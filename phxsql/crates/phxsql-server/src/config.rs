@@ -9,6 +9,8 @@ use std::path::{Path, PathBuf};
 use phxsql_core::error::{PhxError, Result};
 use phxsql_core::json::Json;
 
+use crate::usuarios::Cadastro;
+
 /// Porta padrao do PhxSql.
 pub const PORTA_PADRAO: u16 = 5000;
 
@@ -102,6 +104,8 @@ pub struct Config {
     /// Recusa qualquer operacao de escrita.
     pub somente_leitura: bool,
     pub replicacao: Replicacao,
+    /// Usuarios e o poder de cada um sobre cada base.
+    pub cadastro: Cadastro,
 }
 
 impl Default for Config {
@@ -117,6 +121,7 @@ impl Default for Config {
             timeout_s: 30,
             somente_leitura: false,
             replicacao: Replicacao::default(),
+            cadastro: Cadastro::default(),
         }
     }
 }
@@ -183,6 +188,7 @@ impl Config {
             timeout_s: j.inteiro_ou("timeout_s", padrao.timeout_s as i64).max(1) as u64,
             somente_leitura: j.booleano_ou("somente_leitura", false),
             replicacao: rep,
+            cadastro: Cadastro::de_json(j)?,
         })
     }
 
@@ -248,6 +254,13 @@ impl Config {
             ("conexoes_max", Json::de_u64(self.conexoes_max as u64)),
             ("somente_leitura", Json::Bool(self.somente_leitura)),
             ("papel", Json::texto_de(self.replicacao.papel.nome())),
+            (
+                "usuarios",
+                Json::de_u64(
+                    (self.cadastro.usuarios.len() + usize::from(self.cadastro.root.is_some()))
+                        as u64,
+                ),
+            ),
         ])
     }
 }

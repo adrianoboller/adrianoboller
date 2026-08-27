@@ -31,6 +31,8 @@ pub enum PhxError {
     NaoEncontrado(String),
     /// Violacao de indice unico.
     Duplicado(String),
+    /// Credencial invalida ou poder insuficiente.
+    Autorizacao(String),
     /// Valor excede o limite fisico do formato.
     LimiteExcedido(String),
 }
@@ -62,6 +64,7 @@ impl fmt::Display for PhxError {
             PhxError::Tipo(m) => write!(f, "tipo invalido: {m}"),
             PhxError::NaoEncontrado(m) => write!(f, "nao encontrado: {m}"),
             PhxError::Duplicado(m) => write!(f, "chave duplicada: {m}"),
+            PhxError::Autorizacao(m) => write!(f, "acesso negado: {m}"),
             PhxError::LimiteExcedido(m) => write!(f, "limite excedido: {m}"),
         }
     }

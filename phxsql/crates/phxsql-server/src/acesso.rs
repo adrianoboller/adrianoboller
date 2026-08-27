@@ -28,6 +28,8 @@ pub struct Acesso {
     pub ip: String,
     pub porta_origem: u16,
     pub op: String,
+    /// Login de quem fez, quando houve login. Vazio para anonimo.
+    pub usuario: String,
     /// O token conferiu?
     pub autenticado: bool,
     /// A operacao terminou bem?
@@ -48,6 +50,7 @@ impl Acesso {
             ("ip", Json::texto_de(&self.ip)),
             ("porta_origem", Json::de_u64(self.porta_origem as u64)),
             ("op", Json::texto_de(&self.op)),
+            ("usuario", Json::texto_de(&self.usuario)),
             ("autenticado", Json::Bool(self.autenticado)),
             ("ok", Json::Bool(self.ok)),
             ("ms", Json::de_u64(self.duracao_ms)),
@@ -64,6 +67,7 @@ impl Acesso {
             ip: j.texto_ou("ip", "").to_string(),
             porta_origem: j.inteiro_ou("porta_origem", 0) as u16,
             op: j.texto_ou("op", "").to_string(),
+            usuario: j.texto_ou("usuario", "").to_string(),
             autenticado: j.booleano_ou("autenticado", false),
             ok: j.booleano_ou("ok", false),
             duracao_ms: j.inteiro_ou("ms", 0).max(0) as u64,
@@ -185,6 +189,7 @@ mod tests {
             ip: ip.to_string(),
             porta_origem: 54_321,
             op: "ping".into(),
+            usuario: "adriano".into(),
             autenticado: ok,
             ok,
             duracao_ms: 3,
@@ -211,6 +216,7 @@ mod tests {
         assert_eq!(lidos.len(), 2);
         assert_eq!(lidos[0].ip, "192.168.50.20");
         assert_eq!(lidos[0].porta_origem, 54_321);
+        assert_eq!(lidos[0].usuario, "adriano", "o log diz quem fez");
         assert!(lidos[0].ok);
         assert_eq!(lidos[1].erro.as_deref(), Some("token invalido"));
         // A data e hora saem legiveis.

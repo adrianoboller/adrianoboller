@@ -6,11 +6,13 @@
 pub mod acesso;
 pub mod config;
 pub mod servidor;
+pub mod usuarios;
 pub mod valores;
 
 pub use acesso::{Acesso, LogAcessos, ResumoIp};
 pub use config::{Config, Origem, Papel, Replicacao, PORTA_PADRAO};
 pub use servidor::Servidor;
+pub use usuarios::{Atividade, Cadastro, Permissoes, Usuario};
 
 use std::time::{SystemTime, UNIX_EPOCH};
 

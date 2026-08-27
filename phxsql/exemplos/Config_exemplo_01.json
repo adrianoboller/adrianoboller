@@ -10,6 +10,71 @@
   "conexoes_max": 64,
   "somente_leitura": false,
 
+
+  "_usuarios": [
+    "A senha NUNCA vai em texto puro. Gere o hash com:",
+    "    echo -n 'a senha' | phxsqld --senha",
+    "e cole a linha aqui. Confira o cadastro com: phxsqld --usuarios",
+    "",
+    "Poder por base: a chave \"*\" vale para as bases nao listadas.",
+    "Atividade que nao aparece e FALSE. Base que nao aparece e sem \"*\" nega tudo.",
+    "Supervisor pode tudo em toda base. O root e sempre supervisor."
+  ],
+
+  "root": {
+    "id": 1,
+    "nome": "Administrador do sistema",
+    "login": "root",
+    "senha_hash": "pbkdf2-sha256$210000$4b3d5b3716785add834cf19e811dd044$e51a5ff4700bb173c149f95d0cf1760554965f7aee25575bbcbb09af4420d5bb",
+    "email": "root@empresa.com.br",
+    "telefone": ""
+  },
+
+  "usuarios": [
+    {
+      "id": 2,
+      "nome": "Adriano Boller",
+      "login": "adriano",
+      "senha_hash": "pbkdf2-sha256$210000$1f7200f90c4306e276df39928758fc18$2cdb04dfe1381a3383b4cdb1f7623fc370018e9e2c108a3733b1c0a2b2ea6933",
+      "email": "adriano@empresa.com.br",
+      "telefone": "+55 47 99999-0000",
+      "supervisor": true,
+      "ativo": true,
+      "bases": {}
+    },
+    {
+      "id": 3,
+      "nome": "Maria Operadora",
+      "login": "maria",
+      "senha_hash": "pbkdf2-sha256$210000$767303897a36de35f75ed199c898c559$b75797fc7c023bd5e91f3a02e29a7b44ddd4d22d70785479fa227c330cf15b33",
+      "email": "maria@empresa.com.br",
+      "telefone": "+55 47 98888-0000",
+      "supervisor": false,
+      "ativo": true,
+      "bases": {
+        "*": { "ler": true },
+        "Z": {
+          "ler": true, "inserir": true, "alterar": true, "excluir": false,
+          "criar": false, "reindexar": false, "diario": true,
+          "verificar": true, "administrar": false, "replicar": false
+        }
+      }
+    },
+    {
+      "id": 4,
+      "nome": "Carlos Consulta",
+      "login": "carlos",
+      "senha_hash": "pbkdf2-sha256$210000$35ef2c2a3af29f542568fd4f52567c00$bf763839d36f7441ce402297b414b1b26ad79d16e5ec9621cc3935eebf45da51",
+      "email": "carlos@empresa.com.br",
+      "telefone": "+55 47 97777-0000",
+      "supervisor": false,
+      "ativo": true,
+      "bases": {
+        "Z": { "ler": true, "verificar": true }
+      }
+    }
+  ],
+
   "log_acessos": "acessos.log",
 
   "_ips_permitidos": "Vazio libera qualquer origem. Preencha SEMPRE que a porta nao estiver atras de firewall ou VPN.",
