@@ -28,6 +28,22 @@ use phxsql_core::EXT_REG;
 
 use crate::table::Table;
 
+/// O nome nao e um engano de digitacao: e uma tentativa de sair do diretorio.
+///
+/// Separa as duas coisas de proposito. `"minha tabela!"` e um nome ruim --
+/// alguem errou. `"../../etc/passwd"` nao e nome nenhum: ninguem digita isso
+/// por acidente. Quem chama precisa poder tratar os dois casos de forma
+/// diferente, e e por isso que esta funcao existe separada de
+/// [`validar_nome`].
+pub fn nome_hostil(nome: &str) -> bool {
+    nome == "."
+        || nome == ".."
+        || nome.contains("..")
+        || nome
+            .chars()
+            .any(|c| matches!(c, '/' | '\\' | ':') || c.is_control())
+}
+
 /// Recusa nomes que escapariam do diretorio ou quebrariam o sistema de
 /// arquivos. Vale para database, schema e tabela.
 pub fn validar_nome(rotulo: &str, nome: &str) -> Result<()> {
@@ -422,5 +438,40 @@ mod tests {
             Some("cadastro_clientes")
         );
         assert_eq!(nome_da_tabela(Path::new("cadastroClientes.ndx")), None);
+    }
+    #[test]
+    fn separa_nome_ruim_de_tentativa_de_travessia() {
+        // Engano de digitacao: recusado, mas nao e ataque.
+        assert!(!nome_hostil("minha tabela!"));
+        assert!(!nome_hostil("cadastro*"));
+        assert!(!nome_hostil("aspas\"aqui"));
+        assert!(!nome_hostil("cadastroClientes"));
+        assert!(!nome_hostil("Comercial"));
+        assert!(!nome_hostil("nota.fiscal"));
+
+        // Sondagem: ninguem digita isso por acidente.
+        assert!(nome_hostil(".."));
+        assert!(nome_hostil("."));
+        assert!(nome_hostil("../../etc/passwd"));
+        assert!(nome_hostil("..\\..\\windows"));
+        assert!(nome_hostil("/etc"));
+        assert!(nome_hostil("C:\\dados"));
+        assert!(nome_hostil("a/b"));
+        assert!(nome_hostil("nome\u{0}nulo"));
+        assert!(nome_hostil("quebra\nlinha"));
+        // Sem barra, mas ainda saindo do lugar.
+        assert!(nome_hostil("tabela..oculta"));
+    }
+
+    #[test]
+    fn tudo_que_e_hostil_tambem_e_invalido() {
+        // O contrario nao vale, e e essa a assimetria que interessa.
+        for n in ["..", "/etc", "a/b", "C:\\x", "quebra\nlinha"] {
+            assert!(nome_hostil(n));
+            assert!(
+                validar_nome("tabela", n).is_err(),
+                "{n:?} deveria ser invalido"
+            );
+        }
     }
 }

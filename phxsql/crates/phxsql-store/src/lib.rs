@@ -17,6 +17,7 @@
 pub mod blob;
 pub mod catalogo;
 pub mod log;
+pub mod memoria;
 pub mod ndx;
 pub mod reg;
 pub mod table;
@@ -26,6 +27,7 @@ pub mod volume;
 pub use blob::{BlobFile, EstatisticaBlob, MAGIC_BIN, MAGIC_MEMO};
 pub use catalogo::{qualificar, separar_qualificado, Database, Instancia};
 pub use log::{Evento, LogFile, Operacao, EXT_LOG, MAGIC_LOG};
+pub use memoria::{Consulta, Filtro, Operador, Ordem, Resultado, TabelaMemoria};
 pub use ndx::{DescritorIndice, NdxFile, MAGIC_NDX, PAGINA_PADRAO};
 pub use reg::{RegFile, MAGIC_REG};
 pub use table::{Linha, Relatorio, Table};
