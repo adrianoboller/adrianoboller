@@ -178,6 +178,18 @@ impl Servidor {
             self.config.replicacao.papel.nome()
         );
         eprintln!("log de acessos: {}", self.config.log_acessos.display());
+        if self.config.replicacao.papel != crate::config::Papel::Isolado {
+            eprintln!(
+                "replicacao: papel {} | escuta {} | ATENCAO: o transporte de eventos \
+                 ainda nao esta implementado (ver docs/REPLICACAO.md)",
+                self.config.replicacao.papel.nome(),
+                if self.config.replicacao.escuta.is_empty() {
+                    "(a porta de dados)"
+                } else {
+                    &self.config.replicacao.escuta
+                }
+            );
+        }
         eprintln!("lista de bloqueio: {}", self.config.blacklist.display());
         if !self.config.politica.comandos_proibidos.is_empty() {
             eprintln!(
@@ -413,7 +425,7 @@ impl Servidor {
             ("GET", "/saude") => {
                 // Diz o que a pagina precisa para montar o formulario: a porta
                 // que este servidor REALMENTE escuta (nao a de fabrica), os
-                // destinos que ela pode alcancar e se ha chave a informar.
+                // servidores que ela pode alcancar e se ha chave a informar.
                 // Nada aqui e segredo, e nada aqui depende de token.
                 let _ = http::responder_json(
                     &mut fluxo,
@@ -428,11 +440,11 @@ impl Servidor {
                             ),
                         ),
                         (
-                            "destinos",
+                            "servidores",
                             Json::Lista(
                                 self.config
                                     .web
-                                    .destinos
+                                    .servidores
                                     .iter()
                                     .map(Json::texto_de)
                                     .collect(),
@@ -475,22 +487,22 @@ impl Servidor {
             .map(|j| j.texto_ou("op", "login").to_string())
             .unwrap_or_else(|_| "login".into());
 
-        if !self.config.web.destinos_permitidos_algum() {
+        if !self.config.web.alcanca_outro_servidor() {
             return Err((
                 op,
                 PhxError::Autorizacao(
-                    "esta interface nao fala com outro servidor: preencha web.destinos no config.json".into(),
+                    "esta interface nao fala com outro servidor: preencha web.servidores no config.json".into(),
                 ),
             ));
         }
-        if !self.config.web.destino_permitido(destino) {
+        if !self.config.web.servidor_permitido(destino) {
             // Endereco fora da lista e sondagem de rede, nao engano: alguem
             // esta procurando o que mais existe do outro lado.
-            self.violacao_grave(ip, &op, "destino fora de web.destinos");
+            self.violacao_grave(ip, &op, "servidor fora de web.servidores");
             return Err((
                 op,
                 PhxError::Autorizacao(format!(
-                    "{destino} nao esta em web.destinos; o IP foi bloqueado"
+                    "{destino} nao esta em web.servidores; o IP foi bloqueado"
                 )),
             ));
         }
@@ -605,10 +617,14 @@ impl Servidor {
             }
         }
 
-        // Abrir conexao para outro PhxSql, se o login pediu um destino.
-        let destino = Json::analisar(&pedido.corpo)
+        // Abrir conexao para outro PhxSql, se o login pediu um servidor.
+        //
+        // O campo se chama "servidor" e nao "destino" porque "destino" ja e o
+        // diretorio do backup -- e a colisao de nome mandava todo pedido de
+        // backup para o relay. Achado ligando a peca, nao lendo o codigo.
+        let servidor_remoto = Json::analisar(&pedido.corpo)
             .ok()
-            .map(|j| j.texto_ou("destino", "").trim().to_string())
+            .map(|j| j.texto_ou("servidor", "").trim().to_string())
             .unwrap_or_default();
 
         let inicio = Instant::now();
@@ -620,12 +636,12 @@ impl Servidor {
             .ok()
             .and_then(|r| r.get(&id_sessao).cloned());
 
-        let (op, autenticado, resultado) = match (&ja_remota, destino.is_empty()) {
+        let (op, autenticado, resultado) = match (&ja_remota, servidor_remoto.is_empty()) {
             // Sessao ja amarrada a um servidor remoto: tudo vai para la.
             (Some(conexao), _) => self.encaminhar(conexao, &pedido.corpo, ip),
-            // Login novo pedindo destino: abre, encaminha, e guarda se entrou.
+            // Login novo pedindo servidor: abre, encaminha, e guarda se entrou.
             (None, false) => {
-                let r = self.abrir_remoto(&destino, &pedido.corpo, ip);
+                let r = self.abrir_remoto(&servidor_remoto, &pedido.corpo, ip);
                 match r {
                     Ok((op, valor, conexao)) => {
                         if id_sessao.is_empty() {
@@ -643,7 +659,7 @@ impl Servidor {
             }
             (None, true) => self.despachar(&pedido.corpo, &mut sessao, ip),
         };
-        let remota = ja_remota.is_some() || !destino.is_empty();
+        let remota = ja_remota.is_some() || !servidor_remoto.is_empty();
         let ms = inicio.elapsed().as_millis() as u64;
 
         // Um desafio em aberto so e consumido por um login. Qualquer outra
@@ -1160,6 +1176,8 @@ impl Servidor {
             "memoria_carregar" => self.op_memoria_carregar(p, sessao),
             "memoria_liberar" => self.op_memoria_liberar(p),
             "memoria" => self.op_memoria(),
+            "backup" => self.op_backup(p),
+            "conferir_backup" => self.op_conferir_backup(p),
             // O nome que o Adriano pediu, e o nome em portugues do projeto.
             // Sao a mesma operacao: a interface usa um, o script usa o outro.
             "SelectMemory" | "selectmemory" | "selecionar_memoria" => {
@@ -1538,6 +1556,50 @@ impl Servidor {
         Ok(Json::objeto(vec![
             ("rowid", Json::de_u64(rowid)),
             ("excluido", Json::Bool(removeu)),
+        ]))
+    }
+
+    /// Copia de seguranca, com a trava de dados segurada do inicio ao fim.
+    fn op_backup(&self, p: &Json) -> Result<Json> {
+        let destino = p.texto_ou("destino", "").trim().to_string();
+        if destino.is_empty() {
+            return Err(PhxError::Esquema("informe \"destino\"".into()));
+        }
+        let quando = crate::agora_ms();
+        let inicio = Instant::now();
+        // A trava fica presa a copia inteira. E o que "consistente" quer dizer
+        // sem transacao: nenhuma escrita acontece no meio.
+        let r = {
+            let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+            phxsql_store::backup::executar(
+                &self.config.base,
+                std::path::Path::new(&destino),
+                &phxsql_core::datahora::instante_iso(quando),
+            )?
+        };
+        Ok(Json::objeto(vec![
+            ("destino", Json::texto_de(&destino)),
+            ("arquivos", Json::de_u64(r.arquivos.len() as u64)),
+            ("bytes", Json::de_u64(r.bytes)),
+            ("ms", Json::de_u64(inicio.elapsed().as_millis() as u64)),
+        ]))
+    }
+
+    fn op_conferir_backup(&self, p: &Json) -> Result<Json> {
+        let destino = p.texto_ou("destino", "").trim().to_string();
+        if destino.is_empty() {
+            return Err(PhxError::Esquema("informe \"destino\"".into()));
+        }
+        let r = phxsql_store::backup::conferir(std::path::Path::new(&destino))?;
+        Ok(Json::objeto(vec![
+            ("destino", Json::texto_de(&destino)),
+            ("integro", Json::Bool(r.ok())),
+            ("arquivos", Json::de_u64(r.arquivos.len() as u64)),
+            ("bytes", Json::de_u64(r.bytes)),
+            (
+                "divergencias",
+                Json::Lista(r.divergencias.iter().map(Json::texto_de).collect()),
+            ),
         ]))
     }
 

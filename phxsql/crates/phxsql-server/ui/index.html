@@ -18,6 +18,7 @@
   --ok:#6cc98c; --aviso:#ffc43d;
   --barra:52px; --arvore:268px;
   --sombra-fenix:0 6px 22px rgba(255,77,16,.28);
+  --brilho-entrada:#0d1830; --tinta-botao:#160a00;
 }
 
 /* Tema claro. Nao e o escuro invertido: sobre papel, o vermelhao #ff4d10 da
@@ -35,6 +36,7 @@
   --reg:#1f5c93; --ndx:#6a44a8; --bin:#0e7a85; --memo:#37702e; --log:#b71414;
   --ok:#2f7a3e; --aviso:#8a6a1f;
   --sombra-fenix:0 6px 18px rgba(198,60,10,.18);
+  --brilho-entrada:#efe7dd; --tinta-botao:#fff6f0;
 }
 *{box-sizing:border-box}
 html,body{height:100%}
@@ -50,7 +52,7 @@ button{font-family:inherit;font-size:inherit;color:inherit;cursor:pointer}
 /* --------------------------------------------------------------- entrada */
 #entrada{
   position:fixed;inset:0;display:grid;place-items:center;
-  background:radial-gradient(1200px 600px at 50% -10%,#0d1830 0%,var(--fundo) 62%);
+  background:radial-gradient(1200px 600px at 50% -10%,var(--brilho-entrada) 0%,var(--fundo) 62%);
   z-index:50;
 }
 .cartao{
@@ -89,7 +91,7 @@ input,select{
 input:focus,select:focus{border-color:var(--laranja);outline:none}
 .campo{margin-bottom:16px}
 .botao{
-  width:100%;background:var(--laranja);color:#160a00;border:none;border-radius:6px;
+  width:100%;background:var(--laranja);color:var(--tinta-botao);border:none;border-radius:6px;
   padding:11px;font-weight:600;letter-spacing:.02em;
 }
 .botao:hover{background:var(--ambar)}
@@ -301,7 +303,10 @@ h3:first-child{margin-top:0}
 // avaliada antes de instalar qualquer coisa.
 // =====================================================================
 const est = { sessao:null, usuario:null, token:"", demo:false,
-              bancos:[], atual:null, aba:"estrutura", ordem:"", linhas:[] };
+              bancos:[], atual:null, aba:"estrutura", ordem:"", linhas:[],
+              // Para onde este console esta falando. Vazio = o proprio
+              // servidor que serviu a pagina.
+              servidor:"", portaLocal:5000, servidores:[], database:"" };
 
 async function api(op, params = {}) {
   if (est.demo) return demo(op, params);
@@ -329,6 +334,26 @@ const podeProvar = () => !!(window.crypto && crypto.subtle && crypto.subtle.deri
 
 const bytesDeHex = h => Uint8Array.from(h.match(/../g) || [], b => parseInt(b, 16));
 const hexDeBytes = b => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join("");
+
+/// Assina o MESMO desafio da senha, com a chave privada Ed25519.
+///
+/// Segundo fator: a senha prova que voce sabe, a chave prova que voce tem.
+/// Depende de crypto.subtle com Ed25519 -- que e recente. Sem ele, a pagina
+/// diz para usar a linha de comando em vez de fingir que assinou.
+async function assinarDesafio(chaveHex, nonce, nonceCliente, usuario) {
+  if (!/^[0-9a-fA-F]{64}$/.test(chaveHex))
+    throw new Error("a chave privada tem 64 hexadecimais");
+  let chave;
+  try {
+    chave = await crypto.subtle.importKey(
+      "raw", bytesDeHex(chaveHex), { name:"Ed25519" }, false, ["sign"]);
+  } catch {
+    throw new Error("este navegador não assina Ed25519; entre sem chave por "
+                  + "um cliente de linha de comando");
+  }
+  const msg = new TextEncoder().encode(`${nonce},${nonceCliente},${usuario}`);
+  return hexDeBytes(await crypto.subtle.sign("Ed25519", chave, msg));
+}
 
 async function calcularProva(senha, salHex, iteracoes, nonce, nonceCliente, usuario) {
   const cru = await crypto.subtle.importKey(
@@ -460,8 +485,25 @@ async function detectarModo() {
     // /saude nao pede token e nao conta tentativa: e so o sinal de vida.
     const r = await fetch("/saude");
     if (!r.ok) throw new Error("sem servidor");
-    await r.json();
+    const saude = await r.json();
     est.demo = false;
+    // A porta que aparece no formulario e a que o servidor REALMENTE escuta,
+    // lida dele. O 5000 e so o padrao de fabrica.
+    est.portaLocal = saude.porta_dados || 5000;
+    est.servidores = saude.servidores || [];
+    $("#pt").value = est.portaLocal;
+    $("#campoChave").hidden = !saude.exige_chave;
+    if (est.servidores.length) {
+      $("#h").setAttribute("list", "servidores");
+      const dl = document.createElement("datalist");
+      dl.id = "servidores";
+      for (const d of est.servidores) {
+        const o = document.createElement("option");
+        o.value = d.split(":")[0];
+        dl.appendChild(o);
+      }
+      document.body.appendChild(dl);
+    }
     $("#modo").innerHTML = "Servidor encontrado nesta origem. Informe o token do "
       + "<code>config.json</code> e as suas credenciais.<br>"
       + (podeProvar()
@@ -479,28 +521,50 @@ async function detectarModo() {
   }
 }
 
+/// Este endereco e o proprio servidor que serviu a pagina?
+function ehLocal(host, porta) {
+  const h = (host || "").trim().toLowerCase();
+  const aqui = h === "" || h === "localhost" || h === "127.0.0.1" || h === "::1"
+            || h === location.hostname.toLowerCase();
+  return aqui && Number(porta) === Number(est.portaLocal);
+}
+
 async function entrar() {
   const usuario = $("#u").value.trim(), senha = $("#s").value, token = $("#t").value;
+  const host = $("#h").value.trim(), porta = $("#pt").value.trim() || "5000";
+  const chave = $("#k").value.trim();
   const recado = $("#recado");
   recado.className = "recado info"; recado.textContent = "Conferindo…";
   est.token = token;
+  est.database = $("#db").value.trim();
+  // So manda "servidor" quando for OUTRO servidor. Para o proprio, o caminho
+  // curto continua sendo o caminho curto.
+  est.servidor = ehLocal(host, porta) ? "" : `${host}:${porta}`;
   try {
     if (est.demo) {
       est.usuario = { nome:"Adriano Boller", login:usuario||"demo", supervisor:true };
     } else if (podeProvar()) {
       // Caminho bom: a senha nao sai desta maquina.
       recado.textContent = "Derivando a prova…";
-      const d = await api("desafio", { usuario });
+      const d = await api("desafio",
+        est.servidor ? { usuario, servidor: est.servidor } : { usuario });
       const nonceCliente = hexDeBytes(crypto.getRandomValues(new Uint8Array(12)));
       const prova = await calcularProva(
         senha, d.sal, d.iteracoes, d.nonce, nonceCliente, usuario);
-      est.usuario = await api("login", { usuario, prova, nonce_cliente:nonceCliente });
+      const pedido = { usuario, prova, nonce_cliente:nonceCliente };
+      if (est.servidor) pedido.servidor = est.servidor;
+      if (chave) {
+        recado.textContent = "Assinando o desafio…";
+        pedido.assinatura = await assinarDesafio(chave, d.nonce, nonceCliente, usuario);
+      }
+      est.usuario = await api("login", pedido);
     } else {
       // Reserva: Base64. Nao e cifra -- so tira a senha do olho e do escape
       // do JSON. O que protege de verdade e o tunel.
       const b64 = s => btoa(unescape(encodeURIComponent(s)));
-      est.usuario = await api("login",
-        { usuario_b64:b64(usuario), senha_b64:b64(senha) });
+      const pedido = { usuario_b64:b64(usuario), senha_b64:b64(senha) };
+      if (est.servidor) pedido.servidor = est.servidor;
+      est.usuario = await api("login", pedido);
     }
     await abrirApp();
   } catch (e) {
@@ -518,6 +582,13 @@ async function abrirApp() {
   const p = await api("ping");
   $("#fita").textContent = `v${p.phxsql} · papel ${p.papel}`;
   await montarArvore();
+  // O campo "Database" do login abre a arvore ja na primeira tabela
+  // desse banco, em vez de deixar o usuario procurar.
+  if (est.database) {
+    const primeira = document.querySelector(
+      `.no.tab[data-db="${CSS.escape(est.database)}"]`);
+    if (primeira) primeira.click();
+  }
 }
 
 // =====================================================================

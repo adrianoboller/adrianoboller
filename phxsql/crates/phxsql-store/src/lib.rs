@@ -14,6 +14,7 @@
 //! Cada arquivo se abre sozinho: tem assinatura propria, versao de formato e
 //! CRC. O esquema mora dentro do `.reg`, entao o quarteto e auto-descritivo.
 
+pub mod backup;
 pub mod blob;
 pub mod catalogo;
 pub mod log;

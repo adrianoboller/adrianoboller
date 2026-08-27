@@ -69,6 +69,16 @@ pub struct Origem {
 #[derive(Debug, Clone)]
 pub struct Replicacao {
     pub papel: Papel,
+    /// Socket onde o SOURCE serve o fluxo de eventos para as replicas.
+    ///
+    /// Porta propria, separada da 5000, pelo mesmo motivo da interface web:
+    /// quem fala replicacao nao e quem fala consulta, e o firewall precisa
+    /// poder tratar as duas de forma diferente. Vazia = usa a porta de dados.
+    ///
+    /// A volta -- o "ate onde eu ja apliquei" que a replica manda de tempos em
+    /// tempos -- vai pela MESMA conexao. Nao ha segundo soquete: quem abriu a
+    /// conexao foi a replica, e a resposta volta por onde veio.
+    pub escuta: String,
     /// Identidade deste servidor, usada na numeracao global dos eventos.
     pub id_servidor: String,
     /// IPs autorizados a pedir o fluxo de replicacao (so no source).
@@ -77,10 +87,27 @@ pub struct Replicacao {
     pub origens: Vec<Origem>,
 }
 
+impl Replicacao {
+    /// Endereco onde o source serve o fluxo. Erro se `escuta` for invalida.
+    pub fn endereco(&self) -> Result<SocketAddr> {
+        use std::net::ToSocketAddrs;
+        self.escuta
+            .to_socket_addrs()
+            .map_err(|e| {
+                PhxError::Esquema(format!("replicacao.escuta invalida {:?}: {e}", self.escuta))
+            })?
+            .next()
+            .ok_or_else(|| {
+                PhxError::Esquema(format!("replicacao.escuta sem endereco: {:?}", self.escuta))
+            })
+    }
+}
+
 impl Default for Replicacao {
     fn default() -> Self {
         Replicacao {
             papel: Papel::Isolado,
+            escuta: String::new(),
             id_servidor: String::new(),
             replicas_autorizadas: Vec::new(),
             origens: Vec::new(),
@@ -105,7 +132,7 @@ pub struct Web {
     /// VAZIO = so este servidor. E o padrao, e e o padrao certo: uma interface
     /// que fala com qualquer endereco e um proxy aberto de saida, e quem
     /// invadir a porta da web ganha a rede inteira junto.
-    pub destinos: Vec<String>,
+    pub servidores: Vec<String>,
 }
 
 impl Default for Web {
@@ -114,7 +141,7 @@ impl Default for Web {
             ligado: false,
             bind: format!("127.0.0.1:{PORTA_WEB_PADRAO}"),
             sessao_minutos: 60,
-            destinos: Vec::new(),
+            servidores: Vec::new(),
         }
     }
 }
@@ -130,7 +157,7 @@ impl Web {
                 sessao_minutos: w
                     .inteiro_ou("sessao_minutos", padrao.sessao_minutos as i64)
                     .max(1) as u64,
-                destinos: w.textos("destinos"),
+                servidores: w.textos("servidores"),
             },
         }
     }
@@ -153,14 +180,14 @@ impl Web {
     ///
     /// Compara o texto exato do `config.json`. Nada de resolver nome e
     /// comparar IP: quem controla o DNS decidiria o que a lista permite.
-    /// Ha algum destino configurado? Sem isso a interface so fala consigo.
-    pub fn destinos_permitidos_algum(&self) -> bool {
-        !self.destinos.is_empty()
+    /// Ha algum servidor configurado? Sem isso a interface so fala consigo.
+    pub fn alcanca_outro_servidor(&self) -> bool {
+        !self.servidores.is_empty()
     }
 
-    pub fn destino_permitido(&self, destino: &str) -> bool {
-        let d = destino.trim();
-        !d.is_empty() && self.destinos.iter().any(|p| p.trim() == d)
+    pub fn servidor_permitido(&self, alvo: &str) -> bool {
+        let d = alvo.trim();
+        !d.is_empty() && self.servidores.iter().any(|p| p.trim() == d)
     }
 }
 
@@ -247,6 +274,7 @@ impl Config {
             None => Replicacao::default(),
             Some(r) => Replicacao {
                 papel: Papel::de_texto(r.texto_ou("papel", "isolado"))?,
+                escuta: r.texto_ou("escuta", "").trim().to_string(),
                 id_servidor: r.texto_ou("id_servidor", "").to_string(),
                 replicas_autorizadas: r.textos("replicas_autorizadas"),
                 origens: r
@@ -311,6 +339,19 @@ impl Config {
                 )));
             }
         }
+        if !self.replicacao.escuta.is_empty() {
+            let rep = self.replicacao.endereco()?;
+            if rep == self.endereco()? {
+                return Err(PhxError::Esquema(format!(
+                    "replicacao.escuta e bind apontam para o mesmo endereco ({rep})"
+                )));
+            }
+            if self.web.ligado && rep == self.web.endereco()? {
+                return Err(PhxError::Esquema(format!(
+                    "replicacao.escuta e web.bind apontam para o mesmo endereco ({rep})"
+                )));
+            }
+        }
         if self.replicacao.papel == Papel::Replica && self.replicacao.origens.is_empty() {
             return Err(PhxError::Esquema(
                 "papel replica exige ao menos uma origem em replicacao.origens".into(),
@@ -365,6 +406,14 @@ impl Config {
             ("conexoes_max", Json::de_u64(self.conexoes_max as u64)),
             ("somente_leitura", Json::Bool(self.somente_leitura)),
             ("papel", Json::texto_de(self.replicacao.papel.nome())),
+            (
+                "replicacao_escuta",
+                Json::texto_de(if self.replicacao.escuta.is_empty() {
+                    "(a porta de dados)"
+                } else {
+                    &self.replicacao.escuta
+                }),
+            ),
             (
                 "comandos_proibidos",
                 Json::Lista(
@@ -550,5 +599,56 @@ mod tests {
         let txt = r#"{"token":"x","web":{"bind":"isso nao e endereco"}}"#;
         let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
         c.validar().unwrap();
+    }
+    #[test]
+    fn le_a_porta_de_replicacao() {
+        let txt = r#"{"token":"x","bind":"0.0.0.0:5000",
+          "replicacao":{"papel":"source","escuta":"0.0.0.0:5010"}}"#;
+        let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
+        assert_eq!(c.replicacao.escuta, "0.0.0.0:5010");
+        assert_eq!(c.replicacao.endereco().unwrap().port(), 5010);
+        c.validar().unwrap();
+    }
+
+    #[test]
+    fn a_replicacao_nao_pode_roubar_a_porta_de_dados_nem_a_da_web() {
+        let mesma = r#"{"token":"x","bind":"127.0.0.1:5000",
+          "replicacao":{"papel":"source","escuta":"127.0.0.1:5000"}}"#;
+        assert!(Config::de_json(&Json::analisar(mesma).unwrap())
+            .unwrap()
+            .validar()
+            .is_err());
+
+        let contra_web = r#"{"token":"x","bind":"127.0.0.1:5000",
+          "web":{"ligado":true,"bind":"127.0.0.1:5001"},
+          "replicacao":{"papel":"source","escuta":"127.0.0.1:5001"}}"#;
+        assert!(Config::de_json(&Json::analisar(contra_web).unwrap())
+            .unwrap()
+            .validar()
+            .is_err());
+    }
+
+    #[test]
+    fn sem_escuta_a_replicacao_usa_a_porta_de_dados() {
+        let c = Config::de_json(&Json::analisar(r#"{"token":"x"}"#).unwrap()).unwrap();
+        assert!(c.replicacao.escuta.is_empty());
+        c.validar().unwrap();
+    }
+
+    #[test]
+    fn a_lista_de_servidores_da_web_e_exata() {
+        let txt = r#"{"token":"x","web":{"servidores":["10.1.1.5:5000","curitiba:5000"]}}"#;
+        let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
+        assert!(c.web.alcanca_outro_servidor());
+        assert!(c.web.servidor_permitido("10.1.1.5:5000"));
+        assert!(c.web.servidor_permitido(" curitiba:5000 "));
+        // Sem porta, com outra porta, ou vazio: nao entra.
+        assert!(!c.web.servidor_permitido("10.1.1.5"));
+        assert!(!c.web.servidor_permitido("10.1.1.5:5001"));
+        assert!(!c.web.servidor_permitido(""));
+
+        let fechado = Config::de_json(&Json::analisar(r#"{"token":"x"}"#).unwrap()).unwrap();
+        assert!(!fechado.web.alcanca_outro_servidor());
+        assert!(!fechado.web.servidor_permitido("qualquer:5000"));
     }
 }

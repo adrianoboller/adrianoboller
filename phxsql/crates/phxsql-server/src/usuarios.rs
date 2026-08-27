@@ -90,8 +90,12 @@ impl Atividade {
     /// autenticado -- e o caso do `ping` e do `login`.
     pub fn da_operacao(op: &str) -> Option<Atividade> {
         Some(match op {
-            "ping" | "login" | "desafio" | "quem_sou" => return None,
+            "ping" | "login" | "desafio" | "quem_sou" | "sair" => return None,
             "bancos" | "tabelas" | "esquema" | "ler" | "varrer" | "buscar" => Atividade::Ler,
+            // Consultar em memoria e ler: o dado e o mesmo, o caminho e outro.
+            // Carregar tambem, porque carregar e varrer a tabela inteira.
+            "memoria_carregar" | "memoria" | "SelectMemory" | "selectmemory"
+            | "selecionar_memoria" => Atividade::Ler,
             "inserir" => Atividade::Inserir,
             "atualizar" => Atividade::Alterar,
             "excluir" => Atividade::Excluir,
@@ -682,5 +686,26 @@ mod tests {
             Atividade::da_operacao("op_que_nao_existe"),
             Some(Atividade::Administrar)
         );
+    }
+    #[test]
+    fn a_memoria_pede_leitura_e_o_backup_pede_administrar() {
+        // Consultar em memoria nao pode exigir mais poder do que ler do disco:
+        // e o mesmo dado. Ja o backup e conta de administrador.
+        for op in [
+            "memoria_carregar",
+            "memoria",
+            "SelectMemory",
+            "selecionar_memoria",
+        ] {
+            assert_eq!(Atividade::da_operacao(op), Some(Atividade::Ler), "{op}");
+        }
+        for op in ["backup", "conferir_backup", "memoria_liberar"] {
+            assert_eq!(
+                Atividade::da_operacao(op),
+                Some(Atividade::Administrar),
+                "{op}"
+            );
+        }
+        assert_eq!(Atividade::da_operacao("sair"), None);
     }
 }
