@@ -1,0 +1,15 @@
+[package]
+name = "phxsql-cli"
+description = "Ferramenta de linha de comando do PhxSql"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "phxsql"
+path = "src/main.rs"
+
+[dependencies]
+phxsql-core.workspace = true
+phxsql-store.workspace = true

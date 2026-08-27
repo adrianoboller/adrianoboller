@@ -1,0 +1,439 @@
+//! Esquema de uma tabela PhxSql: colunas, indices e o layout do slot.
+//!
+//! O esquema e serializado dentro do proprio `.reg`, logo apos o cabecalho.
+//! Assim uma tabela e auto-descritiva: basta o quarteto de arquivos para
+//! reabrir e ler os dados, sem dicionario externo.
+
+use crate::error::{PhxError, Result};
+use crate::keyenc::largura_componente;
+use crate::types::ColumnType;
+
+const MAGIC_ESQUEMA: &[u8; 4] = b"PSCH";
+const VERSAO_ESQUEMA: u16 = 1;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Column {
+    pub nome: String,
+    pub ty: ColumnType,
+    pub nullable: bool,
+}
+
+impl Column {
+    pub fn new(nome: impl Into<String>, ty: ColumnType) -> Self {
+        Column {
+            nome: nome.into(),
+            ty,
+            nullable: true,
+        }
+    }
+
+    /// Marca a coluna como obrigatoria (NOT NULL).
+    pub fn obrigatoria(mut self) -> Self {
+        self.nullable = false;
+        self
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IndexColumn {
+    /// Posicao da coluna dentro de [`Schema::colunas`].
+    pub coluna: usize,
+    /// Ordem decrescente.
+    pub desc: bool,
+    /// Comparacao sem distinguir maiusculas (fold ASCII).
+    pub nocase: bool,
+}
+
+impl IndexColumn {
+    pub fn asc(coluna: usize) -> Self {
+        IndexColumn {
+            coluna,
+            desc: false,
+            nocase: false,
+        }
+    }
+
+    pub fn desc(coluna: usize) -> Self {
+        IndexColumn {
+            coluna,
+            desc: true,
+            nocase: false,
+        }
+    }
+
+    pub fn sem_caixa(mut self) -> Self {
+        self.nocase = true;
+        self
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IndexDef {
+    pub nome: String,
+    pub colunas: Vec<IndexColumn>,
+    pub unico: bool,
+}
+
+impl IndexDef {
+    pub fn new(nome: impl Into<String>, colunas: Vec<IndexColumn>) -> Self {
+        IndexDef {
+            nome: nome.into(),
+            colunas,
+            unico: false,
+        }
+    }
+
+    pub fn unico(mut self) -> Self {
+        self.unico = true;
+        self
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Schema {
+    nome: String,
+    colunas: Vec<Column>,
+    indices: Vec<IndexDef>,
+    offsets: Vec<usize>,
+    bitmap_len: usize,
+    payload_len: usize,
+}
+
+impl Schema {
+    pub fn new(
+        nome: impl Into<String>,
+        colunas: Vec<Column>,
+        indices: Vec<IndexDef>,
+    ) -> Result<Schema> {
+        let nome = nome.into();
+        if nome.is_empty() {
+            return Err(PhxError::Esquema("tabela sem nome".into()));
+        }
+        if colunas.is_empty() {
+            return Err(PhxError::Esquema(format!("tabela {nome} sem colunas")));
+        }
+        if colunas.len() > u16::MAX as usize {
+            return Err(PhxError::Esquema("colunas demais".into()));
+        }
+
+        for (i, c) in colunas.iter().enumerate() {
+            if c.nome.is_empty() {
+                return Err(PhxError::Esquema(format!("coluna {i} sem nome")));
+            }
+            if colunas.iter().take(i).any(|o| o.nome == c.nome) {
+                return Err(PhxError::Esquema(format!("coluna duplicada: {}", c.nome)));
+            }
+            if let ColumnType::Str(0) = c.ty {
+                return Err(PhxError::Esquema(format!("coluna {} tem Str(0)", c.nome)));
+            }
+            if let ColumnType::Decimal { precisao, escala } = c.ty {
+                if precisao == 0 || precisao > 38 || escala > precisao {
+                    return Err(PhxError::Esquema(format!(
+                        "Decimal invalido em {}: precisao {precisao}, escala {escala}",
+                        c.nome
+                    )));
+                }
+            }
+        }
+
+        for (i, idx) in indices.iter().enumerate() {
+            if idx.nome.is_empty() {
+                return Err(PhxError::Esquema(format!("indice {i} sem nome")));
+            }
+            if indices.iter().take(i).any(|o| o.nome == idx.nome) {
+                return Err(PhxError::Esquema(format!("indice duplicado: {}", idx.nome)));
+            }
+            if idx.colunas.is_empty() {
+                return Err(PhxError::Esquema(format!(
+                    "indice {} sem colunas",
+                    idx.nome
+                )));
+            }
+            for ic in &idx.colunas {
+                let col = colunas.get(ic.coluna).ok_or_else(|| {
+                    PhxError::Esquema(format!(
+                        "indice {} referencia coluna inexistente {}",
+                        idx.nome, ic.coluna
+                    ))
+                })?;
+                if !col.ty.indexavel() {
+                    return Err(PhxError::Esquema(format!(
+                        "indice {} usa coluna {} do tipo {:?}, que nao e indexavel",
+                        idx.nome, col.nome, col.ty
+                    )));
+                }
+            }
+        }
+
+        let bitmap_len = colunas.len().div_ceil(8);
+        let mut offsets = Vec::with_capacity(colunas.len());
+        let mut pos = bitmap_len;
+        for c in &colunas {
+            offsets.push(pos);
+            pos += c.ty.largura();
+        }
+
+        Ok(Schema {
+            nome,
+            colunas,
+            indices,
+            offsets,
+            bitmap_len,
+            payload_len: pos,
+        })
+    }
+
+    pub fn nome(&self) -> &str {
+        &self.nome
+    }
+
+    pub fn colunas(&self) -> &[Column] {
+        &self.colunas
+    }
+
+    pub fn indices(&self) -> &[IndexDef] {
+        &self.indices
+    }
+
+    /// Bytes do bitmap de nulos no inicio do payload.
+    pub fn bitmap_len(&self) -> usize {
+        self.bitmap_len
+    }
+
+    /// Bytes totais do payload (bitmap + todas as colunas).
+    pub fn payload_len(&self) -> usize {
+        self.payload_len
+    }
+
+    /// Deslocamento da coluna dentro do payload.
+    pub fn offset_coluna(&self, i: usize) -> Result<usize> {
+        self.offsets
+            .get(i)
+            .copied()
+            .ok_or_else(|| PhxError::Esquema(format!("coluna {i} inexistente")))
+    }
+
+    pub fn coluna_por_nome(&self, nome: &str) -> Option<usize> {
+        self.colunas.iter().position(|c| c.nome == nome)
+    }
+
+    pub fn indice_por_nome(&self, nome: &str) -> Option<usize> {
+        self.indices.iter().position(|i| i.nome == nome)
+    }
+
+    /// Bytes de uma chave do indice, sem contar o rowid de desempate.
+    pub fn largura_chave(&self, indice: usize) -> Result<usize> {
+        let idx = self
+            .indices
+            .get(indice)
+            .ok_or_else(|| PhxError::Esquema(format!("indice {indice} inexistente")))?;
+        let mut total = 0;
+        for ic in &idx.colunas {
+            total += largura_componente(&self.colunas[ic.coluna].ty)?;
+        }
+        Ok(total)
+    }
+
+    pub fn serializar(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(256);
+        out.extend_from_slice(MAGIC_ESQUEMA);
+        out.extend_from_slice(&VERSAO_ESQUEMA.to_le_bytes());
+        escrever_texto(&mut out, &self.nome);
+
+        out.extend_from_slice(&(self.colunas.len() as u16).to_le_bytes());
+        for c in &self.colunas {
+            escrever_texto(&mut out, &c.nome);
+            let (a, b) = c.ty.params();
+            out.push(c.ty.tag());
+            out.extend_from_slice(&a.to_le_bytes());
+            out.push(b);
+            out.push(c.nullable as u8);
+        }
+
+        out.extend_from_slice(&(self.indices.len() as u16).to_le_bytes());
+        for idx in &self.indices {
+            escrever_texto(&mut out, &idx.nome);
+            out.push(idx.unico as u8);
+            out.extend_from_slice(&(idx.colunas.len() as u16).to_le_bytes());
+            for ic in &idx.colunas {
+                out.extend_from_slice(&(ic.coluna as u16).to_le_bytes());
+                out.push((ic.desc as u8) | ((ic.nocase as u8) << 1));
+            }
+        }
+        out
+    }
+
+    pub fn desserializar(buf: &[u8]) -> Result<Schema> {
+        let mut leitor = Leitor { buf, pos: 0 };
+        let magic = leitor.bytes(4)?;
+        if magic != MAGIC_ESQUEMA {
+            return Err(PhxError::Esquema("bloco de esquema invalido".into()));
+        }
+        let versao = leitor.u16()?;
+        if versao != VERSAO_ESQUEMA {
+            return Err(PhxError::Esquema(format!(
+                "versao de esquema {versao} nao suportada"
+            )));
+        }
+        let nome = leitor.texto()?;
+
+        let n_col = leitor.u16()? as usize;
+        let mut colunas = Vec::with_capacity(n_col);
+        for _ in 0..n_col {
+            let nome = leitor.texto()?;
+            let tag = leitor.u8()?;
+            let a = leitor.u16()?;
+            let b = leitor.u8()?;
+            let nullable = leitor.u8()? != 0;
+            colunas.push(Column {
+                nome,
+                ty: ColumnType::de_tag(tag, a, b)?,
+                nullable,
+            });
+        }
+
+        let n_idx = leitor.u16()? as usize;
+        let mut indices = Vec::with_capacity(n_idx);
+        for _ in 0..n_idx {
+            let nome = leitor.texto()?;
+            let unico = leitor.u8()? != 0;
+            let n = leitor.u16()? as usize;
+            let mut cols = Vec::with_capacity(n);
+            for _ in 0..n {
+                let coluna = leitor.u16()? as usize;
+                let flags = leitor.u8()?;
+                cols.push(IndexColumn {
+                    coluna,
+                    desc: flags & 1 != 0,
+                    nocase: flags & 2 != 0,
+                });
+            }
+            indices.push(IndexDef {
+                nome,
+                colunas: cols,
+                unico,
+            });
+        }
+
+        Schema::new(nome, colunas, indices)
+    }
+}
+
+fn escrever_texto(out: &mut Vec<u8>, s: &str) {
+    let b = s.as_bytes();
+    out.extend_from_slice(&(b.len() as u16).to_le_bytes());
+    out.extend_from_slice(b);
+}
+
+struct Leitor<'a> {
+    buf: &'a [u8],
+    pos: usize,
+}
+
+impl<'a> Leitor<'a> {
+    fn bytes(&mut self, n: usize) -> Result<&'a [u8]> {
+        if self.pos + n > self.buf.len() {
+            return Err(PhxError::Esquema("bloco de esquema truncado".into()));
+        }
+        let s = &self.buf[self.pos..self.pos + n];
+        self.pos += n;
+        Ok(s)
+    }
+
+    fn u8(&mut self) -> Result<u8> {
+        Ok(self.bytes(1)?[0])
+    }
+
+    fn u16(&mut self) -> Result<u16> {
+        Ok(u16::from_le_bytes(self.bytes(2)?.try_into().unwrap()))
+    }
+
+    fn texto(&mut self) -> Result<String> {
+        let n = self.u16()? as usize;
+        let b = self.bytes(n)?;
+        String::from_utf8(b.to_vec())
+            .map_err(|e| PhxError::Esquema(format!("nome nao e UTF-8 valido: {e}")))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn esquema_clientes() -> Schema {
+        Schema::new(
+            "cadastroClientes",
+            vec![
+                Column::new("id", ColumnType::Int8).obrigatoria(),
+                Column::new("nome", ColumnType::Str(60)).obrigatoria(),
+                Column::new("cnpj", ColumnType::Str(14)),
+                Column::new(
+                    "limite",
+                    ColumnType::Decimal {
+                        precisao: 15,
+                        escala: 2,
+                    },
+                ),
+                Column::new("foto", ColumnType::Bin),
+                Column::new("observacao", ColumnType::Memo),
+            ],
+            vec![
+                IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico(),
+                IndexDef::new("porNome", vec![IndexColumn::asc(1).sem_caixa()]),
+            ],
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn layout_do_payload() {
+        let s = esquema_clientes();
+        // 6 colunas -> 1 byte de bitmap.
+        assert_eq!(s.bitmap_len(), 1);
+        assert_eq!(s.offset_coluna(0).unwrap(), 1);
+        assert_eq!(s.offset_coluna(1).unwrap(), 9);
+        assert_eq!(s.offset_coluna(2).unwrap(), 69);
+        // 1 + 8 + 60 + 14 + 16 + 16 + 16
+        assert_eq!(s.payload_len(), 131);
+    }
+
+    #[test]
+    fn serializacao_roundtrip() {
+        let s = esquema_clientes();
+        let bytes = s.serializar();
+        let volta = Schema::desserializar(&bytes).unwrap();
+        assert_eq!(s, volta);
+    }
+
+    #[test]
+    fn indice_sobre_memo_e_rejeitado() {
+        let r = Schema::new(
+            "t",
+            vec![Column::new("m", ColumnType::Memo)],
+            vec![IndexDef::new("i", vec![IndexColumn::asc(0)])],
+        );
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn coluna_duplicada_e_rejeitada() {
+        let r = Schema::new(
+            "t",
+            vec![
+                Column::new("a", ColumnType::Int4),
+                Column::new("a", ColumnType::Int4),
+            ],
+            vec![],
+        );
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn largura_de_chave_composta() {
+        let s = esquema_clientes();
+        // porId: 1 + 8
+        assert_eq!(s.largura_chave(0).unwrap(), 9);
+        // porNome: 1 + 60
+        assert_eq!(s.largura_chave(1).unwrap(), 61);
+    }
+}

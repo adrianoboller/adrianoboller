@@ -1,0 +1,9 @@
+[package]
+name = "phxsql-core"
+description = "Tipos, esquema, codificacao de chaves e utilitarios do PhxSql"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
