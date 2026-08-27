@@ -18,6 +18,7 @@
 //!     --database <nome>     so esse banco
 //!     --admin <nome>        o nome que entra no arquivo
 //! phxsql conferir-backup <destino>             le a copia de volta e confere
+//! phxsql reparar   <dir> <tabela>              confere .reg contra .bkp e conserta
 //! ```
 
 use std::io::Write;
@@ -61,6 +62,7 @@ USO:
   phxsql tabelas   <base> <database>
   phxsql backup    <base> <destino> [--zip] [--database <n>] [--admin <n>]
   phxsql conferir-backup <destino>
+  phxsql reparar   <dir> <tabela>
 ";
 
 fn main() -> ExitCode {
@@ -82,6 +84,7 @@ fn main() -> ExitCode {
         "tabelas" => exigir(&args, 3).and_then(|_| tabelas(Path::new(&args[1]), &args[2])),
         "backup" => exigir(&args, 3).and_then(|_| backup(&args, &args[1], &args[2])),
         "conferir-backup" => exigir(&args, 2).and_then(|_| conferir_backup(&args[1])),
+        "reparar" => exigir(&args, 3).and_then(|_| reparar(Path::new(&args[1]), &args[2])),
         outro => {
             eprintln!("comando desconhecido: {outro}\n");
             diga!("{USO}");
@@ -655,4 +658,28 @@ fn conferir_backup(destino: &str) -> phxsql_core::error::Result<()> {
     Err(phxsql_core::error::PhxError::Corrompido(
         "o backup nao confere com o manifesto".into(),
     ))
+}
+
+/// Confere o `.reg` contra o `.bkp` e conserta o que der.
+///
+/// Repara nos dois sentidos: registro ruim no principal volta do espelho, e
+/// registro ruim no espelho e reescrito a partir do principal. O que estiver
+/// ruim dos dois lados e CONTADO como perdido, nunca inventado.
+fn reparar(dir: &Path, tabela: &str) -> Result<()> {
+    let mut t = Table::abrir_espelhada(dir, tabela)?;
+    let (conferidos, reparados, perdidos) = t.reparar()?;
+    t.sincronizar()?;
+    diga!("{conferidos} slots conferidos");
+    diga!("{reparados} reparados");
+    if perdidos == 0 {
+        diga!("nenhum perdido -- a tabela esta integra.");
+        return Ok(());
+    }
+    diga!("{perdidos} PERDIDOS: ruins nos dois lados.");
+    diga!();
+    diga!("Restaure do backup. O espelho e segunda chance, nao e backup:");
+    diga!("ele mora no mesmo disco.");
+    Err(phxsql_core::PhxError::Corrompido(format!(
+        "{perdidos} registro(s) sem copia boa"
+    )))
 }

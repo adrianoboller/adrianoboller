@@ -6,6 +6,7 @@
 //! phxsqld --acessos [--config c]   mostra o log de acessos por IP
 //! phxsqld --senha [senha]          gera a linha senha_hash para o config.json
 //! phxsqld --gerar-chave             gera um par de chaves Ed25519
+//! phxsqld --pagina                  escreve o Centro de Controle num arquivo
 //! phxsqld --usuarios [--config c]  lista o cadastro e o poder de cada um
 //! phxsqld --bloqueios              lista os IPs bloqueados
 //! phxsqld --desbloquear <ip>       tira um IP da lista
@@ -26,6 +27,7 @@ USO:
   phxsqld --desbloquear <ip> [--config c] tira um IP da lista de bloqueio
   phxsqld --senha [senha]           gera a linha senha_hash para o config.json
   phxsqld --gerar-chave             gera um par de chaves Ed25519 (2o fator)
+  phxsqld --pagina > centro.html    o Centro de Controle como arquivo unico
   phxsqld --exemplo <1|2|3>         imprime um config.json de exemplo
                                     1 = isolado, 2 = source, 3 = replica
 
@@ -98,6 +100,18 @@ fn main() -> ExitCode {
 
     if args.iter().any(|a| a == "--gerar-chave") {
         return gerar_chave();
+    }
+
+    // A pagina exatamente como o servidor a serve, para um arquivo.
+    //
+    // Sai da MESMA funcao que atende o navegador. Se saisse de outro lugar,
+    // um dia o arquivo e a pagina servida diriam coisas diferentes -- e
+    // ninguem descobriria ate alguem reclamar de um defeito que "aqui nao
+    // acontece".
+    if args.iter().any(|a| a == "--pagina") {
+        use std::io::Write;
+        let _ = std::io::stdout().write_all(phxsql_server::http::montar_pagina().as_bytes());
+        return ExitCode::SUCCESS;
     }
 
     if let Some(i) = args.iter().position(|a| a == "--exemplo") {

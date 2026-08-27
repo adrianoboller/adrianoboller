@@ -101,6 +101,39 @@ impl Table {
     }
 
     /// Abre uma tabela existente. O esquema vem de dentro do proprio `.reg`.
+    /// Abre com o espelho `.bkp` ligado -- a segunda chance do `.reg`.
+    pub fn abrir_espelhada(diretorio: impl AsRef<Path>, nome: &str) -> Result<Table> {
+        let mut t = Table::abrir(diretorio, nome)?;
+        t.reg.espelhar()?;
+        Ok(t)
+    }
+
+    /// Cria com o espelho ligado desde o primeiro registro.
+    pub fn criar_espelhada(diretorio: impl AsRef<Path>, esquema: Schema) -> Result<Table> {
+        let mut t = Table::criar(diretorio, esquema)?;
+        t.reg.espelhar()?;
+        Ok(t)
+    }
+
+    /// Liga o espelho numa tabela ja aberta.
+    pub fn espelhar(&mut self) -> Result<()> {
+        self.reg.espelhar()
+    }
+
+    /// Leituras que o espelho salvou nesta sessao. Zero e o esperado.
+    pub fn recuperados(&self) -> u64 {
+        self.reg.recuperados()
+    }
+
+    pub fn tem_espelho(&self) -> bool {
+        self.reg.tem_espelho()
+    }
+
+    /// Confere os dois lados e conserta o que der. Ver `RegFile::reparar`.
+    pub fn reparar(&mut self) -> Result<(u64, u64, u64)> {
+        self.reg.reparar()
+    }
+
     pub fn abrir(diretorio: impl AsRef<Path>, nome: &str) -> Result<Table> {
         let diretorio = diretorio.as_ref().to_path_buf();
         let reg = RegFile::abrir(&diretorio, nome)?;

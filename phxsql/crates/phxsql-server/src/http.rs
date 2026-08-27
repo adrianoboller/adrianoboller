@@ -39,6 +39,12 @@ use phxsql_core::json::Json;
 /// so, servido nos dois lugares, sem risco de divergirem.
 pub const PAGINA: &str = include_str!("../ui/index.html");
 
+/// O phx-grid, do ecossistema Phoenix: ES5 estrito, zero dependencia,
+/// arquivo unico. Entra no cabecalho para estar definido antes de a pagina
+/// rodar o proprio script. Fonte e historico em `ui/grid/`.
+const GRID_CSS: &str = include_str!("../ui/grid/phx-grid.css");
+const GRID_JS: &str = include_str!("../ui/grid/phx-grid.js");
+
 /// Envolve o fragmento no esqueleto que o navegador espera.
 ///
 /// Sem `<!doctype html>` o navegador entra em modo de compatibilidade e o
@@ -48,7 +54,9 @@ pub const PAGINA: &str = include_str!("../ui/index.html");
 /// a pagina e publicada como artefato.
 pub fn montar_pagina() -> String {
     format!(
-        "<!doctype html>\n<html lang=\"pt-BR\">\n<head>\n<meta charset=\"utf-8\">\n</head>\n<body>\n{PAGINA}\n</body>\n</html>\n"
+        "<!doctype html>\n<html lang=\"pt-BR\">\n<head>\n<meta charset=\"utf-8\">\n\
+         <style>\n{GRID_CSS}\n</style>\n<script>\n{GRID_JS}\n</script>\n\
+         </head>\n<body>\n{PAGINA}\n</body>\n</html>\n"
     )
 }
 

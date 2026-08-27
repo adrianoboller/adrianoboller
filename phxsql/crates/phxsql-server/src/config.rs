@@ -69,16 +69,22 @@ pub struct Origem {
 #[derive(Debug, Clone)]
 pub struct Replicacao {
     pub papel: Papel,
-    /// Socket onde o SOURCE serve o fluxo de eventos para as replicas.
+    /// Socket por onde o SOURCE ENVIA os eventos para as replicas.
     ///
     /// Porta propria, separada da 5000, pelo mesmo motivo da interface web:
     /// quem fala replicacao nao e quem fala consulta, e o firewall precisa
     /// poder tratar as duas de forma diferente. Vazia = usa a porta de dados.
+    pub envio: String,
+    /// Socket por onde o SOURCE RECEBE o retorno das replicas.
     ///
-    /// A volta -- o "ate onde eu ja apliquei" que a replica manda de tempos em
-    /// tempos -- vai pela MESMA conexao. Nao ha segundo soquete: quem abriu a
-    /// conexao foi a replica, e a resposta volta por onde veio.
-    pub escuta: String,
+    /// O retorno e o "apliquei ate aqui" de cada replica, mais os pedidos de
+    /// reenvio. Separado do envio a pedido: com dois soquetes, uma replica
+    /// lenta lendo devagar nao segura o canal por onde as confirmacoes das
+    /// outras chegam, e o firewall pode abrir so um sentido.
+    ///
+    /// Vazio = a volta usa a MESMA conexao do envio, que e o desenho mais
+    /// simples e o que o MySQL(R) faz.
+    pub retorno: String,
     /// Identidade deste servidor, usada na numeracao global dos eventos.
     pub id_servidor: String,
     /// IPs autorizados a pedir o fluxo de replicacao (so no source).
@@ -88,18 +94,38 @@ pub struct Replicacao {
 }
 
 impl Replicacao {
-    /// Endereco onde o source serve o fluxo. Erro se `escuta` for invalida.
-    pub fn endereco(&self) -> Result<SocketAddr> {
+    /// Resolve um dos enderecos de replicacao.
+    fn resolver(rotulo: &str, texto: &str) -> Result<SocketAddr> {
         use std::net::ToSocketAddrs;
-        self.escuta
+        texto
             .to_socket_addrs()
-            .map_err(|e| {
-                PhxError::Esquema(format!("replicacao.escuta invalida {:?}: {e}", self.escuta))
-            })?
+            .map_err(|e| PhxError::Esquema(format!("replicacao.{rotulo} invalida {texto:?}: {e}")))?
             .next()
             .ok_or_else(|| {
-                PhxError::Esquema(format!("replicacao.escuta sem endereco: {:?}", self.escuta))
+                PhxError::Esquema(format!("replicacao.{rotulo} sem endereco: {texto:?}"))
             })
+    }
+
+    /// Por onde o source ENVIA os eventos.
+    pub fn endereco_envio(&self) -> Result<SocketAddr> {
+        Replicacao::resolver("envio", &self.envio)
+    }
+
+    /// Por onde o source RECEBE o retorno das replicas.
+    pub fn endereco_retorno(&self) -> Result<SocketAddr> {
+        Replicacao::resolver("retorno", &self.retorno)
+    }
+
+    /// As portas configuradas, em ordem, para o arranque e para o `config`.
+    pub fn portas(&self) -> Vec<(&'static str, &str)> {
+        let mut v = Vec::new();
+        if !self.envio.is_empty() {
+            v.push(("envio", self.envio.as_str()));
+        }
+        if !self.retorno.is_empty() {
+            v.push(("retorno", self.retorno.as_str()));
+        }
+        v
     }
 }
 
@@ -107,7 +133,8 @@ impl Default for Replicacao {
     fn default() -> Self {
         Replicacao {
             papel: Papel::Isolado,
-            escuta: String::new(),
+            envio: String::new(),
+            retorno: String::new(),
             id_servidor: String::new(),
             replicas_autorizadas: Vec::new(),
             origens: Vec::new(),
@@ -309,6 +336,12 @@ pub struct Config {
     pub timeout_s: u64,
     /// Recusa qualquer operacao de escrita.
     pub somente_leitura: bool,
+    /// Espelha todo `.reg` num `.bkp` irmao -- a segunda chance.
+    ///
+    /// Custa uma escrita a mais por gravacao e o dobro de espaco do `.reg`.
+    /// Protege contra o dado ficar RUIM, nao contra o disco morrer: os dois
+    /// arquivos moram no mesmo lugar.
+    pub espelho: bool,
     pub replicacao: Replicacao,
     /// Usuarios e o poder de cada um sobre cada base.
     pub cadastro: Cadastro,
@@ -334,6 +367,7 @@ impl Default for Config {
             conexoes_max: 64,
             timeout_s: 30,
             somente_leitura: false,
+            espelho: false,
             replicacao: Replicacao::default(),
             cadastro: Cadastro::default(),
             politica: Politica::default(),
@@ -378,7 +412,13 @@ impl Config {
             None => Replicacao::default(),
             Some(r) => Replicacao {
                 papel: Papel::de_texto(r.texto_ou("papel", "isolado"))?,
-                escuta: r.texto_ou("escuta", "").trim().to_string(),
+                // "escuta" e o nome antigo de "envio". Continua valendo:
+                // config que ja existe nao pode parar de subir por renomeacao.
+                envio: r
+                    .texto_ou("envio", r.texto_ou("escuta", ""))
+                    .trim()
+                    .to_string(),
+                retorno: r.texto_ou("retorno", "").trim().to_string(),
                 id_servidor: r.texto_ou("id_servidor", "").to_string(),
                 replicas_autorizadas: r.textos("replicas_autorizadas"),
                 origens: r
@@ -412,6 +452,7 @@ impl Config {
                 .max(1) as usize,
             timeout_s: j.inteiro_ou("timeout_s", padrao.timeout_s as i64).max(1) as u64,
             somente_leitura: j.booleano_ou("somente_leitura", false),
+            espelho: j.booleano_ou("espelho", false),
             replicacao: rep,
             cadastro: Cadastro::de_json(j)?,
             politica: match j.campo("seguranca") {
@@ -444,18 +485,21 @@ impl Config {
                 )));
             }
         }
-        if !self.replicacao.escuta.is_empty() {
-            let rep = self.replicacao.endereco()?;
-            if rep == self.endereco()? {
+        // Cada porta de replicacao contra a de dados, a da web e a outra.
+        // Duas portas no mesmo endereco nao sobem, e descobrir isso no
+        // arranque e melhor do que descobrir com uma delas calada.
+        let mut ocupadas = vec![("bind", self.endereco()?)];
+        if self.web.ligado {
+            ocupadas.push(("web.bind", self.web.endereco()?));
+        }
+        for (rotulo, texto) in self.replicacao.portas() {
+            let alvo = Replicacao::resolver(rotulo, texto)?;
+            if let Some((quem, _)) = ocupadas.iter().find(|(_, e)| *e == alvo) {
                 return Err(PhxError::Esquema(format!(
-                    "replicacao.escuta e bind apontam para o mesmo endereco ({rep})"
+                    "replicacao.{rotulo} e {quem} apontam para o mesmo endereco ({alvo})"
                 )));
             }
-            if self.web.ligado && rep == self.web.endereco()? {
-                return Err(PhxError::Esquema(format!(
-                    "replicacao.escuta e web.bind apontam para o mesmo endereco ({rep})"
-                )));
-            }
+            ocupadas.push((rotulo, alvo));
         }
         if self.replicacao.papel == Papel::Replica && self.replicacao.origens.is_empty() {
             return Err(PhxError::Esquema(
@@ -510,14 +554,17 @@ impl Config {
             ),
             ("conexoes_max", Json::de_u64(self.conexoes_max as u64)),
             ("somente_leitura", Json::Bool(self.somente_leitura)),
+            ("espelho", Json::Bool(self.espelho)),
             ("papel", Json::texto_de(self.replicacao.papel.nome())),
             (
-                "replicacao_escuta",
-                Json::texto_de(if self.replicacao.escuta.is_empty() {
-                    "(a porta de dados)"
-                } else {
-                    &self.replicacao.escuta
-                }),
+                "replicacao_portas",
+                Json::Objeto(
+                    self.replicacao
+                        .portas()
+                        .into_iter()
+                        .map(|(k, v)| (k.to_string(), Json::texto_de(v)))
+                        .collect(),
+                ),
             ),
             (
                 "comandos_proibidos",
@@ -707,18 +754,32 @@ mod tests {
     }
     #[test]
     fn le_a_porta_de_replicacao() {
+        // Nome novo: envio e retorno separados.
         let txt = r#"{"token":"x","bind":"0.0.0.0:5000",
-          "replicacao":{"papel":"source","escuta":"0.0.0.0:5010"}}"#;
+          "replicacao":{"papel":"source","envio":"0.0.0.0:5010","retorno":"0.0.0.0:5011"}}"#;
         let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
-        assert_eq!(c.replicacao.escuta, "0.0.0.0:5010");
-        assert_eq!(c.replicacao.endereco().unwrap().port(), 5010);
+        assert_eq!(c.replicacao.endereco_envio().unwrap().port(), 5010);
+        assert_eq!(c.replicacao.endereco_retorno().unwrap().port(), 5011);
+        assert_eq!(c.replicacao.portas().len(), 2);
+        c.validar().unwrap();
+
+        // Nome antigo "escuta" continua valendo como envio: config que ja
+        // existe nao pode parar de subir so porque o campo foi renomeado.
+        let velho = r#"{"token":"x","bind":"0.0.0.0:5000",
+          "replicacao":{"papel":"source","escuta":"0.0.0.0:5010"}}"#;
+        let c = Config::de_json(&Json::analisar(velho).unwrap()).unwrap();
+        assert_eq!(c.replicacao.envio, "0.0.0.0:5010");
+        assert!(
+            c.replicacao.retorno.is_empty(),
+            "sem retorno = volta pelo envio"
+        );
         c.validar().unwrap();
     }
 
     #[test]
     fn a_replicacao_nao_pode_roubar_a_porta_de_dados_nem_a_da_web() {
         let mesma = r#"{"token":"x","bind":"127.0.0.1:5000",
-          "replicacao":{"papel":"source","escuta":"127.0.0.1:5000"}}"#;
+          "replicacao":{"papel":"source","envio":"127.0.0.1:5000"}}"#;
         assert!(Config::de_json(&Json::analisar(mesma).unwrap())
             .unwrap()
             .validar()
@@ -726,8 +787,16 @@ mod tests {
 
         let contra_web = r#"{"token":"x","bind":"127.0.0.1:5000",
           "web":{"ligado":true,"bind":"127.0.0.1:5001"},
-          "replicacao":{"papel":"source","escuta":"127.0.0.1:5001"}}"#;
+          "replicacao":{"papel":"source","envio":"127.0.0.1:5001"}}"#;
         assert!(Config::de_json(&Json::analisar(contra_web).unwrap())
+            .unwrap()
+            .validar()
+            .is_err());
+
+        // E o envio contra o proprio retorno.
+        let uma_contra_outra = r#"{"token":"x","bind":"127.0.0.1:5000",
+          "replicacao":{"papel":"source","envio":"127.0.0.1:5010","retorno":"127.0.0.1:5010"}}"#;
+        assert!(Config::de_json(&Json::analisar(uma_contra_outra).unwrap())
             .unwrap()
             .validar()
             .is_err());
@@ -736,7 +805,9 @@ mod tests {
     #[test]
     fn sem_escuta_a_replicacao_usa_a_porta_de_dados() {
         let c = Config::de_json(&Json::analisar(r#"{"token":"x"}"#).unwrap()).unwrap();
-        assert!(c.replicacao.escuta.is_empty());
+        assert!(c.replicacao.envio.is_empty());
+        assert!(c.replicacao.retorno.is_empty());
+        assert!(c.replicacao.portas().is_empty());
         c.validar().unwrap();
     }
 

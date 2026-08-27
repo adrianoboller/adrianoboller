@@ -49,3 +49,5 @@ pub const EXT_REG: &str = "reg";
 pub const EXT_NDX: &str = "ndx";
 pub const EXT_BIN: &str = "bin";
 pub const EXT_MEMO: &str = "memo";
+/// Espelho do `.reg`, quando ligado. Ver `volume::Volumes::com_espelho`.
+pub const EXT_BKP: &str = "bkp";

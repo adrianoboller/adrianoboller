@@ -68,6 +68,8 @@ pub struct RegFile {
     slot_count: u64,
     live_count: u64,
     criado_em: i64,
+    /// Leituras salvas pelo espelho nesta sessao.
+    recuperados: u64,
 }
 
 impl RegFile {
@@ -85,6 +87,7 @@ impl RegFile {
             slot_count: 0,
             live_count: 0,
             criado_em: agora(),
+            recuperados: 0,
         };
         r.volumes.criar(1)?;
         r.gravar_cabecalho(1)?;
@@ -157,6 +160,7 @@ impl RegFile {
             slot_count,
             live_count,
             criado_em,
+            recuperados: 0,
         })
     }
 
@@ -188,6 +192,96 @@ impl RegFile {
             self.volumes.definir_tamanho(volume, self.data_offset)?;
         }
         Ok(())
+    }
+
+    /// Quantas leituras foram salvas pelo espelho desde que a tabela abriu.
+    ///
+    /// Nao e curiosidade: recuperacao silenciosa e a pior especie. Se este
+    /// numero sobe, alguma coisa esta estragando dado, e alguem precisa saber.
+    pub fn recuperados(&self) -> u64 {
+        self.recuperados
+    }
+
+    /// Percorre todos os slots e conserta os que o espelho consegue salvar.
+    ///
+    /// Devolve (conferidos, reparados, perdidos). Repara nos DOIS sentidos:
+    /// se o principal esta bom e o espelho nao, o espelho e reescrito -- senao
+    /// a segunda chance de amanha ja nasceria queimada.
+    pub fn reparar(&mut self) -> Result<(u64, u64, u64)> {
+        if !self.volumes.tem_espelho() {
+            return Err(PhxError::Esquema(
+                "esta tabela nao tem espelho: ligue \"espelho\" no config.json antes".into(),
+            ));
+        }
+        let (mut conferidos, mut reparados, mut perdidos) = (0u64, 0u64, 0u64);
+        let bom = |slot: &[u8]| -> bool {
+            slot[0] != STATUS_ATIVO || crc32(&slot[SLOT_CAB..]) == Campos(slot).u32(4)
+        };
+        for rowid in 1..=self.slot_count {
+            let (volume, offset) = self.localizar(rowid);
+            let mut principal = vec![0u8; self.slot_size];
+            let mut copia = vec![0u8; self.slot_size];
+            if self.volumes.ler(volume, offset, &mut principal).is_err() {
+                perdidos += 1;
+                continue;
+            }
+            conferidos += 1;
+            let copia_ok = self
+                .volumes
+                .ler_do_espelho(volume, offset, &mut copia)
+                .is_ok()
+                && bom(&copia);
+            match (bom(&principal), copia_ok) {
+                (true, true) => {}
+                // O principal quebrou e o espelho salvou.
+                (false, true) => {
+                    self.volumes.escrever(volume, offset, &copia)?;
+                    reparados += 1;
+                }
+                // O espelho quebrou; o principal reescreve o espelho.
+                (true, false) => {
+                    self.volumes
+                        .escrever_no_espelho(volume, offset, &principal)?;
+                    reparados += 1;
+                }
+                (false, false) => perdidos += 1,
+            }
+        }
+        self.volumes.sincronizar()?;
+        Ok((conferidos, reparados, perdidos))
+    }
+
+    /// Liga o espelho `.bkp`. Chamado logo depois de abrir ou criar, e antes
+    /// de qualquer escrita -- ligar no meio deixaria o espelho comecando pela
+    /// metade, que e pior do que nao ter espelho nenhum.
+    pub fn espelhar(&mut self) -> Result<()> {
+        let volumes = std::mem::replace(
+            &mut self.volumes,
+            Volumes::novo(".", "", phxsql_core::EXT_REG, self.esquema.paginacao()),
+        );
+        self.volumes = volumes.com_espelho(phxsql_core::EXT_BKP);
+        // Semeia SO o que ainda nao existe do outro lado.
+        //
+        // Copiar por cima de um espelho que ja existe seria destruir a copia
+        // boa com a principal, que e exatamente o contrario do que ele serve.
+        // Um teste pegou isso: estragar o principal e religar o espelho
+        // apagava a segunda chance. Espelho fora de sincronia se acerta com
+        // `reparar`, que olha os dois lados antes de escrever em qualquer um.
+        for volume in self.volumes.existentes() {
+            let tamanho = self.volumes.tamanho(volume)?;
+            if self.volumes.tamanho_do_espelho(volume)? == tamanho {
+                continue; // ja existe e tem o tamanho certo: nao toca
+            }
+            let mut buf = vec![0u8; tamanho as usize];
+            self.volumes.ler(volume, 0, &mut buf)?;
+            self.volumes.escrever_no_espelho(volume, 0, &buf)?;
+        }
+        self.volumes.sincronizar()?;
+        Ok(())
+    }
+
+    pub fn tem_espelho(&self) -> bool {
+        self.volumes.tem_espelho()
     }
 
     pub fn esquema(&self) -> &Schema {
@@ -292,9 +386,30 @@ impl RegFile {
         }
         let payload = slot[SLOT_CAB..].to_vec();
         if crc32(&payload) != Campos(&slot).u32(4) {
+            // A segunda chance: se ha espelho, o outro lado pode estar bom.
+            if self.volumes.tem_espelho() {
+                let mut copia = vec![0u8; self.slot_size];
+                if self
+                    .volumes
+                    .ler_do_espelho(volume, offset, &mut copia)
+                    .is_ok()
+                    && copia[0] == STATUS_ATIVO
+                {
+                    let dele = copia[SLOT_CAB..].to_vec();
+                    if crc32(&dele) == Campos(&copia).u32(4) {
+                        self.recuperados += 1;
+                        return Ok(Some(dele));
+                    }
+                }
+            }
             return Err(PhxError::Corrompido(format!(
-                "CRC do registro {rowid} em {} nao confere",
-                self.volumes.caminho(volume).display()
+                "CRC do registro {rowid} em {} nao confere{}",
+                self.volumes.caminho(volume).display(),
+                if self.volumes.tem_espelho() {
+                    " -- e o espelho tambem nao tem uma copia boa"
+                } else {
+                    ""
+                }
             )));
         }
         Ok(Some(payload))
@@ -679,5 +794,142 @@ mod tests {
         v.ler(3, CAB_LEN as u64, &mut bytes).unwrap();
         assert_eq!(Schema::desserializar(&bytes).unwrap(), esq);
         std::fs::remove_dir_all(&d).unwrap();
+    }
+    #[test]
+    fn o_espelho_salva_um_registro_estragado() {
+        let d = dir_temp("espelho");
+        let esq = esquema();
+        let mut r = RegFile::criar(&d, "cadastroClientes", esq.clone()).unwrap();
+        r.espelhar().unwrap();
+        assert!(r.tem_espelho());
+
+        let mut ids = Vec::new();
+        for i in 0..20u8 {
+            let mut p = vec![0u8; esq.payload_len()];
+            p[0] = i;
+            p[1] = i.wrapping_mul(3);
+            ids.push(r.inserir(&p).unwrap());
+        }
+        r.sincronizar().unwrap();
+        // O .bkp existe e tem o mesmo tamanho do .reg.
+        let reg = d.join("cadastroClientes.reg");
+        let bkp = d.join("cadastroClientes.bkp");
+        assert!(bkp.is_file(), "o espelho nao foi criado");
+        assert_eq!(
+            std::fs::metadata(&reg).unwrap().len(),
+            std::fs::metadata(&bkp).unwrap().len()
+        );
+
+        let antes = r.ler(7).unwrap().unwrap();
+        drop(r);
+
+        // Estraga um byte do payload do registro 7 SO no principal.
+        let mut r2 = RegFile::abrir(&d, "cadastroClientes").unwrap();
+        let (volume, offset) = r2.localizar(7);
+        let mut slot = vec![0u8; r2.slot_size];
+        r2.volumes.ler(volume, offset, &mut slot).unwrap();
+        slot[SLOT_CAB] ^= 0xff;
+        r2.volumes.escrever(volume, offset, &slot).unwrap();
+        r2.sincronizar().unwrap();
+        drop(r2);
+
+        // Sem espelho: a leitura acusa corrupcao, como tem de acusar.
+        let mut sem = RegFile::abrir(&d, "cadastroClientes").unwrap();
+        assert!(sem.ler(7).is_err(), "sem espelho, tem de recusar");
+        drop(sem);
+
+        // Com espelho: a leitura volta certa, e o contador registra.
+        let mut com = RegFile::abrir(&d, "cadastroClientes").unwrap();
+        com.espelhar().unwrap();
+        assert_eq!(com.recuperados(), 0);
+        assert_eq!(com.ler(7).unwrap().unwrap(), antes, "o espelho nao salvou");
+        assert_eq!(com.recuperados(), 1, "a recuperacao tem de aparecer");
+        // Os vizinhos continuam saindo do principal, sem contar recuperacao.
+        assert!(com.ler(6).unwrap().is_some());
+        assert_eq!(com.recuperados(), 1);
+    }
+
+    #[test]
+    fn reparar_conserta_os_dois_lados() {
+        let d = dir_temp("reparar");
+        let esq = esquema();
+        let mut r = RegFile::criar(&d, "cadastroClientes", esq.clone()).unwrap();
+        r.espelhar().unwrap();
+        for i in 0..12u8 {
+            let mut p = vec![0u8; esq.payload_len()];
+            p[0] = i;
+            r.inserir(&p).unwrap();
+        }
+        r.sincronizar().unwrap();
+        drop(r);
+
+        // Estraga o registro 3 no principal e o 9 no espelho.
+        let mut r = RegFile::abrir(&d, "cadastroClientes").unwrap();
+        r.espelhar().unwrap();
+        for (rowid, no_espelho) in [(3u64, false), (9u64, true)] {
+            let (v, off) = r.localizar(rowid);
+            let mut slot = vec![0u8; r.slot_size];
+            if no_espelho {
+                r.volumes.ler_do_espelho(v, off, &mut slot).unwrap();
+                slot[SLOT_CAB] ^= 0x5a;
+                r.volumes.escrever_no_espelho(v, off, &slot).unwrap();
+            } else {
+                r.volumes.ler(v, off, &mut slot).unwrap();
+                slot[SLOT_CAB] ^= 0x5a;
+                // escrever() duplica no espelho; aqui queremos SO o principal.
+                r.volumes.escrever_so_no_principal(v, off, &slot).unwrap();
+            }
+        }
+        r.sincronizar().unwrap();
+
+        let (conferidos, reparados, perdidos) = r.reparar().unwrap();
+        assert_eq!(conferidos, 12);
+        assert_eq!(reparados, 2, "um de cada lado");
+        assert_eq!(perdidos, 0);
+
+        // Depois do reparo, tudo le sem precisar da segunda chance.
+        let mut depois = RegFile::abrir(&d, "cadastroClientes").unwrap();
+        depois.espelhar().unwrap();
+        for rowid in 1..=12 {
+            assert!(depois.ler(rowid).unwrap().is_some(), "rowid {rowid}");
+        }
+        assert_eq!(depois.recuperados(), 0, "nada precisou do espelho");
+    }
+
+    #[test]
+    fn os_dois_lados_perdidos_nao_viram_dado_inventado() {
+        let d = dir_temp("perdidos");
+        let esq = esquema();
+        let mut r = RegFile::criar(&d, "cadastroClientes", esq.clone()).unwrap();
+        r.espelhar().unwrap();
+        for i in 0..5u8 {
+            let mut p = vec![0u8; esq.payload_len()];
+            p[0] = i;
+            r.inserir(&p).unwrap();
+        }
+        r.sincronizar().unwrap();
+        // Estraga o 2 nos DOIS lados: nao ha o que salvar.
+        let (v, off) = r.localizar(2);
+        let mut slot = vec![0u8; r.slot_size];
+        r.volumes.ler(v, off, &mut slot).unwrap();
+        slot[SLOT_CAB] ^= 0xaa;
+        r.volumes.escrever(v, off, &slot).unwrap(); // vai para os dois
+        r.sincronizar().unwrap();
+
+        assert!(
+            r.ler(2).is_err(),
+            "sem copia boa, tem de acusar e nao inventar"
+        );
+        let (_, reparados, perdidos) = r.reparar().unwrap();
+        assert_eq!(reparados, 0);
+        assert_eq!(perdidos, 1);
+    }
+
+    #[test]
+    fn sem_espelho_reparar_recusa_em_vez_de_fingir() {
+        let d = dir_temp("semespelho");
+        let mut r = RegFile::criar(&d, "cadastroClientes", esquema()).unwrap();
+        assert!(!r.tem_espelho());
+        assert!(r.reparar().is_err());
     }
 }

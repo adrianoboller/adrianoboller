@@ -181,6 +181,20 @@ body,.cartao,.barra,.arvore,table,td,th{
 .ferramentas label{margin:0}
 .ferramentas select,.ferramentas input{width:auto;padding:6px 10px;font-size:13px}
 .conta{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--texto-3)}
+.dica{font-size:11.5px;color:var(--texto-3);opacity:.8;font-style:italic;margin-left:auto}
+
+/* O phx-grid traz o proprio tema claro. Aqui ele passa a seguir o do
+   console: os tokens dele apontam para os nossos, e o sol/lua troca os dois
+   ao mesmo tempo. Sem isso, no tema escuro o grid ficaria branco no meio da
+   pagina preta. */
+.phx-grid{
+  --phx-bg:var(--painel); --phx-bg2:var(--painel-2); --phx-fg:var(--texto);
+  --phx-meta:var(--texto-3); --phx-borda:var(--linha); --phx-acc:var(--laranja);
+  font-family:"Exo 2","Helvetica Neue",Arial,sans-serif;
+}
+.phx-grid input,.phx-grid select,.phx-grid button{
+  background:var(--painel-2);color:var(--texto);border-color:var(--linha-forte);
+}
 
 table{width:100%;border-collapse:collapse;font-size:13px}
 th,td{padding:7px 11px;text-align:left;border-bottom:1px solid var(--linha);vertical-align:top}
@@ -306,7 +320,8 @@ const est = { sessao:null, usuario:null, token:"", demo:false,
               bancos:[], atual:null, aba:"estrutura", ordem:"", linhas:[],
               // Para onde este console esta falando. Vazio = o proprio
               // servidor que serviu a pagina.
-              servidor:"", portaLocal:5000, servidores:[], database:"" };
+              servidor:"", portaLocal:5000, servidores:[], database:"",
+              teto:200, esquemaAtual:null, grade:null };
 
 async function api(op, params = {}) {
   if (est.demo) return demo(op, params);
@@ -716,28 +731,69 @@ async function vEstrutura(database, tabela_) {
   return h;
 }
 
+/// Mapeia o tipo do PhxSql no tipo que o grid entende.
+///
+/// So os que mudam a apresentacao: numero alinha a direita, moeda formata,
+/// data ordena por instante. O resto e texto, e texto e o padrao do grid.
+function tipoDoGrid(t) {
+  if (/^Int|^UInt/.test(t)) return "numero";
+  if (/^Decimal/.test(t)) return "moeda";
+  if (t === "Date") return "data";           // sem hora, porque nao ha hora
+  if (t === "DateTime" || t === "Time") return "dataHora";
+  return "texto";
+}
+
 async function vConteudo(database, tabela_) {
   const e = await api("esquema", { database, tabela:tabela_ });
   const r = await api("varrer", { database, tabela:tabela_,
-                                  indice: est.ordem || undefined, max:200 });
+                                  indice: est.ordem || undefined, max: est.teto });
   est.linhas = r.linhas;
-  const cols = e.colunas.map(c => c.nome);
+  est.esquemaAtual = e;
   const opcoes = [`<option value="">ordem de digitação (.reg)</option>`]
     .concat(e.indices.map(i =>
       `<option value="${esc(i.nome)}" ${est.ordem===i.nome?"selected":""}>índice ${esc(i.nome)}</option>`));
+  const tetos = [200, 1000, 5000].map(n =>
+    `<option value="${n}" ${est.teto===n?"selected":""}>${n} linhas</option>`);
   return `<div class="ferramentas">
       <label for="ord">Percorrer por</label>
       <select id="ord">${opcoes.join("")}</select>
+      <label for="teto">Trazer</label>
+      <select id="teto">${tetos.join("")}</select>
       <span class="conta">${r.devolvidas} de ${r.total} linhas · ${esc(r.ordem)}</span>
-    </div>` + tabela(
-      [{t:"rowid"}].concat(cols.map(c=>({t:c}))),
-      r.linhas, l => `<tr><td class="dado num">${l.rowid}</td>${
-        cols.map(c => celulaValor(l[c])).join("")}</tr>`);
+      <span class="dica">Arraste um cabeçalho para a faixa de cima para agrupar.</span>
+    </div>
+    <div id="grade"></div>`;
 }
 
 function ligarConteudo() {
   const s = $("#ord");
   if (s) s.onchange = () => { est.ordem = s.value; desenharAba(); };
+  const t = $("#teto");
+  if (t) t.onchange = () => { est.teto = Number(t.value); desenharAba(); };
+
+  const alvo = $("#grade");
+  if (!alvo || !window.PhxGrid || !est.esquemaAtual) return;
+
+  // O grid do Phoenix, com a faixa de agrupamento ligada. As colunas saem do
+  // esquema da tabela -- nada e escrito a mao aqui, entao tabela nova aparece
+  // certa sem ninguem mexer nesta pagina.
+  const colunas = [{ campo:"rowid", titulo:"rowid", tipo:"numero", largura:90 }]
+    .concat(est.esquemaAtual.colunas.map(c => ({
+      campo: c.nome,
+      titulo: c.nome,
+      tipo: tipoDoGrid(c.tipo),
+      agregador: /^Int|^UInt|^Decimal/.test(c.tipo) ? "sum" : null
+    })));
+
+  if (est.grade && est.grade.destruir) { try { est.grade.destruir(); } catch {} }
+  // Exposto para teste automatizado e para o console do navegador.
+  est.grade = window.__phxgrade = PhxGrid.criar("#grade", {
+    agrupavel: true,
+    buscaGlobal: true,
+    colunas: colunas,
+    dados: est.linhas,
+    pagina: { tamanho: 100, opcoes: [50, 100, 200] }
+  });
 }
 
 async function vIndices(database, tabela_) {

@@ -179,32 +179,23 @@ impl Servidor {
         );
         eprintln!("log de acessos: {}", self.config.log_acessos.display());
         if self.config.replicacao.papel != crate::config::Papel::Isolado {
+            let portas = self.config.replicacao.portas();
             eprintln!(
-                "replicacao: papel {} | escuta {} | ATENCAO: o transporte de eventos \
-                 ainda nao esta implementado (ver docs/REPLICACAO.md)",
+                "replicacao: papel {} | {}",
                 self.config.replicacao.papel.nome(),
-                if self.config.replicacao.escuta.is_empty() {
-                    "(a porta de dados)"
+                if portas.is_empty() {
+                    "envio e retorno pela porta de dados".to_string()
                 } else {
-                    &self.config.replicacao.escuta
+                    portas
+                        .iter()
+                        .map(|(k, v)| format!("{k} {v}"))
+                        .collect::<Vec<_>>()
+                        .join(" | ")
                 }
             );
-        }
-        eprintln!("lista de bloqueio: {}", self.config.blacklist.display());
-        if !self.config.politica.comandos_proibidos.is_empty() {
             eprintln!(
-                "comandos proibidos: {}",
-                self.config.politica.comandos_proibidos.join(", ")
-            );
-        }
-        if let Some(fw) = &self.config.politica.firewall {
-            eprintln!(
-                "firewall: {}",
-                if fw.ligado {
-                    "ligado -- IP bloqueado vira regra no sistema"
-                } else {
-                    "desligado -- o bloqueio vale so dentro do servidor"
-                }
+                "ATENCAO: o transporte de eventos ainda nao esta implementado \
+                 (ver docs/REPLICACAO.md). As portas sao configuracao, nao servico."
             );
         }
 
@@ -1308,6 +1299,7 @@ impl Servidor {
             "memoria_liberar" => self.op_memoria_liberar(p),
             "memoria" => self.op_memoria(),
             "backup" => self.op_backup(p, sessao),
+            "reparar" => self.op_reparar(p, sessao),
             "conferir_backup" => self.op_conferir_backup(p),
             // O nome que o Adriano pediu, e o nome em portugues do projeto.
             // Sao a mesma operacao: a interface usa um, o script usa o outro.
@@ -1334,6 +1326,11 @@ impl Servidor {
         }
         let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
         let mut t = dados.abrir_database(database)?.abrir_qualificada(tabela)?;
+        // O espelho e decisao do servidor, nao da tabela: ligar no config.json
+        // vale para tudo que este servidor abrir daqui para a frente.
+        if self.config.espelho && !t.tem_espelho() {
+            t.espelhar()?;
+        }
         // Quem alterar assina o evento no .log da tabela.
         t.definir_usuario(sessao.id());
         Ok(t)
@@ -1756,6 +1753,20 @@ impl Servidor {
             ));
         }
         Ok(Json::objeto(campos))
+    }
+
+    /// Confere `.reg` contra `.bkp` e conserta o que der.
+    fn op_reparar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let mut t = self.abrir(p, sessao)?;
+        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let (conferidos, reparados, perdidos) = t.reparar()?;
+        t.sincronizar()?;
+        Ok(Json::objeto(vec![
+            ("conferidos", Json::de_u64(conferidos)),
+            ("reparados", Json::de_u64(reparados)),
+            ("perdidos", Json::de_u64(perdidos)),
+            ("integro", Json::Bool(perdidos == 0)),
+        ]))
     }
 
     fn op_conferir_backup(&self, p: &Json) -> Result<Json> {
