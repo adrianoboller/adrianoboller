@@ -4,7 +4,7 @@
 //! chaves e CRC. Sem dependencias externas -- compila offline.
 //!
 //! O PhxSql organiza cada tabela logica em quatro arquivos fisicos, no
-//! espirito do HFSQL:
+//! espirito do HFSQL(R):
 //!
 //! ```text
 //! cadastroClientes.reg   registros na ordem de digitacao

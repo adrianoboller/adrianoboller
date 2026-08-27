@@ -197,7 +197,7 @@ Cada componente ocupa `1 + largura` bytes:
 - **DESC** inverte todos os bytes do componente, o que inverte a ordem e joga
   NULL para o fim.
 - **NOCASE** aplica *fold* ASCII para maiúsculas antes de comparar, preservando
-  o comprimento em bytes (mesma semântica do atributo NOCASE do Clarion).
+  o comprimento em bytes (mesma semântica do atributo NOCASE do Clarion(R)).
 
 ### Remoção
 
@@ -318,7 +318,7 @@ Definida no `CREATE TABLE` e gravada no esquema:
 
 Capacidade da tabela = `registros_por_arquivo × max_arquivos`. Passar disso
 devolve erro explícito "tabela cheia", em vez do estouro silencioso de 2 GB
-que o TopSpeed dava.
+que o TopSpeed(R) dava.
 
 ### O endereçamento continua sendo uma conta
 
@@ -350,7 +350,7 @@ volume de 1 MB, e trocar de volume não resolveria nada.
 
 Uma tabela de 999 volumes não pode manter 999 descritores de arquivo abertos.
 Os volumes são abertos sob demanda e mantidos num cache LRU de 64 posições — o
-mesmo *lazy open* que o `FileManager` do Clarion faz.
+mesmo *lazy open* que o `FileManager` do Clarion(R) faz.
 
 ### Como reabrir sem saber a geometria
 

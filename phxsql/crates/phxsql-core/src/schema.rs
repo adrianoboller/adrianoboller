@@ -14,7 +14,7 @@ const VERSAO_ESQUEMA: u16 = 2;
 
 /// O que fazer com as linhas filhas quando a linha pai muda ou some.
 ///
-/// Mesma semantica do `RELATION` do dicionario do Clarion e do
+/// Mesma semantica do `RELATION` do dicionario do Clarion(R) e do
 /// `ON DELETE` / `ON UPDATE` do SQL.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AcaoRi {
@@ -57,7 +57,7 @@ impl AcaoRi {
 /// Chave estrangeira: liga colunas desta tabela a colunas de outra.
 ///
 /// O FraseSQL precisa dessa informacao no catalogo para conseguir gerar JOIN;
-/// e ela e tambem o `RELATION` do dicionario do Clarion, com CASCADE e
+/// e ela e tambem o `RELATION` do dicionario do Clarion(R), com CASCADE e
 /// RESTRICT.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ForeignKey {

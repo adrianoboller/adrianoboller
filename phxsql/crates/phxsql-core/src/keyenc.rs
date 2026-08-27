@@ -64,7 +64,7 @@ fn escrever_f32_be(v: f32, dst: &mut [u8]) {
 ///
 /// * `desc`   -- ordem decrescente (inverte todos os bytes do componente).
 /// * `nocase` -- comparacao sem distinguir maiusculas (fold ASCII, como o
-///   atributo NOCASE do Clarion; nao altera bytes multibyte do UTF-8).
+///   atributo NOCASE do Clarion(R); nao altera bytes multibyte do UTF-8).
 pub fn escrever_componente(
     valor: &Value,
     ty: &ColumnType,

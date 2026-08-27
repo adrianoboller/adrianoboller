@@ -10,7 +10,7 @@
 //! Uma tabela de 999 volumes nao pode manter 999 descritores de arquivo
 //! abertos. Os volumes sao abertos sob demanda e mantidos num cache LRU; o
 //! menos usado e fechado quando o teto e atingido. E o mesmo *lazy open* que o
-//! `FileManager` do Clarion faz.
+//! `FileManager` do Clarion(R) faz.
 
 use std::collections::{HashMap, VecDeque};
 use std::fs::{File, OpenOptions};

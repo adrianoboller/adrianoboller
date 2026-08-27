@@ -16,7 +16,7 @@ rust-version 1.88.0) e medido:
 | Símbolos FFI distintos `ffi::sqlite3_*` chamados | 170 |
 | `libsqlite3-sys/sqlite3/sqlite3.c` | **269.649 linhas de C** |
 | `Cargo.toml` → `keywords` | `["sqlite", "database", "ffi"]` |
-| `Cargo.toml` → `description` | "Ergonomic wrapper for SQLite" |
+| `Cargo.toml` → `description` | "Ergonomic wrapper for SQLite" (citacao literal do repositorio) |
 
 **Conclusão: rusqlite não é um motor de banco em Rust.** É uma casca
 ergonômica sobre a biblioteca C do SQLite. Parser SQL, planejador de consulta,
@@ -31,7 +31,7 @@ diretório `phxsql/`).
 
 ### O que o rusqlite serve — e serve muito
 
-`src/vtab/` expõe a API de **tabelas virtuais** do SQLite:
+`src/vtab/` expõe a API de **tabelas virtuais** do SQLite(R):
 
 ```rust
 pub unsafe trait VTab<'vtab>        // best_index: onde entrego os índices ao planejador
@@ -41,7 +41,7 @@ pub trait TransactionVTab<'vtab>    // begin / sync / commit / rollback
 pub unsafe trait VTabCursor         // filter / next / eof / column / rowid
 ```
 
-Implementando esses traits sobre o PhxSql, o SQLite passa a fazer parsing,
+Implementando esses traits sobre o PhxSql, o SQLite(R) passa a fazer parsing,
 planejamento, JOIN, GROUP BY e agregações — e **o armazenamento é o PhxSql**.
 O método `best_index` é exatamente o ponto onde o `.ndx` é oferecido ao
 planejador, que então usa os nossos índices em vez de varrer a tabela.
@@ -51,7 +51,7 @@ O próprio repositório traz exemplos prontos: `src/vtab/csvtab.rs` (leitura),
 
 **Estratégia recomendada, em duas fases:**
 
-- **Fase A — SQL emprestado.** PhxSql como módulo de tabela virtual do SQLite,
+- **Fase A — SQL emprestado.** PhxSql como módulo de tabela virtual do SQLite(R),
   via rusqlite. Ganhamos SQL completo em dias, não em meses, sem escrever
   parser nem planejador. Custo: uma dependência em C.
 - **Fase B — SQL próprio.** Parser e executor em Rust puro sobre o mesmo
@@ -106,7 +106,7 @@ Column { name, coltype, nullable, is_pk, is_fk, comment }
 O `Schema` do PhxSql já tem nome, tipo, nulabilidade e índices. **Falta chave
 estrangeira** — o `Schema` ainda não modela relacionamento. Para o FraseSQL
 gerar JOIN corretamente, precisamos de FK no esquema (que é também o que o
-dicionário do Clarion chama de RELATION, com CASCADE/RESTRICT).
+dicionário do Clarion(R) chama de RELATION, com CASCADE/RESTRICT).
 
 ### Regras que o FraseSQL impõe e o PhxSql precisa honrar
 
@@ -125,7 +125,7 @@ dicionário do Clarion chama de RELATION, com CASCADE/RESTRICT).
 ### Sobre ODBC no FraseSQL
 
 O FraseSQL já resolve ODBC com a crate `odbc-api = "8"` atrás da feature
-`odbc`, e usa esse caminho para Oracle, DB2, AS400, Informix, Sybase, Teradata
+`odbc`, e usa esse caminho para Oracle(R), DB2(R), AS400(R), Informix(R), Sybase(R), Teradata(R)
 e Caché/IRIS. A documentação de instalação (`FraseSQL-ORACLE-ODBC.txt` e a
 pasta `odbc/`) é o passo a passo de Instant Client, DSN, `odbc.ini`,
 `odbcinst.ini` e `tnsnames.ora`. **Não precisamos inventar essa camada** —
@@ -277,7 +277,7 @@ ainda sabem dizer o que são.
 #### Tabela cheia
 
 `rowid > registros_por_arquivo x max_arquivos` devolve erro explícito
-"tabela cheia", em vez do estouro silencioso de 2 GB que o TopSpeed dava.
+"tabela cheia", em vez do estouro silencioso de 2 GB que o TopSpeed(R) dava.
 
 ### 3.4 Reindex
 
@@ -296,7 +296,7 @@ As três questões abaixo foram decididas pelo autor:
 | Questão | Decisão |
 |---|---|
 | OLE DB | **ODBC + OLE DB desde já** — aceitando o custo e a restrição a Windows para o OLE DB |
-| Direção do ODBC | **Os dois, driver primeiro** — primeiro o driver ODBC do PhxSql (saída), para Excel, Power BI, Crystal e os apps Clarion; depois o cliente (entrada) |
+| Direção do ODBC | **Os dois, driver primeiro** — primeiro o driver ODBC do PhxSql (saída), para Excel, Power BI, Crystal e os apps Clarion(R); depois o cliente (entrada) |
 | Camada SQL | **rusqlite atrás de uma *feature* do Cargo** — SQL completo rápido pela tabela virtual, com a dependência de C opcional; depois vira oráculo de teste do parser próprio |
 
 O texto original de cada questão fica abaixo, como registro do raciocínio.
@@ -312,8 +312,8 @@ trabalho considerável para cobrir o que o ODBC já cobre.
 
 Caminhos:
 
-- **(a) Só ODBC.** Cobre Oracle, DB2, AS400, Informix, Sybase, Teradata,
-  Caché, SQL Server, Access e mais. É o que o FraseSQL já faz.
+- **(a) Só ODBC.** Cobre Oracle(R), DB2(R), AS400(R), Informix(R), Sybase(R), Teradata(R),
+  Caché, SQL Server, Access(R) e mais. É o que o FraseSQL já faz.
 - **(b) ODBC agora, OLE DB depois**, se aparecer uma fonte que só tenha
   provider OLE DB.
 - **(c) ODBC + OLE DB desde já**, aceitando o custo e a restrição a Windows.
@@ -326,18 +326,18 @@ Recomendação: **(b)**. Pergunta: algum cliente seu tem alguma fonte que
 "Integração com outros bancos via ODBC" pode significar duas coisas opostas, e
 são trabalhos bem diferentes:
 
-- **PhxSql como cliente:** o PhxSql lê Oracle, SQL Server, DB2 via ODBC.
+- **PhxSql como cliente:** o PhxSql lê Oracle(R), SQL Server, DB2(R) via ODBC.
   Permite consulta federada e migração de dados legados para o formato PhxSql.
 - **PhxSql como servidor:** escrever um *driver ODBC do PhxSql*, para que
-  Excel, Power BI, Crystal Reports e sistemas Clarion enxerguem o PhxSql como
+  Excel, Power BI, Crystal Reports e sistemas Clarion(R) enxerguem o PhxSql como
   uma fonte de dados. Isso exige uma biblioteca C ABI que implemente a API ODBC
   (`SQLDriverConnect`, `SQLExecDirect`, `SQLFetch`...), registrada no
   `odbcinst.ini` / registro do Windows.
 
-O segundo é o que faria o PhxSql substituir o TopSpeed nos aplicativos Clarion
+O segundo é o que faria o PhxSql substituir o TopSpeed(R) nos aplicativos Clarion(R)
 existentes. Qual dos dois vem primeiro? Ou os dois?
 
-### 3. Rust puro versus SQLite emprestado
+### 3. Rust puro versus SQLite(R) emprestado
 
 O requisito diz "tudo em Rust". A Fase A (tabela virtual via rusqlite) traz
 `sqlite3.c` junto — 270 mil linhas de C. Ou:
@@ -365,7 +365,7 @@ que quem quiser possa compilar o PhxSql sem uma linha de C.
 
 6. `config.json` e o servidor TCP na porta 5000
 7. Servidor MCP
-8. Camada SQL — tabela virtual do SQLite via rusqlite, atrás de uma *feature*
+8. Camada SQL — tabela virtual do SQLite(R) via rusqlite, atrás de uma *feature*
 9. Driver ODBC do PhxSql (saída), depois cliente ODBC e OLE DB (entrada)
 10. Integração no FraseSQL como `engine = "phxsql"`
 11. Compactação, transações, concorrência

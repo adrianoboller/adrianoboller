@@ -1,6 +1,6 @@
 # Replicação no PhxSql
 
-**Pergunta:** dá para ter no PhxSql a replicação Source → Replica do MySQL?
+**Pergunta:** dá para ter no PhxSql a replicação Source → Replica do MySQL(R)?
 
 **Resposta curta:** dá, e o PhxSql já está a meio caminho — porque o `.log`
 que você pediu **é exatamente o binlog**. O que falta é uma coisa só, e ela é
@@ -10,7 +10,7 @@ uma mudança de formato que vale fazer agora.
 
 ## 1. O paralelo peça a peça
 
-| MySQL | PhxSql | Situação |
+| MySQL(R) | PhxSql | Situação |
 |---|---|---|
 | Binary log (`mysql-bin.000001`) | `Tabela.log`, já paginado em `_001`, `_002` | **existe** |
 | Relay log | mesmo `.log`, do lado da réplica | existe (é o mesmo formato) |
@@ -21,7 +21,7 @@ uma mudança de formato que vale fazer agora.
 | Usuário exclusivo de replicação | token + `replicas_autorizadas` | existe no `config.json` |
 | Row-based binlog (imagem da linha) | **falta** | ver seção 3 |
 
-A direção da conexão é a mesma do MySQL, e é o ponto que você destacou:
+A direção da conexão é a mesma do MySQL(R), e é o ponto que você destacou:
 
 ```
    REPLICA 192.168.50.20  ──── TCP 5000 ────►  SOURCE 10.1.1.102
@@ -111,7 +111,7 @@ Quem quer replicar liga.
 
 ## 4. Posição: por que o PhxSql não precisa inventar um GTID
 
-No MySQL antigo você controlava à mão:
+No MySQL(R) antigo você controlava à mão:
 
 ```
 MASTER_LOG_FILE='mysql-bin.000187'
@@ -152,7 +152,7 @@ transmitir nem negociar nada.
 Isso dá uma verificação forte e barata: ao aplicar uma inclusão, a réplica
 confere se o rowid que ela gerou bate com o do evento. Se não bater, ela
 divergiu, e a replicação **para na hora** em vez de propagar a divergência —
-o mesmo comportamento do SQL thread do MySQL parando num erro.
+o mesmo comportamento do SQL thread do MySQL(R) parando num erro.
 
 É também o motivo de o `Config_exemplo_03.json` vir com:
 
@@ -265,7 +265,7 @@ das transações.
 
 ## 10. O que isto NÃO vai ser
 
-- **Não é replicação síncrona.** É assíncrona, como o padrão do MySQL: a
+- **Não é replicação síncrona.** É assíncrona, como o padrão do MySQL(R): a
   réplica fica atrás do Source por algum tempo.
 - **Não resolve conflito de escrita nos dois lados.** É um caminho só,
   Source → Réplica. Multi-master é outro problema.
