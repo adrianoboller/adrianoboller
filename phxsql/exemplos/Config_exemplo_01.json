@@ -1,0 +1,21 @@
+{
+  "_comentario": "Exemplo 1 — servidor isolado. Um PhxSql sozinho, sem replicacao.",
+
+  "bind": "0.0.0.0:5000",
+  "base": "dados",
+  "token": "TROQUE-ESTE-TOKEN-ANTES-DE-SUBIR",
+
+  "max_linhas": 1000,
+  "timeout_s": 30,
+  "conexoes_max": 64,
+  "somente_leitura": false,
+
+  "log_acessos": "acessos.log",
+
+  "_ips_permitidos": "Vazio libera qualquer origem. Preencha SEMPRE que a porta nao estiver atras de firewall ou VPN.",
+  "ips_permitidos": [],
+
+  "replicacao": {
+    "papel": "isolado"
+  }
+}

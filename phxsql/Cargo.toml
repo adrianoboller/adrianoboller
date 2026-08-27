@@ -4,6 +4,7 @@ members = [
     "crates/phxsql-core",
     "crates/phxsql-store",
     "crates/phxsql-cli",
+    "crates/phxsql-server",
 ]
 
 [workspace.package]
@@ -16,6 +17,7 @@ repository = "https://github.com/adrianoboller/adrianoboller"
 [workspace.dependencies]
 phxsql-core = { path = "crates/phxsql-core" }
 phxsql-store = { path = "crates/phxsql-store" }
+phxsql-server = { path = "crates/phxsql-server" }
 
 [profile.release]
 opt-level = 3

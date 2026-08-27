@@ -1,0 +1,41 @@
+{
+  "_comentario": "Exemplo 2 — SOURCE (antigo master). Curitiba, 10.1.1.102.",
+  "_arquitetura": [
+    "O SOURCE nao empurra nada. Ele so mantem o diario (.log) e atende as",
+    "replicas que se conectam. Quem inicia a conexao TCP e sempre a REPLICA.",
+    "",
+    "  REPLICA 192.168.50.20  ──TCP 5000──►  SOURCE 10.1.1.102",
+    "",
+    "Firewall do SOURCE:",
+    "  ENTRADA  TCP 5000  origem 192.168.50.20  destino 10.1.1.102",
+    "  DROP     qualquer outro acesso externo a 5000",
+    "",
+    "A porta 5000 nunca deve ficar exposta na Internet: use IPSec ou VPN."
+  ],
+
+  "bind": "0.0.0.0:5000",
+  "base": "/var/lib/phxsql/dados",
+  "token": "TOKEN-DO-SOURCE-CURITIBA",
+
+  "max_linhas": 5000,
+  "timeout_s": 60,
+  "conexoes_max": 128,
+  "somente_leitura": false,
+
+  "log_acessos": "/var/log/phxsql/acessos.log",
+
+  "_ips_permitidos": "So a replica e a rede de administracao entram.",
+  "ips_permitidos": [
+    "192.168.50.20",
+    "10.1.1.50"
+  ],
+
+  "replicacao": {
+    "papel": "source",
+    "id_servidor": "curitiba-01",
+    "_replicas_autorizadas": "IPs que podem pedir o fluxo de replicacao. Confere alem do token.",
+    "replicas_autorizadas": [
+      "192.168.50.20"
+    ]
+  }
+}

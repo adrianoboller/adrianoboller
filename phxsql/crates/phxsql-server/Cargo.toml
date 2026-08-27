@@ -1,0 +1,15 @@
+[package]
+name = "phxsql-server"
+description = "Servidor TCP do PhxSql, porta 5000"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "phxsqld"
+path = "src/main.rs"
+
+[dependencies]
+phxsql-core.workspace = true
+phxsql-store.workspace = true

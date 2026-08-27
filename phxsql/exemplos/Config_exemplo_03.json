@@ -1,0 +1,69 @@
+{
+  "_comentario": "Exemplo 3 — REPLICA (antigo slave), multi-source. Belgica, 192.168.50.20.",
+  "_arquitetura": [
+    "A REPLICA e quem procura o SOURCE, e nao o contrario. Ela abre a conexao,",
+    "diz ate onde ja aplicou e pede o que falta -- o equivalente ao",
+    "SOURCE_AUTO_POSITION=1 do MySQL, aqui feito por numero de sequencia global.",
+    "",
+    "  Curitiba  10.1.1.102:5000  ─┐",
+    "  Sao Paulo 10.2.1.10:5000   ─┼──►  REPLICA 192.168.50.20 (Belgica)",
+    "  Bruxelas  10.3.1.7:5000    ─┘",
+    "",
+    "Sao tres conexoes independentes, uma por origem (multi-source).",
+    "",
+    "Firewall da REPLICA:",
+    "  SAIDA  TCP 5000  origem 192.168.50.20  destino 10.1.1.102",
+    "  ENTRADA  apenas conexoes estabelecidas (retorno)",
+    "",
+    "Tudo dentro do tunel IPSec entre os Mikrotik. Nada exposto na Internet."
+  ],
+
+  "bind": "127.0.0.1:5000",
+  "base": "/var/lib/phxsql/dados",
+  "token": "TOKEN-LOCAL-DA-REPLICA",
+
+  "max_linhas": 5000,
+  "timeout_s": 60,
+  "conexoes_max": 64,
+
+  "_somente_leitura": "Uma replica so deve ser escrita pela replicacao. Ligue isto para impedir escrita de aplicacao.",
+  "somente_leitura": true,
+
+  "log_acessos": "/var/log/phxsql/acessos.log",
+  "ips_permitidos": [
+    "127.0.0.1",
+    "192.168.50.0"
+  ],
+
+  "replicacao": {
+    "papel": "replica",
+    "id_servidor": "belgica-01",
+    "origens": [
+      {
+        "nome": "curitiba",
+        "host": "10.1.1.102",
+        "porta": 5000,
+        "token": "TOKEN-DO-SOURCE-CURITIBA",
+        "_databases": "Vazio replica todos os databases da origem.",
+        "databases": ["Z"],
+        "reconectar_em": 10
+      },
+      {
+        "nome": "saopaulo",
+        "host": "10.2.1.10",
+        "porta": 5000,
+        "token": "TOKEN-DO-SOURCE-SAOPAULO",
+        "databases": [],
+        "reconectar_em": 10
+      },
+      {
+        "nome": "bruxelas",
+        "host": "10.3.1.7",
+        "porta": 5000,
+        "token": "TOKEN-DO-SOURCE-BRUXELAS",
+        "databases": ["W"],
+        "reconectar_em": 30
+      }
+    ]
+  }
+}

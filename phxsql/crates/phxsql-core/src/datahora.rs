@@ -54,6 +54,20 @@ pub fn hora_iso(centesimos: i32) -> String {
     format!("{h:02}:{mi:02}:{s:02},{c:02}")
 }
 
+/// Formata um instante em milissegundos desde a epoca como
+/// `AAAA-MM-DD HH:MM:SS,mmm`.
+pub fn instante_iso(milissegundos: i64) -> String {
+    let dias = milissegundos.div_euclid(86_400_000) as i32;
+    let resto = milissegundos.rem_euclid(86_400_000);
+    let (h, m, s, ms) = (
+        resto / 3_600_000,
+        (resto / 60_000) % 60,
+        (resto / 1_000) % 60,
+        resto % 1_000,
+    );
+    format!("{} {h:02}:{m:02}:{s:02},{ms:03}", data_iso(dias))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -83,6 +97,14 @@ mod tests {
             let (a, m, d) = civil_de_dias(dias);
             assert_eq!(dias_de_civil(a, m, d), dias, "falhou em {a}-{m}-{d}");
         }
+    }
+
+    #[test]
+    fn instante_completo() {
+        // 2024-10-04 13:45:30,250
+        let ms = 20_000i64 * 86_400_000 + 13 * 3_600_000 + 45 * 60_000 + 30 * 1_000 + 250;
+        assert_eq!(instante_iso(ms), "2024-10-04 13:45:30,250");
+        assert_eq!(instante_iso(0), "1970-01-01 00:00:00,000");
     }
 
     #[test]

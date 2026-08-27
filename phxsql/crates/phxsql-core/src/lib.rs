@@ -18,6 +18,7 @@
 pub mod crc;
 pub mod datahora;
 pub mod error;
+pub mod json;
 pub mod keyenc;
 pub mod paginacao;
 pub mod schema;

@@ -94,18 +94,7 @@ pub struct Evento {
 impl Evento {
     /// Data e hora do evento em ISO (`AAAA-MM-DD HH:MM:SS,mmm`).
     pub fn instante_iso(&self) -> String {
-        let dias = self.carimbo.div_euclid(86_400_000) as i32;
-        let resto = self.carimbo.rem_euclid(86_400_000);
-        let (h, m, s, ms) = (
-            resto / 3_600_000,
-            (resto / 60_000) % 60,
-            (resto / 1_000) % 60,
-            resto % 1_000,
-        );
-        format!(
-            "{} {h:02}:{m:02}:{s:02},{ms:03}",
-            phxsql_core::datahora::data_iso(dias)
-        )
+        phxsql_core::datahora::instante_iso(self.carimbo)
     }
 
     fn escrever(&self, dst: &mut [u8; EVENTO_LEN]) {
