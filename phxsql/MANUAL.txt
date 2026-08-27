@@ -1,6 +1,7 @@
 ================================================================================
-PHXSQL - MANUAL DO OPERADOR
-Motor de dados no modelo de arquivos separados do HFSQL   |   Linux e Windows
+PHXSQL - PHOENIX DATABASE ENGINE
+Manual do operador                                        |   Linux e Windows
+Built to store. Engineered to scale.
 ================================================================================
 
 
@@ -457,4 +458,5 @@ externa, entao `cargo build --offline` funciona numa maquina sem Internet.
 
 ================================================================================
 PhxSql - cinco arquivos, uma tabela.
+Built to store. Engineered to scale.
 ================================================================================

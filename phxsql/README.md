@@ -1,4 +1,8 @@
-# PhxSql
+<img src="marca/derivados/phxsql-logo-560.png" alt="PhxSql" width="260">
+
+# PhxSql — Phoenix Database Engine
+
+> Built to store. Engineered to scale.
 
 Motor de dados em Rust no modelo de arquivos separados do HFSQL: cada tabela
 lógica é a soma de cinco arquivos físicos.
@@ -185,6 +189,17 @@ oficiais (FIPS 180-4, RFC 4231). Gere o hash com
 **Cadastrar usuários só aperta a segurança.** Sem cadastro, o token dá poder
 total, como antes. Com cadastro, o token vira só a chave da porta da rede e o
 login passa a ser exigido — nunca o contrário.
+
+## Marca
+
+Os arquivos oficiais estão em [`marca/`](marca/): manual de marca, logotipo,
+tela de abertura e os derivados usados na documentação.
+
+| | |
+|---|---|
+| Tipografia | Exo 2 — SemiBold / Medium / Regular |
+| Fundo | `#010418` |
+| Paleta | `#FFC43D` `#FF8A1C` `#FF4D10` `#D71A1A` `#8B0D0D` `#DDE2EB` |
 
 ## Licença
 
