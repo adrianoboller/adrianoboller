@@ -1,0 +1,31 @@
+=== carga de 10.000.000 registros ===
+inserindo…
+  PhxSql  1.000.000 em   219.4s (4.558/s)
+  PhxSql  2.000.000 em   461.3s (4.335/s)
+  PhxSql  3.000.000 em   728.8s (4.116/s)
+  PhxSql  4.000.000 em   998.6s (4.006/s)
+  PhxSql  5.000.000 em  1272.6s (3.929/s)
+  PhxSql  6.000.000 em  1554.5s (3.860/s)
+  PhxSql  7.000.000 em  1840.6s (3.803/s)
+  PhxSql  8.000.000 em  2130.2s (3.755/s)
+  PhxSql  9.000.000 em  2421.1s (3.717/s)
+  PhxSql 10.000.000 em  2714.0s (3.685/s)
+  MySQL   1.000.000 em    10.6s (94.065/s)
+  MySQL   2.000.000 em    21.2s (94.491/s)
+  MySQL   3.000.000 em    31.5s (95.365/s)
+  MySQL   4.000.000 em    41.7s (95.870/s)
+  MySQL   5.000.000 em    52.1s (95.964/s)
+  MySQL   6.000.000 em    62.6s (95.837/s)
+  MySQL   7.000.000 em    73.2s (95.617/s)
+  MySQL   8.000.000 em    83.5s (95.765/s)
+  MySQL   9.000.000 em    94.2s (95.517/s)
+  MySQL  10.000.000 em   104.9s (95.301/s)
+buscar…
+  PhxSql    5.75s  |  MySQL    1.71s
+varrer…
+  PhxSql    3.63s  |  MySQL   18.00s
+atualizar…
+  PhxSql    4.69s  |  MySQL    4.77s
+excluir…
+  PhxSql    7.07s  |  MySQL    3.75s
+=== fim ===
