@@ -29,6 +29,7 @@ use phxsql_store::catalogo::Instancia;
 use phxsql_store::table::Table;
 
 use crate::acesso::{Acesso, LogAcessos};
+use crate::blacklist::Blacklist;
 use crate::config::Config;
 use crate::usuarios::{Atividade, Usuario};
 use crate::valores::{json_para_chave, json_para_linha, linha_para_json};
@@ -53,6 +54,9 @@ const OPS_ESCRITA: &[&str] = &[
 #[derive(Default)]
 struct Sessao {
     usuario: Option<Usuario>,
+    /// Desafio em aberto: (usuario, nonce do servidor, quando expira).
+    /// Vale uma vez so -- e consumido no login, dando certo ou errado.
+    desafio: Option<(String, String, i64)>,
 }
 
 impl Sessao {
@@ -75,6 +79,7 @@ pub struct Servidor {
     /// Trava unica de dados. Ver a nota de concorrencia no topo do modulo.
     dados: Mutex<Instancia>,
     log: Mutex<LogAcessos>,
+    lista_negra: Mutex<Blacklist>,
     conexoes: AtomicUsize,
 }
 
@@ -82,10 +87,12 @@ impl Servidor {
     pub fn novo(config: Config) -> Result<Arc<Servidor>> {
         let instancia = Instancia::nova(&config.base)?;
         let log = LogAcessos::abrir(&config.log_acessos)?;
+        let lista_negra = Blacklist::abrir(&config.blacklist)?;
         Ok(Arc::new(Servidor {
             config,
             dados: Mutex::new(instancia),
             log: Mutex::new(log),
+            lista_negra: Mutex::new(lista_negra),
             conexoes: AtomicUsize::new(0),
         }))
     }
@@ -105,6 +112,23 @@ impl Servidor {
             self.config.replicacao.papel.nome()
         );
         eprintln!("log de acessos: {}", self.config.log_acessos.display());
+        eprintln!("lista de bloqueio: {}", self.config.blacklist.display());
+        if !self.config.politica.comandos_proibidos.is_empty() {
+            eprintln!(
+                "comandos proibidos: {}",
+                self.config.politica.comandos_proibidos.join(", ")
+            );
+        }
+        if let Some(fw) = &self.config.politica.firewall {
+            eprintln!(
+                "firewall: {}",
+                if fw.ligado {
+                    "ligado -- IP bloqueado vira regra no sistema"
+                } else {
+                    "desligado -- o bloqueio vale so dentro do servidor"
+                }
+            );
+        }
 
         for conexao in ouvinte.incoming() {
             match conexao {
@@ -141,6 +165,51 @@ impl Servidor {
         Ok(())
     }
 
+    /// Violacao grave: bloqueia na hora e avisa no log.
+    fn violacao_grave(&self, ip: &str, comando: &str, motivo: &str) {
+        if let Ok(mut lista) = self.lista_negra.lock() {
+            let (b, aviso) = lista.violacao_grave(
+                ip,
+                comando,
+                motivo,
+                &self.config.politica,
+                crate::agora_ms(),
+            );
+            eprintln!(
+                "BLOQUEADO {ip} ate {} -- {} ({})",
+                b.ate(),
+                b.motivo,
+                b.comando
+            );
+            if let Some(a) = aviso {
+                eprintln!("AVISO: {a}");
+            }
+        }
+    }
+
+    /// Tentativa leve: conta, e bloqueia se passar do limite na janela.
+    fn violacao_leve(&self, ip: &str, comando: &str, motivo: &str) {
+        if let Ok(mut lista) = self.lista_negra.lock() {
+            if let Some((b, aviso)) = lista.tentativa_leve(
+                ip,
+                comando,
+                motivo,
+                &self.config.politica,
+                crate::agora_ms(),
+            ) {
+                eprintln!(
+                    "BLOQUEADO {ip} ate {} -- {} apos {} tentativas",
+                    b.ate(),
+                    b.motivo,
+                    b.tentativas
+                );
+                if let Some(a) = aviso {
+                    eprintln!("AVISO: {a}");
+                }
+            }
+        }
+    }
+
     fn anotar(&self, acesso: &Acesso) {
         if let Ok(mut log) = self.log.lock() {
             if let Err(e) = log.registrar(acesso) {
@@ -154,6 +223,45 @@ impl Servidor {
         let porta = par.port();
         let _ = fluxo.set_read_timeout(Some(Duration::from_secs(self.config.timeout_s)));
 
+        // Antes de qualquer coisa: quem esta na lista de bloqueio nao entra.
+        let agora = crate::agora_ms();
+        let bloqueado = {
+            let mut lista = match self.lista_negra.lock() {
+                Ok(l) => l,
+                Err(_) => return,
+            };
+            // Outro processo pode ter mexido no arquivo (phxsqld --desbloquear).
+            let _ = lista.recarregar_se_mudou();
+            let _ = lista.limpar_vencidos(agora, &self.config.politica);
+            lista.bloqueado(&ip, agora).map(|b| {
+                format!(
+                    "bloqueado desde {} ate {} por {} ({})",
+                    b.desde(),
+                    b.ate(),
+                    b.motivo,
+                    b.comando
+                )
+            })
+        };
+        if let Some(motivo) = bloqueado {
+            self.anotar(&Acesso {
+                quando_ms: agora,
+                ip: ip.clone(),
+                porta_origem: porta,
+                op: "conexao".into(),
+                usuario: String::new(),
+                autenticado: false,
+                ok: false,
+                duracao_ms: 0,
+                erro: Some(motivo.clone()),
+            });
+            let escrita = fluxo.try_clone();
+            if let Ok(mut saida) = escrita {
+                let _ = writeln!(saida, "{}", resposta_erro("conexao", &motivo, 0).escrever());
+            }
+            return;
+        }
+
         let permitido = self.config.ip_permitido(&ip);
         let escrita = fluxo.try_clone();
         let mut leitor = BufReader::new(fluxo);
@@ -163,6 +271,7 @@ impl Servidor {
         };
 
         if !permitido {
+            self.violacao_leve(&ip, "conexao", "ip fora da lista de permitidos");
             self.anotar(&Acesso {
                 quando_ms: crate::agora_ms(),
                 ip,
@@ -197,7 +306,7 @@ impl Servidor {
 
             let inicio = Instant::now();
             let quando_ms = crate::agora_ms();
-            let (op, autenticado, resultado) = self.despachar(&linha, &mut sessao);
+            let (op, autenticado, resultado) = self.despachar(&linha, &mut sessao, &ip);
             let duracao = inicio.elapsed().as_millis() as u64;
 
             let resposta = match &resultado {
@@ -229,10 +338,14 @@ impl Servidor {
         }
     }
 
-    /// Le o pedido e o leva por tres portoes, nesta ordem: o token (a rede),
-    /// o login (a identidade) e a permissao (o poder). Devolve (operacao,
-    /// autenticado, resultado) para que o log registre mesmo o que falhou.
-    fn despachar(&self, linha: &str, sessao: &mut Sessao) -> (String, bool, Result<Json>) {
+    /// Le o pedido e o leva pelos portoes, nesta ordem: politica (o que ninguem
+    /// pode), token (a rede), login (a identidade) e permissao (o poder).
+    fn despachar(
+        &self,
+        linha: &str,
+        sessao: &mut Sessao,
+        ip: &str,
+    ) -> (String, bool, Result<Json>) {
         let pedido = match Json::analisar(linha) {
             Ok(p) => p,
             Err(e) => return ("?".into(), false, Err(e)),
@@ -243,9 +356,35 @@ impl Servidor {
         } else {
             op
         };
+        let base = pedido.texto_ou("database", "").to_string();
+
+        // Portao 0 -- a politica. Vale para todo mundo, root inclusive: e o
+        // que o config.json diz que ninguem pede por esta porta. Pedir vira
+        // bloqueio na hora, sem contar tentativa.
+        if self.config.politica.comando_proibido(&op) {
+            self.violacao_grave(ip, &op, "comando proibido pela politica");
+            return (
+                op.clone(),
+                false,
+                Err(PhxError::Autorizacao(format!(
+                    "operacao {op} esta proibida neste servidor; o IP foi bloqueado"
+                ))),
+            );
+        }
+        if self.config.politica.base_proibida(&base) {
+            self.violacao_grave(ip, &op, "base proibida pela politica");
+            return (
+                op,
+                false,
+                Err(PhxError::Autorizacao(format!(
+                    "a base {base} esta proibida neste servidor; o IP foi bloqueado"
+                ))),
+            );
+        }
 
         // Portao 1 -- o token. E a chave da porta da rede, nao a identidade.
         if !self.config.token_confere(pedido.texto_ou("token", "")) {
+            self.violacao_leve(ip, &op, "token invalido");
             return (
                 op,
                 false,
@@ -253,9 +392,16 @@ impl Servidor {
             );
         }
 
-        // Portao 2 -- o login. Havendo cadastro, o token sozinho nao basta.
+        // Portao 2 -- o login.
+        if op == "desafio" {
+            let r = self.op_desafio(&pedido, sessao);
+            return (op, true, r);
+        }
         if op == "login" {
             let r = self.op_login(&pedido, sessao);
+            if r.is_err() {
+                self.violacao_leve(ip, "login", "credencial invalida");
+            }
             return (op, r.is_ok(), r);
         }
         if !self.config.cadastro.vazio()
@@ -285,8 +431,7 @@ impl Servidor {
         if let (Some(atividade), Some(usuario)) =
             (Atividade::da_operacao(&op), sessao.usuario.as_ref())
         {
-            let base = pedido.texto_ou("database", "");
-            if !usuario.pode(base, atividade) {
+            if !usuario.pode(&base, atividade) {
                 return (
                     op,
                     true,
@@ -294,7 +439,7 @@ impl Servidor {
                         "{} nao tem permissao de {} em {}",
                         usuario.login,
                         atividade.nome(),
-                        if base.is_empty() { "(sem base)" } else { base }
+                        if base.is_empty() { "(sem base)" } else { &base }
                     ))),
                 );
             }
@@ -304,17 +449,107 @@ impl Servidor {
         (op, true, r)
     }
 
-    /// Confere login e senha e guarda a identidade na conexao.
-    fn op_login(&self, p: &Json, sessao: &mut Sessao) -> Result<Json> {
+    /// Abre um desafio: devolve sal, iteracoes e um nonce de uso unico.
+    ///
+    /// Usuario que nao existe recebe um desafio de aparencia normal, com sal
+    /// derivado do proprio login -- assim quem sonda nao descobre quem existe
+    /// pela resposta.
+    fn op_desafio(&self, p: &Json, sessao: &mut Sessao) -> Result<Json> {
         let login = p
             .texto_ou("usuario", p.texto_ou("login", ""))
             .trim()
             .to_string();
-        let clara = p.texto_ou("senha", "");
+        if login.is_empty() {
+            return Err(PhxError::Esquema("informe \"usuario\"".into()));
+        }
+        let (sal_hex, iteracoes) = match self.config.cadastro.por_login(&login) {
+            Some(u) => {
+                let (sal, it) = phxsql_core::senha::sal_e_iteracoes(&u.senha_hash)?;
+                (phxsql_core::hash::para_hex(&sal), it)
+            }
+            None => {
+                // Sal falso, estavel por login e indistinguivel de um real.
+                let falso =
+                    phxsql_core::hash::hmac_sha256(self.config.token.as_bytes(), login.as_bytes());
+                (
+                    phxsql_core::hash::para_hex(&falso[..16]),
+                    phxsql_core::senha::ITERACOES_PADRAO,
+                )
+            }
+        };
+
+        let nonce = phxsql_core::desafio::nonce();
+        sessao.desafio = Some((
+            login,
+            nonce.clone(),
+            crate::agora_ms() + phxsql_core::desafio::VALIDADE_MS,
+        ));
+        Ok(Json::objeto(vec![
+            ("sal", Json::texto_de(sal_hex)),
+            ("iteracoes", Json::de_u64(iteracoes as u64)),
+            ("nonce", Json::texto_de(nonce)),
+            (
+                "validade_ms",
+                Json::de_i64(phxsql_core::desafio::VALIDADE_MS),
+            ),
+        ]))
+    }
+
+    /// Confere a credencial e guarda a identidade na conexao.
+    ///
+    /// Aceita tres formas, da mais segura para a menos:
+    ///
+    /// 1. `prova` + `nonce_cliente` -- desafio-resposta. A senha nao sai da
+    ///    maquina do cliente.
+    /// 2. `senha_b64` -- Base64. Some do grep e do olho, mas quem captura o
+    ///    pacote decodifica: NAO e cifra.
+    /// 3. `senha` -- texto puro.
+    fn op_login(&self, p: &Json, sessao: &mut Sessao) -> Result<Json> {
+        let login = match p.campo("usuario_b64").and_then(Json::texto) {
+            Some(b) => phxsql_core::base64::decodificar_texto(b)?,
+            None => p.texto_ou("usuario", p.texto_ou("login", "")).to_string(),
+        };
+        let login = login.trim().to_string();
         if login.is_empty() {
             return Err(PhxError::Esquema("informe \"usuario\" e \"senha\"".into()));
         }
-        match self.config.cadastro.autenticar(&login, clara) {
+
+        // Todo caminho de erro devolve a MESMA mensagem, para nao dizer se o
+        // que falhou foi o login, a senha ou o desafio.
+        let recusa = || PhxError::Autorizacao("usuario ou senha invalidos".into());
+
+        let autenticado = if let Some(prova) = p.campo("prova").and_then(Json::texto) {
+            // (1) desafio-resposta
+            let (usuario_desafio, nonce, expira) = sessao.desafio.take().ok_or_else(|| {
+                PhxError::Autorizacao("peca um desafio antes de mandar a prova".into())
+            })?;
+            if crate::agora_ms() > expira {
+                return Err(PhxError::Autorizacao(
+                    "o desafio expirou; peca outro".into(),
+                ));
+            }
+            if usuario_desafio != login {
+                return Err(recusa());
+            }
+            let nonce_cliente = p.texto_ou("nonce_cliente", "");
+            match self.config.cadastro.por_login(&login) {
+                Some(u) if u.ativo => {
+                    let dk = phxsql_core::senha::derivado_do_hash(&u.senha_hash)?;
+                    phxsql_core::desafio::conferir_prova(&dk, &nonce, nonce_cliente, &login, prova)
+                        .then_some(u)
+                }
+                _ => None,
+            }
+        } else {
+            // (2) Base64 ou (3) texto puro
+            let clara = match p.campo("senha_b64").and_then(Json::texto) {
+                Some(b) => phxsql_core::base64::decodificar_texto(b)?,
+                None => p.texto_ou("senha", "").to_string(),
+            };
+            self.config.cadastro.autenticar(&login, &clara)
+        };
+
+        match autenticado {
             Some(u) => {
                 let ficha = u.ficha();
                 sessao.usuario = Some(u.clone());
@@ -322,9 +557,7 @@ impl Servidor {
             }
             None => {
                 sessao.usuario = None;
-                // Mensagem unica de proposito: nao dizer se o que errou foi o
-                // login ou a senha.
-                Err(PhxError::Autorizacao("usuario ou senha invalidos".into()))
+                Err(recusa())
             }
         }
     }
@@ -350,6 +583,8 @@ impl Servidor {
             "usuarios" => Ok(self.config.cadastro.fichas()),
             "acessos" => self.op_acessos(p),
             "ips" => self.op_ips(),
+            "bloqueios" => self.op_bloqueios(),
+            "desbloquear" => self.op_desbloquear(p),
             "bancos" => self.op_bancos(),
             "tabelas" => self.op_tabelas(p),
             "esquema" => self.op_esquema(p, sessao),
@@ -437,6 +672,40 @@ impl Servidor {
                 })
                 .collect(),
         ))
+    }
+
+    fn op_bloqueios(&self) -> Result<Json> {
+        let lista = self.lista_negra.lock().map_err(|_| trava_envenenada())?;
+        let agora = crate::agora_ms();
+        Ok(Json::objeto(vec![
+            (
+                "arquivo",
+                Json::texto_de(lista.caminho().display().to_string()),
+            ),
+            (
+                "ativos",
+                Json::Lista(
+                    lista
+                        .ativos(agora)
+                        .into_iter()
+                        .map(|b| b.para_json())
+                        .collect(),
+                ),
+            ),
+        ]))
+    }
+
+    fn op_desbloquear(&self, p: &Json) -> Result<Json> {
+        let ip = p.texto_ou("ip", "").trim().to_string();
+        if ip.is_empty() {
+            return Err(PhxError::Esquema("informe \"ip\"".into()));
+        }
+        let mut lista = self.lista_negra.lock().map_err(|_| trava_envenenada())?;
+        let tinha = lista.desbloquear(&ip, &self.config.politica)?;
+        Ok(Json::objeto(vec![
+            ("ip", Json::texto_de(&ip)),
+            ("estava_bloqueado", Json::Bool(tinha)),
+        ]))
     }
 
     fn op_bancos(&self) -> Result<Json> {

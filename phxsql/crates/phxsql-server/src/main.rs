@@ -6,6 +6,8 @@
 //! phxsqld --acessos [--config c]   mostra o log de acessos por IP
 //! phxsqld --senha [senha]          gera a linha senha_hash para o config.json
 //! phxsqld --usuarios [--config c]  lista o cadastro e o poder de cada um
+//! phxsqld --bloqueios              lista os IPs bloqueados
+//! phxsqld --desbloquear <ip>       tira um IP da lista
 //! ```
 
 use std::process::ExitCode;
@@ -19,6 +21,8 @@ USO:
   phxsqld [--config <caminho>]      sobe o servidor
   phxsqld --acessos [--config <c>]  mostra quem acessou, por IP
   phxsqld --usuarios [--config <c>] lista o cadastro e o poder de cada um
+  phxsqld --bloqueios [--config <c>]      lista os IPs bloqueados
+  phxsqld --desbloquear <ip> [--config c] tira um IP da lista de bloqueio
   phxsqld --senha [senha]           gera a linha senha_hash para o config.json
   phxsqld --exemplo <1|2|3>         imprime um config.json de exemplo
                                     1 = isolado, 2 = source, 3 = replica
@@ -133,6 +137,65 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         };
+    }
+
+    if let Some(i) = args.iter().position(|a| a == "--desbloquear") {
+        let ip = match args.get(i + 1).filter(|a| !a.starts_with("--")) {
+            Some(a) => a.clone(),
+            None => {
+                eprintln!("informe o IP: phxsqld --desbloquear 203.0.113.9");
+                return ExitCode::FAILURE;
+            }
+        };
+        return match phxsql_server::Blacklist::abrir(&config.blacklist)
+            .and_then(|mut bl| bl.desbloquear(&ip, &config.politica))
+        {
+            Ok(true) => {
+                println!("{ip} desbloqueado");
+                ExitCode::SUCCESS
+            }
+            Ok(false) => {
+                println!("{ip} nao estava na lista");
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("erro: {e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+
+    if args.iter().any(|a| a == "--bloqueios") {
+        let bl = match phxsql_server::Blacklist::abrir(&config.blacklist) {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("erro ao ler a lista: {e}");
+                return ExitCode::FAILURE;
+            }
+        };
+        let agora = phxsql_server::agora_ms();
+        let ativos = bl.ativos(agora);
+        if ativos.is_empty() {
+            println!("nenhum IP bloqueado em {}", bl.caminho().display());
+            return ExitCode::SUCCESS;
+        }
+        println!(
+            "{:<40} {:<23} {:<23} {:>5}  {:<8}  motivo",
+            "ip", "desde", "ate", "tent", "firewall"
+        );
+        for b in ativos {
+            println!(
+                "{:<40} {:<23} {:<23} {:>5}  {:<8}  {} ({})",
+                b.ip,
+                b.desde(),
+                b.ate(),
+                b.tentativas,
+                if b.firewall { "sim" } else { "nao" },
+                b.motivo,
+                b.comando
+            );
+        }
+        return ExitCode::SUCCESS;
     }
 
     if args.iter().any(|a| a == "--usuarios") {

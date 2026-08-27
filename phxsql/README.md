@@ -50,7 +50,7 @@ reaproveitamento de espaço perde.
 
 ## Estado atual
 
-O motor de armazenamento está completo e testado: **166 testes**, sem nenhuma
+O motor de armazenamento está completo e testado: **195 testes**, sem nenhuma
 dependência externa (só a `std`), o que faz o projeto compilar offline.
 
 | Peça | Situação |
@@ -68,6 +68,8 @@ dependência externa (só a `std`), o que faz o projeto compilar offline.
 | `config.json` e servidor TCP na porta 5000 | pronto |
 | Log de acessos por IP, com data e hora | pronto |
 | Cadastro de usuários, senha em hash, permissão por base | pronto |
+| Login por desafio-resposta (a senha não trafega) e Base64 | pronto |
+| Blacklist com bloqueio automático e gancho de firewall | pronto |
 | Servidor MCP | pendente |
 | Camada SQL (tabela virtual via rusqlite, atrás de *feature*) | pendente |
 | Driver ODBC de saída, depois cliente ODBC/OLE DB | pendente |
@@ -146,6 +148,7 @@ crates/
 docs/
   FORMATO.md       especificação byte a byte dos arquivos
   USUARIOS.md      cadastro, senha em hash e as dez permissões
+  SEGURANCA.md     política, blacklist, firewall e as formas de login
   REPLICACAO.md    o desenho da replicação Source → Réplica
   PLANO.md         leitura do rusqlite e do FraseSQL, e o roteiro do projeto
 exemplos/
@@ -185,6 +188,16 @@ PBKDF2-HMAC-SHA256 com 210.000 iterações — SHA-256, HMAC e PBKDF2 escritos a
 para não quebrar a regra de zero dependências, e conferidos contra os vetores
 oficiais (FIPS 180-4, RFC 4231). Gere o hash com
 `echo -n 'a senha' | phxsqld --senha`.
+
+**Base64 não é criptografia, e o código diz isso.** O `login` aceita
+`senha_b64`, mas há um teste chamado
+`base64_nao_esconde_nada_de_quem_captura` que decodifica a credencial para
+provar. O que protege de verdade é o desafio-resposta, onde a senha nunca sai
+da máquina do cliente.
+
+**Firewall quebrado não vira porta aberta.** O bloqueio vale sempre dentro do
+servidor; a regra de `iptables` é um extra desligado por padrão, roda sem
+shell e valida o IP como endereço antes de usá-lo.
 
 **Cadastrar usuários só aperta a segurança.** Sem cadastro, o token dá poder
 total, como antes. Com cadastro, o token vira só a chave da porta da rede e o

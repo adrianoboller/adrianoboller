@@ -90,7 +90,7 @@ impl Atividade {
     /// autenticado -- e o caso do `ping` e do `login`.
     pub fn da_operacao(op: &str) -> Option<Atividade> {
         Some(match op {
-            "ping" | "login" | "quem_sou" => return None,
+            "ping" | "login" | "desafio" | "quem_sou" => return None,
             "bancos" | "tabelas" | "esquema" | "ler" | "varrer" | "buscar" => Atividade::Ler,
             "inserir" => Atividade::Inserir,
             "atualizar" => Atividade::Alterar,
@@ -99,7 +99,9 @@ impl Atividade {
             "reindexar" => Atividade::Reindexar,
             "diario" => Atividade::Diario,
             "verificar" => Atividade::Verificar,
-            "acessos" | "ips" | "config" | "usuarios" => Atividade::Administrar,
+            "acessos" | "ips" | "config" | "usuarios" | "bloqueios" | "desbloquear" => {
+                Atividade::Administrar
+            }
             "posicao" | "replicar" => Atividade::Replicar,
             // Operacao desconhecida exige o maior poder: nega por omissao.
             _ => Atividade::Administrar,
@@ -636,6 +638,15 @@ mod tests {
         assert_eq!(Atividade::da_operacao("excluir"), Some(Atividade::Excluir));
         assert_eq!(Atividade::da_operacao("diario"), Some(Atividade::Diario));
         assert_eq!(Atividade::da_operacao("ips"), Some(Atividade::Administrar));
+        assert_eq!(Atividade::da_operacao("desafio"), None);
+        assert_eq!(
+            Atividade::da_operacao("bloqueios"),
+            Some(Atividade::Administrar)
+        );
+        assert_eq!(
+            Atividade::da_operacao("desbloquear"),
+            Some(Atividade::Administrar)
+        );
         // Operacao desconhecida exige o maior poder, em vez de passar batido.
         assert_eq!(
             Atividade::da_operacao("op_que_nao_existe"),

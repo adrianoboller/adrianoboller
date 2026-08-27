@@ -4,12 +4,14 @@
 //! `config.json`), fala JSON Lines e registra todo acesso com IP, data e hora.
 
 pub mod acesso;
+pub mod blacklist;
 pub mod config;
 pub mod servidor;
 pub mod usuarios;
 pub mod valores;
 
 pub use acesso::{Acesso, LogAcessos, ResumoIp};
+pub use blacklist::{Blacklist, Bloqueio, Firewall, Politica};
 pub use config::{Config, Origem, Papel, Replicacao, PORTA_PADRAO};
 pub use servidor::Servidor;
 pub use usuarios::{Atividade, Cadastro, Permissoes, Usuario};
