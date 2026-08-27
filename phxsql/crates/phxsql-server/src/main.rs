@@ -5,6 +5,7 @@
 //! phxsqld --exemplo <1|2|3>        imprime um config.json de exemplo
 //! phxsqld --acessos [--config c]   mostra o log de acessos por IP
 //! phxsqld --senha [senha]          gera a linha senha_hash para o config.json
+//! phxsqld --gerar-chave             gera um par de chaves Ed25519
 //! phxsqld --usuarios [--config c]  lista o cadastro e o poder de cada um
 //! phxsqld --bloqueios              lista os IPs bloqueados
 //! phxsqld --desbloquear <ip>       tira um IP da lista
@@ -24,6 +25,7 @@ USO:
   phxsqld --bloqueios [--config <c>]      lista os IPs bloqueados
   phxsqld --desbloquear <ip> [--config c] tira um IP da lista de bloqueio
   phxsqld --senha [senha]           gera a linha senha_hash para o config.json
+  phxsqld --gerar-chave             gera um par de chaves Ed25519 (2o fator)
   phxsqld --exemplo <1|2|3>         imprime um config.json de exemplo
                                     1 = isolado, 2 = source, 3 = replica
 
@@ -37,6 +39,25 @@ A senha NUNCA vai em texto puro no config.json. Gere o hash assim:
 ///
 /// A senha e lida da entrada padrao para nao ficar no historico do shell nem
 /// aparecer no `ps`. Passar como argumento funciona, mas e menos seguro.
+/// Um par de chaves Ed25519.
+///
+/// A privada sai UMA vez, aqui, e o servidor nunca a ve. Se ela se perder,
+/// nao ha como recuperar -- gera-se outra e troca-se a publica no
+/// `config.json`. E o preco de o servidor nao guardar nada que assine.
+fn gerar_chave() -> ExitCode {
+    let privada = phxsql_core::ed25519::gerar_privada();
+    let publica = phxsql_core::ed25519::chave_publica(&privada);
+    println!("# Guarde a chave PRIVADA fora do servidor. Ela nao aparece de novo.");
+    println!("chave_privada = {}", phxsql_core::hash::para_hex(&privada));
+    println!();
+    println!("# Esta linha vai no config.json, dentro do usuario:");
+    println!(
+        "\"chave_publica\": \"{}\"",
+        phxsql_core::hash::para_hex(&publica)
+    );
+    ExitCode::SUCCESS
+}
+
 fn gerar_senha(args: &[String]) -> ExitCode {
     use std::io::{IsTerminal, Read};
     let i = args.iter().position(|a| a == "--senha").unwrap();
@@ -73,6 +94,10 @@ fn main() -> ExitCode {
 
     if args.iter().any(|a| a == "--senha") {
         return gerar_senha(&args);
+    }
+
+    if args.iter().any(|a| a == "--gerar-chave") {
+        return gerar_chave();
     }
 
     if let Some(i) = args.iter().position(|a| a == "--exemplo") {

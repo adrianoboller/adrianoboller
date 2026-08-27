@@ -19,6 +19,7 @@ pub mod base64;
 pub mod crc;
 pub mod datahora;
 pub mod desafio;
+pub mod ed25519;
 pub mod error;
 pub mod hash;
 pub mod json;
@@ -26,6 +27,7 @@ pub mod keyenc;
 pub mod paginacao;
 pub mod schema;
 pub mod senha;
+pub mod sha512;
 pub mod types;
 pub mod value;
 

@@ -17,6 +17,24 @@
   --reg:#5fa6e8; --ndx:#b394f0; --bin:#3fc8d4; --memo:#7bcb6a; --log:#ff5f5f;
   --ok:#6cc98c; --aviso:#ffc43d;
   --barra:52px; --arvore:268px;
+  --sombra-fenix:0 6px 22px rgba(255,77,16,.28);
+}
+
+/* Tema claro. Nao e o escuro invertido: sobre papel, o vermelhao #ff4d10 da
+   3,5:1 de contraste -- abaixo do minimo para texto. Escurece para #c63c0a,
+   que mantem a cor da marca e passa dos 4,5:1. E a mesma adaptacao que o
+   dossie ja fazia; agora as duas paginas concordam.
+
+   As cinco cores de arquivo tambem escurecem: elas precisam se distinguir
+   entre si E do fundo, e as do tema escuro somem no branco. */
+:root[data-tema="claro"]{
+  --fundo:#f7f5f2; --painel:#ffffff; --painel-2:#f2efeb; --realce:#e9e4de;
+  --linha:#ded7cf; --linha-forte:#c4bab0;
+  --texto:#1a1210; --texto-2:#4a3f3a; --texto-3:#7a6d66;
+  --laranja:#c63c0a; --ambar:#a06a00; --vermelhao:#c63c0a; --vermelho:#b71414;
+  --reg:#1f5c93; --ndx:#6a44a8; --bin:#0e7a85; --memo:#37702e; --log:#b71414;
+  --ok:#2f7a3e; --aviso:#8a6a1f;
+  --sombra-fenix:0 6px 18px rgba(198,60,10,.18);
 }
 *{box-sizing:border-box}
 html,body{height:100%}
@@ -43,7 +61,7 @@ button{font-family:inherit;font-size:inherit;color:inherit;cursor:pointer}
    assim ela assenta em cima do painel sem deixar emenda de retangulo. */
 .cartao .simbolo{
   display:block;width:172px;height:auto;margin:0 auto 18px;
-  filter:drop-shadow(0 6px 22px rgba(255,77,16,.28));
+  filter:drop-shadow(var(--sombra-fenix));
 }
 .cartao h1{
   font-size:30px;font-weight:700;letter-spacing:-.02em;margin:0 0 4px;
@@ -60,6 +78,9 @@ button{font-family:inherit;font-size:inherit;color:inherit;cursor:pointer}
 }
 label{display:block;font-size:11px;letter-spacing:.1em;text-transform:uppercase;
   color:var(--texto-3);margin:0 0 6px}
+label .opc{text-transform:none;letter-spacing:0;font-size:10.5px;opacity:.6;
+  font-style:italic}
+.onde{display:grid;grid-template-columns:1fr 88px;gap:10px}
 input,select{
   width:100%;background:var(--fundo);border:1px solid var(--linha-forte);
   color:var(--texto);border-radius:6px;padding:10px 12px;font-size:14px;
@@ -98,6 +119,16 @@ input:focus,select:focus{border-color:var(--laranja);outline:none}
   text-transform:uppercase;color:var(--texto-3);
 }
 .barra .espaco{flex:1}
+.tema{
+  background:none;border:1px solid var(--linha-forte);border-radius:99px;
+  width:34px;height:26px;display:grid;place-items:center;font-size:13px;
+  line-height:1;padding:0;color:var(--texto-2);
+}
+.tema:hover{border-color:var(--laranja);color:var(--laranja)}
+body,.cartao,.barra,.arvore,table,td,th{
+  transition:background-color .18s ease,color .18s ease,border-color .18s ease;
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
 .demo{
   background:rgba(255,196,61,.12);border:1px solid rgba(255,196,61,.35);
   color:var(--ambar);border-radius:99px;padding:3px 11px;font-size:11px;
@@ -199,6 +230,16 @@ h3:first-child{margin-top:0}
     <h1>Ph<span class="x">x</span>Sql</h1>
     <p class="assin">Centro de Controle</p>
     <p class="lema">Built to store. Engineered to scale.</p>
+    <div class="onde">
+      <div class="campo">
+        <label for="h">Servidor</label>
+        <input id="h" value="localhost" placeholder="IP ou DNS" autocomplete="off">
+      </div>
+      <div class="campo estreito">
+        <label for="pt">Porta</label>
+        <input id="pt" value="5000" inputmode="numeric" autocomplete="off">
+      </div>
+    </div>
     <div class="campo">
       <label for="u">Usuário</label>
       <input id="u" autocomplete="username" value="adriano">
@@ -210,6 +251,15 @@ h3:first-child{margin-top:0}
     <div class="campo">
       <label for="t">Token do servidor</label>
       <input id="t" type="password" autocomplete="off">
+    </div>
+    <div class="campo" id="campoChave" hidden>
+      <label for="k">Chave privada <span class="opc">facultativa</span></label>
+      <input id="k" type="password" autocomplete="off"
+             placeholder="Ed25519, 64 hexadecimais">
+    </div>
+    <div class="campo">
+      <label for="db">Database <span class="opc">opcional</span></label>
+      <input id="db" autocomplete="off" placeholder="abre já neste banco">
     </div>
     <button class="botao" id="btEntrar">Entrar</button>
     <div class="recado" id="recado"></div>
@@ -225,6 +275,7 @@ h3:first-child{margin-top:0}
     <span class="fita" id="fita">—</span>
     <span class="espaco"></span>
     <span class="demo" id="selo" hidden>modo demonstração</span>
+    <button class="tema" id="btTema" title="Alternar tema" aria-label="Alternar tema claro e escuro">🌓</button>
     <span class="eu" id="eu"></span>
     <button class="botao secundario" id="btSair">Sair</button>
   </div>
@@ -726,6 +777,38 @@ async function abrirAdmin(qual) {
 }
 
 // =====================================================================
+// Tema. Comeca no que o sistema pede e lembra a escolha por navegador --
+// localStorage, que e do visitante e nunca chega ao servidor. Em janela
+// anonima o acesso levanta excecao em vez de devolver vazio, entao toda
+// leitura e escrita vai dentro de try.
+// =====================================================================
+const TEMAS = { escuro:"🌙", claro:"☀️" };
+
+function lembrar(chave, valor) {
+  try { localStorage.setItem(chave, valor); } catch {}
+}
+function lembrado(chave) {
+  try { return localStorage.getItem(chave); } catch { return null; }
+}
+
+function aplicarTema(qual) {
+  const claro = qual === "claro";
+  document.documentElement.setAttribute("data-tema", claro ? "claro" : "escuro");
+  // O icone mostra PARA ONDE o clique leva, nao onde se esta: no escuro
+  // aparece o sol, porque clicar acende.
+  $("#btTema").textContent = claro ? TEMAS.escuro : TEMAS.claro;
+  $("#btTema").title = claro ? "Mudar para o tema escuro" : "Mudar para o tema claro";
+  lembrar("phxsql-tema", claro ? "claro" : "escuro");
+}
+
+const sistemaClaro = () =>
+  window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches;
+
+aplicarTema(lembrado("phxsql-tema") || (sistemaClaro() ? "claro" : "escuro"));
+$("#btTema").onclick = () =>
+  aplicarTema(document.documentElement.getAttribute("data-tema") === "claro"
+    ? "escuro" : "claro");
+
 $("#btEntrar").onclick = entrar;
 $("#s").addEventListener("keydown", e => { if (e.key === "Enter") entrar(); });
 $("#t").addEventListener("keydown", e => { if (e.key === "Enter") entrar(); });

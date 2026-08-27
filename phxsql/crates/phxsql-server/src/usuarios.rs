@@ -192,6 +192,13 @@ pub struct Usuario {
     pub telefone: String,
     pub supervisor: bool,
     pub ativo: bool,
+    /// Chave publica Ed25519, se este usuario tambem prova posse de chave.
+    ///
+    /// A senha prova que ele SABE alguma coisa; a chave prova que ele TEM
+    /// alguma coisa. Quem copiar o config.json leva so a publica, que nao
+    /// assina nada -- e a diferenca em relacao ao hash da senha, que e
+    /// exatamente o que o desafio-resposta usa para autenticar.
+    pub chave_publica: Option<[u8; phxsql_core::ed25519::CHAVE_LEN]>,
     /// Poder por base. A chave `"*"` vale para as bases nao listadas.
     pub bases: Vec<(String, Permissoes)>,
 }
@@ -231,6 +238,9 @@ impl Usuario {
             ("telefone", Json::texto_de(&self.telefone)),
             ("supervisor", Json::Bool(self.supervisor)),
             ("ativo", Json::Bool(self.ativo)),
+            // Diz que HA chave, nunca qual e. A publica nao e segredo, mas
+            // tambem nao ha motivo para espalhar quem usa o que.
+            ("exige_chave", Json::Bool(self.chave_publica.is_some())),
             (
                 "bases",
                 Json::Objeto(
@@ -250,6 +260,16 @@ impl Usuario {
         }
 
         let hash = extrair_hash(j, &login, avisos)?;
+
+        let chave_publica = match j.campo("chave_publica").and_then(Json::texto) {
+            None => None,
+            Some(hex) if hex.trim().is_empty() => None,
+            Some(hex) => Some(phxsql_core::ed25519::chave_de_hex(hex).ok_or_else(|| {
+                PhxError::Esquema(format!(
+                    "chave_publica de {login} nao e uma chave Ed25519 (precisa de 64 hexadecimais)"
+                ))
+            })?),
+        };
 
         let bases = match j.campo("bases") {
             Some(Json::Objeto(pares)) => pares
@@ -275,6 +295,7 @@ impl Usuario {
             telefone: j.texto_ou("telefone", "").to_string(),
             supervisor: j.booleano_ou("supervisor", false),
             ativo: j.booleano_ou("ativo", true),
+            chave_publica,
             bases,
         })
     }
@@ -369,6 +390,15 @@ impl Cadastro {
     }
 
     /// Ha alguem cadastrado? Sem cadastro, o servidor cai no token de servico.
+    /// Algum usuario exige chave? A pagina de entrada usa isto para decidir
+    /// se mostra o campo -- e nao ha segredo nenhum na resposta.
+    pub fn alguem_exige_chave(&self) -> bool {
+        self.root
+            .iter()
+            .chain(self.usuarios.iter())
+            .any(|u| u.chave_publica.is_some())
+    }
+
     pub fn vazio(&self) -> bool {
         self.root.is_none() && self.usuarios.is_empty()
     }

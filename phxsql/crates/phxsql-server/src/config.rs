@@ -100,6 +100,12 @@ pub struct Web {
     pub bind: String,
     /// Minutos que uma sessao do navegador vale sem uso. Cada clique renova.
     pub sessao_minutos: u64,
+    /// Servidores PhxSql que esta interface pode alcancar, como "host:porta".
+    ///
+    /// VAZIO = so este servidor. E o padrao, e e o padrao certo: uma interface
+    /// que fala com qualquer endereco e um proxy aberto de saida, e quem
+    /// invadir a porta da web ganha a rede inteira junto.
+    pub destinos: Vec<String>,
 }
 
 impl Default for Web {
@@ -108,6 +114,7 @@ impl Default for Web {
             ligado: false,
             bind: format!("127.0.0.1:{PORTA_WEB_PADRAO}"),
             sessao_minutos: 60,
+            destinos: Vec::new(),
         }
     }
 }
@@ -123,6 +130,7 @@ impl Web {
                 sessao_minutos: w
                     .inteiro_ou("sessao_minutos", padrao.sessao_minutos as i64)
                     .max(1) as u64,
+                destinos: w.textos("destinos"),
             },
         }
     }
@@ -139,6 +147,20 @@ impl Web {
     /// Prazo da sessao em milissegundos.
     pub fn sessao_ms(&self) -> i64 {
         self.sessao_minutos as i64 * 60_000
+    }
+
+    /// A interface pode abrir conexao para este endereco?
+    ///
+    /// Compara o texto exato do `config.json`. Nada de resolver nome e
+    /// comparar IP: quem controla o DNS decidiria o que a lista permite.
+    /// Ha algum destino configurado? Sem isso a interface so fala consigo.
+    pub fn destinos_permitidos_algum(&self) -> bool {
+        !self.destinos.is_empty()
+    }
+
+    pub fn destino_permitido(&self, destino: &str) -> bool {
+        let d = destino.trim();
+        !d.is_empty() && self.destinos.iter().any(|p| p.trim() == d)
     }
 }
 

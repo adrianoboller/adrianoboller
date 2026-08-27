@@ -77,6 +77,55 @@ impl Sessao {
     }
 }
 
+/// Uma conexao viva para outro PhxSql, do lado de ca da interface.
+pub struct Remoto {
+    pub destino: String,
+    leitor: BufReader<TcpStream>,
+    escrita: TcpStream,
+}
+
+impl Remoto {
+    /// Abre a conexao. Nao autentica -- quem autentica e o pedido de login,
+    /// que segue por aqui igual a qualquer outro.
+    pub fn abrir(destino: &str, timeout_s: u64) -> Result<Remoto> {
+        use std::net::ToSocketAddrs;
+        let endereco = destino
+            .to_socket_addrs()
+            .map_err(|e| PhxError::Esquema(format!("destino {destino:?} nao resolve: {e}")))?
+            .next()
+            .ok_or_else(|| PhxError::Esquema(format!("destino {destino:?} sem endereco")))?;
+        let fluxo =
+            TcpStream::connect_timeout(&endereco, Duration::from_secs(timeout_s.min(10)))
+                .map_err(|e| PhxError::Esquema(format!("nao consegui falar com {destino}: {e}")))?;
+        fluxo.set_read_timeout(Some(Duration::from_secs(timeout_s)))?;
+        let escrita = fluxo.try_clone()?;
+        Ok(Remoto {
+            destino: destino.to_string(),
+            leitor: BufReader::new(fluxo),
+            escrita,
+        })
+    }
+
+    /// Manda uma linha e devolve a resposta, crua.
+    ///
+    /// Crua de proposito: o que o servidor remoto respondeu e o que o
+    /// navegador recebe. Reescrever no meio do caminho seria mentir sobre
+    /// quem respondeu o que.
+    pub fn conversar(&mut self, linha: &str) -> Result<Json> {
+        let limpa = linha.replace(['\n', '\r'], " ");
+        writeln!(self.escrita, "{limpa}")?;
+        self.escrita.flush()?;
+        let mut resposta = String::new();
+        if self.leitor.read_line(&mut resposta)? == 0 {
+            return Err(PhxError::Esquema(format!(
+                "{} fechou a conexao",
+                self.destino
+            )));
+        }
+        Json::analisar(&resposta)
+    }
+}
+
 pub struct Servidor {
     config: Config,
     /// Trava unica de dados. Ver a nota de concorrencia no topo do modulo.
@@ -88,6 +137,12 @@ pub struct Servidor {
     /// Tabelas residentes em RAM, por "database/tabela". Nada entra aqui
     /// sozinho: so o que alguem pediu para carregar.
     residentes: Mutex<HashMap<String, TabelaMemoria>>,
+    /// Conexoes abertas para outros PhxSql, uma por sessao do navegador.
+    ///
+    /// Ficam abertas de proposito: o protocolo da porta 5000 autentica uma vez
+    /// por CONEXAO, entao manter o soquete e o que faz o PBKDF2 do servidor
+    /// remoto rodar uma vez por login e nao a cada clique.
+    remotos: Mutex<HashMap<String, Arc<Mutex<Remoto>>>>,
     conexoes: AtomicUsize,
 }
 
@@ -103,6 +158,7 @@ impl Servidor {
             lista_negra: Mutex::new(lista_negra),
             sessoes: Mutex::new(http::Sessoes::default()),
             residentes: Mutex::new(HashMap::new()),
+            remotos: Mutex::new(HashMap::new()),
             conexoes: AtomicUsize::new(0),
         }))
     }
@@ -355,12 +411,37 @@ impl Servidor {
             // para saber se ha servidor desta origem. Nao conta tentativa e
             // nao diz nada sobre os dados.
             ("GET", "/saude") => {
+                // Diz o que a pagina precisa para montar o formulario: a porta
+                // que este servidor REALMENTE escuta (nao a de fabrica), os
+                // destinos que ela pode alcancar e se ha chave a informar.
+                // Nada aqui e segredo, e nada aqui depende de token.
                 let _ = http::responder_json(
                     &mut fluxo,
                     200,
                     &Json::objeto(vec![
                         ("ok", Json::Bool(true)),
                         ("phxsql", Json::texto_de(VERSAO)),
+                        (
+                            "porta_dados",
+                            Json::de_u64(
+                                self.config.endereco().map(|e| e.port()).unwrap_or(0) as u64
+                            ),
+                        ),
+                        (
+                            "destinos",
+                            Json::Lista(
+                                self.config
+                                    .web
+                                    .destinos
+                                    .iter()
+                                    .map(Json::texto_de)
+                                    .collect(),
+                            ),
+                        ),
+                        (
+                            "exige_chave",
+                            Json::Bool(self.config.cadastro.alguem_exige_chave()),
+                        ),
                     ]),
                 );
             }
@@ -375,6 +456,115 @@ impl Servidor {
             _ => {
                 let _ = http::erro_json(&mut fluxo, 405, "use GET / ou POST /api");
             }
+        }
+    }
+
+    /// Abre uma conexao para outro PhxSql e manda o login por ela.
+    ///
+    /// A politica DESTE servidor vale antes de qualquer coisa sair daqui:
+    /// comando proibido aqui nao vira pedido la. A interface nao e uma porta
+    /// dos fundos para o que a porta da frente recusa.
+    #[allow(clippy::type_complexity)]
+    fn abrir_remoto(
+        &self,
+        destino: &str,
+        linha: &str,
+        ip: &str,
+    ) -> std::result::Result<(String, Json, Arc<Mutex<Remoto>>), (String, PhxError)> {
+        let op = Json::analisar(linha)
+            .map(|j| j.texto_ou("op", "login").to_string())
+            .unwrap_or_else(|_| "login".into());
+
+        if !self.config.web.destinos_permitidos_algum() {
+            return Err((
+                op,
+                PhxError::Autorizacao(
+                    "esta interface nao fala com outro servidor: preencha web.destinos no config.json".into(),
+                ),
+            ));
+        }
+        if !self.config.web.destino_permitido(destino) {
+            // Endereco fora da lista e sondagem de rede, nao engano: alguem
+            // esta procurando o que mais existe do outro lado.
+            self.violacao_grave(ip, &op, "destino fora de web.destinos");
+            return Err((
+                op,
+                PhxError::Autorizacao(format!(
+                    "{destino} nao esta em web.destinos; o IP foi bloqueado"
+                )),
+            ));
+        }
+        if self.config.politica.comando_proibido(&op) {
+            self.violacao_grave(ip, &op, "comando proibido pela politica");
+            let erro = PhxError::Autorizacao(format!("operacao {op} esta proibida neste servidor"));
+            return Err((op, erro));
+        }
+
+        let mut remoto =
+            Remoto::abrir(destino, self.config.timeout_s).map_err(|e| (op.clone(), e))?;
+        let resposta = remoto.conversar(linha).map_err(|e| (op.clone(), e))?;
+        if !resposta.booleano_ou("ok", false) {
+            return Err((
+                op,
+                PhxError::Autorizacao(format!(
+                    "{destino}: {}",
+                    resposta.texto_ou("erro", "recusou o login")
+                )),
+            ));
+        }
+        let valor = resposta.campo("resultado").cloned().unwrap_or(Json::Nulo);
+        Ok((op, valor, Arc::new(Mutex::new(remoto))))
+    }
+
+    /// Manda o pedido para o servidor remoto desta sessao.
+    fn encaminhar(
+        &self,
+        conexao: &Arc<Mutex<Remoto>>,
+        linha: &str,
+        ip: &str,
+    ) -> (String, bool, Result<Json>) {
+        let op = match Json::analisar(linha) {
+            Ok(j) => {
+                let o = j.texto_ou("op", "ping").trim().to_string();
+                if o.is_empty() {
+                    "ping".to_string()
+                } else {
+                    o
+                }
+            }
+            Err(e) => return ("?".into(), false, Err(e)),
+        };
+        // A politica local vale para o que passa por aqui, mesmo indo embora.
+        if self.config.politica.comando_proibido(&op) {
+            self.violacao_grave(ip, &op, "comando proibido pela politica");
+            return (
+                op.clone(),
+                false,
+                Err(PhxError::Autorizacao(format!(
+                    "operacao {op} esta proibida neste servidor; o IP foi bloqueado"
+                ))),
+            );
+        }
+        let mut r = match conexao.lock() {
+            Ok(r) => r,
+            Err(_) => return (op, false, Err(trava_envenenada())),
+        };
+        match r.conversar(linha) {
+            Ok(resposta) => {
+                if resposta.booleano_ou("ok", false) {
+                    (
+                        op,
+                        true,
+                        Ok(resposta.campo("resultado").cloned().unwrap_or(Json::Nulo)),
+                    )
+                } else {
+                    let erro = resposta
+                        .texto_ou("erro", "o servidor remoto recusou")
+                        .to_string();
+                    (op, true, Err(PhxError::Autorizacao(erro)))
+                }
+            }
+            Err(e) => (op, true, Err(e)),
         }
     }
 
@@ -415,9 +605,45 @@ impl Servidor {
             }
         }
 
+        // Abrir conexao para outro PhxSql, se o login pediu um destino.
+        let destino = Json::analisar(&pedido.corpo)
+            .ok()
+            .map(|j| j.texto_ou("destino", "").trim().to_string())
+            .unwrap_or_default();
+
         let inicio = Instant::now();
         let quando_ms = crate::agora_ms();
-        let (op, autenticado, resultado) = self.despachar(&pedido.corpo, &mut sessao, ip);
+
+        let ja_remota = self
+            .remotos
+            .lock()
+            .ok()
+            .and_then(|r| r.get(&id_sessao).cloned());
+
+        let (op, autenticado, resultado) = match (&ja_remota, destino.is_empty()) {
+            // Sessao ja amarrada a um servidor remoto: tudo vai para la.
+            (Some(conexao), _) => self.encaminhar(conexao, &pedido.corpo, ip),
+            // Login novo pedindo destino: abre, encaminha, e guarda se entrou.
+            (None, false) => {
+                let r = self.abrir_remoto(&destino, &pedido.corpo, ip);
+                match r {
+                    Ok((op, valor, conexao)) => {
+                        if id_sessao.is_empty() {
+                            if let Ok(mut vivas) = self.sessoes.lock() {
+                                id_sessao = vivas.nova("", duracao, agora);
+                            }
+                        }
+                        if let Ok(mut r) = self.remotos.lock() {
+                            r.insert(id_sessao.clone(), conexao);
+                        }
+                        (op, true, Ok(valor))
+                    }
+                    Err((op, e)) => (op, false, Err(e)),
+                }
+            }
+            (None, true) => self.despachar(&pedido.corpo, &mut sessao, ip),
+        };
+        let remota = ja_remota.is_some() || !destino.is_empty();
         let ms = inicio.elapsed().as_millis() as u64;
 
         // Um desafio em aberto so e consumido por um login. Qualquer outra
@@ -430,7 +656,7 @@ impl Servidor {
         }
 
         // Depois do despacho, acerta a sessao conforme o que aconteceu.
-        if resultado.is_ok() {
+        if resultado.is_ok() && !remota {
             match op.as_str() {
                 "desafio" => {
                     if let (Ok(mut vivas), Some(d)) = (self.sessoes.lock(), sessao.desafio.clone())
@@ -454,6 +680,9 @@ impl Servidor {
                 "sair" => {
                     if let Ok(mut vivas) = self.sessoes.lock() {
                         vivas.encerrar(&id_sessao);
+                    }
+                    if let Ok(mut r) = self.remotos.lock() {
+                        r.remove(&id_sessao);
                     }
                     id_sessao.clear();
                 }
@@ -490,6 +719,16 @@ impl Servidor {
             duracao_ms: ms,
             erro: resultado.as_ref().err().map(|e| e.to_string()),
         });
+
+        if remota && op == "sair" {
+            if let Ok(mut r) = self.remotos.lock() {
+                r.remove(&id_sessao);
+            }
+            if let Ok(mut vivas) = self.sessoes.lock() {
+                vivas.encerrar(&id_sessao);
+            }
+            id_sessao.clear();
+        }
 
         let codigo = match &resultado {
             Ok(_) => 200,
@@ -809,6 +1048,7 @@ impl Servidor {
         // que falhou foi o login, a senha ou o desafio.
         let recusa = || PhxError::Autorizacao("usuario ou senha invalidos".into());
 
+        let mut nonces: Option<(String, String)> = None;
         let autenticado = if let Some(prova) = p.campo("prova").and_then(Json::texto) {
             // (1) desafio-resposta
             let (usuario_desafio, nonce, expira) = sessao.desafio.take().ok_or_else(|| {
@@ -823,6 +1063,7 @@ impl Servidor {
                 return Err(recusa());
             }
             let nonce_cliente = p.texto_ou("nonce_cliente", "");
+            nonces = Some((nonce.clone(), nonce_cliente.to_string()));
             match self.config.cadastro.por_login(&login) {
                 Some(u) if u.ativo => {
                     let dk = phxsql_core::senha::derivado_do_hash(&u.senha_hash)?;
@@ -839,6 +1080,35 @@ impl Servidor {
             };
             self.config.cadastro.autenticar(&login, &clara)
         };
+
+        // Segundo fator: quem tem chave publica no config.json tambem assina.
+        //
+        // A mensagem assinada e a MESMA do desafio-resposta -- os dois nonces
+        // e o login --, entao a assinatura tambem vale uma vez so. Nao ha
+        // atalho: sem desafio aberto nao ha o que assinar.
+        if let Some(u) = &autenticado {
+            if let Some(publica) = &u.chave_publica {
+                let (nonce, nonce_cliente) =
+                    match &nonces {
+                        Some(par) => par.clone(),
+                        None => return Err(PhxError::Autorizacao(
+                            "este usuario exige chave: peca um desafio e mande a prova assinada"
+                                .into(),
+                        )),
+                    };
+                let hex = p.texto_ou("assinatura", "");
+                let assinatura = phxsql_core::ed25519::assinatura_de_hex(hex).ok_or_else(|| {
+                    PhxError::Autorizacao(
+                        "este usuario exige \"assinatura\" com 128 hexadecimais".into(),
+                    )
+                })?;
+                let mensagem =
+                    phxsql_core::desafio::mensagem_assinada(&nonce, &nonce_cliente, &login);
+                if !phxsql_core::ed25519::conferir(publica, &mensagem, &assinatura) {
+                    return Err(recusa());
+                }
+            }
+        }
 
         match autenticado {
             Some(u) => {
@@ -1469,10 +1739,8 @@ impl Servidor {
             .iter()
             .map(|i| esquema.colunas()[*i].nome.clone())
             .collect();
-        let tipos: Vec<phxsql_core::types::ColumnType> = indices
-            .iter()
-            .map(|i| esquema.colunas()[*i].ty)
-            .collect();
+        let tipos: Vec<phxsql_core::types::ColumnType> =
+            indices.iter().map(|i| esquema.colunas()[*i].ty).collect();
 
         Ok(Json::objeto(vec![
             ("tabela", Json::texto_de(&chave)),
