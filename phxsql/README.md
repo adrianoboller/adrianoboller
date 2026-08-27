@@ -50,7 +50,7 @@ reaproveitamento de espaço perde.
 
 ## Estado atual
 
-O motor de armazenamento está completo e testado: **254 testes**, sem nenhuma
+O motor de armazenamento está completo e testado: **276 testes**, sem nenhuma
 dependência externa (só a `std`), o que faz o projeto compilar offline.
 
 | Peça | Situação |
@@ -73,7 +73,8 @@ dependência externa (só a `std`), o que faz o projeto compilar offline.
 | Centro de Controle — interface web embutida no `phxsqld` | pronto |
 | Tabela em memória e `SelectMemory` — 87× mais rápido, medido | pronto |
 | Chave assimétrica Ed25519 (RFC 8032) como segundo fator | pronto |
-| Backup com manifesto SHA-256 e comando que confere | pronto |
+| Backup com manifesto SHA-256, ZIP e agendamento | pronto |
+| Nível de usuário: nenhum, leitor, operador, dono, admin | pronto |
 | Tema claro e escuro, console para mais de um servidor | pronto |
 | Servidor MCP | pendente |
 | Camada SQL (tabela virtual via rusqlite, atrás de *feature*) | pendente |
