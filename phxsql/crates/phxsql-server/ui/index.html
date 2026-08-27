@@ -1,0 +1,720 @@
+<title>PhxSql — Centro de Controle</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+/* A marca do PhxSql e escura por natureza, e um console de banco se usa em
+   sessao longa. Esta pagina assume o mundo escuro de proposito: pinta todas
+   as cores explicitamente e nao depende do tema de quem abre. */
+:root{
+  --fundo:#040814; --painel:#0a1122; --painel-2:#0f182c; --realce:#152238;
+  --linha:#1e2940; --linha-forte:#2b3a56;
+  --texto:#dde2eb; --texto-2:#a8b0c0; --texto-3:#7c8598;
+  --laranja:#ff8a1c; --ambar:#ffc43d; --vermelhao:#ff4d10; --vermelho:#ff5f5f;
+  --reg:#5fa6e8; --ndx:#b394f0; --bin:#3fc8d4; --memo:#7bcb6a; --log:#ff5f5f;
+  --ok:#6cc98c; --aviso:#ffc43d;
+  --barra:52px; --arvore:268px;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;background:var(--fundo);color:var(--texto);
+  font-family:"Exo 2","Helvetica Neue",Arial,sans-serif;font-size:14px;
+  -webkit-font-smoothing:antialiased;overflow:hidden;
+}
+.mono,code,td.dado,th.dado,pre{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace}
+button{font-family:inherit;font-size:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--laranja);outline-offset:2px}
+
+/* --------------------------------------------------------------- entrada */
+#entrada{
+  position:fixed;inset:0;display:grid;place-items:center;
+  background:radial-gradient(1200px 600px at 50% -10%,#0d1830 0%,var(--fundo) 62%);
+  z-index:50;
+}
+.cartao{
+  width:min(400px,92vw);background:var(--painel);border:1px solid var(--linha);
+  border-radius:10px;padding:34px 30px 28px;box-shadow:0 24px 60px rgba(0,0,0,.5);
+}
+.cartao h1{
+  font-size:30px;font-weight:700;letter-spacing:-.02em;margin:0 0 4px;
+}
+.cartao h1 .x{color:var(--laranja)}
+.cartao .assin{
+  font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;
+  color:var(--texto-3);margin:0 0 26px;
+}
+label{display:block;font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--texto-3);margin:0 0 6px}
+input,select{
+  width:100%;background:var(--fundo);border:1px solid var(--linha-forte);
+  color:var(--texto);border-radius:6px;padding:10px 12px;font-size:14px;
+  font-family:inherit;
+}
+input:focus,select:focus{border-color:var(--laranja);outline:none}
+.campo{margin-bottom:16px}
+.botao{
+  width:100%;background:var(--laranja);color:#160a00;border:none;border-radius:6px;
+  padding:11px;font-weight:600;letter-spacing:.02em;
+}
+.botao:hover{background:var(--ambar)}
+.botao.secundario{background:transparent;border:1px solid var(--linha-forte);color:var(--texto-2);width:auto;padding:7px 14px;font-weight:500}
+.botao.secundario:hover{border-color:var(--laranja);color:var(--texto)}
+.recado{margin-top:14px;font-size:12.5px;min-height:18px}
+.recado.erro{color:var(--vermelho)}
+.recado.info{color:var(--texto-3)}
+.modo{
+  margin-top:20px;padding-top:16px;border-top:1px solid var(--linha);
+  font-size:11.5px;color:var(--texto-3);line-height:1.5;
+}
+
+/* ----------------------------------------------------------------- barra */
+#app{display:none;height:100%;grid-template-rows:var(--barra) 1fr;
+  grid-template-columns:var(--arvore) 1fr;grid-template-areas:"barra barra" "arvore corpo"}
+#app.ativo{display:grid}
+.barra{
+  grid-area:barra;display:flex;align-items:center;gap:14px;padding:0 16px;
+  background:var(--painel);border-bottom:1px solid var(--linha);
+}
+.barra .marca{font-size:17px;font-weight:700;letter-spacing:-.01em}
+.barra .marca .x{color:var(--laranja)}
+.barra .fita{
+  font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--texto-3);
+}
+.barra .espaco{flex:1}
+.demo{
+  background:rgba(255,196,61,.12);border:1px solid rgba(255,196,61,.35);
+  color:var(--ambar);border-radius:99px;padding:3px 11px;font-size:11px;
+}
+.eu{font-size:12.5px;color:var(--texto-2)}
+.eu b{color:var(--texto);font-weight:600}
+
+/* ---------------------------------------------------------------- arvore */
+.arvore{
+  grid-area:arvore;background:var(--painel);border-right:1px solid var(--linha);
+  overflow-y:auto;padding:12px 0 24px;
+}
+.grupo{
+  font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--texto-3);padding:14px 16px 7px;
+}
+.no{
+  display:flex;align-items:center;gap:8px;padding:6px 16px;cursor:pointer;
+  border-left:2px solid transparent;color:var(--texto-2);
+}
+.no:hover{background:var(--painel-2);color:var(--texto)}
+.no.sel{background:var(--realce);color:var(--texto);border-left-color:var(--laranja)}
+.no .ic{width:14px;text-align:center;color:var(--texto-3);font-size:11px}
+.no.db{font-weight:600;color:var(--texto)}
+.no.tab{padding-left:34px;font-family:"IBM Plex Mono",monospace;font-size:12.5px}
+.no.esq{padding-left:26px;color:var(--texto-3);font-size:12px}
+.no.tab.emesq{padding-left:46px}
+.vazio{padding:10px 16px;font-size:12px;color:var(--texto-3);font-style:italic}
+
+/* ----------------------------------------------------------------- corpo */
+.corpo{grid-area:corpo;overflow:hidden;display:flex;flex-direction:column}
+.cabecalho{padding:16px 22px 0}
+.cabecalho h2{margin:0;font-size:20px;font-weight:600;letter-spacing:-.01em}
+.cabecalho .sub{
+  font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--texto-3);
+  margin-top:3px;
+}
+.abas{display:flex;gap:2px;padding:14px 22px 0;border-bottom:1px solid var(--linha)}
+.aba{
+  background:none;border:none;padding:8px 14px;color:var(--texto-3);
+  border-bottom:2px solid transparent;font-size:13px;
+}
+.aba:hover{color:var(--texto-2)}
+.aba.sel{color:var(--laranja);border-bottom-color:var(--laranja);font-weight:600}
+.painel{flex:1;overflow:auto;padding:20px 22px 40px}
+
+.ferramentas{display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+.ferramentas label{margin:0}
+.ferramentas select,.ferramentas input{width:auto;padding:6px 10px;font-size:13px}
+.conta{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--texto-3)}
+
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:7px 11px;text-align:left;border-bottom:1px solid var(--linha);vertical-align:top}
+thead th{
+  position:sticky;top:0;background:var(--painel-2);z-index:1;
+  font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--texto-3);font-weight:500;white-space:nowrap;
+}
+tbody tr:hover{background:var(--painel-2)}
+td.dado{font-family:"IBM Plex Mono",monospace;font-size:12.5px}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+td.nulo{color:var(--texto-3);font-style:italic}
+.rolo{overflow:auto;border:1px solid var(--linha);border-radius:8px;background:var(--painel)}
+
+.fichas{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1px;
+  background:var(--linha);border:1px solid var(--linha);border-radius:8px;overflow:hidden;margin-bottom:20px}
+.ficha{background:var(--painel);padding:13px 15px}
+.ficha .v{font-size:22px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.ficha .r{font-family:"IBM Plex Mono",monospace;font-size:9.5px;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--texto-3);margin-top:4px}
+
+.pino{
+  display:inline-block;font-family:"IBM Plex Mono",monospace;font-size:10px;
+  letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:99px;
+  border:1px solid currentColor;white-space:nowrap;
+}
+.pino.ok{color:var(--ok)} .pino.nao{color:var(--texto-3)} .pino.mal{color:var(--vermelho)}
+.pino.reg{color:var(--reg)} .pino.ndx{color:var(--ndx)} .pino.bin{color:var(--bin)}
+.pino.memo{color:var(--memo)} .pino.log{color:var(--log)}
+
+h3{font-size:13px;font-weight:600;margin:26px 0 10px;color:var(--texto-2)}
+h3:first-child{margin-top:0}
+.aviso{
+  border-left:2px solid var(--ambar);background:rgba(255,196,61,.07);
+  padding:11px 14px;border-radius:0 6px 6px 0;font-size:12.5px;
+  color:var(--texto-2);margin:16px 0;
+}
+.aviso.mal{border-left-color:var(--vermelho);background:rgba(255,95,95,.07)}
+.centro{display:grid;place-items:center;height:100%;color:var(--texto-3);
+  text-align:center;font-size:13.5px;line-height:1.6}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<!-- =========================== ENTRADA =========================== -->
+<div id="entrada">
+  <div class="cartao">
+    <h1>Ph<span class="x">x</span>Sql</h1>
+    <p class="assin">Centro de Controle</p>
+    <div class="campo">
+      <label for="u">Usuário</label>
+      <input id="u" autocomplete="username" value="adriano">
+    </div>
+    <div class="campo">
+      <label for="s">Senha</label>
+      <input id="s" type="password" autocomplete="current-password">
+    </div>
+    <div class="campo">
+      <label for="t">Token do servidor</label>
+      <input id="t" type="password" autocomplete="off">
+    </div>
+    <button class="botao" id="btEntrar">Entrar</button>
+    <div class="recado" id="recado"></div>
+    <div class="modo" id="modo"></div>
+  </div>
+</div>
+
+<!-- ============================= APP ============================= -->
+<div id="app">
+  <div class="barra">
+    <span class="marca">Ph<span class="x">x</span>Sql</span>
+    <span class="fita" id="fita">—</span>
+    <span class="espaco"></span>
+    <span class="demo" id="selo" hidden>modo demonstração</span>
+    <span class="eu" id="eu"></span>
+    <button class="botao secundario" id="btSair">Sair</button>
+  </div>
+
+  <nav class="arvore" id="arvore" aria-label="Bancos e tabelas"></nav>
+
+  <main class="corpo">
+    <div class="cabecalho">
+      <h2 id="titulo">—</h2>
+      <div class="sub" id="subtitulo"></div>
+    </div>
+    <div class="abas" id="abas"></div>
+    <div class="painel" id="painel"></div>
+  </main>
+</div>
+
+<script>
+"use strict";
+
+// =====================================================================
+// Camada de acesso. Contra o servidor de verdade fala com POST /api; sem
+// servidor, cai num conjunto de dados embutido para a interface poder ser
+// avaliada antes de instalar qualquer coisa.
+// =====================================================================
+const est = { sessao:null, usuario:null, token:"", demo:false,
+              bancos:[], atual:null, aba:"estrutura", ordem:"", linhas:[] };
+
+async function api(op, params = {}) {
+  if (est.demo) return demo(op, params);
+  const r = await fetch("/api", {
+    method:"POST",
+    headers:{ "Content-Type":"application/json",
+              ...(est.sessao ? {"X-Sessao":est.sessao} : {}) },
+    body: JSON.stringify({ token: est.token, op, ...params })
+  });
+  const j = await r.json();
+  if (j.sessao) est.sessao = j.sessao;
+  if (!j.ok) throw new Error(j.erro || "falha");
+  return j.resultado;
+}
+
+// ---------------------------------------------------------------------
+// Desafio-resposta. Base64 tira a senha do olho de quem passa; isto tira a
+// senha do FIO. Quem grava o pacote nao consegue reproduzir a prova, porque
+// o nonce do servidor vale uma vez so.
+//
+// Depende de crypto.subtle, que so existe em contexto seguro: https, ou
+// http em 127.0.0.1. Fora disso a interface cai no Base64 e avisa.
+// ---------------------------------------------------------------------
+const podeProvar = () => !!(window.crypto && crypto.subtle && crypto.subtle.deriveBits);
+
+const bytesDeHex = h => Uint8Array.from(h.match(/../g) || [], b => parseInt(b, 16));
+const hexDeBytes = b => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join("");
+
+async function calcularProva(senha, salHex, iteracoes, nonce, nonceCliente, usuario) {
+  const cru = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(senha), "PBKDF2", false, ["deriveBits"]);
+  const dk = await crypto.subtle.deriveBits(
+    { name:"PBKDF2", salt: bytesDeHex(salHex), iterations: iteracoes, hash:"SHA-256" },
+    cru, 256);
+  const chave = await crypto.subtle.importKey(
+    "raw", dk, { name:"HMAC", hash:"SHA-256" }, false, ["sign"]);
+  const msg = new TextEncoder().encode(`${nonce},${nonceCliente},${usuario}`);
+  return hexDeBytes(await crypto.subtle.sign("HMAC", chave, msg));
+}
+
+// --------------------------------------------------------- dados da demo
+const DEMO = {
+  bancos:["Z","Comercial"],
+  tabelas:{ Z:{schemas:["Vendas"], tabelas:["cadastroClientes","Vendas.pedidos","Vendas.itens"]},
+            Comercial:{schemas:[], tabelas:["produtos"]} },
+  esquema:{
+    cadastroClientes:{
+      tabela:"cadastroClientes", registros:6, slots:7,
+      colunas:[
+        {nome:"id",tipo:"Int8",nullable:false},
+        {nome:"nome",tipo:"Str(60)",nullable:false},
+        {nome:"cidade",tipo:"Str(40)",nullable:true},
+        {nome:"limite",tipo:"Decimal { precisao: 15, escala: 2 }",nullable:true},
+        {nome:"cadastro",tipo:"Date",nullable:true},
+        {nome:"foto",tipo:"Bin",nullable:true},
+        {nome:"ficha",tipo:"Memo",nullable:true}],
+      indices:[
+        {nome:"porId",unico:true,colunas:[{coluna:"id",desc:false,nocase:false}]},
+        {nome:"porNome",unico:false,colunas:[{coluna:"nome",desc:false,nocase:true}]},
+        {nome:"porCidadeLimite",unico:false,colunas:[
+          {coluna:"cidade",desc:false,nocase:false},{coluna:"limite",desc:true,nocase:false}]}],
+      chaves_estrangeiras:[{nome:"fkCidade",colunas:["cidade"],tabela_ref:"geografia.cidades",
+        colunas_ref:["nome"],ao_excluir:"Restringir",ao_alterar:"Cascata"}],
+      paginacao:{registros_por_arquivo:2,max_arquivos:99,capacidade:198}
+    }
+  },
+  linhas:[
+    {rowid:1,id:1,nome:"Adriano Boller",cidade:"Blumenau",limite:"1500.00",cadastro:"2024-10-04",foto:null,ficha:"Cliente desde 1998."},
+    {rowid:2,id:2,nome:"Marcia Alves",cidade:"Joinville",limite:"320.00",cadastro:"2024-10-04",foto:null,ficha:null},
+    {rowid:3,id:3,nome:"Zuleica Prado",cidade:"Blumenau",limite:"890.00",cadastro:"2025-02-11",foto:null,ficha:"Prefere boleto."},
+    {rowid:4,id:4,nome:"Beatriz Nunes",cidade:"Itajai",limite:"45.00",cadastro:"2025-06-30",foto:null,ficha:null},
+    {rowid:5,id:5,nome:"Carlos Menezes",cidade:"Blumenau",limite:"2700.00",cadastro:"2026-01-19",foto:"89504e470d0a1a0a",ficha:"Maior limite da praca."},
+    {rowid:7,id:99,nome:"Inserido por TCP",cidade:"Itajai",limite:"4321.99",cadastro:"2026-08-27",foto:null,ficha:"veio pela porta 5000"}
+  ],
+  diario:[
+    {quando:"2026-08-27 18:45:25,452",operacao:"inclusao",rowid:1,versao:1,usuario:2},
+    {quando:"2026-08-27 18:45:25,452",operacao:"inclusao",rowid:2,versao:1,usuario:2},
+    {quando:"2026-08-27 18:45:25,453",operacao:"inclusao",rowid:3,versao:1,usuario:2},
+    {quando:"2026-08-27 18:45:25,453",operacao:"inclusao",rowid:4,versao:1,usuario:2},
+    {quando:"2026-08-27 18:45:25,454",operacao:"inclusao",rowid:5,versao:1,usuario:2},
+    {quando:"2026-08-27 19:07:19,936",operacao:"inclusao",rowid:6,versao:1,usuario:3},
+    {quando:"2026-08-27 19:07:20,840",operacao:"exclusao",rowid:6,versao:0,usuario:1},
+    {quando:"2026-08-27 19:12:03,118",operacao:"inclusao",rowid:7,versao:1,usuario:2}
+  ],
+  usuarios:[
+    {id:1,nome:"Administrador do sistema",login:"root",email:"root@empresa.com.br",telefone:"",supervisor:true,ativo:true,bases:{}},
+    {id:2,nome:"Adriano Boller",login:"adriano",email:"adriano@empresa.com.br",telefone:"+55 47 99999-0000",supervisor:true,ativo:true,bases:{}},
+    {id:3,nome:"Maria Operadora",login:"maria",email:"maria@empresa.com.br",telefone:"+55 47 98888-0000",supervisor:false,ativo:true,
+     bases:{"*":{ler:true},"Z":{ler:true,inserir:true,alterar:true,diario:true,verificar:true}}},
+    {id:4,nome:"Carlos Consulta",login:"carlos",email:"carlos@empresa.com.br",telefone:"",supervisor:false,ativo:true,
+     bases:{"Z":{ler:true,verificar:true}}}
+  ],
+  acessos:[
+    {quando:"2026-08-27 19:30:17,321",ip:"192.168.50.20",op:"buscar",usuario:"maria",ok:true,ms:1},
+    {quando:"2026-08-27 19:30:17,322",ip:"192.168.50.20",op:"inserir",usuario:"maria",ok:true,ms:104},
+    {quando:"2026-08-27 19:30:17,323",ip:"203.0.113.9",op:"ping",usuario:"",ok:false,ms:0,erro:"token invalido"},
+    {quando:"2026-08-27 19:30:18,001",ip:"203.0.113.9",op:"excluir",usuario:"",ok:false,ms:0,erro:"comando proibido pela politica"}
+  ],
+  bloqueios:[
+    {ip:"203.0.113.9",desde:"2026-08-27 19:30:18,001",ate:"2026-08-27 20:30:18,001",
+     motivo:"comando proibido pela politica",comando:"excluir",tentativas:1,firewall:false}
+  ]
+};
+
+function demo(op, p) {
+  const d = DEMO, nome = (p.tabela||"").split(".").pop();
+  switch (op) {
+    case "ping": return {phxsql:"0.3.0", papel:"isolado", conexoes:1};
+    case "bancos": return d.bancos;
+    case "tabelas": return {database:p.database, ...(d.tabelas[p.database]||{schemas:[],tabelas:[]})};
+    case "esquema": return d.esquema[nome] || {tabela:nome,registros:0,slots:0,colunas:[],indices:[],chaves_estrangeiras:[],paginacao:null};
+    case "varrer": {
+      const l = [...d.linhas];
+      if (p.indice === "porNome") l.sort((a,b)=>a.nome.localeCompare(b.nome));
+      if (p.indice === "porCidadeLimite") l.sort((a,b)=>
+        a.cidade.localeCompare(b.cidade) || parseFloat(b.limite)-parseFloat(a.limite));
+      return {total:l.length, devolvidas:l.length,
+              ordem:p.indice?`indice ${p.indice}`:"digitacao", linhas:l};
+    }
+    case "diario": return {total:d.diario.length, eventos:d.diario};
+    case "verificar": return {tabela:nome, registros:6, slots:7, eventos:8,
+      indices:{porId:6,porNome:6,porCidadeLimite:6}, volumes:{reg:4,bin:1,memo:1,log:1}};
+    case "usuarios": return d.usuarios;
+    case "acessos": return {total:d.acessos.length, acessos:[...d.acessos].reverse()};
+    case "bloqueios": return {arquivo:"blacklist.json", ativos:d.bloqueios};
+    default: throw new Error("operação sem demonstração: " + op);
+  }
+}
+
+// =====================================================================
+// Utilidades de tela
+// =====================================================================
+const $ = s => document.querySelector(s);
+const esc = t => String(t ?? "").replace(/[&<>"']/g, c =>
+  ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+function tabela(colunas, linhas, montar) {
+  if (!linhas.length) return `<div class="vazio">nada aqui</div>`;
+  return `<div class="rolo"><table><thead><tr>${
+    colunas.map(c=>`<th class="${c.cls||""}">${esc(c.t)}</th>`).join("")
+  }</tr></thead><tbody>${linhas.map(montar).join("")}</tbody></table></div>`;
+}
+
+function celulaValor(v) {
+  if (v === null || v === undefined) return `<td class="dado nulo">NULL</td>`;
+  if (typeof v === "number") return `<td class="dado num">${v}</td>`;
+  const s = String(v);
+  return `<td class="dado">${esc(s.length > 60 ? s.slice(0,57)+"…" : s)}</td>`;
+}
+
+// =====================================================================
+// Entrada
+// =====================================================================
+async function detectarModo() {
+  try {
+    // /saude nao pede token e nao conta tentativa: e so o sinal de vida.
+    const r = await fetch("/saude");
+    if (!r.ok) throw new Error("sem servidor");
+    await r.json();
+    est.demo = false;
+    $("#modo").innerHTML = "Servidor encontrado nesta origem. Informe o token do "
+      + "<code>config.json</code> e as suas credenciais.<br>"
+      + (podeProvar()
+          ? "Login por <b>desafio&#8209;resposta</b>: a senha não sai desta máquina."
+          : "Contexto não seguro: o login cai em <b>Base64</b>, que esconde a senha "
+            + "de quem olha, não de quem captura. Use HTTPS ou um túnel.");
+    $("#t").parentElement.hidden = false;
+  } catch {
+    est.demo = true;
+    $("#modo").innerHTML = "<b>Nenhum servidor nesta origem.</b> A interface abre em "
+      + "modo demonstração, com dados embutidos, para ser avaliada antes de instalar. "
+      + "Entre com qualquer coisa.";
+    $("#t").parentElement.hidden = true;
+    $("#s").value = "demonstracao";
+  }
+}
+
+async function entrar() {
+  const usuario = $("#u").value.trim(), senha = $("#s").value, token = $("#t").value;
+  const recado = $("#recado");
+  recado.className = "recado info"; recado.textContent = "Conferindo…";
+  est.token = token;
+  try {
+    if (est.demo) {
+      est.usuario = { nome:"Adriano Boller", login:usuario||"demo", supervisor:true };
+    } else if (podeProvar()) {
+      // Caminho bom: a senha nao sai desta maquina.
+      recado.textContent = "Derivando a prova…";
+      const d = await api("desafio", { usuario });
+      const nonceCliente = hexDeBytes(crypto.getRandomValues(new Uint8Array(12)));
+      const prova = await calcularProva(
+        senha, d.sal, d.iteracoes, d.nonce, nonceCliente, usuario);
+      est.usuario = await api("login", { usuario, prova, nonce_cliente:nonceCliente });
+    } else {
+      // Reserva: Base64. Nao e cifra -- so tira a senha do olho e do escape
+      // do JSON. O que protege de verdade e o tunel.
+      const b64 = s => btoa(unescape(encodeURIComponent(s)));
+      est.usuario = await api("login",
+        { usuario_b64:b64(usuario), senha_b64:b64(senha) });
+    }
+    await abrirApp();
+  } catch (e) {
+    recado.className = "recado erro";
+    recado.textContent = e.message || "não consegui entrar";
+  }
+}
+
+async function abrirApp() {
+  $("#entrada").style.display = "none";
+  $("#app").classList.add("ativo");
+  $("#selo").hidden = !est.demo;
+  $("#eu").innerHTML = `<b>${esc(est.usuario.login)}</b>`
+    + (est.usuario.supervisor ? " · supervisor" : "");
+  const p = await api("ping");
+  $("#fita").textContent = `v${p.phxsql} · papel ${p.papel}`;
+  await montarArvore();
+}
+
+// =====================================================================
+// Arvore de bancos, schemas e tabelas
+// =====================================================================
+async function montarArvore() {
+  const bancos = await api("bancos");
+  est.bancos = bancos;
+  let html = `<div class="grupo">Bancos de dados</div>`;
+  for (const b of bancos) {
+    const t = await api("tabelas", { database:b });
+    html += `<div class="no db" data-db="${esc(b)}"><span class="ic">▾</span>${esc(b)}</div>`;
+    const raiz = t.tabelas.filter(x => !x.includes("."));
+    const porEsq = {};
+    for (const x of t.tabelas.filter(x => x.includes("."))) {
+      const [e, n] = x.split(".");
+      (porEsq[e] ||= []).push(n);
+    }
+    for (const n of raiz)
+      html += `<div class="no tab" data-db="${esc(b)}" data-tab="${esc(n)}">
+        <span class="ic">▤</span>${esc(n)}</div>`;
+    for (const e of Object.keys(porEsq).sort()) {
+      html += `<div class="no esq"><span class="ic">▾</span>${esc(e)}</div>`;
+      for (const n of porEsq[e])
+        html += `<div class="no tab emesq" data-db="${esc(b)}" data-tab="${esc(e)}.${esc(n)}">
+          <span class="ic">▤</span>${esc(n)}</div>`;
+    }
+    if (!t.tabelas.length) html += `<div class="vazio">sem tabelas</div>`;
+  }
+  html += `<div class="grupo">Administração</div>`;
+  for (const [chave, rotulo, ic] of
+       [["usuarios","Usuários","◉"],["acessos","Acessos","◈"],["bloqueios","Bloqueios","⛔"]])
+    html += `<div class="no" data-admin="${chave}"><span class="ic">${ic}</span>${rotulo}</div>`;
+
+  const a = $("#arvore");
+  a.innerHTML = html;
+  a.querySelectorAll("[data-tab]").forEach(n => n.onclick = () => {
+    marcar(n); abrirTabela(n.dataset.db, n.dataset.tab);
+  });
+  a.querySelectorAll("[data-admin]").forEach(n => n.onclick = () => {
+    marcar(n); abrirAdmin(n.dataset.admin);
+  });
+
+  const primeira = a.querySelector("[data-tab]");
+  if (primeira) primeira.click();
+  else $("#painel").innerHTML = `<div class="centro">Nenhuma tabela neste servidor.<br>
+    Crie uma com <code>phxsql demo dados/Z</code>.</div>`;
+}
+
+function marcar(no) {
+  document.querySelectorAll(".no.sel").forEach(x => x.classList.remove("sel"));
+  no.classList.add("sel");
+}
+
+// =====================================================================
+// Tabela: as cinco abas
+// =====================================================================
+const ABAS = [
+  ["estrutura","Estrutura"], ["conteudo","Conteúdo"], ["indices","Índices"],
+  ["diario","Diário"], ["integridade","Integridade"]
+];
+
+async function abrirTabela(db, tab) {
+  est.atual = { db, tab }; est.aba = est.aba || "estrutura"; est.ordem = "";
+  $("#titulo").textContent = tab;
+  $("#subtitulo").textContent = `${db} · .reg + .ndx + .bin + .memo + .log`;
+  $("#abas").innerHTML = ABAS.map(([k,r]) =>
+    `<button class="aba ${k===est.aba?"sel":""}" data-aba="${k}">${r}</button>`).join("");
+  $("#abas").querySelectorAll(".aba").forEach(b => b.onclick = () => {
+    est.aba = b.dataset.aba; abrirTabela(db, tab);
+  });
+  await desenharAba();
+}
+
+async function desenharAba() {
+  const p = $("#painel");
+  p.innerHTML = `<div class="centro">carregando…</div>`;
+  const { db, tab } = est.atual;
+  try {
+    if (est.aba === "estrutura")   return p.innerHTML = await vEstrutura(db, tab);
+    if (est.aba === "conteudo")    return p.innerHTML = await vConteudo(db, tab), ligarConteudo();
+    if (est.aba === "indices")     return p.innerHTML = await vIndices(db, tab);
+    if (est.aba === "diario")      return p.innerHTML = await vDiario(db, tab);
+    if (est.aba === "integridade") return p.innerHTML = await vIntegridade(db, tab);
+  } catch (e) {
+    p.innerHTML = `<div class="aviso mal">${esc(e.message)}</div>`;
+  }
+}
+
+async function vEstrutura(database, tabela_) {
+  const e = await api("esquema", { database, tabela:tabela_ });
+  const pag = e.paginacao;
+  const fichas = [
+    ["registros", e.registros], ["slots usados", e.slots],
+    ["colunas", e.colunas.length], ["índices", e.indices.length],
+    ["chaves estrangeiras", (e.chaves_estrangeiras||[]).length],
+    ["paginação", pag ? `${pag.registros_por_arquivo}/arq` : "não"]
+  ];
+  let h = `<div class="fichas">${fichas.map(([r,v]) =>
+    `<div class="ficha"><div class="v">${esc(v)}</div><div class="r">${r}</div></div>`).join("")}</div>`;
+
+  h += `<h3>Colunas</h3>` + tabela(
+    [{t:"#",cls:""},{t:"nome"},{t:"tipo"},{t:"obrigatória"},{t:"onde mora"}],
+    e.colunas, (c,i) => {
+      const ext = c.tipo === "Bin" ? "bin" : c.tipo === "Memo" ? "memo" : "reg";
+      return `<tr><td class="num dado">${i}</td><td class="dado">${esc(c.nome)}</td>
+        <td class="dado">${esc(c.tipo)}</td>
+        <td>${c.nullable ? '<span class="pino nao">nulo ok</span>' : '<span class="pino ok">not null</span>'}</td>
+        <td><span class="pino ${ext}">.${ext}</span></td></tr>`;
+    });
+
+  if ((e.chaves_estrangeiras||[]).length) {
+    h += `<h3>Chaves estrangeiras</h3>` + tabela(
+      [{t:"nome"},{t:"colunas"},{t:"referencia"},{t:"ao excluir"},{t:"ao alterar"}],
+      e.chaves_estrangeiras, f =>
+        `<tr><td class="dado">${esc(f.nome)}</td><td class="dado">${esc(f.colunas.join(", "))}</td>
+         <td class="dado">${esc(f.tabela_ref)}(${esc(f.colunas_ref.join(", "))})</td>
+         <td>${esc(f.ao_excluir)}</td><td>${esc(f.ao_alterar)}</td></tr>`);
+  }
+
+  if (pag) h += `<div class="aviso">Tabela paginada: <b>${pag.registros_por_arquivo}</b>
+    registros por arquivo × <b>${pag.max_arquivos}</b> arquivos =
+    capacidade de <b>${pag.capacidade}</b> registros. O volume sai do rowid por divisão,
+    então o <code>.ndx</code> não sabe que volume existe.</div>`;
+  return h;
+}
+
+async function vConteudo(database, tabela_) {
+  const e = await api("esquema", { database, tabela:tabela_ });
+  const r = await api("varrer", { database, tabela:tabela_,
+                                  indice: est.ordem || undefined, max:200 });
+  est.linhas = r.linhas;
+  const cols = e.colunas.map(c => c.nome);
+  const opcoes = [`<option value="">ordem de digitação (.reg)</option>`]
+    .concat(e.indices.map(i =>
+      `<option value="${esc(i.nome)}" ${est.ordem===i.nome?"selected":""}>índice ${esc(i.nome)}</option>`));
+  return `<div class="ferramentas">
+      <label for="ord">Percorrer por</label>
+      <select id="ord">${opcoes.join("")}</select>
+      <span class="conta">${r.devolvidas} de ${r.total} linhas · ${esc(r.ordem)}</span>
+    </div>` + tabela(
+      [{t:"rowid"}].concat(cols.map(c=>({t:c}))),
+      r.linhas, l => `<tr><td class="dado num">${l.rowid}</td>${
+        cols.map(c => celulaValor(l[c])).join("")}</tr>`);
+}
+
+function ligarConteudo() {
+  const s = $("#ord");
+  if (s) s.onchange = () => { est.ordem = s.value; desenharAba(); };
+}
+
+async function vIndices(database, tabela_) {
+  const e = await api("esquema", { database, tabela:tabela_ });
+  return `<div class="aviso">Todos os índices moram no mesmo <code>.ndx</code>.
+    Ele é o único arquivo que <b>não</b> pagina: é uma B+tree por índice sobre a
+    tabela inteira, e partir o arquivo partiria a árvore.</div>` + tabela(
+    [{t:"nome"},{t:"único"},{t:"colunas"},{t:"ordem"}],
+    e.indices, i => `<tr>
+      <td class="dado"><span class="pino ndx">${esc(i.nome)}</span></td>
+      <td>${i.unico?'<span class="pino ok">único</span>':'<span class="pino nao">duplicado ok</span>'}</td>
+      <td class="dado">${i.colunas.map(c=>esc(c.coluna)).join(" + ")}</td>
+      <td class="dado">${i.colunas.map(c =>
+        (c.desc?"DESC":"ASC") + (c.nocase?" NOCASE":"")).join(" · ")}</td></tr>`);
+}
+
+async function vDiario(database, tabela_) {
+  const d = await api("diario", { database, tabela:tabela_, max:200 });
+  const cor = { inclusao:"ok", alteracao:"ndx", exclusao:"mal" };
+  return `<div class="ferramentas"><span class="conta">${d.total} eventos no
+      <code>.log</code></span></div>` + tabela(
+    [{t:"quando"},{t:"operação"},{t:"rowid"},{t:"versão"},{t:"usuário"}],
+    d.eventos, ev => `<tr>
+      <td class="dado">${esc(ev.quando)}</td>
+      <td><span class="pino ${cor[ev.operacao]||"nao"}">${esc(ev.operacao)}</span></td>
+      <td class="dado num">${ev.rowid}</td>
+      <td class="dado num">${ev.versao}</td>
+      <td class="dado num">${ev.usuario||"—"}</td></tr>`);
+}
+
+async function vIntegridade(database, tabela_) {
+  const v = await api("verificar", { database, tabela:tabela_ });
+  const idx = Object.entries(v.indices||{});
+  const vol = v.volumes || {};
+  let h = `<div class="aviso"><b>Íntegra.</b> Conferidos o CRC de cada registro,
+    de cada página de índice, de cada bloco externo e de cada evento do diário —
+    e se a contagem de chaves de cada índice bate com a de registros vivos.</div>`;
+  h += `<div class="fichas">${[
+      ["registros",v.registros],["slots",v.slots],["eventos",v.eventos],
+      [".reg",vol.reg],[".bin",vol.bin],[".memo",vol.memo],[".log",vol.log]
+    ].map(([r,x]) => `<div class="ficha"><div class="v">${esc(x)}</div>
+      <div class="r">${r==="registros"||r==="slots"||r==="eventos"?r:r+" volumes"}</div></div>`).join("")}</div>`;
+  h += `<h3>Índices conferidos</h3>` + tabela(
+    [{t:"índice"},{t:"chaves"},{t:"situação"}],
+    idx, ([n,q]) => `<tr><td class="dado">${esc(n)}</td><td class="dado num">${q}</td>
+      <td><span class="pino ${q===v.registros?"ok":"mal"}">${
+        q===v.registros?"em dia":"fora de sincronia"}</span></td></tr>`);
+  return h;
+}
+
+// =====================================================================
+// Administração
+// =====================================================================
+async function abrirAdmin(qual) {
+  est.atual = null;
+  $("#abas").innerHTML = "";
+  const p = $("#painel");
+  p.innerHTML = `<div class="centro">carregando…</div>`;
+  try {
+    if (qual === "usuarios") {
+      $("#titulo").textContent = "Usuários";
+      $("#subtitulo").textContent = "cadastro do config.json · a senha nunca sai daqui";
+      const us = await api("usuarios");
+      p.innerHTML = tabela(
+        [{t:"id"},{t:"nome"},{t:"login"},{t:"e-mail"},{t:"telefone"},{t:"supervisor"},{t:"ativo"},{t:"poder por base"}],
+        us, u => {
+          const bases = u.supervisor ? "tudo, em toda base"
+            : Object.entries(u.bases||{}).map(([b,perm]) =>
+                `${b}=${Object.entries(perm).filter(([,v])=>v).map(([k])=>k).join("+")||"nada"}`
+              ).join("  ") || "nenhuma";
+          return `<tr><td class="dado num">${u.id}</td><td>${esc(u.nome)}</td>
+            <td class="dado">${esc(u.login)}</td><td class="dado">${esc(u.email)}</td>
+            <td class="dado">${esc(u.telefone)}</td>
+            <td>${u.supervisor?'<span class="pino ok">sim</span>':'<span class="pino nao">não</span>'}</td>
+            <td>${u.ativo?'<span class="pino ok">sim</span>':'<span class="pino mal">não</span>'}</td>
+            <td class="dado">${esc(bases)}</td></tr>`;
+        });
+    } else if (qual === "acessos") {
+      $("#titulo").textContent = "Acessos";
+      $("#subtitulo").textContent = "toda tentativa entra, inclusive as recusadas";
+      const a = await api("acessos", { max:200 });
+      p.innerHTML = `<div class="ferramentas"><span class="conta">${a.total}
+          registros no <code>acessos.log</code></span></div>` + tabela(
+        [{t:"quando"},{t:"ip"},{t:"operação"},{t:"usuário"},{t:"resultado"},{t:"ms"}],
+        a.acessos, x => `<tr><td class="dado">${esc(x.quando)}</td>
+          <td class="dado">${esc(x.ip)}</td><td class="dado">${esc(x.op)}</td>
+          <td class="dado">${esc(x.usuario||"—")}</td>
+          <td>${x.ok?'<span class="pino ok">ok</span>'
+                    :`<span class="pino mal">${esc(x.erro||"negado")}</span>`}</td>
+          <td class="dado num">${x.ms}</td></tr>`);
+    } else {
+      $("#titulo").textContent = "Bloqueios";
+      $("#subtitulo").textContent = "blacklist.json · o IP é recusado antes do token";
+      const b = await api("bloqueios");
+      p.innerHTML = (b.ativos.length ? "" :
+          `<div class="aviso">Nenhum IP bloqueado.</div>`) + tabela(
+        [{t:"ip"},{t:"desde"},{t:"até"},{t:"motivo"},{t:"comando"},{t:"tentativas"},{t:"firewall"}],
+        b.ativos, x => `<tr><td class="dado">${esc(x.ip)}</td>
+          <td class="dado">${esc(x.desde)}</td><td class="dado">${esc(x.ate)}</td>
+          <td>${esc(x.motivo)}</td><td class="dado">${esc(x.comando)}</td>
+          <td class="dado num">${x.tentativas}</td>
+          <td>${x.firewall?'<span class="pino ok">aplicado</span>'
+                          :'<span class="pino nao">só no servidor</span>'}</td></tr>`);
+    }
+  } catch (e) {
+    p.innerHTML = `<div class="aviso mal">${esc(e.message)}</div>`;
+  }
+}
+
+// =====================================================================
+$("#btEntrar").onclick = entrar;
+$("#s").addEventListener("keydown", e => { if (e.key === "Enter") entrar(); });
+$("#t").addEventListener("keydown", e => { if (e.key === "Enter") entrar(); });
+$("#btSair").onclick = async () => {
+  if (!est.demo && est.sessao) { try { await api("sair"); } catch {} }
+  location.reload();
+};
+detectarModo();
+</script>

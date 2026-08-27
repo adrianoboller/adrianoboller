@@ -11,6 +11,31 @@
   "somente_leitura": false,
 
 
+  "_web": [
+    "Centro de Controle: a mesma coisa que a porta 5000 faz, so que pelo",
+    "navegador. Sobe DESLIGADO e, quando ligado, escuta so no proprio",
+    "computador -- abrir para a rede e decisao de quem administra.",
+    "",
+    "Porta separada de proposito: quem fala HTTP nao e quem fala JSON Lines,",
+    "e separar deixa o firewall tratar cada uma do seu jeito.",
+    "",
+    "A pagina esta embutida no binario. O servidor nao le arquivo do disco",
+    "para servi-la, nao lista diretorio e nao interpreta caminho: das tres",
+    "rotas que existem (/, /saude, /api), nenhuma toca o sistema de arquivos.",
+    "",
+    "sessao_minutos conta a partir do ULTIMO clique, nao do login.",
+    "",
+    "Em 127.0.0.1 e em https o login usa desafio-resposta e a senha nao sai",
+    "da maquina de quem entra. Fora disso o navegador nao oferece a cifra e a",
+    "pagina cai em Base64, avisando na tela. Para expor na rede: tunel."
+  ],
+
+  "web": {
+    "ligado": false,
+    "bind": "127.0.0.1:5001",
+    "sessao_minutos": 60
+  },
+
   "_seguranca": [
     "comandos_proibidos e bases_proibidas valem para TODO MUNDO, root incluso:",
     "e o que ninguem pede por esta porta. Pedir bloqueia o IP na hora.",

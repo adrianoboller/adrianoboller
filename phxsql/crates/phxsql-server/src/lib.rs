@@ -6,6 +6,7 @@
 pub mod acesso;
 pub mod blacklist;
 pub mod config;
+pub mod http;
 pub mod servidor;
 pub mod usuarios;
 pub mod valores;

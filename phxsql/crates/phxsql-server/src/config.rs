@@ -15,6 +15,10 @@ use crate::usuarios::Cadastro;
 /// Porta padrao do PhxSql.
 pub const PORTA_PADRAO: u16 = 5000;
 
+/// Porta padrao da interface web. Outra porta de proposito: quem fala HTTP
+/// nao e quem fala JSON Lines, e separar deixa o firewall escolher.
+pub const PORTA_WEB_PADRAO: u16 = 5001;
+
 /// Papel do servidor na replicacao.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Papel {
@@ -84,6 +88,60 @@ impl Default for Replicacao {
     }
 }
 
+/// Interface web: um servidor HTTP separado, que serve a pagina do Centro de
+/// Controle e traduz o clique do navegador no mesmo protocolo da porta 5000.
+///
+/// Vem DESLIGADA e presa ao proprio computador. Ligar abre uma porta a mais, e
+/// isso e uma decisao de quem administra -- nao um padrao herdado.
+#[derive(Debug, Clone)]
+pub struct Web {
+    pub ligado: bool,
+    /// Endereco de escuta da interface. Padrao: so o proprio computador.
+    pub bind: String,
+    /// Minutos que uma sessao do navegador vale sem uso. Cada clique renova.
+    pub sessao_minutos: u64,
+}
+
+impl Default for Web {
+    fn default() -> Self {
+        Web {
+            ligado: false,
+            bind: format!("127.0.0.1:{PORTA_WEB_PADRAO}"),
+            sessao_minutos: 60,
+        }
+    }
+}
+
+impl Web {
+    fn de_json(j: &Json) -> Web {
+        let padrao = Web::default();
+        match j.campo("web") {
+            None => padrao,
+            Some(w) => Web {
+                ligado: w.booleano_ou("ligado", false),
+                bind: w.texto_ou("bind", &padrao.bind).to_string(),
+                sessao_minutos: w
+                    .inteiro_ou("sessao_minutos", padrao.sessao_minutos as i64)
+                    .max(1) as u64,
+            },
+        }
+    }
+
+    pub fn endereco(&self) -> Result<SocketAddr> {
+        use std::net::ToSocketAddrs;
+        self.bind
+            .to_socket_addrs()
+            .map_err(|e| PhxError::Esquema(format!("web.bind invalido {:?}: {e}", self.bind)))?
+            .next()
+            .ok_or_else(|| PhxError::Esquema(format!("web.bind sem endereco: {:?}", self.bind)))
+    }
+
+    /// Prazo da sessao em milissegundos.
+    pub fn sessao_ms(&self) -> i64 {
+        self.sessao_minutos as i64 * 60_000
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Config {
     /// Endereco e porta de escuta.
@@ -111,6 +169,8 @@ pub struct Config {
     pub politica: Politica,
     /// Arquivo da lista de bloqueio.
     pub blacklist: PathBuf,
+    /// Interface web.
+    pub web: Web,
 }
 
 impl Default for Config {
@@ -129,6 +189,7 @@ impl Default for Config {
             cadastro: Cadastro::default(),
             politica: Politica::default(),
             blacklist: PathBuf::from("blacklist.json"),
+            web: Web::default(),
         }
     }
 }
@@ -208,6 +269,7 @@ impl Config {
                     .map(|seg| seg.texto_ou("blacklist", "blacklist.json"))
                     .unwrap_or("blacklist.json"),
             ),
+            web: Web::de_json(j),
         })
     }
 
@@ -219,6 +281,14 @@ impl Config {
             ));
         }
         self.endereco()?;
+        if self.web.ligado {
+            let web = self.web.endereco()?;
+            if web == self.endereco()? {
+                return Err(PhxError::Esquema(format!(
+                    "web.bind e bind apontam para o mesmo endereco ({web}): a interface precisa de uma porta so dela"
+                )));
+            }
+        }
         if self.replicacao.papel == Papel::Replica && self.replicacao.origens.is_empty() {
             return Err(PhxError::Esquema(
                 "papel replica exige ao menos uma origem em replicacao.origens".into(),
@@ -292,6 +362,14 @@ impl Config {
                         .map(|f| f.ligado)
                         .unwrap_or(false),
                 ),
+            ),
+            (
+                "web",
+                Json::texto_de(if self.web.ligado {
+                    self.web.bind.clone()
+                } else {
+                    "desligada".to_string()
+                }),
             ),
             (
                 "usuarios",
@@ -416,5 +494,39 @@ mod tests {
         assert_eq!(Papel::de_texto("slave").unwrap(), Papel::Replica);
         assert_eq!(Papel::de_texto("replica").unwrap(), Papel::Replica);
         assert!(Papel::de_texto("banana").is_err());
+    }
+    #[test]
+    fn a_interface_web_vem_desligada_e_presa_ao_proprio_computador() {
+        let c = Config::de_json(&Json::analisar(r#"{"token":"x"}"#).unwrap()).unwrap();
+        assert!(!c.web.ligado);
+        assert_eq!(c.web.bind, "127.0.0.1:5001");
+        assert_eq!(c.web.sessao_minutos, 60);
+        assert_eq!(c.web.sessao_ms(), 3_600_000);
+    }
+
+    #[test]
+    fn le_a_secao_web() {
+        let txt =
+            r#"{"token":"x","web":{"ligado":true,"bind":"0.0.0.0:8080","sessao_minutos":15}}"#;
+        let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
+        assert!(c.web.ligado);
+        assert_eq!(c.web.bind, "0.0.0.0:8080");
+        assert_eq!(c.web.sessao_ms(), 900_000);
+        c.validar().unwrap();
+    }
+
+    #[test]
+    fn a_web_nao_pode_roubar_a_porta_de_dados() {
+        let txt = r#"{"token":"x","bind":"127.0.0.1:5000","web":{"ligado":true,"bind":"127.0.0.1:5000"}}"#;
+        let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
+        assert!(c.validar().is_err());
+    }
+
+    #[test]
+    fn web_desligada_nao_valida_o_endereco() {
+        // Um bind ruim numa interface desligada nao impede o servidor de subir.
+        let txt = r#"{"token":"x","web":{"bind":"isso nao e endereco"}}"#;
+        let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
+        c.validar().unwrap();
     }
 }

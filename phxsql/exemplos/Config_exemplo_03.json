@@ -35,6 +35,13 @@
     "192.168.50.0"
   ],
 
+  "web": {
+    "_": "Centro de Controle pelo navegador. Ver Config_exemplo_01.json.",
+    "ligado": false,
+    "bind": "127.0.0.1:5001",
+    "sessao_minutos": 60
+  },
+
   "replicacao": {
     "papel": "replica",
     "id_servidor": "belgica-01",
