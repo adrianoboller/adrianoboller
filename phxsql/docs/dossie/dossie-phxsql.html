@@ -1,0 +1,1131 @@
+<title>Dossiê PhxSql</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+:root{
+  --papel:#f5f7f6;
+  --papel-2:#eceff0;
+  --papel-3:#e2e7e8;
+  --tinta:#101a1e;
+  --tinta-2:#3b4b52;
+  --tinta-3:#69797f;
+  --linha:#cdd6d8;
+  --acento:#0b6b74;
+  --acento-2:#0e8892;
+  --reg:#2a5f8f;
+  --ndx:#6b4f9c;
+  --bin:#9c5f21;
+  --memo:#3f7a33;
+  --log:#9c3a48;
+  --ok:#2f7a4a;
+  --pend:#8a6a1f;
+  --sombra:0 1px 2px rgba(16,26,30,.06),0 8px 24px rgba(16,26,30,.05);
+  --medida:68ch;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --papel:#0d1417;--papel-2:#141e22;--papel-3:#1c282d;
+    --tinta:#e6edee;--tinta-2:#a9b9be;--tinta-3:#7e9096;
+    --linha:#28363b;
+    --acento:#4bc3cc;--acento-2:#7fd8de;
+    --reg:#78b0e0;--ndx:#b39ae0;--bin:#e0a05c;--memo:#84c471;--log:#e08a96;
+    --ok:#6cc98c;--pend:#d6b459;
+    --sombra:0 1px 2px rgba(0,0,0,.4),0 8px 28px rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="dark"]{
+  --papel:#0d1417;--papel-2:#141e22;--papel-3:#1c282d;
+  --tinta:#e6edee;--tinta-2:#a9b9be;--tinta-3:#7e9096;
+  --linha:#28363b;
+  --acento:#4bc3cc;--acento-2:#7fd8de;
+  --reg:#78b0e0;--ndx:#b39ae0;--bin:#e0a05c;--memo:#84c471;--log:#e08a96;
+  --ok:#6cc98c;--pend:#d6b459;
+  --sombra:0 1px 2px rgba(0,0,0,.4),0 8px 28px rgba(0,0,0,.3);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;background:var(--papel);color:var(--tinta);
+  font-family:"Source Serif 4",Georgia,"Times New Roman",serif;
+  font-size:17px;line-height:1.62;
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,h4,.desloc,.rotulo{font-family:Archivo,"Helvetica Neue",Arial,sans-serif}
+code,kbd,.mono,.dado{font-family:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace}
+
+.pagina{display:grid;grid-template-columns:1fr;max-width:1240px;margin:0 auto;padding:0 24px 96px}
+@media (min-width:1060px){
+  .pagina{grid-template-columns:220px minmax(0,1fr);gap:56px;padding:0 32px 120px}
+}
+
+/* ---------------- indice lateral ---------------- */
+.indice{display:none}
+@media (min-width:1060px){
+  .indice{display:block;position:sticky;top:0;align-self:start;padding-top:88px;max-height:100vh;overflow-y:auto}
+}
+.indice ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.indice a{
+  display:flex;gap:10px;align-items:baseline;
+  font-family:Archivo,sans-serif;font-size:13px;line-height:1.35;
+  color:var(--tinta-3);text-decoration:none;padding:7px 10px;border-radius:4px;
+  border-left:2px solid transparent;
+}
+.indice a:hover{color:var(--tinta);background:var(--papel-2);border-left-color:var(--acento)}
+.indice a:focus-visible{outline:2px solid var(--acento);outline-offset:2px}
+.indice .n{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--acento);font-weight:500}
+.indice-tit{
+  font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--tinta-3);padding:0 12px 10px;
+}
+
+/* ---------------- cabecalho ---------------- */
+header.capa{padding:76px 0 8px;border-bottom:1px solid var(--linha)}
+.selo{
+  display:inline-flex;align-items:center;gap:9px;
+  font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--acento);margin-bottom:22px;
+}
+.selo::before{content:"";width:26px;height:1px;background:var(--acento)}
+h1{
+  font-size:clamp(44px,7.2vw,82px);line-height:.94;font-weight:700;
+  letter-spacing:-.035em;margin:0 0 20px;text-wrap:balance;
+}
+h1 .leve{color:var(--tinta-3);font-weight:500}
+.chamada{
+  font-size:clamp(18px,2.1vw,21px);line-height:1.5;color:var(--tinta-2);
+  max-width:60ch;margin:0 0 34px;
+}
+.chamada strong{color:var(--tinta);font-weight:600}
+
+.painel{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(126px,1fr));
+  gap:1px;background:var(--linha);border:1px solid var(--linha);
+  border-radius:6px;overflow:hidden;margin:0 0 30px;
+}
+.painel div{background:var(--papel);padding:15px 16px}
+.painel .v{
+  font-family:Archivo,sans-serif;font-size:27px;font-weight:700;
+  letter-spacing:-.02em;line-height:1.05;font-variant-numeric:tabular-nums;
+}
+.painel .r{
+  font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--tinta-3);margin-top:5px;
+}
+
+/* ---------------- secoes ---------------- */
+section{padding-top:68px;scroll-margin-top:24px}
+.rotulo{
+  display:flex;align-items:baseline;gap:12px;margin-bottom:8px;
+}
+.rotulo .num{
+  font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:500;
+  color:var(--acento);letter-spacing:.05em;
+}
+.rotulo .traco{flex:1;height:1px;background:var(--linha)}
+h2{
+  font-size:clamp(27px,3.6vw,38px);line-height:1.1;font-weight:700;
+  letter-spacing:-.025em;margin:0 0 18px;text-wrap:balance;
+}
+h3{
+  font-size:19px;font-weight:600;letter-spacing:-.012em;
+  margin:38px 0 12px;text-wrap:balance;
+}
+h4{
+  font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:600;
+  letter-spacing:.13em;text-transform:uppercase;color:var(--tinta-3);
+  margin:30px 0 10px;
+}
+p{max-width:var(--medida);margin:0 0 17px}
+ul,ol{max-width:var(--medida);margin:0 0 17px;padding-left:22px}
+li{margin-bottom:7px}
+a{color:var(--acento);text-decoration-thickness:1px;text-underline-offset:2px}
+strong{font-weight:600}
+code{
+  font-size:.86em;background:var(--papel-2);padding:1.5px 5px;border-radius:3px;
+  border:1px solid var(--linha);
+}
+
+.nota{
+  border-left:2px solid var(--acento);background:var(--papel-2);
+  padding:14px 18px;margin:22px 0;max-width:var(--medida);border-radius:0 4px 4px 0;
+}
+.nota p:last-child{margin-bottom:0}
+.nota .t{
+  font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--acento);display:block;margin-bottom:6px;
+}
+
+/* ---------------- figuras ---------------- */
+figure{margin:34px 0;padding:0}
+.fig-caixa{
+  border:1px solid var(--linha);border-radius:6px;background:var(--papel-2);
+  padding:26px 22px;overflow-x:auto;box-shadow:var(--sombra);
+}
+figure svg{display:block;width:100%;height:auto;max-width:100%;color:var(--tinta-2)}
+figcaption{
+  font-size:14px;line-height:1.5;color:var(--tinta-3);margin-top:12px;
+  max-width:var(--medida);
+}
+figcaption b{color:var(--tinta-2);font-weight:600}
+
+/* ---------------- tabelas ---------------- */
+.rolo{overflow-x:auto;margin:22px 0;border:1px solid var(--linha);border-radius:6px}
+table{width:100%;border-collapse:collapse;font-size:14.5px;background:var(--papel)}
+th,td{padding:9px 14px;text-align:left;border-bottom:1px solid var(--linha);vertical-align:top}
+thead th{
+  font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--tinta-3);font-weight:500;
+  background:var(--papel-2);white-space:nowrap;
+}
+tbody tr:last-child td{border-bottom:none}
+td.dado,th.dado{font-family:"IBM Plex Mono",monospace;font-size:13px;font-variant-numeric:tabular-nums;white-space:nowrap}
+td.num{text-align:right;font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums}
+
+.pino{
+  display:inline-block;font-family:"IBM Plex Mono",monospace;font-size:10.5px;
+  letter-spacing:.07em;text-transform:uppercase;padding:2px 8px;border-radius:99px;
+  border:1px solid currentColor;white-space:nowrap;
+}
+.pino.ok{color:var(--ok)}
+.pino.pend{color:var(--pend)}
+.pino.nao{color:var(--tinta-3)}
+
+/* ---------------- blocos de codigo ---------------- */
+pre{
+  font-family:"IBM Plex Mono",monospace;font-size:12.5px;line-height:1.65;
+  background:var(--papel-2);border:1px solid var(--linha);border-radius:6px;
+  padding:16px 18px;overflow-x:auto;margin:20px 0;color:var(--tinta-2);
+}
+pre b{color:var(--acento);font-weight:500}
+
+/* ---------------- cartoes de arquivo ---------------- */
+.arquivos{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+  gap:12px;margin:24px 0;
+}
+.arq{
+  border:1px solid var(--linha);border-top:3px solid var(--c);border-radius:5px;
+  background:var(--papel);padding:14px 15px;
+}
+.arq .nome{font-family:"IBM Plex Mono",monospace;font-size:14px;font-weight:600;color:var(--c)}
+.arq .desc{font-size:13.5px;line-height:1.45;color:var(--tinta-2);margin-top:6px}
+.arq .meta{
+  font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--tinta-3);margin-top:9px;
+}
+
+footer{
+  margin-top:80px;padding-top:26px;border-top:1px solid var(--linha);
+  font-size:13.5px;color:var(--tinta-3);
+}
+footer p{max-width:var(--medida)}
+
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<div class="pagina">
+
+<nav class="indice" aria-label="Seções do dossiê">
+  <div class="indice-tit">Dossiê</div>
+  <ol>
+    <li><a href="#s1"><span class="n">01</span> O que é</a></li>
+    <li><a href="#s2"><span class="n">02</span> Organograma dos dados</a></li>
+    <li><a href="#s3"><span class="n">03</span> A tabela, peça a peça</a></li>
+    <li><a href="#s4"><span class="n">04</span> Paginação</a></li>
+    <li><a href="#s5"><span class="n">05</span> Organograma do código</a></li>
+    <li><a href="#s6"><span class="n">06</span> Fluxo: gravar</a></li>
+    <li><a href="#s7"><span class="n">07</span> Fluxo: porta 5000</a></li>
+    <li><a href="#s8"><span class="n">08</span> Replicação</a></li>
+    <li><a href="#s9"><span class="n">09</span> Quem pode o quê</a></li>
+    <li><a href="#s10"><span class="n">10</span> Decisões</a></li>
+    <li><a href="#s11"><span class="n">11</span> Estado e roteiro</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<header class="capa">
+  <div class="selo">Dossiê técnico · versão 0.2.0</div>
+  <h1>PhxSql <span class="leve">— cinco arquivos,<br>uma tabela</span></h1>
+  <p class="chamada">Motor de dados em Rust no modelo de arquivos separados do HFSQL, com
+  a garantia que o TopSpeed não dava: <strong>o arquivo de dados guarda a ordem em que
+  você digitou</strong>, e nada nunca a embaralha.</p>
+
+  <div class="painel">
+    <div><div class="v">11.775</div><div class="r">linhas de Rust</div></div>
+    <div><div class="v">166</div><div class="r">testes</div></div>
+    <div><div class="v">0</div><div class="r">dependências</div></div>
+    <div><div class="v">4</div><div class="r">crates</div></div>
+    <div><div class="v">5</div><div class="r">arquivos/tabela</div></div>
+    <div><div class="v">1.918</div><div class="r">linhas de doc</div></div>
+  </div>
+</header>
+
+<!-- ============================= 01 ============================= -->
+<section id="s1">
+  <div class="rotulo"><span class="num">01</span><span class="traco"></span></div>
+  <h2>O que é, e por que não é um SQLite</h2>
+
+  <p>O PhxSql nasceu de uma pergunta específica: como substituir o TopSpeed nos
+  aplicativos Clarion sem herdar as limitações dele. A resposta foi copiar a ideia
+  boa do HFSQL — <strong>separar a tabela em arquivos com papéis distintos</strong> — e
+  corrigir o que incomodava.</p>
+
+  <p>Cada arquivo tem um padrão de acesso diferente, e separá-los deixa cada um
+  otimizado para o seu. O <code>.reg</code> tem slots de largura fixa, então achar o
+  registro 5.000 é uma multiplicação e um <em>seek</em> — não uma busca. O
+  <code>.ndx</code> é o único que sofre a reescrita aleatória da árvore, e o arquivo de
+  dados nunca é reordenado por causa dela. E uma foto de 5 MB mora no
+  <code>.bin</code>, não dentro do registro: o <code>.reg</code> guarda 16 bytes de
+  ponteiro, então varrer a tabela não arrasta os anexos junto.</p>
+
+  <div class="nota">
+    <span class="t">A escolha que define o projeto</span>
+    <p>Slots excluídos <strong>nunca são reaproveitados</strong>. Reaproveitar manteria o
+    arquivo compacto, mas percorrer o <code>.reg</code> deixaria de devolver os registros
+    na ordem em que foram digitados. O espaço volta com compactação explícita — e a
+    ordem, nunca se perde.</p>
+  </div>
+</section>
+
+<!-- ============================= 02 ============================= -->
+<section id="s2">
+  <div class="rotulo"><span class="num">02</span><span class="traco"></span></div>
+  <h2>Organograma dos dados</h2>
+
+  <p>A hierarquia é estrutural, sem arquivo de marcação: um diretório dentro da base é
+  um database, um diretório dentro de um database é um schema, e um arquivo
+  <code>.reg</code> é uma tabela. Tabelas soltas na raiz do database são as
+  <em>tabelas raiz</em> — o equivalente ao <code>public</code> do Postgres.</p>
+
+  <figure>
+    <div class="fig-caixa">
+      <svg viewBox="0 0 860 400" role="img" aria-label="Hierarquia: a base contém databases, cada database contém tabelas na raiz e diretórios de schema, e cada tabela é um conjunto de cinco arquivos">
+        <defs>
+          <marker id="setaA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+          </marker>
+        </defs>
+        <g font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">
+
+          <rect x="20" y="20" width="150" height="40" rx="4" fill="none" stroke="currentColor" stroke-width="1.4"/>
+          <text x="95" y="38" text-anchor="middle" font-size="11" opacity=".65">INSTÂNCIA</text>
+          <text x="95" y="52" text-anchor="middle" font-weight="600">base/</text>
+
+          <line x1="95" y1="60" x2="95" y2="92" stroke="currentColor" stroke-width="1.2"/>
+          <line x1="95" y1="92" x2="500" y2="92" stroke="currentColor" stroke-width="1.2"/>
+          <line x1="95" y1="92" x2="95" y2="112" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaA)"/>
+          <line x1="500" y1="92" x2="500" y2="112" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaA)"/>
+
+          <rect x="20" y="118" width="150" height="38" rx="4" fill="none" stroke="currentColor" stroke-width="1.4"/>
+          <text x="95" y="135" text-anchor="middle" font-size="11" opacity=".65">DATABASE</text>
+          <text x="95" y="149" text-anchor="middle" font-weight="600">Z/</text>
+
+          <rect x="425" y="118" width="150" height="38" rx="4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="3 3" opacity=".55"/>
+          <text x="500" y="141" text-anchor="middle" opacity=".55">W/  ·  outros</text>
+
+          <line x1="95" y1="156" x2="95" y2="186" stroke="currentColor" stroke-width="1.2"/>
+          <line x1="95" y1="186" x2="640" y2="186" stroke="currentColor" stroke-width="1.2"/>
+          <line x1="95" y1="186" x2="95" y2="208" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaA)"/>
+          <line x1="370" y1="186" x2="370" y2="208" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaA)"/>
+          <line x1="640" y1="186" x2="640" y2="208" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaA)"/>
+
+          <rect x="20" y="212" width="160" height="52" rx="4" fill="none" stroke="currentColor" stroke-width="1.4"/>
+          <text x="100" y="230" text-anchor="middle" font-size="11" opacity=".65">TABELAS RAIZ</text>
+          <text x="100" y="246" text-anchor="middle" font-weight="600">cadastroClientes</text>
+          <text x="100" y="259" text-anchor="middle" font-size="10.5" opacity=".55">sem schema</text>
+
+          <rect x="292" y="212" width="156" height="52" rx="4" fill="none" stroke="currentColor" stroke-width="1.4"/>
+          <text x="370" y="230" text-anchor="middle" font-size="11" opacity=".65">SCHEMA X/</text>
+          <text x="370" y="246" text-anchor="middle" font-weight="600">pedidos</text>
+          <text x="370" y="259" text-anchor="middle" font-size="10.5" opacity=".55">itens</text>
+
+          <rect x="562" y="212" width="156" height="52" rx="4" fill="none" stroke="currentColor" stroke-width="1.4"/>
+          <text x="640" y="230" text-anchor="middle" font-size="11" opacity=".65">SCHEMA Y/</text>
+          <text x="640" y="246" text-anchor="middle" font-weight="600">notas</text>
+          <text x="640" y="259" text-anchor="middle" font-size="10.5" opacity=".55">X.pedidos ≠ Y.notas</text>
+
+          <line x1="370" y1="264" x2="370" y2="296" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaA)"/>
+          <text x="384" y="285" font-size="11" opacity=".7">cada tabela é:</text>
+
+          <rect x="150" y="302" width="98" height="34" rx="4" fill="none" stroke="var(--reg)" stroke-width="1.6"/>
+          <text x="199" y="323" text-anchor="middle" fill="var(--reg)" font-weight="600">.reg</text>
+          <rect x="258" y="302" width="98" height="34" rx="4" fill="none" stroke="var(--ndx)" stroke-width="1.6"/>
+          <text x="307" y="323" text-anchor="middle" fill="var(--ndx)" font-weight="600">.ndx</text>
+          <rect x="366" y="302" width="98" height="34" rx="4" fill="none" stroke="var(--bin)" stroke-width="1.6"/>
+          <text x="415" y="323" text-anchor="middle" fill="var(--bin)" font-weight="600">.bin</text>
+          <rect x="474" y="302" width="98" height="34" rx="4" fill="none" stroke="var(--memo)" stroke-width="1.6"/>
+          <text x="523" y="323" text-anchor="middle" fill="var(--memo)" font-weight="600">.memo</text>
+          <rect x="582" y="302" width="98" height="34" rx="4" fill="none" stroke="var(--log)" stroke-width="1.6"/>
+          <text x="631" y="323" text-anchor="middle" fill="var(--log)" font-weight="600">.log</text>
+
+          <text x="415" y="364" text-anchor="middle" font-size="12" opacity=".7">
+            nome qualificado:  <tspan font-weight="600" opacity="1">schema.tabela</tspan>  ou só  <tspan font-weight="600" opacity="1">tabela</tspan>  na raiz
+          </text>
+          <text x="415" y="382" text-anchor="middle" font-size="11" opacity=".55">é o mesmo formato que o catálogo do FraseSQL espera</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>Figura 1.</b> Diretório é a estrutura. Duas tabelas de mesmo nome em
+    schemas diferentes não colidem, e nomes com <code>..</code> ou barra são recusados antes
+    de virar caminho.</figcaption>
+  </figure>
+</section>
+
+<!-- ============================= 03 ============================= -->
+<section id="s3">
+  <div class="rotulo"><span class="num">03</span><span class="traco"></span></div>
+  <h2>A tabela, peça a peça</h2>
+
+  <div class="arquivos">
+    <div class="arq" style="--c:var(--reg)">
+      <div class="nome">.reg</div>
+      <div class="desc">Registros em slots de largura fixa, na ordem de digitação.</div>
+      <div class="meta">PHXREG · pagina</div>
+    </div>
+    <div class="arq" style="--c:var(--ndx)">
+      <div class="nome">.ndx</div>
+      <div class="desc">Todos os índices em B+tree, no mesmo arquivo paginado.</div>
+      <div class="meta">PHXNDX · não pagina</div>
+    </div>
+    <div class="arq" style="--c:var(--bin)">
+      <div class="nome">.bin</div>
+      <div class="desc">Binários: fotos, anexos, documentos.</div>
+      <div class="meta">PHXBIN · pagina</div>
+    </div>
+    <div class="arq" style="--c:var(--memo)">
+      <div class="nome">.memo</div>
+      <div class="desc">Textos longos em UTF-8.</div>
+      <div class="meta">PHXMEMO · pagina</div>
+    </div>
+    <div class="arq" style="--c:var(--log)">
+      <div class="nome">.log</div>
+      <div class="desc">Diário datado de toda inclusão, alteração e exclusão.</div>
+      <div class="meta">PHXLOG · pagina</div>
+    </div>
+  </div>
+
+  <p>O <code>.ndx</code> é o único que <strong>não</strong> pagina, e isso não é
+  esquecimento: ele é uma B+tree por índice sobre a tabela inteira, e partir o arquivo
+  partiria a árvore.</p>
+
+  <figure>
+    <div class="fig-caixa">
+      <svg viewBox="0 0 840 300" role="img" aria-label="Um slot do arquivo .reg guarda um ponteiro de 16 bytes que aponta para o bloco de conteúdo no arquivo .bin ou .memo">
+        <defs>
+          <marker id="setaB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="var(--bin)"/>
+          </marker>
+        </defs>
+        <g font-family="IBM Plex Mono, monospace" font-size="12" fill="currentColor">
+
+          <text x="20" y="24" fill="var(--reg)" font-weight="600" font-size="13">cadastroClientes.reg</text>
+          <text x="20" y="40" font-size="11" opacity=".6">um slot — largura fixa, sempre a mesma</text>
+
+          <rect x="20" y="52" width="94" height="46" rx="3" fill="none" stroke="currentColor" stroke-width="1.3" opacity=".7"/>
+          <text x="67" y="72" text-anchor="middle" font-size="10.5" opacity=".7">cabeçalho</text>
+          <text x="67" y="87" text-anchor="middle" font-size="10.5" opacity=".7">24 bytes</text>
+
+          <rect x="114" y="52" width="70" height="46" rx="3" fill="none" stroke="currentColor" stroke-width="1.3" opacity=".7"/>
+          <text x="149" y="72" text-anchor="middle" font-size="10.5" opacity=".7">bitmap</text>
+          <text x="149" y="87" text-anchor="middle" font-size="10.5" opacity=".7">nulos</text>
+
+          <rect x="184" y="52" width="120" height="46" rx="3" fill="none" stroke="currentColor" stroke-width="1.3" opacity=".7"/>
+          <text x="244" y="72" text-anchor="middle" font-size="10.5" opacity=".7">id, nome,</text>
+          <text x="244" y="87" text-anchor="middle" font-size="10.5" opacity=".7">cidade…</text>
+
+          <rect x="304" y="52" width="150" height="46" rx="3" fill="none" stroke="var(--bin)" stroke-width="1.8"/>
+          <text x="379" y="70" text-anchor="middle" fill="var(--bin)" font-size="11" font-weight="600">foto → ponteiro</text>
+          <text x="379" y="87" text-anchor="middle" fill="var(--bin)" font-size="10.5">16 bytes</text>
+
+          <text x="379" y="122" text-anchor="middle" font-size="11" opacity=".7">offset u48 · volume u16 · tamanho u32 · crc u32</text>
+
+          <path d="M379 130 L379 168" stroke="var(--bin)" stroke-width="1.6" marker-end="url(#setaB)"/>
+          <text x="392" y="152" font-size="11" fill="var(--bin)">aponta para</text>
+
+          <text x="20" y="196" fill="var(--bin)" font-weight="600" font-size="13">cadastroClientes_003.bin</text>
+          <rect x="20" y="206" width="120" height="42" rx="3" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".55"/>
+          <text x="80" y="232" text-anchor="middle" font-size="10.5" opacity=".55">cabeçalho 64 B</text>
+
+          <rect x="140" y="206" width="130" height="42" rx="3" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".55"/>
+          <text x="205" y="232" text-anchor="middle" font-size="10.5" opacity=".55">bloco morto</text>
+
+          <rect x="270" y="206" width="220" height="42" rx="3" fill="none" stroke="var(--bin)" stroke-width="1.8"/>
+          <text x="380" y="225" text-anchor="middle" fill="var(--bin)" font-size="10.5">bloco vivo · 5 MB</text>
+          <text x="380" y="240" text-anchor="middle" fill="var(--bin)" font-size="10.5">status · tamanho · crc32 · conteúdo</text>
+
+          <rect x="490" y="206" width="120" height="42" rx="3" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".55" stroke-dasharray="3 3"/>
+          <text x="550" y="232" text-anchor="middle" font-size="10.5" opacity=".55">próximo…</text>
+
+          <text x="20" y="278" font-size="11.5" opacity=".72">Varrer a tabela lê só a faixa de cima. Os 5 MB só entram na memória se alguém pedir a coluna.</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>Figura 2.</b> O ponteiro de 16 bytes é o que mantém o slot pequeno.
+    O CRC aparece nos dois lados de propósito — assim um ponteiro que aponta para o bloco
+    errado é detectado, não só um bloco corrompido.</figcaption>
+  </figure>
+</section>
+
+<!-- ============================= 04 ============================= -->
+<section id="s4">
+  <div class="rotulo"><span class="num">04</span><span class="traco"></span></div>
+  <h2>Paginação: por que ela sai de graça</h2>
+
+  <p>Uma tabela grande se parte em volumes numerados, com a quantidade de registros por
+  arquivo e a quantidade de arquivos definidas na criação. O ponto do desenho é que o
+  endereçamento continua sendo <strong>uma conta, não uma busca</strong>.</p>
+
+  <figure>
+    <div class="fig-caixa">
+      <svg viewBox="0 0 840 320" role="img" aria-label="O rowid é dividido pela quantidade de registros por arquivo, produzindo o número do volume e o slot dentro dele, e o offset sai de uma multiplicação">
+        <defs>
+          <marker id="setaC" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="var(--acento)"/>
+          </marker>
+        </defs>
+        <g font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">
+
+          <rect x="24" y="30" width="150" height="52" rx="4" fill="none" stroke="var(--acento)" stroke-width="1.8"/>
+          <text x="99" y="52" text-anchor="middle" font-size="11" opacity=".7">rowid (global)</text>
+          <text x="99" y="70" text-anchor="middle" fill="var(--acento)" font-size="17" font-weight="600">1 234</text>
+
+          <path d="M174 56 L236 56" stroke="var(--acento)" stroke-width="1.6" marker-end="url(#setaC)"/>
+
+          <rect x="240" y="18" width="300" height="76" rx="4" fill="none" stroke="currentColor" stroke-width="1.3" opacity=".6"/>
+          <text x="256" y="42" font-size="12.5">volume = (1234 − 1) / 500 + 1</text>
+          <text x="256" y="62" font-size="12.5">slot   = (1234 − 1) % 500 + 1</text>
+          <text x="256" y="84" font-size="11" opacity=".6">500 registros por arquivo</text>
+
+          <path d="M540 56 L602 56" stroke="var(--acento)" stroke-width="1.6" marker-end="url(#setaC)"/>
+
+          <rect x="606" y="30" width="210" height="52" rx="4" fill="none" stroke="var(--acento)" stroke-width="1.8"/>
+          <text x="711" y="52" text-anchor="middle" fill="var(--acento)" font-weight="600" font-size="14">volume 3, slot 234</text>
+          <text x="711" y="70" text-anchor="middle" font-size="11" opacity=".7">cadastroClientes_003.reg</text>
+
+          <path d="M711 82 L711 116" stroke="var(--acento)" stroke-width="1.6" marker-end="url(#setaC)"/>
+          <text x="606" y="140" font-size="12.5">offset = data_offset + (234 − 1) × slot_size</text>
+          <text x="606" y="158" font-size="11" opacity=".6">um seek. sem varredura, sem índice.</text>
+
+          <line x1="24" y1="192" x2="816" y2="192" stroke="currentColor" stroke-width="1" opacity=".3"/>
+          <text x="24" y="218" font-size="12" opacity=".75" font-weight="600">Três garantias que sobrevivem intactas:</text>
+
+          <circle cx="34" cy="244" r="3" fill="var(--acento)"/>
+          <text x="48" y="248" font-size="12">O volume N+1 vem sempre depois do N — a ordem de digitação atravessa volumes.</text>
+          <circle cx="34" cy="270" r="3" fill="var(--acento)"/>
+          <text x="48" y="274" font-size="12">O rowid é global e nunca muda: não é posição no volume, é posição na tabela.</text>
+          <circle cx="34" cy="296" r="3" fill="var(--acento)"/>
+          <text x="48" y="300" font-size="12">O <tspan fill="var(--ndx)" font-weight="600">.ndx</tspan> não mudou uma linha — ele já guardava rowid, e não sabe que volume existe.</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>Figura 3.</b> A aritmética é o desenho inteiro. Foi ela que permitiu
+    acrescentar paginação a um motor já pronto sem tocar no código de índice.</figcaption>
+  </figure>
+
+  <p>Passar da capacidade devolve erro explícito de <em>tabela cheia</em>, em vez do
+  estouro silencioso de 2 GB que o TopSpeed dava. E um bloco maior que o volume fica
+  sozinho no seu volume, em vez de ser recusado — senão uma foto de 2 MB seria impossível
+  de gravar num volume de 1 MB.</p>
+</section>
+
+<!-- ============================= 05 ============================= -->
+<section id="s5">
+  <div class="rotulo"><span class="num">05</span><span class="traco"></span></div>
+  <h2>Organograma do código</h2>
+
+  <figure>
+    <div class="fig-caixa">
+      <svg viewBox="0 0 840 400" role="img" aria-label="Quatro crates: core na base, store sobre ele, e server e cli sobre store; cada um com seus módulos">
+        <defs>
+          <marker id="setaD" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+          </marker>
+        </defs>
+        <g font-family="IBM Plex Mono, monospace" font-size="11.5" fill="currentColor">
+
+          <rect x="250" y="16" width="150" height="46" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/>
+          <text x="325" y="35" text-anchor="middle" font-size="10.5" opacity=".65">BINÁRIO</text>
+          <text x="325" y="52" text-anchor="middle" font-weight="600">phxsqld</text>
+          <rect x="440" y="16" width="150" height="46" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/>
+          <text x="515" y="35" text-anchor="middle" font-size="10.5" opacity=".65">BINÁRIO</text>
+          <text x="515" y="52" text-anchor="middle" font-weight="600">phxsql</text>
+
+          <line x1="325" y1="62" x2="325" y2="92" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaD)"/>
+          <line x1="515" y1="62" x2="515" y2="92" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaD)"/>
+
+          <rect x="230" y="96" width="190" height="76" rx="5" fill="none" stroke="var(--acento)" stroke-width="1.7"/>
+          <text x="325" y="116" text-anchor="middle" fill="var(--acento)" font-weight="600" font-size="12.5">phxsql-server</text>
+          <text x="325" y="136" text-anchor="middle" font-size="10.5" opacity=".7">servidor · config · acesso</text>
+          <text x="325" y="152" text-anchor="middle" font-size="10.5" opacity=".7">valores</text>
+          <text x="325" y="166" text-anchor="middle" font-size="10" opacity=".5">porta 5000 · JSON Lines</text>
+
+          <rect x="440" y="96" width="150" height="76" rx="5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+          <text x="515" y="116" text-anchor="middle" font-weight="600" font-size="12.5">phxsql-cli</text>
+          <text x="515" y="136" text-anchor="middle" font-size="10.5" opacity=".7">main</text>
+          <text x="515" y="156" text-anchor="middle" font-size="10" opacity=".5">9 comandos</text>
+
+          <line x1="325" y1="172" x2="325" y2="204" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaD)"/>
+          <path d="M515 172 L515 190 L360 190 L360 204" fill="none" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaD)"/>
+
+          <rect x="150" y="208" width="420" height="90" rx="5" fill="none" stroke="currentColor" stroke-width="1.7"/>
+          <text x="360" y="228" text-anchor="middle" font-weight="600" font-size="12.5">phxsql-store</text>
+          <text x="360" y="246" text-anchor="middle" font-size="10.5" opacity=".55">os arquivos e a tabela que os costura</text>
+          <text x="188" y="268" fill="var(--reg)" font-weight="600">reg</text>
+          <text x="240" y="268" fill="var(--ndx)" font-weight="600">ndx</text>
+          <text x="292" y="268" fill="var(--bin)" font-weight="600">blob</text>
+          <text x="352" y="268" fill="var(--log)" font-weight="600">log</text>
+          <text x="404" y="268">volume</text>
+          <text x="472" y="268">catalogo</text>
+          <text x="188" y="288" font-weight="600">table</text>
+          <text x="248" y="288" opacity=".6">util</text>
+
+          <line x1="360" y1="298" x2="360" y2="330" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaD)"/>
+
+          <rect x="110" y="334" width="500" height="54" rx="5" fill="none" stroke="currentColor" stroke-width="1.7"/>
+          <text x="360" y="353" text-anchor="middle" font-weight="600" font-size="12.5">phxsql-core</text>
+          <text x="148" y="374">types</text>
+          <text x="200" y="374">value</text>
+          <text x="252" y="374">schema</text>
+          <text x="316" y="374">keyenc</text>
+          <text x="374" y="374">paginacao</text>
+          <text x="450" y="374">json</text>
+          <text x="494" y="374">crc</text>
+          <text x="530" y="374">datahora</text>
+
+          <rect x="636" y="208" width="180" height="180" rx="5" fill="none" stroke="currentColor" stroke-width="1" opacity=".35" stroke-dasharray="4 4"/>
+          <text x="726" y="234" text-anchor="middle" font-size="11" opacity=".6">DEPENDÊNCIAS</text>
+          <text x="726" y="258" text-anchor="middle" font-size="11" opacity=".6">EXTERNAS</text>
+          <text x="726" y="304" text-anchor="middle" font-size="42" font-weight="600" fill="var(--acento)">0</text>
+          <text x="726" y="336" text-anchor="middle" font-size="10.5" opacity=".55">só a std do Rust</text>
+          <text x="726" y="354" text-anchor="middle" font-size="10.5" opacity=".55">compila offline</text>
+          <text x="726" y="372" text-anchor="middle" font-size="10.5" opacity=".55">cruza para Windows</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>Figura 4.</b> A seta é <em>depende de</em>. O zero à direita não é
+    vaidade: foi ele que fez a compilação cruzada para Windows funcionar de primeira, sem
+    vendorizar nada.</figcaption>
+  </figure>
+</section>
+
+<!-- ============================= 06 ============================= -->
+<section id="s6">
+  <div class="rotulo"><span class="num">06</span><span class="traco"></span></div>
+  <h2>Fluxo: o que acontece ao gravar uma linha</h2>
+
+  <figure>
+    <div class="fig-caixa">
+      <svg viewBox="0 0 840 360" role="img" aria-label="Caminho de uma inserção: checa unicidade, grava blobs, monta o payload, anexa ao reg, insere as chaves nos índices e registra o evento no log; se um índice falhar, tudo é desfeito">
+        <defs>
+          <marker id="setaE" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+          </marker>
+          <marker id="setaErro" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="var(--log)"/>
+          </marker>
+        </defs>
+        <g font-family="IBM Plex Mono, monospace" font-size="11.5" fill="currentColor">
+
+          <rect x="16" y="40" width="112" height="44" rx="4" fill="none" stroke="currentColor" stroke-width="1.4"/>
+          <text x="72" y="60" text-anchor="middle" font-size="11">valores</text>
+          <text x="72" y="75" text-anchor="middle" font-size="10" opacity=".6">da aplicação</text>
+
+          <path d="M128 62 L164 62" stroke="currentColor" stroke-width="1.3" marker-end="url(#setaE)"/>
+
+          <rect x="168" y="34" width="126" height="56" rx="4" fill="none" stroke="currentColor" stroke-width="1.4"/>
+          <text x="231" y="54" text-anchor="middle" font-size="11">confere chave</text>
+          <text x="231" y="69" text-anchor="middle" font-size="11">única</text>
+          <text x="231" y="83" text-anchor="middle" font-size="9.5" opacity=".55">antes de tocar em disco</text>
+
+          <path d="M294 62 L330 62" stroke="currentColor" stroke-width="1.3" marker-end="url(#setaE)"/>
+
+          <rect x="334" y="34" width="126" height="56" rx="4" fill="none" stroke="var(--bin)" stroke-width="1.5"/>
+          <text x="397" y="54" text-anchor="middle" fill="var(--bin)" font-size="11">grava blobs</text>
+          <text x="397" y="69" text-anchor="middle" fill="var(--bin)" font-size="10.5">.bin / .memo</text>
+          <text x="397" y="83" text-anchor="middle" font-size="9.5" opacity=".55">devolve ponteiros</text>
+
+          <path d="M460 62 L496 62" stroke="currentColor" stroke-width="1.3" marker-end="url(#setaE)"/>
+
+          <rect x="500" y="34" width="126" height="56" rx="4" fill="none" stroke="var(--reg)" stroke-width="1.5"/>
+          <text x="563" y="54" text-anchor="middle" fill="var(--reg)" font-size="11">anexa no fim</text>
+          <text x="563" y="69" text-anchor="middle" fill="var(--reg)" font-size="10.5">.reg</text>
+          <text x="563" y="83" text-anchor="middle" font-size="9.5" opacity=".55">rowid = slots + 1</text>
+
+          <path d="M626 62 L662 62" stroke="currentColor" stroke-width="1.3" marker-end="url(#setaE)"/>
+
+          <rect x="666" y="34" width="126" height="56" rx="4" fill="none" stroke="var(--ndx)" stroke-width="1.5"/>
+          <text x="729" y="54" text-anchor="middle" fill="var(--ndx)" font-size="11">insere chaves</text>
+          <text x="729" y="69" text-anchor="middle" fill="var(--ndx)" font-size="10.5">.ndx</text>
+          <text x="729" y="83" text-anchor="middle" font-size="9.5" opacity=".55">uma por índice</text>
+
+          <path d="M729 90 L729 128" stroke="currentColor" stroke-width="1.3" marker-end="url(#setaE)"/>
+
+          <rect x="666" y="132" width="126" height="52" rx="4" fill="none" stroke="var(--log)" stroke-width="1.5"/>
+          <text x="729" y="152" text-anchor="middle" fill="var(--log)" font-size="11">registra evento</text>
+          <text x="729" y="167" text-anchor="middle" fill="var(--log)" font-size="10.5">.log</text>
+          <text x="729" y="180" text-anchor="middle" font-size="9.5" opacity=".55">data e hora, ms</text>
+
+          <path d="M666 158 L604 158" stroke="currentColor" stroke-width="1.3" marker-end="url(#setaE)"/>
+          <rect x="470" y="136" width="130" height="44" rx="4" fill="none" stroke="currentColor" stroke-width="1.4"/>
+          <text x="535" y="163" text-anchor="middle" font-size="11">devolve o rowid</text>
+
+          <path d="M700 90 L700 108 L340 108 L340 128" fill="none" stroke="var(--log)" stroke-width="1.4" stroke-dasharray="5 3" marker-end="url(#setaErro)"/>
+          <text x="452" y="103" text-anchor="middle" fill="var(--log)" font-size="10.5">se um índice falhar</text>
+
+          <rect x="250" y="132" width="180" height="52" rx="4" fill="none" stroke="var(--log)" stroke-width="1.5" stroke-dasharray="5 3"/>
+          <text x="340" y="152" text-anchor="middle" fill="var(--log)" font-size="11">desfaz tudo</text>
+          <text x="340" y="168" text-anchor="middle" font-size="9.5" opacity=".62">tira as chaves já postas,</text>
+          <text x="340" y="180" text-anchor="middle" font-size="9.5" opacity=".62">exclui o slot, libera os blobs</text>
+
+          <line x1="16" y1="212" x2="816" y2="212" stroke="currentColor" stroke-width="1" opacity=".3"/>
+
+          <text x="16" y="238" font-size="11.5" opacity=".75" font-weight="600">Duas regras que o desenho impõe:</text>
+          <circle cx="26" cy="262" r="3" fill="var(--acento)"/>
+          <text x="40" y="266" font-size="11.5">A unicidade é conferida <tspan font-weight="600">antes</tspan> de qualquer escrita — uma recusa não deixa slot fantasma.</text>
+          <circle cx="26" cy="288" r="3" fill="var(--acento)"/>
+          <text x="40" y="292" font-size="11.5">Operação recusada <tspan font-weight="600">não vira evento</tspan>: o diário registra o que aconteceu, não o que foi tentado.</text>
+
+          <text x="16" y="330" font-size="11" opacity=".55">Alterar segue o mesmo caminho, mas remove a chave antiga do índice só quando ela mudou, e libera os blocos externos antigos no fim.</text>
+          <text x="16" y="348" font-size="11" opacity=".55">Excluir tira as chaves, marca os blocos como mortos e marca o slot como livre — sem nunca reaproveitá-lo.</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>Figura 5.</b> A aresta tracejada em vermelho é a que importa: sem
+    transações ainda, o desfazer explícito é o que impede uma falha de índice de deixar
+    a tabela inconsistente.</figcaption>
+  </figure>
+</section>
+
+<!-- ============================= 07 ============================= -->
+<section id="s7">
+  <div class="rotulo"><span class="num">07</span><span class="traco"></span></div>
+  <h2>Fluxo: um pedido na porta 5000</h2>
+
+  <figure>
+    <div class="fig-caixa">
+      <svg viewBox="0 0 840 340" role="img" aria-label="Um pedido TCP passa pela lista de IPs, pelo token e pela trava única antes de chegar ao motor; toda tentativa, inclusive as recusadas, é gravada no log de acessos">
+        <defs>
+          <marker id="setaF" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+          </marker>
+          <marker id="setaLog" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="var(--log)"/>
+          </marker>
+        </defs>
+        <g font-family="IBM Plex Mono, monospace" font-size="11.5" fill="currentColor">
+
+          <rect x="16" y="30" width="104" height="48" rx="4" fill="none" stroke="currentColor" stroke-width="1.4"/>
+          <text x="68" y="50" text-anchor="middle" font-size="11">cliente</text>
+          <text x="68" y="66" text-anchor="middle" font-size="10" opacity=".6">JSON Lines</text>
+
+          <path d="M120 54 L156 54" stroke="currentColor" stroke-width="1.3" marker-end="url(#setaF)"/>
+          <text x="138" y="44" text-anchor="middle" font-size="9.5" opacity=".6">TCP</text>
+
+          <rect x="160" y="24" width="112" height="60" rx="4" fill="none" stroke="currentColor" stroke-width="1.4"/>
+          <text x="216" y="44" text-anchor="middle" font-size="11">ips_permitidos</text>
+          <text x="216" y="60" text-anchor="middle" font-size="10" opacity=".6">lista do</text>
+          <text x="216" y="73" text-anchor="middle" font-size="10" opacity=".6">config.json</text>
+
+          <path d="M272 54 L308 54" stroke="currentColor" stroke-width="1.3" marker-end="url(#setaF)"/>
+
+          <rect x="312" y="24" width="112" height="60" rx="4" fill="none" stroke="currentColor" stroke-width="1.4"/>
+          <text x="368" y="44" text-anchor="middle" font-size="11">token</text>
+          <text x="368" y="60" text-anchor="middle" font-size="10" opacity=".6">comparado em</text>
+          <text x="368" y="73" text-anchor="middle" font-size="10" opacity=".6">tempo constante</text>
+
+          <path d="M424 54 L460 54" stroke="currentColor" stroke-width="1.3" marker-end="url(#setaF)"/>
+
+          <rect x="464" y="24" width="118" height="60" rx="4" fill="none" stroke="var(--acento)" stroke-width="1.6"/>
+          <text x="523" y="44" text-anchor="middle" fill="var(--acento)" font-size="11">trava única</text>
+          <text x="523" y="60" text-anchor="middle" font-size="10" opacity=".6">mutex de dados</text>
+          <text x="523" y="73" text-anchor="middle" font-size="10" opacity=".6">operações enfileiram</text>
+
+          <path d="M582 54 L618 54" stroke="currentColor" stroke-width="1.3" marker-end="url(#setaF)"/>
+
+          <rect x="622" y="24" width="118" height="60" rx="4" fill="none" stroke="currentColor" stroke-width="1.4"/>
+          <text x="681" y="44" text-anchor="middle" font-size="11">motor</text>
+          <text x="681" y="60" text-anchor="middle" font-size="10" opacity=".6">abre a tabela,</text>
+          <text x="681" y="73" text-anchor="middle" font-size="10" opacity=".6">executa a operação</text>
+
+          <path d="M216 84 L216 148" stroke="var(--log)" stroke-width="1.3" stroke-dasharray="4 3" marker-end="url(#setaLog)"/>
+          <path d="M368 84 L368 148" stroke="var(--log)" stroke-width="1.3" stroke-dasharray="4 3" marker-end="url(#setaLog)"/>
+          <path d="M681 84 L681 132 L560 132 L560 148" fill="none" stroke="var(--log)" stroke-width="1.3" stroke-dasharray="4 3" marker-end="url(#setaLog)"/>
+
+          <text x="252" y="112" font-size="10" fill="var(--log)">recusado</text>
+          <text x="404" y="112" font-size="10" fill="var(--log)">recusado</text>
+          <text x="596" y="112" font-size="10" fill="var(--log)">executado</text>
+
+          <rect x="150" y="152" width="470" height="56" rx="4" fill="none" stroke="var(--log)" stroke-width="1.7"/>
+          <text x="385" y="174" text-anchor="middle" fill="var(--log)" font-weight="600" font-size="12.5">acessos.log</text>
+          <text x="385" y="194" text-anchor="middle" font-size="10.5" opacity=".7">ip · porta · data e hora ao ms · operação · autenticou · deu certo · duração</text>
+
+          <text x="640" y="180" font-size="10.5" fill="var(--log)">grava com flush</text>
+          <text x="640" y="196" font-size="10.5" fill="var(--log)">imediato</text>
+
+          <line x1="16" y1="236" x2="816" y2="236" stroke="currentColor" stroke-width="1" opacity=".3"/>
+          <text x="16" y="262" font-size="11.5" opacity=".75">
+            <tspan font-weight="600">Toda</tspan> tentativa entra no log, inclusive as três recusadas — é justamente quem bateu na porta e não entrou que interessa.
+          </text>
+          <text x="16" y="288" font-size="11" opacity=".6">A trava única existe porque o motor ainda não tem travas de arquivo nem de registro. Conexões são aceitas em paralelo; as operações se enfileiram.</text>
+          <text x="16" y="308" font-size="11" opacity=".6">É lento sob carga e é correto — o contrário seria rápido e corrompido. Travas finas entram junto com as transações.</text>
+          <text x="16" y="330" font-size="11" opacity=".6">O protocolo trafega em claro: a porta 5000 pertence dentro de VPN ou IPSec, nunca exposta na Internet.</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>Figura 6.</b> As três setas tracejadas convergindo no
+    <code>acessos.log</code> são o desenho do requisito: o log de IP registra o acesso,
+    não o sucesso.</figcaption>
+  </figure>
+
+  <h3>Um pedido de verdade</h3>
+<pre><b>-></b> {"token":"segredo","op":"buscar","database":"Z","tabela":"cadastroClientes",
+     "indice":"porNome","chave":"adriano boller"}
+
+<b>&lt;-</b> {"ok":true,"op":"buscar","resultado":{"encontrados":1,"linhas":[
+     {"rowid":1,"id":1,"nome":"Adriano Boller","cidade":"Blumenau",
+      "limite":"1500.00","cadastro":"2024-10-04","foto":null,
+      "ficha":"Ficha cadastral de Adriano Boller."}]},"ms":0}</pre>
+
+  <p>Repare no <code>"limite":"1500.00"</code>: decimal viaja como <strong>texto</strong>,
+  nunca como número JSON. Um <code>f64</code> não representa 1,10 exatamente, e campo de
+  dinheiro não pode perder centavo no caminho de ida e volta.</p>
+</section>
+
+<!-- ============================= 08 ============================= -->
+<section id="s8">
+  <div class="rotulo"><span class="num">08</span><span class="traco"></span></div>
+  <h2>Replicação Source → Réplica</h2>
+
+  <p>O <code>.log</code> já é o binlog. A posição também já existe: como o diário é uma
+  sequência de eventos de tamanho conhecido, <strong>o evento N é a posição N</strong> —
+  o que dispensa inventar um GTID.</p>
+
+  <figure>
+    <div class="fig-caixa">
+      <svg viewBox="0 0 840 330" role="img" aria-label="A réplica na Bélgica inicia a conexão TCP na porta 5000 até o source em Curitiba, através do túnel IPSec; o source responde com os eventos do diário">
+        <defs>
+          <marker id="setaG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="var(--acento)"/>
+          </marker>
+          <marker id="setaH" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+          </marker>
+        </defs>
+        <g font-family="IBM Plex Mono, monospace" font-size="11.5" fill="currentColor">
+
+          <text x="120" y="24" text-anchor="middle" font-size="10.5" letter-spacing="2" opacity=".6">BRASIL</text>
+          <text x="700" y="24" text-anchor="middle" font-size="10.5" letter-spacing="2" opacity=".6">BÉLGICA</text>
+
+          <rect x="24" y="40" width="192" height="96" rx="5" fill="none" stroke="currentColor" stroke-width="1.6"/>
+          <text x="120" y="62" text-anchor="middle" font-weight="600" font-size="12.5">SOURCE</text>
+          <text x="120" y="79" text-anchor="middle" font-size="11">10.1.1.102:5000</text>
+          <text x="120" y="99" text-anchor="middle" font-size="10.5" opacity=".65">produção · escrita</text>
+          <rect x="44" y="108" width="152" height="20" rx="3" fill="none" stroke="var(--log)" stroke-width="1.3"/>
+          <text x="120" y="122" text-anchor="middle" fill="var(--log)" font-size="10.5">Tabela.log  (o binlog)</text>
+
+          <rect x="604" y="40" width="192" height="96" rx="5" fill="none" stroke="currentColor" stroke-width="1.6"/>
+          <text x="700" y="62" text-anchor="middle" font-weight="600" font-size="12.5">RÉPLICA</text>
+          <text x="700" y="79" text-anchor="middle" font-size="11">192.168.50.20</text>
+          <text x="700" y="99" text-anchor="middle" font-size="10.5" opacity=".65">somente_leitura: true</text>
+          <rect x="624" y="108" width="152" height="20" rx="3" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".6"/>
+          <text x="700" y="122" text-anchor="middle" font-size="10.5" opacity=".7">posição: evento 1 234</text>
+
+          <rect x="300" y="52" width="220" height="34" rx="17" fill="none" stroke="currentColor" stroke-width="1.1" opacity=".45" stroke-dasharray="5 4"/>
+          <text x="410" y="73" text-anchor="middle" font-size="10.5" opacity=".6">túnel IPSec · Mikrotik ↔ Mikrotik</text>
+
+          <path d="M598 106 L226 106" stroke="var(--acento)" stroke-width="2" marker-end="url(#setaG)"/>
+          <text x="412" y="99" text-anchor="middle" fill="var(--acento)" font-size="11.5" font-weight="600">a RÉPLICA abre a conexão — TCP 5000</text>
+
+          <path d="M226 148 L598 148" stroke="currentColor" stroke-width="1.4" marker-end="url(#setaH)"/>
+          <text x="412" y="142" text-anchor="middle" font-size="11">o source responde com os eventos após 1 234</text>
+
+          <line x1="24" y1="180" x2="816" y2="180" stroke="currentColor" stroke-width="1" opacity=".3"/>
+
+          <text x="24" y="204" font-size="11.5" font-weight="600" opacity=".78">O source nunca empurra. Ele só responde a quem pergunta.</text>
+
+          <rect x="24" y="218" width="380" height="94" rx="4" fill="none" stroke="currentColor" stroke-width="1" opacity=".45"/>
+          <text x="40" y="238" font-size="10.5" opacity=".6">FIREWALL DO SOURCE</text>
+          <text x="40" y="258" font-size="11">ENTRADA  TCP 5000  ← só 192.168.50.20</text>
+          <text x="40" y="276" font-size="11">DROP     qualquer outro acesso à 5000</text>
+          <text x="40" y="298" font-size="10.5" opacity=".6">no PhxSql isso é imposto duas vezes: firewall</text>
+          <text x="40" y="310" font-size="10.5" opacity=".6">e ips_permitidos + replicas_autorizadas</text>
+
+          <rect x="436" y="218" width="380" height="94" rx="4" fill="none" stroke="currentColor" stroke-width="1" opacity=".45"/>
+          <text x="452" y="238" font-size="10.5" opacity=".6">O QUE FALTA PARA APLICAR</text>
+          <text x="452" y="258" font-size="11">O evento diz <tspan font-weight="600">que</tspan> o rowid 42 mudou,</text>
+          <text x="452" y="274" font-size="11">mas não diz <tspan font-weight="600">para quê</tspan>.</text>
+          <text x="452" y="296" font-size="10.5" opacity=".6">.log versão 2: o payload cru do .reg mais os</text>
+          <text x="452" y="308" font-size="10.5" opacity=".6">blocos externos que ele referencia.</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>Figura 7.</b> A direção da seta grossa é o ponto: quem procura é a
+    réplica, exatamente como no MySQL. Isso é o que permite manter a porta fechada para
+    a Internet e aberta só de um lado, dentro do túnel.</figcaption>
+  </figure>
+
+  <div class="nota">
+    <span class="t">Por que a réplica sai idêntica</span>
+    <p>O <code>.reg</code> nunca reaproveita slot e o rowid é sempre <code>slots + 1</code>.
+    Se a réplica aplicar todos os eventos, na ordem, e mais ninguém escrever nela, os
+    rowids saem <strong>exatamente iguais</strong> aos do source — sem transmitir nem
+    negociar nada. E conferir isso a cada inclusão detecta divergência na hora, do mesmo
+    jeito que o <em>SQL thread</em> do MySQL para num erro.</p>
+  </div>
+
+  <div class="rolo">
+    <table>
+      <thead><tr><th>MySQL</th><th>PhxSql</th><th>Situação</th></tr></thead>
+      <tbody>
+        <tr><td>Binary log</td><td class="dado">Tabela.log</td><td><span class="pino ok">existe</span></td></tr>
+        <tr><td>Relay log</td><td class="dado">o mesmo formato, do outro lado</td><td><span class="pino ok">existe</span></td></tr>
+        <tr><td>MASTER_LOG_POS</td><td>ordinal do evento</td><td><span class="pino ok">existe</span></td></tr>
+        <tr><td>GTID / SOURCE_AUTO_POSITION</td><td>par (tabela, sequência)</td><td><span class="pino ok">existe</span></td></tr>
+        <tr><td>Porta 3306</td><td class="dado">porta 5000</td><td><span class="pino ok">existe</span></td></tr>
+        <tr><td>Réplica inicia a conexão</td><td>é como o servidor já funciona</td><td><span class="pino ok">existe</span></td></tr>
+        <tr><td>Usuário de replicação</td><td>token + replicas_autorizadas</td><td><span class="pino ok">existe</span></td></tr>
+        <tr><td>Row-based binlog</td><td>imagem da linha no evento</td><td><span class="pino pend">falta</span></td></tr>
+        <tr><td>Multi-source</td><td>uma conexão por origem</td><td><span class="pino pend">no config</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============================= 09 ============================= -->
+<section id="s9">
+  <div class="rotulo"><span class="num">09</span><span class="traco"></span></div>
+  <h2>Quem pode o quê</h2>
+
+  <p>O cadastro de usuários mora no <code>config.json</code> — nome completo, login,
+  e-mail, telefone, supervisor e o poder sobre cada base. A senha, não: o que fica
+  gravado é o <strong>hash</strong>.</p>
+
+  <figure>
+    <div class="fig-caixa">
+      <svg viewBox="0 0 840 300" role="img" aria-label="Um pedido passa por três portões em ordem: o token verifica a rede, o login verifica a identidade e a permissão verifica o poder sobre aquela base">
+        <defs>
+          <marker id="setaP" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+          </marker>
+          <marker id="setaN" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="var(--log)"/>
+          </marker>
+        </defs>
+        <g font-family="IBM Plex Mono, monospace" font-size="11.5" fill="currentColor">
+          <rect x="16" y="44" width="96" height="44" rx="4" fill="none" stroke="currentColor" stroke-width="1.4"/>
+          <text x="64" y="70" text-anchor="middle" font-size="11">pedido</text>
+
+          <path d="M112 66 L152 66" stroke="currentColor" stroke-width="1.3" marker-end="url(#setaP)"/>
+
+          <rect x="156" y="36" width="150" height="60" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/>
+          <text x="231" y="56" text-anchor="middle" font-size="11" font-weight="600">1 · TOKEN</text>
+          <text x="231" y="73" text-anchor="middle" font-size="10.5" opacity=".7">a chave da porta</text>
+          <text x="231" y="87" text-anchor="middle" font-size="10.5" opacity=".7">da rede</text>
+
+          <path d="M306 66 L346 66" stroke="currentColor" stroke-width="1.3" marker-end="url(#setaP)"/>
+
+          <rect x="350" y="36" width="150" height="60" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/>
+          <text x="425" y="56" text-anchor="middle" font-size="11" font-weight="600">2 · LOGIN</text>
+          <text x="425" y="73" text-anchor="middle" font-size="10.5" opacity=".7">a identidade</text>
+          <text x="425" y="87" text-anchor="middle" font-size="10.5" opacity=".7">uma vez por conexão</text>
+
+          <path d="M500 66 L540 66" stroke="currentColor" stroke-width="1.3" marker-end="url(#setaP)"/>
+
+          <rect x="544" y="36" width="150" height="60" rx="4" fill="none" stroke="var(--acento)" stroke-width="1.7"/>
+          <text x="619" y="56" text-anchor="middle" fill="var(--acento)" font-size="11" font-weight="600">3 · PERMISSÃO</text>
+          <text x="619" y="73" text-anchor="middle" font-size="10.5" opacity=".7">o poder nesta</text>
+          <text x="619" y="87" text-anchor="middle" font-size="10.5" opacity=".7">base</text>
+
+          <path d="M694 66 L734 66" stroke="currentColor" stroke-width="1.3" marker-end="url(#setaP)"/>
+          <rect x="738" y="44" width="86" height="44" rx="4" fill="none" stroke="currentColor" stroke-width="1.4"/>
+          <text x="781" y="70" text-anchor="middle" font-size="11">executa</text>
+
+          <path d="M231 96 L231 132" stroke="var(--log)" stroke-width="1.3" stroke-dasharray="4 3" marker-end="url(#setaN)"/>
+          <path d="M425 96 L425 132" stroke="var(--log)" stroke-width="1.3" stroke-dasharray="4 3" marker-end="url(#setaN)"/>
+          <path d="M619 96 L619 132" stroke="var(--log)" stroke-width="1.3" stroke-dasharray="4 3" marker-end="url(#setaN)"/>
+
+          <rect x="150" y="136" width="546" height="34" rx="4" fill="none" stroke="var(--log)" stroke-width="1.5"/>
+          <text x="423" y="157" text-anchor="middle" fill="var(--log)" font-size="11.5">a negativa de qualquer portão entra no acessos.log, com IP, hora e login</text>
+
+          <line x1="16" y1="198" x2="824" y2="198" stroke="currentColor" stroke-width="1" opacity=".3"/>
+          <text x="16" y="222" font-size="11.5" opacity=".78" font-weight="600">Sem cadastro nenhum, o token dá poder total — o comportamento anterior.</text>
+          <text x="16" y="244" font-size="11.5" opacity=".72">Cadastrar usuários faz o portão 2 passar a valer. Ou seja: cadastrar <tspan font-weight="600">só aperta</tspan>, nunca afrouxa.</text>
+          <text x="16" y="274" font-size="11" opacity=".6">A senha é conferida com PBKDF2 de 210.000 iterações, que custa ~100 ms de propósito: irrelevante uma vez por conexão,</text>
+          <text x="16" y="290" font-size="11" opacity=".6">inviável a cada pedido. É por isso que a identidade fica presa à conexão, e não ao pedido.</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>Figura 8.</b> Os três portões são independentes e cumulativos. O
+    token diz que você chegou ao servidor certo; o login diz quem você é; a permissão diz
+    o que você pode naquela base específica.</figcaption>
+  </figure>
+
+  <h3>A senha nunca fica em texto puro</h3>
+  <p>Um <code>config.json</code> vai para backup, para o Git, para o anexo de um chamado
+  de suporte. Um hash nesses lugares é um aborrecimento; uma senha é um incidente.</p>
+
+<pre>echo -n 'a senha de verdade' | phxsqld --senha
+<b>"senha_hash"</b>: "pbkdf2-sha256$210000$7570c880e8815d94...$becbc17c5d0efce2..."
+                    ^         ^        ^                    ^
+                    algoritmo iterações sal de 16 bytes      derivado da senha</pre>
+
+  <p>SHA-256, HMAC e PBKDF2 foram escritos neste projeto para não quebrar a regra de zero
+  dependências, e são conferidos contra os vetores oficiais — FIPS 180-4, RFC 4231 e os
+  vetores usuais de PBKDF2. O número de iterações viaja dentro da própria linha, então
+  aumentar o custo amanhã não invalida as senhas de hoje.</p>
+
+  <h3>Dez atividades, base por base</h3>
+  <div class="rolo">
+    <table>
+      <thead><tr><th>Atividade</th><th>Cobre</th></tr></thead>
+      <tbody>
+        <tr><td class="dado">ler</td><td>bancos, tabelas, esquema, ler, varrer, buscar</td></tr>
+        <tr><td class="dado">inserir</td><td>inserir</td></tr>
+        <tr><td class="dado">alterar</td><td>atualizar</td></tr>
+        <tr><td class="dado">excluir</td><td>excluir</td></tr>
+        <tr><td class="dado">criar</td><td>criar_database, criar_schema</td></tr>
+        <tr><td class="dado">reindexar</td><td>reindexar</td></tr>
+        <tr><td class="dado">diario</td><td>diario</td></tr>
+        <tr><td class="dado">verificar</td><td>verificar</td></tr>
+        <tr><td class="dado">administrar</td><td>acessos, ips, config, usuarios</td></tr>
+        <tr><td class="dado">replicar</td><td>posicao, replicar</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="nota">
+    <span class="t">Nega por omissão, em toda parte</span>
+    <p>Atividade que não aparece vale <code>false</code>. A base listada manda — o
+    curinga <code>"*"</code> não completa o que faltou nela. Base ausente e sem curinga
+    nega tudo. E <strong>operação desconhecida exige <code>administrar</code></strong>:
+    uma op nova que alguém esqueça de mapear é negada, não liberada.</p>
+  </div>
+
+  <p>O rastro fecha nos dois registros: o <code>acessos.log</code> guarda o login de toda
+  tentativa, inclusive as negadas, e o <code>.log</code> da tabela guarda o <em>id</em>
+  numérico de quem alterou o dado — o campo <code>usuario</code> existia no formato desde
+  o primeiro dia e só agora carrega sentido.</p>
+</section>
+
+<!-- ============================= 10 ============================= -->
+<section id="s10">
+  <div class="rotulo"><span class="num">10</span><span class="traco"></span></div>
+  <h2>Decisões tomadas</h2>
+
+  <div class="rolo">
+    <table>
+      <thead><tr><th>Questão</th><th>Decisão</th><th>Consequência</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Ordem de digitação vs. compactação</td>
+          <td>Slot excluído nunca é reaproveitado</td>
+          <td>Varrer o <code>.reg</code> devolve a ordem digitada. O espaço volta só com compactação explícita.</td>
+        </tr>
+        <tr>
+          <td>Dependências externas</td>
+          <td>Zero — só a <code>std</code></td>
+          <td>Compila offline; cruza para Windows sem vendorizar. JSON e CRC escritos à mão.</td>
+        </tr>
+        <tr>
+          <td>OLE DB</td>
+          <td>ODBC + OLE DB desde já</td>
+          <td>Aceita o custo e a restrição a Windows do OLE DB, que é COM e não tem crate em Rust.</td>
+        </tr>
+        <tr>
+          <td>Direção do ODBC</td>
+          <td>Os dois, driver primeiro</td>
+          <td>Primeiro o driver de saída — Excel, Power BI, Crystal e os apps Clarion enxergam o PhxSql.</td>
+        </tr>
+        <tr>
+          <td>Camada SQL</td>
+          <td>rusqlite atrás de uma <em>feature</em></td>
+          <td>SQL completo pela tabela virtual do SQLite; quem quiser compila sem uma linha de C.</td>
+        </tr>
+        <tr>
+          <td>Decimal no protocolo</td>
+          <td>Texto, nunca número JSON</td>
+          <td><code>f64</code> não representa 1,10. Dinheiro não perde centavo.</td>
+        </tr>
+        <tr>
+          <td>Concorrência</td>
+          <td>Trava única por enquanto</td>
+          <td>Lento sob carga e correto, em vez de rápido e corrompido.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="nota">
+    <span class="t">Achado que mudou o plano</span>
+    <p>O <strong>rusqlite não é um motor de banco</strong>. São 22.131 linhas de Rust
+    fazendo 170 chamadas FFI sobre um <code>sqlite3.c</code> de 269.649 linhas — o próprio
+    <code>Cargo.toml</code> se descreve como <em>“Ergonomic wrapper for SQLite”</em>. Não há
+    parser, planejador nem B-tree em Rust para reformular. O que ele oferece de valioso é
+    <code>src/vtab</code>: implementando aqueles traits, o SQLite faz o parsing e o
+    planejamento, e o armazenamento é o PhxSql.</p>
+  </div>
+</section>
+
+<!-- ============================= 10 ============================= -->
+<section id="s11">
+  <div class="rotulo"><span class="num">11</span><span class="traco"></span></div>
+  <h2>Estado e roteiro</h2>
+
+  <div class="rolo">
+    <table>
+      <thead><tr><th>Peça</th><th>Situação</th><th class="dado">Testes</th></tr></thead>
+      <tbody>
+        <tr><td><code>.reg</code> — heap, CRC por registro, esquema embutido</td><td><span class="pino ok">pronto</span></td><td class="num">40</td></tr>
+        <tr><td><code>.ndx</code> — B+tree, chave composta, ASC/DESC/NOCASE/único</td><td><span class="pino ok">pronto</span></td><td class="num">8</td></tr>
+        <tr><td><code>.bin</code> / <code>.memo</code> — blocos com CRC e espaço morto</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
+        <tr><td><code>.log</code> — diário datado das três operações</td><td><span class="pino ok">pronto</span></td><td class="num">9</td></tr>
+        <tr><td>Paginação em volumes, com abertura preguiçosa</td><td><span class="pino ok">pronto</span></td><td class="num">9</td></tr>
+        <tr><td>Hierarquia database → schema → tabela</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
+        <tr><td>Chave estrangeira no esquema</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
+        <tr><td>Reindex — recria o <code>.ndx</code> do zero</td><td><span class="pino ok">pronto</span></td><td class="num">10</td></tr>
+        <tr><td>Servidor TCP na porta 5000 · <code>config.json</code></td><td><span class="pino ok">pronto</span></td><td class="num">23</td></tr>
+        <tr><td>Log de acessos por IP, com data e hora</td><td><span class="pino ok">pronto</span></td><td class="num">6</td></tr>
+        <tr><td>Linha de comando · 9 comandos</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
+        <tr><td>Compilados Linux e Windows · manual</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
+        <tr><td>Cadastro de usuários, senha em hash, permissão por base</td><td><span class="pino ok">pronto</span></td><td class="num">29</td></tr>
+        <tr><td>Replicação — <code>.log</code> v2 com imagem da linha</td><td><span class="pino pend">desenhada</span></td><td class="num">—</td></tr>
+        <tr><td>Servidor MCP</td><td><span class="pino nao">a fazer</span></td><td class="num">—</td></tr>
+        <tr><td>Camada SQL — tabela virtual via rusqlite</td><td><span class="pino nao">a fazer</span></td><td class="num">—</td></tr>
+        <tr><td>Driver ODBC de saída · cliente ODBC e OLE DB</td><td><span class="pino nao">a fazer</span></td><td class="num">—</td></tr>
+        <tr><td>Integração no FraseSQL como <code>engine = "phxsql"</code></td><td><span class="pino nao">a fazer</span></td><td class="num">—</td></tr>
+        <tr><td>Compactação · transações · concorrência fina</td><td><span class="pino nao">a fazer</span></td><td class="num">—</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>O que este motor ainda não faz</h3>
+  <p>Registrado aqui para não haver surpresa mais tarde:</p>
+  <ul>
+    <li><strong>Sem transações.</strong> A inserção desfaz o que gravou se um índice
+    falhar, mas não há <em>journal</em> nem <code>commit</code>/<code>rollback</code> de
+    várias operações.</li>
+    <li><strong>Sem concorrência fina.</strong> Uma trava única serializa todo acesso a
+    dados.</li>
+    <li><strong>Sem compactação.</strong> O formato prevê e mede o espaço morto; o comando
+    ainda não foi escrito. O reindex já cobre a parte do índice.</li>
+    <li><strong>Sem camada SQL.</strong> Esta é a camada de armazenamento; o parser e o
+    executor entram por cima.</li>
+    <li><strong>Sem TLS.</strong> O protocolo trafega em claro — inclusive a senha no
+    <code>login</code> — e depende do túnel.</li>
+    <li><strong>Sem troca de senha pelo protocolo</strong>, sem bloqueio por tentativas
+    e sem grupos: o poder é por usuário, e a senha muda no <code>config.json</code>.</li>
+  </ul>
+</section>
+
+<footer>
+  <p>PhxSql 0.2.0 · 11.775 linhas de Rust em 4 crates · 166 testes · nenhuma dependência
+  externa. Especificação byte a byte em <code>docs/FORMATO.md</code>, cadastro e
+  permissões em <code>docs/USUARIOS.md</code>, desenho da replicação em
+  <code>docs/REPLICACAO.md</code>, roteiro em <code>docs/PLANO.md</code>.</p>
+</footer>
+
+</main>
+</div>
