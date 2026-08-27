@@ -14,7 +14,8 @@ redesenhados:
 | Arquivo | Onde entra |
 |---|---|
 | `phxsql-logo-560.png` | cabeçalho do `README.md` |
-| `phxsql-simbolo-420.png` | capa do dossiê (embutido como data URI) |
+| `phxsql-simbolo-420.png` | aposentado — trazia a palavra cortada ao meio |
+| `phxsql-simbolo-440.png` | capa do dossiê (embutido como data URI) |
 | `phxsql-icone-128.png` | uso geral em miniatura |
 | `phxsql-simbolo-224.png` | cartão de entrada do Centro de Controle |
 | `phxsql-icone-64.png` | barra do Centro de Controle |
@@ -30,6 +31,19 @@ divide a cor por ele. Como o logo é brilho sobre quase preto, isso recupera
 a cor real de cada pixel e a borda do brilho sai suave, em vez de recortada
 com halo. É o que permite a fênix assentar em cima do painel `#0a1122` sem
 deixar emenda de retângulo.
+
+O símbolo de 440 substituiu o de 420 na capa do dossiê por dois defeitos que
+apareceram juntos: o recorte antigo pegava o **topo da palavra "PhxSql"**, que
+saía cortada ao meio, e a imagem **não tinha alfa**, então o `#010418` virava
+um retângulo escuro solto sobre o papel claro do documento.
+
+O recorte novo pega só a fênix e o cilindro — a palavra já aparece grande,
+em texto, logo abaixo. E o alfa resolveu metade do problema, não todo: sobre
+papel claro o **cilindro vira um fantasma branco**, porque o miolo escuro dele
+era o fundo aparecendo. Por isso a capa põe a marca numa **placa** com o
+`#010418`, com cantos arredondados e um brilho — deliberada, para ler como
+apresentação da marca e não como retângulo perdido. Assim a mesma imagem
+serve aos dois temas do dossiê.
 
 O ícone da barra usa um **recorte mais fechado** que o do cartão — só a ave e
 o cilindro, sem as pontas da asa nem as trilhas de circuito. Em 30 px o
