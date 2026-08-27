@@ -1,0 +1,371 @@
+================================================================================
+PHXSQL - MANUAL DO OPERADOR
+Motor de dados no modelo de arquivos separados do HFSQL   |   Linux e Windows
+================================================================================
+
+
+1. O QUE E
+--------------------------------------------------------------------------------
+O PhxSql guarda cada tabela logica em cinco arquivos fisicos:
+
+    cadastroClientes.reg    registros, na ordem de digitacao
+    cadastroClientes.ndx    indices (B+tree)
+    cadastroClientes.bin    binarios (fotos, anexos)
+    cadastroClientes.memo   textos longos
+    cadastroClientes.log    diario de inclusoes, alteracoes e exclusoes
+
+    .reg + .ndx + .bin + .memo + .log  =  cadastroClientes
+
+Tabelas grandes se partem em volumes numerados:
+
+    cadastroClientes_001.reg
+    cadastroClientes_002.reg
+    cadastroClientes_003.reg
+
+Bancos e schemas sao diretorios:
+
+    dados/
+    +-- Z/                          database Z
+        +-- cadastroClientes.reg    tabelas da raiz
+        +-- X/  pedidos.reg ...     schema X
+        +-- Y/  notas.reg ...       schema Y
+
+
+2. O QUE VEM NO PACOTE
+--------------------------------------------------------------------------------
+    phxsql        ferramenta de linha de comando
+    phxsqld       servidor TCP (porta 5000)
+    exemplos/     Config_exemplo_01.json  isolado
+                  Config_exemplo_02.json  source (origem da replicacao)
+                  Config_exemplo_03.json  replica multi-source
+    MANUAL.txt    este arquivo
+    docs/         especificacao do formato, plano e replicacao
+
+No Windows os binarios sao phxsql.exe e phxsqld.exe.
+
+
+3. REQUISITOS
+--------------------------------------------------------------------------------
+Nenhum. Os binarios sao estaticos quanto a dependencias de terceiros: o
+PhxSql nao usa nenhuma crate externa, so a biblioteca padrao do Rust.
+
+    Linux    x86_64, glibc 2.31 ou mais novo
+    Windows  x86_64, Windows 10 ou mais novo
+
+Nao e preciso instalar Rust para USAR. Rust so e preciso para compilar.
+
+
+4. INSTALACAO
+--------------------------------------------------------------------------------
+LINUX
+
+    tar -xzf phxsql-linux-x86_64.tar.gz
+    cd phxsql-linux-x86_64
+    chmod +x phxsql phxsqld
+    sudo cp phxsql phxsqld /usr/local/bin/
+
+WINDOWS
+
+    Extraia o zip, por exemplo em C:\phxsql
+    Acrescente C:\phxsql ao PATH, ou chame pelo caminho completo.
+
+
+5. PRIMEIROS PASSOS
+--------------------------------------------------------------------------------
+Crie uma tabela de exemplo com dados:
+
+    phxsql demo dados/Z
+
+Veja o que foi criado:
+
+    phxsql info    dados/Z cadastroClientes
+    phxsql listar  dados/Z cadastroClientes
+    phxsql tabelas dados Z
+    phxsql bancos  dados
+
+Confira a integridade de tudo:
+
+    phxsql verificar dados/Z cadastroClientes
+
+Veja o diario:
+
+    phxsql log dados/Z cadastroClientes
+
+
+6. COMANDOS DO phxsql
+--------------------------------------------------------------------------------
+    phxsql demo      <dir> [--paginado]
+        Cria um cadastroClientes de exemplo. Com --paginado, dois registros
+        por arquivo, para mostrar os volumes.
+
+    phxsql info      <dir> <tabela>
+        Esquema, contagens, volumes, indices, chaves estrangeiras e ocupacao
+        dos arquivos externos.
+
+    phxsql listar    <dir> <tabela> [--indice <nome>] [--max <n>]
+        Mostra as linhas. Sem --indice, na ordem de digitacao (direto do
+        .reg). Com --indice, na ordem daquele indice. --max 0 mostra tudo.
+
+    phxsql log       <dir> <tabela> [--rowid <n>] [--max <n>]
+        Diario de alteracoes, com data e hora. Com --rowid, so o historico
+        daquele registro.
+
+    phxsql verificar <dir> <tabela>
+        Confere o CRC de cada registro, de cada pagina de indice, de cada
+        bloco externo e de cada evento do diario. Confere tambem se a
+        contagem de chaves de cada indice bate com a de registros vivos.
+
+    phxsql reindex   <dir> <tabela>
+        Recria o .ndx inteiro a partir do .reg. Use quando o indice se
+        perdeu, ficou subocupado depois de muitas exclusoes, ou quando um
+        indice novo foi acrescentado a uma tabela que ja tem dados.
+
+    phxsql bancos    <base>
+    phxsql tabelas   <base> <database>
+        Navegam a hierarquia de databases e schemas.
+
+
+7. O SERVIDOR
+--------------------------------------------------------------------------------
+7.1 Gere um config.json
+
+    phxsqld --exemplo 1 > config.json      isolado
+    phxsqld --exemplo 2 > config.json      source
+    phxsqld --exemplo 3 > config.json      replica
+
+7.2 Edite o config.json
+
+    bind              endereco e porta de escuta. Padrao 0.0.0.0:5000
+    base              raiz onde ficam os databases
+    token             segredo exigido em TODO pedido. NAO SUBA SEM TROCAR
+    max_linhas        teto de linhas por resposta
+    timeout_s         espera por um pedido antes de encerrar a conexao
+    conexoes_max      conexoes simultaneas
+    somente_leitura   recusa qualquer operacao de escrita
+    log_acessos       arquivo do log de acessos
+    ips_permitidos    lista de IPs. VAZIO LIBERA TODOS - preencha sempre
+                      que a porta nao estiver atras de firewall ou VPN
+
+7.3 Suba
+
+    LINUX     ./phxsqld --config config.json
+    WINDOWS   phxsqld.exe --config config.json
+
+    No arranque ele imprime:
+        PhxSql 0.1.0 escutando em 0.0.0.0:5000 | base dados | papel isolado
+        log de acessos: acessos.log
+
+7.4 Servico
+
+    LINUX (systemd), em /etc/systemd/system/phxsql.service:
+
+        [Unit]
+        Description=PhxSql
+        After=network.target
+
+        [Service]
+        Type=simple
+        User=phxsql
+        WorkingDirectory=/opt/phxsql
+        ExecStart=/usr/local/bin/phxsqld --config /opt/phxsql/config.json
+        Restart=on-failure
+
+        [Install]
+        WantedBy=multi-user.target
+
+        systemctl daemon-reload
+        systemctl enable --now phxsql
+
+    WINDOWS: crie um Servico do Windows apontando para phxsqld.exe, com o
+    diretorio de trabalho na pasta do config.json. Ou uma Tarefa Agendada
+    disparada no logon.
+
+
+8. PROTOCOLO
+--------------------------------------------------------------------------------
+JSON Lines: uma linha JSON por pedido, uma linha JSON por resposta, UTF-8,
+terminadas em \n. A conexao aceita varios pedidos seguidos.
+
+PEDIDO
+
+    {"token":"segredo","op":"ping"}
+
+RESPOSTA
+
+    {"ok":true,"op":"ping","resultado":{...},"ms":0}
+    {"ok":false,"op":"ler","erro":"...","ms":1}
+
+OPERACOES
+
+    ping                                     versao, papel, conexoes
+    config                                   configuracao (sem o token)
+    bancos                                   lista os databases
+    tabelas         database                 schemas e tabelas
+    esquema         database, tabela         colunas, indices, FKs, paginacao
+    criar_database  database
+    ler             database, tabela, rowid
+    varrer          database, tabela, [indice], [max]
+    buscar          database, tabela, indice, chave, [max]
+    inserir         database, tabela, valores
+    atualizar       database, tabela, rowid, valores
+    excluir         database, tabela, rowid
+    diario          database, tabela, [rowid], [max]
+    verificar       database, tabela
+    reindexar       database, tabela
+    acessos         [max]                    log de acessos, mais recentes
+    ips                                      resumo por IP
+
+TIPOS NO JSON
+
+    Inteiro       numero            42
+    Real          numero            3.5
+    Decimal       TEXTO             "1500.00"   nunca numero: f64 nao
+                                                representa 1.10 exatamente
+                                                e dinheiro nao pode perder
+                                                centavo no caminho
+    Data          texto ISO         "2026-08-27"   (ou numero de dias)
+    Texto/Memo    texto             "Adriano Boller"
+    Binario       hexadecimal       "00010f10feff"
+    Nulo          null
+
+A LINHA pode vir de duas formas:
+
+    por nome    {"id":7,"nome":"Ana","limite":"10.50"}
+    por ordem   [7,"Ana","10.50"]
+
+No formato por nome, coluna ausente entra como NULL.
+
+EXEMPLOS
+
+    Linux:
+        echo '{"token":"segredo","op":"ping"}' | nc 127.0.0.1 5000
+
+    Linux sem netcat:
+        exec 3<>/dev/tcp/127.0.0.1/5000
+        echo '{"token":"segredo","op":"bancos"}' >&3
+        head -1 <&3
+
+    Windows PowerShell:
+        $c = New-Object System.Net.Sockets.TcpClient("127.0.0.1", 5000)
+        $s = $c.GetStream()
+        $msg = '{"token":"segredo","op":"ping"}' + "`n"
+        $b = [Text.Encoding]::UTF8.GetBytes($msg)
+        $s.Write($b, 0, $b.Length)
+        $buf = New-Object byte[] 65536
+        $n = $s.Read($buf, 0, $buf.Length)
+        [Text.Encoding]::UTF8.GetString($buf, 0, $n)
+        $c.Close()
+
+
+9. LOG DE ACESSOS
+--------------------------------------------------------------------------------
+Toda conexao a porta 5000 e registrada, INCLUSIVE as recusadas por IP ou por
+token errado - e justamente quem tentou e nao conseguiu que interessa.
+
+Arquivo (JSON Lines, uma linha por pedido):
+
+    {"quando":"2026-08-27 18:45:38,739","quando_ms":1787856338739,
+     "ip":"192.168.50.20","porta_origem":39208,"op":"ping",
+     "autenticado":true,"ok":true,"ms":0}
+
+Resumo por IP:
+
+    phxsqld --config config.json --acessos
+
+    ip                acessos  recusados  primeiro                 ultimo
+    192.168.50.20          10          1  2026-08-27 18:45:38,739  ...
+
+Pelo protocolo:
+
+    {"token":"segredo","op":"ips"}
+    {"token":"segredo","op":"acessos","max":50}
+
+Filtrar com grep:
+
+    grep '"ok":false' acessos.log
+    grep '192.168.50.20' acessos.log
+
+
+10. SEGURANCA
+--------------------------------------------------------------------------------
+    - TROQUE O TOKEN antes de expor a porta. O binario recusa subir com o
+      token em branco.
+    - O token e comparado em tempo constante, para nao vazar pelo tempo de
+      resposta.
+    - Preencha ips_permitidos. Lista vazia libera qualquer origem.
+    - A porta 5000 NAO deve ficar aberta na Internet. Ponha atras de VPN,
+      IPSec ou firewall restrito por IP.
+    - O protocolo trafega em claro. Para atravessar rede publica, use tunel
+      (IPSec, WireGuard) ou stunnel na frente.
+    - Numa replica, ligue somente_leitura: true.
+
+
+11. REPLICACAO
+--------------------------------------------------------------------------------
+O modelo e o do MySQL moderno: Source -> Replica, e QUEM INICIA A CONEXAO E
+A REPLICA. O Source nao empurra nada.
+
+    REPLICA 192.168.50.20  ---- TCP 5000 ---->  SOURCE 10.1.1.102
+
+Firewall:
+
+    Source    ENTRADA  TCP 5000  somente o IP da Replica
+    Source    SAIDA    retorno TCP
+    Replica   SAIDA    TCP 5000  para o Source
+    Replica   ENTRADA  apenas conexoes estabelecidas
+
+Estado atual: o .log ja e o binlog e o diario ja pode ser lido pela rede
+(op "diario"). Falta a imagem da linha no evento, que e o que permite
+APLICAR e nao so auditar. Ver docs/REPLICACAO.md para o desenho completo,
+incluindo multi-source e failover.
+
+
+12. PROBLEMAS FREQUENTES
+--------------------------------------------------------------------------------
+"config.json sem token"
+    Preencha o campo token. O servidor recusa subir sem ele.
+
+"nao consegui escutar em 0.0.0.0:5000"
+    Porta ocupada ou sem permissao. Troque o bind ou libere a porta.
+
+"token invalido"
+    O token do pedido nao e exatamente o do config.json. Espacos e
+    maiusculas contam.
+
+"ip nao autorizado"
+    O IP nao esta em ips_permitidos. A tentativa fica no acessos.log.
+
+"nenhum volume de <tabela>.reg"
+    O caminho ou o nome da tabela estao errados, ou os arquivos nao estao
+    todos na mesma pasta.
+
+"cabecalho com CRC invalido" / "CRC do registro nao confere"
+    O arquivo foi corrompido. Se for o .ndx, rode phxsql reindex. Se for o
+    .reg, restaure do backup: o reindex nao inventa dado perdido.
+
+"indice X tem N chaves para M registros"
+    Indice fora de sincronia. Rode phxsql reindex.
+
+"tabela cheia"
+    A paginacao chegou ao teto. Recrie com max_arquivos maior, ou com mais
+    registros por arquivo.
+
+
+13. COMPILAR DO FONTE
+--------------------------------------------------------------------------------
+    cargo build --release
+    cargo test --workspace
+
+Para Windows, a partir do Linux:
+
+    apt-get install -y mingw-w64
+    rustup target add x86_64-pc-windows-gnu
+    cargo build --release --target x86_64-pc-windows-gnu
+
+Nao ha vendor de dependencias a fazer: o projeto nao usa nenhuma crate
+externa, entao `cargo build --offline` funciona numa maquina sem Internet.
+
+
+================================================================================
+PhxSql - cinco arquivos, uma tabela.
+================================================================================
