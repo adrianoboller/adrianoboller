@@ -50,7 +50,7 @@ reaproveitamento de espaço perde.
 
 ## Estado atual
 
-O motor de armazenamento está completo e testado: **195 testes**, sem nenhuma
+O motor de armazenamento está completo e testado: **214 testes**, sem nenhuma
 dependência externa (só a `std`), o que faz o projeto compilar offline.
 
 | Peça | Situação |
@@ -70,6 +70,7 @@ dependência externa (só a `std`), o que faz o projeto compilar offline.
 | Cadastro de usuários, senha em hash, permissão por base | pronto |
 | Login por desafio-resposta (a senha não trafega) e Base64 | pronto |
 | Blacklist com bloqueio automático e gancho de firewall | pronto |
+| Centro de Controle — interface web embutida no `phxsqld` | pronto |
 | Servidor MCP | pendente |
 | Camada SQL (tabela virtual via rusqlite, atrás de *feature*) | pendente |
 | Driver ODBC de saída, depois cliente ODBC/OLE DB | pendente |
@@ -93,6 +94,25 @@ cargo build --release
 ./target/release/phxsql bancos /tmp/dados
 ./target/release/phxsql tabelas /tmp/dados Z
 ```
+
+### O servidor e o Centro de Controle
+
+```bash
+./target/release/phxsqld --exemplo 1 > config.json
+$EDITOR config.json          # troque o token e ligue "web"
+./target/release/phxsqld --config config.json
+```
+
+Com `"web": { "ligado": true }` o próprio `phxsqld` passa a servir o Centro
+de Controle em `http://127.0.0.1:5001` — a página está embutida no binário,
+não há servidor web para instalar. A árvore mostra bancos, schemas e tabelas;
+cada tabela abre em cinco abas (Estrutura, Conteúdo, Índices, Diário,
+Integridade) e há três telas de administração (Usuários, Acessos, Bloqueios).
+
+Em `127.0.0.1` e em `https://` o login usa desafio-resposta e a senha **não
+sai da máquina de quem entra**. Fora de contexto seguro o navegador não
+oferece a cifra: a página cai em Base64 e diz isso na tela. Detalhes na
+seção 9 do [`MANUAL.txt`](MANUAL.txt).
 
 Na biblioteca (este trecho e o `crates/phxsql-store/examples/basico.rs`,
 que compila e roda com `cargo run --example basico`):
@@ -144,6 +164,8 @@ crates/
                    codificação de chaves, CRC, calendário
   phxsql-store/    os cinco arquivos, os volumes, a hierarquia e a tabela
   phxsql-cli/      a ferramenta de linha de comando
+  phxsql-server/   config, usuários, blacklist, servidor TCP e o HTTP da
+                   interface; ui/index.html é o Centro de Controle
   phxsql-store/examples/basico.rs   exemplo executável
 docs/
   FORMATO.md       especificação byte a byte dos arquivos
