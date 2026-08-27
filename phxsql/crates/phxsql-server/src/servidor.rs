@@ -209,6 +209,7 @@ impl Servidor {
         }
 
         self.subir_web();
+        self.subir_backup_agendado();
 
         for conexao in ouvinte.incoming() {
             match conexao {
@@ -316,6 +317,136 @@ impl Servidor {
                 b.comando
             )
         })
+    }
+
+    /// Sobe o relogio do backup agendado, se ligado.
+    ///
+    /// Confere de minuto em minuto em vez de dormir ate a hora certa: dormir
+    /// horas seguidas e frageil -- a maquina suspende, o relogio anda, e o
+    /// backup nao acontece sem ninguem notar.
+    fn subir_backup_agendado(self: &Arc<Self>) {
+        if !self.config.backup.agendado {
+            return;
+        }
+        let b = &self.config.backup;
+        eprintln!(
+            "backup agendado: {} | destino {} | {} | guarda {}",
+            if b.hora.is_empty() {
+                format!("a cada {} h", b.cada_horas)
+            } else {
+                format!("todo dia as {}", b.hora)
+            },
+            b.destino.display(),
+            if b.zip {
+                "um zip por vez"
+            } else {
+                "arvore de diretorios"
+            },
+            if b.manter == 0 {
+                "tudo".to_string()
+            } else {
+                format!("os {} mais novos", b.manter)
+            }
+        );
+        let servidor = Arc::clone(self);
+        std::thread::spawn(move || {
+            let mut ultimo = 0i64;
+            loop {
+                let agora = crate::agora_ms();
+                if servidor.config.backup.hora_de_rodar(agora, ultimo) {
+                    ultimo = agora;
+                    match servidor.rodar_backup_agendado(agora) {
+                        Ok(onde) => eprintln!("backup agendado: {onde}"),
+                        Err(e) => eprintln!("backup agendado FALHOU: {e}"),
+                    }
+                }
+                std::thread::sleep(Duration::from_secs(60));
+            }
+        });
+    }
+
+    fn rodar_backup_agendado(&self, quando: i64) -> Result<String> {
+        let b = &self.config.backup;
+        let (onde, r) = {
+            let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+            if b.zip {
+                let (caminho, r) = phxsql_store::backup::executar_zip(
+                    &self.config.base,
+                    &b.destino,
+                    &b.database,
+                    &b.admin,
+                    quando,
+                )?;
+                (caminho.display().to_string(), r)
+            } else {
+                let pasta = b.destino.join(
+                    phxsql_core::datahora::instante_iso(quando).replace([' ', ':', ','], "-"),
+                );
+                let r = phxsql_store::backup::executar(
+                    &self.config.base,
+                    &pasta,
+                    &phxsql_core::datahora::instante_iso(quando),
+                )?;
+                (pasta.display().to_string(), r)
+            }
+        };
+
+        // O log de acessos guarda tambem o que o servidor faz sozinho: senao,
+        // a unica prova de que o backup rodou seria o arquivo existir.
+        self.anotar(&Acesso {
+            quando_ms: quando,
+            ip: "(local)".into(),
+            porta_origem: 0,
+            op: "backup_agendado".into(),
+            usuario: b.admin.clone(),
+            autenticado: true,
+            ok: true,
+            duracao_ms: 0,
+            erro: None,
+        });
+
+        let apagados = self.limpar_backups_velhos();
+        Ok(format!(
+            "{onde} ({} arquivos, {} bytes{}{})",
+            r.arquivos.len(),
+            r.bytes,
+            if b.zip {
+                format!(", zip de {} bytes", r.comprimido)
+            } else {
+                String::new()
+            },
+            if apagados > 0 {
+                format!(", {apagados} antigo(s) apagado(s)")
+            } else {
+                String::new()
+            }
+        ))
+    }
+
+    /// Guarda so os `manter` mais novos. Zero nao apaga nada.
+    ///
+    /// Olha apenas os `.zip` cujo nome tem a cara dos nossos. Backup nao
+    /// apaga arquivo que nao criou -- alguem pode ter guardado outra coisa
+    /// nessa pasta.
+    fn limpar_backups_velhos(&self) -> usize {
+        let b = &self.config.backup;
+        if b.manter == 0 || !b.zip {
+            return 0;
+        }
+        let Ok(dir) = std::fs::read_dir(&b.destino) else {
+            return 0;
+        };
+        let nomes: Vec<String> = dir
+            .flatten()
+            .filter_map(|e| e.file_name().to_str().map(String::from))
+            .collect();
+        let mut apagados = 0;
+        for nome in phxsql_store::backup::escolher_para_apagar(&nomes, b.manter) {
+            if std::fs::remove_file(b.destino.join(&nome)).is_ok() {
+                apagados += 1;
+            }
+        }
+        apagados
     }
 
     // ----------------------------------------------------------- interface web
@@ -1176,7 +1307,7 @@ impl Servidor {
             "memoria_carregar" => self.op_memoria_carregar(p, sessao),
             "memoria_liberar" => self.op_memoria_liberar(p),
             "memoria" => self.op_memoria(),
-            "backup" => self.op_backup(p),
+            "backup" => self.op_backup(p, sessao),
             "conferir_backup" => self.op_conferir_backup(p),
             // O nome que o Adriano pediu, e o nome em portugues do projeto.
             // Sao a mesma operacao: a interface usa um, o script usa o outro.
@@ -1560,29 +1691,71 @@ impl Servidor {
     }
 
     /// Copia de seguranca, com a trava de dados segurada do inicio ao fim.
-    fn op_backup(&self, p: &Json) -> Result<Json> {
+    ///
+    /// `"zip": true` faz um arquivo unico chamado
+    /// `Banco_Admin_Data_HoraMin.zip`, com o manifesto dentro. Sem isso,
+    /// copia a arvore de diretorios como antes.
+    fn op_backup(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let destino = p.texto_ou("destino", "").trim().to_string();
         if destino.is_empty() {
             return Err(PhxError::Esquema("informe \"destino\"".into()));
         }
         let quando = crate::agora_ms();
         let inicio = Instant::now();
+        let em_zip = p.booleano_ou("zip", false);
+        let banco = p.texto_ou("database", "").trim().to_string();
+        // Quem fez entra no nome do arquivo. Sem login, entrou pelo token de
+        // servico -- e o nome diz isso, em vez de fingir um usuario.
+        let quem = if sessao.login().is_empty() {
+            "servico".to_string()
+        } else {
+            sessao.login().to_string()
+        };
+
         // A trava fica presa a copia inteira. E o que "consistente" quer dizer
         // sem transacao: nenhuma escrita acontece no meio.
-        let r = {
+        let (arquivo, r) = {
             let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
-            phxsql_store::backup::executar(
-                &self.config.base,
-                std::path::Path::new(&destino),
-                &phxsql_core::datahora::instante_iso(quando),
-            )?
+            if em_zip {
+                let (caminho, r) = phxsql_store::backup::executar_zip(
+                    &self.config.base,
+                    std::path::Path::new(&destino),
+                    &banco,
+                    &quem,
+                    quando,
+                )?;
+                (Some(caminho.display().to_string()), r)
+            } else {
+                (
+                    None,
+                    phxsql_store::backup::executar(
+                        &self.config.base,
+                        std::path::Path::new(&destino),
+                        &phxsql_core::datahora::instante_iso(quando),
+                    )?,
+                )
+            }
         };
-        Ok(Json::objeto(vec![
+
+        let mut campos = vec![
             ("destino", Json::texto_de(&destino)),
             ("arquivos", Json::de_u64(r.arquivos.len() as u64)),
             ("bytes", Json::de_u64(r.bytes)),
             ("ms", Json::de_u64(inicio.elapsed().as_millis() as u64)),
-        ]))
+        ];
+        if let Some(a) = arquivo {
+            campos.push(("arquivo", Json::texto_de(a)));
+            campos.push(("comprimido", Json::de_u64(r.comprimido)));
+            campos.push((
+                "reducao_pct",
+                Json::de_u64(if r.bytes > 0 {
+                    100 - (r.comprimido * 100 / r.bytes).min(100)
+                } else {
+                    0
+                }),
+            ));
+        }
+        Ok(Json::objeto(campos))
     }
 
     fn op_conferir_backup(&self, p: &Json) -> Result<Json> {

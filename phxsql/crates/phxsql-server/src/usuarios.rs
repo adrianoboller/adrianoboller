@@ -113,6 +113,100 @@ impl Atividade {
     }
 }
 
+/// Nivel do usuario: um nome no lugar de dez booleanos.
+///
+/// Escrever dez permissoes por base, para cada usuario, e onde alguem erra --
+/// esquece uma, deixa `administrar` ligado sem querer, copia a linha errada.
+/// O nivel resolve o caso comum com uma palavra, e as permissoes por base
+/// continuam la para o caso que o nivel nao cobre.
+///
+/// A ordem importa: cada nivel contem o anterior.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Nivel {
+    /// Nada. E o padrao quando o `config.json` nao diz nivel nenhum.
+    ///
+    /// Existe porque a regra do projeto e negar por omissao, e sem este nivel
+    /// o padrao viraria "le tudo" -- todo config que ja existe passaria a dar
+    /// leitura em base que antes negava. Um teste antigo pegou exatamente
+    /// isso, e este nivel e a correcao.
+    #[default]
+    Nenhum,
+    /// So le.
+    Leitor,
+    /// Le e escreve, mas nao cria base nem mexe em indice.
+    Operador,
+    /// Tudo sobre os dados: cria, reindexa, replica.
+    Dono,
+    /// Tudo, mais o servidor: acessos, bloqueios, usuarios, backup.
+    Admin,
+}
+
+impl Nivel {
+    pub fn de_texto(s: &str) -> Result<Nivel> {
+        Ok(match s.trim().to_lowercase().as_str() {
+            "" | "nenhum" | "nada" => Nivel::Nenhum,
+            "leitor" | "consulta" | "leitura" => Nivel::Leitor,
+            "operador" | "operacao" | "escrita" => Nivel::Operador,
+            "dono" | "owner" | "proprietario" => Nivel::Dono,
+            "admin" | "administrador" | "dba" => Nivel::Admin,
+            outro => {
+                return Err(PhxError::Esquema(format!(
+                    "nivel desconhecido: {outro:?} (use leitor, operador, dono ou admin)"
+                )))
+            }
+        })
+    }
+
+    pub fn nome(self) -> &'static str {
+        match self {
+            Nivel::Nenhum => "nenhum",
+            Nivel::Leitor => "leitor",
+            Nivel::Operador => "operador",
+            Nivel::Dono => "dono",
+            Nivel::Admin => "admin",
+        }
+    }
+
+    /// O que este nivel pode, numa base.
+    pub fn permissoes(self) -> Permissoes {
+        if self == Nivel::Nenhum {
+            return Permissoes::default();
+        }
+        let mut p = Permissoes {
+            ler: true,
+            diario: true,
+            verificar: true,
+            ..Permissoes::default()
+        };
+        if self >= Nivel::Operador {
+            p.inserir = true;
+            p.alterar = true;
+            p.excluir = true;
+        }
+        if self >= Nivel::Dono {
+            p.criar = true;
+            p.reindexar = true;
+            p.replicar = true;
+        }
+        if self >= Nivel::Admin {
+            p.administrar = true;
+        }
+        p
+    }
+}
+
+impl PartialOrd for Nivel {
+    fn partial_cmp(&self, outro: &Nivel) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(outro))
+    }
+}
+
+impl Ord for Nivel {
+    fn cmp(&self, outro: &Nivel) -> std::cmp::Ordering {
+        (*self as u8).cmp(&(*outro as u8))
+    }
+}
+
 /// As dez permissoes de uma base. Tudo comeca em `false`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Permissoes {
@@ -196,6 +290,9 @@ pub struct Usuario {
     pub telefone: String,
     pub supervisor: bool,
     pub ativo: bool,
+    /// Nivel: o poder que este usuario tem nas bases onde nao ha regra
+    /// explicita. `bases` continua mandando, quando existe.
+    pub nivel: Nivel,
     /// Chave publica Ed25519, se este usuario tambem prova posse de chave.
     ///
     /// A senha prova que ele SABE alguma coisa; a chave prova que ele TEM
@@ -214,6 +311,12 @@ impl Usuario {
     }
 
     /// Permissoes efetivas numa base.
+    /// O poder deste usuario nesta base.
+    ///
+    /// Ordem de precedencia, do mais especifico para o mais geral:
+    /// supervisor, a regra da base, a regra `"*"`, e por fim o nivel. O
+    /// especifico ganha do geral -- e o que permite dar `admin` a alguem e
+    /// ainda assim tirar uma base especifica dele.
     pub fn permissoes(&self, database: &str) -> Permissoes {
         if self.supervisor {
             return Permissoes::tudo();
@@ -224,7 +327,12 @@ impl Usuario {
         if let Some((_, p)) = self.bases.iter().find(|(b, _)| b == "*") {
             return *p;
         }
-        Permissoes::default()
+        self.nivel.permissoes()
+    }
+
+    /// E administrador? Vale para operacao de servidor, que nao tem base.
+    pub fn e_admin(&self) -> bool {
+        self.supervisor || self.nivel >= Nivel::Admin
     }
 
     /// Pode fazer a atividade nesta base?
@@ -240,6 +348,7 @@ impl Usuario {
             ("login", Json::texto_de(&self.login)),
             ("email", Json::texto_de(&self.email)),
             ("telefone", Json::texto_de(&self.telefone)),
+            ("nivel", Json::texto_de(self.nivel.nome())),
             ("supervisor", Json::Bool(self.supervisor)),
             ("ativo", Json::Bool(self.ativo)),
             // Diz que HA chave, nunca qual e. A publica nao e segredo, mas
@@ -264,6 +373,16 @@ impl Usuario {
         }
 
         let hash = extrair_hash(j, &login, avisos)?;
+
+        // supervisor e um admin de todas as bases -- e a forma antiga de
+        // dizer a mesma coisa. Mantida, e agora ela ACERTA o nivel, para a
+        // ficha nao dizer "leitor" de quem pode tudo.
+        let supervisor = j.booleano_ou("supervisor", false);
+        let nivel = if supervisor {
+            Nivel::Admin
+        } else {
+            Nivel::de_texto(j.texto_ou("nivel", ""))?
+        };
 
         let chave_publica = match j.campo("chave_publica").and_then(Json::texto) {
             None => None,
@@ -297,8 +416,9 @@ impl Usuario {
             senha_hash: hash,
             email: j.texto_ou("email", "").to_string(),
             telefone: j.texto_ou("telefone", "").to_string(),
-            supervisor: j.booleano_ou("supervisor", false),
+            supervisor,
             ativo: j.booleano_ou("ativo", true),
+            nivel,
             chave_publica,
             bases,
         })
@@ -352,6 +472,7 @@ impl Cadastro {
                 }
                 // O root e supervisor por definicao, diga o que disser o arquivo.
                 u.supervisor = true;
+                u.nivel = Nivel::Admin;
                 u.ativo = true;
                 if u.id == 0 {
                     u.id = 1;
@@ -707,5 +828,117 @@ mod tests {
             );
         }
         assert_eq!(Atividade::da_operacao("sair"), None);
+    }
+    #[test]
+    fn cada_nivel_contem_o_anterior() {
+        let nenhum = Nivel::Nenhum.permissoes();
+        let leitor = Nivel::Leitor.permissoes();
+        let operador = Nivel::Operador.permissoes();
+        let dono = Nivel::Dono.permissoes();
+        let admin = Nivel::Admin.permissoes();
+
+        for a in Atividade::TODAS {
+            assert!(!nenhum.pode(a), "nenhum deu {}", a.nome());
+            if leitor.pode(a) {
+                assert!(operador.pode(a), "operador perdeu {}", a.nome());
+            }
+            if operador.pode(a) {
+                assert!(dono.pode(a), "dono perdeu {}", a.nome());
+            }
+            if dono.pode(a) {
+                assert!(admin.pode(a), "admin perdeu {}", a.nome());
+            }
+        }
+
+        // E cada um acrescenta alguma coisa de verdade.
+        assert!(!leitor.inserir && operador.inserir);
+        assert!(!operador.criar && dono.criar);
+        assert!(!dono.administrar && admin.administrar);
+        // Leitor le, e so.
+        assert!(leitor.ler && leitor.diario && leitor.verificar);
+        assert!(!leitor.excluir && !leitor.reindexar && !leitor.replicar);
+    }
+
+    #[test]
+    fn o_nivel_vale_onde_nao_ha_regra_de_base() {
+        let txt = format!(
+            r#"{{"usuarios":[{{
+                 "login":"ana","senha_hash":"{}","nivel":"operador",
+                 "bases":{{"Financeiro":{{}}}}
+               }}]}}"#,
+            hash_rapido("x")
+        );
+        let c = Cadastro::de_json(&Json::analisar(&txt).unwrap()).unwrap();
+        let ana = c.por_login("ana").unwrap();
+        assert_eq!(ana.nivel, Nivel::Operador);
+        // Onde nao ha regra, vale o nivel.
+        assert!(ana.pode("Comercial", Atividade::Inserir));
+        assert!(ana.pode("Comercial", Atividade::Ler));
+        assert!(!ana.pode("Comercial", Atividade::Criar));
+        // Onde HA regra, a regra manda -- mesmo para tirar poder.
+        assert!(!ana.pode("Financeiro", Atividade::Ler));
+        assert!(!ana.pode("Financeiro", Atividade::Inserir));
+    }
+
+    #[test]
+    fn sem_nivel_o_padrao_nega_tudo() {
+        let txt = format!(
+            r#"{{"usuarios":[{{"login":"ze","senha_hash":"{}"}}]}}"#,
+            hash_rapido("x")
+        );
+        let c = Cadastro::de_json(&Json::analisar(&txt).unwrap()).unwrap();
+        let ze = c.por_login("ze").unwrap();
+        assert_eq!(ze.nivel, Nivel::Nenhum);
+        assert!(!ze.e_admin());
+        // Nada. Config que nao diz nivel nao ganha poder nenhum de brinde --
+        // e o que faz esta mudanca nao alterar nenhum config que ja existe.
+        for a in Atividade::TODAS {
+            assert!(!ze.pode("Qualquer", a), "sem nivel deu {}", a.nome());
+        }
+    }
+
+    #[test]
+    fn nivel_admin_e_supervisor_dizem_a_mesma_coisa() {
+        let txt = format!(
+            r#"{{"usuarios":[
+                 {{"login":"a","senha_hash":"{h}","nivel":"admin"}},
+                 {{"login":"b","senha_hash":"{h}","supervisor":true}}
+               ]}}"#,
+            h = hash_rapido("x")
+        );
+        let c = Cadastro::de_json(&Json::analisar(&txt).unwrap()).unwrap();
+        let a = c.por_login("a").unwrap();
+        let b = c.por_login("b").unwrap();
+        assert!(a.e_admin() && b.e_admin());
+        // A ficha do supervisor nao pode dizer "leitor" de quem pode tudo.
+        assert_eq!(b.nivel, Nivel::Admin);
+        for at in Atividade::TODAS {
+            assert_eq!(
+                a.pode("Comercial", at),
+                b.pode("Comercial", at),
+                "divergiram em {}",
+                at.nome()
+            );
+        }
+    }
+
+    #[test]
+    fn nivel_desconhecido_nao_sobe() {
+        let txt = format!(
+            r#"{{"usuarios":[{{"login":"x","senha_hash":"{}","nivel":"chefao"}}]}}"#,
+            hash_rapido("x")
+        );
+        assert!(Cadastro::de_json(&Json::analisar(&txt).unwrap()).is_err());
+    }
+
+    #[test]
+    fn os_apelidos_de_nivel_valem() {
+        assert_eq!(Nivel::de_texto("ADMIN").unwrap(), Nivel::Admin);
+        assert_eq!(Nivel::de_texto(" dba ").unwrap(), Nivel::Admin);
+        assert_eq!(Nivel::de_texto("consulta").unwrap(), Nivel::Leitor);
+        assert_eq!(Nivel::de_texto("").unwrap(), Nivel::Nenhum);
+        assert_eq!(Nivel::de_texto("nenhum").unwrap(), Nivel::Nenhum);
+        assert_eq!(Nivel::de_texto("leitor").unwrap(), Nivel::Leitor);
+        assert_eq!(Nivel::de_texto("owner").unwrap(), Nivel::Dono);
     }
 }

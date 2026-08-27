@@ -30,6 +30,7 @@ pub mod senha;
 pub mod sha512;
 pub mod types;
 pub mod value;
+pub mod zip;
 
 pub use crc::{crc32, crc32_with};
 pub use error::{PhxError, Result};

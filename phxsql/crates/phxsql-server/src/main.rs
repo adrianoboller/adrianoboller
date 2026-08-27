@@ -235,15 +235,26 @@ fn main() -> ExitCode {
             eprintln!("AVISO: {aviso}");
         }
         println!(
-            "{:<14} {:<26} {:<9} {:<7}  poder por base",
-            "login", "nome", "supervisor", "ativo"
+            "{:<14} {:<24} {:<10} {:<7}  poder por base",
+            "login", "nome", "nivel", "ativo"
         );
         let todos = c.root.iter().chain(c.usuarios.iter());
         for u in todos {
             let bases: Vec<String> = if u.supervisor {
                 vec!["(supervisor: tudo em toda base)".to_string()]
             } else if u.bases.is_empty() {
-                vec!["(nenhuma)".to_string()]
+                // Sem regra de base, quem manda e o nivel -- e a listagem tem
+                // de dizer isso, senao "(nenhuma)" mente sobre quem pode ler.
+                let podem: Vec<&str> = phxsql_server::Atividade::TODAS
+                    .iter()
+                    .filter(|a| u.nivel.permissoes().pode(**a))
+                    .map(|a| a.nome())
+                    .collect();
+                vec![if podem.is_empty() {
+                    "(nada, em base nenhuma)".to_string()
+                } else {
+                    format!("(pelo nivel, em toda base: {})", podem.join("+"))
+                }]
             } else {
                 u.bases
                     .iter()
@@ -265,10 +276,14 @@ fn main() -> ExitCode {
                     .collect()
             };
             println!(
-                "{:<14} {:<26} {:<9} {:<7}  {}",
+                "{:<14} {:<24} {:<10} {:<7}  {}",
                 u.login,
                 u.nome,
-                if u.supervisor { "sim" } else { "nao" },
+                if u.supervisor {
+                    "supervisor"
+                } else {
+                    u.nivel.nome()
+                },
                 if u.ativo { "sim" } else { "nao" },
                 bases.join("  ")
             );

@@ -48,6 +48,8 @@ pub struct Arquivo {
 pub struct Relatorio {
     pub arquivos: Vec<Arquivo>,
     pub bytes: u64,
+    /// Tamanho do ZIP, quando a copia foi para arquivo unico.
+    pub comprimido: u64,
     /// Preenchido so na conferencia: o que nao bate.
     pub divergencias: Vec<String>,
 }
@@ -115,6 +117,116 @@ fn relativo(raiz: &Path, arquivo: &Path) -> String {
         .map(|c| c.as_os_str().to_string_lossy().into_owned())
         .collect::<Vec<_>>()
         .join("/")
+}
+
+/// Nome do arquivo: `BancoNome_Admin_Data_HoraMin.zip`.
+///
+/// Traz quem fez e quando no proprio nome porque e assim que se acha o
+/// arquivo certo numa pasta com trezentos backups -- sem abrir nenhum.
+pub fn nome_do_zip(banco: &str, admin: &str, quando_ms: i64) -> String {
+    let dias = (quando_ms.div_euclid(86_400_000)) as i32;
+    let (ano, mes, dia) = phxsql_core::datahora::civil_de_dias(dias);
+    let minutos = quando_ms.rem_euclid(86_400_000) / 60_000;
+    let limpo = |s: &str, padrao: &str| -> String {
+        let t: String = s
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+            .collect();
+        if t.is_empty() {
+            padrao.to_string()
+        } else {
+            t
+        }
+    };
+    format!(
+        "{}_{}_{ano:04}-{mes:02}-{dia:02}_{:02}{:02}.zip",
+        limpo(banco, "dados"),
+        limpo(admin, "sistema"),
+        minutos / 60,
+        minutos % 60
+    )
+}
+
+/// Copia para um unico arquivo ZIP, com o manifesto dentro.
+///
+/// Um arquivo so viaja melhor do que uma arvore de diretorios: cabe em anexo,
+/// sobe para nuvem inteiro, e o Windows(R), o Linux e o celular abrem sem
+/// instalar nada. O manifesto vai dentro, entao a copia carrega a propria
+/// conferencia.
+///
+/// `banco` vazio copia a raiz inteira. Quem chama segura a trava de dados.
+pub fn executar_zip(
+    raiz: &Path,
+    pasta: &Path,
+    banco: &str,
+    admin: &str,
+    quando_ms: i64,
+) -> Result<(PathBuf, Relatorio)> {
+    let origem = if banco.is_empty() {
+        raiz.to_path_buf()
+    } else {
+        crate::catalogo::validar_nome("database", banco)?;
+        raiz.join(banco)
+    };
+    if !origem.is_dir() {
+        return Err(PhxError::NaoEncontrado(format!(
+            "{} nao existe",
+            origem.display()
+        )));
+    }
+    std::fs::create_dir_all(pasta)?;
+    let alvo = pasta.join(nome_do_zip(
+        if banco.is_empty() { "dados" } else { banco },
+        admin,
+        quando_ms,
+    ));
+
+    let quando = phxsql_core::datahora::instante_iso(quando_ms);
+    let mut zip = phxsql_core::zip::Zip::novo(quando_ms);
+    let mut r = Relatorio::default();
+    for arquivo in listar(&origem)? {
+        let rel = relativo(&origem, &arquivo);
+        let dados = std::fs::read(&arquivo)?;
+        zip.acrescentar(&rel, &dados);
+        r.bytes += dados.len() as u64;
+        r.arquivos.push(Arquivo {
+            caminho: rel,
+            bytes: dados.len() as u64,
+            sha256: para_hex(&sha256(&dados)),
+        });
+    }
+    // O manifesto entra por ultimo, ja sabendo de todos os outros.
+    zip.acrescentar(MANIFESTO, r.para_json(&quando).escrever().as_bytes());
+
+    let bytes = zip.terminar();
+    r.comprimido = bytes.len() as u64;
+    std::fs::write(&alvo, &bytes)?;
+    Ok((alvo, r))
+}
+
+/// Dos arquivos da pasta, quais apagar para sobrarem `manter`.
+///
+/// Separada da faxina de verdade para poder ser testada sem mexer em disco --
+/// e porque a regra que importa aqui e "o que NAO apagar".
+///
+/// So entram arquivos com a cara dos nossos: `.zip` com pelo menos tres
+/// sublinhados, que e o formato `Banco_Admin_Data_HoraMin.zip`. Backup nao
+/// apaga arquivo que nao criou; alguem pode ter guardado outra coisa na pasta.
+pub fn escolher_para_apagar(nomes: &[String], manter: usize) -> Vec<String> {
+    if manter == 0 {
+        return Vec::new();
+    }
+    let mut nossos: Vec<&String> = nomes
+        .iter()
+        .filter(|n| n.ends_with(".zip") && n.matches('_').count() >= 3)
+        .collect();
+    if nossos.len() <= manter {
+        return Vec::new();
+    }
+    // O nome ja ordena por data: Banco_Admin_AAAA-MM-DD_HHMM.zip.
+    nossos.sort();
+    let sobra = nossos.len() - manter;
+    nossos.into_iter().take(sobra).cloned().collect()
 }
 
 /// Copia a raiz de dados para o destino e escreve o manifesto.
@@ -350,5 +462,142 @@ mod tests {
         let a = executar(&raiz, &base.join("c1"), "agora").unwrap();
         let b = executar(&raiz, &base.join("c2"), "depois").unwrap();
         assert_eq!(a.arquivos, b.arquivos);
+    }
+    #[test]
+    fn o_nome_do_zip_traz_banco_admin_data_e_hora() {
+        // 2026-08-27 20:43 UTC
+        let ms = (phxsql_core::datahora::dias_de_civil(2026, 8, 27) as i64) * 86_400_000
+            + 20 * 3_600_000
+            + 43 * 60_000;
+        assert_eq!(
+            nome_do_zip("Comercial", "adriano", ms),
+            "Comercial_adriano_2026-08-27_2043.zip"
+        );
+        // Nome com o que nao cabe em arquivo sai limpo, nao quebrado.
+        assert_eq!(
+            nome_do_zip("Com/ercial", "ana maria", ms),
+            "Comercial_anamaria_2026-08-27_2043.zip"
+        );
+        // Vazio vira o padrao, nunca um nome comecando com sublinhado.
+        assert_eq!(nome_do_zip("", "", ms), "dados_sistema_2026-08-27_2043.zip");
+    }
+
+    #[test]
+    fn o_zip_leva_tudo_e_o_manifesto_dentro() {
+        let base = temp("zip");
+        let raiz = base.join("dados");
+        std::fs::create_dir_all(&raiz).unwrap();
+        dados_de_exemplo(&raiz);
+
+        let (alvo, r) = executar_zip(
+            &raiz,
+            &base.join("copias"),
+            "",
+            "adriano",
+            1_787_000_000_000,
+        )
+        .unwrap();
+        assert!(alvo.is_file());
+        assert!(alvo.to_string_lossy().ends_with(".zip"));
+        assert_eq!(r.arquivos.len(), 4);
+        assert!(r.comprimido > 0);
+
+        let bytes = std::fs::read(&alvo).unwrap();
+        assert_eq!(&bytes[..4], b"PK\x03\x04");
+        let texto = String::from_utf8_lossy(&bytes);
+        assert!(texto.contains("backup.json"), "o manifesto vai dentro");
+        assert!(
+            texto.contains("Z/schemaX/pedidos.reg"),
+            "a hierarquia vai junto"
+        );
+    }
+
+    #[test]
+    fn da_para_copiar_um_banco_so() {
+        let base = temp("zipbanco");
+        let raiz = base.join("dados");
+        std::fs::create_dir_all(&raiz).unwrap();
+        dados_de_exemplo(&raiz);
+        std::fs::create_dir_all(raiz.join("Financeiro")).unwrap();
+        std::fs::write(raiz.join("Financeiro/contas.reg"), b"nao deve entrar").unwrap();
+
+        let (alvo, r) =
+            executar_zip(&raiz, &base.join("c"), "Z", "ana", 1_787_000_000_000).unwrap();
+        assert!(alvo
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("Z_ana_"));
+        assert_eq!(r.arquivos.len(), 4, "so os quatro do Z");
+        let bytes = std::fs::read(&alvo).unwrap();
+        let texto = String::from_utf8_lossy(&bytes);
+        assert!(!texto.contains("contas.reg"), "o outro banco ficou de fora");
+    }
+
+    #[test]
+    fn nome_de_banco_hostil_nao_vira_caminho() {
+        let base = temp("ziphostil");
+        let raiz = base.join("dados");
+        std::fs::create_dir_all(&raiz).unwrap();
+        dados_de_exemplo(&raiz);
+        for mau in ["../..", "/etc", "a/b"] {
+            assert!(
+                executar_zip(&raiz, &base.join("c"), mau, "x", 0).is_err(),
+                "{mau:?} passou"
+            );
+        }
+    }
+
+    #[test]
+    fn a_retencao_guarda_os_mais_novos_e_nao_toca_no_alheio() {
+        let nomes: Vec<String> = [
+            "dados_noturno_2026-08-20_0300.zip",
+            "dados_noturno_2026-08-24_0300.zip",
+            "dados_noturno_2026-08-21_0300.zip",
+            "dados_noturno_2026-08-27_2116.zip",
+            "dados_noturno_2026-08-22_0300.zip",
+            // Nao sao nossos: ficam, aconteca o que acontecer.
+            "relatorio-do-contador.zip",
+            "backup.json",
+            "notas_fiscais.zip",
+            "dados_noturno.zip",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+
+        let apagar = escolher_para_apagar(&nomes, 3);
+        assert_eq!(
+            apagar,
+            vec![
+                "dados_noturno_2026-08-20_0300.zip".to_string(),
+                "dados_noturno_2026-08-21_0300.zip".to_string(),
+            ],
+            "apaga os dois mais velhos e so eles"
+        );
+        for alheio in [
+            "relatorio-do-contador.zip",
+            "notas_fiscais.zip",
+            "backup.json",
+        ] {
+            assert!(!apagar.iter().any(|a| a == alheio), "{alheio} nao e nosso");
+        }
+    }
+
+    #[test]
+    fn manter_zero_nao_apaga_nada_e_poucos_tambem_nao() {
+        let nomes: Vec<String> = (20..25)
+            .map(|d| format!("dados_x_2026-08-{d}_0300.zip"))
+            .collect();
+        assert!(
+            escolher_para_apagar(&nomes, 0).is_empty(),
+            "zero = guarda tudo"
+        );
+        assert!(
+            escolher_para_apagar(&nomes, 5).is_empty(),
+            "cabe todo mundo"
+        );
+        assert!(escolher_para_apagar(&nomes, 99).is_empty());
+        assert_eq!(escolher_para_apagar(&nomes, 1).len(), 4);
     }
 }

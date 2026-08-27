@@ -11,6 +11,33 @@
   "somente_leitura": false,
 
 
+  "_backup": [
+    "Backup agendado. Vem DESLIGADO: backup que roda sozinho num destino que",
+    "ninguem conferiu e backup que enche o disco e para.",
+    "",
+    "hora: \"HH:MM\" roda uma vez por dia nesse horario.",
+    "cada_horas: usado so quando nao ha hora marcada.",
+    "zip: um arquivo Banco_Admin_Data_HoraMin.zip, com o manifesto dentro.",
+    "database: qual copiar. Vazio = todos.",
+    "admin: o nome que entra no arquivo, no lugar de um usuario.",
+    "manter: quantos zips guardar. Zero nao apaga nada. So apaga arquivo com",
+    "        a cara dos nossos -- o que voce guardou na pasta fica.",
+    "",
+    "Conferir sempre:  phxsql conferir-backup <destino>",
+    "O comando sai com erro quando nao bate, entao cabe numa linha de cron."
+  ],
+
+  "backup": {
+    "agendado": false,
+    "hora": "03:00",
+    "cada_horas": 24,
+    "destino": "backups",
+    "zip": true,
+    "database": "",
+    "admin": "agendado",
+    "manter": 14
+  },
+
   "_web": [
     "Centro de Controle: a mesma coisa que a porta 5000 faz, so que pelo",
     "navegador. Sobe DESLIGADO e, quando ligado, escuta so no proprio",
@@ -76,6 +103,22 @@
     "Poder por base: a chave \"*\" vale para as bases nao listadas.",
     "Atividade que nao aparece e FALSE. Base que nao aparece e sem \"*\" nega tudo.",
     "Supervisor pode tudo em toda base. O root e sempre supervisor."
+  ],
+
+  "_niveis": [
+    "nivel resolve o caso comum com uma palavra, em vez de dez booleanos:",
+    "",
+    "  nenhum    nada. E o padrao quando nao se diz nivel -- nega por omissao",
+    "  leitor    ler, diario, verificar",
+    "  operador  o de cima, mais inserir, alterar e excluir",
+    "  dono      o de cima, mais criar, reindexar e replicar",
+    "  admin     tudo, inclusive acessos, bloqueios, usuarios e backup",
+    "",
+    "Cada nivel contem o anterior. supervisor:true e a forma antiga de dizer",
+    "admin em toda base, e continua valendo.",
+    "",
+    "A regra de uma base especifica GANHA do nivel -- inclusive para TIRAR",
+    "poder. E o que permite dar admin a alguem e ainda assim fechar uma base."
   ],
 
   "root": {

@@ -13,7 +13,10 @@
 //!     --max <n>         limita a quantidade (padrao 20; 0 = todos)
 //! phxsql bancos    <base>                      lista os databases da raiz
 //! phxsql tabelas   <base> <database>           lista as tabelas, com schema
-//! phxsql backup    <base> <destino>            copia com manifesto SHA-256
+//! phxsql backup    <base> <destino> [opcoes]   copia com manifesto SHA-256
+//!     --zip                 um arquivo Banco_Admin_Data_HoraMin.zip
+//!     --database <nome>     so esse banco
+//!     --admin <nome>        o nome que entra no arquivo
 //! phxsql conferir-backup <destino>             le a copia de volta e confere
 //! ```
 
@@ -56,6 +59,8 @@ USO:
   phxsql log       <dir> <tabela> [--rowid <n>] [--max <n>]
   phxsql bancos    <base>
   phxsql tabelas   <base> <database>
+  phxsql backup    <base> <destino> [--zip] [--database <n>] [--admin <n>]
+  phxsql conferir-backup <destino>
 ";
 
 fn main() -> ExitCode {
@@ -75,7 +80,7 @@ fn main() -> ExitCode {
         "log" => exigir(&args, 3).and_then(|_| mostrar_log(&args)),
         "bancos" => exigir(&args, 2).and_then(|_| bancos(Path::new(&args[1]))),
         "tabelas" => exigir(&args, 3).and_then(|_| tabelas(Path::new(&args[1]), &args[2])),
-        "backup" => exigir(&args, 3).and_then(|_| backup(&args[1], &args[2])),
+        "backup" => exigir(&args, 3).and_then(|_| backup(&args, &args[1], &args[2])),
         "conferir-backup" => exigir(&args, 2).and_then(|_| conferir_backup(&args[1])),
         outro => {
             eprintln!("comando desconhecido: {outro}\n");
@@ -581,11 +586,44 @@ fn decimal_texto(valor: i128, escala: u8) -> String {
 /// linha de comando garantir que ninguem escreve durante a copia. Com o
 /// servidor no ar, use a operacao "backup" pelo protocolo: la a trava de
 /// dados e segurada de verdade.
-fn backup(base: &str, destino: &str) -> phxsql_core::error::Result<()> {
+fn backup(args: &[String], base: &str, destino: &str) -> phxsql_core::error::Result<()> {
     let agora = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0);
+    let opcao = |nome: &str| -> Option<String> {
+        let i = args.iter().position(|a| a == nome)?;
+        args.get(i + 1).filter(|v| !v.starts_with("--")).cloned()
+    };
+
+    if args.iter().any(|a| a == "--zip") {
+        let banco = opcao("--database").unwrap_or_default();
+        let quem = opcao("--admin").unwrap_or_else(|| "manual".into());
+        let (arquivo, r) = phxsql_store::backup::executar_zip(
+            Path::new(base),
+            Path::new(destino),
+            &banco,
+            &quem,
+            agora,
+        )?;
+        let pct = if r.bytes > 0 {
+            100 - (r.comprimido * 100 / r.bytes).min(100)
+        } else {
+            0
+        };
+        diga!("{}", arquivo.display());
+        diga!(
+            "{} arquivos, {} bytes -> {} bytes ({pct}% menor)",
+            r.arquivos.len(),
+            r.bytes,
+            r.comprimido
+        );
+        diga!();
+        diga!("O manifesto vai dentro do zip. Confira com  unzip -t <arquivo>,");
+        diga!("ou extraia e rode  phxsql conferir-backup <pasta extraida>.");
+        return Ok(());
+    }
+
     let r = phxsql_store::backup::executar(
         Path::new(base),
         Path::new(destino),

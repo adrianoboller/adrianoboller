@@ -37,6 +37,16 @@
     "sessao_minutos": 60
   },
 
+  "backup": {
+    "_": "Backup agendado. Ver Config_exemplo_01.json.",
+    "agendado": false,
+    "hora": "03:00",
+    "destino": "backups",
+    "zip": true,
+    "admin": "agendado",
+    "manter": 14
+  },
+
   "replicacao": {
     "papel": "source",
     "id_servidor": "curitiba-01",
