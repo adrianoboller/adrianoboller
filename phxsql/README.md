@@ -50,7 +50,7 @@ reaproveitamento de espaço perde.
 
 ## Estado atual
 
-O motor de armazenamento está completo e testado: **276 testes**, sem nenhuma
+O motor de armazenamento está completo e testado: **280 testes**, sem nenhuma
 dependência externa (só a `std`), o que faz o projeto compilar offline.
 
 | Peça | Situação |
@@ -76,6 +76,10 @@ dependência externa (só a `std`), o que faz o projeto compilar offline.
 | Backup com manifesto SHA-256, ZIP e agendamento | pronto |
 | Nível de usuário: nenhum, leitor, operador, dono, admin | pronto |
 | Tema claro e escuro, console para mais de um servidor | pronto |
+| Painel com nove gráficos, agregado numa chamada | pronto |
+| phx-grid na aba Conteúdo: agrupamento por arrastar | pronto |
+| Espelho `.bkp`: segunda chance do `.reg` | pronto |
+| Bancada medida contra o MySQL(R), 10 milhões de registros | pronto |
 | Servidor MCP | pendente |
 | Camada SQL (tabela virtual via rusqlite, atrás de *feature*) | pendente |
 | Driver ODBC de saída, depois cliente ODBC/OLE DB | pendente |

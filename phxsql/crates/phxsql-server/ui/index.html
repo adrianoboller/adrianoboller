@@ -183,6 +183,31 @@ body,.cartao,.barra,.arvore,table,td,th{
 .conta{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--texto-3)}
 .dica{font-size:11.5px;color:var(--texto-3);opacity:.8;font-style:italic;margin-left:auto}
 
+/* ------------------------------------------------------------------ painel */
+.no.painel{font-weight:600;margin-bottom:4px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:12px;
+      margin-bottom:22px}
+.kpi{background:var(--painel-2);border:1px solid var(--linha);border-radius:9px;
+     padding:13px 15px}
+.kpi .v{font-size:26px;font-weight:700;letter-spacing:-.02em;line-height:1.1;
+        font-variant-numeric:tabular-nums}
+.kpi .r{font-size:10px;letter-spacing:.11em;text-transform:uppercase;
+        color:var(--texto-3);margin-top:5px}
+.kpi .u{font-size:11px;color:var(--texto-3);margin-top:2px}
+.kpi.viva .v{color:var(--laranja)}
+.kpi.mal .v{color:var(--log)}
+/* align-items:start para carta de 1 item nao esticar ate a altura da de 12.
+   O grid iguala a altura da linha por padrao, e sobra branco no meio. */
+.cartas{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px;
+        align-items:start}
+.carta{background:var(--painel-2);border:1px solid var(--linha);border-radius:10px;
+       padding:15px 17px 12px}
+.carta h4{margin:0 0 2px;font-size:13px;font-weight:600;letter-spacing:-.01em}
+.carta .leg{font-size:11px;color:var(--texto-3);margin:0 0 12px}
+.carta svg{width:100%;height:auto;display:block;overflow:visible}
+.carta.larga{grid-column:1/-1}
+.vazioc{color:var(--texto-3);font-size:12.5px;font-style:italic;padding:14px 0}
+
 /* O phx-grid traz o proprio tema claro. Aqui ele passa a seguir o do
    console: os tokens dele apontam para os nossos, e o sol/lua troca os dois
    ao mesmo tempo. Sem isso, no tema escuro o grid ficaria branco no meio da
@@ -321,7 +346,7 @@ const est = { sessao:null, usuario:null, token:"", demo:false,
               // Para onde este console esta falando. Vazio = o proprio
               // servidor que serviu a pagina.
               servidor:"", portaLocal:5000, servidores:[], database:"",
-              teto:200, esquemaAtual:null, grade:null };
+              teto:200, esquemaAtual:null, grade:null, painel:null };
 
 async function api(op, params = {}) {
   if (est.demo) return demo(op, params);
@@ -612,7 +637,8 @@ async function abrirApp() {
 async function montarArvore() {
   const bancos = await api("bancos");
   est.bancos = bancos;
-  let html = `<div class="grupo">Bancos de dados</div>`;
+  let html = `<div class="no painel" data-admin="painel"><span class="ic">◎</span>Painel</div>
+    <div class="grupo">Bancos de dados</div>`;
   for (const b of bancos) {
     const t = await api("tabelas", { database:b });
     html += `<div class="no db" data-db="${esc(b)}"><span class="ic">▾</span>${esc(b)}</div>`;
@@ -647,10 +673,9 @@ async function montarArvore() {
     marcar(n); abrirAdmin(n.dataset.admin);
   });
 
-  const primeira = a.querySelector("[data-tab]");
-  if (primeira) primeira.click();
-  else $("#painel").innerHTML = `<div class="centro">Nenhuma tabela neste servidor.<br>
-    Crie uma com <code>phxsql demo dados/Z</code>.</div>`;
+  // O painel e a primeira tela: quem entra ve o servidor inteiro antes de
+  // escolher uma tabela.
+  a.querySelector('[data-admin="painel"]').click();
 }
 
 function marcar(no) {
@@ -847,12 +872,192 @@ async function vIntegridade(database, tabela_) {
 // =====================================================================
 // Administração
 // =====================================================================
+// =====================================================================
+// Gráficos do painel. SVG escrito à mão, como o resto do projeto: são
+// barras, área e anel — e uma biblioteca de gráfico não diria mais nada
+// do que isso diz, ao custo de uma dependência.
+//
+// Todos usam currentColor e as variáveis do tema, então trocam de cor com
+// o sol/lua sem nenhuma linha a mais.
+// =====================================================================
+
+const fmt = n => (n ?? 0).toLocaleString("pt-BR");
+function fmtBytes(b) {
+  if (!b) return "0 B";
+  const u = ["B","KB","MB","GB","TB"];
+  const i = Math.min(u.length - 1, Math.floor(Math.log(b) / Math.log(1024)));
+  return (b / Math.pow(1024, i)).toFixed(i ? 1 : 0).replace(".", ",") + " " + u[i];
+}
+
+/// Barras horizontais. Boa para nome longo, que é o caso de tabela e de IP.
+function barras(itens, opc = {}) {
+  if (!itens.length) return `<div class="vazioc">sem dados ainda</div>`;
+  // Largura próxima da real do cartão: o SVG escala o desenho INTEIRO, então
+  // um viewBox largo demais encolhe o texto junto — 12 px viram 7 px.
+  const L = opc.largura ?? 360;
+  const alt = 24, teto = Math.max(...itens.map(i => i.valor), 1);
+  const larguraRotulo = opc.rotulo ?? 120;
+  const h = itens.length * alt + 6;
+  const linhas = itens.map((it, k) => {
+    const y = k * alt + 4;
+    const util = L - larguraRotulo - (opc.texto ?? 78);
+    const w = Math.max(1, (it.valor / teto) * util);
+    const segundo = it.segundo || 0;
+    const w2 = segundo ? Math.max(1, (segundo / teto) * util) : 0;
+    return `<g>
+      <text x="0" y="${y + 14}" font-size="11.5" fill="currentColor" opacity=".85">${esc(it.nome)}</text>
+      <rect x="${larguraRotulo}" y="${y + 4}" width="${w.toFixed(1)}" height="13" rx="3"
+            fill="${it.cor || "var(--laranja)"}" opacity=".9"/>
+      ${segundo ? `<rect x="${(larguraRotulo + w).toFixed(1)}" y="${y + 4}" width="${w2.toFixed(1)}"
+            height="13" rx="3" fill="var(--log)" opacity=".85"/>` : ""}
+      <text x="${(larguraRotulo + w + w2 + 7).toFixed(1)}" y="${y + 14}" font-size="10.5"
+            font-family="IBM Plex Mono, monospace" fill="currentColor" opacity=".7">${esc(it.texto ?? fmt(it.valor))}</text>
+    </g>`;
+  }).join("");
+  return `<svg viewBox="0 0 ${L} ${h}" role="img" aria-label="${esc(opc.titulo || "gráfico de barras")}">${linhas}</svg>`;
+}
+
+/// Área ao longo do tempo. Vinte e quatro baldes de uma hora.
+function areaHoras(serie, recusadas) {
+  // Carta larga: o viewBox nasce largo, senão o texto sairia esticado 2×.
+  const L = 1180, A = 210, base = A - 30, topo = 16;
+  const teto = Math.max(...serie, 1);
+  const px = i => (i / (serie.length - 1)) * (L - 24) + 12;
+  const py = v => base - (v / teto) * (base - topo);
+  const linha = serie.map((v, i) => `${px(i).toFixed(1)},${py(v).toFixed(1)}`).join(" ");
+  const area = `12,${base} ${linha} ${(L - 12)},${base}`;
+  const barrasRec = recusadas.map((v, i) =>
+    v ? `<rect x="${(px(i) - 3).toFixed(1)}" y="${py(v).toFixed(1)}" width="6"
+             height="${(base - py(v)).toFixed(1)}" fill="var(--log)" opacity=".75"/>` : "").join("");
+  const marcas = [0, 4, 8, 12, 16, 20, 23].map(i =>
+    `<text x="${px(i).toFixed(1)}" y="${A - 10}"
+           text-anchor="${i === 23 ? "end" : i === 0 ? "start" : "middle"}"
+           font-size="11" fill="currentColor" opacity=".55">${i === 23 ? "agora" : (23 - i) + "h"}</text>`).join("");
+  // Grade, para o olho medir a altura sem contar pixel.
+  const grade = [0.5, 1].map(f =>
+    `<line x1="12" y1="${py(teto * f).toFixed(1)}" x2="${L - 12}" y2="${py(teto * f).toFixed(1)}"
+           stroke="currentColor" stroke-width="1" opacity=".12" stroke-dasharray="3 4"/>
+     <text x="${L - 12}" y="${(py(teto * f) - 4).toFixed(1)}" text-anchor="end" font-size="10"
+           fill="currentColor" opacity=".45">${fmt(Math.round(teto * f))}</text>`).join("");
+  return `<svg viewBox="0 0 ${L} ${A}" role="img"
+    aria-label="Operações por hora nas últimas 24 horas, com as recusadas destacadas">
+    ${grade}
+    <line x1="12" y1="${base}" x2="${L - 12}" y2="${base}" stroke="currentColor" stroke-width="1" opacity=".25"/>
+    <polygon points="${area}" fill="var(--laranja)" opacity=".16"/>
+    <polyline points="${linha}" fill="none" stroke="var(--laranja)" stroke-width="2"
+              stroke-linejoin="round" stroke-linecap="round"/>
+    ${barrasRec}
+    <text x="12" y="${topo - 4}" font-size="11" fill="currentColor" opacity=".55">operações por hora</text>
+    ${marcas}
+  </svg>`;
+}
+
+/// Anel. Para composição — quantos usuários de cada nível.
+function anel(fatias) {
+  const total = fatias.reduce((a, f) => a + f.valor, 0);
+  if (!total) return `<div class="vazioc">sem dados ainda</div>`;
+  const R = 52, r = 33, cx = 70, cy = 70;
+  let ang = -Math.PI / 2;
+  const arcos = fatias.map(f => {
+    const passo = (f.valor / total) * Math.PI * 2;
+    const [a0, a1] = [ang, ang + passo];
+    ang = a1;
+    const grande = passo > Math.PI ? 1 : 0;
+    const p = (raio, a) => `${(cx + raio * Math.cos(a)).toFixed(2)},${(cy + raio * Math.sin(a)).toFixed(2)}`;
+    // Fatia única vira anel inteiro: o arco de 360° some, porque começa e
+    // termina no mesmo ponto.
+    if (fatias.length === 1 || passo >= Math.PI * 2 - 1e-6)
+      return `<circle cx="${cx}" cy="${cy}" r="${(R + r) / 2}" fill="none"
+                stroke="${f.cor}" stroke-width="${R - r}"/>`;
+    return `<path d="M${p(R, a0)} A${R},${R} 0 ${grande},1 ${p(R, a1)}
+              L${p(r, a1)} A${r},${r} 0 ${grande},0 ${p(r, a0)} Z" fill="${f.cor}"/>`;
+  }).join("");
+  const legenda = fatias.map((f, i) =>
+    `<g transform="translate(150,${28 + i * 21})">
+       <rect width="11" height="11" rx="2" fill="${f.cor}"/>
+       <text x="18" y="10" font-size="12" fill="currentColor">${esc(f.nome)}</text>
+       <text x="150" y="10" font-size="12" text-anchor="end"
+             font-family="IBM Plex Mono, monospace" fill="currentColor" opacity=".7">${f.valor}</text>
+     </g>`).join("");
+  return `<svg viewBox="0 0 320 ${Math.max(145, 34 + fatias.length * 21)}" role="img"
+    aria-label="Composição: ${fatias.map(f => f.nome + " " + f.valor).join(", ")}">
+    ${arcos}
+    <text x="${cx}" y="${cy + 1}" text-anchor="middle" font-size="20" font-weight="700"
+          fill="currentColor">${total}</text>
+    <text x="${cx}" y="${cy + 16}" text-anchor="middle" font-size="9.5"
+          fill="currentColor" opacity=".55">TOTAL</text>
+    ${legenda}
+  </svg>`;
+}
+
+async function vPainel() {
+  const d = await api("painel");
+  const s = d.resumo;
+  est.painel = d;
+
+  const kpi = (v, r, u, classe) =>
+    `<div class="kpi ${classe || ""}"><div class="v">${v}</div>
+       <div class="r">${r}</div>${u ? `<div class="u">${u}</div>` : ""}</div>`;
+
+  const kpis = [
+    kpi(fmt(s.bancos), "bancos", s.tabelas === 1 ? "1 tabela" : `${fmt(s.tabelas)} tabelas`),
+    kpi(fmt(s.registros), "registros", fmtBytes(s.bytes_reg) + " no .reg"),
+    kpi(fmt(s.usuarios), "usuários",
+        d.por_nivel.length === 1 ? "1 nível" : `${d.por_nivel.length} níveis`),
+    kpi(fmt(s.conexoes), "conexões",
+        s.sessoes_web === 1 ? "1 sessão web" : `${fmt(s.sessoes_web)} sessões web`, "viva"),
+    kpi(fmt(s.acessos), "acessos", `${s.ms_medio} ms em média`),
+    kpi(fmt(s.acessos_recusados), "recusados",
+        s.acessos ? ((s.acessos_recusados / s.acessos) * 100).toFixed(1).replace(".", ",") + "% do total" : "",
+        s.acessos_recusados ? "mal" : ""),
+    kpi(fmt(s.bloqueios), "IPs bloqueados", "", s.bloqueios ? "mal" : ""),
+    kpi(fmt(s.tabelas_em_ram), "em memória", fmtBytes(s.bytes_em_ram)),
+  ].join("");
+
+  const carta = (titulo, legenda, corpo, larga) =>
+    `<div class="carta ${larga ? "larga" : ""}"><h4>${titulo}</h4>
+       <p class="leg">${legenda}</p>${corpo}</div>`;
+
+  const CORES = { admin:"var(--vermelhao)", dono:"var(--laranja)", operador:"var(--ambar)",
+                  leitor:"var(--reg)", nenhum:"var(--texto-3)" };
+
+  return `<div class="kpis">${kpis}</div><div class="cartas">
+    ${carta("Operações por hora", "últimas 24 horas · as barras vermelhas são as recusadas",
+        areaHoras(d.por_hora, d.recusadas_por_hora), true)}
+    ${carta("Operações mais pedidas", "verde é o que passou, vermelho o que foi recusado",
+        barras(d.por_operacao.map(o => ({ nome:o.op, valor:o.ok, segundo:o.recusados,
+          texto: o.recusados ? `${fmt(o.ok)} + ${fmt(o.recusados)}✕` : fmt(o.ok) })),
+          { rotulo:112, titulo:"Operações mais pedidas" }))}
+    ${carta("Usuários por nível", "quem pode o quê, do config.json",
+        anel(d.por_nivel.map(n => ({ nome:n.nivel, valor:n.quantos, cor:CORES[n.nivel] || "var(--texto-3)" }))))}
+    ${carta("Maiores tabelas", "por registro · o tamanho é o do .reg",
+        barras(d.maiores_tabelas.map(t => ({ nome:t.tabela, valor:t.registros,
+          texto: `${fmt(t.registros)} · ${fmtBytes(t.bytes)}` })), { rotulo:150, texto:104 }))}
+    ${carta("De onde vêm", "por IP · vermelho é o que foi recusado",
+        barras(d.top_ips.map(i => ({ nome:i.ip, valor:i.acessos - i.recusados, segundo:i.recusados,
+          texto: fmt(i.acessos) })), { rotulo:118 }))}
+    ${carta("Bancos", "tabelas por banco de dados",
+        barras(d.bancos.map(b => ({ nome:b.nome, valor:b.tabelas,
+          texto: `${b.tabelas} tab · ${fmt(b.registros)} reg`, cor:"var(--reg)" })), { rotulo:104, texto:104 }))}
+    ${carta("Quem mais usou", "por login, no log inteiro",
+        barras(d.usuarios_ativos.map(u => ({ nome:u.usuario, valor:u.acessos, cor:"var(--memo)" })),
+          { rotulo:112 }))}
+  </div>`;
+}
+
 async function abrirAdmin(qual) {
   est.atual = null;
   $("#abas").innerHTML = "";
   const p = $("#painel");
   p.innerHTML = `<div class="centro">carregando…</div>`;
   try {
+    if (qual === "painel") {
+      $("#titulo").textContent = "Painel";
+      $("#subtitulo").textContent =
+        `${est.painel ? "" : ""}o servidor inteiro numa tela · uma única chamada ao servidor`;
+      p.innerHTML = await vPainel();
+      return;
+    }
     if (qual === "usuarios") {
       $("#titulo").textContent = "Usuários";
       $("#subtitulo").textContent = "cadastro do config.json · a senha nunca sai daqui";

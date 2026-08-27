@@ -96,6 +96,10 @@ impl Atividade {
             // Carregar tambem, porque carregar e varrer a tabela inteira.
             "memoria_carregar" | "memoria" | "SelectMemory" | "selectmemory"
             | "selecionar_memoria" => Atividade::Ler,
+            // O painel conta so o que quem olha poderia abrir, entao pede
+            // leitura -- e nao administrar. Um operador tem direito de ver o
+            // tamanho do que ele mesmo opera.
+            "painel" => Atividade::Ler,
             "inserir" => Atividade::Inserir,
             "atualizar" => Atividade::Alterar,
             "excluir" => Atividade::Excluir,
