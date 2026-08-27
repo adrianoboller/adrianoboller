@@ -13,6 +13,14 @@ pub fn agora() -> i64 {
         .unwrap_or(0)
 }
 
+/// Instante atual em milissegundos desde a epoca Unix.
+pub fn agora_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
 pub fn ler_exato<F: Read + Seek>(f: &mut F, offset: u64, buf: &mut [u8]) -> Result<()> {
     f.seek(SeekFrom::Start(offset))?;
     f.read_exact(buf)?;

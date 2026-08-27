@@ -18,6 +18,7 @@ use phxsql_core::value::{escrever_inline, ler_inline, Ponteiro, Value};
 use phxsql_core::{RowId, EXT_BIN, EXT_MEMO, EXT_NDX, EXT_REG};
 
 use crate::blob::{BlobFile, MAGIC_BIN, MAGIC_MEMO};
+use crate::log::{Evento, LogFile, Operacao, EXT_LOG};
 use crate::ndx::NdxFile;
 use crate::reg::RegFile;
 
@@ -33,6 +34,10 @@ pub struct Relatorio {
     pub indices: Vec<(String, u64)>,
     pub blocos_bin: (u64, u64),
     pub blocos_memo: (u64, u64),
+    /// Eventos conferidos no `.log`.
+    pub eventos: u64,
+    /// Volumes de cada arquivo paginado: `.reg`, `.bin`, `.memo`, `.log`.
+    pub volumes: (usize, usize, usize, usize),
 }
 
 pub struct Table {
@@ -45,6 +50,7 @@ pub struct Table {
     ndx: NdxFile,
     bin: BlobFile,
     memo: BlobFile,
+    log: LogFile,
 }
 
 fn caminho(diretorio: &Path, nome: &str, ext: &str) -> PathBuf {
@@ -61,20 +67,26 @@ impl Table {
         std::fs::create_dir_all(&diretorio)?;
         let nome = esquema.nome().to_string();
 
-        for ext in [EXT_REG, EXT_NDX, EXT_BIN, EXT_MEMO] {
-            let c = caminho(&diretorio, &nome, ext);
-            if c.exists() {
-                return Err(PhxError::Esquema(format!(
-                    "{} ja existe; use Table::abrir",
-                    c.display()
-                )));
+        let paginacao = esquema.paginacao();
+        for ext in [EXT_REG, EXT_NDX, EXT_BIN, EXT_MEMO, EXT_LOG] {
+            for c in [
+                caminho(&diretorio, &nome, ext),
+                diretorio.join(format!("{nome}{}.{ext}", paginacao.sufixo(1))),
+            ] {
+                if c.exists() {
+                    return Err(PhxError::Esquema(format!(
+                        "{} ja existe; use Table::abrir",
+                        c.display()
+                    )));
+                }
             }
         }
 
         let ndx = NdxFile::criar(caminho(&diretorio, &nome, EXT_NDX), &esquema)?;
-        let bin = BlobFile::criar(caminho(&diretorio, &nome, EXT_BIN), MAGIC_BIN)?;
-        let memo = BlobFile::criar(caminho(&diretorio, &nome, EXT_MEMO), MAGIC_MEMO)?;
-        let reg = RegFile::criar(caminho(&diretorio, &nome, EXT_REG), esquema.clone())?;
+        let bin = BlobFile::criar(&diretorio, &nome, EXT_BIN, MAGIC_BIN, paginacao)?;
+        let memo = BlobFile::criar(&diretorio, &nome, EXT_MEMO, MAGIC_MEMO, paginacao)?;
+        let log = LogFile::criar(&diretorio, &nome, paginacao)?;
+        let reg = RegFile::criar(&diretorio, &nome, esquema.clone())?;
 
         Ok(Table {
             nome,
@@ -84,16 +96,19 @@ impl Table {
             ndx,
             bin,
             memo,
+            log,
         })
     }
 
     /// Abre uma tabela existente. O esquema vem de dentro do proprio `.reg`.
     pub fn abrir(diretorio: impl AsRef<Path>, nome: &str) -> Result<Table> {
         let diretorio = diretorio.as_ref().to_path_buf();
-        let reg = RegFile::abrir(caminho(&diretorio, nome, EXT_REG))?;
+        let reg = RegFile::abrir(&diretorio, nome)?;
+        let paginacao = reg.esquema().paginacao();
         let ndx = NdxFile::abrir(caminho(&diretorio, nome, EXT_NDX))?;
-        let bin = BlobFile::abrir(caminho(&diretorio, nome, EXT_BIN), MAGIC_BIN)?;
-        let memo = BlobFile::abrir(caminho(&diretorio, nome, EXT_MEMO), MAGIC_MEMO)?;
+        let bin = BlobFile::abrir(&diretorio, nome, EXT_BIN, MAGIC_BIN, paginacao)?;
+        let memo = BlobFile::abrir(&diretorio, nome, EXT_MEMO, MAGIC_MEMO, paginacao)?;
+        let log = LogFile::abrir(&diretorio, nome, paginacao)?;
 
         if ndx.indices().len() != reg.esquema().indices().len() {
             return Err(PhxError::Corrompido(format!(
@@ -112,6 +127,7 @@ impl Table {
             ndx,
             bin,
             memo,
+            log,
         })
     }
 
@@ -332,6 +348,7 @@ impl Table {
                 return Err(e);
             }
         }
+        self.log.registrar(Operacao::Inclusao, rowid, 1)?;
         Ok(rowid)
     }
 
@@ -372,7 +389,7 @@ impl Table {
 
         let ponteiros_antigos = self.ponteiros(&antigo)?;
         let payload = self.montar_payload(valores)?;
-        self.reg.atualizar(rowid, &payload)?;
+        let versao = self.reg.atualizar(rowid, &payload)?;
 
         for (i, (antiga, nova)) in chaves_antigas.iter().zip(chaves_novas.iter()).enumerate() {
             if antiga != nova {
@@ -381,6 +398,7 @@ impl Table {
             }
         }
         self.liberar_externos(&ponteiros_antigos)?;
+        self.log.registrar(Operacao::Alteracao, rowid, versao)?;
         Ok(())
     }
 
@@ -398,7 +416,11 @@ impl Table {
         }
         let ponteiros = self.ponteiros(&payload)?;
         self.liberar_externos(&ponteiros)?;
-        self.reg.excluir(rowid)
+        let removeu = self.reg.excluir(rowid)?;
+        if removeu {
+            self.log.registrar(Operacao::Exclusao, rowid, 0)?;
+        }
+        Ok(removeu)
     }
 
     // ------------------------------------------------------------ leitura
@@ -482,6 +504,7 @@ impl Table {
         let indices = self.ndx.verificar()?;
         let blocos_bin = self.bin.verificar()?;
         let blocos_memo = self.memo.verificar()?;
+        let eventos = self.log.verificar()?;
 
         for (nome, qtd) in &indices {
             if *qtd != registros {
@@ -499,14 +522,77 @@ impl Table {
             indices,
             blocos_bin,
             blocos_memo,
+            eventos,
+            volumes: (
+                self.reg.volumes().len(),
+                self.bin.volumes().len(),
+                self.memo.volumes().len(),
+                self.log.volumes().len(),
+            ),
         })
+    }
+
+    /// Recria o `.ndx` inteiro a partir do `.reg`.
+    ///
+    /// Resolve tres coisas de uma vez: indice corrompido ou apagado, arvore
+    /// subocupada depois de muitas exclusoes (a remocao nao rebalanceia), e
+    /// indice novo acrescentado a uma tabela que ja tem dados.
+    ///
+    /// A varredura e feita na ordem de digitacao, entao a arvore sai com os
+    /// rowids inseridos em ordem crescente dentro de cada chave.
+    pub fn reindexar(&mut self) -> Result<Vec<(String, u64)>> {
+        // `NdxFile::criar` trunca o arquivo: a arvore antiga vai embora
+        // inteira, em vez de ser remendada.
+        self.ndx = NdxFile::criar(caminho(&self.diretorio, &self.nome, EXT_NDX), &self.esquema)?;
+
+        let quantos_indices = self.esquema.indices().len();
+        let mut rowid = 1;
+        while let Some((id, payload)) = self.reg.proximo_ativo(rowid)? {
+            let valores = self.decodificar(&payload, false)?;
+            for i in 0..quantos_indices {
+                let chave = self.codificar_chave(i, &valores)?;
+                self.ndx.inserir(i, &chave, id)?;
+            }
+            rowid = id + 1;
+        }
+        self.ndx.verificar()
+    }
+
+    /// Eventos do diario em ordem cronologica. `limite` zero devolve todos.
+    pub fn diario(&mut self, pular: u64, limite: u64) -> Result<Vec<Evento>> {
+        self.log.ler(pular, limite)
+    }
+
+    /// Eventos de um registro especifico.
+    pub fn historico(&mut self, rowid: RowId) -> Result<Vec<Evento>> {
+        self.log.historico(rowid)
+    }
+
+    /// Total de eventos registrados no diario.
+    pub fn eventos(&mut self) -> Result<u64> {
+        self.log.total()
+    }
+
+    /// Define quem assina as proximas operacoes no diario.
+    pub fn definir_usuario(&mut self, usuario: u32) {
+        self.log.usuario = usuario;
     }
 
     /// Ocupacao dos arquivos externos: `(.bin, .memo)`.
     pub fn estatisticas_externas(
-        &self,
-    ) -> (crate::blob::EstatisticaBlob, crate::blob::EstatisticaBlob) {
-        (self.bin.estatistica(), self.memo.estatistica())
+        &mut self,
+    ) -> Result<(crate::blob::EstatisticaBlob, crate::blob::EstatisticaBlob)> {
+        Ok((self.bin.estatistica()?, self.memo.estatistica()?))
+    }
+
+    /// Volumes existentes de cada arquivo paginado.
+    pub fn volumes_por_arquivo(&self) -> (Vec<u32>, Vec<u32>, Vec<u32>, Vec<u32>) {
+        (
+            self.reg.volumes(),
+            self.bin.volumes(),
+            self.memo.volumes(),
+            self.log.volumes(),
+        )
     }
 
     /// Paginas ocupadas pelo `.ndx`, incluindo a pagina 0 de cabecalho.
@@ -524,6 +610,7 @@ impl Table {
         self.ndx.sincronizar()?;
         self.bin.sincronizar()?;
         self.memo.sincronizar()?;
+        self.log.sincronizar()?;
         Ok(())
     }
 }

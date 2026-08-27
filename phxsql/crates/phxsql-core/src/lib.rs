@@ -19,6 +19,7 @@ pub mod crc;
 pub mod datahora;
 pub mod error;
 pub mod keyenc;
+pub mod paginacao;
 pub mod schema;
 pub mod types;
 pub mod value;
