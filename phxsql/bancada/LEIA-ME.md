@@ -44,9 +44,26 @@ comparar escalas diferentes engana: tabela menor tem árvore mais rasa e cabe
 melhor na cache, então parte de qualquer ganho vem do tamanho, não do motor.
 
 Por isso a corrida de 3.000.000 ficou com nome próprio ao lado da de
-10.000.000. A comparação limpa entre elas é **o primeiro milhão**, que é o
+10.000.000. A comparação limpa entre escalas diferentes é **o primeiro milhão**, que é o
 mesmo trabalho nas duas: foi assim que se mediu o efeito do CRC slice-by-8,
 5.089/s → 16.063/s.
+
+Melhor ainda é comparar a **mesma escala em dois momentos**, e é para isso que
+a corrida de 3.000.000 é refeita a cada rodada de desempenho. Ela isolou o
+efeito da rodada da unicidade:
+
+| fase | antes | depois | ganho |
+|---|---:|---:|---:|
+| inserir | 209,09 s | 159,40 s | 1,31× |
+| buscar | 1,06 s | 0,55 s | 1,91× |
+| varrer | 1,76 s | 0,66 s | 2,69× |
+| atualizar | 0,66 s | 0,56 s | 1,18× |
+| excluir | 1,87 s | 1,67 s | 1,12× |
+
+E ensinou uma lição: o conserto que dava nome à rodada — a conferência de
+unicidade — foi o **menor** dos cinco ganhos. Quem rendeu foi o `descer`
+deixando de reler a folha, que tirou uma página inteira, com o CRC de 4 KB
+junto, de *toda* busca do motor.
 
 ## O que se mede
 
