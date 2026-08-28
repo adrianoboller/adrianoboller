@@ -10,6 +10,78 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
+## 0.4.1 — 2026-08-28
+
+Rodada de revisão: nada de recurso novo, só o que a leitura do próprio projeto
+achou de errado.
+
+### Corrigido
+
+- **A bancada media coisas diferentes dos dois lados.** Na varredura por faixa
+  o MySQL(R) recebia `COUNT(*) + SUM(valor)` sobre 1.250.000 linhas enquanto o
+  PhxSql lia 20.000 — mesma pergunta, 1,6% do trabalho. O «5× mais rápido» que
+  saía dali não era o motor: era o serviço menor. A fase `varrer` de
+  `examples/carga.rs` passou a ler a faixa inteira e somar o valor, e a
+  medição de dez milhões foi **refeita do zero**.
+
+  É o segundo erro deste tipo — o primeiro favorecia o MySQL(R), este
+  favorecia o PhxSql. Por isso a bancada ganhou uma quarta regra: *mesma
+  quantidade de trabalho*, não só mesma forma de pergunta.
+
+- **Campo com nome errado no `config.json` era silencioso.** Quem quisesse
+  trocar a porta escreveria `"porta": 5001`, e o campo se chama `bind`: o
+  servidor subia na 5000 sem uma palavra. O arranque agora lista os campos que
+  não reconheceu e diz que o valor foi ignorado. Não vira erro — config antigo
+  continua subindo.
+
+- **Seis marcas de terceiros sem o `(R)`**: `MySQL` em `docs/REPLICACAO.md` e
+  no dossiê, `HFSQL` em dois módulos, `SQLite` e `Clarion` no `docs/PLANO.md`.
+
+- **O painel tem sete gráficos, não nove.** O README e o dossiê diziam nove.
+  Contados: um de área, um de anel e cinco de barras.
+
+- **A versão que o servidor anunciava estava errada.** O `Cargo.toml` do
+  workspace ainda dizia `0.1.0` enquanto este changelog ia em 0.4.0 e os
+  pacotes saíam com 0.4.0 no nome. Como `VERSAO` é `env!("CARGO_PKG_VERSION")`,
+  o `ping`, o `quem_sou` e o rodapé do Centro de Controle respondiam `0.1.0` a
+  quem perguntasse. Cliente que decide compatibilidade pela versão estava
+  recebendo a resposta errada há três lançamentos.
+
+- **Números velhos no dossiê.** A capa dizia 276 testes (são 280) e 3.184
+  linhas de doc (são 3.261); o rodapé ainda dizia *PhxSql 0.3.0 · 19.242
+  linhas · 69 KB de interface*, três números defasados de uma vez. Remedidos:
+  20.224 linhas de Rust, 158 KiB de interface, 280 testes. A regra do projeto é
+  medir, e ela vale para o documento que apresenta o projeto.
+
+- **A bancada não estava no dossiê.** A comparação com o MySQL(R) em dez
+  milhões de registros — a maior medição já feita aqui — existia só em
+  `bancada/` e no roteiro, como uma linha marcada «pronto». Virou a seção 16,
+  com a figura, a tabela dos oito números e o diagnóstico da inserção.
+
+- **Três pedidos não estavam nem registrados.** Triggers, stored procedures e
+  jobs foram pedidos e não constavam do roteiro do dossiê — nem como «a fazer».
+  Ausência que não está escrita é ausência que se esquece.
+
+### Adicionado
+
+- **`docs/PENDENCIAS.md`.** A revisão do que falta, em um lugar só: o que foi
+  pedido e não existe, o que depende de decisão do Adriano, o que está travado
+  de fora, o checklist das perguntas já respondidas, e o único buraco que a
+  medição apontou sem ninguém pedir.
+
+- **`empacotar.sh`.** Monta os pacotes de Linux e Windows e o zip de fontes.
+  Os das rodadas anteriores foram feitos à mão — pacote que ninguém consegue
+  refazer é pacote em que não se deve confiar. O zip de fontes sai de
+  `git archive`, que respeita o `.gitignore` de graça.
+
+- **`docs/dossie/numeros-da-bancada.py`.** A figura, a tabela e o diagnóstico
+  da seção 16 passam a ser **gerados** de `bancada/resultados.json`. Número
+  digitado envelhece calado; número gerado não tem como divergir da medição.
+
+- **`.gitignore`** para os 2,4 GB que a bancada cria em `bancada/phxsql/`.
+
+---
+
 ## 0.4.0 — 2026-08-27
 
 ### Adicionado

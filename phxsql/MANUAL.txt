@@ -159,7 +159,7 @@ Veja o diario:
     WINDOWS   phxsqld.exe --config config.json
 
     No arranque ele imprime:
-        PhxSql 0.1.0 escutando em 0.0.0.0:5000 | base dados | papel isolado
+        PhxSql 0.4.1 escutando em 0.0.0.0:5000 | base dados | papel isolado
         log de acessos: acessos.log
 
 7.4 Servico
@@ -688,7 +688,7 @@ NIVEL: UMA PALAVRA NO LUGAR DE DEZ BOOLEANOS
 O cadastro fica no config.json, com nome completo, login, senha, email,
 telefone, supervisor e o poder sobre cada base. A SENHA E GUARDADA COMO HASH.
 
-10.1 Gerar o hash
+14.1 Gerar o hash
 
     echo -n 'a senha de verdade' | phxsqld --senha
     "senha_hash": "pbkdf2-sha256$210000$7570c880...$becbc17c..."
@@ -697,7 +697,7 @@ telefone, supervisor e o poder sobre cada base. A SENHA E GUARDADA COMO HASH.
     shell nem aparece no ps. Senha em texto puro no campo "senha" funciona,
     mas o servidor avisa alto no arranque.
 
-10.2 O cadastro
+14.2 O cadastro
 
     "root": { "id":1, "nome":"...", "login":"root", "senha_hash":"...",
               "email":"...", "telefone":"" },
@@ -722,7 +722,7 @@ telefone, supervisor e o poder sobre cada base. A SENHA E GUARDADA COMO HASH.
 
     O root e SEMPRE supervisor e sempre ativo.
 
-10.3 As dez atividades
+14.3 As dez atividades
 
     ler          bancos, tabelas, esquema, ler, varrer, buscar
     inserir      inserir
@@ -738,7 +738,7 @@ telefone, supervisor e o poder sobre cada base. A SENHA E GUARDADA COMO HASH.
     NEGA POR OMISSAO: atividade que nao aparece vale false. Base listada
     manda (o "*" nao completa o que faltou). Sem a base e sem "*", nega tudo.
 
-10.4 Os tres portoes
+14.4 Os tres portoes
 
     pedido -> token -> login -> permissao -> executa
               (rede)  (identidade) (poder)
@@ -755,7 +755,7 @@ telefone, supervisor e o poder sobre cada base. A SENHA E GUARDADA COMO HASH.
     A autenticacao acontece UMA VEZ POR CONEXAO. PBKDF2 custa ~100 ms de
     proposito: irrelevante uma vez, inviavel a cada pedido.
 
-10.5 Conferir
+14.5 Conferir
 
     phxsqld --usuarios
 
@@ -774,7 +774,7 @@ telefone, supervisor e o poder sobre cada base. A SENHA E GUARDADA COMO HASH.
 
 15. SEGURANCA
 --------------------------------------------------------------------------------
-11.1 As tres formas de login
+15.1 As tres formas de login
 
     Da mais segura para a menos:
 
@@ -799,7 +799,7 @@ telefone, supervisor e o poder sobre cada base. A SENHA E GUARDADA COMO HASH.
     TEXTO PURO        a senha trafega legivel
         {"token":"...","op":"login","usuario":"adriano","senha":"..."}
 
-11.2 Politica: o que ninguem pede
+15.2 Politica: o que ninguem pede
 
     Na secao "seguranca" do config.json:
 
@@ -816,7 +816,7 @@ telefone, supervisor e o poder sobre cada base. A SENHA E GUARDADA COMO HASH.
     GRAVE (comando ou base proibida)  bloqueia o IP NA HORA
     LEVE  (token, senha, ip de fora)  conta na janela e bloqueia no limite
 
-11.3 A lista de bloqueio
+15.3 A lista de bloqueio
 
     O blacklist.json guarda IP, data e hora, motivo, comando e ate quando:
 
@@ -836,7 +836,7 @@ telefone, supervisor e o poder sobre cada base. A SENHA E GUARDADA COMO HASH.
     O servidor rele o arquivo quando ele muda, entao o --desbloquear vale
     na hora, sem reiniciar.
 
-11.4 A regra de firewall
+15.4 A regra de firewall
 
         "firewall": {
           "ligado": false,
@@ -858,7 +858,7 @@ telefone, supervisor e o poder sobre cada base. A SENHA E GUARDADA COMO HASH.
 
     Detalhes em docs/SEGURANCA.md.
 
-11.5 O basico
+15.5 O basico
 
     - TROQUE O TOKEN antes de expor a porta. O binario recusa subir com o
       token em branco.

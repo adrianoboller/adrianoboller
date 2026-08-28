@@ -1,6 +1,6 @@
 //! # phxsql-store
 //!
-//! O motor de armazenamento do PhxSql, no modelo de quatro arquivos do HFSQL.
+//! O motor de armazenamento do PhxSql, no modelo de quatro arquivos do HFSQL(R).
 //!
 //! ```text
 //! cadastroClientes.reg   registros na ordem de digitacao (heap de slots fixos)

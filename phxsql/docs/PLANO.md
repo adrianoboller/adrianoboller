@@ -19,7 +19,7 @@ rust-version 1.88.0) e medido:
 | `Cargo.toml` → `description` | "Ergonomic wrapper for SQLite" (citacao literal do repositorio) |
 
 **Conclusão: rusqlite não é um motor de banco em Rust.** É uma casca
-ergonômica sobre a biblioteca C do SQLite. Parser SQL, planejador de consulta,
+ergonômica sobre a biblioteca C do SQLite(R). Parser SQL, planejador de consulta,
 B-tree, pager, WAL, journal — nada disso está em Rust; está nas 270 mil linhas
 de `sqlite3.c` que o `libsqlite3-sys` compila junto.
 
@@ -268,7 +268,7 @@ entra agora, em vez de virar uma migração depois.
 
 Uma tabela de 999 volumes não pode abrir 999 descritores de arquivo. Abre-se o
 volume `_001` (que traz o esquema) e os demais sob demanda, com um cache LRU de
-descritores. É exatamente o *lazy open* do `FileManager` do Clarion.
+descritores. É exatamente o *lazy open* do `FileManager` do Clarion(R).
 
 Cada volume carrega o cabeçalho completo, com o seu número, o
 `registros_por_arquivo` e o total de volumes — se o `_001` se perder, os outros

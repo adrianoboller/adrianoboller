@@ -145,6 +145,23 @@ fn main() -> ExitCode {
         }
     };
 
+    // Campo com nome errado nao derruba nada -- e por isso que precisa gritar.
+    // O servidor sobe com o padrao e tudo PARECE certo ate alguem tentar
+    // conectar na porta que nunca mudou.
+    if !config.estranhas.is_empty() {
+        eprintln!(
+            "AVISO: {} nao reconhece {}: {}",
+            caminho,
+            if config.estranhas.len() == 1 {
+                "o campo"
+            } else {
+                "os campos"
+            },
+            config.estranhas.join(", ")
+        );
+        eprintln!("       o valor foi IGNORADO. A porta de dados e \"bind\", nao \"porta\".");
+    }
+
     if args.iter().any(|a| a == "--acessos") {
         return match LogAcessos::resumo_por_ip(&config.log_acessos) {
             Ok(resumo) if resumo.is_empty() => {

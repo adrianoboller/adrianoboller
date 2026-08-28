@@ -120,17 +120,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("achados: {achados}");
         }
         "varrer" => {
-            // Faixa por indice nao-unico: as linhas de uma cidade.
+            // Faixa por indice nao-unico: TODAS as linhas de uma cidade, e a
+            // soma do valor. Precisa ser todas: do outro lado o motor recebe
+            // um COUNT(*) + SUM(valor), que le a faixa inteira. Ler so um
+            // pedaco daria vantagem pelo tamanho do trabalho, nao pela
+            // velocidade -- foi exatamente esse o defeito da primeira bancada.
             let mut t = Table::abrir(&dir, "precos")?;
             let rowids = t.buscar("porCidade", &[Value::Str("Blumenau".into())])?;
             let mut somados = 0u64;
-            for r in rowids.iter().take(n as usize) {
-                if t.ler(*r)?.is_some() {
+            let mut soma: i128 = 0;
+            for r in rowids.iter() {
+                if let Some(linha) = t.ler(*r)? {
+                    if let Some(Value::Decimal(v)) = linha.get(3) {
+                        soma += *v;
+                    }
                     somados += 1;
                 }
             }
             feitas = somados;
-            println!("linhas da cidade: {}", rowids.len());
+            println!("linhas da cidade: {} soma: {soma}", rowids.len());
         }
         "atualizar" => {
             let mut t = Table::abrir(&dir, "precos")?;

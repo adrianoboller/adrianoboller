@@ -26,7 +26,7 @@ pub enum ColumnType {
     Real4,
     Real8,
     /// Decimal exato de ate 38 digitos, guardado como i128 escalado.
-    /// Equivale ao DECIMAL do Clarion(R) e ao numerico do HFSQL.
+    /// Equivale ao DECIMAL do Clarion(R) e ao numerico do HFSQL(R).
     Decimal {
         precisao: u8,
         escala: u8,

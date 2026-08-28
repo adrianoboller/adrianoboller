@@ -16,8 +16,14 @@ Publique sempre **passando essa URL**, para cair na mesma página em vez de
 criar outra. Instruções e as armadilhas de estilo em
 `phxsql/docs/dossie/LEIA-ME.md`.
 
-Os números do painel são **medidos, nunca estimados** — já saíram errados uma
-vez por arredondamento para cima.
+Os números do painel são **medidos, nunca estimados** — já saíram errados três
+vezes: arredondamento para cima, depois 276 testes quando eram 280, depois um
+rodapé inteiro parado numa versão anterior. Os da seção da bancada não se
+digitam mais: `python3 phxsql/docs/dossie/numeros-da-bancada.py` os regenera de
+`bancada/resultados.json`.
+
+O que falta no projeto está em `phxsql/docs/PENDENCIAS.md` — atualize junto com
+o dossiê.
 
 ## A marca é oficial
 
@@ -39,6 +45,13 @@ técnico enquanto não forem.
 para Windows funcionar de primeira e o que permite `cargo build --offline`.
 JSON, CRC-32, SHA-256, HMAC e PBKDF2 são escritos aqui. Se algo parecer exigir
 uma crate, primeiro pergunte — não acrescente.
+
+**Bancada compara trabalho igual, não só pergunta igual.** Os dois erros já
+cometidos aqui saíram do mesmo lugar e apontaram para lados opostos: primeiro
+um `WHERE id IN (…)` contra vinte mil buscas separadas (41× a favor do outro
+motor), depois um `COUNT(*)+SUM` sobre 1.250.000 linhas contra a leitura de
+20.000 (5× a favor do nosso). Nenhum dos dois aparecia no número. As quatro
+regras estão em `phxsql/bancada/LEIA-ME.md`.
 
 **Criptografia se confere contra vetor oficial.** Nada de "parece certo": os
 testes trazem FIPS 180-4, RFC 4231 e os vetores de PBKDF2.

@@ -31,7 +31,7 @@ bytes lidos e escritos (`read_bytes`/`write_bytes`). Do lado do MySQL(R) o
 trabalho acontece no `mysqld`, então os contadores dele entram **por
 diferença** em volta de cada fase.
 
-## As três regras que fazem a comparação valer
+## As quatro regras que fazem a comparação valer
 
 1. **Mesmos dados.** O gerador é previsível, sem sorteio: os dois motores
    recebem exatamente as mesmas linhas.
@@ -41,6 +41,16 @@ diferença** em volta de cada fase.
    primeira versão desta bancada mandava ao MySQL(R) um único
    `WHERE id IN (…)` e ao PhxSql vinte mil buscas separadas — o número saía
    41× a favor do MySQL(R) pela *forma da pergunta*, não pelo motor.
+4. **Mesma quantidade de trabalho.** Forma igual não basta: a varredura por
+   faixa pedia ao MySQL(R) um `COUNT(*) + SUM(valor)` sobre 1.250.000 linhas
+   e ao PhxSql a leitura de apenas 20.000 delas. Mesma pergunta, 1,6% do
+   trabalho — e o resultado saía 5× a favor do PhxSql sem que o motor
+   tivesse feito nada por isso. Corrigido: a fase `varrer` lê a faixa inteira
+   e soma o valor, como o outro lado.
+
+Estas duas regras vieram do mesmo lugar: **os dois erros favoreciam um lado
+diferente, e nenhum dos dois era visível no número**. Bancada mal montada mente
+com número, que é a mentira mais convincente que existe.
 
 ## O que NÃO é comparado
 

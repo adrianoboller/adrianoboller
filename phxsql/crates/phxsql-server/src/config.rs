@@ -353,6 +353,45 @@ pub struct Config {
     pub web: Web,
     /// Backup agendado.
     pub backup: Backup,
+    /// Campos do arquivo que o servidor nao reconhece.
+    ///
+    /// Nao e erro -- config antigo continua subindo. E aviso: campo escrito
+    /// errado e silencioso, e silencio aqui custa caro. Quem escreve
+    /// `"porta": 5001` esperando trocar a porta (o campo e `bind`) descobria
+    /// so quando ninguem conseguia conectar.
+    pub estranhas: Vec<String>,
+}
+
+/// Campos de primeiro nivel que o `config.json` pode trazer.
+///
+/// Os que comecam com `_` sao comentario -- o JSON nao tem comentario, e os
+/// exemplos usam `_web`, `_backup` e afins para explicar a secao seguinte.
+const CAMPOS_CONHECIDOS: [&str; 16] = [
+    "bind",
+    "base",
+    "token",
+    "max_linhas",
+    "log_acessos",
+    "ips_permitidos",
+    "conexoes_max",
+    "timeout_s",
+    "somente_leitura",
+    "espelho",
+    "replicacao",
+    "root",
+    "usuarios",
+    "seguranca",
+    "web",
+    "backup",
+];
+
+/// O que o arquivo trouxe e o servidor nao sabe ler.
+fn chaves_estranhas(j: &Json) -> Vec<String> {
+    j.chaves()
+        .into_iter()
+        .filter(|k| !k.starts_with('_') && !CAMPOS_CONHECIDOS.contains(k))
+        .map(str::to_string)
+        .collect()
 }
 
 impl Default for Config {
@@ -374,6 +413,7 @@ impl Default for Config {
             blacklist: PathBuf::from("blacklist.json"),
             web: Web::default(),
             backup: Backup::default(),
+            estranhas: Vec::new(),
         }
     }
 }
@@ -466,6 +506,7 @@ impl Config {
             ),
             web: Web::de_json(j),
             backup: Backup::de_json(j)?,
+            estranhas: chaves_estranhas(j),
         })
     }
 
@@ -618,6 +659,41 @@ mod tests {
         assert_eq!(c.replicacao.papel, Papel::Isolado);
         assert!(c.ips_permitidos.is_empty());
         c.validar().unwrap();
+    }
+
+    #[test]
+    fn campo_com_nome_errado_e_apontado() {
+        // O caso real: quem quer trocar a porta escreve "porta", que nao
+        // existe -- o campo e "bind". Sem aviso, o servidor sobe na 5000 e
+        // parece obedecer.
+        let j = Json::analisar(
+            r#"{"token":"t","porta":5001,"_comentario":"isto e comentario","bind":"0.0.0.0:5000"}"#,
+        )
+        .unwrap();
+        let c = Config::de_json(&j).unwrap();
+        assert_eq!(c.estranhas, vec!["porta".to_string()]);
+        assert_eq!(c.bind, "0.0.0.0:5000");
+    }
+
+    #[test]
+    fn config_so_com_campos_conhecidos_nao_avisa() {
+        let j = Json::analisar(r#"{"token":"t","bind":"0.0.0.0:5000","espelho":true}"#).unwrap();
+        assert!(Config::de_json(&j).unwrap().estranhas.is_empty());
+    }
+
+    #[test]
+    fn os_exemplos_nao_tem_campo_estranho() {
+        // Se um exemplo trouxesse campo que o servidor ignora, o aviso
+        // apareceria para todo mundo que comeca por ele.
+        for (n, texto) in [
+            (1, crate::CONFIG_EXEMPLO_01),
+            (2, crate::CONFIG_EXEMPLO_02),
+            (3, crate::CONFIG_EXEMPLO_03),
+        ] {
+            let j = Json::analisar(texto).unwrap();
+            let c = Config::de_json(&j).unwrap();
+            assert!(c.estranhas.is_empty(), "exemplo {n}: {:?}", c.estranhas);
+        }
     }
 
     #[test]

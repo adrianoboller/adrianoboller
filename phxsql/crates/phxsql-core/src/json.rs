@@ -46,6 +46,18 @@ impl Json {
         }
     }
 
+    /// Nomes dos campos, na ordem do arquivo. Vazio se nao for objeto.
+    ///
+    /// Serve para conferir o que o arquivo trouxe DE FATO, e nao so o que se
+    /// foi buscar: campo com nome errado passa despercebido quando so se
+    /// pergunta pelos que se conhece.
+    pub fn chaves(&self) -> Vec<&str> {
+        match self {
+            Json::Objeto(pares) => pares.iter().map(|(k, _)| k.as_str()).collect(),
+            _ => Vec::new(),
+        }
+    }
+
     pub fn texto(&self) -> Option<&str> {
         match self {
             Json::Texto(s) => Some(s),

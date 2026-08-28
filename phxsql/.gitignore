@@ -1,2 +1,12 @@
 /target
 **/*.rs.bk
+
+# A bancada gera dados de verdade: 2,4 GB de tabela para 10 milhoes de linhas.
+# Nao vai para o repositorio -- refaz-se com `python3 bancada/medir.py`.
+/bancada/phxsql/
+/bancada/comando.sql
+/pacotes/
+
+# Rodar o phxsqld a partir do repositorio deixa log e lista de bloqueio.
+/exemplos/acessos.log
+/exemplos/blacklist.json

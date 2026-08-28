@@ -19,12 +19,28 @@ impossível de cumprir depois que o diretório temporário sumisse.
 Os números do painel são medidos, nunca estimados:
 
 ```bash
-find crates -name '*.rs' | xargs cat | wc -l                       # linhas de Rust
-cargo test --workspace --release 2>&1 | grep '^test result' \
-  | awk -F'[ ;]' '{s+=$4} END {print s}'                           # testes
+find . -name '*.rs' -not -path './target/*' | xargs cat | wc -l    # linhas de Rust
+cargo test --workspace 2>&1 | grep '^test result' \
+  | awk '{s+=$4} END {print s}'                                    # testes
 $(( $(grep -c '^\[\[package\]\]' Cargo.lock) - 4 ))                # dependências externas
-cat docs/*.md MANUAL.txt README.md | wc -l                         # linhas de doc
+cat docs/*.md README.md CHANGELOG.md MANUAL.txt \
+    bancada/LEIA-ME.md marca/LEIA-ME.md docs/dossie/LEIA-ME.md \
+  | wc -l                                                          # linhas de doc
 ```
+
+**O conjunto de arquivos importa.** A receita de linhas de doc já esteve mais
+curta do que o número publicado — e aí ninguém consegue reproduzir a capa.
+Se acrescentar documento novo, acrescente aqui também.
+
+Os números da **seção 16 (a bancada)** não se digitam: saem de
+
+```bash
+python3 docs/dossie/numeros-da-bancada.py
+```
+
+que lê `bancada/resultados.json` e reescreve a figura, a tabela e o parágrafo
+do diagnóstico entre as marcas `<!-- bancada:… -->`. Número digitado envelhece
+calado; foi assim que a capa passou três lançamentos dizendo 276 testes.
 
 Duas armadilhas de estilo da página:
 

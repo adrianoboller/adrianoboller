@@ -30,7 +30,7 @@ base/
     └── Y/  notas.reg ...         schema Y
 ```
 
-## Por que quatro arquivos
+## Por que cinco arquivos
 
 Cada arquivo tem um padrão de acesso diferente, e separá-los deixa cada um
 otimizado para o seu:
@@ -50,7 +50,7 @@ reaproveitamento de espaço perde.
 
 ## Estado atual
 
-O motor de armazenamento está completo e testado: **280 testes**, sem nenhuma
+O motor de armazenamento está completo e testado: **283 testes**, sem nenhuma
 dependência externa (só a `std`), o que faz o projeto compilar offline.
 
 | Peça | Situação |
@@ -76,10 +76,15 @@ dependência externa (só a `std`), o que faz o projeto compilar offline.
 | Backup com manifesto SHA-256, ZIP e agendamento | pronto |
 | Nível de usuário: nenhum, leitor, operador, dono, admin | pronto |
 | Tema claro e escuro, console para mais de um servidor | pronto |
-| Painel com nove gráficos, agregado numa chamada | pronto |
+| Painel com sete gráficos, agregado numa chamada | pronto |
 | phx-grid na aba Conteúdo: agrupamento por arrastar | pronto |
 | Espelho `.bkp`: segunda chance do `.reg` | pronto |
 | Bancada medida contra o MySQL(R), 10 milhões de registros | pronto |
+| Replicação — `.log` v2 com imagem da linha (as portas já entram no `config.json`) | desenhada |
+| Jobs de execução — operação nomeada no relógio | pendente |
+| Triggers nas três operações | pendente |
+| Stored procedures | pendente |
+| Parar e subir a porta de dados pela interface | pendente |
 | Servidor MCP | pendente |
 | Camada SQL (tabela virtual via rusqlite, atrás de *feature*) | pendente |
 | Driver ODBC de saída, depois cliente ODBC/OLE DB | pendente |
@@ -87,7 +92,8 @@ dependência externa (só a `std`), o que faz o projeto compilar offline.
 | Compactação, transações, concorrência | pendente |
 
 O roteiro completo, com as decisões tomadas e o que cada peça depende, está em
-[`docs/PLANO.md`](docs/PLANO.md).
+[`docs/PLANO.md`](docs/PLANO.md); a revisão do que ainda falta, com o porquê de
+cada ausência, em [`docs/PENDENCIAS.md`](docs/PENDENCIAS.md).
 
 ## Uso
 

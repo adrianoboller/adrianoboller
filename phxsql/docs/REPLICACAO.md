@@ -183,7 +183,7 @@ Três operações novas, no mesmo JSON Lines da porta 5000:
 A réplica roda um laço: pergunta a posição, puxa em lotes, aplica, repete.
 Quando o Source responde `"fim":true`, ela espera e pergunta de novo — ou
 mantém a conexão aberta e o Source segura a resposta até ter novidade
-(long-poll), que é o mais parecido com o binlog dump do MySQL.
+(long-poll), que é o mais parecido com o binlog dump do MySQL(R).
 
 ---
 
