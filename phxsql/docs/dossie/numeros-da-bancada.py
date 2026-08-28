@@ -22,7 +22,16 @@ import sys
 
 RAIZ = pathlib.Path(__file__).resolve().parents[2]
 MEDICAO = RAIZ / "bancada" / "resultados.json"
-DOSSIE = RAIZ / "docs" / "dossie" / "dossie-phxsql.html"
+# Qual dossie reescrever. O nome mudou na 0.15.0 e pode mudar de novo:
+# passar o caminho como primeiro argumento evita editar o script a cada vez.
+def _alvo():
+    for a in sys.argv[1:]:
+        if a.endswith(".html"):
+            return pathlib.Path(a)
+    return RAIZ / "docs" / "dossie" / "dossie-phxsql-0.15.html"
+
+
+DOSSIE = _alvo()
 PENDENCIAS = RAIZ / "docs" / "PENDENCIAS.md"
 
 ABRE = "<!-- bancada:inicio (gerado por docs/dossie/numeros-da-bancada.py) -->"

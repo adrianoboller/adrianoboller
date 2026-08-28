@@ -37,12 +37,25 @@ import subprocess
 import sys
 
 RAIZ = pathlib.Path(__file__).resolve().parents[2]
-DOSSIE = RAIZ / "docs" / "dossie" / "dossie-phxsql.html"
+# Qual dossie reescrever. O nome mudou na 0.15.0 e pode mudar de novo:
+# passar o caminho como primeiro argumento evita editar o script a cada vez.
+def _alvo():
+    for a in sys.argv[1:]:
+        if a.endswith(".html"):
+            return pathlib.Path(a)
+    return RAIZ / "docs" / "dossie" / "dossie-phxsql-0.15.html"
+
+
+DOSSIE = _alvo()
 
 ABRE = "<!-- projeto:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->"
 FECHA = "<!-- projeto:fim -->"
 ABRE_RODAPE = "<!-- rodape:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->"
 FECHA_RODAPE = "<!-- rodape:fim -->"
+# O selo da capa tambem: ele ficou quatro lancamentos dizendo 0.11.0, que e
+# exatamente o erro que este script existe para nao deixar acontecer.
+ABRE_SELO = "<!-- selo:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->"
+FECHA_SELO = "<!-- selo:fim -->"
 
 # Os arquivos fisicos de uma tabela, sem o espelho `.bkp` -- que e opcional e
 # por isso nao entra na contagem que a capa mostra.
@@ -70,7 +83,8 @@ def quantos_crates() -> int:
 # A receita do LEIA-ME, na letra. Documento novo entra nos DOIS lugares.
 DOCS_AVULSOS = (
     "README.md", "CHANGELOG.md", "MANUAL.txt",
-    "bancada/LEIA-ME.md", "marca/LEIA-ME.md", "docs/dossie/LEIA-ME.md",
+    "bancada/LEIA-ME.md", "bancada/replicacao/LEIA-ME.md",
+    "marca/LEIA-ME.md", "docs/dossie/LEIA-ME.md",
 )
 
 # A interface sao os TRES arquivos que o `http.rs` embute com `include_str!`.
@@ -201,15 +215,18 @@ def main() -> None:
   mais {n['kib']} KiB de interface · {milhar(n['testes'])} testes ·
   {'nenhuma dependência externa' if n['deps'] == 0 else str(n['deps']) + ' dependências externas'}.
   Especificação byte a byte em <code>docs/FORMATO.md</code>, cadastro e
-  permissões em <code>docs/USUARIOS.md</code>, desenho da replicação em
+  permissões em <code>docs/USUARIOS.md</code>, a replicação em
   <code>docs/REPLICACAO.md</code>, roteiro em <code>docs/PLANO.md</code>,
   o DbLink em <code>docs/DBLINK.md</code>, as junções em <code>docs/JUNCOES.md</code>,
   a revisão contra os motores maduros em <code>docs/COMPARACAO.md</code>,
   e o que ainda falta em <code>docs/PENDENCIAS.md</code>.</p>
   """
 
+    selo = f'\n  <div class="selo">Dossiê técnico · versão {n["versao"]}</div>\n  '
+
     html = trocar(html, ABRE, FECHA, painel, "painel da capa")
     html = trocar(html, ABRE_RODAPE, FECHA_RODAPE, rodape, "rodapé")
+    html = trocar(html, ABRE_SELO, FECHA_SELO, selo, "selo da capa")
     DOSSIE.write_text(html, encoding="utf-8")
     print(f"\ndossiê atualizado: {DOSSIE.relative_to(RAIZ)}")
 

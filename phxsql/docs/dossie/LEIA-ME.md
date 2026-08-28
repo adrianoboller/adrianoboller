@@ -1,8 +1,12 @@
 # Fonte do dossiê
 
-`dossie-phxsql.html` é o fonte da página publicada em:
+`dossie-phxsql-0.15.html` é o fonte da página publicada em:
 
 **https://claude.ai/code/artifact/5c14044e-0dc5-4832-b015-224ab1e40033**
+
+O nome mudou na 0.15.0 — o dossiê foi refeito com o estado medido daquela
+versão. Os dois scripts abaixo aceitam o caminho do HTML como argumento, para
+que trocar o nome de novo não exija editá-los.
 
 Ele mora aqui, e não só na máquina de quem publicou, para que qualquer sessão
 futura consiga atualizá-lo. Sem isto, a regra de manter o dossiê em dia seria
@@ -10,7 +14,7 @@ impossível de cumprir depois que o diretório temporário sumisse.
 
 ## Como atualizar
 
-1. Edite `dossie-phxsql.html`.
+1. Edite `dossie-phxsql-0.15.html`.
 2. Publique **passando a URL acima**, para cair na mesma página em vez de criar
    uma nova.
 
@@ -22,8 +26,9 @@ impossível de cumprir depois que o diretório temporário sumisse.
 python3 docs/dossie/numeros-do-projeto.py
 ```
 
-que mede tudo e reescreve os dois blocos entre as marcas `<!-- projeto:… -->`
-e `<!-- rodape:… -->`. Ele segue **a receita abaixo, na letra** — mexeu numa,
+que mede tudo e reescreve os três blocos entre as marcas `<!-- projeto:… -->`,
+`<!-- rodape:… -->` e `<!-- selo:… -->` — o selo entrou porque a versão na capa
+ficou **quatro lançamentos** dizendo 0.11.0. Ele segue **a receita abaixo, na letra** — mexeu numa,
 mexa na outra, senão volta a existir número de vitrine que ninguém reproduz.
 `--so-medir` mostra sem gravar; `--sem-testes` pula o `cargo test`, que demora.
 
@@ -35,7 +40,8 @@ cargo test --workspace 2>&1 | grep '^test result' \
   | awk '{s+=$4} END {print s}'                                    # testes
 $(( $(grep -c '^\[\[package\]\]' Cargo.lock) - 4 ))                # dependências externas
 cat docs/*.md README.md CHANGELOG.md MANUAL.txt \
-    bancada/LEIA-ME.md marca/LEIA-ME.md docs/dossie/LEIA-ME.md \
+    bancada/LEIA-ME.md bancada/replicacao/LEIA-ME.md \
+    marca/LEIA-ME.md docs/dossie/LEIA-ME.md \
   | wc -l                                                          # linhas de doc
 stat -c%s crates/phxsql-server/ui/index.html \
           crates/phxsql-server/ui/grid/phx-grid.{css,js} \

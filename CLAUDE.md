@@ -9,12 +9,17 @@ em `phxsql/`. Especificação do formato em `phxsql/docs/FORMATO.md`, roteiro em
 O dossiê é a página que o Adriano usa para enxergar o projeto inteiro:
 
 - **URL:** https://claude.ai/code/artifact/5c14044e-0dc5-4832-b015-224ab1e40033
-- **Fonte:** `phxsql/docs/dossie/dossie-phxsql.html` (versionado, para que
+- **Fonte:** `phxsql/docs/dossie/dossie-phxsql-0.15.html` (versionado, para que
   qualquer sessão consiga atualizá-lo)
 
 Publique sempre **passando essa URL**, para cair na mesma página em vez de
 criar outra. Instruções e as armadilhas de estilo em
 `phxsql/docs/dossie/LEIA-ME.md`.
+
+O nome do arquivo mudou na 0.15.0 (era `dossie-phxsql.html`), a pedido: o
+dossiê foi refeito conferindo cada seção contra o código. Os dois scripts de
+números aceitam o caminho do HTML como argumento, então trocar o nome de novo
+não exige editá-los.
 
 Os números do painel são **medidos, nunca estimados** — já saíram errados três
 vezes: arredondamento para cima, depois 276 testes quando eram 280, depois um
