@@ -50,7 +50,7 @@ reaproveitamento de espaço perde.
 
 ## Estado atual
 
-O motor de armazenamento está completo e testado: **339 testes**, sem nenhuma
+O motor de armazenamento está completo e testado: **355 testes**, sem nenhuma
 dependência externa (só a `std`), o que faz o projeto compilar offline.
 
 | Peça | Situação |
@@ -60,6 +60,9 @@ dependência externa (só a `std`), o que faz o projeto compilar offline.
 | `.bin` / `.memo` — blocos com CRC, contabilidade de espaço morto | pronto |
 | `.log` — diário datado de inclusão, alteração e exclusão | pronto |
 | Paginação em volumes `_001`, `_002`, … com abertura preguiçosa | pronto |
+| Partição por período — mensal, bimestral, semestral, anual | pronto |
+| Metadados de campo: id estável, caption, descrição e máscara PICTURE | pronto |
+| Chave primária declarada, com marca de composta derivada dos índices | pronto |
 | Hierarquia database → schema → tabela | pronto |
 | `Uuid` v4/v7 (RFC 9562), `Uuid256` de 256 bits e `Sequence` | pronto |
 | CRC-32 slice-by-8 — inserção 3,1× mais rápida, medida | pronto |
@@ -76,6 +79,10 @@ dependência externa (só a `std`), o que faz o projeto compilar offline.
 | Centro de Controle — interface web embutida no `phxsqld` | pronto |
 | View Database — grade de tabelas, ficha de edição, incluir/salvar/excluir | pronto |
 | Gestão de tabelas — criar, duplicar, reparar, ver partições e excluir | pronto |
+| Copiar e colar tabela entre bancos e schemas | pronto |
+| SysTables e SysColumns — catálogo e dicionário de dados | pronto |
+| Gerir banco: configurações, diretivas de acesso, conexões, backup | pronto |
+| Editor de menu — troca o nome exibido de cada item | pronto |
 | Tabela em memória e `SelectMemory` — 87× mais rápido, medido | pronto |
 | Chave assimétrica Ed25519 (RFC 8032) como segundo fator | pronto |
 | Backup com manifesto SHA-256, ZIP e agendamento | pronto |

@@ -14,7 +14,7 @@
 use phxsql_core::datahora::{data_iso, dias_de_civil, hora_iso};
 use phxsql_core::error::{PhxError, Result};
 use phxsql_core::json::Json;
-use phxsql_core::paginacao::{Paginacao, DIGITOS_PADRAO};
+use phxsql_core::paginacao::{ModoParticao, Paginacao, Periodo, DIGITOS_PADRAO};
 use phxsql_core::schema::Schema;
 use phxsql_core::schema::{Column, IndexColumn, IndexDef};
 use phxsql_core::types::ColumnType;
@@ -110,6 +110,27 @@ fn data_de_texto(t: &str) -> Result<i32> {
         return Err(invalida());
     }
     Ok(dias_de_civil(ano, mes, dia))
+}
+
+/// Quantos bytes o tipo ocupa no slot -- o "tamanho" que a tela mostra.
+///
+/// Para `Str` e o numero de caracteres declarado, que e o que quem escreveu o
+/// esquema tem na cabeca. Para `Bin` e `Memo` e zero no slot: o que mora ali e
+/// um ponteiro, e o conteudo vive no arquivo externo.
+pub fn largura_do_tipo(t: &ColumnType) -> u64 {
+    match t {
+        ColumnType::Bool | ColumnType::Int1 | ColumnType::UInt1 => 1,
+        ColumnType::Int2 | ColumnType::UInt2 => 2,
+        ColumnType::Int4 | ColumnType::UInt4 | ColumnType::Real4 => 4,
+        ColumnType::Date | ColumnType::Time => 4,
+        ColumnType::Int8 | ColumnType::UInt8 | ColumnType::Real8 => 8,
+        ColumnType::DateTime | ColumnType::Sequence => 8,
+        ColumnType::Uuid => 16,
+        ColumnType::Uuid256 => 32,
+        ColumnType::Decimal { .. } => 16,
+        ColumnType::Str(n) => *n as u64,
+        ColumnType::Bin | ColumnType::Memo => 0,
+    }
 }
 
 /// Le um tipo de coluna escrito em texto.
@@ -230,12 +251,24 @@ pub fn esquema_de_json(j: &Json) -> Result<Schema> {
             return Err(PhxError::Esquema(format!("coluna {i} sem nome")));
         }
         let ty = tipo_de_texto(c.texto_ou("tipo", "Str(60)"))?;
-        let col = Column::new(cn, ty);
-        colunas.push(if c.booleano_ou("obrigatoria", false) {
-            col.obrigatoria()
-        } else {
-            col
-        });
+        let mut col = Column::new(cn, ty)
+            .com_caption(c.texto_ou("caption", ""))
+            .com_descricao(c.texto_ou("descricao", ""))
+            .com_mascara(c.texto_ou("mascara", ""));
+        // O `id` normalmente nasce aqui, sorteado. Aceitar um de fora existe
+        // para UM caso: recriar uma tabela mantendo a identidade das colunas,
+        // para que telas e relatorios que apontam para elas continuem valendo.
+        let id = c.texto_ou("id", "").trim().to_string();
+        if !id.is_empty() {
+            col = col.com_id(
+                Uuid::de_texto(&id)
+                    .map_err(|e| PhxError::Esquema(format!("id da coluna {i}: {e}")))?,
+            );
+        }
+        if c.booleano_ou("obrigatoria", false) {
+            col = col.obrigatoria();
+        }
+        colunas.push(col);
     }
 
     let posicao = |nome: &str| -> Result<usize> {
@@ -276,12 +309,15 @@ pub fn esquema_de_json(j: &Json) -> Result<Schema> {
             if partes.is_empty() {
                 return Err(PhxError::Esquema(format!("indice {inome} sem colunas")));
             }
-            let d = IndexDef::new(inome, partes);
-            indices.push(if idx.booleano_ou("unico", false) {
-                d.unico()
-            } else {
-                d
-            });
+            let mut d = IndexDef::new(inome, partes);
+            if idx.booleano_ou("unico", false) {
+                d = d.unico();
+            }
+            // Primaria implica unica; o `primaria()` cuida disso.
+            if idx.booleano_ou("primario", false) || idx.booleano_ou("primaria", false) {
+                d = d.primaria();
+            }
+            indices.push(d);
         }
     }
 
@@ -296,6 +332,29 @@ pub fn esquema_de_json(j: &Json) -> Result<Schema> {
         // com tres digitos o volume 1000 simplesmente nao tem nome. Entao o
         // padrao e o maior que cabe no sufixo, e nao zero -- que o validador
         // recusaria com uma mensagem que nao ajuda quem preencheu a tela.
+        // A particao por periodo aponta a coluna por NOME, como os indices --
+        // posicao e detalhe de implementacao.
+        let modo = match j.texto_ou("particao", "").trim() {
+            "" | "quantidade" | "faixa" => ModoParticao::PorQuantidade,
+            nome_periodo => {
+                let coluna = j.texto_ou("particao_coluna", "").trim().to_string();
+                let i = esquema
+                    .colunas()
+                    .iter()
+                    .position(|c| c.nome == coluna)
+                    .ok_or_else(|| {
+                        PhxError::Esquema(format!(
+                            "a particao {nome_periodo} precisa de \"particao_coluna\" \
+                             com o nome de uma coluna de data; recebi {coluna:?}"
+                        ))
+                    })?;
+                ModoParticao::PorPeriodo {
+                    coluna: i as u16,
+                    periodo: Periodo::de_nome(nome_periodo)?,
+                }
+            }
+        };
+
         let cabem = 10u32.pow(digitos as u32) - 1;
         let max = match j.inteiro_ou("max_arquivos", 0).max(0) as u32 {
             0 => cabem,
@@ -307,8 +366,9 @@ pub fn esquema_de_json(j: &Json) -> Result<Schema> {
         esquema.com_paginacao(
             Paginacao::nova(por_arquivo as u64, 1)?
                 .com_digitos(digitos)?
-                .com_max_arquivos(max)?,
-        )
+                .com_max_arquivos(max)?
+                .com_modo(modo)?,
+        )?
     } else {
         esquema
     })
@@ -861,6 +921,154 @@ mod testes_esquema {
             assert!(
                 erro.contains(pedaco),
                 "erro {erro:?} nao diz o que falta ({pedaco:?})"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod testes_metadados {
+    use super::*;
+
+    fn json(t: &str) -> Json {
+        Json::analisar(t).expect("json de teste invalido")
+    }
+
+    #[test]
+    fn os_metadados_do_campo_chegam_no_esquema() {
+        let e = esquema_de_json(&json(
+            r#"{"tabela":"lancamentos",
+                "colunas":[{"nome":"emissao","tipo":"Date","obrigatoria":true,
+                            "caption":"Emissão","descricao":"Data do lançamento",
+                            "mascara":"@D6"}]}"#,
+        ))
+        .unwrap();
+        let c = &e.colunas()[0];
+        assert_eq!(c.nome, "emissao");
+        assert_eq!(c.caption, "Emissão");
+        assert_eq!(c.descricao, "Data do lançamento");
+        assert_eq!(c.mascara, "@D6");
+        // Cada coluna nasce com um id proprio, sorteado.
+        assert_ne!(c.id.to_string(), "00000000-0000-0000-0000-000000000000");
+    }
+
+    #[test]
+    fn coluna_sem_caption_usa_o_nome_como_rotulo() {
+        let e = esquema_de_json(&json(
+            r#"{"tabela":"t","colunas":[{"nome":"cidade","tipo":"Str(40)"}]}"#,
+        ))
+        .unwrap();
+        assert_eq!(e.colunas()[0].rotulo(), "cidade");
+    }
+
+    #[test]
+    fn a_chave_primaria_marca_as_colunas_dela() {
+        let e = esquema_de_json(&json(
+            r#"{"tabela":"pedidos",
+                "colunas":[{"nome":"filial","tipo":"Int4","obrigatoria":true},
+                           {"nome":"numero","tipo":"Int8","obrigatoria":true},
+                           {"nome":"cliente","tipo":"Str(40)"}],
+                "indices":[{"nome":"porFilialNumero","colunas":["filial","numero"],
+                            "primario":true}]}"#,
+        ))
+        .unwrap();
+
+        // Primaria implica unica, mesmo sem "unico" no pedido.
+        let pk = e.chave_primaria().expect("devia ter chave primaria");
+        assert!(pk.unico, "primaria tem de ser unica");
+        assert!(pk.composta());
+
+        for i in 0..2 {
+            let p = e.papel_da_coluna(i);
+            assert!(p.primaria, "coluna {i} devia estar na chave primaria");
+            assert!(p.primaria_composta, "a chave tem duas colunas");
+        }
+        assert!(!e.papel_da_coluna(2).primaria, "cliente esta fora da chave");
+    }
+
+    #[test]
+    fn coluna_de_chave_primaria_nao_pode_aceitar_nulo() {
+        // Uma identidade nula nao identifica: e erro de esquema, nao gosto.
+        let erro = esquema_de_json(&json(
+            r#"{"tabela":"t","colunas":[{"nome":"id","tipo":"Int8"}],
+                "indices":[{"nome":"pk","colunas":["id"],"primario":true}]}"#,
+        ))
+        .unwrap_err()
+        .to_string();
+        assert!(
+            erro.contains("chave primaria") && erro.contains("nulo"),
+            "{erro}"
+        );
+    }
+
+    #[test]
+    fn duas_chaves_primarias_e_erro() {
+        let erro = esquema_de_json(&json(
+            r#"{"tabela":"t",
+                "colunas":[{"nome":"a","tipo":"Int8","obrigatoria":true},
+                           {"nome":"b","tipo":"Int8","obrigatoria":true}],
+                "indices":[{"nome":"k1","colunas":["a"],"primario":true},
+                           {"nome":"k2","colunas":["b"],"primario":true}]}"#,
+        ))
+        .unwrap_err()
+        .to_string();
+        assert!(erro.contains("chaves primarias"), "{erro}");
+    }
+
+    #[test]
+    fn particao_por_periodo_le_a_coluna_pelo_nome() {
+        let e = esquema_de_json(&json(
+            r#"{"tabela":"lancamentos",
+                "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                           {"nome":"emissao","tipo":"Date","obrigatoria":true}],
+                "registros_por_arquivo":1000,
+                "particao":"bimestral","particao_coluna":"emissao"}"#,
+        ))
+        .unwrap();
+        let m = e.paginacao().modo;
+        assert_eq!(m.periodo().map(|p| p.nome()), Some("bimestral"));
+        assert_eq!(m.coluna(), Some(1), "emissao e a coluna 1");
+    }
+
+    #[test]
+    fn particao_por_periodo_recusa_o_que_nao_pode_dar_certo() {
+        let casos = [
+            // Sem a coluna.
+            (
+                r#"{"tabela":"t","colunas":[{"nome":"a","tipo":"Date","obrigatoria":true}],
+                    "registros_por_arquivo":10,"particao":"mensal"}"#,
+                "particao_coluna",
+            ),
+            // Coluna que nao existe.
+            (
+                r#"{"tabela":"t","colunas":[{"nome":"a","tipo":"Date","obrigatoria":true}],
+                    "registros_por_arquivo":10,"particao":"mensal","particao_coluna":"zzz"}"#,
+                "particao_coluna",
+            ),
+            // Coluna que nao e data.
+            (
+                r#"{"tabela":"t","colunas":[{"nome":"a","tipo":"Int8","obrigatoria":true}],
+                    "registros_por_arquivo":10,"particao":"mensal","particao_coluna":"a"}"#,
+                "coluna de data",
+            ),
+            // Data que aceita nulo: sem data nao ha periodo.
+            (
+                r#"{"tabela":"t","colunas":[{"nome":"a","tipo":"Date"}],
+                    "registros_por_arquivo":10,"particao":"mensal","particao_coluna":"a"}"#,
+                "nulo",
+            ),
+            // Periodo que nao existe.
+            (
+                r#"{"tabela":"t","colunas":[{"nome":"a","tipo":"Date","obrigatoria":true}],
+                    "registros_por_arquivo":10,"particao":"quinzenal","particao_coluna":"a"}"#,
+                "periodo desconhecido",
+            ),
+        ];
+        for (pedido, pedaco) in casos {
+            let erro = esquema_de_json(&json(pedido)).unwrap_err().to_string();
+            assert!(
+                erro.contains(pedaco),
+                "erro {erro:?} nao menciona {pedaco:?}"
             );
         }
     }

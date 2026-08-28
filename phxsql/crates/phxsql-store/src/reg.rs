@@ -98,7 +98,33 @@ pub struct RegFile {
     proxima_sequencia: u64,
     /// Leituras salvas pelo espelho nesta sessao.
     recuperados: u64,
+    /// Onde cada volume comeca, quando a particao e por periodo.
+    ///
+    /// Indice do vetor = volume - 1. Vazio quando a particao e por quantidade,
+    /// porque ali o volume sai de uma divisao e nao ha o que guardar.
+    fronteiras: Vec<Fronteira>,
 }
+
+/// O comeco de um volume: o primeiro rowid que ele recebeu e o periodo em que
+/// foi aberto.
+///
+/// As faixas sao contiguas e crescentes -- o volume N+1 comeca no rowid
+/// seguinte ao ultimo do N --, porque a ordem de digitacao manda: linha nova
+/// vai sempre para o volume corrente, mesmo que a data dela seja de um periodo
+/// ja fechado. Por isso achar o volume de um rowid e uma busca binaria, e nao
+/// um indice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Fronteira {
+    pub primeiro_rowid: RowId,
+    pub chave_periodo: i64,
+}
+
+/// Volume aberto e ainda sem nenhuma linha: nao ha periodo para gravar.
+///
+/// Acontece na criacao da tabela -- o volume 1 nasce antes da primeira
+/// insercao. O primeiro registro adota o volume em vez de cortar um novo, para
+/// a tabela nao nascer com um arquivo vazio.
+pub const SEM_PERIODO: i64 = i64::MIN;
 
 impl RegFile {
     pub fn criar(diretorio: impl AsRef<Path>, nome: &str, esquema: Schema) -> Result<RegFile> {
@@ -117,7 +143,14 @@ impl RegFile {
             criado_em: agora(),
             proxima_sequencia: 0,
             recuperados: 0,
+            fronteiras: Vec::new(),
         };
+        if r.esquema.paginacao().modo.periodo().is_some() {
+            r.fronteiras.push(Fronteira {
+                primeiro_rowid: 1,
+                chave_periodo: SEM_PERIODO,
+            });
+        }
         r.volumes.criar(1)?;
         r.gravar_cabecalho(1)?;
         Ok(r)
@@ -182,7 +215,7 @@ impl RegFile {
             )));
         }
 
-        Ok(RegFile {
+        let mut r = RegFile {
             volumes: Volumes::novo(diretorio, nome, EXT_REG, esquema.paginacao()),
             esquema,
             slot_size,
@@ -192,7 +225,51 @@ impl RegFile {
             criado_em,
             proxima_sequencia,
             recuperados: 0,
-        })
+            fronteiras: Vec::new(),
+        };
+        r.reler_fronteiras()?;
+        Ok(r)
+    }
+
+    /// Remonta a tabela de fronteiras lendo o cabecalho de cada volume.
+    ///
+    /// So faz sentido na particao por periodo. Le poucos bytes por volume, uma
+    /// vez, na abertura -- e volume e coisa que se conta em dezenas, nao em
+    /// milhares, porque cada um guarda `registros_por_arquivo` linhas.
+    fn reler_fronteiras(&mut self) -> Result<()> {
+        self.fronteiras.clear();
+        if self.esquema.paginacao().modo.periodo().is_none() {
+            return Ok(());
+        }
+        for volume in self.volumes.existentes() {
+            let mut cab = [0u8; CAB_LEN];
+            self.volumes.ler(volume, 0, &mut cab)?;
+            let c = Campos(&cab);
+            self.fronteiras.push(Fronteira {
+                primeiro_rowid: c.u64(76),
+                chave_periodo: c.u64(84) as i64,
+            });
+        }
+        // Um volume que existe mas nunca foi escrito na v3 vem com zero. Zero
+        // nao e rowid: seria endereco 1 para tudo. Melhor recusar alto do que
+        // devolver a linha errada em silencio.
+        //
+        // A tabela recem-criada e vazia nao cai aqui: o volume 1 dela ja nasce
+        // com `primeiro_rowid = 1` e periodo indefinido.
+        if let Some(i) = self.fronteiras.iter().position(|f| f.primeiro_rowid == 0) {
+            return Err(PhxError::Corrompido(format!(
+                "volume {} de {} nao tem fronteira gravada; a tabela foi criada \
+                 antes da particao por periodo e precisa ser recriada",
+                i + 1,
+                self.volumes.nome()
+            )));
+        }
+        Ok(())
+    }
+
+    /// As fronteiras de volume, para quem quiser mostra-las.
+    pub fn fronteiras(&self) -> &[Fronteira] {
+        &self.fronteiras
     }
 
     /// Toma o proximo valor da sequencia e avanca o contador.
@@ -244,6 +321,13 @@ impl RegFile {
         por_u32(&mut buf, 56, crc32(&bytes_esquema));
         por_i64(&mut buf, 60, self.criado_em);
         por_i64(&mut buf, 68, agora());
+        // A fronteira deste volume, na particao por periodo. Cada volume
+        // carrega a sua, e por isso a tabela se remonta lendo os cabecalhos --
+        // sem arquivo extra e sem bloco que cresce.
+        if let Some(f) = self.fronteiras.get(volume as usize - 1) {
+            por_u64(&mut buf, 76, f.primeiro_rowid);
+            por_u64(&mut buf, 84, f.chave_periodo as u64);
+        }
         let crc = crc32(&buf[..124]);
         por_u32(&mut buf, 124, crc);
 
@@ -376,12 +460,91 @@ impl RegFile {
     }
 
     /// Volume e offset em que um rowid mora.
+    ///
+    /// Na particao por quantidade e uma divisao. Na particao por periodo o
+    /// volume nao sai de conta -- ele depende de quando o periodo virou --,
+    /// entao sai de uma busca binaria na tabela de fronteiras. Nos dois casos
+    /// o offset dentro do volume continua sendo multiplicacao.
     fn localizar(&self, rowid: RowId) -> (u32, u64) {
-        let (volume, slot) = self.esquema.paginacao().localizar(rowid);
+        let (volume, slot) = match self.volume_por_fronteira(rowid) {
+            Some(v) => (
+                v,
+                rowid - self.fronteiras[v as usize - 1].primeiro_rowid + 1,
+            ),
+            None => self.esquema.paginacao().localizar(rowid),
+        };
         (
             volume,
             self.data_offset + (slot - 1) * self.slot_size as u64,
         )
+    }
+
+    /// Decide em que volume a linha nova entra, cortando se preciso.
+    ///
+    /// Corta em dois casos, e o segundo e o que a particao por periodo existe
+    /// para fazer:
+    ///
+    /// 1. o volume corrente encheu (`registros_por_arquivo` continua sendo
+    ///    teto, senao um mes movimentado estouraria o arquivo);
+    /// 2. o periodo virou.
+    ///
+    /// O que ele NAO faz e mandar a linha para um volume anterior. Um
+    /// lancamento de janeiro digitado em marco entra no volume de marco: a
+    /// ordem de digitacao manda, e voltar significaria escrever no meio de um
+    /// arquivo ja fechado.
+    fn abrir_faixa_do_periodo(&mut self, rowid: RowId, chave: i64) -> Result<(u32, u64)> {
+        let paginacao = self.esquema.paginacao();
+        let corta = match self.fronteiras.last() {
+            None => true,
+            // Volume ainda vazio: ele ADOTA o periodo da primeira linha. Sem
+            // isto a tabela nasceria com um volume 1 vazio e a primeira linha
+            // iria para o volume 2.
+            Some(f) if rowid == f.primeiro_rowid => {
+                if f.chave_periodo != chave {
+                    let ultimo = self.fronteiras.len() - 1;
+                    self.fronteiras[ultimo].chave_periodo = chave;
+                }
+                false
+            }
+            Some(f) => {
+                let no_volume = rowid - f.primeiro_rowid;
+                no_volume >= paginacao.registros_por_arquivo || f.chave_periodo != chave
+            }
+        };
+        if corta {
+            if self.fronteiras.len() as u64 >= paginacao.max_arquivos as u64 {
+                return Err(PhxError::LimiteExcedido(format!(
+                    "tabela {} cheia: {} volumes, o teto do sufixo de {} digitos",
+                    self.volumes.nome(),
+                    paginacao.max_arquivos,
+                    paginacao.digitos
+                )));
+            }
+            self.fronteiras.push(Fronteira {
+                primeiro_rowid: rowid,
+                chave_periodo: chave,
+            });
+        }
+        let volume = self.fronteiras.len() as u32;
+        let f = self.fronteiras[volume as usize - 1];
+        Ok((
+            volume,
+            self.data_offset + (rowid - f.primeiro_rowid) * self.slot_size as u64,
+        ))
+    }
+
+    /// O ultimo volume que comeca em rowid menor ou igual ao pedido.
+    ///
+    /// `None` quando nao ha fronteiras -- ou seja, quando a particao e por
+    /// quantidade e o volume sai de divisao.
+    fn volume_por_fronteira(&self, rowid: RowId) -> Option<u32> {
+        if self.fronteiras.is_empty() {
+            return None;
+        }
+        let i = self
+            .fronteiras
+            .partition_point(|f| f.primeiro_rowid <= rowid);
+        Some(i.max(1) as u32)
     }
 
     fn conferir_faixa(&self, rowid: RowId) -> Result<()> {
@@ -397,6 +560,15 @@ impl RegFile {
 
     /// Anexa um registro no fim e devolve seu rowid.
     pub fn inserir(&mut self, payload: &[u8]) -> Result<RowId> {
+        self.inserir_no_periodo(payload, None)
+    }
+
+    /// Anexa, dizendo em que periodo a linha cai.
+    ///
+    /// A chave do periodo vem de cima porque o `.reg` so conhece bytes: quem
+    /// sabe ler a coluna de data e a `Table`, que tem o esquema e os valores.
+    /// Na particao por quantidade a chave e ignorada.
+    pub fn inserir_no_periodo(&mut self, payload: &[u8], chave: Option<i64>) -> Result<RowId> {
         if payload.len() != self.esquema.payload_len() {
             return Err(PhxError::Corrompido(format!(
                 "payload de {} bytes, esperado {}",
@@ -406,7 +578,9 @@ impl RegFile {
         }
         let rowid = self.slot_count + 1;
         let paginacao = self.esquema.paginacao();
-        if !paginacao.cabe(rowid) {
+        let por_periodo = paginacao.modo.periodo().is_some();
+
+        if !por_periodo && !paginacao.cabe(rowid) {
             return Err(PhxError::LimiteExcedido(format!(
                 "tabela {} cheia: capacidade de {} registros ({} por arquivo x {} arquivos)",
                 self.volumes.nome(),
@@ -416,7 +590,11 @@ impl RegFile {
             )));
         }
 
-        let (volume, offset) = self.localizar(rowid);
+        let (volume, offset) = if por_periodo {
+            self.abrir_faixa_do_periodo(rowid, chave.unwrap_or(0))?
+        } else {
+            self.localizar(rowid)
+        };
         if self.volumes.garantir(volume)? {
             // Volume novo: ganha cabecalho e esquema proprios.
             self.gravar_cabecalho(volume)?;
@@ -765,7 +943,9 @@ mod tests {
     // ------------------------------------------------------------ paginacao
 
     fn esquema_paginado(registros: u64, arquivos: u32) -> Schema {
-        esquema().com_paginacao(Paginacao::nova(registros, arquivos).unwrap())
+        esquema()
+            .com_paginacao(Paginacao::nova(registros, arquivos).unwrap())
+            .unwrap()
     }
 
     #[test]

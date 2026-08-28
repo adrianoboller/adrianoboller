@@ -149,7 +149,7 @@ fn esquema_demo(paginado: bool) -> Result<Schema> {
     Ok(if paginado {
         // Dois registros por arquivo, ate 99 arquivos: so para a demo mostrar
         // varios volumes com poucas linhas.
-        esquema.com_paginacao(Paginacao::nova(2, 99)?)
+        esquema.com_paginacao(Paginacao::nova(2, 99)?)?
     } else {
         esquema
     })

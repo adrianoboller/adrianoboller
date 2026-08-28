@@ -96,16 +96,21 @@ O **root é sempre supervisor e sempre ativo**, diga o que disser o arquivo.
 
 | Atividade | Cobre |
 |---|---|
-| `ler` | `bancos`, `tabelas`, `esquema`, `ler`, `varrer`, `buscar` |
+| `ler` | `bancos`, `tabelas`, `esquema`, `ler`, `varrer`, `buscar`, `sistabelas`, `siscolunas` |
 | `inserir` | `inserir` |
 | `alterar` | `atualizar` |
 | `excluir` | `excluir` |
-| `criar` | `criar_database`, `criar_schema`, `criar_tabela`, `duplicar_tabela` |
+| `criar` | `criar_database`, `criar_schema`, `criar_tabela`, `duplicar_tabela`, `copiar_tabela` |
 | `reindexar` | `reindexar` |
 | `diario` | `diario` |
 | `verificar` | `verificar` |
 | `administrar` | `acessos`, `ips`, `config`, `usuarios`, `excluir_tabela` |
 | `replicar` | `posicao`, `replicar` |
+
+> **`copiar_tabela` confere a permissão no DESTINO.** O portão geral confere
+> contra o database do campo `database` — que aqui é a *origem*. Colar exige
+> `criar` no banco de destino, conferido à parte: sem isso, quem pode ler um
+> banco e não pode criar no outro conseguiria escrever onde não devia.
 
 > **Por que `excluir_tabela` pede `administrar` e não `excluir`.** Poder excluir
 > uma *linha* não é poder excluir a *tabela*: a primeira operação perde um

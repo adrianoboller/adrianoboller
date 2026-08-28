@@ -92,6 +92,9 @@ impl Atividade {
         Some(match op {
             "ping" | "login" | "desafio" | "quem_sou" | "sair" => return None,
             "bancos" | "tabelas" | "esquema" | "ler" | "varrer" | "buscar" => Atividade::Ler,
+            // O catalogo e leitura: quem pode ler a tabela pode saber que ela
+            // existe e que colunas tem.
+            "sistabelas" | "systables" | "siscolunas" | "syscolumns" => Atividade::Ler,
             // Consultar em memoria e ler: o dado e o mesmo, o caminho e outro.
             // Carregar tambem, porque carregar e varrer a tabela inteira.
             "memoria_carregar" | "memoria" | "SelectMemory" | "selectmemory"
@@ -103,9 +106,8 @@ impl Atividade {
             "inserir" => Atividade::Inserir,
             "atualizar" => Atividade::Alterar,
             "excluir" => Atividade::Excluir,
-            "criar_database" | "criar_schema" | "criar_tabela" | "duplicar_tabela" => {
-                Atividade::Criar
-            }
+            "criar_database" | "criar_schema" | "criar_tabela" | "duplicar_tabela"
+            | "copiar_tabela" => Atividade::Criar,
             // Apagar uma tabela apaga os cinco arquivos de uma vez, e nao ha
             // desfazer. Nao basta poder excluir LINHA para poder excluir a
             // TABELA: isto exige administrar.

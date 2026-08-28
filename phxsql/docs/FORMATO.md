@@ -55,13 +55,59 @@ offset(rowid) = data_offset + (rowid - 1) * slot_size
 | 56 | 4 | CRC-32 do esquema |
 | 60 | 8 | criado em (epoch, segundos) |
 | 68 | 8 | alterado em |
-| 76 | 8 | transação (reservado) |
-| 84 | 40 | reservado |
+| 76 | 8 | `primeiro_rowid` — o primeiro rowid deste volume (só na partição por período) |
+| 84 | 8 | `chave_periodo` — o período em que este volume abriu (só na partição por período) |
+| 92 | 32 | reservado |
 | 124 | 4 | CRC-32 dos bytes 0..124 |
 
 Logo após o cabeçalho vem o **esquema serializado** (`schema_len` bytes), e
 `data_offset` é o próximo múltiplo de 64. A tabela é auto-descritiva: o
 conjunto de arquivos basta para reabrir os dados, sem dicionário externo.
+
+### O bloco de esquema (`PSCH`, versão 3)
+
+O bloco começa com `PSCH` e a versão. A versão **3** acrescentou os metadados
+de coluna, o marcador de chave primária e o modo de partição. A leitura ainda
+aceita a 2: tabela gravada antes abre normalmente, ganha um `id` v7 sorteado na
+hora e os textos vazios. **Escrever, só na 3.**
+
+Por coluna, nesta ordem:
+
+| Campo | Tam | O que é |
+|---|---:|---|
+| `nome` | 2 + n | o nome no disco |
+| tipo | 4 | tag + dois parâmetros (largura do `Str`, precisão/escala do `Decimal`) |
+| `nullable` | 1 | aceita nulo |
+| `id` | 16 | **UUID v7 da coluna**, sorteado na criação e nunca reaproveitado |
+| `caption` | 2 + n | rótulo de tela; vazio significa "use o nome" |
+| `descricao` | 2 + n | para que a coluna serve |
+| `mascara` | 2 + n | PICTURE do Clarion(R): `@N-11.2`, `@D6`, `@P###-####P` |
+
+O `id` existe para que **renomear a coluna não quebre nada**: uma tela, um
+relatório ou um mapeamento apontam para ele, e renomear troca só o `nome`. É a
+mesma razão de o esquema morar no `.reg` — um dicionário externo se perde, se
+desatualiza, e obriga quem copia os cinco arquivos a copiar um sexto.
+
+Por índice, os sinalizadores viraram um byte com dois bits: **único** no bit 0
+e **primário** no bit 1.
+
+### Chave primária, chave estrangeira, chave composta
+
+Só um índice pode ser primário, ele é sempre único, e nenhuma coluna dele pode
+aceitar nulo — uma identidade nula não identifica. As três conferências
+acontecem no `Schema::new`.
+
+O papel de uma coluna nas chaves **não é gravado na coluna**: sai dos índices e
+das chaves estrangeiras, que são a verdade.
+
+| Marca | De onde sai |
+|---|---|
+| primária | a coluna aparece no índice marcado como primário |
+| estrangeira | a coluna aparece em alguma chave estrangeira |
+| composta | a chave de que ela participa tem mais de uma coluna |
+
+Guardar "é primária" no próprio campo criaria uma segunda verdade ao lado do
+índice, e as duas divergiriam no primeiro `ALTER`.
 
 **Todo volume carrega o cabeçalho completo com o esquema**, então qualquer um
 deles se descreve sozinho — se o volume 1 se perder, os outros ainda sabem
@@ -333,10 +379,31 @@ Definida no `CREATE TABLE` e gravada no esquema:
 | `max_arquivos` | quantos volumes a tabela pode ter |
 | `digitos` | largura do sufixo, padrão 3 (`_001`) |
 | `bytes_por_arquivo` | tamanho de cada volume dos arquivos externos |
+| `modo` | **o que faz o volume cortar**: a contagem ou o calendário |
 
 Capacidade da tabela = `registros_por_arquivo × max_arquivos`. Passar disso
 devolve erro explícito "tabela cheia", em vez do estouro silencioso de 2 GB
 que o TopSpeed(R) dava.
+
+**Não existe "sem teto".** O sufixo tem largura fixa: com três dígitos o volume
+1000 simplesmente não teria nome de arquivo. Teto omitido vira o maior que cabe
+no sufixo — 999 com três dígitos.
+
+### Duas regras de corte
+
+| `modo` | quando o volume corta |
+|---|---|
+| `PorQuantidade` | a cada `registros_por_arquivo` linhas |
+| `PorPeriodo { coluna, periodo }` | quando o período da coluna de data vira — **ou** quando o volume enche |
+
+O período é `Mensal`, `Bimestral`, `Semestral` ou `Anual`, e os blocos sempre
+começam em janeiro: bimestre é jan-fev, mar-abr, …; semestre é jan-jun e
+jul-dez. Não há bimestre a começar em fevereiro.
+
+A coluna do período tem de ser `Date` ou `DateTime` **e obrigatória** — sem
+data não há período em que a linha caiba. As duas conferências acontecem na
+criação do esquema, não na primeira gravação: um esquema que só quebra ao
+inserir já nasceu quebrado.
 
 ### O endereçamento continua sendo uma conta
 
@@ -353,6 +420,48 @@ Três garantias sobrevivem intactas:
   na tabela; o volume sai dele por divisão.
 - **O `.ndx` não muda em nada.** Ele já guarda rowid, e nenhuma linha do código
   de índice precisa saber que existe volume.
+
+### Na partição por período, o endereço sai de uma busca binária
+
+O volume não pode sair de divisão quando o corte depende do calendário: dois
+meses rendem quantidades diferentes. Então cada volume grava no **próprio
+cabeçalho** o rowid em que começou (offset 76) e o período em que abriu
+(offset 84), e a tabela de fronteiras é remontada lendo esses cabeçalhos na
+abertura — poucos bytes por volume, uma vez.
+
+```
+volume = a última fronteira com primeiro_rowid <= rowid   (busca binária)
+slot   = rowid - primeiro_rowid[volume] + 1
+offset = data_offset + (slot - 1) * slot_size
+```
+
+Volume é coisa que se conta em dezenas, não em milhares — cada um guarda
+`registros_por_arquivo` linhas —, então a busca binária custa três ou quatro
+comparações num vetor que já está na memória.
+
+**Sem arquivo extra e sem bloco que cresce.** A alternativa seria guardar a
+tabela de fronteiras num sexto arquivo, ou dentro do bloco de esquema — e o
+bloco de esquema é seguido pelos dados, então crescer significaria empurrar a
+tabela inteira. O cabeçalho de cada volume já existe e tem lugar sobrando.
+
+### A linha atrasada não volta
+
+Esta é a regra que define o desenho. Um lançamento de **janeiro digitado em
+março** entra no volume de março, não no de janeiro.
+
+Voltar significaria escrever no meio de um arquivo já fechado, quebrando ao
+mesmo tempo as duas garantias que sustentam o formato: a ordem de digitação e o
+endereço contíguo. Por isso o período de um volume é **o período em que ele
+abriu**, e um volume pode conter linhas de períodos anteriores que chegaram
+depois.
+
+Quem quiser todos os lançamentos de janeiro usa o índice pela data — que é
+exatamente para isso que ele existe. A partição por período é uma decisão de
+*como o arquivo cresce*, não de *como o dado se consulta*.
+
+Consequência prática: um volume recém-criado e ainda vazio não tem período. O
+`.reg` grava `i64::MIN` como sentinela, e a primeira linha **adota** o volume
+em vez de cortar um novo — senão a tabela nasceria com um arquivo vazio.
 
 ### Arquivos externos
 

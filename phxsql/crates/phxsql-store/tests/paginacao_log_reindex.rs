@@ -33,7 +33,7 @@ fn esquema(paginacao: Option<Paginacao>) -> Schema {
     )
     .unwrap();
     match paginacao {
-        Some(p) => e.com_paginacao(p),
+        Some(p) => e.com_paginacao(p).unwrap(),
         None => e,
     }
 }
@@ -314,4 +314,239 @@ fn paginada_fecha_e_reabre_sem_saber_a_geometria() {
     t.inserir(&cliente(41, "Depois", "Itajai")).unwrap();
     assert_eq!(t.registros(), 41);
     t.verificar().unwrap();
+}
+
+// ===================================================================
+// Particao por periodo
+// ===================================================================
+
+use phxsql_core::paginacao::{ModoParticao, Periodo};
+
+fn dias(ano: i32, mes: u32, dia: u32) -> i32 {
+    phxsql_core::datahora::dias_de_civil(ano, mes, dia)
+}
+
+/// Tabela com uma data obrigatoria e uma descricao, particionada por periodo.
+fn tabela_por_periodo(dir: &std::path::Path, periodo: Periodo, teto: u64) -> Table {
+    let esquema = Schema::new(
+        "lancamentos",
+        vec![
+            Column::new("quando", ColumnType::Date).obrigatoria(),
+            Column::new("texto", ColumnType::Str(20)),
+        ],
+        vec![],
+    )
+    .unwrap()
+    .com_paginacao(
+        Paginacao::nova(teto, 99)
+            .unwrap()
+            .com_modo(ModoParticao::PorPeriodo { coluna: 0, periodo })
+            .unwrap(),
+    )
+    .unwrap();
+    Table::criar(dir, esquema).unwrap()
+}
+
+#[test]
+fn volume_corta_quando_o_mes_vira() {
+    let dir = DirTemp::novo("periodo-mes");
+    let mut t = tabela_por_periodo(dir.0.as_path(), Periodo::Mensal, 1000);
+
+    // Tres meses, com quantidades diferentes: 2 em janeiro, 1 em fevereiro,
+    // 3 em marco. Nenhum volume enche -- so o calendario corta.
+    let linhas = [
+        (2026, 1, "jan a"),
+        (2026, 1, "jan b"),
+        (2026, 2, "fev a"),
+        (2026, 3, "mar a"),
+        (2026, 3, "mar b"),
+        (2026, 3, "mar c"),
+    ];
+    for (a, m, txt) in linhas {
+        t.inserir(&[Value::Date(dias(a, m, 15)), Value::Str(txt.into())])
+            .unwrap();
+    }
+
+    let mut vols: Vec<String> = std::fs::read_dir(dir.0.as_path())
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .filter(|n| n.ends_with(".reg"))
+        .collect();
+    vols.sort();
+    assert_eq!(
+        vols,
+        vec![
+            "lancamentos_001.reg".to_string(),
+            "lancamentos_002.reg".to_string(),
+            "lancamentos_003.reg".to_string()
+        ],
+        "tres meses tinham de dar tres volumes"
+    );
+
+    // E a ordem de digitacao continua de pe, atravessando os volumes.
+    let lidos: Vec<String> = (1..=6)
+        .map(|r| match &t.ler(r).unwrap().unwrap()[1] {
+            Value::Str(s) => s.clone(),
+            outro => panic!("esperava texto, veio {outro:?}"),
+        })
+        .collect();
+    assert_eq!(
+        lidos,
+        vec!["jan a", "jan b", "fev a", "mar a", "mar b", "mar c"]
+    );
+}
+
+#[test]
+fn linha_atrasada_fica_no_volume_corrente() {
+    // A regra que define o desenho: a ordem de digitacao manda. Um lancamento
+    // de janeiro digitado depois de um de marco NAO volta para o volume de
+    // janeiro -- isso seria escrever no meio de um arquivo ja fechado.
+    let dir = DirTemp::novo("periodo-atrasada");
+    let mut t = tabela_por_periodo(dir.0.as_path(), Periodo::Mensal, 1000);
+
+    t.inserir(&[Value::Date(dias(2026, 1, 10)), Value::Str("jan".into())])
+        .unwrap();
+    t.inserir(&[Value::Date(dias(2026, 3, 10)), Value::Str("mar".into())])
+        .unwrap();
+    let atrasada = t
+        .inserir(&[
+            Value::Date(dias(2026, 1, 31)),
+            Value::Str("jan tarde".into()),
+        ])
+        .unwrap();
+
+    assert_eq!(atrasada, 3, "o rowid continua sequencial");
+    // Voltou para janeiro? Se tivesse voltado, existiriam so dois volumes e o
+    // de janeiro teria tres slots. Ela ficou no corrente: tres volumes.
+    let quantos = std::fs::read_dir(dir.0.as_path())
+        .unwrap()
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().ends_with(".reg"))
+        .count();
+    assert_eq!(quantos, 3, "a atrasada abriu um volume, nao voltou");
+
+    match &t.ler(3).unwrap().unwrap()[1] {
+        Value::Str(s) => assert_eq!(s, "jan tarde"),
+        outro => panic!("esperava texto, veio {outro:?}"),
+    }
+}
+
+#[test]
+fn o_teto_de_registros_corta_antes_do_periodo_virar() {
+    // `registros_por_arquivo` continua sendo teto: um mes movimentado nao pode
+    // estourar o arquivo so porque o calendario nao virou.
+    let dir = DirTemp::novo("periodo-teto");
+    let mut t = tabela_por_periodo(dir.0.as_path(), Periodo::Anual, 3);
+
+    for i in 0..7 {
+        t.inserir(&[
+            Value::Date(dias(2026, 5, 1 + i)),
+            Value::Str(format!("l{i}")),
+        ])
+        .unwrap();
+    }
+    let quantos = std::fs::read_dir(dir.0.as_path())
+        .unwrap()
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().ends_with(".reg"))
+        .count();
+    assert_eq!(
+        quantos, 3,
+        "7 linhas com teto 3 dao 3 volumes, no mesmo ano"
+    );
+
+    for i in 0..7u64 {
+        match &t.ler(i + 1).unwrap().unwrap()[1] {
+            Value::Str(s) => assert_eq!(s, &format!("l{i}")),
+            outro => panic!("esperava texto, veio {outro:?}"),
+        }
+    }
+}
+
+#[test]
+fn as_fronteiras_sobrevivem_a_fechar_e_abrir() {
+    // O endereco de um rowid depende da tabela de fronteiras, e ela e remontada
+    // lendo o cabecalho de cada volume. Se isso nao funcionar, reabrir a tabela
+    // devolve a LINHA ERRADA -- e em silencio, que e o pior jeito.
+    let dir = DirTemp::novo("periodo-reabrir");
+    {
+        let mut t = tabela_por_periodo(dir.0.as_path(), Periodo::Mensal, 1000);
+        for (m, n) in [(1u32, 2), (2, 1), (3, 4)] {
+            for i in 0..n {
+                t.inserir(&[
+                    Value::Date(dias(2026, m, 10)),
+                    Value::Str(format!("m{m}-{i}")),
+                ])
+                .unwrap();
+            }
+        }
+        t.sincronizar().unwrap();
+    }
+
+    let mut t = Table::abrir(dir.0.as_path(), "lancamentos").unwrap();
+    let esperado = ["m1-0", "m1-1", "m2-0", "m3-0", "m3-1", "m3-2", "m3-3"];
+    for (i, texto) in esperado.iter().enumerate() {
+        match &t.ler(i as u64 + 1).unwrap().unwrap()[1] {
+            Value::Str(s) => assert_eq!(s, texto, "rowid {} veio errado", i + 1),
+            outro => panic!("esperava texto, veio {outro:?}"),
+        }
+    }
+
+    // E continua anexando no volume certo depois de reabrir.
+    let novo = t
+        .inserir(&[Value::Date(dias(2026, 4, 1)), Value::Str("m4-0".into())])
+        .unwrap();
+    assert_eq!(novo, 8);
+    match &t.ler(8).unwrap().unwrap()[1] {
+        Value::Str(s) => assert_eq!(s, "m4-0"),
+        outro => panic!("esperava texto, veio {outro:?}"),
+    }
+}
+
+#[test]
+fn bimestre_e_semestre_agrupam_os_meses_certos() {
+    let dir = DirTemp::novo("periodo-bimestre");
+    let mut t = tabela_por_periodo(dir.0.as_path(), Periodo::Bimestral, 1000);
+    // jan e fev sao o mesmo bimestre; marco abre o proximo.
+    for (m, txt) in [(1u32, "jan"), (2, "fev"), (3, "mar")] {
+        t.inserir(&[Value::Date(dias(2026, m, 5)), Value::Str(txt.into())])
+            .unwrap();
+    }
+    let quantos = std::fs::read_dir(dir.0.as_path())
+        .unwrap()
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().ends_with(".reg"))
+        .count();
+    assert_eq!(quantos, 2, "jan+fev num volume, mar noutro");
+}
+
+#[test]
+fn particao_por_periodo_exige_coluna_de_data_obrigatoria() {
+    let com = |colunas: Vec<Column>, coluna: u16| {
+        Schema::new("t", colunas, vec![]).unwrap().com_paginacao(
+            Paginacao::nova(100, 99)
+                .unwrap()
+                .com_modo(ModoParticao::PorPeriodo {
+                    coluna,
+                    periodo: Periodo::Mensal,
+                })
+                .unwrap(),
+        )
+    };
+
+    // Coluna que nao existe.
+    assert!(com(vec![Column::new("a", ColumnType::Int8).obrigatoria()], 9).is_err());
+    // Coluna que existe mas nao e data.
+    assert!(com(vec![Column::new("a", ColumnType::Int8).obrigatoria()], 0).is_err());
+    // Data, mas aceita nulo: sem data nao ha periodo em que a linha caiba.
+    assert!(com(vec![Column::new("a", ColumnType::Date)], 0).is_err());
+    // Data obrigatoria: passa.
+    assert!(com(vec![Column::new("a", ColumnType::Date).obrigatoria()], 0).is_ok());
+    // DateTime tambem serve.
+    assert!(com(
+        vec![Column::new("a", ColumnType::DateTime).obrigatoria()],
+        0
+    )
+    .is_ok());
 }

@@ -6,11 +6,19 @@
 
 use crate::error::{PhxError, Result};
 use crate::keyenc::largura_componente;
-use crate::paginacao::Paginacao;
+use crate::paginacao::{ModoParticao, Paginacao};
 use crate::types::ColumnType;
+use crate::uuid::Uuid;
 
 const MAGIC_ESQUEMA: &[u8; 4] = b"PSCH";
-const VERSAO_ESQUEMA: u16 = 2;
+/// Versao do bloco de esquema gravado no `.reg`.
+///
+/// A 3 acrescentou os metadados de coluna (`id`, `caption`, `descricao`,
+/// `mascara`), o marcador de chave primaria no indice e o modo de particao.
+/// A leitura ainda aceita a 2: tabela gravada antes abre, ganha um `id` v7
+/// sorteado na hora e os textos vazios. Escrever, so na 3.
+const VERSAO_ESQUEMA: u16 = 3;
+const VERSAO_ESQUEMA_MINIMA: u16 = 2;
 
 /// O que fazer com as linhas filhas quando a linha pai muda ou some.
 ///
@@ -100,17 +108,65 @@ impl ForeignKey {
     }
 }
 
+/// O que uma coluna e dentro das chaves da tabela.
+///
+/// Tudo aqui e DERIVADO dos indices e das chaves estrangeiras -- nada disso e
+/// gravado na coluna. Marcar "primaria" no proprio campo criaria uma segunda
+/// verdade ao lado do indice, e as duas divergiriam no primeiro `ALTER`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PapelDeChave {
+    pub primaria: bool,
+    /// A chave primaria de que participa tem mais de uma coluna.
+    pub primaria_composta: bool,
+    pub estrangeira: bool,
+    /// Alguma chave estrangeira de que participa tem mais de uma coluna.
+    pub estrangeira_composta: bool,
+    pub chaves_estrangeiras: Vec<String>,
+    /// Todos os indices em que a coluna aparece, primario incluido.
+    pub indices: Vec<String>,
+}
+
+fn pertence(idx: &IndexDef, coluna: usize) -> bool {
+    idx.colunas.iter().any(|ic| ic.coluna == coluna)
+}
+
+/// Uma coluna: o que ela guarda, e o que a tela precisa saber para exibi-la.
+///
+/// Os quatro campos de apresentacao -- `id`, `caption`, `descricao` e
+/// `mascara` -- moram no `.reg` junto com o resto do esquema, e nao num
+/// dicionario a parte. E a mesma razao de o esquema morar ali: a tabela tem de
+/// se descrever sozinha. Um dicionario externo se perde, se desatualiza, e
+/// obriga quem copia os cinco arquivos a copiar um sexto.
+///
+/// O `id` e um UUID v7 sorteado na criacao e **nunca reaproveitado**: e por
+/// ele que uma tela, um relatorio ou um mapeamento se referem a coluna, para
+/// que renomear a coluna nao quebre nada. Renomear troca o `nome`; o `id`
+/// segue o mesmo.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Column {
+    /// Identidade estavel da coluna. Sobrevive a renomear.
+    pub id: Uuid,
     pub nome: String,
+    /// Rotulo de tela. Vazio significa "use o nome".
+    pub caption: String,
+    /// Para que serve a coluna, em uma linha.
+    pub descricao: String,
+    /// Mascara de edicao e exibicao, no formato PICTURE do Clarion(R):
+    /// `@N-11.2`, `@D6`, `@P###-####P`. Vazia = sem mascara.
+    pub mascara: String,
     pub ty: ColumnType,
     pub nullable: bool,
 }
 
 impl Column {
+    /// Coluna nova, com um `id` v7 recem-sorteado.
     pub fn new(nome: impl Into<String>, ty: ColumnType) -> Self {
         Column {
+            id: Uuid::v7(),
             nome: nome.into(),
+            caption: String::new(),
+            descricao: String::new(),
+            mascara: String::new(),
             ty,
             nullable: true,
         }
@@ -120,6 +176,36 @@ impl Column {
     pub fn obrigatoria(mut self) -> Self {
         self.nullable = false;
         self
+    }
+
+    /// Fixa o `id` -- para reabrir uma coluna que ja existe, nao para criar.
+    pub fn com_id(mut self, id: Uuid) -> Self {
+        self.id = id;
+        self
+    }
+
+    pub fn com_caption(mut self, caption: impl Into<String>) -> Self {
+        self.caption = caption.into();
+        self
+    }
+
+    pub fn com_descricao(mut self, descricao: impl Into<String>) -> Self {
+        self.descricao = descricao.into();
+        self
+    }
+
+    pub fn com_mascara(mut self, mascara: impl Into<String>) -> Self {
+        self.mascara = mascara.into();
+        self
+    }
+
+    /// O rotulo que a tela deve mostrar: o caption, ou o nome se nao houver.
+    pub fn rotulo(&self) -> &str {
+        if self.caption.is_empty() {
+            &self.nome
+        } else {
+            &self.caption
+        }
     }
 }
 
@@ -161,6 +247,14 @@ pub struct IndexDef {
     pub nome: String,
     pub colunas: Vec<IndexColumn>,
     pub unico: bool,
+    /// Este e o indice da CHAVE PRIMARIA da tabela.
+    ///
+    /// Ate aqui o motor so tinha "indice unico", e chave primaria e mais do
+    /// que isso: e a identidade da linha, a que as chaves estrangeiras das
+    /// outras tabelas apontam, e a que a tela precisa saber para dizer quais
+    /// campos formam a chave. So um indice pode ser primario, e ele e sempre
+    /// unico -- `Schema::new` recusa o contrario.
+    pub primario: bool,
 }
 
 impl IndexDef {
@@ -169,12 +263,26 @@ impl IndexDef {
             nome: nome.into(),
             colunas,
             unico: false,
+            primario: false,
         }
     }
 
     pub fn unico(mut self) -> Self {
         self.unico = true;
         self
+    }
+
+    /// Marca como chave primaria. Primaria implica unica -- nao ha chave
+    /// primaria que aceite duplicata.
+    pub fn primaria(mut self) -> Self {
+        self.primario = true;
+        self.unico = true;
+        self
+    }
+
+    /// A chave e composta quando tem mais de uma coluna.
+    pub fn composta(&self) -> bool {
+        self.colunas.len() > 1
     }
 }
 
@@ -251,6 +359,44 @@ impl Schema {
                     return Err(PhxError::Esquema(format!(
                         "indice {} usa coluna {} do tipo {:?}, que nao e indexavel",
                         idx.nome, col.nome, col.ty
+                    )));
+                }
+            }
+        }
+
+        // A particao por periodo aponta uma coluna, e ela tem de existir e ser
+        // uma data. Conferir aqui e nao na gravacao: um esquema que so quebra
+        // na primeira insercao ja nasceu quebrado.
+        // So uma chave primaria, e ela e unica. Duas primarias seriam duas
+        // identidades para a mesma linha, e uma primaria que aceita duplicata
+        // nao identifica nada -- os dois casos sao erro de esquema, nao
+        // preferencia.
+        let primarias: Vec<&str> = indices
+            .iter()
+            .filter(|i| i.primario)
+            .map(|i| i.nome.as_str())
+            .collect();
+        if primarias.len() > 1 {
+            return Err(PhxError::Esquema(format!(
+                "a tabela {nome} tem {} chaves primarias ({}); pode ter no maximo uma",
+                primarias.len(),
+                primarias.join(", ")
+            )));
+        }
+        if let Some(idx) = indices.iter().find(|i| i.primario && !i.unico) {
+            return Err(PhxError::Esquema(format!(
+                "a chave primaria {} nao esta marcada como unica",
+                idx.nome
+            )));
+        }
+        // Coluna de chave primaria nao pode ser nula: uma identidade nula nao
+        // identifica.
+        if let Some(idx) = indices.iter().find(|i| i.primario) {
+            for ic in &idx.colunas {
+                if colunas[ic.coluna].nullable {
+                    return Err(PhxError::Esquema(format!(
+                        "a coluna {} faz parte da chave primaria {} e aceita nulo",
+                        colunas[ic.coluna].nome, idx.nome
                     )));
                 }
             }
@@ -343,7 +489,46 @@ impl Schema {
     }
 
     /// Liga a paginacao da tabela (os numeros do `CREATE TABLE`).
-    pub fn com_paginacao(mut self, paginacao: Paginacao) -> Schema {
+    /// Fixa a paginacao, conferindo o que ela promete sobre as colunas.
+    ///
+    /// A particao por periodo aponta uma coluna, e ela tem de existir e ser uma
+    /// data. Conferir aqui, e nao na gravacao: um esquema que so quebra na
+    /// primeira insercao ja nasceu quebrado, e o erro apareceria longe de quem
+    /// o causou.
+    pub fn com_paginacao(mut self, paginacao: Paginacao) -> Result<Schema> {
+        if let ModoParticao::PorPeriodo { coluna, periodo } = paginacao.modo {
+            let c = self.colunas.get(coluna as usize).ok_or_else(|| {
+                PhxError::Esquema(format!(
+                    "particao {} aponta a coluna {coluna}, que nao existe em {}",
+                    periodo.nome(),
+                    self.nome
+                ))
+            })?;
+            if !matches!(c.ty, ColumnType::Date | ColumnType::DateTime) {
+                return Err(PhxError::Esquema(format!(
+                    "particao {} pede uma coluna de data; {} e {:?}",
+                    periodo.nome(),
+                    c.nome,
+                    c.ty
+                )));
+            }
+            if c.nullable {
+                return Err(PhxError::Esquema(format!(
+                    "a coluna de particao {} aceita nulo; sem data nao ha periodo \
+                     em que a linha caiba",
+                    c.nome
+                )));
+            }
+        }
+        self.paginacao = paginacao;
+        Ok(self)
+    }
+
+    /// Fixa a paginacao sem conferir -- so para reabrir o que ja esta no disco.
+    ///
+    /// O que foi gravado ja passou pela conferencia uma vez, e recusar na
+    /// leitura transformaria um esquema antigo em tabela ilegivel.
+    pub(crate) fn com_paginacao_do_disco(mut self, paginacao: Paginacao) -> Schema {
         self.paginacao = paginacao;
         self
     }
@@ -362,6 +547,39 @@ impl Schema {
 
     pub fn colunas(&self) -> &[Column] {
         &self.colunas
+    }
+
+    /// O indice marcado como chave primaria, se houver.
+    pub fn chave_primaria(&self) -> Option<&IndexDef> {
+        self.indices.iter().find(|i| i.primario)
+    }
+
+    /// O papel de uma coluna nas chaves da tabela.
+    ///
+    /// Nao e campo gravado: sai dos indices e das chaves estrangeiras, que sao
+    /// a verdade. Guardar "e primaria" na coluna criaria uma segunda verdade
+    /// que pode discordar da primeira -- e um dia discordaria.
+    pub fn papel_da_coluna(&self, i: usize) -> PapelDeChave {
+        let na_pk = self.chave_primaria().filter(|k| pertence(k, i));
+        let fks: Vec<&ForeignKey> = self
+            .chaves_estrangeiras
+            .iter()
+            .filter(|fk| fk.colunas.contains(&i))
+            .collect();
+        PapelDeChave {
+            primaria: na_pk.is_some(),
+            // Composta se a chave de que ela participa tem mais de uma coluna.
+            primaria_composta: na_pk.map(IndexDef::composta).unwrap_or(false),
+            estrangeira: !fks.is_empty(),
+            estrangeira_composta: fks.iter().any(|fk| fk.colunas.len() > 1),
+            chaves_estrangeiras: fks.iter().map(|fk| fk.nome.clone()).collect(),
+            indices: self
+                .indices
+                .iter()
+                .filter(|idx| pertence(idx, i))
+                .map(|idx| idx.nome.clone())
+                .collect(),
+        }
     }
 
     pub fn indices(&self) -> &[IndexDef] {
@@ -421,12 +639,19 @@ impl Schema {
             out.extend_from_slice(&a.to_le_bytes());
             out.push(b);
             out.push(c.nullable as u8);
+            // v3: os metadados de apresentacao, na mesma ordem em que a tela
+            // pede por eles.
+            out.extend_from_slice(c.id.bytes());
+            escrever_texto(&mut out, &c.caption);
+            escrever_texto(&mut out, &c.descricao);
+            escrever_texto(&mut out, &c.mascara);
         }
 
         out.extend_from_slice(&(self.indices.len() as u16).to_le_bytes());
         for idx in &self.indices {
             escrever_texto(&mut out, &idx.nome);
-            out.push(idx.unico as u8);
+            // Dois sinalizadores num byte: unico no bit 0, primario no 1.
+            out.push((idx.unico as u8) | ((idx.primario as u8) << 1));
             out.extend_from_slice(&(idx.colunas.len() as u16).to_le_bytes());
             for ic in &idx.colunas {
                 out.extend_from_slice(&(ic.coluna as u16).to_le_bytes());
@@ -454,6 +679,9 @@ impl Schema {
         out.extend_from_slice(&p.max_arquivos.to_le_bytes());
         out.push(p.digitos);
         out.extend_from_slice(&p.bytes_por_arquivo.to_le_bytes());
+        let (tag, coluna) = p.modo.tag();
+        out.push(tag);
+        out.extend_from_slice(&coluna.to_le_bytes());
         out
     }
 
@@ -464,9 +692,10 @@ impl Schema {
             return Err(PhxError::Esquema("bloco de esquema invalido".into()));
         }
         let versao = leitor.u16()?;
-        if versao != VERSAO_ESQUEMA {
+        if !(VERSAO_ESQUEMA_MINIMA..=VERSAO_ESQUEMA).contains(&versao) {
             return Err(PhxError::Esquema(format!(
-                "versao de esquema {versao} nao suportada"
+                "versao de esquema {versao} nao suportada \
+                 (este motor le da {VERSAO_ESQUEMA_MINIMA} a {VERSAO_ESQUEMA})"
             )));
         }
         let nome = leitor.texto()?;
@@ -479,8 +708,29 @@ impl Schema {
             let a = leitor.u16()?;
             let b = leitor.u8()?;
             let nullable = leitor.u8()? != 0;
+            // Tabela gravada na v2 nao tem metadados: ganha um id novo e
+            // textos vazios, e passa a ter os campos assim que for regravada.
+            let (id, caption, descricao, mascara) = if versao >= 3 {
+                (
+                    Uuid::de_bytes(
+                        leitor
+                            .bytes(16)?
+                            .try_into()
+                            .map_err(|_| PhxError::Esquema("id de coluna truncado".into()))?,
+                    ),
+                    leitor.texto()?,
+                    leitor.texto()?,
+                    leitor.texto()?,
+                )
+            } else {
+                (Uuid::v7(), String::new(), String::new(), String::new())
+            };
             colunas.push(Column {
+                id,
                 nome,
+                caption,
+                descricao,
+                mascara,
                 ty: ColumnType::de_tag(tag, a, b)?,
                 nullable,
             });
@@ -490,7 +740,8 @@ impl Schema {
         let mut indices = Vec::with_capacity(n_idx);
         for _ in 0..n_idx {
             let nome = leitor.texto()?;
-            let unico = leitor.u8()? != 0;
+            let sinais = leitor.u8()?;
+            let (unico, primario) = (sinais & 1 != 0, sinais & 2 != 0);
             let n = leitor.u16()? as usize;
             let mut cols = Vec::with_capacity(n);
             for _ in 0..n {
@@ -506,6 +757,7 @@ impl Schema {
                 nome,
                 colunas: cols,
                 unico,
+                primario,
             });
         }
 
@@ -535,16 +787,20 @@ impl Schema {
             });
         }
 
-        let paginacao = Paginacao {
+        let mut paginacao = Paginacao {
             registros_por_arquivo: leitor.u64()?,
             max_arquivos: leitor.u32()?,
             digitos: leitor.u8()?,
             bytes_por_arquivo: leitor.u64()?,
+            modo: ModoParticao::PorQuantidade,
         };
+        if versao >= 3 {
+            paginacao.modo = ModoParticao::de_tag(leitor.u8()?, leitor.u16()?)?;
+        }
 
         Schema::new(nome, colunas, indices)?
             .com_chaves_estrangeiras(fks)
-            .map(|e| e.com_paginacao(paginacao))
+            .map(|e| e.com_paginacao_do_disco(paginacao))
     }
 }
 

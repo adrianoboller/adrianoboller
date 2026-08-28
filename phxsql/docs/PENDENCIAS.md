@@ -22,7 +22,7 @@ o código, não contra a lembrança — foi assim que a chave estrangeira saiu d
 | ☑️ | 12 | Pastas separando tabelas **e** bancos | `base/ → database → raiz → schema/` |
 | ☑️ | 13 | Paginação `Nome_001.reg`, `_002`… | volume = `(rowid−1)/por_arquivo + 1` |
 | ☑️ | 14 | **Quantidade de registros e arquivos no create table** | op `criar_tabela` no protocolo e tela **Nova tabela** com registros por arquivo, dígitos do sufixo e teto de volumes. A CLI ainda não tem o comando |
-| ☑️ | 15 | Organograma, fluxograma e dossiê | 19 seções, 16 figuras, tudo em SVG à mão |
+| ☑️ | 15 | Organograma, fluxograma e dossiê | 19 seções, 17 figuras, tudo em SVG à mão |
 | ☑️ | 16 | Log de IPs na porta 5000, com data e hora | JSON Lines, para caber `fail2ban` |
 | ☑️ | 17 | Download dos fontes e do compilado Linux/Windows, com manual | `./empacotar.sh`, três zips conferidos |
 | ◐ | 18 | **Subir o PhxSql no GitHub** | está na branch com histórico completo; **repositório próprio bloqueado**: `create_repository` responde 403 |
@@ -74,9 +74,18 @@ o código, não contra a lembrança — foi assim que a chave estrangeira saiu d
 | ☑️ | 62 | Parar a carga de 10 milhões | parada e limpa |
 | ☑️ | 63 | **Barra de menu superior tradicional** | seis menus, 22 recursos, Alt/setas/Esc |
 | ☑️ | 64 | Cadê o sol e a lua? | respondida — estavam lá, o recorte da captura é que cortava |
+| ☑️ | 68 | **Copiar e colar tabela** de um lugar para outro | `copiar_tabela` atravessa databases e schemas; a permissão de criar é conferida **no destino** |
+| ☑️ | 69 | **Configurações gerais do servidor, do banco e dos usuários**, cada uma com sua tela | três telas, três alcances. **Leem, não gravam** — gravar o `config.json` pela web daria a uma sessão roubada o poder de abrir o firewall e criar supervisor |
+| ☑️ | 70 | **SysTables e SysColumns** | o catálogo em forma de dado, e o dicionário de dados com id, caption, descrição, máscara e papel na chave |
+| ☑️ | 71 | **Gerir database**: conexões, triggers, procedures, arquivos bloqueados, modo exclusivo, transações, backup/restaure e jobs | 15 itens numa tela; 11 funcionam, 4 apagados dizendo o que falta e de que dependem |
+| ☑️ | 72 | **Diretivas de acesso ao banco e diretivas de acesso** | os seis portões na ordem em que fecham, e quem alcança o banco resolvido pelas três regras |
+| ☑️ | 73 | **Editor de menu** para trocar o nome exibido | 81 rótulos; fica no navegador de quem mexeu, não no servidor |
+| ☑️ | 74 | **Configurações e diretivas das tabelas** | a geometria decidida na criação, os índices e chaves, e o que a tabela herda do servidor |
+| ☑️ | 75 | **Cadastro de campos** com id automático, nome, caption, descrição, tipo, tamanho, máscara e chave primária/estrangeira/composta | **mudança de formato**: esquema `PSCH` v3. O `id` é UUID v7 e nunca muda; o papel na chave é derivado dos índices |
+| ☑️ | 76 | **Tabela particionada** com grade de gestão: por faixa de quantidade, mensal, bimestral, semestral ou anual | **mudança de formato**: o volume corta pelo calendário, e cada volume grava a própria fronteira no cabeçalho |
 | ☑️ | 67 | **Botão e menu Tabelas** para gerir as tabelas do banco: nova, estrutura, editar conteúdo, partições, duplicar, reparar tabela, reparar índice e excluir — e **Gestão de transações** no menu de ferramentas | as oito operações funcionam de ponta a ponta; três delas (`criar_tabela`, `duplicar_tabela`, `excluir_tabela`) nasceram aqui, e `criar_schema` — prometido na documentação e nunca despachado — junto |
 
-**59 feitos · 2 parciais · 6 planejados**, de 67 pedidos.
+**68 feitos · 2 parciais · 6 planejados**, de 76 pedidos.
 
 Fora do que você pediu, entraram por medição: o CRC slice-by-8, o `descer` sem
 reler a folha, a conferência de unicidade sem descida dupla, e catorze correções
@@ -107,8 +116,8 @@ Pedido e **não começado**. Não estão pela metade: não têm código nenhum.
 
 | # | O que você pediu | Por que ainda não | O que destrava |
 |---|---|---|---|
-| 1 | **Jobs de execução** | é o mais barato dos três, e ficou para depois do painel | o agendador do backup (`hora_de_rodar`, `minuto_do_dia`, o laço que acorda de minuto em minuto) já é exatamente o desenho. Falta generalizar de «rodar backup» para «rodar operação nomeada». Uma rodada |
-| 2 | **Triggers** | onde disparar já existe — `inserir`, `atualizar` e `excluir` são os três pontos, e já escrevem no `.log` | falta decidir **em que linguagem o gatilho é escrito**, e essa escolha é sua. Sem camada SQL não há `BEGIN … END` para hospedar |
+| 1 | **Jobs de execução** | é o mais barato dos três; tem tela apagada em *Gerir banco* dizendo o que falta | o agendador do backup (`hora_de_rodar`, `minuto_do_dia`, o laço que acorda de minuto em minuto) já é exatamente o desenho. Falta generalizar de «rodar backup» para «rodar operação nomeada». Uma rodada |
+| 2 | **Triggers** | tem tela apagada em *Gerir banco*; onde disparar já existe — `inserir`, `atualizar` e `excluir` são os três pontos, e já escrevem no `.log` | falta decidir **em que linguagem o gatilho é escrito**, e essa escolha é sua. Sem camada SQL não há `BEGIN … END` para hospedar |
 | 3 | **Stored procedures** | mesmo bloqueio, maior | procedimento é código guardado, e código guardado precisa de executor. Ou uma linguagem própria pequena, ou esperar a camada SQL |
 | 4 | **Parar e subir o serviço de dados pela interface**, trocando a porta | mexe no coração do servidor | o `accept` bloqueia. Derrubar a porta sem derrubar o processo exige acordar o laço — conectar no próprio endereço para o `accept` retornar e então conferir um sinalizador. Melhor inteiro do que pela metade |
 | 5 | **Servidor MCP** | não depende de nada; é fila | o protocolo já é JSON por linha. O MCP é tradução de vocabulário sobre o que existe |
@@ -119,7 +128,10 @@ Pedido e **não começado**. Não estão pela metade: não têm código nenhum.
 | 10 | Compactação | o formato já prevê e **mede** o espaço morto | falta o comando. O reindex já cobre a parte do índice |
 | 11 | Transações | tem **tela** (Ferramentas → Gestão de transações), e a tela diz o que existe e o que não existe em vez de fingir | hoje a inserção desfaz o que gravou se um índice falhar, e a trava única serializa as escritas — mas não há journal com a imagem anterior da linha, nem identificador de transação na sessão, nem `commit`/`rollback` de várias operações. É o que o uso como livro-razão exigiria primeiro |
 | 12 | Concorrência fina | — | uma trava única serializa todo acesso a dados |
-| 13 | TLS | — | o tráfego depende de túnel. A credencial já não vai em claro quando se usa desafio-resposta; os dados, sim |
+| 13 | Modo exclusivo | tem tela apagada em *Gerir banco* | reservar uma tabela por um período. Hoje a trava única já serializa as escritas, mas não há como RESERVAR — depende da trava por tabela, que é o mesmo trabalho da concorrência fina |
+| 14 | Restaurar backup | o *Backup e restauração* mostra o item apagado | copiar de volta é mais do que copiar: é decidir o que fazer com o que está lá. Sobrescrever um database em uso, com a trava tomada, precisa de um desenho — parar, restaurar ao lado e trocar, ou restaurar com outro nome |
+| 15 | Editar `config.json` e usuários pela web | as telas leem e dizem qual campo mexer | gravar credencial e política por HTTP precisa de desenho próprio: quem pode, o que fica no log, e a senha nunca em claro em ponto nenhum do caminho |
+| 16 | TLS | — | o tráfego depende de túnel. A credencial já não vai em claro quando se usa desafio-resposta; os dados, sim |
 
 ---
 
@@ -225,6 +237,33 @@ que os fez aparecer.
   fixa, e com três dígitos o volume 1000 não teria nome de arquivo. Teto
   omitido agora vira o maior que cabe, em vez de zero — que o validador
   recusava com uma mensagem que não ajudava quem preencheu a tela.
+
+### O que a rodada da gestão do banco achou
+
+Dois defeitos, e o segundo é uma armadilha que qualquer tela nova podia repetir.
+
+- **Um `onclick` no `#painel` vazava para a tela seguinte.** A gestão do banco
+  pendurou o clique no próprio painel; o `folha()` troca o *conteúdo* do painel,
+  não o *elemento*, então o tratador sobreviveu à troca de tela e disparava na
+  próxima — clicar em «Configurações e diretivas» abria SysColumns. Corrigido
+  em dois lugares: o tratador foi para o container das operações, e o `folha()`
+  passou a limpar o `onclick` do painel por garantia.
+
+- **O botão primário ocupava a linha inteira.** O `.botao` nasceu com
+  `width:100%` para o cartão de entrada, onde é o único da linha. Numa barra de
+  ações ele empurrava os outros para baixo. Agora `.acoes .botao` cabe no
+  próprio texto.
+
+- **O volume 1 nascia sem período.** Na partição por calendário o volume 1 é
+  criado antes da primeira linha, então não havia período para gravar — e
+  reabrir a tabela recusava com «não tem fronteira gravada». Agora ele nasce com
+  uma sentinela e a primeira linha **adota** o volume em vez de cortar um novo,
+  senão a tabela nasceria com um arquivo vazio.
+
+- **A tela de partições calculava por divisão.** Ela dividia `slots` por
+  `registros_por_arquivo` — a conta certa para a partição por faixa, e errada
+  para a por período, onde o corte depende do calendário. Quatro meses apareciam
+  como um volume só. Agora ela lê as fronteiras que o `esquema` devolve.
 
 - **A árvore roubava a tela de quem pintasse depois dela.** `montarArvore`
   terminava sempre clicando no Painel; criar uma tabela redesenhava a árvore,

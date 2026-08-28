@@ -153,6 +153,10 @@ input:focus,select:focus{border-color:var(--laranja);outline:none}
 .acoes{
   display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:14px 0;
 }
+/* O `.botao` nasceu com `width:100%` para o cartao de entrada, onde ele e o
+   unico da linha. Numa barra de acoes isso o faz ocupar a largura inteira e
+   empurrar os outros para baixo -- aqui ele cabe no proprio texto. */
+.acoes .botao{width:auto;padding:8px 16px}
 .botao.perigo{border-color:var(--log);color:var(--log)}
 .botao.perigo:hover{background:var(--log);color:#fff;border-color:var(--log)}
 
@@ -179,6 +183,34 @@ input:focus,select:focus{border-color:var(--laranja);outline:none}
   outline:none;border-color:var(--laranja);
 }
 .ficha-edit input::placeholder{color:var(--texto-3);opacity:.7;font-size:11.5px}
+
+/* ------------------------------------------------- cadastro de campos */
+table.montar.campos td{padding:4px 6px}
+table.montar.campos .pos{
+  font-family:"IBM Plex Mono",monospace;font-size:10.5px;color:var(--texto-3);
+}
+.criar .chk{
+  display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--texto-2);
+  text-transform:none;letter-spacing:0;cursor:pointer;margin:0;
+}
+.criar .chk input{width:auto}
+.secao .chk{margin-left:auto;font-weight:400;white-space:nowrap;flex:0 0 auto}
+.leg.chave{
+  margin:10px 0 0;padding:8px 11px;border-radius:5px;
+  background:var(--painel-2);border:1px solid var(--linha);
+}
+.leg.chave b{color:var(--laranja)}
+.leg.chave.sem{border-color:var(--log);color:var(--texto-2)}
+
+/* ------------------------------------------------- configurações e catálogo */
+.bloco-user{
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  padding:8px 11px;border-bottom:1px solid var(--linha);font-size:11.5px;
+}
+.bloco-user b{min-width:110px;font-family:"IBM Plex Mono",monospace}
+.pino.ok{border-color:var(--ok);color:var(--ok)}
+.nota.mal{border-color:var(--log)}
+.nota.mal strong{color:var(--log)}
 
 /* ------------------------------------------------- gestão de tabelas */
 .ops{
@@ -609,7 +641,10 @@ const est = { sessao:null, usuario:null, token:"", demo:false,
               teto:200, esquemaAtual:null, grade:null, painel:null,
               // O formulario de nova tabela sobrevive a um "+ coluna": o
               // rascunho fica aqui e a tela se redesenha a partir dele.
-              rascunho:null };
+              rascunho:null,
+              // A area de transferencia do copiar/colar de tabela, e os
+              // rotulos que o editor de menu trocou.
+              copia:null, rotulos:null };
 
 async function api(op, params = {}) {
   if (est.demo) return demo(op, params);
@@ -1654,8 +1689,14 @@ const TIPOS = [
 ];
 
 /** O database sobre o qual a gestao trabalha, ou um recado dizendo que falta. */
+/** O database sobre o qual a gestao trabalha.
+ *
+ * A ordem importa: o que a TELA esta mostrando ganha do que a arvore tem
+ * selecionado, senao abrir a gestao de um banco e clicar em "Gerir" levaria
+ * para outro. O primeiro da lista e ultimo recurso, para quem acabou de
+ * entrar e nao escolheu nada. */
 function databaseCorrente() {
-  return (est.atual && est.atual.db) || est.database || (est.bancos || [])[0] || "";
+  return est.database || (est.atual && est.atual.db) || (est.bancos || [])[0] || "";
 }
 
 function gerirTabelasAtual() {
@@ -1685,8 +1726,11 @@ async function gerirTabelas(db) {
     `${nomes.length} ${nomes.length === 1 ? "tabela" : "tabelas"} · clique numa linha para gerir`,
     `<div class="acoes">
        <button class="botao" id="btNovaTab">✚ Nova tabela…</button>
+       <button class="botao secundario" id="btColar" ${est.copia ? "" : "disabled"}>
+         ⧉ Colar${est.copia ? ` ${esc(est.copia.db)}.${esc(est.copia.tab)}` : ""}</button>
        <button class="botao secundario" id="btRecarregarTabs">↻ Atualizar</button>
-       <span class="leg">as oito operações ficam na tela de cada tabela</span>
+       <button class="botao secundario" id="btGerirBanco">⛁ Gerir ${esc(db)}</button>
+       <span class="leg">clique numa linha para as oito operações</span>
      </div>` +
     (nomes.length
       ? tabela([{t:"tabela"},{t:"registros",cls:"num"},{t:"slots",cls:"num"},
@@ -1705,6 +1749,8 @@ async function gerirTabelas(db) {
 
   $("#btNovaTab").onclick = () => telaNovaTabela(db);
   $("#btRecarregarTabs").onclick = () => gerirTabelas(db);
+  $("#btGerirBanco").onclick = () => gerirDatabase(db);
+  $("#btColar").onclick = () => telaCopiarColar(db);
   $$("#painel .linha-tab").forEach(tr =>
     tr.onclick = () => gerirTabela(db, tr.dataset.tab));
 }
@@ -1741,12 +1787,21 @@ async function gerirTabela(db, tab) {
     ["conteudo", "▦", "Editar conteúdo da tabela",
      "A grade de dados: incluir, alterar e excluir linha a linha, com um campo por coluna.",
      () => verConteudoEditavel(db, tab)],
+    ["config", "⚙", "Configurações e diretivas",
+     "A geometria decidida na criação, os índices e chaves, e o que a tabela herda do servidor.",
+     () => verConfigTabela(db, tab)],
     ["particoes", "◫", "Partições da tabela",
      "Em que volume cada rowid cai, e qual arquivo do disco guarda cada faixa.",
      () => verParticoes(db, tab)],
     ["duplicar", "⧉", "Duplicar tabela",
-     "Copia os cinco arquivos para outro nome. A cópia nasce com os mesmos rowids e a mesma ordem.",
+     "Copia os cinco arquivos para outro nome, aqui mesmo. A cópia nasce com os mesmos rowids e a mesma ordem.",
      () => duplicarTabelaPara(db, tab)],
+    ["copiar", "⎘", "Copiar tabela",
+     "Põe esta tabela na área de transferência, para colar em outro banco ou schema.",
+     () => copiarTabela(db, tab)],
+    ["colar", "⧉", "Colar aqui",
+     "Traz a tabela da área de transferência para este banco.",
+     () => telaCopiarColar(db)],
     ["reparar", "⛨", "Reparar tabela",
      "Confere cada slot no .reg contra o espelho .bkp e recupera o lado bom.",
      () => repararTabelaDe(db, tab)],
@@ -1761,7 +1816,7 @@ async function gerirTabela(db, tab) {
      () => excluirTabelaDe(db, tab)],
   ];
 
-  folha(`Gestão de ${tab}`, `${db} · oito operações sobre esta tabela`,
+  folha(`Gestão de ${tab}`, `${db} · o que se faz com esta tabela`,
     resumo +
     `<div class="ops">${OPS.map(([k, ico, rot, diz], i) =>
       `<button class="op${k === "excluir" ? " perigo" : ""}" data-op="${i}">
@@ -1790,16 +1845,31 @@ async function gerirTabela(db, tab) {
 function volumesDe(e) {
   const pag = e.paginacao;
   if (!pag || !pag.registros_por_arquivo) return [];
-  const rpa = pag.registros_por_arquivo;
-  const total = Math.max(Number(e.slots) || 0, 0);
-  const quantos = Math.max(1, Math.ceil(total / rpa));
   const larg = pag.digitos || 3;
+  const total = Math.max(Number(e.slots) || 0, 0);
+  const nome = v => `${e.tabela}_${String(v).padStart(larg, "0")}.reg`;
+
+  // Na particao por periodo o volume NAO sai de conta: ele corta quando o
+  // calendario vira, e so o servidor sabe quando isso aconteceu. As
+  // fronteiras vem prontas no `esquema`; calcular aqui daria o numero errado
+  // -- e dava: quatro meses apareciam como um volume so.
+  if (e.volumes && e.volumes.length) {
+    return e.volumes.map((v, i) => {
+      const prox = e.volumes[i + 1];
+      const ate = prox ? prox.primeiro_rowid - 1 : total;
+      return { volume: v.volume, arquivo: nome(v.volume), periodo: v.periodo,
+               de: v.primeiro_rowid, ate,
+               usados: Math.max(0, ate - v.primeiro_rowid + 1) };
+    });
+  }
+
+  const rpa = pag.registros_por_arquivo;
+  const quantos = Math.max(1, Math.ceil(total / rpa));
   const out = [];
   for (let v = 1; v <= quantos; v++) {
     const de = (v - 1) * rpa + 1;
     const ate = v * rpa;
-    out.push({ volume:v,
-      arquivo: `${e.tabela}_${String(v).padStart(larg, "0")}.reg`,
+    out.push({ volume:v, arquivo: nome(v),
       de, ate, usados: Math.max(0, Math.min(total, ate) - de + 1) });
   }
   return out;
@@ -1827,11 +1897,17 @@ async function verParticoes(db, tab) {
   }
 
   const vols = volumesDe(e);
+  const porPeriodo = pag.modo && pag.modo !== "quantidade";
   const gb = n => (n / (1024 * 1024 * 1024)).toFixed(2);
-  folha(`Partições de ${tab}`, `${db} · ${vols.length} volume(s) do .reg`,
+  folha(`Partições de ${tab}`,
+    `${db} · ${vols.length} volume(s) do .reg · ${
+      porPeriodo ? `corta ${pag.modo}, pela coluna ${pag.coluna}` : "corta por quantidade"}`,
     `<div class="fichas">
+       <div class="ficha"><div class="v">${esc(porPeriodo ? pag.modo : "por faixa")}</div>
+         <div class="r">regra de corte</div>
+         <div class="u">${porPeriodo ? esc(`pela coluna ${pag.coluna}`) : "por quantidade"}</div></div>
        <div class="ficha"><div class="v">${esc(String(pag.registros_por_arquivo))}</div>
-         <div class="r">registros por arquivo</div></div>
+         <div class="r">${porPeriodo ? "teto por volume" : "registros por arquivo"}</div></div>
        <div class="ficha"><div class="v">${pag.max_arquivos ? esc(String(pag.max_arquivos)) : "∞"}</div>
          <div class="r">teto de volumes</div></div>
        <div class="ficha"><div class="v">${esc(String(pag.capacidade || "—"))}</div>
@@ -1839,18 +1915,31 @@ async function verParticoes(db, tab) {
        <div class="ficha"><div class="v">${esc(gb(pag.bytes_por_arquivo || 0))} GiB</div>
          <div class="r">volume dos externos</div><div class="u">.bin, .memo, .log</div></div>
      </div>` +
-    tabela([{t:"volume",cls:"num"},{t:"arquivo"},{t:"do rowid",cls:"num"},
-            {t:"até o rowid",cls:"num"},{t:"slots usados",cls:"num"}],
+    tabela([{t:"volume",cls:"num"},{t:"arquivo"},
+            ...(porPeriodo ? [{t:"período que o abriu"}] : []),
+            {t:"do rowid",cls:"num"},{t:"até o rowid",cls:"num"},{t:"slots usados",cls:"num"}],
       vols, v => `<tr>
         <td class="num dado">${v.volume}</td>
         <td class="dado"><code>${esc(v.arquivo)}</code></td>
+        ${porPeriodo ? `<td class="dado">${esc(v.periodo || "—")}</td>` : ""}
         <td class="num">${v.de}</td><td class="num">${v.ate}</td>
         <td class="num">${v.usados}</td></tr>`) +
     `<div class="nota">
+       ${porPeriodo ? `
+       <p><strong>Aqui as faixas não são conta.</strong> O volume corta quando o
+       período da coluna <code>${esc(pag.coluna)}</code> vira — ou quando enche,
+       o que vier primeiro. Cada volume grava no próprio cabeçalho o rowid em
+       que começou, e achar o volume de um rowid é uma busca binária nessa
+       tabela pequena, em vez de uma divisão.</p>
+       <p><strong>A linha atrasada não volta.</strong> Um lançamento de janeiro
+       digitado em março entra no volume de março: a ordem de digitação é
+       sagrada, e voltar seria escrever no meio de um arquivo já fechado. Por
+       isso o período de um volume é <em>o período em que ele abriu</em>.</p>`
+       : `
        <p><strong>Estas faixas são conta, não busca.</strong>
        <code>volume = (rowid−1) ÷ ${esc(String(pag.registros_por_arquivo))} + 1</code>,
        e o resto da divisão é o slot dentro do volume. É por isso que paginar
-       não custa nada na leitura.</p>
+       não custa nada na leitura.</p>`}
        <p>O <code>.ndx</code> <em>não</em> se parte: ele já guarda rowid global,
        e nenhuma linha do código de índice sabe que volume existe.</p>
        <p><strong>Não dá para editar isto depois.</strong> Mudar o divisor mudaria
@@ -1933,6 +2022,24 @@ async function excluirTabelaDe(db, tab) {
 
 /* ----------------------------------------------------------- nova tabela */
 
+/** Quantos volumes cabem num sufixo de N digitos: `_999` para tres.
+ *
+ * Nao e detalhe de tela. Zero volumes de teto seria "infinito", e infinito
+ * nao existe aqui: o volume 1000 com tres digitos nao teria nome de arquivo. */
+const tetoDoSufixo = digitos => Math.pow(10, Math.min(9, Math.max(1, digitos))) - 1;
+
+/** Como cada regra de particao corta o volume, em uma linha. */
+const PARTICOES = [
+  ["quantidade", "por faixa de quantidade", "volume novo a cada N registros — o endereço sai de divisão"],
+  ["mensal",     "mensal",                  "volume novo quando o mês vira"],
+  ["bimestral",  "bimestral",               "jan-fev, mar-abr, mai-jun, jul-ago, set-out, nov-dez"],
+  ["semestral",  "semestral",               "jan-jun e jul-dez"],
+  ["anual",      "anual",                   "volume novo a cada ano"],
+];
+
+/** Os tipos que podem carregar a data da particao. */
+const TIPOS_DATA = ["Date", "DateTime"];
+
 /** O formulario de criacao: colunas e indices montados linha a linha.
  *
  * O indice aponta a coluna pelo NOME e nao pela posicao, porque posicao muda
@@ -1940,18 +2047,36 @@ async function excluirTabelaDe(db, tab) {
 function telaNovaTabela(db) {
   est.rascunho = est.rascunho || {
     dig: 3,
-    colunas: [{ nome:"id", tipo:"Sequence", obrigatoria:true },
-              { nome:"nome", tipo:"Str(60)", obrigatoria:false }],
-    indices: [{ nome:"porId", colunas:"id", unico:true }],
+    particao: "quantidade",
+    colunas: [
+      { nome:"id", tipo:"Sequence", obrigatoria:true, caption:"Código",
+        descricao:"", mascara:"" },
+      { nome:"nome", tipo:"Str(60)", obrigatoria:false, caption:"",
+        descricao:"", mascara:"" },
+    ],
+    indices: [{ nome:"porId", colunas:"id", unico:true, primario:true }],
   };
   desenharNovaTabela(db);
 }
 
-/** Quantos volumes cabem num sufixo de N digitos: `_999` para tres.
+/** A linha de um campo na grade do cadastro.
  *
- * Nao e detalhe de tela. Zero volumes de teto seria "infinito", e infinito
- * nao existe aqui: o volume 1000 com tres digitos nao teria nome de arquivo. */
-const tetoDoSufixo = digitos => Math.pow(10, Math.min(9, Math.max(1, digitos))) - 1;
+ * O `id` aparece apagado e nao se digita: ele e sorteado pelo motor na
+ * criacao. Mostrar mesmo assim tem razao -- e por ele que uma tela ou um
+ * relatorio se referem a coluna, e quem for escrever essa integracao precisa
+ * ve-lo. */
+function linhaDeCampo(c, i, opcoesTipo) {
+  return `<tr>
+    <td class="num"><span class="pos">${i + 1}</span></td>
+    <td><input class="c-nome" data-i="${i}" value="${esc(c.nome)}" placeholder="nome_no_disco"></td>
+    <td><input class="c-caption" data-i="${i}" value="${esc(c.caption || "")}" placeholder="rótulo de tela"></td>
+    <td><select class="c-tipo" data-i="${i}">${opcoesTipo(c.tipo)}</select></td>
+    <td><input class="c-mascara" data-i="${i}" value="${esc(c.mascara || "")}" placeholder="@N-11.2"></td>
+    <td class="num"><input type="checkbox" class="c-obrig" data-i="${i}" ${c.obrigatoria ? "checked" : ""}></td>
+    <td><input class="c-desc" data-i="${i}" value="${esc(c.descricao || "")}" placeholder="para que serve"></td>
+    <td><button type="button" class="mini perigo c-rm" data-i="${i}">remover</button></td>
+  </tr>`;
+}
 
 function desenharNovaTabela(db) {
   const r = est.rascunho;
@@ -1959,50 +2084,94 @@ function desenharNovaTabela(db) {
     `<option value="${esc(t)}"${t === v ? " selected" : ""}>${esc(t)} — ${esc(d)}</option>`
   ).join("");
 
+  const porPeriodo = r.particao && r.particao !== "quantidade";
+  const colunasData = r.colunas.filter(c => TIPOS_DATA.includes(c.tipo) && c.nome);
+  const nomesCol = r.colunas.filter(c => c.nome).map(c => c.nome);
+
+  // A chave primaria e um indice marcado. Mostrar quais colunas a compoem
+  // aqui, e nao so na grade de indices, porque e a pergunta que quem cadastra
+  // campo faz: "qual campo e a chave?".
+  const pk = r.indices.find(x => x.primario && x.nome);
+  const colsDaPk = pk ? pk.colunas.split(",").map(s => s.trim().split(/\s+/)[0]).filter(Boolean) : [];
+
   folha("Nova tabela", `${db} · cinco arquivos nascem juntos`,
     `<form class="criar" id="formNovaTab" autocomplete="off">
        <div class="bloco">
          <label class="largo"><span>nome da tabela</span>
-           <input id="nt_nome" placeholder="cadastroClientes"
-                  value="${esc(r.nome || "")}"></label>
+           <input id="nt_nome" placeholder="cadastroClientes" value="${esc(r.nome || "")}"></label>
          <label class="largo"><span>schema
              <em>(vazio = na raiz do database; a pasta nasce junto se faltar)</em></span>
-           <input id="nt_schema" placeholder="vendas"
-                  value="${esc(r.schema || "")}"></label>
-         <label><span>registros por arquivo <em>(0 = arquivo único)</em></span>
-           <input id="nt_pag" inputmode="numeric" placeholder="0"
-                  value="${esc(String(r.pag ?? 0))}"></label>
+           <input id="nt_schema" placeholder="vendas" value="${esc(r.schema || "")}"></label>
+       </div>
+
+       <h3 class="secao">Campos
+         <button type="button" class="mini" id="nt_addCol">+ campo</button>
+         <em>o <code>id</code> de cada campo é sorteado na criação e nunca muda —
+         é por ele que telas e relatórios apontam para a coluna</em></h3>
+       <div class="rolo"><table class="montar campos"><thead><tr>
+         <th class="num">#</th><th>nome</th><th>caption</th><th>tipo e tamanho</th>
+         <th>máscara <em>(picture)</em></th><th class="num">obrig.</th>
+         <th>descrição</th><th></th>
+       </tr></thead><tbody id="nt_cols">${
+         r.colunas.map((c, i) => linhaDeCampo(c, i, opcoesTipo)).join("")}</tbody></table></div>
+
+       ${colsDaPk.length ? `<p class="leg chave">Chave primária:
+         <b>${colsDaPk.map(esc).join(" + ")}</b>${colsDaPk.length > 1 ? " — composta" : ""}
+         · declarada no índice <code>${esc(pk.nome)}</code></p>`
+        : `<p class="leg chave sem">Sem chave primária. Marque um índice como
+           primário abaixo — é o que as chaves estrangeiras das outras tabelas
+           vão apontar.</p>`}
+
+       <h3 class="secao">Índices e chaves
+         <button type="button" class="mini" id="nt_addIdx">+ índice</button>
+         <em>a coluna vai por nome; aceita “cidade desc” e “nome nocase”</em></h3>
+       <div class="rolo"><table class="montar"><thead><tr>
+         <th>nome</th><th>colunas</th><th class="num">único</th>
+         <th class="num">primária</th><th></th>
+       </tr></thead><tbody id="nt_idxs">${r.indices.map((x, i) => `
+         <tr><td><input class="i-nome" data-i="${i}" value="${esc(x.nome)}"></td>
+             <td><input class="i-cols" data-i="${i}" value="${esc(x.colunas)}"
+                        placeholder="${esc(nomesCol.slice(0, 2).join(", ") || "cidade desc, limite")}"></td>
+             <td class="num"><input type="checkbox" class="i-unico" data-i="${i}" ${x.unico ? "checked" : ""}></td>
+             <td class="num"><input type="radio" name="nt_pk" class="i-pk" data-i="${i}" ${x.primario ? "checked" : ""}></td>
+             <td><button type="button" class="mini perigo i-rm" data-i="${i}">remover</button></td>
+         </tr>`).join("")}</tbody></table></div>
+
+       <h3 class="secao">Partição
+         <label class="chk"><input type="checkbox" id="nt_particionada"
+           ${r.particionada ? "checked" : ""}> tabela particionada</label></h3>
+
+       ${r.particionada ? `
+       <div class="bloco">
+         <label class="largo"><span>como o volume corta</span>
+           <select id="nt_regra">${PARTICOES.map(([k, rot, diz]) =>
+             `<option value="${k}"${k === r.particao ? " selected" : ""}>${esc(rot)} — ${esc(diz)}</option>`
+           ).join("")}</select></label>
+
+         ${porPeriodo ? `
+         <label class="largo"><span>coluna de data que decide o período
+             <em>(precisa ser <code>Date</code> ou <code>DateTime</code> e obrigatória)</em></span>
+           <select id="nt_pcol">${
+             colunasData.length
+               ? colunasData.map(c => `<option value="${esc(c.nome)}"${
+                   c.nome === r.particao_coluna ? " selected" : ""}>${esc(c.nome)}${
+                   c.obrigatoria ? "" : " — atenção: aceita nulo"}</option>`).join("")
+               : `<option value="">— nenhuma coluna de data no cadastro acima —</option>`
+           }</select></label>` : ""}
+
+         <label><span>${porPeriodo ? "teto de registros por volume" : "registros por arquivo"}
+             <em>${porPeriodo ? "corta antes se o período render demais" : "0 = arquivo único"}</em></span>
+           <input id="nt_pag" inputmode="numeric" placeholder="0" value="${esc(String(r.pag ?? 0))}"></label>
          <label><span>dígitos do sufixo <em>(3 dá <code>_001</code>)</em></span>
-           <input id="nt_dig" inputmode="numeric" placeholder="3"
-                  value="${esc(String(r.dig ?? 3))}"></label>
+           <input id="nt_dig" inputmode="numeric" placeholder="3" value="${esc(String(r.dig ?? 3))}"></label>
          <label><span>teto de volumes <em>(0 = o que couber no sufixo)</em></span>
            <input id="nt_max" inputmode="numeric" placeholder="${esc(String(tetoDoSufixo(r.dig ?? 3)))}"
                   value="${esc(String(r.max ?? 0))}"></label>
        </div>
 
-       <h3 class="secao">Colunas <button type="button" class="mini" id="nt_addCol">+ coluna</button></h3>
-       <div class="rolo"><table class="montar"><thead><tr>
-         <th>nome</th><th>tipo</th><th class="num">obrigatória</th><th></th>
-       </tr></thead><tbody id="nt_cols">${r.colunas.map((c, i) => `
-         <tr><td><input class="c-nome" data-i="${i}" value="${esc(c.nome)}"></td>
-             <td><select class="c-tipo" data-i="${i}">${opcoesTipo(c.tipo)}</select></td>
-             <td class="num"><input type="checkbox" class="c-obrig" data-i="${i}"
-                 ${c.obrigatoria ? "checked" : ""}></td>
-             <td><button type="button" class="mini perigo c-rm" data-i="${i}">remover</button></td>
-         </tr>`).join("")}</tbody></table></div>
-
-       <h3 class="secao">Índices <button type="button" class="mini" id="nt_addIdx">+ índice</button></h3>
-       <div class="rolo"><table class="montar"><thead><tr>
-         <th>nome</th><th>colunas <em>(vírgula; aceita “cidade desc” e “nome nocase”)</em></th>
-         <th class="num">único</th><th></th>
-       </tr></thead><tbody id="nt_idxs">${r.indices.map((x, i) => `
-         <tr><td><input class="i-nome" data-i="${i}" value="${esc(x.nome)}"></td>
-             <td><input class="i-cols" data-i="${i}" value="${esc(x.colunas)}"
-                        placeholder="cidade desc, limite"></td>
-             <td class="num"><input type="checkbox" class="i-unico" data-i="${i}"
-                 ${x.unico ? "checked" : ""}></td>
-             <td><button type="button" class="mini perigo i-rm" data-i="${i}">remover</button></td>
-         </tr>`).join("")}</tbody></table></div>
+       ${gradeDeParticoes(r, porPeriodo)}
+       ` : `<p class="leg">Sem partição, a tabela é um arquivo único:
+         <code>${esc(r.nome || "tabela")}.reg</code>, sem sufixo.</p>`}
      </form>
 
      <div class="acoes">
@@ -2012,43 +2181,119 @@ function desenharNovaTabela(db) {
      </div>
 
      <div class="nota">
-       <p><strong>A paginação entra agora e não muda depois.</strong> Ela é o
-       divisor que transforma o rowid em endereço; trocá-la mais tarde mudaria
-       o endereço de cada registro já gravado.</p>
-       <p><strong>Não existe “sem teto”.</strong> O sufixo tem largura fixa, e
-       com ${esc(String(r.dig ?? 3))} dígitos o volume
-       ${esc(String(tetoDoSufixo(r.dig ?? 3) + 1))} não teria nome. Deixando o
-       teto em zero, ele vira ${esc(String(tetoDoSufixo(r.dig ?? 3)))} —
-       ${esc(String(tetoDoSufixo(r.dig ?? 3) * (r.pag || 0)))} registros de
-       capacidade com o divisor de agora.</p>
+       <p><strong>A partição entra agora e não muda depois.</strong> Ela decide
+       como o rowid vira endereço; trocá-la mais tarde mudaria o endereço de
+       cada registro já gravado.</p>
        <p><code>Sequence</code> deixado em branco na inclusão é numerado pelo
        motor; <code>Uuid</code> aceita a palavra <code>novo</code> e gera um v7,
        que é crescente e por isso cai sempre na folha mais à direita da árvore.</p>
      </div>`);
 
+  ligarNovaTabela(db);
+}
+
+/** A grade que explica a regra de corte escolhida, com exemplo.
+ *
+ * Nao e enfeite: a diferenca entre "por faixa" e "mensal" e o que decide se o
+ * endereco sai de divisao ou de busca, e quem escolhe precisa ver isso antes
+ * de gravar -- porque depois nao muda. */
+function gradeDeParticoes(r, porPeriodo) {
+  const por = +r.pag || 0;
+  const dig = r.dig ?? 3;
+  const teto = +r.max || tetoDoSufixo(dig);
+  const sufixo = n => `_${String(n).padStart(dig, "0")}`;
+
+  if (!porPeriodo) {
+    if (!por) return `<div class="nota">Informe quantos registros cabem em cada
+      arquivo — sem esse número não há como cortar o volume.</div>`;
+    return `<div class="rolo"><table class="montar"><thead><tr>
+        <th class="num">volume</th><th>arquivo</th><th class="num">do rowid</th>
+        <th class="num">até o rowid</th></tr></thead><tbody>${
+        [1, 2, 3].map(v => `<tr><td class="num dado">${v}</td>
+          <td class="dado"><code>${esc(r.nome || "tabela")}${sufixo(v)}.reg</code></td>
+          <td class="num">${(v - 1) * por + 1}</td><td class="num">${v * por}</td></tr>`).join("")}
+        <tr><td class="num dado">…</td><td class="dado">…</td>
+          <td class="num">…</td><td class="num">…</td></tr>
+        <tr><td class="num dado">${teto}</td>
+          <td class="dado"><code>${esc(r.nome || "tabela")}${sufixo(teto)}.reg</code></td>
+          <td class="num">${(teto - 1) * por + 1}</td><td class="num">${teto * por}</td></tr>
+      </tbody></table></div>
+      <div class="nota"><p><strong>O endereço é conta, não busca:</strong>
+      <code>volume = (rowid−1) ÷ ${por} + 1</code>. Capacidade total:
+      <b>${(teto * por).toLocaleString("pt-BR")}</b> registros.</p></div>`;
+  }
+
+  const regra = PARTICOES.find(p => p[0] === r.particao) || PARTICOES[1];
+  const exemplos = {
+    mensal:    ["2026-01", "2026-02", "2026-03"],
+    bimestral: ["2026-B1 (jan-fev)", "2026-B2 (mar-abr)", "2026-B3 (mai-jun)"],
+    semestral: ["2026-S1 (jan-jun)", "2026-S2 (jul-dez)", "2027-S1 (jan-jun)"],
+    anual:     ["2026", "2027", "2028"],
+  }[r.particao] || [];
+
+  return `<div class="rolo"><table class="montar"><thead><tr>
+      <th class="num">volume</th><th>arquivo</th><th>período que o abre</th>
+      </tr></thead><tbody>${exemplos.map((p, i) => `<tr>
+        <td class="num dado">${i + 1}</td>
+        <td class="dado"><code>${esc(r.nome || "tabela")}${sufixo(i + 1)}.reg</code></td>
+        <td class="dado">${esc(p)}</td></tr>`).join("")}
+      <tr><td class="num dado">…</td><td class="dado">…</td>
+        <td class="dado">e assim por diante, até ${teto} volumes</td></tr>
+    </tbody></table></div>
+    <div class="nota">
+      <p><strong>${esc(regra[1])}:</strong> ${esc(regra[2])}. O volume também
+      corta quando enche${por ? ` — o teto de ${por} registros vale igual` : ""},
+      para um período movimentado não estourar o arquivo.</p>
+      <p><strong>A linha atrasada não volta.</strong> Um lançamento de janeiro
+      digitado em março entra no volume de março. A ordem de digitação é
+      sagrada: voltar significaria escrever no meio de um arquivo já fechado, e
+      o rowid deixaria de crescer com o arquivo.</p>
+      <p>Por isso o período de um volume é <em>o período em que ele abriu</em>,
+      e um volume pode conter linhas de períodos anteriores que chegaram
+      depois. Quem quiser todos os lançamentos de janeiro usa o índice pela
+      data, que é para isso que ele existe.</p>
+    </div>`;
+}
+
+/** Le a tela de volta para o rascunho e liga os botoes. */
+function ligarNovaTabela(db) {
+  const r = est.rascunho;
+
   const lerForm = () => {
     r.nome = $("#nt_nome").value.trim();
     r.schema = $("#nt_schema").value.trim();
-    r.pag = +$("#nt_pag").value || 0;
-    r.dig = Math.min(9, Math.max(1, +$("#nt_dig").value || 3));
-    r.max = +$("#nt_max").value || 0;
-    r.colunas = $$("#nt_cols tr").map((tr, i) => ({
+    r.particionada = $("#nt_particionada").checked;
+    if ($("#nt_regra")) r.particao = $("#nt_regra").value;
+    if ($("#nt_pcol")) r.particao_coluna = $("#nt_pcol").value;
+    if ($("#nt_pag")) r.pag = +$("#nt_pag").value || 0;
+    if ($("#nt_dig")) r.dig = Math.min(9, Math.max(1, +$("#nt_dig").value || 3));
+    if ($("#nt_max")) r.max = +$("#nt_max").value || 0;
+    r.colunas = $$("#nt_cols tr").map(tr => ({
       nome: tr.querySelector(".c-nome").value.trim(),
+      caption: tr.querySelector(".c-caption").value.trim(),
       tipo: tr.querySelector(".c-tipo").value,
+      mascara: tr.querySelector(".c-mascara").value.trim(),
       obrigatoria: tr.querySelector(".c-obrig").checked,
+      descricao: tr.querySelector(".c-desc").value.trim(),
     }));
     r.indices = $$("#nt_idxs tr").map(tr => ({
       nome: tr.querySelector(".i-nome").value.trim(),
       colunas: tr.querySelector(".i-cols").value.trim(),
       unico: tr.querySelector(".i-unico").checked,
+      primario: tr.querySelector(".i-pk").checked,
     }));
   };
+  const refazer = () => { lerForm(); desenharNovaTabela(db); };
+
   $("#nt_addCol").onclick = () => {
-    lerForm(); r.colunas.push({ nome:"", tipo:"Str(60)", obrigatoria:false });
+    lerForm();
+    r.colunas.push({ nome:"", tipo:"Str(60)", obrigatoria:false,
+                     caption:"", descricao:"", mascara:"" });
     desenharNovaTabela(db);
   };
   $("#nt_addIdx").onclick = () => {
-    lerForm(); r.indices.push({ nome:"", colunas:"", unico:false });
+    lerForm();
+    r.indices.push({ nome:"", colunas:"", unico:false, primario:false });
     desenharNovaTabela(db);
   };
   $$("#painel .c-rm").forEach(b => b.onclick = () => {
@@ -2057,6 +2302,17 @@ function desenharNovaTabela(db) {
   $$("#painel .i-rm").forEach(b => b.onclick = () => {
     lerForm(); r.indices.splice(+b.dataset.i, 1); desenharNovaTabela(db);
   });
+
+  // O que muda a FORMA da tela redesenha; o resto não, senão o campo perde o
+  // foco a cada tecla.
+  $("#nt_particionada").onchange = refazer;
+  if ($("#nt_regra")) $("#nt_regra").onchange = refazer;
+  // Marcar primária desmarca as outras (é um `radio`) e reacende a linha de
+  // resumo da chave.
+  $$("#painel .i-pk").forEach(b => b.onchange = refazer);
+  // Trocar o tipo de um campo pode criar ou tirar uma coluna de data, o que
+  // muda a lista da partição.
+  $$("#painel .c-tipo").forEach(b => b.onchange = refazer);
   $("#nt_voltar").onclick = ev => { ev.preventDefault(); gerirTabelas(db); };
 
   $("#nt_criar").onclick = async ev => {
@@ -2070,16 +2326,29 @@ function desenharNovaTabela(db) {
     const pedido = {
       database: db, tabela: r.nome,
       ...(r.schema ? { schema: r.schema } : {}),
-      colunas: cols.map(c => ({ nome:c.nome, tipo:c.tipo, obrigatoria:c.obrigatoria })),
+      colunas: cols.map(c => ({
+        nome: c.nome, tipo: c.tipo, obrigatoria: c.obrigatoria,
+        caption: c.caption || "", descricao: c.descricao || "", mascara: c.mascara || "",
+      })),
       indices: r.indices.filter(x => x.nome && x.colunas).map(x => ({
-        nome: x.nome, unico: x.unico,
+        nome: x.nome, unico: x.unico, primario: x.primario,
         colunas: x.colunas.split(",").map(s => s.trim()).filter(Boolean),
       })),
     };
-    if (r.pag > 0) {
-      pedido.registros_por_arquivo = r.pag;
+
+    if (r.particionada) {
+      const porPeriodo = r.particao && r.particao !== "quantidade";
+      if (porPeriodo && !r.particao_coluna)
+        return avisar("a partição por período precisa de uma coluna de data obrigatória", true);
+      if (!porPeriodo && !r.pag)
+        return avisar("informe quantos registros cabem em cada arquivo", true);
+      pedido.registros_por_arquivo = r.pag || 1000000;
       pedido.digitos = r.dig;
       pedido.max_arquivos = r.max;   // zero = o que couber no sufixo
+      if (porPeriodo) {
+        pedido.particao = r.particao;
+        pedido.particao_coluna = r.particao_coluna;
+      }
     }
 
     rec.textContent = "criando…";
@@ -2087,7 +2356,7 @@ function desenharNovaTabela(db) {
       const feito = await api("criar_tabela", pedido);
       avisar(`tabela ${feito.tabela} criada${r.schema ? ` em ${r.schema}` : ""}`
            + ` · ${feito.colunas} coluna(s), ${feito.indices} índice(s)`
-           + `${feito.paginada ? ", paginada" : ""}`);
+           + `${feito.paginada ? `, ${r.particao === "quantidade" ? "particionada por faixa" : `partição ${r.particao}`}` : ""}`);
       est.rascunho = null;
       await montarArvore(false);
       return gerirTabelas(db);
@@ -2096,6 +2365,870 @@ function desenharNovaTabela(db) {
       avisar(String(err), true);
     }
   };
+}
+
+
+/* ==================================== Configurações e diretivas da tabela
+   O que vale para UMA tabela: a geometria que ela ganhou na criacao, o que ela
+   herda do servidor, e quem a alcanca.
+
+   A separacao importa. Quase nada aqui se ajusta por tabela -- a paginacao e
+   as chaves entraram na criacao e nao mudam, o espelho e do servidor, a
+   permissao e do database. Dizer isso e o servico: quem procura "onde mudo o
+   tamanho do volume desta tabela" precisa saber que a resposta e "recriando". */
+
+async function verConfigTabela(db, tab) {
+  folha(`Configurações de ${tab}`, `${db} · carregando…`, `<div class="centro">carregando…</div>`);
+
+  const [e, c, mem, quem] = await Promise.all([
+    api("esquema", { database: db, tabela: tab }),
+    api("config"),
+    api("memoria").catch(() => ({ tabelas: [] })),
+    api("quem_sou").catch(() => ({})),
+  ]);
+  const pag = e.paginacao;
+  const naRam = (mem.tabelas || []).some(m =>
+    (m.tabela || m) === tab || (m.tabela || m) === `${db}/${tab}`);
+  const pk = (e.indices || []).find(i => i.primario);
+  const seg = c.seguranca || {};
+  const proibida = (seg.bases_proibidas || []).includes(db);
+
+  folha(`Configurações de ${tab}`, `${db} · o que vale para esta tabela`,
+    `<div class="fichas">
+       ${ficha(e.registros, "registros")}
+       ${ficha(e.slots, "slots", "inclui excluídos")}
+       ${ficha((e.colunas || []).length, "colunas")}
+       ${ficha(pk ? pk.nome : "—", "chave primária", pk && pk.composto ? "composta" : "")}
+       ${ficha(pag ? (pag.modo === "quantidade" ? "por faixa" : pag.modo) : "arquivo único", "partição")}
+       ${ficha(naRam ? "sim" : "não", "carregada na RAM")}
+     </div>
+
+     <h3 class="secao">Geometria — decidida na criação, não muda</h3>
+     <div class="rolo"><table><thead><tr>
+       <th>ajuste</th><th>valor</th><th>por que não muda depois</th>
+     </tr></thead><tbody>
+       <tr><td class="dado">regra de partição</td>
+         <td class="dado"><b>${esc(pag ? (pag.modo === "quantidade" ? "por faixa de quantidade" : pag.modo) : "arquivo único")}</b></td>
+         <td class="leg">decide como o rowid vira endereço</td></tr>
+       ${pag ? `
+       <tr><td class="dado">registros por arquivo</td>
+         <td class="dado"><b>${esc(String(pag.registros_por_arquivo))}</b></td>
+         <td class="leg">é o divisor do endereço, ou o teto do volume</td></tr>
+       <tr><td class="dado">coluna do período</td>
+         <td class="dado"><b>${esc(pag.coluna || "—")}</b></td>
+         <td class="leg">quem decide quando o volume corta</td></tr>
+       <tr><td class="dado">dígitos do sufixo</td>
+         <td class="dado"><b>${esc(String(pag.digitos))}</b> — <code>${esc(tab)}_${"0".repeat(Math.max(0, pag.digitos - 1))}1.reg</code></td>
+         <td class="leg">o nome do arquivo depende dele</td></tr>
+       <tr><td class="dado">teto de volumes</td>
+         <td class="dado"><b>${esc(String(pag.max_arquivos))}</b></td>
+         <td class="leg">o que cabe no sufixo</td></tr>
+       <tr><td class="dado">volume dos externos</td>
+         <td class="dado"><b>${((pag.bytes_por_arquivo || 0) / 1073741824).toFixed(2)} GiB</b></td>
+         <td class="leg">.bin, .memo e .log</td></tr>` : ""}
+       <tr><td class="dado">colunas e tipos</td>
+         <td class="dado"><b>${(e.colunas || []).length} coluna(s)</b></td>
+         <td class="leg">o tamanho do slot é fixo; mudar reescreveria a tabela</td></tr>
+     </tbody></table></div>
+
+     <h3 class="secao">Índices e chaves</h3>
+     ${tabela([{t:"índice"},{t:"colunas"},{t:"único",cls:"num"},{t:"primária",cls:"num"},{t:"composta",cls:"num"}],
+       e.indices || [], i => `<tr>
+         <td class="dado"><b>${esc(i.nome)}</b></td>
+         <td class="dado">${(i.colunas || []).map(c =>
+            `${esc(c.coluna)}${c.desc ? " ↓" : ""}${c.nocase ? " ~" : ""}`).join(", ")}</td>
+         <td class="num">${i.unico ? "sim" : ""}</td>
+         <td class="num">${i.primario ? '<span class="pino ok">PK</span>' : ""}</td>
+         <td class="num">${i.composto ? "sim" : ""}</td></tr>`)}
+
+     ${(e.chaves_estrangeiras || []).length ? `
+     <h3 class="secao">Chaves estrangeiras</h3>
+     <div class="nota mal"><p><strong>Declaradas, não aplicadas.</strong> Elas
+     estão gravadas no cabeçalho do <code>.reg</code> e aparecem aqui, mas
+     nenhuma gravação as consulta: <code>RESTRICT</code> e <code>CASCADE</code>
+     são intenção guardada, não comportamento.</p></div>
+     ${tabela([{t:"nome"},{t:"colunas"},{t:"aponta para"},{t:"ao excluir"},{t:"ao alterar"}],
+       e.chaves_estrangeiras, f => `<tr>
+         <td class="dado"><b>${esc(f.nome)}</b></td>
+         <td class="dado">${(f.colunas||[]).map(esc).join(", ")}</td>
+         <td class="dado"><code>${esc(f.tabela_ref)}</code> (${(f.colunas_ref||[]).map(esc).join(", ")})</td>
+         <td class="dado">${esc(f.ao_excluir)}</td>
+         <td class="dado">${esc(f.ao_alterar)}</td></tr>`)}` : ""}
+
+     ${pag && (e.volumes || []).length ? `
+     <h3 class="secao">Volumes no disco</h3>
+     ${tabela([{t:"volume",cls:"num"},{t:"arquivo"},{t:"primeiro rowid",cls:"num"},{t:"período"}],
+       e.volumes, v => `<tr>
+         <td class="num dado">${v.volume}</td>
+         <td class="dado"><code>${esc(tab)}_${String(v.volume).padStart(pag.digitos, "0")}.reg</code></td>
+         <td class="num">${v.primeiro_rowid}</td>
+         <td class="dado">${v.periodo ? esc(v.periodo) : "<span class=leg>—</span>"}</td></tr>`)}` : ""}
+
+     <h3 class="secao">Diretivas — o que a tabela herda</h3>
+     <div class="rolo"><table><thead><tr>
+       <th>diretiva</th><th>vale aqui</th><th>de onde vem</th>
+     </tr></thead><tbody>
+       <tr><td class="dado">espelho <code>.bkp</code></td>
+         <td class="dado">${c.espelho ? '<span class="pino ok">ligado</span>' : "desligado"}</td>
+         <td class="leg">campo <code>espelho</code> do servidor — não é por tabela</td></tr>
+       <tr><td class="dado">somente leitura</td>
+         <td class="dado">${c.somente_leitura ? '<span class="pino mal">ligado</span>' : "desligado"}</td>
+         <td class="leg">campo <code>somente_leitura</code> do servidor</td></tr>
+       <tr><td class="dado">base proibida</td>
+         <td class="dado">${proibida ? '<span class="pino mal">SIM</span>' : "não"}</td>
+         <td class="leg"><code>seguranca.bases_proibidas</code> — recusa antes de olhar</td></tr>
+       <tr><td class="dado">comandos proibidos</td>
+         <td class="dado">${(seg.comandos_proibidos||[]).length
+            ? (seg.comandos_proibidos).map(x=>`<code>${esc(x)}</code>`).join(" ") : "nenhum"}</td>
+         <td class="leg">recusados no portão, para qualquer tabela</td></tr>
+       <tr><td class="dado">teto de linhas por resposta</td>
+         <td class="dado">${esc(String(c.max_linhas ?? "—"))}</td>
+         <td class="leg">campo <code>max_linhas</code></td></tr>
+       <tr><td class="dado">seu poder aqui</td>
+         <td class="dado">${quem.supervisor ? '<span class="pino ok">supervisor</span>'
+            : esc(quem.nivel || quem.login || "—")}</td>
+         <td class="leg">a permissão é por <em>database</em>, não por tabela</td></tr>
+     </tbody></table></div>
+
+     <div class="nota">
+       <p><strong>Quase nada aqui se ajusta por tabela</strong>, e isso é
+       desenho, não falta. A geometria entra na criação porque é ela que
+       transforma o rowid em endereço; o espelho e a política são do servidor,
+       porque valem para tudo que ele abrir; a permissão é do database, porque
+       é ali que a árvore de pastas separa.</p>
+       <p>Para mudar a geometria: crie a tabela nova com a partição que quer e
+       copie as linhas. Isso <em>refaz os rowids</em> — que é exatamente o
+       motivo de a mudança não ser automática.</p>
+     </div>
+
+     <div class="acoes">
+       <button class="botao secundario" id="btVoltarGer">← Gestão de ${esc(tab)}</button>
+       <button class="botao secundario" id="btVerEstr">Estrutura completa</button>
+     </div>`);
+
+  ligarVoltarGestao(db, tab);
+  $("#btVerEstr").onclick = () => { est.aba = "estrutura"; abrirTabela(db, tab); };
+}
+
+/* ================================================= Gerir um database
+   A tela que junta tudo que se faz SOBRE um banco -- e nao sobre uma tabela.
+
+   Metade dos itens existe e a outra metade nao. Os que nao existem ficam
+   apagados dizendo o que falta, em vez de sumirem da lista: sumir esconderia o
+   roteiro, e ligar num aviso generico seria fingir. */
+
+/** O que cada item de gestao do database faz -- ou por que ainda nao faz. */
+function itensDoDatabase(db) {
+  return [
+    { g:"dados", ico:"▦", rot:"Tabelas",
+      diz:"As tabelas deste banco e as oito operações sobre cada uma.",
+      faz:() => gerirTabelas(db) },
+    { g:"dados", ico:"▤", rot:"SysTables",
+      diz:"O catálogo de tabelas em forma de dado: registros, chaves, partição.",
+      faz:() => verSysTables(db) },
+    { g:"dados", ico:"☰", rot:"SysColumns",
+      diz:"O dicionário de dados: cada campo com caption, máscara, tipo e papel na chave.",
+      faz:() => verSysColumns(db) },
+    { g:"dados", ico:"⧉", rot:"Copiar tabela…",
+      diz:"Copia uma tabela para outro banco ou schema, byte a byte.",
+      faz:() => telaCopiarColar(db) },
+
+    { g:"config", ico:"⚙", rot:"Configurações do banco",
+      diz:"Onde ele mora, quantos schemas e tabelas, e o que herda do servidor.",
+      faz:() => verConfigBanco(db) },
+    { g:"config", ico:"⛨", rot:"Diretivas de acesso ao banco",
+      diz:"Quem alcança este banco e com que poder — e o que o servidor recusa antes de olhar.",
+      faz:() => verDiretivasDoBanco(db) },
+    { g:"config", ico:"✎", rot:"Editor de menu",
+      diz:"Trocar o nome exibido de qualquer item do menu e da barra.",
+      faz:editorDeMenu },
+
+    { g:"operacao", ico:"⇋", rot:"Conexões",
+      diz:"Quem está falando com este servidor agora.",
+      faz:verConexoes },
+    { g:"operacao", ico:"⊘", rot:"Arquivos bloqueados",
+      diz:"Os IPs barrados, o motivo e até quando.",
+      faz:() => irPara("bloqueios") },
+    { g:"operacao", ico:"⇄", rot:"Transações",
+      diz:"O que existe hoje e o que falta para haver commit e rollback.",
+      faz:verTransacoes },
+    { g:"operacao", ico:"⛁", rot:"Backup e restauração",
+      diz:"Copiar com manifesto SHA-256, conferir uma cópia, e o que falta para restaurar.",
+      faz:() => verBackupRestaure(db) },
+
+    { g:"falta", ico:"⚡", rot:"Triggers",
+      falta:"Onde disparar já existe: `inserir`, `atualizar` e `excluir` são os "
+          + "três pontos, e os três já escrevem no `.log`. O que falta é decidir "
+          + "EM QUE LINGUAGEM o gatilho é escrito — e essa escolha é sua. Sem "
+          + "camada SQL não há `BEGIN … END` para hospedar o corpo." },
+    { g:"falta", ico:"ƒ", rot:"Procedures",
+      falta:"Mesmo bloqueio dos triggers, e maior: procedimento é código "
+          + "guardado, e código guardado precisa de um executor. Ou uma "
+          + "linguagem própria pequena, ou esperar a camada SQL." },
+    { g:"falta", ico:"⏱", rot:"Jobs",
+      falta:"É o mais barato dos três. O agendador do backup — `hora_de_rodar`, "
+          + "`minuto_do_dia`, o laço que acorda de minuto em minuto — já é "
+          + "exatamente o desenho. Falta generalizar de «rodar backup» para "
+          + "«rodar operação nomeada»." },
+    { g:"falta", ico:"🔒", rot:"Modo exclusivo",
+      falta:"Abrir a tabela em uso exclusivo, para reorganizar ou compactar sem "
+          + "ninguém escrevendo junto. Hoje uma trava única já serializa todo "
+          + "acesso a dados, então ninguém escreve ao mesmo tempo — mas não há "
+          + "como RESERVAR uma tabela por um período. Depende da trava por "
+          + "tabela, que é o mesmo trabalho da concorrência fina." },
+  ];
+}
+
+const GRUPOS_DB = [
+  ["dados",    "Dados e catálogo"],
+  ["config",   "Configuração e acesso"],
+  ["operacao", "Operação"],
+  ["falta",    "Ainda não existe"],
+];
+
+async function gerirDatabase(db) {
+  db = db || databaseCorrente();
+  if (!db) return avisar("nenhum database — crie um pelo [+] da árvore", true);
+  est.database = db;
+
+  folha(`Gerir ${db}`, "carregando…", `<div class="centro">carregando…</div>`);
+  let resumo = "";
+  try {
+    const st = await api("sistabelas", { database: db });
+    const t = st.tabelas || [];
+    const soma = f => t.reduce((a, x) => a + (+x[f] || 0), 0);
+    resumo = `<div class="fichas">
+      ${ficha(t.length, "tabelas")}
+      ${ficha(soma("registros").toLocaleString("pt-BR"), "registros")}
+      ${ficha(soma("colunas"), "colunas")}
+      ${ficha(t.filter(x => x.chave_primaria).length, "com chave primária")}
+      ${ficha(t.filter(x => x.particao).length, "particionadas")}
+      ${ficha(soma("volumes"), "volumes no disco")}
+    </div>`;
+  } catch (e) { resumo = `<div class="aviso mal">${esc(String(e))}</div>`; }
+
+  const itens = itensDoDatabase(db);
+  folha(`Gerir ${db}`, "tudo que se faz sobre este banco",
+    resumo + GRUPOS_DB.map(([g, titulo]) => {
+      const doGrupo = itens.map((it, i) => [it, i]).filter(([it]) => it.g === g);
+      if (!doGrupo.length) return "";
+      return `<h3 class="secao">${esc(titulo)}</h3>
+        <div class="ops">${doGrupo.map(([it, i]) =>
+          `<button class="op${it.faz ? "" : " afazer"}" data-op="${i}">
+             <span class="op-ico">${it.ico}</span>
+             <span class="op-txt"><b>${esc(it.rot)}</b><span>${esc(
+               it.diz || "ainda não existe — clique para ver o que falta")}</span></span>
+           </button>`).join("")}</div>`;
+    }).join(""));
+
+  // No container das operacoes, e nao no `#painel`: o `folha()` troca o
+  // conteudo do painel mas nao o ELEMENTO, entao um `onclick` posto ali
+  // sobrevive a troca de tela e dispara na tela seguinte.
+  $$("#painel .ops").forEach(caixa => caixa.onclick = ev => {
+    const b = ev.target.closest(".op");
+    if (!b) return;
+    const it = itens[+b.dataset.op];
+    if (!it.faz) return aindaNao(it);
+    Promise.resolve().then(it.faz).catch(e => avisar(String(e), true));
+  });
+}
+
+/* ------------------------------------------------------ copiar e colar */
+
+/** O que esta na area de transferencia da gestao de tabelas. */
+function copiarTabela(db, tab) {
+  est.copia = { db, tab };
+  avisar(`${db}.${tab} copiada — abra o banco de destino e use Colar`);
+  const b = $("#btColar");
+  if (b) b.disabled = false;
+}
+
+/** A tela de colar: escolhe destino e nome, e diz o que vai acontecer. */
+function telaCopiarColar(db) {
+  const c = est.copia;
+  const bancos = est.bancos || [];
+
+  folha("Copiar e colar tabela", c ? `na área: ${c.db}.${c.tab}` : "nada copiado ainda",
+    !c
+      ? `<div class="nota">
+           <p><strong>Nada na área de transferência.</strong> Abra a gestão de
+           tabelas de um banco, escolha uma tabela e clique em <em>Copiar</em>.
+           Depois volte aqui — ou use o <em>Colar</em> da própria grade.</p>
+         </div>
+         <div class="acoes">
+           <button class="botao secundario" id="btIrTabelas">→ Tabelas de ${esc(db)}</button>
+         </div>`
+      : `<form class="criar" id="formColar" autocomplete="off">
+           <div class="bloco">
+             <label><span>de onde</span>
+               <input value="${esc(c.db)} · ${esc(c.tab)}" disabled></label>
+             <label><span>para qual banco</span>
+               <select id="cc_db">${bancos.map(b =>
+                 `<option value="${esc(b)}"${b === db ? " selected" : ""}>${esc(b)}</option>`).join("")}</select></label>
+             <label><span>com que nome
+                 <em>(aceita <code>schema.tabela</code>; a pasta nasce se faltar)</em></span>
+               <input id="cc_nome" value="${esc(c.tab)}"></label>
+           </div>
+         </form>
+         <div class="acoes">
+           <button class="botao" id="btColarAgora">Colar</button>
+           <button class="botao secundario" id="btLimparCopia">Esvaziar a área</button>
+           <span class="leg" id="ccRecado"></span>
+         </div>
+         <div class="nota">
+           <p><strong>A cópia é byte a byte</strong>, os cinco arquivos e o
+           espelho, todos os volumes de cada um. Por isso ela nasce com os
+           <em>mesmos rowids</em> e na <em>mesma ordem de digitação</em> — o que
+           uma reinserção linha a linha não daria.</p>
+           <p>Colar por cima de uma tabela existente é recusado. Para substituir,
+           exclua a de destino primeiro — de propósito: sobrescrever cinco
+           arquivos sem aviso não tem desfazer.</p>
+         </div>`);
+
+  if (!c) { $("#btIrTabelas").onclick = () => gerirTabelas(db); return; }
+
+  $("#btLimparCopia").onclick = () => { est.copia = null; telaCopiarColar(db); };
+  $("#btColarAgora").onclick = async ev => {
+    ev.preventDefault();
+    const destinoDb = $("#cc_db").value;
+    const destino = $("#cc_nome").value.trim();
+    if (!destino) return avisar("dê um nome à cópia", true);
+    $("#ccRecado").textContent = "copiando…";
+    try {
+      const r = await api("copiar_tabela", {
+        database: c.db, tabela: c.tab,
+        destino_database: destinoDb, destino,
+      });
+      avisar(`${r.origem} colada em ${r.destino_database}.${r.destino} · ${r.arquivos} arquivo(s)`);
+      await montarArvore(false);
+      return gerirTabelas(destinoDb);
+    } catch (err) {
+      $("#ccRecado").textContent = "";
+      avisar(String(err), true);
+    }
+  };
+}
+
+/* --------------------------------------------- diretivas de acesso ao banco */
+
+async function verDiretivasDoBanco(db) {
+  db = db || databaseCorrente();
+  const [c, u, eu] = await Promise.all([
+    api("config"), api("usuarios").catch(() => []), api("quem_sou").catch(() => ({})),
+  ]);
+  const seg = c.seguranca || {};
+  const lista = u.usuarios || u || [];
+  const proibida = (seg.bases_proibidas || []).includes(db);
+
+  // O poder de cada usuario sobre ESTE banco, resolvido pelas tres regras.
+  const poder = x => {
+    if (x.supervisor) return { tudo:true, itens:["tudo — supervisor"] };
+    const bases = x.bases || {};
+    const b = bases[db] || bases["*"];
+    if (bases[db] === undefined && bases["*"] === undefined)
+      return { nada:true, itens:[] };
+    const ativos = Object.entries(b || {}).filter(([, v]) => v).map(([k]) => k);
+    return { itens: ativos, vazio: !ativos.length, curinga: bases[db] === undefined };
+  };
+
+  folha(`Diretivas de acesso · ${db}`, "quem alcança este banco, e o que o servidor recusa antes de olhar",
+    `${proibida ? `<div class="nota mal"><p><strong>Este banco está em
+       <code>seguranca.bases_proibidas</code>.</strong> Nenhum usuário o alcança,
+       nem supervisor: a recusa acontece no portão, antes da permissão ser
+       consultada, e a tentativa conta como violação.</p></div>` : ""}
+
+     <h3 class="secao">Os portões, na ordem em que fecham</h3>
+     <div class="rolo"><table><thead><tr>
+       <th class="num">#</th><th>portão</th><th>o que recusa</th><th>valendo agora</th>
+     </tr></thead><tbody>
+       <tr><td class="num dado">1</td><td class="dado">IP permitido</td>
+         <td class="leg">quem não está na lista nem chega a falar</td>
+         <td class="dado">${(c.ips_permitidos || []).length
+            ? (c.ips_permitidos).map(x => `<code>${esc(x)}</code>`).join(" ") : "<span class=leg>qualquer IP</span>"}</td></tr>
+       <tr><td class="num dado">2</td><td class="dado">lista de bloqueio</td>
+         <td class="leg">IP barrado por tentativa anterior</td>
+         <td class="dado"><code>${esc(seg.blacklist || "blacklist.json")}</code>
+           · ${esc(String(seg.tentativas_ate_bloquear ?? "—"))} tentativa(s),
+           ${esc(String(seg.bloqueio_minutos ?? "—"))} min</td></tr>
+       <tr><td class="num dado">3</td><td class="dado">comando proibido</td>
+         <td class="leg">recusado antes de tocar os dados</td>
+         <td class="dado">${(seg.comandos_proibidos || []).length
+            ? (seg.comandos_proibidos).map(x => `<code>${esc(x)}</code>`).join(" ") : "<span class=leg>nenhum</span>"}</td></tr>
+       <tr><td class="num dado">4</td><td class="dado">base proibida</td>
+         <td class="leg">o database inteiro fora do alcance</td>
+         <td class="dado">${(seg.bases_proibidas || []).length
+            ? (seg.bases_proibidas).map(x => `<code>${esc(x)}</code>`).join(" ") : "<span class=leg>nenhuma</span>"}</td></tr>
+       <tr><td class="num dado">5</td><td class="dado">somente leitura</td>
+         <td class="leg">recusa toda operação de escrita</td>
+         <td class="dado">${c.somente_leitura ? "<span class=\"pino mal\">ligado</span>" : "desligado"}</td></tr>
+       <tr><td class="num dado">6</td><td class="dado">permissão do usuário</td>
+         <td class="leg">a atividade contra a base, pelas três regras</td>
+         <td class="dado">por usuário, abaixo</td></tr>
+     </tbody></table></div>
+
+     <h3 class="secao">Quem alcança ${esc(db)}</h3>
+     ${tabela([{t:"login"},{t:"nível"},{t:"pode aqui"},{t:"como resolveu"}],
+       lista, x => {
+         const p = poder(x);
+         return `<tr>
+           <td class="dado"><b>${esc(x.login || "")}</b>${
+             eu.login === x.login ? ' <span class="pino">você</span>' : ""}</td>
+           <td class="dado">${esc(x.nivel || "—")}</td>
+           <td class="dado">${
+             p.tudo ? '<span class="pino ok">tudo</span>'
+             : p.nada ? '<span class="pino mal">nada</span>'
+             : p.vazio ? '<span class="pino mal">nada</span>'
+             : p.itens.map(i => `<span class="pino">${esc(i)}</span>`).join(" ")}</td>
+           <td class="leg">${
+             p.tudo ? "supervisor passa por cima da lista"
+             : p.nada ? 'sem a base e sem "*" — nega tudo'
+             : p.vazio ? "base listada vazia — nega tudo"
+             : p.curinga ? 'veio do "*"' : "base listada explicitamente"}</td></tr>`;
+       })}
+
+     <div class="nota">
+       <p><strong>A base listada manda.</strong> Se <code>${esc(db)}</code>
+       aparece nas bases do usuário, vale o que está lá — o <code>"*"</code>
+       <em>não</em> completa o que faltou. Uma base listada vazia nega tudo, e é
+       assim que se tira alguém de um banco sem mexer no resto.</p>
+     </div>
+
+     <div class="acoes">
+       <button class="botao secundario" id="btVoltaDb">← Gerir ${esc(db)}</button>
+     </div>`);
+  $("#btVoltaDb").onclick = () => gerirDatabase(db);
+}
+
+/* ------------------------------------------------------ backup e restauração */
+
+async function verBackupRestaure(db) {
+  const c = await api("config");
+  const bkp = c.backup || {};
+  folha("Backup e restauração", `${db} · cópia com manifesto SHA-256`,
+    `<div class="fichas">
+       ${ficha(bkp.destino || "—", "destino")}
+       ${ficha(bkp.hora || "não agendado", "agendamento")}
+       ${ficha(bkp.zip ? "sim" : "não", "em zip")}
+       ${ficha(c.espelho ? "sim" : "não", "espelho .bkp", "segunda cópia por slot")}
+     </div>
+
+     <div class="ops">
+       <button class="op" id="opBackup"><span class="op-ico">⛁</span>
+         <span class="op-txt"><b>Backup agora</b><span>Copia e confere, com manifesto SHA-256 de cada arquivo.</span></span></button>
+       <button class="op" id="opConferir"><span class="op-ico">✓</span>
+         <span class="op-txt"><b>Conferir uma cópia</b><span>Recalcula o SHA-256 de cada arquivo contra o manifesto.</span></span></button>
+       <button class="op afazer" id="opRestaurar"><span class="op-ico">⤺</span>
+         <span class="op-txt"><b>Restaurar</b><span>ainda não existe — clique para ver o que falta</span></span></button>
+     </div>
+
+     <div class="nota">
+       <p><strong>Nenhuma escrita acontece durante a cópia.</strong> A operação
+       segura a trava de dados do começo ao fim, então o conjunto copiado é de
+       um instante só — não é uma foto tirada aos pedaços.</p>
+     </div>
+
+     <div class="acoes">
+       <button class="botao secundario" id="btVoltaDb">← Gerir ${esc(db)}</button>
+     </div>`);
+
+  $("#opBackup").onclick = backupAgora;
+  $("#opConferir").onclick = conferirBackup;
+  $("#opRestaurar").onclick = () => aindaNao({ rot:"Restaurar",
+    falta:"Copiar de volta é mais do que copiar: é decidir o que fazer com o "
+        + "que está lá. Sobrescrever um database em uso, com conexões abertas "
+        + "e a trava tomada, precisa de um desenho — parar o serviço, restaurar "
+        + "ao lado e trocar, ou restaurar com outro nome. Enquanto isso não "
+        + "existir, restaurar é copiar a pasta do backup por cima com o serviço "
+        + "parado, e conferir com o `conferir_backup` antes." });
+  $("#btVoltaDb").onclick = () => gerirDatabase(db);
+}
+
+/* ============================================================ editor de menu
+   Trocar o rotulo de qualquer item da barra e do menu.
+
+   Fica no navegador de quem mexeu (`localStorage`), e nao no servidor: e
+   preferencia de quem opera, nao politica do banco. Dois operadores podem
+   querer nomes diferentes, e nenhum dos dois deveria mudar a tela do outro. */
+
+const CHAVE_ROTULOS = "phxsql.rotulos";
+
+function rotulosSalvos() {
+  try { return JSON.parse(localStorage.getItem(CHAVE_ROTULOS) || "{}"); }
+  catch (_) { return {}; }
+}
+
+function gravarRotulos(r) {
+  try { localStorage.setItem(CHAVE_ROTULOS, JSON.stringify(r)); }
+  catch (_) { avisar("o navegador não deixou guardar a preferência", true); }
+}
+
+/** O rotulo a exibir para uma chave, com o original como reserva. */
+function rot(chave, original) {
+  const r = est.rotulos || (est.rotulos = rotulosSalvos());
+  return r[chave] || original;
+}
+
+function editorDeMenu() {
+  est.rotulos = est.rotulos || rotulosSalvos();
+  const itens = [];
+  MENUS.forEach(([nome, , lista], m) => {
+    itens.push({ chave:`menu.${m}`, original:nome, onde:"menu", grupo:nome });
+    lista.forEach((it, i) => {
+      if (it === "sep") return;
+      itens.push({ chave:`menu.${m}.${i}`, original:it.rot, onde:"item", grupo:nome });
+    });
+  });
+  FERRAMENTAS.forEach((f, i) => {
+    if (f === "risco") return;
+    itens.push({ chave:`fer.${i}`, original:f.rot, onde:"ferramenta", grupo:"Barra de ferramentas" });
+  });
+
+  const trocados = Object.keys(est.rotulos).length;
+  const grupos = [...new Set(itens.map(i => i.grupo))];
+
+  folha("Editor de menu", `${itens.length} rótulos · ${trocados} trocado(s) neste navegador`,
+    `<div class="acoes">
+       <button class="botao" id="emSalvar">Aplicar</button>
+       <button class="botao secundario" id="emReverter">Voltar aos nomes de fábrica</button>
+       <span class="leg">em branco = usa o nome original</span>
+     </div>` +
+    grupos.map(g => `<h3 class="secao">${esc(g)}</h3>
+      <div class="rolo"><table class="montar"><thead><tr>
+        <th>onde</th><th>nome de fábrica</th><th>nome que você quer</th>
+      </tr></thead><tbody>${itens.filter(i => i.grupo === g).map(i => `<tr>
+        <td class="dado leg">${esc(i.onde)}</td>
+        <td class="dado">${esc(i.original)}</td>
+        <td><input class="em-rot" data-chave="${esc(i.chave)}"
+             value="${esc(est.rotulos[i.chave] || "")}"
+             placeholder="${esc(i.original)}"></td></tr>`).join("")}
+      </tbody></table></div>`).join("") +
+    `<div class="nota">
+       <p><strong>Fica neste navegador, não no servidor.</strong> É preferência
+       de quem opera, não política do banco: dois operadores podem querer nomes
+       diferentes, e nenhum dos dois deveria mudar a tela do outro.</p>
+       <p>Trocar o rótulo <em>não</em> troca o que o item faz, nem a letra do
+       atalho — <code>Alt</code> continua abrindo o menu pela letra de fábrica.</p>
+     </div>`);
+
+  $("#emSalvar").onclick = () => {
+    const novo = {};
+    $$("#painel .em-rot").forEach(inp => {
+      const v = inp.value.trim();
+      if (v && v !== inp.placeholder) novo[inp.dataset.chave] = v;
+    });
+    est.rotulos = novo;
+    gravarRotulos(novo);
+    montarMenu(); montarFerramentas();
+    avisar(`${Object.keys(novo).length} rótulo(s) trocado(s)`);
+    editorDeMenu();
+  };
+  $("#emReverter").onclick = () => {
+    est.rotulos = {};
+    gravarRotulos({});
+    montarMenu(); montarFerramentas();
+    avisar("nomes de fábrica de volta");
+    editorDeMenu();
+  };
+}
+
+/* ============================================ Configurações e diretivas
+   Tres telas, tres alcances: o SERVIDOR (o `config.json` inteiro), o BANCO
+   (o que vale para um database) e os USUARIOS (quem pode o que).
+
+   As tres LEEM. Nenhuma grava, e isso e escolha, nao esquecimento: gravar o
+   `config.json` pela porta web significaria que uma sessao roubada abre o
+   firewall, troca a lista de comandos proibidos e cria um supervisor. A tela
+   diz exatamente qual campo mexer e onde -- que e o que falta para quem
+   administra, e nao vale o buraco. */
+
+/** Uma ficha com valor, rotulo e unidade. */
+function ficha(valor, rotulo, unidade) {
+  return `<div class="ficha"><div class="v">${esc(String(valor ?? "—"))}</div>
+    <div class="r">${esc(rotulo)}</div>${unidade ? `<div class="u">${esc(unidade)}</div>` : ""}</div>`;
+}
+
+const simNao = v => v ? "sim" : "não";
+
+async function verConfigServidor() {
+  const [c, p] = await Promise.all([api("config"), api("ping")]);
+  const seg = c.seguranca || {};
+  const rep = c.replicacao || {};
+  const bkp = c.backup || {};
+  const web = c.web || {};
+
+  folha("Configurações gerais do servidor", "o que está valendo agora · lido do config.json",
+    `<div class="fichas">
+       ${ficha(p.phxsql || p.versao, "versão")}
+       ${ficha(c.bind, "porta de dados", "campo bind")}
+       ${ficha(web.bind || "desligada", "porta da interface", "campo web.bind")}
+       ${ficha(p.papel || rep.papel, "papel na replicação")}
+       ${ficha(c.conexoes_max, "conexões máximas")}
+       ${ficha(c.timeout_s, "tempo limite", "segundos")}
+     </div>
+
+     ${grupoDeAjustes("Armazenamento", [
+       ["base", c.base, "a pasta que guarda os databases"],
+       ["max_linhas", c.max_linhas, "teto de linhas por resposta"],
+       ["espelho", simNao(c.espelho), "grava o .bkp junto do .reg"],
+       ["somente_leitura", simNao(c.somente_leitura), "recusa toda operação de escrita"],
+     ])}
+
+     ${grupoDeAjustes("Registro e rede", [
+       ["log_acessos", c.log_acessos, "arquivo do log de acessos"],
+       ["ips_permitidos", (c.ips_permitidos || []).join(", ") || "todos", "vazio = qualquer IP"],
+       ["web.sessao_minutos", web.sessao_minutos, "quanto dura a sessão da interface"],
+       ["web.servidores", (web.servidores || []).join(", ") || "só este", "console para mais de um servidor"],
+     ])}
+
+     ${grupoDeAjustes("Segurança", [
+       ["seguranca.comandos_proibidos", (seg.comandos_proibidos || []).join(", ") || "nenhum",
+        "recusados antes de chegar nos dados"],
+       ["seguranca.bases_proibidas", (seg.bases_proibidas || []).join(", ") || "nenhuma", ""],
+       ["seguranca.tentativas_ate_bloquear", seg.tentativas_ate_bloquear, ""],
+       ["seguranca.bloqueio_minutos", seg.bloqueio_minutos, "quanto tempo o IP fica barrado"],
+       ["seguranca.blacklist", seg.blacklist, "onde a lista de bloqueio persiste"],
+       ["seguranca.firewall.ligado", simNao(c.firewall), "executa o comando de bloqueio do sistema"],
+     ])}
+
+     ${grupoDeAjustes("Backup", [
+       ["backup.destino", bkp.destino, ""],
+       ["backup.hora", bkp.hora, "agendamento diário"],
+       ["backup.zip", simNao(bkp.zip), ""],
+     ])}
+
+     ${grupoDeAjustes("Replicação", [
+       ["replicacao.papel", rep.papel, "isolado, origem ou réplica"],
+       ["replicacao.porta_envio", rep.porta_envio, ""],
+       ["replicacao.porta_retorno", rep.porta_retorno, ""],
+     ])}
+
+     ${c.estranhas && c.estranhas.length ? `<div class="nota mal">
+       <p><strong>O config.json traz campos que este servidor não conhece:</strong>
+       ${c.estranhas.map(x => `<code>${esc(x)}</code>`).join(", ")}. Eles foram
+       <em>ignorados</em> — confira se não é um nome escrito errado.</p></div>` : ""}
+
+     <div class="nota">
+       <p><strong>Esta tela lê, não grava.</strong> E é de propósito: gravar o
+       <code>config.json</code> pela porta web significaria que uma sessão
+       roubada consegue abrir o firewall, esvaziar a lista de comandos
+       proibidos e criar um supervisor. O caminho é editar o arquivo e subir o
+       serviço de novo.</p>
+     </div>`);
+}
+
+/** Um bloco de campo → valor → para que serve. */
+function grupoDeAjustes(titulo, linhas) {
+  return `<h3 class="secao">${esc(titulo)}</h3>
+    <div class="rolo"><table><thead><tr>
+      <th>campo no <code>config.json</code></th><th>valor agora</th><th>para que serve</th>
+    </tr></thead><tbody>${linhas.map(([campo, valor, diz]) => `<tr>
+      <td class="dado"><code>${esc(campo)}</code></td>
+      <td class="dado"><b>${esc(String(valor ?? "—"))}</b></td>
+      <td class="leg">${esc(diz || "")}</td></tr>`).join("")}</tbody></table></div>`;
+}
+
+/** As configuracoes que valem para UM database. */
+async function verConfigBanco(db) {
+  db = db || databaseCorrente();
+  if (!db) return avisar("nenhum database escolhido", true);
+
+  const [c, t, st] = await Promise.all([
+    api("config"),
+    api("tabelas", { database: db }),
+    api("sistabelas", { database: db }).catch(() => ({ tabelas: [] })),
+  ]);
+  const seg = c.seguranca || {};
+  const proibida = (seg.bases_proibidas || []).includes(db);
+  const tabelas = st.tabelas || [];
+  const soma = (f) => tabelas.reduce((a, x) => a + (+x[f] || 0), 0);
+
+  folha(`Configurações do banco ${db}`, "o que vale para este database",
+    `<div class="fichas">
+       ${ficha(tabelas.length, "tabelas")}
+       ${ficha((t.schemas || []).length, "schemas")}
+       ${ficha(soma("registros").toLocaleString("pt-BR"), "registros")}
+       ${ficha(soma("volumes") || tabelas.length, "volumes no disco")}
+       ${ficha(proibida ? "SIM" : "não", "na lista de bases proibidas")}
+       ${ficha(c.espelho ? "sim" : "não", "espelho .bkp", "vem do servidor")}
+     </div>
+
+     ${proibida ? `<div class="nota mal"><p><strong>Este database está em
+       <code>seguranca.bases_proibidas</code>.</strong> Qualquer pedido a ele é
+       recusado antes de tocar o disco, e a tentativa conta como violação.</p></div>` : ""}
+
+     <h3 class="secao">Onde ele mora</h3>
+     <div class="rolo"><table><tbody>
+       <tr><td class="dado"><code>base</code></td><td class="dado">${esc(c.base || "dados")}</td></tr>
+       <tr><td class="dado">pasta do database</td><td class="dado"><code>${esc(c.base || "dados")}/${esc(db)}</code></td></tr>
+       <tr><td class="dado">schemas</td><td class="dado">${
+         (t.schemas || []).length ? (t.schemas).map(x => `<code>${esc(x)}/</code>`).join(" ") : "<span class=leg>nenhum — todas as tabelas na raiz</span>"}</td></tr>
+     </tbody></table></div>
+
+     <h3 class="secao">O que herda do servidor</h3>
+     <p class="leg">Estes não se ajustam por database: valem para tudo que este
+     servidor abrir. A tela de <em>Configurações gerais</em> mostra onde mexer.</p>
+     ${grupoDeAjustes("", [
+       ["espelho", simNao(c.espelho), "segunda cópia de cada slot"],
+       ["somente_leitura", simNao(c.somente_leitura), "recusa escrita"],
+       ["max_linhas", c.max_linhas, "teto por resposta"],
+       ["backup.destino", (c.backup || {}).destino, "para onde a cópia vai"],
+     ])}
+
+     <div class="acoes">
+       <button class="botao secundario" id="btGerirDb">← Gerir ${esc(db)}</button>
+     </div>`);
+  const b = $("#btGerirDb");
+  if (b) b.onclick = () => gerirDatabase(db);
+}
+
+/** Quem pode o que, com o poder de cada um sobre cada base. */
+async function verConfigUsuarios() {
+  const u = await api("usuarios");
+  const lista = u.usuarios || u || [];
+  folha("Configurações dos usuários", `${lista.length} cadastrado(s) · o hash da senha nunca sai daqui`,
+    `<div class="fichas">
+       ${ficha(lista.length, "usuários")}
+       ${ficha(lista.filter(x => x.supervisor).length, "supervisores")}
+       ${ficha(lista.filter(x => x.ativo === false).length, "inativos")}
+       ${ficha(lista.filter(x => x.exige_chave).length, "exigem chave", "Ed25519")}
+     </div>
+
+     ${tabela([{t:"login"},{t:"nome"},{t:"nível"},{t:"supervisor"},{t:"ativo"},{t:"chave"},{t:"e-mail"}],
+       lista, x => `<tr>
+         <td class="dado"><b>${esc(x.login || "")}</b></td>
+         <td class="dado">${esc(x.nome || "")}</td>
+         <td class="dado">${esc(x.nivel || "—")}</td>
+         <td class="dado">${x.supervisor ? "<span class=\"pino ok\">sim</span>" : "não"}</td>
+         <td class="dado">${x.ativo === false ? "<span class=\"pino mal\">não</span>" : "sim"}</td>
+         <td class="dado">${x.exige_chave ? "exige" : "—"}</td>
+         <td class="dado">${esc(x.email || "")}</td></tr>`)}
+
+     <h3 class="secao">Poder sobre cada base</h3>
+     ${lista.map(x => `<div class="bloco-user">
+        <b>${esc(x.login || "")}</b>
+        ${x.supervisor ? `<span class="pino ok">supervisor — pode tudo em toda base</span>`
+          : (() => {
+              const bases = x.bases || {};
+              const chaves = Object.keys(bases);
+              if (!chaves.length) return `<span class="pino mal">sem base listada e sem "*" — nega tudo</span>`;
+              return chaves.map(b => `<span class="pino">${esc(b)}: ${
+                Object.entries(bases[b] || {}).filter(([, v]) => v).map(([k]) => esc(k)).join(", ") || "nada"
+              }</span>`).join(" ");
+            })()}
+      </div>`).join("")}
+
+     <div class="nota">
+       <p><strong>Três regras decidem tudo.</strong> Nega por omissão: atividade
+       que não aparece vale <code>false</code>. A base listada manda — o
+       <code>"*"</code> não completa o que faltou, e base listada vazia nega
+       tudo. Sem a base e sem <code>"*"</code>, nega tudo.</p>
+       <p><strong>Esta tela lê.</strong> Criar e alterar usuário pela web
+       significa mexer em credencial por HTTP, e isso precisa de um desenho
+       próprio — quem pode, o que fica no log, e a senha nunca em claro em
+       lugar nenhum do caminho. Por enquanto: <code>phxsqld --senha</code> gera
+       o hash, e ele entra no <code>config.json</code>.</p>
+       <p class="leg">Nenhum campo desta tela traz o hash — o servidor não o
+       devolve, e há teste que falha se a ficha vazar.</p>
+     </div>`);
+}
+
+/* ================================================= Catálogo do sistema
+   SysTables e SysColumns: o catalogo como se fosse tabela. E o dicionario de
+   dados -- onde os metadados novos de campo aparecem todos juntos. */
+
+async function verSysTables(db) {
+  db = db || databaseCorrente();
+  if (!db) return avisar("nenhum database escolhido", true);
+  folha(`SysTables · ${db}`, "carregando…", `<div class="centro">carregando…</div>`);
+  const r = await api("sistabelas", { database: db });
+  const linhas = r.tabelas || [];
+
+  folha(`SysTables · ${db}`, `${linhas.length} tabela(s) · o catálogo em forma de dado`,
+    `<div class="acoes">
+       <button class="botao secundario" id="btSysCols">SysColumns →</button>
+       <button class="botao secundario" id="btVoltaDb">← Gerir ${esc(db)}</button>
+     </div>` +
+    tabela([{t:"tabela"},{t:"schema"},{t:"registros",cls:"num"},{t:"slots",cls:"num"},
+            {t:"colunas",cls:"num"},{t:"índices",cls:"num"},{t:"chave primária"},
+            {t:"FKs",cls:"num"},{t:"bytes/linha",cls:"num"},{t:"partição"},{t:"volumes",cls:"num"}],
+      linhas, x => `<tr class="linha-tab" data-tab="${esc(x.tabela)}">
+        <td class="dado"><b>${esc(x.tabela)}</b>${x.erro ? ` <span class="pino mal">ilegível</span>` : ""}</td>
+        <td class="dado">${esc(x.schema || "")}</td>
+        <td class="num">${esc(String(x.registros ?? "—"))}</td>
+        <td class="num">${esc(String(x.slots ?? "—"))}</td>
+        <td class="num">${esc(String(x.colunas ?? "—"))}</td>
+        <td class="num">${esc(String(x.indices ?? "—"))}</td>
+        <td class="dado">${x.chave_primaria ? `<code>${esc(x.chave_primaria)}</code>` : "<span class=leg>—</span>"}</td>
+        <td class="num">${esc(String(x.chaves_estrangeiras ?? 0))}</td>
+        <td class="num">${esc(String(x.bytes_por_linha ?? "—"))}</td>
+        <td class="dado">${x.particao ? `<span class="pino">${esc(x.particao)}</span>` : "<span class=leg>—</span>"}</td>
+        <td class="num">${esc(String(x.volumes ?? 0))}</td></tr>`) +
+    `<div class="nota"><p>Uma linha por tabela do database. <em>bytes/linha</em> é o
+     payload do slot — o que cada registro ocupa no <code>.reg</code>, sem contar
+     o cabeçalho de 24 bytes nem o que mora no <code>.bin</code> e no
+     <code>.memo</code>.</p></div>`);
+
+  $("#btSysCols").onclick = () => verSysColumns(db);
+  $("#btVoltaDb").onclick = () => gerirDatabase(db);
+  $$("#painel .linha-tab").forEach(tr =>
+    tr.onclick = () => verSysColumns(db, tr.dataset.tab));
+}
+
+async function verSysColumns(db, tabela_) {
+  db = db || databaseCorrente();
+  if (!db) return avisar("nenhum database escolhido", true);
+  folha(`SysColumns · ${db}`, "carregando…", `<div class="centro">carregando…</div>`);
+  const r = await api("siscolunas", tabela_ ? { database: db, tabela: tabela_ } : { database: db });
+  const linhas = r.colunas || [];
+
+  folha(`SysColumns · ${db}${tabela_ ? ` · ${tabela_}` : ""}`,
+    `${linhas.length} coluna(s) · o dicionário de dados`,
+    `<div class="acoes">
+       <button class="botao secundario" id="btSysTabs">← SysTables</button>
+       ${tabela_ ? `<button class="botao secundario" id="btTodas">todas as tabelas</button>` : ""}
+       <button class="botao secundario" id="btVoltaDb">← Gerir ${esc(db)}</button>
+     </div>` +
+    tabela([{t:"tabela"},{t:"#",cls:"num"},{t:"nome"},{t:"caption"},{t:"tipo"},
+            {t:"tam.",cls:"num"},{t:"obrig.",cls:"num"},{t:"chave"},{t:"máscara"},
+            {t:"índices"},{t:"id"},{t:"descrição"}],
+      linhas, c => `<tr>
+        <td class="dado">${esc(c.tabela)}</td>
+        <td class="num">${c.posicao}</td>
+        <td class="dado"><b>${esc(c.nome)}</b></td>
+        <td class="dado">${esc(c.caption || "")}</td>
+        <td class="dado"><code>${esc(tipoCurto(c.tipo))}</code></td>
+        <td class="num">${c.tamanho || "—"}</td>
+        <td class="num">${c.obrigatoria ? "sim" : ""}</td>
+        <td class="dado">${chaveEmPino(c)}</td>
+        <td class="dado">${c.mascara ? `<code>${esc(c.mascara)}</code>` : ""}</td>
+        <td class="dado leg">${(c.nos_indices || []).map(esc).join(", ")}</td>
+        <td class="dado leg"><code title="${esc(c.id)}">${esc((c.id || "").slice(0, 8))}…</code></td>
+        <td class="dado leg">${esc(c.descricao || "")}</td></tr>`) +
+    `<div class="nota"><p>O <code>id</code> é um UUID v7 sorteado quando a coluna
+     nasce e <strong>nunca reaproveitado</strong>. Renomear a coluna troca o
+     nome; o id segue o mesmo — é por ele que uma tela ou um relatório apontam
+     para o campo sem quebrar no primeiro <em>rename</em>.</p>
+     <p>As marcas de chave são <strong>derivadas</strong> dos índices e das
+     chaves estrangeiras, não gravadas no campo. Guardar “é primária” na coluna
+     criaria uma segunda verdade ao lado do índice, e as duas divergiriam.</p></div>`);
+
+  $("#btSysTabs").onclick = () => verSysTables(db);
+  if ($("#btTodas")) $("#btTodas").onclick = () => verSysColumns(db);
+  $("#btVoltaDb").onclick = () => gerirDatabase(db);
+}
+
+/** `Decimal { precisao: 15, escala: 2 }` cansa a vista numa grade. */
+function tipoCurto(t) {
+  const m = /^Decimal.*?precisao:\s*(\d+).*?escala:\s*(\d+)/.exec(t || "");
+  return m ? `Decimal(${m[1]},${m[2]})` : (t || "");
+}
+
+function chaveEmPino(c) {
+  const p = [];
+  if (c.primaria) p.push(`<span class="pino ok">PK</span>`);
+  if (c.estrangeira) p.push(`<span class="pino">FK</span>`);
+  if (c.composta) p.push(`<span class="pino">composta</span>`);
+  return p.join(" ");
 }
 
 /* ==================================================== Gestão de transações
@@ -2246,6 +3379,9 @@ const ICO = {
   correio: `<rect x="3" y="5.5" width="18" height="13" rx="2" fill="none" stroke-width="1.6"/><path d="M3.6 7l8.4 6 8.4-6" fill="none" stroke-width="1.6" stroke-linecap="round"/>`,
   corrente: `<rect x="2.5" y="8.5" width="6" height="7" rx="1.5" fill="none" stroke-width="1.6"/><rect x="9.5" y="8.5" width="5" height="7" rx="1.5" fill="none" stroke-width="1.6"/><rect x="15.5" y="8.5" width="6" height="7" rx="1.5" fill="none" stroke-width="1.6"/><path d="M8.5 12h1M14.5 12h1" stroke-width="1.7"/>`,
   tabelas: `<rect x="3" y="4" width="13" height="12" rx="1.6" fill="none" stroke-width="1.5"/><path d="M3 8h13M8 8v8" stroke-width="1.3"/><path d="M8 8V4M19 8v12H8" fill="none" stroke-width="1.5" stroke-linecap="round"/>`,
+  gerir: `<ellipse cx="12" cy="6" rx="7.5" ry="3" fill="none" stroke-width="1.5"/><path d="M4.5 6v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6" fill="none" stroke-width="1.5"/><path d="M4.5 12v5.5c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V12" fill="none" stroke-width="1.5"/>`,
+  catalogo: `<rect x="3.5" y="3.5" width="17" height="17" rx="2" fill="none" stroke-width="1.5"/><path d="M3.5 8.5h17M8.5 8.5v12" stroke-width="1.3"/><path d="M11.5 12h6M11.5 15.5h6" stroke-width="1.3" stroke-linecap="round"/>`,
+  engrenagem: `<circle cx="12" cy="12" r="3.2" fill="none" stroke-width="1.5"/><path d="M12 2.6v2.6M12 18.8v2.6M21.4 12h-2.6M5.2 12H2.6M18.6 5.4l-1.8 1.8M7.2 16.8l-1.8 1.8M18.6 18.6l-1.8-1.8M7.2 7.2L5.4 5.4" stroke-width="1.5" stroke-linecap="round"/>`,
   grade: `<rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke-width="1.6"/><path d="M3 9h18M9 9v11M15 9v11" stroke-width="1.4"/>`,
   ajuda: `<circle cx="12" cy="12" r="9" fill="none" stroke-width="1.6"/><path d="M9.4 9.3a2.7 2.7 0 015.2.9c0 1.8-2.6 2.2-2.6 4" fill="none" stroke-width="1.7" stroke-linecap="round"/><path d="M12 17.4v.1" stroke-width="2.2" stroke-linecap="round"/>`,
 };
@@ -2277,6 +3413,9 @@ const FERRAMENTAS = [
   { ico:"banco",    rot:"Bancos",     cor:"var(--bin)",    faz:verBancos },
   { ico:"grade",    rot:"View DB",    cor:"var(--bin)",    faz:viewDatabaseAtual },
   { ico:"tabelas",  rot:"Tabelas",    cor:"var(--bin)",    faz:gerirTabelasAtual },
+  { ico:"gerir",    rot:"Gerir Banco",cor:"var(--bin)",    faz:() => gerirDatabase() },
+  { ico:"catalogo", rot:"SysTables",  cor:"var(--memo)",   faz:() => verSysTables() },
+  { ico:"engrenagem", rot:"Config",   cor:"var(--laranja)",faz:verConfigServidor },
   { ico:"duplicar", rot:"Duplicar",   cor:"var(--bin)",    faz:null,
     falta:"Copiar um database inteiro para outro nome. O backup já sabe copiar "
         + "árvore e conferir SHA-256; falta a operação que grava com outro nome "
@@ -2308,10 +3447,13 @@ function montarFerramentas() {
   $("#ferramentas").innerHTML = FERRAMENTAS.map((f, i) => {
     if (f === "risco") return `<div class="risco" role="separator"></div>`;
     const pendente = !!f.falta && !f.faz;
+    // `rot()` deixa o editor de menu trocar o nome exibido sem mexer no que a
+    // ferramenta faz.
+    const rotulo = rot(`fer.${i}`, f.rot);
     return `<button class="fer${pendente ? " afazer" : ""}"
       data-f="${i}" style="color:${f.cor}"
-      title="${esc(f.rot)}${pendente ? " · ainda não existe" : ""}">
-      ${svg(f.ico)}<span class="rot">${esc(f.rot)}</span></button>`;
+      title="${esc(rotulo)}${pendente ? " · ainda não existe" : ""}">
+      ${svg(f.ico)}<span class="rot">${esc(rotulo)}</span></button>`;
   }).join("");
 
   $("#ferramentas").onclick = ev => {
@@ -2526,6 +3668,19 @@ const MENUS = [
   // Um menu so para tabela, e nao dois: "Tabela" (a escolhida na arvore) e
   // "Tabelas" (as do database) seriam vizinhos parecidos demais, e quem le a
   // barra teria de adivinhar em qual dos dois esta a operacao que quer.
+  ["Banco", "B", [
+    { rot:"Gerir este banco",     ico:"⛁", tecla:"Alt+6", faz:() => gerirDatabase() },
+    { rot:"Novo database…",       ico:"✚", faz:novoDatabase },
+    "sep",
+    { rot:"SysTables",            ico:"▤", faz:() => verSysTables() },
+    { rot:"SysColumns",           ico:"☰", faz:() => verSysColumns() },
+    "sep",
+    { rot:"Copiar / colar tabela…", ico:"⧉", faz:() => telaCopiarColar(databaseCorrente()) },
+    { rot:"Backup e restauração", ico:"⛁", faz:() => verBackupRestaure(databaseCorrente()) },
+    { rot:"Arquivos bloqueados",  ico:"⊘", faz:() => irPara("bloqueios") },
+    { rot:"Transações",           ico:"⇄", faz:verTransacoes },
+  ]],
+
   ["Tabelas", "T", [
     { rot:"Gerir as tabelas",     ico:"▦", tecla:"Alt+5", faz:gerirTabelasAtual },
     { rot:"Nova tabela…",         ico:"✚", faz:() => telaNovaTabela(databaseCorrente()) },
@@ -2535,6 +3690,8 @@ const MENUS = [
       faz:() => verConteudoEditavel(est.atual.db, est.atual.tab) },
     { rot:"Partições da tabela",  ico:"◫", quando:comTabela,
       faz:() => verParticoes(est.atual.db, est.atual.tab) },
+    { rot:"Configurações e diretivas", ico:"⚙", quando:comTabela,
+      faz:() => verConfigTabela(est.atual.db, est.atual.tab) },
     { rot:"Índices",              ico:"⑂", quando:comTabela, faz:() => irAba("indices") },
     { rot:"Diário",               ico:"◷", quando:comTabela, faz:() => irAba("diario") },
     { rot:"Integridade",          ico:"⚑", quando:comTabela, faz:() => irAba("integridade") },
@@ -2578,6 +3735,18 @@ const MENUS = [
     { rot:"Reparar…",             ico:"⛨", faz:repararPeloMenu },
   ]],
 
+  // Tres alcances, tres telas: o servidor inteiro, um banco, e quem entra.
+  ["Configurações", "C", [
+    { rot:"Gerais do servidor",   ico:"⚙", faz:verConfigServidor },
+    { rot:"Do banco atual",       ico:"⛁", faz:() => verConfigBanco() },
+    { rot:"Dos usuários",         ico:"☺", faz:verConfigUsuarios },
+    "sep",
+    { rot:"Diretivas de acesso",  ico:"⛨", faz:verDiretivas },
+    { rot:"Diretivas do banco",   ico:"⚑", faz:() => verDiretivasDoBanco() },
+    "sep",
+    { rot:"Editor de menu…",      ico:"✎", faz:editorDeMenu },
+  ]],
+
   ["Ver", "V", [
     { rot:"Atualizar", ico:"↻", tecla:"F5", faz:atualizarVista },
     { rot:"Tema claro / escuro", ico:"🌓", faz:() => $("#btTema").click() },
@@ -2591,7 +3760,10 @@ const MENUS = [
 
 function montarMenu() {
   const bar = $("#menubar");
-  bar.innerHTML = MENUS.map(([nome, letra, itens], i) => {
+  bar.innerHTML = MENUS.map(([nomeOriginal, letra, itens], i) => {
+    // O editor de menu troca o texto; a LETRA do atalho continua a de fabrica,
+    // senao trocar um nome mudaria a tecla debaixo do dedo de quem ja aprendeu.
+    const nome = rot(`menu.${i}`, nomeOriginal);
     const rotulo = letra && nome.includes(letra)
       ? nome.replace(letra, `<u>${letra}</u>`)
       : `<u>${nome[0]}</u>${nome.slice(1)}`;
@@ -2600,7 +3772,7 @@ function montarMenu() {
       const off = it.quando && !it.quando();
       return `<button class="item" role="menuitem" data-m="${i}" data-i="${j}"
         ${off ? "disabled" : ""}><span class="ico">${it.ico || ""}</span
-        ><span class="rot">${esc(it.rot)}</span
+        ><span class="rot">${esc(rot(`menu.${i}.${j}`, it.rot))}</span
         ><span class="tecla">${it.tecla || ""}</span></button>`;
     }).join("");
     return `<div class="menu" data-m="${i}">
@@ -2732,7 +3904,8 @@ function ligarAtalhos() {
     if (ev.altKey && ev.key === "2" && est.atual) { ev.preventDefault(); irAba("estrutura"); return; }
     if (ev.altKey && ev.key === "3" && est.atual) { ev.preventDefault(); irAba("conteudo"); return; }
     if (ev.altKey && ev.key === "4") { ev.preventDefault(); viewDatabaseAtual(); return; }
-    if (ev.altKey && ev.key === "5") { ev.preventDefault(); gerirTabelasAtual(); }
+    if (ev.altKey && ev.key === "5") { ev.preventDefault(); gerirTabelasAtual(); return; }
+    if (ev.altKey && ev.key === "6") { ev.preventDefault(); gerirDatabase(); }
   });
 }
 
@@ -2774,6 +3947,11 @@ function atualizarVista() {
  * tela. */
 function folha(titulo, subtitulo, corpoHtml) {
   $("#abas").innerHTML = "";
+  // Trocar o `innerHTML` troca o conteudo, nao o elemento: um `onclick` que a
+  // tela anterior tenha pendurado no proprio `#painel` continuaria ali e
+  // dispararia nesta. Ja aconteceu -- a gestao do banco levava o clique das
+  // telas seguintes.
+  $("#painel").onclick = null;
   $("#titulo").textContent = titulo;
   $("#subtitulo").textContent = subtitulo || "";
   $("#painel").innerHTML = corpoHtml;

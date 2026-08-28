@@ -212,9 +212,13 @@ OPERACOES
     criar_database  database
     criar_schema    database, schema
     criar_tabela    database, [schema], tabela, colunas, [indices],
-                    [registros_por_arquivo], [digitos], [max_arquivos]
+                    [registros_por_arquivo], [digitos], [max_arquivos],
+                    [particao], [particao_coluna]
     duplicar_tabela database, tabela, destino
+    copiar_tabela   database, tabela, destino_database, destino
     excluir_tabela  database, tabela, confirmar   confirmar repete o nome
+    sistabelas      database                 o catalogo de tabelas
+    siscolunas      database, [tabela]       o dicionario de dados
     ler             database, tabela, rowid
     varrer          database, tabela, [indice], [max]
     buscar          database, tabela, indice, chave, [max]
@@ -474,11 +478,54 @@ BARRA DE MENU
     A permissao e "administrar", nao "excluir" -- poder perder uma linha nao e
     poder perder a tabela.
 
-    A PAGINACAO SE ESCOLHE NA CRIACAO E NAO MUDA DEPOIS. Ela e o divisor que
-    transforma o rowid em endereco; trocar mais tarde mudaria o endereco de
-    cada registro ja gravado. E nao existe "sem teto": o sufixo tem largura
-    fixa, entao com tres digitos cabem 999 volumes. Teto deixado em zero vira
-    o maior que couber.
+    A PARTICAO SE ESCOLHE NA CRIACAO E NAO MUDA DEPOIS. Ela e o que transforma
+    o rowid em endereco; trocar mais tarde mudaria o endereco de cada registro
+    ja gravado. E nao existe "sem teto": o sufixo tem largura fixa, entao com
+    tres digitos cabem 999 volumes. Teto deixado em zero vira o maior que
+    couber.
+
+    DUAS REGRAS DE CORTE
+
+    Por faixa de quantidade, o volume corta a cada N registros e o endereco
+    sai de uma divisao:
+
+        volume = (rowid-1) / registros_por_arquivo + 1
+
+    Por periodo -- mensal, bimestral, semestral ou anual --, o volume corta
+    quando o periodo de uma coluna de data vira, OU quando o volume enche, o
+    que vier primeiro. A coluna tem de ser Date ou DateTime e obrigatoria.
+
+    Os blocos comecam sempre em janeiro: bimestre e jan-fev, mar-abr, ...;
+    semestre e jan-jun e jul-dez.
+
+    A LINHA ATRASADA NAO VOLTA. Um lancamento de janeiro digitado em marco
+    entra no volume de MARCO. A ordem de digitacao e sagrada: voltar seria
+    escrever no meio de um arquivo ja fechado. Por isso o periodo de um volume
+    e "o periodo em que ele abriu", e um volume pode conter linhas de periodos
+    anteriores que chegaram depois. Quem quiser todos os lancamentos de
+    janeiro usa o indice pela data -- e para isso que ele existe.
+
+    CADASTRO DE CAMPOS
+
+    Cada campo tem, alem do nome e do tipo:
+
+        id          UUID v7 sorteado na criacao, NUNCA reaproveitado. E por
+                    ele que uma tela ou um relatorio apontam para a coluna,
+                    para que renomear o campo nao quebre nada
+        caption     o rotulo de tela; vazio significa "use o nome"
+        descricao   para que o campo serve
+        mascara     o PICTURE do Clarion(R): @N-11.2, @D6, @P###-####P
+        tamanho     sai do tipo; para Str e a largura declarada
+
+    E o papel nas chaves -- primaria, estrangeira, composta -- e DERIVADO dos
+    indices e das chaves estrangeiras, nao gravado no campo. Marcar "primaria"
+    no proprio campo criaria uma segunda verdade ao lado do indice.
+
+    CATALOGO DO SISTEMA
+
+    SysTables lista as tabelas do banco com registros, chaves, particao e
+    volumes. SysColumns e o dicionario de dados: cada campo com caption,
+    descricao, mascara, tipo, tamanho e o papel na chave.
 
     O que voce ve e o que o SEU usuario pode ver. A interface nao contorna o
     portao de permissao: quem nao pode inserir recebe a recusa do servidor,
@@ -866,11 +913,13 @@ telefone, supervisor e o poder sobre cada base. A SENHA E GUARDADA COMO HASH.
 
 14.3 As dez atividades
 
-    ler          bancos, tabelas, esquema, ler, varrer, buscar
+    ler          bancos, tabelas, esquema, ler, varrer, buscar,
+                 sistabelas, siscolunas
     inserir      inserir
     alterar      atualizar
     excluir      excluir
-    criar        criar_database, criar_schema, criar_tabela, duplicar_tabela
+    criar        criar_database, criar_schema, criar_tabela, duplicar_tabela,
+                 copiar_tabela
     reindexar    reindexar
     diario       diario
     verificar    verificar

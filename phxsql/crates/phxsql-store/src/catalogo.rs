@@ -351,6 +351,63 @@ impl Database {
         Ok(copiados)
     }
 
+    /// Copia uma tabela para OUTRO database -- o "colar" da tela.
+    ///
+    /// O `duplicar_tabela` copia dentro do mesmo database; este atravessa. E a
+    /// mesma copia byte a byte, e pela mesma razao: a copia nasce com os
+    /// mesmos rowids e na mesma ordem de digitacao.
+    pub fn copiar_tabela_para(
+        &self,
+        origem: &str,
+        destino_db: &Database,
+        destino: &str,
+    ) -> Result<usize> {
+        let (schema_o, nome_o) = separar_qualificado(origem);
+        let (schema_d, nome_d) = separar_qualificado(destino);
+        let (schema_o, nome_o) = (schema_o.as_deref(), nome_o.as_str());
+        let (schema_d, nome_d) = (schema_d.as_deref(), nome_d.as_str());
+        validar_nome("tabela", nome_o)?;
+        validar_nome("tabela de destino", nome_d)?;
+        if destino_db.existe_tabela(schema_d, nome_d)? {
+            return Err(PhxError::Duplicado(format!(
+                "a tabela {destino} ja existe em {}",
+                destino_db.nome()
+            )));
+        }
+        let dir_o = self.diretorio(schema_o)?;
+        // Colar num schema que ainda nao existe cria a pasta -- e o que quem
+        // cola espera, e o mesmo que `criar_tabela` faz.
+        let dir_d = match schema_d {
+            None => destino_db.caminho().to_path_buf(),
+            Some(sc) => destino_db.garantir_schema(sc)?,
+        };
+        if dir_o == dir_d && nome_o == nome_d {
+            return Err(PhxError::Duplicado(
+                "origem e destino sao a mesma tabela".into(),
+            ));
+        }
+
+        let mut copiados = 0usize;
+        for ext in Self::EXTENSOES {
+            for arq in std::fs::read_dir(&dir_o)?.flatten() {
+                let f = arq.file_name();
+                let f = f.to_string_lossy();
+                if pertence(&f, nome_o, ext) {
+                    let novo = format!("{nome_d}{}", &f[nome_o.len()..]);
+                    std::fs::copy(arq.path(), dir_d.join(&novo))?;
+                    copiados += 1;
+                }
+            }
+        }
+        if copiados == 0 {
+            return Err(PhxError::NaoEncontrado(format!(
+                "tabela {origem} nao existe em {}",
+                self.nome()
+            )));
+        }
+        Ok(copiados)
+    }
+
     pub fn existe_tabela(&self, schema: Option<&str>, nome: &str) -> Result<bool> {
         Ok(self.tabelas(schema)?.iter().any(|t| t == nome))
     }
@@ -476,7 +533,8 @@ mod tests {
         let inst = Instancia::nova(&base).unwrap();
         let z = inst.criar_database("Z").unwrap();
         let esq = esquema("grande")
-            .com_paginacao(phxsql_core::paginacao::Paginacao::nova(2, 99).unwrap());
+            .com_paginacao(phxsql_core::paginacao::Paginacao::nova(2, 99).unwrap())
+            .unwrap();
         let mut t = z.criar_tabela(None, esq).unwrap();
         for i in 1..=7i64 {
             t.inserir(&[Value::Int(i), Value::Null]).unwrap();
@@ -699,5 +757,101 @@ mod testes_gestao {
             db.duplicar_tabela("a", "b").is_err(),
             "sobrescreveu a tabela b"
         );
+    }
+}
+
+#[cfg(test)]
+mod testes_copia_entre_bancos {
+    use super::*;
+    use phxsql_core::schema::{Column, IndexColumn, IndexDef};
+    use phxsql_core::types::ColumnType;
+    use phxsql_core::value::Value;
+
+    fn esquema(nome: &str) -> Schema {
+        Schema::new(
+            nome,
+            vec![
+                Column::new("id", ColumnType::Int8).obrigatoria(),
+                Column::new("texto", ColumnType::Str(20)),
+            ],
+            vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).primaria()],
+        )
+        .unwrap()
+    }
+
+    /// A copia entre databases preserva rowid e ordem de digitacao -- que e o
+    /// ponto de copiar arquivo em vez de reinserir linha a linha.
+    #[test]
+    fn colar_em_outro_banco_preserva_rowids_e_ordem() {
+        let base = std::env::temp_dir().join(format!("phx-colar-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let cat = Instancia::nova(&base).unwrap();
+        let origem = cat.criar_database("loja").unwrap();
+        let destino = cat.criar_database("arquivo").unwrap();
+
+        let mut t = origem.criar_tabela(None, esquema("pedidos")).unwrap();
+        for (i, txt) in ["um", "dois", "tres"].iter().enumerate() {
+            t.inserir(&[Value::Int(i as i64 + 1), Value::Str((*txt).into())])
+                .unwrap();
+        }
+        // Um buraco no meio: o slot excluido NAO e reaproveitado, e a copia tem
+        // de carregar o buraco junto -- senao os rowids andariam.
+        t.excluir(2).unwrap();
+        t.sincronizar().unwrap();
+
+        let copiados = origem
+            .copiar_tabela_para("pedidos", &destino, "pedidos_2026")
+            .unwrap();
+        assert_eq!(copiados, 5, "os cinco arquivos");
+
+        let mut c = destino.abrir_qualificada("pedidos_2026").unwrap();
+        assert_eq!(c.slots(), 3, "o slot excluido continua ocupando lugar");
+        assert!(c.ler(2).unwrap().is_none(), "o excluido continua excluido");
+        for (rowid, txt) in [(1u64, "um"), (3, "tres")] {
+            match &c.ler(rowid).unwrap().unwrap()[1] {
+                Value::Str(s) => assert_eq!(s, txt, "rowid {rowid}"),
+                outro => panic!("esperava texto, veio {outro:?}"),
+            }
+        }
+        // E a chave primaria atravessou junto.
+        assert!(c.esquema().chave_primaria().is_some());
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn colar_por_cima_de_tabela_existente_e_recusado() {
+        let base = std::env::temp_dir().join(format!("phx-colar2-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let cat = Instancia::nova(&base).unwrap();
+        let a = cat.criar_database("a").unwrap();
+        let b = cat.criar_database("b").unwrap();
+        a.criar_tabela(None, esquema("t")).unwrap();
+        b.criar_tabela(None, esquema("t")).unwrap();
+
+        // Sobrescrever cinco arquivos sem aviso nao tem desfazer.
+        assert!(a.copiar_tabela_para("t", &b, "t").is_err());
+        // E colar em cima de si mesma tambem nao faz sentido.
+        assert!(a.copiar_tabela_para("t", &a, "t").is_err());
+        // Mas com outro nome, no mesmo banco, vale.
+        assert!(a.copiar_tabela_para("t", &a, "t_copia").is_ok());
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn colar_dentro_de_schema_que_ainda_nao_existe_cria_a_pasta() {
+        let base = std::env::temp_dir().join(format!("phx-colar3-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let cat = Instancia::nova(&base).unwrap();
+        let a = cat.criar_database("a").unwrap();
+        let b = cat.criar_database("b").unwrap();
+        a.criar_tabela(None, esquema("t")).unwrap();
+
+        a.copiar_tabela_para("t", &b, "historico.t").unwrap();
+        assert!(b.existe_tabela(Some("historico"), "t").unwrap());
+        assert!(base.join("b").join("historico").is_dir());
+
+        let _ = std::fs::remove_dir_all(&base);
     }
 }
