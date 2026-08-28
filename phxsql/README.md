@@ -50,7 +50,7 @@ reaproveitamento de espaço perde.
 
 ## Estado atual
 
-O motor de armazenamento está completo e testado: **355 testes**, sem nenhuma
+O motor de armazenamento está completo e testado: **367 testes**, sem nenhuma
 dependência externa (só a `std`), o que faz o projeto compilar offline.
 
 | Peça | Situação |
@@ -90,7 +90,8 @@ dependência externa (só a `std`), o que faz o projeto compilar offline.
 | Tema claro e escuro, console para mais de um servidor | pronto |
 | Barra de menu tradicional — nove menus, atalhos e navegação por teclado | pronto |
 | Painel com sete gráficos, agregado numa chamada | pronto |
-| phx-grid na aba Conteúdo: agrupamento por arrastar | pronto |
+| phx-grid: agrupamento por arrastar, ordem por nível, rodapé e total geral | pronto |
+| Tabela dinâmica com assistente — cruzamento somado no servidor | pronto |
 | Espelho `.bkp`: segunda chance do `.reg` | pronto |
 | Bancada medida contra o MySQL(R), 10 milhões de registros | pronto |
 | Replicação — `.log` v2 com imagem da linha (as portas já entram no `config.json`) | desenhada |

@@ -184,6 +184,87 @@ input:focus,select:focus{border-color:var(--laranja);outline:none}
 }
 .ficha-edit input::placeholder{color:var(--texto-3);opacity:.7;font-size:11.5px}
 
+/* ------------------------------------------------------- assistente do pivot */
+.passos{display:flex;align-items:center;gap:8px;margin:16px 0 20px;flex-wrap:wrap}
+.passo{
+  display:flex;align-items:center;gap:8px;font:inherit;font-size:12px;cursor:pointer;
+  background:var(--painel-2);border:1px solid var(--linha);border-radius:99px;
+  padding:6px 14px 6px 6px;color:var(--texto-3);
+}
+.passo:hover:not(:disabled){border-color:var(--laranja);color:var(--texto)}
+.passo:disabled{opacity:.45;cursor:default}
+.passo-n{
+  width:20px;height:20px;border-radius:50%;display:grid;place-items:center;
+  background:var(--linha);color:var(--texto-2);font-size:10.5px;font-weight:700;
+}
+.passo.agora{border-color:var(--laranja);color:var(--texto);font-weight:600}
+.passo.agora .passo-n{background:var(--laranja);color:var(--tinta-botao)}
+.passo.feito .passo-n{background:var(--ok);color:var(--tinta-botao)}
+.passo-traco{flex:0 0 18px;height:1px;background:var(--linha)}
+
+.pv-montagem{display:grid;grid-template-columns:250px 1fr;gap:14px;margin:16px 0}
+@media (max-width:860px){.pv-montagem{grid-template-columns:1fr}}
+.pv-paleta,.pv-zona{
+  background:var(--painel-2);border:1px solid var(--linha);border-radius:7px;
+}
+.pv-zona-cab{
+  padding:9px 12px;border-bottom:1px solid var(--linha);
+  display:flex;flex-direction:column;gap:2px;
+}
+.pv-zona-cab b{font-size:11.5px}
+.pv-zona-cab span{font-size:10.5px;color:var(--texto-3);line-height:1.4}
+.pv-paleta-lista{padding:8px;display:flex;flex-direction:column;gap:5px;max-height:420px;overflow:auto}
+.pv-campo{
+  display:flex;align-items:center;gap:7px;cursor:grab;font-size:11.5px;
+  padding:5px 9px;border-radius:5px;border:1px solid var(--linha);
+  background:var(--painel);
+}
+.pv-campo:hover{border-color:var(--laranja)}
+.pv-campo.usado{opacity:.42}
+.pv-campo-ico{
+  font-family:"IBM Plex Mono",monospace;font-size:10px;width:16px;text-align:center;
+  color:var(--texto-3);
+}
+.pv-campo em{font-style:normal;margin-left:auto;font-size:9.5px;color:var(--texto-3);opacity:.8}
+
+.pv-zonas{display:flex;flex-direction:column;gap:10px}
+.pv-zona.sobre{border-color:var(--laranja);background:var(--realce)}
+.pv-zona-corpo{padding:9px 12px;display:flex;flex-wrap:wrap;gap:6px;min-height:42px;align-items:center}
+.pv-zona-vazia{font-size:11px;color:var(--texto-3);opacity:.7}
+.pv-chip{
+  display:inline-flex;align-items:center;gap:6px;cursor:grab;font-size:11.5px;
+  padding:4px 6px 4px 10px;border-radius:99px;
+  background:var(--painel);border:1px solid var(--linha-forte);
+}
+.pv-chip-x{
+  background:none;border:none;cursor:pointer;color:var(--texto-3);font-size:13px;
+  line-height:1;padding:0 3px;
+}
+.pv-chip-x:hover{color:var(--log)}
+.pv-gran{
+  font:inherit;font-size:10.5px;padding:1px 4px;border-radius:4px;
+  background:var(--painel-2);border:1px solid var(--linha);color:var(--texto-2);
+}
+.pv-agg{
+  background:var(--painel-2);border:1px solid var(--linha);border-radius:7px;padding:12px;
+}
+.pv-agg label{display:flex;flex-direction:column;gap:5px;font-size:11.5px;text-transform:none;letter-spacing:0}
+.pv-agg label > span{color:var(--texto-3)}
+.pv-agg select{
+  background:var(--painel);border:1px solid var(--linha-forte);border-radius:5px;
+  padding:7px 9px;font-family:inherit;font-size:12.5px;color:var(--texto);width:100%;
+}
+
+/* A grade do resultado: o total ganha peso, a célula vazia perde. */
+table.pivot th.pv-canto{text-align:left}
+table.pivot .pv-rot{font-weight:600}
+table.pivot .pv-vazia{color:var(--texto-3);opacity:.45}
+table.pivot .pv-tot{font-weight:700;background:rgba(127,127,127,.07)}
+table.pivot .pv-geral{background:rgba(127,127,127,.15)}
+table.pivot tfoot td{border-top:2px solid var(--linha-forte)}
+.linha-tab.escolhida{background:var(--realce)}
+.linha-tab.escolhida .pino{border-color:var(--laranja);color:var(--laranja)}
+
 /* ------------------------------------------------- cadastro de campos */
 table.montar.campos td{padding:4px 6px}
 table.montar.campos .pos{
@@ -644,7 +725,9 @@ const est = { sessao:null, usuario:null, token:"", demo:false,
               rascunho:null,
               // A area de transferencia do copiar/colar de tabela, e os
               // rotulos que o editor de menu trocou.
-              copia:null, rotulos:null };
+              copia:null, rotulos:null,
+              // O assistente do pivot sobrevive a ir e voltar entre os passos.
+              pivot:null };
 
 async function api(op, params = {}) {
   if (est.demo) return demo(op, params);
@@ -2368,6 +2451,434 @@ function ligarNovaTabela(db) {
 }
 
 
+/* ==================================================== Tabela dinâmica (pivot)
+   Um assistente de tres passos: quais tabelas entram, que campo vai em cada
+   eixo, e o resultado.
+
+   A agregacao acontece no SERVIDOR. Um pivot resume -- cem mil linhas viram
+   uma grade de vinte por doze --, e trazer as cem mil para o navegador somar
+   seria pagar o transporte do que vai ser jogado fora. */
+
+const AGREGADORES = [
+  ["soma",       "Soma",              "o total dos valores"],
+  ["media",      "Média",             "a soma dividida pela quantidade"],
+  ["contagem",   "Contagem",          "quantas linhas caem na célula — não precisa de campo de valor"],
+  ["minimo",     "Mínimo",            "o menor valor"],
+  ["maximo",     "Máximo",            "o maior valor"],
+  ["distintos",  "Valores distintos", "quantos valores DIFERENTES caem na célula"],
+];
+
+const GRANULARIDADES = [
+  ["exato",     "cada valor"],
+  ["dia",       "por dia"],
+  ["mes",       "por mês"],
+  ["trimestre", "por trimestre"],
+  ["ano",       "por ano"],
+];
+
+const EIXOS = [
+  ["linhas",  "Linhas",  "cada valor vira uma linha da grade"],
+  ["colunas", "Colunas", "cada valor vira uma coluna — deixe vazio para uma coluna só"],
+  ["valor",   "Valores", "o campo que a célula resume"],
+];
+
+/** O estado do assistente, para ele sobreviver a ir e voltar entre os passos. */
+function pivotNovo(db) {
+  return { db, passo: 1, tabela: "", juncoes: [], linhas: [], colunas: [],
+           valor: null, agregador: "soma", resultado: null, erro: "" };
+}
+
+function telaPivot(db) {
+  db = db || databaseCorrente();
+  if (!db) return avisar("nenhum database escolhido", true);
+  if (!est.pivot || est.pivot.db !== db) est.pivot = pivotNovo(db);
+  return desenharPivot();
+}
+
+async function desenharPivot() {
+  const w = est.pivot;
+  const passos = ["Tabelas", "Campos", "Resultado"];
+  const trilha = `<div class="passos">${passos.map((p, i) => {
+    const n = i + 1;
+    return `<button class="passo${n === w.passo ? " agora" : ""}${n < w.passo ? " feito" : ""}"
+      data-passo="${n}" ${n > 1 && !w.tabela ? "disabled" : ""}>
+      <span class="passo-n">${n}</span>${esc(p)}</button>`;
+  }).join('<span class="passo-traco"></span>')}</div>`;
+
+  folha("Tabela dinâmica", `${w.db} · o cruzamento é somado no servidor`,
+    trilha + `<div id="pvCorpo"><div class="centro">carregando…</div></div>`);
+
+  $$("#painel .passo").forEach(b => b.onclick = () => {
+    w.passo = +b.dataset.passo;
+    desenharPivot();
+  });
+
+  if (w.passo === 1) return pivotPasso1();
+  if (w.passo === 2) return pivotPasso2();
+  return pivotPasso3();
+}
+
+/* ------------------------------------------------ passo 1: quais tabelas */
+
+async function pivotPasso1() {
+  const w = est.pivot;
+  const t = await api("tabelas", { database: w.db });
+  const nomes = t.tabelas || [];
+
+  // O esquema da tabela de fatos diz quais junções o motor JÁ CONHECE: as
+  // chaves estrangeiras declaradas. Propor a partir delas poupa quem monta de
+  // lembrar por qual coluna liga.
+  let sugeridas = [];
+  if (w.tabela) {
+    try {
+      const e = await api("esquema", { database: w.db, tabela: w.tabela });
+      sugeridas = (e.chaves_estrangeiras || []).map(fk => ({
+        tabela: fk.tabela_ref, coluna: (fk.colunas || [])[0],
+        prefixo: fk.tabela_ref.split(".").pop(), origem: fk.nome,
+      }));
+    } catch (_) { /* tabela ilegível não trava o assistente */ }
+  }
+
+  $("#pvCorpo").innerHTML = `
+    <h3 class="secao">A tabela dos fatos</h3>
+    <p class="leg">É a que tem as linhas a somar — vendas, lançamentos, movimentos.
+    As outras entram como consulta, para trazer um campo de descrição.</p>
+    <div class="rolo"><table><tbody>${nomes.map(n => `<tr class="linha-tab${
+        n === w.tabela ? " escolhida" : ""}" data-t="${esc(n)}">
+      <td class="dado"><b>${esc(n)}</b></td>
+      <td><span class="pino">${n === w.tabela ? "escolhida" : "escolher"}</span></td>
+    </tr>`).join("")}</tbody></table></div>
+
+    ${w.tabela ? `
+    <h3 class="secao">Tabelas de consulta
+      <em>(opcional — para cruzar por um campo que mora em outra tabela)</em></h3>
+
+    ${sugeridas.length ? `<p class="leg">O esquema de <code>${esc(w.tabela)}</code>
+      declara ${sugeridas.length} chave(s) estrangeira(s). Clique para usar:</p>
+      <div class="acoes">${sugeridas.map((s, i) =>
+        `<button class="botao secundario" data-sug="${i}">+ ${esc(s.tabela)}
+          <span class="leg">por ${esc(s.coluna)}</span></button>`).join("")}</div>`
+      : `<p class="leg">Esta tabela não declara chave estrangeira, então não há o
+         que propor. Dá para juntar à mão abaixo.</p>`}
+
+    ${w.juncoes.length ? `<div class="rolo"><table><thead><tr>
+        <th>prefixo</th><th>tabela</th><th>ligada por</th><th></th>
+      </tr></thead><tbody>${w.juncoes.map((j, i) => `<tr>
+        <td class="dado"><code>${esc(j.prefixo)}</code></td>
+        <td class="dado">${esc(j.tabela)}</td>
+        <td class="dado">${esc(w.tabela)}.<b>${esc(j.coluna)}</b></td>
+        <td><button class="mini perigo" data-tirar="${i}">tirar</button></td>
+      </tr>`).join("")}</tbody></table></div>` : ""}
+
+    <form class="criar" id="fPvJun" autocomplete="off"><div class="bloco">
+      <label><span>juntar com a tabela</span>
+        <select id="pv_jt"><option value="">— escolha —</option>${
+          nomes.filter(n => n !== w.tabela).map(n =>
+            `<option value="${esc(n)}">${esc(n)}</option>`).join("")}</select></label>
+      <label><span>pela coluna de ${esc(w.tabela)}</span>
+        <select id="pv_jc"><option value="">— escolha —</option></select></label>
+      <label><span>prefixo <em>(como os campos dela vão aparecer)</em></span>
+        <input id="pv_jp" placeholder="cliente"></label>
+    </div>
+    <div class="acoes"><button class="botao secundario" id="pv_addjun">+ juntar</button></div>
+    </form>
+
+    <div class="nota">
+      <p><strong>A tabela de consulta é lida inteira para a memória, uma vez.</strong>
+      É o <em>hash join</em>: para a forma de dado que um pivot cruza — muitos
+      fatos, poucas dimensões — ele custa uma varredura em vez de uma descida na
+      árvore por linha de fato. O teto é 500.000 linhas por tabela de consulta.</p>
+    </div>
+
+    <div class="acoes">
+      <button class="botao" id="pv_ir2">Escolher os campos →</button>
+    </div>` : ""}`;
+
+  $$("#pvCorpo .linha-tab").forEach(tr => tr.onclick = () => {
+    if (w.tabela !== tr.dataset.t) { w.tabela = tr.dataset.t; w.juncoes = [];
+      w.linhas = []; w.colunas = []; w.valor = null; w.resultado = null; }
+    pivotPasso1();
+  });
+  $$("#pvCorpo [data-sug]").forEach(b => b.onclick = ev => {
+    ev.preventDefault();
+    const s = sugeridas[+b.dataset.sug];
+    if (!w.juncoes.some(j => j.prefixo === s.prefixo)) w.juncoes.push(s);
+    pivotPasso1();
+  });
+  $$("#pvCorpo [data-tirar]").forEach(b => b.onclick = () => {
+    w.juncoes.splice(+b.dataset.tirar, 1); pivotPasso1();
+  });
+
+  const sel = $("#pv_jt");
+  if (sel) {
+    // As colunas de ligação saem do esquema, e não da digitação.
+    const e = await api("esquema", { database: w.db, tabela: w.tabela });
+    $("#pv_jc").innerHTML = `<option value="">— escolha —</option>` +
+      (e.colunas || []).map(c => `<option value="${esc(c.nome)}">${esc(c.nome)}
+        — ${esc(tipoCurto(c.tipo))}</option>`).join("");
+    sel.onchange = () => {
+      if (!$("#pv_jp").value.trim())
+        $("#pv_jp").value = sel.value.split(".").pop();
+    };
+    $("#pv_addjun").onclick = ev => {
+      ev.preventDefault();
+      const tabela = sel.value, coluna = $("#pv_jc").value;
+      const prefixo = $("#pv_jp").value.trim() || tabela.split(".").pop();
+      if (!tabela || !coluna) return avisar("escolha a tabela e a coluna de ligação", true);
+      if (w.juncoes.some(j => j.prefixo === prefixo))
+        return avisar(`já existe uma junção com o prefixo ${prefixo}`, true);
+      w.juncoes.push({ tabela, coluna, prefixo });
+      pivotPasso1();
+    };
+    $("#pv_ir2").onclick = ev => { ev.preventDefault(); w.passo = 2; desenharPivot(); };
+  }
+}
+
+/* ------------------------------------------------- passo 2: os campos */
+
+/** Todos os campos disponíveis: os da tabela de fatos e os das junções. */
+async function camposDoPivot() {
+  const w = est.pivot;
+  const e = await api("esquema", { database: w.db, tabela: w.tabela });
+  const out = (e.colunas || []).map(c => ({
+    campo: c.nome, rotulo: c.rotulo || c.nome, tipo: c.tipo,
+    de: w.tabela, data: /^Date|^DateTime/.test(c.tipo),
+    numero: /^Int|^UInt|^Real|^Decimal|^Sequence/.test(c.tipo),
+  }));
+  for (const j of w.juncoes) {
+    try {
+      const ej = await api("esquema", { database: w.db, tabela: j.tabela });
+      for (const c of ej.colunas || []) out.push({
+        campo: `${j.prefixo}.${c.nome}`, rotulo: c.rotulo || c.nome, tipo: c.tipo,
+        de: j.tabela, data: /^Date|^DateTime/.test(c.tipo),
+        numero: /^Int|^UInt|^Real|^Decimal|^Sequence/.test(c.tipo),
+      });
+    } catch (_) { /* junção ilegível não trava a lista */ }
+  }
+  return out;
+}
+
+async function pivotPasso2() {
+  const w = est.pivot;
+  const campos = await camposDoPivot();
+  const porNome = {};
+  campos.forEach(c => { porNome[c.campo] = c; });
+  w._campos = porNome;
+
+  const usado = n => w.linhas.some(x => x.campo === n) ||
+                     w.colunas.some(x => x.campo === n) ||
+                     (w.valor && w.valor.campo === n);
+
+  const zona = (chave, titulo, diz) => {
+    const lista = chave === "valor" ? (w.valor ? [w.valor] : []) : w[chave];
+    return `<div class="pv-zona" data-zona="${chave}">
+      <div class="pv-zona-cab"><b>${esc(titulo)}</b><span>${esc(diz)}</span></div>
+      <div class="pv-zona-corpo">${
+        lista.length ? lista.map((f, i) => {
+          const c = porNome[f.campo] || {};
+          return `<span class="pv-chip" draggable="true" data-zona="${chave}" data-i="${i}">
+            ${esc(c.rotulo || f.campo)}
+            ${chave !== "valor" && c.data ? `<select class="pv-gran" data-zona="${chave}" data-i="${i}">${
+              GRANULARIDADES.map(([k, r]) =>
+                `<option value="${k}"${k === (f.granularidade||"exato") ? " selected":""}>${esc(r)}</option>`
+              ).join("")}</select>` : ""}
+            <button type="button" class="pv-chip-x" data-zona="${chave}" data-i="${i}">×</button>
+          </span>`;
+        }).join("")
+        : `<span class="pv-zona-vazia">arraste um campo para cá</span>`}</div>
+    </div>`;
+  };
+
+  $("#pvCorpo").innerHTML = `
+    <div class="pv-montagem">
+      <div class="pv-paleta">
+        <div class="pv-zona-cab"><b>Campos</b><span>arraste, ou clique para mandar às linhas</span></div>
+        <div class="pv-paleta-lista">${campos.map(c => `
+          <span class="pv-campo${usado(c.campo) ? " usado" : ""}" draggable="true"
+                data-campo="${esc(c.campo)}" title="${esc(c.de)} · ${esc(c.tipo)}">
+            <span class="pv-campo-ico">${c.data ? "◷" : c.numero ? "#" : "A"}</span>
+            ${esc(c.rotulo)}${c.campo.includes(".") ? `<em>${esc(c.campo.split(".")[0])}</em>` : ""}
+          </span>`).join("")}</div>
+      </div>
+      <div class="pv-zonas">${EIXOS.map(([k, t, d]) => zona(k, t, d)).join("")}
+        <div class="pv-agg">
+          <label><span>como resumir</span>
+            <select id="pv_ag">${AGREGADORES.map(([k, r, d]) =>
+              `<option value="${k}"${k === w.agregador ? " selected" : ""}>${esc(r)} — ${esc(d)}</option>`
+            ).join("")}</select></label>
+        </div>
+      </div>
+    </div>
+
+    ${w.erro ? `<div class="nota mal"><p>${esc(w.erro)}</p></div>` : ""}
+
+    <div class="acoes">
+      <button class="botao" id="pv_montar">Montar a tabela dinâmica</button>
+      <button class="botao secundario" id="pv_voltar1">← Tabelas</button>
+      <button class="botao secundario" id="pv_limpar">Limpar os eixos</button>
+    </div>
+
+    <div class="nota">
+      <p><strong>Contagem</strong> é o único resumo que dispensa campo de valor —
+      ele conta linhas. Os outros precisam de um campo em <em>Valores</em>.</p>
+      <p>Célula vazia quer dizer <strong>nenhuma linha caiu ali</strong>, e não
+      zero: zero seria «somou e deu nada».</p>
+    </div>`;
+
+  // ---- arrastar e soltar, e o clique como atalho
+  const solta = (zonaChave, campo) => {
+    if (!campo || !porNome[campo]) return;
+    tiraDeTodos(campo);
+    const item = { campo, granularidade: "exato" };
+    if (zonaChave === "valor") w.valor = item; else w[zonaChave].push(item);
+    pivotPasso2();
+  };
+  const tiraDeTodos = campo => {
+    w.linhas = w.linhas.filter(x => x.campo !== campo);
+    w.colunas = w.colunas.filter(x => x.campo !== campo);
+    if (w.valor && w.valor.campo === campo) w.valor = null;
+  };
+
+  $$("#pvCorpo .pv-campo").forEach(el => {
+    el.ondragstart = ev => ev.dataTransfer.setData("text/plain", el.dataset.campo);
+    el.onclick = () => solta("linhas", el.dataset.campo);
+  });
+  $$("#pvCorpo .pv-zona").forEach(z => {
+    z.ondragover = ev => { ev.preventDefault(); z.classList.add("sobre"); };
+    z.ondragleave = () => z.classList.remove("sobre");
+    z.ondrop = ev => {
+      ev.preventDefault(); z.classList.remove("sobre");
+      solta(z.dataset.zona, ev.dataTransfer.getData("text/plain"));
+    };
+  });
+  $$("#pvCorpo .pv-chip").forEach(c => {
+    c.ondragstart = ev => {
+      const z = c.dataset.zona, i = +c.dataset.i;
+      const f = z === "valor" ? w.valor : w[z][i];
+      ev.dataTransfer.setData("text/plain", f.campo);
+    };
+  });
+  $$("#pvCorpo .pv-chip-x").forEach(b => b.onclick = () => {
+    const z = b.dataset.zona;
+    if (z === "valor") w.valor = null; else w[z].splice(+b.dataset.i, 1);
+    pivotPasso2();
+  });
+  $$("#pvCorpo .pv-gran").forEach(s => s.onchange = () => {
+    w[s.dataset.zona][+s.dataset.i].granularidade = s.value;
+  });
+  $("#pv_ag").onchange = () => { w.agregador = $("#pv_ag").value; };
+  $("#pv_voltar1").onclick = ev => { ev.preventDefault(); w.passo = 1; desenharPivot(); };
+  $("#pv_limpar").onclick = ev => {
+    ev.preventDefault();
+    w.linhas = []; w.colunas = []; w.valor = null; pivotPasso2();
+  };
+  $("#pv_montar").onclick = async ev => {
+    ev.preventDefault();
+    w.erro = "";
+    if (!w.linhas.length) { w.erro = "escolha ao menos um campo para as Linhas"; return pivotPasso2(); }
+    if (w.agregador !== "contagem" && !w.valor) {
+      w.erro = `o resumo «${w.agregador}» precisa de um campo em Valores — ou troque para Contagem`;
+      return pivotPasso2();
+    }
+    w.passo = 3;
+    return desenharPivot();
+  };
+}
+
+/* --------------------------------------------------- passo 3: o resultado */
+
+async function pivotPasso3() {
+  const w = est.pivot;
+  $("#pvCorpo").innerHTML = `<div class="centro">cruzando no servidor…</div>`;
+  let r;
+  try {
+    r = await api("pivotar", {
+      database: w.db, tabela: w.tabela,
+      juntar: w.juncoes.map(j => ({ tabela:j.tabela, coluna:j.coluna, prefixo:j.prefixo })),
+      linhas: w.linhas, colunas: w.colunas,
+      ...(w.valor ? { valor: w.valor.campo } : {}),
+      agregador: w.agregador,
+    });
+  } catch (e) {
+    w.erro = String(e);
+    w.passo = 2;
+    return desenharPivot();
+  }
+  w.resultado = r;
+
+  const nome = c => (w._campos && w._campos[c] ? w._campos[c].rotulo : c);
+  const cabLinha = r.campos_linha.map(nome).join(" / ");
+  const agRot = (AGREGADORES.find(a => a[0] === r.agregador) || ["", r.agregador])[1];
+
+  $("#pvCorpo").innerHTML = `
+    <div class="fichas">
+      ${ficha(r.rotulos_linha.length, "linhas")}
+      ${ficha(r.rotulos_coluna.length, "colunas")}
+      ${ficha(agRot, "resumo", r.valor || "linhas")}
+      ${ficha(Number(r.lidas).toLocaleString("pt-BR"), "linhas lidas")}
+      ${ficha(Number(r.consideradas).toLocaleString("pt-BR"), "consideradas", "sem os nulos")}
+      ${ficha(r.total ?? "—", "total geral")}
+    </div>
+
+    ${r.juncoes && r.juncoes.length ? `<p class="leg">Juntou com ${
+      r.juncoes.map(j => `<code>${esc(j.prefixo)}</code> = ${esc(j.tabela)}
+        (${j.linhas} linha(s))`).join(", ")}.</p>` : ""}
+
+    <div class="rolo"><table class="pivot"><thead>
+      <tr><th class="pv-canto">${esc(cabLinha)}</th>
+        ${r.rotulos_coluna.map(c => `<th class="num">${esc(c)}</th>`).join("")}
+        <th class="num pv-tot">total</th></tr>
+    </thead><tbody>
+      ${r.rotulos_linha.map((l, i) => `<tr>
+        <td class="dado pv-rot">${esc(l)}</td>
+        ${r.celulas[i].map(c => `<td class="num${c == null ? " pv-vazia" : ""}">${
+          c == null ? "·" : esc(c)}</td>`).join("")}
+        <td class="num pv-tot">${esc(r.total_linha[i] ?? "")}</td></tr>`).join("")}
+    </tbody><tfoot>
+      <tr><td class="dado pv-rot">total</td>
+        ${r.total_coluna.map(c => `<td class="num pv-tot">${esc(c ?? "")}</td>`).join("")}
+        <td class="num pv-tot pv-geral">${esc(r.total ?? "")}</td></tr>
+    </tfoot></table></div>
+
+    <div class="acoes">
+      <button class="botao secundario" id="pv_voltar2">← Trocar os campos</button>
+      <button class="botao secundario" id="pv_csv">Copiar como CSV</button>
+      <button class="botao secundario" id="pv_json">Ver o pedido</button>
+    </div>
+
+    <div class="nota">
+      <p><strong>Os totais fecham nas duas direções</strong>: a soma das células
+      de uma linha bate com o total dela, e a soma dos totais de coluna bate com
+      o total geral. Um pivot que não fecha não serve para nada, e há teste que
+      confere isso.</p>
+      ${r.valor ? `<p><strong>Dinheiro não perde centavo.</strong> Um campo
+      <code>Decimal</code> é somado no domínio inteiro escalado e só vira texto
+      na saída; a média divide uma vez, no fim — não a cada parcela.</p>` : ""}
+    </div>`;
+
+  $("#pv_voltar2").onclick = () => { w.passo = 2; desenharPivot(); };
+  $("#pv_csv").onclick = () => {
+    const linhas = [[cabLinha, ...r.rotulos_coluna, "total"].join(";")];
+    r.rotulos_linha.forEach((l, i) =>
+      linhas.push([l, ...r.celulas[i].map(c => c ?? ""), r.total_linha[i] ?? ""].join(";")));
+    linhas.push(["total", ...r.total_coluna.map(c => c ?? ""), r.total ?? ""].join(";"));
+    const txt = linhas.join("\n");
+    if (navigator.clipboard) navigator.clipboard.writeText(txt).then(
+      () => avisar(`${linhas.length} linha(s) copiadas`),
+      () => avisar("o navegador não deixou copiar", true));
+    else avisar("o navegador não tem área de transferência", true);
+  };
+  $("#pv_json").onclick = () => folha("Tabela dinâmica · o pedido",
+    "o mesmo cruzamento pela porta 5000",
+    `<pre class="dado">${esc(JSON.stringify({
+      op: "pivotar", database: w.db, tabela: w.tabela,
+      juntar: w.juncoes, linhas: w.linhas, colunas: w.colunas,
+      valor: w.valor ? w.valor.campo : undefined, agregador: w.agregador,
+    }, null, 2))}</pre>
+    <div class="acoes"><button class="botao secundario" id="pv_volta3">← Resultado</button></div>`)
+    || ($("#pv_volta3").onclick = () => desenharPivot());
+}
+
 /* ==================================== Configurações e diretivas da tabela
    O que vale para UMA tabela: a geometria que ela ganhou na criacao, o que ela
    herda do servidor, e quem a alcanca.
@@ -2529,6 +3040,9 @@ function itensDoDatabase(db) {
     { g:"dados", ico:"☰", rot:"SysColumns",
       diz:"O dicionário de dados: cada campo com caption, máscara, tipo e papel na chave.",
       faz:() => verSysColumns(db) },
+    { g:"dados", ico:"▦", rot:"Tabela dinâmica…",
+      diz:"Cruza uma tabela por dois eixos e soma no servidor — com junção a outras tabelas.",
+      faz:() => telaPivot(db) },
     { g:"dados", ico:"⧉", rot:"Copiar tabela…",
       diz:"Copia uma tabela para outro banco ou schema, byte a byte.",
       faz:() => telaCopiarColar(db) },
@@ -3379,6 +3893,7 @@ const ICO = {
   correio: `<rect x="3" y="5.5" width="18" height="13" rx="2" fill="none" stroke-width="1.6"/><path d="M3.6 7l8.4 6 8.4-6" fill="none" stroke-width="1.6" stroke-linecap="round"/>`,
   corrente: `<rect x="2.5" y="8.5" width="6" height="7" rx="1.5" fill="none" stroke-width="1.6"/><rect x="9.5" y="8.5" width="5" height="7" rx="1.5" fill="none" stroke-width="1.6"/><rect x="15.5" y="8.5" width="6" height="7" rx="1.5" fill="none" stroke-width="1.6"/><path d="M8.5 12h1M14.5 12h1" stroke-width="1.7"/>`,
   tabelas: `<rect x="3" y="4" width="13" height="12" rx="1.6" fill="none" stroke-width="1.5"/><path d="M3 8h13M8 8v8" stroke-width="1.3"/><path d="M8 8V4M19 8v12H8" fill="none" stroke-width="1.5" stroke-linecap="round"/>`,
+  pivot: `<rect x="3" y="4" width="18" height="16" rx="1.8" fill="none" stroke-width="1.5"/><path d="M3 9h18M9 4v16" stroke-width="1.4"/><path d="M12 12.5h2.5M12 16h5M15.5 12.5h2.5" stroke-width="1.5" stroke-linecap="round"/>`,
   gerir: `<ellipse cx="12" cy="6" rx="7.5" ry="3" fill="none" stroke-width="1.5"/><path d="M4.5 6v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6" fill="none" stroke-width="1.5"/><path d="M4.5 12v5.5c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V12" fill="none" stroke-width="1.5"/>`,
   catalogo: `<rect x="3.5" y="3.5" width="17" height="17" rx="2" fill="none" stroke-width="1.5"/><path d="M3.5 8.5h17M8.5 8.5v12" stroke-width="1.3"/><path d="M11.5 12h6M11.5 15.5h6" stroke-width="1.3" stroke-linecap="round"/>`,
   engrenagem: `<circle cx="12" cy="12" r="3.2" fill="none" stroke-width="1.5"/><path d="M12 2.6v2.6M12 18.8v2.6M21.4 12h-2.6M5.2 12H2.6M18.6 5.4l-1.8 1.8M7.2 16.8l-1.8 1.8M18.6 18.6l-1.8-1.8M7.2 7.2L5.4 5.4" stroke-width="1.5" stroke-linecap="round"/>`,
@@ -3407,6 +3922,7 @@ const FERRAMENTAS = [
         + "aceitação — conectar no próprio endereço para o `accept` retornar e "
         + "então conferir um sinalizador. Mexe no coração do servidor." },
   { ico:"consulta", rot:"Query",      cor:"var(--ndx)",    faz:abrirConsulta },
+  { ico:"pivot",    rot:"Pivot",      cor:"var(--ndx)",    faz:() => telaPivot() },
   "risco",
   { ico:"gente",    rot:"Usuários",   cor:"var(--reg)",    faz:() => irPara("usuarios") },
   { ico:"escudo",   rot:"Diretivas",  cor:"var(--laranja)",faz:verDiretivas },
@@ -3674,6 +4190,7 @@ const MENUS = [
     "sep",
     { rot:"SysTables",            ico:"▤", faz:() => verSysTables() },
     { rot:"SysColumns",           ico:"☰", faz:() => verSysColumns() },
+    { rot:"Tabela dinâmica…",     ico:"▦", faz:() => telaPivot() },
     "sep",
     { rot:"Copiar / colar tabela…", ico:"⧉", faz:() => telaCopiarColar(databaseCorrente()) },
     { rot:"Backup e restauração", ico:"⛁", faz:() => verBackupRestaure(databaseCorrente()) },
@@ -3728,6 +4245,7 @@ const MENUS = [
   ["Ferramentas", "F", [
     { rot:"Gestão de transações", ico:"⇄", faz:verTransacoes },
     { rot:"Consulta SQL",         ico:"⌕", faz:abrirConsulta },
+    { rot:"Tabela dinâmica…",     ico:"▦", tecla:"Alt+7", faz:() => telaPivot() },
     "sep",
     { rot:"Serviço",              ico:"⏻", faz:verServico },
     { rot:"Conexões",             ico:"⇋", faz:verConexoes },
@@ -3905,7 +4423,8 @@ function ligarAtalhos() {
     if (ev.altKey && ev.key === "3" && est.atual) { ev.preventDefault(); irAba("conteudo"); return; }
     if (ev.altKey && ev.key === "4") { ev.preventDefault(); viewDatabaseAtual(); return; }
     if (ev.altKey && ev.key === "5") { ev.preventDefault(); gerirTabelasAtual(); return; }
-    if (ev.altKey && ev.key === "6") { ev.preventDefault(); gerirDatabase(); }
+    if (ev.altKey && ev.key === "6") { ev.preventDefault(); gerirDatabase(); return; }
+    if (ev.altKey && ev.key === "7") { ev.preventDefault(); telaPivot(); }
   });
 }
 

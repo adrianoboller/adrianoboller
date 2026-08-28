@@ -35,6 +35,10 @@ use crate::blacklist::Blacklist;
 use crate::config::Config;
 use crate::http;
 use crate::usuarios::{Atividade, Usuario};
+use phxsql_core::schema::Schema;
+use phxsql_core::value::Value;
+
+use crate::pivot::{Agregador, Campo, Granularidade, Juncao};
 use crate::valores::{json_para_chave, json_para_linha, largura_do_tipo, linha_para_json};
 
 pub const VERSAO: &str = env!("CARGO_PKG_VERSION");
@@ -1299,6 +1303,7 @@ impl Servidor {
             "copiar_tabela" => self.op_copiar_tabela(p, sessao),
             "sistabelas" | "systables" => self.op_sistabelas(p),
             "siscolunas" | "syscolumns" => self.op_siscolunas(p),
+            "pivotar" | "pivot" => self.op_pivotar(p, sessao),
             "ler" => self.op_ler(p, sessao),
             "varrer" => self.op_varrer(p, sessao),
             "buscar" => self.op_buscar(p, sessao),
@@ -1639,6 +1644,235 @@ impl Servidor {
             ("total", Json::de_u64(linhas.len() as u64)),
             ("colunas", Json::Lista(linhas)),
         ]))
+    }
+
+    /// Monta a tabulacao cruzada de uma tabela, com junção opcional.
+    ///
+    /// ```json
+    /// { "database": "loja", "tabela": "vendas",
+    ///   "juntar": [ {"tabela":"clientes", "coluna":"cliente_id", "prefixo":"cliente"} ],
+    ///   "linhas": [ {"campo":"cliente.cidade"} ],
+    ///   "colunas": [ {"campo":"emissao", "granularidade":"mes"} ],
+    ///   "valor": "total", "agregador": "soma", "max": 200000 }
+    /// ```
+    fn op_pivotar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        // O portao geral ja conferiu `ler` contra este database; a linha
+        // abaixo existe para o caso de a tabela de fatos estar num schema que
+        // o `abrir` recusaria -- e o mesmo caminho das outras leituras.
+        let _ = sessao;
+        let agregador = Agregador::de_texto(p.texto_ou("agregador", "soma"))?;
+        let max = self.limite_pivot(p);
+
+        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let db = dados.abrir_database(p.texto_ou("database", ""))?;
+        let mut t = db.abrir_qualificada(p.texto_ou("tabela", ""))?;
+        let esquema = t.esquema().clone();
+
+        // As tabelas de consulta entram inteiras na memoria, uma vez. E o hash
+        // join: para a forma de dado de um pivot -- muitos fatos, poucas
+        // dimensoes -- ele custa uma varredura em vez de uma descida na arvore
+        // por linha de fato.
+        let mut juncoes: Vec<Juncao> = Vec::new();
+        for (i, j) in p
+            .campo("juntar")
+            .and_then(Json::lista)
+            .unwrap_or(&[])
+            .iter()
+            .enumerate()
+        {
+            let nome = j.texto_ou("tabela", "");
+            let local = j.texto_ou("coluna", "");
+            let prefixo = match j.texto_ou("prefixo", "").trim() {
+                "" => nome.rsplit('.').next().unwrap_or(nome).to_string(),
+                outro => outro.to_string(),
+            };
+            let coluna_local = posicao_da_coluna(&esquema, local).ok_or_else(|| {
+                PhxError::Esquema(format!(
+                    "a junção {i} usa a coluna {local:?}, que nao existe em {}",
+                    esquema.nome()
+                ))
+            })?;
+            // A chave da junção e a PRIMEIRA coluna da chave primaria da tabela
+            // de consulta, ou a coluna nomeada em "chave". Sem chave primaria
+            // nao ha por onde ligar, e dizer isso e melhor do que juntar pela
+            // primeira coluna e devolver numero errado.
+            let mut alvo = db.abrir_qualificada(nome)?;
+            let esq_alvo = alvo.esquema().clone();
+            let chave = match j.texto_ou("chave", "").trim() {
+                "" => esq_alvo
+                    .chave_primaria()
+                    .and_then(|k| k.colunas.first())
+                    .map(|ic| ic.coluna)
+                    .ok_or_else(|| {
+                        PhxError::Esquema(format!(
+                            "a tabela {nome} nao tem chave primaria; diga por qual \
+                             coluna juntar no campo \"chave\""
+                        ))
+                    })?,
+                c => posicao_da_coluna(&esq_alvo, c).ok_or_else(|| {
+                    PhxError::Esquema(format!("a coluna {c:?} nao existe em {nome}"))
+                })?,
+            };
+
+            let mut mapa = HashMap::new();
+            let rowids = alvo.varrer()?;
+            let lidas = rowids.len();
+            for (rowid, _) in rowids.into_iter().take(TETO_JUNCAO) {
+                if let Some(linha) = alvo.ler(rowid)? {
+                    mapa.insert(crate::pivot::rotulo(&linha[chave], 0), linha);
+                }
+            }
+            if lidas > TETO_JUNCAO {
+                return Err(PhxError::LimiteExcedido(format!(
+                    "a tabela de consulta {nome} tem {lidas} linhas, acima do teto \
+                     de {TETO_JUNCAO} para junção. Ela e lida inteira para a memoria; \
+                     junte por uma tabela menor"
+                )));
+            }
+            juncoes.push(Juncao {
+                prefixo,
+                esquema: esq_alvo,
+                coluna_local,
+                mapa,
+                lidas,
+            });
+        }
+
+        let campos = |chave: &str| -> Result<Vec<Campo>> {
+            let mut out = Vec::new();
+            for c in p.campo(chave).and_then(Json::lista).unwrap_or(&[]) {
+                // Aceita tanto "cidade" quanto {"campo":"cidade","granularidade":"mes"}.
+                let (nome, gran) = match c {
+                    Json::Texto(t) => (t.as_str(), "exato"),
+                    outro => (
+                        outro.texto_ou("campo", ""),
+                        outro.texto_ou("granularidade", "exato"),
+                    ),
+                };
+                out.push(resolver_campo(nome, &esquema, &juncoes, gran)?);
+            }
+            Ok(out)
+        };
+        let linhas = campos("linhas")?;
+        let colunas = campos("colunas")?;
+        if linhas.is_empty() {
+            return Err(PhxError::Esquema(
+                "informe ao menos um campo em \"linhas\"".into(),
+            ));
+        }
+
+        let nome_valor = p.texto_ou("valor", "").trim().to_string();
+        let valor = if nome_valor.is_empty() {
+            if agregador.precisa_de_valor() {
+                return Err(PhxError::Esquema(format!(
+                    "o agregador {} precisa de um campo em \"valor\"",
+                    agregador.nome()
+                )));
+            }
+            None
+        } else {
+            Some(resolver_campo(&nome_valor, &esquema, &juncoes, "exato")?)
+        };
+
+        let mut it = LinhasDaTabela {
+            rowids: t
+                .varrer()?
+                .into_iter()
+                .map(|(r, _)| r)
+                .collect::<Vec<_>>()
+                .into_iter(),
+            tabela: &mut t,
+        };
+        let r = crate::pivot::cruzar(
+            &mut it,
+            &esquema,
+            &juncoes,
+            &linhas,
+            &colunas,
+            valor.as_ref(),
+            agregador,
+            max,
+        )?;
+
+        let txt = |o: &Option<String>| match o {
+            None => Json::Nulo,
+            Some(s) => Json::texto_de(s),
+        };
+        Ok(Json::objeto(vec![
+            ("database", Json::texto_de(p.texto_ou("database", ""))),
+            ("tabela", Json::texto_de(p.texto_ou("tabela", ""))),
+            ("agregador", Json::texto_de(agregador.nome())),
+            (
+                "campos_linha",
+                Json::Lista(
+                    linhas
+                        .iter()
+                        .map(|c| Json::texto_de(&c.qualificado))
+                        .collect(),
+                ),
+            ),
+            (
+                "campos_coluna",
+                Json::Lista(
+                    colunas
+                        .iter()
+                        .map(|c| Json::texto_de(&c.qualificado))
+                        .collect(),
+                ),
+            ),
+            ("valor", Json::texto_de(&nome_valor)),
+            (
+                "rotulos_linha",
+                Json::Lista(r.rotulos_linha.iter().map(Json::texto_de).collect()),
+            ),
+            (
+                "rotulos_coluna",
+                Json::Lista(r.rotulos_coluna.iter().map(Json::texto_de).collect()),
+            ),
+            (
+                "celulas",
+                Json::Lista(
+                    r.celulas
+                        .iter()
+                        .map(|l| Json::Lista(l.iter().map(&txt).collect()))
+                        .collect(),
+                ),
+            ),
+            (
+                "total_linha",
+                Json::Lista(r.total_linha.iter().map(&txt).collect()),
+            ),
+            (
+                "total_coluna",
+                Json::Lista(r.total_coluna.iter().map(&txt).collect()),
+            ),
+            ("total", txt(&r.total)),
+            ("lidas", Json::de_u64(r.lidas)),
+            ("consideradas", Json::de_u64(r.consideradas)),
+            (
+                "juncoes",
+                Json::Lista(
+                    juncoes
+                        .iter()
+                        .map(|j| {
+                            Json::objeto(vec![
+                                ("prefixo", Json::texto_de(&j.prefixo)),
+                                ("tabela", Json::texto_de(j.esquema.nome())),
+                                ("linhas", Json::de_u64(j.lidas as u64)),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ),
+        ]))
+    }
+
+    /// O teto de linhas que o pivot varre. Separado do `max_linhas` porque o
+    /// pivot devolve um RESUMO: ler cem mil linhas para devolver uma grade de
+    /// vinte por doze e barato, e o teto da resposta nao se aplica.
+    fn limite_pivot(&self, p: &Json) -> u64 {
+        let pedido = p.inteiro_ou("max", TETO_PIVOT as i64).max(1) as u64;
+        pedido.min(TETO_PIVOT)
     }
 
     /// Cria um schema -- uma pasta dentro do database.
@@ -2780,6 +3014,74 @@ fn ficha_residente(chave: &str, m: &TabelaMemoria) -> Vec<(&'static str, Json)> 
     ]
 }
 
+/// Quantas linhas o pivot varre, no maximo.
+const TETO_PIVOT: u64 = 5_000_000;
+/// Quantas linhas uma tabela de consulta pode ter para caber na memoria.
+const TETO_JUNCAO: usize = 500_000;
+
+fn posicao_da_coluna(e: &Schema, nome: &str) -> Option<usize> {
+    e.colunas().iter().position(|c| c.nome == nome)
+}
+
+/// Le `cidade` ou `cliente.cidade` e diz de onde o campo vem.
+fn resolver_campo(
+    nome: &str,
+    esquema: &Schema,
+    juncoes: &[Juncao],
+    granularidade: &str,
+) -> Result<Campo> {
+    let g = Granularidade::de_texto(granularidade)?;
+    // Prefixo de junção primeiro: uma tabela de consulta chamada `cliente` com
+    // uma coluna `cidade` tem de ganhar de uma coluna local chamada
+    // `cliente.cidade`, que nao existe -- o ponto so aparece por junção.
+    if let Some((pref, campo)) = nome.split_once('.') {
+        if let Some(i) = juncoes.iter().position(|j| j.prefixo == pref) {
+            let c = posicao_da_coluna(&juncoes[i].esquema, campo).ok_or_else(|| {
+                PhxError::Esquema(format!(
+                    "a coluna {campo:?} nao existe em {}",
+                    juncoes[i].esquema.nome()
+                ))
+            })?;
+            return Ok(Campo {
+                qualificado: nome.to_string(),
+                juncao: Some(i),
+                coluna: c,
+                granularidade: g,
+            });
+        }
+    }
+    let c = posicao_da_coluna(esquema, nome).ok_or_else(|| {
+        PhxError::Esquema(format!(
+            "a coluna {nome:?} nao existe em {}. Para usar uma coluna de tabela \
+             juntada, escreva prefixo.coluna",
+            esquema.nome()
+        ))
+    })?;
+    Ok(Campo {
+        qualificado: nome.to_string(),
+        juncao: None,
+        coluna: c,
+        granularidade: g,
+    })
+}
+
+/// Percorre a tabela de fatos linha a linha, sem materializa-la.
+struct LinhasDaTabela<'a> {
+    rowids: std::vec::IntoIter<u64>,
+    tabela: &'a mut Table,
+}
+
+impl crate::pivot::Iterador for LinhasDaTabela<'_> {
+    fn proxima(&mut self) -> Result<Option<Vec<Value>>> {
+        for rowid in self.rowids.by_ref() {
+            if let Some(l) = self.tabela.ler(rowid)? {
+                return Ok(Some(l));
+            }
+        }
+        Ok(None)
+    }
+}
+
 #[cfg(test)]
 mod testes_politica {
     use super::*;
@@ -2831,6 +3133,7 @@ mod testes_politica {
             "usuarios",
             "sistabelas",
             "siscolunas",
+            "pivotar",
         ] {
             assert!(
                 !OPS_ESCRITA.contains(&op),

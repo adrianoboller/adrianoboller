@@ -96,7 +96,7 @@ O **root é sempre supervisor e sempre ativo**, diga o que disser o arquivo.
 
 | Atividade | Cobre |
 |---|---|
-| `ler` | `bancos`, `tabelas`, `esquema`, `ler`, `varrer`, `buscar`, `sistabelas`, `siscolunas` |
+| `ler` | `bancos`, `tabelas`, `esquema`, `ler`, `varrer`, `buscar`, `sistabelas`, `siscolunas`, `pivotar` |
 | `inserir` | `inserir` |
 | `alterar` | `atualizar` |
 | `excluir` | `excluir` |

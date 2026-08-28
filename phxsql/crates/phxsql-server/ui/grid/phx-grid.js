@@ -207,7 +207,10 @@
     min: function (a) { var m = Infinity, i2, v2; for (i2 = 0; i2 < a.length; i2++) { v2 = Number(a[i2]); if (v2 === v2 && v2 < m) m = v2; } return m === Infinity ? null : m; },
     max: function (a) { var m = -Infinity, i2, v2; for (i2 = 0; i2 < a.length; i2++) { v2 = Number(a[i2]); if (v2 === v2 && v2 > m) m = v2; } return m === -Infinity ? null : m; }
   };
-  function agrupa(linhas, campos, aggCols, tipoDe) {
+  // `dirs[d]` diz se o nivel d ordena crescente ou decrescente. O Janus(R) e o
+  // DevExpress(R) deixam trocar isso clicando na pilula do grupo, e faz falta:
+  // agrupar por mes quase sempre quer o mais recente em cima.
+  function agrupa(linhas, campos, aggCols, tipoDe, dirs) {
     function nivel(lns, d, pathPai) {
       var mapa = {}, ordem2 = [], i2, v2, k2, g2;
       for (i2 = 0; i2 < lns.length; i2++) {
@@ -217,13 +220,16 @@
         if (!g2) { g2 = { campo: campos[d], valor: v2, chave: k2, linhas: [] }; mapa[k2] = g2; ordem2.push(g2); }
         g2.linhas.push(lns[i2]);
       }
+      var sinal = (dirs && dirs[d] === "desc") ? -1 : 1;
       ordem2.sort(function (a, b) {
         var ka = chaveOrd(a.valor, tipoDe(campos[d])), kb = chaveOrd(b.valor, tipoDe(campos[d]));
+        // Nulo fica sempre no fim, nas duas direcoes: ele nao e "o menor",
+        // e a ausencia de valor.
         if (ka.n && kb.n) return 0;
         if (ka.n) return 1;
         if (kb.n) return -1;
-        if (ka.v < kb.v) return -1;
-        if (ka.v > kb.v) return 1;
+        if (ka.v < kb.v) return -sinal;
+        if (ka.v > kb.v) return sinal;
         return 0;
       });
       var out = [], j2, g3, no2;
@@ -245,7 +251,16 @@
     }
     return nivel(linhas, 0, "");
   }
-  function achata(arvoreG, recolhidos) {
+  function totaisDe(linhas, aggCols) {
+    var o = {}, a, vals, i2;
+    for (a = 0; a < aggCols.length; a++) {
+      vals = [];
+      for (i2 = 0; i2 < linhas.length; i2++) vals.push(linhas[i2][aggCols[a].campo]);
+      o[aggCols[a].campo] = AGGS[aggCols[a].agregador](vals);
+    }
+    return o;
+  }
+  function achata(arvoreG, recolhidos, comRodape) {
     var out = [], i2;
     function anda(nos) {
       var j2, no2;
@@ -255,6 +270,10 @@
         if (recolhidos[no2.path]) continue;
         if (no2.filhos) anda(no2.filhos);
         else for (i2 = 0; i2 < no2.linhas.length; i2++) out.push(no2.linhas[i2]);
+        // O rodape repete o agregado embaixo do bloco. Num grupo de trinta
+        // linhas o cabecalho ja rolou para fora da tela quando o total
+        // interessa, e e ai que ele e lido.
+        if (comRodape) out.push({ __rodape: no2 });
       }
     }
     anda(arvoreG);
@@ -321,17 +340,23 @@
         }
         var ini = (p.pagina - 1) * p.tamanho;
         if (p.grupos && p.grupos.length) {
-          var arvG = agrupa(base, p.grupos, p.aggCols || [], function (c9) { return (p.tiposCampos && p.tiposCampos[c9]) || "texto"; });
-          var plana = achata(arvG, p.recolhidos || {});
+          var arvG = agrupa(base, p.grupos, p.aggCols || [],
+            function (c9) { return (p.tiposCampos && p.tiposCampos[c9]) || "texto"; },
+            p.dirsGrupo || []);
+          var plana = achata(arvG, p.recolhidos || {}, !!p.rodapeGrupo);
           cb(null, {
             linhas: plana.slice(ini, ini + p.tamanho),
             total: plana.length,
             totalDados: filtrados.length,
+            // O total geral e sobre o conjunto FILTRADO, nao sobre a pagina:
+            // um rodape que muda ao virar de pagina nao e total de nada.
+            totaisGerais: totaisDe(base, p.aggCols || []),
             _ms: agora() - t0
           });
           return;
         }
         cb(null, {
+          totaisGerais: totaisDe(base, p.aggCols || []),
           linhas: base.slice(ini, ini + p.tamanho),
           total: filtrados.length,
           _ms: agora() - t0
@@ -417,6 +442,10 @@
     var filtros = {};
     var grupos = [];
     var recolhidos = {};
+    // Direcao por CAMPO e nao por posicao: arrastar a pilula para outro lugar
+    // nao pode virar a ordem de quem ficou no lugar dela.
+    var dirsGrupo = {};
+    var rodapeGrupo = cfg.rodapeGrupo !== false;
     function agrupada(campo) { var j2; for (j2 = 0; j2 < grupos.length; j2++) if (grupos[j2] === campo) return true; return false; }
     function serializaFiltros() {
       var campos = [], k3, out = [], j2, f2;
@@ -559,15 +588,45 @@
       }
       var html = "", j2;
       for (j2 = 0; j2 < grupos.length; j2++) {
-        var cP = porCampo[grupos[j2]];
-        html += '<span class="phx-gpill" draggable="true" data-campo="' + esc(grupos[j2]) + '">' + esc((cP && cP.titulo) || grupos[j2]) +
+        var cP = porCampo[grupos[j2]], dP = dirsGrupo[grupos[j2]] || "asc";
+        html += '<span class="phx-gpill" draggable="true" data-campo="' + esc(grupos[j2]) + '">' +
+          '<button type="button" class="phx-gpill-dir" title="' +
+            (dP === "asc" ? "crescente \u2014 clique para inverter" : "decrescente \u2014 clique para inverter") + '">' +
+            (dP === "asc" ? "\u2191" : "\u2193") + "</button>" +
+          esc((cP && cP.titulo) || grupos[j2]) +
           ' <button type="button" class="phx-gpill-x" title="desagrupar">\u00d7</button></span>';
         if (j2 < grupos.length - 1) html += '<span class="phx-gpill-seta">\u2192</span>';
       }
+      html += '<span class="phx-gbox-acoes">' +
+        '<button type="button" class="phx-gbox-bt" data-todos="abrir">expandir tudo</button>' +
+        '<button type="button" class="phx-gbox-bt" data-todos="fechar">recolher tudo</button>' +
+        '<button type="button" class="phx-gbox-bt' + (rodapeGrupo ? " phx-gbox-bt-on" : "") +
+          '" data-rodape="1" title="mostra o total embaixo de cada grupo">total por grupo</button>' +
+        "</span>";
       groupBox.innerHTML = html;
+      var acs = groupBox.querySelectorAll("[data-todos]"), ja;
+      for (ja = 0; ja < acs.length; ja++) {
+        (function (bt) {
+          bt.addEventListener("click", function () {
+            api.expandirTodos(bt.getAttribute("data-todos") === "abrir");
+          });
+        })(acs[ja]);
+      }
+      var btR = groupBox.querySelector("[data-rodape]");
+      if (btR) btR.addEventListener("click", function () {
+        rodapeGrupo = !rodapeGrupo;
+        log("rodapegrupo", { ligado: rodapeGrupo });
+        renderGroupBox(); carrega();
+      });
       var pills = groupBox.querySelectorAll(".phx-gpill");
       for (j2 = 0; j2 < pills.length; j2++) {
         (function (pill) {
+          pill.querySelector(".phx-gpill-dir").addEventListener("click", function () {
+            var cmp = pill.getAttribute("data-campo");
+            dirsGrupo[cmp] = (dirsGrupo[cmp] || "asc") === "asc" ? "desc" : "asc";
+            log("ordemgrupo", { campo: cmp, dir: dirsGrupo[cmp] });
+            renderGroupBox(); carrega();
+          });
           pill.querySelector(".phx-gpill-x").addEventListener("click", function () {
             var novo = [], j3;
             for (j3 = 0; j3 < grupos.length; j3++) if (grupos[j3] !== pill.getAttribute("data-campo")) novo.push(grupos[j3]);
@@ -1099,6 +1158,25 @@
             "</td></tr>";
           continue;
         }
+        if (linhas[j].__rodape) {
+          // O rodape alinha o agregado NA COLUNA dele, e nao numa tira de
+          // texto: e assim que se compara um total com os valores acima.
+          var rN = linhas[j].__rodape;
+          html += '<tr class="phx-grodape">';
+          if (temSelecao) html += '<td class="phx-td"></td>';
+          for (k = 0; k < v.length; k++) {
+            c = v[k];
+            var temAgg = Object.prototype.hasOwnProperty.call(rN.aggs, c.campo);
+            html += '<td class="phx-td phx-tipo-' + (c.tipo || "texto") + '">' +
+              (k === 0
+                ? '<span class="phx-grodape-rot">total de ' +
+                    esc(formata(porCampo[rN.campo], rN.valor, {}, 0)) + "</span>"
+                : temAgg ? formata(c, rN.aggs[c.campo], {}, 0) : "") +
+              "</td>";
+          }
+          html += "</tr>";
+          continue;
+        }
         html += "<tr>";
         if (temSelecao) {
           ch = selecionadas[chaveDe(linhas[j], j)] ? " checked" : "";
@@ -1108,6 +1186,24 @@
           c = v[k]; val = linhas[j][c.campo];
           html += '<td class="phx-td phx-tipo-' + (c.tipo || "texto") + '"' +
             (c.fixa ? ' data-fx="' + esc(c.campo) + '"' : "") + ">" + formata(c, val, linhas[j], j) + "</td>";
+        }
+        html += "</tr>";
+      }
+      // O total geral vem do conjunto filtrado inteiro, e por isso fica numa
+      // linha propria, presa embaixo -- nao muda ao virar a pagina.
+      var tg = ultimaCarga && ultimaCarga.totaisGerais;
+      var temTG = false, kg;
+      if (tg) for (kg in tg) { temTG = true; break; }
+      if (temTG) {
+        html += '<tr class="phx-total-geral">';
+        if (temSelecao) html += '<td class="phx-td"></td>';
+        for (k = 0; k < v.length; k++) {
+          c = v[k];
+          var tA2 = Object.prototype.hasOwnProperty.call(tg, c.campo);
+          html += '<td class="phx-td phx-tipo-' + (c.tipo || "texto") + '">' +
+            (k === 0 ? '<span class="phx-grodape-rot">total geral</span>'
+                     : tA2 ? formata(c, tg[c.campo], {}, 0) : "") +
+            "</td>";
         }
         html += "</tr>";
       }
@@ -1222,6 +1318,8 @@
         ordem: { campo: estado.ordem.campo, dir: estado.ordem.dir, tipo: c ? c.tipo : null },
         filtros: serializaFiltros(),
         grupos: grupos.slice(),
+        dirsGrupo: (function () { var o3 = [], j3; for (j3 = 0; j3 < grupos.length; j3++) o3.push(dirsGrupo[grupos[j3]] || "asc"); return o3; })(),
+        rodapeGrupo: rodapeGrupo,
         recolhidos: recolhidos,
         aggCols: (function () { var o3 = [], j3; for (j3 = 0; j3 < colunasDef.length; j3++) if (colunasDef[j3].agregador) o3.push({ campo: colunasDef[j3].campo, agregador: colunasDef[j3].agregador }); return o3; })(),
         tiposCampos: (function () { var o3 = {}, j3; for (j3 = 0; j3 < colunasDef.length; j3++) o3[colunasDef[j3].campo] = colunasDef[j3].tipo || "texto"; return o3; })()

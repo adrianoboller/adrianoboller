@@ -22,7 +22,7 @@ o código, não contra a lembrança — foi assim que a chave estrangeira saiu d
 | ☑️ | 12 | Pastas separando tabelas **e** bancos | `base/ → database → raiz → schema/` |
 | ☑️ | 13 | Paginação `Nome_001.reg`, `_002`… | volume = `(rowid−1)/por_arquivo + 1` |
 | ☑️ | 14 | **Quantidade de registros e arquivos no create table** | op `criar_tabela` no protocolo e tela **Nova tabela** com registros por arquivo, dígitos do sufixo e teto de volumes. A CLI ainda não tem o comando |
-| ☑️ | 15 | Organograma, fluxograma e dossiê | 19 seções, 17 figuras, tudo em SVG à mão |
+| ☑️ | 15 | Organograma, fluxograma e dossiê | 19 seções, 18 figuras, tudo em SVG à mão |
 | ☑️ | 16 | Log de IPs na porta 5000, com data e hora | JSON Lines, para caber `fail2ban` |
 | ☑️ | 17 | Download dos fontes e do compilado Linux/Windows, com manual | `./empacotar.sh`, três zips conferidos |
 | ◐ | 18 | **Subir o PhxSql no GitHub** | está na branch com histórico completo; **repositório próprio bloqueado**: `create_repository` responde 403 |
@@ -83,9 +83,11 @@ o código, não contra a lembrança — foi assim que a chave estrangeira saiu d
 | ☑️ | 74 | **Configurações e diretivas das tabelas** | a geometria decidida na criação, os índices e chaves, e o que a tabela herda do servidor |
 | ☑️ | 75 | **Cadastro de campos** com id automático, nome, caption, descrição, tipo, tamanho, máscara e chave primária/estrangeira/composta | **mudança de formato**: esquema `PSCH` v3. O `id` é UUID v7 e nunca muda; o papel na chave é derivado dos índices |
 | ☑️ | 76 | **Tabela particionada** com grade de gestão: por faixa de quantidade, mensal, bimestral, semestral ou anual | **mudança de formato**: o volume corta pelo calendário, e cada volume grava a própria fronteira no cabeçalho |
+| ☑️ | 77 | **Group dinâmico pelas colunas na grade**, como o Janus GridEX(R) e o DevExpress(R) | já havia arrastar e multinível; entraram ordem por nível, rodapé por grupo com o total na coluna, total geral e expandir/recolher tudo |
+| ☑️ | 78 | **Botão que monta pivot dinâmico com assistente**, pedindo as tabelas envolvidas | operação `pivotar` no servidor com *hash join*, seis resumos e granularidade de data; assistente de três passos na tela |
 | ☑️ | 67 | **Botão e menu Tabelas** para gerir as tabelas do banco: nova, estrutura, editar conteúdo, partições, duplicar, reparar tabela, reparar índice e excluir — e **Gestão de transações** no menu de ferramentas | as oito operações funcionam de ponta a ponta; três delas (`criar_tabela`, `duplicar_tabela`, `excluir_tabela`) nasceram aqui, e `criar_schema` — prometido na documentação e nunca despachado — junto |
 
-**68 feitos · 2 parciais · 6 planejados**, de 76 pedidos.
+**70 feitos · 2 parciais · 6 planejados**, de 78 pedidos.
 
 Fora do que você pediu, entraram por medição: o CRC slice-by-8, o `descer` sem
 reler a folha, a conferência de unicidade sem descida dupla, e catorze correções

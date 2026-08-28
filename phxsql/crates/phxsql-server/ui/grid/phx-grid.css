@@ -130,3 +130,29 @@ tbody tr:hover td[data-fx]{background:#eef1f4}
 .phx-grupo-rotulo{font-weight:700}
 .phx-grupo-conta{color:var(--phx-meta);margin-left:6px}
 .phx-grupo-aggs{color:var(--phx-meta);margin-left:14px;font-size:12px}
+
+/* ----------------------------------------- ordem, rodape e total do grupo */
+.phx-gpill-dir{
+  background:none;border:none;cursor:pointer;padding:0 4px 0 0;font-size:11px;
+  color:inherit;opacity:.7;
+}
+.phx-gpill-dir:hover{opacity:1}
+.phx-gbox-acoes{margin-left:auto;display:flex;gap:6px;align-items:center}
+.phx-gbox-bt{
+  font:inherit;font-size:10.5px;cursor:pointer;padding:2px 8px;border-radius:4px;
+  background:transparent;border:1px solid currentColor;color:inherit;opacity:.6;
+}
+.phx-gbox-bt:hover{opacity:1}
+.phx-gbox-bt-on{opacity:1;font-weight:600}
+
+/* O rodape ecoa o cabecalho do grupo, mais fraco: quem le a coluna de cima
+   para baixo reconhece que a linha fecha o bloco, sem confundi-la com dado. */
+.phx-grodape > td{
+  font-weight:600;background:rgba(127,127,127,.07);
+  border-top:1px solid rgba(127,127,127,.25);
+}
+.phx-grodape-rot{font-weight:500;opacity:.65;font-size:11px}
+.phx-total-geral > td{
+  font-weight:700;background:rgba(127,127,127,.13);
+  border-top:2px solid currentColor;
+}

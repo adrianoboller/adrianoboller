@@ -95,6 +95,9 @@ impl Atividade {
             // O catalogo e leitura: quem pode ler a tabela pode saber que ela
             // existe e que colunas tem.
             "sistabelas" | "systables" | "siscolunas" | "syscolumns" => Atividade::Ler,
+            // O pivot resume o que a varredura leria: quem pode ler a tabela
+            // pode ver o total dela.
+            "pivotar" | "pivot" => Atividade::Ler,
             // Consultar em memoria e ler: o dado e o mesmo, o caminho e outro.
             // Carregar tambem, porque carregar e varrer a tabela inteira.
             "memoria_carregar" | "memoria" | "SelectMemory" | "selectmemory"
