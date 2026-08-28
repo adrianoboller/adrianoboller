@@ -64,6 +64,18 @@ Os monitores da máquina no painel, o aviso de disco por e-mail, e o
   resolvido** na tela de configuração: caminho relativo vale a partir de onde o
   servidor foi iniciado, e subir por outro caminho passa a ver outro banco.
 
+- **As sete junções do diagrama**, mais `UNION` e `UNION ALL`. Na tela se
+  escolhe **clicando no desenho de Venn**, com o SQL equivalente escrito
+  embaixo de cada um. Chave composta, teto que se declara, e as três armadilhas
+  do SQL respeitadas: nulo não casa com nulo, família errada é recusada na
+  entrada em vez de devolver zero linhas parecendo resposta, e decimal casa por
+  valor e não por escala.
+
+- **`criar_tabela` com nome qualificado.** *(corrigido)* `filial.clientes`
+  gravava cinco arquivos chamados `filial.clientes.reg` na **raiz** do banco.
+  Toda leitura separa o ponto em schema e tabela desde sempre; só a criação não
+  separava. A tabela nascia inalcançável e o servidor respondia «criada».
+
 ### Sabido
 
 - **Não há TLS em lugar nenhum** — nem no SMTP nem no DbLink. A `std` não traz
@@ -74,6 +86,10 @@ Os monitores da máquina no painel, o aviso de disco por e-mail, e o
 - **Do `caching_sha2_password` só o caminho rápido**, que vale quando o
   servidor já tem a senha em cache. O completo exige TLS ou a chave RSA. Quando
   o servidor pede o completo, o erro diz isso e as duas saídas.
+
+- **Junção é de duas tabelas por vez, e só por igualdade.** `ON a.x > b.y` não
+  existe: o *hash join* casa por igualdade. `WHERE` sobre o resultado da junção
+  também não — a tela filtra depois, na grade.
 
 - **PostgreSQL(R) ainda não conecta.** A definição já pode ser guardada; o
   cliente não existe.

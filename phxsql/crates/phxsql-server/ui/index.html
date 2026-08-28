@@ -4288,20 +4288,25 @@ function venn(tipo) {
   const A = { cx:36, cy:29, r:24 }, B = { cx:60, cy:29, r:24 };
   const c = (o, extra = "") => `<circle cx="${o.cx}" cy="${o.cy}" r="${o.r}" ${extra}/>`;
   const F = `fill="var(--laranja)"`;
+  // Os dois círculos como UM caminho de dois subcaminhos, com
+  // `clip-rule="evenodd"`: sobra o que está dentro de exatamente um deles — os
+  // dois crescentes, sem o meio. Uma máscara faria o mesmo e exigiria branco e
+  // preto literais, que não seguem o tema; o recorte não precisa de cor
+  // nenhuma.
+  const soUm = `M12,29 a24,24 0 1,0 48,0 a24,24 0 1,0 -48,0 Z`
+             + ` M36,29 a24,24 0 1,0 48,0 a24,24 0 1,0 -48,0 Z`;
   const defs = `<defs>
     <clipPath id="cA-${tipo}">${c(A)}</clipPath>
-    <mask id="mSemB-${tipo}"><rect x="0" y="0" width="96" height="58" fill="#fff"/>${c(B, 'fill="#000"')}</mask>
-    <mask id="mSemA-${tipo}"><rect x="0" y="0" width="96" height="58" fill="#fff"/>${c(A, 'fill="#000"')}</mask>
+    <clipPath id="cUm-${tipo}"><path clip-rule="evenodd" d="${soUm}"/></clipPath>
   </defs>`;
   const pintado = {
     interna:      `<g clip-path="url(#cA-${tipo})">${c(B, F)}</g>`,
     esquerda:     c(A, F),
     direita:      c(B, F),
     completa:     c(A, F) + c(B, F),
-    so_esquerda:  `<g mask="url(#mSemB-${tipo})">${c(A, F)}</g>`,
-    so_direita:   `<g mask="url(#mSemA-${tipo})">${c(B, F)}</g>`,
-    so_dos_lados: `<g mask="url(#mSemB-${tipo})">${c(A, F)}</g>`
-                + `<g mask="url(#mSemA-${tipo})">${c(B, F)}</g>`,
+    so_esquerda:  `<g clip-path="url(#cUm-${tipo})">${c(A, F)}</g>`,
+    so_direita:   `<g clip-path="url(#cUm-${tipo})">${c(B, F)}</g>`,
+    so_dos_lados: `<g clip-path="url(#cUm-${tipo})">${c(A, F)}${c(B, F)}</g>`,
   }[tipo] || "";
   return `<svg viewBox="0 0 96 58" role="img" aria-label="Diagrama de ${tipo}">
     ${defs}${pintado}

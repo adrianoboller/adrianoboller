@@ -97,16 +97,19 @@ o código, não contra a lembrança — foi assim que a chave estrangeira saiu d
 | ☑️ | 88 | **Definir no config o local de armazenamento** (`C:\database`, `D:\database`) | é o campo `base`, e sempre aceitou caminho absoluto. O que faltava era a tela mostrar o caminho **já resolvido**: relativo vale a partir de onde o servidor foi iniciado, e subir por outro caminho passa a ver outro banco |
 | ☑️ | 89 | **Alerta de falta de espaço por e-mail**, configurado no config | seção `alertas`, com dois limites no OU e silêncio entre avisos. Cliente SMTP escrito aqui — **sem TLS**, serve para relé interno |
 | ☑️ | 90 | **Monitores de placa de rede, CPU, memória e HDs no dashboard** | do `/proc`, com taxa entre duas amostras; renovam sozinhos a cada quatro segundos. **Só no Linux** — fora dele a tela diz que não sabe medir, em vez de mostrar zero |
+| ☑️ | 91 | **Operações básicas de union, inner join e as outras do diagrama** | as sete figuras (`interna`, `esquerda`, `direita`, `completa`, `so_esquerda`, `so_direita`, `so_dos_lados`) mais `UNION` e `UNION ALL`. Na tela se escolhe **clicando no desenho de Venn**, com o SQL equivalente escrito embaixo. Chave composta, e nulo que não casa com nulo, como no SQL |
 | ☑️ | 67 | **Botão e menu Tabelas** para gerir as tabelas do banco: nova, estrutura, editar conteúdo, partições, duplicar, reparar tabela, reparar índice e excluir — e **Gestão de transações** no menu de ferramentas | as oito operações funcionam de ponta a ponta; três delas (`criar_tabela`, `duplicar_tabela`, `excluir_tabela`) nasceram aqui, e `criar_schema` — prometido na documentação e nunca despachado — junto |
 
-**80 feitos · 4 parciais · 6 planejados**, de 90 pedidos.
+**81 feitos · 4 parciais · 6 planejados**, de 91 pedidos.
 
 Fora do que você pediu, entraram por medição: o CRC slice-by-8, o `descer` sem
-reler a folha, a conferência de unicidade sem descida dupla, e dezessete
-correções de defeito — três delas de perda silenciosa de dado, e três achadas
-**rodando** o que tinha acabado de ser escrito (o percentual de disco que
-dividia pelo total, o assunto de e-mail com acento cru no cabeçalho, e o
-decimal que a grade arredondava).
+reler a folha, a conferência de unicidade sem descida dupla, e dezoito
+correções de defeito — três delas de perda silenciosa de dado, e quatro
+achadas **rodando** o que tinha acabado de ser escrito (o percentual de disco
+que dividia pelo total, o assunto de e-mail com acento cru no cabeçalho, o
+decimal que a grade arredondava, e o `criar_tabela` que gravava
+`filial.clientes.reg` na raiz do banco e devolvia uma tabela que nenhuma outra
+operação conseguia abrir).
 
 ---
 

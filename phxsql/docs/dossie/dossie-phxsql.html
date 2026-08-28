@@ -285,9 +285,10 @@ footer p{max-width:var(--medida)}
     <li><a href="#s16"><span class="n">16</span> Painel</a></li>
     <li><a href="#s17"><span class="n">17</span> A máquina embaixo</a></li>
     <li><a href="#s18"><span class="n">18</span> DbLink</a></li>
-    <li><a href="#s19"><span class="n">19</span> Bancada</a></li>
-    <li><a href="#s20"><span class="n">20</span> Decisões</a></li>
-    <li><a href="#s21"><span class="n">21</span> Estado e roteiro</a></li>
+    <li><a href="#s19"><span class="n">19</span> Junções</a></li>
+    <li><a href="#s20"><span class="n">20</span> Bancada</a></li>
+    <li><a href="#s21"><span class="n">21</span> Decisões</a></li>
+    <li><a href="#s22"><span class="n">22</span> Estado e roteiro</a></li>
   </ol>
 </nav>
 
@@ -307,12 +308,12 @@ footer p{max-width:var(--medida)}
   você digitou</strong>, e nada nunca a embaralha.</p>
 
   <div class="painel">
-    <div><div class="v">30.113</div><div class="r">linhas de Rust</div></div>
-    <div><div class="v">416</div><div class="r">testes</div></div>
+    <div><div class="v">31.660</div><div class="r">linhas de Rust</div></div>
+    <div><div class="v">432</div><div class="r">testes</div></div>
     <div><div class="v">0</div><div class="r">dependências</div></div>
     <div><div class="v">4</div><div class="r">crates</div></div>
     <div><div class="v">5</div><div class="r">arquivos/tabela</div></div>
-    <div><div class="v">5.204</div><div class="r">linhas de doc</div></div>
+    <div><div class="v">5.344</div><div class="r">linhas de doc</div></div>
   </div>
 </header>
 
@@ -1642,7 +1643,7 @@ footer p{max-width:var(--medida)}
     </table>
   </div>
 
-  <p><strong>46 das 49 operações do protocolo têm tela.</strong> Fora:
+  <p><strong>48 das 51 operações do protocolo têm tela.</strong> Fora:
   <code>buscar</code>, <code>desbloquear</code> e <code>criar_schema</code> — este
   último acontece sozinho quando a tela cria uma tabela dentro de um schema que
   ainda não existe.</p>
@@ -1781,7 +1782,7 @@ footer p{max-width:var(--medida)}
 
   <h3>O editor de menu mora no navegador, não no servidor</h3>
 
-  <p>Ele troca o nome exibido de qualquer um dos 88 rótulos da barra e dos
+  <p>Ele troca o nome exibido de qualquer um dos 93 rótulos da barra e dos
   menus. O que muda é o texto: <strong>a letra do atalho continua a de
   fábrica</strong>, senão renomear um menu mudaria a tecla debaixo do dedo de
   quem já aprendeu.</p>
@@ -2658,6 +2659,176 @@ footer p{max-width:var(--medida)}
 <!-- ============================= 19 ============================= -->
 <section id="s19">
   <div class="rotulo"><span class="num">19</span><span class="traco"></span></div>
+  <h2>Junções: as sete figuras, e as três armadilhas</h2>
+
+  <p>Todo mundo que já viu um diagrama de junção viu o mesmo desenho: dois
+  círculos, sete pinturas. Na tela do PhxSql o desenho <em>é</em> o controle —
+  clica-se na figura, e o SQL equivalente fica escrito embaixo dela. Quem sabe
+  que quer «tudo de A e o que casar de B» nem sempre lembra que isso se chama
+  <code>LEFT JOIN</code>, mas reconhece o desenho na hora.</p>
+
+  <figure>
+    <div class="fig-caixa">
+      <svg viewBox="0 0 840 190" role="img" aria-label="As sete junções em diagramas de Venn: interna pinta só a interseção; esquerda pinta o círculo A inteiro; direita pinta o B; completa pinta os dois; só A pinta A menos a interseção; só B pinta B menos a interseção; e só as pontas pinta os dois círculos menos a interseção.">
+        <defs>
+          <clipPath id="jcA"><circle cx="34" cy="30" r="23"/></clipPath>
+          <!-- Os dois circulos como UM caminho de dois subcaminhos, com
+               `clip-rule="evenodd"`: a regiao que sobra e a que esta dentro de
+               exatamente um deles, ou seja, os dois crescentes sem o meio.
+               Uma mascara faria o mesmo, mas exigiria branco e preto
+               literais, e a regra da pagina e nao ter cor literal nenhuma. -->
+          <clipPath id="jcSoUm">
+            <path clip-rule="evenodd"
+                  d="M11,30 a23,23 0 1,0 46,0 a23,23 0 1,0 -46,0 Z M35,30 a23,23 0 1,0 46,0 a23,23 0 1,0 -46,0 Z"/>
+          </clipPath>
+        </defs>
+        <g font-family="IBM Plex Mono, monospace" fill="currentColor">
+
+          <g transform="translate(6,18)">
+            <g clip-path="url(#jcA)"><circle cx="58" cy="30" r="23" fill="var(--acento)"/></g>
+            <circle cx="34" cy="30" r="23" fill="none" stroke="currentColor" stroke-width="1.2"/>
+            <circle cx="58" cy="30" r="23" fill="none" stroke="currentColor" stroke-width="1.2"/>
+            <text x="46" y="78" text-anchor="middle" font-size="11">INNER</text>
+            <text x="46" y="93" text-anchor="middle" font-size="9.5" opacity=".6">interna</text>
+          </g>
+
+          <g transform="translate(124,18)">
+            <circle cx="34" cy="30" r="23" fill="var(--acento)"/>
+            <circle cx="34" cy="30" r="23" fill="none" stroke="currentColor" stroke-width="1.2"/>
+            <circle cx="58" cy="30" r="23" fill="none" stroke="currentColor" stroke-width="1.2"/>
+            <text x="46" y="78" text-anchor="middle" font-size="11">LEFT</text>
+            <text x="46" y="93" text-anchor="middle" font-size="9.5" opacity=".6">esquerda</text>
+          </g>
+
+          <g transform="translate(242,18)">
+            <circle cx="58" cy="30" r="23" fill="var(--acento)"/>
+            <circle cx="34" cy="30" r="23" fill="none" stroke="currentColor" stroke-width="1.2"/>
+            <circle cx="58" cy="30" r="23" fill="none" stroke="currentColor" stroke-width="1.2"/>
+            <text x="46" y="78" text-anchor="middle" font-size="11">RIGHT</text>
+            <text x="46" y="93" text-anchor="middle" font-size="9.5" opacity=".6">direita</text>
+          </g>
+
+          <g transform="translate(360,18)">
+            <circle cx="34" cy="30" r="23" fill="var(--acento)"/>
+            <circle cx="58" cy="30" r="23" fill="var(--acento)"/>
+            <circle cx="34" cy="30" r="23" fill="none" stroke="currentColor" stroke-width="1.2"/>
+            <circle cx="58" cy="30" r="23" fill="none" stroke="currentColor" stroke-width="1.2"/>
+            <text x="46" y="78" text-anchor="middle" font-size="11">FULL OUTER</text>
+            <text x="46" y="93" text-anchor="middle" font-size="9.5" opacity=".6">completa</text>
+          </g>
+
+          <g transform="translate(478,18)">
+            <g clip-path="url(#jcSoUm)"><circle cx="34" cy="30" r="23" fill="var(--reg)"/></g>
+            <circle cx="34" cy="30" r="23" fill="none" stroke="currentColor" stroke-width="1.2"/>
+            <circle cx="58" cy="30" r="23" fill="none" stroke="currentColor" stroke-width="1.2"/>
+            <text x="46" y="78" text-anchor="middle" font-size="11">só A</text>
+            <text x="46" y="93" text-anchor="middle" font-size="9.5" opacity=".6">so_esquerda</text>
+          </g>
+
+          <g transform="translate(596,18)">
+            <g clip-path="url(#jcSoUm)"><circle cx="58" cy="30" r="23" fill="var(--reg)"/></g>
+            <circle cx="34" cy="30" r="23" fill="none" stroke="currentColor" stroke-width="1.2"/>
+            <circle cx="58" cy="30" r="23" fill="none" stroke="currentColor" stroke-width="1.2"/>
+            <text x="46" y="78" text-anchor="middle" font-size="11">só B</text>
+            <text x="46" y="93" text-anchor="middle" font-size="9.5" opacity=".6">so_direita</text>
+          </g>
+
+          <g transform="translate(714,18)">
+            <g clip-path="url(#jcSoUm)"><circle cx="34" cy="30" r="23" fill="var(--reg)"/></g>
+            <g clip-path="url(#jcSoUm)"><circle cx="58" cy="30" r="23" fill="var(--reg)"/></g>
+            <circle cx="34" cy="30" r="23" fill="none" stroke="currentColor" stroke-width="1.2"/>
+            <circle cx="58" cy="30" r="23" fill="none" stroke="currentColor" stroke-width="1.2"/>
+            <text x="46" y="78" text-anchor="middle" font-size="11">só as pontas</text>
+            <text x="46" y="93" text-anchor="middle" font-size="9.5" opacity=".6">so_dos_lados</text>
+          </g>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>Figura 20.</b> As mesmas sete figuras que a tela desenha — e
+    que a tela usa como botão. As três da direita são as anti-junções, o
+    <code>LEFT JOIN … WHERE B.chave IS NULL</code> e seus irmãos.</figcaption>
+  </figure>
+
+  <h3>Cinco modos, e não sete</h3>
+
+  <p><code>direita</code> é <code>esquerda</code> com os lados trocados, e
+  <code>so_direita</code> é <code>so_esquerda</code> trocado. Escrever os sete
+  daria dois caminhos a mais para o mesmo defeito aparecer.</p>
+
+  <p>Mas a troca não é só economia de código: <strong>ela decide qual tabela
+  cabe na memória</strong>. O lado que a junção precisa inteiro — o <code>A</code>
+  do <code>LEFT</code> — é o que se lê linha a linha; o outro vira mapa. Num
+  <code>RIGHT JOIN</code> de uma tabela de milhões contra um cadastro de
+  centenas, trocar é o que faz o cadastro ser o mapa em vez da tabela grande.
+  As colunas saem na ordem que o pedido pediu de qualquer jeito: quem escreveu
+  <code>A RIGHT JOIN B</code> quer ver A antes de B.</p>
+
+  <h3>Nulo não casa com nulo</h3>
+
+  <p>Em SQL, <code>A.chave = B.chave</code> com um dos lados nulo não dá falso:
+  dá <em>desconhecido</em>, e a linha não casa. Uma linha de A com chave nula se
+  comporta como linha <strong>sem par</strong> — aparece no <code>LEFT</code>,
+  some no <code>INNER</code>, aparece no <code>so_esquerda</code>.</p>
+
+  <p>Não é detalhe de pureza. Se nulo casasse com nulo, <strong>todas</strong>
+  as linhas sem chave de A casariam com <strong>todas</strong> as sem chave de
+  B: dez de cada lado virariam cem linhas do nada, e o resultado seria um
+  produto cartesiano com cara de junção.</p>
+
+  <div class="nota">
+    <p>O resultado devolve <code>chave_nula_a</code> e <code>chave_nula_b</code>,
+    e a tela mostra o aviso quando há alguma. Um <code>INNER</code> que trouxe
+    menos do que se esperava costuma ter aí a explicação — e sem o número, ela
+    vira meia hora de investigação.</p>
+  </div>
+
+  <h3>As outras duas armadilhas</h3>
+
+  <div class="rolo">
+    <table>
+      <thead><tr><th>O que aconteceria</th><th>O que o motor faz</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Juntar um <code>Int</code> com um <code>Str</code> não dá erro nenhum: dá <strong>zero linhas</strong> — o pior resultado possível, porque parece resposta</td>
+          <td>recusa antes de ler qualquer linha, nomeando as duas colunas e as duas famílias</td>
+        </tr>
+        <tr>
+          <td>12,34 com escala 2 e 12,3400 com escala 4 são o mesmo número e têm <code>i128</code> diferente: as tabelas não casariam por um zero à direita</td>
+          <td>a chave de comparação normaliza o decimal — e por isso o inteiro 12 também casa com 12,00</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>Chave repetida <strong>multiplica</strong>, e isso é o certo: se a chave 7
+  aparece três vezes em B, cada linha de A com chave 7 produz três linhas. É
+  também como uma junção descuidada vira milhões de linhas, então há teto — e o
+  resultado se declara <code>truncado</code> em vez de cortar calado.</p>
+
+  <h3>A união empilha por posição</h3>
+
+  <p><code>UNION</code> tira as repetidas, <code>UNION ALL</code> não. As duas
+  empilham <strong>por posição</strong>, como o SQL: a primeira coluna de uma
+  parte cai na primeira da outra, e é o <em>tipo</em> que precisa bater. Casar
+  por nome pareceria mais amigável e seria uma armadilha — duas tabelas com as
+  mesmas colunas em ordem diferente empilhariam trocando os valores, caladas.</p>
+
+  <p>No <code>UNION</code>, duas linhas todas nulas contam como repetidas —
+  diferente da junção, onde nulo nunca casa. As duas regras são do SQL e são
+  mesmo diferentes: a junção compara <em>chaves</em>, a união compara
+  <em>linhas</em>.</p>
+
+  <div class="nota">
+    <p><strong>Ainda não há SQL escrito à mão.</strong> Estas são operações do
+    protocolo, com tela — não há analisador. <code>ON a.x &gt; b.y</code> também
+    não existe: o <em>hash join</em> casa por igualdade, e desigualdade pede
+    outro algoritmo. A camada SQL continua no roteiro.</p>
+  </div>
+</section>
+
+<!-- ============================= 20 ============================= -->
+<section id="s20">
+  <div class="rotulo"><span class="num">20</span><span class="traco"></span></div>
   <h2>A bancada: dez milhões de linhas, medidas</h2>
 
   <p>Um motor novo só tem duas maneiras de se apresentar: prometendo, ou
@@ -2705,7 +2876,7 @@ footer p{max-width:var(--medida)}
       </svg>
 <!-- bancada:fim -->
     </div>
-    <figcaption><b>Figura 20.</b> O perfil do motor num desenho: perde onde
+    <figcaption><b>Figura 21.</b> O perfil do motor num desenho: perde onde
     grava, ganha onde lê em ordem. A varredura por faixa é o formato mostrando
     o que ele é — linhas vizinhas no índice são bytes vizinhos no
     <code>.reg</code>.</figcaption>
@@ -2872,7 +3043,7 @@ footer p{max-width:var(--medida)}
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 21.</b> O defeito não era a trava faltar — era ela
+    <figcaption><b>Figura 22.</b> O defeito não era a trava faltar — era ela
     cobrir metade do trabalho. Com índice único sobre a coluna, o índice pegava
     e virava «chave duplicada»; foi assim que apareceu. <strong>Sem índice
     único, a linha sumia em silêncio.</strong></figcaption>
@@ -2905,9 +3076,9 @@ footer p{max-width:var(--medida)}
   seção sai de lá; nenhum foi estimado.</p>
 </section>
 
-<!-- ============================= 20 ============================= -->
-<section id="s20">
-  <div class="rotulo"><span class="num">20</span><span class="traco"></span></div>
+<!-- ============================= 21 ============================= -->
+<section id="s21">
+  <div class="rotulo"><span class="num">21</span><span class="traco"></span></div>
   <h2>Decisões tomadas</h2>
 
   <div class="rolo">
@@ -2994,9 +3165,9 @@ footer p{max-width:var(--medida)}
   </div>
 </section>
 
-<!-- ============================= 21 ============================= -->
-<section id="s21">
-  <div class="rotulo"><span class="num">21</span><span class="traco"></span></div>
+<!-- ============================= 22 ============================= -->
+<section id="s22">
+  <div class="rotulo"><span class="num">22</span><span class="traco"></span></div>
   <h2>Estado e roteiro</h2>
 
   <div class="rolo">
@@ -3031,9 +3202,11 @@ footer p{max-width:var(--medida)}
         <tr><td>Painel com sete gráficos · agregado numa chamada</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
         <tr><td>phx-grid · agrupamento por arrastar, ordem por nível, rodapé e total geral</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
         <tr><td>Tabela dinâmica · cruzamento somado no servidor, com <em>hash join</em></td><td><span class="pino ok">pronto</span></td><td class="num">12</td></tr>
+        <tr><td>As sete junções do diagrama · escolhidas clicando no desenho</td><td><span class="pino ok">pronto</span></td><td class="num">13</td></tr>
+        <tr><td><code>UNION</code> e <code>UNION ALL</code> · empilham por posição</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
         <tr><td>Espelho <code>.bkp</code> · segunda chance do <code>.reg</code></td><td><span class="pino ok">pronto</span></td><td class="num">4</td></tr>
         <tr><td>Bancada medida contra o MySQL(R), 10 milhões</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
-        <tr><td>View Database · grade de tabelas e ficha de edição · 46 das 49 ops na tela</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
+        <tr><td>View Database · grade de tabelas e ficha de edição · 48 das 51 ops na tela</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
         <tr><td>Gestão de tabelas · onze operações sobre a tabela escolhida</td><td><span class="pino ok">pronto</span></td><td class="num">14</td></tr>
         <tr><td>Partição por período · mensal, bimestral, semestral, anual</td><td><span class="pino ok">pronto</span></td><td class="num">6</td></tr>
         <tr><td>Metadados de campo · id estável, caption, descrição, máscara</td><td><span class="pino ok">pronto</span></td><td class="num">7</td></tr>
@@ -3045,8 +3218,8 @@ footer p{max-width:var(--medida)}
         <tr><td>Diretivas de acesso ao banco · os seis portões na ordem em que fecham</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
         <tr><td>Configurações e diretivas da tabela · geometria, chaves e volumes</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
         <tr><td>Editor de menu · troca o nome exibido de cada item</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
-        <tr><td>Barra de ferramentas · 22 ferramentas, 18 vivas e 4 dizendo o que falta</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
-        <tr><td>Barra de menu tradicional · nove menus, 57 itens · Alt, setas e Esc</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
+        <tr><td>Barra de ferramentas · 23 ferramentas, 19 vivas e 4 dizendo o que falta</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
+        <tr><td>Barra de menu tradicional · nove menus, 61 itens · Alt, setas e Esc</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
         <tr><td>Tema claro e escuro · console para vários servidores</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
         <tr><td>Monitores da máquina · CPU, memória, placas de rede, discos e espaço</td><td><span class="pino ok">pronto</span></td><td class="num">6</td></tr>
         <tr><td>Aviso de disco apertado por e-mail · cliente SMTP escrito aqui</td><td><span class="pino ok">pronto</span></td><td class="num">16</td></tr>
@@ -3103,11 +3276,11 @@ footer p{max-width:var(--medida)}
 </section>
 
 <footer>
-  <p>PhxSql 0.11.0 · 30.113 linhas de Rust em 4 crates, mais 392 KiB de interface ·
-  416 testes · nenhuma dependência externa. Especificação byte a byte em <code>docs/FORMATO.md</code>, cadastro e
+  <p>PhxSql 0.11.0 · 31.660 linhas de Rust em 4 crates, mais 406 KiB de interface ·
+  432 testes · nenhuma dependência externa. Especificação byte a byte em <code>docs/FORMATO.md</code>, cadastro e
   permissões em <code>docs/USUARIOS.md</code>, desenho da replicação em
   <code>docs/REPLICACAO.md</code>, roteiro em <code>docs/PLANO.md</code>,
-  o DbLink em <code>docs/DBLINK.md</code>,
+  o DbLink em <code>docs/DBLINK.md</code>, as junções em <code>docs/JUNCOES.md</code>,
   e o que ainda falta em <code>docs/PENDENCIAS.md</code>.</p>
 </footer>
 
