@@ -121,9 +121,10 @@ o código, não contra a lembrança — foi assim que a chave estrangeira saiu d
 | ☑️ | 112 | **Analisar as sugestões de arquitetura (WAL, MemTable, group commit, LSM)** | `docs/DESEMPENHO.md`, com a medição que muda o alvo: **83,5% do tempo de uma inserção está no `.ndx`**, e o arquivo de dados — o que as propostas querem substituir — já é *append-only* e custa 16,5%. Das dez propostas, cinco já existem, duas miram um gargalo que não é o nosso, uma quebraria a ordem de digitação, e duas são reais |
 | ☐ | 113 | **Ordenar as chaves do lote antes de inserir no `.ndx`** | o item que a medição favorece: ataca os 83,5% sem mudar formato nem garantia. A carga em lote já provou o princípio no nível de cima (9,6×); falta aplicá-lo dentro da B+tree |
 | ☐ | 114 | **Índice não único fora do caminho crítico** | 1,45× medido, e não custa correção: nada depende de um índice não único para decidir se a linha entra. O **único** não pode sair — ele é a própria decisão, e adiá-lo deixaria buraco permanente no `.reg` |
+| ☑️ | 115 | **Vídeo longo em MP4, do login à replicação** | `docs/video/`: 5m13s gravados contra o servidor de verdade, com o Playwright dirigindo a interface e a legenda injetada na própria página. Dezessete capítulos, e o 16 é o que nenhum vídeo de produto tem — o que ainda falta. **Ele achou três defeitos** que ler o código não acharia |
 | ☑️ | 67 | **Botão e menu Tabelas** para gerir as tabelas do banco: nova, estrutura, editar conteúdo, partições, duplicar, reparar tabela, reparar índice e excluir — e **Gestão de transações** no menu de ferramentas | as oito operações funcionam de ponta a ponta; três delas (`criar_tabela`, `duplicar_tabela`, `excluir_tabela`) nasceram aqui, e `criar_schema` — prometido na documentação e nunca despachado — junto |
 
-**99 feitos · 7 parciais · 8 planejados**, de 114 pedidos.
+**100 feitos · 7 parciais · 8 planejados**, de 115 pedidos.
 
 Fora do que você pediu, entraram por medição: o CRC slice-by-8, o `descer` sem
 reler a folha, a conferência de unicidade sem descida dupla, e dezoito
