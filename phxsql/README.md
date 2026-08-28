@@ -5,7 +5,8 @@
 > Built to store. Engineered to scale.
 
 Motor de dados em Rust no modelo de arquivos separados do HFSQL(R): cada tabela
-lógica é a soma de cinco arquivos físicos.
+lógica é a soma de cinco arquivos físicos — mais um sexto, o espelho `.bkp`,
+quando ele está ligado.
 
 ```
 cadastroClientes.reg    registros, na ordem de digitação

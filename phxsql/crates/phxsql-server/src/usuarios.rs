@@ -106,6 +106,9 @@ impl Atividade {
             // A soma de verificacao le a tabela inteira e devolve um numero:
             // quem pode ler a tabela pode saber se ela mudou.
             "checksum" | "soma_de_verificacao" => Atividade::Ler,
+            // Exportar e ler a tabela inteira e levar embora. Nao e mais poder
+            // do que `varrer` ja da -- e menos, porque nao altera nada.
+            "exportar" | "export" => Atividade::Ler,
             // Mexer no contador pode fazer a proxima insercao repetir numero.
             "ajustar_sequencia" => Atividade::Administrar,
             // Consultar em memoria e ler: o dado e o mesmo, o caminho e outro.
