@@ -321,7 +321,10 @@ pub fn esquema_de_json(j: &Json) -> Result<Schema> {
         }
     }
 
-    let esquema = Schema::new(nome, colunas, indices)?;
+    // A tela de criar tabela marca "exigir motivo": a partir dai nenhuma
+    // exclusao nesta tabela passa sem uma frase escrita.
+    let esquema = Schema::new(nome, colunas, indices)?
+        .com_motivo_obrigatorio(j.booleano_ou("motivo_obrigatorio", false));
 
     // A paginacao entra na criacao e nao muda depois: ela decide como o rowid
     // vira endereco. Trocar mais tarde seria reescrever a tabela inteira.
@@ -494,6 +497,31 @@ pub fn json_para_valor(j: &Json, ty: &ColumnType) -> Result<Value> {
 }
 
 /// Linha inteira em JSON, como objeto com o nome de cada coluna.
+/// As colunas de um esquema, no minimo que uma grade precisa para desenhar.
+///
+/// Marca a coluna de sistema com `"sistema": true` para a tela poder trata-la
+/// como o que ela e: nao se digita, nao se edita, e quem manda nela e o botao
+/// de excluir. Sem essa marca, ela apareceria como mais um campo de formulario.
+pub fn colunas_para_json(esquema: &Schema) -> Json {
+    let sistema = esquema.coluna_softdeleted();
+    Json::Lista(
+        esquema
+            .colunas()
+            .iter()
+            .enumerate()
+            .map(|(i, c)| {
+                Json::objeto(vec![
+                    ("nome", Json::texto_de(&c.nome)),
+                    ("rotulo", Json::texto_de(c.rotulo())),
+                    ("tipo", Json::texto_de(format!("{:?}", c.ty))),
+                    ("nullable", Json::Bool(c.nullable)),
+                    ("sistema", Json::Bool(Some(i) == sistema)),
+                ])
+            })
+            .collect(),
+    )
+}
+
 pub fn linha_para_json(linha: &[Value], esquema: &Schema) -> Json {
     Json::Objeto(
         esquema
@@ -509,19 +537,36 @@ pub fn linha_para_json(linha: &[Value], esquema: &Schema) -> Json {
 /// esquema). Colunas ausentes no objeto entram como NULL.
 pub fn json_para_linha(j: &Json, esquema: &Schema) -> Result<Vec<Value>> {
     let colunas = esquema.colunas();
+    // A coluna de sistema pode ficar de fora do que chega pela rede: quem
+    // manda a linha declarou as colunas dele e nao tem por que saber dela.
+    // Falta ela na lista -> entra `false` no fim; falta no objeto -> idem.
+    // Sem isso, `inserir` recusaria toda linha de todo cliente que existe
+    // hoje, porque a coluna e obrigatoria e o ausente vira nulo.
+    let sistema = esquema.coluna_softdeleted();
+    let padrao_de = |i: usize| -> Value {
+        if Some(i) == sistema {
+            Value::Bool(false)
+        } else {
+            Value::Null
+        }
+    };
     match j {
         Json::Lista(itens) => {
-            if itens.len() != colunas.len() {
+            let curta = sistema.is_some_and(|i| itens.len() == i);
+            if itens.len() != colunas.len() && !curta {
                 return Err(PhxError::Tipo(format!(
                     "a lista tem {} valores, a tabela tem {} colunas",
                     itens.len(),
                     colunas.len()
                 )));
             }
-            itens
+            colunas
                 .iter()
-                .zip(colunas.iter())
-                .map(|(v, c)| json_para_valor(v, &c.ty))
+                .enumerate()
+                .map(|(i, c)| match itens.get(i) {
+                    Some(v) => json_para_valor(v, &c.ty),
+                    None => Ok(padrao_de(i)),
+                })
                 .collect()
         }
         Json::Objeto(pares) => {
@@ -535,9 +580,10 @@ pub fn json_para_linha(j: &Json, esquema: &Schema) -> Result<Vec<Value>> {
             }
             colunas
                 .iter()
-                .map(|c| match j.campo(&c.nome) {
+                .enumerate()
+                .map(|(i, c)| match j.campo(&c.nome) {
                     Some(v) => json_para_valor(v, &c.ty),
-                    None => Ok(Value::Null),
+                    None => Ok(padrao_de(i)),
                 })
                 .collect()
         }
@@ -853,7 +899,9 @@ mod testes_esquema {
         .unwrap();
 
         assert_eq!(e.nome(), "pedidos");
-        assert_eq!(e.colunas().len(), 3);
+        // Tres declaradas mais a coluna de sistema, que entra sozinha no fim.
+        assert_eq!(e.colunas().len(), 4);
+        assert_eq!(e.coluna_softdeleted(), Some(3));
         assert!(!e.colunas()[0].nullable, "obrigatoria virou nullable");
         assert!(e.colunas()[1].nullable);
 

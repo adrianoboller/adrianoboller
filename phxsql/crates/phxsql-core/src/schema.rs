@@ -15,10 +15,30 @@ const MAGIC_ESQUEMA: &[u8; 4] = b"PSCH";
 ///
 /// A 3 acrescentou os metadados de coluna (`id`, `caption`, `descricao`,
 /// `mascara`), o marcador de chave primaria no indice e o modo de particao.
+/// A 4 acrescentou a coluna de sistema [`COLUNA_SOFTDELETED`] e o sinal de
+/// motivo obrigatorio.
+///
 /// A leitura ainda aceita a 2: tabela gravada antes abre, ganha um `id` v7
-/// sorteado na hora e os textos vazios. Escrever, so na 3.
-const VERSAO_ESQUEMA: u16 = 3;
+/// sorteado na hora e os textos vazios. Escrever, so na 4.
+///
+/// # Por que a v3 nao ganha a coluna ao ser lida
+///
+/// A coluna de sistema entra em [`Schema::new`], que e o caminho de CRIAR
+/// tabela. A leitura do disco usa outro caminho, que nao acrescenta nada: o
+/// `payload_len` sai da lista de colunas gravada, e uma coluna a mais
+/// deslocaria o offset de todas as seguintes. Uma tabela v3 continua legivel
+/// exatamente como esta -- so nao tem exclusao suave, e a mensagem de erro
+/// diz isso em vez de ler lixo.
+const VERSAO_ESQUEMA: u16 = 4;
 const VERSAO_ESQUEMA_MINIMA: u16 = 2;
+
+/// Nome da coluna de sistema que marca a linha como excluida sem excluir.
+///
+/// Toda tabela criada a partir da v4 tem esta coluna, no FIM da lista: no fim
+/// porque assim os offsets das colunas do usuario nao mudam de lugar quando
+/// ela entra, e quem monta a linha posicionalmente pode continuar mandando so
+/// as colunas que declarou.
+pub const COLUNA_SOFTDELETED: &str = "softdeleted";
 
 /// O que fazer com as linhas filhas quando a linha pai muda ou some.
 ///
@@ -296,10 +316,42 @@ pub struct Schema {
     offsets: Vec<usize>,
     bitmap_len: usize,
     payload_len: usize,
+    /// Exigir motivo escrito para marcar uma linha como excluida.
+    motivo_obrigatorio: bool,
 }
 
 impl Schema {
+    /// Esquema de uma tabela NOVA.
+    ///
+    /// Acrescenta a coluna de sistema [`COLUNA_SOFTDELETED`] no fim, se quem
+    /// chamou nao a declarou. Quem le esquema do disco nao passa por aqui --
+    /// ver [`Schema::do_disco`].
     pub fn new(
+        nome: impl Into<String>,
+        mut colunas: Vec<Column>,
+        indices: Vec<IndexDef>,
+    ) -> Result<Schema> {
+        if !colunas.iter().any(|c| c.nome == COLUNA_SOFTDELETED) {
+            colunas.push(
+                Column::new(COLUNA_SOFTDELETED, ColumnType::Bool)
+                    .obrigatoria()
+                    .com_caption("Excluido")
+                    .com_descricao(
+                        "Marca a linha como excluida sem apagar. \
+                         O motivo fica no .reason.",
+                    ),
+            );
+        }
+        Schema::do_disco(nome, colunas, indices)
+    }
+
+    /// Esquema montado EXATAMENTE com as colunas dadas, sem acrescentar nada.
+    ///
+    /// E o caminho da leitura do disco. Acrescentar uma coluna aqui deslocaria
+    /// o offset de todas as colunas seguintes e faria o motor ler o campo
+    /// errado de cada linha ja gravada -- silenciosamente, porque o CRC do
+    /// slot continuaria batendo: os bytes nao mudaram, so a interpretacao.
+    pub fn do_disco(
         nome: impl Into<String>,
         colunas: Vec<Column>,
         indices: Vec<IndexDef>,
@@ -419,6 +471,27 @@ impl Schema {
             )));
         }
 
+        // A coluna de sistema pode ser declarada a mao -- por quem esta
+        // recriando uma tabela, por exemplo --, mas nao com outro tipo. Um
+        // `softdeleted` Str seria uma coluna comum com nome reservado, e o
+        // motor passaria a marcar exclusao num campo que o usuario le como
+        // texto.
+        if let Some(c) = colunas.iter().find(|c| c.nome == COLUNA_SOFTDELETED) {
+            if c.ty != ColumnType::Bool {
+                return Err(PhxError::Esquema(format!(
+                    "a coluna {COLUNA_SOFTDELETED} e do motor e tem de ser Bool; \
+                     esta declarada como {:?}",
+                    c.ty
+                )));
+            }
+            if c.nullable {
+                return Err(PhxError::Esquema(format!(
+                    "a coluna {COLUNA_SOFTDELETED} nao pode aceitar nulo: \
+                     nulo seria um terceiro estado entre excluida e nao excluida"
+                )));
+            }
+        }
+
         let bitmap_len = colunas.len().div_ceil(8);
         let mut offsets = Vec::with_capacity(colunas.len());
         let mut pos = bitmap_len;
@@ -436,7 +509,28 @@ impl Schema {
             offsets,
             bitmap_len,
             payload_len: pos,
+            motivo_obrigatorio: false,
         })
+    }
+
+    /// Posicao da coluna de sistema `softdeleted`.
+    ///
+    /// `None` numa tabela gravada antes da v4 do esquema: ela nao tem a
+    /// coluna, e exclusao suave nela e recusada com essa explicacao.
+    pub fn coluna_softdeleted(&self) -> Option<usize> {
+        self.colunas
+            .iter()
+            .position(|c| c.nome == COLUNA_SOFTDELETED)
+    }
+
+    /// Exigir motivo escrito na exclusao. Escolhido ao criar a tabela.
+    pub fn com_motivo_obrigatorio(mut self, exigir: bool) -> Schema {
+        self.motivo_obrigatorio = exigir;
+        self
+    }
+
+    pub fn motivo_obrigatorio(&self) -> bool {
+        self.motivo_obrigatorio
     }
 
     /// Posicao da coluna `Sequence`, se a tabela tiver uma.
@@ -691,6 +785,9 @@ impl Schema {
         let (tag, coluna) = p.modo.tag();
         out.push(tag);
         out.extend_from_slice(&coluna.to_le_bytes());
+        // v4: exigir motivo escrito na exclusao. Vem no fim porque quem le uma
+        // v3 simplesmente para antes daqui.
+        out.push(self.motivo_obrigatorio as u8);
         out
     }
 
@@ -806,10 +903,14 @@ impl Schema {
         if versao >= 3 {
             paginacao.modo = ModoParticao::de_tag(leitor.u8()?, leitor.u16()?)?;
         }
+        let motivo_obrigatorio = versao >= 4 && leitor.u8()? != 0;
 
-        Schema::new(nome, colunas, indices)?
+        // `do_disco`, e nao `new`: a lista de colunas gravada e a verdade
+        // inteira. Ver a nota em `VERSAO_ESQUEMA`.
+        Schema::do_disco(nome, colunas, indices)?
             .com_chaves_estrangeiras(fks)
             .map(|e| e.com_paginacao_do_disco(paginacao))
+            .map(|e| e.com_motivo_obrigatorio(motivo_obrigatorio))
     }
 }
 
@@ -862,23 +963,27 @@ impl<'a> Leitor<'a> {
 mod tests {
     use super::*;
 
+    fn colunas_clientes() -> Vec<Column> {
+        vec![
+            Column::new("id", ColumnType::Int8).obrigatoria(),
+            Column::new("nome", ColumnType::Str(60)).obrigatoria(),
+            Column::new("cnpj", ColumnType::Str(14)),
+            Column::new(
+                "limite",
+                ColumnType::Decimal {
+                    precisao: 15,
+                    escala: 2,
+                },
+            ),
+            Column::new("foto", ColumnType::Bin),
+            Column::new("observacao", ColumnType::Memo),
+        ]
+    }
+
     fn esquema_clientes() -> Schema {
         Schema::new(
             "cadastroClientes",
-            vec![
-                Column::new("id", ColumnType::Int8).obrigatoria(),
-                Column::new("nome", ColumnType::Str(60)).obrigatoria(),
-                Column::new("cnpj", ColumnType::Str(14)),
-                Column::new(
-                    "limite",
-                    ColumnType::Decimal {
-                        precisao: 15,
-                        escala: 2,
-                    },
-                ),
-                Column::new("foto", ColumnType::Bin),
-                Column::new("observacao", ColumnType::Memo),
-            ],
+            colunas_clientes(),
             vec![
                 IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico(),
                 IndexDef::new("porNome", vec![IndexColumn::asc(1).sem_caixa()]),
@@ -890,13 +995,94 @@ mod tests {
     #[test]
     fn layout_do_payload() {
         let s = esquema_clientes();
-        // 6 colunas -> 1 byte de bitmap.
+        // 6 colunas declaradas + a de sistema -> 7, ainda 1 byte de bitmap.
+        assert_eq!(s.colunas().len(), 7);
         assert_eq!(s.bitmap_len(), 1);
         assert_eq!(s.offset_coluna(0).unwrap(), 1);
         assert_eq!(s.offset_coluna(1).unwrap(), 9);
         assert_eq!(s.offset_coluna(2).unwrap(), 69);
-        // 1 + 8 + 60 + 14 + 16 + 16 + 16
-        assert_eq!(s.payload_len(), 131);
+        // 1 + 8 + 60 + 14 + 16 + 16 + 16 + 1 do softdeleted
+        assert_eq!(s.payload_len(), 132);
+    }
+
+    /// A coluna de sistema entra por ultimo, e so por ultimo: as colunas do
+    /// usuario nao podem mudar de offset por causa dela.
+    #[test]
+    fn softdeleted_entra_no_fim_e_nao_desloca_ninguem() {
+        let com = esquema_clientes();
+        let sem = Schema::do_disco(
+            "clientes",
+            colunas_clientes(),
+            vec![IndexDef::new("por_nome", vec![IndexColumn::asc(1)])],
+        )
+        .unwrap();
+
+        let i = com.coluna_softdeleted().unwrap();
+        assert_eq!(i, com.colunas().len() - 1);
+        assert_eq!(com.colunas()[i].ty, ColumnType::Bool);
+        assert!(!com.colunas()[i].nullable);
+        assert!(sem.coluna_softdeleted().is_none());
+
+        for j in 0..sem.colunas().len() {
+            assert_eq!(
+                com.offset_coluna(j).unwrap(),
+                sem.offset_coluna(j).unwrap(),
+                "a coluna {j} mudou de lugar"
+            );
+        }
+    }
+
+    /// Este e o teste que protege a tabela ja gravada: ler um esquema v3 do
+    /// disco NAO pode inventar uma coluna. Se inventasse, cada linha passaria
+    /// a ser lida com os offsets deslocados -- e o CRC do slot continuaria
+    /// batendo, porque os bytes seriam os mesmos.
+    #[test]
+    fn esquema_sem_a_coluna_de_sistema_volta_do_disco_sem_ela() {
+        // Uma tabela gravada antes da v4 tem SO as colunas do usuario. O que
+        // este teste prova e que a volta do disco nao inventa a setima.
+        let antiga = Schema::do_disco("cadastroClientes", colunas_clientes(), vec![]).unwrap();
+        assert!(antiga.coluna_softdeleted().is_none());
+
+        let lido = Schema::desserializar(&antiga.serializar()).unwrap();
+        assert!(
+            lido.coluna_softdeleted().is_none(),
+            "a leitura acrescentou a coluna de sistema numa tabela que nao a tem"
+        );
+        assert_eq!(lido.colunas().len(), 6);
+        assert_eq!(lido.payload_len(), antiga.payload_len());
+        assert_eq!(lido, antiga);
+    }
+
+    /// A v3 nao tem o byte do motivo obrigatorio no fim. Ler uma nao pode
+    /// estourar nem trazer lixo -- tem de dar `false`.
+    #[test]
+    fn v3_no_disco_para_antes_do_byte_novo() {
+        let mut bytes = esquema_clientes().serializar();
+        bytes[4..6].copy_from_slice(&3u16.to_le_bytes());
+        bytes.pop();
+        let lido = Schema::desserializar(&bytes).unwrap();
+        assert!(!lido.motivo_obrigatorio());
+    }
+
+    #[test]
+    fn softdeleted_com_outro_tipo_e_recusada() {
+        let mut cols = colunas_clientes();
+        cols.push(Column::new(COLUNA_SOFTDELETED, ColumnType::Str(4)).obrigatoria());
+        let e = Schema::new("t", cols, vec![]).unwrap_err();
+        assert!(format!("{e}").contains("Bool"), "{e}");
+
+        let mut cols = colunas_clientes();
+        cols.push(Column::new(COLUNA_SOFTDELETED, ColumnType::Bool));
+        let e = Schema::new("t", cols, vec![]).unwrap_err();
+        assert!(format!("{e}").contains("nulo"), "{e}");
+    }
+
+    #[test]
+    fn motivo_obrigatorio_atravessa_o_disco() {
+        let s = esquema_clientes().com_motivo_obrigatorio(true);
+        let volta = Schema::desserializar(&s.serializar()).unwrap();
+        assert!(volta.motivo_obrigatorio());
+        assert_eq!(s, volta);
     }
 
     #[test]

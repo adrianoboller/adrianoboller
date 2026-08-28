@@ -133,6 +133,20 @@ impl Atividade {
             "inserir" => Atividade::Inserir,
             "atualizar" => Atividade::Alterar,
             "excluir" => Atividade::Excluir,
+            // Restaurar e desfazer uma exclusao: exige o mesmo poder de
+            // excluir, e nao mais. Quem pode tirar da lista pode devolver.
+            "restaurar" => Atividade::Excluir,
+            // O `.trash` e o `.reason` sao dos administradores, e a razao esta
+            // no conteudo dos dois. O `.trash` guarda o dado que alguem mandou
+            // apagar -- quem so tem `ler` perdeu o direito de ver aquela linha
+            // no instante em que ela foi excluida, e a lixeira devolveria o
+            // direito por outra porta. O `.reason` costuma ser ainda mais
+            // revelador que o registro: "fraude", "pedido de remocao do
+            // titular", "duplicidade com o contrato X".
+            "lixeira" | "trash" | "motivos" | "reasons" => Atividade::Administrar,
+            // Esvaziar a lixeira e a unica operacao do motor que apaga dado
+            // sem rede nenhuma embaixo.
+            "esvaziar_lixeira" => Atividade::Administrar,
             "criar_database" | "criar_schema" | "criar_tabela" | "duplicar_tabela"
             | "copiar_tabela" => Atividade::Criar,
             // Apagar uma tabela apaga os cinco arquivos de uma vez, e nao ha

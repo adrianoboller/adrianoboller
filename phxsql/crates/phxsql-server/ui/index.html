@@ -603,6 +603,36 @@ body,.cartao,.barra,.arvore,table,td,th{
 .fmt .f-ext{font-size:10.5px;font-family:"IBM Plex Mono",monospace;color:var(--texto-3)}
 .fmt .f-diz{font-size:10.5px;color:var(--texto-3);line-height:1.35}
 
+/* ------------------------------------------------- dialogo de exclusao
+   Um sobreposto e nao um `confirm()` do navegador porque a escolha aqui tem
+   DUAS partes -- o modo e o motivo --, e `confirm` so sabe perguntar sim ou
+   nao. E o modo importa: um dos dois nao tem volta. */
+.sobre{position:fixed;inset:0;background:rgba(1,4,24,.62);z-index:90;
+       display:flex;align-items:center;justify-content:center;padding:20px}
+.caixa{background:var(--painel);border:1px solid var(--linha-forte);
+       border-radius:12px;max-width:560px;width:100%;padding:20px 22px;
+       box-shadow:0 18px 50px rgba(0,0,0,.45)}
+.caixa h3{margin:0 0 4px;font-size:16px}
+.caixa .sub{color:var(--texto-3);font-size:11.5px;margin-bottom:14px}
+.modos{display:grid;gap:8px;margin-bottom:14px}
+.modo{display:flex;gap:10px;align-items:flex-start;padding:11px 13px;
+      background:var(--painel-2);border:1px solid var(--linha);border-radius:9px;
+      cursor:pointer;text-align:left;font:inherit;color:var(--texto-2);width:auto}
+.modo:hover{border-color:var(--linha-forte)}
+.modo.escolhido{border-color:var(--laranja);color:var(--texto)}
+.modo.escolhido.risco{border-color:var(--vermelhao)}
+.modo .m-ico{font-size:16px;line-height:1.2}
+.modo .m-rot{font-size:13px;font-weight:600;display:block}
+.modo .m-diz{font-size:10.5px;color:var(--texto-3);line-height:1.4;display:block;
+             margin-top:2px}
+.marca-excluida{color:var(--log);font-weight:600}
+tr.linha-excluida td{opacity:.55;text-decoration:line-through}
+.chip-visao{display:inline-flex;gap:0;border:1px solid var(--linha-forte);
+            border-radius:7px;overflow:hidden;margin-left:8px}
+.chip-visao button{padding:3px 10px;font-size:11px;background:transparent;
+                   border:0;color:var(--texto-3);cursor:pointer;font:inherit;width:auto}
+.chip-visao button.ativo{background:var(--laranja);color:#10060a}
+
 .botao.mini{width:auto;padding:4px 10px;font-size:11px;font-weight:500;
             background:transparent;border:1px solid var(--linha-forte);
             color:var(--texto-3)}
@@ -1898,37 +1928,69 @@ async function verDatabase(db) {
     tr.onclick = () => verConteudoEditavel(db, tr.dataset.tab));
 }
 
-/** A grade de dados, com a coluna de acao que abre a ficha. */
-async function verConteudoEditavel(db, tab) {
+/** A grade de dados, com a coluna de acao que abre a ficha.
+ *
+ * A grade tem DOIS modos: o normal, que nao enxerga linha marcada como
+ * excluida, e o dos excluidos, que mostra so elas com o botao de restaurar.
+ * O segundo existe porque marcar sem ter como desmarcar seria so uma forma
+ * elaborada de perder o dado. */
+async function verConteudoEditavel(db, tab, verExcluidos = false) {
   est.atual = { db, tab };
   folha(`${tab}`, `${db} · clique numa linha para editar`,
         `<div class="centro">carregando…</div>`);
 
   const [e, r] = await Promise.all([
     api("esquema", { database: db, tabela: tab }),
-    api("varrer", { database: db, tabela: tab, max: est.teto }),
+    api("varrer", { database: db, tabela: tab, max: est.teto,
+                    visao: verExcluidos ? "excluidas" : "ativas" }),
   ]);
   est.esquemaAtual = e;
-  const cols = e.colunas.map(c => c.nome);
+  // A coluna de sistema nao vira coluna da grade: quem a le e o estilo da
+  // linha e o botao de restaurar, e um campo "softdeleted: nao" repetido em
+  // toda linha so ocuparia espaco.
+  const sistema = (e.colunas.find(c => c.sistema) || {}).nome || "softdeleted";
+  const cols = e.colunas.filter(c => c.nome !== sistema).map(c => c.nome);
 
   const barra = `<div class="acoes">
       <button class="botao" id="btNova">Nova linha</button>
       <button class="botao secundario" id="btVoltarDb">← ${esc(db)}</button>
+      <span class="chip-visao">
+        <button id="vwAtivas" class="${verExcluidos ? "" : "ativo"}">ativas</button>
+        <button id="vwExcl" class="${verExcluidos ? "ativo" : ""}">excluídas</button>
+      </span>
       <span class="leg">${r.linhas.length} linha(s) · teto de ${est.teto}</span>
     </div>`;
 
+  const vazio = verExcluidos
+    ? `<div class="vazio">nenhuma linha marcada como excluída</div>`
+    : `<div class="vazio">tabela vazia</div>`;
+
   $("#painel").innerHTML = barra + (r.linhas.length
     ? tabela([{t:"rowid",cls:"num"}, ...cols.map(c => ({t:c})), {t:""}],
-        r.linhas, l => `<tr class="linha-dado" data-rowid="${esc(String(l.rowid))}">
+        r.linhas, l => `<tr class="linha-dado${verExcluidos ? " linha-excluida" : ""}"
+              data-rowid="${esc(String(l.rowid))}">
           <td class="num dado">${esc(String(l.rowid))}</td>
-          ${cols.map(c => `<td class="dado">${celulaValor(l[c])}</td>`).join("")}
-          <td><span class="pino">editar</span></td></tr>`)
-    : `<div class="vazio">tabela vazia</div>`);
+          ${cols.map(c => celulaValor(l[c])).join("")}
+          <td>${verExcluidos
+            ? `<button class="botao mini restaurar" data-rowid="${esc(String(l.rowid))}">restaurar</button>`
+            : `<span class="pino">editar</span>`}</td></tr>`)
+    : vazio);
 
   $("#btNova").onclick = () => abrirFicha(db, tab, null);
   $("#btVoltarDb").onclick = () => verDatabase(db);
+  $("#vwAtivas").onclick = () => verConteudoEditavel(db, tab, false);
+  $("#vwExcl").onclick = () => verConteudoEditavel(db, tab, true);
   $$("#painel .linha-dado").forEach(tr =>
-    tr.onclick = () => abrirFicha(db, tab, +tr.dataset.rowid));
+    tr.onclick = ev => {
+      // O clique no botao de restaurar nao pode abrir a ficha junto.
+      if (ev.target.closest(".restaurar")) return;
+      abrirFicha(db, tab, +tr.dataset.rowid);
+    });
+  $$("#painel .restaurar").forEach(b => b.onclick = ev => {
+    ev.stopPropagation();
+    restaurarLinha(db, tab, +b.dataset.rowid,
+      () => verConteudoEditavel(db, tab, true));
+  });
 }
 
 /** Um campo por coluna, do tipo certo. `Bin` e `Memo` moram fora do slot. */
@@ -1976,20 +2038,36 @@ async function abrirFicha(db, tab, rowid) {
     linha = r;
   }
 
+  // A coluna de sistema NAO vira campo de formulario. Quem manda nela e o
+  // botao de excluir e o de restaurar; oferecer um `select` com «verdadeiro /
+  // falso» convidaria a excluir uma linha digitando, sem motivo registrado e
+  // sem passar por lugar nenhum que registre.
+  const sistema = (e.colunas.find(c => c.sistema) || {}).nome || "softdeleted";
+  const editaveis = e.colunas.filter(c => c.nome !== sistema);
+  const marcada = linha[sistema] === true;
+
   folha(novo ? `Nova linha em ${tab}` : `${tab} · registro ${rowid}`,
     novo ? `${db} · em branco significa nulo`
          : `${db} · rowid ${rowid} — a posição física, que não muda`,
-    `<form class="ficha-edit" id="fichaEdit" autocomplete="off">
-       ${e.colunas.map(c => campoDaColuna(c, linha[c.nome])).join("")}
+    `${marcada ? `<div class="aviso">
+        <b class="marca-excluida">Esta linha está marcada como excluída.</b>
+        Ela não aparece nas listas e continua inteira no <code>.reg</code>.
+        <button class="botao mini" id="btRestaurarFicha">restaurar</button>
+      </div>` : ""}
+     <form class="ficha-edit" id="fichaEdit" autocomplete="off">
+       ${editaveis.map(c => campoDaColuna(c, linha[c.nome])).join("")}
      </form>
      <div class="acoes">
        <button class="botao" id="btSalvar">${novo ? "Incluir" : "Salvar"}</button>
-       ${novo ? "" : `<button class="botao perigo" id="btExcluir">Excluir</button>`}
+       ${novo || marcada ? "" : `<button class="botao perigo" id="btExcluir">Excluir</button>`}
        <button class="botao secundario" id="btVoltar">Voltar</button>
        <span class="leg" id="recadoFicha"></span>
      </div>`);
 
-  const valores = () => e.colunas.map(c => {
+  // A lista sai SEM a coluna de sistema, e o motor entende: numa inclusao ela
+  // nasce falsa, e numa alteracao mantem o que a linha ja tinha. E o que
+  // impede um «salvar» de rotina de ressuscitar linha marcada.
+  const valores = () => editaveis.map(c => {
     const el = $(`#f_${c.nome}`);
     const v = el.value.trim();
     if (v === "") return null;              // vazio e NULL, sempre
@@ -1998,6 +2076,14 @@ async function abrirFicha(db, tab, rowid) {
     if (c.tipo === "Real4" || c.tipo === "Real8") return Number(v);
     return v;                                // texto, data, decimal, uuid…
   });
+
+  if (marcada) $("#btRestaurarFicha").onclick = ev => {
+    ev.preventDefault();
+    restaurarLinha(db, tab, rowid, () => {
+      est.esquemaAtual = null;
+      abrirFicha(db, tab, rowid);
+    });
+  };
 
   $("#btSalvar").onclick = async ev => {
     ev.preventDefault();
@@ -2019,17 +2105,14 @@ async function abrirFicha(db, tab, rowid) {
     }
   };
 
-  if (!novo) $("#btExcluir").onclick = async ev => {
+  // O botao nao existe na linha ja marcada -- ali o que se oferece e
+  // restaurar. Sem esta guarda, ligar o clique estoura na abertura da ficha.
+  if (!novo && !marcada) $("#btExcluir").onclick = ev => {
     ev.preventDefault();
-    if (!confirm(`Excluir o registro ${rowid} de ${tab}?\n\n`
-      + `O slot fica marcado como livre e NÃO é reaproveitado — é assim que a `
-      + `ordem de digitação se mantém.`)) return;
-    try {
-      await api("excluir", { database: db, tabela: tab, rowid });
-      avisar(`registro ${rowid} excluído`);
+    dialogoExcluir(db, tab, rowid, () => {
       est.esquemaAtual = null;
       verConteudoEditavel(db, tab);
-    } catch (err) { avisar(String(err), true); }
+    });
   };
 
   $("#btVoltar").onclick = ev => { ev.preventDefault(); verConteudoEditavel(db, tab); };
@@ -2195,8 +2278,14 @@ async function gerirTabela(db, tab) {
     ["nova", "✚", "Nova tabela neste database",
      "Colunas, índices e paginação. A paginação entra aqui e não muda depois.",
      () => telaNovaTabela(db)],
+    ["lixeira", "♲", "Lixeira da tabela",
+     "As linhas que saíram do .reg, inteiras e com os anexos. Só administrador.",
+     () => telaLixeira(db, tab)],
+    ["motivos", "✎", "Motivos das exclusões",
+     "Por que cada linha foi excluída, por quem e quando. Só administrador.",
+     () => telaMotivos(db, tab)],
     ["excluir", "🗑", "Excluir tabela",
-     "Apaga o .reg, o .ndx, o .bin, o .memo e o .log de uma vez. Não há desfazer.",
+     "Apaga os sete arquivos da tabela de uma vez. Não há desfazer.",
      () => excluirTabelaDe(db, tab)],
   ];
 
@@ -2478,7 +2567,7 @@ function desenharNovaTabela(db) {
   const pk = r.indices.find(x => x.primario && x.nome);
   const colsDaPk = pk ? pk.colunas.split(",").map(s => s.trim().split(/\s+/)[0]).filter(Boolean) : [];
 
-  folha("Nova tabela", `${db} · cinco arquivos nascem juntos`,
+  folha("Nova tabela", `${db} · sete arquivos nascem juntos`,
     `<form class="criar" id="formNovaTab" autocomplete="off">
        <div class="bloco">
          <label class="largo"><span>nome da tabela</span>
@@ -2520,6 +2609,20 @@ function desenharNovaTabela(db) {
              <td class="num"><input type="radio" name="nt_pk" class="i-pk" data-i="${i}" ${x.primario ? "checked" : ""}></td>
              <td><button type="button" class="mini perigo i-rm" data-i="${i}">remover</button></td>
          </tr>`).join("")}</tbody></table></div>
+
+       <h3 class="secao">Exclusão
+         <label class="chk"><input type="checkbox" id="nt_motivo_obrig"
+           ${r.motivo_obrigatorio ? "checked" : ""}> exigir motivo escrito</label></h3>
+       <p class="leg">Toda tabela nasce com a coluna de sistema
+         <code>softdeleted</code>: excluir <b>marca</b> a linha, que some das
+         listas e continua inteira no <code>.reg</code>, e dá para restaurar.
+         Quem manda apagar de vez tem a linha guardada no <code>.trash</code>
+         antes de o slot sair, e o motivo vai para o <code>.reason</code> com a
+         data, a hora e quem foi.<br>
+         Marcada, esta caixa faz o motor <b>recusar</b> qualquer exclusão desta
+         tabela sem uma frase escrita. Vale para tabela cujo apagamento alguém
+         vai ter de justificar depois — e não para tabela de rascunho, onde
+         obrigar só ensina todo mundo a digitar um ponto.</p>
 
        <h3 class="secao">Partição
          <label class="chk"><input type="checkbox" id="nt_particionada"
@@ -2647,6 +2750,7 @@ function ligarNovaTabela(db) {
     r.nome = $("#nt_nome").value.trim();
     r.schema = $("#nt_schema").value.trim();
     r.particionada = $("#nt_particionada").checked;
+    r.motivo_obrigatorio = $("#nt_motivo_obrig").checked;
     if ($("#nt_regra")) r.particao = $("#nt_regra").value;
     if ($("#nt_pcol")) r.particao_coluna = $("#nt_pcol").value;
     if ($("#nt_pag")) r.pag = +$("#nt_pag").value || 0;
@@ -2718,6 +2822,7 @@ function ligarNovaTabela(db) {
         nome: x.nome, unico: x.unico, primario: x.primario,
         colunas: x.colunas.split(",").map(s => s.trim()).filter(Boolean),
       })),
+      motivo_obrigatorio: !!r.motivo_obrigatorio,
     };
 
     if (r.particionada) {
@@ -4361,6 +4466,310 @@ async function telaExportar(db, tab) {
   });
 }
 
+/* ================================================= Exclusão: as duas formas
+   O botão de excluir passou a perguntar DUAS coisas, e por isso deixou de ser
+   um `confirm()`: qual das duas exclusões, e por quê.
+
+   O padrão é a reversível, e isso é uma decisão e não uma preferência: a que
+   não tem volta não pode ser escolhida por distração. Quem quer apagar de vez
+   troca o modo e lê, em vermelho, o que vai acontecer.
+
+   O campo do motivo aparece sempre. Fica obrigatório quando a tabela foi
+   criada com «exigir motivo» — e aí o servidor recusa mesmo que a tela deixe
+   passar, porque validação de tela é conveniência e não regra. */
+
+/** Pergunta o modo e o motivo, e executa. `aoTerminar` roda se deu certo. */
+async function dialogoExcluir(db, tab, rowid, aoTerminar) {
+  // Quem sabe se a tabela exige motivo é o servidor. Perguntar antes evita
+  // o vaivém de mandar sem motivo e receber a recusa.
+  let exige = false;
+  try {
+    exige = !!(await api("motivos", { database: db, tabela: tab, limite: 1 })).motivo_obrigatorio;
+  } catch (_) {
+    // Sem poder de administrar não dá para saber, e isso não pode impedir a
+    // exclusão: quem tem `excluir` continua excluindo. O servidor decide.
+  }
+
+  const fundo = document.createElement("div");
+  fundo.className = "sobre";
+  fundo.innerHTML = `
+    <div class="caixa" role="dialog" aria-modal="true" aria-label="Excluir registro">
+      <h3>Excluir o registro ${rowid}</h3>
+      <div class="sub">${esc(db)} · ${esc(tab)}</div>
+      <div class="modos" id="modosExc">
+        <button class="modo escolhido" data-modo="suave">
+          <span class="m-ico">🚫</span>
+          <span><span class="m-rot">Marcar como excluído</span>
+            <span class="m-diz">A linha some das listas e continua no
+              <code>.reg</code>, inteira. Dá para restaurar.</span></span>
+        </button>
+        <button class="modo risco" data-modo="fisico">
+          <span class="m-ico">🗑</span>
+          <span><span class="m-rot">Excluir de vez</span>
+            <span class="m-diz">Sai do <code>.reg</code>. A linha inteira vai
+              antes para o <code>.trash</code>, de onde só o administrador
+              lê — e o slot não é reaproveitado.</span></span>
+        </button>
+      </div>
+      <label class="cmp"><span>Motivo${exige ? " <b>(obrigatório)</b>" : ""}</span>
+        <input id="excMotivo" class="campo" maxlength="2000"
+               placeholder="${exige ? "esta tabela exige o motivo escrito"
+                                    : "opcional, mas fica registrado no .reason"}">
+        <span class="leg">Vai para o <code>.reason</code> com a data, a hora e
+          quem você é. Sobrevive à linha.</span></label>
+      <div id="excRecado"></div>
+      <div class="acoes">
+        <button class="botao secundario" id="btExcNao">Cancelar</button>
+        <button class="botao" id="btExcSim">Marcar como excluído</button>
+      </div>
+    </div>`;
+  document.body.appendChild(fundo);
+
+  const fechar = () => fundo.remove();
+  let modo = "suave";
+
+  const pintar = () => {
+    [...fundo.querySelectorAll(".modo")].forEach(b =>
+      b.classList.toggle("escolhido", b.dataset.modo === modo));
+    const sim = fundo.querySelector("#btExcSim");
+    sim.textContent = modo === "suave" ? "Marcar como excluído" : "Excluir de vez";
+    sim.classList.toggle("perigo", modo === "fisico");
+  };
+  [...fundo.querySelectorAll(".modo")].forEach(b => b.onclick = ev => {
+    ev.preventDefault(); modo = b.dataset.modo; pintar();
+  });
+  pintar();
+
+  fundo.querySelector("#btExcNao").onclick = ev => { ev.preventDefault(); fechar(); };
+  fundo.onclick = ev => { if (ev.target === fundo) fechar(); };
+  document.addEventListener("keydown", function fuga(ev) {
+    if (ev.key === "Escape") { fechar(); document.removeEventListener("keydown", fuga); }
+  });
+  setTimeout(() => fundo.querySelector("#excMotivo").focus(), 30);
+
+  fundo.querySelector("#btExcSim").onclick = async ev => {
+    ev.preventDefault();
+    const motivo = fundo.querySelector("#excMotivo").value.trim();
+    if (exige && !motivo) {
+      fundo.querySelector("#excRecado").innerHTML =
+        `<div class="aviso mal">esta tabela exige o motivo escrito</div>`;
+      return;
+    }
+    // A que não tem volta pede uma confirmação a mais. A reversível não pede:
+    // encher de confirmação o caminho seguro ensina a clicar em «sim» sem ler,
+    // e aí a confirmação que importa também passa batida.
+    if (modo === "fisico" &&
+        !confirm(`Excluir de vez o registro ${rowid}?\n\n`
+          + `A linha sai do .reg. Ela fica no .trash, que só o administrador `
+          + `lê, e o slot NÃO é reaproveitado — é assim que a ordem de `
+          + `digitação se mantém.`)) return;
+    try {
+      const r = await api("excluir",
+        { database: db, tabela: tab, rowid, motivo, fisico: modo === "fisico" });
+      fechar();
+      avisar(r.modo === "suave"
+        ? `registro ${rowid} marcado como excluído — dá para restaurar`
+        : `registro ${rowid} excluído; a linha está no .trash`);
+      if (aoTerminar) aoTerminar();
+    } catch (err) {
+      fundo.querySelector("#excRecado").innerHTML =
+        `<div class="aviso mal">${esc(String(err))}</div>`;
+    }
+  };
+}
+
+/** Restaura uma linha marcada. */
+async function restaurarLinha(db, tab, rowid, aoTerminar) {
+  const motivo = prompt(`Restaurar o registro ${rowid}?\n\n`
+    + `Motivo (fica no .reason):`, "");
+  if (motivo === null) return;
+  try {
+    await api("restaurar", { database: db, tabela: tab, rowid, motivo: motivo.trim() });
+    avisar(`registro ${rowid} restaurado`);
+    if (aoTerminar) aoTerminar();
+  } catch (err) { avisar(String(err), true); }
+}
+
+/* ------------------------------------------------------------- a lixeira
+   Só quem administra chega aqui, e o servidor recusa quem não tem o poder.
+   A tela diz isso com todas as letras em vez de mostrar uma lista vazia. */
+
+async function telaLixeira(db, tab) {
+  db = db || (est.atual || {}).db || databaseCorrente();
+  tab = tab || (est.atual || {}).tab;
+  if (!db || !tab) return avisar("escolha uma tabela primeiro", true);
+
+  folha(`Lixeira de ${tab}`, `${esc(db)} · carregando…`,
+    `<div class="centro">carregando…</div>`);
+  let d;
+  try {
+    d = await api("lixeira", { database: db, tabela: tab, limite: 300 });
+  } catch (e) {
+    folha(`Lixeira de ${tab}`, esc(db),
+      `<div class="aviso mal">${esc(String(e))}</div>
+       <p class="leg">O <code>.trash</code> guarda o dado que alguém mandou
+         apagar. Ver o conteúdo dele exige <b>administrar</b> — quem só tem
+         <code>ler</code> perdeu o direito àquela linha no instante em que ela
+         foi excluída, e a lixeira devolveria o direito por outra porta.</p>
+       <div class="acoes">
+         <button class="botao secundario" id="btVoltaLix">← Gerir tabelas</button>
+       </div>`);
+    $("#btVoltaLix").onclick = () => gerirTabelasAtual();
+    return;
+  }
+
+  const cols = (d.colunas || []).filter(c => !c.sistema);
+  const itens = d.descartadas || [];
+  const EXTERNO = t => /^(Bin|Memo)$/.test(String(t || ""));
+  // Um campo externo vazio na listagem quer dizer «não carreguei», e não
+  // «não tinha». Dizer NULL nos dois casos faria quem investiga concluir que
+  // a foto nunca existiu — que é exatamente o oposto do que a lixeira serve
+  // para provar. O botão «ver» busca aquela linha inteira.
+  const celulaDa = (item, c) =>
+    (!d.anexos_carregados && EXTERNO(c.tipo) && item.anexos > 0)
+      ? `<td class="dado nulo">anexo · não carregado</td>`
+      : celulaValor((item.linha || {})[c.nome]);
+  $("#subtitulo").textContent =
+    `${esc(db)} · ${fmt(d.total)} linha(s), ${fmtBytes(d.bytes)}`;
+
+  $("#painel").innerHTML =
+    `<p class="leg">Cada linha aqui saiu do <code>.reg</code>. Ela foi gravada
+       neste arquivo <b>e o disco confirmou</b> antes de o slot ser liberado:
+       entre perder e duplicar, o motor duplica.</p>
+     ${itens.length === 0
+       ? `<div class="aviso">A lixeira está vazia. Nenhuma linha desta tabela
+            foi excluída de vez.</div>`
+       : tabela(
+           [{ t: "quando" }, { t: "rowid" }, { t: "quem" }, { t: "anexos", cls: "num" },
+            ...cols.map(c => ({ t: c.rotulo || c.nome })), { t: "" }],
+           itens,
+           d_ => `<tr>
+             <td class="dado">${esc(d_.quando)}</td>
+             <td class="num">${d_.rowid}</td>
+             <td>${esc(d_.usuario_nome || (d_.usuario ? "#" + d_.usuario : "—"))}</td>
+             <td class="num">${d_.anexos}</td>
+             ${d_.aviso
+               ? `<td colspan="${cols.length}" class="mal">${esc(d_.aviso)}</td>`
+               : cols.map(c => celulaDa(d_, c)).join("")}
+             <td>${d_.anexos > 0 && !d.anexos_carregados
+               ? `<button class="botao mini ver-lixo" data-uuid="${esc(d_.uuid)}">ver inteira</button>`
+               : ""}</td>
+           </tr>`)}
+     <div class="acoes">
+       <button class="botao secundario" id="btVoltaLix">← Gerir tabelas</button>
+       <button class="botao secundario" id="btVerMotivos">Ver os motivos</button>
+       ${itens.length ? `<button class="botao perigo" id="btEsvaziar">Esvaziar a lixeira</button>` : ""}
+     </div>`;
+
+  $("#btVoltaLix").onclick = () => gerirTabelasAtual();
+  $("#btVerMotivos").onclick = () => telaMotivos(db, tab);
+  $$("#painel .ver-lixo").forEach(b => b.onclick = () => verLinhaDescartada(db, tab, b.dataset.uuid));
+  const bt = $("#btEsvaziar");
+  if (bt) bt.onclick = async () => {
+    const motivo = prompt(
+      `Esvaziar a lixeira de ${tab}?\n\n`
+      + `Isto apaga ${d.total} linha(s) DE VEZ — daqui não volta.\n`
+      + `O expurgo fica registrado no .reason antes de o dado sair.\n\n`
+      + `Motivo (obrigatório):`, "");
+    if (motivo === null) return;
+    if (!motivo.trim()) return avisar("o motivo é obrigatório para esvaziar", true);
+    try {
+      const r = await api("esvaziar_lixeira", { database: db, tabela: tab, motivo: motivo.trim() });
+      avisar(`${fmt(r.apagadas)} linha(s) apagadas de vez`);
+      telaLixeira(db, tab);
+    } catch (err) { avisar(String(err), true); }
+  };
+}
+
+/** Uma linha da lixeira, inteira, com os anexos. */
+async function verLinhaDescartada(db, tab, uuid) {
+  let d;
+  try {
+    d = await api("lixeira", { database: db, tabela: tab, uuid });
+  } catch (e) { return avisar(String(e), true); }
+  const item = (d.descartadas || [])[0];
+  if (!item) return avisar("essa linha não está mais na lixeira", true);
+  const cols = (d.colunas || []).filter(c => !c.sistema);
+
+  folha(`Linha descartada`, `${esc(db)} · ${esc(tab)} · rowid ${item.rowid}`,
+    `<div class="fichas">
+       <div class="ficha"><div class="v">${esc(item.quando)}</div><div class="r">quando</div></div>
+       <div class="ficha"><div class="v">${esc(item.usuario_nome || "—")}</div><div class="r">quem excluiu</div></div>
+       <div class="ficha"><div class="v">${item.anexos}</div><div class="r">anexos</div></div>
+       <div class="ficha"><div class="v">${fmtBytes(item.bytes)}</div><div class="r">no .trash</div></div>
+     </div>
+     ${item.aviso ? `<div class="aviso mal">${esc(item.aviso)}</div>` : ""}
+     ${tabela([{ t: "coluna" }, { t: "valor" }], cols,
+        c => `<tr><td class="dado"><b>${esc(c.rotulo || c.nome)}</b>
+                <span class="leg">${esc(c.tipo)}</span></td>
+              ${celulaValor((item.linha || {})[c.nome])}</tr>`)}
+     <p class="leg">O <code>uuid</code> deste descarte é
+       <code>${esc(item.uuid)}</code>. É um v7: ordenar por ele é ordenar por
+       quando aconteceu.</p>
+     <div class="acoes">
+       <button class="botao secundario" id="btVoltaLinha">← Lixeira</button>
+     </div>`);
+  $("#btVoltaLinha").onclick = () => telaLixeira(db, tab);
+}
+
+/* ------------------------------------------------------------ os motivos */
+
+async function telaMotivos(db, tab) {
+  db = db || (est.atual || {}).db || databaseCorrente();
+  tab = tab || (est.atual || {}).tab;
+  if (!db || !tab) return avisar("escolha uma tabela primeiro", true);
+
+  folha(`Motivos de ${tab}`, `${esc(db)} · carregando…`,
+    `<div class="centro">carregando…</div>`);
+  let d;
+  try {
+    d = await api("motivos", { database: db, tabela: tab, limite: 500 });
+  } catch (e) {
+    folha(`Motivos de ${tab}`, esc(db),
+      `<div class="aviso mal">${esc(String(e))}</div>
+       <p class="leg">O <code>.reason</code> costuma ser mais revelador que o
+         registro que foi excluído — «fraude», «pedido de remoção do titular»,
+         «duplicidade com o contrato X». Por isso exige <b>administrar</b>.</p>
+       <div class="acoes">
+         <button class="botao secundario" id="btVoltaMot">← Gerir tabelas</button>
+       </div>`);
+    $("#btVoltaMot").onclick = () => gerirTabelasAtual();
+    return;
+  }
+
+  const CORES = { suave: "var(--aviso)", fisica: "var(--log)",
+                  restauracao: "var(--ok)", expurgo: "var(--vermelhao)" };
+  const regs = d.motivos || [];
+  $("#subtitulo").textContent = `${esc(db)} · ${fmt(d.total)} registro(s)`;
+  $("#painel").innerHTML =
+    `<p class="leg">O <code>.log</code> diz que houve uma exclusão no rowid tal,
+       no instante tal. O que ele não tem onde dizer — o evento dele tem 36
+       bytes fixos — é <b>por quê</b>. É este arquivo.
+       ${d.motivo_obrigatorio
+         ? `<b>Esta tabela exige motivo escrito</b> em toda exclusão.`
+         : `Esta tabela não exige motivo; o campo continua valendo.`}</p>
+     ${regs.length === 0
+       ? `<div class="aviso">Nenhuma exclusão registrada nesta tabela.</div>`
+       : tabela(
+           [{ t: "quando" }, { t: "o quê" }, { t: "rowid" }, { t: "registro" },
+            { t: "quem" }, { t: "motivo" }],
+           regs,
+           m => `<tr>
+             <td class="dado">${esc(m.quando)}</td>
+             <td><b style="color:${CORES[m.tipo] || "var(--texto-2)"}">${esc(m.tipo)}</b></td>
+             <td class="num">${m.rowid || "—"}</td>
+             <td class="dado">${esc(m.identidade || "—")}</td>
+             <td>${esc(m.usuario_nome || (m.usuario ? "#" + m.usuario : "—"))}</td>
+             <td>${esc(m.motivo || "—")}</td>
+           </tr>`)}
+     <div class="acoes">
+       <button class="botao secundario" id="btVoltaMot">← Gerir tabelas</button>
+       <button class="botao secundario" id="btVerLixo">Ver a lixeira</button>
+     </div>`;
+  $("#btVoltaMot").onclick = () => gerirTabelasAtual();
+  $("#btVerLixo").onclick = () => telaLixeira(db, tab);
+}
+
 /* ============================================ Sessões e estatísticas de uso
    Duas telas que o console não tinha e que todo motor maduro tem: quem está
    falando agora (o SHOW PROCESSLIST) e o que o log já sabia e ninguém
@@ -5269,6 +5678,7 @@ const ICO = {
   grade: `<rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke-width="1.6"/><path d="M3 9h18M9 9v11M15 9v11" stroke-width="1.4"/>`,
   // Seta para baixo saindo de uma folha: o dado saindo da tabela para o disco
   // de quem pediu. E o espelho do `importar`, de proposito.
+  lixeira: `<path d="M4 6.5h16M9.5 6.5V4.6A1.1 1.1 0 0110.6 3.5h2.8a1.1 1.1 0 011.1 1.1v1.9" fill="none" stroke-width="1.6" stroke-linecap="round"/><path d="M6.2 6.5l.9 13a1.4 1.4 0 001.4 1.3h7a1.4 1.4 0 001.4-1.3l.9-13" fill="none" stroke-width="1.6"/><path d="M10.2 10.5v6.5M13.8 10.5v6.5" fill="none" stroke-width="1.5" stroke-linecap="round"/>`,
   exportar: `<path d="M12 3v11M8 10.5l4 4 4-4" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" transform="rotate(180 12 12)"/><path d="M4 17.5v2a1.5 1.5 0 001.5 1.5h13a1.5 1.5 0 001.5-1.5v-2" fill="none" stroke-width="1.6"/>`,
   // Dois circulos que se cruzam, com o meio cheio: e o INNER JOIN, que e a
   // junção que todo mundo desenha quando explica junção.
@@ -5319,6 +5729,7 @@ const FERRAMENTAS = [
   { ico:"elo",      rot:"DbLink",     cor:"var(--memo)",   faz:() => telaDbLink() },
   "risco",
   { ico:"troca",    rot:"Transações", cor:"var(--log)",    faz:verTransacoes },
+  { ico:"lixeira",  rot:"Lixeira",    cor:"var(--log)",    faz:() => telaLixeira() },
   { ico:"exportar", rot:"Exportar",   cor:"var(--ok)",     faz:() => telaExportar() },
   { ico:"importar", rot:"Importar",   cor:"var(--bin)",    faz:null,
     falta:"Ler CSV, .tps do TopSpeed(R) ou outra base e gravar como tabela "
@@ -5507,7 +5918,7 @@ async function abrirConsulta() {
            ? ` · atalho pelo mapa de <code>${esc(r.por_mapa)}</code>` : ""}</p>` +
         (linhas.length
           ? tabela(cols.map(c => ({ t: c })), linhas,
-              l => `<tr>${cols.map(c => `<td class="dado">${celulaValor(l[c])}</td>`).join("")}</tr>`)
+              l => `<tr>${cols.map(c => celulaValor(l[c])).join("")}</tr>`)
           : `<div class="vazio">nada encontrado</div>`);
     } catch (e) {
       saida.innerHTML = `<div class="nota"><p>${esc(String(e))}</p>
@@ -5574,6 +5985,11 @@ const MENUS = [
     { rot:"Índices",              ico:"⑂", quando:comTabela, faz:() => irAba("indices") },
     { rot:"Diário",               ico:"◷", quando:comTabela, faz:() => irAba("diario") },
     { rot:"Integridade",          ico:"⚑", quando:comTabela, faz:() => irAba("integridade") },
+    "sep",
+    // Os tres arquivos que so o administrador le ficam juntos, e o menu diz
+    // isso no rotulo: descobrir a restricao so depois de clicar e pior.
+    { rot:"Lixeira da tabela",    ico:"♲", quando:comTabela, faz:() => telaLixeira() },
+    { rot:"Motivos das exclusões", ico:"✎", quando:comTabela, faz:() => telaMotivos() },
     "sep",
     { rot:"Duplicar tabela…",     ico:"⧉", quando:comTabela,
       faz:() => duplicarTabelaPara(est.atual.db, est.atual.tab) },

@@ -1,22 +1,32 @@
 # Formato de arquivo do PhxSql
 
-Uma tabela de dados do PhxSql é composta por cinco arquivos físicos que
-compartilham o mesmo nome-base — mais um sexto, opcional:
+Uma tabela de dados do PhxSql é composta por sete arquivos físicos que
+compartilham o mesmo nome-base — mais um oitavo, opcional:
 
 ```
-cadastroClientes.reg  +  .ndx  +  .bin  +  .memo  +  .log  =  cadastroClientes
+cadastroClientes.reg + .ndx + .bin + .memo + .log + .trash + .reason
                      ( +  .bkp, o espelho, quando ligado )
 ```
 
-| Arquivo | Papel | Assinatura | Pagina? |
-|---|---|---|---|
-| `.reg` | Registros, na ordem de digitação | `PHXREG\0\0` | sim |
-| `.ndx` | Índices (B+tree), todos no mesmo arquivo | `PHXNDX\0\0` | **não** |
-| `.bin` | Binários (imagens, anexos) | `PHXBIN\0\0` | sim |
-| `.memo` | Textos longos | `PHXMEMO\0` | sim |
-| `.log` | Diário de inclusões, alterações e exclusões | `PHXLOG\0\0` | sim |
+| Arquivo | Papel | Assinatura | Pagina? | Quem lê |
+|---|---|---|---|---|
+| `.reg` | Registros, na ordem de digitação | `PHXREG\0\0` | sim | quem tem `ler` |
+| `.ndx` | Índices (B+tree), todos no mesmo arquivo | `PHXNDX\0\0` | **não** | quem tem `ler` |
+| `.bin` | Binários (imagens, anexos) | `PHXBIN\0\0` | sim | quem tem `ler` |
+| `.memo` | Textos longos | `PHXMEMO\0` | sim | quem tem `ler` |
+| `.log` | Diário de inclusões, alterações e exclusões | `PHXLOG\0\0` | sim | quem tem `diario` |
+| `.trash` | Linhas que saíram do `.reg`, inteiras | `PHXTRH\0\0` | sim | **só `administrar`** |
+| `.reason` | Por que cada linha foi excluída, e por quem | `PHXRSN\0\0` | sim | **só `administrar`** |
 
-E um **sexto arquivo opcional**, que só existe quando `espelho` está ligado no
+Os três últimos são **os arquivos do administrador**, e a razão está no que
+cada um guarda. O `.trash` guarda o dado que alguém mandou apagar — quem só
+tem `ler` perdeu o direito àquela linha no instante em que ela foi excluída, e
+a lixeira devolveria o direito por outra porta. O `.reason` costuma ser ainda
+mais revelador que o registro: *fraude*, *pedido de remoção do titular*,
+*duplicidade com o contrato X*. O `.log` tem permissão própria (`diario`), que
+só um administrador concede.
+
+E um **oitavo arquivo opcional**, que só existe quando `espelho` está ligado no
 `config.json`:
 
 | Arquivo | Papel | Assinatura | Pagina? |
@@ -40,7 +50,7 @@ defeito. **Não** protege contra o disco morrer: os dois arquivos moram no mesmo
 lugar.
 
 Uma tabela grande se parte em volumes numerados — `cadastroClientes_001.reg`,
-`_002.reg`, … — segundo os parâmetros do `CREATE TABLE`. Ver a seção 5.
+`_002.reg`, … — segundo os parâmetros do `CREATE TABLE`. Ver a seção 7.
 
 **Convenções gerais**
 
@@ -88,12 +98,14 @@ Logo após o cabeçalho vem o **esquema serializado** (`schema_len` bytes), e
 `data_offset` é o próximo múltiplo de 64. A tabela é auto-descritiva: o
 conjunto de arquivos basta para reabrir os dados, sem dicionário externo.
 
-### O bloco de esquema (`PSCH`, versão 3)
+### O bloco de esquema (`PSCH`, versão 4)
 
-O bloco começa com `PSCH` e a versão. A versão **3** acrescentou os metadados
-de coluna, o marcador de chave primária e o modo de partição. A leitura ainda
-aceita a 2: tabela gravada antes abre normalmente, ganha um `id` v7 sorteado na
-hora e os textos vazios. **Escrever, só na 3.**
+O bloco começa com `PSCH` e a versão. A **3** acrescentou os metadados de
+coluna, o marcador de chave primária e o modo de partição. A **4** acrescentou
+a coluna de sistema `softdeleted` e um byte no fim, com o sinal de *motivo
+obrigatório*. A leitura ainda aceita a 2: tabela gravada antes abre
+normalmente, ganha um `id` v7 sorteado na hora e os textos vazios.
+**Escrever, só na 4.**
 
 Por coluna, nesta ordem:
 
@@ -110,10 +122,38 @@ Por coluna, nesta ordem:
 O `id` existe para que **renomear a coluna não quebre nada**: uma tela, um
 relatório ou um mapeamento apontam para ele, e renomear troca só o `nome`. É a
 mesma razão de o esquema morar no `.reg` — um dicionário externo se perde, se
-desatualiza, e obriga quem copia os cinco arquivos a copiar um sexto.
+desatualiza, e obriga quem copia os arquivos da tabela a copiar mais um.
 
 Por índice, os sinalizadores viraram um byte com dois bits: **único** no bit 0
 e **primário** no bit 1.
+
+### A coluna de sistema `softdeleted`
+
+Toda tabela criada a partir da v4 ganha, **no fim da lista**, uma coluna `Bool`
+não nula chamada `softdeleted`. Ela marca a linha como excluída sem apagar
+nada: a linha some das listas e continua inteira no `.reg`, e `restaurar`
+desfaz.
+
+No fim, e não no começo, por uma razão de formato: assim os *offsets* das
+colunas do usuário não mudam de lugar quando ela entra, e quem monta a linha
+posicionalmente pode continuar mandando só as colunas que declarou — `inserir`
+com N−1 valores preenche `false`, e `atualizar` com N−1 **mantém o que a linha
+já tinha**.
+
+A coluna entra na **criação** da tabela. Ler o esquema do disco não acrescenta
+nada: a lista de colunas gravada é a verdade inteira. Se a leitura
+acrescentasse a coluna, cada linha de uma tabela v3 passaria a ser lida com os
+*offsets* deslocados — **silenciosamente**, porque o CRC do slot continuaria
+batendo: os bytes seriam os mesmos, só a interpretação mudaria.
+
+Uma tabela anterior à v4 continua legível exatamente como está. Ela só não tem
+exclusão suave, e a mensagem de erro diz isso em vez de ler lixo.
+
+Declarar `softdeleted` à mão é permitido — quem recria uma tabela precisa —,
+mas só como `Bool` não nula. Com outro tipo, o esquema é recusado: seria uma
+coluna comum com nome reservado, e o motor passaria a marcar exclusão num
+campo que o usuário lê como texto. Nulo também é recusado: seria um terceiro
+estado entre excluída e não excluída.
 
 ### Chave primária, chave estrangeira, chave composta
 
@@ -393,7 +433,131 @@ que aconteceu, não o que foi tentado.
 
 ---
 
-## 5. Paginação de tabelas grandes
+## 5. `.trash` — a linha inteira, antes de sumir
+
+Só quem tem `administrar` lê este arquivo.
+
+### A ordem é o recurso
+
+A linha é gravada aqui e **o arquivo é sincronizado** antes de o slot do `.reg`
+ser liberado. Se a máquina cair no meio, o pior caso é a linha aparecer nos
+dois lugares — o que se resolve olhando —, e **nunca em nenhum**. A ordem
+inversa (liberar e depois guardar) tem uma janela em que o registro não existe
+em lugar nenhum, e essa janela não tem conserto depois.
+
+Entre perder e duplicar, o motor duplica.
+
+### Por que não é um `.reg` paralelo
+
+Um `.reg` guarda *payload* de largura fixa, e as colunas `Bin`/`Memo` moram
+nele como **ponteiro** para o `.bin`/`.memo`. Copiar só o *payload* para um
+`.reg` paralelo guardaria os ponteiros — que apontam para blocos que a própria
+exclusão acabou de liberar, e que a próxima inserção pode reaproveitar. A foto
+voltaria sendo a foto de outra linha.
+
+Por isso o registro daqui é de **tamanho variável**: o *payload* byte a byte,
+mais o **conteúdo** de cada coluna externa logo em seguida.
+
+### Cabeçalho do arquivo (64 bytes)
+
+Mesmo desenho do `.log`: assinatura, versão, volume, quantidade, fim e CRC-32.
+
+### Registro (56 bytes de cabeçalho + payload + externos)
+
+| Offset | Bytes | Campo |
+|---:|---:|---|
+| 0 | 8 | carimbo em milissegundos desde 1970-01-01T00:00:00Z |
+| 8 | 1 | *flags* (reservado) |
+| 9 | 1 | quantas colunas externas a linha tem |
+| 10 | 2 | *reservado* |
+| 12 | 8 | rowid que a linha tinha |
+| 20 | 4 | usuário que excluiu (0 = não informado) |
+| 24 | 4 | tamanho do *payload* |
+| 28 | 16 | UUID **v7** deste descarte |
+| 44 | 4 | tamanho total do registro |
+| 48 | 4 | *reservado* |
+| 52 | 4 | CRC-32 de tudo, menos estes 4 bytes |
+| 56 | n | o *payload* do slot, byte a byte como estava no `.reg` |
+| … | … | por externo: `(coluna u16)(tamanho u32)(bytes)` |
+
+O **tamanho total** está no cabeçalho de propósito: quem percorre o arquivo
+avança por ele sem somar os externos um a um, e um registro que se declara
+maior que o volume é recusado em vez de arrastar a leitura para dentro do
+registro seguinte.
+
+O CRC cobre o *payload* e os anexos, e não só o cabeçalho: o `.trash` só vale
+como prova de que a linha era assim se adulterar o conteúdo for detectado.
+
+O rowid guardado é **memória de onde a linha estava**, não promessa de para
+onde ela volta: o `.reg` não reaproveita slot, nem por restauração.
+
+### Esvaziar
+
+`esvaziar_lixeira` apaga os volumes e recomeça do volume 1. Daqui não volta —
+e por isso o expurgo é registrado no `.reason` **antes** de o dado sair, e a
+operação exige motivo escrito mesmo numa tabela que não exige motivo para
+excluir.
+
+---
+
+## 6. `.reason` — por que cada linha foi excluída
+
+Só quem tem `administrar` lê este arquivo.
+
+O `.log` já diz que houve uma exclusão no rowid tal, no instante tal. O que ele
+não diz — e não tem onde dizer, porque o evento dele tem 36 bytes fixos — é
+**por quê**. Este arquivo guarda a frase, a identidade do registro e o usuário,
+e **sobrevive ao registro**: a linha pode sumir do `.reg` e do `.trash`, e o
+motivo continua aqui.
+
+### Cabeçalho do arquivo (64 bytes)
+
+Mesmo desenho do `.log`.
+
+### Registro (48 bytes de cabeçalho + dois textos)
+
+| Offset | Bytes | Campo |
+|---:|---:|---|
+| 0 | 8 | carimbo em milissegundos |
+| 8 | 1 | tipo: `1` suave, `2` física, `3` restauração, `4` expurgo |
+| 9 | 1 | *flags* (reservado) |
+| 10 | 2 | tamanho do texto do motivo |
+| 12 | 8 | rowid |
+| 20 | 4 | usuário (0 = não informado) |
+| 24 | 16 | UUID **v7** deste evento |
+| 40 | 2 | tamanho do texto da identidade |
+| 42 | 2 | *reservado* |
+| 44 | 4 | CRC-32 do cabeçalho (menos estes 4 bytes) e dos dois textos |
+| 48 | n | motivo, UTF-8 |
+| … | m | identidade, UTF-8 |
+
+O **UUID é v7 do próprio evento**: ele identifica *esta* exclusão, e como o v7
+leva o relógio nos primeiros 48 bits, ordenar por ele é ordenar por quando
+aconteceu.
+
+A **identidade** é o valor que identifica a linha na tabela — a chave primária,
+senão a primeira coluna `Uuid` ou `Sequence` —, já em texto. Está aqui porque
+quem lê o motivo seis meses depois não tem mais o esquema daquela linha na
+cabeça, e "rowid 4173" não diz nada.
+
+O CRC cobre os dois textos. Se cobrisse só o cabeçalho, trocar *fraude* por
+*engano* passaria sem ser notado — e o arquivo existe justamente para isso não
+poder acontecer.
+
+Tetos: **2000 bytes** de motivo e **512** de identidade, cortados no limite de
+caractere para nunca gravar UTF-8 inválido.
+
+### O motivo obrigatório
+
+É uma escolha da tabela, gravada no esquema (v4) e feita na criação. Marcada,
+o motor **recusa** qualquer exclusão sem uma frase escrita — antes de qualquer
+gravação. Vale para tabela cujo apagamento alguém vai ter de justificar
+depois; numa tabela de rascunho, obrigar só ensina todo mundo a digitar um
+ponto.
+
+---
+
+## 7. Paginação de tabelas grandes
 
 Definida no `CREATE TABLE` e gravada no esquema:
 
@@ -512,7 +676,7 @@ ler o esquema é que o conjunto de volumes é montado.
 
 ---
 
-## 6. Hierarquia: database, schema e tabela
+## 8. Hierarquia: database, schema e tabela
 
 ```
 base/
@@ -540,7 +704,7 @@ contrabarra, dois-pontos, curinga ou caractere de controle.
 
 ---
 
-## 7. Reindex
+## 9. Reindex
 
 Recriar o `.ndx` inteiro a partir do `.reg`: varre os registros ativos na ordem
 de digitação, recodifica as chaves e reconstrói cada B+tree do zero. Resolve
@@ -555,7 +719,7 @@ crescente dentro de cada chave.
 
 ---
 
-## 8. Identificadores: `Uuid`, `Uuid256` e `Sequence`
+## 10. Identificadores: `Uuid`, `Uuid256` e `Sequence`
 
 Três tipos de largura fixa que cabem inteiros no slot — nada vai para o `.bin`.
 
@@ -615,7 +779,7 @@ defeito. O esquema recusa na criação.
 
 ---
 
-## 9. Limites
+## 11. Limites
 
 | Limite | Valor |
 |---|---|
@@ -624,6 +788,10 @@ defeito. O esquema recusa na criação.
 | Sequência por tabela | 1 (o contador do cabeçalho é único) |
 | Valor máximo de `Sequence` | 2⁶⁴ − 1 |
 | Precisão de `Decimal` | 38 dígitos |
+| Texto do motivo no `.reason` | 2 000 bytes |
+| Identidade no `.reason` | 512 bytes |
+| Colunas externas numa linha do `.trash` | 255 |
+| Tamanho de um registro do `.trash` | 4 GiB |
 | Conteúdo de um bloco `.bin` / `.memo` | 4 GiB |
 | Chave de índice | `page_size / 4 - 8` bytes (1016 numa página de 4096) |
 | Índices por tabela | o diretório precisa caber na página 0 |
@@ -631,7 +799,7 @@ defeito. O esquema recusa na criação.
 | Volumes por arquivo | 65.535 (limite do ponteiro externo) |
 | Offset dentro de um volume externo | 256 TB (48 bits) |
 
-## 10. O que este formato ainda não faz
+## 12. O que este formato ainda não faz
 
 Documentado aqui para não haver surpresa:
 

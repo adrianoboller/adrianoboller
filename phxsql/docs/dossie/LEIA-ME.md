@@ -16,7 +16,18 @@ impossível de cumprir depois que o diretório temporário sumisse.
 
 ## O que conferir antes de publicar
 
-Os números do painel são medidos, nunca estimados:
+**Os números do painel e do rodapé não se digitam mais.** Saem de
+
+```bash
+python3 docs/dossie/numeros-do-projeto.py
+```
+
+que mede tudo e reescreve os dois blocos entre as marcas `<!-- projeto:… -->`
+e `<!-- rodape:… -->`. Ele segue **a receita abaixo, na letra** — mexeu numa,
+mexa na outra, senão volta a existir número de vitrine que ninguém reproduz.
+`--so-medir` mostra sem gravar; `--sem-testes` pula o `cargo test`, que demora.
+
+A receita, para conferir à mão:
 
 ```bash
 find . -name '*.rs' -not -path './target/*' | xargs cat | wc -l    # linhas de Rust

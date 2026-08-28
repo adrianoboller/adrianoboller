@@ -43,7 +43,7 @@
 use std::collections::HashMap;
 
 use phxsql_core::error::{PhxError, Result};
-use phxsql_core::schema::Schema;
+use phxsql_core::schema::{Schema, COLUNA_SOFTDELETED};
 use phxsql_core::types::ColumnType;
 use phxsql_core::value::Value;
 
@@ -458,7 +458,7 @@ pub fn juntar(
         (chave_nula_fluxo, chave_nula_tabela)
     };
 
-    Ok(Resultado {
+    let mut r = Resultado {
         colunas: colunas_de(a, b),
         linhas,
         lidas_esquerda,
@@ -466,7 +466,50 @@ pub fn juntar(
         chave_nula_esquerda: nula_esq,
         chave_nula_direita: nula_dir,
         truncado,
-    })
+    };
+    tirar_a_coluna_de_sistema(&mut r);
+    Ok(r)
+}
+
+/// Tira a coluna `softdeleted` de cada lado do resultado.
+///
+/// Uma junção de duas tabelas traria DUAS colunas dela -- `c.softdeleted` e
+/// `p.softdeleted` --, e as duas seriam falso em toda linha: a junção só lê
+/// linha ativa. Seria ruído em cada resultado, com o agravante de empurrar as
+/// colunas úteis para fora da primeira tela da grade.
+///
+/// Sai aqui, num lugar só, e não no meio da montagem: ali cada linha é
+/// montada por posição, e furar a posição no meio é onde nasce campo trocado.
+fn tirar_a_coluna_de_sistema(r: &mut Resultado) {
+    let sistema = COLUNA_SOFTDELETED;
+    let manter: Vec<bool> = r
+        .colunas
+        .iter()
+        .map(|c| !c.nome.rsplit('.').next().is_some_and(|n| n == sistema))
+        .collect();
+    if manter.iter().all(|m| *m) {
+        return;
+    }
+    for linha in &mut r.linhas {
+        // Linha que nao bate com o cabecalho fica intacta: cortar por posicao
+        // numa linha de outro tamanho e como se tira a coluna errada, e sem
+        // aviso nenhum. Se acontecer, o defeito e antes daqui.
+        if linha.len() != manter.len() {
+            continue;
+        }
+        let mut i = 0;
+        linha.retain(|_| {
+            let fica = manter[i];
+            i += 1;
+            fica
+        });
+    }
+    let mut i = 0;
+    r.colunas.retain(|_| {
+        let fica = manter[i];
+        i += 1;
+        fica
+    });
 }
 
 // ------------------------------------------------------------------- união
@@ -639,13 +682,24 @@ pub fn unir(
         }
     }
 
-    Ok(ResultadoUniao {
+    let mut r = ResultadoUniao {
         colunas,
         linhas,
         por_parte,
         repetidas,
         truncado,
-    })
+    };
+    // Mesma razao da juncao: a coluna de sistema seria falso em toda linha.
+    if r.colunas
+        .last()
+        .is_some_and(|c| c.nome == COLUNA_SOFTDELETED)
+    {
+        r.colunas.pop();
+        for linha in &mut r.linhas {
+            linha.pop();
+        }
+    }
+    Ok(r)
 }
 
 #[cfg(test)]
@@ -687,10 +741,12 @@ mod testes {
             ),
             chave: vec![0],
         };
+        // O `false` no fim é a coluna de sistema: `Schema::new` a acrescenta,
+        // e a linha tem de bater com o esquema.
         let la = vec![
-            vec![Value::Int(1), txt("Adriano")],
-            vec![Value::Int(2), txt("Maria")],
-            vec![Value::Int(3), txt("João")],
+            vec![Value::Int(1), txt("Adriano"), Value::Bool(false)],
+            vec![Value::Int(2), txt("Maria"), Value::Bool(false)],
+            vec![Value::Int(3), txt("João"), Value::Bool(false)],
         ];
         let b = Lado {
             prefixo: "p".into(),
@@ -704,10 +760,10 @@ mod testes {
             chave: vec![0],
         };
         let lb = vec![
-            vec![Value::Int(1), Value::Int(100)],
-            vec![Value::Int(1), Value::Int(200)],
-            vec![Value::Int(2), Value::Int(300)],
-            vec![Value::Int(9), Value::Int(400)],
+            vec![Value::Int(1), Value::Int(100), Value::Bool(false)],
+            vec![Value::Int(1), Value::Int(200), Value::Bool(false)],
+            vec![Value::Int(2), Value::Int(300), Value::Bool(false)],
+            vec![Value::Int(9), Value::Int(400), Value::Bool(false)],
         ];
         (a, la, b, lb)
     }

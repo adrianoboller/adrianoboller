@@ -7,17 +7,31 @@ Built to store. Engineered to scale.
 
 1. O QUE E
 --------------------------------------------------------------------------------
-O PhxSql guarda cada tabela logica em cinco arquivos fisicos:
+O PhxSql guarda cada tabela logica em sete arquivos fisicos:
 
     cadastroClientes.reg    registros, na ordem de digitacao
     cadastroClientes.ndx    indices (B+tree)
     cadastroClientes.bin    binarios (fotos, anexos)
     cadastroClientes.memo   textos longos
     cadastroClientes.log    diario de inclusoes, alteracoes e exclusoes
+    cadastroClientes.trash  as linhas que sairam do .reg, inteiras
+    cadastroClientes.reason por que cada linha foi excluida, e por quem
 
-    .reg + .ndx + .bin + .memo + .log  =  cadastroClientes
+    .reg + .ndx + .bin + .memo + .log + .trash + .reason = cadastroClientes
 
-E um SEXTO arquivo, opcional, que so existe com "espelho" ligado no
+OS TRES ULTIMOS SAO OS ARQUIVOS DO ADMINISTRADOR. A razao esta no que cada um
+guarda:
+
+    .trash    guarda o dado que alguem mandou apagar. Quem so tem "ler" perdeu
+              o direito aquela linha no instante em que ela foi excluida, e a
+              lixeira devolveria o direito por outra porta.
+    .reason   costuma ser MAIS revelador que o registro que foi excluido:
+              "fraude", "pedido de remocao do titular", "duplicidade com o
+              contrato X".
+    .log      tem permissao propria ("diario"), que so um administrador
+              concede.
+
+E um OITAVO arquivo, opcional, que so existe com "espelho" ligado no
 config.json:
 
     cadastroClientes.bkp    espelho byte a byte do .reg, volume por volume
@@ -300,6 +314,58 @@ SEQUENCIAS
     gravado na faixa, a proxima insercao repete, e um indice unico recusa. O
     erro aparece longe de quem causou.
 
+AS DUAS EXCLUSOES
+
+    Toda tabela nasce com a coluna de sistema "softdeleted", e por isso excluir
+    passou a ser duas coisas diferentes.
+
+    SUAVE (o padrao). Marca a linha. Ela some das listas e continua INTEIRA no
+    .reg, com os anexos. "restaurar" desfaz.
+
+        {"op":"excluir","database":"loja","tabela":"clientes","rowid":42,
+         "motivo":"pedido de remocao do titular"}
+
+    FISICA (so quando pedida). A linha sai do .reg. Antes disso ela e gravada
+    inteira no .trash -- com o CONTEUDO dos anexos, e nao com os ponteiros --,
+    e o DISCO CONFIRMA antes de o slot ser liberado.
+
+        {"op":"excluir","database":"loja","tabela":"clientes","rowid":42,
+         "fisico":true,"motivo":"duplicidade com o contrato 9"}
+
+    POR QUE O PADRAO E O SUAVE. O caminho irreversivel nao pode ser escolhido
+    por omissao. Um cliente que manda "excluir" sem dizer mais nada esta
+    pedindo "tira isto da minha lista", e e isso que ele recebe. Numa tabela
+    anterior a v4 do esquema -- que nao tem a coluna -- so existe o caminho
+    fisico, e ele e usado sem alarde.
+
+    A ORDEM DA GRAVACAO E A GARANTIA. Guardar depois de liberar teria uma
+    janela em que a linha nao existe em lugar nenhum, e uma queda dentro dela
+    nao tem conserto. Guardar antes tem a janela oposta: a linha aparece nos
+    dois lugares, o que se resolve olhando. Entre perder e duplicar, o motor
+    duplica.
+
+    A VARREDURA NAO ENXERGA LINHA MARCADA. "visao" escolhe:
+
+        "ativas"     (padrao) so as nao marcadas
+        "excluidas"  so as marcadas -- a tela do administrador
+        "todas"      tudo que esta no .reg
+
+    MOTIVO OBRIGATORIO. Escolhido na criacao da tabela
+    ("motivo_obrigatorio": true). Marcada, o motor RECUSA qualquer exclusao
+    sem uma frase escrita, antes de qualquer gravacao. Vale para tabela cujo
+    apagamento alguem vai ter de justificar depois; numa tabela de rascunho,
+    obrigar so ensina todo mundo a digitar um ponto.
+
+    ESVAZIAR A LIXEIRA NAO TEM VOLTA, e por isso exige motivo mesmo numa tabela
+    que nao exige motivo para excluir. O expurgo e registrado no .reason ANTES
+    de o dado sair: o motivo tem de sobreviver ao dado.
+
+    NA TELA. O botao Excluir da ficha abre um dialogo com os dois modos e o
+    campo do motivo. A grade tem o par "ativas / excluidas", e na visao das
+    excluidas cada linha ganha o botao "restaurar". A lixeira e os motivos tem
+    tela propria, no menu Tabelas e no botao Lixeira da barra -- e as duas so
+    abrem para quem tem "administrar".
+
 OPERACOES
 
     ping                                     versao, papel, conexoes
@@ -322,11 +388,15 @@ OPERACOES
     pivotar         database, tabela, linhas, [colunas], [valor],
                     [agregador], [juntar], [max]   a tabulacao cruzada
     ler             database, tabela, rowid
-    varrer          database, tabela, [indice], [max]
+    varrer          database, tabela, [indice], [max], [visao]
     buscar          database, tabela, indice, chave, [max]
     inserir         database, tabela, valores
     atualizar       database, tabela, rowid, valores
-    excluir         database, tabela, rowid
+    excluir         database, tabela, rowid, [motivo], [fisico]
+    restaurar       database, tabela, rowid, [motivo]   desfaz a exclusao suave
+    lixeira         database, tabela, [uuid], [limite], [com_anexos]
+    motivos         database, tabela, [rowid], [limite]
+    esvaziar_lixeira database, tabela, motivo          nao tem volta
     diario          database, tabela, [rowid], [max]
     verificar       database, tabela
     reindexar       database, tabela
@@ -540,7 +610,7 @@ BARRA DE MENU
 
     Escolhida uma tabela, cinco abas:
 
-        Estrutura     colunas, tipos, em qual dos cinco arquivos cada coluna
+        Estrutura     colunas, tipos, em qual dos arquivos cada coluna
                       mora, indices, chaves estrangeiras e a paginacao
         Conteudo      as linhas, no phx-grid: arraste um cabecalho para a
                       faixa de cima e ele AGRUPA, com contagem e totais por
@@ -576,14 +646,14 @@ BARRA DE MENU
                             volumes no disco, e o que a tabela herda do servidor
         Particoes           em que volume cada faixa de rowid cai, e qual
                             arquivo do disco guarda cada faixa
-        Duplicar            copia os cinco arquivos byte a byte, no mesmo banco:
+        Duplicar            copia os arquivos byte a byte, no mesmo banco:
                             a copia nasce com os MESMOS rowids e na MESMA ordem
         Copiar              poe a tabela na area de transferencia
         Colar aqui          traz para este banco o que esta na area
         Reparar tabela      confere cada slot no .reg contra o espelho .bkp
         Reparar indice      joga o .ndx fora e refaz lendo o .reg
         Nova tabela         campos, indices, schema e particao
-        Excluir             apaga os cinco arquivos e o espelho, de uma vez
+        Excluir             apaga todos os arquivos e o espelho, de uma vez
 
     GESTAO DO BANCO
 
@@ -920,7 +990,7 @@ O QUE "CONSISTENTE" QUER DIZER AQUI
 
 O QUE A COPIA LEVA
 
-    Tudo debaixo da raiz de dados: os cinco arquivos de cada tabela, os
+    Tudo debaixo da raiz de dados: os arquivos de cada tabela, os
     volumes numerados e os diretorios de database e de schema.
 
     O config.json NAO vai junto. Ele tem o token e os hashes de senha, e
@@ -1299,6 +1369,6 @@ externa, entao `cargo build --offline` funciona numa maquina sem Internet.
 
 
 ================================================================================
-PhxSql - cinco arquivos, uma tabela.
+PhxSql - sete arquivos, uma tabela.
 Built to store. Engineered to scale.
 ================================================================================

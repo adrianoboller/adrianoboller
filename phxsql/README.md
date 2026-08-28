@@ -5,7 +5,7 @@
 > Built to store. Engineered to scale.
 
 Motor de dados em Rust no modelo de arquivos separados do HFSQL(R): cada tabela
-lógica é a soma de cinco arquivos físicos — mais um sexto, o espelho `.bkp`,
+lógica é a soma de sete arquivos físicos — mais um oitavo, o espelho `.bkp`,
 quando ele está ligado.
 
 ```
@@ -14,9 +14,15 @@ cadastroClientes.ndx    índices (B+tree)
 cadastroClientes.bin    binários
 cadastroClientes.memo   textos longos
 cadastroClientes.log    diário de inclusões, alterações e exclusões
+cadastroClientes.trash  as linhas que saíram do .reg, inteiras
+cadastroClientes.reason por que cada linha foi excluída, e por quem
 
-.reg + .ndx + .bin + .memo + .log  =  cadastroClientes
+.reg + .ndx + .bin + .memo + .log + .trash + .reason = cadastroClientes
 ```
+
+Os três últimos são **os arquivos do administrador**: o `.trash` guarda o dado
+que alguém mandou apagar, e o `.reason` costuma ser mais revelador que o
+registro que foi excluído.
 
 Tabelas grandes se partem em volumes numerados, e os databases se organizam em
 schemas:
@@ -31,7 +37,7 @@ base/
     └── Y/  notas.reg ...         schema Y
 ```
 
-## Por que cinco arquivos
+## Por que arquivos separados
 
 Cada arquivo tem um padrão de acesso diferente, e separá-los deixa cada um
 otimizado para o seu:
@@ -45,6 +51,10 @@ otimizado para o seu:
   de 16 bytes, e uma varredura da tabela não arrasta os blobs junto.
 - O **`.log`** é append-only e sem índice, então registrar uma operação custa
   36 bytes no fim de um arquivo — não atrapalha a escrita.
+- O **`.trash`** e o **`.reason`** também são append-only, e existem porque uma
+  exclusão precisa deixar rastro: a linha inteira num, o porquê no outro. O
+  `.trash` é gravado e **sincronizado antes** de o slot do `.reg` ser liberado —
+  entre perder o dado e duplicá-lo, o motor duplica.
 
 E o `.reg` guarda a ordem em que os dados foram digitados — algo que um heap com
 reaproveitamento de espaço perde.
@@ -196,7 +206,7 @@ t.verificar()?;
 crates/
   phxsql-core/     tipos, valores, esquema, chaves estrangeiras, paginação,
                    codificação de chaves, CRC, calendário
-  phxsql-store/    os cinco arquivos, os volumes, a hierarquia e a tabela
+  phxsql-store/    os sete arquivos, os volumes, a hierarquia e a tabela
   phxsql-cli/      a ferramenta de linha de comando
   phxsql-server/   config, usuários, blacklist, servidor TCP e o HTTP da
                    interface; ui/index.html é o Centro de Controle

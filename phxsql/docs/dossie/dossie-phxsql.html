@@ -302,19 +302,21 @@ footer p{max-width:var(--medida)}
          alt="Símbolo do PhxSql: uma fênix de asas abertas envolvendo um cilindro de banco de dados, com trilhas de circuito saindo pelos lados">
   </div>
   <div class="selo">Dossiê técnico · versão 0.11.0</div>
-  <h1>Ph<span class="x">x</span>Sql <span class="leve">— cinco arquivos,<br>uma tabela</span></h1>
+  <h1>Ph<span class="x">x</span>Sql <span class="leve">— sete arquivos,<br>uma tabela</span></h1>
   <div class="assinatura">Built to store. Engineered to scale.</div>
   <p class="chamada">Motor de dados em Rust no modelo de arquivos separados do HFSQL(R), com
   a garantia que o TopSpeed(R) não dava: <strong>o arquivo de dados guarda a ordem em que
   você digitou</strong>, e nada nunca a embaralha.</p>
 
   <div class="painel">
-    <div><div class="v">34.156</div><div class="r">linhas de Rust</div></div>
-    <div><div class="v">453</div><div class="r">testes</div></div>
+  <!-- projeto:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
+    <div><div class="v">37.159</div><div class="r">linhas de Rust</div></div>
+    <div><div class="v">495</div><div class="r">testes</div></div>
     <div><div class="v">0</div><div class="r">dependências</div></div>
     <div><div class="v">4</div><div class="r">crates</div></div>
-    <div><div class="v">5</div><div class="r">arquivos/tabela</div></div>
-    <div><div class="v">5.619</div><div class="r">linhas de doc</div></div>
+    <div><div class="v">7</div><div class="r">arquivos/tabela</div></div>
+    <div><div class="v">6.073</div><div class="r">linhas de doc</div></div>
+  <!-- projeto:fim -->
   </div>
 </header>
 
@@ -357,7 +359,7 @@ footer p{max-width:var(--medida)}
 
   <figure>
     <div class="fig-caixa">
-      <svg viewBox="0 0 860 400" role="img" aria-label="Hierarquia: a base contém databases, cada database contém tabelas na raiz e diretórios de schema, e cada tabela é um conjunto de cinco arquivos">
+      <svg viewBox="0 0 860 400" role="img" aria-label="Hierarquia: a base contém databases, cada database contém tabelas na raiz e diretórios de schema, e cada tabela é um conjunto de sete arquivos">
         <defs>
           <marker id="setaA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
             <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
@@ -723,7 +725,7 @@ footer p{max-width:var(--medida)}
           <text x="711" y="70" text-anchor="middle" font-size="11" opacity=".7">cadastroClientes_003.reg</text>
 
           <path d="M711 82 L711 116" stroke="var(--acento)" stroke-width="1.6" marker-end="url(#setaC)"/>
-          <text x="606" y="140" font-size="12.5">offset = data_offset + (234 − 1) × slot_size</text>
+          <text x="520" y="140" font-size="11">offset = data_offset + (234 − 1) × slot_size</text>
           <text x="606" y="158" font-size="11" opacity=".6">um seek. sem varredura, sem índice.</text>
 
           <line x1="24" y1="192" x2="816" y2="192" stroke="currentColor" stroke-width="1" opacity=".3"/>
@@ -821,7 +823,8 @@ footer p{max-width:var(--medida)}
   </figure>
 
   <p>Três alternativas foram descartadas, e vale dizer por quê. Guardar a tabela
-  de fronteiras num <strong>sexto arquivo</strong> quebraria o modelo de cinco.
+  de fronteiras num <strong>arquivo próprio</strong> acrescentaria mais um
+  formato ao conjunto, para uma tabelinha que cabe no cabeçalho.
   Guardá-la <strong>dentro do bloco de esquema</strong> não serve: o bloco é
   seguido pelos dados, e crescer significaria empurrar a tabela inteira. E
   <strong>mandar a linha para o volume do período dela</strong> — o que um
@@ -1007,7 +1010,7 @@ footer p{max-width:var(--medida)}
           <text x="40" y="384" font-size="11.5">O espelho é escrito <tspan font-weight="600">no mesmo instante</tspan> que o principal — não é uma cópia feita depois.</text>
 
           <text x="16" y="416" font-size="10.5" opacity=".55">Alterar segue o mesmo caminho: remove a chave antiga do índice só quando ela mudou, e libera os blocos antigos no fim.</text>
-          <text x="16" y="434" font-size="10.5" opacity=".55">Excluir tira as chaves, marca os blocos como mortos e marca o slot como livre — sem nunca reaproveitá-lo.</text>
+          <text x="16" y="434" font-size="10.5" opacity=".55">Excluir tem dois caminhos, e o padrão é o reversível — a figura seguinte mostra os dois.</text>
         </g>
       </svg>
     </div>
@@ -1017,9 +1020,9 @@ footer p{max-width:var(--medida)}
     espelho está ligado — e ela estava faltando neste desenho.</figcaption>
   </figure>
 
-  <h3>O sexto arquivo: o espelho <code>.bkp</code></h3>
+  <h3>O oitavo arquivo: o espelho <code>.bkp</code></h3>
 
-  <p>A tabela é <strong>cinco</strong> arquivos, e um sexto opcional. O
+  <p>A tabela é <strong>sete</strong> arquivos, e um oitavo opcional. O
   <code>.bkp</code> é um clone byte a byte do <code>.reg</code>, volume por
   volume, e o desenho acima estava incompleto sem ele: <strong>ele é escrito no
   mesmo instante que o principal</strong>, e não copiado depois. Custa uma
@@ -1040,6 +1043,154 @@ footer p{max-width:var(--medida)}
   <p>A tabela conta quantas leituras o espelho salvou desde que foi aberta. É o
   número que diz se ele está pagando o custo — e um número que sobe sozinho é
   disco morrendo, não espelho funcionando.</p>
+
+  <h3>As duas exclusões, e a ordem que é a garantia</h3>
+
+  <p>Toda tabela nasce com a coluna de sistema <code>softdeleted</code>, e por
+  isso excluir passou a ser duas coisas diferentes. O <strong>padrão do
+  protocolo é o caminho reversível</strong>: um cliente que manda
+  <code>excluir</code> sem dizer mais nada está pedindo «tira isto da minha
+  lista», e é isso que ele recebe. O irreversível existe, mas se escreve.</p>
+
+  <figure>
+    <div class="fig-caixa">
+      <svg viewBox="0 0 840 470" role="img" aria-label="Os dois caminhos de uma exclusão. Sem fisico, a linha é marcada na coluna softdeleted e continua inteira no reg, com o motivo indo para o reason. Com fisico, a linha inteira é gravada no trash, o disco confirma, e só então as chaves saem do ndx, os blocos do bin e do memo são liberados e o slot do reg é marcado como livre.">
+        <defs>
+          <marker id="setaX" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+          </marker>
+          <marker id="setaXok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="var(--ok)"/>
+          </marker>
+        </defs>
+        <g font-family="IBM Plex Mono, monospace" font-size="11.5" fill="currentColor">
+
+          <rect x="16" y="40" width="104" height="44" rx="4" fill="none" stroke="currentColor" stroke-width="1.4"/>
+          <text x="68" y="60" text-anchor="middle" font-size="11">excluir</text>
+          <text x="68" y="75" text-anchor="middle" font-size="10" opacity=".6">rowid, motivo</text>
+
+          <path d="M120 62 L146 62" stroke="currentColor" stroke-width="1.3" marker-end="url(#setaX)"/>
+
+          <rect x="150" y="34" width="116" height="56" rx="4" fill="none" stroke="currentColor" stroke-width="1.4"/>
+          <text x="208" y="56" text-anchor="middle" font-size="11">"fisico"?</text>
+          <text x="208" y="72" text-anchor="middle" font-size="9.5" opacity=".55">omitido = não</text>
+          <text x="208" y="85" text-anchor="middle" font-size="9.5" opacity=".55">o padrão volta</text>
+
+          <!-- ramo suave: horizontal, porque e o caminho comum -->
+          <path d="M266 62 L302 62" stroke="var(--ok)" stroke-width="1.4" marker-end="url(#setaXok)"/>
+          <text x="284" y="52" text-anchor="middle" fill="var(--ok)" font-size="9.5">não</text>
+
+          <rect x="306" y="34" width="176" height="56" rx="4" fill="none" stroke="var(--ok)" stroke-width="1.5"/>
+          <text x="394" y="54" text-anchor="middle" fill="var(--ok)" font-size="11">marca a coluna</text>
+          <text x="394" y="69" text-anchor="middle" fill="var(--ok)" font-size="10.5">softdeleted = sim</text>
+          <text x="394" y="83" text-anchor="middle" font-size="9.5" opacity=".55">a linha fica inteira no .reg</text>
+
+          <path d="M482 62 L518 62" stroke="var(--ok)" stroke-width="1.4" marker-end="url(#setaXok)"/>
+
+          <rect x="522" y="34" width="150" height="56" rx="4" fill="none" stroke="var(--pend)" stroke-width="1.5"/>
+          <text x="597" y="54" text-anchor="middle" fill="var(--pend)" font-size="11">registra o porquê</text>
+          <text x="597" y="69" text-anchor="middle" fill="var(--pend)" font-size="10.5">.reason</text>
+          <text x="597" y="83" text-anchor="middle" font-size="9.5" opacity=".55">suave</text>
+
+          <text x="700" y="58" font-size="10.5" fill="var(--ok)">restaurar</text>
+          <text x="700" y="73" font-size="9.5" opacity=".6">desfaz</text>
+
+          <!-- ramo fisico: desce, porque e o caminho longo -->
+          <path d="M208 90 L208 122" stroke="var(--log)" stroke-width="1.4" marker-end="url(#setaX)"/>
+          <text x="228" y="110" font-size="9.5" fill="var(--log)">sim</text>
+
+          <rect x="112" y="126" width="192" height="52" rx="4" fill="none" stroke="var(--log)" stroke-width="1.5"/>
+          <text x="208" y="145" text-anchor="middle" fill="var(--log)" font-size="11">grava a linha inteira</text>
+          <text x="208" y="160" text-anchor="middle" fill="var(--log)" font-size="10.5">.trash</text>
+          <text x="208" y="173" text-anchor="middle" font-size="9" opacity=".55">payload + conteúdo dos anexos</text>
+
+          <path d="M208 178 L208 204" stroke="currentColor" stroke-width="1.3" marker-end="url(#setaX)"/>
+
+          <!-- A caixa que e a garantia inteira desta funcionalidade. -->
+          <rect x="102" y="208" width="212" height="52" rx="4" fill="none" stroke="var(--acento)" stroke-width="2"/>
+          <text x="208" y="228" text-anchor="middle" fill="var(--acento)" font-size="11.5" font-weight="600">o disco confirma</text>
+          <text x="208" y="244" text-anchor="middle" font-size="9.5" opacity=".62">só aqui a linha está segura</text>
+          <text x="208" y="256" text-anchor="middle" font-size="9" opacity=".55">fsync do .trash</text>
+
+          <path d="M208 260 L208 282" stroke="currentColor" stroke-width="1.3" marker-end="url(#setaX)"/>
+
+          <rect x="112" y="286" width="150" height="48" rx="4" fill="none" stroke="var(--ndx)" stroke-width="1.5"/>
+          <text x="187" y="306" text-anchor="middle" fill="var(--ndx)" font-size="11">tira as chaves</text>
+          <text x="187" y="321" text-anchor="middle" fill="var(--ndx)" font-size="10.5">.ndx</text>
+
+          <path d="M262 310 L296 310" stroke="currentColor" stroke-width="1.3" marker-end="url(#setaX)"/>
+
+          <rect x="300" y="286" width="170" height="48" rx="4" fill="none" stroke="var(--bin)" stroke-width="1.5"/>
+          <text x="385" y="306" text-anchor="middle" fill="var(--bin)" font-size="11">libera os blocos</text>
+          <text x="385" y="321" text-anchor="middle" fill="var(--bin)" font-size="10.5">.bin / .memo</text>
+
+          <path d="M470 310 L504 310" stroke="currentColor" stroke-width="1.3" marker-end="url(#setaX)"/>
+
+          <rect x="508" y="286" width="150" height="48" rx="4" fill="none" stroke="var(--reg)" stroke-width="1.5"/>
+          <text x="583" y="306" text-anchor="middle" fill="var(--reg)" font-size="11">libera o slot</text>
+          <text x="583" y="321" text-anchor="middle" fill="var(--reg)" font-size="10.5">.reg</text>
+
+          <path d="M658 310 L692 310" stroke="currentColor" stroke-width="1.3" marker-end="url(#setaX)"/>
+
+          <rect x="696" y="286" width="128" height="48" rx="4" fill="none" stroke="var(--pend)" stroke-width="1.5"/>
+          <text x="760" y="306" text-anchor="middle" fill="var(--pend)" font-size="11">.reason</text>
+          <text x="760" y="321" text-anchor="middle" font-size="9.5" opacity=".55">física</text>
+
+          <line x1="16" y1="360" x2="816" y2="360" stroke="currentColor" stroke-width="1" opacity=".3"/>
+
+          <text x="16" y="386" font-size="11.5" opacity=".75" font-weight="600">Três decisões que este desenho carrega:</text>
+          <circle cx="26" cy="410" r="3" fill="var(--acento)"/>
+          <text x="40" y="414" font-size="11.5">O <tspan font-weight="600">disco confirma antes</tspan> de o slot sair. Guardar depois teria uma janela em que a linha não existe em lugar nenhum.</text>
+          <circle cx="26" cy="436" r="3" fill="var(--log)"/>
+          <text x="40" y="440" font-size="11.5">O .trash guarda o <tspan font-weight="600">conteúdo</tspan> dos anexos, não os ponteiros — os blocos que ele apontaria acabaram de ser liberados.</text>
+          <circle cx="26" cy="462" r="3" fill="var(--ok)"/>
+          <text x="40" y="466" font-size="11.5">O caminho <tspan font-weight="600">reversível é o padrão</tspan>: o irreversível não pode ser escolhido por omissão.</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>Figura 8.</b> A caixa vermelha grossa é a funcionalidade inteira.
+    Entre perder o dado e duplicá-lo, o motor duplica: se a máquina cair entre o
+    <em>fsync</em> e a liberação do slot, a linha aparece nos dois lugares — o que se
+    resolve olhando. A ordem inversa não tem conserto depois.</figcaption>
+  </figure>
+
+  <div class="rolo">
+    <table>
+      <thead><tr><th>&nbsp;</th><th>Suave (o padrão)</th><th>Física (<code>"fisico": true</code>)</th></tr></thead>
+      <tbody>
+        <tr><td>O que muda</td><td>um byte da coluna <code>softdeleted</code></td><td>o slot vai a livre, as chaves saem, os blocos são liberados</td></tr>
+        <tr><td>A linha</td><td>continua <strong>inteira</strong> no <code>.reg</code>, com os anexos</td><td>vai <strong>inteira</strong> para o <code>.trash</code>, com o conteúdo dos anexos</td></tr>
+        <tr><td>Quem enxerga</td><td>ninguém, na varredura comum; <code>"visao": "excluidas"</code> mostra</td><td>ninguém — só a lixeira, e só quem administra</td></tr>
+        <tr><td>Volta?</td><td><code>restaurar</code>, no mesmo rowid</td><td>reinserindo, e com <strong>outro</strong> rowid: o <code>.reg</code> não reaproveita slot nem por restauração</td></tr>
+        <tr><td>Custo</td><td>uma reescrita de slot</td><td>uma cópia da linha + um <em>fsync</em></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>O <code>.reason</code> recebe os dois casos, e mais dois: a restauração e o
+  expurgo. Ele guarda a frase, quem, quando, e a <strong>identidade da linha em
+  texto</strong> — a chave primária, e não o rowid, porque «rowid 4173» não diz
+  nada seis meses depois. O expurgo da lixeira é registrado <strong>antes</strong>
+  de o dado sair: o motivo tem de sobreviver ao dado.</p>
+
+  <div class="nota">
+    <p><strong>A coluna entra no fim da lista, e isso não é estética.</strong>
+    Os <em>offsets</em> das colunas do usuário não podem mudar de lugar quando
+    ela entra — e a leitura do disco <strong>não</strong> a acrescenta, porque a
+    lista de colunas gravada é a verdade inteira. Se a leitura acrescentasse a
+    coluna, cada linha de uma tabela anterior passaria a ser lida com os
+    <em>offsets</em> deslocados, <strong>e em silêncio</strong>: o CRC do slot
+    continuaria batendo, porque os bytes seriam os mesmos — só a interpretação
+    mudaria. Há teste que trava exatamente isso.</p>
+    <p>O <code>.trash</code> e o <code>.reason</code> exigem
+    <strong>administrar</strong>, e a razão está no conteúdo. Quem só tem
+    <code>ler</code> perdeu o direito àquela linha no instante em que ela foi
+    excluída, e a lixeira devolveria o direito por outra porta. E um motivo de
+    exclusão costuma ser mais revelador que o registro: <em>fraude</em>,
+    <em>pedido de remoção do titular</em>, <em>duplicidade com o contrato X</em>.
+    Os dois <strong>não</strong> são cifrados nem compactados hoje — a proteção
+    é a permissão, e no disco vale a do sistema de arquivos.</p>
+  </div>
 
   <div class="nota">
     <p><strong>O que o espelho protege, e o que não protege.</strong> Ele
@@ -1127,13 +1278,14 @@ footer p{max-width:var(--medida)}
           <text x="16" y="262" font-size="11.5" opacity=".75">
             <tspan font-weight="600">Toda</tspan> tentativa entra no log, inclusive as três recusadas — é justamente quem bateu na porta e não entrou que interessa.
           </text>
-          <text x="16" y="288" font-size="11" opacity=".6">A trava única existe porque o motor ainda não tem travas de arquivo nem de registro. Conexões são aceitas em paralelo; as operações se enfileiram.</text>
+          <text x="16" y="288" font-size="11" opacity=".6">A trava única existe porque o motor ainda não tem travas de arquivo nem de registro.</text>
+          <text x="16" y="306" font-size="11" opacity=".6">Conexões são aceitas em paralelo; as operações se enfileiram.</text>
           <text x="16" y="308" font-size="11" opacity=".6">É lento sob carga e é correto — o contrário seria rápido e corrompido. Travas finas entram junto com as transações.</text>
           <text x="16" y="330" font-size="11" opacity=".6">O protocolo trafega em claro: a porta 5000 pertence dentro de VPN ou IPSec, nunca exposta na Internet.</text>
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 8.</b> As três setas tracejadas convergindo no
+    <figcaption><b>Figura 9.</b> As três setas tracejadas convergindo no
     <code>acessos.log</code> são o desenho do requisito: o log de IP registra o acesso,
     não o sucesso.</figcaption>
   </figure>
@@ -1220,7 +1372,7 @@ footer p{max-width:var(--medida)}
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 9.</b> A direção da seta grossa é o ponto: quem procura é a
+    <figcaption><b>Figura 10.</b> A direção da seta grossa é o ponto: quem procura é a
     réplica, exatamente como no MySQL(R). Isso é o que permite manter a porta fechada para
     a Internet e aberta só de um lado, dentro do túnel.</figcaption>
   </figure>
@@ -1316,7 +1468,7 @@ footer p{max-width:var(--medida)}
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 10.</b> Os três portões são independentes e cumulativos. O
+    <figcaption><b>Figura 11.</b> Os três portões são independentes e cumulativos. O
     token diz que você chegou ao servidor certo; o login diz quem você é; a permissão diz
     o que você pode naquela base específica.</figcaption>
   </figure>
@@ -1469,7 +1621,7 @@ footer p{max-width:var(--medida)}
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 11.</b> A lista de bloqueio vem antes do token — quem
+    <figcaption><b>Figura 12.</b> A lista de bloqueio vem antes do token — quem
     está de fora não gasta nem um PBKDF2 do servidor. A regra de firewall é o
     extra à direita, não o mecanismo.</figcaption>
   </figure>
@@ -1515,7 +1667,7 @@ footer p{max-width:var(--medida)}
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 12.</b> A diferença que importa está na terceira
+    <figcaption><b>Figura 13.</b> A diferença que importa está na terceira
     linha: a prova não revela a senha e não serve de novo, porque o nonce do
     servidor é sorteado a cada desafio e vale uma vez.</figcaption>
   </figure>
@@ -1634,7 +1786,7 @@ footer p{max-width:var(--medida)}
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 13.</b> As duas setas convergindo no
+    <figcaption><b>Figura 14.</b> As duas setas convergindo no
     <code>despachar()</code> são o desenho inteiro: a interface não tem um caminho
     privilegiado. Quem não pode inserir recebe a mesma recusa, tenha clicado num
     botão ou aberto um soquete.</figcaption>
@@ -1661,7 +1813,7 @@ footer p{max-width:var(--medida)}
       <thead><tr><th>Onde</th><th>O que traz</th><th>De onde vem</th></tr></thead>
       <tbody>
         <tr><td>Árvore</td><td>bancos &#8594; tabelas da raiz &#8594; schemas &#8594; tabelas</td><td><code>bancos</code>, <code>tabelas</code></td></tr>
-        <tr><td>Estrutura</td><td>colunas, em qual dos cinco arquivos cada uma mora, índices, chaves estrangeiras, paginação</td><td><code>esquema</code></td></tr>
+        <tr><td>Estrutura</td><td>colunas, em qual dos arquivos cada uma mora, índices, chaves estrangeiras, paginação</td><td><code>esquema</code></td></tr>
         <tr><td>Conteúdo</td><td>as linhas, na ordem de digitação ou na de qualquer índice</td><td><code>varrer</code></td></tr>
         <tr><td>Índices</td><td>o que há no <code>.ndx</code>, e por que ele é o único que não pagina</td><td><code>esquema</code></td></tr>
         <tr><td>Diário</td><td>quem alterou o quê, quando, em que versão</td><td><code>diario</code></td></tr>
@@ -1700,7 +1852,7 @@ footer p{max-width:var(--medida)}
     </table>
   </div>
 
-  <p><strong>53 das 56 operações do protocolo têm tela.</strong> Fora:
+  <p><strong>57 das 60 operações do protocolo têm tela.</strong> Fora:
   <code>buscar</code>, <code>desbloquear</code> e <code>criar_schema</code> — este
   último acontece sozinho quando a tela cria uma tabela dentro de um schema que
   ainda não existe.</p>
@@ -1708,27 +1860,32 @@ footer p{max-width:var(--medida)}
   <h3>Gestão de tabelas: o que cada operação toca no disco</h3>
 
   <p>A tela de tabelas não é um menu de conveniência: cada item ali mexe em um
-  conjunto diferente dos cinco arquivos, e é isso que decide o que é reversível
-  e o que não é. <em>Reparar índice</em> joga fora um arquivo que sabe
-  reconstruir sozinho; <em>Excluir</em> apaga seis e não sabe reconstruir
-  nenhum.</p>
+  conjunto diferente dos arquivos da tabela, e é isso que decide o que é
+  reversível e o que não é. <em>Reparar índice</em> joga fora um arquivo que
+  sabe reconstruir sozinho; <em>Excluir tabela</em> apaga os sete mais o
+  espelho, e não sabe reconstruir nenhum.</p>
 
   <div class="rolo">
     <table>
       <thead><tr><th>Operação</th><th class="num">.reg</th><th class="num">.ndx</th>
         <th class="num">.bin</th><th class="num">.memo</th><th class="num">.log</th>
+        <th class="num">.trash</th><th class="num">.reason</th>
         <th class="num">.bkp</th><th>Desfaz?</th></tr></thead>
       <tbody>
-        <tr><td class="dado">Estrutura</td><td class="num">lê</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td>não altera</td></tr>
-        <tr><td class="dado">Partições</td><td class="num">lê</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td>não altera</td></tr>
-        <tr><td class="dado">Configurações e diretivas</td><td class="num">lê</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td>não altera</td></tr>
-        <tr><td class="dado">Editar conteúdo</td><td class="num">grava</td><td class="num">grava</td><td class="num">grava</td><td class="num">grava</td><td class="num">grava</td><td class="num">se ligado</td><td>linha a linha, pelo diário</td></tr>
-        <tr><td class="dado">Nova tabela</td><td class="num">cria</td><td class="num">cria</td><td class="num">cria</td><td class="num">cria</td><td class="num">cria</td><td class="num">—</td><td>excluindo</td></tr>
-        <tr><td class="dado">Duplicar</td><td class="num">copia</td><td class="num">copia</td><td class="num">copia</td><td class="num">copia</td><td class="num">copia</td><td class="num">se houver</td><td>excluindo a cópia</td></tr>
-        <tr><td class="dado">Copiar / colar</td><td class="num">copia</td><td class="num">copia</td><td class="num">copia</td><td class="num">copia</td><td class="num">copia</td><td class="num">se houver</td><td>excluindo a cópia</td></tr>
-        <tr><td class="dado">Reparar tabela</td><td class="num">grava</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">exige</td><td>não — repara em cima</td></tr>
-        <tr><td class="dado">Reparar índice</td><td class="num">lê</td><td class="num">refaz</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td>refazendo de novo</td></tr>
-        <tr><td class="dado">Excluir</td><td class="num">apaga</td><td class="num">apaga</td><td class="num">apaga</td><td class="num">apaga</td><td class="num">apaga</td><td class="num">apaga</td><td><strong>não</strong></td></tr>
+        <tr><td class="dado">Estrutura</td><td class="num">lê</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td>não altera</td></tr>
+        <tr><td class="dado">Partições</td><td class="num">lê</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td>não altera</td></tr>
+        <tr><td class="dado">Configurações e diretivas</td><td class="num">lê</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td>não altera</td></tr>
+        <tr><td class="dado">Editar conteúdo</td><td class="num">grava</td><td class="num">grava</td><td class="num">grava</td><td class="num">grava</td><td class="num">grava</td><td class="num">grava</td><td class="num">grava</td><td class="num">se ligado</td><td>linha a linha, pelo diário</td></tr>
+        <tr><td class="dado">Nova tabela</td><td class="num">cria</td><td class="num">cria</td><td class="num">cria</td><td class="num">cria</td><td class="num">cria</td><td class="num">cria</td><td class="num">cria</td><td class="num">—</td><td>excluindo</td></tr>
+        <tr><td class="dado">Duplicar</td><td class="num">copia</td><td class="num">copia</td><td class="num">copia</td><td class="num">copia</td><td class="num">copia</td><td class="num">copia</td><td class="num">copia</td><td class="num">se houver</td><td>excluindo a cópia</td></tr>
+        <tr><td class="dado">Copiar / colar</td><td class="num">copia</td><td class="num">copia</td><td class="num">copia</td><td class="num">copia</td><td class="num">copia</td><td class="num">copia</td><td class="num">copia</td><td class="num">se houver</td><td>excluindo a cópia</td></tr>
+        <tr><td class="dado">Reparar tabela</td><td class="num">grava</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">exige</td><td>não — repara em cima</td></tr>
+        <tr><td class="dado">Reparar índice</td><td class="num">lê</td><td class="num">refaz</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td>refazendo de novo</td></tr>
+        <tr><td class="dado">Excluir linha (suave)</td><td class="num">marca</td><td class="num">grava</td><td class="num">—</td><td class="num">—</td><td class="num">grava</td><td class="num">—</td><td class="num">grava</td><td class="num">se ligado</td><td><code>restaurar</code></td></tr>
+        <tr><td class="dado">Excluir linha (física)</td><td class="num">libera</td><td class="num">tira</td><td class="num">libera</td><td class="num">libera</td><td class="num">grava</td><td class="num"><strong>grava</strong></td><td class="num">grava</td><td class="num">se ligado</td><td>reinserindo, com outro rowid</td></tr>
+        <tr><td class="dado">Lixeira e motivos</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">lê</td><td class="num">lê</td><td class="num">—</td><td>não altera · <strong>só admin</strong></td></tr>
+        <tr><td class="dado">Esvaziar a lixeira</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num"><strong>apaga</strong></td><td class="num">grava</td><td class="num">—</td><td><strong>não</strong></td></tr>
+        <tr><td class="dado">Excluir tabela</td><td class="num">apaga</td><td class="num">apaga</td><td class="num">apaga</td><td class="num">apaga</td><td class="num">apaga</td><td class="num">apaga</td><td class="num">apaga</td><td class="num">apaga</td><td><strong>não</strong></td></tr>
       </tbody>
     </table>
   </div>
@@ -1974,11 +2131,11 @@ footer p{max-width:var(--medida)}
           <text x="568" y="271" font-size="10.5" opacity=".7">inserir, alterar e excluir.</text>
 
           <text x="16" y="306" font-size="11" opacity=".6">Carga para a RAM: 53 ms para 50.000 linhas, 2.205 KB de valores. Refaça com <tspan font-weight="600">cargo run --release --example memoria</tspan>.</text>
-          <text x="16" y="326" font-size="11" opacity=".6">Nada entra em memória sozinho: um cache que decide sozinho o que guardar é um cache que um dia decide errado no pior momento.</text>
+          <text x="16" y="326" font-size="10.5" opacity=".6">Nada entra em memória sozinho: um cache que decide sozinho o que guardar é um cache que um dia decide errado no pior momento.</text>
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 14.</b> Os 87× não vêm de mágica: vêm de não ler 50.000
+    <figcaption><b>Figura 15.</b> Os 87× não vêm de mágica: vêm de não ler 50.000
     linhas do disco e de um mapa de igualdade que corta a varredura de 50.000 para
     8.333. O exemplo confere as duas respostas antes de imprimir o número —
     <em>benchmark</em> que compara respostas diferentes não mede nada.</figcaption>
@@ -2081,11 +2238,12 @@ footer p{max-width:var(--medida)}
           <text x="430" y="236" font-size="10" opacity=".7">não assina nada: a privada nunca esteve aqui</text>
 
           <text x="16" y="272" font-size="11.5" opacity=".75"><tspan font-weight="600">A assinatura é sobre a MESMA mensagem da senha.</tspan> Então ela também vale uma vez só, e também morre com o nonce.</text>
-          <text x="16" y="292" font-size="11" opacity=".6">Ed25519 escrito neste projeto, conferido contra os quatro vetores da RFC 8032 e contra a implementação de referência da própria RFC.</text>
+          <text x="16" y="280" font-size="11" opacity=".6">Ed25519 escrito neste projeto, conferido contra os quatro vetores da RFC 8032</text>
+          <text x="16" y="296" font-size="11" opacity=".6">e contra a implementação de referência da própria RFC.</text>
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 15.</b> Os dois retângulos de baixo são o ponto: o
+    <figcaption><b>Figura 16.</b> Os dois retângulos de baixo são o ponto: o
     <code>senha_hash</code> é um segredo que autentica, a <code>chave_publica</code> não
     é. Copiar o <code>config.json</code> deixa de ser suficiente.</figcaption>
   </figure>
@@ -2276,7 +2434,7 @@ footer p{max-width:var(--medida)}
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 16.</b> O portão de leitura no fim do caminho é o
+    <figcaption><b>Figura 17.</b> O portão de leitura no fim do caminho é o
     desenho: o painel agrega tudo, e depois <em>desconta</em> o que este login não
     poderia ver. Número agregado também vaza.</figcaption>
   </figure>
@@ -2406,7 +2564,7 @@ footer p{max-width:var(--medida)}
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 17.</b> O <em>hash join</em>: a tabela de consulta é
+    <figcaption><b>Figura 18.</b> O <em>hash join</em>: a tabela de consulta é
     lida uma vez, a de fatos linha a linha. O teto de 500.000 linhas na consulta
     existe porque ela cabe na memória inteira — e quando estoura, o erro diz
     isso em vez de ficar lento.</figcaption>
@@ -2522,7 +2680,7 @@ footer p{max-width:var(--medida)}
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 18.</b> Taxa é inclinação, e inclinação precisa de dois
+    <figcaption><b>Figura 19.</b> Taxa é inclinação, e inclinação precisa de dois
     pontos. Com um ponto só, o honesto é dizer que ainda não há taxa — dividir
     pelo tempo desde o arranque daria a média da vida inteira da máquina com
     cara de medição de agora.</figcaption>
@@ -2640,7 +2798,7 @@ footer p{max-width:var(--medida)}
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 19.</b> O sal muda a cada conexão, então o embaralhado
+    <figcaption><b>Figura 20.</b> O sal muda a cada conexão, então o embaralhado
     também muda: quem captura a rede não consegue reapresentá-lo depois. O que
     ele <em>consegue</em> ler é o resultado da consulta — por isso a ligação é
     para rede interna ou túnel.</figcaption>
@@ -2801,7 +2959,7 @@ footer p{max-width:var(--medida)}
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 20.</b> As mesmas sete figuras que a tela desenha — e
+    <figcaption><b>Figura 21.</b> As mesmas sete figuras que a tela desenha — e
     que a tela usa como botão. As três da direita são as anti-junções, o
     <code>LEFT JOIN … WHERE B.chave IS NULL</code> e seus irmãos.</figcaption>
   </figure>
@@ -2942,7 +3100,7 @@ footer p{max-width:var(--medida)}
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 21.</b> O código vem <em>junto</em> com o texto, e não
+    <figcaption><b>Figura 22.</b> O código vem <em>junto</em> com o texto, e não
     no lugar dele: o texto é para quem lê, o código é para quem programa. Trocar
     um pelo outro obrigaria alguém a perder.</figcaption>
   </figure>
@@ -3086,7 +3244,7 @@ footer p{max-width:var(--medida)}
       </svg>
 <!-- bancada:fim -->
     </div>
-    <figcaption><b>Figura 22.</b> O perfil do motor num desenho: perde onde
+    <figcaption><b>Figura 23.</b> O perfil do motor num desenho: perde onde
     grava, ganha onde lê em ordem. A varredura por faixa é o formato mostrando
     o que ele é — linhas vizinhas no índice são bytes vizinhos no
     <code>.reg</code>.</figcaption>
@@ -3163,7 +3321,7 @@ footer p{max-width:var(--medida)}
   conta era outra, e ninguém tinha medido.</p>
 
   <p>O servidor chamava <code>sincronizar()</code> depois de cada gravação, o
-  que é <code>fsync</code> em até cinco arquivos. Medindo os dois lados
+  que é <code>fsync</code> em todos os arquivos da tabela. Medindo os dois lados
   separados, com as mesmas 20.000 linhas na mesma tabela:</p>
 
   <div class="rolo">
@@ -3253,7 +3411,7 @@ footer p{max-width:var(--medida)}
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 23.</b> O defeito não era a trava faltar — era ela
+    <figcaption><b>Figura 24.</b> O defeito não era a trava faltar — era ela
     cobrir metade do trabalho. Com índice único sobre a coluna, o índice pegava
     e virava «chave duplicada»; foi assim que apareceu. <strong>Sem índice
     único, a linha sumia em silêncio.</strong></figcaption>
@@ -3491,13 +3649,17 @@ footer p{max-width:var(--medida)}
 </section>
 
 <footer>
-  <p>PhxSql 0.11.0 · 34.156 linhas de Rust em 4 crates, mais 422 KiB de interface ·
-  453 testes · nenhuma dependência externa. Especificação byte a byte em <code>docs/FORMATO.md</code>, cadastro e
+  <!-- rodape:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
+  <p>PhxSql 0.13.0 · 37.159 linhas de Rust em 4 crates,
+  mais 443 KiB de interface · 495 testes ·
+  nenhuma dependência externa.
+  Especificação byte a byte em <code>docs/FORMATO.md</code>, cadastro e
   permissões em <code>docs/USUARIOS.md</code>, desenho da replicação em
   <code>docs/REPLICACAO.md</code>, roteiro em <code>docs/PLANO.md</code>,
   o DbLink em <code>docs/DBLINK.md</code>, as junções em <code>docs/JUNCOES.md</code>,
   a revisão contra os motores maduros em <code>docs/COMPARACAO.md</code>,
   e o que ainda falta em <code>docs/PENDENCIAS.md</code>.</p>
+  <!-- rodape:fim -->
 </footer>
 
 </main>

@@ -29,7 +29,7 @@ use phxsql_core::error::{PhxError, Result};
 use phxsql_core::json::Json;
 use phxsql_store::catalogo::Instancia;
 use phxsql_store::memoria::{Consulta, Filtro, Operador, Ordem, TabelaMemoria};
-use phxsql_store::table::Table;
+use phxsql_store::table::{Table, Visao};
 
 use crate::acesso::{Acesso, LogAcessos};
 use crate::blacklist::Blacklist;
@@ -60,6 +60,11 @@ const OPS_ESCRITA: &[&str] = &[
     "duplicar_tabela",
     "copiar_tabela",
     "ajustar_sequencia",
+    // Marcar, desmarcar e esvaziar mexem em dado gravado. Listar a lixeira e
+    // os motivos, nao -- essas duas so leem, e continuam valendo no modo
+    // somente leitura, que e justamente quando alguem esta investigando.
+    "restaurar",
+    "esvaziar_lixeira",
     // Gravam o cadastro de ligacoes, que e arquivo deste servidor.
     "dblink_salvar",
     "dblink_excluir",
@@ -1550,6 +1555,10 @@ impl Servidor {
             "inserir" => self.op_inserir(p, sessao),
             "atualizar" => self.op_atualizar(p, sessao),
             "excluir" => self.op_excluir(p, sessao),
+            "restaurar" => self.op_restaurar(p, sessao),
+            "lixeira" | "trash" => self.op_lixeira(p, sessao),
+            "motivos" | "reasons" => self.op_motivos(p, sessao),
+            "esvaziar_lixeira" => self.op_esvaziar_lixeira(p, sessao),
             "diario" => self.op_diario(p, sessao),
             "memoria_carregar" => self.op_memoria_carregar(p, sessao),
             "memoria_liberar" => self.op_memoria_liberar(p),
@@ -2429,6 +2438,26 @@ impl Servidor {
         ]))
     }
 
+    /// Nome de quem tem este id no cadastro. Vazio quando ninguem tem.
+    ///
+    /// O `.log`, o `.trash` e o `.reason` guardam o id numerico, e nao o nome:
+    /// o id nao muda quando alguem e renomeado, e uma exclusao de 2019 tem de
+    /// continuar apontando para a mesma pessoa. Traduzir na hora de MOSTRAR e
+    /// o que faz o registro ser legivel sem prender o arquivo ao cadastro.
+    fn nome_do_usuario(&self, id: u32) -> String {
+        if id == 0 {
+            return String::new();
+        }
+        self.config
+            .cadastro
+            .root
+            .iter()
+            .chain(self.config.cadastro.usuarios.iter())
+            .find(|u| u.id == id)
+            .map(|u| u.nome.clone())
+            .unwrap_or_default()
+    }
+
     fn op_esquema(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
         let t = self.abrir_travada(&_trava, p, sessao)?;
@@ -2449,6 +2478,9 @@ impl Servidor {
                     ("tipo", Json::texto_de(format!("{:?}", c.ty))),
                     ("tamanho", Json::de_u64(largura_do_tipo(&c.ty))),
                     ("nullable", Json::Bool(c.nullable)),
+                    // Coluna do MOTOR: a tela nao a oferece como campo de
+                    // formulario. Quem manda nela e o botao de excluir.
+                    ("sistema", Json::Bool(Some(i) == e.coluna_softdeleted())),
                     // O papel nas chaves e DERIVADO dos indices e das FKs, e
                     // por isso nao pode discordar delas.
                     ("primaria", Json::Bool(papel.primaria)),
@@ -2612,10 +2644,28 @@ impl Servidor {
         let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
 
+        // `visao` decide o que a varredura enxerga. O padrao e "ativas": a
+        // linha marcada como excluida some das listas, senao marcar nao teria
+        // efeito nenhum.
+        let visao = match p.texto_ou("visao", "ativas").trim() {
+            "" | "ativas" | "ativos" => Visao::Ativas,
+            "excluidas" | "excluidos" => Visao::Excluidas,
+            "todas" | "todos" => Visao::Todas,
+            outro => {
+                return Err(PhxError::Esquema(format!(
+                    "visao {outro:?} nao existe; use ativas, excluidas ou todas"
+                )))
+            }
+        };
+
         let rowids: Vec<u64> = if indice.is_empty() {
-            t.varrer()?.into_iter().map(|(r, _)| r).collect()
+            t.varrer_com(visao)?.into_iter().map(|(r, _)| r).collect()
         } else {
-            t.varrer_indice(&indice)?
+            // O indice devolve rowid, e a marca esta no registro: pela ordem
+            // do indice a filtragem custa uma leitura por linha. E o preco de
+            // pedir ordenado -- e por isso `Todas` nao paga nada.
+            let todos = t.varrer_indice(&indice)?;
+            t.filtrar(&todos, visao)?
         };
         let total = rowids.len();
         let mut linhas = Vec::new();
@@ -2706,25 +2756,234 @@ impl Servidor {
             .ok_or_else(|| PhxError::Esquema("informe \"valores\"".into()))?;
         let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
-        let linha = json_para_linha(&valores_json, t.esquema())?;
+        let mut linha = json_para_linha(&valores_json, t.esquema())?;
+
+        // Quem alterou a linha nao mandou a coluna de sistema? Entao ela nao
+        // muda. Sem isto, `json_para_linha` preencheria `false` e um
+        // `atualizar` de rotina RESSUSCITARIA uma linha excluida -- sem erro
+        // nenhum, e sem ninguem perceber ate a linha reaparecer na lista.
+        if let Some(i) = t.esquema().coluna_softdeleted() {
+            let nome = phxsql_core::schema::COLUNA_SOFTDELETED;
+            let veio = matches!(&valores_json, Json::Objeto(_))
+                && valores_json.campo(nome).is_some()
+                || matches!(&valores_json, Json::Lista(l) if l.len() > i);
+            if !veio {
+                if let Some(atual) = t.ler(rowid)? {
+                    linha[i] = atual[i].clone();
+                }
+            }
+        }
+
         t.atualizar(rowid, &linha)?;
         self.gravar_de_verdade(&mut t, p)?;
         self.residente_mut(p, |m| m.anotar_alteracao(rowid, &linha));
         Ok(Json::objeto(vec![("rowid", Json::de_u64(rowid))]))
     }
 
+    /// Exclui. **Suave por padrao**, fisica so quando pedida.
+    ///
+    /// # Por que o padrao e o suave
+    ///
+    /// O caminho reversivel e o padrao porque o irreversivel nao pode ser
+    /// escolhido por omissao: um cliente antigo que manda `excluir` sem dizer
+    /// nada esta pedindo "tira isto da minha lista", e e isso que ele recebe.
+    /// Quem quer apagar de vez escreve `"fisico": true` e sabe o que esta
+    /// fazendo. Numa tabela sem a coluna de sistema -- as anteriores a v4 do
+    /// esquema -- so existe o caminho fisico, e ele e usado sem alarde.
     fn op_excluir(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let rowid = self.rowid(p)?;
+        let motivo = p.texto_ou("motivo", "").trim().to_string();
+        let fisico = p.booleano_ou("fisico", false);
         let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
-        let removeu = t.excluir(rowid)?;
+        let tem_marca = t.esquema().coluna_softdeleted().is_some();
+
+        if fisico || !tem_marca {
+            let removeu = t.excluir_de_vez(rowid, &motivo)?;
+            self.gravar_de_verdade(&mut t, p)?;
+            if removeu {
+                self.residente_mut(p, |m| m.anotar_exclusao(rowid));
+            }
+            return Ok(Json::objeto(vec![
+                ("rowid", Json::de_u64(rowid)),
+                ("excluido", Json::Bool(removeu)),
+                ("modo", Json::texto_de("fisico")),
+                ("na_lixeira", Json::Bool(removeu)),
+                ("reversivel", Json::Bool(false)),
+            ]));
+        }
+
+        let marcou = t.excluir_suave(rowid, &motivo)?;
         self.gravar_de_verdade(&mut t, p)?;
-        if removeu {
+        // A copia em RAM tem de esquecer a linha tambem: para quem consulta,
+        // marcada e o mesmo que ausente.
+        if marcou {
             self.residente_mut(p, |m| m.anotar_exclusao(rowid));
         }
         Ok(Json::objeto(vec![
             ("rowid", Json::de_u64(rowid)),
-            ("excluido", Json::Bool(removeu)),
+            ("excluido", Json::Bool(marcou)),
+            ("modo", Json::texto_de("suave")),
+            ("na_lixeira", Json::Bool(false)),
+            ("reversivel", Json::Bool(true)),
+        ]))
+    }
+
+    /// Desfaz uma exclusao suave.
+    fn op_restaurar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let rowid = self.rowid(p)?;
+        let motivo = p.texto_ou("motivo", "").trim().to_string();
+        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let mut t = self.abrir_travada(&_trava, p, sessao)?;
+        let voltou = t.restaurar(rowid, &motivo)?;
+        self.gravar_de_verdade(&mut t, p)?;
+        if voltou {
+            // A linha volta a existir para quem consulta em memoria.
+            if let Some(linha) = t.ler(rowid)? {
+                self.residente_mut(p, |m| m.anotar_insercao(rowid, &linha));
+            }
+        }
+        Ok(Json::objeto(vec![
+            ("rowid", Json::de_u64(rowid)),
+            ("restaurado", Json::Bool(voltou)),
+        ]))
+    }
+
+    /// `lixeira`: as linhas que sairam do `.reg`. **So administrador.**
+    ///
+    /// Os anexos so vao junto com `"com_anexos": true`: listar mil linhas
+    /// carregaria mil fotos para mostrar quem excluiu o que e quando.
+    fn op_lixeira(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let pular = p.inteiro_ou("pular", 0).max(0) as u64;
+        let limite = p.inteiro_ou("limite", 200).max(0) as u64;
+        // Um `uuid` pede UMA linha, e ai os anexos vem sempre: quem pediu uma
+        // linha especifica quer ela inteira. Sem uuid e listagem, e a listagem
+        // nao carrega anexo por padrao -- um memo de megabytes vezes trezentas
+        // linhas viraria uma resposta que ninguem consegue usar.
+        let so_uma = p.texto_ou("uuid", "").trim().to_string();
+        let com_anexos = p.booleano_ou("com_anexos", !so_uma.is_empty());
+        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let mut t = self.abrir_travada(&_trava, p, sessao)?;
+
+        let descartadas = if so_uma.is_empty() {
+            t.lixeira(pular, limite, com_anexos)?
+        } else {
+            let alvo = phxsql_core::uuid::Uuid::de_texto(&so_uma)
+                .map_err(|e| PhxError::Esquema(format!("uuid da linha descartada: {e}")))?;
+            t.lixeira(0, 0, true)?
+                .into_iter()
+                .filter(|d| d.uuid.bytes() == alvo.bytes())
+                .collect()
+        };
+        let (total, bytes) = t.lixeira_tamanho()?;
+        let esquema = t.esquema().clone();
+
+        let mut linhas = Vec::with_capacity(descartadas.len());
+        for d in &descartadas {
+            // A linha pode nao decodificar: se o esquema mudou depois do
+            // descarte, o payload guardado nao bate com ele. Isso nao pode
+            // derrubar a listagem inteira -- a entrada aparece com o aviso, e
+            // as outras continuam sendo mostradas.
+            let (linha, aviso) = match t.linha_da_lixeira(d) {
+                Ok(l) => (crate::valores::linha_para_json(&l, &esquema), String::new()),
+                Err(e) => (Json::Nulo, e.to_string()),
+            };
+            linhas.push(Json::objeto(vec![
+                ("uuid", Json::texto_de(d.uuid.to_string())),
+                ("rowid", Json::de_u64(d.rowid)),
+                ("quando", Json::texto_de(d.instante_iso())),
+                ("usuario", Json::de_u64(d.usuario as u64)),
+                (
+                    "usuario_nome",
+                    Json::texto_de(self.nome_do_usuario(d.usuario)),
+                ),
+                ("bytes", Json::de_u64(d.tamanho() as u64)),
+                // Do CABECALHO, e nao do vetor: numa listagem leve o vetor
+                // esta vazio, e dizer "0 anexos" para uma linha que tem tres
+                // faria quem investiga concluir que a foto nunca existiu.
+                ("anexos", Json::de_u64(d.n_externos as u64)),
+                ("linha", linha),
+                ("aviso", Json::texto_de(&aviso)),
+            ]));
+        }
+        Ok(Json::objeto(vec![
+            ("database", Json::texto_de(p.texto_ou("database", ""))),
+            ("tabela", Json::texto_de(p.texto_ou("tabela", ""))),
+            ("total", Json::de_u64(total)),
+            ("bytes", Json::de_u64(bytes)),
+            // A tela precisa saber se um campo externo vazio quer dizer "nao
+            // tinha" ou "nao carreguei". Sao coisas diferentes.
+            ("anexos_carregados", Json::Bool(com_anexos)),
+            ("colunas", crate::valores::colunas_para_json(&esquema)),
+            ("descartadas", Json::Lista(linhas)),
+        ]))
+    }
+
+    /// `motivos`: por que cada linha foi excluida. **So administrador.**
+    fn op_motivos(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let pular = p.inteiro_ou("pular", 0).max(0) as u64;
+        let limite = p.inteiro_ou("limite", 500).max(0) as u64;
+        let so_do_rowid = p.campo("rowid").is_some();
+        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let mut t = self.abrir_travada(&_trava, p, sessao)?;
+
+        let lista = if so_do_rowid {
+            t.motivos_de(self.rowid(p)?)?
+        } else {
+            t.motivos(pular, limite)?
+        };
+        let total = t.total_de_motivos()?;
+        let exige = t.esquema().motivo_obrigatorio();
+
+        let registros = lista
+            .iter()
+            .map(|m| {
+                Json::objeto(vec![
+                    ("uuid", Json::texto_de(m.uuid.to_string())),
+                    ("rowid", Json::de_u64(m.rowid)),
+                    ("quando", Json::texto_de(m.instante_iso())),
+                    ("carimbo", Json::de_i64(m.carimbo)),
+                    ("tipo", Json::texto_de(m.tipo.nome())),
+                    ("motivo", Json::texto_de(&m.motivo)),
+                    ("identidade", Json::texto_de(&m.identidade)),
+                    ("usuario", Json::de_u64(m.usuario as u64)),
+                    (
+                        "usuario_nome",
+                        Json::texto_de(self.nome_do_usuario(m.usuario)),
+                    ),
+                ])
+            })
+            .collect();
+        Ok(Json::objeto(vec![
+            ("database", Json::texto_de(p.texto_ou("database", ""))),
+            ("tabela", Json::texto_de(p.texto_ou("tabela", ""))),
+            ("total", Json::de_u64(total)),
+            ("motivo_obrigatorio", Json::Bool(exige)),
+            ("motivos", Json::Lista(registros)),
+        ]))
+    }
+
+    /// `esvaziar_lixeira`: daqui nao volta. **So administrador.**
+    ///
+    /// O expurgo e registrado no `.reason` ANTES de a lixeira ser apagada: o
+    /// motivo tem de sobreviver ao dado, senao o rastro some junto com ele.
+    fn op_esvaziar_lixeira(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let motivo = p.texto_ou("motivo", "").trim().to_string();
+        if motivo.is_empty() {
+            return Err(PhxError::Esquema(
+                "informe \"motivo\": esvaziar a lixeira nao tem volta, e sem o \
+                 registro do por que nao sobra rastro nenhum"
+                    .into(),
+            ));
+        }
+        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let mut t = self.abrir_travada(&_trava, p, sessao)?;
+        let apagadas = t.esvaziar_lixeira(&motivo)?;
+        t.sincronizar()?;
+        Ok(Json::objeto(vec![
+            ("database", Json::texto_de(p.texto_ou("database", ""))),
+            ("tabela", Json::texto_de(p.texto_ou("tabela", ""))),
+            ("apagadas", Json::de_u64(apagadas)),
         ]))
     }
 
@@ -5009,6 +5268,10 @@ mod testes_politica {
             // Derrubar conexao alheia nao e leitura: um servidor somente
             // leitura nao deve poder interromper o trabalho de ninguem.
             "encerrar_sessao",
+            // Restaurar desmarca a coluna de sistema, e esvaziar apaga a
+            // lixeira inteira: os dois gravam.
+            "restaurar",
+            "esvaziar_lixeira",
         ] {
             assert!(
                 OPS_ESCRITA.contains(&op),
@@ -5046,6 +5309,10 @@ mod testes_politica {
             "exportar",
             "sessoes",
             "sistema",
+            // Listar a lixeira e os motivos so le -- e e exatamente o que se
+            // quer poder fazer num espelho somente-leitura, investigando.
+            "lixeira",
+            "motivos",
             "dblink",
             "dblink_testar",
             "dblink_tabelas",
@@ -5191,5 +5458,398 @@ mod testes_criar_qualificada {
             .to_string();
         assert!(e.contains("escolha um dos dois"), "{e}");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod testes_exclusao {
+    use super::*;
+    use crate::usuarios::{Cadastro, Nivel, Permissoes, Usuario};
+
+    fn dir_temp(nome: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("phx-excl-{nome}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn servidor(dir: &std::path::Path, cadastro: Cadastro) -> Arc<Servidor> {
+        let c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            cadastro,
+            ..Config::default()
+        };
+        Servidor::novo(c).unwrap()
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    /// Um banco com uma tabela de tres linhas.
+    fn com_dados(dir: &std::path::Path, cadastro: Cadastro) -> Arc<Servidor> {
+        let s = servidor(dir, cadastro);
+        let sessao = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &sessao)
+            .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"c",
+                    "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true},
+                               {"nome":"nome","tipo":"Str(20)"}],
+                    "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]}"#,
+            ),
+            &sessao,
+        )
+        .unwrap();
+        for (id, nome) in [(1, "Adriano"), (2, "Maria"), (3, "Joao")] {
+            s.executar(
+                "inserir",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"c","linha":{{"id":{id},"nome":"{nome}"}}}}"#
+                )),
+                &sessao,
+            )
+            .unwrap();
+        }
+        s
+    }
+
+    /// O padrao do protocolo e o caminho REVERSIVEL. Um cliente que manda
+    /// `excluir` sem dizer mais nada nao pode perder o dado.
+    #[test]
+    fn excluir_sem_dizer_nada_e_suave() {
+        let dir = dir_temp("padrao");
+        let s = com_dados(&dir, Cadastro::default());
+        let sessao = Sessao::default();
+
+        let r = s
+            .executar(
+                "excluir",
+                &pedido(r#"{"database":"b","tabela":"c","rowid":2,"motivo":"pedido"}"#),
+                &sessao,
+            )
+            .unwrap();
+        assert_eq!(r.texto_ou("modo", ""), "suave");
+        assert!(matches!(r.campo("reversivel"), Some(Json::Bool(true))));
+
+        // Sumiu da varredura...
+        let v = s
+            .executar(
+                "varrer",
+                &pedido(r#"{"database":"b","tabela":"c"}"#),
+                &sessao,
+            )
+            .unwrap();
+        assert_eq!(v.inteiro_ou("total", -1), 2);
+
+        // ... e a lixeira continua vazia, porque nada foi apagado.
+        let lx = s
+            .executar(
+                "lixeira",
+                &pedido(r#"{"database":"b","tabela":"c"}"#),
+                &sessao,
+            )
+            .unwrap();
+        assert_eq!(lx.inteiro_ou("total", -1), 0);
+
+        // E volta.
+        let r = s
+            .executar(
+                "restaurar",
+                &pedido(r#"{"database":"b","tabela":"c","rowid":2,"motivo":"engano"}"#),
+                &sessao,
+            )
+            .unwrap();
+        assert!(matches!(r.campo("restaurado"), Some(Json::Bool(true))));
+        let v = s
+            .executar(
+                "varrer",
+                &pedido(r#"{"database":"b","tabela":"c"}"#),
+                &sessao,
+            )
+            .unwrap();
+        assert_eq!(v.inteiro_ou("total", -1), 3);
+    }
+
+    #[test]
+    fn excluir_fisico_passa_pela_lixeira() {
+        let dir = dir_temp("fisico");
+        let s = com_dados(&dir, Cadastro::default());
+        let sessao = Sessao::default();
+
+        let r = s
+            .executar(
+                "excluir",
+                &pedido(
+                    r#"{"database":"b","tabela":"c","rowid":2,
+                        "fisico":true,"motivo":"duplicidade"}"#,
+                ),
+                &sessao,
+            )
+            .unwrap();
+        assert_eq!(r.texto_ou("modo", ""), "fisico");
+        assert!(matches!(r.campo("na_lixeira"), Some(Json::Bool(true))));
+
+        let lx = s
+            .executar(
+                "lixeira",
+                &pedido(r#"{"database":"b","tabela":"c"}"#),
+                &sessao,
+            )
+            .unwrap();
+        assert_eq!(lx.inteiro_ou("total", -1), 1);
+        let itens = lx.campo("descartadas").and_then(Json::lista).unwrap();
+        assert_eq!(itens[0].inteiro_ou("rowid", -1), 2);
+        // A linha vem decodificada, com o esquema da tabela.
+        let linha = itens[0].campo("linha").unwrap();
+        assert_eq!(linha.texto_ou("nome", ""), "Maria");
+        assert_eq!(itens[0].texto_ou("aviso", "x"), "");
+
+        // E o motivo ficou registrado, com a identidade da linha.
+        let m = s
+            .executar(
+                "motivos",
+                &pedido(r#"{"database":"b","tabela":"c"}"#),
+                &sessao,
+            )
+            .unwrap();
+        let regs = m.campo("motivos").and_then(Json::lista).unwrap();
+        assert_eq!(regs.len(), 1);
+        assert_eq!(regs[0].texto_ou("tipo", ""), "fisica");
+        assert_eq!(regs[0].texto_ou("motivo", ""), "duplicidade");
+        assert_eq!(regs[0].texto_ou("identidade", ""), "id=2");
+    }
+
+    /// O defeito que este teste protege: `atualizar` monta a linha inteira a
+    /// partir do JSON, e a coluna de sistema ausente virava `false`. Uma
+    /// edicao de rotina RESSUSCITARIA a linha, sem erro e sem aviso.
+    #[test]
+    fn atualizar_nao_ressuscita_linha_excluida() {
+        let dir = dir_temp("ressuscita");
+        let s = com_dados(&dir, Cadastro::default());
+        let sessao = Sessao::default();
+
+        s.executar(
+            "excluir",
+            &pedido(r#"{"database":"b","tabela":"c","rowid":2}"#),
+            &sessao,
+        )
+        .unwrap();
+        s.executar(
+            "atualizar",
+            &pedido(r#"{"database":"b","tabela":"c","rowid":2,"linha":{"id":2,"nome":"Outra"}}"#),
+            &sessao,
+        )
+        .unwrap();
+
+        let v = s
+            .executar(
+                "varrer",
+                &pedido(r#"{"database":"b","tabela":"c"}"#),
+                &sessao,
+            )
+            .unwrap();
+        assert_eq!(
+            v.inteiro_ou("total", -1),
+            2,
+            "a alteracao ressuscitou a linha excluida"
+        );
+    }
+
+    #[test]
+    fn motivo_obrigatorio_vem_do_esquema() {
+        let dir = dir_temp("obrigatorio");
+        let s = servidor(&dir, Cadastro::default());
+        let sessao = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &sessao)
+            .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"c","motivo_obrigatorio":true,
+                    "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true}]}"#,
+            ),
+            &sessao,
+        )
+        .unwrap();
+        s.executar(
+            "inserir",
+            &pedido(r#"{"database":"b","tabela":"c","linha":{"id":1}}"#),
+            &sessao,
+        )
+        .unwrap();
+
+        let e = s
+            .executar(
+                "excluir",
+                &pedido(r#"{"database":"b","tabela":"c","rowid":1}"#),
+                &sessao,
+            )
+            .unwrap_err();
+        assert!(format!("{e}").contains("motivo"), "{e}");
+
+        // A linha continua viva: a recusa veio antes de qualquer gravacao.
+        let v = s
+            .executar(
+                "varrer",
+                &pedido(r#"{"database":"b","tabela":"c"}"#),
+                &sessao,
+            )
+            .unwrap();
+        assert_eq!(v.inteiro_ou("total", -1), 1);
+
+        // E a tela sabe que a tabela exige, para pedir antes de mandar.
+        let m = s
+            .executar(
+                "motivos",
+                &pedido(r#"{"database":"b","tabela":"c"}"#),
+                &sessao,
+            )
+            .unwrap();
+        assert!(matches!(
+            m.campo("motivo_obrigatorio"),
+            Some(Json::Bool(true))
+        ));
+    }
+
+    /// Esvaziar apaga sem volta -- e por isso exige a frase escrita, mesmo
+    /// numa tabela que nao exige motivo para excluir.
+    #[test]
+    fn esvaziar_exige_motivo_e_registra_antes_de_apagar() {
+        let dir = dir_temp("esvaziar");
+        let s = com_dados(&dir, Cadastro::default());
+        let sessao = Sessao::default();
+        s.executar(
+            "excluir",
+            &pedido(r#"{"database":"b","tabela":"c","rowid":1,"fisico":true}"#),
+            &sessao,
+        )
+        .unwrap();
+
+        let e = s
+            .executar(
+                "esvaziar_lixeira",
+                &pedido(r#"{"database":"b","tabela":"c"}"#),
+                &sessao,
+            )
+            .unwrap_err();
+        assert!(format!("{e}").contains("motivo"), "{e}");
+
+        let r = s
+            .executar(
+                "esvaziar_lixeira",
+                &pedido(r#"{"database":"b","tabela":"c","motivo":"limpeza anual"}"#),
+                &sessao,
+            )
+            .unwrap();
+        assert_eq!(r.inteiro_ou("apagadas", -1), 1);
+
+        let lx = s
+            .executar(
+                "lixeira",
+                &pedido(r#"{"database":"b","tabela":"c"}"#),
+                &sessao,
+            )
+            .unwrap();
+        assert_eq!(lx.inteiro_ou("total", -1), 0);
+
+        // O dado foi; o rastro de que foi, nao.
+        let m = s
+            .executar(
+                "motivos",
+                &pedido(r#"{"database":"b","tabela":"c"}"#),
+                &sessao,
+            )
+            .unwrap();
+        let regs = m.campo("motivos").and_then(Json::lista).unwrap();
+        assert!(regs.iter().any(|r| r.texto_ou("tipo", "") == "expurgo"));
+    }
+
+    /// O portao de permissao: quem so le e escreve nao ve a lixeira nem os
+    /// motivos. E o requisito de "somente o administrador visualiza".
+    #[test]
+    fn lixeira_e_motivos_exigem_administrar() {
+        for op in ["lixeira", "trash", "motivos", "reasons", "esvaziar_lixeira"] {
+            assert_eq!(
+                Atividade::da_operacao(op),
+                Some(Atividade::Administrar),
+                "{op:?} nao exige administrar"
+            );
+        }
+        // Excluir e restaurar continuam no poder de excluir, que e o certo:
+        // quem pode tirar da lista pode devolver.
+        assert_eq!(Atividade::da_operacao("excluir"), Some(Atividade::Excluir));
+        assert_eq!(
+            Atividade::da_operacao("restaurar"),
+            Some(Atividade::Excluir)
+        );
+    }
+
+    /// E o portao de verdade, com um usuario que tem tudo menos administrar.
+    #[test]
+    fn operador_sem_administrar_e_recusado_na_lixeira() {
+        let dir = dir_temp("portao");
+        let mut cadastro = Cadastro::default();
+        let permissoes = Permissoes {
+            ler: true,
+            inserir: true,
+            alterar: true,
+            excluir: true,
+            administrar: false,
+            ..Permissoes::default()
+        };
+        cadastro.usuarios.push(Usuario {
+            id: 7,
+            nome: "Operador".into(),
+            login: "op".into(),
+            senha_hash: String::new(),
+            email: String::new(),
+            telefone: String::new(),
+            supervisor: false,
+            ativo: true,
+            nivel: Nivel::Nenhum,
+            chave_publica: None,
+            bases: vec![("*".into(), permissoes)],
+        });
+        let usuario = cadastro.usuarios[0].clone();
+        let s = com_dados(&dir, cadastro);
+
+        let mut sessao = Sessao {
+            usuario: Some(usuario),
+            ..Sessao::default()
+        };
+        // Pelo `despachar`, que e por onde o pedido entra de verdade: e ali
+        // que mora o portao de permissao, e nao no `executar`.
+        let (_, _, r) = s.despachar(
+            r#"{"op":"lixeira","token":"t","database":"b","tabela":"c"}"#,
+            &mut sessao,
+            "1.2.3.4",
+        );
+        let e = r.unwrap_err();
+        assert!(
+            format!("{e}").contains("administrar"),
+            "o operador entrou na lixeira: {e}"
+        );
+
+        let (_, _, r) = s.despachar(
+            r#"{"op":"motivos","token":"t","database":"b","tabela":"c"}"#,
+            &mut sessao,
+            "1.2.3.4",
+        );
+        assert!(r.is_err(), "o operador leu os motivos");
+
+        // Mas excluir ele pode.
+        let (_, _, r) = s.despachar(
+            r#"{"op":"excluir","token":"t","database":"b","tabela":"c","rowid":1}"#,
+            &mut sessao,
+            "1.2.3.4",
+        );
+        assert!(r.is_ok(), "o operador nao conseguiu excluir: {r:?}");
     }
 }

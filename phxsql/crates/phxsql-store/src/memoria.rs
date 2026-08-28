@@ -799,6 +799,7 @@ mod tests {
             Value::Str("Cafe".into()),
             Value::Str("Curitiba".into()),
             Value::Decimal(2100),
+            Value::Bool(false),
         ];
         let rowid = t.inserir(&nova).unwrap();
         m.anotar_insercao(rowid, &nova);
@@ -820,6 +821,7 @@ mod tests {
             Value::Str("Cha".into()),
             Value::Str("Curitiba".into()),
             Value::Decimal(2100),
+            Value::Bool(false),
         ];
         t.atualizar(rowid, &trocada).unwrap();
         m.anotar_alteracao(rowid, &trocada);
