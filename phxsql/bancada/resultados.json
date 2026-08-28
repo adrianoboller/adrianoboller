@@ -1,12 +1,12 @@
 [
   {
-    "segundos": 131.13599999999997,
-    "cpu_s": 128.39999999999998,
+    "segundos": 673.5210000000001,
+    "cpu_s": 661.9999999999998,
     "lido_mb": 0.0,
-    "escrito_mb": 467.89999999999975,
-    "pico_rss_mb": 212.4,
+    "escrito_mb": 1876.500000000001,
+    "pico_rss_mb": 859.1,
     "motor": "PhxSql",
     "fase": "inserir",
-    "operacoes": 2000000
+    "operacoes": 8000000
   }
 ]
