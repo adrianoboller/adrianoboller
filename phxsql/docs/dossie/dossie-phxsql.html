@@ -286,9 +286,10 @@ footer p{max-width:var(--medida)}
     <li><a href="#s17"><span class="n">17</span> A máquina embaixo</a></li>
     <li><a href="#s18"><span class="n">18</span> DbLink</a></li>
     <li><a href="#s19"><span class="n">19</span> Junções</a></li>
-    <li><a href="#s20"><span class="n">20</span> Bancada</a></li>
-    <li><a href="#s21"><span class="n">21</span> Decisões</a></li>
-    <li><a href="#s22"><span class="n">22</span> Estado e roteiro</a></li>
+    <li><a href="#s20"><span class="n">20</span> Operação</a></li>
+    <li><a href="#s21"><span class="n">21</span> Bancada</a></li>
+    <li><a href="#s22"><span class="n">22</span> Decisões</a></li>
+    <li><a href="#s23"><span class="n">23</span> Estado e roteiro</a></li>
   </ol>
 </nav>
 
@@ -308,12 +309,12 @@ footer p{max-width:var(--medida)}
   você digitou</strong>, e nada nunca a embaralha.</p>
 
   <div class="painel">
-    <div><div class="v">31.660</div><div class="r">linhas de Rust</div></div>
-    <div><div class="v">432</div><div class="r">testes</div></div>
+    <div><div class="v">32.812</div><div class="r">linhas de Rust</div></div>
+    <div><div class="v">440</div><div class="r">testes</div></div>
     <div><div class="v">0</div><div class="r">dependências</div></div>
     <div><div class="v">4</div><div class="r">crates</div></div>
     <div><div class="v">5</div><div class="r">arquivos/tabela</div></div>
-    <div><div class="v">5.344</div><div class="r">linhas de doc</div></div>
+    <div><div class="v">5.465</div><div class="r">linhas de doc</div></div>
   </div>
 </header>
 
@@ -1643,7 +1644,7 @@ footer p{max-width:var(--medida)}
     </table>
   </div>
 
-  <p><strong>48 das 51 operações do protocolo têm tela.</strong> Fora:
+  <p><strong>52 das 55 operações do protocolo têm tela.</strong> Fora:
   <code>buscar</code>, <code>desbloquear</code> e <code>criar_schema</code> — este
   último acontece sozinho quando a tela cria uma tabela dentro de um schema que
   ainda não existe.</p>
@@ -1782,7 +1783,7 @@ footer p{max-width:var(--medida)}
 
   <h3>O editor de menu mora no navegador, não no servidor</h3>
 
-  <p>Ele troca o nome exibido de qualquer um dos 93 rótulos da barra e dos
+  <p>Ele troca o nome exibido de qualquer um dos 97 rótulos da barra e dos
   menus. O que muda é o texto: <strong>a letra do atalho continua a de
   fábrica</strong>, senão renomear um menu mudaria a tecla debaixo do dedo de
   quem já aprendeu.</p>
@@ -2829,6 +2830,159 @@ footer p{max-width:var(--medida)}
 <!-- ============================= 20 ============================= -->
 <section id="s20">
   <div class="rotulo"><span class="num">20</span><span class="traco"></span></div>
+  <h2>Operação: o que se pergunta quando algo está estranho</h2>
+
+  <p>Esta seção saiu de uma revisão contra o <em>help embutido</em> de dois
+  motores maduros, rodando na própria máquina — 705 tópicos de um, 833 do
+  outro. O objetivo não era copiar superfície: 79 tabelas de catálogo e 632
+  variáveis de sistema não fazem um motor melhor. Era achar <strong>o que um
+  operador alcança lá e não alcançava aqui</strong>.</p>
+
+  <p>Quatro lacunas eram reais.</p>
+
+  <h3>Erro só tinha texto</h3>
+
+  <p>Quem integrasse com o PhxSql precisava comparar <strong>texto</strong> para
+  saber o que tinha acontecido. Melhorar a redação de uma mensagem quebraria o
+  cliente — e quebraria <em>calado</em>. Um motor maduro mantém milhares de
+  códigos justamente por isso.</p>
+
+  <figure>
+    <div class="fig-caixa">
+      <svg viewBox="0 0 840 234" role="img" aria-label="Antes, a resposta de erro trazia só um texto, e o cliente precisava comparar a mensagem. Depois, traz código, nome, classe e se adianta repetir — e o cliente ramifica pelo número, que não muda quando a redação melhora.">
+        <g font-family="IBM Plex Mono, monospace" font-size="11.5" fill="currentColor">
+
+          <text x="16" y="24" font-size="11" opacity=".62">antes</text>
+          <rect x="16" y="34" width="360" height="58" rx="5" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".55"/>
+          <text x="30" y="54" font-size="10.5">{ "ok": false,</text>
+          <text x="30" y="70" font-size="10.5">  "erro": "chave duplicada: indice unico pk…" }</text>
+          <text x="30" y="86" font-size="10" fill="var(--pend)">o cliente compara TEXTO</text>
+
+          <text x="16" y="126" font-size="11" opacity=".62">depois</text>
+          <rect x="16" y="136" width="360" height="86" rx="5" fill="none" stroke="var(--acento)" stroke-width="1.4"/>
+          <text x="30" y="156" font-size="10.5">{ "ok": false,</text>
+          <text x="30" y="172" font-size="10.5">  "erro": "chave duplicada: …",</text>
+          <text x="30" y="188" font-size="10.5" fill="var(--acento)">  "codigo": 3002, "nome": "DUPLICADO",</text>
+          <text x="30" y="204" font-size="10.5" fill="var(--acento)">  "classe": "dado", "repetir": false }</text>
+
+          <line x1="400" y1="128" x2="440" y2="128" stroke="currentColor" stroke-width="1.2" opacity=".3"/>
+
+          <text x="470" y="24" font-size="11" opacity=".62">as faixas agrupam por família</text>
+          <g font-size="10.5">
+            <rect x="470" y="36" width="352" height="22" rx="3" fill="none" stroke="currentColor" stroke-width="1" opacity=".35"/>
+            <text x="482" y="51">1000  formato   o arquivo não é o que dizia ser</text>
+            <rect x="470" y="62" width="352" height="22" rx="3" fill="none" stroke="currentColor" stroke-width="1" opacity=".35"/>
+            <text x="482" y="77">2000  esquema   o pedido não casa com a estrutura</text>
+            <rect x="470" y="88" width="352" height="22" rx="3" fill="none" stroke="var(--acento)" stroke-width="1.2"/>
+            <text x="482" y="103">3000  dado      o dado em si recusa</text>
+            <rect x="470" y="114" width="352" height="22" rx="3" fill="none" stroke="currentColor" stroke-width="1" opacity=".35"/>
+            <text x="482" y="129">4000  acesso    quem pediu não podia</text>
+            <rect x="470" y="140" width="352" height="22" rx="3" fill="none" stroke="currentColor" stroke-width="1" opacity=".35"/>
+            <text x="482" y="155">5000  sistema   o sistema de arquivos falhou</text>
+          </g>
+          <text x="470" y="184" font-size="10.5" opacity=".7">a `classe` é DERIVADA da faixa —</text>
+          <text x="470" y="199" font-size="10.5" opacity=".7">as duas não têm como divergir</text>
+          <text x="470" y="219" font-size="10.5" fill="var(--pend)">número publicado nunca muda</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>Figura 21.</b> O código vem <em>junto</em> com o texto, e não
+    no lugar dele: o texto é para quem lê, o código é para quem programa. Trocar
+    um pelo outro obrigaria alguém a perder.</figcaption>
+  </figure>
+
+  <p>A regra que faz o número valer alguma coisa: <strong>número nunca muda, e
+  número aposentado nunca volta</strong>. Trocar o significado de um código é
+  pior do que não ter código, porque o cliente antigo continua tratando pelo
+  sentido velho — e há teste que falha se um código publicado mudar.</p>
+
+  <div class="nota">
+    <p>O que ainda é grosseiro, e vale dizer: o código é por <em>variante</em> de
+    erro, e não por situação. <code>ESQUEMA_INVALIDO</code> cobre desde config
+    errado até chave de junção de famílias diferentes. O que existe já resolve o
+    caso que importa — ramificar entre «duplicado», «não encontrado» e «acesso
+    negado» sem olhar texto.</p>
+  </div>
+
+  <h3>O log sabia o quê, e não sobre o quê</h3>
+
+  <p>«<code>varrer</code> levou 4 s» sem o nome da tabela é quase inútil para
+  quem opera: não dá para somar por tabela nem para achar a que custa caro. O
+  registro passou a gravar o <em>objeto</em> do pedido. Como o log é JSON por
+  linha, o arquivo antigo continua sendo lido — campo ausente vira vazio, não
+  erro.</p>
+
+  <h3>Não dava para ver nem derrubar ninguém</h3>
+
+  <p>O servidor sabia <strong>contar</strong> conexões e não sabia dizer quem
+  eram. Quando uma consulta prende a trava de dados, faltavam exatamente as duas
+  respostas que importam: <em>quem está segurando</em> e <em>como solto</em>. É
+  a diferença entre diagnosticar em um minuto e reiniciar o servidor.</p>
+
+  <p>A lista traz a porta de dados e as sessões do navegador <strong>juntas</strong>
+  — uma lista que mostra metade não serve. E o que o encerramento alcança está
+  dito na própria resposta, em vez de só na documentação:</p>
+
+  <div class="rolo">
+    <table>
+      <thead><tr><th>Estado da conexão</th><th>O que acontece ao encerrar</th></tr></thead>
+      <tbody>
+        <tr><td>esperando pedido</td><td>o soquete fecha na hora — é o caso comum da conexão esquecida aberta</td></tr>
+        <tr><td>executando</td><td>a operação termina assim mesmo; o resultado não vai para lugar nenhum e a conexão não volta</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>Não há como abandonar uma varredura no meio sem arriscar deixar a tabela
+  aberta pela metade. Prometer um encerramento que parece instantâneo e não é
+  seria pior do que dizer o que ele faz.</p>
+
+  <h3>A média escondia a cauda</h3>
+
+  <p>O painel dizia «ms médio». Mil respostas de 1 ms e uma de 30 s dão média de
+  30 ms — e o número parece bom enquanto alguém espera meio minuto. Quem responde
+  «está rápido?» é o percentil 95, não a média.</p>
+
+  <p>Ligar o histograma pela primeira vez apontou <strong>p95 de 3,3 s</strong>. A
+  lista das mais demoradas explicou na mesma tela: <em>todas</em> eram
+  <code>login</code> — o PBKDF2 de 210.000 voltas, lento de propósito. O número
+  estava certo; a leitura anterior é que era inútil, porque a média de um
+  <code>login</code> com um <code>ping</code> não descreve nem um nem outro.</p>
+
+  <p>As faixas do histograma <strong>dobram</strong> (1, 2, 4, 8, 16… ms) porque
+  a diferença entre 1 ms e 2 ms importa tanto quanto entre 1 s e 2 s. Faixa de
+  largura fixa esmagaria a metade rápida num balde só.</p>
+
+  <h3>O que ficou de fora, e por quê</h3>
+
+  <div class="rolo">
+    <table>
+      <thead><tr><th>O que existe lá</th><th>Por que não entrou</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Compactação (<code>OPTIMIZE TABLE</code>)</td>
+          <td>o <code>.reg</code> nunca reaproveita slot excluído, e compactar significa reescrever <code>rowid</code> — que é <em>endereço</em>. Uma tabela com muitas exclusões cresce e não encolhe: é consequência aceita da ordem de digitação ser garantida, e mudar isso é uma decisão, não um conserto</td>
+        </tr>
+        <tr>
+          <td>Estatísticas para o planejador</td>
+          <td>não há planejador — quem escolhe o índice é quem escreve a operação. Estatística sem consumidor é arquivo para manter atualizado sem ninguém ler</td>
+        </tr>
+        <tr>
+          <td><code>EXPLAIN</code></td>
+          <td>faz sentido <em>depois</em> da camada SQL. Antes dela, o equivalente honesto é «esta junção vai ler N linhas» — e isso as estatísticas já contam depois do fato</td>
+        </tr>
+        <tr>
+          <td>Catálogo com dezenas de tabelas</td>
+          <td>o catálogo daqui cobre o que existe. Tabela de catálogo para recurso que não existe é promessa em forma de esquema</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============================= 21 ============================= -->
+<section id="s21">
+  <div class="rotulo"><span class="num">21</span><span class="traco"></span></div>
   <h2>A bancada: dez milhões de linhas, medidas</h2>
 
   <p>Um motor novo só tem duas maneiras de se apresentar: prometendo, ou
@@ -2876,7 +3030,7 @@ footer p{max-width:var(--medida)}
       </svg>
 <!-- bancada:fim -->
     </div>
-    <figcaption><b>Figura 21.</b> O perfil do motor num desenho: perde onde
+    <figcaption><b>Figura 22.</b> O perfil do motor num desenho: perde onde
     grava, ganha onde lê em ordem. A varredura por faixa é o formato mostrando
     o que ele é — linhas vizinhas no índice são bytes vizinhos no
     <code>.reg</code>.</figcaption>
@@ -3043,7 +3197,7 @@ footer p{max-width:var(--medida)}
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 22.</b> O defeito não era a trava faltar — era ela
+    <figcaption><b>Figura 23.</b> O defeito não era a trava faltar — era ela
     cobrir metade do trabalho. Com índice único sobre a coluna, o índice pegava
     e virava «chave duplicada»; foi assim que apareceu. <strong>Sem índice
     único, a linha sumia em silêncio.</strong></figcaption>
@@ -3076,9 +3230,9 @@ footer p{max-width:var(--medida)}
   seção sai de lá; nenhum foi estimado.</p>
 </section>
 
-<!-- ============================= 21 ============================= -->
-<section id="s21">
-  <div class="rotulo"><span class="num">21</span><span class="traco"></span></div>
+<!-- ============================= 22 ============================= -->
+<section id="s22">
+  <div class="rotulo"><span class="num">22</span><span class="traco"></span></div>
   <h2>Decisões tomadas</h2>
 
   <div class="rolo">
@@ -3165,9 +3319,9 @@ footer p{max-width:var(--medida)}
   </div>
 </section>
 
-<!-- ============================= 22 ============================= -->
-<section id="s22">
-  <div class="rotulo"><span class="num">22</span><span class="traco"></span></div>
+<!-- ============================= 23 ============================= -->
+<section id="s23">
+  <div class="rotulo"><span class="num">23</span><span class="traco"></span></div>
   <h2>Estado e roteiro</h2>
 
   <div class="rolo">
@@ -3204,9 +3358,14 @@ footer p{max-width:var(--medida)}
         <tr><td>Tabela dinâmica · cruzamento somado no servidor, com <em>hash join</em></td><td><span class="pino ok">pronto</span></td><td class="num">12</td></tr>
         <tr><td>As sete junções do diagrama · escolhidas clicando no desenho</td><td><span class="pino ok">pronto</span></td><td class="num">13</td></tr>
         <tr><td><code>UNION</code> e <code>UNION ALL</code> · empilham por posição</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
+        <tr><td>Erro com código estável, nome e classe · e teste que trava o número</td><td><span class="pino ok">pronto</span></td><td class="num">4</td></tr>
+        <tr><td>Sessões e encerramento · quem está falando, e como derrubar</td><td><span class="pino ok">pronto</span></td><td class="num">4</td></tr>
+        <tr><td>Estatísticas de uso · percentis, histograma e uso por tabela</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
+        <tr><td>Soma de verificação de tabela · comparar cópias sem transportar</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
+        <tr><td>Compactação — reaproveitar espaço de linha excluída</td><td><span class="pino nao">a decidir</span></td><td class="num">—</td></tr>
         <tr><td>Espelho <code>.bkp</code> · segunda chance do <code>.reg</code></td><td><span class="pino ok">pronto</span></td><td class="num">4</td></tr>
         <tr><td>Bancada medida contra o MySQL(R), 10 milhões</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
-        <tr><td>View Database · grade de tabelas e ficha de edição · 48 das 51 ops na tela</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
+        <tr><td>View Database · grade de tabelas e ficha de edição · 52 das 55 ops na tela</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
         <tr><td>Gestão de tabelas · onze operações sobre a tabela escolhida</td><td><span class="pino ok">pronto</span></td><td class="num">14</td></tr>
         <tr><td>Partição por período · mensal, bimestral, semestral, anual</td><td><span class="pino ok">pronto</span></td><td class="num">6</td></tr>
         <tr><td>Metadados de campo · id estável, caption, descrição, máscara</td><td><span class="pino ok">pronto</span></td><td class="num">7</td></tr>
@@ -3219,7 +3378,7 @@ footer p{max-width:var(--medida)}
         <tr><td>Configurações e diretivas da tabela · geometria, chaves e volumes</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
         <tr><td>Editor de menu · troca o nome exibido de cada item</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
         <tr><td>Barra de ferramentas · 23 ferramentas, 19 vivas e 4 dizendo o que falta</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
-        <tr><td>Barra de menu tradicional · nove menus, 61 itens · Alt, setas e Esc</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
+        <tr><td>Barra de menu tradicional · nove menus, 65 itens · Alt, setas e Esc</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
         <tr><td>Tema claro e escuro · console para vários servidores</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
         <tr><td>Monitores da máquina · CPU, memória, placas de rede, discos e espaço</td><td><span class="pino ok">pronto</span></td><td class="num">6</td></tr>
         <tr><td>Aviso de disco apertado por e-mail · cliente SMTP escrito aqui</td><td><span class="pino ok">pronto</span></td><td class="num">16</td></tr>
@@ -3276,11 +3435,12 @@ footer p{max-width:var(--medida)}
 </section>
 
 <footer>
-  <p>PhxSql 0.11.0 · 31.660 linhas de Rust em 4 crates, mais 406 KiB de interface ·
-  432 testes · nenhuma dependência externa. Especificação byte a byte em <code>docs/FORMATO.md</code>, cadastro e
+  <p>PhxSql 0.11.0 · 32.812 linhas de Rust em 4 crates, mais 417 KiB de interface ·
+  440 testes · nenhuma dependência externa. Especificação byte a byte em <code>docs/FORMATO.md</code>, cadastro e
   permissões em <code>docs/USUARIOS.md</code>, desenho da replicação em
   <code>docs/REPLICACAO.md</code>, roteiro em <code>docs/PLANO.md</code>,
   o DbLink em <code>docs/DBLINK.md</code>, as junções em <code>docs/JUNCOES.md</code>,
+  a revisão contra os motores maduros em <code>docs/COMPARACAO.md</code>,
   e o que ainda falta em <code>docs/PENDENCIAS.md</code>.</p>
 </footer>
 

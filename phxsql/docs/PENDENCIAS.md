@@ -98,9 +98,10 @@ o código, não contra a lembrança — foi assim que a chave estrangeira saiu d
 | ☑️ | 89 | **Alerta de falta de espaço por e-mail**, configurado no config | seção `alertas`, com dois limites no OU e silêncio entre avisos. Cliente SMTP escrito aqui — **sem TLS**, serve para relé interno |
 | ☑️ | 90 | **Monitores de placa de rede, CPU, memória e HDs no dashboard** | do `/proc`, com taxa entre duas amostras; renovam sozinhos a cada quatro segundos. **Só no Linux** — fora dele a tela diz que não sabe medir, em vez de mostrar zero |
 | ☑️ | 91 | **Operações básicas de union, inner join e as outras do diagrama** | as sete figuras (`interna`, `esquerda`, `direita`, `completa`, `so_esquerda`, `so_direita`, `so_dos_lados`) mais `UNION` e `UNION ALL`. Na tela se escolhe **clicando no desenho de Venn**, com o SQL equivalente escrito embaixo. Chave composta, e nulo que não casa com nulo, como no SQL |
+| ☑️ | 92 | **Revisar o help do MySQL(R) e do MariaDB(R) e ver o que melhorar** | comparado contra os dois help embutidos rodando (705 e 833 tópicos). Entraram: erro com **código estável**, `sessoes` (PROCESSLIST), `encerrar_sessao` (KILL), `estatisticas` com percentis/histograma/mais-lentas/por-tabela, `checksum` e tempo no ar. O que ficou fora está em `docs/COMPARACAO.md` **com o motivo** |
 | ☑️ | 67 | **Botão e menu Tabelas** para gerir as tabelas do banco: nova, estrutura, editar conteúdo, partições, duplicar, reparar tabela, reparar índice e excluir — e **Gestão de transações** no menu de ferramentas | as oito operações funcionam de ponta a ponta; três delas (`criar_tabela`, `duplicar_tabela`, `excluir_tabela`) nasceram aqui, e `criar_schema` — prometido na documentação e nunca despachado — junto |
 
-**81 feitos · 4 parciais · 6 planejados**, de 91 pedidos.
+**82 feitos · 4 parciais · 6 planejados**, de 92 pedidos.
 
 Fora do que você pediu, entraram por medição: o CRC slice-by-8, o `descer` sem
 reler a folha, a conferência de unicidade sem descida dupla, e dezoito
