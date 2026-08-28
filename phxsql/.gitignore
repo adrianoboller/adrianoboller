@@ -5,6 +5,7 @@
 # Nao vai para o repositorio -- refaz-se com `python3 bancada/medir.py`.
 /bancada/phxsql/
 /bancada/comando.sql
+/bancada/gera.sql
 /pacotes/
 
 # Rodar o phxsqld a partir do repositorio deixa log e lista de bloqueio.
