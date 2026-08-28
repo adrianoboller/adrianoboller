@@ -8,7 +8,7 @@ deve acreditar.
 |---|---|
 | `medir.py` | a bancada: cerca cada fase com os contadores do `/proc` |
 | `graficos.py` | gera a página de comparação a partir do `resultados.json` |
-| `resultados.json` | a última medição, crua — é dela que o dossiê se gera |
+| `resultados.json` | a última medição **completa**, crua — é dela que o dossiê se gera |
 | `carga-10-milhoes.log` | o log da corrida de 10.000.000 |
 | `resultados-3-milhoes.json` | a corrida de 3.000.000, guardada inteira |
 | `carga-3-milhoes.log` | o log dela |
@@ -25,6 +25,17 @@ service mysql start
 python3 bancada/medir.py 10000000     # ~50 min: 45 do insert do PhxSql
 python3 bancada/graficos.py
 ```
+
+## O arquivo do repositório só muda no fim
+
+Durante a corrida o progresso vai para `resultados.parcial.json`, que não é
+versionado. Só quando a medição fecha inteira ele é promovido a
+`resultados.json`, com `os.replace` — que troca de uma vez: ou o arquivo é o
+antigo inteiro, ou o novo inteiro, nunca metade de cada.
+
+Isso existe porque uma corrida de dez milhões leva vinte minutos, e durante
+esse tempo o arquivo versionado ficava com meia medição dentro. Quem olhasse
+via número, não via "faltam quatro fases".
 
 ## Duas escalas, e por que as duas ficam
 

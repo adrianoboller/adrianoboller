@@ -37,6 +37,13 @@ BASE = Path(__file__).resolve().parent
 CARGA = "/home/user/adrianoboller/phxsql/target/release/examples/carga"
 PHX_DIR = BASE / "phxsql"
 RESULTADOS = BASE / "resultados.json"
+# Enquanto a corrida anda, o progresso vai para ca. O arquivo versionado so e
+# tocado no fim, quando a medicao esta inteira.
+#
+# Nao e capricho de arrumacao: uma corrida de dez milhoes leva vinte minutos, e
+# durante esse tempo o `resultados.json` do repositorio ficava com meia medicao
+# dentro. Quem olhasse via numero, nao via "faltam quatro fases".
+PARCIAL = BASE / "resultados.parcial.json"
 
 
 def le_io(pid):
@@ -179,7 +186,18 @@ def fase_mysql(fase, n, comando):
 
 
 def guardar(resultados):
-    RESULTADOS.write_text(json.dumps(resultados, indent=2, ensure_ascii=False))
+    """Grava o progresso no arquivo de trabalho, nao no versionado."""
+    PARCIAL.write_text(json.dumps(resultados, indent=2, ensure_ascii=False))
+
+
+def publicar():
+    """Promove a medicao completa. So aqui o arquivo do repositorio muda.
+
+    `os.replace` troca de uma vez: ou o `resultados.json` e o antigo inteiro,
+    ou o novo inteiro, nunca metade de cada.
+    """
+    if PARCIAL.exists():
+        os.replace(PARCIAL, RESULTADOS)
 
 
 def main():
@@ -309,6 +327,7 @@ def main():
         "bytes": du("/var/lib/mysql/bench"),
     })
     guardar(resultados)
+    publicar()
     print("=== fim ===", flush=True)
 
 
