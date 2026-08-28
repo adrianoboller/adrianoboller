@@ -3158,7 +3158,7 @@ impl Servidor {
         }
         for e in &novos {
             eprintln!(
-                "DISCO APERTADO: {} ({}) -- {:.1}% livre, {} MB",
+                "DISCO APERTADO: {} ({}) -- {:.1}% livre, {} MB de espaco",
                 e.caminho,
                 e.montagem,
                 e.livre_percentual(),
@@ -3191,15 +3191,26 @@ impl Servidor {
         let mut t = String::new();
         t.push_str("O PhxSql esta com pouco espaco em disco.\n\n");
         for e in discos {
+            // O "de" e o ALCANCAVEL, e nao o tamanho do disco: o percentual ao
+            // lado ja e sobre ele, e misturar as duas bases daria uma conta que
+            // nao fecha para quem le ("45% de 258 GB nao dao 17 GB"). A reserva
+            // do sistema de arquivos aparece a parte, quando existe.
             t.push_str(&format!(
-                "  {}\n    montagem  {} ({})\n    livre     {} MB de {} MB ({:.1}%)\n\n",
+                "  {}\n    montagem  {} ({})\n    livre     {} MB de {} MB ({:.1}%)\n",
                 e.caminho,
                 e.montagem,
                 e.dispositivo,
                 e.livre_kb / 1_024,
-                e.total_kb / 1_024,
+                e.utilizavel_kb() / 1_024,
                 e.livre_percentual()
             ));
+            if e.reservado_kb() > 0 {
+                t.push_str(&format!(
+                    "    reserva   {} MB do sistema de arquivos, fora do alcance\n",
+                    e.reservado_kb() / 1_024
+                ));
+            }
+            t.push('\n');
         }
         t.push_str(&format!(
             "Servidor PhxSql {VERSAO}\nQuando: {}\n",
