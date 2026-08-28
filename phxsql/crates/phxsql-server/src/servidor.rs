@@ -20,6 +20,7 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -234,6 +235,16 @@ pub struct Servidor {
     /// por CONEXAO, entao manter o soquete e o que faz o PBKDF2 do servidor
     /// remoto rodar uma vez por login e nao a cada clique.
     remotos: Mutex<HashMap<String, Arc<Mutex<Remoto>>>>,
+    /// Amostra anterior da maquina, para as taxas do painel.
+    ///
+    /// Guardar aqui, e nao na tela, e o que permite dizer "CPU em 40%": o
+    /// `/proc` so traz contadores desde o arranque, e taxa exige duas
+    /// amostras. Uma unica trava para todos os navegadores tambem evita cada
+    /// aba abrir a propria serie e nenhuma delas fechar conta.
+    monitor: Mutex<crate::sistema::Monitor>,
+    /// Ultimo aviso mandado por caminho, para nao repetir enquanto o disco
+    /// continua cheio.
+    avisados: Mutex<HashMap<String, i64>>,
     conexoes: AtomicUsize,
 }
 
@@ -252,6 +263,8 @@ impl Servidor {
             sessoes: Mutex::new(http::Sessoes::default()),
             residentes: Mutex::new(HashMap::new()),
             remotos: Mutex::new(HashMap::new()),
+            monitor: Mutex::new(crate::sistema::Monitor::novo()),
+            avisados: Mutex::new(HashMap::new()),
             conexoes: AtomicUsize::new(0),
         }))
     }
@@ -295,6 +308,7 @@ impl Servidor {
         self.subir_web();
         self.subir_backup_agendado();
         self.ligar_relogio_de_gravacao();
+        self.ligar_vigia_de_disco();
 
         for conexao in ouvinte.incoming() {
             match conexao {
@@ -1427,6 +1441,7 @@ impl Servidor {
             "memoria_liberar" => self.op_memoria_liberar(p),
             "memoria" => self.op_memoria(),
             "painel" => self.op_painel(sessao),
+            "sistema" => Ok(self.op_sistema()),
             "backup" => self.op_backup(p, sessao),
             "reparar" => self.op_reparar(p, sessao),
             "conferir_backup" => self.op_conferir_backup(p),
@@ -2653,6 +2668,212 @@ impl Servidor {
         ]))
     }
 
+    // ----------------------------------------------------- a maquina embaixo
+
+    /// Os caminhos cujo espaco em disco interessa a este servidor.
+    ///
+    /// O `base` sempre, porque e onde o dado mora. O destino do backup quando
+    /// ha backup agendado -- e o disco que enche calado, porque ninguem olha
+    /// para ele ate o dia em que o backup falha. E o que o operador acrescentar
+    /// em `alertas.caminhos`.
+    ///
+    /// Repetido nao entra duas vezes; a mesma particao, sim: `base` e
+    /// `backup.destino` podem cair na mesma montagem, e mostrar as duas linhas
+    /// e o que responde "o disco do banco esta cheio?" sem obrigar ninguem a
+    /// adivinhar qual montagem contem qual pasta.
+    pub fn caminhos_vigiados(&self) -> Vec<PathBuf> {
+        let mut v = vec![self.config.base.clone()];
+        if self.config.backup.agendado {
+            v.push(self.config.backup.destino.clone());
+        }
+        v.extend(self.config.alertas.caminhos.iter().cloned());
+        v.dedup_by(|a, b| a == b);
+        v
+    }
+
+    /// O retrato da maquina: CPU, memoria, discos, placas de rede e IO.
+    ///
+    /// Uma chamada so, pelo mesmo motivo do painel: cinco pedidos separados
+    /// custariam cinco idas e voltas para mostrar um cabecalho.
+    fn op_sistema(&self) -> Json {
+        let caminhos = self.caminhos_vigiados();
+        let refs: Vec<&Path> = caminhos.iter().map(|p| p.as_path()).collect();
+        let mut retrato = match self.monitor.lock() {
+            Ok(mut m) => m.ler(&refs),
+            // Trava envenenada nao pode derrubar o painel: monitor e o que
+            // alguem abre JUSTAMENTE quando algo ja deu errado.
+            Err(_) => crate::sistema::Monitor::novo().ler(&refs),
+        };
+        // O limite entra junto com a medida: sem ele a tela teria de conhecer
+        // a regra do config para saber que barra pintar de vermelho, e a regra
+        // acabaria escrita em dois lugares.
+        if let Json::Objeto(campos) = &mut retrato {
+            campos.push((
+                "alertas".into(),
+                Json::objeto(vec![
+                    ("ligado", Json::Bool(self.config.alertas.ligado)),
+                    (
+                        "livre_minimo_percentual",
+                        Json::texto_de(format!(
+                            "{:.2}",
+                            self.config.alertas.livre_minimo_percentual
+                        )),
+                    ),
+                    (
+                        "livre_minimo_mb",
+                        Json::de_u64(self.config.alertas.livre_minimo_mb),
+                    ),
+                    ("email", Json::Bool(self.config.alertas.email.ligado)),
+                ]),
+            ));
+            campos.push((
+                "apertados".into(),
+                Json::Lista(
+                    self.discos_apertados()
+                        .iter()
+                        .map(|e| Json::texto_de(&e.caminho))
+                        .collect(),
+                ),
+            ));
+        }
+        retrato
+    }
+
+    /// Quais dos caminhos vigiados estao abaixo do limite.
+    ///
+    /// Responde mesmo com os alertas desligados: o limite continua sendo a
+    /// regra de "apertado", e o painel pinta a barra de vermelho de qualquer
+    /// jeito. Desligado quer dizer "nao manda e-mail", nao "nao olha".
+    fn discos_apertados(&self) -> Vec<crate::sistema::EspacoEmDisco> {
+        let caminhos = self.caminhos_vigiados();
+        let refs: Vec<&Path> = caminhos.iter().map(|p| p.as_path()).collect();
+        crate::sistema::espaco(&refs)
+            .into_iter()
+            .filter(|e| {
+                self.config
+                    .alertas
+                    .apertado(e.livre_percentual(), e.livre_kb)
+            })
+            .collect()
+    }
+
+    /// Confere o espaco de tempos em tempos e avisa quando aperta.
+    ///
+    /// Thread propria porque a conferencia chama o `df` e, no caso do aviso,
+    /// abre uma conexao TCP com o rele de e-mail -- nenhuma das duas coisas
+    /// pode acontecer no caminho de uma consulta.
+    fn ligar_vigia_de_disco(self: &Arc<Self>) {
+        if !self.config.alertas.ligado {
+            return;
+        }
+        let a = &self.config.alertas;
+        eprintln!(
+            "vigia de disco: a cada {} min | aperta abaixo de {:.0}% livre ou {} MB | {}",
+            a.checar_minutos,
+            a.livre_minimo_percentual,
+            a.livre_minimo_mb,
+            if a.email.ligado {
+                format!("avisa {}", a.email.para.join(", "))
+            } else {
+                "so no painel (e-mail desligado)".to_string()
+            }
+        );
+        let servidor = Arc::clone(self);
+        std::thread::spawn(move || {
+            let intervalo = Duration::from_secs(servidor.config.alertas.checar_minutos * 60);
+            loop {
+                servidor.conferir_disco();
+                std::thread::sleep(intervalo);
+            }
+        });
+    }
+
+    /// Uma rodada do vigia: olha os discos, avisa o que estiver apertado.
+    ///
+    /// O silencio entre dois avisos do mesmo caminho e por caminho, e nao
+    /// global: dois discos apertando no mesmo dia sao duas noticias, nao uma.
+    fn conferir_disco(&self) {
+        let apertados = self.discos_apertados();
+        if apertados.is_empty() {
+            // Aliviou: esquece o que ja foi avisado, para que a proxima vez
+            // avise de novo em vez de ficar calado pelas horas do silencio.
+            if let Ok(mut a) = self.avisados.lock() {
+                a.clear();
+            }
+            return;
+        }
+        let agora = crate::agora_ms();
+        let silencio = self.config.alertas.repetir_horas as i64 * 3_600_000;
+        let novos: Vec<&crate::sistema::EspacoEmDisco> = {
+            let Ok(mut vistos) = self.avisados.lock() else {
+                return;
+            };
+            apertados
+                .iter()
+                .filter(|e| match vistos.get(&e.caminho) {
+                    Some(quando) if agora - *quando < silencio => false,
+                    _ => {
+                        vistos.insert(e.caminho.clone(), agora);
+                        true
+                    }
+                })
+                .collect()
+        };
+        if novos.is_empty() {
+            return;
+        }
+        for e in &novos {
+            eprintln!(
+                "DISCO APERTADO: {} ({}) -- {:.1}% livre, {} MB",
+                e.caminho,
+                e.montagem,
+                e.livre_percentual(),
+                e.livre_kb / 1_024
+            );
+        }
+        if !self.config.alertas.email.ligado {
+            return;
+        }
+        let assunto = format!(
+            "{} ({} {})",
+            self.config.alertas.email.assunto,
+            novos.len(),
+            if novos.len() == 1 {
+                "caminho"
+            } else {
+                "caminhos"
+            }
+        );
+        let corpo = Self::texto_do_alerta(&novos, agora);
+        match crate::email::enviar(&self.config.alertas.email, &assunto, &corpo) {
+            Ok(r) => eprintln!("alerta de disco enviado: {r}"),
+            // Falhar em avisar tambem e noticia -- e ela nao pode sumir junto
+            // com o aviso que nao saiu.
+            Err(e) => eprintln!("alerta de disco NAO ENVIADO: {e}"),
+        }
+    }
+
+    fn texto_do_alerta(discos: &[&crate::sistema::EspacoEmDisco], agora: i64) -> String {
+        let mut t = String::new();
+        t.push_str("O PhxSql esta com pouco espaco em disco.\n\n");
+        for e in discos {
+            t.push_str(&format!(
+                "  {}\n    montagem  {} ({})\n    livre     {} MB de {} MB ({:.1}%)\n\n",
+                e.caminho,
+                e.montagem,
+                e.dispositivo,
+                e.livre_kb / 1_024,
+                e.total_kb / 1_024,
+                e.livre_percentual()
+            ));
+        }
+        t.push_str(&format!(
+            "Servidor PhxSql {VERSAO}\nQuando: {}\n",
+            phxsql_core::datahora::instante_iso(agora)
+        ));
+        t
+    }
+
     // -------------------------------------------------------------- o painel
 
     /// Tudo que o painel mostra, numa chamada so.
@@ -3412,6 +3633,7 @@ mod testes_politica {
             "diario",
             "verificar",
             "painel",
+            "sistema",
             "acessos",
             "usuarios",
             "sistabelas",

@@ -575,6 +575,17 @@ body,.cartao,.barra,.arvore,table,td,th{
 .carta svg{width:100%;height:auto;display:block;overflow:visible}
 .carta.larga{grid-column:1/-1}
 .vazioc{color:var(--texto-3);font-size:12.5px;font-style:italic;padding:14px 0}
+/* display:contents faz o embrulho sumir do grid: os cartoes da maquina viram
+   filhos diretos de .cartas, e sao repintados sozinhos a cada leitura sem que
+   o embrulho vire uma celula gorda no meio do painel. */
+.passa{display:contents}
+.maquina{display:grid;grid-template-columns:auto 1fr;gap:8px 26px;align-items:center}
+.medidores{display:flex;gap:14px}
+.medidores svg{width:168px;height:auto;display:block}
+/* Numa janela estreita os arcos passam para cima das barras: lado a lado eles
+   espremeriam o disco ate o texto do caminho nao caber. */
+@media (max-width:960px){.maquina{grid-template-columns:1fr}
+                         .medidores{justify-content:center}}
 
 /* O phx-grid traz o proprio tema claro. Aqui ele passa a seguir o do
    console: os tokens dele apontam para os nossos, e o sol/lua troca os dois
@@ -721,6 +732,7 @@ const est = { sessao:null, usuario:null, token:"", demo:false,
               // servidor que serviu a pagina.
               servidor:"", portaLocal:5000, servidores:[], database:"",
               teto:200, esquemaAtual:null, grade:null, painel:null,
+              maquina:null, relogioMaquina:null,
               // O formulario de nova tabela sobrevive a um "+ coluna": o
               // rascunho fica aqui e a tela se redesenha a partir dele.
               rascunho:null,
@@ -1416,10 +1428,190 @@ function anel(fatias) {
   </svg>`;
 }
 
+
+// ---------------------------------------------------------------- a máquina
+//
+// Os monitores de CPU, memória, disco e rede. Vêm da operação `sistema`, que
+// lê /proc — e por isso trazem taxa só a partir da segunda leitura: /proc dá
+// contador desde o boot, e taxa precisa de dois instantes.
+
+/// Medidor de arco. Para o que é percentual de um todo — CPU e memória.
+function medidor(percentual, rotulo, detalhe, limite = 90) {
+  const p = Math.max(0, Math.min(100, Number(percentual) || 0));
+  // O arco abre 240°, e as duas pontas caem em baixo, a y = cy + R·sen(135°).
+  // Com cy=58 e R=46 elas caíam em 90, que era exatamente a linha do detalhe —
+  // o traço laranja passava por cima do texto. Subir o centro e descer o
+  // detalhe separa os dois.
+  const R = 42, cx = 60, cy = 50, esp = 10;
+  // Arco de 240°, aberto embaixo: a abertura é onde o texto respira, e um
+  // anel fechado obrigaria o número a disputar espaço com o traço.
+  const a0 = Math.PI * 0.75, total = Math.PI * 1.5;
+  const ponto = (a) => `${(cx + R * Math.cos(a)).toFixed(2)},${(cy + R * Math.sin(a)).toFixed(2)}`;
+  const arco = (de, ate, cor, opac) => {
+    if (ate - de < 1e-4) return "";
+    return `<path d="M${ponto(de)} A${R},${R} 0 ${ate - de > Math.PI ? 1 : 0},1 ${ponto(ate)}"
+      fill="none" stroke="${cor}" stroke-width="${esp}" stroke-linecap="round" opacity="${opac}"/>`;
+  };
+  const cor = p >= limite ? "var(--log)" : p >= limite * 0.75 ? "var(--ambar)" : "var(--laranja)";
+  return `<svg viewBox="0 0 120 ${detalhe ? 104 : 86}" role="img"
+    aria-label="${esc(rotulo)}: ${p.toFixed(1)}%">
+    ${arco(a0, a0 + total, "currentColor", ".14")}
+    ${arco(a0, a0 + total * (p / 100), cor, ".95")}
+    <text x="${cx}" y="${cy + 2}" text-anchor="middle" font-size="21" font-weight="700"
+          fill="currentColor" font-variant-numeric="tabular-nums">${p.toFixed(0)}<tspan font-size="12">%</tspan></text>
+    <text x="${cx}" y="${cy + 18}" text-anchor="middle" font-size="9.5" fill="currentColor"
+          opacity=".55" letter-spacing=".08em">${esc(rotulo.toUpperCase())}</text>
+    ${detalhe ? `<text x="${cx}" y="${cy + 49}" text-anchor="middle" font-size="9.5"
+          fill="currentColor" opacity=".6">${esc(detalhe)}</text>` : ""}
+  </svg>`;
+}
+
+/// Barra de ocupação, de 0 a 100. Para disco, onde o total é conhecido e o que
+/// interessa é quanto falta.
+function barrasCheias(itens, largura = 1180) {
+  if (!itens.length) return `<div class="vazioc">sem dados ainda</div>`;
+  // O SVG escala o desenho INTEIRO, texto junto: um viewBox de 360 esticado
+  // até a largura da carta larga faz 11 px virarem 38 px. A largura tem de
+  // nascer perto da real — é a mesma armadilha anotada em `barras`.
+  const L = largura, alt = 40;
+  const h = itens.length * alt + 4;
+  return `<svg viewBox="0 0 ${L} ${h}" role="img" aria-label="Ocupação dos discos">` +
+    itens.map((it, k) => {
+      const y = k * alt + 4;
+      const p = Math.max(0, Math.min(100, it.percentual));
+      const cor = it.alerta ? "var(--log)" : p >= 90 ? "var(--ambar)" : "var(--laranja)";
+      return `<g>
+        <text x="0" y="${y + 11}" font-size="11.5" fill="currentColor" opacity=".85">${esc(it.nome)}</text>
+        <text x="${L}" y="${y + 11}" text-anchor="end" font-size="10.5"
+              font-family="IBM Plex Mono, monospace" fill="currentColor"
+              opacity=".7">${esc(it.texto)}</text>
+        <rect x="0" y="${y + 18}" width="${L}" height="10" rx="5" fill="currentColor" opacity=".1"/>
+        <rect x="0" y="${y + 18}" width="${Math.max(2, (p / 100) * L).toFixed(1)}" height="10"
+              rx="5" fill="${cor}" opacity=".9"/>
+      </g>`;
+    }).join("") + `</svg>`;
+}
+
+const fmtTaxa = b => fmtBytes(Number(b) || 0) + "/s";
+
+/// Os quatro monitores da máquina, prontos para entrar no painel.
+///
+/// Devolve string vazia quando o servidor não sabe medir (fora do Linux) ou
+/// quando quem está olhando não é administrador: o monitor some da tela em vez
+/// de aparecer zerado, porque zero seria mentira.
+function maquinaHtml(m) {
+  if (!m) return "";
+  const carta = (titulo, legenda, corpo, larga) =>
+    `<div class="carta ${larga ? "larga" : ""}"><h4>${titulo}</h4>
+       <p class="leg">${legenda}</p>${corpo}</div>`;
+
+  if (!m.disponivel) {
+    return carta("A máquina", `monitor de sistema indisponível em <b>${esc(m.sistema)}</b>`,
+      `<div class="vazioc">CPU, memória e rede saem do /proc, que só existe no Linux.
+       O espaço em disco continua valendo — ele vem do <code>df</code>.</div>`,
+      true) + (m.discos && m.discos.length ? carta("Espaço em disco",
+        "cada caminho que este servidor usa", discosHtml(m), true) : "");
+  }
+
+  const cpu = m.cpu || {}, mem = m.memoria || {};
+  const primeira = cpu.primeira_leitura;
+  const memPerc = Number(mem.usada_percentual) || 0;
+  const carga = (cpu.carga || []).join("  ");
+
+  // Medidores à esquerda, discos à direita: os dois arcos ocupam largura
+  // fixa, e o resto da carta larga fica todo para as barras de disco — que é
+  // o que cresce com o número de caminhos vigiados.
+  const medidores = `<div class="medidores">
+    ${medidor(primeira ? 0 : cpu.uso_percentual, "cpu",
+      `${cpu.nucleos || "?"} núcleos${carga ? " · carga " + carga : ""}`)}
+    ${medidor(memPerc, "memória",
+      `${fmtBytes((mem.usada_kb || 0) * 1024)} de ${fmtBytes((mem.total_kb || 0) * 1024)}`)}
+  </div>`;
+
+  const rede = (m.rede || []).filter(r => r.rx_bytes || r.tx_bytes);
+  const io = (m.io || []).filter(d => d.leituras || d.escritas);
+
+  return carta("A máquina", primeira
+      ? "primeira leitura · a taxa aparece na próxima, porque taxa precisa de dois instantes"
+      : `medido nos últimos ${(m.segundos_desde_a_ultima || "0").replace(".", ",")} s`,
+      `<div class="maquina">${medidores}
+         <div>${m.discos && m.discos.length ? discosHtml(m) : ""}</div>
+       </div>`, true) +
+    carta("Placas de rede", primeira ? "aguardando o segundo instante" : "tráfego por interface",
+      barras(rede.map(r => ({
+        nome: r.interface,
+        valor: Number(r.rx_bytes_s) + Number(r.tx_bytes_s),
+        texto: `↓${fmtTaxa(r.rx_bytes_s)}  ↑${fmtTaxa(r.tx_bytes_s)}`,
+        cor: r.erros > 0 ? "var(--log)" : "var(--reg)",
+      })), { rotulo: 92, texto: 168, titulo: "Tráfego por placa de rede" })) +
+    carta("Discos", primeira ? "aguardando o segundo instante" : "leitura e escrita por disco físico",
+      barras(io.map(d => ({
+        nome: d.disco,
+        valor: Number(d.lidos_bytes_s) + Number(d.escritos_bytes_s),
+        texto: `↓${fmtTaxa(d.lidos_bytes_s)}  ↑${fmtTaxa(d.escritos_bytes_s)}`,
+        cor: "var(--ndx)",
+      })), { rotulo: 92, texto: 168, titulo: "Leitura e escrita por disco" }));
+}
+
+function discosHtml(m) {
+  const apertados = new Set(m.apertados || []);
+  // 800 é a largura real da coluna da direita nesta carta; o viewBox tem de
+  // nascer perto dela, senão o texto sai esticado ou espremido.
+  return barrasCheias((m.discos || []).map(d => ({
+    nome: d.caminho + (d.montagem && d.montagem !== d.caminho ? `  ·  ${d.montagem}` : ""),
+    percentual: Number(d.usado_percentual),
+    alerta: apertados.has(d.caminho),
+    // O denominador é o alcançável (usado + livre), e não o tamanho do disco:
+    // reserva de sistema de arquivos e cota não estão à disposição de ninguém,
+    // e contá-las como livres é o que faz um disco cheio parecer vazio.
+    texto: `${fmtBytes(d.livre_kb * 1024)} livres de ${fmtBytes((d.utilizavel_kb ?? d.total_kb) * 1024)}`
+      + (d.reservado_kb ? `  ·  ${fmtBytes(d.reservado_kb * 1024)} reservados` : ""),
+  })), 800);
+}
+
+/// Lê a máquina sem derrubar o painel se não puder.
+///
+/// Um leitor não tem direito de ver nome de placa de rede, e nesse caso o
+/// servidor recusa — o que é a resposta certa, e não um erro para mostrar na
+/// tela. O painel simplesmente não desenha os monitores.
+async function lerMaquina() {
+  try { return await api("sistema"); } catch { return null; }
+}
+
+/// Renova só os monitores da máquina, de tempos em tempos.
+///
+/// Só eles: repintar o painel inteiro faria o servidor varrer todos os bancos
+/// a cada quatro segundos para atualizar um número de CPU. E o intervalo é o
+/// que define a taxa — a leitura de agora é comparada com a de quatro segundos
+/// atrás, então uma janela curta demais mostraria ruído e uma longa demais
+/// esconderia o pico.
+function ligarMonitor(segundos = 4) {
+  pararMonitor();
+  if (!est.maquina) return;   // sem permissão ou sem /proc: nada a renovar
+  est.relogioMaquina = setInterval(async () => {
+    const alvo = $("#maquina");
+    // A tela pode ter mudado entre dois tiques; sem o alvo, o relógio para
+    // sozinho em vez de escrever num elemento que já saiu da página.
+    if (!alvo) return pararMonitor();
+    const m = await lerMaquina();
+    if (!m) return pararMonitor();
+    est.maquina = m;
+    if ($("#maquina")) $("#maquina").innerHTML = maquinaHtml(m);
+  }, segundos * 1000);
+}
+
+function pararMonitor() {
+  if (est.relogioMaquina) clearInterval(est.relogioMaquina);
+  est.relogioMaquina = null;
+}
+
 async function vPainel() {
-  const d = await api("painel");
+  // As duas chamadas em paralelo: o `painel` varre os bancos e o `sistema`
+  // chama o `df`, e uma esperar a outra dobraria o tempo da tela por nada.
+  const [d, maquina] = await Promise.all([api("painel"), lerMaquina()]);
   const s = d.resumo;
   est.painel = d;
+  est.maquina = maquina;
 
   const kpi = (v, r, u, classe) =>
     `<div class="kpi ${classe || ""}"><div class="v">${v}</div>
@@ -1447,7 +1639,8 @@ async function vPainel() {
   const CORES = { admin:"var(--vermelhao)", dono:"var(--laranja)", operador:"var(--ambar)",
                   leitor:"var(--reg)", nenhum:"var(--texto-3)" };
 
-  return `<div class="kpis">${kpis}</div><div class="cartas">
+  return `<div class="kpis">${kpis}</div><div class="cartas" id="cartas">
+    <div id="maquina" class="passa">${maquinaHtml(maquina)}</div>
     ${carta("Operações por hora", "últimas 24 horas · as barras vermelhas são as recusadas",
         areaHoras(d.por_hora, d.recusadas_por_hora), true)}
     ${carta("Operações mais pedidas", "verde é o que passou, vermelho o que foi recusado",
@@ -1474,14 +1667,16 @@ async function vPainel() {
 async function abrirAdmin(qual) {
   est.atual = null;
   $("#abas").innerHTML = "";
+  pararMonitor();
   const p = $("#painel");
   p.innerHTML = `<div class="centro">carregando…</div>`;
   try {
     if (qual === "painel") {
       $("#titulo").textContent = "Painel";
       $("#subtitulo").textContent =
-        `${est.painel ? "" : ""}o servidor inteiro numa tela · uma única chamada ao servidor`;
+        "o servidor inteiro numa tela · os monitores da máquina renovam sozinhos";
       p.innerHTML = await vPainel();
+      ligarMonitor();
       return;
     }
     if (qual === "usuarios") {
@@ -4552,6 +4747,9 @@ function folha(titulo, subtitulo, corpoHtml) {
   // dispararia nesta. Ja aconteceu -- a gestao do banco levava o clique das
   // telas seguintes.
   $("#painel").onclick = null;
+  // E o mesmo caso do onclick: o relogio do monitor continuaria batendo numa
+  // tela que nao tem mais onde desenhar.
+  pararMonitor();
   $("#titulo").textContent = titulo;
   $("#subtitulo").textContent = subtitulo || "";
   $("#painel").innerHTML = corpoHtml;

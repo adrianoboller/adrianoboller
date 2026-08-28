@@ -109,6 +109,11 @@ impl Atividade {
             // leitura -- e nao administrar. Um operador tem direito de ver o
             // tamanho do que ele mesmo opera.
             "painel" => Atividade::Ler,
+            // Ja o monitor da MAQUINA pede administrar. Nome de placa de rede,
+            // nome de disco e ponto de montagem descrevem a infraestrutura, e
+            // nao o dado -- quem so le uma tabela nao ganha nada com isso e o
+            // atacante ganha o mapa.
+            "sistema" => Atividade::Administrar,
             "inserir" => Atividade::Inserir,
             "atualizar" => Atividade::Alterar,
             "excluir" => Atividade::Excluir,

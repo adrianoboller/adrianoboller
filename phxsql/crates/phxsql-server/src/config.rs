@@ -240,6 +240,252 @@ impl Backup {
     }
 }
 
+/// Aviso de espaco em disco, e por onde o aviso sai.
+///
+/// Vem desligado. Um alerta que dispara sozinho para um destinatario que
+/// ninguem conferiu vira caixa de entrada cheia, e caixa de entrada cheia e
+/// como um alerta de verdade passa despercebido.
+///
+/// # Os dois limites
+///
+/// Percentual e piso em MB valem JUNTOS, no OU: o que chegar primeiro
+/// dispara. Sozinho, cada um erra de um lado -- 10% de um disco de 8 TB sao
+/// 800 GB, que nao e aperto nenhum; e 1 GB livre num disco de 20 GB e aperto
+/// de verdade sem chegar perto de 10%.
+#[derive(Debug, Clone)]
+pub struct Alertas {
+    pub ligado: bool,
+    /// Percentual livre abaixo do qual o disco vira alerta. Zero desliga.
+    pub livre_minimo_percentual: f64,
+    /// Piso absoluto de espaco livre, em MB. Zero desliga.
+    pub livre_minimo_mb: u64,
+    /// De quanto em quanto tempo o relogio confere os discos.
+    pub checar_minutos: u64,
+    /// Silencio entre dois avisos do MESMO caminho.
+    ///
+    /// Sem isto o alerta vira enxurrada: um disco cheio continua cheio, e
+    /// avisar a cada conferencia manda dezenas de mensagens por hora ate
+    /// alguem liberar espaco.
+    pub repetir_horas: u64,
+    /// Caminhos extras a vigiar, alem do `base` e do destino do backup.
+    pub caminhos: Vec<PathBuf>,
+    pub email: Email,
+}
+
+impl Default for Alertas {
+    fn default() -> Self {
+        Alertas {
+            ligado: false,
+            livre_minimo_percentual: 10.0,
+            livre_minimo_mb: 1_024,
+            checar_minutos: 15,
+            repetir_horas: 6,
+            caminhos: Vec::new(),
+            email: Email::default(),
+        }
+    }
+}
+
+impl Alertas {
+    fn de_json(j: &Json) -> Result<Alertas> {
+        let padrao = Alertas::default();
+        let Some(a) = j.campo("alertas") else {
+            return Ok(padrao);
+        };
+        let numero = |campo: &str, padrao: f64| {
+            a.campo(campo)
+                .and_then(Json::numero)
+                .unwrap_or(padrao)
+                .max(0.0)
+        };
+        let alertas = Alertas {
+            ligado: a.booleano_ou("ligado", false),
+            livre_minimo_percentual: numero(
+                "livre_minimo_percentual",
+                padrao.livre_minimo_percentual,
+            )
+            .min(100.0),
+            livre_minimo_mb: numero("livre_minimo_mb", padrao.livre_minimo_mb as f64) as u64,
+            checar_minutos: a
+                .inteiro_ou("checar_minutos", padrao.checar_minutos as i64)
+                .max(1) as u64,
+            repetir_horas: a
+                .inteiro_ou("repetir_horas", padrao.repetir_horas as i64)
+                .max(0) as u64,
+            caminhos: a
+                .textos("caminhos")
+                .into_iter()
+                .map(PathBuf::from)
+                .collect(),
+            email: Email::de_json(a)?,
+        };
+        if alertas.ligado && alertas.livre_minimo_percentual <= 0.0 && alertas.livre_minimo_mb == 0
+        {
+            return Err(PhxError::Esquema(
+                "alertas ligado com os dois limites em zero: nada dispararia nunca \
+                 (preencha livre_minimo_percentual ou livre_minimo_mb)"
+                    .into(),
+            ));
+        }
+        if alertas.ligado && alertas.email.ligado {
+            alertas.email.validar()?;
+        }
+        Ok(alertas)
+    }
+
+    /// Este disco esta apertado?
+    pub fn apertado(&self, livre_percentual: f64, livre_kb: u64) -> bool {
+        (self.livre_minimo_percentual > 0.0 && livre_percentual < self.livre_minimo_percentual)
+            || (self.livre_minimo_mb > 0 && livre_kb / 1_024 < self.livre_minimo_mb)
+    }
+
+    pub fn para_json(&self) -> Json {
+        Json::objeto(vec![
+            ("ligado", Json::Bool(self.ligado)),
+            (
+                "livre_minimo_percentual",
+                Json::texto_de(format!("{:.2}", self.livre_minimo_percentual)),
+            ),
+            ("livre_minimo_mb", Json::de_u64(self.livre_minimo_mb)),
+            ("checar_minutos", Json::de_u64(self.checar_minutos)),
+            ("repetir_horas", Json::de_u64(self.repetir_horas)),
+            (
+                "caminhos",
+                Json::Lista(
+                    self.caminhos
+                        .iter()
+                        .map(|c| Json::texto_de(c.display().to_string()))
+                        .collect(),
+                ),
+            ),
+            ("email", self.email.para_json()),
+        ])
+    }
+}
+
+/// Para onde o alerta vai, e com que credencial.
+///
+/// # O que este cliente NAO faz
+///
+/// Nao fala TLS. A `std` nao traz TLS e o projeto nao aceita crate, entao a
+/// conversa com o servidor de e-mail e em texto claro. Na pratica isso
+/// significa RELE INTERNO -- um `postfix` na propria maquina ou na rede local,
+/// que aceita a mensagem na porta 25 e cuida do TLS para fora. Nao serve para
+/// entregar direto em provedor publico, que exige TLS na porta 465 ou 587.
+///
+/// Consequencia direta: se `usuario` e `senha` forem preenchidos, eles viajam
+/// em base64 pela rede, e base64 nao esconde nada. Preencha so para um rele
+/// que voce controla, e prefira liberar o IP no rele a mandar senha.
+#[derive(Debug, Clone, Default)]
+pub struct Email {
+    pub ligado: bool,
+    pub servidor: String,
+    pub porta: u16,
+    pub de: String,
+    pub para: Vec<String>,
+    pub usuario: String,
+    /// PRIVADO de proposito: quem quiser ler passa por [`Email::senha`], e o
+    /// `para_json` nunca a inclui. E a mesma regra da senha do usuario -- a
+    /// diferenca e que esta o servidor precisa apresentar ao rele, entao nao
+    /// da para guardar so o hash.
+    senha: String,
+    pub assunto: String,
+    pub timeout_s: u64,
+}
+
+impl Email {
+    fn de_json(j: &Json) -> Result<Email> {
+        let Some(e) = j.campo("email") else {
+            return Ok(Email::default());
+        };
+        // A senha pode vir de variavel de ambiente. E o caminho recomendado:
+        // config.json costuma ir para o controle de versao, e variavel de
+        // ambiente nao.
+        let senha = match e.texto_ou("senha_env", "").trim() {
+            "" => e.texto_ou("senha", "").to_string(),
+            var => std::env::var(var).unwrap_or_default(),
+        };
+        Ok(Email {
+            ligado: e.booleano_ou("ligado", false),
+            servidor: e.texto_ou("servidor", "127.0.0.1").trim().to_string(),
+            porta: e.inteiro_ou("porta", 25).clamp(1, 65_535) as u16,
+            de: e.texto_ou("de", "").trim().to_string(),
+            para: e.textos("para"),
+            usuario: e.texto_ou("usuario", "").trim().to_string(),
+            senha,
+            assunto: e
+                .texto_ou("assunto", "PhxSql: espaco em disco")
+                .trim()
+                .to_string(),
+            timeout_s: e.inteiro_ou("timeout_s", 10).max(1) as u64,
+        })
+    }
+
+    /// A senha do rele. O unico caminho de leitura -- e nao aparece em JSON.
+    pub fn senha(&self) -> &str {
+        &self.senha
+    }
+
+    fn validar(&self) -> Result<()> {
+        if self.servidor.is_empty() {
+            return Err(PhxError::Esquema(
+                "alertas.email ligado sem \"servidor\"".into(),
+            ));
+        }
+        if self.de.is_empty() {
+            return Err(PhxError::Esquema(
+                "alertas.email ligado sem \"de\": o rele recusa mensagem sem remetente".into(),
+            ));
+        }
+        if self.para.is_empty() {
+            return Err(PhxError::Esquema(
+                "alertas.email ligado sem \"para\": nao ha para quem mandar".into(),
+            ));
+        }
+        // Cabecalho de e-mail termina em CRLF; um endereco com quebra de linha
+        // deixaria quem escreve o config.json injetar cabecalho na mensagem.
+        for campo in std::iter::once(&self.de).chain(self.para.iter()) {
+            if campo.contains(['\r', '\n']) {
+                return Err(PhxError::Esquema(format!(
+                    "endereco de e-mail com quebra de linha: {campo:?}"
+                )));
+            }
+            if !campo.contains('@') {
+                return Err(PhxError::Esquema(format!(
+                    "endereco de e-mail sem arroba: {campo:?}"
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    pub fn para_json(&self) -> Json {
+        Json::objeto(vec![
+            ("ligado", Json::Bool(self.ligado)),
+            ("servidor", Json::texto_de(&self.servidor)),
+            ("porta", Json::de_u64(self.porta as u64)),
+            ("de", Json::texto_de(&self.de)),
+            (
+                "para",
+                Json::Lista(self.para.iter().map(Json::texto_de).collect()),
+            ),
+            ("usuario", Json::texto_de(&self.usuario)),
+            // Nunca a senha. Nem mascarada com asteriscos do tamanho certo --
+            // o tamanho ja e informacao.
+            (
+                "senha",
+                Json::texto_de(if self.senha.is_empty() {
+                    "(vazia)"
+                } else {
+                    "(oculta)"
+                }),
+            ),
+            ("assunto", Json::texto_de(&self.assunto)),
+            ("tls", Json::Bool(false)),
+        ])
+    }
+}
+
 /// Interface web: um servidor HTTP separado, que serve a pagina do Centro de
 /// Controle e traduz o clique do navegador no mesmo protocolo da porta 5000.
 ///
@@ -537,6 +783,8 @@ pub struct Config {
     pub web: Web,
     /// Backup agendado.
     pub backup: Backup,
+    /// Aviso de disco apertado, e o e-mail por onde ele sai.
+    pub alertas: Alertas,
     /// Campos do arquivo que o servidor nao reconhece.
     ///
     /// Nao e erro -- config antigo continua subindo. E aviso: campo escrito
@@ -550,7 +798,7 @@ pub struct Config {
 ///
 /// Os que comecam com `_` sao comentario -- o JSON nao tem comentario, e os
 /// exemplos usam `_web`, `_backup` e afins para explicar a secao seguinte.
-const CAMPOS_CONHECIDOS: [&str; 17] = [
+const CAMPOS_CONHECIDOS: [&str; 18] = [
     "bind",
     "base",
     "token",
@@ -568,6 +816,7 @@ const CAMPOS_CONHECIDOS: [&str; 17] = [
     "seguranca",
     "web",
     "backup",
+    "alertas",
 ];
 
 /// O que o arquivo trouxe e o servidor nao sabe ler.
@@ -599,6 +848,7 @@ impl Default for Config {
             blacklist: PathBuf::from("blacklist.json"),
             web: Web::default(),
             backup: Backup::default(),
+            alertas: Alertas::default(),
             estranhas: Vec::new(),
         }
     }
@@ -697,6 +947,7 @@ impl Config {
             ),
             web: Web::de_json(j),
             backup: Backup::de_json(j)?,
+            alertas: Alertas::de_json(j)?,
             estranhas: chaves_estranhas(j),
         })
     }
@@ -834,6 +1085,19 @@ impl Config {
                         as u64,
                 ),
             ),
+            // Onde os dados moram DE VERDADE. O campo "base" pode ser
+            // relativo, e relativo a que depende de onde o servidor foi
+            // iniciado -- que e a duvida que a tela precisa tirar.
+            (
+                "base_absoluta",
+                Json::texto_de(
+                    std::fs::canonicalize(&self.base)
+                        .unwrap_or_else(|_| self.base.clone())
+                        .display()
+                        .to_string(),
+                ),
+            ),
+            ("alertas", self.alertas.para_json()),
         ])
     }
 }
@@ -1248,5 +1512,109 @@ mod testes_recursos {
         // cair nessa lista.
         let c = cfg(r#"{"token":"t","recursos":{"threads":2}}"#);
         assert!(!c.estranhas.iter().any(|x| x == "recursos"));
+    }
+}
+
+#[cfg(test)]
+mod testes_alertas {
+    use super::*;
+
+    fn de(txt: &str) -> Config {
+        Config::de_json(&Json::analisar(txt).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn sem_a_secao_o_alerta_vem_desligado() {
+        let c = de(r#"{"token":"x"}"#);
+        assert!(!c.alertas.ligado);
+        assert!(!c.alertas.email.ligado);
+    }
+
+    #[test]
+    fn o_que_dispara_primeiro_manda() {
+        let c = de(r#"{"token":"x","alertas":{"ligado":true,
+                "livre_minimo_percentual":10,"livre_minimo_mb":1024}}"#);
+        let a = &c.alertas;
+        // Disco grande com 12% livre e 900 GB: o percentual nao aperta e o
+        // piso muito menos.
+        assert!(!a.apertado(12.0, 900 * 1024 * 1024));
+        // Mesmo disco a 8%: o percentual aperta, mesmo com 600 GB livres.
+        assert!(a.apertado(8.0, 600 * 1024 * 1024));
+        // Disco pequeno com 20% livre, mas so 500 MB: o piso aperta, mesmo com
+        // o percentual folgado. E o caso que o percentual sozinho perderia.
+        assert!(a.apertado(20.0, 500 * 1024));
+    }
+
+    #[test]
+    fn limite_em_zero_desliga_aquele_lado() {
+        let c = de(r#"{"token":"x","alertas":{"ligado":true,
+                "livre_minimo_percentual":0,"livre_minimo_mb":512}}"#);
+        // So o piso vale: 1% livre com 2 GB nao aperta.
+        assert!(!c.alertas.apertado(1.0, 2 * 1024 * 1024));
+        assert!(c.alertas.apertado(90.0, 100 * 1024));
+    }
+
+    #[test]
+    fn ligado_sem_limite_nenhum_e_erro() {
+        // Um alerta que nunca dispara e pior do que nenhum: quem configurou
+        // acha que esta protegido.
+        let j = Json::analisar(
+            r#"{"token":"x","alertas":{"ligado":true,
+                "livre_minimo_percentual":0,"livre_minimo_mb":0}}"#,
+        )
+        .unwrap();
+        assert!(Config::de_json(&j).is_err());
+    }
+
+    #[test]
+    fn email_ligado_sem_destinatario_nao_sobe() {
+        let j = Json::analisar(
+            r#"{"token":"x","alertas":{"ligado":true,
+                "email":{"ligado":true,"servidor":"rele","de":"phx@x.com"}}}"#,
+        )
+        .unwrap();
+        let e = Config::de_json(&j).unwrap_err().to_string();
+        assert!(e.contains("para"), "{e}");
+    }
+
+    #[test]
+    fn endereco_com_quebra_de_linha_e_recusado() {
+        // Injecao de cabecalho pelo config.json: o "para" carrega um Bcc.
+        let j = Json::analisar(
+            r#"{"token":"x","alertas":{"ligado":true,"email":{"ligado":true,
+                "servidor":"rele","de":"phx@x.com",
+                "para":["a@x.com\r\nBcc: ladrao@fora.com"]}}}"#,
+        )
+        .unwrap();
+        assert!(Config::de_json(&j).is_err());
+    }
+
+    #[test]
+    fn a_senha_do_rele_nunca_aparece_no_json() {
+        let c = de(
+            r#"{"token":"x","alertas":{"ligado":true,"email":{"ligado":true,
+                "servidor":"rele","de":"phx@x.com","para":["a@x.com"],
+                "usuario":"phx","senha":"segredo-do-rele"}}}"#,
+        );
+        assert_eq!(c.alertas.email.senha(), "segredo-do-rele");
+        let texto = c.para_json().escrever();
+        assert!(
+            !texto.contains("segredo-do-rele"),
+            "a senha do rele vazou no config: {texto}"
+        );
+        assert!(texto.contains("(oculta)"), "{texto}");
+    }
+
+    #[test]
+    fn a_senha_pode_vir_do_ambiente() {
+        // O caminho recomendado: config.json costuma ir para o controle de
+        // versao, variavel de ambiente nao.
+        std::env::set_var("PHXSQL_TESTE_SMTP", "vinda-do-ambiente");
+        let c = de(
+            r#"{"token":"x","alertas":{"ligado":true,"email":{"ligado":true,
+                "servidor":"rele","de":"phx@x.com","para":["a@x.com"],
+                "senha_env":"PHXSQL_TESTE_SMTP"}}}"#,
+        );
+        assert_eq!(c.alertas.email.senha(), "vinda-do-ambiente");
     }
 }
