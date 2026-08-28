@@ -25,6 +25,7 @@ pub mod hash;
 pub mod json;
 pub mod keyenc;
 pub mod paginacao;
+pub mod paralelo;
 pub mod schema;
 pub mod senha;
 pub mod sha512;

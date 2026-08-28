@@ -50,7 +50,7 @@ reaproveitamento de espaço perde.
 
 ## Estado atual
 
-O motor de armazenamento está completo e testado: **312 testes**, sem nenhuma
+O motor de armazenamento está completo e testado: **319 testes**, sem nenhuma
 dependência externa (só a `std`), o que faz o projeto compilar offline.
 
 | Peça | Situação |
@@ -62,6 +62,8 @@ dependência externa (só a `std`), o que faz o projeto compilar offline.
 | Paginação em volumes `_001`, `_002`, … com abertura preguiçosa | pronto |
 | Hierarquia database → schema → tabela | pronto |
 | `Uuid` v4/v7 (RFC 9562), `Uuid256` de 256 bits e `Sequence` | pronto |
+| CRC-32 slice-by-8 — inserção 3,1× mais rápida, medida | pronto |
+| Varredura em memória dividida entre núcleos — 1,8× em 4 núcleos | pronto |
 | Chave estrangeira **declarada** no esquema (CASCADE / RESTRICT / SET NULL) | parcial — guardada e reportada, **não aplicada** na gravação |
 | Reindex — recria o `.ndx` do zero a partir do `.reg` | pronto |
 | `Table` — valores, nulos, índices sincronizados, verificação de integridade | pronto |
@@ -85,6 +87,7 @@ dependência externa (só a `std`), o que faz o projeto compilar offline.
 | Jobs de execução — operação nomeada no relógio | pendente |
 | Triggers nas três operações | pendente |
 | Stored procedures | pendente |
+| Trava por tabela no lugar da trava única global | pendente |
 | Parar e subir a porta de dados pela interface | pendente |
 | Servidor MCP | pendente |
 | Camada SQL (tabela virtual via rusqlite, atrás de *feature*) | pendente |

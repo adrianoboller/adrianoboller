@@ -32,6 +32,7 @@
 use std::collections::HashMap;
 
 use phxsql_core::error::{PhxError, Result};
+use phxsql_core::paralelo::mapear_faixa;
 use phxsql_core::schema::Schema;
 use phxsql_core::value::Value;
 use phxsql_core::RowId;
@@ -482,13 +483,23 @@ impl TabelaMemoria {
                 }
             }
             None => {
-                for (i, slot) in self.linhas.iter().enumerate() {
-                    let Some(linha) = slot else { continue };
-                    examinadas += 1;
+                // A varredura sem atalho e o unico trecho desta tabela que
+                // divide bem entre nucleos: cada linha e uma pergunta que nao
+                // depende das outras, tudo esta em RAM e nada e gravado.
+                //
+                // `mapear_faixa` preserva a ordem, entao o resultado e o mesmo
+                // do laco simples -- uma consulta que mudasse de ordem
+                // conforme a maquina seria pior do que uma consulta lenta.
+                passaram = mapear_faixa(self.linhas.len(), |i, saida| {
+                    let Some(linha) = &self.linhas[i] else { return };
                     if c.onde.iter().all(|f| casa(&linha[f.coluna], f)) {
-                        passaram.push(i as RowId + 1);
+                        saida.push(i as RowId + 1);
                     }
-                }
+                });
+                // Contar as vivas dentro das threads exigiria um contador
+                // compartilhado para nada: o numero e o mesmo, e sai de uma
+                // passada barata.
+                examinadas = self.linhas.iter().filter(|s| s.is_some()).count() as u64;
             }
         }
 

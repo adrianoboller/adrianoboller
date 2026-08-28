@@ -10,6 +10,69 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
+## 0.5.1 — 2026-08-28
+
+Rodada de desempenho. Antes de repartir trabalho por nucleos, valia conferir se
+o trabalho precisava existir — e nao precisava.
+
+### Mudado
+
+- **CRC-32 slice-by-8: a insercao ficou 3,1× mais rapida.** O medidor apontou o
+  CRC da pagina inteira como o custo dominante: 10 µs por pagina de 4 KiB, e
+  ~17 toques de pagina por linha inserida, porque toda leitura e toda gravacao
+  do `.ndx` passa os 4096 bytes pelo laco byte a byte.
+
+  O laco tem dependencia serial — cada volta precisa do CRC da anterior para
+  indexar a tabela —, o que o prende a uma leitura de memoria por byte. Com
+  oito tabelas, os oito bytes de uma palavra sao consultados em paralelo pelo
+  processador. Mesmo polinomio, mesmo resultado, nenhuma mudanca de formato.
+
+  | | antes | depois |
+  |---|---:|---:|
+  | só `.reg` | 6,5 µs | 6,3 µs |
+  | +1 índice | 50,0 µs | 19,6 µs |
+  | +1 único | 132,3 µs | 43,2 µs |
+  | +2 índices | 177,1 µs | **56,5 µs** |
+  | linhas/s | 5.645 | **17.700** |
+
+  O CRC isolado sai de 10,00 µs por pagina (0,41 GB/s) para 2,34 µs (1,75 GB/s).
+
+  Como um CRC diferente invalidaria todo arquivo ja gravado, o laco byte a byte
+  ficou no codigo como definicao de referencia, e ha teste comparando os dois em
+  todo tamanho de 0 a 300 bytes com quatro sementes, mais a pagina de 4096.
+
+### Adicionado
+
+- **`phxsql-core/src/paralelo.rs`** — divisao de faixa entre nucleos com
+  `std::thread::scope`, sem dependencia externa. Nao e um `rayon`: e o pedaco
+  de `rayon` que este projeto usa.
+
+  A ordem do resultado e **sempre** a do laco sequencial — cada pedaco junta o
+  seu num vetor proprio e os vetores sao concatenados na ordem dos pedacos. Uma
+  consulta que mudasse de ordem conforme o numero de nucleos da maquina seria
+  pior do que uma consulta lenta.
+
+- **Varredura em memoria dividida entre nucleos.** A consulta sem atalho de
+  mapa e o unico trecho do motor que divide bem: tudo em RAM, nada gravado, cada
+  linha independente das outras. Um milhao de linhas, 4 nucleos: **36 ms → 20 ms**.
+
+- `examples/paralelo.rs` e `examples/onde-doi.rs`, os dois medidores que
+  sustentam os numeros acima.
+
+### Sabido
+
+- **O ganho da varredura paralela e 1,8×, nao 4×.** O filtro por linha e barato,
+  entao a varredura e presa a banda de memoria e nao a conta: mais nucleo nao
+  compra mais banda. O numero esta aqui para ninguem esperar escala linear.
+
+- **A insercao continua monothread, e nenhuma thread a acelera.** Inserir uma
+  linha e uma descida na B+tree em que cada passo depende do anterior. O que
+  falta para varias conexoes gravarem ao mesmo tempo nao e thread — o servidor
+  ja abre uma por conexao —, e **trava por tabela em vez da trava unica global**
+  que hoje serializa todo acesso a dados.
+
+---
+
 ## 0.5.0 — 2026-08-28
 
 ### Adicionado
