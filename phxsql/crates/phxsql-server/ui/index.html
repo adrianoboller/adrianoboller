@@ -147,7 +147,8 @@ input:focus,select:focus{border-color:var(--laranja);outline:none}
   border-radius:50%;background:var(--pend);
 }
 /* ------------------------------------------------- View Database e a ficha */
-.linha-tab,.linha-dado{cursor:pointer}
+.linha-tab,.linha-dado,.linha-seq{cursor:pointer}
+.linha-seq:hover{background:var(--realce)}
 .linha-tab:hover,.linha-dado:hover{background:var(--realce)}
 
 .acoes{
@@ -2451,6 +2452,82 @@ function ligarNovaTabela(db) {
 }
 
 
+/* ================================================ Sequências do banco
+   O contador de cada tabela num lugar so, e o caminho do administrador para
+   zerar ou pular uma faixa.
+
+   O numero NAO mora aqui: cada tabela guarda o proprio contador no cabecalho
+   do `.reg` dela. Esta tela junta para mostrar. Uma segunda copia seria uma
+   segunda verdade, e as duas divergiriam no primeiro caminho que esquecesse de
+   atualizar uma delas -- e ainda custaria uma leitura e uma gravacao a mais
+   por insercao, justamente na operacao mais cara. */
+
+async function verSequencias(db) {
+  db = db || databaseCorrente();
+  if (!db) return avisar("nenhum database escolhido", true);
+  folha(`Sequências de ${db}`, "carregando…", `<div class="centro">carregando…</div>`);
+
+  const r = await api("sequencias", { database: db });
+  const linhas = r.sequencias || [];
+  const com = linhas.filter(x => x.tem_sequencia);
+
+  folha(`Sequências de ${db}`,
+    `${com.length} de ${linhas.length} tabela(s) têm coluna Sequence`,
+    `<div class="fichas">
+       ${ficha(linhas.length, "tabelas")}
+       ${ficha(com.length, "com contador")}
+       ${ficha(com.filter(x => x.proxima === 0).length, "nunca usadas", "o primeiro sai 1")}
+     </div>` +
+    tabela([{t:"tabela"},{t:"coluna"},{t:"próximo número",cls:"num"},
+            {t:"registros",cls:"num"},{t:""}],
+      linhas, x => `<tr${x.tem_sequencia ? ` class="linha-seq" data-t="${esc(x.tabela)}"
+          data-p="${x.proxima}"` : ""}>
+        <td class="dado"><b>${esc(x.tabela)}</b></td>
+        <td class="dado">${x.coluna ? `<code>${esc(x.coluna)}</code>`
+          : `<span class="leg">— sem Sequence</span>`}</td>
+        <td class="num">${x.tem_sequencia ? esc(String(x.proxima)) : ""}</td>
+        <td class="num">${esc(String(x.registros))}</td>
+        <td>${x.tem_sequencia ? `<span class="pino">ajustar</span>` : ""}</td></tr>`) +
+
+    `<div class="nota">
+       <p><strong>Zero quer dizer «nunca usada»</strong> — o primeiro número
+       sai 1. O contador nunca anda para trás sozinho: excluir uma linha não
+       devolve o número dela, pela mesma razão que o <code>.reg</code> não
+       reaproveita slot.</p>
+       <p><strong>O número mora no cabeçalho do <code>.reg</code> de cada
+       tabela</strong>, e continua assim. Esta tela junta para mostrar; não há
+       um arquivo <code>sequences</code> com uma segunda cópia, porque duas
+       cópias divergem — e porque um arquivo separado custaria uma leitura e
+       uma gravação a mais em cada inserção.</p>
+     </div>
+
+     <div class="acoes">
+       <button class="botao secundario" id="btVoltaDb">← Gerir ${esc(db)}</button>
+     </div>`);
+
+  $("#btVoltaDb").onclick = () => gerirDatabase(db);
+  $$("#painel .linha-seq").forEach(tr => tr.onclick = () => ajustarSequencia(db, tr.dataset.t, +tr.dataset.p));
+}
+
+async function ajustarSequencia(db, tabela, atual) {
+  const digitado = prompt(
+    `Contador de ${tabela}\n\n`
+    + `O próximo número que a sequência vai dar é ${atual}.\n\n`
+    + `ATENÇÃO ao baixar: se já houver número gravado na faixa, a próxima\n`
+    + `inclusão repete, e um índice único recusa — o erro aparece longe\n`
+    + `de quem causou.\n\n`
+    + `Novo valor (0 zera, e o primeiro sai 1):`,
+    String(atual));
+  if (digitado === null) return;
+  const n = Number(digitado.trim());
+  if (!Number.isInteger(n) || n < 0) return avisar("informe um inteiro de zero para cima", true);
+  try {
+    const r = await api("ajustar_sequencia", { database: db, tabela, proxima: n });
+    avisar(`${tabela}: ${r.antes} → ${r.proxima}${r.aviso ? " · atenção" : ""}`, !!r.aviso);
+    return verSequencias(db);
+  } catch (e) { avisar(String(e), true); }
+}
+
 /* ==================================================== Tabela dinâmica (pivot)
    Um assistente de tres passos: quais tabelas entram, que campo vai em cada
    eixo, e o resultado.
@@ -3043,6 +3120,9 @@ function itensDoDatabase(db) {
     { g:"dados", ico:"▦", rot:"Tabela dinâmica…",
       diz:"Cruza uma tabela por dois eixos e soma no servidor — com junção a outras tabelas.",
       faz:() => telaPivot(db) },
+    { g:"dados", ico:"№", rot:"Sequências",
+      diz:"O contador de cada tabela do banco, e o ajuste para zerar ou pular uma faixa.",
+      faz:() => verSequencias(db) },
     { g:"dados", ico:"⧉", rot:"Copiar tabela…",
       diz:"Copia uma tabela para outro banco ou schema, byte a byte.",
       faz:() => telaCopiarColar(db) },
@@ -4191,6 +4271,7 @@ const MENUS = [
     { rot:"SysTables",            ico:"▤", faz:() => verSysTables() },
     { rot:"SysColumns",           ico:"☰", faz:() => verSysColumns() },
     { rot:"Tabela dinâmica…",     ico:"▦", faz:() => telaPivot() },
+    { rot:"Sequências",           ico:"№", faz:() => verSequencias() },
     "sep",
     { rot:"Copiar / colar tabela…", ico:"⧉", faz:() => telaCopiarColar(databaseCorrente()) },
     { rot:"Backup e restauração", ico:"⛁", faz:() => verBackupRestaure(databaseCorrente()) },

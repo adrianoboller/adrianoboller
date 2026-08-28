@@ -316,6 +316,185 @@ impl Web {
     }
 }
 
+/// Quando o dado gravado vai de fato para o disco.
+///
+/// # O numero que decide isto
+///
+/// Medido com 20.000 linhas na mesma tabela, mesmos dados, mesma maquina:
+///
+/// ```text
+/// sincroniza a cada linha ......  1.289 linhas/s   (o que o servidor fazia)
+/// a cada 100 ................... 18.264 linhas/s   14,2x
+/// a cada 1.000 ................. 24.858 linhas/s   19,3x
+/// so no fim .................... 26.301 linhas/s   20,4x
+/// ```
+///
+/// Ou seja: **95% do tempo de uma insercao pelo servidor era `fsync`**, e nao
+/// o heap nem o indice. Depois de tirar o `fsync` a insercao custa 37,5 us, dos
+/// quais 65% sao os dois indices -- que e o gargalo seguinte, nao este.
+///
+/// # O que se arrisca
+///
+/// Os bytes vao para o sistema operacional em toda gravacao, sempre: um
+/// `write` direto, sem buffer nosso. Entao **outro processo que abrir o arquivo
+/// ve o dado na hora**, sincronizado ou nao. O `fsync` protege de UMA coisa: o
+/// computador perder energia antes de o sistema descarregar a pagina.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Durabilidade {
+    /// `fsync` depois de cada gravacao. Nao perde nada nem numa queda de
+    /// energia, e custa 20x.
+    PorOperacao,
+    /// `fsync` a cada N gravacoes ou T milissegundos, o que vier primeiro.
+    ///
+    /// Uma queda de energia perde, no pior caso, o que entrou na janela. E o
+    /// padrao porque a janela e curta e o ganho e grande.
+    #[default]
+    PorLote,
+    /// Nunca chama `fsync`; deixa o sistema operacional decidir quando
+    /// descarregar. O mais rapido, e o que mais perde numa queda.
+    Sistema,
+}
+
+impl Durabilidade {
+    pub fn de_texto(t: &str) -> Result<Durabilidade> {
+        Ok(match t.trim().to_ascii_lowercase().as_str() {
+            "" | "por_lote" | "lote" => Durabilidade::PorLote,
+            "por_operacao" | "operacao" | "sempre" => Durabilidade::PorOperacao,
+            "sistema" | "nunca" => Durabilidade::Sistema,
+            outro => {
+                return Err(PhxError::Esquema(format!(
+                    "durabilidade desconhecida: {outro:?} \
+                     (use por_operacao, por_lote ou sistema)"
+                )))
+            }
+        })
+    }
+
+    pub fn nome(self) -> &'static str {
+        match self {
+            Durabilidade::PorOperacao => "por_operacao",
+            Durabilidade::PorLote => "por_lote",
+            Durabilidade::Sistema => "sistema",
+        }
+    }
+}
+
+/// O que o servidor pode consumir da maquina.
+///
+/// Todos os tetos aceitam zero, e zero quer dizer **sem teto imposto por
+/// aqui** -- nao "desligado". Um teto de memoria em zero nao faz o servidor
+/// rodar sem memoria; faz ele nao se limitar.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Recursos {
+    pub durabilidade: Durabilidade,
+    /// Quantas gravacoes cabem numa janela de sincronizacao.
+    pub lote_operacoes: u64,
+    /// Quantos milissegundos uma janela dura, no maximo.
+    pub lote_milissegundos: u64,
+    /// Paginas do `.ndx` mantidas em memoria. Cada uma tem 4 KiB.
+    pub cache_paginas: usize,
+    /// Teto de memoria para as tabelas residentes (`SelectMemory`), em MiB.
+    /// Zero = sem teto.
+    pub memoria_max_mb: u64,
+    /// Threads de trabalho. Zero = quantos nucleos a maquina tiver.
+    pub threads: usize,
+    /// Percentual de CPU que o trabalho dividido pode usar, de 1 a 100.
+    ///
+    /// Nao e uma cota do sistema operacional -- ele nao tem como impor isso a
+    /// um processo. E quantos nucleos o trabalho dividido usa: 50 em oito
+    /// nucleos usa quatro. Cortar pela metade a divisao e o unico jeito
+    /// honesto de "usar menos CPU" sem mentir sobre o mecanismo.
+    pub cpu_percentual: u8,
+    /// Conexoes simultaneas aceitas.
+    pub conexoes_max: usize,
+    /// Usuarios DIFERENTES conectados ao mesmo tempo. Zero = sem teto.
+    ///
+    /// Nao e o mesmo que conexoes: um usuario pode ter varias. Este teto conta
+    /// logins distintos, que e o que uma licenca por posto quer contar.
+    pub usuarios_max: usize,
+}
+
+impl Default for Recursos {
+    fn default() -> Self {
+        Recursos {
+            durabilidade: Durabilidade::PorLote,
+            lote_operacoes: 200,
+            lote_milissegundos: 200,
+            cache_paginas: 4_096,
+            memoria_max_mb: 0,
+            threads: 0,
+            cpu_percentual: 100,
+            conexoes_max: 64,
+            usuarios_max: 0,
+        }
+    }
+}
+
+impl Recursos {
+    fn de_json(j: &Json, conexoes_no_topo: usize) -> Result<Recursos> {
+        let padrao = Recursos::default();
+        let r = match j.campo("recursos") {
+            None => {
+                return Ok(Recursos {
+                    conexoes_max: conexoes_no_topo,
+                    ..padrao
+                })
+            }
+            Some(r) => r,
+        };
+        Ok(Recursos {
+            durabilidade: Durabilidade::de_texto(r.texto_ou("durabilidade", ""))?,
+            lote_operacoes: r
+                .inteiro_ou("lote_operacoes", padrao.lote_operacoes as i64)
+                .max(1) as u64,
+            lote_milissegundos: r
+                .inteiro_ou("lote_milissegundos", padrao.lote_milissegundos as i64)
+                .max(1) as u64,
+            cache_paginas: r
+                .inteiro_ou("cache_paginas", padrao.cache_paginas as i64)
+                .max(0) as usize,
+            memoria_max_mb: r.inteiro_ou("memoria_max_mb", 0).max(0) as u64,
+            threads: r.inteiro_ou("threads", 0).max(0) as usize,
+            // Fora de 1..=100 nao ha o que fazer de sensato, entao vale o
+            // limite mais proximo em vez de recusar o arranque inteiro.
+            cpu_percentual: r.inteiro_ou("cpu_percentual", 100).clamp(1, 100) as u8,
+            // `conexoes_max` no topo continua valendo, para config antigo nao
+            // quebrar. Dentro de `recursos` ele ganha.
+            conexoes_max: r.inteiro_ou("conexoes_max", conexoes_no_topo as i64).max(1) as usize,
+            usuarios_max: r.inteiro_ou("usuarios_max", 0).max(0) as usize,
+        })
+    }
+
+    /// Quantos nucleos o trabalho dividido pode usar.
+    pub fn nucleos(&self) -> usize {
+        let disponiveis = if self.threads > 0 {
+            self.threads
+        } else {
+            std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(1)
+        };
+        // O percentual corta a divisao, e nunca abaixo de um: metade de um
+        // nucleo continua sendo um nucleo.
+        ((disponiveis * self.cpu_percentual as usize) / 100).max(1)
+    }
+
+    pub fn para_json(&self) -> Json {
+        Json::objeto(vec![
+            ("durabilidade", Json::texto_de(self.durabilidade.nome())),
+            ("lote_operacoes", Json::de_u64(self.lote_operacoes)),
+            ("lote_milissegundos", Json::de_u64(self.lote_milissegundos)),
+            ("cache_paginas", Json::de_u64(self.cache_paginas as u64)),
+            ("memoria_max_mb", Json::de_u64(self.memoria_max_mb)),
+            ("threads", Json::de_u64(self.threads as u64)),
+            ("cpu_percentual", Json::de_u64(self.cpu_percentual as u64)),
+            ("nucleos_efetivos", Json::de_u64(self.nucleos() as u64)),
+            ("conexoes_max", Json::de_u64(self.conexoes_max as u64)),
+            ("usuarios_max", Json::de_u64(self.usuarios_max as u64)),
+        ])
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Config {
     /// Endereco e porta de escuta.
@@ -331,7 +510,12 @@ pub struct Config {
     /// IPs autorizados. Vazio = qualquer origem (so use atras de firewall).
     pub ips_permitidos: Vec<String>,
     /// Conexoes simultaneas aceitas.
+    ///
+    /// Espelha `recursos.conexoes_max`; fica aqui porque `config.json` antigo
+    /// traz o campo no topo e nao pode parar de subir.
     pub conexoes_max: usize,
+    /// O que o servidor pode consumir da maquina, e quando grava de verdade.
+    pub recursos: Recursos,
     /// Segundos de espera por um pedido antes de encerrar a conexao.
     pub timeout_s: u64,
     /// Recusa qualquer operacao de escrita.
@@ -366,7 +550,7 @@ pub struct Config {
 ///
 /// Os que comecam com `_` sao comentario -- o JSON nao tem comentario, e os
 /// exemplos usam `_web`, `_backup` e afins para explicar a secao seguinte.
-const CAMPOS_CONHECIDOS: [&str; 16] = [
+const CAMPOS_CONHECIDOS: [&str; 17] = [
     "bind",
     "base",
     "token",
@@ -374,6 +558,7 @@ const CAMPOS_CONHECIDOS: [&str; 16] = [
     "log_acessos",
     "ips_permitidos",
     "conexoes_max",
+    "recursos",
     "timeout_s",
     "somente_leitura",
     "espelho",
@@ -404,6 +589,7 @@ impl Default for Config {
             log_acessos: PathBuf::from("acessos.log"),
             ips_permitidos: Vec::new(),
             conexoes_max: 64,
+            recursos: Recursos::default(),
             timeout_s: 30,
             somente_leitura: false,
             espelho: false,
@@ -487,6 +673,11 @@ impl Config {
             max_linhas: j.inteiro_ou("max_linhas", padrao.max_linhas as i64).max(1) as u64,
             log_acessos: PathBuf::from(j.texto_ou("log_acessos", "acessos.log")),
             ips_permitidos: j.textos("ips_permitidos"),
+            recursos: Recursos::de_json(
+                j,
+                j.inteiro_ou("conexoes_max", padrao.conexoes_max as i64)
+                    .max(1) as usize,
+            )?,
             conexoes_max: j
                 .inteiro_ou("conexoes_max", padrao.conexoes_max as i64)
                 .max(1) as usize,
@@ -594,6 +785,7 @@ impl Config {
                 Json::Lista(self.ips_permitidos.iter().map(Json::texto_de).collect()),
             ),
             ("conexoes_max", Json::de_u64(self.conexoes_max as u64)),
+            ("recursos", self.recursos.para_json()),
             ("somente_leitura", Json::Bool(self.somente_leitura)),
             ("espelho", Json::Bool(self.espelho)),
             ("papel", Json::texto_de(self.replicacao.papel.nome())),
@@ -959,5 +1151,102 @@ mod tests {
         assert_eq!(Backup::minuto_do_dia("03:00"), Some(180));
         assert_eq!(Backup::minuto_do_dia("23:59"), Some(1439));
         assert_eq!(Backup::minuto_do_dia("00:00"), Some(0));
+    }
+}
+
+#[cfg(test)]
+mod testes_recursos {
+    use super::*;
+
+    fn cfg(t: &str) -> Config {
+        Config::de_json(&Json::analisar(t).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn sem_a_secao_recursos_valem_os_padroes() {
+        let c = cfg(r#"{"bind":"127.0.0.1:5000","token":"t"}"#);
+        assert_eq!(c.recursos.durabilidade, Durabilidade::PorLote);
+        assert_eq!(c.recursos.lote_operacoes, 200);
+        assert_eq!(c.recursos.cpu_percentual, 100);
+        assert_eq!(c.recursos.usuarios_max, 0, "zero = sem teto");
+    }
+
+    /// `conexoes_max` morava no topo antes de existir a secao `recursos`.
+    /// Config antigo nao pode parar de subir por causa disso.
+    #[test]
+    fn conexoes_max_no_topo_continua_valendo() {
+        let c = cfg(r#"{"token":"t","conexoes_max":7}"#);
+        assert_eq!(c.conexoes_max, 7);
+        assert_eq!(c.recursos.conexoes_max, 7, "a secao herda o do topo");
+
+        // E dentro de `recursos` ele ganha, porque e o lugar novo.
+        let c = cfg(r#"{"token":"t","conexoes_max":7,"recursos":{"conexoes_max":99}}"#);
+        assert_eq!(c.recursos.conexoes_max, 99);
+    }
+
+    #[test]
+    fn durabilidade_le_os_tres_modos_e_recusa_o_resto() {
+        for (texto, esperado) in [
+            ("por_operacao", Durabilidade::PorOperacao),
+            ("por_lote", Durabilidade::PorLote),
+            ("sistema", Durabilidade::Sistema),
+            ("SEMPRE", Durabilidade::PorOperacao),
+        ] {
+            let c = cfg(&format!(
+                r#"{{"token":"t","recursos":{{"durabilidade":"{texto}"}}}}"#
+            ));
+            assert_eq!(c.recursos.durabilidade, esperado, "{texto}");
+        }
+        let erro = Config::de_json(
+            &Json::analisar(r#"{"token":"t","recursos":{"durabilidade":"talvez"}}"#).unwrap(),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(erro.contains("durabilidade desconhecida"), "{erro}");
+    }
+
+    /// O percentual de CPU vira numero de nucleos, e nunca zero: metade de um
+    /// nucleo continua sendo um nucleo.
+    #[test]
+    fn o_percentual_de_cpu_vira_nucleos() {
+        let com = |t: usize, p: u8| {
+            Recursos {
+                threads: t,
+                cpu_percentual: p,
+                ..Recursos::default()
+            }
+            .nucleos()
+        };
+        assert_eq!(com(8, 100), 8);
+        assert_eq!(com(8, 50), 4);
+        assert_eq!(com(8, 25), 2);
+        assert_eq!(com(1, 50), 1, "nunca zero");
+        assert_eq!(com(3, 1), 1);
+    }
+
+    #[test]
+    fn os_tetos_aceitam_zero_como_sem_teto() {
+        let c =
+            cfg(r#"{"token":"t","recursos":{"memoria_max_mb":0,"usuarios_max":0,"threads":0}}"#);
+        assert_eq!(c.recursos.memoria_max_mb, 0);
+        assert_eq!(c.recursos.usuarios_max, 0);
+        // threads zero quer dizer "quantos nucleos a maquina tiver", e o
+        // resultado tem de ser pelo menos um.
+        assert!(c.recursos.nucleos() >= 1);
+    }
+
+    #[test]
+    fn numero_fora_da_faixa_e_ajustado_em_vez_de_derrubar_o_arranque() {
+        let c = cfg(r#"{"token":"t","recursos":{"cpu_percentual":500,"lote_operacoes":0}}"#);
+        assert_eq!(c.recursos.cpu_percentual, 100, "acima de 100 vira 100");
+        assert_eq!(c.recursos.lote_operacoes, 1, "zero vira um");
+    }
+
+    #[test]
+    fn a_secao_recursos_e_um_campo_conhecido() {
+        // Campo desconhecido no config avisa no arranque; `recursos` nao pode
+        // cair nessa lista.
+        let c = cfg(r#"{"token":"t","recursos":{"threads":2}}"#);
+        assert!(!c.estranhas.iter().any(|x| x == "recursos"));
     }
 }

@@ -10,6 +10,76 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
+## 0.10.0 — 2026-08-28
+
+Uma correção de **perda silenciosa de dado** sob gravação concorrente, a
+gravação **20× mais rápida** com durabilidade configurável, e a seção
+`recursos` no `config.json`.
+
+### Corrigido
+
+- **Duas gravações simultâneas na mesma tabela sobrescreviam uma a outra.**
+  Abrir uma tabela lê o cabeçalho, e o cabeçalho traz `slot_count` — o contador
+  que decide onde a próxima linha vai. O servidor tomava a trava para abrir,
+  **soltava**, e só então tomava de novo para gravar. Nessa fresta duas
+  operações abriam a tabela, as duas guardavam `slot_count = N`, e as duas
+  gravavam no rowid N+1: a segunda por cima da primeira, sem erro nenhum.
+
+  Aparecia como «chave duplicada» quando havia índice único sobre a coluna
+  — o índice pegava. **Sem índice único, a linha simplesmente sumia.**
+
+  A trava passa a cobrir abrir *e* gravar, como um bloco só. Um teste em
+  `tests/tabela.rs` deixa o contrato escrito: duas aberturas disputam o mesmo
+  rowid, e por isso quem abre precisa serializar.
+
+### Adicionado
+
+- **Seção `recursos` no `config.json`**: durabilidade, tamanho do lote, cache
+  de páginas, teto de memória, threads, percentual de CPU, conexões e usuários
+  simultâneos. `conexoes_max` no topo continua valendo, para config antigo não
+  parar de subir.
+
+- **Durabilidade configurável**, e é o que acelera a gravação. Medido com
+  20.000 linhas na mesma tabela:
+
+  | quando sincroniza | linhas/s | ganho |
+  |---|---:|---:|
+  | a cada linha (o que o servidor fazia) | 1.289 | — |
+  | a cada 100 | 18.264 | 14,2× |
+  | a cada 1.000 | 24.858 | 19,3× |
+  | só no fim | 26.301 | 20,4× |
+
+  **95% do tempo de uma inserção era `fsync`.** Depois de tirá-lo, a inserção
+  custa 37,5 µs, dos quais 65% são os dois índices — que é o gargalo seguinte,
+  não este.
+
+  Os bytes vão para o sistema operacional em toda gravação, sempre: um `write`
+  direto, sem buffer nosso. Outro processo vê o dado na hora, sincronizado ou
+  não. O `fsync` protege de uma coisa só: perder energia antes de o sistema
+  descarregar a página.
+
+- **Relógio de fundo** que fecha a janela de durabilidade quando ninguém grava.
+  Sem ele, a última venda do dia às 18h ficaria sem `fsync` a noite inteira.
+
+- **`sequencias`** e **`ajustar_sequencia`**: o contador de cada tabela do banco
+  num lugar só, e o caminho do administrador para zerar ou pular uma faixa. O
+  número continua morando no cabeçalho do `.reg` de cada tabela — a operação
+  junta para mostrar, não cria uma segunda cópia.
+
+- **`custo-do-sync`**, o medidor que produziu a tabela acima.
+
+### Sabido
+
+- `por_lote` é o padrão. Quem precisa de durabilidade por operação — um
+  livro-razão, por exemplo — põe `"durabilidade": "por_operacao"` e paga os 20×.
+- O `cpu_percentual` não é cota do sistema operacional: é quantos núcleos o
+  trabalho dividido usa.
+- `cache_paginas` e `memoria_max_mb` são lidos e mostrados, mas ainda **não são
+  impostos**: o buffer pool do `.ndx` é o trabalho seguinte, e é ele quem vai
+  usá-los.
+
+---
+
 ## 0.9.0 — 2026-08-28
 
 Duas peças de análise: o agrupamento da grade chega ao nível do Janus GridEX(R)

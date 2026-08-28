@@ -302,6 +302,22 @@ impl RegFile {
         self.proxima_sequencia
     }
 
+    /// Ajusta o contador da sequencia -- inclusive para tras.
+    ///
+    /// O `anotar_sequencia` so empurra para a frente, porque nenhuma insercao
+    /// pode fazer o contador recuar. Este e o caminho do ADMINISTRADOR: zerar
+    /// depois de esvaziar a tabela, ou pular uma faixa reservada para outra
+    /// origem.
+    ///
+    /// Quem chama e responsavel por saber o que faz: baixar o contador abaixo
+    /// de um valor ja gravado faz a proxima insercao repetir um numero -- e um
+    /// indice unico sobre a coluna vai recusar, o que e o comportamento certo,
+    /// mas o erro aparece longe de quem causou.
+    pub fn ajustar_sequencia(&mut self, proxima: u64) -> Result<()> {
+        self.proxima_sequencia = proxima;
+        self.gravar_cabecalho(1)
+    }
+
     fn gravar_cabecalho(&mut self, volume: u32) -> Result<()> {
         let bytes_esquema = self.esquema.serializar();
         let mut buf = [0u8; CAB_LEN];

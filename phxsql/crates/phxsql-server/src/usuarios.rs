@@ -98,6 +98,9 @@ impl Atividade {
             // O pivot resume o que a varredura leria: quem pode ler a tabela
             // pode ver o total dela.
             "pivotar" | "pivot" => Atividade::Ler,
+            "sequencias" | "sequences" => Atividade::Ler,
+            // Mexer no contador pode fazer a proxima insercao repetir numero.
+            "ajustar_sequencia" => Atividade::Administrar,
             // Consultar em memoria e ler: o dado e o mesmo, o caminho e outro.
             // Carregar tambem, porque carregar e varrer a tabela inteira.
             "memoria_carregar" | "memoria" | "SelectMemory" | "selectmemory"

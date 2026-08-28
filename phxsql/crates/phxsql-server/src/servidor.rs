@@ -20,7 +20,7 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -32,7 +32,7 @@ use phxsql_store::table::Table;
 
 use crate::acesso::{Acesso, LogAcessos};
 use crate::blacklist::Blacklist;
-use crate::config::Config;
+use crate::config::{Config, Durabilidade};
 use crate::http;
 use crate::usuarios::{Atividade, Usuario};
 use phxsql_core::schema::Schema;
@@ -55,6 +55,7 @@ const OPS_ESCRITA: &[&str] = &[
     "excluir_tabela",
     "duplicar_tabela",
     "copiar_tabela",
+    "ajustar_sequencia",
 ];
 
 /// Estado de uma conexao.
@@ -134,10 +135,92 @@ impl Remoto {
     }
 }
 
+/// Decide QUANDO uma gravacao vai de fato para o disco.
+///
+/// O `write` acontece sempre, na hora: os bytes vao para o sistema operacional
+/// em toda gravacao, sem buffer nosso, entao outro processo ve o dado
+/// imediatamente. O que este contador decide e o `fsync`, que e o que protege
+/// de o computador perder energia antes de o sistema descarregar a pagina.
+///
+/// Medido: sincronizar a cada linha da 1.289 linhas/s; a cada 200, 20.000/s.
+/// Eram **95% do tempo da insercao**.
+struct Janela {
+    modo: Durabilidade,
+    a_cada: u64,
+    ms: u64,
+    /// Gravacoes desde o ultimo `fsync`.
+    pendentes: AtomicU64,
+    /// Quando a janela corrente abriu.
+    desde: Mutex<Instant>,
+}
+
+impl Janela {
+    fn nova(r: &crate::config::Recursos) -> Janela {
+        Janela {
+            modo: r.durabilidade,
+            a_cada: r.lote_operacoes,
+            ms: r.lote_milissegundos,
+            pendentes: AtomicU64::new(0),
+            desde: Mutex::new(Instant::now()),
+        }
+    }
+
+    /// Conta mais uma gravacao e diz se e hora de sincronizar.
+    ///
+    /// Fecha a janela por QUANTIDADE ou por TEMPO, o que vier primeiro. So por
+    /// quantidade, um servidor com pouco movimento deixaria a ultima gravacao
+    /// pendurada indefinidamente; so por tempo, uma carga em massa encheria a
+    /// memoria entre um relogio e outro.
+    fn hora_de_gravar(&self) -> bool {
+        match self.modo {
+            Durabilidade::PorOperacao => true,
+            Durabilidade::Sistema => false,
+            Durabilidade::PorLote => {
+                let n = self.pendentes.fetch_add(1, Ordering::SeqCst) + 1;
+                if n >= self.a_cada {
+                    self.fechar();
+                    return true;
+                }
+                let mut desde = match self.desde.lock() {
+                    Ok(g) => g,
+                    Err(e) => e.into_inner(),
+                };
+                if desde.elapsed().as_millis() as u64 >= self.ms {
+                    self.pendentes.store(0, Ordering::SeqCst);
+                    *desde = Instant::now();
+                    return true;
+                }
+                false
+            }
+        }
+    }
+
+    fn fechar(&self) {
+        self.pendentes.store(0, Ordering::SeqCst);
+        if let Ok(mut d) = self.desde.lock() {
+            *d = Instant::now();
+        }
+    }
+
+    /// Ha gravacao esperando o `fsync`?
+    fn pendente(&self) -> u64 {
+        self.pendentes.load(Ordering::SeqCst)
+    }
+}
+
 pub struct Servidor {
     config: Config,
     /// Trava unica de dados. Ver a nota de concorrencia no topo do modulo.
     dados: Mutex<Instancia>,
+    /// Quando o gravado vai de fato para o disco.
+    janela: Janela,
+    /// Tabelas escritas desde o ultimo `fsync`, como "database/tabela".
+    ///
+    /// Existe porque a tabela e aberta e fechada a cada operacao: quando a
+    /// janela fecha, quem esta aberto e so a tabela da operacao corrente, e as
+    /// outras tocadas na janela ficariam sem sincronizar. Este conjunto e a
+    /// lista do que ainda deve ao disco.
+    sujas: Mutex<std::collections::HashSet<String>>,
     log: Mutex<LogAcessos>,
     lista_negra: Mutex<Blacklist>,
     /// Sessoes do navegador. Vazio enquanto a interface web estiver desligada.
@@ -160,6 +243,8 @@ impl Servidor {
         let log = LogAcessos::abrir(&config.log_acessos)?;
         let lista_negra = Blacklist::abrir(&config.blacklist)?;
         Ok(Arc::new(Servidor {
+            janela: Janela::nova(&config.recursos),
+            sujas: Mutex::new(std::collections::HashSet::new()),
             config,
             dados: Mutex::new(instancia),
             log: Mutex::new(log),
@@ -209,6 +294,7 @@ impl Servidor {
 
         self.subir_web();
         self.subir_backup_agendado();
+        self.ligar_relogio_de_gravacao();
 
         for conexao in ouvinte.incoming() {
             match conexao {
@@ -323,6 +409,30 @@ impl Servidor {
     /// Confere de minuto em minuto em vez de dormir ate a hora certa: dormir
     /// horas seguidas e frageil -- a maquina suspende, o relogio anda, e o
     /// backup nao acontece sem ninguem notar.
+    /// O relogio que fecha a janela de durabilidade quando ninguem grava.
+    ///
+    /// Sem ele, a gravacao em lote so sincronizaria na PROXIMA gravacao -- e um
+    /// servidor que recebe a ultima venda do dia as 18h e fica quieto deixaria
+    /// essa venda sem `fsync` a noite inteira. O relogio acorda a cada janela e
+    /// descarrega o que ficou.
+    ///
+    /// Em `por_operacao` e em `sistema` ele nao tem o que fazer: um sincroniza
+    /// sempre, o outro nunca.
+    fn ligar_relogio_de_gravacao(self: &Arc<Self>) {
+        if self.config.recursos.durabilidade != Durabilidade::PorLote {
+            return;
+        }
+        let ms = self.config.recursos.lote_milissegundos.max(20);
+        let servidor = Arc::clone(self);
+        std::thread::spawn(move || loop {
+            std::thread::sleep(Duration::from_millis(ms));
+            if servidor.janela.pendente() > 0 {
+                servidor.janela.fechar();
+                servidor.descarregar_sujas();
+            }
+        });
+    }
+
     fn subir_backup_agendado(self: &Arc<Self>) {
         if !self.config.backup.agendado {
             return;
@@ -1303,6 +1413,8 @@ impl Servidor {
             "copiar_tabela" => self.op_copiar_tabela(p, sessao),
             "sistabelas" | "systables" => self.op_sistabelas(p),
             "siscolunas" | "syscolumns" => self.op_siscolunas(p),
+            "sequencias" | "sequences" => self.op_sequencias(p),
+            "ajustar_sequencia" => self.op_ajustar_sequencia(p, sessao),
             "pivotar" | "pivot" => self.op_pivotar(p, sessao),
             "ler" => self.op_ler(p, sessao),
             "varrer" => self.op_varrer(p, sessao),
@@ -1333,7 +1445,20 @@ impl Servidor {
 
     // ------------------------------------------------------------ ajudantes
 
-    fn abrir(&self, p: &Json, sessao: &Sessao) -> Result<Table> {
+    /// Abre a tabela DENTRO de uma trava que quem chamou ja tomou.
+    ///
+    /// # Por que a trava vem de fora
+    ///
+    /// Abrir uma tabela LE o cabecalho, e o cabecalho traz `slot_count` e
+    /// `proxima_sequencia` -- os dois contadores que decidem onde a proxima
+    /// linha vai. Se a trava for tomada e solta aqui, duas operacoes
+    /// simultaneas abrem a tabela, cada uma guarda `slot_count = N`, e as duas
+    /// gravam no rowid N+1: **uma sobrescreve a outra, em silencio**.
+    ///
+    /// Era exatamente o que acontecia. A trava tem de cobrir abrir E gravar,
+    /// como um bloco so -- por isso ela entra por parametro, e nao e tomada
+    /// aqui dentro.
+    fn abrir_travada(&self, _dados: &Instancia, p: &Json, sessao: &Sessao) -> Result<Table> {
         let database = p.texto_ou("database", "");
         let tabela = p.texto_ou("tabela", "");
         if database.is_empty() || tabela.is_empty() {
@@ -1341,8 +1466,7 @@ impl Servidor {
                 "informe \"database\" e \"tabela\"".into(),
             ));
         }
-        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
-        let mut t = dados.abrir_database(database)?.abrir_qualificada(tabela)?;
+        let mut t = _dados.abrir_database(database)?.abrir_qualificada(tabela)?;
         // O espelho e decisao do servidor, nao da tabela: ligar no config.json
         // vale para tudo que este servidor abrir daqui para a frente.
         if self.config.espelho && !t.tem_espelho() {
@@ -1875,6 +1999,162 @@ impl Servidor {
         pedido.min(TETO_PIVOT)
     }
 
+    /// Fecha a gravacao no disco, se a janela de durabilidade mandar.
+    ///
+    /// Chamado depois de toda escrita. Em `por_operacao` sincroniza sempre --
+    /// e o que o servidor fazia. Em `por_lote` sincroniza quando a janela
+    /// fecha, e o `fsync` de uma vale por todas as da janela. Em `sistema`
+    /// nunca sincroniza aqui: o `write` ja aconteceu, e o resto e com o
+    /// sistema operacional.
+    fn gravar_de_verdade(&self, t: &mut Table, p: &Json) -> Result<()> {
+        let chave = format!(
+            "{}/{}",
+            p.texto_ou("database", ""),
+            p.texto_ou("tabela", "")
+        );
+        if !self.janela.hora_de_gravar() {
+            if let Ok(mut s) = self.sujas.lock() {
+                s.insert(chave);
+            }
+            return Ok(());
+        }
+        // A janela fechou: esta vai agora, e as outras da janela junto.
+        t.sincronizar()?;
+        if let Ok(mut s) = self.sujas.lock() {
+            s.remove(&chave);
+        }
+        self.descarregar_sujas();
+        Ok(())
+    }
+
+    /// Sincroniza tudo que foi escrito e ainda nao foi para o disco.
+    ///
+    /// Reabre cada tabela suja so para sincronizar. Custa um `open` por tabela,
+    /// uma vez por janela -- nao por gravacao. Erro aqui nao derruba nada: a
+    /// tabela continua na lista e a proxima passada tenta de novo.
+    fn descarregar_sujas(&self) {
+        let lista: Vec<String> = match self.sujas.lock() {
+            Ok(mut s) => s.drain().collect(),
+            Err(_) => return,
+        };
+        if lista.is_empty() {
+            return;
+        }
+        let Ok(dados) = self.dados.lock() else { return };
+        let mut faltaram = Vec::new();
+        for chave in lista {
+            let Some((db, tab)) = chave.split_once('/') else {
+                continue;
+            };
+            let ok = dados
+                .abrir_database(db)
+                .and_then(|d| d.abrir_qualificada(tab))
+                .and_then(|mut t| t.sincronizar())
+                .is_ok();
+            if !ok {
+                faltaram.push(chave);
+            }
+        }
+        if !faltaram.is_empty() {
+            if let Ok(mut s) = self.sujas.lock() {
+                s.extend(faltaram);
+            }
+        }
+    }
+
+    /// Ha quanto o disco esta devendo, para quem quiser mostrar.
+    pub fn pendentes_de_gravacao(&self) -> u64 {
+        self.janela.pendente()
+    }
+
+    /// `sequences`: o contador de cada tabela do banco, num lugar so.
+    ///
+    /// # Onde o numero mora de verdade
+    ///
+    /// Cada tabela guarda o proprio contador no cabecalho do `.reg` dela, e
+    /// **continua assim**. Esta operacao junta os contadores para mostrar; nao
+    /// e um arquivo `sequences` com uma segunda copia.
+    ///
+    /// A razao e a mesma que impede gravar "e chave primaria" na coluna: uma
+    /// segunda copia e uma segunda verdade, e as duas divergem no primeiro
+    /// caminho que esquecer de atualizar uma delas. Alem disso um arquivo
+    /// separado custaria uma leitura e uma gravacao a mais por insercao --
+    /// justamente na operacao que ja e a mais cara.
+    fn op_sequencias(&self, p: &Json) -> Result<Json> {
+        let database = p.texto_ou("database", "");
+        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let db = dados.abrir_database(database)?;
+        let mut linhas = Vec::new();
+        for nome in db.todas_as_tabelas()? {
+            let Ok(t) = db.abrir_qualificada(&nome) else {
+                continue;
+            };
+            let e = t.esquema();
+            let col = e.coluna_sequencia();
+            linhas.push(Json::objeto(vec![
+                ("tabela", Json::texto_de(&nome)),
+                (
+                    "coluna",
+                    match col {
+                        None => Json::Nulo,
+                        Some(i) => Json::texto_de(&e.colunas()[i].nome),
+                    },
+                ),
+                // Zero quer dizer "nunca usada": o primeiro numero sai 1.
+                ("proxima", Json::de_u64(t.sequencia_atual())),
+                ("registros", Json::de_u64(t.registros())),
+                ("tem_sequencia", Json::Bool(col.is_some())),
+            ]));
+        }
+        Ok(Json::objeto(vec![
+            ("database", Json::texto_de(database)),
+            ("total", Json::de_u64(linhas.len() as u64)),
+            ("sequencias", Json::Lista(linhas)),
+        ]))
+    }
+
+    /// Ajusta o contador de uma tabela -- zerar, ou pular uma faixa.
+    ///
+    /// Exige `administrar`: baixar o contador abaixo de um numero ja gravado
+    /// faz a proxima insercao repetir, e o erro aparece longe de quem causou.
+    /// Por isso a resposta diz o que era e o que passou a ser.
+    fn op_ajustar_sequencia(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let proxima = p.inteiro_ou("proxima", -1);
+        if proxima < 0 {
+            return Err(PhxError::Esquema(
+                "informe \"proxima\" com o numero que a sequencia deve dar em seguida \
+                 (0 = zerar, e o primeiro sai 1)"
+                    .into(),
+            ));
+        }
+        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let mut t = self.abrir_travada(&_trava, p, sessao)?;
+        if t.esquema().coluna_sequencia().is_none() {
+            return Err(PhxError::Esquema(format!(
+                "a tabela {} nao tem coluna Sequence",
+                p.texto_ou("tabela", "")
+            )));
+        }
+        let antes = t.sequencia_atual();
+        t.ajustar_sequencia(proxima as u64)?;
+        t.sincronizar()?;
+        Ok(Json::objeto(vec![
+            ("database", Json::texto_de(p.texto_ou("database", ""))),
+            ("tabela", Json::texto_de(p.texto_ou("tabela", ""))),
+            ("antes", Json::de_u64(antes)),
+            ("proxima", Json::de_u64(proxima as u64)),
+            (
+                "aviso",
+                Json::texto_de(if (proxima as u64) < antes {
+                    "o contador andou para TRAS: se ja houver numero gravado nessa \
+                     faixa, a proxima insercao repete e um indice unico recusa"
+                } else {
+                    ""
+                }),
+            ),
+        ]))
+    }
+
     /// Cria um schema -- uma pasta dentro do database.
     ///
     /// Estava prometido em dois lugares (a tabela de permissoes e a lista de
@@ -1975,7 +2255,8 @@ impl Servidor {
     }
 
     fn op_esquema(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
-        let t = self.abrir(p, sessao)?;
+        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let t = self.abrir_travada(&_trava, p, sessao)?;
         let e = t.esquema();
         let colunas: Vec<Json> = e
             .colunas()
@@ -2095,7 +2376,7 @@ impl Servidor {
                                     "periodo",
                                     match pag.modo.periodo() {
                                         None => Json::Nulo,
-                                        Some(p) => Json::texto_de(p.rotulo(f.chave_periodo)),
+                                        Some(per) => Json::texto_de(per.rotulo(f.chave_periodo)),
                                     },
                                 ),
                             ])
@@ -2121,7 +2402,7 @@ impl Servidor {
                             "modo",
                             Json::texto_de(match pag.modo.periodo() {
                                 None => "quantidade".to_string(),
-                                Some(p) => p.nome().to_string(),
+                                Some(per) => per.nome().to_string(),
                             }),
                         ),
                         (
@@ -2142,8 +2423,8 @@ impl Servidor {
 
     fn op_ler(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let rowid = self.rowid(p)?;
-        let mut t = self.abrir(p, sessao)?;
         let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let mut t = self.abrir_travada(&_trava, p, sessao)?;
         match t.ler(rowid)? {
             None => Ok(Json::Nulo),
             Some(linha) => Ok(linha_para_json(&linha, t.esquema())),
@@ -2153,8 +2434,8 @@ impl Servidor {
     fn op_varrer(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let max = self.limite(p);
         let indice = p.texto_ou("indice", "").to_string();
-        let mut t = self.abrir(p, sessao)?;
         let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let mut t = self.abrir_travada(&_trava, p, sessao)?;
 
         let rowids: Vec<u64> = if indice.is_empty() {
             t.varrer()?.into_iter().map(|(r, _)| r).collect()
@@ -2196,8 +2477,8 @@ impl Servidor {
             .campo("chave")
             .cloned()
             .ok_or_else(|| PhxError::Esquema("informe \"chave\"".into()))?;
-        let mut t = self.abrir(p, sessao)?;
         let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let mut t = self.abrir_travada(&_trava, p, sessao)?;
         let pos = t
             .esquema()
             .indice_por_nome(&indice)
@@ -2227,11 +2508,11 @@ impl Servidor {
             .or_else(|| p.campo("linha"))
             .cloned()
             .ok_or_else(|| PhxError::Esquema("informe \"valores\"".into()))?;
-        let mut t = self.abrir(p, sessao)?;
         let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let mut t = self.abrir_travada(&_trava, p, sessao)?;
         let linha = json_para_linha(&valores_json, t.esquema())?;
         let rowid = t.inserir(&linha)?;
-        t.sincronizar()?;
+        self.gravar_de_verdade(&mut t, p)?;
         // A copia em RAM acompanha DENTRO da mesma trava: nao existe instante
         // em que o disco e a memoria discordem.
         self.residente_mut(p, |m| m.anotar_insercao(rowid, &linha));
@@ -2248,21 +2529,21 @@ impl Servidor {
             .or_else(|| p.campo("linha"))
             .cloned()
             .ok_or_else(|| PhxError::Esquema("informe \"valores\"".into()))?;
-        let mut t = self.abrir(p, sessao)?;
         let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let mut t = self.abrir_travada(&_trava, p, sessao)?;
         let linha = json_para_linha(&valores_json, t.esquema())?;
         t.atualizar(rowid, &linha)?;
-        t.sincronizar()?;
+        self.gravar_de_verdade(&mut t, p)?;
         self.residente_mut(p, |m| m.anotar_alteracao(rowid, &linha));
         Ok(Json::objeto(vec![("rowid", Json::de_u64(rowid))]))
     }
 
     fn op_excluir(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let rowid = self.rowid(p)?;
-        let mut t = self.abrir(p, sessao)?;
         let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let mut t = self.abrir_travada(&_trava, p, sessao)?;
         let removeu = t.excluir(rowid)?;
-        t.sincronizar()?;
+        self.gravar_de_verdade(&mut t, p)?;
         if removeu {
             self.residente_mut(p, |m| m.anotar_exclusao(rowid));
         }
@@ -2342,10 +2623,10 @@ impl Servidor {
 
     /// Confere `.reg` contra `.bkp` e conserta o que der.
     fn op_reparar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
-        let mut t = self.abrir(p, sessao)?;
         let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let mut t = self.abrir_travada(&_trava, p, sessao)?;
         let (conferidos, reparados, perdidos) = t.reparar()?;
-        t.sincronizar()?;
+        self.gravar_de_verdade(&mut t, p)?;
         Ok(Json::objeto(vec![
             ("conferidos", Json::de_u64(conferidos)),
             ("reparados", Json::de_u64(reparados)),
@@ -2678,7 +2959,8 @@ impl Servidor {
 
     /// Le a tabela inteira para a RAM.
     fn op_memoria_carregar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
-        let mut t = self.abrir(p, sessao)?;
+        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let mut t = self.abrir_travada(&_trava, p, sessao)?;
         let esquema = t.esquema().clone();
 
         // As colunas com mapa de igualdade. Sem pedido, mapeia as que ja sao
@@ -2895,8 +3177,8 @@ impl Servidor {
     fn op_diario(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let max = self.limite(p) as usize;
         let rowid = p.campo("rowid").and_then(Json::inteiro).map(|n| n as u64);
-        let mut t = self.abrir(p, sessao)?;
         let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let mut t = self.abrir_travada(&_trava, p, sessao)?;
         let eventos = match rowid {
             Some(r) => t.historico(r)?,
             None => t.diario(0, 0)?,
@@ -2925,8 +3207,8 @@ impl Servidor {
     }
 
     fn op_verificar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
-        let mut t = self.abrir(p, sessao)?;
         let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let mut t = self.abrir_travada(&_trava, p, sessao)?;
         let r = t.verificar()?;
         Ok(Json::objeto(vec![
             ("tabela", Json::texto_de(&r.tabela)),
@@ -2955,10 +3237,10 @@ impl Servidor {
     }
 
     fn op_reindexar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
-        let mut t = self.abrir(p, sessao)?;
         let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let mut t = self.abrir_travada(&_trava, p, sessao)?;
         let indices = t.reindexar()?;
-        t.sincronizar()?;
+        self.gravar_de_verdade(&mut t, p)?;
         Ok(Json::Objeto(
             indices
                 .into_iter()
@@ -3106,6 +3388,7 @@ mod testes_politica {
             "excluir_tabela",
             "duplicar_tabela",
             "copiar_tabela",
+            "ajustar_sequencia",
         ] {
             assert!(
                 OPS_ESCRITA.contains(&op),
@@ -3134,6 +3417,7 @@ mod testes_politica {
             "sistabelas",
             "siscolunas",
             "pivotar",
+            "sequencias",
         ] {
             assert!(
                 !OPS_ESCRITA.contains(&op),

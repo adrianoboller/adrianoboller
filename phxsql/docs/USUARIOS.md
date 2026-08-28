@@ -96,7 +96,7 @@ O **root é sempre supervisor e sempre ativo**, diga o que disser o arquivo.
 
 | Atividade | Cobre |
 |---|---|
-| `ler` | `bancos`, `tabelas`, `esquema`, `ler`, `varrer`, `buscar`, `sistabelas`, `siscolunas`, `pivotar` |
+| `ler` | `bancos`, `tabelas`, `esquema`, `ler`, `varrer`, `buscar`, `sistabelas`, `siscolunas`, `pivotar`, `sequencias` |
 | `inserir` | `inserir` |
 | `alterar` | `atualizar` |
 | `excluir` | `excluir` |
@@ -104,7 +104,7 @@ O **root é sempre supervisor e sempre ativo**, diga o que disser o arquivo.
 | `reindexar` | `reindexar` |
 | `diario` | `diario` |
 | `verificar` | `verificar` |
-| `administrar` | `acessos`, `ips`, `config`, `usuarios`, `excluir_tabela` |
+| `administrar` | `acessos`, `ips`, `config`, `usuarios`, `excluir_tabela`, `ajustar_sequencia` |
 | `replicar` | `posicao`, `replicar` |
 
 > **`copiar_tabela` confere a permissão no DESTINO.** O portão geral confere

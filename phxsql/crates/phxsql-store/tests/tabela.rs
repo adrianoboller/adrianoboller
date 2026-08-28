@@ -386,3 +386,61 @@ fn carga_de_dois_mil_registros_com_alteracoes_e_exclusoes() {
     ordenados.sort_unstable();
     assert_eq!(rowids, ordenados);
 }
+
+/// Duas aberturas da MESMA tabela nao podem gravar as duas.
+///
+/// Este teste documenta um contrato, e nao um defeito: abrir uma tabela LE o
+/// cabecalho, e o cabecalho traz `slot_count` e `proxima_sequencia` -- os dois
+/// contadores que decidem onde a proxima linha vai. Duas aberturas guardam o
+/// mesmo numero, e as duas gravam no mesmo rowid.
+///
+/// **Quem abre e responsavel por serializar.** O servidor faz isso segurando a
+/// trava de dados do abrir ate o gravar, num bloco so. Ja fez errado: a trava
+/// era tomada e solta na abertura, e duas operacoes simultaneas sobrescreviam
+/// uma a outra em silencio -- a tabela ficava com uma linha a menos e ninguem
+/// era avisado.
+///
+/// O teste existe para que a propriedade fique escrita: se um dia alguem
+/// achar que pode abrir duas vezes e gravar nas duas, este teste mostra o que
+/// acontece.
+#[test]
+fn duas_aberturas_da_mesma_tabela_disputam_o_mesmo_rowid() {
+    let dir = DirTemp::novo("duas-aberturas");
+    let esquema = Schema::new(
+        "t",
+        vec![
+            Column::new("quem", ColumnType::Str(10)),
+            Column::new("n", ColumnType::Int8),
+        ],
+        vec![],
+    )
+    .unwrap();
+    {
+        let mut t = Table::criar(dir.0.as_path(), esquema).unwrap();
+        t.inserir(&[Value::Str("inicial".into()), Value::Int(0)])
+            .unwrap();
+        t.sincronizar().unwrap();
+    }
+
+    let mut a = Table::abrir(dir.0.as_path(), "t").unwrap();
+    let mut b = Table::abrir(dir.0.as_path(), "t").unwrap();
+
+    let ra = a.inserir(&[Value::Str("A".into()), Value::Int(1)]).unwrap();
+    a.sincronizar().unwrap();
+    let rb = b.inserir(&[Value::Str("B".into()), Value::Int(2)]).unwrap();
+    b.sincronizar().unwrap();
+
+    assert_eq!(
+        ra, rb,
+        "as duas aberturas escolhem o mesmo rowid -- e por isso quem abre \
+         precisa serializar"
+    );
+
+    // E a prova de que uma sobrescreveu a outra: tres insercoes, dois slots.
+    let mut c = Table::abrir(dir.0.as_path(), "t").unwrap();
+    assert_eq!(c.slots(), 2);
+    match &c.ler(2).unwrap().unwrap()[0] {
+        Value::Str(s) => assert_eq!(s, "B", "a segunda gravacao ficou por cima"),
+        outro => panic!("esperava texto, veio {outro:?}"),
+    }
+}

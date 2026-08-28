@@ -37,7 +37,7 @@ o código, não contra a lembrança — foi assim que a chave estrangeira saiu d
 | ☑️ | 27 | Comandos proibidos no `config.json` | e a auditoria achou ali um furo real, corrigido |
 | ☑️ | 28 | Criar regra de firewall em quem tenta o proibido | conferido com um `iptables` falso que grava |
 | ☑️ | 29 | **Base64 no login**, não em claro | feito — e o padrão é melhor: desafio-resposta, a senha não sai da máquina |
-| ☑️ | 30 | **Interface web parecida com o Centro de Controle HFSQL(R)** | árvore, abas, painel, administração, menu, ferramentas, **View Database com edição**, **gestão de tabelas** e **gestão do banco** — 33 das 36 operações. Fora: `buscar`, `desbloquear` e `criar_schema`, que acontece sozinho quando a tela cria tabela dentro de um schema |
+| ☑️ | 30 | **Interface web parecida com o Centro de Controle HFSQL(R)** | árvore, abas, painel, administração, menu, ferramentas, **View Database com edição**, **gestão de tabelas** e **gestão do banco** — 36 das 39 operações. Fora: `buscar`, `desbloquear` e `criar_schema`, que acontece sozinho quando a tela cria tabela dentro de um schema |
 | ☑️ | 66 | **[+] na árvore** para criar database, **About no menu Ajuda**, **tela de créditos** com a fênix, e **View Database** com grade de tabelas e edição | fecha a edição de dados: `ler`, `inserir`, `atualizar` e `excluir` ganharam tela |
 | ☑️ | 65 | **Barra de ferramentas** com Start/Stop, Query, Usuários, Diretivas, Bancos, Duplicar, Conexões, Transações, Importar, Repair, Backup, Replicação, Server Mail, Blockchain e Ajuda | 20 ferramentas hoje, ícone colorido; **16 funcionam**, 4 apagadas dizendo o que falta |
 | ☑️ | 31 | Tabela em memória tipo Redis(R), com `SelectMemory` | **87× mais rápido**, medido |
@@ -83,11 +83,16 @@ o código, não contra a lembrança — foi assim que a chave estrangeira saiu d
 | ☑️ | 74 | **Configurações e diretivas das tabelas** | a geometria decidida na criação, os índices e chaves, e o que a tabela herda do servidor |
 | ☑️ | 75 | **Cadastro de campos** com id automático, nome, caption, descrição, tipo, tamanho, máscara e chave primária/estrangeira/composta | **mudança de formato**: esquema `PSCH` v3. O `id` é UUID v7 e nunca muda; o papel na chave é derivado dos índices |
 | ☑️ | 76 | **Tabela particionada** com grade de gestão: por faixa de quantidade, mensal, bimestral, semestral ou anual | **mudança de formato**: o volume corta pelo calendário, e cada volume grava a própria fronteira no cabeçalho |
+| ☑️ | 79 | **Seção de cache, memória, CPU, threads e usuários no `config.json`** | seção `recursos`, com sete ajustes. `cache_paginas` e `memoria_max_mb` são lidos e mostrados mas **ainda não impostos** — o buffer pool é o trabalho seguinte |
+| ☑️ | 80 | **Validar e revisar o motor de insert; deixar a gravação mais rápida** | medido: **95% do tempo era `fsync`**. Durabilidade configurável dá **20,4×**. E a medição achou uma **perda silenciosa de dado** sob gravação concorrente, corrigida |
+| ☑️ | 81 | **Tabela `sequences` na raiz do banco**, com todas as tabelas e um BigInt ajustável pelo admin | operações `sequencias` e `ajustar_sequencia`. O contador continua no cabeçalho de cada `.reg`: a operação junta para mostrar, e não cria uma segunda cópia que divergiria |
+| ☑️ | 82 | **Bancos em pastas, cada schema uma subpasta** | já era assim desde o início — conferido: `dados/loja/matriz/estoque.reg` |
+| ◐ | 83 | **Comandos SQL reconhecem `matriz.estoque` e `filial.estoque`** | o **endereçamento** funciona hoje em toda operação: `tabela: "matriz.estoque"` abre a pasta certa. O que falta é o **SQL** — não há parser, e ele é o planejado nº 6 |
 | ☑️ | 77 | **Group dinâmico pelas colunas na grade**, como o Janus GridEX(R) e o DevExpress(R) | já havia arrastar e multinível; entraram ordem por nível, rodapé por grupo com o total na coluna, total geral e expandir/recolher tudo |
 | ☑️ | 78 | **Botão que monta pivot dinâmico com assistente**, pedindo as tabelas envolvidas | operação `pivotar` no servidor com *hash join*, seis resumos e granularidade de data; assistente de três passos na tela |
 | ☑️ | 67 | **Botão e menu Tabelas** para gerir as tabelas do banco: nova, estrutura, editar conteúdo, partições, duplicar, reparar tabela, reparar índice e excluir — e **Gestão de transações** no menu de ferramentas | as oito operações funcionam de ponta a ponta; três delas (`criar_tabela`, `duplicar_tabela`, `excluir_tabela`) nasceram aqui, e `criar_schema` — prometido na documentação e nunca despachado — junto |
 
-**70 feitos · 2 parciais · 6 planejados**, de 78 pedidos.
+**74 feitos · 3 parciais · 6 planejados**, de 83 pedidos.
 
 Fora do que você pediu, entraram por medição: o CRC slice-by-8, o `descer` sem
 reler a folha, a conferência de unicidade sem descida dupla, e catorze correções
@@ -266,6 +271,32 @@ Dois defeitos, e o segundo é uma armadilha que qualquer tela nova podia repetir
   `registros_por_arquivo` — a conta certa para a partição por faixa, e errada
   para a por período, onde o corte depende do calendário. Quatro meses apareciam
   como um volume só. Agora ela lê as fronteiras que o `esquema` devolve.
+
+### O que a revisão do motor de insert achou
+
+- **Perda silenciosa de dado sob gravação concorrente.** O servidor tomava a
+  trava para abrir a tabela, **soltava**, e só então tomava de novo para
+  gravar. Abrir lê o cabeçalho, e o cabeçalho traz o `slot_count` — o contador
+  que decide onde a próxima linha vai. Nessa fresta duas operações abriam a
+  tabela, as duas guardavam `slot_count = N`, e as duas gravavam no rowid N+1:
+  a segunda por cima da primeira, **sem erro nenhum**.
+
+  Com índice único sobre a coluna, o índice pegava e virava «chave duplicada» —
+  foi assim que apareceu. Sem índice único, a linha sumia em silêncio.
+
+  A trava passa a cobrir abrir *e* gravar, num bloco só. Um teste deixa o
+  contrato escrito.
+
+- **95% do tempo da inserção era `fsync`.** O diagnóstico anterior — «97% CPU,
+  disco parado, a culpa é da B+tree» — foi medido com a *biblioteca*, que não
+  sincroniza por linha. Pelo *servidor*, que sincronizava, o gargalo era outro.
+  As duas medições estavam certas; era a conclusão que estava sendo aplicada ao
+  caminho errado.
+
+- E um susto meu que não era defeito: caçei por meia hora um contador de
+  sequência que «zerava sozinho». Era o meu próprio teste, com um caso rotulado
+  «tabela sem Sequence» apontando para uma tabela que tinha Sequence — ele
+  zerou o contador porque foi exatamente isso que eu pedi.
 
 ### O que a revisão do dossiê achou
 

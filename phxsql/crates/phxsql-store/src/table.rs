@@ -432,6 +432,11 @@ impl Table {
 
     /// As fronteiras de volume do `.reg`. Vazio na particao por quantidade,
     /// onde o volume sai de divisao e nao ha tabela nenhuma.
+    /// Ajusta o contador da sequencia. Ver `RegFile::ajustar_sequencia`.
+    pub fn ajustar_sequencia(&mut self, proxima: u64) -> Result<()> {
+        self.reg.ajustar_sequencia(proxima)
+    }
+
     pub fn fronteiras(&self) -> &[crate::reg::Fronteira] {
         self.reg.fronteiras()
     }
