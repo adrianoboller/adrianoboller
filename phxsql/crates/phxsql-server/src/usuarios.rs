@@ -103,7 +103,13 @@ impl Atividade {
             "inserir" => Atividade::Inserir,
             "atualizar" => Atividade::Alterar,
             "excluir" => Atividade::Excluir,
-            "criar_database" | "criar_schema" => Atividade::Criar,
+            "criar_database" | "criar_schema" | "criar_tabela" | "duplicar_tabela" => {
+                Atividade::Criar
+            }
+            // Apagar uma tabela apaga os cinco arquivos de uma vez, e nao ha
+            // desfazer. Nao basta poder excluir LINHA para poder excluir a
+            // TABELA: isto exige administrar.
+            "excluir_tabela" => Atividade::Administrar,
             "reindexar" => Atividade::Reindexar,
             "diario" => Atividade::Diario,
             "verificar" => Atividade::Verificar,

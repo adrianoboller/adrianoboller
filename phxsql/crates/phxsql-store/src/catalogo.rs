@@ -35,6 +35,25 @@ use crate::table::Table;
 /// por acidente. Quem chama precisa poder tratar os dois casos de forma
 /// diferente, e e por isso que esta funcao existe separada de
 /// [`validar_nome`].
+/// `esquema.tabela` vira `(Some("esquema"), "tabela")`.
+/// O arquivo `precos_002.reg` pertence a tabela `precos` na extensao `reg`?
+///
+/// A conferencia do sufixo importa: sem ela, `precos_historico.reg` seria
+/// dado como volume de `precos` e a exclusao levaria a tabela errada junto.
+fn pertence(arquivo: &str, tabela: &str, ext: &str) -> bool {
+    let Some(sem_ext) = arquivo.strip_suffix(&format!(".{ext}")) else {
+        return false;
+    };
+    let Some(sufixo) = sem_ext.strip_prefix(tabela) else {
+        return false;
+    };
+    // Ou e o nome exato, ou e o nome mais `_` e so digitos.
+    sufixo.is_empty()
+        || (sufixo.starts_with('_')
+            && sufixo.len() > 1
+            && sufixo[1..].bytes().all(|b| b.is_ascii_digit()))
+}
+
 pub fn nome_hostil(nome: &str) -> bool {
     nome == "."
         || nome == ".."
@@ -257,7 +276,81 @@ impl Database {
         self.abrir_tabela(schema.as_deref(), &nome)
     }
 
-    /// A tabela existe?
+    /// Os cinco arquivos de uma tabela, mais o espelho `.bkp`.
+    const EXTENSOES: [&'static str; 6] = ["reg", "ndx", "bin", "memo", "log", "bkp"];
+
+    /// Apaga os arquivos de uma tabela e devolve o que apagou.
+    ///
+    /// Inclui o `.bkp`: deixar o espelho para tras faria a tabela "voltar"
+    /// pela metade se alguem recriasse uma com o mesmo nome.
+    ///
+    /// Nao ha desfazer. Quem chama confere antes.
+    pub fn excluir_tabela(&self, qualificado: &str) -> Result<Vec<String>> {
+        let (schema, nome) = separar_qualificado(qualificado);
+        let (schema, nome) = (schema.as_deref(), nome.as_str());
+        validar_nome("tabela", nome)?;
+        let dir = self.diretorio(schema)?;
+        let mut apagados = Vec::new();
+        for ext in Self::EXTENSOES {
+            // Uma tabela paginada tem varios volumes por extensao.
+            for arq in std::fs::read_dir(&dir)?.flatten() {
+                let f = arq.file_name();
+                let f = f.to_string_lossy();
+                if pertence(&f, nome, ext) {
+                    std::fs::remove_file(arq.path())?;
+                    apagados.push(f.to_string());
+                }
+            }
+        }
+        if apagados.is_empty() {
+            return Err(PhxError::NaoEncontrado(format!(
+                "tabela {qualificado} nao existe em {}",
+                self.nome()
+            )));
+        }
+        apagados.sort();
+        Ok(apagados)
+    }
+
+    /// Copia uma tabela inteira para outro nome, byte a byte.
+    ///
+    /// Copiar os arquivos preserva a ordem de digitacao e os rowids; reinserir
+    /// linha a linha nao preservaria nem um nem outro.
+    pub fn duplicar_tabela(&self, origem: &str, destino: &str) -> Result<usize> {
+        let (schema_o, nome_o) = separar_qualificado(origem);
+        let (schema_d, nome_d) = separar_qualificado(destino);
+        let (schema_o, nome_o) = (schema_o.as_deref(), nome_o.as_str());
+        let (schema_d, nome_d) = (schema_d.as_deref(), nome_d.as_str());
+        validar_nome("tabela", nome_o)?;
+        validar_nome("tabela de destino", nome_d)?;
+        if self.existe_tabela(schema_d, nome_d)? {
+            return Err(PhxError::Duplicado(format!("a tabela {destino} ja existe")));
+        }
+        let dir_o = self.diretorio(schema_o)?;
+        let dir_d = self.diretorio(schema_d)?;
+        let mut copiados = 0usize;
+        for ext in Self::EXTENSOES {
+            for arq in std::fs::read_dir(&dir_o)?.flatten() {
+                let f = arq.file_name();
+                let f = f.to_string_lossy();
+                if pertence(&f, nome_o, ext) {
+                    // Preserva o sufixo do volume: `precos_002.reg` vira
+                    // `copia_002.reg`, nao `copia.reg`.
+                    let novo = format!("{nome_d}{}", &f[nome_o.len()..]);
+                    std::fs::copy(arq.path(), dir_d.join(&novo))?;
+                    copiados += 1;
+                }
+            }
+        }
+        if copiados == 0 {
+            return Err(PhxError::NaoEncontrado(format!(
+                "tabela {origem} nao existe em {}",
+                self.nome()
+            )));
+        }
+        Ok(copiados)
+    }
+
     pub fn existe_tabela(&self, schema: Option<&str>, nome: &str) -> Result<bool> {
         Ok(self.tabelas(schema)?.iter().any(|t| t == nome))
     }
@@ -473,5 +566,138 @@ mod tests {
                 "{n:?} deveria ser invalido"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod testes_gestao {
+    use super::*;
+    use phxsql_core::schema::{Column, IndexColumn, IndexDef};
+
+    #[test]
+    fn pertence_nao_confunde_tabela_de_prefixo_igual() {
+        // O caso que apagaria a tabela errada: `precos_historico` comeca com
+        // `precos`. Sem conferir o sufixo, excluir `precos` levaria as duas.
+        assert!(pertence("precos.reg", "precos", "reg"));
+        assert!(pertence("precos_001.reg", "precos", "reg"));
+        assert!(pertence("precos_00042.reg", "precos", "reg"));
+
+        assert!(!pertence("precos_historico.reg", "precos", "reg"));
+        assert!(!pertence("precos2.reg", "precos", "reg"));
+        assert!(!pertence("precos_.reg", "precos", "reg"));
+        assert!(!pertence("precos_1a.reg", "precos", "reg"));
+        assert!(!pertence("precos.ndx", "precos", "reg"), "extensao errada");
+        assert!(!pertence("outra.reg", "precos", "reg"));
+    }
+
+    #[test]
+    fn qualificado_se_parte_em_schema_e_nome() {
+        let parte = |q: &str| {
+            let (e, n) = separar_qualificado(q);
+            (e, n)
+        };
+        assert_eq!(parte("clientes"), (None, "clientes".into()));
+        assert_eq!(
+            parte("vendas.pedidos"),
+            (Some("vendas".into()), "pedidos".into())
+        );
+        // Ponto solto nao vira schema vazio: o nome inteiro fica sendo a
+        // tabela, e o `validar_nome` recusa depois. E o que impede um
+        // ".reg" de virar caminho.
+        assert_eq!(parte(".pedidos"), (None, ".pedidos".into()));
+        assert_eq!(parte("vendas."), (None, "vendas.".into()));
+    }
+
+    fn esquema_simples(nome: &str) -> Schema {
+        use phxsql_core::types::ColumnType;
+        Schema::new(
+            nome,
+            vec![Column::new("id", ColumnType::Int8).obrigatoria()],
+            vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
+        )
+        .unwrap()
+    }
+
+    fn base_temp(rotulo: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("phxcat-{rotulo}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[test]
+    fn excluir_tabela_leva_os_arquivos_dela_e_so_os_dela() {
+        let base = base_temp("excluir");
+        let inst = Instancia::nova(&base).unwrap();
+        let db = inst.criar_database("Z").unwrap();
+        db.criar_tabela(None, esquema_simples("precos")).unwrap();
+        db.criar_tabela(None, esquema_simples("precos_historico"))
+            .unwrap();
+
+        let apagados = db.excluir_tabela("precos").unwrap();
+        assert!(!apagados.is_empty());
+        assert!(
+            apagados.iter().all(|a| a.starts_with("precos.")),
+            "levou arquivo que nao era: {apagados:?}"
+        );
+
+        assert!(!db.existe_tabela(None, "precos").unwrap());
+        assert!(
+            db.existe_tabela(None, "precos_historico").unwrap(),
+            "a tabela de prefixo igual foi junto"
+        );
+    }
+
+    #[test]
+    fn excluir_tabela_que_nao_existe_e_erro() {
+        let base = base_temp("excluir-ausente");
+        let inst = Instancia::nova(&base).unwrap();
+        let db = inst.criar_database("Z").unwrap();
+        assert!(db.excluir_tabela("naoexiste").is_err());
+    }
+
+    #[test]
+    fn duplicar_preserva_os_rowids_e_a_ordem() {
+        use phxsql_core::value::Value;
+        let base = base_temp("duplicar");
+        let inst = Instancia::nova(&base).unwrap();
+        let db = inst.criar_database("Z").unwrap();
+        let mut t = db.criar_tabela(None, esquema_simples("precos")).unwrap();
+        for i in 1..=5i64 {
+            t.inserir(&[Value::Int(i * 10)]).unwrap();
+        }
+        t.excluir(3).unwrap(); // um buraco no meio
+        t.sincronizar().unwrap();
+        drop(t);
+
+        let copiados = db.duplicar_tabela("precos", "copia").unwrap();
+        assert!(copiados >= 5, "copiou {copiados} arquivos");
+
+        // A copia tem os MESMOS rowids, o mesmo buraco e a mesma ordem. Uma
+        // reinsercao linha a linha renumeraria tudo.
+        let mut c = db.abrir_tabela(None, "copia").unwrap();
+        assert_eq!(c.ler(1).unwrap().unwrap()[0], Value::Int(10));
+        assert!(
+            c.ler(3).unwrap().is_none(),
+            "o slot excluido nao foi copiado"
+        );
+        assert_eq!(c.ler(5).unwrap().unwrap()[0], Value::Int(50));
+
+        // E o original continua inteiro.
+        let mut o = db.abrir_tabela(None, "precos").unwrap();
+        assert_eq!(o.ler(5).unwrap().unwrap()[0], Value::Int(50));
+    }
+
+    #[test]
+    fn duplicar_para_nome_que_ja_existe_e_recusado() {
+        let base = base_temp("duplicar-ocupado");
+        let inst = Instancia::nova(&base).unwrap();
+        let db = inst.criar_database("Z").unwrap();
+        db.criar_tabela(None, esquema_simples("a")).unwrap();
+        db.criar_tabela(None, esquema_simples("b")).unwrap();
+        assert!(
+            db.duplicar_tabela("a", "b").is_err(),
+            "sobrescreveu a tabela b"
+        );
     }
 }

@@ -14,7 +14,9 @@
 use phxsql_core::datahora::{data_iso, dias_de_civil, hora_iso};
 use phxsql_core::error::{PhxError, Result};
 use phxsql_core::json::Json;
+use phxsql_core::paginacao::{Paginacao, DIGITOS_PADRAO};
 use phxsql_core::schema::Schema;
+use phxsql_core::schema::{Column, IndexColumn, IndexDef};
 use phxsql_core::types::ColumnType;
 use phxsql_core::uuid::{Uuid, Uuid256};
 use phxsql_core::value::Value;
@@ -108,6 +110,208 @@ fn data_de_texto(t: &str) -> Result<i32> {
         return Err(invalida());
     }
     Ok(dias_de_civil(ano, mes, dia))
+}
+
+/// Le um tipo de coluna escrito em texto.
+///
+/// Aceita as tres formas que aparecem na pratica, e a razao de aceitar as
+/// tres e uma so: o que a operacao `esquema` DEVOLVE tem de poder voltar como
+/// entrada. Sem isso, duplicar uma tabela exigiria traduzir o tipo na mao.
+///
+/// ```text
+/// "Int8"                              simples
+/// "Str(60)"                           com um parametro
+/// "Decimal(15,2)"                     com dois
+/// "Decimal { precisao: 15, escala: 2 }"   como o `esquema` escreve hoje
+/// ```
+pub fn tipo_de_texto(t: &str) -> Result<ColumnType> {
+    let t = t.trim();
+
+    // A forma que o `{:?}` do Rust produz para o Decimal.
+    if t.starts_with("Decimal") && t.contains("precisao") {
+        let numero = |chave: &str| -> Option<u32> {
+            let i = t.find(chave)? + chave.len();
+            t[i..]
+                .trim_start_matches([':', ' '])
+                .split(|c: char| !c.is_ascii_digit())
+                .next()?
+                .parse()
+                .ok()
+        };
+        let (p, e) = (numero("precisao"), numero("escala"));
+        return match (p, e) {
+            (Some(p), Some(e)) => Ok(ColumnType::Decimal {
+                precisao: p as u8,
+                escala: e as u8,
+            }),
+            _ => Err(PhxError::Tipo(format!("Decimal mal escrito: {t:?}"))),
+        };
+    }
+
+    let (nome, params) = match t.split_once('(') {
+        Some((n, resto)) => (
+            n.trim(),
+            resto
+                .trim_end_matches(')')
+                .split(',')
+                .filter_map(|x| x.trim().parse::<u32>().ok())
+                .collect::<Vec<_>>(),
+        ),
+        None => (t, Vec::new()),
+    };
+    let p = |i: usize| params.get(i).copied();
+
+    Ok(match nome {
+        "Bool" => ColumnType::Bool,
+        "Int1" => ColumnType::Int1,
+        "Int2" => ColumnType::Int2,
+        "Int4" => ColumnType::Int4,
+        "Int8" => ColumnType::Int8,
+        "UInt1" => ColumnType::UInt1,
+        "UInt2" => ColumnType::UInt2,
+        "UInt4" => ColumnType::UInt4,
+        "UInt8" => ColumnType::UInt8,
+        "Real4" => ColumnType::Real4,
+        "Real8" => ColumnType::Real8,
+        "Date" => ColumnType::Date,
+        "Time" => ColumnType::Time,
+        "DateTime" => ColumnType::DateTime,
+        "Bin" => ColumnType::Bin,
+        "Memo" => ColumnType::Memo,
+        "Uuid" => ColumnType::Uuid,
+        "Uuid256" => ColumnType::Uuid256,
+        "Sequence" => ColumnType::Sequence,
+        "Str" => ColumnType::Str(p(0).unwrap_or(60).min(65_535) as u16),
+        "Decimal" => ColumnType::Decimal {
+            precisao: p(0).unwrap_or(15).min(38) as u8,
+            escala: p(1).unwrap_or(2).min(38) as u8,
+        },
+        outro => {
+            return Err(PhxError::Tipo(format!(
+                "tipo desconhecido: {outro:?}. Use Int8, Str(60), Decimal(15,2), \
+                 Date, DateTime, Memo, Bin, Uuid, Uuid256, Sequence…"
+            )))
+        }
+    })
+}
+
+/// Monta um `Schema` a partir do JSON de um pedido de criacao de tabela.
+///
+/// ```json
+/// { "tabela": "clientes",
+///   "colunas": [ {"nome":"id","tipo":"Int8","obrigatoria":true},
+///                {"nome":"nome","tipo":"Str(60)"} ],
+///   "indices": [ {"nome":"porId","colunas":["id"],"unico":true} ],
+///   "registros_por_arquivo": 1000000 }
+/// ```
+///
+/// As colunas dos indices vao por NOME, nao por posicao. Posicao e detalhe de
+/// implementacao e muda quando alguem reordena o esquema; nome nao.
+pub fn esquema_de_json(j: &Json) -> Result<Schema> {
+    let nome = j.texto_ou("tabela", "").trim().to_string();
+    if nome.is_empty() {
+        return Err(PhxError::Esquema("informe \"tabela\"".into()));
+    }
+
+    let cols_json = j
+        .campo("colunas")
+        .and_then(Json::lista)
+        .ok_or_else(|| PhxError::Esquema("informe \"colunas\" como lista".into()))?;
+    if cols_json.is_empty() {
+        return Err(PhxError::Esquema(
+            "a tabela precisa de ao menos uma coluna".into(),
+        ));
+    }
+
+    let mut colunas = Vec::with_capacity(cols_json.len());
+    for (i, c) in cols_json.iter().enumerate() {
+        let cn = c.texto_ou("nome", "").trim().to_string();
+        if cn.is_empty() {
+            return Err(PhxError::Esquema(format!("coluna {i} sem nome")));
+        }
+        let ty = tipo_de_texto(c.texto_ou("tipo", "Str(60)"))?;
+        let col = Column::new(cn, ty);
+        colunas.push(if c.booleano_ou("obrigatoria", false) {
+            col.obrigatoria()
+        } else {
+            col
+        });
+    }
+
+    let posicao = |nome: &str| -> Result<usize> {
+        colunas
+            .iter()
+            .position(|c| c.nome == nome)
+            .ok_or_else(|| PhxError::Esquema(format!("indice usa coluna inexistente: {nome:?}")))
+    };
+
+    let mut indices = Vec::new();
+    if let Some(lista) = j.campo("indices").and_then(Json::lista) {
+        for (i, idx) in lista.iter().enumerate() {
+            let inome = idx.texto_ou("nome", "").trim().to_string();
+            if inome.is_empty() {
+                return Err(PhxError::Esquema(format!("indice {i} sem nome")));
+            }
+            let mut partes = Vec::new();
+            for c in idx.textos("colunas") {
+                // "cidade desc" e "cidade nocase" no proprio nome da coluna:
+                // e como se escreve um indice em uma linha.
+                let mut it = c.split_whitespace();
+                let cn = it.next().unwrap_or("").to_string();
+                let mut ic = IndexColumn::asc(posicao(&cn)?);
+                for marca in it {
+                    match marca.to_ascii_lowercase().as_str() {
+                        "desc" => ic.desc = true,
+                        "nocase" => ic.nocase = true,
+                        outro => {
+                            return Err(PhxError::Esquema(format!(
+                                "marca desconhecida no indice {inome}: {outro:?} \
+                                 (use desc ou nocase)"
+                            )))
+                        }
+                    }
+                }
+                partes.push(ic);
+            }
+            if partes.is_empty() {
+                return Err(PhxError::Esquema(format!("indice {inome} sem colunas")));
+            }
+            let d = IndexDef::new(inome, partes);
+            indices.push(if idx.booleano_ou("unico", false) {
+                d.unico()
+            } else {
+                d
+            });
+        }
+    }
+
+    let esquema = Schema::new(nome, colunas, indices)?;
+
+    // A paginacao entra na criacao e nao muda depois: ela decide como o rowid
+    // vira endereco. Trocar mais tarde seria reescrever a tabela inteira.
+    let por_arquivo = j.inteiro_ou("registros_por_arquivo", 0);
+    Ok(if por_arquivo > 0 {
+        let digitos = j.inteiro_ou("digitos", DIGITOS_PADRAO as i64).clamp(1, 9) as u8;
+        // Teto omitido nao quer dizer "sem teto": o sufixo tem largura fixa, e
+        // com tres digitos o volume 1000 simplesmente nao tem nome. Entao o
+        // padrao e o maior que cabe no sufixo, e nao zero -- que o validador
+        // recusaria com uma mensagem que nao ajuda quem preencheu a tela.
+        let cabem = 10u32.pow(digitos as u32) - 1;
+        let max = match j.inteiro_ou("max_arquivos", 0).max(0) as u32 {
+            0 => cabem,
+            outro => outro,
+        };
+        // A largura do sufixo entra ANTES do teto: `nova` confere o teto contra
+        // os tres digitos do padrao, e um teto de 9999 seria recusado antes de
+        // o quarto digito existir.
+        esquema.com_paginacao(
+            Paginacao::nova(por_arquivo as u64, 1)?
+                .com_digitos(digitos)?
+                .com_max_arquivos(max)?,
+        )
+    } else {
+        esquema
+    })
 }
 
 /// Valor do PhxSql em JSON, usando o tipo da coluna para dar sentido aos
@@ -507,5 +711,157 @@ mod tests {
         assert!(json_para_valor(&Json::de_i64(-1), &ty).is_err());
         // Nulo e o pedido de "numere voce": nao e erro.
         assert_eq!(json_para_valor(&Json::Nulo, &ty).unwrap(), Value::Null);
+    }
+}
+
+#[cfg(test)]
+mod testes_esquema {
+    use super::*;
+
+    fn json(t: &str) -> Json {
+        Json::analisar(t).expect("json de teste invalido")
+    }
+
+    /// A propriedade que importa: o que a operacao `esquema` DEVOLVE tem de
+    /// voltar como entrada. Sem isso, duplicar uma tabela pela tela exigiria
+    /// traduzir cada tipo na mao -- e um `Decimal` traduzido errado perde
+    /// centavo em silencio.
+    #[test]
+    fn tipo_volta_da_forma_que_o_esquema_escreve() {
+        for ty in [
+            ColumnType::Bool,
+            ColumnType::Int1,
+            ColumnType::Int8,
+            ColumnType::UInt4,
+            ColumnType::Real8,
+            ColumnType::Date,
+            ColumnType::Time,
+            ColumnType::DateTime,
+            ColumnType::Bin,
+            ColumnType::Memo,
+            ColumnType::Uuid,
+            ColumnType::Uuid256,
+            ColumnType::Sequence,
+            ColumnType::Str(60),
+            ColumnType::Str(1),
+            ColumnType::Decimal {
+                precisao: 15,
+                escala: 2,
+            },
+            ColumnType::Decimal {
+                precisao: 38,
+                escala: 0,
+            },
+        ] {
+            let escrito = format!("{ty:?}");
+            assert_eq!(
+                tipo_de_texto(&escrito).unwrap(),
+                ty,
+                "nao voltou de {escrito:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn tipo_tambem_aceita_a_forma_curta_de_quem_digita() {
+        assert_eq!(tipo_de_texto("Str(80)").unwrap(), ColumnType::Str(80));
+        assert_eq!(
+            tipo_de_texto("Decimal(15,2)").unwrap(),
+            ColumnType::Decimal {
+                precisao: 15,
+                escala: 2
+            }
+        );
+        assert_eq!(
+            tipo_de_texto(" Int8 ").unwrap(),
+            ColumnType::Int8,
+            "espaco em volta nao pode derrubar"
+        );
+        assert!(tipo_de_texto("Varchar").is_err());
+    }
+
+    #[test]
+    fn esquema_le_colunas_e_indices_por_nome() {
+        let e = esquema_de_json(&json(
+            r#"{"tabela":"pedidos",
+                "colunas":[{"nome":"id","tipo":"Sequence","obrigatoria":true},
+                           {"nome":"cidade","tipo":"Str(40)"},
+                           {"nome":"total","tipo":"Decimal(15,2)"}],
+                "indices":[{"nome":"porId","colunas":["id"],"unico":true},
+                           {"nome":"porCidade","colunas":["cidade nocase","total desc"]}]}"#,
+        ))
+        .unwrap();
+
+        assert_eq!(e.nome(), "pedidos");
+        assert_eq!(e.colunas().len(), 3);
+        assert!(!e.colunas()[0].nullable, "obrigatoria virou nullable");
+        assert!(e.colunas()[1].nullable);
+
+        let i = &e.indices()[1];
+        assert_eq!(i.nome, "porCidade");
+        // A posicao sai do NOME: cidade e a coluna 1, total a 2.
+        assert_eq!(i.colunas[0].coluna, 1);
+        assert!(i.colunas[0].nocase && !i.colunas[0].desc);
+        assert_eq!(i.colunas[1].coluna, 2);
+        assert!(i.colunas[1].desc && !i.colunas[1].nocase);
+        assert!(e.indices()[0].unico);
+    }
+
+    #[test]
+    fn teto_de_volumes_omitido_vira_o_que_cabe_no_sufixo() {
+        // Zero nao e "sem teto": o sufixo tem largura fixa, e com tres digitos
+        // o volume 1000 nao teria nome de arquivo.
+        let e = esquema_de_json(&json(
+            r#"{"tabela":"t","colunas":[{"nome":"a","tipo":"Int8"}],
+                "registros_por_arquivo":1000}"#,
+        ))
+        .unwrap();
+        let p = e.paginacao();
+        assert_eq!(p.digitos, 3);
+        assert_eq!(p.max_arquivos, 999);
+        assert_eq!(p.capacidade(), 999_000);
+
+        let e = esquema_de_json(&json(
+            r#"{"tabela":"t","colunas":[{"nome":"a","tipo":"Int8"}],
+                "registros_por_arquivo":1000,"digitos":4}"#,
+        ))
+        .unwrap();
+        assert_eq!(e.paginacao().max_arquivos, 9_999);
+    }
+
+    #[test]
+    fn sem_registros_por_arquivo_a_tabela_e_arquivo_unico() {
+        let e = esquema_de_json(&json(
+            r#"{"tabela":"t","colunas":[{"nome":"a","tipo":"Int8"}]}"#,
+        ))
+        .unwrap();
+        assert!(!e.paginacao().ligada());
+    }
+
+    #[test]
+    fn o_que_falta_no_pedido_vira_erro_com_nome() {
+        let casos = [
+            (r#"{"colunas":[{"nome":"a","tipo":"Int8"}]}"#, "tabela"),
+            (r#"{"tabela":"t"}"#, "colunas"),
+            (r#"{"tabela":"t","colunas":[]}"#, "coluna"),
+            (r#"{"tabela":"t","colunas":[{"tipo":"Int8"}]}"#, "nome"),
+            (
+                r#"{"tabela":"t","colunas":[{"nome":"a","tipo":"Int8"}],
+                    "indices":[{"nome":"i","colunas":["naoexiste"]}]}"#,
+                "inexistente",
+            ),
+            (
+                r#"{"tabela":"t","colunas":[{"nome":"a","tipo":"Int8"}],
+                    "indices":[{"nome":"i","colunas":["a crescente"]}]}"#,
+                "desc ou nocase",
+            ),
+        ];
+        for (pedido, pedaco) in casos {
+            let erro = esquema_de_json(&json(pedido)).unwrap_err().to_string();
+            assert!(
+                erro.contains(pedaco),
+                "erro {erro:?} nao diz o que falta ({pedaco:?})"
+            );
+        }
     }
 }

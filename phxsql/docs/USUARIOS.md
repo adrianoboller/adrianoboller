@@ -100,12 +100,19 @@ O **root é sempre supervisor e sempre ativo**, diga o que disser o arquivo.
 | `inserir` | `inserir` |
 | `alterar` | `atualizar` |
 | `excluir` | `excluir` |
-| `criar` | `criar_database`, `criar_schema` |
+| `criar` | `criar_database`, `criar_schema`, `criar_tabela`, `duplicar_tabela` |
 | `reindexar` | `reindexar` |
 | `diario` | `diario` |
 | `verificar` | `verificar` |
-| `administrar` | `acessos`, `ips`, `config`, `usuarios` |
+| `administrar` | `acessos`, `ips`, `config`, `usuarios`, `excluir_tabela` |
 | `replicar` | `posicao`, `replicar` |
+
+> **Por que `excluir_tabela` pede `administrar` e não `excluir`.** Poder excluir
+> uma *linha* não é poder excluir a *tabela*: a primeira operação perde um
+> registro, a segunda apaga o `.reg`, o `.ndx`, o `.bin`, o `.memo`, o `.log` e
+> o espelho de uma vez, com todos os volumes de cada um. Não há desfazer nem
+> lixeira, então a permissão é a mais alta. O servidor ainda exige o nome da
+> tabela repetido no campo `confirmar`.
 
 ### Três regras que decidem tudo
 

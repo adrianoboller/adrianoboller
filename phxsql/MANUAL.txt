@@ -159,7 +159,7 @@ Veja o diario:
     WINDOWS   phxsqld.exe --config config.json
 
     No arranque ele imprime:
-        PhxSql 0.6.0 escutando em 0.0.0.0:5000 | base dados | papel isolado
+        PhxSql 0.7.0 escutando em 0.0.0.0:5000 | base dados | papel isolado
         log de acessos: acessos.log
 
 7.4 Servico
@@ -210,6 +210,11 @@ OPERACOES
     tabelas         database                 schemas e tabelas
     esquema         database, tabela         colunas, indices, FKs, paginacao
     criar_database  database
+    criar_schema    database, schema
+    criar_tabela    database, [schema], tabela, colunas, [indices],
+                    [registros_por_arquivo], [digitos], [max_arquivos]
+    duplicar_tabela database, tabela, destino
+    excluir_tabela  database, tabela, confirmar   confirmar repete o nome
     ler             database, tabela, rowid
     varrer          database, tabela, [indice], [max]
     buscar          database, tabela, indice, chave, [max]
@@ -446,6 +451,34 @@ BARRA DE MENU
         Usuarios      o cadastro e o poder de cada um sobre cada base
         Acessos       o acessos.log: IP, data, hora, operacao, usuario
         Bloqueios     a blacklist.json, com o motivo e ate quando
+
+    GESTAO DE TABELAS
+
+    O botao Tabelas -- ou o menu Tabelas, ou Alt+5 -- lista as tabelas do banco
+    corrente. Um clique numa linha abre as oito operacoes sobre ela:
+
+        Estrutura           as colunas, os tipos, os indices e a paginacao
+        Editar conteudo     a grade de dados, com ficha por linha
+        Particoes           em que volume cada faixa de rowid cai, e qual
+                            arquivo do disco guarda cada faixa. A conta e
+                            volume = (rowid-1) / por_arquivo + 1
+        Duplicar            copia os cinco arquivos byte a byte: a copia nasce
+                            com os MESMOS rowids e na MESMA ordem de digitacao
+        Reparar tabela      confere cada slot no .reg contra o espelho .bkp
+        Reparar indice      joga o .ndx fora e refaz lendo o .reg
+        Nova tabela         colunas, indices, schema e paginacao
+        Excluir             apaga os cinco arquivos e o espelho, de uma vez
+
+    ATENCAO NA EXCLUSAO. Nao ha desfazer e nao ha lixeira: a tela pede o nome
+    da tabela DIGITADO, e o servidor exige o mesmo nome no campo "confirmar".
+    A permissao e "administrar", nao "excluir" -- poder perder uma linha nao e
+    poder perder a tabela.
+
+    A PAGINACAO SE ESCOLHE NA CRIACAO E NAO MUDA DEPOIS. Ela e o divisor que
+    transforma o rowid em endereco; trocar mais tarde mudaria o endereco de
+    cada registro ja gravado. E nao existe "sem teto": o sufixo tem largura
+    fixa, entao com tres digitos cabem 999 volumes. Teto deixado em zero vira
+    o maior que couber.
 
     O que voce ve e o que o SEU usuario pode ver. A interface nao contorna o
     portao de permissao: quem nao pode inserir recebe a recusa do servidor,
@@ -837,11 +870,11 @@ telefone, supervisor e o poder sobre cada base. A SENHA E GUARDADA COMO HASH.
     inserir      inserir
     alterar      atualizar
     excluir      excluir
-    criar        criar_database, criar_schema
+    criar        criar_database, criar_schema, criar_tabela, duplicar_tabela
     reindexar    reindexar
     diario       diario
     verificar    verificar
-    administrar  acessos, ips, config, usuarios
+    administrar  acessos, ips, config, usuarios, excluir_tabela
     replicar     posicao, replicar
 
     NEGA POR OMISSAO: atividade que nao aparece vale false. Base listada

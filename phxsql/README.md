@@ -50,7 +50,7 @@ reaproveitamento de espaço perde.
 
 ## Estado atual
 
-O motor de armazenamento está completo e testado: **324 testes**, sem nenhuma
+O motor de armazenamento está completo e testado: **339 testes**, sem nenhuma
 dependência externa (só a `std`), o que faz o projeto compilar offline.
 
 | Peça | Situação |
@@ -75,12 +75,13 @@ dependência externa (só a `std`), o que faz o projeto compilar offline.
 | Blacklist com bloqueio automático e gancho de firewall | pronto |
 | Centro de Controle — interface web embutida no `phxsqld` | pronto |
 | View Database — grade de tabelas, ficha de edição, incluir/salvar/excluir | pronto |
+| Gestão de tabelas — criar, duplicar, reparar, ver partições e excluir | pronto |
 | Tabela em memória e `SelectMemory` — 87× mais rápido, medido | pronto |
 | Chave assimétrica Ed25519 (RFC 8032) como segundo fator | pronto |
 | Backup com manifesto SHA-256, ZIP e agendamento | pronto |
 | Nível de usuário: nenhum, leitor, operador, dono, admin | pronto |
 | Tema claro e escuro, console para mais de um servidor | pronto |
-| Barra de menu tradicional — 22 recursos, atalhos e navegação por teclado | pronto |
+| Barra de menu tradicional — sete menus, atalhos e navegação por teclado | pronto |
 | Painel com sete gráficos, agregado numa chamada | pronto |
 | phx-grid na aba Conteúdo: agrupamento por arrastar | pronto |
 | Espelho `.bkp`: segunda chance do `.reg` | pronto |

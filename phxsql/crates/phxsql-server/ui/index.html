@@ -180,6 +180,71 @@ input:focus,select:focus{border-color:var(--laranja);outline:none}
 }
 .ficha-edit input::placeholder{color:var(--texto-3);opacity:.7;font-size:11.5px}
 
+/* ------------------------------------------------- gestão de tabelas */
+.ops{
+  display:grid;gap:10px;margin:16px 0;
+  grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+}
+.op{
+  display:flex;align-items:flex-start;gap:11px;text-align:left;cursor:pointer;
+  background:var(--painel-2);border:1px solid var(--linha);border-radius:7px;
+  padding:13px 14px;color:var(--texto);font-family:inherit;
+  transition:border-color .12s,background .12s;
+}
+.op:hover{border-color:var(--laranja);background:var(--realce)}
+.op.perigo:hover{border-color:var(--log)}
+.op-ico{
+  font-size:17px;line-height:1;color:var(--laranja);flex:0 0 auto;
+  width:26px;height:26px;display:grid;place-items:center;
+  border:1px solid var(--linha);border-radius:5px;background:var(--painel);
+}
+.op.perigo .op-ico{color:var(--log)}
+.op-txt{display:flex;flex-direction:column;gap:4px;min-width:0}
+.op-txt b{font-size:12.5px;font-weight:600}
+.op-txt span{font-size:11px;color:var(--texto-3);line-height:1.45}
+.pino.mal{border-color:var(--log);color:var(--log)}
+
+/* ------------------------------------------------- formulário da nova tabela */
+.criar{margin:16px 0}
+.criar .bloco{
+  display:grid;gap:13px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
+  background:var(--painel-2);border:1px solid var(--linha);border-radius:7px;padding:16px;
+}
+.criar label{display:flex;flex-direction:column;gap:5px;font-size:11.5px}
+.criar label.largo{grid-column:1/-1}
+/* Caixa-alta e a regra da casa para rotulo curto, e estraga rotulo com
+   parentese: "TETO DE VOLUMES (0 = O QUE COUBER NO SUFIXO)" grita e quebra em
+   duas linhas. Aqui o rotulo fica em caixa normal e a dica desce sozinha. */
+.criar label > span{
+  color:var(--texto-3);text-transform:none;letter-spacing:.02em;
+  display:flex;flex-direction:column;gap:2px;
+}
+.criar label em{font-style:normal;opacity:.72;font-size:10.5px}
+.criar label em code{font-size:10px}
+.criar input,.criar select{
+  background:var(--painel);border:1px solid var(--linha-forte);border-radius:5px;
+  padding:7px 9px;font-family:inherit;font-size:12.5px;color:var(--texto);width:100%;
+}
+.criar input:focus,.criar select:focus{outline:none;border-color:var(--laranja)}
+.secao{
+  font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--texto-3);
+  margin:20px 0 8px;display:flex;align-items:center;gap:10px;font-weight:600;
+}
+.secao em{font-style:normal;text-transform:none;letter-spacing:0;opacity:.75}
+.mini{
+  font-family:inherit;font-size:10.5px;cursor:pointer;padding:3px 8px;
+  background:var(--painel-2);border:1px solid var(--linha-forte);border-radius:4px;
+  color:var(--texto-2);
+}
+.mini:hover{border-color:var(--laranja);color:var(--laranja)}
+.mini.perigo:hover{border-color:var(--log);color:var(--log)}
+table.montar input[type=text],table.montar input:not([type]),table.montar select{
+  background:var(--painel);border:1px solid var(--linha);border-radius:4px;
+  padding:5px 7px;font-family:inherit;font-size:11.5px;color:var(--texto);width:100%;
+}
+table.montar th em{font-style:normal;font-weight:400;opacity:.7;text-transform:none}
+table.montar td{padding:5px 7px}
+
 /* --------------------------------------------------------------- creditos */
 .creditos{max-width:70ch}
 .creditos .ave{
@@ -541,7 +606,10 @@ const est = { sessao:null, usuario:null, token:"", demo:false,
               // Para onde este console esta falando. Vazio = o proprio
               // servidor que serviu a pagina.
               servidor:"", portaLocal:5000, servidores:[], database:"",
-              teto:200, esquemaAtual:null, grade:null, painel:null };
+              teto:200, esquemaAtual:null, grade:null, painel:null,
+              // O formulario de nova tabela sobrevive a um "+ coluna": o
+              // rascunho fica aqui e a tela se redesenha a partir dele.
+              rascunho:null };
 
 async function api(op, params = {}) {
   if (est.demo) return demo(op, params);
@@ -849,7 +917,14 @@ async function abrirApp() {
 // =====================================================================
 // Arvore de bancos, schemas e tabelas
 // =====================================================================
-async function montarArvore() {
+/** Redesenha a arvore da esquerda.
+ *
+ * `abrirPainel` existe por causa de uma corrida real: a arvore terminava
+ * SEMPRE clicando no Painel, e o `abrirAdmin` disparado por esse clique
+ * chegava DEPOIS da tela que quem chamou ja tinha pintado -- criar uma tabela
+ * voltava para a grade e a grade era substituida pelo painel meio segundo
+ * depois. Quem vai pintar a propria tela passa `false`. */
+async function montarArvore(abrirPainel = true) {
   const bancos = await api("bancos");
   est.bancos = bancos;
   let html = `<div class="no painel" data-admin="painel"><span class="ic">◎</span>Painel</div>
@@ -900,7 +975,7 @@ async function montarArvore() {
 
   // O painel e a primeira tela: quem entra ve o servidor inteiro antes de
   // escolher uma tabela.
-  a.querySelector('[data-admin="painel"]').click();
+  if (abrirPainel) a.querySelector('[data-admin="painel"]').click();
 }
 
 function marcar(no) {
@@ -1541,6 +1616,545 @@ async function abrirFicha(db, tab, rowid) {
   $("#btVoltar").onclick = ev => { ev.preventDefault(); verConteudoEditavel(db, tab); };
 }
 
+/* ==================================================== Gestao das tabelas
+   O botao "Tabelas": as tabelas do database corrente numa grade, e as oito
+   operacoes de gestao sobre a que for escolhida.
+
+   Tres delas nasceram junto com esta tela, porque nao existiam no servidor --
+   `criar_tabela`, `duplicar_tabela` e `excluir_tabela`. As outras cinco ja
+   existiam e nao tinham porta nenhuma na interface. */
+
+/** Os tipos oferecidos na criacao, com o que cada um custa em bytes.
+ *
+ * A largura aparece porque ela decide o `slot_size`, e o `slot_size` decide o
+ * endereco: `offset = inicio + (rowid-1) x slot_size`. Escolher tipo aqui e
+ * escolher o tamanho de cada linha da tabela para sempre. */
+const TIPOS = [
+  ["Int8",        "inteiro com sinal · 8 bytes"],
+  ["Int4",        "inteiro com sinal · 4 bytes"],
+  ["Int2",        "inteiro com sinal · 2 bytes"],
+  ["Int1",        "inteiro com sinal · 1 byte"],
+  ["UInt8",       "inteiro sem sinal · 8 bytes"],
+  ["UInt4",       "inteiro sem sinal · 4 bytes"],
+  ["UInt2",       "inteiro sem sinal · 2 bytes"],
+  ["UInt1",       "inteiro sem sinal · 1 byte"],
+  ["Bool",        "verdadeiro ou falso · 1 byte"],
+  ["Real8",       "ponto flutuante · 8 bytes"],
+  ["Real4",       "ponto flutuante · 4 bytes"],
+  ["Decimal(15,2)", "decimal exato · não perde centavo"],
+  ["Str(60)",     "texto de largura fixa"],
+  ["Date",        "data · 4 bytes"],
+  ["Time",        "hora · 4 bytes"],
+  ["DateTime",    "data e hora · 8 bytes"],
+  ["Memo",        "texto longo · mora no .memo"],
+  ["Bin",         "binário livre · mora no .bin"],
+  ["Uuid",        "128 bits · v7 é crescente"],
+  ["Uuid256",     "256 bits · cabe um SHA-256"],
+  ["Sequence",    "contador da tabela · o motor numera"],
+];
+
+/** O database sobre o qual a gestao trabalha, ou um recado dizendo que falta. */
+function databaseCorrente() {
+  return (est.atual && est.atual.db) || est.database || (est.bancos || [])[0] || "";
+}
+
+function gerirTabelasAtual() {
+  const db = databaseCorrente();
+  if (!db) return avisar("nenhum database — crie um pelo [+] da árvore", true);
+  return gerirTabelas(db);
+}
+
+/** A grade de gestao: uma linha por tabela, com o que ela pesa. */
+async function gerirTabelas(db) {
+  est.database = db;
+  folha(`Tabelas de ${db}`, "carregando…", `<div class="centro">carregando…</div>`);
+
+  const t = await api("tabelas", { database: db });
+  const nomes = t.tabelas || [];
+  const fichas = await Promise.all(nomes.map(async nome => {
+    try {
+      const e = await api("esquema", { database: db, tabela: nome });
+      const pag = e.paginacao;
+      return { nome, registros:e.registros, slots:e.slots,
+               colunas:(e.colunas||[]).length, indices:(e.indices||[]).length,
+               volumes: pag ? volumesDe(e).length : 1, paginada: !!pag };
+    } catch (err) { return { nome, erro:String(err) }; }
+  }));
+
+  folha(`Tabelas de ${db}`,
+    `${nomes.length} ${nomes.length === 1 ? "tabela" : "tabelas"} · clique numa linha para gerir`,
+    `<div class="acoes">
+       <button class="botao" id="btNovaTab">✚ Nova tabela…</button>
+       <button class="botao secundario" id="btRecarregarTabs">↻ Atualizar</button>
+       <span class="leg">as oito operações ficam na tela de cada tabela</span>
+     </div>` +
+    (nomes.length
+      ? tabela([{t:"tabela"},{t:"registros",cls:"num"},{t:"slots",cls:"num"},
+                {t:"colunas",cls:"num"},{t:"índices",cls:"num"},
+                {t:"volumes",cls:"num"},{t:""}],
+          fichas, f => `<tr class="linha-tab" data-tab="${esc(f.nome)}">
+            <td class="dado"><b>${esc(f.nome)}</b>${
+              f.erro ? ` <span class="pino mal">ilegível</span>` : ""}</td>
+            <td class="num">${esc(String(f.registros ?? "—"))}</td>
+            <td class="num">${esc(String(f.slots ?? "—"))}</td>
+            <td class="num">${esc(String(f.colunas ?? "—"))}</td>
+            <td class="num">${esc(String(f.indices ?? "—"))}</td>
+            <td class="num">${f.paginada ? esc(String(f.volumes)) : "1"}</td>
+            <td><span class="pino">gerir</span></td></tr>`)
+      : `<div class="vazio">nenhuma tabela em ${esc(db)} — comece pelo “Nova tabela”</div>`));
+
+  $("#btNovaTab").onclick = () => telaNovaTabela(db);
+  $("#btRecarregarTabs").onclick = () => gerirTabelas(db);
+  $$("#painel .linha-tab").forEach(tr =>
+    tr.onclick = () => gerirTabela(db, tr.dataset.tab));
+}
+
+/** As oito operacoes de uma tabela, cada uma dizendo o que faz antes de fazer. */
+async function gerirTabela(db, tab) {
+  est.atual = { db, tab };
+  est.esquemaAtual = null;
+  folha(`Gestão de ${tab}`, `${db} · carregando…`, `<div class="centro">carregando…</div>`);
+
+  let e = null, erro = "";
+  try { e = await api("esquema", { database: db, tabela: tab }); }
+  catch (err) { erro = String(err); }
+
+  const pag = e && e.paginacao;
+  const resumo = e ? `<div class="fichas">
+      <div class="ficha"><div class="v">${esc(String(e.registros))}</div>
+        <div class="r">registros</div></div>
+      <div class="ficha"><div class="v">${esc(String(e.slots))}</div>
+        <div class="r">slots</div><div class="u">inclui os excluídos</div></div>
+      <div class="ficha"><div class="v">${esc(String((e.colunas||[]).length))}</div>
+        <div class="r">colunas</div></div>
+      <div class="ficha"><div class="v">${esc(String((e.indices||[]).length))}</div>
+        <div class="r">índices</div></div>
+      <div class="ficha"><div class="v">${pag ? esc(String(volumesDe(e).length)) : "1"}</div>
+        <div class="r">volumes .reg</div>
+        <div class="u">${pag ? esc(`${pag.registros_por_arquivo} por arquivo`) : "arquivo único"}</div></div>
+    </div>` : `<div class="aviso mal">${esc(erro)}</div>`;
+
+  const OPS = [
+    ["estrutura", "▤", "Estrutura da tabela",
+     "As colunas, os tipos, os índices e a paginação — como está gravado no cabeçalho do .reg.",
+     () => { est.aba = "estrutura"; return abrirTabela(db, tab); }],
+    ["conteudo", "▦", "Editar conteúdo da tabela",
+     "A grade de dados: incluir, alterar e excluir linha a linha, com um campo por coluna.",
+     () => verConteudoEditavel(db, tab)],
+    ["particoes", "◫", "Partições da tabela",
+     "Em que volume cada rowid cai, e qual arquivo do disco guarda cada faixa.",
+     () => verParticoes(db, tab)],
+    ["duplicar", "⧉", "Duplicar tabela",
+     "Copia os cinco arquivos para outro nome. A cópia nasce com os mesmos rowids e a mesma ordem.",
+     () => duplicarTabelaPara(db, tab)],
+    ["reparar", "⛨", "Reparar tabela",
+     "Confere cada slot no .reg contra o espelho .bkp e recupera o lado bom.",
+     () => repararTabelaDe(db, tab)],
+    ["reindexar", "↻", "Reparar índice",
+     "Joga o .ndx fora e reconstrói a árvore inteira lendo o .reg.",
+     () => reindexarTabelaDe(db, tab)],
+    ["nova", "✚", "Nova tabela neste database",
+     "Colunas, índices e paginação. A paginação entra aqui e não muda depois.",
+     () => telaNovaTabela(db)],
+    ["excluir", "🗑", "Excluir tabela",
+     "Apaga o .reg, o .ndx, o .bin, o .memo e o .log de uma vez. Não há desfazer.",
+     () => excluirTabelaDe(db, tab)],
+  ];
+
+  folha(`Gestão de ${tab}`, `${db} · oito operações sobre esta tabela`,
+    resumo +
+    `<div class="ops">${OPS.map(([k, ico, rot, diz], i) =>
+      `<button class="op${k === "excluir" ? " perigo" : ""}" data-op="${i}">
+         <span class="op-ico">${ico}</span>
+         <span class="op-txt"><b>${esc(rot)}</b><span>${esc(diz)}</span></span>
+       </button>`).join("")}</div>
+     <div class="acoes">
+       <button class="botao secundario" id="btVoltarTabs">← Tabelas de ${esc(db)}</button>
+     </div>`);
+
+  $("#painel .ops").onclick = ev => {
+    const b = ev.target.closest(".op");
+    if (!b) return;
+    Promise.resolve().then(OPS[+b.dataset.op][4]).catch(er => avisar(String(er), true));
+  };
+  $("#btVoltarTabs").onclick = () => gerirTabelas(db);
+}
+
+/* ------------------------------------------------------------- partições */
+
+/** As faixas de rowid de cada volume, calculadas — nao adivinhadas.
+ *
+ * O volume sai de uma DIVISAO, entao a faixa de cada arquivo e exata e nao
+ * precisa perguntar nada ao disco:
+ *   volume = (rowid-1) / registros_por_arquivo + 1  */
+function volumesDe(e) {
+  const pag = e.paginacao;
+  if (!pag || !pag.registros_por_arquivo) return [];
+  const rpa = pag.registros_por_arquivo;
+  const total = Math.max(Number(e.slots) || 0, 0);
+  const quantos = Math.max(1, Math.ceil(total / rpa));
+  const larg = pag.digitos || 3;
+  const out = [];
+  for (let v = 1; v <= quantos; v++) {
+    const de = (v - 1) * rpa + 1;
+    const ate = v * rpa;
+    out.push({ volume:v,
+      arquivo: `${e.tabela}_${String(v).padStart(larg, "0")}.reg`,
+      de, ate, usados: Math.max(0, Math.min(total, ate) - de + 1) });
+  }
+  return out;
+}
+
+async function verParticoes(db, tab) {
+  const e = await api("esquema", { database: db, tabela: tab });
+  const pag = e.paginacao;
+
+  if (!pag) {
+    folha(`Partições de ${tab}`, `${db} · esta tabela não é paginada`,
+      `<div class="nota">
+         <p><strong>Arquivo único.</strong> Tudo mora em
+         <code>${esc(tab)}.reg</code>, sem sufixo numérico.</p>
+         <p>A paginação é decidida na <em>criação</em> e não se muda depois: ela
+         é o que transforma o rowid em endereço, e trocar o divisor mudaria o
+         endereço de cada registro já gravado. Para paginar esta tabela seria
+         preciso criar outra já paginada e copiar as linhas — o que refaz os
+         rowids e quebra a ordem de digitação.</p>
+       </div>
+       <div class="acoes">
+         <button class="botao secundario" id="btVoltarGer">← Gestão de ${esc(tab)}</button>
+       </div>`);
+    return ligarVoltarGestao(db, tab);
+  }
+
+  const vols = volumesDe(e);
+  const gb = n => (n / (1024 * 1024 * 1024)).toFixed(2);
+  folha(`Partições de ${tab}`, `${db} · ${vols.length} volume(s) do .reg`,
+    `<div class="fichas">
+       <div class="ficha"><div class="v">${esc(String(pag.registros_por_arquivo))}</div>
+         <div class="r">registros por arquivo</div></div>
+       <div class="ficha"><div class="v">${pag.max_arquivos ? esc(String(pag.max_arquivos)) : "∞"}</div>
+         <div class="r">teto de volumes</div></div>
+       <div class="ficha"><div class="v">${esc(String(pag.capacidade || "—"))}</div>
+         <div class="r">capacidade</div><div class="u">registros no total</div></div>
+       <div class="ficha"><div class="v">${esc(gb(pag.bytes_por_arquivo || 0))} GiB</div>
+         <div class="r">volume dos externos</div><div class="u">.bin, .memo, .log</div></div>
+     </div>` +
+    tabela([{t:"volume",cls:"num"},{t:"arquivo"},{t:"do rowid",cls:"num"},
+            {t:"até o rowid",cls:"num"},{t:"slots usados",cls:"num"}],
+      vols, v => `<tr>
+        <td class="num dado">${v.volume}</td>
+        <td class="dado"><code>${esc(v.arquivo)}</code></td>
+        <td class="num">${v.de}</td><td class="num">${v.ate}</td>
+        <td class="num">${v.usados}</td></tr>`) +
+    `<div class="nota">
+       <p><strong>Estas faixas são conta, não busca.</strong>
+       <code>volume = (rowid−1) ÷ ${esc(String(pag.registros_por_arquivo))} + 1</code>,
+       e o resto da divisão é o slot dentro do volume. É por isso que paginar
+       não custa nada na leitura.</p>
+       <p>O <code>.ndx</code> <em>não</em> se parte: ele já guarda rowid global,
+       e nenhuma linha do código de índice sabe que volume existe.</p>
+       <p><strong>Não dá para editar isto depois.</strong> Mudar o divisor mudaria
+       o endereço de cada registro já gravado. Ele se escolhe na criação.</p>
+     </div>
+     <div class="acoes">
+       <button class="botao secundario" id="btVoltarGer">← Gestão de ${esc(tab)}</button>
+     </div>`);
+  ligarVoltarGestao(db, tab);
+}
+
+function ligarVoltarGestao(db, tab) {
+  const b = $("#btVoltarGer");
+  if (b) b.onclick = () => gerirTabela(db, tab);
+}
+
+/* ------------------------------------------- duplicar, reparar, reindexar */
+
+async function duplicarTabelaPara(db, tab) {
+  const destino = prompt(
+    `Duplicar ${tab} com que nome?\n\n`
+    + `Os cinco arquivos são copiados byte a byte: a cópia nasce com os MESMOS `
+    + `rowids e na MESMA ordem de digitação.`,
+    `${tab}_copia`);
+  if (!destino || !destino.trim()) return;
+  const r = await api("duplicar_tabela",
+    { database: db, tabela: tab, destino: destino.trim() });
+  avisar(`${tab} duplicada em ${r.destino} · ${r.arquivos} arquivo(s)`);
+  return gerirTabelas(db);
+}
+
+async function repararTabelaDe(db, tab) {
+  if (!confirm(`Reparar ${tab} pelo espelho .bkp?\n\nCada slot é conferido nos dois lados.`)) return;
+  const r = await api("reparar", { database: db, tabela: tab });
+  folha(`Reparo de ${tab}`, `${db} · cada slot conferido no .reg e no .bkp`,
+    fichasDe(r, [["conferidos","conferidos"],["reparados","reparados"],
+                 ["perdidos","perdidos"]]) +
+    (r.perdidos ? `<div class="nota">Há ${r.perdidos} slot(s) perdido(s) dos dois
+       lados — nem o .reg nem o .bkp têm CRC válido para eles.</div>` : "") +
+    `<div class="acoes">
+       <button class="botao secundario" id="btVoltarGer">← Gestão de ${esc(tab)}</button>
+     </div>`);
+  ligarVoltarGestao(db, tab);
+}
+
+async function reindexarTabelaDe(db, tab) {
+  if (!confirm(`Reparar o índice de ${tab}?\n\nO .ndx é jogado fora e refeito do zero a partir do .reg.`)) return;
+  const r = await api("reindexar", { database: db, tabela: tab });
+  avisar(`índices de ${tab} refeitos`);
+  folha(`Índice de ${tab} refeito`, `${db} · a árvore foi reconstruída lendo o .reg`,
+    `<pre class="dado">${esc(JSON.stringify(r, null, 1))}</pre>
+     <div class="acoes">
+       <button class="botao secundario" id="btVoltarGer">← Gestão de ${esc(tab)}</button>
+     </div>`);
+  ligarVoltarGestao(db, tab);
+}
+
+/* --------------------------------------------------------------- excluir */
+
+/** Exigir o nome digitado nao e cerimonia: um clique errado aqui apaga cinco
+ *  arquivos e nao ha desfazer. O servidor exige o mesmo, entao a tela nao e a
+ *  unica guarda -- e a primeira. */
+async function excluirTabelaDe(db, tab) {
+  const digitado = prompt(
+    `EXCLUIR a tabela ${tab} de ${db}.\n\n`
+    + `Isto apaga o .reg, o .ndx, o .bin, o .memo, o .log e o espelho .bkp — `
+    + `todos os volumes de cada um. Não há desfazer, e não existe lixeira.\n\n`
+    + `Para confirmar, digite o nome da tabela:`);
+  if (digitado === null) return;
+  if (digitado.trim() !== tab) {
+    return avisar(`nome não confere: a tabela não foi excluída`, true);
+  }
+  const r = await api("excluir_tabela",
+    { database: db, tabela: tab, confirmar: tab });
+  est.atual = null;
+  avisar(`${tab} excluída · ${(r.arquivos_apagados || []).length} arquivo(s) apagados`);
+  await montarArvore(false);
+  return gerirTabelas(db);
+}
+
+/* ----------------------------------------------------------- nova tabela */
+
+/** O formulario de criacao: colunas e indices montados linha a linha.
+ *
+ * O indice aponta a coluna pelo NOME e nao pela posicao, porque posicao muda
+ * quando alguem reordena e nome nao. */
+function telaNovaTabela(db) {
+  est.rascunho = est.rascunho || {
+    dig: 3,
+    colunas: [{ nome:"id", tipo:"Sequence", obrigatoria:true },
+              { nome:"nome", tipo:"Str(60)", obrigatoria:false }],
+    indices: [{ nome:"porId", colunas:"id", unico:true }],
+  };
+  desenharNovaTabela(db);
+}
+
+/** Quantos volumes cabem num sufixo de N digitos: `_999` para tres.
+ *
+ * Nao e detalhe de tela. Zero volumes de teto seria "infinito", e infinito
+ * nao existe aqui: o volume 1000 com tres digitos nao teria nome de arquivo. */
+const tetoDoSufixo = digitos => Math.pow(10, Math.min(9, Math.max(1, digitos))) - 1;
+
+function desenharNovaTabela(db) {
+  const r = est.rascunho;
+  const opcoesTipo = v => TIPOS.map(([t, d]) =>
+    `<option value="${esc(t)}"${t === v ? " selected" : ""}>${esc(t)} — ${esc(d)}</option>`
+  ).join("");
+
+  folha("Nova tabela", `${db} · cinco arquivos nascem juntos`,
+    `<form class="criar" id="formNovaTab" autocomplete="off">
+       <div class="bloco">
+         <label class="largo"><span>nome da tabela</span>
+           <input id="nt_nome" placeholder="cadastroClientes"
+                  value="${esc(r.nome || "")}"></label>
+         <label class="largo"><span>schema
+             <em>(vazio = na raiz do database; a pasta nasce junto se faltar)</em></span>
+           <input id="nt_schema" placeholder="vendas"
+                  value="${esc(r.schema || "")}"></label>
+         <label><span>registros por arquivo <em>(0 = arquivo único)</em></span>
+           <input id="nt_pag" inputmode="numeric" placeholder="0"
+                  value="${esc(String(r.pag ?? 0))}"></label>
+         <label><span>dígitos do sufixo <em>(3 dá <code>_001</code>)</em></span>
+           <input id="nt_dig" inputmode="numeric" placeholder="3"
+                  value="${esc(String(r.dig ?? 3))}"></label>
+         <label><span>teto de volumes <em>(0 = o que couber no sufixo)</em></span>
+           <input id="nt_max" inputmode="numeric" placeholder="${esc(String(tetoDoSufixo(r.dig ?? 3)))}"
+                  value="${esc(String(r.max ?? 0))}"></label>
+       </div>
+
+       <h3 class="secao">Colunas <button type="button" class="mini" id="nt_addCol">+ coluna</button></h3>
+       <div class="rolo"><table class="montar"><thead><tr>
+         <th>nome</th><th>tipo</th><th class="num">obrigatória</th><th></th>
+       </tr></thead><tbody id="nt_cols">${r.colunas.map((c, i) => `
+         <tr><td><input class="c-nome" data-i="${i}" value="${esc(c.nome)}"></td>
+             <td><select class="c-tipo" data-i="${i}">${opcoesTipo(c.tipo)}</select></td>
+             <td class="num"><input type="checkbox" class="c-obrig" data-i="${i}"
+                 ${c.obrigatoria ? "checked" : ""}></td>
+             <td><button type="button" class="mini perigo c-rm" data-i="${i}">remover</button></td>
+         </tr>`).join("")}</tbody></table></div>
+
+       <h3 class="secao">Índices <button type="button" class="mini" id="nt_addIdx">+ índice</button></h3>
+       <div class="rolo"><table class="montar"><thead><tr>
+         <th>nome</th><th>colunas <em>(vírgula; aceita “cidade desc” e “nome nocase”)</em></th>
+         <th class="num">único</th><th></th>
+       </tr></thead><tbody id="nt_idxs">${r.indices.map((x, i) => `
+         <tr><td><input class="i-nome" data-i="${i}" value="${esc(x.nome)}"></td>
+             <td><input class="i-cols" data-i="${i}" value="${esc(x.colunas)}"
+                        placeholder="cidade desc, limite"></td>
+             <td class="num"><input type="checkbox" class="i-unico" data-i="${i}"
+                 ${x.unico ? "checked" : ""}></td>
+             <td><button type="button" class="mini perigo i-rm" data-i="${i}">remover</button></td>
+         </tr>`).join("")}</tbody></table></div>
+     </form>
+
+     <div class="acoes">
+       <button class="botao" id="nt_criar">Criar tabela</button>
+       <button class="botao secundario" id="nt_voltar">← Tabelas de ${esc(db)}</button>
+       <span class="leg" id="nt_recado"></span>
+     </div>
+
+     <div class="nota">
+       <p><strong>A paginação entra agora e não muda depois.</strong> Ela é o
+       divisor que transforma o rowid em endereço; trocá-la mais tarde mudaria
+       o endereço de cada registro já gravado.</p>
+       <p><strong>Não existe “sem teto”.</strong> O sufixo tem largura fixa, e
+       com ${esc(String(r.dig ?? 3))} dígitos o volume
+       ${esc(String(tetoDoSufixo(r.dig ?? 3) + 1))} não teria nome. Deixando o
+       teto em zero, ele vira ${esc(String(tetoDoSufixo(r.dig ?? 3)))} —
+       ${esc(String(tetoDoSufixo(r.dig ?? 3) * (r.pag || 0)))} registros de
+       capacidade com o divisor de agora.</p>
+       <p><code>Sequence</code> deixado em branco na inclusão é numerado pelo
+       motor; <code>Uuid</code> aceita a palavra <code>novo</code> e gera um v7,
+       que é crescente e por isso cai sempre na folha mais à direita da árvore.</p>
+     </div>`);
+
+  const lerForm = () => {
+    r.nome = $("#nt_nome").value.trim();
+    r.schema = $("#nt_schema").value.trim();
+    r.pag = +$("#nt_pag").value || 0;
+    r.dig = Math.min(9, Math.max(1, +$("#nt_dig").value || 3));
+    r.max = +$("#nt_max").value || 0;
+    r.colunas = $$("#nt_cols tr").map((tr, i) => ({
+      nome: tr.querySelector(".c-nome").value.trim(),
+      tipo: tr.querySelector(".c-tipo").value,
+      obrigatoria: tr.querySelector(".c-obrig").checked,
+    }));
+    r.indices = $$("#nt_idxs tr").map(tr => ({
+      nome: tr.querySelector(".i-nome").value.trim(),
+      colunas: tr.querySelector(".i-cols").value.trim(),
+      unico: tr.querySelector(".i-unico").checked,
+    }));
+  };
+  $("#nt_addCol").onclick = () => {
+    lerForm(); r.colunas.push({ nome:"", tipo:"Str(60)", obrigatoria:false });
+    desenharNovaTabela(db);
+  };
+  $("#nt_addIdx").onclick = () => {
+    lerForm(); r.indices.push({ nome:"", colunas:"", unico:false });
+    desenharNovaTabela(db);
+  };
+  $$("#painel .c-rm").forEach(b => b.onclick = () => {
+    lerForm(); r.colunas.splice(+b.dataset.i, 1); desenharNovaTabela(db);
+  });
+  $$("#painel .i-rm").forEach(b => b.onclick = () => {
+    lerForm(); r.indices.splice(+b.dataset.i, 1); desenharNovaTabela(db);
+  });
+  $("#nt_voltar").onclick = ev => { ev.preventDefault(); gerirTabelas(db); };
+
+  $("#nt_criar").onclick = async ev => {
+    ev.preventDefault();
+    lerForm();
+    const rec = $("#nt_recado");
+    if (!r.nome) return avisar("dê um nome à tabela", true);
+    const cols = r.colunas.filter(c => c.nome);
+    if (!cols.length) return avisar("a tabela precisa de ao menos uma coluna", true);
+
+    const pedido = {
+      database: db, tabela: r.nome,
+      ...(r.schema ? { schema: r.schema } : {}),
+      colunas: cols.map(c => ({ nome:c.nome, tipo:c.tipo, obrigatoria:c.obrigatoria })),
+      indices: r.indices.filter(x => x.nome && x.colunas).map(x => ({
+        nome: x.nome, unico: x.unico,
+        colunas: x.colunas.split(",").map(s => s.trim()).filter(Boolean),
+      })),
+    };
+    if (r.pag > 0) {
+      pedido.registros_por_arquivo = r.pag;
+      pedido.digitos = r.dig;
+      pedido.max_arquivos = r.max;   // zero = o que couber no sufixo
+    }
+
+    rec.textContent = "criando…";
+    try {
+      const feito = await api("criar_tabela", pedido);
+      avisar(`tabela ${feito.tabela} criada${r.schema ? ` em ${r.schema}` : ""}`
+           + ` · ${feito.colunas} coluna(s), ${feito.indices} índice(s)`
+           + `${feito.paginada ? ", paginada" : ""}`);
+      est.rascunho = null;
+      await montarArvore(false);
+      return gerirTabelas(db);
+    } catch (err) {
+      rec.textContent = "";
+      avisar(String(err), true);
+    }
+  };
+}
+
+/* ==================================================== Gestão de transações
+   Uma tela que diz a verdade em vez de um botao apagado: o que ja existe hoje
+   (o desfazer de uma insercao, o diario por tabela) e o que nao existe (commit
+   e rollback de varias operacoes). Sem isto, "livro-razao" e conversa. */
+
+async function verTransacoes() {
+  // O espelho e por servidor, entao a ficha le a configuracao DESTE em vez de
+  // dizer "se ligado no config" -- que e verdade em toda parte e informacao em
+  // lugar nenhum.
+  let espelho = null;
+  try { espelho = !!(await api("config")).espelho; } catch (_) { /* sem sessão */ }
+
+  folha("Gestão de transações", "o que existe hoje, o que falta e por quê",
+    `<div class="fichas">
+       <div class="ficha"><div class="v">não</div><div class="r">commit/rollback</div>
+         <div class="u">de várias operações</div></div>
+       <div class="ficha"><div class="v">sim</div><div class="r">desfazer da inserção</div>
+         <div class="u">se um índice recusar</div></div>
+       <div class="ficha"><div class="v">sim</div><div class="r">diário .log</div>
+         <div class="u">por tabela</div></div>
+       <div class="ficha"><div class="v">${espelho === null ? "—" : espelho ? "sim" : "não"}</div>
+         <div class="r">espelho .bkp</div>
+         <div class="u">neste servidor</div></div>
+     </div>
+
+     <div class="nota">
+       <p><strong>Transações de verdade não existem no PhxSql hoje.</strong>
+       Não há <code>BEGIN</code>, <code>COMMIT</code> nem <code>ROLLBACK</code>,
+       e por isso esta tela não tem uma lista de transações abertas para mostrar
+       — mostrar uma vazia daria a entender que o mecanismo existe e está
+       parado.</p>
+
+       <p>O que existe é menor e vale dizer com precisão:</p>
+       <ul>
+         <li><b>A inserção se desfaz sozinha.</b> Se a linha entra no
+         <code>.reg</code> e um índice único recusa a chave, o registro gravado
+         é desfeito antes do erro voltar. É atômico dentro de <em>uma</em>
+         operação, não entre várias.</li>
+         <li><b>Uma trava global serializa tudo.</b> Cada escrita toma o mesmo
+         <code>Mutex</code>, então duas conexões nunca escrevem ao mesmo tempo.
+         Isso dá isolamento, não durabilidade transacional.</li>
+         <li><b>O <code>.log</code> registra o que aconteceu</b>, por tabela,
+         e serve para auditar — mas não guarda a imagem anterior da linha,
+         então não dá para desfazer por ele.</li>
+       </ul>
+
+       <p><strong>O que falta, em ordem:</strong> um journal com a imagem
+       anterior de cada slot tocado; um identificador de transação carregado na
+       sessão; e o <code>COMMIT</code> que troca o journal por um marco no
+       disco. É o furo que o uso como livro-razão — a
+       <em>blockchain</em> e o correio — exigiria fechar primeiro, e por isso
+       os dois estão marcados como planejados.</p>
+     </div>
+
+     <p class="leg">O estado de cada pedido está em <code>docs/PENDENCIAS.md</code>.</p>`);
+}
+
 /* ------------------------------------------------------------------ creditos
    Quem fez, e com o que. A regra aqui e a mesma do resto do projeto: nao
    inventar. Nao ha uma equipe de dez pessoas para listar -- ha o Adriano
@@ -1631,6 +2245,7 @@ const ICO = {
   replica: `<circle cx="6" cy="12" r="2.6" fill="none" stroke-width="1.6"/><circle cx="18" cy="6" r="2.6" fill="none" stroke-width="1.6"/><circle cx="18" cy="18" r="2.6" fill="none" stroke-width="1.6"/><path d="M8.3 10.8l7.3-3.6M8.3 13.2l7.3 3.6" stroke-width="1.5"/>`,
   correio: `<rect x="3" y="5.5" width="18" height="13" rx="2" fill="none" stroke-width="1.6"/><path d="M3.6 7l8.4 6 8.4-6" fill="none" stroke-width="1.6" stroke-linecap="round"/>`,
   corrente: `<rect x="2.5" y="8.5" width="6" height="7" rx="1.5" fill="none" stroke-width="1.6"/><rect x="9.5" y="8.5" width="5" height="7" rx="1.5" fill="none" stroke-width="1.6"/><rect x="15.5" y="8.5" width="6" height="7" rx="1.5" fill="none" stroke-width="1.6"/><path d="M8.5 12h1M14.5 12h1" stroke-width="1.7"/>`,
+  tabelas: `<rect x="3" y="4" width="13" height="12" rx="1.6" fill="none" stroke-width="1.5"/><path d="M3 8h13M8 8v8" stroke-width="1.3"/><path d="M8 8V4M19 8v12H8" fill="none" stroke-width="1.5" stroke-linecap="round"/>`,
   grade: `<rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke-width="1.6"/><path d="M3 9h18M9 9v11M15 9v11" stroke-width="1.4"/>`,
   ajuda: `<circle cx="12" cy="12" r="9" fill="none" stroke-width="1.6"/><path d="M9.4 9.3a2.7 2.7 0 015.2.9c0 1.8-2.6 2.2-2.6 4" fill="none" stroke-width="1.7" stroke-linecap="round"/><path d="M12 17.4v.1" stroke-width="2.2" stroke-linecap="round"/>`,
 };
@@ -1638,13 +2253,13 @@ const ICO = {
 const svg = nome =>
   `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none">${ICO[nome]}</svg>`;
 
-/* A cor agrupa por familia, nao por gosto: quinze ferramentas para oito
+/* A cor agrupa por familia, nao por gosto: dezessete ferramentas para oito
    matizes, entao a repeticao e inevitavel e deve significar alguma coisa.
      verde   serviço e salvaguarda ... Start/Stop, Backup
      roxo    consulta e réplica ...... Query, Replicação
      azul    gente e mensagem ........ Usuários, Server Mail
      laranja política ................ Diretivas
-     turquesa dados .................. Bancos, Duplicar, Importar
+     turquesa dados .................. Bancos, View DB, Tabelas, Duplicar, Importar
      verde-claro rede ................ Conexões
      vermelho risco .................. Transações
      âmbar   conserto e cadeia ....... Repair, Blockchain
@@ -1661,16 +2276,14 @@ const FERRAMENTAS = [
   { ico:"escudo",   rot:"Diretivas",  cor:"var(--laranja)",faz:verDiretivas },
   { ico:"banco",    rot:"Bancos",     cor:"var(--bin)",    faz:verBancos },
   { ico:"grade",    rot:"View DB",    cor:"var(--bin)",    faz:viewDatabaseAtual },
+  { ico:"tabelas",  rot:"Tabelas",    cor:"var(--bin)",    faz:gerirTabelasAtual },
   { ico:"duplicar", rot:"Duplicar",   cor:"var(--bin)",    faz:null,
     falta:"Copiar um database inteiro para outro nome. O backup já sabe copiar "
         + "árvore e conferir SHA-256; falta a operação que grava com outro nome "
         + "e reescreve o catálogo." },
   { ico:"tomada",   rot:"Conexões",   cor:"var(--memo)",   faz:verConexoes },
   "risco",
-  { ico:"troca",    rot:"Transações", cor:"var(--log)",    faz:null,
-    falta:"Não existem. Hoje a inserção desfaz o que gravou se um índice falhar, "
-        + "mas não há journal nem commit/rollback de várias operações. É o furo "
-        + "que o uso como livro-razão exigiria fechar primeiro." },
+  { ico:"troca",    rot:"Transações", cor:"var(--log)",    faz:verTransacoes },
   { ico:"importar", rot:"Importar",   cor:"var(--bin)",    faz:null,
     falta:"Ler CSV, .tps do TopSpeed(R) ou outra base e gravar como tabela "
         + "PhxSql. Depende de decidir os formatos de entrada." },
@@ -1910,16 +2523,30 @@ const MENUS = [
     { rot:"Sair",                ico:"⏻",                 faz:() => $("#btSair").click() },
   ]],
 
-  ["Tabela", "T", [
-    { rot:"Estrutura",   ico:"▤", tecla:"Alt+2", quando:comTabela, faz:() => irAba("estrutura") },
-    { rot:"Conteúdo",    ico:"▦", tecla:"Alt+3", quando:comTabela, faz:() => irAba("conteudo") },
-    { rot:"Índices",     ico:"⑂",               quando:comTabela, faz:() => irAba("indices") },
-    { rot:"Diário",      ico:"◷",               quando:comTabela, faz:() => irAba("diario") },
-    { rot:"Integridade", ico:"⚑",               quando:comTabela, faz:() => irAba("integridade") },
+  // Um menu so para tabela, e nao dois: "Tabela" (a escolhida na arvore) e
+  // "Tabelas" (as do database) seriam vizinhos parecidos demais, e quem le a
+  // barra teria de adivinhar em qual dos dois esta a operacao que quer.
+  ["Tabelas", "T", [
+    { rot:"Gerir as tabelas",     ico:"▦", tecla:"Alt+5", faz:gerirTabelasAtual },
+    { rot:"Nova tabela…",         ico:"✚", faz:() => telaNovaTabela(databaseCorrente()) },
     "sep",
-    { rot:"Verificar",              ico:"✓", quando:comTabela, faz:verificarTabela },
-    { rot:"Reindexar…",             ico:"↻", quando:comTabela, faz:reindexarTabela },
-    { rot:"Reparar pelo espelho…",  ico:"⛨", quando:comTabela, faz:repararTabela },
+    { rot:"Estrutura da tabela",  ico:"▤", tecla:"Alt+2", quando:comTabela, faz:() => irAba("estrutura") },
+    { rot:"Editar conteúdo",      ico:"▦", tecla:"Alt+3", quando:comTabela,
+      faz:() => verConteudoEditavel(est.atual.db, est.atual.tab) },
+    { rot:"Partições da tabela",  ico:"◫", quando:comTabela,
+      faz:() => verParticoes(est.atual.db, est.atual.tab) },
+    { rot:"Índices",              ico:"⑂", quando:comTabela, faz:() => irAba("indices") },
+    { rot:"Diário",               ico:"◷", quando:comTabela, faz:() => irAba("diario") },
+    { rot:"Integridade",          ico:"⚑", quando:comTabela, faz:() => irAba("integridade") },
+    "sep",
+    { rot:"Duplicar tabela…",     ico:"⧉", quando:comTabela,
+      faz:() => duplicarTabelaPara(est.atual.db, est.atual.tab) },
+    { rot:"Verificar",            ico:"✓", quando:comTabela, faz:verificarTabela },
+    { rot:"Reparar índice…",      ico:"↻", quando:comTabela, faz:reindexarTabela },
+    { rot:"Reparar tabela pelo espelho…", ico:"⛨", quando:comTabela, faz:repararTabela },
+    "sep",
+    { rot:"Excluir tabela…",      ico:"🗑", quando:comTabela,
+      faz:() => excluirTabelaDe(est.atual.db, est.atual.tab) },
   ]],
 
   ["Memória", "M", [
@@ -1936,6 +2563,19 @@ const MENUS = [
     { rot:"De onde vêm",   ico:"◎", faz:verIps },
     { rot:"Configuração",  ico:"⚙", faz:verConfig },
     { rot:"Quem sou eu",   ico:"☰", faz:verQuemSou },
+  ]],
+
+  // A barra de ferramentas so se alcanca com o mouse. Este menu e a mesma
+  // lista pelo teclado -- e onde mora a "Gestão de transações", que nao e
+  // ferramenta de tabela nem de administracao.
+  ["Ferramentas", "F", [
+    { rot:"Gestão de transações", ico:"⇄", faz:verTransacoes },
+    { rot:"Consulta SQL",         ico:"⌕", faz:abrirConsulta },
+    "sep",
+    { rot:"Serviço",              ico:"⏻", faz:verServico },
+    { rot:"Conexões",             ico:"⇋", faz:verConexoes },
+    { rot:"Replicação",           ico:"⇉", faz:verReplicacao },
+    { rot:"Reparar…",             ico:"⛨", faz:repararPeloMenu },
   ]],
 
   ["Ver", "V", [
@@ -2091,7 +2731,8 @@ function ligarAtalhos() {
     if (ev.altKey && ev.key === "1") { ev.preventDefault(); irPara("painel"); return; }
     if (ev.altKey && ev.key === "2" && est.atual) { ev.preventDefault(); irAba("estrutura"); return; }
     if (ev.altKey && ev.key === "3" && est.atual) { ev.preventDefault(); irAba("conteudo"); return; }
-    if (ev.altKey && ev.key === "4") { ev.preventDefault(); viewDatabaseAtual(); }
+    if (ev.altKey && ev.key === "4") { ev.preventDefault(); viewDatabaseAtual(); return; }
+    if (ev.altKey && ev.key === "5") { ev.preventDefault(); gerirTabelasAtual(); }
   });
 }
 
@@ -2103,10 +2744,18 @@ function irPara(qual) {
   abrirAdmin(qual);
 }
 
+/** Vai para uma das cinco abas da tabela escolhida.
+ *
+ * Se a barra de abas nao estiver na tela -- porque quem chegou aqui veio de
+ * uma folha, como a gestao de tabelas --, reabre a tabela em vez de so
+ * desenhar o miolo. Sem isso a Estrutura aparecia solta, sem as abas ao lado
+ * para voltar para o Conteudo. */
 function irAba(qual) {
   if (!est.atual) return;
   est.aba = qual;
-  desenharAba();
+  const { db, tab } = est.atual;
+  if (!$("#abas").children.length) return abrirTabela(db, tab);
+  return desenharAba();
 }
 
 function atualizarVista() {

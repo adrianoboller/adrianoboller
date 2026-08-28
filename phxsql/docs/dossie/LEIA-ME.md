@@ -26,7 +26,14 @@ $(( $(grep -c '^\[\[package\]\]' Cargo.lock) - 4 ))                # dependênci
 cat docs/*.md README.md CHANGELOG.md MANUAL.txt \
     bancada/LEIA-ME.md marca/LEIA-ME.md docs/dossie/LEIA-ME.md \
   | wc -l                                                          # linhas de doc
+stat -c%s crates/phxsql-server/ui/index.html \
+          crates/phxsql-server/ui/grid/phx-grid.{css,js} \
+  | paste -sd+ | bc                                                # bytes de interface
 ```
+
+A interface são os **três arquivos que o `http.rs` embute com `include_str!`** —
+`index.html` mais o CSS e o JS do phx-grid. Contar só o `index.html` daria um
+número menor do que o publicado, e ninguém conseguiria reproduzir o rodapé.
 
 **O conjunto de arquivos importa.** A receita de linhas de doc já esteve mais
 curta do que o número publicado — e aí ninguém consegue reproduzir a capa.

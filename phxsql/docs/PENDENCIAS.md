@@ -21,7 +21,7 @@ o código, não contra a lembrança — foi assim que a chave estrangeira saiu d
 | ☑️ | 11 | Aceitar linha de comando | `phxsql` com 10 comandos, `phxsqld` com 9 chaves |
 | ☑️ | 12 | Pastas separando tabelas **e** bancos | `base/ → database → raiz → schema/` |
 | ☑️ | 13 | Paginação `Nome_001.reg`, `_002`… | volume = `(rowid−1)/por_arquivo + 1` |
-| ◐ | 14 | **Quantidade de registros e arquivos no create table** | a paginação funciona, mas **não há op no protocolo nem comando na CLI para criar tabela** — só escrevendo Rust |
+| ☑️ | 14 | **Quantidade de registros e arquivos no create table** | op `criar_tabela` no protocolo e tela **Nova tabela** com registros por arquivo, dígitos do sufixo e teto de volumes. A CLI ainda não tem o comando |
 | ☑️ | 15 | Organograma, fluxograma e dossiê | 19 seções, 16 figuras, tudo em SVG à mão |
 | ☑️ | 16 | Log de IPs na porta 5000, com data e hora | JSON Lines, para caber `fail2ban` |
 | ☑️ | 17 | Download dos fontes e do compilado Linux/Windows, com manual | `./empacotar.sh`, três zips conferidos |
@@ -37,7 +37,7 @@ o código, não contra a lembrança — foi assim que a chave estrangeira saiu d
 | ☑️ | 27 | Comandos proibidos no `config.json` | e a auditoria achou ali um furo real, corrigido |
 | ☑️ | 28 | Criar regra de firewall em quem tenta o proibido | conferido com um `iptables` falso que grava |
 | ☑️ | 29 | **Base64 no login**, não em claro | feito — e o padrão é melhor: desafio-resposta, a senha não sai da máquina |
-| ☑️ | 30 | **Interface web parecida com o Centro de Controle HFSQL(R)** | árvore, abas, painel, administração, menu, ferramentas e **View Database com edição** — 30 das 32 operações. Fora: `buscar` e `desbloquear` |
+| ☑️ | 30 | **Interface web parecida com o Centro de Controle HFSQL(R)** | árvore, abas, painel, administração, menu, ferramentas, **View Database com edição** e **gestão de tabelas** — 30 das 33 operações. Fora: `buscar`, `desbloquear` e `criar_schema`, que acontece sozinho quando a tela cria tabela dentro de um schema |
 | ☑️ | 66 | **[+] na árvore** para criar database, **About no menu Ajuda**, **tela de créditos** com a fênix, e **View Database** com grade de tabelas e edição | fecha a edição de dados: `ler`, `inserir`, `atualizar` e `excluir` ganharam tela |
 | ☑️ | 65 | **Barra de ferramentas** com Start/Stop, Query, Usuários, Diretivas, Bancos, Duplicar, Conexões, Transações, Importar, Repair, Backup, Replicação, Server Mail, Blockchain e Ajuda | 15 ferramentas, ícone colorido; **10 funcionam**, 5 apagadas dizendo o que falta |
 | ☑️ | 31 | Tabela em memória tipo Redis(R), com `SelectMemory` | **87× mais rápido**, medido |
@@ -74,11 +74,12 @@ o código, não contra a lembrança — foi assim que a chave estrangeira saiu d
 | ☑️ | 62 | Parar a carga de 10 milhões | parada e limpa |
 | ☑️ | 63 | **Barra de menu superior tradicional** | seis menus, 22 recursos, Alt/setas/Esc |
 | ☑️ | 64 | Cadê o sol e a lua? | respondida — estavam lá, o recorte da captura é que cortava |
+| ☑️ | 67 | **Botão e menu Tabelas** para gerir as tabelas do banco: nova, estrutura, editar conteúdo, partições, duplicar, reparar tabela, reparar índice e excluir — e **Gestão de transações** no menu de ferramentas | as oito operações funcionam de ponta a ponta; três delas (`criar_tabela`, `duplicar_tabela`, `excluir_tabela`) nasceram aqui, e `criar_schema` — prometido na documentação e nunca despachado — junto |
 
-**57 feitos · 3 parciais · 6 planejados**, de 66 pedidos.
+**59 feitos · 2 parciais · 6 planejados**, de 67 pedidos.
 
 Fora do que você pediu, entraram por medição: o CRC slice-by-8, o `descer` sem
-reler a folha, a conferência de unicidade sem descida dupla, e onze correções
+reler a folha, a conferência de unicidade sem descida dupla, e catorze correções
 de defeito — três delas de perda silenciosa de dado.
 
 ---
@@ -90,13 +91,15 @@ de defeito — três delas de perda silenciosa de dado.
 Existe, funciona no que promete, mas **não faz tudo** o que o pedido queria.
 Cada linha diz exatamente onde para.
 
+As duas primeiras são os dois ◐ da tabela lá em cima. A terceira **não é um
+pedido seu** — é um buraco achado na revisão, dentro de um pedido marcado
+feito, e fica aqui para não sumir de vista.
+
 | # | O que você pediu | O que existe | O que falta |
 |---|---|---|---|
 | 1 | **Replicação como a do MySQL(R)**, com porta de acesso, de envio e de retorno | as três portas entram no `config.json` e são validadas — duas no mesmo endereço não sobem. O desenho está na seção 9 do dossiê e em `docs/REPLICACAO.md`. O `.log` **é** o binlog | o `.log` **v2 com imagem da linha**. Hoje o diário registra que houve alteração, não o que a linha virou — sem isso a réplica não tem o que aplicar. O servidor avisa alto no arranque que as portas são configuração, não serviço |
-| 2 | **Chave estrangeira** com CASCADE / RESTRICT / SET NULL | declarada, validada, gravada no cabeçalho do `.reg`, sobrevive a fechar e abrir, e aparece na aba Estrutura | **não é aplicada**. Nenhuma gravação consulta a chave: `Restringir` e `Cascata` são intenção guardada, não comportamento. Estava marcada «pronto» no README e no dossiê — corrigido nesta revisão |
-| 3 | **Quantidade de registros e arquivos definida no create table** | a paginação é parâmetro do esquema e funciona; `criar_tabela` existe na biblioteca | não há **op no protocolo nem comando na CLI** para criar tabela. Hoje só se cria escrevendo Rust. Criar *database* pela rede já dá |
-| 4 | **Gráficos comparativos** de IO, memória e CPU | `bancada/graficos.py` gera a página inteira a partir do `resultados.json` | a página gerada não estava **versionada** — existia só na máquina de quem rodou. Passa a entrar no repositório |
-| 5 | **Subir o PhxSql no GitHub** | está em `adrianoboller/adrianoboller`, na branch `claude/capacidades-disponiveis-y6auxh`, com histórico completo | repositório **próprio**: `create_repository` responde `403 Resource not accessible by integration`. Não é escolha minha nem defeito do código — a credencial desta sessão só alcança esse repositório. Destravar depende de você criar o repositório e dar acesso |
+| 2 | **Subir o PhxSql no GitHub** | está em `adrianoboller/adrianoboller`, na branch `claude/capacidades-disponiveis-y6auxh`, com histórico completo | repositório **próprio**: `create_repository` responde `403 Resource not accessible by integration`. Não é escolha minha nem defeito do código — a credencial desta sessão só alcança esse repositório. Destravar depende de você criar o repositório e dar acesso |
+| 3 | **Chave estrangeira** com CASCADE / RESTRICT / SET NULL | declarada, validada, gravada no cabeçalho do `.reg`, sobrevive a fechar e abrir, e aparece na aba Estrutura | **não é aplicada**. Nenhuma gravação consulta a chave: `Restringir` e `Cascata` são intenção guardada, não comportamento. Estava marcada «pronto» no README e no dossiê — corrigido nesta revisão |
 
 ## 3. Planejado
 
@@ -114,7 +117,7 @@ Pedido e **não começado**. Não estão pela metade: não têm código nenhum.
 | 8 | **Cliente ODBC e OLE DB** | depende de (7) | — |
 | 9 | **Integração no FraseSQL** como `engine = "phxsql"` | depende de (8) | — |
 | 10 | Compactação | o formato já prevê e **mede** o espaço morto | falta o comando. O reindex já cobre a parte do índice |
-| 11 | Transações | — | hoje a inserção desfaz o que gravou se um índice falhar, mas não há journal nem `commit`/`rollback` de várias operações |
+| 11 | Transações | tem **tela** (Ferramentas → Gestão de transações), e a tela diz o que existe e o que não existe em vez de fingir | hoje a inserção desfaz o que gravou se um índice falhar, e a trava única serializa as escritas — mas não há journal com a imagem anterior da linha, nem identificador de transação na sessão, nem `commit`/`rollback` de várias operações. É o que o uso como livro-razão exigiria primeiro |
 | 12 | Concorrência fina | — | uma trava única serializa todo acesso a dados |
 | 13 | TLS | — | o tráfego depende de túnel. A credencial já não vai em claro quando se usa desafio-resposta; os dados, sim |
 
@@ -195,6 +198,39 @@ Três coisas entraram para que nada disso volte a acontecer calado:
   `.gitignore` de graça.
 - A receita de medição do `LEIA-ME.md` do dossiê agora lista **exatamente** os
   arquivos contados.
+
+### O que a rodada da gestão de tabelas achou
+
+Quatro defeitos, três deles nas próprias operações novas — construir a tela é o
+que os fez aparecer.
+
+- **Um servidor `somente_leitura` teria deixado apagar tabela.** As três
+  operações novas entraram no despacho e ficaram de fora de `OPS_ESCRITA`, a
+  lista que o modo somente-leitura consulta. Criar e *excluir* tabela passariam
+  num servidor marcado como só de leitura. A lista é escrita à mão, então o
+  conserto veio com um teste que a percorre: quem acrescentar operação que
+  grava e esquecer da lista quebra o teste.
+
+- **`criar_schema` estava prometido em dois lugares e não existia.** Aparecia na
+  tabela de permissões do `docs/USUARIOS.md` e na lista de operações de
+  escrita; pedir pela rede respondia «operacao desconhecida». A biblioteca já
+  sabia criar a pasta — faltava a porta. Agora existe, e a tela de nova tabela
+  tem o campo.
+
+- **A largura do sufixo entrava depois do teto de volumes.** `Paginacao::nova`
+  confere o teto contra os três dígitos do padrão, então pedir 9.999 volumes
+  era recusado *antes* de o quarto dígito existir. Entrou
+  `com_max_arquivos`, e a ordem passou a ser: largura primeiro, teto depois.
+  Também virou explícito que **«sem teto» não existe**: o sufixo tem largura
+  fixa, e com três dígitos o volume 1000 não teria nome de arquivo. Teto
+  omitido agora vira o maior que cabe, em vez de zero — que o validador
+  recusava com uma mensagem que não ajudava quem preencheu a tela.
+
+- **A árvore roubava a tela de quem pintasse depois dela.** `montarArvore`
+  terminava sempre clicando no Painel; criar uma tabela redesenhava a árvore,
+  voltava para a grade — e meio segundo depois o painel chegava por cima. Só
+  apareceu no teste de navegador, e só depois que o formulário ficou maior.
+  Quem vai pintar a própria tela agora passa `montarArvore(false)`.
 
 ## 5. Ninguém pediu, mas a medição aponta
 

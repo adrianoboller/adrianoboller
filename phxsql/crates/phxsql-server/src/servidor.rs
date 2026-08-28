@@ -47,6 +47,9 @@ const OPS_ESCRITA: &[&str] = &[
     "reindexar",
     "criar_database",
     "criar_schema",
+    "criar_tabela",
+    "excluir_tabela",
+    "duplicar_tabela",
 ];
 
 /// Estado de uma conexao.
@@ -1288,6 +1291,10 @@ impl Servidor {
             "tabelas" => self.op_tabelas(p),
             "esquema" => self.op_esquema(p, sessao),
             "criar_database" => self.op_criar_database(p),
+            "criar_schema" => self.op_criar_schema(p),
+            "criar_tabela" => self.op_criar_tabela(p),
+            "excluir_tabela" => self.op_excluir_tabela(p),
+            "duplicar_tabela" => self.op_duplicar_tabela(p),
             "ler" => self.op_ler(p, sessao),
             "varrer" => self.op_varrer(p, sessao),
             "buscar" => self.op_buscar(p, sessao),
@@ -1466,6 +1473,105 @@ impl Servidor {
         ]))
     }
 
+    /// Cria um schema -- uma pasta dentro do database.
+    ///
+    /// Estava prometido em dois lugares (a tabela de permissoes e a lista de
+    /// operacoes de escrita) e nao existia no despacho: pedir `criar_schema`
+    /// pela rede respondia "operacao desconhecida". A biblioteca ja sabia
+    /// fazer; faltava a porta.
+    fn op_criar_schema(&self, p: &Json) -> Result<Json> {
+        let database = p.texto_ou("database", "");
+        let schema = p.texto_ou("schema", "").trim();
+        if schema.is_empty() {
+            return Err(PhxError::Esquema("informe \"schema\"".into()));
+        }
+        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        dados.abrir_database(database)?.criar_schema(schema)?;
+        Ok(Json::objeto(vec![
+            ("database", Json::texto_de(database)),
+            ("schema", Json::texto_de(schema)),
+        ]))
+    }
+
+    /// Cria uma tabela. Fecha o buraco que estava aberto desde a revisao: a
+    /// paginacao existia, o `criar_tabela` existia na biblioteca, e nao havia
+    /// caminho pela rede -- so escrevendo Rust.
+    fn op_criar_tabela(&self, p: &Json) -> Result<Json> {
+        let database = p.texto_ou("database", "");
+        let esquema = crate::valores::esquema_de_json(p)?;
+        let nome = esquema.nome().to_string();
+        let schema = p.texto_ou("schema", "");
+        let schema = (!schema.trim().is_empty()).then_some(schema);
+
+        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let db = dados.abrir_database(database)?;
+        if db.existe_tabela(schema, &nome)? {
+            return Err(PhxError::Duplicado(format!(
+                "a tabela {nome} ja existe em {database}"
+            )));
+        }
+        let t = db.criar_tabela(schema, esquema)?;
+        Ok(Json::objeto(vec![
+            ("database", Json::texto_de(database)),
+            ("tabela", Json::texto_de(&nome)),
+            ("colunas", Json::de_u64(t.esquema().colunas().len() as u64)),
+            ("indices", Json::de_u64(t.esquema().indices().len() as u64)),
+            (
+                "paginada",
+                Json::Bool(t.esquema().paginacao().registros_por_arquivo > 0),
+            ),
+        ]))
+    }
+
+    /// Apaga os cinco arquivos de uma tabela.
+    ///
+    /// Exige o nome repetido no campo `confirmar`. Nao e burocracia: excluir
+    /// uma tabela apaga o `.reg`, o `.ndx`, o `.bin`, o `.memo` e o `.log` de
+    /// uma vez, e nao ha desfazer. Um `rowid` errado perde uma linha; um nome
+    /// errado aqui perde tudo.
+    fn op_excluir_tabela(&self, p: &Json) -> Result<Json> {
+        let database = p.texto_ou("database", "");
+        let tabela = p.texto_ou("tabela", "");
+        if p.texto_ou("confirmar", "") != tabela {
+            return Err(PhxError::Esquema(format!(
+                "para excluir, repita o nome da tabela no campo \"confirmar\": \
+                 esperado {tabela:?}"
+            )));
+        }
+        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let db = dados.abrir_database(database)?;
+        let apagados = db.excluir_tabela(tabela)?;
+        Ok(Json::objeto(vec![
+            ("database", Json::texto_de(database)),
+            ("tabela", Json::texto_de(tabela)),
+            (
+                "arquivos_apagados",
+                Json::Lista(apagados.iter().map(Json::texto_de).collect()),
+            ),
+        ]))
+    }
+
+    /// Copia uma tabela inteira para outro nome, no mesmo database.
+    ///
+    /// Copia byte a byte os cinco arquivos, entao a copia nasce com a MESMA
+    /// ordem de digitacao e os MESMOS rowids do original -- que e o que se
+    /// espera de uma duplicata, e o que uma reinsercao linha a linha nao
+    /// daria.
+    fn op_duplicar_tabela(&self, p: &Json) -> Result<Json> {
+        let database = p.texto_ou("database", "");
+        let tabela = p.texto_ou("tabela", "");
+        let destino = p.texto_ou("destino", "");
+        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let db = dados.abrir_database(database)?;
+        let copiados = db.duplicar_tabela(tabela, destino)?;
+        Ok(Json::objeto(vec![
+            ("database", Json::texto_de(database)),
+            ("origem", Json::texto_de(tabela)),
+            ("destino", Json::texto_de(destino)),
+            ("arquivos", Json::de_u64(copiados as u64)),
+        ]))
+    }
+
     fn op_esquema(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let t = self.abrir(p, sessao)?;
         let e = t.esquema();
@@ -1548,6 +1654,11 @@ impl Servidor {
                         ),
                         ("max_arquivos", Json::de_u64(pag.max_arquivos as u64)),
                         ("capacidade", Json::de_u64(pag.capacidade())),
+                        // A largura do sufixo vai junto porque sem ela nao da
+                        // para escrever o nome do volume: `_1` e `_001` sao
+                        // arquivos diferentes.
+                        ("digitos", Json::de_u64(pag.digitos as u64)),
+                        ("bytes_por_arquivo", Json::de_u64(pag.bytes_por_arquivo)),
                     ])
                 } else {
                     Json::Nulo
@@ -2428,4 +2539,62 @@ fn ficha_residente(chave: &str, m: &TabelaMemoria) -> Vec<(&'static str, Json)> 
         ("bytes", Json::de_u64(m.bytes() as u64)),
         ("mapas", Json::Lista(nomes)),
     ]
+}
+
+#[cfg(test)]
+mod testes_politica {
+    use super::*;
+
+    /// Um servidor em `somente_leitura` nao pode criar nem apagar tabela.
+    ///
+    /// Este teste existe porque o furo ja aconteceu: as tres operacoes de
+    /// gestao de tabela entraram no despacho e ficaram DE FORA da lista de
+    /// escrita, e um servidor marcado somente-leitura teria aceitado apagar os
+    /// cinco arquivos de uma tabela. A lista e escrita a mao, entao quem
+    /// acrescentar uma operacao que grava precisa lembrar dela -- e este teste
+    /// e o lembrete.
+    #[test]
+    fn tudo_que_grava_esta_na_lista_de_escrita() {
+        for op in [
+            "inserir",
+            "atualizar",
+            "excluir",
+            "reindexar",
+            "criar_database",
+            "criar_tabela",
+            "excluir_tabela",
+            "duplicar_tabela",
+        ] {
+            assert!(
+                OPS_ESCRITA.contains(&op),
+                "{op:?} grava e nao esta em OPS_ESCRITA: \
+                 um servidor somente-leitura aceitaria"
+            );
+        }
+    }
+
+    #[test]
+    fn o_que_so_le_fica_fora_da_lista() {
+        for op in [
+            "ping",
+            "config",
+            "bancos",
+            "tabelas",
+            "esquema",
+            "ler",
+            "varrer",
+            "buscar",
+            "diario",
+            "verificar",
+            "painel",
+            "acessos",
+            "usuarios",
+        ] {
+            assert!(
+                !OPS_ESCRITA.contains(&op),
+                "{op:?} so le e esta na lista de escrita: \
+                 um servidor somente-leitura recusaria sem motivo"
+            );
+        }
+    }
 }

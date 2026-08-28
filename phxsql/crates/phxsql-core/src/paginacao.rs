@@ -76,6 +76,17 @@ impl Paginacao {
         self.validada()
     }
 
+    /// Muda o teto de volumes, ja com a largura do sufixo que vigora agora.
+    ///
+    /// Existe por causa da ordem: `nova` confere o teto contra os tres digitos
+    /// do padrao, entao pedir 9999 volumes ali e recusado antes de o quarto
+    /// digito existir. Com este metodo a largura entra primeiro e o teto
+    /// depois, que e a ordem em que os dois fazem sentido.
+    pub fn com_max_arquivos(mut self, max_arquivos: u32) -> Result<Paginacao> {
+        self.max_arquivos = max_arquivos;
+        self.validada()
+    }
+
     /// Muda o tamanho de cada volume dos arquivos externos.
     pub fn com_bytes_por_arquivo(mut self, bytes: u64) -> Result<Paginacao> {
         self.bytes_por_arquivo = bytes;
@@ -188,6 +199,32 @@ impl Default for Paginacao {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn largura_do_sufixo_entra_antes_do_teto() {
+        // O teto de 9999 so e valido depois que o quarto digito existe. Na
+        // ordem contraria a validacao recusa -- e foi assim que a tela de
+        // nova tabela quebrou na primeira tentativa.
+        let p = Paginacao::nova(1000, 1)
+            .unwrap()
+            .com_digitos(4)
+            .unwrap()
+            .com_max_arquivos(9_999)
+            .unwrap();
+        assert_eq!(p.max_arquivos, 9_999);
+        assert_eq!(p.digitos, 4);
+        assert_eq!(p.capacidade(), 9_999_000);
+
+        // E continua recusando o que nao cabe.
+        assert!(Paginacao::nova(1000, 1)
+            .unwrap()
+            .com_max_arquivos(1_000)
+            .is_err());
+        assert!(Paginacao::nova(1000, 1)
+            .unwrap()
+            .com_max_arquivos(0)
+            .is_err());
+    }
 
     #[test]
     fn desligada_mantem_arquivo_unico() {
