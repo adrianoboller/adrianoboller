@@ -60,6 +60,27 @@ const ALINHAMENTO: u64 = 64;
 const STATUS_LIVRE: u8 = 0;
 const STATUS_ATIVO: u8 = 1;
 
+/// O byte de status so pode ser LIVRE ou ATIVO. Qualquer outro valor e
+/// corrupcao, nao um estado.
+///
+/// A distincao importa mais do que parece. Enquanto qualquer coisa diferente
+/// de ATIVO era tratada como "excluido", um unico bit trocado no cabecalho do
+/// slot APAGAVA o registro em silencio: a leitura devolvia "nao existe" sem
+/// erro, e o reparo considerava o slot bom e nunca ia buscar a copia no
+/// espelho -- que estava la, inteira.
+fn status_valido(b: u8) -> bool {
+    b == STATUS_LIVRE || b == STATUS_ATIVO
+}
+
+/// Um slot esta integro quando o status e valido e, se ativo, o CRC bate.
+fn slot_integro(slot: &[u8]) -> bool {
+    match slot[0] {
+        STATUS_LIVRE => true,
+        STATUS_ATIVO => crc32(&slot[SLOT_CAB..]) == Campos(slot).u32(4),
+        _ => false,
+    }
+}
+
 pub struct RegFile {
     volumes: Volumes,
     esquema: Schema,
@@ -255,9 +276,7 @@ impl RegFile {
             ));
         }
         let (mut conferidos, mut reparados, mut perdidos) = (0u64, 0u64, 0u64);
-        let bom = |slot: &[u8]| -> bool {
-            slot[0] != STATUS_ATIVO || crc32(&slot[SLOT_CAB..]) == Campos(slot).u32(4)
-        };
+        let bom = slot_integro;
         for rowid in 1..=self.slot_count {
             let (volume, offset) = self.localizar(rowid);
             let mut principal = vec![0u8; self.slot_size];
@@ -422,11 +441,21 @@ impl RegFile {
         let (volume, offset) = self.localizar(rowid);
         let mut slot = vec![0u8; self.slot_size];
         self.volumes.ler(volume, offset, &mut slot)?;
-        if slot[0] != STATUS_ATIVO {
+
+        // Slot livre e resposta, nao defeito: o registro foi excluido.
+        if slot[0] == STATUS_LIVRE {
             return Ok(None);
         }
+
+        // Daqui para baixo o slot deveria estar ativo. Se o status nao for
+        // nem LIVRE nem ATIVO, o cabecalho do slot esta corrompido -- e ANTES
+        // esse caso caia no `return Ok(None)` acima, respondendo "esse
+        // registro nao existe" para um registro que existe e esta inteiro do
+        // outro lado. Agora ele desce para a segunda chance junto com a falha
+        // de CRC, que e o mesmo problema com outro sintoma.
+        let cabecalho_torto = !status_valido(slot[0]);
         let payload = slot[SLOT_CAB..].to_vec();
-        if crc32(&payload) != Campos(&slot).u32(4) {
+        if cabecalho_torto || crc32(&payload) != Campos(&slot).u32(4) {
             // A segunda chance: se ha espelho, o outro lado pode estar bom.
             if self.volumes.tem_espelho() {
                 let mut copia = vec![0u8; self.slot_size];
@@ -444,12 +473,17 @@ impl RegFile {
                 }
             }
             return Err(PhxError::Corrompido(format!(
-                "CRC do registro {rowid} em {} nao confere{}",
+                "{} do registro {rowid} em {}{}",
+                if cabecalho_torto {
+                    format!("status invalido ({})", slot[0])
+                } else {
+                    "CRC nao confere".to_string()
+                },
                 self.volumes.caminho(volume).display(),
                 if self.volumes.tem_espelho() {
                     " -- e o espelho tambem nao tem uma copia boa"
                 } else {
-                    ""
+                    " -- sem espelho para tentar; ligue \"espelho\" no config.json"
                 }
             )));
         }
@@ -888,6 +922,96 @@ mod tests {
         // Os vizinhos continuam saindo do principal, sem contar recuperacao.
         assert!(com.ler(6).unwrap().is_some());
         assert_eq!(com.recuperados(), 1);
+    }
+
+    #[test]
+    fn status_torto_nao_apaga_o_registro_em_silencio() {
+        // O defeito que este teste existe para impedir, achado com um servidor
+        // de verdade e o .reg estragado a mao: um unico byte trocado no
+        // cabecalho do slot fazia o registro DESAPARECER sem erro nenhum.
+        //
+        // A leitura via `slot[0] != ATIVO` e respondia "nao existe" -- que e a
+        // resposta certa para um registro excluido e a resposta errada para um
+        // registro inteiro que esta ali do lado, no espelho. E o `reparar`
+        // considerava o slot bom pelo mesmo motivo, entao nem consertava.
+        let d = dir_temp("status-torto");
+        let esq = esquema();
+        let mut r = RegFile::criar(&d, "cadastroClientes", esq.clone()).unwrap();
+        r.espelhar().unwrap();
+        for i in 0..12u8 {
+            let mut p = vec![0u8; esq.payload_len()];
+            p[0] = i;
+            r.inserir(&p).unwrap();
+        }
+        r.sincronizar().unwrap();
+        let antes = r.ler(7).unwrap().unwrap();
+        drop(r);
+
+        // Estraga SO o byte de status do registro 7, e so no principal.
+        let mut r2 = RegFile::abrir(&d, "cadastroClientes").unwrap();
+        let (volume, offset) = r2.localizar(7);
+        let mut slot = vec![0u8; r2.slot_size];
+        r2.volumes.ler(volume, offset, &mut slot).unwrap();
+        assert_eq!(slot[0], STATUS_ATIVO);
+        slot[0] = 0xFE; // nem livre, nem ativo: lixo
+        r2.volumes
+            .escrever_so_no_principal(volume, offset, &slot)
+            .unwrap();
+        r2.sincronizar().unwrap();
+        drop(r2);
+
+        // Sem espelho: tem de ACUSAR, nunca responder "nao existe".
+        let mut sem = RegFile::abrir(&d, "cadastroClientes").unwrap();
+        let erro = sem.ler(7);
+        assert!(erro.is_err(), "status invalido virou 'registro nao existe'");
+        assert!(
+            format!("{}", erro.unwrap_err()).contains("status invalido"),
+            "a mensagem tem de dizer o que aconteceu"
+        );
+        drop(sem);
+
+        // Com espelho: a leitura volta certa e conta a recuperacao.
+        let mut com = RegFile::abrir(&d, "cadastroClientes").unwrap();
+        com.espelhar().unwrap();
+        assert_eq!(com.ler(7).unwrap().unwrap(), antes, "o espelho nao salvou");
+        assert_eq!(com.recuperados(), 1);
+
+        // E o reparo tem de consertar o principal, nao dar o slot por bom.
+        let (conferidos, reparados, perdidos) = com.reparar().unwrap();
+        assert_eq!((conferidos, reparados, perdidos), (12, 1, 0));
+
+        // Depois do reparo o principal se basta: sem espelho, le certo.
+        drop(com);
+        let mut so_principal = RegFile::abrir(&d, "cadastroClientes").unwrap();
+        assert_eq!(so_principal.ler(7).unwrap().unwrap(), antes);
+        assert_eq!(
+            so_principal.recuperados(),
+            0,
+            "nao devia precisar do espelho"
+        );
+    }
+
+    #[test]
+    fn slot_livre_continua_sendo_resposta_e_nao_defeito() {
+        // O contraponto do teste acima: excluir DEVE devolver "nao existe",
+        // sem erro e sem consultar o espelho. Se o conserto tivesse passado do
+        // ponto, toda exclusao viraria corrupcao.
+        let d = dir_temp("livre-e-resposta");
+        let esq = esquema();
+        let mut r = RegFile::criar(&d, "cadastroClientes", esq.clone()).unwrap();
+        r.espelhar().unwrap();
+        for i in 0..5u8 {
+            let mut p = vec![0u8; esq.payload_len()];
+            p[0] = i;
+            r.inserir(&p).unwrap();
+        }
+        r.excluir(3).unwrap();
+        r.sincronizar().unwrap();
+
+        assert!(r.ler(3).unwrap().is_none(), "excluido tem de devolver None");
+        assert_eq!(r.recuperados(), 0, "exclusao nao pode acionar o espelho");
+        let (_, reparados, perdidos) = r.reparar().unwrap();
+        assert_eq!((reparados, perdidos), (0, 0), "nao ha o que reparar");
     }
 
     #[test]

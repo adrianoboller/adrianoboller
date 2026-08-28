@@ -72,7 +72,7 @@ inteira.
 
 | Off | Tam | Campo |
 |----:|----:|---|
-| 0 | 1 | status: 0 = livre, 1 = ativo |
+| 0 | 1 | status: 0 = livre, 1 = ativo. **Nenhum outro valor é válido** |
 | 1 | 1 | flags |
 | 2 | 2 | reservado |
 | 4 | 4 | CRC-32 do payload |
@@ -90,6 +90,21 @@ inteira.
 
 O bit `i` do bitmap ligado significa que a coluna `i` é NULL. Colunas NULL
 gravam zeros no seu espaço.
+
+### O byte de status só tem dois valores
+
+Zero é livre, um é ativo, e **qualquer outra coisa é corrupção, não um estado**.
+
+A distinção custou um defeito para ficar clara. Enquanto o código testava
+`status != ativo` para decidir "este registro não existe", um único bit trocado
+no cabeçalho do slot **apagava o registro em silêncio**: a leitura respondia
+"não existe" sem erro, e o reparo dava o slot por bom e nunca ia buscar a cópia
+no espelho — que estava lá, inteira.
+
+Hoje um status inválido cai na mesma segunda chance da falha de CRC. Fica de
+fora um caso: se o bit trocado deixar o status exatamente em **0**, o slot fica
+indistinguível de uma exclusão legítima. Desempatar isso exige o `.log`, que
+registra toda exclusão com data e hora.
 
 ### Ordem de digitação
 

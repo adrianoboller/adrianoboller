@@ -10,6 +10,45 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
+## 0.5.2 — 2026-08-28
+
+### Corrigido
+
+- **Um byte trocado no cabeçalho do slot apagava o registro em silêncio.**
+  Achado provando o espelho `.bkp` com um servidor de verdade e o `.reg`
+  estragado à mão.
+
+  O byte de status de um slot só pode valer 0 (livre) ou 1 (ativo). A leitura
+  testava `slot[0] != ATIVO` e respondia `None` — que é a resposta certa para
+  um registro excluído e a **errada** para um registro inteiro. Com o status
+  virando lixo (254, no teste), o servidor respondia `{"ok": true,
+  "resultado": null}`: nem erro, nem aviso, nem consulta ao espelho, que tinha
+  a cópia boa ali do lado.
+
+  O `reparar` errava pelo mesmo motivo, e pior: dava o slot por bom
+  (`slot[0] != ATIVO ||` curto-circuitava o CRC), reportava
+  `reparados: 1, integro: true` e deixava o registro perdido. Só o `verificar`
+  percebia, e sem poder consertar: *"cabeçalho diz 11 registros, varredura
+  achou 10"*.
+
+  Agora status inválido é **corrupção**, não estado: cai na mesma segunda
+  chance da falha de CRC, e o erro diz qual dos dois aconteceu. Depois do
+  reparo o `.reg` volta a bastar sozinho.
+
+  Dois testes de regressão, e o segundo é o contraponto: **excluir continua
+  devolvendo `None` sem erro e sem acionar o espelho** — se o conserto tivesse
+  passado do ponto, toda exclusão viraria corrupção.
+
+### Sabido
+
+- A segunda chance cobre payload corrompido e status inválido. **Não cobre o
+  caso em que o bit trocado deixa o status exatamente em 0**: aí o slot fica
+  indistinguível de uma exclusão legítima. Resolver isso exige usar o `.log`
+  como desempate — ele registra toda exclusão com data e hora —, e é trabalho
+  de outra rodada.
+
+---
+
 ## 0.5.1 — 2026-08-28
 
 Rodada de desempenho. Antes de repartir trabalho por nucleos, valia conferir se

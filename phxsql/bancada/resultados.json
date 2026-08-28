@@ -1,106 +1,106 @@
 [
   {
-    "segundos": 2475.94,
-    "cpu_s": 2460.28,
+    "segundos": 209.091,
+    "cpu_s": 204.94999999999996,
     "lido_mb": 0.0,
-    "escrito_mb": 2348.399999999999,
-    "pico_rss_mb": 1074.5,
+    "escrito_mb": 703.0999999999998,
+    "pico_rss_mb": 320.1,
     "motor": "PhxSql",
     "fase": "inserir",
-    "operacoes": 10000000
+    "operacoes": 3000000
   },
   {
-    "segundos": 119.772,
-    "cpu_s": 132.14000000000007,
-    "lido_mb": 9.8,
-    "escrito_mb": 32802.3,
-    "pico_rss_mb": 638.0,
+    "segundos": 33.006,
+    "cpu_s": 36.28,
+    "lido_mb": 0.0,
+    "escrito_mb": 8762.999999999998,
+    "pico_rss_mb": 658.0,
     "motor": "MySQL",
     "fase": "inserir",
-    "operacoes": 10000000
+    "operacoes": 3000000
   },
   {
     "motor": "PhxSql",
     "fase": "buscar",
     "operacoes": 20000,
-    "segundos": 7.472,
-    "cpu_s": 7.41,
-    "pico_rss_mb": 1079.9,
+    "segundos": 1.059,
+    "cpu_s": 1.0,
+    "pico_rss_mb": 325.6,
     "lido_mb": 0.0,
     "escrito_mb": 0.0,
     "saida": [
       "achados: 20000",
-      "RESULTADO {\"fase\":\"buscar\",\"operacoes\":20000,\"segundos\":7.4468,\"por_segundo\":2685.7}"
+      "RESULTADO {\"fase\":\"buscar\",\"operacoes\":20000,\"segundos\":1.0249,\"por_segundo\":19514.3}"
     ]
   },
   {
     "motor": "MySQL",
     "fase": "buscar",
     "operacoes": 20000,
-    "segundos": 2.84,
-    "cpu_s": 2.35,
-    "pico_rss_mb": 614.8,
+    "segundos": 2.515,
+    "cpu_s": 2.12,
+    "pico_rss_mb": 630.7,
     "pico_confiavel": true,
     "lido_mb": 0.0,
-    "escrito_mb": 0.0,
+    "escrito_mb": 393.5,
     "erro": null,
     "saida": [
-      "8364163",
-      "8372082"
+      "2364163",
+      "2372082"
     ]
   },
   {
     "motor": "PhxSql",
     "fase": "varrer",
-    "operacoes": 1250000,
-    "segundos": 6.057,
-    "cpu_s": 5.99,
-    "pico_rss_mb": 1079.9,
+    "operacoes": 375000,
+    "segundos": 1.765,
+    "cpu_s": 1.7,
+    "pico_rss_mb": 325.6,
     "lido_mb": 0.0,
     "escrito_mb": 0.0,
     "saida": [
-      "linhas da cidade: 1250000 soma: 557620100000",
-      "RESULTADO {\"fase\":\"varrer\",\"operacoes\":1250000,\"segundos\":6.0386,\"por_segundo\":207002.5}"
+      "linhas da cidade: 375000 soma: 157536300000",
+      "RESULTADO {\"fase\":\"varrer\",\"operacoes\":375000,\"segundos\":1.7216,\"por_segundo\":217816.0}"
     ]
   },
   {
     "motor": "MySQL",
     "fase": "varrer",
     "operacoes": 20000,
-    "segundos": 19.709,
-    "cpu_s": 20.29,
-    "pico_rss_mb": 615.3,
+    "segundos": 5.883,
+    "cpu_s": 5.98,
+    "pico_rss_mb": 630.7,
     "pico_confiavel": true,
     "lido_mb": 0.0,
-    "escrito_mb": 0.4,
+    "escrito_mb": 137.1,
     "erro": null,
     "saida": [
-      "1250000\t5576201000.00"
+      "375000\t1575363000.00"
     ]
   },
   {
     "motor": "PhxSql",
     "fase": "atualizar",
     "operacoes": 20000,
-    "segundos": 6.662,
-    "cpu_s": 6.34,
-    "pico_rss_mb": 1079.9,
+    "segundos": 0.656,
+    "cpu_s": 0.36,
+    "pico_rss_mb": 325.6,
     "lido_mb": 0.0,
-    "escrito_mb": 71.9,
+    "escrito_mb": 81.0,
     "saida": [
-      "RESULTADO {\"fase\":\"atualizar\",\"operacoes\":20000,\"segundos\":6.6354,\"por_segundo\":3014.1}"
+      "RESULTADO {\"fase\":\"atualizar\",\"operacoes\":20000,\"segundos\":0.6366,\"por_segundo\":31416.3}"
     ]
   },
   {
     "motor": "MySQL",
     "fase": "atualizar",
     "operacoes": 20000,
-    "segundos": 6.488,
-    "cpu_s": 7.65,
-    "pico_rss_mb": 615.3,
+    "segundos": 4.646,
+    "cpu_s": 5.55,
+    "pico_rss_mb": 630.7,
     "pico_confiavel": true,
     "lido_mb": 0.0,
-    "escrito_mb": 12963.2,
+    "escrito_mb": 4579.8,
     "erro": null,
     "saida": []
   },
@@ -108,36 +108,36 @@
     "motor": "PhxSql",
     "fase": "excluir",
     "operacoes": 20000,
-    "segundos": 10.207,
-    "cpu_s": 9.7,
-    "pico_rss_mb": 1079.8,
+    "segundos": 1.868,
+    "cpu_s": 1.46,
+    "pico_rss_mb": 325.5,
     "lido_mb": 0.0,
-    "escrito_mb": 217.7,
+    "escrito_mb": 231.5,
     "saida": [
-      "RESULTADO {\"fase\":\"excluir\",\"operacoes\":20000,\"segundos\":10.1744,\"por_segundo\":1965.7}"
+      "RESULTADO {\"fase\":\"excluir\",\"operacoes\":20000,\"segundos\":1.8498,\"por_segundo\":10812.1}"
     ]
   },
   {
     "motor": "MySQL",
     "fase": "excluir",
     "operacoes": 20000,
-    "segundos": 5.196,
-    "cpu_s": 6.12,
-    "pico_rss_mb": 615.4,
+    "segundos": 3.935,
+    "cpu_s": 4.74,
+    "pico_rss_mb": 630.7,
     "pico_confiavel": true,
-    "lido_mb": 1.3,
-    "escrito_mb": 11155.0,
+    "lido_mb": 0.0,
+    "escrito_mb": 7019.8,
     "erro": null,
     "saida": []
   },
   {
     "motor": "PhxSql",
     "fase": "disco",
-    "bytes": 2432713600
+    "bytes": 730790080
   },
   {
     "motor": "MySQL",
     "fase": "disco",
-    "bytes": 947912704
+    "bytes": 293601280
   }
 ]
