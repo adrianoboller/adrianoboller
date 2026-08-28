@@ -276,6 +276,8 @@ pub struct Servidor {
     /// Ultimo aviso mandado por caminho, para nao repetir enquanto o disco
     /// continua cheio.
     avisados: Mutex<HashMap<String, i64>>,
+    /// O que esta chegando pela porta, quando alguem liga para olhar.
+    profiler: Mutex<crate::profiler::Profiler>,
     /// Ligacoes para bancos de fora.
     dblink: Mutex<crate::dblink::Registro>,
     conexoes: AtomicUsize,
@@ -303,6 +305,7 @@ impl Servidor {
             dblink: Mutex::new(dblink),
             avisados: Mutex::new(HashMap::new()),
             conexoes: AtomicUsize::new(0),
+            profiler: Mutex::new(crate::profiler::Profiler::default()),
         }))
     }
 
@@ -1135,7 +1138,48 @@ impl Servidor {
                     Err((op, e)) => (op, false, Err(e)),
                 }
             }
-            (None, true) => self.despachar(&pedido.corpo, &mut sessao, ip),
+            (None, true) => {
+                // O PROFILER olha aqui tambem. A porta da interface e HTTP e
+                // nao JSON por linha, mas o pedido e o mesmo objeto e chega
+                // pelo mesmo TCP -- deixar a web de fora faria o profiler
+                // mentir por omissao justamente para quem esta olhando por
+                // ela.
+                let marca = {
+                    let alvo = objeto_do_pedido(&pedido.corpo, &Ok(Json::Nulo));
+                    let nome_op = Json::analisar(&pedido.corpo)
+                        .ok()
+                        .map(|j| j.texto_ou("op", "?").to_string())
+                        .unwrap_or_else(|| "?".into());
+                    self.profiler.lock().ok().and_then(|mut pr| {
+                        pr.chegou(
+                            &pedido.corpo,
+                            &nome_op,
+                            sessao.login(),
+                            &alvo.database,
+                            &alvo.tabela,
+                            ip,
+                            agora,
+                        )
+                    })
+                };
+                let saida = self.despachar(&pedido.corpo, &mut sessao, ip);
+                if let Some(serial) = marca {
+                    if let Ok(mut pr) = self.profiler.lock() {
+                        pr.terminou(
+                            serial,
+                            inicio.elapsed().as_millis() as u64,
+                            saida.2.is_ok(),
+                            &saida
+                                .2
+                                .as_ref()
+                                .err()
+                                .map(|e| e.to_string())
+                                .unwrap_or_default(),
+                        );
+                    }
+                }
+                saida
+            }
         };
         let remota = ja_remota.is_some() || !servidor_remoto.is_empty();
         let ms = inicio.elapsed().as_millis() as u64;
@@ -1367,8 +1411,44 @@ impl Servidor {
                     );
                 }
             }
+            // O PROFILER olha AQUI: o pedido chegou pelo soquete e nada foi
+            // gravado ainda. Se a operacao travar, ele ja apareceu na tela
+            // como «em curso» -- que e justamente o pedido que se quer achar.
+            let marca = {
+                let alvo = objeto_do_pedido(&linha, &Ok(Json::Nulo));
+                let nome_op = Json::analisar(&linha)
+                    .ok()
+                    .map(|j| j.texto_ou("op", "?").to_string())
+                    .unwrap_or_else(|| "?".into());
+                self.profiler.lock().ok().and_then(|mut p| {
+                    p.chegou(
+                        &linha,
+                        &nome_op,
+                        sessao.login(),
+                        &alvo.database,
+                        &alvo.tabela,
+                        &ip,
+                        quando_ms,
+                    )
+                })
+            };
+
             let (op, autenticado, resultado) = self.despachar(&linha, &mut sessao, &ip);
             let duracao = inicio.elapsed().as_millis() as u64;
+            if let Some(serial) = marca {
+                if let Ok(mut p) = self.profiler.lock() {
+                    p.terminou(
+                        serial,
+                        duracao,
+                        resultado.is_ok(),
+                        &resultado
+                            .as_ref()
+                            .err()
+                            .map(|e| e.to_string())
+                            .unwrap_or_default(),
+                    );
+                }
+            }
             // O login so se sabe DEPOIS: o pedido que autentica e o proprio
             // `login`, e antes dele a sessao ainda esta anonima.
             if let Ok(mut l) = self.ligacoes.lock() {
@@ -1748,6 +1828,10 @@ impl Servidor {
             "motivos" | "reasons" => self.op_motivos(p, sessao),
             "esvaziar_lixeira" => self.op_esvaziar_lixeira(p, sessao),
             "diario" => self.op_diario(p, sessao),
+            "profiler_ligar" => self.op_profiler_ligar(p),
+            "profiler_desligar" => self.op_profiler_desligar(),
+            "profiler" => self.op_profiler(p),
+            "profiler_limpar" => self.op_profiler_limpar(),
             "posicao" => self.op_posicao(p, sessao),
             "replicar" => self.op_replicar(p, sessao),
             "aplicar" => self.op_aplicar(p, sessao),
@@ -5526,6 +5610,134 @@ impl Servidor {
         Ok(Json::objeto(vec![
             ("total", Json::de_u64(total as u64)),
             ("eventos", Json::Lista(recentes)),
+        ]))
+    }
+
+    // ------------------------------------------------------------- profiler
+
+    /// `profiler_ligar`: comeca a observar o que chega pela porta.
+    ///
+    /// **So administrador**, e a razao esta no que ele mostra: o texto dos
+    /// pedidos de todo mundo, com os dados que estao sendo gravados dentro.
+    /// Quem pode ler uma tabela nao ganha por isto o direito de ver o que os
+    /// outros escrevem nela.
+    fn op_profiler_ligar(&self, p: &Json) -> Result<Json> {
+        let filtro = crate::profiler::Filtro {
+            database: p.texto_ou("database", "").trim().to_string(),
+            usuario: p.texto_ou("usuario", "").trim().to_string(),
+            op: p.texto_ou("operacao", "").trim().to_string(),
+            so_escrita: p.booleano_ou("so_escrita", false),
+        };
+        let arquivo = p.texto_ou("arquivo", "").to_string();
+        let teto = p.inteiro_ou("guardar", 500).max(0) as usize;
+        let agora = crate::agora_ms();
+        let mut prof = self.profiler.lock().map_err(|_| trava_envenenada())?;
+        prof.ligar(filtro, &arquivo, teto, agora)?;
+        Ok(Json::objeto(vec![
+            ("ligado", Json::Bool(true)),
+            ("guardar", Json::de_u64(prof.teto() as u64)),
+            (
+                "arquivo",
+                Json::texto_de(prof.caminho().display().to_string()),
+            ),
+            (
+                "desde",
+                Json::texto_de(phxsql_core::datahora::instante_iso(agora)),
+            ),
+        ]))
+    }
+
+    fn op_profiler_desligar(&self) -> Result<Json> {
+        let mut prof = self.profiler.lock().map_err(|_| trava_envenenada())?;
+        let n = prof.observados();
+        prof.desligar(crate::agora_ms());
+        Ok(Json::objeto(vec![
+            ("ligado", Json::Bool(false)),
+            ("observados", Json::de_u64(n)),
+        ]))
+    }
+
+    fn op_profiler_limpar(&self) -> Result<Json> {
+        let mut prof = self.profiler.lock().map_err(|_| trava_envenenada())?;
+        prof.limpar();
+        Ok(Json::objeto(vec![("limpo", Json::Bool(true))]))
+    }
+
+    /// `profiler`: o que foi observado, do mais recente para o mais antigo.
+    fn op_profiler(&self, p: &Json) -> Result<Json> {
+        let max = p.inteiro_ou("max", 200).max(0) as usize;
+        // `desde_serial` deixa a tela pedir so o que ainda nao viu, em vez de
+        // rebaixar o anel inteiro a cada atualizacao.
+        let desde = p.inteiro_ou("desde_serial", 0).max(0) as u64;
+        let prof = self.profiler.lock().map_err(|_| trava_envenenada())?;
+        let f = prof.filtro();
+
+        let eventos: Vec<Json> = prof
+            .eventos(max.clamp(1, 5_000))
+            .into_iter()
+            .filter(|e| e.serial > desde)
+            .map(|e| {
+                Json::objeto(vec![
+                    ("serial", Json::de_u64(e.serial)),
+                    (
+                        "quando",
+                        Json::texto_de(phxsql_core::datahora::instante_iso(e.quando_ms)),
+                    ),
+                    ("ip", Json::texto_de(e.ip)),
+                    ("usuario", Json::texto_de(e.usuario)),
+                    ("op", Json::texto_de(e.op)),
+                    ("database", Json::texto_de(e.database)),
+                    ("tabela", Json::texto_de(e.tabela)),
+                    ("bytes", Json::de_u64(e.bytes as u64)),
+                    // Ja vem redigido: os campos de senha viraram *** antes de
+                    // encostar no anel.
+                    ("pedido", Json::texto_de(e.pedido)),
+                    (
+                        "ms",
+                        match e.duracao_ms {
+                            Some(ms) => Json::de_u64(ms),
+                            None => Json::Nulo,
+                        },
+                    ),
+                    (
+                        "ok",
+                        match e.ok {
+                            Some(v) => Json::Bool(v),
+                            None => Json::Nulo,
+                        },
+                    ),
+                    ("erro", Json::texto_de(e.erro)),
+                ])
+            })
+            .collect();
+
+        Ok(Json::objeto(vec![
+            ("ligado", Json::Bool(prof.ligado())),
+            (
+                "arquivo",
+                Json::texto_de(prof.caminho().display().to_string()),
+            ),
+            ("observados", Json::de_u64(prof.observados())),
+            ("esquecidos", Json::de_u64(prof.esquecidos())),
+            ("guardar", Json::de_u64(prof.teto() as u64)),
+            (
+                "desde",
+                Json::texto_de(if prof.ligado() {
+                    phxsql_core::datahora::instante_iso(prof.ligado_em_ms())
+                } else {
+                    String::new()
+                }),
+            ),
+            (
+                "filtro",
+                Json::objeto(vec![
+                    ("database", Json::texto_de(&f.database)),
+                    ("usuario", Json::texto_de(&f.usuario)),
+                    ("operacao", Json::texto_de(&f.op)),
+                    ("so_escrita", Json::Bool(f.so_escrita)),
+                ]),
+            ),
+            ("eventos", Json::Lista(eventos)),
         ]))
     }
 

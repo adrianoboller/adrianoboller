@@ -180,6 +180,13 @@ impl Atividade {
             "acessos" | "ips" | "config" | "usuarios" | "bloqueios" | "desbloquear" => {
                 Atividade::Administrar
             }
+            // O profiler mostra o TEXTO dos pedidos de todo mundo, com os
+            // dados que estao sendo gravados dentro. Quem pode ler uma tabela
+            // nao ganha por isso o direito de ver o que os outros escrevem
+            // nela -- nem de mandar o servidor escrever um arquivo no disco.
+            "profiler" | "profiler_ligar" | "profiler_desligar" | "profiler_limpar" => {
+                Atividade::Administrar
+            }
             // O fluxo de replicacao e o diario com a linha inteira dentro:
             // permissao propria, para poder dar a uma replica sem dar mais
             // nada -- e para nao sair de graca junto com `ler`.

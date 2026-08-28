@@ -1,0 +1,36 @@
+{
+  "_leia": "Modelo de REPLICA para conteiner. Ela procura o master pelo nome do servico da rede do compose.",
+  "base": "base",
+  "bind": "0.0.0.0:5000",
+  "token": "troque-este-token",
+  "web": { "ligado": true, "bind": "0.0.0.0:5001" },
+  "_somente_leitura": "Nao e opcional na pratica: aplicacao escrevendo na replica quebra a numeracao dos rowids, e a proxima inclusao vinda do master para a replicacao inteira.",
+  "somente_leitura": true,
+  "replicacao": {
+    "papel": "replica",
+    "id_servidor": "replica01",
+    "imagem_da_linha": true,
+    "origens": [
+      {
+        "nome": "master",
+        "host": "master",
+        "porta": 5000,
+        "token": "troque-este-token",
+        "usuario": "adm",
+        "_senha": "O HASH, nunca a senha em claro. Dele sai a chave do desafio-resposta.",
+        "senha_hash": "pbkdf2-sha256$210000$632543aca4976934bd8bd20bac7b4e07$b79202f237b6bee72e6aa664dcb4a7406587c88ff3242fe95f19212016789487",
+        "databases": [],
+        "reconectar_em": 5
+      }
+    ]
+  },
+  "usuarios": [
+    {
+      "login": "adm", "nome": "Administrador", "id": 10,
+      "senha_hash": "pbkdf2-sha256$210000$632543aca4976934bd8bd20bac7b4e07$b79202f237b6bee72e6aa664dcb4a7406587c88ff3242fe95f19212016789487",
+      "bases": { "*": { "ler": true, "inserir": true, "alterar": true, "excluir": true,
+                        "criar": true, "administrar": true, "diario": true,
+                        "verificar": true, "replicar": true } }
+    }
+  ]
+}

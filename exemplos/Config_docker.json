@@ -1,0 +1,23 @@
+{
+  "_leia": "Modelo para conteiner. A senha aqui e um HASH -- gere o seu com: docker run --rm --entrypoint /phxsqld phxsql --senha",
+  "base": "base",
+  "bind": "0.0.0.0:5000",
+  "token": "troque-este-token",
+  "web": { "ligado": true, "bind": "0.0.0.0:5001" },
+  "espelho": true,
+  "recursos": { "durabilidade": "por_lote", "lote_operacoes": 200, "lote_milissegundos": 200 },
+  "usuarios": [
+    {
+      "login": "adm",
+      "nome": "Administrador",
+      "id": 10,
+      "senha_hash": "pbkdf2-sha256$210000$632543aca4976934bd8bd20bac7b4e07$b79202f237b6bee72e6aa664dcb4a7406587c88ff3242fe95f19212016789487",
+      "_senha_do_exemplo": "segredo1 -- TROQUE antes de usar em qualquer lugar",
+      "bases": {
+        "*": { "ler": true, "inserir": true, "alterar": true, "excluir": true,
+               "criar": true, "administrar": true, "diario": true,
+               "verificar": true, "replicar": true }
+      }
+    }
+  ]
+}

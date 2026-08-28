@@ -1,0 +1,35 @@
+# Um master e duas réplicas, cada um na sua porta.
+#
+#   docker compose up -d
+#   docker compose logs -f replica01
+#
+# Responde a três perguntas de uma vez: roda em contêiner, aceita várias
+# instâncias em portas diferentes, e replica entre elas. As três já estavam
+# provadas fora do Docker (`bancada/replicacao/`); aqui elas ficam provadas
+# do jeito que se põe em produção.
+#
+# O que isto NÃO é: um cluster. Não há balanceador, não há eleição, e o
+# failover é manual — trocar `papel` de `replica` para `source` e apontar as
+# outras. Está escrito em docs/CLUSTER.md, com o que faltaria.
+
+services:
+  master:
+    build: .
+    image: phxsql:local
+    ports: ["5000:5000", "5001:5001"]
+    volumes: ["./dados/master:/dados"]
+    restart: unless-stopped
+
+  replica01:
+    image: phxsql:local
+    depends_on: [master]
+    ports: ["5010:5000", "5011:5001"]
+    volumes: ["./dados/replica01:/dados"]
+    restart: unless-stopped
+
+  replica02:
+    image: phxsql:local
+    depends_on: [master]
+    ports: ["5020:5000", "5021:5001"]
+    volumes: ["./dados/replica02:/dados"]
+    restart: unless-stopped

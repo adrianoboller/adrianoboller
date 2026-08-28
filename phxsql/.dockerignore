@@ -1,0 +1,6 @@
+target/
+dados/
+bancada/*.log
+bancada/replicacao/__pycache__/
+docs/dossie/*.html
+.git/

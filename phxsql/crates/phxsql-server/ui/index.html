@@ -16,6 +16,12 @@
   --laranja:#ff8a1c; --ambar:#ffc43d; --vermelhao:#ff4d10; --vermelho:#ff5f5f;
   --reg:#5fa6e8; --ndx:#b394f0; --bin:#3fc8d4; --memo:#7bcb6a; --log:#ff5f5f;
   --ok:#6cc98c; --aviso:#ffc43d;
+  /* As cores da ACAO. Convencao pedida, e ela vale mais que a paleta da marca
+     aqui porque o usuario aprende a cor uma vez e ela vale em toda tela:
+     verde inclui, amarelo altera, vermelho exclui de vez, rosa marca (o
+     excluir que volta), azul consulta. */
+  --acao-incluir:#6cc98c; --acao-alterar:#ffc43d; --acao-excluir:#ff5f5f;
+  --acao-marcar:#ff8fc7;  --acao-consultar:#5fa6e8;
   --barra:52px; --arvore:268px;
   --sombra-fenix:0 6px 22px rgba(255,77,16,.28);
   --brilho-entrada:#0d1830; --tinta-botao:#160a00;
@@ -35,6 +41,11 @@
   --laranja:#c63c0a; --ambar:#a06a00; --vermelhao:#c63c0a; --vermelho:#b71414;
   --reg:#1f5c93; --ndx:#6a44a8; --bin:#0e7a85; --memo:#37702e; --log:#b71414;
   --ok:#2f7a3e; --aviso:#8a6a1f;
+  /* No papel as cinco escurecem: verde e rosa claros dao menos de 4,5:1 sobre
+     branco, que e o minimo para texto. E a mesma adaptacao que o vermelhao da
+     marca ja fazia. */
+  --acao-incluir:#2f7a3e; --acao-alterar:#8a6a1f; --acao-excluir:#b71414;
+  --acao-marcar:#b5257f;  --acao-consultar:#1f5c93;
   --sombra-fenix:0 6px 18px rgba(198,60,10,.18);
   --brilho-entrada:#efe7dd; --tinta-botao:#fff6f0;
 }
@@ -164,6 +175,57 @@ input:focus,select:focus{border-color:var(--laranja);outline:none}
 .botao.perigo{background:transparent;border:1px solid var(--log);color:var(--log);
               font-weight:500}
 .botao.perigo:hover{background:var(--log);color:#fff;border-color:var(--log)}
+
+/* AS CORES DA ACAO -- contorno, e nao fundo cheio.
+   A licao esta duas linhas acima: fundo laranja com texto escuro em cima
+   ficava ilegivel. O contorno diz a cor sem apostar o contraste do texto
+   nela; o preenchimento so acontece no hover, quando ha intencao. */
+.botao.incluir,.botao.alterar,.botao.excluir,.botao.marcar,.botao.consultar{
+  background:transparent;border:1px solid currentColor;font-weight:600;width:auto;
+  padding:9px 16px;
+}
+.botao.incluir{color:var(--acao-incluir)}
+.botao.alterar{color:var(--acao-alterar)}
+.botao.excluir{color:var(--acao-excluir)}
+.botao.marcar{color:var(--acao-marcar)}
+.botao.consultar{color:var(--acao-consultar)}
+.botao.incluir:hover{background:var(--acao-incluir);color:var(--fundo)}
+.botao.alterar:hover{background:var(--acao-alterar);color:var(--fundo)}
+.botao.excluir:hover{background:var(--acao-excluir);color:#fff}
+.botao.marcar:hover{background:var(--acao-marcar);color:var(--fundo)}
+.botao.consultar:hover{background:var(--acao-consultar);color:var(--fundo)}
+.botao.mini.incluir,.botao.mini.alterar,.botao.mini.excluir,
+.botao.mini.marcar,.botao.mini.consultar{padding:4px 10px;font-size:11px;font-weight:500}
+
+/* A legenda das cinco cores, para a convencao ser aprendida uma vez. */
+.cores-acao{display:flex;gap:16px;flex-wrap:wrap;align-items:center;
+  font-size:11px;color:var(--texto-3);margin:10px 0 0}
+.cores-acao b{display:inline-flex;align-items:center;gap:5px;font-weight:500}
+.cores-acao i{width:10px;height:10px;border-radius:3px;display:inline-block}
+
+/* --------------------------------- profiler --------------------------- */
+.prof-topo{flex-wrap:wrap;align-items:flex-end;gap:12px}
+.mini-campo{display:flex;flex-direction:column;gap:4px;font-size:10px;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--texto-3)}
+.mini-campo input,.mini-campo select{padding:6px 8px;font-size:12.5px;
+  border:1px solid var(--linha);border-radius:6px;background:var(--painel-2);
+  color:var(--texto);font-family:inherit;min-width:140px}
+.mini-campo.largo input{min-width:320px}
+/* A caixa de marcar nao herda a largura minima dos campos de texto: sem isto
+   ela estica e vira um retangulo vazio do lado do quadradinho. */
+.mini-campo.caixa{flex-direction:row;align-items:center;gap:7px;text-transform:none;
+  letter-spacing:0;font-size:12.5px;color:var(--texto-2);padding-bottom:7px;
+  white-space:nowrap}
+.mini-campo.caixa input{min-width:0;width:15px;height:15px;padding:0;margin:0;
+  border:1px solid var(--linha);accent-color:var(--acao-consultar)}
+table.prof{font-size:12.5px}
+table.prof td,table.prof th{padding:5px 10px}
+/* O pedido e o unico campo de tamanho livre: ele corta com reticencias e o
+   texto inteiro fica no `title`. Sem o corte, uma insercao grande empurraria
+   a tabela inteira para fora da tela. */
+.prof-pedido{max-width:640px;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;color:var(--texto-2)}
+tr.prof-mal td{background:color-mix(in srgb,var(--log) 8%,transparent)}
 
 .ficha-edit{
   display:grid;gap:13px;margin:16px 0;
@@ -632,6 +694,8 @@ tr.linha-excluida td{opacity:.55;text-decoration:line-through}
 .chip-visao button{padding:3px 10px;font-size:11px;background:transparent;
                    border:0;color:var(--texto-3);cursor:pointer;font:inherit;width:auto}
 .chip-visao button.ativo{background:var(--laranja);color:#10060a}
+/* A visao das marcadas herda o rosa da acao: a mesma cor do botao que marca. */
+.chip-visao button.marcadas.ativo{background:var(--acao-marcar);color:var(--fundo)}
 textarea.campo.mono{font-family:"IBM Plex Mono",monospace;font-size:12px;line-height:1.5}
 label.cmp.largo{grid-column:1/-1}
 .paginar{display:inline-flex;gap:6px;margin-left:8px;align-items:center}
@@ -2007,11 +2071,11 @@ async function verConteudoEditavel(db, tab, verExcluidos = false, cursor = null)
   const pagina = Math.min(paginas, Math.max(1, (cursor && cursor.pagina) || 1));
 
   const barra = `<div class="acoes">
-      <button class="botao" id="btNova">Nova linha</button>
+      <button class="botao incluir" id="btNova">Nova linha</button>
       <button class="botao secundario" id="btVoltarDb">← ${esc(db)}</button>
       <span class="chip-visao">
         <button id="vwAtivas" class="${verExcluidos ? "" : "ativo"}">ativas</button>
-        <button id="vwExcl" class="${verExcluidos ? "ativo" : ""}">excluídas</button>
+        <button id="vwExcl" class="marcadas ${verExcluidos ? "ativo" : ""}">excluídas</button>
       </span>
       <span class="paginar">
         <button class="botao mini" id="pgInicio" ${r.ha_antes ? "" : "disabled"}>⏮ início</button>
@@ -2021,6 +2085,13 @@ async function verConteudoEditavel(db, tab, verExcluidos = false, cursor = null)
         <input id="pgIr" class="campo-pagina" type="number" min="1" max="${paginas}"
                value="${pagina}" title="ir para a página" ${paginas > 1 ? "" : "disabled"}>
         <span class="leg">de ${fmt(paginas)}</span>
+      </span>
+      <span class="cores-acao" title="a mesma cor vale em toda tela">
+        <b><i style="background:var(--acao-incluir)"></i>incluir</b>
+        <b><i style="background:var(--acao-alterar)"></i>alterar</b>
+        <b><i style="background:var(--acao-marcar)"></i>marcar</b>
+        <b><i style="background:var(--acao-excluir)"></i>excluir de vez</b>
+        <b><i style="background:var(--acao-consultar)"></i>consultar</b>
       </span>
       <span class="leg" title="${esc(COMO_PAGINOU[r.salto || r.modo] || "")}">${
         fmt(r.devolvidas)} de ${fmt(r.visiveis ?? r.registros)} ·
@@ -2040,7 +2111,7 @@ async function verConteudoEditavel(db, tab, verExcluidos = false, cursor = null)
           <td class="num dado">${esc(String(l.rowid))}</td>
           ${cols.map(c => celulaValor(l[c])).join("")}
           <td>${verExcluidos
-            ? `<button class="botao mini restaurar" data-rowid="${esc(String(l.rowid))}">restaurar</button>`
+            ? `<button class="botao mini incluir restaurar" data-rowid="${esc(String(l.rowid))}">restaurar</button>`
             : `<span class="pino">editar</span>`}</td></tr>`)
     : vazio);
 
@@ -2142,14 +2213,14 @@ async function abrirFicha(db, tab, rowid) {
     `${marcada ? `<div class="aviso">
         <b class="marca-excluida">Esta linha está marcada como excluída.</b>
         Ela não aparece nas listas e continua inteira no <code>.reg</code>.
-        <button class="botao mini" id="btRestaurarFicha">restaurar</button>
+        <button class="botao mini incluir" id="btRestaurarFicha">restaurar</button>
       </div>` : ""}
      <form class="ficha-edit" id="fichaEdit" autocomplete="off">
        ${editaveis.map(c => campoDaColuna(c, linha[c.nome])).join("")}
      </form>
      <div class="acoes">
-       <button class="botao" id="btSalvar">${novo ? "Incluir" : "Salvar"}</button>
-       ${novo || marcada ? "" : `<button class="botao perigo" id="btExcluir">Excluir</button>`}
+       <button class="botao ${novo ? "incluir" : "alterar"}" id="btSalvar">${novo ? "Incluir" : "Salvar"}</button>
+       ${novo || marcada ? "" : `<button class="botao excluir" id="btExcluir">Excluir</button>`}
        <button class="botao secundario" id="btVoltar">Voltar</button>
        <span class="leg" id="recadoFicha"></span>
      </div>`);
@@ -4687,7 +4758,7 @@ async function telaImportar(db, tab) {
          Coluna que a tabela não tem é erro; coluna que falta fica nula.</span></label>
      <div class="acoes">
        <button class="botao secundario" id="btPrever">Conferir</button>
-       <button class="botao" id="btImportar" disabled>Gravar</button>
+       <button class="botao incluir" id="btImportar" disabled>Gravar</button>
        <button class="botao secundario" id="btVoltaImp">← Gerir tabelas</button>
      </div>
      <div id="impSaida"></div>`);
@@ -4818,7 +4889,7 @@ async function dialogoExcluir(db, tab, rowid, aoTerminar) {
       <div id="excRecado"></div>
       <div class="acoes">
         <button class="botao secundario" id="btExcNao">Cancelar</button>
-        <button class="botao" id="btExcSim">Marcar como excluído</button>
+        <button class="botao marcar" id="btExcSim">Marcar como excluído</button>
       </div>
     </div>`;
   document.body.appendChild(fundo);
@@ -4831,7 +4902,10 @@ async function dialogoExcluir(db, tab, rowid, aoTerminar) {
       b.classList.toggle("escolhido", b.dataset.modo === modo));
     const sim = fundo.querySelector("#btExcSim");
     sim.textContent = modo === "suave" ? "Marcar como excluído" : "Excluir de vez";
-    sim.classList.toggle("perigo", modo === "fisico");
+    // Rosa para a que volta, vermelho para a que não volta. O botão troca de
+    // cor junto com o texto: quem clica sem ler o texto ainda vê a cor mudar.
+    sim.classList.toggle("marcar", modo === "suave");
+    sim.classList.toggle("excluir", modo === "fisico");
   };
   [...fundo.querySelectorAll(".modo")].forEach(b => b.onclick = ev => {
     ev.preventDefault(); modo = b.dataset.modo; pintar();
@@ -5954,6 +6028,7 @@ async function editarDbLink(nome) {
    que depende, em vez de nao fazer nada. */
 
 const ICO = {
+  pulso: `<path d="M2.5 12h4l2-6 3.5 12 2.5-7 1.8 3.4h5.2" fill="none" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/>`,
   energia: `<circle cx="12" cy="12" r="9" fill="none" stroke-width="1.7"/><path d="M12 6.5v6" stroke-width="2" stroke-linecap="round"/>`,
   consulta: `<circle cx="10.5" cy="10.5" r="6" fill="none" stroke-width="1.7"/><path d="M15 15l4.5 4.5" stroke-width="2" stroke-linecap="round"/>`,
   gente: `<circle cx="9" cy="8" r="3.2" fill="none" stroke-width="1.6"/><path d="M3.5 19c0-3.2 2.5-5.2 5.5-5.2s5.5 2 5.5 5.2" fill="none" stroke-width="1.6"/><path d="M16 6.5a3 3 0 010 5.6M17 19c0-2.4-.8-4-2-5" fill="none" stroke-width="1.5"/>`,
@@ -6034,6 +6109,7 @@ const FERRAMENTAS = [
   { ico:"cofre",    rot:"Backup",     cor:"var(--ok)",     faz:backupAgora },
   "risco",
   { ico:"replica",  rot:"Replicação", cor:"var(--ndx)",    faz:verReplicacao },
+  { ico:"pulso",    rot:"Profiler",   cor:"var(--acao-consultar)", faz:verProfiler },
   { ico:"correio",  rot:"Server Mail",cor:"var(--reg)",    faz:null,
     falta:"O armazenamento serve bem — uma tabela de mensagens com pasta "
         + "indexada, corpo no .memo e anexo no .bin. Falta o serviço. O SMTP "
@@ -6229,6 +6305,128 @@ async function verReplicacao() {
   folha("Replicação", `papel ${papel}`, fichas + aviso + deOrigens + posicoes);
 }
 
+/* O PROFILER: o que está chegando pela porta, antes de virar dado.
+ *
+ * A tela atualiza sozinha enquanto está ligada, pedindo só o que ainda não
+ * viu (`desde_serial`) — rebaixar o anel inteiro a cada segundo seria a tela
+ * gerando mais tráfego do que a que ela observa. */
+let profTimer = null;
+let profVisto = 0;
+let profLinhas = [];
+
+async function verProfiler() {
+  clearInterval(profTimer);
+  profVisto = 0; profLinhas = [];
+  const bancos = await api("bancos").catch(() => []);
+  const e = await api("profiler", { max: 200 }).catch(() => ({ ligado:false, filtro:{} }));
+  const f = e.filtro || {};
+
+  folha("Profiler", "o que chega pela porta 5000, antes de virar dado",
+    `<div class="acoes prof-topo">
+       <label class="mini-campo">Database
+         <select id="pfDb"><option value="">— todos —</option>
+           ${(bancos || []).map(b => { const n = b.nome || b;
+             return `<option ${f.database === n ? "selected" : ""}>${esc(n)}</option>`; }).join("")}
+         </select></label>
+       <label class="mini-campo">Usuário
+         <input id="pfUsr" placeholder="— todos —" value="${esc(f.usuario || "")}"></label>
+       <label class="mini-campo">Operação
+         <input id="pfOp" placeholder="— todas —" value="${esc(f.operacao || "")}"></label>
+       <label class="mini-campo">Guardar
+         <input id="pfTeto" type="number" min="10" max="20000" value="${esc(String(e.guardar || 500))}"></label>
+       <label class="mini-campo largo">Arquivo de log (.txt) — opcional
+         <input id="pfArq" placeholder="/var/log/phxsql-monitor.txt"
+                value="${esc(e.arquivo || "")}"></label>
+       <label class="mini-campo caixa"><input type="checkbox" id="pfEscrita"
+         ${f.so_escrita ? "checked" : ""}> só escrita</label>
+       <button class="botao consultar" id="pfLigar">${e.ligado ? "Reiniciar" : "Ligar"}</button>
+       <button class="botao excluir" id="pfParar" ${e.ligado ? "" : "disabled"}>Parar</button>
+       <button class="botao secundario" id="pfLimpar">Limpar</button>
+     </div>
+     <div id="pfEstado"></div>
+     <div class="rolo"><table class="prof">
+       <thead><tr><th>hora</th><th>ip</th><th>usuário</th><th>operação</th>
+         <th>alvo</th><th class="num">ms</th><th></th><th class="num">bytes</th>
+         <th>pedido, como chegou</th></tr></thead>
+       <tbody id="pfCorpo"></tbody></table></div>
+     <div class="nota">
+       <span class="t">A senha não passa por aqui</span>
+       <p>O pedido é mostrado como chegou pelo soquete — <b>menos</b> os campos
+       sensíveis. <code>senha</code>, <code>token</code>, <code>prova</code> e
+       os outros viram <code>"***"</code> <b>antes</b> de encostar na memória
+       ou no arquivo. Pedido que não é JSON válido não vira texto nenhum: vira
+       o tamanho dele, porque não há como tapar um campo numa estrutura que
+       não se lê. Há teste que falha se uma senha aparecer.</p>
+       <p>O ponto de captura é uma linha depois do <code>read_line</code> e uma
+       antes do despacho: <b>nada foi gravado ainda</b>. Por isso o pedido que
+       trava aparece na lista como «em curso» — que é justamente o que se
+       quer achar.</p>
+     </div>`);
+
+  $("#pfLigar").onclick = async () => {
+    try {
+      const r = await api("profiler_ligar", {
+        database: $("#pfDb").value, usuario: $("#pfUsr").value.trim(),
+        operacao: $("#pfOp").value.trim(), so_escrita: $("#pfEscrita").checked,
+        arquivo: $("#pfArq").value.trim(), guardar: +$("#pfTeto").value || 500,
+      });
+      avisar(r.arquivo ? `observando · gravando em ${r.arquivo}` : "observando");
+      profVisto = 0; profLinhas = [];
+      verProfiler();
+    } catch (err) { avisar(String(err), true); }
+  };
+  $("#pfParar").onclick = async () => {
+    const r = await api("profiler_desligar");
+    avisar(`parado — ${fmt(r.observados)} evento(s) observados`);
+    verProfiler();
+  };
+  $("#pfLimpar").onclick = async () => {
+    await api("profiler_limpar"); profVisto = 0; profLinhas = [];
+    $("#pfCorpo").innerHTML = ""; 
+  };
+
+  const pintar = d => {
+    const est = $("#pfEstado"); if (!est) return false;
+    est.innerHTML = d.ligado
+      ? `<div class="aviso bem">observando desde <b>${esc(d.desde)}</b> ·
+           ${fmt(d.observados)} evento(s)${d.esquecidos ? ` · ${fmt(d.esquecidos)} saíram do anel` : ""}
+           ${d.arquivo ? ` · gravando em <code>${esc(d.arquivo)}</code>` : " · só em memória"}</div>`
+      : `<div class="aviso">parado. Escolha os filtros e clique em <b>Ligar</b>.</div>`;
+    return d.ligado;
+  };
+
+  const atualizar = async () => {
+    let d;
+    try { d = await api("profiler", { max: 200, desde_serial: profVisto }); }
+    catch { clearInterval(profTimer); return; }
+    if (!$("#pfCorpo")) { clearInterval(profTimer); return; }   // saiu da tela
+    pintar(d);
+    for (const ev of (d.eventos || []).slice().reverse()) {
+      profVisto = Math.max(profVisto, ev.serial);
+      profLinhas.unshift(ev);
+    }
+    if (profLinhas.length > 300) profLinhas.length = 300;
+    $("#pfCorpo").innerHTML = profLinhas.map(ev => {
+      const estado = ev.ok === null || ev.ok === undefined
+        ? `<span class="pino">em curso</span>`
+        : ev.ok ? `<span class="pino ok">ok</span>`
+                : `<span class="pino mal" title="${esc(ev.erro || "")}">erro</span>`;
+      return `<tr class="${ev.ok === false ? "prof-mal" : ""}">
+        <td class="dado">${esc((ev.quando || "").slice(11))}</td>
+        <td class="dado">${esc(ev.ip)}</td>
+        <td>${esc(ev.usuario || "—")}</td>
+        <td class="dado"><b>${esc(ev.op)}</b></td>
+        <td class="dado">${esc(ev.database ? (ev.tabela ? ev.database + "." + ev.tabela : ev.database) : "—")}</td>
+        <td class="num">${ev.ms === null || ev.ms === undefined ? "—" : fmt(ev.ms)}</td>
+        <td>${estado}</td>
+        <td class="num">${fmt(ev.bytes)}</td>
+        <td class="dado prof-pedido" title="${esc(ev.pedido)}">${esc(ev.pedido)}</td></tr>`;
+    }).join("");
+  };
+  await atualizar();
+  profTimer = setInterval(atualizar, 1000);
+}
+
 async function repararPeloMenu() {
   if (!est.atual) {
     avisar("abra uma tabela antes de reparar", true);
@@ -6258,7 +6456,7 @@ async function abrirConsulta() {
          </select></label>
        <label>Valor <input id="cVal" placeholder="deixe vazio para trazer tudo"></label>
        <label>Máximo <input id="cMax" type="number" value="200" min="1"></label>
-       <button class="botao" id="btConsultar">Consultar</button>
+       <button class="botao consultar" id="btConsultar">Consultar</button>
      </div>
      <div id="saidaConsulta"><p class="leg">A tabela precisa estar na RAM:
        menu <b>Memória → Carregar esta tabela</b>.</p></div>`);
