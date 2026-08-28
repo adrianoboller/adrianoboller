@@ -37,9 +37,9 @@ o código, não contra a lembrança — foi assim que a chave estrangeira saiu d
 | ☑️ | 27 | Comandos proibidos no `config.json` | e a auditoria achou ali um furo real, corrigido |
 | ☑️ | 28 | Criar regra de firewall em quem tenta o proibido | conferido com um `iptables` falso que grava |
 | ☑️ | 29 | **Base64 no login**, não em claro | feito — e o padrão é melhor: desafio-resposta, a senha não sai da máquina |
-| ☑️ | 30 | **Interface web parecida com o Centro de Controle HFSQL(R)** | árvore, abas, painel, administração, menu, ferramentas, **View Database com edição** e **gestão de tabelas** — 30 das 33 operações. Fora: `buscar`, `desbloquear` e `criar_schema`, que acontece sozinho quando a tela cria tabela dentro de um schema |
+| ☑️ | 30 | **Interface web parecida com o Centro de Controle HFSQL(R)** | árvore, abas, painel, administração, menu, ferramentas, **View Database com edição**, **gestão de tabelas** e **gestão do banco** — 33 das 36 operações. Fora: `buscar`, `desbloquear` e `criar_schema`, que acontece sozinho quando a tela cria tabela dentro de um schema |
 | ☑️ | 66 | **[+] na árvore** para criar database, **About no menu Ajuda**, **tela de créditos** com a fênix, e **View Database** com grade de tabelas e edição | fecha a edição de dados: `ler`, `inserir`, `atualizar` e `excluir` ganharam tela |
-| ☑️ | 65 | **Barra de ferramentas** com Start/Stop, Query, Usuários, Diretivas, Bancos, Duplicar, Conexões, Transações, Importar, Repair, Backup, Replicação, Server Mail, Blockchain e Ajuda | 15 ferramentas, ícone colorido; **10 funcionam**, 5 apagadas dizendo o que falta |
+| ☑️ | 65 | **Barra de ferramentas** com Start/Stop, Query, Usuários, Diretivas, Bancos, Duplicar, Conexões, Transações, Importar, Repair, Backup, Replicação, Server Mail, Blockchain e Ajuda | 20 ferramentas hoje, ícone colorido; **16 funcionam**, 4 apagadas dizendo o que falta |
 | ☑️ | 31 | Tabela em memória tipo Redis(R), com `SelectMemory` | **87× mais rápido**, medido |
 | ☑️ | 32 | Revisar regras, corrigir defeitos, registrar em `changelog.md` | `CHANGELOG.md`, com *Corrigido* primeiro |
 | ☑️ | 33 | Chave assimétrica no `config.json` como parâmetro extra | Ed25519 (RFC 8032), contra os quatro vetores oficiais |
@@ -72,7 +72,7 @@ o código, não contra a lembrança — foi assim que a chave estrangeira saiu d
 | ☑️ | 60 | O `.bkp` espelhado existe se ativo? | sim — e provar achou o defeito do byte de status |
 | ☑️ | 61 | O que dá para melhorar no insert | **3,1× no CRC** e **1,31× na unicidade**, medidos |
 | ☑️ | 62 | Parar a carga de 10 milhões | parada e limpa |
-| ☑️ | 63 | **Barra de menu superior tradicional** | seis menus, 22 recursos, Alt/setas/Esc |
+| ☑️ | 63 | **Barra de menu superior tradicional** | nove menus e 53 itens hoje, Alt/setas/Esc |
 | ☑️ | 64 | Cadê o sol e a lua? | respondida — estavam lá, o recorte da captura é que cortava |
 | ☑️ | 68 | **Copiar e colar tabela** de um lugar para outro | `copiar_tabela` atravessa databases e schemas; a permissão de criar é conferida **no destino** |
 | ☑️ | 69 | **Configurações gerais do servidor, do banco e dos usuários**, cada uma com sua tela | três telas, três alcances. **Leem, não gravam** — gravar o `config.json` pela web daria a uma sessão roubada o poder de abrir o firewall e criar supervisor |
@@ -264,6 +264,26 @@ Dois defeitos, e o segundo é uma armadilha que qualquer tela nova podia repetir
   `registros_por_arquivo` — a conta certa para a partição por faixa, e errada
   para a por período, onde o corte depende do calendário. Quatro meses apareciam
   como um volume só. Agora ela lê as fronteiras que o `esquema` devolve.
+
+### O que a revisão do dossiê achou
+
+Duas coisas erradas na própria página, nenhuma no código.
+
+- **Os números do índice lateral estavam fora de ordem.** Do item 4 ao 10 eles
+  ficaram um atrás — «04 Paginação» quando Paginação é a 05 —, e o item 4
+  perdeu o zero à esquerda. Os *links* apontavam certo o tempo todo; só o número
+  exibido divergia. Aconteceu quando uma seção entrou no meio e os
+  `<section>` foram renumerados sem o índice. Agora o número sai do próprio
+  alvo (`#s7` mostra 07), então não tem como divergir de novo.
+
+- **Duas afirmações defasadas**: «9 comandos» na linha de comando (são 11) e
+  «30 das 33 operações na tela» (são 33 das 36). As duas em dois lugares cada.
+
+E uma correção de arrumação: o texto sobre os metadados de campo, a chave
+primária e a partição por calendário tinha entrado dentro de *Estado e
+roteiro*, que é o roteiro — não o lugar de explicar formato. Foi para onde
+pertence: campo e chave na seção 3 (*A tabela, peça a peça*), partição na 5
+(*Paginação*). As figuras foram renumeradas em ordem de leitura.
 
 - **A árvore roubava a tela de quem pintasse depois dela.** `montarArvore`
   terminava sempre clicando no Painel; criar uma tabela redesenhava a árvore,

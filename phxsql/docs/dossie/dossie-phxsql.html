@@ -270,13 +270,13 @@ footer p{max-width:var(--medida)}
     <li><a href="#s1"><span class="n">01</span> O que é</a></li>
     <li><a href="#s2"><span class="n">02</span> Organograma dos dados</a></li>
     <li><a href="#s3"><span class="n">03</span> A tabela, peça a peça</a></li>
-    <li><a href="#s4"><span class="n">4</span> Identificadores</a></li>
-    <li><a href="#s5"><span class="n">04</span> Paginação</a></li>
-    <li><a href="#s6"><span class="n">05</span> Organograma do código</a></li>
-    <li><a href="#s7"><span class="n">06</span> Fluxo: gravar</a></li>
-    <li><a href="#s8"><span class="n">07</span> Fluxo: porta 5000</a></li>
-    <li><a href="#s9"><span class="n">08</span> Replicação</a></li>
-    <li><a href="#s10"><span class="n">09</span> Quem pode o quê</a></li>
+    <li><a href="#s4"><span class="n">04</span> Identificadores</a></li>
+    <li><a href="#s5"><span class="n">05</span> Paginação</a></li>
+    <li><a href="#s6"><span class="n">06</span> Organograma do código</a></li>
+    <li><a href="#s7"><span class="n">07</span> Fluxo: gravar</a></li>
+    <li><a href="#s8"><span class="n">08</span> Fluxo: porta 5000</a></li>
+    <li><a href="#s9"><span class="n">09</span> Replicação</a></li>
+    <li><a href="#s10"><span class="n">10</span> Quem pode o quê</a></li>
     <li><a href="#s11"><span class="n">11</span> Quem não entra</a></li>
     <li><a href="#s12"><span class="n">12</span> Centro de Controle</a></li>
     <li><a href="#s13"><span class="n">13</span> Tabela em memória</a></li>
@@ -310,7 +310,7 @@ footer p{max-width:var(--medida)}
     <div><div class="v">0</div><div class="r">dependências</div></div>
     <div><div class="v">4</div><div class="r">crates</div></div>
     <div><div class="v">5</div><div class="r">arquivos/tabela</div></div>
-    <div><div class="v">4.612</div><div class="r">linhas de doc</div></div>
+    <div><div class="v">4.656</div><div class="r">linhas de doc</div></div>
   </div>
 </header>
 
@@ -518,6 +518,58 @@ footer p{max-width:var(--medida)}
     O CRC aparece nos dois lados de propósito — assim um ponteiro que aponta para o bloco
     errado é detectado, não só um bloco corrompido.</figcaption>
   </figure>
+
+  <h3>O campo ganhou identidade</h3>
+
+  <p>Até a versão 3 do bloco de esquema, uma coluna era três coisas: nome, tipo
+  e se aceita nulo. Uma tela que quisesse mostrar <em>Emissão</em> em vez de
+  <code>emissao</code> guardava esse rótulo em outro lugar — e outro lugar é um
+  dicionário externo, que se perde, se desatualiza e obriga quem copia os cinco
+  arquivos a copiar um sexto.</p>
+
+  <p>Agora cada coluna carrega, dentro do próprio <code>.reg</code>:</p>
+
+  <div class="rolo">
+    <table>
+      <thead><tr><th>Campo</th><th>Para que serve</th></tr></thead>
+      <tbody>
+        <tr><td class="dado"><code>id</code></td><td>UUID v7 sorteado na criação e <strong>nunca reaproveitado</strong></td></tr>
+        <tr><td class="dado"><code>caption</code></td><td>o rótulo de tela; vazio significa «use o nome»</td></tr>
+        <tr><td class="dado"><code>descricao</code></td><td>para que a coluna serve</td></tr>
+        <tr><td class="dado"><code>mascara</code></td><td>o PICTURE do Clarion(R): <code>@N-11.2</code>, <code>@D6</code>, <code>@P###-####P</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>O <code>id</code> é o que faz diferença. É por ele que uma tela, um
+  relatório ou um mapeamento apontam para a coluna, e por isso <strong>renomear
+  o campo não quebra nada</strong>: renomear troca o <code>nome</code>; o
+  <code>id</code> segue o mesmo. Sem ele, todo <em>rename</em> seria uma
+  caçada por referências em texto.</p>
+
+  <h3>Chave primária, e por que ela não mora no campo</h3>
+
+  <p>Até aqui só havia «índice único», e chave primária é mais do que isso: é a
+  identidade da linha, aquilo a que as chaves estrangeiras das outras tabelas
+  apontam. Um índice passa a poder ser marcado como primário — só um, sempre
+  único, e nenhuma coluna dele aceita nulo, porque uma identidade nula não
+  identifica. As três conferências acontecem na montagem do esquema.</p>
+
+  <p>O que <strong>não</strong> foi feito: gravar «é primária» na coluna. Ela
+  poderia estar ali, e a tela pediria isso — mas seria uma <em>segunda
+  verdade</em> ao lado do índice, e as duas divergiriam no primeiro
+  <code>ALTER</code>. As marcas que a tela mostra são derivadas:</p>
+
+  <div class="rolo">
+    <table>
+      <thead><tr><th>Marca</th><th>De onde sai</th></tr></thead>
+      <tbody>
+        <tr><td class="dado">primária</td><td>a coluna aparece no índice marcado como primário</td></tr>
+        <tr><td class="dado">estrangeira</td><td>a coluna aparece em alguma chave estrangeira</td></tr>
+        <tr><td class="dado">composta</td><td>a chave de que ela participa tem mais de uma coluna</td></tr>
+      </tbody>
+    </table>
+  </div>
 </section>
 
 <!-- ============================= 04 ============================= -->
@@ -690,6 +742,91 @@ footer p{max-width:var(--medida)}
   estouro silencioso de 2 GB que o TopSpeed(R) dava. E um bloco maior que o volume fica
   sozinho no seu volume, em vez de ser recusado — senão uma foto de 2 MB seria impossível
   de gravar num volume de 1 MB.</p>
+
+  <p>E <strong>«sem teto» não existe</strong>: o sufixo tem largura fixa, então com três
+  dígitos o volume 1000 não teria nome de arquivo. Teto omitido vira o maior que cabe —
+  999 com três dígitos.</p>
+
+  <h3>O volume aprendeu a cortar pelo calendário</h3>
+
+  <p>A paginação por quantidade corta a cada <em>N</em> registros, e o endereço
+  sai de uma divisão. A partição por período — mensal, bimestral, semestral ou
+  anual — corta quando o período de uma coluna de data vira. Isso quebra a
+  divisão: dois meses rendem quantidades diferentes.</p>
+
+  <figure>
+    <div class="fig-caixa">
+      <svg viewBox="0 0 840 300" role="img" aria-label="Na partição por quantidade o volume sai de uma divisão do rowid; na partição por período cada volume grava no próprio cabeçalho o rowid em que começou, e o volume de um rowid sai de uma busca binária nessa tabela de fronteiras">
+        <g font-family="IBM Plex Mono, monospace" font-size="11.5" fill="currentColor">
+
+          <text x="16" y="18" font-size="10" opacity=".55" letter-spacing=".08em">POR QUANTIDADE — O VOLUME SAI DE UMA CONTA</text>
+
+          <rect x="16" y="30" width="180" height="42" rx="4" fill="none" stroke="currentColor" stroke-width="1.4"/>
+          <text x="106" y="47" text-anchor="middle" font-size="11">volume 1</text>
+          <text x="106" y="63" text-anchor="middle" font-size="10" opacity=".6">rowid 1 … 1000</text>
+
+          <rect x="204" y="30" width="180" height="42" rx="4" fill="none" stroke="currentColor" stroke-width="1.4"/>
+          <text x="294" y="47" text-anchor="middle" font-size="11">volume 2</text>
+          <text x="294" y="63" text-anchor="middle" font-size="10" opacity=".6">rowid 1001 … 2000</text>
+
+          <rect x="392" y="30" width="180" height="42" rx="4" fill="none" stroke="currentColor" stroke-width="1.4"/>
+          <text x="482" y="47" text-anchor="middle" font-size="11">volume 3</text>
+          <text x="482" y="63" text-anchor="middle" font-size="10" opacity=".6">rowid 2001 … 3000</text>
+
+          <text x="592" y="55" font-size="11" fill="var(--acento)">volume = (rowid−1) ÷ 1000 + 1</text>
+
+          <line x1="16" y1="100" x2="824" y2="100" stroke="currentColor" stroke-width=".8" opacity=".25"/>
+
+          <text x="16" y="126" font-size="10" opacity=".55" letter-spacing=".08em">POR PERÍODO — CADA VOLUME GRAVA ONDE COMEÇOU</text>
+
+          <rect x="16" y="138" width="150" height="56" rx="4" fill="none" stroke="var(--acento)" stroke-width="1.5"/>
+          <text x="91" y="156" text-anchor="middle" font-size="11">volume 1</text>
+          <text x="91" y="171" text-anchor="middle" font-size="10" opacity=".65">2026-01</text>
+          <text x="91" y="186" text-anchor="middle" font-size="10" fill="var(--acento)">começa em 1</text>
+
+          <rect x="174" y="138" width="150" height="56" rx="4" fill="none" stroke="var(--acento)" stroke-width="1.5"/>
+          <text x="249" y="156" text-anchor="middle" font-size="11">volume 2</text>
+          <text x="249" y="171" text-anchor="middle" font-size="10" opacity=".65">2026-02</text>
+          <text x="249" y="186" text-anchor="middle" font-size="10" fill="var(--acento)">começa em 3</text>
+
+          <rect x="332" y="138" width="150" height="56" rx="4" fill="none" stroke="var(--acento)" stroke-width="1.5"/>
+          <text x="407" y="156" text-anchor="middle" font-size="11">volume 3</text>
+          <text x="407" y="171" text-anchor="middle" font-size="10" opacity=".65">2026-03</text>
+          <text x="407" y="186" text-anchor="middle" font-size="10" fill="var(--acento)">começa em 4</text>
+
+          <rect x="490" y="138" width="150" height="56" rx="4" fill="none" stroke="var(--acento)" stroke-width="1.5"/>
+          <text x="565" y="156" text-anchor="middle" font-size="11">volume 4</text>
+          <text x="565" y="171" text-anchor="middle" font-size="10" opacity=".65">2026-04</text>
+          <text x="565" y="186" text-anchor="middle" font-size="10" fill="var(--acento)">começa em 7</text>
+
+          <text x="660" y="163" font-size="11" fill="var(--acento)">busca binária</text>
+          <text x="660" y="179" font-size="10" opacity=".6">nas fronteiras</text>
+
+          <text x="16" y="228" font-size="10.5" opacity=".75">Um lançamento de JANEIRO digitado agora entra no volume 4 — o corrente —, não volta para o 1.</text>
+          <text x="16" y="246" font-size="10.5" opacity=".75">A ordem de digitação é sagrada: voltar seria escrever no meio de um arquivo já fechado.</text>
+          <text x="16" y="272" font-size="10.5" opacity=".6">Por isso o período de um volume é «o período em que ele abriu», e um volume pode conter</text>
+          <text x="16" y="288" font-size="10.5" opacity=".6">linhas de períodos anteriores que chegaram depois.</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>Figura 5.</b> A tabela de fronteiras não é um índice: são dois
+    números por volume, gravados no cabeçalho que cada volume já tem, e lidos
+    uma vez na abertura. Volume é coisa que se conta em dezenas — cada um guarda
+    <code>registros_por_arquivo</code> linhas —, então a busca custa três ou
+    quatro comparações num vetor que já está na memória.</figcaption>
+  </figure>
+
+  <p>Três alternativas foram descartadas, e vale dizer por quê. Guardar a tabela
+  de fronteiras num <strong>sexto arquivo</strong> quebraria o modelo de cinco.
+  Guardá-la <strong>dentro do bloco de esquema</strong> não serve: o bloco é
+  seguido pelos dados, e crescer significaria empurrar a tabela inteira. E
+  <strong>mandar a linha para o volume do período dela</strong> — o que um
+  particionamento de banco relacional faria — exigiria escrever no meio de um
+  arquivo fechado, perdendo a ordem de digitação e o endereço contíguo de uma
+  vez só.</p>
+
+  <p>O cabeçalho de cada volume já existia e tinha 48 bytes sobrando. Dois
+  <code>u64</code> resolveram.</p>
 </section>
 
 <!-- ============================= 06 ============================= -->
@@ -726,7 +863,7 @@ footer p{max-width:var(--medida)}
           <rect x="440" y="96" width="150" height="76" rx="5" fill="none" stroke="currentColor" stroke-width="1.5"/>
           <text x="515" y="116" text-anchor="middle" font-weight="600" font-size="12.5">phxsql-cli</text>
           <text x="515" y="136" text-anchor="middle" font-size="10.5" opacity=".7">main</text>
-          <text x="515" y="156" text-anchor="middle" font-size="10" opacity=".5">9 comandos</text>
+          <text x="515" y="156" text-anchor="middle" font-size="10" opacity=".5">11 comandos</text>
 
           <line x1="325" y1="172" x2="325" y2="204" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaD)"/>
           <path d="M515 172 L515 190 L360 190 L360 204" fill="none" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaD)"/>
@@ -766,7 +903,7 @@ footer p{max-width:var(--medida)}
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 5.</b> A seta é <em>depende de</em>. O zero à direita não é
+    <figcaption><b>Figura 6.</b> A seta é <em>depende de</em>. O zero à direita não é
     vaidade: foi ele que fez a compilação cruzada para Windows funcionar de primeira, sem
     vendorizar nada.</figcaption>
   </figure>
@@ -854,7 +991,7 @@ footer p{max-width:var(--medida)}
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 6.</b> A aresta tracejada em vermelho é a que importa: sem
+    <figcaption><b>Figura 7.</b> A aresta tracejada em vermelho é a que importa: sem
     transações ainda, o desfazer explícito é o que impede uma falha de índice de deixar
     a tabela inconsistente.</figcaption>
   </figure>
@@ -936,7 +1073,7 @@ footer p{max-width:var(--medida)}
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 7.</b> As três setas tracejadas convergindo no
+    <figcaption><b>Figura 8.</b> As três setas tracejadas convergindo no
     <code>acessos.log</code> são o desenho do requisito: o log de IP registra o acesso,
     não o sucesso.</figcaption>
   </figure>
@@ -1023,7 +1160,7 @@ footer p{max-width:var(--medida)}
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 8.</b> A direção da seta grossa é o ponto: quem procura é a
+    <figcaption><b>Figura 9.</b> A direção da seta grossa é o ponto: quem procura é a
     réplica, exatamente como no MySQL(R). Isso é o que permite manter a porta fechada para
     a Internet e aberta só de um lado, dentro do túnel.</figcaption>
   </figure>
@@ -1119,7 +1256,7 @@ footer p{max-width:var(--medida)}
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 9.</b> Os três portões são independentes e cumulativos. O
+    <figcaption><b>Figura 10.</b> Os três portões são independentes e cumulativos. O
     token diz que você chegou ao servidor certo; o login diz quem você é; a permissão diz
     o que você pode naquela base específica.</figcaption>
   </figure>
@@ -1272,7 +1409,7 @@ footer p{max-width:var(--medida)}
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 10.</b> A lista de bloqueio vem antes do token — quem
+    <figcaption><b>Figura 11.</b> A lista de bloqueio vem antes do token — quem
     está de fora não gasta nem um PBKDF2 do servidor. A regra de firewall é o
     extra à direita, não o mecanismo.</figcaption>
   </figure>
@@ -1318,7 +1455,7 @@ footer p{max-width:var(--medida)}
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 11.</b> A diferença que importa está na terceira
+    <figcaption><b>Figura 12.</b> A diferença que importa está na terceira
     linha: a prova não revela a senha e não serve de novo, porque o nonce do
     servidor é sorteado a cada desafio e vale uma vez.</figcaption>
   </figure>
@@ -1437,7 +1574,7 @@ footer p{max-width:var(--medida)}
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 12.</b> As duas setas convergindo no
+    <figcaption><b>Figura 13.</b> As duas setas convergindo no
     <code>despachar()</code> são o desenho inteiro: a interface não tem um caminho
     privilegiado. Quem não pode inserir recebe a mesma recusa, tenha clicado num
     botão ou aberto um soquete.</figcaption>
@@ -1472,12 +1609,41 @@ footer p{max-width:var(--medida)}
         <tr><td>Usuários</td><td>o cadastro e o poder de cada um sobre cada base</td><td><code>usuarios</code></td></tr>
         <tr><td>Acessos</td><td>IP, data, hora, operação, usuário, resultado</td><td><code>acessos</code></td></tr>
         <tr><td>Bloqueios</td><td>quem está barrado, por quê e até quando</td><td><code>bloqueios</code></td></tr>
-        <tr><td>Tabelas</td><td>as tabelas do banco e as oito operações sobre cada uma</td><td><code>tabelas</code>, <code>esquema</code></td></tr>
-        <tr><td>Nova tabela</td><td>colunas, índices, schema e paginação, montados linha a linha</td><td><code>criar_tabela</code></td></tr>
-        <tr><td>Partições</td><td>em que volume cada faixa de rowid cai, e o nome do arquivo</td><td><code>esquema</code> + conta</td></tr>
       </tbody>
     </table>
   </div>
+
+  <p>E, sobre a tabela escolhida ou sobre o banco inteiro:</p>
+
+  <div class="rolo">
+    <table>
+      <thead><tr><th>Onde</th><th>O que traz</th><th>De onde vem</th></tr></thead>
+      <tbody>
+        <tr><td>Tabelas</td><td>as tabelas do banco, e onze operações sobre a escolhida</td><td><code>tabelas</code>, <code>esquema</code></td></tr>
+        <tr><td>Nova tabela</td><td>campos, índices, schema e partição, montados linha a linha</td><td><code>criar_tabela</code></td></tr>
+        <tr><td>Partições</td><td>em que volume cada faixa de rowid cai, e o nome do arquivo</td><td><code>esquema</code> — conta, ou as fronteiras</td></tr>
+        <tr><td>Configurações da tabela</td><td>a geometria decidida na criação, chaves, volumes, e o que ela herda</td><td><code>esquema</code>, <code>config</code>, <code>memoria</code></td></tr>
+        <tr><td>Copiar e colar</td><td>leva uma tabela para outro banco ou schema</td><td><code>copiar_tabela</code></td></tr>
+        <tr><td>Gerir banco</td><td>quinze itens sobre o database — onze funcionam, quatro dizem o que falta</td><td><code>sistabelas</code></td></tr>
+        <tr><td>SysTables</td><td>o catálogo de tabelas em forma de dado</td><td><code>sistabelas</code></td></tr>
+        <tr><td>SysColumns</td><td>o dicionário de dados: caption, máscara, tipo, papel na chave</td><td><code>siscolunas</code></td></tr>
+        <tr><td>Configurações do servidor</td><td>cada campo do <code>config.json</code> e para que serve</td><td><code>config</code>, <code>ping</code></td></tr>
+        <tr><td>Configurações do banco</td><td>onde ele mora, o que tem dentro, o que herda</td><td><code>config</code>, <code>tabelas</code>, <code>sistabelas</code></td></tr>
+        <tr><td>Configurações dos usuários</td><td>o cadastro e o poder de cada um sobre cada base</td><td><code>usuarios</code></td></tr>
+        <tr><td>Diretivas do banco</td><td>os seis portões na ordem em que fecham, e quem alcança</td><td><code>config</code>, <code>usuarios</code>, <code>quem_sou</code></td></tr>
+        <tr><td>Backup e restauração</td><td>copiar com manifesto, conferir uma cópia</td><td><code>backup</code>, <code>conferir_backup</code></td></tr>
+        <tr><td>Transações</td><td>o que existe hoje e o que falta — <em>mostra a ausência</em></td><td><code>config</code></td></tr>
+        <tr><td>Editor de menu</td><td>troca o nome exibido de qualquer item</td><td>o navegador de quem mexeu</td></tr>
+        <tr><td>Painel</td><td>o servidor inteiro: sete gráficos e oito números</td><td><code>painel</code></td></tr>
+        <tr><td>Consulta</td><td><code>SelectMemory</code> sobre uma tabela residente</td><td><code>memoria</code>, <code>SelectMemory</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p><strong>33 das 36 operações do protocolo têm tela.</strong> Fora:
+  <code>buscar</code>, <code>desbloquear</code> e <code>criar_schema</code> — este
+  último acontece sozinho quando a tela cria uma tabela dentro de um schema que
+  ainda não existe.</p>
 
   <h3>Gestão de tabelas: o que cada operação toca no disco</h3>
 
@@ -1495,9 +1661,11 @@ footer p{max-width:var(--medida)}
       <tbody>
         <tr><td class="dado">Estrutura</td><td class="num">lê</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td>não altera</td></tr>
         <tr><td class="dado">Partições</td><td class="num">lê</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td>não altera</td></tr>
+        <tr><td class="dado">Configurações e diretivas</td><td class="num">lê</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td>não altera</td></tr>
         <tr><td class="dado">Editar conteúdo</td><td class="num">grava</td><td class="num">grava</td><td class="num">grava</td><td class="num">grava</td><td class="num">grava</td><td class="num">se ligado</td><td>linha a linha, pelo diário</td></tr>
         <tr><td class="dado">Nova tabela</td><td class="num">cria</td><td class="num">cria</td><td class="num">cria</td><td class="num">cria</td><td class="num">cria</td><td class="num">—</td><td>excluindo</td></tr>
         <tr><td class="dado">Duplicar</td><td class="num">copia</td><td class="num">copia</td><td class="num">copia</td><td class="num">copia</td><td class="num">copia</td><td class="num">se houver</td><td>excluindo a cópia</td></tr>
+        <tr><td class="dado">Copiar / colar</td><td class="num">copia</td><td class="num">copia</td><td class="num">copia</td><td class="num">copia</td><td class="num">copia</td><td class="num">se houver</td><td>excluindo a cópia</td></tr>
         <tr><td class="dado">Reparar tabela</td><td class="num">grava</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">exige</td><td>não — repara em cima</td></tr>
         <tr><td class="dado">Reparar índice</td><td class="num">lê</td><td class="num">refaz</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td>refazendo de novo</td></tr>
         <tr><td class="dado">Excluir</td><td class="num">apaga</td><td class="num">apaga</td><td class="num">apaga</td><td class="num">apaga</td><td class="num">apaga</td><td class="num">apaga</td><td><strong>não</strong></td></tr>
@@ -1517,11 +1685,109 @@ footer p{max-width:var(--medida)}
   não basta. E o espelho <code>.bkp</code> vai junto: deixá-lo para trás faria a
   tabela «voltar» pela metade se alguém recriasse uma com o mesmo nome.</p>
 
+  <p><em>Duplicar</em> e <em>copiar/colar</em> fazem a mesma cópia byte a byte; a
+  diferença é o alcance. Duplicar fica no mesmo database; colar atravessa para
+  outro banco ou schema, e aí a permissão de criar é conferida <strong>no
+  destino</strong> — sem isso, quem pode ler um banco e não pode criar no outro
+  escreveria onde não devia.</p>
+
   <p>A conferência de qual arquivo pertence a qual tabela também não é
   ingênua. Uma tabela paginada tem vários volumes por extensão, então o alvo é
   <code>nome.ext</code> ou <code>nome_NNN.ext</code> com o sufixo todo em
   algarismos — sem isso, excluir <code>precos</code> levaria
   <code>precos_historico</code> junto.</p>
+
+  <h3>Gerir o banco: quinze itens, e quatro deles apagados</h3>
+
+  <p>A tela de tabelas trata de <em>uma</em> tabela. A de gerir banco trata do
+  database inteiro, e junta em quatro grupos tudo que se faz sobre ele: dados e
+  catálogo, configuração e acesso, operação, e — separado, com o nome que
+  merece — <strong>ainda não existe</strong>.</p>
+
+  <div class="rolo">
+    <table>
+      <thead><tr><th>Grupo</th><th>Itens</th></tr></thead>
+      <tbody>
+        <tr><td class="dado">Dados e catálogo</td><td>Tabelas · SysTables · SysColumns · Copiar tabela</td></tr>
+        <tr><td class="dado">Configuração e acesso</td><td>Configurações do banco · Diretivas de acesso · Editor de menu</td></tr>
+        <tr><td class="dado">Operação</td><td>Conexões · Arquivos bloqueados · Transações · Backup e restauração</td></tr>
+        <tr><td class="dado">Ainda não existe</td><td><em>Triggers · Procedures · Jobs · Modo exclusivo</em></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>Os quatro últimos ficam ali <strong>apagados</strong>, e clicar num deles
+  abre uma tela que diz o que falta e de que depende — não um aviso genérico.
+  Sumir com eles esconderia o roteiro; ligá-los a um «em breve» seria fingir.
+  Triggers e procedures esperam uma decisão que não é técnica: <em>em que
+  linguagem o gatilho é escrito</em>. Jobs é o mais barato dos três — o
+  agendador do backup já é o desenho. Modo exclusivo depende da trava por
+  tabela, que é o mesmo trabalho da concorrência fina.</p>
+
+  <h3>SysTables e SysColumns: o catálogo vira dado</h3>
+
+  <p>O mesmo que a tela de gestão mostra, em forma de tabela — para quem quer
+  <em>consultar</em> o catálogo em vez de olhar para ele. <code>SysTables</code>
+  dá uma linha por tabela com registros, slots, chave primária, bytes por linha,
+  partição e volumes. <code>SysColumns</code> é o dicionário de dados: cada
+  campo com <code>id</code>, caption, descrição, máscara, tipo, tamanho e o
+  papel na chave.</p>
+
+  <p>Uma tabela ilegível não derruba o catálogo: ela vira uma linha que diz que
+  está ilegível — que é exatamente a informação que alguém foi procurar ali.</p>
+
+  <h3>As telas de configuração leem, e não gravam</h3>
+
+  <p>São três, e o que separa uma da outra é o <em>alcance</em>: o servidor
+  inteiro (o <code>config.json</code>), um database, e quem entra. Cada campo
+  aparece com o nome que tem no arquivo, o valor que está valendo agora, e para
+  que serve.</p>
+
+  <p>Nenhuma delas grava, e isso é escolha. Gravar o <code>config.json</code>
+  pela porta web significaria que uma sessão roubada consegue <strong>abrir o
+  firewall, esvaziar a lista de comandos proibidos e criar um
+  supervisor</strong>. Criar e alterar usuário tem o mesmo problema, com
+  credencial no meio do caminho. O que falta para quem administra é saber
+  <em>qual campo mexer</em> — e isso a tela dá.</p>
+
+  <p>A tela de usuários não traz o hash da senha porque o servidor não o
+  devolve, em operação nenhuma. Há teste que falha se a ficha vazar.</p>
+
+  <h3>Os seis portões, na ordem em que fecham</h3>
+
+  <p>A tela de diretivas do banco mostra o caminho que um pedido percorre antes
+  de tocar em dado, e o que está valendo em cada ponto:</p>
+
+  <div class="rolo">
+    <table>
+      <thead><tr><th class="num">#</th><th>Portão</th><th>O que recusa</th></tr></thead>
+      <tbody>
+        <tr><td class="num dado">1</td><td class="dado">IP permitido</td><td>quem não está na lista nem chega a falar</td></tr>
+        <tr><td class="num dado">2</td><td class="dado">lista de bloqueio</td><td>IP barrado por tentativa anterior</td></tr>
+        <tr><td class="num dado">3</td><td class="dado">comando proibido</td><td>recusado antes de tocar os dados</td></tr>
+        <tr><td class="num dado">4</td><td class="dado">base proibida</td><td>o database inteiro fora do alcance</td></tr>
+        <tr><td class="num dado">5</td><td class="dado">somente leitura</td><td>toda operação de escrita</td></tr>
+        <tr><td class="num dado">6</td><td class="dado">permissão do usuário</td><td>a atividade contra a base, pelas três regras</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>Ela também resolve, por usuário, <em>como</em> a permissão chegou ao
+  resultado: se veio da base listada, do <code>"*"</code>, de ser supervisor, ou
+  se negou porque não havia nenhum dos dois. Ver a regra aplicada vale mais do
+  que ler a regra.</p>
+
+  <h3>O editor de menu mora no navegador, não no servidor</h3>
+
+  <p>Ele troca o nome exibido de qualquer um dos 82 rótulos da barra e dos
+  menus. O que muda é o texto: <strong>a letra do atalho continua a de
+  fábrica</strong>, senão renomear um menu mudaria a tecla debaixo do dedo de
+  quem já aprendeu.</p>
+
+  <p>A preferência fica no <code>localStorage</code> de quem mexeu, e não no
+  <code>config.json</code>. É preferência de quem opera, não política do banco:
+  dois operadores podem querer nomes diferentes, e nenhum dos dois deveria mudar
+  a tela do outro.</p>
 
   <h3>Transações: uma tela que diz que não existem</h3>
 
@@ -1652,7 +1918,7 @@ footer p{max-width:var(--medida)}
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 13.</b> Os 87× não vêm de mágica: vêm de não ler 50.000
+    <figcaption><b>Figura 14.</b> Os 87× não vêm de mágica: vêm de não ler 50.000
     linhas do disco e de um mapa de igualdade que corta a varredura de 50.000 para
     8.333. O exemplo confere as duas respostas antes de imprimir o número —
     <em>benchmark</em> que compara respostas diferentes não mede nada.</figcaption>
@@ -1759,7 +2025,7 @@ footer p{max-width:var(--medida)}
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 14.</b> Os dois retângulos de baixo são o ponto: o
+    <figcaption><b>Figura 15.</b> Os dois retângulos de baixo são o ponto: o
     <code>senha_hash</code> é um segredo que autentica, a <code>chave_publica</code> não
     é. Copiar o <code>config.json</code> deixa de ser suficiente.</figcaption>
   </figure>
@@ -1950,7 +2216,7 @@ footer p{max-width:var(--medida)}
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 15.</b> O portão de leitura no fim do caminho é o
+    <figcaption><b>Figura 16.</b> O portão de leitura no fim do caminho é o
     desenho: o painel agrega tudo, e depois <em>desconta</em> o que este login não
     poderia ver. Número agregado também vaza.</figcaption>
   </figure>
@@ -2046,7 +2312,7 @@ footer p{max-width:var(--medida)}
       </svg>
 <!-- bancada:fim -->
     </div>
-    <figcaption><b>Figura 16.</b> O perfil do motor num desenho: perde onde
+    <figcaption><b>Figura 17.</b> O perfil do motor num desenho: perde onde
     grava, ganha onde lê em ordem. A varredura por faixa é o formato mostrando
     o que ele é — linhas vizinhas no índice são bytes vizinhos no
     <code>.reg</code>.</figcaption>
@@ -2248,7 +2514,7 @@ footer p{max-width:var(--medida)}
         <tr><td>Reindex — recria o <code>.ndx</code> do zero</td><td><span class="pino ok">pronto</span></td><td class="num">10</td></tr>
         <tr><td>Servidor TCP na porta 5000 · <code>config.json</code></td><td><span class="pino ok">pronto</span></td><td class="num">13</td></tr>
         <tr><td>Log de acessos por IP, com data e hora</td><td><span class="pino ok">pronto</span></td><td class="num">6</td></tr>
-        <tr><td>Linha de comando · 9 comandos</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
+        <tr><td>Linha de comando · 11 comandos</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
         <tr><td>Compilados Linux e Windows · manual</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
         <tr><td>Cadastro de usuários, senha em hash, permissão por base</td><td><span class="pino ok">pronto</span></td><td class="num">29</td></tr>
         <tr><td>Login por desafio-resposta e por Base64</td><td><span class="pino ok">pronto</span></td><td class="num">15</td></tr>
@@ -2263,14 +2529,17 @@ footer p{max-width:var(--medida)}
         <tr><td>phx-grid na aba Conteúdo · agrupamento por arrastar</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
         <tr><td>Espelho <code>.bkp</code> · segunda chance do <code>.reg</code></td><td><span class="pino ok">pronto</span></td><td class="num">4</td></tr>
         <tr><td>Bancada medida contra o MySQL(R), 10 milhões</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
-        <tr><td>View Database · grade de tabelas e ficha de edição · 30 das 33 ops na tela</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
-        <tr><td>Gestão de tabelas · criar, duplicar, reparar, partições e excluir</td><td><span class="pino ok">pronto</span></td><td class="num">14</td></tr>
+        <tr><td>View Database · grade de tabelas e ficha de edição · 33 das 36 ops na tela</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
+        <tr><td>Gestão de tabelas · onze operações sobre a tabela escolhida</td><td><span class="pino ok">pronto</span></td><td class="num">14</td></tr>
         <tr><td>Partição por período · mensal, bimestral, semestral, anual</td><td><span class="pino ok">pronto</span></td><td class="num">6</td></tr>
         <tr><td>Metadados de campo · id estável, caption, descrição, máscara</td><td><span class="pino ok">pronto</span></td><td class="num">7</td></tr>
         <tr><td>Chave primária declarada · composta derivada dos índices</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
         <tr><td>SysTables e SysColumns · catálogo e dicionário de dados</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
         <tr><td>Copiar e colar tabela entre bancos e schemas</td><td><span class="pino ok">pronto</span></td><td class="num">3</td></tr>
-        <tr><td>Gerir banco · configurações, diretivas, conexões, backup</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
+        <tr><td>Gerir banco · quinze itens, onze vivos e quatro dizendo o que falta</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
+        <tr><td>Configurações do servidor, do banco e dos usuários · <em>leem, não gravam</em></td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
+        <tr><td>Diretivas de acesso ao banco · os seis portões na ordem em que fecham</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
+        <tr><td>Configurações e diretivas da tabela · geometria, chaves e volumes</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
         <tr><td>Editor de menu · troca o nome exibido de cada item</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
         <tr><td>Barra de ferramentas · 20 ferramentas, 16 vivas e 4 dizendo o que falta</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
         <tr><td>Barra de menu tradicional · nove menus · Alt, setas e Esc</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
@@ -2280,6 +2549,9 @@ footer p{max-width:var(--medida)}
         <tr><td>Triggers nas três operações · tela apagada diz o que falta</td><td><span class="pino nao">a fazer</span></td><td class="num">—</td></tr>
         <tr><td>Stored procedures</td><td><span class="pino nao">a fazer</span></td><td class="num">—</td></tr>
         <tr><td>Parar e subir a porta de dados pela interface</td><td><span class="pino nao">a fazer</span></td><td class="num">—</td></tr>
+        <tr><td>Modo exclusivo · reservar uma tabela por um período</td><td><span class="pino nao">a fazer</span></td><td class="num">—</td></tr>
+        <tr><td>Restaurar um backup por cima do que está lá</td><td><span class="pino nao">a fazer</span></td><td class="num">—</td></tr>
+        <tr><td>Editar <code>config.json</code> e usuários pela web</td><td><span class="pino nao">a fazer</span></td><td class="num">—</td></tr>
         <tr><td>Servidor MCP</td><td><span class="pino nao">a fazer</span></td><td class="num">—</td></tr>
         <tr><td>Camada SQL — tabela virtual via rusqlite</td><td><span class="pino nao">a fazer</span></td><td class="num">—</td></tr>
         <tr><td>Driver ODBC de saída · cliente ODBC e OLE DB</td><td><span class="pino nao">a fazer</span></td><td class="num">—</td></tr>
@@ -2288,139 +2560,6 @@ footer p{max-width:var(--medida)}
       </tbody>
     </table>
   </div>
-
-  <h3>O campo ganhou identidade</h3>
-
-  <p>Até a versão 3 do bloco de esquema, uma coluna era três coisas: nome, tipo
-  e se aceita nulo. Uma tela que quisesse mostrar <em>Emissão</em> em vez de
-  <code>emissao</code> guardava esse rótulo em outro lugar — e outro lugar é um
-  dicionário externo, que se perde, se desatualiza e obriga quem copia os cinco
-  arquivos a copiar um sexto.</p>
-
-  <p>Agora cada coluna carrega, dentro do próprio <code>.reg</code>:</p>
-
-  <div class="rolo">
-    <table>
-      <thead><tr><th>Campo</th><th>Para que serve</th></tr></thead>
-      <tbody>
-        <tr><td class="dado"><code>id</code></td><td>UUID v7 sorteado na criação e <strong>nunca reaproveitado</strong></td></tr>
-        <tr><td class="dado"><code>caption</code></td><td>o rótulo de tela; vazio significa «use o nome»</td></tr>
-        <tr><td class="dado"><code>descricao</code></td><td>para que a coluna serve</td></tr>
-        <tr><td class="dado"><code>mascara</code></td><td>o PICTURE do Clarion(R): <code>@N-11.2</code>, <code>@D6</code>, <code>@P###-####P</code></td></tr>
-      </tbody>
-    </table>
-  </div>
-
-  <p>O <code>id</code> é o que faz diferença. É por ele que uma tela, um
-  relatório ou um mapeamento apontam para a coluna, e por isso <strong>renomear
-  o campo não quebra nada</strong>: renomear troca o <code>nome</code>; o
-  <code>id</code> segue o mesmo. Sem ele, todo <em>rename</em> seria uma
-  caçada por referências em texto.</p>
-
-  <h3>Chave primária, e por que ela não mora no campo</h3>
-
-  <p>Até aqui só havia «índice único», e chave primária é mais do que isso: é a
-  identidade da linha, aquilo a que as chaves estrangeiras das outras tabelas
-  apontam. Um índice passa a poder ser marcado como primário — só um, sempre
-  único, e nenhuma coluna dele aceita nulo, porque uma identidade nula não
-  identifica. As três conferências acontecem na montagem do esquema.</p>
-
-  <p>O que <strong>não</strong> foi feito: gravar «é primária» na coluna. Ela
-  poderia estar ali, e a tela pediria isso — mas seria uma <em>segunda
-  verdade</em> ao lado do índice, e as duas divergiriam no primeiro
-  <code>ALTER</code>. As marcas que a tela mostra são derivadas:</p>
-
-  <div class="rolo">
-    <table>
-      <thead><tr><th>Marca</th><th>De onde sai</th></tr></thead>
-      <tbody>
-        <tr><td class="dado">primária</td><td>a coluna aparece no índice marcado como primário</td></tr>
-        <tr><td class="dado">estrangeira</td><td>a coluna aparece em alguma chave estrangeira</td></tr>
-        <tr><td class="dado">composta</td><td>a chave de que ela participa tem mais de uma coluna</td></tr>
-      </tbody>
-    </table>
-  </div>
-
-  <h3>O volume aprendeu a cortar pelo calendário</h3>
-
-  <p>A paginação por quantidade corta a cada <em>N</em> registros, e o endereço
-  sai de uma divisão. A partição por período — mensal, bimestral, semestral ou
-  anual — corta quando o período de uma coluna de data vira. Isso quebra a
-  divisão: dois meses rendem quantidades diferentes.</p>
-
-  <figure>
-    <div class="fig-caixa">
-      <svg viewBox="0 0 840 300" role="img" aria-label="Na partição por quantidade o volume sai de uma divisão do rowid; na partição por período cada volume grava no próprio cabeçalho o rowid em que começou, e o volume de um rowid sai de uma busca binária nessa tabela de fronteiras">
-        <g font-family="IBM Plex Mono, monospace" font-size="11.5" fill="currentColor">
-
-          <text x="16" y="18" font-size="10" opacity=".55" letter-spacing=".08em">POR QUANTIDADE — O VOLUME SAI DE UMA CONTA</text>
-
-          <rect x="16" y="30" width="180" height="42" rx="4" fill="none" stroke="currentColor" stroke-width="1.4"/>
-          <text x="106" y="47" text-anchor="middle" font-size="11">volume 1</text>
-          <text x="106" y="63" text-anchor="middle" font-size="10" opacity=".6">rowid 1 … 1000</text>
-
-          <rect x="204" y="30" width="180" height="42" rx="4" fill="none" stroke="currentColor" stroke-width="1.4"/>
-          <text x="294" y="47" text-anchor="middle" font-size="11">volume 2</text>
-          <text x="294" y="63" text-anchor="middle" font-size="10" opacity=".6">rowid 1001 … 2000</text>
-
-          <rect x="392" y="30" width="180" height="42" rx="4" fill="none" stroke="currentColor" stroke-width="1.4"/>
-          <text x="482" y="47" text-anchor="middle" font-size="11">volume 3</text>
-          <text x="482" y="63" text-anchor="middle" font-size="10" opacity=".6">rowid 2001 … 3000</text>
-
-          <text x="592" y="55" font-size="11" fill="var(--acento)">volume = (rowid−1) ÷ 1000 + 1</text>
-
-          <line x1="16" y1="100" x2="824" y2="100" stroke="currentColor" stroke-width=".8" opacity=".25"/>
-
-          <text x="16" y="126" font-size="10" opacity=".55" letter-spacing=".08em">POR PERÍODO — CADA VOLUME GRAVA ONDE COMEÇOU</text>
-
-          <rect x="16" y="138" width="150" height="56" rx="4" fill="none" stroke="var(--acento)" stroke-width="1.5"/>
-          <text x="91" y="156" text-anchor="middle" font-size="11">volume 1</text>
-          <text x="91" y="171" text-anchor="middle" font-size="10" opacity=".65">2026-01</text>
-          <text x="91" y="186" text-anchor="middle" font-size="10" fill="var(--acento)">começa em 1</text>
-
-          <rect x="174" y="138" width="150" height="56" rx="4" fill="none" stroke="var(--acento)" stroke-width="1.5"/>
-          <text x="249" y="156" text-anchor="middle" font-size="11">volume 2</text>
-          <text x="249" y="171" text-anchor="middle" font-size="10" opacity=".65">2026-02</text>
-          <text x="249" y="186" text-anchor="middle" font-size="10" fill="var(--acento)">começa em 3</text>
-
-          <rect x="332" y="138" width="150" height="56" rx="4" fill="none" stroke="var(--acento)" stroke-width="1.5"/>
-          <text x="407" y="156" text-anchor="middle" font-size="11">volume 3</text>
-          <text x="407" y="171" text-anchor="middle" font-size="10" opacity=".65">2026-03</text>
-          <text x="407" y="186" text-anchor="middle" font-size="10" fill="var(--acento)">começa em 4</text>
-
-          <rect x="490" y="138" width="150" height="56" rx="4" fill="none" stroke="var(--acento)" stroke-width="1.5"/>
-          <text x="565" y="156" text-anchor="middle" font-size="11">volume 4</text>
-          <text x="565" y="171" text-anchor="middle" font-size="10" opacity=".65">2026-04</text>
-          <text x="565" y="186" text-anchor="middle" font-size="10" fill="var(--acento)">começa em 7</text>
-
-          <text x="660" y="163" font-size="11" fill="var(--acento)">busca binária</text>
-          <text x="660" y="179" font-size="10" opacity=".6">nas fronteiras</text>
-
-          <text x="16" y="228" font-size="10.5" opacity=".75">Um lançamento de JANEIRO digitado agora entra no volume 4 — o corrente —, não volta para o 1.</text>
-          <text x="16" y="246" font-size="10.5" opacity=".75">A ordem de digitação é sagrada: voltar seria escrever no meio de um arquivo já fechado.</text>
-          <text x="16" y="272" font-size="10.5" opacity=".6">Por isso o período de um volume é «o período em que ele abriu», e um volume pode conter</text>
-          <text x="16" y="288" font-size="10.5" opacity=".6">linhas de períodos anteriores que chegaram depois.</text>
-        </g>
-      </svg>
-    </div>
-    <figcaption><b>Figura 17.</b> A tabela de fronteiras não é um índice: são dois
-    números por volume, gravados no cabeçalho que cada volume já tem, e lidos
-    uma vez na abertura. Volume é coisa que se conta em dezenas — cada um guarda
-    <code>registros_por_arquivo</code> linhas —, então a busca custa três ou
-    quatro comparações num vetor que já está na memória.</figcaption>
-  </figure>
-
-  <p>Três alternativas foram descartadas, e vale dizer por quê. Guardar a tabela
-  de fronteiras num <strong>sexto arquivo</strong> quebraria o modelo de cinco.
-  Guardá-la <strong>dentro do bloco de esquema</strong> não serve: o bloco é
-  seguido pelos dados, e crescer significaria empurrar a tabela inteira. E
-  <strong>mandar a linha para o volume do período dela</strong> — o que um
-  particionamento de banco relacional faria — exigiria escrever no meio de um
-  arquivo fechado, perdendo a ordem de digitação e o endereço contíguo de uma
-  vez só.</p>
-
-  <p>O cabeçalho de cada volume já existia e tinha 48 bytes sobrando. Dois
-  <code>u64</code> resolveram.</p>
 
   <h3>O que este motor ainda não faz</h3>
   <p>Registrado aqui para não haver surpresa mais tarde:</p>

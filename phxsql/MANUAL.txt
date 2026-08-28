@@ -459,19 +459,43 @@ BARRA DE MENU
     GESTAO DE TABELAS
 
     O botao Tabelas -- ou o menu Tabelas, ou Alt+5 -- lista as tabelas do banco
-    corrente. Um clique numa linha abre as oito operacoes sobre ela:
+    corrente. Um clique numa linha abre as operacoes sobre ela:
 
-        Estrutura           as colunas, os tipos, os indices e a paginacao
+        Estrutura           as colunas, os tipos, os indices e a particao
         Editar conteudo     a grade de dados, com ficha por linha
+        Config. e diretivas a geometria decidida na criacao, as chaves, os
+                            volumes no disco, e o que a tabela herda do servidor
         Particoes           em que volume cada faixa de rowid cai, e qual
-                            arquivo do disco guarda cada faixa. A conta e
-                            volume = (rowid-1) / por_arquivo + 1
-        Duplicar            copia os cinco arquivos byte a byte: a copia nasce
-                            com os MESMOS rowids e na MESMA ordem de digitacao
+                            arquivo do disco guarda cada faixa
+        Duplicar            copia os cinco arquivos byte a byte, no mesmo banco:
+                            a copia nasce com os MESMOS rowids e na MESMA ordem
+        Copiar              poe a tabela na area de transferencia
+        Colar aqui          traz para este banco o que esta na area
         Reparar tabela      confere cada slot no .reg contra o espelho .bkp
         Reparar indice      joga o .ndx fora e refaz lendo o .reg
-        Nova tabela         colunas, indices, schema e paginacao
+        Nova tabela         campos, indices, schema e particao
         Excluir             apaga os cinco arquivos e o espelho, de uma vez
+
+    GESTAO DO BANCO
+
+    O botao Gerir Banco -- ou o menu Banco, ou Alt+6 -- junta o que se faz sobre
+    o database inteiro, em quatro grupos:
+
+        Dados e catalogo    Tabelas, SysTables, SysColumns, Copiar tabela
+        Config. e acesso    Configuracoes do banco, Diretivas de acesso,
+                            Editor de menu
+        Operacao            Conexoes, Arquivos bloqueados, Transacoes,
+                            Backup e restauracao
+        Ainda nao existe    Triggers, Procedures, Jobs, Modo exclusivo
+
+    Os quatro ultimos ficam APAGADOS e, clicados, abrem uma tela que diz o que
+    falta e de que depende. Sumir com eles esconderia o roteiro.
+
+    AS TELAS DE CONFIGURACAO LEEM, NAO GRAVAM. Sao tres -- servidor, banco e
+    usuarios --, e cada campo aparece com o nome que tem no config.json, o valor
+    valendo agora, e para que serve. Gravar pela porta web daria a uma sessao
+    roubada o poder de abrir o firewall, esvaziar os comandos proibidos e criar
+    supervisor. Para mudar: edite o arquivo e suba o servico.
 
     ATENCAO NA EXCLUSAO. Nao ha desfazer e nao ha lixeira: a tela pede o nome
     da tabela DIGITADO, e o servidor exige o mesmo nome no campo "confirmar".
