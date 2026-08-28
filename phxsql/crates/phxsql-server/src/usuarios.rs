@@ -103,6 +103,9 @@ impl Atividade {
             // operacao confere de novo antes de abrir a segunda tabela.
             "juntar" | "join" | "unir" | "union" => Atividade::Ler,
             "sequencias" | "sequences" => Atividade::Ler,
+            // A soma de verificacao le a tabela inteira e devolve um numero:
+            // quem pode ler a tabela pode saber se ela mudou.
+            "checksum" | "soma_de_verificacao" => Atividade::Ler,
             // Mexer no contador pode fazer a proxima insercao repetir numero.
             "ajustar_sequencia" => Atividade::Administrar,
             // Consultar em memoria e ler: o dado e o mesmo, o caminho e outro.
@@ -136,6 +139,14 @@ impl Atividade {
             "reindexar" => Atividade::Reindexar,
             "diario" => Atividade::Diario,
             "verificar" => Atividade::Verificar,
+            // As estatisticas resumem o log de acessos, que ja exige
+            // administrar: quem ve quanto cada usuario pediu ve o movimento
+            // dos outros.
+            "estatisticas" | "estatisticas_uso" => Atividade::Administrar,
+            // Ver quem esta conectado e derrubar conexao sao poder de
+            // administrador: a lista mostra o login e o IP dos outros, e
+            // derrubar interrompe o trabalho alheio.
+            "sessoes" | "processlist" | "encerrar_sessao" | "kill" => Atividade::Administrar,
             "acessos" | "ips" | "config" | "usuarios" | "bloqueios" | "desbloquear" => {
                 Atividade::Administrar
             }

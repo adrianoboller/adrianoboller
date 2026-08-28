@@ -224,6 +224,9 @@ pub fn erro_json(fluxo: &mut TcpStream, codigo: u16, mensagem: &str) -> std::io:
 pub struct Sessao {
     pub login: String,
     pub expira_ms: i64,
+    /// Quando a sessao comecou. So o prazo de expiracao nao responde "ha
+    /// quanto tempo esta aberta", porque cada clique o renova.
+    pub desde_ms: i64,
     /// Desafio em aberto: (usuario, nonce do servidor, quando expira).
     pub desafio: Option<(String, String, i64)>,
 }
@@ -243,6 +246,7 @@ impl Sessoes {
             Sessao {
                 login: login.to_string(),
                 expira_ms: agora_ms + duracao_ms,
+                desde_ms: agora_ms,
                 desafio: None,
             },
         );
@@ -294,6 +298,38 @@ impl Sessoes {
 
     pub fn quantas(&self) -> usize {
         self.dentro.len()
+    }
+
+    /// As sessoes vivas, como (id, login, quando comecou, quando expira).
+    ///
+    /// O id sai CORTADO de proposito: ele e a credencial da sessao, e quem
+    /// olha a lista de conexoes nao precisa de um cookie que da para colar
+    /// noutro navegador. Oito letras bastam para achar a linha.
+    pub fn listar(&self, agora_ms: i64) -> Vec<(String, String, i64, i64)> {
+        let mut v: Vec<(String, String, i64, i64)> = self
+            .dentro
+            .iter()
+            .filter(|(_, s)| s.expira_ms >= agora_ms)
+            .map(|(id, s)| {
+                (
+                    id.chars().take(8).collect::<String>(),
+                    s.login.clone(),
+                    s.desde_ms,
+                    s.expira_ms,
+                )
+            })
+            .collect();
+        v.sort_by_key(|x| x.2);
+        v
+    }
+
+    /// Encerra pelo comeco do id, que e o que a lista mostra.
+    pub fn encerrar_por_prefixo(&mut self, prefixo: &str) -> bool {
+        let Some(id) = self.dentro.keys().find(|k| k.starts_with(prefixo)).cloned() else {
+            return false;
+        };
+        self.dentro.remove(&id);
+        true
     }
 }
 

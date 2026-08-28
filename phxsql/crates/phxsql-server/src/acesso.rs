@@ -21,7 +21,7 @@ use phxsql_core::error::Result;
 use phxsql_core::json::Json;
 
 /// Um acesso a porta.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Acesso {
     /// Milissegundos desde a epoca Unix.
     pub quando_ms: i64,
@@ -36,6 +36,16 @@ pub struct Acesso {
     pub ok: bool,
     pub duracao_ms: u64,
     pub erro: Option<String>,
+    /// Sobre QUAL objeto a operacao foi, quando ela nomeia um.
+    ///
+    /// O log dizia so o que foi feito, e nao em que. "varrer levou 4 s" sem o
+    /// nome da tabela e quase inutil para quem opera: nao da para somar por
+    /// tabela, nem para achar a que custa caro. Vazio quando a operacao nao
+    /// fala de tabela nenhuma -- `ping`, `config`, `usuarios`.
+    pub database: String,
+    pub tabela: String,
+    /// Codigo do erro, para agrupar por causa em vez de por texto.
+    pub codigo: u16,
 }
 
 impl Acesso {
@@ -55,8 +65,17 @@ impl Acesso {
             ("ok", Json::Bool(self.ok)),
             ("ms", Json::de_u64(self.duracao_ms)),
         ];
+        // So entram quando existem: o log e uma linha por acesso, e campo
+        // vazio em toda linha e peso morto num arquivo que cresce sozinho.
+        if !self.database.is_empty() {
+            pares.push(("database", Json::texto_de(&self.database)));
+        }
+        if !self.tabela.is_empty() {
+            pares.push(("tabela", Json::texto_de(&self.tabela)));
+        }
         if let Some(e) = &self.erro {
             pares.push(("erro", Json::texto_de(e)));
+            pares.push(("codigo", Json::de_u64(self.codigo as u64)));
         }
         Json::objeto(pares)
     }
@@ -72,6 +91,11 @@ impl Acesso {
             ok: j.booleano_ou("ok", false),
             duracao_ms: j.inteiro_ou("ms", 0).max(0) as u64,
             erro: j.campo("erro").and_then(Json::texto).map(str::to_string),
+            // Linha antiga nao tem estes campos, e ler o log antigo tem de
+            // continuar funcionando: ausente vira vazio, nao erro.
+            database: j.texto_ou("database", "").to_string(),
+            tabela: j.texto_ou("tabela", "").to_string(),
+            codigo: j.inteiro_ou("codigo", 0).clamp(0, 65_535) as u16,
         })
     }
 }
@@ -198,6 +222,8 @@ mod tests {
             } else {
                 Some("token invalido".into())
             },
+            codigo: if ok { 0 } else { 4001 },
+            ..Acesso::default()
         }
     }
 

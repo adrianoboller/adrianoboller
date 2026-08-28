@@ -591,6 +591,12 @@ body,.cartao,.barra,.arvore,table,td,th{
 @media (max-width:960px){.maquina{grid-template-columns:1fr}
                          .medidores{justify-content:center}}
 
+.botao.mini{width:auto;padding:4px 10px;font-size:11px;font-weight:500;
+            background:transparent;border:1px solid var(--linha-forte);
+            color:var(--texto-3)}
+.botao.mini:hover{border-color:var(--log);color:var(--log)}
+td.num.mal{color:var(--log)}
+
 /* ----------------------------------------------------------------- juncoes */
 .vennes{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
         gap:10px;margin:18px 0}
@@ -3419,9 +3425,12 @@ function itensDoDatabase(db) {
       diz:"Trocar o nome exibido de qualquer item do menu e da barra.",
       faz:editorDeMenu },
 
-    { g:"operacao", ico:"⇋", rot:"Conexões",
-      diz:"Quem está falando com este servidor agora.",
-      faz:verConexoes },
+    { g:"operacao", ico:"⇋", rot:"Sessões e conexões",
+      diz:"Quem está falando agora, o que está executando, e como derrubar.",
+      faz:verSessoes },
+    { g:"operacao", ico:"◷", rot:"Estatísticas de uso",
+      diz:"A cauda da latência, o que custa caro e por qual tabela.",
+      faz:() => verEstatisticas() },
     { g:"operacao", ico:"⊘", rot:"Arquivos bloqueados",
       diz:"Os IPs barrados, o motivo e até quando.",
       faz:() => irPara("bloqueios") },
@@ -4254,6 +4263,195 @@ function verCreditos() {
 
 
 
+
+/* ============================================ Sessões e estatísticas de uso
+   Duas telas que o console não tinha e que todo motor maduro tem: quem está
+   falando agora (o SHOW PROCESSLIST) e o que o log já sabia e ninguém
+   perguntava (as estatísticas por tabela, por usuário e a cauda da latência).
+
+   A média some daqui de propósito. Mil respostas de 1 ms e uma de 30 s dão
+   média de 30 ms, e o número parece bom enquanto alguém espera meio minuto —
+   quem responde «está rápido?» é o p95, não a média. */
+
+async function verSessoes() {
+  folha("Sessões", "carregando…", `<div class="centro">carregando…</div>`);
+  let d;
+  try { d = await api("sessoes"); }
+  catch (e) { return folha("Sessões", "", `<div class="aviso mal">${esc(String(e))}</div>`); }
+
+  const dur = ms => ms == null ? "—"
+    : ms < 1000 ? `${fmt(ms)} ms`
+    : ms < 60000 ? `${(ms/1000).toFixed(1).replace(".", ",")} s`
+    : `${Math.floor(ms/60000)} min ${Math.round((ms%60000)/1000)} s`;
+
+  folha("Sessões", "quem está falando com o servidor agora · atualiza a cada 3 s",
+    `<div class="fichas">
+       ${ficha(d.quantas, "na porta de dados")}
+       ${ficha(d.sessoes_web ?? 0, "sessões web")}
+       ${ficha(d.executando, "executando")}
+       ${ficha(dur(d.mais_longa_ms), "a mais demorada", d.mais_longa_ms > 5000 ? "há mais de 5 s" : "")}
+     </div>` +
+    tabela([{t:"id",cls:"num"},{t:"origem"},{t:"usuário"},{t:"aberta há",cls:"num"},
+            {t:"estado"},{t:"operação"},{t:"objeto"},{t:"há",cls:"num"},
+            {t:"pedidos",cls:"num"},{t:""}],
+      d.sessoes, x => `<tr>
+        <td class="num dado">${x.id}</td>
+        <td class="dado">${esc(x.ip)}:${x.porta}</td>
+        <td class="dado">${esc(x.usuario || "—")}</td>
+        <td class="num">${dur(x.aberta_s * 1000)}</td>
+        <td>${x.encerrando ? `<span class="pino mal">encerrando</span>`
+             : x.estado === "executando" ? `<span class="pino ndx">executando</span>`
+             : `<span class="pino nao">esperando</span>`}</td>
+        <td class="dado">${esc(x.op || "—")}</td>
+        <td class="dado">${esc(x.objeto || "—")}</td>
+        <td class="num${x.ha_ms > 5000 ? " mal" : ""}">${dur(x.ha_ms)}</td>
+        <td class="num">${fmt(x.pedidos)}</td>
+        <td><button class="botao secundario mini" data-kill="${x.id}">Encerrar</button></td>
+      </tr>`) +
+    ((d.web || []).length
+      ? `<h3>Sessões do navegador</h3>` + tabela(
+          [{t:"id"},{t:"usuário"},{t:"aberta há",cls:"num"},{t:"expira em",cls:"num"},{t:""}],
+          d.web, x => `<tr>
+            <td class="dado">${esc(x.id)}…</td>
+            <td class="dado">${esc(x.usuario || "—")}</td>
+            <td class="num">${dur(x.aberta_s * 1000)}</td>
+            <td class="num">${dur(x.expira_em_s * 1000)}</td>
+            <td><button class="botao secundario mini" data-killweb="${esc(x.id)}">Encerrar</button></td>
+          </tr>`)
+      : "") +
+    `<div class="aviso"><b>Encerrar fecha o soquete.</b> É imediato para a conexão
+      que está esperando pedido — o caso comum da conexão esquecida aberta. Uma
+      operação que <em>já entrou</em> na trava de dados termina assim mesmo: não há
+      como abandonar uma varredura no meio sem arriscar deixar a tabela aberta pela
+      metade. O que muda é que o resultado não vai para lugar nenhum.</div>
+     <div class="acoes">
+       <button class="botao secundario" id="btEstat">Estatísticas de uso…</button>
+     </div>`);
+
+  $("#btEstat").onclick = () => verEstatisticas();
+  $$("#painel [data-killweb]").forEach(b => b.onclick = async () => {
+    const id = b.dataset.killweb;
+    if (!confirm(`Encerrar a sessão web ${id}…?\n\nO próximo clique de quem estava usando cai no login.`)) return;
+    try {
+      const r = await api("encerrar_sessao", { id });
+      avisar(`sessão ${r.encerrada} encerrada — ${r.aviso}`);
+      verSessoes();
+    } catch (e) { avisar(String(e), true); }
+  });
+  $$("#painel [data-kill]").forEach(b => b.onclick = async () => {
+    const id = b.dataset.kill;
+    if (!confirm(`Encerrar a conexão ${id}?\n\nO cliente do outro lado perde a conexão.`)) return;
+    try {
+      const r = await api("encerrar_sessao", { id: Number(id) });
+      avisar(`conexão ${r.encerrada} (${r.estava}) — ${r.aviso}`);
+      verSessoes();
+    } catch (e) { avisar(String(e), true); }
+  });
+
+  // O relógio das sessões usa o mesmo motor do monitor da máquina: uma tela
+  // que mostra «agora» e não se renova sozinha mente depois de meio minuto.
+  pararMonitor();
+  est.relogioMaquina = setInterval(() => {
+    if (!$("#painel [data-kill], #painel .fichas")) return pararMonitor();
+    if ($("#titulo").textContent === "Sessões") verSessoes(); else pararMonitor();
+  }, 3000);
+}
+
+/// Histograma de latência: faixas que dobram, desenhadas à mão.
+///
+/// As faixas dobram porque a diferença entre 1 ms e 2 ms importa tanto quanto
+/// entre 1 s e 2 s. Faixa de largura fixa esmagaria a metade rápida num balde só.
+function histograma(faixas) {
+  const vivas = faixas.filter(f => f.quantas > 0);
+  if (!vivas.length) return `<div class="vazioc">sem acessos no período</div>`;
+  const L = 700, alt = 22, teto = Math.max(...vivas.map(f => f.quantas));
+  const h = vivas.length * alt + 8;
+  return `<svg viewBox="0 0 ${L} ${h}" role="img" aria-label="Distribuição do tempo de resposta">` +
+    vivas.map((f, k) => {
+      const y = k * alt + 4;
+      const w = Math.max(2, (f.quantas / teto) * (L - 250));
+      const rot = f.ate_ms == null ? `${fmt(f.de_ms)} ms ou mais`
+        : `${fmt(f.de_ms)} – ${fmt(f.ate_ms)} ms`;
+      // Acima de um segundo o olho precisa de aviso; a cor é o aviso.
+      const cor = f.de_ms >= 1000 ? "var(--log)" : f.de_ms >= 100 ? "var(--ambar)" : "var(--laranja)";
+      return `<g>
+        <text x="140" y="${y + 15}" text-anchor="end" font-size="11"
+              font-family="IBM Plex Mono, monospace" fill="currentColor" opacity=".75">${rot}</text>
+        <rect x="150" y="${y + 4}" width="${w.toFixed(1)}" height="13" rx="3" fill="${cor}" opacity=".9"/>
+        <text x="${(158 + w).toFixed(1)}" y="${y + 15}" font-size="10.5"
+              font-family="IBM Plex Mono, monospace" fill="currentColor" opacity=".7">${fmt(f.quantas)}</text>
+      </g>`;
+    }).join("") + `</svg>`;
+}
+
+async function verEstatisticas(horas) {
+  folha("Estatísticas de uso", "carregando…", `<div class="centro">carregando…</div>`);
+  let d;
+  try { d = await api("estatisticas", horas ? { horas } : {}); }
+  catch (e) { return folha("Estatísticas de uso", "", `<div class="aviso mal">${esc(String(e))}</div>`); }
+
+  const lat = d.latencia || {};
+  const carta = (titulo, legenda, corpo, larga) =>
+    `<div class="carta ${larga ? "larga" : ""}"><h4>${titulo}</h4>
+       <p class="leg">${legenda}</p>${corpo}</div>`;
+  const listaDe = (linhas, rotulo) => tabela(
+    [{t:rotulo},{t:"vezes",cls:"num"},{t:"recusadas",cls:"num"},
+     {t:"ms médio",cls:"num"},{t:"pior",cls:"num"},{t:"tempo total",cls:"num"}],
+    linhas, x => `<tr>
+      <td class="dado">${esc(x.nome)}</td>
+      <td class="num">${fmt(x.quantas)}</td>
+      <td class="num${x.recusadas ? " mal" : ""}">${x.recusadas ? fmt(x.recusadas) : "—"}</td>
+      <td class="num">${fmt(x.ms_medio)}</td>
+      <td class="num">${fmt(x.ms_pior)}</td>
+      <td class="num">${fmt(x.ms_total)} ms</td></tr>`);
+
+  folha("Estatísticas de uso",
+    `desde ${esc(d.desde)} · ${fmt(d.acessos)} acessos`,
+    `<div class="fichas">
+       ${ficha(fmt(lat.p50), "mediana", "ms · metade responde abaixo disso")}
+       ${ficha(fmt(lat.p90), "p90", "ms")}
+       ${ficha(fmt(lat.p95), "p95", "ms · é este que responde «está rápido?»")}
+       ${ficha(fmt(lat.p99), "p99", "ms")}
+       ${ficha(fmt(lat.pior), "pior", "ms")}
+     </div>
+     <div class="barra-dbl">
+       <label>Período <select id="stHoras">
+         <option value="0">tudo o que há no log</option>
+         <option value="1">última hora</option>
+         <option value="24">últimas 24 horas</option>
+         <option value="168">últimos 7 dias</option>
+       </select></label>
+       <button class="botao secundario" id="btSessoes">← Sessões</button>
+     </div>
+     <div class="cartas">
+       ${carta("Tempo de resposta", "cada faixa dobra a anterior · vermelho é acima de um segundo",
+          histograma(d.histograma || []), true)}
+       ${carta("As mais demoradas", "o registro de consulta lenta, sem precisar ligar nada",
+          tabela([{t:"quando"},{t:"operação"},{t:"objeto"},{t:"usuário"},{t:"ms",cls:"num"}],
+            d.mais_lentas || [], x => `<tr>
+              <td class="dado">${esc(x.quando)}</td>
+              <td class="dado">${esc(x.op)}${x.ok ? "" : ` <span class="pino mal">falhou</span>`}</td>
+              <td class="dado">${esc(x.objeto || "—")}</td>
+              <td class="dado">${esc(x.usuario || "—")}</td>
+              <td class="num">${fmt(x.ms)}</td></tr>`), true)}
+       ${carta("Por tabela", "qual tabela custa caro — o log não sabia dizer isso antes",
+          listaDe(d.por_tabela || [], "tabela"), true)}
+       ${carta("Por operação", "o que mais se pede", listaDe(d.por_operacao || [], "operação"), true)}
+       ${carta("Por usuário", "quem mais usa", listaDe(d.por_usuario || [], "usuário"), true)}
+       ${carta("Por erro", "agrupado pelo código, e não pelo texto da mensagem",
+          tabela([{t:"código",cls:"num"},{t:"nome"},{t:"vezes",cls:"num"},{t:"exemplo"}],
+            d.por_erro || [], x => `<tr>
+              <td class="num dado">${x.codigo || "—"}</td>
+              <td class="dado"><span class="pino ${x.codigo ? "mal" : "nao"}">${esc(x.nome)}</span></td>
+              <td class="num">${fmt(x.quantas)}</td>
+              <td class="dado">${esc(String(x.exemplo).slice(0, 90))}</td></tr>`), true)}
+     </div>`);
+
+  $("#stHoras").value = String(horas || 0);
+  $("#stHoras").onchange = e => verEstatisticas(Number(e.target.value));
+  $("#btSessoes").onclick = () => verSessoes();
+}
+
 /* ================================================= Junções e união
    As sete figuras do diagrama clássico, escolhidas clicando no desenho em vez
    de num menu de texto: quem sabe que quer «tudo de A e o que casar de B» nem
@@ -5017,7 +5215,7 @@ const FERRAMENTAS = [
     falta:"Copiar um database inteiro para outro nome. O backup já sabe copiar "
         + "árvore e conferir SHA-256; falta a operação que grava com outro nome "
         + "e reescreve o catálogo." },
-  { ico:"tomada",   rot:"Conexões",   cor:"var(--memo)",   faz:verConexoes },
+  { ico:"tomada",   rot:"Conexões",   cor:"var(--memo)",   faz:verSessoes },
   { ico:"elo",      rot:"DbLink",     cor:"var(--memo)",   faz:() => telaDbLink() },
   "risco",
   { ico:"troca",    rot:"Transações", cor:"var(--log)",    faz:verTransacoes },
@@ -5130,29 +5328,6 @@ async function verBancos() {
       b => `<tr><td class="dado">${esc(b.nome || b)}</td>
         <td class="num">${esc(String(b.tabelas ?? "—"))}</td></tr>`)
     + `<p class="leg">Criar um novo: menu <b>Arquivo → Novo database</b>.</p>`);
-}
-
-async function verConexoes() {
-  const d = await api("painel");
-  const r = d.resumo || {};
-  folha("Conexões", "quem está falando com este servidor",
-    `<div class="fichas">
-       <div class="ficha viva"><div class="v">${esc(String(r.conexoes ?? 0))}</div>
-         <div class="r">conexões agora</div></div>
-       <div class="ficha"><div class="v">${esc(String(r.sessoes_web ?? 0))}</div>
-         <div class="r">sessões web</div></div>
-       <div class="ficha"><div class="v">${esc(String(r.acessos ?? 0))}</div>
-         <div class="r">acessos</div><div class="u">${esc(String(r.ms_medio ?? "—"))} ms em média</div></div>
-       <div class="ficha${r.acessos_recusados ? " mal" : ""}">
-         <div class="v">${esc(String(r.acessos_recusados ?? 0))}</div>
-         <div class="r">recusados</div></div>
-     </div>
-     <h3>De onde vêm</h3>` +
-     tabela([{t:"IP"},{t:"acessos",cls:"num"},{t:"recusados",cls:"num"}],
-       d.top_ips || [],
-       i => `<tr><td class="dado">${esc(i.ip)}</td>
-         <td class="num">${esc(String(i.acessos ?? 0))}</td>
-         <td class="num">${esc(String(i.recusados ?? 0))}</td></tr>`));
 }
 
 async function verReplicacao() {
@@ -5320,6 +5495,8 @@ const MENUS = [
     { rot:"Acessos",       ico:"◷", faz:() => irPara("acessos") },
     { rot:"Bloqueios",     ico:"⊘", faz:() => irPara("bloqueios") },
     "sep",
+    { rot:"Sessões agora", ico:"⇋", faz:verSessoes },
+    { rot:"Estatísticas de uso", ico:"◷", faz:() => verEstatisticas() },
     { rot:"De onde vêm",   ico:"◎", faz:verIps },
     { rot:"Configuração",  ico:"⚙", faz:verConfig },
     { rot:"Quem sou eu",   ico:"☰", faz:verQuemSou },
@@ -5336,7 +5513,8 @@ const MENUS = [
     { rot:"União de tabelas…",    ico:"⊎", faz:() => telaUniao() },
     "sep",
     { rot:"Serviço",              ico:"⏻", faz:verServico },
-    { rot:"Conexões",             ico:"⇋", faz:verConexoes },
+    { rot:"Sessões e conexões",   ico:"⇋", faz:verSessoes },
+    { rot:"Estatísticas de uso…", ico:"◷", faz:() => verEstatisticas() },
     { rot:"Replicação",           ico:"⇉", faz:verReplicacao },
     { rot:"Reparar…",             ico:"⛨", faz:repararPeloMenu },
   ]],

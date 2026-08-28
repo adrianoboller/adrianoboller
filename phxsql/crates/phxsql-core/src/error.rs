@@ -37,6 +37,88 @@ pub enum PhxError {
     LimiteExcedido(String),
 }
 
+impl PhxError {
+    /// O codigo numerico do erro, estavel para sempre.
+    ///
+    /// # Por que numero, e nao so texto
+    ///
+    /// Sem codigo, quem integra com o PhxSql precisa comparar TEXTO para saber
+    /// o que aconteceu -- e a hora que alguem melhorar a redacao de uma
+    /// mensagem, o cliente quebra sem ninguem perceber. O MySQL(R) mantem mais
+    /// de cinco mil codigos justamente por isso: `1062` e chave duplicada
+    /// desde sempre, seja qual for a lingua ou a redacao da mensagem.
+    ///
+    /// A regra que faz o numero valer alguma coisa: **numero nunca muda e
+    /// numero aposentado nunca volta**. Trocar o significado de um codigo e
+    /// pior do que nao ter codigo, porque o cliente antigo continua tratando
+    /// pelo sentido velho.
+    ///
+    /// As faixas agrupam por familia, para quem quiser tratar em bloco:
+    ///
+    /// | faixa | familia   | o que e |
+    /// |-------|-----------|---------|
+    /// | 1000  | `formato` | o arquivo nao e o que dizia ser |
+    /// | 2000  | `esquema` | o pedido nao casa com a estrutura |
+    /// | 3000  | `dado`    | o dado em si recusa |
+    /// | 4000  | `acesso`  | quem pediu nao podia |
+    /// | 5000  | `sistema` | o sistema de arquivos falhou |
+    pub fn codigo(&self) -> u16 {
+        match self {
+            PhxError::Corrompido(_) => 1001,
+            PhxError::BadMagic { .. } => 1002,
+            PhxError::VersaoNaoSuportada { .. } => 1003,
+            PhxError::Esquema(_) => 2001,
+            PhxError::Tipo(_) => 2002,
+            PhxError::NaoEncontrado(_) => 3001,
+            PhxError::Duplicado(_) => 3002,
+            PhxError::LimiteExcedido(_) => 3003,
+            PhxError::Autorizacao(_) => 4001,
+            PhxError::Io(_) => 5001,
+        }
+    }
+
+    /// O nome simbolico, para quem prefere ler a decorar numero.
+    ///
+    /// Anda junto com o codigo e obedece a mesma regra: nao muda.
+    pub fn nome(&self) -> &'static str {
+        match self {
+            PhxError::Corrompido(_) => "CORROMPIDO",
+            PhxError::BadMagic { .. } => "ASSINATURA_INVALIDA",
+            PhxError::VersaoNaoSuportada { .. } => "VERSAO_NAO_SUPORTADA",
+            PhxError::Esquema(_) => "ESQUEMA_INVALIDO",
+            PhxError::Tipo(_) => "TIPO_INVALIDO",
+            PhxError::NaoEncontrado(_) => "NAO_ENCONTRADO",
+            PhxError::Duplicado(_) => "DUPLICADO",
+            PhxError::LimiteExcedido(_) => "LIMITE_EXCEDIDO",
+            PhxError::Autorizacao(_) => "ACESSO_NEGADO",
+            PhxError::Io(_) => "ERRO_DE_ES",
+        }
+    }
+
+    /// A familia, derivada da faixa do codigo.
+    ///
+    /// Derivada e nao escrita a mao de proposito: um codigo novo cai na
+    /// familia certa sozinho, e as duas nao tem como divergir.
+    pub fn classe(&self) -> &'static str {
+        match self.codigo() / 1000 {
+            1 => "formato",
+            2 => "esquema",
+            3 => "dado",
+            4 => "acesso",
+            _ => "sistema",
+        }
+    }
+
+    /// Vale a pena tentar de novo?
+    ///
+    /// So o erro de E/S -- disco cheio que liberou, arquivo que estava
+    /// travado. Os outros vao dar o mesmo resultado quantas vezes forem
+    /// tentados, e repetir e so gastar o servidor.
+    pub fn adianta_repetir(&self) -> bool {
+        matches!(self, PhxError::Io(_))
+    }
+}
+
 impl fmt::Display for PhxError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -82,5 +164,78 @@ impl std::error::Error for PhxError {
 impl From<std::io::Error> for PhxError {
     fn from(e: std::io::Error) -> Self {
         PhxError::Io(e)
+    }
+}
+
+#[cfg(test)]
+mod testes_codigo {
+    use super::*;
+
+    /// Dois erros diferentes nao podem compartilhar codigo, senao o numero
+    /// nao serve para distinguir nada.
+    #[test]
+    fn cada_erro_tem_o_seu_codigo() {
+        let todos = [
+            PhxError::Corrompido(String::new()),
+            PhxError::BadMagic {
+                arquivo: String::new(),
+                esperado: b"XXXXXXXX",
+                encontrado: *b"YYYYYYYY",
+            },
+            PhxError::VersaoNaoSuportada {
+                arquivo: String::new(),
+                encontrada: 1,
+                suportada: 2,
+            },
+            PhxError::Esquema(String::new()),
+            PhxError::Tipo(String::new()),
+            PhxError::NaoEncontrado(String::new()),
+            PhxError::Duplicado(String::new()),
+            PhxError::LimiteExcedido(String::new()),
+            PhxError::Autorizacao(String::new()),
+            PhxError::Io(std::io::Error::other("x")),
+        ];
+        let mut codigos: Vec<u16> = todos.iter().map(PhxError::codigo).collect();
+        let quantos = codigos.len();
+        codigos.sort_unstable();
+        codigos.dedup();
+        assert_eq!(codigos.len(), quantos, "ha codigo repetido");
+
+        let mut nomes: Vec<&str> = todos.iter().map(PhxError::nome).collect();
+        nomes.sort_unstable();
+        nomes.dedup();
+        assert_eq!(nomes.len(), quantos, "ha nome repetido");
+    }
+
+    /// Os numeros que ja foram publicados. Mudar qualquer um deles quebra
+    /// todo cliente que trata o erro pelo codigo -- e quebra CALADO, porque o
+    /// cliente antigo continua achando que sabe o que 3002 quer dizer.
+    #[test]
+    fn os_codigos_publicados_nao_mudam() {
+        assert_eq!(PhxError::Corrompido(String::new()).codigo(), 1001);
+        assert_eq!(PhxError::Esquema(String::new()).codigo(), 2001);
+        assert_eq!(PhxError::Tipo(String::new()).codigo(), 2002);
+        assert_eq!(PhxError::NaoEncontrado(String::new()).codigo(), 3001);
+        assert_eq!(PhxError::Duplicado(String::new()).codigo(), 3002);
+        assert_eq!(PhxError::LimiteExcedido(String::new()).codigo(), 3003);
+        assert_eq!(PhxError::Autorizacao(String::new()).codigo(), 4001);
+        assert_eq!(PhxError::Io(std::io::Error::other("x")).codigo(), 5001);
+    }
+
+    #[test]
+    fn a_classe_sai_da_faixa_do_codigo() {
+        assert_eq!(PhxError::Corrompido(String::new()).classe(), "formato");
+        assert_eq!(PhxError::Esquema(String::new()).classe(), "esquema");
+        assert_eq!(PhxError::Duplicado(String::new()).classe(), "dado");
+        assert_eq!(PhxError::Autorizacao(String::new()).classe(), "acesso");
+        assert_eq!(PhxError::Io(std::io::Error::other("x")).classe(), "sistema");
+    }
+
+    /// Repetir so adianta no que pode ter mudado sozinho.
+    #[test]
+    fn so_o_erro_de_es_pede_nova_tentativa() {
+        assert!(PhxError::Io(std::io::Error::other("x")).adianta_repetir());
+        assert!(!PhxError::Duplicado(String::new()).adianta_repetir());
+        assert!(!PhxError::Autorizacao(String::new()).adianta_repetir());
     }
 }

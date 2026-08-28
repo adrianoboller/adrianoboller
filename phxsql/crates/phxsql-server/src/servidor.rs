@@ -62,6 +62,7 @@ const OPS_ESCRITA: &[&str] = &[
     // Gravam o cadastro de ligacoes, que e arquivo deste servidor.
     "dblink_salvar",
     "dblink_excluir",
+    "encerrar_sessao",
 ];
 
 /// Estado de uma conexao.
@@ -240,6 +241,14 @@ pub struct Servidor {
     /// por CONEXAO, entao manter o soquete e o que faz o PBKDF2 do servidor
     /// remoto rodar uma vez por login e nao a cada clique.
     remotos: Mutex<HashMap<String, Arc<Mutex<Remoto>>>>,
+    /// As conexoes vivas, para o operador ver quem esta falando e poder
+    /// derrubar quem travou.
+    ligacoes: Mutex<crate::ligacoes::Ligacoes>,
+    /// Quando o servidor subiu, para o `ping` poder dizer ha quanto tempo.
+    ///
+    /// Um servidor que reiniciou sozinho de madrugada parece igual a um que
+    /// nunca caiu -- ate alguem olhar o tempo no ar e ver duas horas.
+    desde_ms: i64,
     /// Amostra anterior da maquina, para as taxas do painel.
     ///
     /// Guardar aqui, e nao na tela, e o que permite dizer "CPU em 40%": o
@@ -271,6 +280,8 @@ impl Servidor {
             sessoes: Mutex::new(http::Sessoes::default()),
             residentes: Mutex::new(HashMap::new()),
             remotos: Mutex::new(HashMap::new()),
+            ligacoes: Mutex::new(crate::ligacoes::Ligacoes::default()),
+            desde_ms: crate::agora_ms(),
             monitor: Mutex::new(crate::sistema::Monitor::novo()),
             dblink: Mutex::new(dblink),
             avisados: Mutex::new(HashMap::new()),
@@ -336,6 +347,9 @@ impl Servidor {
                                 ok: false,
                                 duracao_ms: 0,
                                 erro: Some("limite de conexoes atingido".into()),
+                                database: String::new(),
+                                tabela: String::new(),
+                                codigo: 0,
                             });
                         }
                         continue;
@@ -535,6 +549,9 @@ impl Servidor {
             ok: true,
             duracao_ms: 0,
             erro: None,
+            database: String::new(),
+            tabela: String::new(),
+            codigo: 0,
         });
 
         let apagados = self.limpar_backups_velhos();
@@ -644,6 +661,9 @@ impl Servidor {
                 ok: false,
                 duracao_ms: 0,
                 erro: Some(motivo.clone()),
+                database: String::new(),
+                tabela: String::new(),
+                codigo: 0,
             });
             let _ = http::erro_json(&mut fluxo, 403, &motivo);
             return;
@@ -660,6 +680,9 @@ impl Servidor {
                 ok: false,
                 duracao_ms: 0,
                 erro: Some("ip fora da lista de permitidos".into()),
+                database: String::new(),
+                tabela: String::new(),
+                codigo: 0,
             });
             let _ = http::erro_json(&mut fluxo, 403, "ip nao autorizado");
             return;
@@ -976,10 +999,17 @@ impl Servidor {
                 ("resultado", valor.clone()),
                 ("ms", Json::de_u64(ms)),
             ],
+            // O codigo vem JUNTO com o texto, e nao no lugar dele: o texto e
+            // para quem le, o codigo e para quem programa. Trocar um pelo
+            // outro obrigaria alguem a perder.
             Err(e) => vec![
                 ("ok", Json::Bool(false)),
                 ("op", Json::texto_de(&op)),
                 ("erro", Json::texto_de(e.to_string())),
+                ("codigo", Json::de_u64(e.codigo() as u64)),
+                ("nome", Json::texto_de(e.nome())),
+                ("classe", Json::texto_de(e.classe())),
+                ("repetir", Json::Bool(e.adianta_repetir())),
                 ("ms", Json::de_u64(ms)),
             ],
         };
@@ -997,6 +1027,9 @@ impl Servidor {
             ok: resultado.is_ok(),
             duracao_ms: ms,
             erro: resultado.as_ref().err().map(|e| e.to_string()),
+            // O objeto sai do proprio pedido: e o unico ponto que ve os dois
+            // -- a operacao e sobre o que ela foi.
+            ..objeto_do_pedido(&pedido.corpo, &resultado)
         });
 
         if remota && op == "sair" {
@@ -1036,16 +1069,27 @@ impl Servidor {
                 ok: false,
                 duracao_ms: 0,
                 erro: Some(motivo.clone()),
+                database: String::new(),
+                tabela: String::new(),
+                codigo: 0,
             });
             let escrita = fluxo.try_clone();
             if let Ok(mut saida) = escrita {
-                let _ = writeln!(saida, "{}", resposta_erro("conexao", &motivo, 0).escrever());
+                let _ = writeln!(
+                    saida,
+                    "{}",
+                    resposta_erro("conexao", &PhxError::Autorizacao(motivo.clone()), 0).escrever()
+                );
             }
             return;
         }
 
         let permitido = self.config.ip_permitido(&ip);
         let escrita = fluxo.try_clone();
+        // O soquete vai para o registro para que `encerrar_sessao` consiga
+        // fecha-lo de fora: a thread desta conexao passa a vida parada dentro
+        // de um `read_line`, e so um `shutdown` a acorda.
+        let para_fechar = fluxo.try_clone().ok().map(Arc::new);
         let mut leitor = BufReader::new(fluxo);
         let mut saida = match escrita {
             Ok(f) => f,
@@ -1064,16 +1108,37 @@ impl Servidor {
                 ok: false,
                 duracao_ms: 0,
                 erro: Some("ip fora da lista de permitidos".into()),
+                database: String::new(),
+                tabela: String::new(),
+                codigo: 0,
             });
             let _ = writeln!(
                 saida,
                 "{}",
-                resposta_erro("conexao", "ip nao autorizado", 0).escrever()
+                resposta_erro(
+                    "conexao",
+                    &PhxError::Autorizacao("ip nao autorizado".into()),
+                    0
+                )
+                .escrever()
             );
             return;
         }
 
         let mut sessao = Sessao::default();
+        let (id_ligacao, morrer) = match self.ligacoes.lock() {
+            Ok(mut l) => l.entrar(&ip, porta, crate::agora_ms(), para_fechar),
+            Err(_) => (0, Arc::new(std::sync::atomic::AtomicBool::new(false))),
+        };
+        // Sai do registro por qualquer caminho -- inclusive os `return` do
+        // meio do laco. Sem isto, uma conexao caida ficaria na lista para
+        // sempre, e a lista que existe para dizer a verdade passaria a mentir.
+        let _saida_do_registro = AoSair(|| {
+            if let Ok(mut l) = self.ligacoes.lock() {
+                l.sair(id_ligacao);
+            }
+        });
+
         let mut linha = String::new();
         loop {
             linha.clear();
@@ -1082,14 +1147,41 @@ impl Servidor {
                 Ok(_) => {}
                 Err(_) => return,
             }
+            // Conferido AQUI, e nao so no `shutdown`: se o pedido chegou junto
+            // com o encerramento, quem mandou encerrar ganha.
+            if morrer.load(Ordering::SeqCst) {
+                return;
+            }
             if linha.trim().is_empty() {
                 continue;
             }
 
             let inicio = Instant::now();
             let quando_ms = crate::agora_ms();
+            {
+                let alvo = objeto_do_pedido(&linha, &Ok(Json::Nulo));
+                let nome_op = Json::analisar(&linha)
+                    .ok()
+                    .map(|j| j.texto_ou("op", "?").to_string())
+                    .unwrap_or_else(|| "?".into());
+                if let Ok(mut l) = self.ligacoes.lock() {
+                    l.comecou(
+                        id_ligacao,
+                        &nome_op,
+                        sessao.login(),
+                        &alvo.database,
+                        &alvo.tabela,
+                        quando_ms,
+                    );
+                }
+            }
             let (op, autenticado, resultado) = self.despachar(&linha, &mut sessao, &ip);
             let duracao = inicio.elapsed().as_millis() as u64;
+            // O login so se sabe DEPOIS: o pedido que autentica e o proprio
+            // `login`, e antes dele a sessao ainda esta anonima.
+            if let Ok(mut l) = self.ligacoes.lock() {
+                l.terminou(id_ligacao, sessao.login());
+            }
 
             let resposta = match &resultado {
                 Ok(valor) => Json::objeto(vec![
@@ -1098,7 +1190,7 @@ impl Servidor {
                     ("resultado", valor.clone()),
                     ("ms", Json::de_u64(duracao)),
                 ]),
-                Err(e) => resposta_erro(&op, &e.to_string(), duracao),
+                Err(e) => resposta_erro(&op, e, duracao),
             };
 
             self.anotar(&Acesso {
@@ -1111,6 +1203,8 @@ impl Servidor {
                 ok: resultado.is_ok(),
                 duracao_ms: duracao,
                 erro: resultado.as_ref().err().map(|e| e.to_string()),
+                // O objeto do pedido, para o log poder somar por tabela.
+                ..objeto_do_pedido(&linha, &resultado)
             });
 
             if writeln!(saida, "{}", resposta.escrever()).is_err() {
@@ -1411,6 +1505,14 @@ impl Servidor {
                     "conexoes",
                     Json::de_u64(self.conexoes.load(Ordering::SeqCst) as u64),
                 ),
+                (
+                    "no_ar_s",
+                    Json::de_u64(((crate::agora_ms() - self.desde_ms) / 1_000).max(0) as u64),
+                ),
+                (
+                    "desde",
+                    Json::texto_de(phxsql_core::datahora::instante_iso(self.desde_ms)),
+                ),
             ])),
             "config" => Ok(self.config.para_json()),
             "quem_sou" => Ok(match &sessao.usuario {
@@ -1452,6 +1554,10 @@ impl Servidor {
             "memoria_liberar" => self.op_memoria_liberar(p),
             "memoria" => self.op_memoria(),
             "painel" => self.op_painel(sessao),
+            "estatisticas" | "estatisticas_uso" => self.op_estatisticas(p),
+            "sessoes" | "processlist" => self.op_sessoes(),
+            "encerrar_sessao" | "kill" => self.op_encerrar_sessao(p),
+            "checksum" | "soma_de_verificacao" => self.op_checksum(p, sessao),
             "sistema" => Ok(self.op_sistema()),
             "dblink" => self.op_dblink(),
             "dblink_salvar" => self.op_dblink_salvar(p),
@@ -2716,6 +2822,445 @@ impl Servidor {
             (
                 "divergencias",
                 Json::Lista(r.divergencias.iter().map(Json::texto_de).collect()),
+            ),
+        ]))
+    }
+
+    /// A impressao digital de uma tabela, para comparar duas copias.
+    ///
+    /// # Para que serve
+    ///
+    /// Responder "estas duas tabelas sao a mesma?" sem transportar as duas.
+    /// E o que falta para conferir uma replica contra a origem, e para provar
+    /// que um backup restaurado ficou igual ao original -- hoje o
+    /// `conferir-backup` compara ARQUIVO, e arquivo igual e mais forte do que
+    /// preciso: dois `.reg` podem diferir no enchimento e ter o mesmo dado.
+    ///
+    /// # Como a conta e feita
+    ///
+    /// CRC-32 de cada linha viva, dobrado num acumulador que **depende da
+    /// ordem**. Depender da ordem e de proposito: no PhxSql a ordem de
+    /// digitacao E o dado, e duas tabelas com as mesmas linhas em ordem
+    /// diferente nao sao a mesma tabela.
+    ///
+    /// Slot excluido nao entra. Se entrasse, restaurar um backup daria outro
+    /// numero so porque os buracos caem em outro lugar.
+    fn op_checksum(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let comeco = Instant::now();
+        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let mut t = self.abrir_travada(&dados, p, sessao)?;
+        let esquema = t.esquema().clone();
+
+        let mut soma: u64 = 0xcbf2_9ce4_8422_2325; // semente do FNV-1a de 64
+        let mut linhas = 0u64;
+        for (rowid, _) in t.varrer()? {
+            let Some(linha) = t.ler(rowid)? else { continue };
+            // A linha volta a forma canonica antes de entrar na conta: somar o
+            // byte cru do slot faria o enchimento de um `Str` de largura fixa
+            // pesar, e duas tabelas iguais com larguras diferentes dariam
+            // numeros diferentes.
+            let mut texto = String::with_capacity(64);
+            for (v, c) in linha.iter().zip(esquema.colunas()) {
+                texto.push('\u{1}');
+                if v.e_null() {
+                    texto.push('\u{0}');
+                } else {
+                    texto.push_str(&crate::valores::valor_para_json(v, &c.ty).escrever());
+                }
+            }
+            let crc = phxsql_core::crc::crc32(texto.as_bytes()) as u64;
+            // Multiplicar antes de somar e o que faz a ordem contar: trocar
+            // duas linhas de lugar muda o resultado.
+            soma = (soma ^ crc).wrapping_mul(0x1000_0000_01b3);
+            linhas += 1;
+        }
+
+        Ok(Json::objeto(vec![
+            ("database", Json::texto_de(p.texto_ou("database", ""))),
+            ("tabela", Json::texto_de(p.texto_ou("tabela", ""))),
+            ("checksum", Json::texto_de(format!("{soma:016x}"))),
+            ("linhas", Json::de_u64(linhas)),
+            ("slots", Json::de_u64(t.registros())),
+            ("ms", Json::de_u64(comeco.elapsed().as_millis() as u64)),
+        ]))
+    }
+
+    /// Quem esta falando com o servidor agora.
+    ///
+    /// E o `SHOW PROCESSLIST`: sem ele, quando uma consulta prende a trava de
+    /// dados nao havia como saber QUEM esta segurando -- so que estava lento.
+    fn op_sessoes(&self) -> Result<Json> {
+        let agora = crate::agora_ms();
+        let l = self.ligacoes.lock().map_err(|_| trava_envenenada())?;
+        let todas = l.todas();
+        // A mais demorada primeiro: quando algo trava, e ela que interessa.
+        let mais_longa = todas
+            .iter()
+            .filter(|x| x.op_desde_ms > 0)
+            .map(|x| agora - x.op_desde_ms)
+            .max()
+            .unwrap_or(0);
+        // As sessoes do navegador entram na MESMA lista. Quem pergunta "quem
+        // esta conectado?" quer os dois -- e uma lista que so mostra a porta de
+        // dados nao mostra quem esta olhando a propria tela.
+        let web: Vec<Json> = self
+            .sessoes
+            .lock()
+            .map(|s| {
+                s.listar(agora)
+                    .into_iter()
+                    .map(|(id, login, desde, expira)| {
+                        Json::objeto(vec![
+                            ("id", Json::texto_de(&id)),
+                            ("origem", Json::texto_de("web")),
+                            (
+                                "usuario",
+                                match login.is_empty() {
+                                    true => Json::Nulo,
+                                    false => Json::texto_de(login),
+                                },
+                            ),
+                            (
+                                "desde",
+                                Json::texto_de(phxsql_core::datahora::instante_iso(desde)),
+                            ),
+                            (
+                                "aberta_s",
+                                Json::de_u64(((agora - desde) / 1_000).max(0) as u64),
+                            ),
+                            (
+                                "expira_em_s",
+                                Json::de_u64(((expira - agora) / 1_000).max(0) as u64),
+                            ),
+                        ])
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        Ok(Json::objeto(vec![
+            ("quantas", Json::de_u64(todas.len() as u64)),
+            (
+                "executando",
+                Json::de_u64(todas.iter().filter(|x| !x.op.is_empty()).count() as u64),
+            ),
+            ("mais_longa_ms", Json::de_u64(mais_longa.max(0) as u64)),
+            (
+                "sessoes",
+                Json::Lista(
+                    todas
+                        .iter()
+                        .map(|x| {
+                            let mut j = x.para_json(agora);
+                            if let Json::Objeto(campos) = &mut j {
+                                campos.push(("origem".into(), Json::texto_de("dados")));
+                            }
+                            j
+                        })
+                        .collect(),
+                ),
+            ),
+            ("web", Json::Lista(web.clone())),
+            ("sessoes_web", Json::de_u64(web.len() as u64)),
+        ]))
+    }
+
+    /// Derruba uma conexao pelo numero.
+    ///
+    /// E o `KILL` -- e o que ele alcanca esta dito na resposta, em vez de
+    /// prometer mais do que faz: fecha o soquete, o que e imediato para a
+    /// conexao parada esperando pedido. Uma operacao que ja entrou na trava de
+    /// dados termina assim mesmo; o que muda e que o resultado nao vai para
+    /// lugar nenhum e a conexao nao volta.
+    fn op_encerrar_sessao(&self, p: &Json) -> Result<Json> {
+        // Sessao do navegador vem por texto ("a1b2c3d4"); conexao da porta de
+        // dados, por numero. Aceitar os dois no mesmo campo evita duas
+        // operacoes para a mesma pergunta.
+        if let Some(texto) = p.campo("id").and_then(Json::texto) {
+            if texto.chars().any(|c| !c.is_ascii_digit()) {
+                let mut s = self.sessoes.lock().map_err(|_| trava_envenenada())?;
+                if !s.encerrar_por_prefixo(texto) {
+                    return Err(PhxError::NaoEncontrado(format!(
+                        "nao ha sessao web {texto:?}; a lista esta em `sessoes`"
+                    )));
+                }
+                return Ok(Json::objeto(vec![
+                    ("encerrada", Json::texto_de(texto)),
+                    ("origem", Json::texto_de("web")),
+                    ("estava", Json::texto_de("aberta")),
+                    (
+                        "aviso",
+                        Json::texto_de(
+                            "a sessao do navegador foi invalidada: o proximo clique cai no login",
+                        ),
+                    ),
+                ]));
+            }
+        }
+        let id = p.inteiro_ou("id", 0);
+        if id <= 0 {
+            return Err(PhxError::Esquema(
+                "encerrar_sessao sem \"id\": o numero vem da operacao `sessoes`".into(),
+            ));
+        }
+        let id = id as u64;
+        let agora = crate::agora_ms();
+        let mut l = self.ligacoes.lock().map_err(|_| trava_envenenada())?;
+        let antes = l.todas().into_iter().find(|x| x.id == id);
+        if !l.encerrar(id) {
+            return Err(PhxError::NaoEncontrado(format!(
+                "nao ha conexao {id}; a lista esta em `sessoes`"
+            )));
+        }
+        let executando = antes.as_ref().map(|x| !x.op.is_empty()).unwrap_or(false);
+        Ok(Json::objeto(vec![
+            ("encerrada", Json::de_u64(id)),
+            (
+                "estava",
+                Json::texto_de(if executando {
+                    "executando"
+                } else {
+                    "esperando"
+                }),
+            ),
+            (
+                "op",
+                match antes.as_ref().map(|x| x.op.clone()).unwrap_or_default() {
+                    o if o.is_empty() => Json::Nulo,
+                    o => Json::texto_de(o),
+                },
+            ),
+            // Dito na resposta, e nao so na documentacao: quem manda encerrar
+            // precisa saber se ja acabou ou se ainda vai acabar.
+            (
+                "aviso",
+                Json::texto_de(if executando {
+                    "a operacao em curso termina antes de a conexao fechar: nao ha como \
+                     abandonar uma varredura no meio sem arriscar deixar a tabela aberta \
+                     pela metade. O resultado nao vai para lugar nenhum"
+                } else {
+                    "a conexao estava esperando pedido e foi fechada na hora"
+                }),
+            ),
+            (
+                "quando",
+                Json::texto_de(phxsql_core::datahora::instante_iso(agora)),
+            ),
+        ]))
+    }
+
+    // ------------------------------------------------------- estatisticas
+
+    /// O que o log ja sabia e ninguem perguntava.
+    ///
+    /// # Por que histograma, e nao media
+    ///
+    /// O painel mostrava "ms medio". Media esconde exatamente o que interessa:
+    /// mil respostas de 1 ms e uma de 30 s dao media de 30 ms, e o numero
+    /// parece bom enquanto alguem espera meio minuto. O que responde "esta
+    /// rapido?" e a cauda -- a mediana, o percentil 95 e o pior caso.
+    ///
+    /// As faixas dobram (1, 2, 4, 8, 16... ms) porque a diferenca entre 1 ms e
+    /// 2 ms importa tanto quanto entre 1 s e 2 s, e faixa de largura fixa
+    /// esmagaria a metade rapida num balde so.
+    fn op_estatisticas(&self, p: &Json) -> Result<Json> {
+        let acessos = LogAcessos::ler(&self.config.log_acessos).unwrap_or_default();
+        let desde = match p.inteiro_ou("horas", 0) {
+            0 => 0,
+            h => crate::agora_ms() - h.max(1) * 3_600_000,
+        };
+        let considerar: Vec<&Acesso> = acessos.iter().filter(|a| a.quando_ms >= desde).collect();
+
+        // ------------------------------------------------ por operacao
+        let mut por_op: HashMap<&str, Contagem> = HashMap::new();
+        let mut por_tabela: HashMap<String, Contagem> = HashMap::new();
+        let mut por_usuario: HashMap<&str, Contagem> = HashMap::new();
+        let mut por_codigo: HashMap<u16, (u64, String)> = HashMap::new();
+        let mut geral = Contagem::default();
+        let mut duracoes: Vec<u64> = Vec::with_capacity(considerar.len());
+
+        for a in &considerar {
+            geral.somar(a);
+            por_op.entry(a.op.as_str()).or_default().somar(a);
+            if !a.usuario.is_empty() {
+                por_usuario.entry(a.usuario.as_str()).or_default().somar(a);
+            }
+            // A tabela so entra quando o pedido nomeou uma. Contar "sem tabela"
+            // como se fosse uma tabela poluiria a lista com o `ping`.
+            if !a.tabela.is_empty() {
+                let chave = if a.database.is_empty() {
+                    a.tabela.clone()
+                } else {
+                    format!("{}.{}", a.database, a.tabela)
+                };
+                por_tabela.entry(chave).or_default().somar(a);
+            }
+            if let (false, Some(e)) = (a.ok, a.erro.as_ref()) {
+                let entrada = por_codigo.entry(a.codigo).or_insert((0, e.clone()));
+                entrada.0 += 1;
+            }
+            duracoes.push(a.duracao_ms);
+        }
+        duracoes.sort_unstable();
+
+        // As mais demoradas, com nome e objeto. E o registro de consulta lenta
+        // do MySQL(R), so que sem precisar ligar nada: o log ja tinha o dado, e
+        // faltava a pergunta.
+        let mut mais_lentas: Vec<&Acesso> = considerar.clone();
+        mais_lentas.sort_by(|a, b| b.duracao_ms.cmp(&a.duracao_ms));
+        mais_lentas.truncate(15);
+
+        let percentil = |q: f64| -> u64 {
+            if duracoes.is_empty() {
+                return 0;
+            }
+            // Percentil pelo metodo do vizinho mais proximo: com poucas
+            // amostras, interpolar inventa um valor que ninguem mediu.
+            let i = ((duracoes.len() as f64 - 1.0) * q).round() as usize;
+            duracoes[i.min(duracoes.len() - 1)]
+        };
+
+        // -------------------------------------------------- histograma
+        let mut faixas: Vec<(u64, u64, u64)> = Vec::new();
+        let mut teto = 1u64;
+        while teto <= 65_536 {
+            let piso = if teto == 1 { 0 } else { teto / 2 };
+            let quantas = duracoes
+                .iter()
+                .filter(|d| **d >= piso && **d < teto)
+                .count() as u64;
+            faixas.push((piso, teto, quantas));
+            teto *= 2;
+        }
+        let acima = duracoes.iter().filter(|d| **d >= 65_536).count() as u64;
+
+        let lista = |mut v: Vec<(String, Contagem)>| -> Json {
+            v.sort_by(|a, b| b.1.quantas.cmp(&a.1.quantas));
+            v.truncate(30);
+            Json::Lista(v.iter().map(|(n, c)| c.para_json(n)).collect())
+        };
+
+        Ok(Json::objeto(vec![
+            (
+                "desde",
+                match desde {
+                    0 => Json::texto_de("sempre"),
+                    d => Json::texto_de(phxsql_core::datahora::instante_iso(d)),
+                },
+            ),
+            ("acessos", Json::de_u64(geral.quantas)),
+            ("resumo", geral.para_json("tudo")),
+            (
+                "latencia",
+                Json::objeto(vec![
+                    ("p50", Json::de_u64(percentil(0.50))),
+                    ("p90", Json::de_u64(percentil(0.90))),
+                    ("p95", Json::de_u64(percentil(0.95))),
+                    ("p99", Json::de_u64(percentil(0.99))),
+                    ("pior", Json::de_u64(duracoes.last().copied().unwrap_or(0))),
+                ]),
+            ),
+            (
+                "histograma",
+                Json::Lista(
+                    faixas
+                        .iter()
+                        .map(|(piso, teto, n)| {
+                            Json::objeto(vec![
+                                ("de_ms", Json::de_u64(*piso)),
+                                ("ate_ms", Json::de_u64(*teto)),
+                                ("quantas", Json::de_u64(*n)),
+                            ])
+                        })
+                        .chain(std::iter::once(Json::objeto(vec![
+                            ("de_ms", Json::de_u64(65_536)),
+                            ("ate_ms", Json::Nulo),
+                            ("quantas", Json::de_u64(acima)),
+                        ])))
+                        .collect(),
+                ),
+            ),
+            (
+                "por_operacao",
+                lista(
+                    por_op
+                        .into_iter()
+                        .map(|(k, v)| (k.to_string(), v))
+                        .collect(),
+                ),
+            ),
+            ("por_tabela", lista(por_tabela.into_iter().collect())),
+            (
+                "por_usuario",
+                lista(
+                    por_usuario
+                        .into_iter()
+                        .map(|(k, v)| (k.to_string(), v))
+                        .collect(),
+                ),
+            ),
+            (
+                "mais_lentas",
+                Json::Lista(
+                    mais_lentas
+                        .iter()
+                        .map(|a| {
+                            Json::objeto(vec![
+                                ("quando", Json::texto_de(a.quando())),
+                                ("op", Json::texto_de(&a.op)),
+                                ("ms", Json::de_u64(a.duracao_ms)),
+                                ("usuario", Json::texto_de(&a.usuario)),
+                                (
+                                    "objeto",
+                                    match (a.database.is_empty(), a.tabela.is_empty()) {
+                                        (true, true) => Json::Nulo,
+                                        (false, true) => Json::texto_de(&a.database),
+                                        (true, false) => Json::texto_de(&a.tabela),
+                                        _ => Json::texto_de(format!("{}.{}", a.database, a.tabela)),
+                                    },
+                                ),
+                                ("ok", Json::Bool(a.ok)),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ),
+            (
+                "por_erro",
+                Json::Lista({
+                    let mut v: Vec<(u16, (u64, String))> = por_codigo.into_iter().collect();
+                    v.sort_by(|a, b| b.1 .0.cmp(&a.1 .0));
+                    v.truncate(15);
+                    v.iter()
+                        .map(|(codigo, (n, exemplo))| {
+                            Json::objeto(vec![
+                                ("codigo", Json::de_u64(*codigo as u64)),
+                                // Zero nao e um erro: e uma linha gravada
+                                // antes de o codigo existir. Chama-lo de
+                                // "codigo 0" faria parecer um erro novo.
+                                (
+                                    "nome",
+                                    Json::texto_de(match codigo {
+                                        0 => "(log anterior ao codigo)",
+                                        1001 => "CORROMPIDO",
+                                        1002 => "ASSINATURA_INVALIDA",
+                                        1003 => "VERSAO_NAO_SUPORTADA",
+                                        2001 => "ESQUEMA_INVALIDO",
+                                        2002 => "TIPO_INVALIDO",
+                                        3001 => "NAO_ENCONTRADO",
+                                        3002 => "DUPLICADO",
+                                        3003 => "LIMITE_EXCEDIDO",
+                                        4001 => "ACESSO_NEGADO",
+                                        5001 => "ERRO_DE_ES",
+                                        _ => "?",
+                                    }),
+                                ),
+                                ("quantas", Json::de_u64(*n)),
+                                ("exemplo", Json::texto_de(exemplo)),
+                            ])
+                        })
+                        .collect()
+                }),
             ),
         ]))
     }
@@ -4132,11 +4677,50 @@ fn trava_envenenada() -> PhxError {
     PhxError::Corrompido("uma operacao anterior entrou em panico e deixou a trava suja".into())
 }
 
-fn resposta_erro(op: &str, mensagem: &str, ms: u64) -> Json {
+/// A resposta de erro do protocolo, com codigo.
+///
+/// O codigo vem JUNTO com o texto, e nao no lugar dele: o texto e para quem
+/// le, o codigo e para quem programa. Sem ele, integrar com o PhxSql obriga a
+/// comparar TEXTO -- e melhorar a redacao de uma mensagem quebraria o cliente
+/// sem ninguem perceber.
+/// Roda a limpeza na saida do escopo, por qualquer caminho.
+///
+/// Existe por causa dos `return` no meio do laco da conexao: sem ele, cada um
+/// deles precisaria lembrar de tirar a conexao do registro, e o dia em que
+/// alguem acrescentasse um `return` novo a lista passaria a mostrar conexao
+/// que ja morreu -- uma lista que mente e pior do que nenhuma.
+struct AoSair<F: FnMut()>(F);
+
+impl<F: FnMut()> Drop for AoSair<F> {
+    fn drop(&mut self) {
+        (self.0)();
+    }
+}
+
+/// Os campos do log que saem do PEDIDO, e nao do resultado.
+///
+/// Devolve um `Acesso` so para preencher com `..`: os outros campos do
+/// registro vem de quem chama, e repetir a leitura do corpo em dois lugares e
+/// como os dois caminhos (porta de dados e web) divergiriam com o tempo.
+fn objeto_do_pedido(corpo: &str, resultado: &Result<Json>) -> Acesso {
+    let j = Json::analisar(corpo).unwrap_or(Json::Nulo);
+    Acesso {
+        database: j.texto_ou("database", "").to_string(),
+        tabela: j.texto_ou("tabela", "").to_string(),
+        codigo: resultado.as_ref().err().map(|e| e.codigo()).unwrap_or(0),
+        ..Acesso::default()
+    }
+}
+
+fn resposta_erro(op: &str, e: &PhxError, ms: u64) -> Json {
     Json::objeto(vec![
         ("ok", Json::Bool(false)),
         ("op", Json::texto_de(op)),
-        ("erro", Json::texto_de(mensagem)),
+        ("erro", Json::texto_de(e.to_string())),
+        ("codigo", Json::de_u64(e.codigo() as u64)),
+        ("nome", Json::texto_de(e.nome())),
+        ("classe", Json::texto_de(e.classe())),
+        ("repetir", Json::Bool(e.adianta_repetir())),
         ("ms", Json::de_u64(ms)),
     ])
 }
@@ -4251,6 +4835,56 @@ fn colunas_da_juncao(colunas: &[crate::juncao::ColunaSaida]) -> Json {
     )
 }
 
+/// O que se conta sobre um grupo de acessos.
+///
+/// Guarda a soma e o pior caso, e nao a lista: somar por tabela num log de
+/// milhoes de linhas nao pode custar uma copia por linha.
+#[derive(Debug, Default, Clone)]
+struct Contagem {
+    quantas: u64,
+    recusadas: u64,
+    soma_ms: u64,
+    pior_ms: u64,
+    ultimo_ms: i64,
+}
+
+impl Contagem {
+    fn somar(&mut self, a: &Acesso) {
+        self.quantas += 1;
+        if !a.ok {
+            self.recusadas += 1;
+        }
+        self.soma_ms += a.duracao_ms;
+        self.pior_ms = self.pior_ms.max(a.duracao_ms);
+        self.ultimo_ms = self.ultimo_ms.max(a.quando_ms);
+    }
+
+    fn para_json(&self, nome: &str) -> Json {
+        Json::objeto(vec![
+            ("nome", Json::texto_de(nome)),
+            ("quantas", Json::de_u64(self.quantas)),
+            ("recusadas", Json::de_u64(self.recusadas)),
+            (
+                "ms_medio",
+                Json::de_u64(if self.quantas > 0 {
+                    self.soma_ms / self.quantas
+                } else {
+                    0
+                }),
+            ),
+            ("ms_pior", Json::de_u64(self.pior_ms)),
+            ("ms_total", Json::de_u64(self.soma_ms)),
+            (
+                "ultimo",
+                match self.ultimo_ms {
+                    0 => Json::Nulo,
+                    q => Json::texto_de(phxsql_core::datahora::instante_iso(q)),
+                },
+            ),
+        ])
+    }
+}
+
 /// Percorre a tabela de fatos linha a linha, sem materializa-la.
 struct LinhasDaTabela<'a> {
     rowids: std::vec::IntoIter<u64>,
@@ -4295,6 +4929,9 @@ mod testes_politica {
             "ajustar_sequencia",
             "dblink_salvar",
             "dblink_excluir",
+            // Derrubar conexao alheia nao e leitura: um servidor somente
+            // leitura nao deve poder interromper o trabalho de ninguem.
+            "encerrar_sessao",
         ] {
             assert!(
                 OPS_ESCRITA.contains(&op),
@@ -4327,6 +4964,9 @@ mod testes_politica {
             "sequencias",
             "juntar",
             "unir",
+            "estatisticas",
+            "checksum",
+            "sessoes",
             "sistema",
             "dblink",
             "dblink_testar",
