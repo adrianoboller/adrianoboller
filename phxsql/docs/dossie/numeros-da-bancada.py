@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Escreve a figura e a tabela da secao 16 do dossie a partir da medicao.
+"""Escreve a figura e a tabela da secao 17 do dossie a partir da medicao.
 
 Existe por um motivo especifico: os numeros do dossie ja sairam errados duas
 vezes por serem DIGITADOS. Numero digitado envelhece calado -- a capa passou
@@ -343,7 +343,7 @@ def main():
         PENDENCIAS.write_text(md)
         print(f"  e o resumo do {PENDENCIAS.name}")
 
-    print(f"secao 16 refeita a partir de {MEDICAO.name}")
+    print(f"secao 17 refeita a partir de {MEDICAO.name}")
     print(f"  inserir: PhxSql {taxa_p:,.0f}/s  MySQL(R) {taxa_m:,.0f}/s"
           .replace(",", "."))
     for fase, rotulo, _ in FASES:

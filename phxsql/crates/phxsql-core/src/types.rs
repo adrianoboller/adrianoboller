@@ -43,6 +43,30 @@ pub enum ColumnType {
     Bin,
     /// Texto longo UTF-8, armazenado no `.memo`.
     Memo,
+    /// UUID de 128 bits (RFC 9562). Guardado em 16 bytes crus, big-endian.
+    ///
+    /// Dezesseis bytes contra os 36 de um `Str(36)` -- e, mais importante, o
+    /// indice compara numeros em vez de texto. Com v7 a chave e crescente, e
+    /// insercao com chave crescente cai sempre na folha mais a direita da
+    /// B+tree em vez de espalhar a arvore inteira.
+    Uuid,
+    /// Identificador de 256 bits, em 32 bytes crus.
+    ///
+    /// Nao e um UUID do RFC 9562, que so define 128 bits -- o nome carrega o
+    /// 256 para nao se passar por um. Existe porque um SHA-256 cabe nele
+    /// exatamente: hash de bloco, hash de transacao, impressao digital.
+    Uuid256,
+    /// Contador crescente da tabela, atribuido na insercao quando o valor
+    /// chega nulo.
+    ///
+    /// Diferente do rowid em uma coisa que importa: o rowid e a POSICAO fisica
+    /// do registro e nao se escolhe, enquanto a sequencia e um valor de dado --
+    /// pode comecar onde se quiser, pode ser gravada a mao e continua de onde
+    /// parou. Nunca reaproveita numero, nem depois de exclusao.
+    ///
+    /// Uma por tabela. Duas sequencias na mesma tabela compartilhariam o mesmo
+    /// contador, o que so pareceria um defeito.
+    Sequence,
 }
 
 impl ColumnType {
@@ -60,6 +84,9 @@ impl ColumnType {
             ColumnType::Decimal { .. } => 16,
             ColumnType::Str(n) => *n as usize,
             ColumnType::Bin | ColumnType::Memo => PONTEIRO_LEN,
+            ColumnType::Uuid => 16,
+            ColumnType::Uuid256 => 32,
+            ColumnType::Sequence => 8,
         }
     }
 
@@ -105,6 +132,9 @@ impl ColumnType {
             ColumnType::Str(_) => 16,
             ColumnType::Bin => 17,
             ColumnType::Memo => 18,
+            ColumnType::Uuid => 19,
+            ColumnType::Uuid256 => 20,
+            ColumnType::Sequence => 21,
         }
     }
 
@@ -131,6 +161,9 @@ impl ColumnType {
             16 => ColumnType::Str(param_a),
             17 => ColumnType::Bin,
             18 => ColumnType::Memo,
+            19 => ColumnType::Uuid,
+            20 => ColumnType::Uuid256,
+            21 => ColumnType::Sequence,
             outro => {
                 return Err(PhxError::Esquema(format!(
                     "tag de tipo desconhecida: {outro}"

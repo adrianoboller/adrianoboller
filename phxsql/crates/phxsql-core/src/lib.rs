@@ -29,6 +29,7 @@ pub mod schema;
 pub mod senha;
 pub mod sha512;
 pub mod types;
+pub mod uuid;
 pub mod value;
 pub mod zip;
 
@@ -36,6 +37,7 @@ pub use crc::{crc32, crc32_with};
 pub use error::{PhxError, Result};
 pub use schema::{Column, IndexColumn, IndexDef, Schema};
 pub use types::{ColumnType, PONTEIRO_LEN};
+pub use uuid::{Uuid, Uuid256};
 pub use value::{escrever_inline, ler_inline, Ponteiro, Value};
 
 /// Identificador fisico de um registro dentro do `.reg`.

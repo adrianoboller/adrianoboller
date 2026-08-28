@@ -159,7 +159,7 @@ Veja o diario:
     WINDOWS   phxsqld.exe --config config.json
 
     No arranque ele imprime:
-        PhxSql 0.4.1 escutando em 0.0.0.0:5000 | base dados | papel isolado
+        PhxSql 0.5.0 escutando em 0.0.0.0:5000 | base dados | papel isolado
         log de acessos: acessos.log
 
 7.4 Servico
@@ -233,7 +233,38 @@ TIPOS NO JSON
     Data          texto ISO         "2026-08-27"   (ou numero de dias)
     Texto/Memo    texto             "Adriano Boller"
     Binario       hexadecimal       "00010f10feff"
+    Uuid          texto             "017f22e2-79b0-7cc3-98c4-dc0c0c07398f"
+                                    aceita MAIUSCULAS, sem hifens e entre
+                                    chaves; sai sempre na forma canonica
+                                    minuscula com hifens
+                  "novo"            o servidor gera um v7 (crescente)
+                  "v4"              gera um v4 (sorteado, sem relogio)
+    Uuid256       64 hexadecimais   "ba7816bf...f20015ad", com ou sem "0x"
+                  "novo"            gera 256 bits sorteados
+    Sequence      numero            42
+                  null              o servidor numera: proximo da tabela
     Nulo          null
+
+SOBRE OS IDENTIFICADORES
+
+    Uuid guarda 128 bits em 16 bytes crus -- nao e texto de 36 caracteres.
+    O indice compara numero, nao letra.
+
+    Prefira o v7. Os 48 bits altos dele sao o relogio, entao a ordem do
+    indice E a ordem de criacao: a insercao cai sempre na folha mais a
+    direita da arvore em vez de espalhar a arvore inteira. Use v4 so quando
+    o identificador NAO pode revelar quando foi criado.
+
+    Uuid256 nao e um UUID -- o padrao so define 128 bits. Sao 32 bytes
+    opacos, do tamanho exato de um SHA-256.
+
+    Sequence conta sozinha. Valor escrito a mao empurra o contador para
+    depois dele. Excluir nao devolve o numero. Numa alteracao, null mantem
+    o numero que a linha ja tinha.
+
+    ATENCAO: o contador da sequencia so vai ao disco no sincronizar. Queda
+    de energia antes disso faz ele voltar atras, e numeros podem repetir.
+    Quem precisa de unicidade declara um indice unico sobre a coluna.
 
 A LINHA pode vir de duas formas:
 

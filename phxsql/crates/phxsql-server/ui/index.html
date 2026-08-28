@@ -734,8 +734,11 @@ async function vEstrutura(database, tabela_) {
     [{t:"#",cls:""},{t:"nome"},{t:"tipo"},{t:"obrigatória"},{t:"onde mora"}],
     e.colunas, (c,i) => {
       const ext = c.tipo === "Bin" ? "bin" : c.tipo === "Memo" ? "memo" : "reg";
+      const nota = c.tipo === "Uuid" ? " 16 bytes"
+                 : c.tipo === "Uuid256" ? " 32 bytes"
+                 : c.tipo === "Sequence" ? " conta sozinha" : "";
       return `<tr><td class="num dado">${i}</td><td class="dado">${esc(c.nome)}</td>
-        <td class="dado">${esc(c.tipo)}</td>
+        <td class="dado">${esc(c.tipo)}<span class="leg">${nota}</span></td>
         <td>${c.nullable ? '<span class="pino nao">nulo ok</span>' : '<span class="pino ok">not null</span>'}</td>
         <td><span class="pino ${ext}">.${ext}</span></td></tr>`;
     });
@@ -761,11 +764,14 @@ async function vEstrutura(database, tabela_) {
 /// So os que mudam a apresentacao: numero alinha a direita, moeda formata,
 /// data ordena por instante. O resto e texto, e texto e o padrao do grid.
 function tipoDoGrid(t) {
+  // Sequence antes de UInt: ela chega como numero, mas nao e quantidade --
+  // somar identificadores nao quer dizer nada.
+  if (t === "Sequence") return "numero";
   if (/^Int|^UInt/.test(t)) return "numero";
   if (/^Decimal/.test(t)) return "moeda";
   if (t === "Date") return "data";           // sem hora, porque nao ha hora
   if (t === "DateTime" || t === "Time") return "dataHora";
-  return "texto";
+  return "texto";                            // Uuid e Uuid256 vem em texto
 }
 
 async function vConteudo(database, tabela_) {
@@ -807,7 +813,8 @@ function ligarConteudo() {
       campo: c.nome,
       titulo: c.nome,
       tipo: tipoDoGrid(c.tipo),
-      agregador: /^Int|^UInt|^Decimal/.test(c.tipo) ? "sum" : null
+      // Somar sequencia ou id nao significa nada; so quantidade soma.
+      agregador: c.tipo !== "Sequence" && /^Int|^UInt|^Decimal/.test(c.tipo) ? "sum" : null
     })));
 
   if (est.grade && est.grade.destruir) { try { est.grade.destruir(); } catch {} }

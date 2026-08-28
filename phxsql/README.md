@@ -50,7 +50,7 @@ reaproveitamento de espaço perde.
 
 ## Estado atual
 
-O motor de armazenamento está completo e testado: **283 testes**, sem nenhuma
+O motor de armazenamento está completo e testado: **312 testes**, sem nenhuma
 dependência externa (só a `std`), o que faz o projeto compilar offline.
 
 | Peça | Situação |
@@ -61,6 +61,7 @@ dependência externa (só a `std`), o que faz o projeto compilar offline.
 | `.log` — diário datado de inclusão, alteração e exclusão | pronto |
 | Paginação em volumes `_001`, `_002`, … com abertura preguiçosa | pronto |
 | Hierarquia database → schema → tabela | pronto |
+| `Uuid` v4/v7 (RFC 9562), `Uuid256` de 256 bits e `Sequence` | pronto |
 | Chave estrangeira **declarada** no esquema (CASCADE / RESTRICT / SET NULL) | parcial — guardada e reportada, **não aplicada** na gravação |
 | Reindex — recria o `.ndx` do zero a partir do `.reg` | pronto |
 | `Table` — valores, nulos, índices sincronizados, verificação de integridade | pronto |

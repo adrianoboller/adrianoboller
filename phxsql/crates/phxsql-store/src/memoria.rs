@@ -165,6 +165,16 @@ fn chave(v: &Value) -> Vec<u8> {
             k.push(5);
             k.extend_from_slice(b);
         }
+        // Familia propria: um UUID nunca deve comparar igual a um texto ou a
+        // um binario que por acaso tenha os mesmos bytes.
+        Value::Uuid(u) => {
+            k.push(6);
+            k.extend_from_slice(u.bytes());
+        }
+        Value::Uuid256(u) => {
+            k.push(7);
+            k.extend_from_slice(u.bytes());
+        }
     }
     k
 }
@@ -213,6 +223,10 @@ pub fn comparar(a: &Value, b: &Value) -> std::cmp::Ordering {
                 (Some(x), Some(y)) => x.cmp(y),
                 _ => match (a, b) {
                     (Value::Bin(x), Value::Bin(y)) => x.cmp(y),
+                    // Big-endian: comparar bytes e comparar o numero. Num v7
+                    // isso quer dizer comparar o instante de criacao.
+                    (Value::Uuid(x), Value::Uuid(y)) => x.cmp(y),
+                    (Value::Uuid256(x), Value::Uuid256(y)) => x.cmp(y),
                     _ => familia(a).cmp(&familia(b)),
                 },
             },
@@ -247,6 +261,8 @@ fn familia(v: &Value) -> u8 {
         Value::Real(_) => 3,
         Value::Str(_) | Value::Memo(_) => 4,
         Value::Bin(_) => 5,
+        Value::Uuid(_) => 6,
+        Value::Uuid256(_) => 7,
     }
 }
 

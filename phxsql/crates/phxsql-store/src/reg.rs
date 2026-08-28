@@ -26,7 +26,7 @@
 //! # Layout de cada volume
 //!
 //! ```text
-//! cabecalho     128 bytes
+//! cabecalho     128 bytes  (bytes 36..44: proximo valor da sequencia)
 //! esquema       schema_len bytes (serializado, auto-descritivo)
 //! [alinhamento ate multiplo de 64]
 //! slot 1, slot 2, ...
@@ -68,6 +68,13 @@ pub struct RegFile {
     slot_count: u64,
     live_count: u64,
     criado_em: i64,
+    /// Proximo valor a sair da coluna `Sequence`, se a tabela tiver uma.
+    ///
+    /// Mora no cabecalho do volume 1, como os outros contadores da tabela
+    /// inteira. Zero quer dizer "ainda nao usada", e o primeiro valor sai 1.
+    /// Nunca anda para tras: excluir uma linha nao devolve o numero dela,
+    /// pela mesma razao que o `.reg` nao reaproveita slot.
+    proxima_sequencia: u64,
     /// Leituras salvas pelo espelho nesta sessao.
     recuperados: u64,
 }
@@ -87,6 +94,7 @@ impl RegFile {
             slot_count: 0,
             live_count: 0,
             criado_em: agora(),
+            proxima_sequencia: 0,
             recuperados: 0,
         };
         r.volumes.criar(1)?;
@@ -127,6 +135,7 @@ impl RegFile {
         let slot_size = c.u32(16) as usize;
         let slot_count = c.u64(20);
         let live_count = c.u64(28);
+        let proxima_sequencia = c.u64(36);
         let data_offset = c.u64(44);
         let schema_len = c.u32(52) as usize;
         let schema_crc = c.u32(56);
@@ -160,8 +169,39 @@ impl RegFile {
             slot_count,
             live_count,
             criado_em,
+            proxima_sequencia,
             recuperados: 0,
         })
+    }
+
+    /// Toma o proximo valor da sequencia e avanca o contador.
+    ///
+    /// O cabecalho so vai para o disco no `sincronizar`, junto com os demais
+    /// contadores da tabela. Se a maquina cair antes disso, o contador volta
+    /// atras e valores ja gravados podem repetir -- e por isso que a
+    /// sequencia nao serve como chave unica sozinha. Quem precisa de unicidade
+    /// declara um indice `unico` sobre ela, e ai o proprio indice recusa a
+    /// repeticao.
+    pub fn proxima_da_sequencia(&mut self) -> u64 {
+        self.proxima_sequencia = self.proxima_sequencia.max(1);
+        let v = self.proxima_sequencia;
+        self.proxima_sequencia += 1;
+        v
+    }
+
+    /// Empurra o contador para depois de um valor gravado a mao.
+    ///
+    /// Sem isto, inserir a sequencia 500 na mao e depois deixar o motor
+    /// numerar devolveria 1, 2, 3... por cima do que ja existe.
+    pub fn anotar_sequencia(&mut self, usado: u64) {
+        if usado >= self.proxima_sequencia {
+            self.proxima_sequencia = usado + 1;
+        }
+    }
+
+    /// Proximo valor que a sequencia vai devolver. 0 = ainda nao usada.
+    pub fn sequencia_atual(&self) -> u64 {
+        self.proxima_sequencia
     }
 
     fn gravar_cabecalho(&mut self, volume: u32) -> Result<()> {
@@ -176,6 +216,7 @@ impl RegFile {
         if volume == 1 {
             por_u64(&mut buf, 20, self.slot_count);
             por_u64(&mut buf, 28, self.live_count);
+            por_u64(&mut buf, 36, self.proxima_sequencia);
         }
         por_u64(&mut buf, 44, self.data_offset);
         por_u32(&mut buf, 52, bytes_esquema.len() as u32);

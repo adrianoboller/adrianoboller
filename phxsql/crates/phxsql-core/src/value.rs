@@ -2,6 +2,7 @@
 
 use crate::error::{PhxError, Result};
 use crate::types::{ColumnType, PONTEIRO_LEN};
+use crate::uuid::{Uuid, Uuid256};
 
 /// Um valor de coluna do PhxSql.
 ///
@@ -25,6 +26,10 @@ pub enum Value {
     Str(String),
     Bin(Vec<u8>),
     Memo(String),
+    /// UUID de 128 bits, nos bytes crus.
+    Uuid(Uuid),
+    /// Identificador de 256 bits, nos bytes crus.
+    Uuid256(Uuid256),
 }
 
 impl Value {
@@ -249,6 +254,36 @@ pub fn escrever_inline(valor: &Value, ty: &ColumnType, dst: &mut [u8]) -> Result
             }
             dst[..bytes.len()].copy_from_slice(bytes);
         }
+        ColumnType::Uuid => {
+            let u = match valor {
+                Value::Uuid(u) => *u,
+                // Texto entra porque e assim que o id chega pelo protocolo.
+                Value::Str(s) => Uuid::de_texto(s)?,
+                outro => return Err(erro_tipo("Uuid", outro)),
+            };
+            dst.copy_from_slice(u.bytes());
+        }
+        ColumnType::Uuid256 => {
+            let u = match valor {
+                Value::Uuid256(u) => *u,
+                Value::Str(s) => Uuid256::de_texto(s)?,
+                Value::Bin(b) if b.len() == 32 => {
+                    let mut a = [0u8; 32];
+                    a.copy_from_slice(b);
+                    Uuid256(a)
+                }
+                outro => return Err(erro_tipo("Uuid256", outro)),
+            };
+            dst.copy_from_slice(u.bytes());
+        }
+        ColumnType::Sequence => {
+            let v = match valor {
+                Value::UInt(v) => *v,
+                Value::Int(i) if *i >= 0 => *i as u64,
+                outro => return Err(erro_tipo("Sequence", outro)),
+            };
+            dst.copy_from_slice(&v.to_le_bytes());
+        }
         ColumnType::Bin | ColumnType::Memo => {
             return Err(PhxError::Tipo(
                 "Bin/Memo nao sao gravados inline; use Ponteiro".into(),
@@ -292,6 +327,17 @@ pub fn ler_inline(ty: &ColumnType, src: &[u8]) -> Result<Value> {
             })?;
             Value::Str(s.to_string())
         }
+        ColumnType::Uuid => {
+            let mut b = [0u8; 16];
+            b.copy_from_slice(src);
+            Value::Uuid(Uuid(b))
+        }
+        ColumnType::Uuid256 => {
+            let mut b = [0u8; 32];
+            b.copy_from_slice(src);
+            Value::Uuid256(Uuid256(b))
+        }
+        ColumnType::Sequence => Value::UInt(u64::from_le_bytes(src.try_into().unwrap())),
         ColumnType::Bin | ColumnType::Memo => {
             return Err(PhxError::Tipo(
                 "Bin/Memo nao sao lidos inline; resolva o Ponteiro".into(),

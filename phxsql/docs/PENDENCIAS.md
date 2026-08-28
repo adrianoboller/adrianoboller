@@ -6,16 +6,15 @@ o estado real medido contra o código — não contra a lembrança.
 A regra é a mesma do dossiê: **número medido, nunca estimado**. Onde há número,
 ele saiu de `cargo test`, de `wc -l` ou de `bancada/resultados.json`.
 
-Estado do repositório ao fim desta revisão: **20.337** linhas de Rust,
-**283** testes passando, zero avisos de clippy, zero dependências externas,
-versão **0.4.1**.
+Estado do repositório: **21.631** linhas de Rust, **312** testes passando,
+zero avisos de clippy, zero dependências externas, versão **0.5.0**.
 
 ---
 
 ## 1. Feito
 
 Pronto, testado, e no ar. A última coluna aponta onde a peça mora, para você
-poder conferir sem perguntar. Os **283 testes** do projeto passam, com zero
+poder conferir sem perguntar. Os **312 testes** do projeto passam, com zero
 avisos de clippy.
 
 | # | O que você pediu | Como está | Onde |
@@ -53,8 +52,9 @@ avisos de clippy.
 | 31 | Usar a marca onde precisar | capa, cabeçalho, favicon e paleta; `phxsql/marca/` | `marca/` |
 | 32 | `(R)` nas marcas de outros bancos | conferido em todo o repositório | — (varrido no repositório) |
 | 33 | Revisar regras, corrigir defeitos e registrar em `changelog.md` | `CHANGELOG.md`, com **Corrigido** primeiro e uma seção *Sabido* do que não funciona | `CHANGELOG.md` |
-| 34 | Comparar com o MySQL(R) em 10.000.000 de registros, com gráficos de IO, memória e CPU | seção 16 do dossiê e `bancada/`; **refeita** nesta rodada, porque a montagem anterior comparava trabalho diferente | `bancada/`, seção 16 do dossiê |
+| 34 | Comparar com o MySQL(R) em 10.000.000 de registros, com gráficos de IO, memória e CPU | seção 17 do dossiê e `bancada/`; **refeita** nesta rodada, porque a montagem anterior comparava trabalho diferente | `bancada/`, seção 17 do dossiê |
 | 35 | Download dos fontes e do compilado para Linux e Windows | `./empacotar.sh` monta os três zips; conferidos com `unzip -t` | `empacotar.sh` |
+| 36 | `Uuid` v7 e v4, `Uuid256` de 256 bits e `Sequence` | 16, 32 e 8 bytes crus no slot; v7 estritamente crescente, conferido contra o vetor do RFC 9562 | `core/uuid.rs` |
 
 ## 2. Parcial
 
@@ -63,7 +63,7 @@ Cada linha diz exatamente onde para.
 
 | # | O que você pediu | O que existe | O que falta |
 |---|---|---|---|
-| 1 | **Replicação como a do MySQL(R)**, com porta de acesso, de envio e de retorno | as três portas entram no `config.json` e são validadas — duas no mesmo endereço não sobem. O desenho está na seção 8 do dossiê e em `docs/REPLICACAO.md`. O `.log` **é** o binlog | o `.log` **v2 com imagem da linha**. Hoje o diário registra que houve alteração, não o que a linha virou — sem isso a réplica não tem o que aplicar. O servidor avisa alto no arranque que as portas são configuração, não serviço |
+| 1 | **Replicação como a do MySQL(R)**, com porta de acesso, de envio e de retorno | as três portas entram no `config.json` e são validadas — duas no mesmo endereço não sobem. O desenho está na seção 9 do dossiê e em `docs/REPLICACAO.md`. O `.log` **é** o binlog | o `.log` **v2 com imagem da linha**. Hoje o diário registra que houve alteração, não o que a linha virou — sem isso a réplica não tem o que aplicar. O servidor avisa alto no arranque que as portas são configuração, não serviço |
 | 2 | **Chave estrangeira** com CASCADE / RESTRICT / SET NULL | declarada, validada, gravada no cabeçalho do `.reg`, sobrevive a fechar e abrir, e aparece na aba Estrutura | **não é aplicada**. Nenhuma gravação consulta a chave: `Restringir` e `Cascata` são intenção guardada, não comportamento. Estava marcada «pronto» no README e no dossiê — corrigido nesta revisão |
 | 3 | **Quantidade de registros e arquivos definida no create table** | a paginação é parâmetro do esquema e funciona; `criar_tabela` existe na biblioteca | não há **op no protocolo nem comando na CLI** para criar tabela. Hoje só se cria escrevendo Rust. Criar *database* pela rede já dá |
 | 4 | **Gráficos comparativos** de IO, memória e CPU | `bancada/graficos.py` gera a página inteira a partir do `resultados.json` | a página gerada não estava **versionada** — existia só na máquina de quem rodou. Passa a entrar no repositório |
@@ -144,7 +144,7 @@ faltando: era o projeto se descrevendo errado.
 
 - **A bancada não estava no dossiê.** A maior medição já feita no projeto
   existia só em `bancada/` e como uma linha «pronto» no roteiro. Virou a
-  seção 16.
+  seção 17.
 
 - **Subseções do `MANUAL.txt` numeradas 10.x e 11.x** dentro das seções 14 e 15
   — sobra de quando eram outras seções.
@@ -158,7 +158,7 @@ faltando: era o projeto se descrevendo errado.
 Três coisas entraram para que nada disso volte a acontecer calado:
 
 - `docs/dossie/numeros-da-bancada.py` — a figura, a tabela e o diagnóstico da
-  seção 16 passam a ser **gerados** de `bancada/resultados.json`. Número
+  seção 17 passam a ser **gerados** de `bancada/resultados.json`. Número
   digitado envelhece calado.
 - `empacotar.sh` — os pacotes de Linux e Windows das rodadas anteriores foram
   montados à mão. Pacote que ninguém consegue refazer é pacote em que não se
@@ -202,11 +202,11 @@ aqui que ela rende.
 | O que você sabe fazer aqui? | sim | conversa |
 | Você tem acesso ao meu celular? | sim — **não tenho** | conversa |
 | Precisa de agentes e subagentes para agilizar? | sim | conversa |
-| Dá para ter replicação parecida com a do MySQL(R)? | sim — dá, e o desenho está escrito | seção 8 do dossiê, `docs/REPLICACAO.md` |
+| Dá para ter replicação parecida com a do MySQL(R)? | sim — dá, e o desenho está escrito | seção 9 do dossiê, `docs/REPLICACAO.md` |
 | O desenvolvimento foi conduzido de forma adequada? Poderia ter sido diferente? Qual o impacto de custo? | sim | conversa |
 | Como ter tabelas PhxSql em Android, iOS e IoT? | sim | conversa |
-| Ele **realmente** cria a regra de firewall e bloqueia quem tenta injeção ou comando da blacklist? | sim — e a auditoria achou um buraco de verdade | seção 10 do dossiê; `docs/SEGURANCA.md` |
-| Como o PhxSql se compara ao MySQL(R) em 10 milhões de registros? | sim — e o número **estava errado a nosso favor**; refeito | seção 16 do dossiê, `bancada/` |
+| Ele **realmente** cria a regra de firewall e bloqueia quem tenta injeção ou comando da blacklist? | sim — e a auditoria achou um buraco de verdade | seção 11 do dossiê; `docs/SEGURANCA.md` |
+| Como o PhxSql se compara ao MySQL(R) em 10 milhões de registros? | sim — e o número **estava errado a nosso favor**; refeito | seção 17 do dossiê, `bancada/` |
 
 Sobre a do firewall, vale repetir a parte que corrigiu a pergunta: **não há SQL
 no PhxSql**, então injeção de SQL não tem superfície. A superfície real é o nome

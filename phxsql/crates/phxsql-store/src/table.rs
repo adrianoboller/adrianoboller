@@ -199,6 +199,56 @@ impl Table {
         Ok(())
     }
 
+    /// Resolve a coluna `Sequence`, se houver uma.
+    ///
+    /// Devolve `None` quando nao ha nada a mudar, para o caminho comum nao
+    /// pagar uma copia da linha inteira.
+    ///
+    /// Duas regras, e a segunda e a que evita o estrago: valor nulo ganha o
+    /// proximo numero do contador; valor escolhido a mao EMPURRA o contador
+    /// para depois dele. Sem a segunda, gravar a sequencia 500 na mao e
+    /// deixar o motor numerar em seguida devolveria 1, 2, 3 -- por cima do
+    /// que ja existe.
+    ///
+    /// Numa alteracao (`anterior` presente) o nulo nao gera numero novo: ele
+    /// mantem o que a linha ja tinha. A sequencia identifica a linha, e
+    /// renumerar no meio do caminho seria trocar a identidade dela.
+    fn numerar(
+        &mut self,
+        valores: &[Value],
+        anterior: Option<&Linha>,
+    ) -> Result<Option<Vec<Value>>> {
+        let Some(i) = self.esquema.coluna_sequencia() else {
+            return Ok(None);
+        };
+        match &valores[i] {
+            Value::Null => {
+                let mut novos = valores.to_vec();
+                novos[i] = match anterior {
+                    Some(linha) => linha[i].clone(),
+                    None => Value::UInt(self.reg.proxima_da_sequencia()),
+                };
+                Ok(Some(novos))
+            }
+            Value::UInt(n) => {
+                self.reg.anotar_sequencia(*n);
+                Ok(None)
+            }
+            Value::Int(n) if *n >= 0 => {
+                self.reg.anotar_sequencia(*n as u64);
+                Ok(None)
+            }
+            outro => Err(PhxError::Tipo(format!(
+                "coluna de sequencia espera numero inteiro, recebeu {outro:?}"
+            ))),
+        }
+    }
+
+    /// Proximo numero que a sequencia da tabela vai entregar. 0 = nunca usada.
+    pub fn sequencia_atual(&self) -> u64 {
+        self.reg.sequencia_atual()
+    }
+
     /// Monta o payload do `.reg`, gravando antes o que vai para `.bin`/`.memo`.
     fn montar_payload(&mut self, valores: &[Value]) -> Result<Vec<u8>> {
         let mut payload = vec![0u8; self.esquema.payload_len()];
@@ -355,6 +405,18 @@ impl Table {
     /// indice falhar no meio do caminho, o que ja foi gravado e desfeito.
     pub fn inserir(&mut self, valores: &[Value]) -> Result<RowId> {
         self.conferir_aridade(valores)?;
+
+        // A sequencia entra ANTES das chaves: se a coluna estiver num indice,
+        // a chave tem de ser a do numero que vai ser gravado, nao a do nulo.
+        let proprios;
+        let valores = match self.numerar(valores, None)? {
+            Some(v) => {
+                proprios = v;
+                &proprios[..]
+            }
+            None => valores,
+        };
+
         let chaves = self.todas_as_chaves(valores)?;
 
         for (i, chave) in chaves.iter().enumerate() {
@@ -403,6 +465,17 @@ impl Table {
             .ok_or_else(|| PhxError::NaoEncontrado(format!("registro {rowid} esta excluido")))?;
 
         let valores_antigos = self.decodificar(&antigo, false)?;
+
+        // Nulo na coluna de sequencia guarda o numero que a linha ja tinha.
+        let proprios;
+        let valores = match self.numerar(valores, Some(&valores_antigos))? {
+            Some(v) => {
+                proprios = v;
+                &proprios[..]
+            }
+            None => valores,
+        };
+
         let chaves_antigas = self.todas_as_chaves(&valores_antigos)?;
         let chaves_novas = self.todas_as_chaves(valores)?;
 

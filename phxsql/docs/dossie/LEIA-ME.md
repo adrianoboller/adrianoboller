@@ -32,7 +32,7 @@ cat docs/*.md README.md CHANGELOG.md MANUAL.txt \
 curta do que o número publicado — e aí ninguém consegue reproduzir a capa.
 Se acrescentar documento novo, acrescente aqui também.
 
-Os números da **seção 16 (a bancada)** não se digitam: saem de
+Os números da **seção 17 (a bancada)** não se digitam: saem de
 
 ```bash
 python3 docs/dossie/numeros-da-bancada.py

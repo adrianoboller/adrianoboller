@@ -15,6 +15,7 @@
 
 use crate::error::{PhxError, Result};
 use crate::types::ColumnType;
+use crate::uuid::{Uuid, Uuid256};
 use crate::value::Value;
 
 /// Bytes que um componente de chave ocupa, incluindo o byte de presenca.
@@ -172,6 +173,41 @@ pub fn escrever_componente(
                     *b = b.to_ascii_uppercase();
                 }
             }
+        }
+        // Os bytes crus JA sao a chave: comparar byte a byte da a mesma ordem
+        // que comparar o numero de 128/256 bits, porque estao em big-endian.
+        // Para o v7 isso significa que a ordem do indice e a ordem do tempo.
+        ColumnType::Uuid => {
+            let u = match valor {
+                Value::Uuid(u) => *u,
+                Value::Str(s) => Uuid::de_texto(s)?,
+                outro => return Err(PhxError::Tipo(format!("esperado Uuid, recebido {outro:?}"))),
+            };
+            corpo.copy_from_slice(u.bytes());
+        }
+        ColumnType::Uuid256 => {
+            let u = match valor {
+                Value::Uuid256(u) => *u,
+                Value::Str(s) => Uuid256::de_texto(s)?,
+                outro => {
+                    return Err(PhxError::Tipo(format!(
+                        "esperado Uuid256, recebido {outro:?}"
+                    )))
+                }
+            };
+            corpo.copy_from_slice(u.bytes());
+        }
+        ColumnType::Sequence => {
+            let v = match valor {
+                Value::UInt(v) => *v,
+                Value::Int(i) if *i >= 0 => *i as u64,
+                outro => {
+                    return Err(PhxError::Tipo(format!(
+                        "esperado Sequence, recebido {outro:?}"
+                    )))
+                }
+            };
+            escrever_uint_be(v as u128, 8, corpo);
         }
         ColumnType::Bin | ColumnType::Memo => {
             return Err(PhxError::Esquema("Bin/Memo nao entram em indice".into()));

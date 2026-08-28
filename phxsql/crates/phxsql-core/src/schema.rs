@@ -256,6 +256,23 @@ impl Schema {
             }
         }
 
+        // Uma sequencia por tabela. O contador mora no cabecalho do `.reg`, e
+        // e um so: duas colunas Sequence dividiriam o mesmo numerador, o que
+        // ninguem espera ao escrever o esquema.
+        let sequencias: Vec<&str> = colunas
+            .iter()
+            .filter(|c| c.ty == ColumnType::Sequence)
+            .map(|c| c.nome.as_str())
+            .collect();
+        if sequencias.len() > 1 {
+            return Err(PhxError::Esquema(format!(
+                "a tabela tem {} colunas Sequence ({}), e so pode ter uma: \
+                 o contador do `.reg` e unico",
+                sequencias.len(),
+                sequencias.join(", ")
+            )));
+        }
+
         let bitmap_len = colunas.len().div_ceil(8);
         let mut offsets = Vec::with_capacity(colunas.len());
         let mut pos = bitmap_len;
@@ -274,6 +291,13 @@ impl Schema {
             bitmap_len,
             payload_len: pos,
         })
+    }
+
+    /// Posicao da coluna `Sequence`, se a tabela tiver uma.
+    pub fn coluna_sequencia(&self) -> Option<usize> {
+        self.colunas
+            .iter()
+            .position(|c| c.ty == ColumnType::Sequence)
     }
 
     /// Acrescenta as chaves estrangeiras da tabela.

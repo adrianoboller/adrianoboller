@@ -565,6 +565,14 @@ fn mostrar(v: &Value, ty: &ColumnType) -> String {
         (Value::Real(n), _) => format!("{n}"),
         (Value::Decimal(n), _) => n.to_string(),
         (Value::DateTime(n), _) => n.to_string(),
+        (Value::Uuid(u), _) => u.to_string(),
+        // Trinta e dois bytes viram 64 digitos, e a coluna do terminal nao
+        // comporta. Mostra as pontas, que e o que o olho usa para reconhecer
+        // um hash.
+        (Value::Uuid256(u), _) => {
+            let t = u.to_string();
+            format!("{}…{}", &t[..10], &t[54..])
+        }
     }
 }
 

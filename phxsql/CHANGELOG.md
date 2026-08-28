@@ -10,6 +10,78 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
+## 0.5.0 — 2026-08-28
+
+### Adicionado
+
+- **Três tipos de identificador**, todos de largura fixa e inteiros dentro do
+  slot — nenhum vai para o `.bin`, nenhum custa um ponteiro.
+
+  | Tipo | Bytes | O que é |
+  |---|---:|---|
+  | `Uuid` | 16 | UUID de 128 bits do RFC 9562, v4 e v7 |
+  | `Uuid256` | 32 | identificador de 256 bits — **não é um UUID**, o padrão só define 128. Existe porque um SHA-256 cabe exato |
+  | `Sequence` | 8 | contador crescente da tabela, atribuído na inserção |
+
+- **UUID v7, e o motivo é medido.** Os 48 bits altos de um v7 são o relógio em
+  milissegundos, em big-endian; como a chave do `.ndx` guarda os bytes na ordem
+  natural, comparar bytes é comparar tempo. Chave aleatória manda cada inserção
+  para uma folha diferente da B+tree; chave crescente cai sempre na folha mais à
+  direita, que já está na memória.
+
+  É exatamente onde a bancada dói: a inserção cai de 5.089 linhas/s no primeiro
+  milhão para 3.626/s no décimo, com o disco parado e a CPU em 99%. É a árvore
+  sendo semeada, não o disco.
+
+- **Monotonia de verdade.** Dois v7 no mesmo milissegundo sairiam fora de ordem
+  se dependessem só do relógio, então os 12 bits de `rand_a` viram um contador
+  (método 1 da seção 6.2 do RFC 9562): nasce sorteado a cada milissegundo novo e
+  soma 1 a cada id seguinte; estourou, o relógio anda 1 ms para frente em vez de
+  repetir. O gerador nunca devolve valor menor ou igual ao anterior, nem entre
+  *threads* — há teste que pede vinte mil seguidos e exige que cada um cresça.
+
+  O layout se confere contra o vetor do apêndice A.6 do próprio RFC.
+
+- **A sequência, e a diferença para o rowid.** O rowid é a *posição física* do
+  registro e não se escolhe; a sequência é dado — nasce onde se quiser, é
+  gravada à mão e continua de onde parou. Valor escrito à mão **empurra o
+  contador** para depois dele, senão a próxima numeração automática passaria por
+  cima do que já existe. Excluir não devolve o número. Numa alteração, nulo
+  mantém o número que a linha já tinha: a sequência identifica a linha, e
+  renumerar trocaria a identidade dela.
+
+- Pelo protocolo o id viaja em texto e **sai sempre na forma canônica
+  minúscula** — um id que se escreve de dois jeitos vira dois ids no olho de
+  quem lê. A palavra `"novo"` no lugar do valor pede ao servidor que gere um
+  (`"v4"` força a versão sorteada); `Uuid256` aceita o prefixo `0x`.
+
+- `crates/phxsql-store/examples/identificadores.rs` — monta uma tabela de
+  blocos encadeados pelo hash, com a altura numerada pela sequência. Existe
+  porque criar tabela ainda só se faz escrevendo Rust.
+
+- Seção 4 do dossiê e seção 8 do `docs/FORMATO.md`.
+
+### Mudado
+
+- **Formato em disco**: os bytes 36..44 do cabeçalho do `.reg`, antes
+  reservados, passam a guardar o próximo valor da sequência. Zero continua
+  significando "nunca usada", então `.reg` antigo abre sem conversão.
+
+- Uma sequência por tabela: duas dividiriam o mesmo contador do cabeçalho, o
+  que só pareceria defeito. O esquema recusa na criação.
+
+### Sabido
+
+- **A sequência sozinha não é chave única.** O contador só vai ao disco no
+  `sincronizar`; queda de energia antes disso o faz voltar atrás, e números já
+  gravados podem repetir. Quem precisa de unicidade declara um índice `unico`
+  sobre a coluna — aí é o índice que recusa.
+
+- Um `.reg` gravado com estes tipos **não abre** numa versão anterior do
+  binário: a tag do tipo é desconhecida lá, e o erro é claro.
+
+---
+
 ## 0.4.1 — 2026-08-28
 
 Rodada de revisão: nada de recurso novo, só o que a leitura do próprio projeto

@@ -49,7 +49,7 @@ offset(rowid) = data_offset + (rowid - 1) * slot_size
 | 16 | 4 | `slot_size` |
 | 20 | 8 | `slot_count` — slots alocados, inclusive excluídos (só o volume 1) |
 | 28 | 8 | `live_count` — registros ativos (só o volume 1) |
-| 36 | 8 | reservado (cabeça da lista de livres, versão futura) |
+| 36 | 8 | `proxima_sequencia` — próximo valor da coluna `Sequence` (só o volume 1; 0 = nunca usada) |
 | 44 | 8 | `data_offset` — onde começa o slot 1 |
 | 52 | 4 | `schema_len` |
 | 56 | 4 | CRC-32 do esquema |
@@ -192,6 +192,9 @@ Cada componente ocupa `1 + largura` bytes:
 | `Date` / `Time` | como `Int4` |
 | `DateTime` | como `Int8` |
 | `Str(n)` | n bytes UTF-8, completados com `0x00` |
+| `Uuid` | 16 bytes crus, big-endian — já são a chave |
+| `Uuid256` | 32 bytes crus, big-endian — já são a chave |
+| `Sequence` | 8 bytes big-endian, como `UInt8` |
 
 - **NULL** ordena antes de qualquer valor (byte de presença 0x00).
 - **DESC** inverte todos os bytes do componente, o que inverte a ordem e joga
@@ -404,12 +407,74 @@ crescente dentro de cada chave.
 
 ---
 
-## 8. Limites
+## 8. Identificadores: `Uuid`, `Uuid256` e `Sequence`
+
+Três tipos de largura fixa que cabem inteiros no slot — nada vai para o `.bin`.
+
+| Tipo | Bytes | O que é |
+|---|---:|---|
+| `Uuid` | 16 | UUID de 128 bits do RFC 9562, guardado em big-endian (a mesma ordem em que se escreve) |
+| `Uuid256` | 32 | identificador de 256 bits. **Não é um UUID** — o RFC só define 128. Existe porque um SHA-256 cabe exatamente |
+| `Sequence` | 8 | contador crescente da tabela, atribuído na inserção quando o valor chega nulo |
+
+### Por que o v7 e não o v4
+
+O `.ndx` compara chaves byte a byte, e os bytes de um UUID estão em big-endian:
+comparar bytes é comparar o número. Nos primeiros 48 bits de um **v7** está o
+relógio em milissegundos — então **a ordem do índice é a ordem de criação**.
+
+Isso não é detalhe estético. Chave aleatória (v4) manda cada inserção para uma
+folha diferente da B+tree: toda gravação suja uma página nova, e quanto maior a
+tabela, mais longe uma da outra. Chave crescente cai sempre na folha mais à
+direita, que já está na memória. É a diferença entre semear a árvore inteira e
+anexar no fim dela — e a bancada mostra que é exatamente aí que a inserção do
+motor sofre.
+
+Use `v4` quando o id **não pode** revelar quando foi criado. Nos outros casos,
+`v7`.
+
+### Monotonia dentro do mesmo milissegundo
+
+Dois v7 gerados no mesmo milissegundo sairiam fora de ordem se dependessem só
+do relógio. Por isso os 12 bits de `rand_a` viram um contador (método 1 da
+seção 6.2 do RFC 9562): nasce sorteado na metade de baixo da faixa a cada
+milissegundo novo e soma 1 a cada id seguinte. Estourou, o relógio anda 1 ms
+para frente em vez de repetir. O gerador nunca devolve valor menor ou igual ao
+anterior, nem entre threads.
+
+### A sequência
+
+Diferente do rowid em uma coisa que importa: **o rowid é a posição física** do
+registro e não se escolhe; a sequência é um valor de dado — pode nascer onde se
+quiser, ser gravada à mão e continuar de onde parou.
+
+- Valor nulo na inserção → recebe o próximo número.
+- Valor escrito à mão → **empurra o contador** para depois dele, senão a
+  próxima numeração automática passaria por cima do que já existe.
+- Valor nulo numa **alteração** → mantém o número que a linha já tinha. A
+  sequência identifica a linha; renumerar trocaria a identidade dela.
+- Excluir **não devolve** o número, pela mesma razão que o `.reg` não
+  reaproveita slot.
+
+O contador mora nos bytes 36..44 do cabeçalho do volume 1 e vai ao disco no
+`sincronizar`, junto com os demais contadores. **Se a máquina cair antes disso,
+o contador volta atrás e números já gravados podem repetir** — por isso a
+sequência sozinha não é chave única. Quem precisa de unicidade declara um
+índice `unico` sobre ela, e aí o próprio índice recusa a repetição.
+
+Uma sequência por tabela: duas dividiriam o mesmo contador, o que só pareceria
+defeito. O esquema recusa na criação.
+
+---
+
+## 9. Limites
 
 | Limite | Valor |
 |---|---|
 | Colunas por tabela | 65 535 |
 | Tamanho de `Str(n)` | 65 535 bytes |
+| Sequência por tabela | 1 (o contador do cabeçalho é único) |
+| Valor máximo de `Sequence` | 2⁶⁴ − 1 |
 | Precisão de `Decimal` | 38 dígitos |
 | Conteúdo de um bloco `.bin` / `.memo` | 4 GiB |
 | Chave de índice | `page_size / 4 - 8` bytes (1016 numa página de 4096) |
@@ -418,7 +483,7 @@ crescente dentro de cada chave.
 | Volumes por arquivo | 65.535 (limite do ponteiro externo) |
 | Offset dentro de um volume externo | 256 TB (48 bits) |
 
-## 9. O que este formato ainda não faz
+## 10. O que este formato ainda não faz
 
 Documentado aqui para não haver surpresa:
 

@@ -16,6 +16,7 @@ use phxsql_core::error::{PhxError, Result};
 use phxsql_core::json::Json;
 use phxsql_core::schema::Schema;
 use phxsql_core::types::ColumnType;
+use phxsql_core::uuid::{Uuid, Uuid256};
 use phxsql_core::value::Value;
 
 /// Formata um decimal escalado como texto: 1234 com escala 2 vira "12.34".
@@ -127,6 +128,12 @@ pub fn valor_para_json(v: &Value, ty: &ColumnType) -> Json {
         (Value::Real(n), _) => Json::Numero(*n),
         (Value::Str(s), _) | (Value::Memo(s), _) => Json::texto_de(s),
         (Value::Bin(b), _) => Json::texto_de(bytes_para_hex(b)),
+        // Sempre na forma canonica minuscula: e o que o RFC manda escrever, e
+        // manda o mesmo texto para a grade, para o log e para quem consome a
+        // API. Um id que se escreve de dois jeitos vira dois ids no olho de
+        // quem le.
+        (Value::Uuid(u), _) => Json::texto_de(u.to_string()),
+        (Value::Uuid256(u), _) => Json::texto_de(u.to_string()),
     }
 }
 
@@ -167,6 +174,34 @@ pub fn json_para_valor(j: &Json, ty: &ColumnType) -> Result<Value> {
                 )),
                 _ => return Err(erro("decimal em texto")),
             }
+        }
+        // O id chega em texto, que e como ele viaja em JSON. Aceita-se
+        // tambem a palavra "novo": e o pedido de "gere um para mim" sem que o
+        // cliente precise saber como se monta um v7.
+        ColumnType::Uuid => match j {
+            Json::Texto(t) if t.eq_ignore_ascii_case("novo") || t.eq_ignore_ascii_case("v7") => {
+                Value::Uuid(Uuid::v7())
+            }
+            Json::Texto(t) if t.eq_ignore_ascii_case("v4") => Value::Uuid(Uuid::v4()),
+            Json::Texto(t) => Value::Uuid(Uuid::de_texto(t)?),
+            _ => return Err(erro("UUID em texto")),
+        },
+        ColumnType::Uuid256 => match j {
+            Json::Texto(t) if t.eq_ignore_ascii_case("novo") => {
+                Value::Uuid256(Uuid256::aleatorio())
+            }
+            Json::Texto(t) => Value::Uuid256(Uuid256::de_texto(t)?),
+            _ => return Err(erro("identificador de 256 bits em texto")),
+        },
+        // Nulo ja saiu no comeco da funcao: chegar aqui e o cliente tendo
+        // escolhido o numero a mao, e a tabela empurra o contador para depois
+        // dele.
+        ColumnType::Sequence => {
+            let n = j.inteiro().ok_or_else(|| erro("numero da sequencia"))?;
+            if n < 0 {
+                return Err(PhxError::Tipo(format!("{n} e negativo numa sequencia")));
+            }
+            Value::UInt(n as u64)
         }
         ColumnType::Date => match j {
             Json::Texto(t) => Value::Date(data_de_texto(t)?),
@@ -411,5 +446,66 @@ mod tests {
         assert_eq!(a, b);
         assert_eq!(a[0], Value::Int(7));
         assert!(json_para_chave(&Json::analisar("[7,8]").unwrap(), &esq, 0).is_err());
+    }
+
+    #[test]
+    fn uuid_vai_e_volta_em_texto_canonico() {
+        let ty = ColumnType::Uuid;
+        let texto = "017f22e2-79b0-7cc3-98c4-dc0c0c07398f";
+        let v = json_para_valor(&Json::texto_de(texto), &ty).unwrap();
+        assert_eq!(valor_para_json(&v, &ty), Json::texto_de(texto));
+
+        // MAIUSCULAS entram, mas saem na forma canonica: um id que se escreve
+        // de dois jeitos vira dois ids no olho de quem le.
+        let v = json_para_valor(&Json::texto_de(texto.to_uppercase()), &ty).unwrap();
+        assert_eq!(valor_para_json(&v, &ty), Json::texto_de(texto));
+    }
+
+    #[test]
+    fn a_palavra_novo_gera_um_v7() {
+        let ty = ColumnType::Uuid;
+        let a = json_para_valor(&Json::texto_de("novo"), &ty).unwrap();
+        let b = json_para_valor(&Json::texto_de("novo"), &ty).unwrap();
+        match (&a, &b) {
+            (Value::Uuid(x), Value::Uuid(y)) => {
+                assert_eq!(x.versao(), 7);
+                assert!(y > x, "dois pedidos seguidos tem de crescer");
+            }
+            outro => panic!("esperado Uuid, veio {outro:?}"),
+        }
+        // "v4" pede a versao sem relogio.
+        match json_para_valor(&Json::texto_de("v4"), &ty).unwrap() {
+            Value::Uuid(u) => assert_eq!(u.versao(), 4),
+            outro => panic!("esperado Uuid v4, veio {outro:?}"),
+        }
+    }
+
+    #[test]
+    fn uuid_torto_no_json_e_recusado() {
+        let ty = ColumnType::Uuid;
+        assert!(json_para_valor(&Json::texto_de("nao-e-uuid"), &ty).is_err());
+        assert!(json_para_valor(&Json::de_i64(42), &ty).is_err());
+    }
+
+    #[test]
+    fn hash_de_256_bits_aceita_o_prefixo_0x() {
+        let ty = ColumnType::Uuid256;
+        let hex = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+        let a = json_para_valor(&Json::texto_de(hex), &ty).unwrap();
+        let b = json_para_valor(&Json::texto_de(format!("0x{hex}")), &ty).unwrap();
+        assert_eq!(a, b, "o 0x mudou o valor");
+        assert_eq!(valor_para_json(&a, &ty), Json::texto_de(hex));
+    }
+
+    #[test]
+    fn sequencia_recusa_negativo() {
+        let ty = ColumnType::Sequence;
+        assert_eq!(
+            json_para_valor(&Json::de_i64(7), &ty).unwrap(),
+            Value::UInt(7)
+        );
+        assert!(json_para_valor(&Json::de_i64(-1), &ty).is_err());
+        // Nulo e o pedido de "numere voce": nao e erro.
+        assert_eq!(json_para_valor(&Json::Nulo, &ty).unwrap(), Value::Null);
     }
 }
