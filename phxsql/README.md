@@ -61,7 +61,7 @@ dependência externa (só a `std`), o que faz o projeto compilar offline.
 | `.log` — diário datado de inclusão, alteração e exclusão | pronto |
 | Paginação em volumes `_001`, `_002`, … com abertura preguiçosa | pronto |
 | Hierarquia database → schema → tabela | pronto |
-| Chave estrangeira no esquema (CASCADE / RESTRICT / SET NULL) | pronto |
+| Chave estrangeira **declarada** no esquema (CASCADE / RESTRICT / SET NULL) | parcial — guardada e reportada, **não aplicada** na gravação |
 | Reindex — recria o `.ndx` do zero a partir do `.reg` | pronto |
 | `Table` — valores, nulos, índices sincronizados, verificação de integridade | pronto |
 | CLI `phxsql` | pronto |

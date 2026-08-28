@@ -10,3 +10,4 @@
 # Rodar o phxsqld a partir do repositorio deixa log e lista de bloqueio.
 /exemplos/acessos.log
 /exemplos/blacklist.json
+/pid
