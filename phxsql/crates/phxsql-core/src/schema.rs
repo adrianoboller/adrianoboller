@@ -6,7 +6,7 @@
 
 use crate::error::{PhxError, Result};
 use crate::keyenc::largura_componente;
-use crate::paginacao::{ModoParticao, Paginacao};
+use crate::paginacao::{ModoParticao, Paginacao, BALDES};
 use crate::types::ColumnType;
 use crate::uuid::Uuid;
 
@@ -678,6 +678,41 @@ impl Schema {
                     "a coluna de particao {} aceita nulo; sem data nao ha periodo \
                      em que a linha caiba",
                     c.nome
+                )));
+            }
+        }
+        if let ModoParticao::PorLetra { coluna } = paginacao.modo {
+            let c = self.colunas.get(coluna as usize).ok_or_else(|| {
+                PhxError::Esquema(format!(
+                    "a particao alfanumerica aponta a coluna {coluna}, \
+                     que nao existe em {}",
+                    self.nome
+                ))
+            })?;
+            // Coluna externa nao serve: o valor dela nao esta no slot, e
+            // decidir o arquivo de destino exigiria ler o `.memo` antes de
+            // saber em que arquivo gravar -- que e a ordem invertida.
+            if c.ty.externo() {
+                return Err(PhxError::Esquema(format!(
+                    "a particao alfanumerica nao pode apontar {}, que e {:?}: \
+                     o valor mora fora do slot, e o balde precisa ser decidido \
+                     ANTES de a linha ser gravada",
+                    c.nome, c.ty
+                )));
+            }
+            if c.nullable {
+                return Err(PhxError::Esquema(format!(
+                    "a coluna de particao {} aceita nulo; a linha sem valor \
+                     cairia toda no balde Outros sem ninguem ter escolhido isso",
+                    c.nome
+                )));
+            }
+            if paginacao.max_arquivos as usize != BALDES.len() {
+                return Err(PhxError::Esquema(format!(
+                    "a particao alfanumerica tem exatamente {} volumes \
+                     (A-Z, 0-9 e Outros); o esquema pede {}",
+                    BALDES.len(),
+                    paginacao.max_arquivos
                 )));
             }
         }

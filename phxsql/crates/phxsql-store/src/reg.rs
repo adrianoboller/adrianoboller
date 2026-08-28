@@ -39,11 +39,13 @@
 //! deles se descreve sozinho. Apenas o volume 1 tem contadores autoritativos
 //! da tabela inteira.
 
+use std::fs::File;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use phxsql_core::crc::crc32;
 use phxsql_core::error::{PhxError, Result};
-use phxsql_core::paginacao::Paginacao;
+use phxsql_core::paginacao::{Paginacao, BALDES};
 use phxsql_core::schema::Schema;
 use phxsql_core::{RowId, EXT_REG};
 
@@ -110,6 +112,13 @@ pub struct RegFile {
     /// Indice do vetor = volume - 1. Vazio quando a particao e por quantidade,
     /// porque ali o volume sai de uma divisao e nao ha o que guardar.
     fronteiras: Vec<Fronteira>,
+    /// Slots ja usados em cada balde da particao alfanumerica.
+    ///
+    /// Indice do vetor = balde - 1, com 37 posicoes fixas. Vazio nos outros
+    /// modos. Cada balde tem o proprio contador porque a linha vai para o
+    /// volume DELA: um contador global nao diria em que slot do `_S` a proxima
+    /// Silva entra.
+    baldes: Vec<u64>,
 }
 
 /// O comeco de um volume: o primeiro rowid que ele recebeu e o periodo em que
@@ -150,6 +159,7 @@ impl RegFile {
             criado_em: agora(),
             proxima_sequencia: 0,
             proximo_rownum: 1,
+            baldes: Vec::new(),
             recuperados: 0,
             fronteiras: Vec::new(),
         };
@@ -158,6 +168,13 @@ impl RegFile {
                 primeiro_rowid: 1,
                 chave_periodo: SEM_PERIODO,
             });
+        }
+        if r.esquema.paginacao().modo.por_letra() {
+            // Os 37 baldes existem desde a criacao, todos vazios. O ARQUIVO de
+            // cada um so nasce na primeira linha que cair nele: uma tabela de
+            // clientes que nunca teve nome com Q nao precisa de um `_Q.reg`
+            // vazio ocupando lugar.
+            r.baldes = vec![0; BALDES.len()];
         }
         r.volumes.criar(1)?;
         r.gravar_cabecalho(1)?;
@@ -236,11 +253,41 @@ impl RegFile {
             criado_em,
             proxima_sequencia,
             proximo_rownum,
+            baldes: Vec::new(),
             recuperados: 0,
             fronteiras: Vec::new(),
         };
         r.reler_fronteiras()?;
+        r.reler_baldes()?;
         Ok(r)
+    }
+
+    /// Remonta os contadores dos baldes lendo o cabecalho de cada volume.
+    ///
+    /// Cada volume guarda quantos slots ja usou nos bytes 100..108 do proprio
+    /// cabecalho. Fica no volume, e nao num arquivo separado, pela mesma razao
+    /// da fronteira do periodo: um arquivo separado seria uma segunda verdade,
+    /// e as duas divergem no primeiro caminho que esquecer de atualizar uma.
+    fn reler_baldes(&mut self) -> Result<()> {
+        if !self.esquema.paginacao().modo.por_letra() {
+            self.baldes.clear();
+            return Ok(());
+        }
+        self.baldes = vec![0; BALDES.len()];
+        for volume in self.volumes.existentes() {
+            let i = volume as usize;
+            if i == 0 || i > self.baldes.len() {
+                return Err(PhxError::Corrompido(format!(
+                    "{} tem o volume {volume}, fora dos {} baldes",
+                    self.volumes.nome(),
+                    self.baldes.len()
+                )));
+            }
+            let mut cab = [0u8; CAB_LEN];
+            self.volumes.ler(volume, 0, &mut cab)?;
+            self.baldes[i - 1] = Campos(&cab).u64(100);
+        }
+        Ok(())
     }
 
     /// Remonta a tabela de fronteiras lendo o cabecalho de cada volume.
@@ -377,6 +424,12 @@ impl RegFile {
         if let Some(f) = self.fronteiras.get(volume as usize - 1) {
             por_u64(&mut buf, 76, f.primeiro_rowid);
             por_u64(&mut buf, 84, f.chave_periodo as u64);
+        }
+        // Na particao alfanumerica, quantos slots este balde ja usou. Por
+        // volume, e nao no volume 1: o contador do `_S` tem de viajar junto
+        // com o `_S`.
+        if let Some(usados) = self.baldes.get(volume as usize - 1) {
+            por_u64(&mut buf, 100, *usados);
         }
         let crc = crc32(&buf[..124]);
         por_u32(&mut buf, 124, crc);
@@ -598,6 +651,21 @@ impl RegFile {
     }
 
     fn conferir_faixa(&self, rowid: RowId) -> Result<()> {
+        if !self.baldes.is_empty() {
+            // Na alfanumerica o rowid diz o balde: a faixa valida e a
+            // capacidade da tabela, e o que decide se a linha existe e o slot
+            // estar dentro do `usados` daquele balde.
+            let rpa = self.esquema.paginacao().registros_por_arquivo;
+            let balde = ((rowid.max(1) - 1) / rpa) as usize;
+            let slot = (rowid.max(1) - 1) % rpa;
+            if rowid == 0 || balde >= self.baldes.len() || slot >= self.baldes[balde] {
+                return Err(PhxError::NaoEncontrado(format!(
+                    "rowid {rowid} nao existe em {}",
+                    self.volumes.nome()
+                )));
+            }
+            return Ok(());
+        }
         if rowid == 0 || rowid > self.slot_count {
             return Err(PhxError::NaoEncontrado(format!(
                 "rowid {rowid} fora da faixa 1..={} em {}",
@@ -618,7 +686,70 @@ impl RegFile {
     /// A chave do periodo vem de cima porque o `.reg` so conhece bytes: quem
     /// sabe ler a coluna de data e a `Table`, que tem o esquema e os valores.
     /// Na particao por quantidade a chave e ignorada.
-    pub fn inserir_no_periodo(&mut self, payload: &[u8], chave: Option<i64>) -> Result<RowId> {
+    /// Insere no BALDE da particao alfanumerica.
+    ///
+    /// O rowid nao vem de `slot_count + 1`: vem da conta que poe a linha no
+    /// arquivo dela.
+    ///
+    /// ```text
+    /// rowid = (balde - 1) x registros_por_arquivo + slot_no_balde
+    /// ```
+    ///
+    /// E a inversa exata do que `Paginacao::localizar` ja fazia, e por isso
+    /// nenhum caminho de LEITURA precisou mudar: `localizar` continua
+    /// devolvendo (volume, offset) por divisao, e o `.ndx` continua guardando
+    /// rowid sem saber que balde existe.
+    ///
+    /// `registros_por_arquivo` passa a ser um teto POR LETRA, e nao da tabela.
+    /// Numa base brasileira o `_S` enche muito antes do `_K`, e o erro diz qual
+    /// balde encheu -- porque «tabela cheia» com 3% de ocupacao seria uma
+    /// mensagem que nao ajuda ninguem.
+    pub fn inserir_no_balde(&mut self, payload: &[u8], balde: u32) -> Result<RowId> {
+        self.conferir_payload(payload)?;
+        let paginacao = self.esquema.paginacao();
+        let i = balde as usize;
+        if i == 0 || i > self.baldes.len() {
+            return Err(PhxError::Esquema(format!(
+                "balde {balde} fora da faixa 1..={}",
+                self.baldes.len()
+            )));
+        }
+
+        let usados = self.baldes[i - 1];
+        if usados >= paginacao.registros_por_arquivo {
+            return Err(PhxError::LimiteExcedido(format!(
+                "o balde {} de {} encheu: {} registros, o teto por letra",
+                BALDES[i - 1],
+                self.volumes.nome(),
+                paginacao.registros_por_arquivo
+            )));
+        }
+
+        let rowid = (balde as u64 - 1) * paginacao.registros_por_arquivo + usados + 1;
+        let (volume, offset) = paginacao.localizar(rowid);
+        debug_assert_eq!(volume, balde, "a conta do rowid nao bate com o balde");
+        let offset = self.data_offset + (offset - 1) * self.slot_size as u64;
+
+        if self.volumes.garantir(volume)? {
+            self.gravar_cabecalho(volume)?;
+        }
+        self.escrever_slot(volume, offset, payload)?;
+
+        self.baldes[i - 1] = usados + 1;
+        self.live_count += 1;
+        // `slot_count` vira a MARCA D'AGUA: o maior rowid que ja existiu. Ele
+        // deixa de ser "quantos slots" -- com baldes, a tabela tem buracos
+        // enormes entre um balde e o seguinte -- e continua servindo para o
+        // que `conferir_faixa` precisa: recusar rowid que nunca foi gravado.
+        self.slot_count = self.slot_count.max(rowid);
+        self.gravar_cabecalho(volume)?;
+        if volume != 1 {
+            self.gravar_cabecalho(1)?;
+        }
+        Ok(rowid)
+    }
+
+    fn conferir_payload(&self, payload: &[u8]) -> Result<()> {
         if payload.len() != self.esquema.payload_len() {
             return Err(PhxError::Corrompido(format!(
                 "payload de {} bytes, esperado {}",
@@ -626,6 +757,20 @@ impl RegFile {
                 self.esquema.payload_len()
             )));
         }
+        Ok(())
+    }
+
+    fn escrever_slot(&mut self, volume: u32, offset: u64, payload: &[u8]) -> Result<()> {
+        let mut slot = vec![0u8; self.slot_size];
+        slot[0] = STATUS_ATIVO;
+        por_u32(&mut slot, 4, crc32(payload));
+        por_u64(&mut slot, 8, 1); // versao do registro
+        slot[SLOT_CAB..].copy_from_slice(payload);
+        self.volumes.escrever(volume, offset, &slot)
+    }
+
+    pub fn inserir_no_periodo(&mut self, payload: &[u8], chave: Option<i64>) -> Result<RowId> {
+        self.conferir_payload(payload)?;
         let rowid = self.slot_count + 1;
         let paginacao = self.esquema.paginacao();
         let por_periodo = paginacao.modo.periodo().is_some();
@@ -650,12 +795,7 @@ impl RegFile {
             self.gravar_cabecalho(volume)?;
         }
 
-        let mut slot = vec![0u8; self.slot_size];
-        slot[0] = STATUS_ATIVO;
-        por_u32(&mut slot, 4, crc32(payload));
-        por_u64(&mut slot, 8, 1); // versao do registro
-        slot[SLOT_CAB..].copy_from_slice(payload);
-        self.volumes.escrever(volume, offset, &slot)?;
+        self.escrever_slot(volume, offset, payload)?;
 
         self.slot_count += 1;
         self.live_count += 1;
@@ -775,6 +915,9 @@ impl RegFile {
 
     /// Proximo registro ativo com rowid >= `desde`, na ordem de digitacao.
     pub fn proximo_ativo(&mut self, desde: RowId) -> Result<Option<(RowId, Vec<u8>)>> {
+        if !self.baldes.is_empty() {
+            return self.proximo_ativo_por_balde(desde);
+        }
         let mut rowid = desde.max(1);
         while rowid <= self.slot_count {
             if let Some(p) = self.ler(rowid)? {
@@ -785,13 +928,53 @@ impl RegFile {
         Ok(None)
     }
 
+    /// O proximo ativo quando a tabela e alfanumerica.
+    ///
+    /// Aqui `slot_count` e uma marca d'agua, e nao uma contagem: entre o fim do
+    /// balde `_A` e o comeco do `_B` ha `registros_por_arquivo` menos os usados
+    /// de puro vazio. Andar de um em um por esse vazio faria uma varredura de
+    /// mil linhas custar milhoes de leituras -- que e exatamente o defeito que
+    /// a paginacao acabou de tirar do caminho.
+    ///
+    /// Entao a varredura anda POR BALDE: dentro do balde vai ate `usados`, e
+    /// no fim dele salta direto para o inicio do proximo. A tabela e percorrida
+    /// na ordem dos baldes, que e a ordem alfabetica -- e nao na ordem de
+    /// chegada, que na alfanumerica mora no `rownum`.
+    fn proximo_ativo_por_balde(&mut self, desde: RowId) -> Result<Option<(RowId, Vec<u8>)>> {
+        let rpa = self.esquema.paginacao().registros_por_arquivo;
+        let desde = desde.max(1);
+        let mut balde = ((desde - 1) / rpa) as usize;
+        let mut slot = (desde - 1) % rpa;
+
+        while balde < self.baldes.len() {
+            let usados = self.baldes[balde];
+            while slot < usados {
+                let rowid = balde as u64 * rpa + slot + 1;
+                if let Some(p) = self.ler(rowid)? {
+                    return Ok(Some((rowid, p)));
+                }
+                slot += 1;
+            }
+            balde += 1;
+            slot = 0;
+        }
+        Ok(None)
+    }
+
+    /// Quantos slots cada balde ja usou. Vazio fora da particao alfanumerica.
+    pub fn baldes(&self) -> &[u64] {
+        &self.baldes
+    }
+
     /// Confere o CRC de todos os registros ativos e a contagem do cabecalho.
     pub fn verificar(&mut self) -> Result<u64> {
         let mut vivos = 0u64;
-        for rowid in 1..=self.slot_count {
-            if self.ler(rowid)?.is_some() {
-                vivos += 1;
-            }
+        // Pelo `proximo_ativo`, que sabe saltar os vazios entre baldes: um
+        // `for` de 1 ate a marca d'agua percorreria os buracos da alfanumerica.
+        let mut rowid = 1;
+        while let Some((id, _)) = self.proximo_ativo(rowid)? {
+            vivos += 1;
+            rowid = id + 1;
         }
         if vivos != self.live_count {
             return Err(PhxError::Corrompido(format!(
@@ -812,11 +995,18 @@ fn alinhar(v: u64, a: u64) -> u64 {
     v.div_ceil(a) * a
 }
 
-/// Acha o primeiro volume de um conjunto sem saber, de antemao, se a tabela e
-/// paginada nem qual a largura do sufixo.
+/// Acha o volume 1 de um conjunto sem saber, de antemao, se a tabela e
+/// paginada, qual a largura do sufixo, nem se o sufixo e numero ou letra.
 ///
-/// Procura primeiro `nome.ext` (tabela em arquivo unico); se nao existir,
-/// varre o diretorio atras de `nome_<digitos>.ext` e devolve o menor.
+/// Procura primeiro `nome.ext` (tabela em arquivo unico). Se nao existir,
+/// varre o diretorio e escolhe pelo **cabecalho**, e nao pelo nome: o volume 1
+/// e o que se declara volume 1 nos bytes 12..16.
+///
+/// Pelo nome nao daria. Na particao alfanumerica os sufixos sao `_A`.. `_Z`,
+/// `_0`.. `_9` e `_Outros`, e ordenar texto poria `_0` antes de `_A` -- o que
+/// escolheria como volume 1 um arquivo que nao tem os contadores da tabela.
+/// Ler 128 bytes de cada candidato uma vez, na abertura, custa nada: volume e
+/// coisa que se conta em dezenas.
 fn achar_primeiro_volume(diretorio: &Path, nome: &str, ext: &str) -> Result<PathBuf> {
     let simples = diretorio.join(format!("{nome}.{ext}"));
     if simples.exists() {
@@ -831,17 +1021,28 @@ fn achar_primeiro_volume(diretorio: &Path, nome: &str, ext: &str) -> Result<Path
                 return false;
             }
             match p.file_stem().and_then(|s| s.to_str()) {
-                Some(base) => match base.strip_prefix(&prefixo) {
-                    Some(sufixo) => {
-                        !sufixo.is_empty() && sufixo.chars().all(|c| c.is_ascii_digit())
-                    }
-                    None => false,
-                },
+                Some(base) => base
+                    .strip_prefix(&prefixo)
+                    .is_some_and(|sufixo| !sufixo.is_empty()),
                 None => false,
             }
         })
         .collect();
     candidatos.sort();
+
+    for c in &candidatos {
+        let mut cab = [0u8; CAB_LEN];
+        let Ok(mut f) = File::open(c) else { continue };
+        if f.read_exact(&mut cab).is_err() {
+            continue;
+        }
+        if &cab[0..8] == MAGIC_REG && Campos(&cab).u32(12) == 1 {
+            return Ok(c.clone());
+        }
+    }
+
+    // Nenhum se declarou volume 1. Devolve o menor por nome, para a mensagem
+    // de erro seguinte falar do cabecalho e nao do diretorio vazio.
     candidatos.into_iter().next().ok_or_else(|| {
         PhxError::NaoEncontrado(format!(
             "nenhum volume de {nome}.{ext} em {}",

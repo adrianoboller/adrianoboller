@@ -636,6 +636,7 @@ tr.linha-excluida td{opacity:.55;text-decoration:line-through}
 .paginar .botao.mini:disabled{opacity:.35;cursor:default;border-color:var(--linha)}
 .paginar .botao.mini:disabled:hover{border-color:var(--linha);color:var(--texto-3)}
 td.ordem{color:var(--texto-3);font-size:11px}
+tr.balde-vazio{opacity:.45}
 
 .botao.mini{width:auto;padding:4px 10px;font-size:11px;font-weight:500;
             background:transparent;border:1px solid var(--linha-forte);
@@ -2354,6 +2355,19 @@ function volumesDe(e) {
   const total = Math.max(Number(e.slots) || 0, 0);
   const nome = v => `${e.tabela}_${String(v).padStart(larg, "0")}.reg`;
 
+  // Na alfanumérica os baldes vêm PRONTOS do servidor, com quantas linhas cada
+  // um tem. Calcular aqui daria errado: `slots` nesta partição é a marca
+  // d'água — o maior rowid que já existiu —, e não uma contagem. Dividir a
+  // marca d'água pelo teto por letra diria que o balde A tem 36 mil linhas.
+  if (pag.baldes && pag.baldes.length) {
+    return pag.baldes.map(b => ({
+      volume: b.volume, arquivo: b.arquivo, letra: b.letra, existe: b.existe,
+      de: b.primeiro_rowid,
+      ate: b.primeiro_rowid + pag.registros_por_arquivo - 1,
+      usados: b.registros,
+    }));
+  }
+
   // Na particao por periodo o volume NAO sai de conta: ele corta quando o
   // calendario vira, e so o servidor sabe quando isso aconteceu. As
   // fronteiras vem prontas no `esquema`; calcular aqui daria o numero errado
@@ -2402,17 +2416,21 @@ async function verParticoes(db, tab) {
   }
 
   const vols = volumesDe(e);
-  const porPeriodo = pag.modo && pag.modo !== "quantidade";
+  const porLetra = pag.modo === "letra";
+  const porPeriodo = pag.modo && pag.modo !== "quantidade" && !porLetra;
   const gb = n => (n / (1024 * 1024 * 1024)).toFixed(2);
+  const comLinhas = vols.filter(v => v.usados > 0).length;
   folha(`Partições de ${tab}`,
-    `${db} · ${vols.length} volume(s) do .reg · ${
-      porPeriodo ? `corta ${pag.modo}, pela coluna ${pag.coluna}` : "corta por quantidade"}`,
+    `${db} · ${porLetra
+        ? `${comLinhas} de ${vols.length} baldes com linha · pela primeira letra de ${pag.coluna}`
+        : `${vols.length} volume(s) do .reg · ${
+            porPeriodo ? `corta ${pag.modo}, pela coluna ${pag.coluna}` : "corta por quantidade"}`}`,
     `<div class="fichas">
-       <div class="ficha"><div class="v">${esc(porPeriodo ? pag.modo : "por faixa")}</div>
+       <div class="ficha"><div class="v">${esc(porLetra ? "alfanumérica" : porPeriodo ? pag.modo : "por faixa")}</div>
          <div class="r">regra de corte</div>
-         <div class="u">${porPeriodo ? esc(`pela coluna ${pag.coluna}`) : "por quantidade"}</div></div>
+         <div class="u">${porLetra || porPeriodo ? esc(`pela coluna ${pag.coluna}`) : "por quantidade"}</div></div>
        <div class="ficha"><div class="v">${esc(String(pag.registros_por_arquivo))}</div>
-         <div class="r">${porPeriodo ? "teto por volume" : "registros por arquivo"}</div></div>
+         <div class="r">${porLetra ? "teto POR LETRA" : porPeriodo ? "teto por volume" : "registros por arquivo"}</div></div>
        <div class="ficha"><div class="v">${pag.max_arquivos ? esc(String(pag.max_arquivos)) : "∞"}</div>
          <div class="r">teto de volumes</div></div>
        <div class="ficha"><div class="v">${esc(String(pag.capacidade || "—"))}</div>
@@ -2422,14 +2440,32 @@ async function verParticoes(db, tab) {
      </div>` +
     tabela([{t:"volume",cls:"num"},{t:"arquivo"},
             ...(porPeriodo ? [{t:"período que o abriu"}] : []),
+            ...(porLetra ? [{t:"existe"}] : []),
             {t:"do rowid",cls:"num"},{t:"até o rowid",cls:"num"},{t:"slots usados",cls:"num"}],
-      vols, v => `<tr>
-        <td class="num dado">${v.volume}</td>
+      vols, v => `<tr${porLetra && !v.usados ? ' class="balde-vazio"' : ""}>
+        <td class="num dado">${v.volume}${porLetra ? ` <b>${esc(v.letra)}</b>` : ""}</td>
         <td class="dado"><code>${esc(v.arquivo)}</code></td>
         ${porPeriodo ? `<td class="dado">${esc(v.periodo || "—")}</td>` : ""}
+        ${porLetra ? `<td>${v.existe ? "sim" : "<span class=\"leg\">ainda não</span>"}</td>` : ""}
         <td class="num">${v.de}</td><td class="num">${v.ate}</td>
         <td class="num">${v.usados}</td></tr>`) +
     `<div class="nota">
+       ${porLetra ? `
+       <p><strong>Um arquivo por letra inicial de
+       <code>${esc(pag.coluna)}</code>.</strong> A linha vai para o arquivo
+       dela, e o endereço continua saindo de uma conta:
+       <code>rowid = (balde − 1) × ${esc(String(pag.registros_por_arquivo))} + slot</code>.
+       O balde que nunca recebeu linha não ganha arquivo — os 37 estão previstos,
+       nem todos existem.</p>
+       <p><strong>O teto é por letra, e não da tabela.</strong> Num cadastro
+       brasileiro o <code>_S</code> enche muito antes do <code>_K</code>: quem
+       enche primeiro derruba a inserção daquela letra, com as outras 36 ainda
+       com espaço. É a conta a fazer ao dimensionar.</p>
+       <p><strong>A ordem de digitação está no <code>rownum</code>.</strong>
+       Aqui o rowid diz em que <em>arquivo</em> a linha está, e não quando ela
+       chegou — a leitura sai em ordem alfabética de balde. A ordem de chegada
+       é a coluna de sistema, e é por ela que a grade pagina.</p>
+       ` : ""}
        ${porPeriodo ? `
        <p><strong>Aqui as faixas não são conta.</strong> O volume corta quando o
        período da coluna <code>${esc(pag.coluna)}</code> vira — ou quando enche,
@@ -2536,6 +2572,7 @@ const tetoDoSufixo = digitos => Math.pow(10, Math.min(9, Math.max(1, digitos))) 
 /** Como cada regra de particao corta o volume, em uma linha. */
 const PARTICOES = [
   ["quantidade", "por faixa de quantidade", "volume novo a cada N registros — o endereço sai de divisão"],
+  ["letra",      "alfanumérica (A–Z, 0–9)", "um arquivo por letra inicial: Clientes_A.reg … Clientes_Outros.reg"],
   ["mensal",     "mensal",                  "volume novo quando o mês vira"],
   ["bimestral",  "bimestral",               "jan-fev, mar-abr, mai-jun, jul-ago, set-out, nov-dez"],
   ["semestral",  "semestral",               "jan-jun e jul-dez"],
@@ -2544,6 +2581,13 @@ const PARTICOES = [
 
 /** Os tipos que podem carregar a data da particao. */
 const TIPOS_DATA = ["Date", "DateTime"];
+
+/** Os tipos que servem de REFERENCIA na particao alfanumerica.
+ *
+ * `Bin` e `Memo` ficam de fora, e nao por gosto: o valor deles mora fora do
+ * slot, e o balde precisa ser decidido ANTES de a linha ser gravada -- ler o
+ * `.memo` para saber em que arquivo gravar seria a ordem invertida. */
+const TIPOS_REFERENCIA = t => !/^(Bin|Memo)$/.test(String(t || ""));
 
 /** O formulario de criacao: colunas e indices montados linha a linha.
  *
@@ -2589,8 +2633,10 @@ function desenharNovaTabela(db) {
     `<option value="${esc(t)}"${t === v ? " selected" : ""}>${esc(t)} — ${esc(d)}</option>`
   ).join("");
 
-  const porPeriodo = r.particao && r.particao !== "quantidade";
+  const porLetra = r.particao === "letra";
+  const porPeriodo = r.particao && r.particao !== "quantidade" && !porLetra;
   const colunasData = r.colunas.filter(c => TIPOS_DATA.includes(c.tipo) && c.nome);
+  const colunasRef = r.colunas.filter(c => c.nome && TIPOS_REFERENCIA(c.tipo));
   const nomesCol = r.colunas.filter(c => c.nome).map(c => c.nome);
 
   // A chave primaria e um indice marcado. Mostrar quais colunas a compoem
@@ -2667,6 +2713,17 @@ function desenharNovaTabela(db) {
              `<option value="${k}"${k === r.particao ? " selected" : ""}>${esc(rot)} — ${esc(diz)}</option>`
            ).join("")}</select></label>
 
+         ${porLetra ? `
+         <label class="largo"><span>coluna de referência
+             <em>(a primeira letra dela decide o arquivo; precisa ser obrigatória)</em></span>
+           <select id="nt_pcol">${
+             colunasRef.length
+               ? colunasRef.map(c => `<option value="${esc(c.nome)}"${
+                   c.nome === r.particao_coluna ? " selected" : ""}>${esc(c.nome)}${
+                   c.obrigatoria ? "" : " — atenção: aceita nulo"}</option>`).join("")
+               : `<option value="">— nenhuma coluna serve de referência —</option>`
+           }</select></label>` : ""}
+
          ${porPeriodo ? `
          <label class="largo"><span>coluna de data que decide o período
              <em>(precisa ser <code>Date</code> ou <code>DateTime</code> e obrigatória)</em></span>
@@ -2678,15 +2735,32 @@ function desenharNovaTabela(db) {
                : `<option value="">— nenhuma coluna de data no cadastro acima —</option>`
            }</select></label>` : ""}
 
-         <label><span>${porPeriodo ? "teto de registros por volume" : "registros por arquivo"}
-             <em>${porPeriodo ? "corta antes se o período render demais" : "0 = arquivo único"}</em></span>
+         <label><span>${porLetra ? "teto de registros POR LETRA"
+                        : porPeriodo ? "teto de registros por volume" : "registros por arquivo"}
+             <em>${porLetra ? "num cadastro brasileiro o _S enche muito antes do _K"
+                   : porPeriodo ? "corta antes se o período render demais" : "0 = arquivo único"}</em></span>
            <input id="nt_pag" inputmode="numeric" placeholder="0" value="${esc(String(r.pag ?? 0))}"></label>
+         ${porLetra ? `<p class="leg">O sufixo é a <b>letra</b>, e os volumes são
+           <b>37</b> — A a Z, 0 a 9 e <code>Outros</code>. Nenhum dos dois se
+           escolhe: são o formato desta partição.</p>` : `
          <label><span>dígitos do sufixo <em>(3 dá <code>_001</code>)</em></span>
            <input id="nt_dig" inputmode="numeric" placeholder="3" value="${esc(String(r.dig ?? 3))}"></label>
          <label><span>teto de volumes <em>(0 = o que couber no sufixo)</em></span>
            <input id="nt_max" inputmode="numeric" placeholder="${esc(String(tetoDoSufixo(r.dig ?? 3)))}"
-                  value="${esc(String(r.max ?? 0))}"></label>
+                  value="${esc(String(r.max ?? 0))}"></label>`}
        </div>
+
+       ${porLetra ? `<div class="nota"><p><strong>A ordem de digitação muda de
+         campo.</strong> A linha vai para o arquivo da letra dela, então duas
+         linhas digitadas em seguida caem em arquivos diferentes e o
+         <code>rowid</code> deixa de crescer com a chegada — ele passa a dizer
+         em que <em>arquivo</em> a linha está. A ordem de chegada continua
+         inteira na coluna de sistema <code>rownum</code>, e é por ela que a
+         grade pagina.</p>
+         <p>Alterar a coluna de referência depois é <strong>recusado</strong>:
+         mudaria o arquivo em que a linha mora, e com ele o rowid, que é a
+         identidade dela em todo índice. Para mudar, exclua e insira de novo.</p>
+         </div>` : ""}
 
        ${gradeDeParticoes(r, porPeriodo)}
        ` : `<p class="leg">Sem partição, a tabela é um arquivo único:
@@ -2858,17 +2932,27 @@ function ligarNovaTabela(db) {
     };
 
     if (r.particionada) {
-      const porPeriodo = r.particao && r.particao !== "quantidade";
+      const porLetra = r.particao === "letra";
+      const porPeriodo = r.particao && r.particao !== "quantidade" && !porLetra;
+      if (porLetra && !r.particao_coluna)
+        return avisar("a partição alfanumérica precisa de uma coluna de referência obrigatória", true);
       if (porPeriodo && !r.particao_coluna)
         return avisar("a partição por período precisa de uma coluna de data obrigatória", true);
-      if (!porPeriodo && !r.pag)
+      if (!porPeriodo && !porLetra && !r.pag)
         return avisar("informe quantos registros cabem em cada arquivo", true);
       pedido.registros_por_arquivo = r.pag || 1000000;
-      pedido.digitos = r.dig;
-      pedido.max_arquivos = r.max;   // zero = o que couber no sufixo
-      if (porPeriodo) {
-        pedido.particao = r.particao;
+      if (porLetra) {
+        // Nem `digitos` nem `max_arquivos` vão: os 37 baldes e o sufixo de
+        // letra são o formato desta partição, e não uma escolha da tela.
+        pedido.particao = "letra";
         pedido.particao_coluna = r.particao_coluna;
+      } else {
+        pedido.digitos = r.dig;
+        pedido.max_arquivos = r.max;   // zero = o que couber no sufixo
+        if (porPeriodo) {
+          pedido.particao = r.particao;
+          pedido.particao_coluna = r.particao_coluna;
+        }
       }
     }
 

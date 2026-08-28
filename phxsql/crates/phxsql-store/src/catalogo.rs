@@ -23,6 +23,7 @@
 use std::path::{Path, PathBuf};
 
 use phxsql_core::error::{PhxError, Result};
+use phxsql_core::paginacao::BALDES;
 use phxsql_core::schema::Schema;
 use phxsql_core::EXT_REG;
 
@@ -47,11 +48,25 @@ fn pertence(arquivo: &str, tabela: &str, ext: &str) -> bool {
     let Some(sufixo) = sem_ext.strip_prefix(tabela) else {
         return false;
     };
-    // Ou e o nome exato, ou e o nome mais `_` e so digitos.
-    sufixo.is_empty()
-        || (sufixo.starts_with('_')
-            && sufixo.len() > 1
-            && sufixo[1..].bytes().all(|b| b.is_ascii_digit()))
+    // Ou e o nome exato, ou e o nome mais `_` e um sufixo de volume: so
+    // digitos, ou uma das 37 letras da particao alfanumerica.
+    if sufixo.is_empty() {
+        return true;
+    }
+    let Some(s) = sufixo.strip_prefix('_') else {
+        return false;
+    };
+    !s.is_empty() && (s.bytes().all(|b| b.is_ascii_digit()) || e_balde(s))
+}
+
+/// Este sufixo e o nome de um balde da particao alfanumerica?
+///
+/// Comparacao contra a lista EXATA, e nao "uma letra qualquer": a lista tem 37
+/// nomes e nenhum outro serve. Sem isso, `precos_historico.reg` viraria volume
+/// de `precos` -- que e o defeito que esta conferencia existe para evitar,
+/// agora com um caso a mais.
+fn e_balde(s: &str) -> bool {
+    BALDES.contains(&s)
 }
 
 pub fn nome_hostil(nome: &str) -> bool {
@@ -91,16 +106,30 @@ fn nome_da_tabela(caminho: &Path) -> Option<String> {
         return None;
     }
     let base = caminho.file_stem()?.to_str()?;
-    match base.rsplit_once('_') {
-        Some((antes, sufixo))
-            if !antes.is_empty()
-                && !sufixo.is_empty()
-                && sufixo.chars().all(|c| c.is_ascii_digit()) =>
-        {
-            Some(antes.to_string())
-        }
-        _ => Some(base.to_string()),
+    let Some((antes, sufixo)) = base.rsplit_once('_') else {
+        return Some(base.to_string());
+    };
+    if antes.is_empty() || sufixo.is_empty() {
+        return Some(base.to_string());
     }
+    if sufixo.chars().all(|c| c.is_ascii_digit()) {
+        return Some(antes.to_string());
+    }
+    // Sufixo de LETRA so conta como balde quando o volume 1 esta ali do lado.
+    //
+    // A conferencia existe por causa de uma ambiguidade real: uma tabela
+    // chamada `dados_X` e o balde X de uma tabela `dados` se escrevem igual.
+    // O volume 1 (`_A`) nasce com a tabela alfanumerica e nunca falta, entao a
+    // presenca dele e o que separa os dois casos -- e uma tabela `dados_X`
+    // sozinha continua sendo ela mesma.
+    if e_balde(sufixo)
+        && caminho
+            .with_file_name(format!("{antes}_{}.{EXT_REG}", BALDES[0]))
+            .exists()
+    {
+        return Some(antes.to_string());
+    }
+    Some(base.to_string())
 }
 
 fn tabelas_em(diretorio: &Path) -> Result<Vec<String>> {

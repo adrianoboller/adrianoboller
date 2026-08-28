@@ -119,14 +119,18 @@ impl Table {
         }
 
         let ndx = NdxFile::criar(caminho(&diretorio, &nome, EXT_NDX), &esquema)?;
-        let bin = BlobFile::criar(&diretorio, &nome, EXT_BIN, MAGIC_BIN, paginacao)?;
-        let memo = BlobFile::criar(&diretorio, &nome, EXT_MEMO, MAGIC_MEMO, paginacao)?;
-        let log = LogFile::criar(&diretorio, &nome, paginacao)?;
-        let lixeira = LixeiraFile::criar(&diretorio, &nome, paginacao)?;
-        let motivos = MotivoFile::criar(&diretorio, &nome, paginacao)?;
+        // Os arquivos que NAO se partem por letra levam o sufixo numerico.
+        // Ver `Paginacao::para_externos`: um `Clientes_B.log` se leria como o
+        // diario do balde B, e o diario e da tabela inteira.
+        let externos = paginacao.para_externos();
+        let bin = BlobFile::criar(&diretorio, &nome, EXT_BIN, MAGIC_BIN, externos)?;
+        let memo = BlobFile::criar(&diretorio, &nome, EXT_MEMO, MAGIC_MEMO, externos)?;
+        let log = LogFile::criar(&diretorio, &nome, externos)?;
+        let lixeira = LixeiraFile::criar(&diretorio, &nome, externos)?;
+        let motivos = MotivoFile::criar(&diretorio, &nome, externos)?;
         let reg = RegFile::criar(&diretorio, &nome, esquema.clone())?;
 
-        Ok(Table {
+        let mut t = Table {
             nome,
             diretorio,
             esquema,
@@ -137,7 +141,9 @@ impl Table {
             log,
             lixeira,
             motivos,
-        })
+        };
+        t.gravar_pag()?;
+        Ok(t)
     }
 
     /// Abre uma tabela existente. O esquema vem de dentro do proprio `.reg`.
@@ -179,13 +185,14 @@ impl Table {
         let reg = RegFile::abrir(&diretorio, nome)?;
         let paginacao = reg.esquema().paginacao();
         let ndx = NdxFile::abrir(caminho(&diretorio, nome, EXT_NDX))?;
-        let bin = BlobFile::abrir(&diretorio, nome, EXT_BIN, MAGIC_BIN, paginacao)?;
-        let memo = BlobFile::abrir(&diretorio, nome, EXT_MEMO, MAGIC_MEMO, paginacao)?;
-        let log = LogFile::abrir(&diretorio, nome, paginacao)?;
+        let externos = paginacao.para_externos();
+        let bin = BlobFile::abrir(&diretorio, nome, EXT_BIN, MAGIC_BIN, externos)?;
+        let memo = BlobFile::abrir(&diretorio, nome, EXT_MEMO, MAGIC_MEMO, externos)?;
+        let log = LogFile::abrir(&diretorio, nome, externos)?;
         // `abrir` destes dois CRIA quando falta: tabela feita antes deles
         // existirem tem de continuar abrindo.
-        let lixeira = LixeiraFile::abrir(&diretorio, nome, paginacao)?;
-        let motivos = MotivoFile::abrir(&diretorio, nome, paginacao)?;
+        let lixeira = LixeiraFile::abrir(&diretorio, nome, externos)?;
+        let motivos = MotivoFile::abrir(&diretorio, nome, externos)?;
 
         if ndx.indices().len() != reg.esquema().indices().len() {
             return Err(PhxError::Corrompido(format!(
@@ -573,6 +580,45 @@ impl Table {
     ///
     /// A checagem de indice unico acontece ANTES de tocar no `.reg`; se um
     /// indice falhar no meio do caminho, o que ja foi gravado e desfeito.
+    /// Em que balde esta linha cai, quando a particao e alfanumerica.
+    ///
+    /// `None` nos outros modos. O valor da coluna de referencia vira texto
+    /// pela mesma funcao que o `.reason` usa -- entao numero tambem particiona,
+    /// e o `12345` cai no balde `_1`.
+    fn balde_da_linha(&self, valores: &[Value]) -> Result<Option<u32>> {
+        let modo = self.esquema.paginacao().modo;
+        if !modo.por_letra() {
+            return Ok(None);
+        }
+        let Some(i) = modo.coluna() else {
+            return Err(PhxError::Esquema(
+                "particao alfanumerica sem coluna de referencia".into(),
+            ));
+        };
+        let texto = valores.get(i).map(|v| v.para_texto()).unwrap_or_default();
+        Ok(Some(phxsql_core::paginacao::balde_de(&texto)))
+    }
+
+    /// Quantas linhas cada balde tem. Vazio fora da particao alfanumerica.
+    pub fn baldes(&self) -> &[u64] {
+        self.reg.baldes()
+    }
+
+    /// Regrava o `.pag`, o descritor de particao da tabela.
+    ///
+    /// Gerado, e nunca lido pelo motor: a verdade continua no bloco de esquema
+    /// do `.reg` e nos cabecalhos dos volumes. Ver [`crate::pag`].
+    pub fn gravar_pag(&mut self) -> Result<std::path::PathBuf> {
+        let volumes = self.reg.volumes();
+        crate::pag::escrever(
+            &self.diretorio,
+            &self.nome,
+            &self.esquema,
+            self.reg.baldes(),
+            &volumes,
+        )
+    }
+
     /// Em que periodo esta linha cai, quando a tabela e particionada por data.
     ///
     /// `None` na particao por quantidade -- ali o volume sai de divisao e a
@@ -650,9 +696,12 @@ impl Table {
 
         let payload = self.montar_payload(valores)?;
         let ponteiros = self.ponteiros(&payload)?;
-        let rowid = self
-            .reg
-            .inserir_no_periodo(&payload, self.chave_do_periodo(valores)?)?;
+        let rowid = match self.balde_da_linha(valores)? {
+            Some(balde) => self.reg.inserir_no_balde(&payload, balde)?,
+            None => self
+                .reg
+                .inserir_no_periodo(&payload, self.chave_do_periodo(valores)?)?,
+        };
 
         for (i, chave) in chaves.iter().enumerate() {
             // `ja_conferido`: a unicidade foi conferida logo acima, antes de
@@ -723,6 +772,29 @@ impl Table {
                 return Err(PhxError::Duplicado(format!(
                     "indice unico {} ja tem essa chave",
                     self.ndx.indices()[i].nome
+                )));
+            }
+        }
+
+        // Na particao alfanumerica, o balde e o ENDERECO: mudar a coluna de
+        // referencia de «Silva» para «Andrade» mudaria o arquivo em que a
+        // linha mora, e com ele o rowid -- que e a identidade dela e esta em
+        // todo indice. Mover nao e opcao; deixar a linha no balde errado
+        // tambem nao, porque ai o `_S` deixa de conter os S e a particao para
+        // de valer. Entao a alteracao e RECUSADA, com o caminho escrito.
+        if let (Some(a), Some(b)) = (
+            self.balde_da_linha(&valores_antigos)?,
+            self.balde_da_linha(valores)?,
+        ) {
+            if a != b {
+                let baldes = phxsql_core::paginacao::BALDES;
+                return Err(PhxError::Esquema(format!(
+                    "a alteracao mudaria o balde de {} para {}, e o balde e o \
+                     endereco fisico da linha em {}. Exclua e insira de novo: \
+                     a linha nova nasce no balde certo, com outro rowid",
+                    baldes[a as usize - 1],
+                    baldes[b as usize - 1],
+                    self.nome
                 )));
             }
         }
@@ -1464,6 +1536,10 @@ impl Table {
         self.log.sincronizar()?;
         self.lixeira.sincronizar()?;
         self.motivos.sincronizar()?;
+        // O descritor acompanha o disco: ele so vale se disser o que os
+        // arquivos dizem, e o `sincronizar` e justamente o instante em que os
+        // arquivos param de mudar.
+        self.gravar_pag()?;
         Ok(())
     }
 }

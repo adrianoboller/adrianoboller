@@ -339,6 +339,20 @@ pub fn esquema_de_json(j: &Json) -> Result<Schema> {
         // posicao e detalhe de implementacao.
         let modo = match j.texto_ou("particao", "").trim() {
             "" | "quantidade" | "faixa" => ModoParticao::PorQuantidade,
+            "letra" | "alfanumerica" | "alfanumerico" => {
+                let coluna = j.texto_ou("particao_coluna", "").trim().to_string();
+                let i = esquema
+                    .colunas()
+                    .iter()
+                    .position(|c| c.nome == coluna)
+                    .ok_or_else(|| {
+                        PhxError::Esquema(format!(
+                            "a particao alfanumerica precisa de \"particao_coluna\" \
+                             com o nome da coluna de referencia; recebi {coluna:?}"
+                        ))
+                    })?;
+                ModoParticao::PorLetra { coluna: i as u16 }
+            }
             nome_periodo => {
                 let coluna = j.texto_ou("particao_coluna", "").trim().to_string();
                 let i = esquema
@@ -357,6 +371,13 @@ pub fn esquema_de_json(j: &Json) -> Result<Schema> {
                 }
             }
         };
+
+        // Na alfanumerica o numero de volumes NAO se escolhe: sao os 37
+        // baldes, e o construtor cuida do sufixo. Deixar a tela mandar um teto
+        // aqui so criaria um jeito de pedir uma tabela que o validador recusa.
+        if let ModoParticao::PorLetra { coluna } = modo {
+            return esquema.com_paginacao(Paginacao::por_letra(por_arquivo as u64, coluna)?);
+        }
 
         let cabem = 10u32.pow(digitos as u32) - 1;
         let max = match j.inteiro_ou("max_arquivos", 0).max(0) as u32 {

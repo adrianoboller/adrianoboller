@@ -1,11 +1,12 @@
 # Formato de arquivo do PhxSql
 
 Uma tabela de dados do PhxSql é composta por sete arquivos físicos que
-compartilham o mesmo nome-base — mais um oitavo, opcional:
+compartilham o mesmo nome-base — mais o espelho e o descritor:
 
 ```
 cadastroClientes.reg + .ndx + .bin + .memo + .log + .trash + .reason
                      ( +  .bkp, o espelho, quando ligado )
+                     ( +  .pag, o descritor de partição )
 ```
 
 | Arquivo | Papel | Assinatura | Pagina? | Quem lê |
@@ -17,6 +18,7 @@ cadastroClientes.reg + .ndx + .bin + .memo + .log + .trash + .reason
 | `.log` | Diário de inclusões, alterações e exclusões | `PHXLOG\0\0` | sim | quem tem `diario` |
 | `.trash` | Linhas que saíram do `.reg`, inteiras | `PHXTRH\0\0` | sim | **só `administrar`** |
 | `.reason` | Por que cada linha foi excluída, e por quem | `PHXRSN\0\0` | sim | **só `administrar`** |
+| `.pag` | Descritor de partição, em JSON | — (texto) | não | quem lê a tabela |
 
 Os três últimos são **os arquivos do administrador**, e a razão está no que
 cada um guarda. O `.trash` guarda o dado que alguém mandou apagar — quem só
@@ -77,7 +79,7 @@ offset(rowid) = data_offset + (rowid - 1) * slot_size
 | Off | Tam | Campo |
 |----:|----:|---|
 | 0 | 8 | assinatura `PHXREG\0\0` |
-| 8 | 2 | versão do formato (2) |
+| 8 | 2 | versão do formato (3) |
 | 10 | 2 | tamanho do cabeçalho (128) |
 | 12 | 4 | número do volume |
 | 16 | 4 | `slot_size` |
@@ -91,21 +93,23 @@ offset(rowid) = data_offset + (rowid - 1) * slot_size
 | 68 | 8 | alterado em |
 | 76 | 8 | `primeiro_rowid` — o primeiro rowid deste volume (só na partição por período) |
 | 84 | 8 | `chave_periodo` — o período em que este volume abriu (só na partição por período) |
-| 92 | 32 | reservado |
+| 92 | 8 | `proximo_rownum` — próximo valor da coluna de sistema `rownum` (só o volume 1) |
+| 100 | 8 | `slots_no_balde` — slots já usados **neste** volume (só na partição alfanumérica) |
+| 108 | 16 | reservado |
 | 124 | 4 | CRC-32 dos bytes 0..124 |
 
 Logo após o cabeçalho vem o **esquema serializado** (`schema_len` bytes), e
 `data_offset` é o próximo múltiplo de 64. A tabela é auto-descritiva: o
 conjunto de arquivos basta para reabrir os dados, sem dicionário externo.
 
-### O bloco de esquema (`PSCH`, versão 4)
+### O bloco de esquema (`PSCH`, versão 5)
 
 O bloco começa com `PSCH` e a versão. A **3** acrescentou os metadados de
 coluna, o marcador de chave primária e o modo de partição. A **4** acrescentou
 a coluna de sistema `softdeleted` e um byte no fim, com o sinal de *motivo
-obrigatório*. A leitura ainda aceita a 2: tabela gravada antes abre
-normalmente, ganha um `id` v7 sorteado na hora e os textos vazios.
-**Escrever, só na 4.**
+obrigatório*. A **5** acrescentou a coluna de sistema `rownum`. A leitura ainda
+aceita a 2: tabela gravada antes abre normalmente, ganha um `id` v7 sorteado na
+hora e os textos vazios. **Escrever, só na 5.**
 
 Por coluna, nesta ordem:
 
@@ -154,6 +158,39 @@ mas só como `Bool` não nula. Com outro tipo, o esquema é recusado: seria uma
 coluna comum com nome reservado, e o motor passaria a marcar exclusão num
 campo que o usuário lê como texto. Nulo também é recusado: seria um terceiro
 estado entre excluída e não excluída.
+
+### A coluna de sistema `rownum`
+
+`UInt8` não nula, e ela entra **depois** da `softdeleted` — coluna de sistema
+nova sempre no fim, senão uma tabela gravada na versão anterior teria os
+*offsets* deslocados ao ser relida.
+
+É o **número de ordem de chegada** da linha. O motor preenche; não se escreve à
+mão e não se ajusta — um valor escolhido seria uma ordem inventada. Nunca
+reaproveita número, nem depois de exclusão: se reaproveitasse, uma linha nova
+apareceria **atrás** de um cursor parado numa página, e a paginação passaria a
+pular registro sem avisar. Alterar a linha não renumera.
+
+O contador vive nos bytes 92..100 do cabeçalho do volume 1 e vai ao disco no
+`sincronizar`, como os outros.
+
+**Por que ela existe, se já há o `rowid`.** O `rowid` é a *posição física*.
+Enquanto o volume sai de divisão, posição e ordem de chegada são a mesma coisa
+e o rowid serve de cursor sozinho. Na **partição alfanumérica** não são: a
+linha vai para o volume da letra dela, e duas linhas digitadas em seguida caem
+em arquivos diferentes com rowids que não se comparam. O `rownum` é o que
+sobra de monotônico.
+
+**Ela não é `Sequence`.** Uma tabela só pode ter uma coluna `Sequence` — o
+contador do `.reg` é único —, e reservar essa única vaga para o motor tiraria
+do usuário um tipo que é dele. O `rownum` tem contador próprio.
+
+**Como ela pagina sem índice.** O `rownum` cresce com o `rowid`, porque o
+`.reg` guarda as linhas na ordem de chegada. Uma sequência crescente num
+arquivo de acesso aleatório se procura por **bissecção**: achar a linha de
+número 500.000 num milhão custa vinte leituras, sem índice nenhum a manter. É
+o mesmo motivo de o endereço sair de uma conta — a ordem lógica é a ordem
+física.
 
 ### Chave primária, chave estrangeira, chave composta
 
@@ -577,12 +614,13 @@ que o TopSpeed(R) dava.
 1000 simplesmente não teria nome de arquivo. Teto omitido vira o maior que cabe
 no sufixo — 999 com três dígitos.
 
-### Duas regras de corte
+### Três regras de corte
 
-| `modo` | quando o volume corta |
-|---|---|
-| `PorQuantidade` | a cada `registros_por_arquivo` linhas |
-| `PorPeriodo { coluna, periodo }` | quando o período da coluna de data vira — **ou** quando o volume enche |
+| `modo` | quando o volume corta | sufixo |
+|---|---|---|
+| `PorQuantidade` | a cada `registros_por_arquivo` linhas | `_001` |
+| `PorPeriodo { coluna, periodo }` | quando o período da coluna de data vira — **ou** quando o volume enche | `_001` |
+| `PorLetra { coluna }` | **não corta**: são 37 volumes fixos, e a linha vai para o da letra dela | `_A`, `_0`, `_Outros` |
 
 O período é `Mensal`, `Bimestral`, `Semestral` ou `Anual`, e os blocos sempre
 começam em janeiro: bimestre é jan-fev, mar-abr, …; semestre é jan-jun e
@@ -608,6 +646,95 @@ Três garantias sobrevivem intactas:
   na tabela; o volume sai dele por divisão.
 - **O `.ndx` não muda em nada.** Ele já guarda rowid, e nenhuma linha do código
   de índice precisa saber que existe volume.
+
+### A partição alfanumérica
+
+```
+cadastroClientes_A.reg   cadastroClientes_0.reg
+cadastroClientes_B.reg   cadastroClientes_1.reg      cadastroClientes_Outros.reg
+…                        …
+cadastroClientes_Z.reg   cadastroClientes_9.reg
+```
+
+São **37 volumes**, sempre os mesmos, nesta ordem: `A`..`Z` (1..26), `0`..`9`
+(27..36) e `Outros` (37). A ordem é o formato — mudar a lista mudaria o
+endereço de toda linha já gravada.
+
+O volume sai da **primeira letra** de uma coluna de referência, e o valor dela
+vira texto pela mesma função que o `.reason` usa — então número também
+particiona, e `12345` cai no `_1`. Três decisões:
+
+- **Acento cai na letra sem acento.** «Ávila» vai para o `_A`. Um balde `_Á`
+  separado faria «Avila» e «Ávila» — a mesma pessoa digitada por duas pessoas —
+  pararem em arquivos diferentes. A tabela de dobra é escrita à mão e cobre o
+  português, o espanhol e o alemão; o que não cobrir cai em `Outros`, que é um
+  lugar visível e não um erro escondido.
+- **Vazio vai para `Outros`,** e não para `A`. Nome em branco não começa com A;
+  juntá-lo com os Andrades esconderia o problema no maior balde.
+- **Maiúscula e minúscula são o mesmo balde.** O contrário faria a mesma
+  consulta achar ou não achar conforme como foi digitada.
+
+A coluna de referência tem de ser **obrigatória** e **não externa**: o valor de
+um `Bin`/`Memo` mora fora do slot, e o balde precisa ser decidido *antes* de a
+linha ser gravada — ler o `.memo` para saber em que arquivo gravar seria a
+ordem invertida.
+
+#### O endereço continua sendo a mesma conta
+
+O rowid é **atribuído** assim:
+
+```
+rowid = (balde - 1) × registros_por_arquivo + slot_no_balde
+```
+
+que é a inversa exata da conta de `localizar`. Por isso **nenhum caminho de
+leitura mudou**: `localizar` continua devolvendo (volume, offset) por divisão,
+o `.ndx` continua guardando rowid sem saber que balde existe, e o espelho
+`.bkp` também não muda.
+
+Cada volume guarda no próprio cabeçalho (bytes 100..108) quantos slots já usou.
+Fica no volume, e não num arquivo separado, pela mesma razão da fronteira do
+período: um arquivo separado seria uma segunda verdade.
+
+O `slot_count` do volume 1 deixa de ser "quantos slots" e passa a ser a **marca
+d'água** — o maior rowid que já existiu. Entre o fim do `_A` e o começo do `_B`
+há `registros_por_arquivo` menos os usados de puro vazio, então a varredura anda
+**por balde**: dentro do balde vai até `usados`, e no fim salta direto para o
+início do próximo.
+
+#### A ordem de digitação muda de campo
+
+O que se perde é o rowid ser crescente na ordem de chegada: com os baldes, o
+rowid diz em que **arquivo** a linha está, e não quando ela chegou. Dentro de
+cada volume a ordem continua sendo a de digitação, e slot excluído continua sem
+ser reaproveitado.
+
+A ordem global fica na coluna de sistema `rownum`. **Sem ela este modo seria uma
+quebra da regra da casa; com ela, é uma troca de campo.** A leitura sai em ordem
+alfabética de balde — que é a ordem do arquivo.
+
+#### O teto passa a ser por letra
+
+`registros_por_arquivo` é o teto **de cada balde**, e não da tabela. Num
+cadastro brasileiro o `_S` costuma ter dez vezes o `_K`: quem enche primeiro
+derruba a inserção daquela letra com as outras 36 ainda com espaço, e o erro
+diz **qual** balde encheu — «tabela cheia» com 3% de ocupação seria uma
+mensagem que não ajuda ninguém.
+
+#### O que é recusado
+
+**Alterar a coluna de referência.** Mudar «Silva» para «Andrade» mudaria o
+arquivo em que a linha mora, e com ele o rowid — que é a identidade dela em
+todo índice. Mover não é opção; deixar a linha no balde errado também não,
+porque aí o `_S` deixa de conter os S. Então a alteração é recusada, com o
+caminho escrito na mensagem: exclua e insira de novo, e a linha nova nasce no
+balde certo com outro rowid.
+
+#### Só o `.reg` leva a letra
+
+O `.bin`, o `.memo`, o `.log`, o `.trash` e o `.reason` rolam por **tamanho**, e
+continuam com o sufixo numérico: um `Clientes_B.log` se leria como «o diário do
+balde B», e o diário é da tabela inteira.
 
 ### Na partição por período, o endereço sai de uma busca binária
 
@@ -676,7 +803,49 @@ ler o esquema é que o conjunto de volumes é montado.
 
 ---
 
-## 8. Hierarquia: database, schema e tabela
+## 8. `.pag` — o descritor de partição
+
+JSON indentado, ao lado dos outros arquivos da tabela. Diz **como a tabela está
+partida**, que arquivo guarda o quê, e quanto tem em cada um:
+
+```json
+{
+  "tabela": "clientes",
+  "modo": "letra",
+  "coluna_referencia": "nome",
+  "registros_por_arquivo": 1000,
+  "max_arquivos": 37,
+  "endereco": "volume = (rowid - 1) / registros_por_arquivo + 1; …",
+  "baldes": [
+    { "balde": 1, "letra": "A", "arquivo": "clientes_A.reg",
+      "existe": true, "registros": 2, "primeiro_rowid": 1 },
+    …
+  ]
+}
+```
+
+Existe para quem está do **lado de fora** — uma camada SQL, um ETL, um
+relatório, um `ls` — descobrir isso sem abrir o `.reg` e sem saber ler o bloco
+de esquema. A conta do endereço vai escrita por extenso, porque é exatamente o
+que quem lê precisa saber para não ter de adivinhar.
+
+**Ele não é fonte de verdade**, e isso é o desenho e não um detalhe. O modo e a
+coluna de referência estão no bloco de esquema dentro do `.reg`; quantas linhas
+cada balde tem está no cabeçalho de cada volume. O `.pag` é **gerado** a partir
+dos dois, na criação e a cada `sincronizar`.
+
+A razão é a mesma que impede gravar «é chave primária» na coluna, e a mesma que
+impede um arquivo `sequences` com uma segunda cópia dos contadores: uma segunda
+cópia é uma segunda verdade, e as duas divergem no primeiro caminho que
+esquecer de atualizar uma delas. Aqui a divergência seria pior que o normal —
+o `.pag` diz em que **arquivo** a linha está.
+
+Por isso o motor nunca **lê** este arquivo para decidir nada. Apagar o `.pag`
+não quebra a tabela; regravar resolve.
+
+---
+
+## 9. Hierarquia: database, schema e tabela
 
 ```
 base/
@@ -704,7 +873,7 @@ contrabarra, dois-pontos, curinga ou caractere de controle.
 
 ---
 
-## 9. Reindex
+## 10. Reindex
 
 Recriar o `.ndx` inteiro a partir do `.reg`: varre os registros ativos na ordem
 de digitação, recodifica as chaves e reconstrói cada B+tree do zero. Resolve
@@ -719,7 +888,7 @@ crescente dentro de cada chave.
 
 ---
 
-## 10. Identificadores: `Uuid`, `Uuid256` e `Sequence`
+## 11. Identificadores: `Uuid`, `Uuid256` e `Sequence`
 
 Três tipos de largura fixa que cabem inteiros no slot — nada vai para o `.bin`.
 
@@ -779,7 +948,7 @@ defeito. O esquema recusa na criação.
 
 ---
 
-## 11. Limites
+## 12. Limites
 
 | Limite | Valor |
 |---|---|
@@ -792,6 +961,9 @@ defeito. O esquema recusa na criação.
 | Identidade no `.reason` | 512 bytes |
 | Colunas externas numa linha do `.trash` | 255 |
 | Tamanho de um registro do `.trash` | 4 GiB |
+| Volumes na partição alfanumérica | 37 (A-Z, 0-9, Outros) — fixo |
+| Registros por balde | `registros_por_arquivo`, e é o teto **por letra** |
+| Valor máximo de `rownum` | 2⁶⁴ − 1 |
 | Conteúdo de um bloco `.bin` / `.memo` | 4 GiB |
 | Chave de índice | `page_size / 4 - 8` bytes (1016 numa página de 4096) |
 | Índices por tabela | o diretório precisa caber na página 0 |
@@ -799,7 +971,7 @@ defeito. O esquema recusa na criação.
 | Volumes por arquivo | 65.535 (limite do ponteiro externo) |
 | Offset dentro de um volume externo | 256 TB (48 bits) |
 
-## 12. O que este formato ainda não faz
+## 13. O que este formato ainda não faz
 
 Documentado aqui para não haver surpresa:
 
