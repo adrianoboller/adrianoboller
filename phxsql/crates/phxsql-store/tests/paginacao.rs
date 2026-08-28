@@ -458,3 +458,42 @@ fn a_conferencia_reconta_as_marcadas() {
     assert_eq!(r.marcadas, t.marcadas());
     assert_eq!(t.recontar_marcadas().unwrap(), 5);
 }
+
+/// A linha CURTA — só as colunas declaradas, sem nenhuma das duas de sistema —
+/// tem de ser aceita na inclusão **e** na alteração.
+///
+/// É o caso de toda tela e de todo cliente: quem monta a linha conhece as
+/// colunas que declarou, não as que o motor acrescentou. Um defeito real veio
+/// daqui: a ficha da interface tirava só a PRIMEIRA coluna de sistema e mandava
+/// 8 valores para uma tabela de 9 colunas — e todo salvar e todo incluir pela
+/// tela falhavam com «a lista tem 8 valores». Aqui fica travado dos dois lados.
+#[test]
+fn linha_sem_as_duas_colunas_de_sistema_e_aceita() {
+    let dir = DirTemp::novo("linha-curta");
+    let mut t = Table::criar(&dir.0, esquema()).unwrap();
+    let n = t.esquema().colunas().len();
+    assert_eq!(n, 4, "duas declaradas + softdeleted + rownum");
+
+    // Inclusão com 2 valores numa tabela de 4 colunas.
+    let rowid = t.inserir(&linha(1)).unwrap();
+    assert_eq!(rowid, 1);
+
+    // Alteração idem — e as duas colunas de sistema são HERDADAS, não zeradas.
+    t.excluir_suave(1, "marca para o teste").unwrap();
+    let antes = t.rownum_de(1).unwrap();
+    t.atualizar(1, &[Value::Int(1), Value::Str("Outro nome".into())])
+        .unwrap();
+    assert_eq!(t.rownum_de(1).unwrap(), antes, "a alteração renumerou");
+    assert_eq!(t.marcadas(), 1, "a alteração ressuscitou a linha marcada");
+
+    // E uma lista com um valor a MAIS continua sendo erro: completar preenche
+    // o que falta, não corta o que sobra.
+    let sobrando = vec![
+        Value::Int(2),
+        Value::Str("x".into()),
+        Value::Bool(false),
+        Value::UInt(9),
+        Value::Int(0),
+    ];
+    assert!(t.inserir(&sobrando).is_err());
+}
