@@ -28,6 +28,17 @@ achou de errado.
   favorecia o PhxSql. Por isso a bancada ganhou uma quarta regra: *mesma
   quantidade de trabalho*, não só mesma forma de pergunta.
 
+  A prova de que agora está igual não é a promessa, é a soma: os dois motores
+  devolvem 1.250.000 linhas e **5.576.201.000,00**, o mesmo total até o
+  centavo, por dois códigos sem uma linha em comum.
+
+  E o resultado sobreviveu ao conserto — a varredura continua a favor do
+  PhxSql, por **3,3×** em vez dos 5× que a montagem errada prometia. A nova
+  medição: inserção 20,7× mais devagar (4.039 linhas/s contra 83.492), busca
+  pontual 2,6× mais devagar, exclusão 2,0×, atualização empatada, varredura
+  3,3× mais rápida. Escreve 2,29 GiB onde o MySQL(R) escreve 32,03; ocupa
+  2,27 GiB onde ele ocupa 0,88.
+
 - **Campo com nome errado no `config.json` era silencioso.** Quem quisesse
   trocar a porta escreveria `"porta": 5001`, e o campo se chama `bind`: o
   servidor subia na 5000 sem uma palavra. O arranque agora lista os campos que

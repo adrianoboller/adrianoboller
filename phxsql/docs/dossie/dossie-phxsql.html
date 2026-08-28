@@ -309,7 +309,7 @@ footer p{max-width:var(--medida)}
     <div><div class="v">0</div><div class="r">dependências</div></div>
     <div><div class="v">4</div><div class="r">crates</div></div>
     <div><div class="v">5</div><div class="r">arquivos/tabela</div></div>
-    <div><div class="v">3.449</div><div class="r">linhas de doc</div></div>
+    <div><div class="v">3.530</div><div class="r">linhas de doc</div></div>
   </div>
 </header>
 
@@ -1844,36 +1844,33 @@ footer p{max-width:var(--medida)}
   <figure>
     <div class="fig-caixa">
 <!-- bancada:inicio (gerado por docs/dossie/numeros-da-bancada.py) -->
-      <svg viewBox="0 0 840 300" role="img" aria-label="Cinco operações comparadas com o MySQL(R): a inserção é 25,9 vezes mais devagar, a busca pontual 3,4 vezes, a exclusão 1,9 vezes; a atualização empata e a varredura por faixa é 5,0 vezes mais rápida">
+      <svg viewBox="0 0 840 318" role="img" aria-label="Cinco operações comparadas com o MySQL(R) em escala logarítmica: barra à esquerda do eixo quando o PhxSql é mais devagar, à direita quando é mais rápido">
         <g font-family="IBM Plex Mono, monospace" font-size="11.5" fill="currentColor">
 
           <text x="16" y="26" font-size="11" opacity=".65">mais devagar que o MySQL(R)</text>
           <text x="824" y="26" text-anchor="end" font-size="11" opacity=".65">mais rápido</text>
-          <line x1="470" y1="34" x2="470" y2="232" stroke="currentColor" stroke-width="1.3" opacity=".55"/>
-          <text x="470" y="248" text-anchor="middle" font-size="10" opacity=".55">empate</text>
+          <line x1="470" y1="34" x2="470" y2="224" stroke="currentColor" stroke-width="1.3" opacity=".55"/>
+          <text x="470" y="242" text-anchor="middle" font-size="10" opacity=".55">empate</text>
 
           <text x="16" y="76" font-size="11.5">inserir</text>
-          <rect x="141" y="60" width="329" height="22" fill="var(--log)" opacity=".85"/>
-          <text x="133" y="76" text-anchor="end" fill="var(--log)" font-weight="600" font-size="11.5">25,9&#215;</text>
-
+          <rect x="164" y="60" width="306" height="22" fill="var(--log)" opacity=".85"/>
+          <text x="156" y="76" text-anchor="end" fill="var(--log)" font-size="11.5">20,7&#215;</text>
           <text x="16" y="110" font-size="11.5">buscar</text>
-          <rect x="348" y="94" width="122" height="22" fill="var(--log)" opacity=".6"/>
-          <text x="340" y="110" text-anchor="end" fill="var(--log)" font-size="11.5">3,4&#215;</text>
-
+          <rect x="372" y="94" width="98" height="22" fill="var(--log)" opacity=".6"/>
+          <text x="364" y="110" text-anchor="end" fill="var(--log)" font-size="11.5">2,6&#215;</text>
           <text x="16" y="144" font-size="11.5">excluir</text>
-          <rect x="406" y="128" width="64" height="22" fill="var(--log)" opacity=".6"/>
-          <text x="398" y="144" text-anchor="end" fill="var(--log)" font-size="11.5">1,9&#215;</text>
-
+          <rect x="402" y="128" width="68" height="22" fill="var(--log)" opacity=".6"/>
+          <text x="394" y="144" text-anchor="end" fill="var(--log)" font-size="11.5">2,0&#215;</text>
           <text x="16" y="178" font-size="11.5">atualizar</text>
           <rect x="468" y="162" width="4" height="22" fill="currentColor" opacity=".45"/>
-          <text x="482" y="178" font-size="11.5" opacity=".7">4,69&#8201;s contra 4,77&#8201;s</text>
-
+          <text x="482" y="178" font-size="11.5" opacity=".7">6,66&#8201;s contra 6,49&#8201;s</text>
           <text x="16" y="212" font-size="11.5">varrer faixa</text>
-          <rect x="470" y="196" width="162" height="22" fill="var(--ok)" opacity=".85"/>
-          <text x="640" y="212" fill="var(--ok)" font-weight="600" font-size="11.5">5,0&#215;</text>
+          <rect x="470" y="196" width="119" height="22" fill="var(--ok)" opacity=".85"/>
+          <text x="597" y="212" fill="var(--ok)" font-size="11.5">3,3&#215;</text>
 
-          <line x1="16" y1="266" x2="824" y2="266" stroke="currentColor" stroke-width="1" opacity=".25"/>
-          <text x="16" y="288" font-size="11" opacity=".6">Escala logarítmica: sem ela o 25,9&#215; esmagaria o resto do desenho. Tempo de relógio, mediana de três passadas na mesma máquina.</text>
+          <line x1="16" y1="264" x2="824" y2="264" stroke="currentColor" stroke-width="1" opacity=".25"/>
+          <text x="16" y="286" font-size="11" opacity=".6">Escala logarítmica: cada dobro de diferença anda o mesmo tanto. Sem ela a inserção esmagaria o resto do desenho.</text>
+          <text x="16" y="304" font-size="11" opacity=".6">Tempo de relógio, uma passada, mesma máquina e mesmo disco, os dois motores com os mesmos dados na mesma ordem.</text>
         </g>
       </svg>
 <!-- bancada:fim -->
@@ -1891,14 +1888,14 @@ footer p{max-width:var(--medida)}
     <table>
       <thead><tr><th>Operação</th><th class="num">PhxSql</th><th class="num">MySQL(R)</th><th>Quem ganha</th></tr></thead>
       <tbody>
-        <tr><td>Inserir 10.000.000</td><td class="num">2.714,0&#8201;s</td><td class="num">104,9&#8201;s</td><td><span class="pino pend">MySQL(R) 25,9&#215;</span></td></tr>
-        <tr><td>Buscar 20.000 pontuais</td><td class="num">5,75&#8201;s</td><td class="num">1,71&#8201;s</td><td><span class="pino pend">MySQL(R) 3,4&#215;</span></td></tr>
-        <tr><td>Excluir 20.000</td><td class="num">7,07&#8201;s</td><td class="num">3,75&#8201;s</td><td><span class="pino pend">MySQL(R) 1,9&#215;</span></td></tr>
-        <tr><td>Atualizar 20.000</td><td class="num">4,69&#8201;s</td><td class="num">4,77&#8201;s</td><td>empate</td></tr>
-        <tr><td>Varrer faixa (1,25 milhão na cidade)</td><td class="num">3,63&#8201;s</td><td class="num">18,00&#8201;s</td><td><span class="pino ok">PhxSql 5,0&#215;</span></td></tr>
-        <tr><td>Escrito no disco durante a carga</td><td class="num">2,29&#8201;GiB</td><td class="num">38,9&#8201;GiB</td><td><span class="pino ok">PhxSql 17&#215;</span></td></tr>
+        <tr><td>Inserir 10.000.000</td><td class="num">2.475,94&#8201;s</td><td class="num">119,77&#8201;s</td><td><span class="pino pend">MySQL(R) 20,7&#215;</span></td></tr>
+        <tr><td>Buscar 20.000 pontuais</td><td class="num">7,47&#8201;s</td><td class="num">2,84&#8201;s</td><td><span class="pino pend">MySQL(R) 2,6&#215;</span></td></tr>
+        <tr><td>Excluir 20.000</td><td class="num">10,21&#8201;s</td><td class="num">5,20&#8201;s</td><td><span class="pino pend">MySQL(R) 2,0&#215;</span></td></tr>
+        <tr><td>Atualizar 20.000</td><td class="num">6,66&#8201;s</td><td class="num">6,49&#8201;s</td><td>empate</td></tr>
+        <tr><td>Varrer a faixa inteira (1.250.000 linhas)</td><td class="num">6,06&#8201;s</td><td class="num">19,71&#8201;s</td><td><span class="pino ok">PhxSql 3,3&#215;</span></td></tr>
+        <tr><td>Escrito no disco durante a carga</td><td class="num">2,29&#8201;GiB</td><td class="num">32,03&#8201;GiB</td><td><span class="pino ok">PhxSql 14&#215;</span></td></tr>
         <tr><td>Ocupado no disco no fim</td><td class="num">2,27&#8201;GiB</td><td class="num">0,88&#8201;GiB</td><td><span class="pino pend">MySQL(R) 2,6&#215;</span></td></tr>
-        <tr><td>Pico de memória</td><td class="num">1.080&#8201;MiB</td><td class="num">670&#8201;MiB</td><td><span class="pino pend">MySQL(R)</span></td></tr>
+        <tr><td>Pico de memória</td><td class="num">1.080&#8201;MiB</td><td class="num">638&#8201;MiB</td><td><span class="pino pend">MySQL(R) 1,7&#215;</span></td></tr>
       </tbody>
     </table>
   </div>
@@ -1925,11 +1922,31 @@ footer p{max-width:var(--medida)}
     soma, como o outro lado, e a bancada foi refeita do zero.</p>
     <p>Bancada mal montada mente com número, que é a mentira mais convincente
     que existe — e mente para os dois lados.</p>
+    <p><strong>A prova de que agora está igual</strong> não é a promessa: é a
+    soma. Os dois motores devolvem <code>1.250.000</code> linhas e
+    <code>5.576.201.000,00</code> — o mesmo total, até o centavo, calculado por
+    dois códigos que não têm uma linha em comum. Trabalho diferente não daria o
+    mesmo número.</p>
+    <p>E o resultado sobreviveu ao conserto: a varredura continua a favor do
+    PhxSql, só que por <strong>3,3&#215;</strong> em vez dos 5&#215; que a
+    montagem errada prometia.</p>
   </div>
 
   <h3>A inserção é o buraco, e o diagnóstico é incômodo</h3>
 
 <!-- bancada:diagnostico:inicio -->
+  <p>4.039 linhas por segundo contra 83.492. O reflexo é
+  culpar o disco — mas os contadores dizem outra coisa:
+  <strong>2.460&#8201;s de CPU para 2.476&#8201;s de relógio</strong>
+  (99%), e <strong>0,0&#8201;MiB lidos</strong>. O processo passou o
+  tempo inteiro calculando, não esperando.</p>
+
+  <p>E piora com o tamanho: o primeiro milhão entra a 5.089/s, o
+  décimo a 3.626/s — 29% mais devagar no fim do que no
+  começo. Taxa que cai conforme a tabela cresce, com o disco parado, é
+  assinatura de estrutura de índice: a B+tree do <code>.ndx</code> reescrita nó
+  a nó a cada linha, sem lote. É ali que uma rodada dedicada renderia, e não em
+  recurso novo.</p>
 <!-- bancada:diagnostico:fim -->
 
   <p>A bancada inteira está em <code>bancada/</code> — o medidor, os gráficos, o

@@ -1,0 +1,308 @@
+<title>PhxSql × MySQL — a medição</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+<style>
+:root{
+  --papel:#fbf9f7; --papel2:#f3efec; --tinta:#1a1210; --tinta2:#4a3f3a; --tinta3:#7a6d66;
+  --linha:#ded6d0; --acento:#c63c0a; --outro:#1f5c93; --ok:#2f7a3e;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-tema="claro"]){
+    --papel:#010418; --papel2:#0a1122; --tinta:#dde2eb; --tinta2:#a8b0c0; --tinta3:#7c8598;
+    --linha:#1e2940; --acento:#ff8a1c; --outro:#5fa6e8; --ok:#6cc98c;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--papel);color:var(--tinta);
+  font:16px/1.6 "Source Serif 4",Georgia,serif;padding:0 20px 80px}
+.pagina{max-width:1080px;margin:0 auto}
+h1,h2,h3,.mono,figcaption,.rotulo{font-family:"Exo 2","Helvetica Neue",Arial,sans-serif}
+h1{font-size:38px;line-height:1.15;margin:56px 0 6px;letter-spacing:-.02em;text-wrap:balance}
+h2{font-size:20px;margin:44px 0 4px;letter-spacing:-.01em;
+   border-top:1px solid var(--linha);padding-top:22px}
+.ops{font-size:12px;font-weight:400;color:var(--tinta3);letter-spacing:.08em;
+     font-family:"IBM Plex Mono",monospace;margin-left:8px}
+.sub{color:var(--tinta2);max-width:66ch}
+.grade{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;margin-top:18px}
+.fig{margin:0;background:var(--papel2);border:1px solid var(--linha);border-radius:10px;padding:14px 10px 10px}
+.fig svg{width:100%;height:auto;display:block}
+figcaption{font-size:12px;color:var(--tinta2);text-align:center;margin-top:6px}
+.nota{color:var(--tinta3);font-style:italic}
+table{border-collapse:collapse;width:100%;font-size:14px;margin-top:12px}
+th,td{border-bottom:1px solid var(--linha);padding:7px 10px;text-align:left}
+th{font-family:"Exo 2",sans-serif;font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+   color:var(--tinta3);font-weight:600}
+td.n{font-family:"IBM Plex Mono",monospace;text-align:right;font-variant-numeric:tabular-nums}
+code{font-family:"IBM Plex Mono",monospace;font-size:.9em;background:var(--papel2);
+     padding:1px 5px;border-radius:4px}
+.alerta{background:var(--papel2);border-left:3px solid var(--acento);padding:14px 18px;
+        border-radius:0 8px 8px 0;margin:24px 0;font-size:15px}
+.rolo{overflow-x:auto}
+</style>
+
+<div class="pagina">
+<h1>PhxSql × MySQL(R)<br><span style="color:var(--tinta3);font-weight:400">a medição, não a opinião</span></h1>
+<p class="sub">Mesma máquina, mesmos dados, mesmo esquema, mesmas operações. Cada
+número saiu de <code>/proc</code> — tempo de parede, CPU, bytes lidos e escritos,
+pico de memória residente. Nada aqui é estimativa.</p>
+
+
+
+<h2>A bancada</h2>
+<div class="rolo"><table>
+  <tr><th>Máquina</th><td>Intel(R) Xeon(R) Processor @ 2.80GHz · 4 núcleos · 15Gi de RAM · Linux 6.18.44-fc-v22</td></tr>
+  <tr><th>Carga</th><td>10,000,000 registros — id, produto, cidade, valor decimal, data</td></tr>
+  <tr><th>Índices</th><td>chave primária em <code>id</code> + índice secundário em <code>cidade</code>, dos dois lados</td></tr>
+  <tr><th>MySQL(R)</th><td>Ver 8.0.46-0ubuntu0.24.04.3 for Linux on x86_64 ((Ubuntu)) · InnoDB · buffer pool 128 MB · <code>innodb_flush_log_at_trx_commit=1</code></td></tr>
+  <tr><th>PhxSql</th><td>0.3.0 · uma sincronização por lote de 50.000, como o outro lado</td></tr>
+</table></div>
+
+<h2>O que esta medição não diz</h2>
+<p class="sub"><b>Durabilidade não é comparada.</b> Os dois carregam em massa, com
+uma sincronização por lote. Uma bancada com <code>commit</code> por linha daria outros
+números — e é a que importa para quem grava pedido a pedido.</p>
+<p class="sub"><b>Uma instrução por operação, dos dois lados.</b> A primeira versão
+desta bancada mandava ao MySQL(R) um único <code>WHERE id IN (…)</code> com todos os
+alvos e ao PhxSql vinte mil buscas separadas. O número saía 41× a favor do MySQL(R)
+— por causa da <em>forma da pergunta</em>, não do motor. Corrigido: agora os dois
+recebem vinte mil instruções independentes.</p>
+<p class="sub"><b>O MySQL(R) tem transações; o PhxSql não.</b> Parte do custo de
+escrita dele é o log de <em>redo</em>, que compra algo que o PhxSql ainda não
+oferece. Comparar os dois em escrita é comparar preços de coisas diferentes.</p>
+
+<section>
+  <h2>INSERT <span class="ops">10.000.000 operações</span></h2>
+  <div class="grade"><figure class="fig">
+  <svg viewBox="0 0 300 150" role="img" aria-label="Tempo: PhxSql 2.476 s. MySQL 119.8 s">
+    <line x1="24" y1="112" x2="276" y2="112" stroke="currentColor" stroke-width="1" opacity=".25"/>
+    <rect x="58" y="22.0" width="62" height="90.0" rx="3" fill="var(--acento)"/><text x="89" y="16.0" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">2.476</text><text x="89" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">PhxSql</text>
+    <rect x="178" y="107.6" width="62" height="4.4" rx="3" fill="var(--outro)"/><text x="209" y="101.6" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">119.8</text><text x="209" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">MySQL(R)</text>
+    <text x="150.0" y="144" text-anchor="middle" font-size="10.5" opacity=".6" fill="currentColor">MySQL(R) 20.7× melhor</text>
+  </svg>
+  <figcaption><b>Tempo</b> (s) · <span class="nota">menor e melhor</span></figcaption>
+</figure><figure class="fig">
+  <svg viewBox="0 0 300 150" role="img" aria-label="CPU: PhxSql 2.460 s. MySQL 132.1 s">
+    <line x1="24" y1="112" x2="276" y2="112" stroke="currentColor" stroke-width="1" opacity=".25"/>
+    <rect x="58" y="22.0" width="62" height="90.0" rx="3" fill="var(--acento)"/><text x="89" y="16.0" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">2.460</text><text x="89" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">PhxSql</text>
+    <rect x="178" y="107.2" width="62" height="4.8" rx="3" fill="var(--outro)"/><text x="209" y="101.2" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">132.1</text><text x="209" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">MySQL(R)</text>
+    <text x="150.0" y="144" text-anchor="middle" font-size="10.5" opacity=".6" fill="currentColor">MySQL(R) 18.6× melhor</text>
+  </svg>
+  <figcaption><b>CPU</b> (s) · <span class="nota">menor e melhor</span></figcaption>
+</figure><figure class="fig">
+  <svg viewBox="0 0 300 150" role="img" aria-label="Disco lido: PhxSql 0 MB. MySQL 9.80 MB">
+    <line x1="24" y1="112" x2="276" y2="112" stroke="currentColor" stroke-width="1" opacity=".25"/>
+    <rect x="58" y="110.0" width="62" height="2.0" rx="3" fill="var(--acento)"/><text x="89" y="104.0" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">0</text><text x="89" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">PhxSql</text>
+    <rect x="178" y="22.0" width="62" height="90.0" rx="3" fill="var(--outro)"/><text x="209" y="16.0" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">9.80</text><text x="209" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">MySQL(R)</text>
+    <text x="150.0" y="144" text-anchor="middle" font-size="10.5" opacity=".6" fill="currentColor"></text>
+  </svg>
+  <figcaption><b>Disco lido</b> (MB) · <span class="nota">menor e melhor</span></figcaption>
+</figure><figure class="fig">
+  <svg viewBox="0 0 300 150" role="img" aria-label="Disco escrito: PhxSql 2.348 MB. MySQL 32.802 MB">
+    <line x1="24" y1="112" x2="276" y2="112" stroke="currentColor" stroke-width="1" opacity=".25"/>
+    <rect x="58" y="105.6" width="62" height="6.4" rx="3" fill="var(--acento)"/><text x="89" y="99.6" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">2.348</text><text x="89" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">PhxSql</text>
+    <rect x="178" y="22.0" width="62" height="90.0" rx="3" fill="var(--outro)"/><text x="209" y="16.0" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">32.802</text><text x="209" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">MySQL(R)</text>
+    <text x="150.0" y="144" text-anchor="middle" font-size="10.5" opacity=".6" fill="currentColor">PhxSql 14.0× melhor</text>
+  </svg>
+  <figcaption><b>Disco escrito</b> (MB) · <span class="nota">menor e melhor</span></figcaption>
+</figure><figure class="fig">
+  <svg viewBox="0 0 300 150" role="img" aria-label="Pico de memoria: PhxSql 1.074 MB. MySQL 638.0 MB">
+    <line x1="24" y1="112" x2="276" y2="112" stroke="currentColor" stroke-width="1" opacity=".25"/>
+    <rect x="58" y="22.0" width="62" height="90.0" rx="3" fill="var(--acento)"/><text x="89" y="16.0" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">1.074</text><text x="89" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">PhxSql</text>
+    <rect x="178" y="58.6" width="62" height="53.4" rx="3" fill="var(--outro)"/><text x="209" y="52.6" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">638.0</text><text x="209" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">MySQL(R)</text>
+    <text x="150.0" y="144" text-anchor="middle" font-size="10.5" opacity=".6" fill="currentColor">MySQL(R) 1.7× melhor</text>
+  </svg>
+  <figcaption><b>Pico de memoria</b> (MB) · <span class="nota">menor e melhor</span></figcaption>
+</figure></div>
+</section><section>
+  <h2>SELECT pontual <span class="ops">20.000 operações</span></h2>
+  <div class="grade"><figure class="fig">
+  <svg viewBox="0 0 300 150" role="img" aria-label="Tempo: PhxSql 7.47 s. MySQL 2.84 s">
+    <line x1="24" y1="112" x2="276" y2="112" stroke="currentColor" stroke-width="1" opacity=".25"/>
+    <rect x="58" y="22.0" width="62" height="90.0" rx="3" fill="var(--acento)"/><text x="89" y="16.0" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">7.47</text><text x="89" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">PhxSql</text>
+    <rect x="178" y="77.8" width="62" height="34.2" rx="3" fill="var(--outro)"/><text x="209" y="71.8" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">2.84</text><text x="209" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">MySQL(R)</text>
+    <text x="150.0" y="144" text-anchor="middle" font-size="10.5" opacity=".6" fill="currentColor">MySQL(R) 2.6× melhor</text>
+  </svg>
+  <figcaption><b>Tempo</b> (s) · <span class="nota">menor e melhor</span></figcaption>
+</figure><figure class="fig">
+  <svg viewBox="0 0 300 150" role="img" aria-label="CPU: PhxSql 7.41 s. MySQL 2.35 s">
+    <line x1="24" y1="112" x2="276" y2="112" stroke="currentColor" stroke-width="1" opacity=".25"/>
+    <rect x="58" y="22.0" width="62" height="90.0" rx="3" fill="var(--acento)"/><text x="89" y="16.0" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">7.41</text><text x="89" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">PhxSql</text>
+    <rect x="178" y="83.5" width="62" height="28.5" rx="3" fill="var(--outro)"/><text x="209" y="77.5" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">2.35</text><text x="209" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">MySQL(R)</text>
+    <text x="150.0" y="144" text-anchor="middle" font-size="10.5" opacity=".6" fill="currentColor">MySQL(R) 3.2× melhor</text>
+  </svg>
+  <figcaption><b>CPU</b> (s) · <span class="nota">menor e melhor</span></figcaption>
+</figure><figure class="fig">
+  <svg viewBox="0 0 300 150" role="img" aria-label="Disco lido: PhxSql 0 MB. MySQL 0 MB">
+    <line x1="24" y1="112" x2="276" y2="112" stroke="currentColor" stroke-width="1" opacity=".25"/>
+    <rect x="58" y="110.0" width="62" height="2.0" rx="3" fill="var(--acento)"/><text x="89" y="104.0" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">0</text><text x="89" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">PhxSql</text>
+    <rect x="178" y="110.0" width="62" height="2.0" rx="3" fill="var(--outro)"/><text x="209" y="104.0" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">0</text><text x="209" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">MySQL(R)</text>
+    <text x="150.0" y="144" text-anchor="middle" font-size="10.5" opacity=".6" fill="currentColor"></text>
+  </svg>
+  <figcaption><b>Disco lido</b> (MB) · <span class="nota">menor e melhor</span></figcaption>
+</figure><figure class="fig">
+  <svg viewBox="0 0 300 150" role="img" aria-label="Disco escrito: PhxSql 0 MB. MySQL 0 MB">
+    <line x1="24" y1="112" x2="276" y2="112" stroke="currentColor" stroke-width="1" opacity=".25"/>
+    <rect x="58" y="110.0" width="62" height="2.0" rx="3" fill="var(--acento)"/><text x="89" y="104.0" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">0</text><text x="89" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">PhxSql</text>
+    <rect x="178" y="110.0" width="62" height="2.0" rx="3" fill="var(--outro)"/><text x="209" y="104.0" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">0</text><text x="209" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">MySQL(R)</text>
+    <text x="150.0" y="144" text-anchor="middle" font-size="10.5" opacity=".6" fill="currentColor"></text>
+  </svg>
+  <figcaption><b>Disco escrito</b> (MB) · <span class="nota">menor e melhor</span></figcaption>
+</figure><figure class="fig">
+  <svg viewBox="0 0 300 150" role="img" aria-label="Pico de memoria: PhxSql 1.080 MB. MySQL 614.8 MB">
+    <line x1="24" y1="112" x2="276" y2="112" stroke="currentColor" stroke-width="1" opacity=".25"/>
+    <rect x="58" y="22.0" width="62" height="90.0" rx="3" fill="var(--acento)"/><text x="89" y="16.0" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">1.080</text><text x="89" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">PhxSql</text>
+    <rect x="178" y="60.8" width="62" height="51.2" rx="3" fill="var(--outro)"/><text x="209" y="54.8" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">614.8</text><text x="209" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">MySQL(R)</text>
+    <text x="150.0" y="144" text-anchor="middle" font-size="10.5" opacity=".6" fill="currentColor">MySQL(R) 1.8× melhor</text>
+  </svg>
+  <figcaption><b>Pico de memoria</b> (MB) · <span class="nota">menor e melhor</span></figcaption>
+</figure></div>
+</section><section>
+  <h2>SELECT por faixa <span class="ops">1.250.000 operações</span></h2>
+  <div class="grade"><figure class="fig">
+  <svg viewBox="0 0 300 150" role="img" aria-label="Tempo: PhxSql 6.06 s. MySQL 19.7 s">
+    <line x1="24" y1="112" x2="276" y2="112" stroke="currentColor" stroke-width="1" opacity=".25"/>
+    <rect x="58" y="84.3" width="62" height="27.7" rx="3" fill="var(--acento)"/><text x="89" y="78.3" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">6.06</text><text x="89" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">PhxSql</text>
+    <rect x="178" y="22.0" width="62" height="90.0" rx="3" fill="var(--outro)"/><text x="209" y="16.0" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">19.7</text><text x="209" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">MySQL(R)</text>
+    <text x="150.0" y="144" text-anchor="middle" font-size="10.5" opacity=".6" fill="currentColor">PhxSql 3.3× melhor</text>
+  </svg>
+  <figcaption><b>Tempo</b> (s) · <span class="nota">menor e melhor</span></figcaption>
+</figure><figure class="fig">
+  <svg viewBox="0 0 300 150" role="img" aria-label="CPU: PhxSql 5.99 s. MySQL 20.3 s">
+    <line x1="24" y1="112" x2="276" y2="112" stroke="currentColor" stroke-width="1" opacity=".25"/>
+    <rect x="58" y="85.4" width="62" height="26.6" rx="3" fill="var(--acento)"/><text x="89" y="79.4" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">5.99</text><text x="89" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">PhxSql</text>
+    <rect x="178" y="22.0" width="62" height="90.0" rx="3" fill="var(--outro)"/><text x="209" y="16.0" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">20.3</text><text x="209" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">MySQL(R)</text>
+    <text x="150.0" y="144" text-anchor="middle" font-size="10.5" opacity=".6" fill="currentColor">PhxSql 3.4× melhor</text>
+  </svg>
+  <figcaption><b>CPU</b> (s) · <span class="nota">menor e melhor</span></figcaption>
+</figure><figure class="fig">
+  <svg viewBox="0 0 300 150" role="img" aria-label="Disco lido: PhxSql 0 MB. MySQL 0 MB">
+    <line x1="24" y1="112" x2="276" y2="112" stroke="currentColor" stroke-width="1" opacity=".25"/>
+    <rect x="58" y="110.0" width="62" height="2.0" rx="3" fill="var(--acento)"/><text x="89" y="104.0" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">0</text><text x="89" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">PhxSql</text>
+    <rect x="178" y="110.0" width="62" height="2.0" rx="3" fill="var(--outro)"/><text x="209" y="104.0" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">0</text><text x="209" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">MySQL(R)</text>
+    <text x="150.0" y="144" text-anchor="middle" font-size="10.5" opacity=".6" fill="currentColor"></text>
+  </svg>
+  <figcaption><b>Disco lido</b> (MB) · <span class="nota">menor e melhor</span></figcaption>
+</figure><figure class="fig">
+  <svg viewBox="0 0 300 150" role="img" aria-label="Disco escrito: PhxSql 0 MB. MySQL 0.4 MB">
+    <line x1="24" y1="112" x2="276" y2="112" stroke="currentColor" stroke-width="1" opacity=".25"/>
+    <rect x="58" y="110.0" width="62" height="2.0" rx="3" fill="var(--acento)"/><text x="89" y="104.0" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">0</text><text x="89" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">PhxSql</text>
+    <rect x="178" y="22.0" width="62" height="90.0" rx="3" fill="var(--outro)"/><text x="209" y="16.0" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">0.4</text><text x="209" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">MySQL(R)</text>
+    <text x="150.0" y="144" text-anchor="middle" font-size="10.5" opacity=".6" fill="currentColor"></text>
+  </svg>
+  <figcaption><b>Disco escrito</b> (MB) · <span class="nota">menor e melhor</span></figcaption>
+</figure><figure class="fig">
+  <svg viewBox="0 0 300 150" role="img" aria-label="Pico de memoria: PhxSql 1.080 MB. MySQL 615.3 MB">
+    <line x1="24" y1="112" x2="276" y2="112" stroke="currentColor" stroke-width="1" opacity=".25"/>
+    <rect x="58" y="22.0" width="62" height="90.0" rx="3" fill="var(--acento)"/><text x="89" y="16.0" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">1.080</text><text x="89" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">PhxSql</text>
+    <rect x="178" y="60.7" width="62" height="51.3" rx="3" fill="var(--outro)"/><text x="209" y="54.7" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">615.3</text><text x="209" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">MySQL(R)</text>
+    <text x="150.0" y="144" text-anchor="middle" font-size="10.5" opacity=".6" fill="currentColor">MySQL(R) 1.8× melhor</text>
+  </svg>
+  <figcaption><b>Pico de memoria</b> (MB) · <span class="nota">menor e melhor</span></figcaption>
+</figure></div>
+</section><section>
+  <h2>UPDATE <span class="ops">20.000 operações</span></h2>
+  <div class="grade"><figure class="fig">
+  <svg viewBox="0 0 300 150" role="img" aria-label="Tempo: PhxSql 6.66 s. MySQL 6.49 s">
+    <line x1="24" y1="112" x2="276" y2="112" stroke="currentColor" stroke-width="1" opacity=".25"/>
+    <rect x="58" y="22.0" width="62" height="90.0" rx="3" fill="var(--acento)"/><text x="89" y="16.0" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">6.66</text><text x="89" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">PhxSql</text>
+    <rect x="178" y="24.4" width="62" height="87.6" rx="3" fill="var(--outro)"/><text x="209" y="18.4" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">6.49</text><text x="209" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">MySQL(R)</text>
+    <text x="150.0" y="144" text-anchor="middle" font-size="10.5" opacity=".6" fill="currentColor">MySQL(R) 1.0× melhor</text>
+  </svg>
+  <figcaption><b>Tempo</b> (s) · <span class="nota">menor e melhor</span></figcaption>
+</figure><figure class="fig">
+  <svg viewBox="0 0 300 150" role="img" aria-label="CPU: PhxSql 6.34 s. MySQL 7.65 s">
+    <line x1="24" y1="112" x2="276" y2="112" stroke="currentColor" stroke-width="1" opacity=".25"/>
+    <rect x="58" y="37.4" width="62" height="74.6" rx="3" fill="var(--acento)"/><text x="89" y="31.4" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">6.34</text><text x="89" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">PhxSql</text>
+    <rect x="178" y="22.0" width="62" height="90.0" rx="3" fill="var(--outro)"/><text x="209" y="16.0" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">7.65</text><text x="209" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">MySQL(R)</text>
+    <text x="150.0" y="144" text-anchor="middle" font-size="10.5" opacity=".6" fill="currentColor">PhxSql 1.2× melhor</text>
+  </svg>
+  <figcaption><b>CPU</b> (s) · <span class="nota">menor e melhor</span></figcaption>
+</figure><figure class="fig">
+  <svg viewBox="0 0 300 150" role="img" aria-label="Disco lido: PhxSql 0 MB. MySQL 0 MB">
+    <line x1="24" y1="112" x2="276" y2="112" stroke="currentColor" stroke-width="1" opacity=".25"/>
+    <rect x="58" y="110.0" width="62" height="2.0" rx="3" fill="var(--acento)"/><text x="89" y="104.0" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">0</text><text x="89" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">PhxSql</text>
+    <rect x="178" y="110.0" width="62" height="2.0" rx="3" fill="var(--outro)"/><text x="209" y="104.0" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">0</text><text x="209" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">MySQL(R)</text>
+    <text x="150.0" y="144" text-anchor="middle" font-size="10.5" opacity=".6" fill="currentColor"></text>
+  </svg>
+  <figcaption><b>Disco lido</b> (MB) · <span class="nota">menor e melhor</span></figcaption>
+</figure><figure class="fig">
+  <svg viewBox="0 0 300 150" role="img" aria-label="Disco escrito: PhxSql 71.9 MB. MySQL 12.963 MB">
+    <line x1="24" y1="112" x2="276" y2="112" stroke="currentColor" stroke-width="1" opacity=".25"/>
+    <rect x="58" y="110.0" width="62" height="2.0" rx="3" fill="var(--acento)"/><text x="89" y="104.0" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">71.9</text><text x="89" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">PhxSql</text>
+    <rect x="178" y="22.0" width="62" height="90.0" rx="3" fill="var(--outro)"/><text x="209" y="16.0" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">12.963</text><text x="209" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">MySQL(R)</text>
+    <text x="150.0" y="144" text-anchor="middle" font-size="10.5" opacity=".6" fill="currentColor">PhxSql 180.3× melhor</text>
+  </svg>
+  <figcaption><b>Disco escrito</b> (MB) · <span class="nota">menor e melhor</span></figcaption>
+</figure><figure class="fig">
+  <svg viewBox="0 0 300 150" role="img" aria-label="Pico de memoria: PhxSql 1.080 MB. MySQL 615.3 MB">
+    <line x1="24" y1="112" x2="276" y2="112" stroke="currentColor" stroke-width="1" opacity=".25"/>
+    <rect x="58" y="22.0" width="62" height="90.0" rx="3" fill="var(--acento)"/><text x="89" y="16.0" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">1.080</text><text x="89" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">PhxSql</text>
+    <rect x="178" y="60.7" width="62" height="51.3" rx="3" fill="var(--outro)"/><text x="209" y="54.7" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">615.3</text><text x="209" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">MySQL(R)</text>
+    <text x="150.0" y="144" text-anchor="middle" font-size="10.5" opacity=".6" fill="currentColor">MySQL(R) 1.8× melhor</text>
+  </svg>
+  <figcaption><b>Pico de memoria</b> (MB) · <span class="nota">menor e melhor</span></figcaption>
+</figure></div>
+</section><section>
+  <h2>DELETE <span class="ops">20.000 operações</span></h2>
+  <div class="grade"><figure class="fig">
+  <svg viewBox="0 0 300 150" role="img" aria-label="Tempo: PhxSql 10.2 s. MySQL 5.20 s">
+    <line x1="24" y1="112" x2="276" y2="112" stroke="currentColor" stroke-width="1" opacity=".25"/>
+    <rect x="58" y="22.0" width="62" height="90.0" rx="3" fill="var(--acento)"/><text x="89" y="16.0" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">10.2</text><text x="89" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">PhxSql</text>
+    <rect x="178" y="66.2" width="62" height="45.8" rx="3" fill="var(--outro)"/><text x="209" y="60.2" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">5.20</text><text x="209" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">MySQL(R)</text>
+    <text x="150.0" y="144" text-anchor="middle" font-size="10.5" opacity=".6" fill="currentColor">MySQL(R) 2.0× melhor</text>
+  </svg>
+  <figcaption><b>Tempo</b> (s) · <span class="nota">menor e melhor</span></figcaption>
+</figure><figure class="fig">
+  <svg viewBox="0 0 300 150" role="img" aria-label="CPU: PhxSql 9.70 s. MySQL 6.12 s">
+    <line x1="24" y1="112" x2="276" y2="112" stroke="currentColor" stroke-width="1" opacity=".25"/>
+    <rect x="58" y="22.0" width="62" height="90.0" rx="3" fill="var(--acento)"/><text x="89" y="16.0" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">9.70</text><text x="89" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">PhxSql</text>
+    <rect x="178" y="55.2" width="62" height="56.8" rx="3" fill="var(--outro)"/><text x="209" y="49.2" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">6.12</text><text x="209" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">MySQL(R)</text>
+    <text x="150.0" y="144" text-anchor="middle" font-size="10.5" opacity=".6" fill="currentColor">MySQL(R) 1.6× melhor</text>
+  </svg>
+  <figcaption><b>CPU</b> (s) · <span class="nota">menor e melhor</span></figcaption>
+</figure><figure class="fig">
+  <svg viewBox="0 0 300 150" role="img" aria-label="Disco lido: PhxSql 0 MB. MySQL 1.30 MB">
+    <line x1="24" y1="112" x2="276" y2="112" stroke="currentColor" stroke-width="1" opacity=".25"/>
+    <rect x="58" y="110.0" width="62" height="2.0" rx="3" fill="var(--acento)"/><text x="89" y="104.0" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">0</text><text x="89" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">PhxSql</text>
+    <rect x="178" y="22.0" width="62" height="90.0" rx="3" fill="var(--outro)"/><text x="209" y="16.0" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">1.30</text><text x="209" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">MySQL(R)</text>
+    <text x="150.0" y="144" text-anchor="middle" font-size="10.5" opacity=".6" fill="currentColor"></text>
+  </svg>
+  <figcaption><b>Disco lido</b> (MB) · <span class="nota">menor e melhor</span></figcaption>
+</figure><figure class="fig">
+  <svg viewBox="0 0 300 150" role="img" aria-label="Disco escrito: PhxSql 217.7 MB. MySQL 11.155 MB">
+    <line x1="24" y1="112" x2="276" y2="112" stroke="currentColor" stroke-width="1" opacity=".25"/>
+    <rect x="58" y="110.0" width="62" height="2.0" rx="3" fill="var(--acento)"/><text x="89" y="104.0" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">217.7</text><text x="89" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">PhxSql</text>
+    <rect x="178" y="22.0" width="62" height="90.0" rx="3" fill="var(--outro)"/><text x="209" y="16.0" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">11.155</text><text x="209" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">MySQL(R)</text>
+    <text x="150.0" y="144" text-anchor="middle" font-size="10.5" opacity=".6" fill="currentColor">PhxSql 51.2× melhor</text>
+  </svg>
+  <figcaption><b>Disco escrito</b> (MB) · <span class="nota">menor e melhor</span></figcaption>
+</figure><figure class="fig">
+  <svg viewBox="0 0 300 150" role="img" aria-label="Pico de memoria: PhxSql 1.080 MB. MySQL 615.4 MB">
+    <line x1="24" y1="112" x2="276" y2="112" stroke="currentColor" stroke-width="1" opacity=".25"/>
+    <rect x="58" y="22.0" width="62" height="90.0" rx="3" fill="var(--acento)"/><text x="89" y="16.0" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">1.080</text><text x="89" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">PhxSql</text>
+    <rect x="178" y="60.7" width="62" height="51.3" rx="3" fill="var(--outro)"/><text x="209" y="54.7" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">615.4</text><text x="209" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">MySQL(R)</text>
+    <text x="150.0" y="144" text-anchor="middle" font-size="10.5" opacity=".6" fill="currentColor">MySQL(R) 1.8× melhor</text>
+  </svg>
+  <figcaption><b>Pico de memoria</b> (MB) · <span class="nota">menor e melhor</span></figcaption>
+</figure></div>
+</section>
+<section>
+  <h2>Tamanho em disco</h2>
+  <div class="grade"><figure class="fig">
+  <svg viewBox="0 0 300 150" role="img" aria-label="Ocupado: PhxSql 2.320 MB, MySQL 904.0 MB">
+    <line x1="24" y1="112" x2="276" y2="112" stroke="currentColor" stroke-width="1" opacity=".25"/>
+    <rect x="58" y="22.0" width="62" height="90.0" rx="3" fill="var(--acento)"/><text x="89" y="16.0" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">2.320</text><text x="89" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">PhxSql</text>
+    <rect x="178" y="76.9" width="62" height="35.1" rx="3" fill="var(--outro)"/><text x="209" y="70.9" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">904.0</text><text x="209" y="128" text-anchor="middle" font-size="10.5" opacity=".65" fill="currentColor">MySQL(R)</text>
+    <text x="150.0" y="144" text-anchor="middle" font-size="10.5" opacity=".6" fill="currentColor">MySQL(R) 2.6× melhor</text>
+  </svg>
+  <figcaption><b>Ocupado</b> (MB) · <span class="nota">menor e melhor</span></figcaption>
+</figure></div>
+</section>
+
+<h2>Como refazer</h2>
+<p class="sub">Tudo está no repositório: <code>crates/phxsql-store/examples/carga.rs</code>
+é a carga do lado do PhxSql, e a bancada em Python cerca cada fase com os contadores
+do <code>/proc</code>. Número de desempenho que ninguém consegue refazer é número em
+que não se deve acreditar.</p>
+</div>

@@ -106,6 +106,12 @@ faltando: era o projeto se descrevendo errado.
   `bancada/LEIA-ME.md` ganhou uma quarta regra: **mesma quantidade de
   trabalho**, não só mesma forma de pergunta.
 
+  A prova de que agora está igual é a **soma**: os dois motores devolvem
+  1.250.000 linhas e 5.576.201.000,00 — o mesmo total até o centavo, por dois
+  códigos sem uma linha em comum. E o resultado **sobreviveu ao conserto**: a
+  varredura continua a favor do PhxSql, por 3,3× em vez dos 5× que a montagem
+  errada prometia.
+
 - **A chave estrangeira estava marcada «pronto» e não é aplicada.** Declarada,
   gravada e reportada — mas nenhuma gravação a consulta. Virou «parcial».
 
@@ -164,6 +170,29 @@ Três coisas entraram para que nada disso volte a acontecer calado:
 ## 5. Ninguém pediu, mas a medição aponta
 
 <!-- pendencias:insercao:inicio -->
+A bancada de 10 milhões achou um buraco só, e é grande.
+
+**A inserção é o ponto fraco do motor.** 4.039 linhas/s contra
+83.492 do MySQL(R) — **20,7× mais devagar**. E o
+diagnóstico é incômodo: **2.460 s de CPU para 2.476 s de relógio** (99%), com
+**0,0 MiB lidos do disco**. Não é disco, é processador — a
+B+tree do `.ndx` reescrita nó a nó a cada linha, sem lote. E **piora com o tamanho**: o primeiro milhão entra a 5.089/s, o último a 3.626/s — 29% mais devagar no fim do que no começo.
+
+Nas outras quatro o motor se defende: a varredura por faixa é
+**3,3× mais rápida** (6,06 s contra 19,71 s), lendo as
+1.250.000 linhas dos dois lados e chegando à mesma soma; a
+atualização empata (6,66 s contra 6,49 s); a busca
+pontual é 2,6× mais devagar e a exclusão 2,0×. E escreve muito
+menos: 2,29 GiB contra 32,03 GiB na carga.
+
+Contrapartida honesta: **ocupa 2,27 GiB em disco contra
+0,88 GiB**, porque o `.reg` é de slot fixo — o preço do
+endereçamento O(1) e da ordem de digitação.
+
+Se algum dia sobrar uma rodada para o motor em vez de para recurso novo, é
+aqui que ela rende.
+
+*(Gerado por `docs/dossie/numeros-da-bancada.py` — não edite à mão.)*
 <!-- pendencias:insercao:fim -->
 
 ## 6. As perguntas que você fez, e onde está a resposta

@@ -23,6 +23,7 @@ import sys
 RAIZ = pathlib.Path(__file__).resolve().parents[2]
 MEDICAO = RAIZ / "bancada" / "resultados.json"
 DOSSIE = RAIZ / "docs" / "dossie" / "dossie-phxsql.html"
+PENDENCIAS = RAIZ / "docs" / "PENDENCIAS.md"
 
 ABRE = "<!-- bancada:inicio (gerado por docs/dossie/numeros-da-bancada.py) -->"
 FECHA = "<!-- bancada:fim -->"
@@ -237,6 +238,63 @@ def diagnostico(por):
     return texto
 
 
+def resumo_md(por):
+    """O mesmo diagnostico, em Markdown, para o PENDENCIAS.md."""
+    ins_p, ins_m = por["inserir"]["PhxSql"], por["inserir"]["MySQL"]
+    taxa_p = ins_p["operacoes"] / ins_p["segundos"]
+    taxa_m = ins_m["operacoes"] / ins_m["segundos"]
+    fator = ins_p["segundos"] / ins_m["segundos"]
+    cpu = ins_p["cpu_s"] / ins_p["segundos"] * 100
+
+    def f(fase):
+        a, b = por[fase]["PhxSql"], por[fase]["MySQL"]
+        return a["segundos"] / b["segundos"]
+
+    disco = {
+        d["motor"]: d["bytes"]
+        for d in json.loads(MEDICAO.read_text())
+        if d["fase"] == "disco"
+    }
+
+    t = taxas_por_milhao()
+    queda = ""
+    if t and t[1] and t[0] > t[1]:
+        queda = (
+            f" E **piora com o tamanho**: o primeiro milhao entra a "
+            f"{mil(round(t[0]))}/s, o ultimo a {mil(round(t[1]))}/s \u2014 "
+            f"{dec((1 - t[1] / t[0]) * 100, 0)}% mais devagar no fim do que no comeco."
+        )
+        queda = (queda.replace("primeiro milhao", "primeiro milhão")
+                      .replace("o ultimo", "o último")
+                      .replace("comeco", "começo"))
+
+    var_p, var_m = por["varrer"]["PhxSql"], por["varrer"]["MySQL"]
+    atu_p, atu_m = por["atualizar"]["PhxSql"], por["atualizar"]["MySQL"]
+
+    return (
+        "A bancada de 10 milhões achou um buraco só, e é grande.\n\n"
+        f"**A inserção é o ponto fraco do motor.** {mil(round(taxa_p))} linhas/s contra\n"
+        f"{mil(round(taxa_m))} do MySQL(R) — **{dec(fator, 1)}× mais devagar**. E o\n"
+        f"diagnóstico é incômodo: **{dec(ins_p['cpu_s'], 0)} s de CPU para "
+        f"{dec(ins_p['segundos'], 0)} s de relógio** ({dec(cpu, 0)}%), com\n"
+        f"**{dec(ins_p['lido_mb'], 1)} MiB lidos do disco**. Não é disco, é processador — a\n"
+        f"B+tree do `.ndx` reescrita nó a nó a cada linha, sem lote.{queda}\n\n"
+        f"Nas outras quatro o motor se defende: a varredura por faixa é\n"
+        f"**{dec(1 / f('varrer'), 1)}× mais rápida** ({dec(var_p['segundos'])} s contra "
+        f"{dec(var_m['segundos'])} s), lendo as\n"
+        f"{mil(var_p['operacoes'])} linhas dos dois lados e chegando à mesma soma; a\n"
+        f"atualização empata ({dec(atu_p['segundos'])} s contra {dec(atu_m['segundos'])} s); a busca\n"
+        f"pontual é {dec(f('buscar'), 1)}× mais devagar e a exclusão {dec(f('excluir'), 1)}×. E escreve muito\n"
+        f"menos: {dec(ins_p['escrito_mb'] / 1024)} GiB contra {dec(ins_m['escrito_mb'] / 1024)} GiB na carga.\n\n"
+        f"Contrapartida honesta: **ocupa {dec(disco['PhxSql'] / 1073741824)} GiB em disco contra\n"
+        f"{dec(disco['MySQL'] / 1073741824)} GiB**, porque o `.reg` é de slot fixo — o preço do\n"
+        "endereçamento O(1) e da ordem de digitação.\n\n"
+        "Se algum dia sobrar uma rodada para o motor em vez de para recurso novo, é\n"
+        "aqui que ela rende.\n\n"
+        "*(Gerado por `docs/dossie/numeros-da-bancada.py` — não edite à mão.)*"
+    )
+
+
 def main():
     por = carregar()
     ins = por["inserir"]
@@ -273,6 +331,18 @@ def main():
     html = html[:i] + ABRE_D + "\n" + diagnostico(por) + "\n" + FECHA_D + html[j + len(FECHA_D):]
 
     DOSSIE.write_text(html)
+
+    # O PENDENCIAS.md repete o diagnostico da insercao. Numero repetido em dois
+    # lugares e numero que um dia diverge: gerado tambem.
+    md = PENDENCIAS.read_text()
+    ABRE_P = "<!-- pendencias:insercao:inicio -->"
+    FECHA_P = "<!-- pendencias:insercao:fim -->"
+    i, j = md.find(ABRE_P), md.find(FECHA_P)
+    if i >= 0 and j >= 0:
+        md = md[:i] + ABRE_P + "\n" + resumo_md(por) + "\n" + FECHA_P + md[j + len(FECHA_P):]
+        PENDENCIAS.write_text(md)
+        print(f"  e o resumo do {PENDENCIAS.name}")
+
     print(f"secao 16 refeita a partir de {MEDICAO.name}")
     print(f"  inserir: PhxSql {taxa_p:,.0f}/s  MySQL(R) {taxa_m:,.0f}/s"
           .replace(",", "."))

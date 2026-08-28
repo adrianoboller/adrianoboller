@@ -46,7 +46,10 @@ diferença** em volta de cada fase.
    e ao PhxSql a leitura de apenas 20.000 delas. Mesma pergunta, 1,6% do
    trabalho — e o resultado saía 5× a favor do PhxSql sem que o motor
    tivesse feito nada por isso. Corrigido: a fase `varrer` lê a faixa inteira
-   e soma o valor, como o outro lado.
+   e soma o valor, como o outro lado — e a prova de que agora está igual é a
+   **soma**: os dois devolvem 1.250.000 linhas e 5.576.201.000,00, o mesmo
+   total até o centavo, por dois códigos sem uma linha em comum. O resultado
+   sobreviveu: a varredura continua a favor do PhxSql, por 3,3× em vez de 5×.
 
 Estas duas regras vieram do mesmo lugar: **os dois erros favoreciam um lado
 diferente, e nenhum dos dois era visível no número**. Bancada mal montada mente
