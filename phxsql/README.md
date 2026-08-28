@@ -148,8 +148,8 @@ reaproveitamento de espaço perde.
 
 ## Estado atual
 
-O motor de armazenamento está completo e testado: **369 testes** só nele
-(`phxsql-core` 163 + `phxsql-store` 206), **573 no projeto inteiro**, sem
+O motor de armazenamento está completo e testado: **370 testes** só nele
+(`phxsql-core` 163 + `phxsql-store` 207), **574 no projeto inteiro**, sem
 nenhuma dependência externa (só a `std`) — o que faz o projeto compilar
 offline.
 
