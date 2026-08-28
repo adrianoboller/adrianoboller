@@ -1,0 +1,143 @@
+[
+  {
+    "segundos": 209.091,
+    "cpu_s": 204.94999999999996,
+    "lido_mb": 0.0,
+    "escrito_mb": 703.0999999999998,
+    "pico_rss_mb": 320.1,
+    "motor": "PhxSql",
+    "fase": "inserir",
+    "operacoes": 3000000
+  },
+  {
+    "segundos": 33.006,
+    "cpu_s": 36.28,
+    "lido_mb": 0.0,
+    "escrito_mb": 8762.999999999998,
+    "pico_rss_mb": 658.0,
+    "motor": "MySQL",
+    "fase": "inserir",
+    "operacoes": 3000000
+  },
+  {
+    "motor": "PhxSql",
+    "fase": "buscar",
+    "operacoes": 20000,
+    "segundos": 1.059,
+    "cpu_s": 1.0,
+    "pico_rss_mb": 325.6,
+    "lido_mb": 0.0,
+    "escrito_mb": 0.0,
+    "saida": [
+      "achados: 20000",
+      "RESULTADO {\"fase\":\"buscar\",\"operacoes\":20000,\"segundos\":1.0249,\"por_segundo\":19514.3}"
+    ]
+  },
+  {
+    "motor": "MySQL",
+    "fase": "buscar",
+    "operacoes": 20000,
+    "segundos": 2.515,
+    "cpu_s": 2.12,
+    "pico_rss_mb": 630.7,
+    "pico_confiavel": true,
+    "lido_mb": 0.0,
+    "escrito_mb": 393.5,
+    "erro": null,
+    "saida": [
+      "2364163",
+      "2372082"
+    ]
+  },
+  {
+    "motor": "PhxSql",
+    "fase": "varrer",
+    "operacoes": 375000,
+    "segundos": 1.765,
+    "cpu_s": 1.7,
+    "pico_rss_mb": 325.6,
+    "lido_mb": 0.0,
+    "escrito_mb": 0.0,
+    "saida": [
+      "linhas da cidade: 375000 soma: 157536300000",
+      "RESULTADO {\"fase\":\"varrer\",\"operacoes\":375000,\"segundos\":1.7216,\"por_segundo\":217816.0}"
+    ]
+  },
+  {
+    "motor": "MySQL",
+    "fase": "varrer",
+    "operacoes": 20000,
+    "segundos": 5.883,
+    "cpu_s": 5.98,
+    "pico_rss_mb": 630.7,
+    "pico_confiavel": true,
+    "lido_mb": 0.0,
+    "escrito_mb": 137.1,
+    "erro": null,
+    "saida": [
+      "375000\t1575363000.00"
+    ]
+  },
+  {
+    "motor": "PhxSql",
+    "fase": "atualizar",
+    "operacoes": 20000,
+    "segundos": 0.656,
+    "cpu_s": 0.36,
+    "pico_rss_mb": 325.6,
+    "lido_mb": 0.0,
+    "escrito_mb": 81.0,
+    "saida": [
+      "RESULTADO {\"fase\":\"atualizar\",\"operacoes\":20000,\"segundos\":0.6366,\"por_segundo\":31416.3}"
+    ]
+  },
+  {
+    "motor": "MySQL",
+    "fase": "atualizar",
+    "operacoes": 20000,
+    "segundos": 4.646,
+    "cpu_s": 5.55,
+    "pico_rss_mb": 630.7,
+    "pico_confiavel": true,
+    "lido_mb": 0.0,
+    "escrito_mb": 4579.8,
+    "erro": null,
+    "saida": []
+  },
+  {
+    "motor": "PhxSql",
+    "fase": "excluir",
+    "operacoes": 20000,
+    "segundos": 1.868,
+    "cpu_s": 1.46,
+    "pico_rss_mb": 325.5,
+    "lido_mb": 0.0,
+    "escrito_mb": 231.5,
+    "saida": [
+      "RESULTADO {\"fase\":\"excluir\",\"operacoes\":20000,\"segundos\":1.8498,\"por_segundo\":10812.1}"
+    ]
+  },
+  {
+    "motor": "MySQL",
+    "fase": "excluir",
+    "operacoes": 20000,
+    "segundos": 3.935,
+    "cpu_s": 4.74,
+    "pico_rss_mb": 630.7,
+    "pico_confiavel": true,
+    "lido_mb": 0.0,
+    "escrito_mb": 7019.8,
+    "erro": null,
+    "saida": []
+  },
+  {
+    "motor": "PhxSql",
+    "fase": "disco",
+    "bytes": 730790080
+  },
+  {
+    "motor": "MySQL",
+    "fase": "disco",
+    "bytes": 293601280
+  }
+]

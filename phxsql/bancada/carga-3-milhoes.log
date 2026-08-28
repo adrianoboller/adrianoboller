@@ -1,0 +1,17 @@
+=== carga de 3.000.000 registros ===
+inserindo…
+  PhxSql  1.000.000 em    63.2s (15.812/s)
+  PhxSql  2.000.000 em   133.1s (15.024/s)
+  PhxSql  3.000.000 em   209.1s (14.348/s)
+  MySQL   1.000.000 em    11.0s (90.761/s)
+  MySQL   2.000.000 em    22.0s (90.744/s)
+  MySQL   3.000.000 em    33.0s (90.893/s)
+buscar…
+  PhxSql    1.06s  |  MySQL    2.52s
+varrer…
+  PhxSql    1.76s  |  MySQL    5.88s
+atualizar…
+  PhxSql    0.66s  |  MySQL    4.65s
+excluir…
+  PhxSql    1.87s  |  MySQL    3.94s
+=== fim ===

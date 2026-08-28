@@ -8,8 +8,10 @@ deve acreditar.
 |---|---|
 | `medir.py` | a bancada: cerca cada fase com os contadores do `/proc` |
 | `graficos.py` | gera a página de comparação a partir do `resultados.json` |
-| `resultados.json` | a última medição, crua |
+| `resultados.json` | a última medição, crua — é dela que o dossiê se gera |
 | `carga-10-milhoes.log` | o log da corrida de 10.000.000 |
+| `resultados-3-milhoes.json` | a corrida de 3.000.000, guardada inteira |
+| `carga-3-milhoes.log` | o log dela |
 
 A carga do lado do PhxSql é `crates/phxsql-store/examples/carga.rs`, que roda
 cada fase num processo separado — assim os contadores são daquela fase e de
@@ -23,6 +25,17 @@ service mysql start
 python3 bancada/medir.py 10000000     # ~50 min: 45 do insert do PhxSql
 python3 bancada/graficos.py
 ```
+
+## Duas escalas, e por que as duas ficam
+
+O `resultados.json` guarda uma medição só, e o dossiê se gera dela. Mas
+comparar escalas diferentes engana: tabela menor tem árvore mais rasa e cabe
+melhor na cache, então parte de qualquer ganho vem do tamanho, não do motor.
+
+Por isso a corrida de 3.000.000 ficou com nome próprio ao lado da de
+10.000.000. A comparação limpa entre elas é **o primeiro milhão**, que é o
+mesmo trabalho nas duas: foi assim que se mediu o efeito do CRC slice-by-8,
+5.089/s → 16.063/s.
 
 ## O que se mede
 
