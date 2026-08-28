@@ -1,60 +1,87 @@
-# Tudo que foi pedido: feito, parcial, planejado
+# Tudo que foi pedido, do início até aqui
 
-Revisão de 28/08/2026. Uma linha por pedido seu, desde a primeira mensagem, com
-o estado real medido contra o código — não contra a lembrança.
+Uma linha por pedido seu, na ordem em que você pediu. O estado é medido contra
+o código, não contra a lembrança — foi assim que a chave estrangeira saiu de
+«pronto» para «parcial», e o Centro de Controle de «pronto» para «só navega».
 
-A regra é a mesma do dossiê: **número medido, nunca estimado**. Onde há número,
-ele saiu de `cargo test`, de `wc -l` ou de `bancada/resultados.json`.
+☑️ feito · ◐ parcial · ☐ planejado
 
-Estado do repositório: **22.432** linhas de Rust, **324** testes passando,
-zero avisos de clippy, zero dependências externas, versão **0.5.2**.
+| | # | O que você pediu | Estado |
+|---|---:|---|---|
+| ☑️ | 1 | `Tabela.reg` — tabela física **na ordem de digitação** | slot fixo com CRC; slot excluído nunca reaproveitado |
+| ☑️ | 2 | `Tabela.ndx` — índices | B+tree, chave composta, ASC/DESC/NOCASE/único |
+| ☑️ | 3 | `Tabela.bin` — binários | blocos com CRC, até 4 GiB por bloco |
+| ☑️ | 4 | `Tabela.memo` — textos longos | mesmo mecanismo do `.bin` |
+| ☑️ | 5 | `Tabela.log` — **toda** inclusão, alteração e exclusão com data e hora | append-only, 36 bytes por evento |
+| ☐ | 6 | **Servidor MCP** | não começou. O protocolo já é JSON por linha; falta a tradução de vocabulário |
+| ☐ | 7 | **Driver ODBC e OLE DB** | não começou. Depende da camada SQL |
+| ☑️ | 8 | Porta 5000, configurável no `config.json` | campo `bind`; campo com nome errado agora avisa |
+| ☑️ | 9 | Tudo em Rust, sem dependência | zero crates externas; compila offline |
+| ☑️ | 10 | Reindex criando o `.ndx` do zero | varre o `.reg` e reconstrói |
+| ☑️ | 11 | Aceitar linha de comando | `phxsql` com 10 comandos, `phxsqld` com 9 chaves |
+| ☑️ | 12 | Pastas separando tabelas **e** bancos | `base/ → database → raiz → schema/` |
+| ☑️ | 13 | Paginação `Nome_001.reg`, `_002`… | volume = `(rowid−1)/por_arquivo + 1` |
+| ◐ | 14 | **Quantidade de registros e arquivos no create table** | a paginação funciona, mas **não há op no protocolo nem comando na CLI para criar tabela** — só escrevendo Rust |
+| ☑️ | 15 | Organograma, fluxograma e dossiê | 19 seções, 16 figuras, tudo em SVG à mão |
+| ☑️ | 16 | Log de IPs na porta 5000, com data e hora | JSON Lines, para caber `fail2ban` |
+| ☑️ | 17 | Download dos fontes e do compilado Linux/Windows, com manual | `./empacotar.sh`, três zips conferidos |
+| ◐ | 18 | **Subir o PhxSql no GitHub** | está na branch com histórico completo; **repositório próprio bloqueado**: `create_repository` responde 403 |
+| ◐ | 19 | **Replicação como a do MySQL(R)**, com porta de envio e de retorno | as três portas entram e validam, o desenho está escrito; falta o **`.log` v2 com imagem da linha** |
+| ☑️ | 20 | `Config_exemplo_01/02/03.json` | isolado, réplica e origem |
+| ☑️ | 21 | Precisa de agentes e subagentes? | respondida |
+| ☑️ | 22 | Atualizar o dossiê ao fim de cada rodada | regra permanente, no `CLAUDE.md` |
+| ☑️ | 23 | Usar os logotipos onde precisar | capa, cabeçalho, favicon e paleta |
+| ☑️ | 24 | Cadastro com nome, login, senha, e-mail, telefone, supervisor e poder por base | tudo isso, mais nível e chave pública |
+| ☑️ | 25 | Usuário root e senha no `config.json` | PBKDF2-HMAC-SHA256, 210.000 voltas |
+| ☑️ | 26 | `blacklist.json` com IP, data, hora e comando bloqueado | mais recarga automática entre processos |
+| ☑️ | 27 | Comandos proibidos no `config.json` | e a auditoria achou ali um furo real, corrigido |
+| ☑️ | 28 | Criar regra de firewall em quem tenta o proibido | conferido com um `iptables` falso que grava |
+| ☑️ | 29 | **Base64 no login**, não em claro | feito — e o padrão é melhor: desafio-resposta, a senha não sai da máquina |
+| ◐ | 30 | **Interface web parecida com o Centro de Controle HFSQL(R)** | navega tudo: árvore, cinco abas, painel, administração, barra de menu. **Mas não edita dados** — `inserir`, `atualizar`, `excluir` e `ler` não têm tela |
+| ☑️ | 31 | Tabela em memória tipo Redis(R), com `SelectMemory` | **87× mais rápido**, medido |
+| ☑️ | 32 | Revisar regras, corrigir defeitos, registrar em `changelog.md` | `CHANGELOG.md`, com *Corrigido* primeiro |
+| ☑️ | 33 | Chave assimétrica no `config.json` como parâmetro extra | Ed25519 (RFC 8032), contra os quatro vetores oficiais |
+| ☑️ | 34 | `(R)` nas marcas de outros bancos | varrido no repositório inteiro |
+| ☑️ | 35 | O desenvolvimento foi adequado? Qual o custo? | respondida |
+| ☑️ | 36 | Tabelas PhxSql em Android, iOS e IoT | respondida |
+| ☑️ | 37 | Ele **realmente** cria a regra e bloqueia? | respondida — e a auditoria achou um furo de verdade |
+| ☑️ | 38 | Ícones ☀️/🌓 para claro e escuro | 🌙 no tema claro, ☀️ no escuro, no canto direito da barra |
+| ☑️ | 39 | Login com servidor/porta/usuário/senha/chave/database | a chave é opcional, conforme o `config.json` |
+| ☐ | 40 | **Parar e subir o serviço pela interface**, trocando a porta | não começou. O `accept` bloqueia; exige mexer no laço |
+| ☑️ | 41 | Sistema de backup | ao vivo e agendado |
+| ☑️ | 42 | Checklist das perguntas feitas e respondidas | este documento |
+| ☑️ | 43 | Backup em zip `Banco_Admin_Data_Horamin.zip` | manifesto SHA-256; o ZIP e o DEFLATE são escritos aqui |
+| ☑️ | 44 | **Nível admin** no `config.json` e no usuário | cinco níveis: nenhum, leitor, operador, dono, admin |
+| ☑️ | 45 | Comparar com o MySQL(R) em 10.000.000 | seção 17 do dossiê; refeita duas vezes |
+| ☑️ | 46 | Gráficos comparativos de IO, memória e CPU | `bancada/comparacao-phxsql-mysql.html` |
+| ☑️ | 47 | `tabela.bkp` clone do `.reg`, se ativo no `config.json` | e provar isso achou um defeito grave, corrigido |
+| ☑️ | 48 | DataGrid com faixa de agrupamento acima das colunas | phx-grid: arrastar o cabeçalho agrupa |
+| ☐ | 49 | **Triggers** | não começou. Falta decidir **em que linguagem o gatilho é escrito** — a escolha é sua |
+| ☐ | 50 | **Stored procedures** | não começou. Código guardado precisa de executor |
+| ☐ | 51 | **Jobs de execução** | não começou. **O mais barato dos três**: o agendador do backup já é o desenho |
+| ☑️ | 52 | Dashboard com gráficos de bancos, usuários, conexões | sete gráficos e oito números, de uma chamada só |
+| ☑️ | 53 | Revise o que falta | onze defeitos achados, todos corrigidos |
+| ☑️ | 54 | Tabelas de feito, parcial e planejado | esta |
+| ☑️ | 55 | Serve para Blockchain e servidor de e-mail por socket? | respondida, com o esquema e a restrição do SMTP |
+| ☑️ | 56 | **UUID v7, UUID de 128 bits, 256 bits e `Sequence`** | conferidos contra o vetor do RFC 9562 |
+| ☑️ | 57 | Por que o insert é tão lento perto do MySQL(R)? | diagnosticado e medido: era o CRC da página inteira |
+| ☑️ | 58 | **Multithreads para acelerar** | onde divide: varredura em memória **1,8×** em 4 núcleos |
+| ☑️ | 59 | Novo teste de 3.000.000 | feito duas vezes, isolando cada rodada |
+| ☑️ | 60 | O `.bkp` espelhado existe se ativo? | sim — e provar achou o defeito do byte de status |
+| ☑️ | 61 | O que dá para melhorar no insert | **3,1× no CRC** e **1,31× na unicidade**, medidos |
+| ☑️ | 62 | Parar a carga de 10 milhões | parada e limpa |
+| ☑️ | 63 | **Barra de menu superior tradicional** | seis menus, 22 recursos, Alt/setas/Esc |
+| ☑️ | 64 | Cadê o sol e a lua? | respondida — estavam lá, o recorte da captura é que cortava |
+
+**54 feitos · 4 parciais · 6 planejados**, de 64 pedidos.
+
+Fora do que você pediu, entraram por medição: o CRC slice-by-8, o `descer` sem
+reler a folha, a conferência de unicidade sem descida dupla, e onze correções
+de defeito — três delas de perda silenciosa de dado.
 
 ---
 
-## 1. Feito
-
-Pronto, testado, e no ar. A última coluna aponta onde a peça mora, para você
-poder conferir sem perguntar. Os **324 testes** do projeto passam, com zero
-avisos de clippy.
-
-| # | O que você pediu | Como está | Onde |
-|---|---|---|---|
-| 1 | `Tabela.reg` — tabela física **na ordem de digitação** | slot fixo, CRC por registro, esquema embutido; slot excluído **nunca** é reaproveitado | `store/reg.rs` |
-| 2 | `Tabela.ndx` — índices | B+tree com divisão de páginas, chave composta, ASC/DESC/NOCASE/único | `store/ndx.rs` |
-| 3 | `Tabela.bin` — binários | blocos com CRC e contabilidade de espaço morto | `store/blob.rs` |
-| 4 | `Tabela.memo` — textos longos | mesmo mecanismo do `.bin` | `store/blob.rs` |
-| 5 | `Tabela.log` — **toda** inclusão, alteração e exclusão com data e hora | append-only, 36 bytes por evento | `store/log.rs` |
-| 6 | Paginação `Nome_001.reg`, `_002`… | volume = `(rowid−1)/por_arquivo + 1`, abertura preguiçosa; o `.ndx` **não** pagina | `store/volume.rs`, `core/paginacao.rs` |
-| 7 | Pastas separando tabelas **e** bancos | `base/ → database → tabelas na raiz → schema/` | `store/catalogo.rs` |
-| 8 | Reindex criando o `.ndx` **do zero** | varre o `.reg` e reconstrói | `store/table.rs` |
-| 9 | Aceitar linha de comando | `phxsql` com 10 comandos, `phxsqld` com 9 chaves | `cli/main.rs`, `server/main.rs` |
-| 10 | Porta 5000, configurável no `config.json` | campo `bind`; campo com nome errado agora **avisa** em vez de silenciar | `server/config.rs` |
-| 11 | Log de IPs que acessaram a 5000, com IP, data e hora | JSON Lines, para caber `fail2ban` por cima | `server/acesso.rs` |
-| 12 | Cadastro com nome, login, senha, email, telefone, supervisor e poder por base | tudo isso, mais nível e chave pública | `server/usuarios.rs` |
-| 13 | Usuário root e senha no `config.json` | e a senha nunca em texto puro: PBKDF2-HMAC-SHA256, 210.000 voltas | `core/senha.rs` |
-| 14 | **Nível admin** no `config.json` e no usuário | cinco níveis: nenhum, leitor, operador, dono, admin | `server/usuarios.rs` |
-| 15 | Login e senha em **Base64**, não em claro | feito — e o padrão é melhor: desafio-resposta, em que a senha **não sai da máquina** | `core/desafio.rs`, `core/base64.rs` |
-| 16 | Chave assimétrica no `config.json` como parâmetro extra | Ed25519 (RFC 8032) como segundo fator, conferido contra os quatro vetores oficiais | `core/ed25519.rs` |
-| 17 | Login com servidor/porta/usuário/senha/chave/database | a chave é opcional e o `config.json` decide se é exigida | `ui/index.html` |
-| 18 | `blacklist.json` com IP, data, hora e comando bloqueado | mais recarga automática quando o arquivo muda entre processos | `server/blacklist.rs` |
-| 19 | Seção de comandos proibidos no `config.json` | e a auditoria achou ali um furo real: travessia de caminho era recusada mas **não contava violação**. Corrigido: bloqueia na primeira tentativa | `server/blacklist.rs`, `store/catalogo.rs` |
-| 20 | Criar regra de firewall em quem tenta o proibido | conferido com um `iptables` falso que grava o que recebeu | `server/blacklist.rs` |
-| 21 | Interface web parecida com o Centro de Controle | embutida no `phxsqld`, sem servidor web para instalar; cinco abas por tabela e três telas de administração | `server/http.rs`, `ui/index.html` |
-| 22 | Ícones ☀️/🌓 para claro e escuro | e o console guarda mais de um servidor | `ui/index.html` |
-| 23 | Tabela em memória tipo Redis(R), com `SelectMemory` | **87× mais rápido**, medido | `store/memoria.rs` |
-| 24 | Backup agendado **ou ao vivo**, em zip `Banco_Admin_Data_Horamin.zip` | manifesto SHA-256 e conferência; o ZIP e o DEFLATE são escritos aqui | `store/backup.rs`, `core/zip.rs` |
-| 25 | `tabela.bkp` como clone do `.reg`, se ligado no `config.json` | segunda chance na falha de CRC; e o espelho **não** sobrescreve um `.bkp` bom com um `.reg` corrompido | `store/volume.rs` |
-| 26 | DataGrid com faixa de agrupamento acima das colunas, tipo Excel(R) | phx-grid: arrastar o cabeçalho agrupa, com contagem e agregados; vários níveis empilham | `ui/grid/phx-grid.js` |
-| 27 | Dashboard com gráficos de bancos, usuários, conexões… | **sete** gráficos e oito números, tudo de **uma** chamada, e contando só o que o login enxerga | `server/servidor.rs` (op `painel`), `ui/index.html` |
-| 28 | Organograma, fluxograma e dossiê | 18 seções, 15 figuras, todas em SVG escrito à mão | `docs/dossie/` |
-| 29 | `Config_exemplo_01/02/03.json` | isolado, réplica e origem | `exemplos/` |
-| 30 | Manual de uso | `MANUAL.txt`, 18 seções | `MANUAL.txt` |
-| 31 | Usar a marca onde precisar | capa, cabeçalho, favicon e paleta; `phxsql/marca/` | `marca/` |
-| 32 | `(R)` nas marcas de outros bancos | conferido em todo o repositório | — (varrido no repositório) |
-| 33 | Revisar regras, corrigir defeitos e registrar em `changelog.md` | `CHANGELOG.md`, com **Corrigido** primeiro e uma seção *Sabido* do que não funciona | `CHANGELOG.md` |
-| 34 | Comparar com o MySQL(R) em 10.000.000 de registros, com gráficos de IO, memória e CPU | seção 17 do dossiê e `bancada/`; **refeita** nesta rodada, porque a montagem anterior comparava trabalho diferente | `bancada/`, seção 17 do dossiê |
-| 35 | Download dos fontes e do compilado para Linux e Windows | `./empacotar.sh` monta os três zips; conferidos com `unzip -t` | `empacotar.sh` |
-| 36 | `Uuid` v7 e v4, `Uuid256` de 256 bits e `Sequence` | 16, 32 e 8 bytes crus no slot; v7 estritamente crescente, conferido contra o vetor do RFC 9562 | `core/uuid.rs` |
+## O detalhe de cada parcial e de cada planejado
 
 ## 2. Parcial
 

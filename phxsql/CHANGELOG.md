@@ -10,6 +10,26 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
+## 0.5.4 — 2026-08-28
+
+### Corrigido
+
+- **O Centro de Controle estava marcado «pronto» e não edita dados.** Contando
+  as operações que a tela realmente alcança: **25 de 32**. Faltam `inserir`,
+  `atualizar`, `excluir`, `ler`, `buscar`, `selecionar_memoria` e
+  `desbloquear` — ou seja, a interface **navega os dados mas não os altera**.
+
+  Virou «parcial» no README e no dossiê. É o mesmo erro da chave estrangeira:
+  marcar como pronto o que existe pela metade.
+
+### Adicionado
+
+- `docs/PENDENCIAS.md` refeito numa **tabela única** com os 64 pedidos na ordem
+  em que foram feitos, com ☑️ feito, ◐ parcial e ☐ planejado. O saldo:
+  **54 feitos, 4 parciais, 6 planejados**.
+
+---
+
 ## 0.5.3 — 2026-08-28
 
 ### Adicionado
