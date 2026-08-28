@@ -469,7 +469,29 @@ impl NdxFile {
     // ------------------------------------------------------------ insercao
 
     /// Insere `chave` (codificada, sem rowid) apontando para `rowid`.
+    /// Insere conferindo a unicidade antes.
     pub fn inserir(&mut self, idx: usize, chave: &[u8], rowid: RowId) -> Result<()> {
+        if self.descritor(idx)?.unico && self.existe(idx, chave)? {
+            let nome = self.descritor(idx)?.nome.clone();
+            return Err(PhxError::Duplicado(format!(
+                "indice unico {nome} ja tem essa chave"
+            )));
+        }
+        self.inserir_ja_conferido(idx, chave, rowid)
+    }
+
+    /// Insere SEM conferir unicidade, para quem ja conferiu.
+    ///
+    /// Existe por medicao. A `Table` precisa conferir antes de gravar no
+    /// `.reg` -- descobrir a duplicidade depois exigiria desfazer, e o slot
+    /// desfeito ficaria morto para sempre, porque o `.reg` nao reaproveita
+    /// slot. So que o `inserir` conferia de novo aqui dentro, e cada
+    /// conferencia e uma descida inteira na arvore: duas descidas para
+    /// responder a mesma pergunta, em toda insercao de todo indice unico.
+    ///
+    /// Quem chamar isto assume a conferencia. Chamar sem ter conferido mete
+    /// chave repetida num indice unico, e o indice passa a mentir.
+    pub fn inserir_ja_conferido(&mut self, idx: usize, chave: &[u8], rowid: RowId) -> Result<()> {
         let d = self.descritor(idx)?.clone();
         if chave.len() != d.key_len {
             return Err(PhxError::Corrompido(format!(
@@ -477,12 +499,6 @@ impl NdxFile {
                 d.nome,
                 chave.len(),
                 d.key_len
-            )));
-        }
-        if d.unico && !self.buscar(idx, chave)?.is_empty() {
-            return Err(PhxError::Duplicado(format!(
-                "indice unico {} ja tem essa chave",
-                d.nome
             )));
         }
 
@@ -683,12 +699,20 @@ impl NdxFile {
     // -------------------------------------------------------------- busca
 
     /// Desce ate a folha que deve conter `alvo` e devolve (pagina, posicao).
-    fn descer(&mut self, raiz: u64, alvo: &[u8], ck_len: usize) -> Result<(u64, usize)> {
+    /// Desce ate a folha onde a chave entraria.
+    ///
+    /// Devolve a folha JUNTO com o numero e a posicao. Antes ela era lida aqui
+    /// e jogada fora, e quem chamava lia de novo -- uma pagina inteira a mais
+    /// por busca, com o CRC junto.
+    fn descer(&mut self, raiz: u64, alvo: &[u8], ck_len: usize) -> Result<(u64, usize, Vec<u8>)> {
         let mut pagina = raiz;
         loop {
             let p = self.ler_pagina(pagina)?;
             match pag_tipo(&p) {
-                TIPO_FOLHA => return Ok((pagina, lower_bound_folha(&p, ck_len, alvo))),
+                TIPO_FOLHA => {
+                    let pos = lower_bound_folha(&p, ck_len, alvo);
+                    return Ok((pagina, pos, p));
+                }
                 TIPO_INTERNO => {
                     let pos = escolher_filho(&p, ck_len, alvo);
                     pagina = if pos < pag_qtd(&p) {
@@ -704,6 +728,43 @@ impl NdxFile {
                 }
             }
         }
+    }
+
+    /// Ha ao menos uma entrada com esta chave?
+    ///
+    /// E o que a conferencia de unicidade precisa saber, e so isso. O `buscar`
+    /// junta TODOS os rowids num vetor para depois alguem perguntar se o vetor
+    /// esta vazio -- num indice unico a resposta cabe numa comparacao, e num
+    /// indice comum juntar mil rowids para descartar os mil e trabalho jogado
+    /// fora.
+    pub fn existe(&mut self, idx: usize, chave: &[u8]) -> Result<bool> {
+        let d = self.descritor(idx)?.clone();
+        if chave.len() != d.key_len {
+            return Err(PhxError::Corrompido(format!(
+                "indice {}: chave de {} bytes, esperado {}",
+                d.nome,
+                chave.len(),
+                d.key_len
+            )));
+        }
+        let ck_len = d.ck_len();
+        let inicio = Self::chave_completa(chave, 0);
+        let (_pagina, pos, folha) = self.descer(d.raiz, &inicio, ck_len)?;
+
+        // A chave pode cair exatamente no fim de uma folha: a primeira entrada
+        // com esse prefixo estaria na folha seguinte.
+        if pos < pag_qtd(&folha) {
+            return Ok(folha_entrada(&folha, pos, ck_len)[..d.key_len] == *chave);
+        }
+        let proxima = pag_prox(&folha);
+        if proxima == 0 {
+            return Ok(false);
+        }
+        let p = self.ler_pagina(proxima)?;
+        if pag_qtd(&p) == 0 {
+            return Ok(false);
+        }
+        Ok(folha_entrada(&p, 0, ck_len)[..d.key_len] == *chave)
     }
 
     /// Todos os rowids cuja chave e exatamente `chave`.
@@ -757,10 +818,11 @@ impl NdxFile {
         F: FnMut(&[u8]) -> bool,
     {
         let ck_len = d.ck_len();
-        let (mut pagina, mut pos) = self.descer(d.raiz, inicio, ck_len)?;
+        let (mut pagina, mut pos, mut folha) = self.descer(d.raiz, inicio, ck_len)?;
         let mut saida = Vec::new();
         while pagina != 0 {
-            let p = self.ler_pagina(pagina)?;
+            // A primeira folha vem da descida; as seguintes se leem aqui.
+            let p = folha;
             let qtd = pag_qtd(&p);
             while pos < qtd {
                 let e = folha_entrada(&p, pos, ck_len);
@@ -773,6 +835,10 @@ impl NdxFile {
             }
             pagina = pag_prox(&p);
             pos = 0;
+            if pagina == 0 {
+                break;
+            }
+            folha = self.ler_pagina(pagina)?;
         }
         Ok(saida)
     }
@@ -784,8 +850,7 @@ impl NdxFile {
         let d = self.descritor(idx)?.clone();
         let ck_len = d.ck_len();
         let ck = Self::chave_completa(chave, rowid);
-        let (pagina, pos) = self.descer(d.raiz, &ck, ck_len)?;
-        let mut p = self.ler_pagina(pagina)?;
+        let (pagina, pos, mut p) = self.descer(d.raiz, &ck, ck_len)?;
         let qtd = pag_qtd(&p);
         if pos >= qtd || folha_entrada(&p, pos, ck_len) != ck.as_slice() {
             return Ok(false);
@@ -811,7 +876,7 @@ impl NdxFile {
             let d = self.indices[i].clone();
             let ck_len = d.ck_len();
             let inicio = vec![0u8; ck_len];
-            let (mut pagina, _) = self.descer(d.raiz, &inicio, ck_len)?;
+            let (mut pagina, _, _) = self.descer(d.raiz, &inicio, ck_len)?;
             let mut anterior: Option<Vec<u8>> = None;
             let mut total = 0u64;
             while pagina != 0 {

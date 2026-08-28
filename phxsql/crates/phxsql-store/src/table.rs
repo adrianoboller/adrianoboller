@@ -419,8 +419,13 @@ impl Table {
 
         let chaves = self.todas_as_chaves(valores)?;
 
+        // A conferencia acontece AQUI, antes de qualquer gravacao, e nao la
+        // dentro do `ndx.inserir`, por um motivo de formato: o `.reg` nunca
+        // reaproveita slot. Descobrir a duplicidade depois de gravar exigiria
+        // desfazer, e o slot desfeito ficaria morto para sempre. Uma tabela que
+        // recebe muita insercao repetida iria inchando sem nunca crescer.
         for (i, chave) in chaves.iter().enumerate() {
-            if self.ndx.indices()[i].unico && !self.ndx.buscar(i, chave)?.is_empty() {
+            if self.ndx.indices()[i].unico && self.ndx.existe(i, chave)? {
                 return Err(PhxError::Duplicado(format!(
                     "indice unico {} ja tem essa chave",
                     self.ndx.indices()[i].nome
@@ -433,7 +438,10 @@ impl Table {
         let rowid = self.reg.inserir(&payload)?;
 
         for (i, chave) in chaves.iter().enumerate() {
-            if let Err(e) = self.ndx.inserir(i, chave, rowid) {
+            // `ja_conferido`: a unicidade foi conferida logo acima, antes de
+            // qualquer gravacao. Deixar o `inserir` conferir de novo custaria
+            // uma segunda descida na arvore para a mesma resposta.
+            if let Err(e) = self.ndx.inserir_ja_conferido(i, chave, rowid) {
                 // Desfaz o que ja entrou.
                 for (j, anterior) in chaves.iter().enumerate().take(i) {
                     let _ = self.ndx.remover(j, anterior, rowid);

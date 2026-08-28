@@ -244,3 +244,59 @@ fn chave_grande_demais_para_a_pagina_e_recusada() {
     // Mas cabe numa pagina de 4096.
     assert!(NdxFile::criar_com_pagina(&caminho, &esq, 4096).is_ok());
 }
+
+#[test]
+fn existe_concorda_com_buscar_em_toda_chave() {
+    // `existe` desce uma vez e responde sim/nao sem juntar rowid nenhum. O
+    // oraculo e o `buscar`, que ja era testado: se os dois divergirem em uma
+    // chave que seja, quem esta errado e o novo.
+    //
+    // Paginas de 512 bytes forcam a arvore a ter varios niveis, e as chaves
+    // pares deixam buracos -- entao a busca cai tanto no meio de uma folha
+    // quanto exatamente no fim dela, que e o caso de borda que interessa: a
+    // primeira entrada com o prefixo pode estar na folha SEGUINTE.
+    let dir = DirTemp::novo("existe-vs-buscar");
+    let mut n =
+        NdxFile::criar_com_pagina(dir.0.join("t.ndx"), &esquema(false), PAGINA_PEQUENA).unwrap();
+
+    for i in 0..2_000i64 {
+        n.inserir(0, &chave(i * 2), (i + 1) as u64).unwrap();
+    }
+    n.sincronizar().unwrap();
+
+    // Chaves que existem, chaves que nao existem, e as pontas.
+    for v in (-4..4_010i64).step_by(1) {
+        let pelo_buscar = !n.buscar(0, &chave(v)).unwrap().is_empty();
+        let pelo_existe = n.existe(0, &chave(v)).unwrap();
+        assert_eq!(
+            pelo_existe, pelo_buscar,
+            "divergiram na chave {v}: existe={pelo_existe}, buscar={pelo_buscar}"
+        );
+    }
+}
+
+#[test]
+fn existe_com_chaves_repetidas() {
+    // Num indice comum a mesma chave se repete. `existe` tem de dizer sim uma
+    // vez, sem varrer as mil entradas que o `buscar` juntaria.
+    let dir = DirTemp::novo("existe-repetida");
+    let mut n =
+        NdxFile::criar_com_pagina(dir.0.join("t.ndx"), &esquema(false), PAGINA_PEQUENA).unwrap();
+    for rowid in 1..=1_000u64 {
+        n.inserir(0, &chave(42), rowid).unwrap();
+    }
+    n.sincronizar().unwrap();
+
+    assert!(n.existe(0, &chave(42)).unwrap());
+    assert_eq!(n.buscar(0, &chave(42)).unwrap().len(), 1_000);
+    assert!(!n.existe(0, &chave(41)).unwrap());
+    assert!(!n.existe(0, &chave(43)).unwrap());
+}
+
+#[test]
+fn existe_em_indice_vazio() {
+    let dir = DirTemp::novo("existe-vazio");
+    let mut n =
+        NdxFile::criar_com_pagina(dir.0.join("t.ndx"), &esquema(true), PAGINA_PEQUENA).unwrap();
+    assert!(!n.existe(0, &chave(1)).unwrap());
+}
