@@ -310,11 +310,14 @@ footer p{max-width:var(--medida)}
   a garantia que o TopSpeed(R) não dava: <strong>o arquivo de dados guarda a ordem em que
   você digitou</strong>, e nada nunca a embaralha.</p>
 
-  <p class="chamada" style="margin-top:-6px">Esta é a revisão da <strong>0.15.0</strong>,
+  <p class="chamada" style="margin-top:-6px">Esta é a revisão da <strong>0.16.0</strong>,
   refeita contra o código. Três coisas que a versão anterior listava como o que
   faltava saíram, e as três estão medidas: a <a href="#s9">replicação com quatro
   servidores</a>, o <a href="#s5b">salto para «a página 500»</a> e a
-  <a href="#s7">carga em lote</a>.</p>
+  <a href="#s7">carga em lote</a>. Depois dela entraram o <b>Profiler</b>, as
+  cores da ação, o contêiner <code>scratch</code> de 4,7 MB — e a leitura da
+  documentação do HFSQL(R) contra este código, que está em
+  <code>docs/HFSQL.md</code> e que apontou o que ainda falta.</p>
 
   <div class="painel">
   <!-- projeto:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
@@ -4008,6 +4011,15 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
         <tr><td><em>Long-poll</em> e TLS no transporte da replicação</td><td><span class="pino nao">a fazer</span></td><td class="num">—</td></tr>
         <tr><td>Carga em lote · 9,6× medido · cinco formatos colados</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
         <tr><td>Salto por posição com bissecção no <code>rownum</code></td><td><span class="pino ok">pronto</span></td><td class="num">22</td></tr>
+        <tr><td>Profiler · o que chega pela porta antes de virar dado</td><td><span class="pino ok">pronto</span></td><td class="num">9</td></tr>
+        <tr><td>Chave composta livre e única · a recusa não consome slot</td><td><span class="pino ok">pronto</span></td><td class="num">4</td></tr>
+        <tr><td>Contêiner <code>scratch</code> de 4,7 MB · alvo musl</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
+        <tr><td>Várias instâncias em portas diferentes</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
+        <tr><td>Janela de conflito de escrita · a segunda gravação vence calada</td><td><span class="pino nao">a fazer</span></td><td class="num">—</td></tr>
+        <tr><td>Direito no nível da <em>tabela</em> · hoje para na base</td><td><span class="pino nao">a fazer</span></td><td class="num">—</td></tr>
+        <tr><td>Índice de texto completo · índice parcial · ordenação linguística</td><td><span class="pino nao">a fazer</span></td><td class="num">—</td></tr>
+        <tr><td>Cluster · endereço único, eleição, promoção automática</td><td><span class="pino nao">a fazer</span></td><td class="num">—</td></tr>
+        <tr><td>Diagrama ER e editor visual de modelo</td><td><span class="pino nao">a fazer</span></td><td class="num">—</td></tr>
         <tr><td>Jobs de execução — operação nomeada no relógio</td><td><span class="pino nao">a fazer</span></td><td class="num">—</td></tr>
         <tr><td>Triggers nas três operações · tela apagada diz o que falta</td><td><span class="pino nao">a fazer</span></td><td class="num">—</td></tr>
         <tr><td>Stored procedures</td><td><span class="pino nao">a fazer</span></td><td class="num">—</td></tr>
