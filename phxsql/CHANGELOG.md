@@ -26,6 +26,12 @@ os três estavam escritos como o que faltava, e os três saíram.
   Teste novo trava a linha curta dos dois lados — inclusão e alteração — e
   confirma que as duas colunas de sistema são herdadas, não zeradas.
 
+- **A tela da Replicação lia o campo errado da resposta de `bancos`.** A
+  operação responde uma **lista** de nomes, não um objeto com `bancos` dentro;
+  ler o campo devolvia vazio, e a tela dizia «nenhuma tabela ainda» numa
+  réplica que tinha a tabela na árvore ao lado. Achado no mesmo vídeo, no
+  quadro seguinte.
+
 - **A tela da Replicação dizia que a replicação não existia.** Ela ainda
   explicava que «as portas são configuração, não serviço» e que faltava o
   `.log` v2 — texto verdadeiro na 0.14.0 e falso agora. Passou a mostrar o

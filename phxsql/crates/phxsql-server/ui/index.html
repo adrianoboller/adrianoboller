@@ -6152,7 +6152,10 @@ async function verReplicacao() {
   // source para saber o que falta. Sai do cabeçalho do .log, sem ler evento.
   let posicoes = "";
   try {
-    const bancos = (await api("bancos")).bancos || [];
+    // `bancos` responde uma LISTA de nomes, e nao um objeto com `bancos`
+    // dentro. Ler o campo errado devolvia vazio, e a tela dizia "nenhuma
+    // tabela ainda" numa réplica que tinha a tabela na árvore ao lado.
+    const bancos = await api("bancos");
     const linhas = [];
     for (const b of bancos) {
       const nome = b.nome || b;
