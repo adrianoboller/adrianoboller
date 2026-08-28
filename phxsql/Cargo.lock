@@ -4,7 +4,7 @@ version = 3
 
 [[package]]
 name = "phxsql-cli"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "phxsql-core",
  "phxsql-store",
@@ -12,11 +12,11 @@ dependencies = [
 
 [[package]]
 name = "phxsql-core"
-version = "0.5.4"
+version = "0.5.5"
 
 [[package]]
 name = "phxsql-server"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "phxsql-core",
  "phxsql-store",
@@ -24,7 +24,7 @@ dependencies = [
 
 [[package]]
 name = "phxsql-store"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "phxsql-core",
 ]

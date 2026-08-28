@@ -10,6 +10,53 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
+## 0.5.5 — 2026-08-28
+
+### Adicionado
+
+- **Barra de ferramentas** com as quinze pedidas, cada uma com ícone em SVG
+  desenhado aqui e cor da paleta da marca. **Dez funcionam de verdade**; cinco
+  aparecem apagadas, com um ponto âmbar, e clicar nelas diz o que falta e do
+  que depende.
+
+  Botão que parece funcionar e não funciona custa mais caro do que botão que
+  falta: o primeiro só se descobre no meio do trabalho. Sumir com eles da lista
+  seria esconder o roteiro; ligá-los a um aviso genérico seria fingir.
+
+  | Ferramenta | Estado |
+  |---|---|
+  | Start/Stop | mostra o serviço; parar e subir pela tela ainda não |
+  | **Query** | **novo** — `SelectMemory` com coluna, operador, valor e teto. Não é SQL, e a tela diz isso |
+  | Usuários, Bancos, Repair, Backup, Ajuda | já existiam, agora com atalho |
+  | **Diretivas** | **novo** — comandos proibidos, IPs permitidos, somente leitura, firewall, espelho |
+  | **Conexões** | **novo** — conexões agora, sessões web, acessos e de onde vêm |
+  | **Replicação** | **novo** — papel e portas, dizendo que são configuração e não serviço |
+  | Duplicar, Transações, Importar, Server Mail, Blockchain | apagadas — não existem |
+
+  A cor agrupa por família, não por gosto: quinze ferramentas para oito
+  matizes, então a repetição é inevitável e precisa significar alguma coisa.
+
+- A tela de consulta fecha a sexta das sete operações que não tinham porta:
+  `selecionar_memoria`. **A interface passa de 25 para 26 das 32.** Continuam
+  sem tela `inserir`, `atualizar`, `excluir`, `ler`, `buscar` e `desbloquear`
+  — ou seja, a edição de dados.
+
+### Corrigido
+
+- **Duas cores da barra não existiam.** `--pend` e `--acento-2` são tokens do
+  dossiê, não da interface: Repair e Blockchain saíam com a cor do texto. O
+  teste de navegador leu a cor computada e mostrou. De quebra, `--vermelhao` e
+  `--laranja` são a **mesma cor** no tema claro, por decisão da marca —
+  escolher entre os dois seria escolher nada.
+
+- **`folha()` apagava qual tabela estava aberta.** Carregar a tabela na RAM
+  mostrava uma folha, a folha zerava `est.atual`, e a ferramenta de consulta
+  abria com o database vazio — o erro saía com uma barra solta, `/naoexiste`.
+  Quem escolhe uma tabela na árvore continua com ela escolhida; o que muda é o
+  que está na tela.
+
+---
+
 ## 0.5.4 — 2026-08-28
 
 ### Corrigido

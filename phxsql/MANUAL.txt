@@ -159,7 +159,7 @@ Veja o diario:
     WINDOWS   phxsqld.exe --config config.json
 
     No arranque ele imprime:
-        PhxSql 0.5.4 escutando em 0.0.0.0:5000 | base dados | papel isolado
+        PhxSql 0.5.5 escutando em 0.0.0.0:5000 | base dados | papel isolado
         log de acessos: acessos.log
 
 7.4 Servico
@@ -346,6 +346,36 @@ O QUE TEM NA TELA
 
     E o painel conta so o que VOCE poderia abrir: base sem permissao de
     leitura nao entra na conta. O numero nunca revela o que a arvore esconde.
+
+BARRA DE FERRAMENTAS
+
+    Abaixo do menu, quinze ferramentas com icone colorido. Dez funcionam;
+    cinco aparecem APAGADAS, com um ponto ambar no canto, e clicar nelas diz o
+    que falta e do que depende -- em vez de nao fazer nada.
+
+        Start/Stop    estado do servico, endereco e limite de conexoes.
+                      Parar e subir pela tela ainda nao da: use o systemd ou o
+                      Gerenciador de Servicos.
+        Query         NAO e SQL. E o SelectMemory, que consulta uma tabela ja
+                      carregada na RAM. Coluna, operador, valor e teto.
+        Usuarios      o cadastro do config.json
+        Diretivas     a politica: comandos proibidos, IPs permitidos, somente
+                      leitura, firewall e espelho. Le; mudar e no config.json
+        Bancos        os databases em disco
+        Duplicar      APAGADA -- copiar um database para outro nome
+        Conexoes      quantas agora, sessoes web, acessos e de onde vem
+        Transacoes    APAGADA -- nao existem; e o furo do uso como livro-razao
+        Importar      APAGADA -- ler CSV ou .tps e gravar como tabela PhxSql
+        Repair        conserta a tabela aberta pelo espelho .bkp
+        Backup        copia e confere, com manifesto SHA-256
+        Replicacao    papel e portas. As portas sao configuracao, nao servico
+        Server Mail   APAGADA -- o armazenamento serve; falta o servico, e sem
+                      SMTP nao troca correio com o mundo
+        Blockchain    APAGADA -- o formato encaixa; faltam as transacoes antes
+        Ajuda         versao e o que o motor e
+
+    A cor agrupa por familia: verde e servico e salvaguarda, roxo e consulta e
+    replica, azul e gente e mensagem, turquesa e dado, ambar e conserto.
 
 BARRA DE MENU
 

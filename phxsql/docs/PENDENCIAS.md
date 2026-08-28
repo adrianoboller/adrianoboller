@@ -37,7 +37,8 @@ o código, não contra a lembrança — foi assim que a chave estrangeira saiu d
 | ☑️ | 27 | Comandos proibidos no `config.json` | e a auditoria achou ali um furo real, corrigido |
 | ☑️ | 28 | Criar regra de firewall em quem tenta o proibido | conferido com um `iptables` falso que grava |
 | ☑️ | 29 | **Base64 no login**, não em claro | feito — e o padrão é melhor: desafio-resposta, a senha não sai da máquina |
-| ◐ | 30 | **Interface web parecida com o Centro de Controle HFSQL(R)** | navega tudo: árvore, cinco abas, painel, administração, barra de menu. **Mas não edita dados** — `inserir`, `atualizar`, `excluir` e `ler` não têm tela |
+| ◐ | 30 | **Interface web parecida com o Centro de Controle HFSQL(R)** | árvore, cinco abas, painel, administração, barra de menu e barra de ferramentas — **26 das 32 operações**. Falta a edição: `inserir`, `atualizar`, `excluir`, `ler`, `buscar` |
+| ☑️ | 65 | **Barra de ferramentas** com Start/Stop, Query, Usuários, Diretivas, Bancos, Duplicar, Conexões, Transações, Importar, Repair, Backup, Replicação, Server Mail, Blockchain e Ajuda | 15 ferramentas, ícone colorido; **10 funcionam**, 5 apagadas dizendo o que falta |
 | ☑️ | 31 | Tabela em memória tipo Redis(R), com `SelectMemory` | **87× mais rápido**, medido |
 | ☑️ | 32 | Revisar regras, corrigir defeitos, registrar em `changelog.md` | `CHANGELOG.md`, com *Corrigido* primeiro |
 | ☑️ | 33 | Chave assimétrica no `config.json` como parâmetro extra | Ed25519 (RFC 8032), contra os quatro vetores oficiais |
@@ -73,7 +74,7 @@ o código, não contra a lembrança — foi assim que a chave estrangeira saiu d
 | ☑️ | 63 | **Barra de menu superior tradicional** | seis menus, 22 recursos, Alt/setas/Esc |
 | ☑️ | 64 | Cadê o sol e a lua? | respondida — estavam lá, o recorte da captura é que cortava |
 
-**54 feitos · 4 parciais · 6 planejados**, de 64 pedidos.
+**55 feitos · 4 parciais · 6 planejados**, de 65 pedidos.
 
 Fora do que você pediu, entraram por medição: o CRC slice-by-8, o `descer` sem
 reler a folha, a conferência de unicidade sem descida dupla, e onze correções
