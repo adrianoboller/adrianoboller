@@ -43,7 +43,7 @@
 use std::collections::HashMap;
 
 use phxsql_core::error::{PhxError, Result};
-use phxsql_core::schema::{Schema, COLUNA_SOFTDELETED};
+use phxsql_core::schema::{e_coluna_de_sistema, Schema};
 use phxsql_core::types::ColumnType;
 use phxsql_core::value::Value;
 
@@ -471,21 +471,22 @@ pub fn juntar(
     Ok(r)
 }
 
-/// Tira a coluna `softdeleted` de cada lado do resultado.
+/// Tira as colunas do motor de cada lado do resultado.
 ///
-/// Uma junção de duas tabelas traria DUAS colunas dela -- `c.softdeleted` e
-/// `p.softdeleted` --, e as duas seriam falso em toda linha: a junção só lê
-/// linha ativa. Seria ruído em cada resultado, com o agravante de empurrar as
-/// colunas úteis para fora da primeira tela da grade.
+/// Uma junção de duas tabelas traria DUAS de cada -- `c.softdeleted` e
+/// `p.softdeleted`, `c.rownum` e `p.rownum`. As de exclusão seriam falso em
+/// toda linha, porque a junção só lê linha ativa; e dois números de ordem, de
+/// tabelas diferentes, não paginam coisa nenhuma. Seria ruído em cada
+/// resultado, com o agravante de empurrar as colunas úteis para fora da
+/// primeira tela da grade.
 ///
 /// Sai aqui, num lugar só, e não no meio da montagem: ali cada linha é
 /// montada por posição, e furar a posição no meio é onde nasce campo trocado.
 fn tirar_a_coluna_de_sistema(r: &mut Resultado) {
-    let sistema = COLUNA_SOFTDELETED;
     let manter: Vec<bool> = r
         .colunas
         .iter()
-        .map(|c| !c.nome.rsplit('.').next().is_some_and(|n| n == sistema))
+        .map(|c| !c.nome.rsplit('.').next().is_some_and(e_coluna_de_sistema))
         .collect();
     if manter.iter().all(|m| *m) {
         return;
@@ -689,10 +690,12 @@ pub fn unir(
         repetidas,
         truncado,
     };
-    // Mesma razao da juncao: a coluna de sistema seria falso em toda linha.
-    if r.colunas
+    // Mesma razao da juncao. As de sistema estao no FIM, entao sair de tras
+    // para a frente basta.
+    while r
+        .colunas
         .last()
-        .is_some_and(|c| c.nome == COLUNA_SOFTDELETED)
+        .is_some_and(|c| e_coluna_de_sistema(&c.nome))
     {
         r.colunas.pop();
         for linha in &mut r.linhas {
@@ -741,12 +744,27 @@ mod testes {
             ),
             chave: vec![0],
         };
-        // O `false` no fim é a coluna de sistema: `Schema::new` a acrescenta,
-        // e a linha tem de bater com o esquema.
+        // O `false` e o número no fim são as colunas de sistema, que
+        // `Schema::new` acrescenta: a linha tem de bater com o esquema.
         let la = vec![
-            vec![Value::Int(1), txt("Adriano"), Value::Bool(false)],
-            vec![Value::Int(2), txt("Maria"), Value::Bool(false)],
-            vec![Value::Int(3), txt("João"), Value::Bool(false)],
+            vec![
+                Value::Int(1),
+                txt("Adriano"),
+                Value::Bool(false),
+                Value::UInt(1),
+            ],
+            vec![
+                Value::Int(2),
+                txt("Maria"),
+                Value::Bool(false),
+                Value::UInt(2),
+            ],
+            vec![
+                Value::Int(3),
+                txt("João"),
+                Value::Bool(false),
+                Value::UInt(3),
+            ],
         ];
         let b = Lado {
             prefixo: "p".into(),
@@ -760,10 +778,30 @@ mod testes {
             chave: vec![0],
         };
         let lb = vec![
-            vec![Value::Int(1), Value::Int(100), Value::Bool(false)],
-            vec![Value::Int(1), Value::Int(200), Value::Bool(false)],
-            vec![Value::Int(2), Value::Int(300), Value::Bool(false)],
-            vec![Value::Int(9), Value::Int(400), Value::Bool(false)],
+            vec![
+                Value::Int(1),
+                Value::Int(100),
+                Value::Bool(false),
+                Value::UInt(1),
+            ],
+            vec![
+                Value::Int(1),
+                Value::Int(200),
+                Value::Bool(false),
+                Value::UInt(2),
+            ],
+            vec![
+                Value::Int(2),
+                Value::Int(300),
+                Value::Bool(false),
+                Value::UInt(3),
+            ],
+            vec![
+                Value::Int(9),
+                Value::Int(400),
+                Value::Bool(false),
+                Value::UInt(4),
+            ],
         ];
         (a, la, b, lb)
     }

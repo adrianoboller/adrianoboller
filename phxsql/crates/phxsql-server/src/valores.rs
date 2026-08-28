@@ -503,19 +503,20 @@ pub fn json_para_valor(j: &Json, ty: &ColumnType) -> Result<Value> {
 /// como o que ela e: nao se digita, nao se edita, e quem manda nela e o botao
 /// de excluir. Sem essa marca, ela apareceria como mais um campo de formulario.
 pub fn colunas_para_json(esquema: &Schema) -> Json {
-    let sistema = esquema.coluna_softdeleted();
     Json::Lista(
         esquema
             .colunas()
             .iter()
-            .enumerate()
-            .map(|(i, c)| {
+            .map(|c| {
                 Json::objeto(vec![
                     ("nome", Json::texto_de(&c.nome)),
                     ("rotulo", Json::texto_de(c.rotulo())),
                     ("tipo", Json::texto_de(format!("{:?}", c.ty))),
                     ("nullable", Json::Bool(c.nullable)),
-                    ("sistema", Json::Bool(Some(i) == sistema)),
+                    (
+                        "sistema",
+                        Json::Bool(phxsql_core::schema::e_coluna_de_sistema(&c.nome)),
+                    ),
                 ])
             })
             .collect(),
@@ -899,9 +900,10 @@ mod testes_esquema {
         .unwrap();
 
         assert_eq!(e.nome(), "pedidos");
-        // Tres declaradas mais a coluna de sistema, que entra sozinha no fim.
-        assert_eq!(e.colunas().len(), 4);
+        // Tres declaradas mais as DUAS de sistema, que entram sozinhas no fim.
+        assert_eq!(e.colunas().len(), 5);
         assert_eq!(e.coluna_softdeleted(), Some(3));
+        assert_eq!(e.coluna_rownum(), Some(4));
         assert!(!e.colunas()[0].nullable, "obrigatoria virou nullable");
         assert!(e.colunas()[1].nullable);
 

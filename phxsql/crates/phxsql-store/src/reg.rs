@@ -54,7 +54,12 @@ pub const MAGIC_REG: &[u8; 8] = b"PHXREG\0\0";
 const CAB_LEN: usize = 128;
 /// Bytes de cabecalho de cada slot, antes do payload.
 pub const SLOT_CAB: usize = 24;
-const VERSAO: u16 = 2;
+/// Versao do `.reg`.
+///
+/// A 3 acrescentou `proximo_rownum` nos bytes 92..100, que estavam reservados.
+/// Arquivo da 2 nao abre nesta versao -- o contador nao existiria, e comecar do
+/// zero num arquivo que ja tem linhas faria a coluna repetir numero.
+const VERSAO: u16 = 3;
 const ALINHAMENTO: u64 = 64;
 
 const STATUS_LIVRE: u8 = 0;
@@ -96,6 +101,8 @@ pub struct RegFile {
     /// Nunca anda para tras: excluir uma linha nao devolve o numero dela,
     /// pela mesma razao que o `.reg` nao reaproveita slot.
     proxima_sequencia: u64,
+    /// Proximo valor da coluna de sistema `rownum`. So o volume 1 manda.
+    proximo_rownum: u64,
     /// Leituras salvas pelo espelho nesta sessao.
     recuperados: u64,
     /// Onde cada volume comeca, quando a particao e por periodo.
@@ -142,6 +149,7 @@ impl RegFile {
             live_count: 0,
             criado_em: agora(),
             proxima_sequencia: 0,
+            proximo_rownum: 1,
             recuperados: 0,
             fronteiras: Vec::new(),
         };
@@ -190,6 +198,9 @@ impl RegFile {
         let slot_count = c.u64(20);
         let live_count = c.u64(28);
         let proxima_sequencia = c.u64(36);
+        // Zero num arquivo ja gravado seria "nunca usado", e o primeiro
+        // rownum sairia 1 por cima do que existe. O contador comeca em 1.
+        let proximo_rownum = c.u64(92).max(1);
         let data_offset = c.u64(44);
         let schema_len = c.u32(52) as usize;
         let schema_crc = c.u32(56);
@@ -224,6 +235,7 @@ impl RegFile {
             live_count,
             criado_em,
             proxima_sequencia,
+            proximo_rownum,
             recuperados: 0,
             fronteiras: Vec::new(),
         };
@@ -287,6 +299,27 @@ impl RegFile {
         v
     }
 
+    /// Toma o proximo `rownum` e avanca o contador.
+    ///
+    /// Diferente da sequencia em duas coisas que importam: nao se escreve a
+    /// mao, e nao se ajusta. E o numero de ORDEM de chegada da linha, e o
+    /// unico jeito de ele estar certo e o motor ser o unico a mexer nele.
+    ///
+    /// Nunca reaproveita, nem depois de exclusao -- pela mesma razao que o
+    /// slot nao reaproveita: se reaproveitasse, um cursor parado numa pagina
+    /// veria linha nova aparecer ATRAS de onde ele esta, e a paginacao passaria
+    /// a pular registro sem avisar.
+    pub fn proximo_do_rownum(&mut self) -> u64 {
+        let v = self.proximo_rownum.max(1);
+        self.proximo_rownum = v + 1;
+        v
+    }
+
+    /// Proximo `rownum` que a tabela vai entregar.
+    pub fn rownum_atual(&self) -> u64 {
+        self.proximo_rownum.max(1)
+    }
+
     /// Empurra o contador para depois de um valor gravado a mao.
     ///
     /// Sem isto, inserir a sequencia 500 na mao e depois deixar o motor
@@ -331,6 +364,7 @@ impl RegFile {
             por_u64(&mut buf, 20, self.slot_count);
             por_u64(&mut buf, 28, self.live_count);
             por_u64(&mut buf, 36, self.proxima_sequencia);
+            por_u64(&mut buf, 92, self.proximo_rownum);
         }
         por_u64(&mut buf, 44, self.data_offset);
         por_u32(&mut buf, 52, bytes_esquema.len() as u32);

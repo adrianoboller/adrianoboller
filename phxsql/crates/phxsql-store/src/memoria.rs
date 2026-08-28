@@ -800,6 +800,7 @@ mod tests {
             Value::Str("Curitiba".into()),
             Value::Decimal(2100),
             Value::Bool(false),
+            Value::UInt(6),
         ];
         let rowid = t.inserir(&nova).unwrap();
         m.anotar_insercao(rowid, &nova);
@@ -822,6 +823,7 @@ mod tests {
             Value::Str("Curitiba".into()),
             Value::Decimal(2100),
             Value::Bool(false),
+            Value::UInt(6),
         ];
         t.atualizar(rowid, &trocada).unwrap();
         m.anotar_alteracao(rowid, &trocada);

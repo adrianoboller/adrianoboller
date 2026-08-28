@@ -339,6 +339,15 @@ impl Servidor {
         for conexao in ouvinte.incoming() {
             match conexao {
                 Ok(fluxo) => {
+                    // Sem isto, o Nagle segura a resposta ate 40 ms esperando
+                    // mais bytes para encher um pacote -- e nunca vem mais,
+                    // porque a resposta acabou. Medido: a pagina de uma tabela
+                    // de 20.000 linhas levava 1 ms de servidor e 44 ms de
+                    // relogio, e 43 deles eram esta linha faltando.
+                    //
+                    // O protocolo aqui e pedido-resposta curto, que e o caso
+                    // exato em que o Nagle atrapalha em vez de ajudar.
+                    let _ = fluxo.set_nodelay(true);
                     let par = fluxo.peer_addr().ok();
                     if self.conexoes.load(Ordering::SeqCst) >= self.config.conexoes_max {
                         // Recusa sem derrubar o servico, e deixa registro.
@@ -640,6 +649,9 @@ impl Servidor {
                     Ok(f) => f,
                     Err(_) => continue,
                 };
+                // Mesma razao da porta de dados: resposta curta, e o Nagle
+                // segurando cada clique da tela por 40 ms.
+                let _ = fluxo.set_nodelay(true);
                 let par = fluxo
                     .peer_addr()
                     .unwrap_or_else(|_| SocketAddr::from(([0, 0, 0, 0], 0)));
@@ -2480,7 +2492,10 @@ impl Servidor {
                     ("nullable", Json::Bool(c.nullable)),
                     // Coluna do MOTOR: a tela nao a oferece como campo de
                     // formulario. Quem manda nela e o botao de excluir.
-                    ("sistema", Json::Bool(Some(i) == e.coluna_softdeleted())),
+                    (
+                        "sistema",
+                        Json::Bool(phxsql_core::schema::e_coluna_de_sistema(&c.nome)),
+                    ),
                     // O papel nas chaves e DERIVADO dos indices e das FKs, e
                     // por isso nao pode discordar delas.
                     ("primaria", Json::Bool(papel.primaria)),
@@ -2658,18 +2673,41 @@ impl Servidor {
             }
         };
 
-        let rowids: Vec<u64> = if indice.is_empty() {
-            t.varrer_com(visao)?.into_iter().map(|(r, _)| r).collect()
-        } else {
-            // O indice devolve rowid, e a marca esta no registro: pela ordem
-            // do indice a filtragem custa uma leitura por linha. E o preco de
-            // pedir ordenado -- e por isso `Todas` nao paga nada.
+        // Tres modos, e o padrao mudou de lado.
+        //
+        // `depois` / `antes` sao o CURSOR: a pagina custa o tamanho dela, e
+        // nao o tamanho da tabela. `pular` continua existindo para tela
+        // pequena e para quem ja escreveu cliente com ele, mas e o modo de
+        // compatibilidade -- ele anda ate a posicao, e andar ate a posicao um
+        // milhao custa um milhao de passos.
+        let depois = p.inteiro_ou("depois", -1);
+        let antes = p.inteiro_ou("antes", -1);
+        let pular = p.inteiro_ou("pular", 0).max(0) as u64;
+
+        let por_indice = !indice.is_empty();
+        let (rowids, modo) = if por_indice {
+            // O indice devolve rowid na ordem da CHAVE, e nao na do arquivo:
+            // continuar "depois do rowid X" nao quer dizer nada aqui, porque
+            // o proximo da chave pode ter rowid menor. Entao por indice vale a
+            // posicao, e a resposta diz isso em vez de fingir que paginou.
             let todos = t.varrer_indice(&indice)?;
-            t.filtrar(&todos, visao)?
+            let vivos = t.filtrar(&todos, visao)?;
+            let corte: Vec<u64> = vivos
+                .into_iter()
+                .skip(pular as usize)
+                .take(max as usize)
+                .collect();
+            (corte, "posicao")
+        } else if antes >= 0 {
+            (t.pagina_antes_de(antes as u64, max, visao)?, "cursor")
+        } else if depois >= 0 {
+            (t.pagina_depois_de(depois as u64, max, visao)?, "cursor")
+        } else {
+            (t.pagina(pular, max, visao)?, "posicao")
         };
-        let total = rowids.len();
-        let mut linhas = Vec::new();
-        for rowid in rowids.into_iter().take(max as usize) {
+
+        let mut linhas = Vec::with_capacity(rowids.len());
+        for &rowid in &rowids {
             if let Some(l) = t.ler(rowid)? {
                 let mut obj = vec![("rowid".to_string(), Json::de_u64(rowid))];
                 if let Json::Objeto(pares) = linha_para_json(&l, t.esquema()) {
@@ -2678,15 +2716,36 @@ impl Servidor {
                 linhas.push(Json::Objeto(obj));
             }
         }
+
+        // O cursor para pedir a proxima pagina e a anterior. Vai pronto na
+        // resposta para o cliente nao ter de saber que ele e um rowid -- e
+        // para poder deixar de ser um, se um dia a ordem mudar.
+        let primeiro = rowids.first().copied().unwrap_or(0);
+        let ultimo = rowids.last().copied().unwrap_or(0);
+        // "Tem mais" sem contar a tabela: pede UM alem do teto. Uma leitura a
+        // mais por pagina, contra uma varredura inteira so para mostrar
+        // "pagina 3 de 40" -- que numa tabela grande e o item mais caro da
+        // tela e o que ninguem le.
+        let ha_mais = ultimo > 0 && !t.pagina_depois_de(ultimo, 1, visao)?.is_empty();
+        let ha_antes = primeiro > 1 && !t.pagina_antes_de(primeiro, 1, visao)?.is_empty();
+
         Ok(Json::objeto(vec![
-            ("total", Json::de_u64(total as u64)),
+            // `registros` e o que a tabela tem, e sai do cabecalho: nao custa
+            // varredura. `total` era a contagem da varredura inteira, e por
+            // isso deixou de existir aqui.
+            ("registros", Json::de_u64(t.registros())),
             ("devolvidas", Json::de_u64(linhas.len() as u64)),
+            ("modo", Json::texto_de(modo)),
+            ("cursor_inicio", Json::de_u64(primeiro)),
+            ("cursor_fim", Json::de_u64(ultimo)),
+            ("ha_mais", Json::Bool(ha_mais)),
+            ("ha_antes", Json::Bool(ha_antes)),
             (
                 "ordem",
-                Json::texto_de(if indice.is_empty() {
-                    "digitacao".to_string()
-                } else {
+                Json::texto_de(if por_indice {
                     format!("indice {indice}")
+                } else {
+                    "digitacao".to_string()
                 }),
             ),
             ("linhas", Json::Lista(linhas)),
@@ -5546,7 +5605,7 @@ mod testes_exclusao {
                 &sessao,
             )
             .unwrap();
-        assert_eq!(v.inteiro_ou("total", -1), 2);
+        assert_eq!(v.inteiro_ou("devolvidas", -1), 2);
 
         // ... e a lixeira continua vazia, porque nada foi apagado.
         let lx = s
@@ -5574,7 +5633,7 @@ mod testes_exclusao {
                 &sessao,
             )
             .unwrap();
-        assert_eq!(v.inteiro_ou("total", -1), 3);
+        assert_eq!(v.inteiro_ou("devolvidas", -1), 3);
     }
 
     #[test]
@@ -5656,7 +5715,7 @@ mod testes_exclusao {
             )
             .unwrap();
         assert_eq!(
-            v.inteiro_ou("total", -1),
+            v.inteiro_ou("devolvidas", -1),
             2,
             "a alteracao ressuscitou a linha excluida"
         );
@@ -5702,7 +5761,7 @@ mod testes_exclusao {
                 &sessao,
             )
             .unwrap();
-        assert_eq!(v.inteiro_ou("total", -1), 1);
+        assert_eq!(v.inteiro_ou("devolvidas", -1), 1);
 
         // E a tela sabe que a tabela exige, para pedir antes de mandar.
         let m = s
@@ -5789,6 +5848,147 @@ mod testes_exclusao {
             Atividade::da_operacao("restaurar"),
             Some(Atividade::Excluir)
         );
+    }
+
+    /// A prova da paginacao por cursor: pedir pagina a pagina reconstroi
+    /// exatamente a tabela, sem repetir nem pular -- inclusive por cima dos
+    /// buracos que a exclusao deixa.
+    #[test]
+    fn o_cursor_reconstroi_a_tabela_inteira() {
+        let dir = dir_temp("cursor");
+        let s = servidor(&dir, Cadastro::default());
+        let sessao = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &sessao)
+            .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"c",
+                    "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true}]}"#,
+            ),
+            &sessao,
+        )
+        .unwrap();
+        for id in 1..=25 {
+            s.executar(
+                "inserir",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"c","linha":{{"id":{id}}}}}"#
+                )),
+                &sessao,
+            )
+            .unwrap();
+        }
+        // Dois buracos: um marcado, um apagado de vez.
+        s.executar(
+            "excluir",
+            &pedido(r#"{"database":"b","tabela":"c","rowid":7}"#),
+            &sessao,
+        )
+        .unwrap();
+        s.executar(
+            "excluir",
+            &pedido(r#"{"database":"b","tabela":"c","rowid":13,"fisico":true}"#),
+            &sessao,
+        )
+        .unwrap();
+
+        let mut vistos: Vec<i64> = Vec::new();
+        let mut cursor = 0i64;
+        let mut paginas = 0;
+        loop {
+            let r = s
+                .executar(
+                    "varrer",
+                    &pedido(&format!(
+                        r#"{{"database":"b","tabela":"c","max":7,"depois":{cursor}}}"#
+                    )),
+                    &sessao,
+                )
+                .unwrap();
+            assert_eq!(r.texto_ou("modo", ""), "cursor");
+            let linhas: Vec<Json> = r.campo("linhas").and_then(Json::lista).unwrap().to_vec();
+            if linhas.is_empty() {
+                assert!(
+                    !matches!(r.campo("ha_mais"), Some(Json::Bool(true))),
+                    "disse que ha mais e devolveu vazio"
+                );
+                break;
+            }
+            paginas += 1;
+            assert!(paginas < 20, "nao terminou -- o cursor nao anda");
+            for l in &linhas {
+                vistos.push(l.inteiro_ou("id", -1));
+            }
+            cursor = r.inteiro_ou("cursor_fim", 0);
+        }
+
+        let esperado: Vec<i64> = (1..=25).filter(|i| *i != 7 && *i != 13).collect();
+        assert_eq!(vistos, esperado, "o cursor pulou ou repetiu linha");
+        assert_eq!(paginas, 4, "23 linhas em paginas de 7 dao 4 paginas");
+    }
+
+    /// `registros` sai do cabecalho e nao de varredura: e o numero que a tela
+    /// mostra sem pagar por ele.
+    #[test]
+    fn varrer_nao_conta_a_tabela_para_responder() {
+        let dir = dir_temp("sem-contar");
+        let s = com_dados(&dir, Cadastro::default());
+        let sessao = Sessao::default();
+        let r = s
+            .executar(
+                "varrer",
+                &pedido(r#"{"database":"b","tabela":"c","max":2}"#),
+                &sessao,
+            )
+            .unwrap();
+        assert_eq!(r.inteiro_ou("devolvidas", -1), 2);
+        assert_eq!(r.inteiro_ou("registros", -1), 3);
+        assert!(matches!(r.campo("ha_mais"), Some(Json::Bool(true))));
+        assert!(matches!(r.campo("ha_antes"), Some(Json::Bool(false))));
+
+        // E a pagina de tras devolve o que veio antes, em ordem crescente.
+        let fim = r.inteiro_ou("cursor_fim", 0);
+        let atras = s
+            .executar(
+                "varrer",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"c","max":5,"antes":{fim}}}"#
+                )),
+                &sessao,
+            )
+            .unwrap();
+        let ids: Vec<i64> = atras
+            .campo("linhas")
+            .and_then(Json::lista)
+            .unwrap()
+            .iter()
+            .map(|l| l.inteiro_ou("id", -1))
+            .collect();
+        assert_eq!(ids, vec![1]);
+    }
+
+    /// O `rownum` chega na resposta e cresce com a ordem de digitacao.
+    #[test]
+    fn a_resposta_traz_o_numero_de_ordem() {
+        let dir = dir_temp("rownum");
+        let s = com_dados(&dir, Cadastro::default());
+        let sessao = Sessao::default();
+        let r = s
+            .executar(
+                "varrer",
+                &pedido(r#"{"database":"b","tabela":"c"}"#),
+                &sessao,
+            )
+            .unwrap();
+        let nums: Vec<i64> = r
+            .campo("linhas")
+            .and_then(Json::lista)
+            .unwrap()
+            .iter()
+            .map(|l| l.inteiro_ou("rownum", -1))
+            .collect();
+        assert_eq!(nums, vec![1, 2, 3]);
     }
 
     /// E o portao de verdade, com um usuario que tem tudo menos administrar.

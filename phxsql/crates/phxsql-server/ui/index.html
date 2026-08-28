@@ -632,6 +632,10 @@ tr.linha-excluida td{opacity:.55;text-decoration:line-through}
 .chip-visao button{padding:3px 10px;font-size:11px;background:transparent;
                    border:0;color:var(--texto-3);cursor:pointer;font:inherit;width:auto}
 .chip-visao button.ativo{background:var(--laranja);color:#10060a}
+.paginar{display:inline-flex;gap:6px;margin-left:8px}
+.paginar .botao.mini:disabled{opacity:.35;cursor:default;border-color:var(--linha)}
+.paginar .botao.mini:disabled:hover{border-color:var(--linha);color:var(--texto-3)}
+td.ordem{color:var(--texto-3);font-size:11px}
 
 .botao.mini{width:auto;padding:4px 10px;font-size:11px;font-weight:500;
             background:transparent;border:1px solid var(--linha-forte);
@@ -1356,7 +1360,7 @@ async function vConteudo(database, tabela_) {
       <select id="ord">${opcoes.join("")}</select>
       <label for="teto">Trazer</label>
       <select id="teto">${tetos.join("")}</select>
-      <span class="conta">${r.devolvidas} de ${r.total} linhas · ${esc(r.ordem)}</span>
+      <span class="conta">${fmt(r.devolvidas)} de ${fmt(r.registros)} linhas · ${esc(r.ordem)}</span>
       <span class="dica">Arraste um cabeçalho para a faixa de cima para agrupar.</span>
     </div>
     <div id="grade"></div>`;
@@ -1933,23 +1937,38 @@ async function verDatabase(db) {
  * A grade tem DOIS modos: o normal, que nao enxerga linha marcada como
  * excluida, e o dos excluidos, que mostra so elas com o botao de restaurar.
  * O segundo existe porque marcar sem ter como desmarcar seria so uma forma
- * elaborada de perder o dado. */
-async function verConteudoEditavel(db, tab, verExcluidos = false) {
+ * elaborada de perder o dado.
+ *
+ * E pagina por CURSOR, nao por posicao: `cursor` leva o rowid onde a pagina
+ * anterior parou. A diferenca nao e de estilo -- pular ate a posicao um milhao
+ * custa um milhao de passos, e continuar depois do rowid um milhao custa uma
+ * conta. Na medicao com 800 mil linhas, a pagina do meio saiu de 1.420 ms para
+ * tempo nao medivel. */
+async function verConteudoEditavel(db, tab, verExcluidos = false, cursor = null) {
   est.atual = { db, tab };
   folha(`${tab}`, `${db} · clique numa linha para editar`,
         `<div class="centro">carregando…</div>`);
 
+  // `cursor` é o rowid da última linha da página anterior — o servidor
+  // devolve o par pronto. A grade não guarda "página 37": guarda o ponto onde
+  // parou, que é o que faz a página 37 custar o mesmo que a página 1.
+  const pedido = { database: db, tabela: tab, max: est.teto,
+                   visao: verExcluidos ? "excluidas" : "ativas" };
+  if (cursor && cursor.antes !== undefined) pedido.antes = cursor.antes;
+  else if (cursor && cursor.depois !== undefined) pedido.depois = cursor.depois;
+
   const [e, r] = await Promise.all([
     api("esquema", { database: db, tabela: tab }),
-    api("varrer", { database: db, tabela: tab, max: est.teto,
-                    visao: verExcluidos ? "excluidas" : "ativas" }),
+    api("varrer", pedido),
   ]);
   est.esquemaAtual = e;
-  // A coluna de sistema nao vira coluna da grade: quem a le e o estilo da
-  // linha e o botao de restaurar, e um campo "softdeleted: nao" repetido em
-  // toda linha so ocuparia espaco.
-  const sistema = (e.colunas.find(c => c.sistema) || {}).nome || "softdeleted";
-  const cols = e.colunas.filter(c => c.nome !== sistema).map(c => c.nome);
+  // As colunas de sistema não viram colunas da grade: quem lê a marca é o
+  // estilo da linha e o botão de restaurar, e o número de ordem tem coluna
+  // própria à esquerda. Repetir "softdeleted: não" em toda linha só ocuparia
+  // espaço.
+  const sistemas = e.colunas.filter(c => c.sistema).map(c => c.nome);
+  const cols = e.colunas.filter(c => !c.sistema).map(c => c.nome);
+  const temRownum = e.colunas.some(c => c.nome === "rownum");
 
   const barra = `<div class="acoes">
       <button class="botao" id="btNova">Nova linha</button>
@@ -1958,7 +1977,13 @@ async function verConteudoEditavel(db, tab, verExcluidos = false) {
         <button id="vwAtivas" class="${verExcluidos ? "" : "ativo"}">ativas</button>
         <button id="vwExcl" class="${verExcluidos ? "ativo" : ""}">excluídas</button>
       </span>
-      <span class="leg">${r.linhas.length} linha(s) · teto de ${est.teto}</span>
+      <span class="paginar">
+        <button class="botao mini" id="pgInicio" ${r.ha_antes ? "" : "disabled"}>⏮ início</button>
+        <button class="botao mini" id="pgAntes" ${r.ha_antes ? "" : "disabled"}>← anterior</button>
+        <button class="botao mini" id="pgDepois" ${r.ha_mais ? "" : "disabled"}>próxima →</button>
+      </span>
+      <span class="leg">${fmt(r.devolvidas)} de ${fmt(r.registros)} · página por
+        <b>${esc(r.modo)}</b></span>
     </div>`;
 
   const vazio = verExcluidos
@@ -1966,9 +1991,11 @@ async function verConteudoEditavel(db, tab, verExcluidos = false) {
     : `<div class="vazio">tabela vazia</div>`;
 
   $("#painel").innerHTML = barra + (r.linhas.length
-    ? tabela([{t:"rowid",cls:"num"}, ...cols.map(c => ({t:c})), {t:""}],
+    ? tabela([...(temRownum ? [{t:"nº",cls:"num"}] : []),
+              {t:"rowid",cls:"num"}, ...cols.map(c => ({t:c})), {t:""}],
         r.linhas, l => `<tr class="linha-dado${verExcluidos ? " linha-excluida" : ""}"
               data-rowid="${esc(String(l.rowid))}">
+          ${temRownum ? `<td class="num dado ordem">${esc(String(l.rownum ?? "—"))}</td>` : ""}
           <td class="num dado">${esc(String(l.rowid))}</td>
           ${cols.map(c => celulaValor(l[c])).join("")}
           <td>${verExcluidos
@@ -1980,6 +2007,11 @@ async function verConteudoEditavel(db, tab, verExcluidos = false) {
   $("#btVoltarDb").onclick = () => verDatabase(db);
   $("#vwAtivas").onclick = () => verConteudoEditavel(db, tab, false);
   $("#vwExcl").onclick = () => verConteudoEditavel(db, tab, true);
+  $("#pgInicio").onclick = () => verConteudoEditavel(db, tab, verExcluidos, null);
+  $("#pgAntes").onclick = () =>
+    verConteudoEditavel(db, tab, verExcluidos, { antes: r.cursor_inicio });
+  $("#pgDepois").onclick = () =>
+    verConteudoEditavel(db, tab, verExcluidos, { depois: r.cursor_fim });
   $$("#painel .linha-dado").forEach(tr =>
     tr.onclick = ev => {
       // O clique no botao de restaurar nao pode abrir a ficha junto.

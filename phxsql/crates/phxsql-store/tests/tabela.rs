@@ -286,9 +286,10 @@ fn fecha_reabre_e_continua() {
     let mut t = Table::abrir(&dir.0, "cadastroClientes").unwrap();
     assert_eq!(t.registros(), 50);
     assert_eq!(t.esquema().nome(), "cadastroClientes");
-    // Sete declaradas mais a coluna de sistema, que atravessou o disco.
-    assert_eq!(t.esquema().colunas().len(), 8);
+    // Sete declaradas mais as duas de sistema, que atravessaram o disco.
+    assert_eq!(t.esquema().colunas().len(), 9);
     assert_eq!(t.esquema().coluna_softdeleted(), Some(7));
+    assert_eq!(t.esquema().coluna_rownum(), Some(8));
     assert_eq!(
         t.ler(7).unwrap().unwrap()[FICHA],
         Value::Memo("ficha do cliente 7".into())

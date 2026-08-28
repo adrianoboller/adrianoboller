@@ -16,10 +16,10 @@ const MAGIC_ESQUEMA: &[u8; 4] = b"PSCH";
 /// A 3 acrescentou os metadados de coluna (`id`, `caption`, `descricao`,
 /// `mascara`), o marcador de chave primaria no indice e o modo de particao.
 /// A 4 acrescentou a coluna de sistema [`COLUNA_SOFTDELETED`] e o sinal de
-/// motivo obrigatorio.
+/// motivo obrigatorio. A 5 acrescentou [`COLUNA_ROWNUM`].
 ///
 /// A leitura ainda aceita a 2: tabela gravada antes abre, ganha um `id` v7
-/// sorteado na hora e os textos vazios. Escrever, so na 4.
+/// sorteado na hora e os textos vazios. Escrever, so na 5.
 ///
 /// # Por que a v3 nao ganha a coluna ao ser lida
 ///
@@ -29,7 +29,7 @@ const MAGIC_ESQUEMA: &[u8; 4] = b"PSCH";
 /// deslocaria o offset de todas as seguintes. Uma tabela v3 continua legivel
 /// exatamente como esta -- so nao tem exclusao suave, e a mensagem de erro
 /// diz isso em vez de ler lixo.
-const VERSAO_ESQUEMA: u16 = 4;
+const VERSAO_ESQUEMA: u16 = 5;
 const VERSAO_ESQUEMA_MINIMA: u16 = 2;
 
 /// Nome da coluna de sistema que marca a linha como excluida sem excluir.
@@ -39,6 +39,31 @@ const VERSAO_ESQUEMA_MINIMA: u16 = 2;
 /// ela entra, e quem monta a linha posicionalmente pode continuar mandando so
 /// as colunas que declarou.
 pub const COLUNA_SOFTDELETED: &str = "softdeleted";
+
+/// Nome da coluna de sistema com o numero de ordem de chegada da linha.
+///
+/// # Por que ela existe, se ja ha o rowid
+///
+/// O `rowid` e a POSICAO FISICA. Enquanto o volume sai de divisao, posicao e
+/// ordem de chegada sao a mesma coisa, e o rowid serve de cursor sozinho. Na
+/// particao ALFANUMERICA nao sao: a linha vai para o volume da letra dela, e
+/// duas linhas digitadas em seguida caem em arquivos diferentes, com rowids
+/// que nao se comparam.
+///
+/// O `rownum` e o que sobra de monotonico: um contador global da tabela,
+/// atribuido na insercao, que nunca reaproveita numero. A ordem de digitacao
+/// nao se perde na particao alfanumerica -- ela muda de campo.
+pub const COLUNA_ROWNUM: &str = "rownum";
+
+/// Este nome e de uma coluna do motor?
+///
+/// Existe para os lugares que precisam ESCONDER as colunas de sistema --
+/// a grade, o formulario, a juncao -- nao terem cada um a sua lista. Coluna
+/// de sistema nova entra aqui e some dos tres de uma vez; a lista repetida em
+/// tres lugares e onde a quarta seria esquecida.
+pub fn e_coluna_de_sistema(nome: &str) -> bool {
+    nome == COLUNA_SOFTDELETED || nome == COLUNA_ROWNUM
+}
 
 /// O que fazer com as linhas filhas quando a linha pai muda ou some.
 ///
@@ -342,6 +367,25 @@ impl Schema {
                     ),
             );
         }
+        // DEPOIS da softdeleted, e nao antes: coluna de sistema nova entra
+        // sempre no fim, senao uma tabela gravada na versao anterior teria os
+        // offsets deslocados ao ser relida.
+        //
+        // `UInt8` e nao `Sequence`: uma tabela so pode ter uma coluna
+        // `Sequence` -- o contador do `.reg` e unico --, e reservar essa unica
+        // vaga para o motor tiraria do usuario um tipo que e dele. O `rownum`
+        // tem contador proprio.
+        if !colunas.iter().any(|c| c.nome == COLUNA_ROWNUM) {
+            colunas.push(
+                Column::new(COLUNA_ROWNUM, ColumnType::UInt8)
+                    .obrigatoria()
+                    .com_caption("Nº")
+                    .com_descricao(
+                        "Ordem de chegada da linha. O motor preenche; \
+                         nunca reaproveita numero.",
+                    ),
+            );
+        }
         Schema::do_disco(nome, colunas, indices)
     }
 
@@ -492,6 +536,22 @@ impl Schema {
             }
         }
 
+        if let Some(c) = colunas.iter().find(|c| c.nome == COLUNA_ROWNUM) {
+            if c.ty != ColumnType::UInt8 {
+                return Err(PhxError::Esquema(format!(
+                    "a coluna {COLUNA_ROWNUM} e do motor e tem de ser UInt8; \
+                     esta declarada como {:?}",
+                    c.ty
+                )));
+            }
+            if c.nullable {
+                return Err(PhxError::Esquema(format!(
+                    "a coluna {COLUNA_ROWNUM} nao pode aceitar nulo: \
+                     linha sem numero de ordem nao pagina"
+                )));
+            }
+        }
+
         let bitmap_len = colunas.len().div_ceil(8);
         let mut offsets = Vec::with_capacity(colunas.len());
         let mut pos = bitmap_len;
@@ -521,6 +581,13 @@ impl Schema {
         self.colunas
             .iter()
             .position(|c| c.nome == COLUNA_SOFTDELETED)
+    }
+
+    /// Posicao da coluna de sistema `rownum`.
+    ///
+    /// `None` numa tabela gravada antes da v5 do esquema.
+    pub fn coluna_rownum(&self) -> Option<usize> {
+        self.colunas.iter().position(|c| c.nome == COLUNA_ROWNUM)
     }
 
     /// Exigir motivo escrito na exclusao. Escolhido ao criar a tabela.
@@ -995,14 +1062,35 @@ mod tests {
     #[test]
     fn layout_do_payload() {
         let s = esquema_clientes();
-        // 6 colunas declaradas + a de sistema -> 7, ainda 1 byte de bitmap.
-        assert_eq!(s.colunas().len(), 7);
+        // 6 declaradas + softdeleted + rownum = 8, e o bitmap ainda cabe em 1.
+        assert_eq!(s.colunas().len(), 8);
         assert_eq!(s.bitmap_len(), 1);
         assert_eq!(s.offset_coluna(0).unwrap(), 1);
         assert_eq!(s.offset_coluna(1).unwrap(), 9);
         assert_eq!(s.offset_coluna(2).unwrap(), 69);
-        // 1 + 8 + 60 + 14 + 16 + 16 + 16 + 1 do softdeleted
-        assert_eq!(s.payload_len(), 132);
+        // 1 + 8 + 60 + 14 + 16 + 16 + 16 + 1 do softdeleted + 8 do rownum
+        assert_eq!(s.payload_len(), 140);
+    }
+
+    /// A ordem das duas colunas de sistema e parte do formato: `rownum` entra
+    /// DEPOIS de `softdeleted`, e nao antes. Trocar a ordem deslocaria o
+    /// offset da softdeleted em toda tabela ja gravada na v4.
+    #[test]
+    fn as_colunas_de_sistema_saem_nesta_ordem() {
+        let s = esquema_clientes();
+        let n = s.colunas().len();
+        assert_eq!(s.coluna_softdeleted(), Some(n - 2));
+        assert_eq!(s.coluna_rownum(), Some(n - 1));
+        assert_eq!(s.colunas()[n - 1].ty, ColumnType::UInt8);
+        assert!(!s.colunas()[n - 1].nullable);
+    }
+
+    #[test]
+    fn rownum_com_outro_tipo_e_recusada() {
+        let mut cols = colunas_clientes();
+        cols.push(Column::new(COLUNA_ROWNUM, ColumnType::Int4).obrigatoria());
+        let e = Schema::new("t", cols, vec![]).unwrap_err();
+        assert!(format!("{e}").contains("UInt8"), "{e}");
     }
 
     /// A coluna de sistema entra por ultimo, e so por ultimo: as colunas do
@@ -1018,7 +1106,7 @@ mod tests {
         .unwrap();
 
         let i = com.coluna_softdeleted().unwrap();
-        assert_eq!(i, com.colunas().len() - 1);
+        assert_eq!(i, com.colunas().len() - 2, "a softdeleted saiu do lugar");
         assert_eq!(com.colunas()[i].ty, ColumnType::Bool);
         assert!(!com.colunas()[i].nullable);
         assert!(sem.coluna_softdeleted().is_none());

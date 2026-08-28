@@ -233,38 +233,117 @@ impl Table {
 
     // ------------------------------------------------------- codificacao
 
+    /// Quantas colunas de sistema estao no FIM da lista, seguidas.
+    ///
+    /// Conta do fim para tras e para na primeira coluna do usuario: e o que
+    /// permite a linha chegar sem elas. Uma coluna de sistema que estivesse no
+    /// meio nao entraria nesta conta -- e nao esta, por construcao: elas
+    /// entram sempre no fim, e ha teste que trava a ordem.
+    fn colunas_de_sistema_no_fim(&self) -> usize {
+        self.esquema
+            .colunas()
+            .iter()
+            .rev()
+            .take_while(|c| phxsql_core::schema::e_coluna_de_sistema(&c.nome))
+            .count()
+    }
+
     fn conferir_aridade(&self, valores: &[Value]) -> Result<()> {
         let n = self.esquema().colunas().len();
-        // A coluna de sistema pode vir ou nao: quem monta a linha declarou N-1
-        // colunas e nao tem por que saber da setima. Ver `completar`.
-        let sem_sistema = self.esquema.coluna_softdeleted().is_some() && valores.len() + 1 == n;
-        if valores.len() != n && !sem_sistema {
+        // As colunas de sistema podem vir ou nao. Quem monta a linha declarou
+        // as colunas dele e nao tem por que saber das do motor -- e um cliente
+        // escrito antes de elas existirem continua funcionando. Ver `completar`.
+        let minimo = n - self.colunas_de_sistema_no_fim();
+        if valores.len() < minimo || valores.len() > n {
             return Err(PhxError::Tipo(format!(
-                "{}: esperado {n} valores, recebido {}",
+                "{}: esperado {n} valores{}, recebido {}",
                 self.nome,
+                if minimo < n {
+                    format!(" (ou {minimo}, sem as colunas do motor)")
+                } else {
+                    String::new()
+                },
                 valores.len()
             )));
         }
         Ok(())
     }
 
-    /// Acrescenta o valor da coluna de sistema quando quem chamou nao o
-    /// mandou. `None` quando nao ha nada a fazer.
+    /// Completa as colunas de sistema que quem chamou nao mandou.
     ///
-    /// Numa alteracao o valor herdado e o que a linha JA TINHA: um `atualizar`
-    /// comum nao pode ressuscitar uma linha marcada como excluida por
-    /// distracao de quem montou os valores.
+    /// `None` quando nao ha nada a fazer. Aceita a linha faltando UMA ou as
+    /// DUAS colunas do fim: quem monta a linha declarou as colunas dele e nao
+    /// tem por que saber das do motor.
+    ///
+    /// Numa alteracao o valor herdado e o que a linha JA TINHA -- nas duas. Um
+    /// `atualizar` comum nao pode ressuscitar linha marcada nem renumerar a
+    /// ordem de chegada por distracao de quem montou os valores.
     fn completar(&self, valores: &[Value], anterior: Option<&Linha>) -> Option<Vec<Value>> {
-        let i = self.esquema.coluna_softdeleted()?;
-        if valores.len() != i {
+        let n = self.esquema.colunas().len();
+        if valores.len() >= n {
             return None;
         }
         let mut novos = valores.to_vec();
-        novos.push(match anterior {
-            Some(linha) => linha[i].clone(),
-            None => Value::Bool(false),
-        });
+        for i in valores.len()..n {
+            let c = &self.esquema.colunas()[i];
+            if c.nome != phxsql_core::schema::COLUNA_SOFTDELETED
+                && c.nome != phxsql_core::schema::COLUNA_ROWNUM
+            {
+                // A linha esta curta por outro motivo que nao as colunas de
+                // sistema. Deixa a aridade reclamar, com a mensagem dela.
+                return None;
+            }
+            novos.push(match anterior {
+                Some(linha) => linha[i].clone(),
+                // Zero e o "ainda nao numerado": `numerar_linha` troca por um
+                // numero de verdade antes de a linha ir para o disco.
+                None if c.nome == phxsql_core::schema::COLUNA_ROWNUM => Value::UInt(0),
+                None => Value::Bool(false),
+            });
+        }
         Some(novos)
+    }
+
+    /// Poe o proximo `rownum` na linha, se ela ainda nao tiver um.
+    ///
+    /// Quem chama nao escolhe o numero: `rownum` e ordem de chegada, e um
+    /// valor escolhido a mao seria uma ordem inventada. Valor diferente de
+    /// zero que chegue de fora e ignorado -- e o caso de uma linha remontada
+    /// por um cliente antigo que devolveu tudo que recebeu.
+    fn numerar_linha(&mut self, valores: &mut [Value], anterior: Option<&Linha>) {
+        let Some(i) = self.esquema.coluna_rownum() else {
+            return;
+        };
+        if let Some(linha) = anterior {
+            // Alteracao: mantem o numero que a linha ja tinha.
+            if let Value::UInt(n) = linha[i] {
+                if n > 0 {
+                    valores[i] = Value::UInt(n);
+                    return;
+                }
+            }
+        }
+        if !matches!(valores[i], Value::UInt(n) if n > 0) || anterior.is_none() {
+            valores[i] = Value::UInt(self.reg.proximo_do_rownum());
+        }
+    }
+
+    /// Proximo `rownum` que a tabela vai entregar.
+    pub fn rownum_atual(&self) -> u64 {
+        self.reg.rownum_atual()
+    }
+
+    /// O `rownum` desta linha, lido direto do payload -- sem decodificar nada.
+    fn rownum_do_payload(&self, payload: &[u8]) -> Result<u64> {
+        let Some(i) = self.esquema.coluna_rownum() else {
+            return Ok(0);
+        };
+        let off = self.esquema.offset_coluna(i)?;
+        Ok(u64::from_le_bytes(
+            payload[off..off + 8]
+                .try_into()
+                .map_err(|_| PhxError::Corrompido("payload curto demais para o rownum".into()))?,
+        ))
     }
 
     /// A linha esta marcada como excluida?
@@ -533,14 +612,14 @@ impl Table {
 
     pub fn inserir(&mut self, valores: &[Value]) -> Result<RowId> {
         self.conferir_aridade(valores)?;
-        let completos;
-        let valores = match self.completar(valores, None) {
-            Some(v) => {
-                completos = v;
-                &completos[..]
-            }
-            None => valores,
+        // Numerar ANTES das chaves, pela mesma razao da sequencia: se a coluna
+        // estiver num indice, a chave tem de ser a do numero gravado.
+        let mut completos = match self.completar(valores, None) {
+            Some(v) => v,
+            None => valores.to_vec(),
         };
+        self.numerar_linha(&mut completos, None);
+        let valores = &completos[..];
 
         // A sequencia entra ANTES das chaves: se a coluna estiver num indice,
         // a chave tem de ser a do numero que vai ser gravado, nao a do nulo.
@@ -614,14 +693,12 @@ impl Table {
 
         // Sem a coluna de sistema nos valores, herda a marca da linha: um
         // `atualizar` de rotina nao ressuscita linha excluida por descuido.
-        let completos;
-        let valores = match self.completar(valores, Some(&valores_antigos)) {
-            Some(v) => {
-                completos = v;
-                &completos[..]
-            }
-            None => valores,
+        let mut completos = match self.completar(valores, Some(&valores_antigos)) {
+            Some(v) => v,
+            None => valores.to_vec(),
         };
+        self.numerar_linha(&mut completos, Some(&valores_antigos));
+        let valores = &completos[..];
 
         // Nulo na coluna de sequencia guarda o numero que a linha ja tinha.
         let proprios;
@@ -882,6 +959,214 @@ impl Table {
             rowid = id + 1;
         }
         Ok(saida)
+    }
+
+    // ------------------------------------------------------------- paginas
+
+    /// Uma pagina de rowids, sem decodificar linha nenhuma.
+    ///
+    /// # Por que isto existe separado da varredura
+    ///
+    /// `varrer_com` decodifica CADA linha da tabela -- com os anexos do `.bin`
+    /// e do `.memo` -- e devolve tudo. Quem quer duzentas linhas de um milhao
+    /// pagava um milhao de decodificacoes e um milhao de leituras de anexo,
+    /// para jogar 999.800 fora. O custo crescia com a TABELA, e nao com a
+    /// pagina, que e o defeito que o `LIMIT`/`OFFSET` de qualquer motor tem --
+    /// so que aqui era pior, porque o `OFFSET` ao menos nao carrega o blob.
+    ///
+    /// Aqui a leitura para no teto, e nada e decodificado: para decidir se um
+    /// slot entra basta o byte da coluna de sistema.
+    ///
+    /// `pular` continua existindo porque tela pequena precisa dele, e porque
+    /// nem toda ordenacao tem cursor. Mas ele e o modo de compatibilidade --
+    /// quem tem tabela grande usa [`Table::pagina_depois_de`].
+    pub fn pagina(&mut self, pular: u64, limite: u64, visao: Visao) -> Result<Vec<RowId>> {
+        let mut saida = Vec::new();
+        let mut vistos = 0u64;
+        let mut rowid = 1;
+        while let Some((id, payload)) = self.reg.proximo_ativo(rowid)? {
+            rowid = id + 1;
+            if !self.visao_aceita_payload(&payload, visao)? {
+                continue;
+            }
+            if vistos >= pular {
+                saida.push(id);
+                if limite > 0 && saida.len() as u64 >= limite {
+                    break;
+                }
+            }
+            vistos += 1;
+        }
+        Ok(saida)
+    }
+
+    /// A pagina que vem DEPOIS do rowid `cursor`. O *keyset* do PhxSql.
+    ///
+    /// # Por que aqui ele sai de graca
+    ///
+    /// Num motor relacional, pular para o meio da tabela exige um indice: a
+    /// ordem logica nao tem nada a ver com a posicao fisica. Aqui tem --
+    /// `offset = data_offset + (rowid-1) x slot_size`. Continuar depois do
+    /// rowid 500.000 nao e procurar: e uma conta.
+    ///
+    /// O custo e o da PAGINA, e nao o da tabela. E a diferenca entre uma tela
+    /// que abre igual na pagina 1 e na pagina 10.000, e uma que vai ficando
+    /// lenta conforme o usuario desce.
+    ///
+    /// Cursor zero comeca do inicio. A pagina nunca inclui o proprio cursor,
+    /// para o cliente poder mandar de volta o ultimo rowid que recebeu sem
+    /// receber a mesma linha duas vezes.
+    pub fn pagina_depois_de(
+        &mut self,
+        cursor: RowId,
+        limite: u64,
+        visao: Visao,
+    ) -> Result<Vec<RowId>> {
+        let mut saida = Vec::new();
+        let mut rowid = cursor.saturating_add(1);
+        while let Some((id, payload)) = self.reg.proximo_ativo(rowid)? {
+            rowid = id + 1;
+            if !self.visao_aceita_payload(&payload, visao)? {
+                continue;
+            }
+            saida.push(id);
+            if limite > 0 && saida.len() as u64 >= limite {
+                break;
+            }
+        }
+        Ok(saida)
+    }
+
+    /// O rowid da primeira linha cujo `rownum` e >= `alvo`.
+    ///
+    /// # Por que isto e uma busca binaria, e nao uma varredura
+    ///
+    /// O `rownum` cresce com a ordem de chegada, e o `.reg` guarda as linhas
+    /// na ordem de chegada. Entao o `rownum` **cresce com o rowid**, e uma
+    /// sequencia crescente num arquivo de acesso aleatorio se procura por
+    /// bisseccao: log2 de um milhao sao vinte leituras.
+    ///
+    /// Nao ha indice envolvido, e nao ha indice a manter. E o mesmo motivo de
+    /// o endereco sair de uma conta: a ordem logica e a ordem fisica.
+    ///
+    /// Slot excluido nao tem `rownum` para comparar; a bisseccao anda para o
+    /// vizinho vivo mais proximo, o que custa alguns passos a mais num trecho
+    /// muito esburacado e nao muda a resposta.
+    ///
+    /// `None` quando nenhuma linha tem `rownum` >= alvo, ou quando a tabela
+    /// nao tem a coluna.
+    pub fn rowid_do_rownum(&mut self, alvo: u64) -> Result<Option<RowId>> {
+        if self.esquema.coluna_rownum().is_none() {
+            return Ok(None);
+        }
+        let (mut baixo, mut alto) = (1u64, self.reg.slots());
+        if alto == 0 {
+            return Ok(None);
+        }
+        let mut achado = None;
+        while baixo <= alto {
+            let meio = baixo + (alto - baixo) / 2;
+            // Anda para a frente ate achar um slot vivo, sem passar do alto.
+            let Some((id, payload)) = self.reg.proximo_ativo(meio)? else {
+                // So ha buraco daqui para a frente: o alvo esta atras.
+                if meio == 0 {
+                    break;
+                }
+                alto = meio - 1;
+                continue;
+            };
+            if id > alto {
+                if meio == 0 {
+                    break;
+                }
+                alto = meio - 1;
+                continue;
+            }
+            if self.rownum_do_payload(&payload)? >= alvo {
+                achado = Some(id);
+                if id == 0 {
+                    break;
+                }
+                alto = id - 1;
+            } else {
+                baixo = id + 1;
+            }
+        }
+        Ok(achado)
+    }
+
+    /// A pagina que comeca no numero de ordem `alvo`, inclusive.
+    ///
+    /// E o cursor da tela quando quem pagina guarda o `rownum` e nao o rowid --
+    /// que e o caso da particao alfanumerica, onde o rowid de volumes
+    /// diferentes nao se compara.
+    pub fn pagina_desde_rownum(
+        &mut self,
+        alvo: u64,
+        limite: u64,
+        visao: Visao,
+    ) -> Result<Vec<RowId>> {
+        let Some(inicio) = self.rowid_do_rownum(alvo)? else {
+            return Ok(Vec::new());
+        };
+        // `depois_de` exclui o proprio cursor, e aqui o inicio ENTRA.
+        self.pagina_depois_de(inicio.saturating_sub(1), limite, visao)
+    }
+
+    /// A pagina ANTERIOR ao cursor, para o botao de voltar.
+    ///
+    /// Devolve em ordem crescente, como a de ir: quem chama nao deveria ter de
+    /// saber que a leitura veio de tras para a frente.
+    pub fn pagina_antes_de(
+        &mut self,
+        cursor: RowId,
+        limite: u64,
+        visao: Visao,
+    ) -> Result<Vec<RowId>> {
+        if cursor <= 1 {
+            return Ok(Vec::new());
+        }
+        let mut saida = Vec::new();
+        let mut rowid = cursor - 1;
+        while rowid >= 1 {
+            if let Some(payload) = self.reg.ler(rowid)? {
+                if self.visao_aceita_payload(&payload, visao)? {
+                    saida.push(rowid);
+                    if limite > 0 && saida.len() as u64 >= limite {
+                        break;
+                    }
+                }
+            }
+            if rowid == 1 {
+                break;
+            }
+            rowid -= 1;
+        }
+        saida.reverse();
+        Ok(saida)
+    }
+
+    /// A visao aceita este payload? Le SO o byte da coluna de sistema.
+    ///
+    /// Decodificar a linha inteira para olhar um bit seria pagar o `.memo` e o
+    /// `.bin` de cada linha percorrida -- que e justamente o que a paginacao
+    /// existe para nao fazer.
+    fn visao_aceita_payload(&self, payload: &[u8], visao: Visao) -> Result<bool> {
+        if visao == Visao::Todas {
+            return Ok(true);
+        }
+        let Some(i) = self.esquema.coluna_softdeleted() else {
+            return Ok(visao != Visao::Excluidas);
+        };
+        // Nulo no bitmap nao acontece nesta coluna, que e obrigatoria -- mas
+        // se acontecer, «nao marcada» e a leitura segura.
+        let excluida = if payload[i / 8] & (1 << (i % 8)) != 0 {
+            false
+        } else {
+            let off = self.esquema.offset_coluna(i)?;
+            payload[off] != 0
+        };
+        Ok(visao.aceita(excluida))
     }
 
     /// Tira da lista os rowids que a visao nao enxerga.
