@@ -159,7 +159,7 @@ Veja o diario:
     WINDOWS   phxsqld.exe --config config.json
 
     No arranque ele imprime:
-        PhxSql 0.5.1 escutando em 0.0.0.0:5000 | base dados | papel isolado
+        PhxSql 0.5.2 escutando em 0.0.0.0:5000 | base dados | papel isolado
         log de acessos: acessos.log
 
 7.4 Servico

@@ -6,15 +6,15 @@ o estado real medido contra o código — não contra a lembrança.
 A regra é a mesma do dossiê: **número medido, nunca estimado**. Onde há número,
 ele saiu de `cargo test`, de `wc -l` ou de `bancada/resultados.json`.
 
-Estado do repositório: **21.631** linhas de Rust, **312** testes passando,
-zero avisos de clippy, zero dependências externas, versão **0.5.0**.
+Estado do repositório: **22.432** linhas de Rust, **324** testes passando,
+zero avisos de clippy, zero dependências externas, versão **0.5.2**.
 
 ---
 
 ## 1. Feito
 
 Pronto, testado, e no ar. A última coluna aponta onde a peça mora, para você
-poder conferir sem perguntar. Os **312 testes** do projeto passam, com zero
+poder conferir sem perguntar. Os **324 testes** do projeto passam, com zero
 avisos de clippy.
 
 | # | O que você pediu | Como está | Onde |
@@ -172,17 +172,17 @@ Três coisas entraram para que nada disso volte a acontecer calado:
 <!-- pendencias:insercao:inicio -->
 A bancada de 10 milhões achou um buraco só, e é grande.
 
-**A inserção é o ponto fraco do motor.** 4.039 linhas/s contra
-83.492 do MySQL(R) — **20,7× mais devagar**. E o
-diagnóstico é incômodo: **2.460 s de CPU para 2.476 s de relógio** (99%), com
+**A inserção é o ponto fraco do motor.** 11.308 linhas/s contra
+86.748 do MySQL(R) — **7,7× mais devagar**. E o
+diagnóstico é incômodo: **870 s de CPU para 884 s de relógio** (98%), com
 **0,0 MiB lidos do disco**. Não é disco, é processador — a
-B+tree do `.ndx` reescrita nó a nó a cada linha, sem lote. E **piora com o tamanho**: o primeiro milhão entra a 5.089/s, o último a 3.626/s — 29% mais devagar no fim do que no começo.
+B+tree do `.ndx` reescrita nó a nó a cada linha, sem lote. E **piora com o tamanho**: o primeiro milhão entra a 16.051/s, o último a 9.311/s — 42% mais devagar no fim do que no começo.
 
 Nas outras quatro o motor se defende: a varredura por faixa é
-**3,3× mais rápida** (6,06 s contra 19,71 s), lendo as
+**4,8× mais rápida** (3,94 s contra 18,97 s), lendo as
 1.250.000 linhas dos dois lados e chegando à mesma soma; a
-atualização empata (6,66 s contra 6,49 s); a busca
-pontual é 2,6× mais devagar e a exclusão 2,0×. E escreve muito
+atualização empata (4,44 s contra 6,06 s); a busca
+pontual é 1,9× mais devagar e a exclusão 0,9×. E escreve muito
 menos: 2,29 GiB contra 32,03 GiB na carga.
 
 Contrapartida honesta: **ocupa 2,27 GiB em disco contra
