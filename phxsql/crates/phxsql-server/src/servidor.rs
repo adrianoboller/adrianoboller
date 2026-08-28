@@ -28,6 +28,7 @@ use std::time::{Duration, Instant};
 use phxsql_core::error::{PhxError, Result};
 use phxsql_core::json::Json;
 use phxsql_store::catalogo::Instancia;
+use phxsql_store::log::Operacao;
 use phxsql_store::memoria::{Consulta, Filtro, Operador, Ordem, TabelaMemoria};
 use phxsql_store::table::{Table, Visao};
 
@@ -43,7 +44,10 @@ use phxsql_core::schema::Schema;
 use phxsql_core::value::Value;
 
 use crate::pivot::{Agregador, Campo, Granularidade, Juncao};
-use crate::valores::{json_para_chave, json_para_linha, largura_do_tipo, linha_para_json};
+use crate::valores::{
+    bytes_para_hex, hex_para_bytes, json_para_chave, json_para_linha, largura_do_tipo,
+    linha_para_json,
+};
 
 pub const VERSAO: &str = env!("CARGO_PKG_VERSION");
 
@@ -69,6 +73,12 @@ const OPS_ESCRITA: &[&str] = &[
     // Gravam o cadastro de ligacoes, que e arquivo deste servidor.
     "dblink_salvar",
     "dblink_excluir",
+    // `aplicar` NAO entra aqui, e a ausencia e deliberada. Uma replica roda em
+    // `somente_leitura` justamente para a aplicacao nao escrever nela -- e a
+    // unica escrita que ela deve aceitar e a que vem do source. Barrar
+    // `aplicar` aqui tornaria impossivel replicar para uma replica protegida,
+    // que e a unica replica que se sustenta. Quem pode chamar `aplicar` ja
+    // passou pelo portao do `administrar`.
     "encerrar_sessao",
 ];
 
@@ -326,13 +336,19 @@ impl Servidor {
                         .join(" | ")
                 }
             );
-            eprintln!(
-                "ATENCAO: o transporte de eventos ainda nao esta implementado \
-                 (ver docs/REPLICACAO.md). As portas sao configuracao, nao servico."
-            );
+            if self.config.replicacao.papel == crate::config::Papel::Source
+                && !self.config.replicacao.imagem_da_linha
+            {
+                eprintln!(
+                    "ATENCAO: source com replicacao.imagem_da_linha DESLIGADA. O \
+                     diario grava que a linha mudou, nao grava para que, e as \
+                     replicas nao terao o que aplicar."
+                );
+            }
         }
 
         self.subir_web();
+        self.subir_replicacao();
         self.subir_backup_agendado();
         self.ligar_relogio_de_gravacao();
         self.ligar_vigia_de_disco();
@@ -484,6 +500,163 @@ impl Servidor {
                 servidor.descarregar_sujas();
             }
         });
+    }
+
+    /// Uma thread por origem, puxando os eventos do source.
+    ///
+    /// Uma por origem e nao uma so: multi-source e varias conexoes
+    /// independentes, e uma origem lenta ou caida nao pode segurar as outras.
+    fn subir_replicacao(self: &Arc<Self>) {
+        if self.config.replicacao.papel != crate::config::Papel::Replica {
+            return;
+        }
+        if self.config.replicacao.origens.is_empty() {
+            eprintln!(
+                "replicacao: papel replica sem nenhuma origem em \
+                 replicacao.origens -- nada a puxar"
+            );
+            return;
+        }
+        if !self.config.somente_leitura {
+            // Nao e erro, e e uma pedra no caminho conhecida: uma replica
+            // escrita pela aplicacao quebra a numeracao dos rowids, e a
+            // proxima inclusao vinda do source para a replicacao inteira.
+            eprintln!(
+                "ATENCAO: replica sem somente_leitura. Se a aplicacao escrever \
+                 aqui, os rowids divergem e a replicacao para."
+            );
+        }
+        for origem in self.config.replicacao.origens.clone() {
+            if !origem.senha.is_empty() && origem.senha_hash.is_empty() {
+                eprintln!(
+                    "AVISO: origem {} com a SENHA EM TEXTO PURO no config.json. \
+                     Troque por senha_hash: phxsqld --senha",
+                    origem.nome
+                );
+            }
+            eprintln!(
+                "replicacao: puxando de {} ({}:{}) a cada {}s",
+                origem.nome, origem.host, origem.porta, origem.reconectar_em
+            );
+            let servidor = Arc::clone(self);
+            std::thread::spawn(move || servidor.laco_da_replica(origem));
+        }
+    }
+
+    /// O laco de uma origem: conectar, puxar, aplicar, dormir, repetir.
+    ///
+    /// Erro nao mata a thread -- ele escreve e espera. Um source que caiu volta
+    /// e a replica retoma do numero em que parou; matar a thread exigiria
+    /// reiniciar a replica para religar a replicacao.
+    fn laco_da_replica(self: Arc<Self>, origem: crate::config::Origem) {
+        let espera = Duration::from_secs(origem.reconectar_em);
+        loop {
+            match self.rodada_da_replica(&origem) {
+                Ok(0) => {}
+                Ok(n) => eprintln!("replicacao [{}]: {n} evento(s) aplicado(s)", origem.nome),
+                Err(e) => eprintln!("replicacao [{}]: {e}", origem.nome),
+            }
+            std::thread::sleep(espera);
+        }
+    }
+
+    /// Uma passada por todas as tabelas de todos os databases da origem.
+    ///
+    /// Devolve quantos eventos aplicou.
+    fn rodada_da_replica(&self, origem: &crate::config::Origem) -> Result<u64> {
+        let mut cliente = crate::replica::ligar(origem)?;
+        let databases = if origem.databases.is_empty() {
+            cliente.databases()?
+        } else {
+            origem.databases.clone()
+        };
+
+        let mut aplicados = 0u64;
+        for database in databases {
+            let (com_imagem, tabelas) = crate::replica::posicao(&mut cliente, &database)?;
+            if !com_imagem {
+                return Err(PhxError::Esquema(format!(
+                    "o source de {} esta com replicacao.imagem_da_linha desligada: \
+                     o diario dele nao carrega a linha, e nao ha o que aplicar",
+                    origem.nome
+                )));
+            }
+            for no in tabelas {
+                aplicados += self.alcancar_tabela(&mut cliente, &database, &no)?;
+            }
+        }
+        Ok(aplicados)
+    }
+
+    /// Traz UMA tabela ate a posicao do source.
+    fn alcancar_tabela(
+        &self,
+        cliente: &mut crate::replica::Cliente,
+        database: &str,
+        no: &crate::replica::NoSource,
+    ) -> Result<u64> {
+        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let db = _trava.garantir_database(database)?;
+
+        // Tabela que ainda nao existe aqui nasce do MESMO bloco de esquema que
+        // o source tem, e nao de uma remontagem a partir de JSON: e assim que
+        // o payload da imagem cai byte a byte no lugar certo.
+        let mut tabela = match db.abrir_qualificada(&no.nome) {
+            Ok(t) => t,
+            Err(_) => match &no.esquema {
+                Some(e) => {
+                    let (schema, nome) = match no.nome.split_once('.') {
+                        Some((s, n)) => (Some(s.to_string()), n.to_string()),
+                        None => (None, no.nome.clone()),
+                    };
+                    let _ = nome;
+                    eprintln!("replicacao: criando {database}.{} aqui", no.nome);
+                    db.criar_tabela(schema.as_deref(), e.clone())?
+                }
+                None => return Ok(0),
+            },
+        };
+        // O diario DESTA replica tambem carrega a imagem quando configurado.
+        // Sem isto, uma replica intermediaria grava eventos sem linha dentro, e
+        // a replica que puxa DELA nao tem o que aplicar -- a cascata
+        // Master -> Slave01 -> Slave02 morre no segundo salto. Este caminho
+        // abre a tabela direto, sem passar pelo `abrir_travada` que liga a
+        // imagem para os pedidos que vem pela porta.
+        tabela.ligar_imagem_no_diario(self.config.replicacao.imagem_da_linha);
+
+        let mut posicao = tabela.eventos()?;
+        if posicao >= no.eventos {
+            return Ok(0);
+        }
+        let mut aplicados = 0u64;
+        while posicao < no.eventos {
+            let eventos = crate::replica::puxar(cliente, database, &no.nome, posicao)?;
+            if eventos.is_empty() {
+                break;
+            }
+            for e in &eventos {
+                tabela.aplicar_evento(e.operacao, e.rowid, &e.imagem)?;
+                aplicados += 1;
+            }
+            // A posicao LOCAL, e nao `posicao + eventos.len()`: aplicar gera
+            // eventos no diario daqui, e e por ele que a proxima rodada se
+            // orienta. Contar do lado do source deixaria os dois numeros
+            // andarem separados no primeiro evento que nao gerasse outro.
+            let nova = tabela.eventos()?;
+            if nova <= posicao {
+                // Aplicou e a posicao nao andou: o proximo pedido traria os
+                // mesmos eventos, e o laco giraria em falso para sempre.
+                return Err(PhxError::Corrompido(format!(
+                    "replicacao de {database}.{}: {} evento(s) aplicado(s) e a \
+                     posicao continua em {posicao}",
+                    no.nome,
+                    eventos.len()
+                )));
+            }
+            posicao = nova;
+        }
+        tabela.sincronizar()?;
+        Ok(aplicados)
     }
 
     fn subir_backup_agendado(self: &Arc<Self>) {
@@ -1575,6 +1748,9 @@ impl Servidor {
             "motivos" | "reasons" => self.op_motivos(p, sessao),
             "esvaziar_lixeira" => self.op_esvaziar_lixeira(p, sessao),
             "diario" => self.op_diario(p, sessao),
+            "posicao" => self.op_posicao(p, sessao),
+            "replicar" => self.op_replicar(p, sessao),
+            "aplicar" => self.op_aplicar(p, sessao),
             "memoria_carregar" => self.op_memoria_carregar(p, sessao),
             "memoria_liberar" => self.op_memoria_liberar(p),
             "memoria" => self.op_memoria(),
@@ -1641,6 +1817,9 @@ impl Servidor {
         }
         // Quem alterar assina o evento no .log da tabela.
         t.definir_usuario(sessao.id());
+        // A imagem da linha no diario e decisao do servidor, como o espelho:
+        // um source grava, um servidor isolado nao paga por ela.
+        t.ligar_imagem_no_diario(self.config.replicacao.imagem_da_linha);
         Ok(t)
     }
 
@@ -5347,6 +5526,155 @@ impl Servidor {
         Ok(Json::objeto(vec![
             ("total", Json::de_u64(total as u64)),
             ("eventos", Json::Lista(recentes)),
+        ]))
+    }
+
+    // ----------------------------------------------------------- replicacao
+
+    /// `posicao`: quantos eventos cada tabela do database ja tem.
+    ///
+    /// E o equivalente do `SHOW MASTER STATUS`, e o que a replica compara com
+    /// a propria posicao para saber o que falta. Sai do cabecalho de cada
+    /// volume do `.log`, sem ler evento nenhum.
+    ///
+    /// Por que POR TABELA e nao por servidor: o PhxSql ainda nao tem transacao
+    /// entre tabelas, entao nao existe ordem global a preservar -- e um numero
+    /// por tabela deixa as tabelas replicarem em paralelo.
+    fn op_posicao(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let database = p.texto_ou("database", "").to_string();
+        if database.is_empty() {
+            return Err(PhxError::Esquema("informe \"database\"".into()));
+        }
+        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let db = _trava.abrir_database(&database)?;
+        let com_esquema = p.booleano_ou("com_esquema", false);
+        let mut posicoes = Vec::new();
+        for nome in db.todas_as_tabelas()? {
+            let mut t = db.abrir_qualificada(&nome)?;
+            let mut campos = vec![
+                ("eventos".to_string(), Json::de_u64(t.eventos()?)),
+                ("registros".to_string(), Json::de_u64(t.registros())),
+            ];
+            if com_esquema {
+                // O bloco de esquema CRU, do jeito que mora no `.reg`. A
+                // replica desserializa o mesmo bloco e cria a tabela dela --
+                // sem remontar coluna por coluna a partir de JSON, que e onde
+                // um tipo ou uma escala se perderiam sem ninguem notar.
+                campos.push((
+                    "esquema".to_string(),
+                    Json::texto_de(bytes_para_hex(&t.esquema().serializar())),
+                ));
+            }
+            posicoes.push((nome, Json::Objeto(campos)));
+        }
+        Ok(Json::objeto(vec![
+            ("database", Json::texto_de(database)),
+            ("papel", Json::texto_de(self.config.replicacao.papel.nome())),
+            // Sem a imagem ligada o diario existe mas nao replica, e a replica
+            // precisa saber disso ANTES de puxar mil eventos inaplicaveis.
+            (
+                "imagem_da_linha",
+                Json::Bool(self.config.replicacao.imagem_da_linha),
+            ),
+            ("tabelas", Json::Objeto(posicoes)),
+            ("usuario", Json::de_u64(sessao.id() as u64)),
+        ]))
+    }
+
+    /// `replicar`: os eventos a partir da posicao `desde`, com a imagem.
+    ///
+    /// A imagem vai em hexadecimal porque o transporte e JSON e JSON nao tem
+    /// bytes. Dobra o tamanho -- e a alternativa seria acrescentar um formato
+    /// binario ao protocolo, que e uma decisao maior do que esta.
+    fn op_replicar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let desde = p.inteiro_ou("desde", 0).max(0) as u64;
+        let max = p.inteiro_ou("max", 500).max(0) as u64;
+        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let mut t = self.abrir_travada(&_trava, p, sessao)?;
+        let total = t.eventos()?;
+        let eventos = t.diario_com_imagem(desde, max)?;
+        let lidos = eventos.len() as u64;
+
+        let lista: Vec<Json> = eventos
+            .into_iter()
+            .map(|(e, imagem)| {
+                Json::objeto(vec![
+                    ("operacao", Json::texto_de(e.operacao.nome())),
+                    ("rowid", Json::de_u64(e.rowid)),
+                    ("versao", Json::de_u64(e.versao)),
+                    ("carimbo_ms", Json::Numero(e.carimbo as f64)),
+                    ("usuario", Json::de_u64(e.usuario as u64)),
+                    ("imagem", Json::texto_de(bytes_para_hex(&imagem))),
+                ])
+            })
+            .collect();
+
+        Ok(Json::objeto(vec![
+            ("desde", Json::de_u64(desde)),
+            ("ate", Json::de_u64(desde + lidos)),
+            ("total", Json::de_u64(total)),
+            // `fim` verdadeiro quer dizer "por enquanto acabou": a replica
+            // espera e pergunta de novo, em vez de girar em falso.
+            ("fim", Json::Bool(desde + lidos >= total)),
+            ("eventos", Json::Lista(lista)),
+        ]))
+    }
+
+    /// `aplicar`: grava na tabela LOCAL os eventos que vieram do source.
+    ///
+    /// Para no primeiro erro e devolve onde parou. Seguir depois de um erro
+    /// espalharia a divergencia -- e o rowid que nao bate ja e o sinal de que
+    /// a replica divergiu.
+    fn op_aplicar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let eventos = p
+            .campo("eventos")
+            .and_then(Json::lista)
+            .ok_or_else(|| PhxError::Esquema("informe \"eventos\" como lista".into()))?
+            .to_vec();
+        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let mut t = self.abrir_travada(&_trava, p, sessao)?;
+
+        let mut aplicados = 0u64;
+        let mut erro = None;
+        for e in eventos.iter() {
+            let operacao = match e.texto_ou("operacao", "") {
+                "inclusao" => Operacao::Inclusao,
+                "alteracao" => Operacao::Alteracao,
+                "exclusao" => Operacao::Exclusao,
+                outro => {
+                    erro = Some(format!("operacao desconhecida no evento: {outro:?}"));
+                    break;
+                }
+            };
+            let rowid = e.inteiro_ou("rowid", 0).max(0) as u64;
+            let imagem = match hex_para_bytes(e.texto_ou("imagem", "")) {
+                Ok(b) => b,
+                Err(x) => {
+                    erro = Some(x.to_string());
+                    break;
+                }
+            };
+            match t.aplicar_evento(operacao, rowid, &imagem) {
+                Ok(_) => aplicados += 1,
+                Err(x) => {
+                    erro = Some(x.to_string());
+                    break;
+                }
+            }
+        }
+        self.gravar_de_verdade(&mut t, p)?;
+
+        Ok(Json::objeto(vec![
+            ("recebidos", Json::de_u64(eventos.len() as u64)),
+            ("aplicados", Json::de_u64(aplicados)),
+            ("posicao", Json::de_u64(t.eventos()?)),
+            (
+                "erro",
+                match erro {
+                    Some(e) => Json::texto_de(e),
+                    None => Json::Nulo,
+                },
+            ),
         ]))
     }
 

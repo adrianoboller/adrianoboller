@@ -1,0 +1,33 @@
+{
+  "quando": "2026-08-28",
+  "versao": "0.15.0",
+  "maquina": "quatro processos phxsqld em 127.0.0.1, no mesmo container",
+  "topologia": "master -> slave01, slave02, slave03",
+  "linhas": 105001,
+  "master_linhas_s": 18773,
+  "replica_eventos_s": 4273,
+  "alcance_s": 23.4,
+  "atraso_ms": {
+    "1 insercao": 2067,
+    "1.000 insercoes em lote": 2044,
+    "1 alteracao": 1958,
+    "1 exclusao suave": 1669,
+    "1 restauracao": 1686,
+    "1 exclusao fisica": 1600,
+    "1 linha com memo de 200 KB": 1325
+  },
+  "retomada_subiu_ms": 343,
+  "retomada_alcance_s": 1.0,
+  "iguais_no_fim": true,
+  "custo_da_imagem": {
+    "sem_imagem_linhas_s": 21740,
+    "com_imagem_linhas_s": 19531,
+    "sem_imagem_bytes_por_evento": 44,
+    "com_imagem_bytes_por_evento": 223
+  },
+  "cascata": {
+    "topologia": "master -> slave01 -> slave03 ; master -> slave02",
+    "um_salto_ms": 1679,
+    "dois_saltos_ms": 1827
+  }
+}

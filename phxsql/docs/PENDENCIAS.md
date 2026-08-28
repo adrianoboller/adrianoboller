@@ -26,7 +26,7 @@ o código, não contra a lembrança — foi assim que a chave estrangeira saiu d
 | ☑️ | 16 | Log de IPs na porta 5000, com data e hora | JSON Lines, para caber `fail2ban` |
 | ☑️ | 17 | Download dos fontes e do compilado Linux/Windows, com manual | `./empacotar.sh`, três zips conferidos |
 | ◐ | 18 | **Subir o PhxSql no GitHub** | está na branch com histórico completo; **repositório próprio bloqueado**: `create_repository` responde 403 |
-| ◐ | 19 | **Replicação como a do MySQL(R)**, com porta de envio e de retorno | as três portas entram e validam, o desenho está escrito; falta o **`.log` v2 com imagem da linha** |
+| ☑️ | 19 | **Replicação como a do MySQL(R)**, com porta de envio e de retorno | **funcionando**: `.log` v2 com a imagem da linha, ops `posicao`/`replicar`/`aplicar`, e o laço da réplica dentro do `phxsqld`. Medido com quatro servidores — master 18.773 linhas/s, réplica 4.273 eventos/s, atraso de 1,3 a 2,1 s, retrato SHA-256 das quatro tabelas idêntico. Falta long-poll, espera crescente e TLS |
 | ☑️ | 20 | `Config_exemplo_01/02/03.json` | isolado, réplica e origem |
 | ☑️ | 21 | Precisa de agentes e subagentes? | respondida |
 | ☑️ | 22 | Atualizar o dossiê ao fim de cada rodada | regra permanente, no `CLAUDE.md` |
@@ -116,9 +116,11 @@ o código, não contra a lembrança — foi assim que a chave estrangeira saiu d
 | ☑️ | 107 | **Salto para uma página específica** | `pular` deixou de andar: quando a posição de uma linha **é** o `rownum` dela, o começo da página sai de uma bissecção. Medido em 200.000 linhas pelo protocolo: 6 ms contra 131 ms no fim da tabela, e **plano** com a profundidade. Caixa «ir para a página» na grade — 116 ms no navegador, com o desenho. Contar voltou a ser barato: `visiveis = registros − marcadas`, os dois do cabeçalho |
 | ☑️ | 108 | **Carga em lote — várias linhas de uma vez** | `inserir_lote` no protocolo, `phxsql importar` na linha de comando. Medido com 20.000 linhas pela rede: **2.715 → 25.985 linhas/s (9,6×)**. O ganho não é do disco: é de abrir a tabela, tomar a trava e sincronizar UMA vez em vez de vinte mil |
 | ☑️ | 109 | **Tela para colar JSON, CSV, TXT, HTML ou XML** | os cinco formatos, com o motor adivinhando qual é. A primeira linha manda, e as colunas casam pelo **nome** e não pela posição. `importar_conferir` mostra o que entendeu antes de gravar; o botão de gravar só acende depois disso |
+| ☑️ | 110 | **Teste de replicação com três servidores espelho** | `bancada/replicacao/`: `montar.py` sobe Master + Slave01/02/03, `medir.py` mede atraso por tipo de escrita, vazão, queda e retomada. Compara um SHA-256 de **cada linha**, com o rowid junto — e não a contagem, que não acharia uma linha que atravessou errada. Cascata Master → Slave01 → Slave03 também medida |
+| ◐ | 111 | **A réplica acompanhar a escrita do master** | não acompanha: 4.273 eventos/s contra 18.773 linhas/s. Aplicar decodifica a imagem para `Value` e **reencoda** o payload, em vez de gravar os bytes que vieram. Gravar direto, remendando só os ponteiros dos anexos, é o próximo ganho grande |
 | ☑️ | 67 | **Botão e menu Tabelas** para gerir as tabelas do banco: nova, estrutura, editar conteúdo, partições, duplicar, reparar tabela, reparar índice e excluir — e **Gestão de transações** no menu de ferramentas | as oito operações funcionam de ponta a ponta; três delas (`criar_tabela`, `duplicar_tabela`, `excluir_tabela`) nasceram aqui, e `criar_schema` — prometido na documentação e nunca despachado — junto |
 
-**96 feitos · 7 parciais · 6 planejados**, de 109 pedidos.
+**98 feitos · 7 parciais · 6 planejados**, de 111 pedidos.
 
 Fora do que você pediu, entraram por medição: o CRC slice-by-8, o `descer` sem
 reler a folha, a conferência de unicidade sem descida dupla, e dezoito

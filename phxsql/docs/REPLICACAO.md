@@ -2,9 +2,27 @@
 
 **Pergunta:** dá para ter no PhxSql a replicação Source → Replica do MySQL(R)?
 
-**Resposta curta:** dá, e o PhxSql já está a meio caminho — porque o `.log`
-que você pediu **é exatamente o binlog**. O que falta é uma coisa só, e ela é
-uma mudança de formato que vale fazer agora.
+**Resposta:** dá, e desde a 0.15.0 **está funcionando**. O que faltava era uma
+coisa só — a imagem da linha no `.log` — e ela entrou.
+
+Quatro servidores no ar, com a medição em `bancada/replicacao/`:
+
+```
+Master 5800 ──┬──► Slave01 5801
+              ├──► Slave02 5802
+              └──► Slave03 5803
+```
+
+| | |
+|---|---|
+| Master, com a imagem no diário | 18.773 linhas/s |
+| Aplicação, por réplica (as três em paralelo) | 4.273 eventos/s |
+| Atraso de uma escrita até as três | 1,3 s a 2,1 s |
+| Réplica derrubada: voltar a atender e alcançar 4.000 eventos | 343 ms + 1,0 s |
+| Retrato SHA-256 das quatro tabelas, no fim | idênticos |
+
+O que ainda **não** existe está na seção 10, e um item mudou de lugar: a réplica
+aplica mais devagar do que o master escreve, e sob carga sustentada fica atrás.
 
 ---
 
@@ -19,7 +37,7 @@ uma mudança de formato que vale fazer agora.
 | Porta 3306 | porta **5000** | existe |
 | Réplica inicia a conexão | idem | é como o servidor já funciona |
 | Usuário exclusivo de replicação | token + `replicas_autorizadas` | existe no `config.json` |
-| Row-based binlog (imagem da linha) | **falta** | ver seção 3 |
+| Row-based binlog (imagem da linha) | `.log` v2, atrás de `imagem_da_linha` | **existe** |
 
 A direção da conexão é a mesma do MySQL(R), e é o ponto que você destacou:
 
@@ -49,14 +67,15 @@ alterado, mas não diz *para quê*.
 
 ---
 
-## 3. A única peça que falta: a imagem da linha
+## 3. A peça que faltava: a imagem da linha
 
-O `.log` de hoje guarda 36 bytes por evento — carimbo, operação, rowid, versão,
-usuário e CRC. Falta o conteúdo.
+Até a 0.14.0 o `.log` guardava 36 bytes por evento — carimbo, operação, rowid,
+versão, usuário e CRC. Faltava o conteúdo: o evento dizia *que* o rowid 42
+mudou, não dizia *para quê*.
 
-### Formato proposto (versão 2 do `.log`)
+### O formato (versão 2 do `.log`)
 
-Cabeçalho do evento passa de 36 para **44 bytes**, e ganha um corpo:
+Cabeçalho do evento passou de 36 para **44 bytes**, e ganhou um corpo:
 
 | Off | Tam | Campo |
 |----:|----:|---|
@@ -68,9 +87,18 @@ Cabeçalho do evento passa de 36 para **44 bytes**, e ganha um corpo:
 | 20 | 8 | versão do registro depois da operação |
 | 28 | 4 | usuário |
 | 32 | 4 | **tamanho da imagem** |
-| 36 | 4 | CRC-32 do cabeçalho e da imagem |
+| 36 | 4 | CRC-32 do cabeçalho **e da imagem** |
 | 40 | 4 | reservado |
 | 44 | N | **imagem da linha** |
+
+O CRC cobrir a imagem, e não só o cabeçalho, é o detalhe que importa: a imagem
+é o que a réplica grava **como dado**. Um byte trocado ali entraria na réplica
+sem ninguém notar.
+
+E há um preço que o formato cobra: até a versão 1 o evento N morava no offset
+`64 + N × 36`, e pular era uma conta. Agora não é — chegar ao evento N é
+caminhar pelos anteriores lendo o tamanho de cada um. O que salva a leitura é o
+`qtd_eventos` no cabeçalho de cada volume: um volume inteiro se pula sem abrir.
 
 A imagem não é o texto do registro — é o **payload cru do `.reg`**, os mesmos
 bytes que a réplica precisa gravar. Sem reencodar, sem perder precisão.
@@ -96,16 +124,25 @@ Operações que **não** precisam de imagem: a exclusão. O rowid basta.
 
 ### Custo
 
-Uma tabela com registro de 200 bytes passa a gastar ~244 bytes de diário por
-alteração, em vez de 36. Por isso o `.log` já nasceu paginado, e por isso a
-imagem fica atrás de um interruptor no `config.json`:
+Medido, mesma tabela e mesmas 100.000 linhas, só o interruptor mudando:
+
+| `imagem_da_linha` | linhas/s | bytes por evento | `.log` |
+|---|---:|---:|---:|
+| desligada | 21.740 | 44 | 4,4 MB |
+| ligada | 19.531 | 223 | 22,3 MB |
+
+**10% mais devagar, e um diário 5,1× maior.** Por isso o `.log` já nasceu
+paginado, e por isso a imagem fica atrás de um interruptor no `config.json`:
 
 ```json
 "replicacao": { "imagem_da_linha": true }
 ```
 
-Quem só quer auditoria deixa desligado e continua com 36 bytes por evento.
-Quem quer replicar liga.
+Quem só quer auditoria deixa desligado e continua com 44 bytes por evento.
+Quem quer replicar liga — e num servidor com `papel: source` ela **já vem
+ligada**, porque um source sem imagem no diário é um source que não replica, e
+descobrir isso pela réplica parada seria o pior jeito de descobrir. O arranque
+avisa em voz alta se alguém desligar.
 
 ---
 
@@ -166,24 +203,69 @@ Uma réplica escrita pela aplicação quebra a numeração e perde a sincronia.
 
 ## 6. Protocolo
 
-Três operações novas, no mesmo JSON Lines da porta 5000:
+Três operações, no mesmo JSON Lines da porta 5000:
 
 ```json
-{"token":"...","op":"posicao","database":"Z"}
-{"ok":true,"resultado":{"cadastroClientes":1234,"pedidos":87}}
+{"token":"...","op":"posicao","database":"Z","com_esquema":true}
+{"ok":true,"resultado":{
+   "papel":"source","imagem_da_linha":true,
+   "tabelas":{"cadastroClientes":{"eventos":1234,"registros":1200,
+                                  "esquema":"50534348..."}}}}
 
 {"token":"...","op":"replicar","database":"Z","tabela":"cadastroClientes",
  "desde":1234,"max":500}
-{"ok":true,"resultado":{"eventos":[...],"ate":1734,"fim":false}}
+{"ok":true,"resultado":{"eventos":[...],"desde":1234,"ate":1734,
+                        "total":1734,"fim":true}}
 
 {"token":"...","op":"aplicar","database":"Z","tabela":"cadastroClientes",
  "eventos":[...]}
+{"ok":true,"resultado":{"recebidos":500,"aplicados":500,"posicao":1734,
+                        "erro":null}}
 ```
 
-A réplica roda um laço: pergunta a posição, puxa em lotes, aplica, repete.
-Quando o Source responde `"fim":true`, ela espera e pergunta de novo — ou
-mantém a conexão aberta e o Source segura a resposta até ter novidade
-(long-poll), que é o mais parecido com o binlog dump do MySQL(R).
+A imagem viaja em **hexadecimal**, porque o transporte é JSON e JSON não tem
+bytes. Dobra o tamanho; a alternativa seria acrescentar um formato binário ao
+protocolo, e isso é uma decisão maior do que esta.
+
+O `com_esquema` traz o **bloco de esquema cru**, o mesmo que mora dentro do
+`.reg`. É assim que a réplica cria uma tabela que ainda não existe nela: a
+partir dos mesmos bytes, e não de uma remontagem coluna a coluna a partir de
+JSON — que é onde um tipo ou uma escala se perderiam sem ninguém notar.
+
+**Três permissões diferentes, de propósito.** `posicao` e `replicar` exigem
+`replicar`, que é uma permissão própria: o fluxo é o diário com a linha inteira
+dentro, e dá para concedê-lo a uma réplica sem conceder mais nada. `aplicar`
+exige `administrar`, porque grava com o rowid escolhido e o payload cru, por
+fora das conferências normais.
+
+**`aplicar` não está na lista de operações de escrita**, e a ausência é
+deliberada: uma réplica roda em `somente_leitura` justamente para a aplicação
+não escrever nela, e a única escrita que ela deve aceitar é a que vem do source.
+
+A réplica roda um laço: pergunta a posição, puxa em lotes de 500, aplica,
+dorme `reconectar_em` segundos, repete. Uma **thread por origem**, para uma
+origem lenta ou caída não segurar as outras. Erro não mata a thread — escreve e
+espera; um source que caiu volta e a réplica retoma do número em que parou.
+
+O laço mora dentro do próprio `phxsqld`: basta `papel: replica` e uma origem no
+`config.json`. As operações continuam existindo para quem quiser dirigir a
+replicação de fora.
+
+### A senha não viaja
+
+A réplica se autentica pelo mesmo desafio-resposta do resto do protocolo: pede
+um nonce, calcula o HMAC com a chave derivada e manda a **prova**. No
+`config.json` da réplica mora o `senha_hash` — o mesmo texto que já mora no
+cadastro de usuários —, e dele sai a chave derivada. Não há senha em claro em
+lugar nenhum.
+
+```json
+"origens": [
+  {"nome":"curitiba","host":"10.1.1.102","porta":5000,"token":"...",
+   "usuario":"replicador","senha_hash":"pbkdf2-sha256$210000$...",
+   "databases":["Z"],"reconectar_em":10}
+]
+```
 
 ---
 
@@ -253,21 +335,68 @@ das transações.
 
 ---
 
-## 9. Ordem de implementação
+## 9. O que está feito, e o que falta
 
-1. `.log` versão 2 com imagem da linha, atrás do interruptor no `config.json`
-2. Ops `posicao` e `replicar` no Source
-3. Laço da réplica: puxar, aplicar, conferir o rowid, repetir
-4. Long-poll no Source, para a réplica não ficar perguntando à toa
-5. Reconexão com espera crescente e retomada pela posição
-6. Multi-source (o `config.json` já modela; falta uma thread por origem)
-7. TLS no transporte — hoje o JSON vai em claro e depende do IPSec
+| | |
+|---|---|
+| ☑️ | `.log` versão 2 com imagem da linha, atrás do interruptor |
+| ☑️ | Ops `posicao`, `replicar` e `aplicar` |
+| ☑️ | Laço da réplica dentro do `phxsqld`: puxar, aplicar, conferir o rowid |
+| ☑️ | Criar na réplica a tabela que ainda não existe, do esquema cru do source |
+| ☑️ | Reconexão e retomada pela posição — medido: 1,0 s para 4.000 eventos |
+| ☑️ | Multi-source: uma thread por origem |
+| ☑️ | **Cascata** — Master → Slave01 → Slave03. O segundo salto custou 1.827 ms contra 1.679 do primeiro |
+| ☐ | Long-poll no Source, para a réplica não perguntar à toa |
+| ☐ | Espera crescente na reconexão (hoje é intervalo fixo) |
+| ☐ | TLS no transporte — hoje o JSON vai em claro e depende do IPSec |
 
-## 10. O que isto NÃO vai ser
+### A posição é o diário da própria réplica
+
+A réplica não guarda um arquivo com «apliquei até aqui». Ela **conta os eventos
+do `.log` dela** — e é isso que faz a retomada funcionar sem estado extra:
+matar a réplica no meio de um lote não perde nem repete, porque o número que
+ela usa é o que os arquivos dela dizem, não o que ela lembrava.
+
+Para isso valer, cada evento aplicado tem de gerar **exatamente um** evento
+local. É por isso que uma exclusão que não acha o que excluir é tratada como
+divergência e para: se passasse batido, o evento não geraria evento, a posição
+não andaria, e a replicação giraria em falso puxando o mesmo para sempre.
+
+### Cascata
+
+Uma réplica pode ser origem de outra, e para isso ela precisa de
+`imagem_da_linha` ligada **nela também** — senão o diário dela grava que a
+linha mudou sem gravar a linha, e o segundo salto não tem o que aplicar. O erro
+é explícito e diz o que ligar.
+
+## 10. O que isto NÃO é
 
 - **Não é replicação síncrona.** É assíncrona, como o padrão do MySQL(R): a
-  réplica fica atrás do Source por algum tempo.
+  réplica fica atrás do Source por algum tempo. Medido: 1,3 s a 2,1 s com o
+  laço em 2 s.
+- **A réplica aplica mais devagar do que o master escreve** — 4.273 eventos/s
+  contra 18.773 linhas/s, com as três réplicas competindo pela mesma máquina.
+  Sob carga sustentada elas ficam para trás. A razão está no caminho: aplicar
+  decodifica a imagem para `Value` e **reencoda** o payload, em vez de gravar
+  os bytes que vieram. Gravar o payload direto, remendando só os ponteiros dos
+  anexos, é o próximo ganho grande — e é o que a seção 3 descreve.
 - **Não resolve conflito de escrita nos dois lados.** É um caminho só,
   Source → Réplica. Multi-master é outro problema.
 - **Não substitui backup.** Réplica repete o `DELETE` errado que você fez no
   Source, e repete rápido.
+- **Não há transação**, então não há ordem global entre tabelas a preservar —
+  e é por isso que a posição é por tabela. Quando as transações entrarem, entra
+  junto um número de sequência do database inteiro.
+
+---
+
+## 11. Como refazer a medição
+
+```bash
+cargo build --release
+python3 bancada/replicacao/montar.py /tmp/phx-replicacao
+python3 bancada/replicacao/medir.py 100000
+```
+
+`montar.py --cascata` põe o Slave03 puxando do Slave01. Detalhes e a última
+corrida em `bancada/replicacao/LEIA-ME.md`.

@@ -90,6 +90,34 @@ Medido numa tabela de 200.000 linhas, pelo protocolo, pedindo 200 linhas:
 A bissecção é **plana** — e os 6 ms dela são decodificar e serializar as 200
 linhas, não achar o começo.
 
+## Replicação: Master e espelhos
+
+A réplica **procura** o master; o master não empurra nada. É o desenho do
+MySQL(R), e existe por causa do firewall: o master abre uma porta de entrada e
+não precisa alcançar ninguém de volta.
+
+```json
+"replicacao": { "papel": "source", "imagem_da_linha": true }
+```
+
+O `.log` sempre foi o binlog; o que faltava era a **imagem da linha** dentro do
+evento — o payload cru do `.reg` mais o *conteúdo* dos anexos, porque os
+ponteiros são offsets desta máquina.
+
+Medido com quatro servidores (`bancada/replicacao/`):
+
+| | |
+|---|---|
+| Master, com a imagem no diário | 18.773 linhas/s |
+| Aplicação, por réplica (as três em paralelo) | 4.273 eventos/s |
+| Atraso de uma escrita até as três | 1,3 s a 2,1 s |
+| Réplica derrubada: voltar a atender e alcançar 4.000 eventos | 343 ms + 1,0 s |
+| Retrato SHA-256 das quatro tabelas, no fim | idênticos |
+
+O `rowid` **não é transmitido**: o `.reg` nunca reaproveita slot, então uma
+réplica que aplicou tudo na ordem chega ao mesmo número sozinha. Se não chegar,
+divergiu — e a replicação para ali em vez de espalhar.
+
 ## Carga em lote
 
 Gravar mil linhas com mil pedidos custa mil aberturas de tabela, mil travas e
@@ -120,8 +148,8 @@ reaproveitamento de espaço perde.
 
 ## Estado atual
 
-O motor de armazenamento está completo e testado: **363 testes** só nele
-(`phxsql-core` 163 + `phxsql-store` 200), **567 no projeto inteiro**, sem
+O motor de armazenamento está completo e testado: **369 testes** só nele
+(`phxsql-core` 163 + `phxsql-store` 206), **573 no projeto inteiro**, sem
 nenhuma dependência externa (só a `std`) — o que faz o projeto compilar
 offline.
 
@@ -130,7 +158,7 @@ offline.
 | `.reg` — heap, CRC por registro, esquema embutido | pronto |
 | `.ndx` — B+tree com divisão de páginas, chave composta, ASC/DESC/NOCASE/único | pronto |
 | `.bin` / `.memo` — blocos com CRC, contabilidade de espaço morto | pronto |
-| `.log` — diário datado de inclusão, alteração e exclusão | pronto |
+| `.log` — diário datado de inclusão, alteração e exclusão, com a imagem da linha para replicar | pronto |
 | Paginação em volumes `_001`, `_002`, … com abertura preguiçosa | pronto |
 | Partição por período — mensal, bimestral, semestral, anual | pronto |
 | Metadados de campo: id estável, caption, descrição e máscara PICTURE | pronto |

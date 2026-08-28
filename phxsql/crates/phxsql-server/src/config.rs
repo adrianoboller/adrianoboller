@@ -64,6 +64,16 @@ pub struct Origem {
     pub databases: Vec<String>,
     /// Segundos entre tentativas quando a conexao cai.
     pub reconectar_em: u64,
+    /// Login com que a replica entra no source.
+    pub usuario: String,
+    /// Hash da senha desse login -- o MESMO texto do cadastro de usuarios.
+    ///
+    /// Dele sai a chave derivada do desafio-resposta, entao a replica se
+    /// autentica sem que exista senha em claro em lugar nenhum.
+    pub senha_hash: String,
+    /// Senha em claro. Existe so para quem ainda nao trocou o `config.json`,
+    /// e o arranque avisa em voz alta.
+    pub senha: String,
 }
 
 #[derive(Debug, Clone)]
@@ -91,6 +101,16 @@ pub struct Replicacao {
     pub replicas_autorizadas: Vec<String>,
     /// Origens de onde puxar (so na replica). Varias = multi-source.
     pub origens: Vec<Origem>,
+    /// Gravar a imagem da linha no `.log`? So com ela da para REPLICAR.
+    ///
+    /// Sem ela o evento diz que o rowid 42 mudou e nao diz para que -- basta
+    /// para auditoria, nao basta para uma replica aplicar. Custa: um registro
+    /// de 200 bytes gasta ~244 bytes de diario por alteracao em vez de 44.
+    ///
+    /// Liga sozinha quando o papel e `source`, que e quando ela e obrigatoria:
+    /// um source sem imagem no diario e um source que nao replica, e descobrir
+    /// isso pela replica parada seria o pior jeito de descobrir.
+    pub imagem_da_linha: bool,
 }
 
 impl Replicacao {
@@ -138,6 +158,7 @@ impl Default for Replicacao {
             id_servidor: String::new(),
             replicas_autorizadas: Vec::new(),
             origens: Vec::new(),
+            imagem_da_linha: false,
         }
     }
 }
@@ -917,10 +938,18 @@ impl Config {
                                 token: o.texto_ou("token", "").to_string(),
                                 databases: o.textos("databases"),
                                 reconectar_em: o.inteiro_ou("reconectar_em", 10).max(1) as u64,
+                                usuario: o.texto_ou("usuario", "").trim().to_string(),
+                                senha_hash: o.texto_ou("senha_hash", "").trim().to_string(),
+                                senha: o.texto_ou("senha", "").to_string(),
                             })
                             .collect()
                     })
                     .unwrap_or_default(),
+                imagem_da_linha: r.booleano_ou(
+                    "imagem_da_linha",
+                    // O padrao segue o papel: source liga, o resto nao.
+                    Papel::de_texto(r.texto_ou("papel", "isolado"))? == Papel::Source,
+                ),
             },
         };
 

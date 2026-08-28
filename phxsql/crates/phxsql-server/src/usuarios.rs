@@ -163,6 +163,11 @@ impl Atividade {
             "excluir_tabela" => Atividade::Administrar,
             "reindexar" => Atividade::Reindexar,
             "diario" => Atividade::Diario,
+            // Aplicar GRAVA na tabela, e grava por fora das conferencias
+            // normais: rowid escolhido do evento, payload cru vindo de fora.
+            // Nao e insercao comum, e por isso pede o poder de administrar e
+            // nao o de inserir.
+            "aplicar" => Atividade::Administrar,
             "verificar" => Atividade::Verificar,
             // As estatisticas resumem o log de acessos, que ja exige
             // administrar: quem ve quanto cada usuario pediu ve o movimento
@@ -175,6 +180,9 @@ impl Atividade {
             "acessos" | "ips" | "config" | "usuarios" | "bloqueios" | "desbloquear" => {
                 Atividade::Administrar
             }
+            // O fluxo de replicacao e o diario com a linha inteira dentro:
+            // permissao propria, para poder dar a uma replica sem dar mais
+            // nada -- e para nao sair de graca junto com `ler`.
             "posicao" | "replicar" => Atividade::Replicar,
             // Operacao desconhecida exige o maior poder: nega por omissao.
             _ => Atividade::Administrar,

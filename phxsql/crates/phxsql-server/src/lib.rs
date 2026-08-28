@@ -13,6 +13,7 @@ pub mod http;
 pub mod juncao;
 pub mod ligacoes;
 pub mod pivot;
+pub mod replica;
 pub mod servidor;
 pub mod sistema;
 pub mod usuarios;
