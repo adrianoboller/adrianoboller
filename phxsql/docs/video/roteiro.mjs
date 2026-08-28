@@ -304,7 +304,7 @@ await cena('painel', async () => {
   await diz('17 · O painel', 'O servidor inteiro numa tela — sete gráficos, numa chamada só.', 3800);
   await p.evaluate(() => montarArvore(true));
   await esperar(3400);
-  await diz('', 'PhxSql 0.15.0 · 42.790 linhas de Rust, zero dependências externas, 573 testes.', 4600);
+  await diz('', 'PhxSql 0.15.0 · 42.790 linhas de Rust, zero dependências externas, 574 testes.', 4600);
   await diz('', 'Built to store. Engineered to scale.', 4400);
   await esperar(1400);
 });
