@@ -39,6 +39,7 @@ macro_rules! diga {
     }};
 }
 
+use phxsql_core::carga;
 use phxsql_core::datahora::{data_iso, hora_iso};
 use phxsql_core::paginacao::Paginacao;
 use phxsql_core::schema::{AcaoRi, Column, ForeignKey, IndexColumn, IndexDef, Schema};
@@ -46,7 +47,7 @@ use phxsql_core::types::ColumnType;
 use phxsql_core::value::Value;
 use phxsql_core::Result;
 use phxsql_store::catalogo::Instancia;
-use phxsql_store::table::Table;
+use phxsql_store::table::{Salto, Table, Visao};
 
 const USO: &str = "\
 phxsql -- motor de dados PhxSql (.reg + .ndx + .bin + .memo + .log)
@@ -56,13 +57,15 @@ USO:
   phxsql info      <dir> <tabela>
   phxsql verificar <dir> <tabela>
   phxsql reindex   <dir> <tabela>
-  phxsql listar    <dir> <tabela> [--indice <nome>] [--max <n>]
+  phxsql listar    <dir> <tabela> [--indice <nome>] [--max <n>] [--pular <n>]
   phxsql log       <dir> <tabela> [--rowid <n>] [--max <n>]
   phxsql bancos    <base>
   phxsql tabelas   <base> <database>
   phxsql backup    <base> <destino> [--zip] [--database <n>] [--admin <n>]
   phxsql conferir-backup <destino>
   phxsql reparar   <dir> <tabela>
+  phxsql importar  <dir> <tabela> <arquivo> [--formato csv|txt|json|xml|html]
+                                            [--seguir] [--conferir]
 ";
 
 fn main() -> ExitCode {
@@ -85,6 +88,7 @@ fn main() -> ExitCode {
         "backup" => exigir(&args, 3).and_then(|_| backup(&args, &args[1], &args[2])),
         "conferir-backup" => exigir(&args, 2).and_then(|_| conferir_backup(&args[1])),
         "reparar" => exigir(&args, 3).and_then(|_| reparar(Path::new(&args[1]), &args[2])),
+        "importar" => exigir(&args, 4).and_then(|_| importar(&args)),
         outro => {
             eprintln!("comando desconhecido: {outro}\n");
             diga!("{USO}");
@@ -478,6 +482,7 @@ fn listar(args: &[String]) -> Result<()> {
     let nome = &args[2];
     let mut indice: Option<String> = None;
     let mut max = 20usize;
+    let mut pular = 0u64;
 
     let mut i = 3;
     while i < args.len() {
@@ -488,6 +493,10 @@ fn listar(args: &[String]) -> Result<()> {
             }
             "--max" if i + 1 < args.len() => {
                 max = args[i + 1].parse().unwrap_or(20);
+                i += 2;
+            }
+            "--pular" if i + 1 < args.len() => {
+                pular = args[i + 1].parse().unwrap_or(0);
                 i += 2;
             }
             outro => {
@@ -507,22 +516,46 @@ fn listar(args: &[String]) -> Result<()> {
         .collect();
     let tipos: Vec<ColumnType> = t.esquema().colunas().iter().map(|c| c.ty).collect();
 
-    let rowids: Vec<u64> = match &indice {
-        Some(nome_idx) => t.varrer_indice(nome_idx)?,
-        None => t.varrer()?.into_iter().map(|(r, _)| r).collect(),
+    // O teto entra na LEITURA, e nao depois dela. Ler a tabela inteira para
+    // mostrar vinte linhas custava a tabela inteira -- numa de 200 mil linhas
+    // com memo, segundos de espera para uma tela que cabe num terminal.
+    let teto = if max == 0 { 0 } else { max as u64 };
+    let (rowids, salto) = match &indice {
+        // Por indice a ordem e a da CHAVE, e nao a do arquivo: ali nao ha
+        // conta que leve a posicao N, e a lista de rowids ja veio inteira.
+        Some(nome_idx) => {
+            let todos = t.varrer_indice(nome_idx)?;
+            let corte: Vec<u64> = todos
+                .into_iter()
+                .skip(pular as usize)
+                .take(if max == 0 { usize::MAX } else { max })
+                .collect();
+            (corte, None)
+        }
+        None => {
+            let (r, como) = t.pagina_por_posicao(pular, teto, Visao::Ativas)?;
+            (r, Some(como))
+        }
     };
 
+    let total = t.contar(Visao::Ativas);
     diga!(
-        "{} linhas, na ordem {}",
+        "{} linha(s) de {total}, na ordem {}{}",
         rowids.len(),
         match &indice {
             Some(n) => format!("do indice {n}"),
             None => "de digitacao (.reg)".to_string(),
+        },
+        match salto {
+            // Vale dizer: e a diferenca entre vinte leituras e `pular` delas.
+            Some(Salto::Bissecao) => ", achada por bisseccao no rownum".to_string(),
+            Some(Salto::Passo) if pular > 0 => format!(", andando {pular} linha(s)"),
+            _ => String::new(),
         }
     );
     diga!("{:>8}  {}", "rowid", colunas.join(" | "));
 
-    for rowid in rowids.iter().take(if max == 0 { usize::MAX } else { max }) {
+    for rowid in &rowids {
         if let Some(linha) = t.ler(*rowid)? {
             let campos: Vec<String> = linha
                 .iter()
@@ -532,10 +565,11 @@ fn listar(args: &[String]) -> Result<()> {
             diga!("{rowid:>8}  {}", campos.join(" | "));
         }
     }
-    if max != 0 && rowids.len() > max {
+    let vistas = pular + rowids.len() as u64;
+    if max != 0 && vistas < total {
         diga!(
-            "... (+{} linhas; use --max 0 para tudo)",
-            rowids.len() - max
+            "... (+{} linha(s); use --pular {vistas} para a proxima pagina, ou --max 0 para tudo)",
+            total - vistas
         );
     }
     Ok(())
@@ -690,4 +724,122 @@ fn reparar(dir: &Path, tabela: &str) -> Result<()> {
     Err(phxsql_core::PhxError::Corrompido(format!(
         "{perdidos} registro(s) sem copia boa"
     )))
+}
+
+/// `phxsql importar <dir> <tabela> <arquivo>` -- carga em lote de um arquivo.
+///
+/// Le pelo MESMO caminho do servidor: `phxsql_core::carga`. Uma segunda
+/// implementacao do leitor aqui divergiria da do servidor no primeiro caso
+/// esquisito -- e caso esquisito e o que carga de arquivo tem de sobra.
+///
+/// `--conferir` le e mostra o que entendeu sem gravar nada. `--seguir` pula a
+/// linha ruim em vez de parar; sem ele, para na primeira -- porque **nao ha
+/// transacao**, e uma carga que para na linha 700 e mais facil de consertar do
+/// que uma que gravou 999 com uma faltando no meio.
+fn importar(args: &[String]) -> Result<()> {
+    let dir = Path::new(&args[1]);
+    let tabela = &args[2];
+    let arquivo = &args[3];
+    let seguir = args.iter().any(|a| a == "--seguir");
+    let so_conferir = args.iter().any(|a| a == "--conferir");
+
+    let texto = std::fs::read_to_string(arquivo)?;
+    let formato = match valor_da_opcao(args, "--formato") {
+        Some(f) => carga::Formato::de_texto(&f)?,
+        None => carga::adivinhar(&texto),
+    };
+    let c = carga::ler(&texto, formato)?;
+
+    let mut t = Table::abrir(dir, tabela)?;
+    let esquema = t.esquema().clone();
+
+    diga!("arquivo .... {arquivo}");
+    diga!(
+        "formato .... {} ({})",
+        formato.nome(),
+        if valor_da_opcao(args, "--formato").is_some() {
+            "escolhido"
+        } else {
+            "adivinhado"
+        }
+    );
+    diga!("colunas .... {}", c.colunas.join(", "));
+    diga!("linhas ..... {}", c.linhas.len());
+
+    let desconhecidas: Vec<&String> = c
+        .colunas
+        .iter()
+        .filter(|n| esquema.coluna_por_nome(n).is_none())
+        .collect();
+    if !desconhecidas.is_empty() {
+        return Err(phxsql_core::PhxError::Esquema(format!(
+            "a tabela {tabela} nao tem a(s) coluna(s): {}",
+            desconhecidas
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )));
+    }
+
+    if so_conferir {
+        diga!();
+        diga!("-- amostra (as 5 primeiras, como o leitor entendeu) --");
+        for (i, l) in c.linhas.iter().take(5).enumerate() {
+            diga!("{:>4}  {}", i + 1, l.join(" | "));
+        }
+        diga!();
+        diga!("nada foi gravado (--conferir)");
+        return Ok(());
+    }
+
+    let inicio = std::time::Instant::now();
+    let mut linhas = Vec::with_capacity(c.linhas.len());
+    let mut recusadas: Vec<(usize, String)> = Vec::new();
+    for i in 0..c.linhas.len() {
+        match carga::linha_de_texto(&c, i, &esquema) {
+            Ok(l) => linhas.push(l),
+            Err(e) => {
+                recusadas.push((i, e.to_string()));
+                if !seguir {
+                    break;
+                }
+            }
+        }
+    }
+    let lote = t.inserir_lote(&linhas, !seguir)?;
+    t.sincronizar()?;
+    for (i, e) in &lote.recusadas {
+        recusadas.push((*i, e.clone()));
+    }
+    let ms = inicio.elapsed().as_millis().max(1);
+
+    diga!();
+    diga!(
+        "gravadas ... {} em {ms} ms ({} linhas/s)",
+        lote.rowids.len(),
+        lote.rowids.len() as u128 * 1000 / ms
+    );
+    if let (Some(a), Some(b)) = (lote.rowids.first(), lote.rowids.last()) {
+        diga!("rowid ...... {a} a {b}");
+    }
+    if !recusadas.is_empty() {
+        diga!("recusadas .. {}", recusadas.len());
+        for (i, e) in recusadas.iter().take(20) {
+            diga!("  linha {:>5}: {e}", i + 1);
+        }
+        // Sem transacao, o que entrou antes do erro FICOU. Dizer aqui e melhor
+        // que quem rodou descobrir contando as linhas depois.
+        diga!();
+        diga!("ATENCAO: nao ha transacao -- as linhas gravadas antes do erro ficaram gravadas.");
+    }
+    Ok(())
+}
+
+/// O valor de uma opcao `--nome valor` na linha de comando.
+fn valor_da_opcao(args: &[String], nome: &str) -> Option<String> {
+    args.iter()
+        .position(|a| a == nome)
+        .and_then(|i| args.get(i + 1))
+        .cloned()
 }

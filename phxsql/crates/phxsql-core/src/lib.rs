@@ -16,6 +16,7 @@
 //! Os quatro juntos formam a tabela de dados `cadastroClientes`.
 
 pub mod base64;
+pub mod carga;
 pub mod crc;
 pub mod datahora;
 pub mod desafio;

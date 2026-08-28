@@ -632,7 +632,16 @@ tr.linha-excluida td{opacity:.55;text-decoration:line-through}
 .chip-visao button{padding:3px 10px;font-size:11px;background:transparent;
                    border:0;color:var(--texto-3);cursor:pointer;font:inherit;width:auto}
 .chip-visao button.ativo{background:var(--laranja);color:#10060a}
-.paginar{display:inline-flex;gap:6px;margin-left:8px}
+textarea.campo.mono{font-family:"IBM Plex Mono",monospace;font-size:12px;line-height:1.5}
+label.cmp.largo{grid-column:1/-1}
+.paginar{display:inline-flex;gap:6px;margin-left:8px;align-items:center}
+/* A caixa de ir para a pagina: larga o bastante para cinco digitos, porque
+   uma tabela com mais de dez mil paginas e exatamente o caso em que ela
+   serve. `tabular-nums` para o numero nao dancar enquanto se digita. */
+.campo-pagina{width:5.5em;padding:3px 6px;border:1px solid var(--linha);
+  border-radius:6px;background:var(--painel-2);color:var(--texto);
+  font:inherit;font-size:12px;text-align:right;font-variant-numeric:tabular-nums}
+.campo-pagina:disabled{opacity:.35}
 .paginar .botao.mini:disabled{opacity:.35;cursor:default;border-color:var(--linha)}
 .paginar .botao.mini:disabled:hover{border-color:var(--linha);color:var(--texto-3)}
 td.ordem{color:var(--texto-3);font-size:11px}
@@ -1361,7 +1370,7 @@ async function vConteudo(database, tabela_) {
       <select id="ord">${opcoes.join("")}</select>
       <label for="teto">Trazer</label>
       <select id="teto">${tetos.join("")}</select>
-      <span class="conta">${fmt(r.devolvidas)} de ${fmt(r.registros)} linhas · ${esc(r.ordem)}</span>
+      <span class="conta">${fmt(r.devolvidas)} de ${fmt(r.visiveis ?? r.registros)} linhas · ${esc(r.ordem)}</span>
       <span class="dica">Arraste um cabeçalho para a faixa de cima para agrupar.</span>
     </div>
     <div id="grade"></div>`;
@@ -1940,11 +1949,29 @@ async function verDatabase(db) {
  * O segundo existe porque marcar sem ter como desmarcar seria so uma forma
  * elaborada de perder o dado.
  *
- * E pagina por CURSOR, nao por posicao: `cursor` leva o rowid onde a pagina
- * anterior parou. A diferenca nao e de estilo -- pular ate a posicao um milhao
- * custa um milhao de passos, e continuar depois do rowid um milhao custa uma
- * conta. Na medicao com 800 mil linhas, a pagina do meio saiu de 1.420 ms para
- * tempo nao medivel. */
+ * Anda por CURSOR e SALTA por posicao, que sao coisas diferentes e as duas
+ * baratas:
+ *
+ * - anterior/proxima mandam `antes`/`depois` com o rowid onde a pagina parou.
+ *   Continuar depois do rowid um milhao e uma conta, nao uma procura.
+ * - «ir para a pagina N» manda `pular`, e o servidor bisseta pelo `rownum` --
+ *   164 us contra 246 ms de andar ate la, medido com 800 mil linhas.
+ *
+ * O numero da pagina e o total so aparecem porque agora sao baratos: o
+ * servidor devolve `visiveis` a partir de dois contadores do cabecalho, sem
+ * varrer. Era por nao existir esse numero que a grade nao dizia «de quantas». */
+/* Como a página foi buscada, em português e com o porquê no `title`. O
+   protocolo fala sem acento de propósito -- é chave de JSON --, e a tela é
+   quem traduz. */
+const NOME_DO_MODO = { cursor:"cursor", bisseccao:"bissecção", passo:"passo a passo",
+                       posicao:"posição", rownum:"nº de ordem", indice:"índice" };
+const COMO_PAGINOU = {
+  cursor:"continuou do rowid onde a página anterior parou: o custo é o da página, não o da tabela",
+  bisseccao:"a posição é o nº de ordem, então o início da página saiu de uma busca binária: ~20 leituras",
+  passo:"a tabela tem linha excluída, ou é particionada por letra: aqui a posição não é o nº de ordem, e o motor anda até ela",
+  rownum:"a página começou no nº de ordem pedido",
+};
+
 async function verConteudoEditavel(db, tab, verExcluidos = false, cursor = null) {
   est.atual = { db, tab };
   folha(`${tab}`, `${db} · clique numa linha para editar`,
@@ -1957,6 +1984,7 @@ async function verConteudoEditavel(db, tab, verExcluidos = false, cursor = null)
                    visao: verExcluidos ? "excluidas" : "ativas" };
   if (cursor && cursor.antes !== undefined) pedido.antes = cursor.antes;
   else if (cursor && cursor.depois !== undefined) pedido.depois = cursor.depois;
+  else if (cursor && cursor.pular) pedido.pular = cursor.pular;
 
   const [e, r] = await Promise.all([
     api("esquema", { database: db, tabela: tab }),
@@ -1971,6 +1999,13 @@ async function verConteudoEditavel(db, tab, verExcluidos = false, cursor = null)
   const cols = e.colunas.filter(c => !c.sistema).map(c => c.nome);
   const temRownum = e.colunas.some(c => c.nome === "rownum");
 
+  // Quantas páginas, e em qual estamos. O total é exato porque `visiveis` é
+  // exato; o número da página é CONTADO pela navegação (uma a mais quando
+  // avança, uma a menos quando volta) porque o cursor não sabe a posição
+  // dele -- e não saber é justamente o que faz ele ser barato.
+  const paginas = Math.max(1, Math.ceil((r.visiveis ?? r.registros) / est.teto));
+  const pagina = Math.min(paginas, Math.max(1, (cursor && cursor.pagina) || 1));
+
   const barra = `<div class="acoes">
       <button class="botao" id="btNova">Nova linha</button>
       <button class="botao secundario" id="btVoltarDb">← ${esc(db)}</button>
@@ -1982,9 +2017,14 @@ async function verConteudoEditavel(db, tab, verExcluidos = false, cursor = null)
         <button class="botao mini" id="pgInicio" ${r.ha_antes ? "" : "disabled"}>⏮ início</button>
         <button class="botao mini" id="pgAntes" ${r.ha_antes ? "" : "disabled"}>← anterior</button>
         <button class="botao mini" id="pgDepois" ${r.ha_mais ? "" : "disabled"}>próxima →</button>
+        <button class="botao mini" id="pgFim" ${paginas > 1 ? "" : "disabled"}>fim ⏭</button>
+        <input id="pgIr" class="campo-pagina" type="number" min="1" max="${paginas}"
+               value="${pagina}" title="ir para a página" ${paginas > 1 ? "" : "disabled"}>
+        <span class="leg">de ${fmt(paginas)}</span>
       </span>
-      <span class="leg">${fmt(r.devolvidas)} de ${fmt(r.registros)} · página por
-        <b>${esc(r.modo)}</b></span>
+      <span class="leg" title="${esc(COMO_PAGINOU[r.salto || r.modo] || "")}">${
+        fmt(r.devolvidas)} de ${fmt(r.visiveis ?? r.registros)} ·
+        <b>${esc(NOME_DO_MODO[r.salto || r.modo] || r.modo)}</b></span>
     </div>`;
 
   const vazio = verExcluidos
@@ -2010,9 +2050,21 @@ async function verConteudoEditavel(db, tab, verExcluidos = false, cursor = null)
   $("#vwExcl").onclick = () => verConteudoEditavel(db, tab, true);
   $("#pgInicio").onclick = () => verConteudoEditavel(db, tab, verExcluidos, null);
   $("#pgAntes").onclick = () =>
-    verConteudoEditavel(db, tab, verExcluidos, { antes: r.cursor_inicio });
+    verConteudoEditavel(db, tab, verExcluidos,
+                        { antes: r.cursor_inicio, pagina: pagina - 1 });
   $("#pgDepois").onclick = () =>
-    verConteudoEditavel(db, tab, verExcluidos, { depois: r.cursor_fim });
+    verConteudoEditavel(db, tab, verExcluidos,
+                        { depois: r.cursor_fim, pagina: pagina + 1 });
+  // O salto: manda a POSIÇÃO, e o servidor bisseta pelo rownum quando pode.
+  const irPara = n => {
+    const alvo = Math.min(paginas, Math.max(1, Math.round(n) || 1));
+    if (alvo === 1) return verConteudoEditavel(db, tab, verExcluidos, null);
+    verConteudoEditavel(db, tab, verExcluidos,
+                        { pular: (alvo - 1) * est.teto, pagina: alvo });
+  };
+  $("#pgFim").onclick = () => irPara(paginas);
+  $("#pgIr").onchange = ev => irPara(+ev.target.value);
+  $("#pgIr").onkeydown = ev => { if (ev.key === "Enter") irPara(+ev.target.value); };
   $$("#painel .linha-dado").forEach(tr =>
     tr.onclick = ev => {
       // O clique no botao de restaurar nao pode abrir a ficha junto.
@@ -2311,6 +2363,9 @@ async function gerirTabela(db, tab) {
     ["nova", "✚", "Nova tabela neste database",
      "Colunas, índices e paginação. A paginação entra aqui e não muda depois.",
      () => telaNovaTabela(db)],
+    ["importar", "⭱", "Importar uma carga",
+     "Cole CSV, TXT, JSON, XML ou HTML e grave de uma vez. Confere antes.",
+     () => telaImportar(db, tab)],
     ["lixeira", "♲", "Lixeira da tabela",
      "As linhas que saíram do .reg, inteiras e com os anexos. Só administrador.",
      () => telaLixeira(db, tab)],
@@ -4582,6 +4637,128 @@ async function telaExportar(db, tab) {
   });
 }
 
+/* ============================================== Importar: colar uma carga
+   O caminho de volta do Exportar. Os cinco formatos de TEXTO voltam; o XLSX e
+   o DOCX não — ler ZIP de XML é outro trabalho, e quem tem planilha salva como
+   CSV em dois cliques.
+
+   A tela adivinha o formato pelo primeiro caractere, e mostra o que entendeu
+   ANTES de gravar. Uma carga que entra errada é pior que uma que não entra:
+   dar para conferir a prévia é metade da funcionalidade. */
+
+const FORMATOS_ENTRADA = [
+  ["auto", "adivinhar", "pelo primeiro caractere do que foi colado"],
+  ["csv",  "CSV",  "separado por ; ou , — com aspas quando o campo tem separador dentro"],
+  ["txt",  "TXT",  "separado por tabulação"],
+  ["json", "JSON", "lista de objetos, ou o que o Exportar escreve"],
+  ["xml",  "XML",  "elementos repetidos com campos simples dentro"],
+  ["html", "HTML", "a primeira <table> do documento"],
+];
+
+async function telaImportar(db, tab) {
+  db = db || (est.atual || {}).db || databaseCorrente();
+  tab = tab || (est.atual || {}).tab;
+  if (!db || !tab) return avisar("escolha uma tabela primeiro", true);
+
+  folha(`Importar para ${tab}`, `${esc(db)} · cole a carga e confira antes de gravar`,
+    `<div class="form-dbl">
+       <label class="cmp"><span>Formato</span>
+         <select id="impFmt" class="campo">${FORMATOS_ENTRADA.map(([k, r, d]) =>
+           `<option value="${k}">${esc(r)} — ${esc(d)}</option>`).join("")}</select></label>
+       <label class="cmp"><span>Ao encontrar erro</span>
+         <select id="impErro" class="campo">
+           <option value="parar">parar na primeira linha ruim</option>
+           <option value="seguir">pular a linha ruim e seguir</option>
+         </select>
+         <span class="leg"><b>Não há transação.</b> O que entrou antes do erro
+           fica gravado — não há como desfazer, porque o <code>.reg</code> não
+           reaproveita slot e desfazer deixaria buracos.</span></label>
+     </div>
+     <label class="cmp largo"><span>A carga</span>
+       <textarea id="impTexto" rows="12" class="campo mono"
+         placeholder="id;nome;cidade&#10;1;Adriano;Blumenau&#10;2;Maria;Itajaí"></textarea>
+       <span class="leg">A primeira linha é o <b>cabeçalho</b>, e os nomes são
+         casados com as colunas da tabela <b>por nome</b> — não por posição.
+         Coluna que a tabela não tem é erro; coluna que falta fica nula.</span></label>
+     <div class="acoes">
+       <button class="botao secundario" id="btPrever">Conferir</button>
+       <button class="botao" id="btImportar" disabled>Gravar</button>
+       <button class="botao secundario" id="btVoltaImp">← Gerir tabelas</button>
+     </div>
+     <div id="impSaida"></div>`);
+
+  $("#btVoltaImp").onclick = () => gerirTabelasAtual();
+
+  const previa = () => {
+    const texto = $("#impTexto").value;
+    if (!texto.trim()) { avisar("cole a carga primeiro", true); return null; }
+    return texto;
+  };
+
+  $("#btPrever").onclick = async () => {
+    const texto = previa();
+    if (texto === null) return;
+    // A prévia é lida NO NAVEGADOR pelo mesmo caminho do servidor? Não —
+    // seria uma segunda implementação, e as duas divergiriam. Manda para o
+    // servidor com `conferir`, que lê e devolve sem gravar nada.
+    $("#impSaida").innerHTML = `<div class="centro">lendo…</div>`;
+    try {
+      const r = await api("importar_conferir", {
+        database: db, tabela: tab, texto,
+        formato: $("#impFmt").value,
+      });
+      const cols = r.colunas || [];
+      $("#impSaida").innerHTML =
+        `<div class="aviso">Entendi como <b>${esc(r.formato)}</b>:
+           ${fmt(r.linhas_lidas)} linha(s), ${cols.length} coluna(s).
+           ${r.desconhecidas && r.desconhecidas.length
+             ? `<b class="marca-excluida">Colunas que a tabela não tem:
+                 ${r.desconhecidas.map(esc).join(", ")}</b>`
+             : ""}
+           ${r.faltando && r.faltando.length
+             ? `<span class="leg">Ficam nulas: ${r.faltando.map(esc).join(", ")}</span>`
+             : ""}</div>
+         ${r.amostra && r.amostra.length
+           ? tabela(cols.map(c => ({ t: c })), r.amostra,
+               l => `<tr>${l.map(v => celulaValor(v)).join("")}</tr>`)
+           : `<div class="vazio">nenhuma linha</div>`}
+         <p class="leg">Amostra das primeiras ${r.amostra ? r.amostra.length : 0} linhas,
+           como o leitor entendeu — <b>antes</b> de converter para o tipo de cada coluna.</p>`;
+      $("#btImportar").disabled = !!(r.desconhecidas && r.desconhecidas.length) || !r.linhas_lidas;
+    } catch (e) {
+      $("#impSaida").innerHTML = `<div class="aviso mal">${esc(String(e))}</div>`;
+      $("#btImportar").disabled = true;
+    }
+  };
+
+  $("#btImportar").onclick = async () => {
+    const texto = previa();
+    if (texto === null) return;
+    $("#impSaida").innerHTML = `<div class="centro">gravando…</div>`;
+    try {
+      const r = await api("inserir_lote", {
+        database: db, tabela: tab, texto,
+        formato: $("#impFmt").value,
+        parar_no_erro: $("#impErro").value === "parar",
+      });
+      $("#impSaida").innerHTML =
+        `<div class="aviso ${r.recusadas ? "mal" : ""}">
+           <b>${fmt(r.gravadas)}</b> de ${fmt(r.recebidas)} linha(s) gravadas em
+           ${r.ms} ms${r.por_segundo ? ` — ${fmt(r.por_segundo)} linhas/s` : ""}.
+           ${r.gravadas ? `rowid ${r.primeiro_rowid} a ${r.ultimo_rowid}.` : ""}
+           ${r.aviso ? `<br><b>${esc(r.aviso)}</b>` : ""}</div>
+         ${(r.erros || []).length
+           ? tabela([{t:"linha da carga",cls:"num"},{t:"por quê"}], r.erros,
+               e => `<tr><td class="num">${e.linha}</td><td>${esc(e.erro)}</td></tr>`)
+           : ""}`;
+      if (r.gravadas) avisar(`${fmt(r.gravadas)} linha(s) gravadas em ${tab}`);
+      $("#btImportar").disabled = true;
+    } catch (e) {
+      $("#impSaida").innerHTML = `<div class="aviso mal">${esc(String(e))}</div>`;
+    }
+  };
+}
+
 /* ================================================= Exclusão: as duas formas
    O botão de excluir passou a perguntar DUAS coisas, e por isso deixou de ser
    um `confirm()`: qual das duas exclusões, e por quê.
@@ -5847,9 +6024,7 @@ const FERRAMENTAS = [
   { ico:"troca",    rot:"Transações", cor:"var(--log)",    faz:verTransacoes },
   { ico:"lixeira",  rot:"Lixeira",    cor:"var(--log)",    faz:() => telaLixeira() },
   { ico:"exportar", rot:"Exportar",   cor:"var(--ok)",     faz:() => telaExportar() },
-  { ico:"importar", rot:"Importar",   cor:"var(--bin)",    faz:null,
-    falta:"Ler CSV, .tps do TopSpeed(R) ou outra base e gravar como tabela "
-        + "PhxSql. Depende de decidir os formatos de entrada." },
+  { ico:"importar", rot:"Importar",   cor:"var(--bin)",    faz:() => telaImportar() },
   { ico:"reparo",   rot:"Repair",     cor:"var(--ambar)",  faz:repararPeloMenu },
   { ico:"cofre",    rot:"Backup",     cor:"var(--ok)",     faz:backupAgora },
   "risco",
@@ -6112,6 +6287,7 @@ const MENUS = [
     { rot:"Verificar",            ico:"✓", quando:comTabela, faz:verificarTabela },
     { rot:"Soma de verificação",  ico:"⑈", quando:comTabela, faz:() => checksumTabela() },
     { rot:"Exportar…",            ico:"⭳", quando:comTabela, faz:() => telaExportar() },
+    { rot:"Importar carga…",      ico:"⭱", quando:comTabela, faz:() => telaImportar() },
     { rot:"Reparar índice…",      ico:"↻", quando:comTabela, faz:reindexarTabela },
     { rot:"Reparar tabela pelo espelho…", ico:"⛨", quando:comTabela, faz:repararTabela },
     "sep",

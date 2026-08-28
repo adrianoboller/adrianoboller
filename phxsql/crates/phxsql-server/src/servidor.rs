@@ -60,6 +60,7 @@ const OPS_ESCRITA: &[&str] = &[
     "duplicar_tabela",
     "copiar_tabela",
     "ajustar_sequencia",
+    "inserir_lote",
     // Marcar, desmarcar e esvaziar mexem em dado gravado. Listar a lixeira e
     // os motivos, nao -- essas duas so leem, e continuam valendo no modo
     // somente leitura, que e justamente quando alguem esta investigando.
@@ -1565,6 +1566,8 @@ impl Servidor {
             "varrer" => self.op_varrer(p, sessao),
             "buscar" => self.op_buscar(p, sessao),
             "inserir" => self.op_inserir(p, sessao),
+            "inserir_lote" | "importar" | "carga" => self.op_inserir_lote(p, sessao),
+            "importar_conferir" => self.op_importar_conferir(p, sessao),
             "atualizar" => self.op_atualizar(p, sessao),
             "excluir" => self.op_excluir(p, sessao),
             "restaurar" => self.op_restaurar(p, sessao),
@@ -2722,16 +2725,18 @@ impl Servidor {
             }
         };
 
-        // Tres modos, e o padrao mudou de lado.
+        // Quatro modos.
         //
         // `depois` / `antes` sao o CURSOR: a pagina custa o tamanho dela, e
-        // nao o tamanho da tabela. `pular` continua existindo para tela
-        // pequena e para quem ja escreveu cliente com ele, mas e o modo de
-        // compatibilidade -- ele anda ate a posicao, e andar ate a posicao um
-        // milhao custa um milhao de passos.
+        // nao o tamanho da tabela. `desde_rownum` e o cursor de quem guardou o
+        // numero de ordem em vez do rowid. E `pular` e a POSICAO -- o `OFFSET`
+        // do SQL, que deixou de andar ate la sempre: quando a posicao e o
+        // rownum, ele bisseta. A resposta diz qual dos dois pagou.
         let depois = p.inteiro_ou("depois", -1);
         let antes = p.inteiro_ou("antes", -1);
+        let desde_rownum = p.inteiro_ou("desde_rownum", -1);
         let pular = p.inteiro_ou("pular", 0).max(0) as u64;
+        let mut salto = None;
 
         let por_indice = !indice.is_empty();
         let (rowids, modo) = if por_indice {
@@ -2751,8 +2756,15 @@ impl Servidor {
             (t.pagina_antes_de(antes as u64, max, visao)?, "cursor")
         } else if depois >= 0 {
             (t.pagina_depois_de(depois as u64, max, visao)?, "cursor")
+        } else if desde_rownum >= 0 {
+            (
+                t.pagina_desde_rownum(desde_rownum as u64, max, visao)?,
+                "rownum",
+            )
         } else {
-            (t.pagina(pular, max, visao)?, "posicao")
+            let (rowids, como) = t.pagina_por_posicao(pular, max, visao)?;
+            salto = Some(como);
+            (rowids, "posicao")
         };
 
         let mut linhas = Vec::with_capacity(rowids.len());
@@ -2771,6 +2783,8 @@ impl Servidor {
         // para poder deixar de ser um, se um dia a ordem mudar.
         let primeiro = rowids.first().copied().unwrap_or(0);
         let ultimo = rowids.last().copied().unwrap_or(0);
+        let rownum_inicio = t.rownum_de(primeiro)?;
+        let rownum_fim = t.rownum_de(ultimo)?;
         // "Tem mais" sem contar a tabela: pede UM alem do teto. Uma leitura a
         // mais por pagina, contra uma varredura inteira so para mostrar
         // "pagina 3 de 40" -- que numa tabela grande e o item mais caro da
@@ -2783,10 +2797,29 @@ impl Servidor {
             // varredura. `total` era a contagem da varredura inteira, e por
             // isso deixou de existir aqui.
             ("registros", Json::de_u64(t.registros())),
+            // Quantas linhas ESTA visao enxerga -- e a conta de «pagina 3 de
+            // 40». Sai de dois contadores do cabecalho, sem varrer nada; era
+            // por nao existir que a contagem tinha sido tirada da resposta.
+            ("visiveis", Json::de_u64(t.contar(visao))),
+            ("marcadas", Json::de_u64(t.marcadas())),
             ("devolvidas", Json::de_u64(linhas.len() as u64)),
             ("modo", Json::texto_de(modo)),
+            // Como o inicio da pagina foi achado, quando o modo e por posicao.
+            // «bisseccao» sao ~20 leituras; «passo» sao `pular` leituras.
+            (
+                "salto",
+                match salto {
+                    Some(s) => Json::texto_de(s.nome()),
+                    None => Json::Nulo,
+                },
+            ),
             ("cursor_inicio", Json::de_u64(primeiro)),
             ("cursor_fim", Json::de_u64(ultimo)),
+            // O numero de ordem da primeira e da ultima linha da pagina: e o
+            // cursor de quem pagina por `desde_rownum`, e o que a caixa «ir
+            // para a linha N» devolve para a tela se localizar.
+            ("rownum_inicio", Json::de_u64(rownum_inicio)),
+            ("rownum_fim", Json::de_u64(rownum_fim)),
             ("ha_mais", Json::Bool(ha_mais)),
             ("ha_antes", Json::Bool(ha_antes)),
             (
@@ -2853,6 +2886,250 @@ impl Servidor {
             ("rowid", Json::de_u64(rowid)),
             ("registros", Json::de_u64(t.registros())),
         ]))
+    }
+
+    /// `inserir_lote`: muitas linhas de uma vez, ou uma carga colada.
+    ///
+    /// # De onde vem o ganho
+    ///
+    /// Nao e do disco. Cada linha custa o mesmo la dentro -- montar o payload,
+    /// conferir a unicidade, gravar o slot, manter cada indice. O ganho e de
+    /// tudo que acontecia POR LINHA e passa a acontecer uma vez: abrir a
+    /// tabela (sete arquivos), tomar a trava, e o `fsync`.
+    ///
+    /// Vinte mil insercoes pela rede eram vinte mil aberturas de tabela.
+    ///
+    /// # Duas formas de mandar
+    ///
+    /// `"linhas"` com uma lista de objetos, ou `"texto"` com uma carga colada
+    /// mais `"formato"` -- json, csv, txt, html ou xml. Sem formato, ele e
+    /// adivinhado pelo primeiro caractere.
+    fn op_inserir_lote(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let parar = p.booleano_ou("parar_no_erro", true);
+
+        // A carga colada vira lista de objetos ANTES de a trava ser tomada:
+        // analisar texto com a trava de dados na mao seguraria todo mundo por
+        // causa de um CSV malformado.
+        // Duas origens: uma carga COLADA (texto num dos cinco formatos) ou uma
+        // lista de objetos JSON ja tipada. A colada e lida antes de a trava
+        // ser tomada -- analisar um CSV malformado com a trava de dados na mao
+        // seguraria todo mundo.
+        let colada = match p.campo("texto").and_then(Json::texto) {
+            Some(texto) => {
+                let f = match p.texto_ou("formato", "").trim() {
+                    "" | "auto" => phxsql_core::carga::adivinhar(texto),
+                    outro => phxsql_core::carga::Formato::de_texto(outro)?,
+                };
+                Some((phxsql_core::carga::ler(texto, f)?, f.nome().to_string()))
+            }
+            None => None,
+        };
+        let itens: Vec<Json> = match &colada {
+            Some(_) => Vec::new(),
+            None => p
+                .campo("linhas")
+                .or_else(|| p.campo("valores"))
+                .and_then(Json::lista)
+                .map(|l| l.to_vec())
+                .ok_or_else(|| {
+                    PhxError::Esquema(
+                        "informe \"linhas\" com a lista, ou \"texto\" com a carga colada".into(),
+                    )
+                })?,
+        };
+        let formato = match &colada {
+            Some((_, f)) => f.clone(),
+            None => "lista".to_string(),
+        };
+        let recebidas = match &colada {
+            Some((c, _)) => c.linhas.len(),
+            None => itens.len(),
+        };
+        if recebidas == 0 {
+            return Err(PhxError::Esquema("a carga nao tem nenhuma linha".into()));
+        }
+
+        let inicio = Instant::now();
+        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let mut t = self.abrir_travada(&_trava, p, sessao)?;
+
+        // A conversao acontece aqui, com o esquema na mao. Uma linha que nao
+        // converte entra na lista de recusadas em vez de derrubar a carga
+        // inteira -- a menos que `parar_no_erro` mande parar.
+        let mut linhas: Vec<Vec<phxsql_core::value::Value>> = Vec::with_capacity(recebidas);
+        let mut recusadas: Vec<(usize, String)> = Vec::new();
+        for i in 0..recebidas {
+            let convertida = match (&colada, itens.get(i)) {
+                (Some((c, _)), _) => phxsql_core::carga::linha_de_texto(c, i, t.esquema()),
+                (None, Some(item)) => json_para_linha(item, t.esquema()),
+                (None, None) => break,
+            };
+            match convertida {
+                Ok(l) => linhas.push(l),
+                Err(e) => {
+                    recusadas.push((i, e.to_string()));
+                    if parar {
+                        return Ok(Self::resposta_do_lote(
+                            p,
+                            &formato,
+                            recebidas,
+                            &[],
+                            &recusadas,
+                            inicio,
+                        ));
+                    }
+                }
+            }
+        }
+
+        let lote = t.inserir_lote(&linhas, parar)?;
+        // Uma carga inteira e um `sincronizar`, e nao um por linha.
+        t.sincronizar()?;
+        for (i, e) in &lote.recusadas {
+            recusadas.push((*i, e.clone()));
+        }
+        // A copia em RAM acompanha dentro da mesma trava.
+        for (rowid, linha) in lote.rowids.iter().zip(linhas.iter()) {
+            let (r, l) = (*rowid, linha.clone());
+            self.residente_mut(p, move |m| m.anotar_insercao(r, &l));
+        }
+        Ok(Self::resposta_do_lote(
+            p,
+            &formato,
+            recebidas,
+            &lote.rowids,
+            &recusadas,
+            inicio,
+        ))
+    }
+
+    /// `importar_conferir`: le a carga e devolve o que entendeu, SEM gravar.
+    ///
+    /// Existe porque uma carga que entra errada e pior que uma que nao entra.
+    /// A tela mostra a amostra e as colunas casadas antes de o botao de gravar
+    /// ficar disponivel.
+    ///
+    /// Le pelo MESMO caminho da gravacao. Uma previa escrita no navegador
+    /// seria uma segunda implementacao do leitor, e as duas divergiriam no
+    /// primeiro caso esquisito -- que e justamente onde a previa serve.
+    fn op_importar_conferir(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let texto = p
+            .campo("texto")
+            .and_then(Json::texto)
+            .ok_or_else(|| PhxError::Esquema("informe \"texto\" com a carga".into()))?;
+        let f = match p.texto_ou("formato", "").trim() {
+            "" | "auto" => phxsql_core::carga::adivinhar(texto),
+            outro => phxsql_core::carga::Formato::de_texto(outro)?,
+        };
+        let carga = phxsql_core::carga::ler(texto, f)?;
+
+        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let t = self.abrir_travada(&_trava, p, sessao)?;
+        let e = t.esquema();
+
+        // As duas listas que decidem se a carga serve: o que a tabela nao tem
+        // (erro) e o que a carga nao traz (fica nulo).
+        let desconhecidas: Vec<Json> = carga
+            .colunas
+            .iter()
+            .filter(|c| e.coluna_por_nome(c).is_none())
+            .map(Json::texto_de)
+            .collect();
+        let faltando: Vec<Json> = e
+            .colunas()
+            .iter()
+            .filter(|c| {
+                !phxsql_core::schema::e_coluna_de_sistema(&c.nome)
+                    && !carga.colunas.contains(&c.nome)
+            })
+            .map(|c| Json::texto_de(&c.nome))
+            .collect();
+
+        const AMOSTRA: usize = 20;
+        let amostra: Vec<Json> = carga
+            .linhas
+            .iter()
+            .take(AMOSTRA)
+            .map(|l| Json::Lista(l.iter().map(Json::texto_de).collect()))
+            .collect();
+
+        Ok(Json::objeto(vec![
+            ("database", Json::texto_de(p.texto_ou("database", ""))),
+            ("tabela", Json::texto_de(p.texto_ou("tabela", ""))),
+            ("formato", Json::texto_de(f.nome())),
+            ("linhas_lidas", Json::de_u64(carga.linhas.len() as u64)),
+            (
+                "colunas",
+                Json::Lista(carga.colunas.iter().map(Json::texto_de).collect()),
+            ),
+            ("desconhecidas", Json::Lista(desconhecidas)),
+            ("faltando", Json::Lista(faltando)),
+            ("amostra", Json::Lista(amostra)),
+        ]))
+    }
+
+    fn resposta_do_lote(
+        p: &Json,
+        formato: &str,
+        recebidas: usize,
+        rowids: &[u64],
+        recusadas: &[(usize, String)],
+        inicio: Instant,
+    ) -> Json {
+        let ms = inicio.elapsed().as_millis() as u64;
+        Json::objeto(vec![
+            ("database", Json::texto_de(p.texto_ou("database", ""))),
+            ("tabela", Json::texto_de(p.texto_ou("tabela", ""))),
+            ("formato", Json::texto_de(formato)),
+            ("recebidas", Json::de_u64(recebidas as u64)),
+            ("gravadas", Json::de_u64(rowids.len() as u64)),
+            ("recusadas", Json::de_u64(recusadas.len() as u64)),
+            (
+                "primeiro_rowid",
+                Json::de_u64(rowids.first().copied().unwrap_or(0)),
+            ),
+            (
+                "ultimo_rowid",
+                Json::de_u64(rowids.last().copied().unwrap_or(0)),
+            ),
+            ("ms", Json::de_u64(ms)),
+            (
+                "por_segundo",
+                Json::de_u64(if ms == 0 {
+                    0
+                } else {
+                    (rowids.len() as u64) * 1000 / ms
+                }),
+            ),
+            // A POSICAO na carga, e nao o rowid: a linha recusada nao tem
+            // rowid, e quem mandou precisa achar a linha no arquivo dele.
+            (
+                "erros",
+                Json::Lista(
+                    recusadas
+                        .iter()
+                        .take(50)
+                        .map(|(i, e)| {
+                            Json::objeto(vec![
+                                ("linha", Json::de_u64(*i as u64 + 1)),
+                                ("erro", Json::texto_de(e)),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ),
+            // Sem transacao, uma carga que para no meio DEIXA gravado o que ja
+            // entrou. Dizer isso na resposta e melhor que quem chamou
+            // descobrir contando as linhas depois.
+            (
+                "aviso",
+                Json::texto_de(if recusadas.is_empty() {
+                    ""
+                } else {
+                    "nao ha transacao: as linhas gravadas antes do erro ficaram gravadas"
+                }),
+            ),
+        ])
     }
 
     fn op_atualizar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
@@ -5380,6 +5657,8 @@ mod testes_politica {
             // lixeira inteira: os dois gravam.
             "restaurar",
             "esvaziar_lixeira",
+            // Carga em lote grava, e grava muito.
+            "inserir_lote",
         ] {
             assert!(
                 OPS_ESCRITA.contains(&op),
@@ -5421,6 +5700,9 @@ mod testes_politica {
             // quer poder fazer num espelho somente-leitura, investigando.
             "lixeira",
             "motivos",
+            // Conferir a carga nao grava nada -- e justamente o que se quer
+            // poder fazer antes de decidir gravar.
+            "importar_conferir",
             "dblink",
             "dblink_testar",
             "dblink_tabelas",

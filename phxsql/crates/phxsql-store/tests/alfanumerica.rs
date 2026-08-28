@@ -17,7 +17,7 @@ use phxsql_core::paginacao::{balde_de, Paginacao, BALDES, BALDE_OUTROS};
 use phxsql_core::schema::{Column, IndexColumn, IndexDef, Schema};
 use phxsql_core::types::ColumnType;
 use phxsql_core::value::Value;
-use phxsql_store::table::{Table, Visao};
+use phxsql_store::table::{Salto, Table, Visao};
 
 const NOME: usize = 1;
 
@@ -380,4 +380,75 @@ fn tabela_com_nome_de_balde_nao_e_confundida() {
 
     let tabelas = db.tabelas(None).unwrap();
     assert_eq!(tabelas, vec!["dados_X"], "a tabela virou balde de `dados`");
+}
+
+/// A bissecção pelo `rownum` NÃO vale aqui, e o motor tem de saber disso.
+///
+/// A armadilha: `rowid = (balde-1) × registros_por_arquivo + slot`. A Silva
+/// digitada primeiro mora no `_S`, com rowid alto; a Alves digitada depois
+/// mora no `_A`, com rowid 1. O `rownum` 1 está num rowid MAIOR que o do
+/// `rownum` 2 — a sequência não está ordenada, e bissetar devolveria a linha
+/// errada em silêncio.
+#[test]
+fn achar_pelo_numero_de_ordem_continua_certo_com_baldes() {
+    let dir = DirTemp::novo("ordem-balde");
+    let mut t = Table::criar(&dir.0, esquema(100)).unwrap();
+
+    // Digitados de trás para frente no alfabeto, de propósito.
+    let nomes = ["Zeca", "Silva", "Mendes", "Alves", "Bruno", "Otto", "Ana"];
+    for (i, n) in nomes.iter().enumerate() {
+        t.inserir(&linha(i as i64 + 1, n)).unwrap();
+    }
+
+    // O rowid NÃO cresce com o rownum: é isso que quebra a bissecção.
+    let por_ordem: Vec<u64> = (1..=7)
+        .map(|n| t.rowid_do_rownum(n).unwrap().unwrap())
+        .collect();
+    assert!(
+        por_ordem.windows(2).any(|p| p[0] > p[1]),
+        "os rowids saíram crescentes: o teste deixou de provar o que existe para provar"
+    );
+
+    // E mesmo assim cada número de ordem acha a linha dele.
+    for (i, esperado) in nomes.iter().enumerate() {
+        let r = t.rowid_do_rownum(i as u64 + 1).unwrap().unwrap();
+        assert_eq!(rownum(&mut t, r), i as u64 + 1);
+        match &t.ler(r).unwrap().unwrap()[NOME] {
+            Value::Str(s) => assert_eq!(s, esperado),
+            outro => panic!("{outro:?}"),
+        }
+    }
+
+    // Um alvo que caiu num buraco devolve o PRÓXIMO número, e não o próximo
+    // do arquivo: aqui a ordem que manda é a de digitação.
+    let terceiro = t.rowid_do_rownum(3).unwrap().unwrap();
+    t.excluir_de_vez(terceiro, "").unwrap();
+    let r = t.rowid_do_rownum(3).unwrap().unwrap();
+    assert_eq!(rownum(&mut t, r), 4);
+
+    // Além do fim, nada.
+    assert!(t.rowid_do_rownum(99).unwrap().is_none());
+}
+
+/// Aqui a posição na lista nunca é o `rownum`: a leitura sai balde a balde e o
+/// `rownum` guarda a digitação. As duas ordens são diferentes de propósito.
+#[test]
+fn a_particao_por_letra_nao_bisseta_a_posicao() {
+    let dir = DirTemp::novo("posicao-balde");
+    let mut t = Table::criar(&dir.0, esquema(100)).unwrap();
+    for (i, n) in ["Zeca", "Alves", "Mendes"].iter().enumerate() {
+        t.inserir(&linha(i as i64 + 1, n)).unwrap();
+    }
+    assert!(!t.posicao_e_rownum(Visao::Ativas));
+    assert!(!t.posicao_e_rownum(Visao::Todas));
+
+    // E a página por posição continua certa — pelo caminho que anda.
+    let (p, como) = t.pagina_por_posicao(1, 2, Visao::Ativas).unwrap();
+    assert_eq!(como, Salto::Passo);
+    assert_eq!(p, t.pagina(1, 2, Visao::Ativas).unwrap());
+    // Ordem de LEITURA: Alves, Mendes, Zeca. Pular uma começa em Mendes.
+    match &t.ler(p[0]).unwrap().unwrap()[NOME] {
+        Value::Str(s) => assert_eq!(s, "Mendes"),
+        outro => panic!("{outro:?}"),
+    }
 }

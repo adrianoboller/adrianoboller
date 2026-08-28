@@ -131,6 +131,14 @@ impl Atividade {
             // ela seria emprestar o poder de quem a criou.
             op if op.starts_with("dblink") => Atividade::Administrar,
             "inserir" => Atividade::Inserir,
+            // Carga em lote e insercao, e nao mais que isso: quem pode gravar
+            // uma linha pode gravar mil. O que muda e o custo, e para isso ha
+            // o teto de linhas por carga.
+            "inserir_lote" | "importar" | "carga" => Atividade::Inserir,
+            // Conferir LE a carga que o proprio usuario colou e le o esquema
+            // da tabela: nao grava nada, e por isso pede so `ler`. Barrar
+            // aqui obrigaria a tentar gravar para descobrir se a carga serve.
+            "importar_conferir" => Atividade::Ler,
             "atualizar" => Atividade::Alterar,
             "excluir" => Atividade::Excluir,
             // Restaurar e desfazer uma exclusao: exige o mesmo poder de

@@ -37,5 +37,5 @@ pub use motivo::{Motivo, MotivoFile, EXT_REASON, MAGIC_MOTIVO};
 pub use ndx::{DescritorIndice, NdxFile, MAGIC_NDX, PAGINA_PADRAO};
 pub use pag::EXT_PAG;
 pub use reg::{RegFile, MAGIC_REG};
-pub use table::{Linha, Relatorio, Table, Visao};
+pub use table::{Linha, Lote, Relatorio, Salto, Table, Visao};
 pub use volume::Volumes;

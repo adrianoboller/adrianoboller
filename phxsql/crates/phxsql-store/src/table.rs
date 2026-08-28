@@ -30,6 +30,18 @@ use crate::reg::RegFile;
 /// Uma linha: um valor por coluna do esquema.
 pub type Linha = Vec<Value>;
 
+/// O que saiu de uma carga em lote.
+#[derive(Debug, Clone, Default)]
+pub struct Lote {
+    /// Os rowids gravados, na ordem em que as linhas chegaram.
+    pub rowids: Vec<RowId>,
+    /// As que ficaram de fora: `(posicao na lista, motivo)`.
+    ///
+    /// A POSICAO, e nao o rowid: a linha recusada nao tem rowid, e quem mandou
+    /// a carga precisa achar a linha no arquivo dele para consertar.
+    pub recusadas: Vec<(usize, String)>,
+}
+
 /// O que uma varredura enxerga.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Visao {
@@ -53,6 +65,29 @@ impl Visao {
     }
 }
 
+/// Como a pagina por posicao chegou ao inicio dela.
+///
+/// Sai na resposta do protocolo porque a diferenca entre os dois nao e de
+/// estilo: num milhao de linhas sao vinte leituras contra um milhao de
+/// passos. Quem esta montando uma tela grande precisa saber qual dos dois
+/// esta pagando, e o que fazer com a tabela para pagar o outro.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Salto {
+    /// Busca binaria pelo `rownum`. O inicio da pagina custa `log2 N`.
+    Bissecao,
+    /// Andou ate a posicao, uma linha por vez. Sempre certo, sempre caro.
+    Passo,
+}
+
+impl Salto {
+    pub fn nome(self) -> &'static str {
+        match self {
+            Salto::Bissecao => "bisseccao",
+            Salto::Passo => "passo",
+        }
+    }
+}
+
 /// Resultado de uma verificacao de integridade da tabela.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Relatorio {
@@ -68,6 +103,12 @@ pub struct Relatorio {
     pub descartadas: u64,
     /// Registros conferidos no `.reason`.
     pub motivos: u64,
+    /// Linhas marcadas como excluidas, RECONTADAS -- e nao lidas do cabecalho.
+    ///
+    /// A conferencia existe justamente para nao acreditar em contador: se o
+    /// numero do cabecalho tiver divergido, este e o caminho que descobre e
+    /// conserta.
+    pub marcadas: u64,
     /// Volumes de cada arquivo paginado: `.reg`, `.bin`, `.memo`, `.log`.
     pub volumes: (usize, usize, usize, usize),
 }
@@ -176,8 +217,13 @@ impl Table {
     }
 
     /// Confere os dois lados e conserta o que der. Ver `RegFile::reparar`.
+    ///
+    /// Reconta as marcadas no fim: o reparo pode ter trazido de volta um slot
+    /// que estava ilegivel, e o contador do cabecalho nao sabia dele.
     pub fn reparar(&mut self) -> Result<(u64, u64, u64)> {
-        self.reg.reparar()
+        let r = self.reg.reparar()?;
+        self.recontar_marcadas()?;
+        Ok(r)
     }
 
     pub fn abrir(diretorio: impl AsRef<Path>, nome: &str) -> Result<Table> {
@@ -696,6 +742,9 @@ impl Table {
 
         let payload = self.montar_payload(valores)?;
         let ponteiros = self.ponteiros(&payload)?;
+        // Linha que ja nasce marcada existe: a importacao traz o campo, e a
+        // restauracao de uma lixeira tambem. O contador tem de saber.
+        let nasce_marcada = self.marcada_no_payload(&payload)?;
         let rowid = match self.balde_da_linha(valores)? {
             Some(balde) => self.reg.inserir_no_balde(&payload, balde)?,
             None => self
@@ -717,8 +766,53 @@ impl Table {
                 return Err(e);
             }
         }
+        if nasce_marcada {
+            self.reg.mudar_marcadas(1)?;
+        }
         self.log.registrar(Operacao::Inclusao, rowid, 1)?;
         Ok(rowid)
+    }
+
+    /// Insere varias linhas de uma vez.
+    ///
+    /// # De onde vem o ganho
+    ///
+    /// **Nao e do disco.** Cada linha custa o mesmo aqui dentro: montar o
+    /// payload, conferir a unicidade, gravar o slot, inserir a chave em cada
+    /// indice. Nao ha atalho -- e a insercao ja e o caminho mais caro do
+    /// motor, com 65% do tempo na manutencao do `.ndx`.
+    ///
+    /// O ganho e de tudo que ACONTECIA POR LINHA e passa a acontecer uma vez:
+    /// abrir a tabela (sete arquivos), tomar a trava, e o `fsync`. Pela rede
+    /// isso dominava -- vinte mil insercoes eram vinte mil aberturas.
+    ///
+    /// # Nao ha transacao, e isso muda o que se pode prometer
+    ///
+    /// Se a linha 700 de mil falhar, as 699 anteriores **ficam gravadas**. Nao
+    /// ha como desfazer: o `.reg` nao reaproveita slot, entao "desfazer" seria
+    /// deixar 699 buracos. Por isso o padrao e `parar_no_erro`: entre uma
+    /// carga que para na linha 700 e uma que grava 999 linhas com uma faltando
+    /// no meio, a primeira e a que da para consertar.
+    ///
+    /// Quem esta importando dado sujo de proposito passa `false` e recebe a
+    /// lista do que ficou de fora, com o numero da linha.
+    pub fn inserir_lote(&mut self, linhas: &[Linha], parar_no_erro: bool) -> Result<Lote> {
+        let mut lote = Lote {
+            rowids: Vec::with_capacity(linhas.len()),
+            recusadas: Vec::new(),
+        };
+        for (i, linha) in linhas.iter().enumerate() {
+            match self.inserir(linha) {
+                Ok(r) => lote.rowids.push(r),
+                Err(e) => {
+                    lote.recusadas.push((i, e.to_string()));
+                    if parar_no_erro {
+                        return Ok(lote);
+                    }
+                }
+            }
+        }
+        Ok(lote)
     }
 
     /// Le uma linha completa, carregando `.bin` e `.memo`.
@@ -801,7 +895,14 @@ impl Table {
 
         let ponteiros_antigos = self.ponteiros(&antigo)?;
         let payload = self.montar_payload(valores)?;
+        // `completar` herda a marca quando ela nao vem nos valores, mas quem
+        // manda a coluna escrita pode virar o valor por aqui.
+        let delta = i64::from(self.marcada_no_payload(&payload)?)
+            - i64::from(self.marcada_no_payload(&antigo)?);
         let versao = self.reg.atualizar(rowid, &payload)?;
+        if delta != 0 {
+            self.reg.mudar_marcadas(delta)?;
+        }
 
         for (i, (antiga, nova)) in chaves_antigas.iter().zip(chaves_novas.iter()).enumerate() {
             if antiga != nova {
@@ -847,8 +948,12 @@ impl Table {
         }
         let ponteiros = self.ponteiros(&payload)?;
         self.liberar_externos(&ponteiros)?;
+        let estava_marcada = self.marcada_no_payload(&payload)?;
         let removeu = self.reg.excluir(rowid)?;
         if removeu {
+            if estava_marcada {
+                self.reg.mudar_marcadas(-1)?;
+            }
             self.motivos
                 .registrar(Tipo::Fisica, rowid, motivo, &identidade)?;
             self.log.registrar(Operacao::Exclusao, rowid, 0)?;
@@ -924,6 +1029,7 @@ impl Table {
         let chaves_novas = self.todas_as_chaves(&depois)?;
 
         let versao = self.reg.atualizar(rowid, &payload)?;
+        self.reg.mudar_marcadas(if valor { 1 } else { -1 })?;
         for (j, (a, b)) in chaves_antigas.iter().zip(chaves_novas.iter()).enumerate() {
             if a != b {
                 self.ndx.remover(j, a, rowid)?;
@@ -1131,6 +1237,15 @@ impl Table {
         if self.esquema.coluna_rownum().is_none() {
             return Ok(None);
         }
+        // Na particao alfanumerica o `rownum` NAO cresce com o rowid, e ai a
+        // bisseccao nao vale: a Silva digitada primeiro mora no `_S`, com
+        // rowid alto, e a Alves digitada depois mora no `_A`, com rowid 1 --
+        // rownum 1 num rowid maior que o do rownum 2. Bissetar uma sequencia
+        // que nao esta ordenada devolve resposta errada em silencio, que e
+        // pior que devolver devagar. Ali se varre.
+        if self.reg.paginacao().modo.por_letra() {
+            return self.rowid_do_rownum_varrendo(alvo);
+        }
         let (mut baixo, mut alto) = (1u64, self.reg.slots());
         if alto == 0 {
             return Ok(None);
@@ -1185,6 +1300,170 @@ impl Table {
         self.pagina_depois_de(inicio.saturating_sub(1), limite, visao)
     }
 
+    /// O mesmo que [`Table::rowid_do_rownum`], varrendo.
+    ///
+    /// Existe para a particao alfanumerica, onde a sequencia de `rownum` nao
+    /// esta ordenada pelo rowid. Procura o MENOR `rownum` maior ou igual ao
+    /// alvo -- e nao o primeiro que aparecer na varredura, que ali sairia do
+    /// balde e nao da ordem de digitacao.
+    fn rowid_do_rownum_varrendo(&mut self, alvo: u64) -> Result<Option<RowId>> {
+        let mut melhor: Option<(u64, RowId)> = None;
+        let mut rowid = 1;
+        while let Some((id, payload)) = self.reg.proximo_ativo(rowid)? {
+            rowid = id + 1;
+            let n = self.rownum_do_payload(&payload)?;
+            if n < alvo {
+                continue;
+            }
+            if n == alvo {
+                // Nao existe candidato melhor: pode parar aqui.
+                return Ok(Some(id));
+            }
+            if melhor.is_none() || n < melhor.unwrap().0 {
+                melhor = Some((n, id));
+            }
+        }
+        Ok(melhor.map(|(_, id)| id))
+    }
+
+    /// O `rownum` desta linha, sem decodificar o resto dela.
+    ///
+    /// Zero quando a tabela nao tem a coluna ou o slot esta livre -- e o mesmo
+    /// «nao ha numero» dos dois lados, porque a tela trata os dois igual.
+    pub fn rownum_de(&mut self, rowid: RowId) -> Result<u64> {
+        // Rowid zero e o «pagina vazia» de quem chama, e nao um erro de faixa.
+        if rowid == 0 || self.esquema.coluna_rownum().is_none() {
+            return Ok(0);
+        }
+        match self.reg.ler(rowid)? {
+            Some(p) => self.rownum_do_payload(&p),
+            None => Ok(0),
+        }
+    }
+
+    /// Quantas linhas a visao enxerga, SEM varrer.
+    ///
+    /// # Por que agora da para contar
+    ///
+    /// Contar era o item mais caro da tela: mostrar «pagina 3 de 40» custava
+    /// percorrer a tabela inteira, e por isso o `total` tinha saido da
+    /// resposta. Com o contador de marcadas no cabecalho a conta fecha em
+    /// tempo constante, porque os dois numeros de que ela precisa ja estao
+    /// la: `registros` sao os slots ocupados, `marcadas` sao os ocupados que
+    /// estao escondidos, e a diferenca e o que a lista mostra.
+    ///
+    /// Numa tabela sem a coluna de sistema nao ha marca: `Excluidas` da zero
+    /// e as outras duas dao o total.
+    pub fn contar(&self, visao: Visao) -> u64 {
+        if self.esquema.coluna_softdeleted().is_none() {
+            return match visao {
+                Visao::Excluidas => 0,
+                _ => self.reg.registros(),
+            };
+        }
+        match visao {
+            Visao::Ativas => self.reg.registros().saturating_sub(self.reg.marcadas()),
+            Visao::Excluidas => self.reg.marcadas(),
+            Visao::Todas => self.reg.registros(),
+        }
+    }
+
+    /// Quantas linhas vivas estao marcadas como excluidas. Sai do cabecalho.
+    pub fn marcadas(&self) -> u64 {
+        self.reg.marcadas()
+    }
+
+    /// Reconta as marcadas varrendo, e corrige o cabecalho. Devolve o total.
+    ///
+    /// O contador do cabecalho e um cache, como o `live_count`. Este e o
+    /// caminho que o refaz quando ha duvida -- um arquivo que veio de uma
+    /// versao anterior, uma queda no meio de uma exclusao, um reparo.
+    pub fn recontar_marcadas(&mut self) -> Result<u64> {
+        if self.esquema.coluna_softdeleted().is_none() {
+            self.reg.definir_marcadas(0)?;
+            return Ok(0);
+        }
+        let mut n = 0u64;
+        let mut rowid = 1;
+        while let Some((id, payload)) = self.reg.proximo_ativo(rowid)? {
+            rowid = id + 1;
+            if self.marcada_no_payload(&payload)? {
+                n += 1;
+            }
+        }
+        self.reg.definir_marcadas(n)?;
+        Ok(n)
+    }
+
+    /// A posicao de uma linha na listagem e o `rownum` dela menos um?
+    ///
+    /// # Por que a pergunta importa
+    ///
+    /// Se a resposta e sim, pular para a posicao 500.000 deixa de ser meio
+    /// milhao de passos e vira uma bisseccao de vinte leituras: basta procurar
+    /// o `rownum` 500.001. Se e nao, a conta erraria -- e erraria calada, que
+    /// e o jeito pior de errar numa tela de paginacao.
+    ///
+    /// # As quatro coisas que a quebram
+    ///
+    /// 1. **Tabela sem a coluna** -- nao ha numero de ordem para procurar.
+    /// 2. **Particao alfanumerica** -- a leitura sai balde a balde e o
+    ///    `rownum` guarda a digitacao; as duas ordens sao diferentes de
+    ///    proposito.
+    /// 3. **Exclusao fisica** -- a linha saiu, o numero dela nao volta, e
+    ///    todo mundo depois dela anda um para tras. Da para ver em tempo
+    ///    constante: `rownum_atual() - 1` e quantas linhas ja entraram, e
+    ///    `registros()` e quantas ficaram.
+    /// 4. **Exclusao suave**, na visao comum -- a linha continua no arquivo e
+    ///    continua com o numero, mas some da lista. Por isso o cabecalho
+    ///    carrega quantas estao marcadas.
+    ///
+    /// Nenhuma das quatro custa leitura: as duas ultimas saem de contadores
+    /// que ja moram no cabecalho do volume 1.
+    pub fn posicao_e_rownum(&self, visao: Visao) -> bool {
+        if self.esquema.coluna_rownum().is_none() || self.reg.paginacao().modo.por_letra() {
+            return false;
+        }
+        // A lista de excluidas nao tem relacao nenhuma com a ordem de
+        // chegada: a decima marcada pode ser a linha numero tres.
+        if visao == Visao::Excluidas {
+            return false;
+        }
+        if self.reg.rownum_atual() - 1 != self.reg.registros() {
+            return false;
+        }
+        visao == Visao::Todas || self.reg.marcadas() == 0
+    }
+
+    /// A pagina que comeca na posicao `pular`, pelo caminho mais barato que
+    /// ainda estiver certo.
+    ///
+    /// E o `OFFSET` do SQL, e o que a caixa «ir para a pagina» da grade usa.
+    /// Devolve tambem COMO chegou la, porque as duas formas custam ordens de
+    /// grandeza diferentes e quem esta do outro lado merece saber qual pagou:
+    ///
+    /// - [`Salto::Bissecao`] -- a posicao e o `rownum`, e ai o inicio da
+    ///   pagina sai de uma busca binaria. Custa `log2 N` leituras, e nao `N`.
+    /// - [`Salto::Passo`] -- a tabela tem buraco, ou e alfanumerica, ou a
+    ///   visao e a das excluidas. Ai anda ate a posicao, uma linha por vez.
+    ///
+    /// Nos dois casos a resposta e a MESMA pagina. O que muda e o preco.
+    pub fn pagina_por_posicao(
+        &mut self,
+        pular: u64,
+        limite: u64,
+        visao: Visao,
+    ) -> Result<(Vec<RowId>, Salto)> {
+        if pular > 0 && self.posicao_e_rownum(visao) {
+            // A posicao e base zero e o rownum comeca em 1.
+            let rowids = self.pagina_desde_rownum(pular + 1, limite, visao)?;
+            return Ok((rowids, Salto::Bissecao));
+        }
+        // Pular zero tambem passa por aqui: a primeira pagina nao tem o que
+        // pular, e a bisseccao so acrescentaria uma busca para achar o comeco.
+        Ok((self.pagina(pular, limite, visao)?, Salto::Passo))
+    }
+
     /// A pagina ANTERIOR ao cursor, para o botao de voltar.
     ///
     /// Devolve em ordem crescente, como a de ir: quem chama nao deveria ter de
@@ -1227,18 +1506,27 @@ impl Table {
         if visao == Visao::Todas {
             return Ok(true);
         }
-        let Some(i) = self.esquema.coluna_softdeleted() else {
+        if self.esquema.coluna_softdeleted().is_none() {
             return Ok(visao != Visao::Excluidas);
+        }
+        Ok(visao.aceita(self.marcada_no_payload(payload)?))
+    }
+
+    /// A linha esta marcada como excluida? Le SO o byte da coluna de sistema.
+    ///
+    /// Falso tambem quando a tabela nao tem a coluna: ali nao ha marca, e
+    /// nenhuma linha esta excluida de forma suave.
+    fn marcada_no_payload(&self, payload: &[u8]) -> Result<bool> {
+        let Some(i) = self.esquema.coluna_softdeleted() else {
+            return Ok(false);
         };
         // Nulo no bitmap nao acontece nesta coluna, que e obrigatoria -- mas
         // se acontecer, «nao marcada» e a leitura segura.
-        let excluida = if payload[i / 8] & (1 << (i % 8)) != 0 {
-            false
-        } else {
-            let off = self.esquema.offset_coluna(i)?;
-            payload[off] != 0
-        };
-        Ok(visao.aceita(excluida))
+        if payload[i / 8] & (1 << (i % 8)) != 0 {
+            return Ok(false);
+        }
+        let off = self.esquema.offset_coluna(i)?;
+        Ok(payload[off] != 0)
     }
 
     /// Tira da lista os rowids que a visao nao enxerga.
@@ -1424,6 +1712,9 @@ impl Table {
         let eventos = self.log.verificar()?;
         let descartadas = self.lixeira.verificar()?;
         let motivos = self.motivos.verificar()?;
+        // Reconta e corrige de passagem: um contador de cache so serve
+        // enquanto alguem se dispoe a conferi-lo.
+        let marcadas = self.recontar_marcadas()?;
 
         for (nome, qtd) in &indices {
             if *qtd != registros {
@@ -1444,6 +1735,7 @@ impl Table {
             eventos,
             descartadas,
             motivos,
+            marcadas,
             volumes: (
                 self.reg.volumes().len(),
                 self.bin.volumes().len(),

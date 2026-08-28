@@ -23,7 +23,7 @@ use std::time::Instant;
 use phxsql_core::schema::{Column, IndexColumn, IndexDef, Schema};
 use phxsql_core::types::ColumnType;
 use phxsql_core::value::Value;
-use phxsql_store::table::{Table, Visao};
+use phxsql_store::table::{Salto, Table, Visao};
 
 fn linha(i: i64) -> Vec<Value> {
     vec![
@@ -54,6 +54,12 @@ fn esquema() -> Schema {
 
 fn ms(t: Instant) -> u128 {
     t.elapsed().as_millis()
+}
+
+/// A bisseccao nao aparece em milissegundo: vinte leituras num arquivo quente
+/// somam microssegundos. Medir em ms devolveria «0» e nao provaria nada.
+fn us(t: Instant) -> u128 {
+    t.elapsed().as_micros()
 }
 
 fn main() {
@@ -107,6 +113,23 @@ fn main() {
     let t_hoje_meio = ms(c);
     drop(tudo);
 
+    // 5. A MESMA pagina do meio, agora pela posicao -- que e o `OFFSET` do
+    //    SQL. E a comparacao que interessa: mesmo pedido, mesmo resultado,
+    //    caminhos com custo diferente.
+    let c = Instant::now();
+    let (p5, como) = t.pagina_por_posicao(meio, pagina, Visao::Ativas).unwrap();
+    let t_salto = us(c);
+    assert_eq!(como, Salto::Bissecao, "a tabela intacta tinha de bissetar");
+
+    // 6. E o mesmo pedido depois de UM buraco: a igualdade entre posicao e
+    //    rownum cai, e o motor tem de voltar a andar -- com a MESMA resposta.
+    t.excluir_de_vez(n as u64, "medicao").unwrap();
+    let c = Instant::now();
+    let (p6, como6) = t.pagina_por_posicao(meio, pagina, Visao::Ativas).unwrap();
+    let t_passo = us(c);
+    assert_eq!(como6, Salto::Passo, "com buraco nao pode bissetar");
+    assert_eq!(p5, p6, "os dois caminhos deram paginas diferentes");
+
     assert_eq!(
         primeiras.len(),
         p2.len(),
@@ -114,6 +137,10 @@ fn main() {
     );
     assert_eq!(primeiras, p2, "a pagina 1 deu rowids diferentes");
     assert_eq!(p3, p4, "a pagina do meio deu rowids diferentes");
+    assert_eq!(
+        p3, p5,
+        "o salto por posicao deu rowids diferentes do cursor"
+    );
 
     println!("linhas na tabela .... {n}");
     println!("pagina .............. {pagina}");
@@ -126,10 +153,13 @@ fn main() {
     println!("PAGINA DO MEIO (offset {meio})");
     println!("  varrer_com (hoje) . {t_hoje_meio} ms");
     println!("  depois_de (cursor)  {t_cursor} ms");
+    println!("  posicao, bissecao . {t_salto} us");
+    println!("  posicao, andando .. {t_passo} us  (a mesma pagina, com um buraco)");
 
     println!(
         "RESULTADO {{\"linhas\":{n},\"pagina\":{pagina},\
          \"hoje_ms\":{t_hoje},\"pagina_ms\":{t_pagina},\
-         \"hoje_meio_ms\":{t_hoje_meio},\"cursor_ms\":{t_cursor}}}"
+         \"hoje_meio_ms\":{t_hoje_meio},\"cursor_ms\":{t_cursor},\
+         \"salto_us\":{t_salto},\"passo_us\":{t_passo}}}"
     );
 }

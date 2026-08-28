@@ -16,7 +16,7 @@ use comum::DirTemp;
 use phxsql_core::schema::{Column, IndexColumn, IndexDef, Schema, COLUNA_ROWNUM};
 use phxsql_core::types::ColumnType;
 use phxsql_core::value::Value;
-use phxsql_store::table::{Table, Visao};
+use phxsql_store::table::{Salto, Table, Visao};
 
 const NOME: usize = 1;
 
@@ -272,4 +272,189 @@ fn pagina_desde_o_numero_de_ordem_inclui_o_alvo() {
         .pagina_desde_rownum(999, 3, Visao::Ativas)
         .unwrap()
         .is_empty());
+}
+
+// ---------------------------------------------------------------------------
+// O salto por posição — o `OFFSET` que deixou de andar até lá
+// ---------------------------------------------------------------------------
+
+/// A regra inteira em um teste: numa tabela intacta a posição É o `rownum`,
+/// e por isso o salto pode ser uma bissecção.
+#[test]
+fn tabela_intacta_bisseta_a_posicao() {
+    let dir = DirTemp::novo("bisseta");
+    let mut t = com(500, &dir);
+
+    assert!(t.posicao_e_rownum(Visao::Ativas));
+    let (p, como) = t.pagina_por_posicao(300, 5, Visao::Ativas).unwrap();
+    assert_eq!(como, Salto::Bissecao);
+    assert_eq!(p, vec![301, 302, 303, 304, 305]);
+    // E a resposta é IGUAL à de andar até lá — que é o ponto todo.
+    assert_eq!(p, t.pagina(300, 5, Visao::Ativas).unwrap());
+}
+
+/// As quatro coisas que derrubam a igualdade entre posição e `rownum`.
+/// Cada uma tem de derrubar sozinha.
+#[test]
+fn o_que_derruba_o_salto_derruba_um_de_cada_vez() {
+    // 1. Exclusão física: o número saiu e não volta.
+    let dir = DirTemp::novo("salto-fisica");
+    let mut t = com(50, &dir);
+    assert!(t.posicao_e_rownum(Visao::Ativas));
+    t.excluir_de_vez(10, "").unwrap();
+    assert!(!t.posicao_e_rownum(Visao::Ativas));
+
+    // 2. Exclusão suave, na visão comum: a linha some da lista mas fica no
+    //    arquivo, com o número dela.
+    let dir = DirTemp::novo("salto-suave");
+    let mut t = com(50, &dir);
+    t.excluir_suave(10, "teste").unwrap();
+    assert!(!t.posicao_e_rownum(Visao::Ativas));
+    // Em `Todas` ela continua na lista, e a igualdade se mantém.
+    assert!(t.posicao_e_rownum(Visao::Todas));
+    // Restaurar devolve a igualdade: o contador desce junto.
+    t.restaurar(10, "voltou").unwrap();
+    assert!(t.posicao_e_rownum(Visao::Ativas));
+
+    // 3. A visão das excluídas nunca: a décima marcada pode ser a linha três.
+    assert!(!t.posicao_e_rownum(Visao::Excluidas));
+
+    // 4. Tabela sem a coluna de sistema — sem número de ordem não há o que
+    //    procurar. `do_disco` não acrescenta as colunas de sistema.
+    let sem = Schema::do_disco(
+        "sem_ordem",
+        vec![
+            Column::new("id", ColumnType::Int8).obrigatoria(),
+            Column::new("nome", ColumnType::Str(40)).obrigatoria(),
+        ],
+        vec![],
+    )
+    .unwrap();
+    let dir = DirTemp::novo("salto-sem-coluna");
+    let mut t2 = Table::criar(&dir.0, sem).unwrap();
+    for i in 1..=10 {
+        t2.inserir(&linha(i)).unwrap();
+    }
+    assert!(t2.esquema().coluna_rownum().is_none());
+    assert!(!t2.posicao_e_rownum(Visao::Ativas));
+    // E ainda assim a página sai certa — pelo caminho caro.
+    let (p, como) = t2.pagina_por_posicao(3, 2, Visao::Ativas).unwrap();
+    assert_eq!(como, Salto::Passo);
+    assert_eq!(p, vec![4, 5]);
+}
+
+/// Com buracos, os dois caminhos têm de dar a MESMA página. É o que garante
+/// que trocar de caminho seja uma decisão de preço e não de resultado.
+#[test]
+fn com_buraco_o_caminho_muda_e_a_pagina_nao() {
+    let dir = DirTemp::novo("buraco-mesma-pagina");
+    let mut t = com(200, &dir);
+    for r in [3u64, 17, 88, 150] {
+        t.excluir_de_vez(r, "").unwrap();
+    }
+    t.excluir_suave(40, "sumiu").unwrap();
+
+    for pular in [0u64, 1, 50, 120, 190, 300] {
+        let (p, como) = t.pagina_por_posicao(pular, 7, Visao::Ativas).unwrap();
+        assert_eq!(como, Salto::Passo, "pular {pular}");
+        assert_eq!(
+            p,
+            t.pagina(pular, 7, Visao::Ativas).unwrap(),
+            "pular {pular}"
+        );
+    }
+}
+
+/// A primeira página nunca bisseta: não há o que pular, e procurar o começo
+/// custaria uma busca para achar o que já se sabe.
+#[test]
+fn a_primeira_pagina_nao_procura_nada() {
+    let dir = DirTemp::novo("primeira");
+    let mut t = com(100, &dir);
+    let (p, como) = t.pagina_por_posicao(0, 3, Visao::Ativas).unwrap();
+    assert_eq!(como, Salto::Passo);
+    assert_eq!(p, vec![1, 2, 3]);
+}
+
+/// Passar do fim devolve página vazia pelos dois caminhos, e não erro.
+#[test]
+fn passar_do_fim_devolve_pagina_vazia() {
+    let dir = DirTemp::novo("do-fim");
+    let mut t = com(20, &dir);
+    let (p, como) = t.pagina_por_posicao(999, 10, Visao::Ativas).unwrap();
+    assert_eq!(como, Salto::Bissecao);
+    assert!(p.is_empty());
+}
+
+// ---------------------------------------------------------------------------
+// Contar sem varrer
+// ---------------------------------------------------------------------------
+
+/// `contar` sai de dois números do cabeçalho. Tem de bater com a varredura
+/// nas três visões, depois de exclusão suave, restauração e exclusão física.
+#[test]
+fn contar_sem_varrer_bate_com_a_varredura() {
+    let dir = DirTemp::novo("contar");
+    let mut t = com(60, &dir);
+
+    let confere = |t: &mut Table, onde: &str| {
+        for visao in [Visao::Ativas, Visao::Excluidas, Visao::Todas] {
+            let varrido = t.varrer_com(visao).unwrap().len() as u64;
+            assert_eq!(
+                t.contar(visao),
+                varrido,
+                "{onde}: {visao:?} contou diferente da varredura"
+            );
+        }
+    };
+
+    confere(&mut t, "recém-criada");
+    for r in [2u64, 5, 9, 30] {
+        t.excluir_suave(r, "teste").unwrap();
+    }
+    confere(&mut t, "com quatro marcadas");
+    t.restaurar(5, "voltou").unwrap();
+    confere(&mut t, "depois de restaurar uma");
+    // Excluir de vez uma que estava marcada tem de baixar os DOIS contadores.
+    t.excluir_de_vez(9, "some").unwrap();
+    confere(&mut t, "marcada que saiu de vez");
+    // E uma que não estava marcada baixa só o de registros.
+    t.excluir_de_vez(11, "some").unwrap();
+    confere(&mut t, "ativa que saiu de vez");
+    // Marcar duas vezes não conta duas vezes.
+    t.excluir_suave(2, "de novo").unwrap();
+    confere(&mut t, "marcar de novo o que já estava");
+}
+
+/// O contador mora no cabeçalho: tem de sobreviver a fechar e reabrir.
+#[test]
+fn o_contador_de_marcadas_volta_do_disco() {
+    let dir = DirTemp::novo("marcadas-disco");
+    {
+        let mut t = com(30, &dir);
+        for r in [4u64, 8, 15] {
+            t.excluir_suave(r, "teste").unwrap();
+        }
+        t.sincronizar().unwrap();
+        assert_eq!(t.marcadas(), 3);
+    }
+    let t = Table::abrir(&dir.0, "clientes").unwrap();
+    assert_eq!(t.marcadas(), 3);
+    assert_eq!(t.contar(Visao::Ativas), 27);
+    assert!(!t.posicao_e_rownum(Visao::Ativas));
+}
+
+/// `verificar` reconta varrendo em vez de acreditar no cabeçalho — é assim
+/// que um contador de cache continua confiável.
+#[test]
+fn a_conferencia_reconta_as_marcadas() {
+    let dir = DirTemp::novo("reconta");
+    let mut t = com(40, &dir);
+    for r in [1u64, 2, 3, 4, 5] {
+        t.excluir_suave(r, "teste").unwrap();
+    }
+    let r = t.verificar().unwrap();
+    assert_eq!(r.marcadas, 5);
+    assert_eq!(r.marcadas, t.marcadas());
+    assert_eq!(t.recontar_marcadas().unwrap(), 5);
 }

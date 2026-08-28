@@ -11,9 +11,14 @@
 //! * **Binario sai como hexadecimal**, que atravessa JSON sem escape e e
 //!   conferivel a olho nu.
 
-use phxsql_core::datahora::{data_iso, dias_de_civil, hora_iso};
+use phxsql_core::datahora::{data_iso, hora_iso};
 use phxsql_core::error::{PhxError, Result};
 use phxsql_core::json::Json;
+
+// As conversoes de TEXTO moram no nucleo, porque a linha de comando tambem
+// carrega arquivo -- e duas implementacoes divergiriam. Aqui so o reexporte.
+use phxsql_core::carga::data_de_texto;
+pub use phxsql_core::carga::{hex_para_bytes, texto_para_decimal};
 use phxsql_core::paginacao::{ModoParticao, Paginacao, Periodo, DIGITOS_PADRAO};
 use phxsql_core::schema::Schema;
 use phxsql_core::schema::{Column, IndexColumn, IndexDef};
@@ -38,78 +43,13 @@ pub fn decimal_para_texto(valor: i128, escala: u8) -> String {
     )
 }
 
-/// Le "12.34" com escala 2 e devolve 1234.
-pub fn texto_para_decimal(texto: &str, escala: u8) -> Result<i128> {
-    let t = texto.trim();
-    let (negativo, t) = match t.strip_prefix('-') {
-        Some(resto) => (true, resto),
-        None => (false, t.strip_prefix('+').unwrap_or(t)),
-    };
-    let (inteiro, fracao) = match t.split_once('.') {
-        Some((i, f)) => (i, f),
-        None => (t, ""),
-    };
-    if inteiro.is_empty() && fracao.is_empty() {
-        return Err(PhxError::Tipo(format!("decimal invalido: {texto:?}")));
-    }
-    if !inteiro.chars().all(|c| c.is_ascii_digit()) || !fracao.chars().all(|c| c.is_ascii_digit()) {
-        return Err(PhxError::Tipo(format!("decimal invalido: {texto:?}")));
-    }
-    if fracao.len() > escala as usize {
-        return Err(PhxError::LimiteExcedido(format!(
-            "{texto:?} tem {} casas decimais, a coluna aceita {escala}",
-            fracao.len()
-        )));
-    }
-    let mut digitos = String::from(if inteiro.is_empty() { "0" } else { inteiro });
-    digitos.push_str(fracao);
-    for _ in fracao.len()..escala as usize {
-        digitos.push('0');
-    }
-    let n: i128 = digitos
-        .parse()
-        .map_err(|_| PhxError::LimiteExcedido(format!("decimal fora de faixa: {texto:?}")))?;
-    Ok(if negativo { -n } else { n })
-}
-
+/// Bytes crus em hexadecimal minusculo, para a tela e para o JSON.
 pub fn bytes_para_hex(b: &[u8]) -> String {
     let mut s = String::with_capacity(b.len() * 2);
     for byte in b {
         s.push_str(&format!("{byte:02x}"));
     }
     s
-}
-
-pub fn hex_para_bytes(hex: &str) -> Result<Vec<u8>> {
-    let t = hex.trim();
-    if t.len() % 2 != 0 {
-        return Err(PhxError::Tipo(
-            "hexadecimal precisa ter quantidade par de digitos".into(),
-        ));
-    }
-    (0..t.len())
-        .step_by(2)
-        .map(|i| {
-            u8::from_str_radix(&t[i..i + 2], 16)
-                .map_err(|_| PhxError::Tipo(format!("hexadecimal invalido: {hex:?}")))
-        })
-        .collect()
-}
-
-/// Le uma data em `AAAA-MM-DD` e devolve dias desde a epoca.
-fn data_de_texto(t: &str) -> Result<i32> {
-    let partes: Vec<&str> = t.trim().split('-').collect();
-    let invalida = || PhxError::Tipo(format!("data invalida: {t:?} (use AAAA-MM-DD)"));
-    if partes.len() != 3 {
-        return Err(invalida());
-    }
-    let ano: i32 = partes[0].parse().map_err(|_| invalida())?;
-    let mes: u32 = partes[1].parse().map_err(|_| invalida())?;
-    let dia: u32 = partes[2].parse().map_err(|_| invalida())?;
-    if !(1..=12).contains(&mes) || !(1..=31).contains(&dia) {
-        return Err(invalida());
-    }
-    Ok(dias_de_civil(ano, mes, dia))
 }
 
 /// Quantos bytes o tipo ocupa no slot -- o "tamanho" que a tela mostra.
