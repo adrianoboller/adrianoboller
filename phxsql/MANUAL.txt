@@ -159,7 +159,7 @@ Veja o diario:
     WINDOWS   phxsqld.exe --config config.json
 
     No arranque ele imprime:
-        PhxSql 0.5.5 escutando em 0.0.0.0:5000 | base dados | papel isolado
+        PhxSql 0.6.0 escutando em 0.0.0.0:5000 | base dados | papel isolado
         log de acessos: acessos.log
 
 7.4 Servico
@@ -346,6 +346,30 @@ O QUE TEM NA TELA
 
     E o painel conta so o que VOCE poderia abrir: base sem permissao de
     leitura nao entra na conta. O numero nunca revela o que a arvore esconde.
+
+VIEW DATABASE: VER E EDITAR OS DADOS
+
+    Ferramenta "View DB", menu Arquivo -> View Database, tecla Alt+4, ou um
+    clique no nome do database na arvore.
+
+    E o padrao Browse -> Form do Clarion(R), de onde este projeto vem:
+
+        1. A grade lista as tabelas do database, com registros, slots,
+           colunas e indices.
+        2. Um clique numa tabela mostra o conteudo, linha a linha.
+        3. Um clique numa linha abre a FICHA -- um campo por coluna, do tipo
+           certo: caixa de texto para Memo, sim/nao para Bool, e a dica do
+           formato no lugar (12.34 para Decimal, 2026-08-28 para Date).
+        4. Salvar grava. Excluir apaga. "Nova linha" inclui.
+
+    Campo em branco significa NULO. Coluna obrigatoria tem um asterisco
+    vermelho. Na coluna Sequence, deixar em branco faz o motor numerar; num
+    Uuid, escrever "novo" gera um v7.
+
+    ATENCAO ao excluir: o slot fica marcado como livre e NAO e reaproveitado.
+    E assim que a ordem de digitacao se mantem, e o aviso diz isso antes.
+
+    O [+] ao lado de "Bancos de dados", na arvore, cria um database novo.
 
 BARRA DE FERRAMENTAS
 

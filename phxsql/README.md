@@ -73,7 +73,8 @@ dependência externa (só a `std`), o que faz o projeto compilar offline.
 | Cadastro de usuários, senha em hash, permissão por base | pronto |
 | Login por desafio-resposta (a senha não trafega) e Base64 | pronto |
 | Blacklist com bloqueio automático e gancho de firewall | pronto |
-| Centro de Controle — interface web embutida no `phxsqld` | parcial — navega tudo, **não edita dados** |
+| Centro de Controle — interface web embutida no `phxsqld` | pronto |
+| View Database — grade de tabelas, ficha de edição, incluir/salvar/excluir | pronto |
 | Tabela em memória e `SelectMemory` — 87× mais rápido, medido | pronto |
 | Chave assimétrica Ed25519 (RFC 8032) como segundo fator | pronto |
 | Backup com manifesto SHA-256, ZIP e agendamento | pronto |

@@ -10,6 +10,46 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
+## 0.6.0 — 2026-08-28
+
+A interface deixa de só navegar. **30 das 32 operações** têm tela agora — eram
+14 há três versões.
+
+### Adicionado
+
+- **View Database, no padrão Browse → Form do Clarion(R)**, de onde este
+  projeto vem. Ferramenta *View DB*, menu *Arquivo → View Database*, `Alt+4`,
+  ou um clique no nome do database na árvore.
+
+  A grade lista as tabelas com registros, slots, colunas e índices; um clique
+  abre o conteúdo; um clique numa linha abre a **ficha**, com um campo por
+  coluna e do tipo certo — caixa de texto para `Memo`, sim/não para `Bool`, e a
+  dica do formato no lugar. **Salvar grava, Excluir apaga, Nova linha inclui.**
+
+  Fecha as quatro operações que existiam no servidor e não tinham porta:
+  `ler`, `inserir`, `atualizar` e `excluir`. Sobram `buscar` e `desbloquear`.
+
+  Detalhes que a ficha respeita: campo em branco é **nulo**; coluna obrigatória
+  tem asterisco; `Sequence` em branco faz o motor numerar; `Uuid` aceita a
+  palavra `"novo"`. E o aviso da exclusão diz que **o slot não é
+  reaproveitado** — é assim que a ordem de digitação se mantém.
+
+- **`[+]` na árvore**, ao lado de *Bancos de dados*, para criar um database.
+
+- **About no menu Ajuda**, abrindo a **tela de créditos** com a fênix do
+  projeto Phoenix, quem fez o quê, e a lista honesta do que o motor se apoia:
+  RFC 9562, FIPS 180-4, RFC 4231, RFC 8032, RFC 1951 e os demais — cada um
+  escrito aqui e conferido contra o vetor oficial.
+
+### Corrigido
+
+- **A fênix vinha com um retângulo azulado no tema claro.** Os pixels de fora
+  do símbolo têm alfa 1 a 3 em azul no arquivo de origem — quase-transparente
+  não é transparente. 22.789 pixels zerados antes de embutir. É o mesmo defeito
+  que a capa do dossiê já teve, e a mesma lição: alfa quase-zero se enxerga.
+
+---
+
 ## 0.5.5 — 2026-08-28
 
 ### Adicionado
