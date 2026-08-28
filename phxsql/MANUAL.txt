@@ -159,7 +159,7 @@ Veja o diario:
     WINDOWS   phxsqld.exe --config config.json
 
     No arranque ele imprime:
-        PhxSql 0.5.2 escutando em 0.0.0.0:5000 | base dados | papel isolado
+        PhxSql 0.5.3 escutando em 0.0.0.0:5000 | base dados | papel isolado
         log de acessos: acessos.log
 
 7.4 Servico
@@ -346,6 +346,30 @@ O QUE TEM NA TELA
 
     E o painel conta so o que VOCE poderia abrir: base sem permissao de
     leitura nao entra na conta. O numero nunca revela o que a arvore esconde.
+
+BARRA DE MENU
+
+    No alto, abaixo da marca, a barra de menu tradicional. Ela existe porque
+    metade do que o servidor sabe fazer nao tinha porta de entrada na tela.
+
+        Arquivo        Painel (Alt+1), Novo database, Backup agora (Ctrl+B),
+                       Conferir um backup, Sair
+        Tabela         Estrutura (Alt+2), Conteudo (Alt+3), Indices, Diario,
+                       Integridade | Verificar, Reindexar, Reparar pelo espelho
+        Memoria        Carregar esta tabela na RAM, Tabelas residentes,
+                       Liberar esta tabela
+        Administracao  Usuarios, Acessos, Bloqueios | De onde vem,
+                       Configuracao, Quem sou eu
+        Ver            Atualizar (F5), Tema claro/escuro
+        Ajuda          Sobre o PhxSql
+
+    A letra sublinhada abre o menu com Alt. Dentro dele as setas andam, Enter
+    escolhe e Esc fecha. Os itens de Tabela e de Memoria ficam cinzas
+    enquanto nao houver tabela aberta -- eles precisam de uma.
+
+    As acoes que mexem (reindexar, reparar) pedem confirmacao antes. O
+    resultado aparece na area principal, e um recado curto na barra de cima
+    confirma o que aconteceu.
 
     Depois do painel, a arvore: bancos -> tabelas da raiz -> schemas -> tabelas.
 

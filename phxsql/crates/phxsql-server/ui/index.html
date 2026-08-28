@@ -106,9 +106,61 @@ input:focus,select:focus{border-color:var(--laranja);outline:none}
 }
 
 /* ----------------------------------------------------------------- barra */
-#app{display:none;height:100%;grid-template-rows:var(--barra) 1fr;
-  grid-template-columns:var(--arvore) 1fr;grid-template-areas:"barra barra" "arvore corpo"}
+#app{display:none;height:100%;grid-template-rows:var(--barra) auto 1fr;
+  grid-template-columns:var(--arvore) 1fr;
+  grid-template-areas:"barra barra" "menu menu" "arvore corpo"}
 #app.ativo{display:grid}
+
+/* ------------------------------------------------------------ menu superior
+   Barra de menu tradicional: titulos na horizontal, cada um abrindo uma lista
+   por baixo. O motivo de existir e simples -- metade do que o servidor sabe
+   fazer (backup, reparo, reindex, tabela em memoria) nao tinha porta de
+   entrada nenhuma na tela. */
+.menubar{
+  grid-area:menu;display:flex;align-items:stretch;
+  background:var(--painel-2);border-bottom:1px solid var(--linha);
+  position:relative;z-index:60;user-select:none;
+}
+.menubar > .menu{position:relative;display:flex}
+.menubar .titulo{
+  background:none;border:0;border-radius:0;padding:0 13px;height:30px;
+  font-family:inherit;font-size:12.5px;color:var(--texto-2);cursor:pointer;
+  display:flex;align-items:center;gap:1px;white-space:nowrap;
+}
+.menubar .titulo:hover{background:var(--painel-3);color:var(--texto)}
+.menubar .menu.aberto .titulo{background:var(--laranja);color:#fff}
+/* A letra sublinhada e a tecla de atalho com Alt, como manda a tradicao. */
+.menubar .titulo u{text-decoration:underline;text-underline-offset:2px}
+
+.menubar .lista{
+  display:none;position:absolute;top:100%;left:0;min-width:238px;
+  background:var(--painel);border:1px solid var(--linha-forte);
+  border-radius:0 0 5px 5px;box-shadow:0 8px 24px rgba(0,0,0,.22);
+  padding:4px 0;
+}
+.menubar .menu.aberto .lista{display:block}
+.menubar .item{
+  display:flex;align-items:center;gap:10px;width:100%;
+  background:none;border:0;text-align:left;padding:6px 14px 6px 12px;
+  font-family:inherit;font-size:12.5px;color:var(--texto);cursor:pointer;
+}
+.menubar .item:hover:not(:disabled),
+.menubar .item:focus-visible{background:var(--laranja);color:#fff;outline:none}
+.menubar .item:disabled{color:var(--texto-3);cursor:default;opacity:.55}
+.menubar .item .ico{width:16px;text-align:center;font-size:12px;flex:none}
+.menubar .item .rot{flex:1}
+.menubar .item .tecla{
+  font-family:"IBM Plex Mono",monospace;font-size:10.5px;color:var(--texto-3);
+  flex:none;letter-spacing:.02em;
+}
+.menubar .item:hover:not(:disabled) .tecla{color:rgba(255,255,255,.75)}
+.menubar .sep{height:1px;background:var(--linha);margin:4px 0}
+
+/* Em tela estreita a arvore some e o menu continua sendo o caminho. */
+@media (max-width:820px){
+  .menubar .titulo{padding:0 9px;font-size:12px}
+  .menubar .lista{min-width:200px}
+}
 .barra{
   grid-area:barra;display:flex;align-items:center;gap:14px;padding:0 16px;
   background:var(--painel);border-bottom:1px solid var(--linha);
@@ -121,6 +173,13 @@ input:focus,select:focus{border-color:var(--laranja);outline:none}
   text-transform:uppercase;color:var(--texto-3);
 }
 .barra .espaco{flex:1}
+.barra .recado{
+  font-size:11.5px;padding:3px 10px;border-radius:99px;
+  background:var(--painel-3);border:1px solid var(--linha-forte);
+  color:var(--texto-2);white-space:nowrap;max-width:42ch;
+  overflow:hidden;text-overflow:ellipsis;
+}
+.barra .recado.mal{border-color:var(--log);color:var(--log)}
 .tema{
   background:none;border:1px solid var(--linha-forte);border-radius:99px;
   width:34px;height:26px;display:grid;place-items:center;font-size:13px;
@@ -315,11 +374,14 @@ h3:first-child{margin-top:0}
       alt=""><span>Ph<span class="x">x</span>Sql</span></span>
     <span class="fita" id="fita">—</span>
     <span class="espaco"></span>
+    <span class="recado" id="aviso" role="status" aria-live="polite" hidden></span>
     <span class="demo" id="selo" hidden>modo demonstração</span>
     <button class="tema" id="btTema" title="Alternar tema" aria-label="Alternar tema claro e escuro">🌓</button>
     <span class="eu" id="eu"></span>
     <button class="botao secundario" id="btSair">Sair</button>
   </div>
+
+  <div class="menubar" id="menubar" role="menubar" aria-label="Menu principal"></div>
 
   <nav class="arvore" id="arvore" aria-label="Bancos e tabelas"></nav>
 
@@ -500,8 +562,25 @@ function demo(op, p) {
 // Utilidades de tela
 // =====================================================================
 const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
 const esc = t => String(t ?? "").replace(/[&<>"']/g, c =>
   ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+/** Recado curto no rodape da barra, que some sozinho.
+ *
+ * Um `alert()` interromperia quem esta trabalhando para dizer "backup
+ * pronto"; um recado que aparece e sai nao interrompe ninguem. Erro fica
+ * mais tempo, porque erro se le. */
+let sumicoDoAviso = null;
+function avisar(texto, ehErro) {
+  const alvo = $("#aviso");
+  if (!alvo) return;
+  alvo.textContent = texto;
+  alvo.className = "recado" + (ehErro ? " mal" : "");
+  alvo.hidden = false;
+  clearTimeout(sumicoDoAviso);
+  sumicoDoAviso = setTimeout(() => { alvo.hidden = true; }, ehErro ? 9000 : 4000);
+}
 
 function tabela(colunas, linhas, montar) {
   if (!linhas.length) return `<div class="vazio">nada aqui</div>`;
@@ -621,6 +700,8 @@ async function abrirApp() {
     + (est.usuario.supervisor ? " · supervisor" : "");
   const p = await api("ping");
   $("#fita").textContent = `v${p.phxsql} · papel ${p.papel}`;
+  ligarMenu();
+  ligarAtalhos();
   await montarArvore();
   // O campo "Database" do login abre a arvore ja na primeira tabela
   // desse banco, em vez de deixar o usuario procurar.
@@ -1122,6 +1203,380 @@ async function abrirAdmin(qual) {
 // leitura e escrita vai dentro de try.
 // =====================================================================
 const TEMAS = { escuro:"🌙", claro:"☀️" };
+
+/* =================================================================== menu
+   Barra de menu tradicional. O menu e DECLARADO como dado e desenhado a
+   partir dele: acrescentar recurso vira acrescentar uma linha, e o estado
+   "esta cinza porque nao ha tabela aberta" sai de uma funcao, nao de um
+   `if` espalhado.
+
+   Metade das operacoes do servidor nao tinha porta de entrada nenhuma na
+   tela -- backup, conferir backup, reparo pelo espelho, reindex, a tabela em
+   memoria, a configuracao. Entraram todas aqui. */
+
+const comTabela = () => !!est.atual;
+
+const MENUS = [
+  ["Arquivo", "A", [
+    { rot:"Painel",              ico:"▦", tecla:"Alt+1", faz:() => irPara("painel") },
+    { rot:"Novo database…",      ico:"✚",                faz:novoDatabase },
+    "sep",
+    { rot:"Backup agora…",       ico:"⛁",  tecla:"Ctrl+B", faz:backupAgora },
+    { rot:"Conferir um backup…", ico:"✓",                 faz:conferirBackup },
+    "sep",
+    { rot:"Sair",                ico:"⏻",                 faz:() => $("#btSair").click() },
+  ]],
+
+  ["Tabela", "T", [
+    { rot:"Estrutura",   ico:"▤", tecla:"Alt+2", quando:comTabela, faz:() => irAba("estrutura") },
+    { rot:"Conteúdo",    ico:"▦", tecla:"Alt+3", quando:comTabela, faz:() => irAba("conteudo") },
+    { rot:"Índices",     ico:"⑂",               quando:comTabela, faz:() => irAba("indices") },
+    { rot:"Diário",      ico:"◷",               quando:comTabela, faz:() => irAba("diario") },
+    { rot:"Integridade", ico:"⚑",               quando:comTabela, faz:() => irAba("integridade") },
+    "sep",
+    { rot:"Verificar",              ico:"✓", quando:comTabela, faz:verificarTabela },
+    { rot:"Reindexar…",             ico:"↻", quando:comTabela, faz:reindexarTabela },
+    { rot:"Reparar pelo espelho…",  ico:"⛨", quando:comTabela, faz:repararTabela },
+  ]],
+
+  ["Memória", "M", [
+    { rot:"Carregar esta tabela na RAM", ico:"⇧", quando:comTabela, faz:carregarNaMemoria },
+    { rot:"Tabelas residentes",          ico:"◍",                   faz:verResidentes },
+    { rot:"Liberar esta tabela",         ico:"⇩", quando:comTabela, faz:liberarDaMemoria },
+  ]],
+
+  ["Administração", "d", [
+    { rot:"Usuários",      ico:"☺", faz:() => irPara("usuarios") },
+    { rot:"Acessos",       ico:"◷", faz:() => irPara("acessos") },
+    { rot:"Bloqueios",     ico:"⊘", faz:() => irPara("bloqueios") },
+    "sep",
+    { rot:"De onde vêm",   ico:"◎", faz:verIps },
+    { rot:"Configuração",  ico:"⚙", faz:verConfig },
+    { rot:"Quem sou eu",   ico:"☰", faz:verQuemSou },
+  ]],
+
+  ["Ver", "V", [
+    { rot:"Atualizar", ico:"↻", tecla:"F5", faz:atualizarVista },
+    { rot:"Tema claro / escuro", ico:"🌓", faz:() => $("#btTema").click() },
+  ]],
+
+  ["Ajuda", "j", [
+    { rot:"Sobre o PhxSql", ico:"?", faz:verSobre },
+  ]],
+];
+
+function montarMenu() {
+  const bar = $("#menubar");
+  bar.innerHTML = MENUS.map(([nome, letra, itens], i) => {
+    const rotulo = letra && nome.includes(letra)
+      ? nome.replace(letra, `<u>${letra}</u>`)
+      : `<u>${nome[0]}</u>${nome.slice(1)}`;
+    const linhas = itens.map((it, j) => {
+      if (it === "sep") return `<div class="sep" role="separator"></div>`;
+      const off = it.quando && !it.quando();
+      return `<button class="item" role="menuitem" data-m="${i}" data-i="${j}"
+        ${off ? "disabled" : ""}><span class="ico">${it.ico || ""}</span
+        ><span class="rot">${esc(it.rot)}</span
+        ><span class="tecla">${it.tecla || ""}</span></button>`;
+    }).join("");
+    return `<div class="menu" data-m="${i}">
+      <button class="titulo" role="menuitem" aria-haspopup="true"
+              aria-expanded="false" data-m="${i}">${rotulo}</button>
+      <div class="lista" role="menu" aria-label="${esc(nome)}">${linhas}</div>
+    </div>`;
+  }).join("");
+}
+
+/** Acende e apaga os itens conforme o estado de agora.
+ *
+ * Atualiza o `disabled` dos botoes que ja existem, em vez de refazer o
+ * `innerHTML` da barra. Refazer parecia mais simples e tinha um defeito
+ * sutil: o clique que abria o menu destruia o proprio elemento clicado, o
+ * `ev.target` virava um no solto, e o `closest("#menubar")` do
+ * fechar-ao-clicar-fora devolvia `null` -- entao o menu fechava no mesmo
+ * clique que o abriu. So apareceu no teste de navegador. */
+function atualizarItens() {
+  $$(".menubar .item").forEach(b => {
+    const entrada = MENUS[+b.dataset.m][2][+b.dataset.i];
+    b.disabled = !!(entrada.quando && !entrada.quando());
+  });
+}
+
+let menuAberto = null;
+
+function fecharMenu() {
+  if (menuAberto === null) return;
+  const m = $(`.menubar .menu[data-m="${menuAberto}"]`);
+  if (m) {
+    m.classList.remove("aberto");
+    m.querySelector(".titulo").setAttribute("aria-expanded", "false");
+  }
+  menuAberto = null;
+}
+
+function abrirMenu(i) {
+  if (menuAberto === i) return fecharMenu();
+  fecharMenu();
+  // O "cinza porque nao ha tabela aberta" tem de refletir o estado de AGORA,
+  // e nao o de quando a pagina carregou.
+  atualizarItens();
+  const m = $(`.menubar .menu[data-m="${i}"]`);
+  if (!m) return;
+  m.classList.add("aberto");
+  m.querySelector(".titulo").setAttribute("aria-expanded", "true");
+  menuAberto = i;
+}
+
+function itensVisiveis(i) {
+  return [...$$(`.menubar .menu[data-m="${i}"] .item:not(:disabled)`)];
+}
+
+function ligarMenu() {
+  montarMenu();
+  const bar = $("#menubar");
+
+  bar.addEventListener("click", ev => {
+    const t = ev.target.closest(".titulo");
+    if (t) { abrirMenu(+t.dataset.m); return; }
+    const it = ev.target.closest(".item");
+    if (!it || it.disabled) return;
+    const entrada = MENUS[+it.dataset.m][2][+it.dataset.i];
+    fecharMenu();
+    Promise.resolve().then(entrada.faz).catch(e => avisar(`${e}`, true));
+  });
+
+  // Passar o mouse por outro titulo com um menu aberto troca de menu, como
+  // em qualquer barra de menu que ja se usou.
+  bar.addEventListener("mouseover", ev => {
+    if (menuAberto === null) return;
+    const t = ev.target.closest(".titulo");
+    if (t && +t.dataset.m !== menuAberto) abrirMenu(+t.dataset.m);
+  });
+
+  document.addEventListener("click", ev => {
+    if (!ev.target.closest("#menubar")) fecharMenu();
+  });
+
+  document.addEventListener("keydown", ev => {
+    if (ev.key === "Escape" && menuAberto !== null) {
+      fecharMenu();
+      ev.preventDefault();
+      return;
+    }
+    // Alt + letra abre o menu correspondente.
+    if (ev.altKey && !ev.ctrlKey && !ev.metaKey) {
+      const i = MENUS.findIndex(([n, l]) => l.toLowerCase() === ev.key.toLowerCase());
+      if (i >= 0) {
+        abrirMenu(i);
+        const [primeiro] = itensVisiveis(i);
+        if (primeiro) primeiro.focus();
+        ev.preventDefault();
+        return;
+      }
+    }
+    if (menuAberto === null) return;
+
+    const itens = itensVisiveis(menuAberto);
+    const at = itens.indexOf(document.activeElement);
+    if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+      const passo = ev.key === "ArrowDown" ? 1 : -1;
+      const alvo = itens[(at + passo + itens.length) % itens.length] || itens[0];
+      if (alvo) alvo.focus();
+      ev.preventDefault();
+    } else if (ev.key === "ArrowRight" || ev.key === "ArrowLeft") {
+      const passo = ev.key === "ArrowRight" ? 1 : -1;
+      const i = (menuAberto + passo + MENUS.length) % MENUS.length;
+      abrirMenu(i);
+      const [primeiro] = itensVisiveis(i);
+      if (primeiro) primeiro.focus();
+      ev.preventDefault();
+    }
+  });
+}
+
+/* ------------------------------------------------------- atalhos globais */
+function ligarAtalhos() {
+  document.addEventListener("keydown", ev => {
+    if (!$("#app").classList.contains("ativo")) return;
+    if (ev.target.matches("input, textarea, select")) return;
+
+    if (ev.key === "F5") { ev.preventDefault(); atualizarVista(); return; }
+    if (ev.ctrlKey && (ev.key === "b" || ev.key === "B")) {
+      ev.preventDefault(); backupAgora(); return;
+    }
+    if (ev.altKey && ev.key === "1") { ev.preventDefault(); irPara("painel"); return; }
+    if (ev.altKey && ev.key === "2" && est.atual) { ev.preventDefault(); irAba("estrutura"); return; }
+    if (ev.altKey && ev.key === "3" && est.atual) { ev.preventDefault(); irAba("conteudo"); }
+  });
+}
+
+/* --------------------------------------------------- acoes do menu, enfim */
+
+function irPara(qual) {
+  const no = $(`.arvore [data-admin="${qual}"]`);
+  if (no) { marcar(no); }
+  abrirAdmin(qual);
+}
+
+function irAba(qual) {
+  if (!est.atual) return;
+  est.aba = qual;
+  desenharAba();
+}
+
+function atualizarVista() {
+  if (est.atual) { abrirTabela(est.atual.db, est.atual.tab); return; }
+  montarArvore();
+  abrirAdmin("painel");
+}
+
+/** Mostra um resultado numa folha simples, com o JSON quando nao ha tabela. */
+function folha(titulo, subtitulo, corpoHtml) {
+  est.atual = null;
+  $("#abas").innerHTML = "";
+  $("#titulo").textContent = titulo;
+  $("#subtitulo").textContent = subtitulo || "";
+  $("#painel").innerHTML = corpoHtml;
+}
+
+function fichasDe(obj, rotulos) {
+  return `<div class="fichas">` + rotulos.map(([k, r, u]) =>
+    `<div class="ficha"><div class="v">${esc(String(obj[k] ?? "—"))}</div>
+       <div class="r">${esc(r)}</div>${u ? `<div class="u">${esc(u)}</div>` : ""}</div>`
+  ).join("") + `</div>`;
+}
+
+async function novoDatabase() {
+  const nome = prompt("Nome do database novo:");
+  if (!nome) return;
+  const r = await api("criar_database", { database: nome.trim() });
+  avisar(`database "${esc(r.database || nome)}" criado`);
+  await montarArvore();
+}
+
+async function backupAgora() {
+  const db = est.atual ? est.atual.db : (est.database || "");
+  const alvo = prompt("Database para o backup (vazio = todos):", db);
+  if (alvo === null) return;
+  folha("Backup", "copiando e conferindo…", `<div class="centro">rodando…</div>`);
+  const r = await api("backup", alvo.trim() ? { database: alvo.trim() } : {});
+  folha("Backup", r.zip ? "em zip, com manifesto SHA-256" : "com manifesto SHA-256",
+    fichasDe(r, [["destino","destino"],["arquivos","arquivos"],
+                 ["bytes","bytes"],["segundos","segundos"]]) +
+    `<pre class="dado">${esc(JSON.stringify(r, null, 1))}</pre>`);
+}
+
+async function conferirBackup() {
+  const caminho = prompt("Caminho do backup a conferir:");
+  if (!caminho) return;
+  folha("Conferência do backup", "recalculando o SHA-256 de cada arquivo…",
+        `<div class="centro">conferindo…</div>`);
+  const r = await api("conferir_backup", { destino: caminho.trim() });
+  const ok = r.integro !== false;
+  folha("Conferência do backup",
+        ok ? "confere com o manifesto" : "NÃO confere com o manifesto",
+        fichasDe(r, [["conferidos","conferidos"],["diferentes","diferentes"],
+                     ["faltando","faltando"]]) +
+        `<pre class="dado">${esc(JSON.stringify(r, null, 1))}</pre>`);
+}
+
+async function verificarTabela() {
+  const { db, tab } = est.atual;
+  const r = await api("verificar", { database: db, tabela: tab });
+  folha(`Integridade de ${tab}`, "CRC de cada registro e de cada página do índice",
+        `<pre class="dado">${esc(JSON.stringify(r, null, 1))}</pre>`);
+}
+
+async function reindexarTabela() {
+  const { db, tab } = est.atual;
+  if (!confirm(`Recriar os índices de ${tab} a partir do .reg?\n\nO .ndx é refeito do zero.`)) return;
+  const r = await api("reindexar", { database: db, tabela: tab });
+  avisar(`índices de ${tab} refeitos`);
+  folha(`Reindex de ${tab}`, "o .ndx foi recriado a partir do .reg",
+        `<pre class="dado">${esc(JSON.stringify(r, null, 1))}</pre>`);
+}
+
+async function repararTabela() {
+  const { db, tab } = est.atual;
+  if (!confirm(`Reparar ${tab} pelo espelho .bkp?\n\nCada slot é conferido nos dois lados.`)) return;
+  const r = await api("reparar", { database: db, tabela: tab });
+  folha(`Reparo de ${tab}`, "cada slot conferido no .reg e no .bkp",
+        fichasDe(r, [["conferidos","conferidos"],["reparados","reparados"],
+                     ["perdidos","perdidos"]]) +
+        (r.perdidos ? `<div class="nota">Há ${r.perdidos} slot(s) perdido(s) dos dois lados.</div>` : ""));
+}
+
+async function carregarNaMemoria() {
+  const { db, tab } = est.atual;
+  const r = await api("memoria_carregar", { database: db, tabela: tab });
+  avisar(`${tab} está na RAM`);
+  folha(`${tab} em memória`, "a consulta deixa de tocar o disco",
+        `<pre class="dado">${esc(JSON.stringify(r, null, 1))}</pre>`);
+}
+
+async function liberarDaMemoria() {
+  const { db, tab } = est.atual;
+  const r = await api("memoria_liberar", { database: db, tabela: tab });
+  avisar(`${tab} saiu da RAM`);
+  await verResidentes();
+  return r;
+}
+
+async function verResidentes() {
+  const r = await api("memoria");
+  const linhas = r.tabelas || r || [];
+  folha("Tabelas em memória", "carregadas na RAM · a consulta não toca o disco",
+    Array.isArray(linhas) && linhas.length
+      ? tabela([{t:"tabela"},{t:"linhas",cls:"num"},{t:"bytes",cls:"num"},{t:"carregada em"}],
+          linhas, t => `<tr><td class="dado">${esc(t.tabela || t.nome || "—")}</td>
+            <td class="num">${esc(String(t.linhas ?? "—"))}</td>
+            <td class="num">${esc(String(t.bytes ?? "—"))}</td>
+            <td class="dado">${esc(String(t.carregada_em ?? "—"))}</td></tr>`)
+      : `<div class="centro">nenhuma tabela na RAM</div>`);
+}
+
+async function verIps() {
+  const r = await api("ips");
+  const linhas = Array.isArray(r) ? r : (r.ips || []);
+  folha("De onde vêm", "resumo do acessos.log por IP",
+    linhas.length
+      ? tabela([{t:"IP"},{t:"acessos",cls:"num"},{t:"recusados",cls:"num"},{t:"último"}],
+          linhas, i => `<tr><td class="dado">${esc(i.ip)}</td>
+            <td class="num">${esc(String(i.acessos ?? 0))}</td>
+            <td class="num">${esc(String(i.recusados ?? 0))}</td>
+            <td class="dado">${esc(String(i.ultimo ?? "—"))}</td></tr>`)
+      : `<div class="centro">nenhum acesso registrado</div>`);
+}
+
+async function verConfig() {
+  const c = await api("config");
+  folha("Configuração", "o config.json como o servidor o entendeu · o token nunca sai",
+        `<pre class="dado">${esc(JSON.stringify(c, null, 1))}</pre>`);
+}
+
+async function verQuemSou() {
+  const q = await api("quem_sou");
+  folha("Quem sou eu", "a sessão deste console",
+        `<pre class="dado">${esc(JSON.stringify(q, null, 1))}</pre>`);
+}
+
+async function verSobre() {
+  let v = "—";
+  try { v = (await api("ping")).versao || "—"; } catch (e) { /* offline: segue */ }
+  folha("Sobre o PhxSql", "Built to store. Engineered to scale.",
+    `<div class="fichas">
+       <div class="ficha"><div class="v">${esc(v)}</div><div class="r">versão</div></div>
+       <div class="ficha"><div class="v">5</div><div class="r">arquivos por tabela</div>
+         <div class="u">.reg .ndx .bin .memo .log</div></div>
+       <div class="ficha"><div class="v">0</div><div class="r">dependências</div>
+         <div class="u">só a std do Rust</div></div>
+     </div>
+     <p>Motor de dados em Rust no modelo de arquivos separados do HFSQL(R). O
+     <code>.reg</code> guarda a ordem em que você digitou, e nada nunca a
+     embaralha.</p>
+     <p class="leg">Manual completo em <code>MANUAL.txt</code>; formato byte a
+     byte em <code>docs/FORMATO.md</code>.</p>`);
+}
 
 function lembrar(chave, valor) {
   try { localStorage.setItem(chave, valor); } catch {}

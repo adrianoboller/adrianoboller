@@ -79,6 +79,7 @@ dependência externa (só a `std`), o que faz o projeto compilar offline.
 | Backup com manifesto SHA-256, ZIP e agendamento | pronto |
 | Nível de usuário: nenhum, leitor, operador, dono, admin | pronto |
 | Tema claro e escuro, console para mais de um servidor | pronto |
+| Barra de menu tradicional — 22 recursos, atalhos e navegação por teclado | pronto |
 | Painel com sete gráficos, agregado numa chamada | pronto |
 | phx-grid na aba Conteúdo: agrupamento por arrastar | pronto |
 | Espelho `.bkp`: segunda chance do `.reg` | pronto |

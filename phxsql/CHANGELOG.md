@@ -10,6 +10,42 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
+## 0.5.3 — 2026-08-28
+
+### Adicionado
+
+- **Barra de menu tradicional** no Centro de Controle: *Arquivo · Tabela ·
+  Memória · Administração · Ver · Ajuda*, com ícone, atalho à direita e
+  separadores, como manda o gênero.
+
+  O motivo de existir está na conta: a interface usava **14 das 31 operações**
+  do servidor. Backup, conferência de backup, reparo pelo espelho, reindex, a
+  tabela em memória inteira e a configuração **não tinham porta de entrada
+  nenhuma na tela** — existiam só para quem falasse o protocolo na mão.
+
+  Teclado: a letra sublinhada abre o menu com **Alt**, as setas andam entre
+  itens e entre menus, **Esc** fecha. Mais `F5` para atualizar, `Ctrl+B` para
+  o backup e `Alt+1/2/3` para Painel, Estrutura e Conteúdo.
+
+  Os itens que precisam de uma tabela ficam cinzas enquanto não houver uma, e
+  o estado é recalculado na hora de abrir o menu — não na carga da página.
+  As ações que mexem (reindexar, reparar) pedem confirmação.
+
+- **Recado na barra** (`avisar`), que aparece e some sozinho. Um `alert()`
+  interromperia quem está trabalhando para dizer "backup pronto"; erro fica
+  mais tempo na tela, porque erro se lê.
+
+### Corrigido
+
+- **O menu fechava no mesmo clique que o abria** — defeito meu, achado no
+  teste de navegador e invisível na leitura do código. `abrirMenu` refazia o
+  `innerHTML` da barra para atualizar o cinza dos itens; isso destruía o
+  elemento clicado, o `ev.target` virava um nó solto, e o
+  `closest("#menubar")` do fechar-ao-clicar-fora devolvia `null`. Agora só o
+  `disabled` dos botões existentes é atualizado.
+
+---
+
 ## 0.5.2 — 2026-08-28
 
 ### Corrigido
