@@ -118,9 +118,12 @@ o código, não contra a lembrança — foi assim que a chave estrangeira saiu d
 | ☑️ | 109 | **Tela para colar JSON, CSV, TXT, HTML ou XML** | os cinco formatos, com o motor adivinhando qual é. A primeira linha manda, e as colunas casam pelo **nome** e não pela posição. `importar_conferir` mostra o que entendeu antes de gravar; o botão de gravar só acende depois disso |
 | ☑️ | 110 | **Teste de replicação com três servidores espelho** | `bancada/replicacao/`: `montar.py` sobe Master + Slave01/02/03, `medir.py` mede atraso por tipo de escrita, vazão, queda e retomada. Compara um SHA-256 de **cada linha**, com o rowid junto — e não a contagem, que não acharia uma linha que atravessou errada. Cascata Master → Slave01 → Slave03 também medida |
 | ◐ | 111 | **A réplica acompanhar a escrita do master** | não acompanha: 4.273 eventos/s contra 18.773 linhas/s. Aplicar decodifica a imagem para `Value` e **reencoda** o payload, em vez de gravar os bytes que vieram. Gravar direto, remendando só os ponteiros dos anexos, é o próximo ganho grande |
+| ☑️ | 112 | **Analisar as sugestões de arquitetura (WAL, MemTable, group commit, LSM)** | `docs/DESEMPENHO.md`, com a medição que muda o alvo: **83,5% do tempo de uma inserção está no `.ndx`**, e o arquivo de dados — o que as propostas querem substituir — já é *append-only* e custa 16,5%. Das dez propostas, cinco já existem, duas miram um gargalo que não é o nosso, uma quebraria a ordem de digitação, e duas são reais |
+| ☐ | 113 | **Ordenar as chaves do lote antes de inserir no `.ndx`** | o item que a medição favorece: ataca os 83,5% sem mudar formato nem garantia. A carga em lote já provou o princípio no nível de cima (9,6×); falta aplicá-lo dentro da B+tree |
+| ☐ | 114 | **Índice não único fora do caminho crítico** | 1,45× medido, e não custa correção: nada depende de um índice não único para decidir se a linha entra. O **único** não pode sair — ele é a própria decisão, e adiá-lo deixaria buraco permanente no `.reg` |
 | ☑️ | 67 | **Botão e menu Tabelas** para gerir as tabelas do banco: nova, estrutura, editar conteúdo, partições, duplicar, reparar tabela, reparar índice e excluir — e **Gestão de transações** no menu de ferramentas | as oito operações funcionam de ponta a ponta; três delas (`criar_tabela`, `duplicar_tabela`, `excluir_tabela`) nasceram aqui, e `criar_schema` — prometido na documentação e nunca despachado — junto |
 
-**98 feitos · 7 parciais · 6 planejados**, de 111 pedidos.
+**99 feitos · 7 parciais · 8 planejados**, de 114 pedidos.
 
 Fora do que você pediu, entraram por medição: o CRC slice-by-8, o `descer` sem
 reler a folha, a conferência de unicidade sem descida dupla, e dezoito

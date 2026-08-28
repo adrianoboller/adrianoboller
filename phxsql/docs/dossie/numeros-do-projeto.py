@@ -219,6 +219,7 @@ def main() -> None:
   <code>docs/REPLICACAO.md</code>, roteiro em <code>docs/PLANO.md</code>,
   o DbLink em <code>docs/DBLINK.md</code>, as junções em <code>docs/JUNCOES.md</code>,
   a revisão contra os motores maduros em <code>docs/COMPARACAO.md</code>,
+  onde a escrita dói em <code>docs/DESEMPENHO.md</code>,
   e o que ainda falta em <code>docs/PENDENCIAS.md</code>.</p>
   """
 
