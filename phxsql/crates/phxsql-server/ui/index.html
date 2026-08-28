@@ -591,6 +591,29 @@ body,.cartao,.barra,.arvore,table,td,th{
 @media (max-width:960px){.maquina{grid-template-columns:1fr}
                          .medidores{justify-content:center}}
 
+/* ----------------------------------------------------------------- juncoes */
+.vennes{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+        gap:10px;margin:18px 0}
+.venn{
+  display:flex;flex-direction:column;align-items:center;gap:5px;padding:12px 8px 10px;
+  background:var(--painel-2);border:1px solid var(--linha);border-radius:9px;
+  color:var(--texto-2);cursor:pointer;font:inherit;width:auto;text-align:center;
+}
+.venn:hover{border-color:var(--linha-forte);color:var(--texto)}
+.venn.viva{border-color:var(--laranja);background:var(--realce);color:var(--texto)}
+.venn svg{width:96px;height:auto;display:block}
+.venn .v-rot{font-size:12px;font-weight:600}
+.venn .v-sql{font-size:9.5px;font-family:"IBM Plex Mono",monospace;
+             color:var(--texto-3);line-height:1.3}
+.venn .v-exp{font-size:10px;color:var(--texto-3);line-height:1.35}
+.un-lista{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+          gap:6px;margin-bottom:16px}
+.un-item{display:flex;align-items:center;gap:8px;padding:8px 11px;margin:0;
+         background:var(--painel-2);border:1px solid var(--linha);border-radius:6px;
+         font-size:12.5px;text-transform:none;letter-spacing:0;color:var(--texto-2)}
+.un-item input{width:auto;margin:0}
+.un-item:hover{border-color:var(--linha-forte)}
+
 /* ------------------------------------------------------------------ dblink */
 .barra-dbl{display:flex;gap:12px;align-items:end;flex-wrap:wrap;margin-bottom:14px}
 .barra-dbl label{display:flex;flex-direction:column;gap:4px;font-size:11px;
@@ -4230,6 +4253,259 @@ function verCreditos() {
 }
 
 
+
+/* ================================================= Junções e união
+   As sete figuras do diagrama clássico, escolhidas clicando no desenho em vez
+   de num menu de texto: quem sabe que quer «tudo de A e o que casar de B» nem
+   sempre lembra que isso se chama LEFT JOIN, mas reconhece o desenho na hora.
+
+   Cada cartão mostra o SQL equivalente embaixo — a tela ensina o nome enquanto
+   é usada, em vez de exigir que ele já se saiba. */
+
+const JUNCOES = [
+  { id:"interna",      rot:"Interna",        sql:"INNER JOIN",
+    exp:"só o que casa dos dois lados" },
+  { id:"esquerda",     rot:"Esquerda",       sql:"LEFT JOIN",
+    exp:"tudo de A, e B quando houver" },
+  { id:"direita",      rot:"Direita",        sql:"RIGHT JOIN",
+    exp:"tudo de B, e A quando houver" },
+  { id:"completa",     rot:"Completa",       sql:"FULL OUTER JOIN",
+    exp:"tudo dos dois lados" },
+  { id:"so_esquerda",  rot:"Só A",           sql:"LEFT JOIN … WHERE B.chave IS NULL",
+    exp:"o que existe em A e não em B" },
+  { id:"so_direita",   rot:"Só B",           sql:"RIGHT JOIN … WHERE A.chave IS NULL",
+    exp:"o que existe em B e não em A" },
+  { id:"so_dos_lados", rot:"Só as pontas",   sql:"FULL OUTER … WHERE A.chave IS NULL OR B.chave IS NULL",
+    exp:"o que sobra dos dois lados, sem o meio" },
+];
+
+/// O diagrama de Venn de uma junção, desenhado à mão.
+///
+/// Os `id` de máscara levam o nome do tipo porque sete desenhos convivem na
+/// mesma página: `id` repetido faria o navegador usar a primeira máscara em
+/// todos, e as sete figuras sairiam iguais.
+function venn(tipo) {
+  const A = { cx:36, cy:29, r:24 }, B = { cx:60, cy:29, r:24 };
+  const c = (o, extra = "") => `<circle cx="${o.cx}" cy="${o.cy}" r="${o.r}" ${extra}/>`;
+  const F = `fill="var(--laranja)"`;
+  const defs = `<defs>
+    <clipPath id="cA-${tipo}">${c(A)}</clipPath>
+    <mask id="mSemB-${tipo}"><rect x="0" y="0" width="96" height="58" fill="#fff"/>${c(B, 'fill="#000"')}</mask>
+    <mask id="mSemA-${tipo}"><rect x="0" y="0" width="96" height="58" fill="#fff"/>${c(A, 'fill="#000"')}</mask>
+  </defs>`;
+  const pintado = {
+    interna:      `<g clip-path="url(#cA-${tipo})">${c(B, F)}</g>`,
+    esquerda:     c(A, F),
+    direita:      c(B, F),
+    completa:     c(A, F) + c(B, F),
+    so_esquerda:  `<g mask="url(#mSemB-${tipo})">${c(A, F)}</g>`,
+    so_direita:   `<g mask="url(#mSemA-${tipo})">${c(B, F)}</g>`,
+    so_dos_lados: `<g mask="url(#mSemB-${tipo})">${c(A, F)}</g>`
+                + `<g mask="url(#mSemA-${tipo})">${c(B, F)}</g>`,
+  }[tipo] || "";
+  return `<svg viewBox="0 0 96 58" role="img" aria-label="Diagrama de ${tipo}">
+    ${defs}${pintado}
+    ${c(A, 'fill="none" stroke="currentColor" stroke-width="1.3"')}
+    ${c(B, 'fill="none" stroke="currentColor" stroke-width="1.3"')}
+    <text x="24" y="34" text-anchor="middle" font-size="13" font-weight="700"
+          fill="currentColor">A</text>
+    <text x="72" y="34" text-anchor="middle" font-size="13" font-weight="700"
+          fill="currentColor">B</text>
+  </svg>`;
+}
+
+const JN = { db:"", a:"", b:"", chaveA:"", chaveB:"", tipo:"interna", grade:null };
+
+async function telaJuncao(db) {
+  JN.db = db || JN.db || databaseCorrente();
+  if (!JN.db) return avisar("escolha um banco primeiro", true);
+  folha("Junção de tabelas", "carregando…", `<div class="centro">carregando…</div>`);
+
+  const t = await api("tabelas", { database: JN.db });
+  const tabs = t.tabelas || [];
+  if (tabs.length < 2) {
+    return folha("Junção de tabelas", esc(JN.db),
+      `<div class="aviso mal">O banco <b>${esc(JN.db)}</b> tem
+        ${tabs.length} tabela(s). Uma junção precisa de duas.</div>`);
+  }
+  JN.a = tabs.includes(JN.a) ? JN.a : tabs[0];
+  JN.b = tabs.includes(JN.b) && JN.b !== JN.a ? JN.b : (tabs.find(x => x !== JN.a) || tabs[1]);
+
+  const opc = (lista, sel) => lista.map(x =>
+    `<option ${x === sel ? "selected" : ""}>${esc(x)}</option>`).join("");
+
+  folha("Junção de tabelas", `${esc(JN.db)} · escolha o formato clicando no desenho`,
+    `<div class="form-dbl">
+       <label class="cmp"><span>Tabela A</span>
+         <select id="jA" class="campo">${opc(tabs, JN.a)}</select></label>
+       <label class="cmp"><span>Chave de A</span>
+         <select id="jKA" class="campo"></select>
+         <span class="leg">vazio = a chave primária</span></label>
+       <label class="cmp"><span>Tabela B</span>
+         <select id="jB" class="campo">${opc(tabs, JN.b)}</select></label>
+       <label class="cmp"><span>Chave de B</span>
+         <select id="jKB" class="campo"></select>
+         <span class="leg">vazio = a chave primária</span></label>
+     </div>
+     <div class="vennes" id="vennes">
+       ${JUNCOES.map(j => `<button class="venn ${j.id === JN.tipo ? "viva" : ""}" data-t="${j.id}">
+            ${venn(j.id)}
+            <span class="v-rot">${j.rot}</span>
+            <span class="v-sql">${esc(j.sql)}</span>
+            <span class="v-exp">${j.exp}</span>
+          </button>`).join("")}
+     </div>
+     <div class="acoes">
+       <button class="botao" id="jRodar">Juntar</button>
+       <button class="botao secundario" id="jUniao">União (UNION)…</button>
+     </div>
+     <div id="jSaida"></div>`);
+
+  const encher = async (qual, alvo) => {
+    const e = await api("esquema", { database: JN.db, tabela: qual });
+    const pk = (e.indices || []).find(i => i.primario);
+    const nomes = (e.colunas || []).map(c => c.nome);
+    const atual = alvo === "jKA" ? JN.chaveA : JN.chaveB;
+    $("#" + alvo).innerHTML =
+      `<option value="">— chave primária${pk ? ` (${esc(pk.colunas.map(c=>c.coluna).join(" + "))})` : ": não tem"} —</option>`
+      + opc(nomes, atual);
+  };
+  await Promise.all([encher(JN.a, "jKA"), encher(JN.b, "jKB")]);
+
+  $("#jA").onchange = e => { JN.a = e.target.value; JN.chaveA = ""; telaJuncao(); };
+  $("#jB").onchange = e => { JN.b = e.target.value; JN.chaveB = ""; telaJuncao(); };
+  $("#jKA").onchange = e => JN.chaveA = e.target.value;
+  $("#jKB").onchange = e => JN.chaveB = e.target.value;
+  $("#jUniao").onclick = () => telaUniao(JN.db);
+  $$("#vennes .venn").forEach(b => b.onclick = () => {
+    JN.tipo = b.dataset.t;
+    $$("#vennes .venn").forEach(x => x.classList.toggle("viva", x === b));
+    rodarJuncao();
+  });
+  $("#jRodar").onclick = rodarJuncao;
+}
+
+async function rodarJuncao() {
+  const alvo = $("#jSaida");
+  if (!alvo) return;
+  alvo.innerHTML = `<div class="centro">juntando…</div>`;
+  const pedido = {
+    op: "juntar", database: JN.db, tipo: JN.tipo,
+    a: { tabela: JN.a, prefixo: "a" },
+    b: { tabela: JN.b, prefixo: "b" },
+  };
+  if (JN.chaveA) pedido.a.chave = JN.chaveA;
+  if (JN.chaveB) pedido.b.chave = JN.chaveB;
+  let r;
+  try { r = await api("juntar", pedido); }
+  catch (e) { return alvo.innerHTML = `<div class="aviso mal">${esc(String(e))}</div>`; }
+
+  // As linhas sem par contam: um INNER que trouxe menos do que se esperava
+  // costuma ter aqui a explicação, e escondê-la faz o número virar mistério.
+  const nulas = r.chave_nula_a + r.chave_nula_b
+    ? `<div class="aviso"><b>Chave nula não casa com chave nula.</b>
+         ${fmt(r.chave_nula_a)} linha(s) de A e ${fmt(r.chave_nula_b)} de B têm a chave
+         vazia. Em SQL isso não é «igual a outro vazio»: é desconhecido, e a
+         linha se comporta como linha sem par.</div>`
+    : "";
+
+  alvo.innerHTML = `
+    <div class="dbl-titulo">
+      <b>${fmt(r.quantas)} linha(s)</b>
+      <span class="leg"><code>${esc(r.sql)}</code> · A leu ${fmt(r.lidas_a)},
+        B leu ${fmt(r.lidas_b)} · ${r.ms} ms${r.truncado ? " · cortado no teto" : ""}</span>
+    </div>${nulas}
+    <div id="jGrade"></div>`;
+
+  desenharGradeDeLinhas("#jGrade", r, g => JN.grade = g);
+}
+
+/// A grade de um resultado posicional (junção ou união).
+///
+/// Junção e união devolvem `colunas` e `linhas` como vetores, e não objetos:
+/// os dois lados podem trazer uma coluna `id`, e um objeto perderia a segunda.
+/// Aqui elas viram objeto com o nome já desambiguado pelo servidor.
+function desenharGradeDeLinhas(seletor, r, guardar) {
+  const dados = r.linhas.map(l => {
+    const o = {};
+    r.colunas.forEach((c, i) => o[c.nome] = l[i]);
+    return o;
+  });
+  const g = PhxGrid.criar(seletor, {
+    agrupavel: true,
+    buscaGlobal: true,
+    colunas: r.colunas.map(c => ({
+      campo: c.nome,
+      titulo: c.nome + (c.chave ? " ★" : ""),
+      tipo: tipoDoGrid(c.tipo.replace(/\(.*/, "")),
+      agregador: !c.chave && /^Int|^UInt|^Decimal|^Real/.test(c.tipo) ? "sum" : null,
+    })),
+    dados,
+    pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+  });
+  if (guardar) guardar(g);
+  return g;
+}
+
+const UN = { db:"", escolhidas:[], modo:"distinta" };
+
+async function telaUniao(db) {
+  UN.db = db || UN.db || databaseCorrente();
+  if (!UN.db) return avisar("escolha um banco primeiro", true);
+  folha("União de tabelas", "carregando…", `<div class="centro">carregando…</div>`);
+  const t = await api("tabelas", { database: UN.db });
+  const tabs = t.tabelas || [];
+  UN.escolhidas = UN.escolhidas.filter(x => tabs.includes(x));
+
+  folha("União de tabelas",
+    `${esc(UN.db)} · empilha duas ou mais tabelas, posição a posição`,
+    `<div class="un-lista">
+       ${tabs.map(x => `<label class="un-item">
+            <input type="checkbox" value="${esc(x)}" ${UN.escolhidas.includes(x) ? "checked" : ""}>
+            <span>${esc(x)}</span></label>`).join("")}
+     </div>
+     <div class="form-dbl">
+       <label class="cmp"><span>Modo</span>
+         <select id="unModo" class="campo">
+           <option value="distinta" ${UN.modo === "distinta" ? "selected" : ""}>UNION — tira as repetidas</option>
+           <option value="tudo" ${UN.modo === "tudo" ? "selected" : ""}>UNION ALL — mantém tudo</option>
+         </select></label>
+     </div>
+     <div class="aviso"><b>Empilhar é por posição, e não por nome.</b> A primeira
+       coluna de uma parte cai na primeira da outra, e é o <em>tipo</em> que precisa
+       bater — o nome sai da primeira parte, como no SQL. Casar por nome pareceria
+       mais amigável e seria uma armadilha: duas tabelas com as mesmas colunas em
+       ordem diferente empilhariam trocando os valores, caladas.</div>
+     <div class="acoes">
+       <button class="botao" id="unRodar">Unir</button>
+       <button class="botao secundario" id="unJuncao">← Junção</button>
+     </div>
+     <div id="unSaida"></div>`);
+
+  $("#unModo").onchange = e => UN.modo = e.target.value;
+  $("#unJuncao").onclick = () => telaJuncao(UN.db);
+  $$(".un-item input").forEach(c => c.onchange = () => {
+    UN.escolhidas = $$(".un-item input").filter(x => x.checked).map(x => x.value);
+  });
+  $("#unRodar").onclick = async () => {
+    if (UN.escolhidas.length < 2) return avisar("marque ao menos duas tabelas", true);
+    $("#unSaida").innerHTML = `<div class="centro">unindo…</div>`;
+    let r;
+    try { r = await api("unir", { database: UN.db, modo: UN.modo, tabelas: UN.escolhidas }); }
+    catch (e) { return $("#unSaida").innerHTML = `<div class="aviso mal">${esc(String(e))}</div>`; }
+    $("#unSaida").innerHTML = `
+      <div class="dbl-titulo">
+        <b>${fmt(r.quantas)} linha(s)</b>
+        <span class="leg"><code>${esc(r.sql)}</code> · ${
+          r.por_parte.map((n, i) => `${esc(UN.escolhidas[i])}: ${fmt(n)}`).join(" + ")
+        }${r.repetidas ? ` · ${fmt(r.repetidas)} repetida(s) descartada(s)` : ""} · ${r.ms} ms${
+          r.truncado ? " · cortado no teto" : ""}</span>
+      </div>
+      <div id="unGrade"></div>`;
+    desenharGradeDeLinhas("#unGrade", r);
+  };
+}
+
 /* ========================================================== DbLink
    Ligações para bancos de fora. Duas telas, porque são duas coisas:
 
@@ -4691,6 +4967,9 @@ const ICO = {
   catalogo: `<rect x="3.5" y="3.5" width="17" height="17" rx="2" fill="none" stroke-width="1.5"/><path d="M3.5 8.5h17M8.5 8.5v12" stroke-width="1.3"/><path d="M11.5 12h6M11.5 15.5h6" stroke-width="1.3" stroke-linecap="round"/>`,
   engrenagem: `<circle cx="12" cy="12" r="3.2" fill="none" stroke-width="1.5"/><path d="M12 2.6v2.6M12 18.8v2.6M21.4 12h-2.6M5.2 12H2.6M18.6 5.4l-1.8 1.8M7.2 16.8l-1.8 1.8M18.6 18.6l-1.8-1.8M7.2 7.2L5.4 5.4" stroke-width="1.5" stroke-linecap="round"/>`,
   grade: `<rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke-width="1.6"/><path d="M3 9h18M9 9v11M15 9v11" stroke-width="1.4"/>`,
+  // Dois circulos que se cruzam, com o meio cheio: e o INNER JOIN, que e a
+  // junção que todo mundo desenha quando explica junção.
+  venn: `<circle cx="9.5" cy="12" r="6.5" fill="none" stroke-width="1.6"/><circle cx="14.5" cy="12" r="6.5" fill="none" stroke-width="1.6"/><path d="M12 6.2a6.5 6.5 0 000 11.6 6.5 6.5 0 000-11.6z" fill="currentColor" opacity=".55" stroke="none"/>`,
   // Dois elos que se encaixam atravessando uma linha tracejada: a ligacao
   // cruza a fronteira do servidor.
   elo: `<path d="M9.5 14.5l5-5" stroke-width="1.7" stroke-linecap="round"/><path d="M12.8 7.7l1.9-1.9a3.4 3.4 0 014.8 4.8l-1.9 1.9M11.2 16.3l-1.9 1.9a3.4 3.4 0 01-4.8-4.8l1.9-1.9" fill="none" stroke-width="1.7" stroke-linecap="round"/>`,
@@ -4719,6 +4998,7 @@ const FERRAMENTAS = [
         + "então conferir um sinalizador. Mexe no coração do servidor." },
   { ico:"consulta", rot:"Query",      cor:"var(--ndx)",    faz:abrirConsulta },
   { ico:"pivot",    rot:"Pivot",      cor:"var(--ndx)",    faz:() => telaPivot() },
+  { ico:"venn",     rot:"Junção",     cor:"var(--ndx)",    faz:() => telaJuncao() },
   "risco",
   { ico:"gente",    rot:"Usuários",   cor:"var(--reg)",    faz:() => irPara("usuarios") },
   { ico:"escudo",   rot:"Diretivas",  cor:"var(--laranja)",faz:verDiretivas },
@@ -4989,6 +5269,8 @@ const MENUS = [
     { rot:"SysTables",            ico:"▤", faz:() => verSysTables() },
     { rot:"SysColumns",           ico:"☰", faz:() => verSysColumns() },
     { rot:"Tabela dinâmica…",     ico:"▦", faz:() => telaPivot() },
+    { rot:"Junção de tabelas…",   ico:"◉", faz:() => telaJuncao() },
+    { rot:"União de tabelas…",    ico:"⊎", faz:() => telaUniao() },
     { rot:"Sequências",           ico:"№", faz:() => verSequencias() },
     "sep",
     { rot:"Copiar / colar tabela…", ico:"⧉", faz:() => telaCopiarColar(databaseCorrente()) },
@@ -5045,6 +5327,8 @@ const MENUS = [
     { rot:"Gestão de transações", ico:"⇄", faz:verTransacoes },
     { rot:"Consulta SQL",         ico:"⌕", faz:abrirConsulta },
     { rot:"Tabela dinâmica…",     ico:"▦", tecla:"Alt+7", faz:() => telaPivot() },
+    { rot:"Junção de tabelas…",   ico:"◉", faz:() => telaJuncao() },
+    { rot:"União de tabelas…",    ico:"⊎", faz:() => telaUniao() },
     "sep",
     { rot:"Serviço",              ico:"⏻", faz:verServico },
     { rot:"Conexões",             ico:"⇋", faz:verConexoes },

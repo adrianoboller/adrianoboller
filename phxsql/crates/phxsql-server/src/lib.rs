@@ -9,6 +9,7 @@ pub mod config;
 pub mod dblink;
 pub mod email;
 pub mod http;
+pub mod juncao;
 pub mod pivot;
 pub mod servidor;
 pub mod sistema;

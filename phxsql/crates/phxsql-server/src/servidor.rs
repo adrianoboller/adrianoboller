@@ -36,6 +36,7 @@ use crate::blacklist::Blacklist;
 use crate::config::{Config, Durabilidade};
 use crate::dblink::{mysql, Definicao, Motor};
 use crate::http;
+use crate::juncao::{Lado, Tipo as TipoJuncao, Uniao};
 use crate::usuarios::{Atividade, Usuario};
 use phxsql_core::schema::Schema;
 use phxsql_core::value::Value;
@@ -1438,6 +1439,8 @@ impl Servidor {
             "sequencias" | "sequences" => self.op_sequencias(p),
             "ajustar_sequencia" => self.op_ajustar_sequencia(p, sessao),
             "pivotar" | "pivot" => self.op_pivotar(p, sessao),
+            "juntar" | "join" => self.op_juntar(p, sessao),
+            "unir" | "union" => self.op_unir(p, sessao),
             "ler" => self.op_ler(p, sessao),
             "varrer" => self.op_varrer(p, sessao),
             "buscar" => self.op_buscar(p, sessao),
@@ -2212,22 +2215,54 @@ impl Servidor {
     /// caminho pela rede -- so escrevendo Rust.
     fn op_criar_tabela(&self, p: &Json) -> Result<Json> {
         let database = p.texto_ou("database", "");
-        let esquema = crate::valores::esquema_de_json(p)?;
-        let nome = esquema.nome().to_string();
-        let schema = p.texto_ou("schema", "");
-        let schema = (!schema.trim().is_empty()).then_some(schema);
+        let mut esquema = crate::valores::esquema_de_json(p)?;
+
+        // `filial.clientes` e o schema `filial` mais a tabela `clientes`, e
+        // nao uma tabela chamada "filial.clientes".
+        //
+        // Toda leitura ja separava assim -- `abrir_qualificada` faz isso desde
+        // sempre. So a CRIACAO nao fazia, e o resultado eram cinco arquivos
+        // chamados `filial.clientes.reg` na raiz do banco, que nenhuma outra
+        // operacao conseguia abrir: a tabela nascia inalcancavel, e o servidor
+        // respondia "criada".
+        let (do_nome, nome) = phxsql_store::catalogo::separar_qualificado(esquema.nome());
+        let dito = p.texto_ou("schema", "").trim().to_string();
+        let schema = match (do_nome.as_deref(), dito.as_str()) {
+            (Some(a), b) if !b.is_empty() && a != b => {
+                return Err(PhxError::Esquema(format!(
+                    "o nome diz schema {a:?} e o campo \"schema\" diz {b:?}:                      escolha um dos dois"
+                )))
+            }
+            (Some(a), _) => Some(a.to_string()),
+            (None, "") => None,
+            (None, b) => Some(b.to_string()),
+        };
+        if do_nome.is_some() {
+            esquema.renomear(&nome);
+        }
 
         let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
         let db = dados.abrir_database(database)?;
-        if db.existe_tabela(schema, &nome)? {
+        if db.existe_tabela(schema.as_deref(), &nome)? {
             return Err(PhxError::Duplicado(format!(
-                "a tabela {nome} ja existe em {database}"
+                "a tabela {} ja existe em {database}",
+                phxsql_store::catalogo::qualificar(schema.as_deref(), &nome)
             )));
         }
-        let t = db.criar_tabela(schema, esquema)?;
+        let t = db.criar_tabela(schema.as_deref(), esquema)?;
         Ok(Json::objeto(vec![
             ("database", Json::texto_de(database)),
-            ("tabela", Json::texto_de(&nome)),
+            (
+                "schema",
+                match &schema {
+                    Some(s) => Json::texto_de(s),
+                    None => Json::Nulo,
+                },
+            ),
+            (
+                "tabela",
+                Json::texto_de(phxsql_store::catalogo::qualificar(schema.as_deref(), &nome)),
+            ),
             ("colunas", Json::de_u64(t.esquema().colunas().len() as u64)),
             ("indices", Json::de_u64(t.esquema().indices().len() as u64)),
             (
@@ -2682,6 +2717,283 @@ impl Servidor {
                 "divergencias",
                 Json::Lista(r.divergencias.iter().map(Json::texto_de).collect()),
             ),
+        ]))
+    }
+
+    // -------------------------------------------------- junção e união
+
+    /// Resolve as colunas da chave de um lado, aceitando nome ou lista.
+    fn chave_do_lado(esquema: &Schema, j: &Json, campo: &str, tabela: &str) -> Result<Vec<usize>> {
+        let nomes: Vec<String> = match j.campo(campo) {
+            Some(Json::Lista(l)) => l
+                .iter()
+                .filter_map(|x| x.texto().map(str::to_string))
+                .collect(),
+            Some(outro) => outro
+                .texto()
+                .map(|t| vec![t.to_string()])
+                .unwrap_or_default(),
+            None => Vec::new(),
+        };
+        if nomes.is_empty() {
+            // Sem chave dita, a chave primaria e a escolha obvia -- e a unica
+            // que nao e chute. Juntar pela primeira coluna daria numero errado
+            // calado, que e pior do que recusar.
+            let pk = esquema.chave_primaria().ok_or_else(|| {
+                PhxError::Esquema(format!(
+                    "{tabela} nao tem chave primaria; diga por qual coluna juntar em {campo:?}"
+                ))
+            })?;
+            return Ok(pk.colunas.iter().map(|ic| ic.coluna).collect());
+        }
+        nomes
+            .iter()
+            .map(|n| {
+                posicao_da_coluna(esquema, n).ok_or_else(|| {
+                    PhxError::Esquema(format!("a coluna {n:?} nao existe em {tabela}"))
+                })
+            })
+            .collect()
+    }
+
+    /// Le uma tabela inteira para a memoria, com teto.
+    ///
+    /// O lado do mapa cabe na memoria ou a junção nao acontece. Recusar com o
+    /// numero na mensagem e melhor do que engasgar a maquina.
+    fn materializar(t: &mut Table, nome: &str) -> Result<Vec<Vec<Value>>> {
+        let rowids = t.varrer()?;
+        if rowids.len() > TETO_JUNCAO {
+            return Err(PhxError::LimiteExcedido(format!(
+                "{nome} tem {} linhas, acima do teto de {TETO_JUNCAO} para o lado que \
+                 entra na memoria. Troque a ordem dos lados ou filtre antes",
+                rowids.len()
+            )));
+        }
+        let mut v = Vec::with_capacity(rowids.len());
+        for (rowid, _) in rowids {
+            if let Some(l) = t.ler(rowid)? {
+                v.push(l);
+            }
+        }
+        Ok(v)
+    }
+
+    /// As sete figuras do diagrama, entre duas tabelas.
+    fn op_juntar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let tipo = TipoJuncao::de_texto(p.texto_ou("tipo", "interna"))?;
+        let max = self.limite_pivot(p);
+        let comeco = Instant::now();
+
+        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let db = dados.abrir_database(p.texto_ou("database", ""))?;
+
+        let (pa, pb) = (
+            p.campo("a")
+                .ok_or_else(|| PhxError::Esquema("junção sem o lado \"a\"".into()))?,
+            p.campo("b")
+                .ok_or_else(|| PhxError::Esquema("junção sem o lado \"b\"".into()))?,
+        );
+        let (na, nb) = (pa.texto_ou("tabela", ""), pb.texto_ou("tabela", ""));
+        let mut ta = db.abrir_qualificada(na)?;
+        let mut tb = db.abrir_qualificada(nb)?;
+        let (ea, eb) = (ta.esquema().clone(), tb.esquema().clone());
+
+        // O portao geral ja conferiu `ler`; isto e o cinto, e vale para as
+        // DUAS tabelas -- uma junção que le B tem de pedir permissao de B.
+        if let Some(u) = &sessao.usuario {
+            let base = p.texto_ou("database", "");
+            if !u.pode(base, Atividade::Ler) {
+                return Err(PhxError::Autorizacao(format!(
+                    "{} nao tem permissao de ler em {base}",
+                    u.login
+                )));
+            }
+        }
+
+        let lado = |esquema: Schema, j: &Json, nome: &str| -> Result<Lado> {
+            let chave = Self::chave_do_lado(&esquema, j, "chave", nome)?;
+            let prefixo = match j.texto_ou("prefixo", "").trim() {
+                "" => nome.rsplit('.').next().unwrap_or(nome).to_string(),
+                outro => outro.to_string(),
+            };
+            Ok(Lado {
+                prefixo,
+                esquema,
+                chave,
+            })
+        };
+        let la = lado(ea, pa, na)?;
+        let lb = lado(eb, pb, nb)?;
+        if la.prefixo == lb.prefixo {
+            return Err(PhxError::Esquema(format!(
+                "os dois lados usariam o prefixo {:?}; dê um \"prefixo\" a um deles \
+                 para as colunas nao se sobreporem na saida",
+                la.prefixo
+            )));
+        }
+        crate::juncao::conferir_chaves(&la, &lb)?;
+
+        // Quem entra na memoria e quem NAO precisa sair inteiro. Num RIGHT, o
+        // lado que precisa inteiro e B, entao A vira mapa e B streama.
+        let r = match tipo.trocando_os_lados() {
+            Some(espelho) => {
+                let memoria = Self::materializar(&mut ta, na)?;
+                let mut fluxo = LinhasDaTabela {
+                    rowids: tb
+                        .varrer()?
+                        .into_iter()
+                        .map(|(r, _)| r)
+                        .collect::<Vec<_>>()
+                        .into_iter(),
+                    tabela: &mut tb,
+                };
+                crate::juncao::juntar(&mut fluxo, &lb, &memoria, &la, espelho, true, max)?
+            }
+            None => {
+                let memoria = Self::materializar(&mut tb, nb)?;
+                let mut fluxo = LinhasDaTabela {
+                    rowids: ta
+                        .varrer()?
+                        .into_iter()
+                        .map(|(r, _)| r)
+                        .collect::<Vec<_>>()
+                        .into_iter(),
+                    tabela: &mut ta,
+                };
+                crate::juncao::juntar(&mut fluxo, &la, &memoria, &lb, tipo, false, max)?
+            }
+        };
+
+        Ok(Json::objeto(vec![
+            ("tipo", Json::texto_de(tipo.nome())),
+            ("sql", Json::texto_de(tipo.sql())),
+            ("a", Json::texto_de(na)),
+            ("b", Json::texto_de(nb)),
+            ("colunas", colunas_da_juncao(&r.colunas)),
+            (
+                "linhas",
+                Json::Lista(
+                    r.linhas
+                        .iter()
+                        .map(|l| {
+                            Json::Lista(
+                                l.iter()
+                                    .zip(r.colunas.iter())
+                                    .map(|(v, c)| crate::valores::valor_para_json(v, &c.ty))
+                                    .collect(),
+                            )
+                        })
+                        .collect(),
+                ),
+            ),
+            ("quantas", Json::de_u64(r.linhas.len() as u64)),
+            ("lidas_a", Json::de_u64(r.lidas_esquerda)),
+            ("lidas_b", Json::de_u64(r.lidas_direita)),
+            // Contadas e devolvidas de proposito: um INNER que trouxe menos do
+            // que se esperava costuma ter aqui a explicacao, e sem o numero ela
+            // vira meia hora de investigacao.
+            ("chave_nula_a", Json::de_u64(r.chave_nula_esquerda)),
+            ("chave_nula_b", Json::de_u64(r.chave_nula_direita)),
+            ("truncado", Json::Bool(r.truncado)),
+            ("ms", Json::de_u64(comeco.elapsed().as_millis() as u64)),
+        ]))
+    }
+
+    /// `UNION` e `UNION ALL` entre duas ou mais tabelas.
+    fn op_unir(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let modo = Uniao::de_texto(p.texto_ou("modo", "distinta"))?;
+        let max = self.limite_pivot(p);
+        let comeco = Instant::now();
+        let base = p.texto_ou("database", "");
+
+        if let Some(u) = &sessao.usuario {
+            if !u.pode(base, Atividade::Ler) {
+                return Err(PhxError::Autorizacao(format!(
+                    "{} nao tem permissao de ler em {base}",
+                    u.login
+                )));
+            }
+        }
+
+        let nomes: Vec<String> = p
+            .campo("tabelas")
+            .and_then(Json::lista)
+            .map(|l| {
+                l.iter()
+                    .filter_map(|x| {
+                        x.texto()
+                            .map(str::to_string)
+                            .or_else(|| x.campo("tabela").and_then(Json::texto).map(str::to_string))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        if nomes.len() < 2 {
+            return Err(PhxError::Esquema(
+                "a união precisa de ao menos duas tabelas em \"tabelas\"".into(),
+            ));
+        }
+
+        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let db = dados.abrir_database(base)?;
+
+        // As tabelas entram inteiras porque o `UNION` distinto precisa
+        // comparar cada linha com todas as anteriores -- e porque abrir varias
+        // tabelas e strearmar de todas ao mesmo tempo exigiria manter as
+        // referencias vivas juntas, o que o emprestimo nao deixa aqui.
+        let mut materias: Vec<(Vec<Vec<Value>>, Schema)> = Vec::with_capacity(nomes.len());
+        for n in &nomes {
+            let mut t = db.abrir_qualificada(n)?;
+            let e = t.esquema().clone();
+            materias.push((Self::materializar(&mut t, n)?, e));
+        }
+
+        let mut fontes: Vec<LinhasEmMemoria> = materias
+            .iter()
+            .map(|(l, _)| LinhasEmMemoria(l.clone().into_iter()))
+            .collect();
+        let esquemas: Vec<&Schema> = materias.iter().map(|(_, e)| e).collect();
+        crate::juncao::conferir_uniao(&esquemas)?;
+
+        let mut partes: Vec<(&mut dyn crate::pivot::Iterador, &Schema)> = fontes
+            .iter_mut()
+            .zip(esquemas.iter())
+            .map(|(f, e)| (f as &mut dyn crate::pivot::Iterador, *e))
+            .collect();
+        let r = crate::juncao::unir(&mut partes, modo, max)?;
+
+        Ok(Json::objeto(vec![
+            ("modo", Json::texto_de(modo.nome())),
+            ("sql", Json::texto_de(modo.sql())),
+            (
+                "tabelas",
+                Json::Lista(nomes.iter().map(Json::texto_de).collect()),
+            ),
+            ("colunas", colunas_da_juncao(&r.colunas)),
+            (
+                "linhas",
+                Json::Lista(
+                    r.linhas
+                        .iter()
+                        .map(|l| {
+                            Json::Lista(
+                                l.iter()
+                                    .zip(r.colunas.iter())
+                                    .map(|(v, c)| crate::valores::valor_para_json(v, &c.ty))
+                                    .collect(),
+                            )
+                        })
+                        .collect(),
+                ),
+            ),
+            ("quantas", Json::de_u64(r.linhas.len() as u64)),
+            (
+                "por_parte",
+                Json::Lista(r.por_parte.iter().map(|n| Json::de_u64(*n)).collect()),
+            ),
+            ("repetidas", Json::de_u64(r.repetidas)),
+            ("truncado", Json::Bool(r.truncado)),
+            ("ms", Json::de_u64(comeco.elapsed().as_millis() as u64)),
         ]))
     }
 
@@ -3913,6 +4225,32 @@ fn resolver_campo(
     })
 }
 
+/// Percorre linhas que ja estao na memoria.
+struct LinhasEmMemoria(std::vec::IntoIter<Vec<Value>>);
+
+impl crate::pivot::Iterador for LinhasEmMemoria {
+    fn proxima(&mut self) -> Result<Option<Vec<Value>>> {
+        Ok(self.0.next())
+    }
+}
+
+/// O cabecalho de uma junção ou união, no formato que a grade da tela espera.
+fn colunas_da_juncao(colunas: &[crate::juncao::ColunaSaida]) -> Json {
+    Json::Lista(
+        colunas
+            .iter()
+            .map(|c| {
+                Json::objeto(vec![
+                    ("nome", Json::texto_de(&c.nome)),
+                    ("tipo", Json::texto_de(format!("{:?}", c.ty))),
+                    ("lado", Json::texto_de(c.lado)),
+                    ("chave", Json::Bool(c.chave)),
+                ])
+            })
+            .collect(),
+    )
+}
+
 /// Percorre a tabela de fatos linha a linha, sem materializa-la.
 struct LinhasDaTabela<'a> {
     rowids: std::vec::IntoIter<u64>,
@@ -3987,6 +4325,8 @@ mod testes_politica {
             "siscolunas",
             "pivotar",
             "sequencias",
+            "juntar",
+            "unir",
             "sistema",
             "dblink",
             "dblink_testar",
@@ -4005,5 +4345,133 @@ mod testes_politica {
                  um servidor somente-leitura recusaria sem motivo"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod testes_criar_qualificada {
+    use super::*;
+
+    fn servidor(dir: &std::path::Path) -> Arc<Servidor> {
+        let c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        Servidor::novo(c).unwrap()
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    /// `filial.clientes` e o schema `filial` mais a tabela `clientes`.
+    ///
+    /// Antes desta correcao a criacao tomava o ponto como parte do NOME e
+    /// gravava `filial.clientes.reg` na raiz do banco. O servidor respondia
+    /// "criada", e nenhuma outra operacao conseguia abrir a tabela -- toda
+    /// leitura separa o ponto, e so a criacao nao separava. Uma tabela que
+    /// nasce inalcancavel e pior do que um erro.
+    #[test]
+    fn criar_com_nome_qualificado_cai_no_schema() {
+        let dir = std::env::temp_dir().join(format!("phx-qualif-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let s = servidor(&dir);
+        let sessao = Sessao::default();
+
+        s.executar("criar_database", &pedido(r#"{"database":"loja"}"#), &sessao)
+            .unwrap();
+        let r = s
+            .executar(
+                "criar_tabela",
+                &pedido(
+                    r#"{"database":"loja","tabela":"filial.clientes",
+                        "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true}]}"#,
+                ),
+                &sessao,
+            )
+            .unwrap();
+        assert_eq!(r.texto_ou("schema", ""), "filial");
+        assert_eq!(r.texto_ou("tabela", ""), "filial.clientes");
+
+        // Os arquivos foram para o diretorio do schema, com o nome curto.
+        assert!(
+            dir.join("loja/filial/clientes.reg").exists(),
+            "o .reg nao caiu no schema"
+        );
+        assert!(
+            !dir.join("loja/filial.clientes.reg").exists(),
+            "o ponto virou parte do nome do arquivo de novo"
+        );
+
+        // E a prova que importa: o que foi criado da para abrir e gravar.
+        s.executar(
+            "inserir",
+            &pedido(r#"{"database":"loja","tabela":"filial.clientes","linha":{"id":1}}"#),
+            &sessao,
+        )
+        .unwrap();
+        let v = s
+            .executar(
+                "varrer",
+                &pedido(r#"{"database":"loja","tabela":"filial.clientes"}"#),
+                &sessao,
+            )
+            .unwrap();
+        assert_eq!(v.campo("linhas").and_then(Json::lista).unwrap().len(), 1);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// O campo `schema` continua valendo, e vale igual.
+    #[test]
+    fn o_campo_schema_continua_valendo() {
+        let dir = std::env::temp_dir().join(format!("phx-qualif2-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let s = servidor(&dir);
+        let sessao = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"loja"}"#), &sessao)
+            .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"loja","schema":"matriz","tabela":"estoque",
+                    "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true}]}"#,
+            ),
+            &sessao,
+        )
+        .unwrap();
+        assert!(dir.join("loja/matriz/estoque.reg").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Dizer duas coisas diferentes e erro, e nao "uma delas ganha".
+    #[test]
+    fn nome_e_campo_em_desacordo_param_a_criacao() {
+        let dir = std::env::temp_dir().join(format!("phx-qualif3-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let s = servidor(&dir);
+        let sessao = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"loja"}"#), &sessao)
+            .unwrap();
+        let e = s
+            .executar(
+                "criar_tabela",
+                &pedido(
+                    r#"{"database":"loja","schema":"matriz","tabela":"filial.estoque",
+                        "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true}]}"#,
+                ),
+                &sessao,
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("escolha um dos dois"), "{e}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

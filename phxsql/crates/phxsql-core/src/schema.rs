@@ -541,6 +541,15 @@ impl Schema {
         self.paginacao
     }
 
+    /// Troca o nome da tabela sem mexer em mais nada.
+    ///
+    /// Existe para a criacao separar `filial.clientes` em schema e tabela: o
+    /// esquema chega com o nome qualificado e o que vai para o disco e so a
+    /// parte da tabela -- o schema ja e o diretorio.
+    pub fn renomear(&mut self, nome: &str) {
+        self.nome = nome.to_string();
+    }
+
     pub fn nome(&self) -> &str {
         &self.nome
     }
