@@ -35,6 +35,21 @@
     "O painel mostra o caminho ja resolvido, para tirar essa duvida."
   ],
 
+  "_dblink": [
+    "Arquivo com as ligacoes para bancos de fora (DbLink). Padrao dblink.json.",
+    "",
+    "Separado deste arquivo de proposito: o cadastro muda pela tela, e",
+    "reescrever o config.json inteiro a cada ligacao nova arriscaria os",
+    "comentarios e o resto da configuracao.",
+    "",
+    "Toda operacao de DbLink exige administrar, e uma ligacao nasce",
+    "somente-leitura. Nao ha TLS: a conversa com o outro banco e em texto",
+    "claro (a SENHA nao -- ela vai embaralhada com um sal por conexao).",
+    "",
+    "Detalhes em docs/DBLINK.md."
+  ],
+  "dblink": "dblink.json",
+
   "_alertas": [
     "Aviso de disco apertado. Vem DESLIGADO.",
     "",

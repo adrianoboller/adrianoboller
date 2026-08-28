@@ -158,7 +158,11 @@ input:focus,select:focus{border-color:var(--laranja);outline:none}
    unico da linha. Numa barra de acoes isso o faz ocupar a largura inteira e
    empurrar os outros para baixo -- aqui ele cabe no proprio texto. */
 .acoes .botao{width:auto;padding:8px 16px}
-.botao.perigo{border-color:var(--log);color:var(--log)}
+/* Sem apagar o fundo, o `.botao` continuava laranja e o texto vermelho ficava
+   ilegivel em cima dele -- e como o botao de excluir aparecia. A borda so
+   significa alguma coisa sobre fundo transparente. */
+.botao.perigo{background:transparent;border:1px solid var(--log);color:var(--log);
+              font-weight:500}
 .botao.perigo:hover{background:var(--log);color:#fff;border-color:var(--log)}
 
 .ficha-edit{
@@ -586,6 +590,66 @@ body,.cartao,.barra,.arvore,table,td,th{
    espremeriam o disco ate o texto do caminho nao caber. */
 @media (max-width:960px){.maquina{grid-template-columns:1fr}
                          .medidores{justify-content:center}}
+
+/* ------------------------------------------------------------------ dblink */
+.barra-dbl{display:flex;gap:12px;align-items:end;flex-wrap:wrap;margin-bottom:14px}
+.barra-dbl label{display:flex;flex-direction:column;gap:4px;font-size:11px;
+                 color:var(--texto-3)}
+.barra-dbl select{
+  padding:7px 9px;border:1px solid var(--linha);border-radius:5px;
+  background:var(--painel);color:var(--texto);font-size:12.5px;min-width:170px;
+}
+.barra-dbl .botao{width:auto;padding:7px 14px}
+/* Lista a esquerda, dado a direita: e a forma do Centro de Controle, e e a
+   que deixa trocar de tabela sem perder de vista as outras. */
+.dbl-corpo{display:grid;grid-template-columns:270px 1fr;gap:16px;align-items:start}
+@media (max-width:900px){.dbl-corpo{grid-template-columns:1fr}}
+.dbl-lista{
+  border:1px solid var(--linha);border-radius:8px;background:var(--painel);
+  max-height:70vh;overflow:auto;
+}
+.dbl-cab{padding:9px 12px;font-size:11px;color:var(--texto-3);
+         border-bottom:1px solid var(--linha);position:sticky;top:0;
+         background:var(--painel-2);z-index:1}
+.dbl-tab{
+  display:block;width:100%;text-align:left;padding:9px 12px;background:none;
+  border:none;border-bottom:1px solid var(--linha);color:var(--texto);
+  cursor:pointer;font:inherit;
+}
+.dbl-tab:hover{background:var(--painel-2)}
+.dbl-tab.viva{background:var(--realce);box-shadow:inset 3px 0 0 var(--laranja)}
+.dbl-tab .n{display:block;font-size:12.5px;font-weight:600}
+.dbl-tab .m{display:block;font-size:10.5px;color:var(--texto-3);margin-top:2px;
+            font-variant-numeric:tabular-nums}
+.dbl-titulo{display:flex;gap:10px;align-items:center;margin-bottom:10px;
+            flex-wrap:wrap}
+.dbl-titulo .leg{font-size:11px;color:var(--texto-3)}
+.dbl-titulo .cresce{flex:1}
+.dbl-titulo .botao{width:auto;padding:6px 12px;font-size:11.5px}
+.form-dbl{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));
+          gap:12px 16px;text-align:left}
+/* O `label` global e maiusculo e espacado -- bom para o rotulo, ruim para a
+   dica embaixo do campo, que virava um grito. */
+.form-dbl .cmp{display:flex;flex-direction:column;gap:4px;margin:0;
+               text-transform:none;letter-spacing:0;color:var(--texto-3)}
+.form-dbl .cmp > span:first-child{font-size:10.5px;letter-spacing:.1em;
+                                  text-transform:uppercase}
+.form-dbl .cmp .leg{font-size:10.5px;line-height:1.4;color:var(--texto-3);
+                    text-transform:none;letter-spacing:0}
+.form-dbl input,.form-dbl select{
+  padding:8px 10px;border:1px solid var(--linha);border-radius:5px;
+  background:var(--painel);color:var(--texto);font-size:12.5px;margin:0;
+}
+.form-dbl input:focus,.form-dbl select:focus{outline:none;border-color:var(--laranja)}
+.form-dbl .linha-chk{grid-column:1/-1;flex-direction:row;align-items:center;
+                     gap:8px;font-size:12px;color:var(--texto-2)}
+.form-dbl .linha-chk input{width:auto}
+.form-sql{margin-bottom:16px}
+#sqlDbl{
+  width:100%;padding:10px 12px;border:1px solid var(--linha);border-radius:6px;
+  background:var(--painel);color:var(--texto);font-size:12.5px;
+  font-family:"IBM Plex Mono",monospace;resize:vertical;margin:0 0 12px;
+}
 
 /* O phx-grid traz o proprio tema claro. Aqui ele passa a seguir o do
    console: os tokens dele apontam para os nossos, e o sol/lua troca os dois
@@ -4143,6 +4207,438 @@ function verCreditos() {
      </div>`);
 }
 
+
+/* ========================================================== DbLink
+   Ligações para bancos de fora. Duas telas, porque são duas coisas:
+
+   - `telaDbLinkDefinicoes` é o CADASTRO — endereço, credencial, se a ligação
+     pode escrever. Fica no menu Configurações, junto com o resto do que se
+     configura uma vez.
+   - `telaDbLink` é o NAVEGADOR — escolher a ligação, ver as tabelas do outro
+     banco e abrir o conteúdo na mesma grade que serve as tabelas daqui. É o
+     botão da barra, porque é o que se usa todo dia.
+
+   A grade é a MESMA (`PhxGrid`): agrupar por coluna, buscar e paginar valem
+   igual num `.reg` daqui e numa tabela do MySQL(R) de lá. Escrever uma
+   segunda grade só para o dado de fora seria manter dois comportamentos e
+   corrigir todo defeito duas vezes. */
+
+const DBL = { ligacao:"", database:"", tabela:"", grade:null };
+
+/// O tipo do MySQL(R) traduzido para o que a grade entende.
+function tipoDoGridExterno(c) {
+  if (/DATE|TIME|YEAR/.test(c.tipo)) return "texto";   // vem como texto ISO
+  return c.numerico ? "numero" : "texto";
+}
+
+/// Quantas casas a coluna mostra.
+///
+/// «moeda» não serve para o dado de fora: ela prefixa R$, e um DECIMAL do
+/// outro banco tanto pode ser dinheiro quanto quantidade ou taxa. O tipo é
+/// «numero» com o número de casas que o próprio servidor declarou — sem isso
+/// um DECIMAL(12,2) de 15000,50 aparecia como 15.001, que é outro número.
+///
+/// FLOAT e DOUBLE chegam com 31, o «não fixo» do protocolo — não há casa
+/// declarada. Aí a casa sai do próprio dado que veio: a maior que apareceu na
+/// coluna, até dez. Fixar zero arredondaria 0,5 para 1, e fixar um número
+/// alto encheria a tela de zeros que ninguém escreveu.
+function casasDoExterno(c, linhas, i) {
+  if (!c.numerico) return undefined;
+  if (c.decimais < 31) return c.decimais;
+  let maior = 0;
+  for (const l of linhas || []) {
+    const v = l[i];
+    if (typeof v !== "string") continue;
+    const ponto = v.indexOf(".");
+    if (ponto >= 0) maior = Math.max(maior, Math.min(10, v.length - ponto - 1));
+  }
+  return maior;
+}
+
+/// As linhas vêm como vetor posicional; a grade quer objeto por nome.
+///
+/// Nome repetido acontece (`SELECT a.id, b.id`), e sem desempate a segunda
+/// coluna apagaria a primeira. O sufixo mantém as duas.
+function linhasParaObjetos(r) {
+  const nomes = [];
+  r.colunas.forEach(c => {
+    let n = c.nome, k = 2;
+    while (nomes.includes(n)) n = `${c.nome}_${k++}`;
+    nomes.push(n);
+  });
+  return {
+    nomes,
+    dados: (r.linhas || []).map(l => {
+      const o = {};
+      nomes.forEach((n, i) => o[n] = l[i] === null ? null : l[i]);
+      return o;
+    }),
+  };
+}
+
+async function telaDbLink(nome) {
+  folha("DbLink", "carregando…", `<div class="centro">carregando…</div>`);
+  let d;
+  try { d = await api("dblink"); }
+  catch (e) { return folha("DbLink", "não deu", `<div class="aviso mal">${esc(String(e))}</div>`); }
+
+  const ligacoes = d.ligacoes || [];
+  DBL.ligacao = nome || DBL.ligacao ||
+    (ligacoes.find(l => l.conecta) || ligacoes[0] || {}).nome || "";
+  const atual = ligacoes.find(l => l.nome === DBL.ligacao);
+
+  if (!ligacoes.length) {
+    return folha("DbLink", "nenhuma ligação cadastrada ainda",
+      `<div class="aviso">
+         <p><strong>Um DbLink guarda um apelido, um endereço e uma
+         credencial.</strong> Depois disso o banco de fora aparece nesta tela
+         como se fosse mais um — as tabelas na lista, o conteúdo na mesma
+         grade das tabelas daqui.</p>
+         <p>Hoje o cliente escrito é o do <b>MySQL(R)</b>. A definição de
+         PostgreSQL(R) já pode ser guardada; o cliente ainda não existe.</p>
+       </div>
+       <div class="acoes"><button class="botao" id="btDef">Cadastrar uma ligação…</button></div>`);
+    $("#btDef").onclick = () => telaDbLinkDefinicoes();
+    return;
+  }
+
+  const opcoes = ligacoes.map(l =>
+    `<option value="${esc(l.nome)}" ${l.nome === DBL.ligacao ? "selected" : ""}
+      ${l.conecta ? "" : "disabled"}>${esc(l.nome)} — ${esc(l.motor)}${
+        l.conecta ? "" : " (sem cliente)"}</option>`).join("");
+
+  folha("DbLink",
+    atual ? `${esc(atual.usuario)}@${esc(atual.host)}:${atual.porta}${
+      atual.somente_leitura ? " · somente leitura" : " · PODE ESCREVER"}` : "",
+    `<div class="barra-dbl">
+       <label>Ligação <select id="selLig">${opcoes}</select></label>
+       <label>Base <select id="selBase"><option>carregando…</option></select></label>
+       <button class="botao secundario" id="btTestar">Testar</button>
+       <button class="botao secundario" id="btSql">Consulta SQL…</button>
+       <button class="botao secundario" id="btDef">Definições…</button>
+     </div>
+     <div id="avisoDbl"></div>
+     <div class="dbl-corpo">
+       <div class="dbl-lista" id="listaTab"><div class="centro">carregando…</div></div>
+       <div class="dbl-dado" id="dadoTab">
+         <div class="vazioc">escolha uma tabela à esquerda</div>
+       </div>
+     </div>`);
+
+  $("#selLig").onchange = e => { DBL.ligacao = e.target.value; DBL.database = ""; DBL.tabela = ""; telaDbLink(DBL.ligacao); };
+  $("#btDef").onclick = () => telaDbLinkDefinicoes();
+  $("#btSql").onclick = () => telaDbLinkSql(DBL.ligacao);
+  $("#btTestar").onclick = () => testarDbLink(DBL.ligacao);
+  $("#selBase").onchange = e => { DBL.database = e.target.value; DBL.tabela = ""; carregarTabelasDbl(); };
+
+  // As bases primeiro: sem elas a lista de tabelas não sabe onde olhar.
+  try {
+    const b = await api("dblink_bancos", { dblink: DBL.ligacao });
+    // As bases de serviço do outro servidor ficam por último: quem abre o
+    // DbLink quer a base da aplicação, não o information_schema.
+    const servico = ["information_schema", "performance_schema", "mysql", "sys"];
+    const bases = (b.bancos || []).slice().sort((x, y) =>
+      (servico.includes(x) - servico.includes(y)) || x.localeCompare(y));
+    DBL.database = DBL.database || (atual && atual.database) || bases[0] || "";
+    $("#selBase").innerHTML = bases.map(x =>
+      `<option ${x === DBL.database ? "selected" : ""}>${esc(x)}</option>`).join("");
+  } catch (e) {
+    $("#selBase").innerHTML = `<option>—</option>`;
+    $("#avisoDbl").innerHTML = `<div class="aviso mal">${esc(String(e))}</div>`;
+    $("#listaTab").innerHTML = "";
+    return;
+  }
+  carregarTabelasDbl();
+}
+
+async function carregarTabelasDbl() {
+  const alvo = $("#listaTab");
+  if (!alvo) return;
+  alvo.innerHTML = `<div class="centro">carregando…</div>`;
+  let t;
+  try { t = await api("dblink_tabelas", { dblink: DBL.ligacao, database: DBL.database }); }
+  catch (e) { return alvo.innerHTML = `<div class="aviso mal">${esc(String(e))}</div>`; }
+
+  const tabs = t.tabelas || [];
+  if (!tabs.length) return alvo.innerHTML = `<div class="vazioc">a base ${esc(DBL.database)} não tem tabela</div>`;
+  alvo.innerHTML = `<div class="dbl-cab">${tabs.length} tabela(s) em <b>${esc(DBL.database)}</b></div>` +
+    tabs.map(x => `<button class="dbl-tab ${x.nome === DBL.tabela ? "viva" : ""}" data-t="${esc(x.nome)}">
+        <span class="n">${esc(x.nome)}</span>
+        <span class="m">${fmt(x.registros_estimados)} reg · ${fmtBytes(x.bytes)}${
+          x.tipo === "VIEW" ? " · view" : ""}</span>
+      </button>`).join("");
+  $$("#listaTab .dbl-tab").forEach(b => b.onclick = () => abrirTabelaDbl(b.dataset.t));
+  if (DBL.tabela) abrirTabelaDbl(DBL.tabela);
+}
+
+async function abrirTabelaDbl(tabela, salto = 0) {
+  DBL.tabela = tabela;
+  $$("#listaTab .dbl-tab").forEach(b => b.classList.toggle("viva", b.dataset.t === tabela));
+  const alvo = $("#dadoTab");
+  alvo.innerHTML = `<div class="centro">lendo ${esc(tabela)}…</div>`;
+  let r;
+  try {
+    r = await api("dblink_ler", { dblink: DBL.ligacao, database: DBL.database, tabela, salto });
+  } catch (e) { return alvo.innerHTML = `<div class="aviso mal">${esc(String(e))}</div>`; }
+
+  const { nomes, dados } = linhasParaObjetos(r);
+  alvo.innerHTML = `
+    <div class="dbl-titulo">
+      <b>${esc(DBL.database)}.${esc(tabela)}</b>
+      <span class="leg">${fmt(r.quantas)} linha(s)${salto ? ` a partir da ${fmt(salto + 1)}` : ""}${
+        r.tem_mais ? " · há mais" : ""}</span>
+      <span class="cresce"></span>
+      ${salto ? `<button class="botao secundario" id="btAnt">← anteriores</button>` : ""}
+      ${r.tem_mais ? `<button class="botao secundario" id="btProx">próximas →</button>` : ""}
+      <button class="botao secundario" id="btEstr">Estrutura</button>
+    </div>
+    <div id="gradeDbl"></div>`;
+
+  if (DBL.grade && DBL.grade.destruir) { try { DBL.grade.destruir(); } catch {} }
+  DBL.grade = window.__phxgradedbl = PhxGrid.criar("#gradeDbl", {
+    agrupavel: true,
+    buscaGlobal: true,
+    colunas: r.colunas.map((c, i) => ({
+      campo: nomes[i],
+      titulo: c.nome + (c.primaria ? " ★" : ""),
+      tipo: tipoDoGridExterno(c),
+      decimais: casasDoExterno(c, r.linhas, i),
+      // Somar chave primária não significa nada; só medida soma.
+      agregador: c.numerico && !c.primaria ? "sum" : null,
+    })),
+    dados,
+    pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+  });
+
+  const p = $("#btProx"), a = $("#btAnt");
+  if (p) p.onclick = () => abrirTabelaDbl(tabela, salto + r.quantas);
+  if (a) a.onclick = () => abrirTabelaDbl(tabela, Math.max(0, salto - 1000));
+  $("#btEstr").onclick = () => estruturaDbl(tabela);
+}
+
+async function estruturaDbl(tabela) {
+  let e;
+  try { e = await api("dblink_estrutura", { dblink: DBL.ligacao, database: DBL.database, tabela }); }
+  catch (er) { return avisar(String(er), true); }
+  // O SHOW COLUMNS do MySQL(R) devolve as colunas na ordem Field, Type,
+  // Collation, Null, Key, Default, Extra, Privileges, Comment.
+  const col = e.colunas, idx = e.indices;
+  const linha = (l, i) => l[i] === null ? "" : String(l[i]);
+  folha(`Estrutura de ${DBL.database}.${tabela}`,
+    `colunas e índices como o ${DBL.ligacao} os reporta`,
+    tabela([{t:"campo"},{t:"tipo"},{t:"nulo"},{t:"chave"},{t:"padrão"},{t:"extra"},{t:"comentário"}],
+      col.linhas, l => `<tr>
+        <td class="dado"><b>${esc(linha(l,0))}</b></td>
+        <td class="dado">${esc(linha(l,1))}</td>
+        <td>${linha(l,3) === "YES" ? `<span class="pino nao">nulo ok</span>`
+                                   : `<span class="pino ok">obrigatório</span>`}</td>
+        <td>${linha(l,4) ? `<span class="pino ndx">${esc(linha(l,4))}</span>` : ""}</td>
+        <td class="dado">${esc(linha(l,5))}</td>
+        <td class="dado">${esc(linha(l,6))}</td>
+        <td class="dado">${esc(linha(l,8))}</td></tr>`) +
+    `<h4 style="margin:18px 0 6px">Índices</h4>` +
+    tabela([{t:"nome"},{t:"único"},{t:"coluna"},{t:"ordem"},{t:"cardinalidade",cls:"num"}],
+      idx.linhas, l => `<tr>
+        <td class="dado"><span class="pino ndx">${esc(linha(l,2))}</span></td>
+        <td>${linha(l,1) === "0" ? `<span class="pino ok">único</span>`
+                                 : `<span class="pino nao">duplicado ok</span>`}</td>
+        <td class="dado">${esc(linha(l,4))}</td>
+        <td class="dado">${esc(linha(l,5)) || "ASC"}</td>
+        <td class="num">${esc(linha(l,6))}</td></tr>`) +
+    `<div class="acoes">
+       <button class="botao secundario" id="btVoltaEstr">← ${esc(tabela)}</button>
+     </div>`);
+  $("#btVoltaEstr").onclick = () => { telaDbLink(DBL.ligacao); };
+}
+
+async function testarDbLink(nome) {
+  try {
+    const r = await api("dblink_testar", { nome });
+    avisar(`${r.dblink}: ${r.motor} ${r.versao} · ${r.usuario_efetivo} · base ${r.database || "—"} · ${r.ms} ms`);
+  } catch (e) { avisar(String(e), true); }
+}
+
+async function telaDbLinkSql(nome) {
+  const d = await api("dblink");
+  const l = (d.ligacoes || []).find(x => x.nome === nome) || {};
+  folha(`Consulta no DbLink ${nome}`,
+    l.somente_leitura ? "esta ligação só consulta — SELECT, SHOW, DESCRIBE e EXPLAIN"
+                      : "ATENÇÃO: esta ligação pode escrever no banco do outro lado",
+    `<div class="form-sql">
+       <textarea id="sqlDbl" class="campo" rows="5"
+         placeholder="SELECT * FROM clientes WHERE cidade = 'Joinville'">SELECT </textarea>
+       <div class="acoes">
+         <button class="botao" id="btRodar">Executar</button>
+         <button class="botao secundario" id="btVoltaDbl">← DbLink</button>
+       </div>
+     </div>
+     <div id="saidaSql"></div>`);
+  $("#btVoltaDbl").onclick = () => telaDbLink(nome);
+  $("#btRodar").onclick = async () => {
+    const sql = $("#sqlDbl").value.trim();
+    if (!sql) return avisar("escreva a instrução", true);
+    $("#saidaSql").innerHTML = `<div class="centro">executando…</div>`;
+    let r;
+    try { r = await api("dblink_consultar", { dblink: nome, sql }); }
+    catch (e) { return $("#saidaSql").innerHTML = `<div class="aviso mal">${esc(String(e))}</div>`; }
+    if (!r.colunas.length) {
+      return $("#saidaSql").innerHTML =
+        `<div class="aviso">${fmt(r.afetadas)} linha(s) afetada(s) · ${r.ms} ms</div>`;
+    }
+    const { nomes, dados } = linhasParaObjetos(r);
+    $("#saidaSql").innerHTML =
+      `<div class="dbl-titulo"><b>${fmt(r.quantas)} linha(s)</b>
+         <span class="leg">${r.ms} ms${r.truncado ? " · cortado no teto da ligação" : ""}</span></div>
+       <div id="gradeSql"></div>`;
+    PhxGrid.criar("#gradeSql", {
+      agrupavel: true, buscaGlobal: true,
+      colunas: r.colunas.map((c, i) => ({
+        campo: nomes[i], titulo: c.nome, tipo: tipoDoGridExterno(c),
+        decimais: casasDoExterno(c, r.linhas, i), agregador: c.numerico ? "sum" : null,
+      })),
+      dados, pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+    });
+  };
+}
+
+/* ------------------------------------------------ o cadastro das ligações */
+
+async function telaDbLinkDefinicoes() {
+  folha("Definições do DbLink", "carregando…", `<div class="centro">carregando…</div>`);
+  const d = await api("dblink");
+  const ls = d.ligacoes || [];
+  folha("Definições do DbLink",
+    `${ls.length} ligação(ões) · guardadas em ${esc(d.arquivo)}`,
+    tabela([{t:"apelido"},{t:"motor"},{t:"endereço"},{t:"usuário"},{t:"base"},
+                 {t:"senha"},{t:"escrita"},{t:"teto",cls:"num"},{t:""}],
+      ls, l => `<tr class="linha-dbl" data-n="${esc(l.nome)}">
+        <td class="dado"><b>${esc(l.nome)}</b>${l.descricao
+          ? `<div class="leg">${esc(l.descricao)}</div>` : ""}</td>
+        <td>${l.conecta ? `<span class="pino ndx">${esc(l.motor)}</span>`
+          : `<span class="pino nao">${esc(l.motor)} · sem cliente</span>`}</td>
+        <td class="dado">${esc(l.host)}:${l.porta}</td>
+        <td class="dado">${esc(l.usuario)}</td>
+        <td class="dado">${esc(l.database) || "—"}</td>
+        <td class="dado">${esc(l.senha)}</td>
+        <td>${l.somente_leitura ? `<span class="pino ok">só lê</span>`
+                                : `<span class="pino mal">escreve</span>`}</td>
+        <td class="num">${fmt(l.max_linhas)}</td>
+        <td><span class="pino">editar</span></td></tr>`) +
+    `<div class="aviso">
+       <p><strong>A conversa com o banco do outro lado é em texto claro.</strong>
+       Não há TLS: a <code>std</code> do Rust não traz TLS e o projeto não
+       aceita dependência externa. Use rede interna ou um túnel — a senha
+       nunca viaja em texto (o MySQL(R) a embaralha com um sal por conexão),
+       mas o <em>dado devolvido</em> viaja.</p>
+       <p><strong>A senha fica no arquivo de ligações</strong>, que é gravado
+       com permissão só do dono (<code>0600</code>). Ela precisa ser
+       apresentada ao outro banco, então não dá para guardar só o hash. Quem
+       preferir não tê-la em arquivo usa <code>senha_env</code> e deixa o
+       valor numa variável de ambiente.</p>
+       <p><strong>Uma ligação não carrega permissão.</strong> Ela guarda uma
+       credencial, e todo mundo que a usa fala com o outro banco como aquele
+       usuário. Por isso toda operação de DbLink exige <b>administrar</b>.</p>
+       <p><strong>MySQL(R) 8 e o <code>caching_sha2_password</code>:</strong>
+       o caminho rápido funciona quando o servidor já tem a senha em cache. O
+       caminho completo exige TLS ou a chave RSA e não cabe sem dependência —
+       nesse caso o teste diz exatamente isso e o que fazer.</p>
+     </div>
+     <div class="acoes">
+       <button class="botao" id="btNovaLig">Nova ligação…</button>
+       <button class="botao secundario" id="btIrDbl">← DbLink</button>
+     </div>`);
+  $("#btNovaLig").onclick = () => editarDbLink(null);
+  $("#btIrDbl").onclick = () => telaDbLink();
+  $$("#painel .linha-dbl").forEach(tr => tr.onclick = () => editarDbLink(tr.dataset.n));
+}
+
+async function editarDbLink(nome) {
+  const d = await api("dblink");
+  const l = nome ? (d.ligacoes || []).find(x => x.nome === nome) : null;
+  const motores = d.motores || [];
+  const campo = (id, rot, valor, tipo = "text", dica = "") =>
+    `<label class="cmp"><span>${rot}</span>
+       <input id="${id}" class="campo" type="${tipo}" value="${esc(String(valor ?? ""))}">
+       ${dica ? `<span class="leg">${dica}</span>` : ""}</label>`;
+
+  folha(l ? `Ligação ${l.nome}` : "Nova ligação",
+    l ? "o apelido não muda — para renomear, crie outra e apague esta"
+      : "letras, números, _ e - no apelido",
+    `<div class="form-dbl">
+       ${l ? `<label class="cmp"><span>Apelido</span>
+              <input id="fNome" class="campo" value="${esc(l.nome)}" disabled></label>`
+           : campo("fNome", "Apelido", "", "text", "é por ele que os comandos chamam a ligação")}
+       <label class="cmp"><span>Motor</span>
+         <select id="fMotor" class="campo">${motores.map(m =>
+           `<option value="${esc(m.nome)}" ${l && l.motor === m.nome ? "selected" : ""}>${
+             esc(m.nome)}${m.conecta ? "" : " (cliente ainda não escrito)"}</option>`).join("")}
+         </select></label>
+       ${campo("fHost", "Endereço", l ? l.host : "127.0.0.1")}
+       ${campo("fPorta", "Porta", l ? l.porta : 3306, "number")}
+       ${campo("fUsuario", "Usuário", l ? l.usuario : "")}
+       ${campo("fSenha", "Senha", "", "password",
+         l ? "em branco mantém a que já está guardada" : "fica no arquivo de ligações, com permissão 0600")}
+       ${campo("fSenhaEnv", "Variável de ambiente da senha", l ? l.senha_env : "", "text",
+         "preenchida, a senha vem daqui e não do arquivo")}
+       ${campo("fBase", "Base padrão", l ? l.database : "")}
+       ${campo("fDesc", "Descrição", l ? l.descricao : "")}
+       ${campo("fTeto", "Teto de linhas", l ? l.max_linhas : 1000, "number")}
+       ${campo("fTimeout", "Espera (s)", l ? l.timeout_s : 10, "number")}
+       <label class="cmp linha-chk">
+         <input type="checkbox" id="fLer" ${!l || l.somente_leitura ? "checked" : ""}>
+         <span>Somente leitura — recusa qualquer coisa que não seja consulta</span>
+       </label>
+     </div>
+     <div class="aviso">Desmarcar «somente leitura» deixa esta tela apagar dado no
+       banco do outro lado. Marcado é o padrão de fábrica, e é o certo para
+       quase todo caso.</div>
+     <div class="acoes">
+       <button class="botao" id="btGravar">Gravar</button>
+       <button class="botao secundario" id="btTest2">Gravar e testar</button>
+       ${l ? `<button class="botao perigo" id="btApagar">Excluir ligação</button>` : ""}
+       <button class="botao secundario" id="btVolta2">← Definições</button>
+     </div>`);
+
+  $("#btVolta2").onclick = () => telaDbLinkDefinicoes();
+  const gravar = async () => {
+    const nomeF = (l ? l.nome : $("#fNome").value).trim();
+    const p = {
+      nome: nomeF,
+      motor: $("#fMotor").value,
+      host: $("#fHost").value.trim(),
+      porta: Number($("#fPorta").value),
+      usuario: $("#fUsuario").value.trim(),
+      database: $("#fBase").value.trim(),
+      descricao: $("#fDesc").value.trim(),
+      max_linhas: Number($("#fTeto").value),
+      timeout_s: Number($("#fTimeout").value),
+      somente_leitura: $("#fLer").checked,
+    };
+    const env = $("#fSenhaEnv").value.trim();
+    if (env) p.senha_env = env;
+    // Só manda `senha` quando foi digitada: sem o campo, o servidor mantém a
+    // que já está guardada — e é isso que faz editar a porta não apagar a
+    // credencial.
+    else if ($("#fSenha").value) p.senha = $("#fSenha").value;
+    await api("dblink_salvar", p);
+    return nomeF;
+  };
+  $("#btGravar").onclick = async () => {
+    try { const n = await gravar(); avisar(`ligação ${n} gravada`); telaDbLinkDefinicoes(); }
+    catch (e) { avisar(String(e), true); }
+  };
+  $("#btTest2").onclick = async () => {
+    try { const n = await gravar(); await testarDbLink(n); }
+    catch (e) { avisar(String(e), true); }
+  };
+  const ap = $("#btApagar");
+  if (ap) ap.onclick = async () => {
+    if (!confirm(`Excluir a ligação ${l.nome}?\n\nO banco do outro lado não é tocado — só o cadastro daqui.`)) return;
+    try { await api("dblink_excluir", { nome: l.nome }); avisar(`${l.nome} excluída`); telaDbLinkDefinicoes(); }
+    catch (e) { avisar(String(e), true); }
+  };
+}
+
 /* ======================================================= barra de ferramentas
    Cada ferramenta traz o seu icone em SVG -- desenhado aqui, sem fonte de
    icone e sem emoji. Emoji vem com a cor de fabrica e ignora o CSS; SVG herda
@@ -4173,6 +4669,9 @@ const ICO = {
   catalogo: `<rect x="3.5" y="3.5" width="17" height="17" rx="2" fill="none" stroke-width="1.5"/><path d="M3.5 8.5h17M8.5 8.5v12" stroke-width="1.3"/><path d="M11.5 12h6M11.5 15.5h6" stroke-width="1.3" stroke-linecap="round"/>`,
   engrenagem: `<circle cx="12" cy="12" r="3.2" fill="none" stroke-width="1.5"/><path d="M12 2.6v2.6M12 18.8v2.6M21.4 12h-2.6M5.2 12H2.6M18.6 5.4l-1.8 1.8M7.2 16.8l-1.8 1.8M18.6 18.6l-1.8-1.8M7.2 7.2L5.4 5.4" stroke-width="1.5" stroke-linecap="round"/>`,
   grade: `<rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke-width="1.6"/><path d="M3 9h18M9 9v11M15 9v11" stroke-width="1.4"/>`,
+  // Dois elos que se encaixam atravessando uma linha tracejada: a ligacao
+  // cruza a fronteira do servidor.
+  elo: `<path d="M9.5 14.5l5-5" stroke-width="1.7" stroke-linecap="round"/><path d="M12.8 7.7l1.9-1.9a3.4 3.4 0 014.8 4.8l-1.9 1.9M11.2 16.3l-1.9 1.9a3.4 3.4 0 01-4.8-4.8l1.9-1.9" fill="none" stroke-width="1.7" stroke-linecap="round"/>`,
   ajuda: `<circle cx="12" cy="12" r="9" fill="none" stroke-width="1.6"/><path d="M9.4 9.3a2.7 2.7 0 015.2.9c0 1.8-2.6 2.2-2.6 4" fill="none" stroke-width="1.7" stroke-linecap="round"/><path d="M12 17.4v.1" stroke-width="2.2" stroke-linecap="round"/>`,
 };
 
@@ -4212,6 +4711,7 @@ const FERRAMENTAS = [
         + "árvore e conferir SHA-256; falta a operação que grava com outro nome "
         + "e reescreve o catálogo." },
   { ico:"tomada",   rot:"Conexões",   cor:"var(--memo)",   faz:verConexoes },
+  { ico:"elo",      rot:"DbLink",     cor:"var(--memo)",   faz:() => telaDbLink() },
   "risco",
   { ico:"troca",    rot:"Transações", cor:"var(--log)",    faz:verTransacoes },
   { ico:"importar", rot:"Importar",   cor:"var(--bin)",    faz:null,
@@ -4223,9 +4723,10 @@ const FERRAMENTAS = [
   { ico:"replica",  rot:"Replicação", cor:"var(--ndx)",    faz:verReplicacao },
   { ico:"correio",  rot:"Server Mail",cor:"var(--reg)",    faz:null,
     falta:"O armazenamento serve bem — uma tabela de mensagens com pasta "
-        + "indexada, corpo no .memo e anexo no .bin. Falta o serviço. E sem "
-        + "SMTP ele não troca correio com o mundo: seria um sistema de "
-        + "mensagens fechado." },
+        + "indexada, corpo no .memo e anexo no .bin. Falta o serviço. O SMTP "
+        + "de ENVIO já existe (é o que manda o alerta de disco), mas ele só "
+        + "entrega para um relé interno e não sabe RECEBER — sem isso o "
+        + "correio é de mão única." },
   { ico:"corrente", rot:"Blockchain", cor:"var(--ambar)",  faz:null,
     falta:"O formato encaixa: a altura do bloco é o rowid, o Uuid256 guarda um "
         + "SHA-256 exato e a ordem de digitação é sagrada. Falta o serviço — e, "
@@ -4537,6 +5038,9 @@ const MENUS = [
     "sep",
     { rot:"Diretivas de acesso",  ico:"⛨", faz:verDiretivas },
     { rot:"Diretivas do banco",   ico:"⚑", faz:() => verDiretivasDoBanco() },
+    "sep",
+    "sep",
+    { rot:"Definições do DbLink…", ico:"⛓", faz:telaDbLinkDefinicoes },
     "sep",
     { rot:"Editor de menu…",      ico:"✎", faz:editorDeMenu },
   ]],

@@ -34,6 +34,7 @@ use phxsql_store::table::Table;
 use crate::acesso::{Acesso, LogAcessos};
 use crate::blacklist::Blacklist;
 use crate::config::{Config, Durabilidade};
+use crate::dblink::{mysql, Definicao, Motor};
 use crate::http;
 use crate::usuarios::{Atividade, Usuario};
 use phxsql_core::schema::Schema;
@@ -57,6 +58,9 @@ const OPS_ESCRITA: &[&str] = &[
     "duplicar_tabela",
     "copiar_tabela",
     "ajustar_sequencia",
+    // Gravam o cadastro de ligacoes, que e arquivo deste servidor.
+    "dblink_salvar",
+    "dblink_excluir",
 ];
 
 /// Estado de uma conexao.
@@ -245,6 +249,8 @@ pub struct Servidor {
     /// Ultimo aviso mandado por caminho, para nao repetir enquanto o disco
     /// continua cheio.
     avisados: Mutex<HashMap<String, i64>>,
+    /// Ligacoes para bancos de fora.
+    dblink: Mutex<crate::dblink::Registro>,
     conexoes: AtomicUsize,
 }
 
@@ -253,6 +259,7 @@ impl Servidor {
         let instancia = Instancia::nova(&config.base)?;
         let log = LogAcessos::abrir(&config.log_acessos)?;
         let lista_negra = Blacklist::abrir(&config.blacklist)?;
+        let dblink = crate::dblink::Registro::abrir(&config.dblink)?;
         Ok(Arc::new(Servidor {
             janela: Janela::nova(&config.recursos),
             sujas: Mutex::new(std::collections::HashSet::new()),
@@ -264,6 +271,7 @@ impl Servidor {
             residentes: Mutex::new(HashMap::new()),
             remotos: Mutex::new(HashMap::new()),
             monitor: Mutex::new(crate::sistema::Monitor::novo()),
+            dblink: Mutex::new(dblink),
             avisados: Mutex::new(HashMap::new()),
             conexoes: AtomicUsize::new(0),
         }))
@@ -1442,6 +1450,15 @@ impl Servidor {
             "memoria" => self.op_memoria(),
             "painel" => self.op_painel(sessao),
             "sistema" => Ok(self.op_sistema()),
+            "dblink" => self.op_dblink(),
+            "dblink_salvar" => self.op_dblink_salvar(p),
+            "dblink_excluir" => self.op_dblink_excluir(p),
+            "dblink_testar" => self.op_dblink_testar(p),
+            "dblink_bancos" => self.op_dblink_bancos(p),
+            "dblink_tabelas" => self.op_dblink_tabelas(p),
+            "dblink_estrutura" => self.op_dblink_estrutura(p),
+            "dblink_ler" => self.op_dblink_ler(p),
+            "dblink_consultar" => self.op_dblink_consultar(p),
             "backup" => self.op_backup(p, sessao),
             "reparar" => self.op_reparar(p, sessao),
             "conferir_backup" => self.op_conferir_backup(p),
@@ -2668,6 +2685,323 @@ impl Servidor {
         ]))
     }
 
+    // ------------------------------------------------------------- o DbLink
+
+    /// As ligacoes cadastradas. A senha nunca vem junto.
+    fn op_dblink(&self) -> Result<Json> {
+        let r = self.dblink.lock().map_err(|_| trava_envenenada())?;
+        Ok(Json::objeto(vec![
+            ("arquivo", Json::texto_de(r.caminho.display().to_string())),
+            (
+                "ligacoes",
+                Json::Lista(r.ligacoes.iter().map(Definicao::para_json).collect()),
+            ),
+            (
+                "motores",
+                Json::Lista(
+                    [Motor::MySql, Motor::Postgres]
+                        .iter()
+                        .map(|m| {
+                            Json::objeto(vec![
+                                ("nome", Json::texto_de(m.nome())),
+                                ("porta", Json::de_u64(m.porta_padrao() as u64)),
+                                ("conecta", Json::Bool(m.conecta())),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ),
+        ]))
+    }
+
+    /// Cria ou substitui uma ligacao.
+    ///
+    /// Sem o campo `senha`, a senha que ja estava fica. Isso e o que faz a tela
+    /// de edicao funcionar: ela nunca RECEBE a senha, entao nao teria como
+    /// devolve-la, e sem esta regra editar a porta apagaria a credencial.
+    fn op_dblink_salvar(&self, p: &Json) -> Result<Json> {
+        let mut r = self.dblink.lock().map_err(|_| trava_envenenada())?;
+        let mut d = Definicao::de_json(p)?;
+        if p.campo("senha").is_none() && d.senha_env.is_empty() {
+            if let Ok(antiga) = r.achar(&d.nome) {
+                d = d.com_a_senha_de(antiga);
+            }
+        }
+        let ficha = d.para_json();
+        r.salvar(d)?;
+        Ok(Json::objeto(vec![
+            ("gravado", Json::Bool(true)),
+            ("ligacao", ficha),
+        ]))
+    }
+
+    fn op_dblink_excluir(&self, p: &Json) -> Result<Json> {
+        let nome = p.texto_ou("nome", "").to_string();
+        let mut r = self.dblink.lock().map_err(|_| trava_envenenada())?;
+        r.excluir(&nome)?;
+        Ok(Json::objeto(vec![
+            ("excluido", Json::texto_de(nome)),
+            ("restam", Json::de_u64(r.ligacoes.len() as u64)),
+        ]))
+    }
+
+    /// Abre a ligacao pedida e devolve a conexao pronta.
+    ///
+    /// A definicao e COPIADA antes de conectar, e a trava do cadastro sai da
+    /// mao: conectar leva ida e volta de rede, e segurar a trava enquanto isso
+    /// travaria a tela de cadastro de todo mundo por causa de um host que nao
+    /// responde.
+    fn ligar(&self, p: &Json) -> Result<(Definicao, mysql::Conexao)> {
+        let d = {
+            let r = self.dblink.lock().map_err(|_| trava_envenenada())?;
+            r.achar(p.texto_ou("dblink", p.texto_ou("nome", "")))?
+                .clone()
+        };
+        let c = d.conectar()?;
+        Ok((d, c))
+    }
+
+    fn op_dblink_testar(&self, p: &Json) -> Result<Json> {
+        let comeco = Instant::now();
+        let (d, mut c) = self.ligar(p)?;
+        c.ping()?;
+        let versao = c.versao.clone();
+        let id = c.conexao_id;
+        // Uma pergunta a mais, que e a que o operador realmente quer: com quem
+        // o outro banco acha que esta falando, e em que base caiu.
+        let quem = c
+            .consultar("SELECT current_user(), database(), version()", 1)
+            .ok();
+        c.encerrar();
+        let campo = |i: usize| {
+            quem.as_ref()
+                .and_then(|r| r.linhas.first())
+                .and_then(|l| l.get(i).cloned().flatten())
+                .unwrap_or_default()
+        };
+        Ok(Json::objeto(vec![
+            ("ok", Json::Bool(true)),
+            ("dblink", Json::texto_de(&d.nome)),
+            ("motor", Json::texto_de(d.motor.nome())),
+            ("versao", Json::texto_de(versao)),
+            ("conexao_id", Json::de_u64(id as u64)),
+            ("usuario_efetivo", Json::texto_de(campo(0))),
+            ("database", Json::texto_de(campo(1))),
+            ("ms", Json::de_u64(comeco.elapsed().as_millis() as u64)),
+        ]))
+    }
+
+    /// As bases do outro servidor.
+    fn op_dblink_bancos(&self, p: &Json) -> Result<Json> {
+        let (_, mut c) = self.ligar(p)?;
+        let r = c.consultar("SHOW DATABASES", 1_000);
+        c.encerrar();
+        let r = r?;
+        Ok(Json::objeto(vec![(
+            "bancos",
+            Json::Lista(
+                r.linhas
+                    .iter()
+                    .filter_map(|l| l.first().cloned().flatten())
+                    .map(Json::texto_de)
+                    .collect(),
+            ),
+        )]))
+    }
+
+    /// As tabelas de uma base do outro servidor, com tamanho e comentario.
+    fn op_dblink_tabelas(&self, p: &Json) -> Result<Json> {
+        let (d, mut c) = self.ligar(p)?;
+        let base = match p.texto_ou("database", "").trim() {
+            "" => d.database.clone(),
+            outro => outro.to_string(),
+        };
+        let sql = if base.is_empty() {
+            // Sem base escolhida, o proprio servidor decide pela do login.
+            "SELECT TABLE_NAME, TABLE_TYPE, ENGINE, TABLE_ROWS, \
+             DATA_LENGTH + INDEX_LENGTH, TABLE_COMMENT, TABLE_SCHEMA \
+             FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() \
+             ORDER BY TABLE_NAME"
+                .to_string()
+        } else {
+            format!(
+                "SELECT TABLE_NAME, TABLE_TYPE, ENGINE, TABLE_ROWS, \
+                 DATA_LENGTH + INDEX_LENGTH, TABLE_COMMENT, TABLE_SCHEMA \
+                 FROM information_schema.TABLES WHERE TABLE_SCHEMA = {} \
+                 ORDER BY TABLE_NAME",
+                crate::dblink::literal(&base)?
+            )
+        };
+        let r = c.consultar(&sql, 5_000);
+        c.encerrar();
+        let r = r?;
+        let campo = |l: &Vec<Option<String>>, i: usize| l.get(i).cloned().flatten();
+        Ok(Json::objeto(vec![
+            ("dblink", Json::texto_de(&d.nome)),
+            ("database", Json::texto_de(&base)),
+            (
+                "tabelas",
+                Json::Lista(
+                    r.linhas
+                        .iter()
+                        .map(|l| {
+                            Json::objeto(vec![
+                                ("nome", Json::texto_de(campo(l, 0).unwrap_or_default())),
+                                ("tipo", Json::texto_de(campo(l, 1).unwrap_or_default())),
+                                ("motor", Json::texto_de(campo(l, 2).unwrap_or_default())),
+                                // TABLE_ROWS e ESTIMATIVA no InnoDB, e dizer que
+                                // e contagem seria mentir num numero que a tela
+                                // mostra ao lado do nome.
+                                (
+                                    "registros_estimados",
+                                    Json::de_u64(
+                                        campo(l, 3).and_then(|x| x.parse().ok()).unwrap_or(0u64),
+                                    ),
+                                ),
+                                (
+                                    "bytes",
+                                    Json::de_u64(
+                                        campo(l, 4).and_then(|x| x.parse().ok()).unwrap_or(0u64),
+                                    ),
+                                ),
+                                (
+                                    "comentario",
+                                    Json::texto_de(campo(l, 5).unwrap_or_default()),
+                                ),
+                                ("schema", Json::texto_de(campo(l, 6).unwrap_or_default())),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ),
+        ]))
+    }
+
+    /// A estrutura de uma tabela do outro servidor.
+    fn op_dblink_estrutura(&self, p: &Json) -> Result<Json> {
+        let tabela = crate::dblink::nome_seguro(p.texto_ou("tabela", ""))?;
+        let (d, mut c) = self.ligar(p)?;
+        let base = match p.texto_ou("database", "").trim() {
+            "" => d.database.clone(),
+            outro => outro.to_string(),
+        };
+        let alvo = if base.is_empty() {
+            crate::dblink::entre_crases(&tabela)
+        } else {
+            format!(
+                "{}.{}",
+                crate::dblink::entre_crases(&crate::dblink::nome_seguro(&base)?),
+                crate::dblink::entre_crases(&tabela)
+            )
+        };
+        let colunas = c.consultar(&format!("SHOW FULL COLUMNS FROM {alvo}"), 2_000);
+        let indices = c.consultar(&format!("SHOW INDEX FROM {alvo}"), 2_000);
+        c.encerrar();
+        Ok(Json::objeto(vec![
+            ("dblink", Json::texto_de(&d.nome)),
+            ("tabela", Json::texto_de(&tabela)),
+            ("colunas", crate::dblink::resultado_para_json(&colunas?)),
+            ("indices", crate::dblink::resultado_para_json(&indices?)),
+        ]))
+    }
+
+    /// O conteudo de uma tabela do outro servidor, para a grade.
+    fn op_dblink_ler(&self, p: &Json) -> Result<Json> {
+        let tabela = crate::dblink::nome_seguro(p.texto_ou("tabela", ""))?;
+        let (d, mut c) = self.ligar(p)?;
+        let base = match p.texto_ou("database", "").trim() {
+            "" => d.database.clone(),
+            outro => outro.to_string(),
+        };
+        let alvo = if base.is_empty() {
+            crate::dblink::entre_crases(&tabela)
+        } else {
+            format!(
+                "{}.{}",
+                crate::dblink::entre_crases(&crate::dblink::nome_seguro(&base)?),
+                crate::dblink::entre_crases(&tabela)
+            )
+        };
+        let limite = p
+            .inteiro_ou("limite", d.max_linhas as i64)
+            .clamp(1, d.max_linhas as i64);
+        let salto = p.inteiro_ou("salto", 0).max(0);
+        // A ordem entra pelo nome da coluna, validado, e nunca pelo texto cru:
+        // "ORDER BY " + o que vier da tela seria SQL de fora entrando inteiro.
+        let ordem = match p.texto_ou("ordem", "").trim() {
+            "" => String::new(),
+            coluna => format!(
+                " ORDER BY {} {}",
+                crate::dblink::entre_crases(&crate::dblink::nome_seguro(coluna)?),
+                if p.booleano_ou("descendente", false) {
+                    "DESC"
+                } else {
+                    "ASC"
+                }
+            ),
+        };
+        // Pede uma linha a mais do que o teto: se ela vier, ha mais pagina.
+        let sql = format!(
+            "SELECT * FROM {alvo}{ordem} LIMIT {} OFFSET {salto}",
+            limite + 1
+        );
+        let r = c.consultar(&sql, limite as u64 + 1);
+        c.encerrar();
+        let mut r = r?;
+        let tem_mais = r.linhas.len() as i64 > limite;
+        r.linhas.truncate(limite as usize);
+        let mut saida = crate::dblink::resultado_para_json(&r);
+        if let Json::Objeto(campos) = &mut saida {
+            campos.push(("dblink".into(), Json::texto_de(&d.nome)));
+            campos.push(("tabela".into(), Json::texto_de(&tabela)));
+            campos.push(("salto".into(), Json::de_u64(salto as u64)));
+            campos.push(("tem_mais".into(), Json::Bool(tem_mais)));
+        }
+        Ok(saida)
+    }
+
+    /// Uma instrucao escrita a mao contra o outro servidor.
+    ///
+    /// Duas travas antes de mandar, e as duas precisam ceder: a ligacao tem de
+    /// nao ser somente-leitura E este servidor tambem nao. Um espelho nao vira
+    /// caminho de escrita para o banco do outro so porque a ligacao permitia.
+    fn op_dblink_consultar(&self, p: &Json) -> Result<Json> {
+        let sql = p.texto_ou("sql", "").trim().to_string();
+        if sql.is_empty() {
+            return Err(PhxError::Esquema("dblink_consultar sem \"sql\"".into()));
+        }
+        let (d, mut c) = self.ligar(p)?;
+        if !crate::dblink::so_consulta(&sql) {
+            if d.somente_leitura {
+                return Err(PhxError::Autorizacao(format!(
+                    "a ligacao {:?} esta em somente leitura e a instrucao nao e consulta",
+                    d.nome
+                )));
+            }
+            if self.config.somente_leitura {
+                return Err(PhxError::Autorizacao(
+                    "este servidor esta em somente leitura: nao escreve nem pelo dblink".into(),
+                ));
+            }
+        }
+        let limite = p
+            .inteiro_ou("limite", d.max_linhas as i64)
+            .clamp(1, d.max_linhas as i64) as u64;
+        let comeco = Instant::now();
+        let r = c.consultar(&sql, limite);
+        c.encerrar();
+        let r = r?;
+        let mut saida = crate::dblink::resultado_para_json(&r);
+        if let Json::Objeto(campos) = &mut saida {
+            campos.push(("dblink".into(), Json::texto_de(&d.nome)));
+            campos.push((
+                "ms".into(),
+                Json::de_u64(comeco.elapsed().as_millis() as u64),
+            ));
+        }
+        Ok(saida)
+    }
+
     // ----------------------------------------------------- a maquina embaixo
 
     /// Os caminhos cujo espaco em disco interessa a este servidor.
@@ -3610,6 +3944,8 @@ mod testes_politica {
             "duplicar_tabela",
             "copiar_tabela",
             "ajustar_sequencia",
+            "dblink_salvar",
+            "dblink_excluir",
         ] {
             assert!(
                 OPS_ESCRITA.contains(&op),
@@ -3640,6 +3976,17 @@ mod testes_politica {
             "siscolunas",
             "pivotar",
             "sequencias",
+            "sistema",
+            "dblink",
+            "dblink_testar",
+            "dblink_tabelas",
+            "dblink_estrutura",
+            "dblink_ler",
+            // Nao esta na lista de proposito: por ela passa tanto consulta
+            // quanto escrita, e a propria operacao confere qual e -- barrando
+            // a escrita quando este servidor esta somente-leitura, mas
+            // deixando a LEITURA funcionar num espelho.
+            "dblink_consultar",
         ] {
             assert!(
                 !OPS_ESCRITA.contains(&op),

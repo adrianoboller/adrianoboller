@@ -114,6 +114,12 @@ impl Atividade {
             // nao o dado -- quem so le uma tabela nao ganha nada com isso e o
             // atacante ganha o mapa.
             "sistema" => Atividade::Administrar,
+            // DbLink inteiro exige administrar, inclusive o que so LE do
+            // outro banco. Uma ligacao guarda UMA credencial, e quem a usa
+            // fala com o outro servidor como aquele usuario -- as permissoes
+            // por base do PhxSql nao atravessam. Deixar um leitor navegar por
+            // ela seria emprestar o poder de quem a criou.
+            op if op.starts_with("dblink") => Atividade::Administrar,
             "inserir" => Atividade::Inserir,
             "atualizar" => Atividade::Alterar,
             "excluir" => Atividade::Excluir,

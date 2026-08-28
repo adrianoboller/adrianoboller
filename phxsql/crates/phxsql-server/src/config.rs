@@ -785,6 +785,12 @@ pub struct Config {
     pub backup: Backup,
     /// Aviso de disco apertado, e o e-mail por onde ele sai.
     pub alertas: Alertas,
+    /// Arquivo com as ligacoes de DbLink.
+    ///
+    /// Separado do `config.json` de proposito: o cadastro de ligacoes muda
+    /// pela tela, e reescrever o `config.json` inteiro a cada ligacao nova
+    /// arriscaria os comentarios e o resto da configuracao a cada gravacao.
+    pub dblink: PathBuf,
     /// Campos do arquivo que o servidor nao reconhece.
     ///
     /// Nao e erro -- config antigo continua subindo. E aviso: campo escrito
@@ -798,7 +804,7 @@ pub struct Config {
 ///
 /// Os que comecam com `_` sao comentario -- o JSON nao tem comentario, e os
 /// exemplos usam `_web`, `_backup` e afins para explicar a secao seguinte.
-const CAMPOS_CONHECIDOS: [&str; 18] = [
+const CAMPOS_CONHECIDOS: [&str; 19] = [
     "bind",
     "base",
     "token",
@@ -817,6 +823,7 @@ const CAMPOS_CONHECIDOS: [&str; 18] = [
     "web",
     "backup",
     "alertas",
+    "dblink",
 ];
 
 /// O que o arquivo trouxe e o servidor nao sabe ler.
@@ -849,6 +856,7 @@ impl Default for Config {
             web: Web::default(),
             backup: Backup::default(),
             alertas: Alertas::default(),
+            dblink: PathBuf::from("dblink.json"),
             estranhas: Vec::new(),
         }
     }
@@ -948,6 +956,7 @@ impl Config {
             web: Web::de_json(j),
             backup: Backup::de_json(j)?,
             alertas: Alertas::de_json(j)?,
+            dblink: PathBuf::from(j.texto_ou("dblink", "dblink.json")),
             estranhas: chaves_estranhas(j),
         })
     }
@@ -1098,6 +1107,7 @@ impl Config {
                 ),
             ),
             ("alertas", self.alertas.para_json()),
+            ("dblink", Json::texto_de(self.dblink.display().to_string())),
         ])
     }
 }
