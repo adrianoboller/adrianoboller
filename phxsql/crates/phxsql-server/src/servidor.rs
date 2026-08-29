@@ -2637,6 +2637,7 @@ impl Servidor {
             "posicao" => self.op_posicao(p, sessao),
             "replicar" => self.op_replicar(p, sessao),
             "aplicar" => self.op_aplicar(p, sessao),
+            "replicacao_sondar" => self.op_replicacao_sondar(p),
             "memoria_carregar" => self.op_memoria_carregar(p, sessao),
             "memoria_liberar" => self.op_memoria_liberar(p),
             "memoria" => self.op_memoria(),
@@ -7290,6 +7291,156 @@ impl Servidor {
                     None => Json::Nulo,
                 },
             ),
+        ]))
+    }
+
+    /// `replicacao_sondar`: conecta noutro servidor PhxSql e LE o estado dele.
+    ///
+    /// # Provisoria: sai quando o `replicacao_testar` chegar
+    ///
+    /// O motor novo traz `replicacao_testar`, que faz isto e mais: devolve o
+    /// `id_servidor` do outro, a chave de cada tabela e os `impedimentos` por
+    /// modo. Esta existe para o assistente poder ser PROVADO antes daquele
+    /// motor entrar -- a tela ja chama o `replicacao_testar` primeiro e so cai
+    /// aqui quando ele nao existe. Na integracao, apague esta funcao, a
+    /// entrada dela no catalogo e o ramo do `executar`; a tela nao muda.
+    ///
+    /// E o teste de conexao do assistente de replicacao, e e leitura pura:
+    /// ping, lista de bancos e a posicao por tabela -- nada e gravado em lado
+    /// nenhum. A conexao e a MESMA do laco da replica (`crate::replica`), de
+    /// proposito: o que o teste prova e exatamente o caminho que a replicacao
+    /// vai usar, com a mesma autenticacao (token e/ou desafio-resposta) e o
+    /// mesmo protocolo. Um teste por outro caminho poderia passar onde a
+    /// replicacao falharia -- e ai nao provaria nada.
+    ///
+    /// A credencial vem do pedido (`host`/`porta`/`token`/`usuario`/`senha`)
+    /// ou de uma origem ja configurada (`origem`) -- e nesse caso ela NAO
+    /// viaja: sai do `config.json` deste servidor, do lado de ca. A resposta
+    /// nunca carrega credencial, so o que o outro servidor respondeu.
+    ///
+    /// Op nova nao entra em `Atividade::da_operacao`, entao cai no braco
+    /// `_ => Administrar` -- que e o poder certo: configurar replicacao e
+    /// trabalho de administrador, e a op abre conexao de saida com credencial.
+    fn op_replicacao_sondar(&self, p: &Json) -> Result<Json> {
+        let relogio = Instant::now();
+        let origem = match p.texto_ou("origem", "") {
+            "" => {
+                let host = p.texto_ou("host", "").trim().to_string();
+                if host.is_empty() {
+                    return Err(PhxError::Esquema(
+                        "informe \"host\" (ou \"origem\", para sondar uma ja configurada)".into(),
+                    ));
+                }
+                let porta = p.inteiro_ou("porta", 0);
+                if !(1..=65535).contains(&porta) {
+                    return Err(PhxError::Esquema(
+                        "informe \"porta\" entre 1 e 65535".into(),
+                    ));
+                }
+                // `token_remoto`, e nao `token`: o campo `token` do pedido ja
+                // autentica QUEM PEDE neste servidor. Um so campo com os dois
+                // papeis obrigaria o cliente a mandar o mesmo nome duas vezes
+                // -- e o JSON ficaria com um deles, decidido em silencio.
+                crate::config::Origem {
+                    nome: String::new(),
+                    host,
+                    porta: porta as u16,
+                    token: p.texto_ou("token_remoto", "").to_string(),
+                    databases: Vec::new(),
+                    reconectar_em: 0,
+                    usuario: p.texto_ou("usuario", "").to_string(),
+                    senha_hash: String::new(),
+                    senha: p.texto_ou("senha", "").to_string(),
+                }
+            }
+            nome => self
+                .config
+                .replicacao
+                .origens
+                .iter()
+                .find(|o| o.nome == nome)
+                .cloned()
+                .ok_or_else(|| {
+                    PhxError::NaoEncontrado(format!(
+                        "origem {nome:?} nao esta em replicacao.origens"
+                    ))
+                })?,
+        };
+
+        // Espera curta de proposito: quem espera aqui e uma pessoa com o botao
+        // apertado, nao um laco com a noite inteira pela frente.
+        let mut cliente = crate::replica::Cliente::conectar(
+            &origem.host,
+            origem.porta,
+            &origem.token,
+            Duration::from_secs(5),
+        )?;
+        if !origem.usuario.is_empty() {
+            cliente.autenticar(&origem.usuario, &origem.senha_hash, &origem.senha)?;
+        }
+        let ping = cliente.pedir(vec![("op", Json::texto_de("ping"))])?;
+        // A lista de bancos, lida do formato REAL da resposta: `bancos`
+        // devolve a lista crua como resultado. `Cliente::databases()` procura
+        // um objeto com `bancos` dentro e por isso devolve sempre vazio -- o
+        // que, no laco da replica, faz uma origem com `databases: []`
+        // ("todos") replicar NADA em silencio. O conserto do laco e do motor
+        // de replicacao (a frente irma); aqui a sonda le a resposta como ela
+        // e, tolerando os dois formatos para nao quebrar com o conserto.
+        let r = cliente.pedir(vec![("op", Json::texto_de("bancos"))])?;
+        let bancos: Vec<String> = match r.campo("bancos").and_then(Json::lista) {
+            Some(l) => l,
+            None => r.lista().unwrap_or(&[]),
+        }
+        .iter()
+        .map(|b| match b {
+            Json::Texto(t) => t.clone(),
+            outro => outro.texto_ou("nome", "").to_string(),
+        })
+        .filter(|n| !n.is_empty())
+        .collect();
+
+        // A posicao dos bancos pedidos -- ou de todos, quando nao pedem nenhum
+        // (o pedido explicito vale mesmo vazio: e como a origem configurada
+        // diz "todos"). `posicao` le so cabecalho de volume, entao "todos" nao
+        // e caro; e e dela que sai o `imagem_da_linha` do outro lado, que o
+        // assistente precisa saber ANTES de configurar uma replica que nao
+        // teria o que aplicar.
+        let pedidos = match p.campo("databases").and_then(Json::lista) {
+            Some(l) if !l.is_empty() => l
+                .iter()
+                .filter_map(|x| x.texto())
+                .map(str::to_string)
+                .collect(),
+            _ => bancos.clone(),
+        };
+        let mut imagem_da_linha = Json::Nulo;
+        let mut posicoes = Vec::new();
+        for db in &pedidos {
+            // O pedido cru, sem `com_esquema`: a sonda quer eventos e
+            // registros, nao o bloco serializado de cada tabela. E a resposta
+            // do outro passa adiante como veio -- reescrever no meio do
+            // caminho seria mentir sobre quem respondeu o que.
+            let r = cliente.pedir(vec![
+                ("op", Json::texto_de("posicao")),
+                ("database", Json::texto_de(db.clone())),
+            ])?;
+            imagem_da_linha = Json::Bool(r.booleano_ou("imagem_da_linha", false));
+            posicoes.push((
+                db.clone(),
+                r.campo("tabelas").cloned().unwrap_or(Json::Nulo),
+            ));
+        }
+
+        Ok(Json::objeto(vec![
+            ("ms", Json::de_u64(relogio.elapsed().as_millis() as u64)),
+            ("versao", Json::texto_de(ping.texto_ou("phxsql", "?"))),
+            ("papel", Json::texto_de(ping.texto_ou("papel", "?"))),
+            ("imagem_da_linha", imagem_da_linha),
+            (
+                "bancos",
+                Json::Lista(bancos.iter().map(Json::texto_de).collect()),
+            ),
+            ("posicoes", Json::Objeto(posicoes)),
         ]))
     }
 

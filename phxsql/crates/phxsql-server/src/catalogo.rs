@@ -926,6 +926,40 @@ pub const OPERACOES: &[Operacao] = &[
         exemplo: r#"{"op":"aplicar","database":"loja","tabela":"clientes","rowid":42,"operacao":"inclusao","imagem":"00ff..."}"#,
         ferramenta_mcp: false,
     },
+    Operacao {
+        nome: "replicacao_sondar",
+        apelidos: &[],
+        resumo: "Conecta noutro servidor PhxSql e lê versão, papel, bancos e \
+                 posição -- o teste de conexão do assistente de replicação, \
+                 pelo MESMO caminho que o laço da réplica usa.",
+        parametros: &[
+            opc(
+                "origem",
+                "string",
+                "nome de uma origem já configurada; a credencial sai do config e não viaja",
+            ),
+            opc("host", "string", "endereço do outro servidor, sem `origem`"),
+            opc("porta", "integer", "porta de dados do outro servidor"),
+            opc(
+                "token_remoto",
+                "string",
+                "token do OUTRO servidor; `token` já é o de quem pede aqui",
+            ),
+            opc("usuario", "string", "login lá, com direito de replicar"),
+            opc(
+                "senha",
+                "string",
+                "senha desse login; vira desafio-resposta, nunca viaja em claro",
+            ),
+            opc(
+                "databases",
+                "array",
+                "lê a posição destes bancos; ausente ou vazio, a de todos",
+            ),
+        ],
+        exemplo: r#"{"op":"replicacao_sondar","host":"10.1.1.102","porta":5000,"token":"TOKEN-DO-SOURCE"}"#,
+        ferramenta_mcp: false,
+    },
     // ------------------------------------------------------- o servidor
     Operacao {
         nome: "config",

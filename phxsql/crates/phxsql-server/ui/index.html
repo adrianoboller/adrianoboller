@@ -738,6 +738,28 @@ tr.balde-vazio{opacity:.45}
             background:transparent;border:1px solid var(--linha-forte);
             color:var(--texto-3)}
 .botao.mini:hover{border-color:var(--log);color:var(--log)}
+/* Mini COM cor de acao: sem estas cinco linhas o `.botao.mini` acima vence
+   `.botao.incluir` -- mesma especificidade, e ele vem depois no arquivo --,
+   e ai o botao nasce cinza e o hover pinta de VERMELHO um botao que inclui,
+   altera ou consulta. A convencao da casa e verde/amarelo/rosa/vermelho/azul,
+   sempre contorno, e o preenchimento so no hover; e o vermelho significa
+   excluir. Achado exercitando o atalho «acompanhar a replicacao», e ja valia
+   para os tres minis que existiam antes dele. */
+.botao.mini.incluir{color:var(--acao-incluir);border-color:var(--acao-incluir)}
+.botao.mini.alterar{color:var(--acao-alterar);border-color:var(--acao-alterar)}
+.botao.mini.excluir{color:var(--acao-excluir);border-color:var(--acao-excluir)}
+.botao.mini.marcar{color:var(--acao-marcar);border-color:var(--acao-marcar)}
+.botao.mini.consultar{color:var(--acao-consultar);border-color:var(--acao-consultar)}
+.botao.mini.incluir:hover{background:var(--acao-incluir);color:var(--fundo);
+                          border-color:var(--acao-incluir)}
+.botao.mini.alterar:hover{background:var(--acao-alterar);color:var(--fundo);
+                          border-color:var(--acao-alterar)}
+.botao.mini.excluir:hover{background:var(--acao-excluir);color:#fff;
+                          border-color:var(--acao-excluir)}
+.botao.mini.marcar:hover{background:var(--acao-marcar);color:var(--fundo);
+                         border-color:var(--acao-marcar)}
+.botao.mini.consultar:hover{background:var(--acao-consultar);color:var(--fundo);
+                            border-color:var(--acao-consultar)}
 td.num.mal{color:var(--log)}
 
 /* ----------------------------------------------------------------- juncoes */
@@ -7403,7 +7425,697 @@ async function verReplicacao() {
        retrato SHA-256 das quatro tabelas idêntico no fim.</p>
      </div>`;
 
-  folha("Replicação", `papel ${papel}`, fichas + aviso + deOrigens + posicoes);
+  // O assistente entra aqui como o do DbLink entrou na tela DbLink: um botão
+  // na própria tela, verde porque CRIA uma configuração. O acompanhar é azul
+  // porque só consulta — e só aparece quando há origem para acompanhar.
+  const acoes = `<div class="acoes">
+       <button class="botao incluir" id="btAssistRep">Assistente de replicação…</button>
+       ${origens.length
+         ? `<button class="botao consultar" id="btAcompRep">Acompanhar réplica…</button>`
+         : ""}
+     </div>`;
+
+  folha("Replicação", `papel ${papel}`, fichas + acoes + aviso + deOrigens + posicoes);
+  $("#btAssistRep").onclick = () => assistenteReplicacao();
+  const ac = $("#btAcompRep");
+  if (ac) ac.onclick = () => abrirProvaReplicacao(origens);
+}
+
+/* ================================================ assistente de replicação
+   O mesmo molde do assistente do DbLink: diálogo .sobre > .caixa.larga, passos
+   numerados, e NENHUM passo avança sem o anterior provado — testar a conexão
+   vem antes de configurar, e o passo final mostra a posição dos dois lados.
+
+   Quem procura é sempre quem PUXA: o assistente roda no servidor que vai
+   receber os eventos (a réplica, o standby, a read replica — e cada ponta do
+   multi-master), e o «outro servidor» é de onde eles vêm. */
+
+const MODOS_REPLICA = [
+  { id: "primary_replica", rot: "Primary → Replica", sql: "A → B",
+    papel: "replica",
+    exp: "distribuição e cópia: central → filial, relatórios, datacenter " +
+         "secundário — o outro recebe a escrita, este acompanha" },
+  // «↔» e nao «⇄»: a IBM Plex Mono do v-sql nao tem o glifo duplo, e o
+  // navegador pintava um substituto que parecia «≠» — visto na captura.
+  { id: "multi_master", rot: "Multi-Master", sql: "A ↔ B",
+    papel: "multi",
+    exp: "os dois recebem escrita e trocam alterações · conflito: a " +
+         "modificação mais recente vence (exige relógios via NTP) · " +
+         "chave única por tabela" },
+  { id: "standby", rot: "Primary → Standby", sql: "A → B · failover",
+    papel: "spare",
+    exp: "reserva de contingência: não atende cliente; existe para assumir " +
+         "no desastre — a promoção é a spare_promover" },
+  { id: "read_replica", rot: "Read Replica", sql: "A → B · leitura",
+    papel: "read_replica",
+    exp: "réplica de consulta: aceita leitura, recusa escrita apontando o " +
+         "primário — relatórios e balanceamento de leitura" },
+];
+
+/* A sonda do outro servidor, com o contrato do motor da frente irmã e o de
+   hoje atrás dele.
+
+   `replicacao_testar` é a operação do motor novo, e diz mais: `id_servidor`,
+   a chave de cada tabela e os `impedimentos` por modo. `replicacao_sondar` é
+   a provisória deste worktree, que existe só para o assistente poder ser
+   provado antes daquele motor chegar — quando ele entrar, esta função perde o
+   segundo ramo e a operação sai do servidor.
+
+   O token do OUTRO servidor vai em `token_remoto` porque `token`, no `/api`,
+   já é o de quem pede AQUI: mandar os dois no mesmo nome faz um sobrescrever
+   o outro dentro do mesmo objeto JSON. */
+async function sondarOutro(rz, opcoes = {}) {
+  const base = {};
+  if (opcoes.origem) base.origem = opcoes.origem;
+  else {
+    base.host = rz.host;
+    base.porta = rz.porta;
+    if (rz.token_remoto) base.token_remoto = rz.token_remoto;
+    if (rz.usuario) { base.usuario = rz.usuario; base.senha = rz.senha; }
+    if (opcoes.databases) base.databases = opcoes.databases;
+  }
+  let bruto, deQuem = "replicacao_testar";
+  try {
+    bruto = await api("replicacao_testar", base);
+  } catch (e) {
+    if (!e || e.nome !== "NAO_ENCONTRADO") throw e;
+    deQuem = "replicacao_sondar";
+    bruto = await api("replicacao_sondar", base);
+  }
+  // Uma forma só para os dois: {bancos, tabelas:[{database,tabela,eventos,
+  // registros,chave}], impedimentos, sem_chave_unica}.
+  if (deQuem === "replicacao_testar") {
+    return { ...bruto, de: deQuem, bancos: bruto.databases || [],
+             tabelas: bruto.tabelas || [],
+             impedimentos: bruto.impedimentos || [],
+             sem_chave_unica: bruto.sem_chave_unica || [] };
+  }
+  const tabelas = [];
+  for (const [db, tabs] of Object.entries(bruto.posicoes || {}))
+    for (const [tabela, d] of Object.entries(tabs || {}))
+      tabelas.push({ database: db, tabela, eventos: d.eventos || 0,
+                     registros: d.registros || 0, chave: null });
+  const impedimentos = [];
+  if (bruto.imagem_da_linha === false)
+    impedimentos.push("o outro servidor está com replicacao.imagem_da_linha "
+      + "desligada: o diário dele registra que a linha mudou sem registrar a "
+      + "linha, e não há o que aplicar (vale para TODOS os modos)");
+  return { ...bruto, de: deQuem, bancos: bruto.bancos || [], tabelas,
+           id_servidor: "", impedimentos, sem_chave_unica: [] };
+}
+
+/* O desenho de cada modo, à mão e só com variáveis do tema, como os cartões
+   de junção. O código visual: cilindro PINTADO recebe escrita, contorno só
+   lê, tracejado está dormente. */
+function cartaoReplica(tipo) {
+  const cilindro = (cx, cheio, extra = "") => {
+    const corpo = `M${cx - 11},20 v17 a11,4.4 0 0,0 22,0 v-17`;
+    const topo = `M${cx - 11},20 a11,4.4 0 1,0 22,0 a11,4.4 0 1,0 -22,0`;
+    const enchimento = cheio
+      ? `fill="var(--laranja)" fill-opacity=".45"`
+      : `fill="none"`;
+    const tampa = cheio
+      ? `fill="var(--laranja)" fill-opacity=".8"`
+      : `fill="none"`;
+    return `<path d="${corpo}" ${enchimento} stroke="currentColor" stroke-width="1.3" ${extra}/>
+            <path d="${topo}" ${tampa} stroke="currentColor" stroke-width="1.3" ${extra}/>`;
+  };
+  const seta = (y, volta) => volta
+    ? `<path d="M62 ${y}H38m6 -4l-6 4 6 4" fill="none" stroke="currentColor"
+         stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`
+    : `<path d="M34 ${y}h24m-6 -4l6 4 -6 4" fill="none" stroke="currentColor"
+         stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`;
+  const rotulos = `<text x="20" y="56" text-anchor="middle" font-size="9"
+      fill="currentColor">A</text>
+    <text x="76" y="56" text-anchor="middle" font-size="9"
+      fill="currentColor">B</text>`;
+  const desenho = {
+    primary_replica: cilindro(20, true) + cilindro(76, false) + seta(29),
+    multi_master: cilindro(20, true) + cilindro(76, true) + seta(24) + seta(34, true),
+    // O raio âmbar é a promoção: a reserva tracejada acorda no desastre.
+    standby: cilindro(20, true) + cilindro(76, false, 'stroke-dasharray="3 2.4"')
+      + seta(29)
+      + `<path d="M76 2l-4.5 8h3.5l-2.5 7 7.5-9h-3.5l3-6z"
+           fill="var(--ambar)" stroke="none"/>`,
+    // A lupa azul é a consulta: é para isso que a read replica existe.
+    read_replica: cilindro(20, true) + cilindro(76, false) + seta(29)
+      + `<circle cx="86" cy="8" r="4.6" fill="none"
+           stroke="var(--acao-consultar)" stroke-width="1.5"/>
+         <path d="M89.4 11.4l4 4" stroke="var(--acao-consultar)"
+           stroke-width="1.7" stroke-linecap="round"/>`,
+  }[tipo] || "";
+  return `<svg viewBox="0 0 96 58" role="img"
+    aria-label="Desenho do modo ${tipo}">${desenho}${rotulos}</svg>`;
+}
+
+async function assistenteReplicacao() {
+  let cfg = {};
+  try { cfg = await api("config"); } catch { /* sem config a tela segue */ }
+  const rz = {
+    modo: MODOS_REPLICA[0],
+    nome: "", host: "127.0.0.1", porta: 5000,
+    token_remoto: "", usuario: "", senha: "",
+    sonda: null, todos: true, escolhidos: new Set(),
+    agenda: "streaming", cada: 15, hora: "03:00", reconectar: 10,
+  };
+
+  const fundo = document.createElement("div");
+  fundo.className = "sobre";
+  fundo.innerHTML = `<div class="caixa larga" role="dialog" aria-modal="true"
+    aria-label="Assistente de replicação"><div id="rzCorpo"></div></div>`;
+  document.body.appendChild(fundo);
+  const corpo = fundo.querySelector("#rzCorpo");
+  let prova = null;
+  const fechar = () => { if (prova) prova.parar(); fundo.remove(); };
+  fundo.onclick = ev => { if (ev.target === fundo) fechar(); };
+
+  const molde = (titulo, passo, html, acoes) => {
+    if (prova) { prova.parar(); prova = null; }
+    corpo.innerHTML = `
+      <h3>${esc(titulo)}</h3>
+      <div class="sub">assistente de replicação · ${esc(rz.modo.rot)} · passo ${passo} de 6</div>
+      ${html}
+      <div id="rzRecado"></div>
+      <div class="acoes">${acoes}</div>`;
+  };
+  const recado = (texto, mal) => {
+    $("#rzRecado").innerHTML =
+      `<div class="aviso ${mal ? "mal" : ""}">${esc(texto)}</div>`;
+  };
+
+  // ------------------------------------------------------ passo 1: o modo
+  const passo1 = () => {
+    const jaReplica = (cfg.papel === "replica") && (cfg.origens || []).length;
+    molde("Que replicação vai ser?", 1, `
+      ${jaReplica ? `<div class="aviso bom"><p>Este servidor <b>já é réplica</b>
+          de ${esc(cfg.origens[0].nome)} (${esc(cfg.origens[0].host)}:${cfg.origens[0].porta}).
+          Dá para <button class="botao mini consultar" id="rzJaAcomp" type="button">acompanhar
+          a replicação em andamento</button> sem configurar nada de novo.</p></div>` : ""}
+      <p class="leg">Cilindro <b>pintado</b> recebe escrita; contorno só lê;
+        tracejado fica de reserva. Este assistente roda no servidor que
+        <b>puxa</b> — o B do desenho${rz.modo.id === "multi_master" ? " (no multi-master, cada lado é o B do outro)" : ""}.</p>
+      <div class="vennes" id="rzModos">
+        ${MODOS_REPLICA.map(m => `<button class="venn ${m.id === rz.modo.id ? "viva" : ""}" data-m="${m.id}">
+             ${cartaoReplica(m.id)}
+             <span class="v-rot">${esc(m.rot)}</span>
+             <span class="v-sql">${esc(m.sql)}</span>
+             <span class="v-exp">${esc(m.exp)}</span>
+           </button>`).join("")}
+      </div>`,
+      `<button class="botao secundario" id="rzSair">Cancelar</button>
+       <button class="botao incluir" id="rzIr1">Os servidores →</button>`);
+    $$("#rzModos .venn").forEach(b => b.onclick = () => {
+      rz.modo = MODOS_REPLICA.find(m => m.id === b.dataset.m);
+      $$("#rzModos .venn").forEach(x => x.classList.toggle("viva", x === b));
+      // Dentro do corpo do diálogo: a tela atrás também tem um `.sub`, e o
+      // seletor solto trocaria o título DELA.
+      corpo.querySelector(".sub").textContent =
+        `assistente de replicação · ${rz.modo.rot} · passo 1 de 6`;
+    });
+    const ja = $("#rzJaAcomp");
+    if (ja) ja.onclick = () => { fechar(); abrirProvaReplicacao(cfg.origens); };
+    $("#rzSair").onclick = fechar;
+    $("#rzIr1").onclick = passo2;
+  };
+
+  // ------------------------------------------------ passo 2: os servidores
+  const passo2 = () => {
+    if (!rz.nome) rz.nome = rz.modo.id === "multi_master" ? "parceiro" : "primario";
+    molde("Os dois servidores", 2, `
+      <div class="aviso"><b>Quem procura é quem recebe.</b> ${
+        rz.modo.id === "multi_master"
+          ? "Cada lado do multi-master puxa do outro: configure aqui a metade de cá, e rode o mesmo assistente do outro lado apontando para cá."
+          : `Este servidor vai puxar do outro (${esc(rz.modo.rot)}); o outro é o primário e não precisa alcançar este de volta — é o desenho do firewall.`
+      }</div>
+      <div class="form-dbl">
+        <label class="cmp"><span>Apelido da origem</span>
+          <input id="rzNome" class="campo" value="${esc(rz.nome)}" placeholder="primario, matriz…">
+          <span class="leg">é o nome dela no config e nos logs daqui</span></label>
+        <label class="cmp"><span>Endereço do outro servidor</span>
+          <input id="rzHost" class="campo" value="${esc(rz.host)}"></label>
+        <label class="cmp"><span>Porta de dados dele</span>
+          <input id="rzPorta" class="campo" type="number" value="${rz.porta}">
+          <span class="leg">a mesma do protocolo (5000 de fábrica); a replicação fala por ela</span></label>
+        <label class="cmp"><span>Token do outro servidor</span>
+          <input id="rzTokenR" class="campo" type="password" value="${esc(rz.token_remoto)}">
+          <span class="leg">vale tudo lá — guarde-o como senha</span></label>
+        <label class="cmp"><span>Usuário lá (opcional)</span>
+          <input id="rzUsu" class="campo" value="${esc(rz.usuario)}">
+          <span class="leg">com o direito <b>replicar</b>; entra pelo desafio-resposta</span></label>
+        <label class="cmp"><span>Senha desse usuário</span>
+          <input id="rzSen" class="campo" type="password">
+          <span class="leg">nunca viaja em claro; no config vira <code>senha_hash</code></span></label>
+      </div>`,
+      `<button class="botao secundario" id="rzVolta">← Voltar</button>
+       <button class="botao incluir" id="rzIr2">Testar a conexão →</button>`);
+    $("#rzVolta").onclick = passo1;
+    $("#rzIr2").onclick = () => {
+      rz.nome = $("#rzNome").value.trim();
+      rz.host = $("#rzHost").value.trim();
+      rz.porta = +$("#rzPorta").value || 5000;
+      rz.token_remoto = $("#rzTokenR").value;
+      rz.usuario = $("#rzUsu").value.trim();
+      rz.senha = $("#rzSen").value;
+      if (!rz.nome) return recado("dê um apelido à origem", true);
+      if (!rz.host) return recado("diga o endereço do outro servidor", true);
+      if (!rz.token_remoto && !rz.usuario)
+        return recado("a réplica precisa se apresentar: token do outro servidor, ou usuário com direito de replicar", true);
+      passo3();
+    };
+  };
+
+  // ------------------------------------------------- passo 3: a conexão provada
+  const passo3 = async () => {
+    molde("Testando a conexão", 3,
+      `<div class="centro">este servidor está falando com ${esc(rz.host)}:${rz.porta}…</div>`,
+      `<button class="botao secundario" id="rzVolta">← Voltar</button>`);
+    $("#rzVolta").onclick = passo2;
+    let s;
+    try {
+      s = await sondarOutro(rz);
+    } catch (e) {
+      molde("Não conectou", 3,
+        `<div class="aviso mal"><p>${esc(String(e))}</p>
+         <p class="leg">A sonda usa o MESMO caminho do laço da réplica — o que
+         falha aqui falharia replicando. Confira endereço, porta e a
+         credencial; e se o outro servidor limita IPs
+         (<code>ips_permitidos</code>), o IP <b>deste</b> servidor precisa
+         estar lá.</p></div>`,
+        `<button class="botao secundario" id="rzVolta">← Corrigir a conexão</button>`);
+      $("#rzVolta").onclick = passo2;
+      return;
+    }
+    rz.sonda = s;
+    const bancos = s.bancos || [];
+    const avisos = [];
+    // O que TRAVA vem do outro servidor, não de palpite daqui: `impedimentos`
+    // é a lista que a sonda do motor traz, já redigida por quem sabe o que
+    // cada modo exige.
+    let trava = (s.impedimentos || [])[0] || null;
+    if (!trava && !bancos.length) {
+      trava = `O outro servidor não tem banco nenhum ainda. Replicar o vazio
+        até funciona; provar que funcionou, não. Crie o banco lá e teste de
+        novo.`;
+    }
+    // No bidirecional, tabela sem chave única não replica — e é melhor
+    // descobrir aqui do que pela réplica parada.
+    if (rz.modo.id === "multi_master" && (s.sem_chave_unica || []).length) {
+      trava = `Este modo exige chave única por tabela, e ${s.sem_chave_unica.length}
+        tabela(s) não têm: ${s.sem_chave_unica.slice(0, 6).join(", ")}${
+        s.sem_chave_unica.length > 6 ? "…" : ""}. Elas replicam nos modos A, C e
+        D; no bidirecional, a chave É a identidade entre os dois servidores.`;
+    }
+    if (!trava && s.papel === "isolado") {
+      avisos.push(`O outro servidor se declara <b>isolado</b>. O fluxo de
+        replicação funciona mesmo assim, mas o painel dele vai dizer que não
+        replica para ninguém — ponha <code>"papel": "source"</code> no config
+        dele para a tela de lá dizer a verdade.`);
+    }
+    if (!trava && rz.modo.id === "multi_master") {
+      avisos.push(`Multi-master decide conflito pela <b>modificação mais
+        recente</b> — o carimbo de tempo é o juiz. Relógios dessincronizados
+        fazem o lado atrasado perder sempre: os dois servidores precisam de
+        NTP.`);
+    }
+    const tabelas = (s.tabelas || []).length;
+    const outros = (s.impedimentos || []).slice(trava === (s.impedimentos || [])[0] ? 1 : 0);
+    molde(trava ? "Conectou, mas ainda não dá" : "Conectou", 3, `
+      <div class="aviso bom"><p><b>PhxSql ${esc(s.versao || "")}</b> respondeu${
+        s.ms !== undefined ? ` em ${s.ms} ms` : ""} — papel
+        <b>${esc(s.papel || "?")}</b>${s.id_servidor
+          ? `, id <code>${esc(s.id_servidor)}</code>` : ""}, ${bancos.length} banco(s),
+        ${tabelas} tabela(s), imagem da linha
+        ${s.imagem_da_linha === false ? "desligada" : s.imagem_da_linha ? "ligada" : "sem banco para dizer"}.</p></div>
+      ${trava ? `<div class="aviso mal"><p>${trava}</p></div>` : ""}
+      ${outros.map(a => `<div class="aviso"><p>${esc(a)}</p></div>`).join("")}
+      ${avisos.map(a => `<div class="aviso"><p>${a}</p></div>`).join("")}`,
+      `<button class="botao secundario" id="rzVolta">← Voltar</button>
+       ${trava
+         ? `<button class="botao secundario" id="rzDeNovo">Testar de novo</button>`
+         : `<button class="botao incluir" id="rzIr3">O que replicar →</button>`}`);
+    $("#rzVolta").onclick = passo2;
+    const dn = $("#rzDeNovo");
+    if (dn) dn.onclick = passo3;
+    const ir = $("#rzIr3");
+    if (ir) ir.onclick = passo4;
+  };
+
+  // ------------------------------------------------ passo 4: o que replicar
+  const passo4 = () => {
+    const s = rz.sonda;
+    const bancos = s.bancos || [];
+    const resumoDb = db => {
+      const t = (s.tabelas || []).filter(x => x.database === db);
+      const eventos = t.reduce((n, x) => n + (x.eventos || 0), 0);
+      const sem = t.filter(x => x.chave === null || x.chave === undefined).length;
+      return `${t.length} tabela(s), ${fmt(eventos)} evento(s)` +
+        (rz.modo.id === "multi_master" && sem && s.de === "replicacao_testar"
+          ? ` · ${sem} sem chave única` : "");
+    };
+    molde("O que replicar", 4, `
+      <div class="form-dbl">
+        <label class="cmp linha-chk"><input type="checkbox" id="rzTodos" ${rz.todos ? "checked" : ""}>
+          <span><b>Todos os bancos</b>
+          <span class="leg">— inclusive os que nascerem lá depois; é o vazio no config</span></span></label>
+      </div>
+      <div class="un-lista" id="rzBancos">
+        ${bancos.map(db => `<label class="un-item">
+            <input type="checkbox" data-db="${esc(db)}"
+              ${rz.escolhidos.has(db) ? "checked" : ""} ${rz.todos ? "disabled" : ""}>
+            <span><b>${esc(db)}</b> <span class="leg">${resumoDb(db)}</span></span>
+          </label>`).join("")}
+      </div>
+      ${rz.modo.id === "multi_master" ? `
+      <div class="aviso"><p><b>Chave única por tabela.</b> No modo bidirecional
+        é a chave única que casa a linha daqui com a de lá — sem ela, a mesma
+        linha inserida dos dois lados viraria duas. O motor recusa ligar o
+        modo para tabela que não tenha; confira as chaves antes de aplicar.</p></div>` : ""}`,
+      `<button class="botao secundario" id="rzVolta">← Voltar</button>
+       <button class="botao incluir" id="rzIr4">Streaming ou agendado →</button>`);
+    $("#rzTodos").onchange = ev => {
+      rz.todos = ev.target.checked;
+      $$("#rzBancos input").forEach(i => i.disabled = rz.todos);
+    };
+    $("#rzVolta").onclick = passo3;
+    $("#rzIr4").onclick = () => {
+      rz.escolhidos = new Set($$("#rzBancos input:checked").map(i => i.dataset.db));
+      if (!rz.todos && !rz.escolhidos.size)
+        return recado("marque ao menos um banco, ou volte a «todos»", true);
+      passo5();
+    };
+  };
+
+  // --------------------------------------- passo 5: streaming ou agendado
+  const passo5 = () => {
+    const marca = v => rz.agenda === v ? "checked" : "";
+    molde("Quando replicar", 5, `
+      <div class="form-dbl">
+        <label class="cmp linha-chk"><input type="radio" name="rzAg" value="streaming" ${marca("streaming")}>
+          <span><b>Contínua (streaming)</b>
+          <span class="leg">— aplica o que chega, o tempo todo; é o padrão, e no config é a agenda AUSENTE</span></span></label>
+        <label class="cmp linha-chk"><input type="radio" name="rzAg" value="minutos" ${marca("minutos")}>
+          <span>A cada <input id="rzCada" class="campo" type="number" min="1"
+            value="${rz.cada}" style="width:5em;display:inline-block;margin:0 4px"> minutos
+          <span class="leg">— para link caro ou lote tolerante a atraso</span></span></label>
+        <label class="cmp linha-chk"><input type="radio" name="rzAg" value="hora_em_hora" ${marca("hora_em_hora")}>
+          <span>De hora em hora</span></label>
+        <label class="cmp linha-chk"><input type="radio" name="rzAg" value="diaria" ${marca("diaria")}>
+          <span>Diária às <input id="rzHora" class="campo" type="time"
+            value="${esc(rz.hora)}" style="width:10.5em;display:inline-block;margin:0 4px">
+          <span class="leg">— janela noturna; o atraso esperado é o intervalo</span></span></label>
+        <label class="cmp"><span>Reconferir a cada (s)</span>
+          <input id="rzRec" class="campo" type="number" min="1" value="${rz.reconectar}">
+          <span class="leg">na contínua: a espera quando está em dia — e entre
+            tentativas quando a conexão cai (reconectar_em)</span></label>
+      </div>
+      ${rz.modo.id === "standby" ? `
+      <div class="aviso"><p>Para uma reserva de contingência, o certo é quase
+        sempre a <b>contínua</b>: reserva agendada é reserva que perde o que
+        aconteceu desde a última rodada.</p></div>` : ""}`,
+      `<button class="botao secundario" id="rzVolta">← Voltar</button>
+       <button class="botao incluir" id="rzIr5">Aplicar e provar →</button>`);
+    $("#rzVolta").onclick = passo4;
+    $("#rzIr5").onclick = () => {
+      rz.agenda = (corpo.querySelector('input[name="rzAg"]:checked') || {}).value || "streaming";
+      rz.cada = Math.max(1, +$("#rzCada").value || 15);
+      rz.hora = $("#rzHora").value || "03:00";
+      rz.reconectar = Math.max(1, +$("#rzRec").value || 10);
+      passo6();
+    };
+  };
+
+  // O pedaço de config desta origem — o mesmo objeto vai para a operação de
+  // configurar e, enquanto o motor novo não chega, para o bloco que a pessoa
+  // cola no config.json.
+  const origemMontada = () => {
+    const o = { nome: rz.nome, host: rz.host, porta: rz.porta };
+    if (rz.token_remoto) o.token = rz.token_remoto;
+    if (rz.usuario) { o.usuario = rz.usuario; o.senha = rz.senha; }
+    o.databases = rz.todos ? [] : [...rz.escolhidos];
+    o.reconectar_em = rz.reconectar;
+    // A agenda mora na PRÓPRIA origem, em dois campos rasos: `cada_minutos`
+    // (0 = sem intervalo) e `hora` ("HH:MM", vazia = sem hora marcada). As
+    // duas vazias é o streaming — a ausência É o contínuo, e por isso o modo
+    // contínuo não escreve campo nenhum.
+    if (rz.agenda === "minutos") o.cada_minutos = rz.cada;
+    else if (rz.agenda === "hora_em_hora") o.cada_minutos = 60;
+    else if (rz.agenda === "diaria") o.hora = rz.hora;
+    return o;
+  };
+
+  const resumoDoPlano = () => {
+    const agenda = rz.agenda === "streaming" ? "contínua (streaming)"
+      : rz.agenda === "minutos" ? `a cada ${rz.cada} min`
+      : rz.agenda === "hora_em_hora" ? "de hora em hora"
+      : `diária às ${rz.hora}`;
+    return `<ul class="lista-limpa">
+      <li>modo <b>${esc(rz.modo.rot)}</b> — papel local <code>${esc(rz.modo.papel)}</code></li>
+      <li>origem <code>${esc(rz.nome)}</code> = ${esc(rz.host)}:${rz.porta}
+        (${rz.token_remoto ? "token" : ""}${rz.token_remoto && rz.usuario ? " + " : ""}${rz.usuario ? `usuário <code>${esc(rz.usuario)}</code>` : ""})</li>
+      <li>bancos: ${rz.todos ? "<b>todos</b>" : [...rz.escolhidos].map(esc).join(", ")}</li>
+      <li>agenda: ${agenda} · reconferir a cada ${rz.reconectar} s</li></ul>`;
+  };
+
+  // ------------------------------------------- passo 6: aplicar e provar
+  const passo6 = () => {
+    molde("Aplicar e provar", 6, `
+      <div class="aviso bom">${resumoDoPlano()}</div>
+      ${rz.modo.id === "primary_replica" ? `
+      <div class="aviso"><p>Uma réplica só se sustenta em
+        <code>"somente_leitura": true</code>: se a aplicação escrever aqui, os
+        rowids divergem e a replicação <b>para</b>. O assistente aplica isso
+        junto.</p></div>` : ""}`,
+      `<button class="botao secundario" id="rzVolta">← Voltar</button>
+       <button class="botao incluir" id="rzAplicar">Aplicar a configuração →</button>`);
+    $("#rzVolta").onclick = passo5;
+    $("#rzAplicar").onclick = async () => {
+      recado("aplicando…");
+      try {
+        await api("replicacao_configurar", { papel: rz.modo.papel, origem: origemMontada() });
+        passoPronto();
+      } catch (e) {
+        if (e && e.nome === "NAO_ENCONTRADO") return aplicarPeloConfig();
+        recado(String(e), true);
+      }
+    };
+  };
+
+  // O caminho de HOJE: o phxsqld ainda não aplica replicação em execução — a
+  // operação replicacao_configurar chega com o motor novo. O assistente não
+  // finge: entrega o bloco exato, manda reiniciar e CONFERE antes de dar por
+  // pronto.
+  const aplicarPeloConfig = () => {
+    const o = origemMontada();
+    if (o.senha) {
+      // Senha em claro no config funciona, mas o arranque avisa em voz alta —
+      // o campo de verdade é senha_hash, e o hash mora no cadastro de lá.
+      o.senha_hash = "COLE-AQUI-O-SENHA_HASH-DO-CADASTRO";
+      delete o.senha;
+    }
+    const papelHoje = rz.modo.id === "primary_replica";
+    const blocoAqui = {
+      papel: papelHoje ? "replica" : rz.modo.papel,
+      id_servidor: cfg.id_servidor || "este-servidor",
+      origens: [o],
+    };
+    // O bidirecional exige as três, e o motor recusa subir sem elas: o id
+    // marca a origem de cada evento (é o que impede o laço infinito), a
+    // imagem é a linha dentro do diário, e somente_leitura seria a
+    // contradição de um modo que existe para receber escrita dos dois lados.
+    if (rz.modo.id === "multi_master") blocoAqui.imagem_da_linha = true;
+    const blocoLa = rz.modo.id === "multi_master"
+      ? { papel: rz.modo.papel, id_servidor: "o-outro-servidor",
+          origens: [{ nome: "volta", host: "ENDERECO-DESTE-SERVIDOR",
+            porta: +(String(cfg.bind || "5000").split(":").pop()) || 5000,
+            token: "TOKEN-DESTE-SERVIDOR", databases: o.databases,
+            reconectar_em: o.reconectar_em }],
+          // As duas metades do bidirecional têm as MESMAS exigências: sem a
+          // imagem no diário do outro lado, a volta não tem o que aplicar.
+          imagem_da_linha: true }
+      : { papel: "source", id_servidor: "o-outro-servidor",
+          replicas_autorizadas: ["IP-DESTE-SERVIDOR"] };
+    molde("Aplicar pelo config.json", 6, `
+      <div class="aviso"><p><b>Este phxsqld ainda não muda a replicação em
+        execução</b> — a operação <code>replicacao_configurar</code> chega com
+        o motor novo. O caminho de hoje é o de sempre: o bloco no
+        <code>config.json</code> e um reinício.</p>
+        ${papelHoje ? "" : `<p><b>Atenção:</b> o papel
+        <code>${esc(rz.modo.papel)}</code> também é do motor novo — o phxsqld
+        de hoje entende <code>replica</code> e <code>source</code>. O bloco
+        abaixo é o contrato combinado, para aplicar quando ele chegar.</p>`}</div>
+      <p class="leg">No config <b>deste</b> servidor${
+        rz.modo.id === "primary_replica" || rz.modo.id === "standby"
+          ? ", junto com <code>\"somente_leitura\": true</code>"
+        : rz.modo.id === "multi_master"
+          ? ", com <code>\"somente_leitura\": false</code> e um <code>id_servidor</code> DIFERENTE do outro lado"
+          : ""}:</p>
+      <pre class="dado">"replicacao": ${esc(JSON.stringify(blocoAqui, null, 2))}</pre>
+      <p class="leg">${rz.modo.id === "multi_master"
+        ? "E no config do <b>outro</b> lado, a metade dele (troque endereço e token pelos deste servidor):"
+        : "E no config do <b>outro</b> servidor, para ele dizer a verdade e limitar quem puxa:"}</p>
+      <pre class="dado">"replicacao": ${esc(JSON.stringify(blocoLa, null, 2))}</pre>`,
+      `<button class="botao secundario" id="rzVolta">← Voltar</button>
+       <button class="botao consultar" id="rzConferir">Já apliquei e reiniciei — conferir</button>`);
+    $("#rzVolta").onclick = passo6;
+    $("#rzConferir").onclick = async () => {
+      recado("relendo a configuração do servidor…");
+      let agora;
+      try { agora = await api("config"); } catch (e) { return recado(String(e), true); }
+      cfg = agora;
+      const origem = (agora.origens || []).find(x =>
+        x.nome === rz.nome || (x.host === rz.host && +x.porta === +rz.porta));
+      const papelOk = agora.papel === (papelHoje ? "replica" : rz.modo.papel);
+      if (papelOk && origem) return passoPronto(origem);
+      recado(`ainda não confere: papel está «${agora.papel}» e a origem ${
+        origem ? "apareceu" : `«${rz.nome}» não apareceu`} — o servidor foi
+        reiniciado com o bloco novo?`, true);
+    };
+  };
+
+  // ------------------------------------------------- o «Pronto» que prova
+  const passoPronto = (origem) => {
+    const org = origem || origemMontada();
+    molde("Pronto", 6, `
+      <div class="aviso bom"><p><b>Replicação ${esc(rz.modo.rot)} no ar.</b>
+        A posição dos dois lados, medida agora e de novo a cada 3 s — o
+        atraso é a diferença de eventos:</p></div>
+      <div id="rzProva"><div class="centro">primeira sonda…</div></div>
+      ${rz.modo.id === "standby" ? `
+      <div class="nota"><p><b>Onde fica a promoção:</b> no desastre, o spare
+        assume pela operação <code>spare_promover</code> — pela tela
+        Replicação ou por qualquer cliente:</p>
+        <pre class="dado">{"op":"spare_promover","motivo":"o primário não respondeu"}</pre>
+        <p class="leg">Ela para o laço de réplica, abre a escrita e muda o
+        papel para <code>source</code>. O <code>motivo</code> entra no log e na
+        resposta — é o que impede «pedido manual» e «o primário caiu» de se
+        confundirem depois. Promover é <b>manual e local</b>: não há eleição
+        automática, e é por isso que ninguém promove sozinho por engano.</p></div>` : ""}
+      ${rz.modo.id === "read_replica" ? `
+      <div class="nota"><p>Escrita aqui é <b>recusada apontando o
+        primário</b>: a aplicação que tentar gravar recebe o endereço de
+        ${esc(rz.host)}:${rz.porta} no erro. Leitura, à vontade.</p></div>` : ""}
+      ${rz.modo.id === "multi_master" ? `
+      <div class="nota"><p>Esta é a metade de cá. A volta — o outro servidor
+        puxando daqui — se configura LÁ, com este mesmo assistente. Enquanto
+        ela não existir, isto é um Primary → Replica.</p></div>` : ""}`,
+      `<button class="botao" id="rzFim">Fechar</button>`);
+    prova = painelDaProva($("#rzProva"), [org]);
+    $("#rzFim").onclick = () => { fechar(); verReplicacao(); };
+  };
+
+  passo1();
+}
+
+/* O painel que compara a posição de cada lado. Serve ao passo «Pronto» do
+   assistente e ao «Acompanhar réplica…» da tela — e mede de verdade: o lado
+   de lá pela sonda (a MESMA conexão do laço), o de cá pela posição local. */
+function painelDaProva(alvo, origens) {
+  let vivo = true;
+  const medir = async () => {
+    const blocos = [];
+    // O estado do laço DESTE servidor, quando o motor o oferece: é ele que
+    // sabe o modo em vigor, a última rodada, o último erro e as tabelas
+    // recusadas — coisas que comparar posições nunca conta.
+    let estado = null;
+    try { estado = await api("replicacao_estado"); }
+    catch { /* motor de hoje: o laço não se conta, e o resto ainda mede */ }
+    for (const org of origens) {
+      let s;
+      try {
+        // Origem configurada: a credencial sai do config do servidor e não
+        // viaja.
+        s = await sondarOutro(null, { origem: org.nome });
+      } catch (e) {
+        blocos.push(`<div class="aviso mal">${esc(org.nome)}: ${esc(String(e))}</div>`);
+        continue;
+      }
+      const eo = estado && estado.origens ? estado.origens[org.nome] : null;
+      const linhas = [];
+      let totalLa = 0, totalAqui = 0;
+      const locais = {};
+      for (const t of s.tabelas || []) {
+        if (!(t.database in locais)) {
+          try { locais[t.database] = await api("posicao", { database: t.database }); }
+          catch { locais[t.database] = null; }
+        }
+        const local = locais[t.database];
+        const la = t.eventos || 0;
+        const aquiD = local && local.tabelas && local.tabelas[t.tabela];
+        const aqui = aquiD ? (aquiD.eventos || 0) : null;
+        const recusa = eo && eo.recusas
+          ? eo.recusas[`${t.database}/${t.tabela}`] || eo.recusas[`${t.database}.${t.tabela}`]
+          : null;
+        totalLa += la;
+        totalAqui += aqui || 0;
+        linhas.push({ db: t.database, tab: t.tabela, la, aqui,
+                      atraso: la - (aqui || 0), recusa });
+      }
+      const atrasoTotal = totalLa - totalAqui;
+      blocos.push(`
+        <div class="fichas">
+          <div class="ficha"><div class="v">${esc(org.nome)}</div>
+            <div class="r">${esc(org.host)}:${org.porta}</div></div>
+          <div class="ficha"><div class="v">${esc(eo ? eo.modo : "—")}</div>
+            <div class="r">modo do laço</div></div>
+          <div class="ficha"><div class="v">${fmt(totalLa)}</div><div class="r">eventos lá</div></div>
+          <div class="ficha"><div class="v">${fmt(totalAqui)}</div><div class="r">eventos aqui</div></div>
+          <div class="ficha"><div class="v">${atrasoTotal > 0 ? fmt(atrasoTotal) : "em dia"}</div>
+            <div class="r">atraso</div></div>
+        </div>` +
+        (eo && eo.ultimo_erro
+          ? `<div class="aviso mal">último erro do laço: ${esc(eo.ultimo_erro)}</div>` : "") +
+        (linhas.length ? tabela(
+          [{t:"database"},{t:"tabela"},{t:"eventos lá",cls:"num"},
+           {t:"eventos aqui",cls:"num"},{t:"estado"}],
+          linhas, l => `<tr><td class="dado">${esc(l.db)}</td>
+            <td class="dado">${esc(l.tab)}</td>
+            <td class="num">${fmt(l.la)}</td>
+            <td class="num">${l.aqui === null ? "—" : fmt(l.aqui)}</td>
+            <td>${l.recusa
+              ? `<span class="pino mal">recusada: ${esc(l.recusa)}</span>`
+              : l.aqui === null
+              ? `<span class="pino">ainda não chegou aqui</span>`
+              : l.atraso > 0
+              ? `<span class="pino mal">atrás ${fmt(l.atraso)}</span>`
+              : l.atraso < 0
+              ? `<span class="pino ndx">à frente ${fmt(-l.atraso)}</span>`
+              : `<span class="pino ok">em dia</span>`}</td></tr>`)
+        : `<p class="leg">nenhuma tabela na origem ainda</p>`));
+    }
+    return blocos.join("");
+  };
+  const rodar = async () => {
+    if (!vivo) return;
+    let html;
+    try { html = await medir(); }
+    catch (e) { html = `<div class="aviso mal">${esc(String(e))}</div>`; }
+    // O diálogo pode ter sido fechado enquanto a sonda falava.
+    if (!vivo || !document.body.contains(alvo)) return;
+    alvo.innerHTML = html;
+  };
+  rodar();
+  const timer = setInterval(rodar, 3000);
+  return { parar() { vivo = false; clearInterval(timer); } };
+}
+
+/* O «Acompanhar réplica…» da tela Replicação: o mesmo painel, num diálogo
+   próprio, para todas as origens configuradas. */
+function abrirProvaReplicacao(origens) {
+  const fundo = document.createElement("div");
+  fundo.className = "sobre";
+  fundo.innerHTML = `<div class="caixa larga" role="dialog" aria-modal="true"
+    aria-label="Acompanhar a replicação">
+    <h3>Acompanhando a replicação</h3>
+    <div class="sub">posição dos dois lados, medida a cada 3 s — o atraso é a
+      diferença de eventos</div>
+    <div id="acProva"><div class="centro">primeira sonda…</div></div>
+    <div class="acoes"><button class="botao" id="acFim">Fechar</button></div>
+  </div>`;
+  document.body.appendChild(fundo);
+  const prova = painelDaProva(fundo.querySelector("#acProva"), origens);
+  const fechar = () => { prova.parar(); fundo.remove(); };
+  fundo.onclick = ev => { if (ev.target === fundo) fechar(); };
+  fundo.querySelector("#acFim").onclick = fechar;
 }
 
 /* O PROFILER: o que está chegando pela porta, antes de virar dado.
