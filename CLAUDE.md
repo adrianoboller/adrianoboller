@@ -179,6 +179,13 @@ o lia** — o campo dizia "4096 páginas do `.ndx` em memória" quando não havi
 cache nenhum. Campo de configuração sem leitor é pior que campo ausente: o
 ausente ninguém ajusta esperando efeito.
 
+**Medidor com binário velho mede o passado.** `cargo build --release` não
+recompila os *examples*, e a bancada chama `target/release/examples/carga`
+direto: uma rodada inteira de ganhos (16,4 → 7,5 µs) ficou invisível na bancada
+porque o binário dela era de antes — e a conclusão «o esquema custa 2,2×»
+nasceu, com tabela e tudo, dessa diferença. Antes de medir:
+`cargo build --release --examples -p phxsql-store`.
+
 **Número digitado à mão envelhece calado.** O selo da capa do dossiê passou
 **quatro lançamentos** dizendo 0.11.0 — e o script que existe justamente para
 impedir isso não cobria aquele pedaço. Todo número visível ou sai de um gerador,

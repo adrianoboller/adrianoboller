@@ -86,10 +86,11 @@ O arranjo que funciona **agora**, medido:
   réplicas e a escrita para até alguém promover uma. É *failover manual*, e
   está descrito em `docs/REPLICACAO.md` §8.
 
-E há um limite medido que precisa ser dito: **a réplica aplica mais devagar do
-que o master escreve** — 4.357 eventos/s contra 28.914 linhas/s. Sob carga
-sustentada de escrita elas ficam para trás, e a leitura nelas fica velha. A
-razão está em `docs/DESEMPENHO.md`.
+Um limite que estava escrito aqui **caiu depois de medido**: a réplica
+aplicava 4.357 eventos/s contra 28.914 do master, e hoje aplica **17.450**
+contra 34.048 — as três juntas passam o master (`docs/DESEMPENHO.md` §4.5; a
+causa era o source varrendo o diário a cada lote, não a réplica). Sob carga
+sustentada elas acompanham; o atraso que resta é o `reconectar_em` do laço.
 
 ### 2.3 Cascata, que existe e ajuda
 

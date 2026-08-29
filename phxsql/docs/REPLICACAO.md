@@ -15,10 +15,10 @@ Master 5800 ──┬──► Slave01 5801
 
 | | |
 |---|---|
-| Master, com a imagem no diário | 28.914 linhas/s |
-| Aplicação, por réplica (as três em paralelo) | 4.357 eventos/s |
-| Atraso de uma escrita até as três | 1,3 s a 2,1 s |
-| Réplica derrubada: voltar a atender e alcançar 4.000 eventos | 343 ms + 1,0 s |
+| Master, com a imagem no diário | 34.048 linhas/s |
+| Aplicação, por réplica (as três em paralelo) | 17.450 eventos/s |
+| Atraso de uma escrita até as três | 140 ms a 2,0 s |
+| Réplica derrubada: voltar a atender e alcançar 4.000 eventos | 323 ms + 0,3 s |
 | Retrato SHA-256 das quatro tabelas, no fim | idênticos |
 
 O que ainda **não** existe está na seção 10, e um item mudou de lugar: a réplica
@@ -374,12 +374,13 @@ linha mudou sem gravar a linha, e o segundo salto não tem o que aplicar. O erro
 - **Não é replicação síncrona.** É assíncrona, como o padrão do MySQL(R): a
   réplica fica atrás do Source por algum tempo. Medido: 1,3 s a 2,1 s com o
   laço em 2 s.
-- **A réplica aplica mais devagar do que o master escreve** — 4.357 eventos/s
-  contra 28.914 linhas/s, com as três réplicas competindo pela mesma máquina.
-  Sob carga sustentada elas ficam para trás. A razão está no caminho: aplicar
-  decodifica a imagem para `Value` e **reencoda** o payload, em vez de gravar
-  os bytes que vieram. Gravar o payload direto, remendando só os ponteiros dos
-  anexos, é o próximo ganho grande — e é o que a seção 3 descreve.
+- ~~A réplica aplica mais devagar do que o master escreve~~ — **este limite
+  caiu, e a causa que estava escrita aqui estava errada.** Medido
+  (`DESEMPENHO.md` §4.5): reencodar o payload custa 0,35 µs de 229; o que
+  custava era o **source** varrendo o diário desde o começo a cada lote. Com a
+  marca de posição, cada réplica aplica **17.450 eventos/s** e as três juntas
+  ~52.000 — mais do que os 34.048 que o master escreve. O que continua
+  verdadeiro: o atraso normal é o `reconectar_em`, e réplica não é backup.
 - **Não resolve conflito de escrita nos dois lados.** É um caminho só,
   Source → Réplica. Multi-master é outro problema.
 - **Não substitui backup.** Réplica repete o `DELETE` errado que você fez no

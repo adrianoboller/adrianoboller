@@ -145,13 +145,16 @@ pub fn cache_paginas() -> usize {
 /// pagina em todas as insercoes da carga. Guardar a pagina lida tira o nucleo e
 /// o CRC do caminho de quem ja passou por ali.
 ///
-/// # Por que a gravacao continua atravessando
+/// # A gravacao NAO atravessa mais (0.18.0)
 ///
-/// Segurar pagina suja em RAM daria mais, e trocaria uma garantia por
-/// desempenho **sem avisar**: hoje uma queda do PROCESSO nao atrasa o `.ndx`
-/// em relacao ao `.reg`, porque o `write` ja entregou a pagina ao nucleo. So
-/// uma queda da MAQUINA faz isso. A diferenca entre os dois casos e grande
-/// demais para ser trocada de lado num commit de desempenho.
+/// Ate a 0.17.0 toda gravacao ia ao arquivo na hora, e este comentario
+/// explicava por que: segurar pagina suja trocaria uma garantia por desempenho
+/// **sem avisar**. O write-back entrou justamente quando passou a AVISAR: a
+/// marca de sujo no byte 52 do cabecalho vai ao disco antes da primeira pagina
+/// suja e so sai depois de todas, entao uma queda e detectada na abertura e o
+/// indice recusa responder ate ser reconstruido -- barato desde a construcao
+/// em lote. A troca que era inaceitavel em silencio ficou aceitavel declarada.
+/// Historia completa em `docs/FORMATO.md` (a marca) e `docs/CONCORRENTES.md`.
 ///
 /// # A politica de despejo
 ///
