@@ -38,6 +38,9 @@ monta() {
   rm -rf "$dir"; mkdir -p "$dir"
   cp "target/$alvo/release/phxsqld$sufixo" "$dir/"
   cp "target/$alvo/release/phxsql$sufixo"  "$dir/"
+  # O console entrou na 0.18.0 e quase ficou de fora do pacote: o empacotador
+  # nao sabia dele. Binario novo se acrescenta AQUI, ou o download mente.
+  cp "target/$alvo/release/phxsqlcmd$sufixo" "$dir/"
   cp "${DOCS[@]}" "$dir/"
 
   demonstracao "$dir" "$rotulo" "$sufixo"
@@ -132,6 +135,8 @@ Os dois programas:
 
        phxsqld.exe    o servidor
        phxsql.exe     a linha de comando (10 comandos; rode sem argumentos)
+       phxsqlcmd.exe  o console interativo: conecta no servidor e /help
+                      lista todos os comandos, /help <comando> detalha um
 ================================================================================
 TXT
   else
@@ -177,6 +182,8 @@ Os dois programas:
 
        phxsqld    o servidor
        phxsql     a linha de comando (10 comandos; rode sem argumentos)
+       phxsqlcmd  o console interativo: conecta no servidor e /help lista
+                  todos os comandos, /help <comando> detalha um
 ================================================================================
 TXT
   fi
