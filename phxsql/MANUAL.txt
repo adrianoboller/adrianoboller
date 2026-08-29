@@ -326,6 +326,40 @@ O CATALOGO: O PROTOCOLO SE DESCREVE SOZINHO
     de operacoes do proprio codigo do despachar e falha se ela e o catalogo
     discordarem, nos dois sentidos. Ajuda escrita a mao envelhece calada.
 
+CHAVE ESTRANGEIRA NO criar_tabela
+
+    {"op":"criar_tabela","database":"loja","tabela":"pedidos",
+     "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true},
+                {"nome":"cliente_id","tipo":"Int4"}],
+     "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}],
+     "chaves_estrangeiras":[
+       {"nome":"fk_cliente","colunas":["cliente_id"],
+        "tabela_ref":"clientes","colunas_ref":["id"],
+        "ao_excluir":"restringir","ao_alterar":"cascata"}]}
+
+    O formato ja guardava chave estrangeira e o "esquema" ja a reportava --
+    mas nenhuma operacao do protocolo a CRIAVA: so dava para declarar uma pela
+    API Rust. Agora da.
+
+    AS ACOES aceitam o portugues, o SQL e a forma que o "esquema" devolve:
+
+        restringir | restrict | Restringir      recusa enquanto houver filha
+        cascata    | cascade  | Cascata         repete a operacao nas filhas
+        anular     | set null | AnularCampos    anula as colunas da filha
+        nada       | no action| NaoFazerNada    nao faz nada
+
+    Ausente e "restringir", que e o unico padrao seguro: quem nao disse o que
+    fazer com a filha nao pediu para apaga-la. Sem "colunas_ref", referencia
+    colunas de MESMO NOME na outra tabela.
+
+    ATENCAO -- O QUE ISTO E E O QUE NAO E. A chave fica DECLARADA no esquema:
+    o "esquema" a devolve, o diagrama ER a desenha e um gerador de SQL a le. O
+    motor ainda NAO a IMPOE em insercao, alteracao ou exclusao. Declarar nao e
+    aplicar, e este manual nao vai dizer que e.
+
+    Sem o campo, a tabela nasce exatamente como sempre nasceu -- todo cliente
+    escrito antes desta versao continua criando tabela igual.
+
 SERVIDOR MCP (Model Context Protocol)
 
     phxsqld --mcp                                  pelo token de servico

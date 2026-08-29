@@ -718,6 +718,11 @@ pub const OPERACOES: &[Operacao] = &[
                 "`{nome, colunas, unico, primario}`; a coluna aceita `nome desc` e `nome nocase`",
             ),
             opc(
+                "chaves_estrangeiras",
+                "array",
+                "`{nome, colunas, tabela_ref, colunas_ref, ao_excluir, ao_alterar}`;                  a ação aceita restringir, cascata, anular ou nada",
+            ),
+            opc(
                 "schema",
                 "string",
                 "o schema, quando o nome da tabela não o traz",

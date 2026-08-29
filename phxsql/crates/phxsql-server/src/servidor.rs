@@ -9774,3 +9774,329 @@ mod testes_sql {
         );
     }
 }
+
+/// **Chave estrangeira pelo protocolo** -- o #127 dizia «pronto» e era meia
+/// verdade: o formato as suporta e o `esquema` as reporta desde sempre, mas
+/// NENHUMA operacao as criava. So dava para declarar uma pela API Rust.
+#[cfg(test)]
+mod testes_chave_estrangeira {
+    use super::*;
+
+    fn dir_temp(nome: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("phx-fk-{nome}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    fn servidor(dir: &std::path::Path) -> Arc<Servidor> {
+        let c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        let s = Servidor::novo(c).unwrap();
+        s.executar(
+            "criar_database",
+            &pedido(r#"{"database":"b"}"#),
+            &Sessao::default(),
+        )
+        .unwrap();
+        s
+    }
+
+    /// Pelo `despachar`: e por onde o pedido entra de verdade.
+    fn pede(s: &Arc<Servidor>, corpo: &str) -> Result<Json> {
+        let mut ses = Sessao::default();
+        let (_, _, r) = s.despachar(
+            &format!(r#"{{"token":"t",{corpo}}}"#),
+            &mut ses,
+            "127.0.0.1",
+        );
+        r
+    }
+
+    /// Cria `pedidos` apontando para `clientes`, e le a chave de volta.
+    fn com_fk(s: &Arc<Servidor>, extra: &str) -> Result<Json> {
+        pede(
+            s,
+            &format!(
+                r#""op":"criar_tabela","database":"b","tabela":"pedidos",
+                   "colunas":[{{"nome":"id","tipo":"Int4","obrigatoria":true}},
+                              {{"nome":"cliente_id","tipo":"Int4"}}],
+                   "indices":[{{"nome":"porId","colunas":["id"],"unico":true,
+                                "primario":true}}],
+                   "chaves_estrangeiras":[{{"nome":"fk_cliente",
+                                            "colunas":["cliente_id"],
+                                            "tabela_ref":"clientes",
+                                            "colunas_ref":["id"]{extra}}}]"#
+            ),
+        )
+    }
+
+    #[test]
+    fn criar_tabela_declara_a_chave_e_o_esquema_a_devolve() {
+        let s = servidor(&dir_temp("declara"));
+        com_fk(&s, r#","ao_excluir":"restringir","ao_alterar":"cascata""#).unwrap();
+
+        let e = pede(&s, r#""op":"esquema","database":"b","tabela":"pedidos""#).unwrap();
+        let fks = e
+            .campo("chaves_estrangeiras")
+            .and_then(Json::lista)
+            .unwrap();
+        assert_eq!(fks.len(), 1, "a chave nao voltou: {}", e.escrever());
+        let fk = &fks[0];
+        assert_eq!(fk.texto_ou("nome", ""), "fk_cliente");
+        assert_eq!(fk.texto_ou("tabela_ref", ""), "clientes");
+        assert_eq!(fk.textos("colunas"), vec!["cliente_id"]);
+        assert_eq!(fk.textos("colunas_ref"), vec!["id"]);
+        assert_eq!(fk.texto_ou("ao_excluir", ""), "Restringir");
+        assert_eq!(fk.texto_ou("ao_alterar", ""), "Cascata");
+
+        // E o papel da coluna, que e DERIVADO das chaves, acompanha: sem isto
+        // a tela desenharia a coluna como uma qualquer.
+        let coluna = e
+            .campo("colunas")
+            .and_then(Json::lista)
+            .unwrap()
+            .iter()
+            .find(|c| c.texto_ou("nome", "") == "cliente_id")
+            .cloned()
+            .unwrap();
+        assert_eq!(coluna.campo("estrangeira").unwrap().booleano(), Some(true));
+        assert_eq!(coluna.textos("nas_chaves_estrangeiras"), vec!["fk_cliente"]);
+    }
+
+    /// **O teste do comportamento VELHO, e e o que mais importa.** Um pedido
+    /// sem o campo tem de criar a tabela exatamente como sempre criou -- todo
+    /// cliente escrito antes desta versao manda pedido assim.
+    #[test]
+    fn sem_o_campo_a_tabela_nasce_igual_ao_que_sempre_foi() {
+        let s = servidor(&dir_temp("velho"));
+        pede(
+            &s,
+            r#""op":"criar_tabela","database":"b","tabela":"clientes",
+               "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true}],
+               "indices":[{"nome":"porId","colunas":["id"],"unico":true}]"#,
+        )
+        .unwrap();
+        let e = pede(&s, r#""op":"esquema","database":"b","tabela":"clientes""#).unwrap();
+        assert!(e
+            .campo("chaves_estrangeiras")
+            .and_then(Json::lista)
+            .unwrap()
+            .is_empty());
+        // E a linha entra como sempre entrou.
+        pede(
+            &s,
+            r#""op":"inserir","database":"b","tabela":"clientes","linha":{"id":1}"#,
+        )
+        .unwrap();
+    }
+
+    /// Sem `colunas_ref`, referencia colunas de MESMO NOME. Escrever a lista
+    /// duas vezes e onde alguem troca a ordem sem perceber.
+    #[test]
+    fn sem_colunas_ref_vale_o_mesmo_nome() {
+        let s = servidor(&dir_temp("mesmo-nome"));
+        pede(
+            &s,
+            r#""op":"criar_tabela","database":"b","tabela":"itens",
+               "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true}],
+               "indices":[{"nome":"porId","colunas":["id"],"unico":true}],
+               "chaves_estrangeiras":[{"nome":"fk_id","colunas":["id"],
+                                       "tabela_ref":"outra"}]"#,
+        )
+        .unwrap();
+        let e = pede(&s, r#""op":"esquema","database":"b","tabela":"itens""#).unwrap();
+        let fk = &e
+            .campo("chaves_estrangeiras")
+            .and_then(Json::lista)
+            .unwrap()[0];
+        assert_eq!(fk.textos("colunas_ref"), vec!["id"]);
+        // E o padrao das duas acoes e o unico seguro: quem nao disse o que
+        // fazer com a filha nao pediu para apaga-la.
+        assert_eq!(fk.texto_ou("ao_excluir", ""), "Restringir");
+        assert_eq!(fk.texto_ou("ao_alterar", ""), "Restringir");
+    }
+
+    /// A acao aceita o portugues, o SQL e a forma que o `esquema` DEVOLVE --
+    /// pela mesma razao do tipo da coluna: o que sai tem de poder voltar.
+    #[test]
+    fn a_acao_aceita_as_tres_escritas() {
+        for (escrito, esperado) in [
+            ("cascata", "Cascata"),
+            ("CASCADE", "Cascata"),
+            ("Cascata", "Cascata"),
+            ("set null", "AnularCampos"),
+            ("anular", "AnularCampos"),
+            ("nada", "NaoFazerNada"),
+        ] {
+            let s = servidor(&dir_temp(&format!("acao-{}", escrito.replace(' ', "-"))));
+            com_fk(&s, &format!(r#","ao_excluir":"{escrito}""#)).unwrap();
+            let e = pede(&s, r#""op":"esquema","database":"b","tabela":"pedidos""#).unwrap();
+            let fk = &e
+                .campo("chaves_estrangeiras")
+                .and_then(Json::lista)
+                .unwrap()[0];
+            assert_eq!(fk.texto_ou("ao_excluir", ""), esperado, "{escrito}");
+        }
+    }
+
+    /// Chave mal escrita recusa dizendo O QUE esta errado, e a tabela NAO
+    /// nasce: meia tabela criada seria pior que nenhuma.
+    #[test]
+    fn chave_mal_escrita_recusa_e_a_tabela_nao_nasce() {
+        let s = servidor(&dir_temp("ruim"));
+        // Cada caso com um nome de tabela proprio: com o mesmo nome, o segundo
+        // erro seria "ja existe" e o teste passaria pelo motivo errado.
+        for (n, chave, esperado) in [
+            (
+                1,
+                r#"{"nome":"fk","colunas":["nao_existe"],"tabela_ref":"c"}"#,
+                "nao existe nesta tabela",
+            ),
+            (
+                2,
+                r#"{"nome":"fk","colunas":["id"],"tabela_ref":""}"#,
+                "tabela_ref",
+            ),
+            (
+                3,
+                r#"{"nome":"fk","colunas":["id"],"tabela_ref":"c","ao_excluir":"talvez"}"#,
+                "acao de integridade desconhecida",
+            ),
+            (4, r#"{"colunas":["id"],"tabela_ref":"c"}"#, "nome"),
+            (5, r#"{"nome":"fk","tabela_ref":"c"}"#, "colunas"),
+        ] {
+            let e = pede(
+                &s,
+                &format!(
+                    r#""op":"criar_tabela","database":"b","tabela":"t{n}",
+                       "colunas":[{{"nome":"id","tipo":"Int4","obrigatoria":true}}],
+                       "chaves_estrangeiras":[{chave}]"#
+                ),
+            )
+            .unwrap_err();
+            assert!(
+                e.to_string().contains(esperado),
+                "caso {n}: {e} (esperava {esperado:?})"
+            );
+
+            // E a tabela NAO nasceu: meia tabela criada seria pior que nenhuma,
+            // porque o proximo pedido diria "ja existe" e ninguem entenderia.
+            let t = pede(&s, r#""op":"tabelas","database":"b""#).unwrap();
+            assert!(
+                !t.escrever().contains(&format!("t{n}")),
+                "caso {n}: a tabela nasceu mesmo com a chave recusada"
+            );
+        }
+    }
+
+    /// **Declarar nao e aplicar, e este teste existe para o documento nao
+    /// mentir.**
+    ///
+    /// A chave fica gravada no esquema, o `esquema` a devolve e o diagrama a
+    /// desenha -- mas NENHUMA gravacao a consulta hoje. Uma linha filha
+    /// apontando para um pai que nao existe entra sem reclamacao.
+    ///
+    /// O teste trava o comportamento REAL, e nao o desejado: no dia em que a
+    /// imposicao entrar, ele falha e obriga quem a escreveu a atualizar o
+    /// MANUAL junto. Sem ele, alguem le "chave estrangeira" no `criar_tabela`
+    /// e supoe uma garantia que nao existe -- que e como a lista de pendencias
+    /// chegou a dizer "pronto" para isto.
+    #[test]
+    fn a_chave_e_declarada_mas_ainda_nao_e_imposta_na_gravacao() {
+        let s = servidor(&dir_temp("nao-impoe"));
+        com_fk(&s, "").unwrap();
+        // `clientes` nem existe, e o pai 999 muito menos.
+        pede(
+            &s,
+            r#""op":"inserir","database":"b","tabela":"pedidos",
+               "linha":{"id":1,"cliente_id":999}"#,
+        )
+        .expect(
+            "a insercao passou a ser recusada: a integridade referencial entrou.              Atualize o MANUAL e o docs/PENDENCIAS, que dizem que ela NAO e imposta",
+        );
+    }
+
+    /// **`duplicar_tabela` preserva a chave.** Ele copia os arquivos byte a
+    /// byte, e o esquema mora no `.reg` -- mas isso e uma consequencia de como
+    /// ele foi feito, e nao uma promessa escrita. Este teste vira a promessa:
+    /// se um dia alguem trocar a copia por uma reinsercao linha a linha, a
+    /// chave sumiria em silencio.
+    #[test]
+    fn duplicar_tabela_preserva_a_chave_estrangeira() {
+        let s = servidor(&dir_temp("duplicar"));
+        com_fk(&s, r#","ao_alterar":"cascata""#).unwrap();
+        pede(
+            &s,
+            r#""op":"duplicar_tabela","database":"b","tabela":"pedidos",
+               "destino":"pedidos_copia""#,
+        )
+        .unwrap();
+
+        let e = pede(
+            &s,
+            r#""op":"esquema","database":"b","tabela":"pedidos_copia""#,
+        )
+        .unwrap();
+        let fks = e
+            .campo("chaves_estrangeiras")
+            .and_then(Json::lista)
+            .unwrap();
+        assert_eq!(fks.len(), 1, "a copia perdeu a chave: {}", e.escrever());
+        assert_eq!(fks[0].texto_ou("nome", ""), "fk_cliente");
+        assert_eq!(fks[0].texto_ou("ao_alterar", ""), "Cascata");
+    }
+
+    /// O que o `esquema` devolve tem de poder voltar como `criar_tabela`. E o
+    /// caminho de recriar uma tabela noutro servidor, e uma chave que so sai e
+    /// nao entra quebraria justamente ele.
+    #[test]
+    fn o_que_o_esquema_devolve_volta_como_criar_tabela() {
+        let s = servidor(&dir_temp("ida-e-volta"));
+        com_fk(&s, r#","ao_excluir":"cascata""#).unwrap();
+        let e = pede(&s, r#""op":"esquema","database":"b","tabela":"pedidos""#).unwrap();
+
+        let mut recriar = vec![
+            ("op".to_string(), Json::texto_de("criar_tabela")),
+            ("database".to_string(), Json::texto_de("b")),
+            ("tabela".to_string(), Json::texto_de("pedidos2")),
+            ("token".to_string(), Json::texto_de("t")),
+        ];
+        // As colunas de sistema saem de fora: elas entram sozinhas.
+        let colunas: Vec<Json> = e
+            .campo("colunas")
+            .and_then(Json::lista)
+            .unwrap()
+            .iter()
+            .filter(|c| c.campo("sistema").and_then(Json::booleano) != Some(true))
+            .cloned()
+            .collect();
+        recriar.push(("colunas".to_string(), Json::Lista(colunas)));
+        recriar.push((
+            "chaves_estrangeiras".to_string(),
+            e.campo("chaves_estrangeiras").cloned().unwrap(),
+        ));
+
+        let mut ses = Sessao::default();
+        let (_, _, r) = s.despachar(&Json::Objeto(recriar).escrever(), &mut ses, "127.0.0.1");
+        r.expect("o esquema devolvido nao voltou como pedido");
+
+        let e2 = pede(&s, r#""op":"esquema","database":"b","tabela":"pedidos2""#).unwrap();
+        let fk = &e2
+            .campo("chaves_estrangeiras")
+            .and_then(Json::lista)
+            .unwrap()[0];
+        assert_eq!(fk.texto_ou("nome", ""), "fk_cliente");
+        assert_eq!(fk.texto_ou("ao_excluir", ""), "Cascata");
+    }
+}
