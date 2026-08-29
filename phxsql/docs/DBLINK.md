@@ -336,3 +336,91 @@ o servidor falso do teste de fio. O roteiro e o resultado, para quem refizer:
 dependências — o caminho «por protocolo» que `docs/MULTILINK.md` recomenda. O
 pacote MULTILINK proprietário continua fora pelas 582 crates que ele arrasta;
 esta prova mostra que o destino dele já é alcançável sem ele.
+
+## A sincronia de tabelas primas (0.18.0)
+
+Uma tabela do PhxSql e a prima dela no outro banco, **gravando entre si**: a
+linha que só existe de um lado é copiada para o outro, e a mesma linha
+diferente nos dois é resolvida por quem for o **dono**. É convergência de
+ESTADO pela chave primária — não é replicação de eventos, porque o diário do
+outro banco não é lido. Três limites saem desse desenho, e são de desenho,
+não de preguiça:
+
+- **Exclusão não viaja.** Linha apagada de um lado REAPARECE na próxima
+  rodada, vinda do outro. Propagar exclusão exigiria distinguir «apagada lá»
+  de «nova aqui», e sem diário dos dois lados isso é adivinhação. Para apagar,
+  apague nos dois antes da próxima rodada. (A prova do estágio 5 confere que
+  este limite é verdade, não intenção.)
+- **A chave primária é a identidade** — e tem de ser de UMA coluna. Chave
+  composta recusa na ligação, com o motivo no texto.
+- **O teto é o `max_linhas` da ligação.** Tabela maior recusa com erro claro;
+  sincronizar metade e fingir que acabou seria pior que não sincronizar.
+
+E um limite herdado do módulo, agora visível aqui: **texto com aspa simples
+recusa o empurrão** (`Sant'Ana` não sobe). É a mesma decisão do `nome_seguro`
+— escapar depende do modo do outro servidor (`NO_BACKSLASH_ESCAPES` muda o
+que a contrabarra faz), então o que emendaria SQL é recusado com erro, nunca
+emendado. Se um dia o escape entrar, entra por decisão medida (aspa dobrada
+não depende do modo; a contrabarra sim), não por acidente.
+
+### As duas operações
+
+- **`dblink_ligar`** cria (ou confere) a tabela local espelhando a prima:
+  tipos convertidos com as duas contas que não são óbvias — texto chega em
+  BYTES do utf8mb4 (VARCHAR(60) viaja como 240; divide-se por 4), e o
+  `DECIMAL(p,s)` chega como p+2 com casas e p+1 sem (sinal e ponto). A chave
+  primária vira índice único local `porChave`, que é o que permite o upsert
+  sem varrer. Cada tabela ligada guarda `sentido` (puxar / empurrar / dois) e
+  `dono` (aqui / lá).
+- **`dblink_sincronizar`** roda uma rodada e devolve o relatório: puxadas
+  novas e alteradas, empurradas, iguais, conflitos. O empurrão usa
+  `INSERT ... ON DUPLICATE KEY UPDATE` em lotes — cair no meio e recomeçar
+  grava a mesma linha de novo e nada dobra (estágio 6 da prova: rodada
+  repetida dá 0/0/0).
+
+O conflito é **por linha**, nunca «marca tudo para um lado»: é a mesma lição
+da janela de conflito da tela. E o casamento das colunas é **por nome**,
+nunca por posição — pela posição, uma coluna acrescentada de um lado
+deslocaria as seguintes e a sincronia gravaria cidade dentro de telefone,
+com o CRC batendo.
+
+Os portões de permissão são conferidos **dentro** da operação, contra o alvo
+local (`local_database`.`local_tabela`): são operações sem o campo `tabela`
+do pedido, exatamente o furo que o `juntar`/`unir` já ensinou.
+
+### O assistente da tela
+
+O botão **Assistente…** da tela DbLink monta tudo isso em cinco passos:
+conexão → teste → base → tabelas (com sentido e dono por linha) → job. Cada
+passo só avança com o anterior PROVADO — o teste tem de passar, a ligação tem
+de gravar — porque um assistente que deixa pular o teste é um cadastro com
+etapas. O último passo cria o job (`sincronia-<ligação>`) que roda a
+convergência sozinho no intervalo escolhido, e dispara a primeira rodada na
+hora, mostrando o relatório.
+
+### A prova real, e o que ela ensinou
+
+`bancada/dblink/prova-sincronia.py` roda os sete estágios contra o MySQL(R)
+8.0.46 de verdade: ligar detecta a chave; a primeira rodada puxa tudo; linha
+nova de cada lado atravessa; o dono vence o conflito; a exclusão local
+reaparece (o limite é real); a rodada repetida é 0/0/0; e o job puxa sozinho.
+O assistente foi exercitado no navegador de ponta a ponta (Playwright), com
+captura de cada passo.
+
+O que as provas acharam — e teria passado sem elas:
+
+- **A ordem da puxada não é a ordem dos ids** (HashMap não garante ordem). O
+  defeito era da própria prova, que supunha rowid=1 para o menor id; o
+  conserto é achar o rowid pela chave (`buscar` no índice único). Teste que
+  passa por engano é pior que teste que falta — de novo.
+- **`buscar` espera a chave como LISTA** (`"chave": [1]`), não como objeto.
+- **A árvore da tela não se remonta sozinha**: a sincronia criou o database
+  local, o disco tinha, a tela não mostrava. É a lição da coluna de sistema
+  por outro caminho — quando uma peça nova nasce no fim de um fluxo, procure
+  quem monta a lista uma vez e nunca mais. O conserto (remontar a árvore no
+  Fechar) foi provado no navegador nos dois sentidos: captura sem o database
+  antes, com ele depois.
+- **Decimal negativo menor que um perde o sinal na divisão inteira**: -0,50
+  escalado é -50, o inteiro da divisão é 0, e 0 não carrega sinal. Sem o
+  empréstimo do sinal, o outro banco gravaria crédito onde era dívida. O
+  teste unitário falha com o defeito reposto e passa com o conserto.

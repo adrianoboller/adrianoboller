@@ -104,6 +104,21 @@ também buscar (13×), varrer (11×) e atualizar (12×). Só excluir ainda perde
   inserção, o que cabe aqui, o que não cabe e por quê. Do Cassandra, a
   resposta à pergunta do quórum: o OK de `QUORUM` **não significa disco** no
   modo padrão — significa recebido em W processos.
+- **Sincronia de tabelas primas pelo DbLink** (pedido 132): `dblink_ligar`
+  cria a tabela local espelhando a remota (chave primária vira índice único;
+  texto desconta os 4 bytes do utf8mb4; `DECIMAL` desconta sinal e ponto) e
+  `dblink_sincronizar` converge os dois lados — sentido puxar/empurrar/dois,
+  conflito **por linha** decidido pelo dono, colunas casadas **por nome**,
+  empurrão reentrável por `ON DUPLICATE KEY UPDATE`, teto com recusa clara.
+  Exclusão **não viaja**, por desenho, e a prova confere que o limite é
+  verdade. Provada em 7 estágios contra o MySQL(R) 8.0.46 vivo
+  (`bancada/dblink/prova-sincronia.py`), inclusive o job rodando sozinho.
+- **Assistente de conexão DbLink na tela** (pedido 132): cinco passos que só
+  avançam com o anterior provado — conexão, teste, base, tabelas ligadas com
+  sentido e dono por linha, e o job `sincronia-<ligação>` com a primeira
+  rodada disparada na hora. Exercitado no navegador de ponta a ponta; o
+  exercício achou a árvore de databases que não se remontava quando a
+  sincronia criava um database novo.
 
 ### Sabido
 

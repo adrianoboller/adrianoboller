@@ -23,6 +23,7 @@ pub mod conexao;
 pub mod dialeto;
 pub mod mysql;
 pub mod operacoes;
+pub mod sincronia;
 
 pub use conexao::{Conexao, Resultado};
 
@@ -106,6 +107,9 @@ pub struct Definicao {
     pub somente_leitura: bool,
     pub timeout_s: u64,
     pub max_linhas: u64,
+    /// Tabelas ligadas por sincronia. Campo ausente no arquivo = nenhuma,
+    /// entao todo `dblink.json` escrito antes continua abrindo igual.
+    pub sincronias: Vec<sincronia::Sincronia>,
 }
 
 impl Default for Definicao {
@@ -123,6 +127,7 @@ impl Default for Definicao {
             somente_leitura: true,
             timeout_s: 10,
             max_linhas: 1_000,
+            sincronias: Vec::new(),
         }
     }
 }
@@ -158,6 +163,13 @@ impl Definicao {
             max_linhas: j
                 .inteiro_ou("max_linhas", padrao.max_linhas as i64)
                 .clamp(1, 100_000) as u64,
+            sincronias: match j.campo("sincronias").and_then(Json::lista) {
+                None => Vec::new(),
+                Some(l) => l
+                    .iter()
+                    .map(sincronia::Sincronia::de_json)
+                    .collect::<Result<Vec<_>>>()?,
+            },
         })
     }
 
@@ -181,12 +193,20 @@ impl Definicao {
         } else {
             campos.push(("senha_env", Json::texto_de(&self.senha_env)));
         }
+        if !self.sincronias.is_empty() {
+            campos.push((
+                "sincronias",
+                Json::Lista(self.sincronias.iter().map(|s| s.para_json()).collect()),
+            ));
+        }
         Json::objeto(campos)
     }
 
     /// Como a definicao aparece na tela e no protocolo: sem a senha, nunca.
     pub fn para_json(&self) -> Json {
+        let sincronias = Json::Lista(self.sincronias.iter().map(|s| s.para_json()).collect());
         Json::objeto(vec![
+            ("sincronias", sincronias),
             ("nome", Json::texto_de(&self.nome)),
             ("motor", Json::texto_de(self.motor.nome())),
             ("conecta", Json::Bool(self.motor.conecta())),
@@ -224,6 +244,16 @@ impl Definicao {
     pub fn com_a_senha_de(mut self, outra: &Definicao) -> Definicao {
         self.senha = outra.senha.clone();
         self.senha_env = outra.senha_env.clone();
+        self
+    }
+
+    /// Herda as tabelas ligadas de uma definicao anterior.
+    ///
+    /// Mesmo desenho do `com_a_senha_de`, pela mesma armadilha: a tela salva a
+    /// ligacao sem mandar as sincronias, e um salvar comum nao pode apagar o
+    /// que o assistente montou.
+    pub fn com_as_sincronias_de(mut self, outra: &Definicao) -> Definicao {
+        self.sincronias = outra.sincronias.clone();
         self
     }
 

@@ -324,12 +324,12 @@ footer p{max-width:var(--medida)}
 
   <div class="painel">
   <!-- projeto:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-    <div><div class="v">64.892</div><div class="r">linhas de Rust</div></div>
-    <div><div class="v">878</div><div class="r">testes</div></div>
+    <div><div class="v">65.949</div><div class="r">linhas de Rust</div></div>
+    <div><div class="v">893</div><div class="r">testes</div></div>
     <div><div class="v">0</div><div class="r">dependências</div></div>
     <div><div class="v">6</div><div class="r">crates</div></div>
     <div><div class="v">7</div><div class="r">arquivos/tabela</div></div>
-    <div><div class="v">13.584</div><div class="r">linhas de doc</div></div>
+    <div><div class="v">13.724</div><div class="r">linhas de doc</div></div>
   <!-- projeto:fim -->
   </div>
 </header>
@@ -3404,10 +3404,25 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   declarada, a grade usa a maior que apareceu no dado que veio — fixar zero
   arredondaria 0,5 para 1.</p>
 
-  <p><strong>PostgreSQL(R) ainda não conecta.</strong> A definição já pode ser
-  guardada e o cadastro mostra «sem cliente» em vez de fingir. O caminho é
-  curto: a autenticação <code>scram-sha-256</code> se monta com SHA-256, HMAC e
-  PBKDF2, que já estão escritos aqui.</p>
+  <p>E a ligação deixou de ser só janela: a <strong>sincronia de tabelas
+  primas</strong> faz uma tabela daqui e a prima de lá <em>gravarem entre
+  si</em>. É convergência de estado pela chave primária — linha que só existe
+  de um lado atravessa; a mesma linha diferente nos dois é decidida pelo
+  <strong>dono, por linha</strong> (a lição da janela de conflito, de novo);
+  as colunas casam <strong>por nome</strong>, nunca por posição; e o empurrão
+  usa <code>ON DUPLICATE KEY UPDATE</code>, então cair no meio e recomeçar não
+  dobra nada. Exclusão <strong>não viaja</strong>, por desenho — a prova de
+  sete estágios contra o MySQL(R) 8.0.46 vivo confere inclusive isso: a linha
+  apagada de um lado só reaparece, vinda do outro. O <strong>assistente</strong>
+  da tela monta tudo em cinco passos — conexão, teste, base, tabelas com
+  sentido e dono, e o job que roda a convergência sozinho — e cada passo só
+  avança com o anterior provado.</p>
+
+  <p><strong>PostgreSQL(R): o cliente existe, a prova real não.</strong> O
+  SCRAM-SHA-256 está conferido contra o RFC 7677 e o dialeto por motor está
+  escrito; o que falta é exercitar contra um servidor de verdade, que não
+  existe nesta máquina — o que essa prova exige está em
+  <code>docs/DBLINK.md</code>.</p>
 </section>
 
 <!-- ============================= 19 ============================= -->
@@ -4507,7 +4522,9 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
         <tr><td>Aviso de disco apertado por e-mail · cliente SMTP escrito aqui</td><td><span class="pino ok">pronto</span></td><td class="num">16</td></tr>
         <tr><td>DbLink para MySQL(R) · protocolo escrito aqui, grade compartilhada</td><td><span class="pino ok">pronto</span></td><td class="num">16</td></tr>
         <tr><td>SHA-1 contra o FIPS 180-4 · só para o <code>mysql_native_password</code></td><td><span class="pino ok">pronto</span></td><td class="num">3</td></tr>
-        <tr><td>DbLink para PostgreSQL(R) — a definição guarda, o cliente falta</td><td><span class="pino pend">desenhada</span></td><td class="num">—</td></tr>
+        <tr><td>Sincronia de tabelas primas · dono por linha, provada contra MySQL(R) vivo</td><td><span class="pino ok">pronto</span></td><td class="num">15</td></tr>
+        <tr><td>Assistente de conexão DbLink · cinco passos, cada um provado antes do próximo</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
+        <tr><td>DbLink para PostgreSQL(R) · cliente SCRAM e dialeto prontos, prova real pendente</td><td><span class="pino pend">parcial</span></td><td class="num">—</td></tr>
         <tr><td>Replicação Master → Réplica · quatro servidores medidos</td><td><span class="pino ok">pronto</span></td><td class="num">6</td></tr>
         <tr><td><code>.log</code> v2 com a imagem da linha · atrás do interruptor</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
         <tr><td>Réplica acompanhar a escrita do master · 4.357/s contra 28.914/s</td><td><span class="pino pend">parcial</span></td><td class="num">—</td></tr>
@@ -4574,8 +4591,8 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
 
 <footer>
   <!-- rodape:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-  <p>PhxSql 0.18.0 · 64.892 linhas de Rust em 6 crates,
-  mais 521 KiB de interface · 878 testes ·
+  <p>PhxSql 0.18.0 · 65.949 linhas de Rust em 6 crates,
+  mais 535 KiB de interface · 893 testes ·
   nenhuma dependência externa.
   Especificação byte a byte em <code>docs/FORMATO.md</code>, cadastro e
   permissões em <code>docs/USUARIOS.md</code>, a replicação em
