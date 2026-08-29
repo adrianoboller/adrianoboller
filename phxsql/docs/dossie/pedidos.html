@@ -1,4 +1,4 @@
-<title>Os 132 pedidos do PhxSql</title>
+<title>Os 134 pedidos do PhxSql</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -178,15 +178,15 @@ footer{
 <div class="envelope">
 <header>
   <div class="rotulo">PhxSql · o dossiê do que foi pedido</div>
-  <h1>Os 132 pedidos, e o<br>que existe de cada um</h1>
+  <h1>Os 134 pedidos, e o<br>que existe de cada um</h1>
   <p class="chamada">Uma linha por pedido seu, na ordem em que você pediu. O
   estado é <strong>medido contra o código</strong>, não contra a lembrança — foi
   assim que a chave estrangeira saiu de «pronto» para «parcial», e o Centro de
   Controle de «pronto» para «só navega».</p>
 
   <div class="placar">
-    <div class="c"><div class="v">132</div><div class="r">pedidos</div></div>
-    <div class="c feito"><div class="v">129</div><div class="r">feitos</div></div>
+    <div class="c"><div class="v">134</div><div class="r">pedidos</div></div>
+    <div class="c feito"><div class="v">131</div><div class="r">feitos</div></div>
     <div class="c parcial"><div class="v">3</div><div class="r">parciais</div></div>
     <div class="c planejado"><div class="v">0</div><div class="r">planejados</div></div>
   </div>
@@ -214,7 +214,7 @@ footer{
   não tem opinião própria sobre nenhum item.
 </div>
 
-<h2 id="todos">Os 132, na ordem em que você pediu</h2>
+<h2 id="todos">Os 134, na ordem em que você pediu</h2>
 <p class="sub">A numeração é a sequência real dos seus pedidos — ela diz
 <em>quando</em> cada coisa foi pedida, e é por isso que vale mantê-la.</p>
 
@@ -365,6 +365,8 @@ footer{
       <tr data-e="feito"><td class="n mono">67</td><td class="st"><span class="pino feito">Feito</span></td><td class="p"><strong>Botão e menu Tabelas</strong> para gerir as tabelas do banco: nova, estrutura, editar conteúdo, partições, duplicar, reparar tabela, reparar índice e excluir — e <strong>Gestão de transações</strong> no menu de ferramentas</td><td class="e">as oito operações funcionam de ponta a ponta; três delas (<code>criar_tabela</code>, <code>duplicar_tabela</code>, <code>excluir_tabela</code>) nasceram aqui, e <code>criar_schema</code> — prometido na documentação e nunca despachado — junto</td></tr>
       <tr data-e="feito"><td class="n mono">131</td><td class="st"><span class="pino feito">Feito</span></td><td class="p"><strong>Prioridade no MULTILINK: conectar no MySQL(R) e ver a tabela <code>clientes</code> do outro lado do DbLink</strong></td><td class="e">provado contra o <strong>MySQL(R) 8.0.46 real</strong>, não o servidor falso: <code>caching_sha2_password</code> pelos dois caminhos documentados, <code>dblink_tabelas</code>/<code>dblink_estrutura</code>/<code>dblink_ler</code> trazendo as 5 linhas com o DECIMAL certo — e a grade da tela somando sobre dado que nunca esteve num arquivo nosso. Roteiro de refazer em <code>docs/DBLINK.md</code>. É o DbLink <strong>nativo, zero dependências</strong> — o destino do pacote MULTILINK, alcançado sem as 582 crates dele</td></tr>
       <tr data-e="feito"><td class="n mono">132</td><td class="st"><span class="pino feito">Feito</span></td><td class="p"><strong>Assistente de conexão DbLink</strong>: cria a conexão, testa, escolhe base e tabelas ligadas, e o <strong>job de sincronia</strong> gravando entre si automaticamente</td><td class="e">cinco passos que só avançam com o anterior provado, e por baixo a <strong>sincronia de tabelas primas</strong>: convergência de estado pela chave, sentido (puxar/empurrar/dois) e dono (aqui/lá) <strong>por linha</strong>, colunas casadas <strong>por nome</strong>, empurrão reentrável (<code>ON DUPLICATE KEY UPDATE</code>), teto com recusa clara. Exclusão <strong>não</strong> viaja — limite de desenho, provado no estágio 5 da prova. <code>bancada/dblink/prova-sincronia.py</code> roda os 7 estágios contra o MySQL(R) vivo (inclusive o job puxando sozinho); o assistente foi exercitado no navegador e o exercício achou a árvore que não se remontava. 15 testes de unidade das partes puras, com o defeito do sinal do decimal provado nos dois sentidos. <code>docs/DBLINK.md</code></td></tr>
+      <tr data-e="feito"><td class="n mono">133</td><td class="st"><span class="pino feito">Feito</span></td><td class="p"><strong>Criptografia dos dados: cifrar o valor da coluna marcada como dado pessoal</strong></td><td class="e">escolha <strong>(c)</strong> do dono, entre as quatro medidas: (a) slot inteiro 0,59 µs/linha, (b) página do <code>.ndx</code> 0,23 µs, <strong>(c) coluna marcada 0,10 µs (1% da inserção)</strong>, (d) arquivo inteiro <strong>194 ms para ler uma linha</strong> — 320.000×, a saída que não existe. Cifra as faixas marcadas <strong>no lugar</strong> (o ChaCha20 é de fluxo: não muda o tamanho, nenhum offset se move), com <strong>uma</strong> etiqueta por linha no fim do slot; <code>.reg</code> versão <strong>5</strong>, cabeçalho de 192 bytes. <code>Memo</code>/<code>Bin</code> marcados são selados antes de virar bloco, com nonce de 24 bytes à frente. Nonce = rowid + volume + versão + <strong>8 bytes sorteados nos que já eram reservados</strong> — zero de formato. AAD amarra o endereço: copiar o slot 5 sobre o 9 com o CRC certo <strong>não passa</strong>. Entrou junto <strong>XChaCha20-Poly1305/HChaCha20</strong> com os vetores do draft-irtf-cfrg-xchacha-03 e um gerador de bytes do processo (apagamento rápido de chave). <strong>O <code>.ndx</code> continua em claro, e há teste que prova o vazamento</strong> — <code>SEGURANCA.md</code> §10.3</td></tr>
+      <tr data-e="feito"><td class="n mono">134</td><td class="st"><span class="pino feito">Feito</span></td><td class="p"><strong>FrogCript como modo escolhido, com o aviso escrito</strong></td><td class="e"><code>cifra.modo: &quot;frogcript&quot;</code> — transposição, duas camadas e a direção escondida, <strong>salto e separador parametrizáveis</strong>. O padrão continua sendo o AEAD. O documento diz o que ele acrescenta (formato), o que <strong>não</strong> acrescenta (força: é a §9 do próprio autor) e o que custa, <strong>medido</strong>: 2,77 µs e 189 bytes contra 0,10 µs e 38 do AEAD; o <code>frogcript.py</code> de referência custa <strong>1.137 ms por valor</strong> (410.000×) porque deriva a chave 4 vezes <strong>por valor</strong>, e ~397 bytes (18× o texto). <strong>Sem AES</strong>: a estrutura roda sobre o ChaCha20 da casa, e por isso <strong>não há compatibilidade com o que foi cifrado em Python</strong> — escrito, não escondido. Escrever AES é decisão do dono e está na mesa com o custo (<code>SEGURANCA.md</code> §10.4)</td></tr>
     </tbody>
   </table>
   <div class="vazio" id="vazio" hidden>Nenhum pedido bate com isso.</div>

@@ -32,31 +32,77 @@
 //! slot 1, slot 2, ...
 //!
 //! slot: [status u8][flags u8][res u16][crc32 payload u32]
-//!       [versao u64][res u64][payload ...]
+//!       [versao u64][tempero u64][payload ...]
 //! ```
 //!
 //! Todo volume carrega o cabecalho completo com o esquema, entao qualquer um
 //! deles se descreve sozinho. Apenas o volume 1 tem contadores autoritativos
 //! da tabela inteira.
+//!
+//! # Com a cifra de coluna ligada (versao 5)
+//!
+//! Cifra-se **so a coluna marcada como dado pessoal** (`DadoPessoal`), e nao
+//! o payload inteiro. O cabecalho cresce para 192 bytes -- os 40 do material
+//! de cifra ([`cofre::Material`]) entram em 128..168 --, e o slot cresce
+//! [`cofre::ACRESCIMO`] bytes para caber UMA etiqueta:
+//!
+//! ```text
+//! slot cifrado: [cabecalho de slot 24][payload, com as faixas marcadas
+//!                cifradas no lugar][etiqueta 16]
+//! ```
+//!
+//! # Por que o texto cifrado cabe no lugar do claro
+//!
+//! Porque o ChaCha20 e cifra de FLUXO: o texto cifrado tem exatamente o
+//! tamanho do claro. A faixa de uma coluna `Str(40)` continua com 40 bytes, no
+//! mesmo offset, e nenhum offset de coluna se move. O que nao cabe e a
+//! etiqueta -- e ela e **uma so para a linha inteira**, cobrindo todas as
+//! faixas marcadas juntas, e vai no fim do slot.
+//!
+//! **O endereco continua saindo de uma conta.** `slot_size` cresce uma vez, e
+//! `offset = data_offset + (slot - 1) * slot_size` continua valendo. Cifrar
+//! custa 16 bytes por linha, qualquer que seja o numero de colunas marcadas, e
+//! nenhuma busca a mais.
+//!
+//! O CRC-32 do slot passa a cobrir o que esta NO DISCO -- o payload com as
+//! faixas ja cifradas, mais a etiqueta. Assim `reparar` e o espelho `.bkp`
+//! continuam funcionando **sem a chave**, que e a mesma escolha dos diarios; e
+//! um CRC do texto claro guardado ao lado do cifrado seria um oraculo de 32
+//! bits para quem quisesse adivinhar o conteudo.
+//!
+//! # O que continua em claro, e esta escrito para ninguem supor mais
+//!
+//! Coluna nao marcada, o bitmap de nulos (que diz QUAIS linhas tem a coluna
+//! marcada vazia), o `rowid`, a versao da linha, o status do slot e o esquema
+//! -- inclusive o NOME da coluna marcada. E, fora daqui, o `.ndx`: um indice
+//! sobre coluna marcada guarda a chave em claro e revela a ORDEM. Ver
+//! `docs/SEGURANCA.md` §10.
 
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
+use phxsql_core::cifra;
 use phxsql_core::crc::crc32;
 use phxsql_core::error::{PhxError, Result};
 use phxsql_core::paginacao::{Paginacao, BALDES};
 use phxsql_core::schema::{ForeignKey, Schema};
 use phxsql_core::{RowId, EXT_REG};
 
+use crate::cofre;
 use crate::util::{agora, conferir_magic, ler_exato, por_i64, por_u32, por_u64, Campos};
 use crate::volume::Volumes;
 
 pub const MAGIC_REG: &[u8; 8] = b"PHXREG\0\0";
+/// Cabecalho de um volume em claro (versao 4).
 const CAB_LEN: usize = 128;
+/// Cabecalho de um volume cifrado (versao 5): cabe o material de cifra.
+const CAB_LEN_CIFRADO: usize = 192;
+/// Onde o material de cifra comeca, no cabecalho da versao 5.
+const MATERIAL_EM: usize = 128;
 /// Bytes de cabecalho de cada slot, antes do payload.
 pub const SLOT_CAB: usize = 24;
-/// Versao do `.reg`.
+/// Versao do `.reg` sem cifra.
 ///
 /// A 3 acrescentou `proximo_rownum` nos bytes 92..100, que estavam reservados.
 /// Arquivo da 2 nao abre nesta versao -- o contador nao existiria, e comecar do
@@ -67,6 +113,20 @@ pub const SLOT_CAB: usize = 24;
 /// concluiria que a posicao e o `rownum` sao a mesma coisa numa tabela onde
 /// nao sao, e o salto por bisseccao cairia na linha errada em silencio.
 const VERSAO: u16 = 4;
+/// Versao do `.reg` cifrado.
+///
+/// # Por que uma versao NOVA, e nao uma flag na 4
+///
+/// Porque o cabecalho e o slot mudam de tamanho, e um leitor da versao 4 que
+/// achasse a flag mas usasse `CAB_LEN` leria o esquema 64 bytes antes do lugar
+/// -- e um `slot_size` a menos poria cada linha no endereco da anterior. A
+/// versao no byte 8 e a unica coisa que se le antes de decidir quantos bytes
+/// ler, entao e ela que tem de mudar.
+///
+/// **A 4 continua abrindo, e continua sendo o que se grava sem a cifra.** Um
+/// `.reg` da versao 4 se le exatamente como antes, byte por byte, e uma
+/// tabela criada com o cofre desligado nasce na 4. Guarda nova entra pedida.
+const VERSAO_CIFRADO: u16 = 5;
 const ALINHAMENTO: u64 = 64;
 
 const STATUS_LIVRE: u8 = 0;
@@ -105,6 +165,24 @@ pub struct RegFile {
     /// por linha.
     esquema_bytes: Vec<u8>,
     esquema_crc: u32,
+    /// O material de cifra deste arquivo: sal, iteracoes e a chave derivada.
+    ///
+    /// Vale para a TABELA, e nao para o volume: os slots de uma tabela
+    /// paginada atravessam volumes, e uma chave por volume obrigaria a
+    /// perguntar em qual arquivo a linha mora antes de saber com que chave
+    /// abri-la. O sal e o mesmo em todos os cabecalhos; o que separa um slot
+    /// do outro e o nonce, que carrega volume, rowid e versao.
+    material: cofre::Material,
+    /// As faixas do payload que vao cifradas: `(offset, largura)` de cada
+    /// coluna marcada como dado pessoal, na ordem das colunas.
+    ///
+    /// Sai do esquema uma vez, na abertura. Recalcular por linha seria
+    /// percorrer as colunas a cada leitura para chegar sempre na mesma lista
+    /// -- e o `.reg` e o caminho quente de toda a tabela.
+    faixas: Vec<(usize, usize)>,
+    /// 128 na versao 4, 192 na 5.
+    cab_len: usize,
+    /// Ja com a etiqueta, quando a tabela e cifrada.
     slot_size: usize,
     data_offset: u64,
     slot_count: u64,
@@ -174,8 +252,27 @@ impl RegFile {
     pub fn criar(diretorio: impl AsRef<Path>, nome: &str, esquema: Schema) -> Result<RegFile> {
         let paginacao = esquema.paginacao();
         let bytes_esquema = esquema.serializar();
-        let data_offset = alinhar(CAB_LEN as u64 + bytes_esquema.len() as u64, ALINHAMENTO);
-        let slot_size = SLOT_CAB + esquema.payload_len();
+        // A cifra e decidida AQUI, na criacao, e nunca depois: ligar o cofre
+        // amanha nao recifra uma tabela que ja existe, e desligar nao decifra
+        // -- o que muda e o que se CRIA daqui para a frente. E a mesma regra
+        // dos diarios, e esta escrita em SEGURANCA.md.
+        //
+        // Uma tabela SEM coluna marcada nasce em claro mesmo com o cofre
+        // ligado: nao ha o que cifrar, e carimba-la de cifrada custaria 16
+        // bytes por linha e um cabecalho maior para nao proteger nada.
+        let faixas = faixas_pessoais(&esquema)?;
+        let material = if faixas.is_empty() {
+            cofre::Material::EM_CLARO
+        } else {
+            cofre::Material::novo()?
+        };
+        let cab_len = if material.cifrado() {
+            CAB_LEN_CIFRADO
+        } else {
+            CAB_LEN
+        };
+        let data_offset = alinhar(cab_len as u64 + bytes_esquema.len() as u64, ALINHAMENTO);
+        let slot_size = SLOT_CAB + esquema.payload_len() + material.rabo(largura_marcada(&faixas));
 
         let esquema_crc = crc32(&bytes_esquema);
         let mut r = RegFile {
@@ -183,6 +280,9 @@ impl RegFile {
             esquema,
             esquema_bytes: bytes_esquema,
             esquema_crc,
+            material,
+            faixas,
+            cab_len,
             slot_size,
             data_offset,
             slot_count: 0,
@@ -232,20 +332,34 @@ impl RegFile {
         if tamanho < CAB_LEN as u64 {
             return Err(PhxError::Corrompido(format!("{nome_arq} truncado")));
         }
-        let mut cab = [0u8; CAB_LEN];
+        // Le 128 bytes primeiro e volta com 192 quando a versao pede. Ao
+        // contrario, um `.reg` da versao 4 recem-criado -- que pode ter menos
+        // de 192 bytes -- falharia no fim do arquivo, e o comportamento velho
+        // quebraria por causa do formato novo.
+        let mut cab = vec![0u8; CAB_LEN];
         ler_exato(&mut arquivo, 0, &mut cab)?;
         conferir_magic(&nome_arq, MAGIC_REG, &cab[0..8])?;
 
-        let c = Campos(&cab);
-        let versao = c.u16(8);
-        if versao != VERSAO {
+        let versao = u16::from_le_bytes([cab[8], cab[9]]);
+        if versao != VERSAO && versao != VERSAO_CIFRADO {
             return Err(PhxError::VersaoNaoSuportada {
                 arquivo: nome_arq,
                 encontrada: versao,
-                suportada: VERSAO,
+                suportada: VERSAO_CIFRADO,
             });
         }
-        if crc32(&cab[..124]) != c.u32(124) {
+        let cab_len = if versao == VERSAO_CIFRADO {
+            CAB_LEN_CIFRADO
+        } else {
+            CAB_LEN
+        };
+        if cab_len > CAB_LEN {
+            cab.resize(cab_len, 0);
+            ler_exato(&mut arquivo, 0, &mut cab)?;
+        }
+
+        let c = Campos(&cab);
+        if crc32(&cab[..cab_len - 4]) != c.u32(cab_len - 4) {
             return Err(PhxError::Corrompido(format!(
                 "cabecalho de {nome_arq} com CRC invalido"
             )));
@@ -264,13 +378,13 @@ impl RegFile {
         let schema_crc = c.u32(56);
         let criado_em = c.u64(60) as i64;
 
-        if tamanho < (CAB_LEN + schema_len) as u64 {
+        if tamanho < (cab_len + schema_len) as u64 {
             return Err(PhxError::Corrompido(format!(
                 "{nome_arq} nao contem o esquema inteiro"
             )));
         }
         let mut bytes_esquema = vec![0u8; schema_len];
-        ler_exato(&mut arquivo, CAB_LEN as u64, &mut bytes_esquema)?;
+        ler_exato(&mut arquivo, cab_len as u64, &mut bytes_esquema)?;
         if crc32(&bytes_esquema) != schema_crc {
             return Err(PhxError::Corrompido(format!(
                 "esquema de {nome_arq} com CRC invalido"
@@ -278,7 +392,32 @@ impl RegFile {
         }
         let esquema = Schema::desserializar(&bytes_esquema)?;
 
-        let esperado = SLOT_CAB + esquema.payload_len();
+        // A chave sai daqui, e a prova dentro do material recusa a senha
+        // errada AGORA -- e nao na primeira leitura de linha, que numa tabela
+        // recem-criada seria nunca.
+        let material = if versao == VERSAO_CIFRADO {
+            cofre::Material::ler(
+                &cab,
+                MATERIAL_EM,
+                &nome_arq,
+                &rotulo_da_prova(versao, slot_size),
+            )?
+        } else {
+            cofre::Material::EM_CLARO
+        };
+
+        let faixas = faixas_pessoais(&esquema)?;
+        if material.cifrado() && faixas.is_empty() {
+            // O arquivo diz que cifrou e o esquema nao tem coluna marcada:
+            // alguem desmarcou a coluna DEPOIS de a tabela nascer. Ler assim
+            // devolveria o texto cifrado como se fosse texto, sem erro.
+            return Err(PhxError::Corrompido(format!(
+                "{nome_arq} foi gravado com coluna cifrada e o esquema nao tem \
+                 nenhuma coluna marcada como dado pessoal: desmarcar a coluna \
+                 nao decifra o que ja esta gravado"
+            )));
+        }
+        let esperado = SLOT_CAB + esquema.payload_len() + material.rabo(largura_marcada(&faixas));
         if slot_size != esperado {
             return Err(PhxError::Corrompido(format!(
                 "slot_size {slot_size} em {nome_arq} nao bate com o esquema ({esperado})"
@@ -307,6 +446,9 @@ impl RegFile {
             esquema,
             esquema_bytes: bytes_esquema,
             esquema_crc,
+            material,
+            faixas,
+            cab_len,
             slot_size,
             data_offset,
             slot_count,
@@ -345,7 +487,7 @@ impl RegFile {
                     self.baldes.len()
                 )));
             }
-            let mut cab = [0u8; CAB_LEN];
+            let mut cab = vec![0u8; self.cab_len];
             self.volumes.ler(volume, 0, &mut cab)?;
             self.baldes[i - 1] = Campos(&cab).u64(100);
         }
@@ -363,7 +505,7 @@ impl RegFile {
             return Ok(());
         }
         for volume in self.volumes.existentes() {
-            let mut cab = [0u8; CAB_LEN];
+            let mut cab = vec![0u8; self.cab_len];
             self.volumes.ler(volume, 0, &mut cab)?;
             let c = Campos(&cab);
             self.fronteiras.push(Fronteira {
@@ -519,29 +661,34 @@ impl RegFile {
         // coisa. Esta guarda e inalcancavel hoje (o `data_offset` sai destes
         // mesmos bytes na criacao, e reabrir nao os troca) e existe para o dia
         // em que alguem mudar isso sem perceber.
-        if CAB_LEN as u64 + self.esquema_bytes.len() as u64 > self.data_offset {
+        if self.cab_len as u64 + self.esquema_bytes.len() as u64 > self.data_offset {
             return Err(PhxError::Corrompido(format!(
                 "o bloco de esquema tem {} bytes e so cabem {} antes do primeiro \
                  slot: gravar aqui destruiria dado",
                 self.esquema_bytes.len(),
-                self.data_offset - CAB_LEN as u64
+                self.data_offset - self.cab_len as u64
             )));
         }
         let buf = self.montar_cabecalho(volume);
         self.volumes.escrever(volume, 0, &buf)?;
         self.volumes
-            .escrever(volume, CAB_LEN as u64, &self.esquema_bytes.clone())?;
+            .escrever(volume, self.cab_len as u64, &self.esquema_bytes.clone())?;
         if self.volumes.tamanho(volume)? < self.data_offset {
             self.volumes.definir_tamanho(volume, self.data_offset)?;
         }
         Ok(())
     }
 
-    fn montar_cabecalho(&self, volume: u32) -> [u8; CAB_LEN] {
-        let mut buf = [0u8; CAB_LEN];
+    fn montar_cabecalho(&self, volume: u32) -> Vec<u8> {
+        let versao = if self.material.cifrado() {
+            VERSAO_CIFRADO
+        } else {
+            VERSAO
+        };
+        let mut buf = vec![0u8; self.cab_len];
         buf[0..8].copy_from_slice(MAGIC_REG);
-        buf[8..10].copy_from_slice(&VERSAO.to_le_bytes());
-        buf[10..12].copy_from_slice(&(CAB_LEN as u16).to_le_bytes());
+        buf[8..10].copy_from_slice(&versao.to_le_bytes());
+        buf[10..12].copy_from_slice(&(self.cab_len as u16).to_le_bytes());
         por_u32(&mut buf, 12, volume);
         por_u32(&mut buf, 16, self.slot_size as u32);
         // Contadores da tabela inteira: so o volume 1 e autoritativo.
@@ -570,8 +717,17 @@ impl RegFile {
         if let Some(usados) = self.baldes.get(volume as usize - 1) {
             por_u64(&mut buf, 100, *usados);
         }
-        let crc = crc32(&buf[..124]);
-        por_u32(&mut buf, 124, crc);
+        // O sal e a prova entram DEPOIS dos 128 bytes da versao 4, e por isso
+        // os offsets de tudo que ja existia continuam onde estavam. So o CRC
+        // se mexeu -- ele mora no fim, e o fim mudou de lugar.
+        self.material.gravar(
+            &mut buf,
+            MATERIAL_EM,
+            &rotulo_da_prova(versao, self.slot_size),
+        );
+        let fim = self.cab_len - 4;
+        let crc = crc32(&buf[..fim]);
+        por_u32(&mut buf, fim, crc);
         buf
     }
 
@@ -697,7 +853,7 @@ impl RegFile {
         let bytes = novo.serializar();
         let crc = crc32(&bytes);
 
-        if CAB_LEN as u64 + bytes.len() as u64 <= self.data_offset {
+        if self.cab_len as u64 + bytes.len() as u64 <= self.data_offset {
             self.esquema = novo;
             self.esquema_bytes = bytes;
             self.esquema_crc = crc;
@@ -709,7 +865,7 @@ impl RegFile {
         }
 
         let origem = self.data_offset;
-        let destino = alinhar(CAB_LEN as u64 + bytes.len() as u64, ALINHAMENTO);
+        let destino = alinhar(self.cab_len as u64 + bytes.len() as u64, ALINHAMENTO);
         self.esquema = novo;
         self.esquema_bytes = bytes;
         self.esquema_crc = crc;
@@ -938,7 +1094,7 @@ impl RegFile {
         if self.volumes.garantir(volume)? {
             self.gravar_cabecalho(volume)?;
         }
-        self.escrever_slot(volume, offset, payload)?;
+        self.escrever_slot(volume, rowid, offset, payload)?;
 
         self.baldes[i - 1] = usados + 1;
         self.live_count += 1;
@@ -965,12 +1121,168 @@ impl RegFile {
         Ok(())
     }
 
-    fn escrever_slot(&mut self, volume: u32, offset: u64, payload: &[u8]) -> Result<()> {
+    /// Monta o slot inteiro -- cabecalho, corpo e, se for o caso, etiqueta.
+    ///
+    /// Existe como caminho unico porque inserir e atualizar tem de selar
+    /// exatamente igual: um dos dois com o nonce montado de outro jeito nao
+    /// daria erro nenhum na hora, e sim uma linha que nao abre depois.
+    fn montar_slot(&self, volume: u32, rowid: RowId, versao: u64, payload: &[u8]) -> Vec<u8> {
         let mut slot = vec![0u8; self.slot_size];
         slot[0] = STATUS_ATIVO;
-        por_u32(&mut slot, 4, crc32(payload));
-        por_u64(&mut slot, 8, 1); // versao do registro
-        slot[SLOT_CAB..].copy_from_slice(payload);
+        por_u64(&mut slot, 8, versao);
+
+        let fim_corpo = SLOT_CAB + payload.len();
+        slot[SLOT_CAB..fim_corpo].copy_from_slice(payload);
+
+        if self.material.cifrado() {
+            // Oito bytes sorteados NESTA gravacao, nos que ja eram reservados
+            // no cabecalho do slot. Custam zero de formato e sao o que segura
+            // o nonce diferente quando a versao repete -- o que acontece se
+            // uma gravacao se perder no cache do sistema antes do `fsync` e a
+            // seguinte reler a versao antiga.
+            let tempero = cifra::sortear_u64();
+            por_u64(&mut slot, 16, tempero);
+            let nonce = cofre::nonce_de_pedaco(rowid, volume, versao as u32, tempero);
+
+            // As faixas marcadas viram UMA mensagem: uma etiqueta so para a
+            // linha, e nao uma por coluna. Cifrar cada coluna sozinha custaria
+            // 16 bytes por coluna marcada e permitiria trocar a coluna A de
+            // uma linha pela coluna A de outra sem a etiqueta reclamar.
+            let claro = self.juntar_faixas(payload);
+            let selado = self
+                .material
+                .selar(&nonce, &aad_do_slot(volume, rowid, versao), &claro);
+            if self.material.no_lugar() {
+                self.espalhar_faixas(&mut slot[SLOT_CAB..fim_corpo], &selado[..claro.len()]);
+                slot[fim_corpo..].copy_from_slice(&selado[claro.len()..]);
+            } else {
+                // O pacote nao cabe no lugar: a faixa marcada vai a zeros --
+                // o mesmo que uma coluna nunca preenchida -- e o pacote
+                // inteiro mora no rabo.
+                self.espalhar_faixas(&mut slot[SLOT_CAB..fim_corpo], &vec![0u8; claro.len()]);
+                slot[fim_corpo..].copy_from_slice(&selado);
+            }
+        }
+
+        // O CRC cobre o que esta no DISCO -- o payload ja com as faixas
+        // cifradas, mais a etiqueta. E o que deixa `reparar` e o espelho
+        // trabalharem sem a chave.
+        let crc = crc32(&slot[SLOT_CAB..]);
+        por_u32(&mut slot, 4, crc);
+        slot
+    }
+
+    /// Decifra as faixas marcadas de um slot lido. Sem cifra, devolve os
+    /// proprios bytes do payload.
+    fn abrir_slot(&self, volume: u32, rowid: RowId, slot: &[u8]) -> Result<Vec<u8>> {
+        let fim_corpo = SLOT_CAB + self.esquema.payload_len();
+        let mut payload = slot[SLOT_CAB..fim_corpo].to_vec();
+        if !self.material.cifrado() {
+            return Ok(payload);
+        }
+        let c = Campos(slot);
+        let versao = c.u64(8);
+        let tempero = c.u64(16);
+        let nonce = cofre::nonce_de_pedaco(rowid, volume, versao as u32, tempero);
+
+        let mut guardado = if self.material.no_lugar() {
+            self.juntar_faixas(&payload)
+        } else {
+            Vec::new()
+        };
+        guardado.extend_from_slice(&slot[fim_corpo..]);
+        let claro = self.material.abrir(
+            &nonce,
+            &aad_do_slot(volume, rowid, versao),
+            &guardado,
+            &self.volumes.caminho(volume).display().to_string(),
+        )?;
+        self.espalhar_faixas(&mut payload, &claro);
+        Ok(payload)
+    }
+
+    /// Sela o conteudo de uma coluna EXTERNA marcada, antes de ele virar bloco
+    /// do `.memo` ou do `.bin`.
+    ///
+    /// ```text
+    /// [nonce 24][conteudo cifrado][etiqueta 16]
+    /// ```
+    ///
+    /// # Por que o nonce vai sorteado e gravado inteiro
+    ///
+    /// Porque aqui nao ha endereco de onde tira-lo: o bloco so ganha offset
+    /// DEPOIS de gravado, e o rowid da linha so existe depois do payload
+    /// montado. Com 192 bits, sortear e seguro -- e essa e a razao de o
+    /// XChaCha20 existir. Os 40 bytes a mais por conteudo somem ao lado de um
+    /// memo, que e o que esses tipos guardam.
+    ///
+    /// Sem cifra, ou em coluna nao marcada, devolve o proprio conteudo.
+    pub fn selar_externo(&self, coluna: u16, dados: &[u8]) -> Vec<u8> {
+        if !self.material.cifrado() || !self.externa_marcada(coluna) || dados.is_empty() {
+            return dados.to_vec();
+        }
+        let mut nonce = [0u8; cifra::XNONCE_LEN];
+        cifra::sortear(&mut nonce);
+        let mut fora = nonce.to_vec();
+        fora.extend_from_slice(&self.material.selar(&nonce, &coluna.to_le_bytes(), dados));
+        fora
+    }
+
+    /// Abre o conteudo selado por [`RegFile::selar_externo`].
+    pub fn abrir_externo(&self, coluna: u16, guardado: &[u8]) -> Result<Vec<u8>> {
+        if !self.material.cifrado() || !self.externa_marcada(coluna) || guardado.is_empty() {
+            return Ok(guardado.to_vec());
+        }
+        if guardado.len() < cifra::XNONCE_LEN {
+            return Err(PhxError::Corrompido(format!(
+                "conteudo cifrado da coluna {coluna} sem os {} bytes de nonce",
+                cifra::XNONCE_LEN
+            )));
+        }
+        let mut nonce = [0u8; cifra::XNONCE_LEN];
+        nonce.copy_from_slice(&guardado[..cifra::XNONCE_LEN]);
+        self.material.abrir(
+            &nonce,
+            &coluna.to_le_bytes(),
+            &guardado[cifra::XNONCE_LEN..],
+            self.volumes.nome(),
+        )
+    }
+
+    /// A coluna e externa (`Bin`/`Memo`) E esta marcada como dado pessoal?
+    fn externa_marcada(&self, coluna: u16) -> bool {
+        self.esquema
+            .colunas()
+            .get(coluna as usize)
+            .is_some_and(|c| c.ty.externo() && c.dado_pessoal.e_pessoal())
+    }
+
+    /// Junta as faixas marcadas numa mensagem so, na ordem das colunas.
+    fn juntar_faixas(&self, payload: &[u8]) -> Vec<u8> {
+        let mut fora = Vec::with_capacity(self.faixas.iter().map(|(_, n)| n).sum());
+        for (off, n) in &self.faixas {
+            fora.extend_from_slice(&payload[*off..*off + *n]);
+        }
+        fora
+    }
+
+    /// Devolve cada faixa ao lugar dela dentro do payload.
+    fn espalhar_faixas(&self, payload: &mut [u8], junto: &[u8]) {
+        let mut pos = 0;
+        for (off, n) in &self.faixas {
+            payload[*off..*off + *n].copy_from_slice(&junto[pos..pos + *n]);
+            pos += *n;
+        }
+    }
+
+    fn escrever_slot(
+        &mut self,
+        volume: u32,
+        rowid: RowId,
+        offset: u64,
+        payload: &[u8],
+    ) -> Result<()> {
+        let slot = self.montar_slot(volume, rowid, 1, payload);
         self.volumes.escrever(volume, offset, &slot)
     }
 
@@ -1000,7 +1312,7 @@ impl RegFile {
             self.gravar_cabecalho(volume)?;
         }
 
-        self.escrever_slot(volume, offset, payload)?;
+        self.escrever_slot(volume, rowid, offset, payload)?;
 
         self.slot_count += 1;
         self.live_count += 1;
@@ -1027,8 +1339,7 @@ impl RegFile {
         // outro lado. Agora ele desce para a segunda chance junto com a falha
         // de CRC, que e o mesmo problema com outro sintoma.
         let cabecalho_torto = !status_valido(slot[0]);
-        let payload = slot[SLOT_CAB..].to_vec();
-        if cabecalho_torto || crc32(&payload) != Campos(&slot).u32(4) {
+        if cabecalho_torto || crc32(&slot[SLOT_CAB..]) != Campos(&slot).u32(4) {
             // A segunda chance: se ha espelho, o outro lado pode estar bom.
             if self.volumes.tem_espelho() {
                 let mut copia = vec![0u8; self.slot_size];
@@ -1037,12 +1348,10 @@ impl RegFile {
                     .ler_do_espelho(volume, offset, &mut copia)
                     .is_ok()
                     && copia[0] == STATUS_ATIVO
+                    && crc32(&copia[SLOT_CAB..]) == Campos(&copia).u32(4)
                 {
-                    let dele = copia[SLOT_CAB..].to_vec();
-                    if crc32(&dele) == Campos(&copia).u32(4) {
-                        self.recuperados += 1;
-                        return Ok(Some(dele));
-                    }
+                    self.recuperados += 1;
+                    return Ok(Some(self.abrir_slot(volume, rowid, &copia)?));
                 }
             }
             return Err(PhxError::Corrompido(format!(
@@ -1060,7 +1369,7 @@ impl RegFile {
                 }
             )));
         }
-        Ok(Some(payload))
+        Ok(Some(self.abrir_slot(volume, rowid, &slot)?))
     }
 
     pub fn ativo(&mut self, rowid: RowId) -> Result<bool> {
@@ -1112,11 +1421,7 @@ impl RegFile {
             )));
         }
         let versao = Campos(&slot).u64(8).saturating_add(1);
-        slot[..SLOT_CAB].fill(0);
-        slot[0] = STATUS_ATIVO;
-        por_u32(&mut slot, 4, crc32(payload));
-        por_u64(&mut slot, 8, versao);
-        slot[SLOT_CAB..].copy_from_slice(payload);
+        let slot = self.montar_slot(volume, rowid, versao, payload);
         self.volumes.escrever(volume, offset, &slot)?;
         self.gravar_contadores(1)?;
         Ok(versao)
@@ -1218,6 +1523,67 @@ impl RegFile {
 
 fn alinhar(v: u64, a: u64) -> u64 {
     v.div_ceil(a) * a
+}
+
+/// As faixas do payload ocupadas pelas colunas marcadas como dado pessoal.
+///
+/// # Por que Bin e Memo NAO entram
+///
+/// Porque o que mora no payload deles e um PONTEIRO de 16 bytes para o `.bin`
+/// ou o `.memo`, e cifrar o ponteiro nao esconde o conteudo -- ele esta no
+/// outro arquivo, em claro, ao alcance de quem copiou o diretorio. Cifrar o
+/// ponteiro daria a aparencia de protecao com o conteudo aberto do lado, que
+/// e pior que nao cifrar. O conteudo de coluna externa marcada e selado pela
+/// `Table`, antes de chegar ao bloco. Ver `table.rs`.
+fn faixas_pessoais(esquema: &Schema) -> Result<Vec<(usize, usize)>> {
+    let mut faixas = Vec::new();
+    for (i, col) in esquema.colunas_pessoais() {
+        if col.ty.externo() {
+            continue;
+        }
+        faixas.push((esquema.offset_coluna(i)?, col.ty.largura()));
+    }
+    Ok(faixas)
+}
+
+/// Quantos bytes do payload as faixas marcadas ocupam, somados.
+fn largura_marcada(faixas: &[(usize, usize)]) -> usize {
+    faixas.iter().map(|(_, n)| n).sum()
+}
+
+/// A parte estavel do cabecalho que a prova da chave amarra.
+///
+/// Nao entra contador nenhum: eles mudam a cada linha inserida, e uma prova
+/// que mudasse com eles teria de ser refeita (e reconferida) a cada gravacao
+/// sem proteger nada a mais.
+fn rotulo_da_prova(versao: u16, slot_size: usize) -> Vec<u8> {
+    let mut r = Vec::with_capacity(MAGIC_REG.len() + 6);
+    r.extend_from_slice(MAGIC_REG);
+    r.extend_from_slice(&versao.to_le_bytes());
+    r.extend_from_slice(&(slot_size as u32).to_le_bytes());
+    r
+}
+
+/// O dado associado de um slot: onde a linha mora e em que versao ela esta.
+///
+/// # O que isto impede
+///
+/// Copiar o corpo cifrado da linha 7 por cima da linha 9 -- ou de outro volume
+/// -- deixa de passar: a etiqueta e conferida contra o endereco em que o corpo
+/// foi ENCONTRADO, e nao contra o endereco de onde ele saiu. Sem isto, quem
+/// tem o arquivo mas nao a chave ainda poderia embaralhar as linhas, e o
+/// resultado abriria sem erro nenhum.
+///
+/// O `status` fica FORA de proposito: excluir regrava so o cabecalho de 24
+/// bytes e nao toca no corpo, entao um `status` no dado associado faria o
+/// corpo de toda linha excluida parar de abrir. A lixeira le a linha antes de
+/// excluir, mas quem repara depois nao teria como.
+fn aad_do_slot(volume: u32, rowid: RowId, versao: u64) -> [u8; 20] {
+    let mut a = [0u8; 20];
+    a[0..4].copy_from_slice(&volume.to_le_bytes());
+    a[4..12].copy_from_slice(&rowid.to_le_bytes());
+    a[12..20].copy_from_slice(&versao.to_le_bytes());
+    a
 }
 
 /// Reescreve UM arquivo de volume com o primeiro slot em `destino`.

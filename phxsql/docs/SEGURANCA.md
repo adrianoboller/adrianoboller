@@ -649,3 +649,427 @@ A lição é a do projeto, por outro caminho: *campo de configuração sem leito
 pior que campo ausente* — e o leitor que faltava escondia uma operação
 quebrada atrás dele. O teste novo carrega a tabela, consulta em memória e
 exige que a resposta volte.
+
+---
+
+## 10. A cifra de dados: por coluna marcada
+
+A §8 cifrou os **diários**. Os arquivos de **dados** continuaram em claro, e a
+própria §8 registrou a dívida: *«`.reg`, `.ndx`, `.bin` e `.memo` continuam em
+claro»*. Esta seção paga parte dela — e diz, com todas as letras, qual parte
+não paga.
+
+O que entrou: **o valor de uma coluna marcada como dado pessoal
+(`DadoPessoal`) vai cifrado no `.reg`, no `.memo`, no `.bin` e no espelho
+`.bkp`.** Coluna não marcada continua exatamente como estava.
+
+### 10.1 As quatro saídas, e por que esta
+
+Antes de escrever código, as quatro foram medidas contra o mesmo alvo — uma
+tabela de 500 mil linhas, `Str(40)` como coluna sensível, inserção medida em
+**10,4 µs por linha** (`--example onde-doi`, 50 mil linhas, 2 índices).
+
+O AEAD que já existe faz **330 MB/s** nesta máquina; um payload de 128 bytes
+custa **0,585 µs** para selar e uma página de 4 KiB, **11,7 µs**
+(`--example custo-da-cifra`).
+
+| saída | custo por linha | disco a mais | o que ela quebra |
+|---|---|---|---|
+| **(a) o slot inteiro** | 0,59 µs (5,7% da inserção) | 16 B/linha | nada — mas cifra colunas que ninguém pediu |
+| **(b) página do `.ndx`** | **0,23 µs** (2,2%) | 32 B/página | nada; e o número surpreende — ver abaixo |
+| **(c) coluna marcada** ✅ | **0,10 µs** (1,0%) | 16 B/linha | o índice sobre a coluna marcada |
+| **(d) arquivo inteiro em volumes** | **194 ms para ler UMA linha** | 0 | o O(1); é a saída que não existe |
+
+**(d) morreu com número na mesa.** Um volume de 500 mil linhas com slot de 128
+bytes tem 64 MB. A 330 MB/s, decifrá-lo inteiro para ler uma linha custa
+**194 ms** — contra 0,6 µs hoje. São **320 000×**. Cifrar o arquivo inteiro é
+trocar um banco de dados por um arquivo compactado.
+
+**(b) foi a surpresa, e o registro fica aqui porque a hipótese ingênua estava
+550× errada.** A conta óbvia dizia: a inserção toca **10,86 páginas por linha**
+(medido, `--example onde-doi`), a 11,7 µs por página são **127 µs por linha** —
+doze vezes a inserção inteira, proibitivo. Medido de verdade, o `.ndx` grava
+**0,02 página por linha** no arquivo: o cache de páginas com *write-back*
+absorve todos os outros toques. A cifra entraria exatamente onde o CRC-32 já
+está — em `escrever_pagina` e `ler_pagina` —, e custaria **0,23 µs por linha**.
+*Toque de página não é gravação de página*, e a diferença entre as duas é o
+cache inteiro.
+
+**(a) e (c) diferem pouco em custo e muito em significado.** (a) cifra o
+payload inteiro, inclusive as colunas que ninguém marcou; (c) cifra só o que
+foi declarado sensível. O dono escolheu **(c)** — e o que decide não é o
+microssegundo, é que a marca LGPD já existe no esquema (PSCH v6), já tem tela,
+e já é a declaração de quem sabe o que é sensível. **O motor não adivinha.**
+
+### 10.2 Como funciona
+
+**O texto cifrado cabe no lugar do claro.** O ChaCha20 é cifra de fluxo: o
+cifrado tem exatamente o tamanho do claro. Uma coluna `Str(40)` continua com 40
+bytes, no mesmo *offset*, e **nenhum offset de coluna se move**. O que não cabe
+é a etiqueta — e ela é **uma só para a linha inteira**, cobrindo todas as
+faixas marcadas juntas, no fim do slot.
+
+```text
+slot cifrado: [cabeçalho 24][payload, com as faixas marcadas cifradas][etiqueta 16]
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                             mesmos offsets, mesmos tamanhos
+```
+
+`offset = data_offset + (slot - 1) * slot_size` continua valendo: `slot_size`
+cresce 16 bytes, uma vez, e **o endereço continua saindo de uma conta**.
+
+| | onde | quanto custa |
+|---|---|---|
+| coluna marcada, inline | no próprio payload | 16 B por linha, para a linha toda |
+| coluna marcada, `Memo`/`Bin` | no bloco do `.memo`/`.bin` | 40 B por valor (nonce de 24 + etiqueta de 16) |
+| cabeçalho do `.reg` | 128 → 192 bytes, versão 5 | 64 B por volume |
+
+**Por que `Memo`/`Bin` não entram na faixa do payload.** O que mora no payload
+deles é um **ponteiro de 16 bytes** para o outro arquivo. Cifrar o ponteiro não
+esconde nada — o conteúdo está no `.memo`, em claro, ao alcance de quem copiou
+o diretório. Seria a aparência da proteção com o conteúdo aberto do lado. O
+conteúdo é selado antes de virar bloco, com nonce sorteado de 192 bits à frente
+(é para isso que o XChaCha20 existe).
+
+**O nonce, e o que impede repeti-lo.** Repetir o par (chave, nonce) é o único
+jeito de quebrar isto sem quebrar a matemática — e um slot do `.reg` é
+reescrito **no mesmo lugar** a cada alteração, onde o endereço não serve de
+contador. O nonce de 192 bits carrega três coisas:
+
+```text
+[rowid u64][volume u32][versão da linha u32][tempero u64 sorteado]
+```
+
+- **onde mora** separa dois slots;
+- **a versão** separa duas gravações do mesmo slot — é o contador que o formato
+  já tinha;
+- **os 8 bytes sorteados** ficam de pé quando o contador não fica. Uma gravação
+  perdida no cache do sistema antes do `fsync` faz a seguinte repetir a versão;
+  com 64 bits sorteados, repetir exige colisão de aniversário. Eles moram nos
+  bytes 16..24 do cabeçalho do slot, que **já eram reservados**: custam zero de
+  formato.
+
+O teste `regravar_a_mesma_linha_nunca_repete_o_texto_cifrado` grava 200 vezes o
+**mesmo** conteúdo e exige 200 textos cifrados diferentes.
+
+**O dado associado amarra o endereço.** A etiqueta cobre
+`[volume][rowid][versão]`. Sem isso, quem tem o arquivo e não tem a chave ainda
+poderia **embaralhar as linhas**: copiar os bytes do slot 5 sobre o slot 9,
+consertar o CRC-32 — que é público — e a linha 9 passaria a devolver o conteúdo
+da 5 sem erro nenhum. Cifra sem essa amarração protege o conteúdo e não protege
+a tabela. O teste `trocar_o_corpo_de_uma_linha_pela_outra_nao_passa` faz
+exatamente esse ataque, com o espelho estragado junto.
+
+O `status` fica **fora** do dado associado, de propósito: excluir regrava só os
+24 bytes de cabeçalho e não toca no corpo, e um `status` amarrado faria o corpo
+de toda linha excluída parar de abrir.
+
+**O CRC-32 cobre o que está no disco**, e não o texto claro. É o que deixa
+`reparar` e o espelho `.bkp` trabalharem **sem a chave** — a mesma escolha da
+§8 — e um CRC do claro guardado ao lado do cifrado seria um oráculo de 32 bits
+para quem quisesse adivinhar o conteúdo.
+
+### 10.3 O que continua em claro
+
+Toda escolha aqui deixa algo em claro. Esconder isso seria pior que não cifrar.
+
+| continua legível | por quê |
+|---|---|
+| **o `.ndx` sobre a coluna marcada** | um índice guarda a chave para poder **comparar**. Cifrar a chave destrói a ordem, e sem ordem não há B+tree — seria trocar o índice por uma varredura |
+| toda coluna **não** marcada | é a escolha (c): o motor cifra o que foi declarado |
+| o **bitmap de nulos** | diz **quais** linhas têm a coluna marcada vazia |
+| o `rowid`, a versão da linha, o status do slot | é por eles que se anda no arquivo sem a chave — e é o que faz o reparo funcionar |
+| o **esquema**, inclusive o nome da coluna marcada | `porCPF` já conta o que a tabela guarda |
+| o **tamanho** de um `Memo` marcado | o bloco tem o comprimento no cabeçalho |
+| o **`.ndx` inteiro**, o `.pag`, o catálogo | não entraram nesta rodada |
+| **o tráfego** | continua sem TLS (§7). A cifra é do arquivo em repouso |
+
+Isto está num teste, e não só aqui:
+`o_indice_sobre_a_coluna_marcada_continua_em_claro` **prova o vazamento** —
+procura o nome dentro do `.ndx` e exige achá-lo. Se um dia o `.ndx` for
+cifrado, o teste cai, e cair é o aviso para apagar esta linha da tabela acima.
+
+> **Um banco que diz «cifrado» e vaza a chave pelo índice está mentindo para o
+> usuário.** Uma tabela com coluna marcada e índice sobre ela protege o
+> `.reg` copiado, e **não** protege contra quem copiou o `.ndx` junto. Quem
+> precisa dos dois deve tirar o índice da coluna sensível.
+
+### 10.4 O modo FrogCript
+
+O **FrogCript** é do Adriano Boller (Wx Soluções). Ele parte o texto pelo
+**pulo** — as casas 5, 10, 15… saem —, inverte ou não o extraído conforme a
+**direção**, e envolve os dois lados em duas camadas, com a direção escondida
+dentro da segunda:
+
+```text
+AEAD( AEAD(resto) )  |  AEAD( d + AEAD(extraído) + d )
+```
+
+Ele entra como **modo escolhido**, e o padrão do motor continua sendo o AEAD
+direto. Três coisas precisam estar ditas sem rodeio e sem desdém.
+
+**Primeira: o que ele acrescenta.** O formato. O pacote tem a forma que o autor
+definiu, e um leitor que não conheça a convenção não remonta o texto nem depois
+de abrir os dois lados. Mais o salto e o separador personalizáveis (§10 do
+documento dele), que quem personaliza passa a tratar como parte do segredo.
+
+**Segunda: o que ele não acrescenta.** Força criptográfica. A frase é do próprio
+autor, na §9 do documento dele:
+
+> O pulo 5 e a direção **não são a chave**. A chave é a senha.
+
+A transposição é uma permutação **fixa e pública**: quem tem o texto cifrado só
+a vê depois de abrir o AEAD, e quem abriu o AEAD já tem tudo. Duas camadas com
+a **mesma** chave também não somam segredo. O que segura o conteúdo é o AEAD e
+o tamanho da senha — exatamente como no modo padrão.
+
+**Terceira: o que ele custa.** Medido, não estimado (`--example
+custo-da-cifra`, valor de 22 bytes):
+
+| | tempo | tamanho |
+|---|---|---|
+| AEAD direto | **0,10 µs** | 38 B |
+| FrogCript, como está aqui | **2,77 µs** (27×) | 189 B (5×) |
+| `frogcript.py` de referência | **1 137 ms** (410 000×) | ~397 B (18×) |
+
+O 1,1 s por valor não é exagero: o `frogcript.py` deriva a chave com
+**PBKDF2 de 200 000 iterações a cada uma das quatro selagens**, com sal próprio
+— e um PBKDF2 de 210 000 custa **298 ms** medidos nesta máquina. Cifrar uma
+tabela de 100 mil linhas com ele levaria **31 horas**. Aqui a chave é derivada
+**uma vez por arquivo** e guardada, que é a mesma decisão da §8.
+
+No `.reg`, como o pacote **não cabe** no lugar do texto claro, a faixa marcada
+do payload vai a zeros e o pacote inteiro mora no rabo do slot: o custo de
+disco é `largura marcada + 167` bytes por linha, contra 16 no modo padrão. Para
+um `Str(40)`, são **207 bytes por linha em vez de 16**.
+
+E o separador continua mostrando que existem dois blocos — o autor já diz isso
+na §3 dele.
+
+#### O AES: a decisão que não é minha
+
+O FrogCript de referência usa **AES-256-GCM**. O `cifra.rs` desta casa **não
+tem AES**, e o cabeçalho dele explica por quê: AES portátil, sem a instrução do
+processador, se escreve com tabelas, e tabela em cache vaza a chave pelo tempo
+de acesso.
+
+O modo aqui implementado mantém a **estrutura** do FrogCript sobre o
+ChaCha20-Poly1305 já conferido contra o RFC 8439. A consequência, escrita e não
+escondida:
+
+> **Um pacote produzido aqui NÃO abre no `frogcript.py`, e um pacote produzido
+> pelo `frogcript.py` NÃO abre aqui.** A estrutura é a mesma; a cifra de dentro
+> não é. **Não há compatibilidade com o que foi cifrado por fora em Python.**
+
+Escrever AES aqui para ganhar essa compatibilidade seria pôr alguns milhares de
+linhas novas de código criptográfico no caminho de todo dado pessoal do banco,
+para substituir uma cifra que já tem vetor oficial nos testes. **É uma decisão
+de peso e é do dono** — este documento a coloca na mesa com o custo, não a toma.
+
+Se ela for tomada um dia, o caminho honesto é AES **bitsliced** (tempo
+constante, sem tabela), e não a versão de tabela: a de tabela seria trocar «não
+tem AES» por «tem um AES que vaza a chave por tempo», que é pior que não ter.
+
+#### Como se liga
+
+```json
+"cifra": {
+  "ligada": true,
+  "senha_env": "PHXSQL_CIFRA",
+  "iteracoes": 210000,
+  "modo": "frogcript",
+  "salto": 5,
+  "separador": "|"
+}
+```
+
+Sem `modo`, **`aead`** — e sem a seção `cifra` inteira, nada muda. O modo vai
+gravado **no arquivo**, e não só na configuração: trocar `modo` no
+`config.json` numa terça não pode fazer toda tabela gravada antes parar de
+abrir com a mensagem errada, mandando procurar corrupção onde só há um
+interruptor trocado. O teste é `o_modo_sai_do_arquivo_e_nao_da_configuracao`.
+
+O salto e o separador **não** vão gravados: o autor pede que sejam tratados
+como parte do segredo, e segredo não se grava ao lado do dado que ele protege.
+Quem os perde perde o dado, como quem perde a senha —
+`salto_e_separador_personalizados_viram_parte_do_segredo` prova os dois lados.
+A resposta de `config` oculta os dois **quando saem do padrão**, pela mesma
+razão: o padrão está publicado, um personalizado é segredo.
+
+### 10.5 A chave
+
+**Chave ao lado do dado protege pouco**, e isso já estava escrito na §8: quem
+lê o `config.json` tem a senha. O que a cifra protege é o **arquivo copiado**
+— disco levado, *backup* vazado, cópia numa máquina que não é esta.
+
+O que existe hoje:
+
+- a chave sai de **PBKDF2-SHA256** sobre a senha, com **sal por arquivo** (16
+  bytes, em claro no cabeçalho — sal não é segredo, o papel dele é impedir que
+  a mesma senha derive a mesma chave em dois arquivos);
+- **210 000 iterações** por padrão, com piso de 10 000;
+- a derivação é **guardada por (sal, iterações)**, porque o servidor abre e
+  fecha a tabela a cada pedido e 298 ms por abertura transformaria a cifra numa
+  escolha entre proteger e responder;
+- **trocar a senha limpa esse cache** — sem isso, um servidor que já tivesse
+  aberto o arquivo continuaria aceitando a senha antiga. *(Defeito encontrado
+  ao escrever o teste `senha_errada_e_falta_de_senha_param_na_abertura`: ele
+  passava com a senha errada.)*
+- uma **prova da chave** de 16 bytes no cabeçalho recusa a senha errada **na
+  abertura**, e não na primeira leitura de linha — que numa tabela recém-criada
+  seria nunca.
+
+**O que ainda não existe, e o desenho para quando existir:**
+
+- **Envelope.** Hoje a chave do arquivo *é* a derivada da senha. O certo é uma
+  **chave de tabela sorteada**, guardada no cabeçalho **envelopada** pela chave
+  mestra derivada da senha (`AEAD(chave_mestra, chave_da_tabela)`, 32 + 16
+  bytes). Com ela, trocar a senha mestra reescreve **48 bytes por arquivo** em
+  vez de reescrever a tabela inteira. É a mudança que precisa entrar **cedo**,
+  enquanto não há dado em produção — depois vira migração.
+- **Rotação.** Com o envelope, `rekey` é: abrir o envelope com a senha velha,
+  fechar com a nova, regravar o cabeçalho. Sem o envelope, rotacionar exige
+  reescrever e recifrar **toda linha**, e é por isso que hoje **não há
+  rotação**: trocar `cifra.senha` faz os arquivos gravados com a antiga
+  pararem de abrir, com o erro da prova da chave dizendo exatamente isso.
+- **Argon2id (RFC 9106).** O PBKDF2 não resiste a GPU; o Argon2id resiste. Ele
+  **não entrou nesta rodada** e o motivo é ordem de risco: mexer no hash de
+  senha (`senha.rs`) toca o login de todo mundo, e a regra da casa manda que o
+  teste que mais importa seja o do comportamento velho
+  (`senha_velha_continua_entrando`). É trabalho de uma frente própria, com o
+  vetor do RFC 9106 no teste e o hash antigo continuando a abrir.
+
+**Quando alguém erra a senha**, a prova da chave falha e a abertura para com
+`Autorizacao`, nomeando o arquivo e o campo do `config.json`. **Sem** senha, o
+erro é outro e diz onde preenchê-la. Nenhum dos dois devolve lixo, e nenhum dos
+dois cifra por cima.
+
+### 10.6 Ligar a cifra não cifra o que já existe
+
+Vale para as tabelas criadas **daqui para a frente**, pela mesma razão da §8: o
+`.reg` não se reescreve inteiro ao abrir, e não há comando de recifragem. Uma
+tabela criada antes continua na versão 4 e continua abrindo — o teste
+`tabela_escrita_antes_da_cifra_continua_abrindo` grava sem cifra, liga a cifra,
+lê, insere e altera.
+
+**Desligar também não decifra.** Um `.reg` da versão 5 aberto sem a chave para
+com erro claro, e não devolve texto cifrado como se fosse texto.
+
+E **desmarcar a coluna não decifra**: um arquivo que diz ter cifrado com um
+esquema que não tem mais coluna marcada é recusado, em vez de devolver bytes
+cifrados como se fossem o nome do cliente.
+
+**Uma tabela sem coluna marcada nasce em claro mesmo com o cofre ligado.** Não
+há o que cifrar, e carimbá-la de cifrada custaria 16 bytes por linha e um
+cabeçalho maior para não proteger nada.
+
+### 10.7 O diário, a lixeira e a trilha
+
+**A decisão mais importante desta frente**, e ela não é sobre o `.reg`: *uma
+trilha que guarda em claro o que a tabela cifra anula a cifra.*
+
+Onde o motor grava o valor de uma linha, hoje:
+
+| onde | o que vai | como fica |
+|---|---|---|
+| `.memo`/`.bin` | o conteúdo | **cifrado**, quando a coluna é marcada |
+| `.trash` (lixeira) | o payload + o conteúdo dos externos | o externo vai **como está no bloco** — cifrado |
+| `.log` (imagem da linha) | idem | idem |
+| `.reason` | só o motivo escrito por gente | em claro, e é texto de operador |
+
+O conteúdo externo vai para a lixeira e para o diário **como está no bloco**, e
+não decifrado. Decifrar ali poria o texto claro dentro da imagem do diário e
+dentro da lixeira — exatamente o que a cifra da coluna existe para impedir.
+
+**O que ainda vai em claro na imagem: a faixa inline.** A imagem da linha
+carrega o *payload* como ele foi montado, antes de o `.reg` selá-lo — então uma
+coluna marcada **inline** aparece em claro dentro da imagem. Isso é seguro **só
+porque o corpo do diário é cifrado pelo cofre** (§8) — e os dois vêm da mesma
+seção `cifra`, com a mesma senha: não há como ligar a cifra de coluna sem ligar
+o cofre.
+
+Sobra **um** buraco real, e ele fica escrito: um volume de `.log` ou de
+`.trash` que **já existia em claro** antes de a cifra ser ligada continua em
+claro, e receberá imagens novas em claro. A saída é a mesma da §8 — a proteção
+vale para os volumes criados daqui em diante; para o histórico, copiar para uma
+tabela nova com a cifra já ligada.
+
+**Se a trilha de auditoria (`.lgpd`) passar a gravar valor-antes e
+valor-depois de coluna marcada, ela tem de gravar o texto cifrado ou uma marca
+de redação — nunca o claro.** Gravar o claro numa trilha que ninguém cifra
+desfaz tudo o que está nesta seção, e desfaz em silêncio.
+
+### 10.8 A replicação de uma coluna cifrada
+
+O conteúdo externo viaja **cifrado** na imagem, então a réplica só o abre se
+tiver a **mesma chave** — e a chave sai da senha **mais o sal do arquivo**, que
+é sorteado por arquivo. Consequência, dita em vez de descoberta:
+
+> **Replicar uma tabela com coluna `Memo`/`Bin` marcada só funciona entre
+> servidores que compartilham a senha da cifra E o sal do arquivo de origem.**
+> Sem isso, a réplica recebe bytes que não abre.
+
+É o mesmo limite que o envelope da §10.5 resolveria: com a chave da tabela
+sorteada e envelopada, ela pode ser entregue à réplica sem entregar a senha
+mestra. Enquanto o envelope não existe, a recomendação é **não replicar tabela
+com coluna externa marcada** — e o tráfego continua sem TLS (§7), o que é o
+problema maior nessa mesma frase.
+
+### 10.9 O que os testes provam, e a prova real
+
+Em `crates/phxsql-store/tests/cifra-dos-dados.rs`,
+`crates/phxsql-store/tests/cifra-modo-frogcript.rs` e nos módulos
+`phxsql_core::cifra` e `phxsql_core::frogcript`:
+
+| o que se prova | como |
+|---|---|
+| tabela escrita antes da cifra continua abrindo | grava em claro, liga a cifra, lê, insere e altera; confere que a versão do arquivo **não** mudou |
+| sem a seção `cifra`, nada muda | exige que o nome apareça legível no `.reg`, no `.memo` e no `.ndx` |
+| o dado some | procura o texto claro no `.reg`, no `.memo` **e no espelho `.bkp`** |
+| a chave errada e a falta de chave param na abertura | confere a classe do erro e o texto |
+| embaralhar as linhas não passa | copia o slot 5 sobre o 9 **com o CRC certo**, estraga o espelho junto, e exige erro |
+| o nonce nunca se repete | grava 200 vezes o **mesmo** conteúdo e exige 200 textos cifrados diferentes |
+| o `.ndx` vaza — de propósito | procura o nome dentro do `.ndx` e exige **achá-lo** |
+| o custo do FrogCript é o escrito | subtrai o `slot_size` em claro do cifrado e compara com a conta do módulo |
+| o modo sai do arquivo | grava em AEAD, troca o processo para FrogCript, e a tabela antiga continua abrindo |
+| salto e separador são segredo | grava com `(7, '#')`, tenta abrir com `(5, '|')`, exige erro que nomeia o separador |
+| HChaCha20 e XChaCha20-Poly1305 | **vetores oficiais** do draft-irtf-cfrg-xchacha-03, §2.2.1 e §A.3.1 |
+| o pulo do FrogCript | o exemplo da §7 do documento do autor, letra por letra |
+| o pulo conta caractere, e não byte | `ADRIANO JOSÉ BOLLER` — o `É` ocupa dois bytes e uma casa |
+| o gerador de bytes do processo não repete | 5 000 blocos de 16 bytes, todos distintos e nenhum zerado |
+
+**Prova real, com o defeito reposto:**
+
+| defeito reposto | o que caiu |
+|---|---|
+| tirar o `aad` do `montar_slot`/`abrir_slot` | `trocar_o_corpo_de_uma_linha_pela_outra_nao_passa` passa a **ler a linha trocada** |
+| tirar a `versão` e o `tempero` do nonce | `regravar_a_mesma_linha_nunca_repete_o_texto_cifrado` acha texto cifrado repetido |
+| não limpar o cache de derivadas em `definir` | `senha_errada_e_falta_de_senha_param_na_abertura` **abre com a senha errada** — foi assim que o defeito apareceu |
+| trocar `chars()` por `bytes()` no `pular` | `o_pulo_conta_caractere_e_nao_byte` devolve texto inválido |
+| tirar a `FLAG_FROGCRIPT` da leitura do material | `o_modo_sai_do_arquivo_e_nao_da_configuracao` cai |
+
+### 10.10 Aprendizado, inclusive o infrutífero
+
+**A hipótese que morreu, e o número que a matou.** «Cifrar o `.ndx` custa 127 µs
+por linha, doze vezes a inserção inteira» — errado por **550×**. A conta usava
+*toques de página* (10,86 por linha) onde o certo era *gravações de página*
+(0,02 por linha): o cache com *write-back* absorve o resto. O custo real seria
+**0,23 µs por linha**, 2,2% da inserção. A recusa virou aceitação com o número
+na mesa — e o `.ndx` só ficou de fora porque a escolha do dono foi por coluna,
+não por preço.
+
+**O corolário:** *toque de página não é gravação de página.* É a terceira vez
+que este projeto tropeça na mesma pedra por outro caminho (o CRC do `.ndx`, o
+cabeçalho por linha, e agora este).
+
+**O que a medição comprou de graça.** O AEAD custa **0,585 µs** para 128 bytes,
+dos quais **0,12 µs são a alocação do `Vec`** — 40% do total nesse tamanho, e
+quase nada a 4 KiB. Uma API que sele no lugar devolveria ~1% da inserção. Não
+entrou: 1% não paga uma API nova no caminho de todo dado sensível, e o número
+fica escrito para quem um dia precisar dele.
+
+**O que a leitura do FrogCript comprou.** O documento do autor é honesto na §9,
+e a implementação de referência é 410 000× mais cara do que ele imagina — não
+pela cifra, e sim por derivar a chave quatro vezes **por valor**. O erro não é
+de criptografia, é de onde a derivação mora. Aqui ela mora no arquivo, uma vez,
+e é o mesmo motivo pelo qual a §8 guarda a chave derivada.

@@ -79,8 +79,8 @@ offset(rowid) = data_offset + (rowid - 1) * slot_size
 | Off | Tam | Campo |
 |----:|----:|---|
 | 0 | 8 | assinatura `PHXREG\0\0` |
-| 8 | 2 | versão do formato (4) |
-| 10 | 2 | tamanho do cabeçalho (128) |
+| 8 | 2 | versão do formato (**4** em claro, **5** com coluna cifrada) |
+| 10 | 2 | tamanho do cabeçalho (**128** na 4, **192** na 5) |
 | 12 | 4 | número do volume |
 | 16 | 4 | `slot_size` |
 | 20 | 8 | `slot_count` — slots alocados, inclusive excluídos (só o volume 1) |
@@ -97,11 +97,58 @@ offset(rowid) = data_offset + (rowid - 1) * slot_size
 | 100 | 8 | `slots_no_balde` — slots já usados **neste** volume (só na partição alfanumérica) |
 | 108 | 8 | `marcadas` — linhas vivas marcadas como excluídas (só o volume 1) |
 | 116 | 8 | reservado |
-| 124 | 4 | CRC-32 dos bytes 0..124 |
+| 124 | 4 | CRC-32 dos bytes 0..124 — **só na versão 4** |
+
+Na **versão 5** o cabeçalho tem 192 bytes: tudo acima fica exatamente onde
+está, o **material de cifra** entra em 128..168 e o CRC-32 vai para 188,
+cobrindo os bytes 0..188.
+
+| Off | Tam | Campo (só na versão 5) |
+|----:|----:|---|
+| 128 | 1 | sinais — bit 0: cifrado; bit 1: modo FrogCript |
+| 132 | 4 | iterações do PBKDF2 |
+| 136 | 16 | sal do PBKDF2, em claro (sal não é segredo) |
+| 152 | 16 | prova da chave — etiqueta de uma mensagem vazia |
+| 188 | 4 | CRC-32 dos bytes 0..188 |
+
+A versão 5 nasce **só** quando duas coisas valem ao mesmo tempo: o cofre está
+ligado (`cifra.ligada`) e o esquema tem ao menos uma coluna marcada como dado
+pessoal. Uma tabela sem coluna marcada nasce na 4 mesmo com o cofre ligado — não
+há o que cifrar. A **4 continua sendo lida e gravada** como sempre foi.
 
 Logo após o cabeçalho vem o **esquema serializado** (`schema_len` bytes), e
 `data_offset` é o próximo múltiplo de 64. A tabela é auto-descritiva: o
 conjunto de arquivos basta para reabrir os dados, sem dicionário externo.
+
+### O slot cifrado (versão 5)
+
+```
+slot em claro:  [status 1][flags 1][res 2][CRC-32 4][versão 8][tempero 8][payload]
+slot cifrado:   [status 1][flags 1][res 2][CRC-32 4][versão 8][tempero 8][payload][etiqueta 16]
+                                                              ^^^^^^^^^^           ^^^^^^^^^^^
+                                                      8 bytes antes reservados     nova
+```
+
+Dentro do payload, **só as faixas das colunas marcadas** vão cifradas — no
+mesmo *offset* e com o mesmo tamanho, porque o ChaCha20 é cifra de fluxo. As
+demais colunas, o bitmap de nulos e o cabeçalho do slot ficam em claro.
+
+- `slot_size` cresce **16 bytes**, uma vez: `offset = data_offset + (rowid - 1)
+  * slot_size` continua valendo, e o endereço continua saindo de uma conta.
+- O **CRC-32 cobre o que está no disco** (as faixas já cifradas + a etiqueta), e
+  não o texto claro: é o que deixa `reparar` e o espelho `.bkp` funcionarem sem
+  a chave.
+- O `tempero` são 8 bytes sorteados **a cada gravação**, nos bytes 16..24 que já
+  eram reservados. Ele entra no nonce junto com o `rowid`, o volume e a versão
+  da linha. Ver `SEGURANCA.md` §10.2.
+- No modo **FrogCript** o pacote não cabe no lugar do claro: a faixa marcada vai
+  a **zeros** e o pacote inteiro (largura marcada + 167 bytes) mora depois do
+  payload.
+
+Colunas `Bin` e `Memo` marcadas **não** entram na faixa — o payload delas é um
+ponteiro, e cifrar o ponteiro não esconde o conteúdo. O conteúdo é selado antes
+de virar bloco do `.bin`/`.memo`, com o nonce de 24 bytes à frente:
+`[nonce 24][conteúdo cifrado][etiqueta 16]`, 40 bytes por valor.
 
 O bloco de esquema é imutável, com **uma** exceção: `declarar_fk` e
 `excluir_fk` o regravam para mudar a lista de chaves estrangeiras — que é
