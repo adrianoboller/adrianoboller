@@ -84,6 +84,11 @@ pub(crate) const OPS_ESCRITA: &[&str] = &[
     // os motivos, nao -- essas duas so leem, e continuam valendo no modo
     // somente leitura, que e justamente quando alguem esta investigando.
     "restaurar",
+    // Restaurar um backup grava um database inteiro de uma vez -- e a maior
+    // escrita que existe aqui. `backups`, que so lista o que ha na pasta, nao
+    // entra: ler a pasta nao muda byte nenhum, e e justamente o que se quer
+    // poder fazer num servidor somente-leitura antes de decidir.
+    "restaurar_backup",
     "esvaziar_lixeira",
     // As tres que gravam na tabela de textos da tela. Num servidor somente
     // leitura semear nao pode gravar, e as outras duas apagam trabalho.
@@ -5119,6 +5124,8 @@ impl Servidor {
             "backup" => self.op_backup(p, sessao),
             "reparar" => self.op_reparar(p, sessao),
             "conferir_backup" => self.op_conferir_backup(p),
+            "backups" => self.op_backups(p, sessao),
+            "restaurar_backup" => self.op_restaurar_backup(p, sessao),
             // O nome que o Adriano pediu, e o nome em portugues do projeto.
             // Sao a mesma operacao: a interface usa um, o script usa o outro.
             "SelectMemory" | "selectmemory" | "selecionar_memoria" => {
@@ -8579,6 +8586,303 @@ impl Servidor {
                 Json::Lista(r.divergencias.iter().map(Json::texto_de).collect()),
             ),
         ]))
+    }
+
+    /// `backups`: o que ha na pasta, com o que cada arquivo traz dentro.
+    ///
+    /// Sem esta operacao, restaurar comeca por digitar um caminho de cabeca --
+    /// e o backup que se acha digitando e o que a gente lembra, nao o que
+    /// existe. De cada arquivo le SO o manifesto: num ZIP isso e o fim do
+    /// arquivo mais uma entrada, entao listar dez copias de um gigabyte nao
+    /// custa dez gigabytes.
+    ///
+    /// Arquivo ilegivel entra na lista dizendo que e ilegivel. Sumir com ele
+    /// seria esconder justamente o backup que precisa de atencao.
+    fn op_backups(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let pedida = p.texto_ou("pasta", "").trim().to_string();
+        let caminho = if pedida.is_empty() {
+            self.config.backup.destino.clone()
+        } else {
+            std::path::PathBuf::from(&pedida)
+        };
+        let pasta = caminho.display().to_string();
+        let mut itens = Vec::new();
+        let mut escondidos = 0u64;
+        if caminho.is_dir() {
+            let mut achados: Vec<std::path::PathBuf> = std::fs::read_dir(&caminho)?
+                .filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|c| {
+                    // O que tem cara de backup nosso: um `.zip` ou uma pasta
+                    // com manifesto dentro. O resto da pasta nao e da nossa
+                    // conta -- alguem pode guardar outra coisa ali.
+                    c.extension().and_then(|e| e.to_str()) == Some("zip")
+                        || c.join(phxsql_store::backup::MANIFESTO).is_file()
+                })
+                .collect();
+            // Do mais novo para o mais velho: o nome ja ordena por data, e o
+            // backup que alguem procura e quase sempre o ultimo.
+            achados.sort();
+            achados.reverse();
+
+            for arquivo in achados {
+                let nome = arquivo
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                let tamanho = std::fs::metadata(&arquivo).map(|m| m.len()).unwrap_or(0);
+                let mut campos = vec![
+                    ("nome", Json::texto_de(&nome)),
+                    ("caminho", Json::texto_de(arquivo.display().to_string())),
+                    ("no_disco", Json::de_u64(tamanho)),
+                ];
+                match phxsql_store::restaurar::conteudo(&arquivo) {
+                    Ok(c) => {
+                        // Banco que esta sessao nao administra nao aparece na
+                        // lista de restauraveis: oferecer o que o portao vai
+                        // negar e mandar montar um pedido para ouvir nao.
+                        let (visiveis, ocultos): (Vec<String>, Vec<String>) = c
+                            .databases
+                            .into_iter()
+                            .partition(|db| self.poder_no_backup(sessao, db).is_ok());
+                        escondidos += ocultos.len() as u64;
+                        campos.extend([
+                            ("legivel", Json::Bool(true)),
+                            ("zip", Json::Bool(c.zip)),
+                            ("quando", Json::texto_de(&c.quando)),
+                            ("phxsql", Json::texto_de(&c.versao)),
+                            ("arquivos", Json::de_u64(c.arquivos as u64)),
+                            ("bytes", Json::de_u64(c.bytes)),
+                            (
+                                "escopo",
+                                Json::texto_de(match c.escopo {
+                                    phxsql_store::restaurar::Escopo::Raiz => "raiz",
+                                    phxsql_store::restaurar::Escopo::Database(_) => "database",
+                                }),
+                            ),
+                            // Diz se o escopo veio ESCRITO ou foi deduzido: o
+                            // backup mais velho que a restauracao nao traz o
+                            // campo, e a tela nao deve afirmar o que deduziu.
+                            ("escopo_declarado", Json::Bool(c.declarado)),
+                            (
+                                "databases",
+                                Json::Lista(visiveis.iter().map(Json::texto_de).collect()),
+                            ),
+                        ]);
+                    }
+                    Err(e) => campos.extend([
+                        ("legivel", Json::Bool(false)),
+                        ("erro", Json::texto_de(e.to_string())),
+                    ]),
+                }
+                itens.push(Json::objeto(campos));
+            }
+        }
+        Ok(Json::objeto(vec![
+            ("pasta", Json::texto_de(&pasta)),
+            ("existe", Json::Bool(caminho.is_dir())),
+            ("total", Json::de_u64(itens.len() as u64)),
+            ("escondidos", Json::de_u64(escondidos)),
+            ("backups", Json::Lista(itens)),
+        ]))
+    }
+
+    /// O portao PROPRIO da restauracao: o poder sobre o que vem de DENTRO do
+    /// backup.
+    ///
+    /// O portao geral confere o campo `"database"` do pedido -- que aqui e o
+    /// DESTINO, o nome novo. O database que vem de dentro do backup nao tem
+    /// campo nenhum no pedido, e e ele que carrega o dado. Sem esta
+    /// conferencia bastaria administrar um banco de rascunho para restaurar
+    /// dentro dele o backup da folha de pagamento e ler tudo: a mesma porta
+    /// dos fundos do `juntar` e do `unir`, num campo que o portao geral nao
+    /// tem como enxergar.
+    fn poder_no_backup(&self, sessao: &Sessao, database: &str) -> Result<()> {
+        let Some(usuario) = sessao.usuario.as_ref() else {
+            // Sem usuario e o token de servico, que ja passou pelo portao 1.
+            return Ok(());
+        };
+        if usuario.pode_em(database, "", Atividade::Administrar) {
+            return Ok(());
+        }
+        Err(PhxError::Autorizacao(format!(
+            "{} nao tem permissao de administrar em {database}, que e o \
+             database que vem dentro deste backup",
+            usuario.login
+        )))
+    }
+
+    /// `restaurar_backup`: um database de dentro de um backup vira um database
+    /// deste servidor.
+    ///
+    /// # Os dois modos
+    ///
+    /// * `"modo":"novo"` (o padrao) grava com OUTRO nome. Nao destroi nada,
+    ///   nao precisa da porta de dados parada, e a copia inteira acontece fora
+    ///   da trava -- so a troca final, que e um `rename`, entra nela.
+    /// * `"modo":"por_cima"` substitui um database que ja existe. Exige
+    ///   `"confirmar":true` e a **porta de dados parada**, porque o que ela
+    ///   troca e o chao debaixo de quem esta lendo. O database anterior nao e
+    ///   apagado: sai da raiz e o caminho volta na resposta.
+    ///
+    /// `"simular":true` le e confere o manifesto e devolve o que ha dentro,
+    /// sem escrever nada -- e o que a tela usa para mostrar o conteudo antes
+    /// de alguem decidir.
+    fn op_restaurar_backup(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        use phxsql_store::restaurar::{Escopo, Preparada};
+
+        let origem = p.texto_ou("origem", "").trim().to_string();
+        if origem.is_empty() {
+            return Err(PhxError::Esquema(
+                "informe \"origem\": o .zip ou a pasta do backup".into(),
+            ));
+        }
+        let caminho = std::path::PathBuf::from(&origem);
+        let conteudo = phxsql_store::restaurar::conteudo(&caminho)?;
+
+        // Qual database de dentro do backup. Quando so ha um, nao ha o que
+        // escolher -- pedir o nome de qualquer jeito seria burocracia.
+        let pedido_de = p.texto_ou("de", "").trim().to_string();
+        let de = match (&conteudo.escopo, pedido_de.as_str()) {
+            (Escopo::Database(n), "") => n.clone(),
+            (_, "") if conteudo.databases.len() == 1 => conteudo.databases[0].clone(),
+            (_, "") => {
+                return Err(PhxError::Esquema(format!(
+                    "este backup tem {} databases dentro; diga em \"de\" qual restaurar: {}",
+                    conteudo.databases.len(),
+                    conteudo.databases.join(", ")
+                )))
+            }
+            (_, escolhido) => escolhido.to_string(),
+        };
+        if phxsql_store::catalogo::nome_hostil(&de) {
+            return Err(PhxError::Esquema(format!("database {de:?} invalido")));
+        }
+        self.poder_no_backup(sessao, &de)?;
+
+        let simular = p.booleano_ou("simular", false);
+        let tabelas = phxsql_store::restaurar::tabelas_de(&caminho, &de)?;
+        if simular {
+            return Ok(Json::objeto(vec![
+                ("simulado", Json::Bool(true)),
+                ("origem", Json::texto_de(&origem)),
+                ("zip", Json::Bool(conteudo.zip)),
+                ("de", Json::texto_de(&de)),
+                ("quando", Json::texto_de(&conteudo.quando)),
+                ("phxsql", Json::texto_de(&conteudo.versao)),
+                ("arquivos", Json::de_u64(conteudo.arquivos as u64)),
+                ("bytes", Json::de_u64(conteudo.bytes)),
+                ("escopo_declarado", Json::Bool(conteudo.declarado)),
+                (
+                    "databases",
+                    Json::Lista(conteudo.databases.iter().map(Json::texto_de).collect()),
+                ),
+                (
+                    "tabelas",
+                    Json::Lista(tabelas.iter().map(Json::texto_de).collect()),
+                ),
+                (
+                    "aviso",
+                    Json::texto_de(
+                        "nada foi escrito: isto e so a leitura do manifesto. O SHA-256 \
+                         de cada arquivo e conferido na restauracao de verdade, antes \
+                         de o destino ser tocado",
+                    ),
+                ),
+            ]));
+        }
+
+        let destino = p.texto_ou("database", "").trim().to_string();
+        if destino.is_empty() {
+            return Err(PhxError::Esquema(
+                "informe \"database\": o nome com que o backup vai ser restaurado".into(),
+            ));
+        }
+        let modo = p.texto_ou("modo", "novo").trim().to_lowercase();
+        let por_cima = match modo.as_str() {
+            "novo" | "" => false,
+            "por_cima" | "porcima" | "substituir" => true,
+            outro => {
+                return Err(PhxError::Esquema(format!(
+                    "modo {outro:?} nao existe: use \"novo\" ou \"por_cima\""
+                )))
+            }
+        };
+
+        if por_cima {
+            // Confirmacao explicita, como no `esvaziar_lixeira`: e a unica
+            // operacao aqui que substitui um database inteiro, e um cliente
+            // que erre o campo `modo` nao pode substituir nada por acidente.
+            if !p.booleano_ou("confirmar", false) {
+                return Err(PhxError::Esquema(format!(
+                    "restaurar POR CIMA substitui o database {destino} inteiro. \
+                     Mande \"confirmar\":true junto se e isso mesmo"
+                )));
+            }
+            // A porta de dados parada e o que torna a troca honesta: com ela no
+            // ar, um cliente pode estar no meio de uma leitura do database que
+            // sai debaixo dele. A interface web NAO para junto -- e por ela que
+            // se restaura e por ela que a porta volta.
+            if self.porta_no_ar.load(Ordering::SeqCst) {
+                return Err(PhxError::Esquema(
+                    "para restaurar POR CIMA, pare a porta de dados antes \
+                     ({\"op\":\"servico_parar\"}, ou o botao Start/Stop). A interface \
+                     web continua no ar, e e por ela que a porta volta. Restaurar com \
+                     OUTRO nome nao exige nada disso"
+                        .into(),
+                ));
+            }
+            let abertas = self.conexoes.load(Ordering::SeqCst);
+            if abertas > 0 {
+                return Err(PhxError::Esquema(format!(
+                    "a porta de dados esta parada, mas {abertas} conexao(oes) continuam \
+                     abertas e podem estar lendo {destino}. Espere elas acabarem ou \
+                     encerre pela tela de conexoes"
+                )));
+            }
+        }
+
+        // O caro acontece FORA da trava: ler o backup, conferir o SHA-256 de
+        // cada arquivo e escrever o palco. Segurar a trava por esse tempo
+        // pararia o servidor inteiro pela duracao da copia.
+        let inicio = Instant::now();
+        let preparada = Preparada::preparar(&caminho, &self.config.base, &de)?;
+
+        // A troca entra na trava: e um `rename`, e o que ela impede e dois
+        // pedidos criarem o mesmo database ao mesmo tempo.
+        let r = {
+            let _trava = self.travar_dados()?;
+            preparada.confirmar(&self.config.base, &destino, por_cima)?
+        };
+
+        let mut campos = vec![
+            ("database", Json::texto_de(&r.database)),
+            ("de", Json::texto_de(&r.de)),
+            ("origem", Json::texto_de(&origem)),
+            (
+                "modo",
+                Json::texto_de(if por_cima { "por_cima" } else { "novo" }),
+            ),
+            ("arquivos", Json::de_u64(r.arquivos as u64)),
+            ("bytes", Json::de_u64(r.bytes)),
+            (
+                "tabelas",
+                Json::Lista(r.tabelas.iter().map(Json::texto_de).collect()),
+            ),
+            ("substituiu", Json::Bool(r.substituiu)),
+            ("ms", Json::de_u64(inicio.elapsed().as_millis() as u64)),
+        ];
+        if let Some(onde) = &r.anterior_em {
+            campos.push(("anterior_em", Json::texto_de(onde)));
+            campos.push((
+                "aviso",
+                Json::texto_de(
+                    "o database que estava aqui NAO foi apagado: esta em \"anterior_em\", \
+                     fora da raiz de dados. Confira o restaurado antes de apagar aquilo",
+                ),
+            ));
+        }
+        Ok(Json::objeto(campos))
     }
 
     /// A impressao digital de uma tabela, para comparar duas copias.
@@ -16561,5 +16865,546 @@ mod testes_config_gravar {
         assert!(!s.espelho());
         assert!(!s.somente_leitura());
         assert_eq!(std::fs::read_to_string(&caminho).unwrap(), antes);
+    }
+}
+
+/// Restaurar um backup: os dois modos, a recusa do backup adulterado e o
+/// portao que o campo `"database"` do pedido nao alcanca.
+#[cfg(test)]
+mod testes_restaurar_backup {
+    use super::*;
+    use crate::usuarios::Cadastro;
+
+    fn dir_temp(nome: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!(
+            "phx-rst-{nome}-{}-{}",
+            std::process::id(),
+            crate::agora_ms()
+        ));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    fn servidor(dir: &std::path::Path, cadastro: Cadastro) -> Arc<Servidor> {
+        let c = Config {
+            base: dir.join("dados"),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            cadastro,
+            ..Config::default()
+        };
+        Servidor::novo(c).unwrap()
+    }
+
+    /// Dois bancos: `Comercial` com tres linhas e `Folha`, que existe para o
+    /// teste de permissao ter o que negar.
+    fn com_dados(dir: &std::path::Path, cadastro: Cadastro) -> Arc<Servidor> {
+        let s = servidor(dir, cadastro);
+        let ses = Sessao::default();
+        for db in ["Comercial", "Folha"] {
+            s.executar(
+                "criar_database",
+                &pedido(&format!(r#"{{"database":"{db}"}}"#)),
+                &ses,
+            )
+            .unwrap();
+            s.executar(
+                "criar_tabela",
+                &pedido(&format!(
+                    r#"{{"database":"{db}","tabela":"clientes",
+                        "colunas":[{{"nome":"id","tipo":"Int4","obrigatoria":true}},
+                                   {{"nome":"nome","tipo":"Str(20)"}},
+                                   {{"nome":"cidade","tipo":"Str(20)"}}],
+                        "indices":[{{"nome":"porId","colunas":["id"],"unico":true,"primario":true}}]}}"#
+                )),
+                &ses,
+            )
+            .unwrap();
+        }
+        for (id, nome, cidade) in [
+            (1, "Adriano", "Blumenau"),
+            (2, "Maria", "Joinville"),
+            (3, "Joao", "Itajai"),
+        ] {
+            s.executar(
+                "inserir",
+                &pedido(&format!(
+                    r#"{{"database":"Comercial","tabela":"clientes",
+                         "linha":{{"id":{id},"nome":"{nome}","cidade":"{cidade}"}}}}"#
+                )),
+                &ses,
+            )
+            .unwrap();
+        }
+        s
+    }
+
+    /// O backup em ZIP do banco `Comercial`, no diretorio de copias.
+    fn backup_zip(s: &Arc<Servidor>, dir: &std::path::Path) -> String {
+        let r = s
+            .executar(
+                "backup",
+                &pedido(&format!(
+                    r#"{{"destino":"{}","database":"Comercial","zip":true}}"#,
+                    dir.join("copias").display()
+                )),
+                &Sessao::default(),
+            )
+            .unwrap();
+        r.texto_ou("arquivo", "").to_string()
+    }
+
+    fn checksum(s: &Arc<Servidor>, db: &str) -> String {
+        s.executar(
+            "checksum",
+            &pedido(&format!(r#"{{"database":"{db}","tabela":"clientes"}}"#)),
+            &Sessao::default(),
+        )
+        .unwrap()
+        .texto_ou("checksum", "?")
+        .to_string()
+    }
+
+    /// **O caminho principal.** Restaurar com outro nome cria um database
+    /// integro, sem parar o servico e sem tocar no original.
+    #[test]
+    fn restaurar_com_outro_nome_cria_o_banco_integro() {
+        let dir = dir_temp("novonome");
+        let s = com_dados(&dir, Cadastro::default());
+        let zip = backup_zip(&s, &dir);
+        // O original muda DEPOIS do backup: se a restauracao copiasse do banco
+        // vivo em vez do arquivo, este registro apareceria no restaurado.
+        s.executar(
+            "inserir",
+            &pedido(
+                r#"{"database":"Comercial","tabela":"clientes",
+                    "linha":{"id":4,"nome":"Depois do backup","cidade":"Gaspar"}}"#,
+            ),
+            &Sessao::default(),
+        )
+        .unwrap();
+
+        let r = s
+            .executar(
+                "restaurar_backup",
+                &pedido(&format!(
+                    r#"{{"origem":"{zip}","database":"Comercial_de_ontem"}}"#
+                )),
+                &Sessao::default(),
+            )
+            .unwrap();
+        assert_eq!(r.texto_ou("de", ""), "Comercial");
+        assert_eq!(r.texto_ou("modo", ""), "novo");
+        assert!(matches!(r.campo("substituiu"), Some(Json::Bool(false))));
+        assert_eq!(
+            r.campo("tabelas").and_then(Json::lista).unwrap().len(),
+            1,
+            "{}",
+            r.escrever()
+        );
+
+        // O dado restaurado e o do BACKUP: tres linhas, e nao quatro.
+        let v = s
+            .executar(
+                "varrer",
+                &pedido(r#"{"database":"Comercial_de_ontem","tabela":"clientes"}"#),
+                &Sessao::default(),
+            )
+            .unwrap();
+        assert_eq!(v.inteiro_ou("devolvidas", -1), 3);
+        let linhas = v.campo("linhas").and_then(Json::lista).unwrap();
+        assert_eq!(linhas[0].texto_ou("nome", ""), "Adriano");
+        assert_eq!(linhas[2].texto_ou("cidade", ""), "Itajai");
+
+        // O original continua com as quatro, intocado.
+        let v = s
+            .executar(
+                "varrer",
+                &pedido(r#"{"database":"Comercial","tabela":"clientes"}"#),
+                &Sessao::default(),
+            )
+            .unwrap();
+        assert_eq!(v.inteiro_ou("devolvidas", -1), 4);
+
+        // E a tabela restaurada esta VIVA, e nao so no disco: da para gravar
+        // nela, o que exige o `.ndx` inteiro e o esquema legivel.
+        s.executar(
+            "inserir",
+            &pedido(
+                r#"{"database":"Comercial_de_ontem","tabela":"clientes",
+                    "linha":{"id":9,"nome":"Depois de restaurar","cidade":"Brusque"}}"#,
+            ),
+            &Sessao::default(),
+        )
+        .expect("a tabela restaurada tem de aceitar escrita");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A prova mais forte de que o restaurado e o mesmo dado: a soma de
+    /// verificacao, que depende da ORDEM DE DIGITACAO, bate com a do original.
+    #[test]
+    fn o_restaurado_tem_a_mesma_soma_de_verificacao() {
+        let dir = dir_temp("checksum");
+        let s = com_dados(&dir, Cadastro::default());
+        let antes = checksum(&s, "Comercial");
+        let zip = backup_zip(&s, &dir);
+        s.executar(
+            "restaurar_backup",
+            &pedido(&format!(r#"{{"origem":"{zip}","database":"Copia"}}"#)),
+            &Sessao::default(),
+        )
+        .unwrap();
+        assert_eq!(antes, checksum(&s, "Copia"), "o dado restaurado difere");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **Manifesto adulterado e RECUSADO, e nada e escrito.** Mesmo tamanho e
+    /// conteudo diferente: so o SHA-256 pega.
+    #[test]
+    fn backup_adulterado_nao_vira_database() {
+        let dir = dir_temp("adulterado");
+        let s = com_dados(&dir, Cadastro::default());
+        let copia = dir.join("copia");
+        s.executar(
+            "backup",
+            &pedido(&format!(r#"{{"destino":"{}"}}"#, copia.display())),
+            &Sessao::default(),
+        )
+        .unwrap();
+
+        let alvo = copia.join("Comercial/clientes.reg");
+        let mut bytes = std::fs::read(&alvo).unwrap();
+        let n = bytes.len() / 2;
+        bytes[n] ^= 0xff;
+        std::fs::write(&alvo, &bytes).unwrap();
+
+        let e = s
+            .executar(
+                "restaurar_backup",
+                &pedido(&format!(
+                    r#"{{"origem":"{}","de":"Comercial","database":"Suspeito"}}"#,
+                    copia.display()
+                )),
+                &Sessao::default(),
+            )
+            .unwrap_err();
+        assert_eq!(e.nome(), "CORROMPIDO", "veio {e}");
+        assert!(e.to_string().contains("SHA-256"), "{e}");
+        assert!(
+            !s.config.base.join("Suspeito").exists(),
+            "o backup podre comecou a virar database"
+        );
+        // E o `conferir_backup`, que ja existia, aponta o mesmo arquivo.
+        let c = s
+            .executar(
+                "conferir_backup",
+                &pedido(&format!(r#"{{"destino":"{}"}}"#, copia.display())),
+                &Sessao::default(),
+            )
+            .unwrap();
+        assert!(matches!(c.campo("integro"), Some(Json::Bool(false))));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **Por cima com o servico no ar e recusado**, e a recusa diz o que fazer.
+    #[test]
+    fn por_cima_com_a_porta_de_dados_no_ar_e_recusado() {
+        let dir = dir_temp("noar");
+        let s = com_dados(&dir, Cadastro::default());
+        let zip = backup_zip(&s, &dir);
+        // O que `escutar` faria: a porta de dados esta atendendo.
+        s.porta_no_ar.store(true, Ordering::SeqCst);
+
+        let e = s
+            .executar(
+                "restaurar_backup",
+                &pedido(&format!(
+                    r#"{{"origem":"{zip}","database":"Comercial",
+                         "modo":"por_cima","confirmar":true}}"#
+                )),
+                &Sessao::default(),
+            )
+            .unwrap_err();
+        assert!(e.to_string().contains("servico_parar"), "veio {e}");
+        assert_eq!(
+            checksum(&s, "Comercial"),
+            checksum(&s, "Comercial"),
+            "o banco continua legivel"
+        );
+
+        // Com a porta parada, a mesma restauracao passa.
+        s.porta_no_ar.store(false, Ordering::SeqCst);
+        let r = s
+            .executar(
+                "restaurar_backup",
+                &pedido(&format!(
+                    r#"{{"origem":"{zip}","database":"Comercial",
+                         "modo":"por_cima","confirmar":true}}"#
+                )),
+                &Sessao::default(),
+            )
+            .unwrap();
+        assert!(matches!(r.campo("substituiu"), Some(Json::Bool(true))));
+        let guardado = r.texto_ou("anterior_em", "");
+        assert!(!guardado.is_empty(), "nao disse onde ficou o anterior");
+        assert!(
+            std::path::Path::new(guardado).is_dir(),
+            "o database substituido foi apagado: {guardado}"
+        );
+        let _ = std::fs::remove_dir_all(guardado);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Substituir um database inteiro nao acontece por engano de campo.
+    #[test]
+    fn por_cima_sem_confirmar_e_recusado() {
+        let dir = dir_temp("semconfirmar");
+        let s = com_dados(&dir, Cadastro::default());
+        let zip = backup_zip(&s, &dir);
+        let e = s
+            .executar(
+                "restaurar_backup",
+                &pedido(&format!(
+                    r#"{{"origem":"{zip}","database":"Comercial","modo":"por_cima"}}"#
+                )),
+                &Sessao::default(),
+            )
+            .unwrap_err();
+        assert!(e.to_string().contains("confirmar"), "{e}");
+        // E o modo `novo` num nome que ja existe tambem recusa, dizendo o
+        // caminho: nome ocupado nao vira substituicao silenciosa.
+        let e = s
+            .executar(
+                "restaurar_backup",
+                &pedido(&format!(r#"{{"origem":"{zip}","database":"Comercial"}}"#)),
+                &Sessao::default(),
+            )
+            .unwrap_err();
+        assert!(e.to_string().contains("ja existe"), "{e}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A simulacao le, confere o manifesto e nao escreve nada -- e o que a
+    /// tela usa para mostrar o conteudo antes de alguem decidir.
+    #[test]
+    fn simular_mostra_o_conteudo_sem_escrever() {
+        let dir = dir_temp("simular");
+        let s = com_dados(&dir, Cadastro::default());
+        let zip = backup_zip(&s, &dir);
+        let r = s
+            .executar(
+                "restaurar_backup",
+                &pedido(&format!(r#"{{"origem":"{zip}","simular":true}}"#)),
+                &Sessao::default(),
+            )
+            .unwrap();
+        assert!(matches!(r.campo("simulado"), Some(Json::Bool(true))));
+        assert_eq!(r.texto_ou("de", ""), "Comercial");
+        assert!(r.inteiro_ou("arquivos", 0) >= 7, "{}", r.escrever());
+        let tabelas: Vec<String> = r
+            .campo("tabelas")
+            .and_then(Json::lista)
+            .unwrap()
+            .iter()
+            .filter_map(|t| t.texto().map(str::to_string))
+            .collect();
+        assert_eq!(tabelas, vec!["clientes".to_string()]);
+        assert!(matches!(
+            r.campo("escopo_declarado"),
+            Some(Json::Bool(true))
+        ));
+
+        // A lista da pasta enxerga o mesmo arquivo.
+        let l = s
+            .executar(
+                "backups",
+                &pedido(&format!(
+                    r#"{{"pasta":"{}"}}"#,
+                    dir.join("copias").display()
+                )),
+                &Sessao::default(),
+            )
+            .unwrap();
+        assert_eq!(l.inteiro_ou("total", -1), 1);
+        let primeiro = &l.campo("backups").and_then(Json::lista).unwrap()[0];
+        assert!(matches!(primeiro.campo("legivel"), Some(Json::Bool(true))));
+        assert!(primeiro.inteiro_ou("no_disco", 0) > 0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ------------------------------------------------------------ permissao
+
+    /// Ana administra o servidor inteiro MENOS um banco: e a regra por base
+    /// substituindo a `"*"`, que ja era o comportamento do cadastro.
+    fn cadastro_admin_menos(negado: &str) -> Cadastro {
+        Cadastro::de_json(&pedido(&format!(
+            r#"{{"usuarios":[{{"login":"ana","id":7,
+                 "senha_hash":"pbkdf2-sha256$1000$00$00",
+                 "bases":{{"*":{{"administrar":true,"ler":true,"criar":true,
+                                 "inserir":true}},
+                           "{negado}":{{}}}}}}]}}"#
+        )))
+        .unwrap()
+    }
+
+    fn como_ana(s: &Arc<Servidor>, corpo: &str) -> Result<Json> {
+        let mut ses = Sessao {
+            usuario: s.config.cadastro.por_login("ana").cloned(),
+            ..Sessao::default()
+        };
+        let (_, _, r) = s.despachar(
+            &format!(r#"{{"token":"t",{corpo}}}"#),
+            &mut ses,
+            "127.0.0.1",
+        );
+        r
+    }
+
+    /// **A porta dos fundos que o portao geral nao ve.** O portao confere o
+    /// campo `"database"`, que na restauracao e o DESTINO. Quem administra so
+    /// um banco de rascunho nao pode despejar dentro dele o backup da folha e
+    /// ler tudo por outra porta.
+    #[test]
+    fn o_backup_do_banco_alheio_nao_entra_por_um_destino_permitido() {
+        let dir = dir_temp("portadosfundos");
+        let s = com_dados(&dir, cadastro_admin_menos("Folha"));
+        // Um backup da raiz inteira: dentro dele estao Comercial e Folha.
+        let copia = dir.join("copia");
+        s.executar(
+            "backup",
+            &pedido(&format!(r#"{{"destino":"{}"}}"#, copia.display())),
+            &Sessao::default(),
+        )
+        .unwrap();
+
+        // O banco que ela administra passa pelos dois portoes.
+        como_ana(
+            &s,
+            &format!(
+                r#""op":"restaurar_backup","origem":"{}","de":"Comercial","database":"Rascunho""#,
+                copia.display()
+            ),
+        )
+        .expect("o portao proprio nao pode barrar quem tem o direito");
+
+        // O outro nao passa -- nem entrando por um destino que ela administra.
+        let Err(e) = como_ana(
+            &s,
+            &format!(
+                r#""op":"restaurar_backup","origem":"{}","de":"Folha","database":"Rascunho2""#,
+                copia.display()
+            ),
+        ) else {
+            panic!("o backup do banco negado entrou por um destino permitido");
+        };
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "veio {e}");
+        assert!(e.to_string().contains("Folha"), "a recusa diz qual: {e}");
+        assert!(
+            !s.config.base.join("Rascunho2").exists(),
+            "recusou depois de ja ter escrito"
+        );
+
+        // E a simulacao tambem nao serve de espelho: ela mostraria as tabelas
+        // da folha para quem nao pode ve-las.
+        assert!(como_ana(
+            &s,
+            &format!(
+                r#""op":"restaurar_backup","origem":"{}","de":"Folha","simular":true"#,
+                copia.display()
+            ),
+        )
+        .is_err());
+
+        // A lista da pasta esconde o que ela nao poderia restaurar, e diz
+        // quantos escondeu -- em vez de sumir com o arquivo inteiro.
+        let l = como_ana(
+            &s,
+            &format!(r#""op":"backups","pasta":"{}""#, dir.display()),
+        )
+        .unwrap();
+        let texto = l.escrever();
+        assert!(
+            !texto.contains("\"Folha\""),
+            "vazou o banco negado: {texto}"
+        );
+        assert!(l.inteiro_ou("escondidos", 0) > 0, "{texto}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **O comportamento VELHO.** Quem nao chama a operacao nova nao ve
+    /// diferenca nenhuma: o `restaurar` de LINHA continua sendo o que era, o
+    /// backup continua conferindo, e o manifesto com os campos novos e lido
+    /// pelo `conferir_backup` de sempre.
+    #[test]
+    fn quem_nao_usa_a_operacao_nova_nao_ve_diferenca() {
+        let dir = dir_temp("velho");
+        let s = com_dados(&dir, Cadastro::default());
+        let ses = Sessao::default();
+
+        // 1. `restaurar` continua sendo desfazer uma exclusao de LINHA -- o
+        //    nome nao mudou de dono.
+        s.executar(
+            "excluir",
+            &pedido(r#"{"database":"Comercial","tabela":"clientes","rowid":2,"motivo":"engano"}"#),
+            &ses,
+        )
+        .unwrap();
+        let r = s
+            .executar(
+                "restaurar",
+                &pedido(
+                    r#"{"database":"Comercial","tabela":"clientes","rowid":2,"motivo":"voltou"}"#,
+                ),
+                &ses,
+            )
+            .unwrap();
+        assert!(matches!(r.campo("restaurado"), Some(Json::Bool(true))));
+        assert_eq!(
+            Atividade::da_operacao("restaurar"),
+            Some(Atividade::Excluir),
+            "o poder exigido pelo restaurar de linha mudou"
+        );
+
+        // 2. Backup e conferencia, exatamente como antes -- com o manifesto
+        //    ja trazendo os campos novos dentro.
+        let copia = dir.join("copia");
+        let b = s
+            .executar(
+                "backup",
+                &pedido(&format!(r#"{{"destino":"{}"}}"#, copia.display())),
+                &ses,
+            )
+            .unwrap();
+        assert!(b.inteiro_ou("arquivos", 0) > 0);
+        let c = s
+            .executar(
+                "conferir_backup",
+                &pedido(&format!(r#"{{"destino":"{}"}}"#, copia.display())),
+                &ses,
+            )
+            .unwrap();
+        assert!(
+            matches!(c.campo("integro"), Some(Json::Bool(true))),
+            "{}",
+            c.escrever()
+        );
+
+        // 3. E a raiz de dados continua tendo os dois bancos de sempre: a
+        //    operacao nova nao deixa nada para tras no disco.
+        let bancos = s.executar("bancos", &pedido("{}"), &ses).unwrap();
+        let nomes: Vec<String> = Json::lista(&bancos)
+            .unwrap()
+            .iter()
+            .filter_map(|b| b.texto().map(str::to_string))
+            .collect();
+        assert_eq!(nomes, vec!["Comercial".to_string(), "Folha".to_string()]);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

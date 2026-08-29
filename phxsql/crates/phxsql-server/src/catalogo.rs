@@ -1372,6 +1372,53 @@ pub const OPERACOES: &[Operacao] = &[
         exemplo: r#"{"op":"conferir_backup","destino":"/backup/phxsql"}"#,
         ferramenta_mcp: false,
     },
+    Operacao {
+        nome: "backups",
+        apelidos: &[],
+        resumo: "Lista os backups de uma pasta, com o que cada um traz dentro.",
+        parametros: &[opc(
+            "pasta",
+            "string",
+            "onde procurar; sem ela, o `backup.destino` do config.json",
+        )],
+        exemplo: r#"{"op":"backups","pasta":"/backup/phxsql"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "restaurar_backup",
+        apelidos: &[],
+        resumo: "Restaura um database de dentro de um backup, com outro nome ou por cima.",
+        parametros: &[
+            obr("origem", "string", "o .zip ou a pasta do backup"),
+            opc(
+                "database",
+                "string",
+                "o nome com que o backup vai ser restaurado; obrigatorio fora da simulacao",
+            ),
+            opc(
+                "de",
+                "string",
+                "qual database de dentro do backup; sem ele, o unico que houver",
+            ),
+            opc(
+                "modo",
+                "string",
+                "`novo` (padrao) cria com outro nome; `por_cima` substitui, e exige                  a porta de dados parada",
+            ),
+            opc(
+                "confirmar",
+                "boolean",
+                "obrigatorio no modo `por_cima`: substituir um database inteiro nao                  acontece por engano de campo",
+            ),
+            opc(
+                "simular",
+                "boolean",
+                "so le o manifesto e devolve o que ha dentro, sem escrever nada",
+            ),
+        ],
+        exemplo: r#"{"op":"restaurar_backup","origem":"/backup/Z_ana_2026-08-29_0300.zip","database":"Z_restaurado"}"#,
+        ferramenta_mcp: false,
+    },
     // ------------------------------------------------------------- jobs
     Operacao {
         nome: "jobs",

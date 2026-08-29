@@ -2036,8 +2036,51 @@ O QUE O CONFERIR ACHA
 
 RESTAURAR
 
-    Nao ha comando: pare o servidor, apague a raiz de dados e copie o
-    conteudo do destino de volta. Confira ANTES de apagar qualquer coisa.
+    {"token":"...","op":"backups","pasta":"/backup"}
+    {"token":"...","op":"restaurar_backup",
+     "origem":"/backup/Comercial_ana_2026-08-29_0300.zip",
+     "database":"Comercial_de_ontem"}
+
+    Pede permissao de ADMINISTRAR -- no destino E no database que vem dentro
+    do backup, que e o que o portao geral nao tem como enxergar.
+
+    DOIS MODOS
+
+    "modo":"novo" (o padrao) grava com OUTRO nome. Nao destroi nada, nao
+    precisa parar servico nenhum, e da para conferir o dado antes de decidir
+    qualquer outra coisa. E o caminho normal.
+
+    "modo":"por_cima" substitui um database que ja existe. Exige tres coisas:
+    a porta de dados PARADA ({"op":"servico_parar"}), nenhuma conexao de dados
+    aberta, e "confirmar":true no pedido. O database que estava ali NAO e
+    apagado -- sai da raiz de dados, e o caminho volta em "anterior_em".
+
+    ANTES DE TOCAR NO DESTINO
+
+    A copia e extraida para fora da raiz de dados e o SHA-256 de cada arquivo
+    e conferido contra o backup.json. Backup que nao confere nao vira database
+    pela metade: nao vira database nenhum. So depois disso a troca acontece,
+    com um rename e com a trava na mao -- o pedaco caro fica fora dela.
+
+    VER ANTES DE RESTAURAR
+
+    {"token":"...","op":"restaurar_backup","origem":"...","simular":true}
+
+    Le o manifesto e devolve o que ha dentro -- quando, por que versao,
+    quantos arquivos, que databases, que tabelas -- sem escrever nada.
+
+    UM DATABASE POR VEZ
+
+    Nao ha "restaurar a raiz inteira": restaurar seis bancos por cima com um
+    clique seriam seis estragos com um clique. A copia da raiz continua
+    servindo -- diga em "de" qual database dela restaurar.
+
+    PELA TELA
+
+    Arquivo -> Restaurar um backup..., ou o botao Restaurar da barra.
+
+    O desenho inteiro, com o que a restauracao NAO garante, esta em
+    docs/RESTAURACAO.md.
 
 
 12. CHAVE PUBLICA E PRIVADA (SEGUNDO FATOR)

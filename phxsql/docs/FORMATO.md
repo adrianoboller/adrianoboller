@@ -1308,7 +1308,50 @@ não quebra a tabela; regravar resolve.
 
 ---
 
-## 10. Hierarquia: database, schema e tabela
+## 10. `backup.json` — o manifesto da cópia
+
+Não é formato de tabela: é o índice que acompanha um backup, em JSON, e o que
+torna a cópia **conferível** e restaurável.
+
+```json
+{
+  "phxsql": "0.18.0",
+  "quando": "2026-08-29 03:00:04",
+  "arquivos": 9,
+  "bytes": 1048576,
+  "escopo": "database",
+  "database": "Comercial",
+  "conteudo": [
+    {"caminho": "clientes.reg", "bytes": 8192, "sha256": "3fa8…"}
+  ]
+}
+```
+
+| Campo | Forma | O que é |
+|---|---|---|
+| `phxsql` | v1 | a versão que gravou a cópia |
+| `quando` | v1 | instante da cópia, ISO |
+| `arquivos`, `bytes` | v1 | totais do conteúdo |
+| `conteudo[]` | v1 | caminho relativo (sempre com `/`), tamanho e SHA-256 |
+| `escopo` | **v2** | `raiz` (cada diretório de primeiro nível é um database) ou `database` |
+| `database` | **v2** | o nome do banco, quando o escopo é `database` |
+
+Os dois campos novos são **acréscimos**: manifesto antigo não os tem e continua
+válido — a restauração deduz o escopo pelos caminhos e diz que deduziu. Um
+leitor antigo ignora os campos novos e continua conferindo igual. A ordem de
+`conteudo` é estável (os arquivos entram ordenados), para dois manifestos da
+mesma coisa serem comparáveis.
+
+Num backup em ZIP o manifesto vai **dentro** do próprio arquivo, e é a última
+entrada — ele já sabe de todas as outras. O ZIP é escrito com DEFLATE de
+Huffman fixo e lido com os três tipos de bloco da RFC 1951, porque a cópia que
+volta pode ter sido reempacotada por outro programa. Deslocamentos são de 32
+bits: cópia acima de 4 GiB não cabe no formato, e o leitor recusa em vez de
+devolver lixo.
+
+---
+
+## 11. Hierarquia: database, schema e tabela
 
 ```
 base/
@@ -1355,7 +1398,7 @@ não tem `phxsys` nenhum no disco — e responde exatamente como sempre responde
 
 ---
 
-## 11. Reindex
+## 12. Reindex
 
 Recriar o `.ndx` inteiro a partir do `.reg`: varre os registros ativos na ordem
 de digitação, recodifica as chaves e reconstrói cada B+tree do zero. Resolve
@@ -1370,7 +1413,7 @@ crescente dentro de cada chave.
 
 ---
 
-## 12. Identificadores: `Uuid`, `Uuid256` e `Sequence`
+## 13. Identificadores: `Uuid`, `Uuid256` e `Sequence`
 
 Três tipos de largura fixa que cabem inteiros no slot — nada vai para o `.bin`.
 
@@ -1430,7 +1473,7 @@ defeito. O esquema recusa na criação.
 
 ---
 
-## 13. Limites
+## 14. Limites
 
 | Limite | Valor |
 |---|---|
@@ -1453,7 +1496,7 @@ defeito. O esquema recusa na criação.
 | Volumes por arquivo | 65.535 (limite do ponteiro externo) |
 | Offset dentro de um volume externo | 256 TB (48 bits) |
 
-## 14. `gatilhos.json` e `procedimentos.json` — o cadastro de rotinas
+## 15. `gatilhos.json` e `procedimentos.json` — o cadastro de rotinas
 
 Dois arquivos **por database**, no diretório dele, ao lado das tabelas:
 
@@ -1529,7 +1572,7 @@ A linguagem, o portão de permissão e a semântica de disparo estão em
 
 ---
 
-## 15. O que este formato ainda não faz
+## 16. O que este formato ainda não faz
 
 Documentado aqui para não haver surpresa:
 
