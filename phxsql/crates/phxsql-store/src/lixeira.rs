@@ -278,6 +278,9 @@ impl LixeiraFile {
         nome: &str,
         paginacao: Paginacao,
     ) -> Result<LixeiraFile> {
+        // Ver `crate::diario`: o corte do diario e dele, e sem configuracao
+        // manda o esquema.
+        let paginacao = crate::diario::paginacao(paginacao);
         let mut l = LixeiraFile {
             volumes: Volumes::novo(diretorio, nome, EXT_TRASH, paginacao),
             cabs: HashMap::new(),
@@ -295,6 +298,7 @@ impl LixeiraFile {
         nome: &str,
         paginacao: Paginacao,
     ) -> Result<LixeiraFile> {
+        let paginacao = crate::diario::paginacao(paginacao);
         let volumes = Volumes::novo(&diretorio, nome, EXT_TRASH, paginacao);
         if volumes.existentes().is_empty() {
             return LixeiraFile::criar(diretorio, nome, paginacao);

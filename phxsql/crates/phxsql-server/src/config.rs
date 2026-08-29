@@ -819,6 +819,21 @@ pub struct Recursos {
     /// Nao e o mesmo que conexoes: um usuario pode ter varias. Este teto conta
     /// logins distintos, que e o que uma licenca por posto quer contar.
     pub usuarios_max: usize,
+    /// Onde o volume do `.log`, da `.trash` e do `.reason` corta, em MiB.
+    ///
+    /// **Zero = nao mexe**, e esse e o padrao: vale o `bytes_por_arquivo` do
+    /// esquema, que e 1 GiB. Existe porque 1 GiB e um numero razoavel para um
+    /// anexo e nao para um diario de eventos de 44 bytes -- 1 GiB de `.log` sao
+    /// 24 milhoes de eventos, e na pratica o primeiro volume de uma tabela de
+    /// um milhao de linhas nunca fecha.
+    ///
+    /// Isso importa porque volume FECHADO e a unidade de tudo que se faz com
+    /// diario velho: compactar, arquivar, mover para disco barato. Um arquivo
+    /// que nunca fecha volume nao oferece nenhuma dessas.
+    ///
+    /// O preco de cortar pequeno esta medido em `docs/DESEMPENHO.md`: mais
+    /// volumes e um TETO menor, porque `max_arquivos` continua valendo.
+    pub diario_volume_mib: u64,
 }
 
 impl Default for Recursos {
@@ -834,11 +849,22 @@ impl Default for Recursos {
             conexoes_max: 64,
             carga_prazo_min: 30,
             usuarios_max: 0,
+            diario_volume_mib: 0,
         }
     }
 }
 
 impl Recursos {
+    /// Leva ao processo os tetos que nao sao parametro de ninguem.
+    ///
+    /// Hoje e um so: onde o volume do diario corta. O teto do cache de paginas
+    /// continua sendo aplicado pelo servidor, onde ja estava -- mover os dois
+    /// para o mesmo lugar e limpeza, e limpeza em arquivo de outro agente e
+    /// conflito.
+    pub fn aplicar(&self) {
+        phxsql_store::diario::definir_bytes_por_volume(self.diario_volume_mib * 1024 * 1024);
+    }
+
     fn de_json(j: &Json, conexoes_no_topo: usize) -> Result<Recursos> {
         let padrao = Recursos::default();
         let r = match j.campo("recursos") {
@@ -866,6 +892,7 @@ impl Recursos {
                     padrao.carga_prazo_min
                 }
             },
+            diario_volume_mib: r.inteiro_ou("diario_volume_mib", 0).max(0) as u64,
             cache_paginas: r
                 .inteiro_ou("cache_paginas", padrao.cache_paginas as i64)
                 .max(0) as usize,
@@ -901,6 +928,7 @@ impl Recursos {
             ("lote_operacoes", Json::de_u64(self.lote_operacoes)),
             ("lote_milissegundos", Json::de_u64(self.lote_milissegundos)),
             ("cache_paginas", Json::de_u64(self.cache_paginas as u64)),
+            ("diario_volume_mib", Json::de_u64(self.diario_volume_mib)),
             ("carga_prazo_min", Json::de_u64(self.carga_prazo_min)),
             ("memoria_max_mb", Json::de_u64(self.memoria_max_mb)),
             ("threads", Json::de_u64(self.threads as u64)),
@@ -1076,6 +1104,7 @@ impl Config {
         // abrir o mesmo diario. Campo de configuracao que so metade do
         // programa le e a mesma armadilha do campo que ninguem le.
         c.cifra.aplicar()?;
+        c.recursos.aplicar();
         Ok(c)
     }
 

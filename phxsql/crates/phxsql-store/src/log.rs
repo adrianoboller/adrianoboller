@@ -311,6 +311,9 @@ pub struct LogFile {
 
 impl LogFile {
     pub fn criar(diretorio: impl AsRef<Path>, nome: &str, paginacao: Paginacao) -> Result<LogFile> {
+        // O diario corta o volume no tamanho DELE, que nao e o do `.bin`. Ver
+        // `crate::diario`: sem configuracao, manda o esquema, como sempre.
+        let paginacao = crate::diario::paginacao(paginacao);
         let mut l = LogFile {
             volumes: Volumes::novo(diretorio, nome, EXT_LOG, paginacao),
             cabs: HashMap::new(),
@@ -324,6 +327,7 @@ impl LogFile {
     }
 
     pub fn abrir(diretorio: impl AsRef<Path>, nome: &str, paginacao: Paginacao) -> Result<LogFile> {
+        let paginacao = crate::diario::paginacao(paginacao);
         let volumes = Volumes::novo(diretorio, nome, EXT_LOG, paginacao);
         let existentes = volumes.existentes();
         if existentes.is_empty() {

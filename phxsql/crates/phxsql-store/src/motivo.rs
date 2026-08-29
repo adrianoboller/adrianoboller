@@ -255,6 +255,9 @@ impl MotivoFile {
         nome: &str,
         paginacao: Paginacao,
     ) -> Result<MotivoFile> {
+        // Ver `crate::diario`: o corte do diario e dele, e sem configuracao
+        // manda o esquema.
+        let paginacao = crate::diario::paginacao(paginacao);
         let mut m = MotivoFile {
             volumes: Volumes::novo(diretorio, nome, EXT_REASON, paginacao),
             cabs: HashMap::new(),
@@ -276,6 +279,7 @@ impl MotivoFile {
         nome: &str,
         paginacao: Paginacao,
     ) -> Result<MotivoFile> {
+        let paginacao = crate::diario::paginacao(paginacao);
         let volumes = Volumes::novo(&diretorio, nome, EXT_REASON, paginacao);
         if volumes.existentes().is_empty() {
             return MotivoFile::criar(diretorio, nome, paginacao);

@@ -30,6 +30,24 @@
 //! `bytes_por_arquivo`, e o padrao e 1 GiB. Ela repete a medida com o volume
 //! curto, para saber quanto um volume fechado encolhe DE FATO -- e o relatorio
 //! junta as duas para dizer a partir de que tamanho de tabela isso paga.
+//!
+//! # A quarta pergunta, que a rodada seguinte acrescentou
+//!
+//! O corte do diario virou configuravel -- `recursos.diario_volume_mib`, ver
+//! `phxsql_store::diario` --, entao "nao ha volume fechado" deixou de ser uma
+//! propriedade do formato e virou uma escolha. A pergunta muda de lugar:
+//!
+//! 4. **Com o corte pequeno, compactar volume fechado PAGA?** Nao basta saber
+//!    quanto se economiza. O `.log` e lido em lote pela replicacao e inteiro
+//!    pelo `historico`, e um volume compactado tem de ser inflado INTEIRO para
+//!    servir um lote de 500 eventos. A quarta secao cronometra os dois lados e
+//!    conta o TETO -- porque `max_arquivos` continua valendo, e cortar pequeno
+//!    encolhe o diario que cabe.
+//!
+//! ```bash
+//! cargo run --release --example quanto-ocupa -- 1000000 5 8
+//! #                                             linhas  %  MiB do diario
+//! ```
 
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -242,6 +260,200 @@ fn montar(rotulo: &str, n: i64, pct_exclusao: f64, bytes_por_volume: u64, falar:
     retrato
 }
 
+/// Bytes dos volumes FECHADOS de uma extensao, e o que sobraria deles.
+///
+/// Mede os arquivos inteiros, e nao uma amostra: o que se quer saber e quanto
+/// espaco some do disco, e isso e a soma dos volumes que nunca mais recebem
+/// escrita.
+fn fechados(dir: &Path, ext: &str) -> (u64, u64, usize, f64) {
+    let v = volumes(dir, ext);
+    if v.len() < 2 {
+        return (0, 0, 0, 0.0);
+    }
+    let (mut crus, mut comprimidos) = (0u64, 0u64);
+    let inicio = Instant::now();
+    for caminho in &v[..v.len() - 1] {
+        let dados = std::fs::read(caminho).unwrap();
+        crus += dados.len() as u64;
+        comprimidos += deflate(&dados).len() as u64;
+    }
+    (
+        crus,
+        comprimidos,
+        v.len() - 1,
+        inicio.elapsed().as_secs_f64(),
+    )
+}
+
+/// A quarta secao: com o corte do diario configurado, compactar paga?
+///
+/// Monta a tabela com o `recursos.diario_volume_mib` valendo -- so o diario
+/// corta pequeno; o `.reg` e o `.ndx` continuam com o volume do esquema -- e
+/// mede os dois lados da conta: o que se economiza e o que se paga para ler.
+fn quarta_secao(n: i64, pct_exclusao: f64, corte_mib: u64) {
+    let corte = corte_mib * 1024 * 1024;
+    phxsql_store::diario::definir_bytes_por_volume(corte);
+
+    let dir = std::env::temp_dir().join(format!("phx-quanto-ocupa-{}-corte", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let paginacao = Paginacao::nova((n as u64 / 4).max(1), 999).unwrap();
+    let esquema = Schema::new(
+        "precos",
+        colunas(),
+        vec![
+            IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico(),
+            IndexDef::new("porCidade", vec![IndexColumn::asc(2)]),
+        ],
+    )
+    .unwrap()
+    .com_paginacao(paginacao)
+    .unwrap();
+
+    let mut t = Table::criar(&dir, esquema).unwrap();
+    for i in 1..=n {
+        t.inserir(&linha(i)).unwrap();
+    }
+    let quantas = (((n as f64) * pct_exclusao / 100.0) as i64).max(1);
+    let passo = (n as u64 / quantas as u64).max(1);
+    for k in 0..quantas {
+        let rowid = (1 + (k as u64) * passo).min(n as u64);
+        if k % 2 == 0 {
+            t.excluir_suave(rowid, "revisao de cadastro").unwrap();
+        } else {
+            t.excluir_de_vez(rowid, "duplicidade confirmada").unwrap();
+        }
+    }
+    t.sincronizar().unwrap();
+    drop(t);
+
+    let total_tabela: u64 = EXTENSOES.iter().map(|e| bytes(&dir, e)).sum();
+
+    println!("\n=== 4. com `recursos.diario_volume_mib = {corte_mib}`, compactar paga? ===\n");
+    let (mut soma_crus, mut soma_comp) = (0u64, 0u64);
+    let mut segundos = 0.0;
+    for ext in ["log", "trash", "reason"] {
+        let (crus, comp, quantos, s) = fechados(&dir, ext);
+        soma_crus += crus;
+        soma_comp += comp;
+        segundos += s;
+        println!(
+            "  .{ext:<9} {:>3} volume(s), {:>3} fechado(s), {:>8.2} MiB fechados -> {:>7.2} MiB  ({:.2}x)",
+            volumes(&dir, ext).len(),
+            quantos,
+            mib(crus),
+            mib(comp),
+            crus as f64 / comp.max(1) as f64
+        );
+    }
+    let economia = soma_crus.saturating_sub(soma_comp);
+    println!(
+        "\n  Economia: {:.2} MiB de uma tabela de {:.2} MiB = {:.2}% do total.",
+        mib(economia),
+        mib(total_tabela),
+        economia as f64 / total_tabela.max(1) as f64 * 100.0
+    );
+    println!(
+        "  Custo de comprimir uma vez: {:.2}s para {:.2} MiB ({:.1} MiB/s).",
+        segundos,
+        mib(soma_crus),
+        mib(soma_crus) / segundos.max(1e-9)
+    );
+
+    // ------------------------------------------------- o outro lado da conta
+    //
+    // Um volume compactado nao se le por dentro: para servir um lote de 500
+    // eventos e preciso inflar o volume INTEIRO. Este e o custo que nao
+    // aparece no numero da economia.
+    let vols = volumes(&dir, "log");
+    if vols.len() >= 2 {
+        let primeiro = std::fs::read(&vols[0]).unwrap();
+        let comprimido = deflate(&primeiro);
+
+        let inicio = Instant::now();
+        let mut log = phxsql_store::log::LogFile::abrir(&dir, "precos", paginacao).unwrap();
+        let lote = log.ler(0, 500).unwrap();
+        let ler_lote = inicio.elapsed().as_secs_f64();
+        assert_eq!(lote.len(), 500);
+
+        let inicio = Instant::now();
+        let voltou = phxsql_core::zip::inflate_fixo(&comprimido).expect("inflate falhou");
+        let inflar = inicio.elapsed().as_secs_f64();
+        assert_eq!(voltou.len(), primeiro.len(), "o inflate nao devolveu igual");
+
+        println!("\n  O outro lado da conta -- o que custa LER um volume compactado:\n");
+        println!(
+            "    ler 500 eventos do volume como ele e ...... {:>8.3} ms",
+            ler_lote * 1e3
+        );
+        println!(
+            "    inflar o volume inteiro para servir os 500 . {:>8.3} ms   ({:.0}x)",
+            inflar * 1e3,
+            inflar / ler_lote.max(1e-9)
+        );
+        println!(
+            "    (o volume inflado tem {:.2} MiB; o diario inteiro tem {} eventos\n     \
+             em {} volumes)",
+            mib(primeiro.len() as u64),
+            log.total().unwrap(),
+            vols.len()
+        );
+
+        // ------------------------------------------------------- o veredito
+        //
+        // Escrito a partir dos numeros medidos acima, e nao digitado: um
+        // veredito digitado envelhece calado quando a medida muda.
+        println!("\n  O veredito da quarta pergunta:\n");
+        if economia == 0 {
+            println!(
+                "    Com o corte de {corte_mib} MiB ainda nao ha volume fechado nos tres.\n    \
+                 Compactar continua poupando zero."
+            );
+        } else {
+            println!(
+                "    Compactar os volumes fechados poupa {:.2} MiB -- {:.2}% da tabela --\n    \
+                 e custa {:.0}x no tempo de servir um lote de 500 eventos, porque um\n    \
+                 volume compactado tem de ser inflado INTEIRO para entregar qualquer\n    \
+                 pedaco dele. O servidor abre e fecha a tabela a cada pedido, entao\n    \
+                 nao ha cache que segure o volume inflado entre um lote e o seguinte.",
+                mib(economia),
+                economia as f64 / total_tabela.max(1) as f64 * 100.0,
+                inflar / ler_lote.max(1e-9)
+            );
+            println!(
+                "\n    E a comparacao que decide: compactar SO O `.ndx` poupa {:.2} MiB\n    \
+                 sem custo nenhum de leitura de diario. O espaco continua nao\n    \
+                 estando onde o pedido olha.",
+                {
+                    let b = bytes(&dir, "ndx");
+                    let dados = std::fs::read(&volumes(&dir, "ndx")[0]).unwrap();
+                    let razao = dados.len() as f64 / deflate(&dados).len().max(1) as f64;
+                    mib(b) - mib(b) / razao
+                }
+            );
+        }
+    }
+
+    // -------------------------------------------------------------- o teto
+    let eventos_por_volume = corte / EVENTO_CAB as u64;
+    println!(
+        "\n  E o TETO, que cortar pequeno encolhe: {} volumes x {corte_mib} MiB\n  \
+         = {:.1} GiB de diario, ou ~{:.1} milhoes de eventos sem imagem.\n  \
+         Com o padrao de 1 GiB seriam {:.0} TiB e ~{:.0} bilhoes.",
+        paginacao.max_arquivos,
+        (paginacao.max_arquivos as u64 * corte) as f64 / (1024.0 * 1024.0 * 1024.0),
+        (paginacao.max_arquivos as u64 * eventos_por_volume) as f64 / 1e6,
+        (paginacao.max_arquivos as u64 * BYTES_POR_ARQUIVO_PADRAO) as f64
+            / (1024.0 * 1024.0 * 1024.0 * 1024.0),
+        (paginacao.max_arquivos as u64 * (BYTES_POR_ARQUIVO_PADRAO / EVENTO_CAB as u64)) as f64
+            / 1e9
+    );
+
+    phxsql_store::diario::definir_bytes_por_volume(0);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 fn main() {
     let n: i64 = std::env::args()
         .nth(1)
@@ -356,6 +568,13 @@ fn main() {
         economia_log / total as f64 * 100.0
     );
 
+    let corte_mib: u64 = std::env::args()
+        .nth(3)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(8);
+    quarta_secao(n, pct_exclusao, corte_mib);
+
+    println!("\n=== o veredito, agora com o corte configuravel ===");
     let ndx = r.bytes_de("ndx");
     let economia_ndx = ndx as f64 - ndx as f64 / r.razao_de("ndx");
     println!(
