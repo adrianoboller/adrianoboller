@@ -38,7 +38,7 @@ compara a data do binário com a do arquivo mais novo de `ui/` e diz qual.
 | `arvore` | a árvore remontando quando um banco novo aparece — e continuando **viva** depois de remontar |
 | `grade` | nenhuma coluna de sistema vira coluna de dado na grade editável, e o phx-grid não perde coluna nenhuma |
 | `css-global` | as três armadilhas do CSS global: controle esticado, dado em caixa alta, e caixa de marcar separada do próprio texto |
-| `responsivo` | celular, tablet e desktop: nada rola de lado no corpo da página |
+| `responsivo` | as **cinco** larguras — celular, tablet, desktop, ultrawide (3440) e dois monitores (5120). Nada rola de lado; e nas duas largas, nada estica: texto corrido tem teto, par rótulo→valor vira coluna, e texto de SVG não cresce com o monitor nem se sobrepõe. Planta um caminho de disco comprido antes de medir, senão a sobreposição não se reproduz |
 | `lateral` | o painel retrátil e pinável, com volta |
 | `cores` | a convenção das cinco cores (contorno, nunca fundo cheio) e o contraste **medido** de cada elemento pintado |
 | `primeira-pintura` | a tela de entrada aparece mesmo quando a rede engole a fonte da marca |

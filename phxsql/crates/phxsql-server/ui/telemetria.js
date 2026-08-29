@@ -1355,6 +1355,13 @@ window.PhxTelemetria = (function () {
            sysprocesses, o input_buffer inclusive. Resumo obriga quem
            investiga a ir procurar o resto noutro lugar, e no meio de um
            incidente não há outro lugar. -->
+      <!-- A ficha em COLUNAS, e nao em linhas esticadas. Com uma linha por
+           campo o valor ia parar no fim da carta: medido, 1.353px de vao entre
+           «estado» e «executando» a 1920, e 4.553px a 5120. Vao desse tamanho
+           nao se le -- o olho perde a linha no meio do caminho. Em colunas o
+           vao fica no tamanho da coluna, e a largura extra vira mais coluna em
+           vez de mais vazio. -->
+      <div class="tlm-lista">
       ${linha("estado", a.estado)}
       ${linha("nível", niv.rot)}
       ${linha("operação em curso", a.op || "nenhuma em curso")}
@@ -1379,6 +1386,7 @@ window.PhxTelemetria = (function () {
       ${linha("cancelável neste instante", SIM_NAO(a.cancelavel))}
       ${linha("marcada para encerrar", SIM_NAO(a.encerrando))}
       ${linha("já encerrada", a.encerradas + " vez(es)")}
+      </div>
       <div class="tlm-acoes">
         ${podeEncerrar
           ? `<button class="botao excluir" id="tlmEncerrar" type="button">Encerrar a operação</button>`

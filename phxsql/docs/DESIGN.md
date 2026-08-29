@@ -193,7 +193,7 @@ outra regra fez é **curativo**, e curativo é onde a colisão está escondida.
 
 ---
 
-## 4. Os três tamanhos, e o painel lateral
+## 4. Os quatro tamanhos, e o painel lateral
 
 ### O modelo
 `#app` é um grid de quatro linhas (`barra`, `menu`, `tools`, e a linha
@@ -206,6 +206,99 @@ próprio contêiner** — `.rolo`, `#painel`, `#ferramentas`, `.menubar`, `.abas
 | ≤ 640px celular | sempre gaveta sobreposta, com véu | uma fileira que rola | uma coluna; alvos de 40px |
 | 641–1024px tablet | recolhível, fixa por padrão | uma fileira que rola | duas colunas onde couber |
 | ≥ 1025px desktop | fixa, largura ajustável | duas fileiras (cabe tudo) | como sempre foi |
+| larga (ultrawide, multi-monitor) | igual ao desktop | igual ao desktop | **tetos**, não regras novas — §4.1 |
+
+### 4.1 A quarta faixa: o que a largura extra faz
+
+**Medido antes de mexer**, tela do Painel, árvore aberta, tema escuro:
+
+| largura | rola de lado? | maior parágrafo | vão rótulo→valor | escala do texto em SVG |
+|---|---|---|---|---|
+| 390 | não | 326px | 301px | 1,40× |
+| 820 | não | 740px | 715px | 1,40× |
+| 1180 | não | 1.100px | 613px | 1,40× |
+| 1920 | não | 1.840px | 1.353px | 1,83× |
+| 3440 | não | 3.360px | 2.873px | 3,73× |
+| 5120 | não | 5.040px | 4.553px | **5,83×** |
+
+A responsividade **segurava**: não há rolagem lateral em largura nenhuma, e isso
+é mérito do trabalho da rodada anterior. O que não existia era **teto**. Uma
+linha de 5.040px tem umas 630 letras; um valor a 4.553px do próprio rótulo não
+se lê, porque o olho perde a linha no meio do caminho; e 11px desenhados com
+67px ao lado de um menu de 13px são dois regimes de escala na mesma tela.
+
+**A saída escolhida foi a mista**, confirmada pelo dono com a foto de um IDE
+ocupando um ultrawide em três painéis verticais: **a largura extra vira mais
+painel, não linha mais comprida.**
+
+- Contra «teto e centraliza»: além de desperdiçar a tela, num monitor duplo o
+  bloco central cai **em cima da emenda física**. Um bloco de 74ch centrado em
+  5.120px mora de 2.260 a 2.860px, com a emenda em 2.560 no meio da frase.
+  Alinhado à esquerda ele mora de 290 a 890px, inteiro no primeiro monitor.
+  É por isso que **nada aqui centraliza**: o navegador não sabe onde está a
+  emenda, e a única regra defensável é não pôr um bloco único no meio.
+- Contra «só mais colunas»: nenhuma quantidade de coluna conserta um parágrafo
+  de 630 letras. Texto corrido tem limite de legibilidade que nenhum monitor
+  muda.
+
+**As três regras da faixa larga:**
+
+1. **Texto corrido tem teto** — `--medida: 74ch`, que dá **592px** medidos nesta
+   folha. Vale para parágrafo, item de lista, célula de legenda, subtítulo da
+   tela, e para a caixa de `.nota`/`.aviso`, que passava a moldura em volta de
+   um texto certo. Tabela de dados e `<pre>` ficam **de fora**: dado em coluna
+   não é linha de leitura, e cortar um `<pre>` só acrescentaria rolagem.
+2. **Célula de grade tem teto** — `--teto-cartao: 520px`, `--teto-campo: 340px`.
+   `auto-fit` com `1fr` recolhe a trilha vazia e **estica** a que sobrou: era
+   assim que um campo de «30» ficava com 850px na configuração. O teto manda a
+   sobra para a calha, e não para dentro da célula.
+3. **Texto em SVG não cresce com o monitor** — a escala pode ser constante e
+   maior que 1 (o medidor de arco vive em 1,4× de propósito, porque ali o
+   número grande *é* o desenho); o que não pode é ela **depender da janela**.
+
+**O teto vai no item, nunca no `minmax` da trilha.** Foi a primeira tentativa e
+ela quebrou o 1920: com `minmax(132px, 520px)` o navegador conta as repetições
+pelo **máximo** quando ele é um comprimento definido, então 1.888px davam três
+trilhas de 520 em vez de treze de 132, e a fileira de oito KPIs virou três
+colunas em três fileiras. O `1fr` fica onde estava; quem para de crescer é o
+cartão dentro da trilha.
+
+**Por que teto e não `@media (min-width:2000px)`:** a área central vai virar
+mais de uma região lado a lado, e no dia em que virar, uma regra presa à largura
+da **janela** estaria medindo a coisa errada — a região tem a largura dela. Teto
+em `ch` e `auto-fill` medem o **contêiner**, e por isso continuam certos sem uma
+linha nova.
+
+**Medido depois** (as mesmas seis larguras, agora com o caminho de dados longo
+que reproduz o defeito): maior parágrafo **453px** no Painel e 620px na
+configuração em todas as larguras acima de 820; maior vão rótulo→valor **328px**;
+escala do texto em SVG **1,40× constante**; zero sobreposição; zero rolagem
+lateral.
+
+O par rótulo→valor virou coluna com `columns:300px`, e não com uma grade
+`auto-fill`, porque a ordem de leitura de uma ficha é de cima para baixo: a
+multicoluna preserva isso, e a grade leria em ziguezague. Medido na ficha da
+telemetria: **1 coluna a 1180px, 3 a 1920, 8 a 3440 e 13 a 5120**, com o vão
+caindo de 4.553px para 276px — porque ele passa a ser o vão da **coluna**, e não
+o da tela.
+
+### 4.2 O regime de escala do SVG, e as três saídas
+
+| Onde | O que se fez | Por quê |
+|---|---|---|
+| `barras` (rede, discos, tabelas, IPs, bancos, usuários) | virou HTML | o desenho é rótulo + barra + valor; o navegador mede o rótulo melhor que qualquer `rotulo:112` chutado na chamada |
+| `barrasCheias` (espaço em disco) | virou HTML | **era aqui a sobreposição** — ver §6.1 |
+| `areaHoras` (operações por hora) | `viewBox` nasce na **largura medida** | a geometria precisa de SVG, e aqui a largura extra vira mais gráfico: as marcas do eixo passam de sete a uma por hora |
+| `anel` (usuários por nível) | largura fixa de 320px, centrado | esticar um círculo não serve a ninguém |
+| `medidor` (CPU, memória) | já tinha largura fixa (168px) | 1,4× **constante** é decisão de desenho, não deriva do monitor |
+
+O `viewBox` na largura medida não é invenção desta rodada: o painel de bolhas da
+telemetria já fazia isso (`svg.setAttribute("viewBox", ...)` a partir do
+`clientWidth`). O que mudou foi generalizar a regra e escrevê-la.
+
+O gráfico de horas segue a largura com um `ResizeObserver` só, criado uma vez, e
+guarda a última largura no `dataset` para não repintar a cada tique — arrastar a
+pega da árvore dispara dezenas deles.
 
 ### O painel lateral: dois booleanos, não três botões
 
@@ -320,6 +413,32 @@ escolha do diálogo). A frente do login já a consertou, escopando dentro de
 
 ---
 
+## 6.1 O defeito da tela larga: texto de SVG sobreposto
+
+O cartão «A máquina» desenhava o caminho do diretório de dados e o
+«9,4 GB livres de 37,0 GB · 214,9 GB reservados» como dois `<text>` do **mesmo
+`<g>`**, um em `x=0` e o outro ancorado no fim de um `viewBox` de 800. Texto de
+SVG **não quebra, não corta e não empurra ninguém**: quando não cabe, ele passa
+por cima do vizinho.
+
+Aparecia já a 1920 e ficava grotesco a 5120 — mas medindo, ele estava **em todas
+as larguras**, inclusive 390 e 820: o que decide não é o monitor, é o
+comprimento do caminho. Num servidor com o `base` numa pasta funda, o número
+que interessa fica ilegível no celular também.
+
+Não foi consertado dando mais espaço ao texto — foi consertado tirando o texto
+do SVG. Em HTML a célula quebra em vez de invadir a vizinha, e **sobrepor deixa
+de ser possível por construção**, e não por cuidado. O caminho está inteiro (não
+há reticências): quem cede espaço é ele, que quebra; o valor nunca quebra,
+porque cortado ele perderia o sentido.
+
+**A prova é dos dois lados**, como manda a casa: o caso `responsivo` da bateria
+**planta um caminho comprido** antes de medir, porque o diretório temporário da
+bateria é curto e sem plantar o teste passaria por engano. Com o defeito
+reposto, ele reprova nas cinco larguras.
+
+---
+
 ## 7. Como exercitar
 
 Interface só se prova exercitando, e **os quatro números que importam não se
@@ -353,13 +472,23 @@ corte inalcançável e 9 reprovações de contraste antes.
 
 ## 8. Ao acrescentar um componente
 
-1. **Abra no navegador e olhe** — nos dois temas e em 390px. Ler o código não
-   acha nenhum dos defeitos deste documento.
+1. **Abra no navegador e olhe** — nos dois temas, em 390px **e em 5120px**. Ler
+   o código não acha nenhum dos defeitos deste documento.
 2. **Nome de classe já existe?** Rode `colisoes.py`. Se for peça de moldura,
    use o id.
 3. **Cor nova nasce token**, nos dois temas, e se mede contra o **pior** fundo
    em que vai aparecer.
-4. **Grade `auto-fit`** usa `minmax(min(Npx,100%),1fr)`.
+4. **Grade `auto-fit`** usa `minmax(min(Npx,100%),1fr)`. O teto vai no **item**
+   (`max-width:var(--teto-cartao)`), nunca no `minmax` — ver §4.1.
 5. **Grade larga** vai dentro de um `.rolo`.
 6. **Não desfaça o CSS global com um curativo** (`.no.painel`, `td label`):
    escope a regra que está mordendo.
+7. **Escreveu texto?** Ele tem teto: `max-width:var(--medida)`. Um parágrafo sem
+   teto mede 5.040px num monitor duplo.
+8. **Escreveu `<text>` dentro de um SVG?** Ou o desenho nasce na largura medida,
+   ou a largura dele é fixa em px. `viewBox` esticado multiplica a fonte, e dois
+   `<text>` do mesmo `<g>` se sobrepõem em silêncio — §6.1.
+9. **Um par rótulo→valor** não estica: quando sobra largura, ele vira **coluna**
+   (`columns:300px`), não uma linha de dois mil pixels.
+10. **Nada centraliza acima de 2000px.** Num monitor duplo o meio da janela é a
+    emenda física entre os dois — §4.1.
