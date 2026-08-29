@@ -688,6 +688,28 @@ body,.cartao,.barra,.arvore,table,td,th{
 .modo .m-diz{font-size:10.5px;color:var(--texto-3);line-height:1.4;display:block;
              margin-top:2px}
 .marca-excluida{color:var(--log);font-weight:600}
+
+/* A caixa do conflito de escrita e mais larga que as outras de proposito: sao
+   tres valores lado a lado, e espremer a comparacao em 560px derrotaria o
+   unico motivo de ela existir. */
+.caixa.larga{max-width:880px}
+/* Largura fixa nas quatro colunas: sem isto, um valor comprido numa delas
+   empurra as outras para fora da caixa, e a coluna que some e justamente a
+   ultima -- «voce escreve». Com `fixed`, o texto quebra dentro da celula. */
+table.conf{table-layout:fixed}
+table.conf td,table.conf th{padding:5px 9px;font-size:12px;overflow-wrap:anywhere}
+table.conf .col{font-weight:600}
+table.conf col.c-nome{width:19%} table.conf col.c-val{width:27%}
+table.conf tr.diverge td{background:rgba(255,196,61,.06)}
+/* O `label` da folha nasce em caixa alta -- e ali ele e ROTULO. Aqui dentro
+   ele embrulha um VALOR, e valor mostrado em caixa alta e uma mentira: quem
+   olha nao sabe se «BLUMENAU» esta gravado assim ou se e a tela gritando. */
+table.conf .esc{display:flex;gap:7px;align-items:baseline;cursor:pointer;margin:0;
+  text-transform:none;letter-spacing:0;font-size:12px;color:var(--texto)}
+/* O `input` da folha tem `width:100%` -- num radio isso vira uma bolinha que
+   ocupa a celula inteira e joga o valor para o outro lado dela. */
+table.conf .esc input{margin:0;flex:0 0 auto;width:14px;height:14px;padding:0}
+.vazio-nulo{color:var(--texto-3);font-style:italic}
 tr.linha-excluida td{opacity:.55;text-decoration:line-through}
 .chip-visao{display:inline-flex;gap:0;border:1px solid var(--linha-forte);
             border-radius:7px;overflow:hidden;margin-left:8px}
@@ -965,7 +987,16 @@ async function api(op, params = {}) {
   });
   const j = await r.json();
   if (j.sessao) est.sessao = j.sessao;
-  if (!j.ok) throw new Error(j.erro || "falha");
+  if (!j.ok) {
+    // O texto é para quem lê; o nome e o código são para quem programa. Sem
+    // eles pendurados aqui, distinguir «conflito de escrita» de qualquer
+    // outra recusa obrigaria a comparar a REDAÇÃO da mensagem — e o dia em
+    // que alguém a melhorasse, a tela quebrava calada.
+    const e = new Error(j.erro || "falha");
+    e.nome = j.nome || "";
+    e.codigo = j.codigo || 0;
+    throw e;
+  }
   return j.resultado;
 }
 
@@ -2184,14 +2215,19 @@ async function abrirFicha(db, tab, rowid) {
     || (est.esquemaAtual = await api("esquema", { database: db, tabela: tab }));
   const novo = rowid === null;
 
-  let linha = {};
+  // A versão da linha no instante da leitura. Ela volta no `atualizar` e é o
+  // que faz o servidor recusar a gravação quando outra sessão mexeu no meio —
+  // a janela de conflito de escrita. Numa linha nova não há versão: não há
+  // nada de ninguém para atropelar.
+  let linha = {}, versao = 0;
   if (!novo) {
-    const r = await api("ler", { database: db, tabela: tab, rowid });
+    const r = await api("ler", { database: db, tabela: tab, rowid, com_versao: true });
     if (!r) {
       avisar(`o registro ${rowid} não existe mais`, true);
       return verConteudoEditavel(db, tab);
     }
-    linha = r;
+    linha = r.linha;
+    versao = r.versao;
   }
 
   // A coluna de sistema NAO vira campo de formulario. Quem manda nela e o
@@ -2255,13 +2291,23 @@ async function abrirFicha(db, tab, rowid) {
         const r = await api("inserir", { database: db, tabela: tab, valores: valores() });
         avisar(`linha ${r.rowid} incluída em ${tab}`);
       } else {
-        await api("atualizar", { database: db, tabela: tab, rowid, valores: valores() });
+        await api("atualizar",
+          { database: db, tabela: tab, rowid, valores: valores(), versao });
         avisar(`registro ${rowid} salvo`);
       }
       est.esquemaAtual = null;
       verConteudoEditavel(db, tab);
     } catch (err) {
       rec.textContent = "";
+      // Conflito não é erro de digitação: alguém gravou primeiro, e o que
+      // falta é uma DECISÃO, não uma correção. Em vez do recado vermelho, a
+      // comparação lado a lado.
+      if (err.nome === "CONFLITO" && !novo) {
+        return dialogoConflito(db, tab, rowid, {
+          editaveis, lida: linha, versaoLida: versao, meus: valores(),
+          aoTerminar: () => { est.esquemaAtual = null; verConteudoEditavel(db, tab); }
+        });
+      }
       avisar(String(err), true);
     }
   };
@@ -2270,10 +2316,13 @@ async function abrirFicha(db, tab, rowid) {
   // restaurar. Sem esta guarda, ligar o clique estoura na abertura da ficha.
   if (!novo && !marcada) $("#btExcluir").onclick = ev => {
     ev.preventDefault();
+    // A versão vai junto: excluir uma linha que outra pessoa acabou de
+    // alterar é a mesma janela de conflito, e apagar o trabalho dela sem
+    // avisar seria pior do que sobrescrever.
     dialogoExcluir(db, tab, rowid, () => {
       est.esquemaAtual = null;
       verConteudoEditavel(db, tab);
-    });
+    }, versao);
   };
 
   $("#btVoltar").onclick = ev => { ev.preventDefault(); verConteudoEditavel(db, tab); };
@@ -4848,7 +4897,7 @@ async function telaImportar(db, tab) {
    passar, porque validação de tela é conveniência e não regra. */
 
 /** Pergunta o modo e o motivo, e executa. `aoTerminar` roda se deu certo. */
-async function dialogoExcluir(db, tab, rowid, aoTerminar) {
+async function dialogoExcluir(db, tab, rowid, aoTerminar, versao) {
   // Quem sabe se a tabela exige motivo é o servidor. Perguntar antes evita
   // o vaivém de mandar sem motivo e receber a recusa.
   let exige = false;
@@ -4937,7 +4986,8 @@ async function dialogoExcluir(db, tab, rowid, aoTerminar) {
           + `digitação se mantém.`)) return;
     try {
       const r = await api("excluir",
-        { database: db, tabela: tab, rowid, motivo, fisico: modo === "fisico" });
+        { database: db, tabela: tab, rowid, motivo, fisico: modo === "fisico",
+          ...(versao ? { versao } : {}) });
       fechar();
       avisar(r.modo === "suave"
         ? `registro ${rowid} marcado como excluído — dá para restaurar`
@@ -4945,6 +4995,171 @@ async function dialogoExcluir(db, tab, rowid, aoTerminar) {
       if (aoTerminar) aoTerminar();
     } catch (err) {
       fundo.querySelector("#excRecado").innerHTML =
+        `<div class="aviso mal">${esc(String(err))}</div>`;
+    }
+  };
+}
+
+/* ============================================== A janela de conflito de escrita
+   O caso: você abre a ficha do registro 42 às 9h02, sai para o café, volta às
+   9h11 e clica em «Salvar». Entre uma coisa e outra, outra pessoa gravou a
+   mesma linha. Sem esta janela, o seu «Salvar» apagava o trabalho dela — sem
+   erro, sem registro, sem ninguém perceber até faltar o dado.
+
+   A peça que faz isso funcionar já estava no formato desde o começo: cada slot
+   do `.reg` guarda uma VERSÃO, que sobe a cada regravação. A ficha lê a linha e
+   guarda a versão; o «Salvar» manda a versão de volta; o servidor recusa se ela
+   não for mais a atual. Custa 24 bytes de leitura e não trava nada — travar a
+   linha na leitura prenderia o registro toda vez que alguém fechasse o
+   navegador com a ficha aberta.
+
+   O que se mostra aqui são os TRÊS valores, que é o que o HFSQL(R) mostra:
+   o que você leu, o que o outro escreveu, e o que você ia escrever. Quem
+   decide é gente. */
+
+/** Mostra os três valores e grava a escolha.
+ *
+ * `ctx`: `{ editaveis, lida, versaoLida, meus, aoTerminar }` — as colunas do
+ * formulário, a linha como você a leu, a versão que ela tinha, o que você ia
+ * gravar, e o que fazer depois. Vai num objeto e não em sete parâmetros
+ * soltos porque a caixa se chama de novo quando um terceiro grava no meio, e
+ * uma lista posicional dessa altura erra calada na recursão. */
+async function dialogoConflito(db, tab, rowid, ctx) {
+  const { editaveis, lida, versaoLida, meus, aoTerminar } = ctx;
+  // O que o outro escreveu só se sabe relendo. É uma leitura a mais, e ela só
+  // acontece no conflito — que é raro. Pagar isso em toda gravação para ter o
+  // valor à mão seria trocar o caso raro pelo caso comum.
+  let atual;
+  try {
+    atual = await api("ler", { database: db, tabela: tab, rowid, com_versao: true });
+  } catch (e) { return avisar(String(e), true); }
+
+  const fundo = document.createElement("div");
+  fundo.className = "sobre";
+  const fechar = () => fundo.remove();
+
+  // Excluída de vez não tem o que reconciliar: não há linha para gravar por
+  // cima. O que dá para dizer é onde ela foi parar.
+  if (!atual) {
+    fundo.innerHTML = `
+      <div class="caixa" role="dialog" aria-modal="true" aria-label="Conflito de escrita">
+        <h3>O registro ${rowid} foi excluído</h3>
+        <div class="sub">${esc(db)} · ${esc(tab)}</div>
+        <div class="aviso mal">Outra sessão excluiu esta linha <b>de vez</b>
+          depois que você a abriu. A sua alteração não tem mais onde ser
+          gravada.</div>
+        <p class="leg">A linha inteira está no <code>.trash</code>, e o motivo
+          no <code>.reason</code> — quem administra consegue ver as duas
+          coisas, e o slot não foi reaproveitado.</p>
+        <div class="acoes">
+          <button class="botao secundario" id="btCfFecha">Voltar à lista</button>
+        </div>
+      </div>`;
+    document.body.appendChild(fundo);
+    fundo.querySelector("#btCfFecha").onclick = ev => {
+      ev.preventDefault(); fechar(); if (aoTerminar) aoTerminar();
+    };
+    return;
+  }
+
+  const outra = atual.linha;
+  const mostrar = v => v === null || v === undefined
+    ? `<span class="vazio-nulo">nulo</span>` : esc(String(v));
+  // Dois valores que se ESCREVEM igual são o mesmo valor para quem está
+  // decidindo. Comparar pelo texto mostrado, e não pelo tipo, evita marcar
+  // como divergência o 10 que voltou número e o 10 que saiu do formulário
+  // como texto — divergência que só existiria na cabeça do JavaScript.
+  const igual = (a, b) => mostrar(a) === mostrar(b);
+
+  const linhas = editaveis.map((c, i) => ({
+    nome: c.nome,
+    antes: lida[c.nome] === undefined ? null : lida[c.nome],
+    outro: outra[c.nome] === undefined ? null : outra[c.nome],
+    meu: meus[i]
+  }));
+  const briga = linhas.filter(l => !igual(l.outro, l.meu));
+  const iguais = linhas.length - briga.length;
+
+  fundo.innerHTML = `
+    <div class="caixa larga" role="dialog" aria-modal="true"
+         aria-label="Conflito de escrita">
+      <h3>Conflito de escrita no registro ${rowid}</h3>
+      <div class="sub">${esc(db)} · ${esc(tab)} — você leu a versão
+        ${versaoLida} e a atual é a ${atual.versao}</div>
+      <div class="aviso">Outra sessão gravou esta linha depois que você a abriu.
+        Nada foi sobrescrito: escolha coluna por coluna o que fica.</div>
+      ${outra["softdeleted"] === true ? `<div class="aviso mal">
+        <b class="marca-excluida">O outro marcou esta linha como excluída.</b>
+        Gravar aqui mantém a marca — a linha continua fora das listas.</div>` : ""}
+      ${briga.length ? `
+      <div class="rolo"><table class="conf">
+        <colgroup><col class="c-nome"><col class="c-val"><col class="c-val"><col></colgroup>
+        <thead><tr>
+        <th>Coluna</th><th>Valor anterior</th>
+        <th>O outro escreveu</th><th>Você escreve</th></tr></thead><tbody>
+        ${briga.map(l => {
+          // O padrão de cada coluna não é «o meu» nem «o outro»: é quem MEXEU
+          // nela. Coluna que eu não toquei fica com a alteração do outro;
+          // coluna que eu digitei fica com a minha. Duas pessoas que editaram
+          // campos diferentes da mesma linha saem daqui com os dois trabalhos
+          // preservados, sem ter de escolher nada.
+          const mexi = !igual(l.meu, l.antes);
+          return `<tr class="diverge">
+            <td class="col">${esc(l.nome)}</td>
+            <td>${mostrar(l.antes)}</td>
+            <td><label class="esc">
+              <input type="radio" name="cf_${esc(l.nome)}" value="outro"
+                     ${mexi ? "" : "checked"}><span>${mostrar(l.outro)}</span>
+            </label></td>
+            <td><label class="esc">
+              <input type="radio" name="cf_${esc(l.nome)}" value="meu"
+                     ${mexi ? "checked" : ""}><span>${mostrar(l.meu)}</span>
+            </label></td></tr>`;
+        }).join("")}
+      </tbody></table></div>
+      <p class="leg">Já vem marcado quem <b>mexeu</b> em cada coluna: a que
+        você digitou fica com o seu valor, a que só o outro mudou fica com o
+        dele.${iguais ? ` As outras ${iguais} coluna(s) estão iguais dos dois
+        lados.` : ""}</p>`
+      : `<div class="aviso">As suas alterações e as do outro <b>não se
+           cruzam</b> em nenhuma coluna: gravar não desfaz nada.</div>`}
+      <div id="cfRecado"></div>
+      <div class="acoes">
+        <button class="botao secundario" id="btCfNao">Descartar o meu</button>
+        <button class="botao alterar" id="btCfSim">Gravar o escolhido</button>
+      </div>
+    </div>`;
+  document.body.appendChild(fundo);
+
+  fundo.onclick = ev => { if (ev.target === fundo) fechar(); };
+  fundo.querySelector("#btCfNao").onclick = ev => {
+    ev.preventDefault(); fechar(); if (aoTerminar) aoTerminar();
+  };
+
+  fundo.querySelector("#btCfSim").onclick = async ev => {
+    ev.preventDefault();
+    const escolhido = editaveis.map((c, i) => {
+      const r = fundo.querySelector(`input[name="cf_${c.nome}"]:checked`);
+      if (!r) return meus[i];                     // coluna sem briga
+      return r.value === "meu" ? meus[i]
+                               : (outra[c.nome] === undefined ? null : outra[c.nome]);
+    });
+    try {
+      await api("atualizar", { database: db, tabela: tab, rowid,
+                               valores: escolhido, versao: atual.versao });
+      fechar();
+      avisar(`registro ${rowid} gravado com a versão escolhida`);
+      if (aoTerminar) aoTerminar();
+    } catch (err) {
+      // Um TERCEIRO gravou enquanto esta caixa estava aberta. A resposta é a
+      // mesma caixa outra vez, agora com a escolha desta rodada no papel de
+      // «você escreve» — e não um «tente de novo» que perderia o trabalho.
+      if (err.nome === "CONFLITO") {
+        fechar();
+        return dialogoConflito(db, tab, rowid, { editaveis, lida: outra,
+          versaoLida: atual.versao, meus: escolhido, aoTerminar });
+      }
+      fundo.querySelector("#cfRecado").innerHTML =
         `<div class="aviso mal">${esc(String(err))}</div>`;
     }
   };

@@ -2958,14 +2958,31 @@ impl Servidor {
         ]))
     }
 
+    /// `ler`: uma linha pelo rowid.
+    ///
+    /// Com `"com_versao": true` a resposta deixa de ser a linha crua e passa
+    /// a ser `{linha, rowid, versao}`. A forma muda porque a versao NAO pode
+    /// entrar como mais uma chave dentro da linha: ali ela viraria uma coluna
+    /// que nao existe no esquema, e todo cliente que percorre as chaves da
+    /// resposta comecaria a mandar de volta um campo fantasma. Quem nao pede
+    /// continua recebendo exatamente o que sempre recebeu.
     fn op_ler(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let rowid = self.rowid(p)?;
+        let com_versao = p.booleano_ou("com_versao", false);
         let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
-        match t.ler(rowid)? {
-            None => Ok(Json::Nulo),
-            Some(linha) => Ok(linha_para_json(&linha, t.esquema())),
+        let linha = match t.ler(rowid)? {
+            None => return Ok(Json::Nulo),
+            Some(l) => linha_para_json(&l, t.esquema()),
+        };
+        if !com_versao {
+            return Ok(linha);
         }
+        Ok(Json::objeto(vec![
+            ("rowid", Json::de_u64(rowid)),
+            ("linha", linha),
+            ("versao", Json::de_u64(t.versao(rowid)?.unwrap_or(0))),
+        ]))
     }
 
     fn op_varrer(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
@@ -3404,6 +3421,7 @@ impl Servidor {
             .ok_or_else(|| PhxError::Esquema("informe \"valores\"".into()))?;
         let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
+        conferir_versao_pedida(&mut t, p, rowid)?;
         let mut linha = json_para_linha(&valores_json, t.esquema())?;
 
         // Quem alterou a linha nao mandou a coluna de sistema? Entao ela nao
@@ -3425,7 +3443,12 @@ impl Servidor {
         t.atualizar(rowid, &linha)?;
         self.gravar_de_verdade(&mut t, p)?;
         self.residente_mut(p, |m| m.anotar_alteracao(rowid, &linha));
-        Ok(Json::objeto(vec![("rowid", Json::de_u64(rowid))]))
+        // A versao nova volta na resposta: quem grava duas vezes seguidas
+        // continua protegido sem precisar reler a linha inteira no meio.
+        Ok(Json::objeto(vec![
+            ("rowid", Json::de_u64(rowid)),
+            ("versao", Json::de_u64(t.versao(rowid)?.unwrap_or(0))),
+        ]))
     }
 
     /// Exclui. **Suave por padrao**, fisica so quando pedida.
@@ -3444,6 +3467,7 @@ impl Servidor {
         let fisico = p.booleano_ou("fisico", false);
         let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
+        conferir_versao_pedida(&mut t, p, rowid)?;
         let tem_marca = t.esquema().coluna_softdeleted().is_some();
 
         if fisico || !tem_marca {
@@ -3483,6 +3507,7 @@ impl Servidor {
         let motivo = p.texto_ou("motivo", "").trim().to_string();
         let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
+        conferir_versao_pedida(&mut t, p, rowid)?;
         let voltou = t.restaurar(rowid, &motivo)?;
         self.gravar_de_verdade(&mut t, p)?;
         if voltou {
@@ -5938,6 +5963,30 @@ fn trava_envenenada() -> PhxError {
     PhxError::Corrompido("uma operacao anterior entrou em panico e deixou a trava suja".into())
 }
 
+/// A guarda de conflito de escrita, quando o cliente pede.
+///
+/// # Por que a conferencia e pedida, e nao imposta
+///
+/// Imposta, todo cliente escrito antes desta versao pararia de gravar de
+/// um dia para o outro -- e o que ele estaria recebendo nao e protecao, e um
+/// erro que ele nao sabe tratar. Pedida, quem manda a versao ganha a garantia
+/// na hora e quem nao manda continua com o comportamento de sempre: a ultima
+/// gravacao vence.
+///
+/// A interface web manda sempre, porque ali existe gente do outro lado e
+/// existe a janela de minutos entre abrir a ficha e clicar em salvar. E onde
+/// o conflito de fato acontece.
+///
+/// Zero e ausente sao a mesma coisa: a versao de um registro vivo comeca em
+/// 1, entao o zero nao tira nenhum valor legitimo do caminho.
+fn conferir_versao_pedida(t: &mut Table, p: &Json, rowid: phxsql_core::RowId) -> Result<()> {
+    let esperada = p.inteiro_ou("versao", 0).max(0) as u64;
+    if esperada == 0 {
+        return Ok(());
+    }
+    t.conferir_versao(rowid, esperada)
+}
+
 /// A resposta de erro do protocolo, com codigo.
 ///
 /// O codigo vem JUNTO com o texto, e nao no lugar dele: o texto e para quem
@@ -6922,5 +6971,243 @@ mod testes_exclusao {
             "1.2.3.4",
         );
         assert!(r.is_ok(), "o operador nao conseguiu excluir: {r:?}");
+    }
+}
+
+/// A janela de conflito de escrita, pelo protocolo.
+///
+/// O que estes testes travam nao e so o "recusa quando a versao e velha" --
+/// e principalmente o **contrario**: o cliente que nao manda versao nenhuma
+/// tem de continuar gravando como sempre gravou. Uma guarda que quebra todo
+/// cliente antigo nao e protecao, e um estrago.
+#[cfg(test)]
+mod testes_conflito {
+    use super::*;
+    use crate::usuarios::Cadastro;
+
+    fn dir_temp(nome: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("phx-conf-{nome}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    /// Um banco com uma tabela de uma linha, e a sessao para mexer nela.
+    fn com_uma_linha(dir: &std::path::Path) -> Arc<Servidor> {
+        let c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            cadastro: Cadastro::default(),
+            ..Config::default()
+        };
+        let s = Servidor::novo(c).unwrap();
+        let sessao = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &sessao)
+            .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"c",
+                    "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true},
+                               {"nome":"nome","tipo":"Str(20)"}],
+                    "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]}"#,
+            ),
+            &sessao,
+        )
+        .unwrap();
+        s.executar(
+            "inserir",
+            &pedido(r#"{"database":"b","tabela":"c","linha":{"id":1,"nome":"Adriano"}}"#),
+            &sessao,
+        )
+        .unwrap();
+        s
+    }
+
+    /// Quem nao pede versao recebe a linha crua, como sempre recebeu.
+    #[test]
+    fn ler_sem_pedir_versao_nao_muda_de_forma() {
+        let dir = dir_temp("forma");
+        let s = com_uma_linha(&dir);
+        let r = s
+            .executar(
+                "ler",
+                &pedido(r#"{"database":"b","tabela":"c","rowid":1}"#),
+                &Sessao::default(),
+            )
+            .unwrap();
+        assert_eq!(r.texto_ou("nome", ""), "Adriano");
+        assert!(r.campo("versao").is_none(), "a versao vazou na linha crua");
+        assert!(r.campo("linha").is_none(), "a forma da resposta mudou");
+    }
+
+    #[test]
+    fn ler_com_versao_devolve_a_linha_e_a_versao() {
+        let dir = dir_temp("com-versao");
+        let s = com_uma_linha(&dir);
+        let r = s
+            .executar(
+                "ler",
+                &pedido(r#"{"database":"b","tabela":"c","rowid":1,"com_versao":true}"#),
+                &Sessao::default(),
+            )
+            .unwrap();
+        assert_eq!(r.inteiro_ou("versao", -1), 1);
+        assert_eq!(r.inteiro_ou("rowid", -1), 1);
+        assert_eq!(
+            r.campo("linha").unwrap().texto_ou("nome", ""),
+            "Adriano",
+            "a linha nao veio dentro do envelope"
+        );
+    }
+
+    /// O cliente antigo -- o que nao sabe o que e versao -- continua gravando.
+    #[test]
+    fn atualizar_sem_versao_continua_gravando() {
+        let dir = dir_temp("antigo");
+        let s = com_uma_linha(&dir);
+        let sessao = Sessao::default();
+        for nome in ["Maria", "Joao"] {
+            s.executar(
+                "atualizar",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"c","rowid":1,"linha":{{"id":1,"nome":"{nome}"}}}}"#
+                )),
+                &sessao,
+            )
+            .unwrap();
+        }
+        let r = s
+            .executar(
+                "ler",
+                &pedido(r#"{"database":"b","tabela":"c","rowid":1}"#),
+                &sessao,
+            )
+            .unwrap();
+        assert_eq!(r.texto_ou("nome", ""), "Joao");
+    }
+
+    /// A resposta do `atualizar` traz a versao nova: quem grava duas vezes
+    /// seguidas nao precisa reler a linha inteira no meio.
+    #[test]
+    fn atualizar_devolve_a_versao_nova() {
+        let dir = dir_temp("devolve");
+        let s = com_uma_linha(&dir);
+        let r = s
+            .executar(
+                "atualizar",
+                &pedido(
+                    r#"{"database":"b","tabela":"c","rowid":1,
+                        "linha":{"id":1,"nome":"Maria"},"versao":1}"#,
+                ),
+                &Sessao::default(),
+            )
+            .unwrap();
+        assert_eq!(r.inteiro_ou("versao", -1), 2);
+    }
+
+    /// Os dois leem a versao 1; o segundo chega depois e e recusado.
+    #[test]
+    fn atualizar_com_versao_velha_recusa() {
+        let dir = dir_temp("velha");
+        let s = com_uma_linha(&dir);
+        let sessao = Sessao::default();
+        s.executar(
+            "atualizar",
+            &pedido(
+                r#"{"database":"b","tabela":"c","rowid":1,
+                    "linha":{"id":1,"nome":"Maria"},"versao":1}"#,
+            ),
+            &sessao,
+        )
+        .unwrap();
+
+        let e = s
+            .executar(
+                "atualizar",
+                &pedido(
+                    r#"{"database":"b","tabela":"c","rowid":1,
+                        "linha":{"id":1,"nome":"Joao"},"versao":1}"#,
+                ),
+                &sessao,
+            )
+            .unwrap_err();
+        assert_eq!(e.codigo(), 3004);
+        assert_eq!(e.nome(), "CONFLITO");
+
+        // E nada foi gravado: o trabalho do primeiro esta inteiro.
+        let r = s
+            .executar(
+                "ler",
+                &pedido(r#"{"database":"b","tabela":"c","rowid":1,"com_versao":true}"#),
+                &sessao,
+            )
+            .unwrap();
+        assert_eq!(r.campo("linha").unwrap().texto_ou("nome", ""), "Maria");
+        assert_eq!(r.inteiro_ou("versao", -1), 2);
+    }
+
+    /// Excluir uma linha que outra pessoa acabou de alterar e a mesma janela.
+    #[test]
+    fn excluir_com_versao_velha_recusa() {
+        let dir = dir_temp("excluir");
+        let s = com_uma_linha(&dir);
+        let sessao = Sessao::default();
+        s.executar(
+            "atualizar",
+            &pedido(r#"{"database":"b","tabela":"c","rowid":1,"linha":{"id":1,"nome":"Maria"}}"#),
+            &sessao,
+        )
+        .unwrap();
+
+        let e = s
+            .executar(
+                "excluir",
+                &pedido(r#"{"database":"b","tabela":"c","rowid":1,"versao":1}"#),
+                &sessao,
+            )
+            .unwrap_err();
+        assert_eq!(e.nome(), "CONFLITO");
+
+        // A linha continua la, e nao marcada.
+        let r = s
+            .executar(
+                "varrer",
+                &pedido(r#"{"database":"b","tabela":"c"}"#),
+                &sessao,
+            )
+            .unwrap();
+        assert_eq!(r.inteiro_ou("devolvidas", -1), 1);
+    }
+
+    /// Zero e ausente sao a mesma coisa. Sem isto, um cliente que guarda a
+    /// versao num campo numerico nao inicializado gravaria sempre -- ou nunca.
+    #[test]
+    fn versao_zero_e_o_mesmo_que_nao_mandar() {
+        let dir = dir_temp("zero");
+        let s = com_uma_linha(&dir);
+        let sessao = Sessao::default();
+        s.executar(
+            "atualizar",
+            &pedido(r#"{"database":"b","tabela":"c","rowid":1,"linha":{"id":1,"nome":"Maria"}}"#),
+            &sessao,
+        )
+        .unwrap();
+        s.executar(
+            "atualizar",
+            &pedido(
+                r#"{"database":"b","tabela":"c","rowid":1,
+                    "linha":{"id":1,"nome":"Joao"},"versao":0}"#,
+            ),
+            &sessao,
+        )
+        .unwrap();
     }
 }

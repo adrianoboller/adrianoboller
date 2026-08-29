@@ -31,6 +31,8 @@ pub enum PhxError {
     NaoEncontrado(String),
     /// Violacao de indice unico.
     Duplicado(String),
+    /// Outra sessao mexeu no registro entre a leitura e a gravacao.
+    Conflito(String),
     /// Credencial invalida ou poder insuficiente.
     Autorizacao(String),
     /// Valor excede o limite fisico do formato.
@@ -72,6 +74,7 @@ impl PhxError {
             PhxError::NaoEncontrado(_) => 3001,
             PhxError::Duplicado(_) => 3002,
             PhxError::LimiteExcedido(_) => 3003,
+            PhxError::Conflito(_) => 3004,
             PhxError::Autorizacao(_) => 4001,
             PhxError::Io(_) => 5001,
         }
@@ -90,6 +93,7 @@ impl PhxError {
             PhxError::NaoEncontrado(_) => "NAO_ENCONTRADO",
             PhxError::Duplicado(_) => "DUPLICADO",
             PhxError::LimiteExcedido(_) => "LIMITE_EXCEDIDO",
+            PhxError::Conflito(_) => "CONFLITO",
             PhxError::Autorizacao(_) => "ACESSO_NEGADO",
             PhxError::Io(_) => "ERRO_DE_ES",
         }
@@ -146,6 +150,7 @@ impl fmt::Display for PhxError {
             PhxError::Tipo(m) => write!(f, "tipo invalido: {m}"),
             PhxError::NaoEncontrado(m) => write!(f, "nao encontrado: {m}"),
             PhxError::Duplicado(m) => write!(f, "chave duplicada: {m}"),
+            PhxError::Conflito(m) => write!(f, "conflito de escrita: {m}"),
             PhxError::Autorizacao(m) => write!(f, "acesso negado: {m}"),
             PhxError::LimiteExcedido(m) => write!(f, "limite excedido: {m}"),
         }
@@ -192,6 +197,7 @@ mod testes_codigo {
             PhxError::NaoEncontrado(String::new()),
             PhxError::Duplicado(String::new()),
             PhxError::LimiteExcedido(String::new()),
+            PhxError::Conflito(String::new()),
             PhxError::Autorizacao(String::new()),
             PhxError::Io(std::io::Error::other("x")),
         ];
@@ -218,6 +224,7 @@ mod testes_codigo {
         assert_eq!(PhxError::NaoEncontrado(String::new()).codigo(), 3001);
         assert_eq!(PhxError::Duplicado(String::new()).codigo(), 3002);
         assert_eq!(PhxError::LimiteExcedido(String::new()).codigo(), 3003);
+        assert_eq!(PhxError::Conflito(String::new()).codigo(), 3004);
         assert_eq!(PhxError::Autorizacao(String::new()).codigo(), 4001);
         assert_eq!(PhxError::Io(std::io::Error::other("x")).codigo(), 5001);
     }
@@ -236,6 +243,9 @@ mod testes_codigo {
     fn so_o_erro_de_es_pede_nova_tentativa() {
         assert!(PhxError::Io(std::io::Error::other("x")).adianta_repetir());
         assert!(!PhxError::Duplicado(String::new()).adianta_repetir());
+        // Repetir um conflito e escrever por cima do outro sem olhar. Quem
+        // decide e gente, e nao um laco de nova tentativa.
+        assert!(!PhxError::Conflito(String::new()).adianta_repetir());
         assert!(!PhxError::Autorizacao(String::new()).adianta_repetir());
     }
 }

@@ -129,14 +129,14 @@ o código, não contra a lembrança — foi assim que a chave estrangeira saiu d
 | ☑️ | 120 | **Chave composta livre e única** | as duas já existiam no formato; faltava teste que as separasse. A única recusa **antes de gravar**, e a recusa não consome slot |
 | ☑️ | 121 | **Analisar o PDF do HFSQL(R) contra o projeto** | `docs/HFSQL.md`, item por item. O que falta, em ordem de valor: direito no nível da **tabela**, índice de texto completo, índice parcial, ordenação linguística, e a **janela de conflito de escrita** |
 | ☑️ | 122 | **Analisar o DBeaver: o que dá para reaproveitar** | `docs/DBEAVER.md`. Código: não vale — Apache 2.0 permite, mas seria trazer o Eclipse inteiro. Ferramenta: vale muito, e os três caminhos exigem a **mesma** camada SQL |
-| ☐ | 123 | **Janela de conflito de escrita** | a melhor ideia do PDF do HFSQL(R): o segundo a salvar vê «valor anterior / o outro escreveu / você escreve» e escolhe. Hoje a segunda gravação vence em silêncio — e a peça já está no formato: o `.reg` guarda uma **versão por registro**. É o item mais barato com o maior ganho de correção |
+| ☑️ | 123 | **Janela de conflito de escrita** | feito **sem mudar formato**: a versão por registro do `.reg` estava lá desde a v1. `ler` devolve a versão com `"com_versao"`, `atualizar`/`excluir`/`restaurar` conferem a versão que o cliente mandar, e a recusa é o erro **3004 `CONFLITO`**. A janela mostra as três colunas do PDF e vai além dele: **já vem marcado quem mexeu em cada coluna**, então dois que editaram campos diferentes saem com os dois trabalhos. A conferência é **pedida, não imposta** — cliente antigo continua gravando |
 | ☐ | 124 | **Direito no nível da tabela** | hoje a permissão para na base: quem lê a base lê todas as tabelas. O portão já existe e é um ponto só |
 | ☐ | 125 | **Marcar coluna como dado pessoal (LGPD/GDPR)** | uma marca por coluna e uma tela que audita onde elas estão. O cadastro de campos já tem `caption`, `descricao` e `mascara` — é mais um campo |
 | ☐ | 126 | **Cluster: endereço único, eleição e promoção automática** | `docs/CLUSTER.md`. A peça difícil já está pronta — a réplica que alcança sozinha e para quando diverge. Falta o que fica em volta |
 | ☐ | 127 | **Diagrama ER e editor de modelo** | as chaves estrangeiras já estão declaradas e já vêm no `esquema`; falta o desenho e a edição visual. É SVG, que é do que o dossiê inteiro é feito |
 | ☑️ | 67 | **Botão e menu Tabelas** para gerir as tabelas do banco: nova, estrutura, editar conteúdo, partições, duplicar, reparar tabela, reparar índice e excluir — e **Gestão de transações** no menu de ferramentas | as oito operações funcionam de ponta a ponta; três delas (`criar_tabela`, `duplicar_tabela`, `excluir_tabela`) nasceram aqui, e `criar_schema` — prometido na documentação e nunca despachado — junto |
 
-**107 feitos · 7 parciais · 13 planejados**, de 127 pedidos.
+**108 feitos · 7 parciais · 12 planejados**, de 127 pedidos.
 
 Fora do que você pediu, entraram por medição: o CRC slice-by-8, o `descer` sem
 reler a folha, a conferência de unicidade sem descida dupla, e dezoito

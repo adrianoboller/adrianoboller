@@ -108,6 +108,7 @@ impl Cliente {
                 "CORROMPIDO" => PhxError::Corrompido(texto),
                 "TIPO_INVALIDO" => PhxError::Tipo(texto),
                 "LIMITE_EXCEDIDO" => PhxError::LimiteExcedido(texto),
+                "CONFLITO" => PhxError::Conflito(texto),
                 _ => PhxError::Esquema(texto),
             });
         }

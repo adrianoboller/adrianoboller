@@ -922,6 +922,26 @@ impl RegFile {
         Ok(b[0] == STATUS_ATIVO)
     }
 
+    /// A versao do registro: quantas vezes ele foi regravado desde que nasceu.
+    ///
+    /// Devolve `None` quando o slot nao esta ativo -- registro nunca usado ou
+    /// excluido de vez.
+    ///
+    /// Le so o cabecalho do slot, 24 bytes, e nao o payload: quem confere se
+    /// pode gravar nao precisa do conteudo, e uma tabela com memo de
+    /// megabytes cobraria o arquivo externo inteiro por uma pergunta de
+    /// oito bytes.
+    pub fn versao(&mut self, rowid: RowId) -> Result<Option<u64>> {
+        self.conferir_faixa(rowid)?;
+        let (volume, offset) = self.localizar(rowid);
+        let mut cab = [0u8; SLOT_CAB];
+        self.volumes.ler(volume, offset, &mut cab)?;
+        if cab[0] != STATUS_ATIVO {
+            return Ok(None);
+        }
+        Ok(Some(Campos(&cab).u64(8)))
+    }
+
     /// Regrava o payload de um registro existente, no mesmo slot.
     /// O rowid e a posicao fisica nao mudam.
     /// Devolve a nova versao do registro.
