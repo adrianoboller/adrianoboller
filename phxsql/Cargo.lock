@@ -4,7 +4,7 @@ version = 3
 
 [[package]]
 name = "phxsql-cli"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "phxsql-core",
  "phxsql-store",
@@ -12,7 +12,7 @@ dependencies = [
 
 [[package]]
 name = "phxsql-cmd"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "phxsql-core",
  "phxsql-server",
@@ -20,11 +20,11 @@ dependencies = [
 
 [[package]]
 name = "phxsql-core"
-version = "0.17.0"
+version = "0.18.0"
 
 [[package]]
 name = "phxsql-server"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "phxsql-core",
  "phxsql-sql",
@@ -33,14 +33,14 @@ dependencies = [
 
 [[package]]
 name = "phxsql-sql"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "phxsql-core",
 ]
 
 [[package]]
 name = "phxsql-store"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "phxsql-core",
 ]

@@ -35,7 +35,7 @@ use phxsql_store::table::{Table, Visao};
 use crate::acesso::{Acesso, LogAcessos};
 use crate::blacklist::Blacklist;
 use crate::config::{Config, Durabilidade};
-use crate::dblink::{mysql, Definicao, Motor};
+use crate::dblink::{Definicao, Motor};
 use crate::exportar::Formato;
 use crate::http;
 use crate::juncao::{Lado, Tipo as TipoJuncao, Uniao};
@@ -5870,213 +5870,45 @@ impl Servidor {
     /// mao: conectar leva ida e volta de rede, e segurar a trava enquanto isso
     /// travaria a tela de cadastro de todo mundo por causa de um host que nao
     /// responde.
-    fn ligar(&self, p: &Json) -> Result<(Definicao, mysql::Conexao)> {
+    fn ligar(&self, p: &Json) -> Result<(Definicao, crate::dblink::Conexao)> {
         let d = {
             let r = self.dblink.lock().map_err(|_| trava_envenenada())?;
             r.achar(p.texto_ou("dblink", p.texto_ou("nome", "")))?
                 .clone()
         };
-        let c = d.conectar()?;
+        // `abrir` escolhe a conexao pelo motor da definicao -- e por aqui que
+        // o PostgreSQL(R) entra sem que nenhuma operacao precise saber dele.
+        let c = d.abrir()?;
         Ok((d, c))
     }
 
     fn op_dblink_testar(&self, p: &Json) -> Result<Json> {
-        let comeco = Instant::now();
-        let (d, mut c) = self.ligar(p)?;
-        c.ping()?;
-        let versao = c.versao.clone();
-        let id = c.conexao_id;
-        // Uma pergunta a mais, que e a que o operador realmente quer: com quem
-        // o outro banco acha que esta falando, e em que base caiu.
-        let quem = c
-            .consultar("SELECT current_user(), database(), version()", 1)
-            .ok();
-        c.encerrar();
-        let campo = |i: usize| {
-            quem.as_ref()
-                .and_then(|r| r.linhas.first())
-                .and_then(|l| l.get(i).cloned().flatten())
-                .unwrap_or_default()
-        };
-        Ok(Json::objeto(vec![
-            ("ok", Json::Bool(true)),
-            ("dblink", Json::texto_de(&d.nome)),
-            ("motor", Json::texto_de(d.motor.nome())),
-            ("versao", Json::texto_de(versao)),
-            ("conexao_id", Json::de_u64(id as u64)),
-            ("usuario_efetivo", Json::texto_de(campo(0))),
-            ("database", Json::texto_de(campo(1))),
-            ("ms", Json::de_u64(comeco.elapsed().as_millis() as u64)),
-        ]))
+        let (d, c) = self.ligar(p)?;
+        crate::dblink::operacoes::testar(&d, c)
     }
 
     /// As bases do outro servidor.
     fn op_dblink_bancos(&self, p: &Json) -> Result<Json> {
-        let (_, mut c) = self.ligar(p)?;
-        let r = c.consultar("SHOW DATABASES", 1_000);
-        c.encerrar();
-        let r = r?;
-        Ok(Json::objeto(vec![(
-            "bancos",
-            Json::Lista(
-                r.linhas
-                    .iter()
-                    .filter_map(|l| l.first().cloned().flatten())
-                    .map(Json::texto_de)
-                    .collect(),
-            ),
-        )]))
+        let (d, c) = self.ligar(p)?;
+        crate::dblink::operacoes::bancos(&d, c)
     }
 
     /// As tabelas de uma base do outro servidor, com tamanho e comentario.
     fn op_dblink_tabelas(&self, p: &Json) -> Result<Json> {
-        let (d, mut c) = self.ligar(p)?;
-        let base = match p.texto_ou("database", "").trim() {
-            "" => d.database.clone(),
-            outro => outro.to_string(),
-        };
-        let sql = if base.is_empty() {
-            // Sem base escolhida, o proprio servidor decide pela do login.
-            "SELECT TABLE_NAME, TABLE_TYPE, ENGINE, TABLE_ROWS, \
-             DATA_LENGTH + INDEX_LENGTH, TABLE_COMMENT, TABLE_SCHEMA \
-             FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() \
-             ORDER BY TABLE_NAME"
-                .to_string()
-        } else {
-            format!(
-                "SELECT TABLE_NAME, TABLE_TYPE, ENGINE, TABLE_ROWS, \
-                 DATA_LENGTH + INDEX_LENGTH, TABLE_COMMENT, TABLE_SCHEMA \
-                 FROM information_schema.TABLES WHERE TABLE_SCHEMA = {} \
-                 ORDER BY TABLE_NAME",
-                crate::dblink::literal(&base)?
-            )
-        };
-        let r = c.consultar(&sql, 5_000);
-        c.encerrar();
-        let r = r?;
-        let campo = |l: &Vec<Option<String>>, i: usize| l.get(i).cloned().flatten();
-        Ok(Json::objeto(vec![
-            ("dblink", Json::texto_de(&d.nome)),
-            ("database", Json::texto_de(&base)),
-            (
-                "tabelas",
-                Json::Lista(
-                    r.linhas
-                        .iter()
-                        .map(|l| {
-                            Json::objeto(vec![
-                                ("nome", Json::texto_de(campo(l, 0).unwrap_or_default())),
-                                ("tipo", Json::texto_de(campo(l, 1).unwrap_or_default())),
-                                ("motor", Json::texto_de(campo(l, 2).unwrap_or_default())),
-                                // TABLE_ROWS e ESTIMATIVA no InnoDB, e dizer que
-                                // e contagem seria mentir num numero que a tela
-                                // mostra ao lado do nome.
-                                (
-                                    "registros_estimados",
-                                    Json::de_u64(
-                                        campo(l, 3).and_then(|x| x.parse().ok()).unwrap_or(0u64),
-                                    ),
-                                ),
-                                (
-                                    "bytes",
-                                    Json::de_u64(
-                                        campo(l, 4).and_then(|x| x.parse().ok()).unwrap_or(0u64),
-                                    ),
-                                ),
-                                (
-                                    "comentario",
-                                    Json::texto_de(campo(l, 5).unwrap_or_default()),
-                                ),
-                                ("schema", Json::texto_de(campo(l, 6).unwrap_or_default())),
-                            ])
-                        })
-                        .collect(),
-                ),
-            ),
-        ]))
+        let (d, c) = self.ligar(p)?;
+        crate::dblink::operacoes::tabelas(&d, c, p)
     }
 
     /// A estrutura de uma tabela do outro servidor.
     fn op_dblink_estrutura(&self, p: &Json) -> Result<Json> {
-        let tabela = crate::dblink::nome_seguro(p.texto_ou("tabela", ""))?;
-        let (d, mut c) = self.ligar(p)?;
-        let base = match p.texto_ou("database", "").trim() {
-            "" => d.database.clone(),
-            outro => outro.to_string(),
-        };
-        let alvo = if base.is_empty() {
-            crate::dblink::entre_crases(&tabela)
-        } else {
-            format!(
-                "{}.{}",
-                crate::dblink::entre_crases(&crate::dblink::nome_seguro(&base)?),
-                crate::dblink::entre_crases(&tabela)
-            )
-        };
-        let colunas = c.consultar(&format!("SHOW FULL COLUMNS FROM {alvo}"), 2_000);
-        let indices = c.consultar(&format!("SHOW INDEX FROM {alvo}"), 2_000);
-        c.encerrar();
-        Ok(Json::objeto(vec![
-            ("dblink", Json::texto_de(&d.nome)),
-            ("tabela", Json::texto_de(&tabela)),
-            ("colunas", crate::dblink::resultado_para_json(&colunas?)),
-            ("indices", crate::dblink::resultado_para_json(&indices?)),
-        ]))
+        let (d, c) = self.ligar(p)?;
+        crate::dblink::operacoes::estrutura(&d, c, p)
     }
 
     /// O conteudo de uma tabela do outro servidor, para a grade.
     fn op_dblink_ler(&self, p: &Json) -> Result<Json> {
-        let tabela = crate::dblink::nome_seguro(p.texto_ou("tabela", ""))?;
-        let (d, mut c) = self.ligar(p)?;
-        let base = match p.texto_ou("database", "").trim() {
-            "" => d.database.clone(),
-            outro => outro.to_string(),
-        };
-        let alvo = if base.is_empty() {
-            crate::dblink::entre_crases(&tabela)
-        } else {
-            format!(
-                "{}.{}",
-                crate::dblink::entre_crases(&crate::dblink::nome_seguro(&base)?),
-                crate::dblink::entre_crases(&tabela)
-            )
-        };
-        let limite = p
-            .inteiro_ou("limite", d.max_linhas as i64)
-            .clamp(1, d.max_linhas as i64);
-        let salto = p.inteiro_ou("salto", 0).max(0);
-        // A ordem entra pelo nome da coluna, validado, e nunca pelo texto cru:
-        // "ORDER BY " + o que vier da tela seria SQL de fora entrando inteiro.
-        let ordem = match p.texto_ou("ordem", "").trim() {
-            "" => String::new(),
-            coluna => format!(
-                " ORDER BY {} {}",
-                crate::dblink::entre_crases(&crate::dblink::nome_seguro(coluna)?),
-                if p.booleano_ou("descendente", false) {
-                    "DESC"
-                } else {
-                    "ASC"
-                }
-            ),
-        };
-        // Pede uma linha a mais do que o teto: se ela vier, ha mais pagina.
-        let sql = format!(
-            "SELECT * FROM {alvo}{ordem} LIMIT {} OFFSET {salto}",
-            limite + 1
-        );
-        let r = c.consultar(&sql, limite as u64 + 1);
-        c.encerrar();
-        let mut r = r?;
-        let tem_mais = r.linhas.len() as i64 > limite;
-        r.linhas.truncate(limite as usize);
-        let mut saida = crate::dblink::resultado_para_json(&r);
-        if let Json::Objeto(campos) = &mut saida {
-            campos.push(("dblink".into(), Json::texto_de(&d.nome)));
-            campos.push(("tabela".into(), Json::texto_de(&tabela)));
-            campos.push(("salto".into(), Json::de_u64(salto as u64)));
-            campos.push(("tem_mais".into(), Json::Bool(tem_mais)));
-        }
-        Ok(saida)
+        let (d, c) = self.ligar(p)?;
+        crate::dblink::operacoes::ler(&d, c, p)
     }
 
     /// Uma instrucao escrita a mao contra o outro servidor.
@@ -6089,7 +5921,14 @@ impl Servidor {
         if sql.is_empty() {
             return Err(PhxError::Esquema("dblink_consultar sem \"sql\"".into()));
         }
-        let (d, mut c) = self.ligar(p)?;
+        // As duas travas vem ANTES de conectar: recusar depois de abrir a
+        // conexao gasta uma ida a rede para dizer nao. A da ligacao precisa da
+        // definicao, entao ela e achada primeiro, sem conectar.
+        let d = {
+            let r = self.dblink.lock().map_err(|_| trava_envenenada())?;
+            r.achar(p.texto_ou("dblink", p.texto_ou("nome", "")))?
+                .clone()
+        };
         if !crate::dblink::so_consulta(&sql) {
             if d.somente_leitura {
                 return Err(PhxError::Autorizacao(format!(
@@ -6106,19 +5945,8 @@ impl Servidor {
         let limite = p
             .inteiro_ou("limite", d.max_linhas as i64)
             .clamp(1, d.max_linhas as i64) as u64;
-        let comeco = Instant::now();
-        let r = c.consultar(&sql, limite);
-        c.encerrar();
-        let r = r?;
-        let mut saida = crate::dblink::resultado_para_json(&r);
-        if let Json::Objeto(campos) = &mut saida {
-            campos.push(("dblink".into(), Json::texto_de(&d.nome)));
-            campos.push((
-                "ms".into(),
-                Json::de_u64(comeco.elapsed().as_millis() as u64),
-            ));
-        }
-        Ok(saida)
+        let c = d.abrir()?;
+        crate::dblink::operacoes::consultar(&d, c, &sql, limite)
     }
 
     // ----------------------------------------------------- a maquina embaixo
