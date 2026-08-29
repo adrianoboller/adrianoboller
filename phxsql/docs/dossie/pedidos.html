@@ -1,4 +1,4 @@
-<title>Os 132 pedidos do PhxSql</title>
+<title>Os 133 pedidos do PhxSql</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -178,15 +178,15 @@ footer{
 <div class="envelope">
 <header>
   <div class="rotulo">PhxSql · o dossiê do que foi pedido</div>
-  <h1>Os 132 pedidos, e o<br>que existe de cada um</h1>
+  <h1>Os 133 pedidos, e o<br>que existe de cada um</h1>
   <p class="chamada">Uma linha por pedido seu, na ordem em que você pediu. O
   estado é <strong>medido contra o código</strong>, não contra a lembrança — foi
   assim que a chave estrangeira saiu de «pronto» para «parcial», e o Centro de
   Controle de «pronto» para «só navega».</p>
 
   <div class="placar">
-    <div class="c"><div class="v">132</div><div class="r">pedidos</div></div>
-    <div class="c feito"><div class="v">129</div><div class="r">feitos</div></div>
+    <div class="c"><div class="v">133</div><div class="r">pedidos</div></div>
+    <div class="c feito"><div class="v">130</div><div class="r">feitos</div></div>
     <div class="c parcial"><div class="v">3</div><div class="r">parciais</div></div>
     <div class="c planejado"><div class="v">0</div><div class="r">planejados</div></div>
   </div>
@@ -214,7 +214,7 @@ footer{
   não tem opinião própria sobre nenhum item.
 </div>
 
-<h2 id="todos">Os 132, na ordem em que você pediu</h2>
+<h2 id="todos">Os 133, na ordem em que você pediu</h2>
 <p class="sub">A numeração é a sequência real dos seus pedidos — ela diz
 <em>quando</em> cada coisa foi pedida, e é por isso que vale mantê-la.</p>
 
@@ -365,6 +365,7 @@ footer{
       <tr data-e="feito"><td class="n mono">67</td><td class="st"><span class="pino feito">Feito</span></td><td class="p"><strong>Botão e menu Tabelas</strong> para gerir as tabelas do banco: nova, estrutura, editar conteúdo, partições, duplicar, reparar tabela, reparar índice e excluir — e <strong>Gestão de transações</strong> no menu de ferramentas</td><td class="e">as oito operações funcionam de ponta a ponta; três delas (<code>criar_tabela</code>, <code>duplicar_tabela</code>, <code>excluir_tabela</code>) nasceram aqui, e <code>criar_schema</code> — prometido na documentação e nunca despachado — junto</td></tr>
       <tr data-e="feito"><td class="n mono">131</td><td class="st"><span class="pino feito">Feito</span></td><td class="p"><strong>Prioridade no MULTILINK: conectar no MySQL(R) e ver a tabela <code>clientes</code> do outro lado do DbLink</strong></td><td class="e">provado contra o <strong>MySQL(R) 8.0.46 real</strong>, não o servidor falso: <code>caching_sha2_password</code> pelos dois caminhos documentados, <code>dblink_tabelas</code>/<code>dblink_estrutura</code>/<code>dblink_ler</code> trazendo as 5 linhas com o DECIMAL certo — e a grade da tela somando sobre dado que nunca esteve num arquivo nosso. Roteiro de refazer em <code>docs/DBLINK.md</code>. É o DbLink <strong>nativo, zero dependências</strong> — o destino do pacote MULTILINK, alcançado sem as 582 crates dele</td></tr>
       <tr data-e="feito"><td class="n mono">132</td><td class="st"><span class="pino feito">Feito</span></td><td class="p"><strong>Assistente de conexão DbLink</strong>: cria a conexão, testa, escolhe base e tabelas ligadas, e o <strong>job de sincronia</strong> gravando entre si automaticamente</td><td class="e">cinco passos que só avançam com o anterior provado, e por baixo a <strong>sincronia de tabelas primas</strong>: convergência de estado pela chave, sentido (puxar/empurrar/dois) e dono (aqui/lá) <strong>por linha</strong>, colunas casadas <strong>por nome</strong>, empurrão reentrável (<code>ON DUPLICATE KEY UPDATE</code>), teto com recusa clara. Exclusão <strong>não</strong> viaja — limite de desenho, provado no estágio 5 da prova. <code>bancada/dblink/prova-sincronia.py</code> roda os 7 estágios contra o MySQL(R) vivo (inclusive o job puxando sozinho); o assistente foi exercitado no navegador e o exercício achou a árvore que não se remontava. 15 testes de unidade das partes puras, com o defeito do sinal do decimal provado nos dois sentidos. <code>docs/DBLINK.md</code></td></tr>
+      <tr data-e="feito"><td class="n mono">133</td><td class="st"><span class="pino feito">Feito</span></td><td class="p"><strong>Validar o profiler e o log dele em <code>.txt</code></strong></td><td class="e">validado por <strong>soquete</strong>, contra servidor de verdade, e a validação achou quatro coisas. A <strong>redação passou</strong>: 20 pedidos torcidos — chave escapada em <code>\u0073enha</code>, maiúscula, espaço antes dos dois-pontos, aninhamento fundo, lote de 200 linhas, corpo malformado — e a senha não apareceu em nenhum, nem no anel nem no arquivo; repondo o defeito (recorte no lugar da análise) caem sete testes. O que <strong>não</strong> passou: (1) o <code>.txt</code> aceitava <strong>linha forjada</strong> — um <code>&quot;op&quot;</code> com quebra de linha dentro deixava no arquivo uma segunda linha que se lia como evento de outro IP; (2) o profiler <strong>não era só do administrador</strong>, apesar de a ficha dizer que era — quem tem <code>bases: {&quot;<em>&quot;: {administrar}}</code> e é leitor passava pelo portão geral, e por aí leu a <strong>linha</strong> de uma tabela que o servidor acabara de negar a ele </em>e* mandou o servidor escrever num arquivo escolhido; (3) com o <strong>disco cheio</strong> (tmpfs de 64 KB, 400 pedidos, 223 linhas gravadas) a tela seguia dizendo «gravando em …»; (4) <code>{&quot;senha &quot;:…}</code> e <code>[&quot;senha&quot;,…]</code> escapavam da redação. Consertados os quatro, mais o <code>terminou</code> que varria o anel <strong>do mais antigo</strong> quando o evento procurado é sempre o mais novo. fica <strong>de fora e anotado</strong>: o <code>.txt</code> não rotaciona — 345 B por pedido, sem teto, o que dá 1,2 GB/hora num servidor com 1.000 pedidos/s; o que entrou foi a tela mostrar o tamanho e avisar quando para de gravar. <code>docs/SEGURANCA.md</code> §10, <code>docs/DESEMPENHO.md</code> §2.3, 6 sondas em <code>bancada/profiler/</code></td></tr>
     </tbody>
   </table>
   <div class="vazio" id="vazio" hidden>Nenhum pedido bate com isso.</div>

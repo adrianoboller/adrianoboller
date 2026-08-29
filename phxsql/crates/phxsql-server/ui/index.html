@@ -10026,9 +10026,21 @@ async function verProfiler() {
        <p>O pedido é mostrado como chegou pelo soquete — <b>menos</b> os campos
        sensíveis. <code>senha</code>, <code>token</code>, <code>prova</code> e
        os outros viram <code>"***"</code> <b>antes</b> de encostar na memória
-       ou no arquivo. Pedido que não é JSON válido não vira texto nenhum: vira
-       o tamanho dele, porque não há como tapar um campo numa estrutura que
-       não se lê. Há teste que falha se uma senha aparecer.</p>
+       ou no arquivo, em qualquer profundidade e escrevendo-se como se
+       escrever: com espaço antes dos dois-pontos, em maiúscula, ou com a
+       chave escapada em <code>\u0073enha</code>. Pedido que não é JSON válido
+       — <b>ou que é JSON e não é objeto</b> — não vira texto nenhum: vira o
+       tamanho dele, porque não há como tapar um campo numa estrutura que não
+       se lê, nem numa que não tem campo. Há teste que falha se uma senha
+       aparecer.</p>
+       <p>O que vai para o <b>arquivo</b> segue a mesma régua, e mais uma: cada
+       evento é <b>uma linha</b>. Um pedido com quebra de linha dentro do nome
+       da operação chegou a fabricar no <code>.txt</code> uma segunda linha
+       que se lia como um evento de outro IP e de outro usuário — log de
+       monitoração que aceita linha forjada não serve para investigar nada.
+       Só <b>administrador deste servidor</b> liga o profiler e lê o que ele
+       viu: ele mostra o texto dos pedidos de todo mundo, inclusive das
+       tabelas que o login não pode abrir.</p>
        <p>O ponto de captura é uma linha depois do <code>read_line</code> e uma
        antes do despacho: <b>nada foi gravado ainda</b>. Por isso o pedido que
        trava aparece na lista como «em curso» — que é justamente o que se
@@ -10059,10 +10071,22 @@ async function verProfiler() {
 
   const pintar = d => {
     const est = $("#pfEstado"); if (!est) return false;
+    // `falhas_de_escrita` manda na cor da caixa. Sem isto ela dizia
+    // «gravando em …» com a partição cheia: medido num tmpfs de 64 kB, 400
+    // pedidos observados e 223 linhas no arquivo, sem uma palavra sobre as
+    // outras 177. Log que promete gravar e não grava é pior que log nenhum.
+    const falhas = d.falhas_de_escrita || 0;
+    // `bom`, não `bem`: a classe verde do resto da interface chama-se `bom`,
+    // e esta caixa passou a vida inteira cinza por uma letra.
     est.innerHTML = d.ligado
-      ? `<div class="aviso bem">observando desde <b>${esc(d.desde)}</b> ·
+      ? `<div class="aviso ${falhas ? "mal" : "bom"}">observando desde <b>${esc(d.desde)}</b> ·
            ${fmt(d.observados)} evento(s)${d.esquecidos ? ` · ${fmt(d.esquecidos)} saíram do anel` : ""}
-           ${d.arquivo ? ` · gravando em <code>${esc(d.arquivo)}</code>` : " · só em memória"}</div>`
+           ${d.arquivo
+              ? ` · gravando em <code>${esc(d.arquivo)}</code> (${fmtBytes(d.gravados_bytes || 0)})`
+              : " · só em memória"}
+           ${falhas ? `<br><b>${fmt(falhas)} linha(s) NÃO gravada(s)</b> — disco cheio,
+                       cota, ou o caminho deixou de aceitar escrita. O anel continua;
+                       o arquivo, não.` : ""}</div>`
       : `<div class="aviso">parado. Escolha os filtros e clique em <b>Ligar</b>.</div>`;
     return d.ligado;
   };

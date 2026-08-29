@@ -13,3 +13,12 @@
 /exemplos/blacklist.json
 /pid
 /bancada/resultados.parcial.json
+
+# As sondas do Profiler sobem servidores de verdade e compilam variantes:
+# tudo isso se refaz com `python3 bancada/profiler/sonda.py` e companhia.
+/bancada/profiler/srv-*/
+/bancada/profiler/bin/
+/bancada/profiler/tiros/
+/bancada/profiler/cheio/
+/bancada/profiler/somenteleitura/
+**/__pycache__/
