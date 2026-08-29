@@ -58,6 +58,19 @@
      `--arvore`: assim a largura escolhida no arrasto sobrevive a recolher e
      expandir. Recolhido, esta vale 0; pinado e aberto, vale `--arvore`. */
   --arvore-col:var(--arvore);
+  /* Os TETOS DE LARGURA. Ver a secao QUATRO TAMANHOS no fim da folha.
+     Sao tetos e nao larguras: nada aqui alarga nada, so impede de crescer.
+     Por isso valem em toda faixa e nao dependem de `@media` -- o dia em que a
+     area central virar duas ou tres regioes lado a lado, os tres continuam
+     certos sem uma linha nova.
+
+     `--medida` e o teto do TEXTO CORRIDO: 74 caracteres por linha. Medido
+     nesta folha, 74ch dao 592px. A 5120 o maior paragrafo do painel media
+     5.040px -- umas 630 letras numa linha so, que ninguem le.
+     `--teto-cartao` e `--teto-campo` sao o teto da CELULA de uma grade:
+     `auto-fit` com `1fr` estica a celula quando ha menos itens que trilhas, e
+     foi assim que um campo de «30» ficou com 850px na tela de configuracao. */
+  --medida:74ch; --teto-cartao:520px; --teto-campo:340px;
   --sombra-fenix:0 6px 22px rgba(255,77,16,.28);
   --brilho-entrada:#0d1830; --tinta-botao:#160a00;
 }
@@ -1021,6 +1034,11 @@ body,.cartao,.barra,.arvore,table,td,th{
 .carta h4{margin:0 0 2px;font-size:13px;font-weight:600;letter-spacing:-.01em}
 .carta .leg{font-size:11px;color:var(--texto-3);margin:0 0 12px}
 .carta svg{width:100%;height:auto;display:block;overflow:visible}
+/* O anel e o unico desenho do painel que ainda leva texto e nao nasce na
+   largura medida -- ele e redondo, e esticar um circulo nao serve a ninguem.
+   Entao ele fica em 1x e CENTRADO: o `viewBox` dele mede 320, e a legenda de
+   12px continua com 12px no ultrawide. */
+.carta svg.anel{max-width:320px;margin:0 auto}
 .carta.larga{grid-column:1/-1}
 .vazioc{color:var(--texto-3);font-size:12.5px;font-style:italic;padding:14px 0}
 /* display:contents faz o embrulho sumir do grid: os cartoes da maquina viram
@@ -1034,6 +1052,45 @@ body,.cartao,.barra,.arvore,table,td,th{
    espremeriam o disco ate o texto do caminho nao caber. */
 @media (max-width:960px){.maquina{grid-template-columns:1fr}
                          .medidores{justify-content:center}}
+
+/* -------------------------------------------------- barras e discos, em HTML
+   As duas eram SVG, e as duas trocaram por um motivo so: texto dentro de SVG
+   nao quebra, nao corta e nao empurra ninguem -- ele SOBREPOE. Era esse o
+   defeito do cartao «A maquina»: o caminho do diretorio passava por cima do
+   «livres de 37,0 GB», ja a 1920. E o `viewBox` esticado ainda multiplicava a
+   fonte por 5,83 a 5120, do lado de um menu que ficava com 13px.
+
+   Em HTML o navegador resolve os dois de graca: a celula quebra em vez de
+   invadir a vizinha, e 11,5px sao 11,5px em qualquer largura. */
+.barrash{display:grid;grid-template-columns:minmax(0,auto) minmax(48px,1fr) auto;
+         gap:5px 10px;align-items:center;font-size:11.5px}
+.bh-nome{color:var(--texto-2);min-width:0;overflow-wrap:anywhere}
+.bh-trilha{display:flex;gap:2px;align-items:center;min-width:0;
+           height:13px;border-radius:3px}
+.bh-trilha i{display:block;height:13px;border-radius:3px;opacity:.9;min-width:1px}
+.bh-val{font-family:"IBM Plex Mono",monospace;font-size:10.5px;color:var(--texto-3);
+        white-space:nowrap;text-align:right}
+
+/* Cada disco e um bloco de duas colunas com a barra por baixo, ocupando a
+   largura toda. `1fr auto` com `min-width:0` no caminho: quem cede espaco e o
+   caminho, que quebra, e nunca o valor, que perderia o sentido cortado. */
+/* `auto-fill` e nao `auto-fit`: com UM disco so, `auto-fit` recolhe as trilhas
+   vazias e estica a unica que sobrou ate os 4.490px do cartao -- que e
+   exatamente o vao de mil pixels que este trabalho veio tirar da tela. Com
+   `auto-fill` a trilha vazia FICA vazia e o disco continua com 460px. */
+.discos{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(460px,100%),1fr));
+        gap:14px 26px}
+/* Flex com quebra, e nao grade de duas colunas: numa celula estreita o valor
+   desce para a linha de baixo em vez de espremer o caminho ate ele quebrar
+   letra a letra. */
+.dsk{display:flex;flex-wrap:wrap;gap:2px 14px;align-items:baseline}
+.dsk-nome{font-size:11.5px;color:var(--texto-2);flex:1 1 auto;min-width:0;
+          overflow-wrap:anywhere}
+.dsk-val{font-family:"IBM Plex Mono",monospace;font-size:10.5px;color:var(--texto-3);
+         white-space:nowrap;flex:0 0 auto;margin-left:auto}
+.dsk-trilha{flex:0 0 100%;height:10px;border-radius:5px;background:var(--linha);
+            overflow:hidden;margin-top:4px}
+.dsk-trilha i{display:block;height:10px;border-radius:5px;opacity:.9}
 
 .formatos{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(190px,100%),1fr));
           gap:10px;margin:6px 0 18px}
@@ -1516,7 +1573,7 @@ td label,td .rot-dado{text-transform:none;letter-spacing:0;font-size:inherit;
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 
 /* =====================================================================
-   TRES TAMANHOS
+   QUATRO TAMANHOS
    =====================================================================
    O console nasceu de desktop: `body{overflow:hidden}`, arvore fixa de 268px
    e barra de ferramentas larga. Medido num celular de 390px, a conta era
@@ -1525,7 +1582,7 @@ td label,td .rot-dado{text-transform:none;letter-spacing:0;font-size:inherit;
    abas da tabela mediam 424px dentro de uma faixa de 122px, e a Integridade
    nao tinha como ser clicada. Nao e uma tela apertada, e uma tela quebrada.
 
-   As tres faixas, e o que muda em cada uma:
+   As quatro faixas, e o que muda em cada uma:
 
      ate 640px   celular  a lateral e gaveta (sempre sobreposta, com veu), a
                           barra de ferramentas rola numa fileira so, os
@@ -1535,9 +1592,131 @@ td label,td .rot-dado{text-transform:none;letter-spacing:0;font-size:inherit;
                           ferramentas ainda rola numa fileira
      1025px+     desktop  como sempre foi: lateral fixa e ferramentas em duas
                           fileiras, que e onde mostrar tudo cabe
+     larga       ultrawide e multi-monitor: nenhuma regra NOVA de `@media`,
+                          e sim TETOS que so mordem quando sobra largura --
+                          ver o bloco logo abaixo
 
-   A regra que atravessa as tres: NADA rola de lado no corpo da pagina. O que
-   for largo demais rola DENTRO do seu proprio contêiner. */
+   A regra que atravessa as tres primeiras: NADA rola de lado no corpo da
+   pagina. O que for largo demais rola DENTRO do seu proprio contêiner.
+
+   =====================================================================
+   A QUARTA FAIXA: O QUE A LARGURA EXTRA FAZ
+   =====================================================================
+   Medido antes de mexer, com a arvore aberta, na tela do Painel:
+
+     largura   rola de lado?   maior paragrafo   vao rotulo->valor
+      390          nao              326px              301px
+      820          nao              740px              715px
+     1180          nao            1.100px              613px
+     1920          nao            1.840px            1.353px
+     3440          nao            3.360px            2.873px
+     5120          nao            5.040px            4.553px
+
+   A responsividade segurava -- nao ha rolagem lateral em largura nenhuma, e
+   isso e merito do trabalho anterior. O que faltava era TETO. Uma linha de
+   5.040px tem umas 630 letras; um valor a 4.553px do proprio rotulo nao se
+   le, porque o olho perde a linha no meio do caminho.
+
+   Das tres saidas possiveis -- (a) teto e centraliza, (b) mais colunas,
+   (c) misto --, a escolhida foi a (c), e o dono confirmou com a foto de um
+   IDE ocupando um ultrawide em TRES paineis verticais: a largura extra vira
+   mais PAINEL, e nao linha mais comprida. Contra a (a): teto com bloco
+   centrado desperdica a tela que a pessoa comprou -- e num monitor duplo e
+   pior que desperdicio, porque o bloco central cai bem em cima da EMENDA
+   FISICA entre os dois monitores. Um bloco de 74ch centrado em 5.120px mora
+   de 2.260 a 2.860, com a emenda em 2.560 no meio da frase. Alinhado a
+   esquerda ele mora de 290 a 890, inteiro no primeiro monitor. Contra a (b)
+   pura: nenhuma quantidade de coluna conserta um paragrafo de 630 letras --
+   texto corrido tem limite de legibilidade que nenhum monitor muda.
+
+   As tres regras da faixa larga, e o que cada uma vale:
+
+   1. TEXTO CORRIDO TEM TETO (`--medida`, 74ch = 592px medidos). Paragrafo,
+      legenda, item de lista e nota. E teto, nao largura: em 390px nada muda.
+
+   2. CELULA DE GRADE TEM TETO (`--teto-cartao`, `--teto-campo`). `auto-fit`
+      com `1fr` recolhe a trilha vazia e ESTICA a que sobrou: era assim que um
+      campo de «30» ficava com 850px na tela de configuracao, e que o cartao
+      da maquina virava uma faixa de 4.850px com um disco dentro. O teto
+      manda a sobra para a calha, e nao para dentro da celula.
+
+   3. TEXTO EM SVG NAO CRESCE COM O MONITOR. Era o segundo regime de escala
+      de que o dono reclamou: o `viewBox` estica o desenho INTEIRO, entao
+      11px viravam 67px a 5120 do lado de um menu de 13px. Tres saidas, as
+      tres aplicadas -- onde o desenho e so barra e rotulo (`barras`,
+      `barrasCheias`), virou HTML; onde a geometria precisa de SVG e a largura
+      serve ao desenho (`areaHoras`), o `viewBox` nasce na largura MEDIDA, que
+      e o que o painel de bolhas da telemetria ja fazia; onde esticar nao
+      serviria a ninguem (`anel`, `medidor`), a largura e FIXA em px.
+      A regra nao e «1x sempre»: e escala CONSTANTE. O medidor vive em 1,4x
+      de proposito, porque o numero grande e o desenho. O que nao pode e a
+      escala depender do monitor -- medido, ela ia de 1,4x a 5,83x.
+
+   POR QUE TETO E NAO `@media (min-width:2000px)`: a area central vai virar
+   mais de uma regiao lado a lado -- e o dia em que ela virar, uma regra
+   presa a largura da JANELA estaria medindo a coisa errada, porque a regiao
+   tem a largura dela. Teto em `ch` e `auto-fill` medem o CONTÊINER, e por
+   isso continuam certos sem uma linha nova. */
+
+/* ------------------------------------------ os tetos: valem em toda largura */
+
+/* Texto corrido. 74 caracteres por linha e o teto classico de legibilidade, e
+   e o unico numero desta folha que nao veio de medir o console -- veio de
+   medir gente lendo. O que se mediu aqui foi o efeito: 5.040px viram 592px. */
+#painel p,#painel li,#painel dd,.cabecalho .sub,.corte-da-vista{max-width:var(--medida)}
+/* A legenda do cartao segue o mesmo teto, mas nao pode passar do cartao. */
+.carta .leg,.nota p,.aviso p{max-width:min(100%,var(--medida))}
+/* A CAIXA da nota e do aviso acompanha o texto dela. Sem isto o paragrafo
+   ficava certo com 592px e a moldura em volta media 5.076px -- uma tarja
+   atravessando dois monitores para dizer uma frase. Os 44px sao o `padding`
+   com a borda, para a caixa abracar o texto em vez de o deixar solto nela. */
+.nota,.aviso{max-width:calc(var(--medida) + 44px)}
+/* Prosa dentro de tabela continua sendo prosa. A tabela de DADOS pode e deve
+   usar a largura toda -- e o que uma tela larga faz bem --, mas a coluna «para
+   que serve» das tabelas de REFERENCIA media 1.782px a 5120, e uma frase de
+   1.782px nao se le so porque esta numa celula.
+
+   `max-width` na celula sozinho nao resolve: com `table{width:100%}` e layout
+   automatico o navegador reparte a sobra pelas colunas e passa por cima do
+   teto (medido: 1.782px caiam so ate 1.497px). Quem tem de parar de crescer e
+   a TABELA, e `:has(td.leg)` a distingue da tabela de dados -- so a de
+   referencia tem coluna de prosa. Onde `:has` nao existe, a regra
+   simplesmente nao se aplica e a tela volta ao que era. */
+#painel td.leg{max-width:var(--medida)}
+#painel table:has(td.leg){max-width:calc(var(--medida) + 34ch)}
+/* Um `<pre>` nao e texto corrido -- e conteudo pre-formatado, e cortar a
+   largura dele so acrescentaria rolagem. Fica de fora de proposito. */
+
+/* Celula de grade. O teto vai no ITEM, e nunca no `minmax` da trilha -- essa
+   foi a primeira tentativa e ela QUEBROU o 1920: com `minmax(132px, 520px)` o
+   navegador conta as repeticoes pelo MAXIMO quando ele e um comprimento
+   definido, entao 1.888px davam tres trilhas de 520 em vez de treze de 132, e
+   a fileira de oito KPIs virou tres colunas em tres fileiras. O `1fr` fica
+   onde estava; quem para de crescer e o cartao dentro da trilha. */
+.kpi{max-width:var(--teto-cartao)}
+.carta{max-width:var(--teto-cartao)}
+/* A carta `larga` atravessa a grade de proposito -- e la dentro que o teto
+   vale: os discos tem grade propria e o grafico nasce na largura medida. */
+.carta.larga{max-width:none}
+.fmt{max-width:var(--teto-cartao)}
+.form-dbl .cmp,.ficha-edit label{max-width:var(--teto-campo)}
+/* A CAIXA da ficha para em quatro colunas. O `.form-dbl` da configuracao nao
+   precisa disto porque nao tem moldura -- os campos dele se espalham sobre o
+   fundo da pagina. A ficha TEM: sem teto, a moldura media 4.850px com os
+   campos amontoados nos primeiros 1.400, e caixa vazia parece tela quebrada,
+   enquanto fundo vazio parece respiro.
+
+   Quatro e o numero porque acima disso o olho perde a ligacao entre o rotulo
+   e o campo dele -- a linha atravessa a emenda entre os dois monitores e o
+   rotulo de um campo fica mais perto do campo do vizinho que do proprio. */
+.ficha-edit{max-width:calc(var(--teto-campo) * 4 + 3 * 13px + 32px)}
+/* O campo `largo` (memo, SQL, descricao) atravessa a grade inteira -- e uma
+   caixa de TEXTO, entao o teto dela e o do texto e nao o do campo. */
+.ficha-edit label.largo,.form-dbl .cmp.largo{max-width:var(--medida)}
+/* `.fichas` fica de FORA do teto de proposito: nao e uma grade de cartoes, e
+   uma faixa emendada -- o `gap:1px` sobre um fundo `--linha` e o que desenha
+   os fios entre as celulas. Estreitar a celula abriria o fundo no meio da
+   faixa. E o que mora nela e numero curto, nao texto. */
 
 /* -------------------------------------------------- o que vale em toda tela */
 
@@ -2722,37 +2901,46 @@ function fmtBytes(b) {
 }
 
 /// Barras horizontais. Boa para nome longo, que é o caso de tabela e de IP.
+///
+/// EM HTML, pelo mesmo motivo do `barrasCheias`: em SVG o rótulo, a barra e o
+/// valor moravam em coordenadas fixas de um `viewBox` de 360, e três coisas
+/// davam errado ao mesmo tempo — o nome comprido invadia a barra, o `viewBox`
+/// esticado multiplicava a fonte (1,83× a 1920, 5,83× a 5120) e a largura do
+/// rótulo tinha de ser ADIVINHADA em cada chamada (`rotulo:112`, `rotulo:150`).
+/// Numa grade de três colunas o navegador mede o rótulo sozinho, o valor não
+/// quebra, e a barra fica com o que sobra.
 function barras(itens, opc = {}) {
   if (!itens.length) return `<div class="vazioc">sem dados ainda</div>`;
-  // Largura próxima da real do cartão: o SVG escala o desenho INTEIRO, então
-  // um viewBox largo demais encolhe o texto junto — 12 px viram 7 px.
-  const L = opc.largura ?? 360;
-  const alt = 24, teto = Math.max(...itens.map(i => i.valor), 1);
-  const larguraRotulo = opc.rotulo ?? 120;
-  const h = itens.length * alt + 6;
-  const linhas = itens.map((it, k) => {
-    const y = k * alt + 4;
-    const util = L - larguraRotulo - (opc.texto ?? 78);
-    const w = Math.max(1, (it.valor / teto) * util);
-    const segundo = it.segundo || 0;
-    const w2 = segundo ? Math.max(1, (segundo / teto) * util) : 0;
-    return `<g>
-      <text x="0" y="${y + 14}" font-size="11.5" fill="currentColor" opacity=".85">${esc(it.nome)}</text>
-      <rect x="${larguraRotulo}" y="${y + 4}" width="${w.toFixed(1)}" height="13" rx="3"
-            fill="${it.cor || "var(--laranja)"}" opacity=".9"/>
-      ${segundo ? `<rect x="${(larguraRotulo + w).toFixed(1)}" y="${y + 4}" width="${w2.toFixed(1)}"
-            height="13" rx="3" fill="var(--log)" opacity=".85"/>` : ""}
-      <text x="${(larguraRotulo + w + w2 + 7).toFixed(1)}" y="${y + 14}" font-size="10.5"
-            font-family="IBM Plex Mono, monospace" fill="currentColor" opacity=".7">${esc(it.texto ?? fmt(it.valor))}</text>
-    </g>`;
+  const teto = Math.max(...itens.map(i => i.valor), 1);
+  const linhas = itens.map(it => {
+    const p = (Math.max(0, it.valor) / teto) * 100;
+    const p2 = it.segundo ? (Math.max(0, it.segundo) / teto) * 100 : 0;
+    return `<span class="bh-nome">${esc(it.nome)}</span>
+      <span class="bh-trilha">
+        <i style="width:${p.toFixed(2)}%;background:${it.cor || "var(--laranja)"}"></i>
+        ${p2 ? `<i style="width:${p2.toFixed(2)}%;background:var(--log)"></i>` : ""}
+      </span>
+      <span class="bh-val">${esc(it.texto ?? fmt(it.valor))}</span>`;
   }).join("");
-  return `<svg viewBox="0 0 ${L} ${h}" role="img" aria-label="${esc(opc.titulo || "gráfico de barras")}">${linhas}</svg>`;
+  return `<div class="barrash" role="img"
+    aria-label="${esc(opc.titulo || "gráfico de barras")}: `
+    + `${esc(itens.map(i => i.nome + " " + (i.texto ?? fmt(i.valor))).join(", "))}">${linhas}</div>`;
 }
 
 /// Área ao longo do tempo. Vinte e quatro baldes de uma hora.
-function areaHoras(serie, recusadas) {
-  // Carta larga: o viewBox nasce largo, senão o texto sairia esticado 2×.
-  const L = 1180, A = 210, base = A - 30, topo = 16;
+///
+/// A largura é ARGUMENTO, e quem a passa é `redesenharHoras()`, que mede o
+/// cartão. Aqui a geometria precisa mesmo de SVG — não há como desenhar uma
+/// área e uma poligonal com `<div>` —, então a regra do texto se cumpre pelo
+/// outro lado: o `viewBox` nasce na largura REAL, a escala fica em 1×, e os
+/// 11px do eixo continuam 11px em qualquer monitor. Congelar a largura teria
+/// resolvido a fonte e deixado metade do cartão vazia a 5120; nascer na
+/// medida certa resolve os dois, e a largura extra vira mais gráfico.
+///
+/// O mesmo caminho que o painel de bolhas da telemetria já usa: lá o `viewBox`
+/// também sai do `clientWidth`.
+function areaHoras(serie, recusadas, largura = 1180) {
+  const L = Math.max(320, Math.round(largura)), A = 210, base = A - 30, topo = 16;
   const teto = Math.max(...serie, 1);
   const px = i => (i / (serie.length - 1)) * (L - 24) + 12;
   const py = v => base - (v / teto) * (base - topo);
@@ -2761,7 +2949,15 @@ function areaHoras(serie, recusadas) {
   const barrasRec = recusadas.map((v, i) =>
     v ? `<rect x="${(px(i) - 3).toFixed(1)}" y="${py(v).toFixed(1)}" width="6"
              height="${(base - py(v)).toFixed(1)}" fill="var(--log)" opacity=".75"/>` : "").join("");
-  const marcas = [0, 4, 8, 12, 16, 20, 23].map(i =>
+  // As marcas do eixo acompanham a largura: sete rótulos espalhados por 1180px
+  // ficam de uma hora em uma hora a 4.800px, que é onde a largura extra vira
+  // informação em vez de vazio. O piso de 150px por rótulo é o que impede
+  // «23h 22h 21h» de encostarem um no outro numa janela estreita.
+  const passo = Math.max(1, Math.ceil(23 / Math.max(3, Math.floor(L / 150))));
+  const horas = [];
+  for (let i = 0; i <= 23 - passo; i += passo) horas.push(i);
+  horas.push(23);
+  const marcas = horas.map(i =>
     `<text x="${px(i).toFixed(1)}" y="${A - 10}"
            text-anchor="${i === 23 ? "end" : i === 0 ? "start" : "middle"}"
            font-size="11" fill="currentColor" opacity=".55">${i === 23 ? "agora" : (23 - i) + "h"}</text>`).join("");
@@ -2811,7 +3007,10 @@ function anel(fatias) {
        <text x="150" y="10" font-size="12" text-anchor="end"
              font-family="IBM Plex Mono, monospace" fill="currentColor" opacity=".7">${f.valor}</text>
      </g>`).join("");
-  return `<svg viewBox="0 0 320 ${Math.max(145, 34 + fatias.length * 21)}" role="img"
+  // `class="anel"` para a folha o segurar em 1x: a legenda dele e texto, e
+  // texto em SVG que cresce com o cartao e o regime de escala que esta rodada
+  // veio acabar.
+  return `<svg class="anel" viewBox="0 0 320 ${Math.max(145, 34 + fatias.length * 21)}" role="img"
     aria-label="Composição: ${fatias.map(f => f.nome + " " + f.valor).join(", ")}">
     ${arcos}
     <text x="${cx}" y="${cy + 1}" text-anchor="middle" font-size="20" font-weight="700"
@@ -2862,28 +3061,32 @@ function medidor(percentual, rotulo, detalhe, limite = 90) {
 
 /// Barra de ocupação, de 0 a 100. Para disco, onde o total é conhecido e o que
 /// interessa é quanto falta.
-function barrasCheias(itens, largura = 1180) {
+///
+/// EM HTML, e não em SVG — foi aqui que a sobreposição morava. Os dois textos
+/// nasciam `<text>` na MESMA linha de base, um em `x=0` e o outro ancorado no
+/// fim; texto de SVG não quebra, não corta e não empurra ninguém, então um
+/// caminho de diretório comprido passava POR CIMA do «livres de 37,0 GB». Já
+/// se via a 1920 e ficava grotesco a 5120, porque o `viewBox` de 800 esticado
+/// até 4.664px ainda multiplicava a fonte por 5,83.
+///
+/// Em HTML os dois são células de uma grade: o caminho quebra, o valor não
+/// quebra, e sobrepor deixa de ser possível — não por cuidado, por construção.
+/// De quebra some um dos dois regimes de escala: o texto do disco passa a
+/// medir o mesmo do menu ao lado dele.
+function barrasCheias(itens) {
   if (!itens.length) return `<div class="vazioc">sem dados ainda</div>`;
-  // O SVG escala o desenho INTEIRO, texto junto: um viewBox de 360 esticado
-  // até a largura da carta larga faz 11 px virarem 38 px. A largura tem de
-  // nascer perto da real — é a mesma armadilha anotada em `barras`.
-  const L = largura, alt = 40;
-  const h = itens.length * alt + 4;
-  return `<svg viewBox="0 0 ${L} ${h}" role="img" aria-label="Ocupação dos discos">` +
-    itens.map((it, k) => {
-      const y = k * alt + 4;
-      const p = Math.max(0, Math.min(100, it.percentual));
-      const cor = it.alerta ? "var(--log)" : p >= 90 ? "var(--ambar)" : "var(--laranja)";
-      return `<g>
-        <text x="0" y="${y + 11}" font-size="11.5" fill="currentColor" opacity=".85">${esc(it.nome)}</text>
-        <text x="${L}" y="${y + 11}" text-anchor="end" font-size="10.5"
-              font-family="IBM Plex Mono, monospace" fill="currentColor"
-              opacity=".7">${esc(it.texto)}</text>
-        <rect x="0" y="${y + 18}" width="${L}" height="10" rx="5" fill="currentColor" opacity=".1"/>
-        <rect x="0" y="${y + 18}" width="${Math.max(2, (p / 100) * L).toFixed(1)}" height="10"
-              rx="5" fill="${cor}" opacity=".9"/>
-      </g>`;
-    }).join("") + `</svg>`;
+  return `<div class="discos">` + itens.map(it => {
+    const p = Math.max(0, Math.min(100, it.percentual));
+    const cor = it.alerta ? "var(--log)" : p >= 90 ? "var(--ambar)" : "var(--laranja)";
+    return `<div class="dsk">
+      <span class="dsk-nome">${esc(it.nome)}</span>
+      <span class="dsk-val">${esc(it.texto)}</span>
+      <div class="dsk-trilha" role="img"
+           aria-label="${esc(it.nome)}: ${p.toFixed(0)}% ocupado, ${esc(it.texto)}">
+        <i style="width:${Math.max(1.5, p).toFixed(1)}%;background:${cor}"></i>
+      </div>
+    </div>`;
+  }).join("") + `</div>`;
 }
 
 const fmtTaxa = b => fmtBytes(Number(b) || 0) + "/s";
@@ -2937,20 +3140,18 @@ function maquinaHtml(m) {
         valor: Number(r.rx_bytes_s) + Number(r.tx_bytes_s),
         texto: `↓${fmtTaxa(r.rx_bytes_s)}  ↑${fmtTaxa(r.tx_bytes_s)}`,
         cor: r.erros > 0 ? "var(--log)" : "var(--reg)",
-      })), { rotulo: 92, texto: 168, titulo: "Tráfego por placa de rede" })) +
+      })), { titulo: "Tráfego por placa de rede" })) +
     carta("Discos", primeira ? "aguardando o segundo instante" : "leitura e escrita por disco físico",
       barras(io.map(d => ({
         nome: d.disco,
         valor: Number(d.lidos_bytes_s) + Number(d.escritos_bytes_s),
         texto: `↓${fmtTaxa(d.lidos_bytes_s)}  ↑${fmtTaxa(d.escritos_bytes_s)}`,
         cor: "var(--ndx)",
-      })), { rotulo: 92, texto: 168, titulo: "Leitura e escrita por disco" }));
+      })), { titulo: "Leitura e escrita por disco" }));
 }
 
 function discosHtml(m) {
   const apertados = new Set(m.apertados || []);
-  // 800 é a largura real da coluna da direita nesta carta; o viewBox tem de
-  // nascer perto dela, senão o texto sai esticado ou espremido.
   return barrasCheias((m.discos || []).map(d => ({
     nome: d.caminho + (d.montagem && d.montagem !== d.caminho ? `  ·  ${d.montagem}` : ""),
     percentual: Number(d.usado_percentual),
@@ -2960,7 +3161,7 @@ function discosHtml(m) {
     // e contá-las como livres é o que faz um disco cheio parecer vazio.
     texto: `${fmtBytes(d.livre_kb * 1024)} livres de ${fmtBytes((d.utilizavel_kb ?? d.total_kb) * 1024)}`
       + (d.reservado_kb ? `  ·  ${fmtBytes(d.reservado_kb * 1024)} reservados` : ""),
-  })), 800);
+  })));
 }
 
 /// Lê a máquina sem derrubar o painel se não puder.
@@ -2997,6 +3198,41 @@ function ligarMonitor(segundos = 4) {
 function pararMonitor() {
   if (est.relogioMaquina) clearInterval(est.relogioMaquina);
   est.relogioMaquina = null;
+}
+
+/// Redesenha o gráfico de horas na largura MEDIDA do cartão.
+///
+/// Existe porque texto dentro de SVG cresce com o `viewBox`: com largura fixa
+/// de 1180 o rótulo de 11px do eixo virava 43px a 3440 e 67px a 5120 — ao lado
+/// de um menu que continuava com 13px. São os dois regimes de escala de que o
+/// dono reclamou, e a saída escolhida foi tirar um deles: SVG que leva texto
+/// nasce em 1×.
+///
+/// Guarda a largura usada no `dataset` para não repintar a cada tique de
+/// `ResizeObserver` — arrastar a pega da árvore dispara dezenas deles, e
+/// repintar 24 pontos em cada um pisca.
+function redesenharHoras() {
+  const cx = $("#grafHoras");
+  if (!cx || !est.painel) return;
+  const larg = Math.round(cx.clientWidth);
+  if (larg < 200 || String(larg) === cx.dataset.larg) return;
+  cx.dataset.larg = String(larg);
+  cx.innerHTML = areaHoras(est.painel.por_hora, est.painel.recusadas_por_hora, larg);
+}
+
+// Um observador só, criado uma vez. Ele vale para a janela que muda de tamanho
+// E para a árvore que recolhe — os dois mudam a largura do cartão sem que a
+// tela seja repintada, e é justamente aí que o gráfico ficaria na medida
+// errada.
+const observadorDeLargura = typeof ResizeObserver === "function"
+  ? new ResizeObserver(() => redesenharHoras()) : null;
+
+/// Liga o observador no cartão do gráfico. Chamado depois de pintar o painel.
+function ligarLarguraDoGrafico() {
+  const cx = $("#grafHoras");
+  if (!cx) return;
+  redesenharHoras();
+  if (observadorDeLargura) { observadorDeLargura.disconnect(); observadorDeLargura.observe(cx); }
 }
 
 async function vPainel() {
@@ -3036,25 +3272,25 @@ async function vPainel() {
   return `<div class="kpis">${kpis}</div><div class="cartas" id="cartas">
     <div id="maquina" class="passa">${maquinaHtml(maquina)}</div>
     ${carta("Operações por hora", "últimas 24 horas · as barras vermelhas são as recusadas",
-        areaHoras(d.por_hora, d.recusadas_por_hora), true)}
+        `<div id="grafHoras"></div>`, true)}
     ${carta("Operações mais pedidas", "verde é o que passou, vermelho o que foi recusado",
         barras(d.por_operacao.map(o => ({ nome:o.op, valor:o.ok, segundo:o.recusados,
           texto: o.recusados ? `${fmt(o.ok)} + ${fmt(o.recusados)}✕` : fmt(o.ok) })),
-          { rotulo:112, titulo:"Operações mais pedidas" }))}
+          { titulo:"Operações mais pedidas" }))}
     ${carta("Usuários por nível", "quem pode o quê, do config.json",
         anel(d.por_nivel.map(n => ({ nome:n.nivel, valor:n.quantos, cor:CORES[n.nivel] || "var(--texto-3)" }))))}
     ${carta("Maiores tabelas", "por registro · o tamanho é o do .reg",
         barras(d.maiores_tabelas.map(t => ({ nome:t.tabela, valor:t.registros,
-          texto: `${fmt(t.registros)} · ${fmtBytes(t.bytes)}` })), { rotulo:150, texto:104 }))}
+          texto: `${fmt(t.registros)} · ${fmtBytes(t.bytes)}` })), { titulo:"Maiores tabelas" }))}
     ${carta("De onde vêm", "por IP · vermelho é o que foi recusado",
         barras(d.top_ips.map(i => ({ nome:i.ip, valor:i.acessos - i.recusados, segundo:i.recusados,
-          texto: fmt(i.acessos) })), { rotulo:118 }))}
+          texto: fmt(i.acessos) })), { titulo:"Acessos por IP" }))}
     ${carta("Bancos", "tabelas por banco de dados",
         barras(d.bancos.map(b => ({ nome:b.nome, valor:b.tabelas,
-          texto: `${b.tabelas} tab · ${fmt(b.registros)} reg`, cor:"var(--reg)" })), { rotulo:104, texto:104 }))}
+          texto: `${b.tabelas} tab · ${fmt(b.registros)} reg`, cor:"var(--reg)" })), { titulo:"Tabelas por banco" }))}
     ${carta("Quem mais usou", "por login, no log inteiro",
         barras(d.usuarios_ativos.map(u => ({ nome:u.usuario, valor:u.acessos, cor:"var(--memo)" })),
-          { rotulo:112 }))}
+          { titulo:"Acessos por usuário" }))}
   </div>`;
 }
 
@@ -3071,6 +3307,7 @@ async function abrirAdmin(qual) {
         "o servidor inteiro numa tela · os monitores da máquina renovam sozinhos";
       p.innerHTML = await vPainel();
       ligarMonitor();
+      ligarLarguraDoGrafico();
       return;
     }
     if (qual === "usuarios") {

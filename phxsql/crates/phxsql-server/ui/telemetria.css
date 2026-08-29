@@ -323,9 +323,22 @@ input.tlm-busca {
   color:var(--n); border:1px solid var(--n); border-radius:4px;
   padding:1px 8px; font-size:10px; letter-spacing:.05em;
 }
+/* A lista de pares em COLUNAS. `columns` e nao `grid` de proposito: a ordem
+   de leitura de uma ficha e de cima para baixo, e a multicoluna preserva isso
+   -- uma grade `auto-fill` leria em ziguezague e «estado» ficaria ao lado de
+   «nivel» em vez de acima dele.
+
+   O piso de 300px e a largura em que o par ainda respira; acima disso a
+   coluna cresce ate caber a proxima. Medido: 1 coluna a 1180, 3 a 1920, 8 a
+   3440 e 13 a 5120 -- e o maior vao entre rotulo e valor cai de 4.553px para
+   276px, porque ele passa a ser o vao da COLUNA e nao o da tela. */
+.tlm-lista { columns:300px; column-gap:26px; }
 .tlm-l {
   display:flex; justify-content:space-between; gap:10px;
   padding:3px 0; font-size:11.5px; border-bottom:1px dotted var(--linha);
+  /* O par nao se parte no fim da coluna: rotulo numa coluna e valor na
+     seguinte seria pior que o vao que isto veio consertar. */
+  break-inside:avoid;
 }
 .tlm-l span { color:var(--texto-3); }
 /* O valor é DADO: nunca em caixa alta, nunca reescrito. */

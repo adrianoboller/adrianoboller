@@ -324,12 +324,12 @@ footer p{max-width:var(--medida)}
 
   <div class="painel">
   <!-- projeto:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-    <div><div class="v">90.360</div><div class="r">linhas de Rust</div></div>
-    <div><div class="v">1.132</div><div class="r">testes</div></div>
+    <div><div class="v">96.116</div><div class="r">linhas de Rust</div></div>
+    <div><div class="v">1.205</div><div class="r">testes</div></div>
     <div><div class="v">0</div><div class="r">dependências</div></div>
     <div><div class="v">7</div><div class="r">crates</div></div>
     <div><div class="v">7</div><div class="r">arquivos/tabela</div></div>
-    <div><div class="v">21.522</div><div class="r">linhas de doc</div></div>
+    <div><div class="v">24.185</div><div class="r">linhas de doc</div></div>
   <!-- projeto:fim -->
   </div>
 </header>
@@ -2583,6 +2583,40 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
     fragmento de propósito: o esqueleto HTML é montado pelo servidor, e o mesmo
     arquivo pode ser publicado na web sem virar uma segunda cópia que diverge.</p>
   </div>
+
+  <h3>De 390 a 5.120: o que a largura extra faz</h3>
+
+  <p>O console foi medido em seis larguras — celular, tablet nos dois sentidos,
+  desktop, <em>ultrawide</em> de 3.440 e uma janela de <strong>5.120 esticada por
+  dois monitores</strong>. A responsividade segurou: <strong>zero rolagem lateral em
+  largura nenhuma</strong>. O que não existia era <strong>teto</strong>, e sem teto
+  a tela grande piora em vez de melhorar: o maior parágrafo do painel media
+  <strong>5.040 px</strong> — umas 630 letras numa linha só — e na ficha da
+  telemetria o valor ficava a <strong>4.553 px</strong> do próprio rótulo.</p>
+
+  <p>A regra escolhida é <strong>mista</strong>: a largura extra vira <em>mais
+  painel</em>, não linha mais comprida. Texto corrido para em 74 caracteres;
+  célula de grade para de esticar; par rótulo→valor vira <strong>coluna</strong>
+  quando sobra espaço. E nada centraliza — num monitor duplo o meio da janela é a
+  <strong>emenda física</strong> entre os dois, e um bloco centrado cai bem em
+  cima dela.</p>
+
+  <p>Havia ali um defeito de verdade, e ele não era de gosto: no cartão «A
+  máquina» o caminho do diretório de dados passava <strong>por cima</strong> do
+  «livres de 37,0 GB». Eram dois <code>&lt;text&gt;</code> do mesmo grupo de SVG,
+  e <strong>texto de SVG não quebra, não corta e não empurra ninguém</strong> —
+  quando não cabe, ele se sobrepõe. Aparecia a 1.920 e, medindo, estava em todas
+  as larguras, celular inclusive: quem decide é o comprimento do caminho, não o
+  monitor. O conserto não foi dar mais espaço ao texto, foi <strong>tirar o texto
+  do SVG</strong>. Em HTML a célula quebra em vez de invadir a vizinha, e
+  sobrepor deixa de ser possível por construção.</p>
+
+  <p>De quebra some o segundo regime de escala: o <code>viewBox</code> estica o
+  desenho inteiro, texto junto, e a mesma fonte de 11 px saía com 67 px a 5.120,
+  ao lado de um menu que continuava com 13. Hoje o desenho que leva texto ou é
+  HTML, ou nasce na <strong>largura medida</strong> — e aí a largura extra vira
+  mais gráfico: as marcas do eixo das operações por hora passam de sete a uma por
+  hora.</p>
 </section>
 
 <!-- ============================= 13 ============================= -->
@@ -4678,8 +4712,8 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
 
 <footer>
   <!-- rodape:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-  <p>PhxSql 0.18.0 · 90.360 linhas de Rust em 7 crates,
-  mais 681 KiB de interface · 1.132 testes ·
+  <p>PhxSql 0.18.0 · 96.116 linhas de Rust em 7 crates,
+  mais 751 KiB de interface · 1.205 testes ·
   nenhuma dependência externa.
   Especificação byte a byte em <code>docs/FORMATO.md</code>, cadastro e
   permissões em <code>docs/USUARIOS.md</code>, a replicação em
