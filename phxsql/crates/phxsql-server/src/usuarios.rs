@@ -250,6 +250,18 @@ impl Atividade {
             "bloqueios_exportar" | "whitelist_salvar" | "mensagens" | "mensagens_semear" => {
                 Atividade::Administrar
             }
+            // A telemetria mostra o login, o IP e a TABELA de toda atividade
+            // viva, e o encerrar interrompe o trabalho alheio: e o mesmo poder
+            // do `sessoes` e do `kill`, pelas mesmas duas razoes.
+            //
+            // Este portao ve a base VAZIA, porque nenhuma das quatro tem campo
+            // "database" -- entao ele nao basta, e as quatro conferem por
+            // dentro se quem pediu e administrador DESTE SERVIDOR. E a licao
+            // do juntar/unir: quando o portao geral nao consegue enxergar o
+            // campo, a operacao pergunta por conta.
+            "telemetria" | "telemetria_ligar" | "telemetria_desligar" | "telemetria_encerrar" => {
+                Atividade::Administrar
+            }
             // `config_gravar` esta aqui declarado, e nao so caindo no `_`:
             // a operacao que reescreve o config.json e a ultima que deveria
             // depender do padrao para negar. A op ainda confere por dentro.

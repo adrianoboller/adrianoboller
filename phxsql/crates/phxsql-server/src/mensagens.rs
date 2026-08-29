@@ -178,6 +178,22 @@ pub const FABRICA: &[MensagemFabrica] = &[
     // - `erro.sinal` carrega a MESSAGE_TEXT que o DONO DO BANCO escreveu no
     //   gatilho. Substitui-la por texto nosso seria apagar a voz dele; o
     //   idioma dessa mensagem e escolha de quem escreveu o gatilho.
+    // O cancelamento e a TERCEIRA que nao se traduz por moldura, e por um
+    // motivo proprio: o texto ja vem montado do ponto que cancelou, com quem
+    // encerrou e o que estava rodando. Traduzir de verdade exigiria mover
+    // essa montagem para a tabela -- trabalho que so vale quando alguem
+    // pedir a tela noutro idioma e esbarrar nisto.
+    MensagemFabrica {
+        nome: "erro.cancelado",
+        textos: [
+            "{detalhe}",
+            "{detalhe}",
+            "{detalhe}",
+            "{detalhe}",
+            "{detalhe}",
+            "{detalhe}",
+        ],
+    },
     MensagemFabrica {
         nome: "erro.spare_em_espera",
         textos: [
@@ -435,6 +451,7 @@ pub fn decompor(e: &PhxError) -> (&'static str, String) {
         PhxError::Autorizacao(m) => ("erro.acesso_negado", m.clone()),
         PhxError::EmCarga(m) => ("erro.em_carga", m.clone()),
         PhxError::LimiteExcedido(m) => ("erro.limite_excedido", m.clone()),
+        PhxError::Cancelado(m) => ("erro.cancelado", m.clone()),
         PhxError::SpareEmEspera(m) => ("erro.spare_em_espera", m.clone()),
         PhxError::Redireciona(m) => ("erro.redireciona", m.clone()),
         PhxError::Sinal { estado, mensagem } => (
@@ -754,6 +771,7 @@ mod tests {
             PhxError::Autorizacao(String::new()),
             PhxError::EmCarga(String::new()),
             PhxError::LimiteExcedido(String::new()),
+            PhxError::Cancelado(String::new()),
             PhxError::SpareEmEspera(String::new()),
             PhxError::Redireciona(String::new()),
             PhxError::Sinal {

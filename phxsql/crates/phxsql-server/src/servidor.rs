@@ -507,6 +507,11 @@ pub struct Servidor {
     /// virariam duas respostas no dia em que um caminho esquecesse o outro.
     max_linhas_vivo: AtomicU64,
     espelho_vivo: AtomicBool,
+    /// O que o servidor esta fazendo AGORA: atividades, threads e as series.
+    ///
+    /// `Arc` porque as threads de fundo carregam o registro consigo para
+    /// anotar o que estao fazendo, e elas vivem mais que qualquer emprestimo.
+    telemetria: Arc<crate::telemetria::Telemetria>,
 }
 
 impl Servidor {
@@ -577,6 +582,7 @@ impl Servidor {
             ha_gatilhos,
             max_linhas_vivo: AtomicU64::new(max_linhas),
             espelho_vivo: AtomicBool::new(espelho),
+            telemetria: Arc::new(crate::telemetria::Telemetria::default()),
         });
         // Quem configurou "idioma" pediu o recurso: a tabela de mensagens e
         // semeada no arranque se ainda nao existe. Sem o campo, nada e criado
@@ -692,6 +698,62 @@ impl Servidor {
         self.espelho_vivo.load(Ordering::Relaxed)
     }
 
+    /// Toma a trava unica de dados -- e e o UNICO lugar que a toma.
+    ///
+    /// # Por que passar por aqui
+    ///
+    /// A trava de dados e o gargalo declarado deste servidor: toda leitura e
+    /// toda escrita passam por ela, uma de cada vez. Entao «quanto tempo se
+    /// espera por ela» e «quanto tempo alguem a segura» sao os dois numeros
+    /// que explicam um servidor lento -- e nenhum dos dois existia.
+    ///
+    /// Ha 50 tomadas de trava neste arquivo. Medir em cada uma seria copiar a
+    /// mesma conta 50 vezes, e a que alguem esquecesse viraria o buraco na
+    /// serie -- a mesma razao pela qual o portao de permissao e UM so.
+    ///
+    /// # O que custa
+    ///
+    /// Ligada: dois `Instant::now()` por OPERACAO (nao por linha), num
+    /// caminho em que a operacao mais barata ja leva dezenas de
+    /// microssegundos. Desligada: um `load(Relaxed)`, e nem o relogio e lido.
+    fn travar_dados(&self) -> Result<TravaMedida<'_>> {
+        let medindo = self.telemetria.ligada();
+        let atividade = if medindo {
+            crate::telemetria::corrente()
+        } else {
+            None
+        };
+        // O estado muda ANTES de a thread parar na fila: e essa marca que faz
+        // a bolha aparecer amarela «esperando» enquanto outra atividade
+        // segura a trava. Depois seria tarde -- a thread ja estaria bloqueada.
+        if let Some(a) = &atividade {
+            a.esperando_trava();
+        }
+        let pedida = medindo.then(Instant::now);
+        let guarda = self.dados.lock().map_err(|_| trava_envenenada());
+        // UM relogio para as duas contas: o instante em que a trava chegou na
+        // mao e o fim da espera e o comeco da posse. Ler o relogio duas vezes
+        // aqui pagaria duas chamadas para saber a mesma coisa.
+        let obtida = medindo.then(Instant::now);
+        if let Some(a) = &atividade {
+            a.com_a_trava();
+        }
+        if let (Some(t), Some(o)) = (pedida, obtida) {
+            self.telemetria
+                .contar_espera(o.duration_since(t).as_micros() as u64);
+        }
+        Ok(TravaMedida {
+            guarda: guarda?,
+            tomada: obtida,
+            telemetria: &self.telemetria,
+        })
+    }
+
+    /// O registro da telemetria, para quem precisa anotar alguma coisa nele.
+    pub fn telemetria(&self) -> &Arc<crate::telemetria::Telemetria> {
+        &self.telemetria
+    }
+
     /// Sobe o servidor e atende ate o processo ser encerrado.
     pub fn escutar(self: &Arc<Self>) -> Result<()> {
         let endereco = self.config.endereco()?;
@@ -737,6 +799,19 @@ impl Servidor {
         self.ligar_relogio_de_gravacao();
         self.ligar_vigia_de_disco();
         self.ligar_vigia_de_jobs();
+        self.subir_amostrador();
+        // A thread PRINCIPAL tambem entra no registro. Ela nao e criada por
+        // ninguem -- e o processo --, e por isso era a unica que faltaria numa
+        // lista montada so pelos `spawn`. Um inventario com um buraco e um
+        // inventario em que nao se confia.
+        let principal = self.telemetria.registrar_fio(
+            "aceitador-dados",
+            "a thread principal: fica no `accept` da porta de dados e entrega \
+             cada conexao nova a uma thread de atendimento",
+            "servico",
+            crate::agora_ms(),
+        );
+        principal.fazendo("aceitando conexoes");
 
         self.anotar_porta_no_ar(&ouvinte);
         let mut atual = Some(ouvinte);
@@ -824,11 +899,19 @@ impl Servidor {
                     }
                     let servidor = Arc::clone(self);
                     self.conexoes.fetch_add(1, Ordering::SeqCst);
-                    std::thread::spawn(move || {
-                        let endereco = par.unwrap_or_else(|| SocketAddr::from(([0, 0, 0, 0], 0)));
-                        servidor.atender(fluxo, endereco);
-                        servidor.conexoes.fetch_sub(1, Ordering::SeqCst);
-                    });
+                    let endereco = par.unwrap_or_else(|| SocketAddr::from(([0, 0, 0, 0], 0)));
+                    self.telemetria.subir(
+                        format!("dados-{}", endereco.port()),
+                        "atende UMA conexao da porta de dados, do login ate o fim: \
+                         le uma linha, despacha o pedido e responde, em laco",
+                        "atendimento",
+                        crate::agora_ms(),
+                        move |fio| {
+                            fio.fazendo(&format!("conexao de {endereco}"));
+                            servidor.atender(fluxo, endereco);
+                            servidor.conexoes.fetch_sub(1, Ordering::SeqCst);
+                        },
+                    );
                 }
                 Err(e) => eprintln!("conexao recusada pelo sistema: {e}"),
             }
@@ -1175,13 +1258,78 @@ impl Servidor {
         }
         let ms = self.config.recursos.lote_milissegundos.max(20);
         let servidor = Arc::clone(self);
-        std::thread::spawn(move || loop {
-            std::thread::sleep(Duration::from_millis(ms));
-            if servidor.janela.pendente() > 0 {
-                servidor.janela.fechar();
-                servidor.descarregar_sujas();
-            }
-        });
+        self.telemetria.subir(
+            "relogio-gravacao",
+            "fecha a janela de durabilidade quando ninguem grava: sem ela, a \
+             ultima venda do dia ficaria sem `fsync` a noite inteira",
+            "servico",
+            crate::agora_ms(),
+            move |fio| loop {
+                std::thread::sleep(Duration::from_millis(ms));
+                if servidor.janela.pendente() > 0 {
+                    fio.fazendo("descarregando o que ficou pendente");
+                    servidor.janela.fechar();
+                    servidor.descarregar_sujas();
+                } else {
+                    fio.fazendo(&format!("nada pendente; acorda a cada {ms} ms"));
+                }
+            },
+        );
+    }
+
+    /// Sobe o amostrador das series da telemetria.
+    ///
+    /// # Por que UMA thread, e nao a conta na hora de perguntar
+    ///
+    /// Taxa exige dois instantes. Se cada aba aberta calculasse a propria,
+    /// cada uma teria a sua base de comparacao e duas telas mostrariam
+    /// numeros diferentes do mesmo servidor -- e a primeira pergunta de cada
+    /// aba nao teria taxa nenhuma. Uma amostragem so, de segundo em segundo,
+    /// da a mesma serie para todo mundo.
+    ///
+    /// A thread sobe SEMPRE, mesmo com a telemetria desligada, e e barata
+    /// justamente por isso: desligada, `amostrar` devolve no portao antes de
+    /// ler qualquer `/proc`. Subir a thread junto com o interruptor exigiria
+    /// que ligar a telemetria criasse thread -- e ai o custo de ligar
+    /// dependeria de quantas vezes alguem ligou e desligou.
+    fn subir_amostrador(self: &Arc<Self>) {
+        if !self.telemetria.marcar_amostrador() {
+            return;
+        }
+        let servidor = Arc::clone(self);
+        self.telemetria.subir(
+            "amostrador",
+            "tira, de segundo em segundo, a amostra das series do painel de \
+             telemetria: esperas, vazao, CPU do processo, leitura e escrita \
+             fisicas e acertos do cache do .ndx",
+            "servico",
+            crate::agora_ms(),
+            move |fio| loop {
+                let comeco = Instant::now();
+                if servidor.telemetria.ligada() {
+                    // A CPU da MAQUINA sai do mesmo monitor que o painel de
+                    // sistema ja usa, e nao de uma segunda leitura do
+                    // `/proc/stat`: duas leituras com bases diferentes dariam
+                    // dois percentuais para o mesmo instante.
+                    let maquina = crate::sistema::jiffies_da_maquina();
+                    let agora = crate::agora_ms();
+                    servidor.telemetria.amostrar(maquina, agora);
+                    // A poda anda junto com a amostra porque as duas sao do
+                    // mesmo relogio: uma aba fechada para de pedir, e um
+                    // minuto depois a bolha dela sai.
+                    servidor.telemetria.podar(agora, 60_000);
+                    fio.fazendo("amostra tirada");
+                } else {
+                    fio.fazendo("telemetria desligada: nao amostra");
+                }
+                // Desconta o que a amostra custou, para o periodo ser o
+                // periodo e nao "o periodo mais o trabalho". Sem isso a serie
+                // andaria mais devagar do que ela mesma diz que anda.
+                let gasto = comeco.elapsed();
+                let periodo = Duration::from_millis(crate::telemetria::PERIODO_DA_AMOSTRA_MS);
+                std::thread::sleep(periodo.saturating_sub(gasto));
+            },
+        );
     }
 
     /// Uma thread por origem, puxando os eventos do source.
@@ -1254,7 +1402,18 @@ impl Servidor {
                 };
             });
             let servidor = Arc::clone(self);
-            std::thread::spawn(move || servidor.laco_da_replica(origem));
+            let nome = format!("replica-{}", origem.nome);
+            self.telemetria.subir(
+                nome,
+                "puxa os eventos do diario de UMA origem e os aplica aqui; uma \
+                 por origem, para que uma origem caida nao segure as outras",
+                "servico",
+                crate::agora_ms(),
+                move |fio| {
+                    fio.fazendo("conectando na origem");
+                    servidor.laco_da_replica(origem);
+                },
+            );
         }
     }
 
@@ -1433,7 +1592,7 @@ impl Servidor {
         database: &str,
         no: &crate::replica::NoSource,
     ) -> Result<u64> {
-        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let _trava = self.travar_dados()?;
         let db = _trava.garantir_database(database)?;
 
         // Tabela que ainda nao existe aqui nasce do MESMO bloco de esquema que
@@ -1536,12 +1695,42 @@ impl Servidor {
         for no in c.outros() {
             let servidor = Arc::clone(self);
             let no = no.clone();
-            std::thread::spawn(move || servidor.laco_do_pulso(no));
+            self.telemetria.subir(
+                format!("pulso-{}", no.id),
+                "manda o pulso para UM no do cluster e escuta o dele: e por \
+                 este batimento que a queda do master e descoberta",
+                "servico",
+                crate::agora_ms(),
+                move |fio| {
+                    fio.fazendo("pulsando");
+                    servidor.laco_do_pulso(no);
+                },
+            );
         }
         let servidor = Arc::clone(self);
-        std::thread::spawn(move || servidor.laco_do_arbitro());
+        self.telemetria.subir(
+            "arbitro-cluster",
+            "decide quem e o master: conta os pulsos, apura a maioria e promove \
+             quando o master de antes para de responder",
+            "servico",
+            crate::agora_ms(),
+            move |fio| {
+                fio.fazendo("apurando a maioria");
+                servidor.laco_do_arbitro();
+            },
+        );
         let servidor = Arc::clone(self);
-        std::thread::spawn(move || servidor.laco_da_replica_do_cluster());
+        self.telemetria.subir(
+            "replica-cluster",
+            "puxa do master CORRENTE do cluster, que muda a cada promocao -- e \
+             por isso ela nao pode ser uma origem fixa do config.json",
+            "servico",
+            crate::agora_ms(),
+            move |fio| {
+                fio.fazendo("seguindo o master corrente");
+                servidor.laco_da_replica_do_cluster();
+            },
+        );
     }
 
     /// Pulsa UM outro no, para sempre: conecta, autentica como a replicacao,
@@ -2403,26 +2592,37 @@ impl Servidor {
             }
         );
         let servidor = Arc::clone(self);
-        std::thread::spawn(move || {
-            let mut ultimo = 0i64;
-            loop {
-                let agora = crate::agora_ms();
-                if servidor.config.backup.hora_de_rodar(agora, ultimo) {
-                    ultimo = agora;
-                    match servidor.rodar_backup_agendado(agora) {
-                        Ok(onde) => eprintln!("backup agendado: {onde}"),
-                        Err(e) => eprintln!("backup agendado FALHOU: {e}"),
+        self.telemetria.subir(
+            "backup-agendado",
+            "confere de minuto em minuto se chegou a hora do backup e o executa; \
+             dormir ate a hora certa seria fragil -- a maquina suspende e o \
+             relogio anda",
+            "servico",
+            crate::agora_ms(),
+            move |fio| {
+                let mut ultimo = 0i64;
+                loop {
+                    let agora = crate::agora_ms();
+                    if servidor.config.backup.hora_de_rodar(agora, ultimo) {
+                        ultimo = agora;
+                        fio.fazendo("copiando e conferindo o SHA-256");
+                        match servidor.rodar_backup_agendado(agora) {
+                            Ok(onde) => eprintln!("backup agendado: {onde}"),
+                            Err(e) => eprintln!("backup agendado FALHOU: {e}"),
+                        }
+                    } else {
+                        fio.fazendo("esperando a hora marcada");
                     }
+                    std::thread::sleep(Duration::from_secs(60));
                 }
-                std::thread::sleep(Duration::from_secs(60));
-            }
-        });
+            },
+        );
     }
 
     fn rodar_backup_agendado(&self, quando: i64) -> Result<String> {
         let b = &self.config.backup;
         let (onde, r) = {
-            let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+            let _trava = self.travar_dados()?;
             if b.zip {
                 let (caminho, r) = phxsql_store::backup::executar_zip(
                     &self.config.base,
@@ -3030,26 +3230,37 @@ impl Servidor {
         eprintln!("jobs de execucao: {}", ligados.join(" | "));
         self.relogio_de_jobs.store(true, Ordering::SeqCst);
         let servidor = Arc::clone(self);
-        std::thread::spawn(move || loop {
-            let agora = crate::agora_ms();
-            // A trava sai antes de executar: um job de backup segura a trava
-            // dos dados por segundos, e prender o cadastro junto travaria a
-            // tela de jobs e todos os outros jobs enquanto isso.
-            let vencidos = match servidor.jobs.lock() {
-                Ok(mut r) => {
-                    let v = r.vencidos(agora);
-                    for nome in &v {
-                        r.anotar_corrida(nome, agora);
+        self.telemetria.subir(
+            "relogio-jobs",
+            "acorda de tempos em tempos, ve quais jobs venceram a hora e os \
+             executa, um por um, com o poder do usuario de cada um",
+            "servico",
+            crate::agora_ms(),
+            move |fio| loop {
+                let agora = crate::agora_ms();
+                // A trava sai antes de executar: um job de backup segura a
+                // trava dos dados por segundos, e prender o cadastro junto
+                // travaria a tela de jobs e todos os outros jobs enquanto isso.
+                let vencidos = match servidor.jobs.lock() {
+                    Ok(mut r) => {
+                        let v = r.vencidos(agora);
+                        for nome in &v {
+                            r.anotar_corrida(nome, agora);
+                        }
+                        v
                     }
-                    v
+                    Err(_) => Vec::new(),
+                };
+                if vencidos.is_empty() {
+                    fio.fazendo("nenhum job vencido");
                 }
-                Err(_) => Vec::new(),
-            };
-            for nome in vencidos {
-                let _ = servidor.rodar_job(&nome, "agenda");
-            }
-            std::thread::sleep(Duration::from_secs(crate::jobs::PERIODO_DO_RELOGIO_S));
-        });
+                for nome in vencidos {
+                    fio.fazendo(&format!("rodando o job {nome}"));
+                    let _ = servidor.rodar_job(&nome, "agenda");
+                }
+                std::thread::sleep(Duration::from_secs(crate::jobs::PERIODO_DO_RELOGIO_S));
+            },
+        );
     }
 
     /// Roda um job agora: monta a sessao dele, passa pelos portoes e executa.
@@ -3296,11 +3507,20 @@ impl Servidor {
         let corpo = Self::texto_do_aviso_de_falha(job, corrida);
         // Linha de execucao propria: quem dispara pode ser a tela, e ela nao
         // deve esperar o rele -- nem o timeout de um rele fora do ar.
-        std::thread::spawn(
-            move || match crate::email::enviar(&email, &assunto, &corpo) {
-                Ok(r) => eprintln!("aviso de job enviado: {r}"),
-                // Falhar em avisar tambem e noticia, como no disco.
-                Err(e) => eprintln!("aviso de job NAO ENVIADO: {e}"),
+        self.telemetria.subir(
+            "aviso-job",
+            "entrega UM e-mail de job que falhou e sai; existe em thread \
+             propria porque quem dispara pode ser a tela, e ela nao pode \
+             esperar o rele -- nem o timeout de um rele fora do ar",
+            "servico",
+            crate::agora_ms(),
+            move |fio| {
+                fio.fazendo("falando com o rele de e-mail");
+                match crate::email::enviar(&email, &assunto, &corpo) {
+                    Ok(r) => eprintln!("aviso de job enviado: {r}"),
+                    // Falhar em avisar tambem e noticia, como no disco.
+                    Err(e) => eprintln!("aviso de job NAO ENVIADO: {e}"),
+                }
             },
         );
     }
@@ -3350,10 +3570,19 @@ impl Servidor {
             email.para.join(", ")
         );
         let servidor = Arc::clone(self);
-        std::thread::spawn(move || loop {
-            std::thread::sleep(Duration::from_secs(crate::jobs::PERIODO_DO_VIGIA_S));
-            servidor.conferir_jobs_parados();
-        });
+        self.telemetria.subir(
+            "vigia-jobs",
+            "avisa por e-mail o job PARADO: ligado, com a hora vencida e sem \
+             relogio que o rode -- o caso que o proprio relogio nao percebe",
+            "servico",
+            crate::agora_ms(),
+            move |fio| loop {
+                fio.fazendo("dormindo ate a proxima conferencia");
+                std::thread::sleep(Duration::from_secs(crate::jobs::PERIODO_DO_VIGIA_S));
+                fio.fazendo("conferindo os jobs parados");
+                servidor.conferir_jobs_parados();
+            },
+        );
     }
 
     /// Uma rodada do vigia de jobs parados.
@@ -3500,22 +3729,46 @@ impl Servidor {
             self.config.web.sessao_minutos
         );
         let servidor = Arc::clone(self);
-        std::thread::spawn(move || {
-            for conexao in ouvinte.incoming() {
-                let fluxo = match conexao {
-                    Ok(f) => f,
-                    Err(_) => continue,
-                };
-                // Mesma razao da porta de dados: resposta curta, e o Nagle
-                // segurando cada clique da tela por 40 ms.
-                let _ = fluxo.set_nodelay(true);
-                let par = fluxo
-                    .peer_addr()
-                    .unwrap_or_else(|_| SocketAddr::from(([0, 0, 0, 0], 0)));
-                let s = Arc::clone(&servidor);
-                std::thread::spawn(move || s.atender_http(fluxo, par));
-            }
-        });
+        self.telemetria.subir(
+            "ouvinte-web",
+            "aceita as conexoes da interface web e entrega cada pedido a uma \
+             thread propria; ela so aceita, nunca atende",
+            "servico",
+            crate::agora_ms(),
+            move |fio| {
+                fio.fazendo("esperando conexao do navegador");
+                for conexao in ouvinte.incoming() {
+                    let fluxo = match conexao {
+                        Ok(f) => f,
+                        Err(_) => continue,
+                    };
+                    // Mesma razao da porta de dados: resposta curta, e o Nagle
+                    // segurando cada clique da tela por 40 ms.
+                    let _ = fluxo.set_nodelay(true);
+                    let par = fluxo
+                        .peer_addr()
+                        .unwrap_or_else(|_| SocketAddr::from(([0, 0, 0, 0], 0)));
+                    let s = Arc::clone(&servidor);
+                    // ACHADO, e ele fica declarado aqui: esta thread nasce SEM
+                    // TETO. A porta de dados recusa acima de `conexoes_max`; a
+                    // web nao conta nada, entao uma enxurrada de pedidos vira
+                    // uma enxurrada de threads. O registro agora ao menos as
+                    // MOSTRA -- o teto e decisao de configuracao, e nao deste
+                    // agente.
+                    s.telemetria.clone().subir(
+                        format!("web-{}", par.port()),
+                        "atende UM pedido HTTP da interface e sai: o protocolo \
+                         aqui e uma resposta por conexao (`Connection: close`)",
+                        "web",
+                        crate::agora_ms(),
+                        move |f| {
+                            f.fazendo(&format!("pedido de {par}"));
+                            s.atender_http(fluxo, par);
+                        },
+                    );
+                }
+            },
+        );
     }
 
     /// Atende um pedido HTTP. Uma resposta por conexao -- `Connection: close`.
@@ -3820,6 +4073,35 @@ impl Servidor {
         let inicio = Instant::now();
         let quando_ms = crate::agora_ms();
 
+        // A atividade da web e da SESSAO, e nao do pedido: HTTP abre uma
+        // conexao por clique, e uma bolha por conexao viraria um enxame que
+        // nasce e morre a cada volta da tela. Sem sessao -- o login e o
+        // `saude` --, a chave e o IP, que e o dono que existe naquele
+        // instante.
+        let chave_da_atividade = if id_sessao.is_empty() {
+            format!("web:{ip}")
+        } else {
+            format!("web:{id_sessao}")
+        };
+        let atividade = self
+            .telemetria
+            .entrar(&chave_da_atividade, "web", ip, 0, quando_ms);
+        let _amarrada = crate::telemetria::amarrar(atividade.clone());
+        if let Some(a) = &atividade {
+            let alvo = objeto_do_pedido(&pedido.corpo, &Ok(Json::Nulo));
+            let nome_op = Json::analisar(&pedido.corpo)
+                .ok()
+                .map(|j| j.texto_ou("op", "?").to_string())
+                .unwrap_or_else(|| "?".into());
+            a.comecou_pedido(
+                &nome_op,
+                sessao.login(),
+                &alvo.database,
+                &alvo.tabela,
+                quando_ms,
+            );
+        }
+
         let ja_remota = self
             .remotos
             .lock()
@@ -3894,6 +4176,11 @@ impl Servidor {
         };
         let remota = ja_remota.is_some() || !servidor_remoto.is_empty();
         let ms = inicio.elapsed().as_millis() as u64;
+        if let Some(a) = &atividade {
+            a.terminou_pedido(sessao.login());
+        }
+        self.telemetria
+            .contar_pedido(OPS_ESCRITA.contains(&op.as_str()), resultado.is_ok());
 
         // Um desafio em aberto so e consumido por um login. Qualquer outra
         // operacao no meio do caminho devolve o nonce para a sessao, senao um
@@ -4089,10 +4376,15 @@ impl Servidor {
         // Sai do registro por qualquer caminho -- inclusive os `return` do
         // meio do laco. Sem isto, uma conexao caida ficaria na lista para
         // sempre, e a lista que existe para dizer a verdade passaria a mentir.
+        // A chave da bolha e da CONEXAO, e nao do pedido: uma bolha que
+        // trocasse de identificador a cada pedido seria redesenhada duas
+        // vezes por segundo e ninguem conseguiria clicar nela.
+        let chave_da_atividade = format!("dados:{id_ligacao}");
         let _saida_do_registro = AoSair(|| {
             if let Ok(mut l) = self.ligacoes.lock() {
                 l.sair(id_ligacao);
             }
+            self.telemetria.sair(&chave_da_atividade);
             // A PRIMEIRA rede de protecao da reserva de carga: a conexao caiu,
             // a tabela solta. Sem isto, um cliente morto no meio de uma carga
             // deixaria a tabela reservada ate o prazo vencer -- e o prazo e
@@ -4119,12 +4411,32 @@ impl Servidor {
 
             let inicio = Instant::now();
             let quando_ms = crate::agora_ms();
+            // A atividade e aberta a cada pedido, e nao uma vez por conexao:
+            // quem liga a telemetria no meio do expediente precisa ver as
+            // conexoes que JA estavam abertas. `entrar` devolve a mesma
+            // atividade quando a chave ja existe, entao a bolha nao pisca.
+            let atividade =
+                self.telemetria
+                    .entrar(&chave_da_atividade, "dados", &ip, id_ligacao, quando_ms);
+            // Amarra a atividade a ESTA thread: e por ela que os lacos longos
+            // acham a marca de encerramento, la no fundo, sem carregar a
+            // telemetria por parametro em dezenas de assinaturas.
+            let _amarrada = crate::telemetria::amarrar(atividade.clone());
             {
                 let alvo = objeto_do_pedido(&linha, &Ok(Json::Nulo));
                 let nome_op = Json::analisar(&linha)
                     .ok()
                     .map(|j| j.texto_ou("op", "?").to_string())
                     .unwrap_or_else(|| "?".into());
+                if let Some(a) = &atividade {
+                    a.comecou_pedido(
+                        &nome_op,
+                        sessao.login(),
+                        &alvo.database,
+                        &alvo.tabela,
+                        quando_ms,
+                    );
+                }
                 if let Ok(mut l) = self.ligacoes.lock() {
                     l.comecou(
                         id_ligacao,
@@ -4182,6 +4494,11 @@ impl Servidor {
             if let Ok(mut l) = self.ligacoes.lock() {
                 l.terminou(id_ligacao, sessao.login());
             }
+            if let Some(a) = &atividade {
+                a.terminou_pedido(sessao.login());
+            }
+            self.telemetria
+                .contar_pedido(OPS_ESCRITA.contains(&op.as_str()), resultado.is_ok());
 
             let resposta = match &resultado {
                 Ok(valor) => Json::objeto(vec![
@@ -4762,6 +5079,10 @@ impl Servidor {
             "painel" => self.op_painel(sessao),
             "estatisticas" | "estatisticas_uso" => self.op_estatisticas(p),
             "sessoes" | "processlist" => self.op_sessoes(),
+            "telemetria" => self.op_telemetria(p, sessao),
+            "telemetria_ligar" => self.op_telemetria_ligar(sessao),
+            "telemetria_desligar" => self.op_telemetria_desligar(sessao),
+            "telemetria_encerrar" => self.op_telemetria_encerrar(p, sessao),
             "encerrar_sessao" | "kill" => self.op_encerrar_sessao(p),
             "checksum" | "soma_de_verificacao" => self.op_checksum(p, sessao),
             "exportar" | "export" => self.op_exportar(p, sessao),
@@ -5143,7 +5464,7 @@ impl Servidor {
     }
 
     fn op_bancos(&self) -> Result<Json> {
-        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let dados = self.travar_dados()?;
         Ok(Json::Lista(
             dados.databases()?.into_iter().map(Json::texto_de).collect(),
         ))
@@ -5157,7 +5478,7 @@ impl Servidor {
     /// mostra o que da para abrir.
     fn op_tabelas(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let nome = p.texto_ou("database", "");
-        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let dados = self.travar_dados()?;
         let db = dados.abrir_database(nome)?;
         let todas = db.todas_as_tabelas()?;
         let visiveis: Vec<Json> = todas
@@ -5188,7 +5509,7 @@ impl Servidor {
 
     fn op_criar_database(&self, p: &Json) -> Result<Json> {
         let nome = p.texto_ou("database", "");
-        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let dados = self.travar_dados()?;
         let db = dados.criar_database(nome)?;
         Ok(Json::objeto(vec![
             ("database", Json::texto_de(db.nome())),
@@ -5228,7 +5549,7 @@ impl Servidor {
             }
         }
 
-        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let dados = self.travar_dados()?;
         let origem = dados.abrir_database(origem_db)?;
         let alvo = dados.abrir_database(destino_db)?;
         let copiados = origem.copiar_tabela_para(tabela, &alvo, destino)?;
@@ -5248,7 +5569,7 @@ impl Servidor {
     /// o catalogo em vez de olhar para ele.
     fn op_sistabelas(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let database = p.texto_ou("database", "");
-        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let dados = self.travar_dados()?;
         let db = dados.abrir_database(database)?;
         let mut linhas = Vec::new();
         for nome in db.todas_as_tabelas()? {
@@ -5325,7 +5646,7 @@ impl Servidor {
     fn op_siscolunas(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let database = p.texto_ou("database", "");
         let so_esta = p.texto_ou("tabela", "").trim().to_string();
-        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let dados = self.travar_dados()?;
         let db = dados.abrir_database(database)?;
         let mut linhas = Vec::new();
         for nome in db.todas_as_tabelas()? {
@@ -5403,7 +5724,7 @@ impl Servidor {
     fn op_dados_pessoais(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let database = p.texto_ou("database", "");
         let so_esta = p.texto_ou("tabela", "").trim().to_string();
-        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let dados = self.travar_dados()?;
         let db = dados.abrir_database(database)?;
 
         let mut achados = Vec::new();
@@ -5510,7 +5831,7 @@ impl Servidor {
         let agregador = Agregador::de_texto(p.texto_ou("agregador", "soma"))?;
         let max = self.limite_pivot(p);
 
-        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let dados = self.travar_dados()?;
         let db = dados.abrir_database(p.texto_ou("database", ""))?;
         let mut t = db.abrir_qualificada(p.texto_ou("tabela", ""))?;
         let esquema = t.esquema().clone();
@@ -5830,7 +6151,7 @@ impl Servidor {
         // A tabela tem de existir -- reservar o que nao existe esconderia um
         // erro de digitacao ate o fim da carga.
         {
-            let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+            let dados = self.travar_dados()?;
             dados
                 .abrir_database(&database)?
                 .abrir_qualificada(&tabela)?;
@@ -5874,7 +6195,7 @@ impl Servidor {
 
         // O fsync que a carga inteira adiou acontece agora.
         {
-            let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+            let _trava = self.travar_dados()?;
             let mut t = self.abrir_travada(&_trava, p, sessao)?;
             t.sincronizar()?;
         }
@@ -5986,7 +6307,7 @@ impl Servidor {
     /// justamente na operacao que ja e a mais cara.
     fn op_sequencias(&self, p: &Json) -> Result<Json> {
         let database = p.texto_ou("database", "");
-        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let dados = self.travar_dados()?;
         let db = dados.abrir_database(database)?;
         let mut linhas = Vec::new();
         for nome in db.todas_as_tabelas()? {
@@ -6031,7 +6352,7 @@ impl Servidor {
                     .into(),
             ));
         }
-        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let _trava = self.travar_dados()?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
         if t.esquema().coluna_sequencia().is_none() {
             return Err(PhxError::Esquema(format!(
@@ -6071,7 +6392,7 @@ impl Servidor {
         if schema.is_empty() {
             return Err(PhxError::Esquema("informe \"schema\"".into()));
         }
-        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let dados = self.travar_dados()?;
         dados.abrir_database(database)?.criar_schema(schema)?;
         Ok(Json::objeto(vec![
             ("database", Json::texto_de(database)),
@@ -6110,7 +6431,7 @@ impl Servidor {
             esquema.renomear(&nome);
         }
 
-        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let dados = self.travar_dados()?;
         let db = dados.abrir_database(database)?;
         if db.existe_tabela(schema.as_deref(), &nome)? {
             return Err(PhxError::Duplicado(format!(
@@ -6163,7 +6484,7 @@ impl Servidor {
                     .into(),
             ));
         }
-        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let dados = self.travar_dados()?;
         let mut t = self.abrir_travada(&dados, p, sessao)?;
         let nova = crate::valores::chave_estrangeira_de_json(p, 0, t.esquema())?;
         let mut fks = t.esquema().chaves_estrangeiras().to_vec();
@@ -6204,7 +6525,7 @@ impl Servidor {
                 "informe \"nome\" (o nome da chave declarada)".into(),
             ));
         }
-        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let dados = self.travar_dados()?;
         let mut t = self.abrir_travada(&dados, p, sessao)?;
         let mut fks = t.esquema().chaves_estrangeiras().to_vec();
         let antes = fks.len();
@@ -6248,7 +6569,7 @@ impl Servidor {
                  esperado {tabela:?}"
             )));
         }
-        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let dados = self.travar_dados()?;
         let db = dados.abrir_database(database)?;
         let apagados = db.excluir_tabela(tabela)?;
         // Os gatilhos da tabela saem junto, como no MySQL(R): um orfao
@@ -6280,7 +6601,7 @@ impl Servidor {
         let database = p.texto_ou("database", "");
         let tabela = p.texto_ou("tabela", "");
         let destino = p.texto_ou("destino", "");
-        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let dados = self.travar_dados()?;
         let db = dados.abrir_database(database)?;
         let copiados = db.duplicar_tabela(tabela, destino)?;
         Ok(Json::objeto(vec![
@@ -6852,7 +7173,7 @@ impl Servidor {
     }
 
     fn op_esquema(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
-        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let _trava = self.travar_dados()?;
         let t = self.abrir_travada(&_trava, p, sessao)?;
         let e = t.esquema();
         let colunas: Vec<Json> = e
@@ -7090,7 +7411,7 @@ impl Servidor {
     fn op_ler(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let rowid = self.rowid(p)?;
         let com_versao = p.booleano_ou("com_versao", false);
-        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let _trava = self.travar_dados()?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
         let linha = match t.ler(rowid)? {
             None => return Ok(Json::Nulo),
@@ -7109,7 +7430,7 @@ impl Servidor {
     fn op_varrer(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let max = self.limite(p);
         let indice = p.texto_ou("indice", "").to_string();
-        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let _trava = self.travar_dados()?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
 
         // `visao` decide o que a varredura enxerga. O padrao e "ativas": a
@@ -7168,8 +7489,18 @@ impl Servidor {
             (rowids, "posicao")
         };
 
+        // PONTO DE CANCELAMENTO. A pagina cabe no teto de linhas, mas o teto
+        // e de configuracao e pode ser grande: uma varredura de cem mil linhas
+        // segura a trava por segundos como qualquer outra.
+        let atividade = crate::telemetria::corrente();
+        let _fase = atividade
+            .as_ref()
+            .map(|a| a.fase_cancelavel("lendo as linhas da pagina"));
         let mut linhas = Vec::with_capacity(rowids.len());
         for &rowid in &rowids {
+            if let Some(a) = &atividade {
+                a.siga(1)?;
+            }
             if let Some(l) = t.ler(rowid)? {
                 let mut obj = vec![("rowid".to_string(), Json::de_u64(rowid))];
                 if let Json::Objeto(pares) = linha_para_json(&l, t.esquema()) {
@@ -7244,7 +7575,7 @@ impl Servidor {
             .campo("chave")
             .cloned()
             .ok_or_else(|| PhxError::Esquema("informe \"chave\"".into()))?;
-        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let _trava = self.travar_dados()?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
         let pos = t
             .esquema()
@@ -7279,7 +7610,7 @@ impl Servidor {
         // servidor inteiro e um load atomico, e nada mais.
         let (antes, depois) = self.gatilhos_para(p, phxsql_sql::rotina::Evento::Inserir)?;
         Self::conferir_gatilhos_compilam(&antes, &depois)?;
-        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let _trava = self.travar_dados()?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
         let mut linha = json_para_linha(&valores_json, t.esquema())?;
         // BEFORE ve a linha ja tipada — e o SIGNAL daqui cancela a escrita
@@ -7379,7 +7710,7 @@ impl Servidor {
         Self::conferir_gatilhos_compilam(&antes, &depois)?;
 
         let inicio = Instant::now();
-        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let _trava = self.travar_dados()?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
 
         // A conversao acontece aqui, com o esquema na mao. Uma linha que nao
@@ -7387,7 +7718,22 @@ impl Servidor {
         // inteira -- a menos que `parar_no_erro` mande parar.
         let mut linhas: Vec<Vec<phxsql_core::value::Value>> = Vec::with_capacity(recebidas);
         let mut recusadas: Vec<(usize, String)> = Vec::new();
+        // PONTO DE CANCELAMENTO -- e ele acaba ANTES da gravacao.
+        //
+        // A conversao de cinco mil linhas com a trava na mao e a parte longa
+        // e a parte segura: nada foi escrito ainda, e abandonar aqui e como
+        // se o pedido nunca tivesse chegado. Ja o `inserir_lote` logo abaixo
+        // grava slot, indice e diario por linha, e nao aceita marca nenhuma:
+        // parar no meio dele deixaria a tabela com metade do lote e o indice
+        // com a outra metade. A fase fecha sozinha quando esta chave fecha.
+        let atividade = crate::telemetria::corrente();
+        let _fase = atividade
+            .as_ref()
+            .map(|a| a.fase_cancelavel("convertendo as linhas da carga"));
         for i in 0..recebidas {
+            if let Some(a) = &atividade {
+                a.siga(1)?;
+            }
             let convertida = match (&colada, itens.get(i)) {
                 (Some((c, _)), _) => phxsql_core::carga::linha_de_texto(c, i, t.esquema()),
                 (None, Some(item)) => json_para_linha(item, t.esquema()),
@@ -7421,6 +7767,9 @@ impl Servidor {
             }
         }
 
+        // Daqui para baixo NAO ha ponto de cancelamento: a fase fecha aqui, e
+        // a gravacao vai ate o fim.
+        drop(_fase);
         let lote = t.inserir_lote(&linhas, parar)?;
         // Uma carga inteira e um `sincronizar`, e nao um por linha.
         t.sincronizar()?;
@@ -7482,7 +7831,7 @@ impl Servidor {
         };
         let carga = phxsql_core::carga::ler(texto, f)?;
 
-        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let _trava = self.travar_dados()?;
         let t = self.abrir_travada(&_trava, p, sessao)?;
         let e = t.esquema();
 
@@ -7600,7 +7949,7 @@ impl Servidor {
             .ok_or_else(|| PhxError::Esquema("informe \"valores\"".into()))?;
         let (antes, depois) = self.gatilhos_para(p, phxsql_sql::rotina::Evento::Atualizar)?;
         Self::conferir_gatilhos_compilam(&antes, &depois)?;
-        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let _trava = self.travar_dados()?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
         conferir_versao_pedida(&mut t, p, rowid)?;
         // O OLD dos gatilhos: a linha como ela E, lida na mesma trava que vai
@@ -7675,7 +8024,7 @@ impl Servidor {
         let fisico = p.booleano_ou("fisico", false);
         let (antes, depois) = self.gatilhos_para(p, phxsql_sql::rotina::Evento::Excluir)?;
         Self::conferir_gatilhos_compilam(&antes, &depois)?;
-        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let _trava = self.travar_dados()?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
         conferir_versao_pedida(&mut t, p, rowid)?;
         let tem_marca = t.esquema().coluna_softdeleted().is_some();
@@ -7738,7 +8087,7 @@ impl Servidor {
     fn op_restaurar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let rowid = self.rowid(p)?;
         let motivo = p.texto_ou("motivo", "").trim().to_string();
-        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let _trava = self.travar_dados()?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
         conferir_versao_pedida(&mut t, p, rowid)?;
         let voltou = t.restaurar(rowid, &motivo)?;
@@ -7768,7 +8117,7 @@ impl Servidor {
         // linhas viraria uma resposta que ninguem consegue usar.
         let so_uma = p.texto_ou("uuid", "").trim().to_string();
         let com_anexos = p.booleano_ou("com_anexos", !so_uma.is_empty());
-        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let _trava = self.travar_dados()?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
 
         let descartadas = if so_uma.is_empty() {
@@ -7830,7 +8179,7 @@ impl Servidor {
         let pular = p.inteiro_ou("pular", 0).max(0) as u64;
         let limite = p.inteiro_ou("limite", 500).max(0) as u64;
         let so_do_rowid = p.campo("rowid").is_some();
-        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let _trava = self.travar_dados()?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
 
         let lista = if so_do_rowid {
@@ -7882,7 +8231,7 @@ impl Servidor {
                     .into(),
             ));
         }
-        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let _trava = self.travar_dados()?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
         let apagadas = t.esvaziar_lixeira(&motivo)?;
         t.sincronizar()?;
@@ -7918,7 +8267,7 @@ impl Servidor {
         // A trava fica presa a copia inteira. E o que "consistente" quer dizer
         // sem transacao: nenhuma escrita acontece no meio.
         let (arquivo, r) = {
-            let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+            let _trava = self.travar_dados()?;
             if em_zip {
                 let (caminho, r) = phxsql_store::backup::executar_zip(
                     &self.config.base,
@@ -7963,7 +8312,7 @@ impl Servidor {
 
     /// Confere `.reg` contra `.bkp` e conserta o que der.
     fn op_reparar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
-        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let _trava = self.travar_dados()?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
         let (conferidos, reparados, perdidos) = t.reparar()?;
         self.gravar_de_verdade(&mut t, p)?;
@@ -8014,13 +8363,25 @@ impl Servidor {
     /// numero so porque os buracos caem em outro lugar.
     fn op_checksum(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let comeco = Instant::now();
-        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let dados = self.travar_dados()?;
         let mut t = self.abrir_travada(&dados, p, sessao)?;
         let esquema = t.esquema().clone();
 
         let mut soma: u64 = 0xcbf2_9ce4_8422_2325; // semente do FNV-1a de 64
         let mut linhas = 0u64;
+        // PONTO DE CANCELAMENTO. A soma de verificacao le a tabela inteira
+        // segurando a trava de dados: e a operacao que mais para o servidor
+        // sem gravar nada. Abandonar entre duas linhas nao deixa rastro
+        // nenhum -- nada foi escrito --, e por isso ela e cancelavel do
+        // comeco ao fim.
+        let atividade = crate::telemetria::corrente();
+        let _fase = atividade
+            .as_ref()
+            .map(|a| a.fase_cancelavel("somando a tabela"));
         for (rowid, _) in t.varrer()? {
+            if let Some(a) = &atividade {
+                a.siga(1)?;
+            }
             let Some(linha) = t.ler(rowid)? else { continue };
             // A linha volta a forma canonica antes de entrar na conta: somar o
             // byte cru do slot faria o enchimento de um `Str` de largura fixa
@@ -8132,6 +8493,267 @@ impl Servidor {
         ]))
     }
 
+    // ------------------------------------------------------- telemetria
+
+    /// O portao PROPRIO das operacoes de telemetria.
+    ///
+    /// # Por que ele existe, se ja ha o portao do `despachar`
+    ///
+    /// E a licao do `juntar`/`unir`, com o sinal trocado. La, o portao geral
+    /// olhava o campo `"tabela"` e duas operacoes nao o tinham -- entao elas
+    /// escapavam. Aqui a telemetria tambem nao tem `"tabela"` NEM
+    /// `"database"`: o portao geral so consegue perguntar «este usuario pode
+    /// administrar a base vazia?», e a resposta disso cai na regra `"*"` ou no
+    /// nivel. Um usuario com `bases: {"*": {administrar: true}}` e nivel de
+    /// leitor passaria.
+    ///
+    /// E a telemetria mostra, de todo mundo: o login, o IP, a operacao e a
+    /// TABELA em que ela mexe. Quem ve isso ve o movimento de bases sobre as
+    /// quais nao tem direito nenhum. Entao esta operacao pergunta o que o
+    /// portao geral nao consegue perguntar: **e administrador deste servidor?**
+    ///
+    /// Sem cadastro de usuarios, quem entrou pelo token de servico continua
+    /// podendo -- e assim que toda operacao de administracao ja funciona, e
+    /// apertar isso aqui tiraria um direito que ninguem pediu para tirar.
+    fn portao_da_telemetria(&self, sessao: &Sessao) -> Result<()> {
+        match &sessao.usuario {
+            None => Ok(()),
+            Some(u) if u.e_admin() => Ok(()),
+            Some(u) => Err(PhxError::Autorizacao(format!(
+                "{} nao e administrador deste servidor; a telemetria mostra o \
+                 login, o IP e a tabela de todas as atividades",
+                u.login
+            ))),
+        }
+    }
+
+    /// O painel de telemetria: as series do topo e as atividades vivas.
+    ///
+    /// Uma chamada so, como o `painel` e o `sistema`, e pelo mesmo motivo: a
+    /// tela se atualiza sozinha, e tres idas e voltas por volta seriam tres
+    /// vezes o custo para desenhar uma coisa so.
+    fn op_telemetria(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        self.portao_da_telemetria(sessao)?;
+        let amostras = p.inteiro_ou("amostras", 120).clamp(1, 200) as usize;
+        let agora = crate::agora_ms();
+        let mut retrato = self.telemetria.para_json(agora, amostras);
+        if let Json::Objeto(campos) = &mut retrato {
+            let (acertos, faltas, gravacoes) = phxsql_store::ndx::contadores_de_cache();
+            campos.push((
+                "cache_ndx".into(),
+                Json::objeto(vec![
+                    (
+                        "paginas_teto",
+                        Json::de_u64(phxsql_store::ndx::cache_paginas() as u64),
+                    ),
+                    ("acertos", Json::de_u64(acertos)),
+                    ("faltas", Json::de_u64(faltas)),
+                    ("gravacoes", Json::de_u64(gravacoes)),
+                    (
+                        "acerto_percentual",
+                        Json::texto_de(format!(
+                            "{:.2}",
+                            match acertos + faltas {
+                                0 => 0.0,
+                                t => acertos as f64 / t as f64 * 100.0,
+                            }
+                        )),
+                    ),
+                ]),
+            ));
+            campos.push((
+                "servidor".into(),
+                Json::objeto(vec![
+                    ("phxsql", Json::texto_de(VERSAO)),
+                    (
+                        "conexoes",
+                        Json::de_u64(self.conexoes.load(Ordering::SeqCst) as u64),
+                    ),
+                    (
+                        "conexoes_max",
+                        Json::de_u64(self.config.conexoes_max as u64),
+                    ),
+                    (
+                        "no_ar_s",
+                        Json::de_u64(((agora - self.desde_ms) / 1_000).max(0) as u64),
+                    ),
+                    ("gravacoes_pendentes", Json::de_u64(self.janela.pendente())),
+                ]),
+            ));
+        }
+        Ok(retrato)
+    }
+
+    /// Liga a coleta. Desligada ela custa um `load(Relaxed)` por ponto.
+    fn op_telemetria_ligar(&self, sessao: &Sessao) -> Result<Json> {
+        self.portao_da_telemetria(sessao)?;
+        let agora = crate::agora_ms();
+        self.telemetria.ligar(agora);
+        Ok(Json::objeto(vec![
+            ("ligada", Json::Bool(true)),
+            (
+                "periodo_ms",
+                Json::de_u64(crate::telemetria::PERIODO_DA_AMOSTRA_MS),
+            ),
+            (
+                "aviso",
+                Json::texto_de(
+                    "a serie comeca vazia e a primeira amostra nao tem taxa: taxa \
+                     so existe entre dois instantes",
+                ),
+            ),
+        ]))
+    }
+
+    /// Desliga a coleta e joga a serie fora.
+    fn op_telemetria_desligar(&self, sessao: &Sessao) -> Result<Json> {
+        self.portao_da_telemetria(sessao)?;
+        self.telemetria.desligar();
+        Ok(Json::objeto(vec![
+            ("ligada", Json::Bool(false)),
+            (
+                "aviso",
+                Json::texto_de(
+                    "a serie foi descartada: um grafico com buraco no meio mente \
+                     sobre o que aconteceu ali",
+                ),
+            ),
+        ]))
+    }
+
+    /// Encerra a operacao em curso de UMA atividade -- o cancelamento
+    /// cooperativo.
+    ///
+    /// # O que ele promete, e o que ele NAO promete
+    ///
+    /// Ele marca. A marca so e olhada em ponto seguro, e por isso a resposta
+    /// diz em qual dos tres casos o pedido caiu:
+    ///
+    /// * `encerrando` -- a operacao esta numa fase cancelavel e vai abortar na
+    ///   proxima unidade de trabalho;
+    /// * `nao_cancelavel` -- ela esta dentro do ponto critico e vai TERMINAR;
+    ///   a marca fica posta, mirando esta mesma operacao, e vale se ela ainda
+    ///   entrar numa fase cancelavel antes do fim;
+    /// * `ociosa` -- nao havia nada em curso.
+    ///
+    /// Prometer um `KILL` instantaneo seria mentir, e a mentira apareceria no
+    /// pior momento: com o operador olhando para uma tela que diz «encerrada»
+    /// enquanto a tabela continua sendo escrita.
+    fn op_telemetria_encerrar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        self.portao_da_telemetria(sessao)?;
+        let id = p.texto_ou("id", "").trim().to_string();
+        if id.is_empty() {
+            return Err(PhxError::Esquema(
+                "encerrar sem \"id\": ele vem da lista de `telemetria`, na forma \
+                 dados:17 ou web:a1b2c3d4"
+                    .into(),
+            ));
+        }
+        let quem = match &sessao.usuario {
+            Some(u) => u.login.clone(),
+            None => "token de servico".to_string(),
+        };
+        let atividade = self.telemetria.atividade(&id).ok_or_else(|| {
+            PhxError::NaoEncontrado(format!(
+                "nao ha atividade {id:?}; a lista esta em `telemetria`"
+            ))
+        })?;
+        // Encerrar a propria atividade seria pedir para a tela se matar no
+        // meio de perguntar -- e o pedido morreria antes de responder o que
+        // aconteceu.
+        if let Some(minha) = crate::telemetria::corrente() {
+            if minha.chave == id {
+                return Err(PhxError::Esquema(
+                    "esta e a sua propria atividade: encerra-la mataria o pedido \
+                     que esta perguntando"
+                        .into(),
+                ));
+            }
+        }
+        let agora = crate::agora_ms();
+        let desfecho = atividade.encerrar(&quem);
+        let (estado, op_alvo, aviso) = match &desfecho {
+            crate::telemetria::Encerramento::Ociosa => (
+                "ociosa",
+                String::new(),
+                "nao havia operacao em curso. Para derrubar a CONEXAO inteira, \
+                 use `encerrar_sessao` -- ele fecha o soquete."
+                    .to_string(),
+            ),
+            crate::telemetria::Encerramento::Marcada { op, fase } => (
+                "encerrando",
+                op.clone(),
+                format!(
+                    "a operacao esta em fase cancelavel ({}) e aborta na proxima \
+                     unidade de trabalho. O que ja foi gravado continua gravado e \
+                     o arquivo fica integro.",
+                    if fase.is_empty() { "sem nome" } else { fase }
+                ),
+            ),
+            crate::telemetria::Encerramento::Posta { op } => (
+                "marcada",
+                op.clone(),
+                "esta operacao TEM ponto de cancelamento, mas nao esta nele \
+                 agora -- tipicamente porque esta na fila da trava de dados. A \
+                 marca fica posta e vale para o primeiro ponto seguro que \
+                 vier; se ela ja tiver passado do ultimo, a operacao termina \
+                 normalmente."
+                    .to_string(),
+            ),
+            crate::telemetria::Encerramento::FaseNaoCancelavel { op } => (
+                "nao_cancelavel",
+                op.clone(),
+                "esta operacao esta DENTRO do ponto critico e vai terminar: \
+                 abandonar uma gravacao entre o slot e o indice deixaria a \
+                 tabela mentindo. A marca fica posta e vale se ela ainda entrar \
+                 numa fase cancelavel antes do fim."
+                    .to_string(),
+            ),
+        };
+        self.telemetria.contar_encerramento();
+        // Vai para o log de acessos, e nao so para a resposta: derrubar o
+        // trabalho de outra pessoa e um ato de administracao, e ato de
+        // administracao tem de deixar rastro de quem fez o que e quando.
+        self.anotar(&Acesso {
+            quando_ms: agora,
+            ip: String::new(),
+            porta_origem: 0,
+            op: "telemetria_encerrar".into(),
+            usuario: quem.clone(),
+            autenticado: true,
+            ok: true,
+            duracao_ms: 0,
+            erro: Some(format!(
+                "encerrar {id} ({}) -> {estado}",
+                if op_alvo.is_empty() {
+                    "sem operacao"
+                } else {
+                    &op_alvo
+                }
+            )),
+            database: String::new(),
+            tabela: String::new(),
+            codigo: 0,
+        });
+        Ok(Json::objeto(vec![
+            ("id", Json::texto_de(&id)),
+            ("estado", Json::texto_de(estado)),
+            (
+                "op",
+                match op_alvo.is_empty() {
+                    true => Json::Nulo,
+                    false => Json::texto_de(&op_alvo),
+                },
+            ),
+            ("quem", Json::texto_de(&quem)),
+            (
+                "quando",
+                Json::texto_de(phxsql_core::datahora::instante_iso(agora)),
+            ),
+            ("aviso", Json::texto_de(aviso)),
+        ]))
+    }
+
     /// Derruba uma conexao pelo numero.
     ///
     /// E o `KILL` -- e o que ele alcanca esta dito na resposta, em vez de
@@ -8228,19 +8850,32 @@ impl Servidor {
         // caso em que se quer a tabela inteira, e nao a primeira pagina.
         let teto = p.inteiro_ou("max", 100_000).clamp(1, 1_000_000) as usize;
 
-        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let dados = self.travar_dados()?;
         let mut t = self.abrir_travada(&dados, p, sessao)?;
         let esquema = t.esquema().clone();
 
         let mut linhas: Vec<Vec<Value>> = Vec::new();
         let mut truncado = false;
-        for (rowid, _) in t.varrer()? {
-            if linhas.len() >= teto {
-                truncado = true;
-                break;
-            }
-            if let Some(l) = t.ler(rowid)? {
-                linhas.push(l);
+        // PONTO DE CANCELAMENTO. So a VARREDURA e cancelavel: dela para
+        // frente o formato ja esta sendo montado em memoria, e abandonar no
+        // meio da montagem so jogaria fora trabalho ja feito sem soltar a
+        // trava mais cedo.
+        let atividade = crate::telemetria::corrente();
+        {
+            let _fase = atividade
+                .as_ref()
+                .map(|a| a.fase_cancelavel("lendo a tabela para exportar"));
+            for (rowid, _) in t.varrer()? {
+                if let Some(a) = &atividade {
+                    a.siga(1)?;
+                }
+                if linhas.len() >= teto {
+                    truncado = true;
+                    break;
+                }
+                if let Some(l) = t.ler(rowid)? {
+                    linhas.push(l);
+                }
             }
         }
 
@@ -8571,7 +9206,7 @@ impl Servidor {
         let max = self.limite_pivot(p);
         let comeco = Instant::now();
 
-        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let dados = self.travar_dados()?;
         let db = dados.abrir_database(p.texto_ou("database", ""))?;
 
         let (pa, pb) = (
@@ -8732,7 +9367,7 @@ impl Servidor {
             }
         }
 
-        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let dados = self.travar_dados()?;
         let db = dados.abrir_database(base)?;
 
         // As tabelas entram inteiras porque o `UNION` distinto precisa
@@ -8958,7 +9593,7 @@ impl Servidor {
         }
 
         let (mut d, mut c) = self.ligar(p)?;
-        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let dados = self.travar_dados()?;
         let mut ligadas = Vec::new();
         for t in pedidos {
             let mut sinc = sincronia::Sincronia::de_json(t)?;
@@ -9043,7 +9678,7 @@ impl Servidor {
             )));
         }
 
-        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let dados = self.travar_dados()?;
         let mut relatorio = Vec::new();
         for sinc in &d.sincronias {
             if !so.is_empty()
@@ -9300,13 +9935,27 @@ impl Servidor {
             }
         );
         let servidor = Arc::clone(self);
-        std::thread::spawn(move || {
-            let intervalo = Duration::from_secs(servidor.config.alertas.checar_minutos * 60);
-            loop {
-                servidor.conferir_disco();
-                std::thread::sleep(intervalo);
-            }
-        });
+        self.telemetria.subir(
+            "vigia-disco",
+            "chama o `df` de tempos em tempos e avisa quando o espaco aperta; \
+             thread propria porque ela roda um programa do sistema e pode abrir \
+             uma conexao com o rele de e-mail -- nenhuma das duas coisas cabe \
+             no caminho de uma consulta",
+            "servico",
+            crate::agora_ms(),
+            move |fio| {
+                let intervalo = Duration::from_secs(servidor.config.alertas.checar_minutos * 60);
+                loop {
+                    fio.fazendo("conferindo o espaco em disco");
+                    servidor.conferir_disco();
+                    fio.fazendo(&format!(
+                        "dormindo {} min ate a proxima conferencia",
+                        servidor.config.alertas.checar_minutos
+                    ));
+                    std::thread::sleep(intervalo);
+                }
+            },
+        );
     }
 
     /// Uma rodada do vigia: olha os discos, avisa o que estiver apertado.
@@ -9422,7 +10071,7 @@ impl Servidor {
             (Vec::new(), 0u64, 0u64, 0u64);
         let mut maiores: Vec<(String, u64, u64)> = Vec::new();
         {
-            let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+            let dados = self.travar_dados()?;
             for nome in dados.databases()? {
                 // O painel so conta o que quem esta olhando poderia abrir.
                 if let Some(u) = &sessao.usuario {
@@ -9718,7 +10367,7 @@ impl Servidor {
 
     /// Le a tabela inteira para a RAM.
     fn op_memoria_carregar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
-        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let _trava = self.travar_dados()?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
         let esquema = t.esquema().clone();
 
@@ -9972,7 +10621,7 @@ impl Servidor {
     fn op_diario(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let max = self.limite(p) as usize;
         let rowid = p.campo("rowid").and_then(Json::inteiro).map(|n| n as u64);
-        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let _trava = self.travar_dados()?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
         let eventos = match rowid {
             Some(r) => t.historico(r)?,
@@ -10149,7 +10798,7 @@ impl Servidor {
         if database.is_empty() {
             return Err(PhxError::Esquema("informe \"database\"".into()));
         }
-        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let _trava = self.travar_dados()?;
         let db = _trava.abrir_database(&database)?;
         let com_esquema = p.booleano_ou("com_esquema", false);
         let mut posicoes = Vec::new();
@@ -10209,7 +10858,7 @@ impl Servidor {
     fn op_replicar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let desde = p.inteiro_ou("desde", 0).max(0) as u64;
         let max = p.inteiro_ou("max", 500).max(0) as u64;
-        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let _trava = self.travar_dados()?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
         let total = t.eventos()?;
 
@@ -10314,7 +10963,7 @@ impl Servidor {
             .and_then(Json::lista)
             .ok_or_else(|| PhxError::Esquema("informe \"eventos\" como lista".into()))?
             .to_vec();
-        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let _trava = self.travar_dados()?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
 
         let mut aplicados = 0u64;
@@ -10565,7 +11214,7 @@ impl Servidor {
     }
 
     fn op_verificar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
-        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let _trava = self.travar_dados()?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
         let r = t.verificar()?;
         Ok(Json::objeto(vec![
@@ -10595,7 +11244,7 @@ impl Servidor {
     }
 
     fn op_reindexar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
-        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let _trava = self.travar_dados()?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
         let indices = t.reindexar()?;
         self.gravar_de_verdade(&mut t, p)?;
@@ -10961,6 +11610,48 @@ fn conferir_versao_pedida(t: &mut Table, p: &Json, rowid: phxsql_core::RowId) ->
 /// deles precisaria lembrar de tirar a conexao do registro, e o dia em que
 /// alguem acrescentasse um `return` novo a lista passaria a mostrar conexao
 /// que ja morreu -- uma lista que mente e pior do que nenhuma.
+/// A trava de dados com o cronometro por dentro.
+///
+/// Ela se comporta como a `MutexGuard` que embrulha -- `Deref` e `DerefMut`
+/// entregam a `Instancia` --, e a unica coisa que acrescenta acontece no
+/// `Drop`: o tempo que ela ficou na mao entra na serie. Sem isso, «o servidor
+/// esta lento» nunca distinguiria fila de trabalho.
+struct TravaMedida<'a> {
+    guarda: std::sync::MutexGuard<'a, Instancia>,
+    /// Quando a trava foi obtida. `None` com a telemetria desligada -- e ai o
+    /// `Drop` nao faz nada.
+    tomada: Option<Instant>,
+    telemetria: &'a crate::telemetria::Telemetria,
+}
+
+impl std::ops::Deref for TravaMedida<'_> {
+    type Target = Instancia;
+    fn deref(&self) -> &Instancia {
+        &self.guarda
+    }
+}
+
+impl std::ops::DerefMut for TravaMedida<'_> {
+    fn deref_mut(&mut self) -> &mut Instancia {
+        &mut self.guarda
+    }
+}
+
+impl Drop for TravaMedida<'_> {
+    fn drop(&mut self) {
+        if let Some(t) = self.tomada {
+            self.telemetria.contar_trava(t.elapsed().as_micros() as u64);
+            // A atividade deixa de ser a que segura todo mundo no MESMO
+            // instante em que solta a trava -- e nao no fim do pedido. Entre
+            // um e outro ela ainda monta a resposta, e acusa-la de segurar a
+            // trava nesse trecho seria apontar o culpado errado.
+            if let Some(a) = crate::telemetria::corrente() {
+                a.sem_a_trava();
+            }
+        }
+    }
+}
+
 struct AoSair<F: FnMut()>(F);
 
 impl<F: FnMut()> Drop for AoSair<F> {

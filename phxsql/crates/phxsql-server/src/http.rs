@@ -59,6 +59,16 @@ const GRID_JS: &str = include_str!("../ui/grid/phx-grid.js");
 /// estar definido antes de a pagina rodar o proprio script.
 const DIAGRAMA_JS: &str = include_str!("../ui/diagrama-er.js");
 
+/// A tela de telemetria, em arquivo proprio -- estilo e desenho.
+///
+/// Separada do `index.html` pela mesma razao do diagrama: o empacotamento das
+/// bolhas e o desenho das series sao ALGORITMO. E o estilo vem em folha
+/// propria, escopada em `.tlm`, porque o CSS global da pagina morde componente
+/// novo -- `input{width:100%}` e `label{text-transform:uppercase}` sao certos
+/// num formulario e errados dentro de uma tabela.
+const TELEMETRIA_CSS: &str = include_str!("../ui/telemetria.css");
+const TELEMETRIA_JS: &str = include_str!("../ui/telemetria.js");
+
 /// Envolve o fragmento no esqueleto que o navegador espera.
 ///
 /// Sem `<!doctype html>` o navegador entra em modo de compatibilidade e o
@@ -71,6 +81,8 @@ pub fn montar_pagina() -> String {
         "<!doctype html>\n<html lang=\"pt-BR\">\n<head>\n<meta charset=\"utf-8\">\n\
          <style>\n{GRID_CSS}\n</style>\n<script>\n{GRID_JS}\n</script>\n\
          <script>\n{DIAGRAMA_JS}\n</script>\n\
+         <style>\n{TELEMETRIA_CSS}\n</style>\n\
+         <script>\n{TELEMETRIA_JS}\n</script>\n\
          </head>\n<body>\n{PAGINA}\n</body>\n</html>\n"
     )
 }

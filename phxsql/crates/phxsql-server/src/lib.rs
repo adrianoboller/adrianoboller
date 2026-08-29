@@ -27,6 +27,7 @@ pub mod replica;
 pub mod rotinas;
 pub mod servidor;
 pub mod sistema;
+pub mod telemetria;
 pub mod usuarios;
 pub mod valores;
 

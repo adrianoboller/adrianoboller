@@ -123,6 +123,16 @@ fn ler_cpu() -> (u64, u64) {
     (total.saturating_sub(ocioso), total)
 }
 
+/// Os jiffies (ocupado, total) da maquina, crus.
+///
+/// Publico porque a telemetria precisa dos MESMOS numeros que o painel de
+/// sistema usa. Se ela lesse o `/proc/stat` por conta, as duas telas
+/// comparariam instantes diferentes e mostrariam percentuais que nao batem --
+/// e quem olha as duas ficaria sem saber em qual acreditar.
+pub fn jiffies_da_maquina() -> (u64, u64) {
+    ler_cpu()
+}
+
 fn cpu_json(antes: &Amostra, agora: &Amostra) -> Json {
     let (ocup, tot) = (
         agora.cpu.0.saturating_sub(antes.cpu.0),
