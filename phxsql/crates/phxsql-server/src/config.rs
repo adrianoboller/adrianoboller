@@ -639,9 +639,13 @@ impl Alertas {
     pub fn para_json(&self) -> Json {
         Json::objeto(vec![
             ("ligado", Json::Bool(self.ligado)),
+            // NUMERO, e nao texto formatado. Como "10.00" ele mentia sobre o
+            // tipo: a tela desenha um campo numerico, o arquivo guarda um
+            // numero, e so a resposta trazia uma string -- o bastante para
+            // "o arquivo diz 10 e o servidor diz 10.00" virar divergencia.
             (
                 "livre_minimo_percentual",
-                Json::texto_de(format!("{:.2}", self.livre_minimo_percentual)),
+                Json::Numero(self.livre_minimo_percentual),
             ),
             ("livre_minimo_mb", Json::de_u64(self.livre_minimo_mb)),
             ("checar_minutos", Json::de_u64(self.checar_minutos)),
@@ -1123,12 +1127,18 @@ impl Default for Recursos {
 impl Recursos {
     /// Leva ao processo os tetos que nao sao parametro de ninguem.
     ///
-    /// Hoje e um so: onde o volume do diario corta. O teto do cache de paginas
-    /// continua sendo aplicado pelo servidor, onde ja estava -- mover os dois
-    /// para o mesmo lugar e limpeza, e limpeza em arquivo de outro agente e
-    /// conflito.
+    /// Dois hoje: onde o volume do diario corta, e quantos nucleos o trabalho
+    /// dividido usa. O teto do cache de paginas continua sendo aplicado pelo
+    /// servidor, onde ja estava -- mover os tres para o mesmo lugar e limpeza,
+    /// e limpeza em arquivo de outro agente e conflito.
+    ///
+    /// O teto de nucleos e o LEITOR de `threads` e `cpu_percentual`: antes
+    /// dele os dois campos estavam no config.json, no MANUAL e na tela, e o
+    /// `paralelo::nucleos()` perguntava direto a maquina -- a mesma armadilha
+    /// do `cache_paginas` sem cache.
     pub fn aplicar(&self) {
         phxsql_store::diario::definir_bytes_por_volume(self.diario_volume_mib * 1024 * 1024);
+        phxsql_core::paralelo::definir_teto(self.nucleos());
     }
 
     fn de_json(j: &Json, conexoes_no_topo: usize) -> Result<Recursos> {
@@ -1280,6 +1290,11 @@ pub struct Config {
     /// ignorado, idioma que nao existe. O `main` os imprime no arranque, pelo
     /// mesmo motivo das `estranhas`: silencio aqui custa caro.
     pub avisos: Vec<String>,
+    /// De onde este `Config` foi lido. `None` quando veio de JSON avulso.
+    ///
+    /// E o que permite a tela GRAVAR de volta no mesmo arquivo: sem o caminho,
+    /// `gravar_campos` nao tem onde escrever e recusa com a explicacao.
+    pub caminho: Option<PathBuf>,
 }
 
 /// Campos de primeiro nivel que o `config.json` pode trazer.
@@ -1312,13 +1327,100 @@ const CAMPOS_CONHECIDOS: [&str; 23] = [
     "idioma",
 ];
 
+/// O que cada secao conhecida aceita por dentro.
+///
+/// O aviso de campo estranho so olhava o primeiro nivel: um
+/// `recursos.cache_pagina` (sem o `s`) passava calado, e o campo escrito
+/// errado dentro de secao e exatamente o mais provavel -- e o mais dificil de
+/// achar depois. Ficam FORA `seguranca`, `replicacao`, `root` e `usuarios`:
+/// as duas primeiras estao ganhando campos novos por outras frentes nesta
+/// rodada, e um aviso falso de "campo desconhecido" seria pior que a lacuna;
+/// as duas ultimas tem chaves livres (bases, tabelas).
+const SECOES_CONHECIDAS: [(&str, &[&str]); 6] = [
+    (
+        "recursos",
+        &[
+            "durabilidade",
+            "lote_operacoes",
+            "lote_milissegundos",
+            "cache_paginas",
+            "memoria_max_mb",
+            "threads",
+            "cpu_percentual",
+            "conexoes_max",
+            "carga_prazo_min",
+            "usuarios_max",
+            "diario_volume_mib",
+        ],
+    ),
+    ("web", &["ligado", "bind", "sessao_minutos", "servidores"]),
+    (
+        "backup",
+        &[
+            "agendado",
+            "hora",
+            "cada_horas",
+            "destino",
+            "zip",
+            "database",
+            "admin",
+            "manter",
+        ],
+    ),
+    (
+        "alertas",
+        &[
+            "ligado",
+            "livre_minimo_percentual",
+            "livre_minimo_mb",
+            "checar_minutos",
+            "repetir_horas",
+            "caminhos",
+            "email",
+        ],
+    ),
+    (
+        "alertas.email",
+        &[
+            "ligado",
+            // Da frente dos jobs: liga o aviso por e-mail de job que falhou ou
+            // parou. Sem ele na lista, o verificador novo -- que passou a olhar
+            // o INTERIOR das secoes -- acusava campo estranho num exemplo que
+            // esta certo.
+            "avisar_jobs",
+            "servidor",
+            "porta",
+            "de",
+            "para",
+            "usuario",
+            "senha",
+            "senha_env",
+            "assunto",
+            "timeout_s",
+        ],
+    ),
+    ("cifra", &["ligada", "senha", "senha_env", "iteracoes"]),
+];
+
 /// O que o arquivo trouxe e o servidor nao sabe ler.
 fn chaves_estranhas(j: &Json) -> Vec<String> {
-    j.chaves()
+    let mut fora: Vec<String> = j
+        .chaves()
         .into_iter()
         .filter(|k| !k.starts_with('_') && !CAMPOS_CONHECIDOS.contains(k))
         .map(str::to_string)
-        .collect()
+        .collect();
+    for (secao, conhecidos) in SECOES_CONHECIDAS {
+        let Some(s) = secao.split('.').try_fold(j, |o, parte| o.campo(parte)) else {
+            continue;
+        };
+        for k in s.chaves() {
+            if !k.starts_with('_') && !conhecidos.contains(&k) {
+                fora.push(format!("{secao}.{k}"));
+            }
+        }
+    }
+    fora
 }
 
 impl Default for Config {
@@ -1349,6 +1451,7 @@ impl Default for Config {
             idioma: String::new(),
             estranhas: Vec::new(),
             avisos: Vec::new(),
+            caminho: None,
         }
     }
 }
@@ -1362,6 +1465,7 @@ impl Config {
         })?;
         let json = Json::analisar(&texto)?;
         let mut c = Config::de_json(&json)?;
+        c.caminho = Some(caminho.to_path_buf());
         // Caminhos relativos valem a partir do diretorio do config.json.
         if let Some(dir) = caminho.parent().filter(|d| !d.as_os_str().is_empty()) {
             if c.base.is_relative() {
@@ -1457,6 +1561,11 @@ impl Config {
             }
         }
 
+        let recursos = Recursos::de_json(
+            j,
+            j.inteiro_ou("conexoes_max", padrao.conexoes_max as i64)
+                .max(1) as usize,
+        )?;
         Ok(Config {
             bind: j.texto_ou("bind", &padrao.bind).to_string(),
             base: PathBuf::from(j.texto_ou("base", "dados")),
@@ -1464,14 +1573,12 @@ impl Config {
             max_linhas: j.inteiro_ou("max_linhas", padrao.max_linhas as i64).max(1) as u64,
             log_acessos: PathBuf::from(j.texto_ou("log_acessos", "acessos.log")),
             ips_permitidos: j.textos("ips_permitidos"),
-            recursos: Recursos::de_json(
-                j,
-                j.inteiro_ou("conexoes_max", padrao.conexoes_max as i64)
-                    .max(1) as usize,
-            )?,
-            conexoes_max: j
-                .inteiro_ou("conexoes_max", padrao.conexoes_max as i64)
-                .max(1) as usize,
+            // O ESPELHO do valor de `recursos`, e nao uma segunda leitura do
+            // topo. Era uma segunda leitura, e a promessa "dentro de recursos
+            // ele ganha" mentia: o laco de aceitacao le este campo, e um
+            // `recursos.conexoes_max: 99` ficava so na tela.
+            conexoes_max: recursos.conexoes_max,
+            recursos,
             timeout_s: j.inteiro_ou("timeout_s", padrao.timeout_s as i64).max(1) as u64,
             somente_leitura: j.booleano_ou("somente_leitura", false),
             espelho: j.booleano_ou("espelho", false),
@@ -1510,6 +1617,7 @@ impl Config {
             },
             estranhas: chaves_estranhas(j),
             avisos,
+            caminho: None,
         })
     }
 
@@ -1623,12 +1731,34 @@ impl Config {
         diferenca == 0
     }
 
+    /// A configuracao como resposta de protocolo, SEM segredo nenhum dentro.
+    ///
+    /// # O formato espelha o arquivo
+    ///
+    /// As secoes saem com os MESMOS nomes do `config.json` -- `seguranca`,
+    /// `web`, `backup`, `replicacao` --, e nao num achatado proprio da
+    /// resposta. A versao achatada mentia por omissao: a tela lia
+    /// `c.seguranca.bases_proibidas`, o campo nao vinha, e uma base proibida
+    /// aparecia como "nao" -- que e pior que nao mostrar nada.
     pub fn para_json(&self) -> Json {
         Json::objeto(vec![
             ("bind", Json::texto_de(&self.bind)),
             ("base", Json::texto_de(self.base.display().to_string())),
+            // Onde os dados moram DE VERDADE. O campo "base" pode ser
+            // relativo, e relativo a que depende de onde o servidor foi
+            // iniciado -- que e a duvida que a tela precisa tirar.
+            (
+                "base_absoluta",
+                Json::texto_de(
+                    std::fs::canonicalize(&self.base)
+                        .unwrap_or_else(|_| self.base.clone())
+                        .display()
+                        .to_string(),
+                ),
+            ),
             ("token", Json::texto_de("(oculto)")),
             ("max_linhas", Json::de_u64(self.max_linhas)),
+            ("timeout_s", Json::de_u64(self.timeout_s)),
             (
                 "log_acessos",
                 Json::texto_de(self.log_acessos.display().to_string()),
@@ -1641,104 +1771,140 @@ impl Config {
             ("recursos", self.recursos.para_json()),
             ("somente_leitura", Json::Bool(self.somente_leitura)),
             ("espelho", Json::Bool(self.espelho)),
-            ("papel", Json::texto_de(self.replicacao.papel.nome())),
-            ("id_servidor", Json::texto_de(&self.replicacao.id_servidor)),
             (
-                "replicacao_portas",
-                Json::Objeto(
-                    self.replicacao
-                        .portas()
-                        .into_iter()
-                        .map(|(k, v)| (k.to_string(), Json::texto_de(v)))
-                        .collect(),
-                ),
-            ),
-            // O que a tela da replicacao precisa saber para dizer a verdade:
-            // sem a imagem no diario o servidor tem papel de source e nao
-            // replica, e a tela ficaria dizendo que esta tudo pronto.
-            (
-                "imagem_da_linha",
-                Json::Bool(self.replicacao.imagem_da_linha),
-            ),
-            (
-                "cluster",
-                match &self.cluster {
-                    Some(c) => c.para_json(),
-                    None => Json::Nulo,
-                },
-            ),
-            (
-                "origens",
-                Json::Lista(
-                    self.replicacao
-                        .origens
-                        .iter()
-                        .map(|o| {
-                            Json::objeto(vec![
-                                ("nome", Json::texto_de(&o.nome)),
-                                ("host", Json::texto_de(&o.host)),
-                                ("porta", Json::de_u64(o.porta as u64)),
-                                ("usuario", Json::texto_de(&o.usuario)),
-                                ("reconectar_em", Json::de_u64(o.reconectar_em)),
-                                ("cada_minutos", Json::de_u64(o.cada_minutos)),
-                                ("hora", Json::texto_de(&o.hora)),
-                                (
-                                    "databases",
-                                    Json::Lista(o.databases.iter().map(Json::texto_de).collect()),
-                                ),
-                                // A senha NAO sai daqui, nem o hash: a tela nao
-                                // precisa dela e a resposta do protocolo nunca
-                                // carrega credencial.
-                            ])
-                        })
-                        .collect(),
-                ),
-            ),
-            (
-                "comandos_proibidos",
-                Json::Lista(
-                    self.politica
-                        .comandos_proibidos
-                        .iter()
-                        .map(Json::texto_de)
-                        .collect(),
-                ),
+                "replicacao",
+                Json::objeto(vec![
+                    ("papel", Json::texto_de(self.replicacao.papel.nome())),
+                    ("envio", Json::texto_de(&self.replicacao.envio)),
+                    ("retorno", Json::texto_de(&self.replicacao.retorno)),
+                    ("id_servidor", Json::texto_de(&self.replicacao.id_servidor)),
+                    // O que a tela da replicacao precisa para dizer a verdade:
+                    // sem a imagem no diario o servidor tem papel de source e
+                    // nao replica, e a tela diria que esta tudo pronto.
+                    (
+                        "imagem_da_linha",
+                        Json::Bool(self.replicacao.imagem_da_linha),
+                    ),
+                    (
+                        "replicas_autorizadas",
+                        Json::Lista(
+                            self.replicacao
+                                .replicas_autorizadas
+                                .iter()
+                                .map(Json::texto_de)
+                                .collect(),
+                        ),
+                    ),
+                    (
+                        "origens",
+                        Json::Lista(
+                            self.replicacao
+                                .origens
+                                .iter()
+                                .map(|o| {
+                                    Json::objeto(vec![
+                                        ("nome", Json::texto_de(&o.nome)),
+                                        ("host", Json::texto_de(&o.host)),
+                                        ("porta", Json::de_u64(o.porta as u64)),
+                                        ("usuario", Json::texto_de(&o.usuario)),
+                                        ("reconectar_em", Json::de_u64(o.reconectar_em)),
+                                        (
+                                            "databases",
+                                            Json::Lista(
+                                                o.databases.iter().map(Json::texto_de).collect(),
+                                            ),
+                                        ),
+                                        // A senha NAO sai daqui, nem o hash: a
+                                        // tela nao precisa dela e a resposta do
+                                        // protocolo nunca carrega credencial.
+                                    ])
+                                })
+                                .collect(),
+                        ),
+                    ),
+                ]),
             ),
             (
-                "firewall",
-                Json::Bool(
-                    self.politica
-                        .firewall
-                        .as_ref()
-                        .map(|f| f.ligado)
-                        .unwrap_or(false),
-                ),
+                "seguranca",
+                Json::objeto(vec![
+                    (
+                        "comandos_proibidos",
+                        Json::Lista(
+                            self.politica
+                                .comandos_proibidos
+                                .iter()
+                                .map(Json::texto_de)
+                                .collect(),
+                        ),
+                    ),
+                    (
+                        "bases_proibidas",
+                        Json::Lista(
+                            self.politica
+                                .bases_proibidas
+                                .iter()
+                                .map(Json::texto_de)
+                                .collect(),
+                        ),
+                    ),
+                    (
+                        "tentativas_ate_bloquear",
+                        Json::de_u64(self.politica.tentativas_ate_bloquear as u64),
+                    ),
+                    ("janela_minutos", Json::de_u64(self.politica.janela_minutos)),
+                    (
+                        "bloqueio_minutos",
+                        Json::de_u64(self.politica.bloqueio_minutos),
+                    ),
+                    (
+                        "blacklist",
+                        Json::texto_de(self.blacklist.display().to_string()),
+                    ),
+                    (
+                        "firewall",
+                        Json::Bool(
+                            self.politica
+                                .firewall
+                                .as_ref()
+                                .map(|f| f.ligado)
+                                .unwrap_or(false),
+                        ),
+                    ),
+                ]),
             ),
             (
                 "web",
-                Json::texto_de(if self.web.ligado {
-                    self.web.bind.clone()
-                } else {
-                    "desligada".to_string()
-                }),
+                Json::objeto(vec![
+                    ("ligado", Json::Bool(self.web.ligado)),
+                    ("bind", Json::texto_de(&self.web.bind)),
+                    ("sessao_minutos", Json::de_u64(self.web.sessao_minutos)),
+                    (
+                        "servidores",
+                        Json::Lista(self.web.servidores.iter().map(Json::texto_de).collect()),
+                    ),
+                ]),
+            ),
+            (
+                "backup",
+                Json::objeto(vec![
+                    ("agendado", Json::Bool(self.backup.agendado)),
+                    ("hora", Json::texto_de(&self.backup.hora)),
+                    ("cada_horas", Json::de_u64(self.backup.cada_horas)),
+                    (
+                        "destino",
+                        Json::texto_de(self.backup.destino.display().to_string()),
+                    ),
+                    ("zip", Json::Bool(self.backup.zip)),
+                    ("database", Json::texto_de(&self.backup.database)),
+                    ("admin", Json::texto_de(&self.backup.admin)),
+                    ("manter", Json::de_u64(self.backup.manter as u64)),
+                ]),
             ),
             (
                 "usuarios",
                 Json::de_u64(
                     (self.cadastro.usuarios.len() + usize::from(self.cadastro.root.is_some()))
                         as u64,
-                ),
-            ),
-            // Onde os dados moram DE VERDADE. O campo "base" pode ser
-            // relativo, e relativo a que depende de onde o servidor foi
-            // iniciado -- que e a duvida que a tela precisa tirar.
-            (
-                "base_absoluta",
-                Json::texto_de(
-                    std::fs::canonicalize(&self.base)
-                        .unwrap_or_else(|_| self.base.clone())
-                        .display()
-                        .to_string(),
                 ),
             ),
             ("alertas", self.alertas.para_json()),
@@ -1755,7 +1921,295 @@ impl Config {
                     &self.idioma
                 }),
             ),
+            // O aviso de campo desconhecido tem de chegar na TELA, e nao so no
+            // stderr do arranque: quem edita pela interface nunca ve o
+            // terminal do servidor.
+            (
+                "estranhas",
+                Json::Lista(self.estranhas.iter().map(Json::texto_de).collect()),
+            ),
+            // O que a tela pode gravar, dito pelo SERVIDOR.
+            //
+            // A tela monta o formulario desta lista em vez de trazer a sua --
+            // duas listas divergem no primeiro campo que alguem acrescentar de
+            // um lado so, e a que envelhece e sempre a da tela, que ninguem
+            // compila. E a mesma regra do catalogo das operacoes.
+            ("editaveis", editaveis_json()),
         ])
+    }
+}
+
+/// Os campos editaveis como dado, para a tela montar o formulario.
+pub fn editaveis_json() -> Json {
+    Json::Lista(
+        CAMPOS_EDITAVEIS
+            .iter()
+            .map(|(campo, tipo, quente)| {
+                Json::objeto(vec![
+                    ("campo", Json::texto_de(*campo)),
+                    ("tipo", Json::texto_de(tipo.nome())),
+                    ("a_quente", Json::Bool(*quente)),
+                ])
+            })
+            .collect(),
+    )
+}
+
+/// O tipo que um campo editavel aceita. Existe porque os leitores usam
+/// `inteiro_ou`/`texto_ou`, que caem no PADRAO quando o tipo nao bate: sem
+/// esta conferencia, gravar `"max_linhas": "abc"` passaria na validacao (o
+/// leitor ignora e usa 1.000) e deixaria no arquivo um valor que nunca vale.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TipoDoCampo {
+    Inteiro,
+    Numero,
+    Booleano,
+    Texto,
+}
+
+impl TipoDoCampo {
+    fn confere(self, v: &Json) -> bool {
+        match self {
+            TipoDoCampo::Inteiro => v.inteiro().is_some(),
+            TipoDoCampo::Numero => v.numero().is_some(),
+            TipoDoCampo::Booleano => v.booleano().is_some(),
+            TipoDoCampo::Texto => v.texto().is_some(),
+        }
+    }
+
+    pub fn nome(self) -> &'static str {
+        match self {
+            TipoDoCampo::Inteiro => "inteiro",
+            TipoDoCampo::Numero => "numero",
+            TipoDoCampo::Booleano => "booleano",
+            TipoDoCampo::Texto => "texto",
+        }
+    }
+}
+
+/// Os campos que a tela pode gravar: (campo, tipo, aplica a quente?).
+///
+/// `true` no fim = o servidor aplica sem reiniciar; `false` = fica gravado e
+/// vale no proximo arranque -- e a tela diz isso AO LADO do campo, em vez de
+/// prometer efeito que nao vem.
+///
+/// O que NAO esta aqui nao se grava pela porta web, e a ausencia e decisao,
+/// nao esquecimento: `token`, `seguranca.*`, `usuarios`/`root`, `cifra.*`,
+/// `alertas.email.*` e `replicacao.*` continuam sendo edicao do arquivo --
+/// uma sessao roubada nao abre o firewall, nao cria supervisor, nao vira a
+/// replica para outro source e nao mexe em campo que carrega credencial. As
+/// listas (`ips_permitidos`, `web.servidores`, `alertas.caminhos`) tambem
+/// ficam de fora por serem politica de rede da mesma familia.
+pub const CAMPOS_EDITAVEIS: &[(&str, TipoDoCampo, bool)] = &[
+    // O efeito a quente do bind quem da e a op `servico_subir`; gravar aqui e
+    // o que faz a troca sobreviver ao arranque.
+    ("bind", TipoDoCampo::Texto, false),
+    ("max_linhas", TipoDoCampo::Inteiro, true),
+    ("timeout_s", TipoDoCampo::Inteiro, false),
+    ("somente_leitura", TipoDoCampo::Booleano, true),
+    ("espelho", TipoDoCampo::Booleano, true),
+    ("recursos.durabilidade", TipoDoCampo::Texto, false),
+    ("recursos.lote_operacoes", TipoDoCampo::Inteiro, false),
+    ("recursos.lote_milissegundos", TipoDoCampo::Inteiro, false),
+    // O cache vale para o proximo abrir de tabela -- e a tabela abre e fecha
+    // a cada operacao, entao na pratica e imediato.
+    ("recursos.cache_paginas", TipoDoCampo::Inteiro, true),
+    ("recursos.diario_volume_mib", TipoDoCampo::Inteiro, true),
+    ("recursos.threads", TipoDoCampo::Inteiro, true),
+    ("recursos.cpu_percentual", TipoDoCampo::Inteiro, true),
+    ("recursos.conexoes_max", TipoDoCampo::Inteiro, false),
+    ("recursos.carga_prazo_min", TipoDoCampo::Inteiro, false),
+    ("recursos.memoria_max_mb", TipoDoCampo::Inteiro, false),
+    ("recursos.usuarios_max", TipoDoCampo::Inteiro, false),
+    ("web.sessao_minutos", TipoDoCampo::Inteiro, false),
+    ("backup.agendado", TipoDoCampo::Booleano, false),
+    ("backup.hora", TipoDoCampo::Texto, false),
+    ("backup.cada_horas", TipoDoCampo::Inteiro, false),
+    ("backup.destino", TipoDoCampo::Texto, false),
+    ("backup.zip", TipoDoCampo::Booleano, false),
+    ("backup.manter", TipoDoCampo::Inteiro, false),
+    ("alertas.ligado", TipoDoCampo::Booleano, false),
+    (
+        "alertas.livre_minimo_percentual",
+        TipoDoCampo::Numero,
+        false,
+    ),
+    ("alertas.livre_minimo_mb", TipoDoCampo::Inteiro, false),
+    ("alertas.checar_minutos", TipoDoCampo::Inteiro, false),
+    ("alertas.repetir_horas", TipoDoCampo::Inteiro, false),
+];
+
+/// O valor de `"secao.campo"` dentro de um JSON, ou `None` se nao existe.
+pub fn valor_em(j: &Json, campo: &str) -> Option<Json> {
+    campo
+        .split('.')
+        .try_fold(j, |o, parte| o.campo(parte))
+        .cloned()
+}
+
+/// O que o ARQUIVO diz e ainda nao esta valendo neste processo.
+///
+/// # Por que a tela precisa disto
+///
+/// Gravar `timeout_s` pela tela grava no arquivo e NAO muda o servidor -- esse
+/// campo so vale no proximo arranque, e a tela ja diz isso ao lado dele. Mas
+/// no redesenho seguinte a tela lia a configuracao VIVA, e o campo voltava com
+/// o valor velho, calado: quem acabou de digitar 90 via 45 de novo e nao tinha
+/// como saber que o 90 estava gravado. Achado exercitando a tela, que e a
+/// unica forma de achar isso.
+///
+/// Com este mapa a tela mostra o que esta no arquivo e avisa o que ainda vale.
+pub fn divergencias_do_arquivo(caminho: &Path, vivo: &Json) -> Vec<(String, Json)> {
+    let Ok(texto) = std::fs::read_to_string(caminho) else {
+        return Vec::new();
+    };
+    let Ok(arquivo) = Json::analisar(&texto) else {
+        return Vec::new();
+    };
+    let mut fora = Vec::new();
+    for (campo, _, _) in CAMPOS_EDITAVEIS {
+        let no_arquivo = valor_em(&arquivo, campo);
+        let (Some(a), Some(v)) = (no_arquivo, valor_em(vivo, campo)) else {
+            continue;
+        };
+        // Numero e numero: o arquivo pode trazer `10` onde o vivo traz `10.0`,
+        // e isso nao e divergencia nenhuma.
+        let igual = match (&a, &v) {
+            (Json::Numero(x), Json::Numero(y)) => x == y,
+            _ => a == v,
+        };
+        if !igual {
+            fora.push((campo.to_string(), a));
+        }
+    }
+    fora
+}
+
+/// Este campo se grava pela tela? Devolve (tipo, aplica a quente).
+pub fn campo_editavel(nome: &str) -> Option<(TipoDoCampo, bool)> {
+    CAMPOS_EDITAVEIS
+        .iter()
+        .find(|(c, _, _)| *c == nome)
+        .map(|(_, t, q)| (*t, *q))
+}
+
+impl Config {
+    /// Grava campos escolhidos no `config.json`, atomicamente, e devolve o
+    /// `Config` que o arquivo novo produz.
+    ///
+    /// # Le o arquivo de novo, em vez de reserializar o `Config` vivo
+    ///
+    /// E o que preserva os comentarios `_...`, a ordem das chaves e as secoes
+    /// que este processo nao conhece -- inclusive blocos que outras frentes
+    /// acrescentarem. So muda o que foi pedido; o resto sai byte a byte do que
+    /// o leitor de JSON devolveu.
+    ///
+    /// # A validacao vem ANTES da gravacao
+    ///
+    /// A arvore alterada passa por `de_json` + `validar` primeiro: valor que
+    /// nao subiria o servidor nao entra no arquivo. E cada valor e conferido
+    /// contra o TIPO do campo, porque os leitores usam `inteiro_ou`, que cai
+    /// no padrao em silencio quando o tipo nao bate -- e um campo gravado que
+    /// nunca vale e a mentira desta tela.
+    pub fn gravar_campos(caminho: &Path, mudancas: &[(String, Json)]) -> Result<Config> {
+        if mudancas.is_empty() {
+            return Err(PhxError::Esquema(
+                "nada a gravar: mande \"campos\" com ao menos um".into(),
+            ));
+        }
+        for (campo, valor) in mudancas {
+            let Some((tipo, _)) = campo_editavel(campo) else {
+                return Err(PhxError::Autorizacao(format!(
+                    "o campo {campo:?} nao se grava pela tela; edite o config.json"
+                )));
+            };
+            if !tipo.confere(valor) {
+                return Err(PhxError::Esquema(format!(
+                    "{campo:?} espera {}, veio {}",
+                    tipo.nome(),
+                    valor.escrever()
+                )));
+            }
+        }
+
+        let texto = std::fs::read_to_string(caminho).map_err(|e| {
+            PhxError::NaoEncontrado(format!("nao consegui ler {}: {e}", caminho.display()))
+        })?;
+        let mut arvore = Json::analisar(&texto)?;
+        for (campo, valor) in mudancas {
+            match campo.split_once('.') {
+                None => arvore.definir(campo, valor.clone()),
+                Some((secao, resto)) => {
+                    let mut s = match arvore.campo(secao) {
+                        None => Json::Objeto(Vec::new()),
+                        Some(Json::Objeto(pares)) => Json::Objeto(pares.clone()),
+                        Some(outro) => {
+                            return Err(PhxError::Esquema(format!(
+                                "{secao:?} no arquivo nao e um objeto: {}",
+                                outro.escrever()
+                            )))
+                        }
+                    };
+                    s.definir(resto, valor.clone());
+                    arvore.definir(secao, s);
+                }
+            }
+        }
+
+        let mut novo = Config::de_json(&arvore)?;
+        novo.caminho = Some(caminho.to_path_buf());
+        novo.validar()?;
+
+        // O TEXTO a gravar: a troca cirurgica primeiro.
+        //
+        // Reserializar a arvore preserva valor, ordem e comentario, e perde a
+        // FORMA -- linhas em branco entre secoes somem e `["a","b"]` vira tres
+        // linhas. Num arquivo escrito a mao isso e devolver o trabalho de
+        // alguem reformatado, e num controle de versao e um diff ilegivel.
+        // Entao cada campo e trocado NO TEXTO, e o resto sai byte a byte.
+        //
+        // A reserializacao continua como reserva para o caso que a troca
+        // cirurgica se recusa a fazer: campo (ou secao) que ainda nao esta no
+        // arquivo. Inserir texto exigiria adivinhar a indentacao de quem
+        // escreveu, e adivinhar errado e o mesmo estrago que reformatar.
+        let mut corpo = texto.clone();
+        for (campo, valor) in mudancas {
+            let partes: Vec<&str> = campo.split('.').collect();
+            match Json::texto_trocar(&corpo, &partes, valor) {
+                Some(t) => corpo = t,
+                None => {
+                    corpo = arvore.escrever_identado();
+                    corpo.push('\n');
+                    break;
+                }
+            }
+        }
+        // Cinto: o texto que vai para o disco tem de dizer o mesmo que a
+        // arvore que passou pela validacao. Se a edicao no texto divergir por
+        // qualquer motivo, vale o reserializado -- que esta provado.
+        match Json::analisar(&corpo) {
+            Ok(conferido) if conferido == arvore => {}
+            _ => {
+                corpo = arvore.escrever_identado();
+                corpo.push('\n');
+            }
+        }
+
+        // O mesmo padrao do cadastro do DbLink: escreve inteiro num arquivo
+        // temporario e troca com rename. Um corte de energia no meio deixa o
+        // config.json antigo inteiro, e nao um pela metade -- que derrubaria o
+        // proximo arranque.
+        let temporario = caminho.with_extension("tmp");
+        std::fs::write(&temporario, corpo)
+            .map_err(|e| PhxError::Esquema(format!("nao gravei {}: {e}", temporario.display())))?;
+        // O arquivo carrega o token e os hashes: o temporario herda as
+        // permissoes do original em vez de nascer com as largas do umask.
+        if let Ok(meta) = std::fs::metadata(caminho) {
+            let _ = std::fs::set_permissions(&temporario, meta.permissions());
+        }
+        std::fs::rename(&temporario, caminho)
+            .map_err(|e| PhxError::Esquema(format!("nao troquei {}: {e}", caminho.display())))?;
+        Ok(novo)
     }
 }
 
@@ -1851,6 +2305,78 @@ mod tests {
     fn config_so_com_campos_conhecidos_nao_avisa() {
         let j = Json::analisar(r#"{"token":"t","bind":"0.0.0.0:5000","espelho":true}"#).unwrap();
         assert!(Config::de_json(&j).unwrap().estranhas.is_empty());
+    }
+
+    /// O aviso tem de cobrir DENTRO das secoes: o erro de digitacao mais
+    /// provavel e `recursos.cache_pagina` sem o `s`, e ele passava calado.
+    #[test]
+    fn campo_estranho_dentro_de_secao_e_apontado() {
+        let j = Json::analisar(
+            r#"{"token":"t","recursos":{"cache_pagina":4096,"threads":2},
+                "web":{"sesao_minutos":5},
+                "alertas":{"ligado":false,"email":{"servido":"x"}}}"#,
+        )
+        .unwrap();
+        let c = Config::de_json(&j).unwrap();
+        assert!(
+            c.estranhas.contains(&"recursos.cache_pagina".to_string()),
+            "{:?}",
+            c.estranhas
+        );
+        assert!(c.estranhas.contains(&"web.sesao_minutos".to_string()));
+        assert!(c.estranhas.contains(&"alertas.email.servido".to_string()));
+        assert!(
+            !c.estranhas.iter().any(|x| x == "recursos.threads"),
+            "campo certo apontado como estranho: {:?}",
+            c.estranhas
+        );
+    }
+
+    /// `seguranca` e `replicacao` ganham campos novos por OUTRAS frentes nesta
+    /// rodada: apontar o que este processo ainda nao conhece la dentro seria
+    /// um aviso falso para todo mundo que atualizar primeiro o config.
+    #[test]
+    fn secoes_de_outras_frentes_nao_geram_aviso_por_dentro() {
+        let j = Json::analisar(
+            r#"{"token":"t","seguranca":{"campo_novo":1},
+                "replicacao":{"papel":"isolado","agendamento_novo":{}}}"#,
+        )
+        .unwrap();
+        let c = Config::de_json(&j).unwrap();
+        assert!(c.estranhas.is_empty(), "{:?}", c.estranhas);
+    }
+
+    /// A resposta da op `config` espelha o ARQUIVO: as secoes saem com os
+    /// nomes do config.json. A versao achatada mentia por omissao -- a tela
+    /// lia `c.seguranca.bases_proibidas`, o campo nao vinha, e uma base
+    /// proibida aparecia como "nao".
+    #[test]
+    fn a_resposta_de_config_espelha_o_arquivo() {
+        let j = Json::analisar(
+            r#"{"token":"t","timeout_s":45,
+                "seguranca":{"bases_proibidas":["financeiro"],"bloqueio_minutos":120},
+                "web":{"ligado":true,"bind":"127.0.0.1:5001","sessao_minutos":15},
+                "backup":{"agendado":true,"hora":"03:00","destino":"copias"},
+                "replicacao":{"papel":"source"},
+                "isto_nao_existe":1}"#,
+        )
+        .unwrap();
+        let r = Config::de_json(&j).unwrap().para_json();
+        assert_eq!(r.inteiro_ou("timeout_s", 0), 45);
+        let seg = r.campo("seguranca").expect("sem a secao seguranca");
+        assert_eq!(seg.textos("bases_proibidas"), vec!["financeiro"]);
+        assert_eq!(seg.inteiro_ou("bloqueio_minutos", 0), 120);
+        let web = r.campo("web").expect("sem a secao web");
+        assert!(web.booleano_ou("ligado", false));
+        assert_eq!(web.inteiro_ou("sessao_minutos", 0), 15);
+        let bkp = r.campo("backup").expect("sem a secao backup");
+        assert_eq!(bkp.texto_ou("hora", ""), "03:00");
+        let rep = r.campo("replicacao").expect("sem a secao replicacao");
+        assert_eq!(rep.texto_ou("papel", ""), "source");
+        assert!(rep.booleano_ou("imagem_da_linha", false));
+        // E o aviso de campo desconhecido chega na tela, nao so no stderr.
+        let estranhas = r.textos("estranhas");
+        assert_eq!(estranhas, vec!["isto_nao_existe"]);
     }
 
     #[test]
@@ -2394,9 +2920,28 @@ mod testes_recursos {
         assert_eq!(c.conexoes_max, 7);
         assert_eq!(c.recursos.conexoes_max, 7, "a secao herda o do topo");
 
-        // E dentro de `recursos` ele ganha, porque e o lugar novo.
+        // E dentro de `recursos` ele ganha, porque e o lugar novo -- inclusive
+        // no campo do TOPO, que e o que o laco de aceitacao le de verdade.
+        // Antes deste espelho a promessa era mentira: o 99 ficava so na tela e
+        // o servidor seguia recusando na 7a conexao.
         let c = cfg(r#"{"token":"t","conexoes_max":7,"recursos":{"conexoes_max":99}}"#);
         assert_eq!(c.recursos.conexoes_max, 99);
+        assert_eq!(c.conexoes_max, 99, "o leitor real nao veria o 99");
+    }
+
+    /// `threads` e `cpu_percentual` tem leitor de verdade: o teto global do
+    /// trabalho dividido. Antes disto os dois campos existiam no config.json,
+    /// no MANUAL e na tela, e `paralelo::nucleos()` perguntava direto a
+    /// maquina -- a mesma armadilha do `cache_paginas` sem cache.
+    #[test]
+    fn threads_e_cpu_viram_o_teto_do_paralelo() {
+        // 4 threads a 25% = teto de UM nucleo -- e um e o resultado em
+        // qualquer maquina, porque o teto so corta, nunca inventa nucleo.
+        let c = cfg(r#"{"token":"t","recursos":{"threads":4,"cpu_percentual":25}}"#);
+        c.recursos.aplicar();
+        assert_eq!(phxsql_core::paralelo::nucleos(), 1, "o teto nao valeu");
+        // Devolve o processo ao estado sem teto, para nao morder os vizinhos.
+        phxsql_core::paralelo::definir_teto(0);
     }
 
     #[test]
@@ -2606,5 +3151,223 @@ mod testes_alertas {
                 "senha_env":"PHXSQL_TESTE_SMTP"}}}"#,
         );
         assert_eq!(c.alertas.email.senha(), "vinda-do-ambiente");
+    }
+}
+
+/// A gravacao pela tela: `gravar_campos` e a whitelist.
+#[cfg(test)]
+mod testes_gravacao {
+    use super::*;
+
+    /// Um config.json de verdade no disco, com comentario, ordem propria e um
+    /// bloco que este processo nao conhece -- exatamente o que a gravacao nao
+    /// pode estragar.
+    fn arquivo(nome: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("phx-gravar-{nome}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let caminho = dir.join("config.json");
+        std::fs::write(
+            &caminho,
+            r#"{
+  "_comentario": "explicacao que o Adriano escreveu",
+  "token": "t",
+  "bind": "127.0.0.1:5399",
+  "max_linhas": 1000,
+  "bloco_de_outra_frente": { "campo": 1 },
+  "backup": { "agendado": false, "hora": "03:00" },
+  "alertas": { "ligado": false, "livre_minimo_percentual": 10 }
+}
+"#,
+        )
+        .unwrap();
+        caminho
+    }
+
+    fn muda(campo: &str, valor: Json) -> Vec<(String, Json)> {
+        vec![(campo.to_string(), valor)]
+    }
+
+    #[test]
+    fn grava_o_pedido_e_preserva_o_resto() {
+        let caminho = arquivo("preserva");
+        let novo = Config::gravar_campos(&caminho, &muda("max_linhas", Json::de_i64(50))).unwrap();
+        assert_eq!(novo.max_linhas, 50);
+
+        let texto = std::fs::read_to_string(&caminho).unwrap();
+        assert!(
+            texto.contains("explicacao que o Adriano escreveu"),
+            "{texto}"
+        );
+        assert!(texto.contains("bloco_de_outra_frente"), "{texto}");
+        assert!(texto.contains("\"max_linhas\": 50"), "{texto}");
+        // A ordem das chaves e a do arquivo original, nao a do struct.
+        let pos = |t: &str| texto.find(t).unwrap_or(usize::MAX);
+        assert!(pos("_comentario") < pos("token"), "{texto}");
+        assert!(pos("max_linhas") < pos("bloco_de_outra_frente"), "{texto}");
+        // E o arquivo continua sendo um config que sobe.
+        Config::ler(&caminho).unwrap();
+    }
+
+    /// O arquivo sai byte a byte igual, MENOS o valor trocado.
+    ///
+    /// Reserializar a arvore preservava valor, ordem e comentario -- e perdia
+    /// a forma: as linhas em branco entre as secoes sumiam e `["a","b"]`
+    /// virava tres linhas. Num arquivo escrito a mao isso e devolver o
+    /// trabalho de alguem reformatado, e no controle de versao e um diff
+    /// ilegivel. Este teste e o que trava a troca cirurgica.
+    #[test]
+    fn o_arquivo_sai_igual_menos_o_valor_trocado() {
+        let dir = std::env::temp_dir().join(format!("phx-bytes-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let caminho = dir.join("config.json");
+        let original = "{\n  \"_nota\": \"escrito a mao\",\n\n  \"token\": \"t\",\n  \
+             \"max_linhas\": 1000,\n\n  \"ips_permitidos\": [\"10.0.0.1\", \"10.0.0.2\"],\n\n  \
+             \"recursos\": { \"threads\": 0, \"cpu_percentual\": 100 }\n}\n";
+        std::fs::write(&caminho, original).unwrap();
+
+        Config::gravar_campos(&caminho, &muda("max_linhas", Json::de_i64(50))).unwrap();
+        let depois = std::fs::read_to_string(&caminho).unwrap();
+        assert_eq!(
+            depois,
+            original.replace("\"max_linhas\": 1000", "\"max_linhas\": 50")
+        );
+
+        // Inclusive dentro de uma secao escrita numa linha so.
+        Config::gravar_campos(&caminho, &muda("recursos.threads", Json::de_i64(4))).unwrap();
+        let depois = std::fs::read_to_string(&caminho).unwrap();
+        assert!(
+            depois.contains("\"recursos\": { \"threads\": 4, \"cpu_percentual\": 100 }"),
+            "{depois}"
+        );
+        // A lista numa linha so e as linhas em branco continuam onde estavam.
+        assert!(depois.contains("[\"10.0.0.1\", \"10.0.0.2\"]"), "{depois}");
+        assert!(depois.contains("\n\n  \"token\""), "{depois}");
+    }
+
+    /// Campo que ainda nao esta no arquivo entra pelo caminho reserializado --
+    /// e o arquivo continua valido e com os comentarios.
+    #[test]
+    fn campo_ausente_entra_pelo_reserializado() {
+        let caminho = arquivo("ausente");
+        // `backup.manter` nao existe no arquivo de origem.
+        let novo =
+            Config::gravar_campos(&caminho, &muda("backup.manter", Json::de_i64(3))).unwrap();
+        assert_eq!(novo.backup.manter, 3);
+        let texto = std::fs::read_to_string(&caminho).unwrap();
+        assert!(
+            texto.contains("explicacao que o Adriano escreveu"),
+            "{texto}"
+        );
+        assert!(texto.contains("bloco_de_outra_frente"), "{texto}");
+        Config::ler(&caminho).unwrap();
+    }
+
+    #[test]
+    fn campo_dentro_de_secao_muda_so_ele() {
+        let caminho = arquivo("secao");
+        let novo =
+            Config::gravar_campos(&caminho, &muda("backup.agendado", Json::Bool(true))).unwrap();
+        assert!(novo.backup.agendado);
+        assert_eq!(novo.backup.hora, "03:00", "a hora nao podia mudar");
+        // E secao ausente e criada, em vez de recusada.
+        let novo =
+            Config::gravar_campos(&caminho, &muda("recursos.cache_paginas", Json::de_i64(64)))
+                .unwrap();
+        assert_eq!(novo.recursos.cache_paginas, 64);
+    }
+
+    /// O portao da whitelist: o que nao esta na lista NAO se grava por aqui,
+    /// e o arquivo fica intocado -- token e o exemplo que mais importa.
+    #[test]
+    fn campo_fora_da_lista_e_recusado_sem_tocar_o_arquivo() {
+        let caminho = arquivo("whitelist");
+        let antes = std::fs::read_to_string(&caminho).unwrap();
+        for campo in ["token", "seguranca.firewall", "usuarios", "cifra.senha"] {
+            let e = Config::gravar_campos(&caminho, &muda(campo, Json::texto_de("x")))
+                .unwrap_err()
+                .to_string();
+            assert!(e.contains("nao se grava pela tela"), "{campo}: {e}");
+        }
+        assert_eq!(std::fs::read_to_string(&caminho).unwrap(), antes);
+    }
+
+    /// Tipo errado nao entra: o leitor usa `inteiro_ou`, que cai no padrao em
+    /// silencio -- um `"max_linhas": "abc"` gravado seria um campo que nunca
+    /// vale, e ninguem descobriria pela tela.
+    #[test]
+    fn tipo_errado_e_recusado_antes_de_gravar() {
+        let caminho = arquivo("tipo");
+        let antes = std::fs::read_to_string(&caminho).unwrap();
+        let e = Config::gravar_campos(&caminho, &muda("max_linhas", Json::texto_de("abc")))
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("espera inteiro"), "{e}");
+        assert_eq!(std::fs::read_to_string(&caminho).unwrap(), antes);
+    }
+
+    /// Valor que nao subiria o servidor nao entra no arquivo: a validacao
+    /// roda ANTES do rename.
+    #[test]
+    fn valor_que_nao_valida_nao_entra_no_arquivo() {
+        let caminho = arquivo("valida");
+        let antes = std::fs::read_to_string(&caminho).unwrap();
+        // "25:00" passa no tipo (e texto) e cai na validacao do Backup.
+        let e = Config::gravar_campos(&caminho, &muda("backup.hora", Json::texto_de("25:00")))
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("backup.hora"), "{e}");
+        assert_eq!(std::fs::read_to_string(&caminho).unwrap(), antes);
+        // O mesmo para um bind que nao e endereco.
+        assert!(
+            Config::gravar_campos(&caminho, &muda("bind", Json::texto_de("nao e endereco")))
+                .is_err()
+        );
+        assert_eq!(std::fs::read_to_string(&caminho).unwrap(), antes);
+    }
+
+    /// O que esta GRAVADO e ainda nao vale tem de aparecer -- e o que ja vale
+    /// nao pode aparecer como divergencia.
+    ///
+    /// Achado exercitando a tela: gravar `timeout_s` gravava certo e o campo
+    /// voltava com o valor velho, calado. E o primeiro conserto trouxe um
+    /// falso positivo junto, porque `livre_minimo_percentual` saia da resposta
+    /// como o TEXTO "10.00" contra o numero 10 do arquivo.
+    #[test]
+    fn o_que_esta_gravado_e_ainda_nao_vale_aparece() {
+        let caminho = arquivo("divergencia");
+        let c = Config::ler(&caminho).unwrap();
+        // Nada gravado ainda: o arquivo e a memoria concordam.
+        assert!(divergencias_do_arquivo(&caminho, &c.para_json()).is_empty());
+
+        // Grava um campo de arranque. O `Config` vivo continua o de antes --
+        // e e exatamente essa a situacao que a tela precisa mostrar.
+        Config::gravar_campos(&caminho, &muda("timeout_s", Json::de_i64(90))).unwrap();
+        let fora = divergencias_do_arquivo(&caminho, &c.para_json());
+        assert_eq!(fora.len(), 1, "{fora:?}");
+        assert_eq!(fora[0].0, "timeout_s");
+        assert_eq!(fora[0].1.inteiro(), Some(90));
+
+        // E o percentual do alerta nao pode virar divergencia por causa de
+        // formatacao: 10 no arquivo e 10 na resposta sao o mesmo numero.
+        let com_alerta = Config::ler(&caminho).unwrap();
+        let fora = divergencias_do_arquivo(&caminho, &com_alerta.para_json());
+        assert!(
+            !fora.iter().any(|(c, _)| c.starts_with("alertas.")),
+            "falso positivo de formatacao: {fora:?}"
+        );
+    }
+
+    /// O comportamento VELHO: um arquivo que ninguem gravou pela tela abre
+    /// exatamente como antes -- gravar_campos nao roda no arranque e nao
+    /// reescreve nada sozinho.
+    #[test]
+    fn arquivo_antigo_abre_byte_a_byte_como_antes() {
+        let caminho = arquivo("velho");
+        let antes = std::fs::read_to_string(&caminho).unwrap();
+        let c = Config::ler(&caminho).unwrap();
+        assert_eq!(c.max_linhas, 1000);
+        assert_eq!(std::fs::read_to_string(&caminho).unwrap(), antes);
     }
 }

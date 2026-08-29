@@ -373,6 +373,22 @@ impl Sessoes {
         self.dentro.len()
     }
 
+    /// Os logins com sessao viva, sem repetir.
+    ///
+    /// Serve ao teto de `recursos.usuarios_max`, que conta PESSOAS e nao
+    /// soquetes: a mesma pessoa com tres abas abertas continua sendo uma.
+    pub fn logins_vivos(&self, agora_ms: i64) -> Vec<String> {
+        let mut v: Vec<String> = self
+            .dentro
+            .values()
+            .filter(|s| s.expira_ms >= agora_ms && !s.login.is_empty())
+            .map(|s| s.login.clone())
+            .collect();
+        v.sort();
+        v.dedup();
+        v
+    }
+
     /// As sessoes vivas, como (id, login, quando comecou, quando expira).
     ///
     /// O id sai CORTADO de proposito: ele e a credencial da sessao, e quem
