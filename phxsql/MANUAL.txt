@@ -285,6 +285,33 @@ O CATALOGO: O PROTOCOLO SE DESCREVE SOZINHO
     de operacoes do proprio codigo do despachar e falha se ela e o catalogo
     discordarem, nos dois sentidos. Ajuda escrita a mao envelhece calada.
 
+SERVIDOR MCP (Model Context Protocol)
+
+    phxsqld --mcp                                  pelo token de servico
+    PHXSQL_SENHA='a senha' phxsqld --mcp --usuario adriano
+    phxsqld --mcp --escrita                        libera as que gravam
+
+    Le uma mensagem JSON-RPC 2.0 por linha da entrada padrao e escreve uma
+    resposta por linha na saida -- que e como um cliente MCP local conversa.
+
+    SOMENTE LEITURA VEM LIGADO. Do outro lado ha um modelo de linguagem, e nao
+    uma pessoa. Sem --escrita, phx_inserir e phx_atualizar nem sao anunciadas,
+    e chamar uma delas responde POR QUE foi recusada.
+
+    A SENHA VEM DO AMBIENTE. Argumento de linha de comando aparece no `ps` e
+    fica no historico do shell, e a entrada padrao aqui esta ocupada pelo
+    protocolo -- entao sobra PHXSQL_SENHA. Sem --usuario a ponte fala pelo
+    token de servico, e num servidor COM cadastro isso nao passa do ping; o
+    aviso sai no stderr, que e onde cabe sem sujar o cano.
+
+    O PORTAO E O MESMO. A ponte nao executa nada: ela monta o pedido e entrega
+    ao mesmo despachar da porta 5000 -- politica, token, login e permissao por
+    base e tabela. Toda chamada entra no log de acessos, com "stdio" no lugar
+    do IP.
+
+    AS FERRAMENTAS saem do catalogo (op "catalogo"), e o nome de cada uma e
+    "phx_" mais a op. Detalhes em docs/MCP.md.
+
 SQL: UM SELECT SIMPLES, TRADUZIDO
 
     {"token":"segredo","op":"sql","database":"loja",

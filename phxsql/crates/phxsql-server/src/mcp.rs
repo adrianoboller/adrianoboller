@@ -28,13 +28,19 @@
 //! `inserir`, `atualizar` e `excluir`; liberar é uma decisão de quem monta o
 //! servidor, e não um padrão herdado.
 //!
+//! # O transporte
+//!
+//! [`servir`] lê uma mensagem por linha e escreve uma resposta por linha, e é
+//! o que `phxsqld --mcp` roda contra a entrada e a saída padrão. A tradução
+//! veio antes de propósito -- ela é a parte que se testa sem abrir processo
+//! nenhum --, mas sem o transporte nenhum cliente MCP falava com o servidor.
+//!
 //! # O que ainda NÃO tem
 //!
-//! - **Transporte.** Este módulo é a tradução; quem lê de `stdin` ou de um
-//!   soquete e chama [`Ponte::atender`] ainda não existe. Foi feito assim
-//!   porque a tradução é o que dá para testar sem processo nenhum.
 //! - `resources/*` e `prompts/*`. Uma tabela dá um belo *resource*, e isso é
 //!   outra rodada.
+
+use std::io::{BufRead, Write};
 
 use phxsql_core::error::Result;
 use phxsql_core::json::Json;
@@ -64,128 +70,21 @@ pub trait Executor {
     fn executar(&self, pedido: &Json) -> Result<Json>;
 }
 
-/// Uma ferramenta MCP: o nome que o modelo vê e a operação que ela vira.
-pub struct Ferramenta {
-    /// Nome no MCP. Prefixado com `phx_` para não colidir com as ferramentas
-    /// de outros servidores dentro do mesmo cliente.
-    pub nome: &'static str,
-    /// A `op` do protocolo do PhxSql.
-    pub op: &'static str,
-    pub descricao: &'static str,
-    /// Escreve no banco? Decide se a ponte somente-leitura a oferece.
-    pub escreve: bool,
-    /// Os parâmetros, como `(nome, tipo JSON, obrigatório, para que serve)`.
-    pub parametros: &'static [(&'static str, &'static str, bool, &'static str)],
-}
-
-/// O catálogo. Uma linha por ferramenta, e nada de código por ferramenta.
+/// As ferramentas que o MCP oferece: **o catálogo, filtrado.**
 ///
-/// # Por que uma tabela, e não um `match` por nome
+/// # Por que isto não é uma lista
 ///
-/// Porque `tools/list` e `tools/call` têm de concordar **sempre**. Com duas
-/// listas, a ferramenta que alguém acrescentar num lugar e esquecer no outro
-/// vira uma que o modelo enxerga e não consegue chamar -- ou pior, uma que ele
-/// consegue chamar e não está anunciada.
-pub const FERRAMENTAS: &[Ferramenta] = &[
-    Ferramenta {
-        nome: "phx_bancos",
-        op: "bancos",
-        descricao: "Lista os bancos de dados deste servidor PhxSql.",
-        escreve: false,
-        parametros: &[],
-    },
-    Ferramenta {
-        nome: "phx_tabelas",
-        op: "tabelas",
-        descricao: "Lista as tabelas e os schemas de um banco.",
-        escreve: false,
-        parametros: &[("database", "string", true, "nome do banco")],
-    },
-    Ferramenta {
-        nome: "phx_esquema",
-        op: "esquema",
-        descricao:
-            "Descreve uma tabela: colunas, tipos, índices, chaves e a marca de dado pessoal.",
-        escreve: false,
-        parametros: &[
-            ("database", "string", true, "nome do banco"),
-            ("tabela", "string", true, "nome da tabela"),
-        ],
-    },
-    Ferramenta {
-        nome: "phx_ler",
-        op: "ler",
-        descricao: "Lê uma linha pelo rowid.",
-        escreve: false,
-        parametros: &[
-            ("database", "string", true, "nome do banco"),
-            ("tabela", "string", true, "nome da tabela"),
-            (
-                "rowid",
-                "integer",
-                true,
-                "número do registro, a partir de 1",
-            ),
-        ],
-    },
-    Ferramenta {
-        nome: "phx_varrer",
-        op: "varrer",
-        descricao: "Percorre a tabela na ordem de digitação, com paginação.",
-        escreve: false,
-        parametros: &[
-            ("database", "string", true, "nome do banco"),
-            ("tabela", "string", true, "nome da tabela"),
-            ("pular", "integer", false, "quantas linhas saltar"),
-            ("limite", "integer", false, "quantas linhas trazer"),
-        ],
-    },
-    Ferramenta {
-        nome: "phx_buscar",
-        op: "buscar",
-        descricao: "Busca por um índice, com a chave exata.",
-        escreve: false,
-        parametros: &[
-            ("database", "string", true, "nome do banco"),
-            ("tabela", "string", true, "nome da tabela"),
-            ("indice", "string", true, "nome do índice"),
-            ("chave", "array", true, "os valores da chave, em ordem"),
-        ],
-    },
-    Ferramenta {
-        nome: "phx_dados_pessoais",
-        op: "dados_pessoais",
-        descricao: "Audita onde estão os dados pessoais (LGPD/GDPR) de um banco.",
-        escreve: false,
-        parametros: &[
-            ("database", "string", true, "nome do banco"),
-            ("tabela", "string", false, "limitar a uma tabela"),
-        ],
-    },
-    Ferramenta {
-        nome: "phx_inserir",
-        op: "inserir",
-        descricao: "Inclui uma linha. Só quando a ponte permite escrita.",
-        escreve: true,
-        parametros: &[
-            ("database", "string", true, "nome do banco"),
-            ("tabela", "string", true, "nome da tabela"),
-            ("valores", "object", true, "coluna: valor"),
-        ],
-    },
-    Ferramenta {
-        nome: "phx_atualizar",
-        op: "atualizar",
-        descricao: "Altera uma linha pelo rowid. Só quando a ponte permite escrita.",
-        escreve: true,
-        parametros: &[
-            ("database", "string", true, "nome do banco"),
-            ("tabela", "string", true, "nome da tabela"),
-            ("rowid", "integer", true, "número do registro"),
-            ("valores", "object", true, "coluna: valor"),
-        ],
-    },
-];
+/// Porque era, e a lista era uma segunda verdade. Nove ferramentas escritas à
+/// mão aqui, com nome, descrição e parâmetros — todos repetidos do que o
+/// `MANUAL` dizia e do que o código fazia, e nenhum dos três com quem os
+/// obrigasse a concordar.
+///
+/// Hoje elas saem de [`crate::catalogo`], que é a mesma lista que a op
+/// `catalogo` do protocolo e o `/help` do `phxsqlcmd` leem — e que tem um
+/// teste comparando-a com o `match` do `despachar`. Uma operação nova só vira
+/// ferramenta MCP quando alguém marca `ferramenta_mcp` nela, mas a descrição e
+/// os parâmetros já vêm prontos e já estão certos.
+pub use crate::catalogo::{ferramentas_mcp, Operacao as Ferramenta};
 
 /// A ponte entre o MCP e o protocolo do PhxSql.
 pub struct Ponte<E: Executor> {
@@ -222,9 +121,8 @@ impl<E: Executor> Ponte<E> {
 
     /// As ferramentas que esta ponte oferece.
     pub fn ferramentas(&self) -> Vec<&'static Ferramenta> {
-        FERRAMENTAS
-            .iter()
-            .filter(|f| !(self.somente_leitura && f.escreve))
+        ferramentas_mcp()
+            .filter(|f| !(self.somente_leitura && f.escreve()))
             .collect()
     }
 
@@ -323,11 +221,15 @@ impl<E: Executor> Ponte<E> {
 
     fn tools_call(&self, params: &Json) -> std::result::Result<Json, (i64, String)> {
         let nome = params.texto_ou("name", "");
-        let Some(f) = self.ferramentas().into_iter().find(|f| f.nome == nome) else {
+        let Some(f) = self
+            .ferramentas()
+            .into_iter()
+            .find(|f| f.nome_mcp() == nome)
+        else {
             // A ferramenta não existir é erro de PROTOCOLO -- o modelo chamou
             // algo que não foi anunciado --, e por isso vai no erro do
             // JSON-RPC e não no `isError` do resultado.
-            let motivo = if FERRAMENTAS.iter().any(|f| f.nome == nome) {
+            let motivo = if ferramentas_mcp().any(|f| f.nome_mcp() == nome) {
                 format!("a ferramenta {nome:?} escreve, e esta ponte é somente de leitura")
             } else {
                 format!("a ferramenta {nome:?} não existe")
@@ -347,16 +249,16 @@ impl<E: Executor> Ponte<E> {
         // Falta de argumento obrigatório é recusada AQUI, e não lá dentro: a
         // mensagem daqui diz o nome do parâmetro e para que ele serve, que é
         // o que o modelo precisa para corrigir sozinho.
-        for (nome_p, _, obrigatorio, para_que) in f.parametros {
-            if *obrigatorio && argumentos.campo(nome_p).is_none() {
+        for p in f.parametros.iter().filter(|p| p.obrigatorio) {
+            if argumentos.campo(p.nome).is_none() {
                 return Err((
                     ERRO_PARAMETROS,
-                    format!("falta o argumento {nome_p:?} ({para_que})"),
+                    format!("falta o argumento {:?} ({})", p.nome, p.para_que),
                 ));
             }
         }
 
-        let mut pedido: Vec<(String, Json)> = vec![("op".into(), Json::texto_de(f.op))];
+        let mut pedido: Vec<(String, Json)> = vec![("op".into(), Json::texto_de(f.nome))];
         if let Json::Objeto(pares) = argumentos {
             for (k, v) in pares {
                 // Um argumento chamado "op" ou "token" sobrescreveria o que a
@@ -388,16 +290,20 @@ impl<E: Executor> Ponte<E> {
 }
 
 /// O JSON Schema que o MCP espera em cada ferramenta.
+///
+/// A descrição que o modelo lê ganha o EXEMPLO junto: um pedido inteiro que
+/// funciona vale mais para quem tem de montar a chamada do que qualquer frase,
+/// e ele já está no catálogo com um teste que o confere.
 fn esquema_de(f: &Ferramenta) -> Json {
     let propriedades: Vec<(String, Json)> = f
         .parametros
         .iter()
-        .map(|(nome, tipo, _, para_que)| {
+        .map(|p| {
             (
-                nome.to_string(),
+                p.nome.to_string(),
                 Json::objeto(vec![
-                    ("type", Json::texto_de(*tipo)),
-                    ("description", Json::texto_de(*para_que)),
+                    ("type", Json::texto_de(p.tipo)),
+                    ("description", Json::texto_de(p.para_que)),
                 ]),
             )
         })
@@ -405,13 +311,16 @@ fn esquema_de(f: &Ferramenta) -> Json {
     let obrigatorios: Vec<Json> = f
         .parametros
         .iter()
-        .filter(|(_, _, obrigatorio, _)| *obrigatorio)
-        .map(|(nome, _, _, _)| Json::texto_de(*nome))
+        .filter(|p| p.obrigatorio)
+        .map(|p| Json::texto_de(p.nome))
         .collect();
 
     Json::objeto(vec![
-        ("name", Json::texto_de(f.nome)),
-        ("description", Json::texto_de(f.descricao)),
+        ("name", Json::texto_de(f.nome_mcp())),
+        (
+            "description",
+            Json::texto_de(format!("{} Exemplo: {}", f.resumo, f.exemplo)),
+        ),
         (
             "inputSchema",
             Json::objeto(vec![
@@ -421,6 +330,69 @@ fn esquema_de(f: &Ferramenta) -> Json {
             ]),
         ),
     ])
+}
+
+/// O transporte: uma mensagem JSON-RPC por linha, de `entrada` para `saida`.
+///
+/// # Por que ele é tão pequeno, e por que faltava
+///
+/// O MCP por *stdio* é exatamente isto: o cliente escreve uma linha na entrada
+/// padrão do processo e lê uma linha da saída. Não havia transporte porque a
+/// **tradução** é o que se testa sem processo nenhum — e ela foi feita
+/// primeiro de propósito. Isto aqui é o resto.
+///
+/// # As armadilhas, e todas estão neste corpo
+///
+/// **Responder linha a linha, e não no fim.** Um cliente MCP escreve uma
+/// mensagem e ESPERA a resposta com a entrada ainda aberta — a conversa
+/// inteira acontece assim. Ler tudo primeiro (`lines().collect()`, que é o que
+/// se escreve sem pensar) trava os dois lados esperando um ao outro, sem erro
+/// em lugar nenhum. É o defeito que só aparece pelo processo, e o teste
+/// `a_resposta_sai_antes_de_a_entrada_fechar` PENDURA quando ele volta.
+///
+/// **O `flush` — e aqui a explicação óbvia está errada.** Escrevi primeiro que
+/// sem ele a resposta ficaria presa no cano, porque a saída de um processo é
+/// *block-buffered*. Medido tirando o `flush`: **o teste passa igual.** O
+/// `Stdout` do Rust é um `LineWriter`, e descarrega sozinho no `\n`. O `flush`
+/// fica porque esta função é genérica sobre `Write`, e um `BufWriter` — ou o
+/// dia em que alguém envolver a saída em um — não tem essa cortesia. Um
+/// motivo verdadeiro e pequeno vale mais que um grande e falso.
+///
+/// **Notificação não recebe linha.** `atender` devolve `None` e o silêncio é a
+/// resposta certa; escrever uma linha vazia já seria um pedido malformado do
+/// nosso lado.
+///
+/// **Linha em branco não é mensagem.** Um cliente que termina o envio com
+/// `\n\n` mandaria a ponte analisar uma string vazia e receberia um erro de
+/// JSON que ele não pediu.
+pub fn servir<E: Executor>(
+    ponte: &Ponte<E>,
+    entrada: impl BufRead,
+    saida: &mut impl Write,
+) -> std::io::Result<()> {
+    for linha in entrada.lines() {
+        let linha = match linha {
+            Ok(l) => l,
+            // Byte que não é UTF-8 é erro de MENSAGEM, e não do cano: responder
+            // e seguir é o que o JSON-RPC manda. Derrubar a sessão por causa de
+            // uma linha suja mataria a conversa inteira.
+            Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
+                let r = resposta_erro(Json::Nulo, ERRO_ANALISE, "a linha nao e UTF-8");
+                writeln!(saida, "{}", r.escrever())?;
+                saida.flush()?;
+                continue;
+            }
+            Err(e) => return Err(e),
+        };
+        if linha.trim().is_empty() {
+            continue;
+        }
+        if let Some(resposta) = ponte.atender(&linha) {
+            writeln!(saida, "{resposta}")?;
+            saida.flush()?;
+        }
+    }
+    Ok(())
 }
 
 fn conteudo(texto: &str, e_erro: bool) -> Json {
@@ -599,10 +571,10 @@ mod testes {
             .map(|t| t.texto_ou("name", "").to_string())
             .collect();
 
-        assert_eq!(anunciadas.len(), FERRAMENTAS.len());
-        for f in FERRAMENTAS {
+        assert_eq!(anunciadas.len(), ferramentas_mcp().count());
+        for f in ferramentas_mcp() {
             assert!(
-                anunciadas.contains(&f.nome.to_string()),
+                anunciadas.contains(&f.nome_mcp()),
                 "{} nao foi anunciada",
                 f.nome
             );
@@ -643,7 +615,7 @@ mod testes {
     #[test]
     fn a_ponte_padrao_recusa_escrita() {
         let p = Ponte::nova(Espiao::novo());
-        assert!(p.ferramentas().iter().all(|f| !f.escreve));
+        assert!(p.ferramentas().iter().all(|f| !f.escreve()));
 
         let r = atender(
             &p,
@@ -666,7 +638,7 @@ mod testes {
     #[test]
     fn com_escrita_ligada_a_ferramenta_aparece_e_funciona() {
         let p = Ponte::nova(Espiao::novo()).com_escrita(true);
-        assert!(p.ferramentas().iter().any(|f| f.escreve));
+        assert!(p.ferramentas().iter().any(|f| f.escreve()));
         atender(
             &p,
             r#"{"jsonrpc":"2.0","id":5,"method":"tools/call",
@@ -750,13 +722,13 @@ mod testes {
     #[test]
     fn toda_op_anunciada_tem_atividade_de_permissao() {
         use crate::usuarios::Atividade;
-        for f in FERRAMENTAS {
+        for f in ferramentas_mcp() {
             assert!(
-                Atividade::da_operacao(f.op).is_some(),
+                Atividade::da_operacao(f.nome).is_some(),
                 "a op {:?} da ferramenta {} nao tem atividade: ela passaria \
                  pelo portao de permissao sem ser conferida",
-                f.op,
-                f.nome
+                f.nome,
+                f.nome_mcp()
             );
         }
     }
