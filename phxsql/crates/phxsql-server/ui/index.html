@@ -9899,6 +9899,11 @@ async function abrirConsulta() {
      <div id="saidaConsulta"><p class="leg">A tabela precisa estar na RAM:
        menu <b>Memória → Carregar esta tabela</b>.</p></div>`);
 
+  // A integração com a Claude, quando ligada. Desligada ela não desenha nada,
+  // e esta tela fica exatamente como era — o comportamento VELHO é o que o
+  // teste trava, porque guarda nova entra pedida e não imposta.
+  PhxIA.botaoDaConsulta($("#painel"));
+
   $("#btConsultar").onclick = async () => {
     const saida = $("#saidaConsulta");
     saida.innerHTML = `<div class="centro">consultando…</div>`;
@@ -10118,6 +10123,9 @@ const MENUS = [
     { rot:"Definições do DbLink…", ico:"⛓", faz:telaDbLinkDefinicoes },
     { rot:"Mensagens do servidor…", ico:"⑆", faz:telaMensagens },
     "sep",
+    // A tela mora em `ui/claude.js`, e a chamada dela sai do NAVEGADOR: o
+    // servidor nunca vê a chave. O porquê está em docs/CLAUDE-IA.md.
+    { rot:"Integração com a Claude…", ico:"✦", faz:() => PhxIA.telaConfig() },
     { rot:"Editor de menu…",      ico:"✎", faz:editorDeMenu },
   ]],
 
