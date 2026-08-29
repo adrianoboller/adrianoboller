@@ -324,12 +324,12 @@ footer p{max-width:var(--medida)}
 
   <div class="painel">
   <!-- projeto:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-    <div><div class="v">65.949</div><div class="r">linhas de Rust</div></div>
-    <div><div class="v">893</div><div class="r">testes</div></div>
+    <div><div class="v">90.360</div><div class="r">linhas de Rust</div></div>
+    <div><div class="v">1.132</div><div class="r">testes</div></div>
     <div><div class="v">0</div><div class="r">dependências</div></div>
-    <div><div class="v">6</div><div class="r">crates</div></div>
+    <div><div class="v">7</div><div class="r">crates</div></div>
     <div><div class="v">7</div><div class="r">arquivos/tabela</div></div>
-    <div><div class="v">13.724</div><div class="r">linhas de doc</div></div>
+    <div><div class="v">21.522</div><div class="r">linhas de doc</div></div>
   <!-- projeto:fim -->
   </div>
 </header>
@@ -1509,8 +1509,11 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
     excluída, e a lixeira devolveria o direito por outra porta. E um motivo de
     exclusão costuma ser mais revelador que o registro: <em>fraude</em>,
     <em>pedido de remoção do titular</em>, <em>duplicidade com o contrato X</em>.
-    Os dois <strong>não</strong> são cifrados nem compactados hoje — a proteção
-    é a permissão, e no disco vale a do sistema de arquivos.</p>
+    Os dois <strong>vão cifrados</strong> quando <code>cifra.ligada</code>
+    está no <code>config.json</code> — nos volumes criados daí em diante. Sem
+    ela, a proteção é a permissão, e no disco vale a do sistema de arquivos.
+    Compactados, não: a compactação foi medida duas vezes e recusada duas
+    vezes.</p>
   </div>
 
   <div class="nota">
@@ -2815,6 +2818,90 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   — não há segredo cujo tempo possa vazar. Assinar acontece na máquina de quem tem a
   chave; gerar acontece uma vez, em <code>phxsqld --gerar-chave</code>. Está escrito
   no topo do módulo, para ninguém usar isto num serviço exposto sem saber.</p>
+
+  <h3>A cifra dos dados: só a coluna que alguém marcou</h3>
+
+  <p>Os diários já iam cifrados. Os arquivos de <strong>dados</strong> não — e
+  quem copiasse o diretório lia tudo. Agora o valor de toda coluna marcada como
+  <strong>dado pessoal</strong> vai cifrado no <code>.reg</code>, no
+  <code>.memo</code>, no <code>.bin</code> e no espelho <code>.bkp</code>. A
+  marca é a mesma da tela de LGPD: <strong>o motor não adivinha</strong>, ele
+  cifra o que foi declarado.</p>
+
+  <p>As quatro saídas foram <strong>medidas antes</strong> de existir código,
+  contra uma inserção de 10,4&nbsp;µs por linha:</p>
+
+  <table>
+    <thead><tr><th>saída</th><th>custo por linha</th><th>o que ela quebra</th></tr></thead>
+    <tbody>
+      <tr><td>o slot inteiro</td><td>0,59&nbsp;µs</td><td>cifra colunas que ninguém pediu</td></tr>
+      <tr><td>página do <code>.ndx</code></td><td>0,23&nbsp;µs</td><td>nada — e o número surpreendeu</td></tr>
+      <tr><td><b>a coluna marcada</b></td><td><b>0,10&nbsp;µs</b> (1%)</td><td>o índice sobre ela</td></tr>
+      <tr><td>o arquivo inteiro</td><td><b>194&nbsp;ms para ler UMA linha</b></td><td>o O(1) — a saída que não existe</td></tr>
+    </tbody>
+  </table>
+
+  <p>O texto cifrado <strong>cabe no lugar do claro</strong>, porque o ChaCha20
+  é cifra de fluxo: uma coluna <code>Str(40)</code> continua com 40 bytes, no
+  mesmo <em>offset</em>. O que não cabe é a etiqueta — e ela é <strong>uma
+  só</strong> para a linha inteira, no fim do slot. O <code>slot_size</code>
+  cresce 16 bytes uma vez, e <code>offset = data_offset + (rowid − 1) ×
+  slot_size</code> continua valendo: <strong>o endereço continua saindo de uma
+  conta</strong>.</p>
+
+  <div class="nota">
+    <p><strong>A hipótese que morreu, e estava 550× errada.</strong> A conta
+    óbvia dizia que cifrar o <code>.ndx</code> custaria 127&nbsp;µs por linha —
+    10,86 páginas tocadas × 11,7&nbsp;µs. Medido, o <code>.ndx</code>
+    <em>grava</em> <strong>0,02 página por linha</strong>: o cache com
+    <em>write-back</em> absorve o resto. O custo real seria 0,23&nbsp;µs.
+    <em>Toque de página não é gravação de página</em> — e a recusa virou
+    aceitação com o número na mesa.</p>
+  </div>
+
+  <div class="nota">
+    <p><strong>O que continua em claro, e um teste que prova o vazamento.</strong>
+    O <code>.ndx</code> sobre a coluna marcada <strong>guarda a chave em
+    claro</strong>, porque um índice existe para comparar e cifrar a chave
+    destruiria a ordem. Isso não ficou só escrito no documento: há um teste que
+    procura o nome dentro do <code>.ndx</code> e <strong>exige achá-lo</strong>.
+    Um banco que diz «cifrado» e vaza a chave pelo índice está mentindo para o
+    usuário, e o teste é o que impede a mentira de entrar sem alguém decidir.
+    Também continuam legíveis: coluna não marcada, o bitmap de nulos, o
+    <code>rowid</code> e o nome da coluna no esquema.</p>
+  </div>
+
+  <h3>FrogCript: um modo, com o custo escrito</h3>
+
+  <p>O <strong>FrogCript</strong> é do próprio Adriano: transposição de 5 em 5,
+  duas camadas e a direção escondida dentro da segunda. Ele entra como
+  <strong>modo escolhido</strong> — o padrão continua sendo o AEAD. O que ele
+  acrescenta é <em>formato</em>; o que não acrescenta é <em>força</em>, e a
+  frase é da §9 do documento dele: <em>«o pulo 5 e a direção não são a chave; a
+  chave é a senha»</em>. O custo, medido:</p>
+
+  <table>
+    <thead><tr><th></th><th>tempo por valor</th><th>tamanho</th></tr></thead>
+    <tbody>
+      <tr><td>AEAD direto (padrão)</td><td><b>0,10&nbsp;µs</b></td><td>38&nbsp;B</td></tr>
+      <tr><td>FrogCript, aqui</td><td>2,77&nbsp;µs (27×)</td><td>189&nbsp;B (5×)</td></tr>
+      <tr><td><code>frogcript.py</code> de referência</td><td><b>1.137&nbsp;ms</b> (410.000×)</td><td>~397&nbsp;B (18×)</td></tr>
+    </tbody>
+  </table>
+
+  <p>O 1,1&nbsp;segundo por valor não é exagero e não é culpa da cifra: o
+  <code>frogcript.py</code> deriva a chave com PBKDF2 de 200.000 iterações
+  <strong>a cada uma das quatro selagens</strong>. Aqui a chave é derivada
+  <strong>uma vez por arquivo</strong>. O erro não é de criptografia — é de onde
+  a derivação mora.</p>
+
+  <p><strong>Sem AES.</strong> O FrogCript de referência usa AES-256-GCM, e este
+  projeto não tem AES: a implementação portátil honesta usa tabela, e tabela em
+  cache vaza a chave por tempo. O modo aqui mantém a <em>estrutura</em> sobre o
+  ChaCha20 já conferido contra o RFC 8439 — e a consequência está escrita e não
+  escondida: <strong>um pacote produzido aqui não abre no
+  <code>frogcript.py</code></strong>. Escrever AES é decisão do dono, e está na
+  mesa com o custo em <code>SEGURANCA.md</code> §10.4.</p>
 </section>
 
 <!-- ============================= 15 ============================= -->
@@ -4591,8 +4678,8 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
 
 <footer>
   <!-- rodape:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-  <p>PhxSql 0.18.0 · 65.949 linhas de Rust em 6 crates,
-  mais 535 KiB de interface · 893 testes ·
+  <p>PhxSql 0.18.0 · 90.360 linhas de Rust em 7 crates,
+  mais 681 KiB de interface · 1.132 testes ·
   nenhuma dependência externa.
   Especificação byte a byte em <code>docs/FORMATO.md</code>, cadastro e
   permissões em <code>docs/USUARIOS.md</code>, a replicação em

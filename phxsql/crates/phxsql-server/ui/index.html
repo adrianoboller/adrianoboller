@@ -1910,7 +1910,8 @@ const DEMO = {
       checar_minutos:15, repetir_horas:6, caminhos:[],
       email:{ligado:false, servidor:"127.0.0.1", porta:25, de:"", para:[], usuario:"",
         senha:"(vazia)", assunto:"PhxSql: espaco em disco", tls:false}},
-    cifra:{ligada:false, iteracoes:210000, senha_env:"", senha:"(vazia)"},
+    cifra:{ligada:false, iteracoes:210000, senha_env:"", senha:"(vazia)",
+           modo:"aead", salto:5, separador:"|"},
     estranhas:[],
     editaveis:[
       {campo:"bind",tipo:"texto",a_quente:false},
@@ -5840,7 +5841,14 @@ async function verConfigServidor() {
        ["seguranca.bloqueio_minutos", seg.bloqueio_minutos, "quanto tempo o IP fica barrado"],
        ["seguranca.blacklist", seg.blacklist, "onde a lista de bloqueio persiste"],
        ["seguranca.firewall", simNao(seg.firewall), "executa o comando de bloqueio do sistema"],
-       ["cifra.ligada", simNao((c.cifra || {}).ligada), "cifra dos diários em repouso"],
+       ["cifra.ligada", simNao((c.cifra || {}).ligada),
+        "cifra em repouso: os diários, e o valor de cada coluna marcada como dado pessoal"],
+       ["cifra.modo", (c.cifra || {}).modo || "aead",
+        "aead (padrão) ou frogcript — o FrogCript acrescenta formato, não força; ver SEGURANCA.md §11.4"],
+       ["cifra.salto", (c.cifra || {}).salto, "só no modo frogcript: de quantas em quantas casas ele extrai"],
+       ["cifra.separador", (c.cifra || {}).separador,
+        "só no modo frogcript; personalizado, vira parte do segredo e some daqui"],
+       ["cifra.iteracoes", (c.cifra || {}).iteracoes, "iterações do PBKDF2 que deriva a chave"],
        ["cifra.senha", (c.cifra || {}).senha, "carrega credencial: nunca sai e nunca entra por aqui"],
        ["alertas.caminhos", (al.caminhos || []).join(", ") || "só o base e o backup", ""],
        ["alertas.email.ligado", simNao(em.ligado), "sem TLS: serve para relé interno na porta 25"],
@@ -9349,10 +9357,20 @@ async function telaDadosPessoais(db) {
        tudo não é uma auditoria completa, e é melhor a tela dizer.</div>` : ""}
 
      <div class="nota">
-       <p><strong>Coluna indexada com dado pessoal merece um olhar a mais.</strong>
-       A chave vai para o <code>.ndx</code> em claro, e o índice é um segundo
-       lugar onde o dado existe — apagar a linha do <code>.reg</code> não é a
-       mesma coisa que tirá-lo de todo lugar.</p>
+       <p><strong>A marca também liga a cifra.</strong> Com
+       <code>cifra.ligada</code> no <code>config.json</code>, o valor de toda
+       coluna marcada vai cifrado no <code>.reg</code>, no <code>.memo</code>,
+       no <code>.bin</code> e no espelho <code>.bkp</code> — nas tabelas
+       criadas <b>daqui para a frente</b>. As que já existem continuam em
+       claro: ligar a cifra não reescreve o que está gravado.</p>
+       <p><strong>Coluna indexada com dado pessoal merece um olhar a mais, e
+       agora mais ainda.</strong> A chave vai para o <code>.ndx</code>
+       <b>em claro mesmo com a cifra ligada</b>, porque um índice guarda a
+       chave para poder comparar — cifrá-la destruiria a ordem e o índice
+       deixaria de ser índice. O <code>.ndx</code> é um segundo lugar onde o
+       dado existe, e apagar a linha do <code>.reg</code> não é a mesma coisa
+       que tirá-lo de todo lugar. Quem precisa dos dois tira o índice da
+       coluna sensível. Está em <code>SEGURANCA.md</code> §11.3.</p>
        <p>Esta tela <b>lê</b> a marca, e quem varre é o servidor — a op
        <code>dados_pessoais</code>, que confere o direito tabela a tabela por
        dentro. Marcar e desmarcar é na aba <b>Estrutura</b> da tabela, na

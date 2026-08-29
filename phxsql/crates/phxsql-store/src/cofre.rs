@@ -36,9 +36,11 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use phxsql_core::cifra::{self, Sequencia, CHAVE_LEN, TAG_LEN};
+use phxsql_core::cifra::{self, Sequencia, CHAVE_LEN, TAG_LEN, XNONCE_LEN};
 use phxsql_core::crc::crc32;
 use phxsql_core::error::{PhxError, Result};
+use phxsql_core::frogcript;
+use phxsql_core::hash::iguais_em_tempo_constante;
 
 use crate::util::{conferir_magic, por_i64, por_u32, por_u64, Campos};
 
@@ -57,6 +59,51 @@ pub const ITERACOES_MINIMAS: u32 = 10_000;
 
 /// Bit 0 do byte de flags do cabecalho: o corpo dos registros vai cifrado.
 const FLAG_CIFRADO: u8 = 1;
+/// Bit 1: o pedaco cifrado e um pacote FrogCript, e nao um AEAD direto.
+///
+/// Fica no ARQUIVO, e nao so na configuracao, porque quem abre precisa saber
+/// como o pedaco foi selado. Um `config.json` trocado de `frogcript` para
+/// `aead` faria o motor tentar abrir como AEAD um pacote que nao e -- e o que
+/// sairia seria "a etiqueta nao confere", que manda procurar corrupcao onde
+/// so ha um modo trocado.
+const FLAG_FROGCRIPT: u8 = 2;
+
+/// Como o pedaco marcado e selado.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Modo {
+    /// XChaCha20-Poly1305 direto. O texto cifrado tem o tamanho do claro, e
+    /// so a etiqueta de 16 bytes se acrescenta. **E o padrao.**
+    #[default]
+    Aead,
+    /// O envelope FrogCript: transposicao, duas camadas e a direcao
+    /// escondida, por cima do mesmo AEAD.
+    ///
+    /// **Nao acrescenta forca criptografica** -- a transposicao e uma
+    /// permutacao publica e fixa, e duas camadas com a mesma chave nao somam
+    /// segredo. Acrescenta o FORMATO do autor, e custa 167 bytes por pedaco.
+    /// Ver `docs/SEGURANCA.md` §11.4 e o cabecalho de
+    /// `phxsql_core::frogcript`.
+    FrogCript,
+}
+
+impl Modo {
+    pub fn nome(&self) -> &'static str {
+        match self {
+            Modo::Aead => "aead",
+            Modo::FrogCript => "frogcript",
+        }
+    }
+
+    pub fn de_nome(n: &str) -> Result<Modo> {
+        match n.trim().to_ascii_lowercase().as_str() {
+            "" | "aead" => Ok(Modo::Aead),
+            "frogcript" => Ok(Modo::FrogCript),
+            outro => Err(PhxError::Esquema(format!(
+                "cifra.modo {outro:?} nao existe: use \"aead\" (padrao) ou \"frogcript\""
+            ))),
+        }
+    }
+}
 
 /// O nonce que a prova da chave usa.
 ///
@@ -93,6 +140,8 @@ impl Chave {
 struct Segredo {
     senha: String,
     iteracoes: u32,
+    modo: Modo,
+    ajuste: frogcript::Ajuste,
 }
 
 static COFRE: Mutex<Option<Segredo>> = Mutex::new(None);
@@ -120,6 +169,16 @@ fn envenenada() -> PhxError {
 /// Senha vazia e recusada: uma senha vazia derivaria uma chave fixa a partir do
 /// sal, o que e o mesmo que nao cifrar com um nome que diz o contrario.
 pub fn definir(senha: &str, iteracoes: u32) -> Result<()> {
+    definir_com(senha, iteracoes, Modo::Aead, frogcript::Ajuste::default())
+}
+
+/// Liga a cifra escolhendo o modo e o ajuste do FrogCript.
+pub fn definir_com(
+    senha: &str,
+    iteracoes: u32,
+    modo: Modo,
+    ajuste: frogcript::Ajuste,
+) -> Result<()> {
     if senha.is_empty() {
         return Err(PhxError::Esquema(
             "cifra ligada sem senha: preencha \"cifra.senha\" ou \"cifra.senha_env\"".into(),
@@ -133,7 +192,17 @@ pub fn definir(senha: &str, iteracoes: u32) -> Result<()> {
     *COFRE.lock().map_err(|_| envenenada())? = Some(Segredo {
         senha: senha.to_string(),
         iteracoes,
+        modo,
+        ajuste,
     });
+    // O cache de chaves derivadas e por (sal, iteracoes) -- NAO por senha.
+    // Deixando-o de pe, trocar a senha nao trocaria a chave de nenhum arquivo
+    // ja aberto neste processo: `derivar` acharia a entrada do sal e
+    // devolveria a chave da senha ANTIGA. Um servidor que aceitasse a senha
+    // errada por ter aberto o arquivo antes seria pior que um que a recusa.
+    if let Ok(mut d) = DERIVADAS.lock() {
+        *d = None;
+    }
     Ok(())
 }
 
@@ -150,6 +219,15 @@ pub fn desligar() {
 /// A cifra esta ligada neste processo?
 pub fn ligado() -> bool {
     COFRE.lock().map(|c| c.is_some()).unwrap_or(false)
+}
+
+/// O modo e o ajuste vigentes, para carimbar um arquivo novo.
+fn modo_vigente() -> (Modo, frogcript::Ajuste) {
+    COFRE
+        .lock()
+        .ok()
+        .and_then(|c| c.as_ref().map(|s| (s.modo, s.ajuste)))
+        .unwrap_or_default()
 }
 
 /// As iteracoes vigentes, para carimbar um volume novo.
@@ -191,6 +269,295 @@ pub fn derivar(sal: &[u8; SAL_LEN], iteracoes: u32, arquivo: &str) -> Result<Cha
         .get_or_insert_with(HashMap::new)
         .insert((*sal, iteracoes), chave);
     Ok(chave)
+}
+
+// ---------------------------------------------------------------------------
+// O material de cifra, comum a TODO arquivo cifrado
+// ---------------------------------------------------------------------------
+
+/// Bytes que o material de cifra ocupa no cabecalho de um arquivo.
+///
+/// ```text
+/// +0   flags     u8    bit 0: o conteudo vai cifrado
+/// +4   iteracoes u32   do PBKDF2 que derivou a chave deste arquivo
+/// +8   sal       16    sorteado por arquivo; nao e segredo
+/// +24  prova     16    a etiqueta que diz se a senha e a certa
+/// ```
+pub const MATERIAL_LEN: usize = 40;
+
+/// O material de cifra de um arquivo, ja interpretado.
+///
+/// # Por que um tipo, e nao tres copias do mesmo trecho
+///
+/// Porque ja sao cinco arquivos: os tres diarios trouxeram este desenho, e o
+/// `.reg`, o `.ndx`, o `.memo` e o `.bin` chegaram depois. Repetir os offsets
+/// do sal em sete lugares e repetir sete vezes a chance de errar um -- e um
+/// offset errado aqui nao da erro, da arquivo que abre com a chave de outro.
+#[derive(Debug, Clone, Copy)]
+pub struct Material {
+    sal: [u8; SAL_LEN],
+    iteracoes: u32,
+    chave: Option<Chave>,
+    modo: Modo,
+    /// So vale no modo FrogCript. Vem da configuracao e **nao vai ao
+    /// arquivo**: e o autor quem pediu que salto e separador personalizados
+    /// fossem tratados como parte do segredo, e segredo nao se grava ao lado
+    /// do dado que ele protege.
+    ajuste: frogcript::Ajuste,
+}
+
+impl Material {
+    /// Nenhuma cifra. E o que todo arquivo em claro carrega.
+    pub const EM_CLARO: Material = Material {
+        sal: [0u8; SAL_LEN],
+        iteracoes: 0,
+        chave: None,
+        modo: Modo::Aead,
+        ajuste: frogcript::Ajuste::PADRAO,
+    };
+
+    /// O material de um arquivo NOVO: cifrado se o cofre estiver ligado.
+    ///
+    /// Cada arquivo sorteia o proprio sal, e por isso tem a propria chave. E
+    /// o que deixa o numero de ordem do nonce ser um contador local -- o
+    /// offset, o rowid, o numero da pagina: dois arquivos com o mesmo
+    /// contador tem chaves diferentes.
+    pub fn novo() -> Result<Material> {
+        if !ligado() {
+            return Ok(Material::EM_CLARO);
+        }
+        let mut sal = [0u8; SAL_LEN];
+        sal.copy_from_slice(&phxsql_core::senha::bytes_aleatorios(SAL_LEN));
+        let iteracoes = iteracoes_vigentes()?;
+        let chave = derivar(&sal, iteracoes, "<arquivo novo>")?;
+        let (modo, ajuste) = modo_vigente();
+        Ok(Material {
+            sal,
+            iteracoes,
+            chave: Some(chave),
+            modo,
+            ajuste,
+        })
+    }
+
+    /// O modo com que este arquivo foi selado.
+    pub fn modo(&self) -> Modo {
+        self.modo
+    }
+
+    /// O texto cifrado cabe no lugar do claro?
+    ///
+    /// Sim no AEAD, porque o ChaCha20 e cifra de fluxo e nao muda o tamanho.
+    /// Nao no FrogCript, que devolve um pacote com quatro nonces e quatro
+    /// etiquetas dentro -- e por isso, nesse modo, a faixa marcada do payload
+    /// vai a ZEROS e o pacote inteiro mora no rabo do slot.
+    pub fn no_lugar(&self) -> bool {
+        !self.cifrado() || self.modo == Modo::Aead
+    }
+
+    /// Quantos bytes o slot precisa DEPOIS do payload, dado quanto dele e
+    /// marcado.
+    pub fn rabo(&self, marcado: usize) -> usize {
+        if !self.cifrado() || marcado == 0 {
+            return 0;
+        }
+        match self.modo {
+            Modo::Aead => TAG_LEN,
+            Modo::FrogCript => self.ocupa(marcado),
+        }
+    }
+
+    pub fn cifrado(&self) -> bool {
+        self.chave.is_some()
+    }
+
+    /// Quanto um pedaco de `n` bytes ocupa no disco depois de cifrado.
+    ///
+    /// No modo AEAD sao 16 bytes de etiqueta. No FrogCript sao 167 -- quatro
+    /// nonces, quatro etiquetas, as duas pontas de direcao, o comprimento e o
+    /// separador -- e o texto cifrado deixa de caber no lugar do claro, ver
+    /// `reg.rs`.
+    pub fn ocupa(&self, n: usize) -> usize {
+        if n == 0 || !self.cifrado() {
+            return n;
+        }
+        match self.modo {
+            Modo::Aead => n + TAG_LEN,
+            Modo::FrogCript => n + frogcript::ACRESCIMO + 4 * XNONCE_LEN,
+        }
+    }
+
+    /// Grava flag, iteracoes, sal e prova em `buf`, a partir de `base`.
+    ///
+    /// `rotulo` e a parte ESTAVEL do cabecalho que a prova amarra -- magic,
+    /// versao, tamanho de slot. Fica de fora o que muda a cada gravacao: uma
+    /// prova que mudasse com os contadores teria de ser refeita e reconferida
+    /// toda vez sem proteger nada a mais.
+    pub fn gravar(&self, buf: &mut [u8], base: usize, rotulo: &[u8]) {
+        let Some(chave) = self.chave else { return };
+        buf[base] = FLAG_CIFRADO
+            | if self.modo == Modo::FrogCript {
+                FLAG_FROGCRIPT
+            } else {
+                0
+            };
+        por_u32(buf, base + 4, self.iteracoes);
+        buf[base + 8..base + 8 + SAL_LEN].copy_from_slice(&self.sal);
+        let prova = prova_do_material(&chave, rotulo, &buf[base..base + 24]);
+        buf[base + 24..base + 24 + TAG_LEN].copy_from_slice(&prova);
+    }
+
+    /// Le o material de `buf` a partir de `base`, derivando a chave.
+    ///
+    /// Um arquivo sem a flag devolve [`Material::EM_CLARO`] sem tocar no
+    /// cofre: e o caminho de todo arquivo escrito antes desta versao, e ele
+    /// nao pode nem perguntar se ha chave.
+    pub fn ler(buf: &[u8], base: usize, nome: &str, rotulo: &[u8]) -> Result<Material> {
+        if buf.len() < base + MATERIAL_LEN || buf[base] & FLAG_CIFRADO == 0 {
+            return Ok(Material::EM_CLARO);
+        }
+        let iteracoes = Campos(buf).u32(base + 4);
+        if iteracoes < ITERACOES_MINIMAS {
+            return Err(PhxError::Corrompido(format!(
+                "{nome}: o cabecalho declara {iteracoes} iteracoes de PBKDF2, abaixo do piso"
+            )));
+        }
+        let mut sal = [0u8; SAL_LEN];
+        sal.copy_from_slice(&buf[base + 8..base + 8 + SAL_LEN]);
+        let chave = derivar(&sal, iteracoes, nome)?;
+
+        let esperada = prova_do_material(&chave, rotulo, &buf[base..base + 24]);
+        if !iguais_em_tempo_constante(&esperada, &buf[base + 24..base + 24 + TAG_LEN]) {
+            return Err(PhxError::Autorizacao(format!(
+                "{nome}: a senha de \"cifra\" nao e a que gravou este arquivo"
+            )));
+        }
+        let (_, ajuste) = modo_vigente();
+        Ok(Material {
+            sal,
+            iteracoes,
+            chave: Some(chave),
+            // O MODO sai do arquivo, e nao da configuracao: e assim que um
+            // `config.json` trocado depois nao transforma "modo errado" em
+            // "etiqueta nao confere".
+            modo: if buf[base] & FLAG_FROGCRIPT != 0 {
+                Modo::FrogCript
+            } else {
+                Modo::Aead
+            },
+            ajuste,
+        })
+    }
+
+    /// Cifra um pedaco com nonce de 24 bytes. Sem chave, devolve o proprio.
+    ///
+    /// # Por que o nonce estendido aqui, e o de 96 bits nos diarios
+    ///
+    /// Porque nos diarios o numero de ordem e o offset, que num arquivo que so
+    /// cresce nunca se repete. Um slot do `.reg` e uma pagina do `.ndx` sao
+    /// reescritos NO MESMO LUGAR, e ali o endereco nao serve de contador. Com
+    /// 192 bits sobra espaco para o endereco E para bytes sorteados, e e a
+    /// soma dos dois que fecha a porta.
+    pub fn selar(&self, nonce: &[u8; XNONCE_LEN], aad: &[u8], claro: &[u8]) -> Vec<u8> {
+        let Some(chave) = self.chave else {
+            return claro.to_vec();
+        };
+        if claro.is_empty() {
+            return Vec::new();
+        }
+        if self.modo == Modo::FrogCript {
+            // O nonce e o dado associado nao entram: o pacote FrogCript sorteia
+            // um nonce por camada, e a estrutura dele nao tem onde pendurar
+            // AAD. E uma das coisas que o modo CUSTA, e esta no documento.
+            return frogcript::cifrar_bytes(
+                chave.bytes(),
+                claro,
+                frogcript::Direcao::Direta,
+                self.ajuste,
+            );
+        }
+        let (mut corpo, tag) = cifra::xselar(chave.bytes(), nonce, aad, claro);
+        corpo.extend_from_slice(&tag);
+        corpo
+    }
+
+    /// Abre um pedaco cifrado. Sem chave, devolve o proprio.
+    pub fn abrir(
+        &self,
+        nonce: &[u8; XNONCE_LEN],
+        aad: &[u8],
+        guardado: &[u8],
+        arquivo: &str,
+    ) -> Result<Vec<u8>> {
+        let Some(chave) = self.chave else {
+            return Ok(guardado.to_vec());
+        };
+        if guardado.is_empty() {
+            return Ok(Vec::new());
+        }
+        if self.modo == Modo::FrogCript {
+            return frogcript::decifrar_bytes(chave.bytes(), guardado, self.ajuste)
+                .map(|(claro, _)| claro)
+                .map_err(|e| {
+                    PhxError::Corrompido(format!(
+                        "{arquivo}: o pacote FrogCript nao abriu -- ou o dado foi \
+                         alterado, ou a chave, o salto ou o separador de \"cifra\" \
+                         nao sao os que gravaram este arquivo ({e})"
+                    ))
+                });
+        }
+        if guardado.len() < TAG_LEN {
+            return Err(PhxError::Corrompido(format!(
+                "{arquivo}: pedaco cifrado sem a etiqueta de {TAG_LEN} bytes"
+            )));
+        }
+        let corte = guardado.len() - TAG_LEN;
+        let mut tag = [0u8; TAG_LEN];
+        tag.copy_from_slice(&guardado[corte..]);
+        cifra::xabrir(chave.bytes(), nonce, aad, &guardado[..corte], &tag).map_err(|_| {
+            PhxError::Corrompido(format!(
+                "{arquivo}: a etiqueta nao confere -- ou o dado foi alterado, ou a \
+                 chave de \"cifra\" nao e a que gravou este arquivo"
+            ))
+        })
+    }
+}
+
+/// A prova de que a chave e a certa, sem decifrar conteudo nenhum.
+///
+/// Mesmo papel da prova dos diarios: sem ela, uma senha errada no
+/// `config.json` so apareceria na primeira leitura de conteudo -- que numa
+/// tabela recem-criada seria nunca. Quem digitou errado descobriria com a
+/// tabela ja cheia de linhas gravadas com a chave errada.
+fn prova_do_material(chave: &Chave, rotulo: &[u8], cabecalho: &[u8]) -> [u8; TAG_LEN] {
+    let mut aad = Vec::with_capacity(rotulo.len() + cabecalho.len());
+    aad.extend_from_slice(rotulo);
+    aad.extend_from_slice(cabecalho);
+    let (_, tag) = cifra::xselar(chave.bytes(), &[0u8; XNONCE_LEN], &aad, &[]);
+    tag
+}
+
+/// O nonce de um pedaco endereçavel: onde ele mora, quantas vezes foi
+/// reescrito, e oito bytes sorteados nesta gravacao.
+///
+/// # Por que os tres, e nao um so
+///
+/// - **Onde mora** (volume + rowid, ou o numero da pagina) separa dois
+///   pedacos diferentes do mesmo arquivo.
+/// - **Quantas vezes** separa duas gravacoes do MESMO pedaco. E o contador
+///   que o formato ja tem: a versao da linha, o contador da pagina.
+/// - **Sorteado** e o que sobra de pe quando o contador volta. Uma gravacao
+///   perdida no cache do sistema antes do `fsync` faz a proxima repetir o
+///   contador -- e ai duas imagens diferentes teriam o mesmo par
+///   (chave, nonce), que e a unica falha que quebra isto sem quebrar a
+///   matematica. Com 64 bits sorteados, repetir exige colisao de aniversario.
+pub fn nonce_de_pedaco(onde: u64, quem: u32, contador: u32, tempero: u64) -> [u8; XNONCE_LEN] {
+    let mut n = [0u8; XNONCE_LEN];
+    n[0..8].copy_from_slice(&onde.to_le_bytes());
+    n[8..12].copy_from_slice(&quem.to_le_bytes());
+    n[12..16].copy_from_slice(&contador.to_le_bytes());
+    n[16..24].copy_from_slice(&tempero.to_le_bytes());
+    n
 }
 
 // ---------------------------------------------------------------------------

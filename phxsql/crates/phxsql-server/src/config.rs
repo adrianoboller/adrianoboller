@@ -823,6 +823,18 @@ pub struct Cifra {
     pub senha_env: String,
     /// Iteracoes do PBKDF2. Zero cai no padrao do cofre.
     pub iteracoes: u32,
+    /// Como o valor da coluna marcada e selado: `aead` (padrao) ou
+    /// `frogcript`.
+    ///
+    /// O padrao NAO e o FrogCript, e a razao esta no documento do proprio
+    /// autor (secao 9): a transposicao e a direcao nao acrescentam forca
+    /// criptografica. O que ele acrescenta e formato, e custa 167 bytes por
+    /// valor. Quem quiser o formato pede por ele.
+    pub modo: String,
+    /// De quantas em quantas casas o FrogCript extrai. Padrao 5.
+    pub salto: usize,
+    /// O separador entre os dois lados do pacote FrogCript. Padrao `|`.
+    pub separador: String,
 }
 
 /// `Debug` escrito a mao: o derivado imprimiria a senha, e um diagnostico
@@ -835,6 +847,9 @@ impl std::fmt::Debug for Cifra {
             .field("senha", &"(oculta)")
             .field("senha_env", &self.senha_env)
             .field("iteracoes", &self.iteracoes)
+            .field("modo", &self.modo)
+            .field("salto", &self.salto)
+            .field("separador", &self.separador)
             .finish()
     }
 }
@@ -860,7 +875,45 @@ impl Cifra {
             iteracoes: c
                 .inteiro_ou("iteracoes", phxsql_store::cofre::ITERACOES_PADRAO as i64)
                 .clamp(0, u32::MAX as i64) as u32,
+            modo: c.texto_ou("modo", "aead").trim().to_string(),
+            salto: c
+                .inteiro_ou("salto", phxsql_core::frogcript::SALTO_PADRAO as i64)
+                .clamp(0, 4096) as usize,
+            separador: {
+                let s = c.texto_ou("separador", "").to_string();
+                if s.is_empty() {
+                    (phxsql_core::frogcript::SEPARADOR_PADRAO as char).to_string()
+                } else {
+                    s
+                }
+            },
         }
+    }
+
+    /// O modo e o ajuste ja validados, ou o erro que diz o que corrigir.
+    ///
+    /// Validar AQUI, e nao no cofre, e o que faz um `config.json` errado
+    /// impedir o servidor de subir em vez de derrubar a primeira gravacao --
+    /// que e a mesma regra do `validar()` do arranque.
+    pub fn modo_e_ajuste(
+        &self,
+    ) -> Result<(phxsql_store::cofre::Modo, phxsql_core::frogcript::Ajuste)> {
+        let modo = phxsql_store::cofre::Modo::de_nome(&self.modo)?;
+        // O separador e UM byte: e assim que ele vai ao pacote, e um caractere
+        // de dois bytes gravaria metade dele. Recusar aqui e melhor que
+        // truncar em silencio um valor que o dono escolheu.
+        let sep = self.separador.as_bytes();
+        if sep.len() != 1 {
+            return Err(PhxError::Esquema(format!(
+                "cifra.separador {:?} tem {} bytes: use um unico caractere ASCII",
+                self.separador,
+                sep.len()
+            )));
+        }
+        Ok((
+            modo,
+            phxsql_core::frogcript::Ajuste::novo(self.salto, sep[0])?,
+        ))
     }
 
     /// A senha do cofre. O unico caminho de leitura -- e nao aparece em JSON.
@@ -880,13 +933,33 @@ impl Cifra {
         if !self.ligada {
             return Ok(());
         }
-        phxsql_store::cofre::definir(&self.senha, self.iteracoes)
+        let (modo, ajuste) = self.modo_e_ajuste()?;
+        phxsql_store::cofre::definir_com(&self.senha, self.iteracoes, modo, ajuste)
     }
 
     pub fn para_json(&self) -> Json {
         Json::objeto(vec![
             ("ligada", Json::Bool(self.ligada)),
             ("iteracoes", Json::de_u64(self.iteracoes as u64)),
+            ("modo", Json::texto_de(&self.modo)),
+            ("salto", Json::de_u64(self.salto as u64)),
+            // O salto e o separador personalizados sao parte do segredo (secao
+            // 10 do documento do FrogCript), mas so quando SAEM do padrao --
+            // e o padrao esta publicado. Mostrar o de fabrica ajuda quem
+            // configura; mostrar um personalizado o entregaria.
+            (
+                "separador",
+                Json::texto_de(
+                    if self.separador.as_bytes()
+                        == [phxsql_core::frogcript::SEPARADOR_PADRAO].as_slice()
+                        && self.salto == phxsql_core::frogcript::SALTO_PADRAO
+                    {
+                        self.separador.as_str()
+                    } else {
+                        "(oculto)"
+                    },
+                ),
+            ),
             ("senha_env", Json::texto_de(&self.senha_env)),
             // Nunca a senha. Nem mascarada com asteriscos do tamanho certo --
             // o tamanho ja e informacao.
@@ -1462,7 +1535,18 @@ const SECOES_CONHECIDAS: [(&str, &[&str]); 7] = [
             "timeout_s",
         ],
     ),
-    ("cifra", &["ligada", "senha", "senha_env", "iteracoes"]),
+    (
+        "cifra",
+        &[
+            "ligada",
+            "senha",
+            "senha_env",
+            "iteracoes",
+            "modo",
+            "salto",
+            "separador",
+        ],
+    ),
     ("lgpd", &["alteracoes", "acessos"]),
 ];
 

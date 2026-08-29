@@ -641,6 +641,7 @@ impl Table {
                             )))
                         }
                     };
+                    let dados = self.reg.selar_externo(i as u16, &dados);
                     let p = self.bin.gravar(&dados)?;
                     p.escrever(&mut payload[off..fim])?;
                 }
@@ -653,7 +654,8 @@ impl Table {
                             )))
                         }
                     };
-                    let p = self.memo.gravar(texto.as_bytes())?;
+                    let bytes = self.reg.selar_externo(i as u16, texto.as_bytes());
+                    let p = self.memo.gravar(&bytes)?;
                     p.escrever(&mut payload[off..fim])?;
                 }
                 _ => escrever_inline(valor, &ty, &mut payload[off..fim])?,
@@ -682,7 +684,8 @@ impl Table {
                         Value::Null
                     } else {
                         let p = Ponteiro::ler(&payload[off..fim])?;
-                        Value::Bin(self.bin.ler(&p)?)
+                        let bytes = self.bin.ler(&p)?;
+                        Value::Bin(self.reg.abrir_externo(i as u16, &bytes)?)
                     }
                 }
                 ColumnType::Memo => {
@@ -691,6 +694,7 @@ impl Table {
                     } else {
                         let p = Ponteiro::ler(&payload[off..fim])?;
                         let bytes = self.memo.ler(&p)?;
+                        let bytes = self.reg.abrir_externo(i as u16, &bytes)?;
                         Value::Memo(String::from_utf8(bytes).map_err(|e| {
                             PhxError::Corrompido(format!("memo nao e UTF-8 valido: {e}"))
                         })?)
@@ -1396,6 +1400,11 @@ impl Table {
             let ty = col.ty;
             let off = self.esquema.offset_coluna(i)?;
             let p = Ponteiro::ler(&payload[off..off + ty.largura()])?;
+            // Vai como esta no bloco -- CIFRADO, quando a coluna e marcada.
+            // Decifrar aqui poria o texto claro dentro da imagem do diario e
+            // dentro da lixeira, que e exatamente o que a cifra da coluna
+            // existe para impedir. Quem abre a imagem passa pelo
+            // `abrir_externo` do outro lado.
             let bytes = match ty {
                 ColumnType::Bin => self.bin.ler(&p)?,
                 ColumnType::Memo => self.memo.ler(&p)?,
@@ -1570,14 +1579,22 @@ impl Table {
             }
             let nulo = payload[i / 8] & (1 << (i % 8)) != 0;
             valores[i] = match externos.iter().find(|(c, _)| *c as usize == i) {
-                Some((_, bytes)) => match ty {
-                    ColumnType::Bin => Value::Bin(bytes.clone()),
-                    ColumnType::Memo => Value::Memo(
-                        String::from_utf8(bytes.clone())
-                            .map_err(|_| PhxError::Corrompido("memo nao e UTF-8".into()))?,
-                    ),
-                    _ => Value::Null,
-                },
+                Some((_, bytes)) => {
+                    // A imagem carrega o conteudo COMO ESTA no bloco, e numa
+                    // coluna marcada isso e texto cifrado. Abrir aqui exige a
+                    // chave -- e e por isso que replicar tabela com coluna
+                    // cifrada so funciona entre servidores que dividem a
+                    // senha. Esta escrito em SEGURANCA.md §11.
+                    let bytes = self.reg.abrir_externo(i as u16, bytes)?;
+                    match ty {
+                        ColumnType::Bin => Value::Bin(bytes),
+                        ColumnType::Memo => Value::Memo(
+                            String::from_utf8(bytes)
+                                .map_err(|_| PhxError::Corrompido("memo nao e UTF-8".into()))?,
+                        ),
+                        _ => Value::Null,
+                    }
+                }
                 // Nao veio na imagem: ou a coluna e nula, ou o source nao a
                 // mandou. Nulo e a leitura segura -- inventar bytes seria pior.
                 None if nulo => Value::Null,

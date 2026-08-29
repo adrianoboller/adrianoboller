@@ -476,6 +476,186 @@ impl Sequencia {
     }
 }
 
+// ---------------------------------------------------------------------------
+// XChaCha20-Poly1305: o mesmo AEAD com nonce de 192 bits
+// ---------------------------------------------------------------------------
+
+/// Tamanho do nonce estendido, em bytes.
+pub const XNONCE_LEN: usize = 24;
+
+/// HChaCha20: a funcao que deriva a subchave do XChaCha20.
+///
+/// E o mesmo nucleo do ChaCha20 -- as mesmas 20 rodadas sobre o mesmo estado
+/// -- com **uma** diferenca, e ela e a razao de tudo: o estado inicial NAO e
+/// somado de volta no fim. Sem essa soma o resultado nao e um fluxo de cifra,
+/// e sim a saida da permutacao; e por isso que devolver oito das dezesseis
+/// palavras nao entrega nada sobre as outras oito nem sobre a chave.
+///
+/// As palavras devolvidas sao as quatro da primeira linha (que sofreram todas
+/// as rodadas e nao carregam constante) e as quatro da ultima (que carregavam
+/// o nonce).
+///
+/// Conferido contra o vetor da secao 2.2.1 do draft-irtf-cfrg-xchacha-03.
+pub fn hchacha20(chave: &[u8; CHAVE_LEN], nonce: &[u8; 16]) -> [u8; CHAVE_LEN] {
+    let mut e = [0u32; 16];
+    e[..4].copy_from_slice(&CONSTANTE);
+    for i in 0..8 {
+        e[4 + i] = u32_le(&chave[i * 4..]);
+    }
+    for i in 0..4 {
+        e[12 + i] = u32_le(&nonce[i * 4..]);
+    }
+
+    for _ in 0..10 {
+        quarto_de_volta(&mut e, 0, 4, 8, 12);
+        quarto_de_volta(&mut e, 1, 5, 9, 13);
+        quarto_de_volta(&mut e, 2, 6, 10, 14);
+        quarto_de_volta(&mut e, 3, 7, 11, 15);
+        quarto_de_volta(&mut e, 0, 5, 10, 15);
+        quarto_de_volta(&mut e, 1, 6, 11, 12);
+        quarto_de_volta(&mut e, 2, 7, 8, 13);
+        quarto_de_volta(&mut e, 3, 4, 9, 14);
+    }
+
+    let mut saida = [0u8; CHAVE_LEN];
+    for i in 0..4 {
+        saida[i * 4..i * 4 + 4].copy_from_slice(&e[i].to_le_bytes());
+        saida[16 + i * 4..16 + i * 4 + 4].copy_from_slice(&e[12 + i].to_le_bytes());
+    }
+    saida
+}
+
+/// A subchave e o nonce curto de um nonce estendido de 24 bytes.
+fn desdobrar(
+    chave: &[u8; CHAVE_LEN],
+    nonce: &[u8; XNONCE_LEN],
+) -> ([u8; CHAVE_LEN], [u8; NONCE_LEN]) {
+    let mut n16 = [0u8; 16];
+    n16.copy_from_slice(&nonce[..16]);
+    let subchave = hchacha20(chave, &n16);
+    let mut curto = [0u8; NONCE_LEN];
+    curto[4..].copy_from_slice(&nonce[16..]);
+    (subchave, curto)
+}
+
+/// Cifra e autentica com nonce de 24 bytes (XChaCha20-Poly1305).
+///
+/// # Por que existe, se o [`selar`] ja funciona
+///
+/// Por causa do tamanho do nonce, e por nada mais. Com 96 bits, sortear o
+/// nonce e imprudente: pelo paradoxo do aniversario, dois sorteios se repetem
+/// com probabilidade seria depois de ~2^48 mensagens, e repetir o par
+/// (chave, nonce) e o unico jeito de quebrar isto sem quebrar a matematica.
+/// Por isso o nonce de 96 bits do `.log` sai de um CONTADOR -- o offset no
+/// volume --, que exige o arquivo garantir que o contador nunca volta.
+///
+/// Nos arquivos de dados nem todo lugar tem esse contador: uma pagina do
+/// `.ndx` e reescrita no MESMO lugar milhares de vezes. Com 192 bits o nonce
+/// pode ser sorteado: o mesmo paradoxo so morde depois de ~2^96, que nao
+/// acontece. E o que o XChaCha20 compra, e o preco sao 8 bytes de nonce a
+/// mais e uma permutacao (a [`hchacha20`]) por mensagem.
+///
+/// Conferido contra o vetor da secao A.3.1 do draft-irtf-cfrg-xchacha-03.
+pub fn xselar(
+    chave: &[u8; CHAVE_LEN],
+    nonce: &[u8; XNONCE_LEN],
+    aad: &[u8],
+    claro: &[u8],
+) -> (Vec<u8>, [u8; TAG_LEN]) {
+    let (subchave, curto) = desdobrar(chave, nonce);
+    selar(&subchave, &curto, aad, claro)
+}
+
+/// Confere a etiqueta e decifra, com nonce de 24 bytes.
+pub fn xabrir(
+    chave: &[u8; CHAVE_LEN],
+    nonce: &[u8; XNONCE_LEN],
+    aad: &[u8],
+    cifrado: &[u8],
+    tag: &[u8; TAG_LEN],
+) -> Result<Vec<u8>> {
+    let (subchave, curto) = desdobrar(chave, nonce);
+    abrir(&subchave, &curto, aad, cifrado, tag)
+}
+
+// ---------------------------------------------------------------------------
+// Sorteio: bytes imprevisiveis sem pagar uma chamada de sistema por vez
+// ---------------------------------------------------------------------------
+
+/// O estado do gerador do processo: uma chave e o que sobrou do ultimo bloco.
+struct Sorteio {
+    chave: [u8; CHAVE_LEN],
+    resto: [u8; CHAVE_LEN],
+    disponivel: usize,
+}
+
+static SORTEIO: std::sync::Mutex<Option<Sorteio>> = std::sync::Mutex::new(None);
+
+/// Enche `saida` com bytes imprevisiveis.
+///
+/// # Por que nao chamar o `/dev/urandom` direto
+///
+/// Porque `senha::bytes_aleatorios` ABRE o arquivo a cada chamada, e o
+/// caminho que precisa disto aqui e o de gravar UMA LINHA: cada insercao numa
+/// tabela cifrada sortearia 8 bytes, e cada sorteio custaria um `open` mais um
+/// `read` mais um `close`. Medido em `--example custo-da-cifra`.
+///
+/// # Apagamento rapido de chave
+///
+/// Cada bloco de 64 bytes do ChaCha20 vira duas metades: a primeira substitui
+/// a chave e a segunda e o que sai. A chave que produziu os bytes ja
+/// entregues deixa de existir -- quem lesse a memoria do processo agora nao
+/// reconstroi o que foi sorteado antes. E a construcao que o `arc4random` do
+/// OpenBSD e o gerador do Linux usam, e ela cabe em vinte linhas por cima do
+/// ChaCha20 que ja esta escrito aqui.
+pub fn sortear(saida: &mut [u8]) {
+    let mut trava = match SORTEIO.lock() {
+        Ok(t) => t,
+        // Trava envenenada por panico alheio: melhor pagar a chamada de
+        // sistema do que devolver byte previsivel.
+        Err(_) => {
+            let bytes = crate::senha::bytes_aleatorios(saida.len());
+            saida.copy_from_slice(&bytes);
+            return;
+        }
+    };
+    let s = trava.get_or_insert_with(|| {
+        let semente = crate::senha::bytes_aleatorios(CHAVE_LEN);
+        let mut chave = [0u8; CHAVE_LEN];
+        chave.copy_from_slice(&semente);
+        Sorteio {
+            chave,
+            resto: [0u8; CHAVE_LEN],
+            disponivel: 0,
+        }
+    });
+
+    let mut posto = 0;
+    while posto < saida.len() {
+        if s.disponivel == 0 {
+            // O contador e o nonce sao fixos DE PROPOSITO: a chave nunca se
+            // repete (ela e substituida a cada bloco), entao o par
+            // (chave, nonce) tambem nao.
+            let bloco = chacha20_bloco(&s.chave, 0, &[0u8; NONCE_LEN]);
+            s.chave.copy_from_slice(&bloco[..CHAVE_LEN]);
+            s.resto.copy_from_slice(&bloco[CHAVE_LEN..]);
+            s.disponivel = CHAVE_LEN;
+        }
+        let leva = s.disponivel.min(saida.len() - posto);
+        let de = CHAVE_LEN - s.disponivel;
+        saida[posto..posto + leva].copy_from_slice(&s.resto[de..de + leva]);
+        s.disponivel -= leva;
+        posto += leva;
+    }
+}
+
+/// Oito bytes imprevisiveis, que e o tamanho que os temperos usam.
+pub fn sortear_u64() -> u64 {
+    let mut b = [0u8; 8];
+    sortear(&mut b);
+    u64::from_le_bytes(b)
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;
@@ -658,6 +838,136 @@ mod testes {
         assert_eq!(&a[..4], &[0xde, 0xad, 0xbe, 0xef]);
         // Duas sequencias com prefixos diferentes nao colidem na mesma ordem.
         assert_ne!(Sequencia::nova([1, 0, 0, 0]).nonce(9), s.nonce(9));
+    }
+
+    /// draft-irtf-cfrg-xchacha-03, secao 2.2.1.
+    ///
+    /// O vetor oficial da HChaCha20. Sem ele o XChaCha20 seria "parece
+    /// certo": uma subchave errada cifraria e decifraria em par consigo
+    /// mesma, e todo teste de ida-e-volta passaria com uma construcao que nao
+    /// e a que o resto do mundo chama de XChaCha20.
+    #[test]
+    fn hchacha20_bate_com_o_draft() {
+        let mut chave = [0u8; 32];
+        for (i, b) in chave.iter_mut().enumerate() {
+            *b = i as u8;
+        }
+        let nonce = de_hex("000000090000004a0000000031415927");
+        let mut n = [0u8; 16];
+        n.copy_from_slice(&nonce);
+
+        let esperado = de_hex("82413b4227b27bfed30e42508a877d73a0f9e4d58a74a853c12ec41326d3ecdc");
+        assert_eq!(hchacha20(&chave, &n).to_vec(), esperado);
+    }
+
+    /// draft-irtf-cfrg-xchacha-03, secao A.3.1: o AEAD inteiro.
+    ///
+    /// A mensagem e a mesma do RFC 8439 -- o conselho do protetor solar --,
+    /// agora com nonce de 24 bytes. Confere o texto cifrado byte a byte E a
+    /// etiqueta, e so depois abre de volta.
+    #[test]
+    fn xchacha20_poly1305_bate_com_o_draft() {
+        let claro: &[u8] = b"Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.";
+        assert_eq!(claro.len(), 114, "o texto do vetor tem 114 bytes");
+
+        let aad = de_hex("50515253c0c1c2c3c4c5c6c7");
+        let mut chave = [0u8; 32];
+        for (i, b) in chave.iter_mut().enumerate() {
+            *b = 0x80 + i as u8;
+        }
+        let mut nonce = [0u8; XNONCE_LEN];
+        for (i, b) in nonce.iter_mut().enumerate() {
+            *b = 0x40 + i as u8;
+        }
+
+        let esperado = de_hex(
+            "bd6d179d3e83d43b9576579493c0e939572a1700252bfaccbed2902c21396cbb\
+             731c7f1b0b4aa6440bf3a82f4eda7e39ae64c6708c54c216cb96b72e1213b452\
+             2f8c9ba40db5d945b11b69b982c1bb9e3f3fac2bc369488f76b2383565d3fff9\
+             21f9664c97637da9768812f615c68b13b52e",
+        );
+        let etiqueta = de_hex("c0875924c1c7987947deafd8780acf49");
+
+        let (cifrado, tag) = xselar(&chave, &nonce, &aad, claro);
+        assert_eq!(cifrado, esperado, "texto cifrado do draft");
+        assert_eq!(tag.to_vec(), etiqueta, "etiqueta do draft");
+
+        let volta = xabrir(&chave, &nonce, &aad, &cifrado, &tag).unwrap();
+        assert_eq!(volta, claro);
+    }
+
+    /// O XChaCha20 tem de SER o ChaCha20 com a subchave -- e nao um primo
+    /// dele. Se um dia alguem trocar a posicao dos bytes do nonce curto, este
+    /// teste cai junto com o do draft, e os dois dizem a mesma coisa por
+    /// caminhos diferentes.
+    #[test]
+    fn xchacha_e_o_chacha_com_a_subchave() {
+        let chave = chave_sequencial(0x11);
+        let mut nonce = [0u8; XNONCE_LEN];
+        for (i, b) in nonce.iter_mut().enumerate() {
+            *b = (i as u8).wrapping_mul(7);
+        }
+        let claro = b"uma linha de tabela";
+
+        let mut n16 = [0u8; 16];
+        n16.copy_from_slice(&nonce[..16]);
+        let subchave = hchacha20(&chave, &n16);
+        let mut curto = [0u8; NONCE_LEN];
+        curto[4..].copy_from_slice(&nonce[16..]);
+
+        assert_eq!(
+            xselar(&chave, &nonce, b"", claro),
+            selar(&subchave, &curto, b"", claro)
+        );
+    }
+
+    /// Nonce estendido diferente muda o texto cifrado -- inclusive quando a
+    /// diferenca esta so nos 16 bytes que viram subchave, que e a metade que
+    /// um erro de recorte deixaria de fora.
+    #[test]
+    fn nonce_estendido_diferente_muda_tudo() {
+        let chave = chave_sequencial(2);
+        let a = [1u8; XNONCE_LEN];
+        let claro = b"mesmo texto claro";
+
+        let mut so_subchave = a;
+        so_subchave[0] ^= 1;
+        assert_ne!(
+            xselar(&chave, &a, b"", claro).0,
+            xselar(&chave, &so_subchave, b"", claro).0
+        );
+
+        let mut so_nonce_curto = a;
+        so_nonce_curto[23] ^= 1;
+        assert_ne!(
+            xselar(&chave, &a, b"", claro).0,
+            xselar(&chave, &so_nonce_curto, b"", claro).0
+        );
+    }
+
+    /// O gerador do processo nao pode repetir, e nao pode devolver zeros.
+    ///
+    /// Nao e um teste de aleatoriedade -- isso nao se prova em teste de
+    /// unidade. E o teste dos dois erros que geradores caseiros ja cometeram:
+    /// devolver o buffer sem encher, e repetir o bloco por esquecer de trocar
+    /// a chave.
+    #[test]
+    fn o_sorteio_nao_repete_e_nao_devolve_zeros() {
+        let mut vistos = std::collections::HashSet::new();
+        for _ in 0..5_000 {
+            let mut b = [0u8; 16];
+            sortear(&mut b);
+            assert_ne!(b, [0u8; 16], "sorteio devolveu dezesseis zeros");
+            assert!(vistos.insert(b), "sorteio repetiu um bloco de 16 bytes");
+        }
+        // Pedido maior que o bloco interno de 32 bytes: e na emenda que a
+        // metade de tras fica zerada quando o laco esta errado.
+        let mut grande = [0u8; 200];
+        sortear(&mut grande);
+        assert!(
+            grande[150..].iter().any(|b| *b != 0),
+            "a emenda deixou zeros"
+        );
     }
 
     /// A chave sai do PBKDF2 que ja existia -- aqui so se prova que sal
