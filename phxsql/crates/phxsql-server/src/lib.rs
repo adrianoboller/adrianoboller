@@ -13,6 +13,8 @@ pub mod exportar;
 pub mod http;
 pub mod juncao;
 pub mod ligacoes;
+pub mod mcp;
+pub mod pg;
 pub mod pivot;
 pub mod profiler;
 pub mod replica;

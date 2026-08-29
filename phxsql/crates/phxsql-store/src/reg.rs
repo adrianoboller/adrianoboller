@@ -285,8 +285,23 @@ impl RegFile {
             )));
         }
 
-        let bytes_esquema = esquema.serializar();
-        let esquema_crc = crc32(&bytes_esquema);
+        // Guarda-se o bloco COMO ESTA NO DISCO, e nao o resultado de
+        // reserializar o esquema que acabou de ser lido.
+        //
+        // # Por que, se os dois deviam ser iguais
+        //
+        // Porque nem sempre sao: reserializar grava na versao ATUAL do bloco,
+        // e uma versao nova pode ser mais longa. O `data_offset` -- onde
+        // comeca o primeiro slot -- foi calculado quando a tabela nasceu, e o
+        // folgo ate o proximo multiplo de 64 pode ser ZERO. Um bloco mais
+        // longo escrito ali por cima invadiria o slot 1, e o CRC do slot
+        // continuaria batendo depois: os bytes seriam legiveis, so que de
+        // outra coisa.
+        //
+        // Reabrir uma tabela nao pode reescrever o esquema dela. Se um dia
+        // houver ALTERAR ESQUEMA, ele tera de mover os dados -- e sera uma
+        // operacao com esse nome, e nao um efeito de abrir o arquivo.
+        let esquema_crc = schema_crc;
         let mut r = RegFile {
             volumes: Volumes::novo(diretorio, nome, EXT_REG, esquema.paginacao()),
             esquema,
@@ -498,6 +513,20 @@ impl RegFile {
     }
 
     fn gravar_cabecalho(&mut self, volume: u32) -> Result<()> {
+        // O bloco de esquema tem de caber ANTES do primeiro slot. Se nao
+        // couber, escrever aqui comeria o slot 1 -- e o CRC dele continuaria
+        // batendo depois, porque os bytes seriam validos, so que de outra
+        // coisa. Esta guarda e inalcancavel hoje (o `data_offset` sai destes
+        // mesmos bytes na criacao, e reabrir nao os troca) e existe para o dia
+        // em que alguem mudar isso sem perceber.
+        if CAB_LEN as u64 + self.esquema_bytes.len() as u64 > self.data_offset {
+            return Err(PhxError::Corrompido(format!(
+                "o bloco de esquema tem {} bytes e so cabem {} antes do primeiro \
+                 slot: gravar aqui destruiria dado",
+                self.esquema_bytes.len(),
+                self.data_offset - CAB_LEN as u64
+            )));
+        }
         let buf = self.montar_cabecalho(volume);
         self.volumes.escrever(volume, 0, &buf)?;
         self.volumes
@@ -1424,6 +1453,89 @@ mod tests {
         assert_eq!(Schema::desserializar(&bytes).unwrap(), esq);
         std::fs::remove_dir_all(&d).unwrap();
     }
+    /// **O teste do arquivo VELHO: reabrir nao pode reescrever o esquema.**
+    ///
+    /// O `data_offset` -- onde comeca o primeiro slot -- sai do tamanho do
+    /// bloco de esquema na CRIACAO, e o folgo ate o proximo multiplo de 64
+    /// pode ser zero. Se reabrir reserializasse o esquema na versao ATUAL do
+    /// bloco, uma versao mais longa (foi o que a marca de dado pessoal da v6
+    /// quase fez, com um byte por coluna) invadiria o slot 1 -- e o CRC do
+    /// slot continuaria batendo depois, porque os bytes seriam validos, so
+    /// que de outra coisa.
+    ///
+    /// Este teste fabrica uma tabela com o bloco de esquema de uma versao
+    /// ANTERIOR, mais curta, e prova que abrir e gravar nela deixa o bloco
+    /// exatamente onde estava.
+    #[test]
+    fn reabrir_tabela_de_versao_anterior_nao_engorda_o_esquema() {
+        let d = dir_temp("esquema-estavel");
+        let esq = esquema();
+        let mut r = RegFile::criar(&d, "cadastroClientes", esq.clone()).unwrap();
+        for n in 1..=5u8 {
+            r.inserir(&payload(&esq, n)).unwrap();
+        }
+        r.sincronizar().unwrap();
+        drop(r);
+
+        // ---- fabrica o "arquivo velho": bloco de esquema mais CURTO.
+        //
+        // Tira o bloco de marcas da v6 (um byte por coluna) e volta a versao
+        // para 5. O `data_offset` fica onde estava -- e e essa a situacao que
+        // uma tabela gravada na versao anterior tem de verdade.
+        let caminho = d.join("cadastroClientes.reg");
+        let mut arq = std::fs::read(&caminho).unwrap();
+        let n_v6 = Campos(&arq[..CAB_LEN]).u32(52) as usize;
+        let n_v5 = n_v6 - esq.colunas().len();
+        let mut bloco = arq[CAB_LEN..CAB_LEN + n_v5].to_vec();
+        bloco[4..6].copy_from_slice(&5u16.to_le_bytes());
+        arq[CAB_LEN..CAB_LEN + n_v5].copy_from_slice(&bloco);
+        por_u32(&mut arq, 52, n_v5 as u32);
+        por_u32(&mut arq, 56, crc32(&bloco));
+        let crc = crc32(&arq[..124]);
+        por_u32(&mut arq, 124, crc);
+        std::fs::write(&caminho, &arq).unwrap();
+        let data_offset = Campos(&arq[..CAB_LEN]).u64(44);
+        let primeiro_slot =
+            arq[data_offset as usize..data_offset as usize + esq.payload_len()].to_vec();
+
+        // ---- abre, grava (toda escrita regrava o cabecalho) e confere.
+        let mut r = RegFile::abrir(&d, "cadastroClientes").unwrap();
+        assert_eq!(r.esquema().colunas().len(), esq.colunas().len());
+        r.inserir(&payload(&esq, 6)).unwrap();
+        r.sincronizar().unwrap();
+        drop(r);
+
+        let depois = std::fs::read(&caminho).unwrap();
+        let c = Campos(&depois[..CAB_LEN]);
+        assert_eq!(c.u64(44), data_offset, "o data_offset mudou ao reabrir");
+        assert_eq!(
+            c.u32(52) as usize,
+            n_v5,
+            "o bloco de esquema engordou ao reabrir: ele comeria o primeiro slot"
+        );
+        assert_eq!(
+            &depois[CAB_LEN..CAB_LEN + n_v5],
+            &bloco[..],
+            "o bloco de esquema foi reescrito ao reabrir"
+        );
+        assert_eq!(
+            &depois[data_offset as usize..data_offset as usize + esq.payload_len()],
+            &primeiro_slot[..],
+            "o primeiro slot foi sobrescrito"
+        );
+
+        // E as cinco linhas continuam legiveis, com a sexta no fim.
+        let mut r = RegFile::abrir(&d, "cadastroClientes").unwrap();
+        for n in 1..=6u8 {
+            assert_eq!(
+                r.ler(n as u64).unwrap(),
+                Some(payload(&esq, n)),
+                "a linha {n} nao voltou inteira"
+            );
+        }
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
     #[test]
     fn o_espelho_salva_um_registro_estragado() {
         let d = dir_temp("espelho");

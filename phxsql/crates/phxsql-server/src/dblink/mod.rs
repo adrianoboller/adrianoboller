@@ -64,7 +64,18 @@ impl Motor {
         }
     }
 
-    /// Ha cliente escrito para este motor?
+    /// As operacoes do DbLink ja funcionam com este motor?
+    ///
+    /// **Nao e "ha cliente escrito"** -- o cliente do PostgreSQL(R) existe em
+    /// `crate::pg`, com SCRAM-SHA-256 conferido contra o RFC 7677. O que falta
+    /// e o DIALETO: `dblink_tabelas`, `dblink_colunas` e o teste de ligacao
+    /// montam SQL de MySQL(R) (crase, `SHOW INDEX`, `current_user()`), e o
+    /// `information_schema` do PostgreSQL(R) responde a outras perguntas.
+    ///
+    /// Devolver `true` aqui acenderia o botao na tela e o botao falharia na
+    /// primeira consulta -- que e a mesma armadilha do campo de configuracao
+    /// que ninguem le. O sinal diz o que a tela pode fazer, e nao o que o
+    /// repositorio tem.
     pub fn conecta(self) -> bool {
         matches!(self, Motor::MySql)
     }
@@ -211,7 +222,13 @@ impl Definicao {
         self
     }
 
-    /// Abre a ligacao. So o MySQL(R) tem cliente por enquanto.
+    /// Abre a ligacao pelo cliente MySQL(R).
+    ///
+    /// Continua devolvendo `mysql::Conexao`, e nao um tipo comum aos dois
+    /// motores, de proposito: as operacoes que a usam montam SQL de MySQL(R)
+    /// -- crase em volta do nome, `current_user()`, `SHOW INDEX`. Um tipo
+    /// comum faria o codigo COMPILAR para o PostgreSQL(R) e falhar na primeira
+    /// consulta, que e pior do que nao compilar.
     pub fn conectar(&self) -> Result<mysql::Conexao> {
         match self.motor {
             Motor::MySql => mysql::Conexao::abrir(
@@ -223,7 +240,27 @@ impl Definicao {
                 Duration::from_secs(self.timeout_s),
             ),
             Motor::Postgres => Err(PhxError::Esquema(
-                "o cliente de PostgreSQL(R) ainda nao existe; a definicao fica guardada".into(),
+                "esta ligacao e PostgreSQL(R): o cliente existe (`pg::Conexao`, \
+                 com SCRAM-SHA-256), mas as operacoes do DbLink ainda montam SQL \
+                 de MySQL(R). Use `conectar_pg` ate o dialeto entrar."
+                    .into(),
+            )),
+        }
+    }
+
+    /// Abre a ligacao pelo cliente PostgreSQL(R).
+    pub fn conectar_pg(&self) -> Result<crate::pg::Conexao> {
+        match self.motor {
+            Motor::Postgres => crate::pg::Conexao::abrir(
+                &self.host,
+                self.porta,
+                &self.usuario,
+                &self.senha,
+                &self.database,
+                Duration::from_secs(self.timeout_s),
+            ),
+            Motor::MySql => Err(PhxError::Esquema(
+                "esta ligacao e MySQL(R); use `conectar`".into(),
             )),
         }
     }

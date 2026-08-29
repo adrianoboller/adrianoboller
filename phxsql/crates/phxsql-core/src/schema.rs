@@ -7,7 +7,7 @@
 use crate::error::{PhxError, Result};
 use crate::keyenc::largura_componente;
 use crate::paginacao::{ModoParticao, Paginacao, BALDES};
-use crate::types::ColumnType;
+use crate::types::{ColumnType, DadoPessoal};
 use crate::uuid::Uuid;
 
 const MAGIC_ESQUEMA: &[u8; 4] = b"PSCH";
@@ -16,10 +16,20 @@ const MAGIC_ESQUEMA: &[u8; 4] = b"PSCH";
 /// A 3 acrescentou os metadados de coluna (`id`, `caption`, `descricao`,
 /// `mascara`), o marcador de chave primaria no indice e o modo de particao.
 /// A 4 acrescentou a coluna de sistema [`COLUNA_SOFTDELETED`] e o sinal de
-/// motivo obrigatorio. A 5 acrescentou [`COLUNA_ROWNUM`].
+/// motivo obrigatorio. A 5 acrescentou [`COLUNA_ROWNUM`]. A 6 acrescentou a
+/// marca de dado pessoal ([`DadoPessoal`]) de cada coluna.
 ///
 /// A leitura ainda aceita a 2: tabela gravada antes abre, ganha um `id` v7
-/// sorteado na hora e os textos vazios. Escrever, so na 5.
+/// sorteado na hora e os textos vazios. Escrever, so na 6.
+///
+/// # Por que a marca da v6 vai no FIM, e nao junto da coluna
+///
+/// Ela e um atributo de coluna e o lugar "natural" seria ao lado da `mascara`.
+/// Nao vai la de proposito: no fim, quem le uma v5 simplesmente **para antes**
+/// do bloco novo, do mesmo jeito que ja para antes do byte de motivo
+/// obrigatorio da v4. No meio do laco de colunas, cada versao antiga precisaria
+/// de um desvio proprio dentro do laco -- e desvio dentro de laco de
+/// desserializacao e onde nasce o campo deslocado que ainda passa no CRC.
 ///
 /// # Por que a v3 nao ganha a coluna ao ser lida
 ///
@@ -29,7 +39,7 @@ const MAGIC_ESQUEMA: &[u8; 4] = b"PSCH";
 /// deslocaria o offset de todas as seguintes. Uma tabela v3 continua legivel
 /// exatamente como esta -- so nao tem exclusao suave, e a mensagem de erro
 /// diz isso em vez de ler lixo.
-const VERSAO_ESQUEMA: u16 = 5;
+const VERSAO_ESQUEMA: u16 = 6;
 const VERSAO_ESQUEMA_MINIMA: u16 = 2;
 
 /// Nome da coluna de sistema que marca a linha como excluida sem excluir.
@@ -201,6 +211,13 @@ pub struct Column {
     pub mascara: String,
     pub ty: ColumnType,
     pub nullable: bool,
+    /// A coluna guarda dado pessoal? (LGPD / GDPR.)
+    ///
+    /// E declaracao, nao deducao: o motor NAO tenta adivinhar pelo nome da
+    /// coluna. "cpf" e obvio, "documento" nao e, e um palpite errado num
+    /// relatorio de conformidade e pior que nenhum relatorio -- porque quem
+    /// le acredita.
+    pub dado_pessoal: DadoPessoal,
 }
 
 impl Column {
@@ -214,7 +231,14 @@ impl Column {
             mascara: String::new(),
             ty,
             nullable: true,
+            dado_pessoal: DadoPessoal::Nao,
         }
+    }
+
+    /// Classifica a coluna para a LGPD / GDPR.
+    pub fn com_dado_pessoal(mut self, grau: DadoPessoal) -> Self {
+        self.dado_pessoal = grau;
+        self
     }
 
     /// Marca a coluna como obrigatoria (NOT NULL).
@@ -590,6 +614,41 @@ impl Schema {
         self.colunas.iter().position(|c| c.nome == COLUNA_ROWNUM)
     }
 
+    /// As colunas marcadas como dado pessoal, com a posicao e o grau.
+    ///
+    /// Devolve na ordem das colunas -- que e a ordem que o relatorio de
+    /// auditoria mostra, porque e a mesma ordem em que a ficha aparece na
+    /// tela.
+    pub fn colunas_pessoais(&self) -> Vec<(usize, &Column)> {
+        self.colunas
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| c.dado_pessoal.e_pessoal())
+            .collect()
+    }
+
+    /// A tabela guarda dado pessoal de algum grau?
+    pub fn tem_dado_pessoal(&self) -> bool {
+        self.colunas.iter().any(|c| c.dado_pessoal.e_pessoal())
+    }
+
+    /// Troca o grau de uma coluna pelo NOME.
+    ///
+    /// Pelo nome e nao pelo indice porque quem classifica e gente olhando a
+    /// ficha, e o indice de uma coluna nao aparece em tela nenhuma.
+    pub fn marcar_dado_pessoal(&mut self, coluna: &str, grau: DadoPessoal) -> Result<()> {
+        match self.colunas.iter_mut().find(|c| c.nome == coluna) {
+            Some(c) => {
+                c.dado_pessoal = grau;
+                Ok(())
+            }
+            None => Err(PhxError::NaoEncontrado(format!(
+                "a tabela {} nao tem a coluna {coluna:?}",
+                self.nome
+            ))),
+        }
+    }
+
     /// Exigir motivo escrito na exclusao. Escolhido ao criar a tabela.
     pub fn com_motivo_obrigatorio(mut self, exigir: bool) -> Schema {
         self.motivo_obrigatorio = exigir;
@@ -890,6 +949,11 @@ impl Schema {
         // v4: exigir motivo escrito na exclusao. Vem no fim porque quem le uma
         // v3 simplesmente para antes daqui.
         out.push(self.motivo_obrigatorio as u8);
+        // v6: a marca de dado pessoal, uma por coluna, na ordem das colunas.
+        // Mesmo motivo: quem le uma v5 para antes daqui.
+        for c in &self.colunas {
+            out.push(c.dado_pessoal.tag());
+        }
         out
     }
 
@@ -941,6 +1005,9 @@ impl Schema {
                 mascara,
                 ty: ColumnType::de_tag(tag, a, b)?,
                 nullable,
+                // A marca da v6 vem no fim do bloco, e nao aqui. Ver a nota
+                // em `VERSAO_ESQUEMA`.
+                dado_pessoal: DadoPessoal::Nao,
             });
         }
 
@@ -1006,6 +1073,19 @@ impl Schema {
             paginacao.modo = ModoParticao::de_tag(leitor.u8()?, leitor.u16()?)?;
         }
         let motivo_obrigatorio = versao >= 4 && leitor.u8()? != 0;
+
+        // v6: uma marca por coluna, na ordem das colunas. Um arquivo v6
+        // truncado no meio deste bloco para de ler e deixa o resto em `Nao`:
+        // classificacao perdida vira "nao classificado", que e o padrao e o
+        // estado seguro -- e nunca a marca da coluna errada.
+        if versao >= 6 {
+            for c in colunas.iter_mut() {
+                match leitor.u8() {
+                    Ok(tag) => c.dado_pessoal = DadoPessoal::de_tag(tag),
+                    Err(_) => break,
+                }
+            }
+        }
 
         // `do_disco`, e nao `new`: a lista de colunas gravada e a verdade
         // inteira. Ver a nota em `VERSAO_ESQUEMA`.
@@ -1176,15 +1256,128 @@ mod tests {
         assert_eq!(lido, antiga);
     }
 
-    /// A v3 nao tem o byte do motivo obrigatorio no fim. Ler uma nao pode
-    /// estourar nem trazer lixo -- tem de dar `false`.
+    /// A v3 nao tem o byte do motivo obrigatorio no fim nem o bloco de marcas
+    /// da v6. Ler uma nao pode estourar nem trazer lixo.
     #[test]
     fn v3_no_disco_para_antes_do_byte_novo() {
-        let mut bytes = esquema_clientes().serializar();
+        let s = esquema_clientes();
+        let mut bytes = s.serializar();
         bytes[4..6].copy_from_slice(&3u16.to_le_bytes());
-        bytes.pop();
+        // Tira o bloco da v6 (uma marca por coluna) e o byte da v4.
+        bytes.truncate(bytes.len() - s.colunas().len() - 1);
         let lido = Schema::desserializar(&bytes).unwrap();
         assert!(!lido.motivo_obrigatorio());
+        assert!(lido.colunas().iter().all(|c| !c.dado_pessoal.e_pessoal()));
+    }
+
+    // ------------------------------------------------------- dado pessoal
+    //
+    // O teste que mais importa aqui e o do comportamento VELHO: uma tabela
+    // gravada antes da v6 tem de abrir igual, e sem coluna marcada.
+
+    /// **O teste do arquivo velho.** Um esquema v5 -- sem o bloco de marcas --
+    /// abre inteiro, com todas as colunas em `Nao`.
+    #[test]
+    fn esquema_v5_abre_sem_marca_nenhuma() {
+        let s = esquema_clientes();
+        let v6 = s.serializar();
+
+        // Um v5 de verdade: versao 5 e sem o bloco de marcas no fim.
+        let mut v5 = v6.clone();
+        v5[4..6].copy_from_slice(&5u16.to_le_bytes());
+        v5.truncate(v6.len() - s.colunas().len());
+
+        let lido = Schema::desserializar(&v5).unwrap();
+        assert_eq!(lido.colunas().len(), s.colunas().len());
+        assert_eq!(lido.payload_len(), s.payload_len());
+        assert!(
+            lido.colunas().iter().all(|c| !c.dado_pessoal.e_pessoal()),
+            "a leitura de um v5 inventou marca de dado pessoal"
+        );
+        assert!(!lido.tem_dado_pessoal());
+        // E o resto do esquema tem de ser identico ao de antes da mudanca.
+        assert_eq!(lido, s);
+    }
+
+    #[test]
+    fn a_marca_atravessa_o_disco() {
+        let mut s = esquema_clientes();
+        s.marcar_dado_pessoal("nome", DadoPessoal::Pessoal).unwrap();
+        s.marcar_dado_pessoal("cnpj", DadoPessoal::Pessoal).unwrap();
+        s.marcar_dado_pessoal("foto", DadoPessoal::Sensivel)
+            .unwrap();
+
+        let volta = Schema::desserializar(&s.serializar()).unwrap();
+        assert_eq!(volta, s);
+
+        let pessoais: Vec<&str> = volta
+            .colunas_pessoais()
+            .iter()
+            .map(|(_, c)| c.nome.as_str())
+            .collect();
+        assert_eq!(pessoais, vec!["nome", "cnpj", "foto"]);
+        assert_eq!(
+            volta.colunas()[volta.coluna_por_nome("foto").unwrap()].dado_pessoal,
+            DadoPessoal::Sensivel
+        );
+        assert!(volta.tem_dado_pessoal());
+    }
+
+    /// A marca nao pode deslocar nada: o payload de uma tabela marcada e o
+    /// mesmo de uma nao marcada. E metadado, e nao dado.
+    #[test]
+    fn marcar_nao_mexe_no_layout_do_slot() {
+        let sem = esquema_clientes();
+        let mut com = esquema_clientes();
+        com.marcar_dado_pessoal("cnpj", DadoPessoal::Sensivel)
+            .unwrap();
+
+        assert_eq!(com.payload_len(), sem.payload_len());
+        for j in 0..sem.colunas().len() {
+            assert_eq!(
+                com.offset_coluna(j).unwrap(),
+                sem.offset_coluna(j).unwrap(),
+                "a coluna {j} mudou de lugar por causa de uma marca"
+            );
+        }
+        // E o bloco novo custa exatamente um byte por coluna.
+        assert_eq!(
+            com.serializar().len(),
+            sem.serializar().len(),
+            "a marca mudou o tamanho do bloco"
+        );
+    }
+
+    #[test]
+    fn marcar_coluna_que_nao_existe_recusa() {
+        let mut s = esquema_clientes();
+        let e = s
+            .marcar_dado_pessoal("telefone", DadoPessoal::Pessoal)
+            .unwrap_err();
+        assert!(format!("{e}").contains("telefone"), "{e}");
+    }
+
+    /// Um v6 truncado no meio do bloco de marcas deixa o resto em `Nao` --
+    /// nunca a marca da coluna errada, que e o unico jeito de este bloco
+    /// mentir.
+    #[test]
+    fn v6_truncado_no_bloco_de_marcas_nao_desloca_marca() {
+        let mut s = esquema_clientes();
+        s.marcar_dado_pessoal("nome", DadoPessoal::Pessoal).unwrap();
+        s.marcar_dado_pessoal("cnpj", DadoPessoal::Sensivel)
+            .unwrap();
+
+        let bytes = s.serializar();
+        let n = s.colunas().len();
+        // Corta o bloco de marcas ao meio.
+        let cortado = &bytes[..bytes.len() - n / 2];
+        let lido = Schema::desserializar(cortado).unwrap();
+
+        // As que sobraram continuam nas colunas certas.
+        let i_nome = lido.coluna_por_nome("nome").unwrap();
+        let i_cnpj = lido.coluna_por_nome("cnpj").unwrap();
+        assert_eq!(lido.colunas()[i_nome].dado_pessoal, DadoPessoal::Pessoal);
+        assert_eq!(lido.colunas()[i_cnpj].dado_pessoal, DadoPessoal::Sensivel);
     }
 
     #[test]

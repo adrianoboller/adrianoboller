@@ -12,7 +12,7 @@ O nome vem do Centro de Controle do HFSQL(R), e a ideia é a mesma.
 | Motor | Estado |
 |---|---|
 | MySQL(R) / MariaDB(R) | **cliente escrito**, testado contra MySQL(R) 8.0.46 |
-| PostgreSQL(R) | a definição já pode ser guardada; o cliente ainda não existe |
+| PostgreSQL(R) | **cliente escrito** (`crates/phxsql-server/src/pg/`); as operações do DbLink ainda não o usam — falta o dialeto |
 
 O cliente é escrito aqui, com a `std` do Rust e nada mais — a mesma regra do
 resto do projeto. Um protocolo de rede é um formato de bytes; ler e escrever
@@ -157,6 +157,53 @@ caminho de escrita para o banco do outro só porque a ligação permitia.
 - Sem `CLIENT_MULTI_STATEMENTS`.
 - Carga acima de 16 MB chega partida em vários quadros; a leitura junta, a
   escrita não parte (nenhuma consulta que este cliente manda chega perto).
+
+## O cliente PostgreSQL(R)
+
+Está em `crates/phxsql-server/src/pg/`, e nasceu de um pedido que parecia
+grande e não era: **os tijolos já existiam**. O `scram-sha-256` que o
+PostgreSQL(R) 10+ usa por padrão é feito de SHA-256, HMAC e PBKDF2 — os três
+escritos aqui, anos antes, para o hash de senha do `config.json`.
+
+O protocolo em si tem uma pegadinha que vale escrever: **o `int32` de tamanho
+inclui os próprios 4 bytes**, e não inclui o byte de tipo. Errar por um aqui
+produz um cliente que "quase" funciona.
+
+A outra é o `ReadyForQuery`. Uma consulta responde `T`, `D`…`D`, `C` e só então
+`Z`. Parar de ler no `C` — que é onde a resposta *parece* acabar — deixa o `Z`
+na fila, e a **próxima** consulta lê a resposta da anterior. Tudo continua
+"funcionando", com um desencontro constante de uma mensagem. Por isso o laço
+lê sempre até o `Z`, e por isso um erro do servidor é **guardado** e não
+devolvido na hora: sair no `E` deixaria o `Z` para trás.
+
+### As três autenticações, e por que só uma entra
+
+| método do `pg_hba.conf` | o que este cliente faz |
+|---|---|
+| `scram-sha-256` | **faz**, conferido contra o vetor da §3 do RFC 7677 |
+| `md5` | recusa: exige MD5, que está quebrado e não entra neste projeto |
+| `password` | **recusa de propósito**: sem TLS a senha iria legível no fio |
+
+O `password` é o que merece explicação, porque tecnicamente daria para fazer em
+três linhas. A regra do projeto é que senha não viaja em claro, e um cliente
+que aceitasse isso calado tiraria de quem configurou o servidor uma decisão que
+é dele. Os dois casos recusam dizendo **qual linha mudar** no `pg_hba.conf`.
+
+E a autenticação é **mútua**: o cliente confere a assinatura que o servidor
+manda no fim. Sem essa conferência, qualquer um no meio do caminho poderia
+dizer "pode entrar" sem conhecer a senha — e receberia a consulta seguinte.
+
+### O que falta para a tela usar
+
+O cliente conecta, autentica e consulta. O que ainda não existe é o **dialeto**:
+`dblink_tabelas`, `dblink_colunas` e o teste de ligação montam SQL de MySQL(R)
+— crase em volta do nome, `SHOW INDEX`, `current_user()` —, e as mesmas
+perguntas no PostgreSQL(R) se fazem no `information_schema` com aspas duplas.
+
+Por isso `Motor::conecta()` continua devolvendo `false` para o PostgreSQL(R). É
+deliberado: esse sinal diz **o que a tela pode fazer**, e não o que o
+repositório tem. Acendê-lo agora ligaria um botão que falha na primeira
+consulta.
 
 ---
 

@@ -181,9 +181,141 @@ impl ColumnType {
     }
 }
 
+/// A coluna guarda dado pessoal? E de que grau?
+///
+/// # Por que tres graus, e nao um "sim/nao"
+///
+/// A LGPD separa o dado pessoal (art. 5º, I) do dado pessoal **sensivel**
+/// (art. 5º, II -- origem racial, conviccao religiosa, opiniao politica,
+/// saude, vida sexual, genetico, biometrico), e o GDPR faz a mesma separacao
+/// entre o art. 4(1) e a "special category" do art. 9. Os dois regimes NAO
+/// sao o mesmo: o sensivel exige base legal propria e costuma exigir
+/// consentimento especifico.
+///
+/// Um `bool` obrigaria quem audita a reabrir a lei coluna a coluna para
+/// separar de novo. Como custa o mesmo byte, o grau vai gravado.
+///
+/// Os tres sao ORDENADOS -- `Nao` < `Pessoal` < `Sensivel` --, o que deixa a
+/// pergunta "esta coluna e pelo menos pessoal?" virar uma comparacao em vez de
+/// uma lista de casos.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub enum DadoPessoal {
+    /// Nao e dado pessoal. E o padrao, e e o que toda tabela ja gravada tem.
+    #[default]
+    Nao,
+    /// Dado pessoal comum: nome, endereco, telefone, CPF, e-mail.
+    Pessoal,
+    /// Dado pessoal sensivel: saude, biometria, conviccao, origem racial.
+    Sensivel,
+}
+
+impl DadoPessoal {
+    /// O byte gravado no esquema. **Nunca muda**, pela mesma razao dos codigos
+    /// de erro: numero que troca de significado quebra o leitor antigo em
+    /// silencio.
+    pub fn tag(self) -> u8 {
+        match self {
+            DadoPessoal::Nao => 0,
+            DadoPessoal::Pessoal => 1,
+            DadoPessoal::Sensivel => 2,
+        }
+    }
+
+    /// Byte desconhecido vira `Nao`, e nao erro.
+    ///
+    /// # Por que nao erro
+    ///
+    /// Se um dia entrar um grau 3, uma tabela gravada com ele abriria num
+    /// motor antigo. Recusar o arquivo inteiro por causa de uma classificacao
+    /// que o motor nao conhece tiraria do ar uma tabela que esta perfeita --
+    /// e o dado que ela guarda continua legivel de qualquer jeito. O grau
+    /// desconhecido some do relatorio; a tabela abre.
+    pub fn de_tag(tag: u8) -> DadoPessoal {
+        match tag {
+            1 => DadoPessoal::Pessoal,
+            2 => DadoPessoal::Sensivel,
+            _ => DadoPessoal::Nao,
+        }
+    }
+
+    /// O nome curto, estavel, que sai no protocolo.
+    pub fn nome(self) -> &'static str {
+        match self {
+            DadoPessoal::Nao => "nao",
+            DadoPessoal::Pessoal => "pessoal",
+            DadoPessoal::Sensivel => "sensivel",
+        }
+    }
+
+    /// Do texto que o cliente manda. Vazio e `"nao"` sao a mesma coisa.
+    pub fn de_texto(s: &str) -> Result<DadoPessoal> {
+        Ok(match s.trim().to_lowercase().as_str() {
+            "" | "nao" | "não" | "no" | "false" | "0" => DadoPessoal::Nao,
+            "pessoal" | "sim" | "yes" | "true" | "1" | "personal" => DadoPessoal::Pessoal,
+            "sensivel" | "sensível" | "sensitive" | "2" => DadoPessoal::Sensivel,
+            outro => {
+                return Err(PhxError::Esquema(format!(
+                    "dado_pessoal {outro:?} desconhecido \
+                     (use \"nao\", \"pessoal\" ou \"sensivel\")"
+                )))
+            }
+        })
+    }
+
+    /// E dado pessoal de algum grau?
+    pub fn e_pessoal(self) -> bool {
+        self > DadoPessoal::Nao
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// O byte gravado e o contrato com toda tabela ja em disco.
+    #[test]
+    fn as_tags_do_dado_pessoal_nao_mudam() {
+        assert_eq!(DadoPessoal::Nao.tag(), 0);
+        assert_eq!(DadoPessoal::Pessoal.tag(), 1);
+        assert_eq!(DadoPessoal::Sensivel.tag(), 2);
+        for d in [
+            DadoPessoal::Nao,
+            DadoPessoal::Pessoal,
+            DadoPessoal::Sensivel,
+        ] {
+            assert_eq!(DadoPessoal::de_tag(d.tag()), d);
+        }
+    }
+
+    /// Grau que este motor nao conhece nao derruba a tabela.
+    #[test]
+    fn grau_desconhecido_vira_nao() {
+        assert_eq!(DadoPessoal::de_tag(3), DadoPessoal::Nao);
+        assert_eq!(DadoPessoal::de_tag(255), DadoPessoal::Nao);
+    }
+
+    #[test]
+    fn o_padrao_e_nao_marcado() {
+        assert_eq!(DadoPessoal::default(), DadoPessoal::Nao);
+        assert!(!DadoPessoal::Nao.e_pessoal());
+        assert!(DadoPessoal::Pessoal.e_pessoal());
+        assert!(DadoPessoal::Sensivel.e_pessoal());
+        assert!(DadoPessoal::Sensivel > DadoPessoal::Pessoal);
+    }
+
+    #[test]
+    fn texto_do_cliente_vira_grau() {
+        assert_eq!(DadoPessoal::de_texto("").unwrap(), DadoPessoal::Nao);
+        assert_eq!(
+            DadoPessoal::de_texto(" Sensivel ").unwrap(),
+            DadoPessoal::Sensivel
+        );
+        assert_eq!(
+            DadoPessoal::de_texto("PESSOAL").unwrap(),
+            DadoPessoal::Pessoal
+        );
+        assert!(DadoPessoal::de_texto("talvez").is_err());
+    }
 
     #[test]
     fn larguras() {

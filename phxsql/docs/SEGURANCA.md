@@ -247,3 +247,89 @@ certo ou errado.
 - **Sem bloqueio por faixa.** É IP a IP; `/24` inteiro exige o firewall.
 - **As tentativas leves vivem em memória.** Reiniciar o servidor zera o
   contador; os bloqueios já gravados, não.
+
+---
+
+## 8. A cifra dos diários: ChaCha20-Poly1305
+
+O pedido 101 — cifrar `.log`, `.trash` e `.reason` — ficou parado por uma
+frase: *«o projeto não tem cifra de bloco»*. Havia SHA-256, HMAC e PBKDF2, e
+nenhum AES. A frase estava certa e a conclusão estava errada: **a cifra que
+falta não precisa ser de bloco.**
+
+### Por que ChaCha20, e não AES
+
+AES em software puro, sem a instrução do processador, se escreve com tabelas —
+e tabela em cache vaza a chave pelo tempo de acesso. Fugir disso exige
+*bitslicing*, que são alguns milhares de linhas para conferir. O ChaCha20 é
+soma, XOR e rotação de 32 bits: **tempo constante por construção**, sem tabela
+nenhuma. São ~300 linhas, e é a mesma escolha que o TLS 1.3 e o WireGuard
+fazem para máquina sem AES-NI. O PhxSql compila para Windows, Linux e ARM sem
+saber onde vai rodar.
+
+A implementação está em `crates/phxsql-core/src/cifra.rs` e é conferida contra
+**todos** os vetores do RFC 8439 que dá para exercitar: o bloco (§2.3.2), a
+cifragem (§2.4.2), o Poly1305 (§2.5.2), a chave de uma vez só (§2.6.2) e o
+AEAD com dado associado (§2.8.2). Nada foi aceito por parecer certo.
+
+### O desenho da integração nos três arquivos
+
+Os três são *append-only*, e isso decide quase tudo.
+
+**Cifra-se o corpo, não o cabeçalho.** No `.log` o evento é 44 bytes de
+cabeçalho mais um corpo opcional — e é o corpo que carrega a imagem da linha,
+que é o dado do cliente. O cabeçalho carrega carimbo, rowid, versão e usuário.
+Se o cabeçalho fosse cifrado, **ninguém caminharia pelo arquivo sem a chave**:
+é o `tam_imagem` dele que diz onde começa o próximo evento. Reindexar, contar
+eventos e pular volume deixariam de funcionar para quem só tem o arquivo.
+
+O cabeçalho em claro não fica solto: ele entra como **dado associado** (AAD) na
+etiqueta. Trocar o rowid de um evento, ou mover o corpo do evento 3 para o
+evento 7, faz a etiqueta falhar. O que o cabeçalho em claro custa é
+*metadado*: quem lê o arquivo sem a chave sabe **que** o rowid 42 mudou às
+14h03, e não sabe **para que**. É a troca certa para um diário, e está escrita
+aqui para ninguém supor mais do que ela dá.
+
+**O nonce sai da ordem, não de um sorteio por evento.** Repetir o par (chave,
+nonce) é o único jeito de quebrar isto sem quebrar a matemática, e num arquivo
+que só cresce é fácil errar — basta alguém reabrir o arquivo e recomeçar a
+contagem do zero. O tipo `cifra::Sequencia` fecha essa porta: o nonce é um
+prefixo de 4 bytes sorteado **uma vez por arquivo** (gravado no cabeçalho, em
+claro) mais o número de ordem do evento, de 8 bytes. Como *append-only* nunca
+reescreve evento que já existe — a mesma garantia do `.reg`, que nunca reusa
+slot —, repetir o nonce passa a exigir uma operação que o formato não tem.
+
+**O que muda em cada arquivo:**
+
+| | hoje | cifrado |
+|---|---|---|
+| cabeçalho do arquivo | 64 bytes, versão 2 | versão 3: + flag, + sal de 16 bytes, + prefixo de nonce de 4, + iterações do PBKDF2 |
+| evento | cabeçalho + corpo | cabeçalho (claro, vira AAD) + corpo cifrado + etiqueta de 16 bytes |
+| custo | — | **+16 bytes por evento com corpo**, e nada nos eventos sem corpo |
+
+A `.trash` e o `.reason` seguem o mesmo padrão, com a mesma justificativa: o
+que identifica a linha descartada fica legível, o conteúdo dela não.
+
+**Arquivo velho continua abrindo.** A versão 2 se lê como sempre; a flag de
+cifrado é a que decide, e quem não a tem passa direto. Escrever cifrado é uma
+decisão do `config.json`, não um padrão novo — a mesma regra da janela de
+conflito: guarda nova entra pedida, não imposta.
+
+### O que a chave protege, e o que não protege
+
+A chave vem de `cifra::chave_de_senha`, que é o PBKDF2 que já existia. A senha
+mora no `config.json` ou numa variável de ambiente — o servidor precisa
+**apresentar** a chave para ler o diário, então não dá para guardar só o hash,
+igual à senha do relé de e-mail e à do DbLink.
+
+Isso protege **o arquivo copiado**: disco levado, *backup* vazado, cópia numa
+máquina que não é esta. **Não protege** contra quem já lê o `config.json` da
+máquina, porque quem lê o `config.json` tem a senha. Dizer o contrário seria
+vender uma garantia que o desenho não dá.
+
+### O que ainda falta
+
+A primitiva está pronta e conferida. **Ligar nos três arquivos ainda não foi
+feito** — é mudança de formato em `log.rs`, `lixeira.rs` e `motivo.rs`, mais o
+campo no `config.json`, e entra numa rodada própria para que o teste do
+comportamento *velho* (arquivo versão 2 abrindo intacto) seja escrito junto.

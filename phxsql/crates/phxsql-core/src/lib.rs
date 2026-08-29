@@ -17,6 +17,7 @@
 
 pub mod base64;
 pub mod carga;
+pub mod cifra;
 pub mod crc;
 pub mod datahora;
 pub mod desafio;
@@ -36,10 +37,11 @@ pub mod uuid;
 pub mod value;
 pub mod zip;
 
+pub use cifra::{abrir, selar, Sequencia, CHAVE_LEN, NONCE_LEN, TAG_LEN};
 pub use crc::{crc32, crc32_with};
 pub use error::{PhxError, Result};
 pub use schema::{Column, IndexColumn, IndexDef, Schema};
-pub use types::{ColumnType, PONTEIRO_LEN};
+pub use types::{ColumnType, DadoPessoal, PONTEIRO_LEN};
 pub use uuid::{Uuid, Uuid256};
 pub use value::{escrever_inline, ler_inline, Ponteiro, Value};
 
