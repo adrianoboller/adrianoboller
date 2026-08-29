@@ -1,0 +1,156 @@
+/* =====================================================================
+   MULTITELA -- a area de trabalho em ABAS, REGIOES e JANELAS
+   =====================================================================
+
+   Folha propria, e nao mais um pedaco do `index.html`, pelo mesmo motivo da
+   telemetria: o CSS global da pagina morde componente novo. `input{width:100%}`
+   e `label{text-transform:uppercase}` sao certos num formulario e errados numa
+   barra de abas -- e aqui ha botao, pino e um `x` de fechar dentro de uma tira
+   estreita. Tudo abaixo esta escopado em `.corpo`, `.tira` ou `.regiao`.
+
+   O que NAO esta aqui: nenhuma regra de LARGURA da moldura. As faixas de tela
+   (os `@media` de 1024 e 640 do `index.html`) continuam de la, e esta folha
+   so as respeita. */
+
+/* A area onde as regioes moram. Unico filho de `.corpo`, que ja e
+   `display:flex;flex-direction:column`. */
+.corpo .regioes{flex:1;display:flex;min-height:0;min-width:0}
+
+/* Uma regiao e uma coluna: tira de abas em cima, tela embaixo.
+   `flex:1 1 0` com `min-width:0` porque filho de flex nasce com
+   `min-width:auto`, e e isso que faz uma tabela larga EMPURRAR a coluna em
+   vez de rolar dentro dela -- a mesma armadilha ja documentada no `#app`. */
+.regiao{flex:1 1 0;min-width:0;min-height:0;display:flex;flex-direction:column;
+  overflow:hidden;position:relative}
+/* A regiao com o foco e a que o menu e a barra de ferramentas comandam. A
+   marca e discreta de proposito: uma borda no topo da tira, nao um fundo. */
+.regioes:not([data-n="1"]) .regiao.foco > .tira{border-top-color:var(--laranja)}
+
+/* A calha entre duas regioes: arrasta para redimensionar. 6px de alvo com o
+   risco desenhado no meio -- alvo de 1px nao se pega com o mouse. */
+.calha{flex:0 0 6px;cursor:col-resize;position:relative;background:none;
+  border:none;padding:0;align-self:stretch}
+.calha::before{content:"";position:absolute;inset:0 2px;background:var(--linha)}
+.calha:hover::before,.calha:focus-visible::before{background:var(--laranja)}
+.calha:focus-visible{outline:none}
+
+/* A tira de abas. Rola sozinha: com oito telas abertas ela passaria da borda,
+   e passaria CORTADA -- a mesma licao das cinco abas da tabela. */
+.tira{display:flex;align-items:stretch;gap:2px;padding:0 6px;min-height:34px;
+  border-top:2px solid transparent;border-bottom:1px solid var(--linha);
+  background:var(--painel-2);overflow-x:auto;overflow-y:hidden;
+  scrollbar-width:thin}
+/* Uma regiao so e uma aba so: a tira encolhe para os botoes do canto. Quem
+   nunca abrir a segunda tela ve a moldura de antes com um botao a mais. */
+.tira[data-so-uma="1"]{min-height:26px;border-bottom:none;background:none;
+  justify-content:flex-end}
+.tira[data-so-uma="1"] .tira-aba{display:none}
+
+.tira-aba{flex:none;display:flex;align-items:center;gap:6px;
+  background:none;border:none;border-bottom:2px solid transparent;
+  padding:6px 8px 6px 10px;color:var(--texto-3);font-size:12.5px;
+  white-space:nowrap;cursor:pointer;max-width:26ch}
+.tira-aba:hover{color:var(--texto-2);background:var(--painel)}
+.tira-aba.sel{color:var(--laranja);border-bottom-color:var(--laranja);font-weight:600}
+.tira-aba .rot{overflow:hidden;text-overflow:ellipsis}
+.tira-aba.arrastando{opacity:.4}
+/* Onde a aba arrastada vai cair. */
+.tira.alvo{background:var(--realce)}
+
+/* Os dois enfeites de dentro da aba. Medidas proprias porque o `.botao` e o
+   `input` da pagina tem regra de largura que esticaria os dois. */
+.tira-pino,.tira-x{flex:none;display:inline-flex;align-items:center;
+  justify-content:center;width:18px;height:18px;border-radius:4px;
+  border:none;background:none;color:inherit;padding:0;font-size:13px;
+  line-height:1;opacity:.55;cursor:pointer}
+.tira-pino:hover,.tira-x:hover{opacity:1;background:var(--linha)}
+.tira-pino svg{width:12px;height:12px;display:block}
+.tira-pino svg *{stroke:currentColor}
+.tira-pino[aria-pressed="true"]{opacity:1;color:var(--laranja)}
+.tira-x:hover{color:var(--vermelho)}
+
+.tira-espaco{flex:1 1 auto;min-width:8px}
+/* Os botoes do canto: nova tela, destacar, dividir. Contorno, nunca fundo
+   cheio -- a convencao das cores da acao vale aqui tambem, e o preenchimento
+   so acontece no hover, quando ha intencao. */
+.tira-bt{flex:none;display:inline-flex;align-items:center;justify-content:center;
+  gap:5px;min-width:26px;height:24px;align-self:center;margin:0 1px;padding:0 6px;
+  border:1px solid transparent;border-radius:6px;background:none;
+  color:var(--texto-3);font-size:12px;line-height:1;cursor:pointer}
+.tira-bt:hover{border-color:currentColor;color:var(--texto-2)}
+.tira-bt[data-acao="nova"]:hover{color:var(--acao-incluir)}
+.tira-bt[data-acao="destacar"]:hover{color:var(--acao-consultar)}
+.tira-bt[data-acao="devolver"]:hover{color:var(--acao-alterar)}
+.tira-bt[data-acao="dividir"].sel{color:var(--laranja);border-color:var(--laranja)}
+.tira-bt:disabled{opacity:.35;cursor:default;border-color:transparent}
+.tira-bt .num{font-family:"IBM Plex Mono",monospace;font-size:11px}
+
+/* A tela em si. Mesmas medidas do `.corpo` de antes: cabecalho, abas da
+   tabela, painel que rola. O `#painel` (por id) continua valendo para a tela
+   COM FOCO; esta regra veste as outras, que nao carregam id nenhum. */
+.tela{flex:1;min-height:0;min-width:0;display:flex;flex-direction:column}
+.corpo .painel{flex:1;overflow:auto;padding:20px 22px 40px;
+  overscroll-behavior-x:contain}
+
+@media (max-width:640px){
+  .corpo .painel{padding:14px 14px 32px}
+  /* Celular nao divide: uma regiao de 190px nao e uma regiao, e uma coluna
+     ilegivel. A divisao volta sozinha ao alargar, porque o numero de regioes
+     continua guardado -- so nao se DESENHA aqui. */
+  .corpo .regioes{flex-direction:column}
+  .corpo .calha{display:none}
+}
+
+/* ------------------------------------------------- janelas soltas (o MDI)
+   O terceiro modo: janelas flutuantes DENTRO da pagina, arrastaveis pelo
+   cabecalho e redimensionaveis pelo canto. Nao sao janelas do sistema.
+   `position:relative` no `.corpo` para o `inset:0` da camada valer aqui e
+   nao no `body` -- e so isso; nenhuma regra de largura da moldura mora aqui. */
+main.corpo{position:relative}
+.mdi{position:absolute;inset:0;pointer-events:none;z-index:5}
+.janela{position:absolute;pointer-events:auto;display:flex;flex-direction:column;
+  min-width:280px;min-height:160px;border:1px solid var(--linha-forte);
+  border-radius:10px;background:var(--painel);overflow:hidden;
+  box-shadow:0 12px 34px rgba(0,0,0,.42)}
+.janela.frente{border-color:var(--laranja)}
+/* O cabecalho e o UNICO lugar por onde a janela se move. O corpo nao propaga
+   o arrasto, e e isso que deixa arrastar uma tabela do Diagrama ER dentro da
+   janela sem a janela andar junto -- a armadilha classica do MDI. */
+.jan-topo{display:flex;align-items:center;gap:6px;padding:5px 6px 5px 10px;
+  background:var(--painel-2);border-bottom:1px solid var(--linha);
+  cursor:move;user-select:none;font-size:12.5px;color:var(--texto-2)}
+.jan-tit{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-weight:600}
+.jan-corpo{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.jan-corpo .cabecalho{padding:10px 14px 0}
+.jan-corpo .cabecalho h2{font-size:16px}
+.jan-corpo .abas{padding:8px 14px 0}
+.jan-corpo .painel{padding:12px 14px 24px}
+/* A pega do canto. 16px, porque 4px nao se pega. */
+.jan-canto{position:absolute;right:0;bottom:0;width:16px;height:16px;
+  cursor:nwse-resize;background:none;border:none;padding:0}
+.jan-canto::before{content:"";position:absolute;right:3px;bottom:3px;
+  width:9px;height:9px;border-right:2px solid var(--texto-3);
+  border-bottom:2px solid var(--texto-3);opacity:.6}
+.jan-canto:hover::before{opacity:1;border-color:var(--laranja)}
+
+/* --------------------------------------------------------- modo destacado
+   Janela solta: sem menu, sem barra de ferramentas, sem arvore. So a folha
+   pedida, com o cabecalho minimo da barra dizendo qual banco e qual servidor. */
+#app[data-destacada="1"] .menubar,
+#app[data-destacada="1"] #ferramentas,
+#app[data-destacada="1"] .lateral,
+#app[data-destacada="1"] .pega-arvore,
+#app[data-destacada="1"] .veu-arvore,
+#app[data-destacada="1"] #btLateral{display:none}
+#app[data-destacada="1"]{grid-template-rows:var(--barra) 1fr;
+  grid-template-columns:1fr;grid-template-areas:"barra" "corpo"}
+#app[data-destacada="1"] .fita{color:var(--laranja)}
+
+/* O recado sobre o que muda em cada navegador, e sobre o que este modo nao
+   faz. Aparece na tela e nao num alerta: dizer e o pedido, interromper nao. */
+.multitela-nota{margin:0 0 12px;padding:8px 12px;border:1px solid var(--linha);
+  border-left:3px solid var(--laranja);border-radius:6px;
+  font-size:12px;color:var(--texto-3);background:var(--painel-2)}
+.multitela-nota b{color:var(--texto-2)}
+.multitela-nota code{font-family:"IBM Plex Mono",monospace;font-size:11.5px}

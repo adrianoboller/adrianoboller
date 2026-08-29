@@ -69,6 +69,17 @@ const DIAGRAMA_JS: &str = include_str!("../ui/diagrama-er.js");
 const TELEMETRIA_CSS: &str = include_str!("../ui/telemetria.css");
 const TELEMETRIA_JS: &str = include_str!("../ui/telemetria.js");
 
+/// A area de trabalho em abas, regioes e janelas -- estilo e comportamento.
+///
+/// Separada do `index.html` pelo mesmo motivo do diagrama e da telemetria: o
+/// arranjo das regioes e das abas e MECANISMO, e mecanismo nao deveria morar
+/// no meio de doze mil linhas de tela. E o estilo vem em folha propria porque
+/// o CSS global da pagina morde componente novo -- `input{width:100%}` numa
+/// tira de abas com pino e `x` dentro seria a bolinha do tamanho da celula
+/// outra vez.
+const MULTITELA_CSS: &str = include_str!("../ui/multitela.css");
+const MULTITELA_JS: &str = include_str!("../ui/multitela.js");
+
 /// A integracao com a Claude (API da Anthropic), em arquivo proprio.
 ///
 /// Separada do `index.html` pelo mesmo motivo do diagrama -- e por um segundo:
@@ -99,6 +110,8 @@ pub fn montar_pagina() -> String {
          <script>\n{DIAGRAMA_JS}\n</script>\n\
          <style>\n{TELEMETRIA_CSS}\n</style>\n\
          <script>\n{TELEMETRIA_JS}\n</script>\n\
+         <style>\n{MULTITELA_CSS}\n</style>\n\
+         <script>\n{MULTITELA_JS}\n</script>\n\
          <script>\n{CLAUDE_JS}\n</script>\n\
          </head>\n<body>\n{PAGINA}\n</body>\n</html>\n"
     )
@@ -668,6 +681,32 @@ mod tests {
             "o fragmento tem de entrar inteiro"
         );
         assert!(inteira.trim_end().ends_with("</html>"));
+    }
+
+    /// A area de trabalho entra na pagina ANTES do script dela.
+    ///
+    /// `PhxTelas` e lido pelo `index.html` no `abrirApp`, e o `index.html` e
+    /// servido no corpo. Se o modulo entrasse depois, `window.PhxTelas` seria
+    /// `undefined` na hora de montar a primeira tela -- e a pagina cairia no
+    /// degrau de "sem multitela" sem ninguem perceber, porque ele funciona.
+    #[test]
+    fn a_multitela_entra_no_cabecalho_antes_da_pagina() {
+        let p = montar_pagina();
+        let js = p.find("window.PhxTelas").expect("o modulo tem de entrar");
+        let css = p.find(".corpo .regioes").expect("a folha tem de entrar");
+        let corpo = p.find("<body>").expect("a pagina tem corpo");
+        assert!(
+            js < corpo,
+            "o script da multitela tem de vir antes do corpo"
+        );
+        assert!(
+            css < corpo,
+            "a folha da multitela tem de vir antes do corpo"
+        );
+        assert!(
+            p.contains("id=\"regioes\""),
+            "a moldura tem de trazer a area de regioes"
+        );
     }
 
     #[test]

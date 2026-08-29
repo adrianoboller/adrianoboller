@@ -10,7 +10,8 @@ node phxsql/testes-web/bateria.mjs
 
 Ela sobe um `phxsqld` só dela (portas **6200** e **6201**), num diretório
 temporário próprio, e o derruba **pelo PID** no fim — nunca por `pkill`.
-Roda os onze casos nos **dois temas**: 22 execuções, ~2min20.
+Roda os treze casos: onze nos **dois temas** e dois num tema só (os
+dois novos medem relógio, e cor não muda relógio) — **24 execuções**, ~4min30.
 
 | chave | o que faz |
 |---|---|
@@ -28,7 +29,7 @@ correção que ainda não existe. Esta casa já perdeu uma rodada inteira de
 ganhos medindo com binário velho, então a bateria **recusa rodar**: ela
 compara a data do binário com a do arquivo mais novo de `ui/` e diz qual.
 
-## Os onze casos
+## Os treze casos
 
 | | o que prova |
 |---|---|
@@ -43,6 +44,8 @@ compara a data do binário com a do arquivo mais novo de `ui/` e diz qual.
 | `cores` | a convenção das cinco cores (contorno, nunca fundo cheio) e o contraste **medido** de cada elemento pintado |
 | `primeira-pintura` | a tela de entrada aparece mesmo quando a rede engole a fonte da marca |
 | `lgpd` | a tela de Dado pessoal audita de verdade |
+| `multitela` | abas vivas com estado próprio, regiões lado a lado com calha, janela solta dentro da página, e o pino. Mede os pedidos por minuto com a aba escondida, com ela fechada, e com as quatro telas nomeadas visíveis ao mesmo tempo |
+| `monitores` | a emenda física entre dois monitores, o monitor pinado que sumiu, a janela destacada pegando a sessão pelo canal — e a sessão **não** aparecendo no `localStorage`. DPI de 2× num contexto próprio |
 
 ## Os três canais de erro
 
@@ -70,7 +73,14 @@ anterior seria contado contra a próxima.
   Playwright quando ninguém os escuta, e é por isso que o passeio pode clicar
   em «Excluir tabela» sem excluir nada. O caso `arvore` é a exceção: ele
   **responde** ao `prompt` do `[+]`, porque ali o diálogo é o caminho.
-- **Não mede desempenho.** Isso é a `bancada/`.
+- **Não mede desempenho** do motor. Isso é a `bancada/`. O que ela mede é o
+  custo da TELA em pedidos por minuto, que é outra coisa e mora no caso
+  `multitela`.
+- **Não exercita a Window Management API.** Ela existe no Chromium sem cabeça
+  mas rejeita sem a permissão `window-management`, que o Playwright 1.56 não
+  sabe conceder. O caso `monitores` a **dubla** e prova o caminho nosso —
+  achar a emenda, alinhar as calhas, cair para o monitor principal. O que fica
+  sem prova real é a resposta do navegador; ver `../docs/MULTITELA.md`.
 
 O que cada caso cobre, o que ficou de fora e por quê está em
 `../docs/TESTES.md`.

@@ -10,6 +10,81 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
+## Não lançado — a área de trabalho multitela
+
+Escrito em paralelo com a restauração de backup, abaixo: na integração as duas
+seções «Não lançado» viram uma só, e o número da versão sai de lá.
+
+**O console tinha uma tela por vez.** `folha(...)` trocava o `innerHTML` do
+`#painel`, e abrir a próxima matava a anterior — uma consulta com resultado,
+uma grade rolada até a linha 800, a telemetria coletando, tudo perdido ao
+trocar de tela. O pedido veio no molde do WINDEV(R), e o dono fechou a questão
+por escrito: *«é um site, então tem que esticar o navegador para todas as telas
+e dentro da página 1 ou índex distribuir as janelas dentro da mesma page»*.
+
+### Adicionado
+
+- **Abas dinâmicas**, com estado **por aba**. `est` passou a ter duas metades
+  declaradas: o que é do servidor (sessão, usuário, bancos) continua único, e o
+  que é da tela (`atual`, `aba`, `ordem`, `grade`, `pivot`…) troca junto com o
+  foco. Duas tabelas em duas abas não brigam mais pelo mesmo `est.atual` — o
+  defeito que só aparece com duas abertas, que é o que ninguém testa.
+- **Regiões lado a lado**: a área central divide em 2, 3 ou 4 colunas, cada uma
+  com a própria tira de abas e uma calha arrastável entre elas. É a foto da
+  ultrawide com o WINDEV em três painéis — e é **layout**, então funciona em
+  qualquer navegador. As quatro telas nomeadas (Diagrama ER, Telemetria,
+  Profiler, Query) abrem juntas e vivas.
+- **Janelas soltas dentro da página**: flutuantes, arrastadas pelo cabeçalho,
+  redimensionadas pelo canto, com ordem de sobreposição ao clicar. Soltar e
+  acoplar **movem o mesmo nó do DOM**, e por isso não perdem campo digitado
+  nem resultado; a rolagem, que mudar de pai zera, é salva e reposta.
+- **O pino** — o **mesmo glifo e o mesmo significado** do painel lateral, e a
+  mesma frase de rodapé. Guarda no `localStorage` quantas regiões, a largura
+  de cada uma, que aba em qual, e x/y/largura/altura das janelas. Em **pixel
+  CSS**, porque é a unidade que decide se a grade cabe.
+- **Rota por URL** para as telas com endereço próprio (`?tela=query`,
+  `?tela=diagrama&db=…`, `?tela=tabela&db=…&tab=…`), e uma **janela destacada**
+  do sistema para quem preferir. A ficha de sessão viaja pelo
+  `BroadcastChannel`, em memória, e **nunca** encosta no `localStorage`.
+- **Alinhar as regiões com as emendas físicas dos monitores**, quando a
+  `Window Management API` estiver disponível — o melhor uso dela aqui, e a
+  resposta ao monitor de 49" por daisy chain, que é «dois monitores num».
+- Dois casos novos na bateria de frontend (**24 execuções**), e
+  `testes-web/medir-regiao.mjs`, que mede de quanto uma região precisa.
+
+### Mudado
+
+- Os ids `#painel`, `#titulo`, `#subtitulo` e `#abas` passaram a morar **só na
+  tela com foco**; as outras se vestem por classe. Foi o que permitiu quatro
+  telas na tela sem tocar em nenhuma das centenas de `$("#painel")`.
+- `folha(...)` deixou de parar o relógio **global**: agora solta o laço **da
+  aba**. Parar o global mataria a telemetria da aba ao lado, que nem foi
+  tocada.
+- Ctrl/Cmd/botão do meio na barra de ferramentas, no menu e na árvore abre em
+  **aba nova**. O clique simples continua trocando o conteúdo da aba de agora,
+  que é o que sempre fez.
+
+### Sabido
+
+- **Arrastar uma janela do sistema de volta para a barra de abas não existe** —
+  em navegador nenhum. Não há evento quando uma janela passa por cima de outra.
+  Há «⤺ devolver» e «⇤ acoplar» no lugar, e o documento diz isso.
+- **As janelas destacadas não reabrem sozinhas** ao carregar: `window.open` sem
+  clique é bloqueio de popup em todo navegador.
+- **Quatro telas visíveis custam ≈ 90 pedidos/min** (medido: 15 em 10 s). No
+  modo lado a lado ninguém está escondido, e pausar seria mentir sobre o que a
+  tela mostra. Os relógios da Telemetria (2 s) e do Profiler (1 s) **não são
+  escalonados** — podem cair no mesmo instante. É pendência medida.
+- A `Window Management API` **não é exercitada de verdade** pela bateria: ela
+  pede a permissão `window-management`, que o Playwright 1.56 não sabe
+  conceder. O caso a dubla e prova o caminho nosso. O DPI diferente, esse, se
+  prova de verdade, com um contexto de 2×.
+- A **troca de DPI em voo** tem o ouvinte escrito (`matchMedia` na resolução) e
+  não tem prova automatizada: não há como mudar a densidade de uma página já
+  carregada pelo Playwright.
+
+---
+
 ## Não lançado — a restauração de backup
 
 O número da versão fica para a integração: escrevê-lo aqui antes de o

@@ -20,6 +20,12 @@ import { entrar, capturar, cenario, abrirPelaArvore, bancoDoCaso, verdade } from
 /* Fora do passeio, com o motivo escrito. Nada entra aqui por ser chato. */
 const FORA = new Map([
   ['Sair', 'derruba a sessao e o resto do passeio nao teria onde acontecer'],
+  // Pelo mesmo motivo do «Sair», e nao por ser chato: a janela flutuante fica
+  // POR CIMA do resto da pagina, e todo clique seguinte do passeio bateria
+  // nela. Quem prova este item e o caso `multitela`, que a solta, confere o
+  // estado, e a acopla de volta.
+  ['Soltar esta tela numa janela',
+    'deixa uma janela flutuante por cima do resto do passeio — o caso `multitela` é o dono dela'],
 ]);
 
 export const caso = {
