@@ -169,6 +169,19 @@ impl Atividade {
             // um clique tira o servico do ar para todo mundo. Administrar, e
             // nada menos.
             "servico" | "servico_parar" | "servico_subir" => Atividade::Administrar,
+            // Os textos da tela moram numa tabela comum, entao ver o estado e
+            // tirar o backup sao LEITURA -- exatamente como `exportar`, que ja
+            // le a tabela inteira e leva embora.
+            //
+            // Este portao confere a base VAZIA, porque nenhuma das cinco tem
+            // campo "tabela" no pedido. Ele so aperta; quem confere a tabela
+            // de verdade e o `poder_nos_idiomas`, dentro de cada operacao.
+            "idiomas" | "idiomas_exportar" => Atividade::Ler,
+            // As tres que ESCREVEM na tabela de textos. Semear nao desfaz
+            // traducao de ninguem, mas `idiomas_padrao` e `idiomas_importar`
+            // gravam por cima -- e quem pode reescrever o texto de toda tela
+            // do sistema esta administrando, nao alterando um registro.
+            "idiomas_carga" | "idiomas_padrao" | "idiomas_importar" => Atividade::Administrar,
             "inserir" => Atividade::Inserir,
             // Reservar a tabela para carga exige o poder de INSERIR nela, e
             // nao mais: quem pode gravar mil linhas pode pedir a tabela para

@@ -116,6 +116,139 @@ input:focus,select:focus{border-color:var(--laranja);outline:none}
   font-size:11.5px;color:var(--texto-3);line-height:1.5;
 }
 
+/* ------------------------------------------- entrada: idioma e conexoes
+   Tudo aqui e ESCOPADO em `#entrada`. O desenho global e a moldura sao de
+   outra mao, e componente de tela de entrada nao tem por que vazar para o
+   resto do console.
+
+   O cartao cresceu -- seletor de idioma em cima, grade de conexoes embaixo.
+   Com `place-items:center` num container `fixed` e `body{overflow:hidden}`,
+   conteudo mais alto que a janela e cortado PELO TOPO e nao ha como rolar
+   ate ele. `safe center` centraliza enquanto cabe e passa a alinhar no
+   inicio quando nao cabe, que e exatamente o que se quer num celular
+   deitado. */
+#entrada{
+  place-items:unset;justify-items:center;align-content:safe center;
+  overflow-y:auto;padding:20px 12px;
+}
+
+/* `.modo` é o nome de DOIS componentes diferentes: este bloco de texto do
+   cartão de entrada (declarado lá em cima) e o cartão-escolha do diálogo de
+   exclusão, que é `display:flex` dentro de `.modos`. O segundo é declarado
+   depois e ganha -- e aí a prosa daqui virava um flex container: cada trecho
+   de texto vira um item que quebra sozinho, e as frases saem em colunas que
+   estouram o cartão. Vinha junto um fundo, uma borda e um `cursor:pointer`
+   que dizem «isto se clica» sobre um parágrafo que não se clica.
+
+   Só aparecia no celular, e por um motivo que vale anotar: enquanto o cartão
+   era CORTADO abaixo da dobra, ninguém nunca via o fim dele numa tela
+   estreita. Foi tornar o cartão rolável que revelou um defeito que já estava
+   lá -- conserto que abre caminho também abre o que o caminho escondia. */
+#entrada .modo{
+  display:block;background:none;border:none;border-radius:0;cursor:auto;
+  border-top:1px solid var(--linha);padding:16px 0 0;
+}
+
+/* ------------------------------------------------------------- o idioma */
+#entrada .idiomas{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:0 0 10px;
+}
+#entrada .idi{
+  display:flex;align-items:center;gap:7px;
+  background:var(--fundo);border:1px solid var(--linha-forte);border-radius:6px;
+  /* 44px de altura: alvo de toque de dedo, e nao de ponteiro. */
+  padding:8px 8px;min-height:44px;
+  font-size:11.5px;color:var(--texto-2);text-align:left;line-height:1.15;
+}
+#entrada .idi:hover{border-color:var(--laranja);color:var(--texto)}
+#entrada .idi[aria-checked="true"]{
+  border-color:var(--laranja);color:var(--texto);background:var(--realce);
+}
+/* A bandeira da Franca e a da Italia tem faixa branca, e no tema claro ela
+   sumiria contra o papel. A borda fina desenha o limite da bandeira. */
+#entrada .idi svg{
+  width:22px;height:15px;flex:none;border-radius:2px;
+  box-shadow:0 0 0 1px var(--linha-forte);
+}
+#entrada .idi .nome{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+#entrada .idioma-dica{
+  font-size:10.5px;color:var(--texto-3);margin:0 0 20px;line-height:1.45;
+}
+
+/* --------------------------------------------------------- as conexoes */
+#entrada .conexoes{margin-top:18px;border-top:1px solid var(--linha);padding-top:14px}
+#entrada .conex-cabeca{
+  display:flex;align-items:center;gap:8px;width:100%;
+  background:none;border:none;padding:6px 0;min-height:40px;
+  font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--texto-3);
+}
+#entrada .conex-cabeca:hover{color:var(--texto)}
+#entrada .conex-cabeca .seta{
+  width:10px;height:10px;flex:none;transition:transform .15s;
+  border-right:2px solid currentColor;border-bottom:2px solid currentColor;
+  transform:rotate(-45deg);margin-left:2px;
+}
+#entrada .conex-cabeca[aria-expanded="true"] .seta{transform:rotate(45deg)}
+#entrada .conex-cabeca .conta{
+  margin-left:auto;letter-spacing:0;text-transform:none;font-size:11px;
+  color:var(--texto-3);
+}
+#entrada .conex-corpo{padding-top:8px}
+/* Lista de fichas, e nao tabela: o cartao tem 400px e o celular tem menos.
+   Uma tabela de cinco colunas aqui rolaria de lado ou espremeria o apelido,
+   que e justamente o que a pessoa vem procurar. */
+#entrada .conex{
+  display:flex;align-items:center;gap:8px;
+  border:1px solid var(--linha);border-radius:6px;padding:8px 10px;margin-bottom:6px;
+}
+#entrada .conex:hover{border-color:var(--linha-forte);background:var(--realce)}
+#entrada .conex .abrir{
+  flex:1;min-width:0;background:none;border:none;padding:4px 0;text-align:left;
+  min-height:36px;
+}
+#entrada .conex .apelido{
+  display:block;font-size:13px;color:var(--texto);font-weight:600;
+  /* Sem isto o `label{text-transform:uppercase}` global nao morde, mas o
+     apelido e DADO que a pessoa digitou: «base da farmácia» tem de aparecer
+     como ela escreveu. Deixar explicito impede que uma regra futura o
+     maiusculize e minta sobre o que esta guardado. */
+  text-transform:none;letter-spacing:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+#entrada .conex .onde-quando{
+  display:block;font-size:10.5px;color:var(--texto-3);margin-top:2px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+#entrada .conex .mexer{display:flex;gap:4px;flex:none}
+#entrada .conex .mexer button{
+  background:none;border:1px solid transparent;border-radius:5px;
+  /* 40px porque isto se aperta com o dedo, e o dedo não tem 34px. */
+  width:40px;height:40px;display:grid;place-items:center;color:var(--texto-3);
+  font-size:14px;line-height:1;
+}
+#entrada .conex .mexer .ren:hover{border-color:var(--acao-alterar);color:var(--acao-alterar)}
+#entrada .conex .mexer .rem:hover{border-color:var(--acao-excluir);color:var(--acao-excluir)}
+#entrada .conex-vazio{font-size:11.5px;color:var(--texto-3);line-height:1.5;margin:2px 0 10px}
+#entrada .conex-aviso{
+  font-size:10.5px;color:var(--texto-3);line-height:1.45;margin:10px 0 0;
+  display:flex;gap:6px;align-items:flex-start;
+}
+#entrada .conex-aviso .cad{color:var(--ok);flex:none}
+/* Contorno, nunca fundo cheio -- e verde porque INCLUI uma conexao na lista. */
+#entrada .bt-guardar{
+  width:100%;background:transparent;border:1px solid var(--acao-incluir);
+  color:var(--acao-incluir);border-radius:6px;padding:9px;min-height:40px;
+  font-weight:600;font-size:12.5px;
+}
+#entrada .bt-guardar:hover{background:var(--acao-incluir);color:var(--tinta-botao)}
+#entrada .bt-guardar[disabled]{opacity:.4;cursor:not-allowed}
+#entrada .bt-guardar[disabled]:hover{background:transparent;color:var(--acao-incluir)}
+
+/* Celular: tres bandeiras por linha ficam apertadas abaixo de 360px. */
+@media (max-width:380px){
+  #entrada .idiomas{grid-template-columns:repeat(2,1fr)}
+}
+
 /* ----------------------------------------------------------------- barra */
 #app{display:none;height:100%;grid-template-rows:var(--barra) auto auto 1fr;
   grid-template-columns:var(--arvore) 1fr;
@@ -1060,41 +1193,80 @@ td label,td .rot-dado{text-transform:none;letter-spacing:0;font-size:inherit;
     <img class="simbolo" src="data:image/png;base64,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"
          width="224" height="133" alt="PhxSql">
     <h1>Ph<span class="x">x</span>Sql</h1>
-    <p class="assin">Centro de Controle</p>
+    <p class="assin" data-txt="tela.assinatura">Centro de Controle</p>
     <p class="lema">Built to store. Engineered to scale.</p>
+
+    <!-- O idioma do ambiente. Bandeiras desenhadas a mao em SVG: emoji de
+         bandeira nao desenha no Windows, que e onde este console mais roda --
+         apareceria a sigla "BR" numa caixinha, ou nada. -->
+    <div class="idiomas" id="idiomas" role="radiogroup"
+         aria-label="Idioma da interface"></div>
+    <p class="idioma-dica" data-txt="tela.idioma_dica">A escolha vale nesta
+      sessão e fica guardada neste navegador.</p>
+
     <div class="onde">
       <div class="campo">
-        <label for="h">Servidor</label>
-        <input id="h" value="localhost" placeholder="IP ou DNS" autocomplete="off">
+        <label for="h" data-txt="tela.servidor">Servidor</label>
+        <input id="h" value="localhost" placeholder="IP ou DNS"
+               data-txt-ph="tela.servidor_dica" autocomplete="off">
       </div>
       <div class="campo estreito">
-        <label for="pt">Porta</label>
+        <label for="pt" data-txt="tela.porta">Porta</label>
         <input id="pt" value="5000" inputmode="numeric" autocomplete="off">
       </div>
     </div>
     <div class="campo">
-      <label for="u">Usuário</label>
+      <label for="u" data-txt="tela.usuario">Usuário</label>
       <input id="u" autocomplete="username" value="adriano">
     </div>
     <div class="campo">
-      <label for="s">Senha</label>
+      <label for="s" data-txt="tela.senha">Senha</label>
       <input id="s" type="password" autocomplete="current-password">
     </div>
     <div class="campo">
-      <label for="t">Token do servidor</label>
+      <label for="t" data-txt="tela.token">Token do servidor</label>
       <input id="t" type="password" autocomplete="off">
     </div>
     <div class="campo" id="campoChave" hidden>
-      <label for="k">Chave privada <span class="opc">facultativa</span></label>
+      <label for="k"><span data-txt="tela.chave">Chave privada</span>
+        <span class="opc" data-txt="tela.facultativa">facultativa</span></label>
       <input id="k" type="password" autocomplete="off"
+             data-txt-ph="tela.chave_dica"
              placeholder="Ed25519, 64 hexadecimais">
     </div>
     <div class="campo">
-      <label for="db">Database <span class="opc">opcional</span></label>
-      <input id="db" autocomplete="off" placeholder="abre já neste banco">
+      <label for="db"><span data-txt="tela.database">Database</span>
+        <span class="opc" data-txt="tela.opcional">opcional</span></label>
+      <input id="db" autocomplete="off" data-txt-ph="tela.database_dica"
+             placeholder="abre já neste banco">
     </div>
-    <button class="botao" id="btEntrar">Entrar</button>
+    <button class="botao" id="btEntrar" data-txt="tela.entrar">Entrar</button>
     <div class="recado" id="recado"></div>
+
+    <!-- O historico das conexoes, no espirito do HFSQL(R): a pessoa batiza a
+         base ("base da farmácia") e volta nela pelo nome, e nao pelo IP.
+
+         Retratil e FECHADA por padrao: a tela de entrada e de entrar, e uma
+         grade aberta por cima dela estragaria justamente o que ela faz bem. -->
+    <div class="conexoes">
+      <button class="conex-cabeca" id="btConexoes" aria-expanded="false"
+              aria-controls="conexCorpo">
+        <span class="seta" aria-hidden="true"></span>
+        <span data-txt="tela.conexoes">Conexões salvas</span>
+        <span class="conta" id="conexConta"></span>
+      </button>
+      <div class="conex-corpo" id="conexCorpo" hidden>
+        <div id="conexLista"></div>
+        <button class="bt-guardar" id="btGuardarConex"
+                data-txt="tela.guardar_conexao">Guardar esta conexão</button>
+        <p class="conex-aviso">
+          <span class="cad" aria-hidden="true">&#128274;</span>
+          <span data-txt="tela.conexoes_aviso">Ficam neste navegador, nunca no
+            servidor. A senha e o token NÃO são guardados.</span>
+        </p>
+      </div>
+    </div>
+
     <div class="modo" id="modo"></div>
   </div>
 </div>
@@ -1143,6 +1315,9 @@ const est = { sessao:null, usuario:null, token:"", demo:false,
               // Para onde este console esta falando. Vazio = o proprio
               // servidor que serviu a pagina.
               servidor:"", portaLocal:5000, servidores:[], database:"",
+              // Os textos da tela no idioma escolhido, como `/idiomas` os
+              // resolveu. Vazio = o portugues que ja esta no HTML.
+              textos:null,
               teto:200, esquemaAtual:null, grade:null, painel:null,
               maquina:null, relogioMaquina:null,
               // O formulario de nova tabela sobrevive a um "+ coluna": o
@@ -1454,7 +1629,8 @@ async function entrar() {
   const host = $("#h").value.trim(), porta = $("#pt").value.trim() || "5000";
   const chave = $("#k").value.trim();
   const recado = $("#recado");
-  recado.className = "recado info"; recado.textContent = "Conferindo…";
+  recado.className = "recado info";
+  recado.textContent = txt("tela.conferindo", "Conferindo…");
   est.token = token;
   est.database = $("#db").value.trim();
   // So manda "servidor" quando for OUTRO servidor. Para o proprio, o caminho
@@ -1465,7 +1641,7 @@ async function entrar() {
       est.usuario = { nome:"Adriano Boller", login:usuario||"demo", supervisor:true };
     } else if (podeProvar()) {
       // Caminho bom: a senha nao sai desta maquina.
-      recado.textContent = "Derivando a prova…";
+      recado.textContent = txt("tela.derivando", "Derivando a prova…");
       const d = await api("desafio",
         est.servidor ? { usuario, servidor: est.servidor } : { usuario });
       const nonceCliente = hexDeBytes(crypto.getRandomValues(new Uint8Array(12)));
@@ -1474,7 +1650,7 @@ async function entrar() {
       const pedido = { usuario, prova, nonce_cliente:nonceCliente };
       if (est.servidor) pedido.servidor = est.servidor;
       if (chave) {
-        recado.textContent = "Assinando o desafio…";
+        recado.textContent = txt("tela.assinando", "Assinando o desafio…");
         pedido.assinatura = await assinarDesafio(chave, d.nonce, nonceCliente, usuario);
       }
       est.usuario = await api("login", pedido);
@@ -1486,10 +1662,13 @@ async function entrar() {
       if (est.servidor) pedido.servidor = est.servidor;
       est.usuario = await api("login", pedido);
     }
+    // Carimba a data DEPOIS de a entrada dar certo: uma tentativa recusada
+    // nao e um uso, e a coluna diz «último uso», nao «última tentativa».
+    marcarUsoDaConexao();
     await abrirApp();
   } catch (e) {
     recado.className = "recado erro";
-    recado.textContent = e.message || "não consegui entrar";
+    recado.textContent = e.message || txt("tela.falhou", "não consegui entrar");
   }
 }
 
@@ -1553,7 +1732,8 @@ async function montarArvore(abrirPainel = true) {
   }
   html += `<div class="grupo">Administração</div>`;
   for (const [chave, rotulo, ic] of
-       [["usuarios","Usuários","◉"],["acessos","Acessos","◈"],["bloqueios","Bloqueios","⛔"]])
+       [["usuarios","Usuários","◉"],["acessos","Acessos","◈"],["bloqueios","Bloqueios","⛔"],
+        ["idiomas","Idiomas","⚑"]])
     html += `<div class="no" data-admin="${chave}"><span class="ic">${ic}</span>${rotulo}</div>`;
 
   const a = $("#arvore");
@@ -2179,6 +2359,12 @@ async function abrirAdmin(qual) {
           <td>${x.ok?'<span class="pino ok">ok</span>'
                     :`<span class="pino mal">${esc(x.erro||"negado")}</span>`}</td>
           <td class="dado num">${x.ms}</td></tr>`);
+    } else if (qual === "idiomas") {
+      $("#titulo").textContent = "Idiomas";
+      $("#subtitulo").textContent =
+        "os textos da tela em seis idiomas · phxsys.mensagens, uma tabela como as outras";
+      p.innerHTML = await vIdiomas();
+      ligarIdiomasAdmin();
     } else {
       $("#titulo").textContent = "Bloqueios";
       $("#subtitulo").textContent = "blacklist.json · o IP é recusado antes do token";
@@ -5023,6 +5209,119 @@ function verCreditos() {
 
 
 
+
+/* ============================================ Idiomas: carga, backup, padrão
+
+   As três operações que o pedido descreve, na área de ADMINISTRAÇÃO e não na
+   tela de entrada: quem ainda não entrou não é administrador, e semear ou
+   restaurar uma tabela do sistema é coisa de quem entrou.
+
+   A tela de entrada fica com o que é dela: escolher a bandeira. */
+
+async function vIdiomas() {
+  const e = await api("idiomas", { idioma: idiomaEscolhido() });
+  const semeados = e.textos_de_tela_semeados, total = e.textos_de_tela;
+  const faltam = total - semeados;
+  return `
+    <div class="fichas">
+      <div class="ficha"><div class="v">${e.linhas_na_tabela}</div>
+        <div class="r">linhas na tabela</div>
+        <div class="u"><code>${esc(e.database)}.${esc(e.tabela)}</code></div></div>
+      <div class="ficha"><div class="v">${semeados}/${total}</div>
+        <div class="r">textos de tela semeados</div>
+        <div class="u">${faltam ? `faltam ${faltam}` : "nada a semear"}</div></div>
+      <div class="ficha"><div class="v">${e.traduzidos_no_idioma}</div>
+        <div class="r">com tradução própria</div>
+        <div class="u">no idioma ${esc(e.idioma)}</div></div>
+    </div>
+    <p class="leg">Os textos que a tabela não cobre caem no português de
+      fábrica — sem tabela, a tela é a de sempre. A tradução se edita na grade
+      de <code>${esc(e.database)}.${esc(e.tabela)}</code>, como qualquer tabela.</p>
+
+    <div class="acoes">
+      <button class="botao incluir" id="btIdiCarga">Carga da tabela</button>
+      <button class="botao consultar" id="btIdiExportar">Exportar backup</button>
+      <button class="botao alterar" id="btIdiImportar">Importar backup</button>
+      <input type="file" id="arqIdioma" accept="application/json,.json" hidden>
+    </div>
+
+    <div class="aviso">
+      <b>Carga da tabela</b> só acrescenta o que falta: linha que já existe não
+      é tocada, então ela pode ser repetida à vontade sem desfazer tradução
+      nenhuma.
+    </div>
+
+    <h3 style="margin:22px 0 8px">Carga padrão</h3>
+    <p class="leg">Devolve os textos de <b>fábrica por cima</b> do que está
+      gravado — é o «caso a tradução não tenha ficado boa». Escolha o alcance:
+      um idioma só deixa os outros cinco intactos.</p>
+    <div class="acoes">
+      <select id="idiEscopo" style="width:auto;min-width:230px">
+        ${IDIOMAS.map(i => `<option value="${i.col}">só ${esc(i.col)} (${esc(i.nome)})</option>`).join("")}
+        <option value="*">os seis idiomas</option>
+      </select>
+      <button class="botao excluir" id="btIdiPadrao">Carga padrão</button>
+    </div>`;
+}
+
+function ligarIdiomasAdmin() {
+  $("#btIdiCarga").onclick = async () => {
+    try {
+      const r = await api("idiomas_carga");
+      avisar(`carga feita: ${r.incluidas} incluída(s), ${r.intocadas} já estavam lá`);
+      abrirAdmin("idiomas");
+    } catch (e) { avisar(e.message, true); }
+  };
+
+  $("#btIdiExportar").onclick = async () => {
+    try {
+      const b = await api("idiomas_exportar");
+      const quando = new Date().toISOString().slice(0, 10);
+      baixar(`phxsql-idiomas-${quando}.json`, "application/json",
+             JSON.stringify(b, null, 2), false);
+      avisar(`backup de ${b.linhas.length} linha(s) entregue ao navegador`);
+    } catch (e) { avisar(e.message, true); }
+  };
+
+  $("#btIdiImportar").onclick = () => $("#arqIdioma").click();
+  $("#arqIdioma").onchange = async ev => {
+    const arq = ev.target.files && ev.target.files[0];
+    if (!arq) return;
+    ev.target.value = "";  // o mesmo arquivo tem de poder ser escolhido de novo
+    try {
+      const backup = JSON.parse(await arq.text());
+      const quantas = (backup.linhas || []).length;
+      if (!confirm(`Importar ${quantas} linha(s) de ${arq.name}?\n\n`
+        + "O que estiver no backup é GRAVADO POR CIMA do que está na tabela, "
+        + "TextName por TextName. O que não estiver no backup fica como está."))
+        return;
+      const r = await api("idiomas_importar", { backup });
+      avisar(`importado: ${r.incluidas} incluída(s), ${r.alteradas} alterada(s)`);
+      abrirAdmin("idiomas");
+    } catch (e) { avisar(e.message || "arquivo ilegível", true); }
+  };
+
+  // O botão que apaga trabalho. Ele diz O QUE vai sobrescrever antes de
+  // fazer -- a casa não aceita botão que desfaz tradução em silêncio.
+  $("#btIdiPadrao").onclick = async () => {
+    const escopo = $("#idiEscopo").value;
+    const tudo = escopo === "*";
+    const alvo = tudo ? "os SEIS idiomas" : `no idioma ${escopo}`;
+    if (!confirm(`Devolver os textos de fábrica ${tudo ? "em " : ""}${alvo}?\n\n`
+      + `Toda tradução que alguém tenha escrito ${tudo
+          ? "em qualquer um dos seis idiomas"
+          : `na coluna ${escopo}`} será SUBSTITUÍDA pelo texto de fábrica.\n\n`
+      + "As outras colunas não são tocadas. Isto não se desfaz — exporte um "
+      + "backup antes se houver tradução que valha guardar."))
+      return;
+    try {
+      const r = await api("idiomas_padrao", tudo ? { tudo:true } : { idioma:escopo });
+      avisar(`carga padrão em ${esc(r.sobrescreveu)}: ${r.alteradas} alterada(s), `
+        + `${r.incluidas} incluída(s)`);
+      abrirAdmin("idiomas");
+    } catch (e) { avisar(e.message, true); }
+  };
+}
 
 /* ================================================== Exportar uma tabela
    Sete formatos, e os dois de escritório saem do mesmo compactador que o
@@ -9609,6 +9908,313 @@ aplicarTema(lembrado("phxsql-tema") || (sistemaClaro() ? "claro" : "escuro"));
 $("#btTema").onclick = () =>
   aplicarTema(document.documentElement.getAttribute("data-tema") === "claro"
     ? "escuro" : "claro");
+
+// =====================================================================
+// O IDIOMA DO AMBIENTE
+//
+// As bandeiras sao SVG desenhado a mao, e nao emoji: 🇧🇷 nao desenha no
+// Windows -- aparece "BR" numa caixinha, ou nada. Console de banco roda em
+// Windows, entao emoji de bandeira aqui seria um seletor sem bandeira.
+//
+// Os SEIS textos NAO estao aqui. Quem resolve o texto e o servidor, em
+// `idiomas.rs`, e a pagina so pede `/idiomas?idioma=…` e pendura o resultado
+// nos `data-txt`. Carregar as traducoes tambem aqui criaria duas verdades, e
+// a segunda e sempre a que envelhece calada.
+// =====================================================================
+const IDIOMAS = [
+  // O nome de cada idioma aparece NO PROPRIO idioma -- e assim que quem nao
+  // le a lingua da tela ainda encontra a dele.
+  { col:"Portugues", nome:"Português", lang:"pt-BR", bandeira:"br" },
+  { col:"Frances",   nome:"Français",  lang:"fr",    bandeira:"fr" },
+  { col:"Ingles",    nome:"English",   lang:"en",    bandeira:"gb" },
+  { col:"Italiano",  nome:"Italiano",  lang:"it",    bandeira:"it" },
+  { col:"Alemao",    nome:"Deutsch",   lang:"de",    bandeira:"de" },
+  { col:"Espanhol",  nome:"Español",   lang:"es",    bandeira:"es" },
+];
+
+/* Bandeiras em 24×16. Simples de proposito: o que importa e reconhecer de
+   relance num quadrado de 22px, e nao a heraldica. */
+const BANDEIRAS = {
+  br:`<svg viewBox="0 0 24 16" aria-hidden="true"><rect width="24" height="16" fill="#009b3a"/>
+      <path d="M12 1.7 22.3 8 12 14.3 1.7 8Z" fill="#fedf00"/>
+      <circle cx="12" cy="8" r="3.9" fill="#002776"/></svg>`,
+  fr:`<svg viewBox="0 0 24 16" aria-hidden="true"><rect width="8" height="16" fill="#002395"/>
+      <rect x="8" width="8" height="16" fill="#fff"/>
+      <rect x="16" width="8" height="16" fill="#ed2939"/></svg>`,
+  gb:`<svg viewBox="0 0 24 16" aria-hidden="true"><rect width="24" height="16" fill="#012169"/>
+      <path d="M0 0 24 16M24 0 0 16" stroke="#fff" stroke-width="3.2"/>
+      <path d="M0 0 24 16M24 0 0 16" stroke="#c8102e" stroke-width="1.7"/>
+      <path d="M12 0V16M0 8H24" stroke="#fff" stroke-width="5.4"/>
+      <path d="M12 0V16M0 8H24" stroke="#c8102e" stroke-width="3.2"/></svg>`,
+  it:`<svg viewBox="0 0 24 16" aria-hidden="true"><rect width="8" height="16" fill="#008c45"/>
+      <rect x="8" width="8" height="16" fill="#f4f5f0"/>
+      <rect x="16" width="8" height="16" fill="#cd212a"/></svg>`,
+  de:`<svg viewBox="0 0 24 16" aria-hidden="true"><rect width="24" height="5.34" fill="#000"/>
+      <rect y="5.34" width="24" height="5.33" fill="#dd0000"/>
+      <rect y="10.67" width="24" height="5.33" fill="#ffce00"/></svg>`,
+  es:`<svg viewBox="0 0 24 16" aria-hidden="true"><rect width="24" height="16" fill="#aa151b"/>
+      <rect y="4" width="24" height="8" fill="#f1bf00"/></svg>`,
+};
+
+const CHAVE_IDIOMA = "phxsql-idioma";
+
+/** O idioma guardado, se ele existir. Nome estranho cai no português -- e o
+    mesmo degrau que o servidor faz, e pelo mesmo motivo: um valor errado no
+    navegador de alguem nao pode virar uma tela sem rótulo. */
+function idiomaEscolhido() {
+  const g = lembrado(CHAVE_IDIOMA);
+  return IDIOMAS.some(i => i.col === g) ? g : "Portugues";
+}
+
+/** Um texto da tela, para o que o JS escreve. O padrão é o português de
+    fábrica, que é o que o HTML já mostra. */
+const txt = (nome, padrao) => (est.textos && est.textos[nome]) || padrao;
+
+function desenharIdiomas() {
+  const atual = idiomaEscolhido();
+  $("#idiomas").innerHTML = IDIOMAS.map(i => `
+    <button type="button" class="idi" role="radio" data-idi="${i.col}"
+            aria-checked="${i.col === atual}" tabindex="${i.col === atual ? 0 : -1}"
+            aria-label="${esc(i.nome)}" title="${esc(i.nome)}">
+      ${BANDEIRAS[i.bandeira]}<span class="nome">${esc(i.nome)}</span>
+    </button>`).join("");
+  const botoes = [...$("#idiomas").querySelectorAll(".idi")];
+  botoes.forEach((b, i) => {
+    b.onclick = () => escolherIdioma(b.dataset.idi);
+    // Seta anda entre as bandeiras, que e o que se espera de um radiogroup.
+    b.onkeydown = e => {
+      const passo = { ArrowRight:1, ArrowDown:1, ArrowLeft:-1, ArrowUp:-1 }[e.key];
+      if (!passo) return;
+      e.preventDefault();
+      const alvo = botoes[(i + passo + botoes.length) % botoes.length];
+      escolherIdioma(alvo.dataset.idi).then(() => {
+        const novo = $(`#idiomas .idi[data-idi="${alvo.dataset.idi}"]`);
+        if (novo) novo.focus();
+      });
+    };
+  });
+}
+
+async function escolherIdioma(col) {
+  lembrar(CHAVE_IDIOMA, col);
+  desenharIdiomas();
+  await aplicarIdioma(col);
+}
+
+/** Pede os textos ao servidor e os pendura nos `data-txt`.
+ *
+ *  Sem servidor -- modo demonstração -- não há o que aplicar: o HTML já está
+ *  em português, que é exatamente o degrau 3 do servidor. */
+async function aplicarIdioma(col) {
+  const escolha = IDIOMAS.find(i => i.col === col) || IDIOMAS[0];
+  let textos = null;
+  try {
+    const r = await fetch("/idiomas?idioma=" + encodeURIComponent(col));
+    if (r.ok) {
+      const j = await r.json();
+      if (j && j.ok && j.textos) textos = j.textos;
+    }
+  } catch {}
+  if (!textos) return;
+  est.textos = textos;
+  document.documentElement.lang = escolha.lang;
+  // `textContent`, nunca `innerHTML`: o texto vem de uma tabela que um
+  // administrador edita pela grade, e tabela editável é entrada de usuário.
+  for (const el of document.querySelectorAll("[data-txt]")) {
+    const t = textos[el.dataset.txt];
+    if (t) el.textContent = t;
+  }
+  for (const el of document.querySelectorAll("[data-txt-ph]")) {
+    const t = textos[el.dataset.txtPh];
+    if (t) el.placeholder = t;
+  }
+  desenharConexoes();
+}
+
+// =====================================================================
+// O HISTÓRICO DE CONEXÕES, no espírito do HFSQL(R)
+//
+// Fica no NAVEGADOR (localStorage) e nunca no servidor: é o histórico de
+// quem senta nesta máquina, não do banco. E guarda apelido, endereço, porta,
+// usuário e data -- nunca a senha, nunca o token.
+//
+// A lista branca do `limparConexao` roda na leitura E na gravação. Na
+// gravação é onde ela importa: nenhum caminho consegue enfiar um campo novo
+// (uma senha, por exemplo) na lista, porque o objeto gravado é montado
+// campo a campo a partir dos cinco que existem.
+// =====================================================================
+const CHAVE_CONEX = "phxsql-conexoes";
+const CHAVE_CONEX_ABERTO = "phxsql-conexoes-aberto";
+const MAX_CONEXOES = 12;
+
+function limparConexao(c) {
+  if (!c || typeof c !== "object") return null;
+  const apelido = String(c.apelido ?? "").trim();
+  const host = String(c.host ?? "").trim();
+  if (!apelido || !host) return null;
+  return {
+    apelido:  apelido.slice(0, 60),
+    host:     host.slice(0, 120),
+    porta:    String(c.porta ?? "").replace(/[^0-9]/g, "").slice(0, 5),
+    usuario:  String(c.usuario ?? "").trim().slice(0, 60),
+    database: String(c.database ?? "").trim().slice(0, 60),
+    quando:   String(c.quando ?? "").slice(0, 40),
+  };
+}
+
+function conexoes() {
+  try {
+    const l = JSON.parse(lembrado(CHAVE_CONEX) || "[]");
+    return Array.isArray(l) ? l.map(limparConexao).filter(Boolean) : [];
+  } catch { return []; }
+}
+
+function guardarConexoes(lista) {
+  const limpa = lista.map(limparConexao).filter(Boolean).slice(0, MAX_CONEXOES);
+  lembrar(CHAVE_CONEX, JSON.stringify(limpa));
+  desenharConexoes();
+}
+
+/** Duas conexões são a mesma quando levam ao mesmo lugar com o mesmo login. */
+const chaveDaConexao = c =>
+  `${c.host.toLowerCase()}|${c.porta}|${c.usuario.toLowerCase()}`;
+
+function quandoLegivel(iso) {
+  if (!iso) return txt("tela.nunca_usada", "nunca");
+  const d = new Date(iso);
+  if (isNaN(d)) return txt("tela.nunca_usada", "nunca");
+  const lang = (IDIOMAS.find(i => i.col === idiomaEscolhido()) || IDIOMAS[0]).lang;
+  try {
+    return d.toLocaleString(lang, { dateStyle:"short", timeStyle:"short" });
+  } catch { return d.toISOString().slice(0, 16).replace("T", " "); }
+}
+
+function desenharConexoes() {
+  const lista = conexoes();
+  $("#conexConta").textContent = lista.length ? String(lista.length) : "";
+  const alvo = $("#conexLista");
+  if (!lista.length) {
+    alvo.innerHTML = `<p class="conex-vazio" data-txt="tela.conexoes_vazio">${
+      esc(txt("tela.conexoes_vazio",
+        "Nenhuma conexão guardada ainda. Preencha os campos acima e clique em guardar."))
+    }</p>`;
+    return;
+  }
+  const ren = txt("tela.renomear", "Renomear"), rem = txt("tela.remover", "Remover");
+  alvo.innerHTML = lista.map((c, i) => `
+    <div class="conex">
+      <button type="button" class="abrir" data-i="${i}">
+        <span class="apelido">${esc(c.apelido)}</span>
+        <span class="onde-quando">${esc(c.host)}:${esc(c.porta || "5000")}${
+          c.usuario ? " · " + esc(c.usuario) : ""} · ${esc(quandoLegivel(c.quando))}</span>
+      </button>
+      <span class="mexer">
+        <button type="button" class="ren" data-i="${i}" title="${esc(ren)}"
+                aria-label="${esc(ren)}: ${esc(c.apelido)}">&#9998;</button>
+        <button type="button" class="rem" data-i="${i}" title="${esc(rem)}"
+                aria-label="${esc(rem)}: ${esc(c.apelido)}">&#10005;</button>
+      </span>
+    </div>`).join("");
+  alvo.querySelectorAll(".abrir").forEach(b =>
+    b.onclick = () => usarConexao(lista[+b.dataset.i]));
+  alvo.querySelectorAll(".ren").forEach(b =>
+    b.onclick = () => renomearConexao(+b.dataset.i));
+  alvo.querySelectorAll(".rem").forEach(b =>
+    b.onclick = () => removerConexao(+b.dataset.i));
+}
+
+/** Clicar preenche o formulário -- e só ele. A senha fica com quem sabe. */
+function usarConexao(c) {
+  if (!c) return;
+  $("#h").value = c.host;
+  $("#pt").value = c.porta || est.portaLocal || 5000;
+  $("#u").value = c.usuario;
+  $("#db").value = c.database || "";
+  const recado = $("#recado");
+  recado.className = "recado info";
+  recado.textContent = c.apelido;
+  // O cursor vai para a senha, que é o único campo que a lista não preenche.
+  $("#s").focus();
+}
+
+function renomearConexao(i) {
+  const lista = conexoes();
+  if (!lista[i]) return;
+  const novo = prompt(txt("tela.pergunta_apelido",
+    "Que nome dar a esta conexão? (por exemplo: base da farmácia)"), lista[i].apelido);
+  if (novo === null) return;
+  if (!novo.trim()) return;
+  lista[i].apelido = novo.trim();
+  guardarConexoes(lista);
+}
+
+function removerConexao(i) {
+  const lista = conexoes();
+  if (!lista[i]) return;
+  if (!confirm(`${txt("tela.confirmar_remover",
+    "Remover esta conexão da lista deste navegador?")}\n\n${lista[i].apelido}`)) return;
+  lista.splice(i, 1);
+  guardarConexoes(lista);
+}
+
+/** Guarda o que está no formulário, com o apelido que a pessoa der.
+ *
+ *  Monta o objeto campo a campo: é por isso que a senha não tem por onde
+ *  entrar, nem hoje nem quando alguém acrescentar um campo ao formulário. */
+function guardarConexaoAtual() {
+  const host = $("#h").value.trim();
+  if (!host) return;
+  const nova = {
+    apelido: "",
+    host,
+    porta: $("#pt").value.trim() || String(est.portaLocal || 5000),
+    usuario: $("#u").value.trim(),
+    database: $("#db").value.trim(),
+    quando: new Date().toISOString(),
+  };
+  const lista = conexoes();
+  const jaTem = lista.findIndex(c => chaveDaConexao(c) === chaveDaConexao(nova));
+  const sugestao = jaTem >= 0 ? lista[jaTem].apelido : `${host}`;
+  const apelido = prompt(txt("tela.pergunta_apelido",
+    "Que nome dar a esta conexão? (por exemplo: base da farmácia)"), sugestao);
+  if (apelido === null || !apelido.trim()) return;
+  nova.apelido = apelido.trim();
+  if (jaTem >= 0) lista[jaTem] = nova; else lista.unshift(nova);
+  guardarConexoes(lista);
+}
+
+/** Depois de entrar, carimba a data na entrada correspondente -- se ela
+    existir. Entrar NÃO cria conexão sozinho: a lista é de quem a pessoa
+    batizou, e uma lista que cresce sem pedir vira lixo com IP dentro. */
+function marcarUsoDaConexao() {
+  const lista = conexoes();
+  const atual = {
+    host: $("#h").value.trim(),
+    porta: $("#pt").value.trim() || String(est.portaLocal || 5000),
+    usuario: $("#u").value.trim(),
+  };
+  const i = lista.findIndex(c => chaveDaConexao(c) === chaveDaConexao(atual));
+  if (i < 0) return;
+  lista[i].quando = new Date().toISOString();
+  guardarConexoes(lista);
+}
+
+function abrirConexoes(aberto) {
+  $("#btConexoes").setAttribute("aria-expanded", aberto ? "true" : "false");
+  $("#conexCorpo").hidden = !aberto;
+  lembrar(CHAVE_CONEX_ABERTO, aberto ? "1" : "0");
+}
+
+$("#btConexoes").onclick = () =>
+  abrirConexoes($("#btConexoes").getAttribute("aria-expanded") !== "true");
+$("#btGuardarConex").onclick = guardarConexaoAtual;
+
+// Fechada por padrão: a tela de entrada é de entrar. Só reabre se quem usa
+// esta máquina a deixou aberta.
+abrirConexoes(lembrado(CHAVE_CONEX_ABERTO) === "1");
+desenharIdiomas();
+desenharConexoes();
+aplicarIdioma(idiomaEscolhido());
 
 $("#btEntrar").onclick = entrar;
 $("#s").addEventListener("keydown", e => { if (e.key === "Enter") entrar(); });

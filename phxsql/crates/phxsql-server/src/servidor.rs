@@ -39,6 +39,7 @@ use crate::config::{Config, Durabilidade, Papel};
 use crate::dblink::{Definicao, Motor};
 use crate::exportar::Formato;
 use crate::http;
+use crate::idiomas;
 use crate::juncao::{Lado, Tipo as TipoJuncao, Uniao};
 use crate::mensagens::Mensagens;
 use crate::usuarios::{Atividade, Usuario};
@@ -84,6 +85,11 @@ pub(crate) const OPS_ESCRITA: &[&str] = &[
     // somente leitura, que e justamente quando alguem esta investigando.
     "restaurar",
     "esvaziar_lixeira",
+    // As tres que gravam na tabela de textos da tela. Num servidor somente
+    // leitura semear nao pode gravar, e as outras duas apagam trabalho.
+    "idiomas_carga",
+    "idiomas_padrao",
+    "idiomas_importar",
     // Gravam o cadastro de ligacoes, que e arquivo deste servidor.
     "dblink_salvar",
     "dblink_excluir",
@@ -3477,12 +3483,28 @@ impl Servidor {
                     ]),
                 );
             }
+            // Sem token pelo mesmo motivo do /saude: a tela de ENTRADA precisa
+            // dos rotulos antes de existir sessao, e um rotulo de campo nao e
+            // dado. So serve os `TextName` de tela; as mensagens do protocolo
+            // ficam na mesma tabela e nao saem por aqui.
+            //
+            // Sem a tabela isto nao toca em disco alem de tentar abrir a base:
+            // devolve a fabrica, que e a tela de sempre.
+            ("GET", "/idiomas") => {
+                let idioma =
+                    idiomas::indice_do_idioma(&http::parametro(&pedido.consulta, "idioma"));
+                let corpo = match self.dados.lock() {
+                    Ok(dados) => idiomas::textos_para_a_pagina(&dados, idioma),
+                    Err(_) => idiomas::textos_para_a_pagina_sem_tabela(idioma),
+                };
+                let _ = http::responder_json(&mut fluxo, 200, &corpo);
+            }
             ("POST", "/api") => self.api_http(&mut fluxo, &pedido, &ip, porta),
             ("GET", _) | ("HEAD", _) => {
                 let _ = http::erro_json(
                     &mut fluxo,
                     404,
-                    "esta interface tem tres rotas: /, /saude e /api",
+                    "esta interface tem quatro rotas: /, /saude, /idiomas e /api",
                 );
             }
             _ => {
@@ -4474,6 +4496,11 @@ impl Servidor {
             "whitelist_salvar" => self.op_whitelist_salvar(p),
             "mensagens" => self.op_mensagens(),
             "mensagens_semear" => self.op_mensagens_semear(),
+            "idiomas" => self.op_idiomas(p, sessao),
+            "idiomas_carga" => self.op_idiomas_carga(p, sessao),
+            "idiomas_padrao" => self.op_idiomas_padrao(p, sessao),
+            "idiomas_exportar" => self.op_idiomas_exportar(sessao),
+            "idiomas_importar" => self.op_idiomas_importar(p, sessao),
             "bancos" => self.op_bancos(),
             "tabelas" => self.op_tabelas(p, sessao),
             "bulkinsert" => self.op_bulkinsert(p, sessao),
@@ -4811,6 +4838,110 @@ impl Servidor {
             ("semeadas", Json::de_u64(semeadas)),
             ("ja_existiam", Json::de_u64(existiam)),
         ]))
+    }
+
+    /// O portao PROPRIO das operacoes de idioma.
+    ///
+    /// As cinco nao tem campo `"tabela"` no pedido -- e o portao geral confere
+    /// justamente esse campo. Sem esta conferencia elas cairiam na regra da
+    /// base vazia e ninguem descobriria por leitura, que e exatamente o furo
+    /// que `juntar` e `unir` ja tiveram. Aqui a tabela e fixa, entao o portao
+    /// proprio e curto: ela e sempre `phxsys.mensagens`.
+    fn poder_nos_idiomas(&self, sessao: &Sessao, atividade: Atividade) -> Result<()> {
+        let Some(usuario) = sessao.usuario.as_ref() else {
+            // Sem usuario e o token de servico, que ja passou pelo portao 1.
+            return Ok(());
+        };
+        if usuario.pode_em(idiomas::DATABASE, idiomas::TABELA, atividade) {
+            return Ok(());
+        }
+        Err(PhxError::Autorizacao(format!(
+            "{} nao tem permissao de {} em {}.{}",
+            usuario.login,
+            atividade.nome(),
+            idiomas::DATABASE,
+            idiomas::TABELA
+        )))
+    }
+
+    /// `idiomas`: o estado da tabela de textos, no idioma perguntado.
+    fn op_idiomas(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        self.poder_nos_idiomas(sessao, Atividade::Ler)?;
+        let idioma = idiomas::indice_do_idioma(p.texto_ou("idioma", ""));
+        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        Ok(idiomas::estado(&dados, idioma))
+    }
+
+    /// `idiomas_carga`: semeia os textos de tela que faltam.
+    ///
+    /// Idempotente por `TextName`: linha que existe NAO e tocada. E por isso
+    /// que esta operacao pode ser chamada a vontade sem desfazer traducao de
+    /// ninguem -- quem sobrescreve e a `idiomas_padrao`, e ela pergunta antes.
+    fn op_idiomas_carga(&self, _p: &Json, sessao: &Sessao) -> Result<Json> {
+        self.poder_nos_idiomas(sessao, Atividade::Administrar)?;
+        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        Ok(idiomas::carga(&dados, idiomas::Sobrescrever::Nenhum)?.para_json())
+    }
+
+    /// `idiomas_padrao`: devolve os textos de FABRICA por cima do que estiver
+    /// gravado -- so o idioma pedido, ou os seis.
+    ///
+    /// Esta e a que apaga trabalho, entao o escopo e explicito: sem `"idioma"`
+    /// e sem `"tudo": true` ela recusa, em vez de escolher sozinha qual dos
+    /// dois estragos fazer.
+    fn op_idiomas_padrao(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        self.poder_nos_idiomas(sessao, Atividade::Administrar)?;
+        let tudo = p.booleano_ou("tudo", false);
+        let pedido = p.texto_ou("idioma", "").trim().to_string();
+        let modo = match (tudo, pedido.is_empty()) {
+            (true, _) => idiomas::Sobrescrever::Tudo,
+            (false, false) => {
+                if !idiomas::IDIOMAS.contains(&pedido.as_str()) {
+                    return Err(PhxError::Esquema(format!(
+                        "idioma {pedido:?} nao existe: use um de {:?}",
+                        idiomas::IDIOMAS
+                    )));
+                }
+                idiomas::Sobrescrever::So(idiomas::indice_do_idioma(&pedido))
+            }
+            (false, true) => {
+                return Err(PhxError::Esquema(
+                    "diga o que sobrescrever: \"idioma\" para um so, ou \"tudo\":true \
+                     para os seis"
+                        .into(),
+                ))
+            }
+        };
+        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let r = idiomas::carga(&dados, modo)?;
+        let mut j = r.para_json();
+        if let Json::Objeto(campos) = &mut j {
+            campos.push((
+                "sobrescreveu".to_string(),
+                Json::texto_de(if tudo { "todos os idiomas" } else { &pedido }),
+            ));
+        }
+        Ok(j)
+    }
+
+    /// `idiomas_exportar`: a tabela inteira em JSON, para guardar FORA do
+    /// banco. Leva todos os `TextName`, e nao so os de tela -- backup que
+    /// deixa metade para tras nao e backup.
+    fn op_idiomas_exportar(&self, sessao: &Sessao) -> Result<Json> {
+        self.poder_nos_idiomas(sessao, Atividade::Ler)?;
+        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        idiomas::exportar(&dados)
+    }
+
+    /// `idiomas_importar`: devolve o backup para a tabela.
+    fn op_idiomas_importar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        self.poder_nos_idiomas(sessao, Atividade::Administrar)?;
+        let backup = match p.campo("backup") {
+            Some(b) => b,
+            None => return Err(PhxError::Esquema("informe \"backup\"".into())),
+        };
+        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        Ok(idiomas::importar(&dados, backup)?.para_json())
     }
 
     fn op_bancos(&self) -> Result<Json> {

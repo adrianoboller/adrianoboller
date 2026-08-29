@@ -1142,6 +1142,59 @@ pub const OPERACOES: &[Operacao] = &[
         ferramenta_mcp: false,
     },
     Operacao {
+        nome: "idiomas",
+        apelidos: &[],
+        resumo: "O estado da tabela de textos da tela: quantos há, quantos estão traduzidos.",
+        parametros: &[opc(
+            "idioma",
+            "string",
+            "de qual idioma contar as traduções (padrão: Portugues)",
+        )],
+        exemplo: r#"{"op":"idiomas","idioma":"Frances"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "idiomas_carga",
+        apelidos: &[],
+        resumo: "Cria phxsys.mensagens se falta e semeia os textos de tela ausentes, \
+                 sem tocar nos que já existem.",
+        parametros: &[],
+        exemplo: r#"{"op":"idiomas_carga"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "idiomas_padrao",
+        apelidos: &[],
+        resumo: "Devolve os textos de fábrica POR CIMA do que está gravado — de um idioma \
+                 só, ou dos seis. Apaga tradução: peça confirmação antes.",
+        parametros: &[
+            opc("idioma", "string", "sobrescrever só este idioma"),
+            opc("tudo", "boolean", "sobrescrever os seis idiomas"),
+        ],
+        exemplo: r#"{"op":"idiomas_padrao","idioma":"Frances"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "idiomas_exportar",
+        apelidos: &[],
+        resumo: "A tabela de textos inteira em JSON, para guardar fora do banco.",
+        parametros: &[],
+        exemplo: r#"{"op":"idiomas_exportar"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "idiomas_importar",
+        apelidos: &[],
+        resumo: "Devolve um backup de textos para a tabela, gravando por TextName.",
+        parametros: &[obr(
+            "backup",
+            "object",
+            "o objeto que o idiomas_exportar devolveu",
+        )],
+        exemplo: r#"{"op":"idiomas_importar","backup":{"versao":1,"linhas":[]}}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
         nome: "estatisticas",
         apelidos: &["estatisticas_uso"],
         resumo: "Resume o log de acessos: quem pediu o quê, quantas vezes e quão devagar.",
