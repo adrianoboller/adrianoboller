@@ -12,8 +12,9 @@ que está no repositório e que qualquer pessoa roda de novo.
 > mesma para todas —, e cada leitura passava 4 KiB pelo CRC. Um cache de
 > páginas de leitura tirou isso do caminho: **44,4 → 18,5 µs por linha, 2,4×**,
 > sem mudar formato, sem mudar garantia e sem tocar na árvore. Depois dele, o
-> cabeçalho que reserializava o esquema a cada linha (§2.0) levou a **17,0 µs**
-> — **2,61× no total**.
+> cabeçalho que reserializava o esquema a cada linha (§2.0) levou a 17,0, e o
+> cabeçalho do diário que ia a disco a cada evento (§2.2) levou a **15,9 µs** —
+> **2,79× no total**.
 
 A receita clássica para acelerar escrita («tire o `fsync` do caminho crítico»)
 foi escrita para motores cujo gargalo é o `fsync`. O do PhxSql não era, e havia
@@ -40,21 +41,21 @@ cargo run --release --example onde-doi -- 200000
 Mesma tabela, mesmas linhas, esquemas diferentes. A conta de cada parcela sai
 da subtração:
 
-| Esquema | antes | + cache de páginas | + cabeçalho enxuto | ganho |
-|---|---:|---:|---:|---:|
-| só `.reg` (sem índice nenhum) | 7,3 µs | 6,7 µs | **5,4 µs** | 1,35× |
-| + 1 índice comum | 21,5 µs | 12,2 µs | **10,9 µs** | 1,97× |
-| + o mesmo índice, agora único | 30,6 µs | 12,6 µs | **11,2 µs** | 2,73× |
-| + 2 índices (a forma da bancada) | 44,4 µs | 18,5 µs | **17,0 µs** | **2,61×** |
+| Esquema | antes | + cache de páginas | + cabeçalho do `.reg` | + cabeçalho do `.log` | ganho |
+|---|---:|---:|---:|---:|---:|
+| só `.reg` (sem índice nenhum) | 7,3 µs | 6,7 µs | 5,4 µs | **4,8 µs** | 1,52× |
+| + 1 índice comum | 21,5 µs | 12,2 µs | 10,9 µs | **10,2 µs** | 2,11× |
+| + o mesmo índice, agora único | 30,6 µs | 12,6 µs | 11,2 µs | **10,5 µs** | 2,91× |
+| + 2 índices (a forma da bancada) | 44,4 µs | 18,5 µs | 17,0 µs | **15,9 µs** | **2,79×** |
 
 | Parcela | antes | % | agora | % |
 |---|---:|---:|---:|---:|
-| `.reg` + `.log` | 7,3 | 16,5% | 5,4 | 31,8% |
-| <span>↳ só o `.log` (§2.2)</span> | — | — | 1,22 | 7,2% |
-| primeiro índice | 14,2 | 32,0% | 5,4 | 31,8% |
-| conferir a chave única | 9,1 | 20,5% | 0,7 | **4,0%** |
-| segundo índice | 13,8 | 31,0% | 5,5 | 32,4% |
-| **total** | **44,4** | 100% | **17,0** | 100% |
+| `.reg` + `.log` | 7,3 | 16,5% | 4,8 | 30,3% |
+| <span>↳ só o `.log` (§2.2)</span> | — | — | 0,67 | 4,2% |
+| primeiro índice | 14,2 | 32,0% | 5,4 | 33,9% |
+| conferir a chave única | 9,1 | 20,5% | 0,3 | **1,9%** |
+| segundo índice | 13,8 | 31,0% | 5,4 | 34,0% |
+| **total** | **44,4** | 100% | **15,9** | 100% |
 
 (As três colunas de cima são três medições de três *builds*, cada uma com três
 corridas — a primeira corrida depois de compilar sai contaminada pelo próprio
@@ -110,7 +111,7 @@ paginas gravadas .................. 2,06 por linha
 São **10,86** toques por linha, e não 20. Antes do cache, os 10,86 passavam
 todos pelo CRC: 10,86 × 2,34 = **25,4 µs**, de 44,4 medidos — 57% do tempo de
 uma inserção era CRC-32 de página. Depois, só as 2,06 gravações pagam: 4,8 µs
-de 17,0 (28%).
+de 15,9 (30%).
 
 O acerto de cache custa a **cópia** da página, não o CRC dela. É daí que veio o
 2,4×.
@@ -134,48 +135,56 @@ o elimina.
 - **Teto de 2.048 páginas** = 8 MiB por `.ndx` aberto. O número saiu de uma
   varredura, e não do chute (§2.1).
 
-### 2.2 O que o `.log` custa, e o que um buffer compraria
+### 2.2 O `.log` não atrasa o `.reg`
 
-A tabela acima media `.reg` e `.log` **juntos** — 5,4 µs —, e este documento
-registrava isso como um bloco não decomposto. Ele foi decomposto:
+A tabela acima media `.reg` e `.log` **juntos**, e este documento registrava
+isso como um bloco não decomposto. Ele foi decomposto, e a decomposição virou
+uma mudança.
 
 ```bash
 cargo run --release --example custo-do-log -- 200000
 ```
 
-| | µs por evento | de uma inserção de 17,0 µs |
-|---|---:|---:|
-| o `.log` inteiro, sem imagem | **1,22** | 7,2% |
-| o `.log` inteiro, com a imagem da linha (replicação ligada) | 2,24 | 13,2% |
-| **só** a reescrita do cabeçalho, por evento | 0,41 | 2,4% |
+O `.log` já era enxuto — não reserializa nada, e o cabeçalho fica em cache na
+leitura. O que ele fazia de sobra eram **duas escritas por evento**: os 44 bytes
+do evento, e os 64 bytes do cabeçalho com `fim` e `qtd_eventos`.
 
-Ou seja: dos 5,4 µs, o diário são 1,22 e o **`.reg` sozinho é ~4,2 µs**.
+O evento **tem** de ir na hora. O cabeçalho é um contador — e a leitura sabe
+recalculá-lo varrendo os próprios eventos. Ele passou a ir no `sincronizar`:
 
-O `.log` já é enxuto — não reserializa nada, e o cabeçalho fica em cache na
-leitura. O que ele faz de sobra é **duas escritas por evento**: os 44 bytes do
-evento, e os 64 bytes do cabeçalho com `fim` e `qtd_eventos`.
+| | antes | depois | |
+|---|---:|---:|---:|
+| `.log` por evento, sem imagem | 1,22 µs | **0,67 µs** | 1,82× |
+| `.log` por evento, com a imagem da linha | 2,24 µs | **1,61 µs** | 1,39× |
+| inserção completa, 2 índices | 17,0 µs | **15,9 µs** | 1,06× |
 
-### A pergunta que isso responde
+### O que isso custou, e o que não custou
 
-«Dá para guardar o diário em memória e gravar quando a inserção terminar?»
-Separando as duas coisas que a pergunta junta:
+**Não custou o evento.** Ele continua indo para o arquivo dentro da inserção,
+antes de a operação terminar. O que ficou para depois foi o *contador*.
 
-- **Segurar os EVENTOS em RAM** compraria, no teto, os 1,22 µs do diário
-  inteiro — **7,2%**. E trocaria a garantia de que linha gravada tem evento
-  gravado.
-- **Parar de reescrever o CABEÇALHO a cada evento** compraria 0,41 µs —
-  **2,4%** — e **não precisa de buffer nenhum**: o evento continua indo para o
-  arquivo na hora.
+**Custou um caminho de reparo**, e ele é a parte que valia escrever com cuidado.
+Uma queda antes do `sincronizar` deixa o cabeçalho atrasado em relação aos
+eventos que já estão no arquivo — e, sem cura, a próxima gravação escreveria
+**por cima** deles. Não seria evento invisível: seria evento destruído.
 
-A diferença entre as duas é de natureza, não de tamanho. Um índice perdido se
-reconstrói do `.reg` com `reindexar`. **Um evento perdido não se reconstrói** —
-ele é a história, com carimbo de hora e autor, e é a posição de que a replicação
-depende. Uma réplica pularia a linha em silêncio.
+Então `abrir` varre para a frente a partir do `fim` gravado, validando cada
+evento pelo **CRC que ele já carrega**, e para no primeiro que não confere ou no
+fim do arquivo. A varredura é limitada ao que entrou desde o último
+`sincronizar` — uma janela de centenas de eventos. Região zerada não passa: o
+CRC-32 de 36 bytes zerados não é zero.
 
-Por isso a primeira está registrada e parada, e a segunda é que vale considerar:
-ela pede um caminho de reparo (varrer do `fim` gravado para a frente, achando
-eventos válidos pelo CRC) que hoje não existe, mas não pede que nada fique
-retido em RAM.
+Quatro testes travam isso, e o que mais importa é
+`depois_da_cura_o_novo_evento_nao_sobrescreve`.
+
+### O que continua fora, e por quê
+
+Guardar os **eventos** em RAM compraria os 0,67 µs restantes — 4,2%. Não foi
+feito, e a razão não é de tamanho, é de natureza:
+
+> Índice perdido se reconstrói do `.reg` com `reindexar`. **Evento perdido não
+> se reconstrói.** Ele é a história, com carimbo de hora e autor, e é a posição
+> de que a replicação depende — uma réplica pularia a linha em silêncio.
 
 ### 2.1 De quanto tem de ser o teto
 
@@ -219,7 +228,7 @@ quebraria o formato, e **dois são reais**.
 | 6 | UUID v7 ou sequência, nunca v4 | `Uuid` v4/v7 (RFC 9562), `Uuid256` e `Sequence` prontos; o dossiê tem uma seção sobre por que v7 | **Já existe** |
 | 7 | Não alterar o arquivo principal no INSERT | O `.reg` só anexa. Sem *double-write*, sem divisão de página no arquivo de dados | **Já é assim** |
 | 8 | Segmentos imutáveis, SSTable, compactação | — | **Incompatível.** Ver §5 |
-| 9 | Buffers grandes em vez de escritas pequenas | Escreve por slot; são 2,06 páginas de `.ndx` gravadas por linha, medidas | **Medido, e é pequeno.** Um `lseek` custa 0,10 µs: mesmo 41 chamadas por linha dariam 4,0 µs de 17,0. O que custa nessas gravações é o **CRC** (4,8 µs), não a chamada |
+| 9 | Buffers grandes em vez de escritas pequenas | Escreve por slot; são 2,06 páginas de `.ndx` gravadas por linha, medidas | **Medido, e é pequeno.** Um `lseek` custa 0,10 µs: mesmo 41 chamadas por linha dariam 4,0 µs de 15,9. O que custa nessas gravações é o **CRC** (4,8 µs), não a chamada |
 | 10 | Pré-alocar o WAL | Os volumes crescem conforme escrevem | **Aplicável aos volumes**, ganho provavelmente pequeno pela mesma razão do item 9 |
 
 ---
@@ -230,9 +239,9 @@ quebraria o formato, e **dois são reais**.
 
 | Se sair do caminho crítico | µs por linha | ganho |
 |---|---:|---:|
-| nada (hoje) | 17,0 | — |
-| o segundo índice | 11,2 | 1,52× |
-| os dois índices e a conferência | 5,4 | **3,15×** |
+| nada (hoje) | 15,9 | — |
+| o segundo índice | 10,5 | 1,51× |
+| os dois índices e a conferência | 4,8 | **3,31×** |
 
 (Os mesmos números antes do cache de páginas eram 44,4 / 30,6 / 7,3 — ganho de
 1,45× e 6,1×. O cache já cobrou boa parte do que adiar o índice cobraria, e o
@@ -422,10 +431,10 @@ MySQL(R)**. A inserção é onde ele cobra — e cobra 3× menos que cobrava.
 | | Antes | Agora | |
 |---|---:|---:|---|
 | Inserção pela rede, linha a linha vs. lote | 2.659/s | 39.287/s | **14,8×** |
-| Inserção local, 2 índices (`onde-doi`) | 22.516/s | 58.767/s | **2,61×** |
+| Inserção local, 2 índices (`onde-doi`) | 22.516/s | 62.763/s | **2,79×** |
 | Página por posição no fim de 200 mil linhas | 131 ms | 6 ms | **22×** |
 | Contar as linhas visíveis | varredura inteira | dois campos do cabeçalho | O(1) |
-| Replicação | não existia | 4.273 eventos/s por réplica | — |
+| Replicação | não existia | 4.357 eventos/s por réplica | — |
 
 A carga pela rede agora tem script: `bancada/carga/medir.py`. O número anterior
 (2.715 → 25.985 linhas/s) foi medido **à mão**, sem programa que o refizesse —
@@ -441,7 +450,7 @@ Pela medição, e não pela moda:
 
 1. **CRC incremental por nó**, em vez de recalcular a página inteira. A conta do
    CRC agora fecha (§2): das 2,06 páginas gravadas por linha, cada uma paga
-   2,34 µs de CRC — **4,8 µs de 17,0, ou 28%**. É o maior pedaço isolado que
+   2,34 µs de CRC — **4,8 µs de 15,9, ou 30%**. É o maior pedaço isolado que
    sobrou, e é o mesmo alvo do cache por outro lado: o cache tirou o CRC da
    leitura, isto tiraria o da gravação.
 2. **Construção em lote da B+tree** — varrer, ordenar, encher as folhas em

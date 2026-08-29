@@ -296,7 +296,7 @@ await cena('o que falta', async () => {
   await diz('', 'Não há transação. A inserção desfaz o que gravou se um índice falhar — só isso.', 4200);
   await diz('', 'Não há gatilho, procedimento guardado nem job. Os três foram pedidos, nenhum começou.', 4400);
   await diz('', 'Não há camada SQL, ODBC nem OLE DB. Esta é a camada de armazenamento.', 4000);
-  await diz('', 'E a réplica aplica mais devagar que o master escreve: 4.273/s contra 18.773/s.', 4400);
+  await diz('', 'E a réplica aplica mais devagar que o master escreve: 4.357/s contra 28.914/s.', 4400);
 });
 
 // ------------------------------------------------------------- 17 o painel

@@ -15,8 +15,8 @@ Master 5800 ──┬──► Slave01 5801
 
 | | |
 |---|---|
-| Master, com a imagem no diário | 18.773 linhas/s |
-| Aplicação, por réplica (as três em paralelo) | 4.273 eventos/s |
+| Master, com a imagem no diário | 28.914 linhas/s |
+| Aplicação, por réplica (as três em paralelo) | 4.357 eventos/s |
 | Atraso de uma escrita até as três | 1,3 s a 2,1 s |
 | Réplica derrubada: voltar a atender e alcançar 4.000 eventos | 343 ms + 1,0 s |
 | Retrato SHA-256 das quatro tabelas, no fim | idênticos |
@@ -374,8 +374,8 @@ linha mudou sem gravar a linha, e o segundo salto não tem o que aplicar. O erro
 - **Não é replicação síncrona.** É assíncrona, como o padrão do MySQL(R): a
   réplica fica atrás do Source por algum tempo. Medido: 1,3 s a 2,1 s com o
   laço em 2 s.
-- **A réplica aplica mais devagar do que o master escreve** — 4.273 eventos/s
-  contra 18.773 linhas/s, com as três réplicas competindo pela mesma máquina.
+- **A réplica aplica mais devagar do que o master escreve** — 4.357 eventos/s
+  contra 28.914 linhas/s, com as três réplicas competindo pela mesma máquina.
   Sob carga sustentada elas ficam para trás. A razão está no caminho: aplicar
   decodifica a imagem para `Value` e **reencoda** o payload, em vez de gravar
   os bytes que vieram. Gravar o payload direto, remendando só os ponteiros dos

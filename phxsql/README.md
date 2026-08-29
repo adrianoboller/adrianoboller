@@ -135,8 +135,8 @@ Medido com quatro servidores (`bancada/replicacao/`):
 
 | | |
 |---|---|
-| Master, com a imagem no diário | 18.773 linhas/s |
-| Aplicação, por réplica (as três em paralelo) | 4.273 eventos/s |
+| Master, com a imagem no diário | 28.914 linhas/s |
+| Aplicação, por réplica (as três em paralelo) | 4.357 eventos/s |
 | Atraso de uma escrita até as três | 1,3 s a 2,1 s |
 | Réplica derrubada: voltar a atender e alcançar 4.000 eventos | 343 ms + 1,0 s |
 | Retrato SHA-256 das quatro tabelas, no fim | idênticos |
@@ -212,8 +212,8 @@ nenhum. A árvore e o catálogo passam a listar só o que dá para abrir.
 
 ## Estado atual
 
-O motor de armazenamento está completo e testado: **386 testes** só nele
-(`phxsql-core` 163 + `phxsql-store` 223), **615 no projeto inteiro**, sem
+O motor de armazenamento está completo e testado: **390 testes** só nele
+(`phxsql-core` 163 + `phxsql-store` 227), **619 no projeto inteiro**, sem
 nenhuma dependência externa (só a `std`) — o que faz o projeto compilar
 offline.
 

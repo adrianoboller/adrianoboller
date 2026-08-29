@@ -324,12 +324,12 @@ footer p{max-width:var(--medida)}
 
   <div class="painel">
   <!-- projeto:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-    <div><div class="v">45.654</div><div class="r">linhas de Rust</div></div>
-    <div><div class="v">615</div><div class="r">testes</div></div>
+    <div><div class="v">45.948</div><div class="r">linhas de Rust</div></div>
+    <div><div class="v">619</div><div class="r">testes</div></div>
     <div><div class="v">0</div><div class="r">dependências</div></div>
     <div><div class="v">4</div><div class="r">crates</div></div>
     <div><div class="v">7</div><div class="r">arquivos/tabela</div></div>
-    <div><div class="v">8.915</div><div class="r">linhas de doc</div></div>
+    <div><div class="v">8.992</div><div class="r">linhas de doc</div></div>
   <!-- projeto:fim -->
   </div>
 </header>
@@ -1723,8 +1723,8 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   Quatro servidores no ar, medidos.</p>
 
   <div class="painel">
-    <div><div class="v">18.773</div><div class="r">linhas/s no master</div></div>
-    <div><div class="v">4.273</div><div class="r">eventos/s por réplica</div></div>
+    <div><div class="v">28.914</div><div class="r">linhas/s no master</div></div>
+    <div><div class="v">4.357</div><div class="r">eventos/s por réplica</div></div>
     <div><div class="v">1,3–2,1 s</div><div class="r">até as três réplicas</div></div>
     <div><div class="v">1,0 s</div><div class="r">retomada de 4.000</div></div>
     <div><div class="v">iguais</div><div class="r">retrato das quatro</div></div>
@@ -1877,7 +1877,7 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
 
   <div class="nota">
     <span class="t">A réplica não acompanha a escrita do master</span>
-    <p>4.273 eventos/s contra 18.773 linhas/s, com as três competindo pela mesma
+    <p>4.357 eventos/s contra 28.914 linhas/s, com as três competindo pela mesma
     máquina: sob carga sustentada elas ficam para trás. A razão está no caminho, e
     é a mesma que a figura 8 mostra — aplicar decodifica a imagem para valores e
     <strong>reencoda</strong> o payload, em vez de gravar os bytes que vieram.
@@ -4233,7 +4233,7 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
         <tr><td>DbLink para PostgreSQL(R) — a definição guarda, o cliente falta</td><td><span class="pino pend">desenhada</span></td><td class="num">—</td></tr>
         <tr><td>Replicação Master → Réplica · quatro servidores medidos</td><td><span class="pino ok">pronto</span></td><td class="num">6</td></tr>
         <tr><td><code>.log</code> v2 com a imagem da linha · atrás do interruptor</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
-        <tr><td>Réplica acompanhar a escrita do master · 4.273/s contra 18.773/s</td><td><span class="pino pend">parcial</span></td><td class="num">—</td></tr>
+        <tr><td>Réplica acompanhar a escrita do master · 4.357/s contra 28.914/s</td><td><span class="pino pend">parcial</span></td><td class="num">—</td></tr>
         <tr><td><em>Long-poll</em> e TLS no transporte da replicação</td><td><span class="pino nao">a fazer</span></td><td class="num">—</td></tr>
         <tr><td>Carga em lote · 9,6× medido · cinco formatos colados</td><td><span class="pino ok">pronto</span></td><td class="num">—</td></tr>
         <tr><td>Salto por posição com bissecção no <code>rownum</code></td><td><span class="pino ok">pronto</span></td><td class="num">22</td></tr>
@@ -4278,8 +4278,8 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
     credencial já não vai, quando se usa o desafio-resposta; os dados, sim.</li>
     <li><strong>Sem troca de senha pelo protocolo</strong> e sem grupos: o poder é por
     usuário, e a senha muda no <code>config.json</code>.</li>
-    <li><strong>A réplica não acompanha a escrita do master.</strong> 4.273
-    eventos/s contra 18.773 linhas/s: sob carga sustentada ela fica para trás.
+    <li><strong>A réplica não acompanha a escrita do master.</strong> 4.357
+    eventos/s contra 28.914 linhas/s: sob carga sustentada ela fica para trás.
     Aplicar decodifica a imagem para valores e <em>reencoda</em> o payload, em vez
     de gravar os bytes que vieram. E o transporte não tem <em>long-poll</em> nem
     TLS: o atraso é o intervalo do laço, e a proteção é o túnel.</li>
@@ -4297,8 +4297,8 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
 
 <footer>
   <!-- rodape:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-  <p>PhxSql 0.17.0 · 45.654 linhas de Rust em 4 crates,
-  mais 486 KiB de interface · 615 testes ·
+  <p>PhxSql 0.17.0 · 45.948 linhas de Rust em 4 crates,
+  mais 486 KiB de interface · 619 testes ·
   nenhuma dependência externa.
   Especificação byte a byte em <code>docs/FORMATO.md</code>, cadastro e
   permissões em <code>docs/USUARIOS.md</code>, a replicação em

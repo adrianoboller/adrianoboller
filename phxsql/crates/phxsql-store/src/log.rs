@@ -251,6 +251,10 @@ impl LogFile {
         };
         l.cab(1)?;
         l.cab(volume_atual)?;
+        // So o volume CORRENTE pode ter ficado atrasado: os anteriores foram
+        // fechados quando a paginacao virou, e ali o cabecalho vai a disco na
+        // hora.
+        l.curar(volume_atual)?;
         Ok(l)
     }
 
@@ -370,11 +374,81 @@ impl LogFile {
             self.volumes
                 .escrever(volume, cab.fim + EVENTO_CAB as u64, imagem)?;
         }
-        self.gravar_cab(Cabecalho {
+        // O CABECALHO NAO VAI A DISCO AQUI, e essa e a diferenca que faz o
+        // diario nao atrasar o `.reg`.
+        //
+        // O evento ja foi gravado -- ele e o que nao pode faltar. O cabecalho
+        // e um CONTADOR: `fim`, onde o proximo entra, e `qtd_eventos`. Grava-lo
+        // a cada evento era uma segunda chamada de escrita por linha inserida,
+        // medida em 0,41 us, para levar a disco um numero que a leitura sabe
+        // recalcular varrendo os proprios eventos.
+        //
+        // Ele passa a ir no `sincronizar`, junto com o resto. Se o processo
+        // cair antes disso, o cabecalho fica ATRASADO em relacao aos eventos
+        // que ja estao no arquivo -- e `abrir` cura isso varrendo para a
+        // frente a partir do `fim` gravado, validando cada evento pelo CRC que
+        // ele ja carrega. A varredura e limitada ao que entrou desde o ultimo
+        // `sincronizar`, que e uma janela de centenas de eventos.
+        //
+        // O que NAO se faz aqui, de proposito: segurar o EVENTO em memoria.
+        // Indice perdido se reconstroi do `.reg`; evento perdido nao se
+        // reconstroi -- ele e a historia, e e a posicao de que a replicacao
+        // depende.
+        self.cabs.insert(
             volume,
-            fim: cab.fim + evento.ocupa(),
-            qtd_eventos: cab.qtd_eventos + 1,
-        })
+            Cabecalho {
+                volume,
+                fim: cab.fim + evento.ocupa(),
+                qtd_eventos: cab.qtd_eventos + 1,
+            },
+        );
+        Ok(())
+    }
+
+    /// Varre para a frente a partir do `fim` gravado e conserta o cabecalho.
+    ///
+    /// Existe porque o cabecalho passou a ir a disco so no `sincronizar`: uma
+    /// queda antes dele deixa eventos no arquivo que o cabecalho nao conta. Sem
+    /// esta cura, a proxima gravacao ESCREVERIA POR CIMA deles.
+    ///
+    /// Cada evento carrega o proprio CRC, entao a varredura sabe onde parar: no
+    /// primeiro que nao confere, ou no fim do arquivo. Regiao zerada nao passa
+    /// -- o CRC-32 de 36 bytes zerados nao e zero.
+    fn curar(&mut self, volume: u32) -> Result<u64> {
+        let mut cab = self.cab(volume)?;
+        let tamanho = self.volumes.tamanho(volume)?;
+        let mut achados = 0u64;
+
+        while cab.fim + EVENTO_CAB as u64 <= tamanho {
+            let mut buf = [0u8; EVENTO_CAB];
+            self.volumes.ler(volume, cab.fim, &mut buf)?;
+            let evento = match Evento::ler(&buf) {
+                Ok(e) => e,
+                Err(_) => break,
+            };
+            if cab.fim + evento.ocupa() > tamanho {
+                break;
+            }
+            if evento.tam_imagem > 0 {
+                let mut imagem = vec![0u8; evento.tam_imagem as usize];
+                self.volumes
+                    .ler(volume, cab.fim + EVENTO_CAB as u64, &mut imagem)?;
+                if evento.conferir(&buf, &imagem).is_err() {
+                    break;
+                }
+            }
+            cab = Cabecalho {
+                volume,
+                fim: cab.fim + evento.ocupa(),
+                qtd_eventos: cab.qtd_eventos + 1,
+            };
+            achados += 1;
+        }
+
+        if achados > 0 {
+            self.gravar_cab(cab)?;
+        }
+        Ok(achados)
     }
 
     /// Total de eventos em todos os volumes.
@@ -506,7 +580,15 @@ impl LogFile {
         self.volumes.existentes()
     }
 
+    /// Leva os cabecalhos a disco e sincroniza.
+    ///
+    /// A ordem importa: o cabecalho vai ANTES do `fsync`, senao ele ficaria
+    /// para a proxima janela e a cura teria de varrer duas.
     pub fn sincronizar(&mut self) -> Result<()> {
+        let pendentes: Vec<Cabecalho> = self.cabs.values().copied().collect();
+        for cab in pendentes {
+            self.gravar_cab(cab)?;
+        }
         self.volumes.sincronizar()
     }
 }
@@ -521,6 +603,98 @@ mod tests {
         let _ = std::fs::remove_dir_all(&p);
         std::fs::create_dir_all(&p).unwrap();
         p
+    }
+
+    /* --------------------------------------- o cabecalho preguicoso e a cura
+
+    O cabecalho do `.log` deixou de ir a disco a cada evento, para o diario
+    nao atrasar o `.reg`. O EVENTO continua indo na hora -- e a diferenca
+    entre as duas coisas e o que estes testes protegem.
+
+    Uma queda antes do `sincronizar` deixa o cabecalho atrasado. Sem a cura,
+    a proxima gravacao escreveria POR CIMA dos eventos que ja estavam la:
+    nao seria evento invisivel, seria evento destruido. */
+
+    /// O caso da queda: grava, some sem sincronizar, reabre. Nada pode faltar.
+    #[test]
+    fn queda_sem_sincronizar_nao_perde_evento() {
+        let d = dir_temp("cura-queda");
+        {
+            let mut l = LogFile::criar(&d, "t", Paginacao::DESLIGADA).unwrap();
+            for i in 1..=500u64 {
+                l.registrar(Operacao::Inclusao, i, 1).unwrap();
+            }
+            // De proposito SEM `sincronizar`: e o que uma queda do processo faz.
+        }
+        let mut l = LogFile::abrir(&d, "t", Paginacao::DESLIGADA).unwrap();
+        assert_eq!(l.total().unwrap(), 500, "a cura perdeu evento");
+        let eventos = l.ler(0, 0).unwrap();
+        assert_eq!(eventos.len(), 500);
+        assert_eq!(eventos[0].rowid, 1);
+        assert_eq!(eventos[499].rowid, 500);
+        assert_eq!(l.verificar().unwrap(), 500);
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// A cura tambem vale com imagem da linha, que e o modo da replicacao --
+    /// ali o evento tem tamanho variavel, e a varredura precisa andar por
+    /// `ocupa()` e nao por um passo fixo.
+    #[test]
+    fn a_cura_anda_por_evento_de_tamanho_variavel() {
+        let d = dir_temp("cura-imagem");
+        {
+            let mut l = LogFile::criar(&d, "t", Paginacao::DESLIGADA).unwrap();
+            for i in 1..=200u64 {
+                // Imagens de tamanhos diferentes: passo fixo erraria na segunda.
+                let imagem = vec![(i % 251) as u8; (i % 97) as usize];
+                l.registrar_com_imagem(Operacao::Inclusao, i, 1, &imagem)
+                    .unwrap();
+            }
+        }
+        let mut l = LogFile::abrir(&d, "t", Paginacao::DESLIGADA).unwrap();
+        assert_eq!(l.total().unwrap(), 200);
+        let com = l.ler_com_imagem(0, 0).unwrap();
+        assert_eq!(com.len(), 200);
+        assert_eq!(com[199].1.len(), 200 % 97);
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// O que a cura existe para impedir: gravar por cima. Depois de reabrir,
+    /// o evento novo tem de entrar DEPOIS dos que ja estavam.
+    #[test]
+    fn depois_da_cura_o_novo_evento_nao_sobrescreve() {
+        let d = dir_temp("cura-sobrescreve");
+        {
+            let mut l = LogFile::criar(&d, "t", Paginacao::DESLIGADA).unwrap();
+            for i in 1..=50u64 {
+                l.registrar(Operacao::Inclusao, i, 1).unwrap();
+            }
+        }
+        let mut l = LogFile::abrir(&d, "t", Paginacao::DESLIGADA).unwrap();
+        l.registrar(Operacao::Inclusao, 51, 1).unwrap();
+        l.sincronizar().unwrap();
+
+        let eventos = l.ler(0, 0).unwrap();
+        assert_eq!(eventos.len(), 51, "o evento novo comeu os antigos");
+        assert_eq!(eventos[49].rowid, 50);
+        assert_eq!(eventos[50].rowid, 51);
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// Sincronizado, nao ha o que curar -- e reabrir tem de dar o mesmo.
+    #[test]
+    fn com_sincronizar_a_cura_nao_muda_nada() {
+        let d = dir_temp("cura-nada");
+        {
+            let mut l = LogFile::criar(&d, "t", Paginacao::DESLIGADA).unwrap();
+            for i in 1..=30u64 {
+                l.registrar(Operacao::Inclusao, i, 1).unwrap();
+            }
+            l.sincronizar().unwrap();
+        }
+        let mut l = LogFile::abrir(&d, "t", Paginacao::DESLIGADA).unwrap();
+        assert_eq!(l.total().unwrap(), 30);
+        std::fs::remove_dir_all(&d).unwrap();
     }
 
     #[test]

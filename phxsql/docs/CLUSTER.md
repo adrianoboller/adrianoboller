@@ -87,7 +87,7 @@ O arranjo que funciona **agora**, medido:
   está descrito em `docs/REPLICACAO.md` §8.
 
 E há um limite medido que precisa ser dito: **a réplica aplica mais devagar do
-que o master escreve** — 4.273 eventos/s contra 18.773 linhas/s. Sob carga
+que o master escreve** — 4.357 eventos/s contra 28.914 linhas/s. Sob carga
 sustentada de escrita elas ficam para trás, e a leitura nelas fica velha. A
 razão está em `docs/DESEMPENHO.md`.
 
