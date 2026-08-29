@@ -142,6 +142,15 @@ E o teste que mais importa numa regra de permissão nova é o do comportamento
 **velho**: `sem_regra_de_tabela_nada_muda`. Regra que muda o significado da
 configuração que já existe tira o direito de alguém sem ninguém ter pedido.
 
+**Instrumentação desligada tem de custar zero — e o portão que decide isso vem
+ANTES do trabalho.** O Profiler desligado cobrava 7% da carga pela rede: o ponto
+de captura fazia dois `Json::analisar` do corpo inteiro, três `String` e um
+mutex, e só então perguntava se estava ligado. Num lote de cinco mil linhas era
+analisar meio megabyte de JSON duas vezes para jogar fora. O mutex era o pior
+pedaço: além do custo, ele **serializa** — todo mundo na mesma fila para
+descobrir que não havia o que registrar. Quando entrar um observador novo,
+procure o que ele faz antes de olhar o próprio interruptor.
+
 **Configuração que não é lida mente.** `recursos.cache_paginas` estava no
 `config.json`, no MANUAL e na tela desde a 0.13.0, e **nenhuma linha de código
 o lia** — o campo dizia "4096 páginas do `.ndx` em memória" quando não havia

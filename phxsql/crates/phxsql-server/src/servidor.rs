@@ -21,7 +21,7 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -278,6 +278,25 @@ pub struct Servidor {
     avisados: Mutex<HashMap<String, i64>>,
     /// O que esta chegando pela porta, quando alguem liga para olhar.
     profiler: Mutex<crate::profiler::Profiler>,
+    /// Espelho de `profiler.ligado`, para o caminho quente nao tomar a trava.
+    ///
+    /// # Por que existe
+    ///
+    /// Observacao que nao esta ligada nao pode custar nada. Sem este espelho,
+    /// TODO pedido pagava, antes de a conferencia acontecer: dois
+    /// `Json::analisar` do corpo inteiro -- um para achar database/tabela,
+    /// outro para o nome da operacao --, tres `String` alocadas, e um mutex.
+    /// Num `inserir_lote` de cinco mil linhas isso e analisar meio megabyte de
+    /// JSON duas vezes, para no fim `chegou` olhar `ligado` e devolver `None`.
+    /// Medido: 7% da carga pela rede.
+    ///
+    /// Um `AtomicBool` lido com `Relaxed` custa uma instrucao e nao serializa
+    /// ninguem. A trava so e tomada quando ha o que registrar.
+    ///
+    /// A janela de divergencia e de um pedido: quem liga o profiler pode nao
+    /// ver o pedido que ja estava em voo. Ligar a observacao no meio de um
+    /// pedido nao promete pegar aquele pedido -- promete pegar os proximos.
+    profiler_ligado: AtomicBool,
     /// Ligacoes para bancos de fora.
     dblink: Mutex<crate::dblink::Registro>,
     conexoes: AtomicUsize,
@@ -312,6 +331,7 @@ impl Servidor {
             avisados: Mutex::new(HashMap::new()),
             conexoes: AtomicUsize::new(0),
             profiler: Mutex::new(crate::profiler::Profiler::default()),
+            profiler_ligado: AtomicBool::new(false),
         }))
     }
 
@@ -1150,7 +1170,7 @@ impl Servidor {
                 // pelo mesmo TCP -- deixar a web de fora faria o profiler
                 // mentir por omissao justamente para quem esta olhando por
                 // ela.
-                let marca = {
+                let marca = if self.profiler_ligado.load(Ordering::Relaxed) {
                     let alvo = objeto_do_pedido(&pedido.corpo, &Ok(Json::Nulo));
                     let nome_op = Json::analisar(&pedido.corpo)
                         .ok()
@@ -1167,6 +1187,8 @@ impl Servidor {
                             agora,
                         )
                     })
+                } else {
+                    None
                 };
                 let saida = self.despachar(&pedido.corpo, &mut sessao, ip);
                 if let Some(serial) = marca {
@@ -1420,7 +1442,8 @@ impl Servidor {
             // O PROFILER olha AQUI: o pedido chegou pelo soquete e nada foi
             // gravado ainda. Se a operacao travar, ele ja apareceu na tela
             // como «em curso» -- que e justamente o pedido que se quer achar.
-            let marca = {
+            // Desligado, nao custa NADA: nem parse, nem alocacao, nem trava.
+            let marca = if self.profiler_ligado.load(Ordering::Relaxed) {
                 let alvo = objeto_do_pedido(&linha, &Ok(Json::Nulo));
                 let nome_op = Json::analisar(&linha)
                     .ok()
@@ -1437,6 +1460,8 @@ impl Servidor {
                         quando_ms,
                     )
                 })
+            } else {
+                None
             };
 
             let (op, autenticado, resultado) = self.despachar(&linha, &mut sessao, &ip);
@@ -5718,6 +5743,9 @@ impl Servidor {
         let agora = crate::agora_ms();
         let mut prof = self.profiler.lock().map_err(|_| trava_envenenada())?;
         prof.ligar(filtro, &arquivo, teto, agora)?;
+        // Dentro da trava, e DEPOIS de `ligar` ter dado certo: um espelho que
+        // sobe antes faria o caminho quente pagar por um profiler que nao ligou.
+        self.profiler_ligado.store(true, Ordering::Relaxed);
         Ok(Json::objeto(vec![
             ("ligado", Json::Bool(true)),
             ("guardar", Json::de_u64(prof.teto() as u64)),
@@ -5736,6 +5764,7 @@ impl Servidor {
         let mut prof = self.profiler.lock().map_err(|_| trava_envenenada())?;
         let n = prof.observados();
         prof.desligar(crate::agora_ms());
+        self.profiler_ligado.store(false, Ordering::Relaxed);
         Ok(Json::objeto(vec![
             ("ligado", Json::Bool(false)),
             ("observados", Json::de_u64(n)),
@@ -7571,5 +7600,137 @@ mod testes_direito_por_tabela {
             r#""op":"ler","database":"b","tabela":"folha","rowid":1"#
         )
         .is_ok());
+    }
+}
+
+/// Observacao que nao esta ligada nao pode custar nada.
+///
+/// Ate a 0.17.0 custava, e escondido: todo pedido pagava dois `Json::analisar`
+/// do corpo inteiro, tres `String` e um mutex ANTES de `chegou` olhar `ligado`
+/// e devolver `None`. Num `inserir_lote` de cinco mil linhas era analisar meio
+/// megabyte de JSON duas vezes, para nada -- medido em 7% da carga pela rede
+/// (`bancada/carga/medir.py`).
+///
+/// O portao barato e um `AtomicBool`, e o que pode dar errado nele e DIVERGIR
+/// do estado real: preso em `true` faz o servidor pagar o parse para sempre;
+/// preso em `false` faz o profiler nao ver nada, ligado. E isso que estes
+/// testes travam.
+///
+/// A captura em si mora no laco da conexao, e nao no `despachar` -- entao ela
+/// nao se exercita daqui. Quem a exercita e a bancada, e o numero dela e o que
+/// denuncia se o portao sumir.
+#[cfg(test)]
+mod testes_profiler_desligado {
+    use super::*;
+    use crate::usuarios::Cadastro;
+
+    fn dir_temp(nome: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("phx-prof-{nome}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    fn servidor(dir: &std::path::Path) -> Arc<Servidor> {
+        let c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            cadastro: Cadastro::default(),
+            ..Config::default()
+        };
+        Servidor::novo(c).unwrap()
+    }
+
+    /// O espelho e o estado de verdade, lado a lado.
+    fn conferir(s: &Arc<Servidor>, esperado: bool) {
+        let real = s.profiler.lock().unwrap().ligado();
+        let espelho = s.profiler_ligado.load(Ordering::Relaxed);
+        assert_eq!(real, esperado, "o profiler de verdade");
+        assert_eq!(
+            espelho, real,
+            "o espelho divergiu: espelho={espelho}, real={real}"
+        );
+    }
+
+    /// Nasce desligado, senao o caminho quente pagaria desde o arranque por uma
+    /// observacao que ninguem pediu.
+    #[test]
+    fn nasce_desligado() {
+        let dir = dir_temp("nasce");
+        conferir(&servidor(&dir), false);
+    }
+
+    /// Ligar e desligar, varias voltas: o espelho acompanha em todas.
+    #[test]
+    fn o_espelho_nunca_diverge() {
+        let dir = dir_temp("espelho");
+        let s = servidor(&dir);
+        let sessao = Sessao::default();
+        for _ in 0..3 {
+            s.executar("profiler_ligar", &pedido("{}"), &sessao)
+                .unwrap();
+            conferir(&s, true);
+            s.executar("profiler_desligar", &pedido("{}"), &sessao)
+                .unwrap();
+            conferir(&s, false);
+        }
+    }
+
+    /// Ligar duas vezes seguidas nao pode deixar o espelho para tras -- nem
+    /// desligar duas vezes.
+    #[test]
+    fn ligar_ou_desligar_repetido_nao_confunde_o_espelho() {
+        let dir = dir_temp("repetido");
+        let s = servidor(&dir);
+        let sessao = Sessao::default();
+
+        s.executar("profiler_ligar", &pedido("{}"), &sessao)
+            .unwrap();
+        s.executar("profiler_ligar", &pedido("{}"), &sessao)
+            .unwrap();
+        conferir(&s, true);
+
+        s.executar("profiler_desligar", &pedido("{}"), &sessao)
+            .unwrap();
+        s.executar("profiler_desligar", &pedido("{}"), &sessao)
+            .unwrap();
+        conferir(&s, false);
+    }
+
+    /// Ligar com filtro tambem liga o espelho: o filtro decide o que ENTRA no
+    /// anel, e nao se a observacao existe.
+    #[test]
+    fn ligar_com_filtro_tambem_liga_o_espelho() {
+        let dir = dir_temp("filtro");
+        let s = servidor(&dir);
+        s.executar(
+            "profiler_ligar",
+            &pedido(r#"{"database":"b","so_escrita":true}"#),
+            &Sessao::default(),
+        )
+        .unwrap();
+        conferir(&s, true);
+    }
+
+    /// Ligar que FALHA nao pode ligar o espelho -- senao o servidor pagaria o
+    /// parse por uma observacao que nunca existiu.
+    #[test]
+    fn ligar_que_falha_nao_liga_o_espelho() {
+        let dir = dir_temp("falha");
+        let s = servidor(&dir);
+        let r = s.executar(
+            "profiler_ligar",
+            &pedido(r#"{"arquivo":"/diretorio/que/nao/existe/prof.txt"}"#),
+            &Sessao::default(),
+        );
+        assert!(r.is_err(), "aceitou um caminho que nao existe");
+        conferir(&s, false);
     }
 }
