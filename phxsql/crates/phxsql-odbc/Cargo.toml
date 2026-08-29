@@ -1,0 +1,21 @@
+[package]
+name = "phxsql-odbc"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Driver ODBC 3.x do PhxSql: biblioteca de ABI C sobre o protocolo JSON da porta de dados"
+
+# cdylib porque quem carrega e o gerenciador de driver (unixODBC, o do
+# Windows), por dlopen/LoadLibrary -- nao ha consumidor Rust. O nome sem
+# hifen vira libphxsql_odbc.so / phxsql_odbc.dll.
+[lib]
+name = "phxsql_odbc"
+crate-type = ["cdylib"]
+
+# So a std e o proprio workspace: o JSON que viaja na porta de dados ja tem
+# analisador testado no phxsql-core, e reescreve-lo aqui seria a segunda
+# implementacao de uma coisa que nao pode divergir.
+[dependencies]
+phxsql-core = { workspace = true }

@@ -41,6 +41,13 @@ monta() {
   # O console entrou na 0.18.0 e quase ficou de fora do pacote: o empacotador
   # nao sabia dele. Binario novo se acrescenta AQUI, ou o download mente.
   cp "target/$alvo/release/phxsqlcmd$sufixo" "$dir/"
+  # O driver ODBC e biblioteca, nao executavel: o nome muda por plataforma.
+  # Como instalar e registrar esta em docs/ODBC.md.
+  if [ "$rotulo" = "windows" ]; then
+    cp "target/$alvo/release/phxsql_odbc.dll" "$dir/"
+  else
+    cp "target/$alvo/release/libphxsql_odbc.so" "$dir/"
+  fi
   cp "${DOCS[@]}" "$dir/"
 
   demonstracao "$dir" "$rotulo" "$sufixo"
@@ -137,6 +144,11 @@ Os dois programas:
        phxsql.exe     a linha de comando (10 comandos; rode sem argumentos)
        phxsqlcmd.exe  o console interativo: conecta no servidor e /help
                       lista todos os comandos, /help <comando> detalha um
+
+E, para programas de terceiros (Excel, Access, e o que mais fale ODBC):
+
+       phxsql_odbc.dll   o driver ODBC. Registro e connection string no
+                         docs/ODBC.md do repositorio (secao Windows)
 ================================================================================
 TXT
   else
@@ -184,6 +196,11 @@ Os dois programas:
        phxsql     a linha de comando (10 comandos; rode sem argumentos)
        phxsqlcmd  o console interativo: conecta no servidor e /help lista
                   todos os comandos, /help <comando> detalha um
+
+E, para programas de terceiros (via unixODBC):
+
+       libphxsql_odbc.so   o driver ODBC. Registro e connection string no
+                           docs/ODBC.md do repositorio (secao unixODBC)
 ================================================================================
 TXT
   fi
