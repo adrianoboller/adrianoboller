@@ -903,8 +903,70 @@ pub const OPERACOES: &[Operacao] = &[
             TAB,
             obr("desde", "integer", "o número do primeiro evento a mandar"),
             MAX,
+            opc(
+                "para",
+                "string",
+                "o `id_servidor` de quem pede; eventos que NASCERAM nele não \
+                 voltam (é o que mata o laço do bidirecional), e a posição \
+                 `ate` anda por cima deles mesmo assim",
+            ),
         ],
-        exemplo: r#"{"op":"replicar","database":"loja","tabela":"clientes","desde":0,"max":500}"#,
+        exemplo: r#"{"op":"replicar","database":"loja","tabela":"clientes","desde":0,"max":500,"para":"servidor-b"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "replicacao_estado",
+        apelidos: &[],
+        resumo: "O estado do laço de replicação deste servidor: papel vivo, \
+                 posição consumida por origem e tabela, última rodada, último \
+                 erro e as tabelas recusadas com o motivo.",
+        parametros: &[],
+        exemplo: r#"{"op":"replicacao_estado"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "replicacao_testar",
+        apelidos: &[],
+        resumo: "Prova a ligação com o outro servidor pela MESMA conexão e \
+                 autenticação do laço de replicação, e diz o que ele serve: \
+                 papel, `id_servidor`, se a imagem da linha está ligada, as \
+                 tabelas com a chave de cada uma, e os impedimentos por modo.",
+        parametros: &[
+            opc(
+                "origem",
+                "string",
+                "o nome de uma origem já em `replicacao.origens`; é o caminho \
+                 preferido, porque a credencial não sai do servidor",
+            ),
+            opc("host", "string", "o endereço do outro servidor, para uma ligação nova"),
+            opc("porta", "integer", "a porta dele; 5000 quando omitida"),
+            opc("token", "string", "o token da porta de dados dele"),
+            opc("usuario", "string", "o login de replicação"),
+            opc(
+                "senha_hash",
+                "string",
+                "o hash da senha desse login (o mesmo texto do cadastro) — \
+                 nunca a senha em claro; nada disso volta na resposta",
+            ),
+            opc("database", "string", "olhar só este banco; sem ele, todos"),
+        ],
+        exemplo: r#"{"op":"replicacao_testar","origem":"curitiba"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "spare_promover",
+        apelidos: &[],
+        resumo: "Promove este servidor a primário: o laço de réplica para, a \
+                 escrita abre e o papel vira source. Operação local e manual; \
+                 a resposta avisa o que ajustar no config.json para o próximo \
+                 arranque.",
+        parametros: &[opc(
+            "motivo",
+            "string",
+            "por que a promoção aconteceu; entra no log e na resposta, para \
+             «pedido manual» e «o primário não respondeu» não se confundirem",
+        )],
+        exemplo: r#"{"op":"spare_promover","motivo":"manutencao programada no primario"}"#,
         ferramenta_mcp: false,
     },
     Operacao {

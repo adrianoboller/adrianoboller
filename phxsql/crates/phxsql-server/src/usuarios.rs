@@ -232,6 +232,10 @@ impl Atividade {
             // permissao propria, para poder dar a uma replica sem dar mais
             // nada -- e para nao sair de graca junto com `ler`.
             "posicao" | "replicar" => Atividade::Replicar,
+            // Promover um spare vira o papel do servidor inteiro; o estado do
+            // laco expoe origem, endereco e erro de conexao. Os dois sao
+            // decisao e mapa de administrador, nao de replica.
+            "spare_promover" | "replicacao_estado" | "replicacao_testar" => Atividade::Administrar,
             // Operacao desconhecida exige o maior poder: nega por omissao.
             _ => Atividade::Administrar,
         })

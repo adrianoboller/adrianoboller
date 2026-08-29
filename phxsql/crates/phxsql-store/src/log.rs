@@ -71,7 +71,7 @@ use phxsql_core::paginacao::Paginacao;
 use phxsql_core::RowId;
 
 use crate::cofre::{self, Cabecalho};
-use crate::util::{agora_ms, por_i64, por_u32, por_u64, Campos};
+use crate::util::{agora_ms, por_i64, por_u16, por_u32, por_u64, Campos};
 use crate::volume::Volumes;
 
 pub const MAGIC_LOG: &[u8; 8] = b"PHXLOG\0\0";
@@ -141,6 +141,13 @@ pub struct Evento {
     pub versao: u64,
     /// Identificacao de quem fez. Zero = nao informado.
     pub usuario: u32,
+    /// De que servidor a escrita NASCEU. Zero = escrita local.
+    ///
+    /// E o que mata o laco infinito do bidirecional: ao servir o fluxo para
+    /// outro servidor, os eventos cuja origem e o proprio destino nao viajam
+    /// de volta. Guardado nos 2 bytes que eram reservados no cabecalho -- todo
+    /// evento gravado antes deste campo le zero, que e exatamente "local".
+    pub origem: u16,
     /// Bytes que vem depois deste cabecalho, NO ARQUIVO. Zero = sem imagem.
     ///
     /// Num volume cifrado isto e a imagem cifrada MAIS os 16 bytes da
@@ -171,6 +178,7 @@ impl Evento {
         por_i64(dst, 0, self.carimbo);
         dst[8] = self.operacao.tag();
         dst[9] = if self.tam_imagem == 0 { 0 } else { FLAG_IMAGEM };
+        por_u16(dst, 10, self.origem);
         por_u64(dst, 12, self.rowid);
         por_u64(dst, 20, self.versao);
         por_u32(dst, 28, self.usuario);
@@ -224,6 +232,7 @@ impl Evento {
             rowid: c.u64(12),
             versao: c.u64(20),
             usuario: c.u32(28),
+            origem: c.u16(10),
             tam_imagem,
         };
         if tam_imagem == 0 {
@@ -384,6 +393,27 @@ impl LogFile {
         versao: u64,
         imagem: &[u8],
     ) -> Result<Evento> {
+        self.registrar_detalhado(operacao, rowid, versao, imagem, None, 0)
+    }
+
+    /// Registra um evento com carimbo e origem VINDOS DE FORA.
+    ///
+    /// E o caminho do bidirecional: um evento aplicado aqui tem de guardar o
+    /// instante em que a escrita NASCEU no outro servidor, e nao o instante em
+    /// que chegou -- e o carimbo que decide o conflito, e comparar hora de
+    /// chegada elegeria sempre quem sincroniza por ultimo. A origem e o que
+    /// impede o evento de voltar para o servidor de onde veio.
+    ///
+    /// `carimbo` em `None` usa o relogio local, que e o caso da escrita local.
+    pub fn registrar_detalhado(
+        &mut self,
+        operacao: Operacao,
+        rowid: RowId,
+        versao: u64,
+        imagem: &[u8],
+        carimbo: Option<i64>,
+        origem: u16,
+    ) -> Result<Evento> {
         // O teto conta o que vai AO ARQUIVO: num volume cifrado a etiqueta de
         // 16 bytes anda junto, e deixar a soma passar do teto faria a leitura
         // recusar o proprio evento que acabamos de gravar.
@@ -397,11 +427,12 @@ impl LogFile {
         // volume cifrado o corpo leva a etiqueta de 16 bytes atras dele.
         let atual = self.cab(self.volume_atual)?;
         let evento = Evento {
-            carimbo: agora_ms(),
+            carimbo: carimbo.unwrap_or_else(agora_ms),
             operacao,
             rowid,
             versao,
             usuario: self.usuario,
+            origem,
             tam_imagem: atual.ocupa(imagem.len()) as u32,
         };
         self.anexar(evento, imagem)?;
@@ -874,6 +905,36 @@ mod tests {
         assert!(h.iter().all(|e| e.rowid == 1));
         assert_eq!(h[0].operacao, Operacao::Inclusao);
         assert_eq!(h[1].operacao, Operacao::Alteracao);
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// A origem mora nos 2 bytes que eram reservados: quem grava pelo caminho
+    /// normal continua com zero (= local), e o caminho detalhado grava a que
+    /// veio de fora, junto com o carimbo original do evento.
+    #[test]
+    fn origem_e_carimbo_forcados_viajam_e_voltam() {
+        let d = dir_temp("origem");
+        let mut l = LogFile::criar(&d, "t", Paginacao::DESLIGADA).unwrap();
+        l.registrar(Operacao::Inclusao, 1, 1).unwrap();
+        l.registrar_detalhado(
+            Operacao::Alteracao,
+            1,
+            2,
+            b"imagem qualquer",
+            Some(1_700_000_123_456),
+            0xBEEF,
+        )
+        .unwrap();
+
+        let eventos = l.ler(0, 0).unwrap();
+        assert_eq!(eventos[0].origem, 0, "escrita local e origem zero");
+        assert_eq!(eventos[1].origem, 0xBEEF);
+        assert_eq!(
+            eventos[1].carimbo, 1_700_000_123_456,
+            "o carimbo do conflito e o do NASCIMENTO da escrita, nao o da chegada"
+        );
+        // E o CRC cobre o campo: um byte trocado na origem derruba o evento.
+        assert_eq!(l.verificar().unwrap(), 2);
         std::fs::remove_dir_all(&d).unwrap();
     }
 

@@ -109,6 +109,8 @@ impl Cliente {
                 "TIPO_INVALIDO" => PhxError::Tipo(texto),
                 "LIMITE_EXCEDIDO" => PhxError::LimiteExcedido(texto),
                 "CONFLITO" => PhxError::Conflito(texto),
+                "ESCRITA_NA_REPLICA" => PhxError::EscritaNaReplica(texto),
+                "SPARE_EM_ESPERA" => PhxError::SpareEmEspera(texto),
                 _ => PhxError::Esquema(texto),
             });
         }
@@ -177,14 +179,22 @@ pub struct NoSource {
     pub esquema: Option<Schema>,
 }
 
+/// O que o source diz sobre um database inteiro.
+pub struct PosicaoDoSource {
+    pub com_imagem: bool,
+    /// O `id_servidor` do source -- e com ele que o bidirecional confere a
+    /// colisao de hash antes de confiar na supressao de origem.
+    pub id_servidor: String,
+    pub tabelas: Vec<NoSource>,
+}
+
 /// Le a resposta de `posicao`.
-pub fn posicao(cliente: &mut Cliente, database: &str) -> Result<(bool, Vec<NoSource>)> {
+pub fn posicao(cliente: &mut Cliente, database: &str) -> Result<PosicaoDoSource> {
     let r = cliente.pedir(vec![
         ("op", Json::texto_de("posicao")),
         ("database", Json::texto_de(database)),
         ("com_esquema", Json::Bool(true)),
     ])?;
-    let com_imagem = r.booleano_ou("imagem_da_linha", false);
     let mut saida = Vec::new();
     if let Some(Json::Objeto(pares)) = r.campo("tabelas") {
         for (nome, v) in pares {
@@ -201,7 +211,11 @@ pub fn posicao(cliente: &mut Cliente, database: &str) -> Result<(bool, Vec<NoSou
             });
         }
     }
-    Ok((com_imagem, saida))
+    Ok(PosicaoDoSource {
+        com_imagem: r.booleano_ou("imagem_da_linha", false),
+        id_servidor: r.texto_ou("id_servidor", "").to_string(),
+        tabelas: saida,
+    })
 }
 
 /// Um evento vindo do source, pronto para aplicar.
@@ -209,6 +223,20 @@ pub struct EventoRecebido {
     pub operacao: Operacao,
     pub rowid: u64,
     pub imagem: Vec<u8>,
+    /// O instante em que a escrita NASCEU, no relogio de quem a fez.
+    pub carimbo_ms: i64,
+    /// [`crate::bidirecional::hash_id`] do servidor onde a escrita nasceu.
+    pub origem: u16,
+}
+
+/// Um lote do `replicar`, com a posicao ATE ONDE o source andou.
+///
+/// `ate` pode passar da conta dos eventos: no bidirecional o source suprime
+/// os eventos cuja origem e quem pediu, e a posicao anda por cima deles.
+pub struct LoteRecebido {
+    pub eventos: Vec<EventoRecebido>,
+    pub ate: u64,
+    pub fim: bool,
 }
 
 /// Puxa ate `LOTE` eventos a partir de `desde`.
@@ -218,16 +246,34 @@ pub fn puxar(
     tabela: &str,
     desde: u64,
 ) -> Result<Vec<EventoRecebido>> {
-    let r = cliente.pedir(vec![
+    Ok(puxar_lote(cliente, database, tabela, desde, None)?.eventos)
+}
+
+/// O mesmo que [`puxar`], dizendo QUEM pede -- e devolvendo a posicao.
+///
+/// `para` e o `id_servidor` de quem puxa: o source nao devolve os eventos que
+/// nasceram nele, que e o que mata o laco do bidirecional.
+pub fn puxar_lote(
+    cliente: &mut Cliente,
+    database: &str,
+    tabela: &str,
+    desde: u64,
+    para: Option<&str>,
+) -> Result<LoteRecebido> {
+    let mut campos = vec![
         ("op", Json::texto_de("replicar")),
         ("database", Json::texto_de(database)),
         ("tabela", Json::texto_de(tabela)),
         ("desde", Json::de_u64(desde)),
         ("max", Json::de_u64(LOTE)),
-    ])?;
-    let mut saida = Vec::new();
+    ];
+    if let Some(quem) = para {
+        campos.push(("para", Json::texto_de(quem)));
+    }
+    let r = cliente.pedir(campos)?;
+    let mut eventos = Vec::new();
     for e in r.campo("eventos").and_then(Json::lista).unwrap_or(&[]) {
-        saida.push(EventoRecebido {
+        eventos.push(EventoRecebido {
             operacao: match e.texto_ou("operacao", "") {
                 "inclusao" => Operacao::Inclusao,
                 "alteracao" => Operacao::Alteracao,
@@ -240,9 +286,15 @@ pub fn puxar(
             },
             rowid: e.inteiro_ou("rowid", 0).max(0) as u64,
             imagem: hex_para_bytes(e.texto_ou("imagem", ""))?,
+            carimbo_ms: e.inteiro_ou("carimbo_ms", 0),
+            origem: e.inteiro_ou("origem", 0).clamp(0, u16::MAX as i64) as u16,
         });
     }
-    Ok(saida)
+    Ok(LoteRecebido {
+        eventos,
+        ate: r.inteiro_ou("ate", desde as i64).max(0) as u64,
+        fim: r.booleano_ou("fim", true),
+    })
 }
 
 /// Abre a conexao e entra autenticado. Usado pelo laco e pelos testes.

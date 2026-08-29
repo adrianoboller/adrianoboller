@@ -39,6 +39,18 @@ pub enum PhxError {
     Autorizacao(String),
     /// Valor excede o limite fisico do formato.
     LimiteExcedido(String),
+    /// Este servidor e uma replica de leitura: escrita so no primario.
+    ///
+    /// Erro proprio, e nao um `Autorizacao` generico, porque o cliente precisa
+    /// DISTINGUIR: "voce nao pode" manda falar com o administrador; "este
+    /// servidor nao grava, o primario e X" manda reconectar no lugar certo.
+    /// A mensagem carrega o endereco do primario.
+    EscritaNaReplica(String),
+    /// Este servidor e um spare de contingencia: nao atende cliente comum.
+    ///
+    /// Reserva e reserva: nem leitura. So administracao e monitoramento
+    /// enxergam o spare, ate alguem promove-lo com `spare_promover`.
+    SpareEmEspera(String),
 }
 
 impl PhxError {
@@ -79,6 +91,8 @@ impl PhxError {
             PhxError::Conflito(_) => 3004,
             PhxError::Autorizacao(_) => 4001,
             PhxError::EmCarga(_) => 4002,
+            PhxError::EscritaNaReplica(_) => 4003,
+            PhxError::SpareEmEspera(_) => 4004,
             PhxError::Io(_) => 5001,
         }
     }
@@ -99,6 +113,8 @@ impl PhxError {
             PhxError::Conflito(_) => "CONFLITO",
             PhxError::Autorizacao(_) => "ACESSO_NEGADO",
             PhxError::EmCarga(_) => "EM_CARGA",
+            PhxError::EscritaNaReplica(_) => "ESCRITA_NA_REPLICA",
+            PhxError::SpareEmEspera(_) => "SPARE_EM_ESPERA",
             PhxError::Io(_) => "ERRO_DE_ES",
         }
     }
@@ -165,6 +181,8 @@ impl fmt::Display for PhxError {
             PhxError::Autorizacao(m) => write!(f, "acesso negado: {m}"),
             PhxError::EmCarga(m) => write!(f, "tabela em carga: {m}"),
             PhxError::LimiteExcedido(m) => write!(f, "limite excedido: {m}"),
+            PhxError::EscritaNaReplica(m) => write!(f, "escrita na replica: {m}"),
+            PhxError::SpareEmEspera(m) => write!(f, "spare em espera: {m}"),
         }
     }
 }
@@ -212,6 +230,8 @@ mod testes_codigo {
             PhxError::Conflito(String::new()),
             PhxError::EmCarga(String::new()),
             PhxError::Autorizacao(String::new()),
+            PhxError::EscritaNaReplica(String::new()),
+            PhxError::SpareEmEspera(String::new()),
             PhxError::Io(std::io::Error::other("x")),
         ];
         let mut codigos: Vec<u16> = todos.iter().map(PhxError::codigo).collect();
@@ -240,7 +260,19 @@ mod testes_codigo {
         assert_eq!(PhxError::Conflito(String::new()).codigo(), 3004);
         assert_eq!(PhxError::Autorizacao(String::new()).codigo(), 4001);
         assert_eq!(PhxError::EmCarga(String::new()).codigo(), 4002);
+        assert_eq!(PhxError::EscritaNaReplica(String::new()).codigo(), 4003);
+        assert_eq!(PhxError::SpareEmEspera(String::new()).codigo(), 4004);
         assert_eq!(PhxError::Io(std::io::Error::other("x")).codigo(), 5001);
+    }
+
+    /// Os dois erros de papel sao recusa DEFINITIVA deste servidor: repetir o
+    /// pedido aqui nao muda nada -- o conserto e falar com o primario.
+    #[test]
+    fn recusa_por_papel_nao_pede_nova_tentativa() {
+        assert!(!PhxError::EscritaNaReplica(String::new()).adianta_repetir());
+        assert!(!PhxError::SpareEmEspera(String::new()).adianta_repetir());
+        assert_eq!(PhxError::EscritaNaReplica(String::new()).classe(), "acesso");
+        assert_eq!(PhxError::SpareEmEspera(String::new()).classe(), "acesso");
     }
 
     #[test]

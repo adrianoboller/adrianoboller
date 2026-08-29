@@ -21,7 +21,7 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -33,8 +33,9 @@ use phxsql_store::memoria::{Consulta, Filtro, Operador, Ordem, TabelaMemoria};
 use phxsql_store::table::{Table, Visao};
 
 use crate::acesso::{Acesso, LogAcessos};
+use crate::bidirecional::{self, EstadoOrigem, MapaDeToques, Toque};
 use crate::blacklist::Blacklist;
-use crate::config::{Config, Durabilidade};
+use crate::config::{Config, Durabilidade, Papel};
 use crate::dblink::{Definicao, Motor};
 use crate::exportar::Formato;
 use crate::http;
@@ -99,6 +100,64 @@ pub(crate) const OPS_ESCRITA: &[&str] = &[
     // servidor declarado somente-leitura nao e um servidor sem dono.
     "servico_parar",
     "servico_subir",
+    // `spare_promover` NAO entra aqui, e a ausencia e deliberada, como a do
+    // `aplicar`: um spare roda com `somente_leitura` ligado, e e exatamente
+    // nele que a promocao precisa funcionar. O portao dela e o `administrar`.
+];
+
+/// O que um SPARE atende. Reserva e reserva: cliente comum nao le nem
+/// escreve; o que passa e administracao, monitoramento e a propria
+/// replicacao -- inclusive `posicao`/`replicar`, para o spare poder ser
+/// origem de cascata e mostrar o proprio atraso.
+///
+/// Lista de PERMISSAO, e nao de recusa, de proposito: operacao nova nasce
+/// BARRADA no spare ate alguem decidir o contrario -- o mesmo principio do
+/// portao de permissao que nega operacao desconhecida.
+pub(crate) const OPS_NO_SPARE: &[&str] = &[
+    // A sessao em si.
+    "ping",
+    "desafio",
+    "login",
+    "sair",
+    "quem_sou",
+    "catalogo",
+    // Administracao e monitoramento.
+    "config",
+    "usuarios",
+    "acessos",
+    "ips",
+    "bloqueios",
+    "desbloquear",
+    "sessoes",
+    "processlist",
+    "encerrar_sessao",
+    "kill",
+    "sistema",
+    "painel",
+    "servico",
+    "servico_parar",
+    "servico_subir",
+    "estatisticas",
+    "estatisticas_uso",
+    // Conferencia de integridade e de igualdade -- e como um administrador
+    // confere a reserva sem abrir o dado linha a linha.
+    "verificar",
+    "checksum",
+    "soma_de_verificacao",
+    "diario",
+    "backup",
+    "conferir_backup",
+    // Metadado: ver QUE bancos e tabelas existem nao e ler o dado.
+    "bancos",
+    "tabelas",
+    "esquema",
+    // A replicacao inteira, que e a razao de o spare existir.
+    "posicao",
+    "replicar",
+    "aplicar",
+    "replicacao_estado",
+    "replicacao_testar",
+    "spare_promover",
 ];
 
 /// Estado de uma conexao.
@@ -381,6 +440,24 @@ pub struct Servidor {
     /// Onde a porta de dados escuta agora, que nem sempre e o `bind`.
     endereco_dos_dados: Mutex<Option<SocketAddr>>,
     conexoes: AtomicUsize,
+    /// O papel VIVO deste processo -- nasce igual ao do `config.json` e so
+    /// muda pela promocao (`spare_promover`). Atomico porque o portao de
+    /// pedido le a cada operacao, e um mutex ali serializaria todo mundo por
+    /// um valor que muda uma vez na vida.
+    papel_vivo: AtomicU8,
+    /// O `somente_leitura` VIVO. A promocao de um spare precisa abrir a
+    /// escrita sem reiniciar o processo -- e o config continua dizendo o que
+    /// esta no arquivo, que e outra pergunta.
+    somente_leitura_vivo: AtomicBool,
+    /// O que cada laco de replica conta, por nome de origem, para a operacao
+    /// `replicacao_estado` -- posicao, ultimo erro, recusas.
+    estado_replicacao: Mutex<HashMap<String, EstadoOrigem>>,
+    /// O ultimo toque por chave, por "database/tabela", para o conflito do
+    /// bidirecional. Reconstruido do proprio diario; perder custa varredura.
+    toques_bidi: Mutex<HashMap<String, MapaDeToques>>,
+    /// Posicao consumida por "origem|database/tabela" no modo bidirecional.
+    /// Persistida em `replicacao-posicoes.json` ao lado dos dados.
+    posicoes_bidi: Mutex<HashMap<String, u64>>,
 }
 
 impl Servidor {
@@ -396,6 +473,10 @@ impl Servidor {
         let lista_negra = Blacklist::abrir(&config.blacklist)?;
         let dblink = crate::dblink::Registro::abrir(&config.dblink)?;
         let jobs = crate::jobs::Registro::abrir(&config.jobs)?;
+        let papel = config.replicacao.papel;
+        let somente_leitura = config.somente_leitura;
+        let posicoes_bidi =
+            bidirecional::ler_posicoes(&config.base.join("replicacao-posicoes.json"));
         Ok(Arc::new(Servidor {
             janela: Janela::nova(&config.recursos),
             sujas: Mutex::new(std::collections::HashSet::new()),
@@ -422,11 +503,92 @@ impl Servidor {
             marcas_do_diario: Mutex::new(HashMap::new()),
             profiler: Mutex::new(crate::profiler::Profiler::default()),
             profiler_ligado: AtomicBool::new(false),
+            papel_vivo: AtomicU8::new(papel_para_u8(papel)),
+            somente_leitura_vivo: AtomicBool::new(somente_leitura),
+            estado_replicacao: Mutex::new(HashMap::new()),
+            toques_bidi: Mutex::new(HashMap::new()),
+            posicoes_bidi: Mutex::new(posicoes_bidi),
         }))
     }
 
     pub fn config(&self) -> &Config {
         &self.config
+    }
+
+    /// O papel VIVO deste processo -- o do `config.json`, ate uma promocao.
+    pub fn papel_atual(&self) -> Papel {
+        u8_para_papel(self.papel_vivo.load(Ordering::Relaxed))
+    }
+
+    /// O primeiro endereco de origem, para o erro de recusa apontar o lugar
+    /// certo em vez de so dizer "nao".
+    fn primario(&self) -> String {
+        match self.config.replicacao.origens.first() {
+            Some(o) => format!("{}:{} ({})", o.host, o.porta, o.nome),
+            None => "(nenhuma origem configurada)".into(),
+        }
+    }
+
+    /// Promove ESTE servidor a primario: o laco de replica para, a escrita
+    /// abre, e o papel vira `source`.
+    ///
+    /// # Coesa, com `motivo`, e chamavel por dentro
+    ///
+    /// A op `spare_promover` e uma casca fina sobre esta funcao -- ela so
+    /// escolhe o texto do `motivo`. O parametro existe para que TODA promocao
+    /// diga por que aconteceu: «pedido manual» e uma coisa, «o primario nao
+    /// respondeu» e outra, e quem le o log depois precisa distinguir.
+    ///
+    /// A assinatura e a mesma que a promocao AUTOMATICA usa do outro lado
+    /// (`promover_a_master(&self, motivo: &str) -> Result<Json>`), de
+    /// proposito: o degrau manual e o mesmo degrau, e as duas se reconciliam
+    /// numa funcao so em vez de virarem dois caminhos ate o mesmo estado --
+    /// que e sempre o par em que um esquece uma conferencia.
+    ///
+    /// # O que ela NAO faz
+    ///
+    /// Nao reescreve o `config.json` -- o arquivo e do administrador, com os
+    /// comentarios dele, e um servidor que edita a propria configuracao
+    /// perderia os dois. A resposta avisa o que ajustar para o proximo
+    /// arranque; ate la, o processo vive promovido.
+    pub fn promover_para_primario(&self, motivo: &str) -> Result<Json> {
+        let de = self.papel_atual();
+        if !de.puxa_de_origem() {
+            return Err(PhxError::Esquema(format!(
+                "o papel atual e {}, e promover so faz sentido num servidor \
+                 que replica de uma origem (spare, replica, read_replica)",
+                de.nome()
+            )));
+        }
+        self.papel_vivo
+            .store(papel_para_u8(Papel::Source), Ordering::SeqCst);
+        self.somente_leitura_vivo.store(false, Ordering::SeqCst);
+        eprintln!(
+            "PROMOVIDO ({motivo}): papel {} virou source; os lacos de replica \
+             param na proxima rodada e a escrita esta aberta",
+            de.nome()
+        );
+        Ok(Json::objeto(vec![
+            ("papel_anterior", Json::texto_de(de.nome())),
+            ("papel", Json::texto_de("source")),
+            ("motivo", Json::texto_de(motivo)),
+            ("somente_leitura", Json::Bool(false)),
+            (
+                "aviso",
+                Json::texto_de(
+                    "promocao vale para este processo: ajuste replicacao.papel \
+                     para \"source\" (e somente_leitura para false) no \
+                     config.json antes do proximo arranque",
+                ),
+            ),
+        ]))
+    }
+
+    /// Anota algo no estado de uma origem, para `replicacao_estado`.
+    fn anotar_estado(&self, origem: &str, f: impl FnOnce(&mut EstadoOrigem)) {
+        if let Ok(mut e) = self.estado_replicacao.lock() {
+            f(e.entry(origem.to_string()).or_default());
+        }
     }
 
     /// Sobe o servidor e atende ate o processo ser encerrado.
@@ -693,20 +855,24 @@ impl Servidor {
     /// Uma por origem e nao uma so: multi-source e varias conexoes
     /// independentes, e uma origem lenta ou caida nao pode segurar as outras.
     fn subir_replicacao(self: &Arc<Self>) {
-        if self.config.replicacao.papel != crate::config::Papel::Replica {
+        let papel = self.config.replicacao.papel;
+        if !papel.puxa_de_origem() {
             return;
         }
         if self.config.replicacao.origens.is_empty() {
             eprintln!(
-                "replicacao: papel replica sem nenhuma origem em \
-                 replicacao.origens -- nada a puxar"
+                "replicacao: papel {} sem nenhuma origem em \
+                 replicacao.origens -- nada a puxar",
+                papel.nome()
             );
             return;
         }
-        if !self.config.somente_leitura {
+        if papel != Papel::Multi && !self.config.somente_leitura {
             // Nao e erro, e e uma pedra no caminho conhecida: uma replica
             // escrita pela aplicacao quebra a numeracao dos rowids, e a
             // proxima inclusao vinda do source para a replicacao inteira.
+            // O multi fica de fora: ele EXISTE para ser escrito, e casa as
+            // linhas pela chave, nao pelo rowid.
             eprintln!(
                 "ATENCAO: replica sem somente_leitura. Se a aplicacao escrever \
                  aqui, os rowids divergem e a replicacao para."
@@ -720,10 +886,26 @@ impl Servidor {
                     origem.nome
                 );
             }
+            let modo = if origem.cada_minutos > 0 {
+                format!("agendada a cada {} min", origem.cada_minutos)
+            } else if !origem.hora.is_empty() {
+                format!("diaria as {}", origem.hora)
+            } else {
+                format!("streaming, laco de {}s", origem.reconectar_em)
+            };
             eprintln!(
-                "replicacao: puxando de {} ({}:{}) a cada {}s",
-                origem.nome, origem.host, origem.porta, origem.reconectar_em
+                "replicacao [{}]: puxando de {}:{} | {modo}",
+                origem.nome, origem.host, origem.porta
             );
+            self.anotar_estado(&origem.nome, |e| {
+                e.modo = if origem.cada_minutos > 0 {
+                    format!("cada_{}min", origem.cada_minutos)
+                } else if !origem.hora.is_empty() {
+                    format!("diaria_{}", origem.hora)
+                } else {
+                    "streaming".to_string()
+                };
+            });
             let servidor = Arc::clone(self);
             std::thread::spawn(move || servidor.laco_da_replica(origem));
         }
@@ -750,9 +932,20 @@ impl Servidor {
     /// por evento (`--example onde-doi-na-replica`), o que da mais de 40.000/s.
     /// O que sobrava era sono, e nao trabalho: o numero media o `reconectar_em`.
     fn laco_da_replica(self: Arc<Self>, origem: crate::config::Origem) {
+        if origem.agendada() {
+            return self.laco_agendado(origem);
+        }
         let espera = Duration::from_secs(origem.reconectar_em);
         loop {
-            match self.rodada_da_replica(&origem) {
+            // A promocao encerra o laco: um primario nao puxa de ninguem.
+            if !self.papel_atual().puxa_de_origem() {
+                eprintln!(
+                    "replicacao [{}]: laco encerrado, o servidor foi promovido",
+                    origem.nome
+                );
+                return;
+            }
+            match self.uma_rodada(&origem) {
                 // Nada a fazer: agora sim, espera antes de perguntar de novo.
                 Ok(0) => std::thread::sleep(espera),
                 Ok(n) => {
@@ -773,6 +966,91 @@ impl Servidor {
         }
     }
 
+    /// O laco AGENDADO: alcancar tudo, dormir ate a janela, repetir.
+    ///
+    /// Mora no proprio laco da replica, e nao no subsistema de jobs, de
+    /// proposito: a agenda e da ORIGEM (cada uma pode ter a sua), e o job
+    /// roda pedidos de protocolo -- a replica nao passa pelo protocolo.
+    ///
+    /// A primeira rodada acontece no arranque, sem esperar a janela: uma
+    /// replica que sobe atrasada nao deve ficar horas fingindo que esta em
+    /// dia. Dali em diante, so nas janelas.
+    fn laco_agendado(self: Arc<Self>, origem: crate::config::Origem) {
+        loop {
+            if !self.papel_atual().puxa_de_origem() {
+                eprintln!(
+                    "replicacao [{}]: laco encerrado, o servidor foi promovido",
+                    origem.nome
+                );
+                return;
+            }
+            // Alcancar TUDO: repete enquanto houver o que aplicar, porque a
+            // proxima chance e so na janela seguinte.
+            loop {
+                match self.uma_rodada(&origem) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        eprintln!(
+                            "replicacao [{}]: {n} evento(s) aplicado(s) na janela",
+                            origem.nome
+                        )
+                    }
+                    Err(e) => {
+                        eprintln!("replicacao [{}]: {e}", origem.nome);
+                        break;
+                    }
+                }
+            }
+            let ms =
+                bidirecional::ms_ate_a_janela(crate::agora_ms(), origem.cada_minutos, &origem.hora)
+                    .max(1_000);
+            self.anotar_estado(&origem.nome, |e| {
+                e.proxima_janela_ms = crate::agora_ms() + ms;
+            });
+            // Dorme em passos de ate um segundo: a promocao nao pode esperar
+            // uma janela diaria inteira para o laco perceber.
+            let fim = Instant::now() + Duration::from_millis(ms as u64);
+            loop {
+                let resta = fim.saturating_duration_since(Instant::now());
+                if resta.is_zero() {
+                    break;
+                }
+                if !self.papel_atual().puxa_de_origem() {
+                    return;
+                }
+                std::thread::sleep(resta.min(Duration::from_secs(1)));
+            }
+        }
+    }
+
+    /// Uma rodada, no modo do papel: por rowid (replica fiel) ou por chave
+    /// (bidirecional). Anota o estado para `replicacao_estado` nos dois.
+    fn uma_rodada(&self, origem: &crate::config::Origem) -> Result<u64> {
+        let resultado = if self.papel_atual() == Papel::Multi {
+            self.rodada_bidirecional(origem)
+        } else {
+            self.rodada_da_replica(origem)
+        };
+        match &resultado {
+            Ok(n) => {
+                let n = *n;
+                self.anotar_estado(&origem.nome, |e| {
+                    e.ultima_rodada_ms = crate::agora_ms();
+                    e.aplicados += n;
+                    e.ultimo_erro.clear();
+                });
+            }
+            Err(erro) => {
+                let texto = erro.to_string();
+                self.anotar_estado(&origem.nome, |e| {
+                    e.ultima_rodada_ms = crate::agora_ms();
+                    e.ultimo_erro = texto;
+                });
+            }
+        }
+        resultado
+    }
+
     /// Uma passada por todas as tabelas de todos os databases da origem.
     ///
     /// Devolve quantos eventos aplicou.
@@ -786,15 +1064,15 @@ impl Servidor {
 
         let mut aplicados = 0u64;
         for database in databases {
-            let (com_imagem, tabelas) = crate::replica::posicao(&mut cliente, &database)?;
-            if !com_imagem {
+            let p = crate::replica::posicao(&mut cliente, &database)?;
+            if !p.com_imagem {
                 return Err(PhxError::Esquema(format!(
                     "o source de {} esta com replicacao.imagem_da_linha desligada: \
                      o diario dele nao carrega a linha, e nao ha o que aplicar",
                     origem.nome
                 )));
             }
-            for no in tabelas {
+            for no in p.tabelas {
                 aplicados += self.alcancar_tabela(&mut cliente, &database, &no)?;
             }
         }
@@ -870,6 +1148,317 @@ impl Servidor {
         }
         tabela.sincronizar()?;
         Ok(aplicados)
+    }
+
+    /// Uma passada bidirecional: puxa do outro lado e aplica POR CHAVE.
+    ///
+    /// E o modo multi-master. Difere da replica fiel em tres pontos, e os
+    /// tres estao em `docs/REPLICACAO.md`: a identidade e a chave unica (o
+    /// rowid e local de cada servidor), o conflito e "mais recente vence"
+    /// pelo carimbo do nascimento da escrita, e a posicao consumida vira
+    /// estado proprio -- o diario local mistura escrita local com aplicada e
+    /// deixa de ser a contagem da origem.
+    fn rodada_bidirecional(&self, origem: &crate::config::Origem) -> Result<u64> {
+        let meu_id = self.config.replicacao.id_servidor.trim().to_string();
+        let meu_hash = bidirecional::hash_id(&meu_id);
+        let mut cliente = crate::replica::ligar(origem)?;
+        let databases = if origem.databases.is_empty() {
+            cliente.databases()?
+        } else {
+            origem.databases.clone()
+        };
+
+        let mut aplicados = 0u64;
+        for database in databases {
+            let p = crate::replica::posicao(&mut cliente, &database)?;
+            if !p.com_imagem {
+                return Err(PhxError::Esquema(format!(
+                    "o outro lado ({}) esta sem replicacao.imagem_da_linha: no \
+                     bidirecional a chave mora dentro da imagem",
+                    origem.nome
+                )));
+            }
+            // A identidade e obrigatoria DOS DOIS lados: sem o id do outro nao
+            // ha supressao de origem confiavel, e sem supressao ha laco.
+            let id_dele = p.id_servidor.trim().to_string();
+            if id_dele.is_empty() {
+                return Err(PhxError::Esquema(format!(
+                    "o outro lado ({}) nao informa id_servidor: o bidirecional \
+                     exige replicacao.id_servidor nos dois servidores",
+                    origem.nome
+                )));
+            }
+            if id_dele == meu_id {
+                return Err(PhxError::Esquema(format!(
+                    "os dois servidores usam o MESMO id_servidor ({meu_id}): \
+                     cada um precisa do seu, senao a supressao de origem \
+                     descarta tudo"
+                )));
+            }
+            // A colisao de hash e improvavel e NAO e impossivel -- e falharia
+            // calada, suprimindo eventos de um servidor inocente. Conferir
+            // aqui custa uma comparacao; descobrir depois custaria dado.
+            if bidirecional::hash_id(&id_dele) == meu_hash {
+                return Err(PhxError::Esquema(format!(
+                    "colisao de identidade: {meu_id:?} e {id_dele:?} caem no \
+                     mesmo hash u16; troque um dos dois id_servidor"
+                )));
+            }
+            let hash_dele = bidirecional::hash_id(&id_dele);
+            for no in p.tabelas {
+                aplicados += self.alcancar_tabela_bidi(
+                    &mut cliente,
+                    &database,
+                    &no,
+                    origem,
+                    &meu_id,
+                    meu_hash,
+                    hash_dele,
+                )?;
+            }
+        }
+        Ok(aplicados)
+    }
+
+    /// Traz UMA tabela ate a posicao do outro lado, casando pela chave.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "o laco de uma tabela junta as identidades dos dois lados"
+    )]
+    fn alcancar_tabela_bidi(
+        &self,
+        cliente: &mut crate::replica::Cliente,
+        database: &str,
+        no: &crate::replica::NoSource,
+        origem: &crate::config::Origem,
+        meu_id: &str,
+        meu_hash: u16,
+        hash_dele: u16,
+    ) -> Result<u64> {
+        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let db = _trava.garantir_database(database)?;
+        let mut tabela = match db.abrir_qualificada(&no.nome) {
+            Ok(t) => t,
+            Err(_) => match &no.esquema {
+                Some(e) => {
+                    let schema = no.nome.split_once('.').map(|(s, _)| s.to_string());
+                    eprintln!("replicacao: criando {database}.{} aqui", no.nome);
+                    db.criar_tabela(schema.as_deref(), e.clone())?
+                }
+                None => return Ok(0),
+            },
+        };
+        // No multi as duas imagens sao obrigatorias: a da linha porque a
+        // chave mora nela, e a da exclusao porque exclusao tambem viaja por
+        // chave. Este caminho abre a tabela direto, fora do `abrir_travada`.
+        tabela.ligar_imagem_no_diario(true);
+        tabela.ligar_imagem_na_exclusao(true);
+
+        let chave_tab = format!("{database}/{}", no.nome);
+        let Some((indice, pos_chave)) = bidirecional::chave_unica(tabela.esquema()) else {
+            // A recusa com o motivo escrito: sem chave unica nao ha
+            // identidade entre servidores, e adivinhar pela posicao ou pelo
+            // rowid gravaria a linha de alguem por cima da de outro.
+            let motivo = format!(
+                "sem chave unica de uma coluna: o bidirecional casa as linhas \
+                 pela chave, e {} nao tem uma (crie um indice unico, ou uma \
+                 chave primaria)",
+                no.nome
+            );
+            self.anotar_estado(&origem.nome, |e| {
+                e.recusas.insert(chave_tab.clone(), motivo.clone());
+            });
+            return Ok(0);
+        };
+        // A tabela serve: se ela ja esteve recusada, o recado sai. Recado que
+        // sobrevive ao conserto vira configuracao que mente -- alguem criou o
+        // indice unico e continuaria lendo que a tabela nao replica.
+        self.anotar_estado(&origem.nome, |e| {
+            e.recusas.remove(&chave_tab);
+        });
+
+        // O diario local que ainda nao passou pelo mapa de toques -- inclui a
+        // escrita local desde a ultima rodada, que e quem disputa o conflito.
+        self.absorver_diario_local(&mut tabela, &chave_tab, pos_chave, meu_hash)?;
+
+        let chave_pos = format!("{}|{}", origem.nome, chave_tab);
+        let mut desde = self
+            .posicoes_bidi
+            .lock()
+            .ok()
+            .and_then(|p| p.get(&chave_pos).copied())
+            .unwrap_or(0);
+        if desde >= no.eventos {
+            return Ok(0);
+        }
+
+        let mut aplicados = 0u64;
+        loop {
+            let lote =
+                crate::replica::puxar_lote(cliente, database, &no.nome, desde, Some(meu_id))?;
+            if lote.ate <= desde {
+                break;
+            }
+            for e in &lote.eventos {
+                // Cinto e suspensorio: o source ja suprimiu pelo `para`, e
+                // ainda assim um evento com a MINHA origem nao se aplica --
+                // um source antigo, que ignora o campo, reabriria o laco.
+                if e.origem == meu_hash {
+                    continue;
+                }
+                if self.aplicar_por_chave(
+                    &mut tabela,
+                    &chave_tab,
+                    &indice,
+                    pos_chave,
+                    e,
+                    hash_dele,
+                )? {
+                    aplicados += 1;
+                }
+            }
+            desde = lote.ate;
+            if let Ok(mut p) = self.posicoes_bidi.lock() {
+                p.insert(chave_pos.clone(), desde);
+                let _ = bidirecional::gravar_posicoes(
+                    &self.config.base.join("replicacao-posicoes.json"),
+                    &p,
+                );
+            }
+            self.anotar_estado(&origem.nome, |est| {
+                est.posicoes.insert(chave_tab.clone(), desde);
+            });
+            if lote.fim {
+                break;
+            }
+        }
+        tabela.sincronizar()?;
+        Ok(aplicados)
+    }
+
+    /// Poe no mapa de toques os eventos locais que ele ainda nao viu.
+    ///
+    /// O mapa e por chave, e a chave mora na imagem -- evento sem imagem
+    /// (gravado antes de o modo multi ligar) nao entra no confronto, e isso
+    /// esta documentado: o bidirecional comeca a valer do momento em que as
+    /// imagens comecam.
+    fn absorver_diario_local(
+        &self,
+        tabela: &mut Table,
+        chave_tab: &str,
+        pos_chave: usize,
+        meu_hash: u16,
+    ) -> Result<()> {
+        let total = tabela.eventos()?;
+        let mut guarda = self.toques_bidi.lock().map_err(|_| trava_envenenada())?;
+        let mapa = guarda.entry(chave_tab.to_string()).or_default();
+        if mapa.vistos >= total {
+            return Ok(());
+        }
+        for (ev, imagem) in tabela.diario_com_imagem(mapa.vistos, 0)? {
+            mapa.vistos += 1;
+            if imagem.is_empty() {
+                continue;
+            }
+            let valores = tabela.valores_da_imagem(&imagem)?;
+            let chave = crate::dblink::sincronia::chave_canonica(&valores[pos_chave]);
+            mapa.toques.insert(
+                chave,
+                Toque {
+                    carimbo: ev.carimbo,
+                    // Escrita local guarda o hash do PROPRIO servidor, para o
+                    // empate desempatar pela mesma conta nos dois lados.
+                    origem: if ev.origem == 0 { meu_hash } else { ev.origem },
+                    excluido: ev.operacao == Operacao::Exclusao,
+                },
+            );
+        }
+        Ok(())
+    }
+
+    /// Aplica UM evento remoto pela chave, com "mais recente vence".
+    ///
+    /// Devolve `false` quando o toque local venceu -- que nao e erro, e o
+    /// conflito fazendo o trabalho dele.
+    fn aplicar_por_chave(
+        &self,
+        tabela: &mut Table,
+        chave_tab: &str,
+        indice: &str,
+        pos_chave: usize,
+        e: &crate::replica::EventoRecebido,
+        hash_dele: u16,
+    ) -> Result<bool> {
+        if e.imagem.is_empty() {
+            return Err(PhxError::Esquema(format!(
+                "evento de {} sem imagem no bidirecional: o outro lado precisa \
+                 de replicacao.imagem_da_linha ligada (e de papel multi, que \
+                 poe imagem tambem na exclusao)",
+                e.operacao.nome()
+            )));
+        }
+        let valores = tabela.valores_da_imagem(&e.imagem)?;
+        let chave = crate::dblink::sincronia::chave_canonica(&valores[pos_chave]);
+        // Um source antigo manda origem zero; zero aqui significaria "meu",
+        // que e a leitura errada para um evento que veio DELE.
+        let origem_ev = if e.origem == 0 { hash_dele } else { e.origem };
+
+        let vence = {
+            let guarda = self.toques_bidi.lock().map_err(|_| trava_envenenada())?;
+            match guarda.get(chave_tab).and_then(|m| m.toques.get(&chave)) {
+                Some(local) => bidirecional::remoto_vence(e.carimbo_ms, origem_ev, local),
+                None => true,
+            }
+        };
+        if !vence {
+            return Ok(false);
+        }
+
+        let valor_chave = valores[pos_chave].clone();
+        match e.operacao {
+            Operacao::Inclusao | Operacao::Alteracao => {
+                let achadas = tabela.buscar(indice, &[valor_chave])?;
+                // O evento local nasce com o carimbo e a origem do NASCIMENTO
+                // da escrita -- e o que faz o conflito ser justo e o evento
+                // nao voltar para de onde veio.
+                tabela.forcar_proximo_evento(e.carimbo_ms, origem_ev);
+                match achadas.first() {
+                    // O rowid e o rownum sao LOCAIS: `atualizar` mantem os
+                    // daqui, `inserir` numera na ordem de chegada daqui. A
+                    // ordem de digitacao de cada servidor e sagrada NELE.
+                    Some(rowid) => tabela.atualizar(*rowid, &valores)?,
+                    None => {
+                        tabela.inserir(&valores)?;
+                    }
+                }
+            }
+            Operacao::Exclusao => {
+                let achadas = tabela.buscar(indice, &[valor_chave])?;
+                // Sem linha nao ha o que excluir: ela ja saiu daqui, ou nunca
+                // chegou. O toque gravado abaixo vira a lapide em memoria que
+                // impede uma alteracao MAIS VELHA de ressuscita-la.
+                if let Some(rowid) = achadas.first() {
+                    tabela.forcar_proximo_evento(e.carimbo_ms, origem_ev);
+                    tabela.excluir_de_vez(*rowid, "replicacao bidirecional")?;
+                }
+            }
+        }
+
+        if let Ok(mut guarda) = self.toques_bidi.lock() {
+            guarda
+                .entry(chave_tab.to_string())
+                .or_default()
+                .toques
+                .insert(
+                    chave,
+                    Toque {
+                        carimbo: e.carimbo_ms,
+                        origem: origem_ev,
+                        excluido: e.operacao == Operacao::Exclusao,
+                    },
+                );
+        }
+        Ok(true)
     }
 
     fn subir_backup_agendado(self: &Arc<Self>) {
@@ -2361,8 +2950,33 @@ impl Servidor {
     /// agendador" nao quer dizer nada. Quem chama de outra origem confere a
     /// politica por conta, e o comentario de `rodar_job` diz como.
     fn portoes_do_pedido(&self, op: &str, pedido: &Json, sessao: &Sessao) -> Result<()> {
-        // Portao 2b -- o servidor inteiro em somente leitura.
-        if self.config.somente_leitura && OPS_ESCRITA.contains(&op) {
+        // Portao 2a -- o PAPEL do servidor. Antes do somente-leitura, para a
+        // recusa dizer o que importa: nao e "voce nao pode", e "este servidor
+        // nao atende isso -- o primario e ali". Um portao so, aqui, e nao
+        // espalhado pelas operacoes: a que alguem esquecesse viraria a porta
+        // dos fundos.
+        match self.papel_atual() {
+            Papel::Spare if !OPS_NO_SPARE.contains(&op) => {
+                return Err(PhxError::SpareEmEspera(format!(
+                    "este servidor e um spare de contingencia e nao atende \
+                     cliente (nem leitura); o primario e {}. Para assumir o \
+                     trabalho: {{\"op\":\"spare_promover\"}}",
+                    self.primario()
+                )));
+            }
+            Papel::ReadReplica if OPS_ESCRITA.contains(&op) => {
+                return Err(PhxError::EscritaNaReplica(format!(
+                    "este servidor e uma replica de leitura; escreva no \
+                     primario {}",
+                    self.primario()
+                )));
+            }
+            _ => {}
+        }
+
+        // Portao 2b -- o servidor inteiro em somente leitura. Le o valor
+        // VIVO: a promocao de um spare abre a escrita sem reiniciar.
+        if self.somente_leitura_vivo.load(Ordering::Relaxed) && OPS_ESCRITA.contains(&op) {
             return Err(PhxError::Autorizacao(
                 "servidor em modo somente leitura".into(),
             ));
@@ -2562,7 +3176,13 @@ impl Servidor {
         match op {
             "ping" => Ok(Json::objeto(vec![
                 ("phxsql", Json::texto_de(VERSAO)),
-                ("papel", Json::texto_de(self.config.replicacao.papel.nome())),
+                // O papel VIVO: depois de um `spare_promover`, e aqui que a
+                // promocao aparece -- o config continua dizendo o arquivo.
+                ("papel", Json::texto_de(self.papel_atual().nome())),
+                (
+                    "id_servidor",
+                    Json::texto_de(&self.config.replicacao.id_servidor),
+                ),
                 (
                     "conexoes",
                     Json::de_u64(self.conexoes.load(Ordering::SeqCst) as u64),
@@ -2637,6 +3257,13 @@ impl Servidor {
             "posicao" => self.op_posicao(p, sessao),
             "replicar" => self.op_replicar(p, sessao),
             "aplicar" => self.op_aplicar(p, sessao),
+            "replicacao_estado" => self.op_replicacao_estado(),
+            "replicacao_testar" => self.op_replicacao_testar(p),
+            // Casca fina: a operacao so escolhe o texto do motivo. Toda a
+            // promocao mora em `promover_para_primario`.
+            "spare_promover" => {
+                self.promover_para_primario(p.texto_ou("motivo", "pedido manual do administrador"))
+            }
             "memoria_carregar" => self.op_memoria_carregar(p, sessao),
             "memoria_liberar" => self.op_memoria_liberar(p),
             "memoria" => self.op_memoria(),
@@ -7136,6 +7763,16 @@ impl Servidor {
             let mut campos = vec![
                 ("eventos".to_string(), Json::de_u64(t.eventos()?)),
                 ("registros".to_string(), Json::de_u64(t.registros())),
+                // A chave unica de UMA coluna, se houver: e a identidade que
+                // o modo bidirecional exige, e e aqui que um assistente
+                // descobre ANTES de configurar que a tabela nao tem uma.
+                (
+                    "chave".to_string(),
+                    match bidirecional::chave_unica(t.esquema()) {
+                        Some((_, pos)) => Json::texto_de(&t.esquema().colunas()[pos].nome),
+                        None => Json::Nulo,
+                    },
+                ),
             ];
             if com_esquema {
                 // O bloco de esquema CRU, do jeito que mora no `.reg`. A
@@ -7151,7 +7788,13 @@ impl Servidor {
         }
         Ok(Json::objeto(vec![
             ("database", Json::texto_de(database)),
-            ("papel", Json::texto_de(self.config.replicacao.papel.nome())),
+            ("papel", Json::texto_de(self.papel_atual().nome())),
+            // A identidade deste servidor: o bidirecional confere aqui a
+            // colisao de hash antes de confiar na supressao de origem.
+            (
+                "id_servidor",
+                Json::texto_de(&self.config.replicacao.id_servidor),
+            ),
             // Sem a imagem ligada o diario existe mas nao replica, e a replica
             // precisa saber disso ANTES de puxar mil eventos inaplicaveis.
             (
@@ -7208,19 +7851,49 @@ impl Servidor {
                 v.remove(0);
             }
         }
+        // A posicao anda por TODOS os lidos, inclusive os que a supressao de
+        // origem vai tirar da lista: suprimir e nao mandar de volta, e nao
+        // fingir que o evento nao existe -- a contagem do diario e uma so.
         let lidos = eventos.len() as u64;
+
+        // `para` diz QUEM pede. Eventos cuja origem e o proprio destino nao
+        // viajam: e a alteracao que ele mesmo mandou, e devolve-la fecharia o
+        // laco infinito do bidirecional. A origem zero (escrita local) sai
+        // traduzida para o hash DESTE servidor, para o outro lado guardar de
+        // quem veio sem tabela de traducao nenhuma.
+        let meu_hash = {
+            let id = self.config.replicacao.id_servidor.trim();
+            if id.is_empty() {
+                0
+            } else {
+                bidirecional::hash_id(id)
+            }
+        };
+        let hash_para = {
+            let para = p.texto_ou("para", "").trim();
+            if para.is_empty() {
+                None
+            } else {
+                Some(bidirecional::hash_id(para))
+            }
+        };
 
         let lista: Vec<Json> = eventos
             .into_iter()
-            .map(|(e, imagem)| {
-                Json::objeto(vec![
+            .filter_map(|(e, imagem)| {
+                let origem = if e.origem == 0 { meu_hash } else { e.origem };
+                if hash_para.is_some_and(|h| origem != 0 && origem == h) {
+                    return None;
+                }
+                Some(Json::objeto(vec![
                     ("operacao", Json::texto_de(e.operacao.nome())),
                     ("rowid", Json::de_u64(e.rowid)),
                     ("versao", Json::de_u64(e.versao)),
                     ("carimbo_ms", Json::Numero(e.carimbo as f64)),
                     ("usuario", Json::de_u64(e.usuario as u64)),
+                    ("origem", Json::de_u64(origem as u64)),
                     ("imagem", Json::texto_de(bytes_para_hex(&imagem))),
-                ])
+                ]))
             })
             .collect();
 
@@ -7290,6 +7963,198 @@ impl Servidor {
                     None => Json::Nulo,
                 },
             ),
+        ]))
+    }
+
+    /// Prova a ligacao com o outro servidor, e diz o que ele serve.
+    ///
+    /// # Por que ela existe, e por que no SERVIDOR
+    ///
+    /// Um assistente de replicacao so pode prometer o que conseguiu provar. O
+    /// passo final dele precisa responder tres perguntas antes de alguem
+    /// gravar configuracao nenhuma: **eu alcanco aquele servidor?**, **a
+    /// credencial de replicacao entra?**, e **as tabelas de la servem para o
+    /// modo escolhido?**. Fazer isso do navegador esbarraria na porta 5000 do
+    /// outro lado; feito aqui, e a MESMA conexao e a MESMA autenticacao que o
+    /// laco de replicacao usa depois -- e a prova vale, em vez de parecer.
+    ///
+    /// # A credencial
+    ///
+    /// `origem` aponta uma origem que ja esta no `config.json`, e e o caminho
+    /// preferido: a credencial nao sai do servidor e nao viaja de novo. Quem
+    /// esta montando uma ligacao NOVA manda host, porta, token e usuario com
+    /// `senha_hash` -- o mesmo hash do cadastro, nunca a senha. Nada disso
+    /// volta na resposta.
+    fn op_replicacao_testar(&self, p: &Json) -> Result<Json> {
+        let origem = match p.texto_ou("origem", "").trim() {
+            // Uma origem ja configurada: a credencial nao viaja.
+            nome if !nome.is_empty() => self
+                .config
+                .replicacao
+                .origens
+                .iter()
+                .find(|o| o.nome == nome)
+                .cloned()
+                .ok_or_else(|| {
+                    PhxError::NaoEncontrado(format!("nao ha origem {nome:?} em replicacao.origens"))
+                })?,
+            _ => {
+                let host = p.texto_ou("host", "").trim().to_string();
+                if host.is_empty() {
+                    return Err(PhxError::Esquema(
+                        "informe \"origem\" (uma ja configurada) ou \"host\"".into(),
+                    ));
+                }
+                crate::config::Origem {
+                    nome: p.texto_ou("nome", "teste").trim().to_string(),
+                    host,
+                    porta: p
+                        .inteiro_ou("porta", crate::config::PORTA_PADRAO as i64)
+                        .clamp(1, 65_535) as u16,
+                    token: p.texto_ou("token", "").to_string(),
+                    databases: p.textos("databases"),
+                    reconectar_em: 10,
+                    usuario: p.texto_ou("usuario", "").trim().to_string(),
+                    senha_hash: p.texto_ou("senha_hash", "").trim().to_string(),
+                    senha: p.texto_ou("senha", "").to_string(),
+                    cada_minutos: 0,
+                    hora: String::new(),
+                }
+            }
+        };
+
+        let mut cliente = crate::replica::ligar(&origem)?;
+        let databases = if origem.databases.is_empty() {
+            cliente.databases()?
+        } else {
+            origem.databases.clone()
+        };
+        let alvo = p.texto_ou("database", "").trim().to_string();
+
+        let mut id_servidor = String::new();
+        let mut imagem = false;
+        let mut papel_de_la = String::new();
+        let mut tabelas = Vec::new();
+        let mut sem_chave: Vec<String> = Vec::new();
+        for db in databases.iter().filter(|d| alvo.is_empty() || **d == alvo) {
+            let r = cliente.pedir(vec![
+                ("op", Json::texto_de("posicao")),
+                ("database", Json::texto_de(db)),
+            ])?;
+            id_servidor = r.texto_ou("id_servidor", "").to_string();
+            papel_de_la = r.texto_ou("papel", "").to_string();
+            imagem = r.booleano_ou("imagem_da_linha", false);
+            if let Some(Json::Objeto(pares)) = r.campo("tabelas") {
+                for (nome, v) in pares {
+                    let chave = v.texto_ou("chave", "").to_string();
+                    if chave.is_empty() {
+                        sem_chave.push(format!("{db}.{nome}"));
+                    }
+                    tabelas.push(Json::objeto(vec![
+                        ("database", Json::texto_de(db)),
+                        ("tabela", Json::texto_de(nome)),
+                        (
+                            "eventos",
+                            Json::de_u64(v.inteiro_ou("eventos", 0).max(0) as u64),
+                        ),
+                        (
+                            "registros",
+                            Json::de_u64(v.inteiro_ou("registros", 0).max(0) as u64),
+                        ),
+                        // Vazio = sem identidade replicavel: serve para os
+                        // modos A, C e D, e NAO serve para o bidirecional.
+                        (
+                            "chave",
+                            if chave.is_empty() {
+                                Json::Nulo
+                            } else {
+                                Json::texto_de(chave)
+                            },
+                        ),
+                    ]));
+                }
+            }
+        }
+
+        // O que IMPEDE cada modo, dito antes de alguem configurar -- e nao
+        // depois, pela replica parada.
+        let mut impedimentos = Vec::new();
+        if !imagem {
+            impedimentos.push(Json::texto_de(
+                "o outro servidor esta com replicacao.imagem_da_linha desligada: \
+                 o diario dele registra que a linha mudou sem registrar a linha, \
+                 e nao ha o que aplicar (vale para TODOS os modos)",
+            ));
+        }
+        if id_servidor.trim().is_empty() {
+            impedimentos.push(Json::texto_de(
+                "o outro servidor nao tem replicacao.id_servidor: sem ele nao ha \
+                 origem nos eventos, e o modo bidirecional nao tem como impedir \
+                 que a alteracao volte para quem a mandou",
+            ));
+        }
+        if !sem_chave.is_empty() {
+            impedimentos.push(Json::texto_de(format!(
+                "{} tabela(s) sem chave unica de uma coluna: elas replicam nos \
+                 modos A, C e D, e o bidirecional as recusa, porque la a \
+                 identidade entre servidores e a chave",
+                sem_chave.len()
+            )));
+        }
+
+        Ok(Json::objeto(vec![
+            ("alcancavel", Json::Bool(true)),
+            ("host", Json::texto_de(&origem.host)),
+            ("porta", Json::de_u64(origem.porta as u64)),
+            // Nunca token, nunca senha, nunca hash: a resposta do protocolo
+            // nao carrega credencial, nem a que quem perguntou acabou de
+            // mandar.
+            ("papel", Json::texto_de(papel_de_la)),
+            ("id_servidor", Json::texto_de(id_servidor)),
+            ("imagem_da_linha", Json::Bool(imagem)),
+            (
+                "databases",
+                Json::Lista(databases.iter().map(Json::texto_de).collect()),
+            ),
+            ("tabelas", Json::Lista(tabelas)),
+            (
+                "sem_chave_unica",
+                Json::Lista(sem_chave.iter().map(Json::texto_de).collect()),
+            ),
+            ("impedimentos", Json::Lista(impedimentos)),
+        ]))
+    }
+
+    /// O estado do laco de replicacao DESTE servidor, origem por origem.
+    ///
+    /// E o que um assistente mostra no passo final: a posicao consumida de
+    /// cada tabela, a ultima rodada, o ultimo erro, e as tabelas recusadas
+    /// com o motivo (ex.: sem chave unica no modo bidirecional).
+    fn op_replicacao_estado(&self) -> Result<Json> {
+        let origens = match self.estado_replicacao.lock() {
+            Ok(e) => {
+                let mut pares: Vec<(String, Json)> =
+                    e.iter().map(|(k, v)| (k.clone(), v.para_json())).collect();
+                pares.sort_by(|a, b| a.0.cmp(&b.0));
+                Json::Objeto(pares)
+            }
+            Err(_) => return Err(trava_envenenada()),
+        };
+        Ok(Json::objeto(vec![
+            ("papel", Json::texto_de(self.papel_atual().nome())),
+            (
+                "papel_configurado",
+                Json::texto_de(self.config.replicacao.papel.nome()),
+            ),
+            (
+                "id_servidor",
+                Json::texto_de(&self.config.replicacao.id_servidor),
+            ),
+            (
+                "somente_leitura",
+                Json::Bool(self.somente_leitura_vivo.load(Ordering::Relaxed)),
+            ),
+            ("origens", origens),
         ]))
     }
 
@@ -7540,6 +8405,32 @@ fn projetar(linha: &Json, colunas: &[(String, String)]) -> Json {
             })
             .collect(),
     )
+}
+
+/// O papel num byte, para o `AtomicU8` do papel vivo.
+///
+/// O par de funcoes mora junto para nao divergir; um valor desconhecido na
+/// volta cai em `Isolado`, que e o papel que nao promete nada.
+fn papel_para_u8(p: Papel) -> u8 {
+    match p {
+        Papel::Isolado => 0,
+        Papel::Source => 1,
+        Papel::Replica => 2,
+        Papel::ReadReplica => 3,
+        Papel::Spare => 4,
+        Papel::Multi => 5,
+    }
+}
+
+fn u8_para_papel(v: u8) -> Papel {
+    match v {
+        1 => Papel::Source,
+        2 => Papel::Replica,
+        3 => Papel::ReadReplica,
+        4 => Papel::Spare,
+        5 => Papel::Multi,
+        _ => Papel::Isolado,
+    }
 }
 
 fn trava_envenenada() -> PhxError {
@@ -7924,6 +8815,316 @@ mod testes_politica {
                  um servidor somente-leitura recusaria sem motivo"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod testes_papel {
+    use super::*;
+
+    fn servidor_com_papel(
+        dir: &std::path::Path,
+        papel: &str,
+        somente_leitura: bool,
+    ) -> Arc<Servidor> {
+        let txt = format!(
+            r#"{{"token":"t","somente_leitura":{somente_leitura},
+                 "replicacao":{{"papel":"{papel}","id_servidor":"este-01",
+                   "origens":[{{"nome":"primario","host":"10.0.0.7","porta":5000,"token":"t"}}]}}}}"#
+        );
+        let mut c = Config::de_json(&Json::analisar(&txt).unwrap()).unwrap();
+        c.base = dir.to_path_buf();
+        c.log_acessos = dir.join("acessos.log");
+        c.blacklist = dir.join("blacklist.json");
+        c.dblink = dir.join("dblink.json");
+        c.jobs = dir.join("jobs.json");
+        Servidor::novo(c).unwrap()
+    }
+
+    fn dir(rotulo: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("phx-papel-{rotulo}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    /// A read replica recusa escrita com o erro que APONTA o primario -- e
+    /// continua servindo leitura, que e a razao de ela existir.
+    #[test]
+    fn read_replica_recusa_escrita_apontando_o_primario_e_serve_leitura() {
+        let d = dir("rr");
+        let s = servidor_com_papel(&d, "read_replica", true);
+        let sessao = Sessao::default();
+
+        let erro = s
+            .portoes_do_pedido(
+                "inserir",
+                &pedido(r#"{"database":"x","tabela":"t"}"#),
+                &sessao,
+            )
+            .unwrap_err();
+        assert_eq!(erro.nome(), "ESCRITA_NA_REPLICA");
+        assert_eq!(erro.codigo(), 4003);
+        let texto = erro.to_string();
+        assert!(
+            texto.contains("10.0.0.7:5000"),
+            "sem o primario no erro: {texto}"
+        );
+        assert!(texto.contains("primario"), "{texto}");
+
+        // Leitura passa pelo portao -- o papel nao barra quem so le.
+        s.portoes_do_pedido(
+            "varrer",
+            &pedido(r#"{"database":"x","tabela":"t"}"#),
+            &sessao,
+        )
+        .unwrap();
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// Reserva e reserva: o spare recusa ate a leitura de cliente comum, e o
+    /// que passa e a administracao, o monitoramento e a propria replicacao.
+    #[test]
+    fn spare_nao_atende_cliente_nem_de_leitura() {
+        let d = dir("spare");
+        let s = servidor_com_papel(&d, "spare", true);
+        let sessao = Sessao::default();
+
+        for op in ["varrer", "ler", "buscar", "inserir", "sql", "juntar"] {
+            let erro = s
+                .portoes_do_pedido(op, &pedido(r#"{"database":"x","tabela":"t"}"#), &sessao)
+                .unwrap_err();
+            assert_eq!(erro.nome(), "SPARE_EM_ESPERA", "{op} passou no spare");
+            assert!(
+                erro.to_string().contains("spare_promover"),
+                "{op}: o erro tem de ensinar a saida"
+            );
+        }
+        for op in [
+            "ping",
+            "posicao",
+            "replicar",
+            "checksum",
+            "replicacao_estado",
+            "config",
+        ] {
+            s.portoes_do_pedido(op, &pedido("{}"), &sessao)
+                .unwrap_or_else(|e| panic!("{op} devia passar no spare: {e}"));
+        }
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// `spare_promover`: o papel vira source, a escrita abre -- mesmo com o
+    /// `somente_leitura` do config ligado -- e o laco de replica tem como
+    /// perceber. E o degrau MANUAL em que a promocao automatica vai se apoiar.
+    #[test]
+    fn spare_promover_vira_primario_e_abre_a_escrita() {
+        let d = dir("promo");
+        let s = servidor_com_papel(&d, "spare", true);
+        let sessao = Sessao::default();
+
+        let r = s.promover_para_primario("teste: promocao manual").unwrap();
+        assert_eq!(r.texto_ou("papel", ""), "source");
+        assert_eq!(r.texto_ou("papel_anterior", ""), "spare");
+        assert_eq!(s.papel_atual(), Papel::Source);
+        assert!(
+            !s.papel_atual().puxa_de_origem(),
+            "o laco usa isto para parar"
+        );
+
+        // Escrita e leitura abertas, apesar do somente_leitura no config.
+        s.portoes_do_pedido(
+            "inserir",
+            &pedido(r#"{"database":"x","tabela":"t"}"#),
+            &sessao,
+        )
+        .unwrap();
+        s.portoes_do_pedido(
+            "varrer",
+            &pedido(r#"{"database":"x","tabela":"t"}"#),
+            &sessao,
+        )
+        .unwrap();
+
+        // Promover um source ja promovido e erro, nao silencio.
+        assert!(s.promover_para_primario("de novo").is_err());
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// O comportamento VELHO e o teste que mais importa: a replica classica
+    /// com `somente_leitura` continua recusando escrita com a MESMA recusa
+    /// generica de sempre -- nenhum cliente antigo passa a receber um erro
+    /// que nao conhece.
+    #[test]
+    fn replica_classica_continua_exatamente_como_era() {
+        let d = dir("classica");
+        let s = servidor_com_papel(&d, "replica", true);
+        let sessao = Sessao::default();
+
+        let erro = s
+            .portoes_do_pedido(
+                "inserir",
+                &pedido(r#"{"database":"x","tabela":"t"}"#),
+                &sessao,
+            )
+            .unwrap_err();
+        assert_eq!(
+            erro.nome(),
+            "ACESSO_NEGADO",
+            "a recusa antiga nao pode mudar"
+        );
+        assert!(erro.to_string().contains("somente leitura"));
+        s.portoes_do_pedido(
+            "varrer",
+            &pedido(r#"{"database":"x","tabela":"t"}"#),
+            &sessao,
+        )
+        .unwrap();
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// Toda operacao da lista do spare existe de verdade no protocolo: uma
+    /// lista de permissao com nome fantasma e permissao que ninguem usa, e um
+    /// nome que sair do despachar sem sair daqui viraria promessa furada.
+    #[test]
+    fn a_lista_do_spare_so_tem_operacoes_reais() {
+        for op in OPS_NO_SPARE {
+            let conhecida = crate::catalogo::por_nome(op).is_some()
+                || ["desafio", "login", "sair"].contains(op);
+            assert!(
+                conhecida,
+                "{op:?} esta em OPS_NO_SPARE e nao existe no catalogo"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod testes_supressao_de_origem {
+    use super::*;
+    use phxsql_core::schema::{Column, IndexColumn, IndexDef, Schema};
+    use phxsql_core::types::ColumnType;
+    use phxsql_core::value::Value;
+
+    /// **O teste do laco morto.** Um diario com dois eventos -- um escrito
+    /// aqui, outro que chegou de «beta» -- e o `replicar` de quem se diz
+    /// «beta»: so o local pode voltar.
+    ///
+    /// # O defeito que ele repoe
+    ///
+    /// Tirar o filtro do `op_replicar` (mandar todos os eventos, ignorando o
+    /// `para`) faz este teste falhar na primeira asercao -- e e exatamente o
+    /// laco infinito do bidirecional: beta recebe de volta o que beta
+    /// escreveu, aplica, gera evento, e os dois servidores giram para sempre.
+    /// Provado tambem pela bancada, estagio (c): sem o filtro os eventos
+    /// crescem sozinhos em vez de parar em 2.
+    #[test]
+    fn evento_nao_volta_para_quem_o_escreveu() {
+        let dir = std::env::temp_dir().join(format!("phx-supressao-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("loja")).unwrap();
+
+        let hash_beta = bidirecional::hash_id("beta");
+        {
+            // A tabela nasce fora do servidor so para o diario ficar com os
+            // dois eventos que interessam, sem precisar de um segundo
+            // servidor no ar.
+            let esquema = Schema::new(
+                "clientes",
+                vec![
+                    Column::new("id", ColumnType::Int8).obrigatoria(),
+                    Column::new("nome", ColumnType::Str(40)).obrigatoria(),
+                ],
+                vec![IndexDef::new("porId", vec![IndexColumn::asc(0)])
+                    .unico()
+                    .primaria()],
+            )
+            .unwrap();
+            let mut t = Table::criar(dir.join("loja"), esquema)
+                .unwrap()
+                .com_imagem_no_diario(true);
+            t.inserir(&[Value::Int(1), Value::Str("nascida aqui".into())])
+                .unwrap();
+            t.forcar_proximo_evento(1_700_000_000_000, hash_beta);
+            t.inserir(&[Value::Int(2), Value::Str("veio de beta".into())])
+                .unwrap();
+            t.sincronizar().unwrap();
+        }
+
+        let txt = r#"{"token":"t","replicacao":{"papel":"multi","id_servidor":"alfa",
+            "origens":[{"nome":"beta","host":"127.0.0.1","porta":5000,"token":"t"}]}}"#;
+        let mut c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
+        c.base = dir.clone();
+        c.log_acessos = dir.join("acessos.log");
+        c.blacklist = dir.join("blacklist.json");
+        c.dblink = dir.join("dblink.json");
+        c.jobs = dir.join("jobs.json");
+        let s = Servidor::novo(c).unwrap();
+        let sessao = Sessao::default();
+
+        let pedir = |para: &str| {
+            let p = Json::analisar(&format!(
+                r#"{{"database":"loja","tabela":"clientes","desde":0,"max":100,"para":"{para}"}}"#
+            ))
+            .unwrap();
+            s.op_replicar(&p, &sessao).unwrap()
+        };
+
+        // Beta pergunta: leva so o que NAO nasceu nele.
+        let r = pedir("beta");
+        let eventos = r.campo("eventos").and_then(Json::lista).unwrap().to_vec();
+        assert_eq!(
+            eventos.len(),
+            1,
+            "o evento de beta voltou para beta: e o laco infinito"
+        );
+        assert_eq!(eventos[0].inteiro_ou("rowid", 0), 1);
+
+        // E a POSICAO anda por cima do suprimido: suprimir e nao mandar de
+        // volta, nao fingir que o evento nao existe. Se `ate` parasse em 1,
+        // beta pediria de novo a partir de 1 para sempre.
+        assert_eq!(
+            r.inteiro_ou("ate", 0),
+            2,
+            "a posicao nao andou pelo suprimido"
+        );
+        assert!(r.booleano_ou("fim", false));
+
+        // Um terceiro servidor leva os DOIS: a supressao e por destino, e nao
+        // uma censura no diario.
+        let r = pedir("gama");
+        assert_eq!(
+            r.campo("eventos").and_then(Json::lista).unwrap().len(),
+            2,
+            "gama nao escreveu nenhum dos dois e tem de receber os dois"
+        );
+
+        // E sem o campo `para` -- toda replica de hoje -- nada e suprimido.
+        // E o comportamento VELHO, e e o que mais importa: uma replica
+        // classica nao pode receber menos do que recebia.
+        let p = Json::analisar(r#"{"database":"loja","tabela":"clientes","desde":0,"max":100}"#)
+            .unwrap();
+        let r = s.op_replicar(&p, &sessao).unwrap();
+        assert_eq!(
+            r.campo("eventos").and_then(Json::lista).unwrap().len(),
+            2,
+            "replica sem `para` passou a receber menos: quebrou o cliente antigo"
+        );
+
+        // A origem sai traduzida: a escrita local vira o hash DESTE servidor,
+        // para o outro lado saber de quem veio sem tabela de traducao.
+        let eventos = r.campo("eventos").and_then(Json::lista).unwrap();
+        assert_eq!(
+            eventos[0].inteiro_ou("origem", 0),
+            bidirecional::hash_id("alfa") as i64
+        );
+        assert_eq!(eventos[1].inteiro_ou("origem", 0), hash_beta as i64);
+
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }
 

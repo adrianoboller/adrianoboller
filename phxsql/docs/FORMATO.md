@@ -627,7 +627,7 @@ vender uma garantia que o desenho não dá.
 | 0 | 8 | carimbo — milissegundos desde 1970-01-01T00:00:00Z |
 | 8 | 1 | operação: 1 = inclusão, 2 = alteração, 3 = exclusão |
 | 9 | 1 | flags — bit 0: tem imagem |
-| 10 | 2 | reservado |
+| 10 | 2 | **origem** — hash u16 do `id_servidor` onde a escrita nasceu; 0 = local |
 | 12 | 8 | rowid afetado |
 | 20 | 8 | versão do registro depois da operação |
 | 28 | 4 | usuário (0 = não informado) |
@@ -640,6 +640,23 @@ O carimbo é em **milissegundos**, não segundos, para que operações no mesmo
 segundo continuem ordenáveis. Uma operação recusada — chave duplicada, tabela
 cheia, coluna obrigatória em branco — **não** gera evento: o diário registra o
 que aconteceu, não o que foi tentado.
+
+A **origem** ocupa os 2 bytes que eram reservados, e reservado se grava zero —
+por isso todo evento anterior ao campo lê **zero, que é exatamente "escrita
+local"**, e um `.log` antigo continua abrindo sem conversão. O número é o
+CRC-32 do `id_servidor` dobrado ao meio (u16, nunca zero); quem o grava
+diferente de zero é a **aplicação de um evento vindo de outro servidor** no
+papel `multi` — a escrita local é sempre zero. Nesses eventos aplicados, o
+carimbo também deixa de ser o relógio local: é o **carimbo do nascimento** da
+escrita, copiado do evento original, porque é ele que decide o conflito «mais
+recente vence» (`docs/REPLICACAO.md`). Consequência honesta: um servidor que
+passou a vida como réplica clássica tem o diário inteiro com origem zero, que
+lê como "local" — ele não vira metade de um par bidirecional sem recomeçar as
+tabelas.
+
+No papel `multi` a **exclusão física também carrega imagem** (o bit 0 das
+flags liga): entre servidores que escrevem os dois, a identidade da linha é a
+chave única, e a chave mora dentro da imagem — o rowid é local de cada `.reg`.
 
 O `tamanho da imagem` é o que vem **no arquivo**: num volume cifrado ele conta
 os 16 bytes da etiqueta. É de propósito — quem caminha pelo arquivo precisa

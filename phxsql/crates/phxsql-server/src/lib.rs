@@ -4,6 +4,7 @@
 //! `config.json`), fala JSON Lines e registra todo acesso com IP, data e hora.
 
 pub mod acesso;
+pub mod bidirecional;
 pub mod blacklist;
 pub mod carga;
 pub mod catalogo;
