@@ -2,24 +2,41 @@
  *
  * As chaves estrangeiras JÁ estão declaradas e JÁ vêm no `esquema`: cada
  * tabela responde `chaves_estrangeiras` com as colunas daqui, a tabela de lá e
- * o que acontece ao excluir e ao alterar. Faltava só o desenho — e desenho
- * aqui é SVG, que é do que o dossiê inteiro é feito.
+ * o que acontece ao excluir e ao alterar.
  *
  * Este arquivo é um módulo separado do `index.html` de propósito: o layout do
- * grafo é a única parte da interface que é ALGORITMO, e ele merece caber numa
- * tela sem rolar por sete mil linhas.
+ * grafo e o arrastar são a única parte da interface que é ALGORITMO, e eles
+ * merecem caber numa tela sem rolar por oito mil linhas.
  *
- * ## O que ele NÃO faz
+ * ## O editor (pedido 127, segunda metade)
  *
- * Editar. Arrastar caixa, criar tabela pelo desenho, ligar duas colunas com o
- * mouse: nada disso está aqui, e a tela diz isso em vez de deixar a pessoa
- * descobrir clicando. O editor visual é outra rodada.
+ * Além de desenhar, o módulo agora EDITA:
+ *
+ * - arrastar a caixa pelo TÍTULO move a tabela (a posição é de quem chama,
+ *   que a guarda onde quiser — a tela usa localStorage, por navegador);
+ * - arrastar uma LINHA DE COLUNA puxa um relacionamento até a coluna de outra
+ *   tabela — o título move, a coluna liga, e é assim que o conflito entre os
+ *   dois gestos se resolve (o mesmo desenho do dbdiagram);
+ * - clicar numa caixa abre o cartão dela, por conta de quem chama.
+ *
+ * O módulo NÃO fala com o servidor: ele entrega os gestos prontos nos
+ * callbacks (`aoMover`, `aoLigar`, `aoAbrir`) e quem chama decide o que cada
+ * um custa. É o que deixa o desenho ser exercitado sem servidor.
+ *
+ * ## Coordenadas e o defeito clássico do arrasto
+ *
+ * Todo ponto do mouse passa por `getScreenCTM().inverse()` antes de virar
+ * coordenada do desenho. Sem isso o arrasto funciona até alguém dar zoom na
+ * página ou o SVG ser desenhado menor que a `viewBox` — e aí a caixa foge do
+ * ponteiro na proporção do zoom, que é exatamente o defeito que só aparece
+ * exercitando.
  *
  * ## Cores
  *
- * Todas saem das variáveis do console (`--laranja`, `--reg`, `--ndx`…), então
- * o diagrama acompanha o tema claro e o escuro sem uma segunda paleta. SVG
- * aceita `var()` em `fill` e em `stroke`, e é por isso que dá para fazer assim.
+ * Todas saem das variáveis do console (`--laranja`, `--ndx`, `--memo`…),
+ * então o diagrama acompanha o tema claro e o escuro sem uma segunda paleta.
+ * SVG aceita `var()` em `fill` e em `stroke`, e é por isso que dá para fazer
+ * assim.
  */
 "use strict";
 
@@ -129,17 +146,13 @@ window.PhxER = (function () {
     return M.alturaTitulo + Math.max(linhas, 1) * M.alturaLinha + 8;
   }
 
-  /** Posiciona as caixas e devolve o tamanho total do desenho.
-   *
-   * A margem de cima cresce quando há chave pendurada: o rótulo dela é
-   * desenhado ACIMA do topo da caixa, e com a margem normal a metade de cima
-   * das letras ficava fora da `viewBox` — cortada, no navegador, sem nenhum
-   * erro no console. Achado abrindo a tela, não lendo o código. */
-  function posicionar(m) {
+  /** Posiciona as caixas: primeiro o layout por faixas, depois as posições
+   *  GUARDADAS por cima — quem já arrastou uma tabela a encontra onde deixou,
+   *  e a tabela nova entra no lugar que o layout escolheria para ela. */
+  function posicionar(m, posicoes) {
     const linhas = faixas(m);
     const temPendurada = m.ligacoes.some(l => !l.existe);
     let y = M.margem + (temPendurada ? 26 : 0);
-    let largura = 0;
     linhas.forEach(faixa => {
       let x = M.margem;
       let alta = 0;
@@ -151,10 +164,55 @@ window.PhxER = (function () {
         x += M.larguraCaixa + M.espacoX;
         alta = Math.max(alta, t.h);
       });
-      largura = Math.max(largura, x - M.espacoX + M.margem);
       y += alta + M.espacoY;
     });
-    return { largura: Math.max(largura, 420), altura: y - M.espacoY + M.margem };
+    if (posicoes) {
+      const guardadas = new Set();
+      for (const t of m.tabelas) {
+        const p = posicoes[t.nome];
+        if (p && isFinite(p.x) && isFinite(p.y)) {
+          t.x = Math.max(4, p.x);
+          t.y = Math.max(4, p.y);
+          guardadas.add(t);
+        }
+      }
+      // A tabela NOVA nasce no slot que o layout escolheria — e uma posição
+      // GUARDADA pode estar exatamente ali: `categorias` nasceu embaixo de
+      // `clientes` e ficou invisível, com o subtítulo contando quatro tabelas
+      // e o desenho mostrando três. Achado no screenshot, não no código.
+      // Quem não tem posição guardada e colide com alguém desce para uma
+      // faixa livre embaixo do desenho, onde não há com quem colidir.
+      const colide = (a, b) =>
+        a.x < b.x + b.w + 12 && b.x < a.x + a.w + 12 &&
+        a.y < b.y + b.h + 12 && b.y < a.y + a.h + 12;
+      let chaoY = null, chaoX = M.margem;
+      for (const t of m.tabelas) {
+        if (guardadas.has(t)) continue;
+        if (!m.tabelas.some(o => o !== t && colide(t, o))) continue;
+        if (chaoY === null) {
+          chaoY = 0;
+          for (const o of m.tabelas) if (o !== t) chaoY = Math.max(chaoY, o.y + o.h);
+          chaoY += M.espacoY;
+        }
+        t.x = chaoX;
+        t.y = chaoY;
+        chaoX += t.w + M.espacoX;
+      }
+    }
+    return tamanhoDe(m);
+  }
+
+  /** O retângulo que contém tudo, com a margem. Recalculado a cada arrasto,
+   *  porque arrastar para a direita tem de ESTICAR o desenho — sem isso a
+   *  caixa some debaixo da borda da `viewBox`, sem erro nenhum no console. */
+  function tamanhoDe(m) {
+    let largura = 420, altura = 240;
+    const nos = m.tabelas.concat(m.remotas || []);
+    for (const t of nos) {
+      largura = Math.max(largura, t.x + t.w + M.margem);
+      altura = Math.max(altura, t.y + t.h + M.margem + 8);
+    }
+    return { largura, altura };
   }
 
   /* ----------------------------------------------------------------- pintar */
@@ -162,17 +220,47 @@ window.PhxER = (function () {
   const esc = t => String(t ?? "").replace(/[&<>"']/g, c =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-  function caixa(t) {
+  /** A linha (índice visível) em que a coluna aparece na caixa, ou -1. */
+  function linhaDa(t, coluna) {
+    const alvo = chave(coluna);
+    for (let i = 0; i < Math.min(t.colunas.length, M.maxColunas); i++) {
+      if (chave(t.colunas[i].nome) === alvo) return i;
+    }
+    return -1;
+  }
+
+  /** Onde uma ligação ENCOSTA na caixa: na altura da própria coluna, pelo
+   *  lado que estiver virado para o outro nó. Coluna que não coube no desenho
+   *  ancora no meio da caixa — o que ao menos é verdade sobre a tabela. */
+  function ancora(t, coluna, ladoDireito) {
+    const i = coluna == null ? -1 : linhaDa(t, coluna);
+    const y = i >= 0
+      ? t.y + M.alturaTitulo + 13 + i * M.alturaLinha - 4
+      : t.y + Math.min(t.h / 2, M.alturaTitulo + 9);
+    return { x: ladoDireito ? t.x + t.w : t.x, y };
+  }
+
+  /** Uma caixa de tabela. As coordenadas internas são relativas e o grupo
+   *  carrega um `translate` — é o que deixa o arrasto mexer num atributo só,
+   *  sem redesenhar a caixa inteira a cada movimento do ponteiro. */
+  function caixa(t, editor) {
     const linhas = t.colunas.slice(0, M.maxColunas);
-    let y = t.y + M.alturaTitulo + 13;
+    let y = M.alturaTitulo + 13;
     let corpo = "";
     for (const c of linhas) {
       const cor = c.primaria ? "var(--laranja)"
         : c.estrangeira ? "var(--ndx)" : "var(--texto-2)";
       const marca = c.primaria ? "PK" : c.estrangeira ? "FK" : "";
-      corpo += `<text x="${t.x + 11}" y="${y}" class="er-marca" fill="${cor}">${marca}</text>`
-        + `<text x="${t.x + 36}" y="${y}" class="er-col" fill="${cor}">${esc(c.nome)}</text>`
-        + `<text x="${t.x + t.w - 11}" y="${y}" class="er-tipo">${esc(tipoCurto(c))}</text>`;
+      corpo += `<text x="11" y="${y}" class="er-marca" fill="${cor}">${marca}</text>`
+        + `<text x="36" y="${y}" class="er-col" fill="${cor}">${esc(c.nome)}</text>`
+        + `<text x="${t.w - 11}" y="${y}" class="er-tipo">${esc(tipoCurto(c))}</text>`;
+      if (editor) {
+        // A porta: um retângulo invisível sobre a linha inteira. É dele que
+        // se PUXA um relacionamento — e ele existe por cima do texto, senão
+        // o alvo do arrasto seria a letra, fina demais para acertar.
+        corpo += `<rect x="1" y="${y - 13}" width="${t.w - 2}" height="${M.alturaLinha}"
+          class="er-porta" data-tabela="${esc(t.nome)}" data-coluna="${esc(c.nome)}"/>`;
+      }
       y += M.alturaLinha;
     }
     if (t.total > M.maxColunas) {
@@ -180,18 +268,25 @@ window.PhxER = (function () {
       // coluna do tipo, encostada na borda da caixa), e usá-la aqui jogava o
       // «+ 2 coluna(s)» para fora da caixa, pela esquerda. Só apareceu
       // rolando o desenho até o fim, no navegador.
-      corpo += `<text x="${t.x + 11}" y="${y}" class="er-mais">`
+      corpo += `<text x="11" y="${y}" class="er-mais">`
         + `+ ${t.total - M.maxColunas} coluna(s)</text>`;
     }
-    return `<g class="er-tabela" data-tabela="${esc(t.nome)}">
-      <rect x="${t.x}" y="${t.y}" width="${t.w}" height="${t.h}" rx="7"
-            class="er-caixa"/>
-      <path d="M${t.x} ${t.y + M.alturaTitulo} H${t.x + t.w}" class="er-risco"/>
-      <rect x="${t.x}" y="${t.y}" width="${t.w}" height="${M.alturaTitulo}"
-            rx="7" class="er-topo"/>
-      <text x="${t.x + 11}" y="${t.y + 20}" class="er-nome">${esc(t.nome)}</text>
-      <text x="${t.x + t.w - 11}" y="${t.y + 20}" class="er-conta">${
+    // A pega do arrasto é um retângulo TRANSPARENTE desenhado DEPOIS dos
+    // textos do título: em SVG a ordem do documento é a ordem de pintura, e
+    // com a pega por baixo o nome da tabela "roubava" o pointerdown — dava
+    // para arrastar pela faixa vazia do título, mas não pelo nome, que é
+    // exatamente onde todo mundo pega.
+    return `<g class="er-tabela" data-tabela="${esc(t.nome)}"
+        transform="translate(${t.x} ${t.y})">
+      <rect x="0" y="0" width="${t.w}" height="${t.h}" rx="7" class="er-caixa"/>
+      <path d="M0 ${M.alturaTitulo} H${t.w}" class="er-risco"/>
+      <rect x="0" y="0" width="${t.w}" height="${M.alturaTitulo}" rx="7"
+            class="er-topo"/>
+      <text x="11" y="20" class="er-nome">${esc(t.nome)}</text>
+      <text x="${t.w - 11}" y="20" class="er-conta">${
         t.registros.toLocaleString("pt-BR")}</text>
+      ${editor ? `<rect x="0" y="0" width="${t.w}" height="${M.alturaTitulo}"
+        rx="7" class="er-pega"/>` : ""}
       ${corpo}</g>`;
   }
 
@@ -214,8 +309,24 @@ window.PhxER = (function () {
     return t.split(/[\s{(]/)[0] || t;
   }
 
-  /** Uma ligação: sai da borda de baixo do filho e chega na de cima do pai,
-   *  ou pelas laterais quando as duas estão na mesma faixa. */
+  /** O caminho entre dois pontos ancorados nas laterais: uma curva horizontal
+   *  suave, saindo pelo lado que cada caixa tem virado para a outra. */
+  function curva(a, b) {
+    const folga = Math.max(24, Math.min(64, Math.abs(b.x - a.x) / 2));
+    const sa = a.direita ? folga : -folga;
+    const sb = b.direita ? folga : -folga;
+    return `M${a.x} ${a.y} C${a.x + sa} ${a.y} ${b.x + sb} ${b.y} ${b.x} ${b.y}`;
+  }
+
+  /** Dos dois lados de cada caixa, o par que se olha. */
+  function lados(a, b) {
+    const centroA = a.x + a.w / 2, centroB = b.x + b.w / 2;
+    return { deDireita: centroA <= centroB, paraDireita: centroB < centroA };
+  }
+
+  /** Uma ligação FK: sai da LINHA da coluna do filho e chega na LINHA da
+   *  coluna do pai — a âncora por linha é o que faz o desenho continuar
+   *  legível depois que as caixas foram arrastadas para qualquer lugar. */
   function ligacao(l, m, ordem) {
     const a = m.porNome[chave(l.de)];
     const b = m.porNome[chave(l.para)];
@@ -223,28 +334,23 @@ window.PhxER = (function () {
     if (!b) return pendurada(a, l, ordem);
     if (a === b) return laco(a, l);
 
-    const [ax, ay] = [a.x + a.w / 2, a.y];
-    const [bx, by] = [b.x + b.w / 2, b.y + b.h];
-    // O filho está abaixo do pai (o normal): sobe do topo do filho para a
-    // base do pai, com uma curva suave em vez de bico.
-    const meio = (ay + by) / 2;
-    const d = Math.abs(ay - by) > 8
-      ? `M${ax} ${ay} C${ax} ${meio} ${bx} ${meio} ${bx} ${by}`
-      : `M${a.x + a.w} ${a.y + 18} C${a.x + a.w + 40} ${a.y + 18} `
-        + `${b.x - 40} ${b.y + 18} ${b.x} ${b.y + 18}`;
+    const ld = lados(a, b);
+    const pa = ancora(a, l.colunas[0], ld.deDireita);
+    const pb = ancora(b, l.colunas_ref[0], ld.paraDireita);
+    const d = curva({ ...pa, direita: ld.deDireita }, { ...pb, direita: ld.paraDireita });
     const rotulo = l.colunas.join(", ");
     // O rótulo fica AO LADO da linha, e não em cima dela: centrado no meio do
     // caminho, a própria seta passava por dentro das letras e o nome da coluna
     // saía riscado. Não aparece lendo o código — aparece abrindo a tela.
     return `<g class="er-lig" data-fk="${esc(l.nome)}">
       <path d="${d}" class="er-seta" marker-end="url(#er-ponta)"/>
-      <text class="er-rot lado" x="${(ax + bx) / 2 + 7}"
-            y="${meio + 3}">${esc(rotulo)}</text>
+      <text class="er-rot lado" x="${(pa.x + pb.x) / 2 + 7}"
+            y="${(pa.y + pb.y) / 2 - 4}">${esc(rotulo)}</text>
     </g>`;
   }
 
   /** FK que aponta para tabela que não está neste desenho. Ela não some:
-   *  some seria fingir que a declaração não existe.
+   *  sumir seria fingir que a declaração não existe.
    *
    *  O toco sai da DIREITA do topo, e não do meio: no meio ele caía em cima da
    *  seta da chave que existe, e os dois rótulos se sobrepunham. `ordem`
@@ -269,12 +375,98 @@ window.PhxER = (function () {
     </g>`;
   }
 
-  /** Desenha o diagrama inteiro e devolve o SVG como texto. */
-  function desenhar(esquemas) {
-    const m = modelo(esquemas);
-    if (!m.tabelas.length) return "";
-    const tam = posicionar(m);
-    return `<svg class="er" viewBox="0 0 ${tam.largura} ${tam.altura}"
+  /* ------------------------------------------------------- DbLink no desenho */
+
+  /** Os nós REMOTOS: uma caixinha tracejada por tabela prima do DbLink, na cor
+   *  da ferramenta DbLink (`--memo`), com a ligação de sincronia até a tabela
+   *  local. Visual deliberadamente distinto do ER: aquilo não é uma tabela
+   *  deste banco — é outra máquina, e o tracejado diz isso. */
+  function montarRemotas(m, sincronias) {
+    const remotas = [];
+    for (const s of (sincronias || [])) {
+      const local = m.porNome[chave(s.local_tabela)];
+      remotas.push({
+        id: `@${s.ligacao}.${s.remota}`,
+        ligacao: s.ligacao,
+        remota: s.remota,
+        sentido: s.sentido || "dois",
+        dono: s.dono || "aqui",
+        chaveSinc: s.chave || "",
+        local,
+        w: 190,
+        h: 58,
+        x: 0, y: 0,
+      });
+    }
+    // Posição padrão: uma COLUNA própria, à direita do diagrama inteiro.
+    //
+    // A primeira versão punha cada remota «ao lado da tabela local» — e ao
+    // lado da tabela local mora a PRÓXIMA tabela do layout. A caixinha nascia
+    // em cima do título de `pedidos`, e arrastar `pedidos` arrastava a remota
+    // que estava por cima. Só apareceu exercitando o arrasto, nunca lendo o
+    // código. Na coluna própria não há com quem colidir, e as remotas se
+    // empilham na altura da tabela local de cada uma.
+    let bordaDireita = M.margem;
+    for (const t of m.tabelas) bordaDireita = Math.max(bordaDireita, t.x + t.w);
+    const colunaX = bordaDireita + M.espacoX;
+    let livreY = M.margem;
+    remotas
+      .slice()
+      .sort((a, b) => (a.local ? a.local.y : 1e9) - (b.local ? b.local.y : 1e9))
+      .forEach(r => {
+        r.x = colunaX;
+        r.y = Math.max(livreY, r.local ? r.local.y : livreY);
+        livreY = r.y + r.h + 14;
+      });
+    return remotas;
+  }
+
+  const SENTIDO = { dois: "⇄", puxar: "→ puxa", empurrar: "empurra →" };
+
+  function caixaRemota(r, editor) {
+    // A caixa inteira é pega: uma tabela remota não tem colunas para puxar,
+    // então não há gesto disputando com o arrasto.
+    return `<g class="er-remota" data-remota="${esc(r.id)}"
+        transform="translate(${r.x} ${r.y})">
+      <rect x="0" y="0" width="${r.w}" height="${r.h}" rx="7" class="er-caixa-dbl"/>
+      <text x="11" y="18" class="er-nome-dbl">${esc(r.remota)}</text>
+      <text x="11" y="34" class="er-leg-dbl">DbLink ${esc(r.ligacao)}</text>
+      <text x="11" y="48" class="er-leg-dbl">${
+        esc(SENTIDO[r.sentido] || r.sentido)} · conflito: ${
+        esc(r.dono === "la" ? "lá vence" : "aqui vence")}</text>
+      ${editor ? `<rect x="0" y="0" width="${r.w}" height="${r.h}" rx="7"
+        class="er-pega"/>` : ""}
+    </g>`;
+  }
+
+  function ligacaoRemota(r) {
+    if (!r.local) return "";
+    const t = r.local;
+    const ld = lados(r, t);
+    const pa = { x: ld.deDireita ? r.x + r.w : r.x, y: r.y + r.h / 2, direita: ld.deDireita };
+    const pb = ancora(t, r.chaveSinc || null, ld.paraDireita);
+    const d = curva(pa, { ...pb, direita: ld.paraDireita });
+    return `<g class="er-lig-dbl">
+      <path d="${d}" class="er-seta-dbl"/>
+      <text class="er-rot lado dbl" x="${(pa.x + pb.x) / 2 + 7}"
+            y="${(pa.y + pb.y) / 2 - 4}">${esc(r.chaveSinc)}</text>
+    </g>`;
+  }
+
+  /* -------------------------------------------------------------- desenhar */
+
+  function pintarTudo(m, tam, editor) {
+    const gastas = {};
+    const ligs = m.ligacoes.map(l => {
+      if (l.existe) return ligacao(l, m, 0);
+      const k = chave(l.de);
+      const i = gastas[k] || 0;
+      gastas[k] = i + 1;
+      return ligacao(l, m, i);
+    }).join("");
+    const remotas = (m.remotas || []);
+    return `<svg class="er${editor ? " editor" : ""}"
+      viewBox="0 0 ${tam.largura} ${tam.altura}"
       width="${tam.largura}" height="${tam.altura}"
       preserveAspectRatio="xMinYMin meet" role="img"
       aria-label="Diagrama de entidades e relacionamentos">
@@ -284,20 +476,202 @@ window.PhxER = (function () {
           <path d="M0 0 L10 5 L0 10 z" fill="var(--laranja)"/>
         </marker>
       </defs>
-      ${(() => {
-        // Quantas chaves penduradas esta tabela já gastou: é o que afasta a
-        // segunda da primeira, em vez de as duas saírem do mesmo ponto.
-        const gastas = {};
-        return m.ligacoes.map(l => {
-          if (l.existe) return ligacao(l, m, 0);
-          const k = chave(l.de);
-          const i = gastas[k] || 0;
-          gastas[k] = i + 1;
-          return ligacao(l, m, i);
-        }).join("");
-      })()}
-      ${m.tabelas.map(caixa).join("")}
+      <g class="er-ligs">${ligs}${remotas.map(ligacaoRemota).join("")}</g>
+      ${m.tabelas.map(t => caixa(t, editor)).join("")}
+      ${remotas.map(r => caixaRemota(r, editor)).join("")}
+      <g class="er-tmp"></g>
     </svg>`;
+  }
+
+  /** Desenha o diagrama estático (leitura) e devolve o SVG como texto. */
+  function desenhar(esquemas) {
+    const m = modelo(esquemas);
+    if (!m.tabelas.length) return "";
+    const tam = posicionar(m, null);
+    return pintarTudo(m, tam, false);
+  }
+
+  /* ---------------------------------------------------------------- editor */
+
+  /** Converte um evento de ponteiro para coordenadas do DESENHO.
+   *
+   * `getScreenCTM` já contém o zoom da página, a escala CSS e a rolagem —
+   * inverter a matriz é o único jeito que não quebra quando qualquer um dos
+   * três muda. Conta feita à mão com `offsetX` fugia do ponteiro no zoom. */
+  function noDesenho(svg, ev) {
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return { x: 0, y: 0 };
+    const p = new DOMPoint(ev.clientX, ev.clientY).matrixTransform(ctm.inverse());
+    return { x: p.x, y: p.y };
+  }
+
+  /** Monta o diagrama EDITÁVEL dentro de `alvo` (elemento ou seletor).
+   *
+   * op = {
+   *   posicoes:  { tabela: {x, y} }        — aplicadas por cima do layout
+   *   dblink:    [{ligacao, remota, local_tabela, sentido, dono, chave}]
+   *   aoMover:   (posicoes) => {}          — no fim de cada arrasto
+   *   aoLigar:   (de, para) => {}          — de/para = {tabela, coluna}
+   *   aoAbrir:   (tabela) => {}            — clique na caixa
+   *   aoAbrirRemota: (ligacao, remota) => {}
+   * }
+   */
+  function montar(alvo, esquemas, op) {
+    op = op || {};
+    const raiz = typeof alvo === "string" ? document.querySelector(alvo) : alvo;
+    const m = modelo(esquemas);
+    if (!m.tabelas.length && !(op.dblink || []).length) {
+      raiz.innerHTML = "";
+      return { modelo: m };
+    }
+    posicionar(m, op.posicoes);
+    m.remotas = montarRemotas(m, op.dblink);
+    if (op.posicoes) {
+      for (const r of m.remotas) {
+        const p = op.posicoes[r.id];
+        if (p && isFinite(p.x) && isFinite(p.y)) { r.x = p.x; r.y = p.y; }
+      }
+    }
+    const tam = tamanhoDe(m);
+    raiz.innerHTML = pintarTudo(m, tam, true);
+    const svg = raiz.querySelector("svg.er");
+
+    const posAtuais = () => {
+      const p = {};
+      for (const t of m.tabelas) p[t.nome] = { x: Math.round(t.x), y: Math.round(t.y) };
+      for (const r of m.remotas) p[r.id] = { x: Math.round(r.x), y: Math.round(r.y) };
+      return p;
+    };
+
+    const redesenharLigs = () => {
+      const gastas = {};
+      svg.querySelector(".er-ligs").innerHTML = m.ligacoes.map(l => {
+        if (l.existe) return ligacao(l, m, 0);
+        const k = chave(l.de);
+        const i = gastas[k] || 0;
+        gastas[k] = i + 1;
+        return ligacao(l, m, i);
+      }).join("") + m.remotas.map(ligacaoRemota).join("");
+    };
+
+    const esticar = () => {
+      const t = tamanhoDe(m);
+      svg.setAttribute("viewBox", `0 0 ${t.largura} ${t.altura}`);
+      svg.setAttribute("width", t.largura);
+      svg.setAttribute("height", t.altura);
+    };
+
+    // ---------------------------------------------------------- arrastos
+    // Um estado só para os dois gestos; `tipo` diz qual está acontecendo.
+    let arrasto = null;
+
+    svg.addEventListener("pointerdown", ev => {
+      if (ev.button !== undefined && ev.button !== 0) return;
+      const porta = ev.target.closest(".er-porta");
+      const pega = ev.target.closest(".er-pega");
+      const grupo = ev.target.closest(".er-tabela, .er-remota");
+      if (!grupo) return;
+      const p = noDesenho(svg, ev);
+
+      if (porta) {
+        // Puxar um relacionamento a partir desta coluna.
+        arrasto = {
+          tipo: "ligar",
+          de: { tabela: porta.dataset.tabela, coluna: porta.dataset.coluna },
+          x0: p.x, y0: p.y, mexeu: false,
+        };
+      } else {
+        // Mover a caixa (só pelo título) — ou um clique, se ninguém mexer.
+        const no = grupo.classList.contains("er-remota")
+          ? m.remotas.find(r => r.id === grupo.dataset.remota)
+          : m.porNome[chave(grupo.dataset.tabela)];
+        if (!no) return;
+        if (!pega && !ev.target.closest(".er-caixa, .er-nome, .er-conta, .er-mais, .er-caixa-dbl, .er-nome-dbl, .er-leg-dbl")) return;
+        arrasto = {
+          tipo: pega ? "mover" : "clicar",
+          no, grupo,
+          dx: p.x - no.x, dy: p.y - no.y,
+          x0: p.x, y0: p.y, mexeu: false,
+        };
+        // A caixa arrastada sobe para o topo da pilha — em SVG a ordem do
+        // documento é a ordem de pintura, e arrastar por baixo das outras
+        // parecia defeito.
+        grupo.parentNode.appendChild(grupo);
+      }
+      svg.setPointerCapture(ev.pointerId);
+      ev.preventDefault();
+    });
+
+    svg.addEventListener("pointermove", ev => {
+      if (!arrasto) return;
+      const p = noDesenho(svg, ev);
+      if (Math.abs(p.x - arrasto.x0) + Math.abs(p.y - arrasto.y0) > 3) arrasto.mexeu = true;
+
+      if (arrasto.tipo === "ligar") {
+        const t = m.porNome[chave(arrasto.de.tabela)];
+        const aDireita = p.x >= t.x + t.w / 2;
+        const a = ancora(t, arrasto.de.coluna, aDireita);
+        svg.querySelector(".er-tmp").innerHTML = `<path class="er-seta-tmp"
+          d="${curva({ ...a, direita: aDireita }, { x: p.x, y: p.y, direita: p.x < a.x })}"/>`;
+        // O alvo debaixo do ponteiro acende. `elementFromPoint` e não o alvo
+        // do evento: com o ponteiro capturado, todo evento "pertence" à
+        // origem, e o hover nativo não acontece.
+        svg.querySelectorAll(".er-porta.alvo").forEach(e => e.classList.remove("alvo"));
+        const sob = document.elementFromPoint(ev.clientX, ev.clientY);
+        const alvoPorta = sob && sob.closest ? sob.closest(".er-porta") : null;
+        if (alvoPorta && !(alvoPorta.dataset.tabela === arrasto.de.tabela
+                           && alvoPorta.dataset.coluna === arrasto.de.coluna)) {
+          alvoPorta.classList.add("alvo");
+        }
+      } else if (arrasto.tipo === "mover") {
+        const no = arrasto.no;
+        no.x = Math.max(4, p.x - arrasto.dx);
+        no.y = Math.max(4, p.y - arrasto.dy);
+        arrasto.grupo.setAttribute("transform", `translate(${no.x} ${no.y})`);
+        redesenharLigs();
+        esticar();
+      }
+    });
+
+    const soltar = ev => {
+      if (!arrasto) return;
+      const a = arrasto;
+      arrasto = null;
+      svg.querySelector(".er-tmp").innerHTML = "";
+      svg.querySelectorAll(".er-porta.alvo").forEach(e => e.classList.remove("alvo"));
+
+      if (a.tipo === "ligar") {
+        if (!a.mexeu) {
+          // Clique parado numa coluna abre o cartão da tabela, como no corpo.
+          if (op.aoAbrir) op.aoAbrir(a.de.tabela);
+          return;
+        }
+        const sob = document.elementFromPoint(ev.clientX, ev.clientY);
+        const porta = sob && sob.closest ? sob.closest(".er-porta") : null;
+        if (porta && op.aoLigar) {
+          const para = { tabela: porta.dataset.tabela, coluna: porta.dataset.coluna };
+          if (!(para.tabela === a.de.tabela && para.coluna === a.de.coluna)) {
+            op.aoLigar(a.de, para);
+          }
+        }
+        return;
+      }
+      if (a.mexeu) {
+        if (op.aoMover) op.aoMover(posAtuais());
+      } else if (a.grupo.classList.contains("er-remota")) {
+        if (op.aoAbrirRemota) op.aoAbrirRemota(a.no.ligacao, a.no.remota);
+      } else if (op.aoAbrir) {
+        op.aoAbrir(a.no.nome);
+      }
+    };
+    svg.addEventListener("pointerup", soltar);
+    svg.addEventListener("pointercancel", () => {
+      arrasto = null;
+      svg.querySelector(".er-tmp").innerHTML = "";
+      svg.querySelectorAll(".er-porta.alvo").forEach(e => e.classList.remove("alvo"));
+    });
+
+    return { modelo: m, posicoes: posAtuais };
   }
 
   /** O resumo em números, para a tela não recontar nada por fora. */
@@ -313,5 +687,8 @@ window.PhxER = (function () {
     };
   }
 
-  return { desenhar, resumo, modelo, faixas, MEDIDAS: M };
+  // `tipoCurto` sai junto: o cartão da tabela mostrava `Decimal { precisao:
+  // 15, escala: 2 }` cru enquanto o desenho já reescrevia — a mesma regra tem
+  // de valer nos dois, senão um deles mente sobre o formato.
+  return { desenhar, montar, resumo, modelo, faixas, tipoCurto, MEDIDAS: M };
 })();

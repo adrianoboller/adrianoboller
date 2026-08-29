@@ -198,6 +198,12 @@ impl Atividade {
             "esvaziar_lixeira" => Atividade::Administrar,
             "criar_database" | "criar_schema" | "criar_tabela" | "duplicar_tabela"
             | "copiar_tabela" => Atividade::Criar,
+            // Declarar e desdeclarar chave estrangeira e desenhar o MODELO, e
+            // nao mexer em dado: a chave e catalogo e o motor nao a impoe (ha
+            // teste que trava isso). Pede o mesmo poder de quem cria tabela --
+            // que sempre pode declara-la no proprio criar_tabela -- e o portao
+            // por tabela vale, porque as duas operacoes tem o campo "tabela".
+            "declarar_fk" | "excluir_fk" => Atividade::Criar,
             // Apagar uma tabela apaga os cinco arquivos de uma vez, e nao ha
             // desfazer. Nao basta poder excluir LINHA para poder excluir a
             // TABELA: isto exige administrar.

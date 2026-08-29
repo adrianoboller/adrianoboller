@@ -131,6 +131,11 @@ impl Volumes {
         }
     }
 
+    /// Caminho de um volume no espelho, quando o espelho esta ligado.
+    pub fn caminho_do_espelho(&self, volume: u32) -> Option<PathBuf> {
+        self.espelho.as_ref().map(|e| e.caminho(volume))
+    }
+
     /// Caminho de um volume. Sem paginacao o sufixo e vazio.
     pub fn caminho(&self, volume: u32) -> PathBuf {
         self.diretorio.join(format!(
