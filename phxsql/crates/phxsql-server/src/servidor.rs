@@ -244,6 +244,12 @@ impl Janela {
     }
 }
 
+/// Quantas dicas de posicao do diario guardar por tabela.
+///
+/// Uma por replica que puxa dela, mais folga. Oito cobre a topologia que a
+/// bancada monta (tres) com sobra, e o custo de cada uma e 20 bytes.
+const MARCAS_POR_TABELA: usize = 8;
+
 pub struct Servidor {
     config: Config,
     /// Trava unica de dados. Ver a nota de concorrencia no topo do modulo.
@@ -291,6 +297,32 @@ pub struct Servidor {
     /// O que esta chegando pela porta, quando alguem liga para olhar.
     /// Tabelas reservadas para carga (`BULKINSERT`).
     cargas: Mutex<crate::carga::Cargas>,
+    /// Onde a ultima leitura do diario de cada tabela parou, por
+    /// `database/tabela`.
+    ///
+    /// # Por que aqui, e nao na tabela
+    ///
+    /// A tabela e aberta e fechada a cada pedido, entao a marca morreria entre
+    /// um `replicar` e o seguinte -- que sao exatamente os dois pedidos em que
+    /// ela vale. Sem ela, servir «500 eventos a partir de P» caminha pelos P
+    /// anteriores lendo o cabecalho de cada um, e alcancar N eventos custa
+    /// N^2/2 leituras.
+    ///
+    /// Medido em `--example custo-do-desde`, num diario de 100.000 eventos:
+    /// ler 500 a partir de 0 custa 1,11 us por evento; a partir de 90.000,
+    /// 72,65. Alcancar os 100.000 de 500 em 500 gastava 4,07 s so aqui.
+    ///
+    /// E so uma DICA: perde-la custa uma varredura, e uma errada faz o CRC do
+    /// evento recusar. Por isso ela nao vai a disco.
+    ///
+    /// # Por que uma LISTA, e nao uma marca por tabela
+    ///
+    /// Um source serve varias replicas, e elas nao estao na mesma posicao --
+    /// uma que ficou fora do ar volta atras das outras. Com uma marca so, a
+    /// que estivesse mais adiantada a moveria para frente e as outras nunca a
+    /// aproveitariam: a marca so serve para uma posicao DEPOIS dela. Guardar
+    /// algumas e escolher a maior que ainda cabe atende todas.
+    marcas_do_diario: Mutex<HashMap<String, Vec<phxsql_store::log::MarcaDoDiario>>>,
     profiler: Mutex<crate::profiler::Profiler>,
     /// Espelho de `profiler.ligado`, para o caminho quente nao tomar a trava.
     ///
@@ -345,6 +377,7 @@ impl Servidor {
             avisados: Mutex::new(HashMap::new()),
             conexoes: AtomicUsize::new(0),
             cargas: Mutex::new(crate::carga::Cargas::default()),
+            marcas_do_diario: Mutex::new(HashMap::new()),
             profiler: Mutex::new(crate::profiler::Profiler::default()),
             profiler_ligado: AtomicBool::new(false),
         }))
@@ -592,15 +625,42 @@ impl Servidor {
     /// Erro nao mata a thread -- ele escreve e espera. Um source que caiu volta
     /// e a replica retoma do numero em que parou; matar a thread exigiria
     /// reiniciar a replica para religar a replicacao.
+    /// O laco que puxa do source, para sempre.
+    ///
+    /// # Rodada produtiva nao dorme
+    ///
+    /// O `reconectar_em` e o intervalo entre PERGUNTAS EM VAO -- quanto tempo
+    /// esperar antes de perguntar de novo a um source que nao tinha nada. Uma
+    /// rodada que aplicou eventos nao espera: se o source tinha o que dar,
+    /// provavelmente ainda tem, porque ele continuou escrevendo enquanto esta
+    /// rodada aplicava.
+    ///
+    /// Dormir depois de toda rodada era o que fazia a replica parecer lenta.
+    /// A bancada media `linhas / tempo_ate_alcancar` e chegava a 4.273
+    /// eventos/s -- mas o caminho de CPU inteiro, dos dois lados, custa 23,9 us
+    /// por evento (`--example onde-doi-na-replica`), o que da mais de 40.000/s.
+    /// O que sobrava era sono, e nao trabalho: o numero media o `reconectar_em`.
     fn laco_da_replica(self: Arc<Self>, origem: crate::config::Origem) {
         let espera = Duration::from_secs(origem.reconectar_em);
         loop {
             match self.rodada_da_replica(&origem) {
-                Ok(0) => {}
-                Ok(n) => eprintln!("replicacao [{}]: {n} evento(s) aplicado(s)", origem.nome),
-                Err(e) => eprintln!("replicacao [{}]: {e}", origem.nome),
+                // Nada a fazer: agora sim, espera antes de perguntar de novo.
+                Ok(0) => std::thread::sleep(espera),
+                Ok(n) => {
+                    eprintln!("replicacao [{}]: {n} evento(s) aplicado(s)", origem.nome);
+                    // Sem sono: volta ja. `alcancar_tabela` recusa girar em
+                    // falso -- ela erra se aplicar e a posicao nao andar --,
+                    // entao um `Ok(n)` com n > 0 e progresso de verdade e este
+                    // laco nao tem como virar giro em vazio.
+                }
+                // Erro dorme, e e de proposito: source fora do ar ou conexao
+                // caida pedem espera, senao a replica bate na porta fechada
+                // num laco fechado.
+                Err(e) => {
+                    eprintln!("replicacao [{}]: {e}", origem.nome);
+                    std::thread::sleep(espera);
+                }
             }
-            std::thread::sleep(espera);
         }
     }
 
@@ -6140,7 +6200,40 @@ impl Servidor {
         let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
         let total = t.eventos()?;
+
+        // A dica de onde a leitura anterior desta tabela parou. Sem ela, o
+        // `desde` faz o diario ser varrido desde o comeco a cada lote -- ver
+        // `marcas_do_diario`.
+        let chave = format!(
+            "{}/{}",
+            p.texto_ou("database", "").to_lowercase(),
+            p.texto_ou("tabela", "").to_lowercase()
+        );
+        if let Ok(m) = self.marcas_do_diario.lock() {
+            // A maior que ainda cabe: a marca so serve para uma posicao depois
+            // dela.
+            t.definir_marca_do_diario(
+                m.get(&chave)
+                    .and_then(|v| {
+                        v.iter()
+                            .filter(|k| k.evento <= desde)
+                            .max_by_key(|k| k.evento)
+                    })
+                    .copied(),
+            );
+        }
         let eventos = t.diario_com_imagem(desde, max)?;
+        if let (Ok(mut m), Some(nova)) = (self.marcas_do_diario.lock(), t.marca_do_diario()) {
+            let v = m.entry(chave).or_default();
+            // A que esta replica acabou de usar sai: ela nao volta atras.
+            v.retain(|k| k.evento != desde && k.evento != nova.evento);
+            v.push(nova);
+            // Teto pequeno: sao dicas, e a mais antiga e a menos util.
+            if v.len() > MARCAS_POR_TABELA {
+                v.sort_unstable_by_key(|k| k.evento);
+                v.remove(0);
+            }
+        }
         let lidos = eventos.len() as u64;
 
         let lista: Vec<Json> = eventos

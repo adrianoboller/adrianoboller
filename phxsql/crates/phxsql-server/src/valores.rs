@@ -45,11 +45,18 @@ pub fn decimal_para_texto(valor: i128, escala: u8) -> String {
 
 /// Bytes crus em hexadecimal minusculo, para a tela e para o JSON.
 pub fn bytes_para_hex(b: &[u8]) -> String {
-    let mut s = String::with_capacity(b.len() * 2);
+    // Tabela em vez de `format!("{byte:02x}")`: o `format!` alocava uma String
+    // POR BYTE, e a imagem de uma linha tem dezenas deles. Medido em
+    // `--example onde-doi-na-replica`: era 3,48 us por evento da replicacao,
+    // 14,6% de todo o caminho de CPU dos dois lados.
+    const DIG: &[u8; 16] = b"0123456789abcdef";
+    let mut s = Vec::with_capacity(b.len() * 2);
     for byte in b {
-        s.push_str(&format!("{byte:02x}"));
+        s.push(DIG[(byte >> 4) as usize]);
+        s.push(DIG[(byte & 0x0f) as usize]);
     }
-    s
+    // Só saiu de `DIG`, que é ASCII: nao ha como nao ser UTF-8.
+    String::from_utf8(s).unwrap_or_default()
 }
 
 /// Quantos bytes o tipo ocupa no slot -- o "tamanho" que a tela mostra.

@@ -208,10 +208,38 @@ struct Cabecalho {
     qtd_eventos: u64,
 }
 
+/// Onde um evento comeca no arquivo.
+///
+/// # Por que ela existe
+///
+/// Desde que o evento deixou de ter largura fixa, chegar ao evento N e caminhar
+/// pelos N-1 anteriores lendo o cabecalho de cada um. Para quem le UMA vez isso
+/// e o preco justo. Para quem le em lotes seguidos -- que e exatamente o que a
+/// replicacao faz, «me de 500 a partir de P», com P andando de 500 em 500 --
+/// custa N^2/2 leituras de cabecalho no total.
+///
+/// Medido em `--example custo-do-desde`, num diario de 100.000: ler 500 a
+/// partir de 0 custa 1,11 us por evento, e a partir de 90.000 custa **72,65**.
+/// Alcancar os 100.000 de 500 em 500 gastava **4,07 s so do lado de quem
+/// serve** -- e era isso, e nao o que a replica aplica, que fazia a replicacao
+/// parecer lenta.
+///
+/// A marca e uma **dica**, e nao uma verdade: uma errada faz ler menos, nunca
+/// ler lixo, porque o evento continua sendo conferido pelo CRC dele.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MarcaDoDiario {
+    /// Numero do evento que comeca aqui, contando de zero.
+    pub evento: u64,
+    pub volume: u32,
+    pub offset: u64,
+}
+
 pub struct LogFile {
     volumes: Volumes,
     cabs: HashMap<u32, Cabecalho>,
     volume_atual: u32,
+    /// Ate onde a ultima varredura chegou, para a proxima nao recomecar.
+    marca: Option<MarcaDoDiario>,
     /// Usuario aplicado aos eventos gravados daqui em diante.
     pub usuario: u32,
 }
@@ -222,6 +250,7 @@ impl LogFile {
             volumes: Volumes::novo(diretorio, nome, EXT_LOG, paginacao),
             cabs: HashMap::new(),
             volume_atual: 1,
+            marca: None,
             usuario: 0,
         };
         l.volumes.criar(1)?;
@@ -247,6 +276,7 @@ impl LogFile {
             volumes,
             cabs: HashMap::new(),
             volume_atual,
+            marca: None,
             usuario: 0,
         };
         l.cab(1)?;
@@ -415,6 +445,9 @@ impl LogFile {
     /// primeiro que nao confere, ou no fim do arquivo. Regiao zerada nao passa
     /// -- o CRC-32 de 36 bytes zerados nao e zero.
     fn curar(&mut self, volume: u32) -> Result<u64> {
+        // O reparo pode cortar o rabo do arquivo: uma marca apontando para
+        // dentro do que sumiu passaria a apontar para nada.
+        self.marca = None;
         let mut cab = self.cab(volume)?;
         let tamanho = self.volumes.tamanho(volume)?;
         let mut achados = 0u64;
@@ -493,14 +526,33 @@ impl LogFile {
         com_imagem: bool,
     ) -> Result<Vec<(Evento, Vec<u8>)>> {
         let mut saida = Vec::new();
-        let mut vistos = 0u64;
+
+        // De onde comecar. A marca so serve para uma posicao que esteja DEPOIS
+        // dela: caminhar para tras nao da, o evento nao tem largura fixa.
+        let (mut vistos, comeco) = match self.marca {
+            Some(m) if m.evento <= pular => (m.evento, Some(m)),
+            _ => (0, None),
+        };
+
         for volume in self.volumes.existentes() {
+            if let Some(m) = comeco {
+                if volume < m.volume {
+                    continue; // ja contado dentro do `vistos` da marca
+                }
+            }
             let cab = self.cab(volume)?;
-            if vistos + cab.qtd_eventos <= pular {
+            // O volume inteiro se pula de graca pelo `qtd_eventos` do
+            // cabecalho -- mas so quando `vistos` esta no comeco dele, e nao
+            // no meio, que e onde a marca pode ter parado.
+            let no_comeco_do_volume = !matches!(comeco, Some(m) if m.volume == volume);
+            if no_comeco_do_volume && vistos + cab.qtd_eventos <= pular {
                 vistos += cab.qtd_eventos;
                 continue;
             }
-            let mut offset = CAB_LEN as u64;
+            let mut offset = match comeco {
+                Some(m) if m.volume == volume => m.offset,
+                _ => CAB_LEN as u64,
+            };
             while offset + EVENTO_CAB as u64 <= cab.fim {
                 let mut buf = [0u8; EVENTO_CAB];
                 self.volumes.ler(volume, offset, &mut buf)?;
@@ -518,6 +570,13 @@ impl LogFile {
                     }
                     saida.push((evento, imagem));
                     if limite > 0 && saida.len() as u64 >= limite {
+                        // A marca aponta para o PROXIMO, que e o que o leitor
+                        // sequencial vai pedir na chamada seguinte.
+                        self.marca = Some(MarcaDoDiario {
+                            evento: vistos + 1,
+                            volume,
+                            offset: offset + evento.ocupa(),
+                        });
                         return Ok(saida);
                     }
                 }
@@ -526,6 +585,27 @@ impl LogFile {
             }
         }
         Ok(saida)
+    }
+
+    /// Onde a ultima varredura parou. Ver [`MarcaDoDiario`].
+    ///
+    /// O servidor abre e fecha a tabela a cada pedido, entao a marca morreria
+    /// entre um `replicar` e o seguinte -- que sao justamente os dois pedidos
+    /// em que ela vale. Exportar e reimportar deixa quem sabe que os pedidos
+    /// sao seguidos guardar a dica, do mesmo jeito que a paginacao ja faz com
+    /// o cursor.
+    pub fn marca(&self) -> Option<MarcaDoDiario> {
+        self.marca
+    }
+
+    /// Aceita uma dica de onde comecar. Ver [`MarcaDoDiario`].
+    ///
+    /// Nao ha o que validar aqui, e de proposito: uma marca errada faz a
+    /// varredura comecar no lugar errado e o evento lido nao passar no CRC, ou
+    /// o offset cair depois do `fim` e a leitura devolver vazio. Nenhum dos
+    /// dois entrega dado errado -- e por isso ela e uma dica.
+    pub fn definir_marca(&mut self, marca: Option<MarcaDoDiario>) {
+        self.marca = marca;
     }
 
     /// Eventos de um registro especifico, em ordem cronologica.

@@ -262,3 +262,120 @@ fn a_imagem_leva_o_payload_cru_e_nao_o_texto() {
         Value::Decimal(999_999_999_999)
     );
 }
+
+// ------------------------------------------- a marca de posicao do diário
+
+/// Ler em lotes com a marca tem de dar exatamente o mesmo que ler de uma vez.
+///
+/// A marca é uma otimização num caminho onde errar não dá erro — dá **evento
+/// errado**, aplicado como se fosse o certo. Este teste é o que trava isso.
+#[test]
+fn a_marca_da_exatamente_os_mesmos_eventos() {
+    let dir = DirTemp::novo("marca-igual");
+    let mut t = Table::criar(dir.0.join("s"), esquema()).unwrap();
+    t.ligar_imagem_no_diario(true);
+    for i in 1..=2_000 {
+        t.inserir(&linha(i)).unwrap();
+    }
+    t.sincronizar().unwrap();
+
+    // De uma vez, sem marca nenhuma.
+    t.definir_marca_do_diario(None);
+    let inteiro = t.diario_com_imagem(0, 0).unwrap();
+    assert_eq!(inteiro.len(), 2_000);
+
+    // Em lotes de 137 — número que não divide 2.000, para o último lote ser
+    // parcial e a marca ter de sobreviver a isso.
+    t.definir_marca_do_diario(None);
+    let mut em_lotes = Vec::new();
+    let mut desde = 0u64;
+    loop {
+        let lote = t.diario_com_imagem(desde, 137).unwrap();
+        if lote.is_empty() {
+            break;
+        }
+        desde += lote.len() as u64;
+        em_lotes.extend(lote);
+    }
+    assert_eq!(em_lotes.len(), inteiro.len());
+    for (i, (a, b)) in inteiro.iter().zip(em_lotes.iter()).enumerate() {
+        assert_eq!(a.0, b.0, "evento {i} veio diferente");
+        assert_eq!(a.1, b.1, "imagem do evento {i} veio diferente");
+    }
+}
+
+#[test]
+fn a_marca_e_so_uma_dica_e_a_de_tras_ainda_serve() {
+    let dir = DirTemp::novo("marca-tras");
+    let mut t = Table::criar(dir.0.join("s"), esquema()).unwrap();
+    t.ligar_imagem_no_diario(true);
+    for i in 1..=500 {
+        t.inserir(&linha(i)).unwrap();
+    }
+    t.sincronizar().unwrap();
+
+    // Avança até 300 e guarda onde parou.
+    t.definir_marca_do_diario(None);
+    let _ = t.diario_com_imagem(0, 300).unwrap();
+    let marca = t
+        .marca_do_diario()
+        .expect("a leitura devia ter deixado marca");
+    assert_eq!(marca.evento, 300);
+
+    // Uma réplica atrasada pede de 100: a marca de 300 está À FRENTE e não
+    // pode ser usada, senão ela receberia os eventos errados.
+    t.definir_marca_do_diario(Some(marca));
+    let atrasada = t.diario_com_imagem(100, 10).unwrap();
+    t.definir_marca_do_diario(None);
+    let sem_marca = t.diario_com_imagem(100, 10).unwrap();
+    assert_eq!(atrasada.len(), 10);
+    assert_eq!(atrasada[0].0, sem_marca[0].0);
+    assert_eq!(atrasada[0].1, sem_marca[0].1);
+
+    // E uma que pede exatamente de onde a marca aponta usa o atalho e recebe
+    // o mesmo que receberia varrendo tudo.
+    t.definir_marca_do_diario(Some(marca));
+    let com = t.diario_com_imagem(300, 10).unwrap();
+    t.definir_marca_do_diario(None);
+    let sem = t.diario_com_imagem(300, 10).unwrap();
+    assert_eq!(com.len(), 10);
+    for (a, b) in com.iter().zip(sem.iter()) {
+        assert_eq!(a.0, b.0);
+        assert_eq!(a.1, b.1);
+    }
+}
+
+#[test]
+fn a_marca_atravessa_a_troca_de_volume() {
+    // Volumes pequenos: a marca tem de continuar valendo quando a leitura
+    // passa de um arquivo para o seguinte, que é onde o `qtd_eventos` do
+    // cabeçalho deixa de poder pular o volume inteiro.
+    let dir = DirTemp::novo("marca-volume");
+    let esq = esquema()
+        .com_paginacao(phxsql_core::paginacao::Paginacao::nova(200, 500).unwrap())
+        .unwrap();
+    let mut t = Table::criar(dir.0.join("s"), esq).unwrap();
+    t.ligar_imagem_no_diario(true);
+    for i in 1..=1_200 {
+        t.inserir(&linha(i)).unwrap();
+    }
+    t.sincronizar().unwrap();
+
+    t.definir_marca_do_diario(None);
+    let inteiro = t.diario_com_imagem(0, 0).unwrap();
+
+    t.definir_marca_do_diario(None);
+    let mut em_lotes = Vec::new();
+    let mut desde = 0u64;
+    while let Ok(lote) = t.diario_com_imagem(desde, 50) {
+        if lote.is_empty() {
+            break;
+        }
+        desde += lote.len() as u64;
+        em_lotes.extend(lote);
+    }
+    assert_eq!(em_lotes.len(), inteiro.len());
+    for (i, (a, b)) in inteiro.iter().zip(em_lotes.iter()).enumerate() {
+        assert_eq!(a.0, b.0, "evento {i} diferente ao trocar de volume");
+    }
+}
