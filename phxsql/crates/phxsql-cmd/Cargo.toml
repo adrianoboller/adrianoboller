@@ -1,0 +1,22 @@
+[package]
+name = "phxsql-cmd"
+description = "Console interativo do PhxSql: fala o protocolo JSON com um servidor"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+name = "phxsql_cmd"
+path = "src/lib.rs"
+
+[[bin]]
+name = "phxsqlcmd"
+path = "src/main.rs"
+
+[dependencies]
+phxsql-core.workspace = true
+# Pelo cliente do protocolo (`replica::Cliente`) e pelo desafio-resposta que
+# ele ja implementa. Escrever um segundo cliente aqui seria escrever um segundo
+# jeito de autenticar -- e o segundo jeito e o que fica para tras.
+phxsql-server.workspace = true

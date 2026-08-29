@@ -5,6 +5,7 @@ members = [
     "crates/phxsql-store",
     "crates/phxsql-sql",
     "crates/phxsql-cli",
+    "crates/phxsql-cmd",
     "crates/phxsql-server",
 ]
 
