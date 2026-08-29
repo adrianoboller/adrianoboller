@@ -65,7 +65,7 @@ def ler():
     return itens
 
 
-CABECA = """<title>Os 129 pedidos do PhxSql</title>
+CABECA = """<title>Os {n} pedidos do PhxSql</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -244,10 +244,29 @@ footer{
 </style>"""
 
 
+def cabeca(n):
+    return CABECA.replace("{n}", str(n))
+
+
 def corpo(itens):
     n = len(itens)
     contas = {c: sum(1 for i in itens if i["classe"] == c) for c in ("feito", "parcial", "planejado")}
     abertos = [i for i in itens if i["classe"] != "feito"]
+
+    if abertos:
+        estados = []
+        if contas["parcial"]:
+            estados.append(f"{contas['parcial']} pela metade")
+        if contas["planejado"]:
+            estados.append(f"{contas['planejado']} sem começar")
+        abertura = (
+            f"Os {len(abertos)} que não fecharam ({' e '.join(estados)}), com o "
+            f"motivo de cada um. O motivo importa mais que o estado: uns esperam "
+            f"trabalho, outros esperam uma decisão sua, e outros esperam coisa "
+            f"de fora deste repositório."
+        )
+    else:
+        abertura = "Nenhum pedido em aberto."
 
     def linhas(ls):
         return "\n".join(
@@ -277,9 +296,7 @@ def corpo(itens):
 </header>
 
 <h2>O que está aberto</h2>
-<p class="sub">Os {len(abertos)} que não fecharam, com o motivo de cada um. Três
-deles estão parados por coisa de fora — um 403 do GitHub e um pacote sem
-fonte —, e não por falta de trabalho.</p>
+<p class="sub">{abertura}</p>
 <div class="rolo">
   <table>
     <thead><tr><th class="n">#</th><th class="st">estado</th><th>o que você pediu</th><th>onde está</th></tr></thead>
@@ -291,10 +308,11 @@ fonte —, e não por falta de trabalho.</p>
 
 <div class="nota">
   <span class="t">Por que «parcial» e não «feito»</span>
-  Endereçar <code>matriz.estoque</code> funciona em toda operação; o que falta é
-  o <strong>SQL</strong>, e não o endereçamento. A réplica alcança e para quando
-  diverge; o que falta é ela <strong>acompanhar</strong> a escrita do master.
-  Meio caminho andado continua sendo meio caminho, e a lista diz qual metade.
+  Meio caminho andado continua sendo meio caminho, e a lista diz <em>qual</em>
+  metade — porque é a metade que falta que decide se o pedido serve para alguma
+  coisa hoje. O estado sai da primeira coluna do
+  <code>docs/PENDENCIAS.md</code>, que é medido contra o código; esta página
+  não tem opinião própria sobre nenhum item.
 </div>
 
 <h2 id="todos">Os {n}, na ordem em que você pediu</h2>
@@ -369,14 +387,47 @@ fonte —, e não por falta de trabalho.</p>
 </script>"""
 
 
+ABRE_C = "<!-- pedidos:contagem:inicio -->"
+FECHA_C = "<!-- pedidos:contagem:fim -->"
+
+
+def gravar_contagem(itens):
+    """Escreve a contagem DE VOLTA no PENDENCIAS.md, entre as marcas.
+
+    A linha «123 feitos . 5 parciais . 4 planejados» ficou digitada no proprio
+    arquivo que a produz, e passou rodadas errada -- com a tabela logo acima
+    dizendo outra coisa. Somar aqui e escrever la e a mesma receita do
+    `numeros-da-bancada.py`: quem conta e quem sabe contar.
+    """
+    md = FONTE.read_text(encoding="utf-8")
+    i, j = md.find(ABRE_C), md.find(FECHA_C)
+    if i < 0 or j < 0:
+        return False
+    c = {k: sum(1 for x in itens if x["classe"] == k)
+         for k in ("feito", "parcial", "planejado")}
+    bloco = (
+        f"**{len(itens)} pedidos: {c['feito']} feitos · {c['parcial']} parciais · "
+        f"{c['planejado']} planejados.**\n\n"
+        "*(Gerado por `docs/dossie/pagina-dos-pedidos.py` — não conte à mão. A\n"
+        "conta sai da primeira coluna da tabela acima, e é a mesma que a página\n"
+        "dos pedidos mostra: se as duas discordarem, é porque alguém digitou uma\n"
+        "delas.)*"
+    )
+    md = md[:i] + ABRE_C + "\n" + bloco + "\n" + FECHA_C + md[j + len(FECHA_C):]
+    FONTE.write_text(md, encoding="utf-8")
+    return True
+
+
 def main():
     saida = pathlib.Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else PADRAO
     itens = ler()
-    saida.write_text(CABECA + "\n" + corpo(itens) + "\n", encoding="utf-8")
+    saida.write_text(cabeca(len(itens)) + "\n" + corpo(itens) + "\n", encoding="utf-8")
     contas = {c: sum(1 for i in itens if i["classe"] == c) for c in ("feito", "parcial", "planejado")}
     print(f"{len(itens)} pedidos: {contas['feito']} feitos, "
           f"{contas['parcial']} parciais, {contas['planejado']} planejados")
     print(f"pagina gravada: {saida}")
+    if gravar_contagem(itens):
+        print(f"contagem gravada de volta em {FONTE.name}")
 
 
 if __name__ == "__main__":

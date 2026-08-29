@@ -1,5 +1,14 @@
 # O Teradata(R) lido contra o PhxSql: os sprints que dariam para executar
 
+> **Este documento continua sendo a fonte, mas não é mais a lista.** As
+> nove propostas daqui foram para a lista única de `docs/SPRINTS.md`,
+> junto com as outras 22. Duas notas da travessia: o **sprint 5
+> (`QUALIFY`) é recusado como prematuro** pelo documento do MariaDB(R), e
+> a lista resolve isso por dependência em vez de por mérito
+> (`SPRINTS.md` §2.4); e os **sprints 3 e 8 caem na trava de formato** —
+> cinco propostas independentes dizem «PSCH v7», e cinco rodadas
+> separadas custariam cinco migrações (§2.2).
+
 Documento de **pesquisa e proposta**. Nada aqui foi implementado, e nada será
 implementado sem o **sim do Adriano, sprint a sprint** — a lista existe para
 ser aprovada, recusada ou reordenada por ele, e a última seção repete isso.

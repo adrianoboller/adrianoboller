@@ -14,7 +14,7 @@ o código, não contra a lembrança — foi assim que a chave estrangeira saiu d
 | ☑️ | 4 | `Tabela.memo` — textos longos | mesmo mecanismo do `.bin` |
 | ☑️ | 5 | `Tabela.log` — **toda** inclusão, alteração e exclusão com data e hora | append-only, 36 bytes por evento |
 | ☑️ | 6 | **Servidor MCP** | `phxsqld --mcp` fala JSON-RPC por stdio, com `ExecutorLocal` chamando o `despachar` — o portão continua sendo um — e `stdio` no lugar do IP no log de acessos. O `tools/list` **lê o catálogo de operações** em vez de uma segunda lista escrita à mão. Teste roda o binário de verdade; senha via `PHXSQL_SENHA`, nunca em argumento |
-| ☐ | 7 | **Driver ODBC e OLE DB** | não começou. Depende da camada SQL |
+| ☑️ | 7 | **Driver ODBC e OLE DB** | **driver ODBC 3.x de verdade**, `crates/phxsql-odbc/` — uma `cdylib` de ABI C que o gerenciador carrega por `dlopen`/`LoadLibrary` e que por dentro é um cliente comum da porta de dados (`lib.rs:398`, `SQLDriverConnect`). DSN-less, `SQLExecDirect`/`SQLPrepare`, colunas descritas com tipo, `PWD=***` na string devolvida. Provado com **73 conferências, zero falhas** pela ABI literal (`ctypes`/`dlopen` chamando o que o gerenciador chamaria) mais `isql` de verdade — e com o defeito reposto (truncamento **calado** no `SQLGetData`) a prova falha em 4. **OLE DB nativo é recusa fundamentada, não pendência**: um provider COM é só Windows e **impossível de provar aqui**; o caminho suportado é a ponte oficial `MSDASQL`, que transforma qualquer driver ODBC em origem OLE DB. `docs/ODBC.md` §6 e §7 |
 | ☑️ | 8 | Porta 5000, configurável no `config.json` | campo `bind`; campo com nome errado agora avisa |
 | ☑️ | 9 | Tudo em Rust, sem dependência | zero crates externas; compila offline |
 | ☑️ | 10 | Reindex criando o `.ndx` do zero | varre o `.reg` e reconstrói |
@@ -25,8 +25,8 @@ o código, não contra a lembrança — foi assim que a chave estrangeira saiu d
 | ☑️ | 15 | Organograma, fluxograma e dossiê | 19 seções, 18 figuras, tudo em SVG à mão |
 | ☑️ | 16 | Log de IPs na porta 5000, com data e hora | JSON Lines, para caber `fail2ban` |
 | ☑️ | 17 | Download dos fontes e do compilado Linux/Windows, com manual | `./empacotar.sh`, três zips conferidos |
-| ◐ | 18 | **Subir o PhxSql no GitHub** | está na branch com histórico completo; **repositório próprio bloqueado**: `create_repository` responde 403 |
-| ☑️ | 19 | **Replicação como a do MySQL(R)**, com porta de envio e de retorno | **funcionando**: `.log` v2 com a imagem da linha, ops `posicao`/`replicar`/`aplicar`, e o laço da réplica dentro do `phxsqld`. Medido com quatro servidores — master 28.914 linhas/s, réplica 4.357 eventos/s, atraso de 1,3 a 2,1 s, retrato SHA-256 das quatro tabelas idêntico. Falta long-poll, espera crescente e TLS |
+| ◐ | 18 | **Subir o PhxSql no GitHub** | está na branch `claude/capacidades-disponiveis-y6auxh` de `adrianoboller/adrianoboller`, com histórico completo. **A causa não é permissão que falta: é identidade**, e isso foi medido nesta revisão. A credencial desta sessão autentica como **`EnginePrint`** (id 322529492, criada em 2026-08-29, zero repositórios públicos) — não como você. Ela **lê** `adrianoboller/adrianoboller` e enxerga a branch; o que ela não faz é criar repositório em nome de outra pessoa, e é daí que sai o 403 do `create_repository`. E um repositório criado por ela **não seria seu** — seria dela, com você de fora. Destrava com **você** criando `adrianoboller/phxsql` e dando acesso a essa app |
+| ☑️ | 19 | **Replicação como a do MySQL(R)**, com porta de envio e de retorno | **funcionando**: `.log` v2 com a imagem da linha, ops `posicao`/`replicar`/`aplicar`, e o laço da réplica dentro do `phxsqld`. Medido com quatro servidores — master 28.914 linhas/s, atraso de 1,3 a 2,1 s, retrato SHA-256 de **cada linha** idêntico. Depois disso entraram os **quatro modos** (A source→réplica, B multi-master com «mais recente vence», C spare que não atende ninguém até `spare_promover`, D read replica que recusa escrita apontando o master), o **agendamento por origem** (`cada_minutos`/`hora`; ausente = streaming, e o teste que trava isso é `origem_sem_agendamento_continua_streaming`), o **assistente na tela** e a **cascata** medida. A réplica alcança: 4.273 → 17.450 eventos/s (4,08×). Continuam faltando: **long-poll** no source, espera crescente na reconexão, **TLS** no transporte, gravar a configuração pela tela, e bidirecional com mais de dois servidores. `docs/REPLICACAO.md` §13 |
 | ☑️ | 20 | `Config_exemplo_01/02/03.json` | isolado, réplica e origem |
 | ☑️ | 21 | Precisa de agentes e subagentes? | respondida |
 | ☑️ | 22 | Atualizar o dossiê ao fim de cada rodada | regra permanente, no `CLAUDE.md` |
@@ -37,9 +37,9 @@ o código, não contra a lembrança — foi assim que a chave estrangeira saiu d
 | ☑️ | 27 | Comandos proibidos no `config.json` | e a auditoria achou ali um furo real, corrigido |
 | ☑️ | 28 | Criar regra de firewall em quem tenta o proibido | conferido com um `iptables` falso que grava |
 | ☑️ | 29 | **Base64 no login**, não em claro | feito — e o padrão é melhor: desafio-resposta, a senha não sai da máquina |
-| ☑️ | 30 | **Interface web parecida com o Centro de Controle HFSQL(R)** | árvore, abas, painel, administração, menu, ferramentas, **View Database com edição**, **gestão de tabelas** e **gestão do banco** — 36 das 39 operações. Fora: `buscar`, `desbloquear` e `criar_schema`, que acontece sozinho quando a tela cria tabela dentro de um schema |
+| ☑️ | 30 | **Interface web parecida com o Centro de Controle HFSQL(R)** | árvore, abas, painel, administração, menu, ferramentas, **View Database com edição**, **gestão de tabelas** e **gestão do banco**. O «36 das 39» que estava aqui envelheceu junto com o catálogo: medido nesta revisão, o protocolo tem **108 operações** (`OPERACOES`, em `server/src/catalogo.rs`) e a tela chama **96** delas pelo nome. As 12 que ficam fora não são buracos — são as de máquina (`replicar`, `aplicar`, `bulkinsert`, `cluster_pulso`, `cluster_estado`, `spare_promover`, `catalogo`), a que acontece sozinha (`criar_schema`, quando a tela cria tabela dentro de um schema) e as que a tela alcança por expressão em vez de literal (`telemetria_ligar`/`telemetria_desligar`, no botão que alterna). Refazer a conta: casar os `api("…")` de `ui/` com os `nome:` de `OPERACOES` |
 | ☑️ | 66 | **[+] na árvore** para criar database, **About no menu Ajuda**, **tela de créditos** com a fênix, e **View Database** com grade de tabelas e edição | fecha a edição de dados: `ler`, `inserir`, `atualizar` e `excluir` ganharam tela |
-| ☑️ | 65 | **Barra de ferramentas** com Start/Stop, Query, Usuários, Diretivas, Bancos, Duplicar, Conexões, Transações, Importar, Repair, Backup, Replicação, Server Mail, Blockchain e Ajuda | 20 ferramentas hoje, ícone colorido; **16 funcionam**, 4 apagadas dizendo o que falta |
+| ☑️ | 65 | **Barra de ferramentas** com Start/Stop, Query, Usuários, Diretivas, Bancos, Duplicar, Conexões, Transações, Importar, Repair, Backup, Replicação, Server Mail, Blockchain e Ajuda | **30 ferramentas hoje, e 27 funcionam** — medido nesta revisão contando a lista `FERRAMENTAS` de `ui/index.html`, não lembrado: as 3 apagadas são *Duplicar*, *Server Mail* e *Blockchain*, e cada uma abre uma tela dizendo o que falta e de que depende. O número anterior (20 e 16) estava parado havia rodadas — entraram Telemetria, Profiler, Diagrama ER, LGPD, DbLink, Jobs, Junção, Pivot e outras sem ninguém recontar |
 | ☑️ | 31 | Tabela em memória tipo Redis(R), com `SelectMemory` | **87× mais rápido**, medido |
 | ☑️ | 32 | Revisar regras, corrigir defeitos, registrar em `changelog.md` | `CHANGELOG.md`, com *Corrigido* primeiro |
 | ☑️ | 33 | Chave assimétrica no `config.json` como parâmetro extra | Ed25519 (RFC 8032), contra os quatro vetores oficiais |
@@ -58,8 +58,8 @@ o código, não contra a lembrança — foi assim que a chave estrangeira saiu d
 | ☑️ | 46 | Gráficos comparativos de IO, memória e CPU | `bancada/comparacao-phxsql-mysql.html` |
 | ☑️ | 47 | `tabela.bkp` clone do `.reg`, se ativo no `config.json` | e provar isso achou um defeito grave, corrigido |
 | ☑️ | 48 | DataGrid com faixa de agrupamento acima das colunas | phx-grid: arrastar o cabeçalho agrupa |
-| ☐ | 49 | **Triggers** | não começou. Falta decidir **em que linguagem o gatilho é escrito** — a escolha é sua |
-| ☐ | 50 | **Stored procedures** | não começou. Código guardado precisa de executor |
+| ☑️ | 49 | **Triggers** | a escolha de linguagem foi feita — a do MySQL(R)/MariaDB(R), sintaxe similar e não idêntica — e **um interpretador só** serve gatilho e procedimento (`crates/phxsql-sql/src/rotina.rs`: árvore de expressão, avaliador, e um `Numero` de mantissa `i128` com escala, **sem `f64` em ponto nenhum** — `1.10 * 3` dá `3.30`). `BEFORE`/`AFTER` × `INSERT`/`UPDATE`/`DELETE` `FOR EACH ROW`, com o `BEFORE` rodando **com a trava de dados na mão**, entre a conversão da linha e a gravação, podendo alterar `NEW` e cancelar por `SIGNAL` (`servidor.rs:7019` e `:7076`; registro por database em `rotinas.rs:336`). `docs/TRIGGERS.md`, com **17 recusas nomeadas e testadas** — quem cola um corpo do MySQL(R) descobre o que trocar pelo nome |
+| ☑️ | 50 | **Stored procedures** | `CREATE PROCEDURE`/`CALL` com `IN`/`OUT`/`INOUT` (`rotinas.rs:402`), no **mesmo** interpretador do gatilho. O portão continua sendo um: cada pedido que o corpo produz sai pelo `executar_derivado` com a sessão de quem chamou, e o teste `call_nao_e_a_porta_dos_fundos_para_a_tabela_negada` trava isso. Criar e excluir exigem `administrar` e não `criar` — senão quem cria tabela penduraria um `AFTER INSERT` na tabela alheia e desviaria as linhas dos outros; `CALL` não pede nada próprio, porque nunca dá poder que a pessoa já não tinha |
 | ☑️ | 51 | **Jobs de execução** | `jobs.rs`, cadastro em `jobs.json`, corridas append-only em `jobs.log`, relógio de 30 s e 4 operações, todas exigindo `administrar`. **O job roda com o poder do usuário dele** — e isso obrigou a extrair os portões comuns do `despachar` para uma função só, em vez de copiar a conferência. 8 testes por soquete, incluindo o que prova que um job de `so_le` não cria database |
 | ☑️ | 52 | Dashboard com gráficos de bancos, usuários, conexões | sete gráficos e oito números, de uma chamada só |
 | ☑️ | 53 | Revise o que falta | onze defeitos achados, todos corrigidos |
@@ -101,7 +101,7 @@ o código, não contra a lembrança — foi assim que a chave estrangeira saiu d
 | ☑️ | 92 | **Revisar o help do MySQL(R) e do MariaDB(R) e ver o que melhorar** | comparado contra os dois help embutidos rodando (705 e 833 tópicos). Entraram: erro com **código estável**, `sessoes` (PROCESSLIST), `encerrar_sessao` (KILL), `estatisticas` com percentis/histograma/mais-lentas/por-tabela, `checksum` e tempo no ar. O que ficou fora está em `docs/COMPARACAO.md` **com o motivo** |
 | ☑️ | 93 | **Exportar as tabelas para xlsx, json, xml, html, csv, docx e txt** | os sete, escritos aqui. XLSX e DOCX são ZIP de XML, e o projeto já escrevia ZIP com DEFLATE — planilha com cabeçalho pintado, zebra, painel congelado e autofiltro; data como número com formato, não como texto. Conferido com leitores independentes |
 | ☑️ | 94 | **O dossiê estava esquecendo o `.bkp`** | e no pior lugar: a seção do **fluxo de gravação**. O espelho não aparecia no desenho, e parecia uma cópia feita depois — ele é escrito no mesmo instante. Corrigido no dossiê, no `FORMATO.md`, no `MANUAL.txt` e no `README` |
-| ◐ | 95 | **Integrar o MULTILINK no DbLink** | **bloqueado como está**: o pacote traz só binários (`.rlib`), sem fonte, compilados com rustc 1.98 contra o 1.94 daqui — provado, não suposto. E um `.rlib` é dependência externa, que a regra do projeto proíbe. O caminho que funciona está descrito em `docs/MULTILINK.md`: falar com ele por **protocolo**, e não por link |
+| ☑️ | 95 | **Integrar o MULTILINK no DbLink** | **bloqueado como está**: o pacote traz só binários (`.rlib`), sem fonte, compilados com rustc 1.98 contra o 1.94 daqui — provado, não suposto. E um `.rlib` é dependência externa, que a regra do projeto proíbe. O caminho que funciona está descrito em `docs/MULTILINK.md`: falar com ele por **protocolo**, e não por link. **Fechado nesta revisão, e não por desistência**: o destino do pedido — ver a tabela do outro banco pelo DbLink — foi alcançado pelo **terceiro caminho** que o próprio `MULTILINK.md` descreve, «ler o driver e portar o que se precisa». O cliente MySQL(R) tem 728 linhas escritas aqui (`server/src/dblink/mysql.rs`) e o PostgreSQL(R) 721 mais 278 de SCRAM (`server/src/pg/`), tudo só com a `std`; o pedido 131 provou contra um MySQL(R) 8.0.46 real e o 132 pôs a sincronia por cima. **Não sobra trabalho aqui: sobra uma recusa medida e um destino entregue** |
 | ☑️ | 96 | **Registro apagado fisicamente vai para o `.trash` antes de sair do `.reg`** | e o disco **confirma** antes de o slot ser liberado. Guarda o *payload* byte a byte **mais o conteúdo dos anexos** — com ponteiro, a foto voltaria sendo a de outra linha, porque o bloco do `.bin` é liberado na exclusão. Só quem tem `administrar` lê |
 | ☑️ | 97 | **Coluna `SOFTDELETED` em todas as tabelas** | entra sozinha na criação, no fim da lista para não deslocar as colunas do usuário. Marcar tira a linha das listas e ela continua inteira no `.reg`; `restaurar` desfaz. Esquema `PSCH` v3 → v4, e tabela v3 continua abrindo |
 | ☑️ | 98 | **`.reason` com UUID, data, hora, motivo e quem excluiu** | UUID v7 do próprio evento, e a identidade da linha em texto — «rowid 4173» não diz nada seis meses depois. Sobrevive à linha: o expurgo é registrado antes de o dado sair. Só `administrar` |
@@ -112,7 +112,7 @@ o código, não contra a lembrança — foi assim que a chave estrangeira saiu d
 | ☑️ | 103 | **Campo `rownum` sequencial e automático em todas as tabelas** | coluna de sistema, o motor preenche, nunca reaproveita número, alterar não renumera. `rowid_do_rownum` acha por bissecção — 20 leituras num milhão, sem índice |
 | ☑️ | 104 | **Partição alfanumérica: `Clientes_A.reg` … `Clientes_Outros.reg`** | 37 volumes fixos, o rowid sai de `(balde−1) × rpa + slot` — a inversa exata da conta de sempre, então nenhum caminho de leitura mudou. A ordem de digitação sai do rowid e vai para o `rownum` |
 | ☑️ | 105 | **Arquivo `.pag` com a instrução da partição em JSON** | descritor **gerado**, com a conta do endereço por extenso; o motor nunca o lê. Segunda cópia seria segunda verdade |
-| ◐ | 106 | **Integrar o MULTILINK — segunda análise, agora com os fontes** | o motivo anterior caiu: os fontes vieram. O novo é maior e medido: o `Cargo.lock` resolve **596 pacotes, 14 locais → 582 crates externas**, e cinco são obrigatórias mesmo sem nenhuma *feature* (`serde`, `serde_json`, `log`, `tokio`, `ml-driver-api`). Linkar traria um runtime assíncrono inteiro para dentro do `phxsqld`. Há um caminho novo que os fontes abrem: os `ml-driver-*-ffi` são `cdylib` com ABI C limpa, e ABI C se chama da `std` sem crate nenhuma — mas põe código proprietário com licença por máquina dentro do processo do banco. O caminho recomendado continua sendo **por protocolo**, agora como executável separado; `docs/MULTILINK.md` |
+| ☑️ | 106 | **Integrar o MULTILINK — segunda análise, agora com os fontes** | o motivo anterior caiu: os fontes vieram. O novo é maior e medido: o `Cargo.lock` resolve **596 pacotes, 14 locais → 582 crates externas**, e cinco são obrigatórias mesmo sem nenhuma *feature* (`serde`, `serde_json`, `log`, `tokio`, `ml-driver-api`). Linkar traria um runtime assíncrono inteiro para dentro do `phxsqld`. Há um caminho novo que os fontes abrem: os `ml-driver-*-ffi` são `cdylib` com ABI C limpa, e ABI C se chama da `std` sem crate nenhuma — mas põe código proprietário com licença por máquina dentro do processo do banco. O caminho recomendado continua sendo **por protocolo**, agora como executável separado; `docs/MULTILINK.md`. **Fechado pelo mesmo motivo do 95**: o DbLink nativo chegou ao destino sem as 582 crates, e a recusa está medida em vez de suposta. Se um dia um driver do pacote (Sybase, AS/400) for preciso, ele volta como pedido **novo** — e o caminho já está escrito, inclusive o preço de cada um deles |
 | ☑️ | 107 | **Salto para uma página específica** | `pular` deixou de andar: quando a posição de uma linha **é** o `rownum` dela, o começo da página sai de uma bissecção. Medido em 200.000 linhas pelo protocolo: 6 ms contra 131 ms no fim da tabela, e **plano** com a profundidade. Caixa «ir para a página» na grade — 116 ms no navegador, com o desenho. Contar voltou a ser barato: `visiveis = registros − marcadas`, os dois do cabeçalho |
 | ☑️ | 108 | **Carga em lote — várias linhas de uma vez** | `inserir_lote` no protocolo, `phxsql importar` na linha de comando. Medido com 20.000 linhas pela rede: **2.715 → 25.985 linhas/s (9,6×)**. O ganho não é do disco: é de abrir a tabela, tomar a trava e sincronizar UMA vez em vez de vinte mil |
 | ☑️ | 109 | **Tela para colar JSON, CSV, TXT, HTML ou XML** | os cinco formatos, com o motor adivinhando qual é. A primeira linha manda, e as colunas casam pelo **nome** e não pela posição. `importar_conferir` mostra o que entendeu antes de gravar; o botão de gravar só acende depois disso |
@@ -132,29 +132,53 @@ o código, não contra a lembrança — foi assim que a chave estrangeira saiu d
 | ☑️ | 123 | **Janela de conflito de escrita** | feito **sem mudar formato**: a versão por registro do `.reg` estava lá desde a v1. `ler` devolve a versão com `"com_versao"`, `atualizar`/`excluir`/`restaurar` conferem a versão que o cliente mandar, e a recusa é o erro **3004 `CONFLITO`**. A janela mostra as três colunas do PDF e vai além dele: **já vem marcado quem mexeu em cada coluna**, então dois que editaram campos diferentes saem com os dois trabalhos. A conferência é **pedida, não imposta** — cliente antigo continua gravando |
 | ☑️ | 124 | **Direito no nível da tabela** | `"tabelas"` dentro do objeto da base, e a regra da tabela **substitui** a da base ali — o que permite tirar `folha` de quem lê o banco inteiro **e** dar `clientes` a quem não lê o banco nenhum (interseção só resolveria o primeiro). O portão continua sendo um só; `juntar` e `unir` ganharam conferência própria porque não têm o campo `"tabela"` que ele lê. A árvore e o catálogo passaram a listar só o que dá para abrir. 9 testes |
 | ☑️ | 125 | **Marcar coluna como dado pessoal (LGPD/GDPR)** | PSCH **v6**, três graus (`nao`/`pessoal`/`sensivel`, LGPD art. 5º I e II), com o byte no **fim** do bloco para quem lê v5 parar antes. Op `dados_pessoais` audita a base — e como ela **não tem campo `tabela`** (o furo do `juntar`/`unir`), filtra tabela a tabela por dentro. Não adivinha por nome; devolve quantas colunas ficaram sem classificação. Mais a tela que audita, que diz *que não sabe* quando o esquema não traz a marca |
-| ☐ | 126 | **Cluster: endereço único, eleição e promoção automática** | `docs/CLUSTER.md`. A peça difícil já está pronta — a réplica que alcança sozinha e para quando diverge. Falta o que fica em volta |
-| ◐ | 127 | **Diagrama ER e editor de modelo** | o diagrama está feito (`ui/diagrama-er.js`, sete defeitos achados no navegador) e a meia-verdade caiu: **`criar_tabela` agora declara chave estrangeira pelo protocolo**, com `duplicar_tabela` preservando e um teste que trava que *declarar não é aplicar* — o motor não impõe a FK, e o teste falha no dia em que isso mudar. Faltam o editor visual e a tela «Nova tabela» oferecer FK |
+| ☑️ | 126 | **Cluster: endereço único, eleição e promoção automática** | `crates/phxsql-server/src/cluster.rs`: pulso, época, eleição por maioria com desempate por prioridade (`vencedor`, `:115`), promoção (`:334`) e **rebaixamento sozinho** ao ver época maior (`:348`). Escrita numa réplica devolve `REDIRECIONA host:porta` (erro 4003) — endereço único **pela semântica do protocolo**, e não por VIP, que é infraestrutura e não banco. Medido em `bancada/cluster/`: a escrita volta em **3,9–4,3 s** com janela de 4 s. **Sem o bloco `cluster` no `config.json` nada muda** — nenhuma thread sobe, nenhum portão muda —, e o teste que trava isso é `sem_o_bloco_cluster_nada_muda`. O `docs/CLUSTER.md` §2 diz também o que ele **não** garante: não é multi-master, não há balanceador embutido, e a lista de nós é do arquivo |
+| ◐ | 127 | **Diagrama ER e editor de modelo** | **as duas metades entraram.** O diagrama é `ui/diagrama-er.js` (sete defeitos achados abrindo no navegador, e não lendo). O **editor** é o mesmo arquivo em modo de edição: arrastar a caixa pelo título move a tabela — e a pega é um retângulo transparente por cima do título, senão o alvo seria a letra —, e arrastar a linha de uma coluna até a coluna de outra **declara a chave estrangeira**, que o cartão da tabela também exclui. Por baixo, `criar_tabela` declara FK pelo protocolo, `duplicar_tabela` preserva, e um teste trava que *declarar não é aplicar*: o motor não impõe a FK, e o teste falha no dia em que isso mudar em silêncio. **O que falta agora tem nome:** alterar a estrutura de uma tabela que já tem dado. O slot é de largura fixa e o `slot_size` decide o endereço de cada linha gravada, então acrescentar coluna é reescrever o `.reg` preservando o rowid — e a tela diz isso em vez de oferecer um formulário que fingiria salvar. É o item **25** de `docs/SPRINTS.md` |
 | ☑️ | 128 | **`BULKINSERT(true/false)`: a tabela reservada para a carga** | reserva exclusiva por conexão, com erro **4002 `EM_CARGA`** para os outros — nomeando quem reservou e com `repetir: true`, que é o que separa «espere» de «você não pode». **1,53× medido** (43.500 → 66.500 linhas/s), porque reservada a janela de durabilidade não fecha e a carga vira um `fsync` só. Duas redes contra reserva órfã: a queda da conexão solta na hora, e `recursos.carga_prazo_min` solta o soquete pendurado. Só pela porta de dados. 10 testes mais a prova pelo soquete em `bancada/carga/bulkinsert.py` |
 | ☑️ | 129 | **O motor SQL tem de conhecer o `BULKINSERT`; e o prazo, no `config.json` e na tela** | o prazo já era `recursos.carga_prazo_min` (padrão 30 min) desde o 128; entrou a **tela de configuração explicando cada ajuste** — com a seção «Cargas em andamento» listando quem reservou o quê — e o **`docs/SQL.md`**, que diz o que a camada SQL precisa saber antes de existir. `BULKINSERT` não é açúcar sintático: é palavra reservada, vale para a **sessão** (um driver que multiplexa conexões quebra a exclusividade sem avisar) e o `EM_CARGA` tem de virar *serialization failure* no SQLSTATE, não *access denied*. E a frase que o documento repete alto: **não é transação** — ele reserva a tabela, não desfaz nada |
-| ☑️ | 130 | **`phxsqlcmd`: interface terminal com todos os comandos, `/help` e `/help comando`** | crate `phxsql-cmd`, autenticando pelo mesmo desafio-resposta da réplica. O `/help` **vem do servidor** (op `catalogo`: 79 operações descritas por dados, com um teste que deriva a lista do próprio `despachar` — operação nova não nasce sem descrição, e ajuda escrita à mão não existe para envelhecer). 9 testes por soquete; o soquete achou o que a unidade não achava (o partidor comia as aspas do JSON). Sem histórico/setas nesta rodada, dito no `--help` |
+| ☑️ | 130 | **`phxsqlcmd`: interface terminal com todos os comandos, `/help` e `/help comando`** | crate `phxsql-cmd`, autenticando pelo mesmo desafio-resposta da réplica. O `/help` **vem do servidor** (op `catalogo`: **108** operações descritas por dados (eram 79 quando o `phxsqlcmd` nasceu; a contagem é da constante `OPERACOES` em `server/src/catalogo.rs`), com um teste que deriva a lista do próprio `despachar` — operação nova não nasce sem descrição, e ajuda escrita à mão não existe para envelhecer). 9 testes por soquete; o soquete achou o que a unidade não achava (o partidor comia as aspas do JSON). Sem histórico/setas nesta rodada, dito no `--help` |
 | ☑️ | 67 | **Botão e menu Tabelas** para gerir as tabelas do banco: nova, estrutura, editar conteúdo, partições, duplicar, reparar tabela, reparar índice e excluir — e **Gestão de transações** no menu de ferramentas | as oito operações funcionam de ponta a ponta; três delas (`criar_tabela`, `duplicar_tabela`, `excluir_tabela`) nasceram aqui, e `criar_schema` — prometido na documentação e nunca despachado — junto |
 | ☑️ | 131 | **Prioridade no MULTILINK: conectar no MySQL(R) e ver a tabela `clientes` do outro lado do DbLink** | provado contra o **MySQL(R) 8.0.46 real**, não o servidor falso: `caching_sha2_password` pelos dois caminhos documentados, `dblink_tabelas`/`dblink_estrutura`/`dblink_ler` trazendo as 5 linhas com o DECIMAL certo — e a grade da tela somando sobre dado que nunca esteve num arquivo nosso. Roteiro de refazer em `docs/DBLINK.md`. É o DbLink **nativo, zero dependências** — o destino do pacote MULTILINK, alcançado sem as 582 crates dele |
 | ☑️ | 132 | **Assistente de conexão DbLink**: cria a conexão, testa, escolhe base e tabelas ligadas, e o **job de sincronia** gravando entre si automaticamente | cinco passos que só avançam com o anterior provado, e por baixo a **sincronia de tabelas primas**: convergência de estado pela chave, sentido (puxar/empurrar/dois) e dono (aqui/lá) **por linha**, colunas casadas **por nome**, empurrão reentrável (`ON DUPLICATE KEY UPDATE`), teto com recusa clara. Exclusão **não** viaja — limite de desenho, provado no estágio 5 da prova. `bancada/dblink/prova-sincronia.py` roda os 7 estágios contra o MySQL(R) vivo (inclusive o job puxando sozinho); o assistente foi exercitado no navegador e o exercício achou a árvore que não se remontava. 15 testes de unidade das partes puras, com o defeito do sinal do decimal provado nos dois sentidos. `docs/DBLINK.md` |
 
-**123 feitos · 5 parciais · 4 planejados**, de 132 pedidos.
+<!-- pedidos:contagem:inicio -->
+**132 pedidos: 129 feitos · 3 parciais · 0 planejados.**
+
+*(Gerado por `docs/dossie/pagina-dos-pedidos.py` — não conte à mão. A
+conta sai da primeira coluna da tabela acima, e é a mesma que a página
+dos pedidos mostra: se as duas discordarem, é porque alguém digitou uma
+delas.)*
+<!-- pedidos:contagem:fim -->
+
+Nenhum pedido continua na coluna «planejado». Isso **não** quer dizer que não
+falta nada — quer dizer que o que falta deixou de ser um pedido seu parado e
+virou ou uma **parcial nomeada** (§2), ou um item da lista de propostas
+(`docs/SPRINTS.md`), ou uma das pendências sem número da §3.
 
 Fora do que você pediu, entraram por medição: o CRC slice-by-8, o `descer` sem
-reler a folha, a conferência de unicidade sem descida dupla, e dezoito
-correções de defeito — três delas de perda silenciosa de dado, e quatro
-achadas **rodando** o que tinha acabado de ser escrito (o percentual de disco
-que dividia pelo total, o assunto de e-mail com acento cru no cabeçalho, o
-decimal que a grade arredondava, e o `criar_tabela` que gravava
-`filial.clientes.reg` na raiz do banco e devolvia uma tabela que nenhuma outra
-operação conseguia abrir).
+reler a folha, a conferência de unicidade sem descida dupla, o cache de
+páginas *write-back* do `.ndx`, e dezoito correções de defeito — três delas de
+perda silenciosa de dado, e quatro achadas **rodando** o que tinha acabado de
+ser escrito (o percentual de disco que dividia pelo total, o assunto de e-mail
+com acento cru no cabeçalho, o decimal que a grade arredondava, e o
+`criar_tabela` que gravava `filial.clientes.reg` na raiz do banco e devolvia
+uma tabela que nenhuma outra operação conseguia abrir).
+
+E entraram **frentes inteiras sem número de pedido**, porque nasceram de
+conversa e não de lista: a telemetria ao vivo no molde do SQL Check da
+Idera(R) (`server/src/telemetria.rs`, `ui/telemetria.js`), a integração com a
+Claude no console (`ui/claude.js`, `docs/CLAUDE-IA.md` — a chave fica no
+navegador, o esquema viaja, o dado não), as mensagens multilíngues
+(`server/src/mensagens.rs`, `idiomas.rs`), o console em três tamanhos com o
+sistema visual escrito (`docs/DESIGN.md`, `docs/CONSOLE.md`), o assistente de
+replicação (`docs/ASSISTENTE-REPLICACAO.md`) e o firewall/blacklist revisto.
+Elas não entram na contagem acima porque a contagem é dos **seus pedidos**,
+numerados na ordem em que você fez — mas ficam registradas aqui para não
+parecerem que apareceram sozinhas.
 
 ---
 
-## O detalhe de cada parcial e de cada planejado
+## O detalhe de cada parcial, e o que continua faltando
 
 ## 2. Parcial
 
@@ -162,45 +186,145 @@ Existe, funciona no que promete, mas **não faz tudo** o que o pedido queria.
 Cada linha diz exatamente onde para.
 
 As três primeiras são os ◐ da tabela lá em cima. A que trata de chave
-estrangeira **não é um pedido seu** — é um buraco achado na revisão, dentro de
-um pedido marcado feito, e fica aqui para não sumir de vista.
+estrangeira **não é um pedido seu** — é um buraco achado numa revisão, dentro
+de um pedido marcado feito, e fica aqui para não sumir de vista.
 
 | # | O que você pediu | O que existe | O que falta |
 |---|---|---|---|
-| 1 | **Replicação como a do MySQL(R)**, com porta de acesso, de envio e de retorno | as três portas entram no `config.json` e são validadas — duas no mesmo endereço não sobem. O desenho está na seção 9 do dossiê e em `docs/REPLICACAO.md`. O `.log` **é** o binlog | o `.log` **v2 com imagem da linha**. Hoje o diário registra que houve alteração, não o que a linha virou — sem isso a réplica não tem o que aplicar. O servidor avisa alto no arranque que as portas são configuração, não serviço |
-| 2 | **Subir o PhxSql no GitHub** | está em `adrianoboller/adrianoboller`, na branch `claude/capacidades-disponiveis-y6auxh`, com histórico completo | repositório **próprio**: `create_repository` responde `403 Resource not accessible by integration`. Não é escolha minha nem defeito do código — a credencial desta sessão só alcança esse repositório. Destravar depende de você criar o repositório e dar acesso |
-| 4 | **DbLink para PostgreSQL(R) e outros** | o cadastro reconhece o motor, guarda a definição e a tela mostra «sem cliente» em vez de fingir que conecta | o **cliente**. O caminho é curto: a autenticação `scram-sha-256` do PostgreSQL(R) se monta com SHA-256, HMAC e PBKDF2, que já estão escritos aqui, e o protocolo de consulta simples (`Q` → `T`/`D`/`C`) é menor que o do MySQL(R) |
-| 3 | **Chave estrangeira** com CASCADE / RESTRICT / SET NULL | declarada, validada, gravada no cabeçalho do `.reg`, sobrevive a fechar e abrir, e aparece na aba Estrutura | **não é aplicada**. Nenhuma gravação consulta a chave: `Restringir` e `Cascata` são intenção guardada, não comportamento. Estava marcada «pronto» no README e no dossiê — corrigido nesta revisão |
+| 18 | **Subir o PhxSql no GitHub** | a branch `claude/capacidades-disponiveis-y6auxh` em `adrianoboller/adrianoboller`, com o histórico completo. A credencial **lê** o repositório e enxerga a branch — conferido nesta revisão, não suposto | um repositório **próprio**, e o impedimento é de **identidade, não de permissão**: esta sessão autentica como `EnginePrint` (id 322529492, criada em 2026-08-29, zero repositórios públicos), que não é você. `create_repository` responde 403 porque ninguém cria repositório em nome de outra pessoa — e, se criasse, o repositório seria **dela**, não seu. Destrava com você criando `adrianoboller/phxsql` e dando acesso a essa app. **Não há trabalho de engenharia esperando aqui** |
+| 86 | **DbLink para PostgreSQL(R) e outros** | **cliente, dialeto e ligação prontos**: `server/src/pg/` (721 linhas de protocolo mais 278 de SCRAM-SHA-256 conferido contra o vetor do RFC 7677), SQL por motor em `dblink/dialeto.rs`, e as cinco operações do DbLink reescritas para não saberem qual motor atendem. Provado por soquete contra um servidor de protocolo próprio, byte a byte, nos dois sentidos | só o que o nome do pedido diz: **a prova contra um PostgreSQL(R) de verdade**, que não existe nesta máquina. O roteiro do que ela exige está em `docs/DBLINK.md`, e o precedente é o pedido 131, que fez exatamente isso contra um MySQL(R) 8.0.46 real e achou o que o servidor falso não acharia |
+| 127 | **Diagrama ER e editor de modelo** | o diagrama (`ui/diagrama-er.js`, sete defeitos achados no navegador) **e o editor**: arrastar a caixa pelo título move a tabela, arrastar a linha de uma coluna até a coluna de outra **declara a chave estrangeira**, e o cartão da tabela exclui a declaração. `criar_tabela` declara FK pelo protocolo, com `duplicar_tabela` preservando e um teste que trava que *declarar não é aplicar* | **alterar a estrutura de uma tabela que já tem dado.** O slot é de largura fixa e o `slot_size` decide o endereço de cada linha (`offset = início + (rowid−1) × slot`), então acrescentar coluna é reescrever o `.reg` preservando o rowid. A tela diz isso em vez de oferecer um formulário que fingiria salvar. É o item **25** de `docs/SPRINTS.md`, com a armadilha nomeada: a coluna nova entra **antes** de `softdeleted` e `rownum` |
+| — | **Chave estrangeira** com CASCADE / RESTRICT / SET NULL | declarada, validada, gravada no cabeçalho do `.reg`, preservada pelo `duplicar_tabela`, e mostrada na aba Estrutura e no diagrama | **não é aplicada**. Nenhuma gravação consulta a chave: `Restringir` e `Cascata` são intenção guardada, não comportamento. Há um teste que trava que *declarar não é aplicar*, e ele falha no dia em que isso mudar em silêncio. O Teradata(R) chama isso de *soft RI* e mostra por que é desejável e não preguiça: ela existe **para o otimizador** — e isso só vira valor quando houver planejador |
 
-## 3. Planejado
+## 3. O que continua faltando
 
-Pedido e **não começado**. Não estão pela metade: não têm código nenhum.
+Aqui não há mais pedido seu parado — o que sobrou não tem número, ou é
+consequência do que entrou. A lista é curta de propósito: cada linha diz onde
+o buraco está no código, e não «o que seria bom ter».
 
-| # | O que você pediu | Por que ainda não | O que destrava |
-|---|---|---|---|
-| 1 | **Jobs de execução** | é o mais barato dos três; tem tela apagada em *Gerir banco* dizendo o que falta | o agendador do backup (`hora_de_rodar`, `minuto_do_dia`, o laço que acorda de minuto em minuto) já é exatamente o desenho. Falta generalizar de «rodar backup» para «rodar operação nomeada». Uma rodada |
-| 2 | **Triggers** | tem tela apagada em *Gerir banco*; onde disparar já existe — `inserir`, `atualizar` e `excluir` são os três pontos, e já escrevem no `.log` | falta decidir **em que linguagem o gatilho é escrito**, e essa escolha é sua. Sem camada SQL não há `BEGIN … END` para hospedar |
-| 3 | **Stored procedures** | mesmo bloqueio, maior | procedimento é código guardado, e código guardado precisa de executor. Ou uma linguagem própria pequena, ou esperar a camada SQL |
-| 4 | **Parar e subir o serviço de dados pela interface**, trocando a porta | mexe no coração do servidor | o `accept` bloqueia. Derrubar a porta sem derrubar o processo exige acordar o laço — conectar no próprio endereço para o `accept` retornar e então conferir um sinalizador. Melhor inteiro do que pela metade |
-| 5 | **Servidor MCP** | não depende de nada; é fila | o protocolo já é JSON por linha. O MCP é tradução de vocabulário sobre o que existe |
-| 6 | **Camada SQL** | é a peça de que três outras dependem | tabela virtual do rusqlite atrás de um recurso do Cargo — dá SQL completo sem escrever parser. Repare que **fura a regra de zero dependências**, e por isso fica atrás de um `feature`: quem não liga, compila sem |
-| 7 | **Driver ODBC de saída** | depende de (6) | driver ODBC que não fala SQL não serve para o que você quer ligar nele |
-| 8 | **Cliente ODBC e OLE DB** | depende de (7) | — |
-| 9 | **Integração no FraseSQL** como `engine = "phxsql"` | depende de (8) | — |
-| 10 | Compactação | o formato já prevê e **mede** o espaço morto | falta o comando. O reindex já cobre a parte do índice |
-| 11 | Transações | tem **tela** (Ferramentas → Gestão de transações), e a tela diz o que existe e o que não existe em vez de fingir | hoje a inserção desfaz o que gravou se um índice falhar, e a trava única serializa as escritas — mas não há journal com a imagem anterior da linha, nem identificador de transação na sessão, nem `commit`/`rollback` de várias operações. É o que o uso como livro-razão exigiria primeiro |
-| 12 | Concorrência fina | — | uma trava única serializa todo acesso a dados |
-| 13 | Modo exclusivo | tem tela apagada em *Gerir banco* | reservar uma tabela por um período. Hoje a trava única já serializa as escritas, mas não há como RESERVAR — depende da trava por tabela, que é o mesmo trabalho da concorrência fina |
-| 14 | Restaurar backup | o *Backup e restauração* mostra o item apagado | copiar de volta é mais do que copiar: é decidir o que fazer com o que está lá. Sobrescrever um database em uso, com a trava tomada, precisa de um desenho — parar, restaurar ao lado e trocar, ou restaurar com outro nome |
-| 15 | Editar `config.json` e usuários pela web | as telas leem e dizem qual campo mexer | gravar credencial e política por HTTP precisa de desenho próprio: quem pode, o que fica no log, e a senha nunca em claro em ponto nenhum do caminho |
-| 16 | TLS | — | o tráfego depende de túnel. A credencial já não vai em claro quando se usa desafio-resposta; os dados, sim |
+### 3.1 Os oito que saíram desta lista nesta revisão
+
+Estavam escritos como «não começado, sem código nenhum», e é falso desde
+algumas rodadas atrás. Ficam registrados para a próxima leitura não procurar:
+
+| era planejado | onde está hoje |
+|---|---|
+| Jobs de execução | pedido 51 — `server/src/jobs.rs`, cadastro, corridas, relógio de 30 s, e o job rodando com o poder do usuário dele |
+| Triggers | pedido 49 — `phxsql-sql/src/rotina.rs` + `server/src/rotinas.rs` |
+| Stored procedures | pedido 50 — o mesmo interpretador, `CALL` com `IN`/`OUT`/`INOUT` |
+| Parar e subir o serviço pela tela | pedido 40 — despertador no próprio endereço, porta nova presa antes de a velha ser solta |
+| Servidor MCP | pedido 6 — `phxsqld --mcp`, `tools/list` lendo o catálogo |
+| Camada SQL | pedido 83 — crate `phxsql-sql`, **escrita aqui**. O plano antigo dizia «tabela virtual do rusqlite atrás de um `feature`», e teria furado a regra de zero dependências; não foi por ali |
+| Driver ODBC de saída | pedido 7 — `crates/phxsql-odbc/`, provado pela ABI e pelo `isql` |
+| Cliente ODBC e OLE DB | pedido 7 — ODBC entregue; **OLE DB é recusa fundamentada**, com a ponte `MSDASQL` documentada (`docs/ODBC.md` §6) |
+
+### 3.2 O que falta de verdade
+
+| | O que falta | Onde está o buraco, no código |
+|---|---|---|
+| 1 | **Restaurar backup** | não existe, e a tela diz isso: o botão nasce apagado em `crates/phxsql-server/ui/index.html:5046` (`class="op afazer"`, «ainda não existe — clique para ver o que falta»). Fazer o backup e **conferir** uma cópia funcionam; voltar não. E voltar é mais do que copiar: é decidir o que fazer com o que está lá. Sobrescrever um database em uso, com a trava tomada, precisa de desenho — parar, restaurar ao lado e trocar, ou restaurar com outro nome. **É a metade que falta de um pedido que já se anuncia como «Backup e restauração»** |
+| 2 | **As 13 tomadas da trava de dados fora do ponto único** | `travar_dados()` (`server/src/servidor.rs:719`) é onde a telemetria cronometra a espera na fila — e o comentário dele diz ser «o **único** lugar que a toma». Medido nesta revisão: **não é.** Há 14 `self.dados.lock()` no arquivo, e 13 estão fora dele: `mensagens_atualizar` (:1095), `semear_mensagens` (:1151), `posicao_do_diario` (:2066), `alcancar_tabela_bidi` (:2344), `atender_http` (:3897), `op_mensagens` (:5315), `op_idiomas` (:5390), `op_idiomas_carga` (:5401), `op_idiomas_padrao` (:5434), `op_idiomas_exportar` (:5451), `op_idiomas_importar` (:5462), `descarregar_sujas` (:6268) e `executar_rotina` (:6741). As duas últimas são as que doem: o **despejo do cache** segura a trava por uma passada inteira, e o **corpo de um gatilho ou procedimento** a segura pelo tempo que quiser — que é exatamente a atividade longa que o painel existe para mostrar. Enquanto elas não passarem por `travar_dados()`, o `espera_ms_s` da telemetria é o de uma parte, e o `docs/TELEMETRIA.md` §2.1 afirma o contrário. **Refazer a conta: `grep -c 'self\.dados\.lock()' servidor.rs`** |
+| 3 | **Transações** | tem tela (Ferramentas → Gestão de transações), e ela diz o que existe e o que não existe em vez de fingir. Hoje a inserção desfaz o que gravou se um índice falhar, e a trava única serializa as escritas — mas não há journal com a **imagem anterior** da linha, nem identificador de transação na sessão, nem `commit`/`rollback` de várias operações. O primeiro tijolo é o item **21** de `docs/SPRINTS.md`, e ele é deliberadamente a metade que **não** depende da transação |
+| 4 | **Concorrência fina** | uma trava única serializa todo acesso a dados. É o que o `docs/SPRINTS-TERADATA.md` §4.5 aponta ao recusar *workload management*: prioridade sobre uma fila de um só não é prioridade |
+| 5 | **Modo exclusivo** | tela apagada em *Gerir banco* (`ui/index.html:4799`). Meio caminho existe e não estava escrito aqui: o `BULKINSERT` **já reserva uma tabela por conexão**, com erro 4002 `EM_CARGA` nomeando quem reservou e `repetir: true` (pedido 128). O que falta é reservar **por período** e para outra coisa que não carga — e isso depende da trava por tabela, que é o item 4 |
+| 6 | **Compactação** | o formato prevê e **mede** o espaço morto; falta o comando. E há dois números contra: compactar renumeraria rowid, e rowid é endereço (`docs/COMPARACAO.md`); e a compactação do **diário** foi medida e recusada **duas vezes** — 14,7% no melhor corte contra 2,1× que o mesmo esforço compraria no `.ndx` (`docs/DESEMPENHO.md` §4.7.3). O que sobrou de vivo nesse assunto é o item **19** de `docs/SPRINTS.md`, que é outra conta |
+| 7 | **Editar `config.json` e usuários pela web** | **metade entrou** e não estava escrito aqui: a op `config_gravar` existe (`servidor.rs:2752`), com portão próprio de `administrar` e rastro no log de quem mudou o quê. O que ela **não** grava é deliberado e está na lista `CAMPOS_EDITAVEIS`: token, segurança, cadastro de usuários, cifra, credencial de e-mail e replicação — uma sessão roubada não abre o firewall, não cria supervisor e não vira este servidor para outro source. **Falta o cadastro de usuários pela web**, que é a metade difícil: senha nunca em claro em ponto nenhum do caminho |
+| 8 | **TLS** | o tráfego depende de túnel. A credencial já não vai em claro quando se usa desafio-resposta; os dados, sim. Aparece também no `docs/REPLICACAO.md` §13 como o que falta ao transporte da replicação |
+| 9 | **Integração no FraseSQL** como `engine = "phxsql"` | dependia do ODBC, que entrou. O catálogo do `.reg` já é «o mesmo formato que o catálogo do FraseSQL espera» (`store/src/catalogo.rs:21`), e o contrato de integração está lido em `docs/PLANO.md` §2. Nunca foi tentado |
+
+### 3.3 E a lista de propostas, que não é pendência
+
+Quatro agentes leram os manuais do Cassandra(R), do Redis(R), do MariaDB(R) e
+do Teradata(R) e escreveram **31 propostas de sprint**. Elas não são
+pendências — são candidatas esperando o seu sim, cada uma com a premissa que
+pode matá-la antes da primeira linha de código.
+
+A lista única, com as duplicatas fundidas, as contradições apontadas e o que
+já existe fora dela, está em **`docs/SPRINTS.md`**: 27 itens aprováveis, 2
+fechados como «medição, não sprint», e 6 contradições que precisam de decisão
+antes de dois itens entrarem juntos. Os quatro documentos de origem continuam
+existindo (`docs/SPRINTS-CASSANDRA.md`, `-REDIS.md`, `-MARIADB.md`,
+`-TERADATA.md`).
 
 ---
 
-## 4. O que esta revisão achou de errado — e já consertou
+## 4. O que cada revisão achou de errado — e já consertou
 
-Revisar serve para achar. Onze coisas apareceram, e quase nenhuma era recurso
-faltando: era o projeto se descrevendo errado.
+Revisar serve para achar, e quase nunca o que aparece é recurso faltando: é o
+projeto se descrevendo errado. As seções abaixo estão da mais nova para a mais
+antiga.
+
+### O que a revisão das quatro listas de sprint achou
+
+Esta rodada não tocou em código de produção: leu as quatro propostas de sprint
+e reconferiu esta lista **contra o código**. Achou sete coisas, e cinco delas
+são a mesma família — **número certo com palavra errada em cima**.
+
+- **O gerador da §5 calculava a razão certa e imprimia a palavra errada.** O
+  bloco dizia *«a inserção é o ponto fraco do motor […] 0,8× mais devagar»* com
+  os próprios números ao lado mostrando 109.300 linhas/s contra 88.994 do
+  MySQL(R) — o insert **ganhando**. As palavras «ponto fraco», «mais devagar»,
+  «nas outras quatro o motor se defende» e «a atualização empata» estavam
+  **fixas** no `resumo_md` do `numeros-da-bancada.py`; só os números vinham da
+  medição. Quando o sinal virou (a rodada do cache de páginas e do
+  *write-back*), o texto não virou junto. Agora o veredito de cada fase sai do
+  próprio fator, e não há frase fixa que possa discordar dele. **Número gerado
+  com veredito digitado ainda envelhece calado** — é o selo de capa uma casa
+  adiante.
+
+- **A contagem dos pedidos estava digitada no arquivo que a produz.** «123
+  feitos · 5 parciais · 4 planejados» com a tabela logo acima dizendo outra
+  coisa havia rodadas. Agora o `pagina-dos-pedidos.py` soma e **escreve de
+  volta** entre marcas, como o `numeros-da-bancada.py` já fazia.
+
+- **E o próprio script que existe para impedir número digitado tinha um.** O
+  `<title>` da página era `Os 129 pedidos do PhxSql`, com o 129 fixo no código
+  — errado por dois motivos ao mesmo tempo: são 132 pedidos, e 129 é a
+  contagem dos *feitos*. Também estava fixa a frase «três deles estão parados
+  por coisa de fora — um 403 do GitHub e um pacote sem fonte», que descrevia um
+  estado que mudou. As duas passaram a sair da contagem.
+
+- **Quatro pedidos estavam marcados «não começou» e estavam prontos:** 7
+  (driver ODBC), 49 (triggers), 50 (stored procedures) e 126 (cluster). O 65
+  dizia «20 ferramentas, 16 funcionam» quando são **30 e 27**, e o 130 dizia
+  «79 operações» quando o catálogo tem **108**. Estado medido contra a
+  lembrança do documento é estado errado — a regra estava escrita no topo desta
+  página e não estava sendo cumprida.
+
+- **A trava de dados tem 13 tomadas fora do ponto único, e dois documentos
+  afirmam o contrário.** O comentário de `travar_dados()`
+  (`server/src/servidor.rs:719`) diz ser «o **único** lugar que a toma», e o
+  `docs/TELEMETRIA.md` §2.1 diz que «as 50 tomadas de trava do `servidor.rs`
+  passaram a chamar `travar_dados()`». Contado: são 14 `self.dados.lock()` no
+  arquivo, e **13 estão fora**. A consequência não é estética — o
+  `espera_ms_s` que a telemetria mostra é o de uma parte, e as duas piores
+  ausências são o despejo do cache e o corpo de um gatilho, que é exatamente a
+  atividade longa que o painel existe para mostrar. Está na §3.2, item 2, com
+  a lista de linhas e o comando de recontar. **Não foi consertado aqui**: esta
+  rodada é de documento, e mexer em 13 caminhos de trava não é edição de
+  documentação.
+
+- **A premissa de um dos sprints já estava morta, e dava para saber lendo.** O
+  `SPRINTS-REDIS.md` propõe matar o TTL por linha se «um job horário com
+  `UPDATE … SET SOFTDELETED = 1 WHERE prazo < NOW()` der conta hoje». Não dá: a
+  camada SQL recusa `UPDATE` pelo nome (`phxsql-sql/src/sintaxe.rs:269`) e o
+  corpo de rotina também (`docs/TRIGGERS.md` §8, com o motivo medido). A
+  alternativa barata **não existe**, então ela não pode matar o sprint.
+
+- **E metade de outro sprint já funciona.** O `SPRINTS-MARIADB.md` pede «um job
+  cujo corpo seja `CALL procedimento(...)`». O corpo de um job é um pedido do
+  protocolo despachado pelo despachar de sempre (`servidor.rs:3410`), e `CALL`
+  entra pela op `sql` (`:6671` → `executar_rotina`). Um job com
+  `{"op":"sql","texto":"CALL fecha_mes()"}` já é um job que chama procedimento
+  — falta o teste que prova isso pelo soquete, porque ler o código não é
+  provar.
+
+As sete estão em `docs/SPRINTS.md`, que é o que esta rodada produziu de novo.
+
+### O que a revisão dos onze achou
+
+Onze coisas apareceram, e quase nenhuma era recurso faltando: era o projeto se
+descrevendo errado.
 
 - **A bancada media coisas diferentes dos dois lados, e o número saía a nosso
   favor.** Na varredura por faixa o MySQL(R) recebia `COUNT(*) + SUM(valor)`
@@ -381,28 +505,28 @@ pertence: campo e chave na seção 3 (*A tabela, peça a peça*), partição na 
 
 ## 5. Ninguém pediu, mas a medição aponta
 
+O bloco abaixo é **gerado** de `bancada/resultados.json` — e nesta revisão o
+gerador foi consertado, porque ele calculava a razão certa e imprimia a palavra
+errada (§4). O que ele diz mudou de sinal: a inserção deixou de ser o buraco, e
+sobrou a exclusão.
+
+E, ao contrário de antes, o buraco que sobrou **já tem proposta com número**: o
+`fsync` da lixeira mede 6,5 s → 0,83 s (7,8×) em 20.000 exclusões, e é o item
+**1** de `docs/SPRINTS.md` — o único da lista de 27 cujo valor está medido em
+vez de julgado.
+
 <!-- pendencias:insercao:inicio -->
-A bancada de 10 milhões achou um buraco só, e é grande.
+A bancada de 10 milhões mede 5 fases: o motor ganha em 4 e perde em 1.
 
-**A inserção é o ponto fraco do motor.** 109.300 linhas/s contra
-88.994 do MySQL(R) — **0,8× mais devagar**. E o
-diagnóstico é incômodo: **77 s de CPU para 91 s de relógio** (84%), com
-**0,0 MiB lidos do disco**. Não é disco, é processador — a
-B+tree do `.ndx` reescrita nó a nó a cada linha, sem lote. E **piora com o tamanho**: o primeiro milhão entra a 47.847/s, o último a 22.026/s — 54% mais devagar no fim do que no começo.
+**A exclusão é a única fase em que o motor perde:** **1,3× mais devagar** (6,27 s contra 4,73 s, 20.000 linhas).
 
-Nas outras quatro o motor se defende: a varredura por faixa é
-**11,1× mais rápida** (1,41 s contra 15,70 s), lendo as
-1.250.000 linhas dos dois lados e chegando à mesma soma; a
-atualização empata (0,45 s contra 5,51 s); a busca
-pontual é 0,1× mais devagar e a exclusão 1,3×. E escreve muito
-menos: 1,81 GiB contra 32,07 GiB na carga.
+Onde ele ganha, em ordem de folga: busca pontual **13,1× mais rápida** (0,20 s contra 2,64 s, 20.000 linhas); atualização **12,1× mais rápida** (0,45 s contra 5,51 s, 20.000 linhas); varredura por faixa **11,1× mais rápida** (1,41 s contra 15,70 s, 1.250.000 linhas); inserção **1,2× mais rápida** (91,49 s contra 112,37 s, 10.000.000 linhas).
 
-Contrapartida honesta: **ocupa 2,43 GiB em disco contra
-0,88 GiB**, porque o `.reg` é de slot fixo — o preço do
-endereçamento O(1) e da ordem de digitação.
+Na carga: **109.300 linhas/s contra 88.994** do MySQL(R), com 77 s de CPU para 91 s de relógio (84%) e 0,0 MiB lidos do disco — é processador, não disco. E escreve muito menos: 1,81 GiB contra 32,07 GiB. A taxa **cai com o tamanho**: o primeiro milhão entra a 47.847/s, o último a 22.026/s — 54% mais devagar no fim do que no começo.
 
-Se algum dia sobrar uma rodada para o motor em vez de para recurso novo, é
-aqui que ela rende.
+Contrapartida honesta: **ocupa 2,43 GiB em disco contra 0,88 GiB**, porque o `.reg` é de slot fixo — o preço do endereçamento O(1) e da ordem de digitação.
+
+Se sobrar uma rodada para o motor em vez de para recurso novo, é na **exclusão** que ela rende — é o que sobrou.
 
 *(Gerado por `docs/dossie/numeros-da-bancada.py` — não edite à mão.)*
 <!-- pendencias:insercao:fim -->

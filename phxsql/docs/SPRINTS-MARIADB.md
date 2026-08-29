@@ -1,5 +1,14 @@
 # Sprints a partir do manual do MariaDB(R)
 
+> **Este documento continua sendo a fonte, mas não é mais a lista.** As
+> treze propostas daqui foram para a lista única de `docs/SPRINTS.md`,
+> junto com as outras 18. Três notas da travessia: o **sprint 3 perdeu
+> metade**, porque um job já chama procedimento hoje (`SPRINTS.md` §4.1);
+> o **sprint 12 saiu da lista** e virou uma contagem no Profiler, como ele
+> mesmo pedia (§5.2); e as **duas sobreposições que a §6 daqui afirma**
+> com a análise do Cassandra(R) — papéis e índice invertido — **não
+> existem naquele documento** (§2.6).
+
 **Documento de proposta. Nada aqui foi executado, e nada será executado sem o
 seu sim — sprint a sprint.** É uma lista de trabalho possível, cada item com o
 escopo fechado, a fonte que o justifica e, principalmente, **a premissa que

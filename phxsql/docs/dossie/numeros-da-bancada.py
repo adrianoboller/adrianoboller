@@ -250,60 +250,139 @@ def diagnostico(por):
 
 
 def resumo_md(por):
-    """O mesmo diagnostico, em Markdown, para o PENDENCIAS.md."""
-    ins_p, ins_m = por["inserir"]["PhxSql"], por["inserir"]["MySQL"]
-    taxa_p = ins_p["operacoes"] / ins_p["segundos"]
-    taxa_m = ins_m["operacoes"] / ins_m["segundos"]
-    fator = ins_p["segundos"] / ins_m["segundos"]
-    cpu = ins_p["cpu_s"] / ins_p["segundos"] * 100
+    """O mesmo diagnostico, em Markdown, para o PENDENCIAS.md.
 
-    def f(fase):
-        a, b = por[fase]["PhxSql"], por[fase]["MySQL"]
-        return a["segundos"] / b["segundos"]
+    # Por que esta funcao foi reescrita
 
+    A primeira versao calculava a razao certa e imprimia a palavra errada: o
+    texto dizia «a insercao e o ponto fraco do motor [...] 0,8x mais devagar»
+    com os proprios numeros ao lado mostrando 109.300 linhas/s contra 88.994
+    do MySQL(R) -- ou seja, o insert GANHANDO. As palavras «ponto fraco»,
+    «mais devagar», «nas outras quatro o motor se defende» e «atualizacao
+    empata» estavam fixas no texto; so os numeros vinham da medicao. Quando o
+    sinal virou (a rodada do cache de paginas e do write-back), o gerador nao
+    virou junto.
+
+    E o mesmo defeito do selo de capa parado em 0.11.0, uma casa adiante:
+    **numero gerado com veredito digitado ainda envelhece calado.** Agora o
+    veredito de cada fase sai do numero, e nao ha frase fixa que possa
+    discordar dele.
+    """
     disco = {
         d["motor"]: d["bytes"]
         for d in json.loads(MEDICAO.read_text())
         if d["fase"] == "disco"
     }
 
-    t = taxas_por_milhao()
-    queda = ""
-    if t and t[1] and t[0] > t[1]:
-        queda = (
-            f" E **piora com o tamanho**: o primeiro milhao entra a "
-            f"{mil(round(t[0]))}/s, o ultimo a {mil(round(t[1]))}/s \u2014 "
-            f"{dec((1 - t[1] / t[0]) * 100, 0)}% mais devagar no fim do que no comeco."
-        )
-        queda = (queda.replace("primeiro milhao", "primeiro milhão")
-                      .replace("o ultimo", "o último")
-                      .replace("comeco", "começo"))
+    # Como cada fase se le em portugues, e o que ela mede.
+    NOMES = {
+        "inserir": "inserção",
+        "buscar": "busca pontual",
+        "excluir": "exclusão",
+        "atualizar": "atualização",
+        "varrer": "varredura por faixa",
+    }
 
-    var_p, var_m = por["varrer"]["PhxSql"], por["varrer"]["MySQL"]
-    atu_p, atu_m = por["atualizar"]["PhxSql"], por["atualizar"]["MySQL"]
+    def fator(fase):
+        a, b = por[fase]["PhxSql"], por[fase]["MySQL"]
+        return a["segundos"] / b["segundos"] if b["segundos"] else 1.0
 
-    return (
-        "A bancada de 10 milhões achou um buraco só, e é grande.\n\n"
-        f"**A inserção é o ponto fraco do motor.** {mil(round(taxa_p))} linhas/s contra\n"
-        f"{mil(round(taxa_m))} do MySQL(R) — **{dec(fator, 1)}× mais devagar**. E o\n"
-        f"diagnóstico é incômodo: **{dec(ins_p['cpu_s'], 0)} s de CPU para "
-        f"{dec(ins_p['segundos'], 0)} s de relógio** ({dec(cpu, 0)}%), com\n"
-        f"**{dec(ins_p['lido_mb'], 1)} MiB lidos do disco**. Não é disco, é processador — a\n"
-        f"B+tree do `.ndx` reescrita nó a nó a cada linha, sem lote.{queda}\n\n"
-        f"Nas outras quatro o motor se defende: a varredura por faixa é\n"
-        f"**{dec(1 / f('varrer'), 1)}× mais rápida** ({dec(var_p['segundos'])} s contra "
-        f"{dec(var_m['segundos'])} s), lendo as\n"
-        f"{mil(var_p['operacoes'])} linhas dos dois lados e chegando à mesma soma; a\n"
-        f"atualização empata ({dec(atu_p['segundos'])} s contra {dec(atu_m['segundos'])} s); a busca\n"
-        f"pontual é {dec(f('buscar'), 1)}× mais devagar e a exclusão {dec(f('excluir'), 1)}×. E escreve muito\n"
-        f"menos: {dec(ins_p['escrito_mb'] / 1024)} GiB contra {dec(ins_m['escrito_mb'] / 1024)} GiB na carga.\n\n"
-        f"Contrapartida honesta: **ocupa {dec(disco['PhxSql'] / 1073741824)} GiB em disco contra\n"
-        f"{dec(disco['MySQL'] / 1073741824)} GiB**, porque o `.reg` é de slot fixo — o preço do\n"
-        "endereçamento O(1) e da ordem de digitação.\n\n"
-        "Se algum dia sobrar uma rodada para o motor em vez de para recurso novo, é\n"
-        "aqui que ela rende.\n\n"
-        "*(Gerado por `docs/dossie/numeros-da-bancada.py` — não edite à mão.)*"
+    def frase(fase, com_nome=True):
+        """Uma fase em uma linha, com o veredito saindo do proprio fator."""
+        p, m = por[fase]["PhxSql"], por[fase]["MySQL"]
+        f = fator(fase)
+        if 0.95 <= f <= 1.05:
+            como = "empata"
+        elif f > 1:
+            como = f"**{dec(f, 1)}× mais devagar**"
+        else:
+            como = f"**{dec(1 / f, 1)}× mais rápida**"
+        quem = f"{NOMES[fase]} " if com_nome else "é "
+        return (f"{quem}{como} "
+                f"({dec(p['segundos'])} s contra {dec(m['segundos'])} s, "
+                f"{mil(p['operacoes'])} linhas)")
+
+    fases = [f for f, _, _ in FASES]
+    perde = [f for f in fases if fator(f) > 1.05]
+    ganha = sorted((f for f in fases if fator(f) < 0.95), key=fator)
+    empata = [f for f in fases if 0.95 <= fator(f) <= 1.05]
+
+    def contar(n, s, p):
+        return f"{n} {s if n == 1 else p}"
+
+    partes = []
+    resumo = [f"ganha em {len(ganha)}"] if ganha else []
+    if empata:
+        resumo.append(f"empata em {len(empata)}")
+    resumo.append(f"perde em {len(perde)}" if perde else "não perde em nenhuma")
+    partes.append(
+        f"A bancada de 10 milhões mede {contar(len(fases), 'fase', 'fases')}: o "
+        f"motor {', '.join(resumo[:-1])}{' e ' if len(resumo) > 1 else ''}"
+        f"{resumo[-1]}."
     )
+
+    if len(perde) == 1:
+        partes.append(
+            f"**A {NOMES[perde[0]]} é a única fase em que o motor perde:** "
+            f"{frase(perde[0], com_nome=False)[2:]}."
+        )
+    elif perde:
+        partes.append(
+            "**As fases em que o motor perde:** "
+            + "; ".join(frase(f) for f in perde) + "."
+        )
+
+    if ganha:
+        partes.append(
+            "Onde ele ganha, em ordem de folga: "
+            + "; ".join(frase(f) for f in ganha) + "."
+        )
+    if empata:
+        partes.append("Empata em: " + "; ".join(frase(f) for f in empata) + ".")
+
+    # A insercao, com os contadores. Ela deixou de ser o buraco, mas o
+    # diagnostico continua util: e o unico lugar da bancada em que se ve CPU
+    # e disco separados.
+    ins_p, ins_m = por["inserir"]["PhxSql"], por["inserir"]["MySQL"]
+    taxa_p = ins_p["operacoes"] / ins_p["segundos"]
+    taxa_m = ins_m["operacoes"] / ins_m["segundos"]
+    cpu = ins_p["cpu_s"] / ins_p["segundos"] * 100
+    carga = (
+        f"Na carga: **{mil(round(taxa_p))} linhas/s contra {mil(round(taxa_m))}** do "
+        f"MySQL(R), com {dec(ins_p['cpu_s'], 0)} s de CPU para "
+        f"{dec(ins_p['segundos'], 0)} s de relógio ({dec(cpu, 0)}%) e "
+        f"{dec(ins_p['lido_mb'], 1)} MiB lidos do disco — é processador, não "
+        f"disco. E escreve muito menos: "
+        f"{dec(ins_p['escrito_mb'] / 1024)} GiB contra "
+        f"{dec(ins_m['escrito_mb'] / 1024)} GiB."
+    )
+    t = taxas_por_milhao()
+    if t and t[1] and t[0] > t[1]:
+        carga += (
+            f" A taxa **cai com o tamanho**: o primeiro milhão entra a "
+            f"{mil(round(t[0]))}/s, o último a {mil(round(t[1]))}/s — "
+            f"{dec((1 - t[1] / t[0]) * 100, 0)}% mais devagar no fim do que no "
+            f"começo."
+        )
+    partes.append(carga)
+
+    if len(disco) == 2:
+        partes.append(
+            f"Contrapartida honesta: **ocupa "
+            f"{dec(disco['PhxSql'] / 1073741824)} GiB em disco contra "
+            f"{dec(disco['MySQL'] / 1073741824)} GiB**, porque o `.reg` é de slot "
+            f"fixo — o preço do endereçamento O(1) e da ordem de digitação."
+        )
+
+    if perde:
+        pior = max(perde, key=fator)
+        partes.append(
+            f"Se sobrar uma rodada para o motor em vez de para recurso novo, é "
+            f"na **{NOMES[pior]}** que ela rende — é o que sobrou."
+        )
+
+    partes.append("*(Gerado por `docs/dossie/numeros-da-bancada.py` — não edite à mão.)*")
+    return "\n\n".join(partes)
 
 
 def main():
