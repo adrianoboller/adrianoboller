@@ -6,6 +6,7 @@
 pub mod acesso;
 pub mod blacklist;
 pub mod carga;
+pub mod catalogo;
 pub mod config;
 pub mod dblink;
 pub mod email;

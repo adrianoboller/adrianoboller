@@ -55,11 +55,11 @@ obrigatório faltando.
 
 ## As ferramentas
 
-Um catálogo, uma linha por ferramenta — e nenhum código por ferramenta.
-`tools/list` e `tools/call` leem a **mesma** tabela: com duas listas, a que
-alguém acrescentasse num lugar e esquecesse no outro viraria uma ferramenta que
-o modelo enxerga e não consegue chamar, ou uma que ele chama sem estar
-anunciada.
+Uma lista só, e ela não mora aqui: mora em `crates/phxsql-server/src/catalogo.rs`,
+junto com todas as outras operações do protocolo. `tools/list` e `tools/call`
+leem a **mesma** tabela: com duas listas, a que alguém acrescentasse num lugar e
+esquecesse no outro viraria uma ferramenta que o modelo enxerga e não consegue
+chamar, ou uma que ele chama sem estar anunciada.
 
 | ferramenta | `op` | escreve |
 |---|---|---|
@@ -69,12 +69,14 @@ anunciada.
 | `phx_ler` | `ler` | |
 | `phx_varrer` | `varrer` | |
 | `phx_buscar` | `buscar` | |
+| `phx_sql` | `sql` | |
 | `phx_dados_pessoais` | `dados_pessoais` | |
 | `phx_inserir` | `inserir` | sim |
 | `phx_atualizar` | `atualizar` | sim |
 
-Os nomes levam `phx_` porque um cliente MCP junta as ferramentas de vários
-servidores no mesmo espaço de nomes.
+O nome é **derivado** — `phx_` mais a `op` —, e não digitado: assim o nome
+anunciado e a operação chamada não têm como divergir. O prefixo existe porque um
+cliente MCP junta as ferramentas de vários servidores no mesmo espaço de nomes.
 
 Há um teste que percorre o catálogo e exige que **toda `op` anunciada tenha uma
 atividade de permissão**: uma que a tabela de permissões não conhecesse seria
@@ -82,16 +84,98 @@ uma ferramenta sem portão.
 
 ## O que ainda não tem
 
-- **Transporte.** Este módulo é a tradução; quem lê de `stdin` (ou de um
-  soquete) e chama `Ponte::atender` ainda não existe. Foi feito nesta ordem
-  porque a tradução é a parte que se testa sem abrir processo nenhum — e são
-  14 testes contra zero processo.
 - `resources/*` e `prompts/*`. Uma tabela dá um belo *resource*, e é outra
   rodada.
 - **Amostragem e paginação de resultado grande.** Hoje o `phx_varrer` devolve
   o que o `limite` pedir, e o teto é o do servidor.
+- **Transporte por soquete ou HTTP.** Só stdio, que é o que um cliente MCP
+  local usa.
 
 ---
 
 MCP é o Model Context Protocol; JSON-RPC 2.0 é a especificação de fio que ele
 usa.
+
+---
+
+## O transporte, e o que ele ensinou
+
+`phxsqld --mcp` lê uma mensagem JSON-RPC por linha da entrada padrão e escreve
+uma resposta por linha na saída. É o que faltava: a tradução era testável sem
+processo nenhum e foi feita primeiro, mas sem transporte nenhum cliente MCP
+falava com o servidor.
+
+```bash
+phxsqld --mcp                                  # pelo token de serviço
+PHXSQL_SENHA='a senha' phxsqld --mcp --usuario adriano
+phxsqld --mcp --escrita                        # libera phx_inserir/phx_atualizar
+```
+
+**A senha vem do ambiente, não do argumento** — pela mesma razão do `--senha`:
+argumento aparece no `ps` e fica no histórico do shell. E a entrada padrão aqui
+está ocupada pelo protocolo, então sobra a variável.
+
+**Sem `--usuario`, a ponte fala pelo token de serviço.** Num servidor sem
+cadastro isso é poder total; num servidor com cadastro não passa do `ping`, e a
+ponte avisa no `stderr` — que é onde o aviso pode sair sem sujar o cano do
+protocolo.
+
+### O executor local serializa o pedido para reanalisá-lo, e isso é de propósito
+
+`ExecutorLocal` escreve o pedido como texto e chama `despachar`, que é onde
+moram os quatro portões. Chamar `executar` direto pularia todos eles e seria o
+segundo caminho até o dado. O custo é um `escrever` mais um `analisar` por
+chamada; do outro lado há um modelo fazendo uma pergunta por vez, e não uma
+carga de cinco mil linhas.
+
+A sessão é **uma só e viva entre chamadas**: o `login` é uma operação como
+qualquer outra, e sem guardar a sessão cada `tools/call` chegaria anônimo.
+
+E toda chamada entra no **log de acessos**, com `stdio` no lugar do IP. Não há
+endereço, mas leitura pelo MCP que não deixa rastro seria um buraco na
+auditoria justamente na origem mais nova.
+
+### O que eu escrevi errado sobre o `flush`, e o que a medição disse
+
+Escrevi no comentário que sem o `flush` a resposta ficaria presa no cano,
+porque a saída de um processo é *block-buffered*. **Tirei o `flush` e o teste
+passou igual.** O `Stdout` do Rust é um `LineWriter`: ele descarrega sozinho no
+`\n`.
+
+O `flush` ficou, mas pelo motivo verdadeiro e menor: `servir` é genérica sobre
+`Write`, e um `BufWriter` — ou o dia em que alguém envolver a saída num — não
+tem essa cortesia. *Diagnóstico plausível não é diagnóstico medido*, e o errado
+sobrevive melhor quando a linha que ele justifica funciona por outro motivo.
+
+O defeito que o teste do processo **realmente** pega é outro, e é maior: trocar
+o laço por `lines().collect()` — que é o que se escreve sem pensar — faz o
+servidor ler tudo antes de responder. Um cliente MCP manda uma mensagem e
+*espera*, com a entrada aberta: os dois lados travam esperando um ao outro, sem
+erro em lugar nenhum. Medido: com esse defeito o teste
+`a_resposta_sai_antes_de_a_entrada_fechar` pendura até o tempo estourar.
+
+### As ferramentas saem do catálogo
+
+A tabela de nove ferramentas escrita à mão neste módulo **não existe mais**.
+`tools/list` e `tools/call` leem `crate::catalogo` — a mesma lista que a op
+`catalogo` do protocolo e o `/help` do `phxsqlcmd`, e que tem um teste
+comparando-a com o `match` do `despachar`.
+
+O que isso mudou na prática:
+
+- o nome da ferramenta é derivado (`phx_` + a `op`), e não digitado — não há
+  mais como o nome anunciado e a operação chamada divergirem;
+- `escreve` sai de `OPS_ESCRITA`, a mesma lista que o modo somente-leitura do
+  servidor usa;
+- a descrição que o modelo lê agora traz o **exemplo** junto — um pedido
+  inteiro que funciona vale mais que qualquer frase para quem tem de montar a
+  chamada, e ele já vem com um teste que o confere;
+- entrou uma décima ferramenta de graça: `phx_sql`.
+
+Os quinze testes que já existiam aqui passaram sem uma linha de mudança de
+comportamento — é a prova do lado que mais importa numa troca dessas.
+
+Uma nota que o catálogo obrigou a escrever: **`aplicar` grava e não está em
+`OPS_ESCRITA`.** A ausência é deliberada (uma réplica em somente-leitura precisa
+aplicar), e por isso ele não pode virar ferramenta MCP — a ponte somente-leitura
+o ofereceria achando que ele só lê. Há um teste travando exatamente isso.

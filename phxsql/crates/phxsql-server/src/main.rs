@@ -10,6 +10,7 @@
 //! phxsqld --usuarios [--config c]  lista o cadastro e o poder de cada um
 //! phxsqld --bloqueios              lista os IPs bloqueados
 //! phxsqld --desbloquear <ip>       tira um IP da lista
+//! phxsqld --mcp                    servidor MCP pela entrada/saida padrao
 //! ```
 
 use std::process::ExitCode;
@@ -30,6 +31,14 @@ USO:
   phxsqld --pagina > centro.html    o Centro de Controle como arquivo unico
   phxsqld --exemplo <1|2|3>         imprime um config.json de exemplo
                                     1 = isolado, 2 = source, 3 = replica
+  phxsqld --mcp [--usuario u] [--escrita]   servidor MCP (JSON-RPC por linha,
+                                    pela entrada e pela saida padrao)
+
+O --mcp nasce SOMENTE LEITURA: do outro lado ha um modelo de linguagem, e nao
+uma pessoa. --escrita libera phx_inserir e phx_atualizar. A senha do --usuario
+vem de PHXSQL_SENHA, porque a entrada padrao esta ocupada pelo protocolo:
+
+  PHXSQL_SENHA='a senha' phxsqld --mcp --usuario adriano
 
 A senha NUNCA vai em texto puro no config.json. Gere o hash assim:
 
@@ -85,6 +94,97 @@ fn gerar_senha(args: &[String]) -> ExitCode {
     let hash = phxsql_core::senha::cifrar(&clara);
     println!("\"senha_hash\": \"{hash}\"");
     ExitCode::SUCCESS
+}
+
+/// `phxsqld --mcp`: o servidor MCP falando pela entrada e pela saída padrão.
+///
+/// # Somente leitura vem LIGADO
+///
+/// Do outro lado desta ponte há um modelo de linguagem, não uma pessoa.
+/// `--escrita` libera `phx_inserir` e `phx_atualizar`, e é uma decisão de quem
+/// monta o servidor -- não um padrão herdado.
+///
+/// # A senha não vem no argumento
+///
+/// Ela vem de `PHXSQL_SENHA`, pela mesma razão do `--senha`: argumento de linha
+/// de comando aparece no `ps` e fica no histórico do shell. A entrada padrão
+/// aqui está ocupada pelo JSON-RPC, então sobra a variável de ambiente.
+///
+/// Sem `--usuario`, a ponte fala pelo token de serviço -- que num servidor SEM
+/// cadastro é poder total e num servidor COM cadastro não passa do `ping`. O
+/// aviso sai no `stderr` para não sujar o cano do protocolo.
+fn servir_mcp(args: &[String], config: phxsql_server::Config) -> ExitCode {
+    use phxsql_server::mcp::Ponte;
+
+    let com_escrita = args.iter().any(|a| a == "--escrita");
+    let usuario = args
+        .iter()
+        .position(|a| a == "--usuario")
+        .and_then(|i| args.get(i + 1))
+        .filter(|a| !a.starts_with("--"))
+        .cloned()
+        .unwrap_or_default();
+    let tem_cadastro = !config.cadastro.vazio();
+
+    let servidor = match Servidor::novo(config) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("nao consegui abrir os dados: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    // "stdio" no lugar do IP: nao ha endereco, e o log de acessos tem de dizer
+    // que a operacao veio da ponte. Leitura pelo MCP que nao deixa rastro
+    // seria um buraco na auditoria justamente na origem mais nova.
+    let executor = phxsql_server::servidor::ExecutorLocal::novo(servidor, "stdio");
+
+    if !usuario.is_empty() {
+        let senha = std::env::var("PHXSQL_SENHA").unwrap_or_default();
+        if senha.is_empty() {
+            eprintln!("--usuario {usuario} pede a senha em PHXSQL_SENHA");
+            eprintln!("  PHXSQL_SENHA='a senha' phxsqld --mcp --usuario {usuario}");
+            return ExitCode::FAILURE;
+        }
+        if let Err(e) = executor.entrar(&usuario, &senha) {
+            eprintln!("login de {usuario} recusado: {e}");
+            return ExitCode::FAILURE;
+        }
+        eprintln!("MCP em stdio, como {usuario}");
+    } else {
+        if tem_cadastro {
+            eprintln!(
+                "AVISO: sem --usuario, e este config.json TEM cadastro. A ponte fala pelo\n\
+                 token de servico, e toda operacao que exige poder vai ser recusada."
+            );
+        }
+        eprintln!("MCP em stdio, pelo token de servico");
+    }
+    eprintln!(
+        "escrita: {}",
+        if com_escrita {
+            "LIBERADA (--escrita)"
+        } else {
+            "recusada (o padrao)"
+        }
+    );
+
+    // O token e lido ANTES de a ponte tomar posse do executor: ele e o que a
+    // ponte carimba em todo pedido, e carimbar e o que impede o modelo de
+    // escolher a credencial.
+    let token = phxsql_core::json::Json::texto_de(executor.token());
+    let ponte = Ponte::nova(executor)
+        .com_escrita(com_escrita)
+        .com_campo_fixo("token", token);
+
+    let entrada = std::io::stdin().lock();
+    let mut saida = std::io::stdout().lock();
+    match phxsql_server::mcp::servir(&ponte, entrada, &mut saida) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("a ponte MCP terminou: {e}");
+            ExitCode::FAILURE
+        }
+    }
 }
 
 fn main() -> ExitCode {
@@ -160,6 +260,10 @@ fn main() -> ExitCode {
             config.estranhas.join(", ")
         );
         eprintln!("       o valor foi IGNORADO. A porta de dados e \"bind\", nao \"porta\".");
+    }
+
+    if args.iter().any(|a| a == "--mcp") {
+        return servir_mcp(&args, config);
     }
 
     if args.iter().any(|a| a == "--acessos") {

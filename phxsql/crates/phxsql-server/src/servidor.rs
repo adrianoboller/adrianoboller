@@ -53,7 +53,7 @@ use crate::valores::{
 pub const VERSAO: &str = env!("CARGO_PKG_VERSION");
 
 /// Operacoes que alteram dados. Recusadas quando `somente_leitura` esta ligado.
-const OPS_ESCRITA: &[&str] = &[
+pub(crate) const OPS_ESCRITA: &[&str] = &[
     "inserir",
     "atualizar",
     "excluir",
@@ -1400,24 +1400,34 @@ impl Servidor {
         resultado
     }
 
-    fn executar_job(&self, job: &crate::jobs::Job, op: &str) -> Result<Json> {
+    /// A politica, que no `despachar` roda antes de tudo -- para um pedido que
+    /// NAO veio pela rede.
+    ///
+    /// O que fica de fora e o que so faz sentido com um IP do outro lado: a
+    /// politica de comando proibido bloqueia quem pediu, e bloquear "o
+    /// agendador" ou "o tradutor de SQL" nao quer dizer nada. O resto vale
+    /// igual, e mora aqui num lugar so pela razao de sempre: a copia que
+    /// alguem esquecer de atualizar vira o furo.
+    fn politica_do_pedido(&self, op: &str, pedido: &Json) -> Result<()> {
         if self.config.politica.comando_proibido(op) {
             return Err(PhxError::Autorizacao(format!(
                 "operacao {op} esta proibida neste servidor pela politica"
             )));
         }
-        let base = job.pedido.texto_ou("database", "");
+        let base = pedido.texto_ou("database", "");
         if self.config.politica.base_proibida(base) {
             return Err(PhxError::Autorizacao(format!(
                 "a base {base} esta proibida neste servidor pela politica"
             )));
         }
         // Mesma sonda de travessia da porta de dados. Um job e escrito por um
-        // administrador, mas o arquivo pode ter vindo de outro lugar.
+        // administrador, mas o arquivo pode ter vindo de outro lugar -- e um
+        // `FROM ../../etc` chega pelo tradutor de SQL sem passar pela sonda
+        // que o `despachar` fez no pedido de fora.
         for (rotulo, valor) in [
             ("database", base),
-            ("tabela", job.pedido.texto_ou("tabela", "")),
-            ("schema", job.pedido.texto_ou("schema", "")),
+            ("tabela", pedido.texto_ou("tabela", "")),
+            ("schema", pedido.texto_ou("schema", "")),
         ] {
             if !valor.is_empty() && phxsql_store::catalogo::nome_hostil(valor) {
                 return Err(PhxError::Autorizacao(format!(
@@ -1425,7 +1435,35 @@ impl Servidor {
                 )));
             }
         }
+        Ok(())
+    }
 
+    /// Executa um pedido que o SERVIDOR derivou de outro, pelos mesmos portoes.
+    ///
+    /// # Por que isto existe
+    ///
+    /// Duas coisas aqui dentro montam um pedido e mandam executar: a op `sql`,
+    /// que traduz um `SELECT` para `varrer` ou `buscar`, e -- por outro
+    /// caminho -- o agendador de jobs. Nenhuma das duas pode virar a porta dos
+    /// fundos: quem nao pode ler a folha de pagamento tambem nao pode le-la
+    /// escrevendo `SELECT * FROM folha`, e o portao que confere isso e o
+    /// MESMO, lendo o campo `tabela` do pedido TRADUZIDO.
+    ///
+    /// A licao ja estava escrita no projeto: `juntar` e `unir` foram esse furo
+    /// uma vez, porque a tabela delas nao passava pelo campo que o portao olha.
+    /// A tradução resolve isso pelo outro lado -- ela PRODUZ o campo que o
+    /// portao ja sabe olhar, em vez de pedir um portao novo.
+    fn executar_derivado(&self, op: &str, pedido: &Json, sessao: &Sessao) -> Result<Json> {
+        self.politica_do_pedido(op, pedido)?;
+        self.portoes_do_pedido(op, pedido, sessao)?;
+        self.executar(op, pedido, sessao)
+    }
+
+    fn executar_job(&self, job: &crate::jobs::Job, op: &str) -> Result<Json> {
+        // A politica antes de saber sob qual usuario o job roda: um comando
+        // proibido e proibido para todo mundo, e recusar por ele da a mensagem
+        // certa a um job cujo dono tambem esta errado.
+        self.politica_do_pedido(op, &job.pedido)?;
         let sessao = self.sessao_do_job(job)?;
         self.portoes_do_pedido(op, &job.pedido, &sessao)?;
         self.executar(op, &job.pedido, &sessao)
@@ -2536,6 +2574,8 @@ impl Servidor {
                 ),
             ])),
             "config" => Ok(self.config.para_json()),
+            "catalogo" => Ok(self.op_catalogo(p, sessao)),
+            "sql" => self.op_sql(p, sessao),
             "quem_sou" => Ok(match &sessao.usuario {
                 Some(u) => u.ficha(),
                 None => Json::objeto(vec![
@@ -3819,6 +3859,122 @@ impl Servidor {
             .find(|u| u.id == id)
             .map(|u| u.nome.clone())
             .unwrap_or_default()
+    }
+
+    /// `sql`: um `SELECT` simples traduzido para as operacoes que ja existem.
+    ///
+    /// # O portao continua sendo UM
+    ///
+    /// Esta operacao nao le tabela nenhuma por conta propria. Ela faz duas
+    /// coisas, e as duas pelo `executar_derivado`, que e o mesmo portao do
+    /// pedido que chega pela rede:
+    ///
+    /// 1. pede o `esquema` da tabela do `FROM` -- que ja exige `ler` naquela
+    ///    tabela --, e e de la que saem os indices que o tradutor precisa;
+    /// 2. executa o `varrer` ou o `buscar` que a traducao produziu.
+    ///
+    /// O campo `tabela` do pedido TRADUZIDO e o que o portao confere. Por isso
+    /// `SELECT * FROM folha` de quem nao pode ler a folha para no passo 1, com
+    /// o mesmo erro de um `{"op":"varrer","tabela":"folha"}` -- e nao ha
+    /// conferencia propria aqui que alguem possa esquecer de atualizar.
+    ///
+    /// # Por que o esquema vem pelo protocolo, e nao de um `abrir_travada`
+    ///
+    /// Porque abrir a tabela aqui seria o SEGUNDO caminho ate o dado, e o
+    /// segundo caminho e sempre o que esquece uma conferencia. Custa um
+    /// `esquema` a mais por consulta; a alternativa custa uma porta dos fundos.
+    fn op_sql(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let texto = p
+            .texto_ou("texto", p.texto_ou("sql", ""))
+            .trim()
+            .to_string();
+        if texto.is_empty() {
+            return Err(PhxError::Esquema(
+                "informe \"texto\" com o comando SQL".into(),
+            ));
+        }
+        // O erro de sintaxe ja vem com a coluna: «SQL, coluna 14: esperava
+        // FROM». Reembalar aqui perderia a posicao, que e a unica parte da
+        // mensagem que diz ONDE consertar.
+        let selecao = phxsql_sql::analisar(&texto)?;
+
+        let base = match selecao.de.database.trim() {
+            "" => p.texto_ou("database", "").trim().to_string(),
+            outro => outro.to_string(),
+        };
+        let tabela = selecao.de.nome_no_protocolo();
+        let ped_esquema = Json::objeto(vec![
+            ("database", Json::texto_de(&base)),
+            ("tabela", Json::texto_de(&tabela)),
+        ]);
+        let esquema = self.executar_derivado("esquema", &ped_esquema, sessao)?;
+
+        let plano = phxsql_sql::traduzir(&selecao, &indices_do_esquema(&esquema), &base)?;
+        let bruto = self.executar_derivado(&plano.op, &plano.pedido, sessao)?;
+
+        Ok(resposta_do_sql(&texto, &plano, bruto))
+    }
+
+    /// O catalogo das operacoes -- o `--help` do protocolo, servido por dados.
+    ///
+    /// Filtra pelo poder de quem perguntou, e a filtragem NAO e o portao: o
+    /// portao continua sendo o do `despachar`, que confere de novo quando a
+    /// operacao for chamada. Esconder aqui e cortesia, para nao oferecer
+    /// oitenta operacoes a quem so pode chamar tres.
+    ///
+    /// Com o campo `"operacao"`, detalha uma so -- e e assim que o
+    /// `/help <comando>` do `phxsqlcmd` funciona sem carregar o catalogo
+    /// inteiro. O campo nao se chama `"op"` porque esse ja e o nome da
+    /// operacao chamada: um pedido nao tem a mesma chave duas vezes.
+    fn op_catalogo(&self, p: &Json, sessao: &Sessao) -> Json {
+        let base = p.texto_ou("database", "");
+        let usuario = sessao.usuario.as_ref();
+        let visiveis = crate::catalogo::visiveis(usuario, base);
+
+        if let Some(pedida) = Some(p.texto_ou("operacao", "").trim()).filter(|s| !s.is_empty()) {
+            // Operacao que existe mas este usuario nao pode chamar responde
+            // "nao existe para voce", com a permissao que faltou -- e nao um
+            // 404 seco, que mandaria procurar erro de digitacao onde nao ha.
+            let achada = visiveis.iter().find(|o| o.nomes().any(|n| n == pedida));
+            return match achada {
+                Some(o) => Json::objeto(vec![
+                    ("pedida", Json::texto_de(o.nome)),
+                    ("operacao", o.para_json()),
+                ]),
+                None => {
+                    let existe = crate::catalogo::por_nome(pedida);
+                    Json::objeto(vec![
+                        ("pedida", Json::texto_de(pedida)),
+                        ("operacao", Json::Nulo),
+                        (
+                            "motivo",
+                            Json::texto_de(match existe {
+                                Some(o) => format!(
+                                    "a operacao {pedida:?} existe, mas exige {}",
+                                    o.atividade().map(|a| a.nome()).unwrap_or("login")
+                                ),
+                                None => format!("a operacao {pedida:?} nao existe"),
+                            }),
+                        ),
+                    ])
+                }
+            };
+        }
+
+        Json::objeto(vec![
+            ("total", Json::de_u64(visiveis.len() as u64)),
+            // Quantas ficaram de fora por permissao. Sem este numero, quem ve
+            // uma lista curta nao sabe se o servidor e pequeno ou se ele e que
+            // pode pouco.
+            (
+                "ocultas",
+                Json::de_u64((crate::catalogo::OPERACOES.len() - visiveis.len()) as u64),
+            ),
+            (
+                "operacoes",
+                Json::Lista(visiveis.iter().map(|o| o.para_json()).collect()),
+            ),
+        ])
     }
 
     fn op_esquema(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
@@ -7099,6 +7255,211 @@ impl Servidor {
     }
 }
 
+/// A ponte MCP falando com ESTE servidor, no mesmo processo.
+///
+/// # Por que ela serializa o pedido para depois reanalisá-lo
+///
+/// Porque `despachar` recebe uma LINHA, e é ali que moram os quatro portões:
+/// política, token, login e permissão por base e tabela. Chamar `executar`
+/// direto pularia todos eles -- e seria o segundo caminho até o dado, que é
+/// sempre o que esquece uma conferência.
+///
+/// O custo é um `escrever` mais um `analisar` por chamada. Do outro lado desta
+/// ponte há um modelo de linguagem fazendo uma pergunta por vez, e não uma
+/// carga de cinco mil linhas: o gasto é irrelevante e a garantia não.
+///
+/// # O login mora aqui
+///
+/// A sessão é uma só, e viva entre chamadas: o `login` é uma operação como
+/// qualquer outra, e o resultado dela é o que decide o que as próximas podem.
+/// Sem isto, cada `tools/call` chegaria anônimo.
+pub struct ExecutorLocal {
+    servidor: Arc<Servidor>,
+    sessao: Mutex<Sessao>,
+    /// O que aparece no lugar do IP no log de acessos.
+    ///
+    /// Não é um endereço porque não há um: a ponte fala pelo cano do processo.
+    /// Mas o log tem de dizer que veio dali -- uma leitura pelo MCP que não
+    /// deixa rastro seria um buraco na auditoria, e é justamente a origem
+    /// sobre a qual mais se vai querer perguntar depois.
+    origem: String,
+}
+
+impl ExecutorLocal {
+    pub fn novo(servidor: Arc<Servidor>, origem: &str) -> ExecutorLocal {
+        ExecutorLocal {
+            servidor,
+            sessao: Mutex::new(Sessao::default()),
+            origem: origem.to_string(),
+        }
+    }
+
+    /// Entra com login e senha, pelo mesmo `login` do protocolo.
+    ///
+    /// A senha em claro nunca é guardada nem ecoada: ela vira um pedido de
+    /// `login`, e o que fica na sessão é a ficha do usuário.
+    pub fn entrar(&self, usuario: &str, senha: &str) -> Result<Json> {
+        use crate::mcp::Executor;
+        self.executar(&Json::objeto(vec![
+            ("op", Json::texto_de("login")),
+            ("usuario", Json::texto_de(usuario)),
+            ("senha", Json::texto_de(senha)),
+        ]))
+    }
+
+    /// O token de serviço deste servidor, para a ponte carimbar nos pedidos.
+    pub fn token(&self) -> String {
+        self.servidor.config.token.clone()
+    }
+}
+
+impl crate::mcp::Executor for ExecutorLocal {
+    fn executar(&self, pedido: &Json) -> Result<Json> {
+        let mut sessao = self.sessao.lock().map_err(|_| trava_envenenada())?;
+        let quando_ms = crate::agora_ms();
+        let inicio = Instant::now();
+        let linha = pedido.escrever();
+        let (op, autenticado, resultado) =
+            self.servidor.despachar(&linha, &mut sessao, &self.origem);
+        let duracao = inicio.elapsed().as_millis() as u64;
+        self.servidor.anotar(&Acesso {
+            quando_ms,
+            ip: self.origem.clone(),
+            porta_origem: 0,
+            op,
+            usuario: sessao.login().to_string(),
+            autenticado,
+            ok: resultado.is_ok(),
+            duracao_ms: duracao,
+            erro: resultado.as_ref().err().map(|e| e.to_string()),
+            ..objeto_do_pedido(&linha, &resultado)
+        });
+        resultado
+    }
+}
+
+/// Os indices da tabela, como o tradutor de SQL os espera.
+///
+/// Saem da resposta do `esquema` -- campo por campo, e nao de uma leitura
+/// propria. E a mesma decisao do resto da op `sql`: quem abre tabela e o motor.
+fn indices_do_esquema(esquema: &Json) -> Vec<phxsql_sql::IndiceInfo> {
+    esquema
+        .campo("indices")
+        .and_then(Json::lista)
+        .unwrap_or(&[])
+        .iter()
+        .map(|i| phxsql_sql::IndiceInfo {
+            nome: i.texto_ou("nome", "").to_string(),
+            colunas: i
+                .campo("colunas")
+                .and_then(Json::lista)
+                .unwrap_or(&[])
+                .iter()
+                .map(|c| phxsql_sql::ColunaDoIndice {
+                    nome: c.texto_ou("coluna", "").to_string(),
+                    desc: c.booleano_ou("desc", false),
+                })
+                .collect(),
+            unico: i.booleano_ou("unico", false),
+            primario: i.booleano_ou("primario", false),
+        })
+        .collect()
+}
+
+/// A resposta do `sql`: o que a operacao devolveu, mais o que a traducao
+/// decidiu.
+///
+/// # Por que as notas viajam
+///
+/// Porque `ORDER BY nome` pode ter sido atendido pelo `.ndx` e `COUNT(*)` pode
+/// ter saido do cabecalho sem varrer nada -- e quem escreveu o comando nao tem
+/// como saber qual dos dois aconteceu. Sem as notas, quem pediu uma ordem e
+/// recebeu a de digitacao culpa o motor.
+fn resposta_do_sql(texto: &str, plano: &phxsql_sql::Plano, bruto: Json) -> Json {
+    let mut pares = vec![
+        ("sql".to_string(), Json::texto_de(texto)),
+        ("op".to_string(), Json::texto_de(&plano.op)),
+        (
+            "notas".to_string(),
+            Json::Lista(plano.notas.iter().map(Json::texto_de).collect()),
+        ),
+    ];
+
+    match &plano.saida {
+        // A contagem sai do cabecalho da tabela (`registros`) ou do total da
+        // busca (`encontrados`): nenhuma linha e varrida para contar.
+        //
+        // E a resposta para por aqui: o `COUNT(*)` traduzido pede `max: 1`
+        // para ler o cabecalho, e a linha que vem junto e um efeito colateral
+        // do caminho -- nao a resposta. Devolve-la faria um `SELECT COUNT(*)`
+        // mostrar UMA linha de dado, que e a pior resposta possivel: quem
+        // olha nao sabe se aquela linha quer dizer alguma coisa. Este defeito
+        // so apareceu exercitando o console.
+        phxsql_sql::Saida::Contagem => {
+            let n = match bruto.campo("encontrados") {
+                Some(e) => e.inteiro().unwrap_or(0),
+                None => bruto.inteiro_ou("registros", 0),
+            };
+            pares.push(("contagem".to_string(), Json::de_i64(n)));
+            if let Some(r) = bruto.campo("registros") {
+                pares.push(("registros".to_string(), r.clone()));
+            }
+            return Json::Objeto(pares);
+        }
+        phxsql_sql::Saida::LinhaInteira => {}
+        // A projecao e do cliente porque o protocolo sempre devolve a linha
+        // inteira -- o `.reg` e de slot fixo, e ler meia linha custa a mesma
+        // leitura. Aqui o "cliente" e o servidor, porque quem pediu escreveu
+        // SQL e espera as colunas que pediu.
+        phxsql_sql::Saida::Colunas(cols) => {
+            pares.push((
+                "colunas".to_string(),
+                Json::Lista(
+                    cols.iter()
+                        .map(|(_, rotulo)| Json::texto_de(rotulo))
+                        .collect(),
+                ),
+            ));
+        }
+    }
+
+    if let Json::Objeto(campos) = bruto {
+        for (k, v) in campos {
+            if k == "linhas" {
+                if let (phxsql_sql::Saida::Colunas(cols), Json::Lista(linhas)) = (&plano.saida, &v)
+                {
+                    pares.push((
+                        k,
+                        Json::Lista(linhas.iter().map(|l| projetar(l, cols)).collect()),
+                    ));
+                    continue;
+                }
+            }
+            pares.push((k, v));
+        }
+    }
+    Json::Objeto(pares)
+}
+
+/// Fica com as colunas pedidas, nesta ordem, com estes rotulos.
+///
+/// Coluna que o `SELECT` pediu e a linha nao tem vira `null`, e nao some: uma
+/// chave ausente faria a resposta ter forma diferente linha a linha, e quem le
+/// por posicao quebraria na primeira.
+fn projetar(linha: &Json, colunas: &[(String, String)]) -> Json {
+    Json::Objeto(
+        colunas
+            .iter()
+            .map(|(nome, rotulo)| {
+                (
+                    rotulo.clone(),
+                    linha.campo(nome).cloned().unwrap_or(Json::Nulo),
+                )
+            })
+            .collect(),
+    )
+}
+
 fn trava_envenenada() -> PhxError {
     PhxError::Corrompido("uma operacao anterior entrou em panico e deixou a trava suja".into())
 }
@@ -8585,6 +8946,130 @@ mod testes_direito_por_tabela {
         assert_eq!(nomes, vec!["clientes".to_string()], "veio {nomes:?}");
     }
 
+    /// **A op `sql` NAO e a porta dos fundos.** Ana le `clientes` e nao le
+    /// `folha`; escrever o nome da folha dentro de um SELECT nao muda isso.
+    ///
+    /// Este e o teste que importa do item inteiro: se ele passar a falhar,
+    /// alguem trocou o `executar_derivado` por uma leitura direta da tabela.
+    #[test]
+    fn o_sql_nao_e_a_porta_dos_fundos_para_a_tabela_negada() {
+        let dir = dir_temp("sql-porta");
+        let (s, ses) = servidor(
+            &dir,
+            cadastro(r#"{"*":{"ler":true,"tabelas":{"folha":{}}}}"#),
+        );
+
+        let ok = pede(
+            &s,
+            &ses,
+            r#""op":"sql","database":"b","texto":"SELECT * FROM clientes""#,
+        )
+        .expect("a tabela permitida tinha de passar");
+        assert_eq!(ok.inteiro_ou("devolvidas", -1), 1);
+
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"sql","database":"b","texto":"SELECT * FROM folha""#,
+        )
+        .expect_err("o SELECT leu a tabela negada");
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+        assert!(format!("{e}").contains("folha"), "{e}");
+    }
+
+    /// O endereco de tres partes -- `banco.schema.tabela` -- tambem nao
+    /// contorna nada: a permissao e conferida contra o banco que o SELECT
+    /// escolheu, e nao contra o do envelope. Sem isto, o campo `database` do
+    /// pedido seria enfeite e o SQL escolheria sozinho onde ler.
+    #[test]
+    fn o_banco_do_from_e_o_banco_da_permissao() {
+        let dir = dir_temp("sql-from-db");
+        let (s, ses) = servidor(&dir, cadastro(r#"{"b":{"ler":true}}"#));
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"sql","database":"b","texto":"SELECT * FROM outra.filial.clientes""#,
+        )
+        .expect_err("leu de um banco que nao esta na regra");
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+        assert!(format!("{e}").contains("outra"), "{e}");
+    }
+
+    /// A op `catalogo` mostra so o que a sessao consegue chamar.
+    ///
+    /// Um leitor nao pode ver `excluir_tabela` na lista: oferecer a operacao
+    /// que o portao vai negar e mandar o cliente montar um pedido para ouvir
+    /// nao. E `ler`, que ele pode, tem de estar la -- esconder demais seria o
+    /// mesmo estrago do outro lado.
+    #[test]
+    fn o_catalogo_lista_so_o_que_a_sessao_pode_chamar() {
+        let dir = dir_temp("cat-op");
+        let (s, ses) = servidor(&dir, cadastro(r#"{"*":{"ler":true}}"#));
+        let r = pede(&s, &ses, r#""op":"catalogo","database":"b""#).unwrap();
+        let nomes: Vec<String> = r
+            .campo("operacoes")
+            .and_then(Json::lista)
+            .unwrap()
+            .iter()
+            .map(|o| o.texto_ou("nome", "").to_string())
+            .collect();
+        assert!(nomes.contains(&"ler".to_string()), "{nomes:?}");
+        assert!(nomes.contains(&"varrer".to_string()), "{nomes:?}");
+        assert!(
+            !nomes.contains(&"excluir_tabela".to_string()),
+            "o leitor viu uma operacao de administrador: {nomes:?}"
+        );
+        assert!(
+            !nomes.contains(&"inserir".to_string()),
+            "o leitor viu uma operacao de escrita: {nomes:?}"
+        );
+        // E o numero do que ficou de fora, para quem ve a lista curta saber
+        // que ela e curta por permissao, e nao por o servidor ser pequeno.
+        assert!(r.inteiro_ou("ocultas", 0) > 0);
+        assert_eq!(r.inteiro_ou("total", -1), nomes.len() as i64);
+    }
+
+    /// `catalogo` com `"op"` detalha uma so -- e e o que o `/help <comando>`
+    /// do console usa. Operacao que o usuario nao pode chamar responde POR QUE,
+    /// em vez de fingir que nao existe: fingir manda procurar erro de
+    /// digitacao onde nao ha.
+    #[test]
+    fn o_catalogo_detalha_uma_operacao_e_diz_por_que_negou() {
+        let dir = dir_temp("cat-uma");
+        let (s, ses) = servidor(&dir, cadastro(r#"{"*":{"ler":true}}"#));
+
+        let uma = pede(
+            &s,
+            &ses,
+            r#""op":"catalogo","database":"b","operacao":"buscar""#,
+        )
+        .unwrap()
+        .campo("operacao")
+        .cloned()
+        .unwrap();
+        assert_eq!(uma.texto_ou("nome", ""), "buscar");
+        assert!(!uma.texto_ou("exemplo", "").is_empty());
+        assert!(uma
+            .campo("parametros")
+            .and_then(Json::lista)
+            .unwrap()
+            .iter()
+            .any(|p| p.texto_ou("nome", "") == "indice"));
+
+        let negada = pede(
+            &s,
+            &ses,
+            r#""op":"catalogo","database":"b","operacao":"excluir_tabela""#,
+        )
+        .unwrap();
+        assert!(negada.campo("operacao").unwrap().e_nulo());
+        assert!(
+            negada.texto_ou("motivo", "").contains("administrar"),
+            "{}",
+            negada.escrever()
+        );
+    }
+
     /// O catalogo e a mesma lista por outra porta.
     #[test]
     fn o_catalogo_esconde_a_tabela_negada() {
@@ -9050,5 +9535,607 @@ mod testes_bulkinsert {
             e.to_string().contains("porta de dados"),
             "o recado nao explica: {e}"
         );
+    }
+}
+
+/// A op `sql` -- traducao, e nao motor novo.
+///
+/// O que estes testes travam:
+///
+/// 1. `SELECT *` vira `varrer` e as linhas chegam;
+/// 2. a projecao de colunas acontece, com o rotulo do `AS`;
+/// 3. `COUNT(*)` sai do cabecalho, sem varrer;
+/// 4. `WHERE col = ?` com indice vira `buscar`;
+/// 5. o que NAO tem substrato recusa dizendo o que falta -- e nao devolve a
+///    tabela inteira com o filtro esquecido no caminho;
+/// 6. erro de sintaxe aponta a COLUNA do texto.
+#[cfg(test)]
+mod testes_sql {
+    use super::*;
+
+    fn dir_temp(nome: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("phx-sql-{nome}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    /// Uma base `b` com `clientes(id, nome, cidade)` e indice unico por id.
+    fn servidor(dir: &std::path::Path) -> Arc<Servidor> {
+        let c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        let s = Servidor::novo(c).unwrap();
+        let dono = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &dono)
+            .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"clientes",
+                    "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true},
+                               {"nome":"nome","tipo":"Str(20)"},
+                               {"nome":"cidade","tipo":"Str(20)"}],
+                    "indices":[{"nome":"porId","colunas":["id"],"unico":true,
+                                "primario":true}]}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        for (id, nome, cidade) in [
+            (1, "Adriano", "Blumenau"),
+            (2, "Maria", "Joinville"),
+            (3, "Joao", "Blumenau"),
+        ] {
+            s.executar(
+                "inserir",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"clientes",
+                         "linha":{{"id":{id},"nome":"{nome}","cidade":"{cidade}"}}}}"#
+                )),
+                &dono,
+            )
+            .unwrap();
+        }
+        s
+    }
+
+    /// Pelo `despachar`, que e por onde o pedido entra de verdade.
+    fn sql(s: &Arc<Servidor>, texto: &str) -> Result<Json> {
+        let mut ses = Sessao::default();
+        let corpo = Json::objeto(vec![
+            ("token", Json::texto_de("t")),
+            ("op", Json::texto_de("sql")),
+            ("database", Json::texto_de("b")),
+            ("texto", Json::texto_de(texto)),
+        ])
+        .escrever();
+        let (_, _, r) = s.despachar(&corpo, &mut ses, "127.0.0.1");
+        r
+    }
+
+    fn linhas(j: &Json) -> Vec<Json> {
+        j.campo("linhas").and_then(Json::lista).unwrap().to_vec()
+    }
+
+    #[test]
+    fn select_estrela_vira_varrer_e_traz_as_linhas() {
+        let s = servidor(&dir_temp("estrela"));
+        let r = sql(&s, "SELECT * FROM clientes").unwrap();
+        assert_eq!(r.texto_ou("op", ""), "varrer");
+        assert_eq!(linhas(&r).len(), 3);
+        assert_eq!(linhas(&r)[0].texto_ou("nome", ""), "Adriano");
+        // A nota nao e enfeite: sem ela, quem esperava outra ordem culpa o
+        // motor em vez de escrever o ORDER BY.
+        assert!(r
+            .campo("notas")
+            .and_then(Json::lista)
+            .unwrap()
+            .iter()
+            .any(|n| n.texto().unwrap_or("").contains("DIGITACAO")));
+    }
+
+    /// A projecao e do servidor porque o protocolo sempre devolve a linha
+    /// inteira -- o `.reg` e de slot fixo, e ler meia linha custa a mesma
+    /// leitura. Quem escreveu SQL espera as colunas que pediu.
+    #[test]
+    fn a_projecao_fica_so_com_as_colunas_pedidas_e_usa_o_apelido() {
+        let s = servidor(&dir_temp("projecao"));
+        let r = sql(&s, "SELECT nome AS quem, cidade FROM clientes").unwrap();
+        assert_eq!(
+            r.campo("colunas")
+                .and_then(Json::lista)
+                .unwrap()
+                .iter()
+                .map(|c| c.texto().unwrap_or("").to_string())
+                .collect::<Vec<_>>(),
+            vec!["quem", "cidade"]
+        );
+        let primeira = &linhas(&r)[0];
+        assert_eq!(primeira.chaves(), vec!["quem", "cidade"]);
+        assert_eq!(primeira.texto_ou("quem", ""), "Adriano");
+        // E o que NAO foi pedido nao vem junto -- nem a coluna de sistema.
+        assert!(primeira.campo("softdeleted").is_none());
+    }
+
+    /// A contagem sai do cabecalho, em O(1). Varrer a tabela para contar e o
+    /// erro que a bancada ja cometeu uma vez.
+    #[test]
+    fn count_estrela_sai_do_cabecalho_sem_varrer() {
+        let s = servidor(&dir_temp("count"));
+        let r = sql(&s, "SELECT COUNT(*) FROM clientes").unwrap();
+        assert_eq!(r.inteiro_ou("contagem", -1), 3);
+        assert_eq!(r.inteiro_ou("registros", -1), 3);
+    }
+
+    /// **`SELECT COUNT(*)` nao pode devolver uma LINHA de dado.**
+    ///
+    /// A traducao pede `max: 1` para ler o cabecalho, e a linha que vem junto e
+    /// efeito colateral do caminho -- nao a resposta. Devolve-la fazia o
+    /// console desenhar uma tabela de uma linha embaixo da contagem, e quem
+    /// olha nao tem como saber se aquela linha quer dizer alguma coisa.
+    ///
+    /// Achado exercitando o console, e nao lendo o codigo: no JSON o campo
+    /// extra passa despercebido; na tela ele vira uma tabela inteira.
+    #[test]
+    fn a_contagem_nao_arrasta_a_linha_que_a_traducao_leu() {
+        let s = servidor(&dir_temp("count-limpo"));
+        let r = sql(&s, "SELECT COUNT(*) FROM clientes").unwrap();
+        assert!(
+            r.campo("linhas").is_none(),
+            "a contagem veio com linha de dado: {}",
+            r.escrever()
+        );
+        // E nem os campos que descrevem uma pagina que ninguem pediu.
+        for campo in ["devolvidas", "cursor_inicio", "ha_mais", "ordem"] {
+            assert!(
+                r.campo(campo).is_none(),
+                "{campo} nao descreve nada numa contagem: {}",
+                r.escrever()
+            );
+        }
+        // Ja o COUNT(*) com WHERE conta o que a busca achou.
+        let r = sql(&s, "SELECT COUNT(*) FROM clientes WHERE id = 2").unwrap();
+        assert_eq!(r.inteiro_ou("contagem", -1), 1);
+        assert!(r.campo("linhas").is_none());
+    }
+
+    #[test]
+    fn where_com_indice_vira_buscar() {
+        let s = servidor(&dir_temp("where"));
+        let r = sql(&s, "SELECT nome FROM clientes WHERE id = 2").unwrap();
+        assert_eq!(r.texto_ou("op", ""), "buscar");
+        assert_eq!(linhas(&r).len(), 1);
+        assert_eq!(linhas(&r)[0].texto_ou("nome", ""), "Maria");
+    }
+
+    /// **O que nao tem substrato recusa dizendo o que falta.** `cidade` nao
+    /// tem indice, e o `varrer` NAO filtra: aceitar calado devolveria a tabela
+    /// inteira com o filtro esquecido no caminho -- ler demais e responder
+    /// errado sem avisar.
+    #[test]
+    fn where_sem_indice_recusa_em_vez_de_trazer_tudo() {
+        let s = servidor(&dir_temp("sem-indice"));
+        let e = sql(&s, "SELECT * FROM clientes WHERE cidade = 'Blumenau'").unwrap_err();
+        let msg = e.to_string();
+        assert!(msg.contains("cidade"), "{msg}");
+        assert!(msg.contains("indice"), "{msg}");
+        // E diz qual coluna TEM indice, que e o que permite consertar.
+        assert!(msg.contains("id"), "{msg}");
+    }
+
+    /// Erro de sintaxe aponta a coluna do texto. Sem a posicao, quem escreveu
+    /// um comando de duzentos caracteres procura o erro no lugar errado.
+    #[test]
+    fn erro_de_sintaxe_diz_a_coluna() {
+        let s = servidor(&dir_temp("sintaxe"));
+        let msg = sql(&s, "SELECT * FRON clientes").unwrap_err().to_string();
+        assert!(msg.contains("coluna"), "{msg}");
+        assert!(msg.contains("FROM"), "{msg}");
+
+        let msg = sql(&s, "DELETE FROM clientes").unwrap_err().to_string();
+        assert!(msg.contains("SELECT"), "{msg}");
+    }
+
+    /// O `LIMIT`/`OFFSET` chega ao `varrer` como `max` e `pular` -- e nao e
+    /// aplicado no cliente depois de trazer tudo.
+    #[test]
+    fn limit_e_offset_viram_max_e_pular() {
+        let s = servidor(&dir_temp("limite"));
+        let r = sql(&s, "SELECT * FROM clientes LIMIT 1 OFFSET 1").unwrap();
+        assert_eq!(linhas(&r).len(), 1);
+        assert_eq!(linhas(&r)[0].texto_ou("nome", ""), "Maria");
+    }
+
+    /// Pedido sem texto nenhum recusa dizendo o nome do campo. E `sql` e aceito
+    /// como sinonimo de `texto`, porque e o nome que um driver escreveria.
+    #[test]
+    fn sem_texto_recusa_com_o_nome_do_campo() {
+        let s = servidor(&dir_temp("vazio"));
+        let mut ses = Sessao::default();
+        let (_, _, r) = s.despachar(
+            r#"{"token":"t","op":"sql","database":"b"}"#,
+            &mut ses,
+            "127.0.0.1",
+        );
+        assert!(r.unwrap_err().to_string().contains("texto"));
+
+        let (_, _, r) = s.despachar(
+            r#"{"token":"t","op":"sql","database":"b","sql":"SELECT COUNT(*) FROM clientes"}"#,
+            &mut ses,
+            "127.0.0.1",
+        );
+        assert_eq!(r.unwrap().inteiro_ou("contagem", -1), 3);
+    }
+
+    /// A politica vale para a operacao TRADUZIDA, e nao so para a `sql`. Um
+    /// servidor que proibe `varrer` nao pode ser varrido escrevendo SELECT.
+    #[test]
+    fn a_politica_vale_para_a_operacao_traduzida() {
+        let dir = dir_temp("politica");
+        let mut c = Config {
+            base: dir.clone(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        c.politica.comandos_proibidos = vec!["varrer".into()];
+        let s = Servidor::novo(c).unwrap();
+        let dono = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &dono)
+            .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"clientes",
+                    "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true}],
+                    "indices":[{"nome":"porId","colunas":["id"],"unico":true}]}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+
+        let e = sql(&s, "SELECT * FROM clientes").unwrap_err();
+        assert!(
+            e.to_string().contains("varrer") && e.to_string().contains("proibida"),
+            "{e}"
+        );
+    }
+}
+
+/// **Chave estrangeira pelo protocolo** -- o #127 dizia «pronto» e era meia
+/// verdade: o formato as suporta e o `esquema` as reporta desde sempre, mas
+/// NENHUMA operacao as criava. So dava para declarar uma pela API Rust.
+#[cfg(test)]
+mod testes_chave_estrangeira {
+    use super::*;
+
+    fn dir_temp(nome: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("phx-fk-{nome}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    fn servidor(dir: &std::path::Path) -> Arc<Servidor> {
+        let c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        let s = Servidor::novo(c).unwrap();
+        s.executar(
+            "criar_database",
+            &pedido(r#"{"database":"b"}"#),
+            &Sessao::default(),
+        )
+        .unwrap();
+        s
+    }
+
+    /// Pelo `despachar`: e por onde o pedido entra de verdade.
+    fn pede(s: &Arc<Servidor>, corpo: &str) -> Result<Json> {
+        let mut ses = Sessao::default();
+        let (_, _, r) = s.despachar(
+            &format!(r#"{{"token":"t",{corpo}}}"#),
+            &mut ses,
+            "127.0.0.1",
+        );
+        r
+    }
+
+    /// Cria `pedidos` apontando para `clientes`, e le a chave de volta.
+    fn com_fk(s: &Arc<Servidor>, extra: &str) -> Result<Json> {
+        pede(
+            s,
+            &format!(
+                r#""op":"criar_tabela","database":"b","tabela":"pedidos",
+                   "colunas":[{{"nome":"id","tipo":"Int4","obrigatoria":true}},
+                              {{"nome":"cliente_id","tipo":"Int4"}}],
+                   "indices":[{{"nome":"porId","colunas":["id"],"unico":true,
+                                "primario":true}}],
+                   "chaves_estrangeiras":[{{"nome":"fk_cliente",
+                                            "colunas":["cliente_id"],
+                                            "tabela_ref":"clientes",
+                                            "colunas_ref":["id"]{extra}}}]"#
+            ),
+        )
+    }
+
+    #[test]
+    fn criar_tabela_declara_a_chave_e_o_esquema_a_devolve() {
+        let s = servidor(&dir_temp("declara"));
+        com_fk(&s, r#","ao_excluir":"restringir","ao_alterar":"cascata""#).unwrap();
+
+        let e = pede(&s, r#""op":"esquema","database":"b","tabela":"pedidos""#).unwrap();
+        let fks = e
+            .campo("chaves_estrangeiras")
+            .and_then(Json::lista)
+            .unwrap();
+        assert_eq!(fks.len(), 1, "a chave nao voltou: {}", e.escrever());
+        let fk = &fks[0];
+        assert_eq!(fk.texto_ou("nome", ""), "fk_cliente");
+        assert_eq!(fk.texto_ou("tabela_ref", ""), "clientes");
+        assert_eq!(fk.textos("colunas"), vec!["cliente_id"]);
+        assert_eq!(fk.textos("colunas_ref"), vec!["id"]);
+        assert_eq!(fk.texto_ou("ao_excluir", ""), "Restringir");
+        assert_eq!(fk.texto_ou("ao_alterar", ""), "Cascata");
+
+        // E o papel da coluna, que e DERIVADO das chaves, acompanha: sem isto
+        // a tela desenharia a coluna como uma qualquer.
+        let coluna = e
+            .campo("colunas")
+            .and_then(Json::lista)
+            .unwrap()
+            .iter()
+            .find(|c| c.texto_ou("nome", "") == "cliente_id")
+            .cloned()
+            .unwrap();
+        assert_eq!(coluna.campo("estrangeira").unwrap().booleano(), Some(true));
+        assert_eq!(coluna.textos("nas_chaves_estrangeiras"), vec!["fk_cliente"]);
+    }
+
+    /// **O teste do comportamento VELHO, e e o que mais importa.** Um pedido
+    /// sem o campo tem de criar a tabela exatamente como sempre criou -- todo
+    /// cliente escrito antes desta versao manda pedido assim.
+    #[test]
+    fn sem_o_campo_a_tabela_nasce_igual_ao_que_sempre_foi() {
+        let s = servidor(&dir_temp("velho"));
+        pede(
+            &s,
+            r#""op":"criar_tabela","database":"b","tabela":"clientes",
+               "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true}],
+               "indices":[{"nome":"porId","colunas":["id"],"unico":true}]"#,
+        )
+        .unwrap();
+        let e = pede(&s, r#""op":"esquema","database":"b","tabela":"clientes""#).unwrap();
+        assert!(e
+            .campo("chaves_estrangeiras")
+            .and_then(Json::lista)
+            .unwrap()
+            .is_empty());
+        // E a linha entra como sempre entrou.
+        pede(
+            &s,
+            r#""op":"inserir","database":"b","tabela":"clientes","linha":{"id":1}"#,
+        )
+        .unwrap();
+    }
+
+    /// Sem `colunas_ref`, referencia colunas de MESMO NOME. Escrever a lista
+    /// duas vezes e onde alguem troca a ordem sem perceber.
+    #[test]
+    fn sem_colunas_ref_vale_o_mesmo_nome() {
+        let s = servidor(&dir_temp("mesmo-nome"));
+        pede(
+            &s,
+            r#""op":"criar_tabela","database":"b","tabela":"itens",
+               "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true}],
+               "indices":[{"nome":"porId","colunas":["id"],"unico":true}],
+               "chaves_estrangeiras":[{"nome":"fk_id","colunas":["id"],
+                                       "tabela_ref":"outra"}]"#,
+        )
+        .unwrap();
+        let e = pede(&s, r#""op":"esquema","database":"b","tabela":"itens""#).unwrap();
+        let fk = &e
+            .campo("chaves_estrangeiras")
+            .and_then(Json::lista)
+            .unwrap()[0];
+        assert_eq!(fk.textos("colunas_ref"), vec!["id"]);
+        // E o padrao das duas acoes e o unico seguro: quem nao disse o que
+        // fazer com a filha nao pediu para apaga-la.
+        assert_eq!(fk.texto_ou("ao_excluir", ""), "Restringir");
+        assert_eq!(fk.texto_ou("ao_alterar", ""), "Restringir");
+    }
+
+    /// A acao aceita o portugues, o SQL e a forma que o `esquema` DEVOLVE --
+    /// pela mesma razao do tipo da coluna: o que sai tem de poder voltar.
+    #[test]
+    fn a_acao_aceita_as_tres_escritas() {
+        for (escrito, esperado) in [
+            ("cascata", "Cascata"),
+            ("CASCADE", "Cascata"),
+            ("Cascata", "Cascata"),
+            ("set null", "AnularCampos"),
+            ("anular", "AnularCampos"),
+            ("nada", "NaoFazerNada"),
+        ] {
+            let s = servidor(&dir_temp(&format!("acao-{}", escrito.replace(' ', "-"))));
+            com_fk(&s, &format!(r#","ao_excluir":"{escrito}""#)).unwrap();
+            let e = pede(&s, r#""op":"esquema","database":"b","tabela":"pedidos""#).unwrap();
+            let fk = &e
+                .campo("chaves_estrangeiras")
+                .and_then(Json::lista)
+                .unwrap()[0];
+            assert_eq!(fk.texto_ou("ao_excluir", ""), esperado, "{escrito}");
+        }
+    }
+
+    /// Chave mal escrita recusa dizendo O QUE esta errado, e a tabela NAO
+    /// nasce: meia tabela criada seria pior que nenhuma.
+    #[test]
+    fn chave_mal_escrita_recusa_e_a_tabela_nao_nasce() {
+        let s = servidor(&dir_temp("ruim"));
+        // Cada caso com um nome de tabela proprio: com o mesmo nome, o segundo
+        // erro seria "ja existe" e o teste passaria pelo motivo errado.
+        for (n, chave, esperado) in [
+            (
+                1,
+                r#"{"nome":"fk","colunas":["nao_existe"],"tabela_ref":"c"}"#,
+                "nao existe nesta tabela",
+            ),
+            (
+                2,
+                r#"{"nome":"fk","colunas":["id"],"tabela_ref":""}"#,
+                "tabela_ref",
+            ),
+            (
+                3,
+                r#"{"nome":"fk","colunas":["id"],"tabela_ref":"c","ao_excluir":"talvez"}"#,
+                "acao de integridade desconhecida",
+            ),
+            (4, r#"{"colunas":["id"],"tabela_ref":"c"}"#, "nome"),
+            (5, r#"{"nome":"fk","tabela_ref":"c"}"#, "colunas"),
+        ] {
+            let e = pede(
+                &s,
+                &format!(
+                    r#""op":"criar_tabela","database":"b","tabela":"t{n}",
+                       "colunas":[{{"nome":"id","tipo":"Int4","obrigatoria":true}}],
+                       "chaves_estrangeiras":[{chave}]"#
+                ),
+            )
+            .unwrap_err();
+            assert!(
+                e.to_string().contains(esperado),
+                "caso {n}: {e} (esperava {esperado:?})"
+            );
+
+            // E a tabela NAO nasceu: meia tabela criada seria pior que nenhuma,
+            // porque o proximo pedido diria "ja existe" e ninguem entenderia.
+            let t = pede(&s, r#""op":"tabelas","database":"b""#).unwrap();
+            assert!(
+                !t.escrever().contains(&format!("t{n}")),
+                "caso {n}: a tabela nasceu mesmo com a chave recusada"
+            );
+        }
+    }
+
+    /// **Declarar nao e aplicar, e este teste existe para o documento nao
+    /// mentir.**
+    ///
+    /// A chave fica gravada no esquema, o `esquema` a devolve e o diagrama a
+    /// desenha -- mas NENHUMA gravacao a consulta hoje. Uma linha filha
+    /// apontando para um pai que nao existe entra sem reclamacao.
+    ///
+    /// O teste trava o comportamento REAL, e nao o desejado: no dia em que a
+    /// imposicao entrar, ele falha e obriga quem a escreveu a atualizar o
+    /// MANUAL junto. Sem ele, alguem le "chave estrangeira" no `criar_tabela`
+    /// e supoe uma garantia que nao existe -- que e como a lista de pendencias
+    /// chegou a dizer "pronto" para isto.
+    #[test]
+    fn a_chave_e_declarada_mas_ainda_nao_e_imposta_na_gravacao() {
+        let s = servidor(&dir_temp("nao-impoe"));
+        com_fk(&s, "").unwrap();
+        // `clientes` nem existe, e o pai 999 muito menos.
+        pede(
+            &s,
+            r#""op":"inserir","database":"b","tabela":"pedidos",
+               "linha":{"id":1,"cliente_id":999}"#,
+        )
+        .expect(
+            "a insercao passou a ser recusada: a integridade referencial entrou.              Atualize o MANUAL e o docs/PENDENCIAS, que dizem que ela NAO e imposta",
+        );
+    }
+
+    /// **`duplicar_tabela` preserva a chave.** Ele copia os arquivos byte a
+    /// byte, e o esquema mora no `.reg` -- mas isso e uma consequencia de como
+    /// ele foi feito, e nao uma promessa escrita. Este teste vira a promessa:
+    /// se um dia alguem trocar a copia por uma reinsercao linha a linha, a
+    /// chave sumiria em silencio.
+    #[test]
+    fn duplicar_tabela_preserva_a_chave_estrangeira() {
+        let s = servidor(&dir_temp("duplicar"));
+        com_fk(&s, r#","ao_alterar":"cascata""#).unwrap();
+        pede(
+            &s,
+            r#""op":"duplicar_tabela","database":"b","tabela":"pedidos",
+               "destino":"pedidos_copia""#,
+        )
+        .unwrap();
+
+        let e = pede(
+            &s,
+            r#""op":"esquema","database":"b","tabela":"pedidos_copia""#,
+        )
+        .unwrap();
+        let fks = e
+            .campo("chaves_estrangeiras")
+            .and_then(Json::lista)
+            .unwrap();
+        assert_eq!(fks.len(), 1, "a copia perdeu a chave: {}", e.escrever());
+        assert_eq!(fks[0].texto_ou("nome", ""), "fk_cliente");
+        assert_eq!(fks[0].texto_ou("ao_alterar", ""), "Cascata");
+    }
+
+    /// O que o `esquema` devolve tem de poder voltar como `criar_tabela`. E o
+    /// caminho de recriar uma tabela noutro servidor, e uma chave que so sai e
+    /// nao entra quebraria justamente ele.
+    #[test]
+    fn o_que_o_esquema_devolve_volta_como_criar_tabela() {
+        let s = servidor(&dir_temp("ida-e-volta"));
+        com_fk(&s, r#","ao_excluir":"cascata""#).unwrap();
+        let e = pede(&s, r#""op":"esquema","database":"b","tabela":"pedidos""#).unwrap();
+
+        let mut recriar = vec![
+            ("op".to_string(), Json::texto_de("criar_tabela")),
+            ("database".to_string(), Json::texto_de("b")),
+            ("tabela".to_string(), Json::texto_de("pedidos2")),
+            ("token".to_string(), Json::texto_de("t")),
+        ];
+        // As colunas de sistema saem de fora: elas entram sozinhas.
+        let colunas: Vec<Json> = e
+            .campo("colunas")
+            .and_then(Json::lista)
+            .unwrap()
+            .iter()
+            .filter(|c| c.campo("sistema").and_then(Json::booleano) != Some(true))
+            .cloned()
+            .collect();
+        recriar.push(("colunas".to_string(), Json::Lista(colunas)));
+        recriar.push((
+            "chaves_estrangeiras".to_string(),
+            e.campo("chaves_estrangeiras").cloned().unwrap(),
+        ));
+
+        let mut ses = Sessao::default();
+        let (_, _, r) = s.despachar(&Json::Objeto(recriar).escrever(), &mut ses, "127.0.0.1");
+        r.expect("o esquema devolvido nao voltou como pedido");
+
+        let e2 = pede(&s, r#""op":"esquema","database":"b","tabela":"pedidos2""#).unwrap();
+        let fk = &e2
+            .campo("chaves_estrangeiras")
+            .and_then(Json::lista)
+            .unwrap()[0];
+        assert_eq!(fk.texto_ou("nome", ""), "fk_cliente");
+        assert_eq!(fk.texto_ou("ao_excluir", ""), "Cascata");
     }
 }

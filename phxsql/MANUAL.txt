@@ -174,6 +174,47 @@ Veja o diario:
         Navegam a hierarquia de databases e schemas.
 
 
+6b. phxsqlcmd -- O CONSOLE
+--------------------------------------------------------------------------------
+Um prompt que fala o protocolo com um servidor. A linha digitada vira pedido, e
+a resposta vira tabela.
+
+    phxsqlcmd --host 10.1.1.102 --porta 5000 --token segredo --usuario adriano
+    PHXSQL_SENHA='a senha' phxsqlcmd --usuario adriano --database loja
+    phxsqlcmd --comando 'tabelas database=loja'    roda uma linha e sai
+
+NA LINHA:
+
+    bancos                              operacao sem argumento
+    tabelas database=loja               argumentos sao chave=valor
+    ler tabela=clientes rowid=42        o /use preenche o database sozinho
+    inserir tabela=c valores={"id":9}   JSON dentro do valor funciona
+    buscar tabela=c indice=porId chave=[42]
+    nome="Ana Maria"                    aspas seguram o valor com espaco
+    SELECT * FROM clientes LIMIT 10     vira a operacao sql
+    {"op":"ping"}                       JSON cru, para o que a linha nao alcanca
+
+    /help          a lista de operacoes -- VINDA DO SERVIDOR, e so o que voce
+                   pode chamar. O rodape diz quantas ficaram de fora
+    /help buscar   parametros e exemplo de uma
+    /use loja      escolhe o banco corrente
+    /cru           alterna entre tabela e JSON cru
+    /sair          termina
+
+SEM HISTORICO E SEM SETAS NESTA RODADA. A seta para cima escreve ^[[A na tela
+em vez de trazer o comando anterior. Um readline de verdade e o terminal em
+modo cru, e isso e uma crate -- a regra do projeto e zero dependencias.
+
+A SENHA vem de PHXSQL_SENHA, ou e perguntada (e aparece na tela). --senha
+funciona e avisa que e pior: o argumento aparece no `ps` e fica no historico.
+
+A TABELA NAO MENTE SOBRE O DADO: a caixa nao muda -- «Blumenau» sai
+«Blumenau» --, e a celula maior que 40 caracteres e cortada COM «…», para quem
+le saber que viu um pedaco. Toda lista da resposta vira uma tabela, e nao so a
+primeira: o esquema traz quatro.
+
+Detalhes e o que a ligacao ensinou em docs/CONSOLE.md.
+
 7. O SERVIDOR
 --------------------------------------------------------------------------------
 7.1 Gere um config.json
@@ -248,6 +289,139 @@ RESPOSTA
 
     {"ok":true,"op":"ping","resultado":{...},"ms":0}
     {"ok":false,"op":"ler","erro":"...","ms":1}
+
+O CATALOGO: O PROTOCOLO SE DESCREVE SOZINHO
+
+    {"token":"segredo","op":"catalogo"}
+
+    Devolve TODAS as operacoes que aquela sessao pode chamar, cada uma com o
+    resumo, a permissao exigida, os parametros (nome, tipo, se e obrigatorio,
+    para que serve) e um pedido de exemplo que funciona.
+
+        {"total":42,"ocultas":39,"operacoes":[
+          {"nome":"buscar","apelidos":[],"permissao":"ler","escreve":false,
+           "resumo":"Desce um indice ate a chave exata ...",
+           "parametros":[{"nome":"indice","tipo":"string","obrigatorio":true,
+                          "para_que":"o nome do indice"}, ...],
+           "exemplo":"{\"op\":\"buscar\", ...}"}]}
+
+    UMA SO, com "operacao" -- e o campo nao se chama "op" porque esse ja e o
+    nome da operacao chamada:
+
+        {"token":"segredo","op":"catalogo","operacao":"buscar"}
+
+    O QUE APARECE E O QUE VOCE PODE. Um leitor nao ve "excluir_tabela" na
+    lista; "ocultas" diz quantas ficaram de fora, para quem ve uma lista curta
+    saber que ela e curta por permissao e nao por o servidor ser pequeno.
+    Pedir uma operacao que existe mas voce nao pode responde POR QUE, com o
+    nome da permissao que faltou -- e nao "nao existe", que mandaria procurar
+    erro de digitacao onde nao ha.
+
+    ESCONDER AQUI NAO E O PORTAO. O portao continua sendo o do despachar, e
+    ele confere de novo quando a operacao for de fato chamada. O catalogo e
+    cortesia, para nao oferecer oitenta operacoes a quem so pode chamar tres.
+
+    QUEM MAIS LE ESTE CATALOGO: o "tools/list" do servidor MCP e o "/help" do
+    phxsqlcmd. Os tres saem da MESMA lista -- e ha um teste que deriva a lista
+    de operacoes do proprio codigo do despachar e falha se ela e o catalogo
+    discordarem, nos dois sentidos. Ajuda escrita a mao envelhece calada.
+
+CHAVE ESTRANGEIRA NO criar_tabela
+
+    {"op":"criar_tabela","database":"loja","tabela":"pedidos",
+     "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true},
+                {"nome":"cliente_id","tipo":"Int4"}],
+     "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}],
+     "chaves_estrangeiras":[
+       {"nome":"fk_cliente","colunas":["cliente_id"],
+        "tabela_ref":"clientes","colunas_ref":["id"],
+        "ao_excluir":"restringir","ao_alterar":"cascata"}]}
+
+    O formato ja guardava chave estrangeira e o "esquema" ja a reportava --
+    mas nenhuma operacao do protocolo a CRIAVA: so dava para declarar uma pela
+    API Rust. Agora da.
+
+    AS ACOES aceitam o portugues, o SQL e a forma que o "esquema" devolve:
+
+        restringir | restrict | Restringir      recusa enquanto houver filha
+        cascata    | cascade  | Cascata         repete a operacao nas filhas
+        anular     | set null | AnularCampos    anula as colunas da filha
+        nada       | no action| NaoFazerNada    nao faz nada
+
+    Ausente e "restringir", que e o unico padrao seguro: quem nao disse o que
+    fazer com a filha nao pediu para apaga-la. Sem "colunas_ref", referencia
+    colunas de MESMO NOME na outra tabela.
+
+    ATENCAO -- O QUE ISTO E E O QUE NAO E. A chave fica DECLARADA no esquema:
+    o "esquema" a devolve, o diagrama ER a desenha e um gerador de SQL a le. O
+    motor ainda NAO a IMPOE em insercao, alteracao ou exclusao. Declarar nao e
+    aplicar, e este manual nao vai dizer que e.
+
+    Sem o campo, a tabela nasce exatamente como sempre nasceu -- todo cliente
+    escrito antes desta versao continua criando tabela igual.
+
+SERVIDOR MCP (Model Context Protocol)
+
+    phxsqld --mcp                                  pelo token de servico
+    PHXSQL_SENHA='a senha' phxsqld --mcp --usuario adriano
+    phxsqld --mcp --escrita                        libera as que gravam
+
+    Le uma mensagem JSON-RPC 2.0 por linha da entrada padrao e escreve uma
+    resposta por linha na saida -- que e como um cliente MCP local conversa.
+
+    SOMENTE LEITURA VEM LIGADO. Do outro lado ha um modelo de linguagem, e nao
+    uma pessoa. Sem --escrita, phx_inserir e phx_atualizar nem sao anunciadas,
+    e chamar uma delas responde POR QUE foi recusada.
+
+    A SENHA VEM DO AMBIENTE. Argumento de linha de comando aparece no `ps` e
+    fica no historico do shell, e a entrada padrao aqui esta ocupada pelo
+    protocolo -- entao sobra PHXSQL_SENHA. Sem --usuario a ponte fala pelo
+    token de servico, e num servidor COM cadastro isso nao passa do ping; o
+    aviso sai no stderr, que e onde cabe sem sujar o cano.
+
+    O PORTAO E O MESMO. A ponte nao executa nada: ela monta o pedido e entrega
+    ao mesmo despachar da porta 5000 -- politica, token, login e permissao por
+    base e tabela. Toda chamada entra no log de acessos, com "stdio" no lugar
+    do IP.
+
+    AS FERRAMENTAS saem do catalogo (op "catalogo"), e o nome de cada uma e
+    "phx_" mais a op. Detalhes em docs/MCP.md.
+
+SQL: UM SELECT SIMPLES, TRADUZIDO
+
+    {"token":"segredo","op":"sql","database":"loja",
+     "texto":"SELECT nome AS quem FROM clientes WHERE id = 42"}
+
+    A gramatica inteira cabe em cinco linhas:
+
+        SELECT ( * | COUNT(*) | coluna [AS apelido] {, ...} )
+        FROM   [banco.] [schema.] tabela [[AS] apelido]
+        [WHERE coluna ( = | <> | < | <= | > | >= ) literal]
+        [ORDER BY coluna [ASC|DESC]]
+        [LIMIT n [OFFSET m]]
+
+    A resposta e a da operacao traduzida -- "varrer" ou "buscar" --, com tres
+    campos a mais na frente: o "sql" que voce mandou, o "op" que ele virou e as
+    "notas" do tradutor. COUNT(*) devolve "contagem". O campo "sql" e aceito no
+    lugar de "texto", que e o nome que um driver escreveria.
+
+    O QUE NAO TEM SUBSTRATO RECUSA DIZENDO O QUE FALTA. Nao ha expressao, nao
+    ha JOIN, nao ha subconsulta e nao ha transacao -- e um WHERE sobre coluna
+    SEM indice recusa em vez de virar uma varredura com o filtro esquecido no
+    caminho, porque o "varrer" NAO filtra. A recusa diz quais colunas TEM
+    indice. Erro de sintaxe aponta a coluna do texto: «SQL, coluna 10: ...».
+
+    O PORTAO E O MESMO. A op sql nao abre tabela nenhuma: ela pede o "esquema"
+    da tabela do FROM (que ja exige ler naquela tabela) e depois executa o
+    varrer ou o buscar traduzido -- os dois pelo mesmo portao de um pedido que
+    chega pela rede. SELECT numa tabela negada para com o mesmo erro de um
+    varrer nela. Servidor que proibe "varrer" pela politica tambem nao pode ser
+    varrido escrevendo SELECT.
+
+    QUEM PODE. A op pede "ler". Quem so tem direito por TABELA, e nenhum na
+    base, para no portao de fora: ele le o campo "database" do envelope e nao
+    tem como saber a tabela, que esta dentro do texto do SQL. O portao de
+    dentro continua conferindo a tabela de verdade -- o de fora so aperta.
 
 RECURSOS DA MAQUINA
 

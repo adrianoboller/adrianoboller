@@ -21,7 +21,7 @@ use phxsql_core::carga::data_de_texto;
 pub use phxsql_core::carga::{hex_para_bytes, texto_para_decimal};
 use phxsql_core::paginacao::{ModoParticao, Paginacao, Periodo, DIGITOS_PADRAO};
 use phxsql_core::schema::Schema;
-use phxsql_core::schema::{Column, IndexColumn, IndexDef};
+use phxsql_core::schema::{AcaoRi, Column, ForeignKey, IndexColumn, IndexDef};
 use phxsql_core::types::{ColumnType, DadoPessoal};
 use phxsql_core::uuid::{Uuid, Uuid256};
 use phxsql_core::value::Value;
@@ -163,6 +163,92 @@ pub fn tipo_de_texto(t: &str) -> Result<ColumnType> {
     })
 }
 
+/// Uma chave estrangeira, como o pedido a escreve.
+///
+/// ```json
+/// {"nome":"fk_cliente","colunas":["cliente_id"],
+///  "tabela_ref":"clientes","colunas_ref":["id"],
+///  "ao_excluir":"restringir","ao_alterar":"cascata"}
+/// ```
+///
+/// As colunas LOCAIS vao por nome e viram posicao aqui; as REFERENCIADAS ficam
+/// por nome mesmo, porque elas moram na outra tabela e esta funcao nao a abre
+/// -- resolver posicao ali exigiria ler a outra tabela na hora de criar esta,
+/// e uma FK pode apontar para uma tabela que ainda vai nascer.
+fn chave_estrangeira_de_json(f: &Json, i: usize, esquema: &Schema) -> Result<ForeignKey> {
+    let nome = f.texto_ou("nome", "").trim().to_string();
+    if nome.is_empty() {
+        return Err(PhxError::Esquema(format!(
+            "chave estrangeira {i} sem \"nome\""
+        )));
+    }
+    let locais = f.textos("colunas");
+    if locais.is_empty() {
+        return Err(PhxError::Esquema(format!("{nome} sem \"colunas\"")));
+    }
+    let mut posicoes = Vec::with_capacity(locais.len());
+    for c in &locais {
+        let alvo = c.trim();
+        let p = esquema
+            .colunas()
+            .iter()
+            .position(|col| col.nome == alvo)
+            .ok_or_else(|| {
+                PhxError::Esquema(format!(
+                    "{nome} usa a coluna {alvo:?}, que nao existe nesta tabela"
+                ))
+            })?;
+        posicoes.push(p);
+    }
+
+    let tabela_ref = f
+        .texto_ou("tabela_ref", f.texto_ou("tabela", ""))
+        .trim()
+        .to_string();
+    if tabela_ref.is_empty() {
+        return Err(PhxError::Esquema(format!(
+            "{nome} nao diz qual tabela referencia (\"tabela_ref\")"
+        )));
+    }
+    // Sem `colunas_ref`, referencia colunas de MESMO NOME na outra tabela. E o
+    // caso comum -- `cliente_id` apontando para `clientes.cliente_id` nao e o
+    // comum, mas `id` apontando para `id` e --, e escrever a lista duas vezes
+    // e onde alguem troca a ordem sem perceber.
+    let colunas_ref = match f.textos("colunas_ref") {
+        v if v.is_empty() => locais.clone(),
+        v => v,
+    };
+
+    Ok(ForeignKey::new(nome, posicoes, tabela_ref, colunas_ref)
+        .ao_excluir(acao_ri_de_texto(f.texto_ou("ao_excluir", ""))?)
+        .ao_alterar(acao_ri_de_texto(f.texto_ou("ao_alterar", ""))?))
+}
+
+/// A acao de integridade referencial escrita em texto.
+///
+/// Aceita o portugues, o SQL e a forma que o `esquema` DEVOLVE (`"Restringir"`)
+/// -- pela mesma razao do `tipo_de_texto`: o que a operacao devolve tem de
+/// poder voltar como entrada, senao recriar uma tabela exige traduzir na mao.
+///
+/// Ausente e `Restringir`, que e o padrao do `ForeignKey::new` e o unico
+/// seguro: quem nao disse o que fazer com a filha nao pediu para apaga-la.
+fn acao_ri_de_texto(t: &str) -> Result<AcaoRi> {
+    Ok(
+        match t.trim().to_lowercase().replace([' ', '_'], "").as_str() {
+            "" | "restringir" | "restrict" => AcaoRi::Restringir,
+            "cascata" | "cascade" => AcaoRi::Cascata,
+            "anular" | "anularcampos" | "setnull" => AcaoRi::AnularCampos,
+            "nada" | "naofazernada" | "noaction" => AcaoRi::NaoFazerNada,
+            outro => {
+                return Err(PhxError::Esquema(format!(
+                    "acao de integridade desconhecida: {outro:?} \
+                 (use restringir, cascata, anular ou nada)"
+                )))
+            }
+        },
+    )
+}
+
 /// Monta um `Schema` a partir do JSON de um pedido de criacao de tabela.
 ///
 /// ```json
@@ -175,6 +261,9 @@ pub fn tipo_de_texto(t: &str) -> Result<ColumnType> {
 ///
 /// As colunas dos indices vao por NOME, nao por posicao. Posicao e detalhe de
 /// implementacao e muda quando alguem reordena o esquema; nome nao.
+///
+/// As chaves estrangeiras entram por `"chaves_estrangeiras"`, e a ausencia do
+/// campo e uma lista vazia -- que e o que toda tabela ja criada tem.
 pub fn esquema_de_json(j: &Json) -> Result<Schema> {
     let nome = j.texto_ou("tabela", "").trim().to_string();
     if nome.is_empty() {
@@ -275,6 +364,30 @@ pub fn esquema_de_json(j: &Json) -> Result<Schema> {
     // exclusao nesta tabela passa sem uma frase escrita.
     let esquema = Schema::new(nome, colunas, indices)?
         .com_motivo_obrigatorio(j.booleano_ou("motivo_obrigatorio", false));
+
+    // As chaves estrangeiras.
+    //
+    // O formato as suporta e o `esquema` as reporta desde sempre -- mas
+    // NENHUMA operacao do protocolo as criava: so dava para declarar uma pela
+    // API Rust. Uma lista de pendencias dizia "chave estrangeira: pronto", e
+    // era meia verdade.
+    //
+    // Ausente e uma lista vazia, que e o que toda tabela ja criada tem: cliente
+    // escrito antes desta versao continua criando tabela exatamente igual.
+    let esquema = match j
+        .campo("chaves_estrangeiras")
+        .or_else(|| j.campo("fks"))
+        .and_then(Json::lista)
+    {
+        None => esquema,
+        Some(lista) => {
+            let mut fks = Vec::with_capacity(lista.len());
+            for (i, f) in lista.iter().enumerate() {
+                fks.push(chave_estrangeira_de_json(f, i, &esquema)?);
+            }
+            esquema.com_chaves_estrangeiras(fks)?
+        }
+    };
 
     // A paginacao entra na criacao e nao muda depois: ela decide como o rowid
     // vira endereco. Trocar mais tarde seria reescrever a tabela inteira.
@@ -382,6 +495,25 @@ pub fn json_para_valor(j: &Json, ty: &ColumnType) -> Result<Value> {
     }
     let erro = |esperado: &str| PhxError::Tipo(format!("esperado {esperado}, recebido {j:?}"));
 
+    // Inteiro escrito como TEXTO tambem serve.
+    //
+    // O `Decimal` desta mesma funcao ja EXIGE texto, para nao perder centavo
+    // num `f64` -- e pela mesma razao o tradutor de SQL guarda todo literal
+    // numerico como texto. Sem esta linha, `WHERE id = 2` chegaria como
+    // `["2"]` e seria recusado por tipo, e o SELECT mais simples que existe
+    // nao funcionaria contra uma coluna `Int4`. Vale tambem para o driver
+    // ODBC e para o protocolo do PostgreSQL(R), onde TODO parametro chega
+    // como texto.
+    //
+    // E so alargar: quem manda numero continua igual, e texto que nao e
+    // numero continua recusado com o mesmo erro de tipo.
+    let inteiro = || -> Option<i64> {
+        match j {
+            Json::Texto(t) => t.trim().parse::<i64>().ok(),
+            outro => outro.inteiro(),
+        }
+    };
+
     Ok(match ty {
         ColumnType::Bool => match j {
             Json::Bool(b) => Value::Bool(*b),
@@ -389,10 +521,10 @@ pub fn json_para_valor(j: &Json, ty: &ColumnType) -> Result<Value> {
             _ => return Err(erro("booleano")),
         },
         ColumnType::Int1 | ColumnType::Int2 | ColumnType::Int4 | ColumnType::Int8 => {
-            Value::Int(j.inteiro().ok_or_else(|| erro("inteiro"))?)
+            Value::Int(inteiro().ok_or_else(|| erro("inteiro"))?)
         }
         ColumnType::UInt1 | ColumnType::UInt2 | ColumnType::UInt4 | ColumnType::UInt8 => {
-            let n = j.inteiro().ok_or_else(|| erro("inteiro sem sinal"))?;
+            let n = inteiro().ok_or_else(|| erro("inteiro sem sinal"))?;
             if n < 0 {
                 return Err(PhxError::Tipo(format!(
                     "{n} e negativo numa coluna sem sinal"
@@ -1138,5 +1270,75 @@ mod testes_metadados {
                 "erro {erro:?} nao menciona {pedaco:?}"
             );
         }
+    }
+}
+
+/// Inteiro escrito como texto.
+///
+/// O tradutor de SQL guarda todo literal numerico como texto -- pelo mesmo
+/// motivo que o `Decimal` daqui EXIGE texto: `f64` nao representa `1500.00`
+/// exatamente. Sem aceitar o texto, `WHERE id = 2` nao funcionaria contra uma
+/// coluna `Int4`, e o SELECT mais simples que existe morreria por tipo.
+#[cfg(test)]
+mod testes_inteiro_em_texto {
+    use super::*;
+
+    /// **O teste do comportamento VELHO, que e o que mais importa.** Alargar
+    /// nao pode mudar nada de quem ja mandava numero.
+    #[test]
+    fn numero_continua_valendo_exatamente_como_antes() {
+        assert_eq!(
+            json_para_valor(&Json::de_i64(42), &ColumnType::Int4).unwrap(),
+            Value::Int(42)
+        );
+        assert_eq!(
+            json_para_valor(&Json::de_u64(42), &ColumnType::UInt4).unwrap(),
+            Value::UInt(42)
+        );
+        assert_eq!(
+            json_para_valor(&Json::Nulo, &ColumnType::Int4).unwrap(),
+            Value::Null
+        );
+    }
+
+    #[test]
+    fn texto_com_numero_dentro_tambem_serve() {
+        assert_eq!(
+            json_para_valor(&Json::texto_de("42"), &ColumnType::Int4).unwrap(),
+            Value::Int(42)
+        );
+        assert_eq!(
+            json_para_valor(&Json::texto_de(" -7 "), &ColumnType::Int8).unwrap(),
+            Value::Int(-7)
+        );
+        assert_eq!(
+            json_para_valor(&Json::texto_de("42"), &ColumnType::UInt2).unwrap(),
+            Value::UInt(42)
+        );
+    }
+
+    /// E o que NAO e numero continua recusado, com o mesmo erro de tipo:
+    /// alargar nao pode virar engolir.
+    #[test]
+    fn texto_que_nao_e_numero_continua_recusado() {
+        let e = json_para_valor(&Json::texto_de("abc"), &ColumnType::Int4).unwrap_err();
+        assert_eq!(e.nome(), "TIPO_INVALIDO", "{e}");
+        assert!(e.to_string().contains("inteiro"), "{e}");
+
+        // Negativo em coluna sem sinal continua recusado dizendo por que.
+        let e = json_para_valor(&Json::texto_de("-1"), &ColumnType::UInt4).unwrap_err();
+        assert!(e.to_string().contains("negativo"), "{e}");
+
+        // E o decimal continua exigindo texto e recusando numero -- esta
+        // regra nao foi tocada.
+        let e = json_para_valor(
+            &Json::Numero(12.34),
+            &ColumnType::Decimal {
+                precisao: 10,
+                escala: 2,
+            },
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("centavo"), "{e}");
     }
 }
