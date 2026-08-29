@@ -269,6 +269,42 @@
   ],
   "idioma": "",
 
+  "_telemetria": [
+    "As cores das quatro bolhas do painel de Telemetria, e os dois limiares",
+    "que decidem qual delas cada atividade recebe.",
+    "",
+    "CAMPO VAZIO E A COR DE FABRICA, e vazio e o padrao. A de fabrica nao e um",
+    "hexadecimal: e a cor do TEMA, que escurece sozinha no tema claro pelo",
+    "mesmo motivo do vermelhao da marca. Deixar em branco e ver o painel de",
+    "sempre, nos dois temas.",
+    "",
+    "Aceita \"#rrggbb\" e so. A tela (Configuracoes > Gerais do servidor >",
+    "Cores do painel de telemetria) tem um seletor de cor com a BOLHA de",
+    "amostra ao lado -- cor se escolhe vendo, nao lendo hexadecimal -- e avisa",
+    "quando a escolhida nao alcanca 4,5:1 com nenhuma das duas tintas do",
+    "rotulo. Avisa, nao proibe.",
+    "",
+    "O que NAO se configura e o que nao e cor: o traco da borda, o glifo e a",
+    "palavra do estado sao os mesmos em qualquer paleta. 8% dos homens nao",
+    "distinguem vermelho de amarelo, e cor nunca pode ser o unico sinal.",
+    "",
+    "alto_uso_ms: a partir daqui a operacao em curso vira uso alto (amarelo).",
+    "stress_ms: a partir de quanto tempo TRABALHANDO ela vira stress",
+    "(vermelho). Sao o mesmo numero que a legenda do painel escreve.",
+    "",
+    "Tudo isto se ajusta pela tela e vale NA HORA -- ver docs/TELEMETRIA.md",
+    "secao 3.3.1."
+  ],
+
+  "telemetria": {
+    "cor_normal": "",
+    "cor_alto": "",
+    "cor_stress": "",
+    "cor_encerrando": "",
+    "alto_uso_ms": 2000,
+    "stress_ms": 5000
+  },
+
   "_usuarios": [
     "A senha NUNCA vai em texto puro. Gere o hash com:",
     "    echo -n 'a senha' | phxsqld --senha",

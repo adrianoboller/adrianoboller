@@ -600,6 +600,14 @@ impl Servidor {
             espelho_vivo: AtomicBool::new(espelho),
             telemetria: Arc::new(crate::telemetria::Telemetria::default()),
         });
+        // **O leitor do bloco `telemetria`.** Sem esta linha o `config.json`
+        // teria quatro cores e dois limiares que ninguem le -- exatamente o
+        // `cache_paginas` que passou tres versoes prometendo um cache que nao
+        // existia. O teste que cai com ela removida e
+        // `cor_do_config_chega_no_retrato`.
+        servidor
+            .telemetria
+            .definir_pintura(servidor.config.telemetria.clone());
         // Quem configurou "idioma" pediu o recurso: a tabela de mensagens e
         // semeada no arranque se ainda nao existe. Sem o campo, nada e criado
         // -- guarda nova entra pedida, nao imposta.
@@ -2735,6 +2743,13 @@ impl Servidor {
         j.definir("max_linhas", Json::de_u64(self.max_linhas()));
         j.definir("somente_leitura", Json::Bool(self.somente_leitura()));
         j.definir("espelho", Json::Bool(self.espelho()));
+        // As cores e os limiares do painel valem A QUENTE, entao quem manda e
+        // o registro da telemetria, e nao o `Config` de quando o servidor
+        // subiu. Sem esta linha a tela grava a cor, o painel a obedece na
+        // volta seguinte, e a propria tela de Configuracoes anuncia «gravado,
+        // vale no proximo arranque» -- mentindo sobre o que ela acabou de
+        // fazer. Apareceu exercitando, e nao lendo.
+        j.definir("telemetria", self.telemetria.pintura().para_json());
         // O que ja esta GRAVADO e ainda nao vale: campo que so aplica no
         // proximo arranque volta aqui com o valor do arquivo, para a tela
         // mostra-lo em vez de redesenhar o valor velho calada.
@@ -2799,6 +2814,10 @@ impl Servidor {
         phxsql_store::ndx::definir_cache_paginas(novo.recursos.cache_paginas);
         novo.recursos.aplicar();
         novo.lgpd.aplicar();
+        // A cor vale na resposta seguinte da telemetria -- dois segundos. Cor
+        // se escolhe VENDO, e uma que so aparecesse no proximo arranque seria
+        // escolhida no escuro.
+        self.telemetria.definir_pintura(novo.telemetria.clone());
         self.max_linhas_vivo
             .store(novo.max_linhas, Ordering::Relaxed);
         self.somente_leitura_vivo

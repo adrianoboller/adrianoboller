@@ -76,6 +76,10 @@ pub const PERIODO_DA_AMOSTRA_MS: u64 = 1_000;
 /// com a regra nos dois lugares, o dia em que um deles mudar a tela pinta uma
 /// cor que o servidor nao concorda. E a mesma razao pela qual `sistema` manda
 /// o `livre_minimo_percentual` junto com o espaco livre.
+///
+/// E o valor DE FABRICA: o `config.json` pode troca-lo em
+/// `telemetria.alto_uso_ms`, e o que vale e o que esta na [`Painel`] deste
+/// registro. Quem nao configurar nada continua com estes 2 s.
 pub const ALTO_USO_MS: u64 = 2_000;
 
 /// A partir de quantos milissegundos segurando a trava a atividade e stress.
@@ -83,6 +87,8 @@ pub const ALTO_USO_MS: u64 = 2_000;
 /// Segurar a trava de dados nao e ocupar uma parte do servidor: e ocupar o
 /// servidor INTEIRO, porque toda escrita e toda leitura passam por ela. Por
 /// isso o limiar aqui e mais curto que o de uso alto.
+///
+/// Tambem e o valor de fabrica -- ver [`ALTO_USO_MS`].
 pub const STRESS_MS: u64 = 5_000;
 
 /// As operacoes que TEM ponto de cancelamento em algum trecho.
@@ -520,7 +526,19 @@ impl Atividade {
     /// `stress` diz se o SERVIDOR esta apertado agora: a cor vermelha nao e
     /// so da atividade, e da situacao. Quem decide isso e quem tem as series
     /// na mao, e nao a atividade sozinha.
-    pub fn para_json(&self, agora_ms: i64, stress_no_servidor: bool, ha_fila: bool) -> Json {
+    ///
+    /// Os limiares chegam por parametro em vez de sairem da constante: quem
+    /// os tem na mao e o registro, e o mesmo par que decide o nivel aqui vai
+    /// para o campo `limiares` da resposta, que e o que a legenda escreve. Dois
+    /// numeros para a mesma regra e como a tela acaba pintando o que o
+    /// servidor nao concorda.
+    pub fn para_json(
+        &self,
+        agora_ms: i64,
+        stress_no_servidor: bool,
+        ha_fila: bool,
+        limiares: &crate::config::Painel,
+    ) -> Json {
         let c = self
             .dentro
             .lock()
@@ -564,10 +582,11 @@ impl Atividade {
         let trabalhando = self.trabalhando_ha_ms();
         let nivel = if estado == Estado::Encerrando {
             "encerrando"
-        } else if estado == Estado::Executando && (trabalhando >= STRESS_MS || segurando_todo_mundo)
+        } else if estado == Estado::Executando
+            && (trabalhando >= limiares.stress_ms || segurando_todo_mundo)
         {
             "stress"
-        } else if executando && (ha >= ALTO_USO_MS || estado == Estado::Esperando) {
+        } else if executando && (ha >= limiares.alto_uso_ms || estado == Estado::Esperando) {
             "alto"
         } else {
             "normal"
@@ -878,6 +897,19 @@ pub struct Telemetria {
     encerramentos: AtomicU64,
     /// Threads de atendimento vivas agora (as efemeras nao entram na lista).
     fios_vivos: AtomicUsize,
+    /// As cores e os limiares que o `config.json` escolheu.
+    ///
+    /// # Por que aqui dentro, e nao num global de processo
+    ///
+    /// Porque um global seria estado compartilhado entre testes que rodam em
+    /// paralelo no mesmo processo: um teste que configura uma cor apagaria o
+    /// `sem_cor_configurada_nada_muda` do vizinho de vez em quando, e teste que
+    /// falha as vezes e pior que teste que falta. Aqui a pintura pertence ao
+    /// registro, como tudo o mais que ele responde.
+    ///
+    /// E lida uma vez por retrato -- de dois em dois segundos, quando alguem
+    /// tem o painel aberto --, e nao no caminho quente de pedido nenhum.
+    pintura: Mutex<crate::config::Painel>,
 }
 
 impl Default for Telemetria {
@@ -905,6 +937,27 @@ impl Telemetria {
             trava_us: AtomicU64::new(0),
             encerramentos: AtomicU64::new(0),
             fios_vivos: AtomicUsize::new(0),
+            pintura: Mutex::new(crate::config::Painel::default()),
+        }
+    }
+
+    /// A pintura que o `config.json` pediu.
+    ///
+    /// **Este e o leitor.** Sem esta chamada -- no arranque do servidor e de
+    /// novo a cada gravacao pela tela -- o bloco `telemetria` do arquivo seria
+    /// mais um campo que ninguem le, que e pior que campo ausente: o ausente
+    /// ninguem ajusta esperando efeito.
+    pub fn definir_pintura(&self, p: crate::config::Painel) {
+        match self.pintura.lock() {
+            Ok(mut v) => *v = p,
+            Err(e) => *e.into_inner() = p,
+        }
+    }
+
+    pub fn pintura(&self) -> crate::config::Painel {
+        match self.pintura.lock() {
+            Ok(v) => v.clone(),
+            Err(e) => e.into_inner().clone(),
         }
     }
 
@@ -1339,8 +1392,9 @@ impl Telemetria {
                 ));
             }
         }
+        let stress_ms = self.pintura().stress_ms;
         for at in self.atividades() {
-            if at.estado() == Estado::Esperando && at.ha_ms() >= STRESS_MS {
+            if at.estado() == Estado::Esperando && at.ha_ms() >= stress_ms {
                 motivos.push(format!(
                     "{} esperando a trava ha {} s",
                     at.chave,
@@ -1362,7 +1416,11 @@ impl Telemetria {
         // rodando sozinha», que nao atrapalha ninguem, de «uma consulta longa
         // segurando o servidor inteiro».
         let ha_fila = atividades.iter().any(|a| a.estado() == Estado::Esperando);
-        Json::objeto(vec![
+        // Lida UMA vez por retrato, e usada nos tres lugares que precisam
+        // concordar: o nivel de cada atividade, os limiares que a legenda
+        // escreve e as cores que a tela pinta.
+        let pintura = self.pintura();
+        let mut retrato = Json::objeto(vec![
             ("ligada", Json::Bool(self.ligada())),
             (
                 "ligada_em",
@@ -1417,8 +1475,8 @@ impl Telemetria {
             (
                 "limiares",
                 Json::objeto(vec![
-                    ("alto_uso_ms", Json::de_u64(ALTO_USO_MS)),
-                    ("stress_ms", Json::de_u64(STRESS_MS)),
+                    ("alto_uso_ms", Json::de_u64(pintura.alto_uso_ms)),
+                    ("stress_ms", Json::de_u64(pintura.stress_ms)),
                 ]),
             ),
             (
@@ -1460,7 +1518,7 @@ impl Telemetria {
                 Json::Lista(
                     atividades
                         .iter()
-                        .map(|a| a.para_json(agora_ms, stress, ha_fila))
+                        .map(|a| a.para_json(agora_ms, stress, ha_fila, &pintura))
                         .collect(),
                 ),
             ),
@@ -1468,7 +1526,14 @@ impl Telemetria {
                 "threads",
                 Json::Lista(self.fios().iter().map(|f| f.para_json(agora_ms)).collect()),
             ),
-        ])
+        ]);
+        // O campo so NASCE quando alguem escolheu cor. Sem escolha nenhuma a
+        // resposta e a de sempre, e a tela pinta com as variaveis do tema --
+        // que e o que faz as quatro escurecerem sozinhas no tema claro.
+        if let Some(cores) = pintura.cores_json() {
+            retrato.definir("cores", cores);
+        }
+        retrato
     }
 }
 
@@ -1566,6 +1631,12 @@ fn bytes_do_processo() -> (u64, u64) {
 #[cfg(test)]
 mod testes {
     use super::*;
+    use crate::config::Painel;
+
+    /// Os limiares de fabrica, para os testes que nao sao sobre eles.
+    fn de_fabrica() -> Painel {
+        Painel::default()
+    }
 
     fn nova_atividade() -> Arc<Atividade> {
         Arc::new(Atividade::nova(
@@ -1863,22 +1934,80 @@ mod testes {
         vitima.comecou_pedido("varrer", "adm", "loja", "clientes", 0);
         vitima.esperando_trava();
 
-        let j = culpado.para_json(0, true, true).escrever();
+        let j = culpado.para_json(0, true, true, &de_fabrica()).escrever();
         assert!(
             j.contains("\"nivel\":\"stress\""),
             "o culpado nao ficou vermelho: {j}"
         );
-        let j = vitima.para_json(0, true, true).escrever();
+        let j = vitima.para_json(0, true, true, &de_fabrica()).escrever();
         assert!(
             j.contains("\"nivel\":\"alto\""),
             "quem espera na fila e vitima, e nao culpado: {j}"
         );
         // E sem fila, uma consulta longa sozinha nao incomoda ninguem.
-        let j = culpado.para_json(0, true, false).escrever();
+        let j = culpado.para_json(0, true, false, &de_fabrica()).escrever();
         assert!(
             !j.contains("\"nivel\":\"stress\""),
             "sem ninguem na fila, ela nao esta segurando nada: {j}"
         );
+    }
+
+    /// **O numero que decide a cor e o numero que a legenda escreve.**
+    ///
+    /// A mesma atividade, o mesmo instante: com o limiar de fabrica ela e
+    /// `normal`, e com o limiar do `config.json` ela e `alto` -- e a resposta
+    /// leva junto o limiar que decidiu, que e o que a legenda da tela escreve.
+    /// Dois numeros para a mesma regra e como a tela acaba pintando o que o
+    /// servidor nao concorda.
+    #[test]
+    fn o_limiar_configurado_decide_o_nivel_e_vai_na_legenda() {
+        let t = Telemetria::nova(true);
+        let a = t.entrar("dados:1", "dados", "10.0.0.1", 1, 0).unwrap();
+        a.comecou_pedido("varrer", "adm", "loja", "clientes", 0);
+        // O relogio da atividade e o de verdade (`Instant::elapsed`), entao a
+        // unica forma honesta de passar de um limiar e esperar. 20 ms cobrem
+        // com folga o limiar de 5 ms e ficam longe dos 2 s de fabrica.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+
+        let j = a.para_json(0, false, false, &de_fabrica()).escrever();
+        assert!(j.contains("\"nivel\":\"normal\""), "de fabrica: {j}");
+
+        let apertado = Painel {
+            alto_uso_ms: 5,
+            ..Painel::default()
+        };
+        let j = a.para_json(0, false, false, &apertado).escrever();
+        assert!(
+            j.contains("\"nivel\":\"alto\""),
+            "com o limiar do config: {j}"
+        );
+
+        t.definir_pintura(apertado);
+        let r = t.para_json(0, 1).escrever();
+        assert!(
+            r.contains("\"limiares\":{\"alto_uso_ms\":5,\"stress_ms\":5000}"),
+            "a legenda tem de escrever o limiar que decidiu: {r}"
+        );
+    }
+
+    /// **O comportamento velho.** Sem cor configurada o retrato nao muda.
+    #[test]
+    fn sem_cor_configurada_nada_muda() {
+        let t = Telemetria::nova(true);
+        let r = t.para_json(0, 1).escrever();
+        assert!(!r.contains("\"cores\""), "{r}");
+        assert!(
+            r.contains("\"limiares\":{\"alto_uso_ms\":2000,\"stress_ms\":5000}"),
+            "{r}"
+        );
+
+        // E a cor escolhida entra sem levar junto a que ninguem escolheu.
+        t.definir_pintura(Painel {
+            cor_encerrando: "#7b2ff7".into(),
+            ..Painel::default()
+        });
+        let r = t.para_json(0, 1).escrever();
+        assert!(r.contains("\"cores\":{\"encerrando\":\"#7b2ff7\"}"), "{r}");
     }
 
     /// **Quem espera na fila nao engorda.**

@@ -554,6 +554,59 @@ RECURSOS DA MAQUINA
     armadilha do "cache_paginas" antes de existir cache. Hoje os dois tem
     leitor, e ha teste que falha se o leitor sair.
 
+CORES DO PAINEL DE TELEMETRIA
+
+    A secao "telemetria" do config.json escolhe a cor das quatro bolhas do
+    painel ao vivo e os dois limiares que decidem qual delas cada atividade
+    recebe. Ela tambem se edita pela tela, em Configuracoes > Gerais do
+    servidor > "Cores do painel de telemetria", com a bolha de amostra ao lado
+    de cada seletor -- cor se escolhe VENDO, nao lendo hexadecimal.
+
+    "telemetria": {
+      "cor_normal": "",
+      "cor_alto": "",
+      "cor_stress": "",
+      "cor_encerrando": "",
+      "alto_uso_ms": 2000,
+      "stress_ms": 5000
+    }
+
+    CAMPO VAZIO E A COR DE FABRICA, e vazio e o padrao. A de fabrica nao e um
+    hexadecimal: e a cor do TEMA, que escurece sozinha no tema claro pelo mesmo
+    motivo do vermelhao da marca. Quem nao escrever nada ve exatamente o painel
+    de sempre, nos dois temas -- e a resposta da telemetria nem ganha o campo.
+
+    ACEITA "#rrggbb" E SO. A tela usa um seletor de cor, que produz essa forma;
+    escrever "amarelo" no arquivo vira aviso no arranque e cai na cor de
+    fabrica, e a gravacao pela tela recusa na hora, dizendo o que esperava.
+
+    VALE NA HORA. Salvar troca a cor na volta seguinte do painel, em dois
+    segundos -- nao ha reinicio.
+
+    O QUE NAO SE CONFIGURA E O QUE NAO E COR. O traco da borda (cheia,
+    tracejada, pontilhada, traco longo), o glifo (triangulo, quadrado, xis) e a
+    palavra do estado continuam iguais em qualquer paleta: 8% dos homens nao
+    distinguem vermelho de amarelo, e a cor nunca pode ser o unico sinal. A
+    legenda diz o traco por extenso, e a palavra da cor SOME quando a cor foi
+    trocada -- escrever "amarelo" ao lado de uma bolha roxa seria mentira.
+
+    O AVISO DE CONTRASTE AVISA, NAO PROIBE. O rotulo vai DENTRO da bolha, e a
+    tinta e escolhida medindo, a melhor das duas (clara ou escura). Abaixo de
+    4,5:1 a tela avisa em vermelho e deixa salvar -- quem manda no servidor e o
+    dono dele. Medido: com as duas tintas o pior caso possivel e 4,35:1, e ele
+    so acontece no meio-tom (luminancia em torno de 0,19, como o cinza
+    "#797979"); um amarelo claro como "#fff2b0" passa com 16,74:1 porque a
+    tinta escura entra sozinha. Quando o aviso aparecer, o conserto e clarear
+    ou escurecer a cor, nao trocar de matiz.
+
+    OS LIMIARES. "alto_uso_ms" e a partir de quando a operacao em curso vira
+    "uso alto"; "stress_ms" e a partir de quanto tempo TRABALHANDO ela vira
+    "stress" -- e valem tambem para quem esta parado na fila da trava. Sao o
+    mesmo numero que a legenda do painel escreve, e nao uma segunda copia.
+    Zero apagaria o nivel inteiro, entao o piso e 1 ms.
+
+    Detalhes em docs/TELEMETRIA.md, secao 3.3.1.
+
 SEQUENCIAS
 
     A operacao "sequencias" junta, num lugar so, o contador de cada tabela do
@@ -1332,8 +1385,8 @@ CONFIGURAR PELA TELA
     copia propria que envelheceria calada.
 
     ESTAO NA LISTA: bind, max_linhas, timeout_s, somente_leitura, espelho, a
-    secao "recursos" inteira, web.sessao_minutos, o backup e o alerta de
-    disco.
+    secao "recursos" inteira, web.sessao_minutos, o backup, o alerta de disco
+    e as quatro cores e dois limiares do painel de telemetria.
 
     FICAM DE FORA, e a ausencia e decisao: token, a secao "seguranca", o
     cadastro de usuarios, a cifra, a credencial do rele de e-mail, a
@@ -1346,7 +1399,8 @@ CONFIGURAR PELA TELA
     proximo arranque -- e a resposta da gravacao traz "exigem_reinicio" com os
     que ficaram esperando. Aplicam na hora: max_linhas, somente_leitura,
     espelho, recursos.cache_paginas, recursos.diario_volume_mib,
-    recursos.threads e recursos.cpu_percentual. O resto vale no arranque
+    recursos.threads, recursos.cpu_percentual e a secao "telemetria" inteira
+    (cor que so aparecesse depois de reiniciar seria cor escolhida no escuro). O resto vale no arranque
     seguinte, porque quem o le monta a estrutura uma vez (a janela de
     sincronizacao, o laco de aceitacao, o relogio do backup).
 

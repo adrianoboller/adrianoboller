@@ -1258,6 +1258,135 @@ impl Lgpd {
     }
 }
 
+/// As cores das bolhas do painel de telemetria, e os limiares que decidem
+/// qual delas cada atividade recebe.
+///
+/// # Cor VAZIA quer dizer *de fabrica*, e nao preto
+///
+/// A cor de fabrica nao e um hexadecimal: e a variavel do tema (`var(--reg)`,
+/// `var(--ambar)`, `var(--vermelho)`, `var(--acao-marcar)`), que escurece
+/// sozinha no tema claro pelo mesmo motivo do vermelhao da marca. Congelar
+/// aqui o hexadecimal do tema escuro como "padrao" tiraria isso de quem nunca
+/// pediu nada. Por isso o campo vazio nao viaja na resposta: o retrato de quem
+/// nao configurou cor nenhuma e o mesmo de antes deste bloco existir, e e isso
+/// que `sem_cor_configurada_nada_muda` trava.
+///
+/// # Por que os limiares moram no mesmo bloco
+///
+/// Porque sao a MESMA regra vista dos dois lados: o limiar decide o nivel no
+/// servidor, e a legenda da tela escreve o numero que decidiu. Eles ja saiam
+/// daqui para a resposta (campo `limiares`) justamente para nao existirem em
+/// dois lugares; o que este bloco acrescenta e poder mudar o numero sem
+/// recompilar. Quem nao escrever nada continua com os 2 s e os 5 s de fabrica.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Painel {
+    pub cor_normal: String,
+    pub cor_alto: String,
+    pub cor_stress: String,
+    pub cor_encerrando: String,
+    /// A partir de quantos milissegundos a operacao corrente pinta de amarelo.
+    pub alto_uso_ms: u64,
+    /// A partir de quantos milissegundos trabalhando a atividade fica vermelha.
+    pub stress_ms: u64,
+}
+
+impl Default for Painel {
+    fn default() -> Painel {
+        Painel {
+            cor_normal: String::new(),
+            cor_alto: String::new(),
+            cor_stress: String::new(),
+            cor_encerrando: String::new(),
+            // O padrao sai da MESMA constante que o servidor usa para decidir
+            // o nivel. Repetir o 2000 aqui seria abrir a porta para os dois
+            // numeros discordarem no dia em que um deles mudasse.
+            alto_uso_ms: crate::telemetria::ALTO_USO_MS,
+            stress_ms: crate::telemetria::STRESS_MS,
+        }
+    }
+}
+
+/// `#rrggbb`, e so isso -- ou vazio, que e o pedido de voltar a de fabrica.
+///
+/// A tela escolhe a cor num `<input type="color">`, que produz exatamente esta
+/// forma. Aceitar nome do CSS ou `rgb()` alargaria o que entra sem alargar o
+/// que sai, e alargaria tambem o que a conferencia de contraste precisa
+/// entender antes de avisar que a escolha ficou ilegivel.
+pub fn cor_valida(t: &str) -> bool {
+    t.is_empty()
+        || (t.len() == 7 && t.starts_with('#') && t[1..].bytes().all(|b| b.is_ascii_hexdigit()))
+}
+
+impl Painel {
+    fn de_json(j: &Json, avisos: &mut Vec<String>) -> Painel {
+        let padrao = Painel::default();
+        // Bloco ausente = tudo de fabrica. Config escrito antes desta versao
+        // continua pintando o painel exatamente como pintava.
+        let Some(c) = j.campo("telemetria") else {
+            return padrao;
+        };
+        // Cor torta nao derruba o servidor: vira aviso e cai na de fabrica,
+        // igual ao idioma que nao existe. Derrubar o arranque por causa de uma
+        // cor seria a guarda cobrando mais caro do que aquilo que ela protege.
+        // Quem RECUSA a cor torta e o portao da gravacao pela tela
+        // (`TipoDoCampo::Cor`), onde ela ainda da para corrigir na hora.
+        let mut cor = |campo: &str| {
+            let t = c.texto_ou(campo, "").trim().to_lowercase();
+            if cor_valida(&t) {
+                return t;
+            }
+            avisos.push(format!(
+                "telemetria.{campo}: {t:?} nao e uma cor #rrggbb; \
+                 a cor de fabrica continua valendo"
+            ));
+            String::new()
+        };
+        Painel {
+            cor_normal: cor("cor_normal"),
+            cor_alto: cor("cor_alto"),
+            cor_stress: cor("cor_stress"),
+            cor_encerrando: cor("cor_encerrando"),
+            // Zero apagaria o nivel inteiro -- com limiar zero TODA operacao em
+            // curso ja nasce amarela, e cor que pinta todo mundo nao separa
+            // ninguem. O piso de 1 ms mantem o campo util e o painel honesto.
+            alto_uso_ms: c
+                .inteiro_ou("alto_uso_ms", padrao.alto_uso_ms as i64)
+                .max(1) as u64,
+            stress_ms: c.inteiro_ou("stress_ms", padrao.stress_ms as i64).max(1) as u64,
+        }
+    }
+
+    /// As cores CONFIGURADAS, para a resposta da telemetria.
+    ///
+    /// `None` quando nenhuma foi escolhida; e, quando alguma foi, as vazias
+    /// continuam de fora -- o que nao viaja e o que a tela pinta de fabrica,
+    /// um nivel de cada vez.
+    pub fn cores_json(&self) -> Option<Json> {
+        let pares: Vec<(&str, Json)> = [
+            ("normal", &self.cor_normal),
+            ("alto", &self.cor_alto),
+            ("stress", &self.cor_stress),
+            ("encerrando", &self.cor_encerrando),
+        ]
+        .into_iter()
+        .filter(|(_, c)| !c.is_empty())
+        .map(|(n, c)| (n, Json::texto_de(c.as_str())))
+        .collect();
+        (!pares.is_empty()).then(|| Json::objeto(pares))
+    }
+
+    pub fn para_json(&self) -> Json {
+        Json::objeto(vec![
+            ("cor_normal", Json::texto_de(&self.cor_normal)),
+            ("cor_alto", Json::texto_de(&self.cor_alto)),
+            ("cor_stress", Json::texto_de(&self.cor_stress)),
+            ("cor_encerrando", Json::texto_de(&self.cor_encerrando)),
+            ("alto_uso_ms", Json::de_u64(self.alto_uso_ms)),
+            ("stress_ms", Json::de_u64(self.stress_ms)),
+        ])
+    }
+}
+
 impl Recursos {
     /// Leva ao processo os tetos que nao sao parametro de ninguem.
     ///
@@ -1411,6 +1540,8 @@ pub struct Config {
     pub cifra: Cifra,
     /// A trilha de dado pessoal. Ver [`Lgpd`].
     pub lgpd: Lgpd,
+    /// As cores e os limiares do painel de bolhas. Ver [`Painel`].
+    pub telemetria: Painel,
     /// O idioma das mensagens do servidor: o nome de uma das seis colunas da
     /// tabela `phxsys.mensagens`. Vazio ou ausente = `Portugues`, que e o
     /// texto de fabrica -- e por isso config antigo nao muda nada.
@@ -1437,7 +1568,12 @@ pub struct Config {
 ///
 /// Os que comecam com `_` sao comentario -- o JSON nao tem comentario, e os
 /// exemplos usam `_web`, `_backup` e afins para explicar a secao seguinte.
-const CAMPOS_CONHECIDOS: [&str; 23] = [
+// `lgpd` entrou aqui junto com `telemetria`, e nao por capricho: a secao ja
+// existia em `SECOES_CONHECIDAS` e era lida por `Lgpd::de_json`, mas faltava
+// no primeiro nivel -- quem a escrevesse no arquivo levava um "campo que este
+// servidor nao conhece" sobre um campo que ele le e obedece. Aviso falso gasta
+// a confianca do aviso verdadeiro.
+const CAMPOS_CONHECIDOS: [&str; 25] = [
     "bind",
     "base",
     "token",
@@ -1461,6 +1597,8 @@ const CAMPOS_CONHECIDOS: [&str; 23] = [
     "jobs",
     "cifra",
     "idioma",
+    "lgpd",
+    "telemetria",
 ];
 
 /// O que cada secao conhecida aceita por dentro.
@@ -1472,7 +1610,7 @@ const CAMPOS_CONHECIDOS: [&str; 23] = [
 /// as duas primeiras estao ganhando campos novos por outras frentes nesta
 /// rodada, e um aviso falso de "campo desconhecido" seria pior que a lacuna;
 /// as duas ultimas tem chaves livres (bases, tabelas).
-const SECOES_CONHECIDAS: [(&str, &[&str]); 7] = [
+const SECOES_CONHECIDAS: [(&str, &[&str]); 8] = [
     (
         "recursos",
         &[
@@ -1548,6 +1686,17 @@ const SECOES_CONHECIDAS: [(&str, &[&str]); 7] = [
         ],
     ),
     ("lgpd", &["alteracoes", "acessos"]),
+    (
+        "telemetria",
+        &[
+            "cor_normal",
+            "cor_alto",
+            "cor_stress",
+            "cor_encerrando",
+            "alto_uso_ms",
+            "stress_ms",
+        ],
+    ),
 ];
 
 /// O que o arquivo trouxe e o servidor nao sabe ler.
@@ -1597,6 +1746,7 @@ impl Default for Config {
             jobs: PathBuf::from("jobs.json"),
             cifra: Cifra::default(),
             lgpd: Lgpd::default(),
+            telemetria: Painel::default(),
             idioma: String::new(),
             estranhas: Vec::new(),
             avisos: Vec::new(),
@@ -1751,6 +1901,7 @@ impl Config {
             jobs: PathBuf::from(j.texto_ou("jobs", "jobs.json")),
             cifra: Cifra::de_json(j),
             lgpd: Lgpd::de_json(j),
+            telemetria: Painel::de_json(j, &mut avisos),
             idioma: {
                 // O valor aceito e o NOME de uma coluna da tabela de
                 // mensagens. Desconhecido nao derruba o servidor -- vira
@@ -2063,6 +2214,11 @@ impl Config {
             ("jobs", Json::texto_de(self.jobs.display().to_string())),
             ("cifra", self.cifra.para_json()),
             ("lgpd", self.lgpd.para_json()),
+            // As cores VAO para a tela por aqui -- o mesmo caminho de todo o
+            // resto da configuracao. A tela de configuracao nao le arquivo, e
+            // o painel de bolhas as recebe na propria resposta da telemetria,
+            // ao lado dos limiares que decidiram o nivel.
+            ("telemetria", self.telemetria.para_json()),
             // O idioma EM USO, ja resolvido: vazio no arquivo vira Portugues
             // aqui, para a tela nao ter de repetir a regra do fallback.
             (
@@ -2117,6 +2273,14 @@ pub enum TipoDoCampo {
     Numero,
     Booleano,
     Texto,
+    /// `#rrggbb` ou vazio. Ver [`cor_valida`].
+    ///
+    /// E um tipo proprio, e nao um `Texto` com conferencia solta, porque o
+    /// tipo e o que a TELA le para saber que ali vai um seletor de cor com a
+    /// amostra da bolha ao lado. Uma lista de "estes campos sao cores" escrita
+    /// no JavaScript envelheceria calada no dia em que entrasse a quinta cor
+    /// -- e a lista de campos ja vem do servidor justamente por isso.
+    Cor,
 }
 
 impl TipoDoCampo {
@@ -2126,6 +2290,7 @@ impl TipoDoCampo {
             TipoDoCampo::Numero => v.numero().is_some(),
             TipoDoCampo::Booleano => v.booleano().is_some(),
             TipoDoCampo::Texto => v.texto().is_some(),
+            TipoDoCampo::Cor => v.texto().is_some_and(cor_valida),
         }
     }
 
@@ -2135,6 +2300,7 @@ impl TipoDoCampo {
             TipoDoCampo::Numero => "numero",
             TipoDoCampo::Booleano => "booleano",
             TipoDoCampo::Texto => "texto",
+            TipoDoCampo::Cor => "cor",
         }
     }
 }
@@ -2189,6 +2355,16 @@ pub const CAMPOS_EDITAVEIS: &[(&str, TipoDoCampo, bool)] = &[
     ("alertas.livre_minimo_mb", TipoDoCampo::Inteiro, false),
     ("alertas.checar_minutos", TipoDoCampo::Inteiro, false),
     ("alertas.repetir_horas", TipoDoCampo::Inteiro, false),
+    // As cores do painel de bolhas valem A QUENTE, e isso e o ponto: cor se
+    // escolhe VENDO, e uma cor que so aparecesse depois de reiniciar o
+    // servidor seria escolhida no escuro. O painel a recebe na resposta
+    // seguinte da telemetria, dois segundos depois de salvar.
+    ("telemetria.cor_normal", TipoDoCampo::Cor, true),
+    ("telemetria.cor_alto", TipoDoCampo::Cor, true),
+    ("telemetria.cor_stress", TipoDoCampo::Cor, true),
+    ("telemetria.cor_encerrando", TipoDoCampo::Cor, true),
+    ("telemetria.alto_uso_ms", TipoDoCampo::Inteiro, true),
+    ("telemetria.stress_ms", TipoDoCampo::Inteiro, true),
 ];
 
 /// O valor de `"secao.campo"` dentro de um JSON, ou `None` se nao existe.
@@ -2718,6 +2894,73 @@ mod tests {
         assert_eq!(c.idioma, "");
         assert_eq!(c.avisos.len(), 1);
         assert!(c.avisos[0].contains("Klingon"), "{:?}", c.avisos);
+    }
+
+    /// **O comportamento velho.** Sem o bloco, tudo de fabrica.
+    ///
+    /// Cor vazia, e nao o hexadecimal do tema escuro: a de fabrica e a
+    /// variavel do tema, que escurece sozinha no tema claro. Congelar o
+    /// hexadecimal aqui tiraria isso de quem nunca pediu nada.
+    #[test]
+    fn sem_bloco_de_telemetria_tudo_de_fabrica() {
+        let c = Config::de_json(&Json::analisar(r#"{"token":"x"}"#).unwrap()).unwrap();
+        assert_eq!(c.telemetria, Painel::default());
+        assert!(c.telemetria.cor_alto.is_empty());
+        assert!(c.telemetria.cores_json().is_none());
+        assert_eq!(c.telemetria.alto_uso_ms, crate::telemetria::ALTO_USO_MS);
+        assert_eq!(c.telemetria.stress_ms, crate::telemetria::STRESS_MS);
+        assert!(c.estranhas.is_empty(), "{:?}", c.estranhas);
+    }
+
+    #[test]
+    fn le_as_cores_e_os_limiares_do_painel() {
+        let txt = r##"{
+          "token":"x",
+          "telemetria":{
+            "cor_normal":"#3355FF",
+            "cor_alto":"#00c2a8",
+            "alto_uso_ms":700,
+            "stress_ms":1500
+          }
+        }"##;
+        let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
+        // Guardada em minusculas: a tela compara com o que o `<input
+        // type=color>` devolve, que e sempre minusculo -- sem isso um
+        // "#3355FF" gravado a mao apareceria como mudanca a cada abrir da tela.
+        assert_eq!(c.telemetria.cor_normal, "#3355ff");
+        assert_eq!(c.telemetria.cor_alto, "#00c2a8");
+        assert!(c.telemetria.cor_stress.is_empty());
+        assert_eq!(c.telemetria.alto_uso_ms, 700);
+        assert_eq!(c.telemetria.stress_ms, 1_500);
+        assert!(c.avisos.is_empty(), "{:?}", c.avisos);
+        assert!(c.estranhas.is_empty(), "{:?}", c.estranhas);
+        // So o que foi escolhido viaja.
+        let cores = c.telemetria.cores_json().unwrap().escrever();
+        assert_eq!(cores, r##"{"normal":"#3355ff","alto":"#00c2a8"}"##);
+    }
+
+    /// Cor torta avisa e cai na de fabrica -- nao derruba o servidor.
+    ///
+    /// O mesmo padrao do idioma que nao existe: um arranque que morre por
+    /// causa de uma cor cobraria mais caro do que aquilo que a guarda protege.
+    #[test]
+    fn cor_torta_vira_aviso_e_cai_na_de_fabrica() {
+        let txt = r##"{"token":"x","telemetria":{"cor_alto":"amarelo","cor_stress":"#ff0000"}}"##;
+        let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
+        assert!(c.telemetria.cor_alto.is_empty());
+        assert_eq!(c.telemetria.cor_stress, "#ff0000");
+        assert_eq!(c.avisos.len(), 1);
+        assert!(c.avisos[0].contains("cor_alto"), "{:?}", c.avisos);
+        c.validar().unwrap();
+    }
+
+    /// Limiar zero apagaria o nivel inteiro -- toda operacao nasceria amarela.
+    #[test]
+    fn limiar_zero_vira_um() {
+        let txt = r#"{"token":"x","telemetria":{"alto_uso_ms":0,"stress_ms":-5}}"#;
+        let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
+        assert_eq!(c.telemetria.alto_uso_ms, 1);
+        assert_eq!(c.telemetria.stress_ms, 1);
     }
 
     #[test]
@@ -3594,5 +3837,51 @@ mod testes_gravacao {
         let c = Config::ler(&caminho).unwrap();
         assert_eq!(c.max_linhas, 1000);
         assert_eq!(std::fs::read_to_string(&caminho).unwrap(), antes);
+    }
+
+    /// A tela grava a cor, e o vazio volta para a de fabrica.
+    ///
+    /// O vazio e o botao «voltar as cores de fabrica»: ele nao apaga o campo
+    /// do arquivo (isso exigiria adivinhar a indentacao de quem escreveu), ele
+    /// grava a string vazia -- que e como o leitor escreve «de fabrica».
+    #[test]
+    fn a_tela_grava_a_cor_e_o_vazio_volta_a_de_fabrica() {
+        let caminho = arquivo("cores");
+        let novo = Config::gravar_campos(
+            &caminho,
+            &muda("telemetria.cor_alto", Json::texto_de("#00c2a8")),
+        )
+        .unwrap();
+        assert_eq!(novo.telemetria.cor_alto, "#00c2a8");
+        assert!(std::fs::read_to_string(&caminho)
+            .unwrap()
+            .contains("#00c2a8"));
+
+        let novo =
+            Config::gravar_campos(&caminho, &muda("telemetria.cor_alto", Json::texto_de("")))
+                .unwrap();
+        assert!(novo.telemetria.cor_alto.is_empty());
+        assert!(novo.telemetria.cores_json().is_none());
+    }
+
+    /// O portao da gravacao recusa o que nao e `#rrggbb`.
+    ///
+    /// A recusa mora no TIPO do campo, e nao numa conferencia solta no meio da
+    /// gravacao: e o mesmo portao que ja recusa `"max_linhas":"abc"`, e por
+    /// isso nao ha como uma cor nova entrar por fora dele.
+    #[test]
+    fn a_tela_recusa_cor_que_nao_e_rrggbb() {
+        let caminho = arquivo("cor-torta");
+        let antes = std::fs::read_to_string(&caminho).unwrap();
+        for torta in ["amarelo", "#12345", "rgb(1,2,3)", "#gggggg", "#00c2a8 "] {
+            let e = Config::gravar_campos(
+                &caminho,
+                &muda("telemetria.cor_alto", Json::texto_de(torta)),
+            )
+            .unwrap_err()
+            .to_string();
+            assert!(e.contains("cor"), "{torta:?} passou: {e}");
+            assert_eq!(std::fs::read_to_string(&caminho).unwrap(), antes);
+        }
     }
 }

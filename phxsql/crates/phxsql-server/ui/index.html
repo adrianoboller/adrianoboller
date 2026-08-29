@@ -5808,6 +5808,14 @@ const DIZ_AJUSTE = {
   "alertas.livre_minimo_mb": "piso absoluto; o que apertar primeiro dispara",
   "alertas.checar_minutos": "de quanto em quanto tempo o relógio confere os discos",
   "alertas.repetir_horas": "silêncio entre dois avisos do mesmo caminho",
+  "telemetria.cor_normal": "atividade dentro dos limiares, ou sem operação",
+  "telemetria.cor_alto": "operação acima do limiar, ou parada na fila da trava",
+  "telemetria.cor_stress": "trabalhando demais, ou segurando a trava com fila",
+  "telemetria.cor_encerrando": "marcada para encerrar, esperando o ponto seguro",
+  "telemetria.alto_uso_ms":
+    "a partir daqui a bolha vira «uso alto» — e é este número que a legenda escreve",
+  "telemetria.stress_ms":
+    "a partir daqui, trabalhando, a bolha vira «stress» — vale também para a fila da trava",
 };
 
 /** A explicação de um ajuste, reusando a dos recursos em vez de repeti-la. */
@@ -5856,6 +5864,8 @@ const ROTULO_AJUSTE = {
   "alertas.livre_minimo_mb": "mínimo livre, em MB",
   "alertas.checar_minutos": "conferir a cada, em minutos",
   "alertas.repetir_horas": "repetir o aviso após, em horas",
+  "telemetria.alto_uso_ms": "limiar de uso alto, em milissegundos",
+  "telemetria.stress_ms": "limiar de stress, em milissegundos",
 };
 
 /** O rótulo de um ajuste; sem entrada, o nome do campo serve de reserva. */
@@ -5889,6 +5899,13 @@ const GRUPOS_AJUSTE = [
   ["Alerta de espaço em disco",
    ["alertas.ligado", "alertas.livre_minimo_percentual", "alertas.livre_minimo_mb",
     "alertas.checar_minutos", "alertas.repetir_horas"]],
+  // As quatro cores e os dois limiares do painel de bolhas, juntos: o limiar
+  // é o que decide QUAL cor cada atividade recebe, e separá-los deixaria
+  // metade da regra numa tela e metade noutra.
+  ["Cores do painel de telemetria",
+   ["telemetria.cor_normal", "telemetria.cor_alto", "telemetria.cor_stress",
+    "telemetria.cor_encerrando", "telemetria.alto_uso_ms", "telemetria.stress_ms"],
+   () => rodapeDasCoresDaTelemetria()],
 ];
 
 /** Um campo editável: rótulo, controle, o nome no arquivo e a hora do efeito.
@@ -5915,6 +5932,7 @@ function campoEditavel(c, e) {
   const rodape = `<span class="leg"><code>${esc(e.campo)}</code> ${quando}${espera}<br>${
     esc(dizDoAjuste(e.campo))}</span>`;
 
+  if (e.tipo === "cor") return campoDeCor(e, v, rodape);
   if (e.tipo === "booleano") {
     // .linha-chk existe porque o input{width:100%} global transforma uma
     // caixa de marcar numa barra da largura da coluna.
@@ -5937,6 +5955,128 @@ function campoEditavel(c, e) {
     ${controle}${rodape}</label>`;
 }
 
+/* Um campo de COR, com a bolha de verdade ao lado.
+ *
+ * **Cor se escolhe vendo, não lendo hexadecimal** — e o que se vê tem de ser a
+ * bolha do painel, com o gradiente, o traço da borda e o rótulo por dentro. É
+ * `PhxTelemetria.amostra` quem a desenha, e não um quadradinho pintado aqui:
+ * uma amostra própria esconderia justamente o que dá errado, que é o rótulo
+ * DENTRO da bolha ficar ilegível.
+ *
+ * O valor mora num `input type=hidden`, e o seletor de cor é só o dedo: um
+ * `<input type=color>` NUNCA está vazio — ele devolve `#000000` quando não se
+ * escolheu nada —, e vazio é exatamente o que significa «de fábrica». Com o
+ * valor no seletor, abrir a tela e salvar sem tocar em nada gravaria preto nas
+ * quatro bolhas de quem nunca pediu paleta nenhuma.
+ *
+ * Não é `<label>` por causa do botão de fábrica lá dentro: clique em botão
+ * dentro de label dispara duas vezes, uma delas no controle errado.
+ */
+function campoDeCor(e, valor, rodape) {
+  const nivel = e.campo.replace("telemetria.cor_", "");
+  const n = (PhxTelemetria.NIVEIS || {})[nivel] || {};
+  const v = String(valor || "");
+  return `<div class="cmp cmp-cor" data-nivel="${esc(nivel)}">
+    <span>bolha «${esc(n.rot || nivel)}»</span>
+    <div class="cf-cor">
+      <span class="cf-cor-am"></span>
+      <input type="color" class="cf-cor-p"
+             aria-label="cor da bolha de ${esc(n.rot || nivel)}">
+      <input type="hidden" data-campo="${esc(e.campo)}" data-tipo="cor"
+             data-antes="${esc(v)}" value="${esc(v)}">
+      <button type="button" class="botao secundario cf-cor-zero">de fábrica</button>
+    </div>
+    <span class="cf-cor-diz"></span>
+    ${rodape}</div>`;
+}
+
+/** O rodapé do grupo das cores: o botão de desfazer tudo e o que não muda. */
+function rodapeDasCoresDaTelemetria() {
+  return `<div class="acoes">
+      <button class="botao secundario" id="cfCoresFabrica" type="button">Voltar às
+        cores de fábrica</button>
+      <span class="leg">volta as quatro ao tema — <b>e ainda é preciso
+        salvar</b>, como qualquer outro campo desta tela</span>
+    </div>
+    <div class="nota">
+      <p><strong>A cor não é o único sinal, e isso não se configura.</strong>
+      O traço da borda (cheia, tracejada, pontilhada, traço longo), o glifo
+      (▲ ■ ✕) e a palavra do estado continuam os mesmos em qualquer paleta:
+      8% dos homens não distinguem vermelho de amarelo, e uma paleta escolhida
+      a gosto pode aproximar duas cores muito mais do que a de fábrica.</p>
+      <p><strong>O aviso de contraste avisa, não proíbe.</strong> O rótulo vai
+      <em>dentro</em> da bolha, e a tinta é escolhida medindo — a melhor das
+      duas, clara ou escura. Quando nem a melhor alcança 4,5:1, a tela diz; quem
+      manda no servidor é você. A conta é a mesma que o painel usa para pintar,
+      e não uma cópia: as duas divergirem seria aprovar aqui o que lá sai
+      ilegível.</p>
+      <p><strong>Campo vazio = cor de fábrica</strong>, e a de fábrica segue o
+      tema: ela escurece sozinha no tema claro, pelo mesmo motivo do vermelhão
+      da marca. Uma cor escolhida é fixa nos dois temas — confira nos dois.</p>
+    </div>`;
+}
+
+/** Um `#rrggbb` a partir de qualquer cor do CSS, para o seletor abrir no lugar. */
+function hexDaCor(css) {
+  const d = document.createElement("span");
+  d.style.color = css;
+  document.body.appendChild(d);
+  const v = (getComputedStyle(d).color.match(/[\d.]+/g) || [0, 0, 0]).map(Number);
+  d.remove();
+  return "#" + v.slice(0, 3).map(x => Math.round(x).toString(16).padStart(2, "0")).join("");
+}
+
+/* Liga os campos de cor: a amostra, o aviso de contraste e o de fábrica.
+ *
+ * Repinta a cada movimento do seletor, e não só ao salvar: o aviso existe para
+ * chegar ANTES da escolha virar configuração. */
+function ligarCoresDaTelemetria() {
+  const pintar = bloco => {
+    const nivel = bloco.dataset.nivel;
+    const escondido = bloco.querySelector("input[type=hidden]");
+    const seletor = bloco.querySelector(".cf-cor-p");
+    const a = PhxTelemetria.amostra(nivel, escondido.value);
+    bloco.querySelector(".cf-cor-am").innerHTML = a.svg;
+    // O seletor abre na cor que está valendo — inclusive quando ela é a de
+    // fábrica, que é uma variável do tema e não um hexadecimal.
+    seletor.value = hexDaCor(a.cor);
+    const diz = bloco.querySelector(".cf-cor-diz");
+    const razao = a.razao.toFixed(2).replace(".", ",");
+    diz.className = "cf-cor-diz leg" + (a.passa ? "" : " mal");
+    diz.innerHTML = escondido.value
+      ? (a.passa
+        ? `contraste do rótulo <b>${razao}:1</b> — passa em 4,5:1`
+        : `<b>atenção:</b> o rótulo dentro da bolha dá <b>${razao}:1</b> com a
+           melhor das duas tintas — abaixo de 4,5:1, fica difícil de ler.
+           Você pode salvar assim mesmo.`)
+      : `de fábrica · segue o tema · contraste <b>${razao}:1</b> neste tema`;
+  };
+
+  $$("#painel .cmp-cor").forEach(bloco => {
+    const escondido = bloco.querySelector("input[type=hidden]");
+    bloco.querySelector(".cf-cor-p").addEventListener("input", ev => {
+      escondido.value = ev.target.value.toLowerCase();
+      pintar(bloco);
+    });
+    bloco.querySelector(".cf-cor-zero").onclick = () => {
+      escondido.value = "";
+      pintar(bloco);
+    };
+    pintar(bloco);
+  });
+
+  const todas = $("#cfCoresFabrica");
+  if (todas) {
+    todas.onclick = () => {
+      $$("#painel .cmp-cor").forEach(bloco => {
+        bloco.querySelector("input[type=hidden]").value = "";
+        pintar(bloco);
+      });
+      avisar("as quatro voltaram ao tema — clique em «Salvar no config.json» para gravar");
+    };
+  }
+}
+
 async function verConfigServidor() {
   const [c, p] = await Promise.all([api("config"), api("ping")]);
   const seg = c.seguranca || {};
@@ -5952,8 +6092,14 @@ async function verConfigServidor() {
   const agrupados = new Set(GRUPOS_AJUSTE.flatMap(([, campos]) => campos));
   const sobrando = editaveis.filter(e => !agrupados.has(e.campo));
 
-  const grupo = (titulo, campos) => {
+  const grupo = (titulo, campos, extra) => {
     const itens = campos.filter(x => porCampo[x]).map(x => campoEditavel(c, porCampo[x])).join("");
+    // O `extra` é o rodapé do grupo — hoje só o das cores, com o botão de
+    // voltar ao tema. Ele fica DEPOIS dos campos e só existe quando o grupo
+    // existe: um botão de desfazer cor num servidor que não declarou os
+    // campos de cor prometeria o que a tela não faz.
+    if (itens && extra) return `<h3 class="secao">${esc(titulo)}</h3>
+      <div class="form-dbl">${itens}</div>${extra()}`;
     return itens ? `<h3 class="secao">${esc(titulo)}</h3>
       <div class="form-dbl">${itens}</div>` : "";
   };
@@ -5990,7 +6136,7 @@ async function verConfigServidor() {
          arquivo antigo inteiro até o fim</span>
      </div>
 
-     ${GRUPOS_AJUSTE.map(([t, campos]) => grupo(t, campos)).join("")}
+     ${GRUPOS_AJUSTE.map(([t, campos, extra]) => grupo(t, campos, extra)).join("")}
      ${sobrando.length ? grupo("Outros ajustes que este servidor aceita",
         sobrando.map(e => e.campo)) : ""}
 
@@ -6060,6 +6206,7 @@ async function verConfigServidor() {
 
   $("#cfDescartar").onclick = () => verConfigServidor();
   $("#cfSalvar").onclick = salvarConfigServidor;
+  ligarCoresDaTelemetria();
 }
 
 /** Manda para o servidor só os campos que mudaram. */
