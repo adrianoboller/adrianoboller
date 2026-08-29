@@ -267,3 +267,18 @@ que agora a recusa chega ao cliente pela rede, com o nome da cláusula e a
 coluna do texto — `SQL, coluna 10: …`. Um `WHERE cidade = 'Blumenau'` sem
 índice em `cidade` recusa dizendo **quais colunas têm índice**, em vez de virar
 uma varredura com o filtro esquecido no caminho.
+
+### E um defeito que só a tela mostrou: a contagem arrastava uma linha
+
+`SELECT COUNT(*)` devolvia `contagem: 3` **e** um `linhas` com um registro
+dentro. A tradução pede `max: 1` para ler o campo `registros` do cabeçalho em
+O(1) — a linha que vem junto é efeito colateral do caminho, não a resposta.
+
+No JSON o campo extra passa despercebido, e o teste que existia olhava só a
+contagem. No console ele vira uma tabela inteira embaixo do número, e quem olha
+não tem como saber se aquela linha significa alguma coisa. A resposta de uma
+contagem passa a carregar `contagem` e `registros`, e mais nada — nem os campos
+que descrevem uma página que ninguém pediu.
+
+**A lição:** *o formato só erra na tela.* O campo estava certo no JSON, e era
+por isso que ninguém via.

@@ -7388,12 +7388,23 @@ fn resposta_do_sql(texto: &str, plano: &phxsql_sql::Plano, bruto: Json) -> Json 
     match &plano.saida {
         // A contagem sai do cabecalho da tabela (`registros`) ou do total da
         // busca (`encontrados`): nenhuma linha e varrida para contar.
+        //
+        // E a resposta para por aqui: o `COUNT(*)` traduzido pede `max: 1`
+        // para ler o cabecalho, e a linha que vem junto e um efeito colateral
+        // do caminho -- nao a resposta. Devolve-la faria um `SELECT COUNT(*)`
+        // mostrar UMA linha de dado, que e a pior resposta possivel: quem
+        // olha nao sabe se aquela linha quer dizer alguma coisa. Este defeito
+        // so apareceu exercitando o console.
         phxsql_sql::Saida::Contagem => {
             let n = match bruto.campo("encontrados") {
                 Some(e) => e.inteiro().unwrap_or(0),
                 None => bruto.inteiro_ou("registros", 0),
             };
             pares.push(("contagem".to_string(), Json::de_i64(n)));
+            if let Some(r) = bruto.campo("registros") {
+                pares.push(("registros".to_string(), r.clone()));
+            }
+            return Json::Objeto(pares);
         }
         phxsql_sql::Saida::LinhaInteira => {}
         // A projecao e do cliente porque o protocolo sempre devolve a linha
@@ -9663,11 +9674,39 @@ mod testes_sql {
         let s = servidor(&dir_temp("count"));
         let r = sql(&s, "SELECT COUNT(*) FROM clientes").unwrap();
         assert_eq!(r.inteiro_ou("contagem", -1), 3);
-        assert_eq!(
-            r.inteiro_ou("devolvidas", -1),
-            1,
-            "trouxe linha demais para contar"
+        assert_eq!(r.inteiro_ou("registros", -1), 3);
+    }
+
+    /// **`SELECT COUNT(*)` nao pode devolver uma LINHA de dado.**
+    ///
+    /// A traducao pede `max: 1` para ler o cabecalho, e a linha que vem junto e
+    /// efeito colateral do caminho -- nao a resposta. Devolve-la fazia o
+    /// console desenhar uma tabela de uma linha embaixo da contagem, e quem
+    /// olha nao tem como saber se aquela linha quer dizer alguma coisa.
+    ///
+    /// Achado exercitando o console, e nao lendo o codigo: no JSON o campo
+    /// extra passa despercebido; na tela ele vira uma tabela inteira.
+    #[test]
+    fn a_contagem_nao_arrasta_a_linha_que_a_traducao_leu() {
+        let s = servidor(&dir_temp("count-limpo"));
+        let r = sql(&s, "SELECT COUNT(*) FROM clientes").unwrap();
+        assert!(
+            r.campo("linhas").is_none(),
+            "a contagem veio com linha de dado: {}",
+            r.escrever()
         );
+        // E nem os campos que descrevem uma pagina que ninguem pediu.
+        for campo in ["devolvidas", "cursor_inicio", "ha_mais", "ordem"] {
+            assert!(
+                r.campo(campo).is_none(),
+                "{campo} nao descreve nada numa contagem: {}",
+                r.escrever()
+            );
+        }
+        // Ja o COUNT(*) com WHERE conta o que a busca achou.
+        let r = sql(&s, "SELECT COUNT(*) FROM clientes WHERE id = 2").unwrap();
+        assert_eq!(r.inteiro_ou("contagem", -1), 1);
+        assert!(r.campo("linhas").is_none());
     }
 
     #[test]

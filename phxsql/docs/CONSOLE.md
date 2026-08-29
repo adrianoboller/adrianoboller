@@ -124,3 +124,38 @@ tivesse dado certo.
 **A senha vem de `PHXSQL_SENHA`.** `--senha` funciona e avisa que é pior:
 argumento aparece no `ps` de qualquer um na máquina e fica no histórico do
 shell. É o mesmo cuidado que o `phxsqld --senha` já tinha.
+
+## Os três defeitos que só apareceram exercitando
+
+O console foi aberto contra um servidor de verdade, com uma sessão inteira
+digitada — criar banco, criar tabela com chave estrangeira, inserir, varrer,
+três SELECTs e um `/help`. Os testes estavam todos verdes. Apareceram três
+defeitos em uma tela, e nenhum deles se vê lendo o código.
+
+**1. `SELECT COUNT(*)` desenhava uma linha de dado embaixo da contagem.** A
+tradução pede `max: 1` para ler o campo `registros` do cabeçalho; a linha que
+vem junto é efeito colateral do caminho, e não a resposta. No JSON o campo
+extra passa despercebido; na tela ele vira uma **tabela inteira**, e quem olha
+não tem como saber se aquela linha quer dizer alguma coisa. Corrigido no
+servidor: a resposta de uma contagem carrega `contagem` e `registros`, e mais
+nada.
+
+**2. As notas do tradutor eram cortadas em 40 caracteres.** «sem ORDER BY a
+ordem e a de DIGITACAO, …» — o corte comia exatamente a parte que a nota existe
+para dizer. O corte tinha um motivo real (alinhar coluna de tabela) aplicado no
+lugar errado: numa lista de valores não há coluna nenhuma a alinhar.
+
+**3. Lista dentro de célula saía como JSON.** `["cliente_id"]` onde se queria
+ler um nome de coluna. Agora sai `cliente_id`, e várias saem por vírgula.
+
+O padrão dos três é o mesmo, e é o que a regra do projeto já dizia com outras
+palavras: **o formato só erra na tela.** Os três campos estavam certos no JSON,
+e os testes olhavam o JSON.
+
+## O que ficou e é ruído conhecido
+
+A linha de resumo de um `SELECT` traz todos os escalares do `varrer` —
+`modo`, `salto`, `cursor_inicio`, `rownum_fim`… É barulhento, e ficou de
+propósito: **é a resposta que o servidor deu.** Esconder campos aqui seria o
+console decidindo o que quem perguntou pode ver, e a hora de descobrir que
+`ha_mais` é `sim` não é depois de achar que a consulta acabou.

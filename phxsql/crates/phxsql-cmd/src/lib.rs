@@ -392,9 +392,14 @@ fn tabela_ou_lista(itens: &[Json]) -> String {
         return "  (vazio)".to_string();
     }
     if itens.iter().any(|i| !matches!(i, Json::Objeto(_))) {
+        // **Sem corte aqui.** O corte de 40 caracteres existe para as colunas
+        // da tabela ficarem alinhadas, e numa lista de valores nao ha coluna
+        // nenhuma. Cortando, as `notas` do `sql` -- que sao FRASES -- viravam
+        // «sem ORDER BY a ordem e a de DIGITACAO, …», que perde exatamente a
+        // parte que a nota existe para dizer. Achado exercitando o console.
         return itens
             .iter()
-            .map(|i| format!("  {}", celula(i)))
+            .map(|i| format!("  {}", inteiro(i)))
             .collect::<Vec<_>>()
             .join("\n");
     }
@@ -475,19 +480,35 @@ fn formatar(campos: &[String], largura: &[usize]) -> String {
 /// quem olha não tem como saber qual dos dois está no disco. Só o corte por
 /// largura muda o valor, e ele é marcado com `…`.
 fn celula(v: &Json) -> String {
-    let bruto = match v {
-        Json::Texto(t) => t.clone(),
-        Json::Nulo => String::new(),
-        Json::Bool(b) => (if *b { "sim" } else { "nao" }).to_string(),
-        Json::Numero(_) => v.escrever(),
-        outro => outro.escrever(),
-    };
-    let bruto = bruto.replace(['\n', '\r', '\t'], " ");
+    let bruto = inteiro(v);
     if bruto.chars().count() <= LARGURA_MAX {
         return bruto;
     }
     let corte: String = bruto.chars().take(LARGURA_MAX - 1).collect();
     format!("{corte}…")
+}
+
+/// O valor por extenso, sem corte -- para onde não há coluna a alinhar.
+///
+/// Uma lista de valores simples sai separada por vírgula, e não como o JSON
+/// dela: `["cliente_id"]` numa célula é ruído de formato onde se queria ler um
+/// nome de coluna.
+fn inteiro(v: &Json) -> String {
+    let bruto = match v {
+        Json::Texto(t) => t.clone(),
+        Json::Nulo => String::new(),
+        Json::Bool(b) => (if *b { "sim" } else { "nao" }).to_string(),
+        Json::Numero(_) => v.escrever(),
+        Json::Lista(itens)
+            if itens
+                .iter()
+                .all(|i| !matches!(i, Json::Objeto(_) | Json::Lista(_))) =>
+        {
+            itens.iter().map(inteiro).collect::<Vec<_>>().join(", ")
+        }
+        outro => outro.escrever(),
+    };
+    bruto.replace(['\n', '\r', '\t'], " ")
 }
 
 /// O `/help` sem argumento: a lista, com o resumo de cada operação.
@@ -663,6 +684,42 @@ mod testes {
         let t = tabela_ou_lista(&itens);
         let cabecalho = t.lines().next().unwrap();
         assert!(cabecalho.contains('a') && cabecalho.contains('b'), "{t}");
+    }
+
+    /// **A frase nao se corta.** O corte de 40 caracteres existe para alinhar
+    /// coluna de tabela, e numa lista de valores nao ha coluna. Cortando, a
+    /// nota do `sql` virava «sem ORDER BY a ordem e a de DIGITACAO, …» -- e
+    /// perdia justamente a parte que ela existe para dizer. Achado
+    /// exercitando o console, e nao lendo o codigo.
+    #[test]
+    fn a_lista_de_frases_sai_inteira_e_a_celula_da_tabela_continua_cortando() {
+        let frase = "sem ORDER BY a ordem e a de DIGITACAO, que no PhxSql e estavel";
+        let t = tabela_ou_lista(&[Json::texto_de(frase)]);
+        assert!(t.contains(frase), "cortou a frase: {t}");
+
+        // Mas dentro de uma tabela o corte continua, senao uma coluna de memo
+        // arrebenta a tela e esconde as outras dez.
+        let t = tabela_ou_lista(&[Json::objeto(vec![("nota", Json::texto_de(frase))])]);
+        assert!(t.contains('…'), "a celula da tabela deixou de cortar: {t}");
+    }
+
+    /// Uma lista de valores dentro de uma celula sai por virgula, e nao como o
+    /// JSON dela: `["cliente_id"]` e ruido de formato onde se queria ler um
+    /// nome de coluna.
+    #[test]
+    fn lista_de_valores_na_celula_sai_por_virgula() {
+        assert_eq!(
+            celula(&Json::Lista(vec![Json::texto_de("a"), Json::texto_de("b")])),
+            "a, b"
+        );
+        assert_eq!(celula(&Json::Lista(vec![])), "");
+        // Lista de objetos continua saindo como JSON: nao ha como resumi-la
+        // numa celula sem esconder campo.
+        assert!(celula(&Json::Lista(vec![Json::objeto(vec![(
+            "x",
+            Json::de_i64(1)
+        )])]))
+        .contains('{'));
     }
 
     #[test]
