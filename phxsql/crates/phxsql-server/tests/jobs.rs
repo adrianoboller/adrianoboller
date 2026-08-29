@@ -237,15 +237,22 @@ fn job_sem_dono_valido_e_recusado_ao_salvar() {
 }
 
 /// Ver a lista de jobs ja e poder de administrador: ela mostra que operacao
-/// roda sobre que tabela, e sob que login.
+/// roda sobre que tabela, e sob que login. O apelido e o `job_ligar` entram
+/// no MESMO teste porque o furo classico e a operacao que o portao esqueceu.
 #[test]
 fn a_lista_de_jobs_exige_administrar() {
     let base = pasta("lista");
     let (_s, porta) = subir(&base, true);
     let mut anonimo = Ligacao::nova(porta);
-    let r = anonimo.pedir(r#""op":"jobs""#);
-    assert!(!r.booleano_ou("ok", true), "{}", r.escrever());
-    assert!(erro(&r).contains("login"), "{}", erro(&r));
+    for pedido in [
+        r#""op":"jobs""#,
+        r#""op":"job_listar""#,
+        r#""op":"job_ligar","nome":"x","ligado":true"#,
+    ] {
+        let r = anonimo.pedir(pedido);
+        assert!(!r.booleano_ou("ok", true), "{pedido}: {}", r.escrever());
+        assert!(erro(&r).contains("login"), "{pedido}: {}", erro(&r));
+    }
 }
 
 /// A ficha do job diz a agenda em texto, e a tela nao recalcula nada.
@@ -325,6 +332,129 @@ fn o_historico_resume_analisando() {
     assert!(d.contains("linhas: 1 itens"), "{d}");
     // E o corpo das linhas NAO esta la: o que nao se resume vira contagem.
     assert!(!d.contains("rowid"), "o corpo vazou para o historico: {d}");
+}
+
+/// O estado por job e a historia inteira numa palavra: nunca_rodou vira ok
+/// quando roda bem, falhou quando quebra -- e a ultima corrida e a proxima
+/// prevista vem juntas, para a tela nao recalcular nada.
+#[test]
+fn o_estado_conta_a_historia_do_job() {
+    let base = pasta("estado");
+    let (_s, porta) = subir(&base, false);
+    let mut c = Ligacao::nova(porta);
+
+    let ficha = |c: &mut Ligacao, nome: &str| {
+        let r = c.pedir(r#""op":"jobs""#);
+        res(&r)
+            .campo("jobs")
+            .and_then(Json::lista)
+            .unwrap()
+            .iter()
+            .find(|j| j.texto_ou("nome", "") == nome)
+            .unwrap()
+            .clone()
+    };
+
+    // Nasce desligado: o estado diz isso antes de qualquer corrida.
+    c.pedir(
+        r#""op":"job_salvar","job":{"nome":"pulso","cada_minutos":5,
+            "pedido":{"op":"ping"}}"#,
+    );
+    let f = ficha(&mut c, "pulso");
+    assert_eq!(f.texto_ou("estado", ""), "desligado");
+    assert!(f.campo("proximo_ms").unwrap().inteiro().is_none());
+    assert!(f.campo("ultima").unwrap().campo("ok").is_none());
+
+    // Ligado pelo `job_ligar` -- e neste processo nao ha relogio (nenhum job
+    // estava ligado no arranque), entao ele esta ligado e abandonado.
+    let r = c.pedir(r#""op":"job_ligar","nome":"pulso","ligado":true"#);
+    assert!(r.booleano_ou("ok", false), "{}", erro(&r));
+    assert!(!res(&r).booleano_ou("relogio_no_ar", true));
+    let f = ficha(&mut c, "pulso");
+    assert_eq!(f.texto_ou("estado", ""), "nunca_rodou");
+    assert!(f.booleano_ou("parado", false), "vencido e sem relogio");
+    assert!(
+        f.campo("proximo_ms").unwrap().inteiro().is_some(),
+        "ligado tem proxima prevista: {}",
+        f.escrever()
+    );
+
+    // Rodou bem: ok, com a corrida inteira na ficha.
+    c.pedir(r#""op":"job_rodar","nome":"pulso""#);
+    let f = ficha(&mut c, "pulso");
+    assert_eq!(f.texto_ou("estado", ""), "ok");
+    assert!(
+        !f.booleano_ou("parado", true),
+        "rodou: parado nao esta mais"
+    );
+    let u = f.campo("ultima").unwrap();
+    assert!(u.booleano_ou("ok", false), "{}", u.escrever());
+    assert!(u.campo("duracao_ms").unwrap().inteiro().is_some());
+    assert!(!u.texto_ou("quando", "").is_empty());
+
+    // E um job quebrado fica "falhou", com o motivo na ultima corrida.
+    c.pedir(
+        r#""op":"job_salvar","job":{"nome":"quebrado","ligado":true,"cada_minutos":5,
+            "pedido":{"op":"varrer","database":"NaoExiste","tabela":"Nem"}}"#,
+    );
+    c.pedir(r#""op":"job_rodar","nome":"quebrado""#);
+    let f = ficha(&mut c, "quebrado");
+    assert_eq!(f.texto_ou("estado", ""), "falhou");
+    let u = f.campo("ultima").unwrap();
+    assert!(!u.booleano_ou("ok", true));
+    assert!(!u.texto_ou("detalhe", "").is_empty(), "o motivo tem de vir");
+}
+
+/// `job_listar` e apelido de `jobs`, e a resposta traz o que a tela precisa
+/// alem da lista: se ha relogio e o estado do aviso por e-mail.
+#[test]
+fn job_listar_responde_com_relogio_e_aviso() {
+    let base = pasta("listar");
+    let (_s, porta) = subir(&base, false);
+    let mut c = Ligacao::nova(porta);
+    let r = c.pedir(r#""op":"job_listar""#);
+    assert!(r.booleano_ou("ok", false), "{}", erro(&r));
+    let d = res(&r);
+    assert!(d.campo("relogio_no_ar").is_some(), "{}", d.escrever());
+    let aviso = d.campo("aviso_email").unwrap();
+    // Este servidor nao tem bloco de e-mail: o aviso diz isso, e nao ha
+    // como um e-mail sair -- e o comportamento velho, garantido.
+    assert!(!aviso.booleano_ou("ligado", true), "{}", aviso.escrever());
+    assert!(!aviso.booleano_ou("avisar_jobs", true));
+}
+
+/// Liga e desliga sem reenviar a ficha -- e a mudanca persiste no arquivo.
+#[test]
+fn job_ligar_vira_so_a_chave() {
+    let base = pasta("ligar");
+    let (_s, porta) = subir(&base, false);
+    let mut c = Ligacao::nova(porta);
+    c.pedir(
+        r#""op":"job_salvar","job":{"nome":"chave","descricao":"a ficha fica",
+            "cada_minutos":7,"pedido":{"op":"ping"}}"#,
+    );
+    let r = c.pedir(r#""op":"job_ligar","nome":"chave","ligado":true"#);
+    assert!(r.booleano_ou("ok", false), "{}", erro(&r));
+
+    let texto = std::fs::read_to_string(base.join("jobs.json")).unwrap();
+    let j = Json::analisar(&texto).unwrap();
+    let job = &j.campo("jobs").and_then(Json::lista).unwrap()[0];
+    assert!(job.booleano_ou("ligado", false), "persistiu: {texto}");
+    assert_eq!(
+        job.texto_ou("descricao", ""),
+        "a ficha fica",
+        "so a chave muda"
+    );
+    assert_eq!(job.inteiro_ou("cada_minutos", 0), 7);
+
+    // Sem "ligado" o pedido e recusado com o campo nomeado -- e nao tratado
+    // como false, que desligaria por engano.
+    let r = c.pedir(r#""op":"job_ligar","nome":"chave""#);
+    assert!(!r.booleano_ou("ok", true));
+    assert!(erro(&r).contains("ligado"), "{}", erro(&r));
+    // E job que nao existe avisa.
+    let r = c.pedir(r#""op":"job_ligar","nome":"fantasma","ligado":true"#);
+    assert!(erro(&r).contains("nao existe"), "{}", erro(&r));
 }
 
 #[test]

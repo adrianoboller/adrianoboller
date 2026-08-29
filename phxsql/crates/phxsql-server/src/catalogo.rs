@@ -1069,8 +1069,10 @@ pub const OPERACOES: &[Operacao] = &[
     // ------------------------------------------------------------- jobs
     Operacao {
         nome: "jobs",
-        apelidos: &[],
-        resumo: "O cadastro de tarefas agendadas, e opcionalmente o histórico delas.",
+        apelidos: &["job_listar"],
+        resumo: "O cadastro de tarefas agendadas com o estado completo de cada uma \
+                 (nunca rodou, agendado, rodando, ok, falhou, desligado; última \
+                 corrida e próxima prevista), e opcionalmente o histórico.",
         parametros: &[opc(
             "historico",
             "boolean",
@@ -1089,6 +1091,17 @@ pub const OPERACOES: &[Operacao] = &[
             "`{nome, agenda, usuario, pedido}` -- o pedido é um pedido do protocolo",
         )],
         exemplo: r#"{"op":"job_salvar","job":{"nome":"backup-noturno","agenda":"0 2 * * *","usuario":"adriano","pedido":{"op":"backup","destino":"/backup"}}}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "job_ligar",
+        apelidos: &[],
+        resumo: "Liga ou desliga um job pelo nome, sem mexer no resto da ficha.",
+        parametros: &[
+            obr("nome", "string", "o nome do job"),
+            obr("ligado", "boolean", "true liga, false desliga"),
+        ],
+        exemplo: r#"{"op":"job_ligar","nome":"backup-noturno","ligado":true}"#,
         ferramenta_mcp: false,
     },
     Operacao {

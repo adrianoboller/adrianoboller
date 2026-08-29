@@ -103,6 +103,38 @@ impl Agenda {
         }
     }
 
+    /// Quando a proxima corrida deveria acontecer.
+    ///
+    /// E a mesma conta de `hora_de_rodar`, olhada do outro lado: la se
+    /// pergunta "ja passou?", aqui "quando chega?". Vivem juntas para a tela
+    /// e o relogio nunca discordarem. O instante devolvido pode estar no
+    /// passado -- e ai o job esta vencido, e a proxima volta do relogio (se
+    /// houver relogio) o dispara.
+    pub fn proximo_ms(&self, agora_ms: i64, ultimo_ms: i64) -> i64 {
+        match self {
+            Agenda::Diaria { minuto_do_dia } => {
+                let dia_agora = agora_ms.div_euclid(86_400_000);
+                let dia_ultimo = ultimo_ms.div_euclid(86_400_000);
+                // Ja rodou hoje: amanha. Senao: hoje, mesmo que o minuto ja
+                // tenha passado -- vencido e informacao, nao erro.
+                let dia = if ultimo_ms != 0 && dia_ultimo >= dia_agora {
+                    dia_agora + 1
+                } else {
+                    dia_agora
+                };
+                dia * 86_400_000 + *minuto_do_dia as i64 * 60_000
+            }
+            Agenda::Cada { minutos } => {
+                if ultimo_ms == 0 {
+                    // Nunca rodou: a proxima e a primeira volta do relogio.
+                    agora_ms
+                } else {
+                    ultimo_ms + *minutos as i64 * 60_000
+                }
+            }
+        }
+    }
+
     fn campos_para_disco(&self) -> Vec<(String, Json)> {
         match self {
             Agenda::Diaria { minuto_do_dia } => vec![(
@@ -211,6 +243,73 @@ impl Job {
     }
 }
 
+/// De quanto em quanto tempo o vigia de jobs parados confere.
+///
+/// O dobro do relogio: se ha relogio no ar, um job vencido roda em ate 30 s,
+/// e o vigia nunca o ve parado. Conferir mais rapido que isso so compraria
+/// alarme falso.
+pub const PERIODO_DO_VIGIA_S: u64 = 60;
+
+/// O estado que a tela pinta, um por job.
+///
+/// A ordem e de prioridade e importa: o que acontece AGORA ganha do que ja
+/// aconteceu (rodando primeiro), e o desligado ganha do historico -- um job
+/// desligado nao esta "ok", esta fora da agenda. `ultima_ok` e o resultado da
+/// ultima corrida CONHECIDA (a semeada do log conta), `None` quando nunca
+/// rodou.
+pub fn estado_do_job(
+    ligado: bool,
+    rodando: bool,
+    ultima_ok: Option<bool>,
+    relogio_no_ar: bool,
+) -> &'static str {
+    if rodando {
+        return "rodando";
+    }
+    if !ligado {
+        return "desligado";
+    }
+    match ultima_ok {
+        Some(true) => "ok",
+        Some(false) => "falhou",
+        // Nunca rodou -- e a diferenca entre os dois e se ALGUEM vai rodar:
+        // com relogio, e so esperar; sem, o job esta ligado e abandonado.
+        None if relogio_no_ar => "agendado",
+        None => "nunca_rodou",
+    }
+}
+
+/// Um job PARADO: ligado, com a hora vencida, e sem ninguem para roda-lo --
+/// o relogio nao subiu neste arranque (ele so sobe se havia job ligado no
+/// arranque) e nao ha corrida em andamento.
+///
+/// `vencido` sai da MESMA `hora_de_rodar` do relogio, de proposito: se o
+/// relogio esta no ar, um vencido roda em ate 30 s e nunca e parado. A tela
+/// e o vigia de e-mail usam esta funcao, para os dois nunca discordarem.
+pub fn job_parado(ligado: bool, rodando: bool, vencido: bool, relogio_no_ar: bool) -> bool {
+    ligado && !rodando && vencido && !relogio_no_ar
+}
+
+/// Decide se um aviso repetido sai agora -- e anota que saiu.
+///
+/// Mesmo desenho do vigia de disco, pelo mesmo motivo: um job quebrado
+/// continua quebrado, e avisar a cada corrida vira enxurrada. Quem limpa a
+/// chave quando o problema alivia devolve o direito de avisar na hora.
+pub fn pode_avisar(
+    avisados: &mut std::collections::HashMap<String, i64>,
+    chave: &str,
+    agora_ms: i64,
+    silencio_ms: i64,
+) -> bool {
+    match avisados.get(chave) {
+        Some(quando) if agora_ms - *quando < silencio_ms => false,
+        _ => {
+            avisados.insert(chave.to_string(), agora_ms);
+            true
+        }
+    }
+}
+
 /// Nome de job: letra, digito, `_` e `-`, ate 48. Igual ao do DbLink, e pelo
 /// mesmo motivo -- ele aparece em log e em tela, e vira argumento de comando.
 pub fn validar_nome(nome: &str) -> Result<()> {
@@ -293,6 +392,12 @@ pub struct Registro {
     /// comportamento do backup agendado e o que se quer de um relogio que
     /// perdeu a hora. Quem precisa de "no maximo uma vez por dia" usa `hora`.
     ultimos: Vec<(String, i64)>,
+    /// A ultima corrida CONHECIDA de cada job, para a tela e o estado.
+    ///
+    /// Semeada da cauda do log no `abrir`, para "falhou as 03:00" sobreviver
+    /// a um reinicio. So informa -- NAO alimenta o agendamento: `ultimos`
+    /// continua zerando a cada arranque, pelo motivo escrito nele.
+    corridas: Vec<(String, Corrida)>,
 }
 
 impl Registro {
@@ -302,11 +407,14 @@ impl Registro {
             caminho: caminho.to_path_buf(),
             jobs: Vec::new(),
             ultimos: Vec::new(),
+            corridas: Vec::new(),
         };
         let Ok(texto) = std::fs::read_to_string(caminho) else {
+            r.semear_corridas();
             return Ok(r);
         };
         if texto.trim().is_empty() {
+            r.semear_corridas();
             return Ok(r);
         }
         let j = Json::analisar(&texto)?;
@@ -324,7 +432,27 @@ impl Registro {
             r.jobs.push(Job::de_json(item)?);
         }
         r.conferir_repetidos()?;
+        r.semear_corridas();
         Ok(r)
+    }
+
+    /// Recupera da cauda do log a ultima corrida de cada job.
+    ///
+    /// A cauda basta: quem nao aparece nos ultimos 64 KB nao roda ha muito, e
+    /// para ele a tela dizer "nunca rodou (que se saiba)" e mais honesto que
+    /// carregar meses de log no arranque.
+    fn semear_corridas(&mut self) {
+        // O historico vem da mais nova para a mais velha, entao a primeira
+        // ocorrencia de cada nome e a que fica.
+        for c in self.historico(usize::MAX) {
+            if !self
+                .corridas
+                .iter()
+                .any(|(n, _)| n.eq_ignore_ascii_case(&c.job))
+            {
+                self.corridas.push((c.job.clone(), c));
+            }
+        }
     }
 
     fn conferir_repetidos(&self) -> Result<()> {
@@ -367,6 +495,9 @@ impl Registro {
             return Err(PhxError::NaoEncontrado(format!("job {nome:?} nao existe")));
         }
         self.ultimos.retain(|(n, _)| !n.eq_ignore_ascii_case(nome));
+        // A ultima corrida sai junto: um job recriado com o mesmo nome e um
+        // job novo, e nao pode nascer vestindo o resultado do antigo.
+        self.corridas.retain(|(n, _)| !n.eq_ignore_ascii_case(nome));
         self.gravar()
     }
 
@@ -418,10 +549,26 @@ impl Registro {
         self.caminho.with_extension("log")
     }
 
+    /// A ultima corrida conhecida deste job, se houver.
+    pub fn ultima_corrida_de(&self, nome: &str) -> Option<&Corrida> {
+        self.corridas
+            .iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case(nome))
+            .map(|(_, c)| c)
+    }
+
     /// Anota a corrida no fim do arquivo. Falhar aqui nao pode derrubar o job:
     /// perder a linha do historico e ruim; nao rodar o job por causa dela e
     /// pior.
-    pub fn registrar(&self, c: &Corrida) {
+    pub fn registrar(&mut self, c: &Corrida) {
+        match self
+            .corridas
+            .iter_mut()
+            .find(|(n, _)| n.eq_ignore_ascii_case(&c.job))
+        {
+            Some(p) => p.1 = c.clone(),
+            None => self.corridas.push((c.job.clone(), c.clone())),
+        }
         let caminho = self.caminho_do_log();
         if let Some(pai) = caminho.parent() {
             if !pai.as_os_str().is_empty() {
@@ -617,7 +764,7 @@ mod testes {
     #[test]
     fn historico_le_a_cauda_do_log() {
         let caminho = tmp("historico");
-        let r = Registro::abrir(&caminho).unwrap();
+        let mut r = Registro::abrir(&caminho).unwrap();
         assert!(r.historico(10).is_empty(), "sem log ainda");
         for i in 0..5 {
             r.registrar(&Corrida {
@@ -635,6 +782,139 @@ mod testes {
         assert_eq!(h[0].job, "j4", "a mais nova vem primeiro");
         assert!(h[0].ok, "a j4 foi gravada com ok");
         assert!(!h[1].ok, "e a j3 sem ok -- as duas voltam como entraram");
+    }
+
+    #[test]
+    fn a_proxima_prevista_e_o_outro_lado_da_hora_de_rodar() {
+        // A cada 15 min: a proxima e a ultima mais o intervalo -- e e exatamente
+        // o instante em que `hora_de_rodar` comeca a dizer sim.
+        let a = Agenda::Cada { minutos: 15 };
+        let proxima = a.proximo_ms(2_000_000, 1_000_000);
+        assert_eq!(proxima, 1_000_000 + 15 * 60_000);
+        assert!(!a.hora_de_rodar(proxima - 1, 1_000_000));
+        assert!(a.hora_de_rodar(proxima, 1_000_000));
+        // Nunca rodou: a proxima e a primeira volta do relogio, ou seja, ja.
+        assert_eq!(a.proximo_ms(2_000_000, 0), 2_000_000);
+
+        // Diaria as 03:00. Rodou hoje: amanha. Nao rodou: hoje -- mesmo que o
+        // minuto ja tenha passado, porque vencido e informacao, nao erro.
+        let d = Agenda::Diaria { minuto_do_dia: 180 };
+        let dia = 20_000i64 * 86_400_000;
+        let as_tres = dia + 3 * 3_600_000;
+        assert_eq!(d.proximo_ms(dia + 3_600_000, 0), as_tres, "ainda vem hoje");
+        assert_eq!(
+            d.proximo_ms(as_tres + 3_600_000, as_tres),
+            as_tres + 86_400_000,
+            "rodou hoje, a proxima e amanha"
+        );
+        let vencida = d.proximo_ms(dia + 5 * 3_600_000, 0);
+        assert_eq!(vencida, as_tres, "nunca rodou e o minuto passou: vencida");
+        assert!(d.hora_de_rodar(dia + 5 * 3_600_000, 0));
+    }
+
+    #[test]
+    fn o_estado_segue_a_prioridade() {
+        // O agora ganha do historico; o desligado ganha do resultado.
+        assert_eq!(estado_do_job(true, true, Some(false), true), "rodando");
+        assert_eq!(estado_do_job(false, false, Some(true), true), "desligado");
+        assert_eq!(estado_do_job(true, false, Some(true), true), "ok");
+        assert_eq!(estado_do_job(true, false, Some(false), true), "falhou");
+        assert_eq!(estado_do_job(true, false, None, true), "agendado");
+        assert_eq!(estado_do_job(true, false, None, false), "nunca_rodou");
+    }
+
+    #[test]
+    fn parado_e_vencido_sem_relogio() {
+        // Com relogio no ar um vencido roda em ate 30 s: nao esta parado.
+        assert!(!job_parado(true, false, true, true));
+        assert!(job_parado(true, false, true, false));
+        // Desligado, rodando ou em dia nao sao parado.
+        assert!(!job_parado(false, false, true, false));
+        assert!(!job_parado(true, true, true, false));
+        assert!(!job_parado(true, false, false, false));
+    }
+
+    #[test]
+    fn o_silencio_segura_o_aviso_repetido() {
+        let mut avisados = std::collections::HashMap::new();
+        assert!(pode_avisar(&mut avisados, "falha:x", 1_000, 3_600_000));
+        assert!(
+            !pode_avisar(&mut avisados, "falha:x", 2_000, 3_600_000),
+            "o mesmo problema nao vira enxurrada"
+        );
+        assert!(
+            pode_avisar(&mut avisados, "parado:x", 2_000, 3_600_000),
+            "outra chave e outra noticia"
+        );
+        assert!(
+            pode_avisar(&mut avisados, "falha:x", 1_000 + 3_600_000, 3_600_000),
+            "passado o silencio, avisa de novo"
+        );
+        // E quem limpa a chave devolve o direito de avisar na hora -- e o que
+        // o servidor faz quando o job volta a rodar bem.
+        avisados.remove("falha:x");
+        assert!(pode_avisar(
+            &mut avisados,
+            "falha:x",
+            1_000 + 3_600_000,
+            3_600_000
+        ));
+    }
+
+    #[test]
+    fn a_ultima_corrida_sobrevive_ao_reinicio_sem_mexer_no_relogio() {
+        let caminho = tmp("semeada");
+        {
+            let mut r = Registro::abrir(&caminho).unwrap();
+            r.salvar(Job::de_json(&job_json("noturno", ",\"cada_minutos\":60")).unwrap())
+                .unwrap();
+            for (quando, ok) in [(1_000, true), (2_000, false)] {
+                r.registrar(&Corrida {
+                    quando_ms: quando,
+                    job: "noturno".into(),
+                    op: "backup".into(),
+                    usuario: "adm".into(),
+                    ok,
+                    duracao_ms: 7,
+                    detalhe: if ok {
+                        "ok".into()
+                    } else {
+                        "disco cheio".into()
+                    },
+                });
+            }
+            let u = r.ultima_corrida_de("noturno").unwrap();
+            assert!(!u.ok, "a ultima e a de 2000, que falhou");
+        }
+        // Reabriu: a ultima corrida volta da cauda do log...
+        let r2 = Registro::abrir(&caminho).unwrap();
+        let u = r2.ultima_corrida_de("noturno").unwrap();
+        assert_eq!(u.quando_ms, 2_000);
+        assert_eq!(u.detalhe, "disco cheio");
+        // ...e o agendamento NAO: `ultimos` zera de proposito, para um
+        // "a cada 6 h" rodar logo depois do arranque.
+        assert_eq!(r2.ultimo_de("noturno"), 0);
+    }
+
+    #[test]
+    fn excluir_apaga_a_ultima_corrida_junto() {
+        let caminho = tmp("excluir-corrida");
+        let mut r = Registro::abrir(&caminho).unwrap();
+        r.salvar(Job::de_json(&job_json("x", "")).unwrap()).unwrap();
+        r.registrar(&Corrida {
+            quando_ms: 1,
+            job: "x".into(),
+            op: "ping".into(),
+            usuario: String::new(),
+            ok: true,
+            duracao_ms: 1,
+            detalhe: "ok".into(),
+        });
+        r.excluir("x").unwrap();
+        assert!(
+            r.ultima_corrida_de("x").is_none(),
+            "job recriado nao pode nascer vestindo o resultado do antigo"
+        );
     }
 
     #[test]

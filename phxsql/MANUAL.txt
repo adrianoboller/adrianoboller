@@ -1702,20 +1702,42 @@ AGENDADO
 
     AS OPERACOES
 
-        {"op":"jobs"}                        cadastro + historico
+        {"op":"jobs"}                        cadastro + estado + historico
+                                             (apelido: job_listar)
         {"op":"job_salvar","job":{...}}      grava ou substitui pelo nome
+        {"op":"job_ligar","nome":"x",
+         "ligado":true}                      so vira a chave, sem tocar o resto
         {"op":"job_excluir","nome":"x"}      apaga o job; o historico fica
         {"op":"job_rodar","nome":"x"}        roda agora, fora da agenda
 
-    As quatro exigem ADMINISTRAR, inclusive so ler a lista: ela mostra que
+    Todas exigem ADMINISTRAR, inclusive so ler a lista: ela mostra que
     operacao roda sobre que tabela, e sob que login.
+
+    O ESTADO DE CADA JOB
+
+    A resposta de "jobs" traz, por job, um "estado" que conta a historia numa
+    palavra -- a tela so pinta, nao recalcula:
+
+        rodando      em execucao NESTE instante
+        desligado    fora da agenda (mesmo que ja tenha rodado)
+        ok           a ultima corrida conhecida deu certo
+        falhou       a ultima corrida conhecida deu erro
+        agendado     ligado, nunca rodou, esperando o relogio
+        nunca_rodou  ligado, nunca rodou -- e NAO ha relogio para roda-lo
+
+    Vem junto: "ultima" (a corrida inteira: quando, duracao, resultado ou
+    erro -- semeada da cauda do jobs.log no arranque, para sobreviver a um
+    reinicio), "proximo_ms"/"proxima" (a proxima prevista, pela MESMA conta
+    do relogio), "vencido", "rodando" e "parado". PARADO e o vencido que
+    ninguem vai rodar: ligado, hora vencida, sem relogio no ar.
 
     O RELOGIO
 
     Acorda de 30 em 30 segundos, e SO SOBE se havia algum job ligado quando o
     servidor arrancou -- num servidor sem job nenhum ele nao existe. Ligar o
     primeiro job pela tela vale a partir do proximo arranque, e a tela avisa
-    quando e o caso.
+    quando e o caso -- ate la o job fica "parado", e o aviso por e-mail (se
+    ligado) cobra.
 
     O HISTORICO
 
@@ -1723,6 +1745,33 @@ AGENDADO
     Job que falha calado nao existe. O "detalhe" e um RESUMO da resposta, e ele
     e obtido analisando e reserializando -- nunca recortando: uma varredura de
     vinte mil linhas vira "linhas: 20000 itens", e nao meio JSON cortado.
+
+    AVISO POR E-MAIL (falha e parado)
+
+    Opt-in, no bloco de e-mail que ja existe no config.json -- o mesmo do
+    aviso de disco apertado (ver o "alertas" no Config_exemplo_01.json,
+    inclusive o limite honesto: sem TLS, o rele tem de ser seu):
+
+        "alertas": { "email": { "ligado": true, "avisar_jobs": true, ... } }
+
+    Com "avisar_jobs" ligado, saem dois avisos, para os MESMOS destinatarios
+    do aviso de disco:
+
+      - job FALHOU: assunto "PhxSql: job <nome> falhou", com operacao, dono
+        (login), agenda, hora, duracao e o erro. Enquanto o job continuar
+        falhando, repete no maximo uma vez por "repetir_horas"; quando ele
+        volta a rodar, a proxima falha avisa na hora.
+      - job PARADO: um vigia proprio confere a cada 60 s se ha job ligado,
+        com a hora vencida e sem relogio para roda-lo (o caso tipico: o
+        primeiro job foi ligado pela tela num arranque sem relogio, e ficou
+        esperando um reinicio que ninguem fez). Assunto "PhxSql: N job(s)
+        agendado(s) sem rodar", com o que fazer. Mesmo silencio de
+        "repetir_horas".
+
+    SEM o campo, nada muda: quem configurou e-mail so para o disco continua
+    recebendo so o do disco, e sem bloco de e-mail nenhum aviso existe --
+    guarda nova entra pedida, nao imposta. A senha do rele, como sempre,
+    nunca aparece em mensagem nenhuma.
 
 
 11.2 PARAR E SUBIR A PORTA DE DADOS

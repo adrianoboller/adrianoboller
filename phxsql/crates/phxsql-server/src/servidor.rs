@@ -94,6 +94,7 @@ pub(crate) const OPS_ESCRITA: &[&str] = &[
     // job que so le continua rodando, que e o certo.
     "job_salvar",
     "job_excluir",
+    "job_ligar",
     // Parar a porta de dados nao grava byte nenhum, mas interrompe o trabalho
     // de todo mundo -- pela mesma razao que `encerrar_sessao` esta aqui. Um
     // servidor declarado somente-leitura nao e um servidor sem dono.
@@ -364,6 +365,15 @@ pub struct Servidor {
     jobs: Mutex<crate::jobs::Registro>,
     /// O relogio dos jobs subiu neste processo?
     relogio_de_jobs: AtomicBool,
+    /// Os jobs em execucao NESTE instante -- para a tela dizer "rodando" e o
+    /// vigia nao confundir corrida longa com job parado.
+    ///
+    /// Trava propria, e nunca tomada com a de `jobs` na mao: quem precisa das
+    /// duas tira a foto daqui ANTES de trancar o cadastro.
+    jobs_rodando: Mutex<Vec<String>>,
+    /// Quando cada aviso de job saiu por e-mail, por chave `falha:nome` /
+    /// `parado:nome` -- o silencio entre avisos repetidos, como o do disco.
+    avisos_de_jobs: Mutex<HashMap<String, i64>>,
     /// A porta de dados esta aceitando conexao agora?
     ///
     /// Parada, o processo continua vivo e a interface web continua no ar --
@@ -412,6 +422,8 @@ impl Servidor {
             dblink: Mutex::new(dblink),
             jobs: Mutex::new(jobs),
             relogio_de_jobs: AtomicBool::new(false),
+            jobs_rodando: Mutex::new(Vec::new()),
+            avisos_de_jobs: Mutex::new(HashMap::new()),
             porta_no_ar: AtomicBool::new(false),
             parar_de_aceitar: AtomicBool::new(false),
             proximo_ouvinte: Mutex::new(None),
@@ -472,6 +484,7 @@ impl Servidor {
         self.subir_jobs();
         self.ligar_relogio_de_gravacao();
         self.ligar_vigia_de_disco();
+        self.ligar_vigia_de_jobs();
 
         self.anotar_porta_no_ar(&ouvinte);
         let mut atual = Some(ouvinte);
@@ -1177,9 +1190,17 @@ impl Servidor {
 
     // ------------------------------------------------------- jobs de execucao
 
-    /// O cadastro, o proximo horario de cada um e o historico das corridas.
+    /// O cadastro, o estado completo de cada um e o historico das corridas.
     fn op_jobs(&self, p: &Json) -> Result<Json> {
         let quantas = p.inteiro_ou("historico", 50).clamp(0, 500) as usize;
+        let relogio = self.relogio_de_jobs_no_ar();
+        // A foto dos que rodam agora sai ANTES da trava do cadastro -- a
+        // ordem das duas travas e sempre esta, para nunca haver abraco.
+        let rodando_agora: Vec<String> = self
+            .jobs_rodando
+            .lock()
+            .map(|g| g.clone())
+            .unwrap_or_default();
         let r = self.jobs.lock().map_err(|_| trava_envenenada())?;
         let agora = crate::agora_ms();
         let lista: Vec<Json> = r
@@ -1187,6 +1208,10 @@ impl Servidor {
             .iter()
             .map(|j| {
                 let ultimo = r.ultimo_de(&j.nome);
+                let rodando = rodando_agora
+                    .iter()
+                    .any(|n| n.eq_ignore_ascii_case(&j.nome));
+                let ultima = r.ultima_corrida_de(&j.nome);
                 let mut pares = match j.ficha() {
                     Json::Objeto(x) => x,
                     _ => Vec::new(),
@@ -1202,10 +1227,45 @@ impl Servidor {
                 // "Venceria agora?" e o que a tela precisa para dizer se um
                 // job esta atrasado -- e sai da MESMA funcao que o relogio
                 // usa, para os dois nunca discordarem.
+                let vencido = j.ligado && j.agenda.hora_de_rodar(agora, ultimo);
+                pares.push(("vencido".to_string(), Json::Bool(vencido)));
+                pares.push(("rodando".to_string(), Json::Bool(rodando)));
                 pares.push((
-                    "vencido".to_string(),
-                    Json::Bool(j.ligado && j.agenda.hora_de_rodar(agora, ultimo)),
+                    "estado".to_string(),
+                    Json::texto_de(crate::jobs::estado_do_job(
+                        j.ligado,
+                        rodando,
+                        ultima.map(|c| c.ok),
+                        relogio,
+                    )),
                 ));
+                // Parado e o vencido que ninguem vai rodar -- mesma funcao
+                // que o vigia de e-mail usa.
+                pares.push((
+                    "parado".to_string(),
+                    Json::Bool(crate::jobs::job_parado(j.ligado, rodando, vencido, relogio)),
+                ));
+                // A ultima corrida com resultado -- a semeada do log conta,
+                // para "falhou as 03:00" sobreviver a um reinicio.
+                pares.push((
+                    "ultima".to_string(),
+                    match ultima {
+                        Some(c) => c.para_json(),
+                        None => Json::Nulo,
+                    },
+                ));
+                // A proxima prevista, pela mesma conta do relogio. Pode estar
+                // no passado: vencida e informacao, nao erro.
+                if j.ligado {
+                    let proximo = j.agenda.proximo_ms(agora, ultimo);
+                    pares.push(("proximo_ms".to_string(), Json::de_i64(proximo)));
+                    pares.push((
+                        "proxima".to_string(),
+                        Json::texto_de(phxsql_core::datahora::instante_iso(proximo)),
+                    ));
+                } else {
+                    pares.push(("proximo_ms".to_string(), Json::Nulo));
+                }
                 Json::Objeto(pares)
             })
             .collect();
@@ -1214,14 +1274,64 @@ impl Servidor {
             .iter()
             .map(crate::jobs::Corrida::para_json)
             .collect();
+        let email = &self.config.alertas.email;
         Ok(Json::objeto(vec![
             ("arquivo", Json::texto_de(r.caminho.display().to_string())),
             (
                 "log",
                 Json::texto_de(r.caminho_do_log().display().to_string()),
             ),
+            ("relogio_no_ar", Json::Bool(relogio)),
+            // O estado do aviso por e-mail, para a tela dizer a verdade sobre
+            // quem sera avisado -- os enderecos ja aparecem na op `config`,
+            // que exige o mesmo `administrar` que esta aqui.
+            (
+                "aviso_email",
+                Json::objeto(vec![
+                    // A MESMA funcao que decide se o e-mail sai -- escrita
+                    // duas vezes, a copia esquecida viraria uma tela que
+                    // mente sobre o aviso.
+                    ("ligado", Json::Bool(self.aviso_de_jobs_ligado())),
+                    ("email_ligado", Json::Bool(email.ligado)),
+                    ("avisar_jobs", Json::Bool(email.avisar_jobs)),
+                    (
+                        "para",
+                        Json::Lista(email.para.iter().map(Json::texto_de).collect()),
+                    ),
+                    (
+                        "repetir_horas",
+                        Json::de_u64(self.config.alertas.repetir_horas),
+                    ),
+                ]),
+            ),
             ("jobs", Json::Lista(lista)),
             ("historico", Json::Lista(historico)),
+        ]))
+    }
+
+    /// Liga ou desliga um job pelo nome, sem tocar no resto da ficha.
+    ///
+    /// Existe para a tela nao reenviar o job inteiro so para virar uma chave:
+    /// reenviar a ficha lida ha minutos gravaria por cima do que outro
+    /// administrador mudou nesse meio tempo -- o mesmo estrago da gravacao
+    /// sem versao, por outra porta.
+    fn op_job_ligar(&self, p: &Json) -> Result<Json> {
+        let nome = p.texto_ou("nome", "").trim().to_string();
+        let Some(ligado) = p.campo("ligado").and_then(Json::booleano) else {
+            return Err(PhxError::Esquema(
+                "informe \"ligado\": true liga, false desliga".into(),
+            ));
+        };
+        let mut r = self.jobs.lock().map_err(|_| trava_envenenada())?;
+        let mut job = r.achar(&nome)?.clone();
+        let nome = job.nome.clone();
+        job.ligado = ligado;
+        r.salvar(job)?;
+        Ok(Json::objeto(vec![
+            ("job", Json::texto_de(nome)),
+            ("ligado", Json::Bool(ligado)),
+            // Mesmo aviso do salvar: ligar so vale sozinho se ha relogio.
+            ("relogio_no_ar", Json::Bool(self.relogio_de_jobs_no_ar())),
         ]))
     }
 
@@ -1361,7 +1471,12 @@ impl Servidor {
         };
         let op = job.op().to_string();
 
+        // O nome entra na lista dos que rodam agora ANTES de executar e sai
+        // logo depois: e o que deixa a tela dizer "rodando" e impede o vigia
+        // de tratar um backup de dez minutos como job parado.
+        self.marcar_rodando(&job.nome, true);
         let resultado = self.executar_job(&job, &op);
+        self.marcar_rodando(&job.nome, false);
         let corrida = crate::jobs::Corrida {
             quando_ms: inicio,
             job: job.nome.clone(),
@@ -1377,9 +1492,13 @@ impl Servidor {
                 Err(e) => e.to_string(),
             },
         };
-        if let Ok(r) = self.jobs.lock() {
+        if let Ok(mut r) = self.jobs.lock() {
             r.registrar(&corrida);
         }
+        // O aviso por e-mail, se foi pedido -- e a limpeza do silencio quando
+        // o job volta a rodar. Depois do registrar: o historico nunca pode
+        // depender de o rele estar no ar.
+        self.avisar_sobre_a_corrida(&job, &corrida);
         // O job tambem entra no `acessos.log`, como qualquer outra operacao:
         // quem audita o servidor nao deveria precisar saber que existe um
         // segundo arquivo para descobrir que uma tabela foi mexida.
@@ -1508,6 +1627,239 @@ impl Servidor {
             usuario: Some(u.clone()),
             ..Sessao::default()
         })
+    }
+
+    // ------------------------------------------------- aviso de jobs por e-mail
+
+    /// Entra e sai da lista dos jobs em execucao agora.
+    fn marcar_rodando(&self, nome: &str, esta: bool) {
+        if let Ok(mut g) = self.jobs_rodando.lock() {
+            if esta {
+                g.push(nome.to_string());
+            } else if let Some(i) = g.iter().position(|n| n == nome) {
+                g.remove(i);
+            }
+        }
+    }
+
+    /// O aviso esta ligado? E O portao, um so, e vem antes de qualquer
+    /// trabalho: desligado, quem chama paga duas leituras de booleano e nada
+    /// mais -- nenhuma trava, nenhuma String, nenhum parse.
+    ///
+    /// Opt-in de proposito: `avisar_jobs` e um campo proprio no bloco de
+    /// e-mail. Sem bloco de e-mail nada muda, e quem configurou e-mail so
+    /// para o disco tambem continua exatamente como estava.
+    fn aviso_de_jobs_ligado(&self) -> bool {
+        let email = &self.config.alertas.email;
+        email.ligado && email.avisar_jobs
+    }
+
+    /// Depois de cada corrida: avisa a falha por e-mail, e limpa o silencio
+    /// de quem voltou a rodar.
+    ///
+    /// A limpeza espelha o vigia de disco: enquanto o job falha, no maximo um
+    /// aviso por janela de `repetir_horas`; quando volta a dar certo, a chave
+    /// sai do mapa e a PROXIMA falha avisa na hora, porque e noticia nova.
+    fn avisar_sobre_a_corrida(&self, job: &crate::jobs::Job, corrida: &crate::jobs::Corrida) {
+        if !self.aviso_de_jobs_ligado() {
+            return;
+        }
+        let agora = crate::agora_ms();
+        let silencio = self.config.alertas.repetir_horas as i64 * 3_600_000;
+        let chave = format!("falha:{}", job.nome.to_lowercase());
+        let mandar = {
+            let Ok(mut avisados) = self.avisos_de_jobs.lock() else {
+                return;
+            };
+            // Rodou -- entao parado nao esta.
+            avisados.remove(&format!("parado:{}", job.nome.to_lowercase()));
+            if corrida.ok {
+                avisados.remove(&chave);
+                false
+            } else {
+                crate::jobs::pode_avisar(&mut avisados, &chave, agora, silencio)
+            }
+        };
+        if !mandar {
+            return;
+        }
+        let email = self.config.alertas.email.clone();
+        let assunto = format!("PhxSql: job {} falhou", job.nome);
+        let corpo = Self::texto_do_aviso_de_falha(job, corrida);
+        // Linha de execucao propria: quem dispara pode ser a tela, e ela nao
+        // deve esperar o rele -- nem o timeout de um rele fora do ar.
+        std::thread::spawn(
+            move || match crate::email::enviar(&email, &assunto, &corpo) {
+                Ok(r) => eprintln!("aviso de job enviado: {r}"),
+                // Falhar em avisar tambem e noticia, como no disco.
+                Err(e) => eprintln!("aviso de job NAO ENVIADO: {e}"),
+            },
+        );
+    }
+
+    /// O corpo do e-mail de falha. Identifica o job, o motivo e a hora -- e
+    /// NUNCA carrega credencial: o usuario aparece pelo login, o pedido pela
+    /// operacao, e senha nao ha de onde vir.
+    fn texto_do_aviso_de_falha(job: &crate::jobs::Job, c: &crate::jobs::Corrida) -> String {
+        let mut t = String::new();
+        t.push_str(&format!("O job {} falhou.\n\n", job.nome));
+        if !job.descricao.is_empty() {
+            t.push_str(&format!("  descrição  {}\n", job.descricao));
+        }
+        t.push_str(&format!(
+            "  operação   {}\n  roda como  {}\n  agenda     {}\n  quando     {}\n  duração    {} ms\n\n  erro: {}\n\n",
+            c.op,
+            if c.usuario.is_empty() { "(sem cadastro)" } else { &c.usuario },
+            job.agenda.rotulo(),
+            phxsql_core::datahora::instante_iso(c.quando_ms),
+            c.duracao_ms,
+            c.detalhe
+        ));
+        t.push_str(
+            "Enquanto o job continuar falhando, este aviso se repete no maximo uma vez \
+             por janela de silêncio; quando ele voltar a rodar, a próxima falha avisa \
+             na hora. O histórico completo está na tela Jobs e no jobs.log.\n\n",
+        );
+        t.push_str(&format!("Servidor PhxSql {VERSAO}\n"));
+        t
+    }
+
+    /// Sobe o vigia que avisa por e-mail o job PARADO -- ligado, com a hora
+    /// vencida, e sem relogio para roda-lo (ex.: o primeiro job foi ligado
+    /// pela tela depois do arranque, e o relogio so sobe no arranque).
+    ///
+    /// So existe se o aviso foi pedido: desligado nao custa nem a thread.
+    /// E dorme ANTES da primeira conferencia, para o arranque terminar de
+    /// subir o relogio -- senao todo arranque com job vencido comecaria com
+    /// um alarme falso.
+    fn ligar_vigia_de_jobs(self: &Arc<Self>) {
+        if !self.aviso_de_jobs_ligado() {
+            return;
+        }
+        let email = &self.config.alertas.email;
+        eprintln!(
+            "aviso de jobs por e-mail: falha e parado | avisa {}",
+            email.para.join(", ")
+        );
+        let servidor = Arc::clone(self);
+        std::thread::spawn(move || loop {
+            std::thread::sleep(Duration::from_secs(crate::jobs::PERIODO_DO_VIGIA_S));
+            servidor.conferir_jobs_parados();
+        });
+    }
+
+    /// Uma rodada do vigia de jobs parados.
+    ///
+    /// O predicado e o MESMO da tela (`jobs::job_parado`), para os dois nunca
+    /// discordarem. O silencio e a limpeza espelham o vigia de disco: quem
+    /// deixou de estar parado sai do mapa e volta a ter direito a aviso
+    /// imediato.
+    fn conferir_jobs_parados(&self) {
+        let agora = crate::agora_ms();
+        let relogio = self.relogio_de_jobs_no_ar();
+        let rodando_agora: Vec<String> = self
+            .jobs_rodando
+            .lock()
+            .map(|g| g.clone())
+            .unwrap_or_default();
+        // (nome, descricao, agenda, ultima corrida) de cada parado. A copia
+        // sai de dentro da trava; o e-mail vai sem ela.
+        let parados: Vec<(String, String, String, Option<crate::jobs::Corrida>)> = {
+            let Ok(r) = self.jobs.lock() else { return };
+            r.jobs
+                .iter()
+                .filter(|j| {
+                    let rodando = rodando_agora
+                        .iter()
+                        .any(|n| n.eq_ignore_ascii_case(&j.nome));
+                    let vencido = j.agenda.hora_de_rodar(agora, r.ultimo_de(&j.nome));
+                    crate::jobs::job_parado(j.ligado, rodando, vencido, relogio)
+                })
+                .map(|j| {
+                    (
+                        j.nome.clone(),
+                        j.descricao.clone(),
+                        j.agenda.rotulo(),
+                        r.ultima_corrida_de(&j.nome).cloned(),
+                    )
+                })
+                .collect()
+        };
+        let silencio = self.config.alertas.repetir_horas as i64 * 3_600_000;
+        let novos: Vec<(String, String, String, Option<crate::jobs::Corrida>)> = {
+            let Ok(mut avisados) = self.avisos_de_jobs.lock() else {
+                return;
+            };
+            // Quem deixou de estar parado sai do mapa -- como o disco que
+            // aliviou -- para a proxima parada avisar na hora.
+            avisados.retain(|chave, _| {
+                !chave.starts_with("parado:")
+                    || parados
+                        .iter()
+                        .any(|(n, ..)| chave == &format!("parado:{}", n.to_lowercase()))
+            });
+            parados
+                .into_iter()
+                .filter(|(n, ..)| {
+                    crate::jobs::pode_avisar(
+                        &mut avisados,
+                        &format!("parado:{}", n.to_lowercase()),
+                        agora,
+                        silencio,
+                    )
+                })
+                .collect()
+        };
+        if novos.is_empty() {
+            return;
+        }
+        for (nome, _, agenda, _) in &novos {
+            eprintln!("JOB PARADO: {nome} ({agenda}) -- ligado, vencido e sem relogio");
+        }
+        let assunto = format!("PhxSql: {} job(s) agendado(s) sem rodar", novos.len());
+        let corpo = Self::texto_do_aviso_de_parado(&novos, agora);
+        // Este metodo ja roda na thread do vigia: o envio pode ser aqui mesmo.
+        match crate::email::enviar(&self.config.alertas.email, &assunto, &corpo) {
+            Ok(r) => eprintln!("aviso de job parado enviado: {r}"),
+            Err(e) => eprintln!("aviso de job parado NAO ENVIADO: {e}"),
+        }
+    }
+
+    fn texto_do_aviso_de_parado(
+        parados: &[(String, String, String, Option<crate::jobs::Corrida>)],
+        agora: i64,
+    ) -> String {
+        let mut t = String::new();
+        t.push_str(
+            "Há job agendado que não está rodando: a hora dele venceu e o relógio de \
+             jobs não está no ar neste processo.\n\n",
+        );
+        for (nome, descricao, agenda, ultima) in parados {
+            t.push_str(&format!("  {nome}\n"));
+            if !descricao.is_empty() {
+                t.push_str(&format!("    descrição  {descricao}\n"));
+            }
+            t.push_str(&format!("    agenda     {agenda}\n"));
+            match ultima {
+                Some(c) => t.push_str(&format!(
+                    "    última     {} -- {}\n",
+                    phxsql_core::datahora::instante_iso(c.quando_ms),
+                    if c.ok { "ok" } else { "falhou" }
+                )),
+                None => t.push_str("    última     nunca rodou (que o log saiba)\n"),
+            }
+            t.push('\n');
+        }
+        t.push_str(
+            "O relógio de jobs só sobe no arranque, e só se já havia job ligado. \
+             Reinicie o servidor para a agenda valer -- ou rode o job pela tela \
+             Jobs, que funciona sem relógio.\n\n",
+        );
+        t.push_str(&format!(
+            "Servidor PhxSql {VERSAO}\nQuando: {}\n",
+            phxsql_core::datahora::instante_iso(agora)
+        ));
+        t
     }
 
     // ----------------------------------------------------------- interface web
@@ -2599,10 +2951,11 @@ impl Servidor {
             "servico" => self.op_servico(),
             "servico_parar" => self.op_servico_parar(),
             "servico_subir" => self.op_servico_subir(p),
-            "jobs" => self.op_jobs(p),
+            "jobs" | "job_listar" => self.op_jobs(p),
             "job_salvar" => self.op_job_salvar(p),
             "job_excluir" => self.op_job_excluir(p),
             "job_rodar" => self.op_job_rodar(p),
+            "job_ligar" => self.op_job_ligar(p),
             "criar_database" => self.op_criar_database(p),
             "criar_schema" => self.op_criar_schema(p),
             "criar_tabela" => self.op_criar_tabela(p),

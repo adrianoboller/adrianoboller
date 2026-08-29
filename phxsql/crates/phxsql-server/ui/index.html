@@ -969,6 +969,18 @@ td label,td .rot-dado{text-transform:none;letter-spacing:0;font-size:inherit;
 .forma-job .chk input{width:15px;height:15px;padding:0;margin:0}
 .forma-job .leg{font-size:10.5px;line-height:1.4;text-transform:none;
   letter-spacing:0}
+/* A legenda dentro da LISTA de jobs (descrição, desfecho da última corrida).
+   Escopada pela classe da linha de propósito: um `td .leg` global mudaria as
+   outras tabelas que usam a mesma palavra — o CSS global morde. */
+.linha-job .leg{display:block;font-size:10.5px;line-height:1.5;
+  color:var(--texto-3);max-width:250px;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+/* Os botoes da linha QUEBRAM quando falta largura, em vez de empurrar a
+   tabela para fora da tela -- foi assim que o Excluir sumiu na primeira
+   captura. O min-width segura dois por linha no caso comum. */
+.linha-job td.acoes-job{white-space:normal;min-width:130px}
+.linha-job td.agenda-job{white-space:nowrap}
+.linha-job .botao.mini{margin:1px 3px 2px 0}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 
@@ -1205,11 +1217,16 @@ const DEMO = {
   jobs:[
     {nome:"backup-noturno", descricao:"o zip de todo dia, antes de o time chegar",
      ligado:true, hora:"03:00", agenda:"todo dia as 03:00", op:"backup",
-     usuario:"adm", pedido:{op:"backup"}, ultimo_ms:null, vencido:false},
+     usuario:"adm", pedido:{op:"backup"}, ultimo_ms:null, vencido:false,
+     estado:"ok", rodando:false, parado:false,
+     proximo_ms:Date.now()+7*3600e3,
+     ultima:{quando_ms:Date.now()-17*3600e3, ok:true, duracao_ms:842,
+             detalhe:'{"arquivos":31,"bytes":2118304}'}},
     {nome:"confere-clientes", descricao:"integridade da tabela mais movimentada",
      ligado:false, cada_minutos:360, agenda:"a cada 6 h", op:"verificar",
      usuario:"adm", pedido:{op:"verificar",database:"Z",tabela:"cadastroClientes"},
-     ultimo_ms:null, vencido:false}
+     ultimo_ms:null, vencido:false, estado:"desligado", rodando:false,
+     parado:false, proximo_ms:null, ultima:null}
   ],
   corridas:[
     {quando:"2026-08-28 03:00:04,120", job:"backup-noturno", op:"backup",
@@ -1248,6 +1265,9 @@ function demo(op, p) {
       bind_configurado:"0.0.0.0:5000", difere_do_arquivo:false, conexoes:1,
       web:"127.0.0.1:5001", web_ligada:true};
     case "jobs": return {arquivo:"jobs.json", log:"jobs.log",
+      relogio_no_ar:true,
+      aviso_email:{ligado:true, email_ligado:true, avisar_jobs:true,
+        para:["dba@empresa.com.br"], repetir_horas:6},
       jobs:d.jobs, historico:d.corridas};
     default: throw new Error("operação sem demonstração: " + op);
   }
@@ -6881,36 +6901,108 @@ async function verServico() {
  * pingo a mais. Um agendador com poder próprio seria uma porta dos fundos com
  * hora marcada.
  */
+/** O pino de cada estado. A palavra vem do servidor (`estado`), e a tela só
+ * traduz para cor e rótulo — recalcular o estado aqui abriria espaço para os
+ * dois discordarem. */
+const PINO_DO_ESTADO = {
+  ok:          ["ok",  "ok"],
+  falhou:      ["mal", "falhou"],
+  desligado:   ["nao", "desligado"],
+  rodando:     ["bin", "rodando"],
+  agendado:    ["reg", "agendado"],
+  nunca_rodou: ["ndx", "nunca rodou"],
+};
+
 async function telaJobs() {
   const j = await api("jobs", { historico: 40 });
   const jobs = j.jobs || [];
   const hist = j.historico || [];
+  const aviso = j.aviso_email || {};
+  // Dia/mês e hora:minuto bastam aqui: com ano e segundos a tabela estourava
+  // a largura e empurrava os botões para fora da tela — o histórico logo
+  // abaixo guarda o carimbo completo.
+  const dt = ms => {
+    const d = new Date(ms);
+    return esc(d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })
+      + " " + d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }));
+  };
 
+  const pinoEstado = x => {
+    const [cor, rot] = PINO_DO_ESTADO[x.estado] || ["nao", x.estado || "?"];
+    return `<span class="pino ${cor}">${esc(rot)}</span>`;
+  };
+  // A última corrida com o resultado: a data em cima, o desfecho embaixo.
+  // O detalhe inteiro fica no title, porque meia mensagem de erro não ajuda.
+  const celUltima = x => {
+    const u = x.ultima;
+    if (!u || u.ok === undefined) return '<span class="leg">nunca rodou</span>';
+    return `<div>${dt(u.quando_ms)}</div>
+      <div class="leg" title="${esc(u.detalhe || "")}">${u.ok
+        ? `ok em ${fmt(u.duracao_ms)} ms`
+        : `FALHOU: ${esc(u.detalhe || "")}`}</div>`;
+  };
+  // A próxima prevista — e a verdade sobre ela: «parado» quando ninguém vai
+  // rodá-la (sem relógio), «vencida» quando o relógio a pega na próxima volta.
+  const celProxima = x => {
+    if (!x.ligado) return '<span class="leg">—</span>';
+    if (x.rodando) return '<span class="leg">rodando agora…</span>';
+    const quando = x.proximo_ms ? dt(x.proximo_ms) : "";
+    if (x.parado) return `<div>${quando}</div><span class="pino mal">parado</span>`;
+    if (x.vencido) return `<div>${quando}</div><div class="leg">na próxima volta do relógio</div>`;
+    return `<div>${quando}</div>`;
+  };
   const linha = x => `<tr class="linha-job" data-n="${esc(x.nome)}">
     <td class="dado"><b>${esc(x.nome)}</b>${x.descricao
       ? `<div class="leg">${esc(x.descricao)}</div>` : ""}</td>
-    <td>${x.ligado ? '<span class="pino ok">ligado</span>'
-                   : '<span class="pino nao">desligado</span>'}</td>
-    <td class="dado">${esc(x.agenda)}</td>
+    <td>${pinoEstado(x)}</td>
+    <td class="dado agenda-job">${esc(x.agenda)}</td>
     <td class="dado">${esc(x.op)}</td>
     <td class="dado">${esc(x.usuario) || '<span class="leg">sem cadastro</span>'}</td>
-    <td class="dado">${x.ultimo_ms
-      ? esc(new Date(x.ultimo_ms).toLocaleString("pt-BR"))
-      : "nunca rodou"}</td>
-    <td>${x.vencido ? '<span class="pino mal">vencido</span>' : ""}</td>
-    <td><button class="botao mini alterar bt-rodar" data-n="${esc(x.nome)}">Rodar agora</button></td>
+    <td class="dado">${celUltima(x)}</td>
+    <td class="dado">${celProxima(x)}</td>
+    <td class="acoes-job">
+      <button class="botao mini alterar bt-rodar" title="roda agora, fora da agenda"
+        data-n="${esc(x.nome)}">Rodar</button>
+      <button class="botao mini alterar bt-ligar" data-n="${esc(x.nome)}"
+        data-l="${x.ligado ? 0 : 1}">${x.ligado ? "Desligar" : "Ligar"}</button>
+      <button class="botao mini excluir bt-excluir" data-n="${esc(x.nome)}">Excluir</button>
+    </td>
   </tr>`;
 
+  // O quadro do aviso por e-mail diz a verdade da configuração: quem será
+  // avisado, ou o que falta para alguém ser. Sem bloco de e-mail, nada muda —
+  // e o quadro diz isso com todas as letras.
+  const quadroAviso = aviso.ligado
+    ? `<p><span class="pino ok">ligado</span> Job que <b>falha</b> e job
+         <b>parado</b> (ligado, com a hora vencida e sem relógio) avisam
+         <code>${esc((aviso.para || []).join(", "))}</code>. O mesmo problema
+         repete no máximo a cada ${esc(String(aviso.repetir_horas))} h; quando o
+         job volta a rodar, a próxima falha avisa na hora.</p>`
+    : aviso.email_ligado
+      ? `<p><span class="pino nao">desligado</span> O e-mail do servidor está
+           configurado (aviso de disco), mas o aviso de jobs não foi pedido.
+           Para ligar: <code>"avisar_jobs": true</code> no bloco
+           <code>alertas.email</code> do config.json. Guarda nova entra pedida —
+           sem pedir, nada muda.</p>`
+      : `<p><span class="pino nao">desligado</span> Este servidor não tem e-mail
+           configurado, então nenhum aviso sai — nada muda para quem não pediu.
+           Para ser avisado de job que falha ou para: configure o bloco
+           <code>alertas.email</code> no config.json (um relé SMTP interno) e
+           acrescente <code>"avisar_jobs": true</code>.</p>`;
+
   folha("Jobs de execução",
-    `${jobs.length} job(s) · cadastro em ${esc(j.arquivo)} · corridas em ${esc(j.log)}`,
+    `${jobs.length} job(s) · cadastro em ${esc(j.arquivo)} · corridas em ${esc(j.log)}`
+    + (j.relogio_no_ar ? "" : " · sem relógio neste arranque"),
     (jobs.length
       ? tabela([{t:"nome"},{t:"estado"},{t:"agenda"},{t:"operação"},{t:"roda como"},
-                {t:"última corrida"},{t:""},{t:""}], jobs, linha)
+                {t:"última corrida"},{t:"próxima"},{t:""}], jobs, linha)
       : `<div class="vazio">nenhum job cadastrado ainda</div>`)
     + `<div class="acoes">
          <button class="botao incluir" id="btJobNovo">Novo job…</button>
          <button class="botao consultar" id="btJobVer">Atualizar</button>
        </div>
+       <h3>Aviso por e-mail</h3>
+       <div class="nota">${quadroAviso}</div>
        <h3>Últimas corridas</h3>
        ${hist.length ? tabela(
           [{t:"quando"},{t:"job"},{t:"operação"},{t:"como"},{t:"resultado"},
@@ -6931,15 +7023,15 @@ async function telaJobs() {
          sessão sem dono, que rodaria com tudo liberado.</p>
          <p><strong>O relógio acorda de 30 em 30 segundos</strong>, e só sobe se
          havia algum job ligado quando o servidor arrancou. Ligar o primeiro job
-         pela tela vale a partir do próximo arranque — a tela avisa quando é o
-         caso.</p>
+         pela tela vale a partir do próximo arranque — até lá o job fica
+         <b>parado</b>, a tela mostra e o aviso por e-mail (se ligado) cobra.</p>
          <p><strong>Falha entra no histórico igual</strong> ao acerto: job que
          falha calado não existe. O detalhe é o resumo da resposta — a resposta
          inteira não cabe, e uma varredura de vinte mil linhas vira
          «linhas: 20000 itens».</p>
        </div>
        <p class="cores-acao"><b><i style="background:var(--acao-incluir)"></i>novo</b>
-         <b><i style="background:var(--acao-alterar)"></i>rodar / editar</b>
+         <b><i style="background:var(--acao-alterar)"></i>rodar / ligar / editar</b>
          <b><i style="background:var(--acao-excluir)"></i>excluir</b>
          <b><i style="background:var(--acao-consultar)"></i>consultar</b></p>`);
 
@@ -6950,6 +7042,26 @@ async function telaJobs() {
   $$("#painel .bt-rodar").forEach(b => b.onclick = async ev => {
     ev.stopPropagation();
     await rodarJob(b.dataset.n);
+  });
+  $$("#painel .bt-ligar").forEach(b => b.onclick = async ev => {
+    ev.stopPropagation();
+    const ligar = b.dataset.l === "1";
+    try {
+      const r = await api("job_ligar", { nome: b.dataset.n, ligado: ligar });
+      avisar(`job ${b.dataset.n} ${ligar ? "ligado" : "desligado"}`);
+      if (ligar && !r.relogio_no_ar) {
+        avisar("ligado — mas o relógio de jobs não subiu neste arranque: "
+             + "reinicie para ele andar sozinho, ou rode pela tela.", true);
+      }
+    } catch (e) { avisar(`${e}`, true); }
+    telaJobs();
+  });
+  $$("#painel .bt-excluir").forEach(b => b.onclick = async ev => {
+    ev.stopPropagation();
+    if (!confirm(`Excluir o job ${b.dataset.n}? O histórico das corridas dele fica.`)) return;
+    try { await api("job_excluir", { nome: b.dataset.n }); avisar(`job ${b.dataset.n} excluído`); }
+    catch (e) { avisar(`${e}`, true); }
+    telaJobs();
   });
   $$("#painel .linha-job").forEach(tr => tr.onclick = () => editarJob(tr.dataset.n));
 }
