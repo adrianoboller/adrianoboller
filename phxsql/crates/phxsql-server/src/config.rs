@@ -1218,6 +1218,10 @@ pub struct Config {
     pub jobs: PathBuf,
     /// A cifra dos diarios em repouso. Desligada por padrao.
     pub cifra: Cifra,
+    /// O idioma das mensagens do servidor: o nome de uma das seis colunas da
+    /// tabela `phxsys.mensagens`. Vazio ou ausente = `Portugues`, que e o
+    /// texto de fabrica -- e por isso config antigo nao muda nada.
+    pub idioma: String,
     /// Campos do arquivo que o servidor nao reconhece.
     ///
     /// Nao e erro -- config antigo continua subindo. E aviso: campo escrito
@@ -1225,13 +1229,17 @@ pub struct Config {
     /// `"porta": 5001` esperando trocar a porta (o campo e `bind`) descobria
     /// so quando ninguem conseguia conectar.
     pub estranhas: Vec<String>,
+    /// Avisos de leitura que nao impedem o servidor de subir -- valor que foi
+    /// ignorado, idioma que nao existe. O `main` os imprime no arranque, pelo
+    /// mesmo motivo das `estranhas`: silencio aqui custa caro.
+    pub avisos: Vec<String>,
 }
 
 /// Campos de primeiro nivel que o `config.json` pode trazer.
 ///
 /// Os que comecam com `_` sao comentario -- o JSON nao tem comentario, e os
 /// exemplos usam `_web`, `_backup` e afins para explicar a secao seguinte.
-const CAMPOS_CONHECIDOS: [&str; 22] = [
+const CAMPOS_CONHECIDOS: [&str; 23] = [
     "bind",
     "base",
     "token",
@@ -1254,6 +1262,7 @@ const CAMPOS_CONHECIDOS: [&str; 22] = [
     "dblink",
     "jobs",
     "cifra",
+    "idioma",
 ];
 
 /// O que o arquivo trouxe e o servidor nao sabe ler.
@@ -1290,7 +1299,9 @@ impl Default for Config {
             dblink: PathBuf::from("dblink.json"),
             jobs: PathBuf::from("jobs.json"),
             cifra: Cifra::default(),
+            idioma: String::new(),
             estranhas: Vec::new(),
+            avisos: Vec::new(),
         }
     }
 }
@@ -1333,6 +1344,7 @@ impl Config {
 
     pub fn de_json(j: &Json) -> Result<Config> {
         let padrao = Config::default();
+        let mut avisos: Vec<String> = Vec::new();
         let rep = match j.campo("replicacao") {
             None => Replicacao::default(),
             Some(r) => Replicacao {
@@ -1431,7 +1443,23 @@ impl Config {
             dblink: PathBuf::from(j.texto_ou("dblink", "dblink.json")),
             jobs: PathBuf::from(j.texto_ou("jobs", "jobs.json")),
             cifra: Cifra::de_json(j),
+            idioma: {
+                // O valor aceito e o NOME de uma coluna da tabela de
+                // mensagens. Desconhecido nao derruba o servidor -- vira
+                // aviso e cai no portugues, que e o texto de fabrica.
+                let pedido = j.texto_ou("idioma", "").trim().to_string();
+                if pedido.is_empty() || crate::mensagens::IDIOMAS.contains(&pedido.as_str()) {
+                    pedido
+                } else {
+                    avisos.push(format!(
+                        "idioma {pedido:?} nao existe; use {}. Ficou Portugues.",
+                        crate::mensagens::IDIOMAS.join(", ")
+                    ));
+                    String::new()
+                }
+            },
             estranhas: chaves_estranhas(j),
+            avisos,
         })
     }
 
@@ -1626,6 +1654,16 @@ impl Config {
             ("dblink", Json::texto_de(self.dblink.display().to_string())),
             ("jobs", Json::texto_de(self.jobs.display().to_string())),
             ("cifra", self.cifra.para_json()),
+            // O idioma EM USO, ja resolvido: vazio no arquivo vira Portugues
+            // aqui, para a tela nao ter de repetir a regra do fallback.
+            (
+                "idioma",
+                Json::texto_de(if self.idioma.is_empty() {
+                    crate::mensagens::IDIOMAS[0]
+                } else {
+                    &self.idioma
+                }),
+            ),
         ])
     }
 }
@@ -1783,8 +1821,10 @@ mod tests {
             "comandos_proibidos":["excluir","reindexar"],
             "bases_proibidas":["financeiro"],
             "tentativas_ate_bloquear":3,
+            "tentativas_para_bloqueio":4,
             "janela_minutos":5,
             "bloqueio_minutos":120,
+            "whitelist":["127.0.0.1","192.168.50.0/24"],
             "blacklist":"bl.json",
             "firewall":{"ligado":true,"bloquear":["/sbin/iptables","-s","{ip}"]}
           }
@@ -1795,17 +1835,47 @@ mod tests {
         assert!(!c.politica.comando_proibido("ler"));
         assert!(c.politica.base_proibida("financeiro"));
         assert_eq!(c.politica.tentativas_ate_bloquear, 3);
+        assert_eq!(c.politica.tentativas_para_bloqueio, 4);
         assert_eq!(c.politica.bloqueio_minutos, 120);
+        assert!(c.politica.na_whitelist("127.0.0.1"));
+        assert!(c.politica.na_whitelist("192.168.50.77"));
+        assert!(!c.politica.na_whitelist("10.0.0.1"));
         assert!(c.politica.firewall.as_ref().unwrap().ligado);
         assert_eq!(c.blacklist, PathBuf::from("bl.json"));
     }
 
+    /// **O teste que mais importa da guarda nova**: sem o bloco `seguranca`,
+    /// a politica e a de sempre -- nada proibido, whitelist vazia, e o grave
+    /// bloqueia na primeira, como desde que a blacklist existe.
     #[test]
     fn sem_secao_de_seguranca_nada_e_proibido() {
         let c = Config::de_json(&Json::analisar(r#"{"token":"x"}"#).unwrap()).unwrap();
         assert!(!c.politica.comando_proibido("excluir"));
         assert!(c.politica.firewall.is_none());
         assert_eq!(c.politica.tentativas_ate_bloquear, 5);
+        assert_eq!(c.politica.tentativas_para_bloqueio, 1);
+        assert!(c.politica.whitelist.is_empty());
+        assert!(!c.politica.na_whitelist("127.0.0.1"));
+    }
+
+    #[test]
+    fn idioma_ausente_e_portugues_e_desconhecido_avisa() {
+        let c = Config::de_json(&Json::analisar(r#"{"token":"x"}"#).unwrap()).unwrap();
+        assert_eq!(c.idioma, "");
+        assert!(c.avisos.is_empty());
+
+        let c = Config::de_json(&Json::analisar(r#"{"token":"x","idioma":"Ingles"}"#).unwrap())
+            .unwrap();
+        assert_eq!(c.idioma, "Ingles");
+        assert!(c.avisos.is_empty());
+
+        // Desconhecido nao derruba: avisa no arranque e cai no portugues --
+        // o mesmo padrao do campo com nome errado.
+        let c = Config::de_json(&Json::analisar(r#"{"token":"x","idioma":"Klingon"}"#).unwrap())
+            .unwrap();
+        assert_eq!(c.idioma, "");
+        assert_eq!(c.avisos.len(), 1);
+        assert!(c.avisos[0].contains("Klingon"), "{:?}", c.avisos);
     }
 
     #[test]

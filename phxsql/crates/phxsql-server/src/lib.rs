@@ -17,6 +17,7 @@ pub mod jobs;
 pub mod juncao;
 pub mod ligacoes;
 pub mod mcp;
+pub mod mensagens;
 pub mod pg;
 pub mod pivot;
 pub mod profiler;

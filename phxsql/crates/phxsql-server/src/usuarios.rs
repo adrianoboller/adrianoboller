@@ -232,6 +232,13 @@ impl Atividade {
             "acessos" | "ips" | "config" | "usuarios" | "bloqueios" | "desbloquear" => {
                 Atividade::Administrar
             }
+            // A exportacao e a whitelist sao a mesma familia do `bloqueios`:
+            // quem ve e solta IP tambem exporta e protege. E a gestao das
+            // mensagens e configuracao do servidor -- soltar um texto errado
+            // na resposta de todo mundo nao e direito de leitor.
+            "bloqueios_exportar" | "whitelist_salvar" | "mensagens" | "mensagens_semear" => {
+                Atividade::Administrar
+            }
             // O profiler mostra o TEXTO dos pedidos de todo mundo, com os
             // dados que estao sendo gravados dentro. Quem pode ler uma tabela
             // nao ganha por isso o direito de ver o que os outros escrevem

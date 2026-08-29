@@ -290,3 +290,100 @@ fn pela_web(porta: u16, corpo: &str) -> String {
     BufReader::new(fluxo).read_to_string(&mut resposta).unwrap();
     resposta
 }
+
+/// Sobe um servidor com a politica de comandos proibidos -- o firewall do
+/// proprio servidor, provado pelo soquete como manda a licao do BULKINSERT.
+fn subir_com_politica(base: &std::path::Path, porta: u16, ajustar: impl FnOnce(&mut Config)) {
+    let mut c = Config {
+        bind: format!("127.0.0.1:{porta}"),
+        base: base.to_path_buf(),
+        log_acessos: base.join("acessos.log"),
+        blacklist: base.join("blacklist.json"),
+        dblink: base.join("dblink.json"),
+        jobs: base.join("jobs.json"),
+        token: TOKEN.into(),
+        ..Default::default()
+    };
+    c.web.ligado = false;
+    ajustar(&mut c);
+    let s = Servidor::novo(c).unwrap();
+    std::thread::spawn(move || {
+        let _ = s.escutar();
+    });
+    esperar_porta(porta, true).expect("o servidor nao subiu");
+}
+
+/// O que o teste unitario NAO prova: que a PROXIMA CONEXAO do IP bloqueado e
+/// recusada na porta, com o erro nomeando o bloqueio e a duracao -- e que
+/// `desbloquear` devolve a porta de verdade.
+#[test]
+fn ip_bloqueado_tem_a_proxima_conexao_recusada_e_soltar_devolve() {
+    let base = pasta("firewall");
+    let porta = porta_livre();
+    subir_com_politica(&base, porta, |c| {
+        c.politica.comandos_proibidos = vec!["excluir_tabela".into()];
+        c.politica.tentativas_para_bloqueio = 3;
+        c.politica.bloqueio_minutos = 60;
+    });
+
+    let proibido = format!(
+        "{{\"token\":\"{TOKEN}\",\"op\":\"excluir_tabela\",\"database\":\"x\",\"tabela\":\"y\"}}"
+    );
+    // Duas primeiras: recusam, contam, e a conexao seguinte AINDA entra.
+    for n in 1..=2 {
+        let r = pedir(porta, &proibido);
+        assert!(r.contains("\"ok\":false"), "{r}");
+        assert!(r.contains(&format!("tentativa {n} de 3")), "{r}");
+        assert!(r.contains("\"codigo\":4001"), "{r}");
+    }
+    // A terceira bloqueia.
+    let r = pedir(porta, &proibido);
+    assert!(r.contains("o IP foi bloqueado"), "{r}");
+
+    // A PROXIMA CONEXAO e recusada antes do token, nomeando ate quando.
+    let r = pedir(porta, &format!("{{\"token\":\"{TOKEN}\",\"op\":\"ping\"}}"));
+    assert!(r.contains("\"ok\":false"), "{r}");
+    assert!(r.contains("bloqueado desde"), "{r}");
+    assert!(r.contains("ate"), "{r}");
+    assert!(r.contains("comando proibido pela politica"), "{r}");
+
+    // Soltar por OUTRO processo (o caminho do phxsqld --desbloquear): mexe no
+    // arquivo, e o servidor rele sozinho.
+    {
+        let politica = phxsql_server::Politica::default();
+        let mut bl = phxsql_server::Blacklist::abrir(base.join("blacklist.json")).unwrap();
+        assert!(bl.desbloquear("127.0.0.1", &politica).unwrap());
+    }
+    let r = pedir(porta, &format!("{{\"token\":\"{TOKEN}\",\"op\":\"ping\"}}"));
+    assert!(
+        r.contains("\"ok\":true"),
+        "desbloquear nao devolveu a porta: {r}"
+    );
+}
+
+/// Whitelist pelo soquete: o IP protegido pede o comando proibido a vontade,
+/// recusa apos recusa, e a conexao seguinte SEMPRE entra.
+#[test]
+fn whitelist_no_soquete_recusa_sem_nunca_bloquear() {
+    let base = pasta("whitelist");
+    let porta = porta_livre();
+    subir_com_politica(&base, porta, |c| {
+        c.politica.comandos_proibidos = vec!["excluir_tabela".into()];
+        c.politica.whitelist = vec!["127.0.0.1".into()];
+    });
+
+    let proibido = format!(
+        "{{\"token\":\"{TOKEN}\",\"op\":\"excluir_tabela\",\"database\":\"x\",\"tabela\":\"y\"}}"
+    );
+    for _ in 0..5 {
+        let r = pedir(porta, &proibido);
+        assert!(r.contains("\"ok\":false"), "{r}");
+        assert!(r.contains("esta proibida neste servidor"), "{r}");
+        assert!(
+            !r.contains("o IP foi bloqueado"),
+            "a resposta nao pode mentir que bloqueou: {r}"
+        );
+    }
+    let r = pedir(porta, &format!("{{\"token\":\"{TOKEN}\",\"op\":\"ping\"}}"));
+    assert!(r.contains("\"ok\":true"), "whitelist deixou bloquear: {r}");
+}

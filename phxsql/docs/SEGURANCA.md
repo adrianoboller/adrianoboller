@@ -86,9 +86,11 @@ pede({"op":"login","usuario":"adriano","nonce_cliente":nc,"prova":prova})
 "seguranca": {
   "comandos_proibidos": ["excluir", "reindexar"],
   "bases_proibidas": ["financeiro"],
+  "tentativas_para_bloqueio": 1,
   "tentativas_ate_bloquear": 5,
   "janela_minutos": 10,
   "bloqueio_minutos": 60,
+  "whitelist": ["127.0.0.1", "192.168.50.0/24"],
   "blacklist": "blacklist.json"
 }
 ```
@@ -98,15 +100,45 @@ Não é permissão de usuário — é o que este servidor não faz por esta port
 
 Pedir um comando proibido **bloqueia o IP na hora**. Não há por que dar cinco
 chances a quem pediu exatamente aquilo que o arquivo diz que ninguém pede.
+`tentativas_para_bloqueio` existe para quem discorda: acima de 1, a operação
+continua **recusada desde a primeira** — o que espera a enésima dentro da
+janela é só o bloqueio do IP, e a resposta diz a contagem (`tentativa 2 de 3`).
+Sem o campo, 1 — o comportamento de sempre. `bloqueio_minutos: 0` bloqueia
+até alguém soltar.
 
 ### Duas gravidades
 
 | | O que é | O que acontece |
 |---|---|---|
-| **Grave** | comando proibido, base proibida | bloqueia na hora |
-| **Leve** | token errado, senha errada, IP fora da lista | conta na janela; bloqueia no limite |
+| **Grave** | comando proibido, base proibida, travessia de diretório | bloqueia na tentativa `tentativas_para_bloqueio` (padrão: a primeira) |
+| **Leve** | token errado, senha errada, IP fora da lista | conta na janela; bloqueia em `tentativas_ate_bloquear` |
 
 Errar a senha uma vez é humano. Errar oito vezes em dois minutos, não.
+
+### Whitelist: quem nunca bloqueia
+
+`whitelist` aceita IP exato e faixa CIDR (`192.168.50.0/24`, `2001:db8::/32`),
+e **vence sempre** — inclusive um bloqueio já gravado antes de a regra entrar:
+a conferência acontece a cada conexão, então a regra nova vale na próxima, sem
+esperar o bloqueio vencer. O que a whitelist **não** dá é poder: o comando
+proibido continua recusado, só o IP fica livre. Proteção de acesso não é
+licença.
+
+São duas listas, e a união vale: a **fixa**, no `config.json` (muda com o
+arquivo, como toda configuração), e a **editável pela tela de Bloqueios**, que
+mora no `blacklist.json` — arquivo próprio pelo mesmo motivo do `dblink.json`:
+o que muda pela tela não reescreve o config. Regra ilegível é recusada
+inteira, sem gravar metade.
+
+### `127.0.0.1` não tem exceção implícita
+
+Decisão deliberada, e o motivo está em duas partes. Primeiro, uma exceção
+embutida mudaria o comportamento que já existe — hoje o localhost bloqueia
+como qualquer IP, e há teste de soquete que depende disso. Segundo, o operador
+local **nunca fica trancado de verdade**: `phxsqld --desbloquear 127.0.0.1`
+roda na máquina, mexe no arquivo sem passar pela porta, e o servidor relê
+sozinho. Quem quiser a exceção pede por ela: `"whitelist": ["127.0.0.1"]`, que
+é o que o exemplo de config sugere.
 
 ---
 
@@ -115,6 +147,7 @@ Errar a senha uma vez é humano. Errar oito vezes em dois minutos, não.
 ```json
 {
   "atualizado_em": "2026-08-27 19:30:17,323",
+  "whitelist": ["203.0.113.50"],
   "bloqueios": [
     {
       "ip": "127.0.0.1",
@@ -139,8 +172,12 @@ phxsqld --bloqueios              # quem está de fora, e por quê
 phxsqld --desbloquear 203.0.113.9
 ```
 
-Pelo protocolo, `{"op":"bloqueios"}` e `{"op":"desbloquear","ip":"..."}` —
-ambos exigem `administrar`.
+Pelo protocolo, `{"op":"bloqueios"}` (que também devolve as duas whitelists e
+a política em vigor), `{"op":"desbloquear","ip":"..."}` e
+`{"op":"whitelist_salvar","whitelist":[...]}` — todos exigem `administrar`. A
+tela Administração → Bloqueios cobre os três: soltar por linha, whitelist
+editável e a exportação da §5.1. O campo `whitelist` deste arquivo é a lista
+editável pela tela; a fixa mora no `config.json`.
 
 **O servidor relê o arquivo quando ele muda.** O `--desbloquear` roda em outro
 processo, e sem isso o servidor continuaria barrando um IP que já saiu da
@@ -178,6 +215,64 @@ Para o `iptables` funcionar, o `phxsqld` precisa rodar como root ou ter
 `CAP_NET_ADMIN` — o que é um aumento de privilégio real. Pense se compensa:
 recusar a conexão dentro do processo já resolve quase tudo, e não pede
 privilégio nenhum.
+
+### 5.1 Sem root: exportar a lista e aplicar por fora
+
+A alternativa honesta ao firewall embutido: o servidor **entrega o texto**, e
+quem tem o privilégio aplica. Pela tela de Bloqueios (botão Gerar) ou pelo
+protocolo:
+
+```json
+{"op":"bloqueios_exportar","formato":"nftables"}
+```
+
+Uma linha por IP **ativo** — bloqueio vencido não sai, senão a exportação
+recriaria no firewall o que o servidor já soltou. Quatro formatos:
+
+| formato | cada linha | como aplicar |
+|---|---|---|
+| `texto` | `203.0.113.9` | o cru, para o seu script |
+| `iptables` | `iptables -I INPUT -s 203.0.113.9 -j DROP` | revise e rode: `sh bloqueados.txt` (IPv6 sai como `ip6tables`) |
+| `nftables` | `add element inet filter phxsql_bloqueados { 203.0.113.9 }` | `nft -f bloqueados.txt`, com os conjuntos criados antes (abaixo) |
+| `fail2ban` | `fail2ban-client set phxsql banip 203.0.113.9` | revise e rode, com a jail `phxsql` existindo |
+
+Os conjuntos que o formato `nftables` espera (uma vez só):
+
+```bash
+nft add set inet filter phxsql_bloqueados  '{ type ipv4_addr; }'
+nft add set inet filter phxsql_bloqueados6 '{ type ipv6_addr; }'
+nft add rule inet filter input ip  saddr @phxsql_bloqueados  drop
+nft add rule inet filter input ip6 saddr @phxsql_bloqueados6 drop
+```
+
+E para quem prefere que o **fail2ban vigie sozinho**, o `acessos.log` já foi
+desenhado para isso: JSON Lines com `ip`, `ok` e `codigo` estruturados. Um
+filtro que casa recusa é
+`failregex = ^.*"ip":"<HOST>".*"ok":false.*$` — ele não depende do TEXTO do
+erro, e isso importa desde que o texto passou a poder mudar de idioma
+([MENSAGENS.md](MENSAGENS.md)); o log grava o texto de fábrica justamente para
+filtro nenhum quebrar.
+
+### O que os testes do firewall provam, e a prova real
+
+Em `blacklist.rs`, `servidor.rs` (`testes_firewall_e_mensagens`) e no soquete
+(`tests/servico.rs`):
+
+| o que se prova | como |
+|---|---|
+| sem o bloco `seguranca`, nada muda | config sem o bloco: nada proibido, nada conta, `phxsys` não nasce |
+| grave bloqueia na primeira, como sempre | política default, texto byte a byte com o de antes |
+| `tentativas_para_bloqueio: 3` recusa sempre e bloqueia na terceira | as duas primeiras respondem `tentativa N de 3` e não bloqueiam |
+| a PRÓXIMA CONEXÃO do bloqueado é recusada na porta | soquete de verdade, com o erro nomeando desde/até |
+| soltar de outro processo devolve a porta | mexe no arquivo como o `--desbloquear` e reconecta |
+| whitelist nunca bloqueia, e vence bloqueio já gravado | grave + 100 leves contra IP na lista; bloqueia primeiro, whitelist depois, conexão volta |
+| a exportação é uma linha por IP ativo | os quatro formatos, IPv6 no comando v6, vencido fora |
+
+**Prova real, com o defeito reposto:** comentando a conferência de `protegido`
+no `violacao_grave`, caíram três testes — `whitelist_nunca_bloqueia`,
+`whitelist_recusa_sem_bloquear_e_vence_bloqueio_gravado` e o de soquete
+`whitelist_no_soquete_recusa_sem_nunca_bloquear`. Teste novo que não cai com o
+defeito reposto é pior que teste que falta; estes caem.
 
 ---
 
@@ -244,9 +339,12 @@ certo ou errado.
   também — em `http://` para outra máquina o próprio navegador desliga a
   cifra do login.
 - **Sem troca de senha pelo protocolo.** Muda no `config.json` e reinicia.
-- **Sem bloqueio por faixa.** É IP a IP; `/24` inteiro exige o firewall.
-- **As tentativas leves vivem em memória.** Reiniciar o servidor zera o
-  contador; os bloqueios já gravados, não.
+- **Sem BLOQUEIO por faixa.** O bloqueio é IP a IP; banir um `/24` inteiro
+  exige o firewall (a exportação da §5.1 ajuda). A *whitelist* aceita CIDR —
+  proteger uma faixa de administração é seguro por construção, banir uma faixa
+  inteira automaticamente não.
+- **As tentativas vivem em memória** — as leves e as graves contadas.
+  Reiniciar o servidor zera os contadores; os bloqueios já gravados, não.
 
 ---
 
