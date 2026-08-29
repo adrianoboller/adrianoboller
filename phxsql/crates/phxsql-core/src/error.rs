@@ -44,6 +44,10 @@ pub enum PhxError {
     /// de proposito: e o pedaco que um cliente recorta para se apontar ao
     /// destino certo sem interpretar prosa.
     Redireciona(String),
+    /// Um `SIGNAL` de gatilho ou de procedimento: a recusa escrita pelo dono
+    /// do banco, com o SQLSTATE e a MESSAGE_TEXT que ele escolheu. Num
+    /// gatilho BEFORE, cancela a escrita.
+    Sinal { estado: String, mensagem: String },
 }
 
 impl PhxError {
@@ -82,6 +86,9 @@ impl PhxError {
             PhxError::Duplicado(_) => 3002,
             PhxError::LimiteExcedido(_) => 3003,
             PhxError::Conflito(_) => 3004,
+            // A recusa de SIGNAL e da familia do DADO: o dado em si (ou a
+            // regra que o dono escreveu sobre ele) recusou a operacao.
+            PhxError::Sinal { .. } => 3005,
             PhxError::Autorizacao(_) => 4001,
             PhxError::EmCarga(_) => 4002,
             PhxError::Redireciona(_) => 4003,
@@ -103,6 +110,7 @@ impl PhxError {
             PhxError::Duplicado(_) => "DUPLICADO",
             PhxError::LimiteExcedido(_) => "LIMITE_EXCEDIDO",
             PhxError::Conflito(_) => "CONFLITO",
+            PhxError::Sinal { .. } => "SINAL",
             PhxError::Autorizacao(_) => "ACESSO_NEGADO",
             PhxError::EmCarga(_) => "EM_CARGA",
             PhxError::Redireciona(_) => "REDIRECIONA",
@@ -175,6 +183,12 @@ impl fmt::Display for PhxError {
             // Sem prefixo: a mensagem ja comeca com `REDIRECIONA host:porta`,
             // e e esse comeco que o cliente recorta.
             PhxError::Redireciona(m) => write!(f, "{m}"),
+            // A MESSAGE_TEXT na frente, porque ela e a mensagem que o dono do
+            // banco escreveu para quem esbarrar na regra; o SQLSTATE vem
+            // atras, para o driver que trata por codigo.
+            PhxError::Sinal { estado, mensagem } => {
+                write!(f, "{mensagem} (SIGNAL SQLSTATE {estado})")
+            }
         }
     }
 }
