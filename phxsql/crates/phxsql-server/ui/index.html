@@ -7273,9 +7273,11 @@ async function repararPeloMenu() {
 async function abrirConsulta() {
   folha("Consulta", "SelectMemory — a consulta que não toca o disco",
     `<div class="nota">
-       <p><strong>Isto não é SQL.</strong> O PhxSql não tem camada SQL: não há
-       parser nem executor. O que existe é o <code>SelectMemory</code>, que
-       consulta uma tabela já carregada na RAM.</p>
+       <p><strong>Isto não é SQL.</strong> Esta tela é o <code>SelectMemory</code>,
+       que consulta uma tabela já carregada na RAM sem tocar o disco. A camada
+       SQL de verdade nasceu na 0.18.0: a operação <code>sql</code> do protocolo
+       aceita um <code>SELECT</code> simples — pelo <code>phxsqlcmd</code>, pelo
+       MCP ou por qualquer cliente da porta de dados.</p>
      </div>
      <div class="form-consulta">
        <label>Database <input id="cDb" value="${esc(est.atual ? est.atual.db : (est.database || ""))}"></label>
