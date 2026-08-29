@@ -47,6 +47,26 @@ compara a data do binário com a do arquivo mais novo de `ui/` e diz qual.
 | `multitela` | abas vivas com estado próprio, regiões lado a lado com calha, janela solta dentro da página, e o pino. Mede os pedidos por minuto com a aba escondida, com ela fechada, e com as quatro telas nomeadas visíveis ao mesmo tempo |
 | `monitores` | a emenda física entre dois monitores, o monitor pinado que sumiu, a janela destacada pegando a sessão pelo canal — e a sessão **não** aparecendo no `localStorage`. DPI de 2× num contexto próprio |
 
+## A prova do multi-idioma, à parte
+
+`node phxsql/testes-web/prova-idiomas.mjs --capturas <dir>` roda fora da
+bateria, na faixa **6650/6651**, e prova o caminho do idioma de ponta a ponta:
+
+1. sem escolher nada, a tela é a de sempre, **em português** — o teste do
+   comportamento velho, que é o que mais importa numa guarda nova;
+2. a bandeira da tela de **entrada** troca o texto na hora;
+3. a escolha **atravessa o login**: o cromo entra no idioma escolhido;
+4. a bandeira da tela de **configuração** troca o cromo sem recarregar e sem
+   levar a pessoa para outra tela;
+5. a escolha sobrevive a **sair e entrar** de novo;
+6. o **alemão** (~30% mais longo) não corta rótulo da barra nem faz a página
+   rolar de lado — o defeito que só aparece traduzindo;
+7. capturas da mesma tela em três idiomas × dois temas.
+
+Foi ela que achou o `txt` declarado como `const` sendo pedido pelo
+`aplicarTema` do arranque: a página morria na primeira pintura e o botão de
+tema ficava sem `onclick`. Ler o código não acharia.
+
 ## Os três canais de erro
 
 `pageerror` não é o único. O `ligarMenu` manda **toda** exceção de item de
