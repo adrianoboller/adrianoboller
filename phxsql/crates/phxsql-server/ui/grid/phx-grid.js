@@ -1,5 +1,11 @@
-/* phx-grid v0.1.0 — Núcleo (S01): colunas + render + fonte + paginação
-   Phoenix / WX Soluções — ES5 estrito, zero dependências. */
+/* phx-grid v0.9.0 — Phoenix / WX Soluções — ES5 estrito, zero dependências.
+
+   O cabeçalho passou oito versões dizendo "v0.1.0 — Núcleo (S01)" enquanto o
+   CHANGELOG ao lado ia até a 0.8.0 e o código já tinha ordem por nível de
+   grupo, rodapé de grupo e total geral — que a 0.8.0 nem documenta. Número
+   digitado à mão envelhece calado, e este envelheceu em três lugares ao mesmo
+   tempo. Hoje os três (aqui, o `versao:` do fim do arquivo e o topo do
+   CHANGELOG) são conferidos por `grade_versao_nao_mente`, em http.rs. */
 (function (root) {
   "use strict";
 
@@ -260,6 +266,16 @@
     }
     return o;
   }
+  // Os nomes das linhas que NAO sao dado. Ficam numa lista so, ao lado de quem
+  // as cria, porque a licao da casa e que peca nova no fim de uma lista quebra
+  // quem filtra pela primeira: quem quiser so o dado chama `eMarcador` e nao
+  // reescreve a condicao.
+  var MARCADORES = ["__grupo", "__rodape"];
+  function eMarcador(l) {
+    var j2;
+    for (j2 = 0; j2 < MARCADORES.length; j2++) if (l && l[MARCADORES[j2]]) return true;
+    return false;
+  }
   function achata(arvoreG, recolhidos, comRodape) {
     var out = [], i2;
     function anda(nos) {
@@ -432,6 +448,46 @@
     }
     ordemColunas = flatten(arvore, []);
 
+    // ------------------------------------------------------------------
+    // O LAYOUT LEMBRADO (`cfg.lembrar` = a chave; sem ela nada e gravado).
+    //
+    // Guarda o que a PESSOA arrumou -- largura, ordem, o que escondeu, o que
+    // congelou e quantos itens por pagina --, e nunca filtro nem ordenacao:
+    // um filtro que volta sozinho ao reabrir a tela e a mesma mentira do
+    // filtro truncado, so que com uma noite de intervalo. Layout e gosto;
+    // filtro e pergunta, e pergunta se refaz.
+    //
+    // Tudo em try/catch: navegador em janela anonima, ou com dado de site
+    // bloqueado, LANCA no acesso -- e uma grade que nao abre por causa da
+    // memoria de largura de coluna seria uma troca pessima.
+    // ------------------------------------------------------------------
+    var CHAVE_LAYOUT = cfg.lembrar ? "phx-grid:" + cfg.lembrar : null;
+    function guardaLayout() {
+      if (!CHAVE_LAYOUT) return;
+      try {
+        var larguras = {}, j2, c2;
+        for (j2 = 0; j2 < colunasDef.length; j2++) {
+          c2 = colunasDef[j2];
+          if (c2.largura) larguras[c2.campo] = c2.largura;
+        }
+        var fixas = {};
+        for (j2 = 0; j2 < colunasDef.length; j2++) if (colunasDef[j2].fixa) fixas[colunasDef[j2].campo] = colunasDef[j2].fixa;
+        root.localStorage.setItem(CHAVE_LAYOUT, JSON.stringify({
+          v: 1, ordem: ordemColunas.slice(), ocultas: ocultas,
+          larguras: larguras, fixas: fixas, tamanho: estado.tamanho
+        }));
+      } catch (e) { /* sem memoria de layout; a grade continua inteira */ }
+    }
+    function leLayout() {
+      if (!CHAVE_LAYOUT) return null;
+      try {
+        var cru = root.localStorage.getItem(CHAVE_LAYOUT);
+        if (!cru) return null;
+        var o = JSON.parse(cru);
+        return o && o.v === 1 ? o : null;
+      } catch (e) { return null; }
+    }
+
     var temSelecao = !!cfg.selecao;
     var chaveCampo = cfg.chave || null;
     var selecionadas = {};
@@ -502,6 +558,41 @@
     };
     var opcoesTam = (cfg.pagina && cfg.pagina.opcoes) || [50, 100, 200];
 
+    // Aplica o que ficou guardado ANTES de a grade se desenhar: o cabecalho e
+    // a lista de itens por pagina ja nascem arrumados, e nao ha o pisca de
+    // desenhar do jeito padrao para reorganizar em seguida.
+    (function () {
+      var g = leLayout();
+      if (!g) return;
+      var j2, c2;
+      if (g.ocultas) for (j2 in g.ocultas) if (porCampo[j2]) ocultas[j2] = true;
+      if (g.larguras) for (j2 in g.larguras) if (porCampo[j2]) porCampo[j2].largura = g.larguras[j2];
+      if (g.fixas) for (j2 in g.fixas) if (porCampo[j2]) porCampo[j2].fixa = g.fixas[j2];
+      // Coluna guardada que nao existe mais e coluna que a tabela perdeu: o
+      // layout velho nao pode ressuscita-la nem derrubar a grade.
+      if (g.ordem && g.ordem.length) {
+        var peso = {}, n = 0;
+        for (j2 = 0; j2 < g.ordem.length; j2++) if (porCampo[g.ordem[j2]]) peso[g.ordem[j2]] = n++;
+        (function reordena(no2) {
+          var k2;
+          for (k2 = 0; k2 < no2.filhos.length; k2++) if (!no2.filhos[k2].campo) reordena(no2.filhos[k2]);
+          // Ordenacao estavel por peso: quem nao esta no layout guardado fica
+          // onde estava, atras de quem esta.
+          var comIx = [];
+          for (k2 = 0; k2 < no2.filhos.length; k2++) comIx.push({ f: no2.filhos[k2], ix: k2 });
+          comIx.sort(function (a, b) {
+            var pa = a.f.campo != null && peso[a.f.campo] != null ? peso[a.f.campo] : 1e9;
+            var pb = b.f.campo != null && peso[b.f.campo] != null ? peso[b.f.campo] : 1e9;
+            return pa - pb || a.ix - b.ix;
+          });
+          for (k2 = 0; k2 < comIx.length; k2++) no2.filhos[k2] = comIx[k2].f;
+        })(arvore);
+        ordemColunas = flatten(arvore, []);
+      }
+      for (j2 = 0; j2 < opcoesTam.length; j2++) if (opcoesTam[j2] === g.tamanho) estado.tamanho = g.tamanho;
+      c2 = null;
+    })();
+
     var wrap = el("div", "phx-grid");
     wrap.innerHTML =
       '<div class="phx-envoltorio"><table class="phx-tabela">' +
@@ -513,6 +604,8 @@
       '<span class="phx-mostrando"></span>' +
       '<span class="phx-colsel-envoltorio"><button type="button" class="phx-colsel-btn"></button>' +
       '<div class="phx-colsel" hidden></div></span>' +
+      (cfg.exportarVista === false ? "" :
+        '<button type="button" class="phx-exp-btn" title="baixa o que está na tela: estas colunas, este filtro, esta ordem">⤓ Exportar a vista</button>') +
       "</div></div>";
     var LIMITE_LISTA_EXCEL = 500;
     function valoresDistintos(campo) {
@@ -836,6 +929,21 @@
     wrap.appendChild(popover);
     var popoverDe = null;
     function fechaPopover() { popover.hidden = true; popoverDe = null; }
+    // ABRIR A LINHA. Duplo clique e nao clique simples de proposito: o clique
+    // simples ja e da selecao, e uma grade que navega ao primeiro toque
+    // atrapalha quem so queria marcar. Quem recebe a linha decide o que fazer
+    // com ela -- a grade nao sabe editar, e nao e ela que deve saber: a ficha
+    // do console ja carrega a versao do slot e recusa escrita concorrente.
+    if (cfg.aoAbrirLinha) tbody.addEventListener("dblclick", function (e) {
+      var tr = e.target.closest ? e.target.closest("tr") : null;
+      if (!tr || !tr.parentNode) return;
+      var ix = -1, kids = tbody.children, j2;
+      for (j2 = 0; j2 < kids.length; j2++) if (kids[j2] === tr) { ix = j2; break; }
+      var l = ultimaCarga && ultimaCarga.linhas[ix];
+      if (!l || eMarcador(l)) return;
+      log("abrirlinha", { linha: ix });
+      cfg.aoAbrirLinha(l, ix);
+    });
     tbody.addEventListener("click", function (e) {
       var alvoEl = e.target;
       var trG = alvoEl.closest ? alvoEl.closest(".phx-grupo") : null;
@@ -868,7 +976,10 @@
       var ix = parseInt(tdSel.getAttribute("data-ls"), 10);
       if (e.shiftKey && ancoraSel >= 0) {
         var a2 = Math.min(ancoraSel, ix), b2 = Math.max(ancoraSel, ix), j2;
-        for (j2 = a2; j2 <= b2; j2++) alternaLinha(j2, true);
+        // A faixa pula cabecalho e rodape de grupo: com agrupamento ligado
+        // eles caem no meio do intervalo, e marcar um poria no conjunto uma
+        // chave que nao existe no dado.
+        for (j2 = a2; j2 <= b2; j2++) if (!eMarcador(ultimaCarga.linhas[j2])) alternaLinha(j2, true);
       } else {
         alternaLinha(ix);
         ancoraSel = ix;
@@ -973,7 +1084,7 @@
         e.preventDefault(); e.stopPropagation();
         var x0 = e.clientX, w0 = th.offsetWidth;
         function mv(ev2) { var w = Math.max(50, w0 + ev2.clientX - x0); th.style.width = w + "px"; porCampo[c.campo].largura = w; }
-        function up() { document.removeEventListener("mousemove", mv); document.removeEventListener("mouseup", up); log("resize", { campo: c.campo, largura: porCampo[c.campo].largura }); mideFixas(); }
+        function up() { document.removeEventListener("mousemove", mv); document.removeEventListener("mouseup", up); log("resize", { campo: c.campo, largura: porCampo[c.campo].largura }); mideFixas(); guardaLayout(); }
         document.addEventListener("mousemove", mv);
         document.addEventListener("mouseup", up);
       });
@@ -1006,7 +1117,9 @@
         thS.querySelector("input").addEventListener("click", function () {
           var linhas = ultimaCarga ? ultimaCarga.linhas : [], j2;
           var marcar = this.checked;
-          for (j2 = 0; j2 < linhas.length; j2++) alternaLinha(j2, marcar);
+          // Cabecalho e rodape de grupo nao sao linha para marcar: a chave
+          // deles nao existe no dado, e marcar um deles poria lixo na selecao.
+          for (j2 = 0; j2 < linhas.length; j2++) if (!eMarcador(linhas[j2])) alternaLinha(j2, marcar);
           atualizaMestre();
           log("select", { n: nSel, todos: marcar });
         });
@@ -1027,6 +1140,13 @@
         t2 = setTimeout(function () { t2 = null; fn.apply(self2, args); }, DEBOUNCE_MS);
       };
     }
+    // Os campos daqui levam `size` pequeno de proposito. Numa tabela de
+    // layout automatico e a largura INTRINSECA do controle que decide a
+    // largura da coluna, e o padrao de um `<input>` (size=20, ~170 px)
+    // engordava CADA coluna para 237 px so por causa da caixa de filtro --
+    // medido: o `rowid`, que pede 90 px, ficava mais largo que o `pedido`.
+    // Com `size` pequeno e `width:100%` a caixa encolhe ate o que a coluna
+    // pede e cresce junto com ela.
     function montaFilterRow() {
       var tr = el("tr", "phx-frow"), v = visiveis(), j2, c2, td2, tipoC;
       if (temSelecao) tr.appendChild(el("th", "phx-th phx-frow-cel phx-td-sel", ""));
@@ -1040,7 +1160,7 @@
           continue;
         }
         if (tipoC === "numero" || tipoC === "moeda" || tipoC === "percentual") {
-          td2.innerHTML = '<span class="phx-frow-num"><select class="phx-frow-op"><option>&gt;</option><option>&gt;=</option><option>&lt;</option><option>&lt;=</option><option>=</option><option>!=</option></select><input type="number" step="any" class="phx-frow-in" placeholder="valor"></span>';
+          td2.innerHTML = '<span class="phx-frow-num"><select class="phx-frow-op"><option>&gt;</option><option>&gt;=</option><option>&lt;</option><option>&lt;=</option><option>=</option><option>!=</option></select><input type="number" step="any" size="5" class="phx-frow-in" placeholder="valor"></span>';
           (function (campo, cel) {
             var aplica = debounce(function () {
               var vNum = parseFloat(cel.querySelector(".phx-frow-in").value);
@@ -1068,7 +1188,7 @@
             });
           })(c2.campo, td2);
         } else {
-          td2.innerHTML = '<input type="text" class="phx-frow-in" placeholder="Buscar\u2026">';
+          td2.innerHTML = '<input type="text" size="6" class="phx-frow-in" placeholder="Buscar\u2026">';
           (function (campo, cel) {
             cel.querySelector("input").addEventListener("input", debounce(function () {
               var vt = cel.querySelector("input").value;
@@ -1134,6 +1254,7 @@
       log("reorder", { campo: campoMovido, antesDe: campoAlvo });
       montaHeader(); montaCorpo(ultimaCarga ? ultimaCarga.linhas : []);
       montaColSel();
+      guardaLayout();
     }
 
     var ultimaCarga = null;
@@ -1219,10 +1340,17 @@
       if (!temSelecao) return;
       var mestre = thead.querySelector(".phx-sel-mestre");
       if (!mestre) return;
-      var linhas = ultimaCarga ? ultimaCarga.linhas : [], j, n = 0;
-      for (j = 0; j < linhas.length; j++) if (selecionadas[chaveDe(linhas[j], j)]) n++;
-      mestre.checked = n > 0 && n === linhas.length;
-      mestre.indeterminate = n > 0 && n < linhas.length;
+      // Conta so o DADO. Com o agrupamento ligado a pagina traz cabecalho e
+      // rodape de grupo no meio das linhas, e conta-los faria o "marcar todas"
+      // nunca fechar: seriam sempre menos marcadas que linhas.
+      var linhas = ultimaCarga ? ultimaCarga.linhas : [], j, n = 0, dados = 0;
+      for (j = 0; j < linhas.length; j++) {
+        if (eMarcador(linhas[j])) continue;
+        dados++;
+        if (selecionadas[chaveDe(linhas[j], j)]) n++;
+      }
+      mestre.checked = dados > 0 && n === dados;
+      mestre.indeterminate = n > 0 && n < dados;
     }
     function alternaLinha(ix, forcar) {
       var linhas = ultimaCarga.linhas, k2 = chaveDe(linhas[ix], ix);
@@ -1282,6 +1410,7 @@
     tamSel.addEventListener("change", function () {
       estado.tamanho = parseInt(tamSel.value, 10);
       estado.pagina = 1;
+      guardaLayout();
       carrega(function () { log("pagesize", { tamanho: estado.tamanho }); }, true);
     });
 
@@ -1291,8 +1420,17 @@
       var html = "", j, c;
       for (j = 0; j < ordemColunas.length; j++) {
         c = porCampo[ordemColunas[j]];
-        html += '<label class="phx-colsel-item"><input type="checkbox" data-campo="' + esc(c.campo) + '"' +
-          (ocultas[c.campo] ? "" : " checked") + "> " + esc(c.titulo || c.campo) + "</label>";
+        // O alfinete mora AQUI, e nao no cabecalho, por um motivo pratico:
+        // congelar serve para nao perder de vista a coluna que identifica a
+        // linha, e essa coluna costuma estar na esquerda -- ja fora da tela
+        // quando se rola para a direita e daria falta do botao.
+        html += '<div class="phx-colsel-linha">' +
+          '<button type="button" class="phx-colsel-pino' + (c.fixa === "esq" ? " phx-colsel-pino-on" : "") +
+            '" data-pino="' + esc(c.campo) + '" title="' +
+            (c.fixa === "esq" ? "congelada — clique para soltar" : "congelar à esquerda") +
+            '">◧</button>' +
+          '<label class="phx-colsel-item"><input type="checkbox" data-campo="' + esc(c.campo) + '"' +
+          (ocultas[c.campo] ? "" : " checked") + "> " + esc(c.titulo || c.campo) + "</label></div>";
       }
       colMenu.innerHTML = html;
       var cbs = colMenu.querySelectorAll("input"), k2;
@@ -1303,12 +1441,43 @@
           });
         })(cbs[k2]);
       }
+      var pinos = colMenu.querySelectorAll("[data-pino]");
+      for (k2 = 0; k2 < pinos.length; k2++) {
+        (function (bt) {
+          bt.addEventListener("click", function (e) {
+            e.stopPropagation();
+            var cmp = bt.getAttribute("data-pino");
+            congelar(cmp, porCampo[cmp].fixa === "esq" ? null : "esq");
+          });
+        })(pinos[k2]);
+      }
     }
     colBtn.addEventListener("click", function () { colMenu.hidden = !colMenu.hidden; });
     function mostrarColuna(campo, mostrar) {
       if (mostrar) delete ocultas[campo]; else ocultas[campo] = true;
       log("coluna", { campo: campo, visivel: !!mostrar });
       montaHeader(); montaCorpo(ultimaCarga ? ultimaCarga.linhas : []); montaColSel();
+      guardaLayout();
+    }
+    /// Congela (ou solta) uma coluna. `lado` e "esq", "dir" ou nulo.
+    ///
+    /// A coluna congelada vai para a PONTA da ordem, porque o `sticky` gruda
+    /// no lado do contentor e nao no lugar dela: congelar a quinta coluna sem
+    /// move-la faria as quatro da esquerda passarem POR BAIXO dela.
+    function congelar(campo, lado) {
+      var c = porCampo[campo];
+      if (!c) return;
+      c.fixa = lado || null;
+      if (lado === "esq") {
+        var primeiraSolta = null, j2;
+        for (j2 = 0; j2 < ordemColunas.length; j2++) {
+          if (porCampo[ordemColunas[j2]].fixa !== "esq") { primeiraSolta = ordemColunas[j2]; break; }
+        }
+        if (primeiraSolta && primeiraSolta !== campo) moverColunaAntes(campo, primeiraSolta);
+      }
+      log("congelar", { campo: campo, lado: lado || "(solta)" });
+      montaHeader(); montaCorpo(ultimaCarga ? ultimaCarga.linhas : []); montaColSel();
+      guardaLayout();
     }
 
     function carrega(cb, semHeader) {
@@ -1335,6 +1504,79 @@
       });
     }
 
+    // ------------------------------------------------------------------
+    // EXPORTAR A VISTA.
+    //
+    // Nao e o mesmo que exportar a tabela, e a diferenca e o ponto: a tabela
+    // sai como esta gravada, e a vista sai como a pessoa a montou -- estas
+    // colunas, nesta ordem, com este filtro e esta ordenacao. Quem passou
+    // vinte minutos filtrando quer levar o resultado, e nao recomecar no
+    // Excel.
+    //
+    // Vai a fonte pedindo o CONJUNTO INTEIRO e nao a pagina: exportar a
+    // pagina 1 de 40 seria a mesma mentira do filtro truncado.
+    // ------------------------------------------------------------------
+    function vistaAtual(cb) {
+      var c = porCampo[estado.ordem.campo];
+      fonte.carregar({
+        pagina: 1, tamanho: Math.max(1, estado.total || 1),
+        ordem: { campo: estado.ordem.campo, dir: estado.ordem.dir, tipo: c ? c.tipo : null },
+        filtros: serializaFiltros(),
+        grupos: grupos.slice(),
+        dirsGrupo: (function () { var o3 = [], j3; for (j3 = 0; j3 < grupos.length; j3++) o3.push(dirsGrupo[grupos[j3]] || "asc"); return o3; })(),
+        rodapeGrupo: false,
+        recolhidos: {},
+        aggCols: [],
+        tiposCampos: (function () { var o3 = {}, j3; for (j3 = 0; j3 < colunasDef.length; j3++) o3[colunasDef[j3].campo] = colunasDef[j3].tipo || "texto"; return o3; })()
+      }, function (err, r) {
+        if (err) { cb(err); return; }
+        // Fora os marcadores: cabecalho de grupo nao e linha de dado, e uma
+        // planilha com "Regiao: Sul (312)" no meio das linhas nao abre certo
+        // em lugar nenhum. A ORDEM do agrupamento fica, que e o que se quis.
+        var so = [], j3;
+        for (j3 = 0; j3 < r.linhas.length; j3++) if (!eMarcador(r.linhas[j3])) so.push(r.linhas[j3]);
+        cb(null, { colunas: visiveis(), linhas: so });
+      });
+    }
+    function csvDaVista(v) {
+      // Ponto e virgula e BOM: e o que o Excel em portugues abre sem perguntar
+      // nada. Com virgula ele joga a linha inteira numa celula so.
+      function cel(s) {
+        s = s == null ? "" : String(s);
+        return /[";\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+      }
+      var linhas = [], cab = [], j2, k2, lin;
+      for (j2 = 0; j2 < v.colunas.length; j2++) cab.push(cel(v.colunas[j2].titulo || v.colunas[j2].campo));
+      linhas.push(cab.join(";"));
+      for (j2 = 0; j2 < v.linhas.length; j2++) {
+        lin = [];
+        // O valor CRU, e nao o formatado: "R$ 1.234,56" volta como texto em
+        // qualquer planilha, e ai ninguem soma a coluna.
+        for (k2 = 0; k2 < v.colunas.length; k2++) lin.push(cel(v.linhas[j2][v.colunas[k2].campo]));
+        linhas.push(lin.join(";"));
+      }
+      return "﻿" + linhas.join("\r\n") + "\r\n";
+    }
+    var expBtn = wrap.querySelector(".phx-exp-btn");
+    if (expBtn) expBtn.addEventListener("click", function () {
+      var t1 = agora();
+      expBtn.disabled = true;
+      vistaAtual(function (err, v) {
+        expBtn.disabled = false;
+        if (err) { log("erro", { erro: String(err) }); return; }
+        var texto = csvDaVista(v);
+        var url = URL.createObjectURL(new Blob([texto], { type: "text/csv;charset=utf-8" }));
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = (cfg.nomeVista || "vista") + ".csv";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(function () { URL.revokeObjectURL(url); }, 0);
+        log("exportvista", { linhas: v.linhas.length, colunas: v.colunas.length, ms: Math.round((agora() - t1) * 10) / 10 });
+      });
+    });
+
     var api = {
       ok: true, el: wrap,
       ordenar: function (campo, dir) {
@@ -1345,10 +1587,23 @@
       pagina: function (p) { if (p == null) return estado.pagina; irPagina(p); return api; },
       tamanhoPagina: function (n) {
         if (n == null) return estado.tamanho;
-        estado.tamanho = n; estado.pagina = 1; tamSel.value = String(n); carrega(null, true); return api;
+        estado.tamanho = n; estado.pagina = 1; tamSel.value = String(n);
+        guardaLayout(); carrega(null, true); return api;
       },
       mostrarColuna: mostrarColuna,
       moverColuna: function (campo, antesDe) { moverColunaAntes(campo, antesDe); return api; },
+      congelar: function (campo, lado) { congelar(campo, lado); return api; },
+      congeladas: function () {
+        var o = [], j2;
+        for (j2 = 0; j2 < ordemColunas.length; j2++) if (porCampo[ordemColunas[j2]].fixa) o.push(ordemColunas[j2]);
+        return o;
+      },
+      vistaAtual: vistaAtual,
+      csvDaVista: csvDaVista,
+      esquecerLayout: function () {
+        if (CHAVE_LAYOUT) { try { root.localStorage.removeItem(CHAVE_LAYOUT); } catch (e) { /* nada a esquecer */ } }
+        return api;
+      },
       colunasVisiveis: function () { var v = visiveis(), o = [], j; for (j = 0; j < v.length; j++) o.push(v[j].campo); return o; },
       linhas: function () { return ultimaCarga ? ultimaCarga.linhas : []; },
       estado: function () {
@@ -1473,13 +1728,19 @@
     no.appendChild(wrap);
     montaGroupBox();
     montaBusca();
+    // O menu de Colunas so era montado por `moverColunaAntes` e por
+    // `mostrarColuna` -- isto e, DEPOIS de alguem ja ter mexido nele. Aberto,
+    // ele vinha vazio e o botao vinha sem texto (um quadradinho em branco no
+    // rodape), entao esconder coluna nunca funcionou por aqui. Ler o codigo
+    // nao mostra isso: as duas chamadas existem, e parecem bastar.
+    montaColSel();
     carrega(function () {
       log("init", { linhas: estado.total, colunas: colunasDef.length, ms: Math.round((agora() - t0init) * 10) / 10 });
     });
     return api;
   }
 
-  var PhxGrid = { versao: "0.8.0", criar: criar, fmt: fmt, _ordenaEstavel: ordenaEstavel };
+  var PhxGrid = { versao: "0.9.0", criar: criar, fmt: fmt, _ordenaEstavel: ordenaEstavel };
   if (typeof module !== "undefined" && module.exports) module.exports = PhxGrid;
   root.PhxGrid = PhxGrid;
 })(typeof window !== "undefined" ? window : this);

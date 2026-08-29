@@ -986,6 +986,18 @@ body,.cartao,.barra,.arvore,table,td,th{
 .ferramentas select,.ferramentas input{width:auto;padding:6px 10px;font-size:13px}
 .conta{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--texto-3)}
 .dica{font-size:11.5px;color:var(--texto-3);opacity:.8;font-style:italic;margin-left:auto}
+/* O aviso de que a grade so enxerga uma janela da tabela. Fica ACIMA dela e
+   nao no rodape: quem vai filtrar olha o topo. */
+.corte-da-vista{margin:0 0 12px;font-size:12.5px}
+/* A faixa de acao em lote so aparece com linha marcada -- barra de botoes
+   sempre visivel e barra que ninguem le. */
+.acoes-da-grade{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;
+  padding:8px 12px;border:1px solid var(--linha-forte);border-radius:8px;background:var(--painel-2)}
+/* `display:flex` numa classe GANHA do `[hidden]{display:none}` do navegador:
+   sem esta linha a faixa aparecia com "0 linha(s) marcada(s)" desde o
+   carregamento, que e barra que ninguem le. */
+.acoes-da-grade[hidden]{display:none}
+.acoes-da-grade .botao.mini{width:auto}
 
 /* ------------------------------------------------------------------ painel */
 .no.painel{font-weight:600;margin-bottom:4px}
@@ -1251,6 +1263,62 @@ table.conf td .leg{font-size:10.5px;color:var(--texto-3)}
 .phx-grid input,.phx-grid select,.phx-grid button{
   background:var(--painel-2);color:var(--texto);border-color:var(--linha-forte);
 }
+
+/* A CERCA. Sem ela o CSS global do console morde a grade inteira, e nao e
+   teoria: o funil da coluna estava ILEGIVEL nesta pagina desde que a grade
+   entrou. Medido no navegador, antes: a caixinha de marcar media 204 px de
+   largura -- `input{width:100%}` -- e empurrava o nome da cidade para fora do
+   popover, entao a lista de valores aparecia como oito quadrados sem texto; o
+   radio E/OU media 33,6 px, a bolinha do tamanho da celula de novo; e o
+   `label{text-transform:uppercase}` mostrava «Blumenau» como «BLUMENAU», que
+   e mentira sobre o dado, porque quem le nao sabe se esta gravado assim.
+
+   A cerca fica AQUI, e nao no phx-grid.css, porque o estrago vem daqui: a
+   folha da grade e do ecossistema Phoenix e nao tem por que conhecer as
+   regras do nosso console. */
+.phx-grid input[type=checkbox],.phx-grid input[type=radio]{
+  width:auto;height:auto;min-width:0;padding:0;margin:0 5px 0 0;
+  border-radius:0;vertical-align:middle;flex:0 0 auto;
+}
+/* Rotulo dentro da grade mostra DADO (o valor da coluna no funil) ou o nome
+   da coluna. Nos dois casos ele sai como esta escrito. */
+.phx-grid label{
+  display:block;text-transform:none;letter-spacing:0;font-size:12.5px;
+  color:var(--texto);margin:0;font-weight:400;
+}
+/* A grade dimensiona os proprios campos (`.phx-fpop-busca`, `.phx-frow-in`,
+   `.phx-fpop-numlin`...). O global so precisa parar de impor largura cheia e
+   o padding de formulario, que aqui estoura a altura da linha. */
+.phx-grid input:not([type=checkbox]):not([type=radio]),.phx-grid select{
+  width:auto;padding:0 7px;font-size:12px;border-radius:6px;
+}
+.phx-grid .phx-fpop-busca,.phx-grid .phx-frow-in,.phx-grid .phx-busca-in{
+  width:100%;box-sizing:border-box;
+}
+.phx-grid .phx-fpop-numlin select{flex:1}
+.phx-grid .phx-fpop-numlin input{width:90px}
+/* `min-width:0` nos campos da linha de filtro, e nao so `width:100%`.
+   Um `<input>` tem largura INTRINSECA (o velho `size=20`, ~170 px), e dentro
+   de uma tabela com layout automatico e ela que decide a largura da coluna:
+   ligar a linha de filtro sem isto engordava CADA coluna para 235 px, e o
+   rowid -- 90 px de largura pedida -- ficava mais largo que o `pedido`.
+
+   O `size` pequeno resolve a caixa de TEXTO, e so ela: `size` nao vale para
+   `input[type=number]` -- medido, a caixa de numero continuava com os mesmos
+   169 px do padrao.
+
+   E a de numero tambem nao pode CRESCER: com `flex:1` ela enche a celula, mas
+   a celula so e larga porque a contribuicao de max-content da caixa e os
+   mesmos 169 px -- media, a coluna voltava a 237. Largura fixa, entao, e
+   pequena: 56 px cabem "1000" e e o que se digita num filtro de faixa. Medido
+   nas tres formas: 237 px com o padrao, 118 px com esta regra, 68 px sem a
+   linha de filtro nenhuma. */
+.phx-grid .phx-frow-in,.phx-grid .phx-frow-op{min-width:0}
+.phx-grid .phx-frow-num{display:flex;gap:4px;width:100%}
+.phx-grid .phx-frow-num .phx-frow-op{width:46px;flex:0 0 46px;padding:0 2px}
+.phx-grid .phx-frow-num .phx-frow-in{width:56px;flex:0 0 56px}
+.phx-grid .phx-pag select{max-width:130px}
+.phx-grid .phx-fpop-comb label{display:inline-flex;align-items:center;width:auto}
 
 table{width:100%;border-collapse:collapse;font-size:13px}
 th,td{padding:7px 11px;text-align:left;border-bottom:1px solid var(--linha);vertical-align:top}
@@ -2451,8 +2519,14 @@ async function vConteudo(database, tabela_) {
   const opcoes = [`<option value="">ordem de digitação (.reg)</option>`]
     .concat(e.indices.map(i =>
       `<option value="${esc(i.nome)}" ${est.ordem===i.nome?"selected":""}>índice ${esc(i.nome)}</option>`));
-  const tetos = [200, 1000, 5000].map(n =>
-    `<option value="${n}" ${est.teto===n?"selected":""}>${n} linhas</option>`);
+  const tetos = [200, 1000, 5000, 20000].map(n =>
+    `<option value="${n}" ${est.teto===n?"selected":""}>${fmt(n)} linhas</option>`);
+  // A GRADE FILTRA O QUE ESTA NELA, e o que esta nela e o teto acima. Sem
+  // este aviso a tela mente: o funil de `cidade` responderia «25 linhas» numa
+  // tabela que tem 2.500 daquela cidade, e nada na tela diria que a conta foi
+  // sobre as 200 que vieram. O servidor nao tem WHERE em `varrer` -- nao ha
+  // pushdown para esconder isso atras -- entao o honesto e dizer.
+  const truncou = (r.visiveis ?? r.registros) > r.devolvidas;
   return `<div class="ferramentas">
       <label for="ord">Percorrer por</label>
       <select id="ord">${opcoes.join("")}</select>
@@ -2460,6 +2534,17 @@ async function vConteudo(database, tabela_) {
       <select id="teto">${tetos.join("")}</select>
       <span class="conta">${fmt(r.devolvidas)} de ${fmt(r.visiveis ?? r.registros)} linhas · ${esc(r.ordem)}</span>
       <span class="dica">Arraste um cabeçalho para a faixa de cima para agrupar.</span>
+    </div>
+    ${truncou ? `<div class="aviso corte-da-vista"><b>A grade enxerga
+      ${fmt(r.devolvidas)} das ${fmt(r.visiveis ?? r.registros)} linhas.</b>
+      Filtro, busca, agrupamento, total e exportação valem sobre estas
+      ${fmt(r.devolvidas)} — e não sobre a tabela. Aumente o
+      <b>Trazer</b> para responder sobre mais.</div>` : ""}
+    <div class="acoes-da-grade" id="acoesGrade" hidden>
+      <span class="conta" id="acoesConta"></span>
+      <button class="botao mini consultar" id="btCopiarSel">copiar rowids</button>
+      <button class="botao mini marcar" id="btExcluirSel">excluir marcadas</button>
+      <button class="botao mini" id="btLimparSel">desmarcar</button>
     </div>
     <div id="grade"></div>`;
 }
@@ -2485,15 +2570,75 @@ function ligarConteudo() {
       agregador: c.tipo !== "Sequence" && /^Int|^UInt|^Decimal/.test(c.tipo) ? "sum" : null
     })));
 
+  // A PRIMEIRA coluna congelada, e nao mais: rolando para a direita numa
+  // tabela larga some justo quem diz DE QUAL LINHA se esta falando. Congelar
+  // por padrao so o `rowid` porque ele e o unico que existe em toda tabela --
+  // o resto quem escolhe e quem esta olhando, pelo alfinete do menu Colunas.
+  colunas[0].fixa = "esq";
+
+  const { db, tab } = est.atual;
   if (est.grade && est.grade.destruir) { try { est.grade.destruir(); } catch {} }
   // Exposto para teste automatizado e para o console do navegador.
   est.grade = window.__phxgrade = PhxGrid.criar("#grade", {
     agrupavel: true,
     buscaGlobal: true,
+    // A linha de filtro embaixo do cabecalho: e o filtro que um usuario de
+    // banco usa o dia inteiro, e ate agora estava escrito no phx-grid e
+    // desligado na tela.
+    filterRow: true,
+    // Selecao com CHAVE, e nao por posicao: sem `chave` a grade marca "a
+    // terceira linha da pagina", e virar a pagina levaria a marca junto.
+    selecao: true,
+    chave: "rowid",
+    // O layout e por TABELA: largura de coluna de `clientes` nao tem nada a
+    // ver com a de `pedidos`.
+    lembrar: "conteudo:" + db + "." + tab,
+    nomeVista: db + "-" + tab,
     colunas: colunas,
     dados: est.linhas,
-    pagina: { tamanho: 100, opcoes: [50, 100, 200] }
+    pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+    // Duplo clique abre a FICHA, que e quem sabe gravar: ela carrega a versao
+    // do slot e recusa escrita concorrente. Editar na celula por fora disso
+    // seria dar um caminho de gravacao sem essa guarda.
+    aoAbrirLinha: linha => abrirFicha(db, tab, +linha.rowid),
   });
+
+  // ---------------------------------------------------------------- lote
+  const barra = $("#acoesGrade"), conta = $("#acoesConta");
+  const atualizaBarra = () => {
+    const n = est.grade.selecionadas().length;
+    barra.hidden = n === 0;
+    conta.textContent = `${fmt(n)} linha(s) marcada(s)`;
+  };
+  // A grade nao avisa quando a selecao muda, entao a tela pergunta. Um
+  // temporizador de 200 ms custa nada e evita um evento novo no contrato da
+  // grade so para isto.
+  clearInterval(est.relogioSel);
+  est.relogioSel = setInterval(() => { if ($("#acoesGrade")) atualizaBarra(); else clearInterval(est.relogioSel); }, 200);
+
+  $("#btLimparSel").onclick = () => { est.grade.limparSelecao(); atualizaBarra(); };
+  $("#btCopiarSel").onclick = async () => {
+    const ids = est.grade.selecionadas().join("\n");
+    try { await navigator.clipboard.writeText(ids); avisar(`${est.grade.selecionadas().length} rowid(s) copiados`); }
+    catch { avisar("o navegador não deixou copiar", true); }
+  };
+  $("#btExcluirSel").onclick = async () => {
+    const ids = est.grade.selecionadas();
+    if (!ids.length) return;
+    // "marcadas" e nao "de vez": o excluir da tela e o reversivel, que e o
+    // que a lixeira desfaz. Excluir de vez em lote, sem uma linha aberta na
+    // frente, e estrago rapido demais para um botao.
+    if (!confirm(`Marcar ${ids.length} linha(s) como excluída(s)? A Lixeira desfaz.`)) return;
+    let falhou = 0;
+    for (const rowid of ids) {
+      try { await api("excluir", { database: db, tabela: tab, rowid: +rowid }); }
+      catch { falhou++; }
+    }
+    avisar(falhou ? `${ids.length - falhou} excluída(s), ${falhou} falhou(ram)`
+                  : `${ids.length} linha(s) marcada(s) como excluída(s)`, !!falhou);
+    est.grade.limparSelecao();
+    desenharAba();
+  };
 }
 
 async function vIndices(database, tabela_) {
@@ -7456,13 +7601,23 @@ function desenharGradeDeLinhas(seletor, r, guardar) {
   const g = PhxGrid.criar(seletor, {
     agrupavel: true,
     buscaGlobal: true,
-    colunas: r.colunas.map(c => ({
+    filterRow: true,
+    // Sem seleção e sem layout lembrado, e nos dois casos pelo mesmo motivo:
+    // o resultado de uma junção não tem rowid para marcar, e o conjunto de
+    // colunas muda a cada consulta — lembrar largura de uma junção seria
+    // lembrar a largura de outra.
+    colunas: r.colunas.map((c, i) => ({
       campo: c.nome,
       titulo: c.nome + (c.chave ? " ★" : ""),
       tipo: tipoDoGrid(c.tipo.replace(/\(.*/, "")),
+      // Só a PRIMEIRA congela. Numa junção os dois lados podem trazer chave,
+      // e congelar as duas comeria metade da largura da tela com o que já
+      // estava visível.
+      fixa: i === 0 ? "esq" : null,
       agregador: !c.chave && /^Int|^UInt|^Decimal|^Real/.test(c.tipo) ? "sum" : null,
     })),
     dados,
+    nomeVista: "resultado",
     pagina: { tamanho: 100, opcoes: [50, 100, 200] },
   });
   if (guardar) guardar(g);
@@ -7724,11 +7879,18 @@ async function abrirTabelaDbl(tabela, salto = 0) {
   DBL.grade = window.__phxgradedbl = PhxGrid.criar("#gradeDbl", {
     agrupavel: true,
     buscaGlobal: true,
+    filterRow: true,
+    // Lembra o layout por ligação+base+tabela: uma tabela de fora se olha
+    // muitas vezes seguidas, e arrumar as colunas de novo a cada visita é o
+    // tipo de coisa que faz a pessoa parar de usar a tela.
+    lembrar: `dblink:${DBL.ligacao}.${DBL.database}.${tabela}`,
+    nomeVista: `${DBL.database}-${tabela}`,
     colunas: r.colunas.map((c, i) => ({
       campo: nomes[i],
       titulo: c.nome + (c.primaria ? " ★" : ""),
       tipo: tipoDoGridExterno(c),
       decimais: casasDoExterno(c, r.linhas, i),
+      fixa: i === 0 ? "esq" : null,
       // Somar chave primária não significa nada; só medida soma.
       agregador: c.numerico && !c.primaria ? "sum" : null,
     })),
@@ -8059,9 +8221,13 @@ async function telaDbLinkSql(nome) {
          <span class="leg">${r.ms} ms${r.truncado ? " · cortado no teto da ligação" : ""}</span></div>
        <div id="gradeSql"></div>`;
     PhxGrid.criar("#gradeSql", {
-      agrupavel: true, buscaGlobal: true,
+      agrupavel: true, buscaGlobal: true, filterRow: true,
+      // Sem `lembrar`: cada consulta traz outras colunas, e layout guardado
+      // de um SELECT não descreve o próximo.
+      nomeVista: "consulta",
       colunas: r.colunas.map((c, i) => ({
         campo: nomes[i], titulo: c.nome, tipo: tipoDoGridExterno(c),
+        fixa: i === 0 ? "esq" : null,
         decimais: casasDoExterno(c, r.linhas, i), agregador: c.numerico ? "sum" : null,
       })),
       dados, pagina: { tamanho: 100, opcoes: [50, 100, 200] },
