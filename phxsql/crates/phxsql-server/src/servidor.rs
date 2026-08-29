@@ -64,6 +64,10 @@ pub(crate) const OPS_ESCRITA: &[&str] = &[
     "criar_database",
     "criar_schema",
     "criar_tabela",
+    // Declarar e desdeclarar chave estrangeira regravam o bloco de esquema
+    // no `.reg` -- catalogo, mas catalogo gravado em disco.
+    "declarar_fk",
+    "excluir_fk",
     "excluir_tabela",
     "duplicar_tabela",
     "copiar_tabela",
@@ -3216,6 +3220,8 @@ impl Servidor {
             "criar_database" => self.op_criar_database(p),
             "criar_schema" => self.op_criar_schema(p),
             "criar_tabela" => self.op_criar_tabela(p),
+            "declarar_fk" => self.op_declarar_fk(p, sessao),
+            "excluir_fk" => self.op_excluir_fk(p, sessao),
             "excluir_tabela" => self.op_excluir_tabela(p),
             "duplicar_tabela" => self.op_duplicar_tabela(p),
             "copiar_tabela" => self.op_copiar_tabela(p, sessao),
@@ -4405,6 +4411,98 @@ impl Servidor {
             (
                 "paginada",
                 Json::Bool(t.esquema().paginacao().registros_por_arquivo > 0),
+            ),
+        ]))
+    }
+
+    /// Declara uma chave estrangeira numa tabela QUE JA EXISTE.
+    ///
+    /// E o que o editor do diagrama ER chama quando alguem puxa uma coluna
+    /// ate a coluna de outra tabela. Ate aqui a chave so entrava junto com o
+    /// `criar_tabela` -- e o diagrama liga tabelas que ja nasceram.
+    ///
+    /// Declarar nao e impor: a chave fica no esquema, o `esquema` a devolve e
+    /// o diagrama a desenha, mas nenhuma gravacao a confere -- ha teste que
+    /// trava esse comportamento. Por isso a operacao pede o poder de CRIAR,
+    /// como o `criar_tabela` que sempre pode declara-la, e nao mais.
+    fn op_declarar_fk(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        // `tabela_ref` e obrigatoria AQUI, embora o leitor da chave aceite
+        // `tabela` como apelido dela: neste pedido o campo `tabela` e a
+        // tabela que RECEBE a declaracao, e o apelido a transformaria em uma
+        // referencia a si mesma sem ninguem ter pedido.
+        if p.texto_ou("tabela_ref", "").trim().is_empty() {
+            return Err(PhxError::Esquema(
+                "informe \"tabela_ref\" (a tabela referenciada); \
+                 \"tabela\" e a que recebe a chave"
+                    .into(),
+            ));
+        }
+        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let mut t = self.abrir_travada(&dados, p, sessao)?;
+        let nova = crate::valores::chave_estrangeira_de_json(p, 0, t.esquema())?;
+        let mut fks = t.esquema().chaves_estrangeiras().to_vec();
+        if fks.iter().any(|f| f.nome == nova.nome) {
+            return Err(PhxError::Duplicado(format!(
+                "a chave {} ja esta declarada em {}; exclua-a antes de redeclarar",
+                nova.nome,
+                t.nome()
+            )));
+        }
+        let nome = nova.nome.clone();
+        fks.push(nova);
+        let reescreveu = t.redeclarar_chaves_estrangeiras(fks)?;
+        Ok(Json::objeto(vec![
+            ("database", Json::texto_de(p.texto_ou("database", ""))),
+            ("tabela", Json::texto_de(p.texto_ou("tabela", ""))),
+            ("nome", Json::texto_de(nome)),
+            (
+                "chaves_estrangeiras",
+                Json::de_u64(t.esquema().chaves_estrangeiras().len() as u64),
+            ),
+            // A chave e DECLARADA. Quem chama precisa poder dizer a verdade
+            // na tela sem conhecer o motor de cor.
+            ("imposta", Json::Bool(false)),
+            ("arquivos_reescritos", Json::Bool(reescreveu)),
+        ]))
+    }
+
+    /// Desfaz a declaracao de uma chave estrangeira, pelo nome.
+    ///
+    /// Encolher o bloco de esquema cabe sempre no lugar, entao isto nunca
+    /// reescreve arquivo -- e nao toca em dado nenhum, porque a chave nunca
+    /// foi imposta.
+    fn op_excluir_fk(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let nome = p.texto_ou("nome", "").trim().to_string();
+        if nome.is_empty() {
+            return Err(PhxError::Esquema(
+                "informe \"nome\" (o nome da chave declarada)".into(),
+            ));
+        }
+        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let mut t = self.abrir_travada(&dados, p, sessao)?;
+        let mut fks = t.esquema().chaves_estrangeiras().to_vec();
+        let antes = fks.len();
+        fks.retain(|f| f.nome != nome);
+        if fks.len() == antes {
+            return Err(PhxError::NaoEncontrado(format!(
+                "{} nao tem uma chave chamada {nome:?}; as declaradas sao [{}]",
+                t.nome(),
+                t.esquema()
+                    .chaves_estrangeiras()
+                    .iter()
+                    .map(|f| f.nome.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )));
+        }
+        t.redeclarar_chaves_estrangeiras(fks)?;
+        Ok(Json::objeto(vec![
+            ("database", Json::texto_de(p.texto_ou("database", ""))),
+            ("tabela", Json::texto_de(p.texto_ou("tabela", ""))),
+            ("nome", Json::texto_de(nome)),
+            (
+                "chaves_estrangeiras",
+                Json::de_u64(t.esquema().chaves_estrangeiras().len() as u64),
             ),
         ]))
     }
@@ -10788,6 +10886,141 @@ mod testes_chave_estrangeira {
         assert_eq!(fks.len(), 1, "a copia perdeu a chave: {}", e.escrever());
         assert_eq!(fks[0].texto_ou("nome", ""), "fk_cliente");
         assert_eq!(fks[0].texto_ou("ao_alterar", ""), "Cascata");
+    }
+
+    /// **A chave entra numa tabela que JA existe** -- e o que o editor do
+    /// diagrama chama quando alguem liga duas colunas com o mouse. O bloco de
+    /// esquema cresce e mora antes do slot 1, entao o nome comprido forca o
+    /// caminho caro (reescrever o `.reg`): a linha gravada ANTES tem de
+    /// continuar legivel DEPOIS.
+    #[test]
+    fn declarar_fk_entra_numa_tabela_existente_sem_perder_linha() {
+        let s = servidor(&dir_temp("declara-depois"));
+        pede(
+            &s,
+            r#""op":"criar_tabela","database":"b","tabela":"pedidos",
+               "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true},
+                          {"nome":"cliente_id","tipo":"Int4"}],
+               "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]"#,
+        )
+        .unwrap();
+        pede(
+            &s,
+            r#""op":"inserir","database":"b","tabela":"pedidos",
+               "linha":{"id":7,"cliente_id":3}"#,
+        )
+        .unwrap();
+
+        let r = pede(
+            &s,
+            r#""op":"declarar_fk","database":"b","tabela":"pedidos",
+               "nome":"fk_cliente_com_nome_comprido_de_proposito_para_estourar_a_folga_do_alinhamento",
+               "colunas":["cliente_id"],"tabela_ref":"clientes","colunas_ref":["id"],
+               "ao_excluir":"cascata""#,
+        )
+        .unwrap();
+        // A resposta diz a verdade que a tela precisa repetir.
+        assert_eq!(r.campo("imposta").unwrap().booleano(), Some(false));
+
+        let e = pede(&s, r#""op":"esquema","database":"b","tabela":"pedidos""#).unwrap();
+        let fks = e
+            .campo("chaves_estrangeiras")
+            .and_then(Json::lista)
+            .unwrap();
+        assert_eq!(fks.len(), 1, "a chave nao entrou: {}", e.escrever());
+        assert_eq!(fks[0].texto_ou("tabela_ref", ""), "clientes");
+        assert_eq!(fks[0].texto_ou("ao_excluir", ""), "Cascata");
+
+        // A linha de antes continua inteira -- declarar e catalogo, nao dado.
+        let l = pede(
+            &s,
+            r#""op":"ler","database":"b","tabela":"pedidos","rowid":1"#,
+        )
+        .unwrap();
+        assert!(
+            l.escrever().contains('7'),
+            "a linha sumiu: {}",
+            l.escrever()
+        );
+
+        // Duplicar o nome e recusado -- e a primeira declaracao fica.
+        let e2 = pede(
+            &s,
+            r#""op":"declarar_fk","database":"b","tabela":"pedidos",
+               "nome":"fk_cliente_com_nome_comprido_de_proposito_para_estourar_a_folga_do_alinhamento",
+               "colunas":["cliente_id"],"tabela_ref":"clientes""#,
+        )
+        .unwrap_err();
+        assert!(e2.to_string().contains("ja esta declarada"), "{e2}");
+    }
+
+    /// O leitor da chave aceita `tabela` como apelido de `tabela_ref` -- mas
+    /// NESTE pedido `tabela` e a tabela que recebe a declaracao. Sem a recusa,
+    /// omitir `tabela_ref` viraria uma chave apontando para si mesma, em
+    /// silencio.
+    #[test]
+    fn declarar_fk_sem_tabela_ref_recusa_em_vez_de_apontar_para_si() {
+        let s = servidor(&dir_temp("sem-ref"));
+        pede(
+            &s,
+            r#""op":"criar_tabela","database":"b","tabela":"pedidos",
+               "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true}]"#,
+        )
+        .unwrap();
+        let e = pede(
+            &s,
+            r#""op":"declarar_fk","database":"b","tabela":"pedidos",
+               "nome":"fk","colunas":["id"]"#,
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("tabela_ref"), "{e}");
+        let e = pede(&s, r#""op":"esquema","database":"b","tabela":"pedidos""#).unwrap();
+        assert!(
+            e.campo("chaves_estrangeiras")
+                .and_then(Json::lista)
+                .unwrap()
+                .is_empty(),
+            "a chave nasceu mesmo recusada"
+        );
+    }
+
+    /// `excluir_fk` tira a declaracao e NADA mais: a linha fica, e um nome
+    /// que nao existe responde com a lista do que existe.
+    #[test]
+    fn excluir_fk_tira_a_declaracao_e_nada_mais() {
+        let s = servidor(&dir_temp("tira"));
+        com_fk(&s, "").unwrap();
+        pede(
+            &s,
+            r#""op":"inserir","database":"b","tabela":"pedidos",
+               "linha":{"id":1,"cliente_id":2}"#,
+        )
+        .unwrap();
+
+        let e = pede(
+            &s,
+            r#""op":"excluir_fk","database":"b","tabela":"pedidos","nome":"fk_errada""#,
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("fk_cliente"), "{e}");
+
+        pede(
+            &s,
+            r#""op":"excluir_fk","database":"b","tabela":"pedidos","nome":"fk_cliente""#,
+        )
+        .unwrap();
+        let e = pede(&s, r#""op":"esquema","database":"b","tabela":"pedidos""#).unwrap();
+        assert!(e
+            .campo("chaves_estrangeiras")
+            .and_then(Json::lista)
+            .unwrap()
+            .is_empty());
+        let l = pede(
+            &s,
+            r#""op":"ler","database":"b","tabela":"pedidos","rowid":1"#,
+        )
+        .unwrap();
+        assert!(l.escrever().contains("cliente_id"), "{}", l.escrever());
     }
 
     /// O que o `esquema` devolve tem de poder voltar como `criar_tabela`. E o

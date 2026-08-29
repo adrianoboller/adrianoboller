@@ -175,7 +175,11 @@ pub fn tipo_de_texto(t: &str) -> Result<ColumnType> {
 /// por nome mesmo, porque elas moram na outra tabela e esta funcao nao a abre
 /// -- resolver posicao ali exigiria ler a outra tabela na hora de criar esta,
 /// e uma FK pode apontar para uma tabela que ainda vai nascer.
-fn chave_estrangeira_de_json(f: &Json, i: usize, esquema: &Schema) -> Result<ForeignKey> {
+pub(crate) fn chave_estrangeira_de_json(
+    f: &Json,
+    i: usize,
+    esquema: &Schema,
+) -> Result<ForeignKey> {
     let nome = f.texto_ou("nome", "").trim().to_string();
     if nome.is_empty() {
         return Err(PhxError::Esquema(format!(

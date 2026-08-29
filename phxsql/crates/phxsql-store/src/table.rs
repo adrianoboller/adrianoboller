@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use phxsql_core::datahora::civil_de_dias;
 use phxsql_core::error::{PhxError, Result};
 use phxsql_core::keyenc::{escrever_componente, largura_componente};
-use phxsql_core::schema::Schema;
+use phxsql_core::schema::{ForeignKey, Schema};
 use phxsql_core::types::ColumnType;
 use phxsql_core::value::{escrever_inline, ler_inline, Ponteiro, Value};
 use phxsql_core::{RowId, EXT_BIN, EXT_MEMO, EXT_NDX, EXT_REG};
@@ -232,6 +232,23 @@ impl Table {
         let r = self.reg.reparar()?;
         self.recontar_marcadas()?;
         Ok(r)
+    }
+
+    /// Redeclara as chaves estrangeiras da tabela -- e SO a declaracao.
+    ///
+    /// Nao mexe em linha, indice nem tipo de coluna: a chave estrangeira do
+    /// PhxSql e catalogo (o `esquema` a devolve, o diagrama a desenha, o
+    /// gerador de JOIN a le), e o motor nao a impoe na gravacao -- ha teste
+    /// que trava isso. O que acontece no disco esta em
+    /// [`RegFile::redeclarar_chaves_estrangeiras`]. Devolve `true` quando o
+    /// `.reg` precisou ser reescrito para o bloco de esquema maior caber.
+    pub fn redeclarar_chaves_estrangeiras(&mut self, fks: Vec<ForeignKey>) -> Result<bool> {
+        let moveu = self.reg.redeclarar_chaves_estrangeiras(fks)?;
+        self.esquema = self.reg.esquema().clone();
+        // O `.pag` descreve o esquema para quem le o diretorio sem abrir a
+        // tabela; desatualizado, ele viraria uma segunda verdade.
+        self.gravar_pag()?;
+        Ok(moveu)
     }
 
     pub fn abrir(diretorio: impl AsRef<Path>, nome: &str) -> Result<Table> {

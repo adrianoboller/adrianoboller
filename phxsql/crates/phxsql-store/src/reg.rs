@@ -39,14 +39,14 @@
 //! deles se descreve sozinho. Apenas o volume 1 tem contadores autoritativos
 //! da tabela inteira.
 
-use std::fs::File;
-use std::io::Read;
+use std::fs::{File, OpenOptions};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 use phxsql_core::crc::crc32;
 use phxsql_core::error::{PhxError, Result};
 use phxsql_core::paginacao::{Paginacao, BALDES};
-use phxsql_core::schema::Schema;
+use phxsql_core::schema::{ForeignKey, Schema};
 use phxsql_core::{RowId, EXT_REG};
 
 use crate::util::{agora, conferir_magic, ler_exato, por_i64, por_u32, por_u64, Campos};
@@ -667,6 +667,79 @@ impl RegFile {
         &self.esquema
     }
 
+    /// Regrava o bloco de esquema com outra lista de chaves estrangeiras.
+    ///
+    /// A chave estrangeira e DECLARACAO: nao muda payload, nem `slot_size`,
+    /// nem indice. O que muda e o bloco de esquema serializado -- que mora
+    /// entre o cabecalho e o slot 1 de CADA volume. Dois caminhos:
+    ///
+    /// - o bloco novo cabe antes do `data_offset` (a folga do alinhamento de
+    ///   64 deixa ate 63 bytes): regrava no lugar, volume a volume;
+    /// - nao cabe: cada volume e reescrito num arquivo ao lado, com o primeiro
+    ///   slot mais adiante, e um `rename` troca. E a operacao de mover dados
+    ///   que o comentario do `abrir` prometia para quando houvesse alterar
+    ///   esquema -- aqui os slots viajam byte a byte, sem reinterpretar nada,
+    ///   e uma queda no meio deixa o arquivo velho inteiro ou o novo inteiro.
+    ///
+    /// Devolve `true` quando os arquivos foram reescritos (o caminho caro).
+    pub fn redeclarar_chaves_estrangeiras(&mut self, fks: Vec<ForeignKey>) -> Result<bool> {
+        let novo = self.esquema.clone().com_chaves_estrangeiras(fks)?;
+        // O endereco de cada linha sai do slot_size, e este caminho nao pode
+        // toca-lo. Se um dia a declaracao passar a mudar o payload, este e o
+        // aviso -- antes de algum slot ser lido pelo tamanho errado.
+        if SLOT_CAB + novo.payload_len() != self.slot_size {
+            return Err(PhxError::Esquema(
+                "redeclarar chave estrangeira mudaria o slot_size; isso e \
+                 alterar estrutura, e nao declaracao"
+                    .into(),
+            ));
+        }
+        let bytes = novo.serializar();
+        let crc = crc32(&bytes);
+
+        if CAB_LEN as u64 + bytes.len() as u64 <= self.data_offset {
+            self.esquema = novo;
+            self.esquema_bytes = bytes;
+            self.esquema_crc = crc;
+            for v in self.volumes.existentes() {
+                self.gravar_cabecalho(v)?;
+            }
+            self.volumes.sincronizar()?;
+            return Ok(false);
+        }
+
+        let origem = self.data_offset;
+        let destino = alinhar(CAB_LEN as u64 + bytes.len() as u64, ALINHAMENTO);
+        self.esquema = novo;
+        self.esquema_bytes = bytes;
+        self.esquema_crc = crc;
+        self.data_offset = destino;
+        // Os descritores abertos apontariam para o arquivo VELHO depois do
+        // rename; fechados, a proxima leitura reabre o certo.
+        self.volumes.fechar_todos();
+        for v in self.volumes.existentes() {
+            let cab = self.montar_cabecalho(v);
+            reescrever_volume(
+                &self.volumes.caminho(v),
+                &cab,
+                &self.esquema_bytes,
+                origem,
+                destino,
+            )?;
+            // O espelho e reescrito LENDO DO ESPELHO: a copia independente
+            // dele sobrevive a mudanca, que e para o que ele existe. Uma
+            // queda entre os dois renames deixa o espelho com o tamanho
+            // velho, e e o `espelhar` da proxima abertura que o semeia de
+            // novo -- o mesmo caminho de um espelho que nasceu depois.
+            if let Some(espelho) = self.volumes.caminho_do_espelho(v) {
+                if espelho.exists() {
+                    reescrever_volume(&espelho, &cab, &self.esquema_bytes, origem, destino)?;
+                }
+            }
+        }
+        Ok(true)
+    }
+
     pub fn caminho(&self, volume: u32) -> PathBuf {
         self.volumes.caminho(volume)
     }
@@ -1145,6 +1218,56 @@ impl RegFile {
 
 fn alinhar(v: u64, a: u64) -> u64 {
     v.div_ceil(a) * a
+}
+
+/// Reescreve UM arquivo de volume com o primeiro slot em `destino`.
+///
+/// Escreve num arquivo ao lado (`*.novo`), sincroniza e troca por `rename`:
+/// uma queda no meio deixa ou o arquivo velho inteiro, ou o novo inteiro --
+/// nunca um meio-termo com o cabecalho de um e os slots do outro. Copiar no
+/// proprio arquivo, de tras para a frente, seria mais barato em disco e
+/// deixaria exatamente esse meio-termo se a maquina caisse.
+fn reescrever_volume(
+    caminho: &Path,
+    cab: &[u8],
+    esquema_bytes: &[u8],
+    origem: u64,
+    destino: u64,
+) -> Result<()> {
+    let nome = caminho
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let tmp = caminho.with_file_name(format!("{nome}.novo"));
+
+    let mut de = File::open(caminho)?;
+    let tamanho = de.metadata()?.len();
+    let mut para = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(&tmp)?;
+    para.write_all(cab)?;
+    para.write_all(esquema_bytes)?;
+    let escrito = cab.len() as u64 + esquema_bytes.len() as u64;
+    if escrito < destino {
+        para.write_all(&vec![0u8; (destino - escrito) as usize])?;
+    }
+    if tamanho > origem {
+        de.seek(SeekFrom::Start(origem))?;
+        let mut resta = tamanho - origem;
+        let mut bloco = vec![0u8; 1 << 20];
+        while resta > 0 {
+            let n = resta.min(bloco.len() as u64) as usize;
+            de.read_exact(&mut bloco[..n])?;
+            para.write_all(&bloco[..n])?;
+            resta -= n as u64;
+        }
+    }
+    para.sync_all()?;
+    drop(para);
+    std::fs::rename(&tmp, caminho)?;
+    Ok(())
 }
 
 /// Acha o volume 1 de um conjunto sem saber, de antemao, se a tabela e
@@ -1762,5 +1885,119 @@ mod tests {
         let mut r = RegFile::criar(&d, "cadastroClientes", esquema()).unwrap();
         assert!(!r.tem_espelho());
         assert!(r.reparar().is_err());
+    }
+
+    /// A declaracao de chave estrangeira entra DEPOIS da criacao -- e o bloco
+    /// de esquema mora antes do slot 1, entao ha dois caminhos no disco: o que
+    /// cabe na folga do alinhamento e o que reescreve o volume. Os dois tem de
+    /// devolver cada linha inteira, e a tabela tem de reabrir igual.
+    #[test]
+    fn redeclarar_fk_preserva_cada_linha_nos_dois_caminhos() {
+        let d = dir_temp("redeclara");
+        let esq = esquema();
+        let mut r = RegFile::criar(&d, "cadastroClientes", esq.clone()).unwrap();
+        for n in 1..=5u8 {
+            r.inserir(&payload(&esq, n)).unwrap();
+        }
+        r.sincronizar().unwrap();
+
+        let folga = r.data_offset - CAB_LEN as u64 - r.esquema_bytes.len() as u64;
+        let cresce = |fk: ForeignKey| {
+            esq.clone()
+                .com_chaves_estrangeiras(vec![fk])
+                .unwrap()
+                .serializar()
+                .len() as u64
+                - esq.serializar().len() as u64
+        };
+
+        // Caminho 1, quando a folga do fixture permitir: a chave curta cabe
+        // no lugar e nenhum arquivo e reescrito.
+        let curta = ForeignKey::new("f", vec![0], "c", vec!["i".into()]);
+        if cresce(curta.clone()) <= folga {
+            let moveu = r
+                .redeclarar_chaves_estrangeiras(vec![curta.clone()])
+                .unwrap();
+            assert!(!moveu, "coube na folga e mesmo assim reescreveu");
+        }
+
+        // Caminho 2, sempre: um nome maior que a folga maxima do alinhamento
+        // (63 bytes) forca a reescrita do volume.
+        let comprida = ForeignKey::new(
+            "fk_com_um_nome_deliberadamente_comprido_para_estourar_qualquer_folga_de_alinhamento",
+            vec![1],
+            "cadastroCidades",
+            vec!["nome".into()],
+        );
+        let moveu = r
+            .redeclarar_chaves_estrangeiras(vec![curta, comprida])
+            .unwrap();
+        assert!(moveu, "uma chave maior que a folga tinha de mover o slot 1");
+        for n in 1..=5u8 {
+            assert_eq!(
+                r.ler(n as u64).unwrap(),
+                Some(payload(&esq, n)),
+                "a linha {n} nao sobreviveu a reescrita"
+            );
+        }
+        // E a tabela continua VIVA depois de mover: a proxima insercao grava
+        // o cabecalho novo por cima, e nada pode se perder nisso.
+        r.inserir(&payload(&esq, 6)).unwrap();
+        r.sincronizar().unwrap();
+        drop(r);
+
+        let mut r = RegFile::abrir(&d, "cadastroClientes").unwrap();
+        assert_eq!(r.esquema().chaves_estrangeiras().len(), 2);
+        for n in 1..=6u8 {
+            assert_eq!(r.ler(n as u64).unwrap(), Some(payload(&esq, n)));
+        }
+
+        // Tirar a declaracao encolhe o bloco: cabe sempre, nunca reescreve.
+        let moveu = r.redeclarar_chaves_estrangeiras(Vec::new()).unwrap();
+        assert!(!moveu, "encolher o bloco nao pode custar uma reescrita");
+        drop(r);
+        let mut r = RegFile::abrir(&d, "cadastroClientes").unwrap();
+        assert!(r.esquema().chaves_estrangeiras().is_empty());
+        assert_eq!(r.ler(6).unwrap(), Some(payload(&esq, 6)));
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// O espelho atravessa a reescrita com a PROPRIA copia -- e continua
+    /// salvando um slot estragado depois dela. Se a reescrita semeasse o
+    /// espelho a partir do principal, este teste ainda passaria; o que ele
+    /// trava e o espelho nao ficar para tras com os slots no offset velho.
+    #[test]
+    fn redeclarar_fk_nao_deixa_o_espelho_para_tras() {
+        let d = dir_temp("redeclara-espelho");
+        let esq = esquema();
+        let mut r = RegFile::criar(&d, "cadastroClientes", esq.clone()).unwrap();
+        r.espelhar().unwrap();
+        for n in 1..=4u8 {
+            r.inserir(&payload(&esq, n)).unwrap();
+        }
+        r.sincronizar().unwrap();
+
+        let comprida = ForeignKey::new(
+            "fk_com_um_nome_deliberadamente_comprido_para_estourar_qualquer_folga_de_alinhamento",
+            vec![0],
+            "c",
+            vec!["i".into()],
+        );
+        assert!(r.redeclarar_chaves_estrangeiras(vec![comprida]).unwrap());
+        r.sincronizar().unwrap();
+
+        // Estraga o slot 3 SO no principal: a segunda chance tem de vir do
+        // espelho ja reescrito, no offset novo.
+        let (v, off) = r.localizar(3);
+        let mut slot = vec![0u8; r.slot_size];
+        r.volumes.ler(v, off, &mut slot).unwrap();
+        slot[SLOT_CAB] ^= 0xff;
+        r.volumes.escrever_so_no_principal(v, off, &slot).unwrap();
+        assert_eq!(
+            r.ler(3).unwrap(),
+            Some(payload(&esq, 3)),
+            "o espelho ficou com os slots no offset velho"
+        );
+        std::fs::remove_dir_all(&d).unwrap();
     }
 }

@@ -743,6 +743,41 @@ pub const OPERACOES: &[Operacao] = &[
         ferramenta_mcp: false,
     },
     Operacao {
+        nome: "declarar_fk",
+        apelidos: &[],
+        resumo: "Declara uma chave estrangeira numa tabela que já existe -- \
+                 declara, não impõe: o motor não a confere na gravação.",
+        parametros: &[
+            DB,
+            TAB,
+            obr("nome", "string", "o nome da chave (ex.: fk_cliente)"),
+            obr("colunas", "array", "as colunas locais, por nome"),
+            obr("tabela_ref", "string", "a tabela referenciada"),
+            opc(
+                "colunas_ref",
+                "array",
+                "as colunas de lá; sem elas, as de mesmo nome",
+            ),
+            opc(
+                "ao_excluir",
+                "string",
+                "restringir (padrão), cascata, anular ou nada",
+            ),
+            opc("ao_alterar", "string", "as mesmas quatro ações"),
+        ],
+        exemplo: r#"{"op":"declarar_fk","database":"loja","tabela":"pedidos","nome":"fk_cliente","colunas":["cliente_id"],"tabela_ref":"clientes","colunas_ref":["id"]}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "excluir_fk",
+        apelidos: &[],
+        resumo: "Desfaz a declaração de uma chave estrangeira, pelo nome. Não \
+                 toca em dado nenhum -- a chave nunca foi imposta.",
+        parametros: &[DB, TAB, obr("nome", "string", "o nome da chave declarada")],
+        exemplo: r#"{"op":"excluir_fk","database":"loja","tabela":"pedidos","nome":"fk_cliente"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
         nome: "excluir_tabela",
         apelidos: &[],
         resumo: "Apaga os arquivos de uma tabela. Não há desfazer, e por isso \

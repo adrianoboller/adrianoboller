@@ -103,6 +103,16 @@ Logo após o cabeçalho vem o **esquema serializado** (`schema_len` bytes), e
 `data_offset` é o próximo múltiplo de 64. A tabela é auto-descritiva: o
 conjunto de arquivos basta para reabrir os dados, sem dicionário externo.
 
+O bloco de esquema é imutável, com **uma** exceção: `declarar_fk` e
+`excluir_fk` o regravam para mudar a lista de chaves estrangeiras — que é
+declaração, não estrutura: payload e `slot_size` não mudam. Quando o bloco
+novo cabe antes do `data_offset` (a folga do alinhamento deixa até 63 bytes),
+ele é regravado no lugar, em cada volume; quando não cabe, cada volume é
+reescrito num arquivo ao lado (`*.novo`) com o `data_offset` mais adiante e os
+slots copiados byte a byte, e um `rename` troca — uma queda no meio deixa o
+arquivo velho inteiro ou o novo inteiro, nunca um meio-termo. O espelho
+`.bkp` é reescrito da própria cópia, pelo mesmo caminho.
+
 ### O bloco de esquema (`PSCH`, versão 6)
 
 O bloco começa com `PSCH` e a versão. A **3** acrescentou os metadados de

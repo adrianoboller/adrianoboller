@@ -360,6 +360,25 @@ CHAVE ESTRANGEIRA NO criar_tabela
     Sem o campo, a tabela nasce exatamente como sempre nasceu -- todo cliente
     escrito antes desta versao continua criando tabela igual.
 
+CHAVE ESTRANGEIRA DEPOIS DA CRIACAO: declarar_fk e excluir_fk
+
+    {"op":"declarar_fk","database":"loja","tabela":"pedidos",
+     "nome":"fk_cliente","colunas":["cliente_id"],
+     "tabela_ref":"clientes","colunas_ref":["id"],"ao_excluir":"cascata"}
+
+    {"op":"excluir_fk","database":"loja","tabela":"pedidos","nome":"fk_cliente"}
+
+    E o que o editor do diagrama ER chama quando alguem puxa uma coluna ate a
+    coluna de outra tabela. A chave entra na tabela que JA existe -- o campo
+    "tabela" e a que RECEBE a declaracao, e por isso "tabela_ref" aqui e
+    obrigatorio: sem ele a chave apontaria para si mesma sem ninguem pedir.
+
+    Declarar continua nao sendo impor -- vale tudo o que a secao acima diz.
+    Nenhuma linha e tocada: o que muda e o bloco de esquema no cabecalho do
+    .reg (e, quando o bloco novo nao cabe na folga, o arquivo e reescrito por
+    inteiro, com os slots byte a byte; a resposta diz em
+    "arquivos_reescritos"). As duas pedem o poder de CRIAR.
+
 SERVIDOR MCP (Model Context Protocol)
 
     phxsqld --mcp                                  pelo token de servico
@@ -986,6 +1005,9 @@ OPERACOES
     criar_tabela    database, [schema], tabela, colunas, [indices],
                     [registros_por_arquivo], [digitos], [max_arquivos],
                     [particao], [particao_coluna]
+    declarar_fk     database, tabela, nome, colunas, tabela_ref,
+                    [colunas_ref], [ao_excluir], [ao_alterar]
+    excluir_fk      database, tabela, nome   desfaz a declaracao
     duplicar_tabela database, tabela, destino
     copiar_tabela   database, tabela, destino_database, destino
     excluir_tabela  database, tabela, confirmar   confirmar repete o nome
@@ -2017,7 +2039,7 @@ telefone, supervisor e o poder sobre cada base. A SENHA E GUARDADA COMO HASH.
     alterar      atualizar
     excluir      excluir
     criar        criar_database, criar_schema, criar_tabela, duplicar_tabela,
-                 copiar_tabela
+                 copiar_tabela, declarar_fk, excluir_fk
     reindexar    reindexar
     diario       diario
     verificar    verificar

@@ -927,6 +927,49 @@ svg.er{display:block}
   font-size:11px;color:var(--texto-3);margin:10px 0 0}
 .er-legenda b{display:inline-flex;align-items:center;gap:5px;font-weight:500;
   font-family:"IBM Plex Mono",monospace}
+/* --- o EDITOR do modelo (pedido 127, segunda metade) ---
+   O título arrasta, a linha de coluna puxa relacionamento, o clique abre o
+   cartão. `touch-action:none` é o que faz pointer events valerem no dedo, e
+   `user-select:none` impede o arrasto de sair selecionando os nomes. */
+svg.er.editor{touch-action:none}
+svg.er.editor text{user-select:none;-webkit-user-select:none}
+.er-pega{fill:transparent;cursor:grab}
+.er-pega:active{cursor:grabbing}
+/* `fill:transparent` (e não `none`): o retângulo invisível continua sendo
+   alvo de ponteiro — com `none` o clique atravessaria para o texto. */
+.er-porta{fill:transparent;cursor:crosshair}
+.er-porta:hover{stroke:var(--ndx);stroke-width:1.2}
+.er-porta.alvo{stroke:var(--acao-incluir);stroke-width:1.6}
+.er-tmp{pointer-events:none}
+.er-seta-tmp{fill:none;stroke:var(--acao-incluir);stroke-width:1.6;
+  stroke-dasharray:5 4}
+/* O DbLink no desenho: tracejado e na cor da própria ferramenta DbLink
+   (--memo), porque aquilo NÃO é uma tabela deste banco — é outra máquina. */
+.er-caixa-dbl{fill:var(--painel);stroke:var(--memo);stroke-width:1.2;
+  stroke-dasharray:5 4}
+.er-remota:hover .er-caixa-dbl{stroke-width:1.8}
+.er-nome-dbl{font-family:"Exo 2",sans-serif;font-size:12px;font-weight:600;
+  fill:var(--memo)}
+.er-leg-dbl{font-family:"IBM Plex Mono",monospace;font-size:9px;
+  fill:var(--texto-3)}
+.er-seta-dbl{fill:none;stroke:var(--memo);stroke-width:1.3;stroke-dasharray:5 4}
+.er-rot.dbl{fill:var(--memo)}
+/* A grade de campos do cartão de nova tabela: compacta, dentro da .caixa. */
+.er-campos{width:100%;border-collapse:collapse;font-size:12px}
+.er-campos th{font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--texto-3);text-align:left;padding:3px 6px;font-weight:500}
+.er-campos td{padding:3px 6px}
+.er-campos input[type=text],.er-campos input:not([type]),.er-campos select{
+  width:100%;padding:6px 8px;font-size:12px;background:var(--painel-2);
+  border:1px solid var(--linha);border-radius:4px}
+.er-campos td.num{width:34px;text-align:center}
+.er-campos input[type=checkbox],.er-campos input[type=radio]{
+  width:15px;height:15px;padding:0;margin:0}
+.er-fks{margin:8px 0 0;padding:0;list-style:none;font-size:12px}
+.er-fks li{display:flex;align-items:center;gap:8px;padding:5px 0;
+  border-bottom:1px solid var(--linha)}
+.er-fks code{font-size:11px}
+.er-fks .cresce{flex:1}
 
 /* ------------------------------------------- jobs, serviço e dado pessoal
    Um `<select>` dentro de uma barra de ações herda `width:100%` do CSS global
@@ -7099,12 +7142,27 @@ async function editarJob(nome) {
   }
 }
 
-/* =========================================================== diagrama ER
+/* ============================== diagrama ER e o editor do modelo (#127)
  *
- * As chaves estrangeiras já estão declaradas e já vêm no `esquema` — o que
- * faltava era o desenho. O layout mora em `ui/diagrama-er.js`, porque é a
- * única parte da interface que é algoritmo.
+ * O desenho e os gestos moram em `ui/diagrama-er.js`; aqui é a parte que fala
+ * com o servidor — buscar esquemas, guardar posições, criar tabela, declarar
+ * chave e abrir o assistente do DbLink.
+ *
+ * As POSIÇÕES são deste navegador, de propósito: ficam no localStorage, por
+ * database. Guardar no servidor seria inventar um arquivo para um gosto de
+ * tela — outro navegador vê o layout automático, e a tela diz isso.
  */
+const ER = { db: "", esquemas: [], dblink: [], semDbl: "" };
+
+function erPosicoes(db) {
+  try { return JSON.parse(localStorage.getItem(`phxer.pos.${db}`)) || {}; }
+  catch { return {}; }
+}
+function erGuardar(db, pos) {
+  try { localStorage.setItem(`phxer.pos.${db}`, JSON.stringify(pos)); }
+  catch { /* modo privado: o arrasto vale ate recarregar, e so */ }
+}
+
 async function telaDiagramaER(db) {
   db = db || databaseCorrente();
   const bancos = est.bancos || await api("bancos");
@@ -7124,31 +7182,61 @@ async function telaDiagramaER(db) {
     catch (e) { /* sem permissão ou tabela quebrada */ }
   }
   const fora = (t.tabelas || []).length - esquemas.length;
+
+  // As ligações DbLink deste database, melhor esforço: a operação `dblink`
+  // exige administrar. Sem o poder, o desenho segue sem os nós remotos — e a
+  // nota diz isso, em vez de fingir que não há sincronia nenhuma.
+  let sincronias = [], semDbl = "";
+  try {
+    const d = await api("dblink");
+    for (const l of (d.ligacoes || [])) {
+      for (const s of (l.sincronias || [])) {
+        if ((s.local_database || "").toLowerCase() === db.toLowerCase()) {
+          sincronias.push({ ligacao: l.nome, remota: s.remota,
+            local_tabela: s.local_tabela, sentido: s.sentido,
+            dono: s.dono, chave: s.chave });
+        }
+      }
+    }
+  } catch (e) { semDbl = String(e); }
+
+  ER.db = db; ER.esquemas = esquemas; ER.dblink = sincronias; ER.semDbl = semDbl;
   const r = PhxER.resumo(esquemas);
-  const svg = PhxER.desenhar(esquemas);
 
   folha("Diagrama ER",
-    `${esc(db)} · ${r.tabelas} tabela(s), ${r.ligacoes} chave(s) estrangeira(s)`,
+    `${esc(db)} · ${r.tabelas} tabela(s), ${r.ligacoes} chave(s) estrangeira(s)`
+    + (sincronias.length ? `, ${sincronias.length} sincronia(s) DbLink` : ""),
     `<div class="barra-acao">
        <label>Database<select id="erDb">${bancos.map(b =>
          `<option ${b === db ? "selected" : ""}>${esc(b)}</option>`).join("")}</select></label>
-       <button class="botao consultar" id="btErVer">Redesenhar</button>
+       <button class="botao incluir" id="btErNova">✚ Nova tabela…</button>
+       <button class="botao incluir" id="btErDbl">⛓ Conexão DbLink…</button>
+       <button class="botao consultar" id="btErVer">↻ Redesenhar</button>
+       <button class="botao secundario" id="btErArrumar"
+         title="esquece as posições arrastadas e volta ao layout automático">Reorganizar</button>
      </div>
-     ${svg ? `<div class="er-rolo">${svg}</div>` : `<div class="vazio">
-       nenhuma tabela para desenhar</div>`}
+     ${(esquemas.length || sincronias.length)
+       ? `<div class="er-rolo"><div id="erDesenho"></div></div>`
+       : `<div class="vazio">nenhuma tabela em ${esc(db)} — comece pelo “✚ Nova tabela”</div>`}
      <p class="er-legenda">
        <b style="color:var(--laranja)">PK</b> chave primária
        <b style="color:var(--ndx)">FK</b> chave estrangeira
        <b>→</b> a seta sai do filho e chega no pai
        <b style="font-style:italic">- - →</b> aponta para fora deste database
+       ${sincronias.length ? `<b style="color:var(--memo)">⇄ ┄┄</b> sincronia DbLink` : ""}
      </p>
      ${fora > 0 ? `<div class="aviso">${fora} tabela(s) ficaram de fora do
        desenho — sem permissão de leitura, ou com o esquema ilegível.</div>` : ""}
      <div class="nota">
-       <p><strong>Só o desenho, por enquanto.</strong> Arrastar caixa, criar
-       tabela pelo diagrama e ligar duas colunas com o mouse são o
-       <em>editor de modelo</em>, e ele é outra rodada. Dizer isso é melhor do
-       que deixar a pessoa descobrir clicando e não acontecendo nada.</p>
+       <p><strong>Este é o editor do modelo.</strong> O <b>título</b> arrasta a
+       tabela; uma <b>linha de coluna</b> puxa um relacionamento até a coluna de
+       outra tabela; o <b>clique</b> numa caixa abre o cartão dela. As posições
+       ficam guardadas <em>neste navegador</em> (localStorage, por database) —
+       outro navegador vê o layout automático.</p>
+       <p><strong>A chave estrangeira é DECLARADA, não imposta.</strong> Ela
+       alimenta o esquema, este desenho e o gerador de junções; o motor
+       <em>não</em> a confere na gravação — há teste que trava exatamente esse
+       comportamento, e o cartão de declarar repete essa verdade.</p>
        <p>Cada caixa mostra até ${PhxER.MEDIDAS.maxColunas} colunas, com a chave
        primeiro — o resto vira uma contagem. As colunas de sistema
        (<code>rownum</code>, <code>softdeleted</code>) não entram: elas são do
@@ -7158,12 +7246,328 @@ async function telaDiagramaER(db) {
          elas seria fingir que a declaração não existe.</p>` : ""}
        ${r.sem_ligacao ? `<p>${r.sem_ligacao} tabela(s) não participam de
          nenhuma chave estrangeira.</p>` : ""}
+       ${semDbl ? `<p><strong>As ligações DbLink não entraram no desenho:</strong>
+         ${esc(semDbl)}</p>` : ""}
      </div>`);
 
   $("#btErVer").onclick = () => telaDiagramaER($("#erDb").value);
   $("#erDb").onchange = ev => telaDiagramaER(ev.target.value);
-  $$("#painel .er-tabela").forEach(g => g.onclick = () =>
-    abrirTabela(db, g.dataset.tabela));
+  $("#btErNova").onclick = () => cartaoNovaTabelaER(db);
+  $("#btErDbl").onclick = () => assistenteDbLink();
+  $("#btErArrumar").onclick = () => {
+    try { localStorage.removeItem(`phxer.pos.${db}`); } catch {}
+    telaDiagramaER(db);
+  };
+  montarEditorER();
+}
+
+function montarEditorER() {
+  const alvo = $("#erDesenho");
+  if (!alvo) return;
+  PhxER.montar(alvo, ER.esquemas, {
+    posicoes: erPosicoes(ER.db),
+    dblink: ER.dblink,
+    aoMover: pos => erGuardar(ER.db, pos),
+    aoAbrir: nome => cartaoTabelaER(ER.db, nome),
+    aoAbrirRemota: lig => telaDbLink(lig),
+    aoLigar: (de, para) => cartaoDeclararFk(ER.db, de, para),
+  });
+}
+
+/** Um cartão modal sobre o diagrama — o mesmo molde do assistente DbLink. */
+function cartaoER(html) {
+  const fundo = document.createElement("div");
+  fundo.className = "sobre";
+  fundo.innerHTML = `<div class="caixa larga" role="dialog" aria-modal="true">
+    <div class="er-cartao-corpo"></div></div>`;
+  document.body.appendChild(fundo);
+  const corpo = fundo.querySelector(".er-cartao-corpo");
+  corpo.innerHTML = html;
+  const fechar = () => fundo.remove();
+  fundo.onclick = ev => { if (ev.target === fundo) fechar(); };
+  return { corpo, fechar };
+}
+
+/* ------------------------------------------ o cartão de declarar a chave */
+
+function colunaDe(tabela, coluna) {
+  const e = ER.esquemas.find(x => x.tabela === tabela);
+  return e && (e.colunas || []).find(c => c.nome === coluna);
+}
+
+/** O arrasto terminou numa coluna de outra tabela: confirmar e declarar.
+ *
+ * A direção é a do gesto: a chave entra na tabela DE ONDE se puxou (a filha)
+ * e aponta para onde se soltou (a mãe). O cartão escreve isso por extenso,
+ * porque a seta do ER e o dedo de quem arrasta podem discordar em silêncio.
+ */
+function cartaoDeclararFk(db, de, para) {
+  const ca = colunaDe(de.tabela, de.coluna);
+  const cb = colunaDe(para.tabela, para.coluna);
+  const tipoA = ca ? ca.tipo : "", tipoB = cb ? cb.tipo : "";
+  // Para o AVISO, `Sequence` é um Int8: é o que a coluna guarda por baixo, e
+  // filho Int8 apontando para pai Sequence é o caso NORMAL de uma chave.
+  // Sem isto o cartão avisava «tipos diferentes» justamente no arranjo certo
+  // — aviso errado ensina errado. Achado olhando o screenshot, não o código.
+  const cru = t => t === "Sequence" ? "Int8" : t;
+  const tiposCasam = !tipoA || !tipoB || cru(tipoA) === cru(tipoB);
+  const nomes = new Set(((ER.esquemas.find(x => x.tabela === de.tabela) || {})
+    .chaves_estrangeiras || []).map(f => f.nome));
+  let nome = `fk_${para.tabela}`;
+  for (let n = 2; nomes.has(nome); n++) nome = `fk_${para.tabela}_${n}`;
+
+  const ACOES = [["restringir", "restringir — recusa enquanto houver filha"],
+                 ["cascata", "cascata — repete a operação nas filhas"],
+                 ["anular", "anular — anula as colunas da filha"],
+                 ["nada", "nada — não faz nada"]];
+  const selAcao = id => `<select id="${id}">${ACOES.map(([v, r]) =>
+    `<option value="${v}">${esc(r)}</option>`).join("")}</select>`;
+
+  const c = cartaoER(`
+    <h3>Declarar chave estrangeira</h3>
+    <div class="sub"><code>${esc(de.tabela)}.${esc(de.coluna)}</code> →
+      <code>${esc(para.tabela)}.${esc(para.coluna)}</code></div>
+    <p style="font-size:12.5px">A chave entra em <b>${esc(de.tabela)}</b> (a
+      filha) e aponta para <b>${esc(para.tabela)}</b>${de.tabela === para.tabela
+        ? " — a própria tabela: é o laço do «chefe que também é funcionário», e ele é legítimo"
+        : ""}.</p>
+    ${!tiposCasam ? `<div class="aviso">Os tipos não
+      são iguais: <code>${esc(de.coluna)}</code> é <code>${esc(tipoA)}</code> e
+      <code>${esc(para.coluna)}</code> é <code>${esc(tipoB)}</code>. A
+      declaração entra mesmo assim — mas um JOIN entre os dois vai comparar
+      valores de tipos diferentes.</div>` : ""}
+    ${cb && !cb.primaria ? `<div class="aviso"><code>${esc(para.coluna)}</code>
+      não é a chave primária de ${esc(para.tabela)} — o normal é a chave
+      apontar para a primária. A declaração entra mesmo assim.</div>` : ""}
+    <div class="form-dbl">
+      <label class="cmp"><span>nome da chave</span>
+        <input id="fkNome" value="${esc(nome)}"></label>
+      <label class="cmp"><span>ao excluir a linha-mãe</span>${selAcao("fkExc")}</label>
+      <label class="cmp"><span>ao alterar a chave da mãe</span>${selAcao("fkAlt")}</label>
+    </div>
+    <div class="aviso" style="margin-top:12px"><strong>Declarada, não
+      imposta.</strong> O motor guarda a chave no esquema — este desenho, o
+      <code>esquema</code> e o gerador de junções a leem — mas <em>não</em> a
+      confere ao gravar: uma filha órfã ainda entra. Há teste que trava esse
+      comportamento; quando a imposição existir, este cartão muda junto.</div>
+    <div id="fkRecado"></div>
+    <div class="acoes">
+      <button class="botao incluir" id="fkOk">Declarar a chave</button>
+      <button class="botao secundario" id="fkNao">Cancelar</button>
+    </div>`);
+
+  c.corpo.querySelector("#fkNao").onclick = c.fechar;
+  c.corpo.querySelector("#fkOk").onclick = async () => {
+    const nomeFk = c.corpo.querySelector("#fkNome").value.trim();
+    if (!nomeFk) return c.corpo.querySelector("#fkRecado").innerHTML =
+      `<div class="aviso mal">dê um nome à chave</div>`;
+    try {
+      await api("declarar_fk", {
+        database: db, tabela: de.tabela, nome: nomeFk,
+        colunas: [de.coluna], tabela_ref: para.tabela, colunas_ref: [para.coluna],
+        ao_excluir: c.corpo.querySelector("#fkExc").value,
+        ao_alterar: c.corpo.querySelector("#fkAlt").value,
+      });
+      c.fechar();
+      avisar(`chave ${nomeFk} declarada em ${de.tabela} — declarada, não imposta`);
+      telaDiagramaER(db);
+    } catch (e) {
+      c.corpo.querySelector("#fkRecado").innerHTML =
+        `<div class="aviso mal">${esc(String(e))}</div>`;
+    }
+  };
+}
+
+/* ------------------------------------------------- o cartão de uma tabela */
+
+/** O clique numa caixa: o que esta tabela é, e o que DÁ para fazer nela.
+ *
+ * Alterar coluna de tabela criada não existe no servidor, e o cartão diz o
+ * porquê em vez de oferecer um formulário que fingiria salvar.
+ */
+function cartaoTabelaER(db, nome) {
+  const e = ER.esquemas.find(x => x.tabela === nome);
+  if (!e) return;
+  const colunas = (e.colunas || []).filter(c => !c.sistema);
+  const fks = e.chaves_estrangeiras || [];
+  const c = cartaoER(`
+    <h3>${esc(nome)}</h3>
+    <div class="sub">${esc(db)} · ${e.registros} registro(s) ·
+      ${colunas.length} coluna(s) · ${fks.length} chave(s) estrangeira(s)</div>
+    <div class="rolo" style="max-height:220px"><table class="er-campos"><thead>
+      <tr><th></th><th>coluna</th><th>tipo</th><th>obrig.</th></tr></thead>
+      <tbody>${colunas.map(col => `<tr>
+        <td class="num">${col.primaria ? `<b style="color:var(--laranja)">PK</b>`
+          : col.estrangeira ? `<b style="color:var(--ndx)">FK</b>` : ""}</td>
+        <td class="dado">${esc(col.nome)}</td>
+        <td class="dado">${esc(PhxER.tipoCurto(col))}</td>
+        <td class="num">${col.nullable === false ? "✓" : ""}</td>
+      </tr>`).join("")}</tbody></table></div>
+
+    ${fks.length ? `<h3 style="font-size:12.5px;margin:14px 0 2px">Chaves
+      estrangeiras declaradas</h3>
+    <ul class="er-fks">${fks.map(f => `<li>
+      <code>${esc(f.nome)}</code>
+      <span class="leg">${esc((f.colunas || []).join(", "))} →
+        ${esc(f.tabela_ref)}.${esc((f.colunas_ref || []).join(", "))}
+        · ao excluir: ${esc(f.ao_excluir || "")}</span>
+      <span class="cresce"></span>
+      <button class="mini perigo er-rm-fk" data-fk="${esc(f.nome)}">excluir
+        declaração</button></li>`).join("")}</ul>` : ""}
+
+    <div class="nota" style="margin-top:12px">
+      <p><strong>Alterar coluna de tabela criada não existe no servidor</strong>
+      — e este cartão diz isso em vez de fingir: o tipo e a largura decidem o
+      <code>slot_size</code>, e o <code>slot_size</code> decide o endereço de
+      cada linha já gravada (<code>offset = início + (rowid−1) × slot</code>).
+      O caminho hoje é duplicar ou recriar a tabela e reimportar. O que DÁ
+      para mudar por aqui: as chaves estrangeiras — declare puxando uma coluna
+      com o mouse, exclua no botão acima.</p>
+    </div>
+    <div id="tabRecado"></div>
+    <div class="acoes">
+      <button class="botao consultar" id="tabConteudo">Conteúdo</button>
+      <button class="botao secundario" id="tabEstrutura">Estrutura</button>
+      <button class="botao secundario" id="tabGerir">Gerir tabela</button>
+      <button class="botao secundario" id="tabFechar">Fechar</button>
+    </div>`);
+
+  c.corpo.querySelector("#tabFechar").onclick = c.fechar;
+  c.corpo.querySelector("#tabConteudo").onclick = () => { c.fechar(); verConteudoEditavel(db, nome); };
+  c.corpo.querySelector("#tabEstrutura").onclick = () => { c.fechar(); est.aba = "estrutura"; abrirTabela(db, nome); };
+  c.corpo.querySelector("#tabGerir").onclick = () => { c.fechar(); gerirTabela(db, nome); };
+  c.corpo.querySelectorAll(".er-rm-fk").forEach(b => b.onclick = async () => {
+    try {
+      await api("excluir_fk", { database: db, tabela: nome, nome: b.dataset.fk });
+      c.fechar();
+      avisar(`declaração ${b.dataset.fk} excluída de ${nome} — nenhuma linha foi tocada`);
+      telaDiagramaER(db);
+    } catch (er) {
+      c.corpo.querySelector("#tabRecado").innerHTML =
+        `<div class="aviso mal">${esc(String(er))}</div>`;
+    }
+  });
+}
+
+/* -------------------------------------------- o cartão de criar a tabela */
+
+/** Criar tabela sem sair do diagrama: nome + campos (nome, tipo, obrigatório,
+ *  chave primária) na op real `criar_tabela`. A partição, os índices extras e
+ *  as máscaras moram no cadastro completo — o cartão aponta para lá em vez de
+ *  duplicar a tela inteira. */
+function cartaoNovaTabelaER(db) {
+  const linhas = [
+    { nome: "id", tipo: "Sequence", obrig: true, pk: true },
+    { nome: "nome", tipo: "Str(60)", obrig: false, pk: false },
+  ];
+
+  const c = cartaoER("");
+  const desenhar = () => {
+    c.corpo.innerHTML = `
+      <h3>Nova tabela em ${esc(db)}</h3>
+      <div class="sub">sete arquivos nascem juntos · o cadastro completo
+        (partição, índices, máscaras) fica na tela «Nova tabela»</div>
+      <div class="form-dbl" style="margin-bottom:10px">
+        <label class="cmp"><span>nome da tabela</span>
+          <input id="ntNome" placeholder="cadastroClientes"></label>
+      </div>
+      <table class="er-campos"><thead><tr>
+        <th>campo</th><th>tipo</th><th class="num">obrig.</th>
+        <th class="num">PK</th><th></th></tr></thead>
+      <tbody>${linhas.map((l, i) => `<tr>
+        <td><input class="nt-nome" data-i="${i}" value="${esc(l.nome)}"
+          placeholder="nome_no_disco"></td>
+        <td><select class="nt-tipo" data-i="${i}">${TIPOS.map(([t]) =>
+          `<option${t === l.tipo ? " selected" : ""}>${esc(t)}</option>`).join("")}
+        </select></td>
+        <td class="num"><input type="checkbox" class="nt-obrig" data-i="${i}"
+          ${l.obrig ? "checked" : ""}></td>
+        <td class="num"><input type="radio" name="ntPk" class="nt-pk"
+          data-i="${i}" ${l.pk ? "checked" : ""}></td>
+        <td><button type="button" class="mini perigo nt-rm" data-i="${i}"
+          >remover</button></td>
+      </tr>`).join("")}</tbody></table>
+      <div class="acoes" style="margin:8px 0 0">
+        <button type="button" class="mini" id="ntMais">+ campo</button>
+        <span class="leg">a chave primária vira o índice único
+          <code>pk_&lt;campo&gt;</code> — é para ela que as chaves das outras
+          tabelas apontam</span>
+      </div>
+      <div id="ntRecado"></div>
+      <div class="acoes">
+        <button class="botao incluir" id="ntCriar">Criar tabela</button>
+        <button class="botao secundario" id="ntCompleto">Cadastro completo…</button>
+        <button class="botao secundario" id="ntFechar">Cancelar</button>
+      </div>`;
+
+    const ler = () => {
+      c.corpo.querySelectorAll(".nt-nome").forEach(el =>
+        linhas[+el.dataset.i].nome = el.value.trim());
+      c.corpo.querySelectorAll(".nt-tipo").forEach(el =>
+        linhas[+el.dataset.i].tipo = el.value);
+      c.corpo.querySelectorAll(".nt-obrig").forEach(el =>
+        linhas[+el.dataset.i].obrig = el.checked);
+      c.corpo.querySelectorAll(".nt-pk").forEach(el =>
+        linhas[+el.dataset.i].pk = el.checked);
+      return c.corpo.querySelector("#ntNome").value.trim();
+    };
+
+    c.corpo.querySelector("#ntFechar").onclick = c.fechar;
+    c.corpo.querySelector("#ntMais").onclick = () => {
+      const nome = ler();
+      linhas.push({ nome: "", tipo: "Str(60)", obrig: false, pk: false });
+      desenhar();
+      c.corpo.querySelector("#ntNome").value = nome;
+    };
+    c.corpo.querySelectorAll(".nt-rm").forEach(b => b.onclick = () => {
+      const nome = ler();
+      linhas.splice(+b.dataset.i, 1);
+      desenhar();
+      c.corpo.querySelector("#ntNome").value = nome;
+    });
+    c.corpo.querySelector("#ntCompleto").onclick = () => {
+      // Levar o rascunho junto: o que já foi digitado aqui vira o começo do
+      // cadastro completo, em vez de se perder na troca de tela.
+      const nome = ler();
+      est.rascunho = {
+        dig: 3, particao: "quantidade", nome,
+        colunas: linhas.filter(l => l.nome).map(l => ({
+          nome: l.nome, tipo: l.tipo, obrigatoria: l.obrig,
+          caption: "", descricao: "", mascara: "" })),
+        indices: linhas.filter(l => l.pk && l.nome).map(l => ({
+          nome: `pk_${l.nome}`, colunas: l.nome, unico: true, primario: true })),
+      };
+      c.fechar();
+      telaNovaTabela(db);
+    };
+    c.corpo.querySelector("#ntCriar").onclick = async () => {
+      const nome = ler();
+      const recado = c.corpo.querySelector("#ntRecado");
+      if (!nome) return recado.innerHTML =
+        `<div class="aviso mal">dê um nome à tabela</div>`;
+      const cols = linhas.filter(l => l.nome);
+      if (!cols.length) return recado.innerHTML =
+        `<div class="aviso mal">a tabela precisa de ao menos um campo</div>`;
+      const pk = cols.find(l => l.pk);
+      const pedido = {
+        database: db, tabela: nome,
+        colunas: cols.map(l => ({ nome: l.nome, tipo: l.tipo, obrigatoria: l.obrig })),
+        indices: pk ? [{ nome: `pk_${pk.nome}`, colunas: [pk.nome],
+                         unico: true, primario: true }] : [],
+      };
+      try {
+        const feito = await api("criar_tabela", pedido);
+        c.fechar();
+        avisar(`tabela ${feito.tabela} criada · ${feito.colunas} coluna(s)`
+          + (pk ? "" : " · SEM chave primária — as outras tabelas não têm o que apontar"));
+        await montarArvore(false);
+        telaDiagramaER(db);
+      } catch (e) {
+        recado.innerHTML = `<div class="aviso mal">${esc(String(e))}</div>`;
+      }
+    };
+  };
+  desenhar();
 }
 
 /* ================================================ dado pessoal (LGPD/GDPR)
