@@ -42,7 +42,9 @@ RAIZ = pathlib.Path(__file__).resolve().parents[2]
 def _alvo():
     for a in sys.argv[1:]:
         if a.endswith(".html"):
-            return pathlib.Path(a)
+            # Resolvido: caminho relativo quebrava o `relative_to(RAIZ)`
+            # da mensagem final, DEPOIS de ja ter gravado o arquivo.
+            return pathlib.Path(a).resolve()
     return RAIZ / "docs" / "dossie" / "dossie-phxsql-0.15.html"
 
 

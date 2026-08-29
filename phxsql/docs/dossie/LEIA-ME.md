@@ -71,6 +71,6 @@ Duas armadilhas de estilo da página:
 
 - **Nenhuma cor literal nos SVG.** Tudo sai dos tokens (`var(--reg)`,
   `var(--acento)`…), senão o diagrama some no tema escuro. Confira com
-  `grep -c 'fill="#\|stroke="#' dossie-phxsql.html` — tem de dar zero.
+  `grep -c 'fill="#\|stroke="#' dossie-phxsql-0.15.html` — tem de dar zero.
 - **Todo token de cor nasce no `:root` base.** Cor definida só dentro de
   `@media` ou `[data-theme]` não existe para quem está no tema "sistema".
