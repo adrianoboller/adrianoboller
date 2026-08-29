@@ -1939,10 +1939,22 @@ const esc = t => String(t ?? "").replace(/[&<>"']/g, c =>
  * pronto"; um recado que aparece e sai nao interrompe ninguem. Erro fica
  * mais tempo, porque erro se le. */
 let sumicoDoAviso = null;
+/* O recado do alto da tela.
+ *
+ * `String(erro)` de um `Error` do JavaScript vira «Error: …» — o nome da
+ * CLASSE dele, em inglês, colado na frente da frase. Quando a frase é a
+ * MESSAGE_TEXT que o dono do banco escreveu para quem esbarrar na regra dele,
+ * esse prefixo troca a mensagem dele pela nossa, e ainda em outro idioma. O
+ * servidor já tem essa regra escrita (`erro_do_gatilho` deixa o SIGNAL passar
+ * intacto); aqui ela se desfazia na última linha do caminho.
+ *
+ * Um lugar só limpa, e não os trinta pontos que chamam esta função. */
 function avisar(texto, ehErro) {
   const alvo = $("#aviso");
   if (!alvo) return;
-  alvo.textContent = texto;
+  alvo.textContent = texto instanceof Error
+    ? texto.message
+    : String(texto).replace(/^(?:[A-Za-z]*Error):\s+/, "");
   alvo.className = "recado" + (ehErro ? " mal" : "");
   alvo.hidden = false;
   clearTimeout(sumicoDoAviso);
@@ -3086,10 +3098,28 @@ async function verConteudoEditavel(db, tab, verExcluidos = false, cursor = null)
    Na INCLUSÃO continuam editáveis, porque é ali que nascem. */
 const COLUNAS_FIXAS = { "phxsys/mensagens": ["id", "TextName"] };
 
-/** Um campo por coluna, do tipo certo. `Bin` e `Memo` moram fora do slot. */
-function campoDaColuna(c, valor, fixa = false) {
+/** Um campo por coluna, do tipo certo. `Bin` e `Memo` moram fora do slot.
+ *
+ * Numa linha NOVA, a coluna que é a IDENTIDADE da linha nasce com a palavra
+ * `novo` escrita — a que faz o servidor gerar um v7. O texto do campo prometia
+ * «em branco ou "novo" para gerar um v7» e a metade da frente era **mentira
+ * nos dois casos**: em branco vira NULL, e numa coluna obrigatória — que é o
+ * caso de toda chave primária `Uuid` — o servidor recusa com «obrigatória e
+ * recebeu NULL». Quem quiser nulo apaga a palavra, que está à vista e não
+ * escondida num placeholder cinza.
+ *
+ * E só a chave PRIMÁRIA. A primeira versão preenchia toda coluna `Uuid`, e o
+ * screenshot mostrou o estrago: a coluna `turma_id` — a chave ESTRANGEIRA —
+ * também vinha com `novo`, o que geraria um id sorteado apontando para turma
+ * nenhuma. Um campo em branco quem olha corrige; um campo preenchido com a
+ * resposta errada ninguém corrige, porque parece certo. */
+function campoDaColuna(c, valor, fixa = false, novo = false) {
   const id = `f_${c.nome}`;
-  const v = valor === null || valor === undefined ? "" : String(valor);
+  const ehIdentidade = (c.tipo === "Uuid" || c.tipo === "Uuid256")
+    && c.primaria && !c.estrangeira;
+  const v = valor === null || valor === undefined
+    ? (novo && ehIdentidade ? "novo" : "")
+    : String(valor);
   const obrig = c.nullable ? "" : ` <span class="obrig">*</span>`;
   const dica = `<span class="tipo">${esc(c.tipo)}</span>`;
 
@@ -3111,10 +3141,11 @@ function campoDaColuna(c, valor, fixa = false) {
         <option value="false"${v === "false" ? " selected" : ""}>falso</option>
       </select></label>`;
 
-  // Sequence vem do motor quando fica em branco; Uuid aceita a palavra "novo".
+  // Sequence vem do motor quando fica em branco; Uuid NÃO — nele, em branco é
+  // nulo, e é a palavra "novo" que pede o v7.
   const ph = c.tipo === "Sequence" ? "em branco = o motor numera"
-           : c.tipo === "Uuid" ? "em branco ou \"novo\" para gerar um v7"
-           : c.tipo === "Uuid256" ? "64 hexadecimais, ou \"novo\""
+           : c.tipo === "Uuid" ? "\"novo\" pede um v7; em branco é nulo"
+           : c.tipo === "Uuid256" ? "64 hexadecimais, ou \"novo\"; em branco é nulo"
            : c.tipo === "Date" ? "2026-08-28"
            : c.tipo.startsWith("Decimal") ? "12.34 (texto, para não perder centavo)"
            : "";
@@ -3168,7 +3199,7 @@ async function abrirFicha(db, tab, rowid) {
         <button class="botao mini incluir" id="btRestaurarFicha">restaurar</button>
       </div>` : ""}
      <form class="ficha-edit" id="fichaEdit" autocomplete="off">
-       ${editaveis.map(c => campoDaColuna(c, linha[c.nome], fixas.includes(c.nome))).join("")}
+       ${editaveis.map(c => campoDaColuna(c, linha[c.nome], fixas.includes(c.nome), novo)).join("")}
      </form>
      <div class="acoes">
        <button class="botao ${novo ? "incluir" : "alterar"}" id="btSalvar">${novo ? "Incluir" : "Salvar"}</button>

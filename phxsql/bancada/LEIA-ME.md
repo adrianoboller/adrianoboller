@@ -12,6 +12,7 @@ deve acreditar.
 | `carga-10-milhoes.log` | o log da corrida de 10.000.000 |
 | `resultados-3-milhoes.json` | a corrida de 3.000.000, guardada inteira |
 | `carga-3-milhoes.log` | o log dela |
+| `bateria/` | a bateria de **ponta a ponta**: os seis itens do pedido feitos como um usuário faria, pelo soquete e pela tela, e a medição do que o gatilho e a chave custam. Ver `bateria/LEIA-ME.md` |
 
 A carga do lado do PhxSql é `crates/phxsql-store/examples/carga.rs`, que roda
 cada fase num processo separado — assim os contadores são daquela fase e de

@@ -58,8 +58,8 @@ o código, não contra a lembrança — foi assim que a chave estrangeira saiu d
 | ☑️ | 46 | Gráficos comparativos de IO, memória e CPU | `bancada/comparacao-phxsql-mysql.html` |
 | ☑️ | 47 | `tabela.bkp` clone do `.reg`, se ativo no `config.json` | e provar isso achou um defeito grave, corrigido |
 | ☑️ | 48 | DataGrid com faixa de agrupamento acima das colunas | phx-grid: arrastar o cabeçalho agrupa |
-| ☐ | 49 | **Triggers** | não começou. Falta decidir **em que linguagem o gatilho é escrito** — a escolha é sua |
-| ☐ | 50 | **Stored procedures** | não começou. Código guardado precisa de executor |
+| ☑️ | 49 | **Triggers** | `BEFORE`/`AFTER` de `INSERT`/`UPDATE`/`DELETE`, sintaxe do MySQL(R), `NEW`/`OLD`, `SIGNAL` que cancela a escrita, corpo guardado em `gatilhos.json` e recompilado a cada carga. Documentado em `docs/TRIGGERS.md`; provado de ponta a ponta pelo soquete **e pela tela** em `bancada/bateria/`. A **cadeia tem fundo** desde esta rodada: um `AFTER INSERT` que grava na própria tabela abortava o processo com *stack overflow* |
+| ☑️ | 50 | **Stored procedures** | `CREATE PROCEDURE` com `IN`/`OUT`/`INOUT`, `DECLARE`, `IF`, `WHILE`, `SIGNAL`, `INSERT` e `SELECT … INTO`; `CALL` devolve os `OUT` em `saida`. O mesmo interpretador dos gatilhos. **`CALL` não é porta dos fundos**: cada pedido que o corpo produz sai pelo `executar_derivado`, o portão de sempre, com o poder de quem chamou — provado por soquete com um usuário sem direito a uma das tabelas |
 | ☑️ | 51 | **Jobs de execução** | `jobs.rs`, cadastro em `jobs.json`, corridas append-only em `jobs.log`, relógio de 30 s e 4 operações, todas exigindo `administrar`. **O job roda com o poder do usuário dele** — e isso obrigou a extrair os portões comuns do `despachar` para uma função só, em vez de copiar a conferência. 8 testes por soquete, incluindo o que prova que um job de `so_le` não cria database |
 | ☑️ | 52 | Dashboard com gráficos de bancos, usuários, conexões | sete gráficos e oito números, de uma chamada só |
 | ☑️ | 53 | Revise o que falta | onze defeitos achados, todos corrigidos |
@@ -179,21 +179,19 @@ Pedido e **não começado**. Não estão pela metade: não têm código nenhum.
 | # | O que você pediu | Por que ainda não | O que destrava |
 |---|---|---|---|
 | 1 | **Jobs de execução** | é o mais barato dos três; tem tela apagada em *Gerir banco* dizendo o que falta | o agendador do backup (`hora_de_rodar`, `minuto_do_dia`, o laço que acorda de minuto em minuto) já é exatamente o desenho. Falta generalizar de «rodar backup» para «rodar operação nomeada». Uma rodada |
-| 2 | **Triggers** | tem tela apagada em *Gerir banco*; onde disparar já existe — `inserir`, `atualizar` e `excluir` são os três pontos, e já escrevem no `.log` | falta decidir **em que linguagem o gatilho é escrito**, e essa escolha é sua. Sem camada SQL não há `BEGIN … END` para hospedar |
-| 3 | **Stored procedures** | mesmo bloqueio, maior | procedimento é código guardado, e código guardado precisa de executor. Ou uma linguagem própria pequena, ou esperar a camada SQL |
-| 4 | **Parar e subir o serviço de dados pela interface**, trocando a porta | mexe no coração do servidor | o `accept` bloqueia. Derrubar a porta sem derrubar o processo exige acordar o laço — conectar no próprio endereço para o `accept` retornar e então conferir um sinalizador. Melhor inteiro do que pela metade |
-| 5 | **Servidor MCP** | não depende de nada; é fila | o protocolo já é JSON por linha. O MCP é tradução de vocabulário sobre o que existe |
-| 6 | **Camada SQL** | é a peça de que três outras dependem | tabela virtual do rusqlite atrás de um recurso do Cargo — dá SQL completo sem escrever parser. Repare que **fura a regra de zero dependências**, e por isso fica atrás de um `feature`: quem não liga, compila sem |
-| 7 | **Driver ODBC de saída** | depende de (6) | driver ODBC que não fala SQL não serve para o que você quer ligar nele |
-| 8 | **Cliente ODBC e OLE DB** | depende de (7) | — |
-| 9 | **Integração no FraseSQL** como `engine = "phxsql"` | depende de (8) | — |
-| 10 | Compactação | o formato já prevê e **mede** o espaço morto | falta o comando. O reindex já cobre a parte do índice |
-| 11 | Transações | tem **tela** (Ferramentas → Gestão de transações), e a tela diz o que existe e o que não existe em vez de fingir | hoje a inserção desfaz o que gravou se um índice falhar, e a trava única serializa as escritas — mas não há journal com a imagem anterior da linha, nem identificador de transação na sessão, nem `commit`/`rollback` de várias operações. É o que o uso como livro-razão exigiria primeiro |
-| 12 | Concorrência fina | — | uma trava única serializa todo acesso a dados |
-| 13 | Modo exclusivo | tem tela apagada em *Gerir banco* | reservar uma tabela por um período. Hoje a trava única já serializa as escritas, mas não há como RESERVAR — depende da trava por tabela, que é o mesmo trabalho da concorrência fina |
-| 14 | Restaurar backup | o *Backup e restauração* mostra o item apagado | copiar de volta é mais do que copiar: é decidir o que fazer com o que está lá. Sobrescrever um database em uso, com a trava tomada, precisa de um desenho — parar, restaurar ao lado e trocar, ou restaurar com outro nome |
-| 15 | Editar `config.json` e usuários pela web | as telas leem e dizem qual campo mexer | gravar credencial e política por HTTP precisa de desenho próprio: quem pode, o que fica no log, e a senha nunca em claro em ponto nenhum do caminho |
-| 16 | TLS | — | o tráfego depende de túnel. A credencial já não vai em claro quando se usa desafio-resposta; os dados, sim |
+| 2 | **Parar e subir o serviço de dados pela interface**, trocando a porta | mexe no coração do servidor | o `accept` bloqueia. Derrubar a porta sem derrubar o processo exige acordar o laço — conectar no próprio endereço para o `accept` retornar e então conferir um sinalizador. Melhor inteiro do que pela metade |
+| 3 | **Servidor MCP** | não depende de nada; é fila | o protocolo já é JSON por linha. O MCP é tradução de vocabulário sobre o que existe |
+| 4 | **Camada SQL** | é a peça de que três outras dependem | tabela virtual do rusqlite atrás de um recurso do Cargo — dá SQL completo sem escrever parser. Repare que **fura a regra de zero dependências**, e por isso fica atrás de um `feature`: quem não liga, compila sem |
+| 5 | **Driver ODBC de saída** | depende de (6) | driver ODBC que não fala SQL não serve para o que você quer ligar nele |
+| 6 | **Cliente ODBC e OLE DB** | depende de (7) | — |
+| 7 | **Integração no FraseSQL** como `engine = "phxsql"` | depende de (8) | — |
+| 8 | Compactação | o formato já prevê e **mede** o espaço morto | falta o comando. O reindex já cobre a parte do índice |
+| 9 | Transações | tem **tela** (Ferramentas → Gestão de transações), e a tela diz o que existe e o que não existe em vez de fingir | hoje a inserção desfaz o que gravou se um índice falhar, e a trava única serializa as escritas — mas não há journal com a imagem anterior da linha, nem identificador de transação na sessão, nem `commit`/`rollback` de várias operações. É o que o uso como livro-razão exigiria primeiro |
+| 10 | Concorrência fina | — | uma trava única serializa todo acesso a dados |
+| 11 | Modo exclusivo | tem tela apagada em *Gerir banco* | reservar uma tabela por um período. Hoje a trava única já serializa as escritas, mas não há como RESERVAR — depende da trava por tabela, que é o mesmo trabalho da concorrência fina |
+| 12 | Restaurar backup | o *Backup e restauração* mostra o item apagado | copiar de volta é mais do que copiar: é decidir o que fazer com o que está lá. Sobrescrever um database em uso, com a trava tomada, precisa de um desenho — parar, restaurar ao lado e trocar, ou restaurar com outro nome |
+| 13 | Editar `config.json` e usuários pela web | as telas leem e dizem qual campo mexer | gravar credencial e política por HTTP precisa de desenho próprio: quem pode, o que fica no log, e a senha nunca em claro em ponto nenhum do caminho |
+| 14 | TLS | — | o tráfego depende de túnel. A credencial já não vai em claro quando se usa desafio-resposta; os dados, sim |
 
 ---
 
@@ -201,6 +199,46 @@ Pedido e **não começado**. Não estão pela metade: não têm código nenhum.
 
 Revisar serve para achar. Onze coisas apareceram, e quase nenhuma era recurso
 faltando: era o projeto se descrevendo errado.
+
+### Antes delas: três que a bateria de ponta a ponta achou
+
+`bancada/bateria/` faz os seis itens do pedido **como um usuário faria** — cria
+o banco, cria as tabelas, gera as chaves v7, pendura os gatilhos, chama os
+procedimentos e carrega 5.000 linhas —, pelo soquete **e pela tela**. Todos os
+testes desta casa passavam. Ela achou três defeitos, e nenhum aparecia por
+leitura:
+
+- **O servidor travava de vez, e não era dos gatilhos.** Ao fechar a janela de
+  durabilidade, `gravar_de_verdade` pedia a **trava de dados que já estava na
+  mão de quem chamou** — `Mutex` não é reentrante, e a thread parava para
+  sempre segurando o servidor inteiro. A reprodução mínima não tem gatilho
+  nenhum: **duas tabelas, inserções alternadas, e ele trava na de número
+  200** — exatamente quando a janela fecha. Com uma tabela só o conjunto de
+  sujas ficava vazio e a função voltava antes de pedir a trava; é por isso que
+  as bancadas de uma tabela só nunca esbarraram nele. Detalhe em
+  `docs/TRIGGERS.md` §9.2.
+
+- **Um gatilho derrubava o processo inteiro.** `AFTER INSERT ON t` gravando em
+  `t` chamava a si mesmo sem fundo, e estouro de pilha no Rust não vira erro:
+  **aborta o processo**. Como o corpo mora no `gatilhos.json`, ele voltava a
+  derrubar na próxima tentativa. A cadeia ganhou teto de oito níveis e um aviso
+  que sobe até a resposta que alguém lê (§9.1).
+
+- **`excluir_tabela` não apagava a tabela inteira.** A lista de extensões tinha
+  seis e a tabela já tinha nove: o `.trash`, o `.reason` e o `.pag` ficavam para
+  trás. Recriar a tabela com o mesmo nome virava **impossível** («`t.trash` já
+  existe; use `Table::abrir`»), e o conteúdo das linhas excluídas de uma tabela
+  sobrevivia num arquivo que só `administrar` deveria abrir. É a mesma
+  armadilha da peça nova no fim de uma lista que o `rownum` armou na tela — o
+  comentário logo acima da lista já explicava por que o `.bkp` entrou nela, e
+  ninguém voltou lá quando `.trash` e `.reason` nasceram.
+
+E uma quarta, na tela: a ficha nova de uma tabela de chave `Uuid` **não
+gravava**. O campo prometia «em branco … gera um v7» e em branco o servidor
+recusava a linha com «obrigatória e recebeu NULL». Hoje a chave primária nasce
+com a palavra `novo` escrita — e **só ela**: a primeira versão do conserto
+preenchia toda coluna `Uuid`, inclusive a estrangeira, o que geraria um id
+sorteado apontando para nada. Quem viu isso foi a captura de tela.
 
 - **A bancada media coisas diferentes dos dois lados, e o número saía a nosso
   favor.** Na varredura por faixa o MySQL(R) recebia `COUNT(*) + SUM(valor)`

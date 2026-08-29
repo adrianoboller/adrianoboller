@@ -1,0 +1,151 @@
+{
+  "quando": "2026-08-29",
+  "porta": 6300,
+  "carga": {
+    "quantas": 5000,
+    "rodadas": 3,
+    "cenarios": [
+      {
+        "cenario": "sem gatilho",
+        "s": 0.1478,
+        "linhas_por_s": 33837,
+        "us_por_linha": 29.55,
+        "espalhamento_us": 1.39,
+        "todas_s": [
+          0.1478,
+          0.1475,
+          0.1544
+        ]
+      },
+      {
+        "cenario": "BEFORE que normaliza um campo",
+        "s": 0.1604,
+        "linhas_por_s": 31163,
+        "us_por_linha": 32.09,
+        "espalhamento_us": 7.73,
+        "todas_s": [
+          0.1604,
+          0.1587,
+          0.1974
+        ]
+      },
+      {
+        "cenario": "AFTER que so calcula (nao fala com o motor)",
+        "s": 0.1694,
+        "linhas_por_s": 29510,
+        "us_por_linha": 33.89,
+        "espalhamento_us": 2.3,
+        "todas_s": [
+          0.1738,
+          0.1694,
+          0.1623
+        ]
+      },
+      {
+        "cenario": "AFTER que grava auditoria (1 INSERT derivado por linha)",
+        "s": 0.583,
+        "linhas_por_s": 8577,
+        "us_por_linha": 116.6,
+        "espalhamento_us": 4.49,
+        "todas_s": [
+          0.5772,
+          0.583,
+          0.5997
+        ]
+      }
+    ],
+    "uma_a_uma_s": 1.3846,
+    "uma_a_uma_por_s": 3611,
+    "maior_espalhamento_us": 7.73
+  },
+  "chave": [
+    {
+      "quantas": 100000,
+      "rodadas": 3,
+      "chaves": [
+        {
+          "chave": "Uuid v7 (crescente)",
+          "s": 2.7377,
+          "linhas_por_s": 36527,
+          "us_por_linha": 27.38,
+          "espalhamento_us": 0.67,
+          "todas_s": [
+            2.7583,
+            2.6911,
+            2.7377
+          ]
+        },
+        {
+          "chave": "Uuid v4 (sorteado)",
+          "s": 3.0044,
+          "linhas_por_s": 33284,
+          "us_por_linha": 30.04,
+          "espalhamento_us": 0.96,
+          "todas_s": [
+            3.0685,
+            2.9722,
+            3.0044
+          ]
+        },
+        {
+          "chave": "Sequence (o motor numera)",
+          "s": 2.3364,
+          "linhas_por_s": 42801,
+          "us_por_linha": 23.36,
+          "espalhamento_us": 1.31,
+          "todas_s": [
+            2.3231,
+            2.3364,
+            2.4538
+          ]
+        }
+      ],
+      "v4_sobre_v7": 1.097,
+      "v7_sobre_sequence": 1.172
+    },
+    {
+      "quantas": 1000000,
+      "rodadas": 3,
+      "chaves": [
+        {
+          "chave": "Uuid v7 (crescente)",
+          "s": 28.1478,
+          "linhas_por_s": 35527,
+          "us_por_linha": 28.15,
+          "espalhamento_us": 0.61,
+          "todas_s": [
+            28.1478,
+            28.0186,
+            28.6244
+          ]
+        },
+        {
+          "chave": "Uuid v4 (sorteado)",
+          "s": 42.3947,
+          "linhas_por_s": 23588,
+          "us_por_linha": 42.39,
+          "espalhamento_us": 0.87,
+          "todas_s": [
+            42.3947,
+            43.0695,
+            42.1954
+          ]
+        },
+        {
+          "chave": "Sequence (o motor numera)",
+          "s": 24.1394,
+          "linhas_por_s": 41426,
+          "us_por_linha": 24.14,
+          "espalhamento_us": 0.62,
+          "todas_s": [
+            24.414,
+            24.1394,
+            23.7909
+          ]
+        }
+      ],
+      "v4_sobre_v7": 1.506,
+      "v7_sobre_sequence": 1.166
+    }
+  ]
+}
