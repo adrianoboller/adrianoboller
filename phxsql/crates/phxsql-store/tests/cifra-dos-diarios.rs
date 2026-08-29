@@ -16,10 +16,14 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use phxsql_core::paginacao::Paginacao;
+use phxsql_core::schema::{Column, IndexColumn, IndexDef, Schema};
+use phxsql_core::types::ColumnType;
+use phxsql_core::value::Value;
 use phxsql_store::cofre;
 use phxsql_store::lixeira::LixeiraFile;
 use phxsql_store::log::{LogFile, Operacao};
 use phxsql_store::motivo::{MotivoFile, Tipo};
+use phxsql_store::table::Table;
 
 /// A trava que serializa os testes: o cofre e global ao processo.
 static UM_DE_CADA_VEZ: Mutex<()> = Mutex::new(());
@@ -586,6 +590,77 @@ fn trocar_o_cabecalho_de_um_evento_cifrado_nao_passa() {
         panic!("a imagem do rowid 42 foi lida como sendo do rowid 7")
     };
     assert!(e.to_string().contains("etiqueta"), "{e}");
+
+    cofre::desligar();
+    std::fs::remove_dir_all(&d).unwrap();
+}
+
+/// A tabela inteira, pelo caminho normal: `Table::criar`, inserir, excluir.
+///
+/// # Por que este teste existe alem dos outros
+///
+/// Os de cima abrem `LogFile`, `LixeiraFile` e `MotivoFile` a mao. Este passa
+/// pela `Table`, que e por onde o servidor passa -- e prova que a chave chega
+/// aos tres sem que nenhuma assinatura da `Table` tenha mudado. A cifra e uma
+/// decisao do processo justamente para nao atravessar quatro camadas de API.
+#[test]
+fn a_tabela_inteira_nasce_com_os_tres_diarios_cifrados() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    cofre::desligar();
+    cofre::definir(SENHA, RAPIDO).unwrap();
+    let d = dir("tabela");
+
+    let esquema = Schema::new(
+        "clientes",
+        vec![
+            Column::new("id", ColumnType::Int8).obrigatoria(),
+            Column::new("nome", ColumnType::Str(40)),
+            Column::new("cidade", ColumnType::Str(20)),
+        ],
+        vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
+    )
+    .unwrap();
+
+    let mut t = Table::criar(&d, esquema).unwrap();
+    for i in 1..=100i64 {
+        t.inserir(&[
+            Value::Int(i),
+            Value::Str(format!("Fulano {i:04}")),
+            Value::Str("Blumenau".into()),
+        ])
+        .unwrap();
+    }
+    assert!(t.excluir_suave(7, "revisao de cadastro").unwrap());
+    assert!(t.excluir_de_vez(9, "pedido de remocao do titular").unwrap());
+    t.sincronizar().unwrap();
+    drop(t);
+
+    // Nenhum dos tres pode ter o dado do cliente em claro.
+    for ext in ["log", "trash", "reason"] {
+        let bruto = bytes_do_arquivo(&d, "clientes", ext);
+        assert_eq!(
+            u16::from_le_bytes([bruto[8], bruto[9]]),
+            3,
+            "o .{ext} da tabela nasceu na versao velha"
+        );
+        assert!(
+            !contem(b"titular", &bruto),
+            "o motivo em claro sobreviveu no .{ext}"
+        );
+    }
+    // O `.trash` guarda a LINHA INTEIRA -- e e ela que nao pode estar legivel.
+    let bruto = bytes_do_arquivo(&d, "clientes", "trash");
+    assert!(!contem(b"Fulano 0009", &bruto), "a linha descartada vazou");
+
+    // E tudo volta pela leitura normal.
+    let mut t = Table::abrir(&d, "clientes").unwrap();
+    assert_eq!(t.lixeira(0, 0, true).unwrap().len(), 1);
+    let motivos = t.motivos(0, 0).unwrap();
+    assert_eq!(motivos.len(), 2);
+    assert_eq!(motivos[0].motivo, "revisao de cadastro");
+    assert_eq!(motivos[1].motivo, "pedido de remocao do titular");
+    assert_eq!(t.historico(7).unwrap().len(), 2);
+    assert_eq!(t.diario(0, 0).unwrap().len(), 102);
 
     cofre::desligar();
     std::fs::remove_dir_all(&d).unwrap();
