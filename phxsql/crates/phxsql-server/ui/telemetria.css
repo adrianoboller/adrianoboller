@@ -93,60 +93,160 @@
 
 /* ------------------------------------------------------- painel de bolhas */
 
-.tlm-corpo { display:flex; gap:12px; align-items:stretch; flex-wrap:wrap; }
+/* `flex-start`, e nao `stretch`: com o cartao mais alto que o desenho, o
+   painel esticava junto e ganhava uma faixa escura embaixo da legenda -- o
+   mesmo vazio da queixa, uma volta depois. Caixa que segue o conteudo nao
+   tem como ficar vazia. */
+.tlm-corpo { display:flex; gap:12px; align-items:flex-start; flex-wrap:wrap; }
+/* O painel cresce SEIS vezes mais que o descritivo quando sobra espaco: com
+   muita bolha a largura serve ao desenho. Quando o desenho pede menos, o
+   `max-width` escrito pelo JS o congela e o flex devolve a sobra ao cartao --
+   e e assim que uma atividade sozinha para de morar num vazio. */
 .tlm-painel {
-  flex:1 1 460px; min-width:0;
+  flex:6 1 460px; min-width:0;
   background:var(--painel); border:1px solid var(--linha); border-radius:7px;
   display:flex; flex-direction:column;
+  /* A largura vem do JS quando o desenho pede menos que a tela tem -- uma
+     atividade sozinha não pode ficar num vazio de mil pixels. A transição
+     existe porque a largura muda quando entra ou sai atividade, e salto seco
+     de trezentos pixels no meio de um monitor assusta mais que informa. */
+  transition:max-width .4s ease;
 }
 .tlm-painel-cab {
-  display:flex; justify-content:space-between; align-items:baseline;
-  gap:10px; padding:9px 12px 6px; border-bottom:1px solid var(--linha);
+  display:flex; justify-content:space-between; align-items:center;
+  gap:10px 14px; padding:8px 12px 7px; border-bottom:1px solid var(--linha);
+  flex-wrap:wrap;
 }
+.tlm-painel-fim { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 .tlm-painel-t {
   font-size:10.5px; text-transform:uppercase; letter-spacing:.08em;
   color:var(--texto-3);
 }
-.tlm-painel-s { font-size:11px; color:var(--texto-2); }
-.tlm-bolhas { width:100%; height:340px; display:block; }
+.tlm-painel-s {
+  font-size:11px; color:var(--texto-2); padding:5px 12px 0;
+}
+
+/* --------------------------------------------------- trilha, busca, legenda */
+
+.tlm-trilha { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.tlm-passo {
+  background:none; border:1px solid transparent; border-radius:5px;
+  padding:3px 9px; font-size:10.5px; letter-spacing:.07em;
+  text-transform:uppercase; color:var(--texto-3); font-family:inherit;
+}
+button.tlm-passo:hover { color:var(--texto); border-color:var(--linha-forte); }
+.tlm-passo.atual {
+  color:var(--texto); border-color:var(--linha-forte);
+  background:var(--painel-2);
+}
+/* O IP na trilha é DADO, e dado não vira caixa alta: seria a mentira do
+   «BLUMENAU» num lugar novo. */
+.tlm-trilha .tlm-passo.atual[aria-current] { text-transform:none; letter-spacing:0; }
+.tlm-sep { color:var(--texto-3); opacity:.55; font-size:11px; }
+
+/* A busca é a «Search SPID…» da referência. `width:auto` porque o
+   `input{width:100%}` global a transformaria numa faixa da largura do
+   cabeçalho, empurrando a trilha para outra linha. */
+input.tlm-busca {
+  width:auto; min-width:0; flex:1 1 190px; max-width:280px;
+  padding:5px 9px; font-size:11px;
+}
+.tlm-link {
+  background:none; border:none; padding:2px 0; font-family:inherit;
+  font-size:10.5px; color:var(--acao-consultar); text-decoration:underline;
+  text-underline-offset:2px;
+}
+.tlm-link:hover { color:var(--texto); }
+/* A altura é escrita pelo JS a cada volta; a daqui é só o valor de partida,
+   para a primeira medição não acontecer contra uma caixa de altura zero. */
+.tlm-bolhas { width:100%; height:300px; display:block; }
+.tlm-bolhas .tlm-sem { fill:var(--texto-3); font-size:12px; }
+
+/* O CHÃO: a bandeja em que as esferas pousam. Sem ele a sombra projetada não
+   tem sobre o que cair, e a referência tem chão — é o que faz as bolhas
+   parecerem apoiadas em vez de flutuando no nada. */
+.tlm-chao { fill:url(#tlmChao); }
 
 .tlm-bolha { cursor:pointer; }
+/* ESFERA, e não círculo chapado: o corpo é um gradiente radial com o brilho
+   no alto à esquerda e o aro escuro embaixo à direita, mais a sombra
+   projetada. É o que a referência mostra, e se faz com `<radialGradient>` e
+   `feDropShadow` — nativos do SVG, sem biblioteca nenhuma.
+
+   O `transition` de posição saiu daqui de propósito: quem move a bolha agora
+   é o laço de animação, em `requestAnimationFrame`, porque ele precisa
+   somar a deriva à posição-alvo quadro a quadro. Duas coisas mexendo no
+   mesmo atributo brigariam. */
 .tlm-bolha .tlm-c {
-  /* Contorno, nunca fundo cheio: a lavagem deixa a bolha visível sem tirar o
-     contraste do texto, que continua medido contra o fundo do painel. */
-  fill-opacity:.17; stroke-width:2;
-  transition:cx .45s ease, cy .45s ease, r .45s ease, fill-opacity .15s;
+  stroke-width:1.4; stroke-opacity:.55;
+  filter:url(#tlmSombra);
+  transition:stroke-width .15s;
 }
-.tlm-bolha:hover .tlm-c, .tlm-bolha:focus .tlm-c { fill-opacity:.4; }
-.tlm-bolha.sel .tlm-c { stroke-width:3.5; fill-opacity:.4; }
+/* O alvo de clique é um círculo INVISÍVEL com raio mínimo: bolha de oito
+   pixels é impossível de acertar, e a referência tem bolhas desse tamanho.
+   Ele fica por cima e recebe o ponteiro pelos dois. */
+.tlm-bolha .tlm-alvo { fill:transparent; stroke:none; }
+/* A seleção se diz pelo ARO, e não por mais preenchimento: o corpo da esfera
+   já é cor cheia, e escurecê-lo ou clareá-lo mexeria no contraste do rótulo
+   que está desenhado em cima dele. Aro grosso não mexe em contraste nenhum. */
+.tlm-bolha:hover .tlm-c, .tlm-bolha:focus .tlm-c { stroke-width:3; stroke-opacity:1; }
+.tlm-bolha.sel .tlm-c { stroke-width:4.5; stroke-opacity:1; }
 .tlm-bolha:focus { outline:none; }
-.tlm-bolha:focus .tlm-c { stroke-width:3.5; }
+/* O rótulo é branco ou quase-preto conforme a luminância do corpo da esfera,
+   decidida no JS — as quatro cores clareiam no tema escuro e escurecem no
+   claro, então uma tinta fixa reprovaria em metade dos casos. O contorno na
+   cor oposta cobre a variação do gradiente, do brilho ao aro. */
 .tlm-bolha .tlm-id {
-  fill:var(--texto); font-weight:700; pointer-events:none;
+  font-weight:700; pointer-events:none;
   font-family:"IBM Plex Mono", ui-monospace, monospace;
-  transition:x .45s ease, y .45s ease;
+  paint-order:stroke; stroke-width:3px; stroke-linejoin:round;
 }
 .tlm-bolha .tlm-sub {
-  fill:var(--texto-2); pointer-events:none;
-  transition:x .45s ease, y .45s ease;
+  pointer-events:none; paint-order:stroke; stroke-width:2.4px;
+  stroke-linejoin:round; opacity:.92;
+}
+
+/* Quem pediu menos movimento ao sistema pediu para todo mundo, e um painel de
+   servidor não é exceção. O laço de animação também olha isto — aqui fica só
+   o que é do CSS. */
+@media (prefers-reduced-motion: reduce) {
+  .tlm-painel { transition:none; }
+  .tlm-bolha .tlm-c { transition:none; }
 }
 
 /* A bolha de quem está olhando: um anel mais firme, e o nome no cartão.
    Não é um estado — é uma identidade —, por isso não usa nenhuma das quatro
    cores de nível. */
-.tlm-bolha.eu .tlm-c { stroke-width:3; stroke-dasharray:none; }
+.tlm-bolha.eu .tlm-c {
+  stroke-width:2.6; stroke-dasharray:none; stroke:var(--texto-2);
+  stroke-opacity:1;
+}
 .tlm-eu {
   font-size:9.5px; color:var(--texto-3); border:1px dashed var(--linha-forte);
   border-radius:999px; padding:1px 7px;
 }
+/* A bolha que o cartão descreve sem ninguém ter clicado. Anel mais leve que o
+   da escolhida de propósito: o cartão precisa apontar para alguma bolha, mas
+   quem não clicou não escolheu nada. */
+.tlm-bolha.auto .tlm-c { stroke-width:3; }
+.tlm-auto {
+  font-size:9.5px; color:var(--texto-3); border:1px dotted var(--linha-forte);
+  border-radius:999px; padding:1px 7px;
+}
 
 .tlm-legenda {
-  display:flex; gap:14px; flex-wrap:wrap; align-items:center;
-  padding:7px 12px 9px; border-top:1px solid var(--linha);
+  display:flex; gap:8px 16px; flex-wrap:wrap; align-items:center;
+  padding:8px 12px; border-top:1px solid var(--linha);
   font-size:10px; color:var(--texto-3);
 }
-.tlm-leg { display:inline-flex; align-items:center; gap:5px; }
-.tlm-leg svg { width:13px; height:13px; }
+.tlm-leg { display:inline-flex; align-items:baseline; gap:5px; }
+.tlm-leg b { font-weight:600; }
+/* A faixa escrita ao lado do nome do estado. Fica em `--texto-3` e não na cor
+   do estado: a cor já está no círculo, e repeti-la na frase inteira deixaria
+   quatro linhas berrando ao mesmo tempo — que é o mesmo defeito do painel
+   todo vermelho, um andar acima. */
+.tlm-leg i { font-style:normal; color:var(--texto-3); opacity:.85; }
+.tlm-leg svg { width:13px; height:13px; align-self:center; flex:none; }
 .tlm-leg circle { fill-opacity:.2; stroke-width:2; }
 .tlm-leg[data-n="normal"] circle { fill:var(--reg); stroke:var(--reg); }
 .tlm-leg[data-n="alto"] circle {
@@ -158,16 +258,48 @@
 .tlm-leg[data-n="encerrando"] circle {
   fill:var(--acao-marcar); stroke:var(--acao-marcar); stroke-dasharray:10 4;
 }
-.tlm-leg[data-n="normal"] { color:var(--reg); }
-.tlm-leg[data-n="alto"] { color:var(--ambar); }
-.tlm-leg[data-n="stress"] { color:var(--vermelho); }
-.tlm-leg[data-n="encerrando"] { color:var(--acao-marcar); }
-.tlm-leg b { font-size:11px; }
-.tlm-leg-nota { margin-left:auto; opacity:.8; }
+.tlm-leg[data-n="normal"] b { color:var(--reg); }
+.tlm-leg[data-n="alto"] b { color:var(--ambar); }
+.tlm-leg[data-n="stress"] b { color:var(--vermelho); }
+.tlm-leg[data-n="encerrando"] b { color:var(--acao-marcar); }
+
+/* ---------------------------------------------------------- a escala do peso
+ *
+ * O «eixo» do gráfico de bolha. Sem ele o tamanho é impressão, não medida. */
+.tlm-escala {
+  display:flex; gap:12px; align-items:center; flex-wrap:wrap;
+  padding:6px 12px 9px; border-top:1px solid var(--linha);
+  font-size:10px; color:var(--texto-3);
+}
+/* `display:flex` de uma classe ganha do `[hidden]` do navegador — que tem a
+   mesma especificidade e vem antes. Sem esta linha o `hidden` do JS não
+   esconderia nada, e é o tipo de coisa que só aparece olhando. */
+.tlm-escala[hidden] { display:none; }
+/* «Ocultar legenda» some com a legenda E com a escala: as duas explicam o
+   mesmo desenho, e esconder metade da explicação não ajuda ninguém. */
+.tlm-explica[hidden] { display:none; }
+.tlm-escala-t {
+  text-transform:uppercase; letter-spacing:.09em; font-size:9.5px;
+  color:var(--texto-3); flex:none;
+}
+.tlm-escala svg { height:44px; flex:none; }
+.tlm-escala circle {
+  fill:var(--texto-3); fill-opacity:.16;
+  stroke:var(--texto-3); stroke-width:1.2;
+}
+.tlm-escala text {
+  fill:var(--texto-3); font-size:9px;
+  font-family:"IBM Plex Mono", ui-monospace, monospace;
+}
+.tlm-escala-n { flex:1 1 200px; min-width:0; line-height:1.45; opacity:.9; }
+.tlm-escala-n b { color:var(--texto-2); font-weight:600; }
 
 /* ------------------------------------------------------------- o descritivo */
 
-.tlm-lado { flex:0 1 320px; min-width:260px; }
+/* O descritivo CRESCE com o que o painel de bolhas devolve. Quando há uma
+   atividade só, o painel encolhe e é aqui que a largura sobra vira leitura,
+   em vez de virar mais retângulo escuro. */
+.tlm-lado { flex:1 1 320px; min-width:260px; }
 .tlm-cartao {
   background:var(--painel); border:1px solid var(--linha); border-radius:7px;
   padding:11px 13px; height:100%;
@@ -249,12 +381,16 @@ table.tlm-tab { min-width:520px; }
 
 @media (max-width:860px) {
   .tlm-lado { flex:1 1 100%; min-width:0; }
-  .tlm-bolhas { height:280px; }
+  .tlm-painel { flex:1 1 100%; }
 }
 
 @media (max-width:560px) {
   /* Uma faixa por linha: a 240 px de mínimo, duas colunas já estouravam. */
   .tlm-faixas { grid-template-columns:1fr; }
   .tlm-painel { flex:1 1 100%; }
-  .tlm-leg-nota { margin-left:0; }
+  /* No celular a legenda vira uma linha por estado: a faixa escrita ao lado
+     do nome não cabe ao lado de outra, e meia frase é pior que a frase
+     inteira embaixo. */
+  .tlm-legenda { flex-direction:column; align-items:flex-start; gap:5px; }
+  .tlm-escala { gap:8px; }
 }
