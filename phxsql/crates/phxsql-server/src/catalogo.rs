@@ -926,6 +926,31 @@ pub const OPERACOES: &[Operacao] = &[
         exemplo: r#"{"op":"aplicar","database":"loja","tabela":"clientes","rowid":42,"operacao":"inclusao","imagem":"00ff..."}"#,
         ferramenta_mcp: false,
     },
+    // ---------------------------------------------------------- cluster
+    Operacao {
+        nome: "cluster_pulso",
+        apelidos: &[],
+        resumo: "O pulso entre nós do cluster: quem manda diz id, papel, época \
+                 e posição do diário, e recebe o mesmo de volta.",
+        parametros: &[
+            obr("id", "string", "o id do nó que está pulsando"),
+            obr("papel", "string", "`master` ou `replica`, o papel VIVO de quem pulsa"),
+            opc("epoca", "integer", "a época que o nó conhece; cresce a cada eleição"),
+            opc("posicao", "integer", "a posição do diário do nó, somada nas tabelas"),
+            opc("prioridade", "integer", "o desempate de eleição do nó"),
+        ],
+        exemplo: r#"{"op":"cluster_pulso","id":"no2","papel":"replica","epoca":1,"posicao":1234}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "cluster_estado",
+        apelidos: &[],
+        resumo: "Quem é o master agora, a época e o mapa dos nós -- responde \
+                 igual em qualquer nó, e é o endereço único do cluster.",
+        parametros: &[],
+        exemplo: r#"{"op":"cluster_estado"}"#,
+        ferramenta_mcp: false,
+    },
     // ------------------------------------------------------- o servidor
     Operacao {
         nome: "config",

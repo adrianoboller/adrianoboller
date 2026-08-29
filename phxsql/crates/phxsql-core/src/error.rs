@@ -39,6 +39,11 @@ pub enum PhxError {
     Autorizacao(String),
     /// Valor excede o limite fisico do formato.
     LimiteExcedido(String),
+    /// O pedido tem de ir para OUTRO servidor -- escrita numa replica de
+    /// cluster, por exemplo. A mensagem comeca com `REDIRECIONA host:porta`,
+    /// de proposito: e o pedaco que um cliente recorta para se apontar ao
+    /// destino certo sem interpretar prosa.
+    Redireciona(String),
 }
 
 impl PhxError {
@@ -79,6 +84,7 @@ impl PhxError {
             PhxError::Conflito(_) => 3004,
             PhxError::Autorizacao(_) => 4001,
             PhxError::EmCarga(_) => 4002,
+            PhxError::Redireciona(_) => 4003,
             PhxError::Io(_) => 5001,
         }
     }
@@ -99,6 +105,7 @@ impl PhxError {
             PhxError::Conflito(_) => "CONFLITO",
             PhxError::Autorizacao(_) => "ACESSO_NEGADO",
             PhxError::EmCarga(_) => "EM_CARGA",
+            PhxError::Redireciona(_) => "REDIRECIONA",
             PhxError::Io(_) => "ERRO_DE_ES",
         }
     }
@@ -165,6 +172,9 @@ impl fmt::Display for PhxError {
             PhxError::Autorizacao(m) => write!(f, "acesso negado: {m}"),
             PhxError::EmCarga(m) => write!(f, "tabela em carga: {m}"),
             PhxError::LimiteExcedido(m) => write!(f, "limite excedido: {m}"),
+            // Sem prefixo: a mensagem ja comeca com `REDIRECIONA host:porta`,
+            // e e esse comeco que o cliente recorta.
+            PhxError::Redireciona(m) => write!(f, "{m}"),
         }
     }
 }
@@ -212,6 +222,7 @@ mod testes_codigo {
             PhxError::Conflito(String::new()),
             PhxError::EmCarga(String::new()),
             PhxError::Autorizacao(String::new()),
+            PhxError::Redireciona(String::new()),
             PhxError::Io(std::io::Error::other("x")),
         ];
         let mut codigos: Vec<u16> = todos.iter().map(PhxError::codigo).collect();
@@ -240,6 +251,7 @@ mod testes_codigo {
         assert_eq!(PhxError::Conflito(String::new()).codigo(), 3004);
         assert_eq!(PhxError::Autorizacao(String::new()).codigo(), 4001);
         assert_eq!(PhxError::EmCarga(String::new()).codigo(), 4002);
+        assert_eq!(PhxError::Redireciona(String::new()).codigo(), 4003);
         assert_eq!(PhxError::Io(std::io::Error::other("x")).codigo(), 5001);
     }
 
@@ -266,5 +278,9 @@ mod testes_codigo {
         assert!(PhxError::EmCarga(String::new()).adianta_repetir());
         assert_eq!(PhxError::EmCarga(String::new()).classe(), "acesso");
         assert!(!PhxError::Autorizacao(String::new()).adianta_repetir());
+        // Redirecionado: repetir AQUI da a mesma resposta -- o que adianta e
+        // ir ao endereco que a mensagem aponta.
+        assert!(!PhxError::Redireciona(String::new()).adianta_repetir());
+        assert_eq!(PhxError::Redireciona(String::new()).classe(), "acesso");
     }
 }

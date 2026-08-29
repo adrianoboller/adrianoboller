@@ -691,10 +691,54 @@ VARIAS INSTANCIAS, DOCKER E CLUSTER
     de pacotes, so o binario. So e possivel porque nao ha dependencia externa
     nenhuma. Dockerfile e docker-compose.yml na raiz.
 
-    CLUSTER: NAO. Ha replicacao (um master, N replicas, medida), e com ela a
-    escala de LEITURA. Nao ha endereco unico, nem eleicao de primario, nem
-    promocao automatica -- o failover e manual. docs/CLUSTER.md diz item por
-    item o que falta.
+    CLUSTER: SIM -- eleicao e promocao automatica (pedido 126). O bloco
+    "cluster" no config.json liga o pulso entre os nos, a deteccao de master
+    caido e a eleicao. SEM o bloco, nada muda: e a replicacao de sempre.
+
+        "replicacao": { "papel": "source" },      // "replica" nos demais
+        "cluster": {
+          "id": "no1",                    // qual no da lista e ESTE servidor
+          "prioridade": 0,                // desempate da eleicao (maior ganha)
+          "janela_inatividade_s": 10,     // master calado alem disto = caido
+          "pulso_s": 3,                   // omitido = um terco da janela
+          "avisar_cada_min": 5,           // aceita fracao: 0.1 = 6 s
+          "token": "...", "usuario": "replicador",
+          "senha_hash": "pbkdf2-sha256$...",
+          "databases": [],                // vazio = todos os do master
+          "nos": [
+            {"id":"no1","endereco":"10.1.1.102","porta":5000},
+            {"id":"no2","endereco":"10.1.1.103","porta":5000},
+            {"id":"no3","endereco":"10.1.1.104","porta":5000}
+          ],
+          "email": {"ligado":true,"servidor":"127.0.0.1","porta":25,
+                    "de":"phxsql@x.com","para":["dba@x.com"]}
+        }
+
+    COMO FUNCIONA. Os nos trocam cluster_pulso (autenticado como a replica,
+    permissao "replicar"). Master calado alem da janela abre eleicao: so
+    promove quem enxerga a MAIORIA dos nos configurados; entre os elegiveis
+    vence a maior posicao do diario, empate pela prioridade e depois pelo
+    menor id. O papel vivo e a epoca (cresce a cada eleicao) persistem em
+    base/cluster.estado.json -- o master antigo que volta se ve destronado
+    pela epoca maior no pulso e SE REBAIXA sozinho. Um master que perde a
+    maioria de vista RECUSA escrita, para conter o split-brain.
+
+    ENDERECO UNICO PELO PROTOCOLO. cluster_estado responde em QUALQUER no
+    quem e o master (endereco, epoca, mapa dos nos); escrita numa replica
+    devolve o erro REDIRECIONA (codigo 4003), com "REDIRECIONA host:porta"
+    no comeco da mensagem. VIP de rede e infraestrutura, nao banco.
+
+    E-MAIL. Com email configurado no bloco, a promocao avisa UMA vez e a
+    degradacao (no caido, sem maioria) repete a cada avisar_cada_min
+    enquanto durar. Sem email configurado, sem e-mail.
+
+    O QUE NAO E: nao e Raft. A replicacao continua assincrona -- o master
+    confirma sem esperar replica. Master que morre pode levar junto a cauda
+    que ninguem puxou; o no que volta com diario a frente do master fica
+    degradado avisando e se ressemeia a partir do master. Cluster de DOIS
+    nos nunca se promove sozinho (metade nao e maioria): failover automatico
+    pede tres ou mais. Medido em bancada/cluster/: promocao em 3,9-4,3 s com
+    janela de 4 s. Garantias e nao-garantias por extenso: docs/CLUSTER.md.
 
 REPLICACAO: MASTER E ESPELHOS
 
@@ -764,6 +808,11 @@ REPLICACAO: MASTER E ESPELHOS
         posicao    database, [com_esquema]   quantos eventos cada tabela tem
         replicar   database, tabela, desde, [max]   os eventos com a imagem
         aplicar    database, tabela, eventos        grava aqui o que veio
+
+    E as duas do cluster (secao anterior):
+
+        cluster_pulso   id, papel, [epoca, posicao, prioridade]   o pulso
+        cluster_estado  --   quem e o master, a epoca e o mapa dos nos
 
     posicao e replicar exigem a permissao "replicar", que e propria: da para
     concede-la a uma replica sem conceder mais nada. aplicar exige

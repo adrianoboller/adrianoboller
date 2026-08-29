@@ -232,6 +232,12 @@ impl Atividade {
             // permissao propria, para poder dar a uma replica sem dar mais
             // nada -- e para nao sair de graca junto com `ler`.
             "posicao" | "replicar" => Atividade::Replicar,
+            // O pulso e conversa entre nos do cluster, autenticada como a
+            // replicacao -- nunca anonima: quem pode pedir o fluxo pode dizer
+            // que esta vivo. Ja o estado e leitura: e o endereco unico do
+            // cluster, e qualquer cliente precisa dele para achar o master.
+            "cluster_pulso" => Atividade::Replicar,
+            "cluster_estado" => Atividade::Ler,
             // Operacao desconhecida exige o maior poder: nega por omissao.
             _ => Atividade::Administrar,
         })

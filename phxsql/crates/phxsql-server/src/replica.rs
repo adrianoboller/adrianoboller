@@ -60,6 +60,32 @@ impl Cliente {
         let alvo = format!("{host}:{porta}");
         let fluxo = TcpStream::connect(&alvo)
             .map_err(|e| PhxError::Io(std::io::Error::other(format!("{alvo}: {e}"))))?;
+        Cliente::montar(fluxo, token, espera)
+    }
+
+    /// Conecta com PRAZO. O `connect` sem prazo pode ficar minutos pendurado
+    /// num host que caiu -- para a replicacao isso e tolerável, para o pulso
+    /// do cluster nao: um no morto seguraria a conferencia dos vivos.
+    pub fn conectar_com_prazo(
+        host: &str,
+        porta: u16,
+        token: &str,
+        espera: Duration,
+        prazo_conexao: Duration,
+    ) -> Result<Cliente> {
+        use std::net::ToSocketAddrs;
+        let alvo = format!("{host}:{porta}");
+        let endereco = alvo
+            .to_socket_addrs()
+            .map_err(|e| PhxError::Io(std::io::Error::other(format!("{alvo}: {e}"))))?
+            .next()
+            .ok_or_else(|| PhxError::Io(std::io::Error::other(format!("{alvo}: sem endereco"))))?;
+        let fluxo = TcpStream::connect_timeout(&endereco, prazo_conexao)
+            .map_err(|e| PhxError::Io(std::io::Error::other(format!("{alvo}: {e}"))))?;
+        Cliente::montar(fluxo, token, espera)
+    }
+
+    fn montar(fluxo: TcpStream, token: &str, espera: Duration) -> Result<Cliente> {
         // Nagle segura a resposta em ate 40 ms, e aqui toda troca e um pedido
         // pequeno esperando resposta -- exatamente o caso em que ele so atrasa.
         let _ = fluxo.set_nodelay(true);
@@ -109,6 +135,7 @@ impl Cliente {
                 "TIPO_INVALIDO" => PhxError::Tipo(texto),
                 "LIMITE_EXCEDIDO" => PhxError::LimiteExcedido(texto),
                 "CONFLITO" => PhxError::Conflito(texto),
+                "REDIRECIONA" => PhxError::Redireciona(texto),
                 _ => PhxError::Esquema(texto),
             });
         }
@@ -153,10 +180,20 @@ impl Cliente {
     }
 
     /// Os databases do source, para a origem que nao lista nenhum.
+    ///
+    /// O `bancos` responde uma LISTA direta -- e este leitor procurava um
+    /// campo `"bancos"` que nunca existiu. Consequencia: origem com
+    /// `databases: []` (= todos) nao replicava NADA, em silencio, e ninguem
+    /// viu porque a bancada de replicacao sempre fixou a lista. Foi o laco do
+    /// cluster, que depende de descobrir os databases sozinho, que pisou aqui
+    /// primeiro. Os dois formatos ficam aceitos, para um source antigo ou
+    /// novo responderem igual.
     pub fn databases(&mut self) -> Result<Vec<String>> {
         let r = self.pedir(vec![("op", Json::texto_de("bancos"))])?;
-        Ok(r.campo("bancos")
-            .and_then(Json::lista)
+        let lista = r
+            .lista()
+            .or_else(|| r.campo("bancos").and_then(Json::lista));
+        Ok(lista
             .map(|l| {
                 l.iter()
                     .map(|b| match b {

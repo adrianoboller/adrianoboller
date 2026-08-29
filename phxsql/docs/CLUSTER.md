@@ -3,6 +3,10 @@
 Três perguntas juntas, porque as respostas se encostam: **dá para rodar várias
 instâncias?**, **dá para clusterizar?** e **dá para escalar?**
 
+Desde o pedido 126 a resposta do meio mudou: **há cluster com eleição e
+promoção automática**, medido em `bancada/cluster/`. A seção 2 descreve o que
+ele garante — e, com o mesmo cuidado, o que ele **não** garante.
+
 ---
 
 ## 1. Várias instâncias, em portas diferentes — **sim, e está provado**
@@ -17,86 +21,212 @@ cd /srv/telemetria && phxsqld   # bind 127.0.0.1:5100, web 5101
 cd /srv/arquivo  && phxsqld     # bind 127.0.0.1:5200, web 5201
 ```
 
-Provado nesta sessão de duas formas: `bancada/replicacao/montar.py` sobe
-**quatro** de uma vez (5800–5803) e mede a replicação entre eles; e o
-`docker-compose.yml` sobe três em contêineres separados.
-
-O arranque recusa duas portas iguais no mesmo processo — dados, web, envio e
-retorno são conferidas umas contra as outras. Entre processos diferentes quem
-recusa é o sistema, com «endereço já em uso».
+Provado de três formas: `bancada/replicacao/montar.py` sobe **quatro** de uma
+vez (5800–5803); `bancada/cluster/provar.py` sobe três em cluster
+(5310–5312); e o `docker-compose.yml` sobe três em contêineres separados.
 
 ---
 
-## 2. Cluster — **não, e vale dizer exatamente o que falta**
+## 2. Cluster — **sim, com eleição e promoção automática (pedido 126)**
 
-O HFSQL(R) chama de cluster o seguinte conjunto:
+O que existe, item por item contra a lista do HFSQL(R):
 
 | O que o cluster deles faz | PhxSql |
 |---|---|
-| Vários servidores aparecem como **um** para o cliente | ✗ o cliente escolhe o endereço |
-| Falha de um não impede o acesso | ✗ |
-| Replicação automática entre todos, em tempo real | ◐ um caminho só, source → réplica |
-| Carga de **leitura** distribuída entre todos | ◐ dá para apontar leitores para réplicas, à mão |
-| Adicionar e remover servidor a quente | ✗ |
-| Servidor que caiu ressincroniza ao voltar | ✓ **isto existe** — medido: 4.000 eventos em 1,0 s |
-| Cliente reconectado automaticamente a um servidor válido | ✗ |
+| Vários servidores aparecem como **um** para o cliente | ✓ **pela semântica de protocolo**: `cluster_estado` responde em qualquer nó quem é o master, e escrita numa réplica devolve `REDIRECIONA host:porta` (erro 4003). VIP de rede é infraestrutura, não banco — ver §2.5 |
+| Falha de um não impede o acesso | ✓ leitura segue nas réplicas; escrita volta sozinha após a eleição (medido: 3,9–4,3 s com janela de 4 s) |
+| Replicação automática entre todos | ◐ um master, N réplicas seguindo o master **corrente** — não é multi-master, de propósito |
+| Carga de leitura distribuída | ◐ aponta-se leitores para réplicas; não há balanceador embutido |
+| Adicionar/remover servidor a quente | ✗ a lista de nós é do `config.json`; mudar é editar e reiniciar |
+| Servidor que caiu ressincroniza ao voltar | ✓ e, se era o master, **se rebaixa sozinho** ao ver época maior no pulso |
+| Cliente reconectado automaticamente | ◐ o protocolo diz **para onde** ir (`REDIRECIONA`); ir é do cliente |
 
-Ou seja: **a peça mais difícil já está pronta** — a réplica que alcança sozinha
-e que para quando diverge. O que falta é o que fica *em volta* dela.
+### 2.1 O bloco `cluster` no config.json — pedido, não imposto
 
-### 2.1 O que exatamente falta
+**Sem o bloco, NADA muda**: nenhuma thread sobe, nenhum portão muda, réplica
+com origens fixas continua igualzinha. O teste que trava isso é
+`sem_o_bloco_cluster_nada_muda`, e a fase (g) da bancada prova o mesmo pelo
+soquete.
 
-1. **Um endereço só.** Hoje o cliente conecta num servidor. Num cluster ele
-   conecta no cluster. As saídas são um balanceador na frente (barato, externo,
-   e não sabe quem é primário) ou uma lista de endereços no cliente com escolha
-   e reconexão (mais trabalho, e é o que o MySQL(R) faz com o *router*).
-2. **Saber quem é o primário.** Sem isso não há para onde mandar a escrita
-   depois de uma queda. Exige eleição — e eleição correta exige consenso
-   (Raft), que é um projeto por si.
-3. **Promoção automática.** Hoje é trocar `papel` de `replica` para `source`,
-   desligar `somente_leitura` e apontar as outras. É seguro **quando as
-   réplicas estão na mesma posição**, e exige conferência quando não estão.
-4. **Escrita em mais de um nó.** Não está no roteiro e não deveria estar: sem
-   transações, multi-master é uma forma elaborada de perder dado.
-
-### 2.2 O que dá para fazer hoje, sem cluster
-
-O arranjo que funciona **agora**, medido:
-
-```
-                      escrita
-                         │
-                         ▼
-                   ┌──────────┐
-                   │  MASTER  │  papel: source
-                   └────┬─────┘  imagem_da_linha: true
-          ┌─────────────┼─────────────┐
-          ▼             ▼             ▼
-     ┌─────────┐  ┌─────────┐  ┌─────────┐
-     │ RÉPLICA │  │ RÉPLICA │  │ RÉPLICA │  somente_leitura: true
-     └────┬────┘  └────┬────┘  └────┬────┘
-          └────────────┴────────────┘
-                    leitura
+```json
+"replicacao": { "papel": "source" },          // ou "replica" nos demais
+"cluster": {
+  "id": "no1",                       // qual nó da lista é ESTE servidor
+  "prioridade": 0,                   // desempate de eleição (maior ganha)
+  "janela_inatividade_s": 10,        // master calado além disto = caído
+  "pulso_s": 3,                      // omitido = um terço da janela
+  "avisar_cada_min": 5,              // aceita fração: 0.1 = 6 s
+  "token": "...", "usuario": "replicador",
+  "senha_hash": "pbkdf2-sha256$...", // a MESMA tríade da origem de replicação
+  "databases": [],                   // vazio = todos os do master
+  "nos": [
+    {"id": "no1", "endereco": "10.1.1.102", "porta": 5000},
+    {"id": "no2", "endereco": "10.1.1.103", "porta": 5000},
+    {"id": "no3", "endereco": "10.1.1.104", "porta": 5000}
+  ],
+  "email": { "ligado": true, "servidor": "127.0.0.1", "porta": 25,
+             "de": "phxsql@empresa.com.br", "para": ["dba@empresa.com.br"] }
+}
 ```
 
-- **Escala de leitura: sim**, e é o ganho grande. Cada réplica atende consulta
-  com o dado completo. Quem faz relatório aponta para uma delas.
-- **Escala de escrita: não.** Um master só, e a escrita dele é o teto.
-- **Disponibilidade: parcial.** Se o master cai, a leitura continua nas
-  réplicas e a escrita para até alguém promover uma. É *failover manual*, e
-  está descrito em `docs/REPLICACAO.md` §8.
+Regras que o arranque impõe: o `id` tem de constar de `nos`; menos de dois
+nós não sobe; papel `isolado` não sobe; `imagem_da_linha` liga em **todo**
+papel (qualquer nó pode ser promovido) e desligá-la de propósito é erro. Com
+o bloco presente, `replicacao.origens` é ignorada (com aviso): a origem passa
+a ser o master **corrente**, descoberto pelo pulso.
 
-Um limite que estava escrito aqui **caiu depois de medido**: a réplica
-aplicava 4.357 eventos/s contra 28.914 do master, e hoje aplica **17.450**
-contra 34.048 — as três juntas passam o master (`docs/DESEMPENHO.md` §4.5; a
-causa era o source varrendo o diário a cada lote, não a réplica). Sob carga
-sustentada elas acompanham; o atraso que resta é o `reconectar_em` do laço.
+### 2.2 Como funciona por dentro
 
-### 2.3 Cascata, que existe e ajuda
+- **Pulso.** Cada nó mantém uma conexão com cada outro e troca
+  `cluster_pulso` a cada `pulso_s`, autenticado como a réplica já se
+  autentica (token + desafio-resposta a partir do `senha_hash`; permissão
+  `replicar`). O pulso carrega id, papel vivo, época, posição do diário
+  (soma dos eventos das tabelas replicadas) e prioridade — o pedido leva os
+  meus, a resposta traz os do outro.
+- **Papel vivo e época.** O papel do `config.json` é só o inicial. O vivo
+  mora em `base/cluster.estado.json` junto com a **época** — um contador que
+  cresce a cada eleição. O arquivo ganha do config no arranque: um master
+  destronado que reiniciasse pelo config voltaria mandando.
+- **Detecção.** Master sem pulso além de `janela_inatividade_s` abre
+  eleição nos nós vivos. Há uma graça de uma janela no arranque, senão todo
+  cluster nasceria "degradado" antes do primeiro pulso.
+- **Eleição** (função pura `cluster::vencedor`, com a bateria de testes em
+  volta): só há eleito se os vivos passam da **metade dos nós
+  configurados** — metade exata não basta, senão os dois lados de uma
+  partição ao meio elegeriam um master cada. Entre os elegíveis vence a
+  maior posição do diário; empate quebra pela prioridade e depois pelo menor
+  id (este último só para a conta dar igual em todo nó). Cada nó faz a conta
+  localmente e **só quem se vê vencedor se promove**, com época =
+  maior época vista + 1.
+- **Promoção.** `Servidor::promover_a_master(motivo)` é o **único** caminho:
+  época nova, papel persistido, escrita liberada, aviso agendado, registro no
+  log de acessos (`cluster_promocao`). O laço de réplica para sozinho, porque
+  confere o papel vivo a cada volta. Promoção manual futura deve chamar o
+  mesmo lugar — dois caminhos de promover é a porta dos fundos clássica.
+- **Rebaixamento.** Qualquer nó que se acha master e vê época maior no
+  pulso se rebaixa sozinho e passa a seguir o novo master. Dois masters na
+  mesma época (dois configs `source`, ou empate de partição) resolvem pelo
+  mesmo critério da eleição — os dois lados fazem a mesma conta e o perdedor
+  cede.
+- **Master isolado não escreve.** Um master que deixa de enxergar a maioria
+  recusa escrita ("cluster degradado") até a maioria voltar. É o que limita
+  o split-brain ao tempo de detecção — ver §2.4.
 
-Uma réplica pode ser origem de outra, desde que ela também grave a imagem no
-diário. Medido: Master → Slave01 → Slave03 custou 1.827 ms contra 1.679 ms do
-primeiro salto. Serve para não pendurar dez réplicas no master.
+### 2.3 O endereço único — `cluster_estado` e `REDIRECIONA`
+
+O cliente valida com **qualquer** nó:
+
+```json
+{"op":"cluster_estado"}
+{"ok":true,"resultado":{"papel":"replica","epoca":1,
+  "master":{"id":"no2","endereco":"10.1.1.103:5000"},
+  "escrita_liberada":false,"degradado":[],
+  "nos":[{"id":"no1","papel":"replica","posicao":3801,"vivo":true,...},...]}}
+```
+
+E escrita que chega numa réplica volta com nome `REDIRECIONA`, código
+**4003**, e a mensagem começando com o pedaço que o cliente recorta:
+
+```
+REDIRECIONA 10.1.1.103:5000 -- este no e replica; o master do cluster e no2 (epoca 1)
+```
+
+Se o master conhecido está calado além da janela, a recusa diz "eleição em
+curso" em vez de apontar um endereço morto.
+
+**VIP de rede é infraestrutura, não banco.** Um IP flutuante, um
+balanceador, um DNS de peso — tudo isso pode ser posto NA FRENTE do cluster,
+e é problema de rede. O que o banco entrega é a **semântica** de endereço
+único pelo protocolo: qualquer nó sabe dizer quem manda, e diz.
+
+### 2.4 O que isto NÃO garante — leia antes de confiar
+
+**Não é Raft.** Não há log replicado por quórum de escrita: o master
+confirma a escrita **sem esperar réplica nenhuma** (replicação assíncrona,
+como sempre foi). As consequências práticas, sem eufemismo:
+
+1. **Perda de cauda.** Se o master morre ou é isolado, as escritas que ele
+   confirmou e as réplicas ainda não puxaram **morrem com ele**. O novo
+   master começa do que alcançou. Quando o antigo volta e se rebaixa, o
+   diário local dele pode estar à frente do novo master — o nó fica
+   degradado avisando ("provável cauda de escritas perdidas") e a saída é
+   **ressemear** o nó a partir do master (a replicação para na divergência
+   de rowid em vez de espalhá-la; nunca apagamos dado sozinhos).
+2. **Janela de dois masters.** O destronamento é por época no pulso, então
+   um master antigo pode aceitar escrita por até ~uma janela antes de se ver
+   sem maioria ou ver a época nova. Essas escritas são cauda (item 1). A
+   eleição por maioria garante que **não há dois masters duradouros**: só
+   uma partição pode enxergar mais da metade dos nós configurados.
+3. **Sem maioria, sem escrita.** Numa partição minoritária ninguém promove
+   e o master isolado recusa escrita. Cluster de **dois nós nunca se promove
+   sozinho** (1 de 2 não é maioria) — o arranque avisa; para failover
+   automático são três nós ou mais.
+4. **A posição comparada é a soma dos eventos** das tabelas replicadas. Sem
+   transação entre tabelas não há ordem global, e a soma é o agregado
+   honesto disponível; a prova fina de igualdade continua sendo o retrato
+   SHA-256 (a bancada confere os dois).
+
+### 2.5 Roteiro de operação
+
+- **Subir:** um nó com `papel: source` (o master inicial), os demais
+  `replica` + `somente_leitura: true`, todos com o mesmo bloco `cluster`
+  (mudando só `id` e `prioridade`). Réplicas de cluster não precisam de
+  `origens`.
+- **Validar:** `cluster_estado` em qualquer nó; os três têm de apontar o
+  mesmo master e a mesma época.
+- **Failover:** não há o que fazer — é o ponto. O e-mail de promoção conta
+  quem assumiu; o de degradação repete a cada `avisar_cada_min` enquanto
+  durar (cada nó vivo avisa o que **vê**; aviso em dobro num cluster
+  degradado é melhor que aviso nenhum quando quem avisaria é o nó que caiu).
+- **Volta do nó caído:** sobe igual; se era master, se rebaixa sozinho. Se
+  ficou degradado acusando cauda, ressemeie: pare o nó, apague a base local
+  (e o `cluster.estado.json` se quiser zerar o papel), suba de novo — a
+  réplica puxa tudo do master corrente.
+- **`somente_leitura` num nó promovido** deixa de valer — senão a promoção
+  não promoveria nada. Sem o bloco `cluster`, vale como sempre valeu.
+
+### 2.6 Números e aprendizados da bancada (`bancada/cluster/`)
+
+| medido | resultado |
+|---|---|
+| Promoção após matar o master (janela 4 s, pulso 1 s) | **3,9–4,3 s** |
+| Primeira escrita aceita no novo master | **3,9–4,5 s** |
+| E-mail de promoção | exatamente **1** |
+| E-mails de degradação em ~14 s (aviso a cada 6 s) | 6 (3 por nó vivo — repetição provada) |
+| Nó isolado (1 de 3) por 3× a janela | **não** se promove; escrita recusada |
+| Retratos SHA-256 após queda, promoção, volta e rebaixamento | **idênticos nos três** |
+| Fase sem bloco `cluster` (4 servidores como hoje) | replicação intacta, `cluster_estado` dá erro claro, zero e-mails |
+
+Prova real da bateria: removida a conferência de maioria de `vencedor()`, o
+teste `sem_maioria_visivel_nao_promove` **falhou** (e só ele); restaurada,
+passou. A fase (e) da bancada prova o mesmo pelo soquete.
+
+Aprendizados que ficaram no código:
+
+- **`Cliente::databases()` estava quebrado desde sempre** — o `bancos`
+  responde uma lista direta e o leitor procurava um campo `"bancos"` que não
+  existe. Consequência: origem com `databases: []` (= todos) **não replicava
+  nada, em silêncio**. Ninguém viu porque a bancada de replicação sempre
+  fixou a lista; o laço do cluster, que precisa descobrir os databases
+  sozinho, pisou ali primeiro. É a versão de protocolo da regra da casa:
+  caminho que nenhum teste percorre mente igual a configuração que ninguém
+  lê.
+- **Todo cluster nascia "degradado"** na primeira versão: o árbitro roda seu
+  primeiro tique meio segundo depois do arranque, antes do primeiro pulso —
+  e mandava e-mail. Entrou a graça de uma janela a partir do nascimento do
+  estado.
+- **O master não se apontava como master** em `cluster_estado` (o
+  `master_id` só era preenchido por pulso recebido, e o master não pulsa a
+  si mesmo). A fonte mais confiável respondia "sem master".
+- **Redirecionar para um master morto** é pior que recusar explicando: a
+  recusa agora olha a idade do último pulso do master antes de mandar o
+  cliente para lá.
+- Hipótese que **morreu**: usar `replicas_autorizadas` como lista de
+  autenticação dos pulsos. Ao ler o código para reusar, descobriu-se que o
+  campo **não é lido por ninguém** — está no config e nunca foi consultado.
+  Fica registrado aqui como pendência de outra frente (é exatamente o campo
+  que mente, da regra da casa); o cluster autentica como a réplica, por
+  usuário e permissão `replicar`.
 
 ---
 
@@ -106,15 +236,15 @@ primeiro salto. Serve para não pendurar dez réplicas no master.
 |---|---|---|
 | **Leitura por consulta** | ✓ | réplicas, e `SelectMemory` (87× medido) |
 | **Leitura sequencial** | ✓ | slot de largura fixa: 4,8× o MySQL(R) |
-| **Tabela grande** | ✓ | partição em volumes por quantidade, período ou letra; a página custa a página |
+| **Tabela grande** | ✓ | partição em volumes por quantidade, período ou letra |
 | **Escrita** | ✗ | um master, e o `.ndx` é 83,5% do custo |
 | **Concorrência** | ✗ | **trava global única** — todo acesso a dado se serializa |
 | **Tamanho do dado** | ✓ | volumes; o teto é `registros_por_arquivo × max_arquivos` |
 
-**O gargalo de escala mais próximo não é o cluster: é a trava.** Um servidor com
-muita gente lendo ao mesmo tempo hoje serializa tudo, inclusive leitura contra
-leitura. Trava por tabela — e depois leitura concorrente com escrita — rende
-mais, e é mais barato, que qualquer coisa distribuída.
+**O gargalo de escala mais próximo não é o cluster: é a trava.** Um servidor
+com muita gente lendo ao mesmo tempo hoje serializa tudo, inclusive leitura
+contra leitura. Trava por tabela — e depois leitura concorrente com escrita —
+rende mais, e é mais barato, que qualquer coisa distribuída.
 
 ---
 

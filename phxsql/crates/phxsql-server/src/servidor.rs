@@ -381,6 +381,9 @@ pub struct Servidor {
     /// Onde a porta de dados escuta agora, que nem sempre e o `bind`.
     endereco_dos_dados: Mutex<Option<SocketAddr>>,
     conexoes: AtomicUsize,
+    /// O estado vivo do cluster -- `None` quando o `config.json` nao traz o
+    /// bloco `cluster`, e ai NADA disto existe: nenhuma thread, nenhum portao.
+    cluster: Option<Arc<crate::cluster::EstadoCluster>>,
 }
 
 impl Servidor {
@@ -396,7 +399,15 @@ impl Servidor {
         let lista_negra = Blacklist::abrir(&config.blacklist)?;
         let dblink = crate::dblink::Registro::abrir(&config.dblink)?;
         let jobs = crate::jobs::Registro::abrir(&config.jobs)?;
+        let cluster = config.cluster.clone().map(|c| {
+            Arc::new(crate::cluster::EstadoCluster::novo(
+                c,
+                &config.base,
+                config.replicacao.papel,
+            ))
+        });
         Ok(Arc::new(Servidor {
+            cluster,
             janela: Janela::nova(&config.recursos),
             sujas: Mutex::new(std::collections::HashSet::new()),
             config,
@@ -468,6 +479,7 @@ impl Servidor {
 
         self.subir_web();
         self.subir_replicacao();
+        self.subir_cluster();
         self.subir_backup_agendado();
         self.subir_jobs();
         self.ligar_relogio_de_gravacao();
@@ -693,6 +705,19 @@ impl Servidor {
     /// Uma por origem e nao uma so: multi-source e varias conexoes
     /// independentes, e uma origem lenta ou caida nao pode segurar as outras.
     fn subir_replicacao(self: &Arc<Self>) {
+        if self.cluster.is_some() {
+            // Com cluster, quem puxa e o laco do proprio cluster, do master
+            // CORRENTE -- uma lista fixa de origens apontaria para o master
+            // de ontem, e dois lacos aplicando na mesma tabela brigariam.
+            if !self.config.replicacao.origens.is_empty() {
+                eprintln!(
+                    "AVISO: replicacao.origens e IGNORADA num servidor com o \
+                     bloco cluster -- a origem e o master corrente, descoberto \
+                     pelo pulso"
+                );
+            }
+            return;
+        }
         if self.config.replicacao.papel != crate::config::Papel::Replica {
             return;
         }
@@ -870,6 +895,572 @@ impl Servidor {
         }
         tabela.sincronizar()?;
         Ok(aplicados)
+    }
+
+    // -------------------------------------------------------------- cluster
+
+    /// Sobe as tres pecas do cluster: o pulso (uma thread por par), o arbitro
+    /// e o laco que puxa do master corrente. Sem o bloco `cluster` no
+    /// `config.json`, nenhuma delas existe.
+    fn subir_cluster(self: &Arc<Self>) {
+        let Some(estado) = &self.cluster else { return };
+        let c = &estado.config;
+        eprintln!(
+            "cluster: {} nos | este e {} ({}, epoca {}) | janela {}s | pulso {}s | {}",
+            c.nos.len(),
+            c.id,
+            estado.papel().nome(),
+            estado.epoca(),
+            c.janela_s,
+            c.pulso_s,
+            if c.email.ligado {
+                format!(
+                    "avisa {} a cada {:.1} min enquanto degradado",
+                    c.email.para.join(", "),
+                    c.avisar_cada_min
+                )
+            } else {
+                "sem e-mail (aviso so no log)".to_string()
+            }
+        );
+        if c.nos.len() == 2 {
+            // Nao e recusa: dois nos replicam e redirecionam normalmente. So a
+            // PROMOCAO automatica nunca acontece, e melhor dizer no arranque
+            // do que deixar descobrir na primeira queda.
+            eprintln!(
+                "ATENCAO: cluster de DOIS nos nunca se promove sozinho -- com o \
+                 master caido o que sobra ve 1 de 2, e metade nao e maioria. \
+                 Promocao automatica pede tres ou mais nos."
+            );
+        }
+        for no in c.outros() {
+            let servidor = Arc::clone(self);
+            let no = no.clone();
+            std::thread::spawn(move || servidor.laco_do_pulso(no));
+        }
+        let servidor = Arc::clone(self);
+        std::thread::spawn(move || servidor.laco_do_arbitro());
+        let servidor = Arc::clone(self);
+        std::thread::spawn(move || servidor.laco_da_replica_do_cluster());
+    }
+
+    /// Pulsa UM outro no, para sempre: conecta, autentica como a replicacao,
+    /// e troca `cluster_pulso` a cada intervalo. Cada lado da troca aprende o
+    /// estado do outro -- o pedido leva o meu, a resposta traz o dele.
+    ///
+    /// Erro aqui e rotina, nao noticia: no caido e exatamente o que o mapa
+    /// registra envelhecendo, e quem fala sobre isso e o arbitro, uma vez --
+    /// nao esta thread, a cada pulso perdido.
+    fn laco_do_pulso(self: Arc<Self>, no: crate::config::NoCluster) {
+        let Some(estado) = self.cluster.clone() else {
+            return;
+        };
+        let intervalo = Duration::from_secs(estado.config.pulso_s);
+        loop {
+            let _ = self.pulsar(&estado, &no);
+            std::thread::sleep(intervalo);
+        }
+    }
+
+    /// Uma conexao de pulso: dura ate o primeiro erro, e o laco de fora
+    /// reconecta. O prazo de conexao e CURTO de proposito -- um no morto nao
+    /// pode segurar a conferencia dos vivos alem do proprio pulso.
+    fn pulsar(
+        &self,
+        estado: &crate::cluster::EstadoCluster,
+        no: &crate::config::NoCluster,
+    ) -> Result<()> {
+        let c = &estado.config;
+        let espera = Duration::from_secs((c.pulso_s * 2).max(5));
+        let prazo = Duration::from_secs(c.pulso_s.clamp(1, 2));
+        let mut cliente = crate::replica::Cliente::conectar_com_prazo(
+            &no.endereco,
+            no.porta,
+            &c.token,
+            espera,
+            prazo,
+        )?;
+        if !c.usuario.is_empty() {
+            cliente.autenticar(&c.usuario, &c.senha_hash, "")?;
+        }
+        loop {
+            let r = cliente.pedir(vec![
+                ("op", Json::texto_de("cluster_pulso")),
+                ("id", Json::texto_de(&c.id)),
+                ("papel", Json::texto_de(estado.papel().nome())),
+                ("epoca", Json::de_u64(estado.epoca())),
+                ("posicao", Json::de_u64(estado.posicao())),
+                ("prioridade", Json::de_i64(c.prioridade)),
+            ])?;
+            if let Some((id, pulso)) = crate::cluster::PulsoDeNo::de_json(&r) {
+                estado.registrar(&id, pulso);
+            }
+            std::thread::sleep(Duration::from_secs(c.pulso_s));
+        }
+    }
+
+    /// O arbitro: a cada meio segundo olha o mapa e decide -- rebaixar,
+    /// eleger, liberar ou recusar escrita, avisar. As decisoes moram em
+    /// `cluster.rs`; aqui e so o relogio e as consequencias.
+    fn laco_do_arbitro(self: Arc<Self>) {
+        let Some(estado) = self.cluster.clone() else {
+            return;
+        };
+        let mut ultima_conta = 0i64;
+        let mut motivos_anteriores: Vec<String> = Vec::new();
+        loop {
+            let agora = crate::agora_ms();
+            // A posicao local no ritmo do pulso, e nao do tique: ela toma a
+            // trava de dados, e o dobro da frequencia nao compraria nada.
+            if agora - ultima_conta >= estado.config.pulso_s as i64 * 1_000 {
+                let p = self.posicao_do_diario(&estado.config.databases);
+                estado.definir_posicao(p);
+                ultima_conta = agora;
+            }
+            let motivos = self.rodada_do_arbitro(&estado, agora);
+            // So a MUDANCA vira log: um cluster degradado continua degradado,
+            // e repetir a cada tique afogaria a noticia seguinte.
+            if motivos != motivos_anteriores {
+                for m in &motivos {
+                    eprintln!("cluster: {m}");
+                }
+                if motivos.is_empty() {
+                    eprintln!("cluster: normalizado");
+                }
+                motivos_anteriores = motivos.clone();
+            }
+            estado.definir_degradacao(motivos);
+            self.avisos_do_cluster(&estado, agora);
+            std::thread::sleep(Duration::from_millis(500));
+        }
+    }
+
+    /// Uma rodada de decisao. Devolve os motivos de degradacao ATUAIS.
+    fn rodada_do_arbitro(&self, estado: &crate::cluster::EstadoCluster, agora: i64) -> Vec<String> {
+        use crate::cluster::{Candidato, PapelVivo};
+        let c = &estado.config;
+        let mapa = estado.mapa();
+        let mut motivos = Vec::new();
+
+        // A graca do arranque: por uma janela, "nunca deu pulso" e "ainda nao
+        // deu tempo", nao degradacao -- o primeiro tique roda antes do
+        // primeiro pulso, e sem isto todo cluster nasceria doente.
+        let em_graca = agora - estado.nascido_ms() <= c.janela_ms();
+        let mut vivos_qtd = 1usize; // eu
+        for no in c.outros() {
+            match mapa.get(&no.id) {
+                Some(p) if agora - p.quando_ms <= c.janela_ms() => vivos_qtd += 1,
+                Some(p) => motivos.push(format!(
+                    "no {} sem pulso ha {}s",
+                    no.id,
+                    (agora - p.quando_ms) / 1_000
+                )),
+                None if em_graca => {}
+                None => motivos.push(format!("no {} nunca deu pulso", no.id)),
+            }
+        }
+
+        match estado.papel() {
+            PapelVivo::Master => {
+                // Epoca maior no ar = houve eleicao sem mim. O destronado se
+                // rebaixa SOZINHO -- e o que resolve "dois masters" quando o
+                // antigo volta da particao ou do reinicio.
+                let maior = estado.maior_epoca_vista();
+                if maior > estado.epoca() {
+                    eprintln!(
+                        "cluster: ha epoca {maior} no ar e a minha e {} -- houve \
+                         eleicao enquanto este no esteve fora; REBAIXANDO a replica",
+                        estado.epoca()
+                    );
+                    let _ = estado.rebaixar(maior);
+                    motivos.push("este no foi rebaixado: um master de epoca maior assumiu".into());
+                    return motivos;
+                }
+                // Dois masters na MESMA epoca (dois configs com papel source,
+                // ou um empate de particao): perde quem a eleicao nao
+                // escolheria -- a MESMA conta de `vencedor`, para os dois
+                // lados decidirem igual.
+                for (id, p) in &mapa {
+                    if p.papel == PapelVivo::Master
+                        && p.epoca == estado.epoca()
+                        && agora - p.quando_ms <= c.janela_ms()
+                    {
+                        let eu = Candidato {
+                            id: c.id.clone(),
+                            posicao: estado.posicao(),
+                            prioridade: c.prioridade,
+                        };
+                        let ele = Candidato {
+                            id: id.clone(),
+                            posicao: p.posicao,
+                            prioridade: p.prioridade,
+                        };
+                        let vence = crate::cluster::vencedor(&[eu, ele], 1).map(|v| v.id.clone());
+                        if vence.as_deref() != Some(c.id.as_str()) {
+                            eprintln!(
+                                "cluster: {id} tambem e master na epoca {} e ganha \
+                                 o desempate; REBAIXANDO este no a replica",
+                                estado.epoca()
+                            );
+                            let _ = estado.rebaixar(estado.epoca());
+                            motivos.push(format!("este no perdeu o desempate para {id}"));
+                            return motivos;
+                        }
+                    }
+                }
+                // Master isolado nao escreve: e o que limita o split-brain ao
+                // tempo de DETECCAO -- o que entrou antes disso e a cauda que
+                // se perde, e docs/CLUSTER.md diz isso sem eufemismo. Na graca
+                // do arranque a escrita fica como nasceu (liberada): ainda nao
+                // houve tempo de um pulso chegar, e recusar aqui seria recusar
+                // todo arranque de master por uma janela.
+                let tem_maioria = c.e_maioria(vivos_qtd);
+                if tem_maioria || !em_graca {
+                    estado.liberar_escrita(tem_maioria);
+                }
+                if !tem_maioria && !em_graca {
+                    motivos.push(format!(
+                        "sem maioria visivel ({vivos_qtd} de {}): escrita recusada",
+                        c.nos.len()
+                    ));
+                }
+            }
+            PapelVivo::Replica => {
+                // Diario local A FRENTE do master e a cauda de um antigo
+                // master: nao ha como replicar para tras. Aviso, nao conserto
+                // -- apagar dado sozinho nunca.
+                if let Some((id, _)) = estado.master_atual() {
+                    if let Some(p) = mapa.get(&id) {
+                        if agora - p.quando_ms <= c.janela_ms() && estado.posicao() > p.posicao {
+                            motivos.push(format!(
+                                "diario local ({}) a frente do master {id} ({}): \
+                                 provavel cauda de escritas perdidas -- ressemeie \
+                                 este no a partir do master",
+                                estado.posicao(),
+                                p.posicao
+                            ));
+                        }
+                    }
+                }
+                let silencio = agora - estado.master_visto_ms();
+                if silencio > c.janela_ms() {
+                    let vivos = estado.vivos(agora);
+                    match crate::cluster::vencedor(&vivos, c.nos.len()) {
+                        // O teste de protecao mais importante da bateria: sem
+                        // maioria visivel, ficar degradado E a decisao certa.
+                        None => motivos.push(format!(
+                            "master calado ha {}s e sem maioria visivel ({} de {}): \
+                             NAO promovo",
+                            silencio / 1_000,
+                            vivos.len(),
+                            c.nos.len()
+                        )),
+                        Some(v) if v.id == c.id => {
+                            let motivo = format!(
+                                "master calado ha {}s; eleito entre {} vivos de {} \
+                                 configurados",
+                                silencio / 1_000,
+                                vivos.len(),
+                                c.nos.len()
+                            );
+                            if let Err(e) = self.promover_a_master(&motivo) {
+                                motivos.push(format!("promocao falhou: {e}"));
+                            }
+                        }
+                        Some(v) => motivos.push(format!(
+                            "master calado ha {}s; aguardando {} assumir",
+                            silencio / 1_000,
+                            v.id
+                        )),
+                    }
+                }
+            }
+        }
+        motivos
+    }
+
+    /// PROMOVE este no a master do cluster: epoca nova (a maior vista + 1),
+    /// papel persistido, escrita liberada, aviso agendado.
+    ///
+    /// E o UNICO caminho de promocao. A eleicao automatica chama daqui, e
+    /// qualquer promocao MANUAL que venha a existir deve cair aqui tambem --
+    /// dois caminhos de promover e a porta dos fundos classica: o que alguem
+    /// esquecer de atualizar vira o furo.
+    pub fn promover_a_master(&self, motivo: &str) -> Result<Json> {
+        let Some(estado) = &self.cluster else {
+            return Err(Self::sem_cluster());
+        };
+        let epoca = estado.promover(estado.maior_epoca_vista() + 1)?;
+        eprintln!("cluster: PROMOVIDO a master na epoca {epoca} -- {motivo}");
+        estado.anotar_promocao(format!(
+            "O no {} assumiu como master do cluster, na epoca {epoca}.\n\
+             Motivo: {motivo}\n\
+             As replicas passam a segui-lo sozinhas; clientes que escreverem \
+             num outro no recebem REDIRECIONA {}.",
+            estado.config.id,
+            estado
+                .config
+                .no(&estado.config.id)
+                .map(|n| n.alvo())
+                .unwrap_or_default()
+        ));
+        // O log de acessos guarda tambem o que o servidor decide sozinho --
+        // sem isto, a unica prova da promocao seria o comportamento mudar.
+        self.anotar(&Acesso {
+            quando_ms: crate::agora_ms(),
+            ip: "(local)".into(),
+            porta_origem: 0,
+            op: "cluster_promocao".into(),
+            usuario: estado.config.id.clone(),
+            autenticado: true,
+            ok: true,
+            duracao_ms: 0,
+            erro: None,
+            database: String::new(),
+            tabela: String::new(),
+            codigo: 0,
+        });
+        Ok(Json::objeto(vec![
+            ("papel", Json::texto_de("master")),
+            ("epoca", Json::de_u64(epoca)),
+        ]))
+    }
+
+    /// Os e-mails do cluster: a promocao avisa UMA vez; a degradacao repete a
+    /// cada `avisar_cada_min` enquanto durar. Sem e-mail configurado, nada.
+    fn avisos_do_cluster(&self, estado: &crate::cluster::EstadoCluster, agora: i64) {
+        if !estado.config.email.ligado {
+            return;
+        }
+        if let Some(texto) = estado.tomar_aviso_de_promocao() {
+            match crate::email::enviar(
+                &estado.config.email,
+                "PhxSql cluster: promocao de master",
+                &texto,
+            ) {
+                Ok(r) => eprintln!("cluster: e-mail de promocao enviado: {r}"),
+                Err(e) => eprintln!("cluster: e-mail de promocao NAO ENVIADO: {e}"),
+            }
+        }
+        let motivos = estado.degradacao();
+        if motivos.is_empty() || !estado.hora_de_avisar(agora) {
+            return;
+        }
+        let corpo = format!(
+            "O cluster PhxSql esta degradado. O no {} ve:\n\n{}\n\n\
+             Este aviso repete a cada {:.1} min enquanto durar.\n\
+             Servidor PhxSql {VERSAO}\nQuando: {}\n",
+            estado.config.id,
+            motivos
+                .iter()
+                .map(|m| format!("  - {m}"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+            estado.config.avisar_cada_min,
+            phxsql_core::datahora::instante_iso(agora)
+        );
+        let assunto = format!(
+            "PhxSql cluster degradado ({} motivo{})",
+            motivos.len(),
+            if motivos.len() == 1 { "" } else { "s" }
+        );
+        match crate::email::enviar(&estado.config.email, &assunto, &corpo) {
+            Ok(r) => eprintln!("cluster: e-mail de degradacao enviado: {r}"),
+            Err(e) => eprintln!("cluster: e-mail de degradacao NAO ENVIADO: {e}"),
+        }
+    }
+
+    /// A soma dos eventos das tabelas replicadas -- a posicao que o pulso
+    /// carrega e que a eleicao compara. Toma a trava de dados; por isso quem
+    /// chama e o arbitro, no ritmo do pulso, e o resultado fica em cache.
+    fn posicao_do_diario(&self, so_estes: &[String]) -> u64 {
+        let Ok(trava) = self.dados.lock() else {
+            return 0;
+        };
+        let bases = if so_estes.is_empty() {
+            trava.databases().unwrap_or_default()
+        } else {
+            so_estes.to_vec()
+        };
+        let mut total = 0u64;
+        for b in bases {
+            let Ok(db) = trava.abrir_database(&b) else {
+                continue;
+            };
+            for t in db.todas_as_tabelas().unwrap_or_default() {
+                if let Ok(mut tab) = db.abrir_qualificada(&t) {
+                    total += tab.eventos().unwrap_or(0);
+                }
+            }
+        }
+        total
+    }
+
+    /// O laco que puxa do master CORRENTE -- e a unica diferenca para o laco
+    /// da replicacao comum: a origem sai do mapa do cluster a cada rodada, em
+    /// vez de sair fixa do `config.json`. Promovido, ele para de puxar
+    /// sozinho, porque o papel vivo e conferido a cada volta.
+    fn laco_da_replica_do_cluster(self: Arc<Self>) {
+        let Some(estado) = self.cluster.clone() else {
+            return;
+        };
+        let espera = Duration::from_secs(estado.config.pulso_s);
+        loop {
+            let c = &estado.config;
+            if estado.papel() == crate::cluster::PapelVivo::Master {
+                std::thread::sleep(espera);
+                continue;
+            }
+            let alvo = estado
+                .master_atual()
+                .filter(|(id, _)| id != &c.id)
+                .and_then(|(id, _)| c.no(&id).cloned());
+            let Some(no) = alvo else {
+                std::thread::sleep(espera);
+                continue;
+            };
+            let origem = crate::config::Origem {
+                nome: format!("cluster:{}", no.id),
+                host: no.endereco.clone(),
+                porta: no.porta,
+                token: c.token.clone(),
+                databases: c.databases.clone(),
+                reconectar_em: c.pulso_s,
+                usuario: c.usuario.clone(),
+                senha_hash: c.senha_hash.clone(),
+                senha: String::new(),
+            };
+            match self.rodada_da_replica(&origem) {
+                // Nada novo: espera o pulso seguinte.
+                Ok(0) => std::thread::sleep(espera),
+                Ok(n) => eprintln!("cluster: {n} evento(s) aplicado(s) do master {}", no.id),
+                Err(e) => {
+                    eprintln!("cluster: replicacao do master {}: {e}", no.id);
+                    std::thread::sleep(espera);
+                }
+            }
+        }
+    }
+
+    fn sem_cluster() -> PhxError {
+        PhxError::Esquema(
+            "este servidor nao esta em cluster: nao ha o bloco \"cluster\" no \
+             config.json"
+                .into(),
+        )
+    }
+
+    /// `cluster_pulso`: registra o pulso de OUTRO no e devolve o proprio --
+    /// uma troca, e cada lado sai sabendo do outro.
+    fn op_cluster_pulso(&self, p: &Json) -> Result<Json> {
+        let Some(estado) = &self.cluster else {
+            return Err(Self::sem_cluster());
+        };
+        let Some((id, pulso)) = crate::cluster::PulsoDeNo::de_json(p) else {
+            return Err(PhxError::Esquema(
+                "informe \"id\" e \"papel\" (master ou replica)".into(),
+            ));
+        };
+        // No fora da lista e configuracao torta em algum lugar -- recusar em
+        // voz alta e o que faz o erro aparecer no primeiro pulso, e nao numa
+        // eleicao com um eleitor fantasma.
+        if estado.config.no(&id).is_none() {
+            return Err(PhxError::Autorizacao(format!(
+                "o no {id:?} nao esta na lista de nos deste cluster"
+            )));
+        }
+        if id == estado.config.id {
+            return Err(PhxError::Esquema(format!(
+                "o no {id:?} e ESTE servidor -- dois nos com o mesmo id no ar"
+            )));
+        }
+        estado.registrar(&id, pulso);
+        Ok(Json::objeto(vec![
+            ("id", Json::texto_de(&estado.config.id)),
+            ("papel", Json::texto_de(estado.papel().nome())),
+            ("epoca", Json::de_u64(estado.epoca())),
+            ("posicao", Json::de_u64(estado.posicao())),
+            ("prioridade", Json::de_i64(estado.config.prioridade)),
+        ]))
+    }
+
+    /// `cluster_estado`: quem e o master, a epoca e o mapa dos nos --
+    /// respondida igual em QUALQUER no. E o endereco unico do cluster pelo
+    /// protocolo: o cliente valida com um endereco qualquer e e apontado ao
+    /// certo. VIP de rede e infraestrutura, nao banco.
+    fn op_cluster_estado(&self) -> Result<Json> {
+        let Some(estado) = &self.cluster else {
+            return Err(Self::sem_cluster());
+        };
+        let agora = crate::agora_ms();
+        let c = &estado.config;
+        let mapa = estado.mapa();
+        let nos: Vec<Json> = c
+            .nos
+            .iter()
+            .map(|n| {
+                let (papel, epoca, posicao, idade_ms) = if n.id == c.id {
+                    (
+                        Some(estado.papel().nome()),
+                        estado.epoca(),
+                        estado.posicao(),
+                        0i64,
+                    )
+                } else {
+                    match mapa.get(&n.id) {
+                        Some(p) => (
+                            Some(p.papel.nome()),
+                            p.epoca,
+                            p.posicao,
+                            agora - p.quando_ms,
+                        ),
+                        None => (None, 0, 0, -1),
+                    }
+                };
+                Json::objeto(vec![
+                    ("id", Json::texto_de(&n.id)),
+                    ("endereco", Json::texto_de(n.alvo())),
+                    ("este", Json::Bool(n.id == c.id)),
+                    (
+                        "papel",
+                        match papel {
+                            Some(p) => Json::texto_de(p),
+                            None => Json::Nulo,
+                        },
+                    ),
+                    ("epoca", Json::de_u64(epoca)),
+                    ("posicao", Json::de_u64(posicao)),
+                    // -1 = nunca deu pulso; 0 = este proprio no.
+                    ("ultimo_pulso_ms", Json::de_i64(idade_ms)),
+                    (
+                        "vivo",
+                        Json::Bool(n.id == c.id || (0..=c.janela_ms()).contains(&idade_ms)),
+                    ),
+                ])
+            })
+            .collect();
+        Ok(Json::objeto(vec![
+            ("id", Json::texto_de(&c.id)),
+            ("papel", Json::texto_de(estado.papel().nome())),
+            ("epoca", Json::de_u64(estado.epoca())),
+            (
+                "master",
+                match estado.master_atual().and_then(|(id, _)| c.no(&id).cloned()) {
+                    Some(n) => Json::objeto(vec![
+                        ("id", Json::texto_de(&n.id)),
+                        ("endereco", Json::texto_de(n.alvo())),
+                    ]),
+                    None => Json::Nulo,
+                },
+            ),
+            ("escrita_liberada", Json::Bool(estado.escrita_liberada())),
+            (
+                "degradado",
+                Json::Lista(estado.degradacao().iter().map(Json::texto_de).collect()),
+            ),
+            ("janela_inatividade_s", Json::de_u64(c.janela_s)),
+            ("nos", Json::Lista(nos)),
+        ]))
     }
 
     fn subir_backup_agendado(self: &Arc<Self>) {
@@ -2361,11 +2952,22 @@ impl Servidor {
     /// agendador" nao quer dizer nada. Quem chama de outra origem confere a
     /// politica por conta, e o comentario de `rodar_job` diz como.
     fn portoes_do_pedido(&self, op: &str, pedido: &Json, sessao: &Sessao) -> Result<()> {
-        // Portao 2b -- o servidor inteiro em somente leitura.
-        if self.config.somente_leitura && OPS_ESCRITA.contains(&op) {
-            return Err(PhxError::Autorizacao(
-                "servidor em modo somente leitura".into(),
-            ));
+        // Portao 2b -- a escrita. Com cluster, quem decide e o papel VIVO: a
+        // replica redireciona para o master (`REDIRECIONA host:porta`), e um
+        // master sem maioria visivel recusa, para conter o split-brain. O
+        // `somente_leitura` do config -- que toda replica de cluster liga --
+        // deixa de valer no no PROMOVIDO, senao a promocao nao promoveria
+        // nada. Sem o bloco `cluster`, a regra e a de sempre.
+        if OPS_ESCRITA.contains(&op) {
+            if let Some(estado) = &self.cluster {
+                if let Some(recusa) = estado.recusa_de_escrita() {
+                    return Err(recusa);
+                }
+            } else if self.config.somente_leitura {
+                return Err(PhxError::Autorizacao(
+                    "servidor em modo somente leitura".into(),
+                ));
+            }
         }
 
         // Portao 3 -- o poder deste usuario sobre a base E A TABELA do pedido.
@@ -2562,7 +3164,15 @@ impl Servidor {
         match op {
             "ping" => Ok(Json::objeto(vec![
                 ("phxsql", Json::texto_de(VERSAO)),
-                ("papel", Json::texto_de(self.config.replicacao.papel.nome())),
+                // Num cluster o papel que interessa e o VIVO: um no promovido
+                // que respondesse o papel do config.json estaria mentindo.
+                (
+                    "papel",
+                    Json::texto_de(match &self.cluster {
+                        Some(e) => e.papel().nome(),
+                        None => self.config.replicacao.papel.nome(),
+                    }),
+                ),
                 (
                     "conexoes",
                     Json::de_u64(self.conexoes.load(Ordering::SeqCst) as u64),
@@ -2637,6 +3247,8 @@ impl Servidor {
             "posicao" => self.op_posicao(p, sessao),
             "replicar" => self.op_replicar(p, sessao),
             "aplicar" => self.op_aplicar(p, sessao),
+            "cluster_pulso" => self.op_cluster_pulso(p),
+            "cluster_estado" => self.op_cluster_estado(),
             "memoria_carregar" => self.op_memoria_carregar(p, sessao),
             "memoria_liberar" => self.op_memoria_liberar(p),
             "memoria" => self.op_memoria(),

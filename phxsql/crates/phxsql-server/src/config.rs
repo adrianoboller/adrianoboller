@@ -181,6 +181,213 @@ impl Default for Replicacao {
     }
 }
 
+/// Um no do cluster, como os OUTROS o alcancam.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NoCluster {
+    pub id: String,
+    pub endereco: String,
+    pub porta: u16,
+}
+
+impl NoCluster {
+    /// `host:porta`, do jeito que um cliente redirecionado usa.
+    pub fn alvo(&self) -> String {
+        format!("{}:{}", self.endereco, self.porta)
+    }
+}
+
+/// Cluster com eleicao e promocao automatica -- pedido 126.
+///
+/// # Pedida, nao imposta
+///
+/// Sem o bloco `cluster` no `config.json`, NADA disto existe: nenhuma thread
+/// sobe, nenhum portao muda, e a replicacao continua exatamente como era. O
+/// teste que trava isso e o do comportamento velho.
+///
+/// # O que o bloco liga
+///
+/// Cada no manda um pulso (`cluster_pulso`) aos outros pela porta de dados,
+/// autenticado como a replica ja se autentica. Master calado alem da
+/// `janela_inatividade_s` abre eleicao; so promove quem enxerga a MAIORIA dos
+/// nos configurados, e entre os elegiveis vence a maior posicao do diario,
+/// com empate por prioridade e depois pelo menor id. Nao e Raft -- as
+/// garantias reais e as nao-garantias estao em `docs/CLUSTER.md`.
+#[derive(Debug, Clone)]
+pub struct Cluster {
+    /// Todos os nos, ESTE incluido. A maioria e contada sobre esta lista.
+    pub nos: Vec<NoCluster>,
+    /// Qual no da lista e este servidor. Cai no `replicacao.id_servidor`.
+    pub id: String,
+    /// Desempate da eleicao (maior ganha). Viaja no pulso, entao cada no so
+    /// precisa declarar a PROPRIA -- a dos mortos nao entra em eleicao nenhuma.
+    pub prioridade: i64,
+    /// Master sem pulso por tanto tempo = master caido.
+    pub janela_s: u64,
+    /// Intervalo do pulso. Zero no arquivo = um terco da janela.
+    pub pulso_s: u64,
+    /// Aviso por e-mail a cada X minutos enquanto degradado. Aceita fracao
+    /// (0.1 = 6 s), porque a bancada precisa provar a repeticao sem esperar
+    /// minutos de relogio.
+    pub avisar_cada_min: f64,
+    /// Por onde o aviso sai. Sem e-mail configurado, sem e-mail -- e nada
+    /// mais muda.
+    pub email: Email,
+    /// Databases replicados no cluster. Vazio = todos os do master.
+    pub databases: Vec<String>,
+    /// Credenciais com que ESTE no fala com os outros -- as mesmas tres
+    /// pecas da origem de replicacao, e pela mesma razao: a senha nunca
+    /// aparece em claro, so o hash de onde sai a chave do desafio-resposta.
+    pub token: String,
+    pub usuario: String,
+    pub senha_hash: String,
+}
+
+impl Cluster {
+    fn de_json(j: &Json, id_servidor: &str) -> Result<Option<Cluster>> {
+        let Some(c) = j.campo("cluster") else {
+            return Ok(None);
+        };
+        let nos: Vec<NoCluster> = c
+            .campo("nos")
+            .and_then(Json::lista)
+            .map(|l| {
+                l.iter()
+                    .map(|n| NoCluster {
+                        id: n.texto_ou("id", "").trim().to_string(),
+                        endereco: n.texto_ou("endereco", "127.0.0.1").trim().to_string(),
+                        porta: n.inteiro_ou("porta", PORTA_PADRAO as i64).clamp(1, 65_535) as u16,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let janela_s = c.inteiro_ou("janela_inatividade_s", 10).max(1) as u64;
+        let pulso_s = match c.inteiro_ou("pulso_s", 0).max(0) as u64 {
+            0 => (janela_s / 3).max(1),
+            p => p,
+        };
+        let avisar = c
+            .campo("avisar_cada_min")
+            .and_then(Json::numero)
+            .unwrap_or(5.0);
+        Ok(Some(Cluster {
+            nos,
+            id: c.texto_ou("id", id_servidor).trim().to_string(),
+            prioridade: c.inteiro_ou("prioridade", 0),
+            janela_s,
+            pulso_s,
+            // Abaixo de tres segundos o aviso viraria enxurrada ate em teste.
+            avisar_cada_min: if avisar > 0.0 { avisar.max(0.05) } else { 5.0 },
+            email: Email::de_json(c)?,
+            databases: c.textos("databases"),
+            token: c.texto_ou("token", "").to_string(),
+            usuario: c.texto_ou("usuario", "").trim().to_string(),
+            senha_hash: c.texto_ou("senha_hash", "").trim().to_string(),
+        }))
+    }
+
+    /// O no desta lista com este id.
+    pub fn no(&self, id: &str) -> Option<&NoCluster> {
+        self.nos.iter().find(|n| n.id == id)
+    }
+
+    /// Os OUTROS nos -- os que este servidor pulsa.
+    pub fn outros(&self) -> impl Iterator<Item = &NoCluster> {
+        self.nos.iter().filter(move |n| n.id != self.id)
+    }
+
+    /// `vivos` enxergam a maioria dos nos CONFIGURADOS? Metade nao basta:
+    /// dois lados de uma particao com metade cada um seriam dois masters.
+    pub fn e_maioria(&self, vivos: usize) -> bool {
+        vivos * 2 > self.nos.len()
+    }
+
+    /// Janela e pulso em milissegundos, para quem compara com carimbo.
+    pub fn janela_ms(&self) -> i64 {
+        self.janela_s as i64 * 1_000
+    }
+
+    pub fn avisar_cada_ms(&self) -> i64 {
+        (self.avisar_cada_min * 60_000.0) as i64
+    }
+
+    fn validar(&self, replicacao: &Replicacao) -> Result<()> {
+        if self.nos.len() < 2 {
+            return Err(PhxError::Esquema(
+                "cluster com menos de dois nos: nao ha o que eleger \
+                 (preencha cluster.nos com todos os nos, este incluido)"
+                    .into(),
+            ));
+        }
+        if self.id.is_empty() {
+            return Err(PhxError::Esquema(
+                "cluster sem \"id\": diga qual no da lista e este servidor \
+                 (ou preencha replicacao.id_servidor)"
+                    .into(),
+            ));
+        }
+        if self.no(&self.id).is_none() {
+            return Err(PhxError::Esquema(format!(
+                "cluster.id {:?} nao esta em cluster.nos -- este servidor \
+                 precisa constar da propria lista",
+                self.id
+            )));
+        }
+        let mut ids: Vec<&str> = self.nos.iter().map(|n| n.id.as_str()).collect();
+        ids.sort_unstable();
+        ids.dedup();
+        if ids.len() != self.nos.len() {
+            return Err(PhxError::Esquema(
+                "cluster.nos com id repetido ou vazio".into(),
+            ));
+        }
+        if self.nos.iter().any(|n| n.id.is_empty()) {
+            return Err(PhxError::Esquema("cluster.nos com no sem \"id\"".into()));
+        }
+        if replicacao.papel == Papel::Isolado {
+            return Err(PhxError::Esquema(
+                "cluster pede papel \"source\" (o master inicial) ou \"replica\" \
+                 em replicacao.papel"
+                    .into(),
+            ));
+        }
+        if self.email.ligado {
+            self.email.validar()?;
+        }
+        Ok(())
+    }
+
+    /// O resumo que a op `config` mostra. Sem token e sem hash: resposta de
+    /// protocolo nao carrega credencial.
+    pub fn para_json(&self) -> Json {
+        Json::objeto(vec![
+            ("id", Json::texto_de(&self.id)),
+            ("prioridade", Json::de_i64(self.prioridade)),
+            ("janela_inatividade_s", Json::de_u64(self.janela_s)),
+            ("pulso_s", Json::de_u64(self.pulso_s)),
+            (
+                "avisar_cada_min",
+                Json::texto_de(format!("{:.2}", self.avisar_cada_min)),
+            ),
+            ("email", Json::Bool(self.email.ligado)),
+            (
+                "nos",
+                Json::Lista(
+                    self.nos
+                        .iter()
+                        .map(|n| {
+                            Json::objeto(vec![
+                                ("id", Json::texto_de(&n.id)),
+                                ("endereco", Json::texto_de(&n.endereco)),
+                                ("porta", Json::de_u64(n.porta as u64)),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ),
+        ])
+    }
+}
+
 /// Backup agendado.
 ///
 /// Vem desligado. Backup que roda sozinho num destino que ninguem conferiu e
@@ -972,6 +1179,8 @@ pub struct Config {
     /// arquivos moram no mesmo lugar.
     pub espelho: bool,
     pub replicacao: Replicacao,
+    /// Cluster com eleicao e promocao automatica. `None` = tudo como sempre.
+    pub cluster: Option<Cluster>,
     /// Usuarios e o poder de cada um sobre cada base.
     pub cadastro: Cadastro,
     /// Comandos e bases proibidos, e a politica de bloqueio.
@@ -1010,7 +1219,7 @@ pub struct Config {
 ///
 /// Os que comecam com `_` sao comentario -- o JSON nao tem comentario, e os
 /// exemplos usam `_web`, `_backup` e afins para explicar a secao seguinte.
-const CAMPOS_CONHECIDOS: [&str; 21] = [
+const CAMPOS_CONHECIDOS: [&str; 22] = [
     "bind",
     "base",
     "token",
@@ -1023,6 +1232,7 @@ const CAMPOS_CONHECIDOS: [&str; 21] = [
     "somente_leitura",
     "espelho",
     "replicacao",
+    "cluster",
     "root",
     "usuarios",
     "seguranca",
@@ -1058,6 +1268,7 @@ impl Default for Config {
             somente_leitura: false,
             espelho: false,
             replicacao: Replicacao::default(),
+            cluster: None,
             cadastro: Cadastro::default(),
             politica: Politica::default(),
             blacklist: PathBuf::from("blacklist.json"),
@@ -1149,6 +1360,28 @@ impl Config {
                 ),
             },
         };
+        let mut rep = rep;
+        let cluster = Cluster::de_json(j, &rep.id_servidor)?;
+        if cluster.is_some() {
+            // Num cluster, QUALQUER no pode ser promovido -- entao todo no
+            // precisa da imagem no diario, e nao so o source. O padrao vira
+            // ligado; quem desligar de proposito esta pedindo um no que nao
+            // pode assumir, e isso e contradicao, nao configuracao.
+            match j
+                .campo("replicacao")
+                .and_then(|r| r.campo("imagem_da_linha"))
+            {
+                Some(Json::Bool(false)) => {
+                    return Err(PhxError::Esquema(
+                        "cluster com replicacao.imagem_da_linha desligada: um no \
+                         promovido precisa da imagem no diario para as replicas \
+                         continuarem (apague o campo ou ligue-o)"
+                            .into(),
+                    ))
+                }
+                _ => rep.imagem_da_linha = true,
+            }
+        }
 
         Ok(Config {
             bind: j.texto_ou("bind", &padrao.bind).to_string(),
@@ -1169,6 +1402,7 @@ impl Config {
             somente_leitura: j.booleano_ou("somente_leitura", false),
             espelho: j.booleano_ou("espelho", false),
             replicacao: rep,
+            cluster,
             cadastro: Cadastro::de_json(j)?,
             politica: match j.campo("seguranca") {
                 Some(seg) => Politica::de_json(seg),
@@ -1221,10 +1455,18 @@ impl Config {
             }
             ocupadas.push((rotulo, alvo));
         }
-        if self.replicacao.papel == Papel::Replica && self.replicacao.origens.is_empty() {
+        // Com cluster, a origem e o master CORRENTE, descoberto pelo pulso --
+        // uma lista fixa de origens apontaria para o master de ontem.
+        if self.cluster.is_none()
+            && self.replicacao.papel == Papel::Replica
+            && self.replicacao.origens.is_empty()
+        {
             return Err(PhxError::Esquema(
                 "papel replica exige ao menos uma origem em replicacao.origens".into(),
             ));
+        }
+        if let Some(c) = &self.cluster {
+            c.validar(&self.replicacao)?;
         }
         Ok(())
     }
@@ -1288,6 +1530,13 @@ impl Config {
             (
                 "imagem_da_linha",
                 Json::Bool(self.replicacao.imagem_da_linha),
+            ),
+            (
+                "cluster",
+                match &self.cluster {
+                    Some(c) => c.para_json(),
+                    None => Json::Nulo,
+                },
             ),
             (
                 "origens",
@@ -1566,6 +1815,120 @@ mod tests {
         assert!(!c.token_confere("abc124"));
         assert!(!c.token_confere("abc"));
         assert!(!c.token_confere(""));
+    }
+
+    /* -------------------------------------------------------------- cluster */
+
+    /// Sem o bloco `cluster`, NADA muda -- e este e o teste que mais importa:
+    /// todo config que ja existe tem de continuar subindo exatamente como
+    /// antes, sem ganhar thread, portao nem aviso novo.
+    #[test]
+    fn sem_o_bloco_cluster_nada_muda() {
+        let j = Json::analisar(r#"{"token":"t"}"#).unwrap();
+        let c = Config::de_json(&j).unwrap();
+        assert!(c.cluster.is_none());
+        assert!(c.estranhas.is_empty());
+        c.validar().unwrap();
+
+        // E a regra velha da replica sem origem continua valendo sem cluster.
+        let j = Json::analisar(r#"{"token":"x","replicacao":{"papel":"replica"}}"#).unwrap();
+        assert!(Config::de_json(&j).unwrap().validar().is_err());
+    }
+
+    fn cluster_minimo(extra: &str) -> String {
+        format!(
+            r#"{{"token":"t","replicacao":{{"papel":"source"}},
+                "cluster":{{"id":"no1","janela_inatividade_s":6,{extra}
+                  "nos":[
+                    {{"id":"no1","endereco":"127.0.0.1","porta":5310}},
+                    {{"id":"no2","endereco":"127.0.0.1","porta":5311}},
+                    {{"id":"no3","endereco":"127.0.0.1","porta":5312}}]}}}}"#
+        )
+    }
+
+    #[test]
+    fn le_o_bloco_cluster() {
+        let txt = cluster_minimo(r#""prioridade":7,"avisar_cada_min":0.5,"#);
+        let c = Config::de_json(&Json::analisar(&txt).unwrap()).unwrap();
+        let cl = c.cluster.as_ref().unwrap();
+        assert_eq!(cl.id, "no1");
+        assert_eq!(cl.nos.len(), 3);
+        assert_eq!(cl.prioridade, 7);
+        assert_eq!(cl.janela_s, 6);
+        // Sem pulso_s, um terco da janela.
+        assert_eq!(cl.pulso_s, 2);
+        assert_eq!(cl.avisar_cada_ms(), 30_000);
+        assert_eq!(cl.no("no2").unwrap().alvo(), "127.0.0.1:5311");
+        assert_eq!(cl.outros().count(), 2);
+        assert!(c.estranhas.is_empty(), "{:?}", c.estranhas);
+        c.validar().unwrap();
+    }
+
+    /// Num cluster qualquer no pode ser promovido, entao a imagem da linha
+    /// liga em todo papel -- e desliga-la de proposito e contradicao.
+    #[test]
+    fn cluster_liga_a_imagem_da_linha_em_toda_replica() {
+        let txt = cluster_minimo("").replace(
+            r#""replicacao":{"papel":"source"}"#,
+            r#""replicacao":{"papel":"replica"}"#,
+        );
+        let c = Config::de_json(&Json::analisar(&txt).unwrap()).unwrap();
+        assert!(c.replicacao.imagem_da_linha);
+        // Replica de cluster sobe SEM origens: a origem e o master corrente.
+        c.validar().unwrap();
+
+        let desligada = txt.replace(
+            r#""replicacao":{"papel":"replica"}"#,
+            r#""replicacao":{"papel":"replica","imagem_da_linha":false}"#,
+        );
+        assert!(Config::de_json(&Json::analisar(&desligada).unwrap()).is_err());
+    }
+
+    #[test]
+    fn cluster_recusa_lista_torta() {
+        // Este servidor fora da propria lista.
+        let fora = cluster_minimo("").replace(r#""id":"no1","janela"#, r#""id":"no9","janela"#);
+        let c = Config::de_json(&Json::analisar(&fora).unwrap()).unwrap();
+        assert!(c.validar().is_err());
+
+        // Menos de dois nos.
+        let um = r#"{"token":"t","replicacao":{"papel":"source"},
+            "cluster":{"id":"no1","nos":[{"id":"no1","endereco":"127.0.0.1","porta":5310}]}}"#;
+        assert!(Config::de_json(&Json::analisar(um).unwrap())
+            .unwrap()
+            .validar()
+            .is_err());
+
+        // Papel isolado nao tem lugar num cluster.
+        let isolado = cluster_minimo("").replace(r#""replicacao":{"papel":"source"},"#, "");
+        assert!(Config::de_json(&Json::analisar(&isolado).unwrap())
+            .unwrap()
+            .validar()
+            .is_err());
+    }
+
+    #[test]
+    fn maioria_e_mais_da_metade_dos_configurados() {
+        let txt = cluster_minimo("");
+        let c = Config::de_json(&Json::analisar(&txt).unwrap()).unwrap();
+        let cl = c.cluster.unwrap();
+        assert!(!cl.e_maioria(1), "1 de 3 nao e maioria");
+        assert!(cl.e_maioria(2));
+        assert!(cl.e_maioria(3));
+    }
+
+    /// A credencial do cluster nao sai pela op `config`, pela mesma regra da
+    /// senha do rele: resposta de protocolo nao carrega segredo.
+    #[test]
+    fn a_credencial_do_cluster_nao_sai_em_json() {
+        let txt = cluster_minimo(
+            r#""token":"segredo-entre-nos","usuario":"replicador",
+               "senha_hash":"pbkdf2-sha256$210000$aa$bb","#,
+        );
+        let c = Config::de_json(&Json::analisar(&txt).unwrap()).unwrap();
+        let texto = c.para_json().escrever();
+        assert!(!texto.contains("segredo-entre-nos"), "{texto}");
+        assert!(!texto.contains("pbkdf2-sha256$210000"), "{texto}");
     }
 
     #[test]
