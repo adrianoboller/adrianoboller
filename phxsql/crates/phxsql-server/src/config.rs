@@ -525,6 +525,115 @@ impl Email {
     }
 }
 
+/// A cifra dos diarios em repouso (`.log`, `.trash`, `.reason`).
+///
+/// # Pedida, nao imposta
+///
+/// Nasce DESLIGADA, e ligar vale para os volumes criados DAQUI PARA A FRENTE.
+/// Um diario que ja existe em claro continua em claro e continua abrindo: um
+/// arquivo append-only nao se reescreve, e nao ha como cifrar para tras sem
+/// reescrever. Isso esta dito aqui porque a surpresa seria pior que a
+/// limitacao -- quem liga a cifra precisa saber que o dado velho nao mudou de
+/// lugar.
+///
+/// # O que ela protege
+///
+/// O ARQUIVO COPIADO: disco levado, backup vazado, copia numa maquina que nao
+/// e esta. **Nao** protege contra quem le o `config.json` desta maquina, porque
+/// e nele que a senha esta -- pela mesma razao da senha do rele de e-mail e da
+/// do DbLink, o servidor precisa APRESENTAR a chave, entao nao da para guardar
+/// so o hash.
+#[derive(Clone, Default)]
+pub struct Cifra {
+    pub ligada: bool,
+    /// PRIVADA de proposito: quem quiser ler passa por [`Cifra::senha`], e o
+    /// `para_json` nunca a inclui.
+    senha: String,
+    /// Nome da variavel de ambiente de onde a senha veio, quando veio de la.
+    pub senha_env: String,
+    /// Iteracoes do PBKDF2. Zero cai no padrao do cofre.
+    pub iteracoes: u32,
+}
+
+/// `Debug` escrito a mao: o derivado imprimiria a senha, e um diagnostico
+/// apressado com `{:?}` num `Config` a jogaria no log. Segredo que aparece em
+/// `Debug` vaza no dia em que alguem acrescentar um `dbg!`.
+impl std::fmt::Debug for Cifra {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Cifra")
+            .field("ligada", &self.ligada)
+            .field("senha", &"(oculta)")
+            .field("senha_env", &self.senha_env)
+            .field("iteracoes", &self.iteracoes)
+            .finish()
+    }
+}
+
+impl Cifra {
+    fn de_json(j: &Json) -> Cifra {
+        let Some(c) = j.campo("cifra") else {
+            return Cifra::default();
+        };
+        // A senha pode vir do ambiente, e esse e o caminho recomendado:
+        // `config.json` costuma ir para o controle de versao, e variavel de
+        // ambiente nao.
+        let senha_env = c.texto_ou("senha_env", "").trim().to_string();
+        let senha = if senha_env.is_empty() {
+            c.texto_ou("senha", "").to_string()
+        } else {
+            std::env::var(&senha_env).unwrap_or_default()
+        };
+        Cifra {
+            ligada: c.booleano_ou("ligada", false),
+            senha,
+            senha_env,
+            iteracoes: c
+                .inteiro_ou("iteracoes", phxsql_store::cofre::ITERACOES_PADRAO as i64)
+                .clamp(0, u32::MAX as i64) as u32,
+        }
+    }
+
+    /// A senha do cofre. O unico caminho de leitura -- e nao aparece em JSON.
+    pub fn senha(&self) -> &str {
+        &self.senha
+    }
+
+    /// Liga o cofre do processo, se a configuracao pediu.
+    ///
+    /// # Por que so LIGA, e nunca desliga
+    ///
+    /// Desligar aqui seria uma decisao sobre um estado que este `Config` pode
+    /// nao ter posto -- e um `config.json` lido por engano derrubaria a chave
+    /// de um servidor que ja estava lendo diario cifrado. Quem desliga e quem
+    /// para o processo.
+    pub fn aplicar(&self) -> Result<()> {
+        if !self.ligada {
+            return Ok(());
+        }
+        phxsql_store::cofre::definir(&self.senha, self.iteracoes)
+    }
+
+    pub fn para_json(&self) -> Json {
+        Json::objeto(vec![
+            ("ligada", Json::Bool(self.ligada)),
+            ("iteracoes", Json::de_u64(self.iteracoes as u64)),
+            ("senha_env", Json::texto_de(&self.senha_env)),
+            // Nunca a senha. Nem mascarada com asteriscos do tamanho certo --
+            // o tamanho ja e informacao.
+            (
+                "senha",
+                Json::texto_de(if self.senha.is_empty() {
+                    "(vazia)"
+                } else if self.senha_env.is_empty() {
+                    "(oculta)"
+                } else {
+                    "(do ambiente)"
+                }),
+            ),
+        ])
+    }
+}
+
 /// Interface web: um servidor HTTP separado, que serve a pagina do Centro de
 /// Controle e traduz o clique do navegador no mesmo protocolo da porta 5000.
 ///
@@ -710,6 +819,21 @@ pub struct Recursos {
     /// Nao e o mesmo que conexoes: um usuario pode ter varias. Este teto conta
     /// logins distintos, que e o que uma licenca por posto quer contar.
     pub usuarios_max: usize,
+    /// Onde o volume do `.log`, da `.trash` e do `.reason` corta, em MiB.
+    ///
+    /// **Zero = nao mexe**, e esse e o padrao: vale o `bytes_por_arquivo` do
+    /// esquema, que e 1 GiB. Existe porque 1 GiB e um numero razoavel para um
+    /// anexo e nao para um diario de eventos de 44 bytes -- 1 GiB de `.log` sao
+    /// 24 milhoes de eventos, e na pratica o primeiro volume de uma tabela de
+    /// um milhao de linhas nunca fecha.
+    ///
+    /// Isso importa porque volume FECHADO e a unidade de tudo que se faz com
+    /// diario velho: compactar, arquivar, mover para disco barato. Um arquivo
+    /// que nunca fecha volume nao oferece nenhuma dessas.
+    ///
+    /// O preco de cortar pequeno esta medido em `docs/DESEMPENHO.md`: mais
+    /// volumes e um TETO menor, porque `max_arquivos` continua valendo.
+    pub diario_volume_mib: u64,
 }
 
 impl Default for Recursos {
@@ -725,11 +849,22 @@ impl Default for Recursos {
             conexoes_max: 64,
             carga_prazo_min: 30,
             usuarios_max: 0,
+            diario_volume_mib: 0,
         }
     }
 }
 
 impl Recursos {
+    /// Leva ao processo os tetos que nao sao parametro de ninguem.
+    ///
+    /// Hoje e um so: onde o volume do diario corta. O teto do cache de paginas
+    /// continua sendo aplicado pelo servidor, onde ja estava -- mover os dois
+    /// para o mesmo lugar e limpeza, e limpeza em arquivo de outro agente e
+    /// conflito.
+    pub fn aplicar(&self) {
+        phxsql_store::diario::definir_bytes_por_volume(self.diario_volume_mib * 1024 * 1024);
+    }
+
     fn de_json(j: &Json, conexoes_no_topo: usize) -> Result<Recursos> {
         let padrao = Recursos::default();
         let r = match j.campo("recursos") {
@@ -757,6 +892,7 @@ impl Recursos {
                     padrao.carga_prazo_min
                 }
             },
+            diario_volume_mib: r.inteiro_ou("diario_volume_mib", 0).max(0) as u64,
             cache_paginas: r
                 .inteiro_ou("cache_paginas", padrao.cache_paginas as i64)
                 .max(0) as usize,
@@ -792,6 +928,7 @@ impl Recursos {
             ("lote_operacoes", Json::de_u64(self.lote_operacoes)),
             ("lote_milissegundos", Json::de_u64(self.lote_milissegundos)),
             ("cache_paginas", Json::de_u64(self.cache_paginas as u64)),
+            ("diario_volume_mib", Json::de_u64(self.diario_volume_mib)),
             ("carga_prazo_min", Json::de_u64(self.carga_prazo_min)),
             ("memoria_max_mb", Json::de_u64(self.memoria_max_mb)),
             ("threads", Json::de_u64(self.threads as u64)),
@@ -858,6 +995,8 @@ pub struct Config {
     /// Separado pelo mesmo motivo do DbLink: o cadastro muda pela tela. E as
     /// corridas vao para o `.log` de mesmo nome, ao lado.
     pub jobs: PathBuf,
+    /// A cifra dos diarios em repouso. Desligada por padrao.
+    pub cifra: Cifra,
     /// Campos do arquivo que o servidor nao reconhece.
     ///
     /// Nao e erro -- config antigo continua subindo. E aviso: campo escrito
@@ -871,7 +1010,7 @@ pub struct Config {
 ///
 /// Os que comecam com `_` sao comentario -- o JSON nao tem comentario, e os
 /// exemplos usam `_web`, `_backup` e afins para explicar a secao seguinte.
-const CAMPOS_CONHECIDOS: [&str; 20] = [
+const CAMPOS_CONHECIDOS: [&str; 21] = [
     "bind",
     "base",
     "token",
@@ -892,6 +1031,7 @@ const CAMPOS_CONHECIDOS: [&str; 20] = [
     "alertas",
     "dblink",
     "jobs",
+    "cifra",
 ];
 
 /// O que o arquivo trouxe e o servidor nao sabe ler.
@@ -926,6 +1066,7 @@ impl Default for Config {
             alertas: Alertas::default(),
             dblink: PathBuf::from("dblink.json"),
             jobs: PathBuf::from("jobs.json"),
+            cifra: Cifra::default(),
             estranhas: Vec::new(),
         }
     }
@@ -956,6 +1097,14 @@ impl Config {
             }
         }
         c.validar()?;
+        // A chave do cofre entra AQUI, e nao la no servidor, por uma razao
+        // pratica: `ler` e o unico caminho por onde um `config.json` vira
+        // configuracao viva, e um campo que so o servidor aplicasse nao valeria
+        // para a CLI, que le o mesmo arquivo e precisa da mesma chave para
+        // abrir o mesmo diario. Campo de configuracao que so metade do
+        // programa le e a mesma armadilha do campo que ninguem le.
+        c.cifra.aplicar()?;
+        c.recursos.aplicar();
         Ok(c)
     }
 
@@ -1035,6 +1184,7 @@ impl Config {
             alertas: Alertas::de_json(j)?,
             dblink: PathBuf::from(j.texto_ou("dblink", "dblink.json")),
             jobs: PathBuf::from(j.texto_ou("jobs", "jobs.json")),
+            cifra: Cifra::de_json(j),
             estranhas: chaves_estranhas(j),
         })
     }
@@ -1214,6 +1364,7 @@ impl Config {
             ("alertas", self.alertas.para_json()),
             ("dblink", Json::texto_de(self.dblink.display().to_string())),
             ("jobs", Json::texto_de(self.jobs.display().to_string())),
+            ("cifra", self.cifra.para_json()),
         ])
     }
 }
@@ -1221,6 +1372,65 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /* --------------------------------------------------------------- a cifra
+
+    O que estes testes NAO fazem: ligar o cofre do processo. Ligar e o
+    trabalho do `Cifra::aplicar`, e ele mexe num global que vale para o
+    binario de teste inteiro -- provar isso pertence a
+    `tests/cifra-pelo-config.rs`, que roda em outro processo. Aqui se prova a
+    leitura do campo e o que ele NAO deixa sair. */
+
+    /// Sem a secao `cifra`, nada muda -- e este e o teste que mais importa.
+    #[test]
+    fn sem_a_secao_cifra_nada_muda() {
+        let j = Json::analisar(r#"{"token":"t"}"#).unwrap();
+        let c = Config::de_json(&j).unwrap();
+        assert!(!c.cifra.ligada, "a cifra nao pode nascer ligada");
+        assert!(c.cifra.senha().is_empty());
+        assert!(c.estranhas.is_empty());
+        // E aplicar uma cifra desligada nao liga cofre nenhum.
+        c.cifra.aplicar().unwrap();
+        assert!(!phxsql_store::cofre::ligado());
+    }
+
+    #[test]
+    fn a_secao_cifra_e_lida_e_nao_vira_campo_estranho() {
+        let j = Json::analisar(
+            r#"{"token":"t","cifra":{"ligada":true,"senha":"abre-te sesamo","iteracoes":300000}}"#,
+        )
+        .unwrap();
+        let c = Config::de_json(&j).unwrap();
+        assert!(c.cifra.ligada);
+        assert_eq!(c.cifra.senha(), "abre-te sesamo");
+        assert_eq!(c.cifra.iteracoes, 300_000);
+        assert!(c.estranhas.is_empty(), "{:?}", c.estranhas);
+    }
+
+    #[test]
+    fn a_senha_da_cifra_nunca_sai_em_json() {
+        let j = Json::analisar(r#"{"token":"t","cifra":{"ligada":true,"senha":"abre-te sesamo"}}"#)
+            .unwrap();
+        let c = Config::de_json(&j).unwrap();
+        let texto = c.para_json().escrever();
+        assert!(!texto.contains("abre-te sesamo"), "a senha vazou: {texto}");
+        assert!(texto.contains("(oculta)"));
+    }
+
+    #[test]
+    fn a_senha_da_cifra_pode_vir_do_ambiente() {
+        std::env::set_var("PHXSQL_TESTE_CIFRA", "vinda do ambiente");
+        let j = Json::analisar(
+            r#"{"token":"t","cifra":{"ligada":true,"senha_env":"PHXSQL_TESTE_CIFRA"}}"#,
+        )
+        .unwrap();
+        let c = Config::de_json(&j).unwrap();
+        assert_eq!(c.cifra.senha(), "vinda do ambiente");
+        let texto = c.para_json().escrever();
+        assert!(!texto.contains("vinda do ambiente"), "{texto}");
+        assert!(texto.contains("(do ambiente)"));
+        std::env::remove_var("PHXSQL_TESTE_CIFRA");
+    }
 
     #[test]
     fn padroes_quando_o_json_e_minimo() {

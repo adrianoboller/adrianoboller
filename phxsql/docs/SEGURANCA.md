@@ -293,27 +293,107 @@ aqui para ninguém supor mais do que ela dá.
 **O nonce sai da ordem, não de um sorteio por evento.** Repetir o par (chave,
 nonce) é o único jeito de quebrar isto sem quebrar a matemática, e num arquivo
 que só cresce é fácil errar — basta alguém reabrir o arquivo e recomeçar a
-contagem do zero. O tipo `cifra::Sequencia` fecha essa porta: o nonce é um
-prefixo de 4 bytes sorteado **uma vez por arquivo** (gravado no cabeçalho, em
-claro) mais o número de ordem do evento, de 8 bytes. Como *append-only* nunca
-reescreve evento que já existe — a mesma garantia do `.reg`, que nunca reusa
-slot —, repetir o nonce passa a exigir uma operação que o formato não tem.
+contagem do zero. O tipo `cifra::Sequencia` fecha essa porta.
+
+O número de ordem que entrou é o **offset do registro no volume**. Ele é o
+contador que o arquivo já tem, que nunca se reaproveita num arquivo que só
+cresce, e que **não precisa ser persistido** — um contador à parte teria de ir
+a disco a cada registro, que é exatamente a escrita que o `.log` tirou do
+caminho para não atrasar o `.reg`.
+
+E cada volume sorteia o **próprio sal**, logo tem a própria chave: é isso que
+deixa o offset — que recomeça em cada volume — ser o número de ordem.
+
+**O único caso em que o offset se repetiria, e o que o cobre.** Uma queda no
+meio da escrita deixa um rabo estragado; a cura corta esse rabo pelo CRC, e o
+registro seguinte entra no offset que ele ocupava. Os 4 bytes de prefixo do
+nonce cobrem isso, e eles saem de lugares diferentes conforme o arquivo:
+
+| arquivo | prefixo do nonce | por quê |
+|---|---|---|
+| `.log` | 4 bytes sorteados por evento, no campo reservado do cabeçalho | o evento não tem identidade própria |
+| `.trash` | os 4 últimos bytes do UUID v7 do descarte | o UUID já está lá e já é único |
+| `.reason` | os 4 últimos bytes do UUID v7 do evento | idem |
+
+Nos dois últimos **não há byte novo a gravar**. No `.log` são 4 bytes que já
+estavam reservados.
 
 **O que muda em cada arquivo:**
 
 | | hoje | cifrado |
 |---|---|---|
-| cabeçalho do arquivo | 64 bytes, versão 2 | versão 3: + flag, + sal de 16 bytes, + prefixo de nonce de 4, + iterações do PBKDF2 |
-| evento | cabeçalho + corpo | cabeçalho (claro, vira AAD) + corpo cifrado + etiqueta de 16 bytes |
-| custo | — | **+16 bytes por evento com corpo**, e nada nos eventos sem corpo |
+| cabeçalho do arquivo | 64 bytes, versão 2 | 128 bytes, versão 3: + flag, + sal de 16 bytes, + iterações do PBKDF2, + prova da chave de 16 bytes |
+| registro | cabeçalho + corpo | cabeçalho (claro, vira AAD) + corpo cifrado + etiqueta de 16 bytes |
+| custo | — | **+16 bytes por registro com corpo**, e nada nos registros sem corpo |
 
 A `.trash` e o `.reason` seguem o mesmo padrão, com a mesma justificativa: o
 que identifica a linha descartada fica legível, o conteúdo dela não.
+
+**A prova da chave.** O cabeçalho da versão 3 leva 16 bytes que são a etiqueta
+de uma mensagem vazia. Sem ela, uma senha errada no `config.json` só apareceria
+na primeira leitura de corpo — que num diário ainda vazio seria nunca, e quem
+digitou errado descobriria dias depois, com o arquivo cheio de registros
+gravados com a chave errada e os antigos ilegíveis. Com ela, `abrir` recusa na
+hora e diz o que está errado.
 
 **Arquivo velho continua abrindo.** A versão 2 se lê como sempre; a flag de
 cifrado é a que decide, e quem não a tem passa direto. Escrever cifrado é uma
 decisão do `config.json`, não um padrão novo — a mesma regra da janela de
 conflito: guarda nova entra pedida, não imposta.
+
+### Como se liga
+
+```json
+"cifra": {
+  "ligada": true,
+  "senha_env": "PHXSQL_CIFRA",
+  "iteracoes": 210000
+}
+```
+
+Sem a seção, **nada muda**: o cofre nasce desligado e os três arquivos nascem
+na versão 2, byte por byte como antes. `senha` no lugar de `senha_env` também
+funciona, e é a opção pior pelo mesmo motivo de sempre — `config.json` costuma
+ir para o controle de versão, variável de ambiente não. A senha nunca sai na
+resposta do protocolo, nem no `Debug` da configuração: os dois têm teste.
+
+O campo é lido em `Config::ler`, e não no servidor, porque a **CLI lê o mesmo
+arquivo e abre o mesmo diário** — um campo que só o servidor aplicasse deixaria
+`phxsql` sem a chave para ler o que `phxsqld` gravou. Campo de configuração que
+só metade do programa lê é a mesma armadilha do campo que ninguém lê.
+
+### Ligar a cifra não cifra o que já existe
+
+Vale para os volumes criados **daqui para a frente**. Um `.log` que já existe
+em claro continua em claro e continua abrindo — um arquivo *append-only* não se
+reescreve, e não há comando de recifragem.
+
+Isso está escrito aqui porque a surpresa seria pior que a limitação: quem liga
+a cifra numa terça precisa saber que o diário de segunda não mudou de lugar. O
+caminho para proteger o histórico antigo é o mesmo de sempre para dado que já
+vazou de forma: copiar a tabela para uma nova, com a cifra já ligada, e apagar
+a velha.
+
+### O que a replicação faz com um `source` cifrado
+
+**Nada muda para a réplica.** A cifra é do arquivo em repouso, e quem tem a
+chave — o próprio servidor — lê a imagem da linha como sempre leu. O `posicao`
+e o `replicar` continuam funcionando:
+
+- `posicao` conta eventos pelos cabeçalhos dos volumes, que estão em claro;
+- `replicar` devolve as imagens **já decifradas**, e elas viajam pela sessão
+  autenticada como sempre viajaram.
+
+Consequência que precisa estar escrita: **o dado continua indo em claro no
+fio**. A cifra do diário não é TLS e não substitui o túnel da §7. O que ela
+protege é o arquivo copiado — e uma réplica que grave o próprio diário cifrado
+precisa da sua própria seção `cifra`, com a sua própria senha, porque o sal e a
+chave são de cada arquivo.
+
+O caminho rápido da replicação — a `MarcaDoDiario`, que faz o lote seguinte
+começar de onde o anterior parou — continua valendo sem mudança, e isso não é
+coincidência: o número de ordem do nonce é o offset, que a marca já carrega.
+Um contador de eventos teria de ser recontado a cada lote.
 
 ### O que a chave protege, e o que não protege
 
@@ -329,7 +409,28 @@ vender uma garantia que o desenho não dá.
 
 ### O que ainda falta
 
-A primitiva está pronta e conferida. **Ligar nos três arquivos ainda não foi
-feito** — é mudança de formato em `log.rs`, `lixeira.rs` e `motivo.rs`, mais o
-campo no `config.json`, e entra numa rodada própria para que o teste do
-comportamento *velho* (arquivo versão 2 abrindo intacto) seja escrito junto.
+- **Os outros quatro arquivos.** `.reg`, `.ndx`, `.bin` e `.memo` continuam em
+  claro. O `.reg` é o caso difícil: ele é de acesso aleatório por slot, e não
+  *append-only*, então o nonce não pode sair do offset — reescrever um slot no
+  mesmo lugar repetiria o par (chave, nonce). O desenho para ele precisa de um
+  contador por slot no próprio slot, e isso é outra rodada.
+- **Sem recifragem.** Ver acima.
+- **Sem troca de chave.** Mudar a senha no `config.json` faz os volumes
+  gravados com a antiga pararem de abrir. Não há `rekey`.
+
+### O que os testes provam, e como
+
+Em `crates/phxsql-store/tests/cifra-dos-diarios.rs` e
+`crates/phxsql-server/tests/cifra-pelo-config.rs`:
+
+| o que se prova | como |
+|---|---|
+| arquivo escrito antes da cifra continua abrindo | grava em claro, liga a cifra, lê os três arquivos e grava mais um evento |
+| sem a seção `cifra`, nada muda no disco | confere versão 2 e 64 bytes de cabeçalho byte a byte |
+| o dado some do disco | procura o texto claro nos bytes do arquivo, nos três |
+| a chave errada e a falta de chave dão erro claro | confere a classe do erro e o texto |
+| trocar o cabeçalho de um evento não passa | **conserta o CRC** e mesmo assim a etiqueta cai |
+| o nonce nunca se repete | caminha pelo `.log` real e junta (sal, prefixo, offset) num conjunto |
+| a replicação continua lendo | lotes de 50 com a marca do lote anterior |
+| a cura funciona no volume cifrado | queda sem `sincronizar`, 120 eventos, nada se perde |
+| o campo do `config.json` é lido de verdade | `Config::ler` e o `.log` nasce na versão 3 |

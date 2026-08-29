@@ -44,6 +44,18 @@
 //! # Quem le
 //!
 //! So quem administra. Aqui esta o dado que alguem mandou apagar.
+//!
+//! # A cifra do corpo (versao 3)
+//!
+//! Com a cifra ligada, um volume novo nasce na versao 3 e o corpo -- o payload
+//! da linha MAIS o conteudo dos externos -- vai cifrado, com 16 bytes de
+//! etiqueta atras. O cabecalho de 56 bytes continua em claro, porque e o
+//! `total_len` dele que diz onde o proximo registro comeca; ele entra como
+//! dado associado da etiqueta.
+//!
+//! O nonce sai do UUID do proprio descarte mais o offset dele no volume: o
+//! UUID ja e unico por definicao, entao nao ha byte novo a gravar. Ver
+//! `crate::cofre`.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -54,18 +66,17 @@ use phxsql_core::paginacao::Paginacao;
 use phxsql_core::uuid::Uuid;
 use phxsql_core::RowId;
 
-use crate::util::{agora, agora_ms, conferir_magic, por_i64, por_u32, por_u64, Campos};
+use crate::cofre::{self, Cabecalho};
+use crate::util::{agora_ms, por_i64, por_u32, por_u64, Campos};
 use crate::volume::Volumes;
 
 pub const MAGIC_LIXEIRA: &[u8; 8] = b"PHXTRH\0\0";
 pub const EXT_TRASH: &str = "trash";
 
-const CAB_LEN: usize = 64;
 /// Bytes do cabecalho de cada registro, antes do payload.
 pub const REGISTRO_CAB: usize = 56;
 /// Byte onde comeca o campo do CRC, que e o unico que ele nao cobre.
 const OFF_CRC: usize = 52;
-const VERSAO: u16 = 1;
 
 /// Uma linha na lixeira.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -106,13 +117,17 @@ impl Descartada {
         phxsql_core::datahora::instante_iso(self.carimbo)
     }
 
-    /// Bytes que este registro ocupa no arquivo.
+    /// Bytes que este registro ocupa no arquivo, sem contar a cifra.
     ///
     /// So vale com os anexos carregados: numa `Descartada` que veio de uma
     /// listagem leve, `externos` esta vazio e a conta sai menor.
     pub fn tamanho(&self) -> usize {
-        REGISTRO_CAB
-            + self.payload.len()
+        REGISTRO_CAB + self.corpo_em_claro()
+    }
+
+    /// O corpo: o payload byte a byte, e o conteudo de cada externo atras.
+    fn corpo_em_claro(&self) -> usize {
+        self.payload.len()
             + self
                 .externos
                 .iter()
@@ -120,7 +135,7 @@ impl Descartada {
                 .sum::<usize>()
     }
 
-    fn escrever(&self) -> Result<Vec<u8>> {
+    fn escrever(&self, cab: &Cabecalho, offset: u64) -> Result<Vec<u8>> {
         debug_assert_eq!(self.n_externos as usize, self.externos.len());
         if self.externos.len() > u8::MAX as usize {
             return Err(PhxError::LimiteExcedido(format!(
@@ -129,7 +144,10 @@ impl Descartada {
                 u8::MAX
             )));
         }
-        let total = self.tamanho();
+        // `total` e o que este registro ocupa NO ARQUIVO -- com a etiqueta,
+        // quando o volume e cifrado. E por ele que a varredura anda, e ela
+        // anda sem a chave.
+        let total = REGISTRO_CAB + cab.ocupa(self.corpo_em_claro());
         if total > u32::MAX as usize {
             return Err(PhxError::LimiteExcedido(
                 "linha grande demais para a lixeira (mais de 4 GiB)".into(),
@@ -140,34 +158,40 @@ impl Descartada {
         buf[9] = self.externos.len() as u8;
         por_u64(&mut buf, 12, self.rowid);
         por_u32(&mut buf, 20, self.usuario);
+        // O tamanho do payload e o do TEXTO CLARO: e por ele que o payload se
+        // separa dos externos depois de decifrar.
         por_u32(&mut buf, 24, self.payload.len() as u32);
         buf[28..44].copy_from_slice(self.uuid.bytes());
         por_u32(&mut buf, 44, total as u32);
 
-        buf.extend_from_slice(&self.payload);
+        let mut claro = Vec::with_capacity(self.corpo_em_claro());
+        claro.extend_from_slice(&self.payload);
         for (coluna, bytes) in &self.externos {
-            buf.extend_from_slice(&coluna.to_le_bytes());
-            buf.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
-            buf.extend_from_slice(bytes);
+            claro.extend_from_slice(&coluna.to_le_bytes());
+            claro.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
+            claro.extend_from_slice(bytes);
         }
+        let corpo = cab.selar(tempero(self.uuid.bytes()), offset, &associado(&buf), &claro);
+        buf.extend_from_slice(&corpo);
         debug_assert_eq!(buf.len(), total);
 
-        // Cobre o cabecalho ate o campo do CRC e depois o corpo inteiro: o
-        // payload e os anexos entram na conta. Um `.trash` so vale como prova
-        // do que a linha era se adulterar o conteudo for detectado.
+        // Cobre o cabecalho ate o campo do CRC e depois o corpo inteiro, COMO
+        // ELE VAI AO DISCO. Um `.trash` so vale como prova do que a linha era
+        // se adulterar o conteudo for detectado -- e a deteccao nao pode
+        // depender de ter a chave.
         let crc = crc32_do(&buf);
         por_u32(&mut buf, OFF_CRC, crc);
         Ok(buf)
     }
 
-    fn ler(src: &[u8]) -> Result<Descartada> {
+    fn ler(src: &[u8], cab: &Cabecalho, offset: u64, nome: &str) -> Result<Descartada> {
         if src.len() < REGISTRO_CAB {
             return Err(PhxError::Corrompido("registro de .trash truncado".into()));
         }
         let c = Campos(src);
         let total = c.u32(44) as usize;
         let payload_len = c.u32(24) as usize;
-        if total < REGISTRO_CAB + payload_len || src.len() < total {
+        if total < REGISTRO_CAB + cab.ocupa(payload_len) || src.len() < total {
             return Err(PhxError::Corrompido(
                 "registro de .trash menor que o tamanho que declara".into(),
             ));
@@ -177,29 +201,42 @@ impl Descartada {
                 "registro de .trash com CRC invalido".into(),
             ));
         }
+        let uuid = Uuid::de_bytes(src[28..44].try_into().unwrap());
+        let corpo = cab.abrir(
+            tempero(uuid.bytes()),
+            offset,
+            &associado(&src[..REGISTRO_CAB]),
+            &src[REGISTRO_CAB..total],
+            nome,
+        )?;
+        if corpo.len() < payload_len {
+            return Err(PhxError::Corrompido(
+                "registro de .trash com menos corpo do que declara".into(),
+            ));
+        }
 
-        let payload = src[REGISTRO_CAB..REGISTRO_CAB + payload_len].to_vec();
+        let payload = corpo[..payload_len].to_vec();
         let mut externos = Vec::with_capacity(src[9] as usize);
-        let mut pos = REGISTRO_CAB + payload_len;
+        let mut pos = payload_len;
         for _ in 0..src[9] {
-            if pos + 6 > total {
+            if pos + 6 > corpo.len() {
                 return Err(PhxError::Corrompido(
                     "a lixeira declara mais colunas externas do que cabem no registro".into(),
                 ));
             }
-            let coluna = u16::from_le_bytes([src[pos], src[pos + 1]]);
-            let n = u32::from_le_bytes(src[pos + 2..pos + 6].try_into().unwrap()) as usize;
+            let coluna = u16::from_le_bytes([corpo[pos], corpo[pos + 1]]);
+            let n = u32::from_le_bytes(corpo[pos + 2..pos + 6].try_into().unwrap()) as usize;
             pos += 6;
-            if pos + n > total {
+            if pos + n > corpo.len() {
                 return Err(PhxError::Corrompido(
                     "conteudo externo da lixeira passa do fim do registro".into(),
                 ));
             }
-            externos.push((coluna, src[pos..pos + n].to_vec()));
+            externos.push((coluna, corpo[pos..pos + n].to_vec()));
             pos += n;
         }
         Ok(Descartada {
-            uuid: Uuid::de_bytes(src[28..44].try_into().unwrap()),
+            uuid,
             carimbo: c.u64(0) as i64,
             rowid: c.u64(12),
             usuario: c.u32(20),
@@ -210,11 +247,21 @@ impl Descartada {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-struct Cabecalho {
-    volume: u32,
-    fim: u64,
-    quantos: u64,
+/// O dado associado da etiqueta: o cabecalho do registro, menos o CRC.
+fn associado(cab: &[u8]) -> [u8; REGISTRO_CAB] {
+    let mut aad = [0u8; REGISTRO_CAB];
+    aad.copy_from_slice(&cab[..REGISTRO_CAB]);
+    aad[OFF_CRC..OFF_CRC + 4].fill(0);
+    aad
+}
+
+/// Os quatro bytes de tempero do nonce saem do UUID do proprio descarte.
+///
+/// Nao ha byte novo a gravar: o UUID v7 ja esta no cabecalho e ja e unico por
+/// definicao. Ele cobre o unico caso em que o offset se repetiria -- o
+/// registro que entra por cima de um rabo estragado por uma queda.
+fn tempero(uuid: &[u8; 16]) -> [u8; 4] {
+    [uuid[12], uuid[13], uuid[14], uuid[15]]
 }
 
 pub struct LixeiraFile {
@@ -231,6 +278,9 @@ impl LixeiraFile {
         nome: &str,
         paginacao: Paginacao,
     ) -> Result<LixeiraFile> {
+        // Ver `crate::diario`: o corte do diario e dele, e sem configuracao
+        // manda o esquema.
+        let paginacao = crate::diario::paginacao(paginacao);
         let mut l = LixeiraFile {
             volumes: Volumes::novo(diretorio, nome, EXT_TRASH, paginacao),
             cabs: HashMap::new(),
@@ -238,11 +288,7 @@ impl LixeiraFile {
             usuario: 0,
         };
         l.volumes.criar(1)?;
-        l.gravar_cab(Cabecalho {
-            volume: 1,
-            fim: CAB_LEN as u64,
-            quantos: 0,
-        })?;
+        l.gravar_cab(Cabecalho::novo(1)?)?;
         Ok(l)
     }
 
@@ -252,6 +298,7 @@ impl LixeiraFile {
         nome: &str,
         paginacao: Paginacao,
     ) -> Result<LixeiraFile> {
+        let paginacao = crate::diario::paginacao(paginacao);
         let volumes = Volumes::novo(&diretorio, nome, EXT_TRASH, paginacao);
         if volumes.existentes().is_empty() {
             return LixeiraFile::criar(diretorio, nome, paginacao);
@@ -272,45 +319,13 @@ impl LixeiraFile {
         if let Some(c) = self.cabs.get(&volume) {
             return Ok(*c);
         }
-        let mut buf = [0u8; CAB_LEN];
-        self.volumes.ler(volume, 0, &mut buf)?;
-        let nome = self.volumes.caminho(volume).display().to_string();
-        conferir_magic(&nome, MAGIC_LIXEIRA, &buf[0..8])?;
-        let c = Campos(&buf);
-        let versao = c.u16(8);
-        if versao != VERSAO {
-            return Err(PhxError::VersaoNaoSuportada {
-                arquivo: nome,
-                encontrada: versao,
-                suportada: VERSAO,
-            });
-        }
-        if crc32(&buf[..56]) != c.u32(56) {
-            return Err(PhxError::Corrompido(format!(
-                "cabecalho de {nome} com CRC invalido"
-            )));
-        }
-        let cab = Cabecalho {
-            volume: c.u32(12),
-            fim: c.u64(24),
-            quantos: c.u64(16),
-        };
+        let cab = cofre::ler_cabecalho_do_volume(&mut self.volumes, volume, MAGIC_LIXEIRA)?;
         self.cabs.insert(volume, cab);
         Ok(cab)
     }
 
     fn gravar_cab(&mut self, cab: Cabecalho) -> Result<()> {
-        let mut buf = [0u8; CAB_LEN];
-        buf[0..8].copy_from_slice(MAGIC_LIXEIRA);
-        buf[8..10].copy_from_slice(&VERSAO.to_le_bytes());
-        buf[10..12].copy_from_slice(&(CAB_LEN as u16).to_le_bytes());
-        por_u32(&mut buf, 12, cab.volume);
-        por_u64(&mut buf, 16, cab.quantos);
-        por_u64(&mut buf, 24, cab.fim);
-        por_i64(&mut buf, 32, agora());
-        let crc = crc32(&buf[..56]);
-        por_u32(&mut buf, 56, crc);
-        self.volumes.escrever(cab.volume, 0, &buf)?;
+        cofre::gravar_cabecalho_no_volume(&mut self.volumes, &cab, MAGIC_LIXEIRA)?;
         self.cabs.insert(cab.volume, cab);
         Ok(())
     }
@@ -342,12 +357,11 @@ impl LixeiraFile {
     }
 
     fn anexar(&mut self, d: &Descartada) -> Result<()> {
-        let bytes = d.escrever()?;
         let paginacao = self.volumes.paginacao();
         let atual = self.cab(self.volume_atual)?;
-        let vazio = atual.fim <= CAB_LEN as u64;
-        let (volume, virou) =
-            paginacao.volume_externo(self.volume_atual, atual.fim, bytes.len() as u64, vazio);
+        let vazio = atual.fim <= atual.cab_len as u64;
+        let ocupa = (REGISTRO_CAB + atual.ocupa(d.corpo_em_claro())) as u64;
+        let (volume, virou) = paginacao.volume_externo(self.volume_atual, atual.fim, ocupa, vazio);
 
         let cab = if virou {
             if paginacao.ligada() && volume > paginacao.max_arquivos {
@@ -358,11 +372,7 @@ impl LixeiraFile {
                 )));
             }
             self.volumes.garantir(volume)?;
-            let novo = Cabecalho {
-                volume,
-                fim: CAB_LEN as u64,
-                quantos: 0,
-            };
+            let novo = Cabecalho::novo(volume)?;
             self.gravar_cab(novo)?;
             self.volume_atual = volume;
             novo
@@ -370,12 +380,11 @@ impl LixeiraFile {
             atual
         };
 
+        // O offset entra no nonce: e ele o numero de ordem que um arquivo
+        // append-only nunca reaproveita.
+        let bytes = d.escrever(&cab, cab.fim)?;
         self.volumes.escrever(volume, cab.fim, &bytes)?;
-        self.gravar_cab(Cabecalho {
-            volume,
-            fim: cab.fim + bytes.len() as u64,
-            quantos: cab.quantos + 1,
-        })
+        self.gravar_cab(cab.com(cab.fim + bytes.len() as u64, cab.quantos + 1))
     }
 
     pub fn total(&mut self) -> Result<u64> {
@@ -396,7 +405,8 @@ impl LixeiraFile {
         let mut vistos = 0u64;
         for volume in self.volumes.existentes() {
             let cab = self.cab(volume)?;
-            let mut offset = CAB_LEN as u64;
+            let nome = self.volumes.caminho(volume).display().to_string();
+            let mut offset = cab.cab_len as u64;
             while offset + REGISTRO_CAB as u64 <= cab.fim {
                 let mut cabecalho = [0u8; REGISTRO_CAB];
                 self.volumes.ler(volume, offset, &mut cabecalho)?;
@@ -410,7 +420,7 @@ impl LixeiraFile {
                 if vistos >= pular {
                     let mut buf = vec![0u8; total];
                     self.volumes.ler(volume, offset, &mut buf)?;
-                    let mut d = Descartada::ler(&buf)?;
+                    let mut d = Descartada::ler(&buf, &cab, offset, &nome)?;
                     if !com_externos {
                         // So o CONTEUDO sai; `n_externos` fica.
                         d.externos.clear();
@@ -459,11 +469,10 @@ impl LixeiraFile {
         self.cabs.clear();
         self.volume_atual = 1;
         self.volumes.criar(1)?;
-        self.gravar_cab(Cabecalho {
-            volume: 1,
-            fim: CAB_LEN as u64,
-            quantos: 0,
-        })?;
+        // O volume 1 renasce com sal NOVO: esvaziar zera os offsets, e reusar
+        // o sal antigo faria a chave e o numero de ordem do nonce recomecarem
+        // juntos -- que e exatamente a repeticao que quebra a cifra.
+        self.gravar_cab(Cabecalho::novo(1)?)?;
         self.volumes.sincronizar()?;
         Ok(quantos)
     }
@@ -573,20 +582,26 @@ mod testes {
             payload: vec![1, 2, 3, 4],
             externos: vec![(0, b"anexo".to_vec())],
         };
-        let bom = d.escrever().unwrap();
-        assert!(Descartada::ler(&bom).is_ok());
+        // Cabecalho em claro: o que este teste prova e o CRC, e ele vale nos
+        // dois modos -- a cifra so muda o que esta dentro do corpo.
+        let cab = Cabecalho::novo(1).unwrap();
+        let bom = d.escrever(&cab, 64).unwrap();
+        assert!(Descartada::ler(&bom, &cab, 64, "t").is_ok());
 
         let mut torto = bom.clone();
         torto[REGISTRO_CAB] ^= 0xFF;
         assert!(
-            Descartada::ler(&torto).is_err(),
+            Descartada::ler(&torto, &cab, 64, "t").is_err(),
             "payload adulterado passou"
         );
 
         let mut torto = bom.clone();
         let pos = REGISTRO_CAB + 4 + 6;
         torto[pos] ^= 0xFF;
-        assert!(Descartada::ler(&torto).is_err(), "anexo adulterado passou");
+        assert!(
+            Descartada::ler(&torto, &cab, 64, "t").is_err(),
+            "anexo adulterado passou"
+        );
     }
 
     #[test]

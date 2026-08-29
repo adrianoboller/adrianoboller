@@ -765,6 +765,88 @@ teria de forçar um volume de 512 KiB para ver efeito — que é o sinal clássi
 de funcionalidade medida contra si mesma. O que entra antes é o número acima
 virar uma decisão sobre `bytes_por_arquivo` dos diários.
 
+### 4.7.1 O corte virou configurável — e a premissa caiu
+
+A decisão que faltava entrou: `recursos.diario_volume_mib` no `config.json`
+(ver `phxsql_store::diario`). **Zero, que é o padrão, não mexe em nada** — vale
+o `bytes_por_arquivo` do esquema, 1 GiB, byte por byte como antes. O `.bin` e o
+`.memo` não passam por ele: o corte de um anexo é outro assunto, e juntá-los
+faria mexer no diário mexer nas fotos.
+
+Com isso, «não há volume fechado» deixou de ser uma propriedade do formato e
+virou **uma escolha**. Então a medida foi refeita, na mesma tabela de 1 milhão
+de linhas e 5% de exclusões — `--example quanto-ocupa -- 1000000 5 <MiB>`:
+
+| corte do diário | volumes do `.log` | fechados | economia | % da tabela |
+|---|---:|---:|---:|---:|
+| 1 GiB (padrão) | 1 | 0 | **0,00 MiB** | 0,00% |
+| 8 MiB | 6 | 5 | 30,61 MiB | 11,91% |
+| 4 MiB | 12 | 11 | 33,56 MiB | 13,06% |
+| 1 MiB | 45 | 44 | **37,78 MiB** | **14,70%** |
+
+A `.trash` e o `.reason` só fecham volume a **1 MiB**: eles têm 3,67 e 3,27 MiB
+contra os 44,06 do `.log`, e um corte único para os três é grosseiro por isso —
+o que fecha o diário não chega perto de fechar os outros dois.
+
+**A recusa anterior não estava errada; a razão dela é que era circunstancial.**
+«Compactar pouparia exatamente zero» era verdade, e continua sendo com o corte
+padrão. Com o corte pequeno passa a poupar 14,70% da tabela, que é dinheiro
+real. O item foi medido de novo justamente porque *medir a premissa vem antes
+de implementar o item*, e desta vez a premissa mudou de lado.
+
+### 4.7.2 O outro lado da conta, que ninguém tinha medido
+
+Economia não é o número inteiro. Um volume compactado **não se lê por dentro**:
+para servir um lote de 500 eventos à replicação é preciso inflá-lo inteiro. E o
+servidor abre e fecha a tabela a cada pedido, então não há cache que segure o
+volume inflado entre um lote e o seguinte.
+
+Medido na mesma rodada:
+
+| corte | inflar o volume | ler 500 eventos como está hoje | quantas vezes |
+|---|---:|---:|---:|
+| 8 MiB | 25,88 ms | 3,14 ms | **8×** |
+| 4 MiB | 13,33 ms | 2,95 ms | **5×** |
+| 1 MiB | 3,37 ms | 4,50 ms | **1×** |
+
+O custo escala com o tamanho do volume, e a 1 MiB ele **desaparece**: inflar um
+volume de 1 MiB custa menos que a leitura de 500 eventos já custa hoje. Isso
+derruba a objeção óbvia contra compactar — e é o oposto do que eu teria escrito
+sem medir.
+
+O que **não** desaparece é o teto. `max_arquivos` continua valendo, e cortar
+pequeno o encolhe na mesma proporção:
+
+| corte | 999 volumes dão | eventos sem imagem |
+|---|---:|---:|
+| 1 GiB (padrão) | 1 TiB | ~24 bilhões |
+| 8 MiB | 7,8 GiB | ~190,5 milhões |
+| 4 MiB | 3,9 GiB | ~95,2 milhões |
+| 1 MiB | 1,0 GiB | ~23,8 milhões |
+
+A 1 MiB o diário inteiro passa a caber no que **um** volume guarda hoje. Quem
+cortar pequeno precisa subir `digitos` para 4 no `CREATE TABLE` — que o formato
+já suporta — ou aceitar o teto menor.
+
+### 4.7.3 O veredito, revisado
+
+| | |
+|---|---|
+| **o corte do diário** | configurável, `recursos.diario_volume_mib`; padrão 0 = não mexe |
+| **compactar volume fechado, com corte de 1 MiB** | poupa 37,78 MiB — 14,70% da tabela |
+| **custo de leitura a 1 MiB** | nenhum: 3,37 ms de inflate contra 4,50 ms que a leitura já custa |
+| **custo de leitura a 8 MiB** | 8× |
+| **preço escondido** | o teto do diário cai na mesma proporção do corte |
+| **compactar só o `.ndx`** | pouparia 78,86 MiB — **2,1× mais**, e sem tocar no diário |
+
+**A compactação continua não implementada, e agora por outro motivo.** Não é
+mais «não há o que compactar»: há, e a conta fecha. É que os 14,70% que ela
+compra estão atrás de um formato de volume comprimido, de um caminho de leitura
+que infla, e de um comando de compactação — e o mesmo esforço aplicado ao
+`.ndx` compraria 2,1× mais espaço. **O espaço continua não estando onde o
+pedido olha**, e essa frase agora está sustentada por três cortes medidos em
+vez de um.
+
 ---
 
 ## 4.8 O write-back entrou — e o gargalo mudou de lugar
