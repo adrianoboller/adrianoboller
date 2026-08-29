@@ -70,7 +70,12 @@ calado; foi assim que a capa passou três lançamentos dizendo 276 testes.
 ## A outra página: os 129 pedidos
 
 `pedidos.html` é a relação de tudo que o Adriano pediu, com o estado de cada
-item. Ela **não se edita** — sai de
+item, publicada em:
+
+**https://claude.ai/code/artifact/d6c8f13c-e4a2-444e-9f19-0e047e230352**
+
+Publique **passando essa URL**, para cair na mesma página. Ela **não se edita** —
+sai de
 
 ```bash
 python3 docs/dossie/pagina-dos-pedidos.py [saida.html]

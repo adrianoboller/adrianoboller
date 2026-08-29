@@ -30,6 +30,14 @@ digitam mais: `python3 phxsql/docs/dossie/numeros-da-bancada.py` os regenera de
 O que falta no projeto está em `phxsql/docs/PENDENCIAS.md` — atualize junto com
 o dossiê.
 
+Dessa lista sai uma **segunda página**, a relação dos pedidos com o estado de
+cada um:
+
+- **URL:** https://claude.ai/code/artifact/d6c8f13c-e4a2-444e-9f19-0e047e230352
+- **Fonte:** `phxsql/docs/dossie/pedidos.html`, que **não se edita** —
+  `python3 phxsql/docs/dossie/pagina-dos-pedidos.py` a gera do `PENDENCIAS.md`
+  e conta os três estados sozinho.
+
 ## A marca é oficial
 
 Os arquivos estão em `phxsql/marca/`, com a especificação em
