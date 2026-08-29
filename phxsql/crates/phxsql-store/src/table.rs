@@ -26,6 +26,9 @@ use crate::log::{Evento, LogFile, Operacao, EXT_LOG};
 use crate::motivo::{Motivo, MotivoFile, Tipo, EXT_REASON};
 use crate::ndx::NdxFile;
 use crate::reg::RegFile;
+// Qualificado: `crate::log::Evento` ja ocupa o nome `Evento` aqui, e os dois
+// eventos sao coisas diferentes -- um e do diario, o outro e da trilha.
+use crate::trilha::{self, TrilhaFile, EXT_LGPD};
 
 /// Uma linha: um valor por coluna do esquema.
 pub type Linha = Vec<Value>;
@@ -108,6 +111,8 @@ pub struct Relatorio {
     pub descartadas: u64,
     /// Registros conferidos no `.reason`.
     pub motivos: u64,
+    /// Registros conferidos no `.lgpd`. Zero quando a tabela nao tem trilha.
+    pub trilha: u64,
     /// Linhas marcadas como excluidas, RECONTADAS -- e nao lidas do cabecalho.
     ///
     /// A conferencia existe justamente para nao acreditar em contador: se o
@@ -131,6 +136,23 @@ pub struct Table {
     log: LogFile,
     lixeira: LixeiraFile,
     motivos: MotivoFile,
+    /// A trilha de dado pessoal. Preguicosa: nao toca no disco enquanto nao
+    /// houver o que gravar. Ver [`crate::trilha`].
+    trilha: TrilhaFile,
+    /// Posicoes das colunas marcadas como dado pessoal, de qualquer grau.
+    ///
+    /// # Por que uma lista guardada, e nao uma varredura do esquema
+    ///
+    /// Este e o PORTAO do custo-zero, e ele tem de vir antes do trabalho -- e
+    /// a licao do Profiler, que cobrava 7% da carga fazendo dois `Json` antes
+    /// de perguntar se estava ligado. Perguntar ao esquema "ha coluna marcada?"
+    /// a cada alteracao percorreria as colunas todas por linha gravada; esta
+    /// lista se monta UMA vez, na abertura, e a pergunta vira `is_empty()`.
+    ///
+    /// Vazia = a tabela nao tem dado pessoal declarado, e a trilha inteira
+    /// custa essa comparacao e mais nada: nao abre arquivo, nao decodifica
+    /// valor, nao monta texto.
+    colunas_marcadas: Vec<usize>,
     /// Gravar a imagem da linha no diario? Ver [`Table::com_imagem_no_diario`].
     imagem_no_diario: bool,
     /// Gravar a imagem TAMBEM na exclusao fisica?
@@ -153,6 +175,28 @@ fn caminho(diretorio: &Path, nome: &str, ext: &str) -> PathBuf {
     diretorio.join(format!("{nome}.{ext}"))
 }
 
+/// As posicoes das colunas marcadas como dado pessoal, de qualquer grau.
+///
+/// **Os dois graus, e nao so o sensivel.** A caixa de LGPD da tela marca
+/// `nome`, `email` e `telefone` -- que sao dado pessoal comum (grau 1) -- e a
+/// trilha e o que a lei pede para eles tambem. O grau continua gravado e
+/// continua separando `nome` de `prontuario` no relatorio juridico; ele nao
+/// decide SE ha trilha, decide o regime legal do que esta nela.
+///
+/// Coluna de sistema fica de fora: `softdeleted` e `rownum` sao do motor, nao
+/// sao dado de ninguem, e marca-las seria um engano de quem cadastrou.
+fn marcadas_do_esquema(esquema: &Schema) -> Vec<usize> {
+    esquema
+        .colunas()
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| {
+            c.dado_pessoal.e_pessoal() && !phxsql_core::schema::e_coluna_de_sistema(&c.nome)
+        })
+        .map(|(i, _)| i)
+        .collect()
+}
+
 impl Table {
     /// Cria as quatro pecas da tabela em `diretorio`.
     ///
@@ -165,7 +209,7 @@ impl Table {
 
         let paginacao = esquema.paginacao();
         for ext in [
-            EXT_REG, EXT_NDX, EXT_BIN, EXT_MEMO, EXT_LOG, EXT_TRASH, EXT_REASON,
+            EXT_REG, EXT_NDX, EXT_BIN, EXT_MEMO, EXT_LOG, EXT_TRASH, EXT_REASON, EXT_LGPD,
         ] {
             for c in [
                 caminho(&diretorio, &nome, ext),
@@ -190,8 +234,12 @@ impl Table {
         let log = LogFile::criar(&diretorio, &nome, externos)?;
         let lixeira = LixeiraFile::criar(&diretorio, &nome, externos)?;
         let motivos = MotivoFile::criar(&diretorio, &nome, externos)?;
+        // `abrir`, e nao `criar`, mesmo aqui: a trilha so nasce quando houver
+        // o primeiro evento. Tabela sem coluna marcada nunca ganha o arquivo.
+        let trilha = TrilhaFile::abrir(&diretorio, &nome, externos)?;
         let reg = RegFile::criar(&diretorio, &nome, esquema.clone())?;
 
+        let colunas_marcadas = marcadas_do_esquema(&esquema);
         let mut t = Table {
             nome,
             diretorio,
@@ -203,6 +251,8 @@ impl Table {
             log,
             lixeira,
             motivos,
+            trilha,
+            colunas_marcadas,
             imagem_no_diario: false,
             imagem_na_exclusao: false,
             evento_forcado: None,
@@ -280,6 +330,9 @@ impl Table {
         // existirem tem de continuar abrindo.
         let lixeira = LixeiraFile::abrir(&diretorio, nome, externos)?;
         let motivos = MotivoFile::abrir(&diretorio, nome, externos)?;
+        // Este NAO cria: arquivo ausente e tabela sem trilha, nunca erro --
+        // e e assim que toda tabela gravada antes desta versao abre igual.
+        let trilha = TrilhaFile::abrir(&diretorio, nome, externos)?;
 
         if ndx.indices().len() != reg.esquema().indices().len() {
             return Err(PhxError::Corrompido(format!(
@@ -290,6 +343,7 @@ impl Table {
         }
 
         let esquema = reg.esquema().clone();
+        let colunas_marcadas = marcadas_do_esquema(&esquema);
         Ok(Table {
             nome: nome.to_string(),
             diretorio,
@@ -301,6 +355,8 @@ impl Table {
             log,
             lixeira,
             motivos,
+            trilha,
+            colunas_marcadas,
             imagem_no_diario: false,
             imagem_na_exclusao: false,
             evento_forcado: None,
@@ -1081,6 +1137,51 @@ impl Table {
         }
         self.liberar_externos(&ponteiros_antigos)?;
         self.anotar(Operacao::Alteracao, rowid, versao, &payload)?;
+        // A trilha vem DEPOIS de a linha estar gravada: uma trilha que
+        // registra uma alteracao que falhou depois seria pior que nenhuma.
+        // O `valores_antigos` ja esta decodificado aqui em cima por causa dos
+        // indices, entao o par antes/depois nao custa leitura nova.
+        self.trilhar_alteracao(rowid, &valores_antigos, valores)?;
+        Ok(())
+    }
+
+    /// Grava na trilha as colunas marcadas que mudaram de valor.
+    ///
+    /// # O portao vem antes do trabalho
+    ///
+    /// As duas primeiras linhas decidem tudo, e nenhuma delas toca em disco,
+    /// texto ou arquivo. Numa tabela sem coluna marcada -- a maioria -- o
+    /// custo da trilha inteira e um `is_empty()`. E a licao do Profiler
+    /// escrita como codigo: o observador pergunta se esta ligado ANTES de
+    /// fazer qualquer coisa, e nao depois de ja ter montado o que vai jogar
+    /// fora.
+    fn trilhar_alteracao(&mut self, rowid: RowId, antes: &[Value], depois: &[Value]) -> Result<()> {
+        if self.colunas_marcadas.is_empty() || !trilha::alteracoes_ligadas() {
+            return Ok(());
+        }
+        // So as colunas marcadas que REALMENTE mudaram. Gravar as que ficaram
+        // iguais encheria a trilha de linhas que nao provam nada e afogaria
+        // as que provam -- salvar a ficha sem mexer em nada geraria seis
+        // registros dizendo que nada aconteceu.
+        let mudou: Vec<usize> = self
+            .colunas_marcadas
+            .iter()
+            .copied()
+            .filter(|&i| i < antes.len() && i < depois.len() && antes[i] != depois[i])
+            .collect();
+        if mudou.is_empty() {
+            return Ok(());
+        }
+        // A identidade se monta UMA vez para as N colunas: ela e da linha, e
+        // nao da coluna. Sai dos valores NOVOS -- e a linha como ela ficou.
+        let identidade = self.identidade_de_valores(depois);
+        for i in mudou {
+            let nome = self.esquema.colunas()[i].nome.clone();
+            let a = trilha::valor_para_trilha(&nome, &antes[i]);
+            let d = trilha::valor_para_trilha(&nome, &depois[i]);
+            self.trilha
+                .registrar_alteracao(rowid, &nome, a, d, &identidade)?;
+        }
         Ok(())
     }
 
@@ -1251,11 +1352,21 @@ impl Table {
     /// rowid do proprio registro e tudo que se tem.
     fn identidade(&mut self, payload: &[u8]) -> Result<String> {
         let valores = self.decodificar(payload, false)?;
+        Ok(self.identidade_de_valores(&valores))
+    }
+
+    /// A mesma identidade, quando os valores ja estao decodificados.
+    ///
+    /// A alteracao ja tem os valores na mao -- decodifica-los de novo a partir
+    /// do payload so para montar a identidade seria pagar duas vezes pela
+    /// mesma linha.
+    fn identidade_de_valores(&self, valores: &[Value]) -> String {
         let esquema = &self.esquema;
         if let Some(pk) = esquema.chave_primaria() {
             let partes: Vec<String> = pk
                 .colunas
                 .iter()
+                .filter(|ic| ic.coluna < valores.len())
                 .map(|ic| {
                     format!(
                         "{}={}",
@@ -1264,14 +1375,14 @@ impl Table {
                     )
                 })
                 .collect();
-            return Ok(partes.join(", "));
+            return partes.join(", ");
         }
         for (i, c) in esquema.colunas().iter().enumerate() {
-            if matches!(c.ty, ColumnType::Uuid | ColumnType::Sequence) {
-                return Ok(format!("{}={}", c.nome, valores[i].para_texto()));
+            if matches!(c.ty, ColumnType::Uuid | ColumnType::Sequence) && i < valores.len() {
+                return format!("{}={}", c.nome, valores[i].para_texto());
             }
         }
-        Ok(String::new())
+        String::new()
     }
 
     /// O conteudo de cada coluna externa da linha, para ir junto na lixeira.
@@ -2082,6 +2193,9 @@ impl Table {
         let eventos = self.log.verificar()?;
         let descartadas = self.lixeira.verificar()?;
         let motivos = self.motivos.verificar()?;
+        // Zero quando o arquivo nem existe -- e essa e a resposta certa: a
+        // tabela sem dado pessoal tem trilha integra de tamanho zero.
+        let trilha = self.trilha.verificar()?;
         // Reconta e corrige de passagem: um contador de cache so serve
         // enquanto alguem se dispoe a conferi-lo.
         let marcadas = self.recontar_marcadas()?;
@@ -2105,6 +2219,7 @@ impl Table {
             eventos,
             descartadas,
             motivos,
+            trilha,
             marcadas,
             volumes: (
                 self.reg.volumes().len(),
@@ -2190,6 +2305,90 @@ impl Table {
         self.log.usuario = usuario;
         self.lixeira.usuario = usuario;
         self.motivos.usuario = usuario;
+        self.trilha.usuario = usuario;
+    }
+
+    /// De que endereco vem quem esta mexendo agora.
+    ///
+    /// So a trilha usa: e o unico dos quatro diarios em que o IP foi pedido, e
+    /// acrescenta-lo aos outros tres engordaria arquivos que ja estao gravados
+    /// sem ele -- uma mudanca de formato para um campo que ninguem pediu la.
+    pub fn definir_origem(&mut self, ip: &str) {
+        self.trilha.ip = ip.to_string();
+    }
+
+    /// Marca ou desmarca colunas como dado pessoal, e regrava o esquema.
+    ///
+    /// A lista de colunas marcadas e recalculada aqui: ela e o portao do
+    /// custo-zero, e um portao que continuasse com a lista velha depois de a
+    /// marca mudar seria pior que nao ter portao -- a coluna recem-marcada
+    /// nao geraria trilha, e ninguem descobriria por leitura.
+    pub fn marcar_dado_pessoal(
+        &mut self,
+        marcas: &[(String, phxsql_core::types::DadoPessoal)],
+    ) -> Result<bool> {
+        let reescreveu = self.reg.remarcar_dado_pessoal(marcas)?;
+        self.esquema = self.reg.esquema().clone();
+        self.colunas_marcadas = marcadas_do_esquema(&self.esquema);
+        Ok(reescreveu)
+    }
+
+    /// A tabela tem alguma coluna marcada como dado pessoal?
+    ///
+    /// E o portao do custo-zero, exposto para quem chama poder decidir ANTES
+    /// de montar o criterio de um registro de acesso.
+    pub fn tem_dado_pessoal(&self) -> bool {
+        !self.colunas_marcadas.is_empty()
+    }
+
+    /// Os nomes das colunas marcadas, na ordem do esquema.
+    pub fn colunas_marcadas(&self) -> Vec<&str> {
+        self.colunas_marcadas
+            .iter()
+            .map(|&i| self.esquema.colunas()[i].nome.as_str())
+            .collect()
+    }
+
+    /// Registra UM acesso a dado pessoal, por operacao.
+    ///
+    /// `criterio` e o que responde "quem viu o prontuario do fulano?" -- a
+    /// chave pedida, o filtro da varredura. `linhas` e quantas voltaram.
+    ///
+    /// Nao faz nada quando a tabela nao tem coluna marcada, quando o registro
+    /// de acesso esta desligado, ou quando a operacao nao devolveu linha
+    /// nenhuma: uma busca que nao achou ninguem nao expos dado de ninguem.
+    pub fn registrar_acesso(&mut self, rowid: RowId, criterio: &str, linhas: u64) -> Result<()> {
+        if self.colunas_marcadas.is_empty() || !trilha::acessos_ligados() || linhas == 0 {
+            return Ok(());
+        }
+        let colunas = self.colunas_marcadas().join(",");
+        self.trilha.registrar_acesso(
+            rowid,
+            &colunas,
+            criterio,
+            linhas.min(u32::MAX as u64) as u32,
+        )?;
+        Ok(())
+    }
+
+    /// A trilha inteira, em ordem cronologica. `limite` zero devolve tudo.
+    pub fn trilha(&mut self, pular: u64, limite: u64) -> Result<Vec<trilha::Evento>> {
+        self.trilha.ler(pular, limite)
+    }
+
+    /// A trilha de uma linha.
+    pub fn trilha_de(&mut self, rowid: RowId) -> Result<Vec<trilha::Evento>> {
+        self.trilha.de(rowid)
+    }
+
+    /// Total de registros na trilha. Zero quando o arquivo nem existe.
+    pub fn total_da_trilha(&mut self) -> Result<u64> {
+        self.trilha.total()
+    }
+
+    /// O `.lgpd` desta tabela existe no disco?
+    pub fn tem_trilha(&self) -> bool {
+        self.trilha.existe()
     }
 
     /// Ocupacao dos arquivos externos: `(.bin, .memo)`.
@@ -2232,6 +2431,7 @@ impl Table {
         self.log.sincronizar()?;
         self.lixeira.sincronizar()?;
         self.motivos.sincronizar()?;
+        self.trilha.sincronizar()?;
         // O descritor acompanha o disco: ele so vale se disser o que os
         // arquivos dizem, e o `sincronizar` e justamente o instante em que os
         // arquivos param de mudar.

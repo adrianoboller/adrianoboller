@@ -27,6 +27,7 @@ pub mod ndx;
 pub mod pag;
 pub mod reg;
 pub mod table;
+pub mod trilha;
 mod util;
 pub mod volume;
 
@@ -40,4 +41,5 @@ pub use ndx::{DescritorIndice, NdxFile, MAGIC_NDX, PAGINA_PADRAO};
 pub use pag::EXT_PAG;
 pub use reg::{RegFile, MAGIC_REG};
 pub use table::{Linha, Lote, Relatorio, Salto, Table, Visao};
+pub use trilha::{TrilhaFile, EXT_LGPD, MAGIC_TRILHA};
 pub use volume::Volumes;

@@ -1,13 +1,18 @@
 # Formato de arquivo do PhxSql
 
-Uma tabela de dados do PhxSql é composta por sete arquivos físicos que
+Uma tabela de dados do PhxSql é composta por até oito arquivos físicos que
 compartilham o mesmo nome-base — mais o espelho e o descritor:
 
 ```
 cadastroClientes.reg + .ndx + .bin + .memo + .log + .trash + .reason
+                     ( +  .lgpd, a trilha, quando há coluna marcada )
                      ( +  .bkp, o espelho, quando ligado )
                      ( +  .pag, o descritor de partição )
 ```
+
+**Até** oito, e não oito: o `.lgpd` só existe em tabela que tem coluna marcada
+como dado pessoal, e é o único do conjunto cuja simples existência já é uma
+informação. Ver §7.
 
 | Arquivo | Papel | Assinatura | Pagina? | Quem lê |
 |---|---|---|---|---|
@@ -18,6 +23,7 @@ cadastroClientes.reg + .ndx + .bin + .memo + .log + .trash + .reason
 | `.log` | Diário de inclusões, alterações e exclusões | `PHXLOG\0\0` | sim | quem tem `diario` |
 | `.trash` | Linhas que saíram do `.reg`, inteiras | `PHXTRH\0\0` | sim | **só `administrar`** |
 | `.reason` | Por que cada linha foi excluída, e por quem | `PHXRSN\0\0` | sim | **só `administrar`** |
+| `.lgpd` | Quem alterou e quem leu as colunas de dado pessoal | `PHXLGP\0\0` | sim | **só `administrar`** |
 | `.pag` | Descritor de partição, em JSON | — (texto) | não | quem lê a tabela |
 
 Os três últimos são **os arquivos do administrador**, e a razão está no que
@@ -52,7 +58,7 @@ defeito. **Não** protege contra o disco morrer: os dois arquivos moram no mesmo
 lugar.
 
 Uma tabela grande se parte em volumes numerados — `cadastroClientes_001.reg`,
-`_002.reg`, … — segundo os parâmetros do `CREATE TABLE`. Ver a seção 7.
+`_002.reg`, … — segundo os parâmetros do `CREATE TABLE`. Ver a seção 8.
 
 **Convenções gerais**
 
@@ -889,7 +895,169 @@ ponto.
 
 ---
 
-## 7. Paginação de tabelas grandes
+---
+
+## 7. `.lgpd` — quem mexeu e quem viu o dado pessoal
+
+O quarto diário, e o mais novo. Os três anteriores cobrem a **inclusão** e a
+**exclusão** por inteiro: o `.log` registra toda operação com rowid e instante,
+a `.trash` guarda a linha inteira antes de ela sumir e o `.reason` guarda quem
+excluiu e por quê. Nenhum dos três tem onde dizer o que este guarda:
+
+- a **alteração**, com o valor **antes** e o valor **depois**, **por coluna** —
+  o evento do `.log` tem tamanho fixo e não cabe um valor, e a imagem da linha
+  no diário, quando ligada, guarda a linha nova e não o par;
+- o **acesso**, que nenhum dos três registra, porque ler não muda nada.
+
+```text
+cadastroClientes.reg + .ndx + .bin + .memo + .log + .trash + .reason + .lgpd
+```
+
+### O arquivo é preguiçoso, e isso é do formato
+
+Os outros três nascem junto com a tabela. Este **não existe** enquanto não
+houver o primeiro registro — e só há registro em tabela que tem coluna marcada
+como dado pessoal (§1, "A marca de dado pessoal").
+
+Não é economia de arquivo: é que a presença dele passa a **significar** alguma
+coisa. Com um `.lgpd` vazio em toda tabela, a pergunta "esta tabela tem
+trilha?" se responderia com "tem arquivo", que é sempre sim. Do jeito que está,
+o arquivo existir já é a resposta.
+
+A consequência para quem lê o formato: **arquivo ausente é tabela sem trilha,
+nunca erro** — a mesma regra do `.trash` e do `.reason` para tabelas gravadas
+antes deles existirem.
+
+### Cabeçalho do arquivo (64 bytes na versão 2, 128 na 3)
+
+Idêntico ao dos outros três diários, com a assinatura `PHXLGP\0\0`. A versão 3
+é a cifrada; ver §4, "A cifra do corpo".
+
+### Registro (56 bytes de cabeçalho + cinco textos)
+
+```text
+[carimbo i64 ms][tipo u8][flags u8][antes_len u16]
+[rowid u64][usuario u32]
+[uuid do evento 16 bytes]
+[depois_len u16][ident_len u16][linhas u32]
+[coluna_len u16][ip_len u8][reservado u8][crc32 u32]
+[coluna][antes][depois][identidade][ip]        (utf-8, nesta ordem)
+```
+
+| Campo | Tam | O que é, e por que está aqui |
+|---|---:|---|
+| `carimbo` | 8 | quando, em ms desde a época. É o "data e hora" do pedido |
+| `tipo` | 1 | `1` alteração, `2` acesso |
+| `flags` | 1 | bit 0: `antes` é marca de redação; bit 1: idem `depois` |
+| `antes_len` | 2 | bytes do valor anterior, **em claro** |
+| `rowid` | 8 | onde a linha está **neste** servidor |
+| `usuario` | 4 | quem. Zero = não informado (token de serviço) |
+| `uuid` | 16 | v7 do próprio evento: ordena por tempo e tempera o nonce |
+| `depois_len` | 2 | bytes do valor novo |
+| `ident_len` | 2 | bytes da identidade da linha, ou do critério da consulta |
+| `linhas` | 4 | quantas linhas a operação devolveu (só no acesso) |
+| `coluna_len` | 2 | bytes do nome da coluna, ou da lista delas |
+| `ip_len` | 1 | bytes do endereço de origem |
+| `crc32` | 4 | cobre o cabeçalho **e** os textos como vão ao disco |
+
+Os cinco tamanhos são os do **texto claro**, e não os do que vai ao disco: é
+por eles que os textos se separam depois de decifrar. O tamanho ocupado sai do
+cabeçalho, que é sempre claro — é o que deixa caminhar pelo arquivo sem a
+chave, como no `.log` e no `.reason`.
+
+### A identidade da linha: rowid **e** chave, como no `.reason`
+
+Os dois, e não um. O `rowid` é a **posição física** da linha neste servidor:
+serve para achar a linha agora, e **não atravessa replicação** — o mesmo
+cliente tem rowid diferente em cada nó. A `identidade` é a chave em **texto**
+(`cpf=012.345.678-90`), que é o que um auditor pergunta e o que sobrevive à
+linha: o registro continua legível depois de ela ser excluída, e continua
+significando a mesma pessoa em qualquer servidor.
+
+Guardar só o rowid daria um registro que aponta para o nada seis meses depois.
+Guardar só a chave tiraria o caminho de volta para a linha viva. O `.reason` já
+tinha resolvido exatamente isso assim, e repetir a solução dele custa 8 bytes.
+
+A identidade sai, nesta ordem: da **chave primária**, senão da primeira coluna
+`Uuid` ou `Sequence`, senão vazia.
+
+### A coluna vai pelo **nome**, e não pela posição
+
+Uma posição (`coluna 4`) só se lê com o esquema da época na mão, e o esquema
+muda: coluna acrescentada, renomeada, tirada da tela. A trilha sobrevive ao
+esquema como sobrevive à linha, então ela carrega o nome. É o mesmo motivo de a
+`identidade` ser texto.
+
+### O que **não** entra, e por quê
+
+**Inclusão, exclusão (física ou suave) e restauração não geram trilha.** Foi o
+que o Adriano pediu, e é coerente com o que já existe:
+
+| evento | onde já está registrado |
+|---|---|
+| inclusão | `.log`, com rowid, versão e instante |
+| exclusão suave | `.log` + `.reason` (quem, quando, por quê) |
+| exclusão física | `.log` + `.trash` (a linha inteira) + `.reason` |
+| restauração | `.log` + `.reason` |
+| **alteração, com antes e depois por coluna** | **só o `.lgpd`** |
+| **acesso** | **só o `.lgpd`** |
+
+Um segundo registro do mesmo fato em outro arquivo cria **duas verdades** sobre
+ele, e a que ficar para trás vira a que engana quem audita. A trilha cobre o
+buraco, não o que já está coberto.
+
+E uma alteração que **não muda** nenhuma coluna marcada não grava nada: salvar
+a ficha sem mexer em nada geraria seis registros dizendo que nada aconteceu, e
+eles afogariam os que provam alguma coisa.
+
+### O acesso é por **operação**, nunca por linha
+
+Uma varredura de 10.000 linhas com seis colunas marcadas geraria 60.000
+registros por consulta se a trilha fosse por célula lida. Medido em
+`--example custo-da-trilha`, com 5.000 linhas: por linha custa **2,41× o tempo
+e 2.906× os bytes** de um registro por operação — e por célula seria mais seis
+vezes isso.
+
+Um registro por operação responde a pergunta que o auditor faz de verdade
+("quem viu o prontuário do fulano?") porque guarda o **critério** da consulta
+na `identidade`: `rowid=42`, `por_cpf=["012..."]`, `varrer indice=por_nome
+visao=ativas modo=cursor pular=0`. Os detalhes e os dois custos estão em
+`docs/LGPD.md`.
+
+### Redação: senha e hash nunca entram
+
+Se uma coluna marcada guardar segredo, o registro grava **o tamanho em bytes e
+uma marca de redigido**, nunca o conteúdo, e liga o bit de `flags`. São duas
+conferências, e as duas olham **estrutura**, nunca texto solto:
+
+1. **a coluna declarada** — o nome vem do esquema, que é onde alguém declarou o
+   que aquilo é. Pega a senha ainda em texto puro, que é o caso pior;
+2. **o valor que se analisa como hash** — `senha::e_hash` destrincha a linha nos
+   quatro campos do formato (`pbkdf2-sha256$iterações$sal$derivado`) e confere
+   cada um. Se destrincha, é um hash — venha da coluna que vier. Pega o hash
+   gravado numa coluna de nome inocente.
+
+E o que não se analisa não vira texto, vira tamanho: `Value::Bin` sai como
+`"N bytes"`, porque uma biometria é exatamente o dado que não pode ser
+concentrado aqui.
+
+Cada valor é cortado em **1.024 bytes**, sem partir caractere UTF-8. A trilha é
+a prova de que o valor mudou, não uma segunda cópia da tabela.
+
+### O arquivo mais perigoso da tabela
+
+Ele concentra, em claro, exatamente o que a lei manda proteger. Por isso:
+
+- **nasce `0600`** — legível só pelo dono, como o cadastro de ligações do
+  DbLink já faz. Com a cifra desligada (o padrão), é a única proteção que há;
+- **entra na mesma cifra e no mesmo interruptor** dos outros três diários. Com
+  a cifra ligada, um `grep` no arquivo não encontra o valor — provado, junto
+  com a prova pelo contrário no volume em claro;
+- **só administrador lê** pela operação `trilha`.
+
+---
+
+## 8. Paginação de tabelas grandes
 
 Definida no `CREATE TABLE` e gravada no esquema:
 
@@ -1098,7 +1266,7 @@ ler o esquema é que o conjunto de volumes é montado.
 
 ---
 
-## 8. `.pag` — o descritor de partição
+## 9. `.pag` — o descritor de partição
 
 JSON indentado, ao lado dos outros arquivos da tabela. Diz **como a tabela está
 partida**, que arquivo guarda o quê, e quanto tem em cada um:
@@ -1140,7 +1308,7 @@ não quebra a tabela; regravar resolve.
 
 ---
 
-## 9. Hierarquia: database, schema e tabela
+## 10. Hierarquia: database, schema e tabela
 
 ```
 base/
@@ -1187,7 +1355,7 @@ não tem `phxsys` nenhum no disco — e responde exatamente como sempre responde
 
 ---
 
-## 10. Reindex
+## 11. Reindex
 
 Recriar o `.ndx` inteiro a partir do `.reg`: varre os registros ativos na ordem
 de digitação, recodifica as chaves e reconstrói cada B+tree do zero. Resolve
@@ -1202,7 +1370,7 @@ crescente dentro de cada chave.
 
 ---
 
-## 11. Identificadores: `Uuid`, `Uuid256` e `Sequence`
+## 12. Identificadores: `Uuid`, `Uuid256` e `Sequence`
 
 Três tipos de largura fixa que cabem inteiros no slot — nada vai para o `.bin`.
 
@@ -1262,7 +1430,7 @@ defeito. O esquema recusa na criação.
 
 ---
 
-## 12. Limites
+## 13. Limites
 
 | Limite | Valor |
 |---|---|
@@ -1285,7 +1453,7 @@ defeito. O esquema recusa na criação.
 | Volumes por arquivo | 65.535 (limite do ponteiro externo) |
 | Offset dentro de um volume externo | 256 TB (48 bits) |
 
-## 13. `gatilhos.json` e `procedimentos.json` — o cadastro de rotinas
+## 14. `gatilhos.json` e `procedimentos.json` — o cadastro de rotinas
 
 Dois arquivos **por database**, no diretório dele, ao lado das tabelas:
 
@@ -1361,7 +1529,7 @@ A linguagem, o portão de permissão e a semântica de disparo estão em
 
 ---
 
-## 14. O que este formato ainda não faz
+## 15. O que este formato ainda não faz
 
 Documentado aqui para não haver surpresa:
 

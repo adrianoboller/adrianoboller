@@ -197,6 +197,17 @@ struct Sessao {
     /// Desafio em aberto: (usuario, nonce do servidor, quando expira).
     /// Vale uma vez so -- e consumido no login, dando certo ou errado.
     desafio: Option<(String, String, i64)>,
+    /// De onde veio esta conexao.
+    ///
+    /// Existe para a trilha de LGPD, que precisa gravar o IP de quem alterou
+    /// ou leu dado pessoal. Mora na SESSAO, e nao no pedido, porque e uma
+    /// propriedade da conexao e nao de cada operacao -- e porque assim as
+    /// quarenta operacoes que ja recebem `&Sessao` ganham o IP sem que
+    /// nenhuma delas mude de assinatura.
+    ///
+    /// Vazio nos caminhos que nao tem conexao: replicacao, job agendado,
+    /// rotina interna. Vazio ali e a verdade, e nao uma falta.
+    ip: String,
 }
 
 impl Sessao {
@@ -2782,6 +2793,7 @@ impl Servidor {
         // pedido, inclusive nesta mesma conexao.
         phxsql_store::ndx::definir_cache_paginas(novo.recursos.cache_paginas);
         novo.recursos.aplicar();
+        novo.lgpd.aplicar();
         self.max_linhas_vivo
             .store(novo.max_linhas, Ordering::Relaxed);
         self.somente_leitura_vivo
@@ -4040,8 +4052,11 @@ impl Servidor {
             .to_string();
 
         // Reconstroi, a partir da sessao, o mesmo estado que a conexao TCP
-        // teria: quem esta logado e que desafio esta em aberto.
-        let mut sessao = Sessao::default();
+        // teria: quem esta logado, que desafio esta em aberto, e de onde veio.
+        let mut sessao = Sessao {
+            ip: ip.to_string(),
+            ..Sessao::default()
+        };
         let mut id_sessao = String::new();
         if !id_pedido.is_empty() {
             if let Ok(mut vivas) = self.sessoes.lock() {
@@ -4371,6 +4386,7 @@ impl Servidor {
         };
         let mut sessao = Sessao {
             ligacao: id_ligacao,
+            ip: ip.clone(),
             ..Sessao::default()
         };
         // Sai do registro por qualquer caminho -- inclusive os `return` do
@@ -5055,6 +5071,8 @@ impl Servidor {
             "restaurar" => self.op_restaurar(p, sessao),
             "lixeira" | "trash" => self.op_lixeira(p, sessao),
             "motivos" | "reasons" => self.op_motivos(p, sessao),
+            "trilha" | "trilha_lgpd" => self.op_trilha(p, sessao),
+            "marcar_lgpd" | "marcar_dado_pessoal" => self.op_marcar_lgpd(p, sessao),
             "esvaziar_lixeira" => self.op_esvaziar_lixeira(p, sessao),
             "diario" => self.op_diario(p, sessao),
             "profiler_ligar" => self.op_profiler_ligar(p),
@@ -5145,10 +5163,42 @@ impl Servidor {
         }
         // Quem alterar assina o evento no .log da tabela.
         t.definir_usuario(sessao.id());
+        // E, na trilha de dado pessoal, assina tambem de ONDE. Aqui e o unico
+        // lugar em que a tabela e aberta para o cliente, entao e o unico ponto
+        // que precisa saber disso -- pelo mesmo motivo de o usuario ser
+        // definido aqui e nao em cada operacao.
+        t.definir_origem(&sessao.ip);
         // A imagem da linha no diario e decisao do servidor, como o espelho:
         // um source grava, um servidor isolado nao paga por ela.
         t.ligar_imagem_no_diario(self.config.replicacao.imagem_da_linha);
         Ok(t)
+    }
+
+    /// Anota na trilha que uma operacao LEU dado pessoal.
+    ///
+    /// # O `if` vem antes do `format!`
+    ///
+    /// O criterio chega como fecho e nao como texto de proposito: numa tabela
+    /// sem coluna marcada -- a maioria -- montar a frase seria alocar uma
+    /// `String` por leitura para jogar fora, que e exatamente a conta que o
+    /// Profiler desligado cobrava. Aqui o portao pergunta primeiro.
+    ///
+    /// # E por que o erro sobe, em vez de ser engolido
+    ///
+    /// Uma trilha que perde registro em silencio e pior que trilha nenhuma:
+    /// ela PARECE completa, e quem audita seis meses depois conclui que
+    /// ninguem leu aquela ficha. Se o disco nao aceita o registro, a leitura
+    /// que ficaria sem rastro nao acontece.
+    fn trilhar_acesso(
+        t: &mut Table,
+        rowid: u64,
+        linhas: u64,
+        criterio: impl FnOnce() -> String,
+    ) -> Result<()> {
+        if !t.tem_dado_pessoal() || linhas == 0 {
+            return Ok(());
+        }
+        t.registrar_acesso(rowid, &criterio(), linhas)
     }
 
     fn rowid(&self, p: &Json) -> Result<u64> {
@@ -7417,6 +7467,7 @@ impl Servidor {
             None => return Ok(Json::Nulo),
             Some(l) => linha_para_json(&l, t.esquema()),
         };
+        Self::trilhar_acesso(&mut t, rowid, 1, || format!("rowid={rowid}"))?;
         if !com_versao {
             return Ok(linha);
         }
@@ -7510,6 +7561,26 @@ impl Servidor {
             }
         }
 
+        // UM registro para a pagina inteira, e nao um por linha: e a decisao
+        // que faz a varredura de 10.000 linhas custar um registro de trilha
+        // em vez de 10.000 vezes o numero de colunas marcadas. O criterio
+        // guarda como a pagina foi pedida, que e o que um auditor precisa
+        // para refazer o caminho.
+        Self::trilhar_acesso(&mut t, 0, linhas.len() as u64, || {
+            let onde = if por_indice {
+                format!("indice={indice}")
+            } else {
+                "ordem=digitacao".to_string()
+            };
+            format!("varrer {onde} visao={} modo={modo} pular={pular}", {
+                match visao {
+                    Visao::Ativas => "ativas",
+                    Visao::Excluidas => "excluidas",
+                    Visao::Todas => "todas",
+                }
+            })
+        })?;
+
         // O cursor para pedir a proxima pagina e a anterior. Vai pronto na
         // resposta para o cliente nao ter de saber que ele e um rowid -- e
         // para poder deixar de ser um, se um dia a ordem mudar.
@@ -7594,6 +7665,12 @@ impl Servidor {
                 linhas.push(Json::Objeto(obj));
             }
         }
+        // O criterio guarda o INDICE e a CHAVE pedidos: e o que responde
+        // "quem procurou o CPF do fulano?", que e a pergunta que se faz a
+        // uma trilha de acesso.
+        Self::trilhar_acesso(&mut t, 0, linhas.len() as u64, || {
+            format!("{indice}={}", chave_json.escrever())
+        })?;
         Ok(Json::objeto(vec![
             ("encontrados", Json::de_u64(rowids.len() as u64)),
             ("linhas", Json::Lista(linhas)),
@@ -8215,6 +8292,168 @@ impl Servidor {
             ("total", Json::de_u64(total)),
             ("motivo_obrigatorio", Json::Bool(exige)),
             ("motivos", Json::Lista(registros)),
+        ]))
+    }
+
+    /// `marcar_lgpd`: classifica colunas como dado pessoal. **Administrador.**
+    ///
+    /// ```json
+    /// {"op":"marcar_lgpd","database":"loja","tabela":"clientes",
+    ///  "colunas":{"nome":"pessoal","cpf":"pessoal","laudo":"sensivel",
+    ///             "limite_credito":"nao"}}
+    /// ```
+    ///
+    /// # Por que a caixa da tela manda `"pessoal"`, e nao `true`
+    ///
+    /// A tela mostra uma caixa de marcar, que e o gesto certo para quem esta
+    /// cadastrando o campo. Mas o que vai gravado continua sendo o GRAU, e a
+    /// caixa e so o atalho: marcar sem dizer mais nada da `pessoal`, e quem
+    /// precisa de `sensivel` escolhe ao lado.
+    ///
+    /// Se a caixa mandasse um booleano, marcar uma coluna ja gravada como
+    /// `sensivel` a REBAIXARIA para `pessoal` sem ninguem pedir -- e o
+    /// rebaixamento e justamente o que muda o regime legal do campo. Uma
+    /// interface nova nao pode apagar em silencio a classificacao que alguem
+    /// ja fez.
+    fn op_marcar_lgpd(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let Some(Json::Objeto(pares)) = p.campo("colunas") else {
+            return Err(PhxError::Esquema(
+                "informe \"colunas\" como objeto: \
+                 {\"colunas\":{\"cpf\":\"pessoal\"}}"
+                    .into(),
+            ));
+        };
+        let mut marcas = Vec::with_capacity(pares.len());
+        for (nome, valor) in pares {
+            // `de_texto` aceita "sim"/"true"/"1" como `pessoal` e "nao" como
+            // `nao`, entao a caixa de marcar da tela chega aqui sem tradutor.
+            let grau = match valor {
+                Json::Bool(b) => {
+                    if *b {
+                        DadoPessoal::Pessoal
+                    } else {
+                        DadoPessoal::Nao
+                    }
+                }
+                outro => DadoPessoal::de_texto(outro.texto().unwrap_or(""))?,
+            };
+            marcas.push((nome.clone(), grau));
+        }
+        let _trava = self.travar_dados()?;
+        let mut t = self.abrir_travada(&_trava, p, sessao)?;
+        let reescreveu = t.marcar_dado_pessoal(&marcas)?;
+        t.sincronizar()?;
+        let marcadas: Vec<Json> = t
+            .colunas_marcadas()
+            .iter()
+            .map(|n| Json::texto_de(*n))
+            .collect();
+        Ok(Json::objeto(vec![
+            ("database", Json::texto_de(p.texto_ou("database", ""))),
+            ("tabela", Json::texto_de(p.texto_ou("tabela", ""))),
+            ("alteradas", Json::de_u64(marcas.len() as u64)),
+            ("colunas_marcadas", Json::Lista(marcadas)),
+            // O caminho caro reescreve os volumes; a tela avisa quando foi ele,
+            // porque numa tabela grande isso demora e quem clicou merece saber
+            // por que. Numa tabela ja v6 e sempre `false`.
+            ("arquivos_reescritos", Json::Bool(reescreveu)),
+        ]))
+    }
+
+    /// `trilha`: a trilha de LGPD da tabela. **So administrador.**
+    ///
+    /// # Ela NAO se registra a si mesma
+    ///
+    /// Ler a trilha e, sem duvida, acessar dado pessoal -- e a pergunta
+    /// "quem leu a trilha?" tem de ter resposta. Ela tem, e nao e aqui.
+    ///
+    /// Registrar a leitura da trilha DENTRO da trilha teria dois defeitos. O
+    /// primeiro e a recursao pratica: cada abertura da tela acrescentaria um
+    /// registro, que apareceria na proxima abertura, que acrescentaria outro
+    /// -- e em pouco tempo a trilha de uma tabela seria majoritariamente a
+    /// historia de quem a auditou, com os fatos sobre o DADO afogados no meio.
+    /// Uma auditoria que atrapalha a propria leitura nao e auditoria.
+    ///
+    /// O segundo e que seria o lugar errado. Esta operacao exige
+    /// `Administrar`, e **toda** operacao que passa por esta porta ja e
+    /// gravada no registro de acessos do servidor, com data, hora, IP, login,
+    /// operacao, base, tabela e se deu certo -- e por isso que `op_acessos`
+    /// existe. "Quem leu a trilha da tabela X, quando e de onde" se responde
+    /// la, que e o arquivo de quem-chamou-o-que. A trilha responde outra
+    /// pergunta: o que aconteceu com o DADO. Misturar as duas faria cada uma
+    /// responder pior.
+    fn op_trilha(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let pular = p.inteiro_ou("pular", 0).max(0) as u64;
+        let limite = p.inteiro_ou("limite", 500).max(0) as u64;
+        let so_do_rowid = p.campo("rowid").is_some();
+        // Filtro por tipo, para a tela poder separar "quem mexeu" de "quem
+        // viu" sem trazer as duas listas e jogar metade fora.
+        let so_tipo = p.texto_ou("tipo", "").trim().to_lowercase();
+        let _trava = self.travar_dados()?;
+        let mut t = self.abrir_travada(&_trava, p, sessao)?;
+
+        let marcadas: Vec<Json> = t
+            .colunas_marcadas()
+            .iter()
+            .map(|n| Json::texto_de(*n))
+            .collect();
+        let tem_trilha = t.tem_trilha();
+        let total = t.total_da_trilha()?;
+        let lista = if so_do_rowid {
+            t.trilha_de(self.rowid(p)?)?
+        } else {
+            t.trilha(pular, limite)?
+        };
+
+        let registros: Vec<Json> = lista
+            .iter()
+            .filter(|e| so_tipo.is_empty() || e.tipo.nome() == so_tipo)
+            .map(|e| {
+                Json::objeto(vec![
+                    ("uuid", Json::texto_de(e.uuid.to_string())),
+                    ("quando", Json::texto_de(e.instante_iso())),
+                    ("carimbo", Json::de_i64(e.carimbo)),
+                    ("tipo", Json::texto_de(e.tipo.nome())),
+                    ("rowid", Json::de_u64(e.rowid)),
+                    ("identidade", Json::texto_de(&e.identidade)),
+                    ("coluna", Json::texto_de(&e.coluna)),
+                    ("antes", Json::texto_de(&e.antes)),
+                    ("depois", Json::texto_de(&e.depois)),
+                    // A tela precisa saber que aquele texto e uma MARCA de
+                    // redacao, e nao o valor -- senao mostraria "(redigido: 60
+                    // bytes)" como se fosse o conteudo do campo.
+                    ("antes_redigido", Json::Bool(e.antes_redigido())),
+                    ("depois_redigido", Json::Bool(e.depois_redigido())),
+                    ("linhas", Json::de_u64(e.linhas as u64)),
+                    ("ip", Json::texto_de(&e.ip)),
+                    ("usuario", Json::de_u64(e.usuario as u64)),
+                    (
+                        "usuario_nome",
+                        Json::texto_de(self.nome_do_usuario(e.usuario)),
+                    ),
+                ])
+            })
+            .collect();
+
+        Ok(Json::objeto(vec![
+            ("database", Json::texto_de(p.texto_ou("database", ""))),
+            ("tabela", Json::texto_de(p.texto_ou("tabela", ""))),
+            ("total", Json::de_u64(total)),
+            // A diferenca que a tela precisa para nao mentir: "nao ha arquivo"
+            // e "o arquivo esta vazio" sao a mesma tela, e nenhum dos dois e
+            // "esta tabela nao tem dado pessoal". Quem responde isso e
+            // `colunas_marcadas`.
+            ("tem_arquivo", Json::Bool(tem_trilha)),
+            ("colunas_marcadas", Json::Lista(marcadas)),
+            (
+                "alteracoes_ligadas",
+                Json::Bool(phxsql_store::trilha::alteracoes_ligadas()),
+            ),
+            (
+                "acessos_ligados",
+                Json::Bool(phxsql_store::trilha::acessos_ligados()),
+            ),
+            ("registros", Json::Lista(registros)),
         ]))
     }
 
