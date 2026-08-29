@@ -324,12 +324,12 @@ footer p{max-width:var(--medida)}
 
   <div class="painel">
   <!-- projeto:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-    <div><div class="v">45.342</div><div class="r">linhas de Rust</div></div>
+    <div><div class="v">45.654</div><div class="r">linhas de Rust</div></div>
     <div><div class="v">615</div><div class="r">testes</div></div>
     <div><div class="v">0</div><div class="r">dependências</div></div>
     <div><div class="v">4</div><div class="r">crates</div></div>
     <div><div class="v">7</div><div class="r">arquivos/tabela</div></div>
-    <div><div class="v">8.793</div><div class="r">linhas de doc</div></div>
+    <div><div class="v">8.915</div><div class="r">linhas de doc</div></div>
   <!-- projeto:fim -->
   </div>
 </header>
@@ -1304,7 +1304,7 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
 
   <p>Gravar mil linhas com mil pedidos custava mil aberturas de tabela — sete
   arquivos cada —, mil travas e mil <em>fsync</em>. <code>inserir_lote</code> faz
-  tudo uma vez só: <strong>2.609 → 37.021 linhas/s, 14,2×</strong>, medido com
+  tudo uma vez só: <strong>2.659 → 39.287 linhas/s, 14,8×</strong>, medido com
   20.000 linhas pela rede contra o mesmo trabalho linha a linha, por
   <code>bancada/carga/medir.py</code>.</p>
 
@@ -4013,6 +4013,33 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
     desde a 0.13.0 <strong>sem nada por trás</strong>.</p>
   </div>
 
+  <h3>E o cabeçalho que reserializava o esquema a cada linha</h3>
+
+  <p>Achado respondendo a uma pergunta sobre outra coisa — «e se o
+  <code>.ndx</code> parasse durante a carga?» —, que é onde essas coisas costumam
+  aparecer. Toda inserção chamava <code>gravar_cabecalho</code>, e ele fazia
+  <strong>cinco coisas, das quais uma era necessária</strong>:</p>
+
+  <div class="rolo">
+    <table>
+      <thead><tr><th class="num">#</th><th>o que fazia por linha inserida</th><th>precisa?</th></tr></thead>
+      <tbody>
+        <tr><td class="num">1</td><td>serializar o <strong>esquema inteiro</strong></td><td><span class="pino nao">não</span></td></tr>
+        <tr><td class="num">2</td><td>calcular o <strong>CRC-32</strong> desse bloco</td><td><span class="pino nao">não</span></td></tr>
+        <tr><td class="num">3</td><td>gravar os 128 bytes de cabeçalho, com os contadores</td><td><span class="pino ok">sim</span></td></tr>
+        <tr><td class="num">4</td><td>gravar o <strong>bloco de esquema outra vez</strong>, byte a byte igual</td><td><span class="pino nao">não</span></td></tr>
+        <tr><td class="num">5</td><td>perguntar o <strong>tamanho do arquivo</strong></td><td><span class="pino nao">não</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>O esquema é imutável depois que a tabela nasce. Ele passou a ser serializado
+  uma vez, no construtor, com o CRC junto; e o caminho quente ganhou um irmão que
+  grava <em>só</em> o cabeçalho. O bloco de esquema e o teste de tamanho ficaram
+  onde importam: na criação do volume. <strong>Só o <code>.reg</code>: 6,8 → 5,3
+  µs por linha (1,27×); com dois índices, 18,5 → 17,0</strong>. Nenhum byte mudou
+  de lugar no disco.</p>
+
   <div class="nota">
     <span class="t">O pedido pedia outra coisa, e a medição mandou</span>
     <p>O item da lista dizia «ordene as chaves do lote antes de inserir no
@@ -4270,7 +4297,7 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
 
 <footer>
   <!-- rodape:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-  <p>PhxSql 0.17.0 · 45.342 linhas de Rust em 4 crates,
+  <p>PhxSql 0.17.0 · 45.654 linhas de Rust em 4 crates,
   mais 486 KiB de interface · 615 testes ·
   nenhuma dependência externa.
   Especificação byte a byte em <code>docs/FORMATO.md</code>, cadastro e

@@ -96,6 +96,15 @@ fn slot_integro(slot: &[u8]) -> bool {
 pub struct RegFile {
     volumes: Volumes,
     esquema: Schema,
+    /// O bloco de esquema ja serializado, e o CRC dele.
+    ///
+    /// O esquema NAO MUDA depois que a tabela e criada ou aberta -- e o
+    /// cabecalho e regravado a cada insercao, para os contadores irem ao
+    /// disco. Sem isto, cada linha inserida reserializava o esquema inteiro e
+    /// recalculava o CRC dele: trabalho identico, resultado identico, uma vez
+    /// por linha.
+    esquema_bytes: Vec<u8>,
+    esquema_crc: u32,
     slot_size: usize,
     data_offset: u64,
     slot_count: u64,
@@ -168,9 +177,12 @@ impl RegFile {
         let data_offset = alinhar(CAB_LEN as u64 + bytes_esquema.len() as u64, ALINHAMENTO);
         let slot_size = SLOT_CAB + esquema.payload_len();
 
+        let esquema_crc = crc32(&bytes_esquema);
         let mut r = RegFile {
             volumes: Volumes::novo(diretorio, nome, EXT_REG, paginacao),
             esquema,
+            esquema_bytes: bytes_esquema,
+            esquema_crc,
             slot_size,
             data_offset,
             slot_count: 0,
@@ -264,9 +276,13 @@ impl RegFile {
             )));
         }
 
+        let bytes_esquema = esquema.serializar();
+        let esquema_crc = crc32(&bytes_esquema);
         let mut r = RegFile {
             volumes: Volumes::novo(diretorio, nome, EXT_REG, esquema.paginacao()),
             esquema,
+            esquema_bytes: bytes_esquema,
+            esquema_crc,
             slot_size,
             data_offset,
             slot_count,
@@ -410,7 +426,7 @@ impl RegFile {
         } else {
             self.marcadas = self.marcadas.saturating_sub(delta.unsigned_abs());
         }
-        self.gravar_cabecalho(1)
+        self.gravar_contadores(1)
     }
 
     /// Regrava o contador de marcadas e leva ao disco. E o caminho do reparo.
@@ -419,7 +435,7 @@ impl RegFile {
             return Ok(());
         }
         self.marcadas = n;
-        self.gravar_cabecalho(1)
+        self.gravar_contadores(1)
     }
 
     /// Empurra o contador para depois de um valor gravado a mao.
@@ -450,11 +466,40 @@ impl RegFile {
     /// mas o erro aparece longe de quem causou.
     pub fn ajustar_sequencia(&mut self, proxima: u64) -> Result<()> {
         self.proxima_sequencia = proxima;
-        self.gravar_cabecalho(1)
+        self.gravar_contadores(1)
+    }
+
+    /// So os 128 bytes do cabecalho do volume 1, com os contadores.
+    ///
+    /// # Por que existe, separado do `gravar_cabecalho`
+    ///
+    /// Toda insercao precisa levar `slot_count` e companhia ao disco -- sao
+    /// eles que dizem onde a proxima linha entra. Nao precisa reescrever o
+    /// BLOCO DE ESQUEMA junto, que e imutavel e ja esta la desde a criacao do
+    /// volume; nem conferir o tamanho do arquivo, que so encolheria se alguem
+    /// o truncasse por fora.
+    ///
+    /// Antes disto, cada linha inserida custava: serializar o esquema inteiro,
+    /// calcular o CRC-32 dele, gravar o cabecalho, gravar o bloco de esquema
+    /// de novo e perguntar o tamanho do arquivo. Cinco coisas, das quais uma
+    /// era necessaria.
+    fn gravar_contadores(&mut self, volume: u32) -> Result<()> {
+        let buf = self.montar_cabecalho(volume);
+        self.volumes.escrever(volume, 0, &buf)
     }
 
     fn gravar_cabecalho(&mut self, volume: u32) -> Result<()> {
-        let bytes_esquema = self.esquema.serializar();
+        let buf = self.montar_cabecalho(volume);
+        self.volumes.escrever(volume, 0, &buf)?;
+        self.volumes
+            .escrever(volume, CAB_LEN as u64, &self.esquema_bytes.clone())?;
+        if self.volumes.tamanho(volume)? < self.data_offset {
+            self.volumes.definir_tamanho(volume, self.data_offset)?;
+        }
+        Ok(())
+    }
+
+    fn montar_cabecalho(&self, volume: u32) -> [u8; CAB_LEN] {
         let mut buf = [0u8; CAB_LEN];
         buf[0..8].copy_from_slice(MAGIC_REG);
         buf[8..10].copy_from_slice(&VERSAO.to_le_bytes());
@@ -470,8 +515,8 @@ impl RegFile {
             por_u64(&mut buf, 108, self.marcadas);
         }
         por_u64(&mut buf, 44, self.data_offset);
-        por_u32(&mut buf, 52, bytes_esquema.len() as u32);
-        por_u32(&mut buf, 56, crc32(&bytes_esquema));
+        por_u32(&mut buf, 52, self.esquema_bytes.len() as u32);
+        por_u32(&mut buf, 56, self.esquema_crc);
         por_i64(&mut buf, 60, self.criado_em);
         por_i64(&mut buf, 68, agora());
         // A fronteira deste volume, na particao por periodo. Cada volume
@@ -489,14 +534,7 @@ impl RegFile {
         }
         let crc = crc32(&buf[..124]);
         por_u32(&mut buf, 124, crc);
-
-        self.volumes.escrever(volume, 0, &buf)?;
-        self.volumes
-            .escrever(volume, CAB_LEN as u64, &bytes_esquema)?;
-        if self.volumes.tamanho(volume)? < self.data_offset {
-            self.volumes.definir_tamanho(volume, self.data_offset)?;
-        }
-        Ok(())
+        buf
     }
 
     /// Quantas leituras foram salvas pelo espelho desde que a tabela abriu.
@@ -798,9 +836,9 @@ impl RegFile {
         // enormes entre um balde e o seguinte -- e continua servindo para o
         // que `conferir_faixa` precisa: recusar rowid que nunca foi gravado.
         self.slot_count = self.slot_count.max(rowid);
-        self.gravar_cabecalho(volume)?;
+        self.gravar_contadores(volume)?;
         if volume != 1 {
-            self.gravar_cabecalho(1)?;
+            self.gravar_contadores(1)?;
         }
         Ok(rowid)
     }
@@ -855,7 +893,7 @@ impl RegFile {
 
         self.slot_count += 1;
         self.live_count += 1;
-        self.gravar_cabecalho(1)?;
+        self.gravar_contadores(1)?;
         Ok(rowid)
     }
 
@@ -969,7 +1007,7 @@ impl RegFile {
         por_u64(&mut slot, 8, versao);
         slot[SLOT_CAB..].copy_from_slice(payload);
         self.volumes.escrever(volume, offset, &slot)?;
-        self.gravar_cabecalho(1)?;
+        self.gravar_contadores(1)?;
         Ok(versao)
     }
 
@@ -985,7 +1023,7 @@ impl RegFile {
         cab[0] = STATUS_LIVRE;
         self.volumes.escrever(volume, offset, &cab)?;
         self.live_count = self.live_count.saturating_sub(1);
-        self.gravar_cabecalho(1)?;
+        self.gravar_contadores(1)?;
         Ok(true)
     }
 

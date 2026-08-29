@@ -4,9 +4,10 @@
   "linhas": 20000,
   "por_lote": 5000,
   "indices": 2,
-  "uma_a_uma_s": 7.666,
-  "uma_a_uma_por_s": 2609,
-  "em_lote_s": 0.54,
-  "em_lote_por_s": 37021,
-  "ganho": 14.19
+  "uma_a_uma_s": 7.521,
+  "uma_a_uma_por_s": 2659,
+  "em_lote_s": 0.509,
+  "em_lote_por_s": 39287,
+  "ganho": 14.77,
+  "nota": "duas corridas: o lote deu 39.038 e 39.287 linhas/s; publicada a segunda"
 }

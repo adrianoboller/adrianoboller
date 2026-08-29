@@ -29,12 +29,18 @@ o número não denunciava nada.
 
 | | linhas/s | |
 |---|---:|---|
-| uma a uma | 2.609 | uma viagem, uma abertura e um `fsync` por linha |
-| lotes de 5.000 | **37.021** | **14,2×** |
+| uma a uma | 2.659 | uma viagem, uma abertura e um `fsync` por linha |
+| lotes de 5.000 | **39.287** | **14,8×** |
 
 O ganho **não é do disco**: é de tudo que acontecia *por linha* passar a
 acontecer uma vez por lote. Na 0.16.0 o lote dava 25.985/s; o que mudou entre
-uma e outra foi o cache de páginas do `.ndx` (`docs/DESEMPENHO.md` §2).
+uma e outra foram o cache de páginas do `.ndx` e o cabeçalho que parou de
+reserializar o esquema por linha (`docs/DESEMPENHO.md` §2 e §2.0).
+
+O lado de uma a uma é o mais instável dos dois — cada linha paga uma viagem de
+rede e um `fsync` —, e é por isso que ele é o **controle** e não o resultado:
+duas corridas seguidas deram 2.400 e 2.659 linhas/s, enquanto o lote deu 39.038
+e 39.287.
 
 O lado de controle — o linha a linha — bate com a medição antiga (2.715 e
 2.609), que é como se sabe que os dois números são comparáveis.

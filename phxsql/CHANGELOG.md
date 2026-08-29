@@ -54,8 +54,8 @@ recursos novos inventados aqui.
 
 - **Cache de páginas no `.ndx`** (pedido 113, e não pelo caminho que o pedido
   supunha). A inserção com dois índices caiu de **44,4 para 18,5 µs por linha —
-  2,40×** —, e a carga em lote pela rede subiu de **25.985 para 37.021
-  linhas/s**. Sem mudar formato, sem mudar garantia e sem tocar na B+tree.
+  2,40×** —, e a carga em lote pela rede subiu de **25.985 para 39.287
+  linhas/s** (com o §2.0 junto). Sem mudar formato, sem mudar garantia e sem tocar na B+tree.
 
   O pedido dizia «ordene as chaves do lote, para chaves vizinhas caírem na mesma
   folha». Medi antes: **a desordem custava 1,06×**. O custo não era de
@@ -91,6 +91,22 @@ recursos novos inventados aqui.
 
 - **`--example ordem-da-chave`**, que mede quanto a ordem das chaves custa. Foi
   ele que reprovou a hipótese do pedido 113 antes de ela virar código.
+
+- **O cabeçalho do `.reg` parou de reserializar o esquema a cada linha.** Toda
+  inserção chamava `gravar_cabecalho`, e ele fazia cinco coisas — serializar o
+  esquema inteiro, calcular o CRC-32 dele, gravar os 128 bytes de cabeçalho com
+  os contadores, gravar o **bloco de esquema outra vez** byte a byte igual, e
+  perguntar o tamanho do arquivo. Das cinco, **uma** era necessária.
+
+  O esquema não muda desde que a tabela é criada: passou a ser serializado uma
+  vez, no construtor, com o CRC junto; e o caminho quente ganhou um irmão que
+  grava só o cabeçalho. O bloco de esquema e o teste de tamanho ficaram onde
+  importam, na criação do volume. **Só o `.reg`: 6,8 → 5,3 µs por linha
+  (1,27×). Com dois índices: 18,5 → 17,0 µs.** Nenhum byte mudou de lugar no
+  disco.
+
+  Achado respondendo a uma pergunta sobre outra coisa — «e se o `.ndx` parasse
+  durante a carga?» —, o que é onde essas coisas costumam aparecer.
 
 - **`--example indice-adiado`**, que responde «e se o `.ndx` parasse durante a
   carga e fosse reconstruído no fim?» com a reconstrução **dentro da conta**:

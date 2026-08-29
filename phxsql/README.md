@@ -148,8 +148,8 @@ divergiu — e a replicação para ali em vez de espalhar.
 ## Carga em lote
 
 Gravar mil linhas com mil pedidos custa mil aberturas de tabela, mil travas e
-mil `fsync`. `inserir_lote` faz tudo uma vez só — **2.609 → 37.021 linhas/s
-(14,2×)**, medido com 20.000 linhas pela rede por
+mil `fsync`. `inserir_lote` faz tudo uma vez só — **2.659 → 39.287 linhas/s
+(14,8×)**, medido com 20.000 linhas pela rede por
 [`bancada/carga/medir.py`](bancada/carga/medir.py).
 
 O mesmo pedido aceita texto colado em **JSON, CSV, TXT, XML ou HTML**, e
