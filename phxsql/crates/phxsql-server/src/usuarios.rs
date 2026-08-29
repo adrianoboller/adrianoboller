@@ -90,7 +90,14 @@ impl Atividade {
     /// autenticado -- e o caso do `ping` e do `login`.
     pub fn da_operacao(op: &str) -> Option<Atividade> {
         Some(match op {
-            "ping" | "login" | "desafio" | "quem_sou" | "sair" => return None,
+            // O catalogo entra aqui, junto com o `quem_sou`, e nao entre as
+            // que pedem `ler`: ele descreve o PROTOCOLO, que e documentacao
+            // publica, e nao dado. Quem exige poder para ver o catalogo tira a
+            // ajuda de quem so insere -- e nao esconde nada, porque a lista de
+            // operacoes ja esta no MANUAL. O que ele mostra e filtrado pelo
+            // poder de quem perguntou, entao a resposta nunca promete mais do
+            // que aquela sessao consegue chamar.
+            "ping" | "login" | "desafio" | "quem_sou" | "sair" | "catalogo" => return None,
             "bancos" | "tabelas" | "esquema" | "ler" | "varrer" | "buscar" => Atividade::Ler,
             // O catalogo e leitura: quem pode ler a tabela pode saber que ela
             // existe e que colunas tem.

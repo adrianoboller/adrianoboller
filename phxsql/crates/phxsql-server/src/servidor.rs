@@ -53,7 +53,7 @@ use crate::valores::{
 pub const VERSAO: &str = env!("CARGO_PKG_VERSION");
 
 /// Operacoes que alteram dados. Recusadas quando `somente_leitura` esta ligado.
-const OPS_ESCRITA: &[&str] = &[
+pub(crate) const OPS_ESCRITA: &[&str] = &[
     "inserir",
     "atualizar",
     "excluir",
@@ -2536,6 +2536,7 @@ impl Servidor {
                 ),
             ])),
             "config" => Ok(self.config.para_json()),
+            "catalogo" => Ok(self.op_catalogo(p, sessao)),
             "quem_sou" => Ok(match &sessao.usuario {
                 Some(u) => u.ficha(),
                 None => Json::objeto(vec![
@@ -3819,6 +3820,68 @@ impl Servidor {
             .find(|u| u.id == id)
             .map(|u| u.nome.clone())
             .unwrap_or_default()
+    }
+
+    /// O catalogo das operacoes -- o `--help` do protocolo, servido por dados.
+    ///
+    /// Filtra pelo poder de quem perguntou, e a filtragem NAO e o portao: o
+    /// portao continua sendo o do `despachar`, que confere de novo quando a
+    /// operacao for chamada. Esconder aqui e cortesia, para nao oferecer
+    /// oitenta operacoes a quem so pode chamar tres.
+    ///
+    /// Com o campo `"operacao"`, detalha uma so -- e e assim que o
+    /// `/help <comando>` do `phxsqlcmd` funciona sem carregar o catalogo
+    /// inteiro. O campo nao se chama `"op"` porque esse ja e o nome da
+    /// operacao chamada: um pedido nao tem a mesma chave duas vezes.
+    fn op_catalogo(&self, p: &Json, sessao: &Sessao) -> Json {
+        let base = p.texto_ou("database", "");
+        let usuario = sessao.usuario.as_ref();
+        let visiveis = crate::catalogo::visiveis(usuario, base);
+
+        if let Some(pedida) = Some(p.texto_ou("operacao", "").trim()).filter(|s| !s.is_empty()) {
+            // Operacao que existe mas este usuario nao pode chamar responde
+            // "nao existe para voce", com a permissao que faltou -- e nao um
+            // 404 seco, que mandaria procurar erro de digitacao onde nao ha.
+            let achada = visiveis.iter().find(|o| o.nomes().any(|n| n == pedida));
+            return match achada {
+                Some(o) => Json::objeto(vec![
+                    ("pedida", Json::texto_de(o.nome)),
+                    ("operacao", o.para_json()),
+                ]),
+                None => {
+                    let existe = crate::catalogo::por_nome(pedida);
+                    Json::objeto(vec![
+                        ("pedida", Json::texto_de(pedida)),
+                        ("operacao", Json::Nulo),
+                        (
+                            "motivo",
+                            Json::texto_de(match existe {
+                                Some(o) => format!(
+                                    "a operacao {pedida:?} existe, mas exige {}",
+                                    o.atividade().map(|a| a.nome()).unwrap_or("login")
+                                ),
+                                None => format!("a operacao {pedida:?} nao existe"),
+                            }),
+                        ),
+                    ])
+                }
+            };
+        }
+
+        Json::objeto(vec![
+            ("total", Json::de_u64(visiveis.len() as u64)),
+            // Quantas ficaram de fora por permissao. Sem este numero, quem ve
+            // uma lista curta nao sabe se o servidor e pequeno ou se ele e que
+            // pode pouco.
+            (
+                "ocultas",
+                Json::de_u64((crate::catalogo::OPERACOES.len() - visiveis.len()) as u64),
+            ),
+            (
+                "operacoes",
+                Json::Lista(visiveis.iter().map(|o| o.para_json()).collect()),
+            ),
+        ])
     }
 
     fn op_esquema(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
@@ -8583,6 +8646,81 @@ mod testes_direito_por_tabela {
             .filter_map(|x| x.texto().map(str::to_string))
             .collect();
         assert_eq!(nomes, vec!["clientes".to_string()], "veio {nomes:?}");
+    }
+
+    /// A op `catalogo` mostra so o que a sessao consegue chamar.
+    ///
+    /// Um leitor nao pode ver `excluir_tabela` na lista: oferecer a operacao
+    /// que o portao vai negar e mandar o cliente montar um pedido para ouvir
+    /// nao. E `ler`, que ele pode, tem de estar la -- esconder demais seria o
+    /// mesmo estrago do outro lado.
+    #[test]
+    fn o_catalogo_lista_so_o_que_a_sessao_pode_chamar() {
+        let dir = dir_temp("cat-op");
+        let (s, ses) = servidor(&dir, cadastro(r#"{"*":{"ler":true}}"#));
+        let r = pede(&s, &ses, r#""op":"catalogo","database":"b""#).unwrap();
+        let nomes: Vec<String> = r
+            .campo("operacoes")
+            .and_then(Json::lista)
+            .unwrap()
+            .iter()
+            .map(|o| o.texto_ou("nome", "").to_string())
+            .collect();
+        assert!(nomes.contains(&"ler".to_string()), "{nomes:?}");
+        assert!(nomes.contains(&"varrer".to_string()), "{nomes:?}");
+        assert!(
+            !nomes.contains(&"excluir_tabela".to_string()),
+            "o leitor viu uma operacao de administrador: {nomes:?}"
+        );
+        assert!(
+            !nomes.contains(&"inserir".to_string()),
+            "o leitor viu uma operacao de escrita: {nomes:?}"
+        );
+        // E o numero do que ficou de fora, para quem ve a lista curta saber
+        // que ela e curta por permissao, e nao por o servidor ser pequeno.
+        assert!(r.inteiro_ou("ocultas", 0) > 0);
+        assert_eq!(r.inteiro_ou("total", -1), nomes.len() as i64);
+    }
+
+    /// `catalogo` com `"op"` detalha uma so -- e e o que o `/help <comando>`
+    /// do console usa. Operacao que o usuario nao pode chamar responde POR QUE,
+    /// em vez de fingir que nao existe: fingir manda procurar erro de
+    /// digitacao onde nao ha.
+    #[test]
+    fn o_catalogo_detalha_uma_operacao_e_diz_por_que_negou() {
+        let dir = dir_temp("cat-uma");
+        let (s, ses) = servidor(&dir, cadastro(r#"{"*":{"ler":true}}"#));
+
+        let uma = pede(
+            &s,
+            &ses,
+            r#""op":"catalogo","database":"b","operacao":"buscar""#,
+        )
+        .unwrap()
+        .campo("operacao")
+        .cloned()
+        .unwrap();
+        assert_eq!(uma.texto_ou("nome", ""), "buscar");
+        assert!(!uma.texto_ou("exemplo", "").is_empty());
+        assert!(uma
+            .campo("parametros")
+            .and_then(Json::lista)
+            .unwrap()
+            .iter()
+            .any(|p| p.texto_ou("nome", "") == "indice"));
+
+        let negada = pede(
+            &s,
+            &ses,
+            r#""op":"catalogo","database":"b","operacao":"excluir_tabela""#,
+        )
+        .unwrap();
+        assert!(negada.campo("operacao").unwrap().e_nulo());
+        assert!(
+            negada.texto_ou("motivo", "").contains("administrar"),
+            "{}",
+            negada.escrever()
+        );
     }
 
     /// O catalogo e a mesma lista por outra porta.

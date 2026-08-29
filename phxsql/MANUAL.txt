@@ -249,6 +249,42 @@ RESPOSTA
     {"ok":true,"op":"ping","resultado":{...},"ms":0}
     {"ok":false,"op":"ler","erro":"...","ms":1}
 
+O CATALOGO: O PROTOCOLO SE DESCREVE SOZINHO
+
+    {"token":"segredo","op":"catalogo"}
+
+    Devolve TODAS as operacoes que aquela sessao pode chamar, cada uma com o
+    resumo, a permissao exigida, os parametros (nome, tipo, se e obrigatorio,
+    para que serve) e um pedido de exemplo que funciona.
+
+        {"total":42,"ocultas":39,"operacoes":[
+          {"nome":"buscar","apelidos":[],"permissao":"ler","escreve":false,
+           "resumo":"Desce um indice ate a chave exata ...",
+           "parametros":[{"nome":"indice","tipo":"string","obrigatorio":true,
+                          "para_que":"o nome do indice"}, ...],
+           "exemplo":"{\"op\":\"buscar\", ...}"}]}
+
+    UMA SO, com "operacao" -- e o campo nao se chama "op" porque esse ja e o
+    nome da operacao chamada:
+
+        {"token":"segredo","op":"catalogo","operacao":"buscar"}
+
+    O QUE APARECE E O QUE VOCE PODE. Um leitor nao ve "excluir_tabela" na
+    lista; "ocultas" diz quantas ficaram de fora, para quem ve uma lista curta
+    saber que ela e curta por permissao e nao por o servidor ser pequeno.
+    Pedir uma operacao que existe mas voce nao pode responde POR QUE, com o
+    nome da permissao que faltou -- e nao "nao existe", que mandaria procurar
+    erro de digitacao onde nao ha.
+
+    ESCONDER AQUI NAO E O PORTAO. O portao continua sendo o do despachar, e
+    ele confere de novo quando a operacao for de fato chamada. O catalogo e
+    cortesia, para nao oferecer oitenta operacoes a quem so pode chamar tres.
+
+    QUEM MAIS LE ESTE CATALOGO: o "tools/list" do servidor MCP e o "/help" do
+    phxsqlcmd. Os tres saem da MESMA lista -- e ha um teste que deriva a lista
+    de operacoes do proprio codigo do despachar e falha se ela e o catalogo
+    discordarem, nos dois sentidos. Ajuda escrita a mao envelhece calada.
+
 RECURSOS DA MAQUINA
 
     A secao "recursos" do config.json diz o que o servidor pode consumir e --
