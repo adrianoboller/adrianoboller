@@ -678,6 +678,15 @@ pub struct Recursos {
     pub cpu_percentual: u8,
     /// Conexoes simultaneas aceitas.
     pub conexoes_max: usize,
+    /// Minutos que uma reserva de carga (`BULKINSERT`) dura sem ser renovada.
+    ///
+    /// E a SEGUNDA rede de protecao contra reserva orfa. A primeira e a queda
+    /// da conexao, que solta na hora; esta pega o caso em que o soquete fica
+    /// pendurado vivo com o cliente morto do outro lado.
+    ///
+    /// Zero nao desliga: cairia no padrao, porque reserva sem prazo nenhum e
+    /// exatamente a que trava a tabela para sempre.
+    pub carga_prazo_min: u64,
     /// Usuarios DIFERENTES conectados ao mesmo tempo. Zero = sem teto.
     ///
     /// Nao e o mesmo que conexoes: um usuario pode ter varias. Este teto conta
@@ -696,6 +705,7 @@ impl Default for Recursos {
             threads: 0,
             cpu_percentual: 100,
             conexoes_max: 64,
+            carga_prazo_min: 30,
             usuarios_max: 0,
         }
     }
@@ -721,6 +731,14 @@ impl Recursos {
             lote_milissegundos: r
                 .inteiro_ou("lote_milissegundos", padrao.lote_milissegundos as i64)
                 .max(1) as u64,
+            carga_prazo_min: {
+                let m = r.inteiro_ou("carga_prazo_min", padrao.carga_prazo_min as i64);
+                if m > 0 {
+                    m as u64
+                } else {
+                    padrao.carga_prazo_min
+                }
+            },
             cache_paginas: r
                 .inteiro_ou("cache_paginas", padrao.cache_paginas as i64)
                 .max(0) as usize,
@@ -756,6 +774,7 @@ impl Recursos {
             ("lote_operacoes", Json::de_u64(self.lote_operacoes)),
             ("lote_milissegundos", Json::de_u64(self.lote_milissegundos)),
             ("cache_paginas", Json::de_u64(self.cache_paginas as u64)),
+            ("carga_prazo_min", Json::de_u64(self.carga_prazo_min)),
             ("memoria_max_mb", Json::de_u64(self.memoria_max_mb)),
             ("threads", Json::de_u64(self.threads as u64)),
             ("cpu_percentual", Json::de_u64(self.cpu_percentual as u64)),

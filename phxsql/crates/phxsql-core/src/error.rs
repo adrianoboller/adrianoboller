@@ -33,6 +33,8 @@ pub enum PhxError {
     Duplicado(String),
     /// Outra sessao mexeu no registro entre a leitura e a gravacao.
     Conflito(String),
+    /// A tabela esta reservada para uma carga, por outra sessao.
+    EmCarga(String),
     /// Credencial invalida ou poder insuficiente.
     Autorizacao(String),
     /// Valor excede o limite fisico do formato.
@@ -76,6 +78,7 @@ impl PhxError {
             PhxError::LimiteExcedido(_) => 3003,
             PhxError::Conflito(_) => 3004,
             PhxError::Autorizacao(_) => 4001,
+            PhxError::EmCarga(_) => 4002,
             PhxError::Io(_) => 5001,
         }
     }
@@ -95,6 +98,7 @@ impl PhxError {
             PhxError::LimiteExcedido(_) => "LIMITE_EXCEDIDO",
             PhxError::Conflito(_) => "CONFLITO",
             PhxError::Autorizacao(_) => "ACESSO_NEGADO",
+            PhxError::EmCarga(_) => "EM_CARGA",
             PhxError::Io(_) => "ERRO_DE_ES",
         }
     }
@@ -115,11 +119,18 @@ impl PhxError {
 
     /// Vale a pena tentar de novo?
     ///
-    /// So o erro de E/S -- disco cheio que liberou, arquivo que estava
-    /// travado. Os outros vao dar o mesmo resultado quantas vezes forem
-    /// tentados, e repetir e so gastar o servidor.
+    /// Dois erros, e os dois pelo mesmo motivo: sao os unicos que descrevem
+    /// uma situacao PASSAGEIRA.
+    ///
+    /// * o de E/S -- disco cheio que liberou, arquivo que estava travado;
+    /// * o de tabela em carga -- alguem reservou a tabela e vai soltar.
+    ///
+    /// Os outros vao dar o mesmo resultado quantas vezes forem tentados, e
+    /// repetir e so gastar o servidor. E a distincao que importa para quem
+    /// integra: «em carga» e «acesso negado» sao os dois uma recusa, mas a
+    /// primeira funciona daqui a pouco e a segunda nao funciona nunca.
     pub fn adianta_repetir(&self) -> bool {
-        matches!(self, PhxError::Io(_))
+        matches!(self, PhxError::Io(_) | PhxError::EmCarga(_))
     }
 }
 
@@ -152,6 +163,7 @@ impl fmt::Display for PhxError {
             PhxError::Duplicado(m) => write!(f, "chave duplicada: {m}"),
             PhxError::Conflito(m) => write!(f, "conflito de escrita: {m}"),
             PhxError::Autorizacao(m) => write!(f, "acesso negado: {m}"),
+            PhxError::EmCarga(m) => write!(f, "tabela em carga: {m}"),
             PhxError::LimiteExcedido(m) => write!(f, "limite excedido: {m}"),
         }
     }
@@ -198,6 +210,7 @@ mod testes_codigo {
             PhxError::Duplicado(String::new()),
             PhxError::LimiteExcedido(String::new()),
             PhxError::Conflito(String::new()),
+            PhxError::EmCarga(String::new()),
             PhxError::Autorizacao(String::new()),
             PhxError::Io(std::io::Error::other("x")),
         ];
@@ -226,6 +239,7 @@ mod testes_codigo {
         assert_eq!(PhxError::LimiteExcedido(String::new()).codigo(), 3003);
         assert_eq!(PhxError::Conflito(String::new()).codigo(), 3004);
         assert_eq!(PhxError::Autorizacao(String::new()).codigo(), 4001);
+        assert_eq!(PhxError::EmCarga(String::new()).codigo(), 4002);
         assert_eq!(PhxError::Io(std::io::Error::other("x")).codigo(), 5001);
     }
 
@@ -238,14 +252,19 @@ mod testes_codigo {
         assert_eq!(PhxError::Io(std::io::Error::other("x")).classe(), "sistema");
     }
 
-    /// Repetir so adianta no que pode ter mudado sozinho.
+    /// Repetir so adianta no que pode ter mudado sozinho. Sao dois, e o nome
+    /// deste teste ja disse "so o de E/S" -- ate a tabela em carga existir.
     #[test]
-    fn so_o_erro_de_es_pede_nova_tentativa() {
+    fn so_o_que_e_passageiro_pede_nova_tentativa() {
         assert!(PhxError::Io(std::io::Error::other("x")).adianta_repetir());
         assert!(!PhxError::Duplicado(String::new()).adianta_repetir());
         // Repetir um conflito e escrever por cima do outro sem olhar. Quem
         // decide e gente, e nao um laco de nova tentativa.
         assert!(!PhxError::Conflito(String::new()).adianta_repetir());
+        // «Em carga» e passageiro: quem reservou vai soltar. E a diferenca
+        // entre ele e «acesso negado», que nao muda por esperar.
+        assert!(PhxError::EmCarga(String::new()).adianta_repetir());
+        assert_eq!(PhxError::EmCarga(String::new()).classe(), "acesso");
         assert!(!PhxError::Autorizacao(String::new()).adianta_repetir());
     }
 }

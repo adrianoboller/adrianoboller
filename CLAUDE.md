@@ -157,6 +157,14 @@ já serializa tudo, e é tomada depois e segurada por mais tempo. **Diagnóstico
 plausível não é diagnóstico medido** — e o errado sobrevive melhor quando o
 conserto funcionou por outro motivo.
 
+**Teste unitário não prova queda de conexão — soquete prova.** Os dez testes do
+`BULKINSERT` passavam, e a prova pelo soquete mostrou que a queda da conexão
+**não soltava a reserva**. A causa não estava no servidor: era o teste, porque
+`socket.makefile()` do Python segura o descritor e fechar só o soquete deixa o
+fd aberto — o servidor nunca via o fim da conexão. Duas lições numa: o que
+depende do sistema operacional se prova contra o sistema operacional, e um teste
+que passa por engano é pior que um teste que falta.
+
 **Configuração que não é lida mente.** `recursos.cache_paginas` estava no
 `config.json`, no MANUAL e na tela desde a 0.13.0, e **nenhuma linha de código
 o lia** — o campo dizia "4096 páginas do `.ndx` em memória" quando não havia

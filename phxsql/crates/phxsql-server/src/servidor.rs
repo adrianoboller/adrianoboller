@@ -65,6 +65,10 @@ const OPS_ESCRITA: &[&str] = &[
     "copiar_tabela",
     "ajustar_sequencia",
     "inserir_lote",
+    // Reservar a tabela para carga e declarar intencao de gravar. Num servidor
+    // somente-leitura ninguem vai carregar nada, e deixar reservar seria
+    // deixar travar a tabela para uma escrita que nunca acontece.
+    "bulkinsert",
     // Marcar, desmarcar e esvaziar mexem em dado gravado. Listar a lixeira e
     // os motivos, nao -- essas duas so leem, e continuam valendo no modo
     // somente leitura, que e justamente quando alguem esta investigando.
@@ -90,6 +94,14 @@ const OPS_ESCRITA: &[&str] = &[
 #[derive(Default)]
 struct Sessao {
     usuario: Option<Usuario>,
+    /// A conexao desta sessao, do registro de ligacoes. Zero quando o pedido
+    /// veio pela porta web, que nao tem conexao para amarrar nada.
+    ///
+    /// E a ela que a reserva de carga morre amarrada: sem um id de CONEXAO, a
+    /// reserva so poderia ser identificada pelo login -- e aí duas janelas do
+    /// mesmo usuario seriam o mesmo dono, o que e exatamente o contrario de
+    /// exclusivo.
+    ligacao: u64,
     /// Desafio em aberto: (usuario, nonce do servidor, quando expira).
     /// Vale uma vez so -- e consumido no login, dando certo ou errado.
     desafio: Option<(String, String, i64)>,
@@ -277,6 +289,8 @@ pub struct Servidor {
     /// continua cheio.
     avisados: Mutex<HashMap<String, i64>>,
     /// O que esta chegando pela porta, quando alguem liga para olhar.
+    /// Tabelas reservadas para carga (`BULKINSERT`).
+    cargas: Mutex<crate::carga::Cargas>,
     profiler: Mutex<crate::profiler::Profiler>,
     /// Espelho de `profiler.ligado`, para o caminho quente nao tomar a trava.
     ///
@@ -330,6 +344,7 @@ impl Servidor {
             dblink: Mutex::new(dblink),
             avisados: Mutex::new(HashMap::new()),
             conexoes: AtomicUsize::new(0),
+            cargas: Mutex::new(crate::carga::Cargas::default()),
             profiler: Mutex::new(crate::profiler::Profiler::default()),
             profiler_ligado: AtomicBool::new(false),
         }))
@@ -1389,10 +1404,13 @@ impl Servidor {
             return;
         }
 
-        let mut sessao = Sessao::default();
         let (id_ligacao, morrer) = match self.ligacoes.lock() {
             Ok(mut l) => l.entrar(&ip, porta, crate::agora_ms(), para_fechar),
             Err(_) => (0, Arc::new(std::sync::atomic::AtomicBool::new(false))),
+        };
+        let mut sessao = Sessao {
+            ligacao: id_ligacao,
+            ..Sessao::default()
         };
         // Sai do registro por qualquer caminho -- inclusive os `return` do
         // meio do laco. Sem isto, uma conexao caida ficaria na lista para
@@ -1401,6 +1419,11 @@ impl Servidor {
             if let Ok(mut l) = self.ligacoes.lock() {
                 l.sair(id_ligacao);
             }
+            // A PRIMEIRA rede de protecao da reserva de carga: a conexao caiu,
+            // a tabela solta. Sem isto, um cliente morto no meio de uma carga
+            // deixaria a tabela reservada ate o prazo vencer -- e o prazo e
+            // medido em dezenas de minutos, de proposito.
+            self.soltar_cargas_da_ligacao(id_ligacao);
         });
 
         let mut linha = String::new();
@@ -1664,6 +1687,22 @@ impl Servidor {
             }
         }
 
+        // Portao 4 -- a tabela esta reservada para uma carga de outra ligacao?
+        //
+        // Depois do de permissao, e nao antes: quem nao pode nem ler a tabela
+        // nao precisa descobrir que ela esta em carga, e o recado diz QUEM
+        // reservou. `bulkinsert` fica de fora para o comando dizer o proprio
+        // recado -- e para o administrador conseguir soltar a reserva alheia.
+        if op != "bulkinsert" {
+            let (db, tab) = (
+                pedido.texto_ou("database", ""),
+                pedido.texto_ou("tabela", ""),
+            );
+            if let Some(recado) = self.barrado_por_carga(db, tab, sessao.ligacao) {
+                return (op, true, Err(PhxError::EmCarga(recado)));
+            }
+        }
+
         let r = self.executar(&op, &pedido, sessao);
         (op, true, r)
     }
@@ -1845,6 +1884,8 @@ impl Servidor {
             "desbloquear" => self.op_desbloquear(p),
             "bancos" => self.op_bancos(),
             "tabelas" => self.op_tabelas(p, sessao),
+            "bulkinsert" => self.op_bulkinsert(p, sessao),
+            "cargas" => self.op_cargas(),
             "esquema" => self.op_esquema(p, sessao),
             "criar_database" => self.op_criar_database(p),
             "criar_schema" => self.op_criar_schema(p),
@@ -2504,13 +2545,194 @@ impl Servidor {
     /// fecha, e o `fsync` de uma vale por todas as da janela. Em `sistema`
     /// nunca sincroniza aqui: o `write` ja aconteceu, e o resto e com o
     /// sistema operacional.
+    // --- carga -----------------------------------------------------------
+    // `BULKINSERT`: a tabela reservada para quem esta carregando, e so para
+    // ele. Ver `crate::carga` para o desenho e para as duas redes de protecao
+    // contra reserva orfa.
+    /// Solta o que esta ligacao reservou, e sincroniza o que ficou por gravar.
+    ///
+    /// Roda na saida da conexao, por qualquer caminho. O `sincronizar` vai
+    /// junto porque durante a reserva a janela de durabilidade fica aberta de
+    /// proposito -- soltar sem fechar deixaria a carga inteira dependendo de o
+    /// sistema operacional lembrar dela.
+    fn soltar_cargas_da_ligacao(&self, ligacao: u64) {
+        let soltas = match self.cargas.lock() {
+            Ok(mut c) => c.soltar_da_ligacao(ligacao),
+            Err(_) => return,
+        };
+        if soltas.is_empty() {
+            return;
+        }
+        if let Ok(mut sujas) = self.sujas.lock() {
+            for r in &soltas {
+                sujas.insert(format!("{}/{}", r.database, r.tabela));
+            }
+        }
+        self.descarregar_sujas();
+    }
+
+    /// A tabela deste pedido esta reservada por OUTRA ligacao?
+    ///
+    /// Uma reserva vencida e limpa aqui, que e onde alguem repara nela: um
+    /// relogio de fundo so para isso seria uma linha de execucao acordando
+    /// para, quase sempre, nao fazer nada.
+    fn barrado_por_carga(&self, database: &str, tabela: &str, ligacao: u64) -> Option<String> {
+        if database.is_empty() || tabela.is_empty() {
+            return None;
+        }
+        self.cargas
+            .lock()
+            .ok()?
+            .barra(database, tabela, ligacao, crate::agora_ms())
+    }
+
+    /// Esta tabela esta reservada para carga?
+    ///
+    /// Nao pergunta POR QUEM de proposito: quem chegou ate aqui ja passou pelo
+    /// portao, que so deixa o dono escrever numa tabela reservada. Entao
+    /// «reservada» e «reservada por mim» sao a mesma coisa neste ponto, e
+    /// perguntar de novo pediria a sessao em quarenta lugares.
+    ///
+    /// Enquanto estiver, a janela de durabilidade fica aberta: a carga inteira
+    /// vira um `fsync` so, no fim.
+    fn tabela_reservada(&self, p: &Json) -> bool {
+        let (db, tab) = (p.texto_ou("database", ""), p.texto_ou("tabela", ""));
+        if db.is_empty() || tab.is_empty() {
+            return false;
+        }
+        let k = crate::carga::chave(db, tab);
+        match self.cargas.lock() {
+            Ok(c) => c
+                .todas()
+                .iter()
+                .any(|r| crate::carga::chave(&r.database, &r.tabela) == k),
+            Err(_) => false,
+        }
+    }
+
+    /// `bulkinsert`: reserva a tabela para uma carga, ou solta.
+    ///
+    /// So pela porta de dados. Ver o porque em `crate::carga`.
+    fn op_bulkinsert(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let database = p.texto_ou("database", "").trim().to_string();
+        let tabela = p.texto_ou("tabela", "").trim().to_string();
+        if database.is_empty() || tabela.is_empty() {
+            return Err(PhxError::Esquema(
+                "informe \"database\" e \"tabela\"".into(),
+            ));
+        }
+        // Aceita `{"ligado":true}` e tambem `{"bulkinsert":true}`, que e como
+        // o comando se le quando a camada SQL existir: BULKINSERT(true).
+        let ligar = p
+            .campo("ligado")
+            .or_else(|| p.campo("bulkinsert"))
+            .or_else(|| p.campo("valor"))
+            .and_then(Json::booleano)
+            .ok_or_else(|| {
+                PhxError::Esquema(
+                    "informe \"ligado\": true para reservar, false para soltar".into(),
+                )
+            })?;
+
+        if sessao.ligacao == 0 {
+            return Err(PhxError::Esquema(
+                "BULKINSERT so vale pela porta de dados: HTTP nao tem conexao \
+                 para a reserva morrer amarrada. Pela tela, use \"inserir_lote\", \
+                 que ja e uma operacao so"
+                    .into(),
+            ));
+        }
+
+        // A tabela tem de existir -- reservar o que nao existe esconderia um
+        // erro de digitacao ate o fim da carga.
+        {
+            let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+            dados
+                .abrir_database(&database)?
+                .abrir_qualificada(&tabela)?;
+        }
+
+        let agora = crate::agora_ms();
+        let mut cargas = self.cargas.lock().map_err(|_| trava_envenenada())?;
+
+        if ligar {
+            let prazo = self.config.recursos.carga_prazo_min as i64 * 60_000;
+            let r = cargas.reservar(
+                &database,
+                &tabela,
+                sessao.login(),
+                sessao.ligacao,
+                "",
+                agora,
+                prazo,
+            )?;
+            drop(cargas);
+            return Ok(Json::objeto(vec![
+                ("bulkinsert", Json::Bool(true)),
+                ("database", Json::texto_de(&database)),
+                ("tabela", Json::texto_de(&tabela)),
+                ("reservada", Json::Bool(true)),
+                (
+                    "expira_em_s",
+                    Json::de_u64(((r.expira_ms - agora).max(0) / 1000) as u64),
+                ),
+                (
+                    "prazo_min",
+                    Json::de_u64(self.config.recursos.carga_prazo_min),
+                ),
+            ]));
+        }
+
+        // Soltar: o dono solta o seu; o administrador solta o de qualquer um.
+        let forcar = sessao.usuario.as_ref().map(|u| u.e_admin()).unwrap_or(true);
+        let r = cargas.soltar(&database, &tabela, sessao.ligacao, forcar, agora)?;
+        drop(cargas);
+
+        // O fsync que a carga inteira adiou acontece agora.
+        {
+            let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+            let mut t = self.abrir_travada(&_trava, p, sessao)?;
+            t.sincronizar()?;
+        }
+        if let Ok(mut sujas) = self.sujas.lock() {
+            sujas.remove(&format!("{database}/{tabela}"));
+        }
+
+        Ok(Json::objeto(vec![
+            ("bulkinsert", Json::Bool(false)),
+            ("database", Json::texto_de(&database)),
+            ("tabela", Json::texto_de(&tabela)),
+            ("liberada", Json::Bool(true)),
+            // Em milissegundos, e nao em segundos: uma carga de 300 ms
+            // aparecia como "durou 0s", que e um numero que nao ajuda ninguem.
+            ("durou_ms", Json::de_u64((agora - r.desde_ms).max(0) as u64)),
+            ("sincronizada", Json::Bool(true)),
+        ]))
+    }
+
+    /// `cargas`: quais tabelas estao reservadas agora, e por quem.
+    fn op_cargas(&self) -> Result<Json> {
+        let agora = crate::agora_ms();
+        let c = self.cargas.lock().map_err(|_| trava_envenenada())?;
+        Ok(Json::objeto(vec![
+            ("total", Json::de_u64(c.quantas() as u64)),
+            (
+                "cargas",
+                Json::Lista(c.todas().iter().map(|r| r.para_json(agora)).collect()),
+            ),
+        ]))
+    }
+
     fn gravar_de_verdade(&self, t: &mut Table, p: &Json) -> Result<()> {
         let chave = format!(
             "{}/{}",
             p.texto_ou("database", ""),
             p.texto_ou("tabela", "")
         );
-        if !self.janela.hora_de_gravar() {
+        // Durante uma carga a janela NAO fecha: o `BULKINSERT(false)` e quem
+        // sincroniza, uma vez, no fim. E o segundo ganho da reserva -- o
+        // primeiro e a exclusividade.
+        if self.tabela_reservada(p) || !self.janela.hora_de_gravar() {
             if let Ok(mut s) = self.sujas.lock() {
                 s.insert(chave);
             }
@@ -6337,6 +6559,8 @@ mod testes_politica {
             "esvaziar_lixeira",
             // Carga em lote grava, e grava muito.
             "inserir_lote",
+            // Reservar a tabela e declarar que vai gravar.
+            "bulkinsert",
         ] {
             assert!(
                 OPS_ESCRITA.contains(&op),
@@ -7732,5 +7956,240 @@ mod testes_profiler_desligado {
         );
         assert!(r.is_err(), "aceitou um caminho que nao existe");
         conferir(&s, false);
+    }
+}
+
+/// `BULKINSERT`: a tabela reservada para uma carga.
+///
+/// O que estes testes travam, em ordem de importancia:
+///
+/// 1. **a reserva de fato barra o outro**, e o recado diz quem reservou;
+/// 2. **o dono continua trabalhando** -- reserva que barra o proprio dono seria
+///    so uma forma cara de derrubar o servico;
+/// 3. **a queda da conexao solta** -- e a primeira rede contra reserva orfa;
+/// 4. **o prazo solta** -- e a segunda, para o soquete pendurado vivo;
+/// 5. **o erro e repetivel**: `EM_CARGA` diz `repetir: true`, e e o que separa
+///    «espere um pouco» de «voce nao pode».
+#[cfg(test)]
+mod testes_bulkinsert {
+    use super::*;
+    use crate::usuarios::Cadastro;
+
+    fn dir_temp(nome: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("phx-bulk-{nome}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    fn com_tabela(dir: &std::path::Path) -> Arc<Servidor> {
+        let c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            cadastro: Cadastro::default(),
+            ..Config::default()
+        };
+        let s = Servidor::novo(c).unwrap();
+        let sessao = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &sessao)
+            .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"c",
+                    "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true}],
+                    "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]}"#,
+            ),
+            &sessao,
+        )
+        .unwrap();
+        s
+    }
+
+    /// Pelo `despachar`, que e onde mora o portao da carga.
+    fn pede(s: &Arc<Servidor>, ligacao: u64, corpo: &str) -> Result<Json> {
+        let mut ses = Sessao {
+            ligacao,
+            ..Sessao::default()
+        };
+        let (_, _, r) = s.despachar(
+            &format!(r#"{{"token":"t",{corpo}}}"#),
+            &mut ses,
+            "127.0.0.1",
+        );
+        r
+    }
+
+    const RESERVA: &str = r#""op":"bulkinsert","database":"b","tabela":"c","ligado":true"#;
+    const SOLTA: &str = r#""op":"bulkinsert","database":"b","tabela":"c","ligado":false"#;
+    const INSERE: &str = r#""op":"inserir","database":"b","tabela":"c","linha":{"id":1}"#;
+
+    /// O caso do enunciado: reservada, o outro nao entra -- e sabe por quem.
+    #[test]
+    fn reservada_barra_o_outro_e_diz_quem() {
+        let dir = dir_temp("barra");
+        let s = com_tabela(&dir);
+        pede(&s, 1, RESERVA).unwrap();
+
+        let e = pede(&s, 2, INSERE).unwrap_err();
+        assert_eq!(e.nome(), "EM_CARGA");
+        assert_eq!(e.codigo(), 4002);
+        let texto = e.to_string();
+        assert!(
+            texto.contains("ligacao 1"),
+            "nao disse quem reservou: {texto}"
+        );
+        assert!(texto.contains("b.c"), "nao disse qual tabela: {texto}");
+    }
+
+    /// A leitura tambem para. E de proposito: deixar ler durante a carga e o
+    /// que impediria adiar o indice mais tarde.
+    #[test]
+    fn a_leitura_do_outro_tambem_para() {
+        let dir = dir_temp("leitura");
+        let s = com_tabela(&dir);
+        pede(&s, 1, RESERVA).unwrap();
+        let e = pede(&s, 2, r#""op":"varrer","database":"b","tabela":"c""#).unwrap_err();
+        assert_eq!(e.nome(), "EM_CARGA");
+    }
+
+    /// Uma tabela reservada nao barra a tabela do lado.
+    #[test]
+    fn a_reserva_e_de_uma_tabela_so() {
+        let dir = dir_temp("outra");
+        let s = com_tabela(&dir);
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"d",
+                    "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true}]}"#,
+            ),
+            &Sessao::default(),
+        )
+        .unwrap();
+        pede(&s, 1, RESERVA).unwrap();
+        assert!(pede(&s, 2, r#""op":"varrer","database":"b","tabela":"d""#).is_ok());
+    }
+
+    /// Quem reservou continua trabalhando -- senao a reserva seria so uma
+    /// forma cara de derrubar o proprio servico.
+    #[test]
+    fn o_dono_continua_gravando() {
+        let dir = dir_temp("dono");
+        let s = com_tabela(&dir);
+        pede(&s, 1, RESERVA).unwrap();
+        for i in 1..=50 {
+            pede(
+                &s,
+                1,
+                &format!(r#""op":"inserir","database":"b","tabela":"c","linha":{{"id":{i}}}"#),
+            )
+            .unwrap();
+        }
+        let r = pede(&s, 1, SOLTA).unwrap();
+        assert!(matches!(r.campo("liberada"), Some(Json::Bool(true))));
+        assert!(matches!(r.campo("sincronizada"), Some(Json::Bool(true))));
+
+        // Solta, o outro entra.
+        let v = pede(&s, 2, r#""op":"varrer","database":"b","tabela":"c""#).unwrap();
+        assert_eq!(v.inteiro_ou("devolvidas", -1), 50);
+    }
+
+    /// A PRIMEIRA rede: a conexao caiu, a tabela solta.
+    #[test]
+    fn a_queda_da_conexao_solta() {
+        let dir = dir_temp("queda");
+        let s = com_tabela(&dir);
+        pede(&s, 1, RESERVA).unwrap();
+        assert!(pede(&s, 2, INSERE).is_err());
+
+        // E o que o `AoSair` do laco da conexao chama.
+        s.soltar_cargas_da_ligacao(1);
+        assert!(
+            pede(&s, 2, INSERE).is_ok(),
+            "a reserva sobreviveu a queda da conexao"
+        );
+    }
+
+    /// A SEGUNDA rede: o prazo vence mesmo com o soquete pendurado vivo.
+    #[test]
+    fn o_prazo_solta() {
+        let dir = dir_temp("prazo");
+        let s = com_tabela(&dir);
+        // Reserva com prazo ja vencido, direto no registro: e o estado em que
+        // um cliente morto com o TCP vivo deixaria a tabela.
+        let agora = crate::agora_ms();
+        s.cargas
+            .lock()
+            .unwrap()
+            .reservar("b", "c", "fulano", 1, "1.2.3.4", agora - 60_000, 1_000)
+            .unwrap();
+        assert!(
+            pede(&s, 2, INSERE).is_ok(),
+            "a reserva vencida continuou barrando"
+        );
+        assert_eq!(
+            s.cargas.lock().unwrap().quantas(),
+            0,
+            "a reserva vencida ficou na lista"
+        );
+    }
+
+    /// Reservar de novo o que ja e meu renova o prazo, em vez de recusar.
+    #[test]
+    fn reservar_de_novo_o_meu_renova() {
+        let dir = dir_temp("renova");
+        let s = com_tabela(&dir);
+        pede(&s, 1, RESERVA).unwrap();
+        let r = pede(&s, 1, RESERVA).unwrap();
+        assert!(matches!(r.campo("reservada"), Some(Json::Bool(true))));
+    }
+
+    /// `EM_CARGA` e passageiro, e o protocolo tem de dizer isso: e o que
+    /// separa «espere um pouco» de «voce nao pode».
+    #[test]
+    fn em_carga_pede_nova_tentativa() {
+        let dir = dir_temp("repetir");
+        let s = com_tabela(&dir);
+        pede(&s, 1, RESERVA).unwrap();
+        let e = pede(&s, 2, INSERE).unwrap_err();
+        assert!(e.adianta_repetir(), "EM_CARGA deveria pedir nova tentativa");
+        assert!(
+            !PhxError::Autorizacao(String::new()).adianta_repetir(),
+            "e ACESSO_NEGADO nao"
+        );
+    }
+
+    /// Reservar tabela que nao existe recusa na hora, em vez de esconder o
+    /// erro de digitacao ate o fim da carga.
+    #[test]
+    fn reservar_tabela_que_nao_existe_recusa() {
+        let dir = dir_temp("inexistente");
+        let s = com_tabela(&dir);
+        assert!(pede(
+            &s,
+            1,
+            r#""op":"bulkinsert","database":"b","tabela":"nao_existe","ligado":true"#
+        )
+        .is_err());
+    }
+
+    /// Pela web nao vale: HTTP nao tem conexao para a reserva morrer amarrada.
+    #[test]
+    fn pela_web_recusa_com_o_motivo() {
+        let dir = dir_temp("web");
+        let s = com_tabela(&dir);
+        let e = pede(&s, 0, RESERVA).unwrap_err();
+        assert!(
+            e.to_string().contains("porta de dados"),
+            "o recado nao explica: {e}"
+        );
     }
 }

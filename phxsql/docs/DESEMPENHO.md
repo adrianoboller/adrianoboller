@@ -495,6 +495,7 @@ MySQL(R)**. A inserção é onde ele cobra — e cobra 3× menos que cobrava.
 | | Antes | Agora | |
 |---|---:|---:|---|
 | Inserção pela rede, linha a linha vs. lote | 2.659/s | 43.302/s | **16,3×** |
+| Carga em lote, sem reserva vs. com `BULKINSERT` | 43.500/s | 66.500/s | **1,53×** |
 | Inserção local, 2 índices (`onde-doi`) | 22.516/s | 62.763/s | **2,79×** |
 | Página por posição no fim de 200 mil linhas | 131 ms | 6 ms | **22×** |
 | Contar as linhas visíveis | varredura inteira | dois campos do cabeçalho | O(1) |

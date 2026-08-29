@@ -131,6 +131,13 @@ impl Atividade {
             // ela seria emprestar o poder de quem a criou.
             op if op.starts_with("dblink") => Atividade::Administrar,
             "inserir" => Atividade::Inserir,
+            // Reservar a tabela para carga exige o poder de INSERIR nela, e
+            // nao mais: quem pode gravar mil linhas pode pedir a tabela para
+            // gravar mil linhas. Ja `cargas` -- a lista de quem reservou o que
+            // -- mostra o movimento dos outros, e por isso pede administrar,
+            // pela mesma razao que `sessoes` pede.
+            "bulkinsert" => Atividade::Inserir,
+            "cargas" => Atividade::Administrar,
             // Carga em lote e insercao, e nao mais que isso: quem pode gravar
             // uma linha pode gravar mil. O que muda e o custo, e para isso ha
             // o teto de linhas por carga.
