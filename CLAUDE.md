@@ -146,10 +146,16 @@ configuração que já existe tira o direito de alguém sem ninguém ter pedido.
 ANTES do trabalho.** O Profiler desligado cobrava 7% da carga pela rede: o ponto
 de captura fazia dois `Json::analisar` do corpo inteiro, três `String` e um
 mutex, e só então perguntava se estava ligado. Num lote de cinco mil linhas era
-analisar meio megabyte de JSON duas vezes para jogar fora. O mutex era o pior
-pedaço: além do custo, ele **serializa** — todo mundo na mesma fila para
-descobrir que não havia o que registrar. Quando entrar um observador novo,
-procure o que ele faz antes de olhar o próprio interruptor.
+analisar meio megabyte de JSON duas vezes para jogar fora. Quando entrar um
+observador novo, procure o que ele faz antes de olhar o próprio interruptor.
+
+E o corolário sobre a **explicação** disso, que eu errei primeiro: escrevi que
+«o mutex era o pior pedaço, porque serializa». Medido, o `lock` sem disputa
+custa **13,2 ns** e o parse do lote custa **3.456 µs** — 262.000× mais. O mutex
+nunca foi o gargalo, e neste servidor nem poderia ser: a trava global de dados
+já serializa tudo, e é tomada depois e segurada por mais tempo. **Diagnóstico
+plausível não é diagnóstico medido** — e o errado sobrevive melhor quando o
+conserto funcionou por outro motivo.
 
 **Configuração que não é lida mente.** `recursos.cache_paginas` estava no
 `config.json`, no MANUAL e na tela desde a 0.13.0, e **nenhuma linha de código

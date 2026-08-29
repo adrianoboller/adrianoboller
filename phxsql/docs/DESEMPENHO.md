@@ -218,9 +218,33 @@ trabalho:
 **1,07×** — dois pares de corridas, o mesmo binário sem mais nada mudando.
 
 A regra que fica: **instrumentação desligada tem de custar zero, e o portão que
-decide isso vem antes do trabalho, não depois.** Um mutex por pedido é pior do
-que parece: além do custo, ele *serializa* — todo mundo esperando na mesma
-fila para descobrir que não havia nada a registrar.
+decide isso vem antes do trabalho, não depois.**
+
+### Qual das duas coisas custava
+
+```bash
+cargo run --release --example quem-custava
+```
+
+| | custo |
+|---|---:|
+| um `lock`/`unlock` sem disputa | **13,2 ns** |
+| `Json::analisar` de 1 linha (140 B) | 1,44 µs |
+| `Json::analisar` de 5.000 linhas (304 KB) | **3.456 µs** |
+
+Por lote de 5.000 linhas, o ponto de captura pagava **6.912 µs de parse contra
+0,03 µs de lock** — o parse custava 262.000× o mutex.
+
+**Não era o mutex.** Numa primeira redação deste documento eu escrevi que ele
+era «o pior pedaço, porque serializa». A segunda parte é verdade sobre mutex em
+geral e **não era verdade aqui**, por dois motivos: sem disputa ele custa
+nanossegundos, e neste servidor toda operação de dado já se serializa na trava
+global — que é tomada *depois* e segurada por muito mais tempo. O mutex do
+profiler nunca foi o gargalo de concorrência.
+
+O que custava era analisar meio megabyte de JSON **duas vezes para jogar fora**.
+Foi por isso que a carga em lote melhorou 7% e o caminho linha a linha quase não
+se moveu: lá o corpo tem 140 bytes.
 
 O que o `AtomicBool` custa em troca é uma janela de um pedido: quem liga a
 observação pode não ver o que já estava em voo. Ligar a observação no meio de um

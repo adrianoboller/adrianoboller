@@ -136,7 +136,13 @@ recursos novos inventados aqui.
 
   O portão passou a ser um `AtomicBool` lido antes de qualquer trabalho:
   **40.600 → 43.450 linhas/s (1,07×)** na carga em lote, dois pares de corridas.
-  O mutex por pedido era o pior pedaço — além do custo, ele *serializava*.
+
+  Qual das duas coisas custava, medido em `--example quem-custava`: um
+  `lock`/`unlock` sem disputa custa **13,2 ns**, e analisar o corpo de um lote
+  de 5.000 linhas custa **3.456 µs**. Por lote eram 6.912 µs de parse contra
+  0,03 de lock — **262.000×**. Não era o mutex; era analisar meio megabyte de
+  JSON duas vezes para jogar fora. É também por isso que o caminho linha a
+  linha quase não se moveu: lá o corpo tem 140 bytes.
 
   Cinco testes travam o que pode dar errado: o espelho atômico divergir do
   estado real. Preso em `true`, o servidor pagaria o parse para sempre; preso em
