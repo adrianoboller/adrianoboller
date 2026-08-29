@@ -2,8 +2,12 @@
 
 O molde é o **SQL Check da Idera(R)**: faixas de séries no topo e, embaixo, um
 painel em que cada atividade viva é uma **bolha** — o tamanho é o peso, a cor é
-o estado, e clicar abre o descritivo inteiro. A tela é `Telemetria`, no menu
-lateral, ao lado do Profiler.
+o estado, e clicar abre o descritivo inteiro.
+
+**Onde ela fica:** o botão `Telemetria` na barra de ferramentas, logo depois de
+*Conexões* — e também em **Ferramentas → Telemetria ao vivo…**, pelo teclado. O
+Profiler é o vizinho, nos dois caminhos: as três respondem à mesma pergunta —
+o que está acontecendo agora.
 
 Este documento é a parte que a tela não cabe: **o que cada número mede**, **o
 que o botão de encerrar promete e o que ele não promete**, e **o inventário das
