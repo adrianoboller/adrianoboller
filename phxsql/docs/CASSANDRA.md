@@ -92,7 +92,7 @@ Os números nossos usados como base, todos medidos e registrados:
 | | |
 |---|---|
 | Inserção local, 2 índices, esquema simples | **7,50 µs/linha** (`DESEMPENHO.md` §4.8) |
-| Inserção local, 2 índices, esquema da bancada (`+Decimal(15,2)`, `+Date`) | **16,61 µs/linha** (§4.8) |
+| Inserção local, 2 índices, esquema da bancada (`+Decimal(15,2)`, `+Date`) | **7,92 µs/linha** (§4.8) — o esquema custa ~5% a mais que o simples, não 2,2× |
 | Bancada de 10 milhões | PhxSql **261,8 s** contra MySQL(R) **111,7 s** |
 | Perfil da bancada | **95% CPU**, **2,4 GiB** escritos contra **32,0 GiB** do MySQL(R) |
 | Replicação | master **34.048 linhas/s**, réplica **17.450 eventos/s**, três em paralelo (§4.5) |
@@ -309,8 +309,9 @@ linha (`ndx.rs:708`). Nesse ponto o desenho já é o deles.
 
 **Segunda: a codificação da linha, eles pagam também.** É o achado mais recente
 do `DESEMPENHO.md` (§4.8): depois do *write-back*, o custo dominante da nossa
-inserção passou a ser `montar_payload` + `codificar_chave`, e duas colunas
-(`Decimal(15,2)` e `Date`) levam a inserção de 7,50 para 16,61 µs. O Cassandra
+inserção passou a ser `montar_payload` + `codificar_chave`. Duas colunas
+(`Decimal(15,2)` e `Date`) custam ~0,4 µs a mais — 7,50 para 7,92 µs, e não os
+16,61 que este documento citou antes de o §4.8 derrubar o número. O Cassandra
 **não** evita esse trabalho: `Mutation.serializer.serialize`
 (`CommitLog.java:308`) é exatamente o mesmo tipo de custo, e ele o paga uma vez
 por mutação, mais uma vez para a rede. **Então o que hoje domina a nossa
@@ -957,9 +958,10 @@ correto. Mas há um argumento anterior, que dispensa a discussão inteira:
 > **A LSM não ataca o custo que hoje domina a nossa inserção.**
 
 O §4.8 mediu: depois do *write-back*, `.reg` + `.log` viraram **60,8%** do
-tempo e os dois índices **29,4%**; e o mesmo código, com o esquema da bancada,
-sai de 7,50 para **16,61 µs** por causa de **duas colunas** (`Decimal(15,2)` e
-`Date`). O custo dominante é a **codificação da linha**.
+tempo e os dois índices **29,4%**; o mesmo código com o esquema da bancada sai
+de 7,50 para **7,92 µs** — as duas colunas custam ~5%, não 2,2×. (Este
+documento chegou a citar 16,61 µs em quatro lugares; era um **binário velho**,
+e o §4.8 conta a derrubada.) O custo dominante é a **codificação da linha**.
 
 E o Cassandra **paga esse custo igual**: `Mutation.serializer.serialize`
 (`CommitLog.java:308`), mais a serialização para a rede (`StorageProxy.java:1501`).
@@ -1249,7 +1251,7 @@ não há escrita para distribuir entre elas: um master só, e a escrita dele é 
 teto (`CLUSTER.md` §2.2).
 
 E há o número que fecha o argumento, com a honestidade que ele exige: a nossa
-inserção local custa **7,50 µs** (esquema simples) ou **16,61 µs** (esquema da
+inserção local custa **7,50 µs** (esquema simples) ou **7,92 µs** (esquema da
 bancada), medidos. Um quórum acrescentaria pelo menos uma ida e volta de rede
 até a segunda réplica mais rápida. **Quanto isso é, aqui, não está medido — e
 este documento não vai citar um número de rede que não mediu.** A ordem de
