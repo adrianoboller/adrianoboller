@@ -165,6 +165,18 @@ impl Atividade {
             "jobs" | "job_listar" | "job_salvar" | "job_excluir" | "job_rodar" | "job_ligar" => {
                 Atividade::Administrar
             }
+            // Backup e restauracao sao da familia do `acessos` e do `config`:
+            // administrar o SERVIDOR. Estao aqui declaradas, e nao so caindo
+            // no `_`, pelo mesmo motivo do `config_gravar` -- a operacao que
+            // grava um database inteiro e a ultima que deveria depender do
+            // padrao para negar.
+            //
+            // E o portao geral NAO basta para o `restaurar_backup`: ele confere
+            // o campo "database", que ali e o DESTINO; o database que vem
+            // DENTRO do backup nao tem campo no pedido, e e ele que carrega o
+            // dado. Quem confere esse e o `poder_no_backup`, dentro da
+            // operacao -- a licao do `juntar` e do `unir`.
+            "backup" | "conferir_backup" | "backups" | "restaurar_backup" => Atividade::Administrar,
             // Parar e subir a porta de dados e o poder mais bruto que ha aqui:
             // um clique tira o servico do ar para todo mundo. Administrar, e
             // nada menos.

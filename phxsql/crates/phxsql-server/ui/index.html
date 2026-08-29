@@ -575,6 +575,20 @@ table.montar.campos .pos{
 .op-txt span{font-size:11px;color:var(--texto-3);line-height:1.45}
 .pino.mal{border-color:var(--log);color:var(--log)}
 
+/* ------------------------------------------------- restauração de backup
+   O `input` global tem 14px e 10px de recheio. Dentro do cartão de operação,
+   ao lado de um texto de 11px, ele fica maior que o próprio título do cartão.
+   Estas três linhas o trazem para a escala do cartão -- é a mesma armadilha do
+   rádio que virou bolinha dentro da tabela, e se acha olhando, não lendo. */
+.op.fixa{cursor:default}
+.op.fixa:hover{border-color:var(--linha);background:var(--painel-2)}
+.op.fixa.perigo:hover{border-color:var(--linha)}
+.op .rst-campo{margin-top:9px;font-size:12.5px;padding:7px 9px;background:var(--painel)}
+.op .botao.mini{margin-top:9px;align-self:flex-start}
+.op .botao.mini:disabled{opacity:.4;cursor:default}
+.op .botao.mini:disabled:hover{background:transparent;color:var(--acao-excluir)}
+.op .rst-estado{margin-top:8px;font-size:11px;color:var(--texto-3)}
+
 /* ------------------------------------------------- formulário da nova tabela */
 .criar{margin:16px 0}
 .criar .bloco{
@@ -1921,6 +1935,26 @@ function demo(op, p) {
       jobs:d.jobs, historico:d.corridas};
     case "config": return d.config;
     case "quem_sou": return {login:"adriano", nivel:"admin", supervisor:true};
+    // A restauração também precisa existir sem servidor, senão avaliar a
+    // interface antes de instalar deixa o botão novo dando erro. O que a
+    // demonstração NÃO faz é fingir que restaurou: sem servidor não há disco.
+    case "backups": return {pasta:p.pasta || "backups", existe:true, total:2,
+      escondidos:0, backups:[
+        {nome:"Comercial_adriano_2026-08-29_0300.zip", caminho:"backups/Comercial_adriano_2026-08-29_0300.zip",
+         no_disco:184320, legivel:true, zip:true, quando:"2026-08-29 03:00:04",
+         phxsql:"0.18.0", arquivos:9, bytes:1048576, escopo:"database",
+         escopo_declarado:true, databases:["Comercial"]},
+        {nome:"dados_noturno_2026-08-28_0300.zip", caminho:"backups/dados_noturno_2026-08-28_0300.zip",
+         no_disco:262144, legivel:true, zip:true, quando:"2026-08-28 03:00:03",
+         phxsql:"0.18.0", arquivos:16, bytes:2097152, escopo:"raiz",
+         escopo_declarado:false, databases:["Comercial","Z"]}]};
+    case "restaurar_backup":
+      if (!p.simular) throw new Error(
+        "a demonstração não restaura: sem servidor não há disco onde gravar");
+      return {simulado:true, origem:p.origem, zip:true, de:p.de,
+        quando:"2026-08-29 03:00:04", phxsql:"0.18.0", arquivos:9, bytes:1048576,
+        escopo_declarado:true, databases:[p.de],
+        tabelas:["cadastroClientes","matriz.pedidos"]};
     default: throw new Error("operação sem demonstração: " + op);
   }
 }
@@ -5043,14 +5077,19 @@ async function verBackupRestaure(db) {
          <span class="op-txt"><b>Backup agora</b><span>Copia e confere, com manifesto SHA-256 de cada arquivo.</span></span></button>
        <button class="op" id="opConferir"><span class="op-ico">✓</span>
          <span class="op-txt"><b>Conferir uma cópia</b><span>Recalcula o SHA-256 de cada arquivo contra o manifesto.</span></span></button>
-       <button class="op afazer" id="opRestaurar"><span class="op-ico">⤺</span>
-         <span class="op-txt"><b>Restaurar</b><span>ainda não existe — clique para ver o que falta</span></span></button>
+       <button class="op" id="opRestaurar"><span class="op-ico">⤺</span>
+         <span class="op-txt"><b>Restaurar…</b><span>Traz uma cópia de volta: com outro nome, ou por cima. Confere o SHA-256 antes de tocar no destino.</span></span></button>
      </div>
 
      <div class="nota">
        <p><strong>Nenhuma escrita acontece durante a cópia.</strong> A operação
        segura a trava de dados do começo ao fim, então o conjunto copiado é de
        um instante só — não é uma foto tirada aos pedaços.</p>
+       <p><strong>A volta é o contrário disso, e de propósito.</strong> Restaurar
+       lê o backup e confere o SHA-256 de cada arquivo <em>fora</em> da trava,
+       num palco fora da raiz de dados; só a troca final — um <code>rename</code>
+       — acontece com a trava na mão. Restaurar um banco de dez gigabytes não
+       para o servidor por dez gigabytes.</p>
      </div>
 
      <div class="acoes">
@@ -5059,14 +5098,245 @@ async function verBackupRestaure(db) {
 
   $("#opBackup").onclick = backupAgora;
   $("#opConferir").onclick = conferirBackup;
-  $("#opRestaurar").onclick = () => aindaNao({ rot:"Restaurar",
-    falta:"Copiar de volta é mais do que copiar: é decidir o que fazer com o "
-        + "que está lá. Sobrescrever um database em uso, com conexões abertas "
-        + "e a trava tomada, precisa de um desenho — parar o serviço, restaurar "
-        + "ao lado e trocar, ou restaurar com outro nome. Enquanto isso não "
-        + "existir, restaurar é copiar a pasta do backup por cima com o serviço "
-        + "parado, e conferir com o `conferir_backup` antes." });
+  $("#opRestaurar").onclick = () => telaRestaurarBackup(bkp.destino);
   $("#btVoltaDb").onclick = () => gerirDatabase(db);
+}
+
+/* ------------------------------------------------------------- restauração
+   Escolher a cópia, ver o que ela tem dentro e decidir o nome.
+
+   As duas formas ficam LADO A LADO, e não uma escondida atrás da outra: a
+   escolha entre elas é a decisão inteira desta tela. Com outro nome não
+   destrói nada e não exige parar serviço nenhum; por cima substitui um banco
+   inteiro e exige a porta de dados parada.
+
+   Cor: azul consulta abre a cópia, verde inclui cria o banco novo, vermelho
+   exclui de vez substitui o que existe — a convenção da casa, sempre em
+   contorno, com o preenchimento só no hover. */
+
+async function telaRestaurarBackup(pasta) {
+  const c = await api("config").catch(() => ({}));
+  const inicial = pasta || (c.backup || {}).destino || "backups";
+
+  folha("Restaurar um backup",
+    "a cópia volta com outro nome, ou por cima — e o SHA-256 é conferido antes",
+    `<form class="criar" id="formRst" autocomplete="off" onsubmit="return false">
+       <div class="bloco">
+         <label class="largo"><span>pasta onde procurar
+             <em>o <code>backup.destino</code> do <code>config.json</code>, ou qualquer caminho</em></span>
+           <input id="rstPasta" value="${esc(inicial)}"></label>
+       </div>
+     </form>
+     <div class="acoes">
+       <button class="botao mini consultar" id="btRstListar">Procurar cópias</button>
+       <span class="leg" id="rstRecado"></span>
+     </div>
+     <div id="rstLista"></div>
+     <div id="rstDetalhe"></div>
+
+     <div class="nota">
+       <p><strong>O manifesto é conferido antes de qualquer arquivo de destino
+       ser tocado.</strong> A cópia é extraída para fora da raiz de dados, o
+       SHA-256 de cada arquivo é recalculado contra o <code>backup.json</code>,
+       e só então o banco entra no lugar. Cópia que não confere não vira
+       database pela metade: não vira database nenhum.</p>
+     </div>
+
+     <div class="acoes">
+       <button class="botao secundario" id="btRstVolta">← Backup e restauração</button>
+     </div>`);
+
+  $("#btRstVolta").onclick = () => verBackupRestaure(databaseCorrente());
+  $("#btRstListar").onclick = () => listarBackups();
+  $("#rstPasta").onkeydown = ev => {
+    if (ev.key === "Enter") { ev.preventDefault(); listarBackups(); }
+  };
+  listarBackups();
+}
+
+async function listarBackups() {
+  const pasta = $("#rstPasta").value.trim();
+  const alvo = $("#rstLista");
+  $("#rstDetalhe").innerHTML = "";
+  alvo.innerHTML = `<div class="vazio">procurando…</div>`;
+  try {
+    const r = await api("backups", pasta ? { pasta } : {});
+    $("#rstRecado").textContent = r.existe
+      ? `${r.total} cópia(s) em ${r.pasta}`
+      : `a pasta ${r.pasta} não existe`;
+    if (!r.backups.length) {
+      alvo.innerHTML = `<div class="vazio">nenhuma cópia do PhxSql nesta pasta</div>`;
+      return;
+    }
+    alvo.innerHTML = `<h3 class="secao">Cópias encontradas</h3>` + tabela(
+      [{t:"arquivo"}, {t:"quando"}, {t:"no disco", cls:"num"},
+       {t:"arquivos", cls:"num"}, {t:"o que tem dentro"}],
+      r.backups,
+      b => {
+        if (!b.legivel) return `<tr>
+          <td class="dado"><b>${esc(b.nome)}</b></td>
+          <td class="dado" colspan="4"><span class="pino mal">ilegível</span>
+            <span class="leg">${esc(b.erro || "")}</span></td></tr>`;
+        // Um botão por database de dentro, e é ele que abre o detalhe: assim
+        // a cópia da raiz inteira não vira um clique só que restaura seis
+        // bancos de uma vez.
+        const dbs = (b.databases || []).map(db =>
+          `<button class="botao mini consultar rst-abrir"
+             data-origem="${esc(b.caminho)}" data-de="${esc(db)}">${esc(db)}</button>`).join(" ")
+          || `<span class="leg">nenhum banco que você possa restaurar</span>`;
+        return `<tr>
+          <td class="dado"><b>${esc(b.nome)}</b>
+            <span class="pino crua">${b.zip ? "zip" : "pasta"}</span>
+            ${b.escopo_declarado ? "" : `<span class="pino crua"
+              title="o manifesto desta cópia não diz de que ela é cópia: o escopo foi deduzido dos caminhos">deduzido</span>`}</td>
+          <td class="dado">${esc(b.quando || "—")}</td>
+          <td class="dado num">${esc(fmtBytes(b.no_disco))}</td>
+          <td class="dado num">${fmt(b.arquivos)}</td>
+          <td class="dado">${dbs}</td></tr>`;
+      });
+    if (r.escondidos) {
+      alvo.insertAdjacentHTML("beforeend",
+        `<p class="leg">${fmt(r.escondidos)} banco(s) ficaram de fora da lista:
+         você não tem permissão de administrar neles.</p>`);
+    }
+    $$(".rst-abrir").forEach(bt => bt.onclick = () =>
+      verDentroDoBackup(bt.dataset.origem, bt.dataset.de));
+  } catch (e) {
+    alvo.innerHTML = `<div class="aviso mal">${esc(e.message || String(e))}</div>`;
+  }
+}
+
+/** O que a cópia tem dentro, e as duas formas de trazer de volta. */
+async function verDentroDoBackup(origem, de) {
+  const alvo = $("#rstDetalhe");
+  alvo.innerHTML = `<div class="vazio">lendo o manifesto…</div>`;
+  try {
+    const [d, srv, bancos] = await Promise.all([
+      api("restaurar_backup", { origem, de, simular: true }),
+      api("servico").catch(() => ({ no_ar: false })),
+      api("bancos").catch(() => []),
+    ]);
+    const existentes = Array.isArray(bancos) ? bancos : (bancos.databases || []);
+    const quando = (d.quando || "").slice(0, 10) || new Date().toISOString().slice(0, 10);
+    const sugerido = `${de}_de_${quando}`.replace(/[^A-Za-z0-9_-]/g, "_");
+    const podeSubstituir = existentes.includes(de);
+    const arquivo = origem.split("/").pop();
+
+    // O nome do banco e o do arquivo vão dentro do `<em>`, que é o único
+    // pedaço de `.secao` sem caixa-alta. Fora dele, `Comercial` apareceria
+    // como `COMERCIAL` — uma mentira sobre o dado, porque quem olha não sabe
+    // se o database se chama assim. É a lição de «Blumenau», de novo.
+    alvo.innerHTML = `
+      <h3 class="secao">o que tem dentro <em>${esc(de)} · ${esc(arquivo)}</em></h3>
+      <div class="fichas">
+        ${ficha(d.quando || "—", "gravado em")}
+        ${ficha(fmt(d.arquivos), "arquivos")}
+        ${ficha(fmtBytes(d.bytes), "conteúdo")}
+        ${ficha(d.phxsql || "—", "gravado pela versão")}
+      </div>
+      ${(d.tabelas || []).length
+        ? `<p class="leg">Tabelas na cópia: ${
+             d.tabelas.map(t => `<code>${esc(t)}</code>`).join(" · ")}</p>`
+        : `<p class="leg">A cópia não tem tabela nenhuma dentro.</p>`}
+      ${d.escopo_declarado ? "" : `<div class="nota"><p><strong>Cópia antiga.</strong>
+        O manifesto dela não diz de que ela é cópia, então o escopo foi
+        <em>deduzido</em> dos caminhos de dentro. Confira o nome do banco acima
+        antes de restaurar.</p></div>`}
+
+      <div class="ops">
+        <div class="op fixa">
+          <span class="op-ico">✚</span>
+          <span class="op-txt"><b>Restaurar com outro nome</b>
+            <span>Cria um database novo com o conteúdo da cópia. Não toca no que
+            existe, não precisa parar nada, e dá para conferir o dado antes de
+            decidir qualquer outra coisa.</span>
+            <input class="rst-campo" id="rstNome" value="${esc(sugerido)}">
+            <button class="botao mini incluir" id="btRstNovo">Restaurar com este nome</button>
+          </span>
+        </div>
+
+        <div class="op fixa perigo">
+          <span class="op-ico">⤺</span>
+          <span class="op-txt"><b>Restaurar por cima de ${esc(de)}</b>
+            <span>Substitui o database inteiro pelo conteúdo da cópia. O que está
+            lá <b>não é apagado</b>: sai da raiz de dados, e o caminho aparece na
+            resposta. Exige a <b>porta de dados parada</b> — a interface web
+            continua no ar, e é por ela que a porta volta.</span>
+            <span class="rst-estado">porta de dados:
+              <span class="pino ${srv.no_ar ? "mal" : "ok"}">${srv.no_ar ? "no ar" : "parada"}</span>
+              ${srv.no_ar ? `<button class="botao mini alterar" id="btRstParar">Start/Stop</button>` : ""}
+            </span>
+            ${podeSubstituir
+              ? `<input class="rst-campo" id="rstConfirma" autocomplete="off"
+                        placeholder="digite ${esc(de)} para liberar">
+                 <button class="botao mini excluir" id="btRstPorCima" disabled>
+                   Substituir ${esc(de)}</button>`
+              : `<span class="rst-estado">não há um database chamado
+                 <code>${esc(de)}</code> neste servidor: não há o que substituir.</span>`}
+          </span>
+        </div>
+      </div>
+      <div id="rstErro"></div>`;
+
+    $("#btRstNovo").onclick = () =>
+      restaurarAgora(origem, de, $("#rstNome").value.trim(), false);
+    if (srv.no_ar && $("#btRstParar")) $("#btRstParar").onclick = verServico;
+    if (podeSubstituir) {
+      const campo = $("#rstConfirma"), bt = $("#btRstPorCima");
+      // Digitar o nome, e não um `confirm()`: a pergunta de sim ou não é
+      // respondida no reflexo, e esta é a única operação da tela que
+      // substitui um banco inteiro.
+      campo.oninput = () => { bt.disabled = campo.value.trim() !== de; };
+      bt.onclick = () => restaurarAgora(origem, de, de, true);
+    }
+  } catch (e) {
+    alvo.innerHTML = `<div class="aviso mal">${esc(e.message || String(e))}</div>`;
+  }
+}
+
+async function restaurarAgora(origem, de, destino, porCima) {
+  if (!destino) return avisar("dê um nome ao database restaurado", true);
+  $("#rstRecado").textContent = "conferindo o SHA-256 e restaurando…";
+  try {
+    const r = await api("restaurar_backup", {
+      origem, de, database: destino,
+      ...(porCima ? { modo: "por_cima", confirmar: true } : {}),
+    });
+    $("#rstRecado").textContent = "";
+    avisar(`${r.database} restaurado · ${fmt(r.arquivos)} arquivo(s), ${
+      fmtBytes(r.bytes)}, ${r.tabelas.length} tabela(s)`);
+    await montarArvore(false);
+    folha(`Restaurado: ${r.database}`, `de ${r.de}, em ${fmt(r.ms)} ms`,
+      `<div class="fichas">
+         ${ficha(r.database, "database")}
+         ${ficha(fmt(r.arquivos), "arquivos")}
+         ${ficha(fmtBytes(r.bytes), "conteúdo")}
+         ${ficha(r.tabelas.length, "tabelas")}
+       </div>
+       <p class="leg">Tabelas: ${
+         (r.tabelas || []).map(t => `<code>${esc(t)}</code>`).join(" · ") || "nenhuma"}</p>
+       ${r.anterior_em ? `<div class="nota mal">
+         <p><strong>O database que estava aqui não foi apagado.</strong> Ele está
+         em <code>${esc(r.anterior_em)}</code>, fora da raiz de dados — então não
+         aparece na árvore e não é servido a ninguém. Confira o restaurado antes
+         de apagar aquela pasta.</p></div>` : ""}
+       <div class="acoes">
+         <button class="botao mini consultar" id="btVerRestaurado">Abrir ${esc(r.database)}</button>
+         <button class="botao secundario" id="btRstOutra">← Restaurar outra cópia</button>
+       </div>`);
+    $("#btVerRestaurado").onclick = () => gerirTabelas(r.database);
+    $("#btRstOutra").onclick = () => telaRestaurarBackup();
+  } catch (e) {
+    $("#rstRecado").textContent = "";
+    const texto = String(e.message || e);
+    avisar(texto, true);
+    // O recado do topo trunca, e a recusa desta tela é justamente a que diz o
+    // que fazer -- «pare a porta de dados antes». Aviso que corta a instrução
+    // no meio é o mesmo que não avisar.
+    const caixa = $("#rstErro");
+    if (caixa) caixa.innerHTML = `<div class="nota mal"><p><strong>Não
+      restaurei.</strong> ${esc(texto)}</p></div>`;
+  }
 }
 
 /* ============================================================ editor de menu
@@ -7799,6 +8069,9 @@ const ICO = {
   troca: `<path d="M4 8h13l-3.5-3.5M20 16H7l3.5 3.5" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>`,
   importar: `<path d="M12 3v11M8 10.5l4 4 4-4" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 17.5v2a1.5 1.5 0 001.5 1.5h13a1.5 1.5 0 001.5-1.5v-2" fill="none" stroke-width="1.6"/>`,
   reparo: `<path d="M14.5 6.5a4 4 0 00-5.4 5.2L4 16.8 7.2 20l5.1-5.1a4 4 0 005.2-5.4l-2.6 2.6-2.1-2.1z" fill="none" stroke-width="1.6" stroke-linejoin="round"/>`,
+  // Seta que volta para dentro de uma caixa: a cópia entrando de novo. Espelho
+  // do `cofre`, que é a que sai.
+  voltar: `<path d="M9.5 4.5L5 9l4.5 4.5" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 9h8.5a5.5 5.5 0 010 11H8" fill="none" stroke-width="1.7" stroke-linecap="round"/>`,
   cofre: `<path d="M12 3l8 3.5v5c0 4.6-3.3 8.3-8 9.5-4.7-1.2-8-4.9-8-9.5v-5z" fill="none" stroke-width="1.6"/><path d="M12 8.5v7M8.5 12h7" stroke-width="1.6" stroke-linecap="round"/>`,
   replica: `<circle cx="6" cy="12" r="2.6" fill="none" stroke-width="1.6"/><circle cx="18" cy="6" r="2.6" fill="none" stroke-width="1.6"/><circle cx="18" cy="18" r="2.6" fill="none" stroke-width="1.6"/><path d="M8.3 10.8l7.3-3.6M8.3 13.2l7.3 3.6" stroke-width="1.5"/>`,
   correio: `<rect x="3" y="5.5" width="18" height="13" rx="2" fill="none" stroke-width="1.6"/><path d="M3.6 7l8.4 6 8.4-6" fill="none" stroke-width="1.6" stroke-linecap="round"/>`,
@@ -7884,6 +8157,11 @@ const FERRAMENTAS = [
   { ico:"relogio",  rot:"Jobs",       cor:"var(--log)",    faz:telaJobs },
   "risco",
   { ico:"cofre",    rot:"Backup",     cor:"var(--ok)",     faz:backupAgora },
+  // Ao lado do Backup, e não escondida dentro da tela dele: o pedido chegou
+  // como «falta o botão restaurar» com a tela de backup no ar há semanas.
+  // Backup que não restaura não é backup, e botão que não se acha não existe.
+  { ico:"voltar",   rot:"Restaurar",  cor:"var(--ambar)",  faz:() => telaRestaurarBackup(),
+    dica:"traz uma cópia de volta: com outro nome, ou por cima" },
   { ico:"lixeira",  rot:"Lixeira",    cor:"var(--log)",    faz:() => telaLixeira() },
   { ico:"troca",    rot:"Transações", cor:"var(--log)",    faz:verTransacoes },
   { ico:"elo",      rot:"DbLink",     cor:"var(--memo)",   faz:() => telaDbLink() },
@@ -10009,6 +10287,7 @@ const MENUS = [
     "sep",
     { rot:"Backup agora…",       ico:"⛁",  tecla:"Ctrl+B", faz:backupAgora },
     { rot:"Conferir um backup…", ico:"✓",                 faz:conferirBackup },
+    { rot:"Restaurar um backup…", ico:"⤺",                faz:() => telaRestaurarBackup() },
     "sep",
     { rot:"Sair",                ico:"⏻",                 faz:() => $("#btSair").click() },
   ]],

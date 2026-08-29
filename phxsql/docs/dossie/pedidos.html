@@ -178,15 +178,15 @@ footer{
 <div class="envelope">
 <header>
   <div class="rotulo">PhxSql · o dossiê do que foi pedido</div>
-  <h1>Os 132 pedidos, e o<br>que existe de cada um</h1>
+  <h1>Os 133 pedidos, e o<br>que existe de cada um</h1>
   <p class="chamada">Uma linha por pedido seu, na ordem em que você pediu. O
   estado é <strong>medido contra o código</strong>, não contra a lembrança — foi
   assim que a chave estrangeira saiu de «pronto» para «parcial», e o Centro de
   Controle de «pronto» para «só navega».</p>
 
   <div class="placar">
-    <div class="c"><div class="v">132</div><div class="r">pedidos</div></div>
-    <div class="c feito"><div class="v">123</div><div class="r">feitos</div></div>
+    <div class="c"><div class="v">133</div><div class="r">pedidos</div></div>
+    <div class="c feito"><div class="v">124</div><div class="r">feitos</div></div>
     <div class="c parcial"><div class="v">5</div><div class="r">parciais</div></div>
     <div class="c planejado"><div class="v">4</div><div class="r">planejados</div></div>
   </div>
@@ -221,7 +221,7 @@ fonte —, e não por falta de trabalho.</p>
   Meio caminho andado continua sendo meio caminho, e a lista diz qual metade.
 </div>
 
-<h2 id="todos">Os 132, na ordem em que você pediu</h2>
+<h2 id="todos">Os 133, na ordem em que você pediu</h2>
 <p class="sub">A numeração é a sequência real dos seus pedidos — ela diz
 <em>quando</em> cada coisa foi pedida, e é por isso que vale mantê-la.</p>
 
@@ -309,7 +309,7 @@ fonte —, e não por falta de trabalho.</p>
       <tr data-e="feito"><td class="n mono">68</td><td class="st"><span class="pino feito">Feito</span></td><td class="p"><strong>Copiar e colar tabela</strong> de um lugar para outro</td><td class="e"><code>copiar_tabela</code> atravessa databases e schemas; a permissão de criar é conferida <strong>no destino</strong></td></tr>
       <tr data-e="feito"><td class="n mono">69</td><td class="st"><span class="pino feito">Feito</span></td><td class="p"><strong>Configurações gerais do servidor, do banco e dos usuários</strong>, cada uma com sua tela</td><td class="e">três telas, três alcances. <strong>Leem, não gravam</strong> — gravar o <code>config.json</code> pela web daria a uma sessão roubada o poder de abrir o firewall e criar supervisor</td></tr>
       <tr data-e="feito"><td class="n mono">70</td><td class="st"><span class="pino feito">Feito</span></td><td class="p"><strong>SysTables e SysColumns</strong></td><td class="e">o catálogo em forma de dado, e o dicionário de dados com id, caption, descrição, máscara e papel na chave</td></tr>
-      <tr data-e="feito"><td class="n mono">71</td><td class="st"><span class="pino feito">Feito</span></td><td class="p"><strong>Gerir database</strong>: conexões, triggers, procedures, arquivos bloqueados, modo exclusivo, transações, backup/restaure e jobs</td><td class="e">15 itens numa tela; 11 funcionam, 4 apagados dizendo o que falta e de que dependem</td></tr>
+      <tr data-e="feito"><td class="n mono">71</td><td class="st"><span class="pino feito">Feito</span></td><td class="p"><strong>Gerir database</strong>: conexões, triggers, procedures, arquivos bloqueados, modo exclusivo, transações, backup/restaure e jobs</td><td class="e">18 itens numa tela; 14 funcionam, 4 apagados dizendo o que falta e de que dependem. O <em>backup/restaure</em> passou a restaurar de verdade (pedido 133)</td></tr>
       <tr data-e="feito"><td class="n mono">72</td><td class="st"><span class="pino feito">Feito</span></td><td class="p"><strong>Diretivas de acesso ao banco e diretivas de acesso</strong></td><td class="e">os seis portões na ordem em que fecham, e quem alcança o banco resolvido pelas três regras</td></tr>
       <tr data-e="feito"><td class="n mono">73</td><td class="st"><span class="pino feito">Feito</span></td><td class="p"><strong>Editor de menu</strong> para trocar o nome exibido</td><td class="e">81 rótulos; fica no navegador de quem mexeu, não no servidor</td></tr>
       <tr data-e="feito"><td class="n mono">74</td><td class="st"><span class="pino feito">Feito</span></td><td class="p"><strong>Configurações e diretivas das tabelas</strong></td><td class="e">a geometria decidida na criação, os índices e chaves, e o que a tabela herda do servidor</td></tr>
@@ -372,6 +372,7 @@ fonte —, e não por falta de trabalho.</p>
       <tr data-e="feito"><td class="n mono">67</td><td class="st"><span class="pino feito">Feito</span></td><td class="p"><strong>Botão e menu Tabelas</strong> para gerir as tabelas do banco: nova, estrutura, editar conteúdo, partições, duplicar, reparar tabela, reparar índice e excluir — e <strong>Gestão de transações</strong> no menu de ferramentas</td><td class="e">as oito operações funcionam de ponta a ponta; três delas (<code>criar_tabela</code>, <code>duplicar_tabela</code>, <code>excluir_tabela</code>) nasceram aqui, e <code>criar_schema</code> — prometido na documentação e nunca despachado — junto</td></tr>
       <tr data-e="feito"><td class="n mono">131</td><td class="st"><span class="pino feito">Feito</span></td><td class="p"><strong>Prioridade no MULTILINK: conectar no MySQL(R) e ver a tabela <code>clientes</code> do outro lado do DbLink</strong></td><td class="e">provado contra o <strong>MySQL(R) 8.0.46 real</strong>, não o servidor falso: <code>caching_sha2_password</code> pelos dois caminhos documentados, <code>dblink_tabelas</code>/<code>dblink_estrutura</code>/<code>dblink_ler</code> trazendo as 5 linhas com o DECIMAL certo — e a grade da tela somando sobre dado que nunca esteve num arquivo nosso. Roteiro de refazer em <code>docs/DBLINK.md</code>. É o DbLink <strong>nativo, zero dependências</strong> — o destino do pacote MULTILINK, alcançado sem as 582 crates dele</td></tr>
       <tr data-e="feito"><td class="n mono">132</td><td class="st"><span class="pino feito">Feito</span></td><td class="p"><strong>Assistente de conexão DbLink</strong>: cria a conexão, testa, escolhe base e tabelas ligadas, e o <strong>job de sincronia</strong> gravando entre si automaticamente</td><td class="e">cinco passos que só avançam com o anterior provado, e por baixo a <strong>sincronia de tabelas primas</strong>: convergência de estado pela chave, sentido (puxar/empurrar/dois) e dono (aqui/lá) <strong>por linha</strong>, colunas casadas <strong>por nome</strong>, empurrão reentrável (<code>ON DUPLICATE KEY UPDATE</code>), teto com recusa clara. Exclusão <strong>não</strong> viaja — limite de desenho, provado no estágio 5 da prova. <code>bancada/dblink/prova-sincronia.py</code> roda os 7 estágios contra o MySQL(R) vivo (inclusive o job puxando sozinho); o assistente foi exercitado no navegador e o exercício achou a árvore que não se remontava. 15 testes de unidade das partes puras, com o defeito do sinal do decimal provado nos dois sentidos. <code>docs/DBLINK.md</code></td></tr>
+      <tr data-e="feito"><td class="n mono">133</td><td class="st"><span class="pino feito">Feito</span></td><td class="p"><strong>Falta o botão restaurar</strong> — backup que não restaura não é backup</td><td class="e"><code>restaurar_backup</code> com dois modos: <strong>com outro nome</strong> (o padrão — não destrói nada, não para serviço nenhum e não segura a trava durante a cópia) e <strong>por cima</strong> (exige a porta de dados parada, nenhuma conexão aberta e <code>&quot;confirmar&quot;:true</code>; o database substituído <strong>não é apagado</strong>, sai da raiz e o caminho volta na resposta). O SHA-256 de cada arquivo é conferido <strong>antes</strong> de o destino ser tocado, num palco fora da raiz: backup podre não vira database pela metade. Mais <code>backups</code>, que lista as cópias lendo só o manifesto de cada ZIP; o leitor de ZIP com INFLATE completo (os três blocos da RFC 1951, o dinâmico provado por vetor da zlib); a tela com as duas formas lado a lado; e o <strong>botão na barra</strong>, ao lado do Backup — botão que não se acha não existe. O portão próprio fecha a porta dos fundos que o campo <code>&quot;database&quot;</code> não enxerga: o banco que vem DENTRO do backup. 26 testes novos (1.132 no total), cada guarda provada com o defeito reposto, mais a prova pelo navegador nos dois temas. <code>docs/RESTAURACAO.md</code></td></tr>
     </tbody>
   </table>
   <div class="vazio" id="vazio" hidden>Nenhum pedido bate com isso.</div>

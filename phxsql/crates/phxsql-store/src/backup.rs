@@ -52,6 +52,17 @@ pub struct Relatorio {
     pub comprimido: u64,
     /// Preenchido so na conferencia: o que nao bate.
     pub divergencias: Vec<String>,
+    /// O database UNICO desta copia; `None` quando ela e da raiz inteira.
+    ///
+    /// # Por que o manifesto precisa dizer isto
+    ///
+    /// Os caminhos de dentro nao contam: uma copia da raiz lista
+    /// `Z/clientes.reg` e uma copia do banco Z lista `clientes.reg`, mas um
+    /// banco que so tenha schemas lista `matriz/clientes.reg` -- que se
+    /// escreve igualzinho a uma raiz com o database `matriz`. Adivinhar pelo
+    /// formato do caminho acerta quase sempre, e "quase sempre" numa
+    /// restauracao quer dizer restaurar um schema como se fosse um banco.
+    pub database: Option<String>,
 }
 
 impl Relatorio {
@@ -65,6 +76,24 @@ impl Relatorio {
             ("quando", Json::texto_de(quando)),
             ("arquivos", Json::de_u64(self.arquivos.len() as u64)),
             ("bytes", Json::de_u64(self.bytes)),
+            // Os dois campos entraram JUNTO com a restauracao. Manifesto
+            // gravado antes nao os tem e continua valendo: quem le cai na
+            // deducao pelo formato dos caminhos. Backup ja gravado nao se
+            // reescreve, e leitor antigo ignora campo que nao conhece.
+            (
+                "escopo",
+                Json::texto_de(match &self.database {
+                    Some(_) => "database",
+                    None => "raiz",
+                }),
+            ),
+            (
+                "database",
+                match &self.database {
+                    Some(n) => Json::texto_de(n),
+                    None => Json::Nulo,
+                },
+            ),
             (
                 "conteudo",
                 Json::Lista(
@@ -88,7 +117,7 @@ impl Relatorio {
 ///
 /// Ordenado de proposito: dois backups da mesma coisa tem de dar manifestos
 /// comparaveis, e a ordem que o sistema de arquivos devolve nao e estavel.
-fn listar(raiz: &Path) -> Result<Vec<PathBuf>> {
+pub(crate) fn listar(raiz: &Path) -> Result<Vec<PathBuf>> {
     let mut achados = Vec::new();
     let mut pilha = vec![raiz.to_path_buf()];
     while let Some(dir) = pilha.pop() {
@@ -109,7 +138,7 @@ fn listar(raiz: &Path) -> Result<Vec<PathBuf>> {
     Ok(achados)
 }
 
-fn relativo(raiz: &Path, arquivo: &Path) -> String {
+pub(crate) fn relativo(raiz: &Path, arquivo: &Path) -> String {
     arquivo
         .strip_prefix(raiz)
         .unwrap_or(arquivo)
@@ -183,7 +212,10 @@ pub fn executar_zip(
 
     let quando = phxsql_core::datahora::instante_iso(quando_ms);
     let mut zip = phxsql_core::zip::Zip::novo(quando_ms);
-    let mut r = Relatorio::default();
+    let mut r = Relatorio {
+        database: (!banco.is_empty()).then(|| banco.to_string()),
+        ..Relatorio::default()
+    };
     for arquivo in listar(&origem)? {
         let rel = relativo(&origem, &arquivo);
         let dados = std::fs::read(&arquivo)?;

@@ -26,6 +26,7 @@ pub mod motivo;
 pub mod ndx;
 pub mod pag;
 pub mod reg;
+pub mod restaurar;
 pub mod table;
 mod util;
 pub mod volume;

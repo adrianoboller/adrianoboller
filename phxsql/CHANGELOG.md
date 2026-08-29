@@ -10,6 +10,86 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
+## Não lançado — a restauração de backup
+
+O número da versão fica para a integração: escrevê-lo aqui antes de o
+`Cargo.toml` mudar seria criar um número que ninguém mediu.
+
+**Backup que não restaura não é backup.** O botão *Restaurar* existia como
+promessa apagada desde que a tela de backup nasceu, e o pedido chegou com essas
+palavras. Agora ele restaura.
+
+### Adicionado
+
+- **`restaurar_backup`**, com dois modos. `novo` (o padrão) grava o backup com
+  **outro nome**: não destrói nada, não precisa parar serviço nenhum e não
+  segura a trava durante a cópia — o database de destino ainda não existe, e
+  ninguém está lendo dele. `por_cima` substitui um database que já existe, e
+  exige três coisas: a **porta de dados parada**, nenhuma conexão de dados
+  aberta e `"confirmar":true`. O database substituído **não é apagado** — sai
+  da raiz de dados e o caminho volta em `anterior_em`.
+- **A conferência acontece antes de o destino ser tocado.** A cópia é extraída
+  para um palco fora da raiz de dados e o SHA-256 de cada arquivo é conferido
+  contra o `backup.json`; só então a troca acontece, com um `rename` e com a
+  trava na mão. Backup corrompido não vira database pela metade — não vira
+  database nenhum.
+- **`backups`**, a lista das cópias de uma pasta com o que cada uma traz
+  dentro. De um ZIP lê só o fim do arquivo e o manifesto: listar dez cópias de
+  um gigabyte não custa dez gigabytes.
+- **Leitura de ZIP e INFLATE completo** (`phxsql-core::zip`): o diretório
+  central, o CRC-32 de cada entrada e os **três** tipos de bloco da RFC 1951 —
+  sem compressão, Huffman fixo e Huffman **dinâmico**, que o nosso compressor
+  nunca emite e todo compressor do mundo emite. O teste do dinâmico é um vetor
+  produzido pela zlib, e não uma ida e volta com o próprio código: os dois
+  lados podem estar errados juntos.
+- **A tela**, com as duas formas lado a lado, o que a cópia tem dentro antes de
+  decidir, e o botão **Restaurar na barra de ferramentas**, ao lado do Backup —
+  botão que não se acha não existe. Também no menu *Arquivo*, junto de
+  *Conferir um backup…*.
+- `docs/RESTAURACAO.md`: o desenho, as três saídas possíveis, a que foi
+  escolhida e **o que a restauração não garante**.
+
+### Mudado
+
+- **O manifesto do backup diz de que ele é cópia** — `escopo` (`raiz` ou
+  `database`) e `database`. Os caminhos quase sempre bastariam para deduzir, e
+  «quase sempre» numa restauração quer dizer *restaurar um schema como se fosse
+  um banco*: um database que só tenha schemas se escreve igualzinho a uma raiz.
+  Manifesto antigo continua valendo — cai na dedução, e a resposta diz que
+  deduziu em vez de afirmar.
+
+### Corrigido
+
+- **O portão de permissão não enxergava o database que vem DENTRO do backup.**
+  Ele confere o campo `"database"` do pedido, que na restauração é o destino;
+  sem uma conferência própria, bastaria administrar um banco de rascunho para
+  despejar nele o backup da folha e ler tudo. É a mesma porta dos fundos do
+  `juntar` e do `unir`, e o conserto é o mesmo — um portão próprio dentro da
+  operação. Tem teste, e o teste falha com o portão retirado.
+- **O palco da restauração ia parar no `/tmp`.** Com `base: "dados"` — o padrão
+  do `config.json` — o pai do caminho é vazio, e o código caía no temporário do
+  sistema. `/tmp` costuma ser outro sistema de arquivos, às vezes um `tmpfs`: a
+  troca deixaria de ser um `rename` para virar uma cópia do database inteiro
+  para dentro da RAM, no meio da trava. **Achado exercitando pelo navegador**,
+  não lendo — no teste unitário o `base` é sempre absoluto.
+- **A tela mentia sobre o dado, de novo.** O título da seção usava a classe
+  `.secao`, que é caixa-alta: um database chamado `Comercial` aparecia como
+  `COMERCIAL`. É «Blumenau» virando «BLUMENAU» por outro caminho, e também só
+  apareceu abrindo a página.
+
+### Sabido
+
+- O manifesto prova que o backup **não apodreceu**, não que ninguém o
+  reescreveu de propósito: quem alterar um arquivo *e* recalcular o SHA dentro
+  do `backup.json` passa. Assinar o manifesto ainda não é feito.
+- Não há «restaurar a raiz inteira»: um database por vez, de propósito.
+- Cópia em ZIP acima de 4 GiB não cabe no formato (deslocamentos de 32 bits) —
+  já era assim antes. O que mudou é que agora **falha alto**: o leitor confere
+  a assinatura e o nome do cabeçalho local contra o diretório central, em vez
+  de restaurar lixo em silêncio.
+
+---
+
 ## 0.18.0 — 2026-08-29
 
 A rodada dos concorrentes. Três motores lidos no fonte — InnoDB, Aria e
