@@ -480,6 +480,81 @@ mod tests {
         assert!(PAGINA.len() > 1_000);
     }
 
+    /// Pega o `x.y.z` que vem logo depois de "phx-grid v" ou de `versao: "`.
+    fn versao_depois_de(texto: &str, marca: &str) -> Option<String> {
+        let resto = &texto[texto.find(marca)? + marca.len()..];
+        let v: String = resto
+            .chars()
+            .take_while(|c| c.is_ascii_digit() || *c == '.')
+            .collect();
+        if v.split('.').count() == 3 {
+            Some(v)
+        } else {
+            None
+        }
+    }
+
+    /// A versao da grade aparece em QUATRO lugares, e ja disse tres coisas
+    /// diferentes ao mesmo tempo: o cabecalho do `.js` passou oito versoes em
+    /// "v0.1.0", o `versao:` dizia 0.8.0, e o codigo ja tinha recurso que a
+    /// 0.8.0 nao documenta. Numero digitado a mao envelhece calado; este
+    /// teste e o gerador que faltava.
+    #[test]
+    fn grade_versao_nao_mente() {
+        const CHANGELOG: &str = include_str!("../ui/grid/CHANGELOG-phx-grid.md");
+
+        let no_js_cabecalho = versao_depois_de(GRID_JS, "phx-grid v")
+            .expect("o cabecalho do phx-grid.js deveria dizer `phx-grid vX.Y.Z`");
+        let no_js_literal = versao_depois_de(GRID_JS, "versao: \"")
+            .expect("o phx-grid.js deveria expor `versao: \"X.Y.Z\"`");
+        let no_css = versao_depois_de(GRID_CSS, "phx-grid v")
+            .expect("o cabecalho do phx-grid.css deveria dizer `phx-grid vX.Y.Z`");
+        // O topo do CHANGELOG e a fonte da verdade: e o unico dos quatro que
+        // vem com a lista do que mudou ao lado.
+        let no_changelog = versao_depois_de(CHANGELOG, "## [")
+            .expect("o CHANGELOG deveria abrir com `## [X.Y.Z]`");
+
+        assert_eq!(
+            no_js_cabecalho, no_changelog,
+            "o cabecalho do phx-grid.js diz {no_js_cabecalho} e o topo do CHANGELOG diz {no_changelog}"
+        );
+        assert_eq!(
+            no_js_literal, no_changelog,
+            "o `versao:` do phx-grid.js diz {no_js_literal} e o topo do CHANGELOG diz {no_changelog}"
+        );
+        assert_eq!(
+            no_css, no_changelog,
+            "o cabecalho do phx-grid.css diz {no_css} e o topo do CHANGELOG diz {no_changelog}"
+        );
+    }
+
+    /// A CERCA CONTRA O CSS GLOBAL.
+    ///
+    /// O funil da coluna ficou ilegivel por meses porque `input{width:100%}`
+    /// esticava a caixinha de marcar por cima do nome do valor, e
+    /// `label{text-transform:uppercase}` mostrava «Blumenau» como «BLUMENAU».
+    /// Ler o codigo nao acha isso -- mas apagar a cerca, sim: quem tirar
+    /// qualquer uma destas regras derruba este teste.
+    #[test]
+    fn a_cerca_do_css_global_continua_de_pe() {
+        for regra in [
+            ".phx-grid input[type=checkbox]",
+            ".phx-grid input[type=radio]",
+            ".phx-grid label",
+        ] {
+            assert!(
+                PAGINA.contains(regra),
+                "sumiu a cerca `{regra}`: sem ela o CSS global do console volta \
+                 a morder a grade -- caixinha de 204 px por cima do valor e \
+                 «Blumenau» virando «BLUMENAU»"
+            );
+        }
+        assert!(
+            PAGINA.contains("text-transform:none"),
+            "a cerca precisa desfazer o `label{{text-transform:uppercase}}` global"
+        );
+    }
+
     #[test]
     fn sessao_vale_e_expira() {
         let mut s = Sessoes::default();

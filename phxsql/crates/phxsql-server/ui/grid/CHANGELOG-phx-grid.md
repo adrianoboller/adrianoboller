@@ -2,6 +2,21 @@
 
 Formato baseado em *Keep a Changelog*. Versionamento semântico.
 
+## [0.9.0] — 2026-08-29 · **A GRADE QUE O CONSOLE LIGA** — a cerca, o congelar, a vista e a memória de layout
+
+### Corrigido — o achado da rodada
+- **O filtro Excel estava ilegível no console desde que a grade entrou.** Não era teoria: medido no Chrome, a caixinha de marcar da lista de valores tinha **204 px de largura** — o `input{width:100%}` da página — e empurrava o nome da cidade para fora do popover, então a lista aparecia como **oito quadrados sem texto nenhum**; o rádio E/OU dos Filtros de Número media **33,6 px**, a bolinha do tamanho da célula; e o `label{text-transform:uppercase}` mostrava «Blumenau» como «BLUMENAU», que é mentira sobre o dado. A cerca (`.phx-grid input[type=checkbox]`, `.phx-grid label`…) mora no `index.html`, e não aqui, porque o estrago vem de lá: esta folha é do ecossistema Phoenix e não tem por que conhecer o CSS do nosso console.
+- **Seleção + agrupamento contavam cabeçalho de grupo como linha.** `atualizaMestre`, o "marcar todas" do cabeçalho e a faixa com Shift percorriam `ultimaCarga.linhas` inteiro — com grupos ligados, `__grupo` e `__rodape` caem no meio. O "marcar todas" nunca fechava (sempre menos marcadas que linhas) e a faixa punha no conjunto chaves que não existem no dado. Os três passaram a usar `eMarcador()`, e a **lista de marcadores é uma só** (`MARCADORES`), ao lado de quem os cria: peça nova no fim da lista quebra quem filtra pela primeira.
+
+### Adicionado
+- **Congelar coluna** (`api.congelar(campo, "esq"|null)` + alfinete ◧ no menu de Colunas). A coluna congelada **vai para a ponta da ordem**, porque o `sticky` gruda no lado do contêiner e não no lugar dela: congelar a quinta sem movê-la faria as quatro da esquerda passarem por baixo. O alfinete mora no menu de Colunas e não no cabeçalho pelo motivo prático de que a coluna que se quer congelar já saiu da tela quando dá vontade de congelá-la.
+- **Exportar a vista** (`api.vistaAtual(cb)`, `api.csvDaVista(v)`, botão ⤓ no rodapé; `exportarVista:false` desliga). Não é exportar a tabela: sai **estas colunas, nesta ordem, com este filtro e esta ordenação**. Pede o conjunto **inteiro** à fonte e não a página — exportar a página 1 de 40 seria a mesma mentira do filtro truncado. CSV com `;` e BOM (o que o Excel em português abre sem perguntar) e **valor cru, não formatado**: "R$ 1.234,56" volta como texto e ninguém soma a coluna.
+- **Layout lembrado** (`lembrar: "<chave>"`): largura, ordem, colunas escondidas, congeladas e itens por página, em `localStorage`, por grade. **Filtro e ordenação NÃO** — um filtro que volta sozinho ao reabrir a tela é a mesma mentira, com uma noite de intervalo. Layout é gosto; filtro é pergunta, e pergunta se refaz. Tudo em `try/catch`: em janela anônima o acesso **lança**, e uma grade que não abre por causa da memória de largura de coluna seria péssima troca. Coluna guardada que a tabela perdeu é ignorada, não ressuscitada. `api.esquecerLayout()` apaga.
+- **Abrir a linha** (`aoAbrirLinha(linha, ix)`): **duplo** clique, porque o clique simples já é da seleção. A grade não sabe editar e não é ela que deve saber — quem recebe a linha abre a ficha, que carrega a versão do slot e recusa escrita concorrente.
+
+### Versão — o que estava mentindo
+O cabeçalho do `.js` e o do `.css` diziam **`v0.1.0 — Núcleo (S01)`** desde a S01, enquanto o `versao:` dizia `0.8.0` e o código já tinha **ordem por nível de grupo, rodapé de grupo e total geral** — que a 0.8.0 nem documenta. Três lugares, três respostas diferentes. Agora são conferidos entre si e contra o topo deste arquivo pelo teste **`grade_versao_nao_mente`** (`http.rs`): número visível ou sai de um gerador, ou está errado e ninguém percebeu ainda.
+
 ## [0.8.0] — 2026-08-26 · **S08 GROUP BY BOX** — o coração analítico abre (Fase 3 Pivot)
 
 ### Adicionado

@@ -1,4 +1,5 @@
-/* phx-grid v0.1.0 — tema claro (estilo T20) */
+/* phx-grid v0.9.0 — tema claro (estilo T20). A versão é conferida contra o
+   .js e o CHANGELOG por `grade_versao_nao_mente`, em http.rs. */
 .phx-grid{--phx-bg:#fff;--phx-bg2:#f6f8fa;--phx-fg:#1f2328;--phx-meta:#59636e;--phx-borda:#d0d7de;--phx-acc:#0969da;
   font:13px/1.45 -apple-system,"Segoe UI",Roboto,sans-serif;color:var(--phx-fg);background:var(--phx-bg);
   border:1px solid var(--phx-borda);border-radius:10px;overflow:hidden}
@@ -38,7 +39,16 @@
 .phx-colsel-btn:hover{border-color:var(--phx-acc);color:var(--phx-acc)}
 .phx-colsel{position:absolute;right:0;bottom:32px;background:var(--phx-bg);border:1px solid var(--phx-borda);
   border-radius:8px;box-shadow:0 6px 20px rgba(31,35,40,.12);padding:8px 10px;min-width:180px;max-height:260px;overflow:auto;z-index:30}
-.phx-colsel-item{display:block;padding:3px 0;cursor:pointer;white-space:nowrap}
+.phx-colsel-item{display:block;padding:3px 0;cursor:pointer;white-space:nowrap;flex:1}
+.phx-colsel-linha{display:flex;align-items:center;gap:6px}
+.phx-colsel-pino{border:1px solid transparent;background:none;color:var(--phx-meta);cursor:pointer;
+  border-radius:5px;width:20px;height:20px;line-height:1;padding:0;font-size:12px;flex:0 0 auto;opacity:.45}
+.phx-colsel-pino:hover{opacity:1;border-color:var(--phx-acc);color:var(--phx-acc)}
+.phx-colsel-pino-on{opacity:1;color:var(--phx-acc);border-color:var(--phx-acc)}
+.phx-exp-btn{border:1px solid var(--phx-borda);background:var(--phx-bg);border-radius:6px;height:26px;padding:0 10px;
+  cursor:pointer;font-size:12px;color:var(--phx-fg)}
+.phx-exp-btn:hover:not(:disabled){border-color:var(--phx-acc);color:var(--phx-acc)}
+.phx-exp-btn:disabled{opacity:.5;cursor:progress}
 /* S02: bandas + freeze */
 .phx-banda{text-align:center;border-left:1px solid var(--phx-borda);border-right:1px solid var(--phx-borda)}
 .phx-banda-titulo{font-size:11.5px;letter-spacing:.02em;color:var(--phx-meta);text-transform:uppercase}
