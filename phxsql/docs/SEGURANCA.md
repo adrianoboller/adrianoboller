@@ -816,7 +816,37 @@ profiler é uma **sessão de observação**, não configuração. Quem o liga e 
 servidor reiniciar precisa ligá-lo de novo — o arquivo continua lá, com o
 cabeçalho novo separando as duas sessões.
 
-### 10.6 O que a tela escondia
+### 10.6 As hipóteses que morreram medidas
+
+Vale escrevê-las com o número, senão voltam: recusa medida é resultado, e é o
+que impede a mesma ideia de ser reimplementada por intuição.
+
+**«O campo `erro` vaza credencial.»** Ele vai para a tela e para o `.txt` sem
+passar pela redação — só pela redução a uma linha —, e a suspeita era boa: o
+texto do erro carrega dado do pedido. Percorridos os caminhos que recebem
+credencial, nenhum a devolve no erro. O `login` responde a **mesma** mensagem
+para login errado, senha errada e desafio vencido, de propósito (é o que
+impede sondar quem existe). O `senha_b64` malformado responde
+`base64 invalido: '#'` — **o caractere ofensor, que por definição não pertence
+ao alfabeto Base64 e portanto não é pedaço da senha**. E `extrair_hash`
+recusa dizendo o *login*, nunca o valor. Redigir o `erro` custaria a
+explicação — que é a razão de o profiler existir — e não compraria nada
+medível. Fica **não redigido, e reduzido a uma linha**; o dia em que algum
+erro passar a ecoar o valor de um campo, isto vira defeito.
+
+**«O custo do Profiler ligado é o disco.»** Parecia óbvio: um `writeln!` mais
+um `flush` por evento. Medido, o que dói é o **anel**, não o arquivo — e
+dentro do anel não era nem o parse, era a varredura do `terminou`
+(§2.3.2 de `DESEMPENHO.md`). `File::flush` da `std` não faz nada, e o `write`
+vai para a cache de páginas: são microssegundos contra os 103 µs da varredura.
+
+**«As aspas escapadas dentro de um valor são um vazamento.»** O campo `obs`
+com `ele disse "senha":"…" no chat` **aparece inteiro, e tem de aparecer**.
+Não é credencial: é o que alguém digitou numa tabela. Tapá-lo seria o erro
+simétrico — a tela mentindo sobre o dado, que é a mesma falta do «BLUMENAU»
+em maiúscula. Há teste que falha se o `redigir` tapar isso.
+
+### 10.7 O que a tela escondia
 
 Uma letra. A caixa de estado usava `class="aviso bem"`, e a classe verde desta
 interface chama-se `bom` — não existe `.bem` no CSS. A caixa «observando
