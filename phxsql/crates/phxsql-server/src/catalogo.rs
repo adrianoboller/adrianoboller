@@ -936,6 +936,20 @@ pub const OPERACOES: &[Operacao] = &[
         ferramenta_mcp: false,
     },
     Operacao {
+        nome: "config_gravar",
+        apelidos: &[],
+        resumo: "Grava campos do `config.json` no disco, atomicamente. Exige administrar; \
+                 token, seguranca, usuarios, cifra e replicacao ficam de fora.",
+        parametros: &[obr(
+            "campos",
+            "object",
+            "os campos a gravar, pelo nome do config.json: \
+             {\"max_linhas\":500,\"backup.hora\":\"03:00\"}",
+        )],
+        exemplo: r#"{"op":"config_gravar","campos":{"max_linhas":500}}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
         nome: "usuarios",
         apelidos: &[],
         resumo: "O cadastro e o poder de cada um. Nunca devolve senha nem hash.",

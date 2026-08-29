@@ -434,3 +434,120 @@ Em `crates/phxsql-store/tests/cifra-dos-diarios.rs` e
 | a replicação continua lendo | lotes de 50 com a marca do lote anterior |
 | a cura funciona no volume cifrado | queda sem `sincronizar`, 120 eventos, nada se perde |
 | o campo do `config.json` é lido de verdade | `Config::ler` e o `.log` nasce na versão 3 |
+
+---
+
+## 9. Gravar o `config.json` pela tela
+
+Até a 0.18 as três telas de configuração só liam, e o comentário no código
+dizia por quê: *gravar o `config.json` pela porta web significaria que uma
+sessão roubada abre o firewall, troca a lista de comandos proibidos e cria um
+supervisor*. O raciocínio estava certo sobre **aqueles** campos, e cobrava o
+preço em todos os outros — ajustar o teto de linhas ou a hora do backup exigia
+editar o arquivo à mão e reiniciar o serviço.
+
+A operação `config_gravar` separa os dois grupos.
+
+### A lista é fechada, e quem a declara é o servidor
+
+`CAMPOS_EDITAVEIS`, em `crates/phxsql-server/src/config.rs`, é a única porta.
+Cada entrada diz **o campo**, **o tipo** e **se aplica a quente**. A resposta
+de `config` devolve essa lista em `editaveis`, e a tela monta o formulário
+dela — não de uma cópia própria, que envelheceria calada no dia em que um
+campo novo entrasse. É a mesma regra do catálogo das operações.
+
+**Ficam de fora, e a ausência é decisão:**
+
+| fora da lista | por quê |
+|---|---|
+| `token` | é a chave da porta; trocá-la pela web é trocar a fechadura |
+| `seguranca.*` | comandos e bases proibidos, bloqueio, firewall |
+| `root` e `usuarios` | cadastro é credencial |
+| `cifra.*` | carrega a senha do cofre |
+| `alertas.email.*` | carrega a senha do relé |
+| `replicacao.*` | viraria este servidor para outro dono |
+| `ips_permitidos`, `web.servidores`, `web.bind`, `base` | política de rede e de disco da mesma família |
+
+### Os três portões da operação
+
+1. **Permissão.** `administrar`, conferido **dentro** da operação. O portão
+   geral do `despachar` também barra — a op não tem campo `"tabela"` e cai na
+   regra da base vazia —, mas depender disso deixaria a guarda mais importante
+   do servidor amarrada a um detalhe de resolução de nome de base. O teste que
+   prova o portão próprio chama `executar` direto: pelo `despachar` ele passa
+   igual com a conferência removida, e um teste que passa por engano é pior
+   que um teste que falta.
+2. **Tipo.** Os leitores usam `inteiro_ou`, que **cai no padrão em silêncio**
+   quando o tipo não bate. Sem esta conferência, `"max_linhas": "abc"` seria
+   gravado e nunca valeria — e ninguém descobriria pela tela.
+3. **Validação.** A árvore alterada passa pelo mesmo `validar()` do arranque
+   **antes** do `rename`. Valor que não subiria o servidor não entra no
+   arquivo.
+
+### O segredo não entra nem sai
+
+A resposta da gravação devolve a configuração inteira já sem segredo — o
+mesmo `para_json` que oculta token, senha do relé e senha da cifra. O teste
+`o_segredo_nao_entra_nem_sai` cobre os dois sentidos: o campo secreto é
+recusado na entrada, e a resposta de uma gravação válida não traz o token.
+Pelo navegador, o DOM inteiro foi varrido atrás das quatro cadeias sensíveis:
+nenhuma aparece.
+
+### Gravação atômica, e o arquivo de quem escreveu
+
+Escreve num `.tmp` e troca com `rename`, o mesmo que o cadastro do DbLink faz:
+um corte de energia no meio deixa o `config.json` **antigo inteiro**, e não um
+pela metade — que não subiria. O temporário herda as permissões do original,
+porque o arquivo carrega o token e os hashes.
+
+E a troca é **cirúrgica**: `Json::texto_trocar` acha o intervalo daquele valor
+no texto e troca só ele. Reserializar a árvore preservava valor, ordem e
+comentário — e perdia a **forma**: as linhas em branco entre as seções sumiam
+e `["a", "b"]` virava três linhas. Num arquivo escrito à mão isso é devolver o
+trabalho de alguém reformatado, e num controle de versão é um diff ilegível.
+Campo que ainda não está no arquivo cai no caminho reserializado, porque
+inserir texto exigiria adivinhar a indentação de quem escreveu — e adivinhar
+errado é o mesmo estrago que reformatar.
+
+### O que aprendemos exercitando a tela
+
+Dois defeitos que ler o código não acharia:
+
+- **O campo de arranque voltava com o valor velho, calado.** Gravar
+  `timeout_s` gravava certo, e o redesenho lia a configuração **viva** — quem
+  acabou de digitar 90 via 45 de novo, sem nada dizendo que o 90 estava no
+  arquivo. Hoje a resposta traz `no_arquivo` com o que está gravado e ainda
+  não vale, o campo mostra o gravado, um pino ao lado diz o que vale até
+  reiniciar, e a moldura avisa quem chegar depois.
+- **O primeiro conserto trouxe um falso positivo junto.**
+  `alertas.livre_minimo_percentual` saía da resposta como o **texto**
+  `"10.00"`, contra o número `10` do arquivo — e a tela passou a avisar sobre
+  uma divergência que não existia. A causa era a resposta mentir sobre o tipo;
+  o conserto foi devolver número, e não ensinar a comparação a tolerar texto.
+  Resposta que mente sobre o tipo cria trabalho em quem a lê, e o trabalho
+  nasce errado.
+
+### Campo sem leitor, e o que ele escondia
+
+Dois campos estavam no `config.json`, no `MANUAL.txt` e na tela desde a
+0.13.0 e **nenhuma linha de código os lia** — a mesma armadilha do
+`cache_paginas` antes de existir cache:
+
+| campo | leitor que ganhou |
+|---|---|
+| `recursos.memoria_max_mb` | teto das tabelas residentes, conferido no `memoria_carregar` |
+| `recursos.usuarios_max` | teto de logins distintos, conferido no `login` |
+| `recursos.threads` e `recursos.cpu_percentual` | teto global de núcleos do trabalho dividido (`paralelo::definir_teto`) |
+
+E o teto de memória **achou um defeito muito pior do que ele mesmo**: para
+provar o teto era preciso carregar uma tabela residente, e `memoria_carregar`
+tomava a trava global de dados **duas vezes**. `Mutex` da `std` não é
+reentrante: a operação travava a si mesma e, com ela, o servidor inteiro —
+toda operação de dados passa por aquela trava. Ninguém tinha percebido porque
+**não havia teste que chamasse a operação**, e pela tela a chamada
+simplesmente nunca voltava.
+
+A lição é a do projeto, por outro caminho: *campo de configuração sem leitor é
+pior que campo ausente* — e o leitor que faltava escondia uma operação
+quebrada atrás dele. O teste novo carrega a tabela, consulta em memória e
+exige que a resposta volte.

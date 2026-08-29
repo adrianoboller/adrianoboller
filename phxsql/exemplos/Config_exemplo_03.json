@@ -26,6 +26,30 @@
   "timeout_s": 60,
   "conexoes_max": 64,
 
+  "_recursos": [
+    "Numa replica o trabalho e APLICAR o que vem do source, uma linha por",
+    "evento, e a descida do indice e o custo -- entao o cache de paginas do",
+    ".ndx e o campo que mais rende aqui.",
+    "",
+    "durabilidade por_lote basta: o que a replica perder numa queda ela pede",
+    "de novo ao source, porque a posicao dela e o numero do ultimo evento",
+    "aplicado. Essa e a diferenca entre a replica e o source.",
+    "",
+    "Detalhes de cada campo no exemplo 1 e na secao RECURSOS DA MAQUINA do",
+    "MANUAL.txt."
+  ],
+
+  "recursos": {
+    "durabilidade": "por_lote",
+    "lote_operacoes": 500,
+    "lote_milissegundos": 200,
+    "cache_paginas": 2048,
+    "diario_volume_mib": 0,
+    "conexoes_max": 64,
+    "threads": 0,
+    "cpu_percentual": 100
+  },
+
   "_somente_leitura": "Uma replica so deve ser escrita pela replicacao. Ligue isto para impedir escrita de aplicacao.",
   "somente_leitura": true,
 

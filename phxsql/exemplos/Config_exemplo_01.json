@@ -10,6 +10,51 @@
   "conexoes_max": 64,
   "somente_leitura": false,
 
+  "_recursos": [
+    "O que o servidor pode consumir, e -- o mais importante -- QUANDO o que",
+    "foi gravado vai de fato para o disco.",
+    "",
+    "Todos os tetos aceitam ZERO, e zero quer dizer SEM TETO IMPOSTO AQUI, e",
+    "nao desligado. Um teto de memoria em zero nao faz o servidor rodar sem",
+    "memoria; faz ele nao se limitar.",
+    "",
+    "durabilidade: por_operacao nao perde nada nem numa queda de energia e",
+    "custa 20x; por_lote sincroniza a cada lote_operacoes gravacoes ou",
+    "lote_milissegundos, o que vier primeiro, e e o padrao; sistema nunca",
+    "chama fsync.",
+    "",
+    "cache_paginas: paginas do .ndx em RAM por tabela aberta, 4 KiB cada.",
+    "2.048 sao 8 MiB e valem 2,40x na insercao -- e o joelho da curva.",
+    "",
+    "diario_volume_mib: onde o volume do .log, da .trash e do .reason corta.",
+    "Zero nao mexe, e vale o 1 GiB do esquema.",
+    "",
+    "threads e cpu_percentual viram UM teto de nucleos para o trabalho",
+    "dividido: threads 0 e quantos a maquina tiver, e o percentual corta esse",
+    "numero -- nunca abaixo de um.",
+    "",
+    "conexoes_max aqui dentro GANHA do campo do topo, que continua valendo",
+    "para config antigo. usuarios_max conta logins DIFERENTES, que nao e o",
+    "mesmo que conexoes: um usuario pode ter varias.",
+    "",
+    "Tudo desta secao se ajusta pela tela (Configuracoes -> Gerais do",
+    "servidor), que grava aqui de volta e diz o que aplica na hora."
+  ],
+
+  "recursos": {
+    "durabilidade": "por_lote",
+    "lote_operacoes": 200,
+    "lote_milissegundos": 200,
+    "cache_paginas": 2048,
+    "diario_volume_mib": 0,
+    "carga_prazo_min": 30,
+    "memoria_max_mb": 0,
+    "threads": 0,
+    "cpu_percentual": 100,
+    "conexoes_max": 64,
+    "usuarios_max": 0
+  },
+
 
   "_base": [
     "Onde os bancos moram. Cada banco e uma PASTA, e cada schema uma subpasta",

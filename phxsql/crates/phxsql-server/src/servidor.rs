@@ -88,6 +88,12 @@ pub(crate) const OPS_ESCRITA: &[&str] = &[
     // que e a unica replica que se sustenta. Quem pode chamar `aplicar` ja
     // passou pelo portao do `administrar`.
     "encerrar_sessao",
+    // Grava o config.json, que e arquivo deste servidor -- mesma familia do
+    // cadastro de DbLink e de jobs. Um servidor declarado somente-leitura nao
+    // reescreve a propria configuracao pela porta web; tirar o
+    // `somente_leitura` continua sendo edicao do arquivo, que e por onde ele
+    // entrou.
+    "config_gravar",
     // Gravam o cadastro de jobs, que e arquivo deste servidor. `job_rodar` NAO
     // entra: ele confere o portao com a operacao DE DENTRO do job, entao um
     // job que grava ja e recusado por ela num servidor somente-leitura -- e um
@@ -381,6 +387,22 @@ pub struct Servidor {
     /// Onde a porta de dados escuta agora, que nem sempre e o `bind`.
     endereco_dos_dados: Mutex<Option<SocketAddr>>,
     conexoes: AtomicUsize,
+    /// Os tres ajustes que a tela de configuracao muda A QUENTE.
+    ///
+    /// # Por que uma copia viva, e nao o `Config`
+    ///
+    /// O `Config` e lido em uma centena de lugares por referencia, e trocar
+    /// tudo por trava seria pagar uma trava por pedido para servir uma
+    /// gravacao que acontece uma vez por mes. Estes tres sao os que a
+    /// gravacao pela tela promete aplicar sem reiniciar, e cada um tem um
+    /// punhado de leitores -- entao cada um vira um atomico, lido com
+    /// `Relaxed`, e o resto do `Config` continua imutavel.
+    ///
+    /// Nascem do arquivo: um servidor onde ninguem grava pela tela se comporta
+    /// exatamente como antes de eles existirem.
+    max_linhas_vivo: AtomicU64,
+    somente_leitura_vivo: AtomicBool,
+    espelho_vivo: AtomicBool,
 }
 
 impl Servidor {
@@ -391,6 +413,9 @@ impl Servidor {
         // ANTES de a primeira tabela abrir: o teto vale para o que abrir
         // daqui para a frente.
         phxsql_store::ndx::definir_cache_paginas(config.recursos.cache_paginas);
+        // Copiados ANTES de o `config` entrar no struct, que o consome.
+        let (max_linhas, somente_leitura, espelho) =
+            (config.max_linhas, config.somente_leitura, config.espelho);
         let instancia = Instancia::nova(&config.base)?;
         let log = LogAcessos::abrir(&config.log_acessos)?;
         let lista_negra = Blacklist::abrir(&config.blacklist)?;
@@ -422,11 +447,29 @@ impl Servidor {
             marcas_do_diario: Mutex::new(HashMap::new()),
             profiler: Mutex::new(crate::profiler::Profiler::default()),
             profiler_ligado: AtomicBool::new(false),
+            max_linhas_vivo: AtomicU64::new(max_linhas),
+            somente_leitura_vivo: AtomicBool::new(somente_leitura),
+            espelho_vivo: AtomicBool::new(espelho),
         }))
     }
 
     pub fn config(&self) -> &Config {
         &self.config
+    }
+
+    /// O teto de linhas por resposta que vale AGORA.
+    pub fn max_linhas(&self) -> u64 {
+        self.max_linhas_vivo.load(Ordering::Relaxed)
+    }
+
+    /// O servidor esta recusando escrita AGORA?
+    pub fn somente_leitura(&self) -> bool {
+        self.somente_leitura_vivo.load(Ordering::Relaxed)
+    }
+
+    /// Toda tabela aberta daqui para a frente ganha `.bkp`?
+    pub fn espelho(&self) -> bool {
+        self.espelho_vivo.load(Ordering::Relaxed)
     }
 
     /// Sobe o servidor e atende ate o processo ser encerrado.
@@ -1003,6 +1046,121 @@ impl Servidor {
     // ----------------------------------------------- a porta de dados, na tela
 
     /// O que a tela do Serviço precisa saber para nao mentir.
+    /// A configuracao como o servidor a entende AGORA.
+    ///
+    /// E o `para_json` do arquivo com os tres ajustes vivos por cima: depois
+    /// de uma gravacao a quente, o arquivo e a memoria concordam, mas quem le
+    /// so o arquivo veria o valor de antes de a tela mexer.
+    fn configuracao_json(&self) -> Json {
+        let mut j = self.config.para_json();
+        j.definir("max_linhas", Json::de_u64(self.max_linhas()));
+        j.definir("somente_leitura", Json::Bool(self.somente_leitura()));
+        j.definir("espelho", Json::Bool(self.espelho()));
+        // O que ja esta GRAVADO e ainda nao vale: campo que so aplica no
+        // proximo arranque volta aqui com o valor do arquivo, para a tela
+        // mostra-lo em vez de redesenhar o valor velho calada.
+        if let Some(caminho) = &self.config.caminho {
+            let divergentes = crate::config::divergencias_do_arquivo(caminho, &j);
+            if !divergentes.is_empty() {
+                j.definir("no_arquivo", Json::Objeto(divergentes));
+            }
+        }
+        j
+    }
+
+    /// Grava campos do `config.json` pedidos pela tela.
+    ///
+    /// # O portao e proprio, e nao pode nao ser
+    ///
+    /// O portao geral do `despachar` confere o campo `"tabela"` do pedido, e
+    /// esta operacao nao tem tabela nenhuma -- ela cai na regra da base vazia.
+    /// Isso ja exige `administrar`, mas depender disso deixaria a guarda mais
+    /// importante do servidor amarrada a um detalhe de resolucao de nome de
+    /// base. A conferencia aqui dentro e explicita: sem `administrar`, nao
+    /// grava, viesse o pedido por onde viesse.
+    ///
+    /// # O que ela NAO grava
+    ///
+    /// O que estiver fora de [`crate::config::CAMPOS_EDITAVEIS`]: token,
+    /// seguranca, cadastro de usuarios, cifra, credencial de e-mail e
+    /// replicacao. Uma sessao roubada nao abre o firewall, nao esvazia a lista
+    /// de comandos proibidos, nao cria supervisor e nao vira este servidor
+    /// para outro source. Esses continuam sendo edicao do arquivo.
+    fn op_config_gravar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        if let Some(u) = &sessao.usuario {
+            if !u.pode_em("", "", Atividade::Administrar) {
+                return Err(PhxError::Autorizacao(format!(
+                    "{} nao tem permissao de administrar: gravar a configuracao \
+                     do servidor exige esse poder",
+                    u.login
+                )));
+            }
+        }
+        let Some(caminho) = self.config.caminho.clone() else {
+            return Err(PhxError::Esquema(
+                "este servidor nao subiu de um arquivo (--config): nao ha config.json para gravar"
+                    .into(),
+            ));
+        };
+
+        let Some(Json::Objeto(pares)) = p.campo("campos") else {
+            return Err(PhxError::Esquema(
+                "informe \"campos\" como objeto: {\"campos\":{\"max_linhas\":500}}".into(),
+            ));
+        };
+        let mudancas: Vec<(String, Json)> =
+            pares.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+
+        let novo = crate::config::Config::gravar_campos(&caminho, &mudancas)?;
+
+        // O efeito, para os que aplicam sem reiniciar. Os globais de processo
+        // (cache do .ndx, volume do diario, teto de nucleos) valem para o que
+        // abrir daqui para a frente; os tres vivos valem para o proximo
+        // pedido, inclusive nesta mesma conexao.
+        phxsql_store::ndx::definir_cache_paginas(novo.recursos.cache_paginas);
+        novo.recursos.aplicar();
+        self.max_linhas_vivo
+            .store(novo.max_linhas, Ordering::Relaxed);
+        self.somente_leitura_vivo
+            .store(novo.somente_leitura, Ordering::Relaxed);
+        self.espelho_vivo.store(novo.espelho, Ordering::Relaxed);
+
+        // Quem mexeu, e no que. Um campo que muda o comportamento do servidor
+        // inteiro nao pode mudar sem deixar rastro.
+        let quem = match &sessao.usuario {
+            Some(u) => u.login.clone(),
+            None => "(token de servico)".to_string(),
+        };
+        let lista: Vec<String> = mudancas.iter().map(|(c, _)| c.clone()).collect();
+        eprintln!(
+            "config.json gravado por {quem}: {} | arquivo {}",
+            lista.join(", "),
+            caminho.display()
+        );
+
+        // O que ficou gravado e ainda NAO vale: a tela mostra isto ao lado do
+        // campo, em vez de prometer efeito que so vem no proximo arranque.
+        let esperando: Vec<Json> = mudancas
+            .iter()
+            .filter(|(c, _)| matches!(crate::config::campo_editavel(c), Some((_, false))))
+            .map(|(c, _)| Json::texto_de(c))
+            .collect();
+
+        Ok(Json::objeto(vec![
+            ("gravado", Json::Bool(true)),
+            ("arquivo", Json::texto_de(caminho.display().to_string())),
+            (
+                "campos",
+                Json::Lista(lista.iter().map(Json::texto_de).collect()),
+            ),
+            ("exigem_reinicio", Json::Lista(esperando)),
+            // A configuracao inteira de volta, ja sem segredo nenhum dentro:
+            // a tela redesenha do que o servidor entendeu, e nao do que ela
+            // achava que tinha mandado.
+            ("config", self.configuracao_json()),
+        ]))
+    }
+
     fn op_servico(&self) -> Result<Json> {
         let corrente = self.endereco_dos_dados.lock().ok().and_then(|e| *e);
         let configurado = self.config.bind.clone();
@@ -2362,7 +2520,7 @@ impl Servidor {
     /// politica por conta, e o comentario de `rodar_job` diz como.
     fn portoes_do_pedido(&self, op: &str, pedido: &Json, sessao: &Sessao) -> Result<()> {
         // Portao 2b -- o servidor inteiro em somente leitura.
-        if self.config.somente_leitura && OPS_ESCRITA.contains(&op) {
+        if self.somente_leitura() && OPS_ESCRITA.contains(&op) {
             return Err(PhxError::Autorizacao(
                 "servidor em modo somente leitura".into(),
             ));
@@ -2547,6 +2705,18 @@ impl Servidor {
 
         match autenticado {
             Some(u) => {
+                // O TETO de usuarios SIMULTANEOS, aplicado no unico ponto por
+                // onde alguem passa a existir para o servidor.
+                //
+                // `recursos.usuarios_max` estava no config.json, no MANUAL e
+                // na tela e NENHUMA linha o lia -- a mesma armadilha do
+                // `cache_paginas` sem cache. Zero continua sendo SEM TETO, que
+                // e o padrao: quem nunca preencheu o campo nao ve diferenca.
+                //
+                // Conta LOGIN, e nao conexao: a mesma pessoa em tres abas
+                // continua sendo uma, que e o que uma licenca por posto quer
+                // contar. E quem JA esta dentro entra de novo sem gastar vaga.
+                self.recusar_se_lotou(&u.login)?;
                 let ficha = u.ficha();
                 sessao.usuario = Some(u.clone());
                 Ok(ficha)
@@ -2556,6 +2726,40 @@ impl Servidor {
                 Err(recusa())
             }
         }
+    }
+
+    /// Este login cabe no teto de `recursos.usuarios_max`?
+    ///
+    /// Conta os logins distintos das conexoes vivas e das sessoes do
+    /// navegador. Quem ja esta dentro nunca e barrado -- reconectar nao pode
+    /// custar uma vaga que a propria pessoa ja ocupa.
+    fn recusar_se_lotou(&self, login: &str) -> Result<()> {
+        let teto = self.config.recursos.usuarios_max;
+        if teto == 0 {
+            return Ok(());
+        }
+        let mut vivos: Vec<String> = match self.ligacoes.lock() {
+            Ok(l) => l
+                .todas()
+                .into_iter()
+                .map(|x| x.usuario)
+                .filter(|u| !u.is_empty())
+                .collect(),
+            Err(_) => Vec::new(),
+        };
+        if let Ok(s) = self.sessoes.lock() {
+            vivos.extend(s.logins_vivos(crate::agora_ms()));
+        }
+        vivos.sort();
+        vivos.dedup();
+        if vivos.iter().any(|u| u == login) || vivos.len() < teto {
+            return Ok(());
+        }
+        Err(PhxError::Autorizacao(format!(
+            "o servidor esta com {} usuario(s) diferentes conectados, que e o \
+             teto de recursos.usuarios_max. Espere alguem sair, ou suba o teto",
+            vivos.len()
+        )))
     }
 
     fn executar(&self, op: &str, p: &Json, sessao: &Sessao) -> Result<Json> {
@@ -2576,7 +2780,8 @@ impl Servidor {
                     Json::texto_de(phxsql_core::datahora::instante_iso(self.desde_ms)),
                 ),
             ])),
-            "config" => Ok(self.config.para_json()),
+            "config" => Ok(self.configuracao_json()),
+            "config_gravar" => self.op_config_gravar(p, sessao),
             "catalogo" => Ok(self.op_catalogo(p, sessao)),
             "sql" => self.op_sql(p, sessao),
             "quem_sou" => Ok(match &sessao.usuario {
@@ -2700,7 +2905,7 @@ impl Servidor {
         let mut t = _dados.abrir_database(database)?.abrir_qualificada(tabela)?;
         // O espelho e decisao do servidor, nao da tabela: ligar no config.json
         // vale para tudo que este servidor abrir daqui para a frente.
-        if self.config.espelho && !t.tem_espelho() {
+        if self.espelho() && !t.tem_espelho() {
             t.espelhar()?;
         }
         // Quem alterar assina o evento no .log da tabela.
@@ -2720,11 +2925,12 @@ impl Servidor {
     }
 
     fn limite(&self, p: &Json) -> u64 {
-        let pedido = p.inteiro_ou("max", self.config.max_linhas as i64).max(0) as u64;
+        let teto = self.max_linhas();
+        let pedido = p.inteiro_ou("max", teto as i64).max(0) as u64;
         if pedido == 0 {
-            self.config.max_linhas
+            teto
         } else {
-            pedido.min(self.config.max_linhas)
+            pedido.min(teto)
         }
     }
 
@@ -4091,6 +4297,11 @@ impl Servidor {
             ("tabela", Json::texto_de(e.nome())),
             ("registros", Json::de_u64(t.registros())),
             ("slots", Json::de_u64(t.slots())),
+            // A UNICA diretiva que e da tabela e nao da geometria nem do
+            // servidor. Ela era lida no `excluir` e nao aparecia em lugar
+            // nenhum do esquema: a tela de Configuracoes da tabela nao tinha
+            // como mostrar o que a tabela exige.
+            ("motivo_obrigatorio", Json::Bool(e.motivo_obrigatorio())),
             ("colunas", Json::Lista(colunas)),
             ("indices", Json::Lista(indices)),
             ("chaves_estrangeiras", Json::Lista(fks)),
@@ -5946,7 +6157,7 @@ impl Servidor {
                     d.nome
                 )));
             }
-            if self.config.somente_leitura {
+            if self.somente_leitura() {
                 return Err(PhxError::Autorizacao(
                     "este servidor esta em somente leitura: nao escreve nem pelo dblink".into(),
                 ));
@@ -6614,8 +6825,8 @@ impl Servidor {
                             0
                         }),
                     ),
-                    ("espelho", Json::Bool(self.config.espelho)),
-                    ("somente_leitura", Json::Bool(self.config.somente_leitura)),
+                    ("espelho", Json::Bool(self.espelho())),
+                    ("somente_leitura", Json::Bool(self.somente_leitura())),
                 ]),
             ),
             ("bancos", Json::Lista(bancos)),
@@ -6757,16 +6968,52 @@ impl Servidor {
         };
 
         let inicio = Instant::now();
-        let m = {
-            let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
-            TabelaMemoria::carregar(&mut t, &mapear, crate::agora_ms())?
-        };
+        // A trava de dados JA esta tomada, no topo desta funcao.
+        //
+        // Aqui havia uma segunda tomada da MESMA trava, e `Mutex` da `std` nao
+        // e reentrante: a operacao travava a si mesma, e com ela o servidor
+        // inteiro -- toda operacao de dados passa por esta trava. Ninguem
+        // percebeu porque nao havia teste que chamasse `memoria_carregar`, e
+        // pela tela a chamada simplesmente nunca voltava.
+        //
+        // Achado pelo teste do teto de `memoria_max_mb`: o primeiro que
+        // precisou carregar uma tabela residente de verdade.
+        let m = TabelaMemoria::carregar(&mut t, &mapear, crate::agora_ms())?;
         let ficha = ficha_residente(&Self::chave_residente(p), &m);
         let ms = inicio.elapsed().as_millis() as u64;
-        self.residentes
-            .lock()
-            .map_err(|_| trava_envenenada())?
-            .insert(Self::chave_residente(p), m);
+        let chave = Self::chave_residente(p);
+        let mut residentes = self.residentes.lock().map_err(|_| trava_envenenada())?;
+
+        // O TETO de memoria das tabelas residentes.
+        //
+        // `recursos.memoria_max_mb` estava no config.json, no MANUAL e na tela
+        // desde a 0.13.0 e NENHUMA linha o lia -- a mesma armadilha do
+        // `cache_paginas` sem cache. Aqui e o unico lugar onde a memoria
+        // residente cresce, entao e aqui que o teto vale.
+        //
+        // Zero continua sendo SEM TETO, que e o padrao e o comportamento de
+        // sempre: quem nunca preencheu o campo nao ve diferenca nenhuma.
+        //
+        // A conta troca o que a chave ja ocupava pelo tamanho novo, senao
+        // recarregar a MESMA tabela contaria duas vezes e recusaria sozinha.
+        let teto = self.config.recursos.memoria_max_mb;
+        let ja: u64 = residentes
+            .iter()
+            .filter(|(k, _)| *k != &chave)
+            .map(|(_, r)| r.bytes() as u64)
+            .sum();
+        let depois = ja + m.bytes() as u64;
+        if !cabe_na_memoria(depois, teto) {
+            return Err(PhxError::Esquema(format!(
+                "carregar {chave} passaria do teto de memoria residente: \
+                 {} MB depois de carregar, contra {teto} MB em \
+                 recursos.memoria_max_mb. Libere uma tabela com \
+                 memoria_liberar, ou suba o teto",
+                depois.div_ceil(1024 * 1024)
+            )));
+        }
+        residentes.insert(chave, m);
+        drop(residentes);
 
         let mut campos = ficha;
         campos.push(("carregou_em_ms", Json::de_u64(ms)));
@@ -7664,6 +7911,19 @@ fn coluna_de(j: &Json, esquema: &phxsql_core::schema::Schema) -> Result<usize> {
         .iter()
         .position(|c| c.nome == nome)
         .ok_or_else(|| PhxError::Esquema(format!("coluna {nome:?} nao existe")))
+}
+
+/// O total residente cabe no teto de `recursos.memoria_max_mb`?
+///
+/// Funcao a parte para a decisao poder ser provada sem montar uma tabela de
+/// megabytes: o teto e em MB, e o menor que existe e 1 MB -- um teste que
+/// dependesse do volume precisaria inserir milhares de linhas para dizer o que
+/// esta conta diz em uma.
+///
+/// Zero e SEM TETO, e e o padrao: quem nunca preencheu o campo nao ve
+/// diferenca nenhuma.
+fn cabe_na_memoria(bytes_depois: u64, teto_mb: u64) -> bool {
+    teto_mb == 0 || bytes_depois <= teto_mb * 1024 * 1024
 }
 
 fn ficha_residente(chave: &str, m: &TabelaMemoria) -> Vec<(&'static str, Json)> {
@@ -10219,5 +10479,380 @@ mod testes_chave_estrangeira {
             .unwrap()[0];
         assert_eq!(fk.texto_ou("nome", ""), "fk_cliente");
         assert_eq!(fk.texto_ou("ao_excluir", ""), "Cascata");
+    }
+}
+
+/// A gravacao da configuracao pela tela: o portao, o segredo e o efeito.
+///
+/// O que estes testes travam nao e so o "grava" -- e principalmente o
+/// **contrario**: quem nao tem `administrar` nao grava, o segredo nao volta na
+/// resposta, e o que a lista nao permite nao entra no arquivo.
+#[cfg(test)]
+mod testes_config_gravar {
+    use super::*;
+    use crate::usuarios::{Cadastro, Nivel, Permissoes, Usuario};
+
+    /// Um servidor que subiu de um `config.json` de verdade -- e nao de um
+    /// `Config` montado a mao: sem o caminho no arquivo nao ha o que gravar.
+    fn servidor_de_arquivo(nome: &str, cadastro: Cadastro) -> (Arc<Servidor>, PathBuf) {
+        let dir = std::env::temp_dir().join(format!("phx-cfg-op-{nome}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let caminho = dir.join("config.json");
+        std::fs::write(
+            &caminho,
+            format!(
+                "{{\n  \"_nota\": \"comentario que a gravacao nao pode comer\",\n  \
+                 \"token\": \"t\",\n  \"bind\": \"127.0.0.1:5398\",\n  \
+                 \"base\": \"{}\",\n  \"max_linhas\": 1000,\n  \"espelho\": false\n}}\n",
+                dir.join("dados").display()
+            ),
+        )
+        .unwrap();
+        let mut c = Config::ler(&caminho).unwrap();
+        c.log_acessos = dir.join("acessos.log");
+        c.blacklist = dir.join("blacklist.json");
+        c.dblink = dir.join("dblink.json");
+        c.jobs = dir.join("jobs.json");
+        c.cadastro = cadastro;
+        (Servidor::novo(c).unwrap(), caminho)
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    /// Um usuario com tudo MENOS administrar -- o portao de verdade.
+    fn operador() -> Usuario {
+        Usuario {
+            id: 7,
+            nome: "Operador".into(),
+            login: "op".into(),
+            senha_hash: String::new(),
+            email: String::new(),
+            telefone: String::new(),
+            supervisor: false,
+            ativo: true,
+            nivel: Nivel::Nenhum,
+            chave_publica: None,
+            bases: vec![(
+                "*".into(),
+                Permissoes {
+                    ler: true,
+                    inserir: true,
+                    alterar: true,
+                    excluir: true,
+                    administrar: false,
+                    ..Permissoes::default()
+                },
+            )],
+            tabelas: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn grava_no_arquivo_e_aplica_a_quente() {
+        let (s, caminho) = servidor_de_arquivo("quente", Cadastro::default());
+        let sessao = Sessao::default();
+        assert_eq!(s.max_linhas(), 1000);
+
+        let r = s
+            .executar(
+                "config_gravar",
+                &pedido(r#"{"campos":{"max_linhas":7,"espelho":true}}"#),
+                &sessao,
+            )
+            .unwrap();
+        assert!(r.booleano_ou("gravado", false));
+
+        // (1) o arquivo no disco mudou, e o comentario continua la.
+        let texto = std::fs::read_to_string(&caminho).unwrap();
+        assert!(texto.contains("\"max_linhas\": 7"), "{texto}");
+        assert!(texto.contains("comentario que a gravacao nao pode comer"));
+
+        // (2) o efeito e imediato, sem reiniciar nada.
+        assert_eq!(s.max_linhas(), 7, "o teto novo nao valeu a quente");
+        assert!(s.espelho(), "o espelho novo nao valeu a quente");
+
+        // (3) e a op `config` ja responde o valor vivo, e nao o de antes.
+        let c = s.executar("config", &pedido("{}"), &sessao).unwrap();
+        assert_eq!(c.inteiro_ou("max_linhas", 0), 7);
+
+        // (4) nada aqui exige reinicio, entao a lista sai vazia.
+        assert!(r
+            .campo("exigem_reinicio")
+            .and_then(Json::lista)
+            .unwrap()
+            .is_empty());
+    }
+
+    /// Campo que so vale no proximo arranque volta NOMEADO, para a tela poder
+    /// dizer isso ao lado dele em vez de prometer efeito que nao veio.
+    #[test]
+    fn campo_de_reinicio_volta_nomeado() {
+        let (s, _) = servidor_de_arquivo("reinicio", Cadastro::default());
+        let r = s
+            .executar(
+                "config_gravar",
+                &pedido(r#"{"campos":{"timeout_s":45}}"#),
+                &Sessao::default(),
+            )
+            .unwrap();
+        let espera: Vec<String> = r
+            .campo("exigem_reinicio")
+            .and_then(Json::lista)
+            .unwrap()
+            .iter()
+            .filter_map(|j| j.texto().map(str::to_string))
+            .collect();
+        assert_eq!(espera, vec!["timeout_s"]);
+    }
+
+    /// O portao proprio da operacao. Pelo `despachar`, que e por onde o pedido
+    /// entra de verdade -- e o teste tem de falhar se ele sumir.
+    #[test]
+    fn operador_sem_administrar_nao_grava_a_configuracao() {
+        let mut cadastro = Cadastro::default();
+        cadastro.usuarios.push(operador());
+        let usuario = cadastro.usuarios[0].clone();
+        let (s, caminho) = servidor_de_arquivo("portao", cadastro);
+        let antes = std::fs::read_to_string(&caminho).unwrap();
+
+        let mut sessao = Sessao {
+            usuario: Some(usuario),
+            ..Sessao::default()
+        };
+        let (_, _, r) = s.despachar(
+            r#"{"op":"config_gravar","token":"t","campos":{"max_linhas":9}}"#,
+            &mut sessao,
+            "1.2.3.4",
+        );
+        let e = r.unwrap_err();
+        assert!(
+            format!("{e}").contains("administrar"),
+            "o operador gravou a configuracao: {e}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&caminho).unwrap(),
+            antes,
+            "o arquivo mudou apesar da recusa"
+        );
+        assert_eq!(s.max_linhas(), 1000, "aplicou a quente apesar da recusa");
+    }
+
+    /// O portao PROPRIO da operacao, provado onde ele e o unico que existe.
+    ///
+    /// O teste de cima passa pelo `despachar`, e la o portao GERAL ja barra --
+    /// entao ele passa igual com a conferencia daqui de dentro removida, e nao
+    /// prova o que diz provar. Este chama `executar` direto, que e o caminho
+    /// de quem nao veio pelo soquete: sem a conferencia propria, um operador
+    /// sem `administrar` reescreveria o config.json por aqui.
+    #[test]
+    fn o_portao_proprio_barra_quem_chega_por_dentro() {
+        let mut cadastro = Cadastro::default();
+        cadastro.usuarios.push(operador());
+        let usuario = cadastro.usuarios[0].clone();
+        let (s, caminho) = servidor_de_arquivo("cinto", cadastro);
+        let antes = std::fs::read_to_string(&caminho).unwrap();
+
+        let sessao = Sessao {
+            usuario: Some(usuario),
+            ..Sessao::default()
+        };
+        let e = s
+            .executar(
+                "config_gravar",
+                &pedido(r#"{"campos":{"max_linhas":9}}"#),
+                &sessao,
+            )
+            .unwrap_err();
+        assert!(
+            format!("{e}").contains("administrar"),
+            "o portao proprio nao barrou: {e}"
+        );
+        assert_eq!(std::fs::read_to_string(&caminho).unwrap(), antes);
+        assert_eq!(s.max_linhas(), 1000);
+    }
+
+    /// O token e o resto dos segredos nao se gravam por aqui -- e a resposta
+    /// da operacao tambem nao os carrega de volta.
+    #[test]
+    fn o_segredo_nao_entra_nem_sai() {
+        let (s, caminho) = servidor_de_arquivo("segredo", Cadastro::default());
+        let sessao = Sessao::default();
+
+        let e = s
+            .executar(
+                "config_gravar",
+                &pedido(r#"{"campos":{"token":"roubado"}}"#),
+                &sessao,
+            )
+            .unwrap_err();
+        assert!(format!("{e}").contains("nao se grava pela tela"), "{e}");
+        assert!(std::fs::read_to_string(&caminho).unwrap().contains("\"t\""));
+
+        // E a resposta de uma gravacao valida nao devolve o token em claro.
+        let r = s
+            .executar(
+                "config_gravar",
+                &pedido(r#"{"campos":{"max_linhas":11}}"#),
+                &sessao,
+            )
+            .unwrap();
+        let texto = r.escrever();
+        assert!(!texto.contains("\"t\""), "o token vazou: {texto}");
+        assert!(texto.contains("(oculto)"), "{texto}");
+    }
+
+    /// `recursos.memoria_max_mb` tem LEITOR: carregar tabela residente acima
+    /// do teto e recusado.
+    ///
+    /// O campo estava no config.json, no MANUAL e na tela desde a 0.13.0 e
+    /// nenhuma linha o lia -- a mesma armadilha do `cache_paginas` sem cache.
+    #[test]
+    fn o_teto_de_memoria_residente_e_lido() {
+        let dir = std::env::temp_dir().join(format!("phx-mem-teto-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let base = dir.join("dados");
+        std::fs::create_dir_all(&base).unwrap();
+
+        let com_teto = |mb: u64| {
+            let c = Config {
+                base: base.clone(),
+                log_acessos: dir.join("acessos.log"),
+                blacklist: dir.join("blacklist.json"),
+                dblink: dir.join("dblink.json"),
+                jobs: dir.join("jobs.json"),
+                token: "t".into(),
+                recursos: crate::config::Recursos {
+                    memoria_max_mb: mb,
+                    ..crate::config::Recursos::default()
+                },
+                ..Config::default()
+            };
+            Servidor::novo(c).unwrap()
+        };
+
+        // Um servidor sem teto monta a tabela e carrega -- o comportamento de
+        // sempre, e o que mais importa provar.
+        let s = com_teto(0);
+        let sessao = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"m"}"#), &sessao)
+            .unwrap();
+        // A coluna larga e proposital: o menor teto que o campo aceita e 1 MB,
+        // e uma tabela de inteiros nunca chega la. Com Str(1000), mil e
+        // duzentas linhas passam do megabyte e a recusa pode ser provada de
+        // verdade, e nao so pela conta.
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"m","tabela":"t",
+                    "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true},
+                               {"nome":"txt","tipo":"Str(1000)","obrigatoria":false}]}"#,
+            ),
+            &sessao,
+        )
+        .unwrap();
+        let recheio = "x".repeat(900);
+        for id in 1..=1_200 {
+            s.executar(
+                "inserir",
+                &pedido(&format!(
+                    r#"{{"database":"m","tabela":"t","linha":{{"id":{id},"txt":"{recheio}"}}}}"#
+                )),
+                &sessao,
+            )
+            .unwrap();
+        }
+        s.executar(
+            "memoria_carregar",
+            &pedido(r#"{"database":"m","tabela":"t"}"#),
+            &sessao,
+        )
+        .expect("sem teto tem de carregar, como sempre carregou");
+
+        // E a consulta em memoria funciona depois de carregar -- a prova de
+        // que a operacao VOLTA. Ela tomava a trava global de dados duas vezes
+        // e travava a si mesma; nao havia teste que a chamasse, e pela tela a
+        // chamada simplesmente nunca voltava.
+        let r = s
+            .executar(
+                "SelectMemory",
+                &pedido(r#"{"database":"m","tabela":"t"}"#),
+                &sessao,
+            )
+            .expect("a consulta em memoria nao voltou");
+        assert_eq!(r.inteiro_ou("achadas", -1), 1_200);
+
+        // Com o teto de 1 MB a MESMA tabela nao entra, e a mensagem diz o
+        // campo -- para quem levou a recusa saber onde mexer.
+        let apertado = com_teto(1);
+        let e = apertado
+            .executar(
+                "memoria_carregar",
+                &pedido(r#"{"database":"m","tabela":"t"}"#),
+                &sessao,
+            )
+            .unwrap_err();
+        let texto = format!("{e}");
+        assert!(texto.contains("memoria_max_mb"), "{texto}");
+        assert!(texto.contains("teto de memoria"), "{texto}");
+
+        // E a decisao em si, nos limites exatos.
+        assert!(cabe_na_memoria(999_999_999, 0), "zero e sem teto");
+        assert!(cabe_na_memoria(1024 * 1024, 1), "o limite exato cabe");
+        assert!(
+            !cabe_na_memoria(1024 * 1024 + 1, 1),
+            "um byte acima nao cabe"
+        );
+    }
+
+    /// `recursos.usuarios_max` tem LEITOR: o login recusa acima do teto de
+    /// logins DIFERENTES -- e nunca recusa quem ja esta dentro.
+    #[test]
+    fn o_teto_de_usuarios_simultaneos_e_lido() {
+        let mut cadastro = Cadastro::default();
+        cadastro.usuarios.push(operador());
+        let dono = cadastro.usuarios[0].clone();
+        let (s, _) = servidor_de_arquivo("usuarios-teto", cadastro);
+
+        // Sem teto (o padrao), nada muda: e o comportamento velho.
+        assert_eq!(s.config().recursos.usuarios_max, 0);
+        s.recusar_se_lotou("qualquer")
+            .expect("sem teto ninguem e barrado");
+
+        // Com teto 1 e uma conexao viva de OUTRA pessoa, o segundo login para.
+        let com_teto = {
+            let mut c = s.config().clone();
+            c.recursos.usuarios_max = 1;
+            c.caminho = None;
+            Servidor::novo(c).unwrap()
+        };
+        if let Ok(mut l) = com_teto.ligacoes.lock() {
+            let (id, _) = l.entrar("10.0.0.9", 4000, crate::agora_ms(), None);
+            l.comecou(id, "ping", &dono.login, "", "", crate::agora_ms());
+        }
+        let e = com_teto.recusar_se_lotou("outro").unwrap_err();
+        assert!(format!("{e}").contains("usuarios_max"), "{e}");
+        // E quem JA esta dentro entra de novo sem gastar vaga.
+        com_teto
+            .recusar_se_lotou(&dono.login)
+            .expect("quem ja esta dentro nao pode ser barrado");
+    }
+
+    /// O comportamento VELHO: um servidor onde ninguem grava pela tela se
+    /// comporta exatamente como antes de a operacao existir.
+    #[test]
+    fn sem_gravar_nada_o_servidor_e_o_de_antes() {
+        let (s, caminho) = servidor_de_arquivo("velho", Cadastro::default());
+        let antes = std::fs::read_to_string(&caminho).unwrap();
+        let c = s
+            .executar("config", &pedido("{}"), &Sessao::default())
+            .unwrap();
+        assert_eq!(c.inteiro_ou("max_linhas", 0), 1000);
+        assert!(!s.espelho());
+        assert!(!s.somente_leitura());
+        assert_eq!(std::fs::read_to_string(&caminho).unwrap(), antes);
     }
 }

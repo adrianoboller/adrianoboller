@@ -131,6 +131,30 @@ impl Json {
         Json::Objeto(pares.into_iter().map(|(k, v)| (k.to_string(), v)).collect())
     }
 
+    /// Troca o valor de um campo NO TEXTO, sem reserializar o resto.
+    ///
+    /// Atalho para [`texto::trocar`], para quem tem o texto e o caminho e nao
+    /// quer importar o modulo. Devolve `None` quando o campo nao existe no
+    /// texto -- ver a nota de `texto::trocar` sobre por que nao se inventa.
+    pub fn texto_trocar(texto_json: &str, caminho: &[&str], valor: &Json) -> Option<String> {
+        texto::trocar(texto_json, caminho, valor)
+    }
+
+    /// Troca (ou acrescenta) um campo de um objeto, preservando a ordem.
+    ///
+    /// Existe para o ler-alterar-gravar do `config.json`: o campo que ja
+    /// existe muda NO LUGAR, e os comentarios `_...` e o resto do arquivo
+    /// ficam onde estavam. Num valor que nao e objeto, nao faz nada -- quem
+    /// chama confere antes.
+    pub fn definir(&mut self, nome: &str, valor: Json) {
+        if let Json::Objeto(pares) = self {
+            match pares.iter_mut().find(|(k, _)| k == nome) {
+                Some((_, v)) => *v = valor,
+                None => pares.push((nome.to_string(), valor)),
+            }
+        }
+    }
+
     pub fn texto_de(s: impl Into<String>) -> Json {
         Json::Texto(s.into())
     }
@@ -225,6 +249,215 @@ impl Json {
                 saida.push('}');
             }
         }
+    }
+}
+
+/// Edicao CIRURGICA de um JSON que ja existe em texto.
+///
+/// # Por que nao basta reserializar
+///
+/// Um `config.json` e escrito a mao: linhas em branco separando as secoes,
+/// listas curtas numa linha so, blocos `_comentario` explicando o que vem
+/// embaixo. Reserializar a arvore preserva o VALOR e o COMENTARIO -- os pares
+/// continuam la, na ordem -- e perde a FORMA: as linhas em branco somem e
+/// `["a"]` vira tres linhas. Quem abre o arquivo depois de mexer num campo
+/// pela tela ve o trabalho dele reformatado inteiro, e o `diff` do controle de
+/// versao fica ilegivel.
+///
+/// A troca aqui e byte a byte: acha o intervalo do VALOR daquele campo no
+/// texto original e troca so ele. Todo o resto do arquivo -- inclusive
+/// espaco, quebra de linha e o que este programa nem sabe ler -- sai igual.
+pub mod texto {
+    use super::Json;
+
+    /// Onde, no texto, comeca e termina o valor de um campo.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct Local {
+        pub inicio: usize,
+        pub fim: usize,
+    }
+
+    struct Varredor<'a> {
+        b: &'a [u8],
+        p: usize,
+    }
+
+    impl<'a> Varredor<'a> {
+        fn novo(t: &'a str) -> Varredor<'a> {
+            Varredor {
+                b: t.as_bytes(),
+                p: 0,
+            }
+        }
+
+        fn espaco(&mut self) {
+            while self.p < self.b.len() && self.b[self.p].is_ascii_whitespace() {
+                self.p += 1;
+            }
+        }
+
+        /// Anda ate o fim da string que comeca em `self.p` e devolve o cru,
+        /// SEM as aspas e sem desescapar.
+        fn corda(&mut self) -> Option<&'a [u8]> {
+            if *self.b.get(self.p)? != b'"' {
+                return None;
+            }
+            let inicio = self.p + 1;
+            self.p = inicio;
+            while self.p < self.b.len() {
+                match self.b[self.p] {
+                    b'\\' => self.p += 2,
+                    b'"' => {
+                        let fim = self.p;
+                        self.p += 1;
+                        return Some(&self.b[inicio..fim]);
+                    }
+                    _ => self.p += 1,
+                }
+            }
+            None
+        }
+
+        /// Anda ate depois do valor que comeca em `self.p`.
+        fn valor(&mut self) -> Option<()> {
+            self.espaco();
+            match *self.b.get(self.p)? {
+                b'"' => {
+                    self.corda()?;
+                }
+                b'{' | b'[' => {
+                    let abre = self.b[self.p];
+                    let fecha = if abre == b'{' { b'}' } else { b']' };
+                    let mut nivel = 0usize;
+                    while self.p < self.b.len() {
+                        match self.b[self.p] {
+                            b'"' => {
+                                self.corda()?;
+                                continue;
+                            }
+                            c if c == abre => nivel += 1,
+                            c if c == fecha => {
+                                nivel -= 1;
+                                self.p += 1;
+                                if nivel == 0 {
+                                    return Some(());
+                                }
+                                continue;
+                            }
+                            _ => {}
+                        }
+                        self.p += 1;
+                    }
+                    return None;
+                }
+                _ => {
+                    // Numero, `true`, `false` ou `null`: termina na virgula, no
+                    // fecha-chaves ou no espaco.
+                    while self.p < self.b.len()
+                        && !matches!(self.b[self.p], b',' | b'}' | b']')
+                        && !self.b[self.p].is_ascii_whitespace()
+                    {
+                        self.p += 1;
+                    }
+                }
+            }
+            Some(())
+        }
+
+        /// Dentro do objeto que comeca em `self.p`, acha o valor da chave.
+        ///
+        /// Devolve o intervalo do VALOR, ou -- quando a chave nao existe -- a
+        /// posicao do `}` que fecha o objeto, para quem quiser inserir.
+        fn no_objeto(&mut self, chave: &str) -> Result<Local, Option<usize>> {
+            self.espaco();
+            if self.b.get(self.p) != Some(&b'{') {
+                return Err(None);
+            }
+            self.p += 1;
+            loop {
+                self.espaco();
+                match self.b.get(self.p) {
+                    Some(b'}') => return Err(Some(self.p)),
+                    Some(b',') => {
+                        self.p += 1;
+                        continue;
+                    }
+                    Some(b'"') => {}
+                    _ => return Err(None),
+                }
+                let crua = match self.corda() {
+                    Some(c) => c,
+                    None => return Err(None),
+                };
+                self.espaco();
+                if self.b.get(self.p) != Some(&b':') {
+                    return Err(None);
+                }
+                self.p += 1;
+                self.espaco();
+                let inicio = self.p;
+                if self.valor().is_none() {
+                    return Err(None);
+                }
+                if desescapar(crua).as_deref() == Some(chave) {
+                    return Ok(Local {
+                        inicio,
+                        fim: self.p,
+                    });
+                }
+            }
+        }
+    }
+
+    /// A chave crua vira o nome real. So os escapes que um nome de campo usa.
+    fn desescapar(crua: &[u8]) -> Option<String> {
+        let s = std::str::from_utf8(crua).ok()?;
+        if !s.contains('\\') {
+            return Some(s.to_string());
+        }
+        let mut saida = String::new();
+        let mut chars = s.chars();
+        while let Some(c) = chars.next() {
+            if c != '\\' {
+                saida.push(c);
+                continue;
+            }
+            match chars.next()? {
+                '"' => saida.push('"'),
+                '\\' => saida.push('\\'),
+                '/' => saida.push('/'),
+                'n' => saida.push('\n'),
+                't' => saida.push('\t'),
+                'r' => saida.push('\r'),
+                // `\uXXXX` num nome de campo de configuracao nao acontece, e
+                // adivinhar seria pior que recusar: quem nao se decodifica nao
+                // casa com chave nenhuma, e a troca cai no caminho seguro.
+                _ => return None,
+            }
+        }
+        Some(saida)
+    }
+
+    /// Troca, no texto, o valor do campo `caminho` (`["recursos","threads"]`).
+    ///
+    /// Devolve `None` quando o campo -- ou o objeto que o conteria -- nao
+    /// existe no texto. Quem chama decide o que fazer: aqui nao se INVENTA
+    /// campo, porque inserir texto exige adivinhar a indentacao de quem
+    /// escreveu, e adivinhar errado e o mesmo estrago que reformatar.
+    pub fn trocar(texto: &str, caminho: &[&str], valor: &Json) -> Option<String> {
+        let (ultimo, secoes) = caminho.split_last()?;
+        let mut v = Varredor::novo(texto);
+        for secao in secoes {
+            let local = v.no_objeto(secao).ok()?;
+            v = Varredor::novo(texto);
+            v.p = local.inicio;
+        }
+        let local = v.no_objeto(ultimo).ok()?;
+        let mut saida = String::with_capacity(texto.len() + 16);
+        saida.push_str(&texto[..local.inicio]);
+        saida.push_str(&valor.escrever());
+        saida.push_str(&texto[local.fim..]);
+        Some(saida)
     }
 }
 
@@ -564,5 +797,101 @@ mod tests {
         assert!(j.booleano_ou("ligado", false));
         assert!(!j.booleano_ou("ausente", false));
         assert_eq!(j.texto_ou("ausente", "padrao"), "padrao");
+    }
+
+    /// O ler-alterar-gravar do config.json depende disto: trocar um campo NAO
+    /// pode embaralhar o resto do arquivo nem apagar os comentarios `_...`.
+    #[test]
+    fn definir_troca_no_lugar_e_preserva_a_ordem() {
+        let mut j = Json::analisar(r#"{"_nota":"comentario","a":1,"b":2}"#).unwrap();
+        j.definir("a", Json::de_i64(9));
+        assert_eq!(j.escrever(), r#"{"_nota":"comentario","a":9,"b":2}"#);
+        // Campo novo entra no fim, sem mexer nos outros.
+        j.definir("c", Json::Bool(true));
+        assert_eq!(
+            j.escrever(),
+            r#"{"_nota":"comentario","a":9,"b":2,"c":true}"#
+        );
+        // Num valor que nao e objeto, nada acontece.
+        let mut n = Json::de_i64(1);
+        n.definir("x", Json::Nulo);
+        assert_eq!(n, Json::de_i64(1));
+    }
+}
+
+/// A troca cirurgica: o arquivo de quem escreveu nao pode voltar reformatado.
+#[cfg(test)]
+mod testes_texto {
+    use super::*;
+
+    const ARQUIVO: &str = r#"{
+  "_comentario": "explicacao que alguem escreveu",
+
+  "bind": "0.0.0.0:5000",
+  "max_linhas": 1000,
+
+  "recursos": {
+    "threads": 0,
+    "lista": ["a", "b"]
+  },
+
+  "web": { "ligado": false, "sessao_minutos": 60 }
+}
+"#;
+
+    #[test]
+    fn troca_so_o_valor_e_o_resto_sai_byte_a_byte() {
+        let novo = texto::trocar(ARQUIVO, &["max_linhas"], &Json::de_i64(50)).unwrap();
+        assert_eq!(
+            novo,
+            ARQUIVO.replace("\"max_linhas\": 1000", "\"max_linhas\": 50")
+        );
+        // As linhas em branco e a lista numa linha so continuam la.
+        assert!(novo.contains("\n\n  \"bind\""), "{novo}");
+        assert!(novo.contains(r#""lista": ["a", "b"]"#), "{novo}");
+    }
+
+    #[test]
+    fn troca_dentro_de_secao_e_em_objeto_de_uma_linha() {
+        let novo = texto::trocar(ARQUIVO, &["recursos", "threads"], &Json::de_i64(4)).unwrap();
+        assert_eq!(novo, ARQUIVO.replace("\"threads\": 0", "\"threads\": 4"));
+
+        let novo = texto::trocar(ARQUIVO, &["web", "ligado"], &Json::Bool(true)).unwrap();
+        assert!(
+            novo.contains(r#""web": { "ligado": true, "sessao_minutos": 60 }"#),
+            "{novo}"
+        );
+    }
+
+    #[test]
+    fn troca_texto_e_escapa_o_que_precisa() {
+        let novo = texto::trocar(ARQUIVO, &["bind"], &Json::texto_de("127.0.0.1:5001")).unwrap();
+        assert!(novo.contains(r#""bind": "127.0.0.1:5001""#), "{novo}");
+        // O valor novo passa pelo escritor, entao aspas dentro nao quebram o
+        // arquivo -- e o texto continua sendo JSON valido depois.
+        let novo = texto::trocar(ARQUIVO, &["bind"], &Json::texto_de("a\"b")).unwrap();
+        Json::analisar(&novo).expect("a troca produziu JSON invalido");
+    }
+
+    /// Campo (ou secao) que nao existe no texto devolve `None` em vez de
+    /// inventar: inserir exigiria adivinhar a indentacao de quem escreveu, e
+    /// adivinhar errado e o mesmo estrago que reformatar.
+    #[test]
+    fn campo_ausente_nao_e_inventado() {
+        assert!(texto::trocar(ARQUIVO, &["nao_existe"], &Json::de_i64(1)).is_none());
+        assert!(texto::trocar(ARQUIVO, &["recursos", "nao_existe"], &Json::de_i64(1)).is_none());
+        assert!(texto::trocar(ARQUIVO, &["backup", "hora"], &Json::de_i64(1)).is_none());
+    }
+
+    /// Uma chave que CONTEM o nome procurado nao pode ser confundida com ele,
+    /// nem um valor de texto que pareca uma chave.
+    #[test]
+    fn nao_confunde_chave_parecida_nem_texto_que_parece_chave() {
+        let t = r#"{"max_linhas_antigo": 1, "titulo": "\"max_linhas\": 9", "max_linhas": 7}"#;
+        let novo = texto::trocar(t, &["max_linhas"], &Json::de_i64(3)).unwrap();
+        assert_eq!(
+            novo,
+            r#"{"max_linhas_antigo": 1, "titulo": "\"max_linhas\": 9", "max_linhas": 3}"#
+        );
     }
 }

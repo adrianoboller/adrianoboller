@@ -26,12 +26,32 @@
 //! o numero de nucleos da maquina seria pior do que uma consulta lenta.
 
 use std::num::NonZeroUsize;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+/// Teto de nucleos imposto pela configuracao. Zero = sem teto.
+///
+/// Global de processo pelo mesmo motivo do cofre e do volume do diario: o
+/// trabalho dividido acontece fundo na pilha, longe de qualquer `Config`, e
+/// enfiar o numero por parametro atravessaria dez assinaturas para chegar
+/// aqui. `recursos.threads` e `recursos.cpu_percentual` valem POR este teto --
+/// antes dele, os dois campos existiam no config.json e nenhuma linha de
+/// codigo os lia.
+static TETO: AtomicUsize = AtomicUsize::new(0);
+
+/// Define quantos nucleos o trabalho dividido pode usar. Zero = sem teto.
+pub fn definir_teto(n: usize) {
+    TETO.store(n, Ordering::SeqCst);
+}
 
 /// Quantas threads vale usar. Nunca zero, nunca mais que o tamanho do trabalho.
 pub fn nucleos() -> usize {
-    std::thread::available_parallelism()
+    let disponiveis = std::thread::available_parallelism()
         .map(NonZeroUsize::get)
-        .unwrap_or(1)
+        .unwrap_or(1);
+    match TETO.load(Ordering::SeqCst) {
+        0 => disponiveis,
+        teto => disponiveis.min(teto).max(1),
+    }
 }
 
 /// Piso abaixo do qual paralelizar custa mais do que rende.
@@ -101,6 +121,18 @@ mod tests {
 
     #[test]
     fn nucleos_nunca_e_zero() {
+        assert!(nucleos() >= 1);
+    }
+
+    /// O teto configurado corta a divisao -- e zero o solta de novo.
+    ///
+    /// O teto e global do processo, entao o teste devolve o zero no fim para
+    /// nao morder os vizinhos que rodam em paralelo.
+    #[test]
+    fn o_teto_configurado_vale() {
+        definir_teto(1);
+        assert_eq!(nucleos(), 1, "o teto de 1 nao valeu");
+        definir_teto(0);
         assert!(nucleos() >= 1);
     }
 

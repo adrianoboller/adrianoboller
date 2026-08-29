@@ -22,6 +22,34 @@
   "conexoes_max": 128,
   "somente_leitura": false,
 
+  "_recursos": [
+    "Um source escreve muito e serve as replicas ao mesmo tempo, entao os dois",
+    "campos que importam aqui sao a durabilidade e o cache do indice.",
+    "",
+    "durabilidade por_lote e o padrao: a janela de perda numa queda de energia",
+    "e o que entrou nos ultimos lote_milissegundos. Um source que nao pode",
+    "perder nem isso usa por_operacao -- e paga 20x na insercao.",
+    "",
+    "diario_volume_mib importa MAIS no source do que no isolado: o .log e o",
+    "que as replicas leem, e volume FECHADO e a unidade de arquivar diario",
+    "velho. Zero deixa valer o 1 GiB do esquema, que num evento de 44 bytes",
+    "sao 24 milhoes de eventos por volume.",
+    "",
+    "Detalhes de cada campo no exemplo 1 e na secao RECURSOS DA MAQUINA do",
+    "MANUAL.txt."
+  ],
+
+  "recursos": {
+    "durabilidade": "por_lote",
+    "lote_operacoes": 200,
+    "lote_milissegundos": 200,
+    "cache_paginas": 2048,
+    "diario_volume_mib": 256,
+    "conexoes_max": 128,
+    "threads": 0,
+    "cpu_percentual": 100
+  },
+
   "_base": [
     "Onde os bancos moram. Cada banco e uma PASTA, e cada schema uma subpasta",
     "dentro dela.",

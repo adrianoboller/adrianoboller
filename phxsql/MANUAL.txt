@@ -433,6 +433,7 @@ RECURSOS DA MAQUINA
       "lote_operacoes": 200,
       "lote_milissegundos": 200,
       "cache_paginas": 2048,
+      "diario_volume_mib": 0,
       "carga_prazo_min": 30,
       "memoria_max_mb": 0,
       "threads": 0,
@@ -494,14 +495,45 @@ RECURSOS DA MAQUINA
     velocidade sem avisar: hoje so uma queda da MAQUINA atrasa o .ndx em
     relacao ao .reg, e nao uma queda do processo.
 
+    VOLUME DO DIARIO. O "diario_volume_mib" diz onde o volume do .log, da
+    .trash e do .reason corta. ZERO NAO MEXE, e esse e o padrao: vale o
+    bytes_por_arquivo do esquema, que e 1 GiB. Existe porque 1 GiB e razoavel
+    para um anexo e nao para um diario de eventos de 44 bytes -- 1 GiB de .log
+    sao 24 milhoes de eventos, e o primeiro volume de uma tabela de um milhao
+    de linhas nunca fecha. E volume FECHADO e a unidade de tudo que se faz com
+    diario velho: compactar, arquivar, mover para disco barato.
+
     CPU. O "cpu_percentual" nao e uma cota do sistema operacional -- ele nao
     tem como impor isso a um processo. E quantos nucleos o trabalho DIVIDIDO
     usa: 50 em oito nucleos usa quatro. Cortar a divisao pela metade e o unico
     jeito honesto de "usar menos CPU" sem mentir sobre o mecanismo.
 
+    "threads" e "cpu_percentual" viram UM teto, aplicado no arranque e a cada
+    gravacao pela tela: threads=0 quer dizer "quantos nucleos a maquina tiver",
+    e o percentual corta esse numero -- nunca abaixo de um, porque metade de um
+    nucleo continua sendo um nucleo. Ate a 0.18 os dois campos estavam aqui e
+    na tela e NENHUMA linha de codigo os lia; hoje o teto e o leitor deles.
+
     USUARIOS x CONEXOES. Nao sao a mesma coisa: um usuario pode ter varias
     conexoes. "conexoes_max" conta soquetes; "usuarios_max" conta logins
     diferentes ao mesmo tempo, que e o que uma licenca por posto quer contar.
+
+    O teto de usuarios vale no LOGIN, e conta os logins distintos das conexoes
+    vivas e das sessoes do navegador juntos. Quem JA esta dentro nunca e
+    barrado -- reconectar nao pode custar uma vaga que a propria pessoa ja
+    ocupa. Zero e sem teto, e e o padrao.
+
+    MEMORIA. O "memoria_max_mb" e o teto das tabelas RESIDENTES -- as que
+    alguem carregou com "memoria_carregar" para consultar sem tocar o disco.
+    Vale no carregamento: passar do teto recusa com o numero na mensagem, em
+    vez de deixar o servidor crescer ate o sistema derrubar o processo. Zero e
+    sem teto. Nao e um teto do processo inteiro: indice, cache e buffer de
+    consulta nao entram nesta conta.
+
+    ATE A 0.18 ESTES DOIS NAO ERAM LIDOS. Estavam no config.json, no MANUAL e
+    na tela desde a 0.13.0 e nenhuma linha de codigo os consultava -- a mesma
+    armadilha do "cache_paginas" antes de existir cache. Hoje os dois tem
+    leitor, e ha teste que falha se o leitor sair.
 
 SEQUENCIAS
 
@@ -929,6 +961,7 @@ OPERACOES
 
     ping                                     versao, papel, conexoes
     config                                   configuracao (sem o token)
+    config_gravar   campos                   grava campos do config.json
     bancos                                   lista os databases
     tabelas         database                 schemas e tabelas
     esquema         database, tabela         colunas, indices, FKs, paginacao
@@ -1190,6 +1223,47 @@ LIGAR
     A porta e outra, separada da 5000 de proposito: quem fala HTTP nao e quem
     fala JSON Lines, e separar deixa o firewall tratar cada uma do seu jeito.
     O servidor recusa subir com as duas no mesmo endereco.
+
+CONFIGURAR PELA TELA
+
+    Configuracoes -> Gerais do servidor LE e GRAVA o config.json. O que ela
+    grava e uma lista FECHADA, e quem a declara e o servidor -- a tela monta o
+    formulario do que a resposta de "config" traz em "editaveis", e nao de uma
+    copia propria que envelheceria calada.
+
+    ESTAO NA LISTA: bind, max_linhas, timeout_s, somente_leitura, espelho, a
+    secao "recursos" inteira, web.sessao_minutos, o backup e o alerta de
+    disco.
+
+    FICAM DE FORA, e a ausencia e decisao: token, a secao "seguranca", o
+    cadastro de usuarios, a cifra, a credencial do rele de e-mail, a
+    replicacao e as listas de rede (ips_permitidos, web.servidores,
+    alertas.caminhos). Uma sessao roubada nao pode abrir o firewall, esvaziar
+    a lista de comandos proibidos, criar um supervisor nem virar este servidor
+    para outro source. Esses continuam sendo edicao do arquivo.
+
+    A TELA DIZ, CAMPO A CAMPO, se o ajuste aplica A QUENTE ou se espera o
+    proximo arranque -- e a resposta da gravacao traz "exigem_reinicio" com os
+    que ficaram esperando. Aplicam na hora: max_linhas, somente_leitura,
+    espelho, recursos.cache_paginas, recursos.diario_volume_mib,
+    recursos.threads e recursos.cpu_percentual. O resto vale no arranque
+    seguinte, porque quem o le monta a estrutura uma vez (a janela de
+    sincronizacao, o laco de aceitacao, o relogio do backup).
+
+    A GRAVACAO E ATOMICA: o arquivo novo e escrito ao lado e trocado de uma
+    vez, o mesmo que o cadastro do DbLink faz. Um corte de energia no meio
+    deixa o config.json ANTIGO inteiro, e nao um pela metade -- que nao
+    subiria. Comentarios "_...", ordem das chaves e secoes que este servidor
+    nao conhece ficam onde estavam, porque a gravacao RELE o arquivo e troca
+    so o campo pedido.
+
+    EXIGE ADMINISTRAR, conferido dentro da propria operacao. E valor que nao
+    subiria o servidor nao entra no arquivo: a arvore alterada passa pela
+    mesma validacao do arranque ANTES do rename.
+
+    Pela rede e a mesma coisa:
+
+        {"op":"config_gravar","campos":{"max_linhas":500,"backup.hora":"03:00"}}
 
 O QUE TEM NA TELA
 

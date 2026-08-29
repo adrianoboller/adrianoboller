@@ -218,9 +218,11 @@ impl Atividade {
             // administrador: a lista mostra o login e o IP dos outros, e
             // derrubar interrompe o trabalho alheio.
             "sessoes" | "processlist" | "encerrar_sessao" | "kill" => Atividade::Administrar,
-            "acessos" | "ips" | "config" | "usuarios" | "bloqueios" | "desbloquear" => {
-                Atividade::Administrar
-            }
+            // `config_gravar` esta aqui declarado, e nao so caindo no `_`:
+            // a operacao que reescreve o config.json e a ultima que deveria
+            // depender do padrao para negar. A op ainda confere por dentro.
+            "acessos" | "ips" | "config" | "config_gravar" | "usuarios" | "bloqueios"
+            | "desbloquear" => Atividade::Administrar,
             // O profiler mostra o TEXTO dos pedidos de todo mundo, com os
             // dados que estao sendo gravados dentro. Quem pode ler uma tabela
             // nao ganha por isso o direito de ver o que os outros escrevem

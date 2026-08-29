@@ -813,6 +813,14 @@ td.num.mal{color:var(--log)}
   background:var(--painel);color:var(--texto);font-size:12.5px;margin:0;
 }
 .form-dbl input:focus,.form-dbl select:focus{outline:none;border-color:var(--laranja)}
+/* Numero em algarismo de largura fixa: sem isto, 1000 e 2048 nao alinham de
+   um campo para o outro, e a coluna de ajustes fica com os digitos dancando. */
+.form-dbl input[type=number]{font-family:"IBM Plex Mono",monospace;
+                             font-variant-numeric:tabular-nums}
+/* O pino da hora do efeito fica na MESMA linha do nome do campo no arquivo,
+   e nao empilhado: sao dois pedacos curtos de metadado, nao dois paragrafos. */
+.form-dbl .cmp .leg{display:block}
+.form-dbl .cmp .leg .pino{margin-left:6px;vertical-align:baseline}
 .form-dbl .linha-chk{grid-column:1/-1;flex-direction:row;align-items:center;
                      gap:8px;font-size:12px;color:var(--texto-2)}
 .form-dbl .linha-chk input{width:auto}
@@ -1211,6 +1219,62 @@ const DEMO = {
      usuario:"adm", pedido:{op:"verificar",database:"Z",tabela:"cadastroClientes"},
      ultimo_ms:null, vencido:false}
   ],
+  // A configuracao no formato que o servidor responde -- as secoes com os
+  // MESMOS nomes do config.json. Uma demo com formato proprio deixaria a tela
+  // parecer certa aqui e quebrada no servidor de verdade.
+  config:{
+    bind:"0.0.0.0:5000", base:"dados", base_absoluta:"/var/lib/phxsql/dados",
+    token:"(oculto)", max_linhas:1000, timeout_s:30,
+    log_acessos:"acessos.log", ips_permitidos:[], conexoes_max:64,
+    somente_leitura:false, espelho:false, usuarios:4,
+    dblink:"dblink.json", jobs:"jobs.json",
+    recursos:{durabilidade:"por_lote", lote_operacoes:200, lote_milissegundos:200,
+      cache_paginas:2048, diario_volume_mib:0, carga_prazo_min:30, memoria_max_mb:0,
+      threads:0, cpu_percentual:100, nucleos_efetivos:8, conexoes_max:64, usuarios_max:0},
+    seguranca:{comandos_proibidos:["excluir"], bases_proibidas:[], tentativas_ate_bloquear:5,
+      janela_minutos:10, bloqueio_minutos:60, blacklist:"blacklist.json", firewall:false},
+    web:{ligado:true, bind:"127.0.0.1:5001", sessao_minutos:60, servidores:[]},
+    backup:{agendado:false, hora:"03:00", cada_horas:24, destino:"backups", zip:true,
+      database:"", admin:"agendado", manter:14},
+    replicacao:{papel:"isolado", envio:"", retorno:"", id_servidor:"",
+      imagem_da_linha:false, replicas_autorizadas:[], origens:[]},
+    alertas:{ligado:false, livre_minimo_percentual:10, livre_minimo_mb:1024,
+      checar_minutos:15, repetir_horas:6, caminhos:[],
+      email:{ligado:false, servidor:"127.0.0.1", porta:25, de:"", para:[], usuario:"",
+        senha:"(vazia)", assunto:"PhxSql: espaco em disco", tls:false}},
+    cifra:{ligada:false, iteracoes:210000, senha_env:"", senha:"(vazia)"},
+    estranhas:[],
+    editaveis:[
+      {campo:"bind",tipo:"texto",a_quente:false},
+      {campo:"max_linhas",tipo:"inteiro",a_quente:true},
+      {campo:"timeout_s",tipo:"inteiro",a_quente:false},
+      {campo:"somente_leitura",tipo:"booleano",a_quente:true},
+      {campo:"espelho",tipo:"booleano",a_quente:true},
+      {campo:"recursos.durabilidade",tipo:"texto",a_quente:false},
+      {campo:"recursos.lote_operacoes",tipo:"inteiro",a_quente:false},
+      {campo:"recursos.lote_milissegundos",tipo:"inteiro",a_quente:false},
+      {campo:"recursos.cache_paginas",tipo:"inteiro",a_quente:true},
+      {campo:"recursos.diario_volume_mib",tipo:"inteiro",a_quente:true},
+      {campo:"recursos.threads",tipo:"inteiro",a_quente:true},
+      {campo:"recursos.cpu_percentual",tipo:"inteiro",a_quente:true},
+      {campo:"recursos.conexoes_max",tipo:"inteiro",a_quente:false},
+      {campo:"recursos.carga_prazo_min",tipo:"inteiro",a_quente:false},
+      {campo:"recursos.memoria_max_mb",tipo:"inteiro",a_quente:false},
+      {campo:"recursos.usuarios_max",tipo:"inteiro",a_quente:false},
+      {campo:"web.sessao_minutos",tipo:"inteiro",a_quente:false},
+      {campo:"backup.agendado",tipo:"booleano",a_quente:false},
+      {campo:"backup.hora",tipo:"texto",a_quente:false},
+      {campo:"backup.cada_horas",tipo:"inteiro",a_quente:false},
+      {campo:"backup.destino",tipo:"texto",a_quente:false},
+      {campo:"backup.zip",tipo:"booleano",a_quente:false},
+      {campo:"backup.manter",tipo:"inteiro",a_quente:false},
+      {campo:"alertas.ligado",tipo:"booleano",a_quente:false},
+      {campo:"alertas.livre_minimo_percentual",tipo:"numero",a_quente:false},
+      {campo:"alertas.livre_minimo_mb",tipo:"inteiro",a_quente:false},
+      {campo:"alertas.checar_minutos",tipo:"inteiro",a_quente:false},
+      {campo:"alertas.repetir_horas",tipo:"inteiro",a_quente:false}
+    ]
+  },
   corridas:[
     {quando:"2026-08-28 03:00:04,120", job:"backup-noturno", op:"backup",
      usuario:"adm", ok:true, duracao_ms:842,
@@ -1249,6 +1313,8 @@ function demo(op, p) {
       web:"127.0.0.1:5001", web_ligada:true};
     case "jobs": return {arquivo:"jobs.json", log:"jobs.log",
       jobs:d.jobs, historico:d.corridas};
+    case "config": return d.config;
+    case "quem_sou": return {login:"adriano", nivel:"admin", supervisor:true};
     default: throw new Error("operação sem demonstração: " + op);
   }
 }
@@ -3872,6 +3938,18 @@ async function verConfigTabela(db, tab) {
          <td class="num">${v.primeiro_rowid}</td>
          <td class="dado">${v.periodo ? esc(v.periodo) : "<span class=leg>—</span>"}</td></tr>`)}` : ""}
 
+     <h3 class="secao">Diretiva desta tabela <em>— a única que é dela</em></h3>
+     <div class="rolo"><table><thead><tr>
+       <th>diretiva</th><th>vale aqui</th><th>o que ela faz</th>
+     </tr></thead><tbody>
+       <tr><td class="dado">motivo obrigatório na exclusão</td>
+         <td class="dado">${e.motivo_obrigatorio
+            ? '<span class="pino ok">exigido</span>' : "não exigido"}</td>
+         <td class="leg">gravada no cabeçalho do <code>.reg</code>, na criação.
+           Com ela, excluir sem <code>motivo</code> é recusado <em>antes</em> de
+           qualquer gravação, e o texto vai para o <code>.reason</code></td></tr>
+     </tbody></table></div>
+
      <h3 class="secao">Diretivas — o que a tabela herda</h3>
      <div class="rolo"><table><thead><tr>
        <th>diretiva</th><th>vale aqui</th><th>de onde vem</th>
@@ -4352,11 +4430,17 @@ function editorDeMenu() {
    Tres telas, tres alcances: o SERVIDOR (o `config.json` inteiro), o BANCO
    (o que vale para um database) e os USUARIOS (quem pode o que).
 
-   As tres LEEM. Nenhuma grava, e isso e escolha, nao esquecimento: gravar o
-   `config.json` pela porta web significaria que uma sessao roubada abre o
-   firewall, troca a lista de comandos proibidos e cria um supervisor. A tela
-   diz exatamente qual campo mexer e onde -- que e o que falta para quem
-   administra, e nao vale o buraco. */
+   A DO SERVIDOR grava; as outras duas leem. O que ela grava e uma lista
+   FECHADA, e o servidor a declara -- fora dela ficam o token, a secao
+   `seguranca`, o cadastro de usuarios, a cifra, a credencial do rele de
+   e-mail e a replicacao. A razao e a mesma que antes fazia a tela inteira ser
+   so de leitura: uma sessao roubada nao pode abrir o firewall, esvaziar a
+   lista de comandos proibidos nem criar um supervisor. O que ela ganhou foi o
+   resto -- os limites, a durabilidade, o backup e o alerta de disco --, que e
+   o ajuste do dia a dia e nao valia obrigar a editar o arquivo e reiniciar.
+
+   Cada campo diz se aplica A QUENTE ou se espera o proximo arranque. Dizer
+   isso ao lado do campo e o oposto de prometer efeito que nao vem. */
 
 /** Uma ficha com valor, rotulo e unidade. */
 function ficha(valor, rotulo, unidade) {
@@ -4366,98 +4450,329 @@ function ficha(valor, rotulo, unidade) {
 
 const simNao = v => v ? "sim" : "não";
 
+/** O valor de "secao.campo" dentro da resposta de `config`. */
+const valorDoCampo = (c, campo) =>
+  campo.split(".").reduce((o, k) => (o === null || o === undefined ? o : o[k]), c);
+
+/** Para que serve cada ajuste — texto de tela, e por isso mora aqui.
+ *
+ * A LISTA de campos vem do servidor (`config.editaveis`); isto é só a
+ * explicação. Campo que o servidor conhece e este dicionário não descreve
+ * aparece assim mesmo, com a explicação em branco, em vez de sumir — a mesma
+ * regra do DIZ_RECURSO, e pelo mesmo motivo: lista de tela envelhece calada. */
+const DIZ_AJUSTE = {
+  bind: "endereço e porta onde a porta de dados escuta",
+  max_linhas: "teto de linhas por resposta; o pedido pode pedir menos, nunca mais",
+  timeout_s: "espera por um pedido antes de encerrar a conexão",
+  somente_leitura: "recusa toda operação de escrita, para todo mundo",
+  espelho: "grava o .bkp junto do .reg — segunda cópia de cada slot",
+  "web.sessao_minutos": "quanto dura a sessão da interface sem uso; cada clique renova",
+  "backup.agendado": "liga o backup que roda sozinho",
+  "backup.hora": "HH:MM — roda uma vez por dia nesse horário",
+  "backup.cada_horas": "intervalo, usado só quando não há hora marcada",
+  "backup.destino": "pasta onde os arquivos caem",
+  "backup.zip": "um arquivo só, com o manifesto dentro",
+  "backup.manter": "quantos zips guardar; zero não apaga nada",
+  "alertas.ligado": "vigia o base, o destino do backup e o que estiver em caminhos",
+  "alertas.livre_minimo_percentual":
+    "sobre usado+livre, como o df — reserva do sistema de arquivos não conta como livre",
+  "alertas.livre_minimo_mb": "piso absoluto; o que apertar primeiro dispara",
+  "alertas.checar_minutos": "de quanto em quanto tempo o relógio confere os discos",
+  "alertas.repetir_horas": "silêncio entre dois avisos do mesmo caminho",
+};
+
+/** A explicação de um ajuste, reusando a dos recursos em vez de repeti-la. */
+function dizDoAjuste(campo) {
+  if (DIZ_AJUSTE[campo]) return DIZ_AJUSTE[campo];
+  if (campo.startsWith("recursos.")) {
+    const d = DIZ_RECURSO[campo.slice(9)];
+    if (d) return d[0] + (d[1] ? ` — ${d[1]}` : "");
+  }
+  return "";
+}
+
+/** O rótulo humano de cada ajuste.
+ *
+ * Sem isto o rótulo saía do nome do campo com os `_` trocados por espaço, e o
+ * CSS o punha em caixa-alta: «TIMEOUT S», «DIARIO VOLUME MIB». Isso não é um
+ * nome, é um pedaço de identificador gritado. O nome no arquivo continua
+ * embaixo do campo, em `code`, que é onde ele serve — para achar a linha no
+ * config.json. */
+const ROTULO_AJUSTE = {
+  bind: "endereço de escuta",
+  max_linhas: "teto de linhas por resposta",
+  timeout_s: "tempo limite, em segundos",
+  somente_leitura: "somente leitura",
+  espelho: "espelho .bkp",
+  "web.sessao_minutos": "sessão da interface, em minutos",
+  "recursos.durabilidade": "durabilidade",
+  "recursos.lote_operacoes": "gravações por janela",
+  "recursos.lote_milissegundos": "janela, em milissegundos",
+  "recursos.cache_paginas": "páginas do .ndx em RAM",
+  "recursos.diario_volume_mib": "volume do diário, em MiB",
+  "recursos.carga_prazo_min": "prazo da carga, em minutos",
+  "recursos.memoria_max_mb": "teto das tabelas em RAM, em MB",
+  "recursos.threads": "linhas de execução",
+  "recursos.cpu_percentual": "percentual de CPU",
+  "recursos.conexoes_max": "conexões simultâneas",
+  "recursos.usuarios_max": "usuários simultâneos",
+  "backup.agendado": "backup agendado",
+  "backup.hora": "hora do backup (HH:MM)",
+  "backup.cada_horas": "a cada quantas horas",
+  "backup.destino": "pasta de destino",
+  "backup.zip": "compactar em zip",
+  "backup.manter": "quantos guardar",
+  "alertas.ligado": "vigiar o espaço em disco",
+  "alertas.livre_minimo_percentual": "mínimo livre, em %",
+  "alertas.livre_minimo_mb": "mínimo livre, em MB",
+  "alertas.checar_minutos": "conferir a cada, em minutos",
+  "alertas.repetir_horas": "repetir o aviso após, em horas",
+};
+
+/** O rótulo de um ajuste; sem entrada, o nome do campo serve de reserva. */
+const rotuloDoAjuste = campo =>
+  ROTULO_AJUSTE[campo] || campo.split(".").pop().replace(/_/g, " ");
+
+/** Campo de escolha fechada: digitar livre aqui só produziria recusa. */
+const OPCOES_AJUSTE = {
+  "recursos.durabilidade": ["por_lote", "por_operacao", "sistema"],
+};
+
+/** Em que grupo cada ajuste entra, e em que ordem a tela os mostra.
+ *
+ * Agrupados pelo que a pessoa está tentando fazer, e não pela seção do
+ * arquivo: quem vai mexer em `cpu_percentual` está pensando em máquina, e
+ * `recursos` mistura máquina com durabilidade. O nome do campo no arquivo
+ * aparece embaixo de cada um, que é o que faz a ponte de volta. */
+const GRUPOS_AJUSTE = [
+  ["Rede e limites",
+   ["bind", "timeout_s", "recursos.conexoes_max", "max_linhas",
+    "recursos.usuarios_max", "web.sessao_minutos"]],
+  ["Gravação e durabilidade",
+   ["recursos.durabilidade", "recursos.lote_operacoes", "recursos.lote_milissegundos",
+    "recursos.diario_volume_mib", "recursos.carga_prazo_min", "espelho", "somente_leitura"]],
+  ["Memória e CPU",
+   ["recursos.cache_paginas", "recursos.memoria_max_mb", "recursos.threads",
+    "recursos.cpu_percentual"]],
+  ["Backup",
+   ["backup.agendado", "backup.hora", "backup.cada_horas", "backup.destino",
+    "backup.zip", "backup.manter"]],
+  ["Alerta de espaço em disco",
+   ["alertas.ligado", "alertas.livre_minimo_percentual", "alertas.livre_minimo_mb",
+    "alertas.checar_minutos", "alertas.repetir_horas"]],
+];
+
+/** Um campo editável: rótulo, controle, o nome no arquivo e a hora do efeito.
+ *
+ * `data-antes` guarda o valor de origem: o salvar manda só o que MUDOU, para
+ * um clique em «Salvar» não reescrever trinta campos que ninguém tocou. */
+function campoEditavel(c, e) {
+  // O que está GRAVADO manda no campo, e não o que está valendo: quem acabou
+  // de salvar um ajuste de arranque precisa ver o que gravou. O que está
+  // valendo aparece ao lado, como aviso — a tela diria 45 depois de a pessoa
+  // gravar 90, e ficaria calada sobre o 90.
+  const noArquivo = (c.no_arquivo || {})[e.campo];
+  const vivo = valorDoCampo(c, e.campo);
+  const divergiu = noArquivo !== undefined;
+  const v = divergiu ? noArquivo : vivo;
+  const id = `cf_${e.campo.replace(/\./g, "_")}`;
+  const dados = `id="${id}" data-campo="${esc(e.campo)}" data-tipo="${esc(e.tipo)}"`;
+  const quando = e.a_quente
+    ? `<span class="pino ok">na hora</span>`
+    : `<span class="pino">no arranque</span>`;
+  const espera = divergiu
+    ? ` <span class="pino mal">gravado · vale ${esc(String(vivo))} até reiniciar</span>`
+    : "";
+  const rodape = `<span class="leg"><code>${esc(e.campo)}</code> ${quando}${espera}<br>${
+    esc(dizDoAjuste(e.campo))}</span>`;
+
+  if (e.tipo === "booleano") {
+    // .linha-chk existe porque o input{width:100%} global transforma uma
+    // caixa de marcar numa barra da largura da coluna.
+    return `<label class="cmp linha-chk">
+      <input type="checkbox" ${dados} data-antes="${v ? "true" : "false"}" ${v ? "checked" : ""}>
+      <span>${esc(rotuloDoAjuste(e.campo))} ${quando}${espera}
+        <span class="leg"><code>${esc(e.campo)}</code> · ${esc(dizDoAjuste(e.campo))}</span>
+      </span></label>`;
+  }
+  const opcoes = OPCOES_AJUSTE[e.campo];
+  const controle = opcoes
+    ? `<select ${dados} data-antes="${esc(String(v ?? ""))}">${
+        opcoes.map(o => `<option ${o === v ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>`
+    : `<input ${dados} data-antes="${esc(String(v ?? ""))}"
+        value="${esc(String(v ?? ""))}"
+        ${e.tipo === "inteiro" || e.tipo === "numero"
+          ? `type="number" inputmode="numeric" ${e.tipo === "numero" ? 'step="0.01"' : ""}` : ""}>`;
+  return `<label class="cmp">
+    <span>${esc(rotuloDoAjuste(e.campo))}</span>
+    ${controle}${rodape}</label>`;
+}
+
 async function verConfigServidor() {
   const [c, p] = await Promise.all([api("config"), api("ping")]);
   const seg = c.seguranca || {};
   const rep = c.replicacao || {};
-  const bkp = c.backup || {};
   const web = c.web || {};
   const al = c.alertas || {};
   const em = al.email || {};
+  const editaveis = c.editaveis || [];
+  const porCampo = Object.fromEntries(editaveis.map(e => [e.campo, e]));
+  // Campo que o servidor declara editável e nenhum grupo desta tela mostra.
+  // Some da lista seria a tela envelhecendo calada — que é o defeito que esta
+  // rodada inteira existe para não repetir.
+  const agrupados = new Set(GRUPOS_AJUSTE.flatMap(([, campos]) => campos));
+  const sobrando = editaveis.filter(e => !agrupados.has(e.campo));
 
-  folha("Configurações gerais do servidor", "o que está valendo agora · lido do config.json",
+  const grupo = (titulo, campos) => {
+    const itens = campos.filter(x => porCampo[x]).map(x => campoEditavel(c, porCampo[x])).join("");
+    return itens ? `<h3 class="secao">${esc(titulo)}</h3>
+      <div class="form-dbl">${itens}</div>` : "";
+  };
+
+  folha("Configurações gerais do servidor",
+    "o que está valendo agora · edita e grava no config.json",
     `<div class="fichas">
        ${ficha(p.phxsql || p.versao, "versão")}
        ${ficha(c.bind, "porta de dados", "campo bind")}
-       ${ficha(web.bind || "desligada", "porta da interface", "campo web.bind")}
+       ${ficha(web.ligado ? web.bind : "desligada", "porta da interface", "campo web.bind")}
        ${ficha(p.papel || rep.papel, "papel na replicação")}
        ${ficha(c.conexoes_max, "conexões máximas")}
        ${ficha(c.timeout_s, "tempo limite", "segundos")}
      </div>
 
-     ${grupoDeAjustes("Armazenamento", [
-       ["base", c.base, "a pasta que guarda os databases — aceita caminho absoluto: "
-         + "C:\\database, D:\\database, /var/lib/phxsql"],
-       // Caminho relativo vale a partir de ONDE O SERVIDOR FOI INICIADO, e não
-       // de onde o config.json está. Subir por outro caminho passa a ver outro
-       // banco, e a única forma de tirar essa dúvida é mostrar o resolvido.
-       ["(resolvido)", c.base_absoluta, "é aqui que os dados estão agora"],
-       ["dblink", c.dblink, "arquivo com as ligações para bancos de fora"],
-       ["max_linhas", c.max_linhas, "teto de linhas por resposta"],
-       ["espelho", simNao(c.espelho), "grava o .bkp junto do .reg"],
-       ["somente_leitura", simNao(c.somente_leitura), "recusa toda operação de escrita"],
-     ])}
+     ${c.no_arquivo && Object.keys(c.no_arquivo).length ? `<div class="aviso">
+       <p><strong>Há ajuste gravado que ainda não está valendo.</strong>
+       ${Object.entries(c.no_arquivo).map(([k, v]) =>
+          `<code>${esc(k)}</code> no arquivo é <b>${esc(String(v))}</b>`).join(", ")} —
+       e o servidor continua com o valor de quando subiu. Um reinício do
+       serviço passa a valer o que está no arquivo.</p></div>` : ""}
 
-     ${grupoDeAjustes("Alerta de espaço em disco", [
-       ["alertas.ligado", simNao(al.ligado), "vigia o base, o destino do backup e o que estiver em caminhos"],
-       ["alertas.livre_minimo_percentual", al.livre_minimo_percentual,
-        "sobre usado+livre, como o df — reserva do sistema de arquivos não conta como livre"],
-       ["alertas.livre_minimo_mb", al.livre_minimo_mb, "piso absoluto; o que apertar primeiro dispara"],
-       ["alertas.checar_minutos", al.checar_minutos, ""],
-       ["alertas.repetir_horas", al.repetir_horas, "silêncio entre dois avisos do mesmo caminho"],
+     ${c.estranhas && c.estranhas.length ? `<div class="nota mal">
+       <p><strong>O config.json traz campos que este servidor não conhece:</strong>
+       ${c.estranhas.map(x => `<code>${esc(x)}</code>`).join(", ")}. Eles foram
+       <em>ignorados</em> — confira se não é um nome escrito errado. O aviso
+       cobre também o que está dentro das seções, como
+       <code>recursos.cache_pagina</code> sem o «s».</p></div>` : ""}
+
+     <div class="acoes">
+       <button class="botao alterar" id="cfSalvar">Salvar no config.json</button>
+       <button class="botao secundario" id="cfDescartar">Descartar as mudanças</button>
+       <span class="leg">grava só o que você mudou · escrita atômica, com o
+         arquivo antigo inteiro até o fim</span>
+     </div>
+
+     ${GRUPOS_AJUSTE.map(([t, campos]) => grupo(t, campos)).join("")}
+     ${sobrando.length ? grupo("Outros ajustes que este servidor aceita",
+        sobrando.map(e => e.campo)) : ""}
+
+     <h3 class="secao">Só pelo arquivo <em>— e por quê</em></h3>
+     ${grupoDeAjustes("", [
+       ["token", "(oculto)", "a chave da porta: trocar pela web daria a uma sessão roubada o "
+         + "poder de trocar a fechadura"],
+       ["base", c.base, "a pasta que guarda os databases; mudar com o serviço no ar apontaria "
+         + "para outra árvore no meio de uma operação"],
+       ["(resolvido)", c.base_absoluta, "é aqui que os dados estão agora"],
+       ["log_acessos", c.log_acessos, "arquivo do log de acessos"],
+       ["dblink", c.dblink, "arquivo com as ligações para bancos de fora"],
+       ["jobs", c.jobs, "arquivo com os jobs de execução"],
+       ["ips_permitidos", (c.ips_permitidos || []).join(", ") || "todos", "vazio = qualquer IP"],
+       ["web.ligado", simNao(web.ligado), "abrir ou fechar a própria porta que serve esta tela"],
+       ["web.bind", web.bind, "endereço de escuta da interface"],
+       ["web.servidores", (web.servidores || []).join(", ") || "só este",
+        "console para mais de um servidor; é lista de destino de rede"],
+       ["seguranca.comandos_proibidos", (seg.comandos_proibidos || []).join(", ") || "nenhum",
+        "recusados antes de chegar nos dados — esvaziar pela web seria abrir a porta"],
+       ["seguranca.bases_proibidas", (seg.bases_proibidas || []).join(", ") || "nenhuma", ""],
+       ["seguranca.tentativas_ate_bloquear", seg.tentativas_ate_bloquear, ""],
+       ["seguranca.janela_minutos", seg.janela_minutos, "em que janela as tentativas contam"],
+       ["seguranca.bloqueio_minutos", seg.bloqueio_minutos, "quanto tempo o IP fica barrado"],
+       ["seguranca.blacklist", seg.blacklist, "onde a lista de bloqueio persiste"],
+       ["seguranca.firewall", simNao(seg.firewall), "executa o comando de bloqueio do sistema"],
+       ["cifra.ligada", simNao((c.cifra || {}).ligada), "cifra dos diários em repouso"],
+       ["cifra.senha", (c.cifra || {}).senha, "carrega credencial: nunca sai e nunca entra por aqui"],
        ["alertas.caminhos", (al.caminhos || []).join(", ") || "só o base e o backup", ""],
        ["alertas.email.ligado", simNao(em.ligado), "sem TLS: serve para relé interno na porta 25"],
        ["alertas.email.servidor", em.servidor ? `${em.servidor}:${em.porta}` : "", ""],
        ["alertas.email.para", (em.para || []).join(", ") || "ninguém", ""],
        ["alertas.email.senha", em.senha, "nunca sai daqui, nem no log"],
+       ["replicacao.papel", rep.papel, "isolado, source ou replica — virar o papel pela web "
+         + "apontaria este servidor para outro dono"],
+       ["replicacao.envio", rep.envio || "(a porta de dados)", "por onde o source envia os eventos"],
+       ["replicacao.retorno", rep.retorno || "(pela mesma conexão do envio)",
+        "por onde o source recebe o «apliquei até aqui»"],
+       ["replicacao.imagem_da_linha", simNao(rep.imagem_da_linha),
+        "sem ela o diário não replica"],
+       ["usuarios", c.usuarios, "cadastro e poder de cada um: mexe em credencial"],
      ])}
-
-     ${grupoDeAjustes("Registro e rede", [
-       ["log_acessos", c.log_acessos, "arquivo do log de acessos"],
-       ["ips_permitidos", (c.ips_permitidos || []).join(", ") || "todos", "vazio = qualquer IP"],
-       ["web.sessao_minutos", web.sessao_minutos, "quanto dura a sessão da interface"],
-       ["web.servidores", (web.servidores || []).join(", ") || "só este", "console para mais de um servidor"],
-     ])}
-
-     ${grupoDeAjustes("Segurança", [
-       ["seguranca.comandos_proibidos", (seg.comandos_proibidos || []).join(", ") || "nenhum",
-        "recusados antes de chegar nos dados"],
-       ["seguranca.bases_proibidas", (seg.bases_proibidas || []).join(", ") || "nenhuma", ""],
-       ["seguranca.tentativas_ate_bloquear", seg.tentativas_ate_bloquear, ""],
-       ["seguranca.bloqueio_minutos", seg.bloqueio_minutos, "quanto tempo o IP fica barrado"],
-       ["seguranca.blacklist", seg.blacklist, "onde a lista de bloqueio persiste"],
-       ["seguranca.firewall.ligado", simNao(c.firewall), "executa o comando de bloqueio do sistema"],
-     ])}
-
-     ${grupoDeAjustes("Backup", [
-       ["backup.destino", bkp.destino, ""],
-       ["backup.hora", bkp.hora, "agendamento diário"],
-       ["backup.zip", simNao(bkp.zip), ""],
-     ])}
-
-     ${grupoDeAjustes("Replicação", [
-       ["replicacao.papel", rep.papel, "isolado, origem ou réplica"],
-       ["replicacao.porta_envio", rep.porta_envio, ""],
-       ["replicacao.porta_retorno", rep.porta_retorno, ""],
-     ])}
-
-     ${c.estranhas && c.estranhas.length ? `<div class="nota mal">
-       <p><strong>O config.json traz campos que este servidor não conhece:</strong>
-       ${c.estranhas.map(x => `<code>${esc(x)}</code>`).join(", ")}. Eles foram
-       <em>ignorados</em> — confira se não é um nome escrito errado.</p></div>` : ""}
 
      <div class="nota">
-       <p><strong>Esta tela lê, não grava.</strong> E é de propósito: gravar o
-       <code>config.json</code> pela porta web significaria que uma sessão
-       roubada consegue abrir o firewall, esvaziar a lista de comandos
-       proibidos e criar um supervisor. O caminho é editar o arquivo e subir o
-       serviço de novo.</p>
-     </div>`);
+       <p><strong>O que esta tela grava é uma lista fechada, e quem a declara é
+       o servidor.</strong> Ela monta o formulário do que o servidor respondeu
+       em <code>editaveis</code> — não de uma cópia própria, que envelheceria
+       calada no dia em que um campo novo entrasse.</p>
+       <p><strong>Fora da lista, o motivo é sempre o mesmo:</strong> uma sessão
+       roubada não pode abrir o firewall, esvaziar a lista de comandos
+       proibidos, criar um supervisor nem virar este servidor para outro
+       source. Esses continuam sendo edição do arquivo.</p>
+       <p><strong>A gravação é atômica.</strong> O arquivo novo é escrito ao
+       lado e trocado de uma vez — um corte de energia no meio deixa o
+       <code>config.json</code> antigo inteiro, e não um pela metade, que não
+       subiria. Comentários, ordem das chaves e seções que este servidor não
+       conhece ficam onde estavam.</p>
+     </div>
+     <p class="cores-acao"><b><i style="background:var(--acao-alterar)"></i>salvar altera</b></p>`);
+
+  $("#cfDescartar").onclick = () => verConfigServidor();
+  $("#cfSalvar").onclick = salvarConfigServidor;
 }
 
-/** Um bloco de campo → valor → para que serve. */
+/** Manda para o servidor só os campos que mudaram. */
+async function salvarConfigServidor() {
+  const campos = {};
+  let ruim = "";
+  $$("#painel [data-campo]").forEach(el => {
+    const tipo = el.dataset.tipo;
+    const antes = el.dataset.antes;
+    if (tipo === "booleano") {
+      if (String(el.checked) !== antes) campos[el.dataset.campo] = el.checked;
+      return;
+    }
+    const texto = el.value.trim();
+    if (texto === antes) return;
+    if (tipo === "inteiro" || tipo === "numero") {
+      const n = Number(texto);
+      // Vazio vira 0 em JavaScript, e 0 é um valor legítimo em quase todos
+      // estes campos — mandar o campo apagado como zero seria uma troca que
+      // ninguém pediu.
+      if (texto === "" || !Number.isFinite(n)
+          || (tipo === "inteiro" && !Number.isInteger(n))) {
+        ruim = ruim || `${el.dataset.campo}: «${texto}» não é ${tipo}`;
+        return;
+      }
+      campos[el.dataset.campo] = n;
+      return;
+    }
+    campos[el.dataset.campo] = texto;
+  });
+
+  if (ruim) return avisar(ruim, true);
+  const quantos = Object.keys(campos).length;
+  if (!quantos) return avisar("nada mudou — nenhum campo foi gravado");
+
+  try {
+    const r = await api("config_gravar", { campos });
+    const espera = r.exigem_reinicio || [];
+    avisar(`${quantos} campo(s) gravado(s) em ${r.arquivo}`
+      + (espera.length ? ` · ${espera.join(", ")} só vale(m) no próximo arranque` : ""));
+    verConfigServidor();
+  } catch (e) {
+    avisar(`${e}`, true);
+  }
+}
+
+/** Um bloco de campo → valor → para que serve. Só leitura. */
 function grupoDeAjustes(titulo, linhas) {
-  return `<h3 class="secao">${esc(titulo)}</h3>
+  return `${titulo ? `<h3 class="secao">${esc(titulo)}</h3>` : ""}
     <div class="rolo"><table><thead><tr>
       <th>campo no <code>config.json</code></th><th>valor agora</th><th>para que serve</th>
     </tr></thead><tbody>${linhas.map(([campo, valor, diz]) => `<tr>
@@ -7286,6 +7601,10 @@ async function telaDadosPessoais(db) {
 
 async function verDiretivas() {
   const c = await api("config");
+  // A politica mora em `seguranca`, como no arquivo. Enquanto a resposta a
+  // trazia achatada no topo, esta tela lia dois campos e a de baixo lia
+  // `c.seguranca` -- que nao existia, e por isso dizia "nenhum" sempre.
+  const seg = c.seguranca || {};
   const lista = (arr, vazio) => Array.isArray(arr) && arr.length
     ? `<ul>${arr.map(x => `<li><code>${esc(String(x))}</code></li>`).join("")}</ul>`
     : `<p class="leg">${esc(vazio)}</p>`;
@@ -7293,13 +7612,15 @@ async function verDiretivas() {
     `<div class="fichas">
        <div class="ficha"><div class="v">${c.somente_leitura ? "sim" : "não"}</div>
          <div class="r">somente leitura</div></div>
-       <div class="ficha"><div class="v">${c.firewall ? "ligado" : "desligado"}</div>
+       <div class="ficha"><div class="v">${seg.firewall ? "ligado" : "desligado"}</div>
          <div class="r">regra de firewall</div></div>
        <div class="ficha"><div class="v">${c.espelho ? "ligado" : "desligado"}</div>
          <div class="r">espelho .bkp</div></div>
      </div>
      <h3>Comandos proibidos</h3>
-     ${lista(c.comandos_proibidos, "nenhum comando proibido")}
+     ${lista(seg.comandos_proibidos, "nenhum comando proibido")}
+     <h3>Bases proibidas</h3>
+     ${lista(seg.bases_proibidas, "nenhuma base proibida")}
      <h3>IPs permitidos</h3>
      ${lista(c.ips_permitidos, "vazio — qualquer origem (só use atrás de firewall)")}
      <div class="nota"><p>Esta tela <strong>lê</strong> a política. Mudá-la é
@@ -7320,10 +7641,10 @@ async function verBancos() {
    que ela sabia mostrar enquanto a replicação não existia. */
 async function verReplicacao() {
   const c = await api("config");
-  const portas = c.replicacao_portas || {};
-  const papel = c.papel || "isolado";
-  const comImagem = !!c.imagem_da_linha;
-  const origens = c.origens || [];
+  const rep = c.replicacao || {};
+  const papel = rep.papel || "isolado";
+  const comImagem = !!rep.imagem_da_linha;
+  const origens = rep.origens || [];
 
   // A posição de cada tabela de cada banco: é o que a réplica compara com a do
   // source para saber o que falta. Sai do cabeçalho do .log, sem ler evento.
@@ -7360,7 +7681,7 @@ async function verReplicacao() {
          <div class="r">papel</div></div>
        <div class="ficha"><div class="v">${comImagem ? "ligada" : "desligada"}</div>
          <div class="r">imagem da linha</div></div>
-       <div class="ficha"><div class="v">${esc(portas.envio || "porta de dados")}</div>
+       <div class="ficha"><div class="v">${esc(rep.envio || "porta de dados")}</div>
          <div class="r">envio</div></div>
        <div class="ficha"><div class="v">${origens.length || "—"}</div>
          <div class="r">origens</div></div>
@@ -8099,15 +8420,25 @@ const DIZ_RECURSO = {
   lote_milissegundos: ["duração máxima da janela", "um relógio de fundo fecha quando ninguém grava"],
   cache_paginas:      ["páginas do .ndx em RAM, por tabela aberta",
                        "4 KiB cada; 2.048 dão 8 MiB. Vale 2,4× na inserção"],
+  diario_volume_mib:  ["onde o volume do .log, da .trash e do .reason corta",
+                       "zero = não mexe, e vale o 1 GiB do esquema"],
   carga_prazo_min:    ["minutos que um BULKINSERT dura sem ser renovado",
                        "a segunda rede contra reserva órfã — a primeira é a queda da conexão"],
-  memoria_max_mb:     ["teto das tabelas residentes (SelectMemory)", "zero = sem teto"],
+  memoria_max_mb:     ["teto das tabelas residentes (SelectMemory)",
+                       "zero = sem teto; vale no memoria_carregar, que recusa acima dele"],
   threads:            ["linhas de execução do trabalho dividido", "zero = um por núcleo"],
   cpu_percentual:     ["quantos núcleos o trabalho dividido usa", "não é cota do sistema operacional"],
   nucleos_efetivos:   ["quantos núcleos isso dá nesta máquina", "calculado, não configurado"],
   conexoes_max:       ["soquetes simultâneos aceitos", ""],
-  usuarios_max:       ["logins DIFERENTES ao mesmo tempo", "zero = sem teto; é o que uma licença por posto conta"],
+  usuarios_max:       ["logins DIFERENTES ao mesmo tempo",
+                       "zero = sem teto; vale no login, e quem já está dentro nunca é barrado"],
 };
+
+/** A configuração sem o que é metadado da tela. */
+function semMetadados(c) {
+  const { editaveis, ...resto } = c;
+  return resto;
+}
 
 async function verConfig() {
   const c = await api("config");
@@ -8136,7 +8467,11 @@ async function verConfig() {
     </tr>`).join("");
 
   folha("Configuração", "o config.json como o servidor o entendeu · o token nunca sai",
-    `<h3 class="secao">Recursos</h3>
+    `<div class="acoes">
+       <button class="botao alterar" id="cfIrGerais">Editar em Gerais do servidor</button>
+       <span class="leg">esta tela mostra; a de Gerais grava</span>
+     </div>
+     <h3 class="secao">Recursos</h3>
      <p class="leg">O que o servidor pode consumir e — o mais importante —
        <b>quando</b> o que foi gravado vai de fato para o disco.</p>
      ${tabela([{t:"campo"},{t:"valor",cls:"num"},{t:"o que faz"}],
@@ -8156,7 +8491,14 @@ async function verConfig() {
               a carga inteira passa a valer um <code>fsync</code> só.</p>`)}
 
      <h3 class="secao">O arquivo inteiro, como o servidor o leu</h3>
-     <pre class="dado">${esc(JSON.stringify(c, null, 1))}</pre>`);
+     <p class="leg">Para <b>mudar</b> qualquer um destes: menu
+       <b>Configurações → Gerais do servidor</b>, que grava no
+       <code>config.json</code> e diz, campo a campo, o que aplica na hora e o
+       que espera o próximo arranque.</p>
+     <pre class="dado">${esc(JSON.stringify(semMetadados(c), null, 1))}</pre>`);
+
+  const bt = $("#cfIrGerais");
+  if (bt) bt.onclick = verConfigServidor;
 }
 
 async function verQuemSou() {
