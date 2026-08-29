@@ -244,6 +244,20 @@ pub struct NdxFile {
     indices: Vec<DescritorIndice>,
     cache: CachePaginas,
     gravacoes: u64,
+    /// A pagina 0 esta atrasada em relacao ao que ha em RAM.
+    ///
+    /// O cabecalho guarda quatro coisas: `qtd_paginas`, `pagina_livre`, a raiz
+    /// de cada indice e a `qtd_chaves` de cada indice. As tres primeiras sao
+    /// ESTRUTURA -- sem elas a arvore nao se acha -- e mudam raramente: uma
+    /// alocacao de pagina a cada ~118 chaves, uma troca de raiz a cada nivel
+    /// novo. A quarta e um CONTADOR, e `verificar` sabe recalcula-lo varrendo.
+    ///
+    /// Antes, toda chave inserida gravava 4 KiB no offset 0 -- com dois
+    /// indices, 8 KiB por linha, so para adiantar um contador. E a terceira vez
+    /// que este projeto encontra o mesmo defeito: o `.reg` reserializava o
+    /// esquema por linha (DESEMPENHO.md 2.0) e o `.log` gravava o cabecalho por
+    /// evento (2.2). **Cabecalho de arquivo nao pertence ao caminho quente.**
+    estrutura_mudou: bool,
 }
 
 // ---------------------------------------------------------------- paginas
@@ -406,6 +420,7 @@ impl NdxFile {
             indices: Vec::new(),
             cache: CachePaginas::nova(cache_paginas()),
             gravacoes: 0,
+            estrutura_mudou: false,
         };
         n.arquivo.set_len(page_size as u64)?;
 
@@ -511,6 +526,7 @@ impl NdxFile {
             indices,
             cache: CachePaginas::nova(cache_paginas()),
             gravacoes: 0,
+            estrutura_mudou: false,
         })
     }
 
@@ -564,7 +580,9 @@ impl NdxFile {
         let crc = crc32(&buf[..124]);
         por_u32(&mut buf, 124, crc);
         buf[CAB_LEN..CAB_LEN + dir.len()].copy_from_slice(&dir);
-        escrever_em(&mut self.arquivo, 0, &buf)
+        escrever_em(&mut self.arquivo, 0, &buf)?;
+        self.estrutura_mudou = false;
+        Ok(())
     }
 
     fn ler_pagina(&mut self, n: u64) -> Result<Vec<u8>> {
@@ -609,6 +627,18 @@ impl NdxFile {
     /// Existe para o medidor nao ter de CITAR um `strace` de outro dia: o
     /// numero de toques de pagina por linha inserida e medido aqui dentro, e
     /// envelhece junto com o codigo em vez de envelhecer calado.
+    /// Poe o contador de chaves num valor qualquer. **So para teste.**
+    ///
+    /// Existe porque a conferencia precisa provar que ela ainda para quando a
+    /// varredura acha MENOS chaves do que o diretorio diz -- e nao ha como
+    /// chegar nesse estado por fora sem corromper o arquivo a mao.
+    #[doc(hidden)]
+    pub fn forjar_contador_para_teste(&mut self, idx: usize, qtd: u64) {
+        if let Some(d) = self.indices.get_mut(idx) {
+            d.qtd_chaves = qtd;
+        }
+    }
+
     pub fn estatisticas_paginas(&self) -> (u64, u64, u64) {
         (self.cache.acertos, self.cache.faltas, self.gravacoes)
     }
@@ -622,12 +652,14 @@ impl NdxFile {
             // A pagina volta da lista de livres para ser reescrita do zero: o
             // que o cache tem dela e o conteudo de antes de ela ser liberada.
             self.cache.esquecer(n);
+            self.estrutura_mudou = true;
             return Ok(n);
         }
         let n = self.qtd_paginas;
         self.qtd_paginas += 1;
         self.arquivo
             .set_len(self.qtd_paginas * self.page_size as u64)?;
+        self.estrutura_mudou = true;
         Ok(n)
     }
 
@@ -652,6 +684,9 @@ impl NdxFile {
     }
 
     pub fn sincronizar(&mut self) -> Result<()> {
+        // O cabecalho vai ANTES do `sync_all`, senao o contador que ele carrega
+        // ficaria de fora justamente da gravacao que promete durabilidade.
+        self.gravar_cabecalho()?;
         self.arquivo.flush()?;
         self.arquivo.sync_all()?;
         Ok(())
@@ -718,9 +753,15 @@ impl NdxFile {
             pag_set_dir(&mut p, nova);
             self.gravar_pagina(nova_raiz, &mut p)?;
             self.indices[idx].raiz = nova_raiz;
+            self.estrutura_mudou = true;
         }
         self.indices[idx].qtd_chaves += 1;
-        self.gravar_cabecalho()
+        // O contador nao justifica 4 KiB por chave: ele vai no `sincronizar`,
+        // e `verificar` sabe recalcula-lo. A ESTRUTURA vai na hora.
+        if self.estrutura_mudou {
+            self.gravar_cabecalho()?;
+        }
+        Ok(())
     }
 
     /// Devolve `Some((chave_promovida, pagina_nova))` quando a pagina dividiu.
@@ -1283,11 +1324,24 @@ impl NdxFile {
                 }
                 pagina = pag_prox(&p);
             }
-            if total != d.qtd_chaves {
+            // Os dois sentidos NAO sao a mesma coisa, e confundi-los faria
+            // esta conferencia gritar corrupcao numa arvore sadia.
+            //
+            // Varredura MAIOR que o contador: o contador ficou para tras, que e
+            // o que uma queda entre dois `sincronizar` deixa -- a arvore tem
+            // todas as chaves, e o numero e que esta velho. Conserta-se.
+            //
+            // Varredura MENOR: falta chave na arvore. Isso e corrupcao, e
+            // continua parando aqui.
+            if total < d.qtd_chaves {
                 return Err(PhxError::Corrompido(format!(
-                    "indice {}: diretorio diz {} chaves, varredura achou {total}",
+                    "indice {}: diretorio diz {} chaves e a varredura achou so {total}",
                     d.nome, d.qtd_chaves
                 )));
+            }
+            if total > d.qtd_chaves {
+                self.indices[i].qtd_chaves = total;
+                self.estrutura_mudou = true;
             }
             saida.push((d.nome, total));
         }
