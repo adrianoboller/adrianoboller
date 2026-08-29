@@ -67,6 +67,28 @@ que lê `bancada/resultados.json` e reescreve a figura, a tabela e o parágrafo
 do diagnóstico entre as marcas `<!-- bancada:… -->`. Número digitado envelhece
 calado; foi assim que a capa passou três lançamentos dizendo 276 testes.
 
+## A outra página: os 129 pedidos
+
+`pedidos.html` é a relação de tudo que o Adriano pediu, com o estado de cada
+item. Ela **não se edita** — sai de
+
+```bash
+python3 docs/dossie/pagina-dos-pedidos.py [saida.html]
+```
+
+que lê `docs/PENDENCIAS.md` e conta os três estados sozinho. A fonte da verdade
+é o `.md`; mexeu lá, rode isto. Uma lista de 129 linhas com três contadores
+mantida à mão estaria errada no dia seguinte — é a mesma razão do selo.
+
+Duas coisas que só apareceram abrindo no navegador, e ficam registradas para
+quem mexer:
+
+- **`thead` grudento dentro de `overflow-x:auto` cai por cima da primeira
+  linha.** O `.rolo` vira contexto de rolagem próprio, e o `position:sticky`
+  passa a se medir por ele. Quem gruda é a barra de filtro.
+- **Busca em português tem de achatar acento.** Sem `normalize('NFD')`, quem
+  digita «indice» não acha «índice» — e a busca falha calada.
+
 Duas armadilhas de estilo da página:
 
 - **Nenhuma cor literal nos SVG.** Tudo sai dos tokens (`var(--reg)`,
