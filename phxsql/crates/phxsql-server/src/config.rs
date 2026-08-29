@@ -573,7 +573,11 @@ impl Alertas {
                     .into(),
             ));
         }
-        if alertas.ligado && alertas.email.ligado {
+        // O aviso de jobs anda por fora do vigia de disco: `avisar_jobs` com
+        // `alertas.ligado` falso ainda manda e-mail -- entao o endereco tem de
+        // estar certo nos dois caminhos, e a recusa vem no arranque, nao as
+        // tres da manha quando o primeiro job falhar.
+        if alertas.email.ligado && (alertas.ligado || alertas.email.avisar_jobs) {
             alertas.email.validar()?;
         }
         Ok(alertas)
@@ -625,6 +629,12 @@ impl Alertas {
 #[derive(Debug, Clone, Default)]
 pub struct Email {
     pub ligado: bool,
+    /// Avisar tambem sobre JOBS: quando um falha, e quando um esta parado.
+    ///
+    /// Opt-in de proposito, e separado do `ligado`: quem configurou e-mail so
+    /// para o disco apertado nao pode comecar a receber aviso de job por
+    /// causa de uma versao nova. Guarda nova entra pedida, nao imposta.
+    pub avisar_jobs: bool,
     pub servidor: String,
     pub porta: u16,
     pub de: String,
@@ -653,6 +663,7 @@ impl Email {
         };
         Ok(Email {
             ligado: e.booleano_ou("ligado", false),
+            avisar_jobs: e.booleano_ou("avisar_jobs", false),
             servidor: e.texto_ou("servidor", "127.0.0.1").trim().to_string(),
             porta: e.inteiro_ou("porta", 25).clamp(1, 65_535) as u16,
             de: e.texto_ou("de", "").trim().to_string(),
@@ -708,6 +719,7 @@ impl Email {
     pub fn para_json(&self) -> Json {
         Json::objeto(vec![
             ("ligado", Json::Bool(self.ligado)),
+            ("avisar_jobs", Json::Bool(self.avisar_jobs)),
             ("servidor", Json::texto_de(&self.servidor)),
             ("porta", Json::de_u64(self.porta as u64)),
             ("de", Json::texto_de(&self.de)),
@@ -2292,6 +2304,45 @@ mod testes_alertas {
             "a senha do rele vazou no config: {texto}"
         );
         assert!(texto.contains("(oculta)"), "{texto}");
+    }
+
+    /// O teste que mais importa numa guarda nova: o comportamento VELHO.
+    /// Quem ja tinha e-mail configurado para o disco nao pode comecar a
+    /// receber aviso de job por causa de uma versao nova.
+    #[test]
+    fn sem_avisar_jobs_nada_muda() {
+        let c = de(
+            r#"{"token":"x","alertas":{"ligado":true,"email":{"ligado":true,
+                "servidor":"rele","de":"phx@x.com","para":["a@x.com"]}}}"#,
+        );
+        assert!(c.alertas.email.ligado, "o aviso de disco continua como era");
+        assert!(
+            !c.alertas.email.avisar_jobs,
+            "aviso de job e opt-in: sem pedir, nao existe"
+        );
+    }
+
+    #[test]
+    fn avisar_jobs_vale_mesmo_com_o_vigia_de_disco_desligado() {
+        // O aviso de jobs anda por fora do vigia de disco -- entao o endereco
+        // e conferido no arranque tambem quando so ele esta ligado.
+        let c = de(
+            r#"{"token":"x","alertas":{"email":{"ligado":true,"avisar_jobs":true,
+                "servidor":"rele","de":"phx@x.com","para":["a@x.com"]}}}"#,
+        );
+        assert!(!c.alertas.ligado);
+        assert!(c.alertas.email.avisar_jobs);
+
+        let j = Json::analisar(
+            r#"{"token":"x","alertas":{"email":{"ligado":true,"avisar_jobs":true,
+                "servidor":"rele","de":"phx@x.com"}}}"#,
+        )
+        .unwrap();
+        let e = Config::de_json(&j).unwrap_err().to_string();
+        assert!(
+            e.contains("para"),
+            "sem destinatario a recusa vem no arranque, nao quando o job falhar: {e}"
+        );
     }
 
     #[test]

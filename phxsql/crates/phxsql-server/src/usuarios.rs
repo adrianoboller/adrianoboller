@@ -159,7 +159,12 @@ impl Atividade {
             // sobre que tabela de quem; poder salvar um e poder mandar o
             // servidor executar qualquer coisa com o poder de outro usuario.
             // Isso nao pode ser direito de leitor.
-            "jobs" | "job_salvar" | "job_excluir" | "job_rodar" => Atividade::Administrar,
+            // O apelido `job_listar` e o `job_ligar` entram AQUI junto com o
+            // resto: operacao que o portao nao mapeia e operacao que anonimo
+            // chama -- e o furo mora sempre no nome que alguem esqueceu.
+            "jobs" | "job_listar" | "job_salvar" | "job_excluir" | "job_rodar" | "job_ligar" => {
+                Atividade::Administrar
+            }
             // Parar e subir a porta de dados e o poder mais bruto que ha aqui:
             // um clique tira o servico do ar para todo mundo. Administrar, e
             // nada menos.
