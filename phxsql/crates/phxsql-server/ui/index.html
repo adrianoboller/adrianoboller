@@ -688,6 +688,7 @@ body,.cartao,.barra,.arvore,table,td,th{
 .modo .m-diz{font-size:10.5px;color:var(--texto-3);line-height:1.4;display:block;
              margin-top:2px}
 .marca-excluida{color:var(--log);font-weight:600}
+.por-tabela{margin-top:6px;display:flex;flex-wrap:wrap;gap:5px}
 
 /* A caixa do conflito de escrita e mais larga que as outras de proposito: sao
    tres valores lado a lado, e espremer a comparacao em 560px derrotaria o
@@ -4435,6 +4436,19 @@ async function verConfigUsuarios() {
                 Object.entries(bases[b] || {}).filter(([, v]) => v).map(([k]) => esc(k)).join(", ") || "nada"
               }</span>`).join(" ");
             })()}
+        ${(() => {
+            // A regra de tabela SUBSTITUI a da base naquela tabela. Mostrá-la
+            // na mesma linha da base seria dizer que uma soma da outra.
+            const porTab = x.tabelas || {};
+            const bs = Object.keys(porTab);
+            if (x.supervisor || !bs.length) return "";
+            return `<div class="por-tabela">${bs.map(b =>
+              Object.entries(porTab[b] || {}).map(([t, perm]) => {
+                const pode = Object.entries(perm || {}).filter(([, v]) => v).map(([k]) => esc(k));
+                return `<span class="pino ${pode.length ? "" : "mal"}">${esc(b)}.${esc(t)}: ${
+                  pode.join(", ") || "nada"}</span>`;
+              }).join(" ")).join(" ")}</div>`;
+          })()}
       </div>`).join("")}
 
      <div class="nota">
@@ -4442,6 +4456,12 @@ async function verConfigUsuarios() {
        que não aparece vale <code>false</code>. A base listada manda — o
        <code>"*"</code> não completa o que faltou, e base listada vazia nega
        tudo. Sem a base e sem <code>"*"</code>, nega tudo.</p>
+       <p><strong>E a tabela ganha da base.</strong> Dentro do objeto da base,
+       <code>"tabelas"</code> escreve a regra de cada tabela — e ela
+       <em>substitui</em> a da base naquela tabela, não soma nem corta. É o que
+       permite as duas coisas que a prática pede: tirar <code>folha</code> de
+       quem lê o banco inteiro, e dar <code>clientes</code> a quem não lê o
+       banco nenhum. A árvore e o catálogo só mostram o que dá para abrir.</p>
        <p><strong>Esta tela lê.</strong> Criar e alterar usuário pela web
        significa mexer em credencial por HTTP, e isso precisa de um desenho
        próprio — quem pode, o que fica no log, e a senha nunca em claro em

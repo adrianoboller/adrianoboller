@@ -300,3 +300,96 @@ fn existe_em_indice_vazio() {
         NdxFile::criar_com_pagina(dir.0.join("t.ndx"), &esquema(true), PAGINA_PEQUENA).unwrap();
     assert!(!n.existe(0, &chave(1)).unwrap());
 }
+
+/* ------------------------------------------------------ o cache de paginas
+As paginas do `.ndx` ficam em RAM para nao pagar `pread` e CRC-32 de pagina
+inteira a cada descida da arvore. Ele e de LEITURA: toda gravacao atravessa
+para o arquivo na hora.
+
+Os dois testes abaixo travam justamente isso -- que nada fica retido, e que
+nenhuma pagina velha e servida no lugar da nova. Um cache que erra em
+qualquer um dos dois corrompe indice em silencio. */
+
+/// Nada fica retido em RAM: derrubar o arquivo SEM sincronizar e reabrir tem
+/// de encontrar tudo. Se a gravacao passasse a ficar suja no cache, este teste
+/// e o primeiro a cair.
+#[test]
+fn o_cache_nao_segura_gravacao() {
+    let dir = DirTemp::novo("ndx-cache-atravessa");
+    let caminho = dir.0.join("t.ndx");
+    // Chaves de sobra para encher varias vezes o teto do cache e forcar
+    // despejo no meio da carga.
+    let quantas = 20_000i64;
+    {
+        let mut n = NdxFile::criar_com_pagina(&caminho, &esquema(true), PAGINA_PEQUENA).unwrap();
+        let mut rng = Rng::nova(7);
+        let mut vs: Vec<i64> = (0..quantas).collect();
+        rng.embaralhar(&mut vs);
+        for v in &vs {
+            n.inserir(0, &chave(*v), *v as u64 + 1).unwrap();
+        }
+        // De proposito SEM `sincronizar`: o que se quer provar e que o `write`
+        // ja aconteceu, e nao que o `fsync` salvou o dia.
+    }
+    let mut n = NdxFile::abrir(&caminho).unwrap();
+    assert_eq!(n.indices()[0].qtd_chaves, quantas as u64);
+    assert_eq!(n.varrer(0).unwrap().len(), quantas as usize);
+    for v in [0i64, 1, quantas / 2, quantas - 1] {
+        assert_eq!(
+            n.buscar(0, &chave(v)).unwrap(),
+            vec![v as u64 + 1],
+            "chave {v} sumiu"
+        );
+    }
+    n.verificar().unwrap();
+}
+
+/// Pagina velha nunca no lugar da nova: depois de remover e inserir de novo,
+/// a busca tem de ver o estado de agora -- e o mesmo estado que um arquivo
+/// reaberto do zero enxerga.
+#[test]
+fn o_cache_nao_serve_pagina_velha() {
+    let dir = DirTemp::novo("ndx-cache-velha");
+    let caminho = dir.0.join("t.ndx");
+    let quantas = 6_000i64;
+
+    let mut n = NdxFile::criar_com_pagina(&caminho, &esquema(true), PAGINA_PEQUENA).unwrap();
+    for v in 0..quantas {
+        n.inserir(0, &chave(v), v as u64 + 1).unwrap();
+    }
+    // Tira as pares e devolve as multiplas de 4, com rowid novo. As folhas
+    // envolvidas sao reescritas varias vezes, que e onde um cache errado
+    // devolveria o conteudo de antes.
+    for v in (0..quantas).step_by(2) {
+        n.remover(0, &chave(v), v as u64 + 1).unwrap();
+    }
+    for v in (0..quantas).step_by(4) {
+        n.inserir(0, &chave(v), v as u64 + 10_000).unwrap();
+    }
+    n.sincronizar().unwrap();
+
+    let esperado = |v: i64| -> Vec<u64> {
+        if v % 4 == 0 {
+            vec![v as u64 + 10_000]
+        } else if v % 2 == 0 {
+            vec![]
+        } else {
+            vec![v as u64 + 1]
+        }
+    };
+    for v in 0..quantas {
+        assert_eq!(n.buscar(0, &chave(v)).unwrap(), esperado(v), "chave {v}");
+    }
+    n.verificar().unwrap();
+
+    // E o mesmo que um arquivo sem cache nenhum enxerga.
+    drop(n);
+    let mut fresco = NdxFile::abrir(&caminho).unwrap();
+    for v in 0..quantas {
+        assert_eq!(
+            fresco.buscar(0, &chave(v)).unwrap(),
+            esperado(v),
+            "chave {v} depois de reabrir"
+        );
+    }
+}

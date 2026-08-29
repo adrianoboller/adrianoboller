@@ -1,31 +1,31 @@
 === carga de 10.000.000 registros ===
 inserindo…
-  PhxSql  1.000.000 em    62.3s (16.063/s)
-  PhxSql  2.000.000 em   131.1s (15.251/s)
-  PhxSql  3.000.000 em   206.9s (14.497/s)
-  PhxSql  4.000.000 em   288.4s (13.872/s)
-  PhxSql  5.000.000 em   374.9s (13.338/s)
-  PhxSql  6.000.000 em   467.8s (12.826/s)
-  PhxSql  7.000.000 em   571.9s (12.239/s)
-  PhxSql  8.000.000 em   673.5s (11.878/s)
-  PhxSql  9.000.000 em   776.9s (11.585/s)
-  PhxSql 10.000.000 em   884.3s (11.308/s)
-  MySQL   1.000.000 em    11.4s (87.359/s)
-  MySQL   2.000.000 em    22.6s (88.456/s)
-  MySQL   3.000.000 em    33.9s (88.417/s)
-  MySQL   4.000.000 em    45.5s (88.009/s)
-  MySQL   5.000.000 em    57.1s (87.622/s)
-  MySQL   6.000.000 em    68.4s (87.774/s)
-  MySQL   7.000.000 em    80.3s (87.182/s)
-  MySQL   8.000.000 em    92.4s (86.545/s)
-  MySQL   9.000.000 em   104.1s (86.455/s)
-  MySQL  10.000.000 em   115.3s (86.748/s)
+  PhxSql  1.000.000 em    20.9s (47.897/s)
+  PhxSql  2.000.000 em    43.8s (45.686/s)
+  PhxSql  3.000.000 em    68.2s (44.015/s)
+  PhxSql  4.000.000 em    94.4s (42.389/s)
+  PhxSql  5.000.000 em   121.8s (41.042/s)
+  PhxSql  6.000.000 em   151.1s (39.719/s)
+  PhxSql  7.000.000 em   183.4s (38.174/s)
+  PhxSql  8.000.000 em   216.3s (36.991/s)
+  PhxSql  9.000.000 em   257.6s (34.942/s)
+  PhxSql 10.000.000 em   303.0s (32.999/s)
+  MySQL   1.000.000 em    11.3s (88.668/s)
+  MySQL   2.000.000 em    22.5s (89.083/s)
+  MySQL   3.000.000 em    34.0s (88.334/s)
+  MySQL   4.000.000 em    45.3s (88.253/s)
+  MySQL   5.000.000 em    57.5s (86.958/s)
+  MySQL   6.000.000 em    69.0s (86.973/s)
+  MySQL   7.000.000 em    80.6s (86.873/s)
+  MySQL   8.000.000 em    92.2s (86.780/s)
+  MySQL   9.000.000 em   103.8s (86.721/s)
+  MySQL  10.000.000 em   115.2s (86.799/s)
 buscar…
-  PhxSql    5.08s  |  MySQL    2.67s
+  PhxSql    2.62s  |  MySQL    2.60s
 varrer…
-  PhxSql    3.94s  |  MySQL   18.97s
+  PhxSql    3.28s  |  MySQL   26.19s
 atualizar…
-  PhxSql    4.44s  |  MySQL    6.06s
+  PhxSql    1.92s  |  MySQL    6.33s
 excluir…
-  PhxSql    4.85s  |  MySQL    5.44s
+  PhxSql    8.16s  |  MySQL    6.25s
 === fim ===

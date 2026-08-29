@@ -41,6 +41,7 @@ cargo test --workspace 2>&1 | grep '^test result' \
 $(( $(grep -c '^\[\[package\]\]' Cargo.lock) - 4 ))                # dependências externas
 cat docs/*.md README.md CHANGELOG.md MANUAL.txt \
     bancada/LEIA-ME.md bancada/replicacao/LEIA-ME.md \
+    bancada/carga/LEIA-ME.md \
     marca/LEIA-ME.md docs/dossie/LEIA-ME.md \
   | wc -l                                                          # linhas de doc
 stat -c%s crates/phxsql-server/ui/index.html \

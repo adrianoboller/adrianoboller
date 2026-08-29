@@ -258,7 +258,7 @@ RECURSOS DA MAQUINA
       "durabilidade": "por_lote",
       "lote_operacoes": 200,
       "lote_milissegundos": 200,
-      "cache_paginas": 4096,
+      "cache_paginas": 2048,
       "memoria_max_mb": 0,
       "threads": 0,
       "cpu_percentual": 100,
@@ -295,6 +295,29 @@ RECURSOS DA MAQUINA
 
     Um relogio de fundo fecha a janela quando ninguem grava. Sem ele, a ultima
     venda do dia as 18h ficaria sem fsync a noite inteira.
+
+    CACHE DE PAGINAS. O "cache_paginas" diz quantas paginas do .ndx cada
+    tabela aberta guarda em RAM. Cada pagina tem 4 KiB, entao 2.048 dao 8 MiB
+    por tabela aberta -- e o servidor abre e fecha a tabela a cada operacao,
+    entao o teto vale enquanto a operacao dura.
+
+    E o segundo campo que mais muda a velocidade da gravacao, depois da
+    durabilidade. Toda insercao DESCE a arvore do indice -- raiz, no interno,
+    folha --, e sem cache isso e uma leitura de pagina inteira mais um CRC-32
+    de pagina inteira em cada nivel. A raiz e a MESMA pagina em todas as
+    insercoes da carga. Medido, com dois indices:
+
+        sem cache ................... 22.516 linhas/s   44,4 us por linha
+        com 2.048 paginas ........... 53.988 linhas/s   18,5 us por linha  2,40x
+
+    2.048 e o joelho da curva: dobrar para 4.096 compra 0,8 us por linha e
+    custa mais 8 MiB por tabela. A varredura inteira esta em
+    docs/DESEMPENHO.md.
+
+    O cache e de LEITURA. Toda gravacao atravessa para o arquivo na hora --
+    segurar pagina suja em RAM daria mais e trocaria uma garantia por
+    velocidade sem avisar: hoje so uma queda da MAQUINA atrasa o .ndx em
+    relacao ao .reg, e nao uma queda do processo.
 
     CPU. O "cpu_percentual" nao e uma cota do sistema operacional -- ele nao
     tem como impor isso a um processo. E quantos nucleos o trabalho DIVIDIDO
@@ -748,7 +771,7 @@ OPERACOES
     siscolunas      database, [tabela]       o dicionario de dados
     pivotar         database, tabela, linhas, [colunas], [valor],
                     [agregador], [juntar], [max]   a tabulacao cruzada
-    ler             database, tabela, rowid
+    ler             database, tabela, rowid, [com_versao]
     varrer          database, tabela, [indice], [max], [visao],
                     [depois], [antes], [pular], [desde_rownum]
     buscar          database, tabela, indice, chave, [max]
@@ -763,9 +786,9 @@ OPERACOES
     posicao         database, [com_esquema]  quantos eventos cada tabela tem
     replicar        database, tabela, desde, [max]   os eventos com a imagem
     aplicar         database, tabela, eventos        grava aqui o que veio
-    atualizar       database, tabela, rowid, valores
-    excluir         database, tabela, rowid, [motivo], [fisico]
-    restaurar       database, tabela, rowid, [motivo]   desfaz a exclusao suave
+    atualizar       database, tabela, rowid, valores, [versao]
+    excluir         database, tabela, rowid, [motivo], [fisico], [versao]
+    restaurar       database, tabela, rowid, [motivo], [versao]
     lixeira         database, tabela, [uuid], [limite], [com_anexos]
     motivos         database, tabela, [rowid], [limite]
     esvaziar_lixeira database, tabela, motivo          nao tem volta
@@ -774,6 +797,64 @@ OPERACOES
     reindexar       database, tabela
     acessos         [max]                    log de acessos, mais recentes
     ips                                      resumo por IP
+
+A JANELA DE CONFLITO DE ESCRITA
+
+    O caso: alguem abre a ficha do registro 42 as 9h02, sai para o cafe, volta
+    as 9h11 e salva. Entre uma coisa e outra, outra pessoa gravou a mesma
+    linha. Sem conferencia, o segundo "salvar" apaga o trabalho do primeiro --
+    sem erro, sem registro, sem ninguem perceber ate faltar o dado.
+
+    A peca ja estava no formato: cada slot do .reg guarda uma VERSAO, que sobe
+    a cada regravacao. O caminho e:
+
+      1. leia com "com_versao": true
+
+         {"op":"ler","database":"Z","tabela":"Clientes","rowid":42,
+          "com_versao":true}
+
+         A resposta muda de forma quando se pede a versao -- ela nao pode
+         entrar como mais uma chave dentro da linha, senao viraria uma coluna
+         que nao existe no esquema:
+
+         {"rowid":42,"linha":{...},"versao":3}
+
+      2. mande a versao de volta ao gravar
+
+         {"op":"atualizar","database":"Z","tabela":"Clientes","rowid":42,
+          "valores":{...},"versao":3}
+
+         A resposta traz a versao NOVA, para quem grava duas vezes seguidas
+         nao ter de reler a linha inteira no meio:
+
+         {"rowid":42,"versao":4}
+
+      3. se alguem gravou no meio, a recusa e o erro 3004 CONFLITO
+
+         "conflito de escrita: o registro 42 de Clientes esta na versao 5 e
+          voce leu a 3: outra sessao gravou nesse meio-tempo"
+
+    A CONFERENCIA E PEDIDA, NAO IMPOSTA. Quem manda "versao" ganha a garantia;
+    quem nao manda continua com a ultima gravacao vencendo, que e como todo
+    cliente anterior a 0.17.0 funciona. Zero e o mesmo que ausente: a versao de
+    um registro vivo comeca em 1.
+
+    Vale tambem no "excluir" e no "restaurar": excluir uma linha que outra
+    pessoa acabou de alterar e a mesma janela.
+
+    EXCLUIDA DE VEZ TAMBEM E CONFLITO, e nao "nao encontrado": quem leu a linha
+    ha um minuto precisa saber que ela foi apagada, e nao que o rowid nunca
+    existiu.
+
+    NAO E TRAVA. Travar a linha na leitura resolveria o mesmo problema e
+    criaria dois piores: a linha fica presa quando alguem fecha o navegador com
+    a ficha aberta, e duas sessoes que travam em ordem trocada se abracam.
+
+    NA INTERFACE WEB isso ja acontece sozinho: a ficha guarda a versao ao
+    abrir, manda no salvar, e quando ha conflito mostra as tres colunas --
+    "valor anterior", "o outro escreveu", "voce escreve" --, ja com a escolha
+    marcada em quem MEXEU em cada coluna. Dois que editaram campos diferentes
+    da mesma linha saem dali com os dois trabalhos.
 
 TIPOS NO JSON
 
@@ -1517,7 +1598,8 @@ telefone, supervisor e o poder sobre cada base. A SENHA E GUARDADA COMO HASH.
     id          vai para o .log da tabela como autor da operacao
     supervisor  pode tudo, em toda base
     ativo       false bloqueia o login sem apagar o cadastro
-    bases       o poder base por base; "*" vale para as nao listadas
+    bases       o poder base por base; "*" vale para as nao listadas.
+                Dentro de cada base, "tabelas" desce ao nivel da tabela (14.3.1)
 
     O root e SEMPRE supervisor e sempre ativo.
 
@@ -1539,6 +1621,47 @@ telefone, supervisor e o poder sobre cada base. A SENHA E GUARDADA COMO HASH.
 
     NEGA POR OMISSAO: atividade que nao aparece vale false. Base listada
     manda (o "*" nao completa o que faltou). Sem a base e sem "*", nega tudo.
+
+14.3.1 O direito desce ate a TABELA
+
+    Ate a 0.17.0 a permissao parava na base: quem lia a base lia todas as
+    tabelas dela. A folha de pagamento e a tabela de clientes moram no mesmo
+    banco porque o negocio e um so, e o direito de ler as duas nao e o mesmo.
+
+    Dentro do objeto da base, "tabelas" escreve a regra de cada uma:
+
+      "bases": {
+        "Z": {
+          "ler": true, "inserir": true, "alterar": true,
+          "tabelas": {
+            "folha":    { },
+            "clientes": { "ler":true, "inserir":true, "alterar":true }
+          }
+        }
+      }
+
+    A REGRA DA TABELA SUBSTITUI A DA BASE naquela tabela -- nao soma nem
+    corta, do mesmo jeito que a base ja fazia com o "*". E o que permite as
+    duas coisas que a pratica pede:
+
+      "*": { "ler":true, "tabelas": { "folha": {} } }
+          tira a folha de quem le o banco inteiro
+
+      "Z": { "tabelas": { "clientes": { "ler":true } } }
+          da clientes a quem nao le o banco nenhum
+
+    A ordem, do mais especifico para o mais geral: supervisor; a regra desta
+    tabela nesta base; o "*" de tabela nesta base; a regra desta tabela na
+    base "*"; o "*" de tabela na base "*"; e so entao a regra da base.
+
+    Operacao que nao fala de tabela (bancos, criar_database, sistema) cai
+    direto na regra da base. UM config.json SEM "tabelas" SE COMPORTA
+    EXATAMENTE COMO ANTES.
+
+    A arvore e o catalogo (tabelas, sistabelas, siscolunas) listam so o que
+    da para abrir: o nome de uma tabela ja conta parte da historia.
+
+    O que ainda nao desce e o direito por COLUNA.
 
 14.4 Os tres portoes
 

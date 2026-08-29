@@ -7,15 +7,25 @@ que está no repositório e que qualquer pessoa roda de novo.
 
 ## 1. A resposta curta
 
-> **83,5% do tempo de uma inserção está no `.ndx`.** O arquivo de dados — a
-> parte que as propostas de WAL, MemTable e LSM querem substituir — já é
-> *append-only* sequencial e custa 16,5%.
+> **O tempo estava no `.ndx`, e estava no CRC-32 de página inteira.** Cada
+> inserção descia a B+tree relendo do arquivo as mesmas páginas — a raiz, a
+> mesma para todas —, e cada leitura passava 4 KiB pelo CRC. Um cache de
+> páginas de leitura tirou isso do caminho: **44,4 → 18,5 µs por linha, 2,4×**,
+> sem mudar formato, sem mudar garantia e sem tocar na árvore.
 
-Isso muda o alvo. A receita clássica para acelerar escrita («tire o `fsync` do
-caminho crítico») foi escrita para motores cujo gargalo é o `fsync`. O do PhxSql
-não é, e há medida para isso: na bancada de 10 milhões de linhas, o processo
-gastou **870 s de CPU para 884 s de relógio (98%) e leu 0,0 MiB**. Ele passou o
-tempo inteiro *calculando*, não esperando disco.
+A receita clássica para acelerar escrita («tire o `fsync` do caminho crítico»)
+foi escrita para motores cujo gargalo é o `fsync`. O do PhxSql não era, e havia
+medida para isso: na bancada de 10 milhões de linhas, o processo gastou **870 s
+de CPU para 884 s de relógio (98%) e leu 0,0 MiB**. Ele passava o tempo inteiro
+*calculando* — e agora se sabe calculando o quê.
+
+Na mesma bancada depois do cache: **289 s de CPU para 303 s de relógio (95%),
+0,0 MiB lidos**. Continua sendo CPU, e continua não sendo disco — só que agora
+é três vezes menos CPU.
+
+Depois do cache a divisão mudou de lugar: o `.ndx` caiu de **83,5% para 63,6%**
+do tempo de uma inserção, e o `.reg` + `.log` subiu de 16,5% para 36,4% — não
+porque ficaram mais lentos, mas porque o outro lado encolheu.
 
 ---
 
@@ -28,39 +38,95 @@ cargo run --release --example onde-doi -- 200000
 Mesma tabela, mesmas linhas, esquemas diferentes. A conta de cada parcela sai
 da subtração:
 
-| Esquema | linhas/s | µs por linha |
-|---|---:|---:|
-| só `.reg` (sem índice nenhum) | **136.338** | 7,3 |
-| + 1 índice comum | 46.433 | 21,5 |
-| + o mesmo índice, agora único | 32.639 | 30,6 |
-| + 2 índices (a forma da bancada) | **22.516** | 44,4 |
+| Esquema | antes do cache | depois do cache | |
+|---|---:|---:|---:|
+| só `.reg` (sem índice nenhum) | 7,3 µs | **6,7 µs** | 1,09× |
+| + 1 índice comum | 21,5 µs | **12,2 µs** | 1,76× |
+| + o mesmo índice, agora único | 30,6 µs | **12,6 µs** | 2,43× |
+| + 2 índices (a forma da bancada) | 44,4 µs | **18,5 µs** | **2,40×** |
 
-| Parcela | µs | % |
-|---|---:|---:|
-| `.reg` + `.log` | 7,3 | **16,5%** |
-| primeiro índice | 14,2 | 32,0% |
-| conferir a chave única | 9,1 | 20,5% |
-| segundo índice | 13,8 | 31,0% |
-| **total** | **44,4** | 100% |
+| Parcela | antes | % | depois | % |
+|---|---:|---:|---:|---:|
+| `.reg` + `.log` | 7,3 | 16,5% | 6,7 | **36,4%** |
+| primeiro índice | 14,2 | 32,0% | 5,4 | 29,2% |
+| conferir a chave única | 9,1 | 20,5% | 0,4 | **2,3%** |
+| segundo índice | 13,8 | 31,0% | 5,9 | 32,0% |
+| **total** | **44,4** | 100% | **18,5** | 100% |
 
-**Seis vezes.** Uma tabela sem índice insere a 136 mil linhas/s; a mesma tabela
-com dois índices, a 22,5 mil. O heap não é o problema.
+A linha que mais mudou diz o que aconteceu: **conferir a chave única caiu de
+20,5% para 2,3%**. Essa conferência é uma descida na árvore que não escreve
+nada — exatamente o trabalho que o cache serve de graça. Ela não ficou mais
+esperta; ela parou de reler do arquivo o que já estava em RAM.
 
-E piora com o tamanho, o que confirma o diagnóstico: na carga de 10 milhões, o
-primeiro milhão entrou a 16.051/s e o décimo a 9.311/s — **42% mais devagar no
-fim**. Taxa que cai conforme a tabela cresce, com o disco parado, é assinatura
-de estrutura de índice: a B+tree reescrita nó a nó, uma linha por vez.
+A tabela sem índice nenhum quase não mudou (1,09×), e é o controle da
+experiência: o `.reg` não usa página de `.ndx`.
 
-### Uma conta que não fecha, e vale investigar
+### A conta que não fechava, e agora fecha
 
-O mesmo medidor estima, pelo `strace`, ~41 chamadas de sistema e ~20 toques de
-página por linha, e mede o CRC-32 de uma página de 4 KiB em 2,36 µs. Vinte
-toques dariam ~47 µs só de CRC — **mais que os 44,4 µs medidos no total**.
+A versão anterior deste documento registrava uma **pista aberta**: o medidor
+estimava, por um `strace`, ~20 toques de página por linha, e o CRC-32 de uma
+página de 4 KiB custa 2,34 µs. Vinte toques dariam ~47 µs só de CRC — mais que
+os 44,4 µs medidos no total. A conta não fechava.
 
-A conta não fecha, e isso é informação: ou nem todo toque recalcula o CRC, ou
-as páginas quentes não são revisitadas tantas vezes quanto o `strace` sugere.
-Está registrado aqui como **pista aberta**, não como conclusão. É o próximo
-lugar a instrumentar.
+Ela não fechava porque o número de toques era **citado**, e não medido. O
+medidor agora **conta** os toques dentro do `.ndx`, e o próprio cache é quem
+conta:
+
+```
+paginas servidas pelo cache ....... 8,80 por linha
+paginas lidas do arquivo .......... 0,00 por linha
+paginas gravadas .................. 2,06 por linha
+```
+
+São **10,86** toques por linha, e não 20. Antes do cache, os 10,86 passavam
+todos pelo CRC: 10,86 × 2,34 = **25,4 µs**, de 44,4 medidos — 57% do tempo de
+uma inserção era CRC-32 de página. Depois, só as 2,06 gravações pagam: 4,8 µs
+de 18,5 (26%).
+
+O acerto de cache custa a **cópia** da página, não o CRC dela. É daí que veio o
+2,4×.
+
+E a piora com o tamanho, que confirmava o diagnóstico, continua confirmando: na
+carga de 10 milhões, o primeiro milhão entrava a 16.051/s e o décimo a 9.311/s.
+É a árvore crescendo para além do que cabe em RAM — o cache adia esse ponto, não
+o elimina.
+
+### O cache, em uma tela
+
+- **É de leitura.** Toda gravação atravessa para o arquivo na hora. Segurar
+  página suja daria mais e trocaria uma garantia por desempenho **sem avisar**:
+  hoje uma queda do *processo* não atrasa o `.ndx` em relação ao `.reg`, porque
+  o `write` já entregou a página ao núcleo. Só uma queda da *máquina* faz isso.
+- **A página recém-gravada fica.** É o que mais rende numa carga: a folha que
+  acabou de receber uma chave é quase sempre a que vai receber a próxima.
+- **Despejo por segunda chance (CLOCK).** Fila simples não serviria — a raiz, a
+  página mais visitada de todas, sairia junto com as outras assim que o teto
+  enchesse.
+- **Teto de 2.048 páginas** = 8 MiB por `.ndx` aberto. O número saiu de uma
+  varredura, e não do chute (§2.1).
+
+### 2.1 De quanto tem de ser o teto
+
+```bash
+cargo run --release --example ordem-da-chave -- 200000
+```
+
+Mesmas 200.000 linhas, dois índices, mudando só o teto do cache. A coluna da
+direita é a mesma carga com as chaves **embaralhadas**, que é o caso comum de
+quem importa de outro sistema:
+
+| Teto | RAM | chaves crescentes | chaves embaralhadas |
+|---|---:|---:|---:|
+| sem cache | — | 43,5 µs | 46,0 µs |
+| 512 páginas | 2 MiB | 18,0 µs | 25,3 µs |
+| 1.024 páginas | 4 MiB | 18,2 µs | 23,2 µs |
+| **2.048 páginas** | **8 MiB** | **17,9 µs** | **21,3 µs** |
+| 4.096 páginas | 16 MiB | 17,8 µs | 20,5 µs |
+
+2.048 é o joelho: dobrar de novo compra 0,8 µs e custa mais 8 MiB por tabela
+aberta. O servidor abre e fecha a tabela a cada operação, então esse teto vale
+enquanto a operação dura — e a operação que importa aqui, a carga em lote,
+insere milhares de linhas dentro de uma única abertura.
 
 ---
 
@@ -81,7 +147,7 @@ quebraria o formato, e **dois são reais**.
 | 6 | UUID v7 ou sequência, nunca v4 | `Uuid` v4/v7 (RFC 9562), `Uuid256` e `Sequence` prontos; o dossiê tem uma seção sobre por que v7 | **Já existe** |
 | 7 | Não alterar o arquivo principal no INSERT | O `.reg` só anexa. Sem *double-write*, sem divisão de página no arquivo de dados | **Já é assim** |
 | 8 | Segmentos imutáveis, SSTable, compactação | — | **Incompatível.** Ver §5 |
-| 9 | Buffers grandes em vez de escritas pequenas | Escreve por slot; o `strace` conta 41 chamadas por linha | **Vale medir** — mas 98% de CPU e 0,0 MiB lidos dizem que o disco não é quem espera |
+| 9 | Buffers grandes em vez de escritas pequenas | Escreve por slot; são 2,06 páginas de `.ndx` gravadas por linha, medidas | **Medido, e é pequeno.** Um `lseek` custa 0,10 µs: mesmo 41 chamadas por linha dariam 4,1 µs de 18,5. O que custa nessas gravações é o **CRC** (4,8 µs), não a chamada |
 | 10 | Pré-alocar o WAL | Os volumes crescem conforme escrevem | **Aplicável aos volumes**, ganho provavelmente pequeno pela mesma razão do item 9 |
 
 ---
@@ -92,9 +158,13 @@ quebraria o formato, e **dois são reais**.
 
 | Se sair do caminho crítico | µs por linha | ganho |
 |---|---:|---:|
-| nada (hoje) | 44,4 | — |
-| o segundo índice | 30,6 | 1,45× |
-| os dois índices e a conferência | 7,3 | **6,1×** |
+| nada (hoje) | 18,5 | — |
+| o segundo índice | 12,6 | 1,47× |
+| os dois índices e a conferência | 6,7 | **2,76×** |
+
+(Os mesmos números antes do cache de páginas eram 44,4 / 30,6 / 7,3 — ganho de
+1,45× e 6,1×. O cache já cobrou boa parte do que adiar o índice cobraria, e o
+teto de 6,1× virou 2,76×.)
 
 **Mas há uma linha que não dá para cruzar, e ela é do formato.** A conferência
 de unicidade acontece **antes de qualquer escrita**, e não depois — porque o
@@ -111,12 +181,47 @@ Então a proposta se divide em duas, com veredito diferente:
   a linha. Adiá-lo é aceitar gravar primeiro e descobrir depois, que é
   exatamente o buraco permanente. Fica.
 
-Há um terceiro caminho, que ninguém propôs e que a medição favorece: **manter o
-índice no caminho crítico, mas em lote**. A carga em lote já provou o princípio
-no nível de cima — 2.715 → 25.985 linhas/s, 9,6× — porque tudo que acontecia
-*por linha* passou a acontecer uma vez. A B+tree ainda é reescrita nó a nó
-dentro do lote; ordenar as chaves do lote antes de inseri-las atacaria
-justamente os 83,5%.
+Há um terceiro caminho, que ninguém propôs: **manter o índice no caminho
+crítico, mas em lote** — ordenar as chaves antes de descer a árvore, para que
+chaves vizinhas caiam na mesma folha. Era o item que este documento colocava em
+primeiro lugar. **A medição mudou o veredito, e a ordem.**
+
+### 4.1 Ordenar as chaves do lote: o que a medição disse
+
+```bash
+cargo run --release --example ordem-da-chave -- 200000
+```
+
+As mesmas linhas, os mesmos índices, mudando só a **ordem** em que as chaves
+chegam. A diferença entre as duas é o **teto** do que ordenar o lote pode
+recuperar:
+
+| Forma | crescentes | embaralhadas | a desordem custa |
+|---|---:|---:|---:|
+| 1 índice único, chave inteira | 12,5 µs | 13,5 µs | 1,08× |
+| 1 índice único, chave de texto | 12,6 µs | 13,9 µs | 1,10× |
+| 2 índices (a forma da bancada) | 17,9 µs | 21,3 µs | **1,19×** |
+
+**Antes do cache de páginas, a desordem custava 1,06×** — e ordenar teria
+comprado praticamente nada. A hipótese que colocava este item em primeiro lugar
+estava certa sobre o alvo (o `.ndx`) e errada sobre o mecanismo: o custo não era
+de *localidade*, era de **reler e recalcular CRC da mesma página**. Com tudo em
+RAM, mudar a ordem de chegada não mudava nada.
+
+Depois do cache, a localidade finalmente importa — e vale 1,19× na forma da
+bancada.
+
+**Não implementado, e a razão está no formato.** Ordenar as chaves de um lote
+exige conhecer os rowids antes de inserir no `.ndx`, o que exige gravar o `.reg`
+antes — e aí uma falha no meio da fase do índice deixa linhas gravadas sem
+chave, sem como desfazer (o `.reg` não reaproveita slot). Hoje uma falha de
+índice desfaz a linha inteira. Trocar isso por «rode `reindexar`» é rebaixar uma
+garantia rara, mas real, por 1,19%… por **1,19×**. Fica registrado com o número,
+para a decisão ser tomada com ele na mão e não sem ele.
+
+**O que dá para fazer hoje, de graça:** quem importa um arquivo **já ordenado
+pela chave primária** carrega 1,19× mais rápido. É uma linha de documentação,
+não de código.
 
 ---
 
@@ -148,22 +253,35 @@ Isso é um projeto próprio, não um ajuste.
 Bancada de **10 milhões de linhas**, mesma máquina, mesmo trabalho
 (`bancada/`). Positivo = PhxSql mais rápido:
 
-| Fase | PhxSql | MySQL(R) | |
-|---|---:|---:|---|
-| inserir 10.000.000 | 884,3 s | 115,3 s | **0,13×** — o buraco |
-| buscar 20.000 por chave | 5,08 s | 2,67 s | 0,53× |
-| excluir | 4,85 s | 5,44 s | **1,12×** |
-| atualizar | 4,44 s | 6,06 s | **1,36×** |
-| varrer faixa | 3,94 s | 18,97 s | **4,82×** |
+| Fase | PhxSql 0.16.0 | PhxSql 0.17.0 | MySQL(R) | |
+|---|---:|---:|---:|---|
+| inserir 10.000.000 | 884,3 s | **303,0 s** | 115,2 s | 0,38× (era 0,13×) |
+| buscar 20.000 por chave | 5,08 s | **2,62 s** | 2,60 s | **0,99×** — empate |
+| varrer faixa | 3,94 s | **3,28 s** | 26,19 s | **7,98×** |
+| atualizar | 4,44 s | **1,92 s** | 6,33 s | **3,30×** |
+| excluir | 4,85 s | 8,16 s | 6,25 s | 0,77× — ver abaixo |
 
-A leitura sequencial é onde o formato de slot fixo paga: quase 5× o MySQL(R). A
-inserção é onde ele cobra.
+O cache de páginas mudou quatro das cinco linhas: a inserção ficou **2,92×** mais
+rápida, a busca por chave **empatou** com o MySQL(R) (era metade da velocidade
+dele), e a alteração passou de 1,36× para 3,30×.
+
+**Sobre a exclusão, honestamente.** É a única fase em que o PhxSql *espera
+disco*: 4,3 s de CPU para 8,16 s de relógio. Ela grava a linha inteira no
+`.trash` e **sincroniza antes** de liberar o slot — a ordem que garante que a
+linha nunca deixa de existir nos dois lugares ao mesmo tempo. O número anterior
+(4,85 s) saiu de outra corrida, em outro estado de disco, e repetir a fase
+sozinha na mesma máquina deu de **0,80 s a 2,76 s**. Ou seja: esta linha varia
+demais entre corridas para sustentar «piorou» ou «melhorou», e nada no caminho
+dela mudou nesta versão. Fica publicada como medida, com a instabilidade dita.
+
+A leitura sequencial continua sendo onde o formato de slot fixo paga: **8× o
+MySQL(R)**. A inserção é onde ele cobra — e cobra 3× menos que cobrava.
 
 ### Onde o PhxSql já ganha, e por quê
 
 | | Medido | Por quê |
 |---|---|---|
-| Varrer faixa | 4,8× o MySQL(R) | slot de largura fixa, sem página, sem MVCC |
+| Varrer faixa | 8,0× o MySQL(R) | slot de largura fixa, sem página, sem MVCC |
 | Página no meio de 800 mil linhas | 164 µs contra 246 ms (1.500×) | a ordem lógica é a física: achar é uma conta |
 | Consulta em memória | 87× o disco | `SelectMemory` com mapas por coluna |
 | Resposta do protocolo | 44 ms → 1,3 ms (33×) | `TCP_NODELAY`, que faltava |
@@ -172,10 +290,17 @@ inserção é onde ele cobra.
 
 | | Antes | Agora | |
 |---|---:|---:|---|
-| Inserção pela rede, linha a linha vs. lote | 2.715/s | 25.985/s | **9,6×** |
+| Inserção pela rede, linha a linha vs. lote | 2.609/s | 37.021/s | **14,2×** |
+| Inserção local, 2 índices (`onde-doi`) | 22.516/s | 53.988/s | **2,40×** |
 | Página por posição no fim de 200 mil linhas | 131 ms | 6 ms | **22×** |
 | Contar as linhas visíveis | varredura inteira | dois campos do cabeçalho | O(1) |
 | Replicação | não existia | 4.273 eventos/s por réplica | — |
+
+A carga pela rede agora tem script: `bancada/carga/medir.py`. O número anterior
+(2.715 → 25.985 linhas/s) foi medido **à mão**, sem programa que o refizesse —
+e o motor mudou desde então. Os dois lados batem no linha a linha (2.715 e
+2.609), que é o controle; o lote subiu de 25.985 para 37.021 por causa do cache
+de páginas.
 
 ---
 
@@ -183,14 +308,18 @@ inserção é onde ele cobra.
 
 Pela medição, e não pela moda:
 
-1. **Ordenar as chaves do lote antes de inserir no `.ndx`.** Ataca os 83,5% sem
-   mudar formato nem garantia. É onde está o dinheiro.
-2. **Fechar a conta do CRC** (§2). Se o CRC realmente domina o caminho de
-   página, a saída é CRC incremental por nó em vez de recalcular a página.
-3. **Índice não único adiado**, com fila e trabalhador de fundo. 1,45× medido,
-   e não custa correção nenhuma.
-4. **Buffer de escrita maior**, para baixar as 41 chamadas de sistema por linha.
-   Ganho incerto — o disco não é quem espera —, mas é barato de medir.
+1. **CRC incremental por nó**, em vez de recalcular a página inteira. A conta do
+   CRC agora fecha (§2): das 2,06 páginas gravadas por linha, cada uma paga
+   2,34 µs de CRC — **4,8 µs de 18,5, ou 26%**. É o maior pedaço isolado que
+   sobrou, e é o mesmo alvo do cache por outro lado: o cache tirou o CRC da
+   leitura, isto tiraria o da gravação.
+2. **Índice não único adiado**, com fila e trabalhador de fundo. Não custa
+   correção nenhuma, e o segundo índice ainda vale 5,9 µs de 18,5 (32%).
+3. **Ordenar as chaves do lote** (§4.1): 1,19× medido, e uma garantia a
+   rebaixar. O número está na mesa; a decisão não é técnica sozinha.
+4. **Buffer de escrita maior**, para baixar as chamadas de sistema por linha.
+   Ganho pequeno pela medida: um `lseek` custa 0,10 µs, e mesmo 41 por linha
+   dariam 4,1 µs — enquanto o CRC de gravação sozinho já custa 4,8.
 5. **Trava por tabela.** Não acelera uma inserção; acelera o servidor com muita
    gente. É outro eixo, e o roteiro já o previa.
 

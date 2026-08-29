@@ -116,6 +116,38 @@ quem olha não sabe se está gravado assim. Nenhum dos dois aparece lendo o
 código. Componente novo se abre no navegador e se olha, e é a mesma lição do
 vídeo por outro caminho.
 
+**A lista do que falta também é palpite até alguém medir.** O pedido 113 dizia
+«ordene as chaves do lote antes do `.ndx`» e vinha com o alvo certo — os 83,5%
+estavam mesmo lá. Só que o custo não era de **localidade**: era de reler do
+arquivo e recalcular o CRC-32 da **mesma página** a cada descida da árvore. A
+desordem custava 1,06×; ordenar teria comprado quase nada, e teria custado uma
+garantia. Um cache de páginas de leitura comprou **2,40×**. *Medir a premissa do
+item vem antes de implementar o item* — inclusive quando o item é nosso.
+
+E o corolário: o mesmo medidor dizia «~20 toques de página por linha», citando
+um `strace` de outro dia. Eram 10,86, e é por isso que a conta do CRC nunca
+fechava naquele documento. **Número citado é número que não se mede** — hoje o
+medidor conta os toques por dentro.
+
+**Portão de permissão é UM só — e o campo que ele lê é o furo.** O direito por
+tabela entrou no despachar, que confere o campo `"tabela"` do pedido. Duas
+operações não têm esse campo: `juntar` guarda as tabelas em `a.tabela` e
+`b.tabela`, e `unir` guarda numa **lista**. Sem conferência própria, bastaria
+pedir a tabela negada como o lado B de uma junção. **Quando o portão passar a
+olhar um campo novo, procure quem não tem esse campo** — e não espalhe o portão
+por quarenta operações, porque a que alguém esquecer vira a porta dos fundos e
+ninguém acha por leitura.
+
+E o teste que mais importa numa regra de permissão nova é o do comportamento
+**velho**: `sem_regra_de_tabela_nada_muda`. Regra que muda o significado da
+configuração que já existe tira o direito de alguém sem ninguém ter pedido.
+
+**Configuração que não é lida mente.** `recursos.cache_paginas` estava no
+`config.json`, no MANUAL e na tela desde a 0.13.0, e **nenhuma linha de código
+o lia** — o campo dizia "4096 páginas do `.ndx` em memória" quando não havia
+cache nenhum. Campo de configuração sem leitor é pior que campo ausente: o
+ausente ninguém ajusta esperando efeito.
+
 **Número digitado à mão envelhece calado.** O selo da capa do dossiê passou
 **quatro lançamentos** dizendo 0.11.0 — e o script que existe justamente para
 impedir isso não cobria aquele pedaço. Todo número visível ou sai de um gerador,

@@ -1,0 +1,12 @@
+{
+  "quando": "2026-08-29",
+  "versao": "0.17.0",
+  "linhas": 20000,
+  "por_lote": 5000,
+  "indices": 2,
+  "uma_a_uma_s": 7.666,
+  "uma_a_uma_por_s": 2609,
+  "em_lote_s": 0.54,
+  "em_lote_por_s": 37021,
+  "ganho": 14.19
+}

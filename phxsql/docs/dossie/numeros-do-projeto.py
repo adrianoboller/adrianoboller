@@ -84,6 +84,7 @@ def quantos_crates() -> int:
 DOCS_AVULSOS = (
     "README.md", "CHANGELOG.md", "MANUAL.txt",
     "bancada/LEIA-ME.md", "bancada/replicacao/LEIA-ME.md",
+    "bancada/carga/LEIA-ME.md",
     "marca/LEIA-ME.md", "docs/dossie/LEIA-ME.md",
 )
 

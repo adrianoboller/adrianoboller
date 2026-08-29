@@ -302,7 +302,7 @@ footer p{max-width:var(--medida)}
          alt="Símbolo do PhxSql: uma fênix de asas abertas envolvendo um cilindro de banco de dados, com trilhas de circuito saindo pelos lados">
   </div>
   <!-- selo:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-  <div class="selo">Dossiê técnico · versão 0.16.0</div>
+  <div class="selo">Dossiê técnico · versão 0.17.0</div>
   <!-- selo:fim -->
   <h1>Ph<span class="x">x</span>Sql <span class="leve">— sete arquivos,<br>uma tabela</span></h1>
   <div class="assinatura">Built to store. Engineered to scale.</div>
@@ -310,23 +310,26 @@ footer p{max-width:var(--medida)}
   a garantia que o TopSpeed(R) não dava: <strong>o arquivo de dados guarda a ordem em que
   você digitou</strong>, e nada nunca a embaralha.</p>
 
-  <p class="chamada" style="margin-top:-6px">Esta é a revisão da <strong>0.16.0</strong>,
-  refeita contra o código. Três coisas que a versão anterior listava como o que
-  faltava saíram, e as três estão medidas: a <a href="#s9">replicação com quatro
-  servidores</a>, o <a href="#s5b">salto para «a página 500»</a> e a
-  <a href="#s7">carga em lote</a>. Depois dela entraram o <b>Profiler</b>, as
-  cores da ação, o contêiner <code>scratch</code> de 4,7 MB — e a leitura da
-  documentação do HFSQL(R) contra este código, que está em
-  <code>docs/HFSQL.md</code> e que apontou o que ainda falta.</p>
+  <p class="chamada" style="margin-top:-6px">Esta é a revisão da <strong>0.17.0</strong>,
+  refeita contra o código. Ela fecha três itens da lista do que faltava, e nenhum
+  deles é recurso inventado aqui: a <a href="#s7">janela de conflito de escrita</a>,
+  o <a href="#s10">direito no nível da tabela</a> — os dois apontados pela leitura
+  do HFSQL(R) — e o ataque ao custo da inserção, que a medição
+  <a href="#s21">redirecionou no meio do caminho</a>: o item pedia «ordene as
+  chaves do lote», a desordem custava 1,06&#215;, e o que estava caro era o
+  <strong>CRC-32 de página inteira</strong> relido a cada descida da árvore. Um
+  cache de páginas no <code>.ndx</code> levou a inserção de 44,4 para
+  18,5&#8201;µs por linha, e a bancada de dez milhões de 884 para
+  <strong>303 segundos</strong>.</p>
 
   <div class="painel">
   <!-- projeto:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-    <div><div class="v">43.822</div><div class="r">linhas de Rust</div></div>
-    <div><div class="v">587</div><div class="r">testes</div></div>
+    <div><div class="v">45.342</div><div class="r">linhas de Rust</div></div>
+    <div><div class="v">615</div><div class="r">testes</div></div>
     <div><div class="v">0</div><div class="r">dependências</div></div>
     <div><div class="v">4</div><div class="r">crates</div></div>
     <div><div class="v">7</div><div class="r">arquivos/tabela</div></div>
-    <div><div class="v">8.187</div><div class="r">linhas de doc</div></div>
+    <div><div class="v">8.793</div><div class="r">linhas de doc</div></div>
   <!-- projeto:fim -->
   </div>
 </header>
@@ -1301,14 +1304,17 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
 
   <p>Gravar mil linhas com mil pedidos custava mil aberturas de tabela — sete
   arquivos cada —, mil travas e mil <em>fsync</em>. <code>inserir_lote</code> faz
-  tudo uma vez só: <strong>2.715 → 25.985 linhas/s, 9,6×</strong>, medido com
-  20.000 linhas pela rede contra o mesmo trabalho linha a linha.</p>
+  tudo uma vez só: <strong>2.609 → 37.021 linhas/s, 14,2×</strong>, medido com
+  20.000 linhas pela rede contra o mesmo trabalho linha a linha, por
+  <code>bancada/carga/medir.py</code>.</p>
 
   <p>O ganho <strong>não é do disco</strong>. Cada linha custa exatamente o mesmo
   lá dentro — montar o payload, conferir a unicidade, gravar o slot, manter cada
-  índice —, e a inserção já era o caminho mais caro do motor, com 65% do tempo na
-  manutenção do <code>.ndx</code>. O ganho é de tudo que <em>acontecia por
-  linha</em> e passou a acontecer uma vez.</p>
+  índice —, e a inserção é o caminho mais caro do motor, com <strong>63,6% do
+  tempo na manutenção do <code>.ndx</code></strong>. O ganho é de tudo que
+  <em>acontecia por linha</em> e passou a acontecer uma vez — e o cache de páginas
+  da 0.17.0 somou por cima, porque um lote inteiro entra numa única abertura de
+  tabela e reaproveita as páginas quentes do índice.</p>
 
   <div class="nota">
     <span class="t">Não há transação, e o lote não muda isso</span>
@@ -1521,6 +1527,93 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
     só pode ser livre ou ativo; qualquer outra coisa é corrupção, e corrupção
     manda ler o espelho.</p>
   </div>
+
+  <h3>A janela de conflito de escrita</h3>
+
+  <p>Alguém abre a ficha do registro 42 às 9h02, sai para o café, volta às 9h11 e
+  salva. Entre uma coisa e outra, outra pessoa gravou a mesma linha. Sem conferência,
+  o segundo «salvar» apaga o trabalho do primeiro — <strong>sem erro, sem registro,
+  sem ninguém perceber</strong> até faltar o dado.</p>
+
+  <figure>
+    <div class="fig-caixa">
+      <svg viewBox="0 0 840 250" role="img" aria-label="Duas sessões leem o registro na versão 3; a primeira grava e a versão passa a 4; a segunda chega com a versão 3 e é recusada com o erro 3004">
+        <defs>
+          <marker id="setaCf" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+          </marker>
+          <marker id="setaCfN" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="var(--log)"/>
+          </marker>
+        </defs>
+
+        <text x="20" y="26" font-size="11" fill="currentColor" opacity=".62">SESSÃO A</text>
+        <text x="20" y="150" font-size="11" fill="currentColor" opacity=".62">SESSÃO B</text>
+
+        <line x1="20" y1="118" x2="820" y2="118" stroke="currentColor" opacity=".18" stroke-dasharray="4 4"/>
+
+        <rect x="90" y="38" width="150" height="42" rx="7" fill="none" stroke="currentColor" opacity=".55"/>
+        <text x="165" y="56" text-anchor="middle" font-size="12" fill="currentColor">ler, com_versao</text>
+        <text x="165" y="71" text-anchor="middle" font-size="12" fill="currentColor" opacity=".7">versão 3</text>
+
+        <rect x="90" y="162" width="150" height="42" rx="7" fill="none" stroke="currentColor" opacity=".55"/>
+        <text x="165" y="180" text-anchor="middle" font-size="12" fill="currentColor">ler, com_versao</text>
+        <text x="165" y="195" text-anchor="middle" font-size="12" fill="currentColor" opacity=".7">versão 3</text>
+
+        <rect x="360" y="38" width="170" height="42" rx="7" fill="none" stroke="var(--acento)"/>
+        <text x="445" y="56" text-anchor="middle" font-size="12" fill="var(--acento)">atualizar, versão 3</text>
+        <text x="445" y="71" text-anchor="middle" font-size="12" fill="var(--acento)" opacity=".8">gravou → versão 4</text>
+
+        <rect x="360" y="162" width="170" height="42" rx="7" fill="none" stroke="var(--log)"/>
+        <text x="445" y="180" text-anchor="middle" font-size="12" fill="var(--log)">atualizar, versão 3</text>
+        <text x="445" y="195" text-anchor="middle" font-size="12" fill="var(--log)" opacity=".85">3004 CONFLITO</text>
+
+        <rect x="650" y="162" width="170" height="42" rx="7" fill="none" stroke="currentColor" opacity=".55"/>
+        <text x="735" y="180" text-anchor="middle" font-size="12" fill="currentColor">a janela das</text>
+        <text x="735" y="195" text-anchor="middle" font-size="12" fill="currentColor">três colunas</text>
+
+        <line x1="240" y1="59" x2="356" y2="59" stroke="currentColor" opacity=".55" marker-end="url(#setaCf)"/>
+        <line x1="240" y1="183" x2="356" y2="183" stroke="currentColor" opacity=".55" marker-end="url(#setaCf)"/>
+        <line x1="530" y1="183" x2="646" y2="183" stroke="var(--log)" marker-end="url(#setaCfN)"/>
+
+        <text x="445" y="112" text-anchor="middle" font-size="11" fill="currentColor" opacity=".6">a versão do slot do .reg sobe a cada regravação</text>
+      </svg>
+    </div>
+    <figcaption>A peça já estava no formato: cada slot do <code>.reg</code> guarda uma
+    versão desde a v1, e ninguém a usava. Conferir custa 24 bytes — o cabeçalho do
+    slot, não a linha.</figcaption>
+  </figure>
+
+  <p>Quem lê com <code>"com_versao": true</code> recebe a versão junto e a manda de
+  volta no <code>atualizar</code>. Se ela não for mais a atual, a gravação é recusada
+  com o erro <strong>3004 <code>CONFLITO</code></strong>. Vale também no
+  <code>excluir</code> e no <code>restaurar</code> — apagar uma linha que outra pessoa
+  acabou de alterar é a mesma janela. E <strong>excluída de vez também é conflito</strong>,
+  e não «não encontrado»: quem leu a linha há um minuto precisa saber que ela foi
+  apagada, e não que o rowid nunca existiu.</p>
+
+  <div class="nota">
+    <span class="t">Não é trava, e a conferência é pedida</span>
+    <p>Travar a linha na leitura resolveria o mesmo problema e criaria dois piores: a
+    linha fica presa quando alguém fecha o navegador com a ficha aberta, e duas sessões
+    que travam em ordem trocada se abraçam. O contador não prende nada — só recusa a
+    segunda gravação.</p>
+    <p>E a conferência é <strong>pedida, não imposta</strong>: quem manda
+    <code>"versao"</code> ganha a garantia, quem não manda continua com a última
+    gravação vencendo. Imposta, todo cliente escrito antes desta versão pararia de
+    gravar de um dia para o outro, recebendo um erro que não sabe tratar. A interface
+    web manda sempre, porque é ali que existe gente — e a janela de minutos entre abrir
+    a ficha e clicar em salvar.</p>
+  </div>
+
+  <p>Na tela, o conflito abre as <strong>três colunas</strong> que o HFSQL(R)
+  mostra — «valor anterior», «o outro escreveu», «você escreve» — e vai um passo além
+  dele: <strong>já vem marcado quem mexeu em cada coluna</strong>. A que você digitou
+  fica com o seu valor, a que só o outro mudou fica com o dele; dois que editaram
+  campos diferentes da mesma linha saem dali com os dois trabalhos preservados, sem
+  escolher nada. Marcar tudo como «o meu» por omissão desfaria em silêncio o trabalho
+  do outro nas colunas que você nem tocou — o mesmo estrago de antes, com mais
+  cliques.</p>
 </section>
 
 <!-- ============================= 08 ============================= -->
@@ -1952,6 +2045,46 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
     nega tudo. E <strong>operação desconhecida exige <code>administrar</code></strong>:
     uma op nova que alguém esqueça de mapear é negada, não liberada.</p>
   </div>
+
+  <h3>E o direito desce até a tabela</h3>
+
+  <p>A folha de pagamento e a tabela de clientes moram no mesmo banco porque o negócio
+  é um só, e o direito de ler as duas não é o mesmo. Dentro do objeto da base,
+  <code>"tabelas"</code> escreve a regra de cada uma:</p>
+
+  <pre class="codigo"><code>"bases": {
+  "Z": {
+    "ler": true, "inserir": true, "alterar": true,
+    "tabelas": {
+      "folha":    { },
+      "clientes": { "ler": true, "inserir": true, "alterar": true }
+    }
+  }
+}</code></pre>
+
+  <p>A regra da tabela <strong>substitui</strong> a da base ali — não soma nem corta,
+  do mesmo jeito que a base já fazia com o <code>"*"</code>. Substituir, e não
+  interceder, é o que permite as duas coisas que a prática pede: <strong>tirar</strong>
+  <code>folha</code> de quem lê o banco inteiro, e <strong>dar</strong>
+  <code>clientes</code> a quem não lê o banco nenhum. Uma regra de interseção resolveria
+  só a primeira.</p>
+
+  <div class="nota">
+    <span class="t">O portão é um só, e o campo que ele lê é onde mora o furo</span>
+    <p>A conferência de tabela entrou no <em>mesmo</em> portão, que lê o campo
+    <code>"tabela"</code> do pedido — espalhada por quarenta operações, a que alguém
+    esquecesse viraria a porta dos fundos, e ninguém acharia isso por leitura.</p>
+    <p>Duas operações não têm esse campo: <strong><code>juntar</code></strong>, cujas
+    tabelas moram em <code>a.tabela</code> e <code>b.tabela</code>, e
+    <strong><code>unir</code></strong>, cuja lista está em <code>"tabelas"</code>. Sem
+    conferência própria, bastaria pedir a tabela negada como o lado B de uma junção. As
+    duas conferem cada tabela do pedido, e há um teste com esse nome para cada uma.</p>
+  </div>
+
+  <p>A árvore e o catálogo — <code>tabelas</code>, <code>sistabelas</code>,
+  <code>siscolunas</code> — passaram a listar <strong>só o que dá para abrir</strong>: o
+  nome de uma tabela já conta parte da história, e descobrir a recusa só ao clicar é
+  pior do que não ver. O que ainda não desce é o direito por <strong>coluna</strong>.</p>
 
   <p>O rastro fecha nos dois registros: o <code>acessos.log</code> guarda o login de toda
   tentativa, inclusive as negadas, e o <code>.log</code> da tabela guarda o <em>id</em>
@@ -3628,20 +3761,20 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
           <text x="470" y="242" text-anchor="middle" font-size="10" opacity=".55">empate</text>
 
           <text x="16" y="76" font-size="11.5">inserir</text>
-          <rect x="264" y="60" width="206" height="22" fill="var(--log)" opacity=".85"/>
-          <text x="256" y="76" text-anchor="end" fill="var(--log)" font-size="11.5">7,7&#215;</text>
+          <rect x="372" y="60" width="98" height="22" fill="var(--log)" opacity=".6"/>
+          <text x="364" y="76" text-anchor="end" fill="var(--log)" font-size="11.5">2,6&#215;</text>
           <text x="16" y="110" font-size="11.5">buscar</text>
-          <rect x="405" y="94" width="65" height="22" fill="var(--log)" opacity=".6"/>
-          <text x="397" y="110" text-anchor="end" fill="var(--log)" font-size="11.5">1,9&#215;</text>
+          <rect x="468" y="94" width="4" height="22" fill="currentColor" opacity=".45"/>
+          <text x="482" y="110" font-size="11.5" opacity=".7">2,62&#8201;s contra 2,60&#8201;s</text>
           <text x="16" y="144" font-size="11.5">excluir</text>
-          <rect x="470" y="128" width="12" height="22" fill="var(--ok)" opacity=".6"/>
-          <text x="490" y="144" fill="var(--ok)" font-size="11.5">1,1&#215;</text>
+          <rect x="443" y="128" width="27" height="22" fill="var(--log)" opacity=".6"/>
+          <text x="435" y="144" text-anchor="end" fill="var(--log)" font-size="11.5">1,3&#215;</text>
           <text x="16" y="178" font-size="11.5">atualizar</text>
-          <rect x="470" y="162" width="31" height="22" fill="var(--ok)" opacity=".6"/>
-          <text x="509" y="178" fill="var(--ok)" font-size="11.5">1,4&#215;</text>
+          <rect x="470" y="162" width="121" height="22" fill="var(--ok)" opacity=".85"/>
+          <text x="599" y="178" fill="var(--ok)" font-size="11.5">3,3&#215;</text>
           <text x="16" y="212" font-size="11.5">varrer faixa</text>
-          <rect x="470" y="196" width="159" height="22" fill="var(--ok)" opacity=".85"/>
-          <text x="637" y="212" fill="var(--ok)" font-size="11.5">4,8&#215;</text>
+          <rect x="470" y="196" width="210" height="22" fill="var(--ok)" opacity=".85"/>
+          <text x="688" y="212" fill="var(--ok)" font-size="11.5">8,0&#215;</text>
 
           <line x1="16" y1="264" x2="824" y2="264" stroke="currentColor" stroke-width="1" opacity=".25"/>
           <text x="16" y="286" font-size="11" opacity=".6">Escala logarítmica: cada dobro de diferença anda o mesmo tanto. Sem ela a inserção esmagaria o resto do desenho.</text>
@@ -3663,14 +3796,14 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
     <table>
       <thead><tr><th>Operação</th><th class="num">PhxSql</th><th class="num">MySQL(R)</th><th>Quem ganha</th></tr></thead>
       <tbody>
-        <tr><td>Inserir 10.000.000</td><td class="num">884,34&#8201;s</td><td class="num">115,28&#8201;s</td><td><span class="pino pend">MySQL(R) 7,7&#215;</span></td></tr>
-        <tr><td>Buscar 20.000 pontuais</td><td class="num">5,08&#8201;s</td><td class="num">2,67&#8201;s</td><td><span class="pino pend">MySQL(R) 1,9&#215;</span></td></tr>
-        <tr><td>Excluir 20.000</td><td class="num">4,85&#8201;s</td><td class="num">5,44&#8201;s</td><td><span class="pino ok">PhxSql 1,1&#215;</span></td></tr>
-        <tr><td>Atualizar 20.000</td><td class="num">4,44&#8201;s</td><td class="num">6,06&#8201;s</td><td><span class="pino ok">PhxSql 1,4&#215;</span></td></tr>
-        <tr><td>Varrer a faixa inteira (1.250.000 linhas)</td><td class="num">3,94&#8201;s</td><td class="num">18,97&#8201;s</td><td><span class="pino ok">PhxSql 4,8&#215;</span></td></tr>
-        <tr><td>Escrito no disco durante a carga</td><td class="num">2,29&#8201;GiB</td><td class="num">32,03&#8201;GiB</td><td><span class="pino ok">PhxSql 14&#215;</span></td></tr>
-        <tr><td>Ocupado no disco no fim</td><td class="num">2,27&#8201;GiB</td><td class="num">0,88&#8201;GiB</td><td><span class="pino pend">MySQL(R) 2,6&#215;</span></td></tr>
-        <tr><td>Pico de memória</td><td class="num">1.080&#8201;MiB</td><td class="num">658&#8201;MiB</td><td><span class="pino pend">MySQL(R) 1,6&#215;</span></td></tr>
+        <tr><td>Inserir 10.000.000</td><td class="num">303,04&#8201;s</td><td class="num">115,21&#8201;s</td><td><span class="pino pend">MySQL(R) 2,6&#215;</span></td></tr>
+        <tr><td>Buscar 20.000 pontuais</td><td class="num">2,62&#8201;s</td><td class="num">2,60&#8201;s</td><td>empate</td></tr>
+        <tr><td>Excluir 20.000</td><td class="num">8,16&#8201;s</td><td class="num">6,25&#8201;s</td><td><span class="pino pend">MySQL(R) 1,3&#215;</span></td></tr>
+        <tr><td>Atualizar 20.000</td><td class="num">1,92&#8201;s</td><td class="num">6,33&#8201;s</td><td><span class="pino ok">PhxSql 3,3&#215;</span></td></tr>
+        <tr><td>Varrer a faixa inteira (1.250.000 linhas)</td><td class="num">3,28&#8201;s</td><td class="num">26,19&#8201;s</td><td><span class="pino ok">PhxSql 8,0&#215;</span></td></tr>
+        <tr><td>Escrito no disco durante a carga</td><td class="num">2,44&#8201;GiB</td><td class="num">31,28&#8201;GiB</td><td><span class="pino ok">PhxSql 13&#215;</span></td></tr>
+        <tr><td>Ocupado no disco no fim</td><td class="num">2,43&#8201;GiB</td><td class="num">0,88&#8201;GiB</td><td><span class="pino pend">MySQL(R) 2,8&#215;</span></td></tr>
+        <tr><td>Pico de memória</td><td class="num">1.166&#8201;MiB</td><td class="num">657&#8201;MiB</td><td><span class="pino pend">MySQL(R) 1,8&#215;</span></td></tr>
       </tbody>
     </table>
   </div>
@@ -3711,8 +3844,9 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
     ângulos diferentes.</strong> A primeira comparava trabalho diferente na
     varredura e foi descartada. A segunda foi honesta e mostrou a inserção
     <strong>20,7&#215;</strong> atrás. Esta veio depois do CRC <em>slice-by-8</em>,
-    e a mesma inserção está <strong>7,7&#215;</strong> atrás — 2,8&#215; mais
-    rápida no mesmo trabalho, mesma máquina.</p>
+    e a mesma inserção ficou <strong>7,7&#215;</strong> atrás — 2,8&#215; mais
+    rápida no mesmo trabalho, mesma máquina. A quarta, depois do cache de páginas,
+    trouxe a inserção para <strong>2,6&#215;</strong> atrás.</p>
     <p>O ganho não ficou só na escrita: a exclusão caiu 2,1&#215; e as leituras
     1,5&#215;, porque o CRC estava em <em>todo</em> toque de página, não apenas
     nas gravações. Três das cinco operações agora são do PhxSql.</p>
@@ -3720,7 +3854,8 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
 
   <h3>Onde a inserção gastava o tempo, e o que estava errado no diagnóstico</h3>
 
-  <p>A bancada dizia que a inserção é 7,7× mais lenta que a do MySQL(R), e o
+  <p>A bancada da época dizia que a inserção era 7,7× mais lenta que a do
+  MySQL(R), e o
   diagnóstico anterior foi <em>«97% de CPU, disco parado, a culpa é da B+tree
   reescrita nó a nó»</em>. Estava certo — para a <strong>biblioteca</strong>,
   que era onde a medição tinha sido feita. Pelo <strong>servidor</strong> a
@@ -3828,17 +3963,81 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   serializar. Ele não testa um defeito — testa uma propriedade do formato, para
   que ninguém a redescubra do jeito difícil.</p>
 
-  <h3>A inserção é o buraco, e o diagnóstico é incômodo</h3>
+  <h3>O CRC de página inteira, e o cache que o tirou do caminho</h3>
+
+  <p>A rodada anterior parou num lugar desconfortável: <strong>83,5% do tempo de
+  uma inserção estava no <code>.ndx</code></strong>, e a conta do CRC
+  <em>não fechava</em> — o medidor estimava, por um <code>strace</code> de outro dia,
+  ~20 toques de página por linha, e a 2,34&#8201;µs de CRC por página de 4&#8201;KiB
+  isso daria ~47&#8201;µs, mais do que os 44,4&#8201;µs medidos no total. Ficou
+  registrado como <em>pista aberta</em>, e não como conclusão.</p>
+
+  <p>A conta não fechava porque o número era <strong>citado, e não medido</strong>.
+  Hoje o medidor conta os toques por dentro:</p>
+
+  <div class="rolo">
+    <table>
+      <thead><tr><th>Por linha inserida, com dois índices</th><th class="num">páginas</th></tr></thead>
+      <tbody>
+        <tr><td>servidas pelo cache</td><td class="num">8,80</td></tr>
+        <tr><td>lidas do arquivo</td><td class="num">0,00</td></tr>
+        <tr><td>gravadas</td><td class="num">2,06</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>São <strong>10,86</strong>, e não 20. Antes do cache, as 10,86 passavam
+  <em>todas</em> pelo CRC: 25,4&#8201;µs de 44,4 — <strong>57% do tempo de uma
+  inserção era CRC-32 de página</strong>. E a raiz da árvore é a mesma página em
+  todas as inserções da carga.</p>
+
+  <p>Um cache de páginas <strong>de leitura</strong> no <code>.ndx</code>, com
+  despejo por segunda chance, levou a inserção de <strong>44,4 para 18,5&#8201;µs
+  por linha (2,40&#215;)</strong> sem mudar formato, sem mudar garantia e sem tocar
+  na B+tree. A linha que mais mudou diz o que aconteceu: <em>conferir a chave
+  única</em> caiu de 20,5% para 2,3% do tempo — é uma descida na árvore que não
+  escreve nada, exatamente o trabalho que o cache serve de graça.</p>
+
+  <div class="nota">
+    <span class="t">O cache é de leitura, e isso é escolha</span>
+    <p>Toda gravação atravessa para o arquivo na hora. Segurar página suja em RAM
+    daria mais e trocaria uma garantia por desempenho <strong>sem avisar</strong>:
+    hoje uma queda do <em>processo</em> não atrasa o <code>.ndx</code> em relação ao
+    <code>.reg</code>, porque o <code>write</code> já entregou a página ao núcleo. Só
+    uma queda da <em>máquina</em> faz isso.</p>
+    <p>O despejo é por <strong>segunda chance</strong>, e não fila simples: a raiz,
+    a página mais visitada de todas, sairia junto com as outras assim que o teto
+    enchesse. O teto — 2.048 páginas, 8&#8201;MiB por tabela aberta — saiu de uma
+    varredura de quatro tamanhos, e não do chute. É o campo
+    <code>recursos.cache_paginas</code> do <code>config.json</code>, que existia
+    desde a 0.13.0 <strong>sem nada por trás</strong>.</p>
+  </div>
+
+  <div class="nota">
+    <span class="t">O pedido pedia outra coisa, e a medição mandou</span>
+    <p>O item da lista dizia «ordene as chaves do lote antes de inserir no
+    <code>.ndx</code>, para chaves vizinhas caírem na mesma folha». O alvo estava
+    certo; o mecanismo, não. Medindo antes de escrever código: <strong>a desordem
+    das chaves custava 1,06&#215;</strong>. Ordenar teria comprado quase nada — o
+    custo não era de localidade, era de reler e recalcular CRC da mesma página.</p>
+    <p>Depois do cache a desordem passou a custar <strong>1,19&#215;</strong>: a
+    localidade só importa quando não se está pagando CRC de qualquer jeito.
+    Ordenar continua não feito, agora com o preço na mesa — implementá-lo exige
+    gravar o <code>.reg</code> antes de indexar, e aí uma falha no meio deixa linha
+    sem chave, sem como desfazer.</p>
+  </div>
+
+  <h3>A inserção ainda é onde o MySQL(R) ganha — e 2,9&#215; já voltaram</h3>
 
 <!-- bancada:diagnostico:inicio -->
-  <p>11.308 linhas por segundo contra 86.748. O reflexo é
+  <p>32.999 linhas por segundo contra 86.799. O reflexo é
   culpar o disco — mas os contadores dizem outra coisa:
-  <strong>870&#8201;s de CPU para 884&#8201;s de relógio</strong>
-  (98%), e <strong>0,0&#8201;MiB lidos</strong>. O processo passou o
+  <strong>289&#8201;s de CPU para 303&#8201;s de relógio</strong>
+  (96%), e <strong>0,0&#8201;MiB lidos</strong>. O processo passou o
   tempo inteiro calculando, não esperando.</p>
 
-  <p>E piora com o tamanho: o primeiro milhão entra a 16.051/s, o
-  décimo a 9.311/s — 42% mais devagar no fim do que no
+  <p>E piora com o tamanho: o primeiro milhão entra a 47.847/s, o
+  décimo a 22.026/s — 54% mais devagar no fim do que no
   começo. Taxa que cai conforme a tabela cresce, com o disco parado, é
   assinatura de estrutura de índice: a B+tree do <code>.ndx</code> reescrita nó
   a nó a cada linha, sem lote. É ali que uma rodada dedicada renderia, e não em
@@ -4071,8 +4270,8 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
 
 <footer>
   <!-- rodape:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-  <p>PhxSql 0.16.0 · 43.822 linhas de Rust em 4 crates,
-  mais 474 KiB de interface · 587 testes ·
+  <p>PhxSql 0.17.0 · 45.342 linhas de Rust em 4 crates,
+  mais 486 KiB de interface · 615 testes ·
   nenhuma dependência externa.
   Especificação byte a byte em <code>docs/FORMATO.md</code>, cadastro e
   permissões em <code>docs/USUARIOS.md</code>, a replicação em

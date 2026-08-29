@@ -46,6 +46,7 @@
 //! ficar subocupadas depois de muitas exclusoes. A reconstrucao do indice
 //! (feita pela compactacao da tabela) devolve a arvore ao formato compacto.
 
+use std::collections::{HashMap, VecDeque};
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -93,6 +94,147 @@ impl DescritorIndice {
     }
 }
 
+/// Quantas paginas ficam em RAM por arquivo `.ndx` aberto.
+///
+/// 2.048 paginas de 4 KiB dao 8 MiB por tabela aberta. O numero saiu de uma
+/// varredura de quatro tamanhos (`--example ordem-da-chave`, e a tabela esta em
+/// `docs/DESEMPENHO.md` §2.1): 2.048 e o joelho -- dobrar de novo compra 0,8 us
+/// por linha e custa mais 8 MiB.
+///
+/// O servidor abre e fecha a tabela a cada operacao, entao o teto vale enquanto
+/// a operacao dura -- e a operacao que importa aqui e a carga em lote, que
+/// insere milhares de linhas dentro de uma unica abertura.
+const PAGINAS_PADRAO: usize = 2048;
+
+/// O teto vigente, que o `config.json` ajusta em `recursos.cache_paginas`.
+///
+/// # Por que um global, e nao um parametro
+///
+/// E um teto de RAM do PROCESSO, escolhido uma vez no arranque e nunca por
+/// tabela. Como parametro, ele teria de atravessar quatro camadas de API --
+/// servidor, instancia, database, tabela -- so para chegar aqui, e todas as
+/// quatro passariam a carregar um numero que nao e assunto delas.
+static PAGINAS_EM_CACHE: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(PAGINAS_PADRAO);
+
+/// Ajusta o teto do cache de paginas do `.ndx`, em paginas.
+///
+/// Vale para os arquivos abertos DAQUI PARA A FRENTE: quem ja esta aberto
+/// continua com o teto que tinha. Como isto e chamado no arranque, antes de a
+/// primeira tabela abrir, na pratica vale para tudo.
+///
+/// Zero e recusado -- zero seria "sem cache", e quem quer isso desliga por
+/// medida e nao por acidente de digitacao. Fica no padrao.
+pub fn definir_cache_paginas(paginas: usize) {
+    if paginas > 0 {
+        PAGINAS_EM_CACHE.store(paginas, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// O teto vigente, em paginas.
+pub fn cache_paginas() -> usize {
+    PAGINAS_EM_CACHE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// As paginas do `.ndx` que ficam em RAM.
+///
+/// # De onde vem o ganho
+///
+/// Toda insercao DESCE a arvore: raiz, no interno, folha. Sao tres `pread` de
+/// uma pagina inteira mais tres CRC-32 de pagina inteira -- e a raiz e a mesma
+/// pagina em todas as insercoes da carga. Guardar a pagina lida tira o nucleo e
+/// o CRC do caminho de quem ja passou por ali.
+///
+/// # Por que a gravacao continua atravessando
+///
+/// Segurar pagina suja em RAM daria mais, e trocaria uma garantia por
+/// desempenho **sem avisar**: hoje uma queda do PROCESSO nao atrasa o `.ndx`
+/// em relacao ao `.reg`, porque o `write` ja entregou a pagina ao nucleo. So
+/// uma queda da MAQUINA faz isso. A diferenca entre os dois casos e grande
+/// demais para ser trocada de lado num commit de desempenho.
+///
+/// # A politica de despejo
+///
+/// Segunda chance (CLOCK): a pagina despejada e a mais antiga que nao foi
+/// usada desde que entrou. Fila simples nao serviria -- a raiz, que e a mais
+/// visitada de todas, sairia junto com as outras assim que o teto enchesse.
+struct CachePaginas {
+    paginas: HashMap<u64, Entrada>,
+    fila: VecDeque<u64>,
+    teto: usize,
+    acertos: u64,
+    faltas: u64,
+}
+
+struct Entrada {
+    bytes: Vec<u8>,
+    usada: bool,
+}
+
+impl CachePaginas {
+    fn nova(teto: usize) -> CachePaginas {
+        CachePaginas {
+            paginas: HashMap::with_capacity(teto.min(1024)),
+            fila: VecDeque::with_capacity(teto.min(1024)),
+            teto,
+            acertos: 0,
+            faltas: 0,
+        }
+    }
+
+    fn pegar(&mut self, n: u64) -> Option<Vec<u8>> {
+        match self.paginas.get_mut(&n) {
+            Some(e) => {
+                e.usada = true;
+                self.acertos += 1;
+                Some(e.bytes.clone())
+            }
+            None => {
+                self.faltas += 1;
+                None
+            }
+        }
+    }
+
+    fn por(&mut self, n: u64, bytes: &[u8]) {
+        if let Some(e) = self.paginas.get_mut(&n) {
+            e.bytes.clear();
+            e.bytes.extend_from_slice(bytes);
+            e.usada = true;
+            return;
+        }
+        while self.paginas.len() >= self.teto {
+            match self.fila.pop_front() {
+                None => break,
+                Some(velha) => match self.paginas.get_mut(&velha) {
+                    None => {}
+                    Some(e) if e.usada => {
+                        e.usada = false;
+                        self.fila.push_back(velha);
+                    }
+                    Some(_) => {
+                        self.paginas.remove(&velha);
+                    }
+                },
+            }
+        }
+        self.paginas.insert(
+            n,
+            Entrada {
+                bytes: bytes.to_vec(),
+                usada: false,
+            },
+        );
+        self.fila.push_back(n);
+    }
+
+    /// Tira a pagina do cache. A pagina que volta da lista de livres vai ser
+    /// reescrita do zero, e o conteudo velho dela nao vale mais nada.
+    fn esquecer(&mut self, n: u64) {
+        self.paginas.remove(&n);
+    }
+}
+
 pub struct NdxFile {
     arquivo: File,
     caminho: PathBuf,
@@ -100,6 +242,8 @@ pub struct NdxFile {
     qtd_paginas: u64,
     pagina_livre: u64,
     indices: Vec<DescritorIndice>,
+    cache: CachePaginas,
+    gravacoes: u64,
 }
 
 // ---------------------------------------------------------------- paginas
@@ -229,6 +373,8 @@ impl NdxFile {
             qtd_paginas: 1, // pagina 0 = cabecalho + diretorio
             pagina_livre: 0,
             indices: Vec::new(),
+            cache: CachePaginas::nova(cache_paginas()),
+            gravacoes: 0,
         };
         n.arquivo.set_len(page_size as u64)?;
 
@@ -332,6 +478,8 @@ impl NdxFile {
             qtd_paginas,
             pagina_livre,
             indices,
+            cache: CachePaginas::nova(cache_paginas()),
+            gravacoes: 0,
         })
     }
 
@@ -395,20 +543,43 @@ impl NdxFile {
                 self.caminho.display()
             )));
         }
+        if let Some(p) = self.cache.pegar(n) {
+            return Ok(p);
+        }
         let mut p = vec![0u8; self.page_size];
         ler_exato(&mut self.arquivo, n * self.page_size as u64, &mut p)?;
+        // O CRC e conferido na LEITURA DO ARQUIVO, e nao na do cache: a pagina
+        // que esta em RAM ja passou por aqui, e conferir de novo pagaria o
+        // mesmo CRC que este cache existe para nao pagar.
         if pag_crc(&p) != Campos(&p).u32(28) {
             return Err(PhxError::Corrompido(format!(
                 "CRC invalido na pagina {n} de {}",
                 self.caminho.display()
             )));
         }
+        self.cache.por(n, &p);
         Ok(p)
     }
 
     fn gravar_pagina(&mut self, n: u64, p: &mut [u8]) -> Result<()> {
         pag_selar(p);
-        escrever_em(&mut self.arquivo, n * self.page_size as u64, p)
+        escrever_em(&mut self.arquivo, n * self.page_size as u64, p)?;
+        // Guardar a pagina RECEM-GRAVADA e o que mais rende numa carga: a folha
+        // que acabou de receber uma chave e quase sempre a que vai receber a
+        // proxima, e sem isto ela voltaria do arquivo com CRC e tudo.
+        self.cache.por(n, p);
+        self.gravacoes += 1;
+        Ok(())
+    }
+
+    /// Quantas paginas o cache serviu, quantas vieram do arquivo, e quantas
+    /// foram gravadas.
+    ///
+    /// Existe para o medidor nao ter de CITAR um `strace` de outro dia: o
+    /// numero de toques de pagina por linha inserida e medido aqui dentro, e
+    /// envelhece junto com o codigo em vez de envelhecer calado.
+    pub fn estatisticas_paginas(&self) -> (u64, u64, u64) {
+        (self.cache.acertos, self.cache.faltas, self.gravacoes)
     }
 
     fn alocar_pagina(&mut self) -> Result<u64> {
@@ -417,6 +588,9 @@ impl NdxFile {
             let mut p = vec![0u8; self.page_size];
             ler_exato(&mut self.arquivo, n * self.page_size as u64, &mut p)?;
             self.pagina_livre = pag_prox(&p);
+            // A pagina volta da lista de livres para ser reescrita do zero: o
+            // que o cache tem dela e o conteudo de antes de ela ser liberada.
+            self.cache.esquecer(n);
             return Ok(n);
         }
         let n = self.qtd_paginas;

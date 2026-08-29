@@ -52,7 +52,79 @@ recursos novos inventados aqui.
   navegador: com a ficha aberta, uma gravação alheia na cidade e a minha no
   telefone, o registro terminou com **as duas**.
 
+- **Cache de páginas no `.ndx`** (pedido 113, e não pelo caminho que o pedido
+  supunha). A inserção com dois índices caiu de **44,4 para 18,5 µs por linha —
+  2,40×** —, e a carga em lote pela rede subiu de **25.985 para 37.021
+  linhas/s**. Sem mudar formato, sem mudar garantia e sem tocar na B+tree.
+
+  O pedido dizia «ordene as chaves do lote, para chaves vizinhas caírem na mesma
+  folha». Medi antes: **a desordem custava 1,06×**. O custo não era de
+  localidade — era de **reler do arquivo e recalcular o CRC-32 da mesma página**
+  a cada descida da árvore, e a raiz é a mesma página em todas as inserções da
+  carga. O medidor agora **conta** os toques em vez de citar um `strace`
+  antigo: 8,80 páginas servidas de RAM, 2,06 gravadas, 10,86 no total — não os
+  ~20 que estavam escritos. A 2,34 µs de CRC por página, eram **25,4 µs por
+  linha só de CRC**, de 44,4 medidos.
+
+  Com isso, a linha que mais mudou é a que confirma o diagnóstico: **conferir a
+  chave única caiu de 20,5% para 2,3%** do tempo de uma inserção. É uma descida
+  na árvore que não escreve nada — exatamente o trabalho que o cache serve de
+  graça. E o `.ndx` caiu de 83,5% para 63,6% do total.
+
+  **O cache é de leitura.** Toda gravação atravessa para o arquivo na hora.
+  Segurar página suja daria mais e trocaria uma garantia por desempenho sem
+  avisar: hoje só uma queda da máquina atrasa o `.ndx` em relação ao `.reg`, e
+  não uma queda do processo. O despejo é por segunda chance, senão a raiz — a
+  página mais visitada — sairia junto com as outras assim que o teto enchesse.
+  O teto de 2.048 páginas (8 MiB) saiu de uma varredura de quatro tamanhos, em
+  `docs/DESEMPENHO.md` §2.1.
+
+  **Ordenar as chaves continua não feito**, agora com número: depois do cache a
+  desordem passou a custar **1,19×** (a localidade só importa quando não se está
+  pagando CRC de qualquer jeito). Implementar exige gravar o `.reg` antes de
+  indexar, e aí uma falha no meio deixa linha sem chave, sem como desfazer.
+  Está registrado com o preço para a decisão ser tomada com ele na mão.
+
+- **`bancada/carga/medir.py`**, para a carga pela rede parar de ser um número
+  medido à mão. As duas metades fazem o mesmo trabalho e a contagem é conferida
+  no fim — a armadilha que esta bancada já caiu duas vezes.
+
+- **`--example ordem-da-chave`**, que mede quanto a ordem das chaves custa. Foi
+  ele que reprovou a hipótese do pedido 113 antes de ela virar código.
+
+- **Direito no nível da tabela** (pedido 124), o primeiro item da lista que a
+  leitura do HFSQL(R) apontou como faltando. Até aqui a permissão parava na
+  base: quem lia a base lia **todas** as tabelas dela — e a folha de pagamento
+  e a tabela de clientes moram no mesmo banco porque o negócio é um só.
+
+  Dentro do objeto da base, `"tabelas"` escreve a regra de cada tabela, e ela
+  **substitui** a da base ali — a mesma coisa que a base já fazia com o `"*"`.
+  Substituir, e não interceder, é o que permite as duas coisas que a prática
+  pede: **tirar** `folha` de quem lê o banco inteiro, e **dar** `clientes` a
+  quem não lê o banco nenhum. Uma regra de interseção resolveria só a primeira.
+
+  O portão continua sendo **um só** — espalhado por quarenta operações, a que
+  alguém esquecesse de conferir viraria a porta dos fundos, e ninguém acharia
+  isso por leitura. Duas operações precisaram de conferência própria porque não
+  têm o campo `"tabela"` que o portão lê: **`juntar`**, cujas tabelas moram em
+  `a.tabela` e `b.tabela`, e **`unir`**, cuja lista de tabelas está em
+  `"tabelas"`. Sem isso bastaria pedir a tabela negada como o lado B de uma
+  junção — há um teste com esse nome.
+
+  A árvore e o catálogo (`tabelas`, `sistabelas`, `siscolunas`) passaram a
+  listar **só o que dá para abrir**: o nome de uma tabela já conta parte da
+  história, e descobrir a recusa só ao clicar é pior do que não ver.
+
+  9 testes, e o que mais importa deles é `sem_regra_de_tabela_nada_muda`: um
+  `config.json` escrito antes desta versão continua se comportando igual.
+
 ### Mudado
+
+- **`recursos.cache_paginas` passou a valer.** O campo estava no `config.json`,
+  no MANUAL e na tela desde a 0.13.0, e **nenhuma linha de código o lia** — ele
+  dizia «páginas do `.ndx` mantidas em memória» quando não havia cache nenhum.
+  Agora é o teto do cache, e o padrão baixou de 4.096 para **2.048 páginas
+  (8 MiB)**, que é o joelho da curva medida.
 
 - **O erro do protocolo chega inteiro à tela.** O `api()` da interface jogava
   fora `nome`, `codigo` e `classe` e guardava só o texto — então distinguir um

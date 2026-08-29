@@ -83,7 +83,7 @@ o código, não contra a lembrança — foi assim que a chave estrangeira saiu d
 | ☑️ | 74 | **Configurações e diretivas das tabelas** | a geometria decidida na criação, os índices e chaves, e o que a tabela herda do servidor |
 | ☑️ | 75 | **Cadastro de campos** com id automático, nome, caption, descrição, tipo, tamanho, máscara e chave primária/estrangeira/composta | **mudança de formato**: esquema `PSCH` v3. O `id` é UUID v7 e nunca muda; o papel na chave é derivado dos índices |
 | ☑️ | 76 | **Tabela particionada** com grade de gestão: por faixa de quantidade, mensal, bimestral, semestral ou anual | **mudança de formato**: o volume corta pelo calendário, e cada volume grava a própria fronteira no cabeçalho |
-| ☑️ | 79 | **Seção de cache, memória, CPU, threads e usuários no `config.json`** | seção `recursos`, com sete ajustes. `cache_paginas` e `memoria_max_mb` são lidos e mostrados mas **ainda não impostos** — o buffer pool é o trabalho seguinte |
+| ☑️ | 79 | **Seção de cache, memória, CPU, threads e usuários no `config.json`** | seção `recursos`, com sete ajustes. `cache_paginas` passou a **valer de verdade** na 0.17.0 — era lido e mostrado sem nada por trás, e agora é o teto do cache de páginas do `.ndx`. `memoria_max_mb` continua lido e não imposto |
 | ☑️ | 80 | **Validar e revisar o motor de insert; deixar a gravação mais rápida** | medido: **95% do tempo era `fsync`**. Durabilidade configurável dá **20,4×**. E a medição achou uma **perda silenciosa de dado** sob gravação concorrente, corrigida |
 | ☑️ | 81 | **Tabela `sequences` na raiz do banco**, com todas as tabelas e um BigInt ajustável pelo admin | operações `sequencias` e `ajustar_sequencia`. O contador continua no cabeçalho de cada `.reg`: a operação junta para mostrar, e não cria uma segunda cópia que divergiria |
 | ☑️ | 82 | **Bancos em pastas, cada schema uma subpasta** | já era assim desde o início — conferido: `dados/loja/matriz/estoque.reg` |
@@ -119,7 +119,7 @@ o código, não contra a lembrança — foi assim que a chave estrangeira saiu d
 | ☑️ | 110 | **Teste de replicação com três servidores espelho** | `bancada/replicacao/`: `montar.py` sobe Master + Slave01/02/03, `medir.py` mede atraso por tipo de escrita, vazão, queda e retomada. Compara um SHA-256 de **cada linha**, com o rowid junto — e não a contagem, que não acharia uma linha que atravessou errada. Cascata Master → Slave01 → Slave03 também medida |
 | ◐ | 111 | **A réplica acompanhar a escrita do master** | não acompanha: 4.273 eventos/s contra 18.773 linhas/s. Aplicar decodifica a imagem para `Value` e **reencoda** o payload, em vez de gravar os bytes que vieram. Gravar direto, remendando só os ponteiros dos anexos, é o próximo ganho grande |
 | ☑️ | 112 | **Analisar as sugestões de arquitetura (WAL, MemTable, group commit, LSM)** | `docs/DESEMPENHO.md`, com a medição que muda o alvo: **83,5% do tempo de uma inserção está no `.ndx`**, e o arquivo de dados — o que as propostas querem substituir — já é *append-only* e custa 16,5%. Das dez propostas, cinco já existem, duas miram um gargalo que não é o nosso, uma quebraria a ordem de digitação, e duas são reais |
-| ☐ | 113 | **Ordenar as chaves do lote antes de inserir no `.ndx`** | o item que a medição favorece: ataca os 83,5% sem mudar formato nem garantia. A carga em lote já provou o princípio no nível de cima (9,6×); falta aplicá-lo dentro da B+tree |
+| ◐ | 113 | **Atacar os 83,5% do `.ndx`** | **medido, e o alvo era outro.** O custo não era de localidade de chave — era **reler e recalcular CRC-32 da mesma página**: 10,86 páginas tocadas por linha, 8,80 delas releituras, 2,34 µs de CRC cada. Um **cache de páginas de leitura** no `.ndx` levou a inserção de **44,4 → 18,5 µs (2,40×)** e a carga em lote pela rede de **25.985 → 37.021 linhas/s**. Ordenar as chaves em si valia 1,06× antes do cache e vale **1,19×** depois — está medido em `docs/DESEMPENHO.md` §4.1, com a garantia que teria de ser rebaixada para implementá-lo |
 | ☐ | 114 | **Índice não único fora do caminho crítico** | 1,45× medido, e não custa correção: nada depende de um índice não único para decidir se a linha entra. O **único** não pode sair — ele é a própria decisão, e adiá-lo deixaria buraco permanente no `.reg` |
 | ☑️ | 115 | **Vídeo longo em MP4, do login à replicação** | `docs/video/`: 5m13s gravados contra o servidor de verdade, com o Playwright dirigindo a interface e a legenda injetada na própria página. Dezessete capítulos, e o 16 é o que nenhum vídeo de produto tem — o que ainda falta. **Ele achou três defeitos** que ler o código não acharia |
 | ☑️ | 116 | **Profiler na barra de ferramentas** | vê o que chega pela porta **antes de virar dado** — o ponto de captura é uma linha antes do despacho, então o pedido que trava aparece como «em curso». Filtra por banco, usuário, operação e só-escrita; grava num `.txt` no caminho escolhido. A senha é redigida **analisando** o pedido, nunca recortando o texto; pedido que não é JSON vira o tamanho em bytes. Observa as duas portas e não observa a si mesmo |
@@ -130,13 +130,13 @@ o código, não contra a lembrança — foi assim que a chave estrangeira saiu d
 | ☑️ | 121 | **Analisar o PDF do HFSQL(R) contra o projeto** | `docs/HFSQL.md`, item por item. O que falta, em ordem de valor: direito no nível da **tabela**, índice de texto completo, índice parcial, ordenação linguística, e a **janela de conflito de escrita** |
 | ☑️ | 122 | **Analisar o DBeaver: o que dá para reaproveitar** | `docs/DBEAVER.md`. Código: não vale — Apache 2.0 permite, mas seria trazer o Eclipse inteiro. Ferramenta: vale muito, e os três caminhos exigem a **mesma** camada SQL |
 | ☑️ | 123 | **Janela de conflito de escrita** | feito **sem mudar formato**: a versão por registro do `.reg` estava lá desde a v1. `ler` devolve a versão com `"com_versao"`, `atualizar`/`excluir`/`restaurar` conferem a versão que o cliente mandar, e a recusa é o erro **3004 `CONFLITO`**. A janela mostra as três colunas do PDF e vai além dele: **já vem marcado quem mexeu em cada coluna**, então dois que editaram campos diferentes saem com os dois trabalhos. A conferência é **pedida, não imposta** — cliente antigo continua gravando |
-| ☐ | 124 | **Direito no nível da tabela** | hoje a permissão para na base: quem lê a base lê todas as tabelas. O portão já existe e é um ponto só |
+| ☑️ | 124 | **Direito no nível da tabela** | `"tabelas"` dentro do objeto da base, e a regra da tabela **substitui** a da base ali — o que permite tirar `folha` de quem lê o banco inteiro **e** dar `clientes` a quem não lê o banco nenhum (interseção só resolveria o primeiro). O portão continua sendo um só; `juntar` e `unir` ganharam conferência própria porque não têm o campo `"tabela"` que ele lê. A árvore e o catálogo passaram a listar só o que dá para abrir. 9 testes |
 | ☐ | 125 | **Marcar coluna como dado pessoal (LGPD/GDPR)** | uma marca por coluna e uma tela que audita onde elas estão. O cadastro de campos já tem `caption`, `descricao` e `mascara` — é mais um campo |
 | ☐ | 126 | **Cluster: endereço único, eleição e promoção automática** | `docs/CLUSTER.md`. A peça difícil já está pronta — a réplica que alcança sozinha e para quando diverge. Falta o que fica em volta |
 | ☐ | 127 | **Diagrama ER e editor de modelo** | as chaves estrangeiras já estão declaradas e já vêm no `esquema`; falta o desenho e a edição visual. É SVG, que é do que o dossiê inteiro é feito |
 | ☑️ | 67 | **Botão e menu Tabelas** para gerir as tabelas do banco: nova, estrutura, editar conteúdo, partições, duplicar, reparar tabela, reparar índice e excluir — e **Gestão de transações** no menu de ferramentas | as oito operações funcionam de ponta a ponta; três delas (`criar_tabela`, `duplicar_tabela`, `excluir_tabela`) nasceram aqui, e `criar_schema` — prometido na documentação e nunca despachado — junto |
 
-**108 feitos · 7 parciais · 12 planejados**, de 127 pedidos.
+**109 feitos · 8 parciais · 10 planejados**, de 127 pedidos.
 
 Fora do que você pediu, entraram por medição: o CRC slice-by-8, o `descer` sem
 reler a folha, a conferência de unicidade sem descida dupla, e dezoito
@@ -379,20 +379,20 @@ pertence: campo e chave na seção 3 (*A tabela, peça a peça*), partição na 
 <!-- pendencias:insercao:inicio -->
 A bancada de 10 milhões achou um buraco só, e é grande.
 
-**A inserção é o ponto fraco do motor.** 11.308 linhas/s contra
-86.748 do MySQL(R) — **7,7× mais devagar**. E o
-diagnóstico é incômodo: **870 s de CPU para 884 s de relógio** (98%), com
+**A inserção é o ponto fraco do motor.** 32.999 linhas/s contra
+86.799 do MySQL(R) — **2,6× mais devagar**. E o
+diagnóstico é incômodo: **289 s de CPU para 303 s de relógio** (96%), com
 **0,0 MiB lidos do disco**. Não é disco, é processador — a
-B+tree do `.ndx` reescrita nó a nó a cada linha, sem lote. E **piora com o tamanho**: o primeiro milhão entra a 16.051/s, o último a 9.311/s — 42% mais devagar no fim do que no começo.
+B+tree do `.ndx` reescrita nó a nó a cada linha, sem lote. E **piora com o tamanho**: o primeiro milhão entra a 47.847/s, o último a 22.026/s — 54% mais devagar no fim do que no começo.
 
 Nas outras quatro o motor se defende: a varredura por faixa é
-**4,8× mais rápida** (3,94 s contra 18,97 s), lendo as
+**8,0× mais rápida** (3,28 s contra 26,19 s), lendo as
 1.250.000 linhas dos dois lados e chegando à mesma soma; a
-atualização empata (4,44 s contra 6,06 s); a busca
-pontual é 1,9× mais devagar e a exclusão 0,9×. E escreve muito
-menos: 2,29 GiB contra 32,03 GiB na carga.
+atualização empata (1,92 s contra 6,33 s); a busca
+pontual é 1,0× mais devagar e a exclusão 1,3×. E escreve muito
+menos: 2,44 GiB contra 31,28 GiB na carga.
 
-Contrapartida honesta: **ocupa 2,27 GiB em disco contra
+Contrapartida honesta: **ocupa 2,43 GiB em disco contra
 0,88 GiB**, porque o `.reg` é de slot fixo — o preço do
 endereçamento O(1) e da ordem de digitação.
 

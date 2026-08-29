@@ -658,7 +658,11 @@ pub struct Recursos {
     pub lote_operacoes: u64,
     /// Quantos milissegundos uma janela dura, no maximo.
     pub lote_milissegundos: u64,
-    /// Paginas do `.ndx` mantidas em memoria. Cada uma tem 4 KiB.
+    /// Paginas do `.ndx` mantidas em memoria, por arquivo aberto. Cada uma tem
+    /// 4 KiB, entao 2.048 dao 8 MiB por tabela aberta.
+    ///
+    /// O padrao saiu de uma varredura de quatro tamanhos, em
+    /// `docs/DESEMPENHO.md` §2.1: 2.048 e o joelho da curva.
     pub cache_paginas: usize,
     /// Teto de memoria para as tabelas residentes (`SelectMemory`), em MiB.
     /// Zero = sem teto.
@@ -687,7 +691,7 @@ impl Default for Recursos {
             durabilidade: Durabilidade::PorLote,
             lote_operacoes: 200,
             lote_milissegundos: 200,
-            cache_paginas: 4_096,
+            cache_paginas: 2_048,
             memoria_max_mb: 0,
             threads: 0,
             cpu_percentual: 100,

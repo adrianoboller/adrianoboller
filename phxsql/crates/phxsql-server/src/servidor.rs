@@ -285,6 +285,12 @@ pub struct Servidor {
 
 impl Servidor {
     pub fn novo(config: Config) -> Result<Arc<Servidor>> {
+        // `recursos.cache_paginas` estava no config.json e na documentacao
+        // desde a 0.13.0 -- e nao era lido por ninguem, porque o cache nao
+        // existia. Agora existe, e o campo passa a valer. Tem de ser aqui,
+        // ANTES de a primeira tabela abrir: o teto vale para o que abrir
+        // daqui para a frente.
+        phxsql_store::ndx::definir_cache_paginas(config.recursos.cache_paginas);
         let instancia = Instancia::nova(&config.base)?;
         let log = LogAcessos::abrir(&config.log_acessos)?;
         let lista_negra = Blacklist::abrir(&config.blacklist)?;
@@ -1602,11 +1608,20 @@ impl Servidor {
             );
         }
 
-        // Portao 3 -- o poder deste usuario sobre a base deste pedido.
+        // Portao 3 -- o poder deste usuario sobre a base E A TABELA do pedido.
+        //
+        // A tabela entra aqui, e nao la dentro de cada operacao, porque o
+        // portao tem de ser UM: espalhado por quarenta operacoes, a que
+        // alguem esquecer de conferir vira a porta dos fundos, e ninguem
+        // descobre por leitura.
+        //
+        // Pedido sem tabela -- `bancos`, `criar_database`, `sistema` -- cai na
+        // regra da base, que e como sempre foi.
         if let (Some(atividade), Some(usuario)) =
             (Atividade::da_operacao(&op), sessao.usuario.as_ref())
         {
-            if !usuario.pode(&base, atividade) {
+            let tabela = pedido.texto_ou("tabela", "").trim().to_string();
+            if !usuario.pode_em(&base, &tabela, atividade) {
                 return (
                     op,
                     true,
@@ -1614,7 +1629,11 @@ impl Servidor {
                         "{} nao tem permissao de {} em {}",
                         usuario.login,
                         atividade.nome(),
-                        if base.is_empty() { "(sem base)" } else { &base }
+                        match (base.is_empty(), tabela.is_empty()) {
+                            (true, _) => "(sem base)".to_string(),
+                            (false, true) => base.clone(),
+                            (false, false) => format!("{base}.{tabela}"),
+                        }
                     ))),
                 );
             }
@@ -1800,7 +1819,7 @@ impl Servidor {
             "bloqueios" => self.op_bloqueios(),
             "desbloquear" => self.op_desbloquear(p),
             "bancos" => self.op_bancos(),
-            "tabelas" => self.op_tabelas(p),
+            "tabelas" => self.op_tabelas(p, sessao),
             "esquema" => self.op_esquema(p, sessao),
             "criar_database" => self.op_criar_database(p),
             "criar_schema" => self.op_criar_schema(p),
@@ -1808,8 +1827,8 @@ impl Servidor {
             "excluir_tabela" => self.op_excluir_tabela(p),
             "duplicar_tabela" => self.op_duplicar_tabela(p),
             "copiar_tabela" => self.op_copiar_tabela(p, sessao),
-            "sistabelas" | "systables" => self.op_sistabelas(p),
-            "siscolunas" | "syscolumns" => self.op_siscolunas(p),
+            "sistabelas" | "systables" => self.op_sistabelas(p, sessao),
+            "siscolunas" | "syscolumns" => self.op_siscolunas(p, sessao),
             "sequencias" | "sequences" => self.op_sequencias(p),
             "ajustar_sequencia" => self.op_ajustar_sequencia(p, sessao),
             "pivotar" | "pivot" => self.op_pivotar(p, sessao),
@@ -2001,26 +2020,41 @@ impl Servidor {
         ))
     }
 
-    fn op_tabelas(&self, p: &Json) -> Result<Json> {
+    /// `tabelas`: as tabelas da base, **so as que quem pediu pode ler**.
+    ///
+    /// Filtrar aqui nao e enfeite. Sem isto, quem perdeu o direito a `folha`
+    /// continuaria vendo o nome dela na arvore e so descobriria a recusa ao
+    /// clicar -- e o nome de uma tabela ja conta parte da historia. A arvore
+    /// mostra o que da para abrir.
+    fn op_tabelas(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let nome = p.texto_ou("database", "");
         let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
         let db = dados.abrir_database(nome)?;
+        let todas = db.todas_as_tabelas()?;
+        let visiveis: Vec<Json> = todas
+            .into_iter()
+            .filter(|t| self.pode_ver_tabela(sessao, nome, t))
+            .map(Json::texto_de)
+            .collect();
         Ok(Json::objeto(vec![
             ("database", Json::texto_de(nome)),
             (
                 "schemas",
                 Json::Lista(db.schemas()?.into_iter().map(Json::texto_de).collect()),
             ),
-            (
-                "tabelas",
-                Json::Lista(
-                    db.todas_as_tabelas()?
-                        .into_iter()
-                        .map(Json::texto_de)
-                        .collect(),
-                ),
-            ),
+            ("tabelas", Json::Lista(visiveis)),
         ]))
+    }
+
+    /// Quem esta na sessao pode LER esta tabela desta base?
+    ///
+    /// Sem sessao -- servidor sem cadastro -- e sim: o portao de usuario nao
+    /// existe naquele modo, e inventar um aqui negaria tudo.
+    fn pode_ver_tabela(&self, sessao: &Sessao, database: &str, tabela: &str) -> bool {
+        match &sessao.usuario {
+            None => true,
+            Some(u) => u.pode_em(database, tabela, Atividade::Ler),
+        }
     }
 
     fn op_criar_database(&self, p: &Json) -> Result<Json> {
@@ -2058,9 +2092,9 @@ impl Servidor {
         // conferencia: sem esta linha, quem pode ler um database e nao pode
         // criar no outro conseguiria escrever onde nao devia.
         if let Some(u) = &sessao.usuario {
-            if !u.pode(destino_db, Atividade::Criar) {
+            if !u.pode_em(destino_db, destino, Atividade::Criar) {
                 return Err(PhxError::Autorizacao(format!(
-                    "sem permissao de criar em {destino_db}"
+                    "sem permissao de criar em {destino_db}.{destino}"
                 )));
             }
         }
@@ -2083,12 +2117,18 @@ impl Servidor {
     /// Uma linha por tabela do database, com o que ela pesa. E o mesmo que a
     /// tela de gestao mostra, mas em forma de dado -- para quem quer consultar
     /// o catalogo em vez de olhar para ele.
-    fn op_sistabelas(&self, p: &Json) -> Result<Json> {
+    fn op_sistabelas(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let database = p.texto_ou("database", "");
         let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
         let db = dados.abrir_database(database)?;
         let mut linhas = Vec::new();
         for nome in db.todas_as_tabelas()? {
+            // O catalogo e a mesma lista da arvore por outra porta: se ele nao
+            // filtrasse, bastaria pedir `sistabelas` para saber tudo sobre a
+            // tabela que a arvore esconde -- nome, colunas, quantas linhas.
+            if !self.pode_ver_tabela(sessao, database, &nome) {
+                continue;
+            }
             let t = match db.abrir_qualificada(&nome) {
                 Ok(t) => t,
                 // Uma tabela ilegivel nao pode derrubar o catalogo inteiro: ela
@@ -2153,7 +2193,7 @@ impl Servidor {
     /// Aceita `tabela` para filtrar. E aqui que os metadados novos aparecem
     /// juntos -- id, caption, descricao, mascara e o papel nas chaves --, que e
     /// o que um dicionario de dados precisa mostrar.
-    fn op_siscolunas(&self, p: &Json) -> Result<Json> {
+    fn op_siscolunas(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let database = p.texto_ou("database", "");
         let so_esta = p.texto_ou("tabela", "").trim().to_string();
         let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
@@ -2161,6 +2201,9 @@ impl Servidor {
         let mut linhas = Vec::new();
         for nome in db.todas_as_tabelas()? {
             if !so_esta.is_empty() && so_esta != nome {
+                continue;
+            }
+            if !self.pode_ver_tabela(sessao, database, &nome) {
                 continue;
             }
             let Ok(t) = db.abrir_qualificada(&nome) else {
@@ -4352,15 +4395,19 @@ impl Servidor {
         let mut tb = db.abrir_qualificada(nb)?;
         let (ea, eb) = (ta.esquema().clone(), tb.esquema().clone());
 
-        // O portao geral ja conferiu `ler`; isto e o cinto, e vale para as
-        // DUAS tabelas -- uma junção que le B tem de pedir permissao de B.
+        // O portao geral confere o campo `tabela` do pedido -- e uma junção
+        // NAO TEM esse campo: as duas tabelas moram em `a.tabela` e
+        // `b.tabela`. Sem esta conferencia, juntar seria a porta dos fundos
+        // para ler uma tabela negada, bastando pedi-la como o lado B.
         if let Some(u) = &sessao.usuario {
             let base = p.texto_ou("database", "");
-            if !u.pode(base, Atividade::Ler) {
-                return Err(PhxError::Autorizacao(format!(
-                    "{} nao tem permissao de ler em {base}",
-                    u.login
-                )));
+            for alvo in [na, nb] {
+                if !u.pode_em(base, alvo, Atividade::Ler) {
+                    return Err(PhxError::Autorizacao(format!(
+                        "{} nao tem permissao de ler em {base}.{alvo}",
+                        u.login
+                    )));
+                }
             }
         }
 
@@ -4460,15 +4507,6 @@ impl Servidor {
         let comeco = Instant::now();
         let base = p.texto_ou("database", "");
 
-        if let Some(u) = &sessao.usuario {
-            if !u.pode(base, Atividade::Ler) {
-                return Err(PhxError::Autorizacao(format!(
-                    "{} nao tem permissao de ler em {base}",
-                    u.login
-                )));
-            }
-        }
-
         let nomes: Vec<String> = p
             .campo("tabelas")
             .and_then(Json::lista)
@@ -4486,6 +4524,22 @@ impl Servidor {
             return Err(PhxError::Esquema(
                 "a união precisa de ao menos duas tabelas em \"tabelas\"".into(),
             ));
+        }
+
+        // A conferencia vem DEPOIS de ler a lista, e nao antes, porque e a
+        // lista que diz o que precisa ser conferido: o campo `tabela` que o
+        // portao geral olha nao existe numa união. Cada tabela do pedido
+        // precisa da sua propria permissao -- senao unir vira a porta dos
+        // fundos para ler uma tabela negada.
+        if let Some(u) = &sessao.usuario {
+            for alvo in &nomes {
+                if !u.pode_em(base, alvo, Atividade::Ler) {
+                    return Err(PhxError::Autorizacao(format!(
+                        "{} nao tem permissao de ler em {base}.{alvo}",
+                        u.login
+                    )));
+                }
+            }
         }
 
         let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
@@ -5110,7 +5164,13 @@ impl Servidor {
                     }
                 }
                 let db = dados.abrir_database(&nome)?;
-                let lista = db.todas_as_tabelas()?;
+                // E so o que quem olha poderia abrir, tabela a tabela: o
+                // total do painel nao pode contar linha de tabela negada.
+                let lista: Vec<String> = db
+                    .todas_as_tabelas()?
+                    .into_iter()
+                    .filter(|t| self.pode_ver_tabela(sessao, &nome, t))
+                    .collect();
                 let schemas = db.schemas()?.len() as u64;
                 let mut registros_db = 0u64;
                 for t in &lista {
@@ -5496,11 +5556,11 @@ impl Servidor {
         // O poder vale igual na memoria e no disco. O portao ja passou pelo
         // despachar; isto e o cinto: quem chegar aqui por outro caminho para.
         if let Some(u) = &sessao.usuario {
-            if !u.pode(p.texto_ou("database", ""), Atividade::Ler) {
+            let (base, tabela) = (p.texto_ou("database", ""), p.texto_ou("tabela", ""));
+            if !u.pode_em(base, tabela, Atividade::Ler) {
                 return Err(PhxError::Autorizacao(format!(
-                    "{} nao tem permissao de ler em {}",
-                    u.login,
-                    p.texto_ou("database", "")
+                    "{} nao tem permissao de ler em {base}.{tabela}",
+                    u.login
                 )));
             }
         }
@@ -6936,6 +6996,7 @@ mod testes_exclusao {
             nivel: Nivel::Nenhum,
             chave_publica: None,
             bases: vec![("*".into(), permissoes)],
+            tabelas: Vec::new(),
         });
         let usuario = cadastro.usuarios[0].clone();
         let s = com_dados(&dir, cadastro);
@@ -7209,5 +7270,306 @@ mod testes_conflito {
             &sessao,
         )
         .unwrap();
+    }
+}
+
+/// Direito no nivel da TABELA.
+///
+/// Ate a 0.17.0 a permissao parava na base: quem lia a base lia todas as
+/// tabelas dela. A folha de pagamento e a tabela de clientes moram no mesmo
+/// banco porque o negocio e um so, e o direito de ler as duas nao e o mesmo.
+///
+/// O que estes testes travam, em ordem de importancia:
+///
+/// 1. a regra da tabela **tira** de quem le a base inteira;
+/// 2. a regra da tabela **da** a quem nao le a base nenhuma;
+/// 3. `juntar` e `unir` **nao sao a porta dos fundos** -- as tabelas delas nao
+///    passam pelo campo que o portao geral olha;
+/// 4. a arvore e o catalogo **escondem** o que nao da para abrir;
+/// 5. um `config.json` sem regra de tabela continua se comportando igual.
+#[cfg(test)]
+mod testes_direito_por_tabela {
+    use super::*;
+    use crate::usuarios::Cadastro;
+
+    fn dir_temp(nome: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("phx-dt-{nome}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    /// O cadastro sai do JSON, e nao de uma struct montada a mao: assim o
+    /// teste tambem exercita a LEITURA do `config.json`, que e onde o direito
+    /// por tabela e escrito de verdade.
+    fn cadastro(bases: &str) -> Cadastro {
+        Cadastro::de_json(&pedido(&format!(
+            r#"{{"usuarios":[{{"login":"ana","id":9,
+                 "senha_hash":"pbkdf2-sha256$1000$00$00","bases":{bases}}}]}}"#
+        )))
+        .unwrap()
+    }
+
+    /// Uma base `b` com duas tabelas: `clientes` e `folha`.
+    fn servidor(dir: &std::path::Path, cadastro: Cadastro) -> (Arc<Servidor>, Sessao) {
+        let c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            cadastro: cadastro.clone(),
+            ..Config::default()
+        };
+        let s = Servidor::novo(c).unwrap();
+        let dono = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &dono)
+            .unwrap();
+        for tab in ["clientes", "folha"] {
+            s.executar(
+                "criar_tabela",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"{tab}",
+                        "colunas":[{{"nome":"id","tipo":"Int4","obrigatoria":true}},
+                                   {{"nome":"nome","tipo":"Str(20)"}}],
+                        "indices":[{{"nome":"porId","colunas":["id"],"unico":true,
+                                     "primario":true}}]}}"#
+                )),
+                &dono,
+            )
+            .unwrap();
+            s.executar(
+                "inserir",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"{tab}","linha":{{"id":1,"nome":"x"}}}}"#
+                )),
+                &dono,
+            )
+            .unwrap();
+        }
+        let sessao = Sessao {
+            usuario: cadastro.por_login("ana").cloned(),
+            ..Sessao::default()
+        };
+        (s, sessao)
+    }
+
+    /// Pelo `despachar`, que e por onde o pedido entra de verdade: e ali que
+    /// mora o portao, e nao no `executar`.
+    fn pede(s: &Arc<Servidor>, sessao: &Sessao, corpo: &str) -> Result<Json> {
+        let mut ses = Sessao {
+            usuario: sessao.usuario.clone(),
+            ..Sessao::default()
+        };
+        let (_, _, r) = s.despachar(
+            &format!(r#"{{"token":"t",{corpo}}}"#),
+            &mut ses,
+            "127.0.0.1",
+        );
+        r
+    }
+
+    /// O caso do enunciado: le a base inteira, menos a folha.
+    #[test]
+    fn a_regra_da_tabela_tira_de_quem_le_a_base() {
+        let dir = dir_temp("tira");
+        let (s, ses) = servidor(
+            &dir,
+            cadastro(r#"{"*":{"ler":true,"tabelas":{"folha":{}}}}"#),
+        );
+
+        assert!(pede(
+            &s,
+            &ses,
+            r#""op":"ler","database":"b","tabela":"clientes","rowid":1"#
+        )
+        .is_ok());
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"ler","database":"b","tabela":"folha","rowid":1"#,
+        )
+        .unwrap_err();
+        assert_eq!(e.nome(), "ACESSO_NEGADO");
+        assert!(
+            e.to_string().contains("b.folha"),
+            "a recusa tem de dizer QUAL tabela: {e}"
+        );
+    }
+
+    /// E o contrario, que e o caso que a intersecao nao resolveria: nao le a
+    /// base nenhuma, le uma tabela.
+    #[test]
+    fn a_regra_da_tabela_da_a_quem_nao_le_a_base() {
+        let dir = dir_temp("da");
+        let (s, ses) = servidor(
+            &dir,
+            cadastro(r#"{"b":{"tabelas":{"clientes":{"ler":true}}}}"#),
+        );
+
+        assert!(pede(
+            &s,
+            &ses,
+            r#""op":"ler","database":"b","tabela":"clientes","rowid":1"#
+        )
+        .is_ok());
+        assert!(pede(
+            &s,
+            &ses,
+            r#""op":"ler","database":"b","tabela":"folha","rowid":1"#
+        )
+        .is_err());
+        // E continua sem poder GRAVAR na que le.
+        assert!(pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"b","tabela":"clientes","linha":{"id":2}"#
+        )
+        .is_err());
+    }
+
+    /// `"*"` de tabela vale para as nao listadas, como o `"*"` de base.
+    #[test]
+    fn a_estrela_de_tabela_vale_para_as_nao_listadas() {
+        let dir = dir_temp("estrela");
+        let (s, ses) = servidor(
+            &dir,
+            cadastro(r#"{"*":{"ler":true,"tabelas":{"*":{},"clientes":{"ler":true}}}}"#),
+        );
+        assert!(pede(
+            &s,
+            &ses,
+            r#""op":"ler","database":"b","tabela":"clientes","rowid":1"#
+        )
+        .is_ok());
+        assert!(pede(
+            &s,
+            &ses,
+            r#""op":"ler","database":"b","tabela":"folha","rowid":1"#
+        )
+        .is_err());
+    }
+
+    /// A arvore mostra o que da para abrir, e nao o que existe.
+    #[test]
+    fn a_arvore_esconde_a_tabela_negada() {
+        let dir = dir_temp("arvore");
+        let (s, ses) = servidor(
+            &dir,
+            cadastro(r#"{"*":{"ler":true,"tabelas":{"folha":{}}}}"#),
+        );
+        let r = pede(&s, &ses, r#""op":"tabelas","database":"b""#).unwrap();
+        let nomes: Vec<String> = r
+            .campo("tabelas")
+            .and_then(Json::lista)
+            .unwrap()
+            .iter()
+            .filter_map(|x| x.texto().map(str::to_string))
+            .collect();
+        assert_eq!(nomes, vec!["clientes".to_string()], "veio {nomes:?}");
+    }
+
+    /// O catalogo e a mesma lista por outra porta.
+    #[test]
+    fn o_catalogo_esconde_a_tabela_negada() {
+        let dir = dir_temp("catalogo");
+        let (s, ses) = servidor(
+            &dir,
+            cadastro(r#"{"*":{"ler":true,"tabelas":{"folha":{}}}}"#),
+        );
+        for op in ["sistabelas", "siscolunas"] {
+            let r = pede(&s, &ses, &format!(r#""op":"{op}","database":"b""#)).unwrap();
+            let texto = r.escrever();
+            assert!(
+                !texto.contains("folha"),
+                "{op} vazou a tabela negada: {texto}"
+            );
+            assert!(texto.contains("clientes"), "{op} escondeu demais");
+        }
+    }
+
+    /// Junção nao tem campo `tabela`: as duas moram em `a.tabela` e `b.tabela`.
+    /// Sem a conferencia propria, bastaria pedir a folha como lado B.
+    #[test]
+    fn juntar_nao_e_a_porta_dos_fundos() {
+        let dir = dir_temp("juntar");
+        let (s, ses) = servidor(
+            &dir,
+            cadastro(r#"{"*":{"ler":true,"tabelas":{"folha":{}}}}"#),
+        );
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"juntar","database":"b",
+               "a":{"tabela":"clientes","chave":"id"},
+               "b":{"tabela":"folha","chave":"id"}"#,
+        )
+        .unwrap_err();
+        assert_eq!(e.nome(), "ACESSO_NEGADO");
+        assert!(e.to_string().contains("b.folha"), "veio {e}");
+    }
+
+    /// União tambem nao tem campo `tabela`: tem uma LISTA.
+    #[test]
+    fn unir_nao_e_a_porta_dos_fundos() {
+        let dir = dir_temp("unir");
+        let (s, ses) = servidor(
+            &dir,
+            cadastro(r#"{"*":{"ler":true,"tabelas":{"folha":{}}}}"#),
+        );
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"unir","database":"b","tabelas":["clientes","folha"]"#,
+        )
+        .unwrap_err();
+        assert_eq!(e.nome(), "ACESSO_NEGADO");
+        assert!(e.to_string().contains("b.folha"), "veio {e}");
+    }
+
+    /// O `config.json` que ja existia continua se comportando igual. E o teste
+    /// que importa: uma regra nova que muda o significado da configuracao
+    /// antiga tira o direito de alguem sem ninguem ter pedido.
+    #[test]
+    fn sem_regra_de_tabela_nada_muda() {
+        let dir = dir_temp("igual");
+        let (s, ses) = servidor(&dir, cadastro(r#"{"*":{"ler":true}}"#));
+        for tab in ["clientes", "folha"] {
+            assert!(
+                pede(
+                    &s,
+                    &ses,
+                    &format!(r#""op":"ler","database":"b","tabela":"{tab}","rowid":1"#)
+                )
+                .is_ok(),
+                "{tab} deixou de ser legivel"
+            );
+        }
+        let r = pede(&s, &ses, r#""op":"tabelas","database":"b""#).unwrap();
+        assert_eq!(r.campo("tabelas").and_then(Json::lista).unwrap().len(), 2);
+    }
+
+    /// Supervisor passa por cima de qualquer regra de tabela -- como ja passa
+    /// por cima da regra de base.
+    #[test]
+    fn supervisor_passa_por_cima() {
+        let dir = dir_temp("super");
+        let c = Cadastro::de_json(&pedido(
+            r#"{"usuarios":[{"login":"ana","id":9,"supervisor":true,
+                 "senha_hash":"pbkdf2-sha256$1000$00$00",
+                 "bases":{"*":{"tabelas":{"folha":{}}}}}]}"#,
+        ))
+        .unwrap();
+        let (s, ses) = servidor(&dir, c);
+        assert!(pede(
+            &s,
+            &ses,
+            r#""op":"ler","database":"b","tabela":"folha","rowid":1"#
+        )
+        .is_ok());
     }
 }

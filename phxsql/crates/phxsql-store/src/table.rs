@@ -2102,6 +2102,11 @@ impl Table {
     }
 
     /// Paginas ocupadas pelo `.ndx`, incluindo a pagina 0 de cabecalho.
+    /// Do `.ndx`: paginas servidas pelo cache, lidas do arquivo, e gravadas.
+    pub fn estatisticas_paginas(&self) -> (u64, u64, u64) {
+        self.ndx.estatisticas_paginas()
+    }
+
     pub fn paginas_indice(&self) -> u64 {
         self.ndx.paginas()
     }
