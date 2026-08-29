@@ -1,5 +1,15 @@
 # Sprints inspirados no Cassandra(R) — proposta para aprovação
 
+> **Este documento continua sendo a fonte, mas não é mais a lista.** As
+> cinco propostas daqui foram para a lista única de `docs/SPRINTS.md`,
+> junto com as outras 26 dos manuais do Redis(R), MariaDB(R) e
+> Teradata(R) — lá elas estão ordenadas por valor ÷ custo, com as
+> duplicatas fundidas e as contradições apontadas. Duas coisas mudaram na
+> travessia: o **Sprint 1 foi reescrito** para entrar pedido e não
+> imposto (`SPRINTS.md` §2.1 — do jeito que está aqui, ele afrouxaria a
+> garantia da exclusão no padrão, sem ninguém pedir), e o **Sprint 2 saiu
+> da lista de sprints** por leitura do próprio código (§5.1).
+
 > **Nada deste documento foi executado, e nada será sem o seu sim.** Ele é uma
 > lista de trabalho *proposta*, sprint a sprint, para você aprovar, recusar ou
 > reordenar. Onde há código novo neste commit, é **um exemplo de medição** —

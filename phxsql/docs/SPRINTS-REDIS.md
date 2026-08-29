@@ -1,5 +1,15 @@
 # O manual do Redis(R), lido contra a casa — sprints para aprovação
 
+> **Este documento continua sendo a fonte, mas não é mais a lista.** As
+> quatro propostas daqui foram para a lista única de `docs/SPRINTS.md`,
+> junto com as outras 27. Duas notas da travessia: o **Sprint 2 teve a
+> premissa derrubada por leitura de código** — o job com
+> `UPDATE … SET SOFTDELETED` que ele usa como alternativa barata não
+> existe, porque a camada SQL recusa `UPDATE` pelo nome
+> (`sintaxe.rs:269`) e o corpo de rotina também (`SPRINTS.md` §6, item
+> 18); e o **Sprint 3 aparece lá com o rótulo certo**, que é contrato e
+> cliente, não capacidade nova (§4.2).
+
 Documento de **proposta**, no contrato do `CONCORRENTES.md` e do
 `CASSANDRA.md`: toda afirmação sobre o Redis(R) traz a fonte (URL e seção);
 todo número da casa sai da bancada, do `DESEMPENHO.md` ou de uma medição

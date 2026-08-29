@@ -262,21 +262,27 @@ offline.
 | `sequencias` — o contador de cada tabela, ajustável pelo admin | pronto |
 | Espelho `.bkp`: segunda chance do `.reg` | pronto |
 | Bancada medida contra o MySQL(R), 10 milhões de registros | pronto |
-| Replicação — `.log` v2 com imagem da linha (as portas já entram no `config.json`) | desenhada |
-| Jobs de execução — operação nomeada no relógio | pendente |
-| Triggers nas três operações | pendente |
-| Stored procedures | pendente |
+| Replicação — `.log` v2 com imagem da linha, quatro modos e agendamento por origem | pronto |
+| Cluster com eleição e promoção automática, e `REDIRECIONA` na escrita | pronto |
+| Jobs de execução — operação nomeada no relógio, com o poder do usuário do job | pronto |
+| Triggers nas três operações, e stored procedures — um interpretador só | pronto |
+| Parar e subir a porta de dados pela interface, trocando a porta | pronto |
+| Servidor MCP — `phxsqld --mcp`, com o `tools/list` lendo o catálogo | pronto |
+| Camada SQL — crate `phxsql-sql`, **escrita aqui** e não sobre o rusqlite | pronto |
+| Driver ODBC de saída — `cdylib` de ABI C, provada por 73 conferências e pelo `isql` | pronto |
+| Telemetria ao vivo, marca de dado pessoal (LGPD), DbLink com MySQL(R) e PostgreSQL(R) | pronto |
+| Cliente OLE DB nativo | recusado com motivo — a ponte `MSDASQL` cobre ([`docs/ODBC.md`](docs/ODBC.md) §6) |
+| Restaurar backup — a metade que falta de «Backup e restauração» | pendente |
 | Trava por tabela no lugar da trava única global | pendente |
-| Parar e subir a porta de dados pela interface | pendente |
-| Servidor MCP | pendente |
-| Camada SQL (tabela virtual via rusqlite, atrás de *feature*) | pendente |
-| Driver ODBC de saída, depois cliente ODBC/OLE DB | pendente |
 | Integração no FraseSQL como `engine = "phxsql"` | pendente |
-| Compactação, transações, concorrência | pendente |
+| Compactação, transações, modo exclusivo, TLS | pendente |
 
 O roteiro completo, com as decisões tomadas e o que cada peça depende, está em
 [`docs/PLANO.md`](docs/PLANO.md); a revisão do que ainda falta, com o porquê de
-cada ausência, em [`docs/PENDENCIAS.md`](docs/PENDENCIAS.md).
+cada ausência, em [`docs/PENDENCIAS.md`](docs/PENDENCIAS.md) — que é a fonte
+desta tabela, e onde o estado é medido contra o código. As **propostas** de
+trabalho, lidas dos manuais de quatro motores e ainda esperando aprovação,
+estão em [`docs/SPRINTS.md`](docs/SPRINTS.md); elas não são pendências.
 
 ## Uso
 
