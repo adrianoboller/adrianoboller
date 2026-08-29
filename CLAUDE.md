@@ -191,6 +191,41 @@ nasceu, com tabela e tudo, dessa diferença. Antes de medir:
 impedir isso não cobria aquele pedaço. Todo número visível ou sai de um gerador,
 ou está errado e ninguém percebeu ainda.
 
+**Texto de tela entra pela fábrica de idiomas — isso é pétreo.** Palavra do
+dono: *«o agente multi linguagem deve fazer uma revisão constante para manter a
+possibilidade de mudar entre português, inglês… pelo login e pela tela de
+configuração. A cada nova implementação esse agente tradutor deve atualizar
+strings fixas por variáveis de multi linguagem.»* A máquina existe desde a
+0.17.0 — `phxsys.mensagens`, a `FABRICA_TELA` do `idiomas.rs`, as bandeiras do
+login. O que faltava era o laço que **conta**: medido antes desta rodada,
+11.987 linhas de interface e **16** `data-txt`. Máquina que funciona e que
+ninguém usa é promessa, não garantia.
+
+O conferidor é `crates/phxsql-server/src/conferidor.rs`, e ele roda junto dos
+testes: `cargo run --example textos-fora-da-fabrica -p phxsql-server` lista
+arquivo e linha de cada texto que ainda está cravado, e a **catraca** (`TETO`)
+reprova quem acrescentar mais um. O número só desce — traduziu um punhado,
+baixe a catraca no mesmo commit, porque catraca frouxa não segura nada. O
+procedimento de acrescentar um texto está em `docs/MENSAGENS.md`.
+
+Três armadilhas que esta frente já pagou:
+
+- **Rótulo se traduz; dado, nunca.** É a mesma lição do «Blumenau» virando
+  «BLUMENAU». No conferidor ela virou crivo: tudo o que a página **interpola**
+  (`${…}`) some antes da varredura, e só sobra o que alguém digitou no fonte.
+- **Texto se resolve por CHAVE, nunca por comparação da frase.** No dia em que
+  alguém melhorar a redação, quem compara frase para decidir a tradução quebra
+  calado — e quebra em silêncio, mostrando português.
+- **Chave morta é pior que chave faltando.** O tradutor a vê na tabela, traduz
+  nos seis idiomas, e nada muda na tela. Há teste para os dois lados do laço:
+  chave que a tela pede e não existe, e texto que existe e ninguém pede.
+
+E as **três mensagens que não se traduzem de propósito** continuam assim, com o
+motivo escrito no `mensagens.rs`: `erro.redireciona` (o cliente recorta o
+prefixo — é protocolo vestido de texto), `erro.sinal` (a `MESSAGE_TEXT` é do
+dono do banco) e `erro.cancelado` (o texto já vem montado). Achou uma quarta do
+mesmo naipe? Documente a decisão em vez de traduzir.
+
 **Toda bateria de testes tem prova real e aprendizado documentado — frutífero
 ou infrutífero.** Prova real é nos dois sentidos: o teste novo tem de **falhar
 com o defeito reposto** e passar com o conserto (já houve teste que passava por

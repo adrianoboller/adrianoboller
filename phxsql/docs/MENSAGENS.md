@@ -120,13 +120,147 @@ Em `mensagens.rs` e `servidor.rs` (`testes_firewall_e_mensagens`):
 `celula_vazia_nunca_vira_texto_vazio` mostra exatamente o estrago que se quer
 impedir: o cliente receberia texto **vazio**, pior que sem tradução nenhuma.
 
-## O próximo passo natural (não entrou nesta rodada)
+## Os textos da TELA — a fábrica, o conferidor e a catraca
 
-A tradução da **interface** do console — os milhares de rótulos do
-`index.html` — não entrou. O mecanismo ficou pronto para ela: bastaria semear
-os rótulos como linhas (`tela.botao_salvar`, …), a página pedir o pacote do
-idioma numa op (a tabela já se lê pela `varrer`) e aplicar nos elementos. O
-que isso exigiria de verdade é o trabalho editorial: milhares de textos
-curtos, onde tradução ruim é pior que inglês nenhum — exatamente a razão de a
-célula vazia cair para o português. Traduzir os `{detalhe}` gerados pelo motor
-é a outra metade, e essa pede TextName por mensagem do motor, não só a moldura.
+O que o servidor **diz** virou dado na 0.17.0; o que a tela **mostra** entrou
+depois, na mesma tabela e com o mesmo desenho: `TextName` começando com
+`tela.` em vez de `erro.`, a fábrica em `crates/phxsql-server/src/idiomas.rs`,
+e os mesmos três degraus de resolução. Sem tabela e sem escolha, a tela é a de
+sempre, em português — guarda nova entra pedida.
+
+### O buraco, medido
+
+A máquina funcionava e quase nada passava por ela. Medido antes desta rodada:
+**11.987 linhas de interface e 16 `data-txt`**. O laço que existia olhava para
+um lado só (todo `data-txt` tem de existir na fábrica), e esse pega o nome
+escrito errado, não o buraco.
+
+| | antes | depois |
+|---|---|---|
+| textos na fábrica | 31 | 258 |
+| textos cravados em português | 2.185 | 1.994 |
+| cobertura | 1% | 11% |
+| chaves na `FABRICA_TELA` | 32 | 199 |
+
+Os números saem do conferidor, não da mão:
+
+```bash
+cargo run --example textos-fora-da-fabrica -p phxsql-server            # o placar
+cargo run --example textos-fora-da-fabrica -p phxsql-server -- --tudo  # arquivo e linha de cada um
+cargo run --example textos-fora-da-fabrica -p phxsql-server -- --isentos
+```
+
+### Como acrescentar um texto novo
+
+1. **A chave e as seis traduções**, uma linha em `FABRICA_TELA`
+   (`crates/phxsql-server/src/idiomas.rs`), na ordem Português, Francês,
+   Inglês, Italiano, Alemão, Espanhol:
+
+   ```rust
+   texto!("tela.mi_exportar", "Exportar…", "Exporter…", "Export…", "Esporta…", "Exportieren…", "Exportar…"),
+   ```
+
+   O português nunca é vazio: ele é o degrau 2. Célula que você não sabe
+   traduzir fica **vazia**, e cai no português — melhor nenhuma tradução que
+   uma inventada.
+
+2. **O uso, na tela**, numa das quatro formas — e sempre com o português de
+   fábrica ao lado, que é o que aparece antes de o pacote de idioma chegar:
+
+   | onde | forma |
+   |---|---|
+   | HTML estático | `<button data-txt="tela.fechar">Fechar</button>` |
+   | atributo que se lê | `data-txt-ph=`, `data-txt-tt=` (title), `data-txt-al=` (aria-label) |
+   | HTML montado em JS | `` `<h3>${esc(txt("tela.painel", "Painel"))}</h3>` `` |
+   | tabela lida antes do login (`MENUS`, `FERRAMENTAS`) | `{ rot:"Painel", txt:"tela.painel" }` — o par, **na mesma linha** |
+
+   O par existe porque `MENUS` e `FERRAMENTAS` são lidos no arranque, quando
+   ainda não há texto traduzido nenhum: `txt(…)` ali devolveria português para
+   sempre. Quem desenha chama `txt(f.txt, f.rot)` na hora de pintar.
+
+3. **Rode os portões.** `cargo test --workspace` já cobre os três laços.
+
+### O que o conferidor reprova
+
+| teste | reprova |
+|---|---|
+| `conferidor::a_catraca_dos_textos_fora_da_fabrica` | texto de tela cravado **a mais** que o `TETO` — e também traduzir sem baixar a catraca |
+| `idiomas::todo_data_txt_da_pagina_existe_na_fabrica` | chave que a tela pede e a fábrica não tem (a tela ficaria em português para sempre) |
+| `idiomas::todo_texto_da_fabrica_e_pedido_por_alguem` | chave morta: traduzida nos seis idiomas e pedida por ninguém |
+| `idiomas::a_fabrica_e_bem_formada` | nome repetido, português vazio, ou texto que não cabe nos 250 da coluna |
+
+O `TETO` **só desce**. Traduziu um punhado: rode o exemplo, veja o número novo
+e baixe a catraca no mesmo commit — catraca frouxa não segura nada.
+
+### O que o conferidor enxerga, e o que não
+
+Duas vias, porque a interface escreve texto de dois jeitos: **marcação** (o
+texto entre `>` e `<` de uma etiqueta conhecida, mais `title`, `placeholder`,
+`aria-label` e `alt`) e **rótulo** (o literal em posição de rótulo no
+JavaScript: `rot:`, `{t:`, `diz:`, `dica:`, e o primeiro argumento de
+`avisar(`, `confirm(`, `prompt(` e `folha(`).
+
+Fora dessas formas ele não vê — por exemplo o segundo item de um par solto
+`["registros", e.registros]`. Está declarado no `RECEITAS`: forma nova de
+rótulo entra lá, e o número **sobe**. Subir o número é o conferidor
+funcionando, não falhando.
+
+**Dado não vira rótulo, e não é por lista: é por forma.** Antes de varrer, todo
+`${…}` some e vira um marcador. O que a página interpola (o dado do banco)
+desaparece; o que sobra é o que alguém digitou no fonte, que é a definição de
+rótulo. É a lição do «Blumenau» virando «BLUMENAU» virada crivo.
+
+Há uma terceira lista, a dos **isentos**: nome próprio, sigla, extensão de
+arquivo e identificador que a pessoa digita em outro lugar (`config.json`,
+`.reg`, `PK`, `rownum`, `PhxSql`). Cada um com a razão escrita. Rótulo que
+apenas ainda não foi traduzido **não entra ali** — ele fica na conta do que
+falta, e é essa conta que dirige a próxima leva.
+
+### Trocar o idioma, pelos dois lados
+
+Pelo **login** (as bandeiras, antes de entrar) e pela **tela de configuração**
+— Configurações → Gerais do servidor, e Configurações → Idiomas da interface.
+Os dois seletores são desenhados pela mesma função: um segundo seletor com a
+sua própria lista de idiomas seria a segunda verdade, e é sempre a segunda que
+envelhece.
+
+A troca vale **na hora**, sem recarregar: `aplicarIdioma` repinta os quatro
+atributos, o cromo (menu, barra, abas, árvore) e a tela aberta, através do
+gancho `est.repintar` — que `folha()` limpa e a tela que sabe se redesenhar
+repõe. Sem esse gancho, trocar o idioma na tela de Idiomas jogaria a pessoa no
+Painel. A escolha fica no `localStorage` e atravessa o login e o sair.
+
+### A prova real, exercitando
+
+`node phxsql/testes-web/prova-idiomas.mjs --capturas <dir>` sobe um `phxsqld`
+próprio (portas 6650/6651), dirige o Chromium e prova sete coisas, entre elas
+o **comportamento velho** (sem escolher nada, a tela é a de sempre) e o texto
+que **estica**: o alemão é ~30% mais longo que o português, e o passo 6 falha
+se qualquer rótulo da barra de ferramentas ficar cortado ou se a página passar
+a rolar de lado.
+
+Foi ela que achou o defeito desta rodada que ler o código não acharia: o
+`aplicarTema` do arranque passou a pedir um texto, e o `txt` era `const` — a
+página morria com «Cannot access 'txt' before initialization», e o estrago
+aparecia longe da causa (o botão de tema ficava sem `onclick`, porque a linha
+que o liga vem depois da que estourou). Declaração de função sobe; `const`
+não.
+
+## O que falta, com precisão
+
+Traduzido 100%: a tela de **entrada**, o **cromo** inteiro (barra do alto,
+barra de menu com os nove menus e os setenta e três itens, barra de
+ferramentas com os trinta e um botões, as cinco abas, a árvore e o painel
+lateral), a tela de **Idiomas**, e da tela de **Configurações gerais** o
+título, o subtítulo, os botões e a linha do idioma.
+
+Falta o **miolo das telas**: 1.994 textos, com arquivo e linha no
+`--tudo`. Por ordem do que a pessoa mais vê, a próxima leva é: os 99 títulos e
+subtítulos de `folha(`, os 136 cabeçalhos de coluna distintos (`{t:"…"}`), os
+39 recados de `avisar(` e as 19 perguntas de `confirm(`. Depois vêm os corpos
+de texto longo — telemetria, LGPD, replicação, a tela da Claude — onde
+tradução ruim é pior que português honesto, e por isso a célula vazia cai para
+o português.
+
+Traduzir os `{detalhe}` que o motor gera continua sendo outra metade, e essa
+pede `TextName` por mensagem do motor, não só a moldura.

@@ -1,4 +1,4 @@
-<title>PhxSql — Centro de Controle</title>
+<title data-txt="tela.titulo_pagina">PhxSql — Centro de Controle</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAiCAMAAAAau2s5AAABIFBMVEX/ZAD/owP91g7/lwf/nQr/aAD/ogL/FAD/1iL/EAD/zyBEnf//LQAjo/+Q/6r/cQv2/Jj/XgBc7vT/xhf/n00AM///AP//oYj04lb/2lIi1/9VVf+cqv////IA/wD/AID/U5YzZv+qVf+M6eX/tP8A/4BVAP9V/6q5/wD/Kir/bUn/Zsz/vlcAZv8AAP8AgP8AAAAAVf//AAAAQP//VQD/NQD/RwD/hAD/BAD/NgD/WAL/BAD/RwD/SAD/ZgL/iQD/mAD/dwD/tgL/KAD/agL/pQH/GgH/JgD/NwD/VwD/ZwD/xQr/AgD/FQD/JwD/OAD/dQP/dQD/qAL/CAD/KgD/OQD/NgD/WAD/uAH//wAAqP+D//ut////FQD/JwD/RADIXQuSAAAAYHRSTlObHh5ammrPpOnVXQNqCgMmGtMGqwcFAQMtVQYDCAIBAgQFAwUDBAMGCwYHBV4FAgMAAwwEKxP2EC4uEU4VLzD29vX5FRP4Ek7w/fX5a20xUhRNNZD6qs5LbwUEBAMxzkq5EUlEAAAEBElEQVR42k2Uh3LjOAyGqS7LdlzS2yZbrp9Biurdvffe/f5vcbST21nOUOIAHwFQIn603WKMt1cEtgbGpVLpPEvYMIzzm5ngSteZDSOMdV3fE167uyCf43OdBU0ju0sABhr6FdHUG/iIlWUPXWeTrXH2mVM1kt8yF9IZB2v1X1I0cIlFh5cPkmViix3h1TXLjjHSGcf1VKqzupgzz5Pn/e579hKVFQlf1B4He52B+AsR1WvCambgnggaABDy9Flsmlyra+bEqAg8L5/B3M09TsNUkK817TEPu+JPUOR5UkQ7IvJyT/YhHE8gbfiimPR6KjvC5XAY+Kp6zV8zEPiyL/aqU9BDE9K3zkQsN6qi1lMfyZNe+g7CGZQtQDBtSOtqQ4b7m28Yp/+ZICRXe9VElnkope84uapq6yrHQK4h1xuNxpo81N91wwAiVqvJghKfB3wPLL68aZQ5gmAjN8RpOSlr4MTj+i0rJal2a1AEwD9gXS6Xp2JDJhzKhUI5kYSkkghgmu/3f4uFMovwrZTN/oCLWUzKAj9FMSKoUkFSpVsRiB++xZJckXtTeGUfW+p2KxKqJIiIOeR3EUXdToHNjuTrv0lJgnpVmQNsoQ4zF7oMECv0HA9FK2S3l7Ztm4dlp5BZy3JSkayobdvLto1WUaEiAaIUdexFJnO07YJHB5motuE4zvFGw7ch27vMZBZ2B9EbhF9pZjlPKcwYQdOM4ymfzz9wk2h4A17bVpR5u53hYkDpu1Gr2RrM2u0FgSgK/3jKPjy+FHc33hCTRbs9G7RqJ8n/He2fa8pxEATHeWvUPJ2sq202n89mi/VWywpb82MwUI4LCq+IXSoYpFJKKnXI1KzTaiJoj4+asBqtzMPgcHEMwABAuXoddOIGs1QQ0PeV5HP8wwPvOCQf0yBIzQKXAh47HJJi028edHeW6lNKXc88X1s2LS+ktK/0D3AK62ZOQM44NE3PJVZfcZ3asDWaCKIoSKPAjIAqfYsOvVWccxzk1E3f94d0nHP7r9YqNsdTQeDqG8jHb4HL89QLQz9mICG+GXlWk0pjWmu6Q5NcBq1F9RrlBRqFpmeSDaCJFEWUeE0aiU8QepmWdEndck2T8MhnG4gVm2iCOGdz58SWVQNRrIcn0/S5c2pC8mOuIBHLsnLO3W58jwwjDTmpFg6btIvA7Y/4c+aNw0mog85nt1DMeukWsWbGAKwHtuDZI3BnygIJf25ibjFXyIsOcMuuOhMYdFYqnMalr8YevKXiNIPZvFOYUJcqB3g+y0z20uAM/Clxe7AG7E9kRsrczrgB/GX8om9Mzc6Nrn/Igg5NlwbHUz8199ymfgH1/0HjQ0Av4+uLXkpDcPzSTykkh3/xlP4DLAPwBRpxba0AAAAASUVORK5CYII=">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -218,27 +218,35 @@ th input[type=checkbox],th input[type=radio]{
 #entrada .idiomas{
   display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:0 0 10px;
 }
-#entrada .idi{
+#entrada .idi, .idi-aqui .idi{
   display:flex;align-items:center;gap:7px;
   background:var(--fundo);border:1px solid var(--linha-forte);border-radius:6px;
   /* 44px de altura: alvo de toque de dedo, e nao de ponteiro. */
   padding:8px 8px;min-height:44px;
   font-size:11.5px;color:var(--texto-2);text-align:left;line-height:1.15;
 }
-#entrada .idi:hover{border-color:var(--laranja);color:var(--texto)}
-#entrada .idi[aria-checked="true"]{
+#entrada .idi:hover, .idi-aqui .idi:hover{border-color:var(--laranja);color:var(--texto)}
+#entrada .idi[aria-checked="true"], .idi-aqui .idi[aria-checked="true"]{
   border-color:var(--laranja);color:var(--texto);background:var(--realce);
 }
 /* A bandeira da Franca e a da Italia tem faixa branca, e no tema claro ela
    sumiria contra o papel. A borda fina desenha o limite da bandeira. */
-#entrada .idi svg{
+#entrada .idi svg, .idi-aqui .idi svg{
   width:22px;height:15px;flex:none;border-radius:2px;
   box-shadow:0 0 0 1px var(--linha-forte);
 }
-#entrada .idi .nome{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+#entrada .idi .nome, .idi-aqui .idi .nome{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
 #entrada .idioma-dica{
   font-size:10.5px;color:var(--texto-3);margin:0 0 20px;line-height:1.45;
 }
+/* O mesmo seletor, agora dentro da tela de Idiomas. Ali a largura sobra, e o
+   grid se acomoda sozinho -- 3 colunas no cartao do login, quantas couberem
+   aqui. */
+.idi-aqui{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
+  gap:6px;max-width:760px;margin:0;
+}
+.idi-escolha{align-items:center;gap:14px;flex-wrap:wrap}
 
 /* --------------------------------------------------------- as conexoes */
 #entrada .conexoes{margin-top:18px;border-top:1px solid var(--linha);padding-top:14px}
@@ -1658,7 +1666,7 @@ td label,td .rot-dado{text-transform:none;letter-spacing:0;font-size:inherit;
          bandeira nao desenha no Windows, que e onde este console mais roda --
          apareceria a sigla "BR" numa caixinha, ou nada. -->
     <div class="idiomas" id="idiomas" role="radiogroup"
-         aria-label="Idioma da interface"></div>
+         aria-label="Idioma da interface" data-txt-al="tela.idioma_da_interface"></div>
     <p class="idioma-dica" data-txt="tela.idioma_dica">A escolha vale nesta
       sessão e fica guardada neste navegador.</p>
 
@@ -1742,34 +1750,38 @@ td label,td .rot-dado{text-transform:none;letter-spacing:0;font-size:inherit;
     <span class="fita" id="fita">—</span>
     <span class="espaco"></span>
     <span class="recado" id="aviso" role="status" aria-live="polite" hidden></span>
-    <span class="demo" id="selo" hidden>modo demonstração</span>
-    <button class="tema" id="btTema" title="Alternar tema" aria-label="Alternar tema claro e escuro">🌓</button>
+    <span class="demo" id="selo" hidden data-txt="tela.demo">modo demonstração</span>
+    <button class="tema" id="btTema" title="Alternar tema"
+            aria-label="Alternar tema claro e escuro" data-txt-al="tela.tema_dica">🌓</button>
     <span class="eu" id="eu"></span>
-    <button class="botao secundario" id="btSair">Sair</button>
+    <button class="botao secundario" id="btSair" data-txt="tela.sair">Sair</button>
   </div>
 
-  <div class="menubar" id="menubar" role="menubar" aria-label="Menu principal"></div>
+  <div class="menubar" id="menubar" role="menubar" aria-label="Menu principal"
+       data-txt-al="tela.menu_principal"></div>
 
   <div id="ferramentas" role="toolbar"
-       aria-label="Barra de ferramentas"></div>
+       aria-label="Barra de ferramentas" data-txt-al="tela.barra_ferramentas"></div>
 
   <!-- A arvore vive dentro de uma casca. O topo da casca NAO e refeito pelo
        `montarArvore()`, que troca o `innerHTML` de `#arvore` inteiro -- e por
        isso que o botao de pinar mora aqui fora, e nao ali dentro. -->
   <div class="lateral" id="lateral">
     <div class="lateral-topo">
-      <span class="lateral-tit">Navegação</span>
+      <span class="lateral-tit" data-txt="tela.navegacao">Navegação</span>
       <button class="lateral-pin" id="btPinar"></button>
     </div>
-    <nav class="arvore" id="arvore" aria-label="Bancos e tabelas"></nav>
-    <p class="lateral-nota">Recolhido, pinado e largura ficam
-      <b>neste navegador</b> — não no servidor.</p>
+    <nav class="arvore" id="arvore" aria-label="Bancos e tabelas"
+         data-txt-al="tela.bancos_e_tabelas"></nav>
+    <p class="lateral-nota"><span data-txt="tela.lateral_nota">Recolhido, pinado
+      e largura ficam</span> <b data-txt="tela.neste_navegador">neste navegador</b>
+      <span data-txt="tela.lateral_nota_fim">— não no servidor.</span></p>
   </div>
   <!-- A pega de arrastar a largura da arvore. `separator` com valor porque
        ela tambem anda pelo teclado, com as setas. -->
   <div class="pega-arvore" id="pegaArvore" role="separator"
        aria-orientation="vertical" aria-label="Largura do painel lateral"
-       tabindex="0"></div>
+       data-txt-al="tela.largura_lateral" tabindex="0"></div>
   <!-- O veu do modo gaveta: escurece o conteudo e fecha ao toque de fora.
        So aparece quando a arvore esta sobreposta. -->
   <div class="veu-arvore" id="veuArvore" hidden></div>
@@ -2132,7 +2144,8 @@ function avisar(texto, ehErro) {
 }
 
 function tabela(colunas, linhas, montar) {
-  if (!linhas.length) return `<div class="vazio">nada aqui</div>`;
+  if (!linhas.length)
+    return `<div class="vazio">${esc(txt("tela.nada_aqui", "nada aqui"))}</div>`;
   return `<div class="rolo"><table><thead><tr>${
     colunas.map(c=>`<th class="${c.cls||""}">${esc(c.t)}</th>`).join("")
   }</tr></thead><tbody>${linhas.map(montar).join("")}</tbody></table></div>`;
@@ -2286,10 +2299,11 @@ async function abrirApp() {
 async function montarArvore(abrirPainel = true) {
   const bancos = await api("bancos");
   est.bancos = bancos;
-  let html = `<div class="no painel" data-admin="painel"><span class="ic">◎</span>Painel</div>
-    <div class="grupo">Bancos de dados
-      <button class="mais" id="btNovoDb" title="Novo database"
-              aria-label="Adicionar um database">+</button></div>`;
+  let html = `<div class="no painel" data-admin="painel"><span class="ic">◎</span>${
+      esc(txt("tela.painel", "Painel"))}</div>
+    <div class="grupo">${esc(txt("tela.bancos_de_dados", "Bancos de dados"))}
+      <button class="mais" id="btNovoDb" title="${esc(txt("tela.novo_database", "Novo database"))}"
+              aria-label="${esc(txt("tela.adicionar_database", "Adicionar um database"))}">+</button></div>`;
   for (const b of bancos) {
     const t = await api("tabelas", { database:b });
     html += `<div class="no db" data-db="${esc(b)}"><span class="ic">▾</span>${esc(b)}</div>`;
@@ -2308,13 +2322,20 @@ async function montarArvore(abrirPainel = true) {
         html += `<div class="no tab emesq" data-db="${esc(b)}" data-tab="${esc(e)}.${esc(n)}">
           <span class="ic">▤</span>${esc(n)}</div>`;
     }
-    if (!t.tabelas.length) html += `<div class="vazio">sem tabelas</div>`;
+    if (!t.tabelas.length)
+      html += `<div class="vazio">${esc(txt("tela.sem_tabelas", "sem tabelas"))}</div>`;
   }
-  html += `<div class="grupo">Administração</div>`;
-  for (const [chave, rotulo, ic] of
-       [["usuarios","Usuários","◉"],["acessos","Acessos","◈"],["bloqueios","Bloqueios","⛔"],
-        ["idiomas","Idiomas","⚑"]])
-    html += `<div class="no" data-admin="${chave}"><span class="ic">${ic}</span>${rotulo}</div>`;
+  html += `<div class="grupo">${esc(txt("tela.administracao", "Administração"))}</div>`;
+  // A chave escrita por extenso, e nao montada com `tela.${chave}`: o laco que
+  // procura chave morta le LITERAL, e chave montada some dele -- passaria a
+  // aprovar como viva uma chave que ninguem pede.
+  for (const [chave, rotulo, ic, ch] of
+       [["usuarios","Usuários","◉","tela.usuarios"],
+        ["acessos","Acessos","◈","tela.acessos"],
+        ["bloqueios","Bloqueios","⛔","tela.bloqueios"],
+        ["idiomas","Idiomas","⚑","tela.idiomas"]])
+    html += `<div class="no" data-admin="${chave}"><span class="ic">${ic}</span>${
+      esc(txt(ch, rotulo))}</div>`;
 
   const a = $("#arvore");
   a.innerHTML = html;
@@ -2351,16 +2372,20 @@ function marcar(no) {
 // Tabela: as cinco abas
 // =====================================================================
 const ABAS = [
-  ["estrutura","Estrutura"], ["conteudo","Conteúdo"], ["indices","Índices"],
-  ["diario","Diário"], ["integridade","Integridade"]
+  ["estrutura","Estrutura","tela.aba_estrutura"], ["conteudo","Conteúdo","tela.aba_conteudo"],
+  ["indices","Índices","tela.aba_indices"], ["diario","Diário","tela.aba_diario"],
+  ["integridade","Integridade","tela.aba_integridade"]
 ];
 
 async function abrirTabela(db, tab) {
-  est.atual = { db, tab }; est.aba = est.aba || "estrutura"; est.ordem = "";
+  est.atual = { db, tab };
+  est.aba = est.aba || "estrutura"; est.ordem = "";
+  // Trocar o idioma repinta ESTA tabela, com a aba em que a pessoa estava.
+  est.repintar = () => abrirTabela(db, tab);
   $("#titulo").textContent = tab;
   $("#subtitulo").textContent = `${db} · .reg + .ndx + .bin + .memo + .log`;
-  $("#abas").innerHTML = ABAS.map(([k,r]) =>
-    `<button class="aba ${k===est.aba?"sel":""}" data-aba="${k}">${r}</button>`).join("");
+  $("#abas").innerHTML = ABAS.map(([k,r,chave]) =>
+    `<button class="aba ${k===est.aba?"sel":""}" data-aba="${k}">${esc(txt(chave,r))}</button>`).join("");
   $("#abas").querySelectorAll(".aba").forEach(b => b.onclick = () => {
     est.aba = b.dataset.aba; abrirTabela(db, tab);
   });
@@ -2369,7 +2394,7 @@ async function abrirTabela(db, tab) {
 
 async function desenharAba() {
   const p = $("#painel");
-  p.innerHTML = `<div class="centro">carregando…</div>`;
+  p.innerHTML = `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`;
   const { db, tab } = est.atual;
   try {
     if (est.aba === "estrutura")   return p.innerHTML = await vEstrutura(db, tab),
@@ -3060,22 +3085,26 @@ async function vPainel() {
 
 async function abrirAdmin(qual) {
   est.atual = null;
+  // Trocar o idioma repinta ESTA tela, e nao a primeira: sem isto, escolher
+  // a bandeira na tela de Idiomas jogaria a pessoa no Painel.
+  est.repintar = () => abrirAdmin(qual);
   $("#abas").innerHTML = "";
   pararMonitor();
   const p = $("#painel");
-  p.innerHTML = `<div class="centro">carregando…</div>`;
+  p.innerHTML = `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`;
   try {
     if (qual === "painel") {
-      $("#titulo").textContent = "Painel";
-      $("#subtitulo").textContent =
-        "o servidor inteiro numa tela · os monitores da máquina renovam sozinhos";
+      $("#titulo").textContent = txt("tela.painel", "Painel");
+      $("#subtitulo").textContent = txt("tela.painel_sub",
+        "o servidor inteiro numa tela · os monitores da máquina renovam sozinhos");
       p.innerHTML = await vPainel();
       ligarMonitor();
       return;
     }
     if (qual === "usuarios") {
-      $("#titulo").textContent = "Usuários";
-      $("#subtitulo").textContent = "cadastro do config.json · a senha nunca sai daqui";
+      $("#titulo").textContent = txt("tela.usuarios", "Usuários");
+      $("#subtitulo").textContent = txt("tela.usuarios_sub",
+        "cadastro do config.json · a senha nunca sai daqui");
       const us = await api("usuarios");
       p.innerHTML = tabela(
         [{t:"id"},{t:"nome"},{t:"login"},{t:"e-mail"},{t:"telefone"},{t:"supervisor"},{t:"ativo"},{t:"poder por base"}],
@@ -3092,8 +3121,9 @@ async function abrirAdmin(qual) {
             <td class="dado">${esc(bases)}</td></tr>`;
         });
     } else if (qual === "acessos") {
-      $("#titulo").textContent = "Acessos";
-      $("#subtitulo").textContent = "toda tentativa entra, inclusive as recusadas";
+      $("#titulo").textContent = txt("tela.acessos", "Acessos");
+      $("#subtitulo").textContent = txt("tela.acessos_sub",
+        "toda tentativa entra, inclusive as recusadas");
       const a = await api("acessos", { max:200 });
       p.innerHTML = `<div class="ferramentas"><span class="conta">${a.total}
           registros no <code>acessos.log</code></span></div>` + tabela(
@@ -3105,14 +3135,15 @@ async function abrirAdmin(qual) {
                     :`<span class="pino mal">${esc(x.erro||"negado")}</span>`}</td>
           <td class="dado num">${x.ms}</td></tr>`);
     } else if (qual === "idiomas") {
-      $("#titulo").textContent = "Idiomas";
-      $("#subtitulo").textContent =
-        "os textos da tela em seis idiomas · phxsys.mensagens, uma tabela como as outras";
+      $("#titulo").textContent = txt("tela.idiomas", "Idiomas");
+      $("#subtitulo").textContent = txt("tela.idi_sub",
+        "os textos da tela em seis idiomas · phxsys.mensagens, uma tabela como as outras");
       p.innerHTML = await vIdiomas();
       ligarIdiomasAdmin();
     } else {
-      $("#titulo").textContent = "Bloqueios";
-      $("#subtitulo").textContent = "blacklist.json · o IP é recusado antes do token";
+      $("#titulo").textContent = txt("tela.bloqueios", "Bloqueios");
+      $("#subtitulo").textContent = txt("tela.bloqueios_sub",
+        "blacklist.json · o IP é recusado antes do token");
       const b = await api("bloqueios");
       const pol = b.politica || {};
       const wlConfig = b.whitelist_config || [];
@@ -3247,7 +3278,7 @@ function viewDatabaseAtual() {
 async function verDatabase(db) {
   est.database = db;
   folha(db, "as tabelas deste database · clique numa para ver e editar",
-        `<div class="centro">carregando…</div>`);
+        `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
 
   const t = await api("tabelas", { database: db });
   const nomes = t.tabelas || [];
@@ -3314,7 +3345,7 @@ const COMO_PAGINOU = {
 async function verConteudoEditavel(db, tab, verExcluidos = false, cursor = null) {
   est.atual = { db, tab };
   folha(`${tab}`, `${db} · clique numa linha para editar`,
-        `<div class="centro">carregando…</div>`);
+        `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
 
   // `cursor` é o rowid da última linha da página anterior — o servidor
   // devolve o par pronto. A grade não guarda "página 37": guarda o ponto onde
@@ -3533,7 +3564,8 @@ async function abrirFicha(db, tab, rowid) {
        ${editaveis.map(c => campoDaColuna(c, linha[c.nome], fixas.includes(c.nome), novo)).join("")}
      </form>
      <div class="acoes">
-       <button class="botao ${novo ? "incluir" : "alterar"}" id="btSalvar">${novo ? "Incluir" : "Salvar"}</button>
+       <button class="botao ${novo ? "incluir" : "alterar"}" id="btSalvar">${
+         esc(novo ? txt("tela.incluir", "Incluir") : txt("tela.salvar", "Salvar"))}</button>
        ${novo || marcada ? "" : `<button class="botao excluir" id="btExcluir">Excluir</button>`}
        <button class="botao secundario" id="btVoltar">Voltar</button>
        <span class="leg" id="recadoFicha"></span>
@@ -3663,7 +3695,7 @@ function gerirTabelasAtual() {
 /** A grade de gestao: uma linha por tabela, com o que ela pesa. */
 async function gerirTabelas(db) {
   est.database = db;
-  folha(`Tabelas de ${db}`, "carregando…", `<div class="centro">carregando…</div>`);
+  folha(`Tabelas de ${db}`, "carregando…", `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
 
   const t = await api("tabelas", { database: db });
   const nomes = t.tabelas || [];
@@ -3714,7 +3746,7 @@ async function gerirTabelas(db) {
 async function gerirTabela(db, tab) {
   est.atual = { db, tab };
   est.esquemaAtual = null;
-  folha(`Gestão de ${tab}`, `${db} · carregando…`, `<div class="centro">carregando…</div>`);
+  folha(`Gestão de ${tab}`, `${db} · carregando…`, `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
 
   let e = null, erro = "";
   try { e = await api("esquema", { database: db, tabela: tab }); }
@@ -4444,7 +4476,7 @@ function ligarNovaTabela(db) {
 async function verSequencias(db) {
   db = db || databaseCorrente();
   if (!db) return avisar("nenhum database escolhido", true);
-  folha(`Sequências de ${db}`, "carregando…", `<div class="centro">carregando…</div>`);
+  folha(`Sequências de ${db}`, "carregando…", `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
 
   const r = await api("sequencias", { database: db });
   const linhas = r.sequencias || [];
@@ -4945,7 +4977,7 @@ async function pivotPasso3() {
    tamanho do volume desta tabela" precisa saber que a resposta e "recriando". */
 
 async function verConfigTabela(db, tab) {
-  folha(`Configurações de ${tab}`, `${db} · carregando…`, `<div class="centro">carregando…</div>`);
+  folha(`Configurações de ${tab}`, `${db} · carregando…`, `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
 
   const [e, c, mem, quem] = await Promise.all([
     api("esquema", { database: db, tabela: tab }),
@@ -5179,7 +5211,7 @@ async function gerirDatabase(db) {
   if (!db) return avisar("nenhum database — crie um pelo [+] da árvore", true);
   est.database = db;
 
-  folha(`Gerir ${db}`, "carregando…", `<div class="centro">carregando…</div>`);
+  folha(`Gerir ${db}`, "carregando…", `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   let resumo = "";
   try {
     const st = await api("sistabelas", { database: db });
@@ -5695,7 +5727,7 @@ function rot(chave, original) {
 function editorDeMenu() {
   est.rotulos = est.rotulos || rotulosSalvos();
   const itens = [];
-  MENUS.forEach(([nome, , lista], m) => {
+  MENUS.forEach(([nome, , , lista], m) => {
     itens.push({ chave:`menu.${m}`, original:nome, onde:"menu", grupo:nome });
     lista.forEach((it, i) => {
       if (it === "sep") return;
@@ -5777,7 +5809,11 @@ function ficha(valor, rotulo, unidade) {
     <div class="r">${esc(rotulo)}</div>${unidade ? `<div class="u">${esc(unidade)}</div>` : ""}</div>`;
 }
 
-const simNao = v => v ? "sim" : "não";
+const simNao = v => v ? txt("tela.sim", "sim") : txt("tela.nao", "não");
+/* O par ligado/desligado da tela de configuração e do painel. Um lugar so
+   escreve os dois, e e por ele que os dois se traduzem. */
+const ligaDesliga = v =>
+  v ? txt("tela.ligado", "ligado") : txt("tela.desligado", "desligado");
 
 /** O valor de "secao.campo" dentro da resposta de `config`. */
 const valorDoCampo = (c, campo) =>
@@ -5958,9 +5994,18 @@ async function verConfigServidor() {
       <div class="form-dbl">${itens}</div>` : "";
   };
 
-  folha("Configurações gerais do servidor",
-    "o que está valendo agora · edita e grava no config.json",
-    `<div class="fichas">
+  folha(txt("tela.cfg_titulo", "Configurações gerais do servidor"),
+    txt("tela.cfg_sub", "o que está valendo agora · edita e grava no config.json"),
+    `<div class="acoes idi-escolha">
+       <b>${esc(txt("tela.cfg_idioma", "Idioma desta interface"))}</b>
+       <div class="idiomas idi-aqui" id="idiomasAqui" role="radiogroup"
+            aria-label="${esc(txt("tela.cfg_idioma", "Idioma desta interface"))}"></div>
+     </div>
+     <p class="leg">${esc(txt("tela.cfg_idioma_dica",
+       "Vale neste navegador e na hora. O campo «idioma» do config.json é outro: ele manda "
+       + "nas mensagens que o servidor devolve pelo protocolo."))}</p>
+
+     <div class="fichas">
        ${ficha(p.phxsql || p.versao, "versão")}
        ${ficha(c.bind, "porta de dados", "campo bind")}
        ${ficha(web.ligado ? web.bind : "desligada", "porta da interface", "campo web.bind")}
@@ -5984,10 +6029,12 @@ async function verConfigServidor() {
        <code>recursos.cache_pagina</code> sem o «s».</p></div>` : ""}
 
      <div class="acoes">
-       <button class="botao alterar" id="cfSalvar">Salvar no config.json</button>
-       <button class="botao secundario" id="cfDescartar">Descartar as mudanças</button>
-       <span class="leg">grava só o que você mudou · escrita atômica, com o
-         arquivo antigo inteiro até o fim</span>
+       <button class="botao alterar" id="cfSalvar">${
+         esc(txt("tela.cfg_salvar", "Salvar no config.json"))}</button>
+       <button class="botao secundario" id="cfDescartar">${
+         esc(txt("tela.cfg_descartar", "Descartar as mudanças"))}</button>
+       <span class="leg">${esc(txt("tela.cfg_salvar_leg",
+         "grava só o que você mudou · escrita atômica, com o arquivo antigo inteiro até o fim"))}</span>
      </div>
 
      ${GRUPOS_AJUSTE.map(([t, campos]) => grupo(t, campos)).join("")}
@@ -6060,6 +6107,10 @@ async function verConfigServidor() {
 
   $("#cfDescartar").onclick = () => verConfigServidor();
   $("#cfSalvar").onclick = salvarConfigServidor;
+  desenharIdiomas("#idiomasAqui");
+  // Trocar o idioma AQUI repinta esta tela, e nao leva ninguem embora: o
+  // gancho e limpo por `folha()` e reposto por quem sabe se redesenhar.
+  est.repintar = verConfigServidor;
 }
 
 /** Manda para o servidor só os campos que mudaram. */
@@ -6248,7 +6299,7 @@ async function verConfigUsuarios() {
 async function verSysTables(db) {
   db = db || databaseCorrente();
   if (!db) return avisar("nenhum database escolhido", true);
-  folha(`SysTables · ${db}`, "carregando…", `<div class="centro">carregando…</div>`);
+  folha(`SysTables · ${db}`, "carregando…", `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   const r = await api("sistabelas", { database: db });
   const linhas = r.tabelas || [];
 
@@ -6286,7 +6337,7 @@ async function verSysTables(db) {
 async function verSysColumns(db, tabela_) {
   db = db || databaseCorrente();
   if (!db) return avisar("nenhum database escolhido", true);
-  folha(`SysColumns · ${db}`, "carregando…", `<div class="centro">carregando…</div>`);
+  folha(`SysColumns · ${db}`, "carregando…", `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   const r = await api("siscolunas", tabela_ ? { database: db, tabela: tabela_ } : { database: db });
   const linhas = r.colunas || [];
 
@@ -6479,48 +6530,73 @@ async function vIdiomas() {
   const semeados = e.textos_de_tela_semeados, total = e.textos_de_tela;
   const faltam = total - semeados;
   return `
+    <div class="acoes idi-escolha">
+      <b>${esc(txt("tela.idi_escolha", "Idioma desta tela"))}</b>
+      <div class="idiomas idi-aqui" id="idiomasAqui" role="radiogroup"
+           aria-label="${esc(txt("tela.idi_escolha", "Idioma desta tela"))}"></div>
+    </div>
+    <p class="leg">${esc(txt("tela.idi_escolha_dica",
+      "Vale na hora, sem recarregar, e é a mesma escolha das bandeiras da tela de entrada."))}</p>
+
     <div class="fichas">
       <div class="ficha"><div class="v">${e.linhas_na_tabela}</div>
-        <div class="r">linhas na tabela</div>
+        <div class="r">${esc(txt("tela.idi_linhas", "linhas na tabela"))}</div>
         <div class="u"><code>${esc(e.database)}.${esc(e.tabela)}</code></div></div>
       <div class="ficha"><div class="v">${semeados}/${total}</div>
-        <div class="r">textos de tela semeados</div>
-        <div class="u">${faltam ? `faltam ${faltam}` : "nada a semear"}</div></div>
+        <div class="r">${esc(txt("tela.idi_semeados", "textos de tela semeados"))}</div>
+        <div class="u">${faltam
+            ? `${esc(txt("tela.idi_faltam", "faltam"))} ${faltam}`
+            : esc(txt("tela.idi_nada_semear", "nada a semear"))}</div></div>
       <div class="ficha"><div class="v">${e.traduzidos_no_idioma}</div>
-        <div class="r">com tradução própria</div>
-        <div class="u">no idioma ${esc(e.idioma)}</div></div>
+        <div class="r">${esc(txt("tela.idi_traduzidos", "com tradução própria"))}</div>
+        <div class="u">${esc(txt("tela.idi_no_idioma", "no idioma"))} ${esc(e.idioma)}</div></div>
+      <div class="ficha"><div class="v">${e.cobertura ?? 0}%</div>
+        <div class="r">${esc(txt("tela.idi_cobertura", "da tela na fábrica"))}</div>
+        <div class="u">${e.na_fabrica ?? 0}/${(e.na_fabrica ?? 0) + (e.fora_da_fabrica ?? 0)}
+          · ${esc(txt("tela.idi_cobertura_u", "medido pelo conferidor, não digitado"))}</div></div>
     </div>
-    <p class="leg">Os textos que a tabela não cobre caem no português de
-      fábrica — sem tabela, a tela é a de sempre. A tradução se edita na grade
-      de <code>${esc(e.database)}.${esc(e.tabela)}</code>, como qualquer tabela.</p>
+    <p class="leg">${esc(txt("tela.idi_leg",
+      "Os textos que a tabela não cobre caem no português de fábrica — sem tabela, a tela "
+      + "é a de sempre. A tradução se edita na grade, como qualquer tabela."))}
+      <code>${esc(e.database)}.${esc(e.tabela)}</code></p>
 
     <div class="acoes">
-      <button class="botao incluir" id="btIdiCarga">Carga da tabela</button>
-      <button class="botao consultar" id="btIdiExportar">Exportar backup</button>
-      <button class="botao alterar" id="btIdiImportar">Importar backup</button>
+      <button class="botao incluir" id="btIdiCarga">${
+        esc(txt("tela.idi_carga", "Carga da tabela"))}</button>
+      <button class="botao consultar" id="btIdiExportar">${
+        esc(txt("tela.idi_exportar", "Exportar backup"))}</button>
+      <button class="botao alterar" id="btIdiImportar">${
+        esc(txt("tela.idi_importar", "Importar backup"))}</button>
       <input type="file" id="arqIdioma" accept="application/json,.json" hidden>
     </div>
 
     <div class="aviso">
-      <b>Carga da tabela</b> só acrescenta o que falta: linha que já existe não
-      é tocada, então ela pode ser repetida à vontade sem desfazer tradução
-      nenhuma.
+      <b>${esc(txt("tela.idi_carga", "Carga da tabela"))}</b> ${esc(txt("tela.idi_carga_aviso",
+        "só acrescenta o que falta: linha que já existe não é tocada, então ela pode ser "
+        + "repetida à vontade sem desfazer tradução nenhuma."))}
     </div>
 
-    <h3 style="margin:22px 0 8px">Carga padrão</h3>
-    <p class="leg">Devolve os textos de <b>fábrica por cima</b> do que está
-      gravado — é o «caso a tradução não tenha ficado boa». Escolha o alcance:
-      um idioma só deixa os outros cinco intactos.</p>
+    <h3 style="margin:22px 0 8px">${esc(txt("tela.idi_padrao", "Carga padrão"))}</h3>
+    <p class="leg">${esc(txt("tela.idi_padrao_leg",
+      "Devolve os textos de fábrica por cima do que está gravado — é o «caso a tradução não "
+      + "tenha ficado boa». Escolha o alcance: um idioma só deixa os outros cinco intactos."))}</p>
     <div class="acoes">
       <select id="idiEscopo" style="width:auto;min-width:230px">
-        ${IDIOMAS.map(i => `<option value="${i.col}">só ${esc(i.col)} (${esc(i.nome)})</option>`).join("")}
-        <option value="*">os seis idiomas</option>
+        ${IDIOMAS.map(i => `<option value="${i.col}">${esc(txt("tela.idi_so", "só"))} ${
+          esc(i.col)} (${esc(i.nome)})</option>`).join("")}
+        <option value="*">${esc(txt("tela.idi_seis", "os seis idiomas"))}</option>
       </select>
-      <button class="botao excluir" id="btIdiPadrao">Carga padrão</button>
+      <button class="botao excluir" id="btIdiPadrao">${
+        esc(txt("tela.idi_padrao", "Carga padrão"))}</button>
     </div>`;
 }
 
 function ligarIdiomasAdmin() {
+  // As MESMAS bandeiras da tela de entrada, desenhadas pelo mesmo codigo: um
+  // segundo seletor com a sua propria lista seria a segunda verdade, e e
+  // sempre a segunda que envelhece.
+  desenharIdiomas("#idiomasAqui");
+
   $("#btIdiCarga").onclick = async () => {
     try {
       const r = await api("idiomas_carga");
@@ -6839,7 +6915,7 @@ async function dialogoExcluir(db, tab, rowid, aoTerminar, versao) {
           quem você é. Sobrevive à linha.</span></label>
       <div id="excRecado"></div>
       <div class="acoes">
-        <button class="botao secundario" id="btExcNao">Cancelar</button>
+        <button class="botao secundario" id="btExcNao">${esc(txt("tela.cancelar", "Cancelar"))}</button>
         <button class="botao marcar" id="btExcSim">Marcar como excluído</button>
       </div>
     </div>`;
@@ -7089,7 +7165,7 @@ async function telaLixeira(db, tab) {
   if (!db || !tab) return avisar("escolha uma tabela primeiro", true);
 
   folha(`Lixeira de ${tab}`, `${esc(db)} · carregando…`,
-    `<div class="centro">carregando…</div>`);
+    `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   let d;
   try {
     d = await api("lixeira", { database: db, tabela: tab, limite: 300 });
@@ -7209,7 +7285,7 @@ async function telaMotivos(db, tab) {
   if (!db || !tab) return avisar("escolha uma tabela primeiro", true);
 
   folha(`Motivos de ${tab}`, `${esc(db)} · carregando…`,
-    `<div class="centro">carregando…</div>`);
+    `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   let d;
   try {
     d = await api("motivos", { database: db, tabela: tab, limite: 500 });
@@ -7269,7 +7345,7 @@ async function telaMotivos(db, tab) {
    quem responde «está rápido?» é o p95, não a média. */
 
 async function verSessoes() {
-  folha("Sessões", "carregando…", `<div class="centro">carregando…</div>`);
+  folha("Sessões", "carregando…", `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   let d;
   try { d = await api("sessoes"); }
   catch (e) { return folha("Sessões", "", `<div class="aviso mal">${esc(String(e))}</div>`); }
@@ -7380,7 +7456,7 @@ function histograma(faixas) {
 }
 
 async function verEstatisticas(horas) {
-  folha("Estatísticas de uso", "carregando…", `<div class="centro">carregando…</div>`);
+  folha("Estatísticas de uso", "carregando…", `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   let d;
   try { d = await api("estatisticas", horas ? { horas } : {}); }
   catch (e) { return folha("Estatísticas de uso", "", `<div class="aviso mal">${esc(String(e))}</div>`); }
@@ -7517,7 +7593,7 @@ const JN = { db:"", a:"", b:"", chaveA:"", chaveB:"", tipo:"interna", grade:null
 async function telaJuncao(db) {
   JN.db = db || JN.db || databaseCorrente();
   if (!JN.db) return avisar("escolha um banco primeiro", true);
-  folha("Junção de tabelas", "carregando…", `<div class="centro">carregando…</div>`);
+  folha("Junção de tabelas", "carregando…", `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
 
   const t = await api("tabelas", { database: JN.db });
   const tabs = t.tabelas || [];
@@ -7660,7 +7736,7 @@ const UN = { db:"", escolhidas:[], modo:"distinta" };
 async function telaUniao(db) {
   UN.db = db || UN.db || databaseCorrente();
   if (!UN.db) return avisar("escolha um banco primeiro", true);
-  folha("União de tabelas", "carregando…", `<div class="centro">carregando…</div>`);
+  folha("União de tabelas", "carregando…", `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   const t = await api("tabelas", { database: UN.db });
   const tabs = t.tabelas || [];
   UN.escolhidas = UN.escolhidas.filter(x => tabs.includes(x));
@@ -7783,7 +7859,7 @@ function linhasParaObjetos(r) {
 }
 
 async function telaDbLink(nome) {
-  folha("DbLink", "carregando…", `<div class="centro">carregando…</div>`);
+  folha("DbLink", "carregando…", `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   let d;
   try { d = await api("dblink"); }
   catch (e) { return folha("DbLink", "não deu", `<div class="aviso mal">${esc(String(e))}</div>`); }
@@ -7866,7 +7942,7 @@ async function telaDbLink(nome) {
 async function carregarTabelasDbl() {
   const alvo = $("#listaTab");
   if (!alvo) return;
-  alvo.innerHTML = `<div class="centro">carregando…</div>`;
+  alvo.innerHTML = `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`;
   let t;
   try { t = await api("dblink_tabelas", { dblink: DBL.ligacao, database: DBL.database }); }
   catch (e) { return alvo.innerHTML = `<div class="aviso mal">${esc(String(e))}</div>`; }
@@ -8036,7 +8112,7 @@ async function assistenteDbLink() {
           <span>Esta ligação <b>pode escrever</b> no outro banco
           <span class="leg">— necessário para a sincronia empurrar; desmarcado, ela só puxa</span></span></label>
       </div>`,
-      `<button class="botao secundario" id="azSair">Cancelar</button>
+      `<button class="botao secundario" id="azSair">${esc(txt("tela.cancelar", "Cancelar"))}</button>
        <button class="botao incluir" id="azIr1">Testar a conexão →</button>`);
     $("#azSair").onclick = fechar;
     $("#azIr1").onclick = async () => {
@@ -8063,7 +8139,7 @@ async function assistenteDbLink() {
   const passo2 = async () => {
     molde("Testando a conexão", 2,
       `<div class="centro">falando com ${esc(az.def.host)}:${az.def.porta}…</div>`,
-      `<button class="botao secundario" id="azVolta">← Voltar</button>`);
+      `<button class="botao secundario" id="azVolta">${esc(txt("tela.voltar", "← Voltar"))}</button>`);
     $("#azVolta").onclick = passo1;
     try {
       const t = await api("dblink_testar", { dblink: az.def.nome });
@@ -8071,7 +8147,7 @@ async function assistenteDbLink() {
         <div class="aviso bom"><p><b>${esc(t.motor)} ${esc(t.versao)}</b> respondeu
         em ${t.ms} ms. Você é <code>${esc(t.usuario_efetivo || t.usuario || "?")}</code>
         do outro lado${t.database ? `, na base <code>${esc(t.database)}</code>` : ""}.</p></div>`,
-        `<button class="botao secundario" id="azVolta">← Voltar</button>
+        `<button class="botao secundario" id="azVolta">${esc(txt("tela.voltar", "← Voltar"))}</button>
          <button class="botao incluir" id="azIr2">Escolher a base →</button>`);
       $("#azVolta").onclick = passo1;
       $("#azIr2").onclick = passo3;
@@ -8086,7 +8162,7 @@ async function assistenteDbLink() {
   // ------------------------------------------------------- passo 3: a base
   const passo3 = async () => {
     molde("Qual base do outro lado?", 3, `<div class="centro">listando…</div>`,
-      `<button class="botao secundario" id="azVolta">← Voltar</button>`);
+      `<button class="botao secundario" id="azVolta">${esc(txt("tela.voltar", "← Voltar"))}</button>`);
     $("#azVolta").onclick = passo2;
     try {
       const b = await api("dblink_bancos", { dblink: az.def.nome });
@@ -8098,7 +8174,7 @@ async function assistenteDbLink() {
           <select id="azBase" class="campo">${bases.map(x =>
             `<option ${x === az.base ? "selected" : ""}>${esc(x)}</option>`).join("")}
           </select></label></div>`,
-        `<button class="botao secundario" id="azVolta">← Voltar</button>
+        `<button class="botao secundario" id="azVolta">${esc(txt("tela.voltar", "← Voltar"))}</button>
          <button class="botao incluir" id="azIr3">Escolher as tabelas →</button>`);
       $("#azVolta").onclick = passo2;
       $("#azIr3").onclick = async () => {
@@ -8141,7 +8217,7 @@ async function assistenteDbLink() {
           <colgroup><col style="width:34px"><col><col style="width:170px"><col style="width:170px"></colgroup>
           <thead><tr><th></th><th>tabela de lá</th><th>sentido</th><th>conflito</th></tr></thead>
           <tbody>${linhas}</tbody></table></div>`,
-        `<button class="botao secundario" id="azVolta">← Voltar</button>
+        `<button class="botao secundario" id="azVolta">${esc(txt("tela.voltar", "← Voltar"))}</button>
          <button class="botao incluir" id="azIr4">Ligar as marcadas →</button>`);
       $("#azVolta").onclick = passo3;
       $("#azIr4").onclick = async () => {
@@ -8210,7 +8286,7 @@ async function assistenteDbLink() {
         minutos ? ` O job <code>sincronia-${esc(az.def.nome)}</code> roda a cada ${minutos} min.` :
         " Sem job: sincronize pela operação <code>dblink_sincronizar</code> quando quiser."}</p>
       <p>Primeira rodada:</p><ul class="lista-limpa">${rodada}</ul></div>`,
-      `<button class="botao" id="azFechar">Fechar</button>`);
+      `<button class="botao" id="azFechar">${esc(txt("tela.fechar", "Fechar"))}</button>`);
     // A sincronia pode ter CRIADO um database local -- sem remontar a
     // arvore, ele existe no disco e nao existe na tela.
     $("#azFechar").onclick = () => { fechar(); montarArvore(false); telaDbLink(az.def.nome); };
@@ -8269,7 +8345,7 @@ async function telaDbLinkSql(nome) {
 /* ------------------------------------------------ o cadastro das ligações */
 
 async function telaDbLinkDefinicoes() {
-  folha("Definições do DbLink", "carregando…", `<div class="centro">carregando…</div>`);
+  folha("Definições do DbLink", "carregando…", `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   const d = await api("dblink");
   const ls = d.ligacoes || [];
   folha("Definições do DbLink",
@@ -8488,53 +8564,53 @@ const FERRAMENTAS = [
      4. raro e de risco .......... parar o servico, reparar
      5. desligadas e ajuda ....... o que ainda nao existe fica visivel no fim,
                                    como promessa, e nao no meio, como tropeço */
-  { ico:"banco",    rot:"Bancos",     cor:"var(--bin)",    faz:verBancos },
-  { ico:"gerir",    rot:"Gerir Banco",cor:"var(--bin)",    faz:() => gerirDatabase() },
-  { ico:"grade",    rot:"View DB",    cor:"var(--bin)",    faz:viewDatabaseAtual },
-  { ico:"tabelas",  rot:"Tabelas",    cor:"var(--bin)",    faz:gerirTabelasAtual },
-  { ico:"consulta", rot:"Query",      cor:"var(--ndx)",    faz:abrirConsulta },
-  { ico:"pivot",    rot:"Pivot",      cor:"var(--ndx)",    faz:() => telaPivot() },
-  { ico:"venn",     rot:"Junção",     cor:"var(--ndx)",    faz:() => telaJuncao() },
-  { ico:"exportar", rot:"Exportar",   cor:"var(--ok)",     faz:() => telaExportar() },
-  { ico:"importar", rot:"Importar",   cor:"var(--bin)",    faz:() => telaImportar() },
+  { ico:"banco",    rot:"Bancos", txt:"tela.fer_bancos",     cor:"var(--bin)",    faz:verBancos },
+  { ico:"gerir",    rot:"Gerir Banco", txt:"tela.fer_gerir_banco",cor:"var(--bin)",    faz:() => gerirDatabase() },
+  { ico:"grade",    rot:"View DB", txt:"tela.fer_view_db",    cor:"var(--bin)",    faz:viewDatabaseAtual },
+  { ico:"tabelas",  rot:"Tabelas", txt:"tela.menu_tabelas",    cor:"var(--bin)",    faz:gerirTabelasAtual },
+  { ico:"consulta", rot:"Query", txt:"tela.fer_query",      cor:"var(--ndx)",    faz:abrirConsulta },
+  { ico:"pivot",    rot:"Pivot", txt:"tela.fer_pivot",      cor:"var(--ndx)",    faz:() => telaPivot() },
+  { ico:"venn",     rot:"Junção", txt:"tela.fer_juncao",     cor:"var(--ndx)",    faz:() => telaJuncao() },
+  { ico:"exportar", rot:"Exportar", txt:"tela.fer_exportar",   cor:"var(--ok)",     faz:() => telaExportar() },
+  { ico:"importar", rot:"Importar", txt:"tela.fer_importar",   cor:"var(--bin)",    faz:() => telaImportar() },
   "risco",
-  { ico:"gente",    rot:"Usuários",   cor:"var(--reg)",    faz:() => irPara("usuarios") },
-  { ico:"tomada",   rot:"Conexões",   cor:"var(--memo)",   faz:verSessoes },
+  { ico:"gente",    rot:"Usuários", txt:"tela.usuarios",   cor:"var(--reg)",    faz:() => irPara("usuarios") },
+  { ico:"tomada",   rot:"Conexões", txt:"tela.fer_conexoes",   cor:"var(--memo)",   faz:verSessoes },
   // Vizinhas de "Conexoes" de proposito: as tres respondem a mesma pergunta --
   // o que esta acontecendo AGORA. Estavam no grupo do ocasional, entre coisas
   // que se fazem uma vez por mes, e ninguem as achava: o pedido chegou como
   // "falta o botao do SQL Check" com o botao ja no ar ha semanas. Lugar errado
   // na barra e o mesmo que nao existir.
-  { ico:"medidor",  rot:"Telemetria", cor:"var(--memo)",   faz:telaTelemetria,
-    dica:"gráficos bolha ordenados por peso, no molde do SQL Check da Idera®" },
-  { ico:"pulso",    rot:"Profiler",   cor:"var(--acao-consultar)", faz:verProfiler,
-    dica:"o que chega pela porta de dados, antes de virar dado" },
-  { ico:"engrenagem", rot:"Config",   cor:"var(--laranja)",faz:verConfigServidor },
-  { ico:"relogio",  rot:"Jobs",       cor:"var(--log)",    faz:telaJobs },
+  { ico:"medidor",  rot:"Telemetria", txt:"tela.fer_telemetria", cor:"var(--memo)",   faz:telaTelemetria,
+    dica:"gráficos bolha ordenados por peso, no molde do SQL Check da Idera®", dicaTxt:"tela.fer_dica_telemetria" },
+  { ico:"pulso",    rot:"Profiler", txt:"tela.fer_profiler",   cor:"var(--acao-consultar)", faz:verProfiler,
+    dica:"o que chega pela porta de dados, antes de virar dado", dicaTxt:"tela.fer_dica_profiler" },
+  { ico:"engrenagem", rot:"Config", txt:"tela.fer_config",   cor:"var(--laranja)",faz:verConfigServidor },
+  { ico:"relogio",  rot:"Jobs", txt:"tela.fer_jobs",       cor:"var(--log)",    faz:telaJobs },
   "risco",
-  { ico:"cofre",    rot:"Backup",     cor:"var(--ok)",     faz:backupAgora },
+  { ico:"cofre",    rot:"Backup", txt:"tela.fer_backup",     cor:"var(--ok)",     faz:backupAgora },
   // Ao lado do Backup, e não escondida dentro da tela dele: o pedido chegou
   // como «falta o botão restaurar» com a tela de backup no ar há semanas.
   // Backup que não restaura não é backup, e botão que não se acha não existe.
-  { ico:"voltar",   rot:"Restaurar",  cor:"var(--ambar)",  faz:() => telaRestaurarBackup(),
-    dica:"traz uma cópia de volta: com outro nome, ou por cima" },
-  { ico:"lixeira",  rot:"Lixeira",    cor:"var(--log)",    faz:() => telaLixeira() },
-  { ico:"troca",    rot:"Transações", cor:"var(--log)",    faz:verTransacoes },
+  { ico:"voltar",   rot:"Restaurar", txt:"tela.fer_restaurar",  cor:"var(--ambar)",  faz:() => telaRestaurarBackup(),
+    dica:"traz uma cópia de volta: com outro nome, ou por cima", dicaTxt:"tela.fer_dica_restaurar" },
+  { ico:"lixeira",  rot:"Lixeira", txt:"tela.fer_lixeira",    cor:"var(--log)",    faz:() => telaLixeira() },
+  { ico:"troca",    rot:"Transações", txt:"tela.mi_transacoes", cor:"var(--log)",    faz:verTransacoes },
   { ico:"elo",      rot:"DbLink",     cor:"var(--memo)",   faz:() => telaDbLink() },
   { ico:"catalogo", rot:"SysTables",  cor:"var(--memo)",   faz:() => verSysTables() },
-  { ico:"diagrama", rot:"Diagrama ER",cor:"var(--ndx)",    faz:() => telaDiagramaER() },
-  { ico:"privado",  rot:"LGPD",       cor:"var(--laranja)",faz:() => telaDadosPessoais() },
-  { ico:"replica",  rot:"Replicação", cor:"var(--ndx)",    faz:verReplicacao },
-  { ico:"escudo",   rot:"Diretivas",  cor:"var(--laranja)",faz:verDiretivas },
+  { ico:"diagrama", rot:"Diagrama ER", txt:"tela.fer_diagrama",cor:"var(--ndx)",    faz:() => telaDiagramaER() },
+  { ico:"privado",  rot:"LGPD", txt:"tela.fer_lgpd",       cor:"var(--laranja)",faz:() => telaDadosPessoais() },
+  { ico:"replica",  rot:"Replicação", txt:"tela.mi_replicacao", cor:"var(--ndx)",    faz:verReplicacao },
+  { ico:"escudo",   rot:"Diretivas", txt:"tela.fer_diretivas",  cor:"var(--laranja)",faz:verDiretivas },
   "risco",
-  { ico:"energia",  rot:"Start/Stop", cor:"var(--ok)",     faz:verServico },
-  { ico:"reparo",   rot:"Repair",     cor:"var(--ambar)",  faz:repararPeloMenu },
+  { ico:"energia",  rot:"Start/Stop", txt:"tela.fer_start_stop", cor:"var(--ok)",     faz:verServico },
+  { ico:"reparo",   rot:"Repair", txt:"tela.fer_repair",     cor:"var(--ambar)",  faz:repararPeloMenu },
   "risco",
-  { ico:"duplicar", rot:"Duplicar",   cor:"var(--bin)",    faz:null,
+  { ico:"duplicar", rot:"Duplicar", txt:"tela.fer_duplicar",   cor:"var(--bin)",    faz:null,
     falta:"Copiar um database inteiro para outro nome. O backup já sabe copiar "
         + "árvore e conferir SHA-256; falta a operação que grava com outro nome "
         + "e reescreve o catálogo." },
-  { ico:"correio",  rot:"Server Mail",cor:"var(--reg)",    faz:null,
+  { ico:"correio",  rot:"Server Mail", txt:"tela.fer_server_mail",cor:"var(--reg)",    faz:null,
     falta:"O armazenamento serve bem — uma tabela de mensagens com pasta "
         + "indexada, corpo no .memo e anexo no .bin. Falta o serviço. O SMTP "
         + "de ENVIO já existe (é o que manda o alerta de disco), mas ele só "
@@ -8544,7 +8620,7 @@ const FERRAMENTAS = [
     falta:"O formato encaixa: a altura do bloco é o rowid, o Uuid256 guarda um "
         + "SHA-256 exato e a ordem de digitação é sagrada. Falta o serviço — e, "
         + "antes dele, as transações." },
-  { ico:"ajuda",    rot:"Ajuda",      cor:"var(--texto-3)",faz:verSobre },
+  { ico:"ajuda",    rot:"Ajuda", txt:"tela.menu_ajuda",      cor:"var(--texto-3)",faz:verSobre },
 ];
 
 function montarFerramentas() {
@@ -8553,11 +8629,11 @@ function montarFerramentas() {
     const pendente = !!f.falta && !f.faz;
     // `rot()` deixa o editor de menu trocar o nome exibido sem mexer no que a
     // ferramenta faz.
-    const rotulo = rot(`fer.${f.rot}`, f.rot);
+    const rotulo = rot(`fer.${f.rot}`, txt(f.txt, f.rot));
     return `<button class="fer${pendente ? " afazer" : ""}"
       data-f="${i}" style="color:${f.cor}"
-      title="${esc(rotulo)}${f.dica ? " — " + esc(f.dica) : ""}${
-        pendente ? " · ainda não existe" : ""}">
+      title="${esc(rotulo)}${f.dica ? " — " + esc(txt(f.dicaTxt, f.dica)) : ""}${
+        pendente ? " · " + esc(txt("tela.ainda_nao_existe", "ainda não existe")) : ""}">
       ${svg(f.ico)}<span class="rot">${esc(rotulo)}</span></button>`;
   }).join("");
 
@@ -9207,7 +9283,7 @@ function cartaoDeclararFk(db, de, para) {
     <div id="fkRecado"></div>
     <div class="acoes">
       <button class="botao incluir" id="fkOk">Declarar a chave</button>
-      <button class="botao secundario" id="fkNao">Cancelar</button>
+      <button class="botao secundario" id="fkNao">${esc(txt("tela.cancelar", "Cancelar"))}</button>
     </div>`);
 
   c.corpo.querySelector("#fkNao").onclick = c.fechar;
@@ -9283,7 +9359,7 @@ function cartaoTabelaER(db, nome) {
       <button class="botao consultar" id="tabConteudo">Conteúdo</button>
       <button class="botao secundario" id="tabEstrutura">Estrutura</button>
       <button class="botao secundario" id="tabGerir">Gerir tabela</button>
-      <button class="botao secundario" id="tabFechar">Fechar</button>
+      <button class="botao secundario" id="tabFechar">${esc(txt("tela.fechar", "Fechar"))}</button>
     </div>`);
 
   c.corpo.querySelector("#tabFechar").onclick = c.fechar;
@@ -9351,7 +9427,7 @@ function cartaoNovaTabelaER(db) {
       <div class="acoes">
         <button class="botao incluir" id="ntCriar">Criar tabela</button>
         <button class="botao secundario" id="ntCompleto">Cadastro completo…</button>
-        <button class="botao secundario" id="ntFechar">Cancelar</button>
+        <button class="botao secundario" id="ntFechar">${esc(txt("tela.cancelar", "Cancelar"))}</button>
       </div>`;
 
     const ler = () => {
@@ -9716,9 +9792,9 @@ async function verDiretivas() {
     `<div class="fichas">
        <div class="ficha"><div class="v">${c.somente_leitura ? "sim" : "não"}</div>
          <div class="r">somente leitura</div></div>
-       <div class="ficha"><div class="v">${seg.firewall ? "ligado" : "desligado"}</div>
+       <div class="ficha"><div class="v">${esc(ligaDesliga(seg.firewall))}</div>
          <div class="r">regra de firewall</div></div>
-       <div class="ficha"><div class="v">${c.espelho ? "ligado" : "desligado"}</div>
+       <div class="ficha"><div class="v">${esc(ligaDesliga(c.espelho))}</div>
          <div class="r">espelho .bkp</div></div>
      </div>
      <h3>Comandos proibidos</h3>
@@ -10019,7 +10095,7 @@ async function assistenteReplicacao() {
              <span class="v-exp">${esc(m.exp)}</span>
            </button>`).join("")}
       </div>`,
-      `<button class="botao secundario" id="rzSair">Cancelar</button>
+      `<button class="botao secundario" id="rzSair">${esc(txt("tela.cancelar", "Cancelar"))}</button>
        <button class="botao incluir" id="rzIr1">Os servidores →</button>`);
     $$("#rzModos .venn").forEach(b => b.onclick = () => {
       rz.modo = MODOS_REPLICA.find(m => m.id === b.dataset.m);
@@ -10063,7 +10139,7 @@ async function assistenteReplicacao() {
           <input id="rzSen" class="campo" type="password">
           <span class="leg">nunca viaja em claro; no config vira <code>senha_hash</code></span></label>
       </div>`,
-      `<button class="botao secundario" id="rzVolta">← Voltar</button>
+      `<button class="botao secundario" id="rzVolta">${esc(txt("tela.voltar", "← Voltar"))}</button>
        <button class="botao incluir" id="rzIr2">Testar a conexão →</button>`);
     $("#rzVolta").onclick = passo1;
     $("#rzIr2").onclick = () => {
@@ -10085,7 +10161,7 @@ async function assistenteReplicacao() {
   const passo3 = async () => {
     molde("Testando a conexão", 3,
       `<div class="centro">este servidor está falando com ${esc(rz.host)}:${rz.porta}…</div>`,
-      `<button class="botao secundario" id="rzVolta">← Voltar</button>`);
+      `<button class="botao secundario" id="rzVolta">${esc(txt("tela.voltar", "← Voltar"))}</button>`);
     $("#rzVolta").onclick = passo2;
     let s;
     try {
@@ -10146,7 +10222,7 @@ async function assistenteReplicacao() {
       ${trava ? `<div class="aviso mal"><p>${trava}</p></div>` : ""}
       ${outros.map(a => `<div class="aviso"><p>${esc(a)}</p></div>`).join("")}
       ${avisos.map(a => `<div class="aviso"><p>${a}</p></div>`).join("")}`,
-      `<button class="botao secundario" id="rzVolta">← Voltar</button>
+      `<button class="botao secundario" id="rzVolta">${esc(txt("tela.voltar", "← Voltar"))}</button>
        ${trava
          ? `<button class="botao secundario" id="rzDeNovo">Testar de novo</button>`
          : `<button class="botao incluir" id="rzIr3">O que replicar →</button>`}`);
@@ -10187,7 +10263,7 @@ async function assistenteReplicacao() {
         é a chave única que casa a linha daqui com a de lá — sem ela, a mesma
         linha inserida dos dois lados viraria duas. O motor recusa ligar o
         modo para tabela que não tenha; confira as chaves antes de aplicar.</p></div>` : ""}`,
-      `<button class="botao secundario" id="rzVolta">← Voltar</button>
+      `<button class="botao secundario" id="rzVolta">${esc(txt("tela.voltar", "← Voltar"))}</button>
        <button class="botao incluir" id="rzIr4">Streaming ou agendado →</button>`);
     $("#rzTodos").onchange = ev => {
       rz.todos = ev.target.checked;
@@ -10229,7 +10305,7 @@ async function assistenteReplicacao() {
       <div class="aviso"><p>Para uma reserva de contingência, o certo é quase
         sempre a <b>contínua</b>: reserva agendada é reserva que perde o que
         aconteceu desde a última rodada.</p></div>` : ""}`,
-      `<button class="botao secundario" id="rzVolta">← Voltar</button>
+      `<button class="botao secundario" id="rzVolta">${esc(txt("tela.voltar", "← Voltar"))}</button>
        <button class="botao incluir" id="rzIr5">Aplicar e provar →</button>`);
     $("#rzVolta").onclick = passo4;
     $("#rzIr5").onclick = () => {
@@ -10282,7 +10358,7 @@ async function assistenteReplicacao() {
         <code>"somente_leitura": true</code>: se a aplicação escrever aqui, os
         rowids divergem e a replicação <b>para</b>. O assistente aplica isso
         junto.</p></div>` : ""}`,
-      `<button class="botao secundario" id="rzVolta">← Voltar</button>
+      `<button class="botao secundario" id="rzVolta">${esc(txt("tela.voltar", "← Voltar"))}</button>
        <button class="botao incluir" id="rzAplicar">Aplicar a configuração →</button>`);
     $("#rzVolta").onclick = passo5;
     $("#rzAplicar").onclick = async () => {
@@ -10351,7 +10427,7 @@ async function assistenteReplicacao() {
         ? "E no config do <b>outro</b> lado, a metade dele (troque endereço e token pelos deste servidor):"
         : "E no config do <b>outro</b> servidor, para ele dizer a verdade e limitar quem puxa:"}</p>
       <pre class="dado">"replicacao": ${esc(JSON.stringify(blocoLa, null, 2))}</pre>`,
-      `<button class="botao secundario" id="rzVolta">← Voltar</button>
+      `<button class="botao secundario" id="rzVolta">${esc(txt("tela.voltar", "← Voltar"))}</button>
        <button class="botao consultar" id="rzConferir">Já apliquei e reiniciei — conferir</button>`);
     $("#rzVolta").onclick = passo6;
     $("#rzConferir").onclick = async () => {
@@ -10395,7 +10471,7 @@ async function assistenteReplicacao() {
       <div class="nota"><p>Esta é a metade de cá. A volta — o outro servidor
         puxando daqui — se configura LÁ, com este mesmo assistente. Enquanto
         ela não existir, isto é um Primary → Replica.</p></div>` : ""}`,
-      `<button class="botao" id="rzFim">Fechar</button>`);
+      `<button class="botao" id="rzFim">${esc(txt("tela.fechar", "Fechar"))}</button>`);
     prova = painelDaProva($("#rzProva"), [org]);
     $("#rzFim").onclick = () => { fechar(); verReplicacao(); };
   };
@@ -10506,7 +10582,7 @@ function abrirProvaReplicacao(origens) {
     <div class="sub">posição dos dois lados, medida a cada 3 s — o atraso é a
       diferença de eventos</div>
     <div id="acProva"><div class="centro">primeira sonda…</div></div>
-    <div class="acoes"><button class="botao" id="acFim">Fechar</button></div>
+    <div class="acoes"><button class="botao" id="acFim">${esc(txt("tela.fechar", "Fechar"))}</button></div>
   </div>`;
   document.body.appendChild(fundo);
   const prova = painelDaProva(fundo.querySelector("#acProva"), origens);
@@ -10775,7 +10851,7 @@ async function telaMensagens() {
   $("#subtitulo").textContent =
     "phxsys.mensagens · um texto por idioma; célula vazia cai para o português";
   const p = $("#painel");
-  p.innerHTML = `<div class="centro">carregando…</div>`;
+  p.innerHTML = `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`;
   try {
     const m = await api("mensagens");
     const cabec = `<div class="aviso">
@@ -10821,151 +10897,157 @@ async function telaMensagens() {
 const comTabela = () => !!est.atual;
 
 const MENUS = [
-  ["Arquivo", "A", [
-    { rot:"Painel",              ico:"▦", tecla:"Alt+1", faz:() => irPara("painel") },
-    { rot:"Novo database…",      ico:"✚",                faz:novoDatabase },
-    { rot:"View Database",       ico:"▦", tecla:"Alt+4", faz:viewDatabaseAtual },
+  ["Arquivo", "A", "tela.menu_arquivo", [
+    { rot:"Painel", txt:"tela.painel",              ico:"▦", tecla:"Alt+1", faz:() => irPara("painel") },
+    { rot:"Novo database…", txt:"tela.mi_novo_database",      ico:"✚",                faz:novoDatabase },
+    { rot:"View Database", txt:"tela.mi_view_database",       ico:"▦", tecla:"Alt+4", faz:viewDatabaseAtual },
     "sep",
-    { rot:"Backup agora…",       ico:"⛁",  tecla:"Ctrl+B", faz:backupAgora },
-    { rot:"Conferir um backup…", ico:"✓",                 faz:conferirBackup },
-    { rot:"Restaurar um backup…", ico:"⤺",                faz:() => telaRestaurarBackup() },
+    { rot:"Backup agora…", txt:"tela.mi_backup_agora",       ico:"⛁",  tecla:"Ctrl+B", faz:backupAgora },
+    { rot:"Conferir um backup…", txt:"tela.mi_conferir_backup", ico:"✓",                 faz:conferirBackup },
+    { rot:"Restaurar um backup…", txt:"tela.mi_restaurar_backup", ico:"⤺",                faz:() => telaRestaurarBackup() },
     "sep",
-    { rot:"Sair",                ico:"⏻",                 faz:() => $("#btSair").click() },
+    { rot:"Sair", txt:"tela.sair",                ico:"⏻",                 faz:() => $("#btSair").click() },
   ]],
 
   // Um menu so para tabela, e nao dois: "Tabela" (a escolhida na arvore) e
   // "Tabelas" (as do database) seriam vizinhos parecidos demais, e quem le a
   // barra teria de adivinhar em qual dos dois esta a operacao que quer.
-  ["Banco", "B", [
-    { rot:"Gerir este banco",     ico:"⛁", tecla:"Alt+6", faz:() => gerirDatabase() },
-    { rot:"Novo database…",       ico:"✚", faz:novoDatabase },
+  ["Banco", "B", "tela.menu_banco", [
+    { rot:"Gerir este banco", txt:"tela.mi_gerir_banco",     ico:"⛁", tecla:"Alt+6", faz:() => gerirDatabase() },
+    { rot:"Novo database…", txt:"tela.mi_novo_database",       ico:"✚", faz:novoDatabase },
     "sep",
     { rot:"SysTables",            ico:"▤", faz:() => verSysTables() },
     { rot:"SysColumns",           ico:"☰", faz:() => verSysColumns() },
-    { rot:"Tabela dinâmica…",     ico:"▦", faz:() => telaPivot() },
-    { rot:"Junção de tabelas…",   ico:"◉", faz:() => telaJuncao() },
-    { rot:"União de tabelas…",    ico:"⊎", faz:() => telaUniao() },
-    { rot:"Sequências",           ico:"№", faz:() => verSequencias() },
-    { rot:"Diagrama ER…",         ico:"◇", faz:() => telaDiagramaER() },
-    { rot:"Dado pessoal (LGPD)…", ico:"⛨", faz:() => telaDadosPessoais(databaseCorrente()) },
+    { rot:"Tabela dinâmica…", txt:"tela.mi_pivot",     ico:"▦", faz:() => telaPivot() },
+    { rot:"Junção de tabelas…", txt:"tela.mi_juncao",   ico:"◉", faz:() => telaJuncao() },
+    { rot:"União de tabelas…", txt:"tela.mi_uniao",    ico:"⊎", faz:() => telaUniao() },
+    { rot:"Sequências", txt:"tela.mi_sequencias",           ico:"№", faz:() => verSequencias() },
+    { rot:"Diagrama ER…", txt:"tela.mi_diagrama_er",         ico:"◇", faz:() => telaDiagramaER() },
+    { rot:"Dado pessoal (LGPD)…", txt:"tela.mi_lgpd", ico:"⛨", faz:() => telaDadosPessoais(databaseCorrente()) },
     "sep",
-    { rot:"Copiar / colar tabela…", ico:"⧉", faz:() => telaCopiarColar(databaseCorrente()) },
-    { rot:"Backup e restauração", ico:"⛁", faz:() => verBackupRestaure(databaseCorrente()) },
-    { rot:"Arquivos bloqueados",  ico:"⊘", faz:() => irPara("bloqueios") },
-    { rot:"Transações",           ico:"⇄", faz:verTransacoes },
+    { rot:"Copiar / colar tabela…", txt:"tela.mi_copiar_colar", ico:"⧉", faz:() => telaCopiarColar(databaseCorrente()) },
+    { rot:"Backup e restauração", txt:"tela.mi_backup_restauracao", ico:"⛁", faz:() => verBackupRestaure(databaseCorrente()) },
+    { rot:"Arquivos bloqueados", txt:"tela.mi_arquivos_bloqueados",  ico:"⊘", faz:() => irPara("bloqueios") },
+    { rot:"Transações", txt:"tela.mi_transacoes",           ico:"⇄", faz:verTransacoes },
   ]],
 
-  ["Tabelas", "T", [
-    { rot:"Gerir as tabelas",     ico:"▦", tecla:"Alt+5", faz:gerirTabelasAtual },
-    { rot:"Nova tabela…",         ico:"✚", faz:() => telaNovaTabela(databaseCorrente()) },
+  ["Tabelas", "T", "tela.menu_tabelas", [
+    { rot:"Gerir as tabelas", txt:"tela.mi_gerir_tabelas",     ico:"▦", tecla:"Alt+5", faz:gerirTabelasAtual },
+    { rot:"Nova tabela…", txt:"tela.mi_nova_tabela",         ico:"✚", faz:() => telaNovaTabela(databaseCorrente()) },
     "sep",
-    { rot:"Estrutura da tabela",  ico:"▤", tecla:"Alt+2", quando:comTabela, faz:() => irAba("estrutura") },
-    { rot:"Editar conteúdo",      ico:"▦", tecla:"Alt+3", quando:comTabela,
+    { rot:"Estrutura da tabela", txt:"tela.mi_estrutura_tabela",  ico:"▤", tecla:"Alt+2", quando:comTabela, faz:() => irAba("estrutura") },
+    { rot:"Editar conteúdo", txt:"tela.mi_editar_conteudo",      ico:"▦", tecla:"Alt+3", quando:comTabela,
       faz:() => verConteudoEditavel(est.atual.db, est.atual.tab) },
-    { rot:"Partições da tabela",  ico:"◫", quando:comTabela,
+    { rot:"Partições da tabela", txt:"tela.mi_particoes",  ico:"◫", quando:comTabela,
       faz:() => verParticoes(est.atual.db, est.atual.tab) },
-    { rot:"Configurações e diretivas", ico:"⚙", quando:comTabela,
+    { rot:"Configurações e diretivas", txt:"tela.mi_config_diretivas", ico:"⚙", quando:comTabela,
       faz:() => verConfigTabela(est.atual.db, est.atual.tab) },
-    { rot:"Índices",              ico:"⑂", quando:comTabela, faz:() => irAba("indices") },
-    { rot:"Diário",               ico:"◷", quando:comTabela, faz:() => irAba("diario") },
-    { rot:"Integridade",          ico:"⚑", quando:comTabela, faz:() => irAba("integridade") },
+    { rot:"Índices", txt:"tela.aba_indices",              ico:"⑂", quando:comTabela, faz:() => irAba("indices") },
+    { rot:"Diário", txt:"tela.aba_diario",               ico:"◷", quando:comTabela, faz:() => irAba("diario") },
+    { rot:"Integridade", txt:"tela.aba_integridade",          ico:"⚑", quando:comTabela, faz:() => irAba("integridade") },
     "sep",
     // Os tres arquivos que so o administrador le ficam juntos, e o menu diz
     // isso no rotulo: descobrir a restricao so depois de clicar e pior.
-    { rot:"Lixeira da tabela",    ico:"♲", quando:comTabela, faz:() => telaLixeira() },
-    { rot:"Motivos das exclusões", ico:"✎", quando:comTabela, faz:() => telaMotivos() },
+    { rot:"Lixeira da tabela", txt:"tela.mi_lixeira",    ico:"♲", quando:comTabela, faz:() => telaLixeira() },
+    { rot:"Motivos das exclusões", txt:"tela.mi_motivos", ico:"✎", quando:comTabela, faz:() => telaMotivos() },
     "sep",
-    { rot:"Duplicar tabela…",     ico:"⧉", quando:comTabela,
+    { rot:"Duplicar tabela…", txt:"tela.mi_duplicar_tabela",     ico:"⧉", quando:comTabela,
       faz:() => duplicarTabelaPara(est.atual.db, est.atual.tab) },
-    { rot:"Verificar",            ico:"✓", quando:comTabela, faz:verificarTabela },
-    { rot:"Soma de verificação",  ico:"⑈", quando:comTabela, faz:() => checksumTabela() },
-    { rot:"Exportar…",            ico:"⭳", quando:comTabela, faz:() => telaExportar() },
-    { rot:"Importar carga…",      ico:"⭱", quando:comTabela, faz:() => telaImportar() },
-    { rot:"Reparar índice…",      ico:"↻", quando:comTabela, faz:reindexarTabela },
-    { rot:"Reparar tabela pelo espelho…", ico:"⛨", quando:comTabela, faz:repararTabela },
+    { rot:"Verificar", txt:"tela.mi_verificar",            ico:"✓", quando:comTabela, faz:verificarTabela },
+    { rot:"Soma de verificação", txt:"tela.mi_checksum",  ico:"⑈", quando:comTabela, faz:() => checksumTabela() },
+    { rot:"Exportar…", txt:"tela.mi_exportar",            ico:"⭳", quando:comTabela, faz:() => telaExportar() },
+    { rot:"Importar carga…", txt:"tela.mi_importar",      ico:"⭱", quando:comTabela, faz:() => telaImportar() },
+    { rot:"Reparar índice…", txt:"tela.mi_reparar_indice",      ico:"↻", quando:comTabela, faz:reindexarTabela },
+    { rot:"Reparar tabela pelo espelho…", txt:"tela.mi_reparar_espelho", ico:"⛨", quando:comTabela, faz:repararTabela },
     "sep",
-    { rot:"Excluir tabela…",      ico:"🗑", quando:comTabela,
+    { rot:"Excluir tabela…", txt:"tela.mi_excluir_tabela",      ico:"🗑", quando:comTabela,
       faz:() => excluirTabelaDe(est.atual.db, est.atual.tab) },
   ]],
 
-  ["Memória", "M", [
-    { rot:"Carregar esta tabela na RAM", ico:"⇧", quando:comTabela, faz:carregarNaMemoria },
-    { rot:"Tabelas residentes",          ico:"◍",                   faz:verResidentes },
-    { rot:"Liberar esta tabela",         ico:"⇩", quando:comTabela, faz:liberarDaMemoria },
+  ["Memória", "M", "tela.menu_memoria", [
+    { rot:"Carregar esta tabela na RAM", txt:"tela.mi_carregar_ram", ico:"⇧", quando:comTabela, faz:carregarNaMemoria },
+    { rot:"Tabelas residentes", txt:"tela.mi_residentes",          ico:"◍",                   faz:verResidentes },
+    { rot:"Liberar esta tabela", txt:"tela.mi_liberar",         ico:"⇩", quando:comTabela, faz:liberarDaMemoria },
   ]],
 
-  ["Administração", "d", [
-    { rot:"Usuários",      ico:"☺", faz:() => irPara("usuarios") },
-    { rot:"Acessos",       ico:"◷", faz:() => irPara("acessos") },
-    { rot:"Bloqueios",     ico:"⊘", faz:() => irPara("bloqueios") },
-    { rot:"Dado pessoal (LGPD)…", ico:"⛨", faz:() => telaDadosPessoais() },
-    { rot:"Jobs de execução…",    ico:"⏱", faz:telaJobs },
+  ["Administração", "d", "tela.administracao", [
+    { rot:"Usuários", txt:"tela.usuarios",      ico:"☺", faz:() => irPara("usuarios") },
+    { rot:"Acessos", txt:"tela.acessos",       ico:"◷", faz:() => irPara("acessos") },
+    { rot:"Bloqueios", txt:"tela.bloqueios",     ico:"⊘", faz:() => irPara("bloqueios") },
+    { rot:"Dado pessoal (LGPD)…", txt:"tela.mi_lgpd", ico:"⛨", faz:() => telaDadosPessoais() },
+    { rot:"Jobs de execução…", txt:"tela.mi_jobs",    ico:"⏱", faz:telaJobs },
     "sep",
-    { rot:"Sessões agora", ico:"⇋", faz:verSessoes },
-    { rot:"Estatísticas de uso", ico:"◷", faz:() => verEstatisticas() },
-    { rot:"De onde vêm",   ico:"◎", faz:verIps },
-    { rot:"Configuração",  ico:"⚙", faz:verConfig },
-    { rot:"Quem sou eu",   ico:"☰", faz:verQuemSou },
+    { rot:"Sessões agora", txt:"tela.mi_sessoes_agora", ico:"⇋", faz:verSessoes },
+    { rot:"Estatísticas de uso", txt:"tela.mi_estatisticas", ico:"◷", faz:() => verEstatisticas() },
+    { rot:"De onde vêm", txt:"tela.mi_de_onde_vem",   ico:"◎", faz:verIps },
+    { rot:"Configuração", txt:"tela.mi_configuracao",  ico:"⚙", faz:verConfig },
+    { rot:"Quem sou eu", txt:"tela.mi_quem_sou",   ico:"☰", faz:verQuemSou },
   ]],
 
   // A barra de ferramentas so se alcanca com o mouse. Este menu e a mesma
   // lista pelo teclado -- e onde mora a "Gestão de transações", que nao e
   // ferramenta de tabela nem de administracao.
-  ["Ferramentas", "F", [
-    { rot:"Gestão de transações", ico:"⇄", faz:verTransacoes },
-    { rot:"Consulta SQL",         ico:"⌕", faz:abrirConsulta },
-    { rot:"Tabela dinâmica…",     ico:"▦", tecla:"Alt+7", faz:() => telaPivot() },
-    { rot:"Junção de tabelas…",   ico:"◉", faz:() => telaJuncao() },
-    { rot:"União de tabelas…",    ico:"⊎", faz:() => telaUniao() },
+  ["Ferramentas", "F", "tela.menu_ferramentas", [
+    { rot:"Gestão de transações", txt:"tela.mi_gestao_transacoes", ico:"⇄", faz:verTransacoes },
+    { rot:"Consulta SQL", txt:"tela.mi_consulta_sql",         ico:"⌕", faz:abrirConsulta },
+    { rot:"Tabela dinâmica…", txt:"tela.mi_pivot",     ico:"▦", tecla:"Alt+7", faz:() => telaPivot() },
+    { rot:"Junção de tabelas…", txt:"tela.mi_juncao",   ico:"◉", faz:() => telaJuncao() },
+    { rot:"União de tabelas…", txt:"tela.mi_uniao",    ico:"⊎", faz:() => telaUniao() },
     "sep",
-    { rot:"Serviço",              ico:"⏻", faz:verServico },
-    { rot:"Jobs de execução…",    ico:"⏱", faz:telaJobs },
-    { rot:"Sessões e conexões",   ico:"⇋", faz:verSessoes },
-    { rot:"Estatísticas de uso…", ico:"◷", faz:() => verEstatisticas() },
-    { rot:"Replicação",           ico:"⇉", faz:verReplicacao },
+    { rot:"Serviço", txt:"tela.mi_servico",              ico:"⏻", faz:verServico },
+    { rot:"Jobs de execução…", txt:"tela.mi_jobs",    ico:"⏱", faz:telaJobs },
+    { rot:"Sessões e conexões", txt:"tela.mi_sessoes_conexoes",   ico:"⇋", faz:verSessoes },
+    { rot:"Estatísticas de uso…", txt:"tela.mi_estatisticas_p", ico:"◷", faz:() => verEstatisticas() },
+    { rot:"Replicação", txt:"tela.mi_replicacao",           ico:"⇉", faz:verReplicacao },
     "sep",
-    { rot:"Telemetria ao vivo…",  ico:"◔", faz:telaTelemetria },
-    { rot:"Profiler…",            ico:"∿", faz:verProfiler },
+    { rot:"Telemetria ao vivo…", txt:"tela.mi_telemetria",  ico:"◔", faz:telaTelemetria },
+    { rot:"Profiler…", txt:"tela.mi_profiler",            ico:"∿", faz:verProfiler },
     "sep",
-    { rot:"Reparar…",             ico:"⛨", faz:repararPeloMenu },
+    { rot:"Reparar…", txt:"tela.mi_reparar",             ico:"⛨", faz:repararPeloMenu },
   ]],
 
   // Tres alcances, tres telas: o servidor inteiro, um banco, e quem entra.
-  ["Configurações", "C", [
-    { rot:"Gerais do servidor",   ico:"⚙", faz:verConfigServidor },
-    { rot:"Do banco atual",       ico:"⛁", faz:() => verConfigBanco() },
-    { rot:"Dos usuários",         ico:"☺", faz:verConfigUsuarios },
+  ["Configurações", "C", "tela.menu_configuracoes", [
+    { rot:"Gerais do servidor", txt:"tela.mi_gerais_servidor",   ico:"⚙", faz:verConfigServidor },
+    { rot:"Do banco atual", txt:"tela.mi_do_banco",       ico:"⛁", faz:() => verConfigBanco() },
+    { rot:"Dos usuários", txt:"tela.mi_dos_usuarios",         ico:"☺", faz:verConfigUsuarios },
     "sep",
-    { rot:"Diretivas de acesso",  ico:"⛨", faz:verDiretivas },
-    { rot:"Diretivas do banco",   ico:"⚑", faz:() => verDiretivasDoBanco() },
+    { rot:"Diretivas de acesso", txt:"tela.mi_diretivas_acesso",  ico:"⛨", faz:verDiretivas },
+    { rot:"Diretivas do banco", txt:"tela.mi_diretivas_banco",   ico:"⚑", faz:() => verDiretivasDoBanco() },
     "sep",
     "sep",
-    { rot:"Definições do DbLink…", ico:"⛓", faz:telaDbLinkDefinicoes },
-    { rot:"Mensagens do servidor…", ico:"⑆", faz:telaMensagens },
+    { rot:"Definições do DbLink…", txt:"tela.mi_dblink", ico:"⛓", faz:telaDbLinkDefinicoes },
+    { rot:"Mensagens do servidor…", txt:"tela.mi_mensagens", ico:"⑆", faz:telaMensagens },
+    // A escolha do idioma tem de estar ONDE se procura configuracao. Ela ja
+    // morava na arvore, em Administracao, que e onde ninguem procura idioma.
+    { rot:"Idiomas da interface…", txt:"tela.mi_idiomas", ico:"⚑", faz:() => irPara("idiomas") },
     "sep",
     // A tela mora em `ui/claude.js`, e a chamada dela sai do NAVEGADOR: o
     // servidor nunca vê a chave. O porquê está em docs/CLAUDE-IA.md.
-    { rot:"Integração com a Claude…", ico:"✦", faz:() => PhxIA.telaConfig() },
-    { rot:"Editor de menu…",      ico:"✎", faz:editorDeMenu },
+    { rot:"Integração com a Claude…", txt:"tela.mi_claude", ico:"✦", faz:() => PhxIA.telaConfig() },
+    { rot:"Editor de menu…", txt:"tela.mi_editor_menu",      ico:"✎", faz:editorDeMenu },
   ]],
 
-  ["Ver", "V", [
-    { rot:"Atualizar", ico:"↻", tecla:"F5", faz:atualizarVista },
-    { rot:"Tema claro / escuro", ico:"🌓", faz:() => $("#btTema").click() },
+  ["Ver", "V", "tela.menu_ver", [
+    { rot:"Atualizar", txt:"tela.mi_atualizar", ico:"↻", tecla:"F5", faz:atualizarVista },
+    { rot:"Tema claro / escuro", txt:"tela.mi_tema", ico:"🌓", faz:() => $("#btTema").click() },
   ]],
 
-  ["Ajuda", "j", [
-    { rot:"Sobre o PhxSql", ico:"?", faz:verSobre },
-    { rot:"About — quem fez", ico:"◆", faz:verCreditos },
+  ["Ajuda", "j", "tela.menu_ajuda", [
+    { rot:"Sobre o PhxSql", txt:"tela.mi_sobre", ico:"?", faz:verSobre },
+    { rot:"About — quem fez", txt:"tela.mi_creditos", ico:"◆", faz:verCreditos },
   ]],
 ];
 
 function montarMenu() {
   const bar = $("#menubar");
-  bar.innerHTML = MENUS.map(([nomeOriginal, letra, itens], i) => {
-    // O editor de menu troca o texto; a LETRA do atalho continua a de fabrica,
-    // senao trocar um nome mudaria a tecla debaixo do dedo de quem ja aprendeu.
-    const nome = rot(`menu.${i}`, nomeOriginal);
+  bar.innerHTML = MENUS.map(([nomeOriginal, letra, chave, itens], i) => {
+    // Tres camadas, nesta ordem: o que ESTA PESSOA renomeou vence o idioma, e
+    // o idioma vence o portugues de fabrica. Quem renomeou um item quer o nome
+    // dele, e nao a traducao do nome antigo.
+    // A LETRA do atalho continua a de fabrica, senao trocar um nome mudaria a
+    // tecla debaixo do dedo de quem ja aprendeu.
+    const nome = rot(`menu.${i}`, txt(chave, nomeOriginal));
     const rotulo = letra && nome.includes(letra)
       ? nome.replace(letra, `<u>${letra}</u>`)
       : `<u>${nome[0]}</u>${nome.slice(1)}`;
@@ -10974,7 +11056,7 @@ function montarMenu() {
       const off = it.quando && !it.quando();
       return `<button class="item" role="menuitem" data-m="${i}" data-i="${j}"
         ${off ? "disabled" : ""}><span class="ico">${it.ico || ""}</span
-        ><span class="rot">${esc(rot(`menu.${i}.${j}`, it.rot))}</span
+        ><span class="rot">${esc(rot(`menu.${i}.${j}`, txt(it.txt, it.rot)))}</span
         ><span class="tecla">${it.tecla || ""}</span></button>`;
     }).join("");
     return `<div class="menu" data-m="${i}">
@@ -10995,7 +11077,7 @@ function montarMenu() {
  * clique que o abriu. So apareceu no teste de navegador. */
 function atualizarItens() {
   $$(".menubar .item").forEach(b => {
-    const entrada = MENUS[+b.dataset.m][2][+b.dataset.i];
+    const entrada = MENUS[+b.dataset.m][3][+b.dataset.i];
     b.disabled = !!(entrada.quando && !entrada.quando());
   });
 }
@@ -11038,7 +11120,7 @@ function ligarMenu() {
     if (t) { abrirMenu(+t.dataset.m); return; }
     const it = ev.target.closest(".item");
     if (!it || it.disabled) return;
-    const entrada = MENUS[+it.dataset.m][2][+it.dataset.i];
+    const entrada = MENUS[+it.dataset.m][3][+it.dataset.i];
     fecharMenu();
     Promise.resolve().then(entrada.faz).catch(e => avisar(`${e}`, true));
   });
@@ -11365,6 +11447,10 @@ function atualizarVista() {
  * tela. */
 function folha(titulo, subtitulo, corpoHtml) {
   $("#abas").innerHTML = "";
+  // Toda folha comeca sem saber se repintar. Quem sabe (a tela de
+  // Configurações) guarda DEPOIS de chamar esta funcao; quem nao sabe fica
+  // como esta ate a pessoa navegar -- que e melhor que ser levada embora.
+  est.repintar = null;
   // Trocar o `innerHTML` troca o conteudo, nao o elemento: um `onclick` que a
   // tela anterior tenha pendurado no proprio `#painel` continuaria ali e
   // dispararia nesta. Ja aconteceu -- a gestao do banco levava o clique das
@@ -11657,7 +11743,9 @@ function aplicarTema(qual) {
   // O icone mostra PARA ONDE o clique leva, nao onde se esta: no escuro
   // aparece o sol, porque clicar acende.
   $("#btTema").textContent = claro ? TEMAS.escuro : TEMAS.claro;
-  $("#btTema").title = claro ? "Mudar para o tema escuro" : "Mudar para o tema claro";
+  $("#btTema").title = claro
+    ? txt("tela.tema_para_escuro", "Mudar para o tema escuro")
+    : txt("tela.tema_para_claro", "Mudar para o tema claro");
   lembrar("phxsql-tema", claro ? "claro" : "escuro");
 }
 
@@ -11727,18 +11815,35 @@ function idiomaEscolhido() {
 }
 
 /** Um texto da tela, para o que o JS escreve. O padrão é o português de
-    fábrica, que é o que o HTML já mostra. */
-const txt = (nome, padrao) => (est.textos && est.textos[nome]) || padrao;
+    fábrica, que é o que o HTML já mostra.
+ *
+ *  `function`, e não `const`: o `aplicarTema` do arranque roda ANTES desta
+ *  linha e já pede um texto. Com `const`, a página morria na primeira
+ *  pintura com «Cannot access 'txt' before initialization» -- e o estrago
+ *  aparecia longe da causa: o botão de tema ficava sem `onclick`, porque a
+ *  linha que o liga vem depois da que estourou. Declaração de função sobe;
+ *  `const` não. O navegador achou isto em cinco segundos, e ler o código
+ *  não acharia. */
+function txt(nome, padrao) {
+  return (est.textos && est.textos[nome]) || padrao;
+}
 
-function desenharIdiomas() {
+/** Desenha um seletor de bandeiras onde lhe mandarem.
+ *
+ *  Dois lugares o usam -- a tela de entrada e a tela de Idiomas -- e os dois
+ *  chamam ESTA funcao. Um segundo seletor escrito a parte teria a sua propria
+ *  lista de idiomas, e ela seria a que envelhece calada. */
+function desenharIdiomas(seletor = "#idiomas") {
+  const alvo = $(seletor);
+  if (!alvo) return;
   const atual = idiomaEscolhido();
-  $("#idiomas").innerHTML = IDIOMAS.map(i => `
+  alvo.innerHTML = IDIOMAS.map(i => `
     <button type="button" class="idi" role="radio" data-idi="${i.col}"
             aria-checked="${i.col === atual}" tabindex="${i.col === atual ? 0 : -1}"
             aria-label="${esc(i.nome)}" title="${esc(i.nome)}">
       ${BANDEIRAS[i.bandeira]}<span class="nome">${esc(i.nome)}</span>
     </button>`).join("");
-  const botoes = [...$("#idiomas").querySelectorAll(".idi")];
+  const botoes = [...alvo.querySelectorAll(".idi")];
   botoes.forEach((b, i) => {
     b.onclick = () => escolherIdioma(b.dataset.idi);
     // Seta anda entre as bandeiras, que e o que se espera de um radiogroup.
@@ -11746,9 +11851,9 @@ function desenharIdiomas() {
       const passo = { ArrowRight:1, ArrowDown:1, ArrowLeft:-1, ArrowUp:-1 }[e.key];
       if (!passo) return;
       e.preventDefault();
-      const alvo = botoes[(i + passo + botoes.length) % botoes.length];
-      escolherIdioma(alvo.dataset.idi).then(() => {
-        const novo = $(`#idiomas .idi[data-idi="${alvo.dataset.idi}"]`);
+      const vizinho = botoes[(i + passo + botoes.length) % botoes.length];
+      escolherIdioma(vizinho.dataset.idi).then(() => {
+        const novo = $(`${seletor} .idi[data-idi="${vizinho.dataset.idi}"]`);
         if (novo) novo.focus();
       });
     };
@@ -11757,14 +11862,30 @@ function desenharIdiomas() {
 
 async function escolherIdioma(col) {
   lembrar(CHAVE_IDIOMA, col);
+  // Os dois seletores acendem a mesma bandeira, e nao so aquele em que se
+  // clicou: quem escolhe pela tela de Idiomas continua vendo a escolha certa
+  // ao voltar para a tela de entrada.
   desenharIdiomas();
+  desenharIdiomas("#idiomasAqui");
   await aplicarIdioma(col);
 }
 
 /** Pede os textos ao servidor e os pendura nos `data-txt`.
  *
  *  Sem servidor -- modo demonstração -- não há o que aplicar: o HTML já está
- *  em português, que é exatamente o degrau 3 do servidor. */
+ *  em português, que é exatamente o degrau 3 do servidor.
+ *
+ *  Quatro atributos, e não um: o texto de um botão é `data-txt`, mas o que a
+ *  pessoa lê num `title` ou num `aria-label` é texto de tela igualzinho — e
+ *  quem usa leitor de tela lê SÓ o `aria-label`. Deixá-lo de fora traduziria
+ *  a tela para quem enxerga e não para quem escuta. */
+const ATRIBUTOS_DE_TEXTO = [
+  ["data-txt",    "txt",      (el, t) => { el.textContent = t; }],
+  ["data-txt-ph", "txtPh",    (el, t) => { el.placeholder = t; }],
+  ["data-txt-tt", "txtTt",    (el, t) => { el.title = t; }],
+  ["data-txt-al", "txtAl",    (el, t) => el.setAttribute("aria-label", t)],
+];
+
 async function aplicarIdioma(col) {
   const escolha = IDIOMAS.find(i => i.col === col) || IDIOMAS[0];
   let textos = null;
@@ -11780,15 +11901,27 @@ async function aplicarIdioma(col) {
   document.documentElement.lang = escolha.lang;
   // `textContent`, nunca `innerHTML`: o texto vem de uma tabela que um
   // administrador edita pela grade, e tabela editável é entrada de usuário.
-  for (const el of document.querySelectorAll("[data-txt]")) {
-    const t = textos[el.dataset.txt];
-    if (t) el.textContent = t;
-  }
-  for (const el of document.querySelectorAll("[data-txt-ph]")) {
-    const t = textos[el.dataset.txtPh];
-    if (t) el.placeholder = t;
-  }
+  for (const [attr, chave, aplicar] of ATRIBUTOS_DE_TEXTO)
+    for (const el of document.querySelectorAll(`[${attr}]`)) {
+      const t = textos[el.dataset[chave]];
+      if (t) aplicar(el, t);
+    }
   desenharConexoes();
+  // O `title` do botao de tema e escrito pelo `aplicarTema`, e nao por um
+  // `data-txt-tt`: ele diz para onde o clique LEVA, e muda a cada clique.
+  // Trocar o idioma tem de reescrever tambem esse.
+  aplicarTema(document.documentElement.getAttribute("data-tema") || "escuro");
+  // Depois de entrar, o cromo e a tela aberta já estão pintados em outro
+  // idioma: quem os desenhou leu `est.textos` como estava então. Repintar
+  // aqui é o que faz a troca valer SEM recarregar -- e é o mesmo caminho da
+  // tela de entrada, que não tem cromo para repintar.
+  if ($("#app").classList.contains("ativo")) {
+    montarMenu();
+    montarFerramentas();
+    atualizarItens();
+    await montarArvore(false);
+    if (est.repintar) est.repintar();
+  }
 }
 
 // =====================================================================

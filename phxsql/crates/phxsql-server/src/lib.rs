@@ -9,6 +9,7 @@ pub mod blacklist;
 pub mod carga;
 pub mod catalogo;
 pub mod cluster;
+pub mod conferidor;
 pub mod config;
 pub mod dblink;
 pub mod email;
