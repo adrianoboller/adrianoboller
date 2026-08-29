@@ -171,8 +171,25 @@ fn main() {
         acc = acc.wrapping_add(crc32(&pagina));
     }
     let por_pagina = inicio.elapsed().as_secs_f64() * 1e6 / voltas as f64;
-    println!("\n=== as duas suspeitas do caminho de cada pagina ===\n");
+    // A terceira suspeita, que o proprio texto abaixo insinuava sem medir:
+    // `ler_pagina` devolve `Vec<u8>`, entao um ACERTO de cache copia os 4 KiB
+    // inteiros. Nao paga CRC, mas paga a copia -- e o numero de acertos cresce
+    // com a altura da arvore, que cresce com a tabela.
+    //
+    // `black_box` nao e decoracao: sem ele o LLVM ve que a copia nao e usada e
+    // apaga o laco inteiro -- a primeira versao deste medidor mediu 0,00 us
+    // para copiar 4 KiB, que e impossivel, e o numero passaria como bom.
+    let inicio = Instant::now();
+    let mut soma = 0usize;
+    for _ in 0..voltas {
+        let copia = std::hint::black_box(&pagina).clone();
+        soma += std::hint::black_box(&copia)[0] as usize;
+    }
+    let copia_pagina = inicio.elapsed().as_secs_f64() * 1e6 / voltas as f64;
+
+    println!("\n=== as tres suspeitas do caminho de cada pagina ===\n");
     println!("  CRC-32 de uma pagina de 4 KiB .... {por_pagina:.2} us   (acumulador {acc:x})");
+    println!("  COPIAR uma pagina de 4 KiB ....... {copia_pagina:.2} us   (soma {soma})");
 
     // --------------------------------------------------- chamada de sistema
     // Um `lseek` num arquivo ja aberto e a chamada mais barata que o caminho
@@ -207,10 +224,19 @@ fn main() {
     let com_crc = m.lidas + m.gravadas;
     println!(
         "\n  So a leitura do arquivo e a gravacao passam pelo CRC -- {com_crc:.2} paginas\n  \
-         por linha, ou {:.1} us de CRC, de {dois:.1} us medidos ({:.0}%). O acerto de\n  \
-         cache custa a copia da pagina, e nao o CRC dela: e dai que veio o ganho.",
+         por linha, ou {:.1} us de CRC, de {dois:.1} us medidos ({:.0}%).",
         com_crc * por_pagina,
         com_crc * por_pagina / dois * 100.0
+    );
+    // O acerto de cache nao paga CRC -- mas paga a COPIA, porque `ler_pagina`
+    // devolve `Vec<u8>`. E o numero de acertos cresce com a altura da arvore.
+    let copiadas = m.acertos + m.lidas + m.gravadas;
+    println!(
+        "  E toda pagina que entra ou sai do cache e COPIADA: {copiadas:.2} por\n  \
+         linha, ou {:.1} us, {:.0}% -- e este cresce com a tabela, porque a\n  \
+         arvore fica mais alta e a descida toca mais paginas.",
+        copiadas * copia_pagina,
+        copiadas * copia_pagina / dois * 100.0
     );
     println!(
         "\n  Um lseek custa {por_seek:.2} us: mesmo 41 chamadas por linha dariam {:.1} us.",
