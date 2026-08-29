@@ -1,8 +1,13 @@
 # Telemetria — o painel ao vivo, as threads e o encerrar
 
 O molde é o **SQL Check da Idera(R)**: faixas de séries no topo e, embaixo, um
-painel em que cada atividade viva é uma **bolha** — o tamanho é o peso, a cor é
-o estado, e clicar abre o descritivo inteiro.
+painel em que cada atividade viva é uma **esfera** — o tamanho é o peso, a cor é
+o estado, e clicar abre o descritivo inteiro. As esferas ficam em fileiras, das
+mais pesadas na frente para as mais leves no fundo, e dá para **descer um
+nível**: da conexão para a estação que a abriu, e de volta pela trilha.
+
+O desenho foi refeito contra os quadros do produto de referência, e o que mudou
+— com o que se copiou, o que não se copiou e por quê — está na **§3.4**.
 
 **Onde ela fica:** o botão `Telemetria` na barra de ferramentas, logo depois de
 *Conexões* — e também em **Ferramentas → Telemetria ao vivo…**, pelo teclado. O
@@ -181,6 +186,16 @@ usar o peso direto no raio faria uma atividade duas vezes mais pesada parecer
 quatro vezes maior — é o erro clássico do gráfico de bolha, e ele mente para o
 lado do exagero.
 
+**As mais leves têm um piso**, em 26% do raio da maior. Abaixo disso o rótulo
+não cabe dentro, e bolha sem rótulo não diz quem é — que é a única coisa que
+ela existe para dizer. O piso quebra a proporção de propósito, e por isso ele
+aparece **desenhado** na escala do rodapé do painel: proporção quebrada em
+silêncio seria mentira sobre o dado.
+
+O piso é uma **razão**, e não um número de pixels. Piso absoluto brigaria com a
+caixa — num painel de celular ele viraria a bolha inteira —, e o tamanho em
+pixels só é decidido depois, quando já se sabe quantas fileiras cabem.
+
 ### 3.3 A cor, e o que acompanha a cor
 
 | cor | nível | quando | o que acompanha |
@@ -229,13 +244,200 @@ dois temas, **medido no navegador** com a fórmula da WCAG:
 Elas saem das variáveis do tema e escurecem no claro pelo mesmo motivo do
 vermelhão da marca.
 
+**A faixa está ESCRITA na legenda**, com o número que o servidor mandou. «Amarelo
+· uso alto» sozinho obriga quem olha a adivinhar acima de quanto; agora a
+legenda diz «operação acima de 2,0 s, ou parada na fila da trava». O número sai
+do campo `limiares` da resposta — a mesma constante que decidiu a cor —, e sem
+o campo a frase perde o número em vez de inventar um.
+
 **O nível é decidido no SERVIDOR**, e vai no campo `nivel` da resposta junto com
 os limiares em `limiares`. Com a regra escrita na tela também, o dia em que um
 dos dois mudasse a tela pintaria uma cor que o servidor não concorda — é a mesma
 razão pela qual `sistema` manda o `livre_minimo_percentual` junto com o espaço
 livre.
 
-### 3.4 «Servidor em stress» vem com o motivo
+### 3.4 O desenho, refeito contra a referência
+
+O dono olhou a primeira versão e disse: *«o gráfico do idera SQL check é
+diferente precisa melhorar»*. Estava certo, e a razão dá para escrever: aquele
+painel era uma caixa fixa de 340 px com uma espiral de círculos chapados em
+volta do centro. Com uma atividade viva, uma bolha de 74 px de raio no meio de
+mil pixels escuros. Com oito, um grupinho no meio e as duas pontas vazias.
+
+Depois vieram os quadros do SQL Check rodando, e eles mostraram cinco coisas
+que nenhuma descrição tinha passado:
+
+| o que a referência faz | o que fizemos |
+|---|---|
+| **esferas**, não círculos: brilho especular no alto à esquerda, aro escuro embaixo à direita, sombra projetada no chão | `<radialGradient>` e `feDropShadow`, nativos do SVG. Zero biblioteca |
+| **fileiras frouxas** numa bandeja, não um pacote apertado | arranjo em fileiras, da frente para o fundo |
+| **perspectiva**: as menores ficam mais ao fundo | sai de graça — a fileira da frente recebe as mais pesadas, e o raio já é o peso |
+| **movimento** o tempo todo | transição + deriva de 3 px, com o painel congelando sob o ponteiro |
+| **busca** («Search SPID…») e **legenda** que se esconde | campo de busca e «ocultar legenda» no cabeçalho do painel |
+
+#### O arranjo em fileiras, e por que ele enche o painel
+
+As bolhas vão do maior para o menor, enchendo a fileira da **frente** (embaixo)
+e subindo para o fundo. Uma busca binária acha o **maior raio que ainda cabe**
+na caixa — o número de fileiras muda em degraus conforme o raio cresce, então
+não há fórmula fechada; trinta voltas resolvem até o pixel e isso roda uma vez
+a cada duas voltas da tela, não por quadro.
+
+**A perspectiva não usa escala falsa.** Encolher a fileira de trás «porque está
+longe» seria mentir sobre o peso dela. Como a da frente já recebe as mais
+pesadas, o gradiente de tamanho aparece sozinho, e ele é *verdade sobre o dado*.
+
+As fileiras se encavalam de leve (97% da soma dos raios) e a da frente é
+desenhada por cima — é daí que vem a profundidade. A 82%, que foi o primeiro
+valor, uma esfera grande cobria metade de duas pequenas e comia o rótulo delas:
+**profundidade que esconde o dado deixou de ser profundidade**.
+
+#### A caixa segue o desenho
+
+Nenhuma conta de raio resolve «uma bolha sozinha num vazio de mil pixels» — só
+a caixa. Quando o desenho pede menos largura do que a tela tem, o painel
+**encolhe** (até um piso de 420 px, abaixo do qual a legenda quebra em coluna) e
+o `flex` devolve a sobra ao descritivo do lado. A altura também sai do desenho,
+entre 150 e 380 px. Com uma atividade viva o painel vira um quadrado com uma
+esfera grande dentro, e a ficha dela ocupa o resto da tela.
+
+#### A tinta do rótulo é MEDIDA, não escolhida
+
+A referência escreve o número em branco, porque lá as esferas são azul-escuras.
+Aqui as quatro cores **clareiam** no tema escuro (`--ambar` é `#ffc43d`), e
+branco sobre elas dá menos de 2:1. Então a tela calcula a luminância do corpo
+e compara **as duas** razões — clara e escura —, ficando com a maior.
+
+Um limiar escolhido a olho já errou aqui: a 0,32 o `--vermelho` do tema escuro
+(`#ff5f5f`, luminância 0,303) caía do lado do branco e dava **2,98:1**, quando a
+tinta escura sobre ele dá 6,38:1. Comparar as duas não tem como errar, e
+continua valendo se alguém mexer nas cores do tema.
+
+Medido no navegador, o rótulo dentro da esfera:
+
+| cor | escuro | claro |
+|---|---:|---:|
+| azul (`--reg`) | 7,48:1 | 6,98:1 |
+| âmbar (`--ambar`) | 12,20:1 | 4,61:1 |
+| vermelho (`--vermelho`) | 6,51:1 | 6,72:1 |
+| rosa (`--acao-marcar`) | 9,24:1 | 5,94:1 |
+
+O contorno na cor oposta cobre a variação do gradiente, do brilho ao aro — é o
+mesmo recurso do texto branco com borda da referência.
+
+#### O rótulo se mede contra a corda, não contra o raio
+
+Quantos caracteres cabem sai de `2·√(r²−dy²)·0,84 / (fonte·0,6)`: a corda do
+círculo na altura em que o texto está, com o respiro até a borda e a razão
+largura/altura da monoespaçada. Chutar pelo raio foi o que punha «w·a1b31e4»
+transbordando da bolha num painel estreito — o raio dizia que cabia, a largura
+do texto dizia que não. Abaixo de dois caracteres a esfera fica limpa e o nome
+vai no tooltip e no cartão.
+
+Há uma conferência de geometria que roda no navegador e falha se um rótulo sair
+da esfera, se uma esfera (ou a **sombra** dela) sair da caixa, ou se um alvo de
+clique ficar abaixo de 11 px. Ela pegou 24 casos de bolha cortada pela borda de
+baixo, todos causados pelo desalinhamento de fileira; e depois pegou a sombra
+sendo decepada, que o olho vê como bolha cortada — **a conferência media o
+círculo, e o que vazava era o filtro**.
+
+#### O movimento é honesto
+
+Movimento aleatório que não quer dizer nada é ruído, e nesta casa coisa que se
+mexe significa alguma coisa. São dois tipos, e nenhum é sorteado:
+
+1. a **transição** — a bolha desliza do lugar velho para o novo quando o peso,
+   o estado ou a quantidade de atividades mudou. Isso é dado;
+2. a **deriva** — três pixels de balanço, com a fase tirada do identificador.
+   Enfeite declarado: pequena, sem sorteio, e a primeira a ser desligada.
+
+**Alvo que se move é alvo que não se clica.** Com o ponteiro dentro do painel a
+deriva morre e as posições-alvo congelam, para a volta seguinte não puxar a
+bolha debaixo do cursor. Ela morre rápido (~150 ms) e volta devagar, e a
+assimetria é de propósito: quem levou o ponteiro até a bolha quer mirar agora;
+quem tirou não tem pressa de ver o painel respirar de novo. Provado clicando na
+**menor** bolha do painel (raio 20,6 px) com o desenho vivo.
+
+Acima de 80 bolhas a deriva desliga sozinha, e `prefers-reduced-motion`
+desliga tudo — quem pediu menos movimento ao sistema pediu para todo mundo.
+
+#### SVG, e não Canvas
+
+O conselho de fora dizia «Canvas acima de umas cem». Ficou SVG, e o motivo é
+acerto de clique e leitor de tela: cada bolha continua sendo um `<g>` focável,
+com `<title>` e `aria-label`, e o navegador resolve o «em qual eu cliquei»
+sozinho. Em Canvas os dois teriam de ser reescritos à mão. O preço é o número de
+nós, e é por isso que existe o teto de 150 bolhas desenhadas — acima dele o
+desenho já não se lê de qualquer jeito, e o resumo diz quantas ficaram de fora.
+
+Cada bolha carrega ainda um círculo **invisível** de raio mínimo 11 px por cima:
+alvo menor que isso ninguém acerta, e a referência tem bolhas desse tamanho.
+
+### 3.5 Os três níveis: estação › conexão › operação
+
+O pedido novo foi *«entrar na bolha referente a uma conexão e ver as bolhas
+ativadas em execução por uma estação»*. São três camadas, e temos dado para as
+três.
+
+**A entrada continua sendo a ATIVIDADE**, e a escolha é deliberada: é ela que
+responde à pergunta que abre este painel — *quem está doendo agora*. Uma estação
+com dez conexões calmas some dentro do próprio nome; a conexão que segurou a
+trava por meio minuto tem de aparecer inteira. É também o que a referência faz:
+lá cada bolha é um `spid`, não uma máquina.
+
+**Agrupar por estação é uma VISTA**, para a pergunta seguinte: *de qual máquina
+vem esse aperto*. Nela cada bolha é um IP, o peso é a **soma** do que as
+conexões dele gastaram, e o nível é o **pior** delas — uma estação com uma
+conexão em stress é uma estação em stress, e uma média esconderia exatamente o
+que se procura.
+
+- `Atividades` → uma bolha por conexão. Clicar abre o descritivo.
+- `Por estação` → uma bolha por IP. Clicar **desce** para as conexões dela.
+- `Por estação › 10.0.0.20` → as conexões daquela máquina. Clicar abre o
+  descritivo.
+
+A **trilha** no cabeçalho é o caminho de volta, e ela não é enfeite: descer sem
+escada é armadilha, e a tela não tem o botão «voltar» do navegador para
+oferecer. Do descritivo também há atalho — «Ver as N desta estação».
+
+E a trilha **só se reescreve quando muda**. Reescrevendo a cada volta, os botões
+eram destruídos e recriados de dois em dois segundos: um clique automatizado
+ficou **trinta segundos** tentando, perdendo a corrida para o redesenho toda
+vez. Quem usa mouse perderia o clique de vez em quando sem saber por quê. É a
+regra do «nada pisca» aparecendo num lugar novo.
+
+### 3.6 A busca, e o descritivo completo
+
+A referência tem uma caixa **«Search SPID…»** no canto do painel. A nossa
+procura em conexão, IP, usuário, operação, alvo e estado ao mesmo tempo — num
+servidor com quarenta conexões, achar a que dói pelo olho é sorte. O resumo diz
+quantas ficaram fora do filtro, e o painel vazio diz **por que** está vazio:
+«nenhuma atividade bate com o filtro» é diferente de «nenhuma atividade viva».
+
+E o descritivo mostra **tudo** o que sabemos daquela atividade — 24 linhas —, e
+não um resumo. É o que a referência faz: o painel dela lista as vinte e sete
+colunas do `sysprocesses`, o `input_buffer` (o comando em execução) inclusive.
+Resumo obriga quem investiga a procurar o resto noutro lugar, e no meio de um
+incidente não há outro lugar.
+
+**Sem clique nenhum o cartão descreve a mais pesada.** A coluna do descritivo
+era trezentos pixels com uma frase de convite dentro, do lado de um painel que
+o dono já achava vazio — e a informação que ela mostraria de graça é justamente
+a que o painel inteiro existe para achar. A escolha automática **não liga os
+botões**: encerrar operação dos outros é ato de administração, e ato de
+administração exige escolha explícita.
+
+### 3.7 O que NÃO foi copiado do SQL Check, e por quê
+
+| do SQL Check | por que ficou de fora |
+|---|---|
+| bolhas quase todas do **mesmo tamanho**, com só a selecionada grande | lá o tamanho não carrega dado; aqui ele **é** o peso, e essa é a promessa do painel. Copiar isso jogaria fora a única medida que a bolha carrega |
+| a **bandeja azul-clara** fixa | o fundo aqui sai das variáveis do tema, senão o painel seria uma ilha clara dentro do tema escuro da marca. O chão existe, com o gradiente de `--painel-2` para `--painel` |
+| o painel de detalhe **flutuando por cima** dos gráficos | ele tapa justamente as séries que se está olhando. O nosso fica ao lado, e no celular embaixo |
+| **posições sem ordem** aparente | a ordem por tamanho foi pedida explicitamente, e ela é o que faz a maior dominar a vista |
+| o clique que **muda o tamanho** da bolha selecionada | tamanho é peso. Mexer nele no clique seria a tela mentindo sobre o dado para dizer «esta aqui» — quem diz isso é o aro grosso e o cartão ao lado |
+
+### 3.8 «Servidor em stress» vem com o motivo
 
 `stress` é um adjetivo, e adjetivo não se conserta. O que se conserta é o
 motivo, e ele vai no campo `stress_por_que`:
@@ -369,6 +571,26 @@ DEPOIS    checksum=532f48958bde3ef5 linhas=2865000 (10672 ms)
 VERIFICAR True
 BOLHA     saiu da lista: True
 ```
+
+### O caminho da BOLHA até o laço, refeito no desenho novo
+
+O desenho das bolhas mudou (§3.4), e o botão de encerrar mora no cartão que o
+clique na bolha abre — então o caminho inteiro foi provado outra vez, **pelo
+navegador**, contra o servidor de verdade e com carga viva:
+
+```text
+NAVEGADOR  clique na esfera «dados:64» (checksum) → botão «Encerrar a operação»
+RESPOSTA   encerrando: a operacao esta em fase cancelavel (somando a tabela) e
+           aborta na proxima unidade de trabalho…
+CLIENTE    CANCELADO (6001) — operacao encerrada por root apos 318.615
+           unidade(s) de trabalho em checksum (somando a tabela)
+DEPOIS     checksum=35567217afa6d410 linhas=400000 · igual ao de antes
+VERIFICAR  ok · 400.000 registros, 400.000 slots, índice por_id com 400.000
+```
+
+O cliente alvo é um processo próprio, noutra conexão, somando a tabela em laço
+— o encerrar atravessou duas threads e o soquete, e a tabela reaberta devolveu
+a **mesma soma** e a mesma contagem.
 
 **E a prova tem de partir de um estado bom conhecido.** Na primeira tentativa
 o `verificar` do fim acusou `CRC invalido na pagina 94990 de clientes.ndx` — e
@@ -652,9 +874,11 @@ Três cuidados que só aparecem exercitando:
    existem, um `<g>` por atividade, achado pelo id. Redesenhar tudo faria o
    clique do operador cair no vazio a cada dois segundos e o cartão aberto
    fechar sozinho.
-2. **O empacotamento é uma espiral gulosa**, escrita à mão, sem biblioteca: a
-   maior vai ao centro e cada seguinte anda pela espiral até achar lugar que
-   não encoste em nenhuma. Determinístico — mesma entrada, mesmo desenho.
+2. **O arranjo é em fileiras**, da frente para o fundo, escrito à mão e sem
+   biblioteca: as mais pesadas na fileira de baixo, e uma busca binária acha o
+   maior raio que ainda cabe. Determinístico — mesma entrada, mesmo desenho, e
+   o desalinhamento de cada bolha sai do identificador dela, nunca de sorteio
+   (bolha que pula de lugar é bolha que não se clica). O desenho está na §3.4.
 3. **Pausa e retomada.** O botão para o relógio sem fechar a tela, e a barra
    continua mostrando o instante da última amostra, para ninguém confundir
    pausa com servidor parado.
@@ -665,8 +889,8 @@ inventado, sem servidor nenhum — e é assim que ele continua podendo.
 
 ### 10.1 O que só apareceu exercitando
 
-Cinco defeitos, e nenhum deles aparecia lendo o código. É a lição do vídeo,
-outra vez.
+Onze defeitos até aqui, e nenhum deles aparecia lendo o código. É a lição do
+vídeo, outra vez.
 
 1. **O painel inteiro ficava vermelho** sob stress do servidor — a cor parou de
    separar (§3.3).
@@ -690,6 +914,30 @@ outra vez.
 
    O conserto é o mesmo remédio que o monitor da máquina já usava: **sem alvo,
    o relógio para sozinho**. Uma linha no começo da volta.
+
+Os seis da rodada do desenho novo, todos achados no navegador:
+
+6. **O painel quase vazio.** Uma bolha de 74 px de raio no meio de uma caixa
+   fixa de 340 px por mil de largura. Foi a queixa do dono, e nenhuma conta de
+   raio a resolvia — só a caixa seguir o desenho (§3.4).
+7. **Trocar de nível deixava bolhas órfãs.** O mapa de posições era esvaziado
+   ao mudar de vista, e com ele ia embora a alça dos elementos: doze conexões
+   continuavam desenhadas com quatro estações por cima. **Lembrança apagada
+   não apaga o que está no documento** — quem manda no desenho é o documento, e
+   agora o SVG é varrido também.
+8. **A trilha roubava o próprio clique.** Reescrita a cada volta, os botões
+   eram destruídos e recriados de dois em dois segundos; um clique ficou trinta
+   segundos tentando. Só se reescreve quando muda.
+9. **Branco sobre vermelho dava 2,98:1.** O limiar de luminância escolhido a
+   olho mandava o `--vermelho` do tema escuro para o lado errado. Agora as duas
+   razões são calculadas e ganha a maior.
+10. **Bolha cortada pela borda de baixo**, em 24 casos que a conferência de
+    geometria pegou: o desalinhamento de fileira empurrava a esfera para fora
+    quando a caixa tinha a altura exata de um diâmetro.
+11. **A sombra decepada.** A mesma conferência dizia «tudo dentro» porque media
+    o **círculo**, e o que vazava era o `feDropShadow` — que o olho lê como
+    bolha cortada. A margem passou a caber o filtro, e a conferência passou a
+    medir a sombra junto.
 
 ### 10.2 Quando o servidor não responde
 

@@ -22,3 +22,8 @@
 /bancada/profiler/cheio/
 /bancada/profiler/somenteleitura/
 **/__pycache__/
+
+# A bancada da telemetria monta esta pagina a partir do `ui/` a cada corrida:
+# guardar uma copia dela seria guardar um retrato que envelhece calado.
+/bancada/telemetria/bancada.html
+/bancada/telemetria/*.png
