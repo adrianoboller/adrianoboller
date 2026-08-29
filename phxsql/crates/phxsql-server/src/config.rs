@@ -2261,6 +2261,79 @@ mod tests {
         assert!(texto.contains("(oculta)"));
     }
 
+    /// UM teste para TODAS as credenciais do `config.json`, e nao um por
+    /// campo.
+    ///
+    /// Ja ha tres testes especificos aqui -- a senha da cifra, a do rele e a
+    /// do cluster --, e nenhum deles pega o campo que ALGUEM ACRESCENTAR
+    /// AMANHA: cada um confere o segredo que ja conhece. E o mesmo desenho do
+    /// portao de permissao, que e um so justamente para nao existir a
+    /// operacao que ficou de fora.
+    ///
+    /// Aqui todo campo que carrega segredo recebe uma marca DISTINTA, e a
+    /// asercao e sobre o JSON inteiro: se um campo novo entrar no
+    /// `para_json`, ele so passa se a marca dele nao aparecer. O teste tambem
+    /// diz QUAL marca vazou, para o conserto nao comecar por procurar.
+    #[test]
+    fn nenhuma_credencial_do_config_sai_pela_op_config() {
+        let segredos = [
+            ("token do servidor", "MARCA-TOKEN-SERVIDOR"),
+            ("hash do root", "pbkdf2-sha256$1000$a1$dead0001"),
+            ("hash de um usuario", "pbkdf2-sha256$1000$a2$dead0002"),
+            ("senha da cifra", "MARCA-SENHA-CIFRA"),
+            ("senha do rele de e-mail", "MARCA-SENHA-RELE"),
+            ("token da origem de replicacao", "MARCA-TOKEN-ORIGEM"),
+            ("senha em claro da origem", "MARCA-SENHA-ORIGEM"),
+            ("hash da origem", "pbkdf2-sha256$1000$a3$dead0003"),
+            ("token do cluster", "MARCA-TOKEN-CLUSTER"),
+            ("hash do cluster", "pbkdf2-sha256$1000$a4$dead0004"),
+        ];
+        let bruto = r#"{
+          "token":"MARCA-TOKEN-SERVIDOR",
+          "bind":"127.0.0.1:5000",
+          "root":{"id":1,"login":"root",
+                  "senha_hash":"pbkdf2-sha256$1000$a1$dead0001"},
+          "usuarios":[{"id":2,"login":"ana",
+                       "senha_hash":"pbkdf2-sha256$1000$a2$dead0002"}],
+          "cifra":{"ligada":true,"senha":"MARCA-SENHA-CIFRA"},
+          "alertas":{"ligado":true,"email":{"ligado":true,"servidor":"rele",
+                     "de":"phx@x.com","para":["a@x.com"],
+                     "usuario":"phx","senha":"MARCA-SENHA-RELE"}},
+          "replicacao":{"papel":"replica","id_servidor":"r1",
+            "origens":[{"nome":"m","host":"10.0.0.1","porta":5000,
+                        "token":"MARCA-TOKEN-ORIGEM",
+                        "usuario":"rep","senha":"MARCA-SENHA-ORIGEM",
+                        "senha_hash":"pbkdf2-sha256$1000$a3$dead0003"}]},
+          "cluster":{"id":"r1","token":"MARCA-TOKEN-CLUSTER","usuario":"rep",
+            "senha_hash":"pbkdf2-sha256$1000$a4$dead0004",
+            "nos":[{"id":"r1","endereco":"127.0.0.1","porta":5000},
+                   {"id":"r2","endereco":"127.0.0.2","porta":5000}]}
+        }"#;
+        let c = Config::de_json(&Json::analisar(bruto).unwrap()).unwrap();
+
+        // O caminho de leitura continua funcionando -- um `para_json` que
+        // esconde tudo porque nao leu nada passaria neste teste sem valer.
+        assert_eq!(c.token, "MARCA-TOKEN-SERVIDOR");
+        assert_eq!(c.cifra.senha(), "MARCA-SENHA-CIFRA");
+        assert_eq!(c.alertas.email.senha(), "MARCA-SENHA-RELE");
+        assert_eq!(c.replicacao.origens[0].token, "MARCA-TOKEN-ORIGEM");
+        assert_eq!(c.cluster.as_ref().unwrap().token, "MARCA-TOKEN-CLUSTER");
+
+        let texto = c.para_json().escrever();
+        for (qual, marca) in segredos {
+            assert!(
+                !texto.contains(marca),
+                "vazou pela op `config`: {qual} ({marca})\n{texto}"
+            );
+        }
+        // E nem o prefixo do PBKDF2 sozinho: ele denuncia o formato e o
+        // numero de voltas de todo hash deste servidor.
+        assert!(
+            !texto.contains("pbkdf2-sha256$"),
+            "o formato do hash vazou: {texto}"
+        );
+    }
+
     #[test]
     fn a_senha_da_cifra_pode_vir_do_ambiente() {
         std::env::set_var("PHXSQL_TESTE_CIFRA", "vinda do ambiente");

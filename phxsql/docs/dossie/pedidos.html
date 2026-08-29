@@ -178,15 +178,15 @@ footer{
 <div class="envelope">
 <header>
   <div class="rotulo">PhxSql · o dossiê do que foi pedido</div>
-  <h1>Os 132 pedidos, e o<br>que existe de cada um</h1>
+  <h1>Os 133 pedidos, e o<br>que existe de cada um</h1>
   <p class="chamada">Uma linha por pedido seu, na ordem em que você pediu. O
   estado é <strong>medido contra o código</strong>, não contra a lembrança — foi
   assim que a chave estrangeira saiu de «pronto» para «parcial», e o Centro de
   Controle de «pronto» para «só navega».</p>
 
   <div class="placar">
-    <div class="c"><div class="v">132</div><div class="r">pedidos</div></div>
-    <div class="c feito"><div class="v">123</div><div class="r">feitos</div></div>
+    <div class="c"><div class="v">133</div><div class="r">pedidos</div></div>
+    <div class="c feito"><div class="v">124</div><div class="r">feitos</div></div>
     <div class="c parcial"><div class="v">5</div><div class="r">parciais</div></div>
     <div class="c planejado"><div class="v">4</div><div class="r">planejados</div></div>
   </div>
@@ -221,7 +221,7 @@ fonte —, e não por falta de trabalho.</p>
   Meio caminho andado continua sendo meio caminho, e a lista diz qual metade.
 </div>
 
-<h2 id="todos">Os 132, na ordem em que você pediu</h2>
+<h2 id="todos">Os 133, na ordem em que você pediu</h2>
 <p class="sub">A numeração é a sequência real dos seus pedidos — ela diz
 <em>quando</em> cada coisa foi pedida, e é por isso que vale mantê-la.</p>
 
@@ -372,6 +372,7 @@ fonte —, e não por falta de trabalho.</p>
       <tr data-e="feito"><td class="n mono">67</td><td class="st"><span class="pino feito">Feito</span></td><td class="p"><strong>Botão e menu Tabelas</strong> para gerir as tabelas do banco: nova, estrutura, editar conteúdo, partições, duplicar, reparar tabela, reparar índice e excluir — e <strong>Gestão de transações</strong> no menu de ferramentas</td><td class="e">as oito operações funcionam de ponta a ponta; três delas (<code>criar_tabela</code>, <code>duplicar_tabela</code>, <code>excluir_tabela</code>) nasceram aqui, e <code>criar_schema</code> — prometido na documentação e nunca despachado — junto</td></tr>
       <tr data-e="feito"><td class="n mono">131</td><td class="st"><span class="pino feito">Feito</span></td><td class="p"><strong>Prioridade no MULTILINK: conectar no MySQL(R) e ver a tabela <code>clientes</code> do outro lado do DbLink</strong></td><td class="e">provado contra o <strong>MySQL(R) 8.0.46 real</strong>, não o servidor falso: <code>caching_sha2_password</code> pelos dois caminhos documentados, <code>dblink_tabelas</code>/<code>dblink_estrutura</code>/<code>dblink_ler</code> trazendo as 5 linhas com o DECIMAL certo — e a grade da tela somando sobre dado que nunca esteve num arquivo nosso. Roteiro de refazer em <code>docs/DBLINK.md</code>. É o DbLink <strong>nativo, zero dependências</strong> — o destino do pacote MULTILINK, alcançado sem as 582 crates dele</td></tr>
       <tr data-e="feito"><td class="n mono">132</td><td class="st"><span class="pino feito">Feito</span></td><td class="p"><strong>Assistente de conexão DbLink</strong>: cria a conexão, testa, escolhe base e tabelas ligadas, e o <strong>job de sincronia</strong> gravando entre si automaticamente</td><td class="e">cinco passos que só avançam com o anterior provado, e por baixo a <strong>sincronia de tabelas primas</strong>: convergência de estado pela chave, sentido (puxar/empurrar/dois) e dono (aqui/lá) <strong>por linha</strong>, colunas casadas <strong>por nome</strong>, empurrão reentrável (<code>ON DUPLICATE KEY UPDATE</code>), teto com recusa clara. Exclusão <strong>não</strong> viaja — limite de desenho, provado no estágio 5 da prova. <code>bancada/dblink/prova-sincronia.py</code> roda os 7 estágios contra o MySQL(R) vivo (inclusive o job puxando sozinho); o assistente foi exercitado no navegador e o exercício achou a árvore que não se remontava. 15 testes de unidade das partes puras, com o defeito do sinal do decimal provado nos dois sentidos. <code>docs/DBLINK.md</code></td></tr>
+      <tr data-e="feito"><td class="n mono">133</td><td class="st"><span class="pino feito">Feito</span></td><td class="p"><strong>Bateria de testes de backend e de frontend, e avaliação do design</strong></td><td class="e"><code>testes-web/</code>: onze casos que sobem o próprio servidor (portas 6200/6201), entram pela tela de login e percorrem <strong>112 telas</strong> nos <strong>dois temas</strong>, reprovando em três canais de erro — <code>pageerror</code>, o recado vermelho da barra e o do painel — porque o <code>ligarMenu</code> captura toda exceção e ela nunca vira <code>pageerror</code>. A bateria <strong>recusa rodar com binário velho</strong>: a página é <code>include_str!</code>. Achou seis defeitos que 1.106 testes verdes não achavam — a tela de LGPD lendo um campo que o servidor nunca mandou, a tela de entrada em branco por <strong>12,7 s</strong> onde a rede engole a fonte da marca (<strong>116×</strong>), três mordidas do CSS global e um contraste de 3,85:1 no tema claro. E a varredura do portão de permissão achou <strong>três</strong> operações que leem a base inteira sem o campo <code>tabela</code> que o portão confere: <code>pivotar</code> (a tabela negada como lado da junção — dado, nome e contagem), <code>sequencias</code> e <code>posicao</code>. <code>docs/TESTES.md</code></td></tr>
     </tbody>
   </table>
   <div class="vazio" id="vazio" hidden>Nenhum pedido bate com isso.</div>

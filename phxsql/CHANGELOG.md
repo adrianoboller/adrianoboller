@@ -10,6 +10,115 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
+## Não lançado
+
+A rodada da **bateria de testes** — backend, frontend e avaliação de design.
+O que ela mostra em uma linha: **1.106 testes verdes não provam uma tela**.
+Os seis defeitos de interface abaixo aconteceram sem uma única exceção não
+capturada, e o portão de permissão tinha três operações a mais que leem a base
+inteira sem o campo que ele confere. `docs/TESTES.md` e `testes-web/LEIA-ME.md`.
+
+### Corrigido
+
+- **A tela de Dado pessoal (LGPD) nunca auditou nada.** Ela procurava um campo
+  booleano `pessoal` por coluna, e o servidor nunca mandou esse campo — o
+  esquema responde `dado_pessoal`, em texto, e existe uma op própria
+  (`dados_pessoais`) feita para essa varredura. O efeito era o pior possível
+  para o assunto: a tela dizia, em vermelho e para toda base, «o esquema deste
+  servidor ainda não traz a marca» — **«não sei» sobre um motor que sabe**, numa
+  tela de conformidade. Nenhum teste de `cargo test` podia pegar: o servidor
+  estava certo dos dois lados, e quem lia errado era a página. De quebra, a op
+  filtra tabela a tabela pelo direito de quem pergunta; o laço da tela refazia
+  essa conferência por fora.
+- **O `pivotar` era a porta dos fundos para a tabela negada.** O portão confere
+  o campo `"tabela"` do pedido, e o pivot tem **dois** lugares com tabela: a de
+  fatos em `tabela` e a lista `juntar`, com um `"tabela"` **dentro de cada
+  item**. Bastava juntar a tabela negada e pedir um campo dela em `linhas` — os
+  rótulos das linhas do cruzamento **são** os valores dela, e a resposta ainda
+  dizia o nome da tabela e quantas linhas ela tem. É a terceira operação da
+  mesma família do `juntar` e do `unir`; foi esquecida porque nela o campo tem
+  o nome certo, só que **aninhado**.
+- **`sequencias` e `posicao` mostravam a tabela que a árvore esconde.** As duas
+  percorrem a base inteira sem campo `tabela`. A primeira devolvia nome,
+  contador e quantidade de registros de toda tabela; a segunda, com
+  `com_esquema`, devolvia o **esquema cru** de cada uma. Filtram por dentro
+  agora — `ler` numa, `replicar` na outra, que é o direito que o portão aplica
+  a cada uma. O teste que mais importa é o do comportamento velho: a réplica
+  sem regra por tabela continua vendo tudo.
+- **`duplicar_tabela` não conferia o destino.** O portão confere `criar` contra
+  o campo `tabela`, que ali é a origem — e a tabela que nasce tem o nome do
+  campo `destino`. Quem podia criar nominalmente uma tabela criava qualquer
+  outra, duplicando a permitida. O `copiar_tabela` ao lado já conferia o
+  destino dele.
+- **A tela de entrada ficava em branco por 12,7 s** num servidor cuja rede
+  **engole** o pedido da fonte da marca (firewall com DROP, proxy que só
+  responde reset depois do prazo) — que é a rede em que um servidor de banco
+  mora. A folha de estilo bloqueante parava o parser, e com ele o primeiro
+  `<script>` e o `DOMContentLoaded`. Medido nas duas redes, três rodadas cada:
+  12.778/12.743/12.677 ms contra 124/115/101 ms com recusa imediata; depois do
+  conserto, 125/103/101 ms — **116×**. `media="print"` + `onload` faz o
+  navegador buscar sem bloquear a pintura, e o `noscript` devolve o caminho
+  antigo para quem desligou o script.
+- **O `input{width:100%}` global mordeu a tela «Nova tabela»** — o checkbox
+  `obrig.` media 57×13 px, o `único` 114×13 e o radio `primária` 161×13. Era o
+  quarto caso; em vez do quarto remendo pontual, entrou uma regra para **toda
+  célula** (`td/th input[type=checkbox|radio]`), para o próximo componente
+  nascer certo.
+- **A caixa de marcar separada do próprio texto.** `.criar .chk` trocava o
+  `display` para `flex` e não o `flex-direction`, e `.criar label
+  {flex-direction:column}`, vinte linhas abaixo, vencia: «exigir motivo
+  escrito» e «tabela particionada» apareciam com a caixinha **em cima** do
+  texto, os dois jogados na borda direita. No código as duas regras estão perto
+  e cada uma está certa sozinha.
+- **O nome do índice saía em caixa alta na tela de LGPD** — `porNome` virando
+  `PORNOME`. É a mesma mentira sobre o dado do «BLUMENAU»: nome de índice é
+  dado, e mostrar dado numa caixa que ele não tem faz quem lê não saber como
+  está gravado.
+- **O chip «ativas» da grade reprovava no contraste do tema claro.** Ele trazia
+  uma tinta quase preta fixa sobre `var(--laranja)`, que no tema claro escurece
+  para `#c63c0a`: **3,85:1**, abaixo dos 4,5:1. Era o único lugar que não usava
+  o token `--tinta-botao`. E o número mostra por que se mede: a conta de cabeça
+  dava 2,65:1.
+
+### Adicionado
+
+- **`testes-web/`, a bateria de frontend que roda sozinha.** Onze casos, dois
+  temas, 22 execuções em ~2min20. Sobe um `phxsqld` próprio nas portas
+  6200/6201, entra pela tela de login com o desafio-resposta de verdade,
+  percorre **112 telas** clicando cada item dos nove menus e cada botão da
+  barra, e derruba o servidor **pelo PID**. Ela **recusa rodar com binário
+  velho** — a página é `include_str!`, e exercitar a versão anterior aprovaria
+  uma correção que o servidor nem serve.
+- **Três canais de erro, e não um.** O `ligarMenu` manda toda exceção de item
+  de menu para `avisar(..., true)`: capturada, ela nunca vira `pageerror`. O
+  passeio olha `pageerror`, `#aviso.mal` e `#painel .aviso.mal`, e limpa os
+  dois últimos antes de cada clique.
+- **Oito testes de backend**, todos com o defeito reposto provando que pegam:
+  `pivotar_nao_e_a_porta_dos_fundos`, `sequencias_esconde_a_tabela_negada`,
+  `posicao_esconde_a_tabela_negada`, `duplicar_confere_o_direito_no_destino`,
+  os três «continua valendo» que travam o comportamento velho, e
+  `nenhuma_credencial_do_config_sai_pela_op_config` — **um** teste para todas
+  as credenciais do `config.json`, com dez marcas distintas, no lugar de um por
+  campo que não pega o campo que alguém acrescentar amanhã.
+- **`docs/dossie/cobertura-por-area.py`**, que regrava as duas tabelas de
+  cobertura do `docs/TESTES.md` a partir do código. Tabela de cobertura
+  digitada mente no dia seguinte ao primeiro teste novo.
+
+### Sabido
+
+- **`replica.rs` continua sem nenhum `#[test]`** — 352 linhas, o laço que faz a
+  réplica alcançar o master, e a prova é o `bancada/replicacao/`, que precisa
+  de quatro servidores no ar e não roda no portão de commit.
+- **`duplicar_tabela` e `copiar_tabela` não conferem `ler` na origem.** Copiar
+  uma tabela é ler os bytes dela, e as duas são `Atividade::Criar`. Exigir
+  `ler` mudaria o significado de um `config.json` que já existe, e guarda nova
+  entra pedida — o caminho exato está em `docs/TESTES.md` §5.1.
+- **A gaveta fechada no celular não reabre ao voltar para o desktop**: o
+  fechamento automático é gravado como se fosse escolha da pessoa. Os dois
+  lados são ruins, e o conserto é desenho — `docs/TESTES.md` §5.3.
+
+---
+
 ## 0.18.0 — 2026-08-29
 
 A rodada dos concorrentes. Três motores lidos no fonte — InnoDB, Aria e

@@ -3,7 +3,22 @@
 <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAiCAMAAAAau2s5AAABIFBMVEX/ZAD/owP91g7/lwf/nQr/aAD/ogL/FAD/1iL/EAD/zyBEnf//LQAjo/+Q/6r/cQv2/Jj/XgBc7vT/xhf/n00AM///AP//oYj04lb/2lIi1/9VVf+cqv////IA/wD/AID/U5YzZv+qVf+M6eX/tP8A/4BVAP9V/6q5/wD/Kir/bUn/Zsz/vlcAZv8AAP8AgP8AAAAAVf//AAAAQP//VQD/NQD/RwD/hAD/BAD/NgD/WAL/BAD/RwD/SAD/ZgL/iQD/mAD/dwD/tgL/KAD/agL/pQH/GgH/JgD/NwD/VwD/ZwD/xQr/AgD/FQD/JwD/OAD/dQP/dQD/qAL/CAD/KgD/OQD/NgD/WAD/uAH//wAAqP+D//ut////FQD/JwD/RADIXQuSAAAAYHRSTlObHh5ammrPpOnVXQNqCgMmGtMGqwcFAQMtVQYDCAIBAgQFAwUDBAMGCwYHBV4FAgMAAwwEKxP2EC4uEU4VLzD29vX5FRP4Ek7w/fX5a20xUhRNNZD6qs5LbwUEBAMxzkq5EUlEAAAEBElEQVR42k2Uh3LjOAyGqS7LdlzS2yZbrp9Biurdvffe/f5vcbST21nOUOIAHwFQIn603WKMt1cEtgbGpVLpPEvYMIzzm5ngSteZDSOMdV3fE167uyCf43OdBU0ju0sABhr6FdHUG/iIlWUPXWeTrXH2mVM1kt8yF9IZB2v1X1I0cIlFh5cPkmViix3h1TXLjjHSGcf1VKqzupgzz5Pn/e579hKVFQlf1B4He52B+AsR1WvCambgnggaABDy9Flsmlyra+bEqAg8L5/B3M09TsNUkK817TEPu+JPUOR5UkQ7IvJyT/YhHE8gbfiimPR6KjvC5XAY+Kp6zV8zEPiyL/aqU9BDE9K3zkQsN6qi1lMfyZNe+g7CGZQtQDBtSOtqQ4b7m28Yp/+ZICRXe9VElnkope84uapq6yrHQK4h1xuNxpo81N91wwAiVqvJghKfB3wPLL68aZQ5gmAjN8RpOSlr4MTj+i0rJal2a1AEwD9gXS6Xp2JDJhzKhUI5kYSkkghgmu/3f4uFMovwrZTN/oCLWUzKAj9FMSKoUkFSpVsRiB++xZJckXtTeGUfW+p2KxKqJIiIOeR3EUXdToHNjuTrv0lJgnpVmQNsoQ4zF7oMECv0HA9FK2S3l7Ztm4dlp5BZy3JSkayobdvLto1WUaEiAaIUdexFJnO07YJHB5motuE4zvFGw7ch27vMZBZ2B9EbhF9pZjlPKcwYQdOM4ymfzz9wk2h4A17bVpR5u53hYkDpu1Gr2RrM2u0FgSgK/3jKPjy+FHc33hCTRbs9G7RqJ8n/He2fa8pxEATHeWvUPJ2sq202n89mi/VWywpb82MwUI4LCq+IXSoYpFJKKnXI1KzTaiJoj4+asBqtzMPgcHEMwABAuXoddOIGs1QQ0PeV5HP8wwPvOCQf0yBIzQKXAh47HJJi028edHeW6lNKXc88X1s2LS+ktK/0D3AK62ZOQM44NE3PJVZfcZ3asDWaCKIoSKPAjIAqfYsOvVWccxzk1E3f94d0nHP7r9YqNsdTQeDqG8jHb4HL89QLQz9mICG+GXlWk0pjWmu6Q5NcBq1F9RrlBRqFpmeSDaCJFEWUeE0aiU8QepmWdEndck2T8MhnG4gVm2iCOGdz58SWVQNRrIcn0/S5c2pC8mOuIBHLsnLO3W58jwwjDTmpFg6btIvA7Y/4c+aNw0mog85nt1DMeukWsWbGAKwHtuDZI3BnygIJf25ibjFXyIsOcMuuOhMYdFYqnMalr8YevKXiNIPZvFOYUJcqB3g+y0z20uAM/Clxe7AG7E9kRsrczrgB/GX8om9Mzc6Nrn/Igg5NlwbHUz8199ymfgH1/0HjQ0Av4+uLXkpDcPzSTykkh3/xlP4DLAPwBRpxba0AAAAASUVORK5CYII=">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<!-- A folha da fonte da marca NAO bloqueia a pintura, e o motivo e medido.
+     Bloqueante, ela para o parser ate a resposta chegar -- e a resposta que
+     nunca chega e o caso normal de um servidor de banco: rede que DESCARTA o
+     pacote (firewall com DROP, proxy que so responde reset depois do prazo)
+     em vez de recusar na hora. Medido nas duas redes, tres rodadas cada:
+     12,7 s de tela BRANCA quando o pedido e engolido, contra 0,12 s quando a
+     recusa e imediata -- 103x, e o usuario olhando o nada.
+     `media="print"` faz o navegador buscar SEM bloquear; o `onload` promove a
+     folha quando ela chega. Sem internet, a pilha de reserva assume e a
+     pagina continua inteira -- como ja continuava, so que na hora.
+     O `noscript` devolve o caminho antigo para quem desligou o script: ali a
+     pagina nao funciona mesmo, e a fonte bonita nao custa nada. -->
+<link rel="stylesheet" media="print" onload="this.media='all';this.onload=null"
+      href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<noscript><link rel="stylesheet"
+  href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"></noscript>
 
 <style>
 /* A marca do PhxSql e escura por natureza, e um console de banco se usa em
@@ -130,6 +145,21 @@ input,select{
   font-family:inherit;
 }
 input:focus,select:focus{border-color:var(--laranja);outline:none}
+
+/* O `input{width:100%}` de cima e certo num formulario e ERRADO dentro de uma
+   tabela: ali quem manda a largura e a celula, e um checkbox esticado vira
+   uma bolota do tamanho da coluna. Ja custou tres remendos pontuais nesta
+   pagina -- `.form-dbl .linha-chk`, `.un-item`, `table.conf .esc` -- e cada
+   um deles so nasceu depois de alguem ABRIR a tela e olhar.
+   Medido pela bateria de frontend na tela «Nova tabela»: o checkbox `único`
+   media 114x13px e o radio `primária`, 161x13px. A regra passa a valer para
+   TODA celula, para o proximo componente nascer certo em vez de virar o
+   quarto remendo. Radio e checkbox so -- campo de texto dentro de celula
+   continua ocupando a celula, que e o que se quer la. */
+td input[type=checkbox],td input[type=radio],
+th input[type=checkbox],th input[type=radio]{
+  width:15px;height:15px;min-width:0;padding:0;margin:0;
+}
 .campo{margin-bottom:16px}
 .botao{
   width:100%;background:var(--laranja);color:var(--tinta-botao);border:none;border-radius:6px;
@@ -529,7 +559,17 @@ table.montar.campos .pos{
   font-family:"IBM Plex Mono",monospace;font-size:10.5px;color:var(--texto-3);
 }
 .criar .chk{
-  display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--texto-2);
+  /* `flex-direction:row` NAO e redundante: `.criar label` acima manda
+     `flex-direction:column` para o formulario inteiro, e esta regra so
+     trocava o `display`. O resultado, visivel so no navegador, era a caixinha
+     de «exigir motivo escrito» empilhada EM CIMA do proprio texto, os dois
+     jogados na borda direita pelo `margin-left:auto` do `.secao .chk` -- uma
+     caixa de marcar separada do que ela marca.
+     Achado por captura de tela na bateria de frontend, e nao por leitura: no
+     codigo as duas regras estao a vinte linhas uma da outra e cada uma esta
+     certa sozinha. */
+  display:flex;flex-direction:row;align-items:center;gap:7px;
+  font-size:11.5px;color:var(--texto-2);
   text-transform:none;letter-spacing:0;cursor:pointer;margin:0;
 }
 .criar .chk input{width:auto}
@@ -1012,7 +1052,14 @@ tr.linha-excluida td{opacity:.55;text-decoration:line-through}
             border-radius:7px;overflow:hidden;margin-left:8px}
 .chip-visao button{padding:3px 10px;font-size:11px;background:transparent;
                    border:0;color:var(--texto-3);cursor:pointer;font:inherit;width:auto}
-.chip-visao button.ativo{background:var(--laranja);color:#10060a}
+/* `--tinta-botao` e nao um `#10060a` fixo, e o motivo e medido: no tema claro
+   o `--laranja` escurece para #c63c0a (adaptacao da marca, por contraste), e
+   tinta quase preta em cima dele dava 3,85:1 -- abaixo dos 4,5:1. E a mesma
+   armadilha que o comentario das cores da acao ja descrevia («fundo laranja
+   com texto escuro em cima ficava ilegivel»), sobrevivendo no unico lugar que
+   nao usava o token. O token vira com o tema: escuro no laranja claro, claro
+   no laranja escuro. Achado pela varredura de contraste da bateria. */
+.chip-visao button.ativo{background:var(--laranja);color:var(--tinta-botao)}
 /* A visao das marcadas herda o rosa da acao: a mesma cor do botao que marca. */
 .chip-visao button.marcadas.ativo{background:var(--acao-marcar);color:var(--fundo)}
 textarea.campo.mono{font-family:"IBM Plex Mono",monospace;font-size:12px;line-height:1.5}
@@ -8792,13 +8839,28 @@ function cartaoNovaTabelaER(db) {
 
 /* ================================================ dado pessoal (LGPD/GDPR)
  *
- * A marca vive no esquema, por coluna, no campo booleano `pessoal`. Esta tela
- * só AUDITA: mostra onde as marcas estão, por base e por tabela.
+ * A marca vive no esquema, por coluna, no campo `dado_pessoal`, que vale
+ * `"nao"`, `"pessoal"` ou `"sensivel"` (LGPD art. 5º I e II). Esta tela só
+ * AUDITA: mostra onde as marcas estão, por base e por tabela.
  *
- * A regra que ela não pode quebrar: se o esquema deste servidor ainda não
- * traz o campo, a tela diz isso — e não «nenhum dado pessoal encontrado», que
- * seria uma mentira tranquilizadora sobre exatamente o assunto em que ela
- * custa mais caro.
+ * QUEM VARRE É O SERVIDOR, pela op `dados_pessoais`, e não este laço aqui.
+ * Duas razões, e as duas já custaram caro nesta casa:
+ *
+ *  1. A tela lia um campo booleano `pessoal` que o servidor NUNCA mandou — o
+ *     esquema responde `dado_pessoal`, em texto. O resultado é que ela dizia
+ *     «este servidor ainda não traz a marca» para todo mundo, inclusive para
+ *     bases com colunas marcadas: uma tela de conformidade LGPD respondendo
+ *     «não sei» sobre um motor que sabe. Achado pela bateria de frontend,
+ *     que percorreu a tela em vez de ler o código dela.
+ *  2. A op filtra tabela a tabela pelo direito de quem pergunta — ela não tem
+ *     campo `tabela`, e por isso confere por dentro, como o `juntar` e o
+ *     `unir`. Varrer aqui com `tabelas` + `esquema` refazia essa conferência
+ *     por fora, que é exatamente onde ela um dia deixa de existir.
+ *
+ * E a regra que a tela não pode quebrar continua: coluna SEM CLASSIFICAÇÃO
+ * não é coluna sem dado pessoal. Uma diz «ninguém olhou ainda»; a outra diz
+ * «alguém olhou e disse que não é». O número que separa as duas é
+ * `colunas_sem_classificacao`, e ele fica em cima, entre os grandes.
  */
 async function telaDadosPessoais(db) {
   const bancos = est.bancos || await api("bancos");
@@ -8807,29 +8869,21 @@ async function telaDadosPessoais(db) {
     `<div class="centro">lendo o esquema de cada tabela…</div>`);
 
   const achados = [];
-  let colunasVistas = 0, comCampo = 0, tabelas = 0, semAcesso = 0;
+  let colunasVistas = 0, semClassificacao = 0, semAcesso = 0;
   for (const base of alvos) {
-    let t;
-    try { t = await api("tabelas", { database: base }); }
+    let r;
+    try { r = await api("dados_pessoais", { database: base }); }
     catch (e) { semAcesso++; continue; }
-    for (const nome of (t.tabelas || [])) {
-      let e;
-      try { e = await api("esquema", { database: base, tabela: nome }); }
-      catch (err) { semAcesso++; continue; }
-      tabelas++;
-      for (const c of (e.colunas || [])) {
-        if (c.sistema) continue;
-        colunasVistas++;
-        // A diferença que decide o texto da tela: o campo AUSENTE não é o
-        // mesmo que o campo `false`. Um diz «o motor ainda não sabe marcar»;
-        // o outro diz «alguém olhou e disse que não é pessoal».
-        if (Object.prototype.hasOwnProperty.call(c, "pessoal")) comCampo++;
-        if (c.pessoal) achados.push({ base, tabela: nome, coluna: c });
-      }
-    }
+    colunasVistas += r.colunas_conferidas || 0;
+    semClassificacao += r.colunas_sem_classificacao || 0;
+    semAcesso += (r.tabelas_que_nao_abriram || []).length;
+    for (const t of (r.achados || []))
+      for (const c of (t.colunas || []))
+        achados.push({ base, tabela: t.tabela, coluna: c });
   }
 
-  const semSuporte = comCampo === 0;
+  // Ninguém classificou NADA ainda. Não é «não há dado pessoal».
+  const nadaClassificado = colunasVistas > 0 && semClassificacao === colunasVistas;
   const bases = new Set(achados.map(a => a.base)).size;
   const tabelasComDado = new Set(achados.map(a => `${a.base}.${a.tabela}`)).size;
 
@@ -8843,10 +8897,10 @@ async function telaDadosPessoais(db) {
          <div class="r">tabelas atingidas</div></div>
        <div class="ficha"><div class="v">${fmt(bases)}</div>
          <div class="r">bases atingidas</div></div>
-       <div class="ficha"><div class="v">${fmt(tabelas)}</div>
-         <div class="r">tabelas varridas</div></div>
        <div class="ficha"><div class="v">${fmt(colunasVistas)}</div>
          <div class="r">colunas varridas</div></div>
+       <div class="ficha"><div class="v">${fmt(semClassificacao)}</div>
+         <div class="r">sem classificação</div></div>
      </div>
 
      <div class="barra-acao">
@@ -8857,36 +8911,42 @@ async function telaDadosPessoais(db) {
        <button class="botao consultar" id="btLgVer">Varrer de novo</button>
      </div>
 
-     ${semSuporte ? `<div class="aviso mal">
-       <p><strong>O esquema deste servidor ainda não traz a marca
-       <code>pessoal</code> por coluna.</strong> Nenhuma das
-       ${fmt(colunasVistas)} colunas varridas respondeu esse campo — nem
-       <code>true</code>, nem <code>false</code>.</p>
+     ${nadaClassificado ? `<div class="aviso">
+       <p><strong>Nenhuma das ${fmt(colunasVistas)} colunas varridas foi
+       classificada ainda.</strong></p>
        <p>Por isso esta tela <b>não</b> diz «nenhum dado pessoal encontrado»:
-       ela não sabe. Campo ausente e campo <code>false</code> são coisas
-       diferentes, e confundir os dois num relatório de LGPD é exatamente onde
-       a confusão custa mais caro. Quando a marca entrar no cadastro de campos
-       — ao lado de <code>caption</code>, <code>descricao</code> e
-       <code>mascara</code> —, esta tela passa a listar sozinha.</p>
+       ela não sabe. Coluna sem classificação e coluna marcada como
+       <code>não</code> são coisas diferentes — uma diz que ninguém olhou, a
+       outra que alguém olhou e decidiu —, e confundir as duas num relatório
+       de LGPD é exatamente onde a confusão custa mais caro. A marca entra no
+       <code>criar_tabela</code>, no campo <code>dado_pessoal</code> de cada
+       coluna: <code>nao</code>, <code>pessoal</code> ou
+       <code>sensivel</code>.</p>
      </div>` : ""}
 
      ${achados.length
-       ? tabela([{t:"base"},{t:"tabela"},{t:"coluna"},{t:"rótulo"},{t:"tipo"},
-                 {t:"papel"},{t:"descrição"}],
+       ? tabela([{t:"base"},{t:"tabela"},{t:"coluna"},{t:"grau"},{t:"rótulo"},
+                 {t:"tipo"},{t:"índices"},{t:"descrição"}],
            achados, a => `<tr class="linha-lg" data-db="${esc(a.base)}"
              data-tab="${esc(a.tabela)}">
              <td class="dado">${esc(a.base)}</td>
              <td class="dado">${esc(a.tabela)}</td>
-             <td class="dado"><b>${esc(a.coluna.nome)}</b></td>
-             <td><span class="rot-dado">${esc(a.coluna.rotulo || a.coluna.caption || "—")}</span></td>
+             <td class="dado"><b>${esc(a.coluna.coluna)}</b></td>
+             <!-- crua porque o grau é o texto GRAVADO no esquema (pessoal /
+                  sensivel), e o pino normal o mostraria em caixa alta.
+                  Pino é enfeite; isto é dado. -->
+             <td><span class="pino crua ${a.coluna.grau === "sensivel" ? "log" : "ndx"}"
+                >${esc(a.coluna.grau)}</span></td>
+             <td><span class="rot-dado">${esc(a.coluna.rotulo || "—")}</span></td>
              <td class="dado">${esc(a.coluna.tipo)}</td>
-             <td>${a.coluna.primaria ? '<span class="pino">PK</span> ' : ""}${
-                  a.coluna.estrangeira ? '<span class="pino ndx">FK</span> ' : ""}${
-                  (a.coluna.nos_indices || []).length
-                    ? `<span class="pino reg">indexada</span>` : ""}</td>
+             <!-- crua tambem aqui: o indice se chama porNome, e o pino
+                  normal o mostraria PORNOME. Nome de indice e dado. -->
+             <td>${(a.coluna.nos_indices || []).length
+                    ? `<span class="pino crua reg">${esc((a.coluna.nos_indices || []).join(", "))}</span>`
+                    : `<span class="leg">—</span>`}</td>
              <td>${esc(a.coluna.descricao || "")}</td></tr>`)
-       : (semSuporte ? "" : `<div class="vazio">nenhuma coluna marcada como dado
-           pessoal nas ${fmt(tabelas)} tabelas varridas</div>`)}
+       : (nadaClassificado ? "" : `<div class="vazio">nenhuma coluna marcada como dado
+           pessoal nas ${fmt(colunasVistas)} colunas varridas</div>`)}
 
      ${semAcesso ? `<div class="aviso">${semAcesso} tabela(s) ou base(s) não
        puderam ser lidas com este login — uma auditoria feita por quem não vê
@@ -8897,9 +8957,10 @@ async function telaDadosPessoais(db) {
        A chave vai para o <code>.ndx</code> em claro, e o índice é um segundo
        lugar onde o dado existe — apagar a linha do <code>.reg</code> não é a
        mesma coisa que tirá-lo de todo lugar.</p>
-       <p>Esta tela <b>lê</b> a marca. Marcar e desmarcar é no cadastro de
-       campos da tabela, junto com <code>caption</code>,
-       <code>descricao</code> e <code>mascara</code>.</p>
+       <p>Esta tela <b>lê</b> a marca, e quem varre é o servidor — a op
+       <code>dados_pessoais</code>, que confere o direito tabela a tabela por
+       dentro. Marcar é no <code>criar_tabela</code>, no campo
+       <code>dado_pessoal</code> de cada coluna.</p>
      </div>`);
 
   $("#btLgVer").onclick = () => telaDadosPessoais($("#lgDb").value || null);
