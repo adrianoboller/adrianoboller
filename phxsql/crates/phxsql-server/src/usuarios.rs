@@ -135,6 +135,17 @@ impl Atividade {
             // por base do PhxSql nao atravessam. Deixar um leitor navegar por
             // ela seria emprestar o poder de quem a criou.
             op if op.starts_with("dblink") => Atividade::Administrar,
+            // Job inteiro exige administrar, inclusive so LER a lista, e pelo
+            // mesmo motivo do DbLink: um job carrega o login sob o qual roda e
+            // o pedido inteiro que executa. Ver a lista e ver que operacao roda
+            // sobre que tabela de quem; poder salvar um e poder mandar o
+            // servidor executar qualquer coisa com o poder de outro usuario.
+            // Isso nao pode ser direito de leitor.
+            "jobs" | "job_salvar" | "job_excluir" | "job_rodar" => Atividade::Administrar,
+            // Parar e subir a porta de dados e o poder mais bruto que ha aqui:
+            // um clique tira o servico do ar para todo mundo. Administrar, e
+            // nada menos.
+            "servico" | "servico_parar" | "servico_subir" => Atividade::Administrar,
             "inserir" => Atividade::Inserir,
             // Reservar a tabela para carga exige o poder de INSERIR nela, e
             // nao mais: quem pode gravar mil linhas pode pedir a tabela para

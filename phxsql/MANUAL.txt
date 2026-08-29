@@ -1468,6 +1468,132 @@ AGENDADO
     Todo backup agendado entra no acessos.log. Senao, a unica prova de que
     ele rodou seria o arquivo existir.
 
+
+11.1 JOBS DE EXECUCAO
+
+    Um job e um NOME, uma AGENDA e uma operacao do protocolo que ja existe.
+    O agendador do backup e o mesmo relogio; o que muda e QUE operacao roda.
+
+    O cadastro fica em arquivo proprio, apontado no config.json:
+
+        "jobs": "jobs.json"
+
+    Separado do config.json de proposito -- ele muda pela tela, e reescrever
+    o config.json inteiro a cada job novo arriscaria os comentarios e o resto
+    da configuracao. As corridas vao para o jobs.log ao lado, uma linha JSON
+    por corrida, append-only.
+
+    UM JOB RODA COMO GENTE, E NAO COMO O SERVIDOR
+
+    Ele carrega o login de um usuario do cadastro e roda com o poder DAQUELE
+    usuario, nem um pingo a mais. E deliberado: um agendador com poder proprio
+    seria um jeito de contornar a permissao, bastando escrever num arquivo a
+    operacao que a rede recusaria.
+
+    Usuario que sumiu do cadastro ou foi desativado PARA o job, com o motivo
+    escrito -- e a recusa ja acontece ao SALVAR, nao as tres da manha.
+
+    Num servidor sem cadastro nenhum o job entra sem login, que e o mesmo
+    comportamento da porta de dados. Nada muda para quem ja tinha.
+
+    O CADASTRO
+
+        {
+          "jobs": [
+            { "nome": "backup-noturno",
+              "descricao": "o zip de todo dia",
+              "ligado": true,
+              "hora": "03:00",
+              "usuario": "adm",
+              "pedido": { "op": "backup", "zip": true } },
+
+            { "nome": "confere-clientes",
+              "ligado": false,
+              "cada_minutos": 360,
+              "usuario": "adm",
+              "pedido": { "op": "verificar",
+                          "database": "Comercial",
+                          "tabela": "cadastroClientes" } }
+          ]
+        }
+
+    nome          letras, digitos, _ e -, ate 48. Unico.
+    ligado        VEM DESLIGADO. Um job que comeca a rodar no instante em que
+                  foi salvo nao da a quem escreveu a chance de reler o pedido.
+    hora          "HH:MM", uma vez por dia. Vazia = usa cada_minutos.
+    cada_minutos  intervalo, quando nao ha hora marcada. Minimo 1.
+    usuario       login sob o qual a operacao roda.
+    pedido        o mesmo objeto que a porta de dados aceita, SEM o "token" --
+                  o job nao entra pela rede.
+
+    AS OPERACOES
+
+        {"op":"jobs"}                        cadastro + historico
+        {"op":"job_salvar","job":{...}}      grava ou substitui pelo nome
+        {"op":"job_excluir","nome":"x"}      apaga o job; o historico fica
+        {"op":"job_rodar","nome":"x"}        roda agora, fora da agenda
+
+    As quatro exigem ADMINISTRAR, inclusive so ler a lista: ela mostra que
+    operacao roda sobre que tabela, e sob que login.
+
+    O RELOGIO
+
+    Acorda de 30 em 30 segundos, e SO SOBE se havia algum job ligado quando o
+    servidor arrancou -- num servidor sem job nenhum ele nao existe. Ligar o
+    primeiro job pela tela vale a partir do proximo arranque, e a tela avisa
+    quando e o caso.
+
+    O HISTORICO
+
+    Toda corrida entra no jobs.log e no acessos.log, tenha dado certo ou nao.
+    Job que falha calado nao existe. O "detalhe" e um RESUMO da resposta, e ele
+    e obtido analisando e reserializando -- nunca recortando: uma varredura de
+    vinte mil linhas vira "linhas: 20000 itens", e nao meio JSON cortado.
+
+
+11.2 PARAR E SUBIR A PORTA DE DADOS
+
+        {"op":"servico"}                              estado
+        {"op":"servico_parar"}                        para de aceitar
+        {"op":"servico_subir","bind":"0.0.0.0:5001"}  sobe, aqui ou em outra
+
+    As tres exigem ADMINISTRAR, e as duas ultimas sao recusadas num servidor
+    em somente_leitura -- elas nao gravam byte nenhum, mas interrompem o
+    trabalho de todo mundo, pelo mesmo motivo do encerrar_sessao.
+
+    O QUE PARA, E O QUE NAO PARA
+
+    Para o accept: cliente NOVO recebe recusa de conexao. As conexoes ja
+    abertas seguem ate elas mesmas acabarem, e a resposta diz quantas sao.
+
+    O PROCESSO CONTINUA VIVO, e a interface web continua no ar na porta dela.
+    E por ela que a porta de dados volta -- um botao que se desfaz e um botao;
+    um que nao se desfaz e um alcapao. Derrubar o processo continua sendo do
+    sistema: systemctl stop phxsql, ou o Gerenciador de Servicos.
+
+    A ORDEM QUE EVITA O TIRO NO PE
+
+    O endereco novo e PRESO antes de o velho ser solto. Porta ocupada,
+    permissao negada (abaixo de 1024 sem raiz) ou endereco escrito errado
+    falham com o servico intacto e nada trocado, em vez de deixar a maquina
+    sem porta de dados nenhuma e sem caminho de volta.
+
+    VALE ATE O PROXIMO ARRANQUE
+
+    Trocar a porta por aqui NAO reescreve o config.json. A tela mostra os dois
+    lado a lado -- o que esta no ar e o que esta no arquivo -- para ninguem
+    descobrir a diferenca meses depois, num reinicio. Para valer sempre, mude
+    o campo "bind".
+
+    COMO O accept ACORDA
+
+    Ele bloqueia, e nao ha como interromper um accept bloqueado sem mexer no
+    laco. Havia duas saidas: pesquisar de tempos em tempos com o soquete nao
+    bloqueante, ou ACORDAR o laco com uma conexao. A pesquisa foi descartada
+    por custo: 100 ms de intervalo poem ate 100 ms de espera em TODA conexao
+    nova, o tempo inteiro, para servir um pedido de parada que acontece uma vez
+    por mes. O despertador custa zero enquanto ninguem para.
+
 COM O SERVIDOR PARADO
 
     phxsql backup <base> <destino>

@@ -19,6 +19,24 @@ pub const PORTA_PADRAO: u16 = 5000;
 /// nao e quem fala JSON Lines, e separar deixa o firewall escolher.
 pub const PORTA_WEB_PADRAO: u16 = 5001;
 
+/// `"IP:porta"` em endereco, com a mensagem de erro escrita para gente.
+///
+/// Extraida de `Config::endereco` porque a troca de porta pela tela precisa
+/// resolver um endereco que ainda nao esta em `Config` -- e resolve-lo em
+/// outro lugar significaria duas ideias diferentes do que e um endereco
+/// valido.
+pub fn endereco_de(bind: &str) -> Result<SocketAddr> {
+    use std::net::ToSocketAddrs;
+    let bind = bind.trim();
+    if bind.is_empty() {
+        return Err(PhxError::Esquema("endereco vazio".into()));
+    }
+    bind.to_socket_addrs()
+        .map_err(|e| PhxError::Esquema(format!("bind invalido {bind:?}: {e}")))?
+        .next()
+        .ok_or_else(|| PhxError::Esquema(format!("bind sem endereco: {bind:?}")))
+}
+
 /// Papel do servidor na replicacao.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Papel {
@@ -835,6 +853,11 @@ pub struct Config {
     /// pela tela, e reescrever o `config.json` inteiro a cada ligacao nova
     /// arriscaria os comentarios e o resto da configuracao a cada gravacao.
     pub dblink: PathBuf,
+    /// Arquivo com os jobs de execucao.
+    ///
+    /// Separado pelo mesmo motivo do DbLink: o cadastro muda pela tela. E as
+    /// corridas vao para o `.log` de mesmo nome, ao lado.
+    pub jobs: PathBuf,
     /// Campos do arquivo que o servidor nao reconhece.
     ///
     /// Nao e erro -- config antigo continua subindo. E aviso: campo escrito
@@ -848,7 +871,7 @@ pub struct Config {
 ///
 /// Os que comecam com `_` sao comentario -- o JSON nao tem comentario, e os
 /// exemplos usam `_web`, `_backup` e afins para explicar a secao seguinte.
-const CAMPOS_CONHECIDOS: [&str; 19] = [
+const CAMPOS_CONHECIDOS: [&str; 20] = [
     "bind",
     "base",
     "token",
@@ -868,6 +891,7 @@ const CAMPOS_CONHECIDOS: [&str; 19] = [
     "backup",
     "alertas",
     "dblink",
+    "jobs",
 ];
 
 /// O que o arquivo trouxe e o servidor nao sabe ler.
@@ -901,6 +925,7 @@ impl Default for Config {
             backup: Backup::default(),
             alertas: Alertas::default(),
             dblink: PathBuf::from("dblink.json"),
+            jobs: PathBuf::from("jobs.json"),
             estranhas: Vec::new(),
         }
     }
@@ -1009,6 +1034,7 @@ impl Config {
             backup: Backup::de_json(j)?,
             alertas: Alertas::de_json(j)?,
             dblink: PathBuf::from(j.texto_ou("dblink", "dblink.json")),
+            jobs: PathBuf::from(j.texto_ou("jobs", "jobs.json")),
             estranhas: chaves_estranhas(j),
         })
     }
@@ -1054,12 +1080,7 @@ impl Config {
     }
 
     pub fn endereco(&self) -> Result<SocketAddr> {
-        use std::net::ToSocketAddrs;
-        self.bind
-            .to_socket_addrs()
-            .map_err(|e| PhxError::Esquema(format!("bind invalido {:?}: {e}", self.bind)))?
-            .next()
-            .ok_or_else(|| PhxError::Esquema(format!("bind sem endereco: {:?}", self.bind)))
+        endereco_de(&self.bind)
     }
 
     /// O IP tem permissao de conectar? Lista vazia libera todos.
@@ -1192,6 +1213,7 @@ impl Config {
             ),
             ("alertas", self.alertas.para_json()),
             ("dblink", Json::texto_de(self.dblink.display().to_string())),
+            ("jobs", Json::texto_de(self.jobs.display().to_string())),
         ])
     }
 }

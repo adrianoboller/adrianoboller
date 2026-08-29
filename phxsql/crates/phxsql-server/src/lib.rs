@@ -11,6 +11,7 @@ pub mod dblink;
 pub mod email;
 pub mod exportar;
 pub mod http;
+pub mod jobs;
 pub mod juncao;
 pub mod ligacoes;
 pub mod mcp;

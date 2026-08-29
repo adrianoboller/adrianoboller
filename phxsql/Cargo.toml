@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/phxsql-core",
     "crates/phxsql-store",
+    "crates/phxsql-sql",
     "crates/phxsql-cli",
     "crates/phxsql-server",
 ]
@@ -17,6 +18,7 @@ repository = "https://github.com/adrianoboller/adrianoboller"
 [workspace.dependencies]
 phxsql-core = { path = "crates/phxsql-core" }
 phxsql-store = { path = "crates/phxsql-store" }
+phxsql-sql = { path = "crates/phxsql-sql" }
 phxsql-server = { path = "crates/phxsql-server" }
 
 [profile.release]

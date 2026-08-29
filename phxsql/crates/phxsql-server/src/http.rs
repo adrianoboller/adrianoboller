@@ -45,6 +45,14 @@ pub const PAGINA: &str = include_str!("../ui/index.html");
 const GRID_CSS: &str = include_str!("../ui/grid/phx-grid.css");
 const GRID_JS: &str = include_str!("../ui/grid/phx-grid.js");
 
+/// O desenho do diagrama ER, em arquivo proprio.
+///
+/// Separado do `index.html` porque o layout do grafo e a unica parte da
+/// interface que e ALGORITMO -- e algoritmo nao deveria morar no meio de sete
+/// mil linhas de tela. Entra no cabecalho junto com o grid, pelo mesmo motivo:
+/// estar definido antes de a pagina rodar o proprio script.
+const DIAGRAMA_JS: &str = include_str!("../ui/diagrama-er.js");
+
 /// Envolve o fragmento no esqueleto que o navegador espera.
 ///
 /// Sem `<!doctype html>` o navegador entra em modo de compatibilidade e o
@@ -56,6 +64,7 @@ pub fn montar_pagina() -> String {
     format!(
         "<!doctype html>\n<html lang=\"pt-BR\">\n<head>\n<meta charset=\"utf-8\">\n\
          <style>\n{GRID_CSS}\n</style>\n<script>\n{GRID_JS}\n</script>\n\
+         <script>\n{DIAGRAMA_JS}\n</script>\n\
          </head>\n<body>\n{PAGINA}\n</body>\n</html>\n"
     )
 }
