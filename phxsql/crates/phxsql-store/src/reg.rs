@@ -49,7 +49,7 @@ use phxsql_core::paginacao::{Paginacao, BALDES};
 use phxsql_core::schema::Schema;
 use phxsql_core::{RowId, EXT_REG};
 
-use crate::util::{agora, conferir_magic, por_i64, por_u32, por_u64, Campos};
+use crate::util::{agora, conferir_magic, ler_exato, por_i64, por_u32, por_u64, Campos};
 use crate::volume::Volumes;
 
 pub const MAGIC_REG: &[u8; 8] = b"PHXREG\0\0";
@@ -220,12 +220,20 @@ impl RegFile {
         // direto, antes de montar o conjunto de volumes.
         let primeiro = achar_primeiro_volume(diretorio.as_ref(), nome, EXT_REG)?;
         let nome_arq = primeiro.display().to_string();
-        let bruto = std::fs::read(&primeiro)?;
-        if bruto.len() < CAB_LEN {
+        // Duas leituras curtas, e NAO o arquivo inteiro.
+        //
+        // Aqui havia um `std::fs::read`, que trazia o volume inteiro para a
+        // RAM para tirar dele 128 bytes de cabecalho e o bloco de esquema. Numa
+        // tabela sem paginacao esse volume e a tabela toda: abrir custava
+        // **69 ms por milhao de linhas** (`--example abrir-cresce`), e o
+        // servidor abre a tabela a cada pedido.
+        let mut arquivo = std::fs::File::open(&primeiro)?;
+        let tamanho = arquivo.metadata()?.len();
+        if tamanho < CAB_LEN as u64 {
             return Err(PhxError::Corrompido(format!("{nome_arq} truncado")));
         }
         let mut cab = [0u8; CAB_LEN];
-        cab.copy_from_slice(&bruto[..CAB_LEN]);
+        ler_exato(&mut arquivo, 0, &mut cab)?;
         conferir_magic(&nome_arq, MAGIC_REG, &cab[0..8])?;
 
         let c = Campos(&cab);
@@ -256,12 +264,13 @@ impl RegFile {
         let schema_crc = c.u32(56);
         let criado_em = c.u64(60) as i64;
 
-        if bruto.len() < CAB_LEN + schema_len {
+        if tamanho < (CAB_LEN + schema_len) as u64 {
             return Err(PhxError::Corrompido(format!(
                 "{nome_arq} nao contem o esquema inteiro"
             )));
         }
-        let bytes_esquema = bruto[CAB_LEN..CAB_LEN + schema_len].to_vec();
+        let mut bytes_esquema = vec![0u8; schema_len];
+        ler_exato(&mut arquivo, CAB_LEN as u64, &mut bytes_esquema)?;
         if crc32(&bytes_esquema) != schema_crc {
             return Err(PhxError::Corrompido(format!(
                 "esquema de {nome_arq} com CRC invalido"

@@ -381,18 +381,18 @@ pertence: campo e chave na seção 3 (*A tabela, peça a peça*), partição na 
 <!-- pendencias:insercao:inicio -->
 A bancada de 10 milhões achou um buraco só, e é grande.
 
-**A inserção é o ponto fraco do motor.** 36.517 linhas/s contra
-87.515 do MySQL(R) — **2,4× mais devagar**. E o
-diagnóstico é incômodo: **260 s de CPU para 274 s de relógio** (95%), com
+**A inserção é o ponto fraco do motor.** 37.712 linhas/s contra
+88.109 do MySQL(R) — **2,3× mais devagar**. E o
+diagnóstico é incômodo: **251 s de CPU para 265 s de relógio** (95%), com
 **0,0 MiB lidos do disco**. Não é disco, é processador — a
 B+tree do `.ndx` reescrita nó a nó a cada linha, sem lote. E **piora com o tamanho**: o primeiro milhão entra a 47.847/s, o último a 22.026/s — 54% mais devagar no fim do que no começo.
 
 Nas outras quatro o motor se defende: a varredura por faixa é
-**3,3× mais rápida** (5,04 s contra 16,70 s), lendo as
+**10,7× mais rápida** (2,22 s contra 23,75 s), lendo as
 1.250.000 linhas dos dois lados e chegando à mesma soma; a
-atualização empata (3,38 s contra 5,92 s); a busca
-pontual é 1,5× mais devagar e a exclusão 1,6×. E escreve muito
-menos: 2,43 GiB contra 31,95 GiB na carga.
+atualização empata (1,26 s contra 6,40 s); a busca
+pontual é 0,5× mais devagar e a exclusão 1,5×. E escreve muito
+menos: 2,44 GiB contra 32,10 GiB na carga.
 
 Contrapartida honesta: **ocupa 2,43 GiB em disco contra
 0,88 GiB**, porque o `.reg` é de slot fixo — o preço do

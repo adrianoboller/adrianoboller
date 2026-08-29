@@ -325,7 +325,7 @@ footer p{max-width:var(--medida)}
 
   <div class="painel">
   <!-- projeto:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-    <div><div class="v">48.451</div><div class="r">linhas de Rust</div></div>
+    <div><div class="v">48.615</div><div class="r">linhas de Rust</div></div>
     <div><div class="v">647</div><div class="r">testes</div></div>
     <div><div class="v">0</div><div class="r">dependências</div></div>
     <div><div class="v">4</div><div class="r">crates</div></div>
@@ -3762,20 +3762,20 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
           <text x="470" y="242" text-anchor="middle" font-size="10" opacity=".55">empate</text>
 
           <text x="16" y="76" font-size="11.5">inserir</text>
-          <rect x="382" y="60" width="88" height="22" fill="var(--log)" opacity=".6"/>
-          <text x="374" y="76" text-anchor="end" fill="var(--log)" font-size="11.5">2,4&#215;</text>
+          <rect x="384" y="60" width="86" height="22" fill="var(--log)" opacity=".6"/>
+          <text x="376" y="76" text-anchor="end" fill="var(--log)" font-size="11.5">2,3&#215;</text>
           <text x="16" y="110" font-size="11.5">buscar</text>
-          <rect x="429" y="94" width="41" height="22" fill="var(--log)" opacity=".6"/>
-          <text x="421" y="110" text-anchor="end" fill="var(--log)" font-size="11.5">1,5&#215;</text>
+          <rect x="470" y="94" width="78" height="22" fill="var(--ok)" opacity=".6"/>
+          <text x="556" y="110" fill="var(--ok)" font-size="11.5">2,2&#215;</text>
           <text x="16" y="144" font-size="11.5">excluir</text>
-          <rect x="421" y="128" width="49" height="22" fill="var(--log)" opacity=".6"/>
-          <text x="413" y="144" text-anchor="end" fill="var(--log)" font-size="11.5">1,6&#215;</text>
+          <rect x="428" y="128" width="42" height="22" fill="var(--log)" opacity=".6"/>
+          <text x="420" y="144" text-anchor="end" fill="var(--log)" font-size="11.5">1,5&#215;</text>
           <text x="16" y="178" font-size="11.5">atualizar</text>
-          <rect x="470" y="162" width="57" height="22" fill="var(--ok)" opacity=".6"/>
-          <text x="535" y="178" fill="var(--ok)" font-size="11.5">1,7&#215;</text>
+          <rect x="470" y="162" width="164" height="22" fill="var(--ok)" opacity=".85"/>
+          <text x="642" y="178" fill="var(--ok)" font-size="11.5">5,1&#215;</text>
           <text x="16" y="212" font-size="11.5">varrer faixa</text>
-          <rect x="470" y="196" width="121" height="22" fill="var(--ok)" opacity=".85"/>
-          <text x="599" y="212" fill="var(--ok)" font-size="11.5">3,3&#215;</text>
+          <rect x="470" y="196" width="239" height="22" fill="var(--ok)" opacity=".85"/>
+          <text x="717" y="212" fill="var(--ok)" font-size="11.5">10,7&#215;</text>
 
           <line x1="16" y1="264" x2="824" y2="264" stroke="currentColor" stroke-width="1" opacity=".25"/>
           <text x="16" y="286" font-size="11" opacity=".6">Escala logarítmica: cada dobro de diferença anda o mesmo tanto. Sem ela a inserção esmagaria o resto do desenho.</text>
@@ -3797,14 +3797,14 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
     <table>
       <thead><tr><th>Operação</th><th class="num">PhxSql</th><th class="num">MySQL(R)</th><th>Quem ganha</th></tr></thead>
       <tbody>
-        <tr><td>Inserir 10.000.000</td><td class="num">273,85&#8201;s</td><td class="num">114,27&#8201;s</td><td><span class="pino pend">MySQL(R) 2,4&#215;</span></td></tr>
-        <tr><td>Buscar 20.000 pontuais</td><td class="num">4,04&#8201;s</td><td class="num">2,69&#8201;s</td><td><span class="pino pend">MySQL(R) 1,5&#215;</span></td></tr>
-        <tr><td>Excluir 20.000</td><td class="num">8,94&#8201;s</td><td class="num">5,49&#8201;s</td><td><span class="pino pend">MySQL(R) 1,6&#215;</span></td></tr>
-        <tr><td>Atualizar 20.000</td><td class="num">3,38&#8201;s</td><td class="num">5,92&#8201;s</td><td><span class="pino ok">PhxSql 1,7&#215;</span></td></tr>
-        <tr><td>Varrer a faixa inteira (1.250.000 linhas)</td><td class="num">5,04&#8201;s</td><td class="num">16,70&#8201;s</td><td><span class="pino ok">PhxSql 3,3&#215;</span></td></tr>
-        <tr><td>Escrito no disco durante a carga</td><td class="num">2,43&#8201;GiB</td><td class="num">31,95&#8201;GiB</td><td><span class="pino ok">PhxSql 13&#215;</span></td></tr>
+        <tr><td>Inserir 10.000.000</td><td class="num">265,17&#8201;s</td><td class="num">113,50&#8201;s</td><td><span class="pino pend">MySQL(R) 2,3&#215;</span></td></tr>
+        <tr><td>Buscar 20.000 pontuais</td><td class="num">1,21&#8201;s</td><td class="num">2,62&#8201;s</td><td><span class="pino ok">PhxSql 2,2&#215;</span></td></tr>
+        <tr><td>Excluir 20.000</td><td class="num">7,34&#8201;s</td><td class="num">4,86&#8201;s</td><td><span class="pino pend">MySQL(R) 1,5&#215;</span></td></tr>
+        <tr><td>Atualizar 20.000</td><td class="num">1,26&#8201;s</td><td class="num">6,40&#8201;s</td><td><span class="pino ok">PhxSql 5,1&#215;</span></td></tr>
+        <tr><td>Varrer a faixa inteira (1.250.000 linhas)</td><td class="num">2,22&#8201;s</td><td class="num">23,75&#8201;s</td><td><span class="pino ok">PhxSql 10,7&#215;</span></td></tr>
+        <tr><td>Escrito no disco durante a carga</td><td class="num">2,44&#8201;GiB</td><td class="num">32,10&#8201;GiB</td><td><span class="pino ok">PhxSql 13&#215;</span></td></tr>
         <tr><td>Ocupado no disco no fim</td><td class="num">2,43&#8201;GiB</td><td class="num">0,88&#8201;GiB</td><td><span class="pino pend">MySQL(R) 2,8&#215;</span></td></tr>
-        <tr><td>Pico de memória</td><td class="num">1.166&#8201;MiB</td><td class="num">670&#8201;MiB</td><td><span class="pino pend">MySQL(R) 1,7&#215;</span></td></tr>
+        <tr><td>Pico de memória</td><td class="num">1.166&#8201;MiB</td><td class="num">671&#8201;MiB</td><td><span class="pino pend">MySQL(R) 1,7&#215;</span></td></tr>
       </tbody>
     </table>
   </div>
@@ -4335,9 +4335,9 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   <h3>A inserção ainda é onde o MySQL(R) ganha — e 2,9&#215; já voltaram</h3>
 
 <!-- bancada:diagnostico:inicio -->
-  <p>36.517 linhas por segundo contra 87.515. O reflexo é
+  <p>37.712 linhas por segundo contra 88.109. O reflexo é
   culpar o disco — mas os contadores dizem outra coisa:
-  <strong>260&#8201;s de CPU para 274&#8201;s de relógio</strong>
+  <strong>251&#8201;s de CPU para 265&#8201;s de relógio</strong>
   (95%), e <strong>0,0&#8201;MiB lidos</strong>. O processo passou o
   tempo inteiro calculando, não esperando.</p>
 
@@ -4575,7 +4575,7 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
 
 <footer>
   <!-- rodape:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-  <p>PhxSql 0.17.0 · 48.451 linhas de Rust em 4 crates,
+  <p>PhxSql 0.17.0 · 48.615 linhas de Rust em 4 crates,
   mais 490 KiB de interface · 647 testes ·
   nenhuma dependência externa.
   Especificação byte a byte em <code>docs/FORMATO.md</code>, cadastro e
