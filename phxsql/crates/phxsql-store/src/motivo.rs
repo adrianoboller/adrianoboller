@@ -32,6 +32,17 @@
 //! So quem administra. E a razao esta no proprio conteudo: um motivo de
 //! exclusao costuma ser mais revelador que o registro que foi excluido
 //! ("fraude", "pedido de remocao do titular", "duplicidade com o contrato X").
+//!
+//! # A cifra dos dois textos (versao 3)
+//!
+//! Com a cifra ligada, um volume novo nasce na versao 3 e os DOIS TEXTOS vao
+//! cifrados juntos, com 16 bytes de etiqueta atras. O cabecalho de 48 bytes
+//! continua em claro -- e ele que diz onde o proximo registro comeca --, e
+//! entra como dado associado da etiqueta.
+//!
+//! O nonce sai do UUID do proprio registro mais o offset dele no volume. O
+//! UUID ja e unico por definicao, entao nao ha byte novo a gravar. Ver
+//! `crate::cofre`.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -42,16 +53,15 @@ use phxsql_core::paginacao::Paginacao;
 use phxsql_core::uuid::Uuid;
 use phxsql_core::RowId;
 
-use crate::util::{agora, agora_ms, conferir_magic, por_i64, por_u32, por_u64, Campos};
+use crate::cofre::{self, Cabecalho};
+use crate::util::{agora_ms, por_i64, por_u32, por_u64, Campos};
 use crate::volume::Volumes;
 
 pub const MAGIC_MOTIVO: &[u8; 8] = b"PHXRSN\0\0";
 pub const EXT_REASON: &str = "reason";
 
-const CAB_LEN: usize = 64;
 /// Bytes do cabecalho de cada registro, antes dos dois textos.
 pub const REGISTRO_CAB: usize = 48;
-const VERSAO: u16 = 1;
 
 /// Teto do texto do motivo. Frase, nao dissertacao -- e o `.reason` e lido
 /// inteiro para ser mostrado.
@@ -134,20 +144,27 @@ impl Motivo {
         REGISTRO_CAB + self.motivo.len() + self.identidade.len()
     }
 
-    fn escrever(&self) -> Vec<u8> {
-        let mut buf = vec![0u8; self.tamanho()];
+    fn escrever(&self, cab: &Cabecalho, offset: u64) -> Vec<u8> {
+        let mut buf = vec![0u8; REGISTRO_CAB];
         por_i64(&mut buf, 0, self.carimbo);
         buf[8] = self.tipo.tag();
+        // Os dois tamanhos sao os do TEXTO CLARO, e nao os do que vai ao
+        // disco: e por eles que os dois textos se separam depois de decifrar.
         buf[10..12].copy_from_slice(&(self.motivo.len() as u16).to_le_bytes());
         por_u64(&mut buf, 12, self.rowid);
         por_u32(&mut buf, 20, self.usuario);
         buf[24..40].copy_from_slice(self.uuid.bytes());
         buf[40..42].copy_from_slice(&(self.identidade.len() as u16).to_le_bytes());
-        let fim_motivo = REGISTRO_CAB + self.motivo.len();
-        buf[REGISTRO_CAB..fim_motivo].copy_from_slice(self.motivo.as_bytes());
-        buf[fim_motivo..].copy_from_slice(self.identidade.as_bytes());
-        // O CRC cobre o cabecalho SEM o proprio campo, e os dois textos: um
-        // motivo adulterado tem de ser detectado como qualquer outro dado.
+
+        let mut claro = Vec::with_capacity(self.motivo.len() + self.identidade.len());
+        claro.extend_from_slice(self.motivo.as_bytes());
+        claro.extend_from_slice(self.identidade.as_bytes());
+        let corpo = cab.selar(tempero(self.uuid.bytes()), offset, &associado(&buf), &claro);
+        buf.extend_from_slice(&corpo);
+
+        // O CRC cobre o cabecalho SEM o proprio campo, e o corpo COMO ELE VAI
+        // AO DISCO: um motivo adulterado tem de ser detectado como qualquer
+        // outro dado, e a varredura confere o arquivo sem precisar da chave.
         let mut crc = crc32(&buf[..44]);
         crc = phxsql_core::crc::crc32_with(crc, &buf[REGISTRO_CAB..]);
         por_u32(&mut buf, 44, crc);
@@ -155,14 +172,14 @@ impl Motivo {
     }
 
     /// Le a partir de `src`, que precisa ter o registro inteiro.
-    fn ler(src: &[u8]) -> Result<Motivo> {
+    fn ler(src: &[u8], cab: &Cabecalho, offset: u64, nome: &str) -> Result<Motivo> {
         if src.len() < REGISTRO_CAB {
             return Err(PhxError::Corrompido("registro de .reason truncado".into()));
         }
         let c = Campos(src);
         let n_motivo = u16::from_le_bytes([src[10], src[11]]) as usize;
         let n_ident = u16::from_le_bytes([src[40], src[41]]) as usize;
-        let total = REGISTRO_CAB + n_motivo + n_ident;
+        let total = cab.ocupa(n_motivo + n_ident) + REGISTRO_CAB;
         if src.len() < total {
             return Err(PhxError::Corrompido(
                 "registro de .reason menor que os tamanhos que declara".into(),
@@ -175,28 +192,53 @@ impl Motivo {
                 "registro de .reason com CRC invalido".into(),
             ));
         }
+        let uuid = Uuid::de_bytes(src[24..40].try_into().unwrap());
+        let claro = cab.abrir(
+            tempero(uuid.bytes()),
+            offset,
+            &associado(&src[..REGISTRO_CAB]),
+            &src[REGISTRO_CAB..total],
+            nome,
+        )?;
         let texto = |a: usize, b: usize| -> Result<String> {
-            String::from_utf8(src[a..b].to_vec())
+            String::from_utf8(claro[a..b].to_vec())
                 .map_err(|e| PhxError::Corrompido(format!(".reason nao e UTF-8 valido: {e}")))
         };
-        let fim_motivo = REGISTRO_CAB + n_motivo;
+        if claro.len() < n_motivo + n_ident {
+            return Err(PhxError::Corrompido(
+                "registro de .reason com menos texto do que declara".into(),
+            ));
+        }
         Ok(Motivo {
-            uuid: Uuid::de_bytes(src[24..40].try_into().unwrap()),
+            uuid,
             carimbo: c.u64(0) as i64,
             tipo: Tipo::de_tag(src[8])?,
             rowid: c.u64(12),
             usuario: c.u32(20),
-            motivo: texto(REGISTRO_CAB, fim_motivo)?,
-            identidade: texto(fim_motivo, total)?,
+            motivo: texto(0, n_motivo)?,
+            identidade: texto(n_motivo, n_motivo + n_ident)?,
         })
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-struct Cabecalho {
-    volume: u32,
-    fim: u64,
-    quantos: u64,
+/// O dado associado da etiqueta: o cabecalho do registro, menos o CRC.
+///
+/// O CRC fica de fora porque depende do corpo, que depende da etiqueta, que
+/// depende do dado associado.
+fn associado(cab: &[u8]) -> [u8; REGISTRO_CAB] {
+    let mut aad = [0u8; REGISTRO_CAB];
+    aad.copy_from_slice(&cab[..REGISTRO_CAB]);
+    aad[44..48].fill(0);
+    aad
+}
+
+/// Os quatro bytes de tempero do nonce saem do UUID do proprio registro.
+///
+/// Nao ha byte novo a gravar: o UUID v7 ja esta no cabecalho e ja e unico por
+/// definicao. Ele cobre o unico caso em que o offset se repetiria -- o
+/// registro que entra por cima de um rabo estragado por uma queda.
+fn tempero(uuid: &[u8; 16]) -> [u8; 4] {
+    [uuid[12], uuid[13], uuid[14], uuid[15]]
 }
 
 pub struct MotivoFile {
@@ -220,11 +262,7 @@ impl MotivoFile {
             usuario: 0,
         };
         m.volumes.criar(1)?;
-        m.gravar_cab(Cabecalho {
-            volume: 1,
-            fim: CAB_LEN as u64,
-            quantos: 0,
-        })?;
+        m.gravar_cab(Cabecalho::novo(1)?)?;
         Ok(m)
     }
 
@@ -258,45 +296,12 @@ impl MotivoFile {
         if let Some(c) = self.cabs.get(&volume) {
             return Ok(*c);
         }
-        let mut buf = [0u8; CAB_LEN];
-        self.volumes.ler(volume, 0, &mut buf)?;
-        let nome = self.volumes.caminho(volume).display().to_string();
-        conferir_magic(&nome, MAGIC_MOTIVO, &buf[0..8])?;
-        let c = Campos(&buf);
-        let versao = c.u16(8);
-        if versao != VERSAO {
-            return Err(PhxError::VersaoNaoSuportada {
-                arquivo: nome,
-                encontrada: versao,
-                suportada: VERSAO,
-            });
-        }
-        if crc32(&buf[..56]) != c.u32(56) {
-            return Err(PhxError::Corrompido(format!(
-                "cabecalho de {nome} com CRC invalido"
-            )));
-        }
-        let cab = Cabecalho {
-            volume: c.u32(12),
-            fim: c.u64(24),
-            quantos: c.u64(16),
-        };
+        let cab = cofre::ler_cabecalho_do_volume(&mut self.volumes, volume, MAGIC_MOTIVO)?;
         self.cabs.insert(volume, cab);
         Ok(cab)
     }
-
     fn gravar_cab(&mut self, cab: Cabecalho) -> Result<()> {
-        let mut buf = [0u8; CAB_LEN];
-        buf[0..8].copy_from_slice(MAGIC_MOTIVO);
-        buf[8..10].copy_from_slice(&VERSAO.to_le_bytes());
-        buf[10..12].copy_from_slice(&(CAB_LEN as u16).to_le_bytes());
-        por_u32(&mut buf, 12, cab.volume);
-        por_u64(&mut buf, 16, cab.quantos);
-        por_u64(&mut buf, 24, cab.fim);
-        por_i64(&mut buf, 32, agora());
-        let crc = crc32(&buf[..56]);
-        por_u32(&mut buf, 56, crc);
-        self.volumes.escrever(cab.volume, 0, &buf)?;
+        cofre::gravar_cabecalho_no_volume(&mut self.volumes, &cab, MAGIC_MOTIVO)?;
         self.cabs.insert(cab.volume, cab);
         Ok(())
     }
@@ -323,12 +328,11 @@ impl MotivoFile {
     }
 
     fn anexar(&mut self, m: &Motivo) -> Result<()> {
-        let bytes = m.escrever();
         let paginacao = self.volumes.paginacao();
         let atual = self.cab(self.volume_atual)?;
-        let vazio = atual.fim <= CAB_LEN as u64;
-        let (volume, virou) =
-            paginacao.volume_externo(self.volume_atual, atual.fim, bytes.len() as u64, vazio);
+        let vazio = atual.fim <= atual.cab_len as u64;
+        let ocupa = (REGISTRO_CAB + atual.ocupa(m.motivo.len() + m.identidade.len())) as u64;
+        let (volume, virou) = paginacao.volume_externo(self.volume_atual, atual.fim, ocupa, vazio);
 
         let cab = if virou {
             if paginacao.ligada() && volume > paginacao.max_arquivos {
@@ -339,11 +343,7 @@ impl MotivoFile {
                 )));
             }
             self.volumes.garantir(volume)?;
-            let novo = Cabecalho {
-                volume,
-                fim: CAB_LEN as u64,
-                quantos: 0,
-            };
+            let novo = Cabecalho::novo(volume)?;
             self.gravar_cab(novo)?;
             self.volume_atual = volume;
             novo
@@ -351,12 +351,11 @@ impl MotivoFile {
             atual
         };
 
+        // O offset entra no nonce: e ele o numero de ordem que um arquivo
+        // append-only nunca reaproveita.
+        let bytes = m.escrever(&cab, cab.fim);
         self.volumes.escrever(volume, cab.fim, &bytes)?;
-        self.gravar_cab(Cabecalho {
-            volume,
-            fim: cab.fim + bytes.len() as u64,
-            quantos: cab.quantos + 1,
-        })
+        self.gravar_cab(cab.com(cab.fim + bytes.len() as u64, cab.quantos + 1))
     }
 
     /// Total de registros em todos os volumes.
@@ -374,13 +373,19 @@ impl MotivoFile {
         let mut vistos = 0u64;
         for volume in self.volumes.existentes() {
             let cab = self.cab(volume)?;
-            let mut offset = CAB_LEN as u64;
+            let nome = self.volumes.caminho(volume).display().to_string();
+            let mut offset = cab.cab_len as u64;
             while offset + REGISTRO_CAB as u64 <= cab.fim {
                 let mut cabecalho = [0u8; REGISTRO_CAB];
                 self.volumes.ler(volume, offset, &mut cabecalho)?;
+                // O tamanho sai dos dois campos de texto MAIS a etiqueta,
+                // quando o volume e cifrado: e o que deixa caminhar pelo
+                // arquivo sem a chave.
                 let n = REGISTRO_CAB
-                    + u16::from_le_bytes([cabecalho[10], cabecalho[11]]) as usize
-                    + u16::from_le_bytes([cabecalho[40], cabecalho[41]]) as usize;
+                    + cab.ocupa(
+                        u16::from_le_bytes([cabecalho[10], cabecalho[11]]) as usize
+                            + u16::from_le_bytes([cabecalho[40], cabecalho[41]]) as usize,
+                    );
                 if offset + n as u64 > cab.fim {
                     return Err(PhxError::Corrompido(format!(
                         "registro de .reason em {} passa do fim do volume",
@@ -390,7 +395,7 @@ impl MotivoFile {
                 if vistos >= pular {
                     let mut buf = vec![0u8; n];
                     self.volumes.ler(volume, offset, &mut buf)?;
-                    saida.push(Motivo::ler(&buf)?);
+                    saida.push(Motivo::ler(&buf, &cab, offset, &nome)?);
                     if limite > 0 && saida.len() as u64 >= limite {
                         return Ok(saida);
                     }
@@ -537,18 +542,21 @@ mod testes {
             motivo: "fraude".into(),
             identidade: "id=1".into(),
         };
-        let mut bytes = m.escrever();
-        assert!(Motivo::ler(&bytes).is_ok());
+        // Cabecalho em claro: o que este teste prova e o CRC, e ele vale nos
+        // dois modos -- a cifra so muda o que esta dentro do corpo.
+        let cab = Cabecalho::novo(1).unwrap();
+        let mut bytes = m.escrever(&cab, 64);
+        assert!(Motivo::ler(&bytes, &cab, 64, "t").is_ok());
         let pos = REGISTRO_CAB;
         bytes[pos] = b'F';
-        assert!(Motivo::ler(&bytes).is_err());
+        assert!(Motivo::ler(&bytes, &cab, 64, "t").is_err());
 
         // E a identidade tambem.
         m.motivo = "fraude".into();
-        let mut bytes = m.escrever();
+        let mut bytes = m.escrever(&cab, 64);
         let pos = REGISTRO_CAB + m.motivo.len();
         bytes[pos] = b'X';
-        assert!(Motivo::ler(&bytes).is_err());
+        assert!(Motivo::ler(&bytes, &cab, 64, "t").is_err());
     }
 
     #[test]

@@ -579,18 +579,46 @@ corrompido.
 Toda inclusão, alteração e exclusão é registrada com data e hora. O arquivo é
 append-only e sem índice: é um diário, não uma tabela.
 
-### Cabeçalho (64 bytes)
+### Cabeçalho (64 bytes na versão 2, 128 na 3)
 
 | Off | Tam | Campo |
 |----:|----:|---|
 | 0 | 8 | assinatura `PHXLOG\0\0` |
-| 8 | 2 | versão do formato (2) |
-| 10 | 2 | tamanho do cabeçalho (64) |
+| 8 | 2 | versão do formato (2 em claro, 3 cifrado) |
+| 10 | 2 | tamanho do cabeçalho (64 ou 128) |
 | 12 | 4 | número do volume |
 | 16 | 8 | eventos neste volume |
 | 24 | 8 | `fim` — ponto de anexação |
 | 32 | 8 | alterado em |
-| 56 | 4 | CRC-32 dos bytes 0..56 |
+| 56 | 4 | CRC-32 dos bytes 0..56 — **só na versão 2** |
+
+E na versão 3, que é a do volume cifrado:
+
+| Off | Tam | Campo |
+|----:|----:|---|
+| 40 | 1 | flags — bit 0: o corpo dos registros vai cifrado |
+| 44 | 4 | iterações do PBKDF2 |
+| 48 | 16 | sal do PBKDF2, em claro |
+| 64 | 16 | prova da chave — etiqueta Poly1305 de mensagem vazia |
+| 120 | 4 | CRC-32 dos bytes 0..120 |
+
+O CRC muda de lugar porque o cabeçalho muda de tamanho; ele fica sempre nos
+8 bytes antes do fim. **O tamanho do cabeçalho está no próprio cabeçalho**
+(offset 10), e é por isso que o leitor lê 64 bytes primeiro e volta com 128
+quando a versão pede — um `.log` recém-criado na versão 2 tem exatamente 64
+bytes, e pedir 128 de cara falharia no fim do arquivo.
+
+A **prova da chave** existe para que a senha errada apareça na hora de abrir, e
+não na primeira leitura de corpo — que num arquivo ainda vazio seria nunca. Ela
+é a etiqueta de uma mensagem vazia cujo dado associado é só a parte **estável**
+do cabeçalho (bytes 0..16 e 40..64): os contadores mudam a cada gravação, e uma
+prova que mudasse com eles não protegeria nada a mais.
+
+**A versão é por volume, e não por tabela.** Ligar a cifra num banco que já
+existe faz o volume *seguinte* nascer na versão 3, com sal próprio; os volumes
+anteriores continuam em claro e continuam abrindo. Um arquivo *append-only* não
+se reescreve, então não há como cifrar para trás — e dizer o contrário seria
+vender uma garantia que o desenho não dá.
 
 ### Evento: 44 bytes de cabeçalho, e talvez um corpo
 
@@ -604,14 +632,52 @@ append-only e sem índice: é um diário, não uma tabela.
 | 20 | 8 | versão do registro depois da operação |
 | 28 | 4 | usuário (0 = não informado) |
 | 32 | 4 | tamanho da imagem (0 = sem imagem) |
-| 36 | 4 | CRC-32 dos bytes 0..36 **e da imagem** |
-| 40 | 4 | reservado |
-| 44 | N | imagem da linha |
+| 36 | 4 | CRC-32 dos bytes 0..36 **e do corpo como está no arquivo** |
+| 40 | 4 | tempero do nonce — sorteado por evento; zero no volume em claro |
+| 44 | N | imagem da linha (cifrada + etiqueta de 16 bytes, na versão 3) |
 
 O carimbo é em **milissegundos**, não segundos, para que operações no mesmo
 segundo continuem ordenáveis. Uma operação recusada — chave duplicada, tabela
 cheia, coluna obrigatória em branco — **não** gera evento: o diário registra o
 que aconteceu, não o que foi tentado.
+
+O `tamanho da imagem` é o que vem **no arquivo**: num volume cifrado ele conta
+os 16 bytes da etiqueta. É de propósito — quem caminha pelo arquivo precisa
+saber onde o próximo evento começa sem ter a chave, e a leitura devolve a
+imagem já decifrada.
+
+### A cifra do corpo (versão 3)
+
+Cifra-se o **corpo**, e o cabeçalho do evento fica em claro. Não é
+esquecimento: é o `tamanho da imagem` dele que diz onde o próximo evento
+começa. Cifrá-lo faria a cura, o `verificar` e a contagem de eventos pararem de
+funcionar para quem só tem o arquivo.
+
+O cabeçalho em claro não fica solto — ele entra como **dado associado** (AAD)
+da etiqueta, com os 4 bytes do próprio CRC zerados (o CRC depende do corpo, que
+depende da etiqueta, que depende do AAD; incluí-lo fecharia um círculo). Trocar
+o rowid de um evento, ou mover o corpo do evento 3 para o evento 7, derruba a
+autenticação **mesmo com o CRC consertado** — e consertar o CRC é coisa que
+quem tem o arquivo sabe fazer.
+
+O que o cabeçalho em claro custa é **metadado**: quem lê sem a chave sabe *que*
+o rowid 42 mudou às 14h03, e não sabe *para quê*.
+
+**O nonce é o offset do evento no volume**, mais 4 bytes de tempero sorteados
+por evento. O offset é o contador que o arquivo já tem e que um arquivo que só
+cresce nunca reaproveita — um contador à parte teria de ser persistido a cada
+evento, que é exatamente a escrita que o `.log` tirou do caminho. O tempero
+cobre o único caso em que o offset se repetiria: uma queda no meio da escrita
+deixa um rabo estragado, a cura corta esse rabo, e o próximo evento entra no
+offset que ele ocupava.
+
+Cada volume sorteia o **próprio sal**, logo tem a própria chave — é isso que
+deixa o offset (que recomeça em cada volume) ser o número de ordem do nonce.
+
+O CRC continua sendo calculado pela fórmula da versão 2, byte por byte, sobre o
+corpo **como ele está no disco**. Duas consequências que valem escrever: um
+`.log` gravado antes da cifra continua conferindo, e a cura e o `verificar`
+andam pelo arquivo inteiro **sem a chave**.
 
 ### A imagem da linha
 
@@ -679,9 +745,10 @@ voltaria sendo a foto de outra linha.
 Por isso o registro daqui é de **tamanho variável**: o *payload* byte a byte,
 mais o **conteúdo** de cada coluna externa logo em seguida.
 
-### Cabeçalho do arquivo (64 bytes)
+### Cabeçalho do arquivo (64 bytes na versão 2, 128 na 3)
 
-Mesmo desenho do `.log`: assinatura, versão, volume, quantidade, fim e CRC-32.
+Mesmo desenho do `.log`, byte por byte: assinatura, versão, volume, quantidade,
+fim, CRC-32 — e, na versão 3, o sal, as iterações e a prova da chave.
 
 ### Registro (56 bytes de cabeçalho + payload + externos)
 
@@ -698,6 +765,17 @@ Mesmo desenho do `.log`: assinatura, versão, volume, quantidade, fim e CRC-32.
 | 44 | 4 | tamanho total do registro |
 | 48 | 4 | *reservado* |
 | 52 | 4 | CRC-32 de tudo, menos estes 4 bytes |
+
+Na versão 3 o corpo — o *payload* **e** o conteúdo dos externos, juntos — vai
+cifrado, com 16 bytes de etiqueta atrás. O `tamanho total` os conta, então a
+varredura anda pelo arquivo sem a chave; o `tamanho do payload` continua sendo
+o do texto claro, porque é por ele que o *payload* se separa dos externos
+depois de decifrar.
+
+O nonce sai do **UUID do próprio descarte** (os 4 últimos bytes) mais o offset
+do registro no volume. Não há byte novo a gravar: o UUID já está no cabeçalho e
+já é único por definição — é ele que cobre o caso do registro que entra por
+cima de um rabo estragado por uma queda.
 | 56 | n | o *payload* do slot, byte a byte como estava no `.reg` |
 | … | … | por externo: `(coluna u16)(tamanho u32)(bytes)` |
 
@@ -731,9 +809,15 @@ não diz — e não tem onde dizer, porque o evento dele tem 36 bytes fixos — 
 e **sobrevive ao registro**: a linha pode sumir do `.reg` e do `.trash`, e o
 motivo continua aqui.
 
-### Cabeçalho do arquivo (64 bytes)
+### Cabeçalho do arquivo (64 bytes na versão 2, 128 na 3)
 
-Mesmo desenho do `.log`.
+Mesmo desenho do `.log`, com o mesmo sal, as mesmas iterações e a mesma prova
+da chave na versão 3.
+
+Na versão 3 os **dois textos** vão cifrados juntos, com 16 bytes de etiqueta
+atrás; os dois campos de tamanho continuam sendo os do texto claro, e é por
+eles que os textos se separam depois de decifrar. O nonce sai do UUID do
+próprio registro mais o offset dele no volume, como na `.trash`.
 
 ### Registro (48 bytes de cabeçalho + dois textos)
 
@@ -1170,3 +1254,9 @@ Documentado aqui para não haver surpresa:
   ainda não de journal para desfazer.
 - **Sem camada SQL.** Esta é a camada de armazenamento; o parser e o executor
   entram por cima.
+- **A cifra cobre três arquivos, não os sete.** `.log`, `.trash` e `.reason`
+  têm a versão 3; o `.reg`, o `.ndx`, o `.bin` e o `.memo` continuam em claro.
+  Cifrar o `.reg` é outro problema — ele é de acesso aleatório por slot, e não
+  *append-only*, então o nonce não pode sair do offset.
+- **Ligar a cifra não cifra o que já existe.** Vale do volume seguinte em
+  diante. Não há comando de recifragem.

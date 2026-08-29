@@ -37,13 +37,30 @@
 //!
 //! # O preco de o evento deixar de ter largura fixa
 //!
-//! Ate a versao 1 o evento N morava no offset `CAB_LEN + N x 36`, e pular era
+//! Ate a versao 1 o evento N morava no offset `cabecalho + N x 36`, e pular era
 //! uma conta. Agora nao e: para chegar ao evento N e preciso caminhar pelos
 //! anteriores lendo o tamanho de cada um. O `qtd_eventos` de cada volume no
 //! cabecalho e o que salva a leitura -- um volume inteiro se pula sem abrir.
 //!
 //! Como o `.log` cresce para sempre, ele tambem e paginado em
 //! `Tabela_001.log`, `Tabela_002.log`, ... pelo tamanho de volume do esquema.
+//!
+//! # A cifra do corpo (versao 3)
+//!
+//! Quando o `config.json` liga a cifra, um volume NOVO nasce na versao 3: o
+//! cabecalho do arquivo cresce para 128 bytes e leva sal, iteracoes e a prova
+//! da chave; o corpo de cada evento vai cifrado com ChaCha20-Poly1305 e ganha
+//! 16 bytes de etiqueta.
+//!
+//! **O cabecalho do evento continua em claro**, e isso e escolha, nao
+//! esquecimento: e o `tam_imagem` dele que diz onde comeca o proximo evento.
+//! Cifra-lo faria a cura, o `verificar` e a contagem pararem de funcionar para
+//! quem so tem o arquivo. Em troca ele entra como DADO ASSOCIADO da etiqueta,
+//! entao trocar o rowid de um evento, ou mover o corpo de um para outro,
+//! derruba a autenticacao. O que o cabecalho em claro custa e METADADO: quem
+//! le sem a chave sabe QUE o rowid 42 mudou as 14h03, e nao sabe para que.
+//!
+//! Ver `crate::cofre` e `docs/SEGURANCA.md` §8.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -53,15 +70,17 @@ use phxsql_core::error::{PhxError, Result};
 use phxsql_core::paginacao::Paginacao;
 use phxsql_core::RowId;
 
-use crate::util::{agora, agora_ms, conferir_magic, por_i64, por_u32, por_u64, Campos};
+use crate::cofre::{self, Cabecalho};
+use crate::util::{agora_ms, por_i64, por_u32, por_u64, Campos};
 use crate::volume::Volumes;
 
 pub const MAGIC_LOG: &[u8; 8] = b"PHXLOG\0\0";
 pub const EXT_LOG: &str = "log";
 
-const CAB_LEN: usize = 64;
 /// Bytes do CABECALHO de cada evento. O corpo vem depois, se houver.
 pub const EVENTO_CAB: usize = 44;
+/// Onde ficam os quatro bytes de tempero do nonce. Zerados no volume em claro.
+const OFF_TEMPERO: usize = 40;
 /// Teto da imagem de uma linha, para um tamanho corrompido nao pedir 4 GiB.
 ///
 /// Uma linha com anexos grandes pode passar disto; ai o evento vai sem imagem
@@ -71,7 +90,6 @@ pub const EVENTO_CAB: usize = 44;
 pub const IMAGEM_MAX: u32 = 64 * 1024 * 1024;
 /// Bit 0 do byte de flags: este evento tem imagem.
 const FLAG_IMAGEM: u8 = 1;
-const VERSAO: u16 = 2;
 
 /// O que aconteceu com o registro.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -123,7 +141,12 @@ pub struct Evento {
     pub versao: u64,
     /// Identificacao de quem fez. Zero = nao informado.
     pub usuario: u32,
-    /// Bytes da imagem que vem depois deste cabecalho. Zero = sem imagem.
+    /// Bytes que vem depois deste cabecalho, NO ARQUIVO. Zero = sem imagem.
+    ///
+    /// Num volume cifrado isto e a imagem cifrada MAIS os 16 bytes da
+    /// etiqueta, e nao o tamanho do texto claro. E de proposito: quem caminha
+    /// pelo arquivo precisa saber onde o proximo evento comeca sem ter a
+    /// chave, e a imagem que a leitura devolve ja vem decifrada.
     pub tam_imagem: u32,
 }
 
@@ -143,18 +166,41 @@ impl Evento {
     /// Cobrir so o cabecalho deixaria a imagem sem conferencia -- e a imagem e
     /// justamente o que a replica vai gravar como dado. Um byte trocado ali
     /// entraria na replica sem ninguem notar.
-    fn escrever(&self, dst: &mut [u8; EVENTO_CAB], imagem: &[u8]) {
+    fn escrever(&self, dst: &mut [u8; EVENTO_CAB], tempero: [u8; 4]) {
         dst.fill(0);
         por_i64(dst, 0, self.carimbo);
         dst[8] = self.operacao.tag();
-        dst[9] = if imagem.is_empty() { 0 } else { FLAG_IMAGEM };
+        dst[9] = if self.tam_imagem == 0 { 0 } else { FLAG_IMAGEM };
         por_u64(dst, 12, self.rowid);
         por_u64(dst, 20, self.versao);
         por_u32(dst, 28, self.usuario);
-        por_u32(dst, 32, imagem.len() as u32);
+        por_u32(dst, 32, self.tam_imagem);
+        dst[OFF_TEMPERO..OFF_TEMPERO + 4].copy_from_slice(&tempero);
+    }
+
+    /// O dado associado da etiqueta: o cabecalho inteiro, menos o CRC.
+    ///
+    /// O CRC fica de fora porque ele depende do corpo, e o corpo depende da
+    /// etiqueta, que depende do dado associado -- incluir os quatro bytes
+    /// fecharia um circulo que nao se resolve.
+    fn associado(cab: &[u8]) -> [u8; EVENTO_CAB] {
+        let mut aad = [0u8; EVENTO_CAB];
+        aad.copy_from_slice(&cab[..EVENTO_CAB]);
+        aad[36..40].fill(0);
+        aad
+    }
+
+    fn tempero(cab: &[u8]) -> [u8; 4] {
+        let mut t = [0u8; 4];
+        t.copy_from_slice(&cab[OFF_TEMPERO..OFF_TEMPERO + 4]);
+        t
+    }
+
+    /// Fecha o CRC, que so pode ser calculado com o corpo ja pronto.
+    fn conferir_e_fechar(&self, dst: &mut [u8; EVENTO_CAB], corpo: &[u8]) {
         let mut crc = crc32(&dst[..36]);
-        if !imagem.is_empty() {
-            crc ^= crc32(imagem);
+        if !corpo.is_empty() {
+            crc ^= crc32(corpo);
         }
         por_u32(dst, 36, crc);
     }
@@ -186,7 +232,12 @@ impl Evento {
         Ok(evento)
     }
 
-    /// Confere o CRC do par cabecalho + imagem.
+    /// Confere o CRC do par cabecalho + corpo COMO ELE ESTA NO ARQUIVO.
+    ///
+    /// A formula e a mesma da versao 2, byte por byte -- e por isso um `.log`
+    /// gravado antes da cifra continua conferindo. Num volume cifrado ela cobre
+    /// o corpo cifrado, que e o que esta no disco: e o que deixa a cura e o
+    /// `verificar` andarem pelo arquivo inteiro SEM a chave.
     fn conferir(&self, cab: &[u8], imagem: &[u8]) -> Result<()> {
         let mut crc = crc32(&cab[..36]);
         if !imagem.is_empty() {
@@ -201,11 +252,25 @@ impl Evento {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-struct Cabecalho {
-    volume: u32,
-    fim: u64,
-    qtd_eventos: u64,
+/// Quatro bytes so deste evento, para o nonce.
+///
+/// # Por que eles existem
+///
+/// O numero de ordem do nonce e o OFFSET do evento no volume, e num arquivo
+/// que so cresce dois eventos nunca comecam no mesmo lugar. Ha UMA excecao: uma
+/// queda no meio da escrita deixa um rabo estragado, a cura corta esse rabo, e
+/// o proximo evento entra no offset que o estragado ocupava. Esses quatro bytes
+/// sorteados sao o que impede o par (chave, nonce) de se repetir ali.
+///
+/// Num volume em claro eles ficam zerados: nao ha nonce, e sortear bytes que
+/// ninguem le mudaria o arquivo sem mudar nada.
+fn tempero_novo(cab: &Cabecalho) -> [u8; 4] {
+    if !cab.cifrado() {
+        return [0u8; 4];
+    }
+    let mut t = [0u8; 4];
+    t.copy_from_slice(&phxsql_core::senha::bytes_aleatorios(4));
+    t
 }
 
 /// Onde um evento comeca no arquivo.
@@ -254,11 +319,7 @@ impl LogFile {
             usuario: 0,
         };
         l.volumes.criar(1)?;
-        l.gravar_cab(Cabecalho {
-            volume: 1,
-            fim: CAB_LEN as u64,
-            qtd_eventos: 0,
-        })?;
+        l.gravar_cab(Cabecalho::novo(1)?)?;
         Ok(l)
     }
 
@@ -292,45 +353,13 @@ impl LogFile {
         if let Some(c) = self.cabs.get(&volume) {
             return Ok(*c);
         }
-        let mut buf = [0u8; CAB_LEN];
-        self.volumes.ler(volume, 0, &mut buf)?;
-        let nome = self.volumes.caminho(volume).display().to_string();
-        conferir_magic(&nome, MAGIC_LOG, &buf[0..8])?;
-        let c = Campos(&buf);
-        let versao = c.u16(8);
-        if versao != VERSAO {
-            return Err(PhxError::VersaoNaoSuportada {
-                arquivo: nome,
-                encontrada: versao,
-                suportada: VERSAO,
-            });
-        }
-        if crc32(&buf[..56]) != c.u32(56) {
-            return Err(PhxError::Corrompido(format!(
-                "cabecalho de {nome} com CRC invalido"
-            )));
-        }
-        let cab = Cabecalho {
-            volume: c.u32(12),
-            fim: c.u64(24),
-            qtd_eventos: c.u64(16),
-        };
+        let cab = cofre::ler_cabecalho_do_volume(&mut self.volumes, volume, MAGIC_LOG)?;
         self.cabs.insert(volume, cab);
         Ok(cab)
     }
 
     fn gravar_cab(&mut self, cab: Cabecalho) -> Result<()> {
-        let mut buf = [0u8; CAB_LEN];
-        buf[0..8].copy_from_slice(MAGIC_LOG);
-        buf[8..10].copy_from_slice(&VERSAO.to_le_bytes());
-        buf[10..12].copy_from_slice(&(CAB_LEN as u16).to_le_bytes());
-        por_u32(&mut buf, 12, cab.volume);
-        por_u64(&mut buf, 16, cab.qtd_eventos);
-        por_u64(&mut buf, 24, cab.fim);
-        por_i64(&mut buf, 32, agora());
-        let crc = crc32(&buf[..56]);
-        por_u32(&mut buf, 56, crc);
-        self.volumes.escrever(cab.volume, 0, &buf)?;
+        cofre::gravar_cabecalho_no_volume(&mut self.volumes, &cab, MAGIC_LOG)?;
         self.cabs.insert(cab.volume, cab);
         Ok(())
     }
@@ -351,28 +380,34 @@ impl LogFile {
         versao: u64,
         imagem: &[u8],
     ) -> Result<Evento> {
-        if imagem.len() as u64 > IMAGEM_MAX as u64 {
+        // O teto conta o que vai AO ARQUIVO: num volume cifrado a etiqueta de
+        // 16 bytes anda junto, e deixar a soma passar do teto faria a leitura
+        // recusar o proprio evento que acabamos de gravar.
+        if imagem.len() as u64 + cofre::ACRESCIMO as u64 > IMAGEM_MAX as u64 {
             return Err(PhxError::LimiteExcedido(format!(
                 "imagem de {} bytes passa do teto de {IMAGEM_MAX} do diario",
                 imagem.len()
             )));
         }
+        // O tamanho que vai ao arquivo pode ser maior que o da imagem: num
+        // volume cifrado o corpo leva a etiqueta de 16 bytes atras dele.
+        let atual = self.cab(self.volume_atual)?;
         let evento = Evento {
             carimbo: agora_ms(),
             operacao,
             rowid,
             versao,
             usuario: self.usuario,
-            tam_imagem: imagem.len() as u32,
+            tam_imagem: atual.ocupa(imagem.len()) as u32,
         };
         self.anexar(evento, imagem)?;
         Ok(evento)
     }
 
-    fn anexar(&mut self, evento: Evento, imagem: &[u8]) -> Result<()> {
+    fn anexar(&mut self, mut evento: Evento, imagem: &[u8]) -> Result<()> {
         let paginacao = self.volumes.paginacao();
         let atual = self.cab(self.volume_atual)?;
-        let vazio = atual.fim <= CAB_LEN as u64;
+        let vazio = atual.fim <= atual.cab_len as u64;
         let (volume, virou) =
             paginacao.volume_externo(self.volume_atual, atual.fim, evento.ocupa(), vazio);
 
@@ -385,24 +420,29 @@ impl LogFile {
                 )));
             }
             self.volumes.garantir(volume)?;
-            let novo = Cabecalho {
-                volume,
-                fim: CAB_LEN as u64,
-                qtd_eventos: 0,
-            };
+            // O volume NOVO sorteia o proprio sal, e por isso tem a propria
+            // chave: e o que deixa o numero de ordem do nonce ser o offset
+            // dentro do volume sem nunca repetir o par (chave, nonce).
+            let novo = Cabecalho::novo(volume)?;
             self.gravar_cab(novo)?;
             self.volume_atual = volume;
             novo
         } else {
             atual
         };
+        // Virar de volume pode ter trocado a cifra (o volume velho em claro, o
+        // novo cifrado): o tamanho que vai ao cabecalho e o do volume DESTINO.
+        evento.tam_imagem = cab.ocupa(imagem.len()) as u32;
 
+        let tempero = tempero_novo(&cab);
         let mut buf = [0u8; EVENTO_CAB];
-        evento.escrever(&mut buf, imagem);
+        evento.escrever(&mut buf, tempero);
+        let corpo = cab.selar(tempero, cab.fim, &Evento::associado(&buf), imagem);
+        evento.conferir_e_fechar(&mut buf, &corpo);
         self.volumes.escrever(volume, cab.fim, &buf)?;
-        if !imagem.is_empty() {
+        if !corpo.is_empty() {
             self.volumes
-                .escrever(volume, cab.fim + EVENTO_CAB as u64, imagem)?;
+                .escrever(volume, cab.fim + EVENTO_CAB as u64, &corpo)?;
         }
         // O CABECALHO NAO VAI A DISCO AQUI, e essa e a diferenca que faz o
         // diario nao atrasar o `.reg`.
@@ -424,14 +464,8 @@ impl LogFile {
         // Indice perdido se reconstroi do `.reg`; evento perdido nao se
         // reconstroi -- ele e a historia, e e a posicao de que a replicacao
         // depende.
-        self.cabs.insert(
-            volume,
-            Cabecalho {
-                volume,
-                fim: cab.fim + evento.ocupa(),
-                qtd_eventos: cab.qtd_eventos + 1,
-            },
-        );
+        self.cabs
+            .insert(volume, cab.com(cab.fim + evento.ocupa(), cab.quantos + 1));
         Ok(())
     }
 
@@ -470,11 +504,10 @@ impl LogFile {
                     break;
                 }
             }
-            cab = Cabecalho {
-                volume,
-                fim: cab.fim + evento.ocupa(),
-                qtd_eventos: cab.qtd_eventos + 1,
-            };
+            // A cura anda pelo CRC, e nao pela chave: um volume cifrado tem de
+            // se curar do mesmo jeito, e decifrar aqui obrigaria a ter a chave
+            // so para saber onde o arquivo acaba.
+            cab = cab.com(cab.fim + evento.ocupa(), cab.quantos + 1);
             achados += 1;
         }
 
@@ -488,7 +521,7 @@ impl LogFile {
     pub fn total(&mut self) -> Result<u64> {
         let mut t = 0;
         for v in self.volumes.existentes() {
-            t += self.cab(v)?.qtd_eventos;
+            t += self.cab(v)?.quantos;
         }
         Ok(t)
     }
@@ -541,18 +574,19 @@ impl LogFile {
                 }
             }
             let cab = self.cab(volume)?;
-            // O volume inteiro se pula de graca pelo `qtd_eventos` do
-            // cabecalho -- mas so quando `vistos` esta no comeco dele, e nao
-            // no meio, que e onde a marca pode ter parado.
+            // O volume inteiro se pula de graca pelo `quantos` do cabecalho --
+            // mas so quando `vistos` esta no comeco dele, e nao no meio, que e
+            // onde a marca pode ter parado.
             let no_comeco_do_volume = !matches!(comeco, Some(m) if m.volume == volume);
-            if no_comeco_do_volume && vistos + cab.qtd_eventos <= pular {
-                vistos += cab.qtd_eventos;
+            if no_comeco_do_volume && vistos + cab.quantos <= pular {
+                vistos += cab.quantos;
                 continue;
             }
             let mut offset = match comeco {
                 Some(m) if m.volume == volume => m.offset,
-                _ => CAB_LEN as u64,
+                _ => cab.cab_len as u64,
             };
+            let nome = self.volumes.caminho(volume).display().to_string();
             while offset + EVENTO_CAB as u64 <= cab.fim {
                 let mut buf = [0u8; EVENTO_CAB];
                 self.volumes.ler(volume, offset, &mut buf)?;
@@ -564,7 +598,18 @@ impl LogFile {
                         self.volumes
                             .ler(volume, offset + EVENTO_CAB as u64, &mut imagem)?;
                         evento.conferir(&buf, &imagem)?;
-                        if !com_imagem {
+                        if com_imagem {
+                            // O nonce sai do offset do evento no volume, que
+                            // e a ordem que um arquivo append-only nunca
+                            // reaproveita. Ver `cofre::nonce_de`.
+                            imagem = cab.abrir(
+                                Evento::tempero(&buf),
+                                offset,
+                                &Evento::associado(&buf),
+                                &imagem,
+                                &nome,
+                            )?;
+                        } else {
                             imagem.clear();
                         }
                     }
@@ -622,7 +667,7 @@ impl LogFile {
         let mut total = 0u64;
         for volume in self.volumes.existentes() {
             let cab = self.cab(volume)?;
-            let mut offset = CAB_LEN as u64;
+            let mut offset = cab.cab_len as u64;
             let mut no_volume = 0u64;
             while offset + EVENTO_CAB as u64 <= cab.fim {
                 let mut buf = [0u8; EVENTO_CAB];
@@ -640,11 +685,11 @@ impl LogFile {
                 no_volume += 1;
                 offset += evento.ocupa();
             }
-            if no_volume != cab.qtd_eventos {
+            if no_volume != cab.quantos {
                 return Err(PhxError::Corrompido(format!(
                     "{}: cabecalho diz {} eventos, varredura achou {no_volume}",
                     self.volumes.caminho(volume).display(),
-                    cab.qtd_eventos
+                    cab.quantos
                 )));
             }
             total += no_volume;
@@ -905,7 +950,7 @@ mod tests {
         }
         {
             let mut v = Volumes::novo(&d, "t", EXT_LOG, Paginacao::DESLIGADA);
-            v.escrever(1, CAB_LEN as u64 + 12, &[9u8; 8]).unwrap();
+            v.escrever(1, cofre::CAB_V2 as u64 + 12, &[9u8; 8]).unwrap();
         }
         let mut l = LogFile::abrir(&d, "t", Paginacao::DESLIGADA).unwrap();
         assert!(l.verificar().is_err());
