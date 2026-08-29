@@ -533,6 +533,26 @@ table.montar.campos .pos{
   text-transform:none;letter-spacing:0;cursor:pointer;margin:0;
 }
 .criar .chk input{width:auto}
+
+/* ------------------------------------------------------ a caixa de LGPD
+   Ela mora DENTRO de uma celula da tabela de Estrutura, e e exatamente o caso
+   que a regra da casa descreve: o CSS global morde todo componente novo.
+   Os dois que morderiam aqui ja morderam antes nesta tela --
+   `input{width:100%}` esticaria a caixa de marcar ate a largura da celula (a
+   bolinha gigante do radio), e `label{text-transform:uppercase}` mostraria
+   «PESSOAL» onde esta gravado «pessoal». O segundo e o pior dos dois: o grau e
+   dado gravado, e maiusculiza-lo e uma mentira sobre o que esta no disco. */
+.lgpd-cel{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.lgpd-cel label{
+  display:flex;align-items:center;gap:6px;margin:0;font-size:11.5px;
+  color:var(--texto-2);text-transform:none;letter-spacing:0;cursor:pointer;
+}
+.lgpd-cel input[type=checkbox]{width:auto;margin:0;accent-color:var(--laranja)}
+.lgpd-cel select{width:auto;padding:3px 7px;font-size:11px}
+/* Coluna de sistema nao se classifica: `softdeleted` e `rownum` sao do motor
+   e nao sao dado de ninguem. A celula fica visivelmente inerte em vez de
+   sumir, para nao parecer que a coluna foi esquecida. */
+.lgpd-cel.fixa{opacity:.35}
 .secao .chk{margin-left:auto;font-weight:400;white-space:nowrap;flex:0 0 auto}
 .leg.chave{
   margin:10px 0 0;padding:8px 11px;border-radius:5px;
@@ -2190,7 +2210,8 @@ async function desenharAba() {
   p.innerHTML = `<div class="centro">carregando…</div>`;
   const { db, tab } = est.atual;
   try {
-    if (est.aba === "estrutura")   return p.innerHTML = await vEstrutura(db, tab);
+    if (est.aba === "estrutura")   return p.innerHTML = await vEstrutura(db, tab),
+                                          ligarLgpdDaEstrutura(db, tab);
     if (est.aba === "conteudo")    return p.innerHTML = await vConteudo(db, tab), ligarConteudo();
     if (est.aba === "indices")     return p.innerHTML = await vIndices(db, tab);
     if (est.aba === "diario")      return p.innerHTML = await vDiario(db, tab);
@@ -2213,7 +2234,7 @@ async function vEstrutura(database, tabela_) {
     `<div class="ficha"><div class="v">${esc(v)}</div><div class="r">${r}</div></div>`).join("")}</div>`;
 
   h += `<h3>Colunas</h3>` + tabela(
-    [{t:"#",cls:""},{t:"nome"},{t:"tipo"},{t:"obrigatória"},{t:"onde mora"}],
+    [{t:"#",cls:""},{t:"nome"},{t:"tipo"},{t:"obrigatória"},{t:"onde mora"},{t:"LGPD"}],
     e.colunas, (c,i) => {
       const ext = c.tipo === "Bin" ? "bin" : c.tipo === "Memo" ? "memo" : "reg";
       const nota = c.tipo === "Uuid" ? " 16 bytes"
@@ -2222,7 +2243,8 @@ async function vEstrutura(database, tabela_) {
       return `<tr><td class="num dado">${i}</td><td class="dado">${esc(c.nome)}</td>
         <td class="dado">${esc(c.tipo)}<span class="leg">${nota}</span></td>
         <td>${c.nullable ? '<span class="pino nao">nulo ok</span>' : '<span class="pino ok">not null</span>'}</td>
-        <td><span class="pino ${ext}">.${ext}</span></td></tr>`;
+        <td><span class="pino ${ext}">.${ext}</span></td>
+        <td>${celulaLgpd(c)}</td></tr>`;
     });
 
   if ((e.chaves_estrangeiras||[]).length) {
@@ -2238,7 +2260,89 @@ async function vEstrutura(database, tabela_) {
     registros por arquivo × <b>${pag.max_arquivos}</b> arquivos =
     capacidade de <b>${pag.capacidade}</b> registros. O volume sai do rowid por divisão,
     então o <code>.ndx</code> não sabe que volume existe.</div>`;
+
+  h += `<div class="nota">
+    <p><strong>A coluna LGPD é uma declaração, não uma dedução.</strong> O motor
+    não adivinha pelo nome: <code>cpf</code> é óbvio, <code>documento</code> não
+    é, e um palpite errado num relatório de conformidade é pior que nenhum
+    relatório, porque quem lê acredita. Marcar é dizer «eu conheço este
+    negócio e este campo guarda dado de gente».</p>
+    <p>Marcar liga a <b>trilha</b> daquela coluna: toda alteração passa a
+    gravar o valor antes e depois no <code>.lgpd</code>, com quem, quando e de
+    que IP. Inclusão e exclusão não geram trilha — o <code>.log</code>, a
+    <code>.trash</code> e o <code>.reason</code> já registram as duas.</p>
+    <p>O <b>grau</b> ao lado da caixa não é enfeite: <i>sensível</i> (saúde,
+    biometria, convicção, origem racial) exige base legal própria, e é isso que
+    separa <code>nome</code> de <code>prontuário</code> num relatório jurídico.
+    Marcar sem escolher dá <i>pessoal</i>.</p>
+    <p>Em dúvida, deixe <b>desmarcado</b>. A ausência de marca é uma resposta
+    válida — e é por isso que a tela de LGPD conta separadamente quantas
+    colunas ainda estão <b>sem classificação</b>: é o número que diz o tamanho
+    do trabalho que falta, e ele não se confunde com «não tem dado pessoal».</p>
+  </div>`;
   return h;
+}
+
+/// A célula de LGPD de uma coluna: a caixa de marcar e o grau, ao lado.
+///
+/// # Por que a caixa NÃO é um booleano no disco
+///
+/// A caixa é o gesto de quem está cadastrando o campo — é o que o Adriano
+/// desenhou, e é o certo para a tela. Mas o que vai gravado continua sendo o
+/// grau de três estados, porque `pessoal` e `sensível` têm regimes legais
+/// diferentes. Se a caixa mandasse `true`, marcar uma coluna já classificada
+/// como `sensivel` a rebaixaria para `pessoal` em silêncio — apagando uma
+/// classificação que alguém fez de propósito. Por isso ela manda o grau, e o
+/// grau só desce quando alguém o escolhe no seletor ao lado.
+function celulaLgpd(c) {
+  // `dado_pessoal` é o campo que o servidor devolve (grau em texto). O campo
+  // booleano `pessoal` NUNCA existiu na resposta -- a tela de LGPD passou
+  // versões procurando por ele e relatando «0 colunas marcadas» numa base
+  // toda classificada. Ver o comentário em telaDadosPessoais.
+  const grau = c.dado_pessoal || "nao";
+  const marcada = grau !== "nao";
+  if (c.sistema) {
+    return `<span class="lgpd-cel fixa"><span class="leg">coluna do motor</span></span>`;
+  }
+  const nome = esc(c.nome);
+  return `<span class="lgpd-cel">
+    <label><input type="checkbox" class="lgpd-chk" data-col="${nome}"
+      ${marcada ? "checked" : ""}> <span>dado pessoal</span></label>
+    <select class="lgpd-grau" data-col="${nome}" ${marcada ? "" : "disabled"}>
+      <option value="pessoal" ${grau === "pessoal" ? "selected" : ""}>pessoal</option>
+      <option value="sensivel" ${grau === "sensivel" ? "selected" : ""}>sensível</option>
+    </select>
+  </span>`;
+}
+
+/// Liga a coluna LGPD da tela de Estrutura ao servidor.
+///
+/// Grava na hora, uma coluna por vez: a alternativa seria um botão «salvar»
+/// que junta tudo, e aí quem marca seis colunas e sai da tela perde as seis
+/// sem aviso. Cada mudança é um `marcar_lgpd` com uma coluna só.
+function ligarLgpdDaEstrutura(db, tab) {
+  const salvar = async (coluna, grau) => {
+    try {
+      await api("marcar_lgpd", { database: db, tabela: tab,
+                                 colunas: { [coluna]: grau } });
+      avisar(grau === "nao" ? `${coluna}: marca de LGPD retirada`
+                            : `${coluna}: classificada como ${grau}`);
+    } catch (e) {
+      avisar(`não deu para classificar ${coluna}: ${e.message || e}`, true);
+      // A tela volta ao que o SERVIDOR diz, e não ao que o clique quis: uma
+      // caixa marcada que não gravou é a pior mentira que esta tela pode
+      // contar, porque quem marcou acredita que marcou.
+      abrirTabela(db, tab);
+    }
+  };
+  $$("#painel .lgpd-chk").forEach(chk => chk.onchange = () => {
+    const cel = chk.closest(".lgpd-cel");
+    const sel = cel.querySelector(".lgpd-grau");
+    sel.disabled = !chk.checked;
+    salvar(chk.dataset.col, chk.checked ? sel.value : "nao");
+  });
+  $$("#painel .lgpd-grau").forEach(sel => sel.onchange = () =>
+    salvar(sel.dataset.col, sel.value));
 }
 
 /// Mapeia o tipo do PhxSql no tipo que o grid entende.
@@ -8783,13 +8887,26 @@ function cartaoNovaTabelaER(db) {
 
 /* ================================================ dado pessoal (LGPD/GDPR)
  *
- * A marca vive no esquema, por coluna, no campo booleano `pessoal`. Esta tela
- * só AUDITA: mostra onde as marcas estão, por base e por tabela.
+ * A marca vive no esquema, por coluna, no campo `dado_pessoal` — que carrega o
+ * GRAU em texto (`nao`, `pessoal`, `sensivel`), e não um booleano.
  *
- * A regra que ela não pode quebrar: se o esquema deste servidor ainda não
- * traz o campo, a tela diz isso — e não «nenhum dado pessoal encontrado», que
- * seria uma mentira tranquilizadora sobre exatamente o assunto em que ela
- * custa mais caro.
+ * # O defeito que esta tela teve, e que vale mais que o conserto
+ *
+ * Ela passou versões lendo um campo booleano chamado `pessoal`, que o servidor
+ * nunca devolveu. O motor gravava a marca (PSCH v6), a op `esquema` a
+ * devolvia certinha em `dado_pessoal` — e a tela relatava «0 colunas
+ * marcadas» numa base com seis colunas classificadas.
+ *
+ * O que fez o defeito sobreviver tanto tempo foi a HONESTIDADE dela: como não
+ * achava o campo, dizia «não sei» em vez de «nenhum dado pessoal encontrado».
+ * Isso a impediu de mentir, e é a razão de o texto de aviso continuar aqui
+ * embaixo — mas também fez o defeito parecer um servidor sem marcas em vez de
+ * uma tela quebrada.
+ *
+ * A lição, que está em docs/LGPD.md: «configuração que não é lida mente» tem
+ * um lado espelhado. Aqui o campo era lido pelo motor e ignorado pela tela, e
+ * o estrago é o mesmo pelo outro lado — quem marca acredita que marcou.
+ * Campo de esquema sem leitor na tela é pior que campo ausente.
  */
 async function telaDadosPessoais(db) {
   const bancos = est.bancos || await api("bancos");
@@ -8812,10 +8929,13 @@ async function telaDadosPessoais(db) {
         if (c.sistema) continue;
         colunasVistas++;
         // A diferença que decide o texto da tela: o campo AUSENTE não é o
-        // mesmo que o campo `false`. Um diz «o motor ainda não sabe marcar»;
+        // mesmo que o campo `"nao"`. Um diz «o motor ainda não sabe marcar»;
         // o outro diz «alguém olhou e disse que não é pessoal».
-        if (Object.prototype.hasOwnProperty.call(c, "pessoal")) comCampo++;
-        if (c.pessoal) achados.push({ base, tabela: nome, coluna: c });
+        if (Object.prototype.hasOwnProperty.call(c, "dado_pessoal")) comCampo++;
+        // Os DOIS graus contam como marcada. A caixa da tela de Estrutura
+        // cobre `pessoal` e `sensivel`; só `nao` fica de fora.
+        if (c.dado_pessoal && c.dado_pessoal !== "nao")
+          achados.push({ base, tabela: nome, coluna: c });
       }
     }
   }
@@ -8850,25 +8970,25 @@ async function telaDadosPessoais(db) {
 
      ${semSuporte ? `<div class="aviso mal">
        <p><strong>O esquema deste servidor ainda não traz a marca
-       <code>pessoal</code> por coluna.</strong> Nenhuma das
+       <code>dado_pessoal</code> por coluna.</strong> Nenhuma das
        ${fmt(colunasVistas)} colunas varridas respondeu esse campo — nem
-       <code>true</code>, nem <code>false</code>.</p>
+       <code>"nao"</code>, nem um grau.</p>
        <p>Por isso esta tela <b>não</b> diz «nenhum dado pessoal encontrado»:
-       ela não sabe. Campo ausente e campo <code>false</code> são coisas
+       ela não sabe. Campo ausente e campo <code>"nao"</code> são coisas
        diferentes, e confundir os dois num relatório de LGPD é exatamente onde
-       a confusão custa mais caro. Quando a marca entrar no cadastro de campos
-       — ao lado de <code>caption</code>, <code>descricao</code> e
-       <code>mascara</code> —, esta tela passa a listar sozinha.</p>
+       a confusão custa mais caro.</p>
      </div>` : ""}
 
      ${achados.length
-       ? tabela([{t:"base"},{t:"tabela"},{t:"coluna"},{t:"rótulo"},{t:"tipo"},
+       ? tabela([{t:"base"},{t:"tabela"},{t:"coluna"},{t:"grau"},{t:"rótulo"},{t:"tipo"},
                  {t:"papel"},{t:"descrição"}],
            achados, a => `<tr class="linha-lg" data-db="${esc(a.base)}"
              data-tab="${esc(a.tabela)}">
              <td class="dado">${esc(a.base)}</td>
              <td class="dado">${esc(a.tabela)}</td>
              <td class="dado"><b>${esc(a.coluna.nome)}</b></td>
+             <td><span class="pino ${a.coluna.dado_pessoal === "sensivel" ? "mal" : ""}"
+               >${a.coluna.dado_pessoal === "sensivel" ? "sensível" : "pessoal"}</span></td>
              <td><span class="rot-dado">${esc(a.coluna.rotulo || a.coluna.caption || "—")}</span></td>
              <td class="dado">${esc(a.coluna.tipo)}</td>
              <td>${a.coluna.primaria ? '<span class="pino">PK</span> ' : ""}${
@@ -8888,15 +9008,131 @@ async function telaDadosPessoais(db) {
        A chave vai para o <code>.ndx</code> em claro, e o índice é um segundo
        lugar onde o dado existe — apagar a linha do <code>.reg</code> não é a
        mesma coisa que tirá-lo de todo lugar.</p>
-       <p>Esta tela <b>lê</b> a marca. Marcar e desmarcar é no cadastro de
-       campos da tabela, junto com <code>caption</code>,
-       <code>descricao</code> e <code>mascara</code>.</p>
+       <p>Esta tela <b>lê</b> a marca. Marcar e desmarcar é na aba
+       <b>Estrutura</b> da tabela, na coluna LGPD — clique numa linha acima
+       para ir até lá.</p>
+       <p><b>${fmt(colunasVistas - achados.length)}</b> coluna(s) varrida(s)
+       estão <b>sem classificação</b>. Isso não quer dizer «não é dado
+       pessoal»: quer dizer que ninguém olhou ainda. É o número que mede o
+       trabalho que falta.</p>
      </div>`);
 
   $("#btLgVer").onclick = () => telaDadosPessoais($("#lgDb").value || null);
   $("#lgDb").onchange = ev => telaDadosPessoais(ev.target.value || null);
   $$("#painel .linha-lg").forEach(tr => tr.onclick = () =>
-    abrirTabela(tr.dataset.db, tr.dataset.tab));
+    telaTrilhaLgpd(tr.dataset.db, tr.dataset.tab));
+}
+
+/* ------------------------------------------------------- a trilha `.lgpd`
+ *
+ * Quem mexeu e quem viu as colunas marcadas de UMA tabela. Só administrador —
+ * o servidor recusa para os demais, e a tela mostra a recusa em vez de uma
+ * lista vazia, porque «não tem trilha» e «você não pode ver a trilha» são
+ * respostas muito diferentes para quem audita.
+ */
+async function telaTrilhaLgpd(db, tab, tipo) {
+  folha("Trilha de LGPD", `${esc(db)}.${esc(tab)} · lendo…`,
+    `<div class="centro">lendo o <code>.lgpd</code>…</div>`);
+  let t;
+  try {
+    t = await api("trilha", { database: db, tabela: tab, limite: 500,
+                              tipo: tipo || undefined });
+  } catch (e) {
+    return folha("Trilha de LGPD", `${esc(db)}.${esc(tab)}`,
+      `<div class="aviso mal"><p><strong>Não deu para ler a trilha.</strong>
+       ${esc(e.message || String(e))}</p>
+       <p>A trilha guarda o valor <b>antes</b> e <b>depois</b> das colunas
+       marcadas — é o arquivo mais revelador da tabela, e por isso só
+       administrador a lê.</p></div>`);
+  }
+
+  const regs = t.registros || [];
+  const marcadas = t.colunas_marcadas || [];
+  const alt = regs.filter(r => r.tipo === "alteracao").length;
+  const ace = regs.filter(r => r.tipo === "acesso").length;
+
+  // O valor redigido aparece como CADEADO, e nunca como texto: se a marca de
+  // redação fosse mostrada como se fosse o conteúdo, quem lê acharia que o
+  // campo passou a valer «(redigido: 60 bytes)».
+  const valor = (txt, redigido) => redigido
+    ? `<span class="pino mal" title="senha ou hash: o valor nunca entra na trilha">⛨ redigido</span>`
+    : (txt === "" ? `<span class="leg">(vazio)</span>` : `<span class="dado">${esc(txt)}</span>`);
+
+  folha("Trilha de LGPD", `${esc(db)}.${esc(tab)} · quem mexeu e quem viu`,
+    `<div class="fichas">
+       <div class="ficha"><div class="v">${fmt(t.total || 0)}</div>
+         <div class="r">registros na trilha</div></div>
+       <div class="ficha"><div class="v">${fmt(alt)}</div>
+         <div class="r">alterações mostradas</div></div>
+       <div class="ficha"><div class="v">${fmt(ace)}</div>
+         <div class="r">acessos mostrados</div></div>
+       <div class="ficha"><div class="v">${fmt(marcadas.length)}</div>
+         <div class="r">colunas marcadas</div></div>
+     </div>
+
+     <div class="barra-acao">
+       <label>Mostrar<select id="lgTipo">
+         <option value="">tudo</option>
+         <option value="alteracao" ${tipo==="alteracao"?"selected":""}>só alterações</option>
+         <option value="acesso" ${tipo==="acesso"?"selected":""}>só acessos</option>
+       </select></label>
+       <button class="botao consultar" id="btLgTrRec">Reler</button>
+       <button class="botao consultar" id="btLgTrEstr">Ver a estrutura</button>
+     </div>
+
+     ${marcadas.length
+       ? `<div class="nota"><p>Colunas com trilha ligada:
+          ${/* `crua` porque isto é NOME DE COLUNA, e nome de coluna é dado
+                gravado: mostrar `data_nascimento` como DATA_NASCIMENTO é a
+                mesma mentira do «BLUMENAU» — quem olha não sabe se a coluna
+                está gravada assim. Rótulo nosso pode ser maiúsculo; o que veio
+                do esquema, não. */""}
+          ${marcadas.map(c => `<span class="pino crua">${esc(c)}</span>`).join(" ")}</p></div>`
+       : `<div class="aviso"><p><strong>Esta tabela não tem coluna marcada como
+          dado pessoal</strong>, então não há trilha — e não há custo: o
+          <code>.lgpd</code> nem chega a ser criado.</p>
+          <p>Marcar é na aba <b>Estrutura</b>, na coluna LGPD.</p></div>`}
+
+     ${regs.length ? tabela(
+       [{t:"quando"},{t:"o quê"},{t:"linha"},{t:"coluna"},{t:"antes"},{t:"depois"},
+        {t:"quem"},{t:"de onde"}],
+       regs, r => `<tr>
+         <td class="dado">${esc(r.quando)}</td>
+         <td><span class="pino ${r.tipo === "alteracao" ? "" : "reg"}">${
+             r.tipo === "alteracao" ? "alterou" : "leu"}</span></td>
+         <td class="dado">${esc(r.identidade || (r.rowid ? "rowid=" + r.rowid : "—"))}</td>
+         <td class="dado">${esc(r.coluna)}</td>
+         <td>${r.tipo === "alteracao" ? valor(r.antes, r.antes_redigido)
+                : `<span class="leg">—</span>`}</td>
+         <td>${r.tipo === "alteracao" ? valor(r.depois, r.depois_redigido)
+                : `<span class="leg">${fmt(r.linhas)} linha(s)</span>`}</td>
+         <td class="dado">${esc(r.usuario_nome || "—")}</td>
+         <td class="dado">${esc(r.ip || "—")}</td></tr>`)
+       : (marcadas.length ? `<div class="vazio">a trilha ainda está vazia —
+           ninguém alterou nem leu coluna marcada desta tabela</div>` : "")}
+
+     <div class="nota">
+       <p><strong>Inclusão e exclusão não aparecem aqui, de propósito.</strong>
+       O <code>.log</code> já registra as duas com data, hora e autor; a
+       <code>.trash</code> guarda a linha inteira antes de ela sumir; e o
+       <code>.reason</code> guarda quem excluiu e por quê. A trilha cobre o que
+       faltava — a alteração com antes e depois, e o acesso.</p>
+       <p><strong>O acesso é por operação, não por linha.</strong> Uma varredura
+       de 10.000 linhas gera <b>um</b> registro, com o filtro usado e quantas
+       linhas voltaram — e não 10.000 vezes o número de colunas marcadas. É o
+       que mantém a consulta barata e a pergunta «quem viu a ficha do fulano?»
+       respondível.</p>
+       <p><strong>Senha e hash nunca entram.</strong> Se uma coluna marcada
+       guardar segredo, a trilha grava o tamanho em bytes e um cadastro de
+       redigido — nunca o conteúdo. ${t.acessos_ligados ? "" :
+       "<br><b>O registro de acessos está desligado</b> no <code>config.json</code>."}
+       ${t.alteracoes_ligadas ? "" :
+       "<br><b>O registro de alterações está desligado</b> no <code>config.json</code>."}</p>
+     </div>`);
+
+  $("#btLgTrRec").onclick = () => telaTrilhaLgpd(db, tab, $("#lgTipo").value);
+  $("#lgTipo").onchange = ev => telaTrilhaLgpd(db, tab, ev.target.value);
+  $("#btLgTrEstr").onclick = () => { est.aba = "estrutura"; abrirTabela(db, tab); };
 }
 
 async function verDiretivas() {

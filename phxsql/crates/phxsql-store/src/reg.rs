@@ -694,6 +694,48 @@ impl RegFile {
                     .into(),
             ));
         }
+        self.regravar_esquema(novo)
+    }
+
+    /// Regrava a marca de dado pessoal de uma ou mais colunas.
+    ///
+    /// # Por que isto e declaracao, e nao alteracao de estrutura
+    ///
+    /// Pelo mesmo motivo da chave estrangeira, e o formato ja diz: a marca da
+    /// v6 e **um byte por coluna no FIM do bloco**, e nao desloca nada --
+    /// `payload_len` e os offsets das colunas sao os mesmos de uma tabela sem
+    /// marca. Nenhuma linha muda de tamanho nem de lugar, e nenhum indice
+    /// precisa ser refeito. O que muda e um byte de metadado.
+    ///
+    /// Numa tabela que ja e v6 o bloco nem troca de tamanho, entao o caminho
+    /// barato vale sempre. Numa gravada antes da v6 o bloco CRESCE (ele passa
+    /// a existir), e por isso o caminho caro continua aqui: e o mesmo que a
+    /// chave estrangeira ja usava, com os slots viajando byte a byte.
+    pub fn remarcar_dado_pessoal(
+        &mut self,
+        marcas: &[(String, phxsql_core::types::DadoPessoal)],
+    ) -> Result<bool> {
+        let mut novo = self.esquema.clone();
+        for (coluna, grau) in marcas {
+            novo.marcar_dado_pessoal(coluna, *grau)?;
+        }
+        // O mesmo cinto de seguranca do outro caminho: se um dia a marca
+        // passar a mexer no payload, o erro aparece aqui e nao numa linha
+        // lida pelo tamanho errado.
+        if SLOT_CAB + novo.payload_len() != self.slot_size {
+            return Err(PhxError::Esquema(
+                "marcar dado pessoal mudaria o slot_size; isso e alterar \
+                 estrutura, e nao declaracao"
+                    .into(),
+            ));
+        }
+        self.regravar_esquema(novo)
+    }
+
+    /// Troca o bloco de esquema gravado, pelos dois caminhos possiveis.
+    ///
+    /// Devolve `true` quando os arquivos precisaram ser reescritos.
+    fn regravar_esquema(&mut self, novo: Schema) -> Result<bool> {
         let bytes = novo.serializar();
         let crc = crc32(&bytes);
 

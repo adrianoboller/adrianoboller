@@ -1124,6 +1124,67 @@ impl Default for Recursos {
     }
 }
 
+/// O interruptor da trilha de dado pessoal (`.lgpd`).
+///
+/// # Nasce LIGADA, e por que isso nao quebra a regra da casa
+///
+/// «Guarda nova entra pedida, nao imposta» existe para que uma protecao nova
+/// nao pare quem escreveu o cliente antes dela. Aqui nada para: a trilha so
+/// acontece em tabela que tem coluna marcada como dado pessoal, e marcar e um
+/// ato deliberado de quem cadastrou o campo. **Tabela sem marca nao muda de
+/// comportamento** -- nao ganha arquivo, nao paga custo, nao responde
+/// diferente. Quem marcou ja declarou que ali ha dado pessoal; a trilha e a
+/// consequencia legal dessa declaracao.
+///
+/// Os dois lados sao separados porque respondem a perguntas diferentes e
+/// custam diferente: a alteracao e barata e e a que a lei pede primeiro; o
+/// acesso e o que uma base muito lida gera em volume. Quem precisa apertar o
+/// tamanho desliga o acesso e mantem a alteracao.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Lgpd {
+    /// Registrar ANTES e DEPOIS de coluna marcada que mudou.
+    pub alteracoes: bool,
+    /// Registrar quem LEU coluna marcada, um registro por operacao.
+    pub acessos: bool,
+}
+
+impl Default for Lgpd {
+    fn default() -> Lgpd {
+        Lgpd {
+            alteracoes: true,
+            acessos: true,
+        }
+    }
+}
+
+impl Lgpd {
+    fn de_json(j: &Json) -> Lgpd {
+        let padrao = Lgpd::default();
+        // Bloco ausente = os padroes, que sao ligados. Um `config.json`
+        // escrito antes desta versao continua valendo, e o que ele descreve
+        // nao muda: tabela sem coluna marcada nao tem trilha de qualquer jeito.
+        let Some(c) = j.campo("lgpd") else {
+            return padrao;
+        };
+        Lgpd {
+            alteracoes: c.booleano_ou("alteracoes", padrao.alteracoes),
+            acessos: c.booleano_ou("acessos", padrao.acessos),
+        }
+    }
+
+    /// Leva a decisao ao processo.
+    pub fn aplicar(&self) {
+        phxsql_store::trilha::definir(self.alteracoes, self.acessos);
+    }
+
+    pub fn para_json(&self) -> Json {
+        Json::objeto(vec![
+            ("alteracoes", Json::Bool(self.alteracoes)),
+            ("acessos", Json::Bool(self.acessos)),
+        ])
+    }
+}
+
 impl Recursos {
     /// Leva ao processo os tetos que nao sao parametro de ninguem.
     ///
@@ -1275,6 +1336,8 @@ pub struct Config {
     pub jobs: PathBuf,
     /// A cifra dos diarios em repouso. Desligada por padrao.
     pub cifra: Cifra,
+    /// A trilha de dado pessoal. Ver [`Lgpd`].
+    pub lgpd: Lgpd,
     /// O idioma das mensagens do servidor: o nome de uma das seis colunas da
     /// tabela `phxsys.mensagens`. Vazio ou ausente = `Portugues`, que e o
     /// texto de fabrica -- e por isso config antigo nao muda nada.
@@ -1336,7 +1399,7 @@ const CAMPOS_CONHECIDOS: [&str; 23] = [
 /// as duas primeiras estao ganhando campos novos por outras frentes nesta
 /// rodada, e um aviso falso de "campo desconhecido" seria pior que a lacuna;
 /// as duas ultimas tem chaves livres (bases, tabelas).
-const SECOES_CONHECIDAS: [(&str, &[&str]); 6] = [
+const SECOES_CONHECIDAS: [(&str, &[&str]); 7] = [
     (
         "recursos",
         &[
@@ -1400,6 +1463,7 @@ const SECOES_CONHECIDAS: [(&str, &[&str]); 6] = [
         ],
     ),
     ("cifra", &["ligada", "senha", "senha_env", "iteracoes"]),
+    ("lgpd", &["alteracoes", "acessos"]),
 ];
 
 /// O que o arquivo trouxe e o servidor nao sabe ler.
@@ -1448,6 +1512,7 @@ impl Default for Config {
             dblink: PathBuf::from("dblink.json"),
             jobs: PathBuf::from("jobs.json"),
             cifra: Cifra::default(),
+            lgpd: Lgpd::default(),
             idioma: String::new(),
             estranhas: Vec::new(),
             avisos: Vec::new(),
@@ -1490,6 +1555,7 @@ impl Config {
         // programa le e a mesma armadilha do campo que ninguem le.
         c.cifra.aplicar()?;
         c.recursos.aplicar();
+        c.lgpd.aplicar();
         Ok(c)
     }
 
@@ -1600,6 +1666,7 @@ impl Config {
             dblink: PathBuf::from(j.texto_ou("dblink", "dblink.json")),
             jobs: PathBuf::from(j.texto_ou("jobs", "jobs.json")),
             cifra: Cifra::de_json(j),
+            lgpd: Lgpd::de_json(j),
             idioma: {
                 // O valor aceito e o NOME de uma coluna da tabela de
                 // mensagens. Desconhecido nao derruba o servidor -- vira
@@ -1911,6 +1978,7 @@ impl Config {
             ("dblink", Json::texto_de(self.dblink.display().to_string())),
             ("jobs", Json::texto_de(self.jobs.display().to_string())),
             ("cifra", self.cifra.para_json()),
+            ("lgpd", self.lgpd.para_json()),
             // O idioma EM USO, ja resolvido: vazio no arquivo vira Portugues
             // aqui, para a tela nao ter de repetir a regra do fallback.
             (

@@ -211,6 +211,20 @@ impl Atividade {
             // revelador que o registro: "fraude", "pedido de remocao do
             // titular", "duplicidade com o contrato X".
             "lixeira" | "trash" | "motivos" | "reasons" => Atividade::Administrar,
+            // A trilha de LGPD e dos administradores pelo mesmo argumento,
+            // levado ao extremo: ela guarda o VALOR de antes e o de depois das
+            // colunas marcadas como dado pessoal. Quem a le nao le "houve uma
+            // alteracao"; le o CPF velho e o CPF novo, o endereco velho e o
+            // novo, de todas as linhas de uma vez. E o arquivo mais revelador
+            // da tabela, e o unico que concentra o que a lei manda proteger --
+            // dar acesso a ele por `ler` seria abrir por uma porta lateral
+            // tudo o que a permissao por tabela fecha pela porta da frente.
+            "trilha" | "trilha_lgpd" => Atividade::Administrar,
+            // Classificar coluna e mexer no ESQUEMA, e desmarcar uma coluna
+            // apaga a trilha dela daqui para a frente -- que e a maneira mais
+            // silenciosa que existe de desligar a auditoria de um campo.
+            // Administrar, como toda mudanca de estrutura.
+            "marcar_lgpd" | "marcar_dado_pessoal" => Atividade::Administrar,
             // Esvaziar a lixeira e a unica operacao do motor que apaga dado
             // sem rede nenhuma embaixo.
             "esvaziar_lixeira" => Atividade::Administrar,

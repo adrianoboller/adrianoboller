@@ -648,6 +648,39 @@ pub const OPERACOES: &[Operacao] = &[
         ferramenta_mcp: false,
     },
     Operacao {
+        nome: "trilha",
+        apelidos: &["trilha_lgpd"],
+        resumo: "A trilha de LGPD do `.lgpd` -- quem alterou e quem leu as \
+                 colunas marcadas como dado pessoal, com valor antes e depois.",
+        parametros: &[
+            DB,
+            TAB,
+            opc("rowid", "integer", "só a trilha desta linha"),
+            opc("tipo", "string", "`alteracao` ou `acesso`; vazio traz os dois"),
+            opc("limite", "integer", "quantos trazer"),
+            opc("pular", "integer", "quantos saltar"),
+        ],
+        exemplo: r#"{"op":"trilha","database":"loja","tabela":"clientes","limite":50}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "marcar_lgpd",
+        apelidos: &["marcar_dado_pessoal"],
+        resumo: "Classifica colunas como dado pessoal (`nao`, `pessoal` ou \
+                 `sensivel`). É o que liga a trilha `.lgpd` daquela coluna.",
+        parametros: &[
+            DB,
+            TAB,
+            obr(
+                "colunas",
+                "object",
+                "`{\"cpf\":\"pessoal\",\"laudo\":\"sensivel\"}`; `true` vale por `pessoal`",
+            ),
+        ],
+        exemplo: r#"{"op":"marcar_lgpd","database":"loja","tabela":"clientes","colunas":{"cpf":"pessoal"}}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
         nome: "esvaziar_lixeira",
         apelidos: &[],
         resumo: "Apaga de vez o que está na lixeira. É a única operação que \
