@@ -285,6 +285,37 @@ fn pag_selar(p: &mut [u8]) {
     por_u32(p, 28, c);
 }
 
+/// Quanto de cada folha a construcao em lote enche, em porcento.
+///
+/// **80, e o numero e medido** (`--example indice-em-lote`, um milhao de chaves
+/// e mais 10% inseridas depois no MEIO da faixa). Nao e nem a folga classica de
+/// 70 nem o instinto de encher tudo:
+///
+/// ```text
+///   enchimento   paginas   varrer   crescer   paginas novas
+///          70%      6.028    0,035s    0,804s              0
+///          80%      5.271    0,028s    0,770s              0   <- o joelho
+///          90%      4.683    0,026s    0,901s          2.342
+///         100%      4.213    0,023s    0,984s          2.110
+/// ```
+///
+/// 70 nao compra nada: insercao aleatoria ja assenta perto de 69% de ocupacao
+/// sozinha, e um resultado classico de B-tree. De 90 para cima a folha nao tem
+/// mais folga, e crescer passa a alocar milhares de paginas e a ficar mais
+/// LENTO do que a arvore mais frouxa -- a varredura mais rapida nao paga isso.
+///
+/// 80 e a ocupacao mais densa que ainda absorve 10% de crescimento sem alocar
+/// uma pagina, e por isso e a mais rapida das duas pontas que importam.
+const ENCHIMENTO_PADRAO: usize = 80;
+
+/// Tamanho da fatia `i` ao repartir `total` em `partes` o mais iguais possivel.
+///
+/// As primeiras `total % partes` fatias levam uma a mais. Existe para nao
+/// terminar com uma folha de uma chave so depois de encher todas as outras.
+fn fatia(total: usize, partes: usize, i: usize) -> usize {
+    total / partes + usize::from(i < total % partes)
+}
+
 fn nova_pagina(page_size: usize, tipo: u8) -> Vec<u8> {
     let mut p = vec![0u8; page_size];
     p[0] = tipo;
@@ -868,6 +899,188 @@ impl NdxFile {
         self.gravar_pagina(pagina, &mut esq)?;
         self.gravar_pagina(nova, &mut dirp)?;
         Ok(Some((chave_promovida, nova)))
+    }
+
+    // ---------------------------------------------------- construcao em lote
+
+    /// Monta a arvore inteira de um indice a partir das chaves, de uma vez.
+    ///
+    /// # Por que existe
+    ///
+    /// `inserir` desce a arvore uma vez por chave. Reconstruir um indice de um
+    /// milhao de linhas assim custa um milhao de descidas -- exatamente o
+    /// trabalho do caminho de dentro, so que de novo. E por isso que adiar o
+    /// indice numa carga e reconstruir no fim comprava 1,02x: o `reindexar`
+    /// pagava o mesmo preco em outro lugar.
+    ///
+    /// Aqui nao ha descida nenhuma. As chaves sao ordenadas, as folhas sao
+    /// enchidas em SEQUENCIA, e os niveis de cima sao montados por cima dos de
+    /// baixo. Cada pagina e escrita uma vez, na ordem do arquivo.
+    ///
+    /// # O que ele exige
+    ///
+    /// **O indice tem de estar vazio.** Isto e uma construcao, e nao um remendo
+    /// numa arvore existente: aproveitar as paginas de uma arvore antiga pediria
+    /// devolve-las a lista de livres uma a uma, e quem chama aqui (`reindexar`)
+    /// acabou de truncar o arquivo. Recusar e melhor que vazar paginas em
+    /// silencio.
+    pub fn construir_em_lote(&mut self, idx: usize, chaves: Vec<u8>) -> Result<()> {
+        self.construir_em_lote_com(idx, chaves, ENCHIMENTO_PADRAO)
+    }
+
+    /// O mesmo, escolhendo quanto de cada folha encher, em porcento.
+    ///
+    /// Existe separado porque o numero e uma troca medivel, e nao uma verdade:
+    /// veja `ENCHIMENTO_PADRAO`. O medidor e `--example indice-em-lote`.
+    pub fn construir_em_lote_com(
+        &mut self,
+        idx: usize,
+        chaves: Vec<u8>,
+        enchimento: usize,
+    ) -> Result<()> {
+        let d = self.descritor(idx)?.clone();
+        let ck_len = d.ck_len();
+        if !(1..=100).contains(&enchimento) {
+            return Err(PhxError::Esquema(format!(
+                "enchimento {enchimento} invalido: use de 1 a 100 por cento"
+            )));
+        }
+        if chaves.len() % ck_len != 0 {
+            return Err(PhxError::Corrompido(format!(
+                "indice {}: lote de {} bytes nao e multiplo da chave de {ck_len}",
+                d.nome,
+                chaves.len()
+            )));
+        }
+        let total = chaves.len() / ck_len;
+        if total > u32::MAX as usize {
+            return Err(PhxError::Esquema(format!(
+                "indice {}: {total} chaves passam do teto de {} por lote",
+                d.nome,
+                u32::MAX
+            )));
+        }
+
+        // A arvore precisa estar vazia, e a folha que ela ja tem vira a
+        // primeira do lote -- senao ela vazaria, sem entrar na lista de livres.
+        let raiz_atual = self.ler_pagina(d.raiz)?;
+        if pag_tipo(&raiz_atual) != TIPO_FOLHA || pag_qtd(&raiz_atual) != 0 {
+            return Err(PhxError::Esquema(format!(
+                "indice {}: construir em lote exige indice vazio",
+                d.nome
+            )));
+        }
+        if total == 0 {
+            return Ok(()); // a folha vazia que ja esta la e a arvore certa
+        }
+
+        let em = |i: u32| {
+            let a = i as usize * ck_len;
+            &chaves[a..a + ck_len]
+        };
+
+        // Ordena uma PERMUTACAO, e nao as chaves: mover 4 bytes por troca em vez
+        // da chave inteira, e sem uma alocacao por chave. Num indice de dez
+        // milhoes isso e a diferenca entre ~200 MiB e mais de meio giga.
+        //
+        // A codificacao preserva ordem, entao ordenar os bytes e ordenar os
+        // valores -- e o rowid no fim desempata chave repetida de indice nao
+        // unico, o que torna a ordem total.
+        let mut ordem: Vec<u32> = (0..total as u32).collect();
+        ordem.sort_unstable_by(|a, b| em(*a).cmp(em(*b)));
+
+        for par in ordem.windows(2) {
+            let (x, y) = (em(par[0]), em(par[1]));
+            if x == y {
+                return Err(PhxError::Corrompido(format!(
+                    "indice {}: mesma chave completa duas vezes no lote",
+                    d.nome
+                )));
+            }
+            if d.unico && x[..d.key_len] == y[..d.key_len] {
+                return Err(PhxError::Duplicado(format!(
+                    "indice unico {}: chave repetida no lote",
+                    d.nome
+                )));
+            }
+        }
+
+        // ------------------------------------------------------------ folhas
+        let cap_folha = (self.page_size - PAG_CAB) / ck_len;
+        let por_folha = (cap_folha * enchimento / 100).max(1);
+        // Reparte em partes IGUAIS em vez de encher ate o teto e deixar o resto
+        // na ultima: com 101 chaves e teto 100 sairiam 100 e 1, e a folha de uma
+        // chave so divide na primeira insercao seguinte.
+        let qtd_folhas = total.div_ceil(por_folha);
+
+        // As paginas das folhas sao reservadas ANTES de escrever qualquer uma:
+        // assim cada folha ja nasce sabendo o numero da seguinte, e nenhuma
+        // precisa ser relida para ganhar o `prox`.
+        let mut paginas = Vec::with_capacity(qtd_folhas);
+        paginas.push(d.raiz);
+        for _ in 1..qtd_folhas {
+            paginas.push(self.alocar_pagina()?);
+        }
+
+        let mut filhos: Vec<(u64, Vec<u8>)> = Vec::with_capacity(qtd_folhas);
+        let mut lida = 0usize;
+        for f in 0..qtd_folhas {
+            let quantas = fatia(total, qtd_folhas, f);
+            let mut p = nova_pagina(self.page_size, TIPO_FOLHA);
+            pag_set_qtd(&mut p, quantas);
+            pag_set_ant(&mut p, if f == 0 { 0 } else { paginas[f - 1] });
+            pag_set_prox(
+                &mut p,
+                if f + 1 < qtd_folhas {
+                    paginas[f + 1]
+                } else {
+                    0
+                },
+            );
+            for j in 0..quantas {
+                let a = PAG_CAB + j * ck_len;
+                p[a..a + ck_len].copy_from_slice(em(ordem[lida + j]));
+            }
+            filhos.push((paginas[f], em(ordem[lida]).to_vec()));
+            self.gravar_pagina(paginas[f], &mut p)?;
+            lida += quantas;
+        }
+
+        // ---------------------------------------------------- niveis de cima
+        let ent = ck_len + 8;
+        let cap_interno = (self.page_size - PAG_CAB) / ent;
+        let max_filhos = cap_interno + 1;
+
+        while filhos.len() > 1 {
+            let qtd_nos = filhos.len().div_ceil(max_filhos);
+            let mut acima: Vec<(u64, Vec<u8>)> = Vec::with_capacity(qtd_nos);
+            let mut lido = 0usize;
+            for n in 0..qtd_nos {
+                let quantos = fatia(filhos.len(), qtd_nos, n);
+                let grupo = &filhos[lido..lido + quantos];
+                let pagina = self.alocar_pagina()?;
+                let mut p = nova_pagina(self.page_size, TIPO_INTERNO);
+                // `escolher_filho` manda para `filho[i]` quem for MENOR que
+                // `chave[i]`; entao a chave separadora e a primeira do filho
+                // seguinte, que e o mesmo que a divisao promove.
+                pag_set_qtd(&mut p, quantos - 1);
+                for (i, (f, _)) in grupo[..quantos - 1].iter().enumerate() {
+                    let a = PAG_CAB + i * ent;
+                    p[a..a + ck_len].copy_from_slice(&grupo[i + 1].1);
+                    interno_set_filho(&mut p, i, ck_len, *f);
+                }
+                pag_set_dir(&mut p, grupo[quantos - 1].0);
+                self.gravar_pagina(pagina, &mut p)?;
+                acima.push((pagina, grupo[0].1.clone()));
+                lido += quantos;
+            }
+            filhos = acima;
+        }
+
+        self.indices[idx].raiz = filhos[0].0;
+        self.indices[idx].qtd_chaves = total as u64;
+        self.gravar_cabecalho()?;
+        Ok(())
     }
 
     // -------------------------------------------------------------- busca

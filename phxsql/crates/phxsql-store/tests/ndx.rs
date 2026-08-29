@@ -393,3 +393,181 @@ fn o_cache_nao_serve_pagina_velha() {
         );
     }
 }
+
+// ------------------------------------------------------- construcao em lote
+
+/// Junta as chaves de um lote no buffer plano que `construir_em_lote` espera.
+fn lote(pares: &[(i64, u64)]) -> Vec<u8> {
+    let mut b = Vec::new();
+    for (v, rowid) in pares {
+        b.extend_from_slice(&NdxFile::chave_completa(&chave(*v), *rowid));
+    }
+    b
+}
+
+#[test]
+fn lote_monta_a_mesma_arvore_que_inserir_uma_a_uma() {
+    let dir = DirTemp::novo("ndx-lote-igual");
+
+    const TOTAL: i64 = 5_000;
+    let mut valores: Vec<i64> = (1..=TOTAL).collect();
+    Rng::nova(0xB0A7).embaralhar(&mut valores);
+    let pares: Vec<(i64, u64)> = valores
+        .iter()
+        .enumerate()
+        .map(|(i, v)| (*v, i as u64 + 1))
+        .collect();
+
+    // Uma a uma, o caminho de sempre.
+    let mut uma =
+        NdxFile::criar_com_pagina(dir.0.join("uma.ndx"), &esquema(true), PAGINA_PEQUENA).unwrap();
+    for (v, rowid) in &pares {
+        uma.inserir(0, &chave(*v), *rowid).unwrap();
+    }
+
+    // De uma vez.
+    let mut em_lote =
+        NdxFile::criar_com_pagina(dir.0.join("lote.ndx"), &esquema(true), PAGINA_PEQUENA).unwrap();
+    em_lote.construir_em_lote(0, lote(&pares)).unwrap();
+
+    // O que importa nao e a arvore ser byte a byte igual -- ela nao e, e nem
+    // deveria -- e sim as duas responderem a mesma coisa.
+    assert_eq!(uma.verificar().unwrap(), em_lote.verificar().unwrap());
+    assert_eq!(uma.varrer(0).unwrap(), em_lote.varrer(0).unwrap());
+    for (v, rowid) in &pares {
+        assert_eq!(em_lote.buscar(0, &chave(*v)).unwrap(), vec![*rowid]);
+    }
+    // Quantas paginas cada uma gasta e assunto do `ENCHIMENTO_PADRAO`, e esta
+    // medido em `--example indice-em-lote` -- nao se afirma aqui, porque
+    // insercao aleatoria ja assenta perto de 69% de ocupacao sozinha e a
+    // comparacao depende do numero escolhido.
+}
+
+#[test]
+fn depois_do_lote_a_insercao_continua_funcionando() {
+    let dir = DirTemp::novo("ndx-lote-depois");
+    let mut n =
+        NdxFile::criar_com_pagina(dir.0.join("t.ndx"), &esquema(true), PAGINA_PEQUENA).unwrap();
+
+    // Numeros pares, para os impares caberem no meio e forcarem divisao.
+    let pares: Vec<(i64, u64)> = (1..=2_000).map(|i| (i * 2, i as u64)).collect();
+    n.construir_em_lote(0, lote(&pares)).unwrap();
+
+    for i in 1..=2_000i64 {
+        n.inserir(0, &chave(i * 2 - 1), 2_000 + i as u64).unwrap();
+    }
+    assert_eq!(n.verificar().unwrap()[0].1, 4_000);
+    assert_eq!(n.buscar(0, &chave(1)).unwrap(), vec![2_001]);
+    assert_eq!(n.buscar(0, &chave(4_000)).unwrap(), vec![2_000]);
+}
+
+#[test]
+fn lote_encadeia_as_folhas_nos_dois_sentidos() {
+    let dir = DirTemp::novo("ndx-lote-cadeia");
+    let mut n =
+        NdxFile::criar_com_pagina(dir.0.join("t.ndx"), &esquema(false), PAGINA_PEQUENA).unwrap();
+    let pares: Vec<(i64, u64)> = (1..=3_000).map(|i| (i, i as u64)).collect();
+    n.construir_em_lote(0, lote(&pares)).unwrap();
+
+    // `verificar` anda a cadeia de folhas pelo `prox` e confere a ordem; se o
+    // encadeamento tivesse buraco, ela acharia menos chaves do que o diretorio
+    // diz e recusaria.
+    assert_eq!(n.verificar().unwrap()[0].1, 3_000);
+    assert_eq!(n.varrer(0).unwrap().len(), 3_000);
+    // O intervalo desce e depois anda de folha em folha: pega os dois sentidos.
+    assert_eq!(
+        n.intervalo(0, Some(&chave(10)), Some(&chave(20)))
+            .unwrap()
+            .len(),
+        11
+    );
+}
+
+#[test]
+fn lote_recusa_indice_que_ja_tem_chave() {
+    let dir = DirTemp::novo("ndx-lote-povoado");
+    let mut n =
+        NdxFile::criar_com_pagina(dir.0.join("t.ndx"), &esquema(true), PAGINA_PEQUENA).unwrap();
+    n.inserir(0, &chave(1), 1).unwrap();
+
+    let e = n.construir_em_lote(0, lote(&[(2, 2)])).unwrap_err();
+    assert!(
+        e.to_string().contains("exige indice vazio"),
+        "recusa errada: {e}"
+    );
+    // E a chave que estava la continua la: a recusa nao mexeu em nada.
+    assert_eq!(n.buscar(0, &chave(1)).unwrap(), vec![1]);
+}
+
+#[test]
+fn lote_recusa_a_mesma_chave_completa_duas_vezes() {
+    let dir = DirTemp::novo("ndx-lote-cc");
+    let mut n =
+        NdxFile::criar_com_pagina(dir.0.join("t.ndx"), &esquema(false), PAGINA_PEQUENA).unwrap();
+    let e = n
+        .construir_em_lote(0, lote(&[(7, 1), (9, 2), (7, 1)]))
+        .unwrap_err();
+    assert!(e.to_string().contains("duas vezes"), "recusa errada: {e}");
+}
+
+#[test]
+fn lote_em_indice_unico_recusa_chave_repetida() {
+    let dir = DirTemp::novo("ndx-lote-unico");
+    let mut n =
+        NdxFile::criar_com_pagina(dir.0.join("t.ndx"), &esquema(true), PAGINA_PEQUENA).unwrap();
+    // Rowids diferentes: a chave COMPLETA nao repete, so a do usuario.
+    let e = n.construir_em_lote(0, lote(&[(7, 1), (7, 2)])).unwrap_err();
+    assert!(e.to_string().contains("repetida"), "recusa errada: {e}");
+}
+
+#[test]
+fn lote_em_indice_nao_unico_aceita_chave_repetida() {
+    let dir = DirTemp::novo("ndx-lote-repete");
+    let mut n =
+        NdxFile::criar_com_pagina(dir.0.join("t.ndx"), &esquema(false), PAGINA_PEQUENA).unwrap();
+    let pares: Vec<(i64, u64)> = (1..=500u64).map(|r| (7, r)).collect();
+    n.construir_em_lote(0, lote(&pares)).unwrap();
+    // O rowid no fim da chave e o que torna a ordem total, e ele sai em ordem.
+    assert_eq!(
+        n.buscar(0, &chave(7)).unwrap(),
+        (1..=500u64).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn lote_vazio_deixa_a_arvore_vazia_e_utilizavel() {
+    let dir = DirTemp::novo("ndx-lote-zero");
+    let mut n =
+        NdxFile::criar_com_pagina(dir.0.join("t.ndx"), &esquema(true), PAGINA_PEQUENA).unwrap();
+    n.construir_em_lote(0, Vec::new()).unwrap();
+    assert_eq!(n.verificar().unwrap()[0].1, 0);
+    n.inserir(0, &chave(1), 1).unwrap();
+    assert_eq!(n.buscar(0, &chave(1)).unwrap(), vec![1]);
+}
+
+#[test]
+fn lote_recusa_buffer_que_nao_fecha_na_chave() {
+    let dir = DirTemp::novo("ndx-lote-torto");
+    let mut n =
+        NdxFile::criar_com_pagina(dir.0.join("t.ndx"), &esquema(true), PAGINA_PEQUENA).unwrap();
+    let mut b = lote(&[(1, 1)]);
+    b.pop(); // um byte a menos: o buffer deixa de ser multiplo da chave
+    let e = n.construir_em_lote(0, b).unwrap_err();
+    assert!(e.to_string().contains("multiplo"), "recusa errada: {e}");
+}
+
+#[test]
+fn lote_sobrevive_a_reabrir_o_arquivo() {
+    let dir = DirTemp::novo("ndx-lote-reabre");
+    let caminho = dir.0.join("t.ndx");
+    let pares: Vec<(i64, u64)> = (1..=3_000).map(|i| (i, i as u64)).collect();
+    {
+        let mut n = NdxFile::criar_com_pagina(&caminho, &esquema(true), PAGINA_PEQUENA).unwrap();
+        n.construir_em_lote(0, lote(&pares)).unwrap();
+        n.sincronizar().unwrap();
+    }
+    // A raiz e a contagem tem de ter ido para o cabecalho, e nao so para a RAM.
+    let mut n = NdxFile::abrir(&caminho).unwrap();
+    assert_eq!(n.verificar().unwrap()[0].1, 3_000);
+    assert_eq!(n.buscar(0, &chave(1_500)).unwrap(), vec![1_500]);
+}
