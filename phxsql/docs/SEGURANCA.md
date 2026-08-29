@@ -649,3 +649,177 @@ A lição é a do projeto, por outro caminho: *campo de configuração sem leito
 pior que campo ausente* — e o leitor que faltava escondia uma operação
 quebrada atrás dele. O teste novo carrega a tabela, consulta em memória e
 exige que a resposta volte.
+
+## 10. O Profiler: o que ele promete e o que ele cumpre
+
+O Profiler (`crates/phxsql-server/src/profiler.rs`, tela em *Ferramentas →
+Profiler*) mostra o texto dos pedidos **como chegaram pelo soquete**, uma
+linha depois do `read_line` e uma antes do despacho. É o lugar do servidor
+onde uma senha vazaria sem ninguém notar, porque a razão de ele existir é
+mostrar texto cru — e o pedido de `login` traz a senha dentro.
+
+Esta seção é a **validação** dele: o que foi provado, como, e o que a prova
+achou. Tudo por soquete, contra um servidor de verdade, com uma sentinela
+única no lugar da senha e um `grep` no anel **e** no arquivo depois
+(`bancada/profiler/sonda.py`).
+
+### 10.1 A redação: analisar cumpre o que recortar não cumpre
+
+Vinte pedidos torcidos, todos com a mesma sentinela dentro. O que passou:
+
+| o pedido chegou assim | o Profiler mostrou |
+|---|---|
+| `{"op":"login","senha":"SEGREDO"}` | `"senha":"***"` |
+| `{ "op" : "login" , "senha" : "SEGREDO" }` | `"senha":"***"` |
+| `{"\u0073enha":"SEGREDO"}` — chave escapada | `"senha":"***"` |
+| `{"SENHA":"SEGREDO"}` — maiúscula | `"SENHA":"***"` |
+| `senha_b64`, `prova`, `token`, `chave`, `assinatura` | `"***"` |
+| `{"config":{"usuarios":[{"perfil":{"credenciais":[{"senha":…}]}}]}}` | `"***"` no fundo |
+| `inserir_lote` com 200 linhas, senha em cada | 200 × `"***"` |
+| `{"op":"login","senha":"SEGREDO"` — sem fechar | `<pedido invalido, 59 bytes>` |
+| `senha=SEGREDO` — não é JSON | `<pedido invalido, 25 bytes>` |
+
+Nenhum recorte de texto passa nesta tabela: a chave `\u0073enha` só é
+`senha` **depois** do analisador, e o espaço antes dos dois-pontos já derruba
+o `find("\"senha\":\"")`. Repondo o defeito — trocando o `redigir` por um
+recorte — caem **sete** testes de uma vez, entre eles o
+`chave_escapada_em_unicode_tambem_e_senha` e o `a_senha_nunca_aparece` que já
+existia antes desta rodada.
+
+E o caso que prova o outro lado: um `inserir` cujo campo `obs` vale
+`ele disse "senha":"SEGREDO" no chat`. Isso é **dado**, não credencial, e
+continua visível. O recorte erraria aqui para o lado de tapar o que não era
+segredo — e tela que tapa dado de verdade manda o operador procurar em outro
+lugar o que estava na frente dele.
+
+### 10.2 O que a prova ACHOU, e o conserto de cada um
+
+**Chave com espaço dentro das aspas.** `{"senha ":"SEGREDO"}` aparecia
+inteiro. O servidor não lê `"senha "`, então essa chave nunca autenticou
+ninguém — mas um cliente desastrado que a mande põe uma senha de verdade no
+fio, e o Profiler a mostrava. A comparação passou a ser contra a chave
+**aparada**: não se perde nada e fecha a porta.
+
+**JSON válido que não é objeto.** `["op","senha","SEGREDO"]` virava texto
+inteiro. A redação é por **nome de campo**, e um topo que não tem campo não
+tem nome para tapar. Passou a virar o tamanho em bytes, pela mesma razão que o
+malformado já virava: *o que não se analisa não vira texto*. O protocolo só
+aceita objeto no topo, então não se perde pedido legítimo nenhum.
+
+**O que continua exposto, e por quê.** Uma senha escrita **dentro do texto de
+um SQL** — `{"op":"sql","texto":"… WHERE obs = 'SEGREDO'"}` — aparece, porque
+o campo se chama `texto` e o valor é a consulta inteira. É o mesmo que o
+Profiler do SQL Server(R) faz, e não há como resolver por nome de campo. Hoje
+a camada SQL não tem nenhum comando que carregue credencial, então nada de
+verdade viaja por aí; no dia em que tiver, este parágrafo vira um defeito.
+
+### 10.3 O arquivo `.txt`: uma linha do log é UMA linha
+
+O `pedido` sai seguro do `redigir` porque JSON escapa a quebra de linha. Os
+outros campos da linha **não passavam por JSON nenhum**: `op`, `database` e
+`tabela` vêm do corpo do pedido, e o `erro` carrega texto que o cliente
+influencia.
+
+Provado por soquete, num arquivo de verdade. Este pedido:
+
+```json
+{"op":"ping\n2000-01-01T00:00:00 9.9.9.9      forjado      ping   -  ok  0ms  0B  {}"}
+```
+
+deixou no `.txt` **duas** linhas — a segunda indistinguível de um evento real,
+com outro IP, outro usuário e outro horário. Pelo campo `tabela` o mesmo
+truque funcionava. Log de monitoração que aceita linha forjada não serve para
+investigar nada: quem lê o arquivo depois de um incidente estaria lendo o que
+o suspeito escreveu.
+
+O conserto é no **nascimento** do evento, e não na hora de escrever — que é
+onde alguém esqueceria de aplicar: todo campo livre entra no evento reduzido a
+uma linha, com o caractere de controle **mostrado escapado** (`\n`, `\r`,
+`\x00`) em vez de apagado, porque apagar em silêncio esconderia justamente a
+tentativa. E com teto de tamanho: um `"op"` de dez mil bytes virava uma linha
+de dez mil bytes no arquivo de quem só queria ver o que estava chegando.
+
+### 10.4 O Profiler não era só do administrador — a ficha mentia
+
+A ficha do `op_profiler_ligar` dizia «**Só administrador**» desde o primeiro
+dia, e o `da_operacao` de fato pede `Atividade::Administrar` para as quatro
+operações. Só que **nenhum pedido do profiler tem campo `"database"`**, então
+o portão 3 do `despachar` pergunta «pode administrar a base *vazia*?» — e
+`bases: {"*": {administrar: true}}` responde sim para quem é leitor.
+
+É o furo do `juntar`/`unir` com o sinal trocado: lá o portão olhava um campo
+que a operação não tinha e ela **escapava**; aqui ele olha um campo vazio e a
+regra curinga a **deixa passar**. A telemetria já tinha aprendido isso e ganhou
+o `portao_da_telemetria`; o profiler ficou para trás.
+
+Provado por soquete (`bancada/profiler/sonda-permissao.py`), num servidor com
+três usuários. O `curioso` — nível leitor, `ler` só em `loja`, `administrar`
+na regra `"*"`:
+
+```
+ler folha.salarios  ->  acesso negado: curioso nao tem permissao de ler em folha.salarios
+profiler_ligar      ->  LIGOU (arquivo escolhido por ele; 485 B escritos)
+profiler            ->  adm  inserir  folha.salarios  {"op":"inserir",…,"quanto":987654}
+```
+
+Duas coisas de uma vez: ele leu a **linha** de uma tabela que o servidor
+acabara de negar a ele, e mandou o servidor **criar e escrever um arquivo** no
+caminho que ele escolheu. Somado ao forjar linha da seção anterior, isso era
+acrescentar texto escolhido a qualquer arquivo que o processo do servidor
+consiga abrir.
+
+A telemetria mostra o **nome** da tabela; o profiler mostra a **linha**. Por
+isso o conserto é o mesmo, e mais apertado: `portao_do_profiler` pergunta o
+que o portão geral não consegue — **é administrador DESTE servidor?** — nas
+quatro operações. E o teste que mais importa é o do comportamento **velho**,
+`sem_cadastro_nada_muda`: servidor que sobe com token de serviço e sem
+usuários não pode perder o profiler de um dia para o outro.
+
+### 10.5 O que o arquivo faz, e o que ele não faz
+
+Provado contra o sistema operacional, e não contra uma simulação
+(`bancada/profiler/sonda-log.py`):
+
+| situação | o que acontece |
+|---|---|
+| diretório não existe | recusa no `ligar`, com o caminho na mensagem |
+| o caminho **é** um diretório | recusa: `Is a directory (os error 21)` |
+| sistema de arquivos somente-leitura | recusa no `ligar` — o cabeçalho já falha |
+| diretório `0500` **rodando como root** | aceita: o bit de permissão não vale para o uid 0, e testar com ele não prova nada |
+| **disco enche depois de ligar** | ver abaixo |
+| servidor reinicia | o profiler volta **desligado**; o arquivo sobrevive e religar **continua** nele (`append`) |
+| o arquivo cresce | **345 B por pedido, sem rotação e sem teto** |
+
+O disco cheio foi feito de verdade: um `tmpfs` de 64 KB montado só para isto.
+Depois de 400 `inserir`, o anel tinha os 400 eventos, o arquivo tinha **223
+linhas** e 65.536 B — e a resposta do `profiler` continuava dizendo
+`ligado: true, arquivo: …`, sem uma palavra sobre as 177 linhas que foram para
+o chão. O `let _ = writeln!(…)` engolia a falha.
+
+Hoje a gravação é contada nos dois sentidos: `gravados_bytes` e
+`falhas_de_escrita` saem na resposta, a tela pinta a caixa de **vermelho** e
+diz quantas linhas não foram gravadas, e o rodapé do próprio arquivo registra
+o número quando o profiler é desligado. Contar não conserta o disco — troca um
+log que mente por um log que avisa. O teste usa `/dev/full`, que aceita a
+abertura e recusa toda escrita com `ENOSPC`: é o disco cheio sem esperar o
+disco encher.
+
+**A rotação continua não existindo**, e agora com número: 345 B por pedido
+significa que um profiler esquecido ligado num servidor com 1.000 pedidos por
+segundo escreve **1,2 GB por hora**. O anel de memória tem teto desde sempre;
+o arquivo não tem. Está anotado nas pendências — o que existe hoje é a tela
+mostrando o tamanho, para quem esqueceu ver o arquivo crescendo antes de ele
+comer a partição.
+
+E o reinício merece uma frase, porque é uma escolha e não um esquecimento: o
+profiler é uma **sessão de observação**, não configuração. Quem o liga e vê o
+servidor reiniciar precisa ligá-lo de novo — o arquivo continua lá, com o
+cabeçalho novo separando as duas sessões.
+
+### 10.6 O que a tela escondia
+
+Uma letra. A caixa de estado usava `class="aviso bem"`, e a classe verde desta
+interface chama-se `bom` — não existe `.bem` no CSS. A caixa «observando
+desde…» passou a vida inteira cinza, igual à de «parado». Nenhum teste pega
+isso, e ler o código também não: é a lição do vídeo por outro caminho —
+*componente novo se abre no navegador e se olha*.

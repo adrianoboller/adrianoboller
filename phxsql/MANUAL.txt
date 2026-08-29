@@ -677,9 +677,17 @@ PROFILER: O QUE ESTA CHEGANDO, ANTES DE VIRAR DADO
     A SENHA NAO PASSA POR AQUI. O pedido e mostrado como chegou MENOS os
     campos sensiveis: senha, senha_b64, senha_hash, nova_senha, prova, token,
     chave, chave_privada e assinatura viram "***" ANTES de encostar na
-    memoria ou no arquivo. Pedido que nao e JSON valido nao vira texto
-    nenhum: vira o tamanho dele, porque nao ha como tapar um campo numa
-    estrutura que nao se le.
+    memoria ou no arquivo -- em qualquer profundidade, e escrevendo-se como
+    se escrever: com espaco antes dos dois-pontos, em maiuscula, ou com a
+    chave escapada em \u0073enha. Pedido que nao e JSON valido -- OU QUE E
+    JSON E NAO E OBJETO -- nao vira texto nenhum: vira o tamanho dele, porque
+    nao ha como tapar um campo numa estrutura que nao se le, nem numa que nao
+    tem campo.
+
+    O QUE ELE NAO ALCANCA: senha escrita DENTRO do texto de um SELECT
+    aparece, porque o campo se chama "texto" e o valor e a consulta. E o
+    mesmo que o Profiler do SQL Server(R) faz, e nao ha como resolver por
+    nome de campo.
 
     SO ADMINISTRADOR, e a razao esta no que ele mostra: o texto dos pedidos
     de todo mundo, com os dados que estao sendo gravados dentro. Quem pode ler
@@ -688,9 +696,30 @@ PROFILER: O QUE ESTA CHEGANDO, ANTES DE VIRAR DADO
 
     O ANEL TEM TETO. Profiler esquecido ligado num servidor movimentado nao
     pode comer a memoria da maquina: o mais antigo sai, e a resposta diz
-    quantos sairam. O ARQUIVO, esse, cresce -- quem o pediu escolheu o
-    caminho e sabe onde ele esta. Ele abre em modo APPEND: religar no mesmo
-    arquivo continua o registro em vez de apagar o que estava la.
+    quantos sairam. O ARQUIVO, esse, CRESCE SEM TETO -- 345 bytes por pedido,
+    medido, o que da 1,2 GB por hora num servidor com mil pedidos por
+    segundo. Nao ha rotacao: quem o pediu escolheu o caminho, e a resposta
+    diz o tamanho em "gravados_bytes" para ele nao crescer escondido. Ele
+    abre em modo APPEND: religar no mesmo arquivo continua o registro em vez
+    de apagar o que estava la.
+
+    UMA LINHA DO ARQUIVO E UMA LINHA. Os campos livres -- op, database,
+    tabela e o texto do erro -- vem do pedido, e uma quebra de linha dentro
+    de qualquer um deles fabricaria uma LINHA INTEIRA no arquivo, que se
+    leria como um evento de outro IP e de outro usuario. Eles entram no
+    evento reduzidos a uma linha, com o controle mostrado escapado (\n, \r,
+    \x00) em vez de apagado: quem investiga precisa saber que o pedido
+    trazia aquilo.
+
+    GRAVACAO QUE FALHA E CONTADA. Disco cheio, cota ou sistema de arquivos
+    somente-leitura: a resposta traz "falhas_de_escrita" e a tela pinta a
+    caixa de vermelho dizendo quantas linhas nao foram gravadas. Antes disto
+    a tela seguia dizendo "gravando em ..." com a particao cheia -- medido:
+    400 pedidos, 223 linhas no arquivo, nenhum aviso.
+
+    O PROFILER NAO SOBREVIVE A REINICIO, e e escolha: ele e uma sessao de
+    observacao, nao configuracao. O arquivo sobrevive, e religar continua
+    nele com um cabecalho novo separando as duas sessoes.
 
     ELE OBSERVA AS DUAS PORTAS -- a de dados e a da interface web. Deixar a
     web de fora faria o profiler mentir por omissao justamente para quem esta

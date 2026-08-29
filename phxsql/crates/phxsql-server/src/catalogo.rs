@@ -1397,7 +1397,8 @@ pub const OPERACOES: &[Operacao] = &[
     Operacao {
         nome: "profiler_ligar",
         apelidos: &[],
-        resumo: "Liga a captura dos pedidos, com filtro por operação, usuário ou base.",
+        resumo: "Liga a captura dos pedidos, com filtro por operação, usuário ou \
+                 base. Só administrador do servidor.",
         parametros: &[
             opc("arquivo", "string", "grava a captura também neste arquivo"),
             opc("guardar", "integer", "quantos pedidos manter em memória"),
@@ -1420,7 +1421,8 @@ pub const OPERACOES: &[Operacao] = &[
     Operacao {
         nome: "profiler",
         apelidos: &[],
-        resumo: "O que foi capturado, com o texto do pedido já redigido.",
+        resumo: "O que foi capturado, com o texto do pedido já redigido. Só \
+                 administrador do servidor.",
         parametros: &[
             MAX,
             opc(

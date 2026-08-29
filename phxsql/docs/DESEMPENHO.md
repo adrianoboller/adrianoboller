@@ -250,6 +250,89 @@ O que o `AtomicBool` custa em troca é uma janela de um pedido: quem liga a
 observação pode não ver o que já estava em voo. Ligar a observação no meio de um
 pedido não promete pegar aquele pedido — promete pegar os próximos.
 
+### 2.3.1 A conferência de 2026-08: o desligado custa mesmo zero?
+
+O número de 7% acima foi tirado numa corrida e nunca refeito. Refazer achou
+duas coisas: o portão continua valendo, e a **forma de medir** estava frágil.
+
+A primeira tentativa rodou uma variante inteira, depois a outra, e comparou as
+medianas. O resultado foi **impossível** — o Profiler *ligado* apareceu 1,21×
+mais rápido que desligado. A causa não estava no servidor: outro processo
+ocupava os mesmos quatro núcleos durante metade da corrida. Uma corrida de
+cinco minutos não é uma condição; são cinco minutos de condições diferentes.
+
+O medidor passou a ser **emparelhado** (`bancada/profiler/custo.py`): as duas
+variantes ficam no ar ao mesmo tempo, em duas portas, e o trabalho é picado em
+pedaços curtos que se alternam entre elas, trocando a ordem a cada volta. Um
+pico de carga cai nos dois lados do par. O que se reporta é a **mediana das
+razões**, com o menor e o maior ao lado.
+
+Três binários, com a mesma árvore e só o portão trocado — `Relaxed`, `false` e
+`true` —, 15 pares cada, 5.000 linhas por pedaço em lote e 1.500 uma a uma:
+
+| comparação | em lote | uma a uma |
+|---|---:|---:|
+| **desligado × sem profiler nenhum** | **0,99×** (0,72–1,09) | **1,00×** (0,86–1,12) |
+| portão barato × defeito da 0.17.0 | **1,13×** (0,94–1,25) | 1,02× (0,97–1,14) |
+| ligado (anel 500) × desligado | 0,80× (0,75–1,03) | 0,92× (0,83–1,08) |
+
+Lidas em ordem:
+
+1. **O Profiler desligado custa zero.** Contra um binário em que o ponto de
+   captura foi compilado fora (`if false`), a diferença é 0,99× e 1,00× — está
+   dentro da largura do ruído, que nesta máquina foi de ±25% entre o melhor e
+   o pior par. O `AtomicBool` cumpre o que promete. A afirmação que este
+   número sustenta é «não dá para distinguir de zero», e não «é exatamente
+   zero»: com esta largura de ruído, um custo abaixo de ~5% no lote passaria
+   despercebido — e é bom lembrar disso antes de citar o 0,99× como se fosse
+   uma medida fina.
+2. **O portão vale 1,13× na carga em lote e quase nada linha a linha** — que é
+   exatamente a forma que a explicação da 0.17.0 previa: o que custava era
+   analisar o corpo, e o corpo do lote tem 300 KB contra 140 B do pedido
+   avulso. Os 7% de então viraram 13% aqui; a máquina é outra e estava
+   ocupada, e o que confirma a explicação é **o sinal e a forma** — o ganho
+   está no lote e não no pedido avulso —, não a terceira casa.
+3. **Ligar custa 20% no lote e 8% linha a linha.** Não é grátis, e não deveria
+   ser: com o Profiler ligado o corpo é analisado, redigido e reserializado
+   para o anel. É o preço de ver o texto, e ele só se paga quem pediu.
+
+### 2.3.2 O anel se procurava do lado errado
+
+Medir o custo do Profiler **ligado** deu um número grande demais para o que a
+conta previa: na carga uma a uma o corpo tem 140 B e o `Json::analisar` dele
+custa 2,07 µs, mas a diferença medida com `guardar: 20000` era de **103 µs por
+linha**. Cinquenta vezes o que o parse explicava.
+
+O que faltava não era parse: era o `terminou`. Ele acha o evento pelo serial
+para costurar nele a duração e o desfecho — e procurava **do mais antigo para
+o mais novo**, com `VecDeque::iter_mut().find(...)`. O evento procurado é
+quase sempre o **último** que entrou: `chegou` empurra atrás, e o desfecho
+chega logo depois. Com o anel cheio de 20.000, eram 20.000 comparações por
+pedido para achar o que estava na ponta.
+
+Emparelhado, com e sem `.rev()` (`bancada/profiler/custo-anel.py`):
+
+| busca invertida, na carga uma a uma | razão |
+|---|---:|
+| anel de **500** (o padrão da tela) | 1,00× (0,84–1,10) |
+| anel de **20.000** | **1,17×** (0,93–1,62) |
+
+Na carga em lote as duas dão 1,00×, e tinha de dar: quatro pedidos de 5.000
+linhas fazem quatro varreduras, não vinte mil. O ganho mora onde há **muitos
+pedidos**, que é onde um profiler ligado dói.
+
+O 1,17× é medido **por baixo**: o anel começa vazio em cada par e só alcança
+as 20.000 entradas no meio da corrida, então boa parte dos pares foi medida
+com um anel menor que o do caso ruim.
+
+Quem sobe o teto do anel para investigar um problema é justamente quem tem
+tráfego — e era ali que a instrumentação ficava mais cara **quanto mais
+memória se desse a ela**. Uma palavra de conserto: `.rev()`.
+
+A lição é velha e apareceu num lugar novo: **o número que não fecha com a conta
+é o número que tem mais a dizer.** A conta do parse explicava 2 µs; a medição
+mostrava 103. Aceitar o «bem, ligar custa caro» teria enterrado o achado.
+
 ### 2.1 De quanto tem de ser o teto
 
 ```bash

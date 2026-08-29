@@ -52,6 +52,47 @@ também buscar (13×), varrer (11×) e atualizar (12×). Só excluir ainda perde
   e a casa cita marca de terceiro, não a adota; quem quiser outro rótulo troca
   no *Editor de menu*. Lugar errado na barra é o mesmo que não existir.
 
+- **O Profiler não era só do administrador, apesar de a ficha dizer que era.**
+  Nenhum pedido dele tem campo `"database"`, então o portão geral do
+  `despachar` pergunta «pode administrar a base *vazia*?» — e
+  `bases: {"*": {administrar: true}}` responde sim para quem é **leitor**. É o
+  furo do `juntar`/`unir` com o sinal trocado: lá a operação escapava por não
+  ter o campo, aqui a regra curinga a deixava passar. Provado por soquete: um
+  usuário que levou **acesso negado** ao pedir `ler` em `folha.salarios` ligou
+  o profiler no pedido seguinte e leu no anel o texto inteiro do `inserir` que
+  o administrador fez naquela tabela, valor incluído — *e* mandou o servidor
+  criar um arquivo no caminho que ele escolheu. Entrou o `portao_do_profiler`,
+  irmão do `portao_da_telemetria`, nas quatro operações; o teste que trava é o
+  do comportamento **velho**, `sem_cadastro_nada_muda`.
+- **O `.txt` do Profiler aceitava linha forjada.** O `pedido` sai seguro do
+  `redigir` porque JSON escapa a quebra de linha, mas `op`, `database`,
+  `tabela` e `erro` iam crus para a linha do arquivo. Um pedido com
+  `"op": "ping\n2000-01-01T00:00:00 9.9.9.9 forjado …"` deixava no arquivo uma
+  **segunda linha indistinguível de um evento real**, com outro IP e outro
+  usuário — quem lesse o log depois de um incidente estaria lendo o que o
+  suspeito escreveu. Todo campo livre passou a entrar no evento reduzido a uma
+  linha, com o controle **mostrado escapado** (apagar esconderia a tentativa) e
+  com teto de tamanho.
+- **Com o disco cheio o Profiler seguia dizendo «gravando em …».** O
+  `let _ = writeln!(…)` engolia a falha. Medido num `tmpfs` de 64 KB: 400
+  pedidos, **223 linhas** no arquivo, nenhum aviso. Agora `gravados_bytes` e
+  `falhas_de_escrita` saem na resposta, a caixa de estado fica **vermelha** e
+  diz quantas linhas se perderam, e o rodapé do arquivo registra o número.
+- **Duas fugas da redação do Profiler**, achadas mandando pedido torcido:
+  `{"senha ": …}` — com espaço dentro das aspas — aparecia inteiro, e a chave
+  passou a ser comparada **aparada**; e `["op","senha","…"]` — JSON válido que
+  **não é objeto** — virava texto, e passou a virar o tamanho em bytes, pelo
+  mesmo motivo que o malformado já virava: a redação é por nome de campo, e ali
+  não há nome para tapar.
+- **`terminou` procurava o evento do lado errado do anel.** Ele acha pelo
+  serial para costurar o desfecho, e varria **do mais antigo** quando o
+  procurado é sempre o mais novo. Emparelhado, na carga uma a uma: **1,17×**
+  com o anel em 20.000 e 1,00× com o anel padrão de 500 — a instrumentação
+  ficava mais cara justamente para quem lhe dava mais memória.
+- **A caixa de estado do Profiler nunca foi verde.** `class="aviso bem"`, e a
+  classe verde desta interface chama-se `bom` — não existe `.bem` no CSS.
+  Nenhum teste pega isso, e ler o código também não: apareceu abrindo a tela.
+
 ### Adicionado
 
 - **Cache de páginas *write-back* no `.ndx`**, a ideia central dos três
@@ -139,6 +180,15 @@ também buscar (13×), varrer (11×) e atualizar (12×). Só excluir ainda perde
   Adriano.
 - A prova do dialeto PostgreSQL(R) contra um servidor real está pendente.
 - O editor visual do modelo (pedido 127, segunda metade) não começou.
+- **O `.txt` do Profiler não rotaciona.** Medido: **345 B por pedido**, sem
+  teto — 1,2 GB por hora num servidor com 1.000 pedidos/s. O anel de memória
+  tem teto desde sempre; o arquivo não. Hoje a tela mostra o tamanho.
+- **O Profiler não sobrevive a reinício**, e é escolha: ele é sessão de
+  observação, não configuração. O arquivo sobrevive, e religar continua nele.
+- **Senha escrita dentro do texto de um `SELECT` aparece no Profiler** — o
+  campo se chama `texto` e nenhuma redação por nome de campo a alcança. Hoje a
+  camada SQL não tem comando que carregue credencial; no dia em que tiver,
+  isto vira defeito.
 
 ---
 
