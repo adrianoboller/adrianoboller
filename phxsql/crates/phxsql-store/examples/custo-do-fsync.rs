@@ -100,7 +100,9 @@ fn main() {
     const AMOSTRA: i64 = 20_000;
     const JANELA: i64 = 200; // o `a_cada` padrao da Durabilidade::PorLote
 
-    println!("=== sincronizar a cada {JANELA} contra uma vez so, {AMOSTRA} linhas por trecho ===\n");
+    println!(
+        "=== sincronizar a cada {JANELA} contra uma vez so, {AMOSTRA} linhas por trecho ===\n"
+    );
     println!(
         "  {:>10}  {:>12} {:>12} {:>10}  {:>14}",
         "ja tinha", "a cada 200", "uma vez so", "delta", "sync avulso"
