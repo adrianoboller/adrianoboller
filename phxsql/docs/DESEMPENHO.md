@@ -1008,6 +1008,105 @@ de significar «durável» e passa a significar «recebido». O `BULKINSERT` já
 isso a quem pede, para carga. Estender ao caminho comum muda o contrato de todo
 cliente, e guarda nova entra pedida, não imposta.
 
+### 4.10 A bateria de ponta a ponta: o gatilho e a chave, medidos
+
+```bash
+cargo build --release
+cargo build --release --examples -p phxsql-store
+python3 bancada/bateria/prova-bateria.py --medir --rodadas 3
+```
+
+A bateria de `bancada/bateria/` faz os seis itens do pedido como um usuário
+faria — cria o banco, cria as tabelas, gera as chaves, pendura os gatilhos,
+chama os procedimentos e carrega 5.000 linhas — e no fim **mede**. Os quatro
+cenários fazem o mesmo trabalho (as mesmas 5.000 linhas, o mesmo formato de
+tabela, os mesmos dois índices) e mudam **só o gatilho**; cada rodada usa uma
+tabela nova, e as rodadas são intercaladas.
+
+#### O que um gatilho custa por linha
+
+5.000 linhas em lotes de 1.000, três rodadas intercaladas:
+
+| cenário | mediana | linhas/s | µs/linha | diferença | veredito |
+|---|---:|---:|---:|---:|---|
+| sem gatilho | 0,148 s | 33.837 | 29,55 | — | — |
+| `BEFORE` que normaliza um campo | 0,160 s | 31.163 | 32,09 | +2,54 | **não aparece acima do ruído** |
+| `AFTER` que só calcula | 0,169 s | 29.510 | 33,89 | +4,33 | **não aparece acima do ruído** |
+| `AFTER` que grava auditoria | 0,583 s | 8.577 | 116,60 | **+87,04** | acima do ruído |
+| uma a uma (`inserir`, 5.000 viagens) | 1,385 s | 3.611 | 276,92 | — | outro trabalho |
+
+**Maior espalhamento dentro de um cenário sozinho: 7,73 µs/linha** — é a régua
+com que a coluna «diferença» se lê, e é por isso que as duas primeiras linhas
+não viram número.
+
+A conclusão que vale é a última: **o gatilho que só decide custa o que a
+medição não consegue separar do ruído; o gatilho que ESCREVE custa 87 µs por
+linha, quase quatro vezes a inserção inteira.** E o motivo é conhecido e já
+está escrito neste documento por outro caminho: cada `INSERT` do corpo de um
+`AFTER` sai pelo `executar_derivado` como um `inserir` completo — toma a trava,
+**abre a tabela de destino (sete arquivos)**, grava e fecha. É a mesma conta
+que fez o `inserir_lote` existir: *vinte mil inserções pela rede eram vinte mil
+aberturas de tabela*. Dentro do gatilho, a carga de 5.000 linhas com auditoria
+são 5.000 aberturas da tabela de auditoria.
+
+Isso é um **item de desempenho identificado, e não consertado nesta rodada**:
+juntar os `INSERT` que os `AFTER` de um lote produzem num `inserir_lote` só,
+por tabela de destino, é o desenho óbvio — e muda a ordem em que os gatilhos
+enxergam o mundo, então é decisão, não ajuste.
+
+#### A chave: v7 contra v4 contra `Sequence` — e por que a escala é a medição
+
+O `uuid.rs` afirma, na própria documentação do módulo, que chave **aleatória**
+espalha a inserção por folhas diferentes da B+tree e chave **crescente** cai
+sempre na folha da direita. A afirmação nunca tinha sido medida aqui. E ela
+**só se mede em duas escalas**: enquanto o `.ndx` inteiro cabe na cache de
+páginas, espalhar não custa quase nada — a folha «longe» também está na
+memória. Uma escala só mediria a cache e chamaria isso de chave.
+
+Mesma tabela, mesmas colunas, mesmos dois índices, três rodadas intercaladas,
+`cache_paginas: 2048` (8 MiB):
+
+| chave primária | 100.000 linhas | 1.000.000 linhas |
+|---|---:|---:|
+| `Uuid` v7 (crescente) | 27,38 µs · 36.527/s | **28,15 µs** · 35.527/s |
+| `Uuid` v4 (sorteado) | 30,04 µs · 33.284/s | **42,39 µs** · 23.588/s |
+| `Sequence` (o motor numera) | 23,36 µs · 42.801/s | 24,14 µs · 41.426/s |
+| **v4 ÷ v7** | **1,10×** | **1,51×** |
+| **v7 ÷ Sequence** | 1,17× | 1,17× |
+
+Maior espalhamento dentro de um cenário: **1,31 µs/linha**. As diferenças estão
+todas muito acima dele.
+
+Três leituras, e a segunda é a que importa:
+
+1. **A hipótese do módulo está certa — e o número dela cresce com a tabela.**
+   A 100.000 linhas o v4 custa 1,10×, que é quase nada; a 1.000.000 custa
+   1,51×. Publicar só o primeiro número teria enterrado o motivo de o v7
+   existir; publicar só o segundo teria escondido que abaixo de certa escala
+   ele não paga.
+2. **O que separa os dois não é o v4 ficar caro: é o v7 não ficar.** O custo do
+   v7 vai de 27,38 para 28,15 µs quando a tabela cresce dez vezes — 2,8%. O do
+   v4 vai de 30,04 para 42,39 — 41%. *Chave crescente mantém o custo por linha
+   constante enquanto a tabela cresce.* É essa a frase que o formato promete, e
+   agora ela tem número.
+3. **O `Sequence` é 1,17× mais barato que o v7 nas DUAS escalas, e a constância
+   é a explicação.** Se a vantagem fosse de localidade, ela cresceria com a
+   tabela como a do v4 cresce. Ela não cresce: é o preço fixo de uma chave de
+   16 bytes contra uma de 8 na página do `.ndx` — cabem menos chaves por
+   página, e a árvore fica proporcionalmente mais alta. Escolher entre os dois
+   é escolher entre 17% e um identificador que não revela quantas linhas a
+   tabela tem.
+
+#### O infrutífero, que também é resultado
+
+**A comparação com `bancada/carga/resultados.json` (39.287 linhas/s em lote)
+não foi feita, de propósito.** É a mesma pergunta e **não é o mesmo trabalho**:
+lá a chave é `Int8` e o lote tem 5.000 linhas; aqui a chave é `Uuid` de 16
+bytes, há uma segunda coluna `Uuid` indexada e o lote tem 1.000. Encostar os
+dois números lado a lado produziria um «a carga caiu 14%» que não é sobre
+nada — e é exatamente o erro que o `bancada/LEIA-ME.md` registra duas vezes.
+O controle honesto desta bateria está dentro dela: o cenário «sem gatilho».
+
 ---
 
 ## 5. Por que LSM não cabe dentro do motor atual
@@ -1128,4 +1227,5 @@ cargo run --release --example quanto-ocupa -- 1000000 5   # a ocupação do §4.
 python3 bancada/medir.py 10000000                      # o comparativo do §6
 python3 bancada/replicacao/montar.py /tmp/phx-replicacao
 python3 bancada/replicacao/medir.py 100000
+python3 bancada/bateria/prova-bateria.py --medir            # o §4.10
 ```

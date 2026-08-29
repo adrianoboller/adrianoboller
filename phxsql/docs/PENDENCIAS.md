@@ -336,6 +336,46 @@ As sete estão em `docs/SPRINTS.md`, que é o que esta rodada produziu de novo.
 Onze coisas apareceram, e quase nenhuma era recurso faltando: era o projeto se
 descrevendo errado.
 
+### Antes delas: três que a bateria de ponta a ponta achou
+
+`bancada/bateria/` faz os seis itens do pedido **como um usuário faria** — cria
+o banco, cria as tabelas, gera as chaves v7, pendura os gatilhos, chama os
+procedimentos e carrega 5.000 linhas —, pelo soquete **e pela tela**. Todos os
+testes desta casa passavam. Ela achou três defeitos, e nenhum aparecia por
+leitura:
+
+- **O servidor travava de vez, e não era dos gatilhos.** Ao fechar a janela de
+  durabilidade, `gravar_de_verdade` pedia a **trava de dados que já estava na
+  mão de quem chamou** — `Mutex` não é reentrante, e a thread parava para
+  sempre segurando o servidor inteiro. A reprodução mínima não tem gatilho
+  nenhum: **duas tabelas, inserções alternadas, e ele trava na de número
+  200** — exatamente quando a janela fecha. Com uma tabela só o conjunto de
+  sujas ficava vazio e a função voltava antes de pedir a trava; é por isso que
+  as bancadas de uma tabela só nunca esbarraram nele. Detalhe em
+  `docs/TRIGGERS.md` §9.2.
+
+- **Um gatilho derrubava o processo inteiro.** `AFTER INSERT ON t` gravando em
+  `t` chamava a si mesmo sem fundo, e estouro de pilha no Rust não vira erro:
+  **aborta o processo**. Como o corpo mora no `gatilhos.json`, ele voltava a
+  derrubar na próxima tentativa. A cadeia ganhou teto de oito níveis e um aviso
+  que sobe até a resposta que alguém lê (§9.1).
+
+- **`excluir_tabela` não apagava a tabela inteira.** A lista de extensões tinha
+  seis e a tabela já tinha nove: o `.trash`, o `.reason` e o `.pag` ficavam para
+  trás. Recriar a tabela com o mesmo nome virava **impossível** («`t.trash` já
+  existe; use `Table::abrir`»), e o conteúdo das linhas excluídas de uma tabela
+  sobrevivia num arquivo que só `administrar` deveria abrir. É a mesma
+  armadilha da peça nova no fim de uma lista que o `rownum` armou na tela — o
+  comentário logo acima da lista já explicava por que o `.bkp` entrou nela, e
+  ninguém voltou lá quando `.trash` e `.reason` nasceram.
+
+E uma quarta, na tela: a ficha nova de uma tabela de chave `Uuid` **não
+gravava**. O campo prometia «em branco … gera um v7» e em branco o servidor
+recusava a linha com «obrigatória e recebeu NULL». Hoje a chave primária nasce
+com a palavra `novo` escrita — e **só ela**: a primeira versão do conserto
+preenchia toda coluna `Uuid`, inclusive a estrangeira, o que geraria um id
+sorteado apontando para nada. Quem viu isso foi a captura de tela.
+
 - **A bancada media coisas diferentes dos dois lados, e o número saía a nosso
   favor.** Na varredura por faixa o MySQL(R) recebia `COUNT(*) + SUM(valor)`
   sobre **1.250.000** linhas, e o PhxSql lia **20.000** — 1,6% do trabalho. O

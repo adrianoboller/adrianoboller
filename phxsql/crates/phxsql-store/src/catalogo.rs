@@ -305,8 +305,28 @@ impl Database {
         self.abrir_tabela(schema.as_deref(), &nome)
     }
 
-    /// Os cinco arquivos de uma tabela, mais o espelho `.bkp`.
+    /// O que uma CÓPIA leva: os cinco arquivos da tabela mais o espelho
+    /// `.bkp`. Nao inclui a lixeira nem os motivos -- uma copia nasce como a
+    /// origem esta, e nao herda o que foi excluido dela.
     const EXTENSOES: [&'static str; 6] = ["reg", "ndx", "bin", "memo", "log", "bkp"];
+
+    /// O que uma tabela OCUPA em disco -- tudo que o nome dela carrega.
+    ///
+    /// Lista separada da de cima, e a diferenca entre as duas e o ponto: o que
+    /// uma copia leva e uma decisao (a lixeira da origem nao e da copia), o que
+    /// um `excluir_tabela` apaga nao e -- ou apaga tudo, ou nao apagou a tabela.
+    ///
+    /// Ela nasceu do defeito: a lista de apagar tinha SEIS extensoes e a tabela
+    /// ja tinha NOVE. O `.trash`, o `.reason` e o `.pag` entraram depois e
+    /// ninguem voltou aqui — a mesma armadilha da peca nova no fim de uma lista
+    /// que o `rownum` armou na tela. O estrago era duplo: recriar a tabela com
+    /// o mesmo nome passava a ser IMPOSSIVEL (`Table::criar` confere as sete
+    /// extensoes e recusa), e se nao fosse, a tabela nova herdaria a lixeira e
+    /// os motivos de exclusao de uma tabela alheia — que e conteudo de linha,
+    /// e so `administrar` pode ler.
+    const EXTENSOES_TODAS: [&'static str; 9] = [
+        "reg", "ndx", "bin", "memo", "log", "bkp", "trash", "reason", "pag",
+    ];
 
     /// Apaga os arquivos de uma tabela e devolve o que apagou.
     ///
@@ -320,7 +340,7 @@ impl Database {
         validar_nome("tabela", nome)?;
         let dir = self.diretorio(schema)?;
         let mut apagados = Vec::new();
-        for ext in Self::EXTENSOES {
+        for ext in Self::EXTENSOES_TODAS {
             // Uma tabela paginada tem varios volumes por extensao.
             for arq in std::fs::read_dir(&dir)?.flatten() {
                 let f = arq.file_name();
@@ -733,6 +753,53 @@ mod testes_gestao {
             db.existe_tabela(None, "precos_historico").unwrap(),
             "a tabela de prefixo igual foi junto"
         );
+    }
+
+    /// O defeito: a lista de extensoes do `excluir_tabela` tinha SEIS e a
+    /// tabela ja tinha NOVE. O `.trash`, o `.reason` e o `.pag` ficavam para
+    /// tras, e o estrago era duplo — recriar a tabela com o mesmo nome passava
+    /// a ser IMPOSSIVEL, e o dado de uma tabela excluida sobrevivia num
+    /// arquivo que so `administrar` deveria abrir.
+    ///
+    /// A prova e o CICLO: criar, excluir e criar de novo com o mesmo nome. Ele
+    /// falha com a lista velha e passa com a nova, e nao depende de eu lembrar
+    /// quais sao as extensoes — quem sabe isso e o `Table::criar`, que confere
+    /// todas antes de escrever a primeira.
+    #[test]
+    fn excluir_tabela_deixa_o_nome_livre_para_a_proxima() {
+        let base = base_temp("excluir-ciclo");
+        let inst = Instancia::nova(&base).unwrap();
+        let db = inst.criar_database("Z").unwrap();
+        db.criar_tabela(None, esquema_simples("precos")).unwrap();
+        let dir = base.join("Z");
+
+        // A tabela nasce com mais que os quatro arquivos do folclore.
+        let antes: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter(|f| f.starts_with("precos."))
+            .collect();
+        assert!(
+            antes.iter().any(|f| f.ends_with(".trash")),
+            "esperava o .trash entre os arquivos da tabela: {antes:?}"
+        );
+
+        db.excluir_tabela("precos").unwrap();
+        let sobrou: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter(|f| f.starts_with("precos."))
+            .collect();
+        assert!(
+            sobrou.is_empty(),
+            "excluir_tabela deixou para tras: {sobrou:?}"
+        );
+
+        // E o que importa para quem usa: o nome volta a estar livre.
+        db.criar_tabela(None, esquema_simples("precos"))
+            .expect("recriar com o mesmo nome tem de funcionar depois de excluir");
     }
 
     #[test]

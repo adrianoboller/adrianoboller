@@ -271,6 +271,7 @@ Com o conserto de volta, os 16 testes do módulo passam.
 ```bash
 cargo build --release
 python3 bancada/rotinas/prova-rotinas.py
+python3 bancada/bateria/prova-bateria.py --tela   # a de ponta a ponta, secao 9
 ```
 
 Sobe um phxsqld próprio em **5301/5701**, roda 11 passos com o resultado
@@ -375,6 +376,7 @@ que falta.*
 | cursor, `HANDLER` | o erro sobe para quem chamou, com código e mensagem |
 | `CREATE FUNCTION` | devolveria valor dentro de expressão SQL, e a camada `SELECT` não avalia expressão |
 | `CALL` aninhado | nesta versão não |
+| cadeia de `AFTER` sem fundo | tem teto de **8 níveis**. Sem ele, um `AFTER INSERT ON t` que grava em `t` **abortava o processo** com *stack overflow* — ver a seção 9.1 |
 | `BEGIN`/`COMMIT` no corpo | **não há transação no PhxSql** |
 | `DEFINER` | gatilho roda com o poder de quem dispara; `CALL`, de quem chama |
 | `FOLLOWS`/`PRECEDES` | disparam na ordem de criação |
@@ -394,3 +396,135 @@ escritas, porque quem vem do MySQL(R) espera o contrário:
 E o limite que vale repetir: **não há transação**. Um corpo que falha no meio
 deixa gravado o que já gravou, e um `AFTER` que falha não desfaz a escrita que o
 disparou.
+
+---
+
+## 9. A bateria de ponta a ponta, e os dois defeitos que ela achou
+
+Os testes desta área passavam todos. A bateria de `bancada/bateria/` — que faz
+os seis itens do pedido **como um usuário faria**, pelo soquete e pela tela —
+achou dois defeitos em meia hora, e **nenhum dos dois aparecia por leitura**.
+
+```bash
+cargo build --release
+python3 bancada/bateria/prova-bateria.py --tela --medir
+```
+
+### 9.1 A cadeia de gatilhos não tinha fundo, e o servidor MORRIA
+
+```sql
+CREATE TRIGGER se_multiplica AFTER INSERT ON loop FOR EACH ROW
+  INSERT INTO loop (n, quem) VALUES (NEW.n + 1, 'gatilho');
+```
+
+Uma inserção nessa tabela, e o processo inteiro terminava:
+
+```
+thread 'dados-46604' has overflowed its stack
+fatal runtime error: stack overflow, aborting
+```
+
+Não é um laço infinito qualquer — é **recursão de pilha**, e um estouro de
+pilha no Rust não vira erro: **aborta o processo**. Todas as conexões caem, o
+servidor sai do ar, e como o corpo mora no `gatilhos.json` ele volta a cair na
+próxima tentativa. Basta uma pessoa com `administrar` escrever isso uma vez, e
+depois disso **qualquer um** que possa inserir na tabela derruba o servidor.
+
+A causa é a que a seção 2 já explica pelo lado bom: o `AFTER` roda **depois de
+a trava ser solta**, e por isso ele pode gravar. O que faltava era o fundo:
+cada `INSERT` do corpo produz um pedido derivado, que dispara os `AFTER`
+daquela tabela, que produzem outro pedido derivado — na mesma pilha, na mesma
+thread.
+
+**O conserto é um contador por thread**, em `rodar_gatilhos_depois`: a cadeia
+pode empilhar **oito** níveis, e o nono é recusado. Oito é folga larga para a
+cadeia real (venda → auditoria → resumo) e corta o laço em nove linhas.
+
+O aviso **não sai do nível que corta**, e a razão é a mesma da `MESSAGE_TEXT`:
+ali embaixo ele iria para a resposta de um pedido derivado, que o corpo do
+gatilho descarta — e quem gravou receberia um `ok` limpo sobre uma cadeia
+cortada. A marca sobe até o nível zero, que é a resposta que alguém lê:
+
+```json
+{"rowid": 1, "registros": 1,
+ "gatilhos_avisos": ["a cadeia de gatilhos passou de 8 niveis e foi cortada — \
+um AFTER que grava na propria tabela dispara a si mesmo"]}
+```
+
+| defeito reposto | o que acontece |
+|---|---|
+| a guarda removida | `cargo test` **aborta**: `fatal runtime error: stack overflow` |
+| a guarda de volta | `a_cadeia_de_gatilhos_para_no_teto_e_avisa` passa, com 1 + 8 linhas |
+
+E o teste que importa tanto quanto: `a_cadeia_curta_de_auditoria_roda_inteira`
+— dez inserções com auditoria em outra tabela, **sem aviso nenhum**. Guarda que
+corta a cadeia legítima não é guarda, é estrago.
+
+### 9.2 O abraço mortal com a própria trava — e ele não era dos gatilhos
+
+Este é maior, e a bateria só o encontrou porque escreve em **duas tabelas**.
+
+Ao fechar a janela de durabilidade, `gravar_de_verdade` chamava
+`descarregar_sujas()`, que pede a **trava de dados** — com a trava de dados já
+na mão de quem chamou. `std::sync::Mutex` não é reentrante: a thread para para
+sempre, segurando o servidor inteiro. O `ping` continua respondendo (não toca
+em dado); qualquer operação de dado, de qualquer conexão, congela.
+
+A pilha, colhida com `gdb` no processo travado:
+
+```
+op_inserir → gravar_de_verdade → descarregar_sujas → Mutex::lock_contended
+```
+
+**Não é um defeito dos gatilhos.** A reprodução mínima não tem gatilho nenhum:
+duas tabelas na mesma base, inserções alternadas. Com a janela padrão
+(`lote_operacoes: 200`), ele trava **na inserção de número 200** — exatamente
+quando a janela fecha. O que ele exigia era só isto: que, no instante em que a
+janela fecha, o conjunto de tabelas sujas tivesse **outra** tabela além da que
+está sendo gravada. Com uma tabela só o conjunto ficava vazio, a função voltava
+antes de pedir a trava, e ninguém via nada — e é por isso que as bancadas de
+uma tabela só nunca esbarraram nele.
+
+Os gatilhos só o tornaram fácil de achar: um `AFTER` que grava auditoria
+escreve em duas tabelas por inserção.
+
+O conserto é passar a instância que já se tem, em vez de pedir a trava de
+novo — `descarregar_sujas_com(dados)`. As oito chamadas de `gravar_de_verdade`
+vêm todas logo depois de um `travar_dados`.
+
+| defeito reposto | o que acontece |
+|---|---|
+| `descarregar_sujas()` de volta | `duas_tabelas_na_mesma_janela_nao_travam_o_servidor` e `a_cadeia_curta_de_auditoria_roda_inteira` **falham** por prazo, em 30 s |
+| e as duas de uma tabela só | continuam passando — que é a forma certa do defeito |
+
+Os testes correm numa thread com prazo, e isso não é zelo: reposto o defeito, o
+pedido não volta **nunca**, e um teste que pendura não acusa nada — pendura o
+`cargo test` inteiro e ainda parece que a suíte está só demorando.
+
+### 9.3 O que a bateria mediu
+
+Está em `docs/DESEMPENHO.md`, §4.10, com o programa que refaz. Em resumo:
+
+* **gatilho que só decide não aparece acima do ruído** — `BEFORE` que normaliza
+  um campo, +2,54 µs/linha; `AFTER` que só calcula, +4,33 µs/linha; maior
+  espalhamento dentro de um cenário sozinho, **7,73 µs/linha**. É a mesma
+  conclusão da seção 4, agora pelo caminho da carga;
+* **gatilho que ESCREVE custa 87,04 µs/linha** — quase quatro vezes a inserção
+  inteira (29,55 µs sem gatilho). Cada `INSERT` do corpo é um `inserir`
+  completo: toma a trava, **abre a tabela de destino** e fecha. É a conta que
+  fez o `inserir_lote` existir, agora dentro do gatilho.
+
+### 9.4 O aprendizado
+
+**Teste unitário não prova o caminho do usuário — e desta vez nem soquete
+bastava sozinho.** Os 16 testes desta área passavam, e a prova por soquete de
+`bancada/rotinas/` também: ela grava pouco, e a janela de durabilidade fecha a
+cada 200 operações. O que achou o abraço mortal foi **carregar cinco mil
+linhas em duas tabelas**, que é o que alguém faz no primeiro dia de uso.
+
+**Guarda nova procura o caso em que ela não devia agir.** A primeira versão da
+guarda de cadeia recusava certo e a primeira versão do preenchimento de `Uuid`
+na tela preenchia **toda** coluna `Uuid` — inclusive a chave estrangeira, que
+ganharia um id sorteado apontando para nada. Um campo em branco quem olha
+corrige; um campo preenchido com a resposta errada ninguém corrige, porque
+parece certo. Quem viu isso foi a captura de tela, não o código.

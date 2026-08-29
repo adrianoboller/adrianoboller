@@ -6306,7 +6306,18 @@ impl Servidor {
         ]))
     }
 
-    fn gravar_de_verdade(&self, t: &mut Table, p: &Json) -> Result<()> {
+    /// Fecha (ou adia) a janela de durabilidade desta gravacao.
+    ///
+    /// # Por que a instancia entra por parametro
+    ///
+    /// Porque quem chama JA ESTA com a trava de dados na mao -- as oito
+    /// chamadas desta funcao vem logo depois de um `travar_dados`. Pedir a
+    /// trava de novo aqui dentro e o abraco mortal com a propria trava:
+    /// `std::sync::Mutex` nao e reentrante, e a thread para para sempre
+    /// segurando o servidor inteiro. Era exatamente isso que acontecia quando
+    /// a janela fechava com OUTRA tabela suja no conjunto -- duas tabelas
+    /// gravadas alternadamente bastavam, sem gatilho nenhum no meio.
+    fn gravar_de_verdade(&self, dados: &Instancia, t: &mut Table, p: &Json) -> Result<()> {
         let chave = format!(
             "{}/{}",
             p.texto_ou("database", ""),
@@ -6326,16 +6337,31 @@ impl Servidor {
         if let Ok(mut s) = self.sujas.lock() {
             s.remove(&chave);
         }
-        self.descarregar_sujas();
+        self.descarregar_sujas_com(dados);
         Ok(())
     }
 
     /// Sincroniza tudo que foi escrito e ainda nao foi para o disco.
     ///
+    /// Para quem NAO tem a trava de dados: o relogio de gravacao e a saida de
+    /// uma conexao com carga reservada. Quem ja a tem chama a `_com`, senao
+    /// trava o servidor.
+    fn descarregar_sujas(&self) {
+        // Sem nada sujo nem se pede a trava: e o caminho comum do relogio de
+        // fundo, que acorda muito mais vezes do que acha trabalho.
+        if self.sujas.lock().map(|s| s.is_empty()).unwrap_or(true) {
+            return;
+        }
+        let Ok(dados) = self.dados.lock() else { return };
+        self.descarregar_sujas_com(&dados);
+    }
+
+    /// O mesmo, com a trava de dados JA na mao.
+    ///
     /// Reabre cada tabela suja so para sincronizar. Custa um `open` por tabela,
     /// uma vez por janela -- nao por gravacao. Erro aqui nao derruba nada: a
     /// tabela continua na lista e a proxima passada tenta de novo.
-    fn descarregar_sujas(&self) {
+    fn descarregar_sujas_com(&self, dados: &Instancia) {
         let lista: Vec<String> = match self.sujas.lock() {
             Ok(mut s) => s.drain().collect(),
             Err(_) => return,
@@ -6343,7 +6369,6 @@ impl Servidor {
         if lista.is_empty() {
             return;
         }
-        let Ok(dados) = self.dados.lock() else { return };
         let mut faltaram = Vec::new();
         for chave in lista {
             let Some((db, tab)) = chave.split_once('/') else {
@@ -7177,6 +7202,19 @@ impl Servidor {
     /// diria "nao gravou" a quem gravou — e o cliente repetiria, duplicando a
     /// linha. A resposta fica `ok` e carrega `gatilhos_avisos` com o nome do
     /// gatilho e o motivo: as duas verdades, na ordem certa.
+    ///
+    /// # A cadeia tem fundo, e o fundo nao e negociavel
+    ///
+    /// O corpo de um AFTER pode gravar, e o que ele grava dispara os AFTER
+    /// daquela tabela. Um `AFTER INSERT ON t` que grava em `t` chama a si
+    /// mesmo, e sem fundo isso nao e um laco infinito qualquer: e recursao de
+    /// pilha, e o Rust ABORTA O PROCESSO com "stack overflow". Um gatilho que
+    /// alguem escreveu derrubava o servidor inteiro para todo mundo — e como o
+    /// corpo mora no `gatilhos.json`, ele derrubava de novo a cada tentativa.
+    ///
+    /// O teto e por thread e por cadeia, nao por gatilho: quem conta e a
+    /// profundidade do aninhamento. Oito e folga larga para a cadeia real
+    /// (venda -> auditoria -> resumo), e curta o laco em nove linhas.
     fn rodar_gatilhos_depois(
         &self,
         gatilhos: &[Arc<crate::rotinas::Gatilho>],
@@ -7186,6 +7224,26 @@ impl Servidor {
         sessao: &Sessao,
     ) -> Vec<Json> {
         use phxsql_sql::rotina::{executar, Contexto};
+        // Sem AFTER nenhum nesta tabela nao ha nem cadeia nem contador: o
+        // caminho de escrita comum nao paga por uma guarda que nao usa.
+        if gatilhos.is_empty() {
+            return Vec::new();
+        }
+        let nivel = PROFUNDIDADE_DA_CADEIA.with(|c| c.get());
+        if nivel >= CADEIA_MAXIMA {
+            // O aviso NAO sai daqui. Aqui embaixo ele iria para a resposta de
+            // um pedido derivado, que o corpo do gatilho descarta — e quem
+            // gravou receberia um `ok` limpo sobre uma cadeia cortada. A marca
+            // sobe ate o nivel zero, que e a resposta que alguem le.
+            CADEIA_CORTADA.with(|c| c.set(true));
+            return Vec::new();
+        }
+        if nivel == 0 {
+            CADEIA_CORTADA.with(|c| c.set(false));
+        }
+        PROFUNDIDADE_DA_CADEIA.with(|c| c.set(nivel + 1));
+        let _fim = AoSair(|| PROFUNDIDADE_DA_CADEIA.with(|c| c.set(nivel)));
+
         let mut avisos = Vec::new();
         let database = p.texto_ou("database", "").trim().to_string();
         for g in gatilhos {
@@ -7210,6 +7268,14 @@ impl Servidor {
             if let Err(e) = executar(programa, &mut ctx, &mut motor) {
                 avisos.push(Json::texto_de(format!("gatilho {:?} falhou: {e}", g.nome)));
             }
+        }
+        // A cadeia cortada la embaixo vira aviso AQUI, no unico nivel cuja
+        // resposta chega a alguem.
+        if nivel == 0 && CADEIA_CORTADA.with(|c| c.get()) {
+            avisos.push(Json::texto_de(format!(
+                "a cadeia de gatilhos passou de {CADEIA_MAXIMA} niveis e foi cortada \
+                 — um AFTER que grava na propria tabela dispara a si mesmo"
+            )));
         }
         avisos
     }
@@ -7750,7 +7816,7 @@ impl Servidor {
             self.rodar_gatilhos_antes(&antes, Some(&mut linha), None, t.esquema())?;
         }
         let rowid = t.inserir(&linha)?;
-        self.gravar_de_verdade(&mut t, p)?;
+        self.gravar_de_verdade(&_trava, &mut t, p)?;
         // A copia em RAM acompanha DENTRO da mesma trava: nao existe instante
         // em que o disco e a memoria discordem.
         self.residente_mut(p, |m| m.anotar_insercao(rowid, &linha));
@@ -8113,7 +8179,7 @@ impl Servidor {
         }
 
         t.atualizar(rowid, &linha)?;
-        self.gravar_de_verdade(&mut t, p)?;
+        self.gravar_de_verdade(&_trava, &mut t, p)?;
         self.residente_mut(p, |m| m.anotar_alteracao(rowid, &linha));
         // A versao nova volta na resposta: quem grava duas vezes seguidas
         // continua protegido sem precisar reler a linha inteira no meio.
@@ -8174,14 +8240,14 @@ impl Servidor {
 
         let (saiu, modo, na_lixeira, reversivel) = if fisico || !tem_marca {
             let removeu = t.excluir_de_vez(rowid, &motivo)?;
-            self.gravar_de_verdade(&mut t, p)?;
+            self.gravar_de_verdade(&_trava, &mut t, p)?;
             if removeu {
                 self.residente_mut(p, |m| m.anotar_exclusao(rowid));
             }
             (removeu, "fisico", removeu, false)
         } else {
             let marcou = t.excluir_suave(rowid, &motivo)?;
-            self.gravar_de_verdade(&mut t, p)?;
+            self.gravar_de_verdade(&_trava, &mut t, p)?;
             // A copia em RAM tem de esquecer a linha tambem: para quem
             // consulta, marcada e o mesmo que ausente.
             if marcou {
@@ -8222,7 +8288,7 @@ impl Servidor {
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
         conferir_versao_pedida(&mut t, p, rowid)?;
         let voltou = t.restaurar(rowid, &motivo)?;
-        self.gravar_de_verdade(&mut t, p)?;
+        self.gravar_de_verdade(&_trava, &mut t, p)?;
         if voltou {
             // A linha volta a existir para quem consulta em memoria.
             if let Some(linha) = t.ler(rowid)? {
@@ -8608,7 +8674,7 @@ impl Servidor {
         let _trava = self.travar_dados()?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
         let (conferidos, reparados, perdidos) = t.reparar()?;
-        self.gravar_de_verdade(&mut t, p)?;
+        self.gravar_de_verdade(&_trava, &mut t, p)?;
         Ok(Json::objeto(vec![
             ("conferidos", Json::de_u64(conferidos)),
             ("reparados", Json::de_u64(reparados)),
@@ -11648,7 +11714,7 @@ impl Servidor {
                 }
             }
         }
-        self.gravar_de_verdade(&mut t, p)?;
+        self.gravar_de_verdade(&_trava, &mut t, p)?;
 
         Ok(Json::objeto(vec![
             ("recebidos", Json::de_u64(eventos.len() as u64)),
@@ -11901,7 +11967,7 @@ impl Servidor {
         let _trava = self.travar_dados()?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
         let indices = t.reindexar()?;
-        self.gravar_de_verdade(&mut t, p)?;
+        self.gravar_de_verdade(&_trava, &mut t, p)?;
         Ok(Json::Objeto(
             indices
                 .into_iter()
@@ -12312,6 +12378,30 @@ impl<F: FnMut()> Drop for AoSair<F> {
     fn drop(&mut self) {
         (self.0)();
     }
+}
+
+/// Quantos niveis de AFTER uma cadeia pode empilhar antes de o servidor
+/// recusar o proximo.
+///
+/// A cadeia real e curta -- venda dispara auditoria, auditoria dispara
+/// resumo -- e oito e folga larga para ela. O que este numero existe para
+/// impedir e a cadeia que nao acaba: `AFTER INSERT ON t` gravando em `t`.
+const CADEIA_MAXIMA: u32 = 8;
+
+thread_local! {
+    /// A profundidade da cadeia de gatilhos DESTA thread.
+    ///
+    /// Por thread porque a cadeia e uma pilha de chamadas: cada pedido roda na
+    /// sua linha de execucao, e o que interessa e quantos AFTER estao
+    /// empilhados abaixo deste -- nao quantos o servidor inteiro esta rodando.
+    static PROFUNDIDADE_DA_CADEIA: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+
+    /// A cadeia desta thread bateu no teto e foi cortada?
+    ///
+    /// Marcada no fundo, lida no topo. O nivel que corta esta dentro de um
+    /// pedido DERIVADO, e a resposta dele o corpo do gatilho descarta: um
+    /// aviso emitido la nunca chegaria a quem gravou.
+    static CADEIA_CORTADA: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// Os campos do log que saem do PEDIDO, e nao do resultado.
@@ -17106,8 +17196,6 @@ mod testes_config_gravar {
     }
 }
 
-/// Restaurar um backup: os dois modos, a recusa do backup adulterado e o
-/// portao que o campo `"database"` do pedido nao alcanca.
 #[cfg(test)]
 mod testes_restaurar_backup {
     use super::*;
@@ -17644,5 +17732,221 @@ mod testes_restaurar_backup {
             .collect();
         assert_eq!(nomes, vec!["Comercial".to_string(), "Folha".to_string()]);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod testes_janela_e_cadeia {
+    use super::*;
+
+    fn dir_temp(nome: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("phx-jan-{nome}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    /// Um servidor cuja janela de durabilidade fecha a cada 4 gravacoes, e
+    /// cujo relogio de fundo nao acorda durante o teste.
+    ///
+    /// Os dois numeros sao o teste: com a janela do padrao (200 operacoes) o
+    /// defeito so aparecia depois de 200 gravacoes, e com o relogio acordando
+    /// a cada 200 ms ele as vezes limpava o conjunto antes e escondia tudo.
+    /// Aqui a condicao e deterministica.
+    fn servidor_janela_curta(nome: &str) -> Arc<Servidor> {
+        let dir = dir_temp(nome);
+        let mut config = Config {
+            base: dir.clone(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        config.recursos.lote_operacoes = 4;
+        config.recursos.lote_milissegundos = 600_000;
+        let s = Servidor::novo(config).unwrap();
+        let dono = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &dono)
+            .unwrap();
+        for t in ["a", "b"] {
+            s.executar(
+                "criar_tabela",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"{t}",
+                        "colunas":[{{"nome":"n","tipo":"Int8"}},
+                                   {{"nome":"x","tipo":"Str(20)"}}]}}"#
+                )),
+                &dono,
+            )
+            .unwrap();
+        }
+        s
+    }
+
+    fn quantas(s: &Arc<Servidor>, tabela: &str) -> usize {
+        s.executar(
+            "varrer",
+            &pedido(&format!(
+                r#"{{"database":"b","tabela":"{tabela}","max":200}}"#
+            )),
+            &Sessao::default(),
+        )
+        .unwrap()
+        .campo("linhas")
+        .and_then(Json::lista)
+        .map(|l| l.len())
+        .unwrap_or(0)
+    }
+
+    /// Roda o trecho numa thread com prazo.
+    ///
+    /// Todo teste deste modulo que escreve em DUAS tabelas passa por aqui, e
+    /// nao e zelo: reposto o defeito, o pedido nao volta NUNCA — e um teste
+    /// que pendura nao acusa nada, pendura o `cargo test` inteiro e ainda
+    /// parece que a suite esta so demorando.
+    fn com_prazo(rotulo: &str, f: impl FnOnce() + Send + 'static) {
+        let (enviar, receber) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            f();
+            let _ = enviar.send(());
+        });
+        assert!(
+            receber
+                .recv_timeout(std::time::Duration::from_secs(30))
+                .is_ok(),
+            "{rotulo}: o servidor travou — alguem pediu a trava de dados que ja \
+             estava na mao desta mesma thread"
+        );
+    }
+
+    fn criar_gatilho(s: &Arc<Servidor>, texto: &str) {
+        let corpo = Json::objeto(vec![
+            ("token", Json::texto_de("t")),
+            ("op", Json::texto_de("sql")),
+            ("database", Json::texto_de("b")),
+            ("texto", Json::texto_de(texto)),
+        ])
+        .escrever();
+        let mut ses = Sessao::default();
+        s.despachar(&corpo, &mut ses, "127.0.0.1").2.unwrap();
+    }
+
+    /// O defeito: `gravar_de_verdade` fechava a janela chamando
+    /// `descarregar_sujas()`, que pede a trava de dados — com a trava de dados
+    /// JA na mao de quem chamou. `Mutex` nao e reentrante: a thread parava
+    /// para sempre segurando o servidor inteiro, e nao havia gatilho nenhum no
+    /// meio. So aparecia com DUAS tabelas, porque com uma so o conjunto de
+    /// sujas ficava vazio e a funcao voltava antes de pedir a trava.
+    ///
+    /// O teste roda numa thread com prazo: um abraco mortal sem prazo
+    /// penduraria o `cargo test` inteiro, e um teste que pendura nao acusa
+    /// nada.
+    #[test]
+    fn duas_tabelas_na_mesma_janela_nao_travam_o_servidor() {
+        let s = servidor_janela_curta("duas-tabelas");
+        let copia = Arc::clone(&s);
+        com_prazo("40 insercoes alternadas entre duas tabelas", move || {
+            for i in 0..40 {
+                let t = if i % 2 == 0 { "a" } else { "b" };
+                copia
+                    .executar(
+                        "inserir",
+                        &pedido(&format!(
+                            r#"{{"database":"b","tabela":"{t}","linha":{{"n":{i},"x":"y"}}}}"#
+                        )),
+                        &Sessao::default(),
+                    )
+                    .unwrap();
+            }
+        });
+        // E as 40 estao la, vinte de cada: travar nao e a unica forma de errar.
+        assert_eq!(quantas(&s, "a"), 20);
+        assert_eq!(quantas(&s, "b"), 20);
+    }
+
+    /// O comportamento VELHO, e ele e o que mais importa aqui: com UMA tabela
+    /// so, tudo continua exatamente como antes — a janela fecha, o dado vai
+    /// para o disco e ninguem repara em nada.
+    #[test]
+    fn uma_tabela_so_grava_como_sempre() {
+        let s = servidor_janela_curta("uma-tabela");
+        for i in 0..20 {
+            s.executar(
+                "inserir",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"a","linha":{{"n":{i},"x":"y"}}}}"#
+                )),
+                &Sessao::default(),
+            )
+            .unwrap();
+        }
+        assert_eq!(quantas(&s, "a"), 20);
+    }
+
+    /// O outro defeito: um `AFTER INSERT ON t` que grava em `t` chamava a si
+    /// mesmo sem fundo. Nao era um laco lento — era recursao de pilha, e o
+    /// Rust ABORTA O PROCESSO com "stack overflow". Reposto o defeito, este
+    /// teste nao falha: ele derruba o `cargo test` inteiro, que e exatamente o
+    /// tamanho do estrago que a guarda impede.
+    #[test]
+    fn a_cadeia_de_gatilhos_para_no_teto_e_avisa() {
+        let s = servidor_janela_curta("cadeia");
+        criar_gatilho(
+            &s,
+            "CREATE TRIGGER se_multiplica AFTER INSERT ON a FOR EACH ROW \
+             INSERT INTO a (n, x) VALUES (NEW.n + 1, 'gatilho')",
+        );
+        let r = s
+            .executar(
+                "inserir",
+                &pedido(r#"{"database":"b","tabela":"a","linha":{"n":1,"x":"gente"}}"#),
+                &Sessao::default(),
+            )
+            .unwrap();
+        // A resposta continua `ok` — a linha entrou —, e diz o que houve.
+        let avisos = r.campo("gatilhos_avisos").and_then(Json::lista).unwrap();
+        assert_eq!(avisos.len(), 1, "esperava um aviso, veio {avisos:?}");
+        let texto = avisos[0].texto().unwrap_or_default().to_string();
+        assert!(texto.contains("cadeia de gatilhos"), "aviso: {texto}");
+        // A primeira linha mais um degrau por nivel, e nem uma a mais.
+        assert_eq!(quantas(&s, "a"), 1 + CADEIA_MAXIMA as usize);
+    }
+
+    /// A cadeia CURTA — a de verdade — continua rodando inteira: gravar em `a`
+    /// dispara a auditoria em `b`, e isso e um nivel, nao oito. Sem este teste,
+    /// a guarda podia estar cortando a cadeia legitima e ninguem veria.
+    #[test]
+    fn a_cadeia_curta_de_auditoria_roda_inteira() {
+        let s = servidor_janela_curta("auditoria");
+        criar_gatilho(
+            &s,
+            "CREATE TRIGGER audita AFTER INSERT ON a FOR EACH ROW \
+             INSERT INTO b (n, x) VALUES (NEW.n, 'auditoria')",
+        );
+        // Sao duas tabelas por caminho do gatilho: o prazo vale aqui tambem.
+        let copia = Arc::clone(&s);
+        com_prazo("10 insercoes com auditoria em outra tabela", move || {
+            for i in 0..10 {
+                let r = copia
+                    .executar(
+                        "inserir",
+                        &pedido(&format!(
+                            r#"{{"database":"b","tabela":"a","linha":{{"n":{i},"x":"y"}}}}"#
+                        )),
+                        &Sessao::default(),
+                    )
+                    .unwrap();
+                assert!(
+                    r.campo("gatilhos_avisos").is_none(),
+                    "a cadeia curta nao devia avisar nada: {r:?}"
+                );
+            }
+        });
+        assert_eq!(quantas(&s, "b"), 10);
     }
 }
