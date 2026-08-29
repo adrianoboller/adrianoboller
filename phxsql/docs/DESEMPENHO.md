@@ -632,6 +632,110 @@ está escrito aqui como suspeita e não como causa.
 
 ---
 
+## 4.7 Compactar `.log`, `.trash` e `.reason`: o ganho é zero, e o motivo não é o registrado
+
+O pedido 101 pede para **cifrar e compactar** os três diários. A pendência
+registrava dois bloqueios: *«não temos cifra de bloco»* (resolvido — §8 do
+`SEGURANCA.md`) e *«compactar append-only exige rotacionar e reescrever»*.
+
+O segundo bloqueio foi medido antes de virar plano, e o resultado é o outro:
+**não é preciso rotacionar nada, e mesmo assim o ganho é zero.**
+
+```bash
+cargo run --release --example quanto-ocupa -- 1000000 5
+```
+
+### O que uma tabela de 1 milhão de linhas ocupa
+
+Cinco colunas, dois índices, 5% de exclusões (metade suave, metade de vez):
+
+| arquivo | MiB | % da tabela | volumes |
+|---|---:|---:|---:|
+| `.reg` | 116,35 | 45,26% | 4 |
+| `.ndx` | 89,73 | 34,90% | 1 |
+| `.log` | 44,06 | **17,14%** | 1 |
+| `.trash` | 3,67 | 1,43% | 1 |
+| `.reason` | 3,27 | 1,27% | 1 |
+| **total** | **257,08** | 100% | |
+
+Os três do pedido somam **51,00 MiB — 19,84% da tabela**. Não é desprezível: a
+premissa do item, de que ali há espaço a recuperar, **está certa**.
+
+### E o DEFLATE encolhe mesmo
+
+Não estimado — os bytes de verdade passados pelo `zip::deflate` que o backup já
+usa:
+
+| arquivo | razão | de → para |
+|---|---:|---|
+| `.reg` | 4,79× | 116,35 → 24,29 MiB |
+| `.ndx` | **8,26×** | 89,73 → 10,87 MiB |
+| `.log` | 4,08× | 44,06 → 10,79 MiB |
+| `.trash` | 3,97× | 3,67 → 0,93 MiB |
+| `.reason` | 2,80× | 3,27 → 1,17 MiB |
+
+(O DEFLATE deste repositório anda a **34,0 MiB/s** — medido na mesma rodada, e
+não citado de outro dia.)
+
+### O número que derruba o item
+
+> **Volumes fechados de `.log` + `.trash` + `.reason`, com 1 milhão de linhas:
+> zero.**
+
+Os três cortam volume por **bytes**, não por linhas, e o padrão é
+`bytes_por_arquivo = 1 GiB`. Um evento sem imagem tem 44 bytes: o `.log`
+só fecha o primeiro volume em **~24,4 milhões de eventos**. Com um milhão de
+linhas os três estão, cada um, num único arquivo — e esse arquivo é o que ainda
+está recebendo escrita.
+
+Ou seja: **compactar por volume fechado pouparia exatamente 0 byte**, não
+porque compactar não funcione — funciona, 4,08× — mas porque não há o que
+compactar. O bloqueio registrado continua de pé, e por um motivo diferente do
+escrito: não é que rotacionar seja difícil, é que **a rotação não acontece
+nessa escala**.
+
+Que a rotação resolveria, quando acontece, também foi medido — a mesma tabela
+com volume de 512 KiB, para forçar o corte:
+
+| arquivo | volumes | fechados | razão |
+|---|---:|---:|---:|
+| `.log` | 18 | 17 | 4,06× |
+| `.trash` | 2 | 1 | 4,08× |
+| `.reason` | 2 | 1 | 2,90× |
+
+Com volume curto há o que compactar, e ele encolhe o mesmo tanto. **A decisão
+que falta não é «como compactar», é «de quanto em quanto o diário deve
+rotacionar»** — e essa é uma linha no `config.json`, não uma arquitetura.
+
+### E o espaço não está onde o pedido olha
+
+O `.ndx` sozinho ocupa **34,90%** e comprime **8,26×**: compactar só ele
+pouparia **78,86 MiB**, contra 38,51 MiB dos três do pedido juntos — **2,0×
+mais**.
+
+Isso **não é uma recomendação**. O `.ndx` se lê em acesso aleatório, e é
+exatamente sobre ele que o cache de páginas comprou os 2,40× da §1;
+comprimi-lo trocaria espaço em disco por trabalho de CPU no caminho mais quente
+que este motor tem. Está aqui porque a pergunta do item era sobre espaço, e a
+resposta honesta sobre espaço é que os três diários **não são onde ele está**.
+
+### Veredito
+
+| | |
+|---|---|
+| **os três ocupam** | 51,00 MiB de 257,08 — 19,84% |
+| **compactados poupariam** | 38,51 MiB — 14,98% da tabela |
+| **compactando volume fechado, hoje** | **0 byte** — não há volume fechado |
+| **falta para haver** | rotação do diário em algo menor que 1 GiB |
+
+**Não implementado, e de propósito.** Escrever a compactação hoje entregaria
+código que não comprime nada em nenhuma tabela real, e o teste que o cobrisse
+teria de forçar um volume de 512 KiB para ver efeito — que é o sinal clássico
+de funcionalidade medida contra si mesma. O que entra antes é o número acima
+virar uma decisão sobre `bytes_por_arquivo` dos diários.
+
+---
+
 ## 5. Por que LSM não cabe dentro do motor atual
 
 Segmentos imutáveis com compactação é uma boa arquitetura, e é incompatível com
@@ -746,6 +850,7 @@ cargo run --release --example custo-do-sync            # os modos de durabilidad
 cargo run --release --example custo-da-pagina -- 800000 200
 cargo run --release --example indice-em-lote -- 1000000   # o lote do §4.3
 cargo run --release --example adiar-vale-quando -- 200000 # o ponto de virada
+cargo run --release --example quanto-ocupa -- 1000000 5   # a ocupação do §4.7
 python3 bancada/medir.py 10000000                      # o comparativo do §6
 python3 bancada/replicacao/montar.py /tmp/phx-replicacao
 python3 bancada/replicacao/medir.py 100000
