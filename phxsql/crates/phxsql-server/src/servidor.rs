@@ -10036,7 +10036,18 @@ impl Servidor {
                     porta: p
                         .inteiro_ou("porta", crate::config::PORTA_PADRAO as i64)
                         .clamp(1, 65_535) as u16,
-                    token: p.texto_ou("token", "").to_string(),
+                    // `token_remoto` primeiro, e `token` so como resto:
+                    // no `/api` da tela o campo `token` JA e o de quem pede
+                    // aqui, entao mandar o do outro servidor com o mesmo nome
+                    // faz um sobrescrever o outro dentro do mesmo objeto.
+                    token: {
+                        let remoto = p.texto_ou("token_remoto", "");
+                        if remoto.is_empty() {
+                            p.texto_ou("token", "").to_string()
+                        } else {
+                            remoto.to_string()
+                        }
+                    },
                     databases: p.textos("databases"),
                     reconectar_em: 10,
                     usuario: p.texto_ou("usuario", "").trim().to_string(),
