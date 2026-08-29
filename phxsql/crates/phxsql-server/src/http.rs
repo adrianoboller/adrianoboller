@@ -3,13 +3,19 @@
 //! Existe porque navegador nao abre soquete TCP cru: a porta 5000 fala JSON
 //! Lines, e o navegador precisa de HTTP. Este modulo e a ponte, e nada mais --
 //! ele nao serve arquivo do disco, nao lista diretorio e nao interpreta
-//! caminho. So ha duas rotas, e a pagina esta embutida no binario.
+//! caminho. So ha quatro rotas, e a pagina esta embutida no binario.
 //!
 //! ```text
 //! GET  /            a interface (embutida com include_str!)
 //! GET  /saude       um "ok" para monitoramento, sem autenticacao
+//! GET  /idiomas     os textos da tela de entrada, sem autenticacao
 //! POST /api         o mesmo protocolo da porta 5000, uma operacao por pedido
 //! ```
+//!
+//! As duas rotas sem token servem a MESMA necessidade: a tela de entrada
+//! precisa se desenhar antes de existir sessao. A `/saude` diz que porta e
+//! que campos; a `/idiomas` diz em que lingua. Nenhuma das duas conta nada
+//! sobre os dados, e nenhuma conta tentativa de acesso.
 //!
 //! # Sessao
 //!
@@ -77,7 +83,12 @@ const MAX_CORPO: usize = 4 * 1024 * 1024;
 #[derive(Debug)]
 pub struct Pedido {
     pub metodo: String,
+    /// O caminho SEM a query, que e o que as rotas casam por igualdade.
     pub caminho: String,
+    /// A query crua, sem o `?`. Separada do caminho de proposito: juntar as
+    /// duas faria `/saude?x=1` deixar de casar com `/saude`, e toda rota que
+    /// ja existe passaria a depender de ninguem pendurar parametro nela.
+    pub consulta: String,
     pub cabecalhos: HashMap<String, String>,
     pub corpo: String,
 }
@@ -135,9 +146,14 @@ pub fn ler_pedido(fluxo: &TcpStream) -> Option<Pedido> {
         return None;
     }
 
+    let (so_caminho, consulta) = match caminho.split_once('?') {
+        Some((c, q)) => (c.to_string(), q.to_string()),
+        None => (caminho.clone(), String::new()),
+    };
     Some(Pedido {
         metodo,
-        caminho: caminho.split('?').next().unwrap_or("/").to_string(),
+        caminho: so_caminho,
+        consulta,
         cabecalhos,
         corpo: String::from_utf8_lossy(&corpo).into_owned(),
     })
@@ -218,6 +234,54 @@ pub fn erro_json(fluxo: &mut TcpStream, codigo: u16, mensagem: &str) -> std::io:
             ("erro", Json::texto_de(mensagem)),
         ]),
     )
+}
+
+/// Um parametro da query de um pedido: `idioma` em `idioma=Alemao&tema=claro`.
+///
+/// Recebe a [`Pedido::consulta`] crua, sem o `?`.
+///
+/// Analisa e desescapa, em vez de recortar por posicao: o `%C3%A3` de um nome
+/// com til e o `+` do espaco chegam decodificados, e um parametro que nao
+/// existe devolve vazio em vez de enganar com o pedaco errado da URL. Byte
+/// invalido em `%XX` fica como esta -- e melhor devolver o texto cru do que
+/// perder um caractere calado.
+pub fn parametro(consulta: &str, nome: &str) -> String {
+    for par in consulta.split('&') {
+        let (chave, valor) = par.split_once('=').unwrap_or((par, ""));
+        if chave == nome {
+            return desescapar(valor);
+        }
+    }
+    String::new()
+}
+
+fn desescapar(bruto: &str) -> String {
+    let bytes = bruto.as_bytes();
+    let mut saida: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'+' => {
+                saida.push(b' ');
+                i += 1;
+            }
+            b'%' if i + 2 < bytes.len() => match u8::from_str_radix(&bruto[i + 1..i + 3], 16) {
+                Ok(b) => {
+                    saida.push(b);
+                    i += 3;
+                }
+                Err(_) => {
+                    saida.push(b'%');
+                    i += 1;
+                }
+            },
+            b => {
+                saida.push(b);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&saida).into_owned()
 }
 
 // --------------------------------------------------------------- sessoes
@@ -499,6 +563,28 @@ mod tests {
         assert_eq!(d.0, "adriano");
         assert_eq!(d.1, "nonce123");
         assert!(s.tomar_desafio(&id).is_none(), "vale uma vez so");
+    }
+
+    /// O defeito que este teste tranca: recortar a query por posicao em vez
+    /// de analisar. Com `?tema=escuro&idioma=Alemao`, quem recorta pelo `=`
+    /// devolve `escuro&idioma` -- e a tela sai no idioma errado, calada.
+    #[test]
+    fn o_parametro_sai_analisado_e_desescapado() {
+        assert_eq!(parametro("idioma=Alemao", "idioma"), "Alemao");
+        assert_eq!(parametro("tema=escuro&idioma=Alemao", "idioma"), "Alemao");
+        // Nao existe: vazio, e nao o pedaco errado da URL.
+        assert_eq!(parametro("tema=escuro", "idioma"), "");
+        assert_eq!(parametro("", "idioma"), "");
+        // Desescapa de verdade: acento e espaco chegam inteiros.
+        assert_eq!(parametro("a=Portugu%C3%AAs", "a"), "Português");
+        assert_eq!(
+            parametro("a=base+da+farm%C3%A1cia", "a"),
+            "base da farmácia"
+        );
+        // Nome que e prefixo de outro nao rouba o valor do outro.
+        assert_eq!(parametro("idiomas=todos&idioma=Ingles", "idioma"), "Ingles");
+        // `%` solto nao come o resto.
+        assert_eq!(parametro("a=100%", "a"), "100%");
     }
 
     #[test]

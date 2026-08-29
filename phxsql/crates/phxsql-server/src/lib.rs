@@ -13,6 +13,7 @@ pub mod dblink;
 pub mod email;
 pub mod exportar;
 pub mod http;
+pub mod idiomas;
 pub mod jobs;
 pub mod juncao;
 pub mod ligacoes;
