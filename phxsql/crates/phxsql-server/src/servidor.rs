@@ -5055,12 +5055,12 @@ impl Servidor {
             "declarar_fk" => self.op_declarar_fk(p, sessao),
             "excluir_fk" => self.op_excluir_fk(p, sessao),
             "excluir_tabela" => self.op_excluir_tabela(p),
-            "duplicar_tabela" => self.op_duplicar_tabela(p),
+            "duplicar_tabela" => self.op_duplicar_tabela(p, sessao),
             "copiar_tabela" => self.op_copiar_tabela(p, sessao),
             "sistabelas" | "systables" => self.op_sistabelas(p, sessao),
             "siscolunas" | "syscolumns" => self.op_siscolunas(p, sessao),
             "dados_pessoais" | "lgpd" => self.op_dados_pessoais(p, sessao),
-            "sequencias" | "sequences" => self.op_sequencias(p),
+            "sequencias" | "sequences" => self.op_sequencias(p, sessao),
             "ajustar_sequencia" => self.op_ajustar_sequencia(p, sessao),
             "pivotar" | "pivot" => self.op_pivotar(p, sessao),
             "juntar" | "join" => self.op_juntar(p, sessao),
@@ -5881,12 +5881,33 @@ impl Servidor {
     ///   "valor": "total", "agregador": "soma", "max": 200000 }
     /// ```
     fn op_pivotar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
-        // O portao geral ja conferiu `ler` contra este database; a linha
-        // abaixo existe para o caso de a tabela de fatos estar num schema que
-        // o `abrir` recusaria -- e o mesmo caminho das outras leituras.
-        let _ = sessao;
         let agregador = Agregador::de_texto(p.texto_ou("agregador", "soma"))?;
         let max = self.limite_pivot(p);
+
+        // O portao geral confere o campo `tabela` do pedido, e a tabela de
+        // FATOS do pivot esta la -- mas as tabelas de CONSULTA nao: cada uma
+        // mora num `tabela` DENTRO de um item de `juntar`, e o portao nao
+        // desce ate ali. Sem esta conferencia, o pivot era a porta dos fundos
+        // do `juntar` e do `unir` por um terceiro caminho: bastava juntar a
+        // tabela negada e pedir um campo dela em `linhas` -- os rotulos das
+        // linhas do cruzamento SAO os valores dela, e a resposta ainda diz o
+        // nome da tabela e quantas linhas ela tem.
+        //
+        // A licao que isto repete: quando o portao passar a olhar um campo
+        // novo, procure quem NAO tem esse campo -- inclusive quem o tem
+        // aninhado, que e o disfarce mais facil de nao ver.
+        if let Some(u) = &sessao.usuario {
+            let base = p.texto_ou("database", "");
+            for j in p.campo("juntar").and_then(Json::lista).unwrap_or(&[]) {
+                let alvo = j.texto_ou("tabela", "");
+                if !u.pode_em(base, alvo, Atividade::Ler) {
+                    return Err(PhxError::Autorizacao(format!(
+                        "{} nao tem permissao de ler em {base}.{alvo}",
+                        u.login
+                    )));
+                }
+            }
+        }
 
         let dados = self.travar_dados()?;
         let db = dados.abrir_database(p.texto_ou("database", ""))?;
@@ -6362,12 +6383,24 @@ impl Servidor {
     /// caminho que esquecer de atualizar uma delas. Alem disso um arquivo
     /// separado custaria uma leitura e uma gravacao a mais por insercao --
     /// justamente na operacao que ja e a mais cara.
-    fn op_sequencias(&self, p: &Json) -> Result<Json> {
+    fn op_sequencias(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let database = p.texto_ou("database", "");
         let dados = self.travar_dados()?;
         let db = dados.abrir_database(database)?;
         let mut linhas = Vec::new();
         for nome in db.todas_as_tabelas()? {
+            // A terceira porta para a MESMA lista que a arvore esconde. O
+            // `tabelas`, o `sistabelas` e o `siscolunas` ja filtravam; esta
+            // nao, e ela devolve nome da tabela, contador e quantas linhas --
+            // que e o suficiente para saber que a folha existe, quantas
+            // pessoas ela tem e quanto ela cresceu no mes.
+            //
+            // Ela varre a base inteira e NAO tem campo `tabela`, entao o
+            // portao geral nao a alcanca: e o mesmo desenho do
+            // `dados_pessoais`, que filtra tabela a tabela por dentro.
+            if !self.pode_ver_tabela(sessao, database, &nome) {
+                continue;
+            }
             let Ok(t) = db.abrir_qualificada(&nome) else {
                 continue;
             };
@@ -6654,10 +6687,24 @@ impl Servidor {
     /// ordem de digitacao e os MESMOS rowids do original -- que e o que se
     /// espera de uma duplicata, e o que uma reinsercao linha a linha nao
     /// daria.
-    fn op_duplicar_tabela(&self, p: &Json) -> Result<Json> {
+    fn op_duplicar_tabela(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let database = p.texto_ou("database", "");
         let tabela = p.texto_ou("tabela", "");
         let destino = p.texto_ou("destino", "");
+        // O portao geral confere `criar` contra o campo `tabela`, que aqui e
+        // a ORIGEM -- e a tabela que NASCE tem outro nome, no campo `destino`.
+        // Sem esta linha, quem pode criar UMA tabela nominalmente cria
+        // qualquer outra, bastando duplicar a que ele pode para o nome que
+        // quiser. E exatamente a conferencia que o `copiar_tabela` ao lado ja
+        // faz no destino dele; a diferenca era so que aqui o destino mora no
+        // mesmo database e por isso parecia coberto.
+        if let Some(u) = &sessao.usuario {
+            if !u.pode_em(database, destino, Atividade::Criar) {
+                return Err(PhxError::Autorizacao(format!(
+                    "sem permissao de criar em {database}.{destino}"
+                )));
+            }
+        }
         let dados = self.travar_dados()?;
         let db = dados.abrir_database(database)?;
         let copiados = db.duplicar_tabela(tabela, destino)?;
@@ -11394,6 +11441,22 @@ impl Servidor {
         let com_esquema = p.booleano_ou("com_esquema", false);
         let mut posicoes = Vec::new();
         for nome in db.todas_as_tabelas()? {
+            // `posicao` tambem varre a base inteira sem campo `tabela`, e o
+            // portao geral so ve o de cima -- a mesma familia do `juntar`, do
+            // `unir`, do `pivotar` e do `sequencias`. Aqui a conferencia e de
+            // `replicar`, e nao de `ler`, porque e o direito que o portao
+            // aplicou a operacao: quem nao pode replicar a folha nao pode
+            // saber por `posicao` quantos eventos ela tem, nem pedir o
+            // esquema cru dela com `com_esquema`.
+            //
+            // Sem regra de tabela nada muda: a replica de sempre tem
+            // `replicar` na base e nenhuma regra por tabela, e continua vendo
+            // todas -- e uma sessao interna (sem usuario) tambem.
+            if let Some(u) = &sessao.usuario {
+                if !u.pode_em(&database, &nome, Atividade::Replicar) {
+                    continue;
+                }
+            }
             let mut t = db.abrir_qualificada(&nome)?;
             let mut campos = vec![
                 ("eventos".to_string(), Json::de_u64(t.eventos()?)),
@@ -14534,6 +14597,181 @@ mod testes_direito_por_tabela {
         .unwrap_err();
         assert_eq!(e.nome(), "ACESSO_NEGADO");
         assert!(e.to_string().contains("b.folha"), "veio {e}");
+    }
+
+    /// O pivot tem DOIS lugares com tabela, e o portao geral so ve um: a
+    /// tabela de fatos em `tabela`, e a lista `juntar`, com um campo `tabela`
+    /// DENTRO de cada item. Sem a conferencia propria, bastava juntar a folha
+    /// e pedir `f.nome` em `linhas` -- os rotulos das linhas do cruzamento SAO
+    /// os valores da tabela negada.
+    ///
+    /// A mesma falha do `juntar` e do `unir`, na terceira operacao que nao tem
+    /// o campo que o portao le.
+    #[test]
+    fn pivotar_nao_e_a_porta_dos_fundos() {
+        let dir = dir_temp("pivotar");
+        let (s, ses) = servidor(
+            &dir,
+            cadastro(r#"{"*":{"ler":true,"tabelas":{"folha":{}}}}"#),
+        );
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"pivotar","database":"b","tabela":"clientes",
+               "juntar":[{"tabela":"folha","coluna":"id","prefixo":"f","chave":"id"}],
+               "linhas":[{"campo":"f.nome"}],
+               "colunas":[{"campo":"nome"}],
+               "agregador":"contagem""#,
+        )
+        .unwrap_err();
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "veio {e}");
+        assert!(e.to_string().contains("b.folha"), "veio {e}");
+    }
+
+    /// E a tabela de FATOS do pivot continua passando pelo portao de sempre --
+    /// ela tem o campo `tabela`, entao a conferencia nova nao pode ser a
+    /// unica.
+    #[test]
+    fn pivotar_na_tabela_permitida_continua_valendo() {
+        let dir = dir_temp("pivot-ok");
+        let (s, ses) = servidor(
+            &dir,
+            cadastro(r#"{"*":{"ler":true,"tabelas":{"folha":{}}}}"#),
+        );
+        assert!(
+            pede(
+                &s,
+                &ses,
+                r#""op":"pivotar","database":"b","tabela":"clientes",
+                   "linhas":[{"campo":"nome"}],
+                   "colunas":[{"campo":"id"}],
+                   "agregador":"contagem""#,
+            )
+            .is_ok(),
+            "a conferencia nova barrou um pivot legitimo"
+        );
+    }
+
+    /// `sequencias` e a TERCEIRA porta para a lista que a arvore esconde --
+    /// depois do `sistabelas` e do `siscolunas`, que ja filtravam. Ela varre a
+    /// base inteira e nao tem campo `tabela`, entao o portao geral so ve a
+    /// base: sem filtro proprio, ela entregava o nome da tabela negada, o
+    /// contador dela e quantas linhas ela tem.
+    #[test]
+    fn sequencias_esconde_a_tabela_negada() {
+        let dir = dir_temp("seq");
+        let (s, ses) = servidor(
+            &dir,
+            cadastro(r#"{"*":{"ler":true,"tabelas":{"folha":{}}}}"#),
+        );
+        let r = pede(&s, &ses, r#""op":"sequencias","database":"b""#).unwrap();
+        let nomes: Vec<String> = r
+            .campo("sequencias")
+            .and_then(Json::lista)
+            .unwrap()
+            .iter()
+            .map(|x| x.texto_ou("tabela", "").to_string())
+            .collect();
+        assert_eq!(nomes, vec!["clientes".to_string()], "veio {nomes:?}");
+        assert_eq!(r.inteiro_ou("total", -1), 1, "o total ainda conta a negada");
+    }
+
+    /// `posicao` e o `SHOW MASTER STATUS` daqui, e tambem varre a base inteira
+    /// sem campo `tabela`. Com `com_esquema`, ela devolve o esquema CRU de
+    /// cada tabela -- entao o vazamento nao era so o nome.
+    ///
+    /// A conferencia e de `replicar`, e nao de `ler`: e o direito que o portao
+    /// geral aplicou a operacao.
+    #[test]
+    fn posicao_esconde_a_tabela_negada() {
+        let dir = dir_temp("posic");
+        let (s, ses) = servidor(
+            &dir,
+            cadastro(
+                r#"{"*":{"ler":true,"replicar":true,
+                     "tabelas":{"folha":{"ler":true}}}}"#,
+            ),
+        );
+        let r = pede(
+            &s,
+            &ses,
+            r#""op":"posicao","database":"b","com_esquema":true"#,
+        )
+        .unwrap();
+        // `tabelas` aqui e um OBJETO: a chave e o nome da tabela.
+        let Some(Json::Objeto(pares)) = r.campo("tabelas") else {
+            panic!("posicao sem o objeto tabelas: {}", r.escrever());
+        };
+        let nomes: Vec<String> = pares.iter().map(|(n, _)| n.clone()).collect();
+        assert_eq!(
+            nomes,
+            vec!["clientes".to_string()],
+            "a folha, que ele le mas nao replica, apareceu: {nomes:?}"
+        );
+        let cru = r.escrever();
+        assert!(
+            !cru.contains("folha"),
+            "o nome da tabela negada vazou na resposta: {cru}"
+        );
+    }
+
+    /// E o teste que mais importa nas duas mudancas acima: a REPLICA de sempre
+    /// nao tem regra por tabela, e continua vendo tudo. Guarda nova que quebra
+    /// quem ja funcionava nao e guarda, e estrago.
+    #[test]
+    fn sem_regra_de_tabela_posicao_e_sequencias_veem_tudo() {
+        let dir = dir_temp("replica-velha");
+        let (s, ses) = servidor(&dir, cadastro(r#"{"*":{"ler":true,"replicar":true}}"#));
+        let r = pede(&s, &ses, r#""op":"sequencias","database":"b""#).unwrap();
+        assert_eq!(r.inteiro_ou("total", -1), 2, "sequencias perdeu uma tabela");
+        let r = pede(&s, &ses, r#""op":"posicao","database":"b""#).unwrap();
+        let Some(Json::Objeto(pares)) = r.campo("tabelas") else {
+            panic!("posicao sem o objeto tabelas: {}", r.escrever());
+        };
+        assert_eq!(pares.len(), 2, "posicao perdeu uma tabela");
+    }
+
+    /// `duplicar_tabela` cria uma tabela com o nome do campo `destino`, e o
+    /// portao geral confere o campo `tabela` -- que aqui e a ORIGEM. Quem
+    /// podia criar nominalmente UMA tabela criava qualquer outra duplicando a
+    /// permitida. O `copiar_tabela` ao lado ja conferia o destino dele.
+    #[test]
+    fn duplicar_confere_o_direito_no_destino() {
+        let dir = dir_temp("dup");
+        let (s, ses) = servidor(
+            &dir,
+            cadastro(
+                r#"{"*":{"ler":true,
+                     "tabelas":{"clientes":{"ler":true,"criar":true},"*":{"ler":true}}}}"#,
+            ),
+        );
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"duplicar_tabela","database":"b","tabela":"clientes",
+               "destino":"clientes_copia""#,
+        )
+        .unwrap_err();
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "veio {e}");
+        assert!(
+            e.to_string().contains("clientes_copia"),
+            "a recusa tem de dizer o nome que ele tentou criar: {e}"
+        );
+    }
+
+    /// E quem PODE criar no destino continua duplicando. Guarda que so nega
+    /// nao e guarda, e parede.
+    #[test]
+    fn duplicar_com_direito_no_destino_continua_valendo() {
+        let dir = dir_temp("dup-ok");
+        let (s, ses) = servidor(&dir, cadastro(r#"{"*":{"ler":true,"criar":true}}"#));
+        assert!(pede(
+            &s,
+            &ses,
+            r#""op":"duplicar_tabela","database":"b","tabela":"clientes",
+               "destino":"clientes_copia""#
+        )
+        .is_ok());
     }
 
     /// O `config.json` que ja existia continua se comportando igual. E o teste
