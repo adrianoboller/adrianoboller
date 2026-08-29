@@ -59,6 +59,22 @@ const GRID_JS: &str = include_str!("../ui/grid/phx-grid.js");
 /// estar definido antes de a pagina rodar o proprio script.
 const DIAGRAMA_JS: &str = include_str!("../ui/diagrama-er.js");
 
+/// A integracao com a Claude (API da Anthropic), em arquivo proprio.
+///
+/// Separada do `index.html` pelo mesmo motivo do diagrama -- e por um segundo:
+/// este e o unico pedaco da interface que fala com um servidor de FORA, e ele
+/// merece caber numa tela para quem for conferir o que sai daqui. O servidor
+/// nao participa da chamada: ele so entrega o arquivo.
+const CLAUDE_JS: &str = include_str!("../ui/claude.js");
+
+/// A origem da API da Anthropic, para a politica de seguranca da pagina.
+///
+/// A chamada sai do NAVEGADOR (a `std` nao tem TLS, e a casa nao acrescenta
+/// dependencia), e `connect-src 'self'` sozinho a barraria antes de ela sair.
+/// E uma folga de UMA origem, so na pagina, e so para `connect-src` -- nao ha
+/// `script-src` novo aqui: nenhum script de fora entra.
+pub const ORIGEM_ANTHROPIC: &str = "https://api.anthropic.com";
+
 /// Envolve o fragmento no esqueleto que o navegador espera.
 ///
 /// Sem `<!doctype html>` o navegador entra em modo de compatibilidade e o
@@ -71,6 +87,7 @@ pub fn montar_pagina() -> String {
         "<!doctype html>\n<html lang=\"pt-BR\">\n<head>\n<meta charset=\"utf-8\">\n\
          <style>\n{GRID_CSS}\n</style>\n<script>\n{GRID_JS}\n</script>\n\
          <script>\n{DIAGRAMA_JS}\n</script>\n\
+         <script>\n{CLAUDE_JS}\n</script>\n\
          </head>\n<body>\n{PAGINA}\n</body>\n</html>\n"
     )
 }
@@ -180,12 +197,25 @@ pub fn montar_resposta(codigo: u16, tipo: &str, corpo: &str) -> String {
     // por isso a folga do `style-src`/`font-src` nao existe nas respostas de
     // dados. Servidor sem internet: a fonte nao carrega, a pilha de reserva
     // assume e a pagina continua inteira.
+    //
+    // O `connect-src` da PAGINA ganhou uma segunda origem pelo mesmo desenho:
+    // a integracao com a Claude chama `api.anthropic.com` do navegador, porque
+    // o servidor nao tem TLS para chamar no lugar dele. Sem esta linha a
+    // chamada morreria antes de sair, e sem erro visivel. A folga e de UMA
+    // origem, so no HTML e so para `connect-src`: as respostas de dados
+    // continuam com `connect-src 'self'`, e nenhum `script-src` novo entra --
+    // nenhum script de fora roda nesta pagina.
     let externo = tipo.starts_with("text/html");
     let estilo = if externo {
         "style-src 'unsafe-inline' https://fonts.googleapis.com; \
          font-src https://fonts.gstatic.com; "
     } else {
         "style-src 'unsafe-inline'; "
+    };
+    let conexao = if externo {
+        format!("connect-src 'self' {ORIGEM_ANTHROPIC}; ")
+    } else {
+        "connect-src 'self'; ".to_string()
     };
     format!(
         "HTTP/1.1 {codigo} {motivo}\r\n\
@@ -197,7 +227,7 @@ pub fn montar_resposta(codigo: u16, tipo: &str, corpo: &str) -> String {
          Referrer-Policy: no-referrer\r\n\
          Content-Security-Policy: default-src 'none'; {estilo}\
          script-src 'unsafe-inline'; \
-         img-src data:; connect-src 'self'; form-action 'none'; \
+         img-src data:; {conexao}form-action 'none'; \
          frame-ancestors 'none'; base-uri 'none'\r\n\
          Connection: close\r\n\
          \r\n{corpo}",
@@ -595,5 +625,85 @@ mod tests {
         assert!(s.definir_login(&id, "adriano"));
         assert_eq!(s.usar(&id, HORA, T0).as_deref(), Some("adriano"));
         assert!(!s.definir_login("sessao-que-nao-existe", "invasor"));
+    }
+}
+
+#[cfg(test)]
+mod testes_da_claude {
+    use super::*;
+
+    /// A pagina tem de PODER falar com a API da Anthropic.
+    ///
+    /// Este e o teste do defeito que nao aparece lendo o codigo: com
+    /// `connect-src 'self'` sozinho a chamada do navegador morre ANTES de
+    /// sair, e o navegador nao devolve erro nenhum ao script -- a tela so fica
+    /// parada. Reponha o `'self'` sozinho e este teste falha.
+    #[test]
+    fn a_pagina_pode_chamar_a_api_da_anthropic() {
+        let r = montar_resposta(200, "text/html; charset=utf-8", "x");
+        let csp = r
+            .lines()
+            .find(|l| l.starts_with("Content-Security-Policy:"))
+            .expect("a pagina tem politica de seguranca");
+        assert!(
+            csp.contains(&format!("connect-src 'self' {ORIGEM_ANTHROPIC}")),
+            "a pagina precisa alcancar {ORIGEM_ANTHROPIC}; veio: {csp}"
+        );
+        // E a folga NAO pode ter virado script de fora: o que roda na pagina
+        // continua sendo so o que este binario carrega.
+        assert!(csp.contains("script-src 'unsafe-inline';"));
+        assert!(!csp.contains(&format!("script-src 'unsafe-inline' {ORIGEM_ANTHROPIC}")));
+    }
+
+    /// A folga e da PAGINA, e nao das respostas de dados.
+    #[test]
+    fn a_resposta_de_dados_continua_so_com_a_propria_origem() {
+        let r = montar_resposta(200, "application/json; charset=utf-8", "{}");
+        let csp = r
+            .lines()
+            .find(|l| l.starts_with("Content-Security-Policy:"))
+            .unwrap();
+        assert!(csp.contains("connect-src 'self';"));
+        assert!(!csp.contains(ORIGEM_ANTHROPIC));
+    }
+
+    /// O modulo da integracao esta na pagina, e vem do arquivo proprio.
+    #[test]
+    fn o_modulo_da_claude_entra_na_pagina() {
+        let p = montar_pagina();
+        assert!(p.contains("window.PhxIA"));
+        assert!(p.contains("anthropic-dangerous-direct-browser-access"));
+    }
+
+    /// O SERVIDOR nao conhece chave nenhuma da Anthropic.
+    ///
+    /// A chave e do navegador de quem usa. Se um dia alguem "facilitar"
+    /// guardando-a no config.json ou costurando-a numa rota, o prefixo dela
+    /// aparece no que este modulo serve -- e este teste cai. E a mesma guarda
+    /// da senha, que nunca vai em texto puro para arquivo, log ou resposta.
+    #[test]
+    fn o_servidor_nao_carrega_chave_da_anthropic() {
+        // O prefixo e montado em pedacos de proposito: escreve-lo inteiro
+        // aqui o poria no binario, e o teste passaria a se acusar.
+        let prefixo = format!("sk-{}-", "ant");
+        // Procura chave de VERDADE, e nao a mencao do prefixo: a tela mostra
+        // "sk-ant-…" como dica dentro do campo, e uma dica nao e um segredo.
+        // Chave de verdade tem corpo -- vinte ou mais caracteres do alfabeto
+        // dela logo depois do prefixo. Foi a reposicao do defeito que
+        // mostrou a diferenca: a versao anterior deste teste acusava a
+        // propria dica, e teste que acusa o inocente ninguem mantem ligado.
+        let pagina = montar_pagina();
+        let achada = pagina.match_indices(&prefixo).any(|(i, _)| {
+            pagina[i + prefixo.len()..]
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+                .count()
+                >= 20
+        });
+        assert!(!achada, "a pagina nao pode trazer chave de API embutida");
+        // O `x-api-key` so pode existir no modulo que chama a Anthropic do
+        // navegador. Nao ha nenhum costurado na tela nem numa rota daqui.
+        assert!(!PAGINA.contains("x-api-key"));
+        assert!(CLAUDE_JS.contains("x-api-key"));
     }
 }
