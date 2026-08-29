@@ -39,6 +39,21 @@
   ],
   "dblink": "dblink.json",
 
+  "_jobs": [
+    "Arquivo com os jobs de execucao. Padrao jobs.json.",
+    "",
+    "Um job e um nome, uma agenda e uma operacao do protocolo que ja existe.",
+    "Separado deste arquivo pelo mesmo motivo do dblink: o cadastro muda pela",
+    "tela. As corridas vao para o jobs.log ao lado, uma linha por corrida.",
+    "",
+    "Um job roda com o poder do USUARIO configurado nele, e nem um pingo a",
+    "mais -- um agendador com poder proprio seria um jeito de contornar a",
+    "permissao. Job nasce desligado, e toda operacao de job exige administrar.",
+    "",
+    "Detalhes na secao 11.1 do MANUAL.txt."
+  ],
+  "jobs": "jobs.json",
+
   "_alertas": [
     "Aviso de disco apertado. Vem DESLIGADO.",
     "",

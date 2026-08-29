@@ -1,9 +1,49 @@
 # A camada SQL: o que ela precisa saber
 
-**Não existe ainda.** Não há parser, não há executor, não há planejador. Este
-documento é o desenho de antes de escrever, e existe porque **três pendências
-esperam a mesma coisa**: o driver ODBC/OLE DB (#7), o DBeaver (#122) e o
-protocolo de fio do PostgreSQL(R). Uma camada, três destravadas.
+**O passo 1 existe agora**, em `crates/phxsql-sql/`: analisador léxico,
+analisador sintático de um `SELECT` simples e o tradutor dele para as operações
+do protocolo. Não há executor e não há planejador — e a seção 4 continua sendo
+o roteiro do que falta.
+
+Este documento é o desenho de antes de escrever, e existe porque **três
+pendências esperam a mesma coisa**: o driver ODBC/OLE DB (#7), o DBeaver (#122)
+e o protocolo de fio do PostgreSQL(R). Uma camada, três destravadas.
+
+## O que o crate já faz
+
+```
+SELECT ( * | COUNT(*) | coluna [AS apelido] {, ...} )
+FROM   [database.] [schema.] tabela [[AS] apelido]
+[WHERE coluna ( = | <> | < | <= | > | >= ) literal]
+[ORDER BY coluna [ASC|DESC]]
+[LIMIT n [OFFSET m]]
+```
+
+```bash
+cargo run -p phxsql-sql --example traduzir -- "SELECT * FROM matriz.estoque"
+```
+
+`traduzir(&Selecao, &[IndiceInfo], database)` devolve um `Plano`: a operação
+(`varrer` ou `buscar`), o pedido pronto em JSON, o que o cliente ainda tem de
+fazer com a resposta (a projeção, que é do cliente porque o protocolo sempre
+devolve a linha inteira) e as **notas** — o que o tradutor decidiu e por quê.
+
+O `FROM matriz.estoque` fecha o lado SQL do pedido #83: o endereçamento já
+funcionava em toda operação, e faltava alguém escrever isso e chegar lá.
+
+**O que não tem substrato recusa dizendo o nome da cláusula.** Um `WHERE cidade
+= 'X'` sem índice em `cidade` **não** vira uma varredura com o filtro esquecido
+no caminho: o `varrer` não filtra, e aceitar calado devolveria a tabela inteira
+como se fosse a resposta. O mesmo para `ORDER BY` sem índice, `AND`, `LIKE`,
+`IN`, `BETWEEN`, `IS NULL`, `DISTINCT`, `GROUP BY`, `JOIN`, os agregados que
+não são `COUNT(*)`, e `BEGIN`/`COMMIT`/`ROLLBACK`.
+
+**O que ainda NÃO está ligado:** o servidor não tem operação `sql`. O crate
+traduz texto em pedido; ligar isso ao despachar e à tela de consulta é a
+próxima rodada, e é pequena — mas não está feita, e dizer o contrário seria
+inventar.
+
+---
 
 Ele também existe por um motivo mais imediato: o `BULKINSERT` entrou no
 protocolo, e o motor SQL vai ter de conhecê-lo **como comando, e não como
@@ -52,10 +92,10 @@ de dados. Ver a seção correspondente no `MANUAL.txt`.
 Três coisas que o parser **não pode** tratar como açúcar sintático:
 
 1. **É palavra reservada.** Não pode existir tabela, coluna ou apelido chamado
-   `BULKINSERT`. Hoje `validar_nome` (em `catalogo.rs`) não conhece palavra
-   reservada nenhuma, porque não havia vocabulário — é ali que a lista entra
-   quando o parser chegar, e não antes: reservar palavra para um parser que não
-   existe só quebraria banco de quem já tem a tabela.
+   `BULKINSERT`. A reserva ficou **no parser**, em `RESERVADAS_DO_MOTOR`, e não
+   no `validar_nome` do `catalogo.rs`: reservar palavra no motor quebraria banco
+   de quem já tem a tabela. Assim ela só custa a quem escreve SQL — e `"BULKINSERT"`
+   entre aspas duplas volta a ser um nome, para quem já tem essa tabela.
 
 2. **É de sessão, não de instrução.** O estado vive na conexão, entre
    comandos — como uma transação. Um driver que multiplexa várias sessões
@@ -81,7 +121,8 @@ SOFTDELETED     coluna de sistema: a marca de excluído
 ```
 
 As três já são nomes tomados **hoje**, no motor. As duas últimas o esquema já
-protege; a primeira só passa a precisar de proteção quando houver parser.
+protege, e continuam colunas legítimas num `SELECT` — quem as reserva é o
+esquema, não a linguagem. A primeira é a única reservada pelo parser.
 
 ---
 
@@ -110,8 +151,9 @@ parar no meio, o que entrou está gravado. Quem lê `BULKINSERT(true)` esperando
 
 Na ordem em que cada passo destrava alguém:
 
-1. **`SELECT` de uma tabela**, com `WHERE` de igualdade e `LIMIT/OFFSET`. Já é
-   o suficiente para o DBeaver listar e navegar.
+1. ~~**`SELECT` de uma tabela**, com `WHERE` de igualdade e `LIMIT/OFFSET`.~~
+   **Feito** em `crates/phxsql-sql/`, menos a ligação com o servidor: não há
+   operação `sql` no protocolo ainda, e sem ela o DBeaver não lista nada.
 2. **`INSERT`/`UPDATE`/`DELETE`** por chave primária. Fecha o CRUD.
 3. **`BULKINSERT`** e o catálogo (`information_schema`). Fecha a carga e a
    introspecção.

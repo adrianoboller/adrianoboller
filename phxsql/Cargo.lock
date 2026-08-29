@@ -23,6 +23,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "phxsql-sql"
+version = "0.17.0"
+dependencies = [
+ "phxsql-core",
+]
+
+[[package]]
 name = "phxsql-store"
 version = "0.17.0"
 dependencies = [

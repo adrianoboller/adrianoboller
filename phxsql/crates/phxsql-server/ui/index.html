@@ -875,6 +875,91 @@ h3:first-child{margin-top:0}
 .aviso.mal{border-left-color:var(--vermelho);background:rgba(255,95,95,.07)}
 .centro{display:grid;place-items:center;height:100%;color:var(--texto-3);
   text-align:center;font-size:13.5px;line-height:1.6}
+/* --------------------------------------------------- diagrama ER (#127)
+   As cores todas saem das variáveis do console, então o desenho acompanha o
+   tema claro e o escuro sem uma segunda paleta.
+
+   ATENÇÃO ao CSS global: `label{text-transform:uppercase}` não morde texto de
+   SVG (que não é `label`), mas `input{width:100%}` morde o seletor de banco
+   desta tela — por isso ele tem largura própria abaixo. */
+.er-rolo{
+  overflow:auto;background:var(--painel-2);border:1px solid var(--linha);
+  border-radius:8px;padding:14px;max-height:calc(100vh - 320px);
+}
+/* Sem `min-width:100%`: com uma tabela só, esticar o SVG para a largura do
+   painel jogava o desenho para o meio de um retângulo vazio. Ele fica no
+   tamanho que tem, encostado à esquerda, e quem passar da largura rola. */
+svg.er{display:block}
+.er-caixa{fill:var(--painel);stroke:var(--linha-forte);stroke-width:1}
+.er-topo{fill:var(--realce);stroke:none}
+.er-risco{stroke:var(--linha-forte);stroke-width:1}
+.er-nome{font-family:"Exo 2",sans-serif;font-size:12.5px;font-weight:600;
+  fill:var(--texto)}
+.er-conta{font-family:"IBM Plex Mono",monospace;font-size:9.5px;
+  fill:var(--texto-3);text-anchor:end}
+.er-col{font-family:"IBM Plex Mono",monospace;font-size:11px}
+.er-marca{font-family:"IBM Plex Mono",monospace;font-size:9px;font-weight:600;
+  letter-spacing:.05em}
+.er-tipo{font-family:"IBM Plex Mono",monospace;font-size:9.5px;
+  fill:var(--texto-3);text-anchor:end}
+/* O «+ N coluna(s)» é ancorado à ESQUERDA. Com o `er-tipo`, que é ancorado à
+   direita, ele saía pela borda esquerda da caixa. */
+.er-mais{font-family:"IBM Plex Mono",monospace;font-size:9.5px;
+  fill:var(--texto-3);font-style:italic}
+.er-seta{fill:none;stroke:var(--laranja);stroke-width:1.4}
+.er-seta.solta{stroke:var(--texto-3);stroke-dasharray:4 3}
+.er-rot{font-family:"IBM Plex Mono",monospace;font-size:9.5px;
+  fill:var(--texto-3);text-anchor:middle}
+/* Encostado à esquerda: o rótulo fica AO LADO da seta, não em cima dela. */
+.er-rot.lado{text-anchor:start}
+.er-rot.solta{fill:var(--texto-3);font-style:italic}
+.er-tabela:hover .er-caixa{stroke:var(--laranja)}
+.er-legenda{display:flex;gap:16px;flex-wrap:wrap;align-items:center;
+  font-size:11px;color:var(--texto-3);margin:10px 0 0}
+.er-legenda b{display:inline-flex;align-items:center;gap:5px;font-weight:500;
+  font-family:"IBM Plex Mono",monospace}
+
+/* ------------------------------------------- jobs, serviço e dado pessoal
+   Um `<select>` dentro de uma barra de ações herda `width:100%` do CSS global
+   e vira uma faixa da largura da tela. Aqui os campos têm tamanho próprio. */
+.barra-acao{
+  display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin:0 0 14px;
+}
+.barra-acao label{
+  display:flex;flex-direction:column;gap:4px;margin:0;font-size:10px;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--texto-3);
+}
+.barra-acao input,.barra-acao select{
+  width:auto;min-width:150px;padding:7px 10px;font-size:12.5px;
+  background:var(--painel);border:1px solid var(--linha);border-radius:5px;
+}
+.barra-acao .botao{width:auto}
+/* Rótulo de célula não vira caixa-alta: «Blumenau» tem de continuar
+   «Blumenau», senão a tela mente sobre o dado. */
+td label,td .rot-dado{text-transform:none;letter-spacing:0;font-size:inherit;
+  color:inherit;display:inline}
+.forma-job{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+  gap:12px 16px;margin:0 0 14px;
+}
+.forma-job label{
+  display:flex;flex-direction:column;gap:4px;margin:0;
+  text-transform:none;letter-spacing:0;color:var(--texto-3);
+}
+.forma-job label > span:first-child{font-size:10.5px;letter-spacing:.1em;
+  text-transform:uppercase}
+.forma-job label.largo{grid-column:1/-1}
+.forma-job input,.forma-job select,.forma-job textarea{
+  width:100%;padding:8px 10px;border:1px solid var(--linha);border-radius:5px;
+  background:var(--painel);color:var(--texto);font-size:12.5px;margin:0;
+}
+.forma-job textarea{font-family:"IBM Plex Mono",monospace;min-height:92px;
+  resize:vertical}
+.forma-job .chk{flex-direction:row;align-items:center;gap:8px;
+  font-size:12.5px;color:var(--texto-2)}
+.forma-job .chk input{width:15px;height:15px;padding:0;margin:0}
+.forma-job .leg{font-size:10.5px;line-height:1.4;text-transform:none;
+  letter-spacing:0}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 
@@ -1107,6 +1192,23 @@ const DEMO = {
   bloqueios:[
     {ip:"203.0.113.9",desde:"2026-08-27 19:30:18,001",ate:"2026-08-27 20:30:18,001",
      motivo:"comando proibido pela politica",comando:"excluir",tentativas:1,firewall:false}
+  ],
+  jobs:[
+    {nome:"backup-noturno", descricao:"o zip de todo dia, antes de o time chegar",
+     ligado:true, hora:"03:00", agenda:"todo dia as 03:00", op:"backup",
+     usuario:"adm", pedido:{op:"backup"}, ultimo_ms:null, vencido:false},
+    {nome:"confere-clientes", descricao:"integridade da tabela mais movimentada",
+     ligado:false, cada_minutos:360, agenda:"a cada 6 h", op:"verificar",
+     usuario:"adm", pedido:{op:"verificar",database:"Z",tabela:"cadastroClientes"},
+     ultimo_ms:null, vencido:false}
+  ],
+  corridas:[
+    {quando:"2026-08-28 03:00:04,120", job:"backup-noturno", op:"backup",
+     usuario:"adm", ok:true, duracao_ms:842,
+     detalhe:'{"arquivos":31,"bytes":2118304} (destino: 1 campos)'},
+    {quando:"2026-08-27 03:00:03,880", job:"backup-noturno", op:"backup",
+     usuario:"adm", ok:false, duracao_ms:12,
+     detalhe:"esquema invalido: destino do backup nao existe: /mnt/cofre"}
   ]
 };
 
@@ -1131,6 +1233,13 @@ function demo(op, p) {
     case "usuarios": return d.usuarios;
     case "acessos": return {total:d.acessos.length, acessos:[...d.acessos].reverse()};
     case "bloqueios": return {arquivo:"blacklist.json", ativos:d.bloqueios};
+    // As telas novas também precisam existir sem servidor, senão avaliar a
+    // interface antes de instalar deixa três botões dando erro.
+    case "servico": return {no_ar:true, endereco:"127.0.0.1:5000",
+      bind_configurado:"0.0.0.0:5000", difere_do_arquivo:false, conexoes:1,
+      web:"127.0.0.1:5001", web_ligada:true};
+    case "jobs": return {arquivo:"jobs.json", log:"jobs.log",
+      jobs:d.jobs, historico:d.corridas};
     default: throw new Error("operação sem demonstração: " + op);
   }
 }
@@ -6295,6 +6404,13 @@ const ICO = {
   // cruza a fronteira do servidor.
   elo: `<path d="M9.5 14.5l5-5" stroke-width="1.7" stroke-linecap="round"/><path d="M12.8 7.7l1.9-1.9a3.4 3.4 0 014.8 4.8l-1.9 1.9M11.2 16.3l-1.9 1.9a3.4 3.4 0 01-4.8-4.8l1.9-1.9" fill="none" stroke-width="1.7" stroke-linecap="round"/>`,
   ajuda: `<circle cx="12" cy="12" r="9" fill="none" stroke-width="1.6"/><path d="M9.4 9.3a2.7 2.7 0 015.2.9c0 1.8-2.6 2.2-2.6 4" fill="none" stroke-width="1.7" stroke-linecap="round"/><path d="M12 17.4v.1" stroke-width="2.2" stroke-linecap="round"/>`,
+  // Um relogio com a flecha de repeticao: agenda que volta. E de proposito
+  // parecido com o `troca`, porque job e ciclo.
+  relogio: `<circle cx="12" cy="12.6" r="7.8" fill="none" stroke-width="1.6"/><path d="M12 8.4v4.4l3 1.8" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M9.4 3.2h5.2" stroke-width="1.7" stroke-linecap="round"/>`,
+  // Duas caixas ligadas por uma linha com ponta: e o desenho do proprio ER.
+  diagrama: `<rect x="2.8" y="3.5" width="8" height="6" rx="1.4" fill="none" stroke-width="1.5"/><rect x="13.2" y="14.5" width="8" height="6" rx="1.4" fill="none" stroke-width="1.5"/><path d="M6.8 9.5v5a1.6 1.6 0 001.6 1.6h4.2" fill="none" stroke-width="1.5"/><path d="M11.2 15l1.8 1.6-1.8 1.6" fill="none" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>`,
+  // Escudo com um cadeado: o dado que a lei manda proteger.
+  privado: `<path d="M12 2.8l7.4 3v5.4c0 4.3-3.1 7.8-7.4 9-4.3-1.2-7.4-4.7-7.4-9V5.8z" fill="none" stroke-width="1.5"/><rect x="9.2" y="11.4" width="5.6" height="4.6" rx="1" fill="none" stroke-width="1.4"/><path d="M10.4 11.4v-1.5a1.6 1.6 0 013.2 0v1.5" fill="none" stroke-width="1.4"/>`,
 };
 
 const svg = nome =>
@@ -6313,10 +6429,7 @@ const svg = nome =>
    Atencao: `--vermelhao` e `--laranja` sao a MESMA cor no tema claro, por
    decisao da marca. Escolher entre os dois seria escolher nada. */
 const FERRAMENTAS = [
-  { ico:"energia",  rot:"Start/Stop", cor:"var(--ok)",     faz:verServico,
-    falta:"Parar a porta 5000 sem derrubar o processo exige acordar o laço de "
-        + "aceitação — conectar no próprio endereço para o `accept` retornar e "
-        + "então conferir um sinalizador. Mexe no coração do servidor." },
+  { ico:"energia",  rot:"Start/Stop", cor:"var(--ok)",     faz:verServico },
   { ico:"consulta", rot:"Query",      cor:"var(--ndx)",    faz:abrirConsulta },
   { ico:"pivot",    rot:"Pivot",      cor:"var(--ndx)",    faz:() => telaPivot() },
   { ico:"venn",     rot:"Junção",     cor:"var(--ndx)",    faz:() => telaJuncao() },
@@ -6345,6 +6458,9 @@ const FERRAMENTAS = [
   "risco",
   { ico:"replica",  rot:"Replicação", cor:"var(--ndx)",    faz:verReplicacao },
   { ico:"pulso",    rot:"Profiler",   cor:"var(--acao-consultar)", faz:verProfiler },
+  { ico:"relogio",  rot:"Jobs",       cor:"var(--log)",    faz:telaJobs },
+  { ico:"diagrama", rot:"Diagrama ER",cor:"var(--ndx)",    faz:() => telaDiagramaER() },
+  { ico:"privado",  rot:"LGPD",       cor:"var(--laranja)",faz:() => telaDadosPessoais() },
   { ico:"correio",  rot:"Server Mail",cor:"var(--reg)",    faz:null,
     falta:"O armazenamento serve bem — uma tabela de mensagens com pasta "
         + "indexada, corpo no .memo e anexo no .bin. Falta o serviço. O SMTP "
@@ -6396,26 +6512,508 @@ function aindaNao(f) {
 
 /* ------------------------------------------------ o que a barra liga de fato */
 
+/* A tela do Serviço: parar e subir a porta de dados, e trocar a porta.
+ *
+ * O que ela NÃO faz, de propósito: derrubar o processo. Um botão que se
+ * desfaz é um botão; um que não se desfaz é um alçapão — não sobraria
+ * ninguém para atender o «subir». O processo continua vivo, a interface web
+ * continua no ar na porta dela, e é por ela que a porta de dados volta.
+ */
 async function verServico() {
-  const [p, c] = await Promise.all([api("ping"), api("config")]);
-  folha("Serviço", "o que está no ar agora",
+  const [p, s] = await Promise.all([api("ping"), api("servico")]);
+  const noAr = !!s.no_ar;
+  folha("Serviço",
+    noAr ? "a porta de dados está aceitando conexão"
+         : "a porta de dados está PARADA — a interface web continua no ar",
     `<div class="fichas">
-       <div class="ficha"><div class="v">no ar</div><div class="r">estado</div>
-         <div class="u">${esc(c.bind || "—")}</div></div>
-       <div class="ficha"><div class="v">${esc(p.versao || p.phxsql || "—")}</div>
-         <div class="r">versão</div></div>
-       <div class="ficha"><div class="v">${esc(String(c.conexoes_max ?? "—"))}</div>
-         <div class="r">conexões máx.</div></div>
-       <div class="ficha"><div class="v">${esc(p.papel || c.papel || "—")}</div>
+       <div class="ficha"><div class="v" style="color:${
+          noAr ? "var(--ok)" : "var(--vermelho)"}">${noAr ? "no ar" : "parada"}</div>
+         <div class="r">porta de dados</div></div>
+       <div class="ficha"><div class="v">${esc(s.endereco || "—")}</div>
+         <div class="r">${noAr ? "escutando em" : "última porta"}</div></div>
+       <div class="ficha"><div class="v">${fmt(s.conexoes ?? 0)}</div>
+         <div class="r">conexões abertas</div></div>
+       <div class="ficha"><div class="v">${esc(p.papel || "—")}</div>
          <div class="r">papel</div></div>
+       <div class="ficha"><div class="v">${esc(s.web_ligada ? s.web : "desligada")}</div>
+         <div class="r">interface web</div></div>
      </div>
+
+     ${s.difere_do_arquivo ? `<div class="aviso">
+       <p><strong>A porta de agora não é a do arquivo.</strong> O
+       <code>config.json</code> diz <code>${esc(s.bind_configurado)}</code>, e o
+       servidor está em <code>${esc(s.endereco || "—")}</code>. Trocar pela tela
+       vale <b>até o próximo arranque</b> — esta tela não reescreve o
+       <code>config.json</code>, que carrega comentários e o resto da
+       configuração. Para valer sempre, mude o campo <code>bind</code> lá.</p>
+     </div>` : ""}
+
+     <h3>Trocar a porta, ou religar</h3>
+     <div class="barra-acao">
+       <label>Endereço<input id="svBind" value="${esc(s.endereco || s.bind_configurado || "")}"
+         placeholder="127.0.0.1:5000"></label>
+       <button class="botao ${noAr ? "alterar" : "incluir"}" id="btSvSubir">${
+         noAr ? "Trocar para esta porta" : "Subir nesta porta"}</button>
+       ${noAr ? `<button class="botao excluir" id="btSvParar">Parar a porta de dados</button>` : ""}
+       <button class="botao consultar" id="btSvVer">Atualizar</button>
+     </div>
+
      <div class="nota">
-       <p><strong>Parar e subir pela tela ainda não dá.</strong> ${esc(
-          FERRAMENTAS[0].falta)}</p>
-       <p>Por enquanto é pelo sistema: <code>systemctl stop phxsql</code> no
-       Linux, ou o Gerenciador de Serviços no Windows. A porta se troca no
-       campo <code>bind</code> do <code>config.json</code>.</p>
+       <p><strong>Quem fica sem resposta.</strong> Ninguém que já está
+       conectado: as conexões vivas seguem até elas mesmas acabarem. O que para
+       é o <code>accept</code> — cliente <em>novo</em> recebe recusa de conexão,
+       o mesmo que receberia com o serviço desligado. Agora há
+       <b>${fmt(s.conexoes ?? 0)}</b> conexão(ões) aberta(s).</p>
+       <p><strong>Como se volta se errar a porta.</strong> A porta nova é
+       <em>presa antes</em> de a antiga ser solta: porta ocupada, permissão
+       negada (abaixo de 1024 sem raiz) ou endereço escrito errado falham sem
+       trocar nada, e o serviço continua exatamente como estava. E mesmo com a
+       porta de dados parada, esta tela continua aqui — a interface web é outro
+       soquete, no mesmo processo.</p>
+       <p><strong>O processo não é derrubado por aqui.</strong> Para isso é o
+       sistema: <code>systemctl stop phxsql</code> no Linux, ou o Gerenciador de
+       Serviços no Windows.</p>
+     </div>
+     <p class="cores-acao"><b><i style="background:var(--acao-incluir)"></i>subir</b>
+       <b><i style="background:var(--acao-alterar)"></i>trocar</b>
+       <b><i style="background:var(--acao-excluir)"></i>parar</b>
+       <b><i style="background:var(--acao-consultar)"></i>consultar</b></p>`);
+
+  $("#btSvVer").onclick = () => verServico();
+  const parar = $("#btSvParar");
+  if (parar) parar.onclick = async () => {
+    if (!confirm("Parar de aceitar conexão nova na porta de dados?\n\n"
+      + "As conexões abertas continuam. Para voltar, use esta mesma tela.")) return;
+    try {
+      const r = await api("servico_parar");
+      avisar(`porta de dados parando · ${r.conexoes_abertas} conexão(ões) aberta(s)`);
+      setTimeout(verServico, 500);
+    } catch (e) { avisar(`${e}`, true); }
+  };
+  $("#btSvSubir").onclick = async () => {
+    const bind = $("#svBind").value.trim();
+    if (noAr && bind && bind !== s.endereco
+        && !confirm(`Trocar a porta de dados para ${bind}?\n\n`
+          + `Todo cliente que fala com ${s.endereco} precisa ser reapontado.`)) return;
+    try {
+      const r = await api("servico_subir", { bind });
+      avisar(`subindo em ${r.subindo_em}`);
+      setTimeout(verServico, 600);
+    } catch (e) { avisar(`${e}`, true); }
+  };
+}
+
+/* ======================================================== jobs de execução
+ *
+ * Um job é um NOME, uma AGENDA e uma operação do protocolo que já existe. O
+ * agendador do backup já era esse desenho; o que muda é qual operação roda.
+ *
+ * A parte que mais importa nesta tela é o campo «roda como»: o job carrega o
+ * login de um usuário do cadastro e roda com o poder DAQUELE usuário, nem um
+ * pingo a mais. Um agendador com poder próprio seria uma porta dos fundos com
+ * hora marcada.
+ */
+async function telaJobs() {
+  const j = await api("jobs", { historico: 40 });
+  const jobs = j.jobs || [];
+  const hist = j.historico || [];
+
+  const linha = x => `<tr class="linha-job" data-n="${esc(x.nome)}">
+    <td class="dado"><b>${esc(x.nome)}</b>${x.descricao
+      ? `<div class="leg">${esc(x.descricao)}</div>` : ""}</td>
+    <td>${x.ligado ? '<span class="pino ok">ligado</span>'
+                   : '<span class="pino nao">desligado</span>'}</td>
+    <td class="dado">${esc(x.agenda)}</td>
+    <td class="dado">${esc(x.op)}</td>
+    <td class="dado">${esc(x.usuario) || '<span class="leg">sem cadastro</span>'}</td>
+    <td class="dado">${x.ultimo_ms
+      ? esc(new Date(x.ultimo_ms).toLocaleString("pt-BR"))
+      : "nunca rodou"}</td>
+    <td>${x.vencido ? '<span class="pino mal">vencido</span>' : ""}</td>
+    <td><button class="botao mini alterar bt-rodar" data-n="${esc(x.nome)}">Rodar agora</button></td>
+  </tr>`;
+
+  folha("Jobs de execução",
+    `${jobs.length} job(s) · cadastro em ${esc(j.arquivo)} · corridas em ${esc(j.log)}`,
+    (jobs.length
+      ? tabela([{t:"nome"},{t:"estado"},{t:"agenda"},{t:"operação"},{t:"roda como"},
+                {t:"última corrida"},{t:""},{t:""}], jobs, linha)
+      : `<div class="vazio">nenhum job cadastrado ainda</div>`)
+    + `<div class="acoes">
+         <button class="botao incluir" id="btJobNovo">Novo job…</button>
+         <button class="botao consultar" id="btJobVer">Atualizar</button>
+       </div>
+       <h3>Últimas corridas</h3>
+       ${hist.length ? tabela(
+          [{t:"quando"},{t:"job"},{t:"operação"},{t:"como"},{t:"resultado"},
+           {t:"ms",cls:"num"},{t:"detalhe"}],
+          hist, h => `<tr><td class="dado">${esc(h.quando)}</td>
+            <td class="dado">${esc(h.job)}</td>
+            <td class="dado">${esc(h.op)}</td>
+            <td class="dado">${esc(h.usuario) || "—"}</td>
+            <td>${h.ok ? '<span class="pino ok">ok</span>'
+                       : '<span class="pino mal">falhou</span>'}</td>
+            <td class="num">${fmt(h.duracao_ms)}</td>
+            <td class="dado prof-pedido" title="${esc(h.detalhe)}">${esc(h.detalhe)}</td></tr>`)
+        : `<div class="vazio">nenhuma corrida registrada</div>`}
+       <div class="nota">
+         <p><strong>Um job roda com o poder do usuário dele</strong>, e nem um
+         pingo a mais. Usuário que sumiu do cadastro ou foi desativado
+         <b>para</b> o job, com o motivo escrito — em vez de cair para uma
+         sessão sem dono, que rodaria com tudo liberado.</p>
+         <p><strong>O relógio acorda de 30 em 30 segundos</strong>, e só sobe se
+         havia algum job ligado quando o servidor arrancou. Ligar o primeiro job
+         pela tela vale a partir do próximo arranque — a tela avisa quando é o
+         caso.</p>
+         <p><strong>Falha entra no histórico igual</strong> ao acerto: job que
+         falha calado não existe. O detalhe é o resumo da resposta — a resposta
+         inteira não cabe, e uma varredura de vinte mil linhas vira
+         «linhas: 20000 itens».</p>
+       </div>
+       <p class="cores-acao"><b><i style="background:var(--acao-incluir)"></i>novo</b>
+         <b><i style="background:var(--acao-alterar)"></i>rodar / editar</b>
+         <b><i style="background:var(--acao-excluir)"></i>excluir</b>
+         <b><i style="background:var(--acao-consultar)"></i>consultar</b></p>`);
+
+  $("#btJobVer").onclick = () => telaJobs();
+  $("#btJobNovo").onclick = () => editarJob(null);
+  // `filter`, e não `find`: cada botão precisa do próprio ouvinte. Ligar só o
+  // primeiro é exatamente o defeito que o vídeo achou no `rownum`.
+  $$("#painel .bt-rodar").forEach(b => b.onclick = async ev => {
+    ev.stopPropagation();
+    await rodarJob(b.dataset.n);
+  });
+  $$("#painel .linha-job").forEach(tr => tr.onclick = () => editarJob(tr.dataset.n));
+}
+
+async function rodarJob(nome) {
+  try {
+    const r = await api("job_rodar", { nome });
+    // O pedido deu certo; o JOB pode ter falhado. São duas coisas, e a tela
+    // não pode dizer "pronto" quando o job voltou com erro.
+    avisar(r.ok ? `job ${nome} rodou em ${r.duracao_ms} ms`
+                : `job ${nome} FALHOU: ${r.detalhe}`, !r.ok);
+  } catch (e) { avisar(`${e}`, true); }
+  telaJobs();
+}
+
+/** As operações que fazem sentido num job, com um pedido de exemplo cada.
+ *
+ * Não é uma lista fechada: o campo do pedido aceita qualquer operação do
+ * protocolo. Ela existe para quem não sabe de cor o nome dos campos. */
+const JOBS_MODELO = [
+  ["backup",     'Backup do servidor',        '{"op":"backup"}'],
+  ["reindexar",  'Refazer o índice de uma tabela',
+    '{"op":"reindexar","database":"Comercial","tabela":"cadastroClientes"}'],
+  ["verificar",  'Conferir a integridade de uma tabela',
+    '{"op":"verificar","database":"Comercial","tabela":"cadastroClientes"}'],
+  ["checksum",   'Soma de verificação de uma tabela',
+    '{"op":"checksum","database":"Comercial","tabela":"cadastroClientes"}'],
+  ["esvaziar_lixeira", 'Esvaziar a lixeira de uma tabela',
+    '{"op":"esvaziar_lixeira","database":"Comercial","tabela":"cadastroClientes"}'],
+  ["ping",       'Só um pulso, para provar que o relógio anda', '{"op":"ping"}'],
+];
+
+async function editarJob(nome) {
+  const [j, us] = await Promise.all([api("jobs"), api("usuarios").catch(() => [])]);
+  const x = nome ? (j.jobs || []).find(a => a.nome === nome) : null;
+  const porHora = !!(x && x.hora);
+  const logins = (Array.isArray(us) ? us : []).filter(u => u.ativo).map(u => u.login);
+
+  folha(x ? `Job ${x.nome}` : "Novo job",
+    x ? "o nome não muda — para renomear, crie outro e apague este"
+      : "letras, números, _ e - no nome · ele nasce desligado, de propósito",
+    `<div class="forma-job">
+       <label><span>Nome</span>
+         <input id="jbNome" value="${esc(x ? x.nome : "")}" ${x ? "disabled" : ""}></label>
+       <label><span>Roda como</span>
+         ${logins.length
+           ? `<select id="jbUsuario">${
+               logins.map(l => `<option ${x && x.usuario === l ? "selected" : ""}
+                 >${esc(l)}</option>`).join("")}</select>`
+           : `<input id="jbUsuario" value="${esc(x ? x.usuario : "")}"
+                placeholder="(este servidor não tem cadastro)">`}
+         <span class="leg">o job roda com o poder deste usuário, e nem um pingo a mais</span>
+       </label>
+       <label class="largo"><span>Descrição</span>
+         <input id="jbDesc" value="${esc(x ? x.descricao : "")}"></label>
+
+       <label><span>Quando</span>
+         <select id="jbQuando">
+           <option value="cada" ${porHora ? "" : "selected"}>a cada N minutos</option>
+           <option value="hora" ${porHora ? "selected" : ""}>todo dia, numa hora</option>
+         </select></label>
+       <label><span>A cada (min)</span>
+         <input id="jbCada" type="number" min="1"
+           value="${esc(x && x.cada_minutos ? x.cada_minutos : 60)}"></label>
+       <label><span>Hora (HH:MM)</span>
+         <input id="jbHora" value="${esc(x && x.hora ? x.hora : "")}" placeholder="03:00">
+         <span class="leg">preenchida, ela manda — e o job roda uma vez por dia</span></label>
+
+       <label class="largo"><span>Modelo de pedido</span>
+         <select id="jbModelo"><option value="">— escolha para preencher abaixo —</option>
+           ${JOBS_MODELO.map(([o, rot, ex]) =>
+             `<option value="${esc(ex)}">${esc(o)} — ${esc(rot)}</option>`).join("")}
+         </select></label>
+       <label class="largo"><span>Pedido do protocolo</span>
+         <textarea id="jbPedido" spellcheck="false">${
+           esc(x ? JSON.stringify(x.pedido, null, 2) : '{\n  "op": "ping"\n}')}</textarea>
+         <span class="leg">o mesmo objeto que a porta 5000 aceita, <b>sem</b> o
+           <code>token</code> — o job não entra pela rede</span></label>
+
+       <label class="chk largo">
+         <input type="checkbox" id="jbLigado" ${x && x.ligado ? "checked" : ""}>
+         <span>Ligado — o relógio passa a considerá-lo</span></label>
+     </div>
+     <div class="acoes">
+       <button class="botao ${x ? "alterar" : "incluir"}" id="btJbGravar">${
+         x ? "Gravar alterações" : "Criar o job"}</button>
+       ${x ? `<button class="botao alterar" id="btJbRodar">Rodar agora</button>
+              <button class="botao excluir" id="btJbApagar">Excluir job</button>` : ""}
+       <button class="botao consultar" id="btJbVolta">← Jobs</button>
      </div>`);
+
+  $("#btJbVolta").onclick = () => telaJobs();
+  /* Os dois campos de agenda ficavam ativos ao mesmo tempo: quem escolhia
+     «a cada N minutos» e ainda assim digitava a hora não recebia aviso nenhum
+     — o valor era simplesmente ignorado na gravação. Só apareceu abrindo a
+     tela. O que não vale fica desabilitado, e o olho vê. */
+  const ajustarAgenda = () => {
+    const porHoraAgora = $("#jbQuando").value === "hora";
+    $("#jbCada").disabled = porHoraAgora;
+    $("#jbHora").disabled = !porHoraAgora;
+    $("#jbCada").closest("label").style.opacity = porHoraAgora ? ".45" : "1";
+    $("#jbHora").closest("label").style.opacity = porHoraAgora ? "1" : ".45";
+  };
+  $("#jbQuando").onchange = ajustarAgenda;
+  ajustarAgenda();
+  $("#jbModelo").onchange = ev => {
+    if (!ev.target.value) return;
+    $("#jbPedido").value = JSON.stringify(JSON.parse(ev.target.value), null, 2);
+  };
+  const gravar = async () => {
+    let pedido;
+    try {
+      pedido = JSON.parse($("#jbPedido").value);
+    } catch (e) {
+      // Analisar aqui em vez de mandar o texto: o erro de digitação aparece
+      // com o nome dele, e não como «esquema inválido» vindo do servidor.
+      return avisar(`o pedido não é um JSON válido: ${e.message}`, true);
+    }
+    const job = {
+      nome: (x ? x.nome : $("#jbNome").value).trim(),
+      descricao: $("#jbDesc").value.trim(),
+      usuario: $("#jbUsuario").value.trim(),
+      ligado: $("#jbLigado").checked,
+      pedido,
+    };
+    if ($("#jbQuando").value === "hora") job.hora = $("#jbHora").value.trim();
+    else job.cada_minutos = Number($("#jbCada").value) || 60;
+    try {
+      const r = await api("job_salvar", { job });
+      avisar(`job ${r.salvo} gravado`);
+      if (job.ligado && !r.relogio_no_ar) {
+        avisar("gravado — mas o relógio de jobs não subiu neste arranque: "
+             + "ele só sobe quando já há job ligado. Reinicie para o job andar sozinho.", true);
+      }
+      telaJobs();
+    } catch (e) { avisar(`${e}`, true); }
+  };
+  $("#btJbGravar").onclick = gravar;
+  if (x) {
+    $("#btJbRodar").onclick = () => rodarJob(x.nome);
+    $("#btJbApagar").onclick = async () => {
+      if (!confirm(`Excluir o job ${x.nome}? O histórico das corridas dele fica.`)) return;
+      try { await api("job_excluir", { nome: x.nome }); avisar(`job ${x.nome} excluído`); }
+      catch (e) { return avisar(`${e}`, true); }
+      telaJobs();
+    };
+  }
+}
+
+/* =========================================================== diagrama ER
+ *
+ * As chaves estrangeiras já estão declaradas e já vêm no `esquema` — o que
+ * faltava era o desenho. O layout mora em `ui/diagrama-er.js`, porque é a
+ * única parte da interface que é algoritmo.
+ */
+async function telaDiagramaER(db) {
+  db = db || databaseCorrente();
+  const bancos = est.bancos || await api("bancos");
+  if (!db) db = bancos[0];
+  if (!db) return folha("Diagrama ER", "não há database ainda",
+    `<div class="vazio">crie um database primeiro</div>`);
+
+  folha("Diagrama ER", `${esc(db)} · lendo o esquema…`,
+    `<div class="centro">lendo o esquema de cada tabela…</div>`);
+  const t = await api("tabelas", { database: db });
+  const esquemas = [];
+  for (const nome of (t.tabelas || [])) {
+    // Uma tabela que este usuário não pode ler simplesmente não entra no
+    // desenho -- e a contagem embaixo diz quantas ficaram de fora, em vez de
+    // o diagrama fingir que o banco é menor do que é.
+    try { esquemas.push(await api("esquema", { database: db, tabela: nome })); }
+    catch (e) { /* sem permissão ou tabela quebrada */ }
+  }
+  const fora = (t.tabelas || []).length - esquemas.length;
+  const r = PhxER.resumo(esquemas);
+  const svg = PhxER.desenhar(esquemas);
+
+  folha("Diagrama ER",
+    `${esc(db)} · ${r.tabelas} tabela(s), ${r.ligacoes} chave(s) estrangeira(s)`,
+    `<div class="barra-acao">
+       <label>Database<select id="erDb">${bancos.map(b =>
+         `<option ${b === db ? "selected" : ""}>${esc(b)}</option>`).join("")}</select></label>
+       <button class="botao consultar" id="btErVer">Redesenhar</button>
+     </div>
+     ${svg ? `<div class="er-rolo">${svg}</div>` : `<div class="vazio">
+       nenhuma tabela para desenhar</div>`}
+     <p class="er-legenda">
+       <b style="color:var(--laranja)">PK</b> chave primária
+       <b style="color:var(--ndx)">FK</b> chave estrangeira
+       <b>→</b> a seta sai do filho e chega no pai
+       <b style="font-style:italic">- - →</b> aponta para fora deste database
+     </p>
+     ${fora > 0 ? `<div class="aviso">${fora} tabela(s) ficaram de fora do
+       desenho — sem permissão de leitura, ou com o esquema ilegível.</div>` : ""}
+     <div class="nota">
+       <p><strong>Só o desenho, por enquanto.</strong> Arrastar caixa, criar
+       tabela pelo diagrama e ligar duas colunas com o mouse são o
+       <em>editor de modelo</em>, e ele é outra rodada. Dizer isso é melhor do
+       que deixar a pessoa descobrir clicando e não acontecendo nada.</p>
+       <p>Cada caixa mostra até ${PhxER.MEDIDAS.maxColunas} colunas, com a chave
+       primeiro — o resto vira uma contagem. As colunas de sistema
+       (<code>rownum</code>, <code>softdeleted</code>) não entram: elas são do
+       motor, e não do modelo.</p>
+       ${r.soltas ? `<p><strong>${r.soltas} chave(s) apontam para fora deste
+         database.</strong> Elas aparecem penduradas, tracejadas — sumir com
+         elas seria fingir que a declaração não existe.</p>` : ""}
+       ${r.sem_ligacao ? `<p>${r.sem_ligacao} tabela(s) não participam de
+         nenhuma chave estrangeira.</p>` : ""}
+     </div>`);
+
+  $("#btErVer").onclick = () => telaDiagramaER($("#erDb").value);
+  $("#erDb").onchange = ev => telaDiagramaER(ev.target.value);
+  $$("#painel .er-tabela").forEach(g => g.onclick = () =>
+    abrirTabela(db, g.dataset.tabela));
+}
+
+/* ================================================ dado pessoal (LGPD/GDPR)
+ *
+ * A marca vive no esquema, por coluna, no campo booleano `pessoal`. Esta tela
+ * só AUDITA: mostra onde as marcas estão, por base e por tabela.
+ *
+ * A regra que ela não pode quebrar: se o esquema deste servidor ainda não
+ * traz o campo, a tela diz isso — e não «nenhum dado pessoal encontrado», que
+ * seria uma mentira tranquilizadora sobre exatamente o assunto em que ela
+ * custa mais caro.
+ */
+async function telaDadosPessoais(db) {
+  const bancos = est.bancos || await api("bancos");
+  const alvos = db ? [db] : bancos;
+  folha("Dado pessoal", "varrendo o esquema…",
+    `<div class="centro">lendo o esquema de cada tabela…</div>`);
+
+  const achados = [];
+  let colunasVistas = 0, comCampo = 0, tabelas = 0, semAcesso = 0;
+  for (const base of alvos) {
+    let t;
+    try { t = await api("tabelas", { database: base }); }
+    catch (e) { semAcesso++; continue; }
+    for (const nome of (t.tabelas || [])) {
+      let e;
+      try { e = await api("esquema", { database: base, tabela: nome }); }
+      catch (err) { semAcesso++; continue; }
+      tabelas++;
+      for (const c of (e.colunas || [])) {
+        if (c.sistema) continue;
+        colunasVistas++;
+        // A diferença que decide o texto da tela: o campo AUSENTE não é o
+        // mesmo que o campo `false`. Um diz «o motor ainda não sabe marcar»;
+        // o outro diz «alguém olhou e disse que não é pessoal».
+        if (Object.prototype.hasOwnProperty.call(c, "pessoal")) comCampo++;
+        if (c.pessoal) achados.push({ base, tabela: nome, coluna: c });
+      }
+    }
+  }
+
+  const semSuporte = comCampo === 0;
+  const bases = new Set(achados.map(a => a.base)).size;
+  const tabelasComDado = new Set(achados.map(a => `${a.base}.${a.tabela}`)).size;
+
+  folha("Dado pessoal",
+    db ? `${esc(db)} · onde estão as marcas de LGPD/GDPR`
+       : "todas as bases · onde estão as marcas de LGPD/GDPR",
+    `<div class="fichas">
+       <div class="ficha"><div class="v">${fmt(achados.length)}</div>
+         <div class="r">colunas marcadas</div></div>
+       <div class="ficha"><div class="v">${fmt(tabelasComDado)}</div>
+         <div class="r">tabelas atingidas</div></div>
+       <div class="ficha"><div class="v">${fmt(bases)}</div>
+         <div class="r">bases atingidas</div></div>
+       <div class="ficha"><div class="v">${fmt(tabelas)}</div>
+         <div class="r">tabelas varridas</div></div>
+       <div class="ficha"><div class="v">${fmt(colunasVistas)}</div>
+         <div class="r">colunas varridas</div></div>
+     </div>
+
+     <div class="barra-acao">
+       <label>Alcance<select id="lgDb">
+         <option value="">todas as bases</option>
+         ${bancos.map(b => `<option ${b === db ? "selected" : ""}>${esc(b)}</option>`).join("")}
+       </select></label>
+       <button class="botao consultar" id="btLgVer">Varrer de novo</button>
+     </div>
+
+     ${semSuporte ? `<div class="aviso mal">
+       <p><strong>O esquema deste servidor ainda não traz a marca
+       <code>pessoal</code> por coluna.</strong> Nenhuma das
+       ${fmt(colunasVistas)} colunas varridas respondeu esse campo — nem
+       <code>true</code>, nem <code>false</code>.</p>
+       <p>Por isso esta tela <b>não</b> diz «nenhum dado pessoal encontrado»:
+       ela não sabe. Campo ausente e campo <code>false</code> são coisas
+       diferentes, e confundir os dois num relatório de LGPD é exatamente onde
+       a confusão custa mais caro. Quando a marca entrar no cadastro de campos
+       — ao lado de <code>caption</code>, <code>descricao</code> e
+       <code>mascara</code> —, esta tela passa a listar sozinha.</p>
+     </div>` : ""}
+
+     ${achados.length
+       ? tabela([{t:"base"},{t:"tabela"},{t:"coluna"},{t:"rótulo"},{t:"tipo"},
+                 {t:"papel"},{t:"descrição"}],
+           achados, a => `<tr class="linha-lg" data-db="${esc(a.base)}"
+             data-tab="${esc(a.tabela)}">
+             <td class="dado">${esc(a.base)}</td>
+             <td class="dado">${esc(a.tabela)}</td>
+             <td class="dado"><b>${esc(a.coluna.nome)}</b></td>
+             <td><span class="rot-dado">${esc(a.coluna.rotulo || a.coluna.caption || "—")}</span></td>
+             <td class="dado">${esc(a.coluna.tipo)}</td>
+             <td>${a.coluna.primaria ? '<span class="pino">PK</span> ' : ""}${
+                  a.coluna.estrangeira ? '<span class="pino ndx">FK</span> ' : ""}${
+                  (a.coluna.nos_indices || []).length
+                    ? `<span class="pino reg">indexada</span>` : ""}</td>
+             <td>${esc(a.coluna.descricao || "")}</td></tr>`)
+       : (semSuporte ? "" : `<div class="vazio">nenhuma coluna marcada como dado
+           pessoal nas ${fmt(tabelas)} tabelas varridas</div>`)}
+
+     ${semAcesso ? `<div class="aviso">${semAcesso} tabela(s) ou base(s) não
+       puderam ser lidas com este login — uma auditoria feita por quem não vê
+       tudo não é uma auditoria completa, e é melhor a tela dizer.</div>` : ""}
+
+     <div class="nota">
+       <p><strong>Coluna indexada com dado pessoal merece um olhar a mais.</strong>
+       A chave vai para o <code>.ndx</code> em claro, e o índice é um segundo
+       lugar onde o dado existe — apagar a linha do <code>.reg</code> não é a
+       mesma coisa que tirá-lo de todo lugar.</p>
+       <p>Esta tela <b>lê</b> a marca. Marcar e desmarcar é no cadastro de
+       campos da tabela, junto com <code>caption</code>,
+       <code>descricao</code> e <code>mascara</code>.</p>
+     </div>`);
+
+  $("#btLgVer").onclick = () => telaDadosPessoais($("#lgDb").value || null);
+  $("#lgDb").onchange = ev => telaDadosPessoais(ev.target.value || null);
+  $$("#painel .linha-lg").forEach(tr => tr.onclick = () =>
+    abrirTabela(tr.dataset.db, tr.dataset.tab));
 }
 
 async function verDiretivas() {
@@ -6763,6 +7361,8 @@ const MENUS = [
     { rot:"Junção de tabelas…",   ico:"◉", faz:() => telaJuncao() },
     { rot:"União de tabelas…",    ico:"⊎", faz:() => telaUniao() },
     { rot:"Sequências",           ico:"№", faz:() => verSequencias() },
+    { rot:"Diagrama ER…",         ico:"◇", faz:() => telaDiagramaER() },
+    { rot:"Dado pessoal (LGPD)…", ico:"⛨", faz:() => telaDadosPessoais(databaseCorrente()) },
     "sep",
     { rot:"Copiar / colar tabela…", ico:"⧉", faz:() => telaCopiarColar(databaseCorrente()) },
     { rot:"Backup e restauração", ico:"⛁", faz:() => verBackupRestaure(databaseCorrente()) },
@@ -6813,6 +7413,8 @@ const MENUS = [
     { rot:"Usuários",      ico:"☺", faz:() => irPara("usuarios") },
     { rot:"Acessos",       ico:"◷", faz:() => irPara("acessos") },
     { rot:"Bloqueios",     ico:"⊘", faz:() => irPara("bloqueios") },
+    { rot:"Dado pessoal (LGPD)…", ico:"⛨", faz:() => telaDadosPessoais() },
+    { rot:"Jobs de execução…",    ico:"⏱", faz:telaJobs },
     "sep",
     { rot:"Sessões agora", ico:"⇋", faz:verSessoes },
     { rot:"Estatísticas de uso", ico:"◷", faz:() => verEstatisticas() },
@@ -6832,6 +7434,7 @@ const MENUS = [
     { rot:"União de tabelas…",    ico:"⊎", faz:() => telaUniao() },
     "sep",
     { rot:"Serviço",              ico:"⏻", faz:verServico },
+    { rot:"Jobs de execução…",    ico:"⏱", faz:telaJobs },
     { rot:"Sessões e conexões",   ico:"⇋", faz:verSessoes },
     { rot:"Estatísticas de uso…", ico:"◷", faz:() => verEstatisticas() },
     { rot:"Replicação",           ico:"⇉", faz:verReplicacao },

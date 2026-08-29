@@ -84,6 +84,17 @@ const OPS_ESCRITA: &[&str] = &[
     // que e a unica replica que se sustenta. Quem pode chamar `aplicar` ja
     // passou pelo portao do `administrar`.
     "encerrar_sessao",
+    // Gravam o cadastro de jobs, que e arquivo deste servidor. `job_rodar` NAO
+    // entra: ele confere o portao com a operacao DE DENTRO do job, entao um
+    // job que grava ja e recusado por ela num servidor somente-leitura -- e um
+    // job que so le continua rodando, que e o certo.
+    "job_salvar",
+    "job_excluir",
+    // Parar a porta de dados nao grava byte nenhum, mas interrompe o trabalho
+    // de todo mundo -- pela mesma razao que `encerrar_sessao` esta aqui. Um
+    // servidor declarado somente-leitura nao e um servidor sem dono.
+    "servico_parar",
+    "servico_subir",
 ];
 
 /// Estado de uma conexao.
@@ -345,6 +356,26 @@ pub struct Servidor {
     profiler_ligado: AtomicBool,
     /// Ligacoes para bancos de fora.
     dblink: Mutex<crate::dblink::Registro>,
+    /// Jobs de execucao: cadastro e a hora da ultima corrida de cada um.
+    jobs: Mutex<crate::jobs::Registro>,
+    /// O relogio dos jobs subiu neste processo?
+    relogio_de_jobs: AtomicBool,
+    /// A porta de dados esta aceitando conexao agora?
+    ///
+    /// Parada, o processo continua vivo e a interface web continua no ar --
+    /// e e por ela que a porta volta. Um botao que derrubasse o PROCESSO nao
+    /// teria como se desfazer: nao sobraria ninguem para atender o "subir".
+    porta_no_ar: AtomicBool,
+    /// Sinalizador que o laco de aceitacao le depois de cada `accept`.
+    parar_de_aceitar: AtomicBool,
+    /// O ouvinte ja preso no endereco novo, esperando o laco soltar o velho.
+    ///
+    /// A ordem importa e e a garantia contra o tiro no pe: o endereco novo e
+    /// PRESO antes de o antigo ser solto. Porta ocupada ou endereco invalido
+    /// falham enquanto o servico continua no ar, e nada muda.
+    proximo_ouvinte: Mutex<Option<TcpListener>>,
+    /// Onde a porta de dados escuta agora, que nem sempre e o `bind`.
+    endereco_dos_dados: Mutex<Option<SocketAddr>>,
     conexoes: AtomicUsize,
 }
 
@@ -360,6 +391,7 @@ impl Servidor {
         let log = LogAcessos::abrir(&config.log_acessos)?;
         let lista_negra = Blacklist::abrir(&config.blacklist)?;
         let dblink = crate::dblink::Registro::abrir(&config.dblink)?;
+        let jobs = crate::jobs::Registro::abrir(&config.jobs)?;
         Ok(Arc::new(Servidor {
             janela: Janela::nova(&config.recursos),
             sujas: Mutex::new(std::collections::HashSet::new()),
@@ -374,6 +406,12 @@ impl Servidor {
             desde_ms: crate::agora_ms(),
             monitor: Mutex::new(crate::sistema::Monitor::novo()),
             dblink: Mutex::new(dblink),
+            jobs: Mutex::new(jobs),
+            relogio_de_jobs: AtomicBool::new(false),
+            porta_no_ar: AtomicBool::new(false),
+            parar_de_aceitar: AtomicBool::new(false),
+            proximo_ouvinte: Mutex::new(None),
+            endereco_dos_dados: Mutex::new(None),
             avisados: Mutex::new(HashMap::new()),
             conexoes: AtomicUsize::new(0),
             cargas: Mutex::new(crate::carga::Cargas::default()),
@@ -427,12 +465,64 @@ impl Servidor {
         self.subir_web();
         self.subir_replicacao();
         self.subir_backup_agendado();
+        self.subir_jobs();
         self.ligar_relogio_de_gravacao();
         self.ligar_vigia_de_disco();
 
-        for conexao in ouvinte.incoming() {
+        self.anotar_porta_no_ar(&ouvinte);
+        let mut atual = Some(ouvinte);
+        loop {
+            match atual.take() {
+                Some(o) => {
+                    self.aceitar_ate_mandarem_parar(&o);
+                    // A porta so e SOLTA aqui, depois do laco sair -- e o
+                    // ouvinte novo, quando ha, ja esta preso desde antes de
+                    // qualquer coisa parar. Ver `op_servico_subir`.
+                    drop(o);
+                    self.porta_no_ar.store(false, Ordering::SeqCst);
+                    eprintln!("porta de dados PARADA (a interface web continua no ar)");
+                }
+                // Parada: a linha de execucao fica aqui, de olho no pedido de
+                // subir de novo. Um quarto de segundo de espera so acontece
+                // enquanto o servico esta parado, que e o caso raro.
+                None => std::thread::sleep(Duration::from_millis(250)),
+            }
+            if let Ok(mut p) = self.proximo_ouvinte.lock() {
+                if let Some(novo) = p.take() {
+                    self.anotar_porta_no_ar(&novo);
+                    atual = Some(novo);
+                }
+            }
+        }
+    }
+
+    /// Aceita conexoes ate alguem pedir para parar.
+    ///
+    /// # Como o `accept` acorda
+    ///
+    /// Ele bloqueia, e nao ha como interromper um `accept` bloqueado sem
+    /// mexer no laco. As duas saidas eram: pesquisar de tempos em tempos com
+    /// o soquete em modo nao bloqueante, ou ACORDAR o laco com uma conexao.
+    ///
+    /// A pesquisa foi descartada por medicao de custo, e nao por gosto: um
+    /// intervalo de 100 ms poe ate 100 ms de espera em TODA conexao nova, o
+    /// tempo inteiro, para servir um pedido de parada que acontece uma vez por
+    /// mes. O despertador custa zero enquanto ninguem para: quem pede a parada
+    /// levanta o sinalizador e conecta no proprio endereco, o `accept`
+    /// devolve, e a primeira coisa do laco e olhar o sinalizador.
+    ///
+    /// A conexao do despertador nao vira sessao: o laco sai antes de atender.
+    fn aceitar_ate_mandarem_parar(self: &Arc<Self>, ouvinte: &TcpListener) {
+        loop {
+            let conexao = ouvinte.accept();
+            // ANTES de atender: se o pedido de parada chegou junto com uma
+            // conexao de verdade, quem mandou parar ganha -- e a conexao
+            // recusada volta a existir quando a porta subir de novo.
+            if self.parar_de_aceitar.swap(false, Ordering::SeqCst) {
+                return;
+            }
             match conexao {
-                Ok(fluxo) => {
+                Ok((fluxo, _)) => {
                     // Sem isto, o Nagle segura a resposta ate 40 ms esperando
                     // mais bytes para encher um pacote -- e nunca vem mais,
                     // porque a resposta acabou. Medido: a pagina de uma tabela
@@ -474,7 +564,22 @@ impl Servidor {
                 Err(e) => eprintln!("conexao recusada pelo sistema: {e}"),
             }
         }
-        Ok(())
+    }
+
+    /// Guarda o endereco em que a porta de dados esta escutando AGORA.
+    ///
+    /// Ele pode diferir do `bind` do `config.json` depois de uma troca pela
+    /// tela -- e a tela mostra os dois lado a lado justamente por isso.
+    /// Configuracao que nao e lida mente; endereco corrente que finge ser o
+    /// configurado mente do mesmo jeito.
+    fn anotar_porta_no_ar(&self, ouvinte: &TcpListener) {
+        if let Ok(e) = ouvinte.local_addr() {
+            if let Ok(mut atual) = self.endereco_dos_dados.lock() {
+                *atual = Some(e);
+            }
+            eprintln!("porta de dados escutando em {e}");
+        }
+        self.porta_no_ar.store(true, Ordering::SeqCst);
     }
 
     /// Violacao grave: bloqueia na hora e avisa no log.
@@ -891,6 +996,478 @@ impl Servidor {
         apagados
     }
 
+    // ----------------------------------------------- a porta de dados, na tela
+
+    /// O que a tela do Serviço precisa saber para nao mentir.
+    fn op_servico(&self) -> Result<Json> {
+        let corrente = self.endereco_dos_dados.lock().ok().and_then(|e| *e);
+        let configurado = self.config.bind.clone();
+        Ok(Json::objeto(vec![
+            ("no_ar", Json::Bool(self.porta_no_ar.load(Ordering::SeqCst))),
+            (
+                "endereco",
+                match corrente {
+                    Some(e) => Json::texto_de(e.to_string()),
+                    None => Json::Nulo,
+                },
+            ),
+            // Os dois lado a lado de proposito. Uma troca pela tela vale ate o
+            // proximo arranque -- ela NAO reescreve o config.json, que carrega
+            // comentario e o resto da configuracao. Sem mostrar os dois, quem
+            // reiniciar a maquina meses depois nao entende por que a porta
+            // voltou a ser outra.
+            ("bind_configurado", Json::texto_de(&configurado)),
+            (
+                "difere_do_arquivo",
+                Json::Bool(match (&corrente, self.config.endereco()) {
+                    (Some(c), Ok(cfg)) => *c != cfg,
+                    _ => false,
+                }),
+            ),
+            (
+                "conexoes",
+                Json::de_u64(self.conexoes.load(Ordering::SeqCst) as u64),
+            ),
+            ("web", Json::texto_de(&self.config.web.bind)),
+            ("web_ligada", Json::Bool(self.config.web.ligado)),
+        ]))
+    }
+
+    /// Para de aceitar conexao nova na porta de dados.
+    ///
+    /// # Quem fica sem resposta
+    ///
+    /// Ninguem que ja esta conectado: as conexoes vivas continuam ate elas
+    /// mesmas acabarem. O que para e o `accept`. Cliente NOVO recebe recusa de
+    /// conexao do sistema operacional -- o mesmo que receberia com o servico
+    /// desligado --, e a resposta diz quantas conexoes ficaram abertas para
+    /// quem clicou saber o que esta interrompendo.
+    ///
+    /// # Como se volta
+    ///
+    /// Pela mesma tela: o processo continua vivo, a interface web continua no
+    /// ar na porta dela, e `servico_subir` religa. E por isso que este botao
+    /// **nao** derruba o processo: um botao que se desfaz e um botao; um que
+    /// nao se desfaz e um alcapao.
+    fn op_servico_parar(&self) -> Result<Json> {
+        if !self.porta_no_ar.load(Ordering::SeqCst) {
+            return Err(PhxError::Esquema("a porta de dados ja esta parada".into()));
+        }
+        let abertas = self.conexoes.load(Ordering::SeqCst);
+        self.parar_de_aceitar.store(true, Ordering::SeqCst);
+        self.acordar_o_accept()?;
+        Ok(Json::objeto(vec![
+            ("parando", Json::Bool(true)),
+            ("conexoes_abertas", Json::de_u64(abertas as u64)),
+            (
+                "aviso",
+                Json::texto_de(
+                    "as conexoes ja abertas seguem ate acabarem; o que parou foi aceitar \
+                     conexao nova. A interface web continua no ar, e e por ela que a porta \
+                     volta",
+                ),
+            ),
+        ]))
+    }
+
+    /// Sobe a porta de dados, no mesmo endereco ou em outro.
+    ///
+    /// # A ordem que evita o tiro no pe
+    ///
+    /// O endereco novo e PRESO primeiro. So depois de o `bind` dar certo e que
+    /// o laco antigo e mandado parar e solta o endereco velho. Porta ocupada,
+    /// permissao negada (porta abaixo de 1024 sem raiz) ou endereco escrito
+    /// errado falham AQUI, com o servico intacto e nada trocado -- em vez de
+    /// deixar a maquina sem porta de dados nenhuma e sem jeito de voltar.
+    fn op_servico_subir(&self, p: &Json) -> Result<Json> {
+        let pedido = p.texto_ou("bind", "").trim().to_string();
+        let alvo = if pedido.is_empty() {
+            // Sem endereco: volta para onde estava, ou para o do arquivo.
+            match self.endereco_dos_dados.lock().ok().and_then(|e| *e) {
+                Some(e) => e,
+                None => self.config.endereco()?,
+            }
+        } else {
+            crate::config::endereco_de(&pedido)?
+        };
+
+        let no_ar = self.porta_no_ar.load(Ordering::SeqCst);
+        let atual = self.endereco_dos_dados.lock().ok().and_then(|e| *e);
+        if no_ar && atual == Some(alvo) {
+            return Err(PhxError::Esquema(format!(
+                "a porta de dados ja esta no ar em {alvo}"
+            )));
+        }
+
+        let novo = TcpListener::bind(alvo).map_err(|e| {
+            PhxError::Esquema(format!(
+                "nao consegui escutar em {alvo}: {e}. Nada mudou -- o servico continua \
+                 como estava"
+            ))
+        })?;
+        {
+            let mut prox = self
+                .proximo_ouvinte
+                .lock()
+                .map_err(|_| trava_envenenada())?;
+            *prox = Some(novo);
+        }
+        if no_ar {
+            self.parar_de_aceitar.store(true, Ordering::SeqCst);
+            self.acordar_o_accept()?;
+        }
+        Ok(Json::objeto(vec![
+            ("subindo_em", Json::texto_de(alvo.to_string())),
+            ("trocou_de_porta", Json::Bool(atual != Some(alvo))),
+            (
+                "aviso",
+                Json::texto_de(
+                    "vale ate o proximo arranque: o config.json nao foi reescrito. Para \
+                     valer sempre, mude o campo bind no arquivo",
+                ),
+            ),
+        ]))
+    }
+
+    /// Acorda o `accept` bloqueado conectando no proprio endereco.
+    ///
+    /// # O endereco para onde conectar nao e sempre o do `bind`
+    ///
+    /// Um servidor preso em `0.0.0.0:5000` escuta em toda placa, e conectar
+    /// literalmente em `0.0.0.0` so funciona por acidente do sistema. Com
+    /// endereco nao especificado, o despertador vai pelo `localhost` na mesma
+    /// porta, que e o caminho que sempre existe.
+    fn acordar_o_accept(&self) -> Result<()> {
+        let Some(onde) = self.endereco_dos_dados.lock().ok().and_then(|e| *e) else {
+            return Err(PhxError::Esquema(
+                "nao sei em que endereco a porta esta escutando".into(),
+            ));
+        };
+        let destino = if onde.ip().is_unspecified() {
+            match onde {
+                SocketAddr::V4(_) => SocketAddr::from(([127, 0, 0, 1], onde.port())),
+                SocketAddr::V6(_) => SocketAddr::from((std::net::Ipv6Addr::LOCALHOST, onde.port())),
+            }
+        } else {
+            onde
+        };
+        match TcpStream::connect_timeout(&destino, Duration::from_secs(3)) {
+            // O soquete morre aqui mesmo: o laco sai antes de atender, e do
+            // outro lado isto e so o toque que fez o `accept` devolver.
+            Ok(_) => Ok(()),
+            Err(e) => {
+                // O sinalizador volta: deixa-lo levantado faria a PROXIMA
+                // conexao de verdade derrubar a porta, minutos depois, sem
+                // ninguem ter pedido.
+                self.parar_de_aceitar.store(false, Ordering::SeqCst);
+                if let Ok(mut prox) = self.proximo_ouvinte.lock() {
+                    *prox = None;
+                }
+                Err(PhxError::Esquema(format!(
+                    "nao consegui acordar o laco de aceitacao em {destino}: {e}. \
+                     Nada mudou"
+                )))
+            }
+        }
+    }
+
+    // ------------------------------------------------------- jobs de execucao
+
+    /// O cadastro, o proximo horario de cada um e o historico das corridas.
+    fn op_jobs(&self, p: &Json) -> Result<Json> {
+        let quantas = p.inteiro_ou("historico", 50).clamp(0, 500) as usize;
+        let r = self.jobs.lock().map_err(|_| trava_envenenada())?;
+        let agora = crate::agora_ms();
+        let lista: Vec<Json> = r
+            .jobs
+            .iter()
+            .map(|j| {
+                let ultimo = r.ultimo_de(&j.nome);
+                let mut pares = match j.ficha() {
+                    Json::Objeto(x) => x,
+                    _ => Vec::new(),
+                };
+                pares.push((
+                    "ultimo_ms".to_string(),
+                    if ultimo == 0 {
+                        Json::Nulo
+                    } else {
+                        Json::de_i64(ultimo)
+                    },
+                ));
+                // "Venceria agora?" e o que a tela precisa para dizer se um
+                // job esta atrasado -- e sai da MESMA funcao que o relogio
+                // usa, para os dois nunca discordarem.
+                pares.push((
+                    "vencido".to_string(),
+                    Json::Bool(j.ligado && j.agenda.hora_de_rodar(agora, ultimo)),
+                ));
+                Json::Objeto(pares)
+            })
+            .collect();
+        let historico: Vec<Json> = r
+            .historico(quantas)
+            .iter()
+            .map(crate::jobs::Corrida::para_json)
+            .collect();
+        Ok(Json::objeto(vec![
+            ("arquivo", Json::texto_de(r.caminho.display().to_string())),
+            (
+                "log",
+                Json::texto_de(r.caminho_do_log().display().to_string()),
+            ),
+            ("jobs", Json::Lista(lista)),
+            ("historico", Json::Lista(historico)),
+        ]))
+    }
+
+    fn op_job_salvar(&self, p: &Json) -> Result<Json> {
+        let job = crate::jobs::Job::de_json(p.campo("job").unwrap_or(p))?;
+        // Conferido na hora de salvar, e nao so na hora de rodar: descobrir
+        // que o login nao existe as tres da manha, no historico, e pior do que
+        // descobrir agora, com a tela aberta.
+        self.sessao_do_job(&job)?;
+        let mut r = self.jobs.lock().map_err(|_| trava_envenenada())?;
+        let nome = job.nome.clone();
+        r.salvar(job)?;
+        Ok(Json::objeto(vec![
+            ("salvo", Json::texto_de(nome)),
+            // O relogio le o cadastro a cada volta, entao ligar um job vale na
+            // proxima. Mas se NENHUM estava ligado quando o servidor subiu,
+            // nao ha relogio -- e a tela precisa dizer isso, senao o job fica
+            // ligado e parado sem ninguem entender por que.
+            ("relogio_no_ar", Json::Bool(self.relogio_de_jobs_no_ar())),
+        ]))
+    }
+
+    fn op_job_excluir(&self, p: &Json) -> Result<Json> {
+        let nome = p.texto_ou("nome", "").trim().to_string();
+        let mut r = self.jobs.lock().map_err(|_| trava_envenenada())?;
+        r.excluir(&nome)?;
+        Ok(Json::objeto(vec![("excluido", Json::texto_de(nome))]))
+    }
+
+    /// Roda um job agora, fora da agenda.
+    ///
+    /// O `rodar_job` faz a conferencia de permissao com o usuario DO JOB, e
+    /// nao com quem clicou -- senao rodar agora seria um jeito de emprestar o
+    /// proprio poder para o job. Quem clica precisa de `administrar`, que e o
+    /// que o portao ja exigiu para chegar ate aqui.
+    fn op_job_rodar(&self, p: &Json) -> Result<Json> {
+        let nome = p.texto_ou("nome", "").trim().to_string();
+        let inicio = crate::agora_ms();
+        let r = self.rodar_job(&nome, "tela");
+        if let Ok(mut reg) = self.jobs.lock() {
+            reg.anotar_corrida(&nome, inicio);
+        }
+        Ok(Json::objeto(vec![
+            ("job", Json::texto_de(nome)),
+            ("ok", Json::Bool(r.is_ok())),
+            ("duracao_ms", Json::de_i64(crate::agora_ms() - inicio)),
+            (
+                "detalhe",
+                Json::texto_de(match &r {
+                    Ok(j) => resumir_resposta(j),
+                    Err(e) => e.to_string(),
+                }),
+            ),
+            ("resposta", r.unwrap_or(Json::Nulo)),
+        ]))
+    }
+
+    /// Ha relogio de jobs rodando neste processo?
+    ///
+    /// Ele so sobe se algum job estava ligado no arranque -- entao ligar o
+    /// primeiro job pela tela nao acorda ninguem ate o proximo arranque. Dizer
+    /// isso e melhor do que subir uma linha de execucao que fica acordando de
+    /// trinta em trinta segundos num servidor que nao tem job nenhum.
+    fn relogio_de_jobs_no_ar(&self) -> bool {
+        self.relogio_de_jobs.load(Ordering::SeqCst)
+    }
+
+    /// Sobe o relogio dos jobs, se houver algum ligado.
+    ///
+    /// Um relogio so para todos, e nao um por job: o trabalho de perguntar
+    /// "chegou a hora?" e uma comparacao de inteiros, e uma linha de execucao
+    /// por job custaria pilha para ficar dormindo.
+    fn subir_jobs(self: &Arc<Self>) {
+        let ligados: Vec<String> = match self.jobs.lock() {
+            Ok(r) => r
+                .jobs
+                .iter()
+                .filter(|j| j.ligado)
+                .map(|j| format!("{} ({}, {})", j.nome, j.op(), j.agenda.rotulo()))
+                .collect(),
+            Err(_) => return,
+        };
+        if ligados.is_empty() {
+            // Sem job ligado nao ha relogio: instrumentacao desligada custa
+            // zero, e o portao que decide isso vem ANTES do trabalho.
+            return;
+        }
+        eprintln!("jobs de execucao: {}", ligados.join(" | "));
+        self.relogio_de_jobs.store(true, Ordering::SeqCst);
+        let servidor = Arc::clone(self);
+        std::thread::spawn(move || loop {
+            let agora = crate::agora_ms();
+            // A trava sai antes de executar: um job de backup segura a trava
+            // dos dados por segundos, e prender o cadastro junto travaria a
+            // tela de jobs e todos os outros jobs enquanto isso.
+            let vencidos = match servidor.jobs.lock() {
+                Ok(mut r) => {
+                    let v = r.vencidos(agora);
+                    for nome in &v {
+                        r.anotar_corrida(nome, agora);
+                    }
+                    v
+                }
+                Err(_) => Vec::new(),
+            };
+            for nome in vencidos {
+                let _ = servidor.rodar_job(&nome, "agenda");
+            }
+            std::thread::sleep(Duration::from_secs(crate::jobs::PERIODO_DO_RELOGIO_S));
+        });
+    }
+
+    /// Roda um job agora: monta a sessao dele, passa pelos portoes e executa.
+    ///
+    /// # Por que ele nao roda "como o servidor"
+    ///
+    /// Porque um agendador com poder proprio e um jeito de contornar a
+    /// permissao: bastaria escrever no cadastro de jobs a operacao que a rede
+    /// recusaria. O job carrega o login de um usuario do cadastro e roda com o
+    /// poder DAQUELE usuario -- e usuario que sumiu ou foi desativado para o
+    /// job, com erro escrito, em vez de cair para uma sessao sem dono, que e
+    /// o que o `Default` daria.
+    ///
+    /// # A politica e conferida aqui, e nao no portao comum
+    ///
+    /// `portoes_do_pedido` deixou de fora o que so faz sentido com um IP do
+    /// outro lado. Comando proibido pela politica vale igual para o job -- o
+    /// `config.json` diz que ninguem pede aquilo neste servidor --, mas nao ha
+    /// IP para bloquear: a recusa vira linha no historico.
+    fn rodar_job(&self, nome: &str, disparado_por: &str) -> Result<Json> {
+        let inicio = crate::agora_ms();
+        // A copia sai de dentro da trava para o job poder rodar por segundos
+        // sem prender o cadastro -- e a tela de jobs continua respondendo.
+        let job = match self.jobs.lock() {
+            Ok(r) => r.achar(nome)?.clone(),
+            Err(_) => return Err(trava_envenenada()),
+        };
+        let op = job.op().to_string();
+
+        let resultado = self.executar_job(&job, &op);
+        let corrida = crate::jobs::Corrida {
+            quando_ms: inicio,
+            job: job.nome.clone(),
+            op: op.clone(),
+            usuario: job.usuario.clone(),
+            ok: resultado.is_ok(),
+            duracao_ms: crate::agora_ms() - inicio,
+            detalhe: match &resultado {
+                // A resposta inteira nao entra: uma varredura de vinte mil
+                // linhas nao cabe no historico e nao interessa a ele. O que
+                // interessa e ter rodado, e o que voltou de resumo.
+                Ok(j) => resumir_resposta(j),
+                Err(e) => e.to_string(),
+            },
+        };
+        if let Ok(r) = self.jobs.lock() {
+            r.registrar(&corrida);
+        }
+        // O job tambem entra no `acessos.log`, como qualquer outra operacao:
+        // quem audita o servidor nao deveria precisar saber que existe um
+        // segundo arquivo para descobrir que uma tabela foi mexida.
+        self.anotar(&Acesso {
+            quando_ms: inicio,
+            ip: format!("(job:{disparado_por})"),
+            porta_origem: 0,
+            op: format!("job:{op}"),
+            usuario: job.usuario.clone(),
+            autenticado: !job.usuario.is_empty(),
+            ok: resultado.is_ok(),
+            duracao_ms: corrida.duracao_ms.max(0) as u64,
+            erro: resultado.as_ref().err().map(|e| e.to_string()),
+            database: job.pedido.texto_ou("database", "").to_string(),
+            tabela: job.pedido.texto_ou("tabela", "").to_string(),
+            codigo: resultado.as_ref().err().map(|e| e.codigo()).unwrap_or(0),
+        });
+        if let Err(e) = &resultado {
+            eprintln!("job {} FALHOU: {e}", job.nome);
+        }
+        resultado
+    }
+
+    fn executar_job(&self, job: &crate::jobs::Job, op: &str) -> Result<Json> {
+        if self.config.politica.comando_proibido(op) {
+            return Err(PhxError::Autorizacao(format!(
+                "operacao {op} esta proibida neste servidor pela politica"
+            )));
+        }
+        let base = job.pedido.texto_ou("database", "");
+        if self.config.politica.base_proibida(base) {
+            return Err(PhxError::Autorizacao(format!(
+                "a base {base} esta proibida neste servidor pela politica"
+            )));
+        }
+        // Mesma sonda de travessia da porta de dados. Um job e escrito por um
+        // administrador, mas o arquivo pode ter vindo de outro lugar.
+        for (rotulo, valor) in [
+            ("database", base),
+            ("tabela", job.pedido.texto_ou("tabela", "")),
+            ("schema", job.pedido.texto_ou("schema", "")),
+        ] {
+            if !valor.is_empty() && phxsql_store::catalogo::nome_hostil(valor) {
+                return Err(PhxError::Autorizacao(format!(
+                    "{rotulo} {valor:?} nao e um nome"
+                )));
+            }
+        }
+
+        let sessao = self.sessao_do_job(job)?;
+        self.portoes_do_pedido(op, &job.pedido, &sessao)?;
+        self.executar(op, &job.pedido, &sessao)
+    }
+
+    /// A sessao sob a qual o job roda.
+    ///
+    /// Sem cadastro de usuarios, o servidor inteiro entra sem login e o job
+    /// acompanha -- e o mesmo comportamento da rede, e nao uma excecao. COM
+    /// cadastro, o login e obrigatorio e tem de existir e estar ativo.
+    fn sessao_do_job(&self, job: &crate::jobs::Job) -> Result<Sessao> {
+        if self.config.cadastro.vazio() {
+            return Ok(Sessao::default());
+        }
+        if job.usuario.is_empty() {
+            return Err(PhxError::Autorizacao(format!(
+                "job {:?} nao diz sob qual usuario roda, e este servidor tem cadastro. \
+                 Um job sem dono rodaria com poder que ninguem concedeu",
+                job.nome
+            )));
+        }
+        let u = self
+            .config
+            .cadastro
+            .por_login(&job.usuario)
+            .ok_or_else(|| {
+                PhxError::Autorizacao(format!(
+                    "job {:?}: o usuario {:?} nao esta no cadastro",
+                    job.nome, job.usuario
+                ))
+            })?;
+        if !u.ativo {
+            return Err(PhxError::Autorizacao(format!(
+                "job {:?}: o usuario {:?} esta desativado",
+                job.nome, job.usuario
+            )));
+        }
+        Ok(Sessao {
+            usuario: Some(u.clone()),
+            ..Sessao::default()
+        })
+    }
+
     // ----------------------------------------------------------- interface web
 
     /// Sobe a interface web numa linha de execucao propria, se ligada.
@@ -1015,11 +1592,24 @@ impl Servidor {
                     &Json::objeto(vec![
                         ("ok", Json::Bool(true)),
                         ("phxsql", Json::texto_de(VERSAO)),
+                        // A porta que ele REALMENTE escuta agora, e nao a do
+                        // arquivo: depois de uma troca pela tela, o formulario
+                        // de entrada mandaria todo mundo para a porta velha.
                         (
                             "porta_dados",
                             Json::de_u64(
-                                self.config.endereco().map(|e| e.port()).unwrap_or(0) as u64
+                                self.endereco_dos_dados
+                                    .lock()
+                                    .ok()
+                                    .and_then(|e| *e)
+                                    .map(|e| e.port())
+                                    .or_else(|| self.config.endereco().ok().map(|e| e.port()))
+                                    .unwrap_or(0) as u64,
                             ),
+                        ),
+                        (
+                            "porta_dados_no_ar",
+                            Json::Bool(self.porta_no_ar.load(Ordering::SeqCst)),
                         ),
                         (
                             "servidores",
@@ -1706,14 +2296,34 @@ impl Servidor {
             );
         }
 
-        if self.config.somente_leitura && OPS_ESCRITA.contains(&op.as_str()) {
-            return (
-                op,
-                true,
-                Err(PhxError::Autorizacao(
-                    "servidor em modo somente leitura".into(),
-                )),
-            );
+        // Portoes 2b, 3 e 4 -- ver `portoes_do_pedido`.
+        if let Err(e) = self.portoes_do_pedido(&op, &pedido, sessao) {
+            return (op, true, Err(e));
+        }
+
+        let r = self.executar(&op, &pedido, sessao);
+        (op, true, r)
+    }
+
+    /// Os portoes que valem para QUALQUER origem, e nao so para a rede.
+    ///
+    /// Estao juntos aqui porque o portao tem de ser UM. O agendador de jobs
+    /// nao chega por soquete -- nao passa pelo token nem pela lista negra --,
+    /// mas o somente-leitura, o poder do usuario sobre a base E A TABELA e a
+    /// reserva de carga valem para ele igual. Escrever essa conferencia num
+    /// segundo lugar e exatamente como a porta dos fundos aparece: a copia que
+    /// alguem esquecer de atualizar vira o furo, e ninguem acha por leitura.
+    ///
+    /// O que NAO esta aqui e o que so faz sentido com um IP do outro lado: a
+    /// politica de comando proibido bloqueia quem pediu, e bloquear "o
+    /// agendador" nao quer dizer nada. Quem chama de outra origem confere a
+    /// politica por conta, e o comentario de `rodar_job` diz como.
+    fn portoes_do_pedido(&self, op: &str, pedido: &Json, sessao: &Sessao) -> Result<()> {
+        // Portao 2b -- o servidor inteiro em somente leitura.
+        if self.config.somente_leitura && OPS_ESCRITA.contains(&op) {
+            return Err(PhxError::Autorizacao(
+                "servidor em modo somente leitura".into(),
+            ));
         }
 
         // Portao 3 -- o poder deste usuario sobre a base E A TABELA do pedido.
@@ -1725,25 +2335,22 @@ impl Servidor {
         //
         // Pedido sem tabela -- `bancos`, `criar_database`, `sistema` -- cai na
         // regra da base, que e como sempre foi.
+        let base = pedido.texto_ou("database", "").to_string();
         if let (Some(atividade), Some(usuario)) =
-            (Atividade::da_operacao(&op), sessao.usuario.as_ref())
+            (Atividade::da_operacao(op), sessao.usuario.as_ref())
         {
             let tabela = pedido.texto_ou("tabela", "").trim().to_string();
             if !usuario.pode_em(&base, &tabela, atividade) {
-                return (
-                    op,
-                    true,
-                    Err(PhxError::Autorizacao(format!(
-                        "{} nao tem permissao de {} em {}",
-                        usuario.login,
-                        atividade.nome(),
-                        match (base.is_empty(), tabela.is_empty()) {
-                            (true, _) => "(sem base)".to_string(),
-                            (false, true) => base.clone(),
-                            (false, false) => format!("{base}.{tabela}"),
-                        }
-                    ))),
-                );
+                return Err(PhxError::Autorizacao(format!(
+                    "{} nao tem permissao de {} em {}",
+                    usuario.login,
+                    atividade.nome(),
+                    match (base.is_empty(), tabela.is_empty()) {
+                        (true, _) => "(sem base)".to_string(),
+                        (false, true) => base.clone(),
+                        (false, false) => format!("{base}.{tabela}"),
+                    }
+                )));
             }
         }
 
@@ -1759,12 +2366,10 @@ impl Servidor {
                 pedido.texto_ou("tabela", ""),
             );
             if let Some(recado) = self.barrado_por_carga(db, tab, sessao.ligacao) {
-                return (op, true, Err(PhxError::EmCarga(recado)));
+                return Err(PhxError::EmCarga(recado));
             }
         }
-
-        let r = self.executar(&op, &pedido, sessao);
-        (op, true, r)
+        Ok(())
     }
 
     /// Abre um desafio: devolve sal, iteracoes e um nonce de uso unico.
@@ -1947,6 +2552,13 @@ impl Servidor {
             "bulkinsert" => self.op_bulkinsert(p, sessao),
             "cargas" => self.op_cargas(),
             "esquema" => self.op_esquema(p, sessao),
+            "servico" => self.op_servico(),
+            "servico_parar" => self.op_servico_parar(),
+            "servico_subir" => self.op_servico_subir(p),
+            "jobs" => self.op_jobs(p),
+            "job_salvar" => self.op_job_salvar(p),
+            "job_excluir" => self.op_job_excluir(p),
+            "job_rodar" => self.op_job_rodar(p),
             "criar_database" => self.op_criar_database(p),
             "criar_schema" => self.op_criar_schema(p),
             "criar_tabela" => self.op_criar_tabela(p),
@@ -6365,6 +6977,36 @@ impl Servidor {
 
 fn trava_envenenada() -> PhxError {
     PhxError::Corrompido("uma operacao anterior entrou em panico e deixou a trava suja".into())
+}
+
+/// O resumo de uma resposta, para caber numa linha do historico de jobs.
+///
+/// Ele **analisa e reserializa**, nunca recorta: o corpo de um `varrer` de
+/// vinte mil linhas nao entra cortado no meio, porque um pedaco de JSON nao e
+/// JSON e a tela nao teria como distinguir "cortado" de "gravado assim". O que
+/// nao se resume vira o tamanho em bytes, que e verdade sobre o que voltou.
+fn resumir_resposta(j: &Json) -> String {
+    let Json::Objeto(pares) = j else {
+        return format!("{} bytes de resposta", j.escrever().len());
+    };
+    let curto: Vec<(String, Json)> = pares
+        .iter()
+        .filter(|(_, v)| !matches!(v, Json::Lista(_) | Json::Objeto(_)))
+        .cloned()
+        .collect();
+    let grandes: Vec<String> = pares
+        .iter()
+        .filter_map(|(k, v)| match v {
+            Json::Lista(l) => Some(format!("{k}: {} itens", l.len())),
+            Json::Objeto(o) => Some(format!("{k}: {} campos", o.len())),
+            _ => None,
+        })
+        .collect();
+    let mut texto = Json::Objeto(curto).escrever();
+    if !grandes.is_empty() {
+        texto.push_str(&format!(" ({})", grandes.join(", ")));
+    }
+    texto
 }
 
 /// A guarda de conflito de escrita, quando o cliente pede.
