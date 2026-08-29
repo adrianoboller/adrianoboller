@@ -41,6 +41,7 @@ use crate::http;
 use crate::juncao::{Lado, Tipo as TipoJuncao, Uniao};
 use crate::usuarios::{Atividade, Usuario};
 use phxsql_core::schema::Schema;
+use phxsql_core::types::DadoPessoal;
 use phxsql_core::value::Value;
 
 use crate::pivot::{Agregador, Campo, Granularidade, Juncao};
@@ -1955,6 +1956,7 @@ impl Servidor {
             "copiar_tabela" => self.op_copiar_tabela(p, sessao),
             "sistabelas" | "systables" => self.op_sistabelas(p, sessao),
             "siscolunas" | "syscolumns" => self.op_siscolunas(p, sessao),
+            "dados_pessoais" | "lgpd" => self.op_dados_pessoais(p, sessao),
             "sequencias" | "sequences" => self.op_sequencias(p),
             "ajustar_sequencia" => self.op_ajustar_sequencia(p, sessao),
             "pivotar" | "pivot" => self.op_pivotar(p, sessao),
@@ -2346,6 +2348,7 @@ impl Servidor {
                     ("caption", Json::texto_de(&c.caption)),
                     ("descricao", Json::texto_de(&c.descricao)),
                     ("mascara", Json::texto_de(&c.mascara)),
+                    ("dado_pessoal", Json::texto_de(c.dado_pessoal.nome())),
                     ("tipo", Json::texto_de(format!("{:?}", c.ty))),
                     ("tamanho", Json::de_u64(largura_do_tipo(&c.ty))),
                     ("obrigatoria", Json::Bool(!c.nullable)),
@@ -2366,6 +2369,126 @@ impl Servidor {
             ("database", Json::texto_de(database)),
             ("total", Json::de_u64(linhas.len() as u64)),
             ("colunas", Json::Lista(linhas)),
+        ]))
+    }
+
+    /// Onde estao os dados pessoais desta base (LGPD / GDPR).
+    ///
+    /// ```json
+    /// { "op": "dados_pessoais", "database": "loja" }
+    /// ```
+    ///
+    /// # O portao, que aqui e o assunto e nao o detalhe
+    ///
+    /// Esta operacao **nao tem campo `tabela`**: ela varre a base inteira. O
+    /// portao geral do `despachar` confere o campo `"tabela"` do pedido, e um
+    /// pedido sem ele cai na regra da BASE -- que e exatamente o furo ja
+    /// documentado no `juntar` e no `unir`.
+    ///
+    /// Por isso a conferencia por tabela vem aqui dentro, com o mesmo
+    /// `pode_ver_tabela` do `tabelas` e do `siscolunas`: quem nao pode ler a
+    /// tabela nao descobre por este relatorio que ela existe, nem que ela
+    /// guarda CPF. Um relatorio de conformidade que vaza o mapa do dado
+    /// sensivel para quem nao pode le-lo e a pior versao possivel desta
+    /// funcionalidade.
+    ///
+    /// # O que ele NAO faz
+    ///
+    /// Nao adivinha. Coluna chamada `cpf` sem marca nao entra no relatorio, e
+    /// isso e de proposito: um mapa de conformidade deduzido por nome de campo
+    /// da a quem le a sensacao de estar coberto sem estar. O relatorio conta
+    /// quantas colunas ficaram SEM classificacao, que e o numero que diz o
+    /// tamanho do trabalho que falta.
+    fn op_dados_pessoais(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let database = p.texto_ou("database", "");
+        let so_esta = p.texto_ou("tabela", "").trim().to_string();
+        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let db = dados.abrir_database(database)?;
+
+        let mut achados = Vec::new();
+        let mut tabelas_com = 0u64;
+        let mut colunas_vistas = 0u64;
+        let mut pessoais = 0u64;
+        let mut sensiveis = 0u64;
+        let mut sem_esquema = Vec::new();
+
+        for nome in db.todas_as_tabelas()? {
+            if !so_esta.is_empty() && so_esta != nome {
+                continue;
+            }
+            if !self.pode_ver_tabela(sessao, database, &nome) {
+                continue;
+            }
+            let Ok(t) = db.abrir_qualificada(&nome) else {
+                // Tabela que nao abre nao vira erro do relatorio inteiro: ela
+                // vira uma linha dizendo que nao foi conferida. Um relatorio
+                // de conformidade que para no primeiro arquivo quebrado nao
+                // audita nada.
+                sem_esquema.push(Json::texto_de(&nome));
+                continue;
+            };
+            let e = t.esquema();
+            let mut da_tabela = Vec::new();
+            for (i, c) in e.colunas().iter().enumerate() {
+                if phxsql_core::schema::e_coluna_de_sistema(&c.nome) {
+                    continue;
+                }
+                colunas_vistas += 1;
+                if !c.dado_pessoal.e_pessoal() {
+                    continue;
+                }
+                match c.dado_pessoal {
+                    DadoPessoal::Sensivel => sensiveis += 1,
+                    _ => pessoais += 1,
+                }
+                da_tabela.push(Json::objeto(vec![
+                    ("posicao", Json::de_u64(i as u64 + 1)),
+                    ("coluna", Json::texto_de(&c.nome)),
+                    ("rotulo", Json::texto_de(c.rotulo())),
+                    ("descricao", Json::texto_de(&c.descricao)),
+                    ("tipo", Json::texto_de(format!("{:?}", c.ty))),
+                    ("grau", Json::texto_de(c.dado_pessoal.nome())),
+                    // Coluna pessoal que tambem e chave aparece em indice, e
+                    // indice e o caminho por onde o dado sai sem ninguem ler a
+                    // linha. Quem audita precisa ver isso junto.
+                    (
+                        "nos_indices",
+                        Json::Lista(
+                            e.papel_da_coluna(i)
+                                .indices
+                                .iter()
+                                .map(Json::texto_de)
+                                .collect(),
+                        ),
+                    ),
+                ]));
+            }
+            if !da_tabela.is_empty() {
+                tabelas_com += 1;
+                achados.push(Json::objeto(vec![
+                    ("tabela", Json::texto_de(&nome)),
+                    ("registros", Json::de_u64(t.registros())),
+                    ("total", Json::de_u64(da_tabela.len() as u64)),
+                    ("colunas", Json::Lista(da_tabela)),
+                ]));
+            }
+        }
+
+        Ok(Json::objeto(vec![
+            ("database", Json::texto_de(database)),
+            ("tabelas_com_dado_pessoal", Json::de_u64(tabelas_com)),
+            ("colunas_pessoais", Json::de_u64(pessoais)),
+            ("colunas_sensiveis", Json::de_u64(sensiveis)),
+            // O numero que conta a HISTORIA: quanto ainda nao foi classificado.
+            // Sem ele, uma base sem marca nenhuma parece uma base sem dado
+            // pessoal -- e sao coisas muito diferentes.
+            (
+                "colunas_sem_classificacao",
+                Json::de_u64(colunas_vistas.saturating_sub(pessoais + sensiveis)),
+            ),
+            ("colunas_conferidas", Json::de_u64(colunas_vistas)),
+            ("tabelas_que_nao_abriram", Json::Lista(sem_esquema)),
+            ("achados", Json::Lista(achados)),
         ]))
     }
 
@@ -3103,6 +3226,7 @@ impl Servidor {
                     ("rotulo", Json::texto_de(c.rotulo())),
                     ("descricao", Json::texto_de(&c.descricao)),
                     ("mascara", Json::texto_de(&c.mascara)),
+                    ("dado_pessoal", Json::texto_de(c.dado_pessoal.nome())),
                     ("tipo", Json::texto_de(format!("{:?}", c.ty))),
                     ("tamanho", Json::de_u64(largura_do_tipo(&c.ty))),
                     ("nullable", Json::Bool(c.nullable)),

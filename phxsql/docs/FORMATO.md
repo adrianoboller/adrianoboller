@@ -103,14 +103,15 @@ Logo após o cabeçalho vem o **esquema serializado** (`schema_len` bytes), e
 `data_offset` é o próximo múltiplo de 64. A tabela é auto-descritiva: o
 conjunto de arquivos basta para reabrir os dados, sem dicionário externo.
 
-### O bloco de esquema (`PSCH`, versão 5)
+### O bloco de esquema (`PSCH`, versão 6)
 
 O bloco começa com `PSCH` e a versão. A **3** acrescentou os metadados de
 coluna, o marcador de chave primária e o modo de partição. A **4** acrescentou
 a coluna de sistema `softdeleted` e um byte no fim, com o sinal de *motivo
-obrigatório*. A **5** acrescentou a coluna de sistema `rownum`. A leitura ainda
-aceita a 2: tabela gravada antes abre normalmente, ganha um `id` v7 sorteado na
-hora e os textos vazios. **Escrever, só na 5.**
+obrigatório*. A **5** acrescentou a coluna de sistema `rownum`. A **6**
+acrescentou a **marca de dado pessoal** de cada coluna, num bloco no fim. A
+leitura ainda aceita a 2: tabela gravada antes abre normalmente, ganha um `id`
+v7 sorteado na hora e os textos vazios. **Escrever, só na 6.**
 
 Por coluna, nesta ordem:
 
@@ -131,6 +132,44 @@ desatualiza, e obriga quem copia os arquivos da tabela a copiar mais um.
 
 Por índice, os sinalizadores viraram um byte com dois bits: **único** no bit 0
 e **primário** no bit 1.
+
+### A marca de dado pessoal (LGPD / GDPR), v6
+
+No **fim** do bloco, depois do byte de motivo obrigatório, vem **um byte por
+coluna**, na ordem das colunas:
+
+| byte | grau | o que é |
+|---:|---|---|
+| 0 | `nao` | não é dado pessoal — é o padrão, e é o que toda tabela já gravada tem |
+| 1 | `pessoal` | dado pessoal comum: nome, endereço, telefone, CPF, e-mail (LGPD art. 5º I / GDPR art. 4(1)) |
+| 2 | `sensivel` | dado pessoal **sensível**: saúde, biometria, convicção, origem racial (LGPD art. 5º II / GDPR art. 9) |
+
+**Três graus e não um `sim/não`** porque os dois regimes tratam o sensível
+diferente: ele exige base legal própria. Um booleano obrigaria quem audita a
+reabrir a lei coluna a coluna. Custa o mesmo byte.
+
+**No fim, e não ao lado da `mascara`.** O lugar "natural" seria dentro do
+registro de cada coluna. Não vai lá de propósito: no fim, quem lê uma v5
+simplesmente **para antes** do bloco novo — do mesmo jeito que já para antes do
+byte da v4. Dentro do laço das colunas, cada versão antiga precisaria de um
+desvio próprio *dentro do laço*, e é aí que nasce o campo deslocado que ainda
+passa no CRC.
+
+Byte de grau desconhecido vira `nao`, e não erro: se um dia entrar um grau 3,
+uma tabela gravada com ele **abre** num motor antigo. Recusar o arquivo inteiro
+por causa de uma classificação que o motor não conhece tiraria do ar uma tabela
+que está perfeita. Um bloco truncado no meio deixa o resto em `nao` — nunca a
+marca da coluna errada.
+
+A marca é **declaração, não dedução**: o motor não adivinha pelo nome da
+coluna. `cpf` é óbvio, `documento` não é, e um palpite errado num relatório de
+conformidade é pior que nenhum relatório, porque quem lê acredita. A operação
+`dados_pessoais` do protocolo devolve, junto com os achados, **quantas colunas
+ficaram sem classificação** — que é o número que diz o tamanho do trabalho que
+falta.
+
+A marca não desloca nada: `payload_len` e os *offsets* das colunas são os
+mesmos de uma tabela sem marca. É metadado, e não dado.
 
 ### A coluna de sistema `softdeleted`
 

@@ -22,7 +22,7 @@ pub use phxsql_core::carga::{hex_para_bytes, texto_para_decimal};
 use phxsql_core::paginacao::{ModoParticao, Paginacao, Periodo, DIGITOS_PADRAO};
 use phxsql_core::schema::Schema;
 use phxsql_core::schema::{Column, IndexColumn, IndexDef};
-use phxsql_core::types::ColumnType;
+use phxsql_core::types::{ColumnType, DadoPessoal};
 use phxsql_core::uuid::{Uuid, Uuid256};
 use phxsql_core::value::Value;
 
@@ -201,7 +201,10 @@ pub fn esquema_de_json(j: &Json) -> Result<Schema> {
         let mut col = Column::new(cn, ty)
             .com_caption(c.texto_ou("caption", ""))
             .com_descricao(c.texto_ou("descricao", ""))
-            .com_mascara(c.texto_ou("mascara", ""));
+            .com_mascara(c.texto_ou("mascara", ""))
+            // Ausente = `Nao`, que e o que toda tabela ja criada tem. Cliente
+            // escrito antes desta versao continua criando tabela igual.
+            .com_dado_pessoal(DadoPessoal::de_texto(c.texto_ou("dado_pessoal", ""))?);
         // O `id` normalmente nasce aqui, sorteado. Aceitar um de fora existe
         // para UM caso: recriar uma tabela mantendo a identidade das colunas,
         // para que telas e relatorios que apontam para elas continuem valendo.
@@ -968,6 +971,52 @@ mod testes_metadados {
         assert_eq!(c.mascara, "@D6");
         // Cada coluna nasce com um id proprio, sorteado.
         assert_ne!(c.id.to_string(), "00000000-0000-0000-0000-000000000000");
+    }
+
+    /// **O teste do cliente velho.** Um `criar_tabela` escrito antes desta
+    /// versao nao manda `dado_pessoal` -- e tem de criar a tabela igual, com
+    /// nenhuma coluna classificada. Marca que entra sozinha e marca errada.
+    #[test]
+    fn sem_dado_pessoal_no_pedido_nada_muda() {
+        let e = esquema_de_json(&json(
+            r#"{"tabela":"clientes",
+                "colunas":[{"nome":"nome","tipo":"Str(60)"},
+                           {"nome":"cpf","tipo":"Str(11)"},
+                           {"nome":"tipo_sanguineo","tipo":"Str(3)"}]}"#,
+        ))
+        .unwrap();
+        assert!(
+            !e.tem_dado_pessoal(),
+            "o motor classificou coluna que ninguem pediu"
+        );
+        assert!(e.colunas_pessoais().is_empty());
+    }
+
+    #[test]
+    fn o_grau_de_dado_pessoal_chega_no_esquema() {
+        let e = esquema_de_json(&json(
+            r#"{"tabela":"pacientes",
+                "colunas":[{"nome":"id","tipo":"Int8"},
+                           {"nome":"nome","tipo":"Str(60)","dado_pessoal":"pessoal"},
+                           {"nome":"laudo","tipo":"Memo","dado_pessoal":"sensivel"}]}"#,
+        ))
+        .unwrap();
+        assert_eq!(e.colunas()[0].dado_pessoal, DadoPessoal::Nao);
+        assert_eq!(e.colunas()[1].dado_pessoal, DadoPessoal::Pessoal);
+        assert_eq!(e.colunas()[2].dado_pessoal, DadoPessoal::Sensivel);
+        assert_eq!(e.colunas_pessoais().len(), 2);
+    }
+
+    #[test]
+    fn grau_escrito_errado_recusa_em_vez_de_ignorar() {
+        let e = esquema_de_json(&json(
+            r#"{"tabela":"t","colunas":[{"nome":"x","tipo":"Int8",
+                                         "dado_pessoal":"talvez"}]}"#,
+        ))
+        .unwrap_err();
+        // Aceitar calado deixaria a coluna sem marca e o operador achando que
+        // marcou -- que e pior do que recusar.
+        assert!(format!("{e}").contains("talvez"), "{e}");
     }
 
     #[test]

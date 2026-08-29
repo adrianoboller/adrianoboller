@@ -95,6 +95,11 @@ impl Atividade {
             // O catalogo e leitura: quem pode ler a tabela pode saber que ela
             // existe e que colunas tem.
             "sistabelas" | "systables" | "siscolunas" | "syscolumns" => Atividade::Ler,
+            // O mapa de dado pessoal e catalogo, e nao dado: mostra QUE a
+            // coluna guarda CPF, nunca o CPF. Pede `ler` pelo mesmo motivo
+            // que `siscolunas` -- e, como varre a base inteira sem campo
+            // "tabela", a propria operacao filtra tabela a tabela por dentro.
+            "dados_pessoais" | "lgpd" => Atividade::Ler,
             // O pivot resume o que a varredura leria: quem pode ler a tabela
             // pode ver o total dela.
             "pivotar" | "pivot" => Atividade::Ler,
