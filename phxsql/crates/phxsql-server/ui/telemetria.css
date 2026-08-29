@@ -1,0 +1,260 @@
+/* Telemetria — estilo ESCOPADO em `.tlm`.
+ *
+ * Escopado de propósito. O CSS global da página vale em toda tela, e duas
+ * regras dele estragam componente novo: `input{width:100%}` transforma um
+ * rádio numa bolota do tamanho da célula, e `label{text-transform:uppercase}`
+ * escreve «BLUMENAU» onde o dado é «Blumenau» — que é uma mentira sobre o
+ * dado, porque quem olha não sabe se está gravado assim. As duas são
+ * desfeitas aqui dentro, explicitamente.
+ *
+ * Nenhuma cor é escrita em hexadecimal: todas saem das variáveis do console,
+ * e por isso escurecem sozinhas no tema claro — o mesmo caminho do vermelhão
+ * da marca. As três cores de estado passam de 4,5:1 sobre o painel nos dois
+ * temas (azul 7,3:1 / 6,9:1; âmbar 11:1 / 4,6:1; vermelho 6,4:1 / 6,8:1).
+ *
+ * As bolhas são CONTORNO com uma lavagem por dentro, e não fundo cheio: é a
+ * mesma regra dos botões de ação, e pelo mesmo motivo — texto escuro sobre
+ * cor cheia fica ilegível, e foi assim que o botão de excluir apareceu.
+ */
+
+.tlm { display:flex; flex-direction:column; gap:12px; }
+.tlm label { text-transform:none; letter-spacing:0; }
+.tlm input, .tlm select { width:auto; }
+
+/* ------------------------------------------------------------ barra do topo */
+
+.tlm-topo-barra {
+  display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+  justify-content:space-between;
+}
+.tlm-estado {
+  display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+  font-size:11.5px; color:var(--texto-3);
+}
+.tlm-estado b { color:var(--texto-2); font-weight:600; }
+.tlm-estado .mal b, .tlm-estado b.mal { color:var(--vermelho); }
+.tlm-botoes { display:flex; gap:8px; flex-wrap:wrap; }
+.tlm-pastilha {
+  border:1px solid var(--linha-forte); border-radius:999px;
+  padding:2px 10px; font-size:10.5px; letter-spacing:.04em;
+}
+.tlm-pastilha.on { color:var(--acao-incluir); border-color:var(--acao-incluir); }
+.tlm-pastilha.off { color:var(--texto-3); }
+/* Tela VELHA: o servidor parou de responder e o que está desenhado é o
+   retrato do instante em que ele caiu. O desenho fica, apagado, e o aviso na
+   barra diz de quando ele é — painel congelado é idêntico a painel calmo, e
+   essa confusão é exatamente o que não pode acontecer num monitor.
+
+   A opacidade NÃO é o sinal: o sinal é a frase na barra. A opacidade só
+   acompanha, para quem olha de longe. */
+.tlm.velho .tlm-faixas,
+.tlm.velho .tlm-corpo,
+.tlm.velho .tlm-threads { opacity:.42; filter:saturate(.3); }
+.tlm.velho .tlm-bolha { cursor:not-allowed; }
+.tlm-pastilha.mal { color:var(--vermelho); border-color:var(--vermelho); font-weight:600; }
+.tlm-pastilha.pausa { color:var(--ambar); border-color:var(--ambar); }
+.tlm.pausado .tlm-faixas { opacity:.72; }
+
+.tlm-stress {
+  color:var(--vermelho); border:1px solid var(--vermelho);
+  border-radius:4px; padding:2px 9px; font-weight:600;
+}
+
+/* --------------------------------------------------------------- as faixas */
+
+.tlm-faixas {
+  display:grid; gap:10px;
+  grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));
+}
+.tlm-faixa {
+  background:var(--painel); border:1px solid var(--linha);
+  border-radius:7px; padding:9px 11px 7px;
+}
+.tlm-faixa-cab {
+  display:flex; justify-content:space-between; align-items:baseline;
+  gap:8px; margin-bottom:5px;
+}
+.tlm-faixa-t {
+  font-size:10.5px; text-transform:uppercase; letter-spacing:.08em;
+  color:var(--texto-3);
+}
+.tlm-faixa-v {
+  font-size:11.5px; color:var(--texto); font-weight:600;
+  font-family:"IBM Plex Mono", ui-monospace, monospace; text-align:right;
+}
+.tlm-faixa svg { display:block; width:100%; height:54px; }
+.tlm-faixa-leg {
+  display:flex; gap:10px; flex-wrap:wrap; margin-top:5px;
+  font-size:9.5px; color:var(--texto-3);
+}
+.tlm-faixa-leg span { display:inline-flex; align-items:center; gap:4px; }
+.tlm-faixa-leg i { width:8px; height:3px; border-radius:2px; display:inline-block; }
+.tlm-faixa-leg .tlm-topo { margin-left:auto; opacity:.75; }
+
+/* ------------------------------------------------------- painel de bolhas */
+
+.tlm-corpo { display:flex; gap:12px; align-items:stretch; flex-wrap:wrap; }
+.tlm-painel {
+  flex:1 1 460px; min-width:0;
+  background:var(--painel); border:1px solid var(--linha); border-radius:7px;
+  display:flex; flex-direction:column;
+}
+.tlm-painel-cab {
+  display:flex; justify-content:space-between; align-items:baseline;
+  gap:10px; padding:9px 12px 6px; border-bottom:1px solid var(--linha);
+}
+.tlm-painel-t {
+  font-size:10.5px; text-transform:uppercase; letter-spacing:.08em;
+  color:var(--texto-3);
+}
+.tlm-painel-s { font-size:11px; color:var(--texto-2); }
+.tlm-bolhas { width:100%; height:340px; display:block; }
+
+.tlm-bolha { cursor:pointer; }
+.tlm-bolha .tlm-c {
+  /* Contorno, nunca fundo cheio: a lavagem deixa a bolha visível sem tirar o
+     contraste do texto, que continua medido contra o fundo do painel. */
+  fill-opacity:.17; stroke-width:2;
+  transition:cx .45s ease, cy .45s ease, r .45s ease, fill-opacity .15s;
+}
+.tlm-bolha:hover .tlm-c, .tlm-bolha:focus .tlm-c { fill-opacity:.4; }
+.tlm-bolha.sel .tlm-c { stroke-width:3.5; fill-opacity:.4; }
+.tlm-bolha:focus { outline:none; }
+.tlm-bolha:focus .tlm-c { stroke-width:3.5; }
+.tlm-bolha .tlm-id {
+  fill:var(--texto); font-weight:700; pointer-events:none;
+  font-family:"IBM Plex Mono", ui-monospace, monospace;
+  transition:x .45s ease, y .45s ease;
+}
+.tlm-bolha .tlm-sub {
+  fill:var(--texto-2); pointer-events:none;
+  transition:x .45s ease, y .45s ease;
+}
+
+/* A bolha de quem está olhando: um anel mais firme, e o nome no cartão.
+   Não é um estado — é uma identidade —, por isso não usa nenhuma das quatro
+   cores de nível. */
+.tlm-bolha.eu .tlm-c { stroke-width:3; stroke-dasharray:none; }
+.tlm-eu {
+  font-size:9.5px; color:var(--texto-3); border:1px dashed var(--linha-forte);
+  border-radius:999px; padding:1px 7px;
+}
+
+.tlm-legenda {
+  display:flex; gap:14px; flex-wrap:wrap; align-items:center;
+  padding:7px 12px 9px; border-top:1px solid var(--linha);
+  font-size:10px; color:var(--texto-3);
+}
+.tlm-leg { display:inline-flex; align-items:center; gap:5px; }
+.tlm-leg svg { width:13px; height:13px; }
+.tlm-leg circle { fill-opacity:.2; stroke-width:2; }
+.tlm-leg[data-n="normal"] circle { fill:var(--reg); stroke:var(--reg); }
+.tlm-leg[data-n="alto"] circle {
+  fill:var(--ambar); stroke:var(--ambar); stroke-dasharray:6 4;
+}
+.tlm-leg[data-n="stress"] circle {
+  fill:var(--vermelho); stroke:var(--vermelho); stroke-dasharray:2 3;
+}
+.tlm-leg[data-n="encerrando"] circle {
+  fill:var(--acao-marcar); stroke:var(--acao-marcar); stroke-dasharray:10 4;
+}
+.tlm-leg[data-n="normal"] { color:var(--reg); }
+.tlm-leg[data-n="alto"] { color:var(--ambar); }
+.tlm-leg[data-n="stress"] { color:var(--vermelho); }
+.tlm-leg[data-n="encerrando"] { color:var(--acao-marcar); }
+.tlm-leg b { font-size:11px; }
+.tlm-leg-nota { margin-left:auto; opacity:.8; }
+
+/* ------------------------------------------------------------- o descritivo */
+
+.tlm-lado { flex:0 1 320px; min-width:260px; }
+.tlm-cartao {
+  background:var(--painel); border:1px solid var(--linha); border-radius:7px;
+  padding:11px 13px; height:100%;
+}
+.tlm-vazio {
+  color:var(--texto-3); font-size:11.5px; text-align:center; padding:28px 8px;
+}
+.tlm-cartao-cab {
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  padding-bottom:8px; margin-bottom:8px; border-bottom:1px solid var(--linha);
+}
+.tlm-cartao-cab b {
+  font-family:"IBM Plex Mono", ui-monospace, monospace; font-size:13px;
+  color:var(--texto);
+  /* O id de uma sessao web tem 48 caracteres e nao tem onde quebrar: sem
+     isto ele saía pela borda do cartão. Ele fica inteiro de propósito -- é
+     o que se passa para `telemetria_encerrar`. */
+  overflow-wrap:anywhere; min-width:0;
+}
+.tlm-nivel {
+  color:var(--n); border:1px solid var(--n); border-radius:4px;
+  padding:1px 8px; font-size:10px; letter-spacing:.05em;
+}
+.tlm-l {
+  display:flex; justify-content:space-between; gap:10px;
+  padding:3px 0; font-size:11.5px; border-bottom:1px dotted var(--linha);
+}
+.tlm-l span { color:var(--texto-3); }
+/* O valor é DADO: nunca em caixa alta, nunca reescrito. */
+.tlm-l b {
+  color:var(--texto); font-weight:500; text-align:right;
+  text-transform:none; word-break:break-word;
+}
+.tlm-acoes { display:flex; gap:8px; flex-wrap:wrap; margin:11px 0 8px; }
+.tlm-acoes .botao[disabled] { opacity:.4; cursor:not-allowed; }
+.tlm-nota {
+  font-size:10.5px; color:var(--texto-3); line-height:1.5; margin:0;
+}
+
+/* ------------------------------------------------------------- as threads */
+
+.tlm-threads {
+  background:var(--painel); border:1px solid var(--linha); border-radius:7px;
+  padding:8px 12px;
+}
+.tlm-threads > summary {
+  cursor:pointer; font-size:11px; color:var(--texto-2);
+  text-transform:uppercase; letter-spacing:.07em;
+}
+.tlm-threads > summary span { text-transform:none; color:var(--texto-3); }
+table.tlm-tab { width:100%; border-collapse:collapse; margin-top:8px; }
+table.tlm-tab th {
+  text-align:left; font-size:9.5px; text-transform:uppercase;
+  letter-spacing:.08em; color:var(--texto-3); padding:4px 8px 4px 0;
+  border-bottom:1px solid var(--linha); white-space:nowrap;
+}
+table.tlm-tab td {
+  font-size:11px; color:var(--texto-2); padding:4px 8px 4px 0;
+  border-bottom:1px solid var(--linha); vertical-align:top;
+}
+table.tlm-tab td.num, table.tlm-tab th.num { text-align:right; }
+table.tlm-tab .tlm-nome {
+  font-family:"IBM Plex Mono", ui-monospace, monospace; color:var(--texto);
+  white-space:nowrap;
+}
+table.tlm-tab .tlm-fim { color:var(--texto-3); max-width:420px; }
+table.tlm-tab tr.morta td { opacity:.45; }
+
+/* Nada aqui pode empurrar a página de lado.
+ *
+ * A tabela de threads é a única coisa larga da tela, e ela rola DENTRO da
+ * própria caixa — a página não. Medido no navegador a 430 px: sem estas duas
+ * linhas o `<summary>` e a tabela esticavam o corpo inteiro e a moldura
+ * ganhava uma barra horizontal, que é defeito de tela e não de conteúdo. */
+.tlm, .tlm-corpo, .tlm-painel, .tlm-faixas { min-width:0; max-width:100%; }
+.tlm-threads { min-width:0; overflow:hidden; }
+.tlm-threads .rolo { overflow-x:auto; max-width:100%; }
+table.tlm-tab { min-width:520px; }
+
+@media (max-width:860px) {
+  .tlm-lado { flex:1 1 100%; min-width:0; }
+  .tlm-bolhas { height:280px; }
+}
+
+@media (max-width:560px) {
+  /* Uma faixa por linha: a 240 px de mínimo, duas colunas já estouravam. */
+  .tlm-faixas { grid-template-columns:1fr; }
+  .tlm-painel { flex:1 1 100%; }
+  .tlm-leg-nota { margin-left:0; }
+}

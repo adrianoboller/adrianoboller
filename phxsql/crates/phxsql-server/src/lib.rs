@@ -23,6 +23,7 @@ pub mod profiler;
 pub mod replica;
 pub mod servidor;
 pub mod sistema;
+pub mod telemetria;
 pub mod usuarios;
 pub mod valores;
 

@@ -39,6 +39,20 @@ pub enum PhxError {
     Autorizacao(String),
     /// Valor excede o limite fisico do formato.
     LimiteExcedido(String),
+    /// Alguem mandou encerrar esta atividade e ela chegou num ponto seguro.
+    ///
+    /// # Por que uma familia so dela
+    ///
+    /// Nao e recusa de acesso: quem pediu podia, e a operacao ja tinha
+    /// comecado. Nao e erro do dado, nem do esquema, nem do disco. E o unico
+    /// erro do PhxSql que descreve uma DECISAO de quem administra, tomada
+    /// depois de o trabalho comecar -- e quem integra precisa distingui-lo de
+    /// uma falha, porque nao ha nada para consertar.
+    ///
+    /// O arquivo fica INTEIRO: a marca de encerramento so e olhada em ponto
+    /// seguro, entre uma unidade de trabalho e a proxima. O que ja foi
+    /// gravado esta gravado, e o que faltava nao comecou.
+    Cancelado(String),
     /// O pedido tem de ir para OUTRO servidor -- escrita numa replica de
     /// cluster, por exemplo. A mensagem comeca com `REDIRECIONA host:porta`,
     /// de proposito: e o pedaco que um cliente recorta para se apontar ao
@@ -70,7 +84,8 @@ impl PhxError {
     /// | 2000  | `esquema` | o pedido nao casa com a estrutura |
     /// | 3000  | `dado`    | o dado em si recusa |
     /// | 4000  | `acesso`  | quem pediu nao podia |
-    /// | 5000  | `sistema` | o sistema de arquivos falhou |
+    /// | 5000  | `sistema` | o sistema de arquivos falhou
+    /// | 6000  | `execucao`| a operacao foi interrompida por quem administra |
     pub fn codigo(&self) -> u16 {
         match self {
             PhxError::Corrompido(_) => 1001,
@@ -86,6 +101,7 @@ impl PhxError {
             PhxError::EmCarga(_) => 4002,
             PhxError::Redireciona(_) => 4003,
             PhxError::Io(_) => 5001,
+            PhxError::Cancelado(_) => 6001,
         }
     }
 
@@ -107,6 +123,7 @@ impl PhxError {
             PhxError::EmCarga(_) => "EM_CARGA",
             PhxError::Redireciona(_) => "REDIRECIONA",
             PhxError::Io(_) => "ERRO_DE_ES",
+            PhxError::Cancelado(_) => "CANCELADO",
         }
     }
 
@@ -120,6 +137,7 @@ impl PhxError {
             2 => "esquema",
             3 => "dado",
             4 => "acesso",
+            6 => "execucao",
             _ => "sistema",
         }
     }
@@ -175,6 +193,9 @@ impl fmt::Display for PhxError {
             // Sem prefixo: a mensagem ja comeca com `REDIRECIONA host:porta`,
             // e e esse comeco que o cliente recorta.
             PhxError::Redireciona(m) => write!(f, "{m}"),
+            // Sem prefixo de erro na frente: quem le a resposta esta vendo o
+            // resultado de um botao que ele mesmo apertou, e nao uma falha.
+            PhxError::Cancelado(m) => write!(f, "{m}"),
         }
     }
 }
@@ -224,6 +245,7 @@ mod testes_codigo {
             PhxError::Autorizacao(String::new()),
             PhxError::Redireciona(String::new()),
             PhxError::Io(std::io::Error::other("x")),
+            PhxError::Cancelado(String::new()),
         ];
         let mut codigos: Vec<u16> = todos.iter().map(PhxError::codigo).collect();
         let quantos = codigos.len();
@@ -253,6 +275,7 @@ mod testes_codigo {
         assert_eq!(PhxError::EmCarga(String::new()).codigo(), 4002);
         assert_eq!(PhxError::Redireciona(String::new()).codigo(), 4003);
         assert_eq!(PhxError::Io(std::io::Error::other("x")).codigo(), 5001);
+        assert_eq!(PhxError::Cancelado(String::new()).codigo(), 6001);
     }
 
     #[test]
@@ -262,6 +285,15 @@ mod testes_codigo {
         assert_eq!(PhxError::Duplicado(String::new()).classe(), "dado");
         assert_eq!(PhxError::Autorizacao(String::new()).classe(), "acesso");
         assert_eq!(PhxError::Io(std::io::Error::other("x")).classe(), "sistema");
+        assert_eq!(PhxError::Cancelado(String::new()).classe(), "execucao");
+    }
+
+    /// Encerrar uma atividade NAO e pedir para tentar de novo: quem
+    /// administra acabou de mandar parar, e um cliente que repete desfaz a
+    /// decisao dele sem ninguem perceber.
+    #[test]
+    fn cancelado_nao_pede_nova_tentativa() {
+        assert!(!PhxError::Cancelado(String::new()).adianta_repetir());
     }
 
     /// Repetir so adianta no que pode ter mudado sozinho. Sao dois, e o nome

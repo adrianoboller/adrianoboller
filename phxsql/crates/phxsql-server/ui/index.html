@@ -6727,6 +6727,8 @@ const ICO = {
   // Um relogio com a flecha de repeticao: agenda que volta. E de proposito
   // parecido com o `troca`, porque job e ciclo.
   relogio: `<circle cx="12" cy="12.6" r="7.8" fill="none" stroke-width="1.6"/><path d="M12 8.4v4.4l3 1.8" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M9.4 3.2h5.2" stroke-width="1.7" stroke-linecap="round"/>`,
+  // Um mostrador com ponteiro: o medidor de painel de instrumentos.
+  medidor: `<path d="M3 16.5a9 9 0 0118 0" fill="none" stroke-width="1.6" stroke-linecap="round"/><path d="M12 16.5l4.4-4.9" fill="none" stroke-width="1.6" stroke-linecap="round"/><circle cx="12" cy="16.5" r="1.5" fill="none" stroke-width="1.4"/><path d="M5.6 11.4l1 .9M12 8.2v1.4M18.4 11.4l-1 .9" fill="none" stroke-width="1.3" stroke-linecap="round"/>`,
   // Duas caixas ligadas por uma linha com ponta: e o desenho do proprio ER.
   diagrama: `<rect x="2.8" y="3.5" width="8" height="6" rx="1.4" fill="none" stroke-width="1.5"/><rect x="13.2" y="14.5" width="8" height="6" rx="1.4" fill="none" stroke-width="1.5"/><path d="M6.8 9.5v5a1.6 1.6 0 001.6 1.6h4.2" fill="none" stroke-width="1.5"/><path d="M11.2 15l1.8 1.6-1.8 1.6" fill="none" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>`,
   // Escudo com um cadeado: o dado que a lei manda proteger.
@@ -6784,6 +6786,7 @@ const FERRAMENTAS = [
   { ico:"privado",  rot:"LGPD",       cor:"var(--laranja)",faz:() => telaDadosPessoais() },
   { ico:"replica",  rot:"Replicação", cor:"var(--ndx)",    faz:verReplicacao },
   { ico:"pulso",    rot:"Profiler",   cor:"var(--acao-consultar)", faz:verProfiler },
+  { ico:"medidor",  rot:"Telemetria", cor:"var(--memo)",   faz:telaTelemetria },
   { ico:"escudo",   rot:"Diretivas",  cor:"var(--laranja)",faz:verDiretivas },
   "risco",
   { ico:"energia",  rot:"Start/Stop", cor:"var(--ok)",     faz:verServico },
@@ -7931,6 +7934,26 @@ let profTimer = null;
 let profVisto = 0;
 let profLinhas = [];
 
+/* ============================== telemetria (o SQL Check da Idera(R))
+ *
+ * A tela inteira mora em `ui/telemetria.js` e `ui/telemetria.css`; aqui e so
+ * a cola: monta a folha, entrega a `api` e o `avisar` ao modulo, e sai da
+ * frente. O modulo nao fala com o servidor por conta -- e o que permitiu
+ * exercita-lo no navegador com um retrato inventado, sem servidor nenhum.
+ */
+function telaTelemetria() {
+  folha("Telemetria",
+        "o que o servidor está fazendo agora — séries, atividades e threads",
+        PhxTelemetria.html());
+  PhxTelemetria.iniciar({
+    api,
+    aoAvisar: (t, mal) => avisar(t, mal),
+    // Dois segundos: a serie do servidor anda de segundo em segundo, e pedir
+    // mais rapido que ela so traria a mesma amostra duas vezes.
+    periodo: 2000,
+  });
+}
+
 async function verProfiler() {
   clearInterval(profTimer);
   profVisto = 0; profLinhas = [];
@@ -8449,8 +8472,10 @@ function folha(titulo, subtitulo, corpoHtml) {
   // telas seguintes.
   $("#painel").onclick = null;
   // E o mesmo caso do onclick: o relogio do monitor continuaria batendo numa
-  // tela que nao tem mais onde desenhar.
+  // tela que nao tem mais onde desenhar. Vale para os dois relogios que
+  // existem: o do monitor e o da telemetria.
   pararMonitor();
+  if (window.PhxTelemetria) PhxTelemetria.parar();
   $("#titulo").textContent = titulo;
   $("#subtitulo").textContent = subtitulo || "";
   $("#painel").innerHTML = corpoHtml;

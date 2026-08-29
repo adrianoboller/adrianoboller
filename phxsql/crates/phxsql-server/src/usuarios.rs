@@ -229,6 +229,18 @@ impl Atividade {
             // administrador: a lista mostra o login e o IP dos outros, e
             // derrubar interrompe o trabalho alheio.
             "sessoes" | "processlist" | "encerrar_sessao" | "kill" => Atividade::Administrar,
+            // A telemetria mostra o login, o IP e a TABELA de toda atividade
+            // viva, e o encerrar interrompe o trabalho alheio: e o mesmo poder
+            // do `sessoes` e do `kill`, pelas mesmas duas razoes.
+            //
+            // Este portao ve a base VAZIA, porque nenhuma das quatro tem campo
+            // "database" -- entao ele nao basta, e as quatro conferem por
+            // dentro se quem pediu e administrador DESTE SERVIDOR. E a licao
+            // do juntar/unir: quando o portao geral nao consegue enxergar o
+            // campo, a operacao pergunta por conta.
+            "telemetria" | "telemetria_ligar" | "telemetria_desligar" | "telemetria_encerrar" => {
+                Atividade::Administrar
+            }
             "acessos" | "ips" | "config" | "usuarios" | "bloqueios" | "desbloquear" => {
                 Atividade::Administrar
             }

@@ -50,6 +50,7 @@ use std::collections::{HashMap, VecDeque};
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicU64;
 
 use phxsql_core::crc::{crc32, crc32_with};
 use phxsql_core::error::{PhxError, Result};
@@ -134,6 +135,35 @@ pub fn definir_cache_paginas(paginas: usize) {
 /// O teto vigente, em paginas.
 pub fn cache_paginas() -> usize {
     PAGINAS_EM_CACHE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Acertos, faltas e gravacoes de pagina do processo inteiro.
+///
+/// # Por que os contadores sobem so no FECHAMENTO
+///
+/// Cada `.ndx` aberto ja conta os proprios acertos num `u64` comum, que nao
+/// custa nada porque nao e atomico e nao e compartilhado. Somar cada toque
+/// direto num atomico global custaria uma instrucao sincronizada por toque --
+/// e sao 10,86 toques por linha inserida, medidos, num caminho onde a linha
+/// inteira leva 7,5 us. Instrumentacao que cobra do caminho quente e
+/// instrumentacao que muda o que ela mede.
+///
+/// Entao os contadores do arquivo sobem para ca UMA VEZ, quando ele fecha. O
+/// preco disso e a granularidade: o servidor abre e fecha a tabela a cada
+/// operacao, entao o numero anda por OPERACAO, e nao por linha. Uma carga de
+/// cinco mil linhas so aparece quando ela termina -- o que a tela de
+/// telemetria diz, em vez de fingir tempo real.
+static CACHE_ACERTOS: AtomicU64 = AtomicU64::new(0);
+static CACHE_FALTAS: AtomicU64 = AtomicU64::new(0);
+static CACHE_GRAVACOES: AtomicU64 = AtomicU64::new(0);
+
+/// (acertos, faltas, gravacoes de pagina) desde que o processo subiu.
+pub fn contadores_de_cache() -> (u64, u64, u64) {
+    (
+        CACHE_ACERTOS.load(std::sync::atomic::Ordering::Relaxed),
+        CACHE_FALTAS.load(std::sync::atomic::Ordering::Relaxed),
+        CACHE_GRAVACOES.load(std::sync::atomic::Ordering::Relaxed),
+    )
 }
 
 /// As paginas do `.ndx` que ficam em RAM.
@@ -1540,5 +1570,11 @@ impl Drop for NdxFile {
     /// proxima abertura vai dizer isso em vez de responder errado.
     fn drop(&mut self) {
         let _ = self.fechar();
+        // Os contadores deste arquivo entram na conta do processo aqui, e nao
+        // a cada toque de pagina: ver a nota em `contadores_de_cache`.
+        let o = std::sync::atomic::Ordering::Relaxed;
+        CACHE_ACERTOS.fetch_add(self.cache.acertos, o);
+        CACHE_FALTAS.fetch_add(self.cache.faltas, o);
+        CACHE_GRAVACOES.fetch_add(self.gravacoes, o);
     }
 }
