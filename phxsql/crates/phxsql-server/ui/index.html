@@ -4288,7 +4288,7 @@ function editorDeMenu() {
   });
   FERRAMENTAS.forEach((f, i) => {
     if (f === "risco") return;
-    itens.push({ chave:`fer.${i}`, original:f.rot, onde:"ferramenta", grupo:"Barra de ferramentas" });
+    itens.push({ chave:`fer.${f.rot}`, original:f.rot, onde:"ferramenta", grupo:"Barra de ferramentas" });
   });
 
   const trocados = Object.keys(est.rotulos).length;
@@ -6429,38 +6429,48 @@ const svg = nome =>
    Atencao: `--vermelhao` e `--laranja` sao a MESMA cor no tema claro, por
    decisao da marca. Escolher entre os dois seria escolher nada. */
 const FERRAMENTAS = [
-  { ico:"energia",  rot:"Start/Stop", cor:"var(--ok)",     faz:verServico },
+/* A ORDEM e a do uso, do diario para o raro -- e e julgamento declarado,
+   nao medicao: o servidor ainda nao conta cliques por ferramenta. Quando a
+   tela de Estatisticas de uso passar a contar, a ordem se refaz do numero.
+     1. o dia a dia do dado ...... ver, consultar, cruzar, entrar e sair
+     2. administracao corrente ... bancos, gente, conexoes, configuracao
+     3. o ocasional .............. salvaguarda, cadastro fino, observacao
+     4. raro e de risco .......... parar o servico, reparar
+     5. desligadas e ajuda ....... o que ainda nao existe fica visivel no fim,
+                                   como promessa, e nao no meio, como tropeço */
+  { ico:"grade",    rot:"View DB",    cor:"var(--bin)",    faz:viewDatabaseAtual },
+  { ico:"tabelas",  rot:"Tabelas",    cor:"var(--bin)",    faz:gerirTabelasAtual },
   { ico:"consulta", rot:"Query",      cor:"var(--ndx)",    faz:abrirConsulta },
   { ico:"pivot",    rot:"Pivot",      cor:"var(--ndx)",    faz:() => telaPivot() },
   { ico:"venn",     rot:"Junção",     cor:"var(--ndx)",    faz:() => telaJuncao() },
+  { ico:"exportar", rot:"Exportar",   cor:"var(--ok)",     faz:() => telaExportar() },
+  { ico:"importar", rot:"Importar",   cor:"var(--bin)",    faz:() => telaImportar() },
   "risco",
-  { ico:"gente",    rot:"Usuários",   cor:"var(--reg)",    faz:() => irPara("usuarios") },
-  { ico:"escudo",   rot:"Diretivas",  cor:"var(--laranja)",faz:verDiretivas },
   { ico:"banco",    rot:"Bancos",     cor:"var(--bin)",    faz:verBancos },
-  { ico:"grade",    rot:"View DB",    cor:"var(--bin)",    faz:viewDatabaseAtual },
-  { ico:"tabelas",  rot:"Tabelas",    cor:"var(--bin)",    faz:gerirTabelasAtual },
   { ico:"gerir",    rot:"Gerir Banco",cor:"var(--bin)",    faz:() => gerirDatabase() },
-  { ico:"catalogo", rot:"SysTables",  cor:"var(--memo)",   faz:() => verSysTables() },
+  { ico:"gente",    rot:"Usuários",   cor:"var(--reg)",    faz:() => irPara("usuarios") },
+  { ico:"tomada",   rot:"Conexões",   cor:"var(--memo)",   faz:verSessoes },
   { ico:"engrenagem", rot:"Config",   cor:"var(--laranja)",faz:verConfigServidor },
+  { ico:"relogio",  rot:"Jobs",       cor:"var(--log)",    faz:telaJobs },
+  "risco",
+  { ico:"cofre",    rot:"Backup",     cor:"var(--ok)",     faz:backupAgora },
+  { ico:"lixeira",  rot:"Lixeira",    cor:"var(--log)",    faz:() => telaLixeira() },
+  { ico:"troca",    rot:"Transações", cor:"var(--log)",    faz:verTransacoes },
+  { ico:"elo",      rot:"DbLink",     cor:"var(--memo)",   faz:() => telaDbLink() },
+  { ico:"catalogo", rot:"SysTables",  cor:"var(--memo)",   faz:() => verSysTables() },
+  { ico:"diagrama", rot:"Diagrama ER",cor:"var(--ndx)",    faz:() => telaDiagramaER() },
+  { ico:"privado",  rot:"LGPD",       cor:"var(--laranja)",faz:() => telaDadosPessoais() },
+  { ico:"replica",  rot:"Replicação", cor:"var(--ndx)",    faz:verReplicacao },
+  { ico:"pulso",    rot:"Profiler",   cor:"var(--acao-consultar)", faz:verProfiler },
+  { ico:"escudo",   rot:"Diretivas",  cor:"var(--laranja)",faz:verDiretivas },
+  "risco",
+  { ico:"energia",  rot:"Start/Stop", cor:"var(--ok)",     faz:verServico },
+  { ico:"reparo",   rot:"Repair",     cor:"var(--ambar)",  faz:repararPeloMenu },
+  "risco",
   { ico:"duplicar", rot:"Duplicar",   cor:"var(--bin)",    faz:null,
     falta:"Copiar um database inteiro para outro nome. O backup já sabe copiar "
         + "árvore e conferir SHA-256; falta a operação que grava com outro nome "
         + "e reescreve o catálogo." },
-  { ico:"tomada",   rot:"Conexões",   cor:"var(--memo)",   faz:verSessoes },
-  { ico:"elo",      rot:"DbLink",     cor:"var(--memo)",   faz:() => telaDbLink() },
-  "risco",
-  { ico:"troca",    rot:"Transações", cor:"var(--log)",    faz:verTransacoes },
-  { ico:"lixeira",  rot:"Lixeira",    cor:"var(--log)",    faz:() => telaLixeira() },
-  { ico:"exportar", rot:"Exportar",   cor:"var(--ok)",     faz:() => telaExportar() },
-  { ico:"importar", rot:"Importar",   cor:"var(--bin)",    faz:() => telaImportar() },
-  { ico:"reparo",   rot:"Repair",     cor:"var(--ambar)",  faz:repararPeloMenu },
-  { ico:"cofre",    rot:"Backup",     cor:"var(--ok)",     faz:backupAgora },
-  "risco",
-  { ico:"replica",  rot:"Replicação", cor:"var(--ndx)",    faz:verReplicacao },
-  { ico:"pulso",    rot:"Profiler",   cor:"var(--acao-consultar)", faz:verProfiler },
-  { ico:"relogio",  rot:"Jobs",       cor:"var(--log)",    faz:telaJobs },
-  { ico:"diagrama", rot:"Diagrama ER",cor:"var(--ndx)",    faz:() => telaDiagramaER() },
-  { ico:"privado",  rot:"LGPD",       cor:"var(--laranja)",faz:() => telaDadosPessoais() },
   { ico:"correio",  rot:"Server Mail",cor:"var(--reg)",    faz:null,
     falta:"O armazenamento serve bem — uma tabela de mensagens com pasta "
         + "indexada, corpo no .memo e anexo no .bin. Falta o serviço. O SMTP "
@@ -6471,7 +6481,6 @@ const FERRAMENTAS = [
     falta:"O formato encaixa: a altura do bloco é o rowid, o Uuid256 guarda um "
         + "SHA-256 exato e a ordem de digitação é sagrada. Falta o serviço — e, "
         + "antes dele, as transações." },
-  "risco",
   { ico:"ajuda",    rot:"Ajuda",      cor:"var(--texto-3)",faz:verSobre },
 ];
 
@@ -6481,7 +6490,7 @@ function montarFerramentas() {
     const pendente = !!f.falta && !f.faz;
     // `rot()` deixa o editor de menu trocar o nome exibido sem mexer no que a
     // ferramenta faz.
-    const rotulo = rot(`fer.${i}`, f.rot);
+    const rotulo = rot(`fer.${f.rot}`, f.rot);
     return `<button class="fer${pendente ? " afazer" : ""}"
       data-f="${i}" style="color:${f.cor}"
       title="${esc(rotulo)}${pendente ? " · ainda não existe" : ""}">
