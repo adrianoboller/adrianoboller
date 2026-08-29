@@ -6432,12 +6432,16 @@ const FERRAMENTAS = [
 /* A ORDEM e a do uso, do diario para o raro -- e e julgamento declarado,
    nao medicao: o servidor ainda nao conta cliques por ferramenta. Quando a
    tela de Estatisticas de uso passar a contar, a ordem se refaz do numero.
-     1. o dia a dia do dado ...... ver, consultar, cruzar, entrar e sair
+     1. o dia a dia do dado ...... abre pelos bancos, a pedido do Adriano
+                                   (e o ponto de partida de toda sessao),
+                                   depois ver, consultar, cruzar, entrar e sair
      2. administracao corrente ... bancos, gente, conexoes, configuracao
      3. o ocasional .............. salvaguarda, cadastro fino, observacao
      4. raro e de risco .......... parar o servico, reparar
      5. desligadas e ajuda ....... o que ainda nao existe fica visivel no fim,
                                    como promessa, e nao no meio, como tropeço */
+  { ico:"banco",    rot:"Bancos",     cor:"var(--bin)",    faz:verBancos },
+  { ico:"gerir",    rot:"Gerir Banco",cor:"var(--bin)",    faz:() => gerirDatabase() },
   { ico:"grade",    rot:"View DB",    cor:"var(--bin)",    faz:viewDatabaseAtual },
   { ico:"tabelas",  rot:"Tabelas",    cor:"var(--bin)",    faz:gerirTabelasAtual },
   { ico:"consulta", rot:"Query",      cor:"var(--ndx)",    faz:abrirConsulta },
@@ -6446,8 +6450,6 @@ const FERRAMENTAS = [
   { ico:"exportar", rot:"Exportar",   cor:"var(--ok)",     faz:() => telaExportar() },
   { ico:"importar", rot:"Importar",   cor:"var(--bin)",    faz:() => telaImportar() },
   "risco",
-  { ico:"banco",    rot:"Bancos",     cor:"var(--bin)",    faz:verBancos },
-  { ico:"gerir",    rot:"Gerir Banco",cor:"var(--bin)",    faz:() => gerirDatabase() },
   { ico:"gente",    rot:"Usuários",   cor:"var(--reg)",    faz:() => irPara("usuarios") },
   { ico:"tomada",   rot:"Conexões",   cor:"var(--memo)",   faz:verSessoes },
   { ico:"engrenagem", rot:"Config",   cor:"var(--laranja)",faz:verConfigServidor },
