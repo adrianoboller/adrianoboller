@@ -92,6 +92,15 @@ recursos novos inventados aqui.
 - **`--example ordem-da-chave`**, que mede quanto a ordem das chaves custa. Foi
   ele que reprovou a hipótese do pedido 113 antes de ela virar código.
 
+- **`--example indice-adiado`**, que responde «e se o `.ndx` parasse durante a
+  carga e fosse reconstruído no fim?» com a reconstrução **dentro da conta**:
+  **1,02×**. O `reindexar` de hoje insere chave a chave — uma descida por
+  chave, o mesmo trabalho do caminho de dentro, feito depois. O ganho está na
+  **construção em lote** da B+tree (varrer, ordenar, encher as folhas em
+  sequência), cujo piso medido é 0,24 s contra os 2,54 s que o `reindexar`
+  cobra. A ordem de trabalho é a inversa da intuição: o lote primeiro, o
+  adiamento depois. Está em `docs/DESEMPENHO.md` §4.2.
+
 - **Direito no nível da tabela** (pedido 124), o primeiro item da lista que a
   leitura do HFSQL(R) apontou como faltando. Até aqui a permissão parava na
   base: quem lia a base lia **todas** as tabelas dela — e a folha de pagamento
