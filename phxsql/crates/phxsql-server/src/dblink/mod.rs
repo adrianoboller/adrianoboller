@@ -19,7 +19,12 @@
 //! tabelas de um banco de producao apagaria uma se a escrita viesse ligada por
 //! omissao.
 
+pub mod conexao;
+pub mod dialeto;
 pub mod mysql;
+pub mod operacoes;
+
+pub use conexao::{Conexao, Resultado};
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -31,9 +36,6 @@ use phxsql_core::json::Json;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Motor {
     MySql,
-    /// Reconhecido no cadastro, ainda sem cliente. Guardar a definicao antes
-    /// do cliente existir e de proposito: o cadastro nao muda quando o cliente
-    /// chegar.
     Postgres,
 }
 
@@ -66,18 +68,21 @@ impl Motor {
 
     /// As operacoes do DbLink ja funcionam com este motor?
     ///
-    /// **Nao e "ha cliente escrito"** -- o cliente do PostgreSQL(R) existe em
-    /// `crate::pg`, com SCRAM-SHA-256 conferido contra o RFC 7677. O que falta
-    /// e o DIALETO: `dblink_tabelas`, `dblink_colunas` e o teste de ligacao
-    /// montam SQL de MySQL(R) (crase, `SHOW INDEX`, `current_user()`), e o
-    /// `information_schema` do PostgreSQL(R) responde a outras perguntas.
+    /// **Nao e "ha cliente escrito"**, e essa distincao custou uma versao: o
+    /// cliente do PostgreSQL(R) existia, conferido contra o RFC 7677, e este
+    /// sinal continuava `false` porque as operacoes montavam SQL de MySQL(R).
+    /// Acende-lo ali teria ligado um botao que falha na primeira consulta --
+    /// a mesma armadilha do campo de configuracao que ninguem le.
     ///
-    /// Devolver `true` aqui acenderia o botao na tela e o botao falharia na
-    /// primeira consulta -- que e a mesma armadilha do campo de configuracao
-    /// que ninguem le. O sinal diz o que a tela pode fazer, e nao o que o
-    /// repositorio tem.
+    /// Agora os dois respondem `true` porque as duas coisas existem: o cliente
+    /// em `crate::pg` e o dialeto em `dblink::dialeto`, com as operacoes em
+    /// `dblink::operacoes` escolhendo por motor.
+    ///
+    /// O sinal continua dizendo **o que a tela pode fazer**, e nao o que o
+    /// repositorio tem -- e por isso ele fica aqui, num lugar so, em vez de a
+    /// tela adivinhar pelo nome do motor.
     pub fn conecta(self) -> bool {
-        matches!(self, Motor::MySql)
+        matches!(self, Motor::MySql | Motor::Postgres)
     }
 }
 
@@ -222,13 +227,12 @@ impl Definicao {
         self
     }
 
-    /// Abre a ligacao pelo cliente MySQL(R).
+    /// Abre a ligacao pelo cliente MySQL(R), com o tipo concreto.
     ///
-    /// Continua devolvendo `mysql::Conexao`, e nao um tipo comum aos dois
-    /// motores, de proposito: as operacoes que a usam montam SQL de MySQL(R)
-    /// -- crase em volta do nome, `current_user()`, `SHOW INDEX`. Um tipo
-    /// comum faria o codigo COMPILAR para o PostgreSQL(R) e falhar na primeira
-    /// consulta, que e pior do que nao compilar.
+    /// O caminho normal e [`Definicao::abrir`], que devolve a conexao comum aos
+    /// dois motores. Este continua existindo para quem precisa do tipo
+    /// concreto -- o teste de protocolo, e quem quiser um campo que so o
+    /// MySQL(R) tem.
     pub fn conectar(&self) -> Result<mysql::Conexao> {
         match self.motor {
             Motor::MySql => mysql::Conexao::abrir(
@@ -240,9 +244,8 @@ impl Definicao {
                 Duration::from_secs(self.timeout_s),
             ),
             Motor::Postgres => Err(PhxError::Esquema(
-                "esta ligacao e PostgreSQL(R): o cliente existe (`pg::Conexao`, \
-                 com SCRAM-SHA-256), mas as operacoes do DbLink ainda montam SQL \
-                 de MySQL(R). Use `conectar_pg` ate o dialeto entrar."
+                "esta ligacao e PostgreSQL(R): use `conectar_pg`, ou `abrir`, \
+                 que escolhe o cliente pelo motor da ligacao"
                     .into(),
             )),
         }
