@@ -1,0 +1,7 @@
+# Worktrees que os agentes criam para trabalhar isolados.
+#
+# Nao sao codigo: sao copias do proprio repositorio, uma por agente, e o
+# conteudo delas volta para ca por merge. Versiona-las poria o repositorio
+# inteiro dentro dele mesmo -- os dois worktrees de uma rodada ja somaram
+# 1,2 GiB.
+.claude/worktrees/
