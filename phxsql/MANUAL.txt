@@ -2087,16 +2087,35 @@ telefone, supervisor e o poder sobre cada base. A SENHA E GUARDADA COMO HASH.
 
         "comandos_proibidos": ["excluir","reindexar"],
         "bases_proibidas": ["financeiro"],
+        "tentativas_para_bloqueio": 1,
         "tentativas_ate_bloquear": 5,
         "janela_minutos": 10,
         "bloqueio_minutos": 60,
+        "whitelist": ["127.0.0.1","192.168.50.0/24"],
         "blacklist": "blacklist.json"
+
+    SEM A SECAO, NADA MUDA: nada e proibido, nada conta, nada bloqueia.
 
     Vale para TODO MUNDO, root incluso, e e conferido ANTES do token. Nao e
     permissao de usuario: e o que este servidor nao faz por esta porta.
 
-    GRAVE (comando ou base proibida)  bloqueia o IP NA HORA
-    LEVE  (token, senha, ip de fora)  conta na janela e bloqueia no limite
+    GRAVE (comando/base proibida, nome hostil)  bloqueia na tentativa
+                                                "tentativas_para_bloqueio"
+                                                -- padrao 1, ou seja, NA HORA
+    LEVE  (token, senha, ip de fora)            conta na janela e bloqueia em
+                                                "tentativas_ate_bloquear"
+
+    Com tentativas_para_bloqueio acima de 1, a operacao continua RECUSADA
+    desde a primeira: o que espera a enesima e so o bloqueio do IP, e a
+    resposta diz a contagem ("tentativa 2 de 3").
+
+    WHITELIST: IP exato ou faixa CIDR que NUNCA bloqueia. Vence sempre,
+    inclusive um bloqueio ja gravado antes de a regra entrar. Nao da poder
+    nenhum: o comando proibido continua recusado, so o IP fica livre.
+
+    127.0.0.1 NAO tem excecao implicita -- ponha na whitelist se quiser uma.
+    Quem administra a maquina nunca fica trancado de verdade: o
+    phxsqld --desbloquear mexe no arquivo sem passar pela porta.
 
 15.3 A lista de bloqueio
 
@@ -2117,6 +2136,18 @@ telefone, supervisor e o poder sobre cada base. A SENHA E GUARDADA COMO HASH.
     Pelo protocolo: {"op":"bloqueios"} e {"op":"desbloquear","ip":"..."}.
     O servidor rele o arquivo quando ele muda, entao o --desbloquear vale
     na hora, sem reiniciar.
+
+    O arquivo tambem guarda a whitelist EDITAVEL pela tela, no campo
+    "whitelist" -- some com a do config.json. Pelo protocolo:
+    {"op":"whitelist_salvar","whitelist":["127.0.0.1"]}.
+
+    SEM ROOT, aplicar num firewall de verdade: a op exportar entrega uma
+    linha por IP ativo, no formato texto, iptables, nftables ou fail2ban.
+
+        {"op":"bloqueios_exportar","formato":"nftables"}
+
+    A tela Administracao > Bloqueios faz os tres: soltar, whitelist e
+    exportar. Os comandos de aplicar estao em docs/SEGURANCA.md 5.1.
 
 15.4 A regra de firewall
 
@@ -2152,6 +2183,46 @@ telefone, supervisor e o poder sobre cada base. A SENHA E GUARDADA COMO HASH.
     - O protocolo trafega em claro. Para atravessar rede publica, use tunel
       (IPSec, WireGuard) ou stunnel na frente.
     - Numa replica, ligue somente_leitura: true.
+
+15.6 As mensagens que o servidor devolve
+
+    O TEXTO de cada mensagem se personaliza; o CODIGO nunca muda. Cliente
+    antigo trata pelo codigo (4002 EM_CARGA e 4002 EM_CARGA em qualquer
+    lingua) e nao percebe a diferenca.
+
+    Cada mensagem e uma LINHA da tabela phxsys.mensagens, com as colunas:
+
+        id          Uuid, chave primaria      \ fixos: a programacao
+        TextName    Str(80), indice unico     / busca por eles
+        Portugues Frances Ingles Italiano Alemao Espanhol   Str(250)
+
+    No config.json:
+
+        "idioma": "Ingles"
+
+    Vazio ou ausente = Portugues, com os textos de fabrica -- ou seja, sem o
+    campo NADA MUDA. Idioma desconhecido nao derruba o servidor: avisa no
+    arranque e cai no portugues.
+
+    A resolucao tem tres degraus: a celula do idioma; vazia, o Portugues;
+    linha (ou tabela) ausente, o texto de fabrica de sempre.
+
+    Com o idioma preenchido, a tabela e semeada no primeiro arranque. Sem
+    ele, nada nasce ate alguem pedir:
+
+        {"op":"mensagens"}         o estado: idioma, se existe, quantas linhas
+        {"op":"mensagens_semear"}  cria e completa, sem tocar no que ja existe
+
+    Editar o TEXTO vale em poucos segundos, sem reiniciar (o servidor rele
+    quando o arquivo muda). Trocar o IDIOMA e config e exige reinicio.
+
+    Pela tela: Configuracoes > Mensagens do servidor -- e dali para a grade
+    comum de phxsys.mensagens, onde id e TextName aparecem travados.
+
+    O acessos.log continua gravando o texto de FABRICA, para filtro de log
+    (fail2ban) nao quebrar por troca de idioma.
+
+    Detalhes em docs/MENSAGENS.md.
 
 
 16. REPLICACAO

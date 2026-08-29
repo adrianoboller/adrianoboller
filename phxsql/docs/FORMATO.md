@@ -1139,6 +1139,25 @@ diferentes não colidem.
 Nomes de database, schema e tabela são validados: nada de `..`, barra,
 contrabarra, dois-pontos, curinga ou caractere de controle.
 
+### `phxsys` — o database do próprio servidor
+
+Um database como qualquer outro, **criado só quando alguém pede**. Hoje ele
+guarda uma tabela:
+
+```
+base/
+└── phxsys/
+    └── mensagens.reg ...     os textos que o servidor devolve, um por idioma
+```
+
+Ser tabela comum é a decisão, e não um detalhe: a grade já a edita, a permissão
+por base já a protege, o diário já registra quem mudou o quê, e o backup já a
+leva junto. Um arquivo de formato próprio precisaria dos quatro de novo. O
+esquema e a regra de resolução estão em [`MENSAGENS.md`](MENSAGENS.md).
+
+Servidor sem o campo `idioma` no `config.json` e sem ninguém clicar em «semear»
+não tem `phxsys` nenhum no disco — e responde exatamente como sempre respondeu.
+
 ---
 
 ## 10. Reindex

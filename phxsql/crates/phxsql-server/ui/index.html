@@ -871,6 +871,11 @@ td.nulo{color:var(--texto-3);font-style:italic}
   border:1px solid currentColor;white-space:nowrap;
 }
 .pino.ok{color:var(--ok)} .pino.nao{color:var(--texto-3)} .pino.mal{color:var(--vermelho)}
+/* O pino que carrega DADO -- nome de operação, de base, de IP -- não pode
+   deformá-lo: `excluir_tabela` mostrado como EXCLUIR_TABELA é uma mentira
+   sobre o que está gravado, a mesma do «BLUMENAU». Rótulo nosso pode ser
+   maiúsculo; o que veio do config.json, não. */
+.pino.crua{text-transform:none;letter-spacing:0;font-size:11px}
 .pino.reg{color:var(--reg)} .pino.ndx{color:var(--ndx)} .pino.bin{color:var(--bin)}
 .pino.memo{color:var(--memo)} .pino.log{color:var(--log)}
 
@@ -1241,7 +1246,23 @@ function demo(op, p) {
       indices:{porId:6,porNome:6,porCidadeLimite:6}, volumes:{reg:4,bin:1,memo:1,log:1}};
     case "usuarios": return d.usuarios;
     case "acessos": return {total:d.acessos.length, acessos:[...d.acessos].reverse()};
-    case "bloqueios": return {arquivo:"blacklist.json", ativos:d.bloqueios};
+    case "bloqueios": return {arquivo:"blacklist.json", ativos:d.bloqueios,
+      whitelist_config:["127.0.0.1"], whitelist:["192.168.50.0/24"],
+      politica:{comandos_proibidos:["excluir_tabela"], bases_proibidas:[],
+        tentativas_para_bloqueio:1, tentativas_ate_bloquear:5,
+        janela_minutos:10, bloqueio_minutos:60, firewall:false}};
+    case "desbloquear": return {ip:p.ip, estava_bloqueado:true};
+    case "whitelist_salvar": return {whitelist:p.whitelist||[]};
+    case "bloqueios_exportar": return {formato:p.formato||"texto", ips:1,
+      texto:p.formato==="iptables" ? "iptables -I INPUT -s 203.0.113.9 -j DROP\n"
+        : p.formato==="nftables" ? "add element inet filter phxsql_bloqueados { 203.0.113.9 }\n"
+        : p.formato==="fail2ban" ? "fail2ban-client set phxsql banip 203.0.113.9\n"
+        : "203.0.113.9\n"};
+    case "mensagens": return {idioma:"Portugues", database:"phxsys",
+      tabela:"mensagens", existe:false, linhas:0, de_fabrica:25,
+      idiomas:["Portugues","Frances","Ingles","Italiano","Alemao","Espanhol"]};
+    case "mensagens_semear": return {criou_database:true, criou_tabela:true,
+      semeadas:25, ja_existiam:0};
     // As telas novas também precisam existir sem servidor, senão avaliar a
     // interface antes de instalar deixa três botões dando erro.
     case "servico": return {no_ar:true, endereco:"127.0.0.1:5000",
@@ -2077,15 +2098,103 @@ async function abrirAdmin(qual) {
       $("#titulo").textContent = "Bloqueios";
       $("#subtitulo").textContent = "blacklist.json · o IP é recusado antes do token";
       const b = await api("bloqueios");
-      p.innerHTML = (b.ativos.length ? "" :
-          `<div class="aviso">Nenhum IP bloqueado.</div>`) + tabela(
-        [{t:"ip"},{t:"desde"},{t:"até"},{t:"motivo"},{t:"comando"},{t:"tentativas"},{t:"firewall"}],
+      const pol = b.politica || {};
+      const wlConfig = b.whitelist_config || [];
+      const wlEditavel = b.whitelist || [];
+      const chip = t => `<span class="pino crua">${esc(t)}</span>`;
+
+      // A política EM VIGOR, lida do servidor — e não o que alguém lembra de
+      // ter configurado. Muda no config.json, com reinício.
+      const politicaHtml = `<div class="aviso">
+          <b>Política do bloco <code>seguranca</code></b> (muda no
+          <code>config.json</code>, exige reinício) ·
+          comandos proibidos: ${(pol.comandos_proibidos||[]).map(chip).join(" ") || "<i>nenhum</i>"} ·
+          bases proibidas: ${(pol.bases_proibidas||[]).map(chip).join(" ") || "<i>nenhuma</i>"} ·
+          violação grave bloqueia na tentativa
+          <b>${esc(String(pol.tentativas_para_bloqueio ?? 1))}</b> ·
+          leves (token/senha) na <b>${esc(String(pol.tentativas_ate_bloquear ?? 5))}</b>
+          em ${esc(String(pol.janela_minutos ?? 10))} min ·
+          duração: <b>${pol.bloqueio_minutos === 0 ? "permanente até soltar"
+            : esc(String(pol.bloqueio_minutos ?? 60)) + " min"}</b> ·
+          firewall do sistema: ${pol.firewall
+            ? '<span class="pino ok">ligado</span>'
+            : '<span class="pino nao">desligado</span>'}
+        </div>`;
+
+      // Lista vazia mostra UM recado, e não dois: o `tabela()` já põe o
+      // «nada aqui» dele, e os dois juntos só ocupam a tela dizendo o mesmo.
+      const bloqueadosHtml = !b.ativos.length
+        ? `<div class="aviso">Nenhum IP bloqueado.</div>`
+        : tabela(
+        [{t:"ip"},{t:"desde"},{t:"até"},{t:"motivo"},{t:"comando"},{t:"tentativas"},{t:"firewall"},{t:""}],
         b.ativos, x => `<tr><td class="dado">${esc(x.ip)}</td>
           <td class="dado">${esc(x.desde)}</td><td class="dado">${esc(x.ate)}</td>
           <td>${esc(x.motivo)}</td><td class="dado">${esc(x.comando)}</td>
           <td class="dado num">${x.tentativas}</td>
           <td>${x.firewall?'<span class="pino ok">aplicado</span>'
-                          :'<span class="pino nao">só no servidor</span>'}</td></tr>`);
+                          :'<span class="pino nao">só no servidor</span>'}</td>
+          <td><button class="botao mini excluir soltar-ip" data-ip="${esc(x.ip)}"
+            title="tira ${esc(x.ip)} da lista de bloqueio de vez">soltar</button></td></tr>`);
+
+      // Whitelist: a fixa do config só se lê; a editável grava no
+      // blacklist.json — arquivo próprio, como dblink e jobs.
+      const whitelistHtml = `<h3 class="secao">Whitelist — nunca bloqueiam</h3>
+        <p class="leg">A recusa da operação proibida continua valendo; whitelist protege o
+           <b>acesso</b>, não dá poder. Aceita IP e faixa CIDR (<code>192.168.50.0/24</code>).</p>
+        <p class="leg">Fixa do <code>config.json</code>:
+           ${wlConfig.map(chip).join(" ") || "<i>vazia</i>"}</p>
+        <div class="ficha-edit" style="max-width:28rem">
+          <textarea id="wlEditavel" rows="4" spellcheck="false"
+            placeholder="um IP ou CIDR por linha">${esc(wlEditavel.join("\n"))}</textarea>
+        </div>
+        <div class="acoes">
+          <button class="botao alterar" id="btSalvarWl">Salvar whitelist</button>
+          <span class="leg">editável pela tela · vale na próxima conexão, sem reiniciar</span>
+        </div>`;
+
+      // Exportação: o servidor não roda como root e não mexe em iptables —
+      // entrega o texto pronto para quem TEM o privilégio aplicar.
+      const exportarHtml = `<h3 class="secao">Exportar para o firewall do sistema</h3>
+        <div class="acoes">
+          <!-- width:auto porque o CSS global diz select{width:100%}, que é
+               certo num formulário e aqui empurraria o botão para fora. -->
+          <select id="fmtExport" style="width:auto;max-width:20rem">
+            <option value="texto">texto — um IP por linha</option>
+            <option value="iptables">iptables / ip6tables</option>
+            <option value="nftables">nftables</option>
+            <option value="fail2ban">fail2ban</option>
+          </select>
+          <button class="botao consultar" id="btExportar">Gerar</button>
+          <span class="leg">só os bloqueios ativos · docs/SEGURANCA.md mostra o comando de aplicar</span>
+        </div>
+        <pre id="saidaExport" class="rolo" hidden style="user-select:all"></pre>`;
+
+      p.innerHTML = politicaHtml + bloqueadosHtml + whitelistHtml + exportarHtml;
+
+      $$("#painel .soltar-ip").forEach(btn => btn.onclick = async () => {
+        try {
+          await api("desbloquear", { ip: btn.dataset.ip });
+          avisar(`${btn.dataset.ip} solto`);
+          abrirAdmin("bloqueios");
+        } catch (e) { avisar(String(e), true); }
+      });
+      $("#btSalvarWl").onclick = async () => {
+        const linhas = $("#wlEditavel").value.split("\n")
+          .map(l => l.trim()).filter(l => l);
+        try {
+          await api("whitelist_salvar", { whitelist: linhas });
+          avisar("whitelist salva");
+          abrirAdmin("bloqueios");
+        } catch (e) { avisar(String(e), true); }
+      };
+      $("#btExportar").onclick = async () => {
+        try {
+          const r = await api("bloqueios_exportar", { formato: $("#fmtExport").value });
+          const saida = $("#saidaExport");
+          saida.textContent = r.texto || "(nenhum bloqueio ativo)";
+          saida.hidden = false;
+        } catch (e) { avisar(String(e), true); }
+      };
     }
   } catch (e) {
     p.innerHTML = `<div class="aviso mal">${esc(e.message)}</div>`;
@@ -2299,12 +2408,24 @@ async function verConteudoEditavel(db, tab, verExcluidos = false, cursor = null)
   });
 }
 
+/* As colunas FIXAS da programação, por tabela de sistema: aparecem na ficha e
+   não se editam depois de criadas — é por elas que o código acha a linha.
+   Na INCLUSÃO continuam editáveis, porque é ali que nascem. */
+const COLUNAS_FIXAS = { "phxsys/mensagens": ["id", "TextName"] };
+
 /** Um campo por coluna, do tipo certo. `Bin` e `Memo` moram fora do slot. */
-function campoDaColuna(c, valor) {
+function campoDaColuna(c, valor, fixa = false) {
   const id = `f_${c.nome}`;
   const v = valor === null || valor === undefined ? "" : String(valor);
   const obrig = c.nullable ? "" : ` <span class="obrig">*</span>`;
   const dica = `<span class="tipo">${esc(c.tipo)}</span>`;
+
+  // readonly, e não disabled: o valor continua indo no salvar — a linha
+  // inteira é gravada, e sumir com a coluna apagaria o que não se pode mudar.
+  if (fixa)
+    return `<label><span>${esc(c.nome)} <span class="tipo">fixo</span> ${dica}</span>
+      <input id="${id}" value="${esc(v)}" readonly style="opacity:.6"
+        title="usado na programação e na busca; não muda depois de criado"></label>`;
 
   if (c.tipo === "Memo")
     return `<label class="largo"><span>${esc(c.nome)}${obrig} ${dica}</span>
@@ -2361,6 +2482,9 @@ async function abrirFicha(db, tab, rowid) {
   // que impede um salvar de rotina de ressuscitar linha excluída ou renumerar.
   const editaveis = e.colunas.filter(c => !c.sistema);
   const marcada = linha["softdeleted"] === true;
+  // As colunas fixas da programação (id/TextName da tabela de mensagens) só
+  // se editam na inclusão — depois, aparecem travadas.
+  const fixas = novo ? [] : (COLUNAS_FIXAS[`${db}/${tab}`] || []);
 
   folha(novo ? `Nova linha em ${tab}` : `${tab} · registro ${rowid}`,
     novo ? `${db} · em branco significa nulo`
@@ -2371,7 +2495,7 @@ async function abrirFicha(db, tab, rowid) {
         <button class="botao mini incluir" id="btRestaurarFicha">restaurar</button>
       </div>` : ""}
      <form class="ficha-edit" id="fichaEdit" autocomplete="off">
-       ${editaveis.map(c => campoDaColuna(c, linha[c.nome])).join("")}
+       ${editaveis.map(c => campoDaColuna(c, linha[c.nome], fixas.includes(c.nome))).join("")}
      </form>
      <div class="acoes">
        <button class="botao ${novo ? "incluir" : "alterar"}" id="btSalvar">${novo ? "Incluir" : "Salvar"}</button>
@@ -7604,6 +7728,61 @@ async function abrirConsulta() {
    tela -- backup, conferir backup, reparo pelo espelho, reindex, a tabela em
    memoria, a configuracao. Entraram todas aqui. */
 
+/* ============================================= Mensagens do servidor
+   A gestão é a GRADE comum sobre phxsys.mensagens — nenhum editor novo. Esta
+   tela só diz o estado (idioma em uso, o que falta semear) e leva até lá;
+   `id` e `TextName` ficam travados na ficha via COLUNAS_FIXAS. */
+async function telaMensagens() {
+  est.atual = null;
+  $("#abas").innerHTML = "";
+  pararMonitor();
+  $("#titulo").textContent = "Mensagens do servidor";
+  $("#subtitulo").textContent =
+    "phxsys.mensagens · um texto por idioma; célula vazia cai para o português";
+  const p = $("#painel");
+  p.innerHTML = `<div class="centro">carregando…</div>`;
+  try {
+    const m = await api("mensagens");
+    const cabec = `<div class="aviso">
+        Idioma em uso: <b>${esc(m.idioma)}</b> — é o campo <code>idioma</code> do
+        <code>config.json</code>; trocar o <i>idioma</i> exige reinício, editar os
+        <i>textos</i> não. Cada mensagem é uma linha da tabela
+        <code>${esc(m.database)}.${esc(m.tabela)}</code>: <code>id</code> e
+        <code>TextName</code> são fixos (a programação busca por eles) e as colunas
+        ${(m.idiomas||[]).map(i=>`<code>${esc(i)}</code>`).join(", ")} guardam o texto.
+        O código estruturado do erro (ex.: 4002 EM_CARGA) nunca muda com o idioma.
+      </div>`;
+    if (!m.existe) {
+      p.innerHTML = cabec + `<div class="aviso">A tabela ainda não existe neste
+          servidor. Semear cria o database <code>phxsys</code> e grava as
+          ${fmt(m.de_fabrica)} mensagens de fábrica — traduza depois, pela grade;
+          o que ficar em branco continua saindo em português.</div>
+        <div class="acoes">
+          <button class="botao incluir" id="btSemear">Semear mensagens</button>
+        </div>`;
+    } else {
+      const faltam = Math.max(0, (m.de_fabrica || 0) - (m.linhas || 0));
+      p.innerHTML = cabec + `<div class="acoes">
+          <button class="botao consultar" id="btAbrirGrade">Abrir a tabela na grade</button>
+          <button class="botao incluir" id="btSemear">Semear / completar</button>
+          <span class="leg">${fmt(m.linhas)} mensagens na tabela ·
+            ${fmt(m.de_fabrica)} de fábrica${faltam ? ` · ${fmt(faltam)} por semear` : ""} ·
+            texto editado vale em poucos segundos, sem reiniciar</span>
+        </div>`;
+      $("#btAbrirGrade").onclick = () => verConteudoEditavel(m.database, m.tabela);
+    }
+    $("#btSemear").onclick = async () => {
+      try {
+        const r = await api("mensagens_semear", {});
+        avisar(`${r.semeadas} mensagens semeadas${r.criou_tabela ? " · tabela criada" : ""}`);
+        verConteudoEditavel("phxsys", "mensagens");
+      } catch (e) { avisar(String(e), true); }
+    };
+  } catch (e) {
+    p.innerHTML = `<div class="aviso mal">${esc(e.message)}</div>`;
+  }
+}
+
 const comTabela = () => !!est.atual;
 
 const MENUS = [
@@ -7722,6 +7901,7 @@ const MENUS = [
     "sep",
     "sep",
     { rot:"Definições do DbLink…", ico:"⛓", faz:telaDbLinkDefinicoes },
+    { rot:"Mensagens do servidor…", ico:"⑆", faz:telaMensagens },
     "sep",
     { rot:"Editor de menu…",      ico:"✎", faz:editorDeMenu },
   ]],

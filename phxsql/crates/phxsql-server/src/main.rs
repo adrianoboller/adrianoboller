@@ -261,6 +261,11 @@ fn main() -> ExitCode {
         );
         eprintln!("       o valor foi IGNORADO. A porta de dados e \"bind\", nao \"porta\".");
     }
+    // Valor reconhecido e ignorado grita pelo mesmo motivo do campo estranho:
+    // um "idioma" escrito errado calaria em portugues para sempre.
+    for aviso in &config.avisos {
+        eprintln!("AVISO: {aviso}");
+    }
 
     if args.iter().any(|a| a == "--mcp") {
         return servir_mcp(&args, config);

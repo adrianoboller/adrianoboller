@@ -34,6 +34,69 @@ use phxsql_core::datahora::instante_iso;
 use phxsql_core::error::Result;
 use phxsql_core::json::Json;
 
+/// A regra cobre este IP? Aceita endereco exato (`203.0.113.9`) ou faixa
+/// CIDR (`203.0.113.0/24`, `2001:db8::/32`).
+///
+/// IPv4 e IPv6 nao se misturam: `10.0.0.0/8` nunca cobre um endereco v6 --
+/// exceto a forma mapeada `::ffff:10.0.0.1`, que E o mesmo endereco chegando
+/// por um soquete dual-stack, e por isso e normalizada antes de comparar.
+pub fn regra_cobre_ip(regra: &str, ip: &IpAddr) -> bool {
+    let ip = normalizar(ip);
+    match regra.trim().split_once('/') {
+        None => match regra.trim().parse::<IpAddr>() {
+            Ok(r) => normalizar(&r) == ip,
+            Err(_) => false,
+        },
+        Some((base, bits)) => {
+            let (Ok(base), Ok(bits)) = (base.trim().parse::<IpAddr>(), bits.trim().parse::<u32>())
+            else {
+                return false;
+            };
+            let (vb, largura) = como_bits(&normalizar(&base));
+            let (vi, li) = como_bits(&ip);
+            if largura != li || bits > largura {
+                return false;
+            }
+            if bits == 0 {
+                return true;
+            }
+            let desloc = largura - bits;
+            (vb >> desloc) == (vi >> desloc)
+        }
+    }
+}
+
+/// A regra e um IP ou CIDR que o servidor sabe ler? E o que a tela confere
+/// ANTES de gravar: regra ilegivel na whitelist e protecao que nao protege.
+pub fn regra_valida(regra: &str) -> bool {
+    match regra.trim().split_once('/') {
+        None => regra.trim().parse::<IpAddr>().is_ok(),
+        Some((base, bits)) => match (base.trim().parse::<IpAddr>(), bits.trim().parse::<u32>()) {
+            (Ok(b), Ok(n)) => n <= como_bits(&b).1,
+            _ => false,
+        },
+    }
+}
+
+/// `::ffff:1.2.3.4` vira `1.2.3.4`: e o mesmo endereco por soquete dual-stack.
+fn normalizar(ip: &IpAddr) -> IpAddr {
+    match ip {
+        IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
+            Some(v4) => IpAddr::V4(v4),
+            None => *ip,
+        },
+        v4 => *v4,
+    }
+}
+
+/// O endereco como inteiro, com a largura em bits (32 ou 128).
+fn como_bits(ip: &IpAddr) -> (u128, u32) {
+    match ip {
+        IpAddr::V4(v4) => (u32::from_be_bytes(v4.octets()) as u128, 32),
+        IpAddr::V6(v6) => (u128::from_be_bytes(v6.octets()), 128),
+    }
+}
+
 /// Politica de bloqueio, vinda do `config.json`.
 #[derive(Debug, Clone)]
 pub struct Politica {
@@ -43,9 +106,17 @@ pub struct Politica {
     pub bases_proibidas: Vec<String>,
     /// Tentativas leves toleradas dentro da janela.
     pub tentativas_ate_bloquear: u32,
+    /// Tentativas GRAVES toleradas antes de bloquear. O padrao e 1 -- comando
+    /// proibido bloqueia na hora, como sempre foi. Subir este numero e decisao
+    /// de quem administra: recusa continua recusando desde a primeira, so o
+    /// bloqueio do IP espera a enesima dentro da janela.
+    pub tentativas_para_bloqueio: u32,
     pub janela_minutos: u64,
     /// Duracao do bloqueio. Zero = ate alguem desbloquear.
     pub bloqueio_minutos: u64,
+    /// IPs e faixas CIDR que NUNCA sao bloqueados. A recusa da operacao
+    /// continua valendo -- whitelist protege o acesso, nao da poder.
+    pub whitelist: Vec<String>,
     pub firewall: Option<Firewall>,
 }
 
@@ -55,8 +126,10 @@ impl Default for Politica {
             comandos_proibidos: Vec::new(),
             bases_proibidas: Vec::new(),
             tentativas_ate_bloquear: 5,
+            tentativas_para_bloqueio: 1,
             janela_minutos: 10,
             bloqueio_minutos: 60,
+            whitelist: Vec::new(),
             firewall: None,
         }
     }
@@ -84,14 +157,37 @@ impl Politica {
                     padrao.tentativas_ate_bloquear as i64,
                 )
                 .max(1) as u32,
+            tentativas_para_bloqueio: j
+                .inteiro_ou(
+                    "tentativas_para_bloqueio",
+                    padrao.tentativas_para_bloqueio as i64,
+                )
+                .max(1) as u32,
             janela_minutos: j
                 .inteiro_ou("janela_minutos", padrao.janela_minutos as i64)
                 .max(1) as u64,
             bloqueio_minutos: j
                 .inteiro_ou("bloqueio_minutos", padrao.bloqueio_minutos as i64)
                 .max(0) as u64,
+            whitelist: j
+                .textos("whitelist")
+                .into_iter()
+                .map(|w| w.trim().to_string())
+                .filter(|w| !w.is_empty())
+                .collect(),
             firewall: j.campo("firewall").and_then(Firewall::de_json),
         }
+    }
+
+    /// O IP esta na whitelist FIXA do `config.json`?
+    ///
+    /// So a fixa: a editavel pela tela mora no arquivo da blacklist, e quem
+    /// responde pelas duas juntas e [`Blacklist::protegido`].
+    pub fn na_whitelist(&self, ip: &str) -> bool {
+        let Ok(endereco) = ip.trim().parse::<IpAddr>() else {
+            return false;
+        };
+        self.whitelist.iter().any(|r| regra_cobre_ip(r, &endereco))
     }
 
     /// A operacao esta proibida por politica?
@@ -222,12 +318,37 @@ impl Bloqueio {
     }
 }
 
+/// O que uma violacao grave rendeu. Quem chamou redige o erro conforme o
+/// caso -- e o caso importa: dizer "o IP foi bloqueado" quando nao foi seria
+/// mentira na resposta do protocolo.
+#[derive(Debug)]
+pub enum Grave {
+    /// O IP esta na whitelist: a operacao foi recusada, mas nada conta e
+    /// nada bloqueia.
+    Protegido,
+    /// Contou dentro da janela e ainda nao chegou ao limite.
+    Contada { tentativas: u32, limite: u32 },
+    /// Bloqueou. O aviso e a falha nao-fatal do firewall, quando houver.
+    Bloqueado(Bloqueio, Option<String>),
+}
+
 /// A lista de bloqueio, com o contador de tentativas recentes.
 pub struct Blacklist {
     caminho: PathBuf,
     bloqueios: Vec<Bloqueio>,
+    /// IPs e faixas CIDR que nunca bloqueiam, editaveis pela tela.
+    ///
+    /// Moram AQUI, e nao no `config.json`, pelo mesmo motivo do dblink e dos
+    /// jobs: o que muda pela tela vive em arquivo proprio, senao cada clique
+    /// reescreveria o config inteiro e arriscaria os comentarios. A whitelist
+    /// do config continua valendo -- a efetiva e a uniao das duas.
+    whitelist: Vec<String>,
     /// Carimbos das tentativas leves recentes, por IP. So em memoria.
     tentativas: HashMap<String, Vec<i64>>,
+    /// Carimbos das tentativas GRAVES recentes, por IP. Separado das leves de
+    /// proposito: misturar faria um token errado adiantar o bloqueio de um
+    /// comando proibido, e os dois limites sao configuraveis em separado.
+    tentativas_graves: HashMap<String, Vec<i64>>,
     /// Quando o arquivo foi gravado da ultima vez que o lemos.
     ///
     /// O `phxsqld --desbloquear` roda em OUTRO processo e mexe no mesmo
@@ -243,23 +364,30 @@ impl Blacklist {
         if let Some(dir) = caminho.parent().filter(|d| !d.as_os_str().is_empty()) {
             std::fs::create_dir_all(dir)?;
         }
-        let bloqueios = match std::fs::read_to_string(&caminho) {
-            Err(_) => Vec::new(),
-            Ok(texto) => Json::analisar(&texto)
-                .ok()
-                .and_then(|j| {
+        let (bloqueios, whitelist) = match std::fs::read_to_string(&caminho) {
+            Err(_) => (Vec::new(), Vec::new()),
+            Ok(texto) => match Json::analisar(&texto) {
+                Err(_) => (Vec::new(), Vec::new()),
+                Ok(j) => (
                     j.campo("bloqueios")
                         .and_then(Json::lista)
-                        .map(|l| l.to_vec())
-                })
-                .map(|l| l.iter().filter_map(Bloqueio::de_json).collect())
-                .unwrap_or_default(),
+                        .map(|l| l.iter().filter_map(Bloqueio::de_json).collect())
+                        .unwrap_or_default(),
+                    j.textos("whitelist")
+                        .into_iter()
+                        .map(|w| w.trim().to_string())
+                        .filter(|w| !w.is_empty())
+                        .collect(),
+                ),
+            },
         };
         let lido_em = mtime(&caminho);
         Ok(Blacklist {
             caminho,
             bloqueios,
+            whitelist,
             tentativas: HashMap::new(),
+            tentativas_graves: HashMap::new(),
             lido_em,
         })
     }
@@ -275,9 +403,46 @@ impl Blacklist {
         }
         let recarregada = Blacklist::abrir(&self.caminho)?;
         self.bloqueios = recarregada.bloqueios;
+        self.whitelist = recarregada.whitelist;
         self.lido_em = recarregada.lido_em;
         // As tentativas em memoria seguem: elas nao moram no arquivo.
         Ok(true)
+    }
+
+    /// A whitelist editavel pela tela, como esta no arquivo.
+    pub fn whitelist(&self) -> &[String] {
+        &self.whitelist
+    }
+
+    /// Substitui a whitelist editavel e grava. Recusa regra ilegivel INTEIRA,
+    /// sem gravar nada: meia whitelist gravada e meia protecao, e quem clicou
+    /// em salvar nao tem como saber qual metade valeu.
+    pub fn definir_whitelist(&mut self, lista: Vec<String>) -> Result<()> {
+        let limpa: Vec<String> = lista
+            .into_iter()
+            .map(|w| w.trim().to_string())
+            .filter(|w| !w.is_empty())
+            .collect();
+        if let Some(ruim) = limpa.iter().find(|w| !regra_valida(w)) {
+            return Err(phxsql_core::error::PhxError::Tipo(format!(
+                "{ruim:?} nao e um IP nem uma faixa CIDR"
+            )));
+        }
+        self.whitelist = limpa;
+        self.gravar_e_marcar()
+    }
+
+    /// O IP esta protegido contra bloqueio? Uniao das duas whitelists: a fixa
+    /// do `config.json` e a editavel deste arquivo. Whitelist vence SEMPRE --
+    /// inclusive sobre um bloqueio ja gravado antes de a regra entrar.
+    pub fn protegido(&self, politica: &Politica, ip: &str) -> bool {
+        if politica.na_whitelist(ip) {
+            return true;
+        }
+        let Ok(endereco) = ip.trim().parse::<IpAddr>() else {
+            return false;
+        };
+        self.whitelist.iter().any(|r| regra_cobre_ip(r, &endereco))
     }
 
     pub fn caminho(&self) -> &Path {
@@ -312,6 +477,10 @@ impl Blacklist {
                 "Lista de bloqueio do PhxSql. Gerado pelo servidor; pode ser editado com o servidor parado.",
             )),
             ("atualizado_em", Json::texto_de(instante_iso(crate::agora_ms()))),
+            (
+                "whitelist",
+                Json::Lista(self.whitelist.iter().map(Json::texto_de).collect()),
+            ),
             (
                 "bloqueios",
                 Json::Lista(self.bloqueios.iter().map(Bloqueio::para_json).collect()),
@@ -369,6 +538,7 @@ impl Blacklist {
         self.bloqueios.retain(|b| b.ip != ip);
         self.bloqueios.push(bloqueio.clone());
         self.tentativas.remove(ip);
+        self.tentativas_graves.remove(ip);
         if let Err(e) = self.gravar_e_marcar() {
             aviso = Some(format!("nao consegui gravar a blacklist: {e}"));
         }
@@ -383,6 +553,7 @@ impl Blacklist {
         }
         self.bloqueios.retain(|b| b.ip != ip);
         self.tentativas.remove(ip);
+        self.tentativas_graves.remove(ip);
         self.gravar_e_marcar()?;
         if let Some(fw) = &politica.firewall {
             fw.desbloquear_ip(ip)?;
@@ -390,7 +561,12 @@ impl Blacklist {
         Ok(true)
     }
 
-    /// Registra uma violacao GRAVE: bloqueia na hora.
+    /// Registra uma violacao GRAVE.
+    ///
+    /// Com `tentativas_para_bloqueio: 1` -- o padrao, e o comportamento de
+    /// sempre -- bloqueia na primeira. Acima de 1, conta dentro da janela e so
+    /// bloqueia na enesima: a recusa da operacao acontece SEMPRE, quem muda e
+    /// so o destino do IP. Whitelist vence tudo: recusa sem contar nada.
     pub fn violacao_grave(
         &mut self,
         ip: &str,
@@ -398,8 +574,30 @@ impl Blacklist {
         motivo: &str,
         politica: &Politica,
         agora_ms: i64,
-    ) -> (Bloqueio, Option<String>) {
-        self.bloquear(ip, motivo, comando, 1, politica, agora_ms)
+    ) -> Grave {
+        if self.protegido(politica, ip) {
+            return Grave::Protegido;
+        }
+        let limite = politica.tentativas_para_bloqueio.max(1);
+        if limite <= 1 {
+            let (b, aviso) = self.bloquear(ip, motivo, comando, 1, politica, agora_ms);
+            return Grave::Bloqueado(b, aviso);
+        }
+        let janela = (politica.janela_minutos as i64) * 60_000;
+        let recentes = self.tentativas_graves.entry(ip.to_string()).or_default();
+        recentes.retain(|t| agora_ms - *t < janela);
+        recentes.push(agora_ms);
+        let quantas = recentes.len() as u32;
+        if quantas >= limite {
+            self.tentativas_graves.remove(ip);
+            let (b, aviso) = self.bloquear(ip, motivo, comando, quantas, politica, agora_ms);
+            Grave::Bloqueado(b, aviso)
+        } else {
+            Grave::Contada {
+                tentativas: quantas,
+                limite,
+            }
+        }
     }
 
     /// Registra uma tentativa LEVE. Bloqueia quando passar do limite dentro
@@ -412,6 +610,9 @@ impl Blacklist {
         politica: &Politica,
         agora_ms: i64,
     ) -> Option<(Bloqueio, Option<String>)> {
+        if self.protegido(politica, ip) {
+            return None;
+        }
         let janela = (politica.janela_minutos as i64) * 60_000;
         let recentes = self.tentativas.entry(ip.to_string()).or_default();
         recentes.retain(|t| agora_ms - *t < janela);
@@ -451,6 +652,68 @@ impl Blacklist {
         self.gravar_e_marcar()?;
         Ok(antes - self.bloqueios.len())
     }
+
+    /// A blacklist num formato que um firewall de verdade consome.
+    ///
+    /// O servidor nao mexe em `iptables` sozinho -- isso exigiria root, e um
+    /// banco de dados com root e mais superficie do que protecao. O que ele
+    /// entrega e o texto pronto, uma linha por IP, para quem TEM o privilegio
+    /// aplicar (`docs/SEGURANCA.md` mostra o comando de cada formato).
+    ///
+    /// So os bloqueios ATIVOS saem: exportar um vencido recriaria no firewall
+    /// um bloqueio que o servidor ja soltou.
+    pub fn exportar(&self, formato: &str, agora_ms: i64) -> Result<String> {
+        let ativos = self.ativos(agora_ms);
+        // So o que e endereco de verdade vira linha: o mesmo cuidado do
+        // comando de firewall, agora no texto que alguem vai aplicar.
+        let enderecos: Vec<(String, bool)> = ativos
+            .iter()
+            .filter_map(|b| {
+                b.ip.parse::<IpAddr>()
+                    .ok()
+                    .map(|e| (b.ip.clone(), e.is_ipv6()))
+            })
+            .collect();
+        let mut linhas = Vec::with_capacity(enderecos.len());
+        match formato.trim().to_lowercase().as_str() {
+            "texto" | "" => {
+                for (ip, _) in &enderecos {
+                    linhas.push(ip.clone());
+                }
+            }
+            "iptables" => {
+                for (ip, v6) in &enderecos {
+                    let comando = if *v6 { "ip6tables" } else { "iptables" };
+                    linhas.push(format!("{comando} -I INPUT -s {ip} -j DROP"));
+                }
+            }
+            "nftables" => {
+                for (ip, v6) in &enderecos {
+                    let conjunto = if *v6 {
+                        "phxsql_bloqueados6"
+                    } else {
+                        "phxsql_bloqueados"
+                    };
+                    linhas.push(format!("add element inet filter {conjunto} {{ {ip} }}"));
+                }
+            }
+            "fail2ban" => {
+                for (ip, _) in &enderecos {
+                    linhas.push(format!("fail2ban-client set phxsql banip {ip}"));
+                }
+            }
+            outro => {
+                return Err(phxsql_core::error::PhxError::Esquema(format!(
+                    "formato {outro:?} nao existe; use texto, iptables, nftables ou fail2ban"
+                )))
+            }
+        }
+        let mut texto = linhas.join("\n");
+        if !texto.is_empty() {
+            texto.push('\n');
+        }
+        Ok(texto)
+    }
 }
 
 /// Carimbo de alteracao do arquivo, ou `None` se ele nao existe.
@@ -477,7 +740,15 @@ mod tests {
             tentativas_ate_bloquear: 3,
             janela_minutos: 10,
             bloqueio_minutos: 60,
-            firewall: None,
+            ..Politica::default()
+        }
+    }
+
+    /// Desembrulha o caso que o teste espera: bloqueou.
+    fn bloqueou(g: Grave) -> (Bloqueio, Option<String>) {
+        match g {
+            Grave::Bloqueado(b, aviso) => (b, aviso),
+            outro => panic!("esperava bloqueio, veio {outro:?}"),
         }
     }
 
@@ -490,13 +761,184 @@ mod tests {
         let p = politica();
         assert!(bl.bloqueado("203.0.113.9", T0).is_none());
 
-        let (b, aviso) = bl.violacao_grave("203.0.113.9", "excluir", "comando proibido", &p, T0);
+        let (b, aviso) =
+            bloqueou(bl.violacao_grave("203.0.113.9", "excluir", "comando proibido", &p, T0));
         assert!(aviso.is_none());
         assert_eq!(b.comando, "excluir");
         assert_eq!(b.tentativas, 1);
         assert!(bl.bloqueado("203.0.113.9", T0).is_some());
         // O bloqueio vence depois de 60 minutos.
         assert!(bl.bloqueado("203.0.113.9", T0 + 61 * 60_000).is_none());
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// A guarda pedida, e nao imposta: com `tentativas_para_bloqueio` acima
+    /// de 1, a recusa continua na primeira, mas o bloqueio espera a enesima.
+    #[test]
+    fn tentativas_para_bloqueio_conta_antes_de_bloquear() {
+        let d = dir_temp("grave-contada");
+        let mut bl = Blacklist::abrir(d.join("blacklist.json")).unwrap();
+        let p = Politica {
+            tentativas_para_bloqueio: 3,
+            ..politica()
+        };
+        match bl.violacao_grave("203.0.113.7", "excluir", "comando proibido", &p, T0) {
+            Grave::Contada {
+                tentativas: 1,
+                limite: 3,
+            } => {}
+            outro => panic!("primeira deveria so contar, veio {outro:?}"),
+        }
+        assert!(bl.bloqueado("203.0.113.7", T0).is_none());
+        match bl.violacao_grave("203.0.113.7", "excluir", "comando proibido", &p, T0 + 1_000) {
+            Grave::Contada { tentativas: 2, .. } => {}
+            outro => panic!("segunda deveria so contar, veio {outro:?}"),
+        }
+        let (b, _) = bloqueou(bl.violacao_grave(
+            "203.0.113.7",
+            "excluir",
+            "comando proibido",
+            &p,
+            T0 + 2_000,
+        ));
+        assert_eq!(b.tentativas, 3);
+        assert!(bl.bloqueado("203.0.113.7", T0 + 2_000).is_some());
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// Graves fora da janela nao contam -- a mesma regra das leves.
+    #[test]
+    fn tentativas_graves_fora_da_janela_nao_contam() {
+        let d = dir_temp("grave-janela");
+        let mut bl = Blacklist::abrir(d.join("blacklist.json")).unwrap();
+        let p = Politica {
+            tentativas_para_bloqueio: 2,
+            ..politica()
+        };
+        bl.violacao_grave("203.0.113.8", "excluir", "x", &p, T0);
+        // Onze minutos depois, a primeira saiu da janela de dez.
+        match bl.violacao_grave("203.0.113.8", "excluir", "x", &p, T0 + 11 * 60_000) {
+            Grave::Contada { tentativas: 1, .. } => {}
+            outro => panic!("deveria recomecar a contagem, veio {outro:?}"),
+        }
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// **Whitelist nunca bloqueia** -- nem grave, nem leve. E o teste da prova
+    /// real desta guarda: com a conferencia de `protegido` removida do
+    /// `violacao_grave`, ele falha.
+    #[test]
+    fn whitelist_nunca_bloqueia() {
+        let d = dir_temp("whitelist");
+        let mut bl = Blacklist::abrir(d.join("blacklist.json")).unwrap();
+        let p = Politica {
+            whitelist: vec!["10.0.0.99".into()],
+            ..politica()
+        };
+        match bl.violacao_grave("10.0.0.99", "excluir", "comando proibido", &p, T0) {
+            Grave::Protegido => {}
+            outro => panic!("whitelist deveria proteger, veio {outro:?}"),
+        }
+        assert!(bl.bloqueado("10.0.0.99", T0).is_none());
+        // Nem cem tentativas leves bloqueiam quem esta na whitelist.
+        for i in 0..100 {
+            assert!(bl
+                .tentativa_leve("10.0.0.99", "login", "senha errada", &p, T0 + i)
+                .is_none());
+        }
+        assert!(bl.bloqueado("10.0.0.99", T0 + 200).is_none());
+        // Quem NAO esta na whitelist continua bloqueando normalmente.
+        bloqueou(bl.violacao_grave("10.0.0.98", "excluir", "x", &p, T0));
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// Whitelist vence ate um bloqueio ja gravado ANTES de a regra entrar:
+    /// `protegido` e o que o servidor confere primeiro na conexao.
+    #[test]
+    fn whitelist_por_cidr_e_a_dinamica_do_arquivo() {
+        let d = dir_temp("whitelist-cidr");
+        let mut bl = Blacklist::abrir(d.join("blacklist.json")).unwrap();
+        let p = Politica {
+            whitelist: vec!["192.168.50.0/24".into(), "2001:db8::/32".into()],
+            ..politica()
+        };
+        assert!(bl.protegido(&p, "192.168.50.20"));
+        assert!(bl.protegido(&p, "2001:db8::7"));
+        assert!(!bl.protegido(&p, "192.168.51.20"));
+        assert!(!bl.protegido(&p, "2001:db9::7"));
+
+        // A dinamica, gravada pelo arquivo, soma com a do config.
+        bl.definir_whitelist(vec!["203.0.113.9".into()]).unwrap();
+        assert!(bl.protegido(&p, "203.0.113.9"));
+        // E persiste: outra abertura do arquivo ve a mesma lista.
+        let bl2 = Blacklist::abrir(bl.caminho()).unwrap();
+        assert_eq!(bl2.whitelist(), &["203.0.113.9".to_string()]);
+
+        // Regra ilegivel nao grava NADA.
+        let erro = bl.definir_whitelist(vec!["10.0.0.1".into(), "nao-e-ip".into()]);
+        assert!(erro.is_err());
+        assert_eq!(bl.whitelist(), &["203.0.113.9".to_string()]);
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn regra_cobre_ip_sabe_cidr_e_mapeado() {
+        let v4 = "10.1.2.3".parse().unwrap();
+        assert!(regra_cobre_ip("10.1.2.3", &v4));
+        assert!(regra_cobre_ip("10.0.0.0/8", &v4));
+        assert!(regra_cobre_ip("10.1.2.0/24", &v4));
+        assert!(!regra_cobre_ip("10.1.3.0/24", &v4));
+        assert!(regra_cobre_ip("0.0.0.0/0", &v4));
+        assert!(!regra_cobre_ip("2001:db8::/32", &v4));
+        // O endereco v4 mapeado em v6 e o MESMO endereco.
+        let mapeado = "::ffff:10.1.2.3".parse().unwrap();
+        assert!(regra_cobre_ip("10.0.0.0/8", &mapeado));
+        let v6 = "2001:db8:1::9".parse().unwrap();
+        assert!(regra_cobre_ip("2001:db8::/32", &v6));
+        assert!(!regra_cobre_ip("10.0.0.0/8", &v6));
+        // Lixo nao cobre nada.
+        assert!(!regra_cobre_ip("", &v4));
+        assert!(!regra_cobre_ip("10.0.0.0/33", &v4));
+        assert!(!regra_cobre_ip("banana/8", &v4));
+
+        assert!(regra_valida("127.0.0.1"));
+        assert!(regra_valida("10.0.0.0/8"));
+        assert!(regra_valida("::1"));
+        assert!(regra_valida("2001:db8::/32"));
+        assert!(!regra_valida("10.0.0.0/33"));
+        assert!(!regra_valida("localhost"));
+        assert!(!regra_valida(""));
+    }
+
+    /// A exportacao entrega o texto que um firewall DE VERDADE consome, uma
+    /// linha por IP ativo -- vencido nao sai, e IPv6 vai para o comando v6.
+    #[test]
+    fn exportar_uma_linha_por_ip_ativo() {
+        let d = dir_temp("exporta");
+        let mut bl = Blacklist::abrir(d.join("blacklist.json")).unwrap();
+        let p = politica();
+        bl.violacao_grave("203.0.113.9", "excluir", "x", &p, T0);
+        bl.violacao_grave("2001:db8::7", "excluir", "x", &p, T0);
+        // Este vence antes do instante da exportacao: nao pode sair.
+        bl.violacao_grave("198.51.100.1", "excluir", "x", &p, T0 - 61 * 60_000);
+
+        let texto = bl.exportar("texto", T0).unwrap();
+        assert!(texto.contains("203.0.113.9\n"));
+        assert!(texto.contains("2001:db8::7\n"));
+        assert!(!texto.contains("198.51.100.1"));
+
+        let ipt = bl.exportar("iptables", T0).unwrap();
+        assert!(ipt.contains("iptables -I INPUT -s 203.0.113.9 -j DROP\n"));
+        assert!(ipt.contains("ip6tables -I INPUT -s 2001:db8::7 -j DROP\n"));
+
+        let nft = bl.exportar("nftables", T0).unwrap();
+        assert!(nft.contains("add element inet filter phxsql_bloqueados { 203.0.113.9 }\n"));
+        assert!(nft.contains("add element inet filter phxsql_bloqueados6 { 2001:db8::7 }\n"));
+
+        let f2b = bl.exportar("fail2ban", T0).unwrap();
+        assert!(f2b.contains("fail2ban-client set phxsql banip 203.0.113.9\n"));
+
+        assert!(bl.exportar("xml", T0).is_err());
         std::fs::remove_dir_all(&d).unwrap();
     }
 
@@ -676,7 +1118,8 @@ mod tests {
             }),
             ..politica()
         };
-        let (b, aviso) = bl.violacao_grave("10.0.0.3", "excluir", "comando proibido", &p, T0);
+        let (b, aviso) =
+            bloqueou(bl.violacao_grave("10.0.0.3", "excluir", "comando proibido", &p, T0));
         assert!(aviso.is_some(), "a falha do firewall vira aviso");
         assert!(!b.firewall, "a regra nao chegou a ser aplicada");
         assert!(

@@ -39,9 +39,10 @@ use crate::dblink::{Definicao, Motor};
 use crate::exportar::Formato;
 use crate::http;
 use crate::juncao::{Lado, Tipo as TipoJuncao, Uniao};
+use crate::mensagens::Mensagens;
 use crate::usuarios::{Atividade, Usuario};
-use phxsql_core::schema::Schema;
-use phxsql_core::types::DadoPessoal;
+use phxsql_core::schema::{Column, IndexColumn, IndexDef, Schema};
+use phxsql_core::types::{ColumnType, DadoPessoal};
 use phxsql_core::value::Value;
 
 use crate::pivot::{Agregador, Campo, Granularidade, Juncao};
@@ -381,6 +382,9 @@ pub struct Servidor {
     /// Onde a porta de dados escuta agora, que nem sempre e o `bind`.
     endereco_dos_dados: Mutex<Option<SocketAddr>>,
     conexoes: AtomicUsize,
+    /// As mensagens que o servidor devolve, resolvidas pela tabela
+    /// `phxsys.mensagens` quando ela existe. Ver `mensagens.rs`.
+    mensagens: Mensagens,
 }
 
 impl Servidor {
@@ -396,7 +400,9 @@ impl Servidor {
         let lista_negra = Blacklist::abrir(&config.blacklist)?;
         let dblink = crate::dblink::Registro::abrir(&config.dblink)?;
         let jobs = crate::jobs::Registro::abrir(&config.jobs)?;
-        Ok(Arc::new(Servidor {
+        let mensagens = Mensagens::nova(&config.idioma, &config.base);
+        let servidor = Arc::new(Servidor {
+            mensagens,
             janela: Janela::nova(&config.recursos),
             sujas: Mutex::new(std::collections::HashSet::new()),
             config,
@@ -422,7 +428,24 @@ impl Servidor {
             marcas_do_diario: Mutex::new(HashMap::new()),
             profiler: Mutex::new(crate::profiler::Profiler::default()),
             profiler_ligado: AtomicBool::new(false),
-        }))
+        });
+        // Quem configurou "idioma" pediu o recurso: a tabela de mensagens e
+        // semeada no arranque se ainda nao existe. Sem o campo, nada e criado
+        // -- guarda nova entra pedida, nao imposta.
+        if !servidor.config.idioma.is_empty() {
+            match servidor.semear_mensagens() {
+                Ok((db_novo, tab_nova, semeadas, _)) if tab_nova || semeadas > 0 => eprintln!(
+                    "mensagens: tabela {}.{} semeada ({} mensagens{})",
+                    crate::mensagens::DATABASE,
+                    crate::mensagens::TABELA,
+                    semeadas,
+                    if db_novo { ", database criado" } else { "" }
+                ),
+                Ok(_) => {}
+                Err(e) => eprintln!("AVISO: nao consegui semear a tabela de mensagens: {e}"),
+            }
+        }
+        Ok(servidor)
     }
 
     pub fn config(&self) -> &Config {
@@ -586,16 +609,22 @@ impl Servidor {
         self.porta_no_ar.store(true, Ordering::SeqCst);
     }
 
-    /// Violacao grave: bloqueia na hora e avisa no log.
-    fn violacao_grave(&self, ip: &str, comando: &str, motivo: &str) {
-        if let Ok(mut lista) = self.lista_negra.lock() {
-            let (b, aviso) = lista.violacao_grave(
-                ip,
-                comando,
-                motivo,
-                &self.config.politica,
-                crate::agora_ms(),
-            );
+    /// Violacao grave: bloqueia (na hora ou na enesima, conforme a politica)
+    /// e avisa no log. Devolve o que aconteceu, porque a RESPOSTA depende
+    /// disso: dizer "o IP foi bloqueado" quando a whitelist protegeu ou a
+    /// tentativa so contou seria mentir para o cliente.
+    fn violacao_grave(&self, ip: &str, comando: &str, motivo: &str) -> crate::blacklist::Grave {
+        let Ok(mut lista) = self.lista_negra.lock() else {
+            return crate::blacklist::Grave::Protegido;
+        };
+        let resultado = lista.violacao_grave(
+            ip,
+            comando,
+            motivo,
+            &self.config.politica,
+            crate::agora_ms(),
+        );
+        if let crate::blacklist::Grave::Bloqueado(b, aviso) = &resultado {
             eprintln!(
                 "BLOQUEADO {ip} ate {} -- {} ({})",
                 b.ate(),
@@ -606,6 +635,7 @@ impl Servidor {
                 eprintln!("AVISO: {a}");
             }
         }
+        resultado
     }
 
     /// Tentativa leve: conta, e bloqueia se passar do limite na janela.
@@ -639,24 +669,248 @@ impl Servidor {
         }
     }
 
-    /// Este IP esta barrado agora? Devolve o motivo, ja formatado para o log.
+    /// Este IP esta barrado agora? Devolve o bloqueio, para o chamador poder
+    /// formatar dois textos diferentes dele: o do LOG, sempre de fabrica, e o
+    /// da RESPOSTA, que passa pela tabela de mensagens.
     ///
     /// Reaproveitado pelas duas portas: a de dados e a da interface web. Um IP
     /// bloqueado e bloqueado no servidor inteiro, nao numa porta so.
-    fn barrado(&self, ip: &str, agora: i64) -> Option<String> {
+    fn barrado(&self, ip: &str, agora: i64) -> Option<crate::blacklist::Bloqueio> {
         let mut lista = self.lista_negra.lock().ok()?;
         // Outro processo pode ter mexido no arquivo (phxsqld --desbloquear).
         let _ = lista.recarregar_se_mudou();
         let _ = lista.limpar_vencidos(agora, &self.config.politica);
-        lista.bloqueado(ip, agora).map(|b| {
-            format!(
-                "bloqueado desde {} ate {} por {} ({})",
-                b.desde(),
-                b.ate(),
-                b.motivo,
-                b.comando
-            )
-        })
+        // Whitelist vence SEMPRE -- inclusive sobre um bloqueio gravado antes
+        // de a regra entrar. E o que impede o operador de se trancar fora: a
+        // regra nova vale na proxima conexao, sem esperar o bloqueio vencer.
+        if lista.protegido(&self.config.politica, ip) {
+            return None;
+        }
+        lista.bloqueado(ip, agora).cloned()
+    }
+
+    /// O motivo do bloqueio como o log de acessos sempre gravou. NAO passa
+    /// pela tabela de mensagens: filtro de log nao quebra por troca de idioma.
+    fn motivo_de_bloqueio(b: &crate::blacklist::Bloqueio) -> String {
+        format!(
+            "bloqueado desde {} ate {} por {} ({})",
+            b.desde(),
+            b.ate(),
+            b.motivo,
+            b.comando
+        )
+    }
+
+    /// O mesmo motivo para a RESPOSTA, resolvido pela tabela de mensagens.
+    fn recado_de_bloqueio(&self, b: &crate::blacklist::Bloqueio) -> String {
+        self.msg(
+            "erro.ip_bloqueado",
+            &[
+                ("desde", b.desde().as_str()),
+                ("ate", b.ate().as_str()),
+                ("motivo", b.motivo.as_str()),
+                ("comando", b.comando.as_str()),
+            ],
+        )
+    }
+
+    // ------------------------------------------------ mensagens do servidor
+    //
+    // Regra de ouro: `msg` e `texto_do_erro` NUNCA sao chamados com a trava
+    // de dados na mao -- a recarga do cache a toma. Os pontos de uso sao os
+    // portoes e a montagem da resposta, que rodam fora dela.
+
+    /// O texto de uma mensagem nomeada, resolvido pela tabela de mensagens.
+    fn msg(&self, nome: &str, parametros: &[(&str, &str)]) -> String {
+        self.mensagens_atualizar();
+        self.mensagens.texto(nome, parametros)
+    }
+
+    /// O texto humano de um erro para a RESPOSTA. O log de acessos continua
+    /// gravando o `Display` de fabrica -- filtro de log nao pode quebrar por
+    /// troca de idioma.
+    fn texto_do_erro(&self, e: &PhxError) -> String {
+        self.mensagens_atualizar();
+        self.mensagens.texto_do_erro(e)
+    }
+
+    /// O recado de uma recusa por politica, com o sufixo que diz a verdade:
+    /// bloqueado, tentativa N de M, ou nada (whitelist protegeu).
+    fn recado_de_grave(
+        &self,
+        destino: &crate::blacklist::Grave,
+        nome: &str,
+        parametros: &[(&str, &str)],
+    ) -> String {
+        let recado = self.msg(nome, parametros);
+        match destino {
+            crate::blacklist::Grave::Protegido => recado,
+            crate::blacklist::Grave::Contada { tentativas, limite } => self.msg(
+                "erro.grave_tentativa",
+                &[
+                    ("recado", recado.as_str()),
+                    ("n", &tentativas.to_string()),
+                    ("m", &limite.to_string()),
+                ],
+            ),
+            crate::blacklist::Grave::Bloqueado(..) => {
+                self.msg("erro.grave_bloqueado", &[("recado", recado.as_str())])
+            }
+        }
+    }
+
+    /// Rele a tabela de mensagens quando o `mtime` do `.reg` diz que alguem
+    /// gravou nela -- e so entao. Pega QUALQUER caminho de escrita (grade,
+    /// protocolo, SQL, ate outro processo), sem espalhar avisos por quarenta
+    /// operacoes: e o mesmo desenho do `recarregar_se_mudou` da blacklist.
+    fn mensagens_atualizar(&self) {
+        if !self.mensagens.precisa_recarregar() {
+            return;
+        }
+        let Ok(dados) = self.dados.lock() else { return };
+        let linhas = Self::ler_tabela_de_mensagens(&dados);
+        self.mensagens.carregar(linhas);
+    }
+
+    /// Le a tabela inteira para o cache. Tabela ausente = mapa vazio, que na
+    /// resolucao significa "textos de fabrica" -- o comportamento de sempre.
+    fn ler_tabela_de_mensagens(dados: &Instancia) -> HashMap<String, [String; 6]> {
+        let mut mapa = HashMap::new();
+        let Ok(db) = dados.abrir_database(crate::mensagens::DATABASE) else {
+            return mapa;
+        };
+        let Ok(mut t) = db.abrir_qualificada(crate::mensagens::TABELA) else {
+            return mapa;
+        };
+        let Some(col_nome) = posicao_da_coluna(t.esquema(), "TextName") else {
+            return mapa;
+        };
+        let idiomas: Vec<Option<usize>> = crate::mensagens::IDIOMAS
+            .iter()
+            .map(|n| posicao_da_coluna(t.esquema(), n))
+            .collect();
+        let total = t.registros();
+        let Ok((rowids, _)) = t.pagina_por_posicao(0, total, Visao::Ativas) else {
+            return mapa;
+        };
+        for rowid in rowids {
+            let Ok(Some(linha)) = t.ler(rowid) else {
+                continue;
+            };
+            let Some(nome) = linha.get(col_nome).and_then(Value::como_str) else {
+                continue;
+            };
+            let nome = nome.trim().to_string();
+            if nome.is_empty() {
+                continue;
+            }
+            let mut textos: [String; 6] = Default::default();
+            for (i, pos) in idiomas.iter().enumerate() {
+                if let Some(p) = pos {
+                    if let Some(s) = linha.get(*p).and_then(Value::como_str) {
+                        textos[i] = s.trim().to_string();
+                    }
+                }
+            }
+            mapa.insert(nome, textos);
+        }
+        mapa
+    }
+
+    /// Cria `phxsys.mensagens` se falta e grava as mensagens de fabrica que
+    /// ainda nao existem la. Idempotente por `TextName`: linha presente nao e
+    /// tocada -- semear de novo NUNCA desfaz a traducao de alguem.
+    ///
+    /// Devolve (criou database, criou tabela, semeadas, ja existiam).
+    fn semear_mensagens(&self) -> Result<(bool, bool, u64, u64)> {
+        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let mut criou_db = false;
+        let db = match dados.abrir_database(crate::mensagens::DATABASE) {
+            Ok(db) => db,
+            Err(_) => {
+                criou_db = true;
+                dados.criar_database(crate::mensagens::DATABASE)?
+            }
+        };
+        let mut criou_tabela = false;
+        if !db.existe_tabela(None, crate::mensagens::TABELA)? {
+            // `id` e `TextName` sao os FIXOS da programacao: chave primaria e
+            // indice unico. As seis colunas de idioma sao texto comum -- e a
+            // grade do Centro de Controle ja sabe editar texto comum.
+            let mut colunas = vec![
+                Column::new("id", ColumnType::Uuid).obrigatoria(),
+                Column::new("TextName", ColumnType::Str(80)).obrigatoria(),
+            ];
+            for idioma in crate::mensagens::IDIOMAS {
+                colunas.push(Column::new(idioma, ColumnType::Str(250)));
+            }
+            let indices = vec![
+                IndexDef::new("porId", vec![IndexColumn::asc(0)]).primaria(),
+                IndexDef::new("porTextName", vec![IndexColumn::asc(1)]).unico(),
+            ];
+            db.criar_tabela(
+                None,
+                Schema::new(crate::mensagens::TABELA, colunas, indices)?,
+            )?;
+            criou_tabela = true;
+        }
+
+        let mut t = db.abrir_qualificada(crate::mensagens::TABELA)?;
+        let Some(col_nome) = posicao_da_coluna(t.esquema(), "TextName") else {
+            return Err(PhxError::Esquema(format!(
+                "a tabela {}.{} existe mas nao tem a coluna TextName",
+                crate::mensagens::DATABASE,
+                crate::mensagens::TABELA
+            )));
+        };
+        // O que ja esta la fica exatamente como esta.
+        let mut existentes = std::collections::HashSet::new();
+        let total = t.registros();
+        // A visao e TODAS de proposito: um TextName marcado como excluido
+        // ainda ocupa o indice unico, e semear por cima daria chave duplicada.
+        if let Ok((rowids, _)) = t.pagina_por_posicao(0, total, Visao::Todas) {
+            for rowid in rowids {
+                if let Ok(Some(linha)) = t.ler(rowid) {
+                    if let Some(nome) = linha.get(col_nome).and_then(Value::como_str) {
+                        existentes.insert(nome.trim().to_string());
+                    }
+                }
+            }
+        }
+
+        let mut semeadas = 0u64;
+        for m in crate::mensagens::FABRICA {
+            if existentes.contains(m.nome) {
+                continue;
+            }
+            // A linha entra pelo MESMO caminho do `inserir` da rede
+            // (`json_para_linha`): e ele que completa as colunas de sistema.
+            // Um segundo caminho de montar linha seria o que diverge um dia.
+            let mut objeto = vec![
+                (
+                    "id".to_string(),
+                    Json::texto_de(phxsql_core::uuid::Uuid::v7().to_string()),
+                ),
+                ("TextName".to_string(), Json::texto_de(m.nome)),
+            ];
+            for (i, idioma) in crate::mensagens::IDIOMAS.iter().enumerate() {
+                // Celula vazia fica NULL: e o degrau que cai para o
+                // portugues, e e o que a tela mostra como "sem traducao".
+                if !m.textos[i].is_empty() {
+                    objeto.push((idioma.to_string(), Json::texto_de(m.textos[i])));
+                }
+            }
+            let linha = json_para_linha(&Json::Objeto(objeto), t.esquema())?;
+            t.inserir(&linha)?;
+            semeadas += 1;
+        }
+        if semeadas > 0 {
+            t.sincronizar()?;
+        }
+        drop(dados);
+        // O cache rele na proxima resolucao -- e o "aplica sem reiniciar".
+        self.mensagens.invalidar();
+        Ok((criou_db, criou_tabela, semeadas, existentes.len() as u64))
     }
 
     /// Sobe o relogio do backup agendado, se ligado.
@@ -1565,7 +1819,7 @@ impl Servidor {
         let _ = fluxo.set_read_timeout(Some(Duration::from_secs(self.config.timeout_s)));
 
         let agora = crate::agora_ms();
-        if let Some(motivo) = self.barrado(&ip, agora) {
+        if let Some(b) = self.barrado(&ip, agora) {
             self.anotar(&Acesso {
                 quando_ms: agora,
                 ip,
@@ -1575,12 +1829,12 @@ impl Servidor {
                 autenticado: false,
                 ok: false,
                 duracao_ms: 0,
-                erro: Some(motivo.clone()),
+                erro: Some(Self::motivo_de_bloqueio(&b)),
                 database: String::new(),
                 tabela: String::new(),
                 codigo: 0,
             });
-            let _ = http::erro_json(&mut fluxo, 403, &motivo);
+            let _ = http::erro_json(&mut fluxo, 403, &self.recado_de_bloqueio(&b));
             return;
         }
         if !self.config.ip_permitido(&ip) {
@@ -1599,7 +1853,7 @@ impl Servidor {
                 tabela: String::new(),
                 codigo: 0,
             });
-            let _ = http::erro_json(&mut fluxo, 403, "ip nao autorizado");
+            let _ = http::erro_json(&mut fluxo, 403, &self.msg("erro.ip_nao_autorizado", &[]));
             return;
         }
 
@@ -1972,11 +2226,12 @@ impl Servidor {
             ],
             // O codigo vem JUNTO com o texto, e nao no lugar dele: o texto e
             // para quem le, o codigo e para quem programa. Trocar um pelo
-            // outro obrigaria alguem a perder.
+            // outro obrigaria alguem a perder. O texto passa pela tabela de
+            // mensagens; o codigo nunca muda com o idioma.
             Err(e) => vec![
                 ("ok", Json::Bool(false)),
                 ("op", Json::texto_de(&op)),
-                ("erro", Json::texto_de(e.to_string())),
+                ("erro", Json::texto_de(self.texto_do_erro(e))),
                 ("codigo", Json::de_u64(e.codigo() as u64)),
                 ("nome", Json::texto_de(e.nome())),
                 ("classe", Json::texto_de(e.classe())),
@@ -2029,7 +2284,7 @@ impl Servidor {
 
         // Antes de qualquer coisa: quem esta na lista de bloqueio nao entra.
         let agora = crate::agora_ms();
-        if let Some(motivo) = self.barrado(&ip, agora) {
+        if let Some(b) = self.barrado(&ip, agora) {
             self.anotar(&Acesso {
                 quando_ms: agora,
                 ip: ip.clone(),
@@ -2039,7 +2294,7 @@ impl Servidor {
                 autenticado: false,
                 ok: false,
                 duracao_ms: 0,
-                erro: Some(motivo.clone()),
+                erro: Some(Self::motivo_de_bloqueio(&b)),
                 database: String::new(),
                 tabela: String::new(),
                 codigo: 0,
@@ -2049,7 +2304,12 @@ impl Servidor {
                 let _ = writeln!(
                     saida,
                     "{}",
-                    resposta_erro("conexao", &PhxError::Autorizacao(motivo.clone()), 0).escrever()
+                    self.resposta_erro(
+                        "conexao",
+                        &PhxError::Autorizacao(self.recado_de_bloqueio(&b)),
+                        0
+                    )
+                    .escrever()
                 );
             }
             return;
@@ -2086,9 +2346,9 @@ impl Servidor {
             let _ = writeln!(
                 saida,
                 "{}",
-                resposta_erro(
+                self.resposta_erro(
                     "conexao",
-                    &PhxError::Autorizacao("ip nao autorizado".into()),
+                    &PhxError::Autorizacao(self.msg("erro.ip_nao_autorizado", &[])),
                     0
                 )
                 .escrever()
@@ -2208,7 +2468,7 @@ impl Servidor {
                     ("resultado", valor.clone()),
                     ("ms", Json::de_u64(duracao)),
                 ]),
-                Err(e) => resposta_erro(&op, e, duracao),
+                Err(e) => self.resposta_erro(&op, e, duracao),
             };
 
             self.anotar(&Acesso {
@@ -2254,45 +2514,55 @@ impl Servidor {
 
         // Portao 0 -- a politica. Vale para todo mundo, root inclusive: e o
         // que o config.json diz que ninguem pede por esta porta. Pedir vira
-        // bloqueio na hora, sem contar tentativa.
+        // violacao grave: bloqueio na hora com a politica padrao, ou na
+        // enesima quando `tentativas_para_bloqueio` diz para tolerar --
+        // e a recusa da operacao acontece SEMPRE, desde a primeira.
         if self.config.politica.comando_proibido(&op) {
-            self.violacao_grave(ip, &op, "comando proibido pela politica");
+            let destino = self.violacao_grave(ip, &op, "comando proibido pela politica");
             return (
                 op.clone(),
                 false,
-                Err(PhxError::Autorizacao(format!(
-                    "operacao {op} esta proibida neste servidor; o IP foi bloqueado"
+                Err(PhxError::Autorizacao(self.recado_de_grave(
+                    &destino,
+                    "erro.comando_proibido",
+                    &[("op", op.as_str())],
                 ))),
             );
         }
         // Nome com ".." ou barra nao e engano de digitacao: e sondagem de
         // travessia de diretorio. O motor ja recusava -- mas recusava calado, e
-        // quem sonda podia tentar a noite inteira sem nunca ser barrado. Agora
-        // e violacao grave, igual a comando proibido: bloqueia na primeira.
+        // quem sonda podia tentar a noite inteira sem nunca ser barrado. E
+        // violacao grave, igual a comando proibido, com a mesma tolerancia
+        // configuravel -- regra unica, para o operador nao ter de decorar qual
+        // grave conta e qual nao conta.
         for (rotulo, valor) in [
             ("database", &base),
             ("tabela", &pedido.texto_ou("tabela", "").to_string()),
             ("schema", &pedido.texto_ou("schema", "").to_string()),
         ] {
             if !valor.is_empty() && phxsql_store::catalogo::nome_hostil(valor) {
-                self.violacao_grave(ip, &op, "tentativa de travessia de diretorio");
+                let destino = self.violacao_grave(ip, &op, "tentativa de travessia de diretorio");
                 return (
                     op,
                     false,
-                    Err(PhxError::Autorizacao(format!(
-                        "{rotulo} {valor:?} nao e um nome; o IP foi bloqueado"
+                    Err(PhxError::Autorizacao(self.recado_de_grave(
+                        &destino,
+                        "erro.nome_hostil",
+                        &[("rotulo", rotulo), ("valor", &format!("{valor:?}"))],
                     ))),
                 );
             }
         }
 
         if self.config.politica.base_proibida(&base) {
-            self.violacao_grave(ip, &op, "base proibida pela politica");
+            let destino = self.violacao_grave(ip, &op, "base proibida pela politica");
             return (
                 op,
                 false,
-                Err(PhxError::Autorizacao(format!(
-                    "a base {base} esta proibida neste servidor; o IP foi bloqueado"
+                Err(PhxError::Autorizacao(self.recado_de_grave(
+                    &destino,
+                    "erro.base_proibida",
+                    &[("base", base.as_str())],
                 ))),
             );
         }
@@ -2303,7 +2573,7 @@ impl Servidor {
             return (
                 op,
                 false,
-                Err(PhxError::Autorizacao("token invalido".into())),
+                Err(PhxError::Autorizacao(self.msg("erro.token_invalido", &[]))),
             );
         }
 
@@ -2332,9 +2602,7 @@ impl Servidor {
             return (
                 op,
                 true,
-                Err(PhxError::Autorizacao(
-                    "faca login antes: {\"op\":\"login\",\"usuario\":...,\"senha\":...}".into(),
-                )),
+                Err(PhxError::Autorizacao(self.msg("erro.faca_login", &[]))),
             );
         }
 
@@ -2363,9 +2631,7 @@ impl Servidor {
     fn portoes_do_pedido(&self, op: &str, pedido: &Json, sessao: &Sessao) -> Result<()> {
         // Portao 2b -- o servidor inteiro em somente leitura.
         if self.config.somente_leitura && OPS_ESCRITA.contains(&op) {
-            return Err(PhxError::Autorizacao(
-                "servidor em modo somente leitura".into(),
-            ));
+            return Err(PhxError::Autorizacao(self.msg("erro.somente_leitura", &[])));
         }
 
         // Portao 3 -- o poder deste usuario sobre a base E A TABELA do pedido.
@@ -2383,15 +2649,20 @@ impl Servidor {
         {
             let tabela = pedido.texto_ou("tabela", "").trim().to_string();
             if !usuario.pode_em(&base, &tabela, atividade) {
-                return Err(PhxError::Autorizacao(format!(
-                    "{} nao tem permissao de {} em {}",
-                    usuario.login,
-                    atividade.nome(),
-                    match (base.is_empty(), tabela.is_empty()) {
-                        (true, _) => "(sem base)".to_string(),
-                        (false, true) => base.clone(),
-                        (false, false) => format!("{base}.{tabela}"),
-                    }
+                return Err(PhxError::Autorizacao(self.msg(
+                    "erro.sem_direito",
+                    &[
+                        ("login", usuario.login.as_str()),
+                        ("atividade", atividade.nome()),
+                        (
+                            "alvo",
+                            &match (base.is_empty(), tabela.is_empty()) {
+                                (true, _) => "(sem base)".to_string(),
+                                (false, true) => base.clone(),
+                                (false, false) => format!("{base}.{tabela}"),
+                            },
+                        ),
+                    ],
                 )));
             }
         }
@@ -2481,7 +2752,7 @@ impl Servidor {
 
         // Todo caminho de erro devolve a MESMA mensagem, para nao dizer se o
         // que falhou foi o login, a senha ou o desafio.
-        let recusa = || PhxError::Autorizacao("usuario ou senha invalidos".into());
+        let recusa = || PhxError::Autorizacao(self.msg("erro.credencial_invalida", &[]));
 
         let mut nonces: Option<(String, String)> = None;
         let autenticado = if let Some(prova) = p.campo("prova").and_then(Json::texto) {
@@ -2591,6 +2862,10 @@ impl Servidor {
             "ips" => self.op_ips(),
             "bloqueios" => self.op_bloqueios(),
             "desbloquear" => self.op_desbloquear(p),
+            "bloqueios_exportar" => self.op_bloqueios_exportar(p),
+            "whitelist_salvar" => self.op_whitelist_salvar(p),
+            "mensagens" => self.op_mensagens(),
+            "mensagens_semear" => self.op_mensagens_semear(),
             "bancos" => self.op_bancos(),
             "tabelas" => self.op_tabelas(p, sessao),
             "bulkinsert" => self.op_bulkinsert(p, sessao),
@@ -2668,9 +2943,9 @@ impl Servidor {
             }
             "verificar" => self.op_verificar(p, sessao),
             "reindexar" => self.op_reindexar(p, sessao),
-            outro => Err(PhxError::NaoEncontrado(format!(
-                "operacao desconhecida: {outro}"
-            ))),
+            outro => Err(PhxError::NaoEncontrado(
+                self.msg("erro.operacao_desconhecida", &[("op", outro)]),
+            )),
         }
     }
 
@@ -2767,6 +3042,7 @@ impl Servidor {
     fn op_bloqueios(&self) -> Result<Json> {
         let lista = self.lista_negra.lock().map_err(|_| trava_envenenada())?;
         let agora = crate::agora_ms();
+        let p = &self.config.politica;
         Ok(Json::objeto(vec![
             (
                 "arquivo",
@@ -2782,6 +3058,45 @@ impl Servidor {
                         .collect(),
                 ),
             ),
+            // As duas whitelists SEPARADAS, porque so uma delas se edita pela
+            // tela: a do config e de quem administra o arquivo.
+            (
+                "whitelist_config",
+                Json::Lista(p.whitelist.iter().map(Json::texto_de).collect()),
+            ),
+            (
+                "whitelist",
+                Json::Lista(lista.whitelist().iter().map(Json::texto_de).collect()),
+            ),
+            // A politica em vigor, para a tela dizer a verdade sobre o que
+            // esta valendo -- e nao o que alguem lembra de ter configurado.
+            (
+                "politica",
+                Json::objeto(vec![
+                    (
+                        "comandos_proibidos",
+                        Json::Lista(p.comandos_proibidos.iter().map(Json::texto_de).collect()),
+                    ),
+                    (
+                        "bases_proibidas",
+                        Json::Lista(p.bases_proibidas.iter().map(Json::texto_de).collect()),
+                    ),
+                    (
+                        "tentativas_para_bloqueio",
+                        Json::de_u64(p.tentativas_para_bloqueio as u64),
+                    ),
+                    (
+                        "tentativas_ate_bloquear",
+                        Json::de_u64(p.tentativas_ate_bloquear as u64),
+                    ),
+                    ("janela_minutos", Json::de_u64(p.janela_minutos)),
+                    ("bloqueio_minutos", Json::de_u64(p.bloqueio_minutos)),
+                    (
+                        "firewall",
+                        Json::Bool(p.firewall.as_ref().map(|f| f.ligado).unwrap_or(false)),
+                    ),
+                ]),
+            ),
         ]))
     }
 
@@ -2795,6 +3110,86 @@ impl Servidor {
         Ok(Json::objeto(vec![
             ("ip", Json::texto_de(&ip)),
             ("estava_bloqueado", Json::Bool(tinha)),
+        ]))
+    }
+
+    /// `bloqueios_exportar`: a blacklist ativa no formato que um firewall de
+    /// verdade consome. O servidor nao roda como root e nao mexe em iptables
+    /// sozinho -- entrega o texto para quem tem o privilegio aplicar.
+    fn op_bloqueios_exportar(&self, p: &Json) -> Result<Json> {
+        let formato = p.texto_ou("formato", "texto").trim().to_string();
+        let lista = self.lista_negra.lock().map_err(|_| trava_envenenada())?;
+        let agora = crate::agora_ms();
+        let texto = lista.exportar(&formato, agora)?;
+        Ok(Json::objeto(vec![
+            ("formato", Json::texto_de(&formato)),
+            ("ips", Json::de_u64(lista.ativos(agora).len() as u64)),
+            ("texto", Json::texto_de(texto)),
+        ]))
+    }
+
+    /// `whitelist_salvar`: substitui a whitelist EDITAVEL (a do arquivo da
+    /// blacklist). A do `config.json` nao se mexe por aqui -- config muda com
+    /// o arquivo, pelo mesmo motivo de sempre.
+    fn op_whitelist_salvar(&self, p: &Json) -> Result<Json> {
+        let regras = p.textos("whitelist");
+        let mut lista = self.lista_negra.lock().map_err(|_| trava_envenenada())?;
+        lista.definir_whitelist(regras)?;
+        Ok(Json::objeto(vec![(
+            "whitelist",
+            Json::Lista(lista.whitelist().iter().map(Json::texto_de).collect()),
+        )]))
+    }
+
+    /// `mensagens`: o estado da tabela de mensagens, para a tela dizer a
+    /// verdade -- qual idioma vale, se a tabela existe, o que falta semear.
+    fn op_mensagens(&self) -> Result<Json> {
+        self.mensagens_atualizar();
+        let (existe, linhas) = {
+            let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+            match dados.abrir_database(crate::mensagens::DATABASE) {
+                Err(_) => (false, 0u64),
+                Ok(db) => match db.existe_tabela(None, crate::mensagens::TABELA)? {
+                    false => (false, 0),
+                    true => (
+                        true,
+                        db.abrir_qualificada(crate::mensagens::TABELA)
+                            .map(|t| t.registros())
+                            .unwrap_or(0),
+                    ),
+                },
+            }
+        };
+        let conhecidas = crate::mensagens::FABRICA.len() as u64;
+        Ok(Json::objeto(vec![
+            ("idioma", Json::texto_de(self.mensagens.idioma())),
+            ("database", Json::texto_de(crate::mensagens::DATABASE)),
+            ("tabela", Json::texto_de(crate::mensagens::TABELA)),
+            ("existe", Json::Bool(existe)),
+            ("linhas", Json::de_u64(linhas)),
+            ("de_fabrica", Json::de_u64(conhecidas)),
+            (
+                "idiomas",
+                Json::Lista(
+                    crate::mensagens::IDIOMAS
+                        .iter()
+                        .map(|i| Json::texto_de(*i))
+                        .collect(),
+                ),
+            ),
+        ]))
+    }
+
+    /// `mensagens_semear`: cria e completa a tabela de mensagens. Idempotente
+    /// -- linha existente nunca e tocada, entao semear de novo e sempre
+    /// seguro, inclusive depois de alguem traduzir metade.
+    fn op_mensagens_semear(&self) -> Result<Json> {
+        let (criou_db, criou_tabela, semeadas, existiam) = self.semear_mensagens()?;
+        Ok(Json::objeto(vec![
+            ("criou_database", Json::Bool(criou_db)),
+            ("criou_tabela", Json::Bool(criou_tabela)),
+            ("semeadas", Json::de_u64(semeadas)),
+            ("ja_existiam", Json::de_u64(existiam)),
         ]))
     }
 
@@ -7635,17 +8030,22 @@ fn objeto_do_pedido(corpo: &str, resultado: &Result<Json>) -> Acesso {
     }
 }
 
-fn resposta_erro(op: &str, e: &PhxError, ms: u64) -> Json {
-    Json::objeto(vec![
-        ("ok", Json::Bool(false)),
-        ("op", Json::texto_de(op)),
-        ("erro", Json::texto_de(e.to_string())),
-        ("codigo", Json::de_u64(e.codigo() as u64)),
-        ("nome", Json::texto_de(e.nome())),
-        ("classe", Json::texto_de(e.classe())),
-        ("repetir", Json::Bool(e.adianta_repetir())),
-        ("ms", Json::de_u64(ms)),
-    ])
+impl Servidor {
+    /// A resposta de erro da porta de dados. O texto humano passa pela tabela
+    /// de mensagens; `codigo`, `nome`, `classe` e `repetir` NUNCA mudam com o
+    /// idioma -- e por eles que o cliente trata.
+    fn resposta_erro(&self, op: &str, e: &PhxError, ms: u64) -> Json {
+        Json::objeto(vec![
+            ("ok", Json::Bool(false)),
+            ("op", Json::texto_de(op)),
+            ("erro", Json::texto_de(self.texto_do_erro(e))),
+            ("codigo", Json::de_u64(e.codigo() as u64)),
+            ("nome", Json::texto_de(e.nome())),
+            ("classe", Json::texto_de(e.classe())),
+            ("repetir", Json::Bool(e.adianta_repetir())),
+            ("ms", Json::de_u64(ms)),
+        ])
+    }
 }
 
 /// Uma coluna, pelo nome ou pelo numero. Aceitar os dois e o que deixa a
@@ -7924,6 +8324,368 @@ mod testes_politica {
                  um servidor somente-leitura recusaria sem motivo"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod testes_firewall_e_mensagens {
+    use super::*;
+
+    fn dir_temp(rotulo: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("phx-fw-{}-{rotulo}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn config_base(dir: &std::path::Path) -> Config {
+        Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            jobs: dir.join("jobs.json"),
+            token: "t".into(),
+            ..Config::default()
+        }
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    /// **O teste que mais importa**: sem o bloco `seguranca` no config, nada
+    /// do firewall novo muda o comportamento -- nenhum comando e proibido,
+    /// nenhuma tentativa conta, nenhum IP bloqueia.
+    #[test]
+    fn sem_bloco_seguranca_nada_muda() {
+        let dir = dir_temp("sem-bloco");
+        let s = Servidor::novo(config_base(&dir)).unwrap();
+        let mut sessao = Sessao::default();
+        for _ in 0..10 {
+            let (_, _, r) =
+                s.despachar(r#"{"token":"t","op":"bancos"}"#, &mut sessao, "203.0.113.5");
+            r.unwrap();
+        }
+        // Ate operacao "perigosa" passa pelo portao de politica sem contar.
+        let (_, _, r) = s.despachar(
+            r#"{"token":"t","op":"excluir_tabela","database":"x","tabela":"y"}"#,
+            &mut sessao,
+            "203.0.113.5",
+        );
+        // O erro e do motor (a base nao existe), nunca da politica.
+        let e = r.unwrap_err();
+        assert!(
+            !e.to_string().contains("proibida"),
+            "sem bloco seguranca nao ha comando proibido: {e}"
+        );
+        assert!(s.barrado("203.0.113.5", crate::agora_ms()).is_none());
+        // E sem tabela de mensagens nem idioma, phxsys nao nasce sozinho.
+        assert!(
+            !dir.join("phxsys").exists(),
+            "phxsys nao pode nascer sem alguem pedir"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// O comportamento VELHO do comando proibido: bloqueio na primeira, com o
+    /// mesmo texto de sempre, byte a byte.
+    #[test]
+    fn comando_proibido_bloqueia_na_primeira_como_sempre() {
+        let dir = dir_temp("grave-velho");
+        let mut c = config_base(&dir);
+        c.politica.comandos_proibidos = vec!["excluir_tabela".into()];
+        let s = Servidor::novo(c).unwrap();
+        let mut sessao = Sessao::default();
+        let (_, _, r) = s.despachar(
+            r#"{"token":"t","op":"excluir_tabela","database":"x","tabela":"y"}"#,
+            &mut sessao,
+            "203.0.113.9",
+        );
+        assert_eq!(
+            r.unwrap_err().to_string(),
+            "acesso negado: operacao excluir_tabela esta proibida neste servidor; o IP foi bloqueado"
+        );
+        assert!(s.barrado("203.0.113.9", crate::agora_ms()).is_some());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A guarda pedida: com `tentativas_para_bloqueio: 3`, as duas primeiras
+    /// recusam e CONTAM -- e a resposta diz isso --, e a terceira bloqueia.
+    #[test]
+    fn tentativas_para_bloqueio_recusa_sempre_e_bloqueia_na_enesima() {
+        let dir = dir_temp("grave-contado");
+        let mut c = config_base(&dir);
+        c.politica.comandos_proibidos = vec!["excluir_tabela".into()];
+        c.politica.tentativas_para_bloqueio = 3;
+        let s = Servidor::novo(c).unwrap();
+        let mut sessao = Sessao::default();
+        let ip = "203.0.113.10";
+        let proibido = r#"{"token":"t","op":"excluir_tabela","database":"x","tabela":"y"}"#;
+
+        for n in 1..=2 {
+            let (_, _, r) = s.despachar(proibido, &mut sessao, ip);
+            let texto = r.unwrap_err().to_string();
+            assert!(
+                texto.contains(&format!("tentativa {n} de 3")),
+                "a resposta tem de dizer a contagem: {texto}"
+            );
+            assert!(
+                s.barrado(ip, crate::agora_ms()).is_none(),
+                "bloqueou antes da hora"
+            );
+        }
+        let (_, _, r) = s.despachar(proibido, &mut sessao, ip);
+        assert!(r.unwrap_err().to_string().contains("o IP foi bloqueado"));
+        assert!(s.barrado(ip, crate::agora_ms()).is_some());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Whitelist NUNCA bloqueia: a recusa continua, o IP fica livre -- e a
+    /// resposta nao mente dizendo que bloqueou. Vale ate para bloqueio ja
+    /// gravado antes de a regra entrar: a whitelist vence na conexao.
+    #[test]
+    fn whitelist_recusa_sem_bloquear_e_vence_bloqueio_gravado() {
+        let dir = dir_temp("whitelist");
+        let mut c = config_base(&dir);
+        c.politica.comandos_proibidos = vec!["excluir_tabela".into()];
+        c.politica.whitelist = vec!["192.168.50.0/24".into()];
+        let s = Servidor::novo(c).unwrap();
+        let mut sessao = Sessao::default();
+        let proibido = r#"{"token":"t","op":"excluir_tabela","database":"x","tabela":"y"}"#;
+
+        for _ in 0..5 {
+            let (_, _, r) = s.despachar(proibido, &mut sessao, "192.168.50.20");
+            assert_eq!(
+                r.unwrap_err().to_string(),
+                "acesso negado: operacao excluir_tabela esta proibida neste servidor"
+            );
+        }
+        assert!(s.barrado("192.168.50.20", crate::agora_ms()).is_none());
+
+        // Bloqueio gravado ANTES de a whitelist dinamica entrar: a regra
+        // nova vence na proxima conexao, sem esperar o bloqueio vencer.
+        let (_, _, r) = s.despachar(proibido, &mut sessao, "10.0.0.7");
+        assert!(r.unwrap_err().to_string().contains("o IP foi bloqueado"));
+        assert!(s.barrado("10.0.0.7", crate::agora_ms()).is_some());
+        s.executar(
+            "whitelist_salvar",
+            &pedido(r#"{"whitelist":["10.0.0.7"]}"#),
+            &Sessao::default(),
+        )
+        .unwrap();
+        assert!(
+            s.barrado("10.0.0.7", crate::agora_ms()).is_none(),
+            "whitelist tem de vencer bloqueio ja gravado"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// As operacoes de gestao: listar traz whitelist e politica, salvar
+    /// valida, exportar entrega uma linha por IP.
+    #[test]
+    fn ops_de_bloqueio_listam_salvam_e_exportam() {
+        let dir = dir_temp("ops");
+        let mut c = config_base(&dir);
+        c.politica.comandos_proibidos = vec!["reindexar".into()];
+        c.politica.whitelist = vec!["127.0.0.1".into()];
+        let s = Servidor::novo(c).unwrap();
+        let sessao = Sessao::default();
+        let mut anonima = Sessao::default();
+
+        let proibido = r#"{"token":"t","op":"reindexar","database":"x","tabela":"y"}"#;
+        let _ = s.despachar(proibido, &mut anonima, "203.0.113.77");
+
+        let b = s.executar("bloqueios", &pedido("{}"), &sessao).unwrap();
+        assert_eq!(b.campo("ativos").and_then(Json::lista).unwrap().len(), 1);
+        assert_eq!(
+            b.campo("whitelist_config")
+                .and_then(Json::lista)
+                .unwrap()
+                .len(),
+            1
+        );
+        let politica = b.campo("politica").unwrap();
+        assert_eq!(politica.inteiro_ou("tentativas_para_bloqueio", 0), 1);
+        assert_eq!(
+            politica
+                .campo("comandos_proibidos")
+                .and_then(Json::lista)
+                .unwrap()
+                .len(),
+            1
+        );
+
+        let e = s
+            .executar(
+                "bloqueios_exportar",
+                &pedido(r#"{"formato":"iptables"}"#),
+                &sessao,
+            )
+            .unwrap();
+        assert_eq!(
+            e.texto_ou("texto", ""),
+            "iptables -I INPUT -s 203.0.113.77 -j DROP\n"
+        );
+
+        // Salvar recusa lixo inteiro, sem gravar metade.
+        let ruim = s.executar(
+            "whitelist_salvar",
+            &pedido(r#"{"whitelist":["10.0.0.1","banana"]}"#),
+            &sessao,
+        );
+        assert!(ruim.is_err());
+        let b = s.executar("bloqueios", &pedido("{}"), &sessao).unwrap();
+        assert!(b
+            .campo("whitelist")
+            .and_then(Json::lista)
+            .unwrap()
+            .is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A semeadura cria `phxsys.mensagens` com uma linha por mensagem de
+    /// fabrica -- e semear de novo nao toca em nada.
+    #[test]
+    fn mensagens_semear_cria_tudo_e_e_idempotente() {
+        let dir = dir_temp("semear");
+        let s = Servidor::novo(config_base(&dir)).unwrap();
+        let sessao = Sessao::default();
+
+        let r = s
+            .executar("mensagens_semear", &pedido("{}"), &sessao)
+            .unwrap();
+        assert!(r.booleano_ou("criou_database", false));
+        assert!(r.booleano_ou("criou_tabela", false));
+        assert_eq!(
+            r.inteiro_ou("semeadas", 0) as usize,
+            crate::mensagens::FABRICA.len()
+        );
+
+        let de_novo = s
+            .executar("mensagens_semear", &pedido("{}"), &sessao)
+            .unwrap();
+        assert!(!de_novo.booleano_ou("criou_tabela", true));
+        assert_eq!(de_novo.inteiro_ou("semeadas", -1), 0);
+
+        // O estado diz a verdade para a tela.
+        let m = s.executar("mensagens", &pedido("{}"), &sessao).unwrap();
+        assert!(m.booleano_ou("existe", false));
+        assert_eq!(
+            m.inteiro_ou("linhas", 0) as usize,
+            crate::mensagens::FABRICA.len()
+        );
+        assert_eq!(m.texto_ou("idioma", ""), "Portugues");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Provas (g), (h) e (j) da rodada: com `idioma: Ingles` o texto humano
+    /// sai da coluna Ingles e o CODIGO estruturado nao muda; celula vazia cai
+    /// para o portugues; sem idioma no config, portugues de sempre.
+    #[test]
+    fn idioma_troca_o_texto_e_nunca_o_codigo() {
+        let dir = dir_temp("idioma");
+        let mut c = config_base(&dir);
+        c.idioma = "Ingles".into();
+        // Com idioma configurado, a semeadura acontece sozinha no arranque.
+        let s = Servidor::novo(c).unwrap();
+        assert!(dir.join("phxsys/mensagens.reg").exists());
+
+        let e = PhxError::EmCarga("clientes reservada".into());
+        // (g) o texto vem da coluna Ingles...
+        assert_eq!(
+            s.texto_do_erro(&e),
+            "table under bulk load: clientes reservada"
+        );
+        // ...e o campo estruturado continua identico ao de sempre.
+        let resposta = s.resposta_erro("bulkinsert", &e, 3);
+        assert_eq!(resposta.inteiro_ou("codigo", 0), 4002);
+        assert_eq!(resposta.texto_ou("nome", ""), "EM_CARGA");
+        assert!(resposta.booleano_ou("repetir", false));
+
+        // (h) celula Ingles vazia (a fabrica nao traduz esta): portugues.
+        let v = PhxError::VersaoNaoSuportada {
+            arquivo: "x.reg".into(),
+            encontrada: 9,
+            suportada: 2,
+        };
+        assert_eq!(s.texto_do_erro(&v), v.to_string());
+
+        // (j) outro servidor, mesma base semeada, SEM idioma: portugues de
+        // sempre, byte a byte.
+        let s2 = Servidor::novo(config_base(&dir)).unwrap();
+        assert_eq!(s2.texto_do_erro(&e), e.to_string());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Prova (i): linha excluida da tabela = texto de fabrica byte a byte.
+    /// Prova (k): editar o texto pela operacao comum de tabela vale SEM
+    /// reiniciar -- o servidor rele pelo mtime, como a blacklist.
+    #[test]
+    fn editar_e_excluir_linhas_vale_sem_reiniciar() {
+        let dir = dir_temp("editar");
+        let mut c = config_base(&dir);
+        c.idioma = "Ingles".into();
+        let s = Servidor::novo(c).unwrap();
+        let sessao = Sessao::default();
+
+        // Aquece o cache com a tabela semeada.
+        let e = PhxError::Duplicado("porNome".into());
+        assert_eq!(s.texto_do_erro(&e), "duplicate key: porNome");
+
+        // Acha a linha de erro.duplicado na tabela, como a grade acharia.
+        let v = s
+            .executar(
+                "varrer",
+                &pedido(r#"{"database":"phxsys","tabela":"mensagens","max":1000}"#),
+                &sessao,
+            )
+            .unwrap();
+        let linhas = v.campo("linhas").and_then(Json::lista).unwrap();
+        let alvo = linhas
+            .iter()
+            .find(|l| l.texto_ou("TextName", "") == "erro.duplicado")
+            .expect("a linha semeada sumiu");
+        let rowid = alvo.inteiro_ou("rowid", 0);
+
+        // (k) edita a coluna Ingles pela operacao comum de atualizar -- a
+        // linha inteira, como a ficha da tela manda.
+        let mut valores: Vec<(String, Json)> = ["id", "TextName"]
+            .iter()
+            .chain(crate::mensagens::IDIOMAS.iter())
+            .map(|c| (c.to_string(), alvo.campo(c).cloned().unwrap_or(Json::Nulo)))
+            .collect();
+        for (nome, valor) in &mut valores {
+            if nome == "Ingles" {
+                *valor = Json::texto_de("key already used: {detalhe}");
+            }
+        }
+        s.executar(
+            "atualizar",
+            &pedido(&format!(
+                r#"{{"database":"phxsys","tabela":"mensagens","rowid":{rowid},"valores":{}}}"#,
+                Json::Objeto(valores).escrever()
+            )),
+            &sessao,
+        )
+        .unwrap();
+        // O cache rele quando o intervalo de conferencia passa -- e o teste
+        // espera esse intervalo de proposito: reiniciar nao pode ser preciso.
+        std::thread::sleep(crate::mensagens::INTERVALO_DE_CONFERENCIA + Duration::from_millis(200));
+        assert_eq!(s.texto_do_erro(&e), "key already used: porNome");
+
+        // (i) excluir a linha devolve o texto de fabrica, byte a byte.
+        s.executar(
+            "excluir",
+            &pedido(&format!(
+                r#"{{"database":"phxsys","tabela":"mensagens","rowid":{rowid}}}"#
+            )),
+            &sessao,
+        )
+        .unwrap();
+        std::thread::sleep(crate::mensagens::INTERVALO_DE_CONFERENCIA + Duration::from_millis(200));
+        assert_eq!(s.texto_do_erro(&e), e.to_string());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
 
