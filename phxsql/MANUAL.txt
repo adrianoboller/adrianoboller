@@ -285,6 +285,42 @@ O CATALOGO: O PROTOCOLO SE DESCREVE SOZINHO
     de operacoes do proprio codigo do despachar e falha se ela e o catalogo
     discordarem, nos dois sentidos. Ajuda escrita a mao envelhece calada.
 
+SQL: UM SELECT SIMPLES, TRADUZIDO
+
+    {"token":"segredo","op":"sql","database":"loja",
+     "texto":"SELECT nome AS quem FROM clientes WHERE id = 42"}
+
+    A gramatica inteira cabe em cinco linhas:
+
+        SELECT ( * | COUNT(*) | coluna [AS apelido] {, ...} )
+        FROM   [banco.] [schema.] tabela [[AS] apelido]
+        [WHERE coluna ( = | <> | < | <= | > | >= ) literal]
+        [ORDER BY coluna [ASC|DESC]]
+        [LIMIT n [OFFSET m]]
+
+    A resposta e a da operacao traduzida -- "varrer" ou "buscar" --, com tres
+    campos a mais na frente: o "sql" que voce mandou, o "op" que ele virou e as
+    "notas" do tradutor. COUNT(*) devolve "contagem". O campo "sql" e aceito no
+    lugar de "texto", que e o nome que um driver escreveria.
+
+    O QUE NAO TEM SUBSTRATO RECUSA DIZENDO O QUE FALTA. Nao ha expressao, nao
+    ha JOIN, nao ha subconsulta e nao ha transacao -- e um WHERE sobre coluna
+    SEM indice recusa em vez de virar uma varredura com o filtro esquecido no
+    caminho, porque o "varrer" NAO filtra. A recusa diz quais colunas TEM
+    indice. Erro de sintaxe aponta a coluna do texto: «SQL, coluna 10: ...».
+
+    O PORTAO E O MESMO. A op sql nao abre tabela nenhuma: ela pede o "esquema"
+    da tabela do FROM (que ja exige ler naquela tabela) e depois executa o
+    varrer ou o buscar traduzido -- os dois pelo mesmo portao de um pedido que
+    chega pela rede. SELECT numa tabela negada para com o mesmo erro de um
+    varrer nela. Servidor que proibe "varrer" pela politica tambem nao pode ser
+    varrido escrevendo SELECT.
+
+    QUEM PODE. A op pede "ler". Quem so tem direito por TABELA, e nenhum na
+    base, para no portao de fora: ele le o campo "database" do envelope e nao
+    tem como saber a tabela, que esta dentro do texto do SQL. O portao de
+    dentro continua conferindo a tabela de verdade -- o de fora so aperta.
+
 RECURSOS DA MAQUINA
 
     A secao "recursos" do config.json diz o que o servidor pode consumir e --

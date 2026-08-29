@@ -408,6 +408,22 @@ pub const OPERACOES: &[Operacao] = &[
         ferramenta_mcp: true,
     },
     Operacao {
+        nome: "sql",
+        apelidos: &[],
+        resumo: "Traduz um SELECT simples para as operações do protocolo e o \
+                 executa pelo MESMO portão de permissão.",
+        parametros: &[
+            opc(
+                "database",
+                "string",
+                "o banco corrente, quando o FROM não disser qual",
+            ),
+            obr("texto", "string", "o comando SQL; `sql` também é aceito"),
+        ],
+        exemplo: r#"{"op":"sql","database":"loja","texto":"SELECT * FROM clientes LIMIT 10"}"#,
+        ferramenta_mcp: true,
+    },
+    Operacao {
         nome: "pivotar",
         apelidos: &["pivot"],
         resumo: "Tabulação cruzada: soma, conta ou tira a média de uma coluna \

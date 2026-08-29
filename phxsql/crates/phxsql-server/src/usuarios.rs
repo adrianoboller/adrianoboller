@@ -115,6 +115,17 @@ impl Atividade {
             // operacao confere de novo antes de abrir a segunda tabela.
             "juntar" | "join" | "unir" | "union" => Atividade::Ler,
             "sequencias" | "sequences" => Atividade::Ler,
+            // A op `sql` so produz `varrer` e `buscar` hoje, e as duas pedem
+            // `ler`. Este portao e o de FORA e nao dispensa o de dentro: o
+            // pedido traduzido volta pelo mesmo `portoes_do_pedido`, com o
+            // nome da tabela no campo que ele ja sabe olhar. Entao ele so pode
+            // apertar, nunca afrouxar -- e apertar e o lado certo de errar.
+            //
+            // O preco esta escrito em docs/SQL.md: quem so tem direito por
+            // TABELA, e nenhum na base, para aqui. Nao da para consertar sem o
+            // portao ler o texto do SQL, e portao que interpreta linguagem e
+            // portao que erra.
+            "sql" => Atividade::Ler,
             // A soma de verificacao le a tabela inteira e devolve um numero:
             // quem pode ler a tabela pode saber se ela mudou.
             "checksum" | "soma_de_verificacao" => Atividade::Ler,

@@ -382,6 +382,25 @@ pub fn json_para_valor(j: &Json, ty: &ColumnType) -> Result<Value> {
     }
     let erro = |esperado: &str| PhxError::Tipo(format!("esperado {esperado}, recebido {j:?}"));
 
+    // Inteiro escrito como TEXTO tambem serve.
+    //
+    // O `Decimal` desta mesma funcao ja EXIGE texto, para nao perder centavo
+    // num `f64` -- e pela mesma razao o tradutor de SQL guarda todo literal
+    // numerico como texto. Sem esta linha, `WHERE id = 2` chegaria como
+    // `["2"]` e seria recusado por tipo, e o SELECT mais simples que existe
+    // nao funcionaria contra uma coluna `Int4`. Vale tambem para o driver
+    // ODBC e para o protocolo do PostgreSQL(R), onde TODO parametro chega
+    // como texto.
+    //
+    // E so alargar: quem manda numero continua igual, e texto que nao e
+    // numero continua recusado com o mesmo erro de tipo.
+    let inteiro = || -> Option<i64> {
+        match j {
+            Json::Texto(t) => t.trim().parse::<i64>().ok(),
+            outro => outro.inteiro(),
+        }
+    };
+
     Ok(match ty {
         ColumnType::Bool => match j {
             Json::Bool(b) => Value::Bool(*b),
@@ -389,10 +408,10 @@ pub fn json_para_valor(j: &Json, ty: &ColumnType) -> Result<Value> {
             _ => return Err(erro("booleano")),
         },
         ColumnType::Int1 | ColumnType::Int2 | ColumnType::Int4 | ColumnType::Int8 => {
-            Value::Int(j.inteiro().ok_or_else(|| erro("inteiro"))?)
+            Value::Int(inteiro().ok_or_else(|| erro("inteiro"))?)
         }
         ColumnType::UInt1 | ColumnType::UInt2 | ColumnType::UInt4 | ColumnType::UInt8 => {
-            let n = j.inteiro().ok_or_else(|| erro("inteiro sem sinal"))?;
+            let n = inteiro().ok_or_else(|| erro("inteiro sem sinal"))?;
             if n < 0 {
                 return Err(PhxError::Tipo(format!(
                     "{n} e negativo numa coluna sem sinal"
@@ -1138,5 +1157,75 @@ mod testes_metadados {
                 "erro {erro:?} nao menciona {pedaco:?}"
             );
         }
+    }
+}
+
+/// Inteiro escrito como texto.
+///
+/// O tradutor de SQL guarda todo literal numerico como texto -- pelo mesmo
+/// motivo que o `Decimal` daqui EXIGE texto: `f64` nao representa `1500.00`
+/// exatamente. Sem aceitar o texto, `WHERE id = 2` nao funcionaria contra uma
+/// coluna `Int4`, e o SELECT mais simples que existe morreria por tipo.
+#[cfg(test)]
+mod testes_inteiro_em_texto {
+    use super::*;
+
+    /// **O teste do comportamento VELHO, que e o que mais importa.** Alargar
+    /// nao pode mudar nada de quem ja mandava numero.
+    #[test]
+    fn numero_continua_valendo_exatamente_como_antes() {
+        assert_eq!(
+            json_para_valor(&Json::de_i64(42), &ColumnType::Int4).unwrap(),
+            Value::Int(42)
+        );
+        assert_eq!(
+            json_para_valor(&Json::de_u64(42), &ColumnType::UInt4).unwrap(),
+            Value::UInt(42)
+        );
+        assert_eq!(
+            json_para_valor(&Json::Nulo, &ColumnType::Int4).unwrap(),
+            Value::Null
+        );
+    }
+
+    #[test]
+    fn texto_com_numero_dentro_tambem_serve() {
+        assert_eq!(
+            json_para_valor(&Json::texto_de("42"), &ColumnType::Int4).unwrap(),
+            Value::Int(42)
+        );
+        assert_eq!(
+            json_para_valor(&Json::texto_de(" -7 "), &ColumnType::Int8).unwrap(),
+            Value::Int(-7)
+        );
+        assert_eq!(
+            json_para_valor(&Json::texto_de("42"), &ColumnType::UInt2).unwrap(),
+            Value::UInt(42)
+        );
+    }
+
+    /// E o que NAO e numero continua recusado, com o mesmo erro de tipo:
+    /// alargar nao pode virar engolir.
+    #[test]
+    fn texto_que_nao_e_numero_continua_recusado() {
+        let e = json_para_valor(&Json::texto_de("abc"), &ColumnType::Int4).unwrap_err();
+        assert_eq!(e.nome(), "TIPO_INVALIDO", "{e}");
+        assert!(e.to_string().contains("inteiro"), "{e}");
+
+        // Negativo em coluna sem sinal continua recusado dizendo por que.
+        let e = json_para_valor(&Json::texto_de("-1"), &ColumnType::UInt4).unwrap_err();
+        assert!(e.to_string().contains("negativo"), "{e}");
+
+        // E o decimal continua exigindo texto e recusando numero -- esta
+        // regra nao foi tocada.
+        let e = json_para_valor(
+            &Json::Numero(12.34),
+            &ColumnType::Decimal {
+                precisao: 10,
+                escala: 2,
+            },
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("centavo"), "{e}");
     }
 }

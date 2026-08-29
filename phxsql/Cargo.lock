@@ -19,6 +19,7 @@ name = "phxsql-server"
 version = "0.17.0"
 dependencies = [
  "phxsql-core",
+ "phxsql-sql",
  "phxsql-store",
 ]
 
