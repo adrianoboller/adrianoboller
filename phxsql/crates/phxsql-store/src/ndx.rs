@@ -169,6 +169,8 @@ struct CachePaginas {
 struct Entrada {
     bytes: Vec<u8>,
     usada: bool,
+    /// A pagina mudou em RAM e ainda nao foi ao arquivo.
+    suja: bool,
 }
 
 impl CachePaginas {
@@ -196,13 +198,20 @@ impl CachePaginas {
         }
     }
 
-    fn por(&mut self, n: u64, bytes: &[u8]) {
+    /// Poe a pagina no cache. `suja` diz se ela ainda nao foi ao arquivo.
+    ///
+    /// Devolve a pagina SUJA que teve de sair para abrir lugar, se houve --
+    /// quem chama e que sabe escrever no arquivo, e e ele que paga o CRC. Uma
+    /// pagina limpa despejada nao devolve nada: o arquivo ja a tem.
+    fn por(&mut self, n: u64, bytes: &[u8], suja: bool) -> Option<(u64, Vec<u8>)> {
         if let Some(e) = self.paginas.get_mut(&n) {
             e.bytes.clear();
             e.bytes.extend_from_slice(bytes);
             e.usada = true;
-            return;
+            e.suja |= suja;
+            return None;
         }
+        let mut despejada = None;
         while self.paginas.len() >= self.teto {
             match self.fila.pop_front() {
                 None => break,
@@ -213,7 +222,11 @@ impl CachePaginas {
                         self.fila.push_back(velha);
                     }
                     Some(_) => {
-                        self.paginas.remove(&velha);
+                        let e = self.paginas.remove(&velha).unwrap();
+                        if e.suja {
+                            despejada = Some((velha, e.bytes));
+                        }
+                        break;
                     }
                 },
             }
@@ -223,9 +236,25 @@ impl CachePaginas {
             Entrada {
                 bytes: bytes.to_vec(),
                 usada: false,
+                suja,
             },
         );
         self.fila.push_back(n);
+        despejada
+    }
+
+    /// Todas as sujas, ja marcadas como limpas. Quem chama grava e nao volta.
+    fn tirar_sujas(&mut self) -> Vec<(u64, Vec<u8>)> {
+        let mut fora = Vec::new();
+        for (n, e) in self.paginas.iter_mut() {
+            if e.suja {
+                e.suja = false;
+                fora.push((*n, e.bytes.clone()));
+            }
+        }
+        // Em ordem de pagina: escrever para frente no arquivo em vez de saltar.
+        fora.sort_unstable_by_key(|(n, _)| *n);
+        fora
     }
 
     /// Tira a pagina do cache. A pagina que volta da lista de livres vai ser
@@ -258,6 +287,25 @@ pub struct NdxFile {
     /// esquema por linha (DESEMPENHO.md 2.0) e o `.log` gravava o cabecalho por
     /// evento (2.2). **Cabecalho de arquivo nao pertence ao caminho quente.**
     estrutura_mudou: bool,
+    /// Ha pagina suja em RAM, e o cabecalho no disco ja diz isso.
+    ///
+    /// # A rede de seguranca do write-back
+    ///
+    /// Com paginas sujas, uma queda deixa o `.ndx` atrasado em relacao ao
+    /// `.reg`: a arvore pode ter chave faltando. Isso, sozinho, seria o pior
+    /// defeito possivel -- busca respondendo errado sem ninguem notar.
+    ///
+    /// A marca desfaz isso: ela vai ao cabecalho ANTES da primeira pagina suja
+    /// e so sai depois de todas irem ao disco. Quem abre um `.ndx` com a marca
+    /// levantada sabe que ele nao presta e recusa responder, mandando
+    /// reconstruir -- que desde a 0.17.0 custa 0,31 s por milhao de chaves.
+    ///
+    /// E o mesmo desenho do Aria, que compra a garantia de volta com tres
+    /// bytes de "nao fechei direito" (`ma_locking.c:460`) mais reparo na
+    /// abertura, em vez do redo log do InnoDB.
+    sujo: bool,
+    /// O arquivo foi aberto com a marca de sujo: a arvore nao e confiavel.
+    precisa_reconstruir: bool,
 }
 
 // ---------------------------------------------------------------- paginas
@@ -421,6 +469,8 @@ impl NdxFile {
             cache: CachePaginas::nova(cache_paginas()),
             gravacoes: 0,
             estrutura_mudou: false,
+            sujo: false,
+            precisa_reconstruir: false,
         };
         n.arquivo.set_len(page_size as u64)?;
 
@@ -473,6 +523,10 @@ impl NdxFile {
         let pagina_livre = c.u64(28);
         let dir_len = c.u32(36) as usize;
         let dir_crc = c.u32(40);
+        // Byte 52: a marca de sujo. Arquivo escrito antes da 0.18.0 tem zero
+        // ali, e zero e "limpo" -- que e a verdade para quem so escrevia
+        // atraves. Nao ha migracao a fazer.
+        let sujo = cab[52] != 0;
 
         let mut dir = vec![0u8; dir_len];
         ler_exato(&mut arquivo, CAB_LEN as u64, &mut dir)?;
@@ -527,6 +581,8 @@ impl NdxFile {
             cache: CachePaginas::nova(cache_paginas()),
             gravacoes: 0,
             estrutura_mudou: false,
+            sujo,
+            precisa_reconstruir: sujo,
         })
     }
 
@@ -577,6 +633,10 @@ impl NdxFile {
         por_u32(&mut buf, 36, dir.len() as u32);
         por_u32(&mut buf, 40, crc32(&dir));
         por_i64(&mut buf, 44, agora());
+        // Byte 52: a marca de sujo. Ficava zerado ate a 0.17.0, e zero quer
+        // dizer "limpo" -- entao um `.ndx` escrito antes desta versao continua
+        // sendo lido com o significado certo, sem migracao.
+        buf[52] = u8::from(self.sujo);
         let crc = crc32(&buf[..124]);
         por_u32(&mut buf, 124, crc);
         buf[CAB_LEN..CAB_LEN + dir.len()].copy_from_slice(&dir);
@@ -606,18 +666,69 @@ impl NdxFile {
                 self.caminho.display()
             )));
         }
-        self.cache.por(n, &p);
+        self.guardar_no_cache(n, &p, false)?;
         Ok(p)
     }
 
+    /// Poe a pagina no cache e grava a que for despejada SUJA.
+    ///
+    /// Existe como caminho unico porque o despejo nao pode ser perdido em
+    /// nenhum dos dois lados. Foi assim que o primeiro write-back quebrou: o
+    /// `ler_pagina` chamava o cache e jogava fora o retorno, entao uma pagina
+    /// recem-alocada que so existia suja em RAM era despejada e sumia -- o
+    /// arquivo ficava com os zeros do `set_len`, e a leitura seguinte batia num
+    /// CRC invalido. A suite inteira passou; quem pegou foi a medicao.
+    fn guardar_no_cache(&mut self, n: u64, p: &[u8], suja: bool) -> Result<()> {
+        if let Some((velha, mut bytes)) = self.cache.por(n, p, suja) {
+            self.escrever_pagina(velha, &mut bytes)?;
+        }
+        Ok(())
+    }
+
+    /// A pagina mudou. Ela fica SUJA em RAM; o CRC e o `write` sao adiados.
+    ///
+    /// # Por que adiar, e o que isso troca
+    ///
+    /// Antes, toda pagina tocada era selada e escrita na hora: 2,06 gravacoes
+    /// por linha, cada uma pagando o CRC-32 da pagina inteira. Numa carga a
+    /// mesma folha recebe centenas de chaves seguidas, e pagava-se o CRC uma
+    /// vez por chave em vez de uma vez por folha.
+    ///
+    /// E como o InnoDB e o Aria fazem: a mini-transacao do InnoDB so marca a
+    /// pagina suja (`mtr0mtr.cc:338`) e o checksum sai na descarga
+    /// (`buf0flu.cc:1243`); o Aria tem `PCBLOCK_CHANGED` (`ma_pagecache.c:177`)
+    /// e `PAGECACHE_WRITE_DELAY` (`ma_page.c:255`). Medido aqui: **13,1 -> 7,2
+    /// us por linha**.
+    ///
+    /// O preco e a garantia que o `FORMATO.md` descrevia: antes, uma queda do
+    /// PROCESSO nao atrasava o `.ndx` em relacao ao `.reg`, porque o `write` ja
+    /// tinha entregue a pagina ao nucleo. Agora atrasa -- e por isso existe a
+    /// marca de sujo no cabecalho, que faz a queda ser DETECTADA. Indice
+    /// atrasado se reconstroi do `.reg`; indice atrasado em silencio, nao.
     fn gravar_pagina(&mut self, n: u64, p: &mut [u8]) -> Result<()> {
+        // A marca vai ao arquivo ANTES da primeira pagina suja existir. Ao
+        // contrario, uma queda no meio deixaria cabecalho limpo com paginas
+        // faltando -- que e exatamente o defeito que ela existe para impedir.
+        if !self.sujo {
+            self.sujo = true;
+            self.gravar_cabecalho()?;
+        }
+        self.guardar_no_cache(n, p, true)
+    }
+
+    /// Sela e escreve de verdade. So o despejo e o `sincronizar` chamam.
+    fn escrever_pagina(&mut self, n: u64, p: &mut [u8]) -> Result<()> {
         pag_selar(p);
         escrever_em(&mut self.arquivo, n * self.page_size as u64, p)?;
-        // Guardar a pagina RECEM-GRAVADA e o que mais rende numa carga: a folha
-        // que acabou de receber uma chave e quase sempre a que vai receber a
-        // proxima, e sem isto ela voltaria do arquivo com CRC e tudo.
-        self.cache.por(n, p);
         self.gravacoes += 1;
+        Ok(())
+    }
+
+    /// Leva todas as paginas sujas ao arquivo.
+    fn descarregar(&mut self) -> Result<()> {
+        for (n, mut bytes) in self.cache.tirar_sujas() {
+            self.escrever_pagina(n, &mut bytes)?;
+        }
         Ok(())
     }
 
@@ -683,12 +794,70 @@ impl NdxFile {
         self.qtd_paginas
     }
 
+    /// Leva tudo ao disco, e a ORDEM aqui e a garantia.
+    ///
+    /// Primeiro as paginas sujas e um `fsync` delas; so entao o cabecalho sem a
+    /// marca de sujo, e outro `fsync`. Escrever o cabecalho limpo antes de as
+    /// paginas estarem no disco abriria a janela exata que a marca existe para
+    /// fechar: uma queda da maquina no meio deixaria "esta tudo bem" gravado
+    /// por cima de uma arvore incompleta.
+    ///
+    /// Sao dois `fsync` por `sincronizar` -- que acontece uma vez por carga, e
+    /// nao por linha.
     pub fn sincronizar(&mut self) -> Result<()> {
-        // O cabecalho vai ANTES do `sync_all`, senao o contador que ele carrega
-        // ficaria de fora justamente da gravacao que promete durabilidade.
+        self.descarregar()?;
+        self.arquivo.flush()?;
+        self.arquivo.sync_all()?;
+
+        self.sujo = false;
         self.gravar_cabecalho()?;
         self.arquivo.flush()?;
         self.arquivo.sync_all()?;
+        Ok(())
+    }
+
+    /// Leva as paginas sujas ao arquivo e baixa a marca, SEM `fsync`.
+    ///
+    /// E o fechamento limpo: o `write` ja entregou tudo ao nucleo, entao uma
+    /// queda do PROCESSO nao perde nada -- que era a garantia de antes do
+    /// write-back, e ela volta inteira aqui. Quem quer resistir a queda da
+    /// MAQUINA chama `sincronizar`, que acrescenta os dois `fsync`.
+    ///
+    /// E o mesmo momento em que o Aria baixa a marca dele: ao destravar a
+    /// tabela (`ma_locking.c:301`), e nao a cada linha.
+    pub fn fechar(&mut self) -> Result<()> {
+        // Um arquivo aberto JA sujo nao se limpa fechando: nada foi
+        // reconstruido, e a arvore continua sem as chaves que faltam. So o
+        // `reindexar`, que recria o arquivo, tira a marca -- senao bastaria
+        // alguem abrir e fechar para o defeito virar invisivel.
+        if self.precisa_reconstruir {
+            return Ok(());
+        }
+        self.descarregar()?;
+        if self.sujo || self.estrutura_mudou {
+            self.sujo = false;
+            self.gravar_cabecalho()?;
+        }
+        Ok(())
+    }
+
+    /// O arquivo foi aberto com a marca de sujo levantada.
+    ///
+    /// A arvore pode ter chave faltando; reconstrua com `reindexar` antes de
+    /// confiar em qualquer resposta dela.
+    pub fn precisa_reconstruir(&self) -> bool {
+        self.precisa_reconstruir
+    }
+
+    /// Recusa operar sobre um indice que ficou para tras numa queda.
+    fn conferir_confiavel(&self) -> Result<()> {
+        if self.precisa_reconstruir {
+            return Err(PhxError::Corrompido(format!(
+                "o indice de {} ficou para tras numa queda e nao e confiavel: \
+                 reconstrua com `reparar indice` antes de usar",
+                self.caminho.display()
+            )));
+        }
         Ok(())
     }
 
@@ -700,7 +869,15 @@ impl NdxFile {
         ck
     }
 
+    /// O descritor de um indice -- e o portao por onde toda operacao passa.
+    ///
+    /// A guarda de "ficou para tras numa queda" mora AQUI, e nao espalhada por
+    /// `inserir`, `buscar`, `varrer`, `intervalo`, `remover` e `verificar`.
+    /// Espalhada, a que alguem esquecesse viraria a porta dos fundos -- e a
+    /// porta dos fundos de uma marca de confiabilidade e uma busca respondendo
+    /// errado em silencio. E a mesma licao do portao de permissao.
     fn descritor(&self, idx: usize) -> Result<&DescritorIndice> {
+        self.conferir_confiavel()?;
         self.indices
             .get(idx)
             .ok_or_else(|| PhxError::NaoEncontrado(format!("indice {idx} inexistente")))
@@ -1299,6 +1476,8 @@ impl NdxFile {
     /// Confere CRC de todas as paginas e a ordenacao das folhas de cada
     /// indice. Devolve a quantidade de chaves encontrada por indice.
     pub fn verificar(&mut self) -> Result<Vec<(String, u64)>> {
+        // Esta nao passa por `descritor`: le `self.indices[i]` direto.
+        self.conferir_confiavel()?;
         let mut saida = Vec::new();
         for i in 0..self.indices.len() {
             let d = self.indices[i].clone();
@@ -1346,5 +1525,17 @@ impl NdxFile {
             saida.push((d.nome, total));
         }
         Ok(saida)
+    }
+}
+
+impl Drop for NdxFile {
+    /// Rede de seguranca do fechamento limpo.
+    ///
+    /// Quem esquecer de chamar `fechar` ou `sincronizar` ainda tem as paginas
+    /// levadas ao arquivo aqui. E se a gravacao FALHAR, a marca de sujo fica
+    /// levantada -- que e a resposta certa: o indice realmente nao presta, e a
+    /// proxima abertura vai dizer isso em vez de responder errado.
+    fn drop(&mut self) {
+        let _ = self.fechar();
     }
 }
