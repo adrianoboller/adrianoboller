@@ -11,8 +11,24 @@
    as cores explicitamente e nao depende do tema de quem abre. */
 :root{
   --fundo:#010418; --painel:#0a1122; --painel-2:#0f182c; --realce:#152238;
+  /* `--painel-3` e a superficie de HOVER do cromo (barra de ferramentas e
+     menu). Ficou tres versoes sendo usada sem nunca ter sido definida: o
+     `var()` sem valor nao cai no anterior, invalida a declaracao inteira, e
+     o fundo virava transparente -- o hover do menu e da barra nao pintava
+     nada. Fica entre `--painel-2` e `--realce`, que e onde o desenho a
+     colocava. */
+  --painel-3:#131d33;
+  /* A bolinha da ferramenta que ainda nao existe. Mesma historia: `--pend`
+     era usada em `background` e nunca definida, entao a tarja «a fazer»
+     simplesmente NAO APARECIA. E um aviso, e aviso e ambar. */
+  --pend:#ffc43d;
   --linha:#1e2940; --linha-forte:#2b3a56;
-  --texto:#dde2eb; --texto-2:#a8b0c0; --texto-3:#7c8598;
+  /* `--texto-3` media 4,30:1 sobre `--realce` -- abaixo dos 4,5:1. Ele e o
+     token de texto apagado MAIS usado da pagina (cabecalho de tabela, rotulo
+     de KPI, legenda de cartao), entao a falha aparecia em toda tela com uma
+     linha selecionada. Clareado ate passar no PIOR fundo: 4,78:1 sobre
+     `--realce` e 5,30:1 sobre `--painel-2`. */
+  --texto:#dde2eb; --texto-2:#a8b0c0; --texto-3:#848da0;
   --laranja:#ff8a1c; --ambar:#ffc43d; --vermelhao:#ff4d10; --vermelho:#ff5f5f;
   --reg:#5fa6e8; --ndx:#b394f0; --bin:#3fc8d4; --memo:#7bcb6a; --log:#ff5f5f;
   --ok:#6cc98c; --aviso:#ffc43d;
@@ -23,6 +39,10 @@
   --acao-incluir:#6cc98c; --acao-alterar:#ffc43d; --acao-excluir:#ff5f5f;
   --acao-marcar:#ff8fc7;  --acao-consultar:#5fa6e8;
   --barra:52px; --arvore:268px;
+  /* A largura VIVA da coluna da arvore. O painel retratil mexe nela, e nao em
+     `--arvore`: assim a largura escolhida no arrasto sobrevive a recolher e
+     expandir. Recolhido, esta vale 0; pinado e aberto, vale `--arvore`. */
+  --arvore-col:var(--arvore);
   --sombra-fenix:0 6px 22px rgba(255,77,16,.28);
   --brilho-entrada:#0d1830; --tinta-botao:#160a00;
 }
@@ -36,15 +56,25 @@
    entre si E do fundo, e as do tema escuro somem no branco. */
 :root[data-tema="claro"]{
   --fundo:#f7f5f2; --painel:#ffffff; --painel-2:#f2efeb; --realce:#e9e4de;
+  --painel-3:#ece7e1; --pend:#a06a00;
   --linha:#ded7cf; --linha-forte:#c4bab0;
-  --texto:#1a1210; --texto-2:#4a3f3a; --texto-3:#7a6d66;
+  /* `--texto-3` era `#7a6d66` e MEDIA 4,36:1 sobre `--painel-2` e 3,95:1
+     sobre `--realce` -- reprovado nos dois. Como no escuro, ele carrega o
+     cabecalho de tabela, o rotulo do KPI e a legenda do cartao, que moram
+     justamente sobre `--painel-2`. Escurecido ate passar no pior fundo:
+     4,94:1 sobre `--realce` e 5,45:1 sobre `--painel-2`. */
+  --texto:#1a1210; --texto-2:#4a3f3a; --texto-3:#6b5e57;
   --laranja:#c63c0a; --ambar:#a06a00; --vermelhao:#c63c0a; --vermelho:#b71414;
   --reg:#1f5c93; --ndx:#6a44a8; --bin:#0e7a85; --memo:#37702e; --log:#b71414;
   --ok:#2f7a3e; --aviso:#8a6a1f;
   /* No papel as cinco escurecem: verde e rosa claros dao menos de 4,5:1 sobre
      branco, que e o minimo para texto. E a mesma adaptacao que o vermelhao da
      marca ja fazia. */
-  --acao-incluir:#2f7a3e; --acao-alterar:#8a6a1f; --acao-excluir:#b71414;
+  /* O amarelo do «altera» media 4,40:1 sobre `--painel-2` -- e ele e COR DE
+     TEXTO no botao de contorno, entao 4,5:1 e o piso, nao 3:1. Escurecido o
+     minimo que resolve: 5,20:1 sobre `--painel-2` e 4,72:1 sobre `--realce`,
+     e continua sendo o mesmo ocre da familia. */
+  --acao-incluir:#2f7a3e; --acao-alterar:#7d5f18; --acao-excluir:#b71414;
   --acao-marcar:#b5257f;  --acao-consultar:#1f5c93;
   --sombra-fenix:0 6px 18px rgba(198,60,10,.18);
   --brilho-entrada:#efe7dd; --tinta-botao:#fff6f0;
@@ -108,9 +138,14 @@ input:focus,select:focus{border-color:var(--laranja);outline:none}
 .botao:hover{background:var(--ambar)}
 .botao.secundario{background:transparent;border:1px solid var(--linha-forte);color:var(--texto-2);width:auto;padding:7px 14px;font-weight:500}
 .botao.secundario:hover{border-color:var(--laranja);color:var(--texto)}
-.recado{margin-top:14px;font-size:12.5px;min-height:18px}
-.recado.erro{color:var(--vermelho)}
-.recado.info{color:var(--texto-3)}
+/* Escopado dentro de `#entrada`: a barra de cima tem um `<span class="recado"
+   id="aviso">` que e OUTRO componente, e estava herdando daqui um
+   `margin-top:14px` -- medido no navegador. Numa barra de 52px com
+   `align-items:center`, essa margem desloca a pilula de aviso para baixo do
+   eixo, e ninguem olhando o codigo do aviso encontraria a causa. */
+#entrada .recado{margin-top:14px;font-size:12.5px;min-height:18px}
+#entrada .recado.erro{color:var(--vermelho)}
+#entrada .recado.info{color:var(--texto-3)}
 .modo{
   margin-top:20px;padding-top:16px;border-top:1px solid var(--linha);
   font-size:11.5px;color:var(--texto-3);line-height:1.5;
@@ -118,42 +153,65 @@ input:focus,select:focus{border-color:var(--laranja);outline:none}
 
 /* ----------------------------------------------------------------- barra */
 #app{display:none;height:100%;grid-template-rows:var(--barra) auto auto 1fr;
-  grid-template-columns:var(--arvore) 1fr;
+  grid-template-columns:var(--arvore-col) 1fr;
   grid-template-areas:"barra barra" "menu menu" "tools tools" "arvore corpo"}
 #app.ativo{display:grid}
+/* `100dvh` acompanha a barra do navegador do celular, que cresce e encolhe
+   enquanto se rola. Com `100%` a ultima faixa da tela fica embaixo do cromo
+   do navegador. Quem nao conhece a unidade ignora a linha e fica com o 100%. */
+#app.ativo{height:100dvh}
+/* Todo filho de grid nasce com `min-width:auto`, que quer dizer "nao encolha
+   abaixo do seu conteudo". Numa coluna estreita e isso que faz a tabela
+   EMPURRAR a coluna em vez de rolar dentro dela -- e foi o que cortou o
+   conteudo no celular. */
+#app > *{min-width:0;min-height:0}
 
 /* ------------------------------------------------------- barra de ferramentas
-   Dezesseis botoes, e nem todos tem motor por tras. Os que ainda nao existem
+   Trinta botoes, e nem todos tem motor por tras. Os que ainda nao existem
    aparecem apagados e com a tarja "a fazer" -- clicar neles diz o que falta e
    de que dependem, em vez de nao fazer nada.
 
    Botao que parece funcionar e nao funciona custa mais caro do que botao que
-   falta: o primeiro so se descobre no meio do trabalho. */
-.ferramentas{
+   falta: o primeiro so se descobre no meio do trabalho.
+
+   ESTA BARRA E `#ferramentas`, PELO ID, E NAO PELA CLASSE. Havia dois
+   componentes diferentes com o nome `.ferramentas`: esta barra da moldura e a
+   fila de filtros que algumas telas desenham dentro do painel. A segunda vem
+   depois na folha e GANHAVA -- trocava o `gap` de 2px por 12px, colava um
+   `margin-bottom:14px` na barra da moldura e, o que mais aparecia, ligava
+   `flex-wrap:wrap` numa barra escrita para ROLAR. Era dai que saiam as duas
+   linhas no desktop e as SETE linhas no celular, comendo a tela inteira antes
+   de o conteudo comecar. Pelo id os dois nunca mais se encontram. */
+#ferramentas{
   grid-area:tools;display:flex;align-items:stretch;gap:2px;
-  padding:5px 8px;overflow-x:auto;overflow-y:hidden;
+  padding:5px 8px;overflow-x:auto;overflow-y:hidden;margin:0;
   background:var(--painel);border-bottom:1px solid var(--linha);
   scrollbar-width:thin;
+  /* Em tela larga sobra espaco e mostrar tudo vale mais que economizar
+     altura: duas fileiras cabem e nenhuma ferramenta fica escondida. O
+     `flex-wrap` volta a ser `nowrap` abaixo de 1025px, onde envolver
+     significaria sete fileiras. */
+  flex-wrap:wrap;
 }
-.ferramentas .fer{
+#ferramentas .fer{
   display:flex;flex-direction:column;align-items:center;gap:3px;
   background:none;border:1px solid transparent;border-radius:5px;
   padding:5px 9px 4px;min-width:62px;cursor:pointer;
   font-family:inherit;font-size:10px;line-height:1.15;color:var(--texto-2);
   white-space:nowrap;position:relative;flex:none;
 }
-.ferramentas .fer:hover{background:var(--painel-3);border-color:var(--linha-forte);color:var(--texto)}
-.ferramentas .fer:focus-visible{outline:2px solid var(--laranja);outline-offset:1px}
-.ferramentas .fer svg{width:19px;height:19px;display:block;flex:none}
+#ferramentas .fer:hover{background:var(--painel-3);border-color:var(--linha-forte);color:var(--texto)}
+#ferramentas .fer:focus-visible{outline:2px solid var(--laranja);outline-offset:1px}
+#ferramentas .fer svg{width:19px;height:19px;display:block;flex:none}
 /* A cor vem do proprio botao: cada ferramenta tem a sua, e o SVG a herda. */
-.ferramentas .fer svg *{stroke:currentColor}
-.ferramentas .fer .rot{color:var(--texto-2)}
-.ferramentas .fer:hover .rot{color:var(--texto)}
+#ferramentas .fer svg *{stroke:currentColor}
+#ferramentas .fer .rot{color:var(--texto-2)}
+#ferramentas .fer:hover .rot{color:var(--texto)}
 
 /* O que ainda nao existe: apagado, mas presente e clicavel. */
-.ferramentas .fer.afazer{opacity:.42}
-.ferramentas .fer.afazer:hover{opacity:.75}
-.ferramentas .fer.afazer::after{
+#ferramentas .fer.afazer{opacity:.42}
+#ferramentas .fer.afazer:hover{opacity:.75}
+#ferramentas .fer.afazer::after{
   content:"";position:absolute;top:4px;right:6px;width:5px;height:5px;
   border-radius:50%;background:var(--pend);
 }
@@ -229,7 +287,7 @@ tr.prof-mal td{background:color-mix(in srgb,var(--log) 8%,transparent)}
 
 .ficha-edit{
   display:grid;gap:13px;margin:16px 0;
-  grid-template-columns:repeat(auto-fit,minmax(210px,1fr));
+  grid-template-columns:repeat(auto-fit,minmax(min(210px,100%),1fr));
   background:var(--painel-2);border:1px solid var(--linha);
   border-radius:7px;padding:16px;
 }
@@ -363,7 +421,7 @@ table.montar.campos .pos{
 /* ------------------------------------------------- gestão de tabelas */
 .ops{
   display:grid;gap:10px;margin:16px 0;
-  grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+  grid-template-columns:repeat(auto-fit,minmax(min(280px,100%),1fr));
 }
 .op{
   display:flex;align-items:flex-start;gap:11px;text-align:left;cursor:pointer;
@@ -387,7 +445,7 @@ table.montar.campos .pos{
 /* ------------------------------------------------- formulário da nova tabela */
 .criar{margin:16px 0}
 .criar .bloco{
-  display:grid;gap:13px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
+  display:grid;gap:13px;grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr));
   background:var(--painel-2);border:1px solid var(--linha);border-radius:7px;padding:16px;
 }
 .criar label{display:flex;flex-direction:column;gap:5px;font-size:11.5px}
@@ -468,13 +526,8 @@ table.montar td{padding:5px 7px}
 }
 .form-consulta input:focus,.form-consulta select:focus{outline:none;border-color:var(--laranja)}
 
-.ferramentas .risco{
+#ferramentas .risco{
   width:1px;background:var(--linha);margin:4px 5px;flex:none;
-}
-
-@media (max-width:900px){
-  .ferramentas .fer{min-width:54px;padding:5px 6px 4px;font-size:9.5px}
-  .ferramentas .fer svg{width:17px;height:17px}
 }
 
 /* ------------------------------------------------------------ menu superior
@@ -563,11 +616,109 @@ body,.cartao,.barra,.arvore,table,td,th{
 .eu{font-size:12.5px;color:var(--texto-2)}
 .eu b{color:var(--texto);font-weight:600}
 
-/* ---------------------------------------------------------------- arvore */
-.arvore{
+/* ------------------------------------------------- painel lateral (a casca)
+   A arvore mora dentro de `.lateral`, que e quem ocupa a area do grid. Tres
+   estados, e eles sao DOIS booleanos e nao tres posicoes:
+
+     aberta=1 pin=1   fixa    -- ocupa coluna propria e EMPURRA o conteudo
+     aberta=1 pin=0   solta   -- flutua POR CIMA do conteudo, que fica inteiro
+     aberta=0         fechada -- some, e a coluna vale zero
+
+   O «solta» e o que da tela cheia ao conteudo sem tirar a navegacao do
+   alcance: ela volta com um clique e se fecha sozinha ao escolher alguma
+   coisa. O botao de reabrir mora na barra de cima, que nunca some. */
+.lateral{
   grid-area:arvore;background:var(--painel);border-right:1px solid var(--linha);
-  overflow-y:auto;padding:12px 0 24px;
+  display:flex;flex-direction:column;min-height:0;position:relative;
+  transition:transform .18s ease,opacity .18s ease;
 }
+.lateral-topo{
+  display:flex;align-items:center;gap:8px;padding:8px 8px 8px 16px;
+  border-bottom:1px solid var(--linha);flex:none;
+}
+.lateral-tit{
+  font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:9.5px;
+  letter-spacing:.16em;text-transform:uppercase;color:var(--texto-3);flex:1;
+}
+.lateral-pin{
+  background:none;border:1px solid var(--linha-forte);border-radius:5px;
+  width:26px;height:26px;display:grid;place-items:center;padding:0;
+  font-size:12px;line-height:1;color:var(--texto-3);flex:none;
+}
+.lateral-pin:hover{border-color:var(--laranja);color:var(--laranja)}
+.lateral-pin[aria-pressed="true"]{color:var(--laranja);border-color:var(--laranja)}
+.lateral-pin:disabled{opacity:.4;cursor:default}
+.lateral-nota{
+  flex:none;margin:0;padding:9px 16px 12px;border-top:1px solid var(--linha);
+  font-size:10px;line-height:1.45;color:var(--texto-3);
+}
+.lateral-nota b{font-weight:600;color:var(--texto-2)}
+/* Os dois botoes da lateral desenham com SVG de traco, como a barra de
+   ferramentas: a cor vem do botao e o desenho a herda. */
+.lateral-bt svg,.lateral-pin svg{width:17px;height:17px;display:block}
+.lateral-bt svg *,.lateral-pin svg *{stroke:currentColor}
+
+/* O botao de recolher/reabrir, na barra de cima. */
+.lateral-bt{
+  background:none;border:1px solid var(--linha-forte);border-radius:6px;
+  width:32px;height:28px;display:grid;place-items:center;padding:0;
+  font-size:14px;line-height:1;color:var(--texto-2);flex:none;
+}
+.lateral-bt:hover{border-color:var(--laranja);color:var(--laranja)}
+
+/* SOLTA: a COLUNA vira zero (mais abaixo) e a casca fica com a largura dela
+   mesma. Um item de grid mais largo que a sua faixa transborda por cima do
+   vizinho em vez de empurra-lo -- e e exatamente o que se quer aqui, sem
+   precisar calcular onde a linha da arvore comeca para um `position:absolute`
+   (a barra, o menu e as ferramentas tem altura variavel). */
+#app[data-lateral-solta="1"] .lateral{
+  width:var(--arvore);z-index:70;
+  box-shadow:0 18px 46px rgba(0,0,0,.42);
+}
+/* FECHADA: some de vez. `visibility` alem do `transform` para o que esta
+   escondido tambem sair da ordem de tabulacao -- painel invisivel que ainda
+   pega o Tab e uma armadilha de teclado. */
+#app[data-lateral-aberta="0"] .lateral{
+  transform:translateX(-100%);visibility:hidden;opacity:0;
+}
+#app[data-lateral-aberta="0"] .pega-arvore{display:none}
+
+/* O veu do modo gaveta. So no celular: no desktop a solta se fecha ao clicar
+   fora sem precisar escurecer a tela inteira.
+
+   Ele cobria a BARRA DE CIMA junto -- medido com `elementFromPoint`, o que
+   respondia no lugar do botao de recolher, do tema e do Sair era o proprio
+   veu. O painel continuava "sempre com botao de voltar" na aparencia e sem
+   botao nenhum no dedo: tocar ali fechava a gaveta pelo veu, por acidente, e
+   o Sair simplesmente nao funcionava com a gaveta aberta. A barra sobe acima
+   do veu; o menu, as ferramentas e o conteudo ficam por baixo, que e o que a
+   gaveta esta substituindo enquanto esta aberta. */
+.veu-arvore{
+  position:fixed;inset:0;background:rgba(1,4,24,.5);z-index:65;
+  border:0;padding:0;
+}
+.barra{position:relative;z-index:75}
+
+/* A pega de arrastar a largura. Fina, mas com area de toque de 9px, porque
+   1px so se pega com mouse e sorte. */
+.pega-arvore{
+  grid-area:arvore;justify-self:end;align-self:stretch;
+  width:9px;margin-right:-5px;cursor:col-resize;z-index:71;
+  background:transparent;
+}
+.pega-arvore:hover,.pega-arvore:focus-visible{
+  background:linear-gradient(90deg,transparent 3px,var(--laranja) 3px,var(--laranja) 5px,transparent 5px);
+}
+#app[data-lateral-solta="1"] .pega-arvore{display:none}
+
+.arvore{
+  flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:12px 0 24px;
+}
+
+/* A COLUNA. Só a lateral fixa e aberta ocupa largura; solta e fechada valem
+   zero, e ai o conteudo recebe a tela inteira. Uma regra so, num lugar so. */
+#app[data-lateral-aberta="0"],
+#app[data-lateral-solta="1"]{--arvore-col:0px}
 .grupo .mais{
   float:right;background:none;border:1px solid var(--linha-forte);
   border-radius:4px;width:18px;height:18px;line-height:1;padding:0;
@@ -609,8 +760,20 @@ body,.cartao,.barra,.arvore,table,td,th{
 }
 .aba:hover{color:var(--texto-2)}
 .aba.sel{color:var(--laranja);border-bottom-color:var(--laranja);font-weight:600}
-.painel{flex:1;overflow:auto;padding:20px 22px 40px}
+/* Pelo ID, e nao pela classe. A arvore tem um no `<div class="no painel">` --
+   o atalho para a tela do Painel --, e ele estava recebendo o estilo da AREA
+   DE CONTEUDO: medido no navegador, aquele no ficava com 76px de altura e
+   `padding:20px 22px 40px`, contra 28px e `6px 16px` de todos os outros nos
+   da arvore. Era o bloco gordo no alto da lista, e o `.no.painel` logo abaixo
+   (que so acerta o peso da fonte) e o curativo que alguem colou sem achar a
+   causa. Dois componentes, um nome: quem quiser a area de conteudo pede
+   `#painel`. */
+#painel{flex:1;overflow:auto;padding:20px 22px 40px}
 
+/* A fila de filtros DENTRO do painel -- a contagem, a ordem, a paginacao.
+   Nao confundir com `#ferramentas`, a barra da moldura: sao dois componentes,
+   e por muito tempo dividiram este nome de classe. Ver o comentario la em
+   cima. Quem quiser a barra da moldura pede pelo id. */
 .ferramentas{display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap}
 .ferramentas label{margin:0}
 .ferramentas select,.ferramentas input{width:auto;padding:6px 10px;font-size:13px}
@@ -619,7 +782,7 @@ body,.cartao,.barra,.arvore,table,td,th{
 
 /* ------------------------------------------------------------------ painel */
 .no.painel{font-weight:600;margin-bottom:4px}
-.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:12px;
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(132px,100%),1fr));gap:12px;
       margin-bottom:22px}
 .kpi{background:var(--painel-2);border:1px solid var(--linha);border-radius:9px;
      padding:13px 15px}
@@ -632,7 +795,7 @@ body,.cartao,.barra,.arvore,table,td,th{
 .kpi.mal .v{color:var(--log)}
 /* align-items:start para carta de 1 item nao esticar ate a altura da de 12.
    O grid iguala a altura da linha por padrao, e sobra branco no meio. */
-.cartas{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px;
+.cartas{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(330px,100%),1fr));gap:16px;
         align-items:start}
 .carta{background:var(--painel-2);border:1px solid var(--linha);border-radius:10px;
        padding:15px 17px 12px}
@@ -653,7 +816,7 @@ body,.cartao,.barra,.arvore,table,td,th{
 @media (max-width:960px){.maquina{grid-template-columns:1fr}
                          .medidores{justify-content:center}}
 
-.formatos{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+.formatos{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(190px,100%),1fr));
           gap:10px;margin:6px 0 18px}
 .fmt{display:flex;flex-direction:column;align-items:flex-start;gap:3px;
      padding:12px 14px;background:var(--painel-2);border:1px solid var(--linha);
@@ -741,7 +904,7 @@ tr.balde-vazio{opacity:.45}
 td.num.mal{color:var(--log)}
 
 /* ----------------------------------------------------------------- juncoes */
-.vennes{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+.vennes{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(150px,100%),1fr));
         gap:10px;margin:18px 0}
 .venn{
   display:flex;flex-direction:column;align-items:center;gap:5px;padding:12px 8px 10px;
@@ -755,7 +918,7 @@ td.num.mal{color:var(--log)}
 .venn .v-sql{font-size:9.5px;font-family:"IBM Plex Mono",monospace;
              color:var(--texto-3);line-height:1.3}
 .venn .v-exp{font-size:10px;color:var(--texto-3);line-height:1.35}
-.un-lista{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+.un-lista{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(190px,100%),1fr));
           gap:6px;margin-bottom:16px}
 .un-item{display:flex;align-items:center;gap:8px;padding:8px 11px;margin:0;
          background:var(--painel-2);border:1px solid var(--linha);border-radius:6px;
@@ -798,7 +961,7 @@ td.num.mal{color:var(--log)}
 .dbl-titulo .leg{font-size:11px;color:var(--texto-3)}
 .dbl-titulo .cresce{flex:1}
 .dbl-titulo .botao{width:auto;padding:6px 12px;font-size:11.5px}
-.form-dbl{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));
+.form-dbl{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(230px,100%),1fr));
           gap:12px 16px;text-align:left}
 /* O `label` global e maiusculo e espacado -- bom para o rotulo, ruim para a
    dica embaixo do campo, que virava um grito. */
@@ -856,9 +1019,18 @@ tbody tr:hover{background:var(--painel-2)}
 td.dado{font-family:"IBM Plex Mono",monospace;font-size:12.5px}
 td.num{text-align:right;font-variant-numeric:tabular-nums}
 td.nulo{color:var(--texto-3);font-style:italic}
-.rolo{overflow:auto;border:1px solid var(--linha);border-radius:8px;background:var(--painel)}
+/* O contêiner de rolagem das grades largas. A rolagem e DELE, e nunca da
+   pagina: `overscroll-behavior-x:contain` impede que o gesto, ao chegar ao
+   fim da tabela, continue e arraste a pagina inteira de lado. */
+.rolo{overflow:auto;max-width:100%;overscroll-behavior-x:contain;
+      border:1px solid var(--linha);border-radius:8px;background:var(--painel)}
 
-.fichas{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1px;
+/* `minmax(min(160px,100%),1fr)` e nao `minmax(160px,1fr)`: o segundo diz "a
+   coluna nunca fica menor que 160px", e num painel de 76px isso nao encolhe,
+   TRANSBORDA -- e como o pai corta, a ficha ficava inalcancavel. O `min(...,
+   100%)` deixa a coluna ceder quando a largura disponivel e menor que o piso.
+   A mesma troca vale para as outras dez grades `auto-fit` da folha. */
+.fichas{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(160px,100%),1fr));gap:1px;
   background:var(--linha);border:1px solid var(--linha);border-radius:8px;overflow:hidden;margin-bottom:20px}
 .ficha{background:var(--painel);padding:13px 15px}
 .ficha .v{font-size:22px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
@@ -991,7 +1163,7 @@ svg.er.editor text{user-select:none;-webkit-user-select:none}
 td label,td .rot-dado{text-transform:none;letter-spacing:0;font-size:inherit;
   color:inherit;display:inline}
 .forma-job{
-  display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr));
   gap:12px 16px;margin:0 0 14px;
 }
 .forma-job label{
@@ -1025,6 +1197,135 @@ td label,td .rot-dado{text-transform:none;letter-spacing:0;font-size:inherit;
 .linha-job td.agenda-job{white-space:nowrap}
 .linha-job .botao.mini{margin:1px 3px 2px 0}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+/* =====================================================================
+   TRES TAMANHOS
+   =====================================================================
+   O console nasceu de desktop: `body{overflow:hidden}`, arvore fixa de 268px
+   e barra de ferramentas larga. Medido num celular de 390px, a conta era
+   cruel -- 268px de arvore deixavam 122px para o conteudo, e como `.corpo`
+   corta o que passa, o que sobrava do trabalho ficava INALCANCAVEL: as cinco
+   abas da tabela mediam 424px dentro de uma faixa de 122px, e a Integridade
+   nao tinha como ser clicada. Nao e uma tela apertada, e uma tela quebrada.
+
+   As tres faixas, e o que muda em cada uma:
+
+     ate 640px   celular  a lateral e gaveta (sempre sobreposta, com veu), a
+                          barra de ferramentas rola numa fileira so, os
+                          formularios caem para uma coluna e todo alvo de
+                          toque tem 40px
+     641-1024px  tablet   a lateral abre solta por padrao, a barra de
+                          ferramentas ainda rola numa fileira
+     1025px+     desktop  como sempre foi: lateral fixa e ferramentas em duas
+                          fileiras, que e onde mostrar tudo cabe
+
+   A regra que atravessa as tres: NADA rola de lado no corpo da pagina. O que
+   for largo demais rola DENTRO do seu proprio contêiner. */
+
+/* -------------------------------------------------- o que vale em toda tela */
+
+/* As abas mediam 424px e viviam num `.corpo` que corta. Agora elas rolam
+   sozinhas, e nenhuma aba fica fora de alcance. `flex:none` para o navegador
+   nao as espremer ate o rotulo sumir em vez de deixar rolar. */
+.abas{overflow-x:auto;overflow-y:hidden;scrollbar-width:thin}
+.aba{flex:none;white-space:nowrap}
+
+/* O menu superior tem nove titulos e passava da borda direita em qualquer
+   tela estreita -- e passava CORTADO, porque nada ali rolava. */
+.menubar{overflow-x:auto;overflow-y:hidden;scrollbar-width:thin}
+.menubar > .menu{flex:none}
+
+/* Os dois arcos e as barras de disco: lado a lado eles somavam 658px numa
+   tela de 390. Envolvem. */
+.medidores{flex-wrap:wrap}
+
+/* O `.rolo` ganhou `max-width` e `overscroll-behavior` la em cima, junto da
+   definicao -- duas regras para o mesmo componente em lugares diferentes e
+   como o `.ferramentas` comeca. */
+
+/* Tabela larga dentro do painel: o painel rola, e por isso nada fica
+   inalcancavel. Mas o cabecalho grudado precisa saber que a rolagem e
+   horizontal tambem, senao ele desliza para fora junto com o resto. */
+#painel{overscroll-behavior-x:contain}
+
+/* --------------------------------------------------- tablet e para baixo */
+@media (max-width:1024px){
+  /* Uma fileira que rola. Envolver aqui daria quatro a sete fileiras, e a
+     barra comeria a tela antes de o conteudo comecar. */
+  #ferramentas{flex-wrap:nowrap;overscroll-behavior-x:contain}
+  #ferramentas .fer{min-width:56px;padding:5px 7px 4px;font-size:9.5px}
+  #ferramentas .fer svg{width:18px;height:18px}
+
+  /* Duas colunas onde couber: o piso de 330px de `.cartas` deixava uma coluna
+     so em 820px, desperdicando metade da largura do tablet. */
+  .cartas{grid-template-columns:repeat(auto-fit,minmax(min(280px,100%),1fr))}
+}
+
+/* --------------------------------------------------------------- celular */
+@media (max-width:640px){
+  /* A lateral e SEMPRE gaveta aqui: 268px de uma tela de 390 nao e um painel
+     ao lado do trabalho, e a tela inteira. O `!important` e deliberado -- o
+     estado guardado no navegador nao pode reimpor a lateral fixa num celular
+     onde ela nao cabe. */
+  #app{--arvore-col:0px!important}
+  .lateral{width:min(var(--arvore),86vw);z-index:70;
+           box-shadow:0 18px 46px rgba(0,0,0,.42)}
+  .pega-arvore{display:none}
+
+  /* A barra de cima: sobra pouco, entao sai o que e enfeite e fica o que e
+     acao. A fita da versao e o papel do servidor vivem no Painel tambem. */
+  .barra{gap:8px;padding:0 10px}
+  .barra .fita{display:none}
+  .barra .marca span{display:none}
+  .barra .marca img{height:26px}
+  .barra .eu{max-width:9ch;overflow:hidden;text-overflow:ellipsis;
+             white-space:nowrap}
+  .barra .recado{max-width:16ch}
+
+  .cabecalho{padding:12px 14px 0}
+  .cabecalho h2{font-size:17px}
+  .abas{padding:10px 14px 0}
+  #painel{padding:14px 14px 32px}
+
+  /* Formulario de uma coluna. Duas colunas de 100px nao sao duas colunas, sao
+     dois campos ilegiveis. */
+  .ficha-edit,.criar .bloco,.form-dbl,.forma-job,.ops,.formatos,
+  .un-lista,.vennes,.pv-montagem,.dbl-corpo,.cartas{
+    grid-template-columns:1fr;
+  }
+  /* KPI e ficha NAO caem para uma coluna: o valor e curto («2», «172») e duas
+     por linha cabem em 390px. Uma so por linha viraria uma torre de rolagem
+     para ler seis numeros. Os cartoes de `.cartas`, que levam grafico, ficam
+     em uma -- ali a largura e o desenho. */
+  .kpis,.fichas{grid-template-columns:repeat(auto-fit,minmax(min(150px,100%),1fr))}
+
+  .acoes{gap:8px}
+  .acoes .botao{flex:1 1 auto}
+
+  /* A caixa de dialogo encostava nas bordas. */
+  .sobre{padding:10px}
+  .caixa{padding:16px 14px;max-height:90vh;overflow:auto}
+
+  /* A comparacao do conflito tem quatro colunas de texto: em 390px ela so
+     serve rolando dentro da propria caixa. */
+  table.conf{min-width:520px}
+  .caixa .rolo{overflow-x:auto}
+}
+
+/* ------------------------------------------------------------ dedo grosso
+   Ponteiro grosseiro e o teste certo, e nao a largura: um tablet de 1024px
+   tambem se usa com o dedo. 40px e o piso pedido. */
+@media (pointer:coarse){
+  #ferramentas .fer{min-height:44px}
+  .no{padding-top:9px;padding-bottom:9px;min-height:40px}
+  .aba{padding:11px 14px}
+  .lateral-bt,.lateral-pin{min-width:40px;min-height:40px}
+  .botao.mini,.mini{min-height:34px}
+  .menubar .titulo{height:40px}
+  .menubar .item{padding-top:10px;padding-bottom:10px}
+  .grupo .mais{width:28px;height:28px}
+  .tema{width:40px;height:34px}
+}
 </style>
 
 <!-- =========================== ENTRADA =========================== -->
@@ -1075,6 +1376,11 @@ td label,td .rot-dado{text-transform:none;letter-spacing:0;font-size:inherit;
 <!-- ============================= APP ============================= -->
 <div id="app">
   <div class="barra">
+    <!-- O botao de recolher/reabrir o painel lateral. Mora na barra, que
+         NUNCA some: painel que se fecha sem deixar por onde voltar e
+         armadilha, e a volta nao pode depender de lembrar um atalho. -->
+    <button class="lateral-bt" id="btLateral" aria-controls="arvore"
+            aria-expanded="true"></button>
     <span class="marca"><img src="data:image/png;base64,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" width="72" height="62"
       alt=""><span>Ph<span class="x">x</span>Sql</span></span>
     <span class="fita" id="fita">—</span>
@@ -1088,10 +1394,29 @@ td label,td .rot-dado{text-transform:none;letter-spacing:0;font-size:inherit;
 
   <div class="menubar" id="menubar" role="menubar" aria-label="Menu principal"></div>
 
-  <div class="ferramentas" id="ferramentas" role="toolbar"
+  <div id="ferramentas" role="toolbar"
        aria-label="Barra de ferramentas"></div>
 
-  <nav class="arvore" id="arvore" aria-label="Bancos e tabelas"></nav>
+  <!-- A arvore vive dentro de uma casca. O topo da casca NAO e refeito pelo
+       `montarArvore()`, que troca o `innerHTML` de `#arvore` inteiro -- e por
+       isso que o botao de pinar mora aqui fora, e nao ali dentro. -->
+  <div class="lateral" id="lateral">
+    <div class="lateral-topo">
+      <span class="lateral-tit">Navegação</span>
+      <button class="lateral-pin" id="btPinar"></button>
+    </div>
+    <nav class="arvore" id="arvore" aria-label="Bancos e tabelas"></nav>
+    <p class="lateral-nota">Recolhido, pinado e largura ficam
+      <b>neste navegador</b> — não no servidor.</p>
+  </div>
+  <!-- A pega de arrastar a largura da arvore. `separator` com valor porque
+       ela tambem anda pelo teclado, com as setas. -->
+  <div class="pega-arvore" id="pegaArvore" role="separator"
+       aria-orientation="vertical" aria-label="Largura do painel lateral"
+       tabindex="0"></div>
+  <!-- O veu do modo gaveta: escurece o conteudo e fecha ao toque de fora.
+       So aparece quando a arvore esta sobreposta. -->
+  <div class="veu-arvore" id="veuArvore" hidden></div>
 
   <main class="corpo">
     <div class="cabecalho">
@@ -1454,13 +1779,20 @@ async function abrirApp() {
   $("#entrada").style.display = "none";
   $("#app").classList.add("ativo");
   $("#selo").hidden = !est.demo;
+  const quemSou = est.usuario.login + (est.usuario.supervisor ? " · supervisor" : "");
   $("#eu").innerHTML = `<b>${esc(est.usuario.login)}</b>`
     + (est.usuario.supervisor ? " · supervisor" : "");
+  // Em tela estreita este pedaco corta com reticencias. Corte que avisa e
+  // honesto; corte que perde o dado nao -- o texto inteiro fica aqui.
+  $("#eu").title = quemSou;
   const p = await api("ping");
   $("#fita").textContent = `v${p.phxsql} · papel ${p.papel}`;
   ligarMenu();
   montarFerramentas();
   ligarAtalhos();
+  // Antes de montar a arvore: `montarArvore` termina clicando no Painel, e
+  // esse clique passa por `marcar`, que ja consulta o estado da lateral.
+  ligarLateral();
   await montarArvore();
   // O campo "Database" do login abre a arvore ja na primeira tabela
   // desse banco, em vez de deixar o usuario procurar.
@@ -1538,6 +1870,10 @@ async function montarArvore(abrirPainel = true) {
 function marcar(no) {
   document.querySelectorAll(".no.sel").forEach(x => x.classList.remove("sel"));
   no.classList.add("sel");
+  // Escolher e o fim do trabalho da gaveta: ela se fecha e devolve a tela.
+  // Pinada, fica -- e um unico lugar decide isso, porque toda escolha na
+  // arvore passa por aqui.
+  fecharSeSolta();
 }
 
 // =====================================================================
@@ -8385,6 +8721,221 @@ function ligarMenu() {
   });
 }
 
+
+// =====================================================================
+// Painel lateral: recolher, pinar, arrastar a largura
+// =====================================================================
+/* Sao DOIS booleanos, e nao tres botoes:
+ *
+ *   aberta   o painel esta na tela ou nao
+ *   pinada   aberto, ele ocupa COLUNA PROPRIA (empurra o conteudo) ou FLUTUA
+ *            por cima dele (e o conteudo fica com a tela inteira)
+ *
+ * Despinado, o painel se fecha sozinho depois que a pessoa escolhe alguma
+ * coisa nele -- e para isso que serve despinar. Pinado, ele fica: e o que
+ * "pinar" quer dizer, e por isso o estado tem de sobreviver ao recarregar.
+ *
+ * O botao de reabrir mora na barra de cima, que nunca some em nenhum dos tres
+ * estados. Painel que se fecha sem deixar por onde voltar e armadilha, e a
+ * volta nao pode depender de lembrar um atalho de teclado.
+ *
+ * Num celular a escolha nao existe: 268px de uma tela de 390 nao sao um painel
+ * ao LADO do trabalho, sao o trabalho inteiro. Abaixo de 640px ele e sempre
+ * gaveta, e o botao de pinar aparece desligado dizendo por que. */
+
+const CHAVE_LATERAL = "phxsql-lateral";
+const ARVORE_MIN = 180, ARVORE_MAX = 520, ARVORE_PADRAO = 268;
+
+const ICO_LATERAL = {
+  // Uma moldura com a coluna da esquerda marcada -- o desenho da propria
+  // tela --, mais a seta que diz para que lado o clique leva.
+  fechar: `<rect x="3" y="4.6" width="18" height="14.8" rx="2" stroke-width="1.5"/>`
+        + `<path d="M9.4 4.6v14.8" stroke-width="1.5"/>`
+        + `<path d="M17.2 9.6L14.8 12l2.4 2.4" stroke-width="1.5"`
+        + ` stroke-linecap="round" stroke-linejoin="round"/>`,
+  abrir:  `<rect x="3" y="4.6" width="18" height="14.8" rx="2" stroke-width="1.5"/>`
+        + `<path d="M9.4 4.6v14.8" stroke-width="1.5"/>`
+        + `<path d="M14.4 9.6L16.8 12l-2.4 2.4" stroke-width="1.5"`
+        + ` stroke-linecap="round" stroke-linejoin="round"/>`,
+  // Um alfinete: cabeca, corpo e ponta.
+  pino:   `<path d="M9.2 3.6h5.6" stroke-width="1.6" stroke-linecap="round"/>`
+        + `<path d="M10.5 3.6v6.1l-2.5 3.1h8l-2.5-3.1V3.6" stroke-width="1.5"`
+        + ` stroke-linejoin="round"/>`
+        + `<path d="M12 12.8v7.6" stroke-width="1.6" stroke-linecap="round"/>`,
+};
+
+const svgLateral = nome =>
+  `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none">${ICO_LATERAL[nome]}</svg>`;
+
+/** Uma tela onde o painel lateral nao cabe ao lado do trabalho. */
+const telaEstreita = () => window.matchMedia("(max-width:640px)").matches;
+
+function lateralGuardada() {
+  const padrao = { aberta:true, pinada:true, largura:ARVORE_PADRAO };
+  try {
+    const g = JSON.parse(lembrado(CHAVE_LATERAL) || "{}");
+    return {
+      // `!== false` e nao `|| true`: o padrao e ABERTO E PINADO, e so um
+      // `false` gravado de proposito muda isso.
+      aberta: g.aberta !== false,
+      pinada: g.pinada !== false,
+      largura: travarLargura(+g.largura || ARVORE_PADRAO),
+    };
+  } catch { return padrao; }
+}
+
+const travarLargura = n =>
+  Math.min(ARVORE_MAX, Math.max(ARVORE_MIN, Math.round(n) || ARVORE_PADRAO));
+
+const guardarLateral = () => lembrar(CHAVE_LATERAL, JSON.stringify(est.lateral));
+
+/** Escreve o estado na tela. Unico lugar que mexe nos atributos e nos rotulos:
+ *  tres botoes escrevendo cada um a sua versao do estado e como o rotulo e o
+ *  desenho param de concordar. */
+function aplicarLateral() {
+  const app = $("#app");
+  const L = est.lateral;
+  const estreita = telaEstreita();
+  const solta = estreita || !L.pinada;
+
+  app.dataset.lateralAberta = L.aberta ? "1" : "0";
+  app.dataset.lateralSolta = solta ? "1" : "0";
+  document.documentElement.style.setProperty("--arvore", L.largura + "px");
+
+  const bt = $("#btLateral");
+  bt.innerHTML = svgLateral(L.aberta ? "fechar" : "abrir");
+  bt.setAttribute("aria-expanded", L.aberta ? "true" : "false");
+  const diz = (L.aberta ? "Recolher" : "Abrir") + " o painel lateral (Ctrl+\\)";
+  bt.title = diz;
+  bt.setAttribute("aria-label", diz);
+
+  const pin = $("#btPinar");
+  pin.innerHTML = svgLateral("pino");
+  pin.setAttribute("aria-pressed", L.pinada && !estreita ? "true" : "false");
+  pin.disabled = estreita;
+  const dizPin = estreita
+    ? "Nesta largura o painel é sempre uma gaveta"
+    : L.pinada
+      ? "Despinar — o painel passa a flutuar por cima e some depois que você escolhe"
+      : "Pinar — o painel volta a ocupar uma coluna e fica aberto";
+  pin.title = dizPin;
+  pin.setAttribute("aria-label", dizPin);
+
+  // O veu so no celular: no desktop a lateral solta se fecha ao clicar fora
+  // sem precisar escurecer a tela inteira para dizer isso.
+  $("#veuArvore").hidden = !(L.aberta && estreita);
+
+  const pega = $("#pegaArvore");
+  pega.setAttribute("aria-valuenow", L.largura);
+  pega.setAttribute("aria-valuemin", ARVORE_MIN);
+  pega.setAttribute("aria-valuemax", ARVORE_MAX);
+}
+
+function alternarLateral(abrir) {
+  est.lateral.aberta = abrir === undefined ? !est.lateral.aberta : !!abrir;
+  aplicarLateral();
+  guardarLateral();
+}
+
+function alternarPino() {
+  if (telaEstreita()) return;
+  est.lateral.pinada = !est.lateral.pinada;
+  // Despinar com o painel ja fechado nao mudaria nada na tela, e um botao que
+  // parece nao ter feito nada e um botao quebrado. Abre junto.
+  if (!est.lateral.pinada) est.lateral.aberta = true;
+  aplicarLateral();
+  guardarLateral();
+}
+
+/** Fecha a lateral depois de escolher alguma coisa DENTRO dela.
+ *  Pinada, ela fica -- e exatamente o que pinar quer dizer. */
+function fecharSeSolta() {
+  if (!est.lateral || !est.lateral.aberta) return;
+  if (telaEstreita() || !est.lateral.pinada) alternarLateral(false);
+}
+
+function ligarLateral() {
+  est.lateral = lateralGuardada();
+  aplicarLateral();
+
+  $("#btLateral").onclick = () => alternarLateral();
+  $("#btPinar").onclick = alternarPino;
+  $("#veuArvore").onclick = () => alternarLateral(false);
+
+  // Clicar fora fecha a lateral SOLTA: ela existe para sumir.
+  document.addEventListener("pointerdown", ev => {
+    if (!est.lateral.aberta) return;
+    if (est.lateral.pinada && !telaEstreita()) return;
+    if (ev.target.closest("#lateral, #btLateral, #pegaArvore")) return;
+    alternarLateral(false);
+  });
+
+  document.addEventListener("keydown", ev => {
+    // Ctrl+\ recolhe e reabre. Alt+letra ja e do menu e Ctrl+B ja e o backup;
+    // esta sobra, e nenhum navegador a usa.
+    if (ev.ctrlKey && !ev.altKey && !ev.metaKey && ev.key === "\\") {
+      ev.preventDefault();
+      alternarLateral();
+      return;
+    }
+    if (ev.key === "Escape" && est.lateral.aberta
+        && (telaEstreita() || !est.lateral.pinada)) alternarLateral(false);
+  });
+
+  // Virar o celular muda a faixa, e com ela o significado de "pinada".
+  const faixa = window.matchMedia("(max-width:640px)");
+  const aoTrocarFaixa = () => aplicarLateral();
+  if (faixa.addEventListener) faixa.addEventListener("change", aoTrocarFaixa);
+  else faixa.addListener(aoTrocarFaixa);
+
+  ligarArrastoDaLateral();
+}
+
+/** A largura por arrasto -- e pelas setas, porque quem nao usa mouse tambem
+ *  precisa da largura. Por isso a pega e um `separator` com valor. */
+function ligarArrastoDaLateral() {
+  const pega = $("#pegaArvore");
+  let arrastando = false;
+
+  pega.addEventListener("pointerdown", ev => {
+    arrastando = true;
+    pega.setPointerCapture(ev.pointerId);
+    document.body.style.cursor = "col-resize";
+    ev.preventDefault();
+  });
+  pega.addEventListener("pointermove", ev => {
+    if (!arrastando) return;
+    // A lateral comeca na borda esquerda da janela, entao o X do ponteiro JA E
+    // a largura -- sem `getBoundingClientRect`, que mudaria a cada quadro.
+    est.lateral.largura = travarLargura(ev.clientX);
+    document.documentElement.style.setProperty(
+      "--arvore", est.lateral.largura + "px");
+    pega.setAttribute("aria-valuenow", est.lateral.largura);
+  });
+  const soltar = ev => {
+    if (!arrastando) return;
+    arrastando = false;
+    document.body.style.cursor = "";
+    try { pega.releasePointerCapture(ev.pointerId); } catch {}
+    guardarLateral();
+  };
+  pega.addEventListener("pointerup", soltar);
+  pega.addEventListener("pointercancel", soltar);
+
+  pega.addEventListener("keydown", ev => {
+    const passo = ev.shiftKey ? 32 : 8;
+    let l = est.lateral.largura;
+    if (ev.key === "ArrowLeft") l -= passo;
+    else if (ev.key === "ArrowRight") l += passo;
+    else if (ev.key === "Home") l = ARVORE_MIN;
+    else if (ev.key === "End") l = ARVORE_MAX;
+    else return;
+    ev.preventDefault();
+    est.lateral.largura = travarLargura(l);
+    aplicarLateral();
+    guardarLateral();
+  });
+}
 /* ------------------------------------------------------- atalhos globais */
 function ligarAtalhos() {
   document.addEventListener("keydown", ev => {
