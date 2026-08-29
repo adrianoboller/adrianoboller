@@ -39,6 +39,10 @@ pub enum PhxError {
     Autorizacao(String),
     /// Valor excede o limite fisico do formato.
     LimiteExcedido(String),
+    /// Um `SIGNAL` de gatilho ou de procedimento: a recusa escrita pelo dono
+    /// do banco, com o SQLSTATE e a MESSAGE_TEXT que ele escolheu. Num
+    /// gatilho BEFORE, cancela a escrita.
+    Sinal { estado: String, mensagem: String },
 }
 
 impl PhxError {
@@ -77,6 +81,9 @@ impl PhxError {
             PhxError::Duplicado(_) => 3002,
             PhxError::LimiteExcedido(_) => 3003,
             PhxError::Conflito(_) => 3004,
+            // A recusa de SIGNAL e da familia do DADO: o dado em si (ou a
+            // regra que o dono escreveu sobre ele) recusou a operacao.
+            PhxError::Sinal { .. } => 3005,
             PhxError::Autorizacao(_) => 4001,
             PhxError::EmCarga(_) => 4002,
             PhxError::Io(_) => 5001,
@@ -97,6 +104,7 @@ impl PhxError {
             PhxError::Duplicado(_) => "DUPLICADO",
             PhxError::LimiteExcedido(_) => "LIMITE_EXCEDIDO",
             PhxError::Conflito(_) => "CONFLITO",
+            PhxError::Sinal { .. } => "SINAL",
             PhxError::Autorizacao(_) => "ACESSO_NEGADO",
             PhxError::EmCarga(_) => "EM_CARGA",
             PhxError::Io(_) => "ERRO_DE_ES",
@@ -165,6 +173,12 @@ impl fmt::Display for PhxError {
             PhxError::Autorizacao(m) => write!(f, "acesso negado: {m}"),
             PhxError::EmCarga(m) => write!(f, "tabela em carga: {m}"),
             PhxError::LimiteExcedido(m) => write!(f, "limite excedido: {m}"),
+            // A MESSAGE_TEXT na frente, porque ela e a mensagem que o dono do
+            // banco escreveu para quem esbarrar na regra; o SQLSTATE vem
+            // atras, para o driver que trata por codigo.
+            PhxError::Sinal { estado, mensagem } => {
+                write!(f, "{mensagem} (SIGNAL SQLSTATE {estado})")
+            }
         }
     }
 }

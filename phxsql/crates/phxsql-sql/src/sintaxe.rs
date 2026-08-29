@@ -149,17 +149,20 @@ pub fn analisar(entrada: &str) -> Result<Selecao> {
     Ok(sel)
 }
 
-struct Analisador {
-    s: Vec<Simbolo>,
-    i: usize,
+/// O cursor de simbolos e compartilhado com `rotina`, que analisa os corpos
+/// de gatilho e de procedimento: um leitor so, para as mensagens de erro (com
+/// a coluna) sairem iguais nas duas gramaticas.
+pub(crate) struct Analisador {
+    pub(crate) s: Vec<Simbolo>,
+    pub(crate) i: usize,
 }
 
 impl Analisador {
-    fn espiar(&self) -> Option<&Simbolo> {
+    pub(crate) fn espiar(&self) -> Option<&Simbolo> {
         self.s.get(self.i)
     }
 
-    fn posicao_atual(&self) -> usize {
+    pub(crate) fn posicao_atual(&self) -> usize {
         match self.s.get(self.i) {
             Some(s) => s.posicao,
             // Fim do texto: aponta logo depois do ultimo simbolo lido.
@@ -168,7 +171,7 @@ impl Analisador {
     }
 
     /// Consome o proximo simbolo se ele for exatamente este.
-    fn aceitar(&mut self, t: &Token) -> bool {
+    pub(crate) fn aceitar(&mut self, t: &Token) -> bool {
         if self.espiar().map(|s| &s.token) == Some(t) {
             self.i += 1;
             return true;
@@ -177,7 +180,7 @@ impl Analisador {
     }
 
     /// Consome a proxima palavra se ela for esta clausula.
-    fn aceitar_palavra(&mut self, palavra: &str) -> bool {
+    pub(crate) fn aceitar_palavra(&mut self, palavra: &str) -> bool {
         let bate = self
             .espiar()
             .and_then(|s| s.token.palavra_chave())
@@ -188,7 +191,7 @@ impl Analisador {
         bate
     }
 
-    fn exigir_palavra(&mut self, palavra: &str) -> Result<()> {
+    pub(crate) fn exigir_palavra(&mut self, palavra: &str) -> Result<()> {
         if self.aceitar_palavra(palavra) {
             return Ok(());
         }
@@ -198,7 +201,7 @@ impl Analisador {
         ))
     }
 
-    fn mas_veio(&self) -> String {
+    pub(crate) fn mas_veio(&self) -> String {
         match self.espiar() {
             Some(s) => format!(", e veio {:?}", s.token.descrever()),
             None => ", e o comando acabou".into(),
@@ -206,7 +209,7 @@ impl Analisador {
     }
 
     /// Le um identificador: palavra que nao seja clausula, ou citada.
-    fn identificador(&mut self, papel: &str) -> Result<String> {
+    pub(crate) fn identificador(&mut self, papel: &str) -> Result<String> {
         let Some(s) = self.espiar() else {
             return Err(lexico::erro(
                 self.posicao_atual(),
@@ -535,7 +538,7 @@ impl Analisador {
         Ok(Condicao { coluna, op, valor })
     }
 
-    fn literal(&mut self) -> Result<Literal> {
+    pub(crate) fn literal(&mut self) -> Result<Literal> {
         let pos = self.posicao_atual();
         let Some(s) = self.espiar() else {
             return Err(lexico::erro(pos, "esperava um valor, e o comando acabou"));
@@ -571,7 +574,7 @@ impl Analisador {
         Ok(lit)
     }
 
-    fn inteiro(&mut self, papel: &str) -> Result<u64> {
+    pub(crate) fn inteiro(&mut self, papel: &str) -> Result<u64> {
         let pos = self.posicao_atual();
         match self.espiar().map(|s| s.token.clone()) {
             Some(Token::Numero(n)) if !n.contains('.') => {

@@ -46,8 +46,8 @@ use phxsql_core::value::Value;
 
 use crate::pivot::{Agregador, Campo, Granularidade, Juncao};
 use crate::valores::{
-    bytes_para_hex, hex_para_bytes, json_para_chave, json_para_linha, largura_do_tipo,
-    linha_para_json,
+    bytes_para_hex, hex_para_bytes, json_para_chave, json_para_linha, json_para_valor,
+    largura_do_tipo, linha_para_json,
 };
 
 pub const VERSAO: &str = env!("CARGO_PKG_VERSION");
@@ -358,6 +358,14 @@ pub struct Servidor {
     /// ver o pedido que ja estava em voo. Ligar a observacao no meio de um
     /// pedido nao promete pegar aquele pedido -- promete pegar os proximos.
     profiler_ligado: AtomicBool,
+    /// Gatilhos e procedimentos, por database, com os corpos ja compilados.
+    rotinas: Mutex<crate::rotinas::Rotinas>,
+    /// Espelho de "existe algum gatilho?", para o caminho de escrita SEM
+    /// gatilho custar um load atomico e nada mais — nem trava, nem String.
+    ///
+    /// E a mesma decisao do `profiler_ligado`, tomada ANTES de doer: o portao
+    /// que decide se ha trabalho vem antes de qualquer trabalho.
+    ha_gatilhos: AtomicBool,
     /// Ligacoes para bancos de fora.
     dblink: Mutex<crate::dblink::Registro>,
     /// Jobs de execucao: cadastro e a hora da ultima corrida de cada um.
@@ -396,6 +404,8 @@ impl Servidor {
         let lista_negra = Blacklist::abrir(&config.blacklist)?;
         let dblink = crate::dblink::Registro::abrir(&config.dblink)?;
         let jobs = crate::jobs::Registro::abrir(&config.jobs)?;
+        let rotinas = crate::rotinas::Rotinas::carregar(&config.base)?;
+        let ha_gatilhos = AtomicBool::new(rotinas.ha_gatilhos());
         Ok(Arc::new(Servidor {
             janela: Janela::nova(&config.recursos),
             sujas: Mutex::new(std::collections::HashSet::new()),
@@ -422,6 +432,8 @@ impl Servidor {
             marcas_do_diario: Mutex::new(HashMap::new()),
             profiler: Mutex::new(crate::profiler::Profiler::default()),
             profiler_ligado: AtomicBool::new(false),
+            rotinas: Mutex::new(rotinas),
+            ha_gatilhos,
         }))
     }
 
@@ -3815,6 +3827,14 @@ impl Servidor {
         let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
         let db = dados.abrir_database(database)?;
         let apagados = db.excluir_tabela(tabela)?;
+        // Os gatilhos da tabela saem junto, como no MySQL(R): um orfao
+        // dispararia contra uma homonima futura que nao tem nada com ele.
+        let mut gatilhos_apagados = 0usize;
+        if self.ha_gatilhos.load(Ordering::Relaxed) {
+            let mut r = self.rotinas.lock().map_err(|_| trava_envenenada())?;
+            gatilhos_apagados = r.excluir_gatilhos_da_tabela(database, tabela)?;
+            self.ha_gatilhos.store(r.ha_gatilhos(), Ordering::Relaxed);
+        }
         Ok(Json::objeto(vec![
             ("database", Json::texto_de(database)),
             ("tabela", Json::texto_de(tabela)),
@@ -3822,6 +3842,7 @@ impl Servidor {
                 "arquivos_apagados",
                 Json::Lista(apagados.iter().map(Json::texto_de).collect()),
             ),
+            ("gatilhos_apagados", Json::de_u64(gatilhos_apagados as u64)),
         ]))
     }
 
@@ -3898,6 +3919,13 @@ impl Servidor {
                 "informe \"texto\" com o comando SQL".into(),
             ));
         }
+        // CREATE TRIGGER/PROCEDURE, DROP, CALL e SHOW entram pela MESMA op:
+        // sao SQL, e um driver os manda pelo mesmo campo. O detector devolve
+        // None para todo o resto, que segue o caminho do SELECT de sempre.
+        if let Some(comando) = phxsql_sql::rotina::comando(&texto)? {
+            return self.executar_rotina(comando, p, sessao);
+        }
+
         // O erro de sintaxe ja vem com a coluna: «SQL, coluna 14: esperava
         // FROM». Reembalar aqui perderia a posicao, que e a unica parte da
         // mensagem que diz ONDE consertar.
@@ -3918,6 +3946,423 @@ impl Servidor {
         let bruto = self.executar_derivado(&plano.op, &plano.pedido, sessao)?;
 
         Ok(resposta_do_sql(&texto, &plano, bruto))
+    }
+
+    // ------------------------------------------------- gatilhos e rotinas
+
+    /// Executa um comando de rotina vindo pela op `sql`.
+    ///
+    /// # Permissao: administrar, e por que nao `criar`
+    ///
+    /// Criar, excluir e LISTAR gatilhos e procedimentos exigem `administrar`
+    /// na base — a mesma regra dos jobs, e pelo mesmo motivo: os tres sao
+    /// codigo guardado que roda depois, sob o poder de OUTRA pessoa. Com
+    /// `criar` bastando, quem cria tabela poderia pendurar um AFTER INSERT
+    /// na tabela alheia e desviar cada linha gravada pelos outros para uma
+    /// tabela sua — escalada por gatilho. `CALL`, ao contrario, nao pede nada
+    /// proprio: cada pedido que o corpo produz passa pelo portao de sempre
+    /// com o poder de quem chamou, entao chamar nunca da poder que a pessoa
+    /// ja nao tinha.
+    fn executar_rotina(
+        &self,
+        comando: phxsql_sql::rotina::Comando,
+        p: &Json,
+        sessao: &Sessao,
+    ) -> Result<Json> {
+        use phxsql_sql::rotina::Comando;
+        let base_do_pedido = p.texto_ou("database", "").trim().to_string();
+        let exigir_base = |base: &str| -> Result<()> {
+            if base.is_empty() {
+                return Err(PhxError::Esquema(
+                    "informe \"database\" no pedido (rotina mora num database)".into(),
+                ));
+            }
+            Ok(())
+        };
+        match comando {
+            Comando::CriarGatilho(mut def) => {
+                let base = if def.database.is_empty() {
+                    base_do_pedido
+                } else {
+                    def.database.clone()
+                };
+                exigir_base(&base)?;
+                self.exigir_administrar_rotina(sessao, &base, &def.tabela)?;
+                self.recusar_somente_leitura("criar gatilho")?;
+                // A tabela tem de existir — e abrir tambem valida os nomes
+                // contra travessia, porque estes vieram de DENTRO do texto
+                // SQL, que a sonda do despachar nao ve.
+                {
+                    let trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+                    trava
+                        .abrir_database(&base)?
+                        .abrir_qualificada(&def.tabela)?;
+                }
+                // O database ja e o dono do arquivo; guardado dentro dele,
+                // o campo seria redundancia que um dia discorda.
+                def.database = String::new();
+                let g = {
+                    let mut r = self.rotinas.lock().map_err(|_| trava_envenenada())?;
+                    let g = r.criar_gatilho(&base, def, sessao.login())?;
+                    self.ha_gatilhos.store(r.ha_gatilhos(), Ordering::Relaxed);
+                    g
+                };
+                Ok(Json::objeto(vec![
+                    ("gatilho", Json::texto_de(&g.nome)),
+                    ("tabela", Json::texto_de(&g.tabela)),
+                    ("quando", Json::texto_de(g.quando.nome())),
+                    ("evento", Json::texto_de(g.evento.nome())),
+                    ("criado", Json::Bool(true)),
+                ]))
+            }
+            Comando::ExcluirGatilho { nome, se_existe } => {
+                exigir_base(&base_do_pedido)?;
+                self.exigir_administrar_rotina(sessao, &base_do_pedido, "")?;
+                self.recusar_somente_leitura("excluir gatilho")?;
+                let saiu = {
+                    let mut r = self.rotinas.lock().map_err(|_| trava_envenenada())?;
+                    let saiu = r.excluir_gatilho(&base_do_pedido, &nome)?;
+                    self.ha_gatilhos.store(r.ha_gatilhos(), Ordering::Relaxed);
+                    saiu
+                };
+                if !saiu && !se_existe {
+                    return Err(PhxError::NaoEncontrado(format!(
+                        "gatilho {nome:?} nao existe em {base_do_pedido}"
+                    )));
+                }
+                Ok(Json::objeto(vec![
+                    ("gatilho", Json::texto_de(nome)),
+                    ("excluido", Json::Bool(saiu)),
+                ]))
+            }
+            Comando::MostrarGatilhos => {
+                exigir_base(&base_do_pedido)?;
+                self.exigir_administrar_rotina(sessao, &base_do_pedido, "")?;
+                let r = self.rotinas.lock().map_err(|_| trava_envenenada())?;
+                let lista = r.gatilhos_do_db(&base_do_pedido);
+                Ok(Json::objeto(vec![
+                    ("total", Json::de_u64(lista.len() as u64)),
+                    (
+                        "gatilhos",
+                        Json::Lista(lista.iter().map(|g| g.para_json()).collect()),
+                    ),
+                ]))
+            }
+            Comando::CriarProcedimento(def) => {
+                exigir_base(&base_do_pedido)?;
+                self.exigir_administrar_rotina(sessao, &base_do_pedido, "")?;
+                self.recusar_somente_leitura("criar procedimento")?;
+                let quantos = def.parametros.len();
+                let nome = {
+                    let mut r = self.rotinas.lock().map_err(|_| trava_envenenada())?;
+                    r.criar_procedimento(&base_do_pedido, def, sessao.login())?
+                        .nome
+                        .clone()
+                };
+                Ok(Json::objeto(vec![
+                    ("procedimento", Json::texto_de(nome)),
+                    ("parametros", Json::de_u64(quantos as u64)),
+                    ("criado", Json::Bool(true)),
+                ]))
+            }
+            Comando::ExcluirProcedimento { nome, se_existe } => {
+                exigir_base(&base_do_pedido)?;
+                self.exigir_administrar_rotina(sessao, &base_do_pedido, "")?;
+                self.recusar_somente_leitura("excluir procedimento")?;
+                let saiu = {
+                    let mut r = self.rotinas.lock().map_err(|_| trava_envenenada())?;
+                    r.excluir_procedimento(&base_do_pedido, &nome)?
+                };
+                if !saiu && !se_existe {
+                    return Err(PhxError::NaoEncontrado(format!(
+                        "procedimento {nome:?} nao existe em {base_do_pedido}"
+                    )));
+                }
+                Ok(Json::objeto(vec![
+                    ("procedimento", Json::texto_de(nome)),
+                    ("excluido", Json::Bool(saiu)),
+                ]))
+            }
+            Comando::MostrarProcedimentos => {
+                exigir_base(&base_do_pedido)?;
+                self.exigir_administrar_rotina(sessao, &base_do_pedido, "")?;
+                let r = self.rotinas.lock().map_err(|_| trava_envenenada())?;
+                let lista = r.procedimentos_do_db(&base_do_pedido);
+                Ok(Json::objeto(vec![
+                    ("total", Json::de_u64(lista.len() as u64)),
+                    (
+                        "procedimentos",
+                        Json::Lista(lista.iter().map(|q| q.para_json()).collect()),
+                    ),
+                ]))
+            }
+            Comando::Chamar { nome, argumentos } => {
+                exigir_base(&base_do_pedido)?;
+                self.chamar_procedimento(&base_do_pedido, &nome, argumentos, sessao)
+            }
+        }
+    }
+
+    /// `CALL nome(args)`: roda o corpo com o poder de quem chamou.
+    fn chamar_procedimento(
+        &self,
+        base: &str,
+        nome: &str,
+        argumentos: Vec<phxsql_sql::rotina::Valor>,
+        sessao: &Sessao,
+    ) -> Result<Json> {
+        use phxsql_sql::rotina::{executar, Contexto, Modo, Valor};
+        // A trava do registro solta ANTES de o corpo rodar: o Arc viaja, e o
+        // corpo pode demorar o quanto o teto de passos permitir.
+        let procedimento = {
+            let r = self.rotinas.lock().map_err(|_| trava_envenenada())?;
+            r.procedimento(base, nome)
+        }
+        .ok_or_else(|| {
+            PhxError::NaoEncontrado(format!("procedimento {nome:?} nao existe em {base}"))
+        })?;
+        let programa = procedimento.programa.as_ref().map_err(|motivo| {
+            PhxError::Esquema(format!(
+                "o procedimento {nome:?} nao compila ({motivo}); DROP PROCEDURE e crie de novo"
+            ))
+        })?;
+
+        // Os argumentos batem com os parametros? OUT no fim pode ser omitido
+        // — `CALL somar(10)` — porque quem chama nao tem o que passar ali.
+        let parametros = &procedimento.parametros;
+        let saidas_no_fim = parametros
+            .iter()
+            .rev()
+            .take_while(|q| q.modo == Modo::Saida)
+            .count();
+        if argumentos.len() != parametros.len()
+            && argumentos.len() != parametros.len() - saidas_no_fim
+        {
+            return Err(PhxError::Esquema(format!(
+                "{nome} espera {} argumento(s) — {} — e vieram {}. OUT no fim \
+                 pode ser omitido; no meio, passe NULL",
+                parametros.len(),
+                parametros
+                    .iter()
+                    .map(|q| format!("{} {}", q.modo.nome(), q.nome))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                argumentos.len()
+            )));
+        }
+        let mut sementes = Vec::with_capacity(parametros.len());
+        for (i, q) in parametros.iter().enumerate() {
+            // OUT comeca NULL sempre, como no MySQL(R): o valor passado num
+            // OUT e so um lugar, nunca uma entrada.
+            let valor = if q.modo == Modo::Saida {
+                Valor::Nulo
+            } else {
+                q.tipo
+                    .coagir(argumentos.get(i).cloned().unwrap_or(Valor::Nulo))
+                    .map_err(|e| {
+                        PhxError::Tipo(format!("no parametro {:?} de {nome}: {e}", q.nome))
+                    })?
+            };
+            sementes.push((q.nome.clone(), q.tipo, valor));
+        }
+        let mut ctx = Contexto::de_procedimento(sementes);
+        let mut motor = MotorDoServidor {
+            servidor: self,
+            sessao,
+            database: base.to_string(),
+        };
+        executar(programa, &mut ctx, &mut motor)?;
+        let saida: Vec<(String, Json)> = parametros
+            .iter()
+            .filter(|q| q.modo != Modo::Entrada)
+            .map(|q| {
+                (
+                    q.nome.clone(),
+                    ctx.valor_de(&q.nome)
+                        .cloned()
+                        .unwrap_or(Valor::Nulo)
+                        .para_json(),
+                )
+            })
+            .collect();
+        Ok(Json::objeto(vec![
+            ("procedimento", Json::texto_de(&procedimento.nome)),
+            ("saida", Json::Objeto(saida)),
+        ]))
+    }
+
+    fn exigir_administrar_rotina(&self, sessao: &Sessao, base: &str, tabela: &str) -> Result<()> {
+        if let Some(u) = &sessao.usuario {
+            if !u.pode_em(base, tabela, Atividade::Administrar) {
+                return Err(PhxError::Autorizacao(format!(
+                    "{} nao tem permissao de administrar em {} — criar, excluir \
+                     e listar rotinas exigem administrar",
+                    u.login,
+                    if tabela.is_empty() {
+                        base.to_string()
+                    } else {
+                        format!("{base}.{tabela}")
+                    }
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    /// A op `sql` nao esta em `OPS_ESCRITA` porque um SELECT nao escreve —
+    /// mas criar e excluir rotina grava arquivo, entao a conferencia mora
+    /// aqui, no unico lugar por onde esses comandos passam.
+    fn recusar_somente_leitura(&self, o_que: &str) -> Result<()> {
+        if self.config.somente_leitura {
+            return Err(PhxError::Autorizacao(format!(
+                "servidor em modo somente leitura: {o_que} grava arquivo"
+            )));
+        }
+        Ok(())
+    }
+
+    /// O portao dos gatilhos de uma escrita.
+    ///
+    /// Sem gatilho NENHUM no servidor, custa um load atomico e devolve vazio
+    /// — sem trava, sem String, sem olhar o pedido. E a licao do Profiler
+    /// aplicada antes de doer: o portao vem ANTES de qualquer trabalho.
+    fn gatilhos_para(
+        &self,
+        p: &Json,
+        evento: phxsql_sql::rotina::Evento,
+    ) -> Result<crate::rotinas::AntesEDepois> {
+        if !self.ha_gatilhos.load(Ordering::Relaxed) {
+            return Ok((Vec::new(), Vec::new()));
+        }
+        let r = self.rotinas.lock().map_err(|_| trava_envenenada())?;
+        Ok(r.gatilhos_de(
+            p.texto_ou("database", "").trim(),
+            p.texto_ou("tabela", "").trim(),
+            evento,
+        ))
+    }
+
+    /// Gatilho quebrado barra a escrita ANTES de ela comecar — inclusive o
+    /// AFTER, que depois de gravado nao teria mais como barrar nada. Pular a
+    /// regra quebrada seria fingir que ela nao existe, em silencio.
+    fn conferir_gatilhos_compilam(
+        antes: &[Arc<crate::rotinas::Gatilho>],
+        depois: &[Arc<crate::rotinas::Gatilho>],
+    ) -> Result<()> {
+        for g in antes.iter().chain(depois) {
+            if let Err(motivo) = &g.programa {
+                return Err(PhxError::Esquema(format!(
+                    "o gatilho {:?} desta tabela nao compila ({motivo}); \
+                     conserte-o ou exclua com DROP TRIGGER — a escrita nao \
+                     prossegue com a regra quebrada",
+                    g.nome
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    /// Roda os BEFORE de uma escrita, na ordem de criacao, sobre a linha ja
+    /// convertida. Roda com a trava de dados na mao — por isso o motor e o
+    /// [`phxsql_sql::rotina::MotorNulo`]: o parser ja recusa DML nesses
+    /// corpos, e o motor nulo e o cinto para a instrucao que um dia esquecer.
+    ///
+    /// `nova` e a linha que vai ser gravada (INSERT/UPDATE); `velha`, a que
+    /// esta la (UPDATE/DELETE). O que o corpo tocar via `SET NEW.…` volta
+    /// para a linha ja convertido no tipo da coluna — pelo MESMO
+    /// `json_para_valor` de qualquer pedido.
+    fn rodar_gatilhos_antes(
+        &self,
+        gatilhos: &[Arc<crate::rotinas::Gatilho>],
+        nova: Option<&mut Vec<Value>>,
+        velha: Option<&[Value]>,
+        esquema: &Schema,
+    ) -> Result<()> {
+        use phxsql_sql::rotina::{executar, Contexto, MotorNulo};
+        let gravavel = nova.is_some();
+        let mut nova_json = nova.as_ref().map(|l| linha_para_json(l, esquema));
+        let velha_json = velha.map(|l| linha_para_json(l, esquema));
+        let mut tocadas: Vec<String> = Vec::new();
+        for g in gatilhos {
+            let programa = g.programa.as_ref().map_err(|motivo| {
+                PhxError::Esquema(format!("o gatilho {:?} nao compila: {motivo}", g.nome))
+            })?;
+            let mut ctx = Contexto::de_gatilho(nova_json.take(), gravavel, velha_json.clone());
+            let resultado = executar(programa, &mut ctx, &mut MotorNulo);
+            // O NEW volta mesmo em erro: o proximo uso e de quem tratar.
+            nova_json = ctx.nova.take();
+            resultado.map_err(|e| erro_do_gatilho(&g.nome, e))?;
+            for coluna in ctx.tocadas {
+                if !tocadas.contains(&coluna) {
+                    tocadas.push(coluna);
+                }
+            }
+        }
+        if let (Some(linha), Some(objeto)) = (nova, nova_json) {
+            for coluna in &tocadas {
+                if phxsql_core::schema::e_coluna_de_sistema(coluna) {
+                    return Err(PhxError::Esquema(format!(
+                        "gatilho tentou alterar a coluna de sistema {coluna:?} — \
+                         rownum e softdeleted sao do motor"
+                    )));
+                }
+                let Some(i) = esquema.coluna_por_nome(coluna) else {
+                    continue;
+                };
+                let valor = objeto.campo(coluna).unwrap_or(&Json::Nulo);
+                linha[i] = json_para_valor(valor, &esquema.colunas()[i].ty).map_err(|e| {
+                    PhxError::Tipo(format!("gatilho gravou NEW.{coluna} invalido: {e}"))
+                })?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Roda os AFTER, ja SEM a trava de dados: o corpo fala com o motor (o
+    /// INSERT de auditoria) pelos MESMOS portoes de qualquer pedido, com o
+    /// poder de quem disparou a escrita.
+    ///
+    /// # Falha de AFTER e aviso, nao erro — e isso esta escrito
+    ///
+    /// A escrita ja aconteceu e nao ha transacao que a desfaca. Devolver erro
+    /// diria "nao gravou" a quem gravou — e o cliente repetiria, duplicando a
+    /// linha. A resposta fica `ok` e carrega `gatilhos_avisos` com o nome do
+    /// gatilho e o motivo: as duas verdades, na ordem certa.
+    fn rodar_gatilhos_depois(
+        &self,
+        gatilhos: &[Arc<crate::rotinas::Gatilho>],
+        nova: Option<Json>,
+        velha: Option<Json>,
+        p: &Json,
+        sessao: &Sessao,
+    ) -> Vec<Json> {
+        use phxsql_sql::rotina::{executar, Contexto};
+        let mut avisos = Vec::new();
+        let database = p.texto_ou("database", "").trim().to_string();
+        for g in gatilhos {
+            let programa = match g.programa.as_ref() {
+                Ok(programa) => programa,
+                // Barrado antes da escrita por `conferir_gatilhos_compilam`;
+                // se chegou aqui quebrado, a unica coisa honesta e avisar.
+                Err(motivo) => {
+                    avisos.push(Json::texto_de(format!(
+                        "gatilho {:?} nao compila: {motivo}",
+                        g.nome
+                    )));
+                    continue;
+                }
+            };
+            let mut ctx = Contexto::de_gatilho(nova.clone(), false, velha.clone());
+            let mut motor = MotorDoServidor {
+                servidor: self,
+                sessao,
+                database: database.clone(),
+            };
+            if let Err(e) = executar(programa, &mut ctx, &mut motor) {
+                avisos.push(Json::texto_de(format!("gatilho {:?} falhou: {e}", g.nome)));
+            }
+        }
+        avisos
     }
 
     /// O catalogo das operacoes -- o `--help` do protocolo, servido por dados.
@@ -4401,18 +4846,42 @@ impl Servidor {
             .or_else(|| p.campo("linha"))
             .cloned()
             .ok_or_else(|| PhxError::Esquema("informe \"valores\"".into()))?;
+        // O portao dos gatilhos, ANTES de qualquer trabalho: sem gatilho no
+        // servidor inteiro e um load atomico, e nada mais.
+        let (antes, depois) = self.gatilhos_para(p, phxsql_sql::rotina::Evento::Inserir)?;
+        Self::conferir_gatilhos_compilam(&antes, &depois)?;
         let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
-        let linha = json_para_linha(&valores_json, t.esquema())?;
+        let mut linha = json_para_linha(&valores_json, t.esquema())?;
+        // BEFORE ve a linha ja tipada — e o SIGNAL daqui cancela a escrita
+        // antes de qualquer byte ir para o disco.
+        if !antes.is_empty() {
+            self.rodar_gatilhos_antes(&antes, Some(&mut linha), None, t.esquema())?;
+        }
         let rowid = t.inserir(&linha)?;
         self.gravar_de_verdade(&mut t, p)?;
         // A copia em RAM acompanha DENTRO da mesma trava: nao existe instante
         // em que o disco e a memoria discordem.
         self.residente_mut(p, |m| m.anotar_insercao(rowid, &linha));
-        Ok(Json::objeto(vec![
+        let registros = t.registros();
+        // O NEW do AFTER e a linha como FICOU gravada — sequencia preenchida,
+        // rownum de verdade — lida de volta ainda dentro da trava.
+        let gravada = if depois.is_empty() {
+            None
+        } else {
+            t.ler(rowid)?.map(|l| linha_para_json(&l, t.esquema()))
+        };
+        drop(t);
+        drop(_trava);
+        let avisos = self.rodar_gatilhos_depois(&depois, gravada, None, p, sessao);
+        let mut resposta = vec![
             ("rowid", Json::de_u64(rowid)),
-            ("registros", Json::de_u64(t.registros())),
-        ]))
+            ("registros", Json::de_u64(registros)),
+        ];
+        if !avisos.is_empty() {
+            resposta.push(("gatilhos_avisos", Json::Lista(avisos)));
+        }
+        Ok(Json::objeto(resposta))
     }
 
     /// `inserir_lote`: muitas linhas de uma vez, ou uma carga colada.
@@ -4476,6 +4945,10 @@ impl Servidor {
             return Err(PhxError::Esquema("a carga nao tem nenhuma linha".into()));
         }
 
+        // O portao dos gatilhos, antes da trava: sem gatilho, um load atomico.
+        let (antes, depois) = self.gatilhos_para(p, phxsql_sql::rotina::Evento::Inserir)?;
+        Self::conferir_gatilhos_compilam(&antes, &depois)?;
+
         let inicio = Instant::now();
         let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
@@ -4491,6 +4964,16 @@ impl Servidor {
                 (None, Some(item)) => json_para_linha(item, t.esquema()),
                 (None, None) => break,
             };
+            // O BEFORE roda por linha, sobre o valor ja tipado — o MESMO
+            // caminho da insercao de uma. Um SIGNAL recusa A LINHA, como um
+            // erro de conversao: a posicao entra em `erros` e a carga segue
+            // (ou para, se `parar_no_erro` mandou).
+            let convertida = convertida.and_then(|mut l| {
+                if !antes.is_empty() {
+                    self.rodar_gatilhos_antes(&antes, Some(&mut l), None, t.esquema())?;
+                }
+                Ok(l)
+            });
             match convertida {
                 Ok(l) => linhas.push(l),
                 Err(e) => {
@@ -4520,14 +5003,34 @@ impl Servidor {
             let (r, l) = (*rowid, linha.clone());
             self.residente_mut(p, move |m| m.anotar_insercao(r, &l));
         }
-        Ok(Self::resposta_do_lote(
-            p,
-            &formato,
-            recebidas,
-            &lote.rowids,
-            &recusadas,
-            inicio,
-        ))
+        // O NEW de cada AFTER e a linha como ficou gravada, lida na trava.
+        let mut gravadas = Vec::new();
+        if !depois.is_empty() {
+            for rowid in &lote.rowids {
+                if let Some(l) = t.ler(*rowid)? {
+                    gravadas.push(linha_para_json(&l, t.esquema()));
+                }
+            }
+        }
+        drop(t);
+        drop(_trava);
+        let mut avisos = Vec::new();
+        for nova in gravadas {
+            avisos.extend(self.rodar_gatilhos_depois(&depois, Some(nova), None, p, sessao));
+        }
+        // O teto e o mesmo dos erros do lote — e corta a LISTA, nunca a
+        // execucao: todo AFTER rodou; o que se limita e a resposta.
+        avisos.truncate(50);
+        let resposta =
+            Self::resposta_do_lote(p, &formato, recebidas, &lote.rowids, &recusadas, inicio);
+        if avisos.is_empty() {
+            return Ok(resposta);
+        }
+        let Json::Objeto(mut pares) = resposta else {
+            return Ok(resposta);
+        };
+        pares.push(("gatilhos_avisos".to_string(), Json::Lista(avisos)));
+        Ok(Json::Objeto(pares))
     }
 
     /// `importar_conferir`: le a carga e devolve o que entendeu, SEM gravar.
@@ -4666,9 +5169,18 @@ impl Servidor {
             .or_else(|| p.campo("linha"))
             .cloned()
             .ok_or_else(|| PhxError::Esquema("informe \"valores\"".into()))?;
+        let (antes, depois) = self.gatilhos_para(p, phxsql_sql::rotina::Evento::Atualizar)?;
+        Self::conferir_gatilhos_compilam(&antes, &depois)?;
         let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
         conferir_versao_pedida(&mut t, p, rowid)?;
+        // O OLD dos gatilhos: a linha como ela E, lida na mesma trava que vai
+        // gravar a nova — nao ha janela entre o que o gatilho ve e o que sai.
+        let velha = if antes.is_empty() && depois.is_empty() {
+            None
+        } else {
+            t.ler(rowid)?
+        };
         let mut linha = json_para_linha(&valores_json, t.esquema())?;
 
         // Quem alterou a linha nao mandou a coluna de sistema? Entao ela nao
@@ -4687,15 +5199,35 @@ impl Servidor {
             }
         }
 
+        if !antes.is_empty() {
+            self.rodar_gatilhos_antes(&antes, Some(&mut linha), velha.as_deref(), t.esquema())?;
+        }
+
         t.atualizar(rowid, &linha)?;
         self.gravar_de_verdade(&mut t, p)?;
         self.residente_mut(p, |m| m.anotar_alteracao(rowid, &linha));
         // A versao nova volta na resposta: quem grava duas vezes seguidas
         // continua protegido sem precisar reler a linha inteira no meio.
-        Ok(Json::objeto(vec![
+        let versao = t.versao(rowid)?.unwrap_or(0);
+        let (gravada, velha_json) = if depois.is_empty() {
+            (None, None)
+        } else {
+            (
+                t.ler(rowid)?.map(|l| linha_para_json(&l, t.esquema())),
+                velha.as_deref().map(|l| linha_para_json(l, t.esquema())),
+            )
+        };
+        drop(t);
+        drop(_trava);
+        let avisos = self.rodar_gatilhos_depois(&depois, gravada, velha_json, p, sessao);
+        let mut resposta = vec![
             ("rowid", Json::de_u64(rowid)),
-            ("versao", Json::de_u64(t.versao(rowid)?.unwrap_or(0))),
-        ]))
+            ("versao", Json::de_u64(versao)),
+        ];
+        if !avisos.is_empty() {
+            resposta.push(("gatilhos_avisos", Json::Lista(avisos)));
+        }
+        Ok(Json::objeto(resposta))
     }
 
     /// Exclui. **Suave por padrao**, fisica so quando pedida.
@@ -4712,40 +5244,65 @@ impl Servidor {
         let rowid = self.rowid(p)?;
         let motivo = p.texto_ou("motivo", "").trim().to_string();
         let fisico = p.booleano_ou("fisico", false);
+        let (antes, depois) = self.gatilhos_para(p, phxsql_sql::rotina::Evento::Excluir)?;
+        Self::conferir_gatilhos_compilam(&antes, &depois)?;
         let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
         conferir_versao_pedida(&mut t, p, rowid)?;
         let tem_marca = t.esquema().coluna_softdeleted().is_some();
+        // O OLD dos gatilhos. O DELETE dispara nos dois modos — suave e
+        // fisico — porque nos dois a linha some da lista de quem consulta.
+        let velha = if antes.is_empty() && depois.is_empty() {
+            None
+        } else {
+            t.ler(rowid)?
+        };
+        if let Some(l) = velha.as_deref().filter(|_| !antes.is_empty()) {
+            // Um SIGNAL aqui protege a linha: nada foi tirado ainda. Linha
+            // que ja nao existe nao passa por gatilho — nao ha o que proteger.
+            self.rodar_gatilhos_antes(&antes, None, Some(l), t.esquema())?;
+        }
 
-        if fisico || !tem_marca {
+        let (saiu, modo, na_lixeira, reversivel) = if fisico || !tem_marca {
             let removeu = t.excluir_de_vez(rowid, &motivo)?;
             self.gravar_de_verdade(&mut t, p)?;
             if removeu {
                 self.residente_mut(p, |m| m.anotar_exclusao(rowid));
             }
-            return Ok(Json::objeto(vec![
-                ("rowid", Json::de_u64(rowid)),
-                ("excluido", Json::Bool(removeu)),
-                ("modo", Json::texto_de("fisico")),
-                ("na_lixeira", Json::Bool(removeu)),
-                ("reversivel", Json::Bool(false)),
-            ]));
-        }
-
-        let marcou = t.excluir_suave(rowid, &motivo)?;
-        self.gravar_de_verdade(&mut t, p)?;
-        // A copia em RAM tem de esquecer a linha tambem: para quem consulta,
-        // marcada e o mesmo que ausente.
-        if marcou {
-            self.residente_mut(p, |m| m.anotar_exclusao(rowid));
-        }
-        Ok(Json::objeto(vec![
+            (removeu, "fisico", removeu, false)
+        } else {
+            let marcou = t.excluir_suave(rowid, &motivo)?;
+            self.gravar_de_verdade(&mut t, p)?;
+            // A copia em RAM tem de esquecer a linha tambem: para quem
+            // consulta, marcada e o mesmo que ausente.
+            if marcou {
+                self.residente_mut(p, |m| m.anotar_exclusao(rowid));
+            }
+            (marcou, "suave", false, true)
+        };
+        let velha_json = if saiu && !depois.is_empty() {
+            velha.as_deref().map(|l| linha_para_json(l, t.esquema()))
+        } else {
+            None
+        };
+        drop(t);
+        drop(_trava);
+        let avisos = if saiu {
+            self.rodar_gatilhos_depois(&depois, None, velha_json, p, sessao)
+        } else {
+            Vec::new()
+        };
+        let mut resposta = vec![
             ("rowid", Json::de_u64(rowid)),
-            ("excluido", Json::Bool(marcou)),
-            ("modo", Json::texto_de("suave")),
-            ("na_lixeira", Json::Bool(false)),
-            ("reversivel", Json::Bool(true)),
-        ]))
+            ("excluido", Json::Bool(saiu)),
+            ("modo", Json::texto_de(modo)),
+            ("na_lixeira", Json::Bool(na_lixeira)),
+            ("reversivel", Json::Bool(reversivel)),
+        ];
+        if !avisos.is_empty() {
+            resposta.push(("gatilhos_avisos", Json::Lista(avisos)));
+        }
+        Ok(Json::objeto(resposta))
     }
 
     /// Desfaz uma exclusao suave.
@@ -7546,6 +8103,58 @@ fn trava_envenenada() -> PhxError {
     PhxError::Corrompido("uma operacao anterior entrou em panico e deixou a trava suja".into())
 }
 
+/// O erro de um gatilho, com o nome de quem errou — MENOS o `SIGNAL`.
+///
+/// O `SIGNAL` passa intacto de proposito: a MESSAGE_TEXT e a mensagem que o
+/// dono do banco escreveu para quem esbarrar na regra, e embrulha-la em
+/// "gatilho x:" esconderia a frase dele atras da nossa.
+fn erro_do_gatilho(nome: &str, e: PhxError) -> PhxError {
+    match e {
+        PhxError::Sinal { .. } => e,
+        outro => PhxError::Esquema(format!("gatilho {nome:?}: {outro}")),
+    }
+}
+
+/// O motor que os corpos de rotina enxergam: cada pedido que um corpo produz
+/// passa pelo `executar_derivado` — o MESMO portao de politica e de permissao
+/// dos pedidos da rede, com a sessao de quem disparou. E a licao do
+/// `juntar`/`unir`: a rotina produz o pedido que o portao ja sabe conferir,
+/// em vez de ganhar uma porta propria para os dados.
+struct MotorDoServidor<'a> {
+    servidor: &'a Servidor,
+    sessao: &'a Sessao,
+    /// O database corrente: completa o pedido que o corpo escreveu sem `db.`.
+    database: String,
+}
+
+impl phxsql_sql::rotina::Motor for MotorDoServidor<'_> {
+    fn operacao(&mut self, op: &str, pedido: &Json) -> Result<Json> {
+        let pedido = match pedido.campo("database") {
+            Some(_) => pedido.clone(),
+            None => {
+                let Json::Objeto(pares) = pedido else {
+                    return Err(PhxError::Esquema("pedido de rotina nao e objeto".into()));
+                };
+                let mut pares = pares.clone();
+                pares.insert(0, ("database".into(), Json::texto_de(&self.database)));
+                Json::Objeto(pares)
+            }
+        };
+        self.servidor.executar_derivado(op, &pedido, self.sessao)
+    }
+
+    fn consultar(&mut self, sql: &str) -> Result<Json> {
+        // O caminho e o proprio op_sql: a traducao, as notas e — o que
+        // importa — o portao sobre a operacao TRADUZIDA, tudo igual a um
+        // SELECT que chegasse pela rede.
+        let pedido = Json::objeto(vec![
+            ("database", Json::texto_de(&self.database)),
+            ("texto", Json::texto_de(sql)),
+        ]);
+        self.servidor.op_sql(&pedido, self.sessao)
+    }
+}
+
 /// O resumo de uma resposta, para caber numa linha do historico de jobs.
 ///
 /// Ele **analisa e reserializa**, nunca recorta: o corpo de um `varrer` de
@@ -9893,6 +10502,676 @@ mod testes_sql {
             e.to_string().contains("varrer") && e.to_string().contains("proibida"),
             "{e}"
         );
+    }
+}
+
+/// **Gatilhos e procedimentos** (pedidos 49 e 50), pelo caminho de verdade:
+/// o CREATE entra pela op `sql`, o disparo acontece nas operacoes de escrita
+/// e o corpo fala com o motor pelos MESMOS portoes de qualquer pedido.
+#[cfg(test)]
+mod testes_gatilhos {
+    use super::*;
+    use crate::usuarios::Cadastro;
+
+    fn dir_temp(nome: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("phx-gat-{nome}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    fn config_de(dir: &std::path::Path) -> Config {
+        Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            ..Config::default()
+        }
+    }
+
+    /// Base `b` com `clientes(id, nome, cidade)` e `auditoria(evento, quem)`.
+    fn servidor(dir: &std::path::Path) -> Arc<Servidor> {
+        let s = Servidor::novo(config_de(dir)).unwrap();
+        let dono = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &dono)
+            .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"clientes",
+                    "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true},
+                               {"nome":"nome","tipo":"Str(20)"},
+                               {"nome":"cidade","tipo":"Str(20)"}],
+                    "indices":[{"nome":"porId","colunas":["id"],"unico":true,
+                                "primario":true}]}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"auditoria",
+                    "colunas":[{"nome":"evento","tipo":"Str(60)"},
+                               {"nome":"quem","tipo":"Str(20)"}]}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        s
+    }
+
+    /// Pelo `despachar`, que e por onde o pedido entra de verdade.
+    fn sql(s: &Arc<Servidor>, texto: &str) -> Result<Json> {
+        let mut ses = Sessao::default();
+        let corpo = Json::objeto(vec![
+            ("token", Json::texto_de("t")),
+            ("op", Json::texto_de("sql")),
+            ("database", Json::texto_de("b")),
+            ("texto", Json::texto_de(texto)),
+        ])
+        .escrever();
+        let (_, _, r) = s.despachar(&corpo, &mut ses, "127.0.0.1");
+        r
+    }
+
+    fn inserir(s: &Arc<Servidor>, tabela: &str, linha: &str) -> Result<Json> {
+        s.executar(
+            "inserir",
+            &pedido(&format!(
+                r#"{{"database":"b","tabela":"{tabela}","linha":{linha}}}"#
+            )),
+            &Sessao::default(),
+        )
+    }
+
+    /// Quantas linhas quem consulta VE — o excluir suave tira da lista sem
+    /// mexer no contador do cabecalho, entao contar `registros` mentiria.
+    fn registros(s: &Arc<Servidor>, tabela: &str) -> i64 {
+        s.executar(
+            "varrer",
+            &pedido(&format!(
+                r#"{{"database":"b","tabela":"{tabela}","max":100}}"#
+            )),
+            &Sessao::default(),
+        )
+        .unwrap()
+        .campo("linhas")
+        .and_then(Json::lista)
+        .map(|l| l.len() as i64)
+        .unwrap_or(-1)
+    }
+
+    /// O caso 1 do pedido 49: BEFORE INSERT normaliza um campo.
+    #[test]
+    fn before_insert_normaliza_o_campo() {
+        let s = servidor(&dir_temp("normaliza"));
+        sql(
+            &s,
+            "CREATE TRIGGER normaliza BEFORE INSERT ON clientes FOR EACH ROW \
+             SET NEW.cidade = UPPER(TRIM(NEW.cidade))",
+        )
+        .unwrap();
+        let r = inserir(
+            &s,
+            "clientes",
+            r#"{"id":1,"nome":"Ana","cidade":"  blumenau "}"#,
+        )
+        .unwrap();
+        let rowid = r.inteiro_ou("rowid", 0);
+        let linha = s
+            .executar(
+                "ler",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"clientes","rowid":{rowid}}}"#
+                )),
+                &Sessao::default(),
+            )
+            .unwrap();
+        assert_eq!(linha.texto_ou("cidade", ""), "BLUMENAU");
+        // E a resposta nao ganhou campo novo: sem aviso, a forma e a velha.
+        assert!(r.campo("gatilhos_avisos").is_none());
+    }
+
+    /// O caso 2: SIGNAL cancela — o erro leva a MESSAGE_TEXT e a linha NAO
+    /// entra. E o mesmo gatilho deixa passar a linha que obedece a regra.
+    #[test]
+    fn sinal_cancela_a_escrita_e_a_linha_nao_entra() {
+        let s = servidor(&dir_temp("sinal"));
+        sql(
+            &s,
+            "CREATE TRIGGER exige_nome BEFORE INSERT ON clientes FOR EACH ROW \
+             IF NEW.nome IS NULL OR NEW.nome = '' THEN \
+               SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'cliente sem nome nao entra'; \
+             END IF",
+        )
+        .unwrap();
+        let e = inserir(&s, "clientes", r#"{"id":1,"nome":"","cidade":"X"}"#).unwrap_err();
+        assert!(
+            matches!(&e, PhxError::Sinal { estado, .. } if estado == "45000"),
+            "esperava Sinal, veio {e}"
+        );
+        assert!(e.to_string().contains("cliente sem nome nao entra"), "{e}");
+        assert_eq!(e.codigo(), 3005);
+        assert_eq!(registros(&s, "clientes"), 0, "a linha recusada ENTROU");
+
+        inserir(&s, "clientes", r#"{"id":1,"nome":"Ana","cidade":"X"}"#).unwrap();
+        assert_eq!(registros(&s, "clientes"), 1);
+    }
+
+    /// O caso 3: AFTER INSERT grava a auditoria noutra tabela, com o NEW
+    /// como a linha FICOU gravada.
+    #[test]
+    fn after_insert_audita_noutra_tabela() {
+        let s = servidor(&dir_temp("audita"));
+        sql(
+            &s,
+            "CREATE TRIGGER audita AFTER INSERT ON clientes FOR EACH ROW \
+             INSERT INTO auditoria (evento, quem) \
+             VALUES (CONCAT('entrou ', NEW.nome), 'gatilho')",
+        )
+        .unwrap();
+        let r = inserir(&s, "clientes", r#"{"id":7,"nome":"Maria","cidade":"J"}"#).unwrap();
+        assert!(r.campo("gatilhos_avisos").is_none(), "{}", r.escrever());
+        let audit = s
+            .executar(
+                "varrer",
+                &pedido(r#"{"database":"b","tabela":"auditoria","max":10}"#),
+                &Sessao::default(),
+            )
+            .unwrap();
+        let linhas = audit.campo("linhas").and_then(Json::lista).unwrap();
+        assert_eq!(linhas.len(), 1);
+        assert_eq!(linhas[0].texto_ou("evento", ""), "entrou Maria");
+    }
+
+    /// UPDATE ve OLD e NEW; DELETE ve OLD e o SIGNAL protege a linha — nos
+    /// dois modos de excluir, porque nos dois a linha some da lista.
+    #[test]
+    fn update_e_delete_veem_old() {
+        let s = servidor(&dir_temp("old"));
+        inserir(
+            &s,
+            "clientes",
+            r#"{"id":1,"nome":"protegido","cidade":"X"}"#,
+        )
+        .unwrap();
+        inserir(&s, "clientes", r#"{"id":2,"nome":"comum","cidade":"X"}"#).unwrap();
+        sql(
+            &s,
+            "CREATE TRIGGER sem_renomear BEFORE UPDATE ON clientes FOR EACH ROW \
+             IF NEW.nome <> OLD.nome THEN \
+               SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'nome nao se troca'; \
+             END IF",
+        )
+        .unwrap();
+        sql(
+            &s,
+            "CREATE TRIGGER sem_excluir BEFORE DELETE ON clientes FOR EACH ROW \
+             IF OLD.nome = 'protegido' THEN \
+               SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'este nao sai'; \
+             END IF",
+        )
+        .unwrap();
+
+        // Trocar a cidade pode; trocar o nome, nao.
+        s.executar(
+            "atualizar",
+            &pedido(
+                r#"{"database":"b","tabela":"clientes","rowid":1,
+                    "linha":{"id":1,"nome":"protegido","cidade":"Y"}}"#,
+            ),
+            &Sessao::default(),
+        )
+        .unwrap();
+        let e = s
+            .executar(
+                "atualizar",
+                &pedido(
+                    r#"{"database":"b","tabela":"clientes","rowid":1,
+                        "linha":{"id":1,"nome":"outro","cidade":"Y"}}"#,
+                ),
+                &Sessao::default(),
+            )
+            .unwrap_err();
+        assert!(e.to_string().contains("nome nao se troca"), "{e}");
+
+        // Excluir o protegido nao pode — nem suave, nem fisico.
+        for extra in ["", r#","fisico":true"#] {
+            let e = s
+                .executar(
+                    "excluir",
+                    &pedido(&format!(
+                        r#"{{"database":"b","tabela":"clientes","rowid":1{extra}}}"#
+                    )),
+                    &Sessao::default(),
+                )
+                .unwrap_err();
+            assert!(e.to_string().contains("este nao sai"), "{e}");
+        }
+        assert_eq!(registros(&s, "clientes"), 2);
+        // O comum sai.
+        s.executar(
+            "excluir",
+            &pedido(r#"{"database":"b","tabela":"clientes","rowid":2}"#),
+            &Sessao::default(),
+        )
+        .unwrap();
+        assert_eq!(registros(&s, "clientes"), 1);
+    }
+
+    /// O caso 4 (pedido 50): procedimento com IN, OUT e WHILE somando.
+    #[test]
+    fn procedimento_com_in_out_e_while() {
+        let s = servidor(&dir_temp("proc"));
+        sql(
+            &s,
+            "CREATE PROCEDURE somar(IN ate INT, OUT total INT) BEGIN \
+               DECLARE i INT DEFAULT 1; \
+               SET total = 0; \
+               WHILE i <= ate DO \
+                 SET total = total + i; \
+                 SET i = i + 1; \
+               END WHILE; \
+             END",
+        )
+        .unwrap();
+        let r = sql(&s, "CALL somar(100)").unwrap();
+        assert_eq!(r.texto_ou("procedimento", ""), "somar");
+        assert_eq!(r.campo("saida").unwrap().inteiro_ou("total", -1), 5050);
+    }
+
+    /// Procedimento le o motor: SELECT … INTO com COUNT(*) e com coluna.
+    #[test]
+    fn procedimento_le_com_select_into() {
+        let s = servidor(&dir_temp("into"));
+        inserir(&s, "clientes", r#"{"id":1,"nome":"Ana","cidade":"BNU"}"#).unwrap();
+        inserir(&s, "clientes", r#"{"id":2,"nome":"Bia","cidade":"JLE"}"#).unwrap();
+        sql(
+            &s,
+            "CREATE PROCEDURE resumo(IN qual INT, OUT quantos INT, OUT nome_dele VARCHAR(20)) \
+             BEGIN \
+               SELECT COUNT(*) INTO quantos FROM clientes; \
+               SELECT nome INTO nome_dele FROM clientes WHERE id = qual; \
+             END",
+        )
+        .unwrap();
+        let r = sql(&s, "CALL resumo(2)").unwrap();
+        let saida = r.campo("saida").unwrap();
+        assert_eq!(saida.inteiro_ou("quantos", -1), 2);
+        assert_eq!(saida.texto_ou("nome_dele", ""), "Bia");
+    }
+
+    /// **A porta dos fundos continua fechada.** CALL roda com o poder de quem
+    /// chama: quem nao pode inserir na tabela nao passa a poder porque um
+    /// administrador guardou um INSERT nela dentro de um procedimento.
+    ///
+    /// A prova real deste teste esta em docs/TRIGGERS.md: com o
+    /// `executar_derivado` do motor trocado por `executar` (sem portao), ele
+    /// FALHA com a linha gravada — que e o furo que ele existe para impedir.
+    #[test]
+    fn call_nao_e_a_porta_dos_fundos_para_a_tabela_negada() {
+        let dir = dir_temp("porta");
+        let cadastro = Cadastro::de_json(&pedido(
+            r#"{"usuarios":[{"login":"ana","id":9,
+                 "senha_hash":"pbkdf2-sha256$1000$00$00",
+                 "bases":{"b":{"ler":true,"inserir":true,
+                               "tabelas":{"auditoria":{"ler":true}}}}}]}"#,
+        ))
+        .unwrap();
+        let mut c = config_de(&dir);
+        c.cadastro = cadastro.clone();
+        let s = Servidor::novo(c).unwrap();
+        let dono = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &dono)
+            .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"auditoria",
+                    "colunas":[{"nome":"evento","tipo":"Str(60)"}]}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        // O dono guarda o procedimento que grava na tabela fechada.
+        s.op_sql(
+            &pedido(
+                r#"{"database":"b",
+                    "texto":"CREATE PROCEDURE fura() INSERT INTO auditoria (evento) VALUES ('furou')"}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+
+        // A ana pode ler a base e ate inserir nas outras tabelas — mas na
+        // auditoria so pode ler, e o CALL nao muda isso.
+        let ana = Sessao {
+            usuario: cadastro.por_login("ana").cloned(),
+            ..Sessao::default()
+        };
+        let e = s
+            .op_sql(&pedido(r#"{"database":"b","texto":"CALL fura()"}"#), &ana)
+            .unwrap_err();
+        assert!(
+            e.to_string().contains("permissao") || e.to_string().contains("acesso"),
+            "{e}"
+        );
+        let quantos = s
+            .executar(
+                "varrer",
+                &pedido(r#"{"database":"b","tabela":"auditoria","max":10}"#),
+                &dono,
+            )
+            .unwrap()
+            .inteiro_ou("registros", -1);
+        assert_eq!(quantos, 0, "o CALL furou o portao e gravou");
+    }
+
+    /// Criar, excluir e listar rotina exigem administrar — inserir na tabela
+    /// nao basta, pela escalada descrita no comentario do `executar_rotina`.
+    #[test]
+    fn criar_rotina_exige_administrar() {
+        let dir = dir_temp("administrar");
+        let cadastro = Cadastro::de_json(&pedido(
+            r#"{"usuarios":[{"login":"ana","id":9,
+                 "senha_hash":"pbkdf2-sha256$1000$00$00",
+                 "bases":{"b":{"ler":true,"inserir":true,"criar":true}}}]}"#,
+        ))
+        .unwrap();
+        let mut c = config_de(&dir);
+        c.cadastro = cadastro.clone();
+        let s = Servidor::novo(c).unwrap();
+        let dono = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &dono)
+            .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"c",
+                    "colunas":[{"nome":"id","tipo":"Int4"}]}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        let ana = Sessao {
+            usuario: cadastro.por_login("ana").cloned(),
+            ..Sessao::default()
+        };
+        for texto in [
+            "CREATE TRIGGER t BEFORE INSERT ON c FOR EACH ROW SET NEW.id = 1",
+            "CREATE PROCEDURE p() SET x = 1",
+            "DROP TRIGGER t",
+            "SHOW TRIGGERS",
+            "SHOW PROCEDURES",
+        ] {
+            let e = s
+                .op_sql(
+                    &pedido(&format!(r#"{{"database":"b","texto":"{texto}"}}"#)),
+                    &ana,
+                )
+                .unwrap_err();
+            assert!(
+                e.to_string().contains("administrar"),
+                "{texto} passou sem administrar: {e}"
+            );
+        }
+    }
+
+    /// **O comportamento velho.** Tabela sem gatilho grava exatamente como
+    /// antes — inclusive quando OUTRA tabela tem gatilho, que e quando o
+    /// portao atomico esta ligado e a consulta ao registro acontece.
+    #[test]
+    fn sem_gatilho_nada_muda() {
+        let s = servidor(&dir_temp("velho"));
+        // Gatilho na auditoria, nunca na clientes.
+        sql(
+            &s,
+            "CREATE TRIGGER na_outra BEFORE INSERT ON auditoria FOR EACH ROW \
+             SET NEW.quem = 'x'",
+        )
+        .unwrap();
+        let r = inserir(&s, "clientes", r#"{"id":1,"nome":"ana","cidade":"bnu"}"#).unwrap();
+        assert_eq!(r.chaves(), vec!["rowid", "registros"], "a forma mudou");
+        let linha = s
+            .executar(
+                "ler",
+                &pedido(r#"{"database":"b","tabela":"clientes","rowid":1}"#),
+                &Sessao::default(),
+            )
+            .unwrap();
+        // Minusculo como entrou: nenhum gatilho alheio encostou aqui.
+        assert_eq!(linha.texto_ou("cidade", ""), "bnu");
+        // Atualizar e excluir tambem continuam com a forma velha.
+        let r = s
+            .executar(
+                "atualizar",
+                &pedido(
+                    r#"{"database":"b","tabela":"clientes","rowid":1,
+                        "linha":{"id":1,"nome":"ana","cidade":"jle"}}"#,
+                ),
+                &Sessao::default(),
+            )
+            .unwrap();
+        assert_eq!(r.chaves(), vec!["rowid", "versao"]);
+        let r = s
+            .executar(
+                "excluir",
+                &pedido(r#"{"database":"b","tabela":"clientes","rowid":1}"#),
+                &Sessao::default(),
+            )
+            .unwrap();
+        assert_eq!(
+            r.chaves(),
+            vec!["rowid", "excluido", "modo", "na_lixeira", "reversivel"]
+        );
+    }
+
+    /// O gatilho sobrevive ao reinicio: sai do `gatilhos.json` e volta
+    /// compilado.
+    #[test]
+    fn o_gatilho_sobrevive_ao_reinicio() {
+        let dir = dir_temp("reinicio");
+        {
+            let s = servidor(&dir);
+            sql(
+                &s,
+                "CREATE TRIGGER normaliza BEFORE INSERT ON clientes FOR EACH ROW \
+                 SET NEW.cidade = UPPER(NEW.cidade)",
+            )
+            .unwrap();
+        }
+        // Outro processo, mesma base.
+        let s = Servidor::novo(config_de(&dir)).unwrap();
+        inserir(&s, "clientes", r#"{"id":1,"nome":"Ana","cidade":"bnu"}"#).unwrap();
+        let linha = s
+            .executar(
+                "ler",
+                &pedido(r#"{"database":"b","tabela":"clientes","rowid":1}"#),
+                &Sessao::default(),
+            )
+            .unwrap();
+        assert_eq!(linha.texto_ou("cidade", ""), "BNU");
+    }
+
+    #[test]
+    fn drop_tira_e_show_lista() {
+        let s = servidor(&dir_temp("drop"));
+        sql(
+            &s,
+            "CREATE TRIGGER normaliza BEFORE INSERT ON clientes FOR EACH ROW \
+             SET NEW.cidade = UPPER(NEW.cidade)",
+        )
+        .unwrap();
+        sql(&s, "CREATE PROCEDURE nada() SET @x = 1").unwrap_err(); // @ nao existe
+        sql(
+            &s,
+            "CREATE PROCEDURE dobro(IN x INT, OUT y INT) SET y = x * 2",
+        )
+        .unwrap();
+
+        let r = sql(&s, "SHOW TRIGGERS").unwrap();
+        assert_eq!(r.inteiro_ou("total", -1), 1);
+        let g = &r.campo("gatilhos").and_then(Json::lista).unwrap()[0];
+        assert_eq!(g.texto_ou("nome", ""), "normaliza");
+        assert_eq!(g.texto_ou("quando", ""), "BEFORE");
+        assert!(
+            g.texto_ou("corpo", "").contains("UPPER"),
+            "o corpo nao voltou"
+        );
+
+        let r = sql(&s, "SHOW PROCEDURES").unwrap();
+        assert_eq!(r.inteiro_ou("total", -1), 1);
+
+        sql(&s, "DROP TRIGGER normaliza").unwrap();
+        sql(&s, "DROP PROCEDURE dobro").unwrap();
+        assert_eq!(sql(&s, "SHOW TRIGGERS").unwrap().inteiro_ou("total", -1), 0);
+        // Depois do DROP, a escrita volta a ser a crua.
+        inserir(&s, "clientes", r#"{"id":1,"nome":"Ana","cidade":"bnu"}"#).unwrap();
+        let linha = s
+            .executar(
+                "ler",
+                &pedido(r#"{"database":"b","tabela":"clientes","rowid":1}"#),
+                &Sessao::default(),
+            )
+            .unwrap();
+        assert_eq!(linha.texto_ou("cidade", ""), "bnu");
+        // E o segundo DROP recusa — mas com IF EXISTS, passa.
+        assert!(sql(&s, "DROP TRIGGER normaliza").is_err());
+        assert!(sql(&s, "DROP TRIGGER IF EXISTS normaliza").is_ok());
+    }
+
+    /// O lote passa pelo BEFORE linha a linha: a recusada vira erro DO LOTE,
+    /// com a posicao, e as outras entram — o contrato de sempre do lote.
+    #[test]
+    fn lote_passa_pelo_before_por_linha() {
+        let s = servidor(&dir_temp("lote"));
+        sql(
+            &s,
+            "CREATE TRIGGER exige_nome BEFORE INSERT ON clientes FOR EACH ROW \
+             BEGIN \
+               IF NEW.nome = '' THEN \
+                 SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'sem nome'; \
+               END IF; \
+               SET NEW.cidade = UPPER(NEW.cidade); \
+             END",
+        )
+        .unwrap();
+        let r = s
+            .executar(
+                "inserir_lote",
+                &pedido(
+                    r#"{"database":"b","tabela":"clientes","parar_no_erro":false,
+                        "linhas":[{"id":1,"nome":"Ana","cidade":"bnu"},
+                                  {"id":2,"nome":"","cidade":"x"},
+                                  {"id":3,"nome":"Bia","cidade":"jle"}]}"#,
+                ),
+                &Sessao::default(),
+            )
+            .unwrap();
+        assert_eq!(r.inteiro_ou("gravadas", -1), 2);
+        assert_eq!(r.inteiro_ou("recusadas", -1), 1);
+        let erros = r.campo("erros").and_then(Json::lista).unwrap();
+        assert_eq!(erros[0].inteiro_ou("linha", -1), 2);
+        assert!(erros[0].texto_ou("erro", "").contains("sem nome"));
+        assert_eq!(registros(&s, "clientes"), 2);
+        // E a normalizacao valeu para as que entraram.
+        let l = s
+            .executar(
+                "ler",
+                &pedido(r#"{"database":"b","tabela":"clientes","rowid":1}"#),
+                &Sessao::default(),
+            )
+            .unwrap();
+        assert_eq!(l.texto_ou("cidade", ""), "BNU");
+    }
+
+    /// Falha de AFTER nao desfaz a escrita — nao ha transacao — e vira o
+    /// aviso `gatilhos_avisos`, com o nome do gatilho, numa resposta `ok`.
+    #[test]
+    fn falha_de_after_vira_aviso_e_a_escrita_fica() {
+        let s = servidor(&dir_temp("aviso"));
+        sql(
+            &s,
+            "CREATE TRIGGER audita AFTER INSERT ON clientes FOR EACH ROW \
+             INSERT INTO tabela_que_nao_existe (a) VALUES (1)",
+        )
+        .unwrap();
+        let r = inserir(&s, "clientes", r#"{"id":1,"nome":"Ana","cidade":"X"}"#).unwrap();
+        assert_eq!(registros(&s, "clientes"), 1, "a escrita tinha de ficar");
+        let avisos = r.campo("gatilhos_avisos").and_then(Json::lista).unwrap();
+        assert!(
+            avisos[0].texto().unwrap_or("").contains("audita"),
+            "{}",
+            r.escrever()
+        );
+    }
+
+    /// Excluir a tabela leva os gatilhos dela: o orfao dispararia contra uma
+    /// homonima futura.
+    #[test]
+    fn excluir_tabela_leva_os_gatilhos() {
+        let s = servidor(&dir_temp("orfao"));
+        sql(
+            &s,
+            "CREATE TRIGGER normaliza BEFORE INSERT ON clientes FOR EACH ROW \
+             SET NEW.cidade = UPPER(NEW.cidade)",
+        )
+        .unwrap();
+        let r = s
+            .executar(
+                "excluir_tabela",
+                &pedido(r#"{"database":"b","tabela":"clientes","confirmar":"clientes"}"#),
+                &Sessao::default(),
+            )
+            .unwrap();
+        assert_eq!(r.inteiro_ou("gatilhos_apagados", -1), 1);
+        assert_eq!(sql(&s, "SHOW TRIGGERS").unwrap().inteiro_ou("total", -1), 0);
+        // Nota de rodape achada por ESTE teste e fora do escopo dele:
+        // `excluir_tabela` nao apaga o `.trash`, entao recriar a homonima
+        // recusa hoje por outro motivo. O orfao esta provado pelo registro.
+    }
+
+    /// Coluna de sistema nao se toca por gatilho: a ordem de digitacao e
+    /// sagrada, e um `SET NEW.rownum` seria o jeito novo de quebra-la.
+    #[test]
+    fn coluna_de_sistema_recusa_o_set() {
+        let s = servidor(&dir_temp("sistema"));
+        sql(
+            &s,
+            "CREATE TRIGGER esperto BEFORE INSERT ON clientes FOR EACH ROW \
+             SET NEW.rownum = 1",
+        )
+        .unwrap();
+        let e = inserir(&s, "clientes", r#"{"id":1,"nome":"a","cidade":"b"}"#).unwrap_err();
+        assert!(e.to_string().contains("sistema"), "{e}");
+        assert_eq!(registros(&s, "clientes"), 0);
+    }
+
+    /// Servidor somente-leitura nao cria nem exclui rotina — os arquivos de
+    /// rotina sao escrita como qualquer outra.
+    #[test]
+    fn somente_leitura_recusa_criar_rotina() {
+        let dir = dir_temp("soler");
+        {
+            let s = servidor(&dir);
+            drop(s);
+        }
+        let mut c = config_de(&dir);
+        c.somente_leitura = true;
+        let s = Servidor::novo(c).unwrap();
+        let e = sql(
+            &s,
+            "CREATE TRIGGER t BEFORE INSERT ON clientes FOR EACH ROW SET NEW.cidade = 'x'",
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("somente leitura"), "{e}");
     }
 }
 

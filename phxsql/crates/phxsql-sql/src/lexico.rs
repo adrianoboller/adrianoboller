@@ -57,6 +57,13 @@ pub enum Token {
     FechaParen,
     Asterisco,
     PontoEVirgula,
+    /// `+`, `-` e `/` existem por causa dos corpos de rotina (gatilhos e
+    /// procedimentos), que fazem conta. O `SELECT` nao os usa -- e continua
+    /// recusando expressao, agora com uma mensagem de sintaxe em vez de
+    /// "caractere nao faz parte da linguagem".
+    Mais,
+    Menos,
+    Barra,
 }
 
 impl Token {
@@ -84,6 +91,9 @@ impl Token {
             Token::FechaParen => ")".into(),
             Token::Asterisco => "*".into(),
             Token::PontoEVirgula => ";".into(),
+            Token::Mais => "+".into(),
+            Token::Menos => "-".into(),
+            Token::Barra => "/".into(),
         }
     }
 }
@@ -113,7 +123,7 @@ pub fn analisar(entrada: &str) -> Result<Vec<Simbolo>> {
             continue;
         }
         // Comentarios. Vem antes dos operadores porque `--` comeca com `-`, e
-        // `/*` com `/`.
+        // `/*` com `/`. O `-` e o `/` sozinhos caem nos operadores adiante.
         if c == '-' && b.get(i + 1) == Some(&'-') {
             while i < b.len() && b[i] != '\n' {
                 i += 1;
@@ -161,6 +171,18 @@ pub fn analisar(entrada: &str) -> Result<Vec<Simbolo>> {
             ';' => {
                 i += 1;
                 Token::PontoEVirgula
+            }
+            '+' => {
+                i += 1;
+                Token::Mais
+            }
+            '-' => {
+                i += 1;
+                Token::Menos
+            }
+            '/' => {
+                i += 1;
+                Token::Barra
             }
             '=' => {
                 i += 1;

@@ -533,7 +533,18 @@ pub fn json_para_valor(j: &Json, ty: &ColumnType) -> Result<Value> {
             Value::UInt(n as u64)
         }
         ColumnType::Real4 | ColumnType::Real8 => {
-            Value::Real(j.numero().ok_or_else(|| erro("numero"))?)
+            // Real escrito como TEXTO tambem serve -- o mesmo alargamento do
+            // inteiro acima, pelos mesmos clientes (ODBC e o protocolo do
+            // PostgreSQL(R) mandam TODO parametro como texto) e agora pelos
+            // gatilhos, que escrevem numero fracionario como texto porque a
+            // conta deles nao passa por f64. Quem manda numero continua
+            // exatamente como antes; texto que nao e numero continua
+            // recusado com o mesmo erro.
+            let n = match j {
+                Json::Texto(t) => t.trim().parse::<f64>().ok(),
+                outro => outro.numero(),
+            };
+            Value::Real(n.ok_or_else(|| erro("numero"))?)
         }
         ColumnType::Decimal { escala, .. } => {
             match j {
@@ -1340,5 +1351,24 @@ mod testes_inteiro_em_texto {
         )
         .unwrap_err();
         assert!(e.to_string().contains("centavo"), "{e}");
+    }
+
+    /// O Real alarga como o inteiro alargou: texto numerico serve, numero
+    /// continua igual, texto torto continua recusado. Quem precisa disso e o
+    /// gatilho (a conta dele nao passa por f64, entao fracionario sai como
+    /// texto) e todo cliente que so fala texto — ODBC, fio do PostgreSQL(R).
+    #[test]
+    fn real_aceita_texto_como_o_inteiro_ja_aceita() {
+        assert_eq!(
+            json_para_valor(&Json::texto_de("1.5"), &ColumnType::Real8).unwrap(),
+            Value::Real(1.5)
+        );
+        assert_eq!(
+            json_para_valor(&Json::Numero(1.5), &ColumnType::Real8).unwrap(),
+            Value::Real(1.5),
+            "quem manda numero continua exatamente como antes"
+        );
+        let e = json_para_valor(&Json::texto_de("abc"), &ColumnType::Real4).unwrap_err();
+        assert_eq!(e.nome(), "TIPO_INVALIDO", "{e}");
     }
 }

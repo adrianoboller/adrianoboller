@@ -1239,7 +1239,83 @@ defeito. O esquema recusa na criação.
 | Volumes por arquivo | 65.535 (limite do ponteiro externo) |
 | Offset dentro de um volume externo | 256 TB (48 bits) |
 
-## 13. O que este formato ainda não faz
+## 13. `gatilhos.json` e `procedimentos.json` — o cadastro de rotinas
+
+Dois arquivos **por database**, no diretório dele, ao lado das tabelas:
+
+```
+base/
+└── loja/
+    ├── clientes.reg ...        as tabelas
+    ├── gatilhos.json           os gatilhos deste database
+    └── procedimentos.json      os procedimentos deste database
+```
+
+São os únicos arquivos do layout que **não são binários**, e é deliberado:
+isto é **cadastro, não dado**. Muda por comando (`CREATE TRIGGER`), lê-se no
+olho, e viaja junto com o backup do diretório sem precisar de ferramenta. O
+volume é de dezenas de entradas, não de milhões de linhas — o formato binário
+existe para o que se lê por offset, e ninguém lê um gatilho por offset.
+
+```json
+{
+  "gatilhos": [
+    {
+      "nome": "normaliza",
+      "tabela": "clientes",
+      "quando": "BEFORE",
+      "evento": "INSERT",
+      "corpo": "SET NEW.cidade = UPPER(TRIM(NEW.cidade))",
+      "criado_em": "2026-08-29T16:58:03Z",
+      "criado_por": "root"
+    }
+  ]
+}
+```
+
+```json
+{
+  "procedimentos": [
+    {
+      "nome": "somar",
+      "parametros": [
+        {"modo": "IN",  "nome": "ate",   "tipo": "INT"},
+        {"modo": "OUT", "nome": "total", "tipo": "DECIMAL(15,2)"}
+      ],
+      "corpo": "BEGIN … END",
+      "criado_em": "2026-08-29T16:58:04Z",
+      "criado_por": "root"
+    }
+  ]
+}
+```
+
+Quatro regras do arquivo:
+
+- **`tabela` é o nome qualificado**, `schema.tabela` quando há schema — o mesmo
+  que o campo `"tabela"` do protocolo escreve, porque é contra ele que o
+  disparo compara. O database não aparece dentro: ele é o dono do arquivo, e
+  guardá-lo aqui seria a redundância que um dia discorda;
+- **o `corpo` é o texto verbatim** que o autor escreveu, com aspas, caixa e
+  espaços. É ele que o `SHOW` devolve, e é dele que sai a compilação a cada
+  carga. O compilado nunca vai a disco;
+- **arquivo ausente = zero rotinas**, e o comportamento é o de sempre. Quando a
+  última rotina sai, o arquivo é **apagado** — para o ausente continuar
+  significando o que significa, e para não sobrar um `{"gatilhos":[]}` que
+  alguém estranha no backup;
+- **JSON inválido derruba a subida do servidor**, com o caminho e o motivo.
+  Subir sem os gatilhos que o dono escreveu seria gravar sem as regras dele,
+  em silêncio.
+
+Excluir a tabela apaga os gatilhos dela do arquivo, no mesmo comando: um órfão
+dispararia contra uma homônima futura que não tem nada com ele.
+
+A linguagem, o portão de permissão e a semântica de disparo estão em
+`docs/TRIGGERS.md`.
+
+---
+
+## 14. O que este formato ainda não faz
 
 Documentado aqui para não haver surpresa:
 
@@ -1252,8 +1328,10 @@ Documentado aqui para não haver surpresa:
   índice.
 - **O `.log` não guarda o conteúdo anterior**, só o evento. Serve de auditoria,
   ainda não de journal para desfazer.
-- **Sem camada SQL.** Esta é a camada de armazenamento; o parser e o executor
-  entram por cima.
+- **A camada SQL não mora aqui.** Esta é a camada de armazenamento. O parser e
+  o executor entram por cima, e já existem em parte: a op `sql` traduz um
+  `SELECT` simples (`docs/SQL.md`) e os corpos de gatilho e de procedimento
+  (`docs/TRIGGERS.md`). O que falta é o planejador e a expressão em `WHERE`.
 - **A cifra cobre três arquivos, não os sete.** `.log`, `.trash` e `.reason`
   têm a versão 3; o `.reg`, o `.ndx`, o `.bin` e o `.memo` continuam em claro.
   Cifrar o `.reg` é outro problema — ele é de acesso aleatório por slot, e não
