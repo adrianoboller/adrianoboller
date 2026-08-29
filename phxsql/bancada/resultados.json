@@ -1,19 +1,19 @@
 [
   {
-    "segundos": 261.773,
-    "cpu_s": 247.92000000000004,
+    "segundos": 91.491,
+    "cpu_s": 76.89000000000013,
     "lido_mb": 0.0,
-    "escrito_mb": 2499.099999999997,
-    "pico_rss_mb": 1159.8,
+    "escrito_mb": 1856.6000000000035,
+    "pico_rss_mb": 12.7,
     "motor": "PhxSql",
     "fase": "inserir",
     "operacoes": 10000000
   },
   {
-    "segundos": 111.674,
-    "cpu_s": 122.75000000000001,
-    "lido_mb": 0.0,
-    "escrito_mb": 32809.29999999999,
+    "segundos": 112.367,
+    "cpu_s": 121.9699999999999,
+    "lido_mb": 7.0,
+    "escrito_mb": 32843.9,
     "pico_rss_mb": 684.0,
     "motor": "MySQL",
     "fase": "inserir",
@@ -23,26 +23,26 @@
     "motor": "PhxSql",
     "fase": "buscar",
     "operacoes": 20000,
-    "segundos": 1.11,
-    "cpu_s": 1.05,
-    "pico_rss_mb": 1165.9,
+    "segundos": 0.202,
+    "cpu_s": 0.14,
+    "pico_rss_mb": 10.7,
     "lido_mb": 0.0,
     "escrito_mb": 0.0,
     "saida": [
       "achados: 20000",
-      "RESULTADO {\"fase\":\"buscar\",\"operacoes\":20000,\"segundos\":1.0993,\"por_segundo\":18192.8}"
+      "RESULTADO {\"fase\":\"buscar\",\"operacoes\":20000,\"segundos\":0.1960,\"por_segundo\":102020.6}"
     ]
   },
   {
     "motor": "MySQL",
     "fase": "buscar",
     "operacoes": 20000,
-    "segundos": 2.597,
-    "cpu_s": 2.2,
+    "segundos": 2.637,
+    "cpu_s": 2.23,
     "pico_rss_mb": 656.7,
     "pico_confiavel": true,
     "lido_mb": 0.0,
-    "escrito_mb": 254.8,
+    "escrito_mb": 289.0,
     "erro": null,
     "saida": [
       "8364163",
@@ -53,22 +53,22 @@
     "motor": "PhxSql",
     "fase": "varrer",
     "operacoes": 1250000,
-    "segundos": 2.167,
-    "cpu_s": 2.11,
-    "pico_rss_mb": 1165.9,
+    "segundos": 1.411,
+    "cpu_s": 1.35,
+    "pico_rss_mb": 20.2,
     "lido_mb": 0.0,
     "escrito_mb": 0.0,
     "saida": [
       "linhas da cidade: 1250000 soma: 557620100000",
-      "RESULTADO {\"fase\":\"varrer\",\"operacoes\":1250000,\"segundos\":2.1345,\"por_segundo\":585617.5}"
+      "RESULTADO {\"fase\":\"varrer\",\"operacoes\":1250000,\"segundos\":1.3759,\"por_segundo\":908483.4}"
     ]
   },
   {
     "motor": "MySQL",
     "fase": "varrer",
     "operacoes": 20000,
-    "segundos": 16.166,
-    "cpu_s": 16.64,
+    "segundos": 15.696,
+    "cpu_s": 16.17,
     "pico_rss_mb": 656.7,
     "pico_confiavel": true,
     "lido_mb": 0.0,
@@ -82,25 +82,25 @@
     "motor": "PhxSql",
     "fase": "atualizar",
     "operacoes": 20000,
-    "segundos": 1.26,
-    "cpu_s": 0.97,
-    "pico_rss_mb": 1165.8,
+    "segundos": 0.454,
+    "cpu_s": 0.13,
+    "pico_rss_mb": 2.5,
     "lido_mb": 0.0,
     "escrito_mb": 72.2,
     "saida": [
-      "RESULTADO {\"fase\":\"atualizar\",\"operacoes\":20000,\"segundos\":1.2322,\"por_segundo\":16231.1}"
+      "RESULTADO {\"fase\":\"atualizar\",\"operacoes\":20000,\"segundos\":0.4341,\"por_segundo\":46072.7}"
     ]
   },
   {
     "motor": "MySQL",
     "fase": "atualizar",
     "operacoes": 20000,
-    "segundos": 5.614,
-    "cpu_s": 6.67,
+    "segundos": 5.508,
+    "cpu_s": 6.51,
     "pico_rss_mb": 656.7,
     "pico_confiavel": true,
     "lido_mb": 0.0,
-    "escrito_mb": 12998.6,
+    "escrito_mb": 13164.8,
     "erro": null,
     "saida": []
   },
@@ -108,25 +108,25 @@
     "motor": "PhxSql",
     "fase": "excluir",
     "operacoes": 20000,
-    "segundos": 6.565,
-    "cpu_s": 3.16,
-    "pico_rss_mb": 1165.8,
+    "segundos": 6.271,
+    "cpu_s": 2.42,
+    "pico_rss_mb": 16.0,
     "lido_mb": 0.0,
     "escrito_mb": 377.8,
     "saida": [
-      "RESULTADO {\"fase\":\"excluir\",\"operacoes\":20000,\"segundos\":6.5138,\"por_segundo\":3070.4}"
+      "RESULTADO {\"fase\":\"excluir\",\"operacoes\":20000,\"segundos\":6.2322,\"por_segundo\":3209.2}"
     ]
   },
   {
     "motor": "MySQL",
     "fase": "excluir",
     "operacoes": 20000,
-    "segundos": 5.413,
-    "cpu_s": 6.48,
+    "segundos": 4.731,
+    "cpu_s": 5.67,
     "pico_rss_mb": 656.7,
     "pico_confiavel": true,
     "lido_mb": 0.0,
-    "escrito_mb": 11524.7,
+    "escrito_mb": 11366.8,
     "erro": null,
     "saida": []
   },
