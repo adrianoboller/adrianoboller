@@ -222,7 +222,37 @@ recursos novos inventados aqui.
   9 testes, e o que mais importa deles é `sem_regra_de_tabela_nada_muda`: um
   `config.json` escrito antes desta versão continua se comportando igual.
 
+- **`docs/SQL.md`: o que a camada SQL precisa saber, antes de existir.** O
+  motor tem hoje um protocolo de operações, e não uma linguagem. O documento
+  mapeia cada construção de SQL na operação que já existe — e é curto de
+  propósito: a maior parte de um `SELECT` já tem substrato, e o que **não**
+  tem está listado com nome (expressão, planejador, `GROUP BY` geral,
+  subconsulta, transação).
+
+  Ele nasceu de uma pergunta específica: como o `BULKINSERT` entra numa
+  linguagem. A resposta é que ele **não** é açúcar sintático, por três motivos
+  que o analisador não pode ignorar — é palavra reservada; vale para a
+  **sessão**, e não para o comando, então um driver que multiplexa conexões
+  quebra a exclusividade sem avisar; e o `EM_CARGA` tem de virar
+  *serialization failure* no SQLSTATE, e não *access denied*, senão o driver
+  do outro lado desiste em vez de repetir.
+
+  E a frase que o documento repete alto: **`BULKINSERT` não é transação.** Ele
+  reserva a tabela; não desfaz nada. Quem ler «exclusiva até concluir» e
+  entender `BEGIN` vai perder dado.
+
 ### Mudado
+
+- **A tela de configuração explica cada ajuste, em vez de despejar o JSON.**
+  Ela mostrava o `config.json` cru — o que serve para conferir, e não para
+  decidir. Agora cada campo de `recursos` vem com uma linha dizendo o que ele
+  muda de verdade (`cache_paginas`, `carga_prazo_min`, `nucleos_efetivos`…),
+  e há uma seção **«Cargas em andamento»** listando as reservas de
+  `BULKINSERT` — quem, qual tabela, desde quando. O JSON continua embaixo.
+
+  Conferida no navegador, e não só lida: foi assim que `nucleos_efetivos`
+  apareceu com a explicação em branco. Quem não tem `administrar` vê a tela
+  sem a seção de cargas, e não um erro.
 
 - **`recursos.cache_paginas` passou a valer.** O campo estava no `config.json`,
   no MANUAL e na tela desde a 0.13.0, e **nenhuma linha de código o lia** — ele
