@@ -1774,13 +1774,27 @@ td label,td .rot-dado{text-transform:none;letter-spacing:0;font-size:inherit;
        So aparece quando a arvore esta sobreposta. -->
   <div class="veu-arvore" id="veuArvore" hidden></div>
 
+  <!-- A area de trabalho: REGIOES lado a lado, cada uma com a propria tira
+       de abas. O `PhxTelas` adota esta primeira regiao e esta primeira tela
+       em vez de cria-las -- assim, se o modulo nao carregar, a moldura ainda
+       desenha exatamente a de antes: cabecalho, abas da tabela e painel.
+       Os IDS moram na tela COM FOCO, e so nela; as outras se vestem pelas
+       CLASSES. Ver o cabecalho de `ui/multitela.js`. -->
   <main class="corpo">
-    <div class="cabecalho">
-      <h2 id="titulo">—</h2>
-      <div class="sub" id="subtitulo"></div>
+    <div class="regioes" id="regioes" data-n="1">
+      <section class="regiao foco">
+        <div class="tira" data-so-uma="1" role="tablist"
+             aria-label="Telas abertas nesta região"></div>
+        <div class="tela">
+          <div class="cabecalho">
+            <h2 id="titulo">—</h2>
+            <div class="sub" id="subtitulo"></div>
+          </div>
+          <div class="abas" id="abas"></div>
+          <div class="painel" id="painel"></div>
+        </div>
+      </section>
     </div>
-    <div class="abas" id="abas"></div>
-    <div class="painel" id="painel"></div>
   </main>
 </div>
 
@@ -2251,6 +2265,21 @@ async function abrirApp() {
   // Antes de montar a arvore: `montarArvore` termina clicando no Painel, e
   // esse clique passa por `marcar`, que ja consulta o estado da lateral.
   ligarLateral();
+  // E antes de qualquer tela pintar: e o `PhxTelas` que decide quem carrega
+  // os ids `#painel`/`#titulo`, e sem ele a primeira tela pintaria numa tela
+  // que ainda nao e a com foco.
+  const rota = window.PhxTelas ? PhxTelas.rotaDaUrl() : { destacada:false };
+  if (window.PhxTelas) PhxTelas.iniciar({ destacada: rota.destacada });
+
+  if (rota.destacada) {
+    // Janela destacada: sem arvore, sem menu, sem barra. So a folha pedida.
+    // Montar a arvore aqui custaria uma chamada por banco para desenhar algo
+    // que o CSS esconde.
+    $("#fita").textContent += ` · ${rota.tela}`;
+    await PhxTelas.abrirRota();
+    return;
+  }
+
   await montarArvore();
   // O campo "Database" do login abre a arvore ja na primeira tabela
   // desse banco, em vez de deixar o usuario procurar.
@@ -2259,6 +2288,9 @@ async function abrirApp() {
       `.no.tab[data-db="${CSS.escape(est.database)}"]`);
     if (primeira) primeira.click();
   }
+  // As abas PINADAS voltam por ultimo, para nao competirem com o clique que
+  // a arvore da no Painel. Quem nunca pinou nada nao ve diferenca nenhuma.
+  if (window.PhxTelas) await PhxTelas.restaurar();
 }
 
 // =====================================================================
@@ -2306,11 +2338,27 @@ async function montarArvore(abrirPainel = true) {
 
   const a = $("#arvore");
   a.innerHTML = html;
-  a.querySelectorAll("[data-tab]").forEach(n => n.onclick = () => {
-    marcar(n); abrirTabela(n.dataset.db, n.dataset.tab);
+  // A arvore passa pelo `PhxTelas` de proposito: clicar numa tabela JA aberta
+  // volta para a aba dela em vez de recarregar -- e e por isso que a grade
+  // rolada ate a linha 800 sobrevive a um passeio pela arvore. Sem o modulo,
+  // ou com uma aba so, o caminho e o mesmo de sempre.
+  const irTabela = (n, nova) => {
+    marcar(n);
+    if (window.PhxTelas) {
+      if (nova) PhxTelas.novaAba();
+      return PhxTelas.abrir("tabela", { db: n.dataset.db, tab: n.dataset.tab });
+    }
+    return abrirTabela(n.dataset.db, n.dataset.tab);
+  };
+  a.querySelectorAll("[data-tab]").forEach(n => {
+    n.onclick = ev => irTabela(n, ev && (ev.ctrlKey || ev.metaKey));
+    n.onauxclick = ev => { if (ev.button === 1) irTabela(n, true); };
   });
-  a.querySelectorAll("[data-admin]").forEach(n => n.onclick = () => {
-    marcar(n); abrirAdmin(n.dataset.admin);
+  a.querySelectorAll("[data-admin]").forEach(n => n.onclick = ev => {
+    marcar(n);
+    if ((ev.ctrlKey || ev.metaKey) && window.PhxTelas) PhxTelas.novaAba();
+    Promise.resolve(abrirAdmin(n.dataset.admin))
+      .then(() => { if (window.PhxTelas) PhxTelas.renomear(); });
   });
   // O [+] ao lado do titulo do grupo. `stopPropagation` porque ele mora
   // dentro do cabecalho, e clicar nele nao e clicar no grupo.
@@ -2352,6 +2400,9 @@ async function abrirTabela(db, tab) {
   $("#abas").querySelectorAll(".aba").forEach(b => b.onclick = () => {
     est.aba = b.dataset.aba; abrirTabela(db, tab);
   });
+  // A aba passa a dizer QUAL tabela ela mostra -- e e por isso que voltar
+  // nesta tabela pela arvore acha esta aba em vez de recarregar a grade.
+  if (window.PhxTelas) { PhxTelas.marcar("tabela", { db, tab }); PhxTelas.renomear(); }
   await desenharAba();
 }
 
@@ -3049,6 +3100,10 @@ async function vPainel() {
 async function abrirAdmin(qual) {
   est.atual = null;
   $("#abas").innerHTML = "";
+  // Esta aba deixou de ser a tabela que era: `est.atual` acabou de virar nulo,
+  // e uma aba que continuasse dizendo «sou a tabela clientes» faria o clique
+  // seguinte na arvore achar que nao havia nada a recarregar.
+  if (window.PhxTelas) PhxTelas.marcar(null);
   pararMonitor();
   const p = $("#painel");
   p.innerHTML = `<div class="centro">carregando…</div>`;
@@ -3059,6 +3114,10 @@ async function abrirAdmin(qual) {
         "o servidor inteiro numa tela · os monitores da máquina renovam sozinhos";
       p.innerHTML = await vPainel();
       ligarMonitor();
+      // Aba escondida para de perguntar pela maquina. Sem este par, quatro
+      // abas de Painel abertas seriam quatro relogios batendo para desenhar
+      // tres telas que ninguem esta vendo.
+      if (window.PhxTelas) PhxTelas.laco(pararMonitor, ligarMonitor);
       return;
     }
     if (qual === "usuarios") {
@@ -8530,13 +8589,20 @@ function montarFerramentas() {
       ${svg(f.ico)}<span class="rot">${esc(rotulo)}</span></button>`;
   }).join("");
 
-  $("#ferramentas").onclick = ev => {
+  // `auxclick` e nao `click`: o botao do meio nao dispara `click` em navegador
+  // nenhum, e e ele que toda gente ja usa para "abre isto noutra aba".
+  const disparar = (ev, novaAba) => {
     const b = ev.target.closest(".fer");
     if (!b) return;
     const f = FERRAMENTAS[+b.dataset.f];
     if (!f.faz) return aindaNao(f);
+    // Ctrl/Cmd/meio abre em ABA NOVA; o clique simples continua trocando o
+    // conteudo da aba de agora, que e o que a barra sempre fez.
+    if (novaAba && window.PhxTelas) { ev.preventDefault(); PhxTelas.novaAba(); }
     Promise.resolve().then(f.faz).catch(e => avisar(`${e}`, true));
   };
+  $("#ferramentas").onclick = ev => disparar(ev, ev.ctrlKey || ev.metaKey);
+  $("#ferramentas").onauxclick = ev => { if (ev.button === 1) disparar(ev, true); };
 }
 
 /** A tela do que ainda nao existe. Diz o que e, o que falta e de que depende. */
@@ -10505,13 +10571,17 @@ function telaTelemetria() {
         "o que o servidor está fazendo agora — séries, atividades e threads, "
         + "em gráficos bolha no molde do SQL Check da Idera®",
         PhxTelemetria.html());
-  PhxTelemetria.iniciar({
+  const ligar = () => PhxTelemetria.iniciar({
     api,
     aoAvisar: (t, mal) => avisar(t, mal),
     // Dois segundos: a serie do servidor anda de segundo em segundo, e pedir
     // mais rapido que ela so traria a mesma amostra duas vezes.
     periodo: 2000,
   });
+  ligar();
+  // Escondida, a telemetria PARA de pedir -- de 2 em 2 segundos e o pedido
+  // mais caro da tela, e num monitor de quatro regioes seriam quatro.
+  if (window.PhxTelas) PhxTelas.laco(() => PhxTelemetria.parar(), ligar);
 }
 
 async function verProfiler() {
@@ -10649,6 +10719,15 @@ async function verProfiler() {
   };
   await atualizar();
   profTimer = setInterval(atualizar, 1000);
+  // O laco do Profiler ja sabia parar sozinho quando saia da tela (ele
+  // pergunta por `#pfCorpo`). Com abas isso continua verdade -- a aba
+  // escondida sai do documento --, mas quem VOLTA precisa religar, e e o
+  // segundo membro do par que faz isso.
+  if (window.PhxTelas) {
+    PhxTelas.laco(
+      () => clearInterval(profTimer),
+      () => { clearInterval(profTimer); profTimer = setInterval(atualizar, 1000); });
+  }
 }
 
 async function repararPeloMenu() {
@@ -10921,6 +11000,36 @@ const MENUS = [
   ["Ver", "V", [
     { rot:"Atualizar", ico:"↻", tecla:"F5", faz:atualizarVista },
     { rot:"Tema claro / escuro", ico:"🌓", faz:() => $("#btTema").click() },
+    "sep",
+    // A area de trabalho: abas vivas e regioes lado a lado. Ver o cabecalho
+    // de `ui/multitela.js` e `docs/MULTITELA.md`.
+    // Alt+N e Alt+W, e nao Alt+T: o `T` ja abre o menu Tabelas, e trocar a
+    // tecla debaixo do dedo de quem ja aprendeu vale menos que a aba nova.
+    { rot:"Nova aba nesta região", ico:"⊞", tecla:"Alt+N",
+      faz:() => PhxTelas.novaAba() },
+    { rot:"Fechar esta aba", ico:"⊟", tecla:"Alt+W",
+      faz:() => PhxTelas.fecharAtiva(),
+      // Regiao com uma aba so nao fecha a ultima: sobraria uma coluna vazia,
+      // que e pior que a tela que estava la.
+      quando:() => PhxTelas.podeFechar() },
+    // Apagado quando NAO CABE, e nao um erro depois do clique: a largura
+    // util e o que decide, e o item cinza ja diz isso antes de o dedo sair
+    // do lugar. `quando` e reavaliado a cada abertura do menu, entao esticar
+    // a janela acende os itens sozinho.
+    { rot:"Uma região", ico:"▮", faz:() => PhxTelas.dividir(1) },
+    { rot:"Duas regiões", ico:"▮▮", faz:() => PhxTelas.dividir(2),
+      quando:() => PhxTelas.maxRegioes() >= 2 },
+    { rot:"Três regiões", ico:"▮▮▮", faz:() => PhxTelas.dividir(3),
+      quando:() => PhxTelas.maxRegioes() >= 3 },
+    { rot:"Quatro regiões", ico:"▮▮▮▮", faz:() => PhxTelas.dividir(4),
+      quando:() => PhxTelas.maxRegioes() >= 4 },
+    // O terceiro modo: janela flutuante DENTRO da pagina. Nao e janela do
+    // sistema -- nao depende de popup, de permissao nem de navegador.
+    { rot:"Soltar esta tela numa janela", ico:"⇱",
+      faz:() => PhxTelas.soltar() },
+    { rot:"Alinhar com as bordas dos monitores", ico:"⧉",
+      faz:() => PhxTelas.alinharComOsMonitores() },
+    { rot:"Sobre o modo multitela…", ico:"◫", faz:() => PhxTelas.telaAjuda() },
   ]],
 
   ["Ajuda", "j", [
@@ -11009,6 +11118,8 @@ function ligarMenu() {
     if (!it || it.disabled) return;
     const entrada = MENUS[+it.dataset.m][2][+it.dataset.i];
     fecharMenu();
+    // Ctrl/Cmd no item do menu abre em ABA NOVA, como na barra de ferramentas.
+    if ((ev.ctrlKey || ev.metaKey) && window.PhxTelas) PhxTelas.novaAba();
     Promise.resolve().then(entrada.faz).catch(e => avisar(`${e}`, true));
   });
 
@@ -11293,6 +11404,14 @@ function ligarAtalhos() {
     if (ev.altKey && ev.key === "5") { ev.preventDefault(); gerirTabelasAtual(); return; }
     if (ev.altKey && ev.key === "6") { ev.preventDefault(); gerirDatabase(); return; }
     if (ev.altKey && ev.key === "7") { ev.preventDefault(); telaPivot(); }
+    // A area de trabalho. `key.toLowerCase()` porque Alt+letra chega em
+    // maiuscula em alguns teclados, e um atalho que so funciona sem Shift
+    // e um atalho que as vezes nao funciona.
+    if (ev.altKey && window.PhxTelas) {
+      const k = String(ev.key || "").toLowerCase();
+      if (k === "n") { ev.preventDefault(); PhxTelas.novaAba(); return; }
+      if (k === "w") { ev.preventDefault(); PhxTelas.fecharAtiva(); }
+    }
   });
 }
 
@@ -11342,11 +11461,20 @@ function folha(titulo, subtitulo, corpoHtml) {
   // E o mesmo caso do onclick: o relogio do monitor continuaria batendo numa
   // tela que nao tem mais onde desenhar. Vale para os dois relogios que
   // existem: o do monitor e o da telemetria.
-  pararMonitor();
-  if (window.PhxTelemetria) PhxTelemetria.parar();
+  //
+  // Por que `pararLaco()` e nao `pararMonitor(); PhxTelemetria.parar()`: com
+  // abas, parar o relogio GLOBAL daqui mataria a telemetria da aba ao lado,
+  // que nem foi tocada. O laco e da ABA, e quem para e a aba.
+  if (window.PhxTelas) PhxTelas.pararLaco();
+  else { pararMonitor(); if (window.PhxTelemetria) PhxTelemetria.parar(); }
   $("#titulo").textContent = titulo;
   $("#subtitulo").textContent = subtitulo || "";
   $("#painel").innerHTML = corpoHtml;
+  // O rotulo da aba acompanha o titulo que a tela acabou de escrever, e a aba
+  // deixa de dizer que e a tela que estava aqui antes: `marcar(null)` quer
+  // dizer «folha avulsa». Dentro de `PhxTelas.abrir(...)` isto e ignorado --
+  // la a chave acabou de ser posta de proposito.
+  if (window.PhxTelas) { PhxTelas.marcar(null); PhxTelas.renomear(); }
 }
 
 function fichasDe(obj, rotulos) {
@@ -11952,5 +12080,22 @@ $("#btSair").onclick = async () => {
   if (!est.demo && est.sessao) { try { await api("sair"); } catch {} }
   location.reload();
 };
-detectarModo();
+
+/* A entrada, e o desvio de quem chegou por `?tela=…&destacada=1`.
+ *
+ * A janela destacada nao pede login de novo E nao le a sessao do disco do
+ * navegador: ela PEDE a ficha a janela que a abriu, pelo `BroadcastChannel`,
+ * e essa ficha nunca encosta no `localStorage` -- o disco do navegador e lido
+ * por qualquer outra aba da mesma origem e sobrevive ao fechamento. Se a mae
+ * ja tiver morrido, a filha cai no formulario, que e o caminho honesto. */
+detectarModo().then(async () => {
+  if (!window.PhxTelas) return;
+  const rota = PhxTelas.rotaDaUrl();
+  if (!rota.destacada || est.demo) return;
+  if (await PhxTelas.pedirSessao(rota)) {
+    try { await abrirApp(); }
+    catch (e) { $("#recado").className = "recado erro";
+                $("#recado").textContent = String(e && e.message || e); }
+  }
+});
 </script>

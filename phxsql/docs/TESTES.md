@@ -96,7 +96,7 @@ não tem nenhum. A prova dele é o `bancada/replicacao/`, que **não roda no
 
 ## 2. A bateria de frontend
 
-Como rodar, os onze casos e o que ela deliberadamente não faz:
+Como rodar, os treze casos e o que ela deliberadamente não faz:
 `testes-web/LEIA-ME.md`.
 
 O resumo do desenho:
@@ -107,7 +107,7 @@ O resumo do desenho:
 - **Entra pela tela de login**, com o desafio-resposta de verdade. Se a página
   cair em modo demonstração, o caso falha — sem essa guarda a bateria inteira
   passaria sem tocar no motor.
-- **Percorre 112 telas** clicando cada item dos nove menus e cada botão da
+- **Percorre 120 telas** clicando cada item dos nove menus e cada botão da
   barra, e reprova em qualquer erro. Esse laço sozinho vale mais que dez
   asserções bonitas: foi ele que pegou um `` ` `` a mais dentro de um template
   literal em três segundos, com a página inteira morta.
