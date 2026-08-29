@@ -128,6 +128,41 @@
     "manter": 14
   },
 
+  "_replicacao_papeis": [
+    "papel diz o que este servidor E, e o que ele atende:",
+    "",
+    "  replica       o de sempre: puxa do source e nao e escrito pela",
+    "                aplicacao (com somente_leitura ligado).",
+    "  read_replica  replica de LEITURA: atende consulta de cliente e recusa",
+    "                escrita com um erro que APONTA o primario (codigo 4003).",
+    "                Serve relatorio e balanceamento de leitura.",
+    "  spare         reserva de contingencia: nao atende cliente NENHUM, nem",
+    "                leitura (codigo 4004). So administracao, monitoramento e",
+    "                a propria replicacao enxergam. Assume com a operacao",
+    "                {\"op\":\"spare_promover\"}, que e local e manual.",
+    "  multi         bidirecional: os DOIS servidores recebem escrita e trocam",
+    "                alteracoes. Exige id_servidor nos dois, imagem_da_linha,",
+    "                relogios em NTP e tabela com CHAVE UNICA -- ver",
+    "                docs/REPLICACAO.md secao 12 antes de ligar.",
+    "",
+    "id_servidor identifica este servidor nos eventos do diario. No modo multi",
+    "ele e obrigatorio: e dele que sai a origem que impede a alteracao de",
+    "voltar para quem a mandou."
+  ],
+
+  "_replicacao_agenda": [
+    "Por padrao a replica e STREAMING: puxa continuamente, dormindo",
+    "reconectar_em segundos entre uma pergunta em vao e a seguinte.",
+    "",
+    "Dois campos, POR ORIGEM, trocam isso por janelas:",
+    "",
+    "  cada_minutos: 15   uma janela a cada 15 minutos",
+    "  hora: \"02:30\"      uma janela por dia, as 02:30 UTC (a noite)",
+    "",
+    "AUSENTES OU ZERO = streaming, exatamente como sempre foi. Na janela a",
+    "replica puxa ate esgotar, porque a proxima chance so vem depois."
+  ],
+
   "replicacao": {
     "papel": "replica",
     "id_servidor": "belgica-01",
@@ -150,12 +185,14 @@
         "reconectar_em": 10
       },
       {
+        "_": "Esta origem e AGENDADA: uma janela por dia, as 02:30 UTC.",
         "nome": "bruxelas",
         "host": "10.3.1.7",
         "porta": 5000,
         "token": "TOKEN-DO-SOURCE-BRUXELAS",
         "databases": ["W"],
-        "reconectar_em": 30
+        "reconectar_em": 30,
+        "hora": "02:30"
       }
     ]
   }

@@ -48,6 +48,10 @@ pub enum PhxError {
     /// do banco, com o SQLSTATE e a MESSAGE_TEXT que ele escolheu. Num
     /// gatilho BEFORE, cancela a escrita.
     Sinal { estado: String, mensagem: String },
+    /// Este servidor e um SPARE de contingencia: nao atende cliente, nem
+    /// para ler. Erro proprio porque a acao de quem recebe e outra --
+    /// esperar ou promover, nunca insistir.
+    SpareEmEspera(String),
 }
 
 impl PhxError {
@@ -92,6 +96,7 @@ impl PhxError {
             PhxError::Autorizacao(_) => 4001,
             PhxError::EmCarga(_) => 4002,
             PhxError::Redireciona(_) => 4003,
+            PhxError::SpareEmEspera(_) => 4004,
             PhxError::Io(_) => 5001,
         }
     }
@@ -114,6 +119,7 @@ impl PhxError {
             PhxError::Autorizacao(_) => "ACESSO_NEGADO",
             PhxError::EmCarga(_) => "EM_CARGA",
             PhxError::Redireciona(_) => "REDIRECIONA",
+            PhxError::SpareEmEspera(_) => "SPARE_EM_ESPERA",
             PhxError::Io(_) => "ERRO_DE_ES",
         }
     }
@@ -189,6 +195,7 @@ impl fmt::Display for PhxError {
             PhxError::Sinal { estado, mensagem } => {
                 write!(f, "{mensagem} (SIGNAL SQLSTATE {estado})")
             }
+            PhxError::SpareEmEspera(m) => write!(f, "spare em espera: {m}"),
         }
     }
 }
@@ -237,6 +244,7 @@ mod testes_codigo {
             PhxError::EmCarga(String::new()),
             PhxError::Autorizacao(String::new()),
             PhxError::Redireciona(String::new()),
+            PhxError::SpareEmEspera(String::new()),
             PhxError::Io(std::io::Error::other("x")),
         ];
         let mut codigos: Vec<u16> = todos.iter().map(PhxError::codigo).collect();
@@ -266,7 +274,23 @@ mod testes_codigo {
         assert_eq!(PhxError::Autorizacao(String::new()).codigo(), 4001);
         assert_eq!(PhxError::EmCarga(String::new()).codigo(), 4002);
         assert_eq!(PhxError::Redireciona(String::new()).codigo(), 4003);
+        assert_eq!(PhxError::SpareEmEspera(String::new()).codigo(), 4004);
         assert_eq!(PhxError::Io(std::io::Error::other("x")).codigo(), 5001);
+    }
+
+    /// Os dois erros de papel sao recusa DEFINITIVA deste servidor: repetir o
+    /// pedido aqui nao muda nada -- o conserto e falar com o primario.
+    ///
+    /// `Redireciona` cobre os dois casos que nasceram separados: a escrita
+    /// numa read replica e a escrita numa replica de cluster. Para quem chama,
+    /// e o mesmo evento -- "va para o outro servidor" -- e um evento so tem
+    /// um codigo.
+    #[test]
+    fn recusa_por_papel_nao_pede_nova_tentativa() {
+        assert!(!PhxError::Redireciona(String::new()).adianta_repetir());
+        assert!(!PhxError::SpareEmEspera(String::new()).adianta_repetir());
+        assert_eq!(PhxError::Redireciona(String::new()).classe(), "acesso");
+        assert_eq!(PhxError::SpareEmEspera(String::new()).classe(), "acesso");
     }
 
     #[test]

@@ -256,6 +256,10 @@ impl Atividade {
             // cluster, e qualquer cliente precisa dele para achar o master.
             "cluster_pulso" => Atividade::Replicar,
             "cluster_estado" => Atividade::Ler,
+            // Promover um spare vira o papel do servidor inteiro; o estado do
+            // laco expoe origem, endereco e erro de conexao. Os dois sao
+            // decisao e mapa de administrador, nao de replica.
+            "spare_promover" | "replicacao_estado" | "replicacao_testar" => Atividade::Administrar,
             // Operacao desconhecida exige o maior poder: nega por omissao.
             _ => Atividade::Administrar,
         })

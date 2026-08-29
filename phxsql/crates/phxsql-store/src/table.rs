@@ -133,6 +133,20 @@ pub struct Table {
     motivos: MotivoFile,
     /// Gravar a imagem da linha no diario? Ver [`Table::com_imagem_no_diario`].
     imagem_no_diario: bool,
+    /// Gravar a imagem TAMBEM na exclusao fisica?
+    ///
+    /// A exclusao classica vai sem imagem porque o rowid basta -- entre
+    /// servidores que replicam pelo rowid, ele e a identidade. No bidirecional
+    /// a identidade e a CHAVE, e a chave mora dentro da imagem: sem ela o
+    /// outro lado recebe "excluiu o rowid 42" e nao sabe QUAL linha e essa la.
+    imagem_na_exclusao: bool,
+    /// Carimbo e origem que o PROXIMO evento do diario deve levar, uma vez so.
+    ///
+    /// E o gancho do bidirecional: um evento aplicado aqui guarda o instante e
+    /// o servidor em que a escrita NASCEU, e nao o relogio local da chegada --
+    /// senao o conflito "mais recente vence" elegeria sempre quem sincronizou
+    /// por ultimo. `None` = escrita local, relogio local, origem zero.
+    evento_forcado: Option<(i64, u16)>,
 }
 
 fn caminho(diretorio: &Path, nome: &str, ext: &str) -> PathBuf {
@@ -190,6 +204,8 @@ impl Table {
             lixeira,
             motivos,
             imagem_no_diario: false,
+            imagem_na_exclusao: false,
+            evento_forcado: None,
         };
         t.gravar_pag()?;
         Ok(t)
@@ -286,6 +302,8 @@ impl Table {
             lixeira,
             motivos,
             imagem_no_diario: false,
+            imagem_na_exclusao: false,
+            evento_forcado: None,
         })
     }
 
@@ -307,6 +325,24 @@ impl Table {
 
     pub fn imagem_no_diario(&self) -> bool {
         self.imagem_no_diario
+    }
+
+    /// Liga a imagem da linha tambem no evento de EXCLUSAO fisica.
+    ///
+    /// So faz efeito com [`Table::ligar_imagem_no_diario`] ligada tambem. E o
+    /// que o papel bidirecional exige: la a identidade entre servidores e a
+    /// chave, e a chave mora dentro da imagem.
+    pub fn ligar_imagem_na_exclusao(&mut self, ligado: bool) {
+        self.imagem_na_exclusao = ligado;
+    }
+
+    /// O PROXIMO evento do diario leva este carimbo e esta origem, uma vez so.
+    ///
+    /// Ver o campo `evento_forcado`. Chamar antes de `inserir`, `atualizar` ou
+    /// `excluir_de_vez` quando a operacao esta APLICANDO uma escrita que
+    /// nasceu em outro servidor.
+    pub fn forcar_proximo_evento(&mut self, carimbo: i64, origem: u16) {
+        self.evento_forcado = Some((carimbo, origem));
     }
 
     pub fn nome(&self) -> &str {
@@ -832,13 +868,20 @@ impl Table {
         versao: u64,
         payload: &[u8],
     ) -> Result<()> {
+        // Consumido SEMPRE, mesmo sem imagem: um forcado que sobrasse para a
+        // operacao seguinte carimbaria uma escrita local com relogio alheio.
+        let (carimbo, origem) = match self.evento_forcado.take() {
+            Some((c, o)) => (Some(c), o),
+            None => (None, 0),
+        };
         if !self.imagem_no_diario {
-            self.log.registrar(operacao, rowid, versao)?;
+            self.log
+                .registrar_detalhado(operacao, rowid, versao, &[], carimbo, origem)?;
             return Ok(());
         }
         let imagem = self.imagem_da_linha(payload)?;
         self.log
-            .registrar_com_imagem(operacao, rowid, versao, &imagem)?;
+            .registrar_detalhado(operacao, rowid, versao, &imagem, carimbo, origem)?;
         Ok(())
     }
 
@@ -1065,6 +1108,13 @@ impl Table {
         // payload apontam para blocos que esta mesma exclusao vai liberar.
         let externos = self.conteudo_externo(&payload)?;
         let identidade = self.identidade(&payload)?;
+        // A imagem se monta AGORA, antes de os blocos externos serem
+        // liberados: depois, os ponteiros do payload apontariam para o nada.
+        let imagem_do_evento = if self.imagem_no_diario && self.imagem_na_exclusao {
+            self.imagem_da_linha(&payload)?
+        } else {
+            Vec::new()
+        };
         self.lixeira.guardar(rowid, &payload, externos)?;
 
         let valores = self.decodificar(&payload, false)?;
@@ -1082,7 +1132,18 @@ impl Table {
             }
             self.motivos
                 .registrar(Tipo::Fisica, rowid, motivo, &identidade)?;
-            self.log.registrar(Operacao::Exclusao, rowid, 0)?;
+            let (carimbo, origem) = match self.evento_forcado.take() {
+                Some((c, o)) => (Some(c), o),
+                None => (None, 0),
+            };
+            self.log.registrar_detalhado(
+                Operacao::Exclusao,
+                rowid,
+                0,
+                &imagem_do_evento,
+                carimbo,
+                origem,
+            )?;
         }
         Ok(removeu)
     }
@@ -1301,6 +1362,16 @@ impl Table {
             i += n;
         }
         Ok((payload, externos))
+    }
+
+    /// Os valores da linha que uma imagem carrega, com os externos DELA.
+    ///
+    /// E o `abrir_imagem` mais a decodificacao, num passo so: o caminho que o
+    /// bidirecional usa para ler a CHAVE e os campos de um evento que chegou
+    /// de outro servidor, sem nunca seguir os ponteiros alheios do payload.
+    pub fn valores_da_imagem(&mut self, imagem: &[u8]) -> Result<Vec<Value>> {
+        let (payload, externos) = Table::abrir_imagem(imagem)?;
+        self.decodificar_com_externos(&payload, &externos)
     }
 
     /// Aplica um evento vindo do source. **So faz sentido numa replica.**

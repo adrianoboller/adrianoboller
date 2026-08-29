@@ -46,6 +46,19 @@ pub enum Papel {
     Source,
     /// Replica: conecta no source, le os eventos e aplica localmente.
     Replica,
+    /// Replica de leitura: como a replica, e com o contrato EXPLICITO --
+    /// leitura de cliente e bem-vinda, escrita de cliente e recusada com um
+    /// erro que aponta o primario. Serve relatorio e balanceamento de leitura.
+    ReadReplica,
+    /// Reserva de contingencia: replica que NAO atende cliente nenhum, nem de
+    /// leitura. So administracao e monitoramento enxergam, ate a operacao
+    /// `spare_promover` transforma-la em primario.
+    Spare,
+    /// Bidirecional (multi-master): recebe escrita de cliente E puxa as
+    /// alteracoes do outro servidor, casando as linhas pela CHAVE UNICA.
+    /// Exige `id_servidor`, e o conflito e resolvido pelo carimbo mais
+    /// recente -- ver docs/REPLICACAO.md.
+    Multi,
 }
 
 impl Papel {
@@ -54,6 +67,9 @@ impl Papel {
             "" | "isolado" | "standalone" => Papel::Isolado,
             "source" | "master" | "origem" => Papel::Source,
             "replica" | "slave" => Papel::Replica,
+            "read_replica" | "read-replica" | "leitura" => Papel::ReadReplica,
+            "spare" | "standby" => Papel::Spare,
+            "multi" | "multimaster" | "multi-master" | "bidirecional" => Papel::Multi,
             outro => {
                 return Err(PhxError::Esquema(format!(
                     "papel de replicacao desconhecido: {outro}"
@@ -67,7 +83,25 @@ impl Papel {
             Papel::Isolado => "isolado",
             Papel::Source => "source",
             Papel::Replica => "replica",
+            Papel::ReadReplica => "read_replica",
+            Papel::Spare => "spare",
+            Papel::Multi => "multi",
         }
+    }
+
+    /// Este papel roda o laco que puxa eventos de uma origem?
+    pub fn puxa_de_origem(self) -> bool {
+        matches!(
+            self,
+            Papel::Replica | Papel::ReadReplica | Papel::Spare | Papel::Multi
+        )
+    }
+
+    /// Este papel PRECISA da imagem da linha no diario para cumprir o que
+    /// promete? O source porque replica para fora; o multi porque alem disso
+    /// casa conflito pela chave, que mora dentro da imagem.
+    pub fn exige_imagem(self) -> bool {
+        matches!(self, Papel::Source | Papel::Multi)
     }
 }
 
@@ -92,6 +126,19 @@ pub struct Origem {
     /// Senha em claro. Existe so para quem ainda nao trocou o `config.json`,
     /// e o arranque avisa em voz alta.
     pub senha: String,
+    /// Replicacao AGENDADA: puxar a cada tantos minutos. Zero = streaming,
+    /// que e o comportamento de sempre -- o laco puxa continuamente.
+    pub cada_minutos: u64,
+    /// Replicacao DIARIA a uma hora marcada, "HH:MM" (ex.: "02:30", a noite).
+    /// Vazia = nao ha hora marcada. Com as duas vazias, vale o streaming.
+    pub hora: String,
+}
+
+impl Origem {
+    /// A replicacao desta origem e agendada (em vez de streaming)?
+    pub fn agendada(&self) -> bool {
+        self.cada_minutos > 0 || !self.hora.is_empty()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1373,14 +1420,17 @@ impl Config {
                                 usuario: o.texto_ou("usuario", "").trim().to_string(),
                                 senha_hash: o.texto_ou("senha_hash", "").trim().to_string(),
                                 senha: o.texto_ou("senha", "").to_string(),
+                                cada_minutos: o.inteiro_ou("cada_minutos", 0).max(0) as u64,
+                                hora: o.texto_ou("hora", "").trim().to_string(),
                             })
                             .collect()
                     })
                     .unwrap_or_default(),
                 imagem_da_linha: r.booleano_ou(
                     "imagem_da_linha",
-                    // O padrao segue o papel: source liga, o resto nao.
-                    Papel::de_texto(r.texto_ou("papel", "isolado"))? == Papel::Source,
+                    // O padrao segue o papel: quem PRECISA dela (source e
+                    // multi) liga, o resto nao.
+                    Papel::de_texto(r.texto_ou("papel", "isolado"))?.exige_imagem(),
                 ),
             },
         };
@@ -1495,15 +1545,53 @@ impl Config {
             }
             ocupadas.push((rotulo, alvo));
         }
-        // Com cluster, a origem e o master CORRENTE, descoberto pelo pulso --
-        // uma lista fixa de origens apontaria para o master de ontem.
+        // Duas regras que se somam: a lista de origens e exigida de TODO papel
+        // que puxa (replica, read replica, spare, multi) -- e nao so do
+        // `replica`, como era antes de os papeis novos existirem --, MENOS
+        // quando ha cluster, porque ai a origem e o master CORRENTE descoberto
+        // pelo pulso, e uma lista fixa apontaria para o master de ontem.
         if self.cluster.is_none()
-            && self.replicacao.papel == Papel::Replica
+            && self.replicacao.papel.puxa_de_origem()
             && self.replicacao.origens.is_empty()
         {
-            return Err(PhxError::Esquema(
-                "papel replica exige ao menos uma origem em replicacao.origens".into(),
-            ));
+            return Err(PhxError::Esquema(format!(
+                "papel {} exige ao menos uma origem em replicacao.origens",
+                self.replicacao.papel.nome()
+            )));
+        }
+        if self.replicacao.papel == Papel::Multi {
+            // O id e a identidade dos eventos: sem ele nao ha como marcar a
+            // origem, e sem a origem o evento que A aplicou de B voltaria
+            // para B num laco infinito.
+            if self.replicacao.id_servidor.trim().is_empty() {
+                return Err(PhxError::Esquema(
+                    "papel multi exige replicacao.id_servidor: e ele que marca a \
+                     origem de cada evento e impede o laco infinito"
+                        .into(),
+                ));
+            }
+            if self.somente_leitura {
+                return Err(PhxError::Esquema(
+                    "papel multi com somente_leitura e contradicao: multi existe \
+                     para receber escrita nos dois servidores"
+                        .into(),
+                ));
+            }
+            if !self.replicacao.imagem_da_linha {
+                return Err(PhxError::Esquema(
+                    "papel multi exige replicacao.imagem_da_linha: a identidade \
+                     entre servidores e a chave, e a chave mora dentro da imagem"
+                        .into(),
+                ));
+            }
+        }
+        for o in &self.replicacao.origens {
+            if !o.hora.is_empty() && Backup::minuto_do_dia(&o.hora).is_none() {
+                return Err(PhxError::Esquema(format!(
+                    "origem {}: hora invalida {:?} (use \"HH:MM\", 24 horas)",
+                    o.nome, o.hora
+                )));
+            }
         }
         if let Some(c) = &self.cluster {
             c.validar(&self.replicacao)?;
@@ -1554,6 +1642,7 @@ impl Config {
             ("somente_leitura", Json::Bool(self.somente_leitura)),
             ("espelho", Json::Bool(self.espelho)),
             ("papel", Json::texto_de(self.replicacao.papel.nome())),
+            ("id_servidor", Json::texto_de(&self.replicacao.id_servidor)),
             (
                 "replicacao_portas",
                 Json::Objeto(
@@ -1591,6 +1680,8 @@ impl Config {
                                 ("porta", Json::de_u64(o.porta as u64)),
                                 ("usuario", Json::texto_de(&o.usuario)),
                                 ("reconectar_em", Json::de_u64(o.reconectar_em)),
+                                ("cada_minutos", Json::de_u64(o.cada_minutos)),
+                                ("hora", Json::texto_de(&o.hora)),
                                 (
                                     "databases",
                                     Json::Lista(o.databases.iter().map(Json::texto_de).collect()),
@@ -2019,7 +2110,96 @@ mod tests {
         assert_eq!(Papel::de_texto("source").unwrap(), Papel::Source);
         assert_eq!(Papel::de_texto("slave").unwrap(), Papel::Replica);
         assert_eq!(Papel::de_texto("replica").unwrap(), Papel::Replica);
+        assert_eq!(Papel::de_texto("read_replica").unwrap(), Papel::ReadReplica);
+        assert_eq!(Papel::de_texto("leitura").unwrap(), Papel::ReadReplica);
+        assert_eq!(Papel::de_texto("spare").unwrap(), Papel::Spare);
+        assert_eq!(Papel::de_texto("standby").unwrap(), Papel::Spare);
+        assert_eq!(Papel::de_texto("multi").unwrap(), Papel::Multi);
+        assert_eq!(Papel::de_texto("bidirecional").unwrap(), Papel::Multi);
         assert!(Papel::de_texto("banana").is_err());
+    }
+
+    /// Os papeis novos que puxam de origem tambem exigem uma origem -- e o
+    /// multi exige a identidade e recusa a contradicao com somente_leitura.
+    #[test]
+    fn os_papeis_novos_validam_o_que_lhes_falta() {
+        for papel in ["read_replica", "spare", "multi"] {
+            let txt = format!(r#"{{"token":"x","replicacao":{{"papel":"{papel}"}}}}"#);
+            assert!(
+                Config::de_json(&Json::analisar(&txt).unwrap())
+                    .unwrap()
+                    .validar()
+                    .is_err(),
+                "{papel} sem origem subiu"
+            );
+        }
+
+        let origem = r#""origens":[{"nome":"a","host":"127.0.0.1","porta":5000,"token":"t"}]"#;
+
+        // Multi sem id_servidor: e o id que marca a origem dos eventos.
+        let sem_id = format!(r#"{{"token":"x","replicacao":{{"papel":"multi",{origem}}}}}"#);
+        let e = Config::de_json(&Json::analisar(&sem_id).unwrap())
+            .unwrap()
+            .validar()
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("id_servidor"), "{e}");
+
+        // Multi com somente_leitura e contradicao.
+        let contradicao = format!(
+            r#"{{"token":"x","somente_leitura":true,
+                 "replicacao":{{"papel":"multi","id_servidor":"a",{origem}}}}}"#
+        );
+        assert!(Config::de_json(&Json::analisar(&contradicao).unwrap())
+            .unwrap()
+            .validar()
+            .is_err());
+
+        // Multi completo sobe, e a imagem ja vem ligada por padrao.
+        let ok = format!(
+            r#"{{"token":"x","replicacao":{{"papel":"multi","id_servidor":"a",{origem}}}}}"#
+        );
+        let c = Config::de_json(&Json::analisar(&ok).unwrap()).unwrap();
+        c.validar().unwrap();
+        assert!(c.replicacao.imagem_da_linha, "multi liga a imagem sozinho");
+    }
+
+    /// O comportamento VELHO: origem sem os campos de agendamento continua
+    /// streaming, byte a byte como sempre foi. E o teste que mais importa.
+    #[test]
+    fn origem_sem_agendamento_continua_streaming() {
+        let txt = r#"{"token":"x","replicacao":{"papel":"replica",
+            "origens":[{"nome":"a","host":"127.0.0.1","porta":5000,"token":"t"}]}}"#;
+        let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
+        let o = &c.replicacao.origens[0];
+        assert_eq!(o.cada_minutos, 0);
+        assert!(o.hora.is_empty());
+        assert!(!o.agendada(), "sem os campos, e streaming como sempre");
+        c.validar().unwrap();
+    }
+
+    #[test]
+    fn origem_agendada_le_os_dois_jeitos_e_recusa_hora_invalida() {
+        let cada = r#"{"token":"x","replicacao":{"papel":"replica",
+            "origens":[{"nome":"a","host":"h","porta":5000,"token":"t","cada_minutos":15}]}}"#;
+        let c = Config::de_json(&Json::analisar(cada).unwrap()).unwrap();
+        assert_eq!(c.replicacao.origens[0].cada_minutos, 15);
+        assert!(c.replicacao.origens[0].agendada());
+        c.validar().unwrap();
+
+        let diaria = r#"{"token":"x","replicacao":{"papel":"replica",
+            "origens":[{"nome":"a","host":"h","porta":5000,"token":"t","hora":"02:30"}]}}"#;
+        let c = Config::de_json(&Json::analisar(diaria).unwrap()).unwrap();
+        assert_eq!(c.replicacao.origens[0].hora, "02:30");
+        assert!(c.replicacao.origens[0].agendada());
+        c.validar().unwrap();
+
+        let torta = r#"{"token":"x","replicacao":{"papel":"replica",
+            "origens":[{"nome":"a","host":"h","porta":5000,"token":"t","hora":"25:99"}]}}"#;
+        assert!(Config::de_json(&Json::analisar(torta).unwrap())
+            .unwrap()
+            .validar()
+            .is_err());
     }
     #[test]
     fn a_interface_web_vem_desligada_e_presa_ao_proprio_computador() {

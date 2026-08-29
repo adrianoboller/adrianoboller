@@ -179,6 +179,17 @@ pub const FABRICA: &[MensagemFabrica] = &[
     //   gatilho. Substitui-la por texto nosso seria apagar a voz dele; o
     //   idioma dessa mensagem e escolha de quem escreveu o gatilho.
     MensagemFabrica {
+        nome: "erro.spare_em_espera",
+        textos: [
+            "spare em espera: {detalhe}",
+            "serveur de secours en attente : {detalhe}",
+            "spare on standby: {detalhe}",
+            "server di riserva in attesa: {detalhe}",
+            "Reserveserver im Wartezustand: {detalhe}",
+            "servidor de reserva en espera: {detalhe}",
+        ],
+    },
+    MensagemFabrica {
         nome: "erro.redireciona",
         textos: [
             "{detalhe}",
@@ -424,6 +435,7 @@ pub fn decompor(e: &PhxError) -> (&'static str, String) {
         PhxError::Autorizacao(m) => ("erro.acesso_negado", m.clone()),
         PhxError::EmCarga(m) => ("erro.em_carga", m.clone()),
         PhxError::LimiteExcedido(m) => ("erro.limite_excedido", m.clone()),
+        PhxError::SpareEmEspera(m) => ("erro.spare_em_espera", m.clone()),
         PhxError::Redireciona(m) => ("erro.redireciona", m.clone()),
         PhxError::Sinal { estado, mensagem } => (
             "erro.sinal",
@@ -742,6 +754,7 @@ mod tests {
             PhxError::Autorizacao(String::new()),
             PhxError::EmCarga(String::new()),
             PhxError::LimiteExcedido(String::new()),
+            PhxError::SpareEmEspera(String::new()),
             PhxError::Redireciona(String::new()),
             PhxError::Sinal {
                 estado: String::new(),
