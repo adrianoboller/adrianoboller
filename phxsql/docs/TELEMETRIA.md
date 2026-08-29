@@ -201,8 +201,8 @@ pixels só é decidido depois, quando já se sabe quantas fileiras cabem.
 | cor | nível | quando | o que acompanha |
 |---|---|---|---|
 | azul | `normal` | tudo em paz | borda contínua |
-| amarelo | `alto` | operação acima de 2 s de relógio, **ou** parada na fila da trava | borda tracejada, **▲** |
-| vermelho | `stress` | **trabalhando** há mais de 5 s, **ou** segurando a trava enquanto há fila | borda pontilhada, **■** |
+| amarelo | `alto` | operação acima de `alto_uso_ms` (2 s de fábrica) de relógio, **ou** parada na fila da trava | borda tracejada, **▲** |
+| vermelho | `stress` | **trabalhando** há mais de `stress_ms` (5 s de fábrica), **ou** segurando a trava enquanto há fila | borda pontilhada, **■** |
 | rosa | `encerrando` | marcada para encerrar, ainda não chegou no ponto | traço longo, **✕** |
 
 **O vermelho tem de apontar UMA atividade**, e essa regra também saiu do
@@ -242,7 +242,9 @@ dois temas, **medido no navegador** com a fórmula da WCAG:
 | texto (`--texto`) | 14,47:1 | 18,45:1 |
 
 Elas saem das variáveis do tema e escurecem no claro pelo mesmo motivo do
-vermelhão da marca.
+vermelhão da marca — e é isso que o dono do servidor troca, se quiser, no bloco
+`telemetria` do `config.json` (§3.3.1). O que ele **não** troca é a segunda
+coluna da tabela lá em cima: o traço e o glifo não se configuram.
 
 **A faixa está ESCRITA na legenda**, com o número que o servidor mandou. «Amarelo
 · uso alto» sozinho obriga quem olha a adivinhar acima de quanto; agora a
@@ -255,6 +257,90 @@ os limiares em `limiares`. Com a regra escrita na tela também, o dia em que um
 dos dois mudasse a tela pintaria uma cor que o servidor não concorda — é a mesma
 razão pela qual `sistema` manda o `livre_minimo_percentual` junto com o espaço
 livre.
+
+### 3.3.1 As quatro cores e os dois limiares se configuram
+
+O bloco `telemetria` do `config.json`, editável também pela tela
+(*Configurações → Gerais do servidor → **Cores do painel de telemetria***):
+
+```json
+"telemetria": {
+  "cor_normal": "",
+  "cor_alto": "",
+  "cor_stress": "",
+  "cor_encerrando": "",
+  "alto_uso_ms": 2000,
+  "stress_ms": 5000
+}
+```
+
+**Campo vazio = cor de fábrica, e vazio é o padrão.** A de fábrica não é um
+hexadecimal: é a variável do tema (`var(--reg)`, `var(--ambar)`,
+`var(--vermelho)`, `var(--acao-marcar)`), que escurece sozinha no tema claro
+pelo mesmo motivo do vermelhão da marca. Congelar aqui o hexadecimal do tema
+escuro como «padrão» tiraria isso de quem nunca pediu nada — por isso o campo
+vazio **não viaja**: sem cor escolhida a resposta da telemetria não ganha o
+campo `cores`, e o retrato é o mesmo de antes deste bloco existir. É o que o
+teste `sem_cor_configurada_nada_muda` trava, nos dois níveis (unitário e por
+soquete).
+
+**O caminho da cor até a tela é o mesmo do resto da configuração.** A tela não
+lê arquivo: o painel recebe `cores` na própria resposta de `telemetria`, ao lado
+de `limiares`; a tela de Configurações recebe o bloco na resposta de `config`.
+O leitor é o `definir_pintura` do `Servidor::novo` e do `config_gravar` — tire-o
+e o `a_cor_e_o_limiar_do_config_chegam_pelo_soquete` cai, que é o mesmo defeito
+do `recursos.cache_paginas` prometendo um cache que não existia.
+
+**Vale a quente.** Salvar pela tela troca a cor na volta seguinte do painel
+(dois segundos). Isso obrigou o `configuracao_json` do servidor a responder com
+a pintura **viva**, e não com a do arranque — sem isso a tela gravava a cor, o
+painel obedecia, e a própria tela anunciava «gravado, vale no próximo arranque»,
+mentindo sobre o que ela acabara de fazer. Apareceu exercitando, não lendo.
+
+**O que NÃO se configura é o que não é cor.** O traço da borda, o glifo (▲ ■ ✕)
+e a palavra do estado continuam os mesmos em qualquer paleta — 8% dos homens não
+distinguem vermelho de amarelo, e uma paleta escolhida a gosto pode aproximar
+duas cores muito mais do que a de fábrica aproxima. A legenda passou a dizer o
+traço **por extenso** («▲ amarelo · uso alto · borda tracejada»), e a palavra da
+cor **some** quando a cor foi trocada: escrever «amarelo» ao lado de uma bolha
+roxa é mentira de tela, do mesmo tipo do «BLUMENAU» que o CSS global já fez.
+
+**A conferência de contraste avisa, não proíbe.** O rótulo vai *dentro* da
+bolha, e a tinta é escolhida medindo — a melhor das duas, clara ou escura
+(§3.3). A tela de Configurações mostra a **mesma** bolha ao lado do seletor,
+desenhada pela mesma função (`PhxTelemetria.amostra`), e escreve a razão; abaixo
+de 4,5:1 ela avisa em vermelho e deixa salvar, porque quem manda no servidor é o
+dono dele. Copiar a conta para a tela de configuração seria aprovar ali o que o
+painel desenha ilegível.
+
+E aqui um número que **mediu uma premissa e a corrigiu**: o exemplo que se conta
+por aí — «branco sobre amarelo claro dá 2,x:1» — **não acontece** neste painel,
+porque a tinta não é fixa. Com as duas tintas disponíveis, o pior caso possível
+é **4,35:1**, e ele só existe numa faixa estreita de luminância em torno de
+**0,19** — o meio-tom. Medido na tela: `#fff2b0` (amarelo claro) dá 16,74:1 com
+a tinta escura, e quem reprova é `#797979`, um cinza médio, com 4,35:1. O aviso
+continua valendo — ele é justamente o que pega a faixa que nenhuma tinta salva —,
+mas o que ele diz para fazer é **clarear ou escurecer** a cor, não trocá-la de
+matiz.
+
+**Cor torta não derruba o servidor.** `"cor_alto": "amarelo"` no arquivo vira
+aviso no arranque (e na tela, junto dos campos desconhecidos) e cai na de
+fábrica — o mesmo padrão do idioma que não existe. Quem **recusa** é o portão da
+gravação pela tela: `telemetria.cor_*` é do tipo `cor`, que aceita `#rrggbb` ou
+vazio e nada mais. O tipo também é o que faz a tela desenhar um seletor de cor
+ali — uma lista de «estes campos são cores» escrita no JavaScript envelheceria
+calada no dia em que entrasse a quinta cor.
+
+**Os limiares moram no mesmo bloco** porque são a mesma regra vista dos dois
+lados: `alto_uso_ms` e `stress_ms` decidem o nível no servidor e são o número
+que a legenda escreve. Zero seria apagar o nível inteiro — toda operação em
+curso nasceria amarela —, então o leitor tem piso de 1 ms.
+
+**A prova:** `bancada/telemetria/prova-das-cores.mjs`, que sobe um servidor
+próprio (portas 6600/6601), põe quatro somas concorrentes para produzir os três
+estados vivos, captura o painel de fábrica e trocado **nos dois temas**, mede o
+contraste do rótulo dentro de cada bolha desenhada e confere que a legenda deixa
+de dizer «amarelo» quando o amarelo deixou de ser amarelo.
 
 ### 3.4 O desenho, refeito contra a referência
 

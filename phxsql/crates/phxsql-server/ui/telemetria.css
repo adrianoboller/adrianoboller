@@ -262,6 +262,44 @@ input.tlm-busca {
 .tlm-leg[data-n="alto"] b { color:var(--ambar); }
 .tlm-leg[data-n="stress"] b { color:var(--vermelho); }
 .tlm-leg[data-n="encerrando"] b { color:var(--acao-marcar); }
+/* As quatro regras acima sao a cor DE FABRICA, e continuam sendo a resposta
+   certa para quem nao configurou nada -- e por isso o painel escurece sozinho
+   no tema claro. Quando ha cor escolhida, o JavaScript poe o `style` inline no
+   circulo e no `b`, que ganha da folha. Trocar isto por uma variavel escrita
+   pelo JS pareceria mais limpo e custaria o tema: `var(--reg)` no tema claro e
+   OUTRA cor, e uma variavel escrita uma vez congelaria a do tema em que a tela
+   abriu. */
+
+/* ------------------------------------------------- a amostra da bolha
+ *
+ * Mora aqui, e nao no `<style>` da pagina, porque quem a desenha e o modulo do
+ * painel: a amostra e a MESMA bolha, com o mesmo gradiente e o mesmo traco de
+ * borda. Duas folhas para o mesmo desenho e como as duas divergem.
+ *
+ * Fora do escopo `.tlm` de proposito -- ela aparece na tela de Configuracoes,
+ * que nao e o painel. */
+.tlm-amostra { width:34px; height:34px; flex:none; display:block; }
+.tlm-leg-t { display:inline; }
+
+/* ------------------------------------ o campo de cor, na tela de Configuracoes
+ *
+ * **O CSS global morde todo componente novo**, e aqui ele morde duas vezes:
+ * `input{width:100%}` transforma o seletor de cor numa barra da largura da
+ * coluna, e o `padding:8px 10px` de `.form-dbl input` deixa a mancha de cor do
+ * tamanho de um confete dentro dela. Os dois se desfazem explicitamente --
+ * `.cf-cor input[type=color]` ganha de `.form-dbl input` por especificidade. */
+.cmp-cor .cf-cor { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.cf-cor input[type=color] {
+  width:40px; height:34px; flex:none; padding:2px; margin:0; cursor:pointer;
+  border:1px solid var(--linha); border-radius:5px; background:var(--painel);
+}
+.cf-cor .botao { padding:4px 10px; font-size:10.5px; }
+.cf-cor-diz { font-size:10.5px; line-height:1.4; color:var(--texto-3);
+              text-transform:none; letter-spacing:0; }
+/* O aviso de contraste. `--vermelho` escurece no tema claro pelo mesmo motivo
+   do vermelhao da marca -- o aviso de ilegibilidade nao pode ele proprio ser
+   ilegivel. */
+.cf-cor-diz.mal { color:var(--vermelho); }
 
 /* ---------------------------------------------------------- a escala do peso
  *

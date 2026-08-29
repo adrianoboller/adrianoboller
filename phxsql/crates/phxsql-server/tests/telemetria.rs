@@ -53,6 +53,14 @@ fn pasta(nome: &str) -> std::path::PathBuf {
 }
 
 fn subir_servidor(base: &std::path::Path, porta: u16) -> Arc<Servidor> {
+    subir_com(base, porta, Default::default())
+}
+
+fn subir_com(
+    base: &std::path::Path,
+    porta: u16,
+    painel: phxsql_server::config::Painel,
+) -> Arc<Servidor> {
     let mut c = Config {
         bind: format!("127.0.0.1:{porta}"),
         base: base.to_path_buf(),
@@ -62,6 +70,7 @@ fn subir_servidor(base: &std::path::Path, porta: u16) -> Arc<Servidor> {
         jobs: base.join("jobs.json"),
         token: TOKEN.into(),
         max_linhas: 500_000,
+        telemetria: painel,
         ..Default::default()
     };
     c.web.ligado = false;
@@ -371,4 +380,73 @@ fn nenhuma_thread_fica_sem_finalidade_escrita() {
     // As duas que existem em qualquer servidor, com ou sem cluster e replica.
     assert!(bloco.contains("aceitador-dados"), "{bloco}");
     assert!(bloco.contains("amostrador"), "{bloco}");
+}
+
+/// **O comportamento VELHO.** Sem cor configurada, o retrato e o de sempre.
+///
+/// Este e o teste que mais importa aqui, e nao o da cor nova: quem nunca ouviu
+/// falar deste bloco nao pode receber um campo a mais nem uma cor diferente. A
+/// cor de fabrica e a variavel do tema, e ela escurece sozinha no tema claro --
+/// mandar o hexadecimal do tema escuro como "padrao" tiraria isso de todo mundo
+/// sem ninguem ter pedido.
+#[test]
+fn sem_cor_configurada_nada_muda() {
+    let base = pasta("cor-de-fabrica");
+    let porta = porta_livre();
+    let _s = subir_servidor(&base, porta);
+
+    let mut c = Conexao::abrir(porta);
+    let r = c.pedir("\"op\":\"telemetria\",\"amostras\":1");
+    assert!(
+        !r.contains("\"cores\""),
+        "sem cor configurada a resposta nao pode ganhar campo nenhum: {r}"
+    );
+    assert!(
+        r.contains("\"limiares\":{\"alto_uso_ms\":2000,\"stress_ms\":5000}"),
+        "os limiares de fabrica mudaram: {r}"
+    );
+}
+
+/// **O leitor.** A cor e o limiar do `config.json` chegam na resposta.
+///
+/// # O defeito reposto
+///
+/// Tire o `definir_pintura` do `Servidor::novo` (`servidor.rs`, logo depois de
+/// montar o servidor) e este teste cai nas duas asserções: o bloco continua no
+/// arquivo, a tela continua mostrando o campo, e nada acontece -- que e
+/// exatamente o `recursos.cache_paginas` prometendo um cache que nao existia.
+#[test]
+fn a_cor_e_o_limiar_do_config_chegam_pelo_soquete() {
+    let base = pasta("cor-configurada");
+    let porta = porta_livre();
+    let _s = subir_com(
+        &base,
+        porta,
+        phxsql_server::config::Painel {
+            cor_alto: "#00c2a8".into(),
+            cor_stress: "#7b2ff7".into(),
+            alto_uso_ms: 250,
+            stress_ms: 900,
+            ..Default::default()
+        },
+    );
+
+    let mut c = Conexao::abrir(porta);
+    let r = c.pedir("\"op\":\"telemetria\",\"amostras\":1");
+    assert!(
+        r.contains("\"cores\":{\"alto\":\"#00c2a8\",\"stress\":\"#7b2ff7\"}"),
+        "a cor configurada nao chegou na resposta: {r}"
+    );
+    // O que a legenda escreve sai da MESMA fonte que decide o nivel. Dois
+    // numeros para a mesma regra e como a tela acaba pintando o que o servidor
+    // nao concorda.
+    assert!(
+        r.contains("\"limiares\":{\"alto_uso_ms\":250,\"stress_ms\":900}"),
+        "o limiar configurado nao chegou na legenda: {r}"
+    );
+    // O que NAO foi configurado continua de fora, um nivel de cada vez.
+    assert!(
+        !r.contains("\"normal\":"),
+        "cor nao escolhida nao pode viajar: {r}"
+    );
 }

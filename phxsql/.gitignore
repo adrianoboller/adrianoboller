@@ -27,3 +27,4 @@
 # guardar uma copia dela seria guardar um retrato que envelhece calado.
 /bancada/telemetria/bancada.html
 /bancada/telemetria/*.png
+/bancada/telemetria/capturas-cores/

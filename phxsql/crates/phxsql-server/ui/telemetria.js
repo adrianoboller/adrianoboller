@@ -105,16 +105,47 @@ window.PhxTelemetria = (function () {
 
   /* Os quatro níveis, com o que NÃO é cor junto de cada um.
    *
-   * As cores saem das variáveis do console, e por isso escurecem sozinhas no
-   * tema claro — o mesmo caminho do vermelhão da marca. Nenhuma delas é
-   * escrita em hexadecimal aqui. */
+   * As cores DE FÁBRICA saem das variáveis do console, e por isso escurecem
+   * sozinhas no tema claro — o mesmo caminho do vermelhão da marca. Nenhuma
+   * delas é escrita em hexadecimal aqui.
+   *
+   * O dono do servidor pode trocar as quatro pelo `config.json` (bloco
+   * `telemetria`) ou pela tela de configuração, e aí a cor chega na resposta,
+   * em `cores`. **O que ele não pode trocar é o que não é cor**: o traço da
+   * borda, o glifo e a palavra do estado continuam iguais em qualquer paleta,
+   * porque são eles que fazem o painel se ler sem depender da cor — 8% dos
+   * homens não distinguem vermelho de amarelo, e uma paleta escolhida a gosto
+   * pode aproximar duas cores muito mais do que a de fábrica aproxima.
+   *
+   * `palavra` é o nome da cor de fábrica, e some quando a cor foi trocada:
+   * escrever «amarelo» ao lado de uma bolha roxa é mentira de tela, do mesmo
+   * tipo do «BLUMENAU» que o CSS global já fez uma vez. O que fica no lugar
+   * dela é `borda`, que é verdade em qualquer paleta. */
   const NIVEIS = {
-    normal:     { cor:"var(--reg)",      traco:"",      glifo:"",  rot:"normal" },
-    alto:       { cor:"var(--ambar)",    traco:"6 4",   glifo:"▲", rot:"uso alto" },
-    stress:     { cor:"var(--vermelho)", traco:"2 3",   glifo:"■", rot:"stress" },
-    encerrando: { cor:"var(--acao-marcar)", traco:"10 4", glifo:"✕", rot:"encerrando" },
+    normal:     { cor:"var(--reg)",      traco:"",      glifo:"",  rot:"normal",
+                  palavra:"azul",     borda:"borda cheia" },
+    alto:       { cor:"var(--ambar)",    traco:"6 4",   glifo:"▲", rot:"uso alto",
+                  palavra:"amarelo",  borda:"borda tracejada" },
+    stress:     { cor:"var(--vermelho)", traco:"2 3",   glifo:"■", rot:"stress",
+                  palavra:"vermelho", borda:"borda pontilhada" },
+    encerrando: { cor:"var(--acao-marcar)", traco:"10 4", glifo:"✕", rot:"encerrando",
+                  palavra:"rosa",     borda:"borda de traço longo" },
   };
   const ORDEM_NIVEL = { normal:0, alto:1, encerrando:2, stress:3 };
+
+  /** O piso da WCAG para texto pequeno. O rótulo vai DENTRO da bolha. */
+  const PISO_CONTRASTE = 4.5;
+
+  /* As cores escolhidas pelo dono do servidor, como vieram na resposta.
+   *
+   * Nível ausente = cor de fábrica, um nível de cada vez: quem trocou só o
+   * amarelo continua com os outros três seguindo o tema. */
+  let cores = {};
+
+  /** A cor de um nível: a escolhida, ou a de fábrica. */
+  function corDoNivel(n) {
+    return cores[n] || (NIVEIS[n] || NIVEIS.normal).cor;
+  }
 
   const esc = t => String(t ?? "").replace(/[&<>"']/g, c =>
     ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
@@ -369,7 +400,7 @@ window.PhxTelemetria = (function () {
          <stop offset="100%" stop-color="#000" stop-opacity=".45"/>
        </radialGradient>`;
     return `<defs>
-      ${Object.entries(NIVEIS).map(([n, v]) => g("tlmEsfera-" + n, v.cor)).join("")}
+      ${Object.keys(NIVEIS).map(n => g("tlmEsfera-" + n, corDoNivel(n))).join("")}
       <linearGradient id="tlmChao" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0%" style="stop-color:var(--painel-2)"/>
         <stop offset="100%" style="stop-color:var(--painel)"/>
@@ -387,7 +418,14 @@ window.PhxTelemetria = (function () {
    * são azul-escuras, e aqui as quatro cores CLAREIAM no tema escuro
    * (`--ambar` é #ffc43d). Branco sobre elas dá menos de 2:1. Então a cor se
    * decide medindo, e o contorno na cor oposta cobre a variação do gradiente —
-   * que é o mesmo truque do texto branco com borda da referência. */
+   * que é o mesmo truque do texto branco com borda da referência.
+   *
+   * **É esta função que a tela de configuração chama para avisar.** Com a cor
+   * escolhida por gente, «branco sobre amarelo claro dá 2,x:1» deixa de ser
+   * uma hipótese e vira o caso comum. Ela devolve a `razao` da melhor das duas
+   * tintas justamente para quem escolhe a cor poder ser avisado antes de
+   * salvar — e o aviso e o desenho saem da MESMA conta, senão a tela avisaria
+   * sobre uma bolha e pintaria outra. */
   function tintaDoRotulo(corCss) {
     const d = document.createElement("span");
     d.style.color = corCss;
@@ -406,6 +444,39 @@ window.PhxTelemetria = (function () {
     return escuro >= claro
       ? { tinta: "#0b0d16", contorno: "rgba(255,255,255,.6)", razao: escuro }
       : { tinta: "#ffffff", contorno: "rgba(0,0,0,.6)", razao: claro };
+  }
+
+  /* Uma bolha de amostra, do tamanho de um botão, com a conta do contraste.
+   *
+   * **Cor se escolhe vendo, não lendo hexadecimal** — e o que se vê tem de ser
+   * a bolha de verdade, com o mesmo gradiente, o mesmo traço de borda, o mesmo
+   * glifo e a mesma tinta de rótulo. Uma amostra que fosse só um quadradinho
+   * pintado esconderia exatamente o que dá errado: o rótulo DENTRO da bolha.
+   *
+   * Ela devolve a `razao` junto com o desenho porque quem escolhe precisa do
+   * aviso, e o aviso e o desenho têm de sair da mesma conta — senão a tela
+   * avisa sobre uma bolha e pinta outra. */
+  function amostra(nivel, cor) {
+    const v = NIVEIS[nivel] || NIVEIS.normal;
+    const c = (cor || "").trim() || v.cor;
+    const t = tintaDoRotulo(c);
+    const id = `tlmAm-${nivel}`;
+    const svg =
+      `<svg class="tlm-amostra" viewBox="0 0 52 52" role="img"
+            aria-label="amostra da bolha ${esc(v.rot)}, contraste ${t.razao.toFixed(2)} para 1">
+         <defs><radialGradient id="${id}" cx="34%" cy="28%" r="72%">
+           <stop offset="0%" stop-color="#fff" stop-opacity=".85"/>
+           <stop offset="26%" style="stop-color:${esc(c)}" stop-opacity=".95"/>
+           <stop offset="78%" style="stop-color:${esc(c)}" stop-opacity="1"/>
+           <stop offset="100%" stop-color="#000" stop-opacity=".45"/>
+         </radialGradient></defs>
+         <circle cx="26" cy="26" r="23" fill="url(#${id})" stroke="${esc(c)}"
+                 stroke-width="2" stroke-dasharray="${esc(v.traco)}"/>
+         <text x="26" y="30" text-anchor="middle" font-size="13" font-weight="600"
+               fill="${t.tinta}" stroke="${t.contorno}" stroke-width=".7"
+               paint-order="stroke">${esc(v.glifo || "#17")}</text>
+       </svg>`;
+    return { svg, razao: t.razao, passa: t.razao >= PISO_CONTRASTE, cor: c };
   }
 
   /* ------------------------------------------------------------- a deriva
@@ -530,14 +601,16 @@ window.PhxTelemetria = (function () {
            obriga quem olha a adivinhar acima de quanto; e o número que ela
            escreve vem do campo "limiares" da resposta, que é a mesma constante
            que decidiu a cor no servidor. Dois números para a mesma regra é
-           como a tela acaba pintando o que o servidor não concorda. -->
+           como a tela acaba pintando o que o servidor não concorda.
+
+           Ela sai do MESMO objeto que pinta as bolhas (NIVEIS), e não de
+           quatro linhas escritas à mão: a palavra da cor, o glifo e o traço da
+           borda são os três sinais, e uma legenda copiada envelheceria calada
+           no dia em que a paleta do config.json trocasse a cor. -->
       <div class="tlm-explica" id="tlmExplica">
-      <div class="tlm-legenda">
-        <span class="tlm-leg" data-n="normal"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/></svg>azul · <b>normal</b><i id="tlmFxNormal"></i></span>
-        <span class="tlm-leg" data-n="alto"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/></svg>▲ amarelo · <b>uso alto</b><i id="tlmFxAlto"></i></span>
-        <span class="tlm-leg" data-n="stress"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/></svg>■ vermelho · <b>stress</b><i id="tlmFxStress"></i></span>
-        <span class="tlm-leg" data-n="encerrando"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/></svg>✕ rosa · <b>encerrando</b><i>marcada, esperando o ponto seguro</i></span>
-      </div>
+      <div class="tlm-legenda">${Object.keys(NIVEIS).map(n =>
+        `<span class="tlm-leg" data-n="${n}"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/></svg>` +
+        `<span class="tlm-leg-t"></span><i id="tlmFx-${n}"></i></span>`).join("")}</div>
       <!-- A escala é o «eixo» que um gráfico de bolha tem: sem ela o tamanho
            é uma impressão, e não uma medida. Os três círculos saem da MESMA
            função que desenha o painel, então o piso das mais leves aparece
@@ -630,6 +703,11 @@ window.PhxTelemetria = (function () {
     estado.estacao = null;
     estado.busca = "";
     estado.pos = new Map();
+    // A tela nasce de fábrica e só troca quando a resposta trouxer cor. Sem
+    // isto, sair da tela com uma paleta e voltar depois de o dono a ter
+    // desfeito mostraria a cor velha até a primeira volta.
+    cores = {};
+    pintarLegenda();
 
     $("#tlmPausar").onclick = () => {
       estado.pausado = !estado.pausado;
@@ -898,10 +976,45 @@ window.PhxTelemetria = (function () {
       ],
     });
 
+    // As cores que o dono do servidor escolheu chegam por AQUI, na mesma
+    // resposta que traz os limiares — e não de um pedido próprio nem de uma
+    // leitura de arquivo. Nível ausente = cor de fábrica: quem não configurou
+    // nada recebe um retrato sem o campo e o painel continua o de sempre.
+    aplicarCores(d.cores);
     desenharFaixas(d.limiares);
     desenharBolhas(d.atividades || []);
     desenharThreads(d.threads || []);
     desenharCartao();
+  }
+
+  /* Guarda as cores da resposta e, se mudaram, manda refazer os gradientes.
+   *
+   * O `<defs>` das esferas nasce uma vez e fica, de propósito — recriá-lo a
+   * cada volta faria o navegador recompor todo gradiente duas vezes por
+   * segundo. Então a troca de cor é o ÚNICO motivo para refazê-lo, e é por
+   * isso que a comparação existe: sem ela, ou o painel só mudaria de cor
+   * depois de sair e voltar na tela, ou pagaria o custo em toda volta. */
+  function aplicarCores(novas) {
+    const limpas = {};
+    for (const n of Object.keys(NIVEIS)) {
+      const c = novas && typeof novas[n] === "string" ? novas[n].trim() : "";
+      // Só `#rrggbb`, o mesmo que o servidor aceita gravar. A tela não é o
+      // portão, mas também não empurra para dentro de um `fill` do SVG o que
+      // vier escrito na resposta.
+      if (/^#[0-9a-fA-F]{6}$/.test(c)) limpas[n] = c.toLowerCase();
+    }
+    const igual = Object.keys(NIVEIS).every(n => (cores[n] || "") === (limpas[n] || ""));
+    cores = limpas;
+    if (!igual) {
+      const svg = $("#tlmBolhas");
+      svg?.querySelector("defs")?.remove();
+      // As posições ficam; o que sai é só o gradiente. Refazer o painel
+      // inteiro faria o cartão aberto fechar sozinho na volta em que alguém
+      // trocou a cor noutra aba.
+      estado.pos.forEach(p => p.g?.remove());
+      estado.pos = new Map();
+    }
+    pintarLegenda();
   }
 
   /* ------------------------------------------------------------- as bolhas */
@@ -1056,7 +1169,7 @@ window.PhxTelemetria = (function () {
     painel.style.maxWidth = (estado.largPainel || largAlvo) + "px";
 
     const tinta = {};
-    Object.entries(NIVEIS).forEach(([n, v]) => { tinta[n] = tintaDoRotulo(v.cor); });
+    Object.keys(NIVEIS).forEach(n => { tinta[n] = tintaDoRotulo(corDoNivel(n)); });
 
     const vistos = new Set();
     itens.forEach(it => {
@@ -1093,8 +1206,12 @@ window.PhxTelemetria = (function () {
       p.ar = it.pr;
       p.fileira = it.fileira;
 
-      p.circulo.setAttribute("fill", `url(#tlmEsfera-${NIVEIS[a.nivel] ? a.nivel : "normal"})`);
-      p.circulo.setAttribute("stroke", niv.cor);
+      const nivelNome = NIVEIS[a.nivel] ? a.nivel : "normal";
+      p.circulo.setAttribute("fill", `url(#tlmEsfera-${nivelNome})`);
+      p.circulo.setAttribute("stroke", corDoNivel(nivelNome));
+      // O traço da borda NÃO é configurável, e é de propósito: com a cor
+      // escolhida a gosto, ele e o glifo são o que ainda separa os quatro
+      // níveis para quem não distingue as cores.
       p.circulo.setAttribute("stroke-dasharray", niv.traco);
 
       // O rótulo é medido contra a corda do círculo, e não chutado pelo raio.
@@ -1250,16 +1367,47 @@ window.PhxTelemetria = (function () {
     const alto = lim && lim.alto_uso_ms ? dur(lim.alto_uso_ms) : null;
     const stress = lim && lim.stress_ms ? dur(lim.stress_ms) : null;
     const posto = (id, texto) => { const e = $(id); if (e) e.textContent = texto; };
-    posto("#tlmFxNormal", "abaixo dos limiares, ou sem operação");
+    posto("#tlmFx-normal", "abaixo dos limiares, ou sem operação");
     // Sem o campo, a frase perde o número em vez de inventar um. Número na
     // tela que não veio do servidor é o começo de a tela pintar uma cor que
     // o servidor não concorda.
-    posto("#tlmFxAlto", alto
+    posto("#tlmFx-alto", alto
       ? `operação acima de ${alto}, ou parada na fila da trava`
       : "operação longa, ou parada na fila da trava");
-    posto("#tlmFxStress", stress
+    posto("#tlmFx-stress", stress
       ? `trabalhando há mais de ${stress}, ou segurando a trava com fila`
       : "trabalhando demais, ou segurando a trava com fila");
+    posto("#tlmFx-encerrando", "marcada, esperando o ponto seguro");
+  }
+
+  /* A legenda pintada com as cores que estão VALENDO.
+   *
+   * Três coisas de uma vez, e as três pelo mesmo motivo — a legenda não pode
+   * descrever um painel diferente do desenhado:
+   *
+   * 1. o disquinho ganha a cor escolhida (inline, que ganha da folha; sem cor
+   *    escolhida o inline sai e a variável do tema volta a valer, e é assim
+   *    que ela continua escurecendo sozinha no tema claro);
+   * 2. a palavra da cor SOME quando a cor foi trocada — «amarelo» ao lado de
+   *    uma bolha roxa é mentira de tela;
+   * 3. o traço da borda entra ESCRITO. Ele já estava desenhado no disquinho,
+   *    mas com paleta livre o desenho de 13 px é pouco: quem não distingue as
+   *    cores precisa da palavra. Este é o sinal que sobrevive a qualquer
+   *    paleta, junto com o glifo. */
+  function pintarLegenda() {
+    document.querySelectorAll("#tlmExplica .tlm-leg[data-n]").forEach(el => {
+      const n = el.dataset.n;
+      const v = NIVEIS[n];
+      if (!v) return;
+      const escolhida = cores[n] || "";
+      const c = el.querySelector("circle");
+      if (c) { c.style.fill = escolhida; c.style.stroke = escolhida; }
+      const t = el.querySelector(".tlm-leg-t");
+      if (!t) return;
+      t.innerHTML = `${v.glifo ? esc(v.glifo) + " " : ""}${
+        escolhida ? "" : esc(v.palavra) + " · "}<b${
+        escolhida ? ` style="color:${esc(escolhida)}"` : ""}>${esc(v.rot)}</b> · ${esc(v.borda)}`;
+    });
   }
 
   /* Qual atividade o cartão está descrevendo.
@@ -1344,7 +1492,8 @@ window.PhxTelemetria = (function () {
     const podeEncerrar = escolha.escolhida && !!a.op && !!a.tem_ponto && !a.encerrando;
     const irmas = (d.atividades || []).filter(x => x.ip === a.ip).length;
     alvo.innerHTML = `
-      <div class="tlm-cartao-cab" style="--n:${niv.cor}">
+      <div class="tlm-cartao-cab" style="--n:${
+        corDoNivel(NIVEIS[a.nivel] ? a.nivel : "normal")}">
         <span class="tlm-nivel">${esc(niv.glifo)} ${esc(niv.rot)}</span>
         <b>${esc(a.id)}</b>
         ${d.voce === a.id ? `<span class="tlm-eu">esta é a sua tela</span>` : ""}
@@ -1477,5 +1626,11 @@ window.PhxTelemetria = (function () {
         </tr>`).join("")}</tbody>`;
   }
 
-  return { html, iniciar, parar, desenhar, fileiras, arrumar, raioRelativo, faixa };
+  /* `amostra`, `tintaDoRotulo`, `NIVEIS` e `PISO_CONTRASTE` saem daqui para a
+   * TELA DE CONFIGURAÇÃO, e não por generosidade de módulo: é o que impede a
+   * tela de escolher a cor por uma conta e o painel de pintar por outra. Se a
+   * conferência de contraste fosse copiada para lá, o dia em que uma das duas
+   * mudasse a tela aprovaria uma cor que o painel desenha ilegível. */
+  return { html, iniciar, parar, desenhar, fileiras, arrumar, raioRelativo, faixa,
+           amostra, tintaDoRotulo, NIVEIS, PISO_CONTRASTE };
 })();

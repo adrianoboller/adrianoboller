@@ -9,6 +9,7 @@ função `api(op, params)` de quem o chama.
 python3 bancada/telemetria/monta-bancada.py      # gera bancada.html
 node    bancada/telemetria/conferir-desenho.mjs  # a geometria e o contraste
 node    bancada/telemetria/conferir-interacao.mjs # o clique, a busca, os níveis
+node    bancada/telemetria/prova-das-cores.mjs   # as cores configuráveis, com servidor
 ```
 
 `conferir-interacao.mjs` grava três capturas ao lado dele; `TLM_CAPTURAS=<dir>`
@@ -54,5 +55,23 @@ falha quando:
 - escolher uma bolha pelo teclado;
 - `prefers-reduced-motion` deixar tudo parado.
 
-O que estes dois **não** provam é o servidor: a carga de verdade e o encerrar
+**`prova-das-cores.mjs`** — o único dos três que **sobe um servidor**, porque a
+cor configurável atravessa o `config.json`, o servidor e a tela, e nenhuma das
+três pontas se prova sem as outras duas. Ele usa as portas **6600/6601** e
+derruba o processo pelo PID no fim. Sobe 400.000 linhas, põe quatro somas de
+verificação concorrentes para produzir os três estados vivos, e falha quando:
+
+- a carga não produz bolhas de estados diferentes (senão a prova seria de um
+  painel todo azul, e passaria dizendo nada);
+- a legenda de fábrica não diz a palavra da cor **e** o traço da borda;
+- a cor escolhida na tela não chega ao painel depois de salvar;
+- a palavra «amarelo» sobrevive ao amarelo ter virado roxo;
+- um rótulo fica abaixo de 4,5:1 dentro da bolha, em qualquer tema;
+- o aviso de contraste não aparece para uma cor de meio-tom (`#797979`, a que
+  nenhuma das duas tintas salva).
+
+Ele guarda as capturas com `--capturas <dir>`: painel de fábrica e trocado nos
+dois temas, a legenda de perto, e a tela de Configurações com o aviso aceso.
+
+O que os dois primeiros **não** provam é o servidor: a carga de verdade e o encerrar
 pela bolha estão em `docs/TELEMETRIA.md` §4.6.
