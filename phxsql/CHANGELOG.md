@@ -363,6 +363,86 @@ atravessando `replica::puxar`, que é uma ida e volta de rede.
   do corte por bytes, então quadruplicar o lote quadruplica o pior caso de
   memória de quem serve, na direção contrária do teto que este mesmo trabalho
   acabou de declarar.
+## Não lançado — a frase que não se traduz picada
+
+Escrito em paralelo com as outras seções «Não lançado»: na integração todas
+viram uma só, e o número da versão sai de lá.
+
+A catraca dos idiomas tinha acabado de subir de 1.999 para **2.068**, porque o
+`multitela.js` era servido pelo `http.rs` e não estava no `FONTES` do
+conferidor — 69 textos cravados que nunca contaram. Esta rodada traduz os 69.
+E ao traduzi-los apareceu uma lição de desenho que vale para todo o resto da
+interface.
+
+### Adicionado
+
+- **O `ui/multitela.js` inteiro passa pela fábrica de idiomas**: 68 rótulos
+  viraram **70 chaves** `tela.mt_*` nos seis idiomas — as dicas da tira de
+  abas, os botões da janela solta, o `aria-label` da calha, os dezesseis
+  recados e a tela «Sobre o modo multitela». É o **primeiro arquivo de
+  interface com zero texto cravado**. O sexagésimo nono, `devicePixelRatio`,
+  entrou nos isentos com a razão escrita: nome de propriedade do navegador não
+  se traduz, e ele aparece dentro de um `<code>`.
+
+- **`marcado()` e `preencher()`, na página** — a resposta ao achado desta
+  rodada, que está escrito por inteiro no `docs/MENSAGENS.md`: **frase picada
+  por marcação é intraduzível por construção.** Trinta e nove dos 68 eram uma
+  frase só, partida em treze literais pelos `<b>` e `<code>` do meio —
+  `"funcionam em"` + `<b>qualquer navegador</b>` + `"— é layout. Destacar em
+  janela também, com"`. Nenhum desses pedaços é uma frase, e não existe ordem
+  de pedaços que sirva para as seis línguas: em alemão o verbo vai para o fim.
+  Hoje a frase inteira é **uma chave** e a ênfase é uma **marca dentro do
+  texto** — `**assim**` para `<b>`, a palavra entre crases para `<code>`,
+  `{nome}` para o dado. O corte em etiquetas acontece **depois** da tradução,
+  e na captura alemã a ênfase caiu em `**gleich auf dem richtigen Monitor**`,
+  onde o português não tem nada.
+
+- **Três testes que travam o mecanismo**, os três com o defeito reposto:
+  `nenhum_texto_da_fabrica_traz_etiqueta_crua` (um `<b>` gravado na célula
+  apareceria escrito, porque a página escapa antes de escrever — e escapar não
+  se muda: a célula é editada pela grade, e célula editável é entrada de
+  usuário), `as_marcas_de_enfase_fecham` (asterisco aberto e não fechado, o
+  erro mais provável de quem reescreve a frase em alemão e o mais silencioso,
+  porque só aparece naquele idioma) e
+  `todo_idioma_tem_os_mesmos_marcadores_do_portugues` (o `{n}` perdido numa
+  tradução, que deixaria o número sem aparecer).
+
+- **Passo 7 da `prova-idiomas.mjs`**, pelo navegador: abre a tela do modo
+  multitela em português, confere que a frase sai **inteira e na ordem**, que
+  a marca virou `<b>`/`<code>` de verdade e que não sobrou marca crua; troca
+  para alemão **sem sair da tela** e confere que nem o corpo, nem o título,
+  nem o `title` da tira ficaram em português. Prova real nos dois sentidos:
+  sem o gancho `est.repintar` a tela não troca de idioma, e sem a conversão de
+  marcas a página mostra `**Multitela.**` com os asteriscos à mostra.
+
+### Mudado
+
+- **A catraca desce de 2.068 para 1.999**, medida e não digitada. O número é o
+  mesmo de duas rodadas atrás por coincidência — e agora ele quer dizer o que
+  dizia por engano: 1.999 sobre a interface **inteira**, e não sobre cinco
+  sextos dela.
+
+- **`PhxTelas.repintar()`**, chamado pelo `aplicarIdioma`: o cromo deste
+  módulo é pintado uma vez e ficava na língua anterior. Ele repõe também o
+  rótulo das abas cujo nome vem da fábrica — **por chave**, nunca comparando a
+  frase com o rótulo antigo, porque quem compara frase quebra calado no dia em
+  que alguém melhorar a redação.
+
+- **O `CATALOGO` do `multitela.js` ganhou o par `rot`/`txt`**, e as seis
+  chaves são as que **já existiam** (`tela.painel`, `tela.fer_query`,
+  `tela.fer_diagrama`, `tela.fer_telemetria`, `tela.fer_profiler`,
+  `tela.usuarios`). Chave nova para o mesmo botão seria uma segunda verdade, e
+  o tradutor traduziria duas vezes a mesma palavra. A entrada `tabela` fica
+  **sem** `txt`: o rótulo dela é o nome da tabela, que é dado.
+
+### Sabido
+
+- **A aba de segundo plano guarda o idioma em que foi pintada.** Achado
+  exercitando, e deixado de fora de propósito: o `est.repintar` é o gancho da
+  tela **com foco**, e repintar tela escondida contraria a decisão [2] do
+  módulo — *aba escondida sai do documento e para de trabalhar* —, que é o que
+  faz a telemetria de uma aba escondida custar zero pedido. Nomeado no
+  `docs/PENDENCIAS.md` §3.2, item 12.
 
 ---
 

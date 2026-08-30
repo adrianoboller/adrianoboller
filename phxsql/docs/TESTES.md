@@ -45,7 +45,7 @@ contando `#[test]` por arquivo e agrupando:
 | Protocolo e portões (despachar) | 180 | 14,5 |
 | Núcleo (JSON, tipos, UUID, zip, paralelo) | 133 | 10,7 |
 | Configuração | 82 | 6,6 |
-| Criptografia e codificação | 80 | 6,5 |
+| Criptografia e codificação | 80 | 6,4 |
 | DbLink | 65 | 5,2 |
 | Telemetria e profiler | 45 | 3,6 |
 | Camada SQL (léxico, sintaxe, tradução) | 44 | 3,5 |
@@ -54,20 +54,20 @@ contando `#[test]` por arquivo e agrupando:
 | Interface web (servidor HTTP) | 28 | 2,3 |
 | MCP | 19 | 1,5 |
 | Usuários e permissões | 19 | 1,5 |
-| **Console de terminal (phxsqlcmd)** | **18** | **1,5** |
-| **Segurança de rede (blacklist, firewall)** | **18** | **1,5** |
+| **Console de terminal (phxsqlcmd)** | **18** | **1,4** |
+| **Segurança de rede (blacklist, firewall)** | **18** | **1,4** |
 | **ODBC** | **17** | **1,4** |
-| **Mensagens (i18n do servidor)** | **14** | **1,1** |
+| **Mensagens (i18n do servidor)** | **17** | **1,4** |
 | **Exportação** | **13** | **1,0** |
 | **Junções e união** | **13** | **1,0** |
 | **Pivot** | **12** | **1,0** |
 | **Replicação** | **11** | **0,9** |
-| **Servidor (outros)** | **9** | **0,7** |
+| **Servidor (outros)** | **8** | **0,6** |
 | **Alertas e e-mail** | **8** | **0,6** |
 | **CLI** | **7** | **0,6** |
 | **Cluster** | **7** | **0,6** |
 | **Monitor de máquina** | **6** | **0,5** |
-| **total** | **1240** | |
+| **total** | **1242** | |
 
 Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 
@@ -76,7 +76,7 @@ Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 | `phxsql-store/src/table.rs` | 2458 |
 | `phxsql-store/src/ndx.rs` | 1580 |
 | `phxsql-server/src/main.rs` | 452 |
-| `phxsql-server/src/replica.rs` | 394 |
+| `phxsql-server/src/replica.rs` | 352 |
 | `phxsql-server/src/dblink/conexao.rs` | 238 |
 | `phxsql-server/src/carga.rs` | 226 |
 | `phxsql-cmd/src/main.rs` | 162 |
@@ -489,7 +489,7 @@ projeto estava verde.
 O `provar.py` **não refaz nenhuma delas** — cada uma tem dono, já foi provada e
 continua rodando sozinha pelo comando dela. Ele chama, cronometra e soma.
 
-### As dezessete partes
+### As dezesseis partes
 
 | parte | o que prova | portas |
 |---|---|---|
@@ -505,7 +505,6 @@ continua rodando sozinha pelo comando dela. Ele chama, cronometra e soma.
 | `telemetria-cores` | as cores configuráveis, exercitando: escolher, salvar, conferir no painel | 6600/6601 |
 | `cluster` | eleição e promoção automática com três servidores e um SMTP falso | 5310-5312, 5316 |
 | `replicacao` | os quatro modos por soquete, com o comportamento velho no fim | 5330-5339 |
-| `trava` | a trava de dados contra a leitura de rede: corte silencioso, alcance, queda de conexão e o abraço do bidirecional | 7050-7055 |
 | `jobs` | o aviso de jobs por e-mail — e o servidor **sem** bloco de e-mail, que não manda nada | 5303/5703 |
 | `profiler-disco` | o `.txt` do Profiler contra o sistema operacional: disco cheio, somente-leitura | 6253 |
 | `dblink` | a sincronia de tabelas primas contra um MySQL(R) de verdade | — |
@@ -637,9 +636,8 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `endereco-fora-da-amarracao` | as DUAS fechaduras somem: dá para embaralhar as linhas cifradas | 1 | ✅ provada |
 | `cache-de-chaves-nao-limpo` | trocar a senha da cifra não limpa o cache: a senha errada abre | 1 | ✅ provada |
 | `catraca-dos-textos` | mais um texto de tela cravado, fora da fábrica de idiomas | 1 | ✅ provada |
-| `trava-atras-da-rede` | o laço da réplica segura a trava de dados enquanto lê do soquete | 1 | ✅ provada |
 
-**19 guardas: 17 provadas, 2 redundantes** — 182 s de mutação, medido em 2026-08-30 06:10.
+**18 guardas: 16 provadas, 2 redundantes** — 162 s de mutação, medido em 2026-08-30 03:58.
 
 As notas que a rodada deixou:
 

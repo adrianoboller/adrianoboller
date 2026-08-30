@@ -196,8 +196,80 @@ const main = async () => {
       await capturar(page, '07-config-alemao');
     });
 
-    // -------------------------------- 7. a mesma tela, os dois temas, 2 linguas
+    // ------------------------------------- 7. a frase que era picada
+    // O bloco que ensinou a regra: a nota da multitela vivia partida em treze
+    // literais pela marcacao (`"funcionam em"` + `<b>qualquer navegador</b>` +
+    // ...), e pedaco de frase nao se traduz. Agora e uma chave por frase, com
+    // a enfase virada marca. Aqui se prova que o corte em `<b>`/`<code>`
+    // sobreviveu a traducao -- e que o texto TROCA de idioma na hora.
+    await passo('a nota da multitela troca de idioma inteira, com a ênfase no lugar', async () => {
+      await escolher(page, '#idiomasAqui', 'Portugues');
+      const onde = await page.evaluate(() => {
+        for (const m of document.querySelectorAll('.menubar .menu'))
+          for (const b of m.querySelectorAll('.item'))
+            if (b.textContent.includes('multitela'))
+              return { m: b.dataset.m, i: b.dataset.i };
+        return null;
+      });
+      verdade(onde !== null, 'nao achei o item «Sobre o modo multitela» no menu');
+      await page.click(`.menubar .titulo[data-m="${onde.m}"]`);
+      await page.click(`.menubar .item[data-m="${onde.m}"][data-i="${onde.i}"]`);
+      await page.waitForSelector('.multitela-nota', { timeout: 10000 });
+      igual(await page.textContent('#titulo'), 'Multitela', 'o titulo da tela');
+      const pt = await page.textContent('.multitela-nota');
+      verdade(pt.includes('funcionam em qualquer navegador — é layout'),
+        `a frase tem de sair inteira e na ordem: ${pt.slice(0, 160)}`);
+      // A marca virou etiqueta de verdade, e nao asterisco na tela.
+      verdade(!pt.includes('**') && !pt.includes('`'),
+        'sobrou marca crua na tela -- o marcado() nao cortou');
+      const negritos = await page.$$eval('.multitela-nota b', ns => ns.map(n => n.textContent.trim()));
+      verdade(negritos.includes('qualquer navegador'),
+        `a enfase devia virar <b>: ${negritos.join(' | ')}`);
+      verdade(await page.$('.multitela-nota code') !== null,
+        'a palavra entre crases devia virar <code>');
+      await capturar(page, '07a-multitela-portugues');
+
+      // A MESMA funcao que o `onclick` da bandeira chama. Esta tela nao tem
+      // bandeira -- e e justamente por isso que ela repoe o `est.repintar`:
+      // trocar o idioma noutro lugar tem de repintar a tela que esta aberta,
+      // e nao levar a pessoa de volta ao Painel.
+      await page.evaluate(() => escolherIdioma('Alemao'));
+      await page.waitForFunction(
+        () => document.querySelector('.multitela-nota')
+          && /jedem Browser/.test(document.querySelector('.multitela-nota').textContent),
+        null, { timeout: 10000 });
+      const de = await page.textContent('.multitela-nota');
+      verdade(!de.includes('Abas vivas'), `sobrou portugues na nota alema: ${de.slice(0, 160)}`);
+      verdade(!de.includes('**') && !de.includes('`'), 'sobrou marca crua no alemao');
+      igual(await page.textContent('#titulo'), 'Mehrbildschirm',
+        'o titulo devia trocar sem sair da tela');
+      // Cromo do modulo: a tira de abas e pintada uma vez e fica. Sem o
+      // `PhxTelas.repintar()` do `aplicarIdioma`, este `title` ficaria em
+      // portugues -- e ninguem repara num title velho.
+      const dica = await page.getAttribute('.tira-bt[data-acao="nova"]', 'title');
+      verdade(/Bildschirm/.test(dica || ''), `a dica da tira ficou em portugues: ${dica}`);
+      // A armadilha do CSS global, pelo criterio da casa: rotulo em caixa
+      // alta e ESTILO (o `.ficha .r` e o `thead th` sao maiusculos de
+      // proposito, em toda tela); dado em caixa alta e mentira. O texto
+      // corrido da nota tambem nao pode ser maiusculado -- ele e frase, e
+      // frase em caixa alta nao se le.
+      const caixaAlta = await page.$$eval(
+        '#painel td.dado, #painel .ficha .v, #painel .multitela-nota, #painel .nota p',
+        ns => ns.filter(n => getComputedStyle(n).textTransform === 'uppercase')
+          .map(n => n.textContent.trim().slice(0, 40)));
+      verdade(caixaAlta.length === 0, `dado ou frase em MAIUSCULA pelo CSS global: ${caixaAlta.join(', ')}`);
+      const rolaDeLado = await page.evaluate(() =>
+        document.body.scrollWidth > document.body.clientWidth + 1);
+      verdade(!rolaDeLado, 'a tela da multitela rolou de lado em alemao');
+      await capturar(page, '07b-multitela-alemao');
+    });
+
+    // -------------------------------- 8. a mesma tela, os dois temas, 2 linguas
     await passo('a mesma tela em dois idiomas e nos dois temas', async () => {
+      // O passo anterior deixou a Multitela na tela; o seletor de bandeiras
+      // mora na de Configuracoes, entao volta-se para ela pela barra.
+      await page.click('#ferramentas .fer >> nth=13');
+      await page.waitForSelector('#idiomasAqui .idi', { timeout: 10000 });
       for (const [col, nome] of [['Portugues', 'pt'], ['Ingles', 'en'], ['Alemao', 'de']]) {
         await escolher(page, '#idiomasAqui', col);
         await page.waitForSelector('#idiomasAqui .idi');

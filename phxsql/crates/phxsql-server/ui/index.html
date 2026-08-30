@@ -12422,6 +12422,43 @@ function txt(nome, padrao) {
   return (est.textos && est.textos[nome]) || padrao;
 }
 
+/** Põe os `{marcador}` no lugar, num texto que vai para `textContent`.
+ *
+ *  Marcador POSICIONAL POR NOME, e não `+` no meio da frase: a ordem das
+ *  palavras muda de idioma para idioma, e um `"o monitor " + nome + " sumiu"`
+ *  obriga toda língua a pôr o nome no meio. É a mesma convenção dos
+ *  `{detalhe}` das mensagens do protocolo -- uma só, e não duas. */
+function preencher(bruto, dados) {
+  return String(bruto).replace(/\{(\w+)\}/g,
+    (m, k) => (dados && k in dados) ? String(dados[k]) : m);
+}
+
+/** Um texto de tela COM ênfase, resolvido em HTML seguro.
+ *
+ *  POR QUE MARCA E NÃO ETIQUETA. A frase da nota da multitela vivia picada
+ *  pela marcação: `"…funcionam em"` + `<b>qualquer navegador</b>` +
+ *  `"— é layout…"`. Cada pedaço era um literal, e pedaço de frase NÃO se
+ *  traduz: em alemão o verbo vai para o fim, e nenhuma ordem de pedaços
+ *  serve para as seis línguas. Aqui a frase inteira é UMA chave e a ênfase é
+ *  uma marca dentro dela, então o tradutor move o `**…**` para onde a língua
+ *  dele pede. O corte em etiquetas acontece DEPOIS da tradução.
+ *
+ *  POR QUE MARCA E NÃO HTML DENTRO DA CÉLULA. O texto vem de
+ *  `phxsys.mensagens`, que um administrador edita pela grade -- é entrada de
+ *  usuário. Aceitar `<b>` cru na célula seria aceitar `<script>` junto. Então
+ *  escapa-se TUDO primeiro e só depois duas marcas viram etiqueta: `**assim**`
+ *  e a palavra entre crases. É o mesmo motivo do `textContent` do
+ *  `aplicarIdioma`, pelo caminho que precisa de ênfase.
+ *
+ *  O dado entra por último e escapado à parte: assim um valor que contenha
+ *  `**` nunca vira negrito. Rótulo se marca; dado, nunca. */
+function marcado(bruto, dados) {
+  return esc(bruto)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
+    .replace(/\{(\w+)\}/g, (m, k) => (dados && k in dados) ? esc(dados[k]) : m);
+}
+
 /** Desenha um seletor de bandeiras onde lhe mandarem.
  *
  *  Dois lugares o usam -- a tela de entrada e a tela de Idiomas -- e os dois
@@ -12514,6 +12551,10 @@ async function aplicarIdioma(col) {
     montarFerramentas();
     atualizarItens();
     await montarArvore(false);
+    // A tira de abas e os botões da janela solta são cromo igual ao menu: eles
+    // ficariam no idioma em que foram pintados, e o `title` de um botão é
+    // justamente o que ninguém repara que envelheceu.
+    if (window.PhxTelas) PhxTelas.repintar();
     if (est.repintar) est.repintar();
   }
 }
