@@ -501,6 +501,24 @@ saiba.
 * Uma marca cuja **tabela não abre mais** (alguém apagou a tabela entre a queda
   e o arranque) cai no mesmo lugar, pelo mesmo motivo.
 
+### 5.6 A lição que o próprio teste do `SIGKILL` deu
+
+A primeira versão da prova por soquete exigia **sempre** as 3.000 linhas depois
+do `SIGKILL`, e ela era instável **por construção** — o que a fez falhar uma
+vez em quatro. Matar o processo no instante certo é uma corrida, e **os dois
+desfechos são legítimos**: o sinal pode cair antes de o `fsync` da marca
+terminar, e aí ela fica truncada, o CRC não confere, e isso é um commit que
+nunca começou.
+
+O erro não estava no motor: estava na pergunta que o teste fazia. A pergunta do
+contrato **não é** «as 3.000 estão lá?» — é «o banco consegue determinar de
+forma inequívoca?». Então o que se exige é **nunca metade**: ou 3.000, ou
+nenhuma, e o relatório diz qual das duas sem o teste ter de adivinhar.
+
+É a mesma família do teste que passa por engano, pelo outro lado: um teste que
+**falha** por engano treina quem o vê a repetir a rodada até ficar verde — e aí
+ele deixa de valer para os dois lados.
+
 ---
 
 ## 6. A replicação: uma transação revertida não chega aplicada

@@ -309,6 +309,52 @@ def main():
        json.dumps(r)[:200])
     ok("e a linha esta la", quantas(c, "pedidos") == 1)
 
+    print("\n== 6b. o DIARIO: o rollback nao produz evento nenhum ==")
+    # E a §6.3 do desenho, e ela e a peca que faz a replicacao nao precisar
+    # mudar: uma transacao revertida nao chega aplicada na replica porque ela
+    # NAO CHEGA. Nada foi gravado, logo nada foi journalizado, logo nao ha o
+    # que servir -- e nao ha supressao nenhuma a implementar do outro lado.
+    def eventos(c, tabela):
+        # `tabelas` e um OBJETO por nome de tabela, e nao uma lista.
+        r = c.fala({"op": "posicao", "database": "loja"})
+        return r["resultado"]["tabelas"].get(tabela, {}).get("eventos", -1)
+
+    antes_dos_eventos = eventos(c, "clientes")
+    f = Ligacao()
+    f.fala({"op": "begin"})
+    for i in range(500, 600):
+        f.fala({"op": "inserir", "database": "loja", "tabela": "clientes",
+                "linha": {"id": i, "nome": f"revertido {i}"}})
+    ok("o diario NAO anda com a transacao aberta",
+       eventos(c, "clientes") == antes_dos_eventos,
+       f"{antes_dos_eventos} -> {eventos(c, 'clientes')}")
+    f.fala({"op": "rollback"})
+    ok("e continua parado depois do ROLLBACK",
+       eventos(c, "clientes") == antes_dos_eventos,
+       f"{antes_dos_eventos} -> {eventos(c, 'clientes')}")
+
+    # E o COMMIT produz os eventos na ordem, de uma vez -- indistinguiveis de
+    # um `inserir_lote` para quem os aplica. Uma replica de QUALQUER versao,
+    # inclusive anterior a esta rodada, aplica sem saber que houve transacao.
+    f.fala({"op": "begin"})
+    for i in range(600, 640):
+        f.fala({"op": "inserir", "database": "loja", "tabela": "clientes",
+                "linha": {"id": i, "nome": f"confirmado {i}"}})
+    f.fala({"op": "commit"})
+    ok("o COMMIT produz um evento por linha, e nem um a mais",
+       eventos(c, "clientes") == antes_dos_eventos + 40,
+       f"{antes_dos_eventos} -> {eventos(c, 'clientes')}, esperava +40")
+
+    # A prova de que o `.log` nao ganhou operacao nova: toda tag continua
+    # sendo 1, 2 ou 3. Uma tag `BEGIN` faria `Operacao::de_tag` devolver
+    # Corrompido numa replica antiga -- ela PARARIA, em vez de ignorar.
+    r = c.fala({"op": "diario", "database": "loja", "tabela": "clientes",
+                "limite": 200})
+    ops = {e["operacao"] for e in r["resultado"]["eventos"]} if r.get("ok") else set()
+    ok("o diario nao ganhou operacao nova",
+       bool(ops) and ops <= {"inclusao", "alteracao", "exclusao"}, f"{sorted(ops)}")
+    f.morrer()
+
     print("\n== 7. SIGKILL no meio de um COMMIT ==")
     # A marca `.tx` e escrita e sincronizada ANTES da passada. Para matar o
     # processo com ela no disco, o commit tem de ser grande o bastante para a
@@ -349,17 +395,11 @@ def main():
     sobrou = marcas()
     ok("a marca .tx ficou no disco", len(sobrou) >= 1, f"{sobrou}")
 
-    print("\n== 8. o banco reabre e COMPLETA o commit ==")
+    print("\n== 8. o banco reabre e SABE DIZER o que aconteceu ==")
     subir()
     ok("o servidor voltou", esperar_porta(PORTA))
     g = Ligacao()
     total = quantas(g, "pedidos")
-    # O commit foi confirmado no instante em que a marca foi sincronizada:
-    # entao ou ele ja estava inteiro, ou a recuperacao o completou. As duas
-    # respostas sao "COMMITTED", e nenhuma e "metade".
-    ok("as 3.000 linhas do commit estao la",
-       total == antes_do_commit + 3000, f"{total} (antes {antes_do_commit})")
-    ok("a marca sumiu depois da recuperacao", not marcas(), f"{marcas()}")
     with open(os.path.join(BASE, "servidor.log")) as f:
         log = f.read()
     ok("o relatorio de recuperacao saiu no arranque",
@@ -367,6 +407,44 @@ def main():
        log[-400:].replace("\n", " | ")[:300])
     ok("e ele nao inventa linha que nao mede",
        "Pages redone" not in log and "paginas refeitas" not in log)
+
+    # ------------------------------------------------------------------
+    # O QUE SE AFIRMA AQUI E O CONTRATO, E NAO UM DOS DOIS DESFECHOS.
+    #
+    # A primeira versao deste passo exigia sempre as 3.000 linhas, e ela era
+    # instavel POR CONSTRUCAO: matar o processo no instante certo e uma
+    # corrida, e os dois desfechos sao LEGITIMOS. O SIGKILL pode cair antes
+    # de o `fsync` da marca terminar -- e ai a marca fica truncada, o CRC nao
+    # confere, e isso e um commit que NUNCA COMECOU.
+    #
+    # A pergunta do contrato nao e «as 3.000 estao la?». E:
+    #
+    #     depois de reiniciar, o banco consegue determinar de forma
+    #     INEQUIVOCA se esta transacao foi COMMITTED ou ABORTED?
+    #
+    # Entao o que se exige e: nunca METADE. Ou 3.000, ou nenhuma -- e o
+    # relatorio diz qual das duas, sem o teste ter de adivinhar.
+    # ------------------------------------------------------------------
+    completou = "transacoes completadas ........ 1" in log
+    descartou = "marcas ilegiveis descartadas .. 1" in log
+    ok("o relatorio diz UMA das duas, e nao as duas nem nenhuma",
+       completou != descartou,
+       f"completadas={completou} descartadas={descartou}")
+
+    if completou:
+        ok("COMMITTED: as 3.000 linhas estao la",
+           total == antes_do_commit + 3000,
+           f"{total} (antes {antes_do_commit})")
+    else:
+        ok("ABORTED: nenhuma das 3.000 entrou -- a marca nem chegou inteira",
+           total == antes_do_commit,
+           f"{total} (antes {antes_do_commit})")
+
+    # E o que NUNCA pode acontecer, dito como asserção propria: metade.
+    ok("em nenhum caso a transacao ficou pela METADE",
+       total in (antes_do_commit, antes_do_commit + 3000),
+       f"{total} nao e nem {antes_do_commit} nem {antes_do_commit + 3000}")
+    ok("a marca sumiu depois da recuperacao", not marcas(), f"{marcas()}")
 
     # Reabrir de novo nao pode duplicar nada -- a recuperacao e idempotente.
     g.morrer()
@@ -379,7 +457,7 @@ def main():
     subir()
     esperar_porta(PORTA)
     h = Ligacao()
-    ok("reabrir de novo nao duplica", quantas(h, "pedidos") == total,
+    ok("reabrir de novo nao duplica nem perde", quantas(h, "pedidos") == total,
        f"{quantas(h, 'pedidos')} != {total}")
 
     print("\n== 9. o comportamento velho continua velho depois de tudo ==")
