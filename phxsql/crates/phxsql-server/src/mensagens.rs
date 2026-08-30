@@ -250,6 +250,28 @@ pub const FABRICA: &[MensagemFabrica] = &[
         ],
     },
     MensagemFabrica {
+        nome: "erro.em_transacao",
+        textos: [
+            "tabela em transacao: {detalhe}",
+            "table dans une transaction : {detalhe}",
+            "table held by a transaction: {detalhe}",
+            "tabella in transazione: {detalhe}",
+            "Tabelle in einer Transaktion: {detalhe}",
+            "tabla en transacción: {detalhe}",
+        ],
+    },
+    MensagemFabrica {
+        nome: "erro.transacao_abortada",
+        textos: [
+            "transacao abortada: {detalhe}",
+            "transaction abandonnée : {detalhe}",
+            "transaction aborted: {detalhe}",
+            "transazione interrotta: {detalhe}",
+            "Transaktion abgebrochen: {detalhe}",
+            "transacción abortada: {detalhe}",
+        ],
+    },
+    MensagemFabrica {
         nome: "erro.limite_excedido",
         textos: [
             "limite excedido: {detalhe}",
@@ -494,6 +516,8 @@ pub fn decompor(e: &PhxError) -> (&'static str, String) {
         PhxError::Conflito(m) => ("erro.conflito", m.clone()),
         PhxError::Autorizacao(m) => ("erro.acesso_negado", m.clone()),
         PhxError::EmCarga(m) => ("erro.em_carga", m.clone()),
+        PhxError::EmTransacao(m) => ("erro.em_transacao", m.clone()),
+        PhxError::TransacaoAbortada(m) => ("erro.transacao_abortada", m.clone()),
         PhxError::LimiteExcedido(m) => ("erro.limite_excedido", m.clone()),
         PhxError::Cancelado(m) => ("erro.cancelado", m.clone()),
         PhxError::SpareEmEspera(m) => ("erro.spare_em_espera", m.clone()),
@@ -665,6 +689,8 @@ mod tests {
             PhxError::Conflito("versao 3, esperada 2".into()),
             PhxError::Autorizacao("token invalido".into()),
             PhxError::EmCarga("clientes reservada".into()),
+            PhxError::EmTransacao("clientes na transacao 3".into()),
+            PhxError::TransacaoAbortada("houve erro de transacao".into()),
             PhxError::LimiteExcedido("Str(10)".into()),
             PhxError::Io(std::io::Error::other("disco cheio")),
         ];

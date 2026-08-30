@@ -1787,6 +1787,97 @@ ele: **diagnóstico plausível não é diagnóstico medido.**
 
 ---
 
+## 12. A transação: o group commit aceito com número, e o passo seguinte morto
+
+Medido com `cargo run --release -p phxsql-server --example custo-da-transacao`,
+mediana de 5 rodadas **intercaladas** (medir um cenário inteiro de cada vez põe
+toda a deriva da máquina dentro de um deles, e ela vira «custo»).
+
+### 12.1 O group commit: 2,63×, e o que sobra não vale 1,5×
+
+O `COMMIT` chegou chamando `sincronizar()` por tabela — um `fsync` por commit.
+A decomposição de um commit de **uma linha** mostrou onde estava o tempo:
+
+| pedaço | ms | o que é |
+|---|---|---|
+| commit inteiro, com `fsync` por commit | **1,199** | o comportamento anterior (`durabilidade: por_operacao`) |
+| só a marca `transacao_<id>.tx` | 0,289 | escrever + `fsync` + apagar o ponto de compromisso |
+| a linha, com o `fsync` amortizado | 0,050 | o trabalho de verdade |
+| **o resto** | **0,860** | o `fsync` da tabela, cobrado por commit |
+
+Uma inserção **solta**, sem transação nenhuma, custa **0,061 ms** — quase o
+mesmo que a linha dentro do commit grande. A diferença inteira era o `fsync`
+que a transação estava forçando e que o resto do servidor já não paga, porque
+passa pela **janela de durabilidade**.
+
+**A receita de fora mirava outro gargalo.** *Group commit* clássico amortiza
+`fsync` entre commits **concorrentes**; aqui a trava única serializa tudo e
+**nunca há dois commits em voo para agrupar**. O que havia para amortizar era
+o `fsync` da tabela contra a janela que já existia.
+
+**Por que adiar é seguro, e é o `.tx` que responde:** quem decide se a
+transação aconteceu é a **marca**, não o `fsync` da tabela. Ela já está
+sincronizada quando a passada começa, então adiar o `fsync` não adia a decisão
+— adia só o momento em que o dado alcança o disco, e a marca é o bilhete que o
+traz de volta. **A ordem é a peça:** a marca só é apagada *depois* de a tabela
+sincronizar.
+
+| | ms por commit de 1 linha |
+|---|---|
+| antes (`fsync` por commit) | 1,199 |
+| depois (`fsync` na janela) | **0,457** |
+| **ganho** | **2,63×** |
+
+**E o passo seguinte morre medido.** Agrupar os `fsync` das *marcas* entre
+commits é a única coisa que sobra. O piso irredutível — marca (0,289) mais
+trabalho (0,050) — é **0,341 ms** contra os 0,455 de hoje: **1,34×**, abaixo do
+critério de morte de **1,5×** acordado antes da medição. A marca não se adia;
+ela é o ponto de compromisso. **Recusa registrada com o número**, para a ideia
+não voltar sem medição.
+
+### 12.2 `LOCK MODE AUTO` contra `EXCLUSIVE`: 1,55×, e o conflito é artificial
+
+O caso que matou o exclusivo-por-padrão: 64 caixas, **cada um numa linha
+diferente** da mesma tabela.
+
+| modo | ms | passaram | barrados |
+|---|---|---|---|
+| `AUTO` (intenção na tabela, exclusiva na linha) | **50,5** | 64 | 0 |
+| `EXCLUSIVE` (tabela inteira) | 78,4 | 64 | 0 |
+
+**1,55× a favor do `AUTO`**, e nenhum dos dois perde trabalho: o `EXCLUSIVE`
+não recusa ninguém, ele **serializa** — cada caixa espera o anterior soltar a
+tabela. O número é o preço de uma disputa que não existia.
+
+Por isso `AUTO` é o padrão e `EXCLUSIVE` se pede. E por isso o `INSERT` trava o
+**fim da tabela** e não uma linha: ali a disputa é real, porque o próximo slot é
+um só.
+
+### 12.3 Otimista contra pessimista, na MESMA linha
+
+64 clientes disputando a linha 1. O otimista é a janela de conflito de escrita
+que já existia (o cliente manda `"versao"` e repete quando o servidor recusa);
+o pessimista é a trava de linha da transação.
+
+| | ms | gravações | tentativas gastas |
+|---|---|---|---|
+| otimista (`versao`) | **28,0** | 64 | **133** |
+| pessimista (trava de linha) | 71,8 | 64 | **64** |
+
+**Nenhum dos dois é o certo sempre, e o número diz por quê.** Com 64 clientes o
+otimista ainda ganha em tempo e já gasta 2,1× mais tentativas; o pessimista
+nunca desperdiça uma. É a **subida dessa razão** — e não o relógio — que diz
+quando trocar: cada tentativa perdida do otimista é uma leitura mais uma
+gravação recusada, e ela cresce com a disputa enquanto a do pessimista fica em
+uma por cliente.
+
+Numa segunda rodada o otimista gastou **303** tentativas para as mesmas 64
+gravações. A variação é do próprio mecanismo: quem perde a corrida relê e tenta
+de novo, e quantos perdem depende do escalonamento. **Essa instabilidade é
+informação**, e não ruído — o pessimista mediu 64 nas duas rodadas.
+
+---
+
 ## Como refazer tudo
 
 ```bash
@@ -1805,4 +1896,7 @@ python3 bancada/replicacao/montar.py /tmp/phx-replicacao
 python3 bancada/replicacao/medir.py 100000
 python3 bancada/bateria/prova-bateria.py --medir            # o §4.10
 cargo run --release -p phxsql-server --example custo-da-trava 3000000 9  # a §9
+cargo build --release --examples -p phxsql-server        # binario velho mede o passado
+cargo run --release -p phxsql-server --example custo-da-transacao 200 64  # a §12
+python3 bancada/transacoes/provar.py                     # a transacao pelo soquete
 ```

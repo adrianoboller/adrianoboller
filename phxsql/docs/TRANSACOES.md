@@ -1,13 +1,17 @@
-# Transações no PhxSql: o desenho, antes do código
+# Transações no PhxSql: o desenho, e o que dele virou código
 
 Documento de **decisão**, escrito antes da implementação e de propósito. Cada
 escolha aqui está amarrada a uma linha de código que já existe, porque o que
 mata um desenho de transação neste motor não é a teoria — é uma regra do
 formato que ele não pode quebrar.
 
-> **Estado:** desenho escolhido e **não implementado**. O que entrou nesta
-> rodada foi o pré-requisito (§8) e este documento. A tela *Ferramentas →
-> Gestão de transações* continua dizendo que não há transação, porque não há.
+> **Estado:** implementado. `BEGIN` / `COMMIT` / `ROLLBACK` / `SAVEPOINT`
+> existem pelo protocolo e pelo SQL, com escopo e prazos declarados na
+> abertura, travas de intenção na tabela e exclusivas na linha, máquina de
+> estados com `ABORT_ONLY`, marca de recuperação e a tela de *Gestão de
+> transações* dizendo o que passou a valer.
+>
+> **O que continua não existindo está na §11, com o motivo de cada um.**
 
 ---
 
@@ -27,7 +31,8 @@ Daí sai a pergunta difícil de qualquer transação aqui:
 > pode ser reusado, **o que é o rollback de um insert?**
 
 Este documento responde: **não é nada, porque o insert ainda não aconteceu.**
-A defesa está na §3.
+A defesa está na §3, e o teste que a trava é o
+`o_rollback_de_um_insert_nao_queima_slot`.
 
 ---
 
@@ -47,6 +52,11 @@ pelo login — e aí duas janelas do mesmo usuário seriam o mesmo dono, o que �
 exatamente o contrário de exclusivo.»* Uma transação tem o mesmo problema, com
 o mesmo tamanho de estrago.
 
+O `ExecutorLocal` — a ponte MCP, o job agendado — nasce com `ligacao: 0`, e
+zero quer dizer «não há conexão a que amarrar». Por isso **nenhum dos dois abre
+transação**, e a recusa diz isso com todas as letras em vez de deixar a
+transação viver órfã.
+
 ### 2.2 Por que a porta web fica de fora
 
 Também já está decidido no mesmo arquivo: *«HTTP não tem conexão para cair —
@@ -55,9 +65,9 @@ existe.»* Uma transação aberta por uma aba de navegador que o usuário fechou
 ficaria pendurada segurando tabelas, e a única rede restante seria o prazo.
 
 A web **não fica sem atomicidade** por isso: ela manda a transação inteira em
-**um** pedido (`{"op":"transacao","operacoes":[…]}`), que roda inteiro dentro
-de uma tomada da trava. É o mesmo caminho que o `inserir_lote` da tela já usa
-hoje, e é por isso que a tela nunca precisou de `BEGIN`.
+**um** pedido, que roda inteiro dentro de uma tomada da trava. É o mesmo
+caminho que o `inserir_lote` da tela já usa hoje, e é por isso que a tela nunca
+precisou de `BEGIN`.
 
 ### 2.3 Por que um database só
 
@@ -68,7 +78,9 @@ restaurasse um deles sozinho — e restaurar um database sozinho é uma operaç�
 que já existe (pedido 133).
 
 Transação entre databases é *two-phase commit*, é outro projeto, e entra na
-lista do que falta com esse nome. **Recusa fundamentada, não esquecimento.**
+lista do que falta com esse nome. **Recusa fundamentada, não esquecimento** — e
+a recusa que o servidor devolve cita o nome, para quem esbarrar saber o que
+procurar.
 
 ---
 
@@ -93,11 +105,6 @@ COMMIT           → a lista é aplicada em ordem, numa tomada da trava
 O rollback de um insert é **zero bytes de trabalho**, e a ordem de digitação
 nunca correu risco.
 
-E a ordem de digitação continua sendo a ordem de digitação: as linhas entram
-no `.reg` na ordem em que foram pedidas dentro da transação, anexadas no fim.
-Duas transações não podem embaralhar essa ordem numa mesma tabela porque não
-podem tocar a mesma tabela ao mesmo tempo (§4.2).
-
 ### 3.2 A alternativa que foi recusada, e os quatro motivos
 
 A resposta óbvia — **o slot que «nasceu e morreu»**: gravar o slot, e no
@@ -108,54 +115,63 @@ ordem de gravidade:
    `store/src/reg.rs:143` é literal: `b == STATUS_LIVRE || b == STATUS_ATIVO`,
    e qualquer outro valor cai no ramo *«status inválido»*. Um valor novo faria
    o `verificar`, o `reparar` e a comparação com o `.bkp` chamarem de
-   corrompida uma linha que está exatamente como deveria — e o comentário logo
-   acima dessa função conta por que a distinção foi cravada: **um único bit
-   trocado apagava um registro em silêncio**, e o reparo nunca ia buscar a
-   cópia boa no espelho. Reabrir isso para fazer transação seria trocar uma
-   garantia paga por outra.
+   corrompida uma linha que está exatamente como deveria.
 
-2. **O status novo é desnecessário: o `.reg` já sabe desfazer um insert, e é
-   o que ele faz hoje.** Quando um índice único recusa a chave depois do slot
-   gravado, o `inserir` chama `self.reg.excluir(rowid)`, que põe
-   `STATUS_LIVRE` e não devolve o slot para a fila. Ou seja: a marca «nasceu
-   e morreu» **já existe**, disfarçada de `LIVRE`. O que ela não resolve é o
-   item 3.
+2. **O status novo é desnecessário: o `.reg` já sabe desfazer um insert.**
+   Quando um índice único recusa a chave depois do slot gravado, o `inserir`
+   chama `self.reg.excluir(rowid)`. A marca «nasceu e morreu» **já existe**,
+   disfarçada de `LIVRE`. O que ela não resolve é o item 3.
 
 3. **Na replicação, o slot queimado tem de ser queimado dos dois lados.**
    O `aplicar_evento` para a replicação quando o rowid que a réplica gerou não
-   bate com o do evento: *«o source diz rowid N e aqui saiu M»*. Se o master
-   queima o slot 700, a réplica precisa queimar o 700 também, senão o próximo
-   insert sai 700 nela e 701 nele, e a replicação morre. Queimar o 700 na
-   réplica exige **mandar para ela a inclusão e depois a exclusão** — quer
-   dizer, **a transação revertida chega aplicada na réplica**, exatamente o
-   que não pode acontecer (§6).
+   bate com o do evento. Queimar o mesmo slot na réplica exigiria **mandar para
+   ela a inclusão e depois a exclusão** — quer dizer, **a transação revertida
+   chegaria aplicada na réplica**, exatamente o que não pode acontecer (§6).
 
-4. **O buraco é permanente.** A compactação está recusada com número
-   (`DESEMPENHO.md` §4.7.3, e `COMPARACAO.md` sobre rowid ser endereço). Uma
-   carga de 2.500 linhas que falha na linha 1 e é revertida deixaria 2.500
-   slots mortos para sempre. A carga que motivou esta frente foi exatamente
-   essa.
+4. **O buraco é permanente.** A compactação está recusada com número. Uma carga
+   de 2.500 linhas que falha na linha 1 e é revertida deixaria 2.500 slots
+   mortos para sempre.
 
 ### 3.3 O que a escolha custa, dito antes de alguém descobrir
 
 | Custo | Tamanho | O que se faz com ele |
 |---|---|---|
-| **Memória** | o conjunto de escrita inteiro fica em RAM | teto configurável (`recursos.transacao_max_linhas`). Estourou, a operação é **recusada com erro nomeado** — nunca engolida, nunca vazada para disco pelas costas |
-| **Ler o que a própria transação escreveu** | não entrega nesta rodada | uma consulta dentro da transação **não vê** o que ela mesma inseriu. Está declarado na §4.3 e vai para a tela |
+| **Memória** | o conjunto de escrita inteiro fica em RAM | teto em `recursos.transacao_max_linhas` (padrão 100.000, ~20 MiB). Estourou, a operação é **recusada com erro nomeado** e a transação vai para `ABORT_ONLY` — nunca engolida, nunca vazada para disco pelas costas |
+| **Ler o que a própria transação escreveu** | não entrega | uma consulta dentro da transação **não vê** o que ela mesma inseriu. Está declarado na §4.4 e a tela diz |
 | **Falha no meio do `COMMIT`** | é a única janela que sobra | é a §5, e é por isso que ela é peça da transação e não detalhe |
-| **Buraco na sequência** | o `AUTO_INCREMENT` é consumido ao empilhar, não ao confirmar | tem de ser: a coluna da sequência pode estar num índice único, e o `inserir` de hoje já numera **antes** das chaves por essa razão. Um `ROLLBACK` deixa o número queimado — que é o que todo banco faz, e é a única coisa que uma transação revertida deixa para trás aqui |
+| **Buraco na sequência** | o `AUTO_INCREMENT` é consumido ao aplicar | a numeração acontece dentro do `inserir`, na passada — um `ROLLBACK` não queima número nenhum, porque a passada não chegou a acontecer |
 
-O terceiro item merece a única mitigação que este desenho tem: **o que pode
-falhar é conferido na hora do `INSERT`, não na hora do `COMMIT`.** O `inserir`
-de hoje já confere a unicidade **antes** de qualquer gravação, pela mesma razão
-de formato — e o comentário lá está escrito com essas palavras. A transação faz
-a mesma conferência ao empilhar, contra o índice **e** contra as chaves que ela
-mesma já empilhou. Sobrando só falha de E/S no `COMMIT`, a recuperação da §5
-tem uma resposta única e simples.
+O terceiro item merece a mitigação que este desenho tem: **o que pode falhar é
+conferido na hora do `INSERT`, não na hora do `COMMIT`.** A conversão da linha,
+os gatilhos `BEFORE` e a unicidade rodam ao empilhar — contra o índice **e**
+contra as chaves que a própria transação já empilhou. Sobrando só falha de E/S
+no `COMMIT`, a recuperação da §5 tem uma resposta única e simples.
+
+### 3.4 O que a transação NÃO empilha, e por quê
+
+`OPS_EMPILHAVEIS` é `inserir`, `atualizar`, `excluir` e `restaurar`. Escrita
+que não está nessa lista **é recusada** dentro de uma transação, nomeando o que
+a lista tem.
+
+**Ela não confirma a transação aberta por conta própria**, e essa é a decisão.
+O MySQL(R) e o Oracle confirmam quando chega um DDL, e é uma armadilha
+conhecida: quem escreveu `BEGIN; …; CREATE TABLE; ROLLBACK` acha que desfez e
+não desfez. Recusar é a resposta honesta enquanto o DDL não for transacional.
+
+`inserir_lote` fica de fora, e a ausência é deliberada: ele **já é atômico
+sozinho** — roda inteiro dentro de uma tomada da trava — e empilhá-lo linha a
+linha estouraria o teto de memória com uma carga que não precisava de transação
+nenhuma.
+
+Tabela com **partição alfanumérica** (por letra) recusa `INSERT` dentro de
+transação. Ali o slot depende do balde em que a linha cai, e o balde sai de uma
+regra que mora dentro do `Table`; reproduzi-la fora seria uma segunda
+implementação dela, e sem o rowid alvo a marca de recuperação deixa de ser
+idempotente. Recusa fundamentada, e não esquecimento.
 
 ---
 
-## 4. O isolamento: o que se entrega e o que não
+## 4. O isolamento e as travas
 
 ### 4.1 Não se pode segurar a trava global entre pedidos
 
@@ -163,71 +179,240 @@ A tentação é grande porque seria serialização de graça: `BEGIN` toma a tra
 `COMMIT` solta. **É a doença que este projeto já mediu.** Em `REPLICACAO.md`
 §17, com a trava presa atravessando uma ida e volta de rede numa réplica
 cortada em silêncio, `varrer` esperou **29.456 ms** enquanto o `ping` respondia
-em 6 ms — o servidor no ar e a trava presa. Uma transação aberta por um cliente
-que foi almoçar faria o mesmo, e não por engano de implementação: por desenho.
+em 6 ms. Uma transação aberta por um cliente que foi almoçar faria o mesmo, e
+não por engano de implementação: por desenho.
 
 **Então a transação NÃO segura a trava global.** Ela a toma e solta operação a
-operação, exatamente como hoje.
+operação, exatamente como hoje — e a espera por uma trava de transação acontece
+**fora** da trava de dados, sempre.
 
-### 4.2 O que substitui: reserva de tabela, sem espera
+### 4.2 O que substitui — e esta seção MUDOU
 
-Ao tocar uma tabela pela primeira vez, a transação a **reserva**, no mesmo
-registro que o `BULKINSERT` já usa. Enquanto a transação viver, mais ninguém
-**escreve** naquela tabela.
+**A decisão anterior, e ela está registrada porque foi trocada:** o desenho
+escrito escolhia **reserva de tabela, sem espera**. Ao tocar uma tabela pela
+primeira vez, a transação a reservava inteira; quem esbarrasse recebia a recusa
+na hora, sem esperar. O argumento era forte e continua verdadeiro: **sem espera
+não há grafo de espera, e sem grafo não há ciclo** — o abraço mortal ficava
+impossível por construção, o que é uma resposta mais forte do que detectá-lo
+depois de existir.
 
-Quem esbarra recebe a recusa na hora, **sem esperar**: erro `EM_TRANSACAO`,
-`repetir: true`, nomeando quem segura — o gêmeo do `EM_CARGA` 4002 que já
-existe. Não esperar não é preguiça: **é o que torna impossível o abraço mortal
-entre duas transações** que peguem duas tabelas em ordens opostas. Sem espera
-não há ciclo.
+**Por que ela caiu.** O preço era um conflito **artificial**. Quinhentos caixas
+vendendo, um mexendo no pedido 9001/produto 100 e outro no 18223/987: não há
+disputa nenhuma de verdade, e a trava de tabela criava uma. Medido, com 64
+caixas em linhas diferentes: **50,5 ms com `AUTO` contra 78,4 ms com
+`EXCLUSIVE`** — 1,55× de conflito que não existia (`DESEMPENHO.md` §12.2).
 
-E as duas redes de proteção contra reserva órfã são as mesmas do `BULKINSERT`,
-pelo mesmo motivo: a queda da conexão solta, **e** o prazo solta. Uma só não
-basta — soquete meio-morto existe, e é justamente o caso em que a primeira não
-pega.
+**O que entrou no lugar.** Uma hierarquia de duas alturas:
 
-### 4.3 O nível, dito sem enfeite
+| modo | na tabela | na linha |
+|---|---|---|
+| `AUTO` (padrão) | intenção (`IX`) | exclusiva |
+| `ROW` | intenção (`IX`) | exclusiva |
+| `TABLE` | exclusiva (`X`) | não precisa |
+| `EXCLUSIVE` | exclusiva (`X`) | não precisa |
+
+Duas intenções convivem; a exclusiva não convive com nada. Duas transações
+mexendo em linhas diferentes da mesma tabela **não se veem**.
+
+**O que paga pela volta da espera: a declaração prévia do escopo.** Travar por
+linha traz a espera de volta, e com ela a possibilidade de ciclo. Com as
+tabelas conhecidas na abertura, o gestor adquire **sempre na mesma ordem
+canônica**, e o ciclo clássico — A pega `pedidos` e quer `estoque` enquanto B
+pega `estoque` e quer `pedidos` — deixa de existir.
+
+> **A ordem canônica aqui é o nome qualificado em caixa baixa.** O que a ordem
+> exige é uma ordem total *estável* sobre as tabelas; qualquer uma serve, desde
+> que todas as transações usem a mesma. Um id numérico interno teria de ser
+> inventado, gravado e mantido estável entre restaurações de backup — e seria a
+> segunda verdade sobre a mesma tabela.
+
+**E a garantia não é total. Isto tem de ficar dito, e não vendido.**
+
+* A ordenação mata o ciclo entre **tabelas**.
+* Ciclo entre **linhas da mesma tabela** continua possível: A trava a linha 5 e
+  depois quer a 9, B trava a 9 e depois quer a 5.
+* Para esse caso a resposta não é prevenir, é **limitar**: o `LOCK TIMEOUT`
+  transforma a espera num erro nomeado com o número, e nunca numa thread
+  pendurada.
+* E a **expansão dinâmica** (§4.5) reintroduz a possibilidade de ciclo entre
+  tabelas, porque a ordem canônica só vale para o que foi declarado na
+  abertura. Quem quer a garantia declara o escopo inteiro.
+
+**Este motor não promete «sem deadlock».** Ele promete ordem canônica entre
+tabelas declaradas e espera limitada em todo o resto.
+
+O `INSERT` trava o **fim da tabela**, e não uma linha: o próximo slot é
+`slots() + 1` e ele é um só. Duas transações que anexam ao mesmo tempo preveem
+o mesmo rowid, e sem essa trava a segunda descobriria isso na passada de
+commit, com metade do trabalho gravado.
+
+As redes contra trava órfã são as três de sempre, e nenhuma delas basta
+sozinha: a queda da conexão solta, o `TIMEOUT` solta, e o `COMMIT`/`ROLLBACK`
+solta.
+
+### 4.3 Uma escrita comum não espera
+
+Quem escreve **sem** `BEGIN` respeita a trava de quem tem, mas **não espera**:
+recebe `4005 EM_TRANSACAO` com `repetir: true`, na hora. Um pedido solto não
+declarou `LOCK TIMEOUT` nenhum, e inventar uma espera para ele mudaria o tempo
+de resposta de todo cliente que já existe.
+
+### 4.4 O nível, dito sem enfeite
 
 | | |
 |---|---|
-| **Entre escritores** | **serializável** nas tabelas da transação — ninguém mais escreve nelas, e o efeito aparece de uma vez |
+| **Entre escritores** | **serializável por linha** nas tabelas da transação, com a tabela inteira quando o modo é `TABLE`/`EXCLUSIVE` |
 | **Para quem lê** | **read committed**, e sem bloquear: um leitor nunca vê dado não confirmado, porque **não há dado não confirmado em lugar nenhum** — ele ainda está em RAM |
 | **Para a própria transação** | **nada.** Ela não tem *snapshot*: entre duas leituras dela, outra transação pode ter confirmado. E ela não vê as próprias escritas |
 
-**Não é ANSI SERIALIZABLE**, e não vai ser chamado assim. O que ele é, com
-precisão: *escrita serializável por tabela, leitura confirmada e não
-bloqueante, sem leitura repetível.*
+**Não é ANSI SERIALIZABLE**, e não vai ser chamado assim. O nome que o servidor
+devolve em `transaction_isolation` é o que ele é:
+
+> *escrita serializável por tabela, leitura confirmada e não bloqueante, sem
+> leitura repetível.*
 
 E fica registrado o que este desenho **não** compra: paralelismo. A trava única
 continua serializando toda operação, uma de cada vez. Transação e concorrência
 fina são frentes diferentes; confundi-las é o que faz uma prometer a outra.
 
+### 4.5 O escopo declarado: `SCOPE`, e os dois modos
+
+```sql
+BEGIN TRANSACTION
+  SCOPE (clientes, pedidos, pediditens, estoque)
+  SCOPE MODE STRICT
+  TIMEOUT 5s
+  LOCK TIMEOUT 500ms
+  STATEMENT TIMEOUT 2s
+  LOCK MODE AUTO;
+```
+
+O mesmo pela porta de dados, que é por onde os clientes falam:
+
+```json
+{"op":"begin","database":"loja",
+ "scope":["clientes","pedidos","pediditens","estoque"],
+ "scope_mode":"strict","lock_mode":"auto",
+ "timeout":"5s","lock_timeout":"500ms","statement_timeout":"2s"}
+```
+
+**Parâmetros nomeados, e não posicionais.** A forma posicional —
+`Transaction(clientes, pedidos, estoque, 5s)` — não estende: entrou o segundo
+prazo, não há onde ele caiba sem quebrar quem já escreveu, e não há como dizer
+*qual* dos três prazos é aquele. E ela mistura tabela com duração na mesma
+lista, onde a quarta posição só não é uma tabela porque termina em `s`.
+
+**As cláusulas não têm ordem.** Ordem obrigatória é uma regra que existe para
+facilitar o analisador, e o preço dela é pago por quem digita.
+
+| modo de escopo | o que faz com tabela não declarada |
+|---|---|
+| `DYNAMIC` (**padrão**) | acolhe, toma a trava na hora e **anota a expansão**, que aparece na ficha |
+| `STRICT` | **recusa**, nomeando a tabela e o escopo |
+
+`STRICT` é melhor para ERP e financeiro, e é o que o desenho preferia. **Ele
+não pode ser o padrão**: `STRICT` por omissão recusaria toda escrita de todo
+cliente que nunca declarou escopo, e isso é exatamente a regra pétrea da casa —
+*guarda nova entra pedida, não imposta*. **Sem `SCOPE` nenhum, nada muda**, e
+esse é o teste que mais importa (`sem_transacao_nada_muda`).
+
+### 4.6 Escopo efetivo: o declarado mais o que o catálogo alcança
+
+> Escopo declarado + dependências do catálogo = **escopo efetivo**
+
+Ele é calculado na abertura e aparece **separado** do declarado na ficha —
+`tabelas_declaradas`, `tabelas_efetivas` e `tabelas_expandidas`. Juntar as
+listas numa só esconderia exatamente a informação pela qual a separação existe:
+quais tabelas entraram sem ninguém pedir, e por onde.
+
+**O gatilho entra, e alcança de verdade.** O corpo de um gatilho grava noutra
+tabela com `INSERT INTO`, e o `rodar_gatilhos_depois` executa isso. Os alvos
+saem da **árvore já compilada** do corpo, e não do texto: procurar `INSERT
+INTO` por comparação de texto quebra calado no dia em que alguém escrever o
+mesmo comando com outro espaçamento — a mesma armadilha de resolver texto de
+tela comparando a frase. O fecho é transitivo, com teto de voltas, porque um
+gatilho que grava na própria tabela é legítimo.
+
+**A chave estrangeira NÃO entra, e isso foi conferido em vez de suposto.**
+
+A tentação era somar as tabelas apontadas por FK com `ao_excluir`/`ao_alterar`
+em cascata. Elas não alcançam nada: **o motor declara a chave estrangeira e não
+a impõe.** Há teste travando isso pelo nome —
+`a_chave_e_declarada_mas_ainda_nao_e_imposta_na_gravacao` — e o comentário dele
+diz que uma linha filha apontando para um pai que não existe entra sem
+reclamação. Sem imposição não há cascata, e sem cascata a FK não toca tabela
+nenhuma.
+
+Somá-las travaria tabelas que a transação nunca vai tocar, e a ficha mostraria
+um alcance que não existe — que é exatamente a linha que não se imprime porque
+não se mede. **No dia em que aquele teste falhar**, o `escopo_efetivo` é o
+lugar de acrescentar o braço da FK, e o comentário lá diz isso.
+
+### 4.7 Os três prazos, e quem encerra
+
+| prazo | o que limita | padrão |
+|---|---|---|
+| `TIMEOUT` | a transação **inteira** | `recursos.transacao_prazo_min`, 5 min |
+| `LOCK TIMEOUT` | quanto se aceita **esperar por outro** | `recursos.transacao_lock_timeout_ms`, 500 ms |
+| `STATEMENT TIMEOUT` | quanto **uma operação** pode levar | `recursos.transacao_statement_ms`, 0 = sem prazo |
+
+São problemas diferentes, e um número só não responde aos três: uma transação
+pode ser curta e mesmo assim esperar demais por uma trava, e uma operação pode
+demorar sem que nem a transação nem a espera tenham estourado.
+
+**Quem encerra é o gestor de transações, nunca uma thread morta.** Matar a
+thread deixaria a trava de dados presa, o conjunto de escrita órfão e o contador
+de transações abertas errado. Estourado o prazo, a transação vai para
+`ABORT_ONLY`, **solta as travas na hora**, joga a lista fora, e a próxima
+operação recebe `6002 TRANSACAO_ABORTADA` com o número do prazo dentro. A
+conexão continua viva, e o cliente descobre pelo erro — que é o que ele sabe
+tratar.
+
+**Onde o `STATEMENT TIMEOUT` morde, dito em vez de escondido.** Ele usa a
+máquina de cancelamento cooperativo que já existe — a mesma do
+`telemetria_encerrar` —, e por isso é conferido nos **pontos de cancelamento
+que existem**: o `Atividade::siga`, chamado entre duas unidades de trabalho
+seguras pelos laços longos (a conversão de uma carga, a exportação). Uma
+inserção de **uma** linha não tem ponto de cancelamento no meio, e não poderia
+ter: parar entre gravar o slot e manter o índice deixaria os dois discordando.
+Um prazo que só morde onde há laço é um prazo honesto; um campo que promete
+cortar qualquer coisa seria configuração que mente.
+
+### 4.8 Otimista e pessimista: nenhum dos dois é o certo sempre
+
+A **janela de conflito de escrita** (pedido 123) já existia: o cliente manda
+`"versao"` e o servidor recusa se a linha mudou. É controle **otimista**, e
+resolve escrita-contra-escrita sem travar nada. A trava de linha é
+**pessimista**, e resolve o mesmo caso travando.
+
+Um não substitui o outro, e a escolha é de quem escreve o cliente:
+
+| | otimista (`versao`) | pessimista (trava de linha) |
+|---|---|---|
+| bloqueia? | nunca | sim, até o `LOCK TIMEOUT` |
+| disputa baixa | ganha: zero espera, zero trava | paga a trava sem precisar |
+| disputa alta na MESMA linha | vira tentativa e erro | uma tentativa por cliente, sempre |
+| custo de uma perda | reler e regravar | esperar |
+
+Medido com 64 clientes na **mesma** linha (`DESEMPENHO.md` §12.3): o otimista
+levou **28,0 ms gastando 133 tentativas** para 64 gravações; o pessimista levou
+**71,8 ms gastando exatamente 64**. Nesse ponto o otimista ainda ganha em
+tempo, e já gasta 2,1× mais tentativas — é a subida dessa razão, e não o
+relógio, que diz quando trocar.
+
 ---
 
 ## 5. Se o processo morrer no meio
 
-### 5.1 Hoje não há marca nenhuma, e isso é verdade
-
-O Aria tem 3 bytes para dizer «não fechei direito», o InnoDB tem o LSN do
-checkpoint. Aqui não há nada — e por isso a recuperação não teria como saber o
-que reverter. **A marca é peça da transação, e não um detalhe da entrega.**
-
-### 5.2 A marca: `transacao_<id>.tx`, no diretório do database
+### 5.1 A marca: `transacao_<id>.tx`, no diretório do database
 
 Antes de a passada de `COMMIT` tocar em qualquer arquivo, o conjunto de
-escrita inteiro é gravado num arquivo próprio e **sincronizado**:
-
-```text
-base/ → database → transacao_<id>.tx
-
-cabeçalho  [magic PHXTX\0\0\0][versao u32][id u64][carimbo i64]
-           [n_operacoes u32][crc32 u32]
-operação   [tabela: u16 tam + bytes][op u8][rowid alvo u64]
-           [tam payload u32][payload …][crc32 u32]
-```
+escrita inteiro é gravado num arquivo próprio e **sincronizado**. O formato
+está em `docs/FORMATO.md`.
 
 O `rowid alvo` é conhecido **antes** da passada: o `.reg` sempre anexa no fim,
-e o próximo rowid é `slots() + 1`. Com a tabela reservada, ninguém pode mudar
+e o próximo rowid é `slots() + 1` mais quantas inserções a transação já
+empilhou para aquela tabela. Com o fim da tabela travado, ninguém pode mudar
 isso no meio. É essa previsibilidade que torna a recuperação exata.
 
 A ordem é a mesma que a lixeira já usa e pelo mesmo motivo
@@ -235,7 +420,14 @@ A ordem é a mesma que a lixeira já usa e pelo mesmo motivo
 alvo, porque *«a ordem inversa tem uma janela em que o registro não existe em
 lugar nenhum, e essa janela não tem conserto depois.»*
 
-### 5.3 A recuperação anda para a frente, nunca para trás
+**A linha vai em bytes, e não em JSON, e isso foi medido no próprio código:**
+`valor_para_json` escreve `Time` e `DateTime` como texto ISO e
+`json_para_valor` desses dois só aceita número. A volta não fecha, e uma
+recuperação que reconstrói a linha errada é pior do que uma que não reconstrói
+nada. A codificação própria tem uma etiqueta por variante, e o teste
+`a_linha_volta_igual_nas_catorze_variantes` fecha o laço.
+
+### 5.2 A recuperação anda para a frente, nunca para trás
 
 Ao abrir um database, um `.tx` órfão significa: **alguém morreu no meio de um
 commit**. A recuperação **completa o commit** — reaplica as operações que
@@ -247,21 +439,67 @@ formato permite, e o `.tx` é o que torna isso possível — sem ele, não se sa
 para onde ir.
 
 A reaplicação é **idempotente pelo rowid**: cada operação diz o slot que devia
-ter escrito e o conteúdo. Slot já ativo com aquele conteúdo — passa adiante.
-Slot livre — grava. É por isso que o `.tx` guarda o rowid alvo, e não só a
-linha.
+ter escrito e o conteúdo. Slot já ativo — passa adiante. Slot livre e no fim —
+grava. É por isso que o `.tx` guarda o rowid alvo, e não só a linha.
 
-### 5.4 O que continua sem cobertura, dito
+Ela roda no arranque, **antes de o servidor abrir a porta**: deixar isso para o
+primeiro pedido responderia «depende de quem chegar primeiro» a uma pergunta
+que precisa ser inequívoca.
 
-Uma queda **entre** a última operação da passada e o `unlink` do `.tx` faz a
-recuperação reaplicar um commit que já estava inteiro — e ela vai encontrar
-todos os slots já certos e não fazer nada. Custa uma varredura do `.tx` no
-próximo arranque. É o único caso de trabalho repetido, e ele é seguro.
+### 5.3 O relatório, e só o que ele mede
 
-Uma queda **durante o `fsync` do próprio `.tx`** deixa um `.tx` truncado. Ele
-tem CRC por operação justamente por isso: um `.tx` que não confere é um commit
-que **nunca começou**, e é apagado. A transação se perde inteira, que é o
-resultado correto.
+```text
+PHXSQL Recovery -- base /var/phxsql
+  transacoes achadas ............ 2
+  marcas ilegiveis descartadas .. 1   (commit que nunca comecou)
+  transacoes completadas ........ 1
+  operacoes reaplicadas ......... 37
+  operacoes ja aplicadas ........ 12
+  tempo ......................... 8 ms
+```
+
+O relatório do capítulo tinha uma linha de **páginas refeitas**. Ela não existe
+aqui e não vai ser inventada: não há página suja confirmada para refazer, e uma
+linha que imprime zero para sempre é pior do que linha nenhuma. Linha
+`operacoes IMPOSSIVEIS` só aparece quando há alguma — ver a §5.5.
+
+E ele **não sai quando não há marca nenhuma**, que é o arranque de sempre: um
+bloco dizendo zero em toda subida treina quem opera a não ler o relatório.
+
+### 5.4 O contrato, respondido ponto a ponto
+
+> «Se o computador perder energia exatamente nesta instrução, depois de
+> reiniciar o banco conseguirá determinar de forma inequívoca se esta transação
+> foi COMMITTED ou ABORTED?»
+
+| onde a energia cai | a resposta |
+|---|---|
+| antes de a marca estar sincronizada | **ABORTED.** Não há marca e nenhum byte de dado foi tocado |
+| durante o `fsync` da marca | **ABORTED.** Ela fica truncada, o CRC não confere, e marca que não confere é commit que nunca começou |
+| depois da marca, no meio da passada | **COMMITTED.** A marca está inteira no disco e a recuperação completa o que falta |
+| depois da passada, antes de a janela de durabilidade fechar | **COMMITTED.** A marca ainda está lá de propósito (§8), e a recuperação reaplica |
+| depois de a marca ser apagada | **COMMITTED**, e sem trabalho nenhum |
+
+**O `fsync` da marca é o ponto de compromisso.** Antes dele a transação não
+aconteceu; depois dele ela aconteceu, mesmo que o arquivo de dado ainda não
+saiba.
+
+### 5.5 O que continua sem cobertura, dito
+
+* Uma queda **entre** a última operação da passada e o `unlink` do `.tx` faz a
+  recuperação reaplicar um commit que já estava inteiro — e ela encontra todos
+  os slots já certos e não faz nada. Custa uma varredura. É seguro.
+
+* **O caso sem conserto**, e ele é um só: se a passada gravou o slot e depois o
+  liberou (o `inserir` desfazendo a si mesmo por falha de E/S no índice), o
+  slot fica dentro da faixa e **livre**. O `.reg` não reaproveita slot, então
+  aquela linha não volta para o lugar dela. A recuperação **não esconde isso**:
+  a operação entra em `operacoes IMPOSSIVEIS` com a tabela e o rowid, e o
+  arranque imprime. Perder a linha em silêncio seria pior do que dizer que ela
+  se perdeu.
+
+* Uma marca cuja **tabela não abre mais** (alguém apagou a tabela entre a queda
+  e o arranque) cai no mesmo lugar, pelo mesmo motivo.
 
 ---
 
@@ -273,32 +511,18 @@ A regra desta frente é dura: *«réplica que não conhece a versão nova contin
 aplicando»*. Este desenho a cumpre da forma mais forte possível: **não existe
 versão nova.** O `.log` não ganha campo, não ganha flag e não ganha operação.
 
-Isso não é sorte: foi medido contra o formato, e a medição matou a alternativa.
-
 * **Uma operação nova no `.log` quebraria toda réplica antiga.**
-  `store/src/log.rs`, `Operacao::de_tag`, devolve `Corrompido` para qualquer
-  tag que não seja 1, 2 ou 3. Uma tag `BEGIN` ou `COMMIT` não seria ignorada
-  por uma réplica antiga — ela **pararia a replicação** com erro de corrupção.
+  `Operacao::de_tag` devolve `Corrompido` para qualquer tag que não seja 1, 2
+  ou 3. Uma tag `BEGIN` não seria ignorada — ela **pararia a replicação**.
 * **Um identificador de transação não cabe no cabeçalho.** Os 44 bytes estão
-  cheios: carimbo 0..8, operação 8, flags 9, origem 10..12, rowid 12..20,
-  versão 20..28, usuário 28..32, tam_imagem 32..36, crc 36..40, tempero
-  40..44. Os «reservados» do comentário do topo já foram gastos — a `origem`
-  ficou nos 2 bytes que sobravam, e é ela que mata o laço do bidirecional.
-* **No corpo também não cabe.** O corpo é a imagem da linha, os bytes que a
-  réplica grava como dado. Um prefixo de transação ali seria lido como coluna
-  por toda réplica antiga.
-
-O único espaço realmente livre é o **byte de flags**, do qual só o bit 0 está
-em uso (`FLAG_IMAGEM`), e `Evento::ler` nem o consulta — um bit novo seria
-ignorado por réplica antiga, o que é ótimo para uma **dica** e inútil para uma
-**garantia**, porque a réplica antiga o ignoraria justamente quando ele
-importasse.
+  cheios, e os «reservados» já foram gastos pela `origem`.
+* **No corpo também não cabe:** ele é a imagem da linha, e um prefixo ali seria
+  lido como coluna por toda réplica antiga.
 
 ### 6.2 Por que não é preciso mexer nele
 
 Porque **a transação aberta não produz evento nenhum.** Nada foi gravado, logo
-nada foi journalizado, logo não há o que servir. O `replicar` do master entrega
-o que sempre entregou: eventos de escritas que aconteceram.
+nada foi journalizado, logo não há o que servir.
 
 E o `COMMIT` produz os eventos na ordem, de uma vez, dentro de uma tomada da
 trava — indistinguíveis de um `inserir_lote` de hoje para quem os aplica. Uma
@@ -306,23 +530,7 @@ réplica de qualquer versão, inclusive uma anterior a esta rodada, aplica sem
 saber que houve transação.
 
 **Uma transação revertida não chega aplicada na réplica porque ela não chega,
-ponto.** Não há supressão a implementar, nem janela em que a réplica segure
-dado que o master vai desfazer.
-
-### 6.3 A prova, e ela é obrigatória
-
-A bancada de Docker (`bancada/replicacao/docker/provar.py`) roda com o daemon
-no ar. O roteiro da prova, quando a implementação existir:
-
-| # | O que se faz | O que tem de acontecer |
-|---|---|---|
-| 1 | `BEGIN`, 2.500 `INSERT`, `ROLLBACK` no master | a `posicao` do diário **não anda**; a réplica não recebe evento; o `slots()` do master não muda |
-| 2 | `BEGIN`, 2.500 `INSERT`, `COMMIT` | as 2.500 chegam; retrato SHA-256 de cada linha idêntico dos dois lados; rowid idêntico |
-| 3 | Réplica compilada **antes** desta rodada | aplica o commit sem nenhuma mudança — é o teste que mais importa |
-| 4 | `kill -9` no master no meio do `COMMIT` | ao subir, o `.tx` completa o commit; a réplica alcança e bate |
-
-O item 3 é o teste do comportamento **velho**, e é a razão de o desenho ter
-chegado até aqui sem tocar no `.log`.
+ponto.**
 
 ---
 
@@ -331,122 +539,246 @@ chegado até aqui sem tocar no `.log`.
 **A regra:** se acrescentar algo mensurável ao caminho de quem nunca abre uma
 transação, o desenho está errado — e volta para a mesa.
 
-O único acréscimo previsto no caminho comum é **um portão, e ele vem antes de
-qualquer trabalho**: um `AtomicUsize` com o número de transações abertas, lido
-com `load(Relaxed)`. Zero transações abertas — que é o servidor inteiro hoje —
-e nenhuma estrutura de transação é consultada, nenhum `Mutex` é tomado, nenhuma
-`String` é montada.
+O único acréscimo no caminho comum é **um portão, e ele vem antes de qualquer
+trabalho**: um `AtomicUsize` com o número de transações abertas, lido com
+`load(Relaxed)`. Zero transações abertas — que é o servidor inteiro hoje — e
+nenhuma estrutura de transação é consultada, nenhum `Mutex` é tomado, nenhuma
+`String` é montada, nenhum campo do pedido é lido de novo.
 
 Isto é literalmente a lição que o Profiler cobrou: *«o portão que decide isso
-vem ANTES do trabalho»*. O ponto de captura do Profiler desligado fazia dois
-`Json::analisar` do corpo inteiro **antes** de perguntar se estava ligado, e
-cobrava 7% da carga pela rede. Nenhuma consulta ao mapa de transações pode
-acontecer antes do `load`.
+vem ANTES do trabalho»*.
 
 E o teste que mais importa não é o do recurso novo: é o
 **`sem_transacao_nada_muda`** — quem nunca manda `BEGIN` vê exatamente o
 comportamento de hoje, inclusive a mensagem literal do `inserir_lote` sobre as
 linhas gravadas antes do erro.
 
-**Como medir, quando existir:**
+---
 
-```bash
-cargo build --release --examples -p phxsql-store   # medidor com binário velho mede o passado
-cargo run --release -p phxsql-server --example custo-do-portao
-```
+## 8. O group commit: medido, aceito, e o passo seguinte morto
 
-O molde é o `custo-do-portao`, que já resolve o problema difícil desta medição:
-**rodadas intercaladas** (1,2,3, 1,2,3…) em servidores limpos, e a conclusão
-dada como *comparação* — enquanto a diferença entre cenários couber dentro do
-espalhamento de um cenário sozinho, o resultado honesto é «o portão não
-aparece», e não um número.
+Chegou de fora, e a regra da casa mandou medir antes de virar plano. O critério
+de morte foi acordado **antes** da medição: **abaixo de 1,5× a hipótese morre.**
+
+A decomposição de um commit de uma linha (`--example custo-da-transacao`,
+mediana de 5 rodadas intercaladas):
+
+| pedaço | ms | o que é |
+|---|---|---|
+| commit inteiro, `fsync` por commit | 1,199 | o comportamento anterior |
+| só a marca `.tx` | 0,289 | o ponto de compromisso |
+| a linha, com o `fsync` amortizado | 0,050 | o trabalho de verdade |
+| **o resto** | **0,860** | o `fsync` da tabela, por commit |
+
+Uma inserção **solta**, sem transação, custa 0,061 ms — justamente porque ela
+passa pela **janela de durabilidade** que já existia.
+
+**A conclusão, e ela é o oposto da receita:** o group commit clássico amortiza
+`fsync` entre commits **concorrentes**, e este servidor não tem commits
+concorrentes — a trava única serializa tudo, e nunca há dois em voo para
+agrupar. O que havia para amortizar era outra coisa: o `fsync` da tabela, que a
+transação estava forçando por commit enquanto o resto do servidor já usava a
+janela.
+
+**O conserto foi deixar o commit usar a janela que já existe**, e ele é seguro
+por um motivo que só o `.tx` dá: **quem decide se a transação aconteceu é a
+marca, não o `fsync` da tabela.** A marca já está sincronizada quando a passada
+começa, então adiar o `fsync` não adia a decisão — adia só o momento em que o
+dado alcança o disco, e a marca é o bilhete que o traz de volta.
+
+**A ordem é a peça, e ela não se inverte:** a marca só é apagada **depois** de
+a tabela sincronizar. Apagar antes abriria a janela em que o dado não está no
+disco e não há bilhete nenhum para recuperá-lo.
+
+**Ganho medido: 2,63×** (1,199 → 0,457 ms por commit de uma linha), no mesmo
+binário e na mesma rodada.
+
+**E o passo seguinte morre medido.** Agrupar os `fsync` das *marcas* entre
+commits é a única coisa que sobra, e o piso irredutível (marca + trabalho) é
+0,341 ms contra os 0,455 de hoje: **1,34×**, abaixo do critério de 1,5×. A
+marca não se adia — ela é o ponto de compromisso. **Recusa registrada com o
+número**, para a ideia não voltar sem medição.
 
 ---
 
-## 8. O pré-requisito, que entrou nesta rodada
+## 9. As classes de erro
 
-A transação vai morar em cima da trava de dados, então a trava precisava ter
-**um** dono antes de a transação existir. Ela não tinha.
+O §29 do capítulo, e a aplicação precisa da distinção porque a ação dela é
+outra em cada caso:
 
-### 8.1 As 13 tomadas fora do ponto único
-
-`travar_dados()` afirmava, em comentário, ser *«o único lugar que a toma»*.
-Era mentira medida: havia **13** `self.dados.lock()` fora dele. Todas as 13
-entraram, e nenhuma foi convertida no automático — cada uma respondeu à
-pergunta «quem chama isto já tem a trava?»:
-
-| Onde | Quem chama | Já tem a trava? |
+| classe | exemplos | o que acontece |
 |---|---|---|
-| `mensagens_atualizar` | `msg`, `texto_do_erro`, `op_mensagens` | não — a «regra de ouro» escrita no próprio arquivo é exatamente essa, e os pontos de uso são portões e montagem de resposta |
-| `semear_mensagens` | o arranque e `op_mensagens_semear` | não |
-| `posicao_do_diario` | o árbitro do cluster, no ritmo do pulso | não |
-| `alcancar_tabela_bidi` | `rodada_bidirecional` | não |
-| `atender_http` (`/idiomas`) | o despacho de rota | não |
-| `op_mensagens`, `op_idiomas`, `_carga`, `_padrao`, `_exportar`, `_importar` | o despachar | não |
-| `descarregar_sujas` | o relógio de gravação e a saída da conexão | não — e a variante `_com` existe justamente para quem tem |
-| `executar_rotina` (`CREATE TRIGGER`) | o despachar, via `sql` | não |
+| **instrução** | chave duplicada, tipo errado, rowid inexistente, `SIGNAL` de gatilho, acesso negado | a instrução é cancelada, a transação **continua `ACTIVE`**, corrigir e repetir funciona |
+| **transação** | teto de linhas estourado, E/S no meio da passada, prazo estourado, formato corrompido | vai para **`ABORT_ONLY`**; só o `ROLLBACK` passa |
+| **queda da conexão** | o soquete caiu | desfeita sozinha, sem ninguém para avisar |
 
-Três delas doíam, e é o que a lista de pendências já dizia: o despejo do cache
-segurava a trava por uma passada inteira, o corpo de um gatilho pelo tempo que
-quisesse, e o laço da replicação **através de uma ida e volta de rede**. Agora
-as três aparecem no `espera_ms_s` da telemetria, e o `TELEMETRIA.md` §2.1
-voltou a ser verdade.
+A classe **sai da faixa do código de erro**, e não de uma lista escrita à mão:
+esquema (2xxx), dado (3xxx) e acesso (4xxx) cancelam a instrução; formato
+(1xxx), sistema (5xxx) e execução (6xxx) derrubam a transação. Erro novo cai na
+classe certa sozinho, e as duas não têm como divergir — é a mesma decisão do
+`PhxError::classe`.
 
-E a que mais preocupava foi provada **por soquete**, e não por leitura: o
-`alcancar_tabela_bidi` é a única das 13 que nenhum teste unitário exercita de
-ponta a ponta, porque ela segura a trava atravessando a rede entre dois
-servidores. Dois `phxsqld` em modo multi-master (portas 7010 e 7012), 20 linhas
-escritas em cada lado ao mesmo tempo: **40 e 40, conteúdo idêntico nos dois**.
-É a lição do `BULKINSERT` aplicada de novo — teste unitário não prova o que
-depende da rede.
+Em `ABORT_ONLY`, **até a leitura recusa**, como no PostgreSQL(R): a transação
+está suja e não serve para mais nada. E `ROLLBACK TO SAVEPOINT` **não a
+resgata** — a diferença para o PostgreSQL(R) é deliberada: lá *todo* erro
+aborta a transação, e o `SAVEPOINT` existe justamente para resgatar quem errou
+uma instrução. Aqui erro de instrução não aborta nada, então só chega a
+`ABORT_ONLY` o que põe em dúvida o próprio conjunto de escrita. Voltar a um
+ponto não desfaz essa dúvida.
 
-### 8.2 A catraca, porque comentário não conta
+Dois códigos novos, e eles não mudam nunca:
 
-O teste `so_um_lugar_toma_a_trava` conta as tomadas **no próprio fonte** — pelo
-mesmo `include_str!` do conferidor de textos, e pela mesma razão dele: assim
-não há como o teste contar um arquivo e o binário ser compilado de outro. Ele
-reprova a décima-quarta, e confere que a que sobrou está mesmo dentro do
-`travar_dados`.
-
-*(A primeira versão do teste acusou 4 onde havia 1: o literal escrito no
-próprio teste entrava na conta, e as citações nos comentários também. A agulha
-é montada, não escrita, e linha de comentário fica de fora.)*
-
-### 8.3 A reentrância deixou de pendurar o servidor
-
-`std::sync::Mutex` não é reentrante, e pedir a trava que a própria thread já
-tem parava o servidor **inteiro**, para sempre, sem log e sem pilha. Aconteceu
-três vezes neste projeto — a última em configuração padrão, com escrita comum
-em duas tabelas.
-
-Agora `travar_dados` pergunta antes, numa `Cell` de thread, e devolve erro
-nomeado em vez de parar: o pedido culpado falha dizendo o que houve, e as
-outras conexões continuam sendo atendidas. O teste
-`a_trava_pedida_duas_vezes_pela_mesma_thread_vira_erro` roda **com prazo**, e
-com a guarda removida ele acusa em 30 s em vez de pendurar o `cargo test`
-inteiro — foi assim que a prova foi feita.
-
-Ele também confere o outro lado, que é onde uma guarda dessas erra: depois do
-`drop`, a mesma thread **volta a conseguir**. Sem isso, a guarda trocaria um
-abraço mortal por uma thread aleijada para o resto da vida dela.
-
-O custo dessa guarda está medido em `DESEMPENHO.md` §9. Ela está no caminho de
-**toda** leitura e **toda** escrita do servidor, então medi-la não era
-opcional.
+| código | nome | classe | repetir? |
+|---|---|---|---|
+| 4005 | `EM_TRANSACAO` | acesso | **sim** — quem segura vai soltar |
+| 6002 | `TRANSACAO_ABORTADA` | execução | não — o pedido não é o problema |
 
 ---
 
-## 9. O que fica para as próximas rodadas, e por quê
+## 10. `SAVEPOINT`: quase de graça, e por quê
 
-| | O que falta | Por que não entrou agora |
+Não se copia a transação: guarda-se um **índice na lista** de escrita
+empilhada. `ROLLBACK TO SAVEPOINT` trunca o `Vec` naquele ponto e a transação
+**continua aberta**.
+
+Num motor que já gravou as escritas, voltar a um ponto exige desfazer páginas.
+Aqui o conjunto de escrita está em RAM, e é isso que torna a operação barata —
+**a ideia é do capítulo que o dono mandou, e foi ela que tornou o `SAVEPOINT`
+possível nesta rodada em vez de na seguinte.**
+
+O que o truncamento precisa levar junto: **as chaves únicas já empilhadas**.
+Sem refazê-las, a chave de uma linha descartada continuaria barrando a próxima
+igual a ela, e o `SAVEPOINT` deixaria de desfazer de verdade.
+
+Nome repetido **destrói** o ponto anterior e cria um novo, que é o que o SQL
+manda. `RELEASE SAVEPOINT` tira o ponto e os criados depois dele, **sem tocar
+no trabalho**.
+
+---
+
+## 11. O que NÃO entrou, e o motivo de cada um
+
+Esta seção existe para as ideias não voltarem sem medição.
+
+### 11.1 MVCC — não implementar
+
+**Aqui o rowid é o endereço**, e é o que dá o O(1). Uma segunda versão da linha
+pede um segundo slot, logo um segundo rowid — e isso quebra **duas** coisas ao
+mesmo tempo: a regra pétrea da ordem de digitação, e a replicação, cujo
+`aplicar_evento` **para** quando o rowid diverge do que o source mandou.
+
+Não é falta de vontade nem de tempo: é incompatível com o formato. A decisão
+sobre rowid-como-endereço é do dono do projeto e não voltou.
+
+**A boa notícia, e ela é metade do que se quer do MVCC:** *readers
+non-blocking* **este desenho já entrega**, por outro caminho e sem MVCC nenhum.
+Como nada vai a disco antes do `COMMIT`, um leitor concorrente nunca vê escrita
+não confirmada e **nunca espera por escritor**. O que continua faltando — e que
+só o MVCC daria — é **leitura repetível** ao longo de um leitor longo, e **ler o
+que a própria transação escreveu**.
+
+### 11.2 WAL, undo log, PageLSN, full-page-write, VACUUM
+
+Todos existem para o problema que o desenho de «nada a disco antes do COMMIT»
+**não tem**: não há página suja confirmada para refazer, nem versão velha para
+limpar. O `.tx` é a intenção inteira, e ele é apagado quando deixa de valer.
+
+**O full-page-write merece a conferência que ele pede, e ela foi feita:** o
+`.reg` guarda slots de tamanho fixo **com CRC-32**, então uma escrita rasgada é
+**detectável, e não silenciosa** — o leitor recusa o slot em vez de devolver
+metade velha e metade nova.
+
+Um slot **pode** cruzar fronteira de setor: o tamanho dele sai do esquema e não
+é alinhado a 512 nem a 4096 bytes. O que isso significa aqui: uma escrita
+rasgada na fronteira corrompe o slot, o CRC acusa, e a linha é recuperável pelo
+espelho `.bkp` quando ele está ligado. O que o full-page-write compraria é
+escrever a página inteira no journal antes de tocá-la — e para isso seria
+preciso um journal de páginas, que é justamente o WAL que este desenho não tem
+e não precisa. **Não entra**, e o motivo é que a detecção já existe e o reparo
+já existe; o que falta seria uma terceira cópia para um caso que o espelho
+cobre.
+
+### 11.3 Detecção de deadlock
+
+O grafo de espera existe agora que há espera (§4.2), então a resposta honesta
+não é «impossível» — é **prevenir onde dá e limitar onde não dá**:
+
+* entre **tabelas declaradas**: a ordem canônica **impede** o ciclo, o que é
+  mais forte que detectá-lo;
+* entre **linhas** e sob **expansão dinâmica**: o ciclo é possível, e o `LOCK
+  TIMEOUT` o transforma num erro nomeado com o número.
+
+Um detector de ciclo entregaria: (a) matar a vítima mais barata em vez de a que
+esperou mais, e (b) um erro mais cedo. O preço é um grafo mantido em toda
+aquisição de trava e uma varredura a cada espera. **Não entra nesta rodada**, e
+o que o faria entrar é uma medição mostrando espera de `LOCK TIMEOUT` cheio
+acontecendo em produção.
+
+### 11.4 DDL transacional
+
+O `ALTER TABLE ADD COLUMN` que acabou de entrar **já tem duas fases e ponto de
+compromisso**: escreve todos os `*.novo`, sincroniza, e só então troca com
+`rename`, volume 1 primeiro. Isso é atomicidade de **uma** operação de DDL, e é
+mais do que a maioria dos motores de arquivo entrega.
+
+O que falta para ser DDL **dentro de transação**:
+
+1. o conjunto de escrita teria de guardar operações de **estrutura**, não só de
+   linha — e a marca `.tx` teria de saber descrevê-las;
+2. a recuperação teria de saber completar um `rename` pela metade, o que é
+   outro tipo de idempotência;
+3. e o pior: um `ALTER` empilhado mudaria o esquema **debaixo** das escritas de
+   linha já empilhadas na mesma transação, que foram convertidas contra o
+   esquema antigo.
+
+**Não implementado nesta rodada**, e a recusa é a da §3.4: o DDL dentro de
+transação é **recusado**, e não silenciosamente confirmado.
+
+### 11.5 Transação entre databases
+
+*Two-phase commit.* Recusa fundamentada, §2.3.
+
+---
+
+## 12. *ACID compliant*: o que passou a valer, e o que não
+
+A folha de marca afirma *ACID compliant*, e o `CLAUDE.md` dizia que era falso
+porque sem transação não há o **A** nem o **I**. Esta rodada muda parte disso, e
+a única resposta útil é a precisa:
+
+| letra | estado | com precisão |
 |---|---|---|
-| 1 | O `BEGIN`/`COMMIT`/`ROLLBACK` em si | o desenho vem antes do código, e é esta rodada. O pré-requisito era o terreno, e ele consumiu a rodada por inteiro |
-| 2 | Ler o que a própria transação escreveu | exige sobrepor o conjunto de escrita em **todo** caminho de leitura — que é o antipadrão do «portão espalhado por quarenta operações» que já produziu a porta dos fundos do `juntar` e do `unir`. Precisa de um ponto único de leitura antes |
-| 3 | Transação entre databases | *two-phase commit*. Recusa fundamentada, §2.3 |
-| 4 | Concorrência fina (trava por tabela) | frente diferente. A transação não a promete, e não depende dela |
-| 5 | A tela de Gestão de transações | **não foi tocada de propósito**: nada passou a existir, e ela continua dizendo a verdade. Quando o `COMMIT` existir, é ela que muda — e o texto novo entra pela fábrica de idiomas, com a catraca do `conferidor.rs` baixada no mesmo commit (ela está em **1.999 de 1.999** hoje: qualquer texto cru novo reprova o `cargo test`) |
+| **A** — atomicidade | **entregue** | o conjunto de escrita é aplicado inteiro ou não é aplicado; o `ROLLBACK` não deixa slot, rowid nem evento; uma queda no meio da passada é completada pela marca |
+| **I** — isolamento | **entregue, com o nome certo** | *escrita serializável por tabela, leitura confirmada e não bloqueante, sem leitura repetível.* **Não é ANSI SERIALIZABLE** e não pode ser chamado assim: não há leitura repetível, e a transação não vê as próprias escritas |
+| **C** — consistência | **parcial, e a parte que falta tem nome** | tipo, unicidade e gatilhos são conferidos ao empilhar. **A integridade referencial continua não sendo imposta** (§4.6) — a chave estrangeira é catálogo. Enquanto isso valer, o **C** não está inteiro |
+| **D** — durabilidade | **entregue, e configurável** | a marca `.tx` é sincronizada antes da passada e é o ponto de compromisso; uma queda depois dela é completada no arranque. Com `durabilidade: sistema` quem abre mão é quem configurou, e está escrito |
 
-E a frase que continua valendo até o item 1 existir:
+**Então: continua sendo errado escrever *ACID compliant* sem qualificação.** O
+que se pode escrever, e é verdade: *atomicidade e durabilidade entregues,
+isolamento entregue no nível declarado acima, consistência dependente da
+integridade referencial que o motor ainda não impõe.*
 
-> ***ACID compliant* é falso.** Sem transação não há o **A** nem o **I**. Não
-> se repete isso em documento técnico enquanto não houver `COMMIT`.
+---
+
+## 13. O pré-requisito, que entrou na rodada anterior
+
+A transação mora em cima da trava de dados, então a trava precisava ter **um**
+dono antes de a transação existir. As 13 tomadas fora do `travar_dados()`
+entraram para dentro dele, a reentrância deixou de pendurar o servidor e virou
+erro nomeado, e o teste `so_um_lugar_toma_a_trava` conta as tomadas no próprio
+fonte. O relato inteiro está no histórico deste documento e em
+`DESEMPENHO.md` §9.
+
+---
+
+## 14. Como se prova
+
+| o que | onde |
+|---|---|
+| o formato da marca, a ida e volta das 14 variantes, o CRC, o truncamento | `transacao.rs`, testes do módulo |
+| a matriz de travas, a ordem canônica, os dois caixas | `travas.rs`, testes do módulo |
+| o protocolo inteiro: `BEGIN`/`COMMIT`/`ROLLBACK`/`SAVEPOINT`, escopo, prazos, classes de erro, recuperação | `servidor.rs`, `testes_transacoes` |
+| o SQL: os três sinônimos, as cláusulas sem ordem, `500ms` que não vira `500s` | `phxsql-sql/src/transacao.rs` |
+| **pelo soquete**, com `SIGKILL` no meio de um `COMMIT` | `bancada/transacoes/provar.py` |
+| que cada teste ainda pega o defeito que o motivou | `bancada/guardas/catalogo.py` |
+| os números | `--example custo-da-transacao`, e `DESEMPENHO.md` §12 |

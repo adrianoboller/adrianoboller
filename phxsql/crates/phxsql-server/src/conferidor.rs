@@ -898,8 +898,15 @@ impl Placar {
 /// tabela do editor de modelo dizia, em portugues cravado, que alterar coluna
 /// nao existia. Ela virou o formulario que existe, e os textos dele nasceram
 /// na fabrica -- os tres paragrafos que sairam sao os tres que a catraca
-/// desce.
-pub const TETO: usize = 1_996;
+/// 1.996 -> 1.961 na frente das transacoes: a tela de *Gestao de transacoes*
+/// foi reescrita inteira, e os **35** textos cravados dela sairam junto. A
+/// tela velha era um caso de manual do que este conferidor existe para pegar:
+/// paragrafos picados por `<b>` e `<code>`, com pedacos como «, e por isso
+/// esta tela nao tem uma lista de transacoes abertas para mostrar» -- pedaco
+/// de frase que **nao se traduz**, porque a ordem das palavras muda de lingua
+/// para lingua. A tela nova tem 43 chaves de fabrica, cada uma uma frase
+/// INTEIRA, e a enfase entra como marca.
+pub const TETO: usize = 1_961;
 
 #[cfg(test)]
 mod testes {

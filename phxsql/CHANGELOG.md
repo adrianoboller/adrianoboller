@@ -10,6 +10,183 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
+## Não lançado — as transações
+
+O pedido é *transações*. A rodada anterior entregou o **pré-requisito** e o
+**desenho escrito antes do código**; esta entregou o código, e ele obedece o
+desenho — com uma seção reescrita, e o motivo dito.
+
+### Adicionado
+
+- **`BEGIN` / `COMMIT` / `ROLLBACK` / `SAVEPOINT`**, pelo protocolo e pelo SQL.
+  Três sinônimos de abertura (`BEGIN`, `BEGIN TRANSACTION`,
+  `START TRANSACTION`), `ROLLBACK TO SAVEPOINT` com a palavra do meio
+  facultativa, e `RELEASE SAVEPOINT`.
+
+  **Nada vai a disco antes do `COMMIT`.** A transação empilha o conjunto de
+  escrita em RAM; o `ROLLBACK` joga a lista fora. **Zero slot queimado, zero
+  rowid consumido, a ordem de digitação intacta** — que é a regra pétrea desta
+  casa, e a razão de o desenho ser este e não outro.
+
+- **A abertura declarada, com parâmetros nomeados e cláusulas sem ordem:**
+
+  ```sql
+  BEGIN TRANSACTION
+    SCOPE (clientes, pedidos, pediditens, estoque)
+    SCOPE MODE STRICT      -- DYNAMIC é o padrão
+    TIMEOUT 5s
+    LOCK TIMEOUT 500ms
+    STATEMENT TIMEOUT 2s
+    LOCK MODE AUTO;        -- AUTO, ROW, TABLE ou EXCLUSIVE
+  ```
+
+  A forma posicional foi recusada e o motivo está escrito: ela não estende
+  (onde caberia o segundo prazo?) e mistura tabela com duração na mesma lista.
+
+- **A máquina de estados com `ABORT_ONLY`.** Depois de um erro de TRANSAÇÃO o
+  `COMMIT` **recusa** dizendo que a transação não pode ser confirmada, em vez
+  de confirmar trabalho meio inválido. Em `ABORT_ONLY` até a leitura recusa,
+  como no PostgreSQL(R) — e `ROLLBACK TO SAVEPOINT` **não resgata**, porque
+  aqui erro de instrução não aborta nada, então só chega ali o que põe em
+  dúvida o próprio conjunto de escrita.
+
+- **Duas classes de erro, e o erro diz qual é** — pelo código, e não pelo
+  texto: `4005 EM_TRANSACAO` (acesso, `repetir: true`) e
+  `6002 TRANSACAO_ABORTADA` (execução). A classe sai da **faixa do código**, e
+  não de uma lista escrita à mão: erro novo cai na classe certa sozinho.
+
+- **A marca `transacao_<id>.tx`** e a recuperação que **anda para a frente**.
+  Ela é sincronizada antes de a passada tocar em qualquer arquivo de dado, e é
+  o **ponto de compromisso**: antes dela a transação não aconteceu, depois dela
+  aconteceu. Formato em `docs/FORMATO.md` §16, com CRC por operação — uma marca
+  que não confere é um commit que **nunca começou**.
+
+- **O relatório de recuperação no arranque**, e ele só imprime o que mede: não
+  há linha de «páginas refeitas», porque não há página suja confirmada para
+  refazer. E ele **não sai quando não há marca nenhuma** — um bloco dizendo
+  zero em toda subida treina quem opera a não ler o relatório.
+
+- **A tela de Gestão de transações**, reescrita inteira: o nível de isolamento
+  pelo nome certo, quem está segurando o quê (declarado **e** efetivo,
+  separados), e o que continua não existindo. 43 chaves novas na fábrica de
+  idiomas, nos seis idiomas.
+
+- **`recursos.transacao_prazo_min`, `transacao_max_linhas`,
+  `transacao_lock_timeout_ms` e `transacao_statement_ms`** no `config.json`, no
+  MANUAL e na tela — e **os quatro são lidos**.
+
+### Mudado
+
+- **A §4.2 do `docs/TRANSACOES.md` foi reescrita, e a decisão anterior ficou
+  registrada.** O desenho escolhia **reserva de tabela sem espera**, e o
+  argumento era forte: sem espera não há grafo de espera, e sem grafo não há
+  ciclo. O que a derrubou foi um conflito **artificial** — quinhentos caixas
+  vendendo, um no pedido 9001 e outro no 18223, sem disputa nenhuma de verdade.
+
+  Entrou a hierarquia de duas alturas: **intenção na tabela, exclusiva na
+  linha**. E o que paga pela volta da espera é a **declaração prévia do
+  escopo**: com as tabelas conhecidas na abertura, elas são tomadas sempre na
+  mesma ordem canônica, e o ciclo entre tabelas deixa de existir.
+
+  **A garantia não é total, e está dito:** a ordenação mata o ciclo entre
+  TABELAS; entre LINHAS da mesma tabela ele continua possível, e a resposta é o
+  `LOCK TIMEOUT` — espera limitada e erro nomeado, nunca uma thread pendurada.
+  **Este motor não promete «sem deadlock».**
+
+- **O `INSERT` trava o FIM da tabela**, e não uma linha: o próximo slot é
+  `slots() + 1` e ele é um só. Sem essa trava, duas transações que anexam ao
+  mesmo tempo preveem o mesmo rowid e a segunda descobriria isso na passada de
+  commit, com metade do trabalho gravado.
+
+- **DDL dentro de transação é recusado, e não confirma a transação pelas
+  costas.** O MySQL(R) e o Oracle confirmam, e é uma armadilha conhecida: quem
+  escreveu `BEGIN; …; CREATE TABLE; ROLLBACK` acha que desfez e não desfez.
+
+- **O detector de transação passou a vir antes do de rotina na op `sql`.** O
+  detector de rotina analisa o texto pelo léxico comum, e o léxico recusa
+  `500ms` — número colado em identificador. Ele erra antes de o de transação
+  ser consultado, e um `LOCK TIMEOUT 500ms` nunca chegaria lá.
+
+### Corrigido
+
+- **A recuperação não conseguia completar um commit depois de um `SIGKILL`, e
+  quem achou foi a prova por SOQUETE.** A queda no meio da passada levanta a
+  marca de «o índice ficou para trás», e enquanto ela estiver lá **toda**
+  operação de índice recusa. A recuperação reabria a tabela, tentava inserir e
+  recebia «reconstrua com reparar índice»: o commit ficava pela metade e a
+  tabela inutilizável até alguém reparar à mão — **sem ninguém ser avisado**,
+  porque o servidor subia normalmente.
+
+  Agora ela reconstrói o índice antes de completar, e o relatório **conta**
+  quantos foram reconstruidos. Nenhum teste unitário via isso, e a entrada
+  `recuperar-sem-reindexar` do catálogo de guardas afirma exatamente isso.
+
+- **A chave única de uma escrita recusada pela trava ficava na lista.** A
+  tentativa seguinte, com a mesma linha, era acusada de duplicada **por si
+  mesma**. Perguntar e guardar viraram duas coisas separadas: a chave só entra
+  depois de a escrita estar empilhada de verdade.
+
+### Medido
+
+- **O *group commit*: 2,63×, e o passo seguinte morre.** Receita de fora se
+  mede contra o nosso gargalo antes de virar plano, e o critério de morte
+  (1,5×) foi acordado **antes** da medição.
+
+  A decomposição de um commit de uma linha: **1,199 ms** no total, dos quais
+  0,289 ms são a marca e 0,050 ms o trabalho — sobravam **0,860 ms, 74% do
+  commit, só no `fsync` da tabela**. Uma inserção solta, sem transação, custa
+  0,061 ms, justamente porque passa pela janela de durabilidade.
+
+  **A receita mirava outro gargalo:** *group commit* clássico amortiza `fsync`
+  entre commits **concorrentes**, e a trava única deste servidor nunca tem dois
+  em voo para agrupar. O que havia para amortizar era o `fsync` da tabela
+  contra a janela que já existia — e adiá-lo é seguro porque **quem decide se a
+  transação aconteceu é a marca, não o `fsync`**. 1,199 → **0,457 ms**.
+
+  E o passo seguinte — agrupar o `fsync` das *marcas* — **morre medido**: o
+  piso irredutível é 0,341 ms contra os 0,455 de hoje, **1,34×**, abaixo do
+  critério. A marca não se adia; ela é o ponto de compromisso.
+
+- **`LOCK MODE AUTO` contra `EXCLUSIVE`, 64 caixas em linhas diferentes:**
+  50,5 ms contra 78,4 ms, **1,55×**. Nenhum dos dois perde trabalho — o
+  `EXCLUSIVE` não recusa ninguém, ele serializa. O número é o preço de uma
+  disputa que não existia.
+
+- **Otimista contra pessimista, 64 clientes na MESMA linha:** o otimista
+  (`versao`) levou 28,0 ms gastando **133 tentativas** para 64 gravações; o
+  pessimista levou 71,8 ms gastando **exatamente 64**. Nenhum dos dois é o
+  certo sempre, e é a subida dessa razão — não o relógio — que diz quando
+  trocar.
+
+### Sabido
+
+- ***ACID compliant* continua falso, e mudou de motivo.** O **A** e o **I**
+  passaram a existir; o **D** já existia. O que segura a frase é o **C**: a
+  integridade referencial **não é imposta**, e há teste travando isso.
+
+  E o **I** só se escreve com o nome certo: *escrita serializável por tabela,
+  leitura confirmada e não bloqueante, sem leitura repetível*. **Não é ANSI
+  SERIALIZABLE.**
+
+- **A transação não vê as próprias escritas**, e não vai ver nesta rodada:
+  exigiria sobrepor o conjunto de escrita em todo caminho de leitura, que é o
+  antipadrão do «portão espalhado por quarenta operações».
+
+- **Tabela com partição alfanumérica recusa `INSERT` dentro de transação.** Ali
+  o slot depende do balde, e o balde sai de uma regra que mora dentro do
+  `Table`; sem o rowid alvo a marca não é idempotente.
+
+- **O `STATEMENT TIMEOUT` morde nos pontos de cancelamento que existem** — os
+  laços longos que já chamam `Atividade::siga`. Uma inserção de uma linha não
+  tem ponto de cancelamento no meio, e não poderia ter.
+
+- **Um caso da recuperação continua sem conserto, e ele está nomeado:** se a
+  passada gravou o slot e depois o liberou, o `.reg` não o reaproveita e a
+  linha não volta. A recuperação **não esconde**: a operação entra em
+  `operacoes IMPOSSIVEIS` com a tabela e o rowid.
+
+---
+
 ## Não lançado — o terreno das transações, e o desenho delas
 
 O pedido é *transações*. Esta rodada entregou o **pré-requisito** e o

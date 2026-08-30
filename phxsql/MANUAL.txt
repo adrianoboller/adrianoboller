@@ -541,6 +541,10 @@ RECURSOS DA MAQUINA
       "cache_paginas": 2048,
       "diario_volume_mib": 0,
       "carga_prazo_min": 30,
+      "transacao_prazo_min": 5,
+      "transacao_max_linhas": 100000,
+      "transacao_lock_timeout_ms": 500,
+      "transacao_statement_ms": 0,
       "memoria_max_mb": 0,
       "threads": 0,
       "cpu_percentual": 100,
@@ -1360,6 +1364,79 @@ BULKINSERT: A TABELA RESERVADA PARA A CARGA
     QUEM PODE. Reservar exige o poder de INSERIR na tabela, e nao mais. Ja
     "cargas" -- a lista de quem reservou o que -- exige ADMINISTRAR, porque
     mostra o movimento dos outros. O administrador tambem solta reserva alheia.
+
+TRANSACOES: BEGIN, COMMIT, ROLLBACK E SAVEPOINT
+
+    Pela porta de dados, e pelo SQL:
+
+        {"op":"begin"}                          BEGIN / START TRANSACTION
+        {"op":"commit"}                         COMMIT
+        {"op":"rollback"}                       ROLLBACK
+        {"op":"savepoint","nome":"p1"}          SAVEPOINT p1
+        {"op":"rollback_para","nome":"p1"}      ROLLBACK TO SAVEPOINT p1
+        {"op":"release_savepoint","nome":"p1"}  RELEASE SAVEPOINT p1
+        {"op":"transacao"}                      o estado DESTA conexao
+        {"op":"transacoes"}                     todas as abertas (administrar)
+
+    NADA VAI A DISCO ANTES DO COMMIT. A transacao empilha o conjunto de escrita
+    em memoria; o ROLLBACK joga a lista fora. Nenhum slot queimado, nenhum
+    rowid consumido, a ordem de digitacao intacta.
+
+    A ABERTURA DECLARADA, com parametros NOMEADOS e clausulas sem ordem:
+
+        BEGIN TRANSACTION
+          SCOPE (clientes, pedidos, pediditens, estoque)
+          SCOPE MODE STRICT          -- DYNAMIC e o padrao
+          TIMEOUT 5s
+          LOCK TIMEOUT 500ms
+          STATEMENT TIMEOUT 2s
+          LOCK MODE AUTO;            -- AUTO, ROW, TABLE ou EXCLUSIVE
+
+    O MESMO em JSON, que e o que os clientes usam:
+
+        {"op":"begin","database":"loja",
+         "scope":["clientes","pedidos"],"scope_mode":"strict",
+         "lock_mode":"auto","timeout":"5s","lock_timeout":"500ms"}
+
+    AS TRAVAS. Em AUTO -- o padrao -- a transacao toma INTENCAO na tabela e
+    EXCLUSIVA na linha. Dois caixas em pedidos diferentes nao se esbarram; na
+    mesma linha, esbarram. Medido com 64 caixas: 50,5 ms em AUTO contra 78,4 ms
+    em EXCLUSIVE. O INSERT trava o FIM da tabela, porque o proximo slot e um so.
+
+    Quem esbarra recebe 4005 EM_TRANSACAO com repetir: true, nomeando quem
+    segura. Uma transacao ESPERA ate o LOCK TIMEOUT dela; uma escrita comum,
+    sem BEGIN, NAO espera -- ela nao declarou prazo nenhum.
+
+    OS TRES PRAZOS sao problemas diferentes:
+
+        TIMEOUT             a transacao inteira    transacao_prazo_min, 5 min
+        LOCK TIMEOUT        a espera por outro     transacao_lock_timeout_ms, 500
+        STATEMENT TIMEOUT   uma operacao           transacao_statement_ms, 0 = sem
+
+    Estourado o TIMEOUT, quem encerra e o gestor e nunca uma thread morta: a
+    transacao vai para ABORT_ONLY, solta as travas, joga a lista fora, e a
+    proxima operacao recebe 6002 TRANSACAO_ABORTADA com o numero do prazo.
+
+    OS ESTADOS: IDLE, ACTIVE, COMMITTING, COMMITTED, ROLLING_BACK, ROLLED_BACK
+    e ABORT_ONLY. Em ABORT_ONLY o COMMIT RECUSA em vez de confirmar trabalho
+    meio invalido, e so o ROLLBACK passa.
+
+    AS DUAS CLASSES DE ERRO, e o erro diz qual e pelo codigo:
+
+        instrucao   chave duplicada, tipo errado -- a transacao segue ACTIVE
+        transacao   teto, E/S, prazo -- vai para ABORT_ONLY
+
+    SE O PROCESSO MORRER NO MEIO DE UM COMMIT, o banco sabe dizer o que
+    aconteceu: a marca transacao_<id>.tx e sincronizada antes da passada e e o
+    ponto de compromisso. No arranque, a recuperacao COMPLETA o commit -- ela
+    anda para a frente, nunca para tras -- e imprime o bloco PHXSQL Recovery.
+
+    SO PELA PORTA DE DADOS. HTTP nao tem conexao para a transacao morrer
+    amarrada. Pela tela, mande as operacoes num pedido so.
+
+    O QUE NAO EXISTE, e esta escrito em docs/TRANSACOES.md com o motivo: MVCC,
+    WAL, deteccao de deadlock, DDL dentro de transacao (recusado, e nao
+    confirmado pelas costas) e transacao entre dois databases.
 
 A JANELA DE CONFLITO DE ESCRITA
 

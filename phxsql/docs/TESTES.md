@@ -489,7 +489,10 @@ projeto estava verde.
 O `provar.py` **não refaz nenhuma delas** — cada uma tem dono, já foi provada e
 continua rodando sozinha pelo comando dela. Ele chama, cronometra e soma.
 
-### As dezessete partes
+### As partes
+
+A lista sai do `provar.py --listar`, e não desta tabela: uma contagem
+digitada aqui envelheceria calada na próxima parte que entrasse.
 
 | parte | o que prova | portas |
 |---|---|---|
@@ -499,6 +502,7 @@ continua rodando sozinha pelo comando dela. Ele chama, cronometra e soma.
 | `idiomas` | o caminho do idioma de ponta a ponta, e o comportamento velho | 6952/6953 |
 | `ponta-a-ponta` | os seis itens do dono pelo soquete, mais a passada pela tela | 6300/6301 |
 | `alter` | acrescentar coluna numa tabela com dado pelo soquete: rowid preservado, backup, e a réplica que ainda não alterou | 7150/7152 |
+| `transacoes` | `BEGIN`/`COMMIT`/`ROLLBACK`/`SAVEPOINT` pelo soquete — com **SIGKILL no meio de um `COMMIT`**, e o banco reabrindo para dizer o que aconteceu | 7320 |
 | `rotinas` | gatilhos e procedimentos pelo soquete, com SIGNAL, lote e reinício | 5301/5701 |
 | `profiler` | a redação do Profiler por soquete: vinte pedidos torcidos, sentinela no anel e no `.txt` | 6251 |
 | `telemetria-desenho` | o painel de bolhas por medida: rótulo na esfera, alvo de clique, contraste | — |

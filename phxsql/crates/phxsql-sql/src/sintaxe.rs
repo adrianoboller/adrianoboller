@@ -279,13 +279,21 @@ impl Analisador {
                  tabela para carga e a reserva morre com a conexao. Hoje se pede pela \
                  porta de dados, com a operacao bulkinsert",
             )),
-            "BEGIN" | "COMMIT" | "ROLLBACK" => Err(lexico::erro(
-                pos,
-                &format!(
-                    "{verbo} nao tem o que chamar embaixo: nao ha transacao no PhxSql. \
-                     BULKINSERT nao e transacao -- ele nao desfaz"
-                ),
-            )),
+            // Chegar AQUI quer dizer que o `transacao::comando` nao
+            // reconheceu a forma -- ele e consultado antes, no `op_sql`. Entao
+            // a recusa nao e mais "nao ha transacao": e "esta forma nao".
+            "BEGIN" | "COMMIT" | "ROLLBACK" | "SAVEPOINT" | "RELEASE" | "START" => {
+                Err(lexico::erro(
+                    pos,
+                    &format!(
+                        "{verbo} e comando de SESSAO e nao de consulta, e esta \
+                         forma dele nao foi reconhecida. As aceitas: BEGIN, \
+                         BEGIN TRANSACTION, START TRANSACTION, COMMIT, ROLLBACK, \
+                         SAVEPOINT <nome>, ROLLBACK TO SAVEPOINT <nome> e \
+                         RELEASE SAVEPOINT <nome>"
+                    ),
+                ))
+            }
             "" => Err(lexico::erro(pos, "o comando nao comeca por um verbo")),
             outro => Err(lexico::erro(
                 pos,
@@ -699,11 +707,23 @@ mod testes {
         assert!(e.contains("SESSAO"), "{e}");
     }
 
+    /// O `analisar` e o tradutor de CONSULTA, e transacao nao e consulta: ela
+    /// e reconhecida antes, pelo `crate::transacao::comando`. Quem cai aqui
+    /// escreveu uma forma que nenhum dos dois entende, e a recusa diz as
+    /// formas que existem em vez de dizer que a transacao nao existe.
     #[test]
-    fn transacao_recusa_dizendo_que_nao_ha() {
-        for c in ["BEGIN", "COMMIT", "ROLLBACK"] {
+    fn transacao_nao_e_consulta_e_a_recusa_lista_as_formas() {
+        for c in ["BEGIN", "COMMIT", "ROLLBACK", "SAVEPOINT p1"] {
             let e = analisar(c).unwrap_err().to_string();
-            assert!(e.contains("transacao"), "{c}: {e}");
+            assert!(e.contains("SESSAO"), "{c}: {e}");
+            assert!(e.contains("START TRANSACTION"), "{c}: {e}");
+        }
+        // E o caminho de verdade continua reconhecendo os quatro.
+        for c in ["BEGIN", "COMMIT", "ROLLBACK", "SAVEPOINT p1"] {
+            assert!(
+                crate::transacao::comando(c).unwrap().is_some(),
+                "{c} tem de ser reconhecido como comando de transacao"
+            );
         }
     }
 

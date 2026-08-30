@@ -29,6 +29,8 @@ pub mod rotinas;
 pub mod servidor;
 pub mod sistema;
 pub mod telemetria;
+pub mod transacao;
+pub mod travas;
 pub mod usuarios;
 pub mod valores;
 

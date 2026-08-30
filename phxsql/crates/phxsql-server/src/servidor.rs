@@ -85,6 +85,16 @@ pub(crate) const OPS_ESCRITA: &[&str] = &[
     // somente-leitura ninguem vai carregar nada, e deixar reservar seria
     // deixar travar a tabela para uma escrita que nunca acontece.
     "bulkinsert",
+    // Abrir e confirmar uma transacao, pelo mesmo argumento do `bulkinsert`:
+    // abrir declara a intencao de gravar e reserva tabela, e confirmar grava.
+    // `rollback` e `savepoint` NAO entram, e a ausencia e deliberada -- os
+    // dois so mexem numa lista em RAM, e recusar o `rollback` num servidor
+    // que virou somente-leitura no meio deixaria a transacao presa ate o
+    // prazo, sem ninguem poder solta-la.
+    "begin",
+    "start_transaction",
+    "begin_transaction",
+    "commit",
     // Marcar, desmarcar e esvaziar mexem em dado gravado. Listar a lixeira e
     // os motivos, nao -- essas duas so leem, e continuam valendo no modo
     // somente leitura, que e justamente quando alguem esta investigando.
@@ -187,6 +197,36 @@ pub(crate) const OPS_NO_SPARE: &[&str] = &[
     "replicacao_testar",
     "spare_promover",
 ];
+
+/// As operacoes de CONTROLE de transacao. Elas passam sempre, inclusive com a
+/// transacao em `ABORT_ONLY` -- que so sai pelo `rollback`.
+pub(crate) const OPS_DE_TRANSACAO: &[&str] = &[
+    "begin",
+    "start_transaction",
+    "begin_transaction",
+    "commit",
+    "rollback",
+    "savepoint",
+    "rollback_para",
+    "rollback_to_savepoint",
+    "release_savepoint",
+    "transacao",
+    "transacoes",
+];
+
+/// O que uma transacao aberta EMPILHA em vez de gravar.
+///
+/// Lista curta e escrita a mao de proposito: o que nao esta aqui e escrita e
+/// nao passa (`dentro_da_transacao` recusa nomeando), e o que nao e escrita
+/// passa direto como leitura. Uma operacao de escrita nova nasce RECUSADA
+/// dentro de transacao ate alguem decidir o contrario -- o mesmo principio da
+/// lista de permissao do spare.
+///
+/// `inserir_lote` NAO entra, e a ausencia e deliberada: ele ja e uma operacao
+/// atomica sozinho -- roda inteiro dentro de UMA tomada da trava -- e
+/// empilha-lo linha a linha estouraria o teto de memoria da transacao com uma
+/// carga de cinco mil linhas que nao precisava de transacao nenhuma.
+pub(crate) const OPS_EMPILHAVEIS: &[&str] = &["inserir", "atualizar", "excluir", "restaurar"];
 
 /// O que uma REPLICA chama no source, e so isso.
 ///
@@ -441,6 +481,46 @@ pub struct Servidor {
     /// O que esta chegando pela porta, quando alguem liga para olhar.
     /// Tabelas reservadas para carga (`BULKINSERT`).
     cargas: Mutex<crate::carga::Cargas>,
+    /// As marcas `.tx` de commits ja aplicados cuja janela de durabilidade
+    /// ainda nao fechou. **E o group commit deste motor.**
+    ///
+    /// # Por que a marca pode esperar, e o que ela garante enquanto espera
+    ///
+    /// Porque quem decide se a transacao aconteceu e a MARCA, e nao o `fsync`
+    /// da tabela: a marca ja esta sincronizada quando a passada comeca, e uma
+    /// queda depois dela faz a recuperacao COMPLETAR o commit. Entao adiar o
+    /// `fsync` da tabela nao adia a decisao -- adia so o momento em que o dado
+    /// alcanca o disco, e a marca e o bilhete que o traz de volta.
+    ///
+    /// A ordem e a peca: a marca so e apagada DEPOIS de a tabela sincronizar.
+    /// Apagar antes abriria a janela em que o dado nao esta no disco e nao ha
+    /// bilhete nenhum para recupera-lo -- que e a mesma janela sem conserto da
+    /// lixeira, pelo outro lado.
+    marcas_pendentes: Mutex<Vec<PathBuf>>,
+    /// Quem segura qual tabela e qual linha. Ver `crate::travas`.
+    ///
+    /// Trava PROPRIA, e nunca tomada com a de dados na mao por mais de uma
+    /// consulta: a espera por uma trava de transacao acontece FORA da trava de
+    /// dados, senao uma transacao esperando outra seguraria o servidor
+    /// inteiro -- que e a doenca que o `alcancar_tabela_bidi` ja mediu em
+    /// 29.456 ms.
+    travas: Mutex<crate::travas::Travas>,
+    /// As transacoes abertas, por conexao. Ver `crate::transacao`.
+    transacoes: Mutex<crate::transacao::Transacoes>,
+    /// Quantas transacoes estao abertas AGORA.
+    ///
+    /// # O portao que vem ANTES do trabalho
+    ///
+    /// E a licao que o Profiler cobrou, aplicada aqui de proposito: um
+    /// `AtomicUsize` lido com `Relaxed` custa uma instrucao e nao serializa
+    /// ninguem. Zero transacoes abertas -- que e o servidor inteiro hoje -- e
+    /// NENHUMA estrutura de transacao e consultada: nenhum `Mutex` e tomado,
+    /// nenhuma `String` e montada, nenhum campo do pedido e lido de novo.
+    ///
+    /// A janela de divergencia e de um pedido, e ela e inofensiva: quem abre
+    /// uma transacao ja incrementou este contador ANTES de responder, entao o
+    /// proximo pedido daquela conexao ja a enxerga.
+    transacoes_abertas: AtomicUsize,
     /// Onde a ultima leitura do diario de cada tabela parou, por
     /// `database/tabela`.
     ///
@@ -585,6 +665,22 @@ impl Servidor {
         let (max_linhas, somente_leitura, espelho) =
             (config.max_linhas, config.somente_leitura, config.espelho);
         let instancia = Instancia::nova(&config.base)?;
+        // A RECUPERACAO, e ela vem antes de tudo o mais.
+        //
+        // Um `transacao_<id>.tx` orfao quer dizer uma coisa so: alguem morreu
+        // no meio de um `COMMIT`. Completa-lo aqui, com o servidor ainda
+        // fechado para o mundo, e o que faz a resposta a pergunta do contrato
+        // ser inequivoca -- «depois de reiniciar, o banco consegue determinar
+        // se esta transacao foi COMMITTED ou ABORTED?». Deixar isso para o
+        // primeiro pedido seria responder «depende de quem chegar primeiro».
+        //
+        // Silencio quando nao ha marca nenhuma, que e o arranque de sempre: um
+        // bloco de relatorio dizendo zero em toda subida treina quem opera a
+        // nao ler o relatorio.
+        let recuperacao = crate::transacao::recuperar(&instancia);
+        if recuperacao.houve() {
+            eprintln!("{}", recuperacao.texto(&config.base));
+        }
         let log = LogAcessos::abrir(&config.log_acessos)?;
         let lista_negra = Blacklist::abrir(&config.blacklist)?;
         let dblink = crate::dblink::Registro::abrir(&config.dblink)?;
@@ -634,6 +730,10 @@ impl Servidor {
             avisados: Mutex::new(HashMap::new()),
             conexoes: AtomicUsize::new(0),
             cargas: Mutex::new(crate::carga::Cargas::default()),
+            marcas_pendentes: Mutex::new(Vec::new()),
+            travas: Mutex::new(crate::travas::Travas::default()),
+            transacoes: Mutex::new(crate::transacao::Transacoes::nova(crate::agora_ms())),
+            transacoes_abertas: AtomicUsize::new(0),
             marcas_do_diario: Mutex::new(HashMap::new()),
             profiler: Mutex::new(crate::profiler::Profiler::default()),
             profiler_ligado: AtomicBool::new(false),
@@ -4656,6 +4756,10 @@ impl Servidor {
             // deixaria a tabela reservada ate o prazo vencer -- e o prazo e
             // medido em dezenas de minutos, de proposito.
             self.soltar_cargas_da_ligacao(id_ligacao);
+            // E a PRIMEIRA rede da transacao, pelo mesmo motivo e no mesmo
+            // lugar: a conexao caiu, a transacao e desfeita. Nada foi gravado,
+            // entao desfazer e jogar a lista fora -- zero bytes de trabalho.
+            self.soltar_transacao_da_ligacao(id_ligacao);
         });
 
         // O canal comeca EM CLARO, sempre. E o comportamento de hoje, e ele so
@@ -5240,6 +5344,34 @@ impl Servidor {
                 return Err(PhxError::EmCarga(recado));
             }
         }
+
+        // Portao 5 -- a tabela esta segurada pela TRANSACAO de outra conexao?
+        //
+        // O primeiro `if` e um `load(Relaxed)` num atomico: sem transacao
+        // aberta em lugar nenhum -- o servidor de hoje -- nada aqui custa.
+        //
+        // # O campo que este portao le, e quem NAO tem esse campo
+        //
+        // Esta e a armadilha que o `juntar` e o `unir` ja pagaram, e por isso
+        // ela e conferida em vez de suposta: o portao le `"tabela"`, e a
+        // pergunta obrigatoria e quem escreve numa tabela sem dizer o nome
+        // dela nesse campo. Das operacoes de ESCRITA, as duas sao
+        // `duplicar_tabela` e `copiar_tabela`, que gravam no `"destino"` --
+        // entao o destino entra aqui junto. As de leitura ficam de fora
+        // porque a reserva de transacao **nao barra leitura**: o isolamento e
+        // leitura confirmada e NAO bloqueante, e um leitor nunca ve dado nao
+        // confirmado porque ele nem chegou ao disco.
+        //
+        // As que escrevem sem tabela nenhuma -- `criar_database`,
+        // `restaurar_backup` -- nao passam por aqui e nao precisam: quem tem
+        // transacao aberta ja e recusado por elas em `dentro_da_transacao`, e
+        // quem NAO tem esta restaurando um database inteiro, que e uma
+        // operacao de administrador com o servico parado.
+        if self.transacoes_abertas.load(Ordering::Relaxed) > 0 && OPS_ESCRITA.contains(&op) {
+            if let Some(recado) = self.barrado_por_travas(op, pedido, sessao) {
+                return Err(PhxError::EmTransacao(recado));
+            }
+        }
         Ok(())
     }
 
@@ -5434,6 +5566,26 @@ impl Servidor {
     }
 
     fn executar(&self, op: &str, p: &Json, sessao: &Sessao) -> Result<Json> {
+        // O PORTAO DAS TRANSACOES, e ele vem antes do despacho inteiro.
+        //
+        // Um `load(Relaxed)` num `AtomicUsize`, e nada mais, quando nao ha
+        // transacao aberta em lugar nenhum -- que e o servidor de hoje. E a
+        // licao que o Profiler cobrou: o portao que decide se ha trabalho vem
+        // ANTES do trabalho, e nao depois de dois `Json::analisar`.
+        if let Some(r) = self.dentro_da_transacao(op, p, sessao) {
+            // Erro de classe TRANSACAO derruba a transacao para `ABORT_ONLY`;
+            // erro de INSTRUCAO nao mexe nela. E a distincao do §29 do
+            // capitulo, e e ela que a aplicacao precisa para saber se corrige
+            // e repete ou se desiste e reverte.
+            if let Err(e) = &r {
+                if crate::transacao::ClasseDoErro::do_erro(e)
+                    == crate::transacao::ClasseDoErro::Transacao
+                {
+                    self.abortar_transacao(sessao.ligacao, &e.to_string());
+                }
+            }
+            return r;
+        }
         match op {
             "ping" => Ok(Json::objeto(vec![
                 ("phxsql", Json::texto_de(VERSAO)),
@@ -5494,6 +5646,16 @@ impl Servidor {
             "tabelas" => self.op_tabelas(p, sessao),
             "bulkinsert" => self.op_bulkinsert(p, sessao),
             "cargas" => self.op_cargas(),
+            // Os tres sinonimos de abertura, porque os tres existem no SQL de
+            // todo mundo e quem digita um espera que ele valha.
+            "begin" | "start_transaction" | "begin_transaction" => self.op_begin(p, sessao),
+            "commit" => self.op_commit(sessao),
+            "rollback" => self.op_rollback(sessao),
+            "savepoint" => self.op_savepoint(p, sessao),
+            "rollback_para" | "rollback_to_savepoint" => self.op_rollback_para(p, sessao),
+            "release_savepoint" => self.op_release_savepoint(p, sessao),
+            "transacao" => self.op_transacao(sessao),
+            "transacoes" => self.op_transacoes(),
             "esquema" => self.op_esquema(p, sessao),
             "servico" => self.op_servico(),
             "servico_parar" => self.op_servico_parar(),
@@ -6761,6 +6923,1466 @@ impl Servidor {
         ]))
     }
 
+    // ================================================== transacoes
+    //
+    // `BEGIN` / `COMMIT` / `ROLLBACK` / `SAVEPOINT`. O desenho inteiro esta em
+    // `docs/TRANSACOES.md` e a maquina de estados em `crate::transacao`; aqui
+    // fica so o que amarra as duas ao protocolo.
+
+    /// Os tres prazos e os dois modos que valem para esta abertura.
+    ///
+    /// # Por que parametros NOMEADOS, e nao posicionais
+    ///
+    /// `Transaction(a, b, c, 5s)` nao estende -- entrou o segundo prazo, nao ha
+    /// onde ele caiba sem quebrar quem ja escreveu -- e confunde tabela com
+    /// duracao na mesma lista. Aqui cada coisa tem nome, e o que nao vier no
+    /// pedido cai no padrao do `config.json`.
+    fn abertura_do_pedido(&self, p: &Json) -> Result<crate::transacao::Abertura> {
+        let r = &self.config.recursos;
+        let modo = crate::travas::Modo::de_texto(p.texto_ou("lock_mode", p.texto_ou("modo", "")))
+            .ok_or_else(|| {
+            PhxError::Esquema("lock_mode aceita AUTO, ROW, TABLE ou EXCLUSIVE".into())
+        })?;
+        let escopo_modo = crate::travas::EscopoModo::de_texto(
+            p.texto_ou("scope_mode", p.texto_ou("escopo_modo", "")),
+        )
+        .ok_or_else(|| PhxError::Esquema("scope_mode aceita DYNAMIC ou STRICT".into()))?;
+        Ok(crate::transacao::Abertura {
+            transacao_ms: duracao_ms(p, "timeout", r.transacao_prazo_min as i64 * 60_000)?,
+            lock_ms: duracao_ms(p, "lock_timeout", r.transacao_lock_timeout_ms as i64)?,
+            statement_ms: duracao_ms(p, "statement_timeout", r.transacao_statement_ms as i64)?,
+            modo,
+            escopo_modo,
+        })
+    }
+
+    /// O PORTAO das transacoes, e ele vem antes de qualquer trabalho.
+    ///
+    /// Devolve `None` quando este pedido nao tem nada a ver com transacao --
+    /// que e o caso do servidor inteiro hoje, e por isso a primeira linha e um
+    /// `load` atomico e nada mais.
+    ///
+    /// # Um portao so, e nao espalhado
+    ///
+    /// A alternativa seria cada `op_inserir`/`op_atualizar`/`op_excluir`
+    /// perguntar por conta se ha transacao aberta. E exatamente o antipadrao
+    /// que ja produziu a porta dos fundos do `juntar` e do `unir`: a operacao
+    /// que alguem esquecer grava direto no disco no meio de uma transacao, e
+    /// ninguem acha isso por leitura.
+    fn dentro_da_transacao(&self, op: &str, p: &Json, sessao: &Sessao) -> Option<Result<Json>> {
+        if self.transacoes_abertas.load(Ordering::Relaxed) == 0 || sessao.ligacao == 0 {
+            return None;
+        }
+        // A partir daqui ja se sabe que EXISTE transacao em algum lugar; falta
+        // saber se e nesta conexao.
+        let estado = {
+            let t = self.transacoes.lock().ok()?;
+            t.de(sessao.ligacao)?.estado
+        };
+
+        // As operacoes de controle passam sempre -- inclusive em ABORT_ONLY,
+        // que so sai pelo `rollback`.
+        if OPS_DE_TRANSACAO.contains(&op) {
+            return None;
+        }
+
+        // O PRAZO DA TRANSACAO, conferido na hora de usar. Estourado, quem
+        // encerra e o gestor: `ABORT_ONLY`, travas soltas, lista jogada fora,
+        // e a proxima operacao recebe o erro com o numero do prazo. Nenhuma
+        // thread e morta -- matar thread deixaria estado interno pela metade.
+        let vencida = {
+            match self.transacoes.lock() {
+                Ok(t) => t
+                    .de(sessao.ligacao)
+                    .is_some_and(|tx| tx.expira_ms <= crate::agora_ms()),
+                Err(_) => false,
+            }
+        };
+        if vencida && estado != crate::transacao::Estado::AbortOnly {
+            return Some(Err(self.estourar_prazo(sessao)));
+        }
+
+        if estado == crate::transacao::Estado::AbortOnly && Atividade::da_operacao(op).is_some() {
+            return Some(Err(PhxError::TransacaoAbortada(
+                self.motivo_do_aborto(sessao.ligacao),
+            )));
+        }
+
+        if OPS_EMPILHAVEIS.contains(&op) {
+            self.por_prazo_na_operacao(sessao);
+            return Some(self.empilhar(op, p, sessao));
+        }
+
+        // O STATEMENT TIMEOUT vale tambem para o que a transacao manda
+        // executar sem empilhar -- uma consulta longa no meio dela. Ele e
+        // posto no relogio da ATIVIDADE desta conexao, que e a mesma maquina
+        // de cancelamento cooperativo do `telemetria_encerrar`: quem para a
+        // operacao e o laco dela, num ponto seguro, e nunca uma thread morta.
+        self.por_prazo_na_operacao(sessao);
+
+        // Escrita que a transacao nao sabe empilhar NAO passa direto ao disco,
+        // e tambem nao confirma a transacao pelas costas de ninguem.
+        //
+        // O MySQL(R) e o Oracle confirmam a transacao aberta quando chega um
+        // DDL, e isso e uma armadilha conhecida: quem escreveu `BEGIN; ...;
+        // CREATE TABLE; ROLLBACK` acha que desfez e nao desfez. Recusar e a
+        // resposta honesta enquanto o DDL nao for transacional -- e o que
+        // falta para ele ser esta escrito no documento.
+        if OPS_ESCRITA.contains(&op) {
+            return Some(Err(PhxError::Esquema(format!(
+                "{op} nao entra em transacao: esta rodada empilha {}. \
+                 E ela NAO confirma a transacao aberta por conta propria -- \
+                 termine com COMMIT ou ROLLBACK e repita",
+                OPS_EMPILHAVEIS.join(", ")
+            ))));
+        }
+        // Leitura passa direto, e isso e o isolamento declarado: a transacao
+        // le o CONFIRMADO e nao ve as proprias escritas, porque elas estao em
+        // RAM. Esta escrito na §4.3 e a tela diz com todas as letras.
+        None
+    }
+
+    fn motivo_do_aborto(&self, ligacao: u64) -> String {
+        let padrao = "houve erro de TRANSACAO nesta conexao: a transacao nao \
+                      pode ser confirmada. Mande ROLLBACK";
+        match self.transacoes.lock() {
+            Ok(t) => match t.de(ligacao) {
+                Some(tx) if !tx.motivo_do_aborto.is_empty() => format!(
+                    "{}; a transacao nao pode ser confirmada, mande ROLLBACK",
+                    tx.motivo_do_aborto
+                ),
+                _ => padrao.to_string(),
+            },
+            Err(_) => padrao.to_string(),
+        }
+    }
+
+    /// Marca a transacao desta conexao como `ABORT_ONLY`.
+    ///
+    /// Chamado quando um erro de classe TRANSACAO acontece: dali em diante o
+    /// `COMMIT` recusa em vez de confirmar trabalho meio invalido.
+    fn abortar_transacao(&self, ligacao: u64, motivo: &str) {
+        if let Ok(mut t) = self.transacoes.lock() {
+            if let Some(tx) = t.de_mut(ligacao) {
+                tx.estado = crate::transacao::Estado::AbortOnly;
+                if tx.motivo_do_aborto.is_empty() {
+                    tx.motivo_do_aborto = motivo.to_string();
+                }
+            }
+        }
+    }
+
+    /// `begin` / `start_transaction` / `begin_transaction`, com o escopo e os
+    /// prazos declarados na abertura.
+    ///
+    /// ```text
+    /// BEGIN TRANSACTION
+    ///   SCOPE (clientes, pedidos, pediditens, estoque)
+    ///   TIMEOUT 5s
+    ///   LOCK TIMEOUT 500ms
+    ///   LOCK MODE AUTO;
+    /// ```
+    ///
+    /// # O que a declaracao previa COMPRA
+    ///
+    /// Ela e o que paga pela volta da espera. Travar por linha desfaz o
+    /// conflito artificial entre dois caixas em pedidos diferentes, mas traz
+    /// de volta a possibilidade de ciclo -- e com as tabelas conhecidas aqui,
+    /// as travas de tabela sao tomadas SEMPRE na mesma ordem canonica, o que
+    /// mata o ciclo classico entre tabelas. Ver `crate::travas`.
+    fn op_begin(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        // Pela mesma razao do `BULKINSERT`, e com o mesmo tamanho de estrago:
+        // HTTP nao tem conexao para cair, entao a primeira rede de protecao
+        // contra transacao orfa nao existiria. A tela nao fica sem
+        // atomicidade -- ela manda as operacoes num pedido so.
+        if sessao.ligacao == 0 {
+            return Err(PhxError::Esquema(
+                "transacao so vale pela porta de dados: HTTP nao tem conexao \
+                 para ela morrer amarrada, e uma aba fechada deixaria tabelas \
+                 presas ate o prazo. Pela tela, mande as operacoes num pedido \
+                 so"
+                .into(),
+            ));
+        }
+        self.limpar_transacoes_vencidas();
+        let abertura = self.abertura_do_pedido(p)?;
+        let database = p.texto_ou("database", "").trim().to_string();
+        let declaradas = lista_do_escopo(p);
+        if !declaradas.is_empty() && database.is_empty() {
+            return Err(PhxError::Esquema(
+                "SCOPE precisa do \"database\": uma transacao abrange UM \
+                 database, e a marca de recuperacao mora dentro dele"
+                    .into(),
+            ));
+        }
+        let agora = crate::agora_ms();
+        let id = {
+            let mut t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+            t.abrir(sessao.ligacao, sessao.login(), &sessao.ip, agora, &abertura)?
+        };
+        // Depois de a transacao estar no mapa: o portao le este contador, e
+        // incrementa-lo antes deixaria uma janela em que ele diz "ha
+        // transacao" e o mapa ainda nao tem nenhuma.
+        self.transacoes_abertas.fetch_add(1, Ordering::SeqCst);
+
+        // Daqui para baixo, qualquer falha DESFAZ a transacao recem-aberta:
+        // deixa-la meio aberta seguraria travas que ninguem sabe que existem.
+        if let Err(e) = self.declarar_escopo(id, &database, &declaradas, sessao) {
+            self.descartar_transacao(sessao.ligacao);
+            return Err(e);
+        }
+        let ficha = {
+            let t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+            t.de(sessao.ligacao).ok_or_else(sem_transacao)?.ficha(agora)
+        };
+        Ok(self.juntar_travas(ficha, agora))
+    }
+
+    /// Calcula o escopo EFETIVO e toma as travas de tabela em ordem canonica.
+    ///
+    /// Sem `SCOPE` declarado nao ha nada a fazer aqui: as tabelas entram uma a
+    /// uma, na primeira escrita de cada -- e e por isso que **quem nunca
+    /// declarou escopo nao sente diferenca nenhuma**.
+    fn declarar_escopo(
+        &self,
+        id: u64,
+        database: &str,
+        declaradas: &[String],
+        sessao: &Sessao,
+    ) -> Result<()> {
+        if declaradas.is_empty() {
+            return Ok(());
+        }
+        let (efetivas, chegadas) = self.escopo_efetivo(database, declaradas, sessao)?;
+        {
+            let mut t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+            let tx = t.de_mut(sessao.ligacao).ok_or_else(sem_transacao)?;
+            tx.database = database.to_string();
+            tx.declaradas = declaradas
+                .iter()
+                .map(|n| crate::carga::chave(database, n))
+                .collect();
+            crate::travas::em_ordem_canonica(&mut tx.declaradas);
+            tx.efetivas = efetivas.clone();
+            let _ = chegadas;
+        }
+        // ORDEM CANONICA, e e ela que mata o ciclo entre tabelas: A e B pedem
+        // `estoque` e `pedidos` na MESMA sequencia, entao nunca ha uma
+        // segurando o que a outra quer enquanto quer o que a outra segura.
+        let modo = self.modo_da_transacao(sessao)?;
+        for chave in &efetivas {
+            self.esperar_trava(sessao, id, chave, Alvo::Tabela(modo.na_tabela()))?;
+        }
+        Ok(())
+    }
+
+    /// O escopo EFETIVO: o declarado mais o que as dependencias do catalogo
+    /// alcancam. Devolve `(efetivo, como cada uma chegou)`.
+    ///
+    /// # A chave estrangeira NAO entra, e isso foi conferido
+    ///
+    /// A tentacao era somar as tabelas apontadas por chave estrangeira com
+    /// `ao_excluir`/`ao_alterar` em cascata. **Elas nao alcancam nada aqui**:
+    /// o motor DECLARA a chave estrangeira e nao a IMPOE -- ha teste travando
+    /// isso pelo nome, `a_chave_e_declarada_mas_ainda_nao_e_imposta_na_gravacao`,
+    /// e o comentario dele diz que uma linha filha apontando para um pai que
+    /// nao existe entra sem reclamacao. Sem imposicao nao ha cascata, e sem
+    /// cascata a chave estrangeira nao toca tabela nenhuma.
+    ///
+    /// Somar essas tabelas ao escopo efetivo travaria tabelas que a transacao
+    /// nunca vai tocar, e a ficha de diagnostico mostraria um alcance que nao
+    /// existe -- que e exatamente a linha que nao se imprime porque nao se
+    /// mede. O dia em que aquele teste falhar, este comentario e o
+    /// `escopo_por_gatilho` ao lado sao o lugar de acrescentar o braco da FK.
+    ///
+    /// # O GATILHO entra, e alcanca de verdade
+    ///
+    /// O corpo de um gatilho grava noutra tabela com `INSERT INTO`, e isso
+    /// acontece de verdade -- o `rodar_gatilhos_depois` executa. Entao o alvo
+    /// de cada `INSERT` do corpo entra no escopo efetivo, e o fecho e
+    /// transitivo: o gatilho de `auditoria` pode ter gatilho.
+    fn escopo_efetivo(
+        &self,
+        database: &str,
+        declaradas: &[String],
+        _sessao: &Sessao,
+    ) -> Result<(Vec<String>, HashMap<String, String>)> {
+        let mut efetivas: Vec<String> = declaradas
+            .iter()
+            .map(|n| crate::carga::chave(database, n))
+            .collect();
+        let mut chegadas: HashMap<String, String> = efetivas
+            .iter()
+            .map(|c| (c.clone(), "declarada".to_string()))
+            .collect();
+        // Fila de trabalho com o nome ORIGINAL (nao a chave), porque e assim
+        // que o cadastro de gatilhos guarda a tabela.
+        let mut fila: Vec<String> = declaradas.to_vec();
+        // Teto de voltas: um gatilho que grava na propria tabela e legitimo, e
+        // sem teto o fecho transitivo de um ciclo nao termina.
+        let mut voltas = 0;
+        while let Some(tabela) = fila.pop() {
+            voltas += 1;
+            if voltas > 256 {
+                break;
+            }
+            for alvo in self.escopo_por_gatilho(database, &tabela)? {
+                let chave = crate::carga::chave(database, &alvo);
+                if chegadas.contains_key(&chave) {
+                    continue;
+                }
+                chegadas.insert(chave.clone(), format!("gatilho de {tabela}"));
+                efetivas.push(chave);
+                fila.push(alvo);
+            }
+        }
+        crate::travas::em_ordem_canonica(&mut efetivas);
+        Ok((efetivas, chegadas))
+    }
+
+    /// As tabelas em que os gatilhos DESTA tabela gravam.
+    ///
+    /// Sai do programa ja compilado, e nao do texto do corpo: comparar texto
+    /// para descobrir onde um gatilho grava e a mesma armadilha de resolver
+    /// texto de tela por frase -- quebra calado no dia em que alguem escrever
+    /// o mesmo `INSERT` com outro espacamento.
+    fn escopo_por_gatilho(&self, database: &str, tabela: &str) -> Result<Vec<String>> {
+        if !self.ha_gatilhos.load(Ordering::Relaxed) {
+            return Ok(Vec::new());
+        }
+        let r = self.rotinas.lock().map_err(|_| trava_envenenada())?;
+        let mut alvos = Vec::new();
+        for evento in [
+            phxsql_sql::rotina::Evento::Inserir,
+            phxsql_sql::rotina::Evento::Atualizar,
+            phxsql_sql::rotina::Evento::Excluir,
+        ] {
+            let (antes, depois) = r.gatilhos_de(database, tabela, evento);
+            for g in antes.iter().chain(depois.iter()) {
+                let Ok(programa) = &g.programa else { continue };
+                tabelas_gravadas(programa, &mut alvos);
+            }
+        }
+        alvos.sort();
+        alvos.dedup();
+        Ok(alvos)
+    }
+
+    fn modo_da_transacao(&self, sessao: &Sessao) -> Result<crate::travas::Modo> {
+        let t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+        Ok(t.de(sessao.ligacao).ok_or_else(sem_transacao)?.modo)
+    }
+
+    /// A transacao desta conexao, ou o erro que diz que nao ha nenhuma.
+    fn exigir_transacao(&self, sessao: &Sessao) -> Result<u64> {
+        if self.transacoes_abertas.load(Ordering::Relaxed) == 0 || sessao.ligacao == 0 {
+            return Err(sem_transacao());
+        }
+        let t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+        match t.de(sessao.ligacao) {
+            Some(tx) => Ok(tx.id),
+            None => Err(sem_transacao()),
+        }
+    }
+
+    /// `transacao`: o estado da transacao DESTA conexao.
+    ///
+    /// Responde tambem quando nao ha nenhuma -- `IDLE` e uma resposta, e nao
+    /// um erro. E o que permite um cliente perguntar "estou em transacao?"
+    /// sem tratar excecao.
+    fn op_transacao(&self, sessao: &Sessao) -> Result<Json> {
+        let agora = crate::agora_ms();
+        if self.transacoes_abertas.load(Ordering::Relaxed) > 0 && sessao.ligacao != 0 {
+            let ficha = {
+                let t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+                t.de(sessao.ligacao).map(|tx| tx.ficha(agora))
+            };
+            if let Some(f) = ficha {
+                return Ok(self.juntar_travas(f, agora));
+            }
+        }
+        Ok(Json::objeto(vec![
+            ("transaction_id", Json::Nulo),
+            (
+                "transaction_state",
+                Json::texto_de(crate::transacao::Estado::Ociosa.nome()),
+            ),
+            (
+                "transaction_isolation",
+                Json::texto_de(crate::transacao::NIVEL_DE_ISOLAMENTO),
+            ),
+            ("linhas", Json::de_u64(0)),
+        ]))
+    }
+
+    /// `transacoes`: todas as abertas, para quem administra e para a tela.
+    fn op_transacoes(&self) -> Result<Json> {
+        self.limpar_transacoes_vencidas();
+        let agora = crate::agora_ms();
+        let fichas = {
+            let t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+            t.todas(agora)
+        };
+        let quantas = fichas.len();
+        let fichas: Vec<Json> = fichas
+            .into_iter()
+            .map(|f| self.juntar_travas(f, agora))
+            .collect();
+        Ok(Json::objeto(vec![
+            ("total", Json::de_u64(quantas as u64)),
+            ("transacoes", Json::Lista(fichas)),
+            (
+                "transaction_isolation",
+                Json::texto_de(crate::transacao::NIVEL_DE_ISOLAMENTO),
+            ),
+        ]))
+    }
+
+    /// `savepoint <nome>`.
+    fn op_savepoint(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let nome = nome_do_ponto(p)?;
+        self.exigir_transacao(sessao)?;
+        let mut t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+        let tx = t.de_mut(sessao.ligacao).ok_or_else(sem_transacao)?;
+        if !tx.estado.aceita_trabalho() {
+            return Err(PhxError::TransacaoAbortada(
+                "a transacao esta em ABORT_ONLY: so o ROLLBACK passa".into(),
+            ));
+        }
+        // Nome repetido DESTROI o ponto anterior e cria um novo, que e o que o
+        // SQL manda: quem repete o nome quer marcar aqui, e nao empilhar dois
+        // pontos com a mesma etiqueta -- dois pontos iguais fariam o
+        // `ROLLBACK TO` voltar para um lugar que quem escreveu nao escolheu.
+        tx.pontos.retain(|x| x.nome != nome);
+        let ate = tx.escritas.len();
+        tx.pontos.push(crate::transacao::Ponto {
+            nome: nome.clone(),
+            ate,
+        });
+        Ok(Json::objeto(vec![
+            ("savepoint", Json::texto_de(&nome)),
+            ("linhas", Json::de_u64(ate as u64)),
+            ("transaction_id", Json::de_u64(tx.id)),
+        ]))
+    }
+
+    /// `rollback_para` / `ROLLBACK TO SAVEPOINT <nome>`.
+    ///
+    /// Trunca a lista de escrita naquele ponto e a transacao **continua
+    /// aberta**. Num desenho em que tudo esta em RAM isso e quase de graca --
+    /// e a ideia e do capitulo que o dono mandou: nao se copia a transacao,
+    /// guarda-se um INDICE na lista.
+    fn op_rollback_para(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let nome = nome_do_ponto(p)?;
+        self.exigir_transacao(sessao)?;
+        let (descartadas, restantes, id) = {
+            let mut t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+            let tx = t.de_mut(sessao.ligacao).ok_or_else(sem_transacao)?;
+            // ABORT_ONLY NAO se conserta voltando a um ponto, e a diferenca
+            // para o PostgreSQL(R) e deliberada: la TODO erro aborta a
+            // transacao, e o SAVEPOINT existe justamente para resgatar quem
+            // errou uma instrucao. Aqui erro de INSTRUCAO nao aborta nada --
+            // a transacao continua ACTIVE --, entao so chega a ABORT_ONLY o
+            // que poe em duvida o proprio conjunto de escrita. Voltar a um
+            // ponto nao desfaz essa duvida.
+            if tx.estado == crate::transacao::Estado::AbortOnly {
+                return Err(PhxError::TransacaoAbortada(
+                    "a transacao esta em ABORT_ONLY: voltar a um SAVEPOINT nao \
+                     a conserta, porque o que a abortou nao foi uma instrucao. \
+                     Mande ROLLBACK"
+                        .into(),
+                ));
+            }
+            let ate = tx
+                .pontos
+                .iter()
+                .find(|x| x.nome == nome)
+                .map(|x| x.ate)
+                .ok_or_else(|| {
+                    PhxError::NaoEncontrado(format!("nao ha SAVEPOINT {nome:?} nesta transacao"))
+                })?;
+            let descartadas = tx.escritas.len().saturating_sub(ate);
+            tx.escritas.truncate(ate);
+            // Os pontos criados DEPOIS deste somem; o proprio fica, e e o que
+            // o SQL manda -- da para voltar ao mesmo ponto duas vezes.
+            tx.pontos.retain(|x| x.ate <= ate);
+            (descartadas, ate, tx.id)
+        };
+        // As chaves unicas empilhadas TEM de acompanhar o truncamento: sem
+        // isto, a chave de uma linha descartada continuaria barrando a proxima
+        // igual a ela, e o SAVEPOINT deixaria de desfazer de verdade.
+        self.refazer_chaves_da_transacao(sessao)?;
+        Ok(Json::objeto(vec![
+            ("savepoint", Json::texto_de(&nome)),
+            ("descartadas", Json::de_u64(descartadas as u64)),
+            ("linhas", Json::de_u64(restantes as u64)),
+            ("transaction_id", Json::de_u64(id)),
+            (
+                "transaction_state",
+                Json::texto_de(crate::transacao::Estado::Ativa.nome()),
+            ),
+        ]))
+    }
+
+    /// `release_savepoint`: tira o ponto e os criados depois dele, sem tocar
+    /// no trabalho -- as escritas continuam empilhadas.
+    fn op_release_savepoint(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let nome = nome_do_ponto(p)?;
+        self.exigir_transacao(sessao)?;
+        let mut t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+        let tx = t.de_mut(sessao.ligacao).ok_or_else(sem_transacao)?;
+        let ate = tx
+            .pontos
+            .iter()
+            .find(|x| x.nome == nome)
+            .map(|x| x.ate)
+            .ok_or_else(|| {
+                PhxError::NaoEncontrado(format!("nao ha SAVEPOINT {nome:?} nesta transacao"))
+            })?;
+        let antes = tx.pontos.len();
+        tx.pontos.retain(|x| x.ate < ate);
+        Ok(Json::objeto(vec![
+            ("savepoint", Json::texto_de(&nome)),
+            ("liberados", Json::de_u64((antes - tx.pontos.len()) as u64)),
+            ("linhas", Json::de_u64(tx.escritas.len() as u64)),
+            ("transaction_id", Json::de_u64(tx.id)),
+        ]))
+    }
+
+    /// Recalcula o conjunto de chaves unicas empilhadas.
+    fn refazer_chaves_da_transacao(&self, sessao: &Sessao) -> Result<()> {
+        // O esquema de cada tabela e preciso para saber as colunas de cada
+        // indice, entao a trava de dados entra -- e entra ANTES da trava das
+        // transacoes, que e a ordem unica deste servidor.
+        let escritas: Vec<crate::transacao::Escrita> = {
+            let t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+            match t.de(sessao.ligacao) {
+                Some(tx) => tx.escritas.clone(),
+                None => return Ok(()),
+            }
+        };
+        let mut chaves: HashMap<usize, Vec<(String, String)>> = HashMap::new();
+        if !escritas.is_empty() {
+            let trava = self.travar_dados()?;
+            let mut abertas: HashMap<String, Table> = HashMap::new();
+            for (i, e) in escritas.iter().enumerate() {
+                if e.acao != crate::transacao::Acao::Inserir {
+                    continue;
+                }
+                let chave = format!("{}/{}", e.database, e.tabela);
+                let t = match abertas.entry(chave) {
+                    std::collections::hash_map::Entry::Occupied(o) => o.into_mut(),
+                    std::collections::hash_map::Entry::Vacant(v) => {
+                        let ped = pedido_da_tabela(&e.database, &e.tabela);
+                        match self.abrir_travada(&trava, &ped, sessao) {
+                            Ok(t) => v.insert(t),
+                            Err(_) => continue,
+                        }
+                    }
+                };
+                chaves.insert(i, chaves_unicas(t.esquema(), &e.linha));
+            }
+        }
+        let mut t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+        if let Some(tx) = t.de_mut(sessao.ligacao) {
+            tx.refazer_chaves(&chaves);
+        }
+        Ok(())
+    }
+
+    /// Empilha uma escrita no conjunto da transacao. **Nao toca em disco.**
+    ///
+    /// # Por que a conferencia acontece AQUI, e nao no `COMMIT`
+    ///
+    /// Porque a passada de commit nao pode falhar no meio: se ela falhar, uma
+    /// parte da transacao ja esta gravada e a outra nao. Entao tudo o que pode
+    /// ser conferido antes e conferido antes -- a linha converte, os gatilhos
+    /// BEFORE rodam, a unicidade e testada contra o indice E contra as chaves
+    /// que esta mesma transacao ja empilhou. Sobrando so falha de E/S no
+    /// `COMMIT`, a recuperacao tem uma resposta unica e simples.
+    fn empilhar(&self, op: &str, p: &Json, sessao: &Sessao) -> Result<Json> {
+        use crate::transacao::Acao;
+        let database = p.texto_ou("database", "").trim().to_string();
+        let tabela = p.texto_ou("tabela", "").trim().to_string();
+        if database.is_empty() || tabela.is_empty() {
+            return Err(PhxError::Esquema(
+                "informe \"database\" e \"tabela\"".into(),
+            ));
+        }
+        // As chaves unicas desta linha, guardadas so DEPOIS de a escrita
+        // entrar na lista. Ver a nota no ramo do `Inserir`.
+        let mut chaves_novas: Vec<(String, String)> = Vec::new();
+        let acao = match op {
+            "inserir" => Acao::Inserir,
+            "atualizar" => Acao::Atualizar,
+            "restaurar" => Acao::Restaurar,
+            "excluir" if p.booleano_ou("fisico", false) => Acao::ExcluirDeVez,
+            _ => Acao::ExcluirSuave,
+        };
+
+        // Um database so por transacao. A marca `.tx` mora dentro do
+        // diretorio do database, e e isso que a faz viajar junto no backup e
+        // na restauracao; uma marca que cobrisse dois deixaria de valer no
+        // instante em que alguem restaurasse um deles sozinho.
+        {
+            let t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+            let tx = t.de(sessao.ligacao).ok_or_else(sem_transacao)?;
+            if !tx.database.is_empty() && !tx.database.eq_ignore_ascii_case(&database) {
+                return Err(PhxError::Esquema(format!(
+                    "esta transacao ja esta no database {:?} e uma transacao \
+                     abrange UM database. Transacao entre databases e two-phase \
+                     commit, e e outro projeto",
+                    tx.database
+                )));
+            }
+        }
+
+        // Os gatilhos BEFORE rodam AQUI, na instrucao -- e nao no `COMMIT`.
+        // Um `SIGNAL` deles e erro de INSTRUCAO: cancela esta operacao e a
+        // transacao continua `ACTIVE`, exatamente como uma chave duplicada.
+        // Deixa-los para o commit faria um `SIGNAL` derrubar a passada no
+        // meio, que e a unica coisa que este desenho nao pode ter.
+        let evento = match acao {
+            Acao::Inserir => phxsql_sql::rotina::Evento::Inserir,
+            Acao::Atualizar => phxsql_sql::rotina::Evento::Atualizar,
+            _ => phxsql_sql::rotina::Evento::Excluir,
+        };
+        let (antes, depois) = self.gatilhos_para(p, evento)?;
+        Self::conferir_gatilhos_compilam(&antes, &depois)?;
+
+        let trava = self.travar_dados()?;
+        let mut t = self.abrir_travada(&trava, p, sessao)?;
+
+        // A particao alfanumerica fica de fora, e o motivo e o rowid.
+        //
+        // Numa tabela por letra o slot da linha depende do BALDE em que ela
+        // cai, e o balde sai de uma regra que mora dentro do `Table`.
+        // Reproduzir essa regra aqui seria uma segunda implementacao dela --
+        // e a segunda e sempre a que envelhece. Sem o rowid alvo, a marca
+        // `.tx` nao consegue ser idempotente e a recuperacao deixa de ser
+        // exata. Recusa fundamentada, e nao esquecimento.
+        if acao == Acao::Inserir && t.esquema().paginacao().modo.por_letra() {
+            return Err(PhxError::Esquema(format!(
+                "{database}.{tabela} e particionada por letra, e ali o slot da \
+                 linha depende do balde: o rowid alvo nao e previsivel fora do \
+                 motor, e sem ele a marca de recuperacao nao e idempotente. \
+                 Insira nesta tabela fora de transacao"
+            )));
+        }
+
+        let escrita = match acao {
+            Acao::Inserir => {
+                let valores_json = p
+                    .campo("valores")
+                    .or_else(|| p.campo("linha"))
+                    .cloned()
+                    .ok_or_else(|| PhxError::Esquema("informe \"valores\"".into()))?;
+                let mut linha = json_para_linha(&valores_json, t.esquema())?;
+                if !antes.is_empty() {
+                    self.rodar_gatilhos_antes(&antes, Some(&mut linha), None, t.esquema())?;
+                }
+                // A unicidade contra o INDICE, que e a mesma conferencia que o
+                // `inserir` de hoje faz antes de gravar byte nenhum.
+                let chaves = chaves_unicas(t.esquema(), &linha);
+                for (indice, _) in &chaves {
+                    let valores = valores_do_indice(t.esquema(), indice, &linha);
+                    if !t.buscar(indice, &valores)?.is_empty() {
+                        return Err(PhxError::Duplicado(format!(
+                            "indice unico {indice} ja tem essa chave"
+                        )));
+                    }
+                }
+                // E contra o que esta transacao JA empilhou -- o indice em
+                // disco nao sabe das linhas que ainda estao na lista, e duas
+                // iguais dentro da mesma transacao passariam pela conferencia
+                // de cima e quebrariam a passada no meio.
+                //
+                // So PERGUNTA aqui; guardar so acontece la embaixo, depois de
+                // a escrita estar empilhada de verdade. Guardar antes deixava
+                // a chave de uma escrita recusada pela TRAVA na lista, e a
+                // tentativa seguinte da mesma linha era acusada de duplicada
+                // por si mesma.
+                {
+                    let reg = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+                    let tx = reg.de(sessao.ligacao).ok_or_else(sem_transacao)?;
+                    let posicao = tx.escritas.len() + 1;
+                    for (indice, chave) in &chaves {
+                        if tx.chave_ja_empilhada(&tabela, indice, chave) {
+                            return Err(PhxError::Duplicado(format!(
+                                "o indice unico {indice} ja recebeu essa chave \
+                                 nesta mesma transacao; esta seria a linha \
+                                 {posicao} da lista"
+                            )));
+                        }
+                    }
+                }
+                chaves_novas = chaves;
+                let rowid = {
+                    let reg = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+                    let tx = reg.de(sessao.ligacao).ok_or_else(sem_transacao)?;
+                    t.slots() + 1 + tx.insercoes_em(&tabela)
+                };
+                crate::transacao::Escrita {
+                    database: database.clone(),
+                    tabela: tabela.clone(),
+                    acao,
+                    rowid,
+                    linha,
+                    motivo: String::new(),
+                }
+            }
+            Acao::Atualizar => {
+                let rowid = self.rowid(p)?;
+                let valores_json = p
+                    .campo("valores")
+                    .or_else(|| p.campo("linha"))
+                    .cloned()
+                    .ok_or_else(|| PhxError::Esquema("informe \"valores\"".into()))?;
+                let nasceu_aqui = {
+                    let reg = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+                    reg.de(sessao.ligacao)
+                        .ok_or_else(sem_transacao)?
+                        .nasceu_aqui(&tabela, rowid)
+                };
+                let velha = if nasceu_aqui { None } else { t.ler(rowid)? };
+                if velha.is_none() && !nasceu_aqui {
+                    return Err(PhxError::NaoEncontrado(format!(
+                        "rowid {rowid} nao existe em {database}.{tabela}"
+                    )));
+                }
+                let mut linha = json_para_linha(&valores_json, t.esquema())?;
+                // A MESMA guarda do `op_atualizar`: quem nao mandou a coluna
+                // de sistema nao esta ressuscitando linha excluida.
+                if let (Some(i), Some(atual)) = (t.esquema().coluna_softdeleted(), velha.as_ref()) {
+                    let nome = phxsql_core::schema::COLUNA_SOFTDELETED;
+                    let veio = matches!(&valores_json, Json::Objeto(_))
+                        && valores_json.campo(nome).is_some()
+                        || matches!(&valores_json, Json::Lista(l) if l.len() > i);
+                    if !veio {
+                        linha[i] = atual[i].clone();
+                    }
+                }
+                if !antes.is_empty() {
+                    self.rodar_gatilhos_antes(
+                        &antes,
+                        Some(&mut linha),
+                        velha.as_deref(),
+                        t.esquema(),
+                    )?;
+                }
+                crate::transacao::Escrita {
+                    database: database.clone(),
+                    tabela: tabela.clone(),
+                    acao,
+                    rowid,
+                    linha,
+                    motivo: String::new(),
+                }
+            }
+            _ => {
+                let rowid = self.rowid(p)?;
+                let motivo = p.texto_ou("motivo", "").trim().to_string();
+                let nasceu_aqui = {
+                    let reg = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+                    reg.de(sessao.ligacao)
+                        .ok_or_else(sem_transacao)?
+                        .nasceu_aqui(&tabela, rowid)
+                };
+                let velha = if nasceu_aqui { None } else { t.ler(rowid)? };
+                if !nasceu_aqui && velha.is_none() && acao != Acao::Restaurar {
+                    return Err(PhxError::NaoEncontrado(format!(
+                        "rowid {rowid} nao existe em {database}.{tabela}"
+                    )));
+                }
+                if let Some(l) = velha.as_deref().filter(|_| !antes.is_empty()) {
+                    self.rodar_gatilhos_antes(&antes, None, Some(l), t.esquema())?;
+                }
+                // Exclusao suave numa tabela sem a coluna de sistema so tem o
+                // caminho fisico -- a mesma regra do `op_excluir`.
+                let acao =
+                    if acao == Acao::ExcluirSuave && t.esquema().coluna_softdeleted().is_none() {
+                        Acao::ExcluirDeVez
+                    } else {
+                        acao
+                    };
+                crate::transacao::Escrita {
+                    database: database.clone(),
+                    tabela: tabela.clone(),
+                    acao,
+                    rowid,
+                    linha: Vec::new(),
+                    motivo,
+                }
+            }
+        };
+        drop(t);
+        drop(trava);
+
+        // AS TRAVAS. Tabela primeiro, linha depois -- e sempre nessa ordem,
+        // que e o que a hierarquia de intencao existe para dar: quem quer a
+        // tabela inteira ve a intencao de quem esta nas linhas sem ter de
+        // varrer linha por linha.
+        let chave = crate::carga::chave(&database, &tabela);
+        self.travar_para_empilhar(sessao, &chave, &escrita)?;
+
+        let teto = self.config.recursos.transacao_max_linhas as usize;
+        let mut t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+        let tx = t.de_mut(sessao.ligacao).ok_or_else(sem_transacao)?;
+        if teto > 0 && tx.escritas.len() >= teto {
+            // Erro de TRANSACAO, e nao de instrucao: o conjunto de escrita
+            // esta no teto e nao ha instrucao a corrigir. **Nunca engolido, e
+            // nunca vazado para disco pelas costas.**
+            tx.estado = crate::transacao::Estado::AbortOnly;
+            tx.motivo_do_aborto = format!(
+                "o conjunto de escrita chegou ao teto de {teto} linhas \
+                 (recursos.transacao_max_linhas)"
+            );
+            return Err(PhxError::TransacaoAbortada(tx.motivo_do_aborto.clone()));
+        }
+        if tx.database.is_empty() {
+            tx.database = database.clone();
+        }
+        if !tx.tabelas.contains(&chave) {
+            tx.tabelas.push(chave);
+        }
+        let rowid = escrita.rowid;
+        let acao_nome = escrita.acao.nome();
+        tx.escritas.push(escrita);
+        for (indice, chave) in &chaves_novas {
+            tx.guardar_chave(&tabela, indice, chave);
+        }
+        Ok(Json::objeto(vec![
+            ("empilhada", Json::Bool(true)),
+            ("acao", Json::texto_de(acao_nome)),
+            ("rowid", Json::de_u64(rowid)),
+            ("linhas", Json::de_u64(tx.escritas.len() as u64)),
+            ("transaction_id", Json::de_u64(tx.id)),
+            ("transaction_state", Json::texto_de(tx.estado.nome())),
+        ]))
+    }
+
+    /// As travas que UMA escrita empilhada precisa, na ordem certa.
+    ///
+    /// # O escopo declarado manda aqui
+    ///
+    /// Tabela fora do escopo: em `STRICT` a escrita e recusada nomeando a
+    /// tabela e o escopo; em `DYNAMIC` -- o padrao -- ela ENTRA, a trava e
+    /// tomada na hora e a expansao fica anotada, para a ficha de diagnostico
+    /// mostrar o que entrou sem ninguem pedir.
+    ///
+    /// **A expansao dinamica reintroduz a possibilidade de ciclo entre
+    /// tabelas**, e nao adianta fingir que nao: a ordem canonica so vale para
+    /// o que foi declarado na abertura. Quem quer a garantia declara o escopo
+    /// inteiro; quem nao declara fica com o `LOCK TIMEOUT` de rede embaixo. E
+    /// esse e exatamente o preco do `DYNAMIC`, dito antes de alguem descobrir.
+    fn travar_para_empilhar(
+        &self,
+        sessao: &Sessao,
+        chave: &str,
+        escrita: &crate::transacao::Escrita,
+    ) -> Result<()> {
+        use crate::transacao::Acao;
+        let (id, modo, escopo_modo, no_escopo, declarou) = {
+            let t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+            let tx = t.de(sessao.ligacao).ok_or_else(sem_transacao)?;
+            (
+                tx.id,
+                tx.modo,
+                tx.escopo_modo,
+                tx.efetivas.iter().any(|c| c == chave),
+                !tx.declaradas.is_empty(),
+            )
+        };
+        if declarou && !no_escopo {
+            if escopo_modo == crate::travas::EscopoModo::Estrito {
+                return Err(PhxError::Esquema(format!(
+                    "{chave} nao esta no SCOPE desta transacao e o SCOPE MODE e \
+                     STRICT. Declare-a na abertura, ou abra com SCOPE MODE \
+                     DYNAMIC"
+                )));
+            }
+            let mut t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+            if let Some(tx) = t.de_mut(sessao.ligacao) {
+                tx.efetivas.push(chave.to_string());
+                crate::travas::em_ordem_canonica(&mut tx.efetivas);
+                tx.expandidas.push(chave.to_string());
+            }
+        }
+        self.esperar_trava(sessao, id, chave, Alvo::Tabela(modo.na_tabela()))?;
+        if modo.trava_linha() {
+            // Anexar disputa o FIM da tabela, e nao uma linha: o proximo slot
+            // e `slots() + 1` e ele e um so. Duas transacoes que anexam ao
+            // mesmo tempo preveem o MESMO rowid, e sem esta trava a segunda
+            // descobriria isso na passada de commit, com metade do trabalho
+            // gravado.
+            let alvo = if escrita.acao == Acao::Inserir {
+                crate::travas::FIM_DA_TABELA
+            } else {
+                escrita.rowid
+            };
+            self.esperar_trava(sessao, id, chave, Alvo::Linha(alvo))?;
+        }
+        Ok(())
+    }
+
+    /// Toma uma trava, esperando no maximo o `LOCK TIMEOUT` desta transacao.
+    ///
+    /// # A espera acontece FORA da trava de dados, e isso e a peca
+    ///
+    /// Esperar com a trava global na mao seria a doenca que este projeto ja
+    /// mediu em 29.456 ms: uma transacao esperando outra pararia o servidor
+    /// inteiro, e nao por engano de implementacao -- por desenho. Aqui a
+    /// espera solta tudo entre uma tentativa e a proxima.
+    ///
+    /// # Por que enquete, e nao variavel de condicao
+    ///
+    /// Porque a espera e limitada e curta por definicao (o padrao sao 500 ms),
+    /// e uma variavel de condicao precisaria acordar por tabela e por linha
+    /// para nao acordar todo mundo a cada solta. O custo desta e um `lock` sem
+    /// disputa a cada 2 ms -- **13,2 ns** medidos em `DESEMPENHO.md` --, e
+    /// quem espera ja esta parado de qualquer forma. Trocar isto por condvar e
+    /// otimizar o caminho de quem ja perdeu.
+    fn esperar_trava(&self, sessao: &Sessao, id: u64, chave: &str, alvo: Alvo) -> Result<()> {
+        let (prazo_ms, expira_ms) = {
+            let t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+            let tx = t.de(sessao.ligacao).ok_or_else(sem_transacao)?;
+            (tx.lock_timeout_ms, tx.expira_ms)
+        };
+        let comeco = Instant::now();
+        let mut ultima: Option<crate::travas::Barrada>;
+        loop {
+            {
+                let mut tr = self.travas.lock().map_err(|_| trava_envenenada())?;
+                let r = match alvo {
+                    Alvo::Tabela(t) => tr.pegar_tabela(chave, id, t),
+                    Alvo::Linha(rowid) => tr.pegar_linha(chave, id, rowid),
+                };
+                match r {
+                    Ok(()) => {
+                        drop(tr);
+                        self.anotar_espera(sessao, "");
+                        return Ok(());
+                    }
+                    Err(b) => ultima = Some(b),
+                }
+            }
+            // O prazo da TRANSACAO tambem corta a espera: nao adianta esperar
+            // 500 ms por uma trava se a transacao morre em 50.
+            let estourou_o_lock = prazo_ms <= 0 || comeco.elapsed().as_millis() as i64 >= prazo_ms;
+            let estourou_a_transacao = crate::agora_ms() >= expira_ms;
+            if estourou_o_lock || estourou_a_transacao {
+                self.anotar_espera(sessao, "");
+                let b = ultima.expect("so se sai do laco com uma barrada na mao");
+                let recado = {
+                    let t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+                    t.recado_da_barrada(&b, crate::agora_ms())
+                };
+                if estourou_a_transacao {
+                    return Err(self.estourar_prazo(sessao));
+                }
+                return Err(PhxError::EmTransacao(format!(
+                    "{recado}. Esperei o LOCK TIMEOUT de {prazo_ms} ms e desisti"
+                )));
+            }
+            if let Some(b) = &ultima {
+                let onde = match b.rowid {
+                    Some(crate::travas::FIM_DA_TABELA) => format!("o fim de {}", b.tabela),
+                    Some(r) => format!("{} rowid {r}", b.tabela),
+                    None => b.tabela.clone(),
+                };
+                self.anotar_espera(sessao, &format!("{onde} (transacao {})", b.transacao));
+            }
+            // Dois milissegundos: curto o bastante para nao somar ao tempo de
+            // quem consegue a trava logo, e longo o bastante para nao virar
+            // espera ativa.
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    }
+
+    /// Anota (ou limpa) o que esta transacao espera, para a ficha.
+    fn anotar_espera(&self, sessao: &Sessao, o_que: &str) {
+        if let Ok(mut t) = self.transacoes.lock() {
+            if let Some(tx) = t.de_mut(sessao.ligacao) {
+                tx.esperando = o_que.to_string();
+            }
+        }
+    }
+
+    /// O prazo da transacao estourou: **quem encerra e o gestor, nunca uma
+    /// thread morta.**
+    ///
+    /// Matar a thread deixaria estado interno pela metade -- travas presas,
+    /// conjunto de escrita orfao, o contador de transacoes abertas errado. Em
+    /// vez disso a transacao vai para `ABORT_ONLY`, solta as travas, joga a
+    /// lista fora e passa a recusar operacao nova com um erro que traz o
+    /// numero do prazo. A conexao continua viva e o cliente descobre pelo
+    /// erro, que e o que ele sabe tratar.
+    fn estourar_prazo(&self, sessao: &Sessao) -> PhxError {
+        let (id, prazo) = match self.transacoes.lock() {
+            Ok(mut t) => match t.de_mut(sessao.ligacao) {
+                Some(tx) => {
+                    tx.estado = crate::transacao::Estado::AbortOnly;
+                    tx.escritas.clear();
+                    tx.pontos.clear();
+                    tx.esperando.clear();
+                    let prazo = tx.expira_ms - tx.desde_ms;
+                    if tx.motivo_do_aborto.is_empty() {
+                        tx.motivo_do_aborto =
+                            format!("o TIMEOUT da transacao ({prazo} ms) estourou");
+                    }
+                    (tx.id, prazo)
+                }
+                None => return sem_transacao(),
+            },
+            Err(_) => return trava_envenenada(),
+        };
+        // As travas saem JA -- segurar tabela alheia depois do prazo e
+        // exatamente o que o prazo existe para impedir.
+        if let Ok(mut tr) = self.travas.lock() {
+            tr.soltar_tudo(id);
+        }
+        PhxError::TransacaoAbortada(format!(
+            "a transacao {id} passou do TIMEOUT de {prazo} ms e foi revertida; \
+             as travas dela ja sairam. Mande ROLLBACK para fechar"
+        ))
+    }
+
+    /// Poe o `STATEMENT TIMEOUT` desta transacao no relogio da operacao.
+    ///
+    /// # Onde ele morde, e onde nao morde
+    ///
+    /// Ele e conferido nos PONTOS DE CANCELAMENTO que ja existem -- o
+    /// `Atividade::siga`, chamado entre duas unidades de trabalho seguras
+    /// pelos lacos longos (a conversao de uma carga, a exportacao). Uma
+    /// insercao de UMA linha nao tem ponto de cancelamento no meio, e nao
+    /// poderia ter: parar entre gravar o slot e manter o indice deixaria os
+    /// dois discordando. **Isso esta dito no documento em vez de escondido**,
+    /// e e a diferenca entre um prazo que faz o que promete e um campo de
+    /// configuracao que mente.
+    fn por_prazo_na_operacao(&self, sessao: &Sessao) {
+        let prazo = match self.transacoes.lock() {
+            Ok(t) => t
+                .de(sessao.ligacao)
+                .map(|tx| tx.statement_timeout_ms)
+                .unwrap_or(0),
+            Err(_) => 0,
+        };
+        if prazo <= 0 {
+            return;
+        }
+        if let Some(a) = crate::telemetria::corrente() {
+            a.definir_prazo(crate::agora_ms() + prazo);
+        }
+    }
+
+    /// Acrescenta a uma ficha de transacao o que o gestor de travas SABE.
+    ///
+    /// As duas metades vem de registros diferentes de proposito: a transacao
+    /// sabe o que declarou, o gestor sabe o que ela conseguiu. Juntar as duas
+    /// fontes numa so faria uma passar a acreditar na outra, e a ficha
+    /// deixaria de ser medida -- que e a regra do relatorio de recuperacao
+    /// aplicada aqui.
+    fn juntar_travas(&self, ficha: Json, _agora: i64) -> Json {
+        let Json::Objeto(mut pares) = ficha else {
+            return ficha;
+        };
+        let id = pares
+            .iter()
+            .find(|(k, _)| k == "transaction_id")
+            .and_then(|(_, v)| v.inteiro())
+            .unwrap_or(0)
+            .max(0) as u64;
+        let travadas = match self.travas.lock() {
+            Ok(t) => t.ficha(id),
+            Err(_) => Vec::new(),
+        };
+        let mut linhas_travadas = 0u64;
+        let lista: Vec<Json> = travadas
+            .iter()
+            .map(|(tabela, trava, linhas)| {
+                linhas_travadas += *linhas;
+                Json::objeto(vec![
+                    ("tabela", Json::texto_de(tabela)),
+                    ("trava", Json::texto_de(*trava)),
+                    ("linhas", Json::de_u64(*linhas)),
+                ])
+            })
+            .collect();
+        pares.push(("travas".to_string(), Json::Lista(lista)));
+        pares.push(("linhas_travadas".to_string(), Json::de_u64(linhas_travadas)));
+        Json::Objeto(pares)
+    }
+
+    /// Uma escrita COMUM -- sem `BEGIN` nenhum -- esbarra numa trava de
+    /// transacao?
+    ///
+    /// **Ela nao espera**, e isso e deliberado: um pedido solto nao declarou
+    /// `LOCK TIMEOUT` nenhum, e inventar uma espera para ele mudaria o tempo
+    /// de resposta de todo cliente que ja existe. Recebe `EM_TRANSACAO` com
+    /// `repetir: true`, que e o que separa «espere» de «voce nao pode».
+    fn barrado_por_travas(&self, op: &str, pedido: &Json, sessao: &Sessao) -> Option<String> {
+        if self.transacoes_abertas.load(Ordering::Relaxed) == 0 {
+            return None;
+        }
+        let db = pedido.texto_ou("database", "");
+        if db.is_empty() {
+            return None;
+        }
+        // **Quem TEM transacao aberta nao passa por aqui.** Este portao e o da
+        // escrita comum, e a diferenca entre os dois e a espera: uma transacao
+        // declarou `LOCK TIMEOUT` e tem direito de esperar por ele, no
+        // `esperar_trava`; um pedido solto nao declarou nada e recusa na hora.
+        // Deixar os dois passarem por aqui tiraria da transacao a espera que
+        // ela pediu -- e o erro dela sairia sem sequer dizer LOCK TIMEOUT.
+        if self
+            .transacoes
+            .lock()
+            .ok()
+            .is_some_and(|t| t.de(sessao.ligacao).is_some())
+        {
+            return None;
+        }
+        let meu = 0u64;
+        let travas = self.travas.lock().ok()?;
+        // O campo que este portao le e o furo: `tabela` cobre quase tudo, e
+        // `destino` cobre as duas que gravam noutra tabela sem dize-lo ali
+        // (`duplicar_tabela` e `copiar_tabela`).
+        for campo in ["tabela", "destino"] {
+            let tab = pedido.texto_ou(campo, "");
+            if tab.is_empty() {
+                continue;
+            }
+            let chave = crate::carga::chave(db, tab);
+            // O que esta escrita pretende, e nao "a tabela inteira" para todo
+            // mundo: um `atualizar` no rowid 7 nao tem nada a ver com a linha 9
+            // que uma transacao segura.
+            let barrada = match op {
+                "atualizar" | "excluir" | "restaurar" => {
+                    let rowid = pedido.campo("rowid").and_then(Json::inteiro).unwrap_or(0);
+                    travas.conflito_de_linha(&chave, meu, rowid.max(0) as u64)
+                }
+                // Anexar disputa o FIM da tabela: o proximo slot e um so.
+                "inserir" | "inserir_lote" | "importar" | "carga" | "duplicar_tabela"
+                | "copiar_tabela" => {
+                    travas.conflito_de_linha(&chave, meu, crate::travas::FIM_DA_TABELA)
+                }
+                // O resto mexe na tabela toda -- estrutura, indice, lixeira.
+                _ => travas.conflito_de_tabela(&chave, meu, crate::travas::Trava::Exclusiva),
+            };
+            if let Some(b) = barrada {
+                let agora = crate::agora_ms();
+                let t = self.transacoes.lock().ok()?;
+                return Some(t.recado_da_barrada(&b, agora));
+            }
+        }
+        None
+    }
+
+    /// `rollback`: joga a lista fora. **Zero bytes de trabalho.**
+    fn op_rollback(&self, sessao: &Sessao) -> Result<Json> {
+        self.exigir_transacao(sessao)?;
+        let (id, descartadas) = self.descartar_transacao(sessao.ligacao);
+        Ok(Json::objeto(vec![
+            ("transaction_id", Json::de_u64(id)),
+            (
+                "transaction_state",
+                Json::texto_de(crate::transacao::Estado::Revertida.nome()),
+            ),
+            ("descartadas", Json::de_u64(descartadas)),
+        ]))
+    }
+
+    /// Tira a transacao do registro e devolve `(id, linhas descartadas)`.
+    ///
+    /// E o mesmo caminho do `ROLLBACK`, da queda da conexao e do prazo -- tres
+    /// portas para uma saida so, porque tres implementacoes de "desfazer"
+    /// seriam tres chances de esquecer o contador.
+    fn descartar_transacao(&self, ligacao: u64) -> (u64, u64) {
+        let saiu = match self.transacoes.lock() {
+            Ok(mut t) => t.tirar(ligacao),
+            Err(_) => None,
+        };
+        match saiu {
+            Some(tx) => {
+                // As travas saem JUNTO, e no mesmo lugar: uma segunda funcao
+                // para soltar travas seria uma segunda chance de esquecer, e
+                // trava esquecida trava a tabela para sempre.
+                if let Ok(mut tr) = self.travas.lock() {
+                    tr.soltar_tudo(tx.id);
+                }
+                self.transacoes_abertas.fetch_sub(1, Ordering::SeqCst);
+                (tx.id, tx.escritas.len() as u64)
+            }
+            None => (0, 0),
+        }
+    }
+
+    /// A queda da conexao desfaz a transacao dela -- a PRIMEIRA rede.
+    ///
+    /// A segunda e o prazo, e uma so nao basta: soquete meio-morto existe, e e
+    /// justamente o caso em que esta nao pega.
+    fn soltar_transacao_da_ligacao(&self, ligacao: u64) {
+        if self.transacoes_abertas.load(Ordering::Relaxed) == 0 {
+            return;
+        }
+        self.descartar_transacao(ligacao);
+    }
+
+    /// As transacoes que passaram do prazo -- a SEGUNDA rede.
+    ///
+    /// Conferida na hora de usar, e nao por um relogio de fundo: uma transacao
+    /// vencida que ninguem consultou nao atrapalha ninguem, e a primeira
+    /// consulta a limpa. E a mesma decisao da reserva de carga.
+    fn limpar_transacoes_vencidas(&self) {
+        if self.transacoes_abertas.load(Ordering::Relaxed) == 0 {
+            return;
+        }
+        let vencidas = match self.transacoes.lock() {
+            Ok(t) => t.vencidas(crate::agora_ms()),
+            Err(_) => return,
+        };
+        for l in vencidas {
+            self.descartar_transacao(l);
+        }
+    }
+
+    /// `commit`: a lista inteira aplicada numa passada so.
+    ///
+    /// # A resposta ao contrato, ponto a ponto
+    ///
+    /// *«Se o computador perder energia exatamente nesta instrucao, depois de
+    /// reiniciar o banco conseguira determinar de forma inequivoca se esta
+    /// transacao foi COMMITTED ou ABORTED?»*
+    ///
+    /// | onde a energia cai | o que o banco sabe dizer |
+    /// |---|---|
+    /// | antes de a marca estar sincronizada | ABORTED. Nao ha marca e nenhum byte de dado foi tocado |
+    /// | durante o `fsync` da marca | ABORTED. Ela fica truncada, o CRC nao confere, e marca que nao confere e commit que nunca comecou |
+    /// | depois da marca e no meio da passada | COMMITTED. A marca esta inteira no disco e a recuperacao completa o que falta, andando para a frente |
+    /// | depois da passada e antes do `unlink` | COMMITTED. A recuperacao reaplica e acha tudo ja certo -- custa uma varredura da marca, e e seguro |
+    /// | depois do `unlink` | COMMITTED, e sem trabalho nenhum |
+    ///
+    /// O `fsync` da marca e o **ponto de compromisso**: antes dele a transacao
+    /// nao aconteceu; depois dele ela aconteceu, mesmo que o arquivo de dado
+    /// ainda nao saiba.
+    fn op_commit(&self, sessao: &Sessao) -> Result<Json> {
+        self.exigir_transacao(sessao)?;
+        let inicio = Instant::now();
+        // ORDEM UNICA DAS TRAVAS: dados primeiro, transacoes depois. Sempre.
+        // Duas ordens diferentes em dois pontos e o abraco mortal classico, e
+        // este servidor ja pagou tres vezes por uma trava tomada duas vezes.
+        let trava = self.travar_dados()?;
+        let (id, database, escritas) = {
+            let mut reg = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+            let tx = reg.de_mut(sessao.ligacao).ok_or_else(sem_transacao)?;
+            match tx.estado {
+                crate::transacao::Estado::AbortOnly => {
+                    return Err(PhxError::TransacaoAbortada(format!(
+                        "{}; a transacao nao pode ser confirmada -- mande ROLLBACK",
+                        if tx.motivo_do_aborto.is_empty() {
+                            "houve erro de TRANSACAO".to_string()
+                        } else {
+                            tx.motivo_do_aborto.clone()
+                        }
+                    )))
+                }
+                crate::transacao::Estado::Ativa => {}
+                outro => {
+                    return Err(PhxError::Esquema(format!(
+                        "a transacao esta em {} e nao aceita COMMIT",
+                        outro.nome()
+                    )))
+                }
+            }
+            tx.estado = crate::transacao::Estado::Confirmando;
+            // `take` e nao `clone`: depois de a marca estar no disco, a lista
+            // em RAM deixou de ser a verdade -- a marca e. E cinco mil linhas
+            // clonadas seriam cinco mil linhas de RAM para jogar fora.
+            (tx.id, tx.database.clone(), std::mem::take(&mut tx.escritas))
+        };
+
+        let quantas = escritas.len();
+        if quantas == 0 {
+            drop(trava);
+            self.descartar_transacao(sessao.ligacao);
+            return Ok(Json::objeto(vec![
+                ("transaction_id", Json::de_u64(id)),
+                (
+                    "transaction_state",
+                    Json::texto_de(crate::transacao::Estado::Confirmada.nome()),
+                ),
+                ("gravadas", Json::de_u64(0)),
+                ("ms", Json::de_u64(inicio.elapsed().as_millis() as u64)),
+            ]));
+        }
+
+        let dir = trava.abrir_database(&database)?.caminho().to_path_buf();
+        let carimbo = crate::agora_ms();
+        // A marca vai ao disco e e SINCRONIZADA antes de a passada tocar em
+        // qualquer arquivo de dado. A ordem inversa tem uma janela em que o
+        // trabalho existe pela metade e nao ha intencao nenhuma no disco para
+        // completa-lo -- e essa janela nao tem conserto depois.
+        let marca = match crate::transacao::gravar_marca(&dir, id, carimbo, &escritas) {
+            Ok(c) => c,
+            Err(e) => {
+                drop(trava);
+                self.abortar_transacao(
+                    sessao.ligacao,
+                    &format!("nao consegui gravar a marca de commit: {e}"),
+                );
+                return Err(e);
+            }
+        };
+
+        let resultado = self.aplicar_conjunto(&trava, &database, &escritas, sessao);
+        let mut avisos = Vec::new();
+        match resultado {
+            Ok(depois_de_rodar) => {
+                // A marca so sai depois de a tabela estar sincronizada. A
+                // janela fechou na passada? Entao sai agora. Ainda aberta? A
+                // marca fica pendurada, e quem a apaga e o `descarregar_sujas`
+                // -- **depois** de o `fsync` acontecer, nunca antes.
+                if self.tabelas_ainda_sujas(&database, &escritas) {
+                    if let Ok(mut m) = self.marcas_pendentes.lock() {
+                        m.push(marca.clone());
+                    }
+                } else {
+                    let _ = std::fs::remove_file(&marca);
+                }
+                drop(trava);
+                for (ped, evento, nova, velha) in depois_de_rodar {
+                    let (_, depois) = self.gatilhos_para(&ped, evento)?;
+                    avisos.extend(self.rodar_gatilhos_depois(&depois, nova, velha, &ped, sessao));
+                }
+            }
+            Err(e) => {
+                // A passada quebrou no meio, e a marca ESTA no disco -- entao
+                // a transacao ja foi confirmada, e o unico caminho e
+                // completa-la. A tentativa acontece aqui com o MESMO codigo
+                // que a recuperacao do arranque usa: um segundo caminho para
+                // "completar um commit" seria um segundo lugar para errar.
+                if let Ok(t) = self.travar_dados() {
+                    let r = crate::transacao::recuperar(&t);
+                    if r.houve() {
+                        eprintln!("{}", r.texto(&self.config.base));
+                    }
+                }
+                self.descartar_transacao(sessao.ligacao);
+                return Err(e);
+            }
+        }
+        self.descartar_transacao(sessao.ligacao);
+        let mut resposta = vec![
+            ("transaction_id", Json::de_u64(id)),
+            (
+                "transaction_state",
+                Json::texto_de(crate::transacao::Estado::Confirmada.nome()),
+            ),
+            ("gravadas", Json::de_u64(quantas as u64)),
+            ("ms", Json::de_u64(inicio.elapsed().as_millis() as u64)),
+        ];
+        avisos.truncate(50);
+        if !avisos.is_empty() {
+            resposta.push(("gatilhos_avisos", Json::Lista(avisos)));
+        }
+        Ok(Json::objeto(resposta))
+    }
+
+    /// A passada: aplica o conjunto de escrita, na ordem, com a trava na mao.
+    ///
+    /// Devolve o que os AFTER precisam saber, para eles rodarem DEPOIS de a
+    /// trava sair -- que e onde eles ja rodam em toda escrita deste servidor.
+    #[allow(clippy::type_complexity)]
+    fn aplicar_conjunto(
+        &self,
+        trava: &Instancia,
+        database: &str,
+        escritas: &[crate::transacao::Escrita],
+        sessao: &Sessao,
+    ) -> Result<Vec<(Json, phxsql_sql::rotina::Evento, Option<Json>, Option<Json>)>> {
+        use crate::transacao::Acao;
+        let mut abertas: HashMap<String, Table> = HashMap::new();
+        let mut depois_de_rodar = Vec::new();
+        let ha_gatilhos = self.ha_gatilhos.load(Ordering::Relaxed);
+        for e in escritas {
+            let ped = pedido_da_tabela(database, &e.tabela);
+            let t = match abertas.entry(e.tabela.clone()) {
+                std::collections::hash_map::Entry::Occupied(o) => o.into_mut(),
+                std::collections::hash_map::Entry::Vacant(v) => {
+                    v.insert(self.abrir_travada(trava, &ped, sessao)?)
+                }
+            };
+            let velha = if ha_gatilhos && e.acao != Acao::Inserir {
+                t.ler(e.rowid)?.map(|l| linha_para_json(&l, t.esquema()))
+            } else {
+                None
+            };
+            let evento = match e.acao {
+                Acao::Inserir => phxsql_sql::rotina::Evento::Inserir,
+                Acao::Atualizar => phxsql_sql::rotina::Evento::Atualizar,
+                _ => phxsql_sql::rotina::Evento::Excluir,
+            };
+            match e.acao {
+                Acao::Inserir => {
+                    let saiu = t.inserir(&e.linha)?;
+                    // A garantia que a marca prometeu. Divergir aqui quer
+                    // dizer que alguem escreveu nesta tabela apesar da
+                    // reserva -- e o commit para em vez de gravar no lugar
+                    // errado.
+                    if saiu != e.rowid {
+                        return Err(PhxError::Corrompido(format!(
+                            "a transacao reservou o rowid {} em {} e a insercao \
+                             saiu {saiu}",
+                            e.rowid, e.tabela
+                        )));
+                    }
+                    self.residente_mut(&ped, |m| m.anotar_insercao(saiu, &e.linha));
+                }
+                Acao::Atualizar => {
+                    t.atualizar(e.rowid, &e.linha)?;
+                    self.residente_mut(&ped, |m| m.anotar_alteracao(e.rowid, &e.linha));
+                }
+                Acao::ExcluirSuave => {
+                    if t.excluir_suave(e.rowid, &e.motivo)? {
+                        self.residente_mut(&ped, |m| m.anotar_exclusao(e.rowid));
+                    }
+                }
+                Acao::ExcluirDeVez => {
+                    if t.excluir_de_vez(e.rowid, &e.motivo)? {
+                        self.residente_mut(&ped, |m| m.anotar_exclusao(e.rowid));
+                    }
+                }
+                Acao::Restaurar => {
+                    t.restaurar(e.rowid, &e.motivo)?;
+                }
+            }
+            if ha_gatilhos {
+                let nova = match e.acao {
+                    Acao::ExcluirSuave | Acao::ExcluirDeVez => None,
+                    _ => t.ler(e.rowid)?.map(|l| linha_para_json(&l, t.esquema())),
+                };
+                depois_de_rodar.push((ped, evento, nova, velha));
+            }
+        }
+        // **O GROUP COMMIT, e ele e a janela de durabilidade que ja existia.**
+        //
+        // A primeira versao chamava `sincronizar()` aqui, um `fsync` por
+        // tabela por commit. Medido: um commit de UMA linha custava 1,542 ms,
+        // dos quais 0,342 ms sao a marca e 0,063 ms o trabalho de verdade --
+        // sobravam **1,14 ms, 74% do commit, so no `fsync` da tabela**. Uma
+        // insercao SOLTA, sem transacao, custa 0,066 ms justamente porque ela
+        // passa por esta janela.
+        //
+        // Adiar e seguro porque a marca ja esta no disco: uma queda antes de a
+        // janela fechar deixa o `.tx` la, e a recuperacao completa o commit.
+        // O que NAO se adia e a marca -- ela e o ponto de compromisso.
+        for (nome, mut t) in abertas {
+            let ped = pedido_da_tabela(database, &nome);
+            self.gravar_de_verdade(trava, &mut t, &ped)?;
+        }
+        Ok(depois_de_rodar)
+    }
+
     /// Fecha (ou adia) a janela de durabilidade desta gravacao.
     ///
     /// # Por que a instancia entra por parametro
@@ -6844,7 +8466,34 @@ impl Servidor {
             if let Ok(mut s) = self.sujas.lock() {
                 s.extend(faltaram);
             }
+            // Alguma tabela nao sincronizou: as marcas FICAM. Apaga-las agora
+            // seria jogar fora o bilhete de um dado que pode nao estar no
+            // disco -- e o bilhete e a unica coisa que o traz de volta.
+            return;
         }
+        // O disco esta em dia: as marcas dos commits que esperavam por ele
+        // podem sair. **Esta e a ordem que faz o group commit ser seguro**, e
+        // ela nao se inverte.
+        let pendentes: Vec<PathBuf> = match self.marcas_pendentes.lock() {
+            Ok(mut m) => m.drain(..).collect(),
+            Err(_) => return,
+        };
+        for marca in pendentes {
+            let _ = std::fs::remove_file(marca);
+        }
+    }
+
+    /// Alguma tabela desta transacao continua devendo ao disco?
+    fn tabelas_ainda_sujas(&self, database: &str, escritas: &[crate::transacao::Escrita]) -> bool {
+        let Ok(sujas) = self.sujas.lock() else {
+            // Trava envenenada: o lado seguro e SEGURAR a marca. Uma marca a
+            // mais custa uma varredura no proximo arranque; uma marca a menos
+            // custa o dado.
+            return true;
+        };
+        escritas
+            .iter()
+            .any(|e| sujas.contains(&format!("{database}/{}", e.tabela)))
     }
 
     /// Ha quanto o disco esta devendo, para quem quiser mostrar.
@@ -7302,9 +8951,42 @@ impl Servidor {
                 "informe \"texto\" com o comando SQL".into(),
             ));
         }
+        // Os comandos de TRANSACAO vem PRIMEIRO, e a ordem foi corrigida por um
+        // teste: o detector de rotina analisa o texto inteiro pelo lexico
+        // comum, e o lexico recusa `500ms` -- numero colado em identificador.
+        // Ele erra com `?` antes de o detector de transacao ser consultado, e
+        // um `LOCK TIMEOUT 500ms` nunca chegaria aqui.
+        //
+        // Inverter e seguro, e nao por sorte: o unico `BEGIN` que NAO abre
+        // transacao e o do corpo de um `CREATE PROCEDURE p() BEGIN … END`, e
+        // esse texto comeca por `CREATE`. O detector olha a PRIMEIRA palavra,
+        // entao ele nunca rouba um `CREATE` de ninguem -- e ha teste para os
+        // dois lados, no proprio `phxsql_sql::transacao`.
+        //
+        // Eles nao passam pelo tradutor de SELECT porque nao sao consulta:
+        // nao tem tabela, nao produzem linha e nao dependem de esquema
+        // nenhum. Sao comandos de SESSAO, como o BULKINSERT.
+        if let Some(c) = phxsql_sql::transacao::comando(&texto)? {
+            let mut pedido = c.pedido();
+            // O `database` do pedido de fora viaja junto: quem manda
+            // `{"op":"sql","database":"loja","texto":"BEGIN"}` nao precisa
+            // repetir a base na proxima operacao.
+            if let Json::Objeto(pares) = &mut pedido {
+                pares.push((
+                    "database".to_string(),
+                    Json::texto_de(p.texto_ou("database", "")),
+                ));
+            }
+            let bruto = self.executar(&c.op, &pedido, sessao)?;
+            return Ok(Json::objeto(vec![
+                ("sql", Json::texto_de(&texto)),
+                ("op", Json::texto_de(&c.op)),
+                ("resultado", bruto),
+            ]));
+        }
+
         // CREATE TRIGGER/PROCEDURE, DROP, CALL e SHOW entram pela MESMA op:
-        // sao SQL, e um driver os manda pelo mesmo campo. O detector devolve
-        // None para todo o resto, que segue o caminho do SELECT de sempre.
+        // sao SQL, e um driver os manda pelo mesmo campo.
         if let Some(comando) = phxsql_sql::rotina::comando(&texto)? {
             return self.executar_rotina(comando, p, sessao);
         }
@@ -12554,9 +14236,24 @@ pub struct ExecutorLocal {
 
 impl ExecutorLocal {
     pub fn novo(servidor: Arc<Servidor>, origem: &str) -> ExecutorLocal {
+        ExecutorLocal::com_ligacao(servidor, origem, 0)
+    }
+
+    /// Um executor com id de LIGACAO -- e ele existe por causa da transacao.
+    ///
+    /// A transacao pertence a CONEXAO, e o executor local nao tem soquete:
+    /// sem um id, dois executores do mesmo processo seriam a mesma conexao, e
+    /// a transacao de um apareceria para o outro. Zero continua sendo o
+    /// padrao, e zero quer dizer «nao ha conexao a que amarrar» -- que e a
+    /// verdade da ponte MCP e do job agendado, e e por isso que os dois nao
+    /// abrem transacao.
+    pub fn com_ligacao(servidor: Arc<Servidor>, origem: &str, ligacao: u64) -> ExecutorLocal {
         ExecutorLocal {
             servidor,
-            sessao: Mutex::new(Sessao::default()),
+            sessao: Mutex::new(Sessao {
+                ligacao,
+                ..Sessao::default()
+            }),
             origem: origem.to_string(),
         }
     }
@@ -12784,6 +14481,198 @@ fn trava_reentrante() -> PhxError {
 /// O `SIGNAL` passa intacto de proposito: a MESSAGE_TEXT e a mensagem que o
 /// dono do banco escreveu para quem esbarrar na regra, e embrulha-la em
 /// "gatilho x:" esconderia a frase dele atras da nossa.
+/// O que uma espera de trava esta tentando pegar.
+#[derive(Debug, Clone, Copy)]
+enum Alvo {
+    Tabela(crate::travas::Trava),
+    Linha(u64),
+}
+
+/// Uma duracao do pedido, em milissegundos.
+///
+/// Aceita as duas formas, e as duas de proposito: `"timeout_ms": 5000` para
+/// quem monta o JSON por programa, e `"timeout": "5s"` para quem escreve a
+/// mao ou traduz do SQL, onde a unidade faz parte do comando. Numero SEM
+/// unidade e lido como milissegundo, que e a unidade de todo prazo deste
+/// servidor.
+fn duracao_ms(p: &Json, campo: &str, padrao: i64) -> Result<i64> {
+    let com_ms = format!("{campo}_ms");
+    if let Some(n) = p.campo(&com_ms).and_then(Json::inteiro) {
+        return Ok(n.max(0));
+    }
+    let Some(v) = p.campo(campo) else {
+        return Ok(padrao);
+    };
+    if let Some(n) = v.inteiro() {
+        return Ok(n.max(0));
+    }
+    let Some(texto) = v.texto() else {
+        return Err(PhxError::Esquema(format!(
+            "{campo} precisa ser um numero de milissegundos ou um texto como \"5s\""
+        )));
+    };
+    duracao_de_texto(texto).ok_or_else(|| {
+        PhxError::Esquema(format!(
+            "{campo}: nao entendi a duracao {texto:?}. \
+             Aceito 500ms, 5s, 2m ou o numero de milissegundos"
+        ))
+    })
+}
+
+/// `"500ms"`, `"5s"`, `"2m"` ou `"1500"` em milissegundos.
+fn duracao_de_texto(t: &str) -> Option<i64> {
+    let t = t.trim().to_ascii_lowercase();
+    // A ordem importa: `ms` tem de ser testado ANTES de `s`, senao "500ms"
+    // vira 500 segundos -- que e um erro de mil vezes, calado.
+    for (sufixo, fator) in [("ms", 1i64), ("s", 1_000), ("m", 60_000), ("h", 3_600_000)] {
+        if let Some(n) = t.strip_suffix(sufixo) {
+            return n.trim().parse::<i64>().ok().map(|v| v * fator);
+        }
+    }
+    t.parse::<i64>().ok()
+}
+
+/// A lista de tabelas do `SCOPE`, venha ela como lista ou como texto.
+fn lista_do_escopo(p: &Json) -> Vec<String> {
+    let campo = p.campo("scope").or_else(|| p.campo("escopo"));
+    match campo {
+        Some(Json::Lista(itens)) => itens
+            .iter()
+            .filter_map(Json::texto)
+            .map(|t| t.trim().to_string())
+            .filter(|t| !t.is_empty())
+            .collect(),
+        // Texto tambem serve: `"scope": "clientes, pedidos"` e o que sai de um
+        // cliente que so tem string para oferecer.
+        Some(Json::Texto(t)) => t
+            .split(',')
+            .map(|x| x.trim().to_string())
+            .filter(|x| !x.is_empty())
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// As tabelas em que um programa de rotina GRAVA, recursivamente.
+///
+/// Sai da arvore ja compilada, e nao do texto do corpo: procurar `INSERT INTO`
+/// por comparacao de texto quebra calado no dia em que alguem escrever o mesmo
+/// comando com outro espacamento -- a mesma armadilha de resolver texto de
+/// tela comparando a frase.
+fn tabelas_gravadas(programa: &[phxsql_sql::rotina::Instrucao], alvos: &mut Vec<String>) {
+    use phxsql_sql::rotina::Instrucao;
+    for i in programa {
+        match i {
+            Instrucao::Inserir { alvo, .. } => {
+                if !alvo.tabela.is_empty() {
+                    alvos.push(alvo.tabela.clone());
+                }
+            }
+            Instrucao::Se { ramos, senao } => {
+                for (_, corpo) in ramos {
+                    tabelas_gravadas(corpo, alvos);
+                }
+                tabelas_gravadas(senao, alvos);
+            }
+            Instrucao::Enquanto { corpo, .. } => tabelas_gravadas(corpo, alvos),
+            _ => {}
+        }
+    }
+}
+
+/// A recusa de quem mandou `COMMIT` sem ter aberto nada.
+///
+/// Nao e um erro de transacao: e um pedido fora de hora, e por isso e da
+/// familia do esquema. A mensagem diz o que fazer, porque a causa mais comum
+/// e um cliente que reconectou -- e a transacao morre com a conexao.
+fn sem_transacao() -> PhxError {
+    PhxError::Esquema(
+        "esta conexao nao tem transacao aberta; comece com {\"op\":\"begin\"} \
+         (ou BEGIN / START TRANSACTION pelo SQL). Lembre que a transacao \
+         pertence a CONEXAO: reconectar desfaz a que estava aberta"
+            .into(),
+    )
+}
+
+/// O nome de um `SAVEPOINT`, conferido.
+///
+/// Nome nao e dado: ele vira etiqueta dentro do servidor e volta na resposta.
+/// Aceitar qualquer coisa deixaria passar uma quebra de linha, que e como uma
+/// linha forjada aparece num log -- o mesmo cuidado do `de_uma_linha`.
+fn nome_do_ponto(p: &Json) -> Result<String> {
+    let nome = p
+        .texto_ou("nome", p.texto_ou("savepoint", ""))
+        .trim()
+        .to_string();
+    if nome.is_empty() {
+        return Err(PhxError::Esquema("informe \"nome\" do SAVEPOINT".into()));
+    }
+    if nome.len() > 64 || !nome.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        return Err(PhxError::Esquema(format!(
+            "nome de SAVEPOINT invalido: {nome:?}. Use ate 64 letras, numeros \
+             ou sublinhado"
+        )));
+    }
+    Ok(nome)
+}
+
+/// O pedido minimo que `abrir_travada`, `gatilhos_para` e `residente_mut`
+/// esperam. Montado uma vez, e nao repetido em cinco lugares.
+fn pedido_da_tabela(database: &str, tabela: &str) -> Json {
+    Json::objeto(vec![
+        ("database", Json::texto_de(database)),
+        ("tabela", Json::texto_de(tabela)),
+    ])
+}
+
+/// Os valores de um indice, na ordem das colunas dele.
+fn valores_do_indice(esquema: &Schema, indice: &str, linha: &[Value]) -> Vec<Value> {
+    let Some(def) = esquema.indices().iter().find(|i| i.nome == indice) else {
+        return Vec::new();
+    };
+    def.colunas
+        .iter()
+        .filter_map(|c| linha.get(c.coluna).cloned())
+        .collect()
+}
+
+/// As chaves UNICAS desta linha, como `(indice, chave em texto)`.
+///
+/// # Por que a chave vira texto
+///
+/// Porque ela e comparada com as das outras linhas EMPILHADAS, e a comparacao
+/// tem de ser exata e barata. O texto sai do `Debug` do valor de propósito: ele
+/// separa `Int(1)` de `Str("1")`, que numa comparacao por `para_texto` seriam
+/// a mesma chave -- e duas colunas de tipos diferentes nunca estao no mesmo
+/// indice, mas o dia em que estiverem nao pode virar um falso duplicado.
+///
+/// **Indice com coluna NULA fica de fora**, e isso e deliberado: a sequencia e
+/// o rownum sao preenchidos pelo motor no momento da insercao, entao a chave
+/// deles ainda nao existe ao empilhar. Elas sao unicas por construcao -- quem
+/// as gera e um contador -- e conferir o nulo aqui recusaria a segunda linha
+/// de toda tabela com sequencia.
+fn chaves_unicas(esquema: &Schema, linha: &[Value]) -> Vec<(String, String)> {
+    let mut saida = Vec::new();
+    for def in esquema.indices() {
+        if !def.unico {
+            continue;
+        }
+        let valores = valores_do_indice(esquema, &def.nome, linha);
+        if valores.len() != def.colunas.len() || valores.iter().any(Value::e_null) {
+            continue;
+        }
+        saida.push((
+            def.nome.clone(),
+            valores
+                .iter()
+                .map(|v| format!("{v:?}"))
+                .collect::<Vec<_>>()
+                .join("\u{1}"),
+        ));
+    }
+    saida
+}
+
 fn erro_do_gatilho(nome: &str, e: PhxError) -> PhxError {
     match e {
         PhxError::Sinal { .. } => e,
@@ -18742,5 +20631,1069 @@ mod testes_janela_e_cadeia {
         // E a trava esta livre no fim: uma marca que vazasse do `Drop`
         // trancaria esta thread sem ninguem segurando nada.
         assert!(s.travar_dados().is_ok());
+    }
+}
+
+/// As transacoes pelo PROTOCOLO: `BEGIN`, o conjunto de escrita, o `COMMIT`,
+/// o `ROLLBACK`, os `SAVEPOINT`, o escopo declarado e as travas.
+///
+/// # O teste que mais importa neste modulo
+///
+/// Nao e nenhum dos que exercitam o recurso novo: e o
+/// `sem_transacao_nada_muda`. Quem nunca manda `BEGIN` tem de ver EXATAMENTE
+/// o comportamento de hoje -- inclusive a mensagem literal do `inserir_lote`
+/// sobre as linhas gravadas antes do erro. Guarda nova entra pedida.
+#[cfg(test)]
+mod testes_transacoes {
+    use super::*;
+
+    fn dir_temp(rotulo: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!(
+            "phx-tx-{}-{rotulo}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn servidor(dir: &std::path::Path) -> Arc<Servidor> {
+        let c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        Servidor::novo(c).unwrap()
+    }
+
+    /// Uma sessao com LIGACAO, que e o que a transacao exige: sem id de
+    /// conexao a transacao nao teria a que morrer amarrada.
+    fn sessao(ligacao: u64) -> Sessao {
+        Sessao {
+            ligacao,
+            ip: "127.0.0.1".into(),
+            ..Sessao::default()
+        }
+    }
+
+    fn pede(s: &Arc<Servidor>, ses: &Sessao, corpo: &str) -> Result<Json> {
+        let mut copia = Sessao {
+            ligacao: ses.ligacao,
+            ip: ses.ip.clone(),
+            usuario: ses.usuario.clone(),
+            ..Sessao::default()
+        };
+        let (_, _, r) = s.despachar(
+            &format!(r#"{{"token":"t",{corpo}}}"#),
+            &mut copia,
+            "127.0.0.1",
+        );
+        r
+    }
+
+    /// Um banco com `clientes` e `pedidos`, e nada dentro.
+    fn base(s: &Arc<Servidor>, ses: &Sessao) {
+        pede(s, ses, r#""op":"criar_database","database":"loja""#).unwrap();
+        for tabela in ["clientes", "pedidos"] {
+            pede(
+                s,
+                ses,
+                &format!(
+                    r#""op":"criar_tabela","database":"loja","tabela":"{tabela}",
+                       "colunas":[{{"nome":"id","tipo":"Int8","obrigatoria":true}},
+                                  {{"nome":"nome","tipo":"Str(40)"}}],
+                       "indices":[{{"nome":"pk_id","colunas":["id"],"unico":true,"primario":true}}]"#
+                ),
+            )
+            .unwrap();
+        }
+    }
+
+    fn quantas(s: &Arc<Servidor>, ses: &Sessao, tabela: &str) -> u64 {
+        let r = pede(
+            s,
+            ses,
+            &format!(r#""op":"varrer","database":"loja","tabela":"{tabela}","max":1000"#),
+        )
+        .unwrap();
+        r.campo("linhas")
+            .and_then(Json::lista)
+            .map(|l| l.len() as u64)
+            .unwrap_or(0)
+    }
+
+    fn slots(s: &Arc<Servidor>, ses: &Sessao, tabela: &str) -> u64 {
+        let r = pede(
+            s,
+            ses,
+            &format!(r#""op":"esquema","database":"loja","tabela":"{tabela}""#),
+        )
+        .unwrap();
+        r.campo("slots").and_then(Json::inteiro).unwrap_or(0) as u64
+    }
+
+    // ------------------------------------------------- o comportamento VELHO
+
+    /// **O teste que mais importa.** Quem nunca abre transacao ve exatamente o
+    /// servidor de sempre: insere, atualiza, exclui, e o `inserir_lote` que
+    /// para no erro continua dizendo o que gravou antes de parar.
+    #[test]
+    fn sem_transacao_nada_muda() {
+        let dir = dir_temp("velho");
+        let s = servidor(&dir);
+        let ses = sessao(7);
+        base(&s, &ses);
+
+        let r = pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"Ana"}"#,
+        )
+        .unwrap();
+        assert_eq!(r.campo("rowid").and_then(Json::inteiro), Some(1));
+        // Gravou de VERDADE, sem commit nenhum: e o autocommit de sempre.
+        assert_eq!(quantas(&s, &ses, "clientes"), 1);
+
+        pede(
+            &s,
+            &ses,
+            r#""op":"atualizar","database":"loja","tabela":"clientes","rowid":1,
+               "linha":{"id":1,"nome":"Ana Maria"}"#,
+        )
+        .unwrap();
+        pede(
+            &s,
+            &ses,
+            r#""op":"excluir","database":"loja","tabela":"clientes","rowid":1"#,
+        )
+        .unwrap();
+        assert_eq!(quantas(&s, &ses, "clientes"), 0);
+
+        // O lote que para no erro: a mensagem de sempre, com o que gravou.
+        let r = pede(
+            &s,
+            &ses,
+            r#""op":"inserir_lote","database":"loja","tabela":"pedidos",
+               "linhas":[{"id":1,"nome":"a"},{"id":1,"nome":"b"}]"#,
+        )
+        .unwrap();
+        assert_eq!(r.campo("gravadas").and_then(Json::inteiro), Some(1));
+        assert!(!r
+            .campo("erros")
+            .and_then(Json::lista)
+            .unwrap_or(&[])
+            .is_empty());
+
+        // E o estado da transacao desta conexao e IDLE, que e resposta e nao erro.
+        let r = pede(&s, &ses, r#""op":"transacao""#).unwrap();
+        assert_eq!(r.texto_ou("transaction_state", ""), "IDLE");
+        // Nenhuma trava viva no servidor inteiro.
+        assert_eq!(s.travas.lock().unwrap().quantas(), 0);
+    }
+
+    // ------------------------------------------------------- o basico
+
+    /// `BEGIN; INSERT; ROLLBACK` nao consome slot, nao consome rowid e nao
+    /// deixa nada no disco. E a resposta da §3.1 do documento.
+    #[test]
+    fn o_rollback_de_um_insert_nao_queima_slot() {
+        let dir = dir_temp("rollback");
+        let s = servidor(&dir);
+        let ses = sessao(7);
+        base(&s, &ses);
+        let antes = slots(&s, &ses, "clientes");
+
+        pede(&s, &ses, r#""op":"begin""#).unwrap();
+        for i in 1..=50 {
+            pede(
+                &s,
+                &ses,
+                &format!(
+                    r#""op":"inserir","database":"loja","tabela":"clientes",
+                       "linha":{{"id":{i},"nome":"c{i}"}}"#
+                ),
+            )
+            .unwrap();
+        }
+        // Nada no disco ainda: a leitura nao ve o que a transacao empilhou.
+        assert_eq!(quantas(&s, &ses, "clientes"), 0);
+        assert_eq!(slots(&s, &ses, "clientes"), antes);
+
+        let r = pede(&s, &ses, r#""op":"rollback""#).unwrap();
+        assert_eq!(r.campo("descartadas").and_then(Json::inteiro), Some(50));
+        assert_eq!(r.texto_ou("transaction_state", ""), "ROLLED_BACK");
+        // **Zero slot queimado**, que e a regra petrea desta frente.
+        assert_eq!(slots(&s, &ses, "clientes"), antes);
+        assert_eq!(quantas(&s, &ses, "clientes"), 0);
+        assert_eq!(s.travas.lock().unwrap().quantas(), 0);
+    }
+
+    /// O `COMMIT` aplica a lista inteira, na ordem, com os rowids que a
+    /// transacao prometeu ao empilhar.
+    #[test]
+    fn o_commit_aplica_na_ordem_e_com_o_rowid_prometido() {
+        let dir = dir_temp("commit");
+        let s = servidor(&dir);
+        let ses = sessao(7);
+        base(&s, &ses);
+
+        pede(&s, &ses, r#""op":"begin""#).unwrap();
+        let mut prometidos = Vec::new();
+        for i in 1..=20 {
+            let r = pede(
+                &s,
+                &ses,
+                &format!(
+                    r#""op":"inserir","database":"loja","tabela":"clientes",
+                       "linha":{{"id":{i},"nome":"c{i}"}}"#
+                ),
+            )
+            .unwrap();
+            assert_eq!(r.campo("empilhada").and_then(Json::booleano), Some(true));
+            prometidos.push(r.campo("rowid").and_then(Json::inteiro).unwrap());
+        }
+        assert_eq!(prometidos, (1..=20).collect::<Vec<i64>>());
+
+        let r = pede(&s, &ses, r#""op":"commit""#).unwrap();
+        assert_eq!(r.campo("gravadas").and_then(Json::inteiro), Some(20));
+        assert_eq!(r.texto_ou("transaction_state", ""), "COMMITTED");
+        assert_eq!(quantas(&s, &ses, "clientes"), 20);
+        // O rowid prometido e o rowid gravado.
+        let l = pede(
+            &s,
+            &ses,
+            r#""op":"ler","database":"loja","tabela":"clientes","rowid":7"#,
+        )
+        .unwrap();
+        assert_eq!(l.texto_ou("nome", ""), "c7");
+        assert_eq!(s.travas.lock().unwrap().quantas(), 0);
+    }
+
+    fn marcas(dir: &std::path::Path) -> Vec<String> {
+        std::fs::read_dir(dir.join("loja"))
+            .map(|d| {
+                d.filter_map(|e| e.ok())
+                    .map(|e| e.file_name().to_string_lossy().to_string())
+                    .filter(|n| n.ends_with(".tx"))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// **A ordem do group commit, e ela nao se inverte.**
+    ///
+    /// Com a janela de durabilidade aberta -- o padrao -- a marca FICA depois
+    /// do commit: ela e o bilhete que traz o dado de volta se a energia cair
+    /// antes de o `fsync` acontecer. Ela so sai quando a janela fecha, e sai
+    /// DEPOIS do `fsync`, nunca antes.
+    ///
+    /// Com `durabilidade: por_operacao` a janela fecha em toda gravacao, e a
+    /// marca sai no proprio commit.
+    #[test]
+    fn a_marca_espera_o_fsync_e_so_entao_e_apagada() {
+        let dir = dir_temp("marca");
+        let s = servidor(&dir);
+        let ses = sessao(7);
+        base(&s, &ses);
+        pede(&s, &ses, r#""op":"begin""#).unwrap();
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"a"}"#,
+        )
+        .unwrap();
+        pede(&s, &ses, r#""op":"commit""#).unwrap();
+        assert_eq!(
+            marcas(&dir).len(),
+            1,
+            "a marca tem de ESPERAR o fsync -- apaga-la antes joga fora o \
+             bilhete de um dado que pode nao estar no disco"
+        );
+        // A janela fecha, e a marca sai junto.
+        s.descarregar_sujas();
+        assert!(
+            marcas(&dir).is_empty(),
+            "a marca tem de sair quando a janela fecha: {:?}",
+            marcas(&dir)
+        );
+    }
+
+    /// Com `por_operacao` nao ha janela: a marca sai no proprio commit.
+    #[test]
+    fn sem_janela_a_marca_sai_no_commit() {
+        let dir = dir_temp("marca-sem-janela");
+        let mut c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        c.recursos.durabilidade = crate::config::Durabilidade::PorOperacao;
+        let s = Servidor::novo(c).unwrap();
+        let ses = sessao(7);
+        base(&s, &ses);
+        pede(&s, &ses, r#""op":"begin""#).unwrap();
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"a"}"#,
+        )
+        .unwrap();
+        pede(&s, &ses, r#""op":"commit""#).unwrap();
+        assert!(marcas(&dir).is_empty(), "{:?}", marcas(&dir));
+    }
+
+    // -------------------------------------------------------- os savepoints
+
+    /// `ROLLBACK TO SAVEPOINT` trunca a lista e a transacao **continua
+    /// aberta** -- e o que torna o ponto quase de graca neste desenho.
+    #[test]
+    fn o_savepoint_trunca_a_lista_e_a_transacao_segue() {
+        let dir = dir_temp("savepoint");
+        let s = servidor(&dir);
+        let ses = sessao(7);
+        base(&s, &ses);
+
+        pede(&s, &ses, r#""op":"begin""#).unwrap();
+        for i in 1..=3 {
+            pede(
+                &s,
+                &ses,
+                &format!(
+                    r#""op":"inserir","database":"loja","tabela":"clientes",
+                       "linha":{{"id":{i},"nome":"c{i}"}}"#
+                ),
+            )
+            .unwrap();
+        }
+        pede(&s, &ses, r#""op":"savepoint","nome":"p1""#).unwrap();
+        for i in 4..=6 {
+            pede(
+                &s,
+                &ses,
+                &format!(
+                    r#""op":"inserir","database":"loja","tabela":"clientes",
+                       "linha":{{"id":{i},"nome":"c{i}"}}"#
+                ),
+            )
+            .unwrap();
+        }
+        let r = pede(&s, &ses, r#""op":"rollback_para","nome":"p1""#).unwrap();
+        assert_eq!(r.campo("descartadas").and_then(Json::inteiro), Some(3));
+        assert_eq!(r.campo("linhas").and_then(Json::inteiro), Some(3));
+        assert_eq!(r.texto_ou("transaction_state", ""), "ACTIVE");
+
+        // A transacao continua ACEITANDO trabalho, e a chave descartada volta
+        // a caber: sem refazer o conjunto de chaves, o `id 4` continuaria
+        // barrado por uma linha que ninguem vai gravar.
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":4,"nome":"outro"}"#,
+        )
+        .unwrap();
+        let r = pede(&s, &ses, r#""op":"commit""#).unwrap();
+        assert_eq!(r.campo("gravadas").and_then(Json::inteiro), Some(4));
+        assert_eq!(quantas(&s, &ses, "clientes"), 4);
+    }
+
+    #[test]
+    fn release_savepoint_tira_o_ponto_e_deixa_o_trabalho() {
+        let dir = dir_temp("release");
+        let s = servidor(&dir);
+        let ses = sessao(7);
+        base(&s, &ses);
+        pede(&s, &ses, r#""op":"begin""#).unwrap();
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"a"}"#,
+        )
+        .unwrap();
+        pede(&s, &ses, r#""op":"savepoint","nome":"p1""#).unwrap();
+        let r = pede(&s, &ses, r#""op":"release_savepoint","nome":"p1""#).unwrap();
+        assert_eq!(r.campo("linhas").and_then(Json::inteiro), Some(1));
+        // O ponto sumiu, e voltar a ele agora e erro.
+        let e = pede(&s, &ses, r#""op":"rollback_para","nome":"p1""#).unwrap_err();
+        assert_eq!(e.nome(), "NAO_ENCONTRADO");
+        // E o trabalho continua la.
+        pede(&s, &ses, r#""op":"commit""#).unwrap();
+        assert_eq!(quantas(&s, &ses, "clientes"), 1);
+    }
+
+    // ------------------------------------------------- as classes de erro
+
+    /// Erro de INSTRUCAO cancela a instrucao e a transacao segue `ACTIVE`;
+    /// erro de TRANSACAO leva a `ABORT_ONLY` e o `COMMIT` recusa.
+    #[test]
+    fn erro_de_instrucao_nao_derruba_a_transacao() {
+        let dir = dir_temp("classes");
+        let s = servidor(&dir);
+        let ses = sessao(7);
+        base(&s, &ses);
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"ja existe"}"#,
+        )
+        .unwrap();
+
+        pede(&s, &ses, r#""op":"begin""#).unwrap();
+        // Chave duplicada: erro de INSTRUCAO.
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"x"}"#,
+        )
+        .unwrap_err();
+        assert_eq!(e.nome(), "DUPLICADO");
+        assert_eq!(
+            crate::transacao::ClasseDoErro::do_erro(&e),
+            crate::transacao::ClasseDoErro::Instrucao
+        );
+        // A transacao continua viva, e aceita trabalho.
+        let r = pede(&s, &ses, r#""op":"transacao""#).unwrap();
+        assert_eq!(r.texto_ou("transaction_state", ""), "ACTIVE");
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":2,"nome":"ok"}"#,
+        )
+        .unwrap();
+        let r = pede(&s, &ses, r#""op":"commit""#).unwrap();
+        assert_eq!(r.campo("gravadas").and_then(Json::inteiro), Some(1));
+    }
+
+    /// O teto de linhas e erro de TRANSACAO: `ABORT_ONLY`, e o `COMMIT`
+    /// **recusa** em vez de confirmar trabalho meio invalido.
+    #[test]
+    fn o_teto_leva_a_abort_only_e_o_commit_recusa() {
+        let dir = dir_temp("teto");
+        let mut c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        c.recursos.transacao_max_linhas = 3;
+        let s = Servidor::novo(c).unwrap();
+        let ses = sessao(7);
+        base(&s, &ses);
+
+        pede(&s, &ses, r#""op":"begin""#).unwrap();
+        for i in 1..=3 {
+            pede(
+                &s,
+                &ses,
+                &format!(
+                    r#""op":"inserir","database":"loja","tabela":"clientes",
+                       "linha":{{"id":{i},"nome":"c{i}"}}"#
+                ),
+            )
+            .unwrap();
+        }
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":4,"nome":"x"}"#,
+        )
+        .unwrap_err();
+        assert_eq!(e.nome(), "TRANSACAO_ABORTADA");
+        assert!(e.to_string().contains("teto"), "{e}");
+
+        // Em ABORT_ONLY o COMMIT recusa, e a recusa DIZ o que fazer.
+        let e = pede(&s, &ses, r#""op":"commit""#).unwrap_err();
+        assert_eq!(e.nome(), "TRANSACAO_ABORTADA");
+        assert!(e.to_string().contains("ROLLBACK"), "{e}");
+        // Em ABORT_ONLY ate a LEITURA recusa, como no PostgreSQL(R): a
+        // transacao esta suja e nao serve para mais nada.
+        assert_eq!(
+            pede(
+                &s,
+                &ses,
+                r#""op":"varrer","database":"loja","tabela":"clientes""#
+            )
+            .unwrap_err()
+            .nome(),
+            "TRANSACAO_ABORTADA"
+        );
+        // E o ROLLBACK passa, que e o unico caminho que sobra.
+        pede(&s, &ses, r#""op":"rollback""#).unwrap();
+        // Nada foi gravado.
+        assert_eq!(quantas(&s, &ses, "clientes"), 0);
+        let r = pede(&s, &ses, r#""op":"transacao""#).unwrap();
+        assert_eq!(r.texto_ou("transaction_state", ""), "IDLE");
+    }
+
+    /// Em `ABORT_ONLY`, voltar a um `SAVEPOINT` NAO conserta -- e a diferenca
+    /// deliberada para o PostgreSQL(R), com o motivo na resposta.
+    #[test]
+    fn o_savepoint_nao_resgata_uma_transacao_abortada() {
+        let dir = dir_temp("resgate");
+        let mut c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        c.recursos.transacao_max_linhas = 1;
+        let s = Servidor::novo(c).unwrap();
+        let ses = sessao(7);
+        base(&s, &ses);
+        pede(&s, &ses, r#""op":"begin""#).unwrap();
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"a"}"#,
+        )
+        .unwrap();
+        pede(&s, &ses, r#""op":"savepoint","nome":"p1""#).unwrap();
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":2,"nome":"b"}"#,
+        )
+        .unwrap_err();
+        let e = pede(&s, &ses, r#""op":"rollback_para","nome":"p1""#).unwrap_err();
+        assert_eq!(e.nome(), "TRANSACAO_ABORTADA");
+        assert!(e.to_string().contains("ROLLBACK"), "{e}");
+    }
+
+    // ------------------------------------------------------------- as travas
+
+    /// **O caso que matou o exclusivo-por-padrao.** Dois caixas em pedidos
+    /// diferentes nao disputam nada; na MESMA linha, disputam.
+    #[test]
+    fn dois_caixas_em_linhas_diferentes_nao_se_esbarram() {
+        let dir = dir_temp("caixas");
+        let s = servidor(&dir);
+        let a = sessao(1);
+        let b = sessao(2);
+        base(&s, &a);
+        for i in 1..=4 {
+            pede(
+                &s,
+                &a,
+                &format!(
+                    r#""op":"inserir","database":"loja","tabela":"pedidos",
+                       "linha":{{"id":{i},"nome":"p{i}"}}"#
+                ),
+            )
+            .unwrap();
+        }
+
+        pede(&s, &a, r#""op":"begin""#).unwrap();
+        pede(&s, &b, r#""op":"begin""#).unwrap();
+        pede(
+            &s,
+            &a,
+            r#""op":"atualizar","database":"loja","tabela":"pedidos","rowid":1,
+               "linha":{"id":1,"nome":"do caixa A"}"#,
+        )
+        .unwrap();
+        // Linha DIFERENTE: passa sem esperar nada.
+        pede(
+            &s,
+            &b,
+            r#""op":"atualizar","database":"loja","tabela":"pedidos","rowid":3,
+               "linha":{"id":3,"nome":"do caixa B"}"#,
+        )
+        .unwrap();
+        // MESMA linha: o conflito de verdade, com o nome de quem segura.
+        let e = pede(
+            &s,
+            &b,
+            r#""op":"atualizar","database":"loja","tabela":"pedidos","rowid":1,
+               "linha":{"id":1,"nome":"tambem do B"}"#,
+        )
+        .unwrap_err();
+        assert_eq!(e.nome(), "EM_TRANSACAO");
+        assert!(e.adianta_repetir(), "EM_TRANSACAO tem de pedir repeticao");
+        assert!(e.to_string().contains("LOCK TIMEOUT"), "{e}");
+
+        pede(&s, &a, r#""op":"commit""#).unwrap();
+        pede(&s, &b, r#""op":"commit""#).unwrap();
+        assert_eq!(s.travas.lock().unwrap().quantas(), 0);
+    }
+
+    /// `LOCK MODE EXCLUSIVE` cria o conflito que o `AUTO` evita -- e e por
+    /// isso que ele se PEDE, e nao e o padrao.
+    #[test]
+    fn o_modo_exclusivo_barra_ate_linha_diferente() {
+        let dir = dir_temp("exclusivo");
+        let s = servidor(&dir);
+        let a = sessao(1);
+        let b = sessao(2);
+        base(&s, &a);
+        for i in 1..=4 {
+            pede(
+                &s,
+                &a,
+                &format!(
+                    r#""op":"inserir","database":"loja","tabela":"pedidos",
+                       "linha":{{"id":{i},"nome":"p{i}"}}"#
+                ),
+            )
+            .unwrap();
+        }
+        pede(
+            &s,
+            &a,
+            r#""op":"begin","database":"loja","scope":["pedidos"],"lock_mode":"EXCLUSIVE""#,
+        )
+        .unwrap();
+        pede(&s, &b, r#""op":"begin""#).unwrap();
+        let e = pede(
+            &s,
+            &b,
+            r#""op":"atualizar","database":"loja","tabela":"pedidos","rowid":3,
+               "linha":{"id":3,"nome":"do B"}"#,
+        )
+        .unwrap_err();
+        assert_eq!(e.nome(), "EM_TRANSACAO");
+        pede(&s, &a, r#""op":"rollback""#).unwrap();
+        // Solta a exclusiva, o outro entra.
+        pede(
+            &s,
+            &b,
+            r#""op":"atualizar","database":"loja","tabela":"pedidos","rowid":3,
+               "linha":{"id":3,"nome":"agora vai"}"#,
+        )
+        .unwrap();
+        pede(&s, &b, r#""op":"commit""#).unwrap();
+    }
+
+    /// Uma escrita COMUM -- sem `BEGIN` -- respeita a trava de quem tem, e
+    /// recebe `EM_TRANSACAO` com `repetir: true` em vez de esperar.
+    #[test]
+    fn a_escrita_comum_respeita_a_trava_e_nao_espera() {
+        let dir = dir_temp("comum");
+        let s = servidor(&dir);
+        let a = sessao(1);
+        let b = sessao(2);
+        base(&s, &a);
+        pede(
+            &s,
+            &a,
+            r#""op":"inserir","database":"loja","tabela":"pedidos","linha":{"id":1,"nome":"p1"}"#,
+        )
+        .unwrap();
+
+        pede(&s, &a, r#""op":"begin""#).unwrap();
+        pede(
+            &s,
+            &a,
+            r#""op":"atualizar","database":"loja","tabela":"pedidos","rowid":1,
+               "linha":{"id":1,"nome":"na transacao"}"#,
+        )
+        .unwrap();
+        let comeco = Instant::now();
+        let e = pede(
+            &s,
+            &b,
+            r#""op":"atualizar","database":"loja","tabela":"pedidos","rowid":1,
+               "linha":{"id":1,"nome":"por fora"}"#,
+        )
+        .unwrap_err();
+        assert_eq!(e.nome(), "EM_TRANSACAO");
+        assert!(
+            comeco.elapsed() < Duration::from_millis(200),
+            "a escrita comum NAO espera -- ela recusa na hora"
+        );
+        // Outra linha da mesma tabela continua passando: a trava e de LINHA.
+        pede(
+            &s,
+            &a,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":9,"nome":"x"}"#,
+        )
+        .unwrap();
+        pede(&s, &a, r#""op":"rollback""#).unwrap();
+    }
+
+    // ------------------------------------------------------ o escopo declarado
+
+    /// `SCOPE MODE STRICT` recusa a tabela nao declarada; o `DYNAMIC` -- que e
+    /// o padrao -- a acolhe e ANOTA a expansao.
+    #[test]
+    fn estrito_recusa_e_dinamico_expande_avisando() {
+        let dir = dir_temp("escopo");
+        let s = servidor(&dir);
+        let ses = sessao(7);
+        base(&s, &ses);
+
+        pede(
+            &s,
+            &ses,
+            r#""op":"begin","database":"loja","scope":["clientes"],"scope_mode":"STRICT""#,
+        )
+        .unwrap();
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"pedidos","linha":{"id":1,"nome":"x"}"#,
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("STRICT"), "{e}");
+        assert!(e.to_string().contains("SCOPE"), "{e}");
+        pede(&s, &ses, r#""op":"rollback""#).unwrap();
+
+        // DYNAMIC e o padrao, e ele expande em vez de recusar.
+        pede(
+            &s,
+            &ses,
+            r#""op":"begin","database":"loja","scope":["clientes"]"#,
+        )
+        .unwrap();
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"pedidos","linha":{"id":1,"nome":"x"}"#,
+        )
+        .unwrap();
+        let r = pede(&s, &ses, r#""op":"transacao""#).unwrap();
+        let expandidas: Vec<&str> = r
+            .campo("tabelas_expandidas")
+            .and_then(Json::lista)
+            .unwrap()
+            .iter()
+            .filter_map(Json::texto)
+            .collect();
+        assert_eq!(expandidas, vec!["loja/pedidos"]);
+        pede(&s, &ses, r#""op":"rollback""#).unwrap();
+    }
+
+    /// A ficha separa DECLARADO de EFETIVO, e o gatilho que grava noutra
+    /// tabela entra no efetivo -- porque ele alcanca de verdade.
+    #[test]
+    fn o_gatilho_entra_no_escopo_efetivo_e_a_fk_nao() {
+        let dir = dir_temp("efetivo");
+        let s = servidor(&dir);
+        let ses = sessao(7);
+        base(&s, &ses);
+        // `auditoria` recebe do gatilho, e nao e declarada por ninguem.
+        pede(
+            &s,
+            &ses,
+            r#""op":"criar_tabela","database":"loja","tabela":"auditoria",
+               "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                          {"nome":"nome","tipo":"Str(40)"}]"#,
+        )
+        .unwrap();
+        pede(
+            &s,
+            &ses,
+            r#""op":"sql","database":"loja",
+               "texto":"CREATE TRIGGER reg AFTER INSERT ON clientes FOR EACH ROW BEGIN INSERT INTO auditoria (id, nome) VALUES (NEW.id, 'entrou'); END""#,
+        )
+        .unwrap();
+
+        pede(
+            &s,
+            &ses,
+            r#""op":"begin","database":"loja","scope":["clientes"]"#,
+        )
+        .unwrap();
+        let r = pede(&s, &ses, r#""op":"transacao""#).unwrap();
+        let declaradas: Vec<&str> = r
+            .campo("tabelas_declaradas")
+            .and_then(Json::lista)
+            .unwrap()
+            .iter()
+            .filter_map(Json::texto)
+            .collect();
+        let efetivas: Vec<&str> = r
+            .campo("tabelas_efetivas")
+            .and_then(Json::lista)
+            .unwrap()
+            .iter()
+            .filter_map(Json::texto)
+            .collect();
+        assert_eq!(declaradas, vec!["loja/clientes"]);
+        assert_eq!(efetivas, vec!["loja/auditoria", "loja/clientes"]);
+        pede(&s, &ses, r#""op":"rollback""#).unwrap();
+    }
+
+    /// O prazo da transacao estoura e **quem encerra e o gestor**: a transacao
+    /// vai para `ABORT_ONLY`, as travas saem, e a proxima operacao recebe o
+    /// erro com o NUMERO do prazo. Nenhuma thread e morta.
+    #[test]
+    fn o_prazo_estourado_reverte_e_solta_as_travas() {
+        let dir = dir_temp("prazo");
+        let s = servidor(&dir);
+        let ses = sessao(7);
+        base(&s, &ses);
+        pede(&s, &ses, r#""op":"begin","timeout":"1ms""#).unwrap();
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"a"}"#,
+        )
+        .unwrap();
+        assert_eq!(s.travas.lock().unwrap().quantas(), 1);
+        std::thread::sleep(Duration::from_millis(30));
+
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":2,"nome":"b"}"#,
+        )
+        .unwrap_err();
+        assert_eq!(e.nome(), "TRANSACAO_ABORTADA");
+        assert!(e.to_string().contains("TIMEOUT"), "{e}");
+        // As travas ja sairam.
+        assert_eq!(s.travas.lock().unwrap().quantas(), 0);
+        pede(&s, &ses, r#""op":"rollback""#).unwrap();
+        assert_eq!(quantas(&s, &ses, "clientes"), 0);
+    }
+
+    /// Os tres sinonimos de abertura, e a abertura declarada inteira pelo SQL.
+    #[test]
+    fn o_sql_abre_com_escopo_e_prazos() {
+        let dir = dir_temp("sql");
+        let s = servidor(&dir);
+        let ses = sessao(7);
+        base(&s, &ses);
+        let r = pede(
+            &s,
+            &ses,
+            r#""op":"sql","database":"loja",
+               "texto":"BEGIN TRANSACTION SCOPE (clientes, pedidos) TIMEOUT 5s LOCK TIMEOUT 500ms LOCK MODE AUTO""#,
+        )
+        .unwrap();
+        let dentro = r.campo("resultado").unwrap();
+        assert_eq!(dentro.texto_ou("transaction_state", ""), "ACTIVE");
+        assert_eq!(dentro.texto_ou("lock_mode", ""), "AUTO");
+        assert_eq!(
+            dentro.campo("lock_timeout_ms").and_then(Json::inteiro),
+            Some(500)
+        );
+        let efetivas = dentro
+            .campo("tabelas_efetivas")
+            .and_then(Json::lista)
+            .unwrap();
+        assert_eq!(efetivas.len(), 2);
+
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"a"}"#,
+        )
+        .unwrap();
+        let r = pede(&s, &ses, r#""op":"sql","texto":"COMMIT""#).unwrap();
+        assert_eq!(
+            r.campo("resultado")
+                .unwrap()
+                .texto_ou("transaction_state", ""),
+            "COMMITTED"
+        );
+        assert_eq!(quantas(&s, &ses, "clientes"), 1);
+    }
+
+    /// DDL dentro de transacao **recusa**, e nao confirma pelas costas.
+    ///
+    /// O MySQL(R) e o Oracle confirmam a transacao aberta quando chega um DDL,
+    /// e quem escreveu `BEGIN; …; CREATE TABLE; ROLLBACK` acha que desfez sem
+    /// ter desfeito. Recusar e a resposta honesta enquanto o DDL nao for
+    /// transacional.
+    #[test]
+    fn o_ddl_recusa_em_vez_de_confirmar_pelas_costas() {
+        let dir = dir_temp("ddl");
+        let s = servidor(&dir);
+        let ses = sessao(7);
+        base(&s, &ses);
+        pede(&s, &ses, r#""op":"begin""#).unwrap();
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"a"}"#,
+        )
+        .unwrap();
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"excluir_tabela","database":"loja","tabela":"pedidos""#,
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("nao entra em transacao"), "{e}");
+        assert!(e.to_string().contains("ROLLBACK"), "{e}");
+        // A transacao continua viva e o trabalho dela continua la.
+        let r = pede(&s, &ses, r#""op":"commit""#).unwrap();
+        assert_eq!(r.campo("gravadas").and_then(Json::inteiro), Some(1));
+        // E a tabela NAO foi apagada.
+        assert!(pede(
+            &s,
+            &ses,
+            r#""op":"esquema","database":"loja","tabela":"pedidos""#
+        )
+        .is_ok());
+    }
+
+    /// A queda da conexao desfaz a transacao -- a PRIMEIRA rede.
+    #[test]
+    fn a_queda_da_ligacao_desfaz_e_solta() {
+        let dir = dir_temp("queda");
+        let s = servidor(&dir);
+        let ses = sessao(7);
+        base(&s, &ses);
+        pede(&s, &ses, r#""op":"begin""#).unwrap();
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"a"}"#,
+        )
+        .unwrap();
+        assert_eq!(s.travas.lock().unwrap().quantas(), 1);
+        // E o que o laco da conexao faz na saida, por qualquer caminho.
+        s.soltar_transacao_da_ligacao(7);
+        assert_eq!(s.travas.lock().unwrap().quantas(), 0);
+        assert_eq!(quantas(&s, &ses, "clientes"), 0);
+        assert_eq!(s.transacoes_abertas.load(Ordering::SeqCst), 0);
+    }
+
+    /// Duas transacoes que anexam na mesma tabela disputam o FIM dela -- e
+    /// disputam de verdade, porque o proximo slot e um so.
+    #[test]
+    fn duas_transacoes_que_anexam_disputam_o_fim_da_tabela() {
+        let dir = dir_temp("fim");
+        let s = servidor(&dir);
+        let a = sessao(1);
+        let b = sessao(2);
+        base(&s, &a);
+        pede(&s, &a, r#""op":"begin""#).unwrap();
+        pede(&s, &b, r#""op":"begin""#).unwrap();
+        pede(
+            &s,
+            &a,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"a"}"#,
+        )
+        .unwrap();
+        let e = pede(
+            &s,
+            &b,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":2,"nome":"b"}"#,
+        )
+        .unwrap_err();
+        assert_eq!(e.nome(), "EM_TRANSACAO");
+        assert!(e.to_string().contains("fim de"), "{e}");
+        // A solta, B entra e o rowid dele e o seguinte -- nao o mesmo.
+        pede(&s, &a, r#""op":"commit""#).unwrap();
+        let r = pede(
+            &s,
+            &b,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":2,"nome":"b"}"#,
+        )
+        .unwrap();
+        assert_eq!(r.campo("rowid").and_then(Json::inteiro), Some(2));
+        pede(&s, &b, r#""op":"commit""#).unwrap();
+        assert_eq!(quantas(&s, &a, "clientes"), 2);
+    }
+
+    /// Uma transacao abrange UM database, e a recusa diz por que.
+    #[test]
+    fn duas_bases_na_mesma_transacao_recusam() {
+        let dir = dir_temp("duasbases");
+        let s = servidor(&dir);
+        let ses = sessao(7);
+        base(&s, &ses);
+        pede(&s, &ses, r#""op":"criar_database","database":"outra""#).unwrap();
+        pede(
+            &s,
+            &ses,
+            r#""op":"criar_tabela","database":"outra","tabela":"t",
+               "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true}]"#,
+        )
+        .unwrap();
+        pede(&s, &ses, r#""op":"begin""#).unwrap();
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"a"}"#,
+        )
+        .unwrap();
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"outra","tabela":"t","linha":{"id":1}"#,
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("two-phase commit"), "{e}");
+        pede(&s, &ses, r#""op":"rollback""#).unwrap();
+    }
+
+    /// A recuperacao completa um commit que morreu no meio -- e ela e
+    /// idempotente, entao rodar de novo nao duplica nada.
+    #[test]
+    fn a_recuperacao_completa_o_commit_e_nao_duplica() {
+        let dir = dir_temp("recuperar");
+        let s = servidor(&dir);
+        let ses = sessao(7);
+        base(&s, &ses);
+        // A marca escrita a mao, como se a passada tivesse morrido logo depois
+        // de sincroniza-la: nada de dado no disco, e a intencao inteira la.
+        let escritas: Vec<crate::transacao::Escrita> = (1..=5)
+            .map(|i| crate::transacao::Escrita {
+                database: "loja".into(),
+                tabela: "clientes".into(),
+                acao: crate::transacao::Acao::Inserir,
+                rowid: i,
+                linha: vec![
+                    Value::Int(i as i64),
+                    Value::Str(format!("c{i}")),
+                    Value::Bool(false),
+                ],
+                motivo: String::new(),
+            })
+            .collect();
+        crate::transacao::gravar_marca(&dir.join("loja"), 42, crate::agora_ms(), &escritas)
+            .unwrap();
+        drop(s);
+
+        // O arranque acha a marca e completa o commit.
+        let s = servidor(&dir);
+        assert_eq!(quantas(&s, &ses, "clientes"), 5);
+        // A marca sumiu, e um segundo arranque nao duplica nada.
+        drop(s);
+        let s = servidor(&dir);
+        assert_eq!(quantas(&s, &ses, "clientes"), 5);
+    }
+
+    /// Marca com o CRC quebrado e um commit que NUNCA COMECOU: ela e
+    /// descartada, e o disco continua como estava.
+    #[test]
+    fn marca_que_nao_confere_e_commit_que_nunca_comecou() {
+        let dir = dir_temp("marca-ruim");
+        let s = servidor(&dir);
+        let ses = sessao(7);
+        base(&s, &ses);
+        let escritas = vec![crate::transacao::Escrita {
+            database: "loja".into(),
+            tabela: "clientes".into(),
+            acao: crate::transacao::Acao::Inserir,
+            rowid: 1,
+            linha: vec![Value::Int(1), Value::Str("a".into()), Value::Bool(false)],
+            motivo: String::new(),
+        }];
+        let caminho =
+            crate::transacao::gravar_marca(&dir.join("loja"), 7, crate::agora_ms(), &escritas)
+                .unwrap();
+        let mut b = std::fs::read(&caminho).unwrap();
+        let meio = b.len() - 6;
+        b[meio] ^= 0xFF;
+        std::fs::write(&caminho, &b).unwrap();
+        drop(s);
+
+        let s = servidor(&dir);
+        assert_eq!(quantas(&s, &ses, "clientes"), 0);
+        assert!(!caminho.exists(), "a marca ruim tem de sair do disco");
     }
 }

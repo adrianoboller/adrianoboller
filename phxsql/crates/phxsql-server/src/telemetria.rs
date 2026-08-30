@@ -213,6 +213,17 @@ pub struct Atividade {
     com_trava: AtomicBool,
     /// Unidades de trabalho ja percorridas na operacao corrente.
     passos: AtomicU64,
+    /// Instante (ms da epoca) em que a operacao corrente tem de terminar.
+    /// Zero = sem prazo, e e o valor de toda operacao fora de transacao.
+    ///
+    /// # Por que ele mora aqui, e nao num relogio de fundo
+    ///
+    /// Porque **quem encerra e o gestor, e nunca uma thread morta**: matar a
+    /// thread deixaria a trava de dados presa e o estado interno pela metade.
+    /// O prazo entra no MESMO ponto de cancelamento que o `encerrar` ja usa --
+    /// o `siga`, entre duas unidades de trabalho seguras --, e por isso ele
+    /// morde exatamente onde o cancelamento coopera, e em nenhum outro lugar.
+    prazo_ate_ms: AtomicI64,
     /// Milissegundos de servidor ja gastos pelas operacoes CONCLUIDAS.
     consumido_ms: AtomicU64,
     /// Quantos pedidos ja passaram por aqui.
@@ -251,6 +262,7 @@ impl Atividade {
             tem_ponto: AtomicBool::new(false),
             com_trava: AtomicBool::new(false),
             passos: AtomicU64::new(0),
+            prazo_ate_ms: AtomicI64::new(0),
             consumido_ms: AtomicU64::new(0),
             pedidos: AtomicU64::new(0),
             comecou: Mutex::new(None),
@@ -403,6 +415,20 @@ impl Atividade {
     /// isso e o unico escrito para caber em duas instrucoes.
     pub fn siga(&self, passos: u64) -> Result<()> {
         self.passos.fetch_add(passos, Ordering::Relaxed);
+        // O STATEMENT TIMEOUT, e ele vem antes do encerramento manual: os dois
+        // param a mesma operacao, e quem tem prazo estourado nao precisa de
+        // ninguem para mandar parar. Custa um `load` `Relaxed` quando nao ha
+        // prazo, que e toda operacao fora de transacao.
+        let ate = self.prazo_ate_ms.load(Ordering::Relaxed);
+        if ate != 0 && crate::agora_ms() >= ate {
+            self.prazo_ate_ms.store(0, Ordering::Relaxed);
+            return Err(PhxError::Cancelado(format!(
+                "a operacao passou do STATEMENT TIMEOUT da transacao apos {} \
+                 unidade(s) de trabalho; o que ja estava gravado continua \
+                 gravado e o arquivo esta integro",
+                self.passos.load(Ordering::Relaxed)
+            )));
+        }
         let mirado = self.encerrar_serial.load(Ordering::Relaxed);
         if mirado != 0 && mirado == self.serial.load(Ordering::Relaxed) {
             self.encerradas.fetch_add(1, Ordering::Relaxed);
@@ -442,6 +468,15 @@ impl Atividade {
     }
 
     /// Manda encerrar a operacao corrente. Devolve o que da para prometer.
+    /// Poe (ou tira) o prazo desta operacao. Zero tira.
+    ///
+    /// Chamado no comeco de cada pedido feito DENTRO de uma transacao com
+    /// `STATEMENT TIMEOUT` declarado. Fora disso ninguem chama, e o campo
+    /// continua zero -- o caminho comum nao paga nada.
+    pub fn definir_prazo(&self, ate_ms: i64) {
+        self.prazo_ate_ms.store(ate_ms, Ordering::Relaxed);
+    }
+
     pub fn encerrar(&self, quem: &str) -> Encerramento {
         let serial = self.serial.load(Ordering::Relaxed);
         let (op, fase) = self

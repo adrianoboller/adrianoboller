@@ -720,6 +720,75 @@ pub const OPERACOES: &[Operacao] = &[
         exemplo: r#"{"op":"cargas"}"#,
         ferramenta_mcp: false,
     },
+    // ------------------------------------------------------------ transacao
+    //
+    // Todas de SESSAO: valem para a CONEXAO que as chamou, e morrem com ela.
+    // Nenhuma delas pede poder proprio -- cada escrita empilhada passa pelo
+    // portao de sempre com a atividade dela.
+    Operacao {
+        nome: "begin",
+        apelidos: &["start_transaction", "begin_transaction"],
+        resumo: "Abre uma transacao nesta conexao. Nada vai a disco ate o COMMIT.",
+        parametros: &[],
+        exemplo: r#"{"op":"begin"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "commit",
+        apelidos: &[],
+        resumo: "Aplica o conjunto de escrita inteiro numa passada so.",
+        parametros: &[],
+        exemplo: r#"{"op":"commit"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "rollback",
+        apelidos: &[],
+        resumo: "Descarta o conjunto de escrita. Nenhum slot foi consumido.",
+        parametros: &[],
+        exemplo: r#"{"op":"rollback"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "savepoint",
+        apelidos: &[],
+        resumo: "Marca um ponto de retorno dentro da transacao aberta.",
+        parametros: &[obr("nome", "string", "o nome do ponto")],
+        exemplo: r#"{"op":"savepoint","nome":"antes_do_lote"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "rollback_para",
+        apelidos: &["rollback_to_savepoint"],
+        resumo: "Volta ao ponto marcado. A transacao continua aberta.",
+        parametros: &[obr("nome", "string", "o nome do ponto")],
+        exemplo: r#"{"op":"rollback_para","nome":"antes_do_lote"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "release_savepoint",
+        apelidos: &[],
+        resumo: "Tira o ponto e os criados depois dele, sem desfazer trabalho.",
+        parametros: &[obr("nome", "string", "o nome do ponto")],
+        exemplo: r#"{"op":"release_savepoint","nome":"antes_do_lote"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "transacao",
+        apelidos: &[],
+        resumo: "O estado da transacao DESTA conexao. Responde IDLE quando nao ha.",
+        parametros: &[],
+        exemplo: r#"{"op":"transacao"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "transacoes",
+        apelidos: &[],
+        resumo: "Todas as transacoes abertas no servidor, e quem segura o que.",
+        parametros: &[],
+        exemplo: r#"{"op":"transacoes"}"#,
+        ferramenta_mcp: false,
+    },
     // ----------------------------------------------------- criar e apagar
     Operacao {
         nome: "criar_database",

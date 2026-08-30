@@ -1712,19 +1712,106 @@ A linguagem, o portão de permissão e a semântica de disparo estão em
 
 ---
 
-## 16. O que este formato ainda não faz
+## 16. `transacao_<id>.tx` — a marca de um `COMMIT` em curso
+
+Um arquivo **por transação em confirmação**, no diretório do database, ao lado
+das tabelas. Ele nasce antes de a passada de `COMMIT` tocar em qualquer
+arquivo de dado, é **sincronizado**, e some quando a tabela sincroniza.
+
+```
+base/
+└── loja/
+    ├── clientes.reg ...
+    └── transacao_1788105998047.tx     enquanto o commit estiver em curso
+```
+
+**Ele é o ponto de compromisso.** Antes de o `fsync` dele terminar, a
+transação não aconteceu; depois dele, ela aconteceu — mesmo que nenhum byte
+tenha chegado às tabelas ainda. É essa inversão que torna a resposta ao
+contrato inequívoca (`docs/TRANSACOES.md` §5.4) e que permite o `fsync` das
+tabelas ir para a janela de durabilidade em vez de acontecer por commit.
+
+### O leiaute
+
+```text
+cabeçalho  [magic "PHXTX\0\0\0" 8][versao u32][id u64][carimbo i64]
+           [n_operacoes u32][crc32 u32]
+
+operação   [tam_tabela u16][tabela bytes][op u8][rowid alvo u64]
+           [tam_payload u32][payload …][crc32 u32]
+```
+
+| campo | tamanho | o que é |
+|---|---|---|
+| `magic` | 8 | `PHXTX\0\0\0`, como todo arquivo do motor |
+| `versao` | 4 | 1 |
+| `id` | 8 | o identificador da transação, o mesmo do nome do arquivo |
+| `carimbo` | 8 | ms desde a época, quando a marca foi escrita |
+| `n_operacoes` | 4 | quantas operações vêm a seguir |
+| `crc32` | 4 | do cabeçalho inteiro até aqui |
+
+E por operação:
+
+| campo | tamanho | o que é |
+|---|---|---|
+| `op` | 1 | 1 inserir, 2 atualizar, 3 excluir suave, 4 excluir de vez, 5 restaurar |
+| `rowid alvo` | 8 | **o slot que esta operação vai escrever** |
+| `payload` | variável | a linha codificada, seguida do motivo |
+| `crc32` | 4 | de toda a operação, do `tam_tabela` ao fim do payload |
+
+### Por que o `rowid alvo`, e não só a linha
+
+Porque a reaplicação é **idempotente pelo rowid**: cada operação diz o slot que
+devia ter escrito, e a recuperação passa adiante quando ele já está ocupado. O
+rowid é previsível antes da passada porque o `.reg` sempre anexa no fim e o
+`INSERT` trava o fim da tabela — ninguém pode mudar isso no meio.
+
+### Por que a linha vai em bytes, e não em JSON
+
+Porque **JSON perde aqui, e isso foi medido no próprio código**: o
+`valor_para_json` escreve `Time` e `DateTime` como texto ISO, e o
+`json_para_valor` desses dois só aceita número. A volta não fecha, e uma
+recuperação que reconstrói a linha errada é pior do que uma que não reconstrói
+nada.
+
+A codificação tem uma etiqueta por variante de `Value` — 0 nulo, 1 booleano, 2
+inteiro, 3 sem sinal, 4 real, 5 decimal, 6 data, 7 hora, 8 data-hora, 9 texto,
+10 binário, 11 memo, 12 UUID, 13 identificador de 256 bits — e a etiqueta
+**nunca muda de significado**, pela mesma regra do código de erro: uma marca é
+lida justamente no dia em que o processo caiu, que é o pior dia para descobrir
+que a etiqueta virou outra coisa.
+
+### O que a leitura faz com uma marca que não confere
+
+Devolve «não há marca». Um CRC quebrado, uma assinatura errada, uma versão
+desconhecida ou um arquivo truncado são todos a **mesma** resposta: um commit
+que **nunca começou** — porque a marca é sincronizada inteira antes de qualquer
+escrita. Ela é apagada, e o disco continua como estava.
+
+---
+
+## 17. O que este formato ainda não faz
 
 Documentado aqui para não haver surpresa:
 
-- **Sem transações.** `inserir` desfaz o que gravou se um índice falhar, mas
-  não há *journal* nem `commit`/`rollback` de várias operações.
+- **Sem MVCC.** Não há segunda versão da linha, e não vai haver: o rowid é o
+  endereço, e uma segunda versão pediria um segundo slot. Ver `TRANSACOES.md`
+  §11.1. Transação **existe** desde a 0.19.0 (a marca da §16), mas ela guarda o
+  conjunto de escrita em RAM em vez de versionar a linha.
 - **Sem concorrência.** Um processo por tabela; não há travas de arquivo nem de
   registro.
 - **Sem compactação implementada.** O formato prevê e mede o espaço morto, mas
   o comando ainda não foi escrito. O reindex já existe e cobre a parte do
   índice.
 - **O `.log` não guarda o conteúdo anterior**, só o evento. Serve de auditoria,
-  ainda não de journal para desfazer.
+  e não de journal para desfazer — e não precisa ser: a transação não desfaz
+  escrita gravada, porque não grava nada antes do `COMMIT`.
+- **Sem full-page-write, e a conferência está escrita.** O slot tem tamanho
+  arbitrário (`SLOT_CAB + payload + rabo`), não alinhado a setor, então ele
+  **pode** cruzar a fronteira — e uma escrita rasgada ali corrompe o slot. O
+  CRC-32 por slot faz isso ser **detectável e não silencioso**, e o espelho
+  `.bkp` é o reparo. O que o full-page-write compraria exigiria um journal de
+  páginas, que é o WAL que este desenho não tem. Ver `TRANSACOES.md` §11.2.
 - **A camada SQL não mora aqui.** Esta é a camada de armazenamento. O parser e
   o executor entram por cima, e já existem em parte: a op `sql` traduz um
   `SELECT` simples (`docs/SQL.md`) e os corpos de gatilho e de procedimento
