@@ -379,9 +379,27 @@ fn senha_errada_e_falta_de_senha_param_na_abertura() {
 /// a devolver o conteudo da 5 sem erro nenhum. Cifra sem essa amarracao
 /// protege o conteudo e nao protege a tabela.
 ///
-/// Provado com o defeito reposto: tirando o `aad` do `montar_slot` e do
-/// `abrir_slot`, este teste passa a ler a linha trocada e falha no
-/// `assert!(erro)`.
+/// # Quem amarra sao DUAS fechaduras, e nao uma
+///
+/// Esta ficha dizia que tirar o `aad` do `montar_slot` e do `abrir_slot` fazia
+/// este teste ler a linha trocada. Medido pelo `bancada/guardas/`, com o
+/// defeito reposto de verdade: **nao faz** -- o teste continua verde.
+///
+/// O endereco esta amarrado duas vezes. O `aad_do_slot` leva (volume, rowid,
+/// versao) e o `cofre::nonce_de_pedaco(rowid, volume, versao, tempero)` leva
+/// os mesmos tres, e nonce diferente ja da texto cifrado e etiqueta
+/// diferentes. Cada uma segura sozinha; o teste so cai quando as DUAS somem.
+///
+/// A garantia que este teste nomeia continua de pe -- o que estava errado era
+/// a atribuicao dela a uma unica peca. E o corolario do CLAUDE.md em miniatura:
+/// diagnostico plausivel nao e diagnostico medido, e o errado sobrevive melhor
+/// quando o conserto funcionou por outro motivo.
+///
+/// As tres entradas do catalogo que travam isto: `aad-fora-do-slot` e
+/// `nonce-sem-endereco` afirmam a redundancia (tirar uma so nao muda nada) e
+/// `endereco-fora-da-amarracao` prova a guarda (tirar as duas derruba este
+/// teste). No dia em que o nonce deixar de carregar o endereco, as duas
+/// primeiras deixam de ser redundantes e o relatorio avisa.
 #[test]
 fn trocar_o_corpo_de_uma_linha_pela_outra_nao_passa() {
     let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());

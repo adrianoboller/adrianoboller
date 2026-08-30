@@ -425,7 +425,7 @@ def estagio_f(base, h):
 
 def estagio_g(base, h):
     estagio("g", "read replica: leitura ok; escrita recusada com "
-                 "ESCRITA_NA_REPLICA (4003) apontando 127.0.0.1:5338")
+                 "REDIRECIONA (4003) apontando 127.0.0.1:5338")
     subir(base, "g-source", {**config_base(5338, h), "replicacao": {
         "papel": "source", "id_servidor": "g-source", "imagem_da_linha": True}})
     i = liga(5338)
@@ -441,8 +441,19 @@ def estagio_g(base, h):
     ler = j({"op": "varrer", "database": "loja", "tabela": "clientes"})
     gravar = j({"op": "inserir", "database": "loja", "tabela": "clientes",
                 "linha": {"id": 2, "nome": "nao entra", "cidade": "x"}})
+    # Os DOIS nomes, e nao um. O erro se chamava `ESCRITA_NA_REPLICA` e virou
+    # `REDIRECIONA` quando o cluster passou a usar o mesmo desvio (`error.rs`,
+    # `PhxError::Redireciona`) -- e esta prova ficou para tras, reprovando o
+    # estagio (g) sem ninguem saber, porque ela nao estava em portao nenhum.
+    # Foi a bateria unica (`provar.py`) que a trouxe para a luz.
+    #
+    # Aceitar os dois nao e frouxidao: o `replica.rs:142` tambem le os dois do
+    # fio, de proposito, para uma replica de hoje entender um source antigo. A
+    # prova que exigisse so o nome novo passaria a mentir contra esse mesmo
+    # servidor antigo, e e ele que o codigo promete atender.
     ok = (ler.get("ok") and len(ler["resultado"]["linhas"]) == 1
-          and not gravar.get("ok") and gravar.get("nome") == "ESCRITA_NA_REPLICA"
+          and not gravar.get("ok")
+          and gravar.get("nome") in ("REDIRECIONA", "ESCRITA_NA_REPLICA")
           and gravar.get("codigo") == 4003 and "127.0.0.1:5338" in gravar.get("erro", ""))
     medir("g", ok, f"leitura={'ok' if ler.get('ok') else 'NEGADA'}; escrita: "
                    f"{gravar.get('nome')} {gravar.get('codigo')} -> {gravar.get('erro','')!r}")

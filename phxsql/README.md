@@ -381,7 +381,21 @@ exemplos/
   Config_exemplo_0N.json   isolado, source e réplica
 MANUAL.txt         manual do operador
 CHANGELOG.md       o que mudou em cada versão, defeitos primeiro
+provar.py          a bateria inteira num comando só
+bancada/guardas/   o catálogo dos defeitos repostos, e o executor que os repõe
 ```
+
+### Como se prova
+
+```bash
+python3 provar.py --construir     # compila e roda as dezesseis partes
+python3 provar.py --listar        # o que existe, e o que cada parte prova
+```
+
+Ele imprime o que passou, o que falhou, quanto cada parte demorou e **o que foi
+pulado, com o motivo** — bateria que esconde o que não rodou mente por omissão.
+Recusa rodar com binário velho, porque a interface está embutida no `phxsqld`.
+O desenho está em `docs/TESTES.md` §7.
 
 ## Decisões de projeto que valem explicação
 
