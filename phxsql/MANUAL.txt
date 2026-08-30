@@ -2640,8 +2640,8 @@ Para Windows, a partir do Linux:
 
 Nao ha vendor de dependencias a fazer: o projeto nao usa nenhuma crate
 externa, entao `cargo build --offline` funciona numa maquina sem Internet.
-Medido: com o CARGO_HOME vazio e sem rede, sete crates em 28,6 s -- os sete
-sao deste repositorio, e nao ha o que baixar.
+Medido tres vezes, com o CARGO_HOME vazio e sem rede: sete crates em 28,6 s,
+30,3 s e 34,3 s. Os sete sao deste repositorio, e nao ha o que baixar.
 
 Para refazer os tres zips de download:
 

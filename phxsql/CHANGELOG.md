@@ -84,6 +84,31 @@ mesmo padrão do vídeo de demonstração, por outro caminho.
 - **`docs/EMPACOTAMENTO.md`**: o que cada zip leva, o que ele deliberadamente
   não leva, e como quem baixou confere.
 
+### Medido
+
+- **Zero dependências externas continua verdade depois desta rodada.**
+  `cargo metadata --offline` dá **7 pacotes no grafo, os 7 deste repositório,
+  0 com `source`** — nenhum de registro, nenhum de git. O `Cargo.lock` inteiro
+  cabe em 30 linhas.
+
+- **O teste que o dono vai fazer.** Zip de fontes extraído num diretório limpo
+  fora da árvore, `CARGO_HOME` vazio (zero entradas), `CARGO_NET_OFFLINE=true`
+  e as variáveis de proxy apagadas: `cargo build --offline --release` em
+  **28,6 s, 30,3 s e 34,3 s** em três medições, sete crates, quatro binários. E
+  o laço fecha — desse diretório extraído, `./empacotar.sh linux` remonta o
+  pacote de Linux inteiro.
+
+- **O binário de Linux roda.** Subido do zip numa porta da faixa 6750–6799:
+  `ping` pela porta de dados responde `{"ok":true,...,"phxsql":"0.18.0"}`, a
+  interface web devolve 1.057.862 bytes de HTML, e o `phxsqlcmd` empacotado
+  faz login e lista bancos. Alvo `x86_64-unknown-linux-gnu`, `rustc 1.94.1`.
+
+- **O de Windows tem a forma certa.** Os três `.exe` e a `.dll` são PE32+
+  x86-64, e as únicas DLLs que importam são do sistema — `KERNEL32`,
+  `msvcrt`, `ntdll`, `WS2_32`, `bcryptprimitives`,
+  `api-ms-win-core-synch-l1-2-0`. Nenhuma do mingw, então não há runtime para
+  acompanhar o pacote. A `phxsql_odbc.dll` exporta os 21 símbolos ODBC.
+
 ### Sabido
 
 - **Não há arquivo de licença no repositório**, e `Cargo.toml` e `README.md`

@@ -203,8 +203,14 @@ cd /tmp/limpo/phxsql-<versão>-fontes
 CARGO_HOME=/tmp/limpo/cargo-home cargo build --offline --release
 ```
 
-Com o `CARGO_HOME` vazio e sem proxy: **28,6 s**, sete crates, quatro binários.
-Nada foi baixado porque não há nada para baixar.
+Com o `CARGO_HOME` vazio (zero entradas), `CARGO_NET_OFFLINE=true` e as
+variáveis de proxy apagadas: **28,6 s, 30,3 s e 34,3 s** em três medições,
+sete crates, quatro binários — `phxsqld`, `phxsql`, `phxsqlcmd` e
+`libphxsql_odbc.so`. Nada foi baixado porque não há nada para baixar.
+
+E o laço fecha: de dentro desse diretório extraído, `./empacotar.sh linux`
+remonta o pacote de Linux inteiro. O de fontes não sai dali, e o empacotador
+diz por quê — ele nasce do histórico do git, que o zip não carrega.
 
 ---
 
