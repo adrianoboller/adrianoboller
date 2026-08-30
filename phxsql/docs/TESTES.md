@@ -489,7 +489,18 @@ projeto estava verde.
 O `provar.py` **não refaz nenhuma delas** — cada uma tem dono, já foi provada e
 continua rodando sozinha pelo comando dela. Ele chama, cronometra e soma.
 
-### As dezessete partes
+### As partes
+
+A lista de verdade sai do próprio `provar.py`, e não daqui:
+
+```bash
+python3 provar.py --listar
+```
+
+A tabela abaixo é a leitura dela — e a primeira versão desta seção começava com
+um número escrito à mão no título («as dezessete partes») que **já mentia**
+enquanto quatro partes rodavam sem aparecer aqui. Número visível ou sai de um
+comando, ou está errado e ninguém percebeu ainda.
 
 | parte | o que prova | portas |
 |---|---|---|
@@ -498,17 +509,21 @@ continua rodando sozinha pelo comando dela. Ele chama, cronometra e soma.
 | `tela` | a interface contra o servidor de verdade: 120 telas, CSS global, contraste, primeira pintura | 6950/6951 |
 | `idiomas` | o caminho do idioma de ponta a ponta, e o comportamento velho | 6952/6953 |
 | `ponta-a-ponta` | os seis itens do dono pelo soquete, mais a passada pela tela | 6300/6301 |
+| `cifra-do-fio` | o aperto de mão da porta de dados contra um cliente escrito **de novo** em Python: o cliente velho, o túnel, o pino, o registro repetido e o fio cortado | — |
 | `alter` | acrescentar coluna numa tabela com dado pelo soquete: rowid preservado, backup, e a réplica que ainda não alterou | 7150/7152 |
 | `rotinas` | gatilhos e procedimentos pelo soquete, com SIGNAL, lote e reinício | 5301/5701 |
 | `profiler` | a redação do Profiler por soquete: vinte pedidos torcidos, sentinela no anel e no `.txt` | 6251 |
+| `queda-na-exclusao` | que a janela de durabilidade da exclusão não perde linha numa queda do **processo**: 150 exclusões e um `SIGKILL` no meio | — |
 | `telemetria-desenho` | o painel de bolhas por medida: rótulo na esfera, alvo de clique, contraste | — |
 | `telemetria-interacao` | clicar na bolha menor com o painel em movimento, descer de nível, voltar | — |
 | `telemetria-cores` | as cores configuráveis, exercitando: escolher, salvar, conferir no painel | 6600/6601 |
 | `cluster` | eleição e promoção automática com três servidores e um SMTP falso | 5310-5312, 5316 |
 | `replicacao` | os quatro modos por soquete, com o comportamento velho no fim | 5330-5339 |
+| `trava` | que nenhuma leitura de rede acontece com a trava de dados na mão | 7050-7055 |
 | `jobs` | o aviso de jobs por e-mail — e o servidor **sem** bloco de e-mail, que não manda nada | 5303/5703 |
 | `profiler-disco` | o `.txt` do Profiler contra o sistema operacional: disco cheio, somente-leitura | 6253 |
 | `dblink` | a sincronia de tabelas primas contra um MySQL(R) de verdade | — |
+| `embutido` | o **PhxSql embutido**: um programa em C ligado à biblioteca, rodado contra o `.a` e contra o `.so` em x86-64 e contra o `.a` em **ARM64 sob emulação** — porque «compila» não é «roda» | — |
 | `odbc` | a ABI do driver pelo `ctypes`, sem passar pelo unixODBC | 6954 |
 
 Cada parte abre as portas dela — documentadas no cabeçalho de cada script — e
@@ -615,6 +630,20 @@ Ela **não se digita** — sai de uma rodada, como as duas tabelas de cobertura 
 python3 bancada/guardas/provar-guardas.py --json /tmp/guardas.json
 python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 ```
+
+> **A tabela abaixo está atrasada em seis linhas, e isto fica escrito em vez de
+> ser tapado.** As seis guardas da fronteira de C (`ffi-…`, do
+> `crates/phxsql-ffi`) entraram no catálogo e foram **provadas uma a uma**
+> — as seis deram PROVADA, e a `ffi-panico-atravessa` pelo aborto, como a
+> `cadeia-sem-teto`. O que não foi feito foi a **rodada completa** que
+> regrava este bloco: ela precisa de ~1,3 GB de árvore copiada, e a máquina
+> desta rodada estava com 3,6 GB livres e outra compilação em curso. Uma
+> tabela parcial seria pior que uma atrasada, porque apagaria as 37 linhas
+> medidas. Rodar os dois comandos acima resolve.
+>
+> Também há duas linhas `QUEBRADA` a esperar: `aad-fora-do-slot` e
+> `endereco-fora-da-amarracao` não acharam mais o trecho no `reg.rs`, e essas
+> são de outra frente.
 
 <!-- guardas:inicio -->
 | guarda | o defeito reposto | testes que caem | veredito |

@@ -1,0 +1,27 @@
+[package]
+name = "phxsql-ffi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "PhxSql embutido: o motor como biblioteca, por ABI de C -- para Android, iOS e IoT"
+
+# Os dois formatos, e cada um por uma exigencia de loja diferente:
+#
+#   cdylib    libphxsql_ffi.so  -- o Android carrega por System.loadLibrary
+#   staticlib libphxsql_ffi.a   -- a Apple nao aceita biblioteca dinamica de
+#                                  terceiros dentro do app; tem de ser ligada
+#
+# Sem `rlib` de proposito: nao ha consumidor Rust desta camada, e a prova toda
+# mora em teste de unidade, que o cargo compila do fonte de qualquer jeito.
+# Ver docs/EMBUTIDO.md secao 2.
+[lib]
+name = "phxsql_ffi"
+crate-type = ["cdylib", "staticlib"]
+
+# So a std e o proprio workspace. E o que torna o iOS plausivel: uma crate de
+# C no meio teria de compilar cruzado para aarch64-apple-ios tambem.
+[dependencies]
+phxsql-core = { workspace = true }
+phxsql-store = { workspace = true }

@@ -10,6 +10,109 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
+## Não lançado — o PhxSql embutido: o motor como biblioteca, com ABI de C
+
+O pedido era *«um mini servidor para rodar no Android e no iOS off-line e se
+conectar por TCP/IP com o servidor»*. O **objetivo** está certo e é o alvo
+desta rodada; a **forma** foi corrigida, e a correção não é nossa: o iOS
+proíbe processo de longa duração em segundo plano e app escutando porta para
+outros apps, e o Android mata processo em segundo plano com liberdade. A forma
+que os dois apoiam é biblioteca embutida no processo do aplicativo — sem
+porta, sem daemon.
+
+E a conclusão que veio antes de qualquer código: **o `phxsql-store` já é o
+banco embutido**; o `phxsql-server` é um envelope de rede em volta dele. Esta
+rodada não reescreveu motor — **expôs o que existe** por uma ABI de C.
+`phxsql-server` não foi tocado.
+
+### Corrigido
+
+- **«Não há essa linha» voltava de duas formas diferentes conforme o motivo.**
+  Achado pelo programa em C na **primeira rodada dele**, não lendo o código:
+  slot livre devolve `Ok(None)` e rowid além do fim devolve `NaoEncontrado`.
+  A diferença é real dentro do motor e invisível para quem chama — o
+  aplicativo mostraria caixa vermelha para metade dos «não achei» e lista
+  vazia para a outra metade. `phx_ler` e `phx_versao_da_linha` dobram as duas
+  em `PHX_NAO_HA`; o `phx_buscar` **não** dobra, porque lá o mesmo 3001 quer
+  dizer «esse índice não existe».
+
+- **No ARM64, ligando à mão, o `catch_unwind` era enfeite.** Sem
+  `--eh-frame-hdr` o binário sai sem `PT_GNU_EH_FRAME`, o desenrolador não
+  acha a tabela de FDE, e todo pânico capturado vira `fatal runtime error:
+  failed to initiate panic` seguido de aborto. A garantia central da camada
+  sumia **calada**, por uma bandeira do ligador. O `cc`, o `clang` e o Xcode
+  passam sozinhos; um script de ligação próprio pode não passar — e é o item
+  mais importante para quem for escrever a camada JNI ou a de Swift.
+
+- **«Quantas linhas tem a tabela» tinha três respostas e a ABI dava uma.**
+  `phx_tabela_registros` contava slots ocupados em vez de consultar a visão:
+  com exclusão suave, a tela diria 2 e listaria 1. A visão virou parâmetro.
+
+- **Um teste que passava por engano.** O executor de guardas devolveu
+  `NAO PEGOU` no `ffi-erro-global`: com a vaga de erro global — o defeito — o
+  teste da vaga por thread **continuava passando**, porque os outros testes
+  rodam em paralelo e o `limpar()` de qualquer um esvaziava a vaga bem a
+  tempo. Trocado por uma ordem estrita entre duas threads.
+
+### Adicionado
+
+- **`crates/phxsql-ffi`** — `cdylib` (o `.so` que o Android carrega) **e**
+  `staticlib` (o `.a` que a Apple exige, porque ela não aceita biblioteca
+  dinâmica de terceiros dentro do app). **44 funções** exportadas, contadas
+  com `nm -D`. O `.so` tem **1.155.480 B** — 962.664 B depois do `strip` —
+  com B+tree, CRC-32, ChaCha20-Poly1305, SHA-256, JSON e diário dentro, o que
+  é consequência direta da regra de zero dependências.
+
+  A superfície: abrir e fechar base, construtor de esquema, criar e abrir
+  tabela, inserir, atualizar (com e **sem** a janela de conflito), excluir de
+  vez e suave, restaurar, ler por rowid, buscar por índice, cursor de
+  digitação e de índice, verificar, e os **ganchos de replicação** — imagem no
+  diário, posição, leitura de evento com imagem, `aplicar_evento` e a origem
+  que mata o laço do bidirecional.
+
+- **`crates/phxsql-ffi/include/phxsql.h`** — o cabeçalho de C, com as seis
+  regras da fronteira escritas nele. Dois testes o mantêm honesto: um confere
+  que biblioteca e cabeçalho declaram **as mesmas funções** (nos dois
+  sentidos), outro que **nenhuma constante diverge** entre o Rust e o `.h` —
+  uma que divergisse compilaria, rodaria, e gravaria a coluna com o tipo
+  errado.
+
+- **`docs/EMBUTIDO.md`** — o desenho, escrito **antes** do código, com as seis
+  decisões justificadas: nenhum pânico atravessa (e o punho fica **envenenado**
+  depois de um, porque capturar salva o processo e não conserta o objeto);
+  erro em código de retorno com os **mesmos números** da porta de dados, mais
+  último-erro **por thread**; quem alocou libera (a biblioteca nunca devolve
+  ponteiro para o `free()` do chamador — em `.dll` do Windows isso derruba o
+  processo); UTF-8 com tamanho explícito, nunca `NUL`-terminado, porque dado
+  de cliente tem byte zero; e a segurança de thread dita com todas as letras,
+  **inclusive o que não foi testado**.
+
+- **`bancada/embutido/provar.sh` e `crates/phxsql-ffi/c/prova.c`** — um
+  programa em C que liga contra a biblioteca de verdade e roda **três vezes**:
+  contra o `.a` em x86-64, contra o `.so` em x86-64 (o formato do Android) e
+  em **ARM64 sob `qemu-aarch64-static`**. **40 passos, zero falhas** nas três.
+
+- **6 guardas novas** no `bancada/guardas/catalogo.py` (37 → **43**), todas
+  PROVADAS. A `ffi-panico-atravessa` é a segunda de toda a lista que espera
+  **aborto** em vez de falha: o tamanho do estrago é a prova.
+
+### Sabido
+
+- **A camada JNI (Android) e a Swift/ObjC (iOS) não existem** — só o desenho,
+  em `docs/EMBUTIDO.md` §10. O NDK não está nesta máquina (o alvo
+  `aarch64-linux-android` compila e falha no ligador) e o SDK da Apple só
+  existe em macOS. Escrever código que não se pode ligar nem rodar seria
+  entregar promessa: *«compila» não é «rodou»*.
+- **O cliente de sincronia não existe** — os ganchos existem; o laço que
+  decide *quando* sincronizar é decisão de produto.
+- **O desempenho num aparelho de verdade continua sem medida.** O que se mede
+  sob `qemu-user` é o custo da emulação.
+- **A ABI não fala SQL** e não gerencia usuários: dentro do processo do
+  aplicativo não há a quem negar. Permissão continua sendo do servidor
+  central, do outro lado da rede.
+
+---
+
 ## Não lançado — o terreno das transações, e o desenho delas
 
 O pedido é *transações*. Esta rodada entregou o **pré-requisito** e o

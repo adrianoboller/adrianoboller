@@ -328,34 +328,43 @@ alvos. Isso não é perda: o driver é do lado **cliente** — ele mora na máqu
 que roda a ferramenta de relatório, não na placa que guarda o dado. Quem
 precisar mesmo de ODBC em ARM compila para o alvo `gnu` da mesma arquitetura.
 
-### 7.5 Android: compila, e para no ligador
+### 7.5 Android: o daemon para no ligador, e a biblioteca não para
 
 O alvo `aarch64-linux-android` **compilou** — todos os crates passaram. Falhou
 só no **link**, por não achar a libc do Android (bionic: `-lc`, `-lm`, `-ldl`),
 que vem no NDK e não está nesta máquina. É limite do ambiente, não do código.
 
-Mas «linkar» não é «ter um app», e são duas coisas diferentes:
+Mas «linkar o daemon» nunca foi o caminho certo, e é isso que mudou desde a
+primeira redação desta seção:
 
 - **Termux** — um servidor de linha de comando num Android com Termux é o caso
   fácil, e é essencialmente o caso Linux ARM da §7.1.
-- **Dentro de um aplicativo** — aí o motor precisaria virar biblioteca nativa
-  (`cdylib`) com uma camada JNI, **que não existe hoje**. E o Android moderno
-  mata processo em segundo plano com liberdade, então um daemon que escuta
-  porta não é uma forma que o sistema apoie.
+- **Dentro de um aplicativo** — o Android mata processo em segundo plano com
+  liberdade, então um daemon que escuta porta **não é uma forma que o sistema
+  apoie**. A forma que ele apoia é biblioteca nativa carregada pelo processo do
+  app — e essa **passou a existir**: `crates/phxsql-ffi`, uma `cdylib` de ABI
+  de C, provada em `bancada/embutido/provar.sh`. O que ainda falta é a camada
+  **JNI** por cima dela, e o desenho dela está em `docs/EMBUTIDO.md` §10.1.
 
-### 7.6 iOS: não é questão de compilar
+### 7.6 iOS: continua sem Mac, e deixou de ser sem caminho
 
-Aqui a resposta muda de natureza. O alvo `aarch64-apple-ios` exige o SDK da
-Apple e o Xcode, que só existem em macOS — não dá nem para tentar aqui. E
-mesmo com um Mac, **o formato do iOS não comporta o que o `phxsqld` é**: o
-sistema não permite processo em segundo plano de longa duração nem um app
-escutando porta para outros apps usarem.
+O alvo `aarch64-apple-ios` exige o SDK da Apple e o Xcode, que só existem em
+macOS — não dá nem para tentar aqui. E o sistema não permite processo em
+segundo plano de longa duração nem um app escutando porta para outros apps
+usarem, então **o formato do iOS nunca vai comportar o que o `phxsqld` é**.
 
-A forma que faria sentido é outra: o motor como **biblioteca estática** ligada
-dentro do aplicativo, com uma camada FFI em C/Swift. Isso é plausível
-justamente por não haver dependência externa — mas **essa camada não existe**,
-e a arquitetura cliente-servidor de hoje teria de virar embutida. É trabalho de
-projeto, não de compilação.
+A forma que faz sentido é a que a primeira redação desta seção descrevia como
+inexistente: o motor como **biblioteca estática** ligada dentro do aplicativo,
+com uma camada de C. O `staticlib` **agora existe** — `libphxsql_ffi.a`, 10,5 MB
+em aarch64 — e um programa em C ligado a ele **gravou e leu sob emulação
+ARM64**. Continua faltando o Mac (para o alvo `aarch64-apple-ios` de verdade) e
+o invólucro em Swift; o desenho está em `docs/EMBUTIDO.md` §10.2.
+
+> Um achado desta frente que vale para os dois: ligando **na mão**, sem
+> `--eh-frame-hdr`, o binário sai sem `PT_GNU_EH_FRAME` e todo `catch_unwind`
+> vira aborto — a garantia de que nenhum pânico atravessa a fronteira some
+> calada. O `cc`, o `clang` e o Xcode passam a bandeira sozinhos; um script de
+> ligação próprio pode não passar. `docs/EMBUTIDO.md` §9.3.
 
 ### 7.7 Resumindo em uma tabela
 
@@ -365,5 +374,8 @@ projeto, não de compilação.
 | Windows x86-64 | **compila e empacota** | — |
 | Linux ARM64 / ARMv7 | **roda: gravou e leu 50 linhas sob emulação** | o desempenho real, que só a placa mede |
 | Android (Termux) | **compila; link precisa do NDK** | o NDK, e uma corrida real |
-| Android (dentro de app) | não | `cdylib` + camada JNI + repensar o daemon |
-| iOS | não | Mac com Xcode, camada FFI, e virar biblioteca embutida |
+| Android (dentro de app) | **a biblioteca existe e roda** (`cdylib`, provada em x86-64 e ARM64) | a camada JNI, e o NDK para o alvo bionic |
+| iOS | **a biblioteca existe e roda** (`staticlib` aarch64, exercitada sob emulação) | Mac com Xcode, o alvo `aarch64-apple-ios`, e o invólucro em Swift |
+
+O `phxsqld` como daemon continua **não** sendo o caminho nesses dois últimos, e
+isso não é limitação nossa: é o que os dois sistemas permitem.
