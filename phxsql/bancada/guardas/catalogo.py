@@ -1508,4 +1508,100 @@ GUARDAS = [
             "paginada_reescreve_cada_volume_e_preserva_a_ordem",
         ],
     },
+    # -----------------------------------------------------------------------
+    # 38. O texto colado nas seis colunas de idioma
+    # -----------------------------------------------------------------------
+    {
+        "id": "texto-colado-nos-seis",
+        "titulo": "a mesma frase colada nas seis colunas de idioma",
+        "porque": (
+            "a catraca de cima conta o que ainda NAO passa pela fabrica; esta "
+            "conta o contrario -- o que passa pela fabrica e mesmo assim nao "
+            "esta traduzido. Colar o portugues nas seis colunas faz o numero "
+            "da cobertura subir e a tela continuar em portugues, que e o pior "
+            "dos dois mundos: a conta que dirige a proxima leva passa a mentir."
+        ),
+        "arquivo": "crates/phxsql-server/src/idiomas.rs",
+        "trecho": (
+            '    texto!("tela.tl_cartao_vazio", "nenhuma atividade aqui '
+            '\u2014 quando houver, clique numa bolha para ver o descritivo '
+            'completo", "aucune activit\u00e9 ici'
+        ),
+        "troca": (
+            "    // DEFEITO REPOSTO: o portugues colado nas seis colunas.\n"
+            '    texto!("tela.tl_cartao_vazio", "nenhuma atividade aqui '
+            '\u2014 quando houver, clique numa bolha para ver o descritivo '
+            'completo", "nenhuma atividade aqui \u2014 quando houver, clique '
+            'numa bolha para ver o descritivo completo", "nenhuma atividade '
+            'aqui \u2014 quando houver, clique numa bolha para ver o '
+            'descritivo completo", "nenhuma atividade aqui \u2014 quando '
+            'houver, clique numa bolha para ver o descritivo completo", '
+            '"nenhuma atividade aqui \u2014 quando houver, clique numa bolha '
+            'para ver o descritivo completo", "nenhuma atividade aqui '
+            '\u2014 quando houver, clique numa bolha para ver o descritivo '
+            'completo"), // "aucune activit\u00e9 ici'
+        ),
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "conferidor::testes::nenhuma_chave_com_os_seis_idiomas_colados",
+            # A guarda da frase longa pega o mesmo estrago pelo outro lado --
+            # seis idiomas sao mais que tres --, e isso e desenho, nao
+            # duplicacao: uma pega o colar INTEIRO, a outra o PARCIAL.
+            "conferidor::testes::nenhuma_frase_longa_repetida_em_tres_idiomas",
+        ],
+        "seguem": [
+            # O criterio nao e "igual ao portugues": as 33 chaves com espanhol
+            # identico ao portugues (`Database`, `Profiler`, `Menu principal`)
+            # continuam passando, e e por isso que a guarda pode existir.
+            "conferidor::testes::a_catraca_dos_textos_fora_da_fabrica",
+            "idiomas::testes::a_fabrica_e_bem_formada",
+            "idiomas::testes::todo_texto_da_fabrica_e_pedido_por_alguem",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # 39. A frase longa repetida em tres idiomas
+    # -----------------------------------------------------------------------
+    {
+        "id": "frase-longa-repetida",
+        "titulo": "uma frase longa repetida em três das seis colunas de idioma",
+        "porque": (
+            "e o colar PARCIAL, que a guarda dos seis nao pega: quem traduz "
+            "tres colunas e cola o portugues nas outras tres passa por ela. "
+            "Duas linguas coincidirem numa palavra e comum; tres coincidirem "
+            "numa frase de mais de 25 caracteres de MIOLO (o texto sem os "
+            "marcadores), nao."
+        ),
+        "arquivo": "crates/phxsql-server/src/idiomas.rs",
+        "trecho": (
+            '"in chiusura\u2026 l\'operazione si interrompe al prossimo '
+            'punto sicuro.", "wird beendet\u2026 die Operation bricht am '
+            'n\u00e4chsten sicheren Punkt ab.", "finalizando\u2026 la '
+            'operaci\u00f3n aborta en el pr\u00f3ximo punto seguro."'
+        ),
+        # DEFEITO REPOSTO: o italiano e o espanhol recebem o portugues. Sao
+        # DUAS colunas, e nao uma, porque com uma so seriam dois idiomas
+        # iguais -- e dois nao e o defeito: duas linguas irmas coincidirem e
+        # comum. A guarda comeca a valer no TERCEIRO.
+        "troca": (
+            '"encerrando\u2026 a opera\u00e7\u00e3o aborta no pr\u00f3ximo '
+            'ponto seguro.", "wird beendet\u2026 die Operation bricht am '
+            'n\u00e4chsten sicheren Punkt ab.", "encerrando\u2026 a '
+            'opera\u00e7\u00e3o aborta no pr\u00f3ximo ponto seguro."'
+        ),
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "conferidor::testes::nenhuma_frase_longa_repetida_em_tres_idiomas",
+        ],
+        "seguem": [
+            # Com DUAS colunas iguais a guarda dos seis nao dispara -- e e essa
+            # a divisao de trabalho entre as duas.
+            "conferidor::testes::nenhuma_chave_com_os_seis_idiomas_colados",
+            # E o molde de marcadores continua passando: o miolo de
+            # `tela.tl_quem_atividade` e «peso», a mesma palavra em portugues,
+            # italiano e espanhol, e ele nao pode ser acusado.
+            "conferidor::testes::o_miolo_tira_os_marcadores",
+        ],
+    },
 ]

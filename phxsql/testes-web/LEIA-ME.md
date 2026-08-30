@@ -78,6 +78,39 @@ idioma e o passo estoura no `waitForFunction`; tirando a conversão de marcas
 do `marcado()`, a página mostra `**Multitela.**` com os asteriscos à mostra e
 o passo diz qual frase saiu errada.
 
+## A prova das QUATRO telas, também à parte
+
+`node phxsql/testes-web/prova-idiomas-telas.mjs --porta 7550 --capturas <dir>`
+é a irmã da de cima, e cobre o que ela não cobria: as telas que moram **fora**
+do `index.html`. A de cima prova a máquina — login, cromo, texto que estica; a
+desta prova as telas.
+
+| passo | o que prova |
+|---|---|
+| a tela da **Claude** | português → **alemão**: o aviso de «leia antes de ligar», o rótulo da chave, e a explicação de custo do modelo, que vem do par `diz:`/`dizTxt:` |
+| a **telemetria** | português → **francês**: a barra, o título da faixa, a gaveta das threads, e o rótulo do nível na legenda, que vem do par `rot:`/`txt:` do `NIVEIS` |
+| a **grade** | português → **espanhol**: o rodapé, o seletor de colunas, e o painel de filtro de coluna, que **só existe depois do clique** |
+| o **diagrama ER** | português → **italiano**: o `aria-label` do desenho |
+| o comportamento **velho** | sem escolher nada, as telas são as de sempre |
+| o console | nenhum `pageerror` nas quatro |
+
+**Prova real, com o defeito reposto:** trocando o `txt` do `telemetria.js` por
+`return padrao` — a delegação no global quebrada, que é o defeito mais
+provável de quem move o módulo —, o passo da telemetria reprova nomeando o
+rótulo que não trocou, **e os outros cinco continuam verdes**. É a delimitação
+que importa: o passo acusa a tela dele, e não a bateria inteira.
+
+Ela achou três defeitos que ler o código não acharia, e os três estão em
+`docs/MENSAGENS.md`: `rot: "…"` com espaço não é par; quem escreve por último
+manda (o `aplicarLegenda` reescrevia em português o botão que o `html()` já
+tinha traduzido); e texto escrito com `\uXXXX` some das duas vias do
+conferidor.
+
+**Cada passo começa e termina em português, e o retorno está num `finally`.**
+Sem isso, uma afirmação que falha no meio deixa a escolha de pé e o passo
+seguinte reprova por um defeito que não é o dele — aconteceu na primeira
+rodada, com o diagrama ER acusado de estar em espanhol por causa da grade.
+
 ## Os três canais de erro
 
 `pageerror` não é o único. O `ligarMenu` manda **toda** exceção de item de

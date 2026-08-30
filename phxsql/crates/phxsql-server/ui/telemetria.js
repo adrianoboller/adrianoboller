@@ -122,14 +122,22 @@ window.PhxTelemetria = (function () {
    * tipo do «BLUMENAU» que o CSS global já fez uma vez. O que fica no lugar
    * dela é `borda`, que é verdade em qualquer paleta. */
   const NIVEIS = {
-    normal:     { cor:"var(--reg)",      traco:"",      glifo:"",  rot:"normal",
-                  palavra:"azul",     borda:"borda cheia" },
-    alto:       { cor:"var(--ambar)",    traco:"6 4",   glifo:"▲", rot:"uso alto",
-                  palavra:"amarelo",  borda:"borda tracejada" },
-    stress:     { cor:"var(--vermelho)", traco:"2 3",   glifo:"■", rot:"stress",
-                  palavra:"vermelho", borda:"borda pontilhada" },
-    encerrando: { cor:"var(--acao-marcar)", traco:"10 4", glifo:"✕", rot:"encerrando",
-                  palavra:"rosa",     borda:"borda de traço longo" },
+    normal:     { cor:"var(--reg)",      traco:"",      glifo:"",
+                  rot:"normal", txt:"tela.tl_nivel_normal",
+                  palavra:"azul", palavraTxt:"tela.tl_cor_azul",
+                  borda:"borda cheia", bordaTxt:"tela.tl_borda_cheia" },
+    alto:       { cor:"var(--ambar)",    traco:"6 4",   glifo:"▲",
+                  rot:"uso alto", txt:"tela.tl_nivel_alto",
+                  palavra:"amarelo", palavraTxt:"tela.tl_cor_amarelo",
+                  borda:"borda tracejada", bordaTxt:"tela.tl_borda_tracejada" },
+    stress:     { cor:"var(--vermelho)", traco:"2 3",   glifo:"■",
+                  rot:"stress", txt:"tela.tl_nivel_stress",
+                  palavra:"vermelho", palavraTxt:"tela.tl_cor_vermelho",
+                  borda:"borda pontilhada", bordaTxt:"tela.tl_borda_pontilhada" },
+    encerrando: { cor:"var(--acao-marcar)", traco:"10 4", glifo:"✕",
+                  rot:"encerrando", txt:"tela.tl_nivel_encerrando",
+                  palavra:"rosa", palavraTxt:"tela.tl_cor_rosa",
+                  borda:"borda de traço longo", bordaTxt:"tela.tl_borda_longa" },
   };
   const ORDEM_NIVEL = { normal:0, alto:1, encerrando:2, stress:3 };
 
@@ -149,6 +157,36 @@ window.PhxTelemetria = (function () {
 
   const esc = t => String(t ?? "").replace(/[&<>"']/g, c =>
     ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+
+  /** O texto de tela pela fabrica de idiomas, com o portugues de fabrica ao
+   *  lado.
+   *
+   *  Delega no global em vez de chama-lo direto pelo mesmo motivo do cabecalho
+   *  deste arquivo: o modulo se exercita SEM a pagina em volta, com um retrato
+   *  inventado, e um `txt is not defined` no meio do desenho deixaria o painel
+   *  em branco. Com a pagina, a fabrica manda; sem ela, o portugues. */
+  function txt(nome, padrao) {
+    return window.txt ? window.txt(nome, padrao) : padrao;
+  }
+
+  /** Poe os `{marcador}` no lugar, num texto que vai para `textContent`.
+   *  Posicional por nome, e nunca `+` no meio da frase: a ordem das palavras
+   *  muda de lingua para lingua. */
+  function preencher(bruto, dados) {
+    return String(bruto).replace(/\{(\w+)\}/g,
+      (m, k) => (dados && k in dados) ? String(dados[k]) : m);
+  }
+
+  /** Um texto de tela COM enfase, resolvido em HTML seguro: escapa tudo antes
+   *  e so depois transforma `**assim**` em `<b>` e a crase em `<code>`. Frase
+   *  picada pela marcacao e intraduzivel por construcao -- o corte em etiqueta
+   *  acontece DEPOIS da traducao. */
+  function marcado(bruto, dados) {
+    return esc(bruto)
+      .replace(/`([^`]+)`/g, "<code>$1</code>")
+      .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
+      .replace(/\{(\w+)\}/g, (m, k) => (dados && k in dados) ? esc(dados[k]) : m);
+  }
 
   const num = v => {
     const n = Number(v);
@@ -258,7 +296,8 @@ window.PhxTelemetria = (function () {
        </svg>
        <div class="tlm-faixa-leg">${
          series.map(s => `<span><i style="background:${s.cor}"></i>${esc(s.nome)}</span>`).join("")
-       }<span class="tlm-topo">pico ${esc(cfg.topoRot ? cfg.topoRot(topo) : topo.toFixed(1))}</span></div>`;
+       }<span class="tlm-topo">${esc(preencher(txt("tela.tl_pico", "pico {v}"),
+          { v: cfg.topoRot ? cfg.topoRot(topo) : topo.toFixed(1) }))}</span></div>`;
   }
 
   /* ----------------------------------------------------- o arranjo das bolhas
@@ -463,7 +502,9 @@ window.PhxTelemetria = (function () {
     const id = `tlmAm-${nivel}`;
     const svg =
       `<svg class="tlm-amostra" viewBox="0 0 52 52" role="img"
-            aria-label="amostra da bolha ${esc(v.rot)}, contraste ${t.razao.toFixed(2)} para 1">
+            aria-label="${esc(preencher(txt("tela.tl_amostra_dica",
+              "amostra da bolha {nivel}, contraste {razao} para 1"),
+              { nivel: txt(v.txt, v.rot), razao: t.razao.toFixed(2) }))}">
          <defs><radialGradient id="${id}" cx="34%" cy="28%" r="72%">
            <stop offset="0%" stop-color="#fff" stop-opacity=".85"/>
            <stop offset="26%" style="stop-color:${esc(c)}" stop-opacity=".95"/>
@@ -562,9 +603,9 @@ window.PhxTelemetria = (function () {
   <div class="tlm-topo-barra">
     <div class="tlm-estado" id="tlmEstado" role="status" aria-live="polite">—</div>
     <div class="tlm-botoes">
-      <button class="botao consultar" id="tlmPausar" type="button">Pausar</button>
-      <button class="botao secundario" id="tlmAgora" type="button">Atualizar agora</button>
-      <button class="botao alterar" id="tlmLigar" type="button">Desligar coleta</button>
+      <button class="botao consultar" id="tlmPausar" type="button">${esc(txt("tela.tl_pausar", "Pausar"))}</button>
+      <button class="botao secundario" id="tlmAgora" type="button">${esc(txt("tela.tl_agora", "Atualizar agora"))}</button>
+      <button class="botao alterar" id="tlmLigar" type="button">${esc(txt("tela.tl_desligar", "Desligar coleta"))}</button>
     </div>
   </div>
 
@@ -583,20 +624,20 @@ window.PhxTelemetria = (function () {
              mesmo que descer sem escada: quem entrou numa estação precisa
              ver onde está e como sair, e a tela não tem botão «voltar» do
              navegador para oferecer. -->
-        <nav class="tlm-trilha" id="tlmTrilha" aria-label="onde você está"></nav>
+        <nav class="tlm-trilha" id="tlmTrilha" aria-label="${esc(txt("tela.tl_trilha", "onde você está"))}"></nav>
         <div class="tlm-painel-fim">
           <!-- A busca é a «Search SPID…» da referência. Num servidor com
                quarenta conexões, achar a que dói pelo olho é sorte. -->
           <input id="tlmBusca" class="tlm-busca" type="search" autocomplete="off"
-                 placeholder="procurar conexão, IP, usuário ou operação…"
-                 aria-label="procurar entre as atividades">
+                 placeholder="${esc(txt("tela.tl_busca_dica", "procurar conexão, IP, usuário ou operação…"))}"
+                 aria-label="${esc(txt("tela.tl_busca_al", "procurar entre as atividades"))}">
           <button class="tlm-link" id="tlmLegenda" type="button"
-                  aria-expanded="true">ocultar legenda</button>
+                  aria-expanded="true">${esc(txt("tela.tl_ocultar_legenda", "ocultar legenda"))}</button>
         </div>
       </div>
       <div class="tlm-painel-s" id="tlmResumo"></div>
       <svg class="tlm-bolhas" id="tlmBolhas" role="group"
-           aria-label="atividades vivas, uma bolha por atividade"></svg>
+           aria-label="${esc(txt("tela.tl_bolhas_al", "atividades vivas, uma bolha por atividade"))}"></svg>
       <!-- A legenda diz a FAIXA, e não só a cor. «amarelo · uso alto» sozinho
            obriga quem olha a adivinhar acima de quanto; e o número que ela
            escreve vem do campo "limiares" da resposta, que é a mesma constante
@@ -616,24 +657,25 @@ window.PhxTelemetria = (function () {
            função que desenha o painel, então o piso das mais leves aparece
            desenhado em vez de ficar escondido. -->
       <div class="tlm-escala">
-        <span class="tlm-escala-t">peso</span>
+        <span class="tlm-escala-t">${esc(txt("tela.tl_peso", "peso"))}</span>
         <svg id="tlmEscala" viewBox="0 0 260 40" role="img"
-             aria-label="escala: a área da bolha segue o peso"></svg>
-        <span class="tlm-escala-n">a <b>área</b> segue o peso — milissegundos de
-          servidor que a atividade já gastou. Escala reduzida; as mais leves
-          têm piso, para o rótulo caber.</span>
+             aria-label="${esc(txt("tela.tl_escala_al", "escala: a área da bolha segue o peso"))}"></svg>
+        <span class="tlm-escala-n">${marcado(txt("tela.tl_escala_area",
+          "a **área** segue o peso — milissegundos de servidor que a atividade já gastou."))
+          } ${marcado(txt("tela.tl_escala_piso",
+          "Escala reduzida; as mais leves têm piso, para o rótulo caber."))}</span>
       </div>
       </div>
     </div>
     <aside class="tlm-lado">
       <div class="tlm-cartao" id="tlmCartao">
-        <div class="tlm-vazio">clique numa bolha para ver o descritivo completo</div>
+        <div class="tlm-vazio">${esc(txt("tela.tl_clique_bolha", "clique numa bolha para ver o descritivo completo"))}</div>
       </div>
     </aside>
   </div>
 
   <details class="tlm-threads">
-    <summary>Gestor de threads <span id="tlmThreadsN"></span></summary>
+    <summary>${esc(txt("tela.tl_gestor_threads", "Gestor de threads"))} <span id="tlmThreadsN"></span></summary>
     <div class="rolo"><table class="tlm-tab" id="tlmThreads"></table></div>
   </details>
 </div>`;
@@ -810,7 +852,9 @@ window.PhxTelemetria = (function () {
     const e = $("#tlmExplica"), b = $("#tlmLegenda");
     if (!e || !b) return;
     e.hidden = !estado.legendaAberta;
-    b.textContent = estado.legendaAberta ? "ocultar legenda" : "mostrar legenda";
+    b.textContent = estado.legendaAberta
+      ? txt("tela.tl_ocultar_legenda", "ocultar legenda")
+      : txt("tela.tl_mostrar_legenda", "mostrar legenda");
     b.setAttribute("aria-expanded", String(estado.legendaAberta));
   }
 
@@ -856,12 +900,14 @@ window.PhxTelemetria = (function () {
     if (!alvo) return;
     const idade = estado.ultimoOkEm ? Date.now() - estado.ultimoOkEm : 0;
     alvo.innerHTML =
-      `<span class="tlm-pastilha mal">sem resposta do servidor</span>
+      `<span class="tlm-pastilha mal">${esc(txt("tela.tl_sem_resposta", "sem resposta do servidor"))}</span>
        <span class="mal"><b>${esc(erro)}</b></span>
        <span>${estado.ultimoOkEm
-         ? `o que está na tela é de <b>${esc(estado.ultimoOkRotulo)}</b>, há <b>${dur(idade)}</b>`
-         : "nunca houve resposta nesta sessão"}</span>
-       <span>${estado.falhas} tentativa(s) sem resposta</span>`;
+         ? marcado(txt("tela.tl_na_tela_de", "o que está na tela é de **{quando}**, há **{idade}**"),
+                   { quando: estado.ultimoOkRotulo, idade: dur(idade) })
+         : esc(txt("tela.tl_nunca_respondeu", "nunca houve resposta nesta sessão"))}</span>
+       <span>${esc(preencher(txt("tela.tl_tentativas", "{n} tentativa(s) sem resposta"),
+         { n: estado.falhas }))}</span>`;
   }
 
   /* Desenha um retrato inteiro. É público para poder ser exercitado sem
@@ -882,7 +928,8 @@ window.PhxTelemetria = (function () {
     const ult = s.length ? s[s.length - 1] : {};
     const bot = $("#tlmLigar");
     if (bot) {
-      bot.textContent = d.ligada ? "Desligar coleta" : "Ligar coleta";
+      bot.textContent = d.ligada ? txt("tela.tl_desligar", "Desligar coleta")
+                                 : txt("tela.tl_ligar", "Ligar coleta");
       bot.className = "botao " + (d.ligada ? "alterar" : "incluir");
     }
 
@@ -891,13 +938,21 @@ window.PhxTelemetria = (function () {
     const atraso = num(d.atraso_ms);
     const tarde = d.ligada && atraso > 3000;
     $("#tlmEstado").innerHTML =
-      `<span class="tlm-pastilha ${d.ligada ? "on" : "off"}">${d.ligada ? "coletando" : "coleta desligada"}</span>
-       <span>última amostra <b>${esc(d.ultima_amostra || "—")}</b></span>
-       <span class="${tarde ? "mal" : ""}">atraso da amostra <b>${dur(atraso)}</b></span>
-       <span>ida e volta <b>${dur(estado.ultimaIdaVolta)}</b></span>
-       <span>período <b>${dur(num(d.periodo_ms))}</b></span>
-       ${estado.pausado ? `<span class="tlm-pastilha pausa">pausado por você</span>` : ""}
-       ${d.stress ? `<span class="tlm-stress">servidor em stress · ${esc(d.stress_por_que || "")}</span>` : ""}`;
+      `<span class="tlm-pastilha ${d.ligada ? "on" : "off"}">${esc(d.ligada
+         ? txt("tela.tl_coletando", "coletando")
+         : txt("tela.tl_coleta_off", "coleta desligada"))}</span>
+       <span>${marcado(txt("tela.tl_ultima_amostra", "última amostra **{v}**"),
+         { v: d.ultima_amostra || "—" })}</span>
+       <span class="${tarde ? "mal" : ""}">${marcado(
+         txt("tela.tl_atraso", "atraso da amostra **{v}**"), { v: dur(atraso) })}</span>
+       <span>${marcado(txt("tela.tl_ida_e_volta", "ida e volta **{v}**"),
+         { v: dur(estado.ultimaIdaVolta) })}</span>
+       <span>${marcado(txt("tela.tl_periodo", "período **{v}**"),
+         { v: dur(num(d.periodo_ms)) })}</span>
+       ${estado.pausado ? `<span class="tlm-pastilha pausa">${esc(txt("tela.tl_pausado", "pausado por você"))}</span>` : ""}
+       ${d.stress ? `<span class="tlm-stress">${esc(preencher(
+         txt("tela.tl_em_stress", "servidor em stress · {por_que}"),
+         { por_que: d.stress_por_que || "" }))}</span>` : ""}`;
 
     const col = (campo) => s.map(a => num(a[campo]));
 
@@ -908,51 +963,56 @@ window.PhxTelemetria = (function () {
     // é ela que vai no destaque.
     const esperando = num(ult.esperando);
     faixa($("#tlmEsperas"), {
-      titulo: "Esperas — atividades por estado",
+      titulo: txt("tela.tl_fx_esperas", "Esperas — atividades por estado"),
       valor: esperando > 0
-        ? `${esperando} na fila · a mais antiga há ${dur(ult.espera_maior_ms)}`
-        : `ninguém na fila · ${num(ult.espera_ms_s).toFixed(0)} ms/s de espera`,
+        ? preencher(txt("tela.tl_fx_esperas_v", "{n} na fila · a mais antiga há {ha}"),
+                    { n: esperando, ha: dur(ult.espera_maior_ms) })
+        : preencher(txt("tela.tl_fx_esperas_v0", "ninguém na fila · {ms} ms/s de espera"),
+                    { ms: num(ult.espera_ms_s).toFixed(0) }),
       empilhado: true,
       topoMinimo: 3,
       topoRot: v => v.toFixed(0),
       series: [
-        { nome:"executando", cor:"var(--reg)",      vals: col("executando") },
-        { nome:"esperando",  cor:"var(--ambar)",    vals: col("esperando") },
-        { nome:"encerrando", cor:"var(--vermelho)", vals: col("encerrando") },
-        { nome:"ociosas",    cor:"var(--texto-3)",  vals: col("ociosas") },
+        { nome:txt("tela.tl_s_executando", "executando"), cor:"var(--reg)",      vals: col("executando") },
+        { nome:txt("tela.tl_s_esperando", "esperando"),  cor:"var(--ambar)",    vals: col("esperando") },
+        { nome:txt("tela.tl_s_encerrando", "encerrando"), cor:"var(--vermelho)", vals: col("encerrando") },
+        { nome:txt("tela.tl_s_ociosas", "ociosas"),    cor:"var(--texto-3)",  vals: col("ociosas") },
       ],
     });
 
     faixa($("#tlmDisco"), {
-      titulo: "Leitura e escrita físicas (deste processo)",
-      valor: `${bytes(ult.ler_bytes_s)}/s ler · ${bytes(ult.escrever_bytes_s)}/s gravar`,
+      titulo: txt("tela.tl_fx_disco", "Leitura e escrita físicas (deste processo)"),
+      valor: preencher(txt("tela.tl_fx_disco_v", "{ler}/s ler · {gravar}/s gravar"),
+                       { ler: bytes(ult.ler_bytes_s), gravar: bytes(ult.escrever_bytes_s) }),
       topoRot: v => bytes(v) + "/s",
       series: [
-        { nome:"lidos",     cor:"var(--bin)",     vals: col("ler_bytes_s") },
-        { nome:"gravados",  cor:"var(--laranja)", vals: col("escrever_bytes_s"), tracejado:true },
+        { nome:txt("tela.tl_s_lidos", "lidos"),     cor:"var(--bin)",     vals: col("ler_bytes_s") },
+        { nome:txt("tela.tl_s_gravados", "gravados"),  cor:"var(--laranja)", vals: col("escrever_bytes_s"), tracejado:true },
       ],
     });
 
     faixa($("#tlmCpu"), {
       titulo: "CPU",
-      valor: `processo ${num(ult.cpu_processo).toFixed(0)}% · máquina ${num(ult.cpu_maquina).toFixed(0)}%`,
+      valor: preencher(txt("tela.tl_fx_cpu_v", "processo {p}% · máquina {m}%"),
+                       { p: num(ult.cpu_processo).toFixed(0), m: num(ult.cpu_maquina).toFixed(0) }),
       topoMinimo: 100,
       topoRot: v => v.toFixed(0) + "%",
       series: [
-        { nome:"processo", cor:"var(--memo)",   vals: col("cpu_processo") },
-        { nome:"máquina",  cor:"var(--texto-3)", vals: col("cpu_maquina"), tracejado:true },
+        { nome:txt("tela.tl_s_processo", "processo"), cor:"var(--memo)",   vals: col("cpu_processo") },
+        { nome:txt("tela.tl_s_maquina", "máquina"),  cor:"var(--texto-3)", vals: col("cpu_maquina"), tracejado:true },
       ],
     });
 
     faixa($("#tlmVazao"), {
-      titulo: "Vazão — operações por segundo",
-      valor: `${num(ult.leituras_s).toFixed(1)} leitura/s · ${num(ult.escritas_s).toFixed(1)} escrita/s`,
+      titulo: txt("tela.tl_fx_vazao", "Vazão — operações por segundo"),
+      valor: preencher(txt("tela.tl_fx_vazao_v", "{l} leitura/s · {e} escrita/s"),
+                       { l: num(ult.leituras_s).toFixed(1), e: num(ult.escritas_s).toFixed(1) }),
       topoMinimo: 1,
       topoRot: v => v.toFixed(1) + "/s",
       series: [
-        { nome:"leitura", cor:"var(--reg)",      vals: col("leituras_s") },
-        { nome:"escrita", cor:"var(--acao-incluir)", vals: col("escritas_s") },
-        { nome:"erro",    cor:"var(--vermelho)", vals: col("erros_s"), tracejado:true },
+        { nome:txt("tela.tl_s_leitura", "leitura"), cor:"var(--reg)",      vals: col("leituras_s") },
+        { nome:txt("tela.tl_s_escrita", "escrita"), cor:"var(--acao-incluir)", vals: col("escritas_s") },
+        { nome:txt("tela.tl_s_erro", "erro"),    cor:"var(--vermelho)", vals: col("erros_s"), tracejado:true },
       ],
     });
 
@@ -964,15 +1024,17 @@ window.PhxTelemetria = (function () {
     // que sabe dizer «ainda não sei».
     const tocouCache = num(c.acertos) + num(c.faltas) > 0;
     faixa($("#tlmCache"), {
-      titulo: "Cache de páginas do .ndx",
+      titulo: txt("tela.tl_fx_cache", "Cache de páginas do .ndx"),
       valor: tocouCache
-        ? `${esc(c.acerto_percentual || "0")}% de acerto · teto ${esc(String(c.paginas_teto || 0))} páginas`
-        : `sem toque de página ainda · teto ${esc(String(c.paginas_teto || 0))} páginas`,
+        ? preencher(txt("tela.tl_fx_cache_v", "{p}% de acerto · teto {teto} páginas"),
+                    { p: c.acerto_percentual || "0", teto: String(c.paginas_teto || 0) })
+        : preencher(txt("tela.tl_fx_cache_v0", "sem toque de página ainda · teto {teto} páginas"),
+                    { teto: String(c.paginas_teto || 0) }),
       topoMinimo: 1,
       topoRot: v => v.toFixed(0) + "/s",
       series: [
-        { nome:"acertos", cor:"var(--acao-incluir)", vals: col("cache_acertos_s") },
-        { nome:"faltas",  cor:"var(--ambar)",        vals: col("cache_faltas_s"), tracejado:true },
+        { nome:txt("tela.tl_s_acertos", "acertos"), cor:"var(--acao-incluir)", vals: col("cache_acertos_s") },
+        { nome:txt("tela.tl_s_faltas", "faltas"),  cor:"var(--ambar)",        vals: col("cache_faltas_s"), tracejado:true },
       ],
     });
 
@@ -1058,7 +1120,7 @@ window.PhxTelemetria = (function () {
       // exatamente o que se procura.
       const por = new Map();
       ativs.filter(a => casaComABusca(a, b)).forEach(a => {
-        const ip = a.ip || "sem IP";
+        const ip = a.ip || txt("tela.tl_sem_ip", "sem IP");
         const e = por.get(ip) || { id: "estacao:" + ip, ip, peso_ms: 0, nivel: "normal",
                                    quantas: 0, executando: 0, usuarios: new Set() };
         e.peso_ms += num(a.peso_ms);
@@ -1070,13 +1132,13 @@ window.PhxTelemetria = (function () {
       });
       return [...por.values()].map(e => ({
         id: e.id, rotulo: e.ip, peso_ms: e.peso_ms, nivel: e.nivel,
-        sub: e.quantas + " conex.", estacao: e,
+        sub: preencher(txt("tela.tl_conex", "{n} conex."), { n: e.quantas }), estacao: e,
       }));
     }
     return ativs
       .filter(a => (!estado.estacao || a.ip === estado.estacao) && casaComABusca(a, b))
       .map(a => ({ id: a.id, rotulo: curtinho(a.id), peso_ms: num(a.peso_ms),
-                   nivel: a.nivel, sub: a.op || "ociosa", d: a }));
+                   nivel: a.nivel, sub: a.op || txt("tela.tl_ociosa", "ociosa"), d: a }));
   }
 
   function desenharTrilha() {
@@ -1085,9 +1147,10 @@ window.PhxTelemetria = (function () {
     const passo = (n, r, atual) =>
       `<button class="tlm-passo${atual ? " atual" : ""}" data-nivel="${n}"
                type="button"${atual ? ' aria-current="true"' : ""}>${esc(r)}</button>`;
-    let h = passo("todas", "Atividades", estado.vista === "atividades")
+    let h = passo("todas", txt("tela.tl_atividades", "Atividades"), estado.vista === "atividades")
           + `<span class="tlm-sep">|</span>`
-          + passo("estacoes", "Por estação", estado.vista === "estacoes" && !estado.estacao);
+          + passo("estacoes", txt("tela.tl_por_estacao", "Por estação"),
+                  estado.vista === "estacoes" && !estado.estacao);
     if (estado.estacao) {
       h += `<span class="tlm-sep">›</span>`
          + `<span class="tlm-passo atual" aria-current="true">${esc(estado.estacao)}</span>`;
@@ -1248,10 +1311,13 @@ window.PhxTelemetria = (function () {
 
       const euMesmo = d0.voce === id;
       const quem = a.estacao
-        ? `estação ${a.rotulo} · ${a.estacao.quantas} conexão(ões), `
-          + `${a.estacao.executando} executando · peso ${dur(a.peso_ms)}`
-        : `${id}${euMesmo ? " (a sua própria tela)" : ""} · ${niv.rot} · `
-          + `${a.sub} · peso ${dur(a.peso_ms)}`;
+        ? preencher(txt("tela.tl_quem_estacao",
+            "estação {ip} · {quantas} conexão(ões), {executando} executando · peso {peso}"),
+            { ip: a.rotulo, quantas: a.estacao.quantas,
+              executando: a.estacao.executando, peso: dur(a.peso_ms) })
+        : preencher(txt("tela.tl_quem_atividade", "{id}{eu} · {nivel} · {sub} · peso {peso}"),
+            { id, eu: euMesmo ? txt("tela.tl_sua_tela_par", " (a sua própria tela)") : "",
+              nivel: txt(niv.txt, niv.rot), sub: a.sub, peso: dur(a.peso_ms) });
       // O tooltip e o `aria-label` dizem em PALAVRAS o que a cor diz: é o que
       // mantém o painel legível para quem não distingue as quatro — e é onde
       // o nome inteiro aparece quando a bolha é pequena demais para ele.
@@ -1261,8 +1327,8 @@ window.PhxTelemetria = (function () {
       // operador procurar quem é «w·85a62fd» — e é ele mesmo.
       p.g.classList.toggle("eu", !!euMesmo);
       p.g.setAttribute("aria-label", quem
-        + (a.estacao ? ", clique para ver as conexões desta estação"
-                     : ", clique para o descritivo completo"));
+        + (a.estacao ? txt("tela.tl_clique_estacao", ", clique para ver as conexões desta estação")
+                     : txt("tela.tl_clique_descritivo", ", clique para o descritivo completo")));
       porNoLugar(p);
     });
 
@@ -1298,8 +1364,8 @@ window.PhxTelemetria = (function () {
         svg.appendChild(vazio);
       }
       vazio.textContent = estado.busca || estado.estacao
-        ? "nenhuma atividade bate com o filtro"
-        : "nenhuma atividade viva neste instante";
+        ? txt("tela.tl_nada_no_filtro", "nenhuma atividade bate com o filtro")
+        : txt("tela.tl_nada_viva", "nenhuma atividade viva neste instante");
       vazio.setAttribute("x", (larg / 2).toFixed(0));
       vazio.setAttribute("y", (alt / 2).toFixed(0));
     } else if (vazio) {
@@ -1320,13 +1386,18 @@ window.PhxTelemetria = (function () {
     // A ordem é a promessa do painel, então o resumo diz quem é a cabeça
     // dela: quem só olha o texto continua sabendo qual é a mais pesada.
     $("#tlmResumo").textContent =
-      `${ativs.length} viva(s) · ${ativs.filter(a => a.op).length} executando`
+      preencher(txt("tela.tl_r_vivas", "{vivas} viva(s) · {exec} executando"),
+                { vivas: ativs.length, exec: ativs.filter(a => a.op).length })
       + (estado.vista === "estacoes" && !estado.estacao
-          ? ` · ${todas.length} estação(ões)` : "")
-      + (maior ? ` · a mais pesada aqui: ${maior.rotulo} (${dur(maior.peso_ms)})` : "")
-      + (escondidas > 0 ? ` · ${escondidas} fora do filtro` : "")
-      + (deFora > 0 ? ` · ${deFora} mais leve(s) fora do desenho` : "")
-      + ` · ${num(t.encerramentos)} encerramento(s) desde que subiu`;
+          ? " · " + preencher(txt("tela.tl_r_estacoes", "{n} estação(ões)"), { n: todas.length }) : "")
+      + (maior ? " · " + preencher(txt("tela.tl_r_mais_pesada", "a mais pesada aqui: {quem} ({peso})"),
+                                   { quem: maior.rotulo, peso: dur(maior.peso_ms) }) : "")
+      + (escondidas > 0 ? " · " + preencher(txt("tela.tl_r_fora_filtro", "{n} fora do filtro"),
+                                            { n: escondidas }) : "")
+      + (deFora > 0 ? " · " + preencher(txt("tela.tl_r_fora_desenho", "{n} mais leve(s) fora do desenho"),
+                                        { n: deFora }) : "")
+      + " · " + preencher(txt("tela.tl_r_encerramentos", "{n} encerramento(s) desde que subiu"),
+                          { n: num(t.encerramentos) });
   }
 
   /* A escala: três círculos com o peso escrito ao lado.
@@ -1357,8 +1428,12 @@ window.PhxTelemetria = (function () {
     });
     alvo.setAttribute("viewBox", `0 0 ${Math.ceil(x + 4)} 44`);
     alvo.setAttribute("aria-label",
-      `escala do peso: a área segue o peso; a mais pesada tem ${dur(pesoMax)}`
-      + (ordenadas.length > 1 ? ` e a mais leve, ${dur(menor)}` : ""));
+      preencher(txt("tela.tl_escala_max",
+        "escala do peso: a área segue o peso; a mais pesada tem {maior}"),
+        { maior: dur(pesoMax) })
+      + (ordenadas.length > 1
+          ? preencher(txt("tela.tl_escala_min", " e a mais leve, {menor}"), { menor: dur(menor) })
+          : ""));
     alvo.innerHTML = svg;
   }
 
@@ -1367,17 +1442,19 @@ window.PhxTelemetria = (function () {
     const alto = lim && lim.alto_uso_ms ? dur(lim.alto_uso_ms) : null;
     const stress = lim && lim.stress_ms ? dur(lim.stress_ms) : null;
     const posto = (id, texto) => { const e = $(id); if (e) e.textContent = texto; };
-    posto("#tlmFx-normal", "abaixo dos limiares, ou sem operação");
+    posto("#tlmFx-normal", txt("tela.tl_fxn_normal", "abaixo dos limiares, ou sem operação"));
     // Sem o campo, a frase perde o número em vez de inventar um. Número na
     // tela que não veio do servidor é o começo de a tela pintar uma cor que
     // o servidor não concorda.
     posto("#tlmFx-alto", alto
-      ? `operação acima de ${alto}, ou parada na fila da trava`
-      : "operação longa, ou parada na fila da trava");
+      ? preencher(txt("tela.tl_fxn_alto", "operação acima de {t}, ou parada na fila da trava"),
+                  { t: alto })
+      : txt("tela.tl_fxn_alto0", "operação longa, ou parada na fila da trava"));
     posto("#tlmFx-stress", stress
-      ? `trabalhando há mais de ${stress}, ou segurando a trava com fila`
-      : "trabalhando demais, ou segurando a trava com fila");
-    posto("#tlmFx-encerrando", "marcada, esperando o ponto seguro");
+      ? preencher(txt("tela.tl_fxn_stress", "trabalhando há mais de {t}, ou segurando a trava com fila"),
+                  { t: stress })
+      : txt("tela.tl_fxn_stress0", "trabalhando demais, ou segurando a trava com fila"));
+    posto("#tlmFx-encerrando", txt("tela.tl_fxn_encerrando", "marcada, esperando o ponto seguro"));
   }
 
   /* A legenda pintada com as cores que estão VALENDO.
@@ -1405,8 +1482,9 @@ window.PhxTelemetria = (function () {
       const t = el.querySelector(".tlm-leg-t");
       if (!t) return;
       t.innerHTML = `${v.glifo ? esc(v.glifo) + " " : ""}${
-        escolhida ? "" : esc(v.palavra) + " · "}<b${
-        escolhida ? ` style="color:${esc(escolhida)}"` : ""}>${esc(v.rot)}</b> · ${esc(v.borda)}`;
+        escolhida ? "" : esc(txt(v.palavraTxt, v.palavra)) + " · "}<b${
+        escolhida ? ` style="color:${esc(escolhida)}"` : ""}>${
+        esc(txt(v.txt, v.rot))}</b> · ${esc(txt(v.bordaTxt, v.borda))}`;
     });
   }
 
@@ -1453,7 +1531,8 @@ window.PhxTelemetria = (function () {
     return `<div class="tlm-l"><span>${esc(rot)}</span><b>${esc(val ?? "—")}</b></div>`;
   }
 
-  const SIM_NAO = v => (v ? "sim" : "não");
+  const NAO = () => txt("tela.tl_nao", "não");
+  const SIM_NAO = v => (v ? txt("tela.tl_sim", "sim") : NAO());
 
   /* Qual atividade o cartão está descrevendo.
    *
@@ -1473,8 +1552,8 @@ window.PhxTelemetria = (function () {
     const escolha = alvoDoCartao();
     const a = escolha.a;
     if (!a) {
-      alvo.innerHTML = `<div class="tlm-vazio">nenhuma atividade aqui — quando houver,
-        clique numa bolha para ver o descritivo completo</div>`;
+      alvo.innerHTML = `<div class="tlm-vazio">${esc(txt("tela.tl_cartao_vazio",
+        "nenhuma atividade aqui — quando houver, clique numa bolha para ver o descritivo completo"))}</div>`;
       return;
     }
     const niv = NIVEIS[a.nivel] || NIVEIS.normal;
@@ -1494,10 +1573,10 @@ window.PhxTelemetria = (function () {
     alvo.innerHTML = `
       <div class="tlm-cartao-cab" style="--n:${
         corDoNivel(NIVEIS[a.nivel] ? a.nivel : "normal")}">
-        <span class="tlm-nivel">${esc(niv.glifo)} ${esc(niv.rot)}</span>
+        <span class="tlm-nivel">${esc(niv.glifo)} ${esc(txt(niv.txt, niv.rot))}</span>
         <b>${esc(a.id)}</b>
-        ${d.voce === a.id ? `<span class="tlm-eu">esta é a sua tela</span>` : ""}
-        ${escolha.escolhida ? "" : `<span class="tlm-auto">a mais pesada agora</span>`}
+        ${d.voce === a.id ? `<span class="tlm-eu">${esc(txt("tela.tl_sua_tela", "esta é a sua tela"))}</span>` : ""}
+        ${escolha.escolhida ? "" : `<span class="tlm-auto">${esc(txt("tela.tl_mais_pesada", "a mais pesada agora"))}</span>`}
       </div>
       <!-- TUDO o que sabemos da atividade, e não um resumo. É o que a
            referência faz: o painel dela lista as vinte e sete colunas do
@@ -1511,62 +1590,69 @@ window.PhxTelemetria = (function () {
            vao fica no tamanho da coluna, e a largura extra vira mais coluna em
            vez de mais vazio. -->
       <div class="tlm-lista">
-      ${linha("estado", a.estado)}
-      ${linha("nível", niv.rot)}
-      ${linha("operação em curso", a.op || "nenhuma em curso")}
-      ${linha("alvo", a.alvo)}
-      ${linha("fase", a.fase)}
-      ${linha("usuário", a.usuario)}
-      ${linha("origem", a.origem)}
-      ${linha("estação (IP)", a.ip)}
-      ${linha("conexão", a.ligacao == null ? "—" : "nº " + a.ligacao)}
-      ${linha("conectada desde", a.desde)}
-      ${linha("aberta há", dur(num(a.aberta_s) * 1000))}
-      ${linha("operação iniciada", a.op_desde)}
-      ${linha("operação dura há", dur(a.ha_ms))}
-      ${linha("desse tempo, trabalhando", dur(a.trabalhando_ms))}
-      ${linha("desse tempo, na fila da trava", dur(a.esperou_ms))}
-      ${linha("peso (servidor gasto)", dur(a.peso_ms))}
-      ${linha("pedidos já feitos", a.pedidos)}
-      ${linha("unidades percorridas", a.passos)}
-      ${linha("trava de dados", a.com_trava ? "na mão desta atividade" : "não")}
-      ${linha("esperando", a.esperando_o_que)}
-      ${linha("tem ponto de cancelamento", SIM_NAO(a.tem_ponto))}
-      ${linha("cancelável neste instante", SIM_NAO(a.cancelavel))}
-      ${linha("marcada para encerrar", SIM_NAO(a.encerrando))}
-      ${linha("já encerrada", a.encerradas + " vez(es)")}
+      ${linha(txt("tela.tl_c_estado", "estado"), a.estado)}
+      ${linha(txt("tela.tl_c_nivel", "nível"), txt(niv.txt, niv.rot))}
+      ${linha(txt("tela.tl_c_operacao", "operação em curso"), a.op || txt("tela.tl_c_sem_op", "nenhuma em curso"))}
+      ${linha(txt("tela.tl_c_alvo", "alvo"), a.alvo)}
+      ${linha(txt("tela.tl_c_fase", "fase"), a.fase)}
+      ${linha(txt("tela.tl_c_usuario", "usuário"), a.usuario)}
+      ${linha(txt("tela.tl_c_origem", "origem"), a.origem)}
+      ${linha(txt("tela.tl_c_estacao", "estação (IP)"), a.ip)}
+      ${linha(txt("tela.tl_c_conexao", "conexão"), a.ligacao == null ? "—"
+        : preencher(txt("tela.tl_c_numero", "nº {n}"), { n: a.ligacao }))}
+      ${linha(txt("tela.tl_c_desde", "conectada desde"), a.desde)}
+      ${linha(txt("tela.tl_c_aberta_ha", "aberta há"), dur(num(a.aberta_s) * 1000))}
+      ${linha(txt("tela.tl_c_op_inicio", "operação iniciada"), a.op_desde)}
+      ${linha(txt("tela.tl_c_op_dura", "operação dura há"), dur(a.ha_ms))}
+      ${linha(txt("tela.tl_c_trabalhando", "desse tempo, trabalhando"), dur(a.trabalhando_ms))}
+      ${linha(txt("tela.tl_c_na_fila", "desse tempo, na fila da trava"), dur(a.esperou_ms))}
+      ${linha(txt("tela.tl_c_peso", "peso (servidor gasto)"), dur(a.peso_ms))}
+      ${linha(txt("tela.tl_c_pedidos", "pedidos já feitos"), a.pedidos)}
+      ${linha(txt("tela.tl_c_passos", "unidades percorridas"), a.passos)}
+      ${linha(txt("tela.tl_c_trava", "trava de dados"), a.com_trava
+        ? txt("tela.tl_c_trava_sim", "na mão desta atividade") : NAO())}
+      ${linha(txt("tela.tl_c_esperando", "esperando"), a.esperando_o_que)}
+      ${linha(txt("tela.tl_c_tem_ponto", "tem ponto de cancelamento"), SIM_NAO(a.tem_ponto))}
+      ${linha(txt("tela.tl_c_cancelavel", "cancelável neste instante"), SIM_NAO(a.cancelavel))}
+      ${linha(txt("tela.tl_c_marcada", "marcada para encerrar"), SIM_NAO(a.encerrando))}
+      ${linha(txt("tela.tl_c_ja_encerrada", "já encerrada"),
+        preencher(txt("tela.tl_c_vezes", "{n} vez(es)"), { n: a.encerradas }))}
       </div>
       <div class="tlm-acoes">
         ${podeEncerrar
-          ? `<button class="botao excluir" id="tlmEncerrar" type="button">Encerrar a operação</button>`
+          ? `<button class="botao excluir" id="tlmEncerrar" type="button">${
+              esc(txt("tela.tl_encerrar", "Encerrar a operação"))}</button>`
           : `<button class="botao excluir" type="button" disabled
-               title="${esc(!escolha.escolhida ? "clique na bolha para poder encerrá-la"
-                 : a.encerrando ? "já está encerrando"
-                 : a.op ? "esta operação não tem ponto de cancelamento: vai terminar"
-                 : "não há operação em curso")}">Encerrar a operação</button>`}
-        ${escolha.escolhida && a.ligacao ? `<button class="botao marcar" id="tlmDerrubar" type="button">Derrubar a conexão</button>` : ""}
+               title="${esc(!escolha.escolhida ? txt("tela.tl_encerrar_off_clique", "clique na bolha para poder encerrá-la")
+                 : a.encerrando ? txt("tela.tl_encerrar_off_ja", "já está encerrando")
+                 : a.op ? txt("tela.tl_encerrar_off_sem_ponto", "esta operação não tem ponto de cancelamento: vai terminar")
+                 : txt("tela.tl_encerrar_off_sem_op", "não há operação em curso"))}">${
+              esc(txt("tela.tl_encerrar", "Encerrar a operação"))}</button>`}
+        ${escolha.escolhida && a.ligacao ? `<button class="botao marcar" id="tlmDerrubar" type="button">${
+          esc(txt("tela.tl_derrubar", "Derrubar a conexão"))}</button>` : ""}
         ${a.ip && irmas > 1 && !estado.estacao
-          ? `<button class="botao consultar" id="tlmEstacao" type="button">Ver as ${irmas} desta estação</button>`
+          ? `<button class="botao consultar" id="tlmEstacao" type="button">${
+              esc(preencher(txt("tela.tl_ver_estacao", "Ver as {n} desta estação"), { n: irmas }))}</button>`
           : ""}
       </div>
       <p class="tlm-nota">${
         !escolha.escolhida
-          ? "esta é a atividade mais pesada agora, mostrada sem ninguém ter pedido. "
-            + "<b>Clique na bolha dela</b> para poder encerrá-la — derrubar o trabalho "
-            + "de outra pessoa exige escolha explícita."
+          ? marcado(txt("tela.tl_nota_auto",
+              "esta é a atividade mais pesada agora, mostrada sem ninguém ter pedido. **Clique na bolha dela** para poder encerrá-la — derrubar o trabalho de outra pessoa exige escolha explícita."))
         : a.encerrando
-          ? "encerrando… a operação aborta no próximo ponto seguro."
+          ? marcado(txt("tela.tl_nota_encerrando",
+              "encerrando… a operação aborta no próximo ponto seguro."))
           : !a.op
-            ? "sem operação em curso. Derrubar a conexão fecha o soquete — é o «kill» de sempre."
+            ? marcado(txt("tela.tl_nota_sem_op",
+                "sem operação em curso. Derrubar a conexão fecha o soquete — é o «kill» de sempre."))
             : a.cancelavel
-              ? "cancelável agora: a marca é lida entre duas unidades de trabalho, e o que já "
-                + "foi gravado fica gravado."
+              ? marcado(txt("tela.tl_nota_cancelavel",
+                  "cancelável agora: a marca é lida entre duas unidades de trabalho, e o que já foi gravado fica gravado."))
               : a.tem_ponto
-                ? "esta operação tem ponto de cancelamento, mas não está nele neste instante — "
-                  + "tipicamente porque espera a trava de dados. A marca vale para o primeiro "
-                  + "ponto seguro que vier."
-                : "não cancelável: a operação não tem ponto de cancelamento e vai terminar. "
-                  + "Abandonar uma gravação no meio deixaria o arquivo mentindo."
+                ? marcado(txt("tela.tl_nota_tem_ponto",
+                    "esta operação tem ponto de cancelamento, mas não está nele neste instante — tipicamente porque espera a trava de dados. A marca vale para o primeiro ponto seguro que vier."))
+                : marcado(txt("tela.tl_nota_sem_ponto",
+                    "não cancelável: a operação não tem ponto de cancelamento e vai terminar. Abandonar uma gravação no meio deixaria o arquivo mentindo."))
       }</p>`;
 
     // O cartão inteiro é reescrito a cada volta porque os números mudam a cada
@@ -1587,10 +1673,12 @@ window.PhxTelemetria = (function () {
     };
     const der = $("#tlmDerrubar");
     if (der) der.onclick = async () => {
-      if (!confirm(`Derrubar a conexão ${a.ligacao}? O soquete fecha e o cliente perde a resposta.`)) return;
+      if (!confirm(preencher(txt("tela.tl_derrubar_pergunta",
+        "Derrubar a conexão {n}? O soquete fecha e o cliente perde a resposta."),
+        { n: a.ligacao }))) return;
       try {
         const r = await estado.api("encerrar_sessao", { id: a.ligacao });
-        estado.aoAvisar(r.aviso || "conexão encerrada");
+        estado.aoAvisar(r.aviso || txt("tela.tl_conexao_encerrada", "conexão encerrada"));
       } catch (e) { estado.aoAvisar(String(e), true); }
       volta();
     };
@@ -1611,16 +1699,22 @@ window.PhxTelemetria = (function () {
     const tab = $("#tlmThreads");
     if (!tab) return;
     const vivas = fios.filter(f => f.viva).length;
-    $("#tlmThreadsN").textContent = `· ${vivas} viva(s) de ${fios.length} registrada(s)`;
+    $("#tlmThreadsN").textContent = "· " + preencher(
+      txt("tela.tl_th_vivas", "{vivas} viva(s) de {total} registrada(s)"),
+      { vivas, total: fios.length });
     tab.innerHTML =
-      `<thead><tr><th>thread</th><th>família</th><th>finalidade</th>
-         <th>fazendo agora</th><th class="num">voltas</th><th class="num">viva há</th></tr></thead>
+      `<thead><tr><th>${esc(txt("tela.tl_th_thread", "thread"))}</th>
+         <th>${esc(txt("tela.tl_th_familia", "família"))}</th>
+         <th>${esc(txt("tela.tl_th_finalidade", "finalidade"))}</th>
+         <th>${esc(txt("tela.tl_th_fazendo", "fazendo agora"))}</th>
+         <th class="num">${esc(txt("tela.tl_th_voltas", "voltas"))}</th>
+         <th class="num">${esc(txt("tela.tl_th_viva_ha", "viva há"))}</th></tr></thead>
        <tbody>${fios.map(f => `
         <tr class="${f.viva ? "" : "morta"}">
           <td class="tlm-nome">${esc(f.nome)}</td>
           <td>${esc(f.familia)}</td>
           <td class="tlm-fim">${esc(f.finalidade)}</td>
-          <td>${esc(f.viva ? f.fazendo : "encerrada")}</td>
+          <td>${esc(f.viva ? f.fazendo : txt("tela.tl_th_encerrada", "encerrada"))}</td>
           <td class="num">${esc(String(f.voltas))}</td>
           <td class="num">${esc(dur(num(f.viva_s) * 1000))}</td>
         </tr>`).join("")}</tbody>`;
