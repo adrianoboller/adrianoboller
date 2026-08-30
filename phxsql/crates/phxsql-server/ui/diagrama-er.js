@@ -220,6 +220,24 @@ window.PhxER = (function () {
   const esc = t => String(t ?? "").replace(/[&<>"']/g, c =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+  /** O texto de tela pela fabrica de idiomas, com o portugues de fabrica ao
+   *  lado.
+   *
+   *  Delega em vez de chamar o global direto pelo mesmo motivo do cabecalho
+   *  deste arquivo: o modulo se exercita SEM a pagina em volta, e um
+   *  `txt is not defined` no meio do desenho deixaria o diagrama sem sair.
+   *  Com a pagina, a fabrica manda; sem ela, o portugues. */
+  function txt(nome, padrao) {
+    return window.txt ? window.txt(nome, padrao) : padrao;
+  }
+
+  /** Poe os `{marcador}` no lugar. Marcador posicional por nome, e nunca `+`
+   *  no meio da frase: a ordem das palavras muda de lingua para lingua. */
+  function preencher(bruto, dados) {
+    return String(bruto).replace(/\{(\w+)\}/g,
+      (m, k) => (dados && k in dados) ? String(dados[k]) : m);
+  }
+
   /** A linha (índice visível) em que a coluna aparece na caixa, ou -1. */
   function linhaDa(t, coluna) {
     const alvo = chave(coluna);
@@ -361,7 +379,7 @@ window.PhxER = (function () {
     return `<g class="er-lig solta">
       <path d="M${x} ${a.y} V${y}" class="er-seta solta"/>
       <text class="er-rot solta lado" x="${x + 5}" y="${y - 3}"
-        >→ ${esc(l.para)} (fora)</text>
+        >${esc(preencher(txt("tela.er_fora", "→ {tabela} (fora)"), { tabela: l.para }))}</text>
     </g>`;
   }
 
@@ -469,7 +487,7 @@ window.PhxER = (function () {
       viewBox="0 0 ${tam.largura} ${tam.altura}"
       width="${tam.largura}" height="${tam.altura}"
       preserveAspectRatio="xMinYMin meet" role="img"
-      aria-label="Diagrama de entidades e relacionamentos">
+      aria-label="${esc(txt("tela.er_diagrama", "Diagrama de entidades e relacionamentos"))}">
       <defs>
         <marker id="er-ponta" viewBox="0 0 10 10" refX="9" refY="5"
                 markerWidth="7" markerHeight="7" orient="auto-start-reverse">

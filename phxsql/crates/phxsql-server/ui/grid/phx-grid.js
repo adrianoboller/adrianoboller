@@ -14,6 +14,22 @@
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
   }
+  /* O texto de tela pela fabrica de idiomas, com o portugues de fabrica ao
+     lado. Delega no `root.txt` da pagina hospedeira em vez de chamar o global
+     direto: a grade e um componente de ZERO dependencias e continua sendo --
+     sem a pagina em volta ela desenha em portugues, e nao estoura. */
+  function txt(nome, padrao) {
+    return root.txt ? root.txt(nome, padrao) : padrao;
+  }
+
+  /* Poe os `{marcador}` no lugar. Posicional por nome, e nunca `+` no meio da
+     frase: «Pagina 2 de 9» nao tem a mesma ordem em toda lingua. */
+  function preencher(bruto, dados) {
+    return String(bruto).replace(/\{(\w+)\}/g, function (m, k) {
+      return (dados && Object.prototype.hasOwnProperty.call(dados, k)) ? String(dados[k]) : m;
+    });
+  }
+
   function el(tag, cls, html) {
     var e = document.createElement(tag);
     if (cls) e.className = cls;
@@ -600,12 +616,15 @@
       '<div class="phx-rodape">' +
       '<div class="phx-pag"></div>' +
       '<div class="phx-rodape-dir">' +
-      '<select class="phx-tam"></select><span class="phx-tam-rotulo">itens por página</span>' +
+      '<select class="phx-tam"></select><span class="phx-tam-rotulo">' +
+      esc(txt("tela.gr_itens_por_pagina", "itens por página")) + "</span>" +
       '<span class="phx-mostrando"></span>' +
       '<span class="phx-colsel-envoltorio"><button type="button" class="phx-colsel-btn"></button>' +
       '<div class="phx-colsel" hidden></div></span>' +
       (cfg.exportarVista === false ? "" :
-        '<button type="button" class="phx-exp-btn" title="baixa o que está na tela: estas colunas, este filtro, esta ordem">⤓ Exportar a vista</button>') +
+        '<button type="button" class="phx-exp-btn" title="' +
+        esc(txt("tela.gr_exportar_dica", "baixa o que está na tela: estas colunas, este filtro, esta ordem")) +
+        '">' + esc(txt("tela.gr_exportar_vista", "⤓ Exportar a vista")) + "</button>") +
       "</div></div>";
     var LIMITE_LISTA_EXCEL = 500;
     function valoresDistintos(campo) {
@@ -642,12 +661,16 @@
     var buscaEl = null, buscaContaEl = null;
     function atualizaContaBusca() {
       if (!buscaContaEl) return;
-      buscaContaEl.textContent = filtros["*"] ? fmt.numero(estado.total) + " resultado" + (estado.total === 1 ? "" : "s") : "";
+      buscaContaEl.textContent = filtros["*"]
+        ? preencher(txt("tela.gr_resultados", "{n} resultado(s)"), { n: fmt.numero(estado.total) })
+        : "";
     }
     function montaBusca() {
       if (!cfg.buscaGlobal) return;
       var bb = el("div", "phx-busca");
-      bb.innerHTML = '<input type="text" class="phx-busca-in" placeholder="Buscar em tudo\u2026 (v\u00e1rios termos = E)"><span class="phx-busca-conta"></span>';
+      bb.innerHTML = '<input type="text" class="phx-busca-in" placeholder="' +
+        esc(txt("tela.gr_busca_tudo", "Buscar em tudo\u2026 (v\u00e1rios termos = E)")) +
+        '"><span class="phx-busca-conta"></span>';
       wrap.insertBefore(bb, wrap.firstChild);
       buscaEl = bb.querySelector("input");
       buscaContaEl = bb.querySelector(".phx-busca-conta");
@@ -676,7 +699,8 @@
     function renderGroupBox() {
       if (!groupBox) return;
       if (!grupos.length) {
-        groupBox.innerHTML = '<span class="phx-groupbox-dica">Arraste uma coluna para c\u00e1 para agrupar</span>';
+        groupBox.innerHTML = '<span class="phx-groupbox-dica">' +
+          esc(txt("tela.gr_arraste", "Arraste uma coluna para c\u00e1 para agrupar")) + "</span>";
         return;
       }
       var html = "", j2;
@@ -684,17 +708,23 @@
         var cP = porCampo[grupos[j2]], dP = dirsGrupo[grupos[j2]] || "asc";
         html += '<span class="phx-gpill" draggable="true" data-campo="' + esc(grupos[j2]) + '">' +
           '<button type="button" class="phx-gpill-dir" title="' +
-            (dP === "asc" ? "crescente \u2014 clique para inverter" : "decrescente \u2014 clique para inverter") + '">' +
+            esc(dP === "asc" ? txt("tela.gr_crescente", "crescente \u2014 clique para inverter")
+                             : txt("tela.gr_decrescente", "decrescente \u2014 clique para inverter")) + '">' +
             (dP === "asc" ? "\u2191" : "\u2193") + "</button>" +
           esc((cP && cP.titulo) || grupos[j2]) +
-          ' <button type="button" class="phx-gpill-x" title="desagrupar">\u00d7</button></span>';
+          ' <button type="button" class="phx-gpill-x" title="' +
+          esc(txt("tela.gr_desagrupar", "desagrupar")) + '">\u00d7</button></span>';
         if (j2 < grupos.length - 1) html += '<span class="phx-gpill-seta">\u2192</span>';
       }
       html += '<span class="phx-gbox-acoes">' +
-        '<button type="button" class="phx-gbox-bt" data-todos="abrir">expandir tudo</button>' +
-        '<button type="button" class="phx-gbox-bt" data-todos="fechar">recolher tudo</button>' +
+        '<button type="button" class="phx-gbox-bt" data-todos="abrir">' +
+        esc(txt("tela.gr_expandir_tudo", "expandir tudo")) + "</button>" +
+        '<button type="button" class="phx-gbox-bt" data-todos="fechar">' +
+        esc(txt("tela.gr_recolher_tudo", "recolher tudo")) + "</button>" +
         '<button type="button" class="phx-gbox-bt' + (rodapeGrupo ? " phx-gbox-bt-on" : "") +
-          '" data-rodape="1" title="mostra o total embaixo de cada grupo">total por grupo</button>' +
+          '" data-rodape="1" title="' +
+          esc(txt("tela.gr_total_grupo_dica", "mostra o total embaixo de cada grupo")) + '">' +
+          esc(txt("tela.gr_total_por_grupo", "total por grupo")) + "</button>" +
         "</span>";
       groupBox.innerHTML = html;
       var acs = groupBox.querySelectorAll("[data-todos]"), ja;
@@ -752,12 +782,15 @@
       for (k3 in filtros) if (filtros[k3]) campos.push(k3);
       campos.sort();
       if (!campos.length) { barraFiltros.hidden = true; barraFiltros.innerHTML = ""; atualizaContaBusca(); return; }
-      var html = '<span class="phx-filtros-conta">Filtros Ativos (' + campos.length + ")</span>";
+      var html = '<span class="phx-filtros-conta">' +
+        esc(preencher(txt("tela.gr_filtros_ativos", "Filtros Ativos ({n})"), { n: campos.length })) + "</span>";
       for (j2 = 0; j2 < campos.length; j2++) {
         html += '<span class="phx-chip" data-campo="' + esc(campos[j2]) + '">' + esc(resumoFiltro(campos[j2], filtros[campos[j2]])) +
-          ' <button type="button" class="phx-chip-x" title="remover">\u00d7</button></span>';
+          ' <button type="button" class="phx-chip-x" title="' +
+          esc(txt("tela.gr_remover", "remover")) + '">\u00d7</button></span>';
       }
-      html += '<button type="button" class="phx-filtros-limpar">Limpar Todos</button>';
+      html += '<button type="button" class="phx-filtros-limpar">' +
+        esc(txt("tela.gr_limpar_todos", "Limpar Todos")) + "</button>";
       barraFiltros.innerHTML = html;
       barraFiltros.hidden = false;
       var xs = barraFiltros.querySelectorAll(".phx-chip-x");
@@ -787,7 +820,14 @@
       var ehNum = c2.tipo === "numero" || c2.tipo === "moeda" || c2.tipo === "percentual";
       var multiIni = (atual && atual.tipo === "multi") ? atual : (atual && atual.tipo === "expr" ? { combinador: "e", condicoes: [{ op: atual.op, valor: atual.valor }] } : null);
       var combIni = multiIni ? multiIni.combinador : "e";
-      var OPS_NUM = [[">", "\u00e9 maior que"], [">=", "\u00e9 maior ou igual a"], ["<", "\u00e9 menor que"], ["<=", "\u00e9 menor ou igual a"], ["=", "\u00e9 igual a"], ["!=", "\u00e9 diferente de"]];
+      var OPS_NUM = [
+        [">",  txt("tela.gr_op_maior", "\u00e9 maior que")],
+        [">=", txt("tela.gr_op_maior_ig", "\u00e9 maior ou igual a")],
+        ["<",  txt("tela.gr_op_menor", "\u00e9 menor que")],
+        ["<=", txt("tela.gr_op_menor_ig", "\u00e9 menor ou igual a")],
+        ["=",  txt("tela.gr_op_igual", "\u00e9 igual a")],
+        ["!=", txt("tela.gr_op_diferente", "\u00e9 diferente de")],
+      ];
       function linhaNum(ix2) {
         var ci = multiIni && multiIni.condicoes[ix2];
         var h = '<div class="phx-fpop-numlin"><select data-nop="' + ix2 + '">', j3;
@@ -833,25 +873,38 @@
         atualizaMestreFpop();
         var rodT = fpop.querySelector(".phx-fpop-trunc");
         if (dist.total > vis.length && (busca ? true : dist.total > LIMITE_LISTA_EXCEL)) {
-          rodT.textContent = "mostrando " + fmt.numero(vis.length) + " de " + fmt.numero(dist.total) + " \u2014 refine a pesquisa";
+          rodT.textContent = preencher(
+            txt("tela.gr_mostrando", "mostrando {vis} de {total} \u2014 refine a pesquisa"),
+            { vis: fmt.numero(vis.length), total: fmt.numero(dist.total) });
           rodT.hidden = false;
         } else rodT.hidden = true;
       }
       fpop.innerHTML =
-        '<button type="button" class="phx-fpop-acao" data-a="az">Classificar de A a Z</button>' +
-        '<button type="button" class="phx-fpop-acao" data-a="za">Classificar de Z a A</button>' +
-        '<button type="button" class="phx-fpop-acao" data-a="limpar">Limpar Filtro</button>' +
+        '<button type="button" class="phx-fpop-acao" data-a="az">' +
+        esc(txt("tela.gr_ordenar_az", "Classificar de A a Z")) + "</button>" +
+        '<button type="button" class="phx-fpop-acao" data-a="za">' +
+        esc(txt("tela.gr_ordenar_za", "Classificar de Z a A")) + "</button>" +
+        '<button type="button" class="phx-fpop-acao" data-a="limpar">' +
+        esc(txt("tela.gr_limpar_filtro", "Limpar Filtro")) + "</button>" +
         '<div class="phx-fpop-sep"></div>' +
-        (dist.remoto ? '<div class="phx-fpop-aviso">fonte remota sem suporte a valores distintos</div>' :
-        '<input type="text" class="phx-fpop-busca" placeholder="Pesquisar">' +
-        '<label class="phx-fpop-tudo"><input type="checkbox"> (Selecionar Tudo)</label>' +
+        (dist.remoto ? '<div class="phx-fpop-aviso">' +
+          esc(txt("tela.gr_sem_distintos", "fonte remota sem suporte a valores distintos")) + "</div>" :
+        '<input type="text" class="phx-fpop-busca" placeholder="' +
+          esc(txt("tela.gr_pesquisar", "Pesquisar")) + '">' +
+        '<label class="phx-fpop-tudo"><input type="checkbox"> ' +
+          esc(txt("tela.gr_selecionar_tudo", "(Selecionar Tudo)")) + "</label>" +
         '<div class="phx-fpop-lista"></div>' +
         '<div class="phx-fpop-trunc" hidden></div>' +
-        (dist.temNulos ? '<label class="phx-fpop-nulos"><input type="checkbox"' + (incluiNulos ? " checked" : "") + "> Exibir itens sem valor</label>" : "")) +
-        (ehNum ? '<div class="phx-fpop-sep"></div><div class="phx-fpop-numtit">Filtros de N\u00famero</div>' + linhaNum(0) +
-          '<div class="phx-fpop-comb"><label><input type="radio" name="phxcomb" value="e"' + (combIni !== "ou" ? " checked" : "") + '> E</label>' +
-          '<label><input type="radio" name="phxcomb" value="ou"' + (combIni === "ou" ? " checked" : "") + '> OU</label></div>' + linhaNum(1) : "") +
-        '<div class="phx-fpop-rodape"><button type="button" class="phx-fpop-ok">OK</button><button type="button" class="phx-fpop-cancela">Cancelar</button></div>';
+        (dist.temNulos ? '<label class="phx-fpop-nulos"><input type="checkbox"' + (incluiNulos ? " checked" : "") + "> " +
+          esc(txt("tela.gr_exibir_sem_valor", "Exibir itens sem valor")) + "</label>" : "")) +
+        (ehNum ? '<div class="phx-fpop-sep"></div><div class="phx-fpop-numtit">' +
+          esc(txt("tela.gr_filtros_numero", "Filtros de N\u00famero")) + "</div>" + linhaNum(0) +
+          '<div class="phx-fpop-comb"><label><input type="radio" name="phxcomb" value="e"' + (combIni !== "ou" ? " checked" : "") + "> " +
+          esc(txt("tela.gr_e", "E")) + "</label>" +
+          '<label><input type="radio" name="phxcomb" value="ou"' + (combIni === "ou" ? " checked" : "") + "> " +
+          esc(txt("tela.gr_ou", "OU")) + "</label></div>" + linhaNum(1) : "") +
+        '<div class="phx-fpop-rodape"><button type="button" class="phx-fpop-ok">OK</button>' +
+        '<button type="button" class="phx-fpop-cancela">' + esc(txt("tela.cancelar", "Cancelar")) + "</button></div>";
       var rb = ancora.getBoundingClientRect(), rw = wrap.getBoundingClientRect();
       fpop.style.left = Math.max(8, Math.min(rb.left - rw.left, wrap.offsetWidth - 260)) + "px";
       fpop.style.top = (rb.bottom - rw.top + 4) + "px";
@@ -1054,8 +1107,10 @@
       th.innerHTML =
         '<span class="phx-th-titulo">' + esc(c.titulo || c.campo) + '<span class="phx-sort-ind">' + ind + "</span></span>" +
         (c.dimensao ? '<span class="phx-th-dim">(' + esc(c.dimensao) + ")</span>" : "") +
-        (c.agregador ? '<button type="button" class="phx-th-agg" title="alternar agregador">' + esc(c.agregador.toUpperCase()) + "</button>" : "") +
-        (c.filtravel !== false ? '<button type="button" class="phx-fbtn' + (filtros[c.campo] ? " phx-fbtn-on" : "") + '" title="filtrar">\u25bc</button>' : "") +
+        (c.agregador ? '<button type="button" class="phx-th-agg" title="' +
+          esc(txt("tela.gr_alternar_agregador", "alternar agregador")) + '">' + esc(c.agregador.toUpperCase()) + "</button>" : "") +
+        (c.filtravel !== false ? '<button type="button" class="phx-fbtn' + (filtros[c.campo] ? " phx-fbtn-on" : "") +
+          '" title="' + esc(txt("tela.gr_filtrar", "filtrar")) + '">\u25bc</button>' : "") +
         '<span class="phx-col-resz"></span>';
       if (c.ordenavel !== false) {
         th.className += " phx-ordenavel";
@@ -1160,7 +1215,7 @@
           continue;
         }
         if (tipoC === "numero" || tipoC === "moeda" || tipoC === "percentual") {
-          td2.innerHTML = '<span class="phx-frow-num"><select class="phx-frow-op"><option>&gt;</option><option>&gt;=</option><option>&lt;</option><option>&lt;=</option><option>=</option><option>!=</option></select><input type="number" step="any" size="5" class="phx-frow-in" placeholder="valor"></span>';
+          td2.innerHTML = '<span class="phx-frow-num"><select class="phx-frow-op"><option>&gt;</option><option>&gt;=</option><option>&lt;</option><option>&lt;=</option><option>=</option><option>!=</option></select><input type="number" step="any" size="5" class="phx-frow-in" placeholder="' + esc(txt("tela.gr_valor", "valor")) + '"></span>';
           (function (campo, cel) {
             var aplica = debounce(function () {
               var vNum = parseFloat(cel.querySelector(".phx-frow-in").value);
@@ -1179,7 +1234,8 @@
             });
           })(c2.campo, td2);
         } else if (tipoC === "badge") {
-          var dist2 = valoresDistintos(c2.campo), hOp = '<select class="phx-frow-in phx-frow-sel"><option value="">Selecionar</option>', j3;
+          var dist2 = valoresDistintos(c2.campo), hOp = '<select class="phx-frow-in phx-frow-sel"><option value="">' +
+            esc(txt("tela.gr_selecionar", "Selecionar")) + "</option>", j3;
           for (j3 = 0; j3 < dist2.itens.length && j3 < 50; j3++) hOp += "<option>" + esc(dist2.itens[j3].chave) + "</option>";
           td2.innerHTML = hOp + "</select>";
           (function (campo, cel) {
@@ -1188,7 +1244,8 @@
             });
           })(c2.campo, td2);
         } else {
-          td2.innerHTML = '<input type="text" size="6" class="phx-frow-in" placeholder="Buscar\u2026">';
+          td2.innerHTML = '<input type="text" size="6" class="phx-frow-in" placeholder="' +
+            esc(txt("tela.gr_buscar_curto", "Buscar\u2026")) + '">';
           (function (campo, cel) {
             cel.querySelector("input").addEventListener("input", debounce(function () {
               var vt = cel.querySelector("input").value;
@@ -1322,7 +1379,7 @@
           c = v[k];
           var tA2 = Object.prototype.hasOwnProperty.call(tg, c.campo);
           html += '<td class="phx-td phx-tipo-' + (c.tipo || "texto") + '">' +
-            (k === 0 ? '<span class="phx-grodape-rot">total geral</span>'
+            (k === 0 ? '<span class="phx-grodape-rot">' + esc(txt("tela.gr_total_geral", "total geral")) + "</span>"
                      : tA2 ? formata(c, tg[c.campo], {}, 0) : "") +
             "</td>";
         }
@@ -1377,9 +1434,12 @@
       if (fim < tp) itens.push('<span class="phx-pg-elipse">…</span>');
       itens.push(btn("›", p + 1, p === tp));
       itens.push(btn("»", tp, p === tp));
-      itens.push('<span class="phx-pg-irpara">ir para <input type="number" min="1" max="' + tp + '" value="' + p + '"></span>');
+      itens.push('<span class="phx-pg-irpara">' + esc(txt("tela.gr_ir_para", "ir para")) +
+        ' <input type="number" min="1" max="' + tp + '" value="' + p + '"></span>');
       var tP = agora();
-      pagEl.innerHTML = 'Página ' + p + " de " + fmt.numero(tp) + " (" + fmt.numero(estado.total) + " registros) " + itens.join("");
+      pagEl.innerHTML = esc(preencher(
+        txt("tela.gr_pagina_de", "Página {p} de {tp} ({n} registros)"),
+        { p: p, tp: fmt.numero(tp), n: fmt.numero(estado.total) })) + " " + itens.join("");
       var bs = pagEl.querySelectorAll(".phx-pg"), j2;
       for (j2 = 0; j2 < bs.length; j2++) {
         (function (bEl) {
@@ -1391,9 +1451,13 @@
       var ini2 = estado.total ? (p - 1) * estado.tamanho + 1 : 0;
       var fim2 = Math.min(estado.total, p * estado.tamanho);
       if (grupos.length && ultimaCarga && ultimaCarga.totalDados != null)
-        mostrandoEl.textContent = fmt.numero(ultimaCarga.totalDados) + " linhas em " + grupos.length + " n\u00edvel" + (grupos.length > 1 ? "eis" : "") + " de grupo";
+        mostrandoEl.textContent = preencher(
+          txt("tela.gr_linhas_em_grupos", "{linhas} linhas em {niveis} n\u00edvel(is) de grupo"),
+          { linhas: fmt.numero(ultimaCarga.totalDados), niveis: grupos.length });
       else
-        mostrandoEl.textContent = "Mostrando " + fmt.numero(ini2) + "\u2013" + fmt.numero(fim2) + " de " + fmt.numero(estado.total);
+        mostrandoEl.textContent = preencher(
+          txt("tela.gr_mostrando_de_ate", "Mostrando {de}\u2013{ate} de {total}"),
+          { de: fmt.numero(ini2), ate: fmt.numero(fim2), total: fmt.numero(estado.total) });
       atualizaContaBusca();
       perfRender.pagMs = Math.round((agora() - tP) * 100) / 100;
     }
@@ -1416,7 +1480,7 @@
 
     function montaColSel() {
       var vis = visiveis().length;
-      colBtn.textContent = "Colunas: " + vis + " ▾";
+      colBtn.textContent = preencher(txt("tela.gr_colunas_conta", "Colunas: {n} ▾"), { n: vis });
       var html = "", j, c;
       for (j = 0; j < ordemColunas.length; j++) {
         c = porCampo[ordemColunas[j]];
@@ -1427,7 +1491,8 @@
         html += '<div class="phx-colsel-linha">' +
           '<button type="button" class="phx-colsel-pino' + (c.fixa === "esq" ? " phx-colsel-pino-on" : "") +
             '" data-pino="' + esc(c.campo) + '" title="' +
-            (c.fixa === "esq" ? "congelada — clique para soltar" : "congelar à esquerda") +
+            esc(c.fixa === "esq" ? txt("tela.gr_congelada", "congelada — clique para soltar")
+                                 : txt("tela.gr_congelar", "congelar à esquerda")) +
             '">◧</button>' +
           '<label class="phx-colsel-item"><input type="checkbox" data-campo="' + esc(c.campo) + '"' +
           (ocultas[c.campo] ? "" : " checked") + "> " + esc(c.titulo || c.campo) + "</label></div>";

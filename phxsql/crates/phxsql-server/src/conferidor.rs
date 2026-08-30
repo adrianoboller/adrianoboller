@@ -305,6 +305,18 @@ pub const ISENTOS: &[(&str, &str)] = &[
     ("Oracle", "nome de produto"),
     ("DBeaver", "nome de produto"),
     ("Claude", "nome de produto"),
+    (
+        "Claude Opus 5",
+        "nome de produto da Anthropic, o mesmo em toda lingua",
+    ),
+    (
+        "Claude Sonnet 5",
+        "nome de produto da Anthropic, o mesmo em toda lingua",
+    ),
+    (
+        "Claude Haiku 4.5",
+        "nome de produto da Anthropic, o mesmo em toda lingua",
+    ),
     ("Anthropic", "nome de empresa"),
     ("ODBC", "nome de padrao"),
     (
@@ -432,7 +444,11 @@ fn limpar(fonte: &str) -> (String, Vec<usize>) {
 /// solucao e o par -- o rotulo de fabrica fica no dado, a chave ao lado, e
 /// quem desenha chama `txt(f.txt, f.rot)` na hora de pintar. Para o
 /// conferidor, rotulo com chave ao lado E rotulo coberto.
-const PARES: &[(&str, &str)] = &[("rot:\"", "txt:\""), ("dica:\"", "dicaTxt:\"")];
+const PARES: &[(&str, &str)] = &[
+    ("rot:\"", "txt:\""),
+    ("dica:\"", "dicaTxt:\""),
+    ("diz:\"", "dizTxt:\""),
+];
 
 /// Apaga o rotulo de fabrica quando a chave dele esta na MESMA linha.
 ///
@@ -850,6 +866,110 @@ impl Placar {
 }
 
 // =====================================================================
+// As duas guardas do texto COLADO
+// =====================================================================
+//
+// A catraca de cima conta o que ainda NAO passa pela fabrica. Estas duas
+// contam o contrario: o que passa pela fabrica e mesmo assim nao esta
+// traduzido, porque alguem colou a mesma frase em varias colunas.
+//
+// Elas nascem em ZERO, e nascer em zero e o ponto: nao ha o que consertar
+// hoje: medido nesta rodada, nenhuma chave tem os seis idiomas iguais e
+// nenhuma frase longa se repete em tres. O que elas fazem e pegar o DIA em
+// que alguem colar -- que e o jeito mais provavel de a fabrica crescer com
+// numero bonito e tela em portugues.
+//
+// # O criterio NAO e «igual ao portugues»
+//
+// Foi a primeira ideia, e ela e errada. Medido: 33 chaves tem o espanhol
+// identico ao portugues, e a maioria esta CERTA -- `Database`, `Profiler`,
+// `Servidor`, e `Menu principal`, que em frances e exatamente isso. Uma
+// guarda de «igual ao portugues» reprovaria o correto, e guarda que reprova o
+// correto e desligada na primeira semana.
+//
+// O criterio e mais forte: os SEIS iguais (guarda 1), ou a mesma frase LONGA
+// em tres ou mais (guarda 2). Duas linguas coincidirem numa palavra e comum;
+// seis coincidirem numa frase, nao.
+
+/// O texto sem os `{marcador}`: o que sobra e o que alguem realmente
+/// escreveu.
+///
+/// Sem isto, `"{id}{eu} · {nivel} · {sub} · peso {peso}"` conta como frase de
+/// trinta e nove caracteres e cai na guarda da frase longa -- quando a unica
+/// palavra ali e «peso», que e a mesma em portugues, italiano e espanhol.
+/// Medir o molde em vez do miolo daria falso positivo exatamente onde a
+/// traducao esta certa.
+fn miolo(texto: &str) -> String {
+    let mut saida = String::with_capacity(texto.len());
+    let mut resto = texto;
+    while let Some(i) = resto.find('{') {
+        saida.push_str(&resto[..i]);
+        match resto[i..].find('}') {
+            Some(f) => resto = &resto[i + f + 1..],
+            None => {
+                resto = "";
+                break;
+            }
+        }
+    }
+    saida.push_str(resto);
+    saida.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Quantos caracteres de texto de verdade um idioma traz.
+fn tamanho_do_miolo(texto: &str) -> usize {
+    miolo(texto).chars().count()
+}
+
+/// As chaves em que os SEIS idiomas trazem exatamente o mesmo texto.
+///
+/// Nome proprio, sigla e identificador ficam de fora pela lista que ja existe
+/// -- [`ISENTOS`] --, e nao por uma segunda lista: `Profiler` e `Pivot` sao
+/// iguais nas seis porque nao se traduzem, e a razao ja esta escrita la.
+pub fn colados() -> Vec<&'static str> {
+    crate::idiomas::FABRICA_TELA
+        .iter()
+        .filter(|f| {
+            let base = f.textos[0];
+            tamanho_do_miolo(base) > 3
+                && isento(base).is_none()
+                && f.textos.iter().all(|t| *t == base)
+        })
+        .map(|f| f.nome)
+        .collect()
+}
+
+/// Quantos idiomas uma frase longa ocupa numa chave, quando ocupa tres ou
+/// mais. Devolve (chave, a frase, quantos idiomas).
+pub fn frases_repetidas() -> Vec<(&'static str, &'static str, usize)> {
+    let mut achados = Vec::new();
+    for f in crate::idiomas::FABRICA_TELA {
+        for (i, t) in f.textos.iter().enumerate() {
+            // So a PRIMEIRA aparicao de cada frase entra, senao a mesma
+            // repeticao seria relatada uma vez por idioma.
+            if t.is_empty() || f.textos[..i].contains(t) {
+                continue;
+            }
+            if tamanho_do_miolo(t) <= 25 || isento(t).is_some() {
+                continue;
+            }
+            let quantos = f.textos.iter().filter(|o| *o == t).count();
+            if quantos >= 3 {
+                achados.push((f.nome, *t, quantos));
+            }
+        }
+    }
+    achados
+}
+
+/// Chaves com os seis idiomas iguais. **So desce**, e hoje e zero.
+pub const TETO_COLADO: usize = 0;
+
+/// Frases longas repetidas em tres ou mais idiomas. **So desce**, e hoje e
+/// zero.
+pub const TETO_FRASE_REPETIDA: usize = 0;
+
+// =====================================================================
 // A catraca
 // =====================================================================
 
@@ -899,7 +1019,13 @@ impl Placar {
 /// nao existia. Ela virou o formulario que existe, e os textos dele nasceram
 /// na fabrica -- os tres paragrafos que sairam sao os tres que a catraca
 /// desce.
-pub const TETO: usize = 1_996;
+///
+/// 1.996 -> 1.806: os QUATRO arquivos que nao sao o `index.html` fecharam em
+/// zero -- `claude.js` (126), `telemetria.js` (38), `grid/phx-grid.js` (24) e
+/// `diagrama-er.js` (2). O que sobra e o `index.html` inteiro, e ele ficou de
+/// fora de proposito: quatro frentes o estavam editando ao mesmo tempo, e
+/// mexer nos 1.806 no meio disso trocaria traducao por conflito.
+pub const TETO: usize = 1_806;
 
 #[cfg(test)]
 mod testes {
@@ -1068,6 +1194,80 @@ mod testes {
         assert_eq!(isento("PhxSql"), Some("a marca"));
         assert_eq!(isento("Salvar"), None, "rotulo de verdade nunca e isento");
         assert_eq!(isento("Cidade"), None);
+    }
+
+    /// A guarda do texto colado: seis colunas com a mesma frase e uma chave
+    /// que ninguem traduziu, com aparencia de traduzida.
+    ///
+    /// **Prova real, com o defeito reposto:** troque as seis colunas de
+    /// `tela.tl_cartao_vazio` pelo portugues e este teste reprova nomeando a
+    /// chave; devolva a traducao e ele passa. A saida esta no relatorio da
+    /// rodada em que a guarda entrou.
+    ///
+    /// Ela NAO compara com o portugues: medido, 33 chaves tem o espanhol
+    /// identico ao portugues e a maioria esta certa (`Database`, `Profiler`,
+    /// `Menu principal`). Comparar com o portugues reprovaria o correto.
+    #[test]
+    fn nenhuma_chave_com_os_seis_idiomas_colados() {
+        // A comparacao e `>` e nao `<=` porque o teto e ZERO: com `<=`, o
+        // clippy tem razao ao dizer que so o `==` acontece. A forma com `>`
+        // diz a mesma coisa e continua certa no dia em que o teto nao for
+        // zero -- e a mesma forma da catraca de cima.
+        let achadas = colados();
+        if achadas.len() > TETO_COLADO {
+            panic!(
+                "{} chave(s) com os SEIS idiomas identicos, e a catraca esta em \
+                 {TETO_COLADO}: {achadas:?}.\nOu falta traduzir, ou o texto nao \
+                 se traduz mesmo -- e ai ele entra nos ISENTOS com a razao escrita",
+                achadas.len()
+            );
+        }
+    }
+
+    /// A guarda da frase longa: a mesma frase de mais de 25 caracteres em tres
+    /// ou mais idiomas.
+    ///
+    /// Pega o colar PARCIAL, que a guarda de cima nao pega: quem traduz tres
+    /// colunas e cola o portugues nas outras tres passa por ela e cai aqui.
+    ///
+    /// O tamanho e medido no MIOLO -- o texto sem os `{marcador}` --, porque
+    /// `"{id}{eu} · {nivel} · {sub} · peso {peso}"` tem trinta e nove
+    /// caracteres e uma palavra so, e essa palavra e a mesma em portugues,
+    /// italiano e espanhol.
+    ///
+    /// **Prova real, com o defeito reposto:** copie o portugues de
+    /// `tela.tl_nota_encerrando` para o italiano e o espanhol e este teste
+    /// reprova, nomeando a chave e quantos idiomas trazem a frase.
+    #[test]
+    fn nenhuma_frase_longa_repetida_em_tres_idiomas() {
+        let achadas = frases_repetidas();
+        let mostra: Vec<String> = achadas
+            .iter()
+            .map(|(nome, texto, quantos)| format!("  {nome} em {quantos} idiomas: {texto:?}"))
+            .collect();
+        if achadas.len() > TETO_FRASE_REPETIDA {
+            panic!(
+                "{} frase(s) longa(s) repetida(s) em tres ou mais idiomas, e a \
+                 catraca esta em {TETO_FRASE_REPETIDA}:\n{}",
+                achadas.len(),
+                mostra.join("\n")
+            );
+        }
+    }
+
+    /// O miolo e o que sobra depois de tirar os marcadores -- e e ele que
+    /// impede a guarda da frase longa de acusar um molde de marcadores.
+    #[test]
+    fn o_miolo_tira_os_marcadores() {
+        assert_eq!(
+            miolo("{id}{eu} · {nivel} · {sub} · peso {peso}"),
+            "· · · peso"
+        );
+        assert_eq!(miolo("peso {peso}"), "peso");
+        assert_eq!(miolo("sem marcador nenhum"), "sem marcador nenhum");
+        // Chave que abre e nao fecha nao pode comer o resto em silencio: ela
+        // some ate o fim, e o que importa e nao estourar.
+        assert_eq!(miolo("aberta {sem fim"), "aberta");
     }
 
     /// Nenhuma isencao duplicada: duas razoes para o mesmo texto significa

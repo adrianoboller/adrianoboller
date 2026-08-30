@@ -135,12 +135,12 @@ A máquina funcionava e quase nada passava por ela. Medido antes desta rodada:
 um lado só (todo `data-txt` tem de existir na fábrica), e esse pega o nome
 escrito errado, não o buraco.
 
-| | antes | a leva do conferidor | a leva do multitela |
-|---|---|---|---|
-| textos na fábrica | 31 | 258 | 353 |
-| textos cravados em português | 2.185 | 1.994 | 1.999 |
-| cobertura | 1% | 11% | 15% |
-| chaves na `FABRICA_TELA` | 32 | 199 | 280 |
+| | antes | a leva do conferidor | a leva do multitela | a leva dos quatro |
+|---|---|---|---|---|
+| textos na fábrica | 31 | 258 | 353 | 730 |
+| textos cravados em português | 2.185 | 1.994 | 1.999 | 1.806 |
+| cobertura | 1% | 11% | 15% | 28% |
+| chaves na `FABRICA_TELA` | 32 | 199 | 280 | 645 |
 
 A coluna do meio mede **cinco sextos da tela**, e a da direita mede a tela
 inteira: o `multitela.js` era servido pelo `http.rs` e não estava no `FONTES`
@@ -149,6 +149,13 @@ sobe para 1.999 numa leva que só traduziu — o piso mudou de lugar, e quem
 impede a próxima leitura falsa é a guarda
 `conferidor::a_lista_cobre_tudo_que_o_http_serve`, que lê o fonte do `http.rs`
 e cobra cada `.js` e `.html` que ele embute.
+
+A coluna da direita é a leva dos **quatro arquivos que não são o
+`index.html`** — `claude.js` (126), `telemetria.js` (38), `grid/phx-grid.js`
+(24) e `diagrama-er.js` (2). Depois dela, **todo texto cravado que resta está
+num arquivo só**, e é o `index.html`. Ele ficou de fora de propósito: quatro
+frentes o estavam editando ao mesmo tempo, e mexer nos 1.806 no meio disso
+trocaria tradução por conflito de integração.
 
 Os números saem do conferidor, não da mão:
 
@@ -182,11 +189,39 @@ cargo run --example textos-fora-da-fabrica -p phxsql-server -- --isentos
    | HTML montado em JS | `` `<h3>${esc(txt("tela.painel", "Painel"))}</h3>` `` |
    | frase com ênfase ou nome de API dentro | `` `${marcado(txt("tela.mt_nota", "**Multitela.** … `window.open` …"))}` `` |
    | frase com um número ou um nome no meio | `avisar(preencher(txt("tela.mt_alinhadas", "{n} regiões alinhadas…"), { n }))` |
-   | tabela lida antes do login (`MENUS`, `FERRAMENTAS`, `CATALOGO`) | `{ rot:"Painel", txt:"tela.painel" }` — o par, **na mesma linha** |
+   | tabela lida antes do login (`MENUS`, `FERRAMENTAS`, `CATALOGO`, `NIVEIS`, `MODELOS`, `RECEITAS`) | `{ rot:"Painel", txt:"tela.painel" }` — o par, **na mesma linha** |
 
    O par existe porque `MENUS` e `FERRAMENTAS` são lidos no arranque, quando
    ainda não há texto traduzido nenhum: `txt(…)` ali devolveria português para
    sempre. Quem desenha chama `txt(f.txt, f.rot)` na hora de pintar.
+
+   São **três** pares hoje, e o terceiro nasceu nesta leva: `rot:`/`txt:`,
+   `dica:`/`dicaTxt:` e `diz:`/`dizTxt:`. O `diz:` é a explicação de custo ao
+   lado de cada modelo no `claude.js`, e a lista dele é lida no arranque como
+   as outras duas. **Par novo entra no `PARES` do conferidor**, senão o rótulo
+   de fábrica continua contado como texto cravado mesmo estando coberto — e o
+   número que dirige a próxima leva fica maior do que a verdade.
+
+   Cuidado com o espaço: o conferidor casa `rot:"` **sem espaço depois dos dois
+   pontos**, que é como o `MENUS` e o `FERRAMENTAS` já escrevem. `rot: "…"` com
+   espaço é lido como rótulo cravado e o par não cobre nada. Custou uma medição
+   nesta rodada: sete textos continuavam na conta com o `txt:` escrito ao lado.
+
+4. **Se o texto mora num módulo que não é o `index.html`**, o módulo declara o
+   próprio `txt` e ele **delega** no global:
+
+   ```js
+   function txt(nome, padrao) {
+     return window.txt ? window.txt(nome, padrao) : padrao;
+   }
+   ```
+
+   Os cinco arquivos de interface são IIFE próprias, e três delas dizem no
+   cabeçalho que se exercitam **sem a página em volta** — a telemetria com um
+   retrato inventado, a grade como componente de zero dependências. Chamar o
+   global direto quebraria essa promessa com um `txt is not defined` no meio do
+   desenho; delegar mantém as duas coisas. Na grade, que é ES5 estrito e recebe
+   o `window` como `root`, a delegação é `root.txt`.
 
 3. **Rode os portões.** `cargo test --workspace` já cobre os três laços.
 
@@ -284,6 +319,60 @@ português nem marca crua. Repondo os dois defeitos ela reprova os dois: sem o
 gancho `est.repintar` a tela não troca de idioma, e sem a conversão de marcas
 a página mostra `**Multitela.**` com os asteriscos à mostra.
 
+### O texto COLADO: as duas guardas que a catraca não pega
+
+A catraca conta o que ainda **não passa** pela fábrica. Ela não vê o estrago
+oposto, que é passar pela fábrica e mesmo assim não estar traduzido: colar a
+mesma frase nas seis colunas faz a cobertura subir e a tela continuar em
+português — a conta que dirige a próxima leva passa a mentir, e é a única
+coisa que ela serve para dizer.
+
+Duas guardas entraram em **zero**, e nascer em zero é o ponto: não há o que
+consertar hoje (medido: nenhuma chave tem os seis idiomas iguais, e nenhuma
+frase longa se repete em três). O que elas fazem é pegar o **dia** em que
+alguém colar.
+
+| guarda | reprova | teto |
+|---|---|---|
+| `conferidor::nenhuma_chave_com_os_seis_idiomas_colados` | os SEIS idiomas com o mesmo texto | 0 |
+| `conferidor::nenhuma_frase_longa_repetida_em_tres_idiomas` | a mesma frase de mais de 25 caracteres em três ou mais | 0 |
+
+**O critério NÃO é «igual ao português».** Foi a primeira ideia, e ela é
+errada: medido, **33 chaves têm o espanhol idêntico ao português**, e a
+maioria está *certa* — `Database`, `Profiler`, `Servidor`, e `Menu principal`,
+que em francês é exatamente isso. Uma guarda de «igual ao português»
+reprovaria o correto, e guarda que reprova o correto é desligada na primeira
+semana. O critério é mais forte: os seis iguais, ou a mesma frase **longa** em
+três ou mais. Duas línguas coincidirem numa palavra é comum; três coincidirem
+numa frase, não.
+
+E o tamanho é medido no **miolo** — o texto sem os `{marcador}` —, porque
+`"{id}{eu} · {nivel} · {sub} · peso {peso}"` tem trinta e nove caracteres e
+uma palavra só, e essa palavra é a mesma em português, italiano e espanhol.
+Medir o molde em vez do miolo daria falso positivo exatamente onde a tradução
+está certa.
+
+Nome próprio e sigla ficam de fora pela lista que já existe — os
+[`ISENTOS`] —, e não por uma segunda lista: `Profiler` e `Pivot` são iguais
+nas seis porque não se traduzem, e a razão já está escrita lá.
+
+**Prova real, com o defeito reposto.** Colando o português de
+`tela.tl_cartao_vazio` nas seis colunas, as duas guardas reprovam e cada uma
+nomeia a chave:
+
+```
+1 chave(s) com os SEIS idiomas identicos, e a catraca esta em 0:
+  ["tela.tl_cartao_vazio"]
+2 frase(s) longa(s) repetida(s) em tres ou mais idiomas, e a catraca esta em 0:
+  tela.tl_cartao_vazio em 6 idiomas: "nenhuma atividade aqui — quando houver, …"
+  tela.tl_nota_encerrando em 3 idiomas: "encerrando… a operação aborta no …"
+```
+
+As duas entraram no `bancada/guardas/catalogo.py` (`texto-colado-nos-seis` e
+`frase-longa-repetida`), e a segunda mostra por que o defeito reposto precisa
+de **duas** colunas e não uma: com uma só, dois idiomas ficam iguais — e dois
+não é o defeito. A guarda começa a valer no terceiro.
+
 ### O que o conferidor reprova
 
 | teste | reprova |
@@ -361,19 +450,79 @@ ferramentas com os trinta e um botões, as cinco abas, a árvore e o painel
 lateral), a tela de **Idiomas**, e da tela de **Configurações gerais** o
 título, o subtítulo, os botões e a linha do idioma.
 
-Traduzido 100% também o **modo multitela** inteiro (`ui/multitela.js`): a tira
-de abas, a calha, a janela solta dentro da página, os dezesseis recados e a
-tela «Sobre o modo multitela». É o primeiro arquivo de interface com zero
-texto cravado.
+Traduzido 100% também o **modo multitela** inteiro (`ui/multitela.js`) e,
+nesta leva, os outros **quatro** arquivos de interface:
 
-Falta o **miolo das telas**: 1.999 textos, com arquivo e linha no
-`--tudo` — 1.809 no `index.html`, 126 no `claude.js`, 38 no `telemetria.js`, 24 no
-`phx-grid.js` e 2 no `diagrama-er.js`. Por ordem do que a pessoa mais
-vê, a próxima leva é: os títulos e subtítulos de `folha(`, os cabeçalhos de
-coluna distintos (`{t:"…"}`), os recados de `avisar(` e as perguntas de
-`confirm(`. Depois vêm os corpos de texto longo — telemetria, LGPD,
-replicação, a tela da Claude —, e para esses a receita já está escrita acima:
-uma chave por **frase**, com a ênfase virada marca.
+| arquivo | tinha | tem | o que entrou |
+|---|---:|---:|---|
+| `ui/claude.js` | 126 | **0** | a tela de Integração, o painel da tela de Query, a revisão do plano, a criação, o desfazer e as quinze recusas da API |
+| `ui/telemetria.js` | 38 | **0** | a barra, as cinco faixas, a legenda, a trilha, o resumo, as vinte e cinco etiquetas do cartão e a tabela de threads |
+| `ui/grid/phx-grid.js` | 24 | **0** | o rodapé, a paginação, o seletor de colunas, a caixa de grupos, a barra de filtros e o painel de filtro de coluna |
+| `ui/diagrama-er.js` | 2 | **0** | o toco da chave para fora e o rótulo do desenho |
+
+**Todo texto cravado que resta está no `index.html`**: 1.806, com arquivo e
+linha no `--tudo`. Ele ficou de fora de propósito — quatro frentes o editavam
+ao mesmo tempo, e mexer nele no meio disso trocaria tradução por conflito. Por
+ordem do que a pessoa mais vê, a próxima leva é: os títulos e subtítulos de
+`folha(`, os cabeçalhos de coluna distintos (`{t:"…"}`), os recados de
+`avisar(` e as perguntas de `confirm(`. Depois vêm os corpos de texto longo —
+LGPD, replicação, a página de Nova tabela —, e para esses a receita já está
+escrita acima: uma chave por **frase**, com a ênfase virada marca.
+
+### O que ainda escapa da conta, e por quê
+
+Duas formas de rótulo continuam **fora** do `RECEITAS`, e é honesto dizer
+quais, porque o número não as conta:
+
+- o **primeiro argumento de `linha(`** — as vinte e cinco etiquetas do cartão
+  da telemetria («estado», «operação em curso», «peso (servidor gasto)»…).
+  Elas foram traduzidas nesta leva **à mão**, mas a forma não entrou no
+  `RECEITAS`: `linha(` é um nome curto demais para casar sem falso positivo, e
+  ele existe também no `index.html` com outro sentido. Entrar depois, junto de
+  um nome de campo que o distinga;
+- o **texto escrito com `\uXXXX`**. Isto foi um achado desta rodada, e ele
+  não estava escrito em lugar nenhum: os seis operadores do filtro de número
+  da grade (`"\u00e9 maior que"`), a dica de arrastar coluna e dois
+  `placeholder` estavam escapados assim. O conferidor tira `${…}` e `txt(…)`
+  antes de varrer, mas ele lê o fonte como **texto**, e `\u00e9` não é uma
+  letra para a varredura — nenhuma das duas vias o vê. Os nove foram
+  traduzidos; a forma continua invisível, e quem a achar de novo vai achá-la
+  do mesmo jeito: **no navegador**.
 
 Traduzir os `{detalhe}` que o motor gera continua sendo outra metade, e essa
 pede `TextName` por mensagem do motor, não só a moldura.
+
+## A prova das quatro telas, exercitando
+
+`node phxsql/testes-web/prova-idiomas-telas.mjs --porta 7550 --capturas <dir>`
+sobe um `phxsqld` próprio, abre as quatro telas em português, troca o idioma
+pela bandeira (alemão na da Claude, francês na telemetria, espanhol na grade,
+italiano no diagrama) e confere que o texto mudou de verdade — mais o passo do
+comportamento **velho**, que exige as telas em português sem escolha nenhuma.
+
+Ela existe porque ler o código não acha o que ela achou. **Três defeitos em
+uma rodada**, e nenhum deles aparece no fonte:
+
+1. **`rot: "…"` com espaço não é par.** O conferidor casa `rot:"` colado. Sete
+   rótulos do `claude.js` continuavam na conta com o `txt:` escrito ao lado, e
+   só o número medido mostrou.
+2. **Quem escreve por último manda.** O botão da legenda da telemetria pedia o
+   texto pela fábrica no `html()`, e o `aplicarLegenda` o reescrevia com
+   `"ocultar legenda"` cravado logo depois. Na captura em francês ele aparecia
+   em português no meio de uma tela inteira traduzida. É o «BLUMENAU» por
+   outro caminho: dois lugares escrevem o mesmo elemento, e o código não diz
+   qual é o último.
+3. **`\uXXXX` some da varredura.** Descrito acima. O painel do filtro em
+   espanhol trazia «é maior que» em português, e o conferidor dizia zero.
+
+**Prova real, com o defeito reposto:** trocando o `txt` do `telemetria.js` por
+`return padrao` — a delegação no global quebrada, que é o defeito mais
+provável de quem move o módulo —, o passo da telemetria reprova nomeando o
+rótulo que não trocou, e os outros cinco continuam verdes. É a delimitação que
+importa: o passo acusa a tela dele, e não a bateria inteira.
+
+E o cuidado que a primeira rodada dela ensinou: **cada passo começa e termina
+em português, e o retorno está num `finally`**. Sem isso, uma afirmação que
+falha no meio deixa a escolha de pé e o passo seguinte reprova por um defeito
+que não é o dele — foi exatamente o que aconteceu, com o diagrama ER acusado
+de estar em espanhol por causa da grade.
