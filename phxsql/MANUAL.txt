@@ -240,6 +240,13 @@ Detalhes e o que a ligacao ensinou em docs/CONSOLE.md.
     web.servidores    outros PhxSql que a interface pode alcancar. VAZIO =
                       so este servidor, e esse e o padrao certo
     replicacao.escuta socket onde o source serve os eventos. Ver a secao 16
+    replicacao.replicas_autorizadas
+                      IPs que podem pedir posicao/replicar/aplicar neste
+                      source. VAZIO LIBERA TODOS - e o padrao, e e o
+                      comportamento de sempre. Preenchendo, quem nao esta
+                      na lista leva ACESSO_NEGADO nessas tres operacoes e
+                      a tentativa fica no acessos.log. Vale ALEM do token
+                      e de ips_permitidos, nao no lugar deles
 
 7.3 Suba
 

@@ -328,6 +328,17 @@ pub const FABRICA: &[MensagemFabrica] = &[
         ],
     },
     MensagemFabrica {
+        nome: "erro.replica_nao_autorizada",
+        textos: [
+            "este ip nao esta em replicacao.replicas_autorizadas",
+            "cette ip n'est pas dans replicacao.replicas_autorizadas",
+            "this ip is not in replicacao.replicas_autorizadas",
+            "questo ip non e in replicacao.replicas_autorizadas",
+            "diese IP steht nicht in replicacao.replicas_autorizadas",
+            "esta ip no esta en replicacao.replicas_autorizadas",
+        ],
+    },
+    MensagemFabrica {
         nome: "erro.somente_leitura",
         textos: [
             "servidor em modo somente leitura",

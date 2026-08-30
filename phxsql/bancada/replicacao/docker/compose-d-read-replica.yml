@@ -1,0 +1,34 @@
+# MODO D -- Primary -> Read Replica, em conteineres.
+#
+#   PHX_BASE=/tmp/phx-docker-replicacao \
+#   docker compose -f compose-d-read-replica.yml up -d
+#
+# A read replica le e recusa escrita com `REDIRECIONA host:porta` (4003). Em
+# conteiner esse `host:porta` deixa de ser uma frase e vira um achado: o
+# endereco sai da ORIGEM configurada na replica, que aqui e o nome de servico
+# `primario:5000`. Esse nome so existe dentro da rede `leitura` -- um cliente
+# do hospedeiro que recorte o prefixo e reconecte nao resolve nada. Rodando
+# tudo em `127.0.0.1` o defeito e invisivel, porque la o endereco da origem
+# por acaso tambem serve para o cliente.
+name: phxrep-d
+services:
+  primario:
+    image: ${PHX_IMAGEM:-phxsql-bancada:local}
+    container_name: phxrep-d-primario
+    volumes: ["${PHX_BASE}/d/primario:/dados"]
+    networks: [leitura]
+    ports: ["6831:5000"]
+    stop_grace_period: 2s
+
+  leitor:
+    image: ${PHX_IMAGEM:-phxsql-bancada:local}
+    container_name: phxrep-d-leitor
+    volumes: ["${PHX_BASE}/d/leitor:/dados"]
+    networks: [leitura]
+    ports: ["6832:5000"]
+    depends_on: [primario]
+    stop_grace_period: 2s
+
+networks:
+  leitura:
+    name: phxrep-d-leitura

@@ -253,6 +253,45 @@ erro, e isso importa desde que o texto passou a poder mudar de idioma
 ([MENSAGENS.md](MENSAGENS.md)); o log grava o texto de fábrica justamente para
 filtro nenhum quebrar.
 
+### 5.2 O desenho da replicação, provado em contêiner — e o campo que mentia
+
+A §7 do [REPLICACAO.md](REPLICACAO.md) desenha um Source que aceita entrada
+**só** do IP da Réplica e **não alcança ninguém**. Com processos no mesmo
+`127.0.0.1` não há o que trancar: todo mundo se enxerga por construção, e o
+desenho fica sendo um desenho. Em contêiner ele vira medição —
+`bancada/replicacao/docker/`, estágio (e): uma rede própria, IPs fixos, e um
+**intruso** com o `config.json` de réplica vazado (mesmo token, mesmo usuário,
+mesmo `senha_hash` — o modelo de ameaça de quem perde um arquivo de
+configuração, não o de quem quebra criptografia).
+
+| tranca | eventos que o intruso levou do diário |
+|---|---:|
+| nenhuma | **200 de 200** |
+| `replicas_autorizadas` *(antes do conserto)* | **200 de 200** |
+| `replicas_autorizadas` *(hoje)* | 0 |
+| `ips_permitidos` | 0 |
+| `iptables` da §7 no namespace do source | nem abre a porta |
+
+A segunda linha é o achado: **`replicas_autorizadas` estava no `config.json`,
+na §7 e na tela, e nenhuma linha de código o lia**. O conserto está descrito
+na §7 do REPLICACAO.md, com as três garantias de sempre — lista vazia é o
+comportamento de sempre, portão único, e a pergunta obrigatória sobre quem
+*não* tem o campo novo (job e rotina interna chegam com `ip` vazio).
+
+Duas camadas apareceram sem ninguém pedir, e as duas são boas notícias:
+**86 linhas** no `acessos.log` com o IP do intruso, e o IP **na lista negra**
+do source ao fim da fase — bater na porta recusada dezenas de vezes é
+exatamente o que a política da §3 conta. E há uma diferença que só o
+`iptables` mostra: `ips_permitidos` **recusa** (o pacote chega e leva um
+«não»), o `DROP` do firewall **some** com o pacote — o intruso leva *timeout*,
+e nem fica sabendo que há algo ali.
+
+A metade do desenho que nunca tinha sido provada é a de saída: com
+`-A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT` seguido de
+`-A OUTPUT -j DROP` no namespace do source, **a replicação continua inteira** —
+porque quem abre a conexão é sempre a réplica — e o source **não consegue
+abrir conexão para ninguém**. Medido, nos dois sentidos.
+
 ### O que os testes do firewall provam, e a prova real
 
 Em `blacklist.rs`, `servidor.rs` (`testes_firewall_e_mensagens`) e no soquete

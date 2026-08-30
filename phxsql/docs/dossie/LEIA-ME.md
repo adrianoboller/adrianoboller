@@ -14,9 +14,32 @@ impossível de cumprir depois que o diretório temporário sumisse.
 
 ## Como atualizar
 
-1. Edite `dossie-phxsql-0.15.html`.
-2. Publique **passando a URL acima**, para cair na mesma página em vez de criar
+1. **LEIA o artefato publicado antes de qualquer coisa** (`action: "read"` com
+   a URL acima).
+2. Compare com `dossie-phxsql-0.15.html` — pelo menos o número de `<h2>`.
+3. Edite `dossie-phxsql-0.15.html`.
+4. Publique **passando a URL acima**, para cair na mesma página em vez de criar
    uma nova.
+
+### O degrau 1 não é formalidade — medido
+
+Numa rodada de agosto de 2026, a página publicada tinha **33 seções e 2,4 MB**
+(com 21 imagens embutidas) e este arquivo tinha **24 seções e 383 KB**. Nove
+seções — multitela, as grades, telemetria e Profiler, o console em imagens, a
+cifra do dado pessoal, a restauração, SQL e gatilhos, ODBC/MCP e os seis
+idiomas — existiam **só na página**, publicadas de outros *worktrees* que
+ainda não tinham voltado para este branch.
+
+Quem seguisse «edite e publique» teria **apagado as nove**, com a melhor das
+intenções e sem ver nada errado no diff local. É a mesma família do
+`replicas_autorizadas` e do binário velho: **o que não se confere contra a
+fonte de verdade envelhece calado** — e aqui a fonte de verdade, na hora de
+publicar, é a página que está no ar, não o arquivo que está na sua mão.
+
+Se a página estiver à frente: **não publique deste branch**. Diga que ela está
+à frente e em quantas seções, e deixe a integração dos branches reconciliar o
+fonte. Publicar um merge montado em `/tmp` é pior — vira uma página que
+nenhum repositório reproduz.
 
 ## O que conferir antes de publicar
 
@@ -41,6 +64,7 @@ cargo test --workspace 2>&1 | grep '^test result' \
 $(( $(grep -c '^\[\[package\]\]' Cargo.lock) - 4 ))                # dependências externas
 cat docs/*.md README.md CHANGELOG.md MANUAL.txt \
     bancada/LEIA-ME.md bancada/replicacao/LEIA-ME.md \
+    bancada/replicacao/docker/LEIA-ME.md \
     bancada/carga/LEIA-ME.md \
     marca/LEIA-ME.md docs/dossie/LEIA-ME.md \
   | wc -l                                                          # linhas de doc

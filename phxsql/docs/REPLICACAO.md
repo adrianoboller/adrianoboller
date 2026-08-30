@@ -322,6 +322,36 @@ No PhxSql isso é imposto em **dois lugares**, não só no firewall:
 E toda tentativa — inclusive a recusada — cai no `acessos.log` com IP, data e
 hora. Quem bateu na porta e não entrou fica registrado.
 
+**A segunda tranca não existia, e esta frase mentiu até a bancada em contêiner
+medi-la.** `replicas_autorizadas` estava no `config.json`, nesta seção e na
+tela de configuração desde que os papéis novos entraram, e **nenhuma linha de
+código o lia**. O estrago, medido em contêiner (§17, estágio (e)): um vizinho
+de rede com um `config.json` de réplica vazado — mesmo token, mesmo usuário,
+mesmo `senha_hash` — levou os **200 de 200 eventos** do diário do source *com
+a lista preenchida*. Consertado no portão único (`portoes_do_pedido`, portão
+2a-bis), com as três garantias da casa:
+
+- **pedida, não imposta**: lista vazia — o padrão, e o que todo `config.json`
+  de hoje tem — libera todos, byte a byte o comportamento de sempre. O teste
+  que trava isso é o do comportamento **velho**
+  (`sem_replicas_autorizadas_nada_muda`);
+- **um portão só**, e não espalhado por `posicao`/`replicar`/`aplicar`, porque
+  a que alguém esquecesse viraria a porta dos fundos;
+- **o campo novo que o portão passou a olhar é o IP da sessão**, então a
+  pergunta obrigatória é quem *não* tem esse campo: job agendado, rotina
+  interna e a replicação chamada de dentro chegam com `ip` vazio — e vazio ali
+  é a verdade, não uma falta. Não vieram de fora, não há IP para autorizar, e
+  o portão não se aplica a eles (`caminho_interno_sem_ip_nao_e_barrado_pela_lista`).
+
+*Configuração que não é lida mente* — e mente pior quando o assunto é quem
+alcança o dado. Depois do conserto o mesmo intruso leva **0 de 200**.
+
+Vale dizer o que a lista de IPs **não** resolve, e o contêiner tornou isso
+visível: num orquestrador o IP do vizinho muda a cada recriação. Lista por IP
+só é operável com endereçamento fixo — no `compose-e-firewall.yml` isso é o
+bloco `ipam`, e num datacenter é a reserva no DHCP. Sem isso, a lista barra a
+própria réplica no primeiro `docker compose up` depois de um reboot.
+
 ### Curitiba ↔ Bélgica
 
 ```
@@ -627,6 +657,10 @@ igual que já está registrado — custa releitura, nunca dado.
 | ☐ | Long-poll no Source, para a réplica não perguntar à toa |
 | ☐ | Espera crescente na reconexão (hoje é intervalo fixo) |
 | ☐ | TLS no transporte — hoje o JSON vai em claro e depende do IPSec |
+| ☑️ | **`replicas_autorizadas` passou a ser lido** — era campo sem leitor até a bancada de contêiner medir 200 de 200 eventos vazando com a lista preenchida (§7) |
+| ☐ | **Buscar o lote FORA da trava de dados.** Medido (§17): `varrer` esperou **30,7 s** numa réplica cortada em silêncio, e no bidirecional os dois lados se trancam por 30 s com a rede sã. É o item 2 da §3.2 do `PENDENCIAS.md` visto de dentro da replicação, e é a causa; a espera crescente e o `connect` com prazo tratam o sintoma |
+| ☐ | **O endereço do `REDIRECIONA` é o da origem configurada**, que é «por onde *eu* alcanço o primário» e nem sempre «por onde *você* alcança» (§17, achado 3). Um campo próprio para o endereço que se anuncia ao cliente resolveria |
+| ☐ | **`replicacao_estado` não conta nada durante um corte silencioso** — `ultima_rodada` fica com o carimbo de antes e `ultimo_erro` fica nulo, porque o laço está pendurado. Falta um «quando foi a última rodada BEM-SUCEDIDA» que envelheça sozinho, para o monitoramento distinguir «nada a replicar» de «cego» |
 
 ### A posição é o diário da própria réplica
 
@@ -732,5 +766,387 @@ python3 bancada/replicacao/medir.py 100000
 python3 bancada/replicacao/modos.py /tmp/phx-modos
 ```
 
+```bash
+# e os quatro modos em CONTEINERES, que e onde endereco, firewall e
+# particao existem de verdade (~20 min, e remove tudo no fim):
+cargo build --release --target x86_64-unknown-linux-musl --bin phxsqld
+python3 bancada/replicacao/docker/provar.py
+```
+
 `montar.py --cascata` põe o Slave03 puxando do Slave01. Detalhes e a última
-corrida em `bancada/replicacao/LEIA-ME.md`.
+corrida em `bancada/replicacao/LEIA-ME.md` e em
+`bancada/replicacao/docker/LEIA-ME.md`.
+
+---
+
+## 17. Os quatro modos em contêiner — o que só o isolamento de rede prova
+
+```bash
+rustup target add x86_64-unknown-linux-musl        # uma vez
+cargo build --release --target x86_64-unknown-linux-musl --bin phxsqld
+python3 bancada/replicacao/docker/provar.py        # ~20 min, tudo
+```
+
+Cinco `compose`, um por modo mais o do firewall, e um `provar.py` que sobe,
+mede e **remove tudo** — contêineres, redes e volumes — mesmo quando falha.
+Detalhes em `bancada/replicacao/docker/LEIA-ME.md`.
+
+### Por que Docker muda alguma coisa
+
+A bancada de processos (§14 e §16) prova que os quatro modos **funcionam**.
+Ela não prova — e não tem como — três coisas, e elas são a razão desta frente
+existir.
+
+**1. Endereço.** Com tudo em `127.0.0.1`, o `bind` do source e o endereço que
+a réplica procura são o mesmo por acidente. Em contêiner a origem é o **nome
+de serviço** (`"host": "fonte"`), resolvido pelo DNS do Docker, e isso obriga
+o `bind` a ser `0.0.0.0:5000`. O estágio (0) repõe o defeito de propósito —
+`bind: 127.0.0.1:5000` **dentro** do contêiner — e mede o silêncio dele: o
+vizinho na mesma rede não abre a porta, e a réplica fica em **0 evento por
+20 s sem um único erro em lugar nenhum**. Nem no log do source, nem no
+`replicacao_estado`, nem na tela. Trocando a linha do config, ela alcança em
+0,51 s. É o erro de configuração mais fácil de cometer ao pôr o PhxSql em
+produção, e ele é **invisível** na bancada de processos.
+
+**2. Firewall e isolamento (§7).** No loopback não há o que trancar. Aqui há:
+rede própria com IPAM fixo, um intruso com o `config.json` vazado, e
+`iptables` de verdade no namespace de rede do source. Foi assim que a §7
+deixou de ser um desenho — e foi assim que o `replicas_autorizadas` que
+ninguém lia apareceu.
+
+**3. Queda e partição.** `docker kill` mata sem chance de fechar arquivo — o
+que uma máquina que perde energia faz. E **cortar a rede sem matar ninguém**
+só existe aqui: os dois lados vivos, os dois aceitando escrita, e cegos um
+para o outro. É a lição do `BULKINSERT` um degrau adiante: teste unitário não
+prova queda de conexão, soquete prova, e contêiner prova o que soquete no
+loopback não alcança.
+
+### A imagem, e os três tamanhos que ela tem
+
+`FROM scratch` + o binário musl: sem shell, sem gerenciador de pacotes, sem
+libc solta. É a regra de zero dependência externa cobrando o dividendo dela —
+a mesma que fez a compilação cruzada para Windows funcionar de primeira. Um
+contêiner sem shell não tem como um invasor rodar nada dentro dele; a
+superfície é o próprio servidor e mais nada.
+
+O tamanho merece cuidado, porque **três comandos dão três números** e a
+primeira redação desta seção publicou o errado com o rótulo certo:
+
+| de onde sai | quanto | o que é |
+|---|---:|---|
+| soma do `docker history` | **6,42 MB** | o conteúdo da imagem |
+| `docker image inspect .Size` | 2,69 MB | o que se **baixa** (comprimido) |
+| `docker images` | 9,11 MB | o de cima mais o manifesto de atestação do BuildKit |
+
+Estava publicado «a imagem tem 2,7 MB» — número certo, rótulo errado: era o
+comprimido, e quem rodasse `docker images` veria 9,11 e concluiria que o
+documento mentia. Hoje o `provar.py` mede os três e grava os três, porque
+número com rótulo trocado é a mesma família do número digitado à mão.
+
+### Modo A — Primary → Replica
+
+100.000 linhas, com `imagem_da_linha` ligada e `reconectar_em: 2`, no
+contêiner e **em processos, com o mesmo código**: a função de carga não sabe
+qual dos dois está do outro lado, que é a única forma de o trabalho ser
+mesmo igual (regra 4 da bancada).
+
+| | contêiner | processo |
+|---|---:|---:|
+| escrita no source | 17.147 linhas/s | 17.998 linhas/s |
+| a réplica alcançar 100.000 eventos | **2,51 s** | 2,61 s |
+| taxa de aplicação | 39.831 eventos/s | 38.331 eventos/s |
+| atraso de 12 inserções soltas (mín/mediana/máx) | 4 / 1.993 / 2.041 ms | 3 / 3 / 2.025 ms |
+| soma do servidor, linhas e slots | idênticos (101.013) | idênticos (101.013) |
+| retrato SHA-256 de cada linha | `39787c620feeed8f` | `39787c620feeed8f` |
+
+**A rede do Docker não custou nada de mensurável.** A escrita saiu 5% mais
+lenta no contêiner nesta corrida e 5% mais **rápida** na anterior (17.936 ×
+17.103); o alcance saiu mais rápido nas duas. Diferença que troca de sinal
+entre corridas é ruído da máquina, não custo de transporte — e vale dizer que
+a máquina estava compartilhada com outros trabalhos, o que é a razão de as duas
+medições terem sido feitas **na mesma corrida, uma logo depois da outra**.
+
+A linha do atraso merece um aviso, e ela é a quinta regra que esta bancada
+aprendeu sozinha. **Uma amostra de atraso não é atraso** — a primeira corrida
+mediu a mesma inserção em 2.035 ms no contêiner e 53 ms no processo, e a
+diferença inteira era *onde no ciclo de 2 s do `reconectar_em`* a escrita caiu.
+Doze amostras desfazem a manchete falsa («o Docker é 38× mais lento no
+atraso»), mas **não** estabilizam a mediana: nesta corrida ela deu 1.993 ms no
+contêiner e 3 ms no processo, e na anterior deu 1.983 ms no contêiner e
+2.025 ms no processo — os dois lados já foram o lento. As amostras são
+correlacionadas, porque cada escrita acontece logo depois de a anterior ter
+chegado, então elas herdam a fase do laço. **O número que se sustenta é o
+máximo**, e ele bate nos dois (2.041 e 2.025 ms): é a janela do
+`reconectar_em`, e tudo abaixo dela é fase.
+
+A escrita na réplica continua recusada com a `ACESSO_NEGADO` de sempre —
+`papel: replica` não muda de comportamento por causa dos papéis novos.
+
+### Queda do nó — o teste que a bancada de processos nunca fez direito
+
+`docker kill` na réplica (SIGKILL, sem `Drop`, sem `sincronizar`, sem fechar
+descritor), 4.000 linhas no source com ela morta, `docker start`:
+
+| | |
+|---|---:|
+| voltou a atender | **480 ms** |
+| alcançou os 4.000 eventos, contado desde o `docker start` | **0,48 s** |
+| soma do servidor e retrato SHA-256 depois | idênticos ao source |
+
+Matar o processo no meio da aplicação **não deixou rastro**: a posição é o
+diário da própria réplica (§13), então ela conta os eventos que os arquivos
+dela têm e retoma dali. Nada perdido, nada repetido.
+
+### O que o contêiner mostrou e os processos escondiam
+
+**Achado 1 — `replicas_autorizadas` não era lido.** Está contado na §7. Em
+uma frase: a segunda tranca da §7 não existia, um vizinho com o `config.json`
+de réplica vazado levava **200 de 200 eventos** do diário com a lista
+preenchida, e hoje leva 0.
+
+**Achado 2 — a trava de dados fica presa atrás de uma leitura de rede.** O
+laço da réplica segura `self.dados.lock()` (`alcancar_tabela`, e o mesmo em
+`alcancar_tabela_bidi`) e, **de dentro dela**, faz a ida e volta de rede que
+busca o lote. Numa rede sã isso é invisível: a resposta chega em
+microssegundos. Quando não chega, a trava fica presa até o prazo de leitura de
+**30 s** do cliente da réplica — e todo pedido de cliente que precise da trava
+espera atrás.
+
+O contraste é o diagnóstico, e está no estágio (a3). Corte silencioso entre a
+réplica e o source, com o source **escrevendo sem parar** (para o laço estar
+dentro do `puxar` sob a trava quando o corte cai). Na réplica, em 43 s e
+30.521 amostras:
+
+| | |
+|---|---:|
+| pior `ping` (não precisa da trava) | **6 ms** |
+| pior `varrer` (precisa da trava) | **29.456 ms** |
+
+O servidor está no ar; o que espera é a trava. Isto **não** aparece com
+`docker stop`: matar o processo devolve RST, o `puxar` falha na hora e a trava
+é solta na hora. Só o corte que **não responde** produz a espera — e cortes
+que não respondem são o caso comum de verdade (firewall, cabo, rota que
+sumiu). É a consequência medida do item 2 da §3.2 do `PENDENCIAS.md`, as
+tomadas da trava fora do ponto único.
+
+**Achado 2b — no bidirecional, os dois lados se trancam um ao outro.** É o
+mesmo mecanismo levado ao pior caso, e ele **não precisa de corte nenhum**.
+`alcancar_tabela_bidi` toma a trava **deste** servidor e pede `replicar` ao
+outro; do outro lado, servir `replicar` (e `posicao`) também precisa da trava
+de **lá** — `op_replicar` e `op_posicao` chamam `travar_dados()`. Com fila nos
+dois ao mesmo tempo, cada um segura a própria trava esperando a resposta do
+outro, que não pode vir. Ninguém sai até o prazo de 30 s estourar nos dois, e
+eles podem reentrar em passo.
+
+Medido no estágio (b-abraco), com a rede **perfeitamente sã**: 50.000 linhas
+escritas em cada lado ao mesmo tempo. As mesmas 100.000 linhas no modo A
+entram em ~5,8 s; aqui a escrita do cliente levou **33,3 s**, com um `EAGAIN`
+(`Resource temporarily unavailable`, que é o prazo de leitura estourando) no
+diário de **cada** servidor. Um ciclo de abraço, e a escrita de quem estava
+digitando parou junto.
+
+É também a explicação certa do estágio (b-cortes), e vale registrar que a
+primeira redação estava errada: ela dizia que a lentidão do corte silencioso
+vinha da «espera exponencial do SYN do núcleo», porque o `connect` do laço não
+tem prazo. Plausível, e falso — o diário dos dois contêineres tinha a
+resposta: **sete `Resource temporarily unavailable` em cada lado**, sete vezes
+30 s, no corte que levou 228,9 s para se recuperar. É o prazo de **leitura**,
+não o de conexão. *Diagnóstico plausível não é diagnóstico medido.*
+
+E a assinatura que fecha o diagnóstico é a **simetria**: os `EAGAIN` saem em
+número igual nos dois lados — 7 e 7 — em corridas diferentes. Um nó sozinho
+esperando um vizinho quieto daria contagens desiguais; o empate é o que só um
+abraço produz, porque os dois esperam **um pelo outro** e saem juntos quando o
+prazo estoura nos dois.
+
+Vale a nota honesta de método: este achado **não veio de um estágio planejado**.
+Veio de olhar `docker logs` dos dois contêineres enquanto um estágio demorava
+mais do que devia. A bancada mediu o sintoma (228,9 s) e escreveu a causa
+errada; o diário do servidor tinha a causa certa o tempo todo. *Quando o número
+surpreender, leia o log antes de explicar o número.*
+
+**Achado 3 — o `REDIRECIONA` aponta o endereço da ORIGEM, não o do cliente.**
+A read replica recusa escrita com
+`REDIRECIONA primario:5000 (primario) -- ...`, e `primario` é o nome de
+serviço do compose: existe dentro da rede e **não resolve no hospedeiro**
+(medido: `getaddrinfo` falha). O cliente que recorta o prefixo e reconecta —
+que é para isso que o prefixo existe — não chega a lugar nenhum. Em
+`127.0.0.1` o defeito é invisível, porque ali o endereço da origem por acaso
+também serve para o cliente. O endereço sai de `origens[0]` do config da
+réplica, então ele é «por onde **eu** alcanço o primário», e nem sempre é «por
+onde **você** alcança».
+
+**Achado 4 — e o de sempre: depois do failover manual, o redirecionamento
+fica órfão.** No estágio (c) o primário morre, o spare é promovido, e a read
+replica continua respondendo `REDIRECIONA primario:5000` — para um endereço
+morto. Não é defeito do papel: é o que «failover **manual**» quer dizer (§8),
+e está aqui escrito para quem escrever o failover automático saber que essa
+ponta também precisa mudar.
+
+### Modo B — Multi-Master, e a partição de verdade
+
+Ida e volta e laço morto continuam como na §14. O que é novo é a **partição**:
+`iptables` no namespace de beta, nos dois sentidos, contra o IP de alfa. Os
+dois continuam vivos, os dois continuam aceitando escrita, e não se enxergam.
+
+Durante o corte, cada lado alterou a mesma chave e criou chaves próprias. Ao
+religar:
+
+- a chave disputada ficou com **o carimbo mais novo nos dois** servidores;
+- todas as chaves atravessaram nos dois sentidos;
+- **os rowids são diferentes em cada servidor** — a linha que nasceu em beta
+  com rowid 3 entrou em alfa com rowid 6, porque em alfa já havia três linhas
+  que beta nunca viu. É a §12 provada em vez de afirmada: se a replicação
+  casasse por rowid, ela gravaria a linha de um por cima da do outro.
+
+E o corolário que caiu junto, e que muda como se confere o modo B:
+
+> **A soma de verificação do servidor (`checksum`) não serve para comparar dois
+> pares bidirecionais convergidos.** Ela é ORDENADA de propósito — multiplica
+> antes de somar, justamente para que trocar duas linhas de lugar mude o
+> resultado. Isso é o que se quer no modo A, onde a réplica reproduz a ordem
+> de digitação do source. No modo B é o contrário: **a ordem de digitação é
+> sagrada em cada servidor**, então dois lados convergidos têm somas
+> diferentes por construção. Medido: conteúdo casado pela chave idêntico
+> (`771ff218d033f64c` nos dois), somas do servidor `ae8056eac15401d1` e
+> `bd5c6e435cd98de9`. Quem comparar modo B pela soma vai ver divergência onde
+> não há nenhuma, e vai parar uma replicação sadia.
+>
+> A comparação certa no modo B é o conteúdo **ordenado pela chave, sem rowid e
+> sem rownum** — é o que `retrato_por_chave` faz na bancada.
+
+**Durante o corte, `replicacao_estado` não conta nada.** `ultima_rodada` fica
+com o carimbo de antes do corte e `ultimo_erro` fica **nulo** — porque o laço
+está pendurado num `connect`/`read` que não volta, e sem rodada não há erro
+para gravar. Quem olha o estado vê o retrato de antes e conclui que está tudo
+bem. Um corte silencioso é, para o monitoramento, indistinguível de «não houve
+nada para replicar».
+
+**Os dois cortes que o mundo tem, cronometrados.** Depois de a rede voltar,
+quanto tempo até a linha chegar do outro lado:
+
+| duração do corte | `REJECT` (processo morto, RST) | `DROP` (cabo cortado, silêncio) — 4 corridas |
+|---:|---:|---|
+| 3 s | 0,0 s | 0,2 · 0,2 · 0,4 · 0,2 s |
+| 20 s | 0,0 s | **229,0 · 31,5 · 0,2 · 293,8** s |
+| 45 s | 0,3 s | 25,4 · 24,4 · 25,2 · 25,4 s |
+
+Com RST a retomada é **imediata sempre**, e não depende da duração: o
+`connect` falha na hora, o laço tenta de novo no `reconectar_em` seguinte.
+
+Com silêncio ela é **variável e não limitada**, e a linha do meio é a prova: o
+**mesmo** corte de 20 s se recuperou em 0,2 s numa corrida e em 293,8 s em
+outra. Não é a duração do corte que manda — é **quantos ciclos de abraço** (o
+achado 2b) os dois lados gastam antes de saírem de passo, e cada ciclo custa os
+30 s do prazo de leitura. Uma faixa de três ordens de grandeza para o mesmo
+estímulo é a assinatura de um estado que se auto-sustenta, não de uma espera
+proporcional.
+
+É o argumento medido para dois itens da §13 — *espera crescente na reconexão*
+e um `connect`/`read` com prazo curto no laço — e para o item 2 da §3.2 do
+`PENDENCIAS.md`, que é o que resolve a causa em vez do sintoma.
+
+**E o abraço, sem corte nenhum.** O estágio (b-abraco) é a prova de que o
+achado 2b não precisa de rede quebrada: 50.000 linhas escritas em cada lado ao
+mesmo tempo, com uma `Barrier` para as duas cargas largarem no mesmo instante,
+e a rede perfeitamente sã.
+
+| | |
+|---|---:|
+| as mesmas 100.000 linhas, num servidor só, em modo A | ~5,8 s |
+| 50.000 em cada lado do par bidirecional, ao mesmo tempo | **33,3 s** |
+| `EAGAIN` novos no diário | **+1 em alfa e +1 em beta** |
+| pior `checksum` da bancada durante o episódio | 1.997 ms |
+
+Um ciclo de abraço, e a escrita de quem estava digitando parou junto. O
+`EAGAIN` (`Resource temporarily unavailable`) no diário dos dois é a
+assinatura: é o prazo de leitura de 30 s do cliente da réplica estourando
+porque o outro lado, vivo e saudável, não conseguiu responder.
+
+Consequência prática para quem usa modo B: **as duas metades não devem receber
+carga pesada simultânea** enquanto o laço buscar o lote de dentro da trava. Não
+é um limite do desenho da replicação — é um limite de onde a trava é tomada.
+
+### Modo C — Spare, e a morte do primário
+
+O spare recusa `varrer` e `inserir` com `SPARE_EM_ESPERA` (4004), e deixa
+passar `ping` e `checksum` — o monitoramento continua enxergando. Então
+`docker kill` no primário (não `stop`: sem aviso e sem chance de fechar
+arquivo), e a promoção com ele **realmente fora do ar**:
+
+| | |
+|---|---:|
+| primário morto, conexão recusada | sim |
+| `spare_promover` | **5 ms** |
+| papel depois | `source` |
+| `varrer` e `inserir` depois | passam |
+| soma do primário antes de morrer × soma do promovido | 200 linhas → 201 (a que o teste inseriu depois) |
+
+### Modo D — Read Replica
+
+500 linhas alcançadas em **0,30 s**, leitura devolvendo as 500, escrita
+recusada com `REDIRECIONA` **4003**, e soma do servidor idêntica nos dois
+lados. O endereço do redirecionamento é o achado 3, acima.
+
+### O estágio (e) — a §7, medida
+
+| tranca no source | eventos que o intruso levou |
+|---|---:|
+| nenhuma | **200 de 200** |
+| `replicas_autorizadas` (antes do conserto) | **200 de 200** |
+| `replicas_autorizadas` (hoje) | 0 |
+| `ips_permitidos` | 0 |
+| `iptables` da §7 | nem abre a porta (*timeout*, não recusa) |
+
+Com as regras da §7 no namespace do source — entrada TCP 5000 só do IP da
+réplica (mais o gateway, que é a estação do administrador), saída só
+`ESTABLISHED,RELATED` — as três coisas foram medidas juntas: **o intruso leva
+timeout**, **a réplica autorizada continua replicando** e **o source não
+consegue abrir conexão para ninguém**. A metade de saída do desenho nunca
+tinha sido provada, e é a que mais importa: ela é o que faz o source não ser
+uma ponte para dentro da rede dele.
+
+Duas camadas apareceram sem ninguém pedir: **86 linhas** com o IP do intruso
+no `acessos.log`, e o IP **na lista negra** do source ao fim da fase.
+
+### Aprendizados — inclusive os que não deram em nada
+
+1. **A hipótese do congelamento morreu na primeira montagem, e a segunda a
+   ressuscitou — porque o cenário é que estava errado, não a hipótese.** O
+   primeiro estágio (a3) cortou a rede com o **source parado** e não congelou
+   nada: pior `ping` 8 ms, pior `varrer` 8 ms, em 107.365 amostras. Com o
+   source parado a réplica passa a vida no `ligar`, que acontece **fora** da
+   trava. Ela só entra na trava quando há evento para puxar. Repetindo com o
+   source escrevendo sem parar: `varrer` em **29.456 ms**. *Cenário que não
+   exercita o caminho mede o caminho errado* — e o «8 ms» teria arquivado um
+   defeito real como inexistente, com número e tudo.
+2. **E o mesmo aconteceu com o abraço, na direção contrária.** A primeira
+   montagem do (b-abraco) escreveu 4.000 linhas de cada lado: convergiu em
+   0,1 s, zero `EAGAIN`, nenhum travamento. A fila era pequena demais para as
+   duas fases de puxar se sobreporem. Com 50.000 de cada lado e as duas cargas
+   largando no mesmo instante (uma `Barrier`), o abraço aparece na primeira
+   tentativa. **Duas montagens do mesmo estágio deram respostas opostas, e a
+   diferença estava no tamanho da fila** — não na hipótese. Junto com o
+   anterior, a regra: *cenário fraco não refuta hipótese, e o número que ele
+   produz é o mais perigoso de todos, porque parece medição.*
+3. **`docker network disconnect` não serve para cortar a rede numa bancada.**
+   Ele leva junto a porta publicada, e a bancada fica cega justamente no
+   momento em que precisa olhar os dois lados. A primeira versão do estágio da
+   partição morreu com «o servidor fechou a conexão» ao tentar ler o nó
+   desligado. `iptables` no namespace, contra o IP do outro, é cirúrgico e
+   deixa os dois observáveis.
+4. **O servidor fecha a conexão ociosa em `timeout_s` (30 s)**, e isso é
+   razoável para um servidor e mortal para uma bancada que mede cortes de
+   45 s. A primeira versão morria com `broken pipe` **depois** do corte, e o
+   número saía como «não se recuperou» quando quem tinha ido embora era o
+   cliente. Um teste que falha por engano é tão ruim quanto um que passa por
+   engano.
+5. **A lista negra sobrevive à corrida.** O intruso do estágio (e) acaba
+   bloqueado — que é o certo —, e `blacklist.json` mora no volume: na corrida
+   seguinte a fase **sem tranca nenhuma** mediu zero evento roubado. O número
+   estava certo e a conclusão seria errada. Estado que persiste entre corridas
+   é uma armadilha de bancada tão grande quanto binário velho.
+6. **A imagem oficial e a da bancada são duas de propósito.** A oficial
+   compila dentro do contêiner com `--offline`, que é o que prova a promessa
+   de zero dependência; a da bancada carrega o binário musl da máquina, porque
+   sobe e derruba dez contêineres por corrida. Mesmo alvo, mesmo `scratch`.
