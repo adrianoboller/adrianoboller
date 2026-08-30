@@ -1,0 +1,10 @@
+# Update the dossier's measured numbers
+# 28/08 17:08
+
+import re
+srv=open('crates/phxsql-server/src/servidor.rs').read(); ui=open('crates/phxsql-server/ui/index.html').read()
+i=srv.index('fn executar(&self, op: &str'); j=srv.index('// ------------------------------------------------------------ ajudantes', i)
+ops=[re.findall(r'"([^"]+)"', m.group(1)) for m in re.finditer(r'^\s{12}((?:"[a-zA-Z_0-9]+"\s*\|\s*)*"[a-zA-Z_0-9]+")\s*=>', srv[i:j], re.M)]
+sem=[o for o in ops if not any(re.search(r'["\'`]%s["\'`]' % re.escape(n), ui) for n in o)]
+sem=[o for o in sem if o!=["buscar"]] + [["buscar"]]
+print("operacoes:", len(ops), "com tela:", len(ops)-len(sem))

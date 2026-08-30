@@ -1,0 +1,1327 @@
+# Os scripts, por tecnica
+
+As tres primeiras familias sao as que se reaproveitam em outro
+projeto. `edicao-em-massa` e conserto de uma vez so -- guardado
+pelo padrao, nao pelo conteudo.
+
+## Medicao -- cronometram, contam, comparam  (11)
+
+- `126-insert-5000-rows-for-a-real-benchmark.py` -- Insert 5000 rows for a real benchmark
+- `1298-fix-the-temp-scan-to-be-o-n-and-dry-run-again.py` -- Fix the temp scan to be O(n) and dry-run again
+- `1303-add-script-classification-and-regenerate.py` -- Add script classification and regenerate
+- `659-seed-20k-rows-for-the-ui-test.py` -- Seed 20k rows for the UI test
+- `660-time-the-server-side-of-paging.py` -- Time the server side of paging
+- `661-see-the-actual-varrer-response.py` -- See the actual varrer response
+- `662-time-paging-on-the-server.py` -- Time paging on the server
+- `666-re-measure-after-the-nagle-fix.py` -- Re-measure after the Nagle fix
+- `716-measure-single-vs-bulk-insert.py` -- Measure single vs bulk insert
+- `802-test-cascading-replication.py` -- Test cascading replication
+- `805-verify-the-cascade-and-measure-the-two-hop-lag.py` -- Verify the cascade and measure the two-hop lag
+
+## Prova real -- repoem o defeito e conferem que reprova  (15)
+
+- `1103-registrar-a-regra-e-achar-a-barra-de-ferramentas.py` -- Registrar a regra e achar a barra de ferramentas
+- `1242-repose-the-defect.py` -- Repose the defect
+- `1245-repose-the-defect-and-check-the-proof-fails.py` -- Repose the defect and check the proof fails
+- `1246-restore-the-guard-with-the-honest-note-and-run-g.py` -- Restore the guard with the honest note and run gates
+- `1247-add-multitela-js-to-the-checker-s-source-list.py` -- Add multitela.js to the checker's source list
+- `1248-add-the-guard-test-tying-the-list-to-http-rs.py` -- Add the guard test tying the list to http.rs
+- `1250-update-pendencias-and-regenerate-the-requests-pa.py` -- Update PENDENCIAS and regenerate the requests page
+- `1274-repose-the-defect-to-prove-the-ceiling-test-catc.py` -- Repose the defect to prove the ceiling test catches it
+- `1275-rewrite-the-test-to-assert-on-bytes-consumed.py` -- Rewrite the test to assert on bytes consumed
+- `1276-register-the-ceiling-guard-in-the-catalog.py` -- Register the ceiling guard in the catalog
+- `1293-make-the-probe-assert-the-verdict-and-re-run.py` -- Make the probe assert the verdict and re-run
+- `1301-write-the-p-trea-clause-into-the-project-claude-.py` -- Write the pétrea clause into the project CLAUDE.md
+- `924-add-cache-entry-to-changelog.py` -- Add cache entry to CHANGELOG
+- `937-add-124-to-changelog.py` -- Add #124 to CHANGELOG
+- `965-note-in-changelog-and-re-run-tests.py` -- Note in CHANGELOG and re-run tests
+
+## Sondas de protocolo -- falam com o servidor por soquete  (33)
+
+- `034-exercise-the-server-protocol-end-to-end.py` -- Exercise the server protocol end to end
+- `049-live-test-of-authentication-and-permissions.py` -- Live test of authentication and permissions
+- `051-verify-authorization-error-messages.py` -- Verify authorization error messages
+- `071-live-test-of-base64-challenge-response-and-block.py` -- Live test of base64, challenge-response and blocking
+- `072-inspect-blacklist-file-and-cli-commands.py` -- Inspect blacklist file and CLI commands
+- `074-verify-the-reload-fix-with-a-running-server.py` -- Verify the reload fix with a running server
+- `080-add-web-section-to-config.py` -- Add web section to config
+- `084-add-web-layer-and-build.py` -- Add web layer and build
+- `1109-a-prova-clientes-do-mysql-atraves-do-dblink.py` -- A prova: clientes do MySQL atraves do DbLink
+- `1110-provar-o-caminho-rapido-e-ler-clientes-de-verdad.py` -- Provar o caminho rapido e ler clientes de verdade
+- `1111-provar-tambem-o-caminho-nativo.py` -- Provar tambem o caminho nativo
+- `118-list-planned-tasks.py` -- List planned tasks
+- `1195-check-if-the-mark-survives-to-the-esquema-respon.py` -- Check if the mark survives to the esquema response
+- `1288-run-the-arm64-server-under-emulation-and-talk-to.py` -- Run the ARM64 server under emulation and talk to it
+- `132-add-the-remoto-connection-type.py` -- Add the Remoto connection type
+- `160-add-replication-listen-port-to-config.py` -- Add replication listen port to config
+- `182-test-retention-and-the-admin-level.py` -- Test retention and the admin level
+- `186-test-that-admin-can-back-up-and-leitor-cannot.py` -- Test that admin can back up and leitor cannot
+- `187-test-admin-vs-leitor-permissions.py` -- Test admin vs leitor permissions
+- `216-start-a-server-with-mirroring-on.py` -- Start a server with mirroring on
+- `217-corrupt-the-reg-and-verify-the-second-chance.py` -- Corrupt the .reg and verify the second chance
+- `229-test-the-dashboard-aggregate.py` -- Test the dashboard aggregate
+- `230-test-the-dashboard-data.py` -- Test the dashboard data
+- `231-fetch-the-dashboard-data.py` -- Fetch the dashboard data
+- `234-generate-activity-so-the-dashboard-has-data.py` -- Generate activity so the dashboard has data
+- `235-generate-dashboard-activity.py` -- Generate dashboard activity
+- `717-test-all-five-paste-formats-and-error-handling.py` -- Test all five paste formats and error handling
+- `720-retest-the-five-formats-with-typed-columns.py` -- Retest the five formats with typed columns
+- `723-retest-all-five-formats.py` -- Retest all five formats
+- `848-confirm-the-arity-bug-against-the-live-server.py` -- Confirm the arity bug against the live server
+- `852-inspect-the-bancos-response-shape.py` -- Inspect the bancos response shape
+- `867-run-the-static-musl-binary.py` -- Run the static musl binary
+- `873-test-the-profiler-against-the-live-server.py` -- Test the profiler against the live server
+
+## Varredura -- percorrem arvore de arquivos  (2)
+
+- `163-add-registered-trademark-marks-to-third-party-na.py` -- Add registered trademark marks to third-party names
+- `731-extract-the-conversion-functions.py` -- Extract the conversion functions
+
+## Edicao em massa -- mexem no fonte por padrao  (1094)
+
+- `001-write-table-module-and-build-workspace.py` -- Write table module and build workspace
+- `002-fix-borrow-errors-and-rebuild.py` -- Fix borrow errors and rebuild
+- `003-refactor-table-to-hold-schema-without-per-row-cl.py` -- Refactor Table to hold schema without per-row clones
+- `004-add-date-time-helpers-to-core.py` -- Add date/time helpers to core
+- `005-write-cli-and-build-release.py` -- Write CLI and build release
+- `006-fix-clippy-findings.py` -- Fix clippy findings
+- `007-fix-digit-grouping-warnings-and-recheck-clippy.py` -- Fix digit grouping warnings and recheck clippy
+- `008-final-quality-gates.py` -- Final quality gates
+- `009-update-plan-with-pagination-spec-and-commit.py` -- Update plan with pagination spec and commit
+- `010-change-pointer-format-to-carry-volume-number.py` -- Change pointer format to carry volume number
+- `011-add-pagination-module-to-core.py` -- Add pagination module to core
+- `012-add-foreign-keys-and-pagination-to-schema.py` -- Add foreign keys and pagination to Schema
+- `013-add-the-paged-volume-set-abstraction.py` -- Add the paged volume-set abstraction
+- `014-fix-reg-imports-and-volume-discovery.py` -- Fix reg imports and volume discovery
+- `015-add-the-log-journal-module.py` -- Add the .log journal module
+- `016-add-the-log-journal-module.py` -- Add the .log journal module
+- `017-wire-pagination-and-log-into-table.py` -- Wire pagination and log into Table
+- `018-complete-table-with-log-reindex-and-stats.py` -- Complete Table with log, reindex and stats
+- `019-fix-duplicate-function-and-run-tests.py` -- Fix duplicate function and run tests
+- `020-fix-duplicate-function-and-run-tests.py` -- Fix duplicate function and run tests
+- `021-update-cli-with-log-reindex-and-pagination.py` -- Update CLI with log, reindex and pagination
+- `022-fix-oversized-block-handling-and-re-test.py` -- Fix oversized block handling and re-test
+- `023-add-database-schema-hierarchy-module.py` -- Add database/schema hierarchy module
+- `024-clean-cli-warnings-and-add-database-commands.py` -- Clean CLI warnings and add database commands
+- `025-make-cli-pipe-safe-and-verify.py` -- Make CLI pipe-safe and verify
+- `026-update-format-specification.py` -- Update format specification
+- `027-update-readme-and-plan-docs.py` -- Update README and plan docs
+- `028-update-readme-and-plan-docs.py` -- Update README and plan docs
+- `029-add-zero-dependency-json-parser.py` -- Add zero-dependency JSON parser
+- `030-add-server-config-module.py` -- Add server config module
+- `031-add-json-to-value-translation-layer.py` -- Add JSON to Value translation layer
+- `032-add-config-examples-and-build.py` -- Add config examples and build
+- `033-start-server-and-check-startup.py` -- Start server and check startup
+- `035-convert-svg-colors-to-theme-tokens-and-verify.py` -- Convert SVG colors to theme tokens and verify
+- `037-implement-sha-256-hmac-and-pbkdf2-with-official-.py` -- Implement SHA-256, HMAC and PBKDF2 with official test vectors
+- `038-add-password-hashing-module.py` -- Add password hashing module
+- `039-fix-infinite-read-of-dev-urandom.py` -- Fix infinite read of /dev/urandom
+- `040-add-users-and-permissions-module.py` -- Add users and permissions module
+- `041-wire-user-registry-into-config-and-access-log.py` -- Wire user registry into config and access log
+- `042-add-session-login-and-permission-gates-to-server.py` -- Add session, login and permission gates to server
+- `044-add-password-generation-and-user-listing-command.py` -- Add password generation and user listing commands
+- `045-use-isterminal-from-std-instead-of-term-heuristi.py` -- Use IsTerminal from std instead of TERM heuristic
+- `046-use-isterminal-from-std-instead-of-term-heuristi.py` -- Use IsTerminal from std instead of TERM heuristic
+- `047-fix-msrv-and-add-users-to-config-example-1.py` -- Fix MSRV and add users to config example 1
+- `048-test-the-user-listing-command.py` -- Test the user listing command
+- `050-add-authorization-error-variant-and-run-all-gate.py` -- Add authorization error variant and run all gates
+- `052-write-user-docs-and-update-manual.py` -- Write user docs and update manual
+- `053-update-readme-and-commit-user-system.py` -- Update README and commit user system
+- `054-update-the-dossier-with-the-security-section.py` -- Update the dossier with the security section
+- `055-correct-the-two-rounded-numbers.py` -- Correct the two rounded numbers
+- `057-apply-official-brand-palette-and-typography-to-d.py` -- Apply official brand palette and typography to dossier
+- `058-tidy-css-and-apply-brand-to-readme-and-manual.py` -- Tidy CSS and apply brand to README and manual
+- `059-tidy-css-and-apply-brand-to-readme-and-manual.py` -- Tidy CSS and apply brand to README and manual
+- `060-document-brand-and-commit.py` -- Document brand and commit
+- `061-add-base64-with-rfc-4648-vectors.py` -- Add Base64 with RFC 4648 vectors
+- `062-fix-base64-padding-validation.py` -- Fix Base64 padding validation
+- `063-correct-the-invalid-input-test-case.py` -- Correct the invalid input test case
+- `064-add-challenge-response-authentication.py` -- Add challenge-response authentication
+- `065-add-challenge-response-authentication.py` -- Add challenge-response authentication
+- `066-add-blacklist-with-auto-blocking-and-firewall-ho.py` -- Add blacklist with auto-blocking and firewall hook
+- `067-add-security-section-to-config.py` -- Add security section to config
+- `068-wire-blacklist-into-the-server-connection-path.py` -- Wire blacklist into the server connection path
+- `070-add-blacklist-ops-and-cli-commands.py` -- Add blacklist ops and CLI commands
+- `073-make-server-reload-blacklist-when-changed-extern.py` -- Make server reload blacklist when changed externally
+- `075-write-security-docs-and-update-config-example.py` -- Write security docs and update config example
+- `076-update-manual-and-readme-commit-security-work.py` -- Update manual and README, commit security work
+- `077-add-security-section-to-the-dossier.py` -- Add security section to the dossier
+- `078-make-response-building-testable.py` -- Make response building testable
+- `079-make-response-building-testable.py` -- Make response building testable
+- `082-extend-sessao-with-challenge-state.py` -- Extend Sessao with challenge state
+- `083-wire-sessions-and-sair-into-servidor-rs.py` -- Wire sessions and sair into servidor.rs
+- `085-fix-challenge-restore-ui-health-probe-run-tests.py` -- Fix challenge restore, UI health probe, run tests
+- `086-fix-challenge-restore-ui-health-probe-run-tests.py` -- Fix challenge restore, UI health probe, run tests
+- `087-wrap-page-in-html-skeleton-adjust-csp.py` -- Wrap page in HTML skeleton, adjust CSP
+- `088-wrap-page-in-html-skeleton-adjust-csp.py` -- Wrap page in HTML skeleton, adjust CSP
+- `090-upgrade-ui-login-to-challenge-response.py` -- Upgrade UI login to challenge-response
+- `091-update-mode-message-rebuild-serve.py` -- Update mode message, rebuild, serve
+- `093-insert-web-section-into-manual.py` -- Insert web section into manual
+- `094-fix-log-section-wording.py` -- Fix log section wording
+- `095-add-web-to-config-field-list.py` -- Add web to config field list
+- `096-update-readme.py` -- Update README
+- `097-add-web-security-section.py` -- Add web security section
+- `098-commit-documentation-updates.py` -- Commit documentation updates
+- `100-insert-control-center-section-into-dossier.py` -- Insert Control Center section into dossier
+- `1001-re-apply-the-atomic-gate-cleanly.py` -- Re-apply the atomic gate cleanly
+- `1002-document-commit-and-push.py` -- Document, commit and push
+- `1003-document-commit-and-push.py` -- Document, commit and push
+- `1004-document-commit-and-push.py` -- Document, commit and push
+- `1005-correct-the-overclaim-in-all-three-places.py` -- Correct the overclaim in all three places
+- `1006-add-the-em-carga-error.py` -- Add the EM_CARGA error
+- `1007-write-the-carga-module.py` -- Write the carga module
+- `1008-wire-the-reservation-registry-into-the-server.py` -- Wire the reservation registry into the server
+- `1009-add-the-lease-config.py` -- Add the lease config
+- `101-fix-duplicate-section-id.py` -- Fix duplicate section id
+- `1010-add-the-carga-methods-to-the-server.py` -- Add the carga methods to the server
+- `1011-wire-the-gate-the-ops-and-the-permissions.py` -- Wire the gate, the ops and the permissions
+- `1012-wire-the-gate-the-ops-and-the-permissions.py` -- Wire the gate, the ops and the permissions
+- `1013-add-the-bulkinsert-tests.py` -- Add the BULKINSERT tests
+- `1014-fix-the-name-clash-the-lint-and-the-test-s-socke.py` -- Fix the name clash, the lint and the test's socket close
+- `1015-fix-the-name-clash-the-lint-and-the-test-s-socke.py` -- Fix the name clash, the lint and the test's socket close
+- `1016-polish-the-message-and-the-duration-unit.py` -- Polish the message and the duration unit
+- `1017-document-in-manual-and-pendencias.py` -- Document in MANUAL and PENDENCIAS
+- `1018-document-in-manual-and-pendencias.py` -- Document in MANUAL and PENDENCIAS
+- `1019-document-and-commit-bulkinsert.py` -- Document and commit BULKINSERT
+- `102-update-dossier-numbers.py` -- Update dossier numbers
+- `1020-document-and-commit-bulkinsert.py` -- Document and commit BULKINSERT
+- `1021-rebuild-the-config-screen.py` -- Rebuild the config screen
+- `1022-add-the-missing-entry-and-look-for-a-reserved-wo.py` -- Add the missing entry and look for a reserved-word list
+- `1024-acrescentar-as-duas-entradas-ao-changelog.py` -- Acrescentar as duas entradas ao CHANGELOG
+- `1025-acrescentar-o-pedido-129-e-reordenar-o-128.py` -- Acrescentar o pedido 129 e reordenar o 128
+- `1026-escrever-as-secoes-novas-do-dossie.py` -- Escrever as secoes novas do dossie
+- `1027-corrigir-os-scripts-e-regenerar-os-numeros-da-ba.py` -- Corrigir os scripts e regenerar os numeros da bancada
+- `1029-achatar-acentos-na-busca-e-reconferir.py` -- Achatar acentos na busca e reconferir
+- `1030-achatar-acentos-na-busca-e-regerar.py` -- Achatar acentos na busca e regerar
+- `1031-tirar-o-thead-grudento-e-reconferir.py` -- Tirar o thead grudento e reconferir
+- `1032-registrar-o-gerador-e-reajustar-os-numeros-do-do.py` -- Registrar o gerador e reajustar os numeros do dossie
+- `1033-registrar-a-url-da-pagina-e-reajustar-os-numeros.py` -- Registrar a URL da pagina e reajustar os numeros
+- `1034-escrever-a-construcao-em-lote.py` -- Escrever a construcao em lote
+- `1036-ligar-o-reindexar-a-construcao-em-lote.py` -- Ligar o reindexar a construcao em lote
+- `1037-corrigir-a-chamada-e-rodar.py` -- Corrigir a chamada e rodar
+- `1038-tirar-a-afirmacao-nao-medida-e-rodar.py` -- Tirar a afirmacao nao medida e rodar
+- `1039-medir-de-novo-com-as-chaves-caindo-no-meio.py` -- Medir de novo com as chaves caindo no meio
+- `104-render-dossier-and-capture-new-figure.py` -- Render dossier and capture new figure
+- `1040-fixar-o-enchimento-medido-e-rodar-clippy.py` -- Fixar o enchimento medido e rodar clippy
+- `1041-atualizar-a-prosa-do-medidor.py` -- Atualizar a prosa do medidor
+- `1042-registrar-a-medicao-e-o-veredito-no-desempenho.py` -- Registrar a medicao e o veredito no DESEMPENHO
+- `1043-atualizar-o-pedido-114-e-regerar-a-pagina.py` -- Atualizar o pedido 114 e regerar a pagina
+- `1044-corrigir-o-hex-e-o-sono-do-laco.py` -- Corrigir o hex e o sono do laco
+- `1045-corrigir-o-hex-e-o-sono-do-laco.py` -- Corrigir o hex e o sono do laco
+- `1046-acrescentar-a-marca-ao-logfile.py` -- Acrescentar a marca ao LogFile
+- `1047-implementar-a-marca-no-percorrer.py` -- Implementar a marca no percorrer
+- `1048-corrigir-o-construtor-e-compilar.py` -- Corrigir o construtor e compilar
+- `1049-ponte-na-table-e-achar-onde-por-o-cache.py` -- Ponte na Table e achar onde por o cache
+- `105-fix-diagram-routing-and-text-overflow.py` -- Fix diagram routing and text overflow
+- `1050-guardar-a-dica-no-servidor.py` -- Guardar a dica no servidor
+- `1051-guardar-varias-marcas-por-tabela.py` -- Guardar varias marcas por tabela
+- `1052-corrigir-e-rodar-os-testes-da-marca.py` -- Corrigir e rodar os testes da marca
+- `1053-corrigir-os-avisos-e-reconferir.py` -- Corrigir os avisos e reconferir
+- `1054-corrigir-o-leia-me-da-bancada.py` -- Corrigir o LEIA-ME da bancada
+- `1057-fechar-o-pedido-111.py` -- Fechar o pedido 111
+- `1058-escrever-o-changelog-da-rodada.py` -- Escrever o CHANGELOG da rodada
+- `1059-registrar-no-desempenho-e-reajustar-os-numeros.py` -- Registrar no DESEMPENHO e reajustar os numeros
+- `106-fix-diagram-from-project-root-and-re-render.py` -- Fix diagram from project root and re-render
+- `1060-acrescentar-as-secoes-do-lote-e-da-replica-ao-do.py` -- Acrescentar as secoes do lote e da replica ao dossie
+- `1061-medir-tambem-a-copia-da-pagina.py` -- Medir tambem a copia da pagina
+- `1063-medir-a-copia-da-pagina.py` -- Medir a copia da pagina
+- `1064-medir-a-copia-com-black-box.py` -- Medir a copia com black_box
+- `1065-instrumentar-cada-arquivo-na-abertura.py` -- Instrumentar cada arquivo na abertura
+- `1066-ler-so-o-cabecalho-e-o-esquema.py` -- Ler so o cabecalho e o esquema
+- `1067-registrar-e-commitar-a-correcao-da-abertura.py` -- Registrar e commitar a correcao da abertura
+- `1068-registrar-as-duas-medicoes.py` -- Registrar as duas medicoes
+- `1069-acrescentar-o-sinalizador-de-estrutura.py` -- Acrescentar o sinalizador de estrutura
+- `107-add-decisions-rows-and-stage-dossier.py` -- Add decisions rows and stage dossier
+- `1070-tirar-o-cabecalho-do-caminho-da-chave.py` -- Tirar o cabecalho do caminho da chave
+- `1071-reconciliar-o-contador-e-testar.py` -- Reconciliar o contador e testar
+- `1072-reescrever-o-teste-para-a-garantia-e-travar-o-ou.py` -- Reescrever o teste para a garantia e travar o outro sentido
+- `1073-acrescentar-o-auxiliar-de-teste-e-rodar.py` -- Acrescentar o auxiliar de teste e rodar
+- `1074-crc-slice-by-16-e-os-testes-de-referencia.py` -- CRC slice-by-16 e os testes de referencia
+- `1075-renomear-o-teste-e-medir.py` -- Renomear o teste e medir
+- `1076-cache-com-pagina-suja-e-despejo-que-devolve.py` -- Cache com pagina suja e despejo que devolve
+- `1077-write-back-no-gravar-pagina.py` -- Write-back no gravar_pagina
+- `1078-campo-sujo-byte-52-e-a-ordem-do-sincronizar.py` -- Campo sujo, byte 52 e a ordem do sincronizar
+- `1079-ler-a-marca-na-abertura-e-compilar.py` -- Ler a marca na abertura e compilar
+- `1080-por-a-guarda-no-portao-comum.py` -- Por a guarda no portao comum
+- `1081-guarda-no-verificar-e-primeira-bateria.py` -- Guarda no verificar e primeira bateria
+- `1082-testes-do-contrato-novo.py` -- Testes do contrato novo
+- `1083-fechamento-limpo-e-rede-no-drop.py` -- Fechamento limpo e rede no Drop
+- `1084-mover-o-drop-para-fora-do-impl.py` -- Mover o Drop para fora do impl
+- `1085-simular-queda-de-verdade-e-nao-limpar-marca-na-e.py` -- Simular queda de verdade e nao limpar marca na espiada
+- `1086-simular-queda-de-verdade-e-nao-limpar-marca-na-e.py` -- Simular queda de verdade e nao limpar marca na espiada
+- `1087-caminho-unico-para-o-cache-e-remedir.py` -- Caminho unico para o cache e remedir
+- `1088-provar-que-o-teste-pega-o-defeito.py` -- Provar que o teste pega o defeito
+- `1089-documentar-o-formato-e-commitar-o-write-back.py` -- Documentar o formato e commitar o write-back
+- `1090-registrar-o-achado-e-empurrar.py` -- Registrar o achado e empurrar
+- `1091-reconciliar-as-pendencias-com-o-codigo.py` -- Reconciliar as pendencias com o codigo
+- `1092-corrigir-os-tres-pontos-desatualizados.py` -- Corrigir os tres pontos desatualizados
+- `1093-corrigir-o-4-8-registrar-o-4-9-e-a-licao.py` -- Corrigir o 4.8, registrar o 4.9 e a licao
+- `1094-atualizar-a-capa-e-regerar-os-numeros.py` -- Atualizar a capa e regerar os numeros
+- `1095-atualizar-as-pendencias-e-a-pagina.py` -- Atualizar as pendencias e a pagina
+- `1096-aplicar-o-delta-do-dblink-no-servidor.py` -- Aplicar o delta do dblink no servidor
+- `1097-subir-a-versao-e-escrever-o-changelog-da-rodada.py` -- Subir a versao e escrever o CHANGELOG da rodada
+- `1098-fechar-as-pendencias-do-b-e-regerar-tudo.py` -- Fechar as pendencias do B e regerar tudo
+- `1102-corrigir-a-tela-recompilar-e-regravar.py` -- Corrigir a tela, recompilar e regravar
+- `1104-reordenar-a-barra-e-estabilizar-a-chave-do-rotul.py` -- Reordenar a barra e estabilizar a chave do rotulo
+- `1105-reordenar-de-verdade-e-recompilar.py` -- Reordenar de verdade e recompilar
+- `1106-acrescentar-o-phxsqlcmd-ao-pacote.py` -- Acrescentar o phxsqlcmd ao pacote
+- `1107-apresentar-o-console-e-reempacotar.py` -- Apresentar o console e reempacotar
+- `1108-mover-bancos-e-gerir-banco-para-o-inicio.py` -- Mover Bancos e Gerir Banco para o inicio
+- `1113-ligar-o-modulo-e-o-campo.py` -- Ligar o modulo e o campo
+- `1114-corrigir-o-default-e-ver-de-json-e-para-disco.py` -- Corrigir o default e ver de_json e para_disco
+- `1115-persistir-e-expor-as-sincronias.py` -- Persistir e expor as sincronias
+- `1116-herdar-sincronias-e-achar-o-despachar.py` -- Herdar sincronias e achar o despachar
+- `1117-ligar-as-operacoes-no-despachar.py` -- Ligar as operacoes no despachar
+- `1118-ajustar-o-modulo-para-colunas-de-negocio.py` -- Ajustar o modulo para colunas de negocio
+- `1119-corrigir-tipos-e-cobrir-os-uuid.py` -- Corrigir tipos e cobrir os UUID
+- `112-embed-brand-marks-into-the-interface.py` -- Embed brand marks into the interface
+- `1120-usar-o-to-string-canonico-dos-dois.py` -- Usar o to_string canonico dos dois
+- `1121-escrever-as-operacoes-ligar-e-sincronizar.py` -- Escrever as operacoes ligar e sincronizar
+- `1122-descrever-as-operacoes-no-catalogo.py` -- Descrever as operacoes no catalogo
+- `1123-tipo-json-certo-no-parametro.py` -- Tipo JSON certo no parametro
+- `1124-corrigir-a-prova-e-rodar-do-zero.py` -- Corrigir a prova e rodar do zero
+- `1125-chave-como-lista-e-rodar-do-zero.py` -- Chave como lista e rodar do zero
+- `1126-acrescentar-o-passo-do-job-e-rodar-tudo.py` -- Acrescentar o passo do job e rodar tudo
+- `1127-escrever-o-assistente.py` -- Escrever o assistente
+- `1129-resolve-struct-and-constructor-conflicts.py` -- Resolve struct and constructor conflicts
+- `1130-resolve-gate-2b-conflict-preserving-both.py` -- Resolve gate 2b conflict preserving both
+- `1131-add-non-translatable-messages-for-the-two-new-er.py` -- Add non-translatable messages for the two new errors
+- `1134-unify-redirect-error-keep-spare-error.py` -- Unify redirect error, keep spare error
+- `1138-resolve-usuarios-and-replica-conflicts.py` -- Resolve usuarios and replica conflicts
+- `1139-combine-cluster-exemption-with-expanded-role-val.py` -- Combine cluster exemption with expanded role validation
+- `114-swap-in-tighter-icon-and-re-verify.py` -- Swap in tighter icon and re-verify
+- `1140-summarize-servidor-rs-conflicts.py` -- Summarize servidor.rs conflicts
+- `1141-auto-resolve-additive-conflicts-in-servidor-rs.py` -- Auto-resolve additive conflicts in servidor.rs
+- `1143-resolve-the-three-semantic-conflicts.py` -- Resolve the three semantic conflicts
+- `1144-unify-constructor-and-rebuild.py` -- Unify constructor and rebuild
+- `1145-separate-test-modules-and-rebuild.py` -- Separate test modules and rebuild
+- `1146-find-where-brace-balance-breaks.py` -- Find where brace balance breaks
+- `1147-trace-where-an-extra-brace-opens.py` -- Trace where an extra brace opens
+- `1148-find-first-divergent-function-and-its-predecesso.py` -- Find first divergent function and its predecessor
+- `1149-restore-missing-brace-and-rebuild.py` -- Restore missing brace and rebuild
+- `115-update-brand-readme-and-dossier-measurement.py` -- Update brand readme and dossier measurement
+- `1150-find-next-unbalanced-spot-in-test-module.py` -- Find next unbalanced spot in test module
+- `1152-fix-origem-fields-and-spare-message.py` -- Fix Origem fields and spare message
+- `1153-point-test-at-unified-variant-and-run-tests.py` -- Point test at unified variant and run tests
+- `1154-update-test-and-run-full-gates.py` -- Update test and run full gates
+- `1156-drop-provisional-op-keep-definitive.py` -- Drop provisional op, keep definitive
+- `1157-accept-token-remoto-and-drop-ui-fallback.py` -- Accept token_remoto and drop UI fallback
+- `1158-repoint-socket-test-to-definitive-op-and-run-it.py` -- Repoint socket test to definitive op and run it
+- `116-update-brand-readme-and-dossier-measurement.py` -- Update brand readme and dossier measurement
+- `1160-resolve-additive-conflicts-and-build.py` -- Resolve additive conflicts and build
+- `1161-locate-unbalanced-region-after-login-merge.py` -- Locate unbalanced region after login merge
+- `1162-restore-brace-and-rebuild.py` -- Restore brace and rebuild
+- `1163-close-catalog-entry-and-rebuild.py` -- Close catalog entry and rebuild
+- `1164-unify-duplicated-constants.py` -- Unify duplicated constants
+- `1167-resolve-conflicts-and-detect-lost-fields.py` -- Resolve conflicts and detect lost fields
+- `117-add-brand-paragraph-to-dossier-and-stage-artifac.py` -- Add brand paragraph to dossier and stage artifacts
+- `1171-unify-the-shared-field-keep-both-sets-of-methods.py` -- Unify the shared field, keep both sets of methods
+- `1173-resolve-gate-and-build.py` -- Resolve gate and build
+- `1174-locate-brace-imbalance.py` -- Locate brace imbalance
+- `1175-restore-brace-and-rebuild.py` -- Restore brace and rebuild
+- `1176-fix-known-field-duplicate-arm-check-warnings.py` -- Fix known field, duplicate arm; check warnings
+- `1177-remove-duplicate-binding-and-run-all-gates.py` -- Remove duplicate binding and run all gates
+- `1179-fix-the-four-stale-citations.py` -- Fix the four stale citations
+- `1181-resolve-additive-conflicts-summarize-servidor-rs.py` -- Resolve additive conflicts, summarize servidor.rs
+- `1182-resolve-additive-conflicts-summarize-servidor-rs.py` -- Resolve additive conflicts, summarize servidor.rs
+- `1184-resolve-keeping-deadlock-fix-routing-locks-throu.py` -- Resolve keeping deadlock fix, routing locks through the single point
+- `1185-find-the-brace-imbalance.py` -- Find the brace imbalance
+- `1186-restore-brace-and-rebuild.py` -- Restore brace and rebuild
+- `1187-fix-field-placement-and-locate-usuarios-break.py` -- Fix field placement and locate usuarios break
+- `1188-fix-field-placement-and-locate-usuarios-break.py` -- Fix field placement and locate usuarios break
+- `1189-fix-both-merge-damages-and-rebuild.py` -- Fix both merge damages and rebuild
+- `119-add-nome-hostil-to-catalogo.py` -- Add nome_hostil to catalogo
+- `1190-reconcile-cancelado-into-messages-table.py` -- Reconcile Cancelado into messages table
+- `1191-fix-screenshot-paths-and-rerun.py` -- Fix screenshot paths and rerun
+- `1193-fix-login-on-same-connection-and-rerun.py` -- Fix login on same connection and rerun
+- `1194-create-database-first-and-rerun.py` -- Create database first and rerun
+- `1196-move-telemetry-profiler-buttons-add-tooltips-and.py` -- Move telemetry/profiler buttons, add tooltips and menu entries
+- `1197-update-changelog-and-telemetria-md.py` -- Update CHANGELOG and TELEMETRIA.md
+- `1198-resolve-http-rs-conflicts-additively.py` -- Resolve http.rs conflicts additively
+- `1199-fix-the-stale-brand-claim-section-and-regenerate.py` -- Fix the stale brand-claim section and regenerate
+- `120-treat-traversal-as-a-grave-violation.py` -- Treat traversal as a grave violation
+- `1201-resolve-the-formato-conflict-and-renumber.py` -- Resolve the FORMATO conflict and renumber
+- `1202-resolve-the-first-pendencias-conflict-renumberin.py` -- Resolve the first PENDENCIAS conflict, renumbering restore to 134
+- `1204-resolve-first-conflict-locate-second.py` -- Resolve first conflict, locate second
+- `1206-resolve-the-lgpd-screen-conflict-keeping-the-ser.py` -- Resolve the LGPD screen conflict keeping the server-side scan
+- `1207-resolve-pendencias-and-changelog-conflicts.py` -- Resolve PENDENCIAS and CHANGELOG conflicts
+- `1208-make-row-click-open-the-table-and-give-the-trail.py` -- Make row click open the table and give the trail its own button
+- `1209-resolve-code-conflicts-inspect-seguranca.py` -- Resolve code conflicts; inspect SEGURANCA
+- `1211-resolve-seguranca-and-find-stale-section-referen.py` -- Resolve SEGURANCA and find stale section references
+- `1212-renumber-the-crypto-section-references.py` -- Renumber the crypto section references
+- `1213-resolve-pendencias-renumbering-the-crypto-entrie.py` -- Resolve PENDENCIAS renumbering the crypto entries
+- `1215-resolve-the-pendencias-conflict.py` -- Resolve the PENDENCIAS conflict
+- `1216-fill-dates-by-their-declared-type.py` -- Fill dates by their declared type
+- `122-register-memoria-module-and-run-its-tests.py` -- Register memoria module and run its tests
+- `1220-resolve-conflicts-additively-and-renumber.py` -- Resolve conflicts additively and renumber
+- `1221-resolve-and-run-gates-for-the-colours-merge.py` -- Resolve and run gates for the colours merge
+- `1222-fix-the-numbering-and-regenerate.py` -- Fix the numbering and regenerate
+- `1223-resolve-the-menu-conflict-giving-the-new-items-t.py` -- Resolve the menu conflict giving the new items translation keys
+- `1225-move-the-short-labels-into-the-factory.py` -- Move the short labels into the factory
+- `1226-fix-the-duplicate-attribute-and-recount.py` -- Fix the duplicate attribute and recount
+- `1228-raise-the-ratchet-with-the-reason-and-run-gates.py` -- Raise the ratchet with the reason and run gates
+- `123-wire-memory-store-into-the-server.py` -- Wire memory store into the server
+- `1230-distinguish-no-manifest-from-does-not-verify.py` -- Distinguish 'no manifest' from 'does not verify'
+- `1231-resolve-the-dossi-conflicts.py` -- Resolve the dossiê conflicts
+- `1233-strip-the-data-uris-so-i-can-read-what-the-page-.py` -- Strip the data URIs so I can read what the page says
+- `1237-renumber-the-docker-requests.py` -- Renumber the Docker requests
+- `1239-guard-abriradmin-against-being-overtaken.py` -- Guard abrirAdmin against being overtaken
+- `124-add-memory-operations-to-the-server.py` -- Add memory operations to the server
+- `1241-drive-the-race-directly-through-the-function.py` -- Drive the race directly through the function
+- `1243-check-whether-the-route-actually-intercepts.py` -- Check whether the route actually intercepts
+- `1244-apply-the-whole-guard-properly-this-time.py` -- Apply the whole guard properly this time
+- `1249-correct-the-ratchet-to-the-measured-truth.py` -- Correct the ratchet to the measured truth
+- `125-fix-field-name-and-value-serialization.py` -- Fix field name and value serialization
+- `1251-resolve-the-catalog-keeping-both-sides-and-check.py` -- Resolve the catalog keeping both sides and check for duplicate ids
+- `1253-validate-the-resolved-catalog-and-renumber-heade.py` -- Validate the resolved catalog and renumber headers
+- `1254-restore-missing-headers-from-each-guard-s-own-ti.py` -- Restore missing headers from each guard's own title
+- `1255-give-every-guard-exactly-one-numbered-header-fro.py` -- Give every guard exactly one numbered header from its own title
+- `1256-redo-the-catalog-resolution-cleanly-with-correct.py` -- Redo the catalog resolution cleanly with correct headers
+- `1259-resolve-catalog-and-additive-docs.py` -- Resolve catalog and additive docs
+- `1260-redo-the-catalog-merge-comparing-against-head-br.py` -- Redo the catalog merge comparing against HEAD, bringing constants along
+- `1261-correct-the-guard-count-in-request-145-and-regen.py` -- Correct the guard count in request 145 and regenerate
+- `1262-fix-the-part-count-and-run-the-test-suite.py` -- Fix the part count and run the test suite
+- `1264-move-the-memory-ceiling-inside-the-channel-read.py` -- Move the memory ceiling inside the channel read
+- `1266-resolve-replica-rs-changelog-and-the-guard-catal.py` -- Resolve replica.rs, CHANGELOG and the guard catalog
+- `1267-fix-the-borrow-and-rebuild.py` -- Fix the borrow and rebuild
+- `1268-use-by-ref-and-rebuild.py` -- Use by_ref and rebuild
+- `1269-fully-qualify-the-take-call.py` -- Fully qualify the take call
+- `127-fix-clippy-warning-and-re-verify.py` -- Fix clippy warning and re-verify
+- `1270-bump-the-config-array-sizes-and-rebuild.py` -- Bump the config array sizes and rebuild
+- `1271-clean-warnings-and-run-clippy.py` -- Clean warnings and run clippy
+- `1278-resolve-all-alter-table-conflicts.py` -- Resolve all ALTER TABLE conflicts
+- `1279-re-extract-guard-blocks-by-dict-boundary.py` -- Re-extract guard blocks by dict boundary
+- `128-add-light-palette-and-theme-button.py` -- Add light palette and theme button
+- `1280-re-extract-guards-with-a-fixed-assertion.py` -- Re-extract guards with a fixed assertion
+- `1281-extract-guard-blocks-precisely-by-dict-boundary.py` -- Extract guard blocks precisely by dict boundary
+- `1282-deduplicate-teto-and-measure-the-true-count.py` -- Deduplicate TETO and measure the true count
+- `1283-deduplicate-145-and-renumber-the-alter-request.py` -- Deduplicate 145 and renumber the ALTER request
+- `1284-extend-the-packaging-script-with-arm-targets.py` -- Extend the packaging script with ARM targets
+- `1286-write-a-minimal-config-for-the-footprint-measure.py` -- Write a minimal config for the footprint measurement
+- `1289-authenticate-and-write-real-rows-on-the-arm-serv.py` -- Authenticate and write real rows on the ARM server
+- `129-wire-the-theme-toggle.py` -- Wire the theme toggle
+- `1290-fix-hash-extraction-and-run-the-arm-proof.py` -- Fix hash extraction and run the ARM proof
+- `1291-run-the-complete-arm-proof-with-correct-types.py` -- Run the complete ARM proof with correct types
+- `1292-find-the-right-response-field-and-complete-the-r.py` -- Find the right response field and complete the read-back
+- `1294-update-the-packaging-doc-with-the-completed-proo.py` -- Update the packaging doc with the completed proof
+- `1295-update-the-packaging-doc-with-the-completed-proo.py` -- Update the packaging doc with the completed proof
+- `1299-make-the-freed-space-total-measured-rather-than-.py` -- Make the freed-space total measured rather than summed
+- `130-add-destinos-allow-list-to-web-config.py` -- Add destinos allow-list to web config
+- `131-add-destinos-allow-list-from-project-root.py` -- Add destinos allow-list from project root
+- `133-route-api-requests-through-the-remote-connection.py` -- Route API requests through the remote connection
+- `134-add-relay-open-and-forward-functions.py` -- Add relay open and forward functions
+- `135-add-relay-open-and-forward-functions.py` -- Add relay open and forward functions
+- `136-fix-borrow-error.py` -- Fix borrow error
+- `137-add-host-port-key-and-database-fields.py` -- Add host, port, key and database fields
+- `138-extend-saude-with-server-facts.py` -- Extend /saude with server facts
+- `139-register-and-test-sha-512.py` -- Register and test SHA-512
+- `140-fix-byte-loading-and-retest.py` -- Fix byte loading and retest
+- `141-add-public-key-field-to-usuario.py` -- Add public key field to Usuario
+- `142-complete-the-usuario-struct-and-add-alguem-exige.py` -- Complete the Usuario struct and add alguem_exige_chave
+- `143-wire-signature-verification-into-login.py` -- Wire signature verification into login
+- `144-wire-signature-verification-into-login.py` -- Wire signature verification into login
+- `145-wire-signature-verification-into-login.py` -- Wire signature verification into login
+- `146-add-key-generation-to-the-cli.py` -- Add key generation to the CLI
+- `148-build-and-generate-a-key-pair.py` -- Build and generate a key pair
+- `149-fix-clippy-and-re-verify-vectors.py` -- Fix clippy and re-verify vectors
+- `150-add-backup-ops-to-server.py` -- Add backup ops to server
+- `151-map-memory-ops-to-read-permission-and-test.py` -- Map memory ops to read permission and test
+- `153-rename-the-relay-field-to-avoid-the-collision.py` -- Rename the relay field to avoid the collision
+- `154-finish-the-rename-and-restart.py` -- Finish the rename and restart
+- `155-wire-the-new-login-fields-in-javascript.py` -- Wire the new login fields in JavaScript
+- `156-fix-selector-and-restart.py` -- Fix selector and restart
+- `157-tokenize-the-entry-gradient-and-audit-literal-co.py` -- Tokenize the entry gradient and audit literal colors
+- `158-tokenize-button-text-color-and-retest.py` -- Tokenize button text color and retest
+- `159-add-backup-commands-to-the-cli.py` -- Add backup commands to the CLI
+- `162-add-replication-config-tests-and-honest-startup-.py` -- Add replication config tests and honest startup notice
+- `164-fix-the-verbatim-quote-and-mark-remaining-names.py` -- Fix the verbatim quote and mark remaining names
+- `165-add-manual-sections-for-memory-backup-and-keys.py` -- Add manual sections for memory, backup and keys
+- `166-update-readme-with-the-new-features.py` -- Update README with the new features
+- `167-update-readme-with-the-new-features.py` -- Update README with the new features
+- `168-update-dossier-numbers-and-renumber-sections.py` -- Update dossier numbers and renumber sections
+- `169-update-dossier-tables-and-render.py` -- Update dossier tables and render
+- `170-fix-overlapping-boxes-in-figure-12.py` -- Fix overlapping boxes in figure 12
+- `171-adjust-figure-12-coordinates-and-re-render.py` -- Adjust figure 12 coordinates and re-render
+- `172-add-nivel-enum-to-the-user-model.py` -- Add Nivel enum to the user model
+- `173-wire-nivel-into-permission-resolution.py` -- Wire Nivel into permission resolution
+- `174-add-nivel-tests.py` -- Add Nivel tests
+- `176-add-zip-backup-with-the-naming-convention.py` -- Add ZIP backup with the naming convention
+- `178-add-zip-option-to-the-backup-operation.py` -- Add zip option to the backup operation
+- `179-add-scheduled-backup-config.py` -- Add scheduled backup config
+- `180-add-the-scheduled-backup-thread.py` -- Add the scheduled backup thread
+- `183-extract-and-test-the-retention-rule.py` -- Extract and test the retention rule
+- `184-extract-and-test-the-retention-rule.py` -- Extract and test the retention rule
+- `185-add-nivel-nenhum-to-preserve-deny-by-default.py` -- Add Nivel::Nenhum to preserve deny-by-default
+- `188-show-the-level-in-the-listing.py` -- Show the level in the listing
+- `189-rebuild-and-check-the-listing.py` -- Rebuild and check the listing
+- `190-add-backup-and-level-sections-to-example-configs.py` -- Add backup and level sections to example configs
+- `191-add-zip-options-to-the-backup-cli.py` -- Add zip options to the backup CLI
+- `193-fix-usage-text-format-and-lint.py` -- Fix usage text, format and lint
+- `194-fix-clippy-warning-and-run-all-tests.py` -- Fix clippy warning and run all tests
+- `195-satisfy-clippy-and-re-verify.py` -- Satisfy clippy and re-verify
+- `196-update-manual-and-changelog.py` -- Update manual and changelog
+- `197-update-manual-and-changelog.py` -- Update manual and changelog
+- `198-update-dossier-with-zip-scheduling-and-levels.py` -- Update dossier with zip, scheduling and levels
+- `199-correct-the-measured-numbers.py` -- Correct the measured numbers
+- `201-replace-the-cover-logo-with-a-clean-plate.py` -- Replace the cover logo with a clean plate
+- `202-document-the-brand-fix-and-do-a-final-render-che.py` -- Document the brand fix and do a final render check
+- `203-fix-the-argument-length-problem-and-retest.py` -- Fix the argument length problem and retest
+- `204-make-the-comparison-fair-and-retest.py` -- Make the comparison fair and retest
+- `205-add-mirroring-to-the-volume-layer.py` -- Add mirroring to the volume layer
+- `206-add-second-chance-read-and-repair-to-regfile.py` -- Add second-chance read and repair to RegFile
+- `207-add-the-recovery-counter-field.py` -- Add the recovery counter field
+- `208-fix-the-struct-and-rebuild.py` -- Fix the struct and rebuild
+- `209-expose-mirroring-on-table.py` -- Expose mirroring on Table
+- `211-fix-test-helpers-and-rerun.py` -- Fix test helpers and rerun
+- `212-fix-the-seeding-bug-and-retest.py` -- Fix the seeding bug and retest
+- `213-fix-the-seeding-bug-and-retest.py` -- Fix the seeding bug and retest
+- `214-wire-the-mirror-into-config-and-server.py` -- Wire the mirror into config and server
+- `215-add-repair-to-the-cli-and-set-up-an-end-to-end-t.py` -- Add repair to the CLI and set up an end-to-end test
+- `218-split-replication-into-send-and-return-ports.py` -- Split replication into send and return ports
+- `220-validate-the-three-replication-ports.py` -- Validate the three replication ports
+- `221-update-replication-tests.py` -- Update replication tests
+- `222-update-replication-tests.py` -- Update replication tests
+- `223-replace-the-content-table-with-the-grid.py` -- Replace the content table with the grid
+- `224-compose-the-page-with-the-grid-and-add-the-expor.py` -- Compose the page with the grid and add the export flag
+- `225-compose-the-page-with-the-grid-and-add-the-expor.py` -- Compose the page with the grid and add the export flag
+- `227-make-the-grid-follow-the-console-theme.py` -- Make the grid follow the console theme
+- `228-add-the-dashboard-aggregate-operation.py` -- Add the dashboard aggregate operation
+- `232-add-the-dashboard-entry-and-its-styles.py` -- Add the dashboard entry and its styles
+- `233-add-the-dashboard-view-with-hand-written-svg-cha.py` -- Add the dashboard view with hand-written SVG charts
+- `236-fix-chart-scaling-and-re-render.py` -- Fix chart scaling and re-render
+- `237-fix-chart-scaling-from-the-project-root.py` -- Fix chart scaling from the project root
+- `238-update-manual-and-changelog.py` -- Update manual and changelog
+- `239-update-manual-and-changelog.py` -- Update manual and changelog
+- `240-remeasure-and-update-the-dossier-numbers.py` -- Remeasure and update the dossier numbers
+- `241-shorten-the-figure-text-and-re-render.py` -- Shorten the figure text and re-render
+- `242-add-digitos-to-schema-json.py` -- Add digitos to schema JSON
+- `243-clean-up-three-rough-edges.py` -- Clean up three rough edges
+- `244-add-toolbar-entries.py` -- Add toolbar entries
+- `245-fix-colour-family-comment.py` -- Fix colour family comment
+- `246-rework-menubar.py` -- Rework menubar
+- `247-add-alt-5-shortcut.py` -- Add Alt+5 shortcut
+- `248-make-iraba-redraw-tabs-when-missing.py` -- Make irAba redraw tabs when missing
+- `250-default-max-arquivos-to-the-suffix-width.py` -- Default max_arquivos to the suffix width
+- `251-fix-pagination-fields-in-the-form.py` -- Fix pagination fields in the form
+- `252-test-the-delete-success-path.py` -- Test the delete success path
+- `253-make-transactions-screen-read-live-config.py` -- Make transactions screen read live config
+- `254-read-live-espelho-setting.py` -- Read live espelho setting
+- `255-fix-label-casing-and-re-run.py` -- Fix label casing and re-run
+- `256-fix-label-casing-and-re-run.py` -- Fix label casing and re-run
+- `257-capture-both-themes.py` -- Capture both themes
+- `258-update-permission-docs.py` -- Update permission docs
+- `259-document-why-excluir-tabela-needs-administrar.py` -- Document why excluir_tabela needs administrar
+- `260-add-com-max-arquivos-and-reorder.py` -- Add com_max_arquivos and reorder
+- `261-test-the-new-builder-method.py` -- Test the new builder method
+- `262-add-the-three-ops-to-the-read-only-guard.py` -- Add the three ops to the read-only guard
+- `263-remove-duplicate-helper.py` -- Remove duplicate helper
+- `264-fix-test-and-run.py` -- Fix test and run
+- `265-implement-criar-schema-op.py` -- Implement criar_schema op
+- `266-add-schema-field-to-the-new-table-form.py` -- Add schema field to the new-table form
+- `267-rerun-schema-tests-with-traversal-last.py` -- Rerun schema tests with traversal last
+- `268-fix-the-tree-panel-race.py` -- Fix the tree/panel race
+- `269-update-the-pendencias-table.py` -- Update the PENDENCIAS table
+- `270-update-the-parcial-and-planejado-sections.py` -- Update the parcial and planejado sections
+- `271-clean-the-parcial-section.py` -- Clean the parcial section
+- `273-record-this-round-s-defects.py` -- Record this round's defects
+- `274-update-dossier-numbers.py` -- Update dossier numbers
+- `278-add-the-table-management-section-to-the-dossier.py` -- Add the table-management section to the dossier
+- `279-qualify-the-mirror-column.py` -- Qualify the mirror column
+- `280-update-readme-and-check-for-stale-numbers.py` -- Update README and check for stale numbers
+- `281-bump-version-and-write-the-changelog-entry.py` -- Bump version and write the changelog entry
+- `282-bump-versions-and-document-the-interface-size-re.py` -- Bump versions and document the interface-size recipe
+- `283-update-the-manual-operations-list.py` -- Update the MANUAL operations list
+- `284-document-the-table-screens-in-the-manual.py` -- Document the table screens in the MANUAL
+- `285-update-the-doc-line-count.py` -- Update the doc line count
+- `286-add-metadata-fields-to-column.py` -- Add metadata fields to Column
+- `287-add-primario-to-indexdef.py` -- Add primario to IndexDef
+- `288-add-primaria-builder-and-read-schema-new.py` -- Add primaria builder and read Schema::new
+- `289-validate-the-primary-key-in-schema-new.py` -- Validate the primary key in Schema::new
+- `290-add-papeldechave-and-the-derivation.py` -- Add PapelDeChave and the derivation
+- `291-bump-serialization-to-v3.py` -- Bump serialization to v3
+- `292-build-core.py` -- Build core
+- `293-add-modoparticao-and-periodo.py` -- Add ModoParticao and Periodo
+- `294-serialize-the-partition-mode.py` -- Serialize the partition mode
+- `295-find-com-paginacao.py` -- Find com_paginacao
+- `296-make-com-paginacao-validate.py` -- Make com_paginacao validate
+- `297-fix-the-server-call-site.py` -- Fix the server call site
+- `298-read-the-partition-mode-from-json.py` -- Read the partition mode from JSON
+- `299-use-the-schema-s-columns.py` -- Use the schema's columns
+- `300-add-the-boundary-table-to-regfile.py` -- Add the boundary table to RegFile
+- `301-make-localizar-use-the-boundary-table.py` -- Make localizar use the boundary table
+- `302-simplify-localizar.py` -- Simplify localizar
+- `303-implement-the-volume-cut-decision.py` -- Implement the volume-cut decision
+- `304-compute-the-period-key-in-table.py` -- Compute the period key in Table
+- `305-fix-test-and-run-the-suite.py` -- Fix test and run the suite
+- `306-fix-remaining-call-sites.py` -- Fix remaining call sites
+- `307-fix-the-temp-dir-usage.py` -- Fix the temp-dir usage
+- `308-enrich-the-esquema-response.py` -- Enrich the esquema response
+- `309-expose-partition-mode-and-volume-boundaries.py` -- Expose partition mode and volume boundaries
+- `310-add-largura-do-tipo-and-table-fronteiras.py` -- Add largura_do_tipo and Table::fronteiras
+- `311-build-the-server.py` -- Build the server
+- `312-accept-field-metadata-in-criar-tabela.py` -- Accept field metadata in criar_tabela
+- `313-add-cross-database-copy.py` -- Add cross-database copy
+- `314-add-copiar-systables-and-syscolumns.py` -- Add copiar, SysTables and SysColumns
+- `315-fix-the-new-ops.py` -- Fix the new ops
+- `316-clean-warnings.py` -- Clean warnings
+- `317-add-copiar-tabela-to-permissions.py` -- Add copiar_tabela to permissions
+- `318-wire-permissions-and-the-read-only-guard.py` -- Wire permissions and the read-only guard
+- `319-wire-permissions-and-the-read-only-guard.py` -- Wire permissions and the read-only guard
+- `320-wire-permissions-and-the-read-only-guard.py` -- Wire permissions and the read-only guard
+- `321-wire-permissions-and-the-read-only-guard.py` -- Wire permissions and the read-only guard
+- `322-fix-the-test-and-verify.py` -- Fix the test and verify
+- `323-fix-the-empty-volume-seeding.py` -- Fix the empty-volume seeding
+- `324-tidy-state-and-check-ligarmenu.py` -- Tidy state and check ligarMenu
+- `325-avoid-stacking-listeners.py` -- Avoid stacking listeners
+- `326-fix-duplicate-and-rerun-screen-tests.py` -- Fix duplicate and rerun screen tests
+- `327-fix-duplicate-and-rerun-screen-tests.py` -- Fix duplicate and rerun screen tests
+- `328-apply-the-two-fixes-properly.py` -- Apply the two fixes properly
+- `329-fix-the-leaking-click-handler.py` -- Fix the leaking click handler
+- `330-make-the-partitions-screen-read-real-boundaries.py` -- Make the partitions screen read real boundaries
+- `331-verify-partitions-read-the-real-boundaries.py` -- Verify partitions read the real boundaries
+- `332-fix-the-button-width-and-recapture.py` -- Fix the button width and recapture
+- `333-keep-the-partition-checkbox-on-one-line.py` -- Keep the partition checkbox on one line
+- `334-document-the-format-change.py` -- Document the format change
+- `335-document-the-schema-block-v3.py` -- Document the schema block v3
+- `336-update-manual-and-permission-docs.py` -- Update manual and permission docs
+- `337-document-partitioning-and-field-metadata-in-the-.py` -- Document partitioning and field metadata in the manual
+- `338-update-pendencias.py` -- Update PENDENCIAS
+- `339-record-this-round-s-defects.py` -- Record this round's defects
+- `340-bump-to-0-8-0-and-write-the-changelog.py` -- Bump to 0.8.0 and write the changelog
+- `341-update-readme-and-measure.py` -- Update README and measure
+- `342-update-dossier-numbers.py` -- Update dossier numbers
+- `343-add-the-format-change-section-to-the-dossier.py` -- Add the format-change section to the dossier
+- `344-fix-figure-numbering-and-counts.py` -- Fix figure numbering and counts
+- `345-fix-test-setup-and-rerun-the-table-suite.py` -- Fix test setup and rerun the table suite
+- `346-update-the-old-test-for-the-partition-checkbox.py` -- Update the old test for the partition checkbox
+- `348-move-field-metadata-into-section-3.py` -- Move field metadata into section 3
+- `349-move-calendar-partitioning-into-section-5.py` -- Move calendar partitioning into section 5
+- `350-renumber-the-figures-in-document-order.py` -- Renumber the figures in document order
+- `351-complete-the-screen-inventory-table.py` -- Complete the screen inventory table
+- `352-fix-stale-numbers.py` -- Fix stale numbers
+- `353-update-the-disk-touch-table.py` -- Update the disk-touch table
+- `354-complete-the-state-table.py` -- Complete the state table
+- `355-document-database-management-in-the-dossier.py` -- Document database management in the dossier
+- `357-fix-stale-claims-in-the-other-docs.py` -- Fix stale claims in the other docs
+- `358-update-the-manual-s-operation-list.py` -- Update the manual's operation list
+- `359-update-doc-count-and-check-html-balance.py` -- Update doc count and check HTML balance
+- `360-fix-selector-and-rerender.py` -- Fix selector and rerender
+- `361-fix-the-sidebar-numbering-drift.py` -- Fix the sidebar numbering drift
+- `362-check-sidebar-titles-against-section-headings.py` -- Check sidebar titles against section headings
+- `363-final-dossier-render-check.py` -- Final dossier render check
+- `364-record-the-review-findings-and-re-measure.py` -- Record the review findings and re-measure
+- `365-record-the-review-findings-and-re-measure.py` -- Record the review findings and re-measure
+- `366-add-the-imports.py` -- Add the imports
+- `367-add-remaining-imports.py` -- Add remaining imports
+- `368-fix-duplicate-import-and-unused-variable.py` -- Fix duplicate import and unused variable
+- `369-wire-permissions-and-verify.py` -- Wire permissions and verify
+- `370-add-pivotar-to-the-read-only-test.py` -- Add pivotar to the read-only test
+- `371-wire-the-pivot-button-and-menus.py` -- Wire the pivot button and menus
+- `372-test-dark-theme-csv-and-the-request-view.py` -- Test dark theme, CSV and the request view
+- `373-apply-the-sequence-fix-from-the-right-directory.py` -- Apply the Sequence fix from the right directory
+- `374-document-the-pivot-and-grouping-in-the-manual.py` -- Document the pivot and grouping in the manual
+- `375-bump-version-and-write-the-changelog.py` -- Bump version and write the changelog
+- `376-update-pendencias-and-measure.py` -- Update PENDENCIAS and measure
+- `377-update-dossier-and-verify-counts.py` -- Update dossier and verify counts
+- `378-add-the-grouping-and-pivot-section.py` -- Add the grouping and pivot section
+- `379-renumber-figures-by-reading-order.py` -- Renumber figures by reading order
+- `380-update-counts-and-verify.py` -- Update counts and verify
+- `381-update-counts-and-verify.py` -- Update counts and verify
+- `382-render-the-dossier-and-check-the-new-figure.py` -- Render the dossier and check the new figure
+- `383-fix-the-patch-anchor-and-apply.py` -- Fix the patch anchor and apply
+- `384-wire-recursos-into-config.py` -- Wire Recursos into Config
+- `386-wire-recursos-into-config-properly.py` -- Wire Recursos into Config properly
+- `387-complete-the-config-wiring.py` -- Complete the Config wiring
+- `388-route-all-syncs-through-the-window.py` -- Route all syncs through the window
+- `389-fix-the-move-order.py` -- Fix the move order
+- `391-start-the-clock-at-boot.py` -- Start the clock at boot
+- `392-rerun-the-concurrent-measurement.py` -- Rerun the concurrent measurement
+- `393-fix-the-last-callers-and-the-shadowed-name.py` -- Fix the last callers and the shadowed name
+- `395-remove-the-duplicate-accessor.py` -- Remove the duplicate accessor
+- `396-add-the-sequences-operations.py` -- Add the sequences operations
+- `397-document-resources-and-sequences-in-the-manual.py` -- Document resources and sequences in the manual
+- `398-write-the-changelog-and-update-readme.py` -- Write the changelog and update README
+- `399-update-pendencias-with-the-round-s-findings.py` -- Update PENDENCIAS with the round's findings
+- `400-update-dossier-numbers.py` -- Update dossier numbers
+- `401-add-the-sequences-screen.py` -- Add the sequences screen
+- `402-final-verification.py` -- Final verification
+- `403-commit-and-push.py` -- Commit and push
+- `404-simplify-the-sistema-field.py` -- Simplify the sistema field
+- `405-simplify-sistema-field.py` -- Simplify sistema field
+- `406-add-alertas-email-config-structs.py` -- Add Alertas/Email config structs
+- `407-wire-alertas-into-config.py` -- Wire alertas into Config
+- `408-finish-config-wiring-and-build.py` -- Finish config wiring and build
+- `409-register-email-module-and-test.py` -- Register email module and test
+- `410-fix-warning-and-comment.py` -- Fix warning and comment
+- `411-rewrite-loop.py` -- Rewrite loop
+- `412-add-monitor-field-and-dispatch.py` -- Add monitor field and dispatch
+- `413-insert-sistema-ops-into-servidor-rs.py` -- Insert sistema ops into servidor.rs
+- `414-add-path-import-and-permission.py` -- Add path import and permission
+- `415-add-path-import-and-permission.py` -- Add path import and permission
+- `416-add-sistema-to-read-only-op-test-fmt-and-clippy.py` -- Add sistema to read-only op test, fmt and clippy
+- `417-fix-clippy-warnings.py` -- Fix clippy warnings
+- `418-insert-machine-ui-into-panel.py` -- Insert machine UI into panel
+- `419-insert-machine-ui-into-panel.py` -- Insert machine UI into panel
+- `420-add-wrapper-and-css.py` -- Add wrapper and CSS
+- `421-add-monitor-clock.py` -- Add monitor clock
+- `422-clear-monitor-in-folha-syntax-check-the-page-js.py` -- Clear monitor in folha; syntax-check the page JS
+- `423-probe-with-login.py` -- Probe with login
+- `424-fix-the-percentage-base.py` -- Fix the percentage base
+- `425-add-the-regression-test.py` -- Add the regression test
+- `426-update-ui-restart-re-probe.py` -- Update UI, restart, re-probe
+- `427-check-rates-on-the-second-reading.py` -- Check rates on the second reading
+- `428-fix-gauge-and-disk-bar-scaling.py` -- Fix gauge and disk-bar scaling
+- `429-apply-the-ui-fixes-for-real.py` -- Apply the UI fixes for real
+- `430-tighten-the-machine-card-layout.py` -- Tighten the machine card layout
+- `431-document-alertas-base-in-the-example-configs.py` -- Document alertas + base in the example configs
+- `432-write-sha-1-with-fips-vectors.py` -- Write SHA-1 with FIPS vectors
+- `433-write-the-dblink-registry.py` -- Write the DbLink registry
+- `434-add-dblink-path-to-config.py` -- Add dblink path to config
+- `435-add-identifier-validation.py` -- Add identifier validation
+- `436-wire-dblink-ops-into-servidor.py` -- Wire DbLink ops into servidor
+- `437-permissions-and-op-list-tests.py` -- Permissions and op-list tests
+- `438-adapt-the-draft-to-existing-helpers.py` -- Adapt the draft to existing helpers
+- `439-insert-dblink-ui-toolbar-menu-and-css.py` -- Insert DbLink UI, toolbar, menu and CSS
+- `440-fix-the-comma-expression-and-rebuild.py` -- Fix the comma expression and rebuild
+- `441-carry-the-decimals-through.py` -- Carry the decimals through
+- `442-derive-float-decimals-from-data.py` -- Derive float decimals from data
+- `443-fix-the-form-layout.py` -- Fix the form layout
+- `444-fix-the-danger-button-style.py` -- Fix the danger-button style
+- `445-document-dblink-in-configs-correct-the-server-ma.py` -- Document dblink in configs; correct the Server Mail note
+- `446-document-dblink-in-configs-correct-the-server-ma.py` -- Document dblink in configs; correct the Server Mail note
+- `447-rfc-2047-subject-and-base64-body.py` -- RFC 2047 subject and base64 body
+- `448-apply-the-rfc-fixes.py` -- Apply the RFC fixes
+- `449-make-the-alert-text-use-one-base.py` -- Make the alert text use one base
+- `451-show-storage-location-and-alerts-on-the-config-s.py` -- Show storage location and alerts on the config screen
+- `452-bump-version-and-write-the-changelog.py` -- Bump version and write the changelog
+- `453-update-pendencias.py` -- Update PENDENCIAS
+- `455-renumber-the-last-three-sections.py` -- Renumber the last three sections
+- `456-shift-the-last-two-figure-numbers.py` -- Shift the last two figure numbers
+- `457-insert-the-two-new-dossier-sections.py` -- Insert the two new dossier sections
+- `458-check-the-roadmap-section-for-stale-numbers.py` -- Check the roadmap section for stale numbers
+- `461-correct-the-stale-counts.py` -- Correct the stale counts
+- `462-add-new-rows-and-verify-the-test-counts.py` -- Add new rows and verify the test counts
+- `463-move-the-overlapping-note-in-figure-18.py` -- Move the overlapping note in Figure 18
+- `464-write-the-join-and-union-engine.py` -- Write the join and union engine
+- `465-clean-up-the-union-column-construction.py` -- Clean up the union column construction
+- `466-add-debug-and-re-test.py` -- Add Debug and re-test
+- `467-wire-the-operations-into-the-server.py` -- Wire the operations into the server
+- `468-disambiguate-the-two-juncao-names.py` -- Disambiguate the two Juncao names
+- `469-permissions-and-clippy.py` -- Permissions and clippy
+- `470-full-end-to-end-run-with-timeouts.py` -- Full end-to-end run with timeouts
+- `471-fix-criar-tabela-to-split-qualified-names.py` -- Fix criar_tabela to split qualified names
+- `472-add-schema-renomear-and-build.py` -- Add Schema::renomear and build
+- `473-insert-the-join-ui-icon-css-and-menu-entries.py` -- Insert the join UI, icon, CSS and menu entries
+- `474-insert-the-join-ui-for-real.py` -- Insert the join UI for real
+- `475-fix-the-clippy-warning.py` -- Fix the clippy warning
+- `476-update-pendencias-and-verify-the-counts.py` -- Update PENDENCIAS and verify the counts
+- `478-add-the-joins-section-to-the-dossier.py` -- Add the joins section to the dossier
+- `480-replace-masks-with-even-odd-clip-paths.py` -- Replace masks with even-odd clip paths
+- `482-update-changelog-and-run-final-checks.py` -- Update changelog and run final checks
+- `483-add-stable-error-codes.py` -- Add stable error codes
+- `484-wire-codes-onto-the-wire-and-test.py` -- Wire codes onto the wire and test
+- `485-record-the-object-in-the-access-log.py` -- Record the object in the access log
+- `487-fill-the-real-object-at-the-dispatch-site.py` -- Fill the real object at the dispatch site
+- `489-carry-the-code-through-the-tcp-path-too.py` -- Carry the code through the TCP path too
+- `490-centralise-the-object-extraction.py` -- Centralise the object extraction
+- `491-centralise-the-object-extraction.py` -- Centralise the object extraction
+- `492-tidy-the-derive-and-build.py` -- Tidy the derive and build
+- `493-add-the-statistics-operation.py` -- Add the statistics operation
+- `494-add-the-statistics-operation.py` -- Add the statistics operation
+- `495-add-checksum-and-uptime.py` -- Add checksum and uptime
+- `496-add-checksum-and-uptime.py` -- Add checksum and uptime
+- `497-check-and-test.py` -- Check and test
+- `498-fix-the-test-helper-and-re-check.py` -- Fix the test helper and re-check
+- `499-write-the-connection-registry.py` -- Write the connection registry
+- `500-register-connections-in-the-tcp-loop.py` -- Register connections in the TCP loop
+- `501-fix-the-double-count-and-add-the-scope-guard.py` -- Fix the double count and add the scope guard
+- `502-fix-the-double-count-and-add-the-scope-guard.py` -- Fix the double count and add the scope guard
+- `503-add-sessoes-and-encerrar-sessao.py` -- Add sessoes and encerrar_sessao
+- `504-add-sessoes-and-encerrar-sessao.py` -- Add sessoes and encerrar_sessao
+- `505-add-sessoes-and-encerrar-sessao.py` -- Add sessoes and encerrar_sessao
+- `506-register-the-write-op-and-test.py` -- Register the write op and test
+- `507-register-the-write-op-and-test.py` -- Register the write op and test
+- `508-add-the-slow-list-and-label-code-0.py` -- Add the slow list and label code 0
+- `509-add-the-slow-list-and-label-code-0.py` -- Add the slow list and label code 0
+- `510-add-the-sessions-and-statistics-screens.py` -- Add the sessions and statistics screens
+- `511-add-creation-time-and-listing-to-web-sessions.py` -- Add creation time and listing to web sessions
+- `512-include-web-sessions-in-the-list-and-in-kill.py` -- Include web sessions in the list and in kill
+- `513-show-web-sessions-in-the-ui-and-check.py` -- Show web sessions in the UI and check
+- `514-repoint-and-remove-the-superseded-screen.py` -- Repoint and remove the superseded screen
+- `515-update-pendencias-and-the-changelog.py` -- Update PENDENCIAS and the changelog
+- `517-update-pendencias-and-the-changelog.py` -- Update PENDENCIAS and the changelog
+- `518-add-the-operations-section-to-the-dossier.py` -- Add the operations section to the dossier
+- `520-add-the-checksum-screen.py` -- Add the checksum screen
+- `521-add-fixed-parts-and-tests.py` -- Add fixed parts and tests
+- `522-fix-the-raw-string-delimiter.py` -- Fix the raw string delimiter
+- `524-fix-the-header-style-and-the-missing-tblgrid.py` -- Fix the header style and the missing tblGrid
+- `526-wire-the-export-operation.py` -- Wire the export operation
+- `527-wire-the-export-operation.py` -- Wire the export operation
+- `528-add-the-export-screen-and-toolbar-button.py` -- Add the export screen and toolbar button
+- `530-add-the-mirror-and-durability-window-to-the-writ.py` -- Add the mirror and durability window to the write flow
+- `531-fix-the-figure-layout.py` -- Fix the figure layout
+- `532-apply-the-figure-fixes.py` -- Apply the figure fixes
+- `533-document-the-sixth-file-in-the-spec-and-readme.py` -- Document the sixth file in the spec and readme
+- `534-document-the-sixth-file-in-the-spec-and-readme.py` -- Document the sixth file in the spec and readme
+- `535-document-the-mirror-in-the-manual-then-check.py` -- Document the mirror in the manual, then check
+- `536-update-the-pending-list.py` -- Update the pending list
+- `539-finish-the-dossier-numbers.py` -- Finish the dossier numbers
+- `540-fix-the-cover-numbers-and-validate.py` -- Fix the cover numbers and validate
+- `541-fix-garbled-encryption-sentence-in-artifact.py` -- Fix garbled encryption sentence in artifact
+- `545-add-0-12-0-changelog-entry-and-bump-version.py` -- Add 0.12.0 changelog entry and bump version
+- `546-bump-psch-version-and-add-constant.py` -- Bump PSCH version and add constant
+- `547-split-schema-new-do-disco-and-add-flag.py` -- Split Schema::new / do_disco and add flag
+- `548-wire-serialization-of-the-new-flag.py` -- Wire serialization of the new flag
+- `549-update-layout-test-and-add-system-column-tests.py` -- Update layout test and add system-column tests
+- `550-refactor-helper-and-run-core-tests.py` -- Refactor helper and run core tests
+- `551-fix-the-v3-regression-test.py` -- Fix the v3 regression test
+- `552-register-motivo-module-and-test.py` -- Register motivo module and test
+- `553-fix-trash-record-header-layout-and-crc.py` -- Fix trash record header layout and CRC
+- `554-register-lixeira-module-and-test.py` -- Register lixeira module and test
+- `555-fix-borrow-and-retest.py` -- Fix borrow and retest
+- `556-wire-the-two-new-files-into-table.py` -- Wire the two new files into Table
+- `557-add-tolerant-arity-and-helpers.py` -- Add tolerant arity and helpers
+- `558-complete-arity-on-insert-and-update.py` -- Complete arity on insert and update
+- `559-replace-excluir-with-the-three-deletion-paths.py` -- Replace excluir with the three deletion paths
+- `560-add-value-para-texto-and-check-helpers.py` -- Add Value::para_texto and check helpers
+- `561-add-read-paths-and-admin-methods-then-build.py` -- Add read paths and admin methods, then build
+- `562-clean-warning-and-run-full-tests.py` -- Clean warning and run full tests
+- `563-clean-warning-and-run-full-tests.py` -- Clean warning and run full tests
+- `564-drop-system-column-from-join-output.py` -- Drop system column from join output
+- `565-drop-system-column-from-union-too.py` -- Drop system column from union too
+- `566-test-joins.py` -- Test joins
+- `567-fix-fixture-and-guard-the-filter.py` -- Fix fixture and guard the filter
+- `568-make-json-para-linha-fill-the-system-column.py` -- Make json_para_linha fill the system column
+- `569-add-motivo-obrigatorio-to-schema-json-and-fix-te.py` -- Add motivo_obrigatorio to schema JSON and fix test
+- `570-preserve-softdeleted-on-update-read-memoria-fixt.py` -- Preserve softdeleted on update; read memoria fixture
+- `571-fix-memoria-fixture-and-run-all-tests.py` -- Fix memoria fixture and run all tests
+- `572-fix-assertion-and-rerun.py` -- Fix assertion and rerun
+- `573-fix-borrow-and-rerun.py` -- Fix borrow and rerun
+- `574-add-server-ops-and-dispatch.py` -- Add server ops and dispatch
+- `575-add-helper-functions-and-build.py` -- Add helper functions and build
+- `576-add-helper-functions-and-build.py` -- Add helper functions and build
+- `577-add-permissions-and-find-the-read-only-list.py` -- Add permissions and find the read-only list
+- `578-add-write-ops-and-rebuild.py` -- Add write ops and rebuild
+- `579-add-new-write-ops-to-the-policy-test.py` -- Add new write ops to the policy test
+- `580-pin-the-read-only-classification.py` -- Pin the read-only classification
+- `581-fix-despachar-call-and-rerun.py` -- Fix despachar call and rerun
+- `582-fix-field-name-and-check-sessao-struct.py` -- Fix field name and check Sessao struct
+- `583-add-token-to-despachar-calls-and-rerun.py` -- Add token to despachar calls and rerun
+- `584-auto-fix-clippy-and-clean-the-rest.py` -- Auto-fix clippy and clean the rest
+- `585-route-delete-through-the-new-dialog.py` -- Route delete through the new dialog
+- `586-add-dialog-css.py` -- Add dialog CSS
+- `587-add-dialog-trash-and-reasons-screens.py` -- Add dialog, trash and reasons screens
+- `588-fix-ui-issues-and-syntax-check-the-js.py` -- Fix UI issues and syntax-check the JS
+- `589-add-trash-reasons-to-management-inspect-menu.py` -- Add trash/reasons to management, inspect menu
+- `590-add-menu-entries-look-at-toolbar.py` -- Add menu entries; look at toolbar
+- `591-add-trash-icon-and-toolbar-button.py` -- Add trash icon and toolbar button
+- `592-add-the-reason-checkbox-to-create-table.py` -- Add the reason checkbox to create-table
+- `593-wire-the-checkbox-into-the-create-request.py` -- Wire the checkbox into the create request
+- `594-fix-the-nested-td-bug.py` -- Fix the nested td bug
+- `595-add-the-two-mode-grid-check-op-varrer-for-visao.py` -- Add the two-mode grid; check op_varrer for visao
+- `596-add-visao-to-op-varrer.py` -- Add visao to op_varrer
+- `597-import-visao-and-build.py` -- Import Visao and build
+- `598-single-pass-filter-by-visao.py` -- Single-pass filter by visao
+- `599-single-pass-filter-by-visao.py` -- Single-pass filter by visao
+- `600-seed-with-login-first.py` -- Seed with login first
+- `601-add-true-attachment-count-to-descartada.py` -- Add true attachment count to Descartada
+- `602-add-uuid-lookup-and-honest-attachment-count.py` -- Add uuid lookup and honest attachment count
+- `603-honest-attachment-display-plus-single-row-view.py` -- Honest attachment display plus single-row view
+- `604-hide-the-system-column-from-the-record-form.py` -- Hide the system column from the record form
+- `605-mark-the-system-column-in-op-esquema-too.py` -- Mark the system column in op_esquema too
+- `606-fix-the-null-onclick-and-retest.py` -- Fix the null onclick and retest
+- `607-fix-the-null-onclick-guard.py` -- Fix the null onclick guard
+- `608-update-formato-md-header-table.py` -- Update FORMATO.md header table
+- `609-add-the-two-new-format-sections.py` -- Add the two new format sections
+- `610-document-the-system-column.py` -- Document the system column
+- `611-add-new-limits.py` -- Add new limits
+- `612-update-the-manual-intro.py` -- Update the manual intro
+- `613-add-new-ops-to-the-manual-operations-list.py` -- Add new ops to the manual operations list
+- `614-add-manual-section-and-update-readme.py` -- Add manual section and update README
+- `615-add-manual-section-and-update-readme.py` -- Add manual section and update README
+- `616-fix-test-constructor-lint-and-count.py` -- Fix test constructor, lint and count
+- `617-write-the-0-13-0-changelog-and-bump-version.py` -- Write the 0.13.0 changelog and bump version
+- `619-renumber-figures-and-fix-the-mirror-text.py` -- Renumber figures and fix the mirror text
+- `620-add-the-deletion-flow-figure-to-the-dossier.py` -- Add the deletion-flow figure to the dossier
+- `621-find-all-invalid-code-tags-inside-svg-text.py` -- Find all invalid code tags inside SVG text
+- `622-fix-and-re-render.py` -- Fix and re-render
+- `623-wire-the-markers-and-run-the-measurement-script.py` -- Wire the markers and run the measurement script
+- `624-fix-stale-file-count-claims.py` -- Fix stale file-count claims
+- `627-update-the-disk-impact-table-with-the-new-files.py` -- Update the disk-impact table with the new files
+- `631-fix-the-overflowing-svg-text-and-recheck.py` -- Fix the overflowing SVG text and recheck
+- `632-nudge-the-last-two-and-recheck.py` -- Nudge the last two and recheck
+- `633-align-the-script-with-the-published-recipe.py` -- Align the script with the published recipe
+- `634-document-the-script-and-stage-everything.py` -- Document the script and stage everything
+- `635-add-page-and-cursor-reads.py` -- Add page and cursor reads
+- `636-add-the-rownum-counter-to-the-reg-header.py` -- Add the rownum counter to the .reg header
+- `637-add-the-rownum-system-column.py` -- Add the rownum system column
+- `638-add-the-rownum-system-column.py` -- Add the rownum system column
+- `639-teach-completar-about-both-system-columns.py` -- Teach completar about both system columns
+- `640-wire-rownum-into-insert-and-update.py` -- Wire rownum into insert and update
+- `641-update-the-layout-tests.py` -- Update the layout tests
+- `642-generalize-the-system-column-filter.py` -- Generalize the system-column filter
+- `643-generalize-the-system-column-filter.py` -- Generalize the system-column filter
+- `644-fix-and-rerun-tests.py` -- Fix and rerun tests
+- `645-fix-fixtures-and-rerun.py` -- Fix fixtures and rerun
+- `646-fix-fixtures-and-rerun.py` -- Fix fixtures and rerun
+- `647-generalize-arity-and-rerun.py` -- Generalize arity and rerun
+- `648-fix-the-memoria-fixture-and-rerun.py` -- Fix the memoria fixture and rerun
+- `649-fix-the-exclusao-fixture.py` -- Fix the exclusao fixture
+- `650-fix-and-confirm-all-green.py` -- Fix and confirm all green
+- `651-fix-and-rerun.py` -- Fix and rerun
+- `652-rewrite-op-varrer-with-cursor-pagination.py` -- Rewrite op_varrer with cursor pagination
+- `653-fix-test-assertions.py` -- Fix test assertions
+- `654-add-server-level-cursor-tests.py` -- Add server-level cursor tests
+- `655-fix-and-rerun.py` -- Fix and rerun
+- `656-add-cursor-pagination-to-the-grid.py` -- Add cursor pagination to the grid
+- `657-fix-the-other-varrer-consumer.py` -- Fix the other varrer consumer
+- `658-add-binary-search-by-rownum-and-test-it.py` -- Add binary search by rownum and test it
+- `663-fix-nagle-and-mark-rownum-as-a-system-column.py` -- Fix Nagle and mark rownum as a system column
+- `664-fix-nagle-and-mark-rownum-as-a-system-column.py` -- Fix Nagle and mark rownum as a system column
+- `665-fix-nagle-and-mark-rownum-as-a-system-column.py` -- Fix Nagle and mark rownum as a system column
+- `667-add-the-porletra-mode-and-bucket-mapping.py` -- Add the PorLetra mode and bucket mapping
+- `668-wire-the-mode-into-tags-and-suffixes.py` -- Wire the mode into tags and suffixes
+- `669-add-the-buckets-field.py` -- Add the buckets field
+- `670-wire-bucket-counters-into-the-header.py` -- Wire bucket counters into the header
+- `671-add-insert-by-bucket-to-the-reg.py` -- Add insert-by-bucket to the .reg
+- `672-make-scans-bucket-aware.py` -- Make scans bucket-aware
+- `673-route-inserts-to-the-right-bucket.py` -- Route inserts to the right bucket
+- `674-validate-the-alphanumeric-partition-schema.py` -- Validate the alphanumeric partition schema
+- `675-refuse-updates-that-would-change-the-bucket.py` -- Refuse updates that would change the bucket
+- `676-add-por-letra-constructor-and-test-the-pag.py` -- Add por_letra constructor and test the .pag
+- `677-add-por-letra-constructor-and-test-the-pag.py` -- Add por_letra constructor and test the .pag
+- `678-write-the-pag-on-create-and-sync.py` -- Write the .pag on create and sync
+- `679-write-the-pag-on-create-and-sync.py` -- Write the .pag on create and sync
+- `680-find-volume-1-by-its-header.py` -- Find volume 1 by its header
+- `681-fix-imports-and-rerun.py` -- Fix imports and rerun
+- `682-accept-the-alphanumeric-mode-in-the-protocol.py` -- Accept the alphanumeric mode in the protocol
+- `683-add-the-alphanumeric-option-to-the-create-table-.py` -- Add the alphanumeric option to the create-table screen
+- `684-wire-the-submit-path.py` -- Wire the submit path
+- `686-add-para-externos-and-find-the-volumes-users.py` -- Add para_externos and find the Volumes users
+- `687-add-para-externos.py` -- Add para_externos
+- `688-give-external-files-numeric-suffixes.py` -- Give external files numeric suffixes
+- `689-send-the-buckets-in-the-schema-response.py` -- Send the buckets in the schema response
+- `690-make-the-partitions-screen-understand-buckets.py` -- Make the partitions screen understand buckets
+- `691-teach-the-catalogue-about-letter-suffixes.py` -- Teach the catalogue about letter suffixes
+- `692-test-catalogue-listing-with-buckets.py` -- Test catalogue listing with buckets
+- `693-fix-and-rerun.py` -- Fix and rerun
+- `694-fix-the-fixture-and-run-everything.py` -- Fix the fixture and run everything
+- `695-update-the-format-header-docs.py` -- Update the format header docs
+- `696-update-format-header-docs.py` -- Update format header docs
+- `697-document-rownum-in-the-format.py` -- Document rownum in the format
+- `698-document-the-alphanumeric-partition.py` -- Document the alphanumeric partition
+- `699-add-the-pag-section-and-limits.py` -- Add the .pag section and limits
+- `700-update-manual-and-readme.py` -- Update manual and README
+- `701-update-manual-and-readme.py` -- Update manual and README
+- `702-write-the-0-14-0-changelog-and-bump-version.py` -- Write the 0.14.0 changelog and bump version
+- `704-update-the-multilink-verdict.py` -- Update the MULTILINK verdict
+- `705-add-the-pagination-section-to-the-dossier.py` -- Add the pagination section to the dossier
+- `706-check-the-dossier-renders-clean.py` -- Check the dossier renders clean
+- `707-fix-the-figure-and-remeasure-the-numbers.py` -- Fix the figure and remeasure the numbers
+- `710-add-inserir-lote-to-the-table.py` -- Add inserir_lote to the Table
+- `711-add-inserir-lote-to-the-table.py` -- Add inserir_lote to the Table
+- `712-register-and-test-the-importer.py` -- Register and test the importer
+- `713-add-the-bulk-insert-operation.py` -- Add the bulk insert operation
+- `714-add-the-bulk-insert-operation.py` -- Add the bulk insert operation
+- `715-add-the-bulk-insert-operation.py` -- Add the bulk insert operation
+- `718-add-schema-driven-text-conversion.py` -- Add schema-driven text conversion
+- `719-add-schema-driven-text-conversion.py` -- Add schema-driven text conversion
+- `721-fix-brazilian-number-parsing-and-test-it.py` -- Fix Brazilian number parsing and test it
+- `722-fix-brazilian-number-parsing-and-test-it.py` -- Fix Brazilian number parsing and test it
+- `724-build-the-import-screen.py` -- Build the import screen
+- `725-add-the-preview-operation-and-permissions.py` -- Add the preview operation and permissions
+- `726-add-the-preview-operation-and-permissions.py` -- Add the preview operation and permissions
+- `727-add-the-preview-operation-and-permissions.py` -- Add the preview operation and permissions
+- `728-move-the-loader-to-core.py` -- Move the loader to core
+- `729-move-the-loader-to-core.py` -- Move the loader to core
+- `730-move-the-loader-to-core.py` -- Move the loader to core
+- `732-move-conversion-into-core.py` -- Move conversion into core
+- `733-write-a-complete-text-to-value-conversion-in-cor.py` -- Write a complete text-to-value conversion in core
+- `734-point-the-server-at-core-s-conversions.py` -- Point the server at core's conversions
+- `736-wire-the-server-to-core-s-conversion.py` -- Wire the server to core's conversion
+- `738-add-the-cli-import-command.py` -- Add the CLI import command
+- `739-add-marcadas-counter-to-reg-header.py` -- Add marcadas counter to reg header
+- `740-extract-marcada-no-payload-helper.py` -- Extract marcada_no_payload helper
+- `741-maintain-marcadas-across-mutations.py` -- Maintain marcadas across mutations
+- `742-make-mudar-marcadas-persist.py` -- Make mudar_marcadas persist
+- `743-add-pagina-por-posicao-and-friends.py` -- Add pagina_por_posicao and friends
+- `744-add-salto-enum-and-build.py` -- Add Salto enum and build
+- `745-recount-on-repair.py` -- Recount on repair
+- `746-add-marcadas-to-relatorio-and-build.py` -- Add marcadas to Relatorio and build
+- `747-add-table-contar.py` -- Add Table::contar
+- `748-wire-pagina-por-posicao-into-op-varrer.py` -- Wire pagina_por_posicao into op_varrer
+- `749-add-rownum-de-and-build.py` -- Add rownum_de and build
+- `750-guard-rowid-zero-and-retest.py` -- Guard rowid zero and retest
+- `751-add-tests-for-the-jump-and-the-count.py` -- Add tests for the jump and the count
+- `752-fix-do-disco-call-and-retest.py` -- Fix do_disco call and retest
+- `753-add-alphanumeric-regression-tests.py` -- Add alphanumeric regression tests
+- `754-fix-borrow-and-retest.py` -- Fix borrow and retest
+- `755-measure-the-jump-on-400k-rows.py` -- Measure the jump on 400k rows
+- `756-measure-at-800k-rows-in-microseconds.py` -- Measure at 800k rows in microseconds
+- `757-add-page-jump-to-the-grid.py` -- Add page jump to the grid
+- `758-style-the-page-box.py` -- Style the page box
+- `759-fix-clippy-warnings-and-run-tests.py` -- Fix clippy warnings and run tests
+- `760-re-run-the-browser-check.py` -- Re-run the browser check
+- `761-translate-the-paging-mode-labels.py` -- Translate the paging mode labels
+- `762-make-the-cli-page-instead-of-scanning.py` -- Make the CLI page instead of scanning
+- `763-update-formato-md.py` -- Update FORMATO.md
+- `764-update-the-manual-pagination-section.py` -- Update the manual pagination section
+- `765-update-cli-usage-check-bulk-docs.py` -- Update CLI usage; check bulk docs
+- `766-document-bulk-load-in-the-manual.py` -- Document bulk load in the manual
+- `767-fix-the-cli-import-usage-text.py` -- Fix the CLI import usage text
+- `768-add-importar-to-the-cli-list.py` -- Add importar to the CLI list
+- `769-write-the-0-15-0-changelog-and-bump-the-version.py` -- Write the 0.15.0 changelog and bump the version
+- `770-close-pending-item-107.py` -- Close pending item 107
+- `771-add-the-bulk-load-entries-and-recount.py` -- Add the bulk-load entries and recount
+- `773-update-the-readme.py` -- Update the README
+- `774-fix-the-readme-test-count.py` -- Fix the README test count
+- `775-rewrite-the-log-event-format.py` -- Rewrite the log event format
+- `776-rewrite-the-log-read-write-paths.py` -- Rewrite the log read/write paths
+- `777-add-the-image-flag-to-table.py` -- Add the image flag to Table
+- `778-add-the-setters.py` -- Add the setters
+- `779-add-image-encode-decode-and-apply.py` -- Add image encode/decode and apply
+- `780-wire-the-image-into-insert-update-mark.py` -- Wire the image into insert/update/mark
+- `781-run-the-replication-tests.py` -- Run the replication tests
+- `783-fix-the-attachment-test.py` -- Fix the attachment test
+- `785-add-imagem-da-linha-to-the-config.py` -- Add imagem_da_linha to the config
+- `786-wire-the-flag-and-inspect-op-diario.py` -- Wire the flag and inspect op_diario
+- `787-add-the-replication-ops.py` -- Add the replication ops
+- `788-fix-imports.py` -- Fix imports
+- `789-build-the-replication-ops.py` -- Build the replication ops
+- `790-fix-the-eventos-list-handling.py` -- Fix the eventos list handling
+- `791-add-activity-mapping.py` -- Add activity mapping
+- `792-exempt-aplicar-from-the-read-only-guard.py` -- Exempt aplicar from the read-only guard
+- `793-include-the-raw-schema-in-posicao.py` -- Include the raw schema in posicao
+- `794-use-the-existing-replicar-activity.py` -- Use the existing Replicar activity
+- `795-register-the-module-and-extend-origem.py` -- Register the module and extend Origem
+- `796-add-the-replication-loop-to-the-server.py` -- Add the replication loop to the server
+- `797-guard-against-silent-spinning.py` -- Guard against silent spinning
+- `798-fix-clippy-warnings.py` -- Fix clippy warnings
+- `799-make-conferir-importable-without-all-four-up.py` -- Make conferir importable without all four up
+- `803-fix-the-mangled-strings.py` -- Fix the mangled strings
+- `804-fix-the-cascade-bug.py` -- Fix the cascade bug
+- `806-update-the-replication-doc-part-1.py` -- Update the replication doc, part 1
+- `807-finish-the-replication-doc.py` -- Finish the replication doc
+- `808-update-formato-for-the-log-v2.py` -- Update FORMATO for the log v2
+- `809-document-replication-in-the-manual.py` -- Document replication in the manual
+- `810-update-changelog-and-pending-list.py` -- Update changelog and pending list
+- `811-update-changelog-and-pending-list.py` -- Update changelog and pending list
+- `812-update-changelog-and-pending-list.py` -- Update changelog and pending list
+- `813-update-readme-and-recount-tests.py` -- Update README and recount tests
+- `814-final-checks-before-commit.py` -- Final checks before commit
+- `815-rename-the-dossier-and-parameterise-the-scripts.py` -- Rename the dossier and parameterise the scripts
+- `816-update-the-doc-recipe-and-rules.py` -- Update the doc recipe and rules
+- `817-update-the-doc-recipe-and-rules.py` -- Update the doc recipe and rules
+- `819-render-and-validate-the-figures.py` -- Render and validate the figures
+- `820-shorten-the-line-and-re-check.py` -- Shorten the line and re-check
+- `821-simplify-the-error-path.py` -- Simplify the error path
+- `824-tidy-the-labels.py` -- Tidy the labels
+- `825-rewrite-the-replication-section.py` -- Rewrite the replication section
+- `826-use-the-existing-css-classes.py` -- Use the existing CSS classes
+- `827-add-the-position-jump-to-the-pagination-section.py` -- Add the position jump to the pagination section
+- `828-add-the-bulk-load-subsection.py` -- Add the bulk-load subsection
+- `829-update-the-state-table.py` -- Update the state table
+- `830-update-the-title-and-cover-intro.py` -- Update the title and cover intro
+- `831-regenerate-footer-and-bench-numbers.py` -- Regenerate footer and bench numbers
+- `832-make-the-script-own-the-cover-version-badge.py` -- Make the script own the cover version badge
+- `833-regenerate-and-document-the-badge.py` -- Regenerate and document the badge
+- `834-regenerate-and-document-the-badge.py` -- Regenerate and document the badge
+- `835-update-claude-md-and-stage.py` -- Update CLAUDE.md and stage
+- `836-add-the-new-doc-to-the-footer.py` -- Add the new doc to the footer
+- `837-add-the-pending-items-and-recount.py` -- Add the pending items and recount
+- `838-add-the-pending-items-and-recount.py` -- Add the pending items and recount
+- `839-expose-the-replication-state-in-config.py` -- Expose the replication state in config
+- `840-rewrite-the-replication-screen.py` -- Rewrite the replication screen
+- `841-add-the-create-table-and-insert-scenes.py` -- Add the create-table and insert scenes
+- `842-finish-the-delete-scenes.py` -- Finish the delete scenes
+- `843-classify-the-replica-s-errors-properly.py` -- Classify the replica's errors properly
+- `844-rebuild-and-restart-both-servers.py` -- Rebuild and restart both servers
+- `845-reduce-the-seed-size-and-add-progress-output.py` -- Reduce the seed size and add progress output
+- `846-apply-the-script-fixes.py` -- Apply the script fixes
+- `847-make-each-scene-resilient.py` -- Make each scene resilient
+- `849-fix-the-edit-form-arity-bug.py` -- Fix the edit form arity bug
+- `850-commit-the-fixes-found-by-the-video.py` -- Commit the fixes found by the video
+- `853-fix-and-verify-the-position-table.py` -- Fix and verify the position table
+- `854-commit-the-screen-fix.py` -- Commit the screen fix
+- `855-sync-the-measured-test-counts.py` -- Sync the measured test counts
+- `856-sync-the-measured-test-counts.py` -- Sync the measured test counts
+- `857-fix-the-readme-counts-and-push.py` -- Fix the README counts and push
+- `858-record-the-video-in-the-pending-list-and-push.py` -- Record the video in the pending list and push
+- `863-add-the-action-colour-tokens-and-classes.py` -- Add the action colour tokens and classes
+- `864-colour-the-action-buttons.py` -- Colour the action buttons
+- `865-colour-the-delete-dialog-by-mode.py` -- Colour the delete dialog by mode
+- `866-add-the-colour-legend-to-the-grid.py` -- Add the colour legend to the grid
+- `869-write-the-profiler-module.py` -- Write the profiler module
+- `870-wire-the-profiler-into-the-request-loop.py` -- Wire the profiler into the request loop
+- `871-add-the-profiler-operations.py` -- Add the profiler operations
+- `872-add-the-profiler-operations.py` -- Add the profiler operations
+- `874-add-the-profiler-screen.py` -- Add the profiler screen
+- `875-verify-the-profiler-screen-in-a-browser.py` -- Verify the profiler screen in a browser
+- `876-capture-the-http-path-too.py` -- Capture the HTTP path too
+- `877-stop-the-profiler-observing-itself.py` -- Stop the profiler observing itself
+- `878-apply-the-self-observation-fix.py` -- Apply the self-observation fix
+- `879-fix-the-checkbox-layout-and-run-all-checks.py` -- Fix the checkbox layout and run all checks
+- `880-fix-the-checkbox-and-run-all-checks.py` -- Fix the checkbox and run all checks
+- `881-update-claude-md-with-the-learnings.py` -- Update CLAUDE.md with the learnings
+- `882-document-the-profiler-and-composite-keys-in-the-.py` -- Document the profiler and composite keys in the manual
+- `883-update-the-pending-list.py` -- Update the pending list
+- `884-write-the-0-16-0-changelog-and-bump.py` -- Write the 0.16.0 changelog and bump
+- `885-update-the-readme-and-recount-tests.py` -- Update the README and recount tests
+- `886-commit-the-documentation-and-claude-md.py` -- Commit the documentation and CLAUDE.md
+- `887-update-the-dossier-state-table.py` -- Update the dossier state table
+- `888-measure-the-request-status-from-the-pending-list.py` -- Measure the request status from the pending list
+- `889-add-conflito-error-variant.py` -- Add Conflito error variant
+- `890-add-regfile-versao.py` -- Add RegFile::versao
+- `891-add-table-version-guard-and-build.py` -- Add Table version guard and build
+- `892-op-ler-com-versao.py` -- op_ler com_versao
+- `893-guard-atualizar-excluir-restaurar.py` -- Guard atualizar/excluir/restaurar
+- `894-add-conferir-versao-pedida-and-build.py` -- Add conferir_versao_pedida and build
+- `895-fix-rowid-path-and-rebuild.py` -- Fix RowId path and rebuild
+- `896-map-conflito-in-replica-client.py` -- Map CONFLITO in replica client
+- `897-api-carries-error-name.py` -- api() carries error name
+- `898-abrirficha-keeps-and-sends-version.py` -- abrirFicha keeps and sends version
+- `899-dialogoexcluir-sends-version.py` -- dialogoExcluir sends version
+- `900-add-conflict-dialog-and-css.py` -- Add conflict dialog and CSS
+- `901-refactor-dialogoconflito-signature.py` -- Refactor dialogoConflito signature
+- `903-fix-and-rerun-test.py` -- Fix and rerun test
+- `904-fix-uppercase-and-re-run-proof.py` -- Fix uppercase and re-run proof
+- `905-capture-screenshot-of-the-dialog.py` -- Capture screenshot of the dialog
+- `906-fix-table-layout-and-radio-size-re-run.py` -- Fix table layout and radio size, re-run
+- `907-update-hfsql-md-3-5.py` -- Update HFSQL.md 3.5
+- `908-document-version-field-in-formato-md.py` -- Document version field in FORMATO.md
+- `909-mark-123-done-and-recount.py` -- Mark #123 done and recount
+- `910-add-0-17-0-changelog-entry.py` -- Add 0.17.0 changelog entry
+- `911-record-the-round-s-lessons-in-claude-md.py` -- Record the round's lessons in CLAUDE.md
+- `912-add-page-cache-to-ndx-rs.py` -- Add page cache to ndx.rs
+- `913-add-imports-and-build.py` -- Add imports and build
+- `914-add-page-touch-counters.py` -- Add page-touch counters
+- `915-make-onde-doi-count-page-touches.py` -- Make onde-doi count page touches
+- `916-fix-verification-and-rerun.py` -- Fix verification and rerun
+- `917-use-verificar-for-the-count.py` -- Use verificar for the count
+- `918-rewrite-desempenho-sections-1-and-2.py` -- Rewrite DESEMPENHO sections 1 and 2
+- `919-rewrite-section-4-and-7-check-bench.py` -- Rewrite section 4 and 7; check bench
+- `920-update-remaining-stale-numbers.py` -- Update remaining stale numbers
+- `921-add-bench-script-note-check-progress.py` -- Add bench-script note; check progress
+- `922-document-the-cache-in-formato-md.py` -- Document the cache in FORMATO.md
+- `923-update-113-in-pendencias.py` -- Update #113 in PENDENCIAS
+- `925-record-the-measuring-lesson.py` -- Record the measuring lesson
+- `926-add-table-level-rights-to-usuarios-rs.py` -- Add table-level rights to usuarios.rs
+- `927-wire-the-gate-to-the-table.py` -- Wire the gate to the table
+- `928-filter-table-listing-and-fix-join-gate.py` -- Filter table listing and fix join gate
+- `929-wire-the-remaining-table-checks-and-build.py` -- Wire the remaining table checks and build
+- `930-filter-catalogue-ops.py` -- Filter catalogue ops
+- `931-fix-session-clone-and-rerun.py` -- Fix session clone and rerun
+- `932-show-table-rights-in-the-ui.py` -- Show table rights in the UI
+- `933-document-table-rights-in-usuarios-md.py` -- Document table rights in USUARIOS.md
+- `935-update-hfsql-md-3-1.py` -- Update HFSQL.md 3.1
+- `936-mark-124-done.py` -- Mark #124 done
+- `938-add-table-rights-to-manual.py` -- Add table rights to MANUAL
+- `939-make-the-cache-ceiling-configurable.py` -- Make the cache ceiling configurable
+- `940-wire-config-to-the-cache.py` -- Wire config to the cache
+- `941-update-cache-paginas-in-docs.py` -- Update cache_paginas in docs
+- `942-document-cache-paginas-in-manual-and-pendencias.py` -- Document cache_paginas in MANUAL and PENDENCIAS
+- `943-document-cache-paginas-in-manual-and-pendencias.py` -- Document cache_paginas in MANUAL and PENDENCIAS
+- `944-document-the-conflict-window-in-manual.py` -- Document the conflict window in MANUAL
+- `945-update-readme.py` -- Update README
+- `946-record-the-gate-lesson.py` -- Record the gate lesson
+- `947-note-cache-paginas-in-changelog-wait-for-bench.py` -- Note cache_paginas in CHANGELOG; wait for bench
+- `948-add-the-new-leia-me-to-the-doc-lines-recipe.py` -- Add the new LEIA-ME to the doc-lines recipe
+- `949-add-table-rights-to-the-dossier.py` -- Add table rights to the dossier
+- `950-add-the-conflict-section-to-the-dossier.py` -- Add the conflict section to the dossier
+- `951-update-the-comparison-table.py` -- Update the comparison table
+- `952-update-the-cpu-claim-regenerate-dossier-bench-nu.py` -- Update the CPU claim; regenerate dossier bench numbers
+- `953-add-the-cache-story-to-the-dossier.py` -- Add the cache story to the dossier
+- `954-refresh-stale-dossier-numbers.py` -- Refresh stale dossier numbers
+- `955-update-the-dossier-cover.py` -- Update the dossier cover
+- `956-update-readme-test-counts.py` -- Update README test counts
+- `957-final-lint-and-status.py` -- Final lint and status
+- `959-add-the-bulk-load-floor-measurement.py` -- Add the bulk-load floor measurement
+- `960-fix-the-floor-measurement-to-encode-keys-directl.py` -- Fix the floor measurement to encode keys directly
+- `961-clean-up-and-re-run.py` -- Clean up and re-run
+- `963-update-114-with-the-measurement.py` -- Update #114 with the measurement
+- `964-document-the-finding-in-desempenho.py` -- Document the finding in DESEMPENHO
+- `966-cache-the-serialized-schema-and-split-the-header.py` -- Cache the serialized schema and split the header write
+- `967-switch-the-hot-paths-to-counters-only-header-wri.py` -- Switch the hot paths to counters-only header writes
+- `968-update-desempenho-with-the-new-step.py` -- Update DESEMPENHO with the new step
+- `969-fix-the-remaining-stale-numbers.py` -- Fix the remaining stale numbers
+- `970-changelog-lint-tests.py` -- CHANGELOG, lint, tests
+- `971-update-the-load-numbers-everywhere.py` -- Update the load numbers everywhere
+- `972-update-the-load-numbers-everywhere.py` -- Update the load numbers everywhere
+- `973-replace-the-load-numbers.py` -- Replace the load numbers
+- `974-final-cleanup-and-check-the-dossier-numbers.py` -- Final cleanup and check the dossier numbers
+- `975-update-113-and-check-the-stray-file.py` -- Update #113 and check the stray file
+- `976-add-the-header-finding-to-the-dossier.py` -- Add the header finding to the dossier
+- `977-add-a-ready-to-run-demo-to-the-binary-packages.py` -- Add a ready-to-run demo to the binary packages
+- `978-compute-the-exact-insert-ratios.py` -- Compute the exact insert ratios
+- `979-regroup-the-diamond-labels-and-re-render.py` -- Regroup the diamond labels and re-render
+- `980-fix-and-run-the-log-measurement.py` -- Fix and run the log measurement
+- `981-document-the-decomposition.py` -- Document the decomposition
+- `982-document-the-decomposition.py` -- Document the decomposition
+- `983-update-the-artifact-with-the-decomposition.py` -- Update the artifact with the decomposition
+- `984-make-the-log-header-lazy-with-a-heal-on-open-sca.py` -- Make the log header lazy, with a heal-on-open scan
+- `985-add-the-heal-tests.py` -- Add the heal tests
+- `986-update-the-desempenho-tables.py` -- Update the DESEMPENHO tables
+- `988-update-remaining-numbers-and-the-changelog.py` -- Update remaining numbers and the CHANGELOG
+- `989-update-remaining-numbers-and-the-changelog.py` -- Update remaining numbers and the CHANGELOG
+- `990-final-numbers-lint-and-tests.py` -- Final numbers, lint and tests
+- `991-final-numbers-lint-and-tests.py` -- Final numbers, lint and tests
+- `992-refresh-the-replication-numbers-everywhere.py` -- Refresh the replication numbers everywhere
+- `993-finish-refreshing-and-regenerate-the-dossier-pan.py` -- Finish refreshing and regenerate the dossier panel
+- `994-finish-updating-commit-and-push.py` -- Finish updating, commit and push
+- `995-update-the-flowchart-numbers.py` -- Update the flowchart numbers
+- `996-update-the-bar-chart-and-table-re-render.py` -- Update the bar chart and table, re-render
+- `997-fix-the-aria-labels-and-re-render.py` -- Fix the aria-labels and re-render
+- `998-add-the-atomic-gate-to-both-capture-points.py` -- Add the atomic gate to both capture points
+- `999-keep-the-mirror-in-sync-and-build.py` -- Keep the mirror in sync and build
+
+## Os demais  (148)
+
+- `036-convert-svg-colors-to-theme-tokens-and-verify.py` -- Convert SVG colors to theme tokens and verify
+- `043-replace-despachar-with-the-three-gate-version.py` -- Replace despachar with the three-gate version
+- `056-version-brand-assets-and-generate-derivatives.py` -- Version brand assets and generate derivatives
+- `069-add-policy-gate-challenge-and-multi-mode-login.py` -- Add policy gate, challenge and multi-mode login
+- `081-add-config-tests.py` -- Add config tests
+- `089-add-http-tests-and-run.py` -- Add http tests and run
+- `092-add-web-section-to-example-configs.py` -- Add web section to example configs
+- `099-verify-demo-mode-as-published.py` -- Verify demo mode as published
+- `1000-rewrite-the-tests-to-lock-the-mirror-invariant.py` -- Rewrite the tests to lock the mirror invariant
+- `1023-write-the-sql-layer-design-doc.py` -- Write the SQL layer design doc
+- `1028-extrair-os-pedidos-do-pendencias-md.py` -- Extrair os pedidos do PENDENCIAS.md
+- `103-locate-server-label-text.py` -- Locate server label text
+- `1035-trocar-para-buffer-plano-com-permutacao.py` -- Trocar para buffer plano com permutacao
+- `1055-ver-o-resultados-json-da-replicacao.py` -- Ver o resultados.json da replicacao
+- `1056-atualizar-os-resultados-da-bancada-de-replicacao.py` -- Atualizar os resultados da bancada de replicacao
+- `1062-medir-tambem-a-copia-da-pagina.py` -- Medir tambem a copia da pagina
+- `108-extract-brand-symbol-with-alpha-at-ui-sizes.py` -- Extract brand symbol with alpha at UI sizes
+- `109-re-crop-with-full-wingspan.py` -- Re-crop with full wingspan
+- `1099-ligar-a-web-e-subir-o-servidor-do-demo.py` -- Ligar a web e subir o servidor do demo
+- `110-try-palette-quantization.py` -- Try palette quantization
+- `1100-cadastrar-o-usuario-do-demo-e-reerguer-o-servido.py` -- Cadastrar o usuario do demo e reerguer o servidor
+- `1101-corrigir-as-permissoes-e-sondar-de-novo.py` -- Corrigir as permissoes e sondar de novo
+- `111-quantize-derivatives-and-inspect-ui-markup.py` -- Quantize derivatives and inspect UI markup
+- `1112-documentar-e-commitar-a-prova.py` -- Documentar e commitar a prova
+- `1128-resolve-additive-conflicts-keeping-both-sides.py` -- Resolve additive conflicts keeping both sides
+- `113-make-a-tighter-icon-crop-for-the-top-bar.py` -- Make a tighter icon crop for the top bar
+- `1132-fix-campos-conhecidos-array-size.py` -- Fix CAMPOS_CONHECIDOS array size
+- `1133-show-error-rs-conflicts-compactly.py` -- Show error.rs conflicts compactly
+- `1135-show-remaining-error-rs-conflicts-in-full.py` -- Show remaining error.rs conflicts in full
+- `1136-remove-orphan-conflict-markers.py` -- Remove orphan conflict markers
+- `1137-show-conflicts-in-config-replica-usuarios.py` -- Show conflicts in config, replica, usuarios
+- `1142-show-the-3-semantic-conflicts-in-full.py` -- Show the 3 semantic conflicts in full
+- `1151-replace-messy-region-with-intact-modules-from-ea.py` -- Replace messy region with intact modules from each side
+- `1155-show-wizard-merge-conflicts.py` -- Show wizard merge conflicts
+- `1159-show-login-merge-conflicts.py` -- Show login merge conflicts
+- `1165-inspect-config-and-usuarios-conflicts.py` -- Inspect config and usuarios conflicts
+- `1166-full-context-of-para-json-conflicts.py` -- Full context of para_json conflicts
+- `1168-resolve-conflicts-and-detect-lost-fields.py` -- Resolve conflicts and detect lost fields
+- `1169-show-servidor-rs-conflicts.py` -- Show servidor.rs conflicts
+- `1170-full-view-of-field-and-method-conflicts.py` -- Full view of field and method conflicts
+- `1172-show-the-final-gate-conflict.py` -- Show the final gate conflict
+- `1178-start-integration-validation-server.py` -- Start integration validation server
+- `1180-inspect-error-and-usuarios-conflicts.py` -- Inspect error and usuarios conflicts
+- `1183-full-view-of-lock-conflicts.py` -- Full view of lock conflicts
+- `1192-grant-admin-level-and-rerun-telemetry-exercise.py` -- Grant admin level and rerun telemetry exercise
+- `1200-resolve-conflicts-and-regenerate-the-count.py` -- Resolve conflicts and regenerate the count
+- `1203-debug-the-conflict-split.py` -- Debug the conflict split
+- `1205-resolve-the-second-conflict-and-regenerate.py` -- Resolve the second conflict and regenerate
+- `121-test-the-hostile-name-predicate.py` -- Test the hostile-name predicate
+- `1210-list-sections-on-both-sides-of-the-seguranca-con.py` -- List sections on both sides of the SEGURANCA conflict
+- `1214-resolve-gitignore-and-run-gates.py` -- Resolve gitignore and run gates
+- `1217-rebuild-servidor-rs-keeping-both-test-modules.py` -- Rebuild servidor.rs keeping both test modules
+- `1218-resolve-the-doc-conflicts.py` -- Resolve the doc conflicts
+- `1219-tabulate-every-bench-phase.py` -- Tabulate every bench phase
+- `1224-add-factory-keys-and-run-gates.py` -- Add factory keys and run gates
+- `1227-fix-the-duplicate-attribute-and-recount.py` -- Fix the duplicate attribute and recount
+- `1229-fix-the-stale-entry-and-commit.py` -- Fix the stale entry and commit
+- `1232-renumber-the-dossi-requests-and-regenerate.py` -- Renumber the dossiê requests and regenerate
+- `1234-resolve-the-changelog-and-check-for-duplicate-nu.py` -- Resolve the CHANGELOG and check for duplicate numbers
+- `1235-renumber-and-regenerate.py` -- Renumber and regenerate
+- `1236-resolve-the-rename-and-additive-conflicts.py` -- Resolve the rename and additive conflicts
+- `1238-renumber-the-docker-replication-request.py` -- Renumber the Docker replication request
+- `1240-guard-the-catch-and-run-the-battery.py` -- Guard the catch and run the battery
+- `1252-resolve-the-catalog-semantically-by-id-keeping-b.py` -- Resolve the catalog semantically by id, keeping both sides' new guards
+- `1257-resolve-changelog-keeping-both-sides.py` -- Resolve CHANGELOG keeping both sides
+- `1258-resolve-the-code-conflict-and-recount-raw-data-l.py` -- Resolve the code conflict and recount raw data locks
+- `1263-resolve-translation-front-conflicts.py` -- Resolve translation-front conflicts
+- `1265-resolve-replica-rs-changelog-and-the-guard-catal.py` -- Resolve replica.rs, CHANGELOG and the guard catalog
+- `1272-add-the-new-fields-to-the-lock-front-s-test.py` -- Add the new fields to the lock front's test
+- `1273-add-and-run-a-test-for-the-moved-ceiling.py` -- Add and run a test for the moved ceiling
+- `1277-resolve-all-alter-table-conflicts.py` -- Resolve all ALTER TABLE conflicts
+- `1285-find-a-config-template-to-start-a-server.py` -- Find a config template to start a server
+- `1287-run-the-arm64-server-under-emulation-and-talk-to.py` -- Run the ARM64 server under emulation and talk to it
+- `1296-measure-how-many-keys-have-a-language-column-ide.py` -- Measure how many keys have a language column identical to Portuguese
+- `1297-find-the-systematic-untranslated-case.py` -- Find the systematic untranslated case
+- `1300-register-the-janitor-and-its-root-cause-in-pende.py` -- Register the janitor and its root cause in PENDENCIAS
+- `1302-survey-the-transcript-structure.py` -- Survey the transcript structure
+- `147-add-key-generation-to-the-cli.py` -- Add key generation to the CLI
+- `152-map-memory-ops-to-read-permission-and-test.py` -- Map memory ops to read permission and test
+- `161-add-replication-config-tests-and-honest-startup-.py` -- Add replication config tests and honest startup notice
+- `175-add-nivel-tests.py` -- Add Nivel tests
+- `177-test-the-zip-backup.py` -- Test the ZIP backup
+- `181-test-the-backup-scheduler.py` -- Test the backup scheduler
+- `192-fix-the-cli-backup-function-and-test-zip-output.py` -- Fix the CLI backup function and test zip output
+- `200-generate-a-clean-cover-symbol-with-alpha.py` -- Generate a clean cover symbol with alpha
+- `210-test-the-mirror-and-repair.py` -- Test the mirror and repair
+- `219-validate-the-three-replication-ports.py` -- Validate the three replication ports
+- `226-enable-the-web-interface-and-restart.py` -- Enable the web interface and restart
+- `249-restart-with-web-console-enabled.py` -- Restart with web console enabled
+- `272-reorder-the-parcial-rows.py` -- Reorder the parcial rows
+- `275-verify-toolbar-and-menu-counts.py` -- Verify toolbar and menu counts
+- `276-full-toolbar-listing.py` -- Full toolbar listing
+- `277-recount-toolbar.py` -- Recount toolbar
+- `347-extract-the-format-subsections.py` -- Extract the format subsections
+- `356-count-the-editable-labels-exactly.py` -- Count the editable labels exactly
+- `385-wire-recursos-into-config-properly.py` -- Wire Recursos into Config properly
+- `390-add-the-durability-clock-thread.py` -- Add the durability clock thread
+- `394-remove-the-unused-helper.py` -- Remove the unused helper
+- `450-verify-the-message-decodes-as-a-real-client-woul.py` -- Verify the message decodes as a real client would read it
+- `454-verify-the-counts-are-measured-not-guessed.py` -- Verify the counts are measured, not guessed
+- `459-count-dispatched-operations-exactly.py` -- Count dispatched operations exactly
+- `460-measure-which-operations-have-a-screen.py` -- Measure which operations have a screen
+- `477-update-pendencias-and-verify-the-counts.py` -- Update PENDENCIAS and verify the counts
+- `479-build-the-circle-subpaths.py` -- Build the circle subpaths
+- `481-re-measure-operations-and-ui-counts.py` -- Re-measure operations and UI counts
+- `486-fill-the-new-fields-at-every-call-site.py` -- Fill the new fields at every call site
+- `488-which-functions-log-accesses.py` -- Which functions log accesses
+- `516-update-pendencias-and-the-changelog.py` -- Update PENDENCIAS and the changelog
+- `519-re-measure-for-the-dossier.py` -- Re-measure for the dossier
+- `523-read-the-files-back-with-independent-libraries.py` -- Read the files back with independent libraries
+- `525-re-verify-with-the-independent-readers.py` -- Re-verify with the independent readers
+- `529-verify-the-browser-downloaded-files.py` -- Verify the browser-downloaded files
+- `537-update-the-pending-list.py` -- Update the pending list
+- `538-update-the-dossier-s-measured-numbers.py` -- Update the dossier's measured numbers
+- `542-inspect-benchmark-results-structure.py` -- Inspect benchmark results structure
+- `543-print-benchmark-rows.py` -- Print benchmark rows
+- `544-show-last-two-benchmark-entries.py` -- Show last two benchmark entries
+- `618-add-the-new-requests-to-pendencias.py` -- Add the new requests to PENDENCIAS
+- `625-count-protocol-operations.py` -- Count protocol operations
+- `626-compare-operation-counts-against-the-previous-co.py` -- Compare operation counts against the previous commit
+- `628-update-the-disk-impact-table-with-the-new-files.py` -- Update the disk-impact table with the new files
+- `629-print-the-header-row-exactly.py` -- Print the header row exactly
+- `630-recheck-table-alignment-correctly.py` -- Recheck table alignment correctly
+- `685-wire-the-submit-path.py` -- Wire the submit path
+- `703-update-pendencias.py` -- Update PENDENCIAS
+- `708-renumber-the-figures-by-position.py` -- Renumber the figures by position
+- `709-verify-the-figure-sequence.py` -- Verify the figure sequence
+- `735-wire-the-server-to-core-s-conversion.py` -- Wire the server to core's conversion
+- `737-move-tests-to-core-and-run-everything.py` -- Move tests to core and run everything
+- `772-count-the-pending-table-properly.py` -- Count the pending table properly
+- `782-fix-the-attachment-test.py` -- Fix the attachment test
+- `784-rewrite-the-attachment-test.py` -- Rewrite the attachment test
+- `800-point-slave03-at-slave01.py` -- Point slave03 at slave01
+- `801-test-cascading-replication.py` -- Test cascading replication
+- `818-redraw-the-write-flow-figure.py` -- Redraw the write-flow figure
+- `822-rewrite-the-error-path-lines.py` -- Rewrite the error path lines
+- `823-fix-the-error-path-with-correct-indices.py` -- Fix the error path with correct indices
+- `851-find-the-held-segment-by-scene-detection.py` -- Find the held segment by scene detection
+- `859-extract-the-pdf-text.py` -- Extract the PDF text
+- `860-read-the-rest-of-the-pdf.py` -- Read the rest of the PDF
+- `861-render-the-key-pages.py` -- Render the key pages
+- `862-read-the-cluster-section.py` -- Read the cluster section
+- `868-fix-the-dockerfile-to-use-musl.py` -- Fix the Dockerfile to use musl
+- `902-syntax-check-the-ui-javascript.py` -- Syntax-check the UI JavaScript
+- `934-find-the-table-rights-section-in-hfsql-md.py` -- Find the table-rights section in HFSQL.md
+- `958-compare-the-live-artifact-with-the-committed-0-1.py` -- Compare the live artifact with the committed 0.16.0 file
+- `962-fix-the-summary-line-and-rerun.py` -- Fix the summary line and rerun
+- `987-rewrite-section-2-2.py` -- Rewrite section 2.2
+
