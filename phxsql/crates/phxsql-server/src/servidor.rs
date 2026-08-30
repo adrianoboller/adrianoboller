@@ -7153,7 +7153,24 @@ impl Servidor {
         if declaradas.is_empty() {
             return Ok(());
         }
-        let (efetivas, chegadas) = self.escopo_efetivo(database, declaradas, sessao)?;
+        // A tabela declarada TEM de existir, e o erro sai aqui em vez de mais
+        // tarde. Sem esta conferencia, `SCOPE (pediditens)` escrito com um
+        // erro de digitacao era aceito calado: a trava ia para uma chave que
+        // nao aponta para nada, e o `STRICT` recusava depois a tabela CERTA,
+        // dizendo que ela nao estava no escopo. O engano ficava a duas
+        // mensagens de distancia da causa.
+        {
+            let trava = self.travar_dados()?;
+            let db = trava.abrir_database(database)?;
+            for nome in declaradas {
+                if db.abrir_qualificada(nome).is_err() {
+                    return Err(PhxError::NaoEncontrado(format!(
+                        "{database}.{nome} esta no SCOPE e nao existe"
+                    )));
+                }
+            }
+        }
+        let efetivas = self.escopo_efetivo(database, declaradas, sessao)?;
         {
             let mut t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
             let tx = t.de_mut(sessao.ligacao).ok_or_else(sem_transacao)?;
@@ -7164,7 +7181,6 @@ impl Servidor {
                 .collect();
             crate::travas::em_ordem_canonica(&mut tx.declaradas);
             tx.efetivas = efetivas.clone();
-            let _ = chegadas;
         }
         // ORDEM CANONICA, e e ela que mata o ciclo entre tabelas: A e B pedem
         // `estoque` e `pedidos` na MESMA sequencia, entao nunca ha uma
@@ -7206,15 +7222,15 @@ impl Servidor {
         database: &str,
         declaradas: &[String],
         _sessao: &Sessao,
-    ) -> Result<(Vec<String>, HashMap<String, String>)> {
+    ) -> Result<Vec<String>> {
         let mut efetivas: Vec<String> = declaradas
             .iter()
             .map(|n| crate::carga::chave(database, n))
             .collect();
-        let mut chegadas: HashMap<String, String> = efetivas
-            .iter()
-            .map(|c| (c.clone(), "declarada".to_string()))
-            .collect();
+        // Quem ja esta dentro nao entra de novo -- e o conjunto tambem serve
+        // de marca de visita, para o fecho transitivo nao girar num gatilho
+        // que grava na propria tabela.
+        let mut dentro: std::collections::HashSet<String> = efetivas.iter().cloned().collect();
         // Fila de trabalho com o nome ORIGINAL (nao a chave), porque e assim
         // que o cadastro de gatilhos guarda a tabela.
         let mut fila: Vec<String> = declaradas.to_vec();
@@ -7228,16 +7244,15 @@ impl Servidor {
             }
             for alvo in self.escopo_por_gatilho(database, &tabela)? {
                 let chave = crate::carga::chave(database, &alvo);
-                if chegadas.contains_key(&chave) {
+                if !dentro.insert(chave.clone()) {
                     continue;
                 }
-                chegadas.insert(chave.clone(), format!("gatilho de {tabela}"));
                 efetivas.push(chave);
                 fila.push(alvo);
             }
         }
         crate::travas::em_ordem_canonica(&mut efetivas);
-        Ok((efetivas, chegadas))
+        Ok(efetivas)
     }
 
     /// As tabelas em que os gatilhos DESTA tabela gravam.
@@ -8142,7 +8157,21 @@ impl Servidor {
             Err(_) => return,
         };
         for l in vencidas {
-            self.descartar_transacao(l);
+            // **Ela nao SUMA: vira `ABORT_ONLY` e espera o dono.**
+            //
+            // Descartar aqui soltava as travas -- que e o que importa para os
+            // outros -- e tirava do dono a resposta: a proxima operacao dele
+            // receberia «esta conexao nao tem transacao aberta», sem o numero
+            // do prazo dentro. Quem varre e OUTRA conexao, e ela nao pode
+            // apagar a explicacao de quem estourou.
+            //
+            // O que fica e uma entrada sem travas e sem conjunto de escrita:
+            // ela custa nada, e sai no `ROLLBACK`, no `COMMIT` ou na queda da
+            // conexao, como qualquer outra.
+            let _ = self.estourar_prazo(&Sessao {
+                ligacao: l,
+                ..Sessao::default()
+            });
         }
     }
 
@@ -21464,6 +21493,80 @@ mod testes_transacoes {
         assert_eq!(s.travas.lock().unwrap().quantas(), 0);
         pede(&s, &ses, r#""op":"rollback""#).unwrap();
         assert_eq!(quantas(&s, &ses, "clientes"), 0);
+    }
+
+    /// Tabela declarada no `SCOPE` que não existe **recusa na abertura**.
+    ///
+    /// Sem esta conferência o engano ficava a duas mensagens de distância da
+    /// causa: a trava ia para uma chave que não aponta para nada, e o `STRICT`
+    /// recusava depois a tabela CERTA dizendo que ela não estava no escopo.
+    #[test]
+    fn escopo_com_tabela_que_nao_existe_recusa_na_abertura() {
+        let dir = dir_temp("escopo-errado");
+        let s = servidor(&dir);
+        let ses = sessao(7);
+        base(&s, &ses);
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"begin","database":"loja","scope":["clientes","pediditens"]"#,
+        )
+        .unwrap_err();
+        assert_eq!(e.nome(), "NAO_ENCONTRADO");
+        assert!(e.to_string().contains("pediditens"), "{e}");
+        assert!(e.to_string().contains("SCOPE"), "{e}");
+        // E a transacao NAO ficou meio aberta: nenhuma trava presa, nenhum
+        // contador subido.
+        assert_eq!(s.travas.lock().unwrap().quantas(), 0);
+        assert_eq!(s.transacoes_abertas.load(Ordering::SeqCst), 0);
+        let r = pede(&s, &ses, r#""op":"transacao""#).unwrap();
+        assert_eq!(r.texto_ou("transaction_state", ""), "IDLE");
+    }
+
+    /// A transação vencida **não some** quando OUTRA conexão varre: ela vira
+    /// `ABORT_ONLY`, solta as travas, e espera o dono para lhe dizer o número
+    /// do prazo.
+    ///
+    /// Descartá-la ali soltava as travas — que é o que importa para os outros
+    /// — e tirava do dono a resposta: a próxima operação dele receberia «esta
+    /// conexão não tem transação aberta», sem o prazo dentro.
+    #[test]
+    fn a_vencida_varrida_por_outro_ainda_explica_ao_dono() {
+        let dir = dir_temp("varrida");
+        let s = servidor(&dir);
+        let dono = sessao(1);
+        let outro = sessao(2);
+        base(&s, &dono);
+        pede(&s, &dono, r#""op":"begin","timeout":"1ms""#).unwrap();
+        pede(
+            &s,
+            &dono,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"a"}"#,
+        )
+        .unwrap();
+        assert_eq!(s.travas.lock().unwrap().quantas(), 1);
+        std::thread::sleep(Duration::from_millis(30));
+
+        // OUTRA conexao varre -- e e o `begin` dela que chama a varredura.
+        pede(&s, &outro, r#""op":"begin""#).unwrap();
+        // As travas do vencido sairam: e o que importa para quem esperava.
+        assert_eq!(
+            s.travas.lock().unwrap().quantas(),
+            0,
+            "a varredura tem de soltar as travas da vencida"
+        );
+        // E o DONO ainda recebe a explicacao, com o numero do prazo.
+        let e = pede(
+            &s,
+            &dono,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":2,"nome":"b"}"#,
+        )
+        .unwrap_err();
+        assert_eq!(e.nome(), "TRANSACAO_ABORTADA");
+        assert!(e.to_string().contains("TIMEOUT"), "{e}");
+        pede(&s, &dono, r#""op":"rollback""#).unwrap();
+        pede(&s, &outro, r#""op":"rollback""#).unwrap();
+        assert_eq!(quantas(&s, &dono, "clientes"), 0);
     }
 
     /// Os tres sinonimos de abertura, e a abertura declarada inteira pelo SQL.
