@@ -950,10 +950,18 @@ fn importar(args: &[String]) -> Result<()> {
         for (i, e) in recusadas.iter().take(20) {
             diga!("  linha {:>5}: {e}", i + 1);
         }
-        // Sem transacao, o que entrou antes do erro FICOU. Dizer aqui e melhor
-        // que quem rodou descobrir contando as linhas depois.
+        // O `inserir_lote` NAO entra em transacao -- e recusado dentro de
+        // uma, e a razao esta na §3.4 do `docs/TRANSACOES.md`: ele ja e
+        // atomico sozinho, e empilha-lo linha a linha estouraria o teto de
+        // memoria com uma carga que nao precisava de transacao nenhuma.
+        //
+        // Entao o que entrou antes do erro FICOU, e dizer aqui e melhor que
+        // quem rodou descobrir contando as linhas depois.
         diga!();
-        diga!("ATENCAO: nao ha transacao -- as linhas gravadas antes do erro ficaram gravadas.");
+        diga!(
+            "ATENCAO: a carga nao entra em transacao -- as linhas gravadas \
+               antes do erro ficaram gravadas."
+        );
     }
     Ok(())
 }

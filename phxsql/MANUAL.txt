@@ -511,7 +511,7 @@ SQL: UM SELECT SIMPLES, TRADUZIDO
     lugar de "texto", que e o nome que um driver escreveria.
 
     O QUE NAO TEM SUBSTRATO RECUSA DIZENDO O QUE FALTA. Nao ha expressao, nao
-    ha JOIN, nao ha subconsulta e nao ha transacao -- e um WHERE sobre coluna
+    ha JOIN e nao ha subconsulta -- e um WHERE sobre coluna
     SEM indice recusa em vez de virar uma varredura com o filtro esquecido no
     caminho, porque o "varrer" NAO filtra. A recusa diz quais colunas TEM
     indice. Erro de sintaxe aponta a coluna do texto: «SQL, coluna 10: ...».

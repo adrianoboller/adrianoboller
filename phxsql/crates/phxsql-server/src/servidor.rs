@@ -10319,6 +10319,16 @@ impl Servidor {
             // descobrir contando as linhas depois.
             (
                 "aviso",
+                // O texto NAO muda, e a decisao e deliberada. Ele e visivel
+                // pelo protocolo, e todo cliente escrito antes desta rodada o
+                // le -- e ele continua VERDADE para esta operacao: o
+                // `inserir_lote` nao entra em transacao (ver `OPS_EMPILHAVEIS`
+                // e a §3.4 do `docs/TRANSACOES.md`), entao quando ele para no
+                // meio nao ha transacao nenhuma cobrindo o que ja gravou.
+                //
+                // Trocar a frase por «esta operacao nao entra em transacao»
+                // seria mais preciso e quebraria quem casa o texto -- e a
+                // precisao que falta esta no documento, que e onde ela cabe.
                 Json::texto_de(if recusadas.is_empty() {
                     ""
                 } else {

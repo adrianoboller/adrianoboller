@@ -10,14 +10,26 @@
 //!
 //! # Consistencia
 //!
-//! O motor ainda nao tem transacoes, entao "consistente" aqui quer dizer uma
-//! coisa precisa: **nenhuma escrita acontece durante a copia**. Quem chama
-//! segura a trava unica de dados do inicio ao fim, e como toda escrita passa
-//! por essa mesma trava, nao ha registro pela metade no meio do caminho.
+//! "Consistente" aqui quer dizer uma coisa precisa: **nenhuma escrita acontece
+//! durante a copia**. Quem chama segura a trava unica de dados do inicio ao
+//! fim, e como toda escrita passa por essa mesma trava, nao ha registro pela
+//! metade no meio do caminho.
 //!
 //! E menos do que um snapshot de verdade -- uma escrita longa faz o backup
-//! esperar, e o backup faz a escrita esperar. E o que da para prometer sem
-//! mentir enquanto nao houver `commit`.
+//! esperar, e o backup faz a escrita esperar.
+//!
+//! # E a transacao, que passou a existir, nao muda isto
+//!
+//! Ela **reforca**, e por um motivo que vale escrever: como nada vai a disco
+//! antes do `COMMIT`, uma transacao aberta durante a copia nao tem nada para
+//! aparecer pela metade -- o conjunto de escrita dela esta em RAM. E o
+//! `COMMIT` inteiro roda dentro de UMA tomada da mesma trava que o backup
+//! segura, entao ele acontece antes ou depois da copia, nunca no meio.
+//!
+//! O que a transacao acrescenta ao diretorio copiado e a marca
+//! `transacao_<id>.tx`, quando ha um commit em curso -- e ela viaja junto de
+//! proposito: restaurado o diretorio, a recuperacao completa aquele commit
+//! exatamente como faria no original. Ver `docs/TRANSACOES.md` §2.3.
 //!
 //! # O que a copia leva
 //!
