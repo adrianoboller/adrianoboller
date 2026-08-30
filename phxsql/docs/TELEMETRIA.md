@@ -70,10 +70,17 @@ O número em destaque é `espera_ms_s`: **quantos milissegundos de cada segundo 
 servidor passou na fila**. Meio segundo por segundo quer dizer que, na média,
 há sempre alguém parado esperando — e é um dos gatilhos de *stress*.
 
-A medida vem de um lugar só. As 50 tomadas de trava do `servidor.rs` passaram a
-chamar `travar_dados()`, e é lá dentro que o cronômetro está. Medir em cada uma
-seria copiar a mesma conta 50 vezes, e a que alguém esquecesse viraria o buraco
-na série — a mesma razão pela qual o portão de permissão é um só.
+A medida vem de um lugar só: **toda** tomada de trava do `servidor.rs` chama
+`travar_dados()`, e é lá dentro que o cronômetro está. Medir em cada uma seria
+copiar a mesma conta dezenas de vezes, e a que alguém esquecesse viraria o
+buraco na série — a mesma razão pela qual o portão de permissão é um só.
+
+E esta frase **já foi falsa**, por rodadas: havia 13 tomadas diretas fora do
+ponto único, e as três piores (o despejo do cache, o corpo de um gatilho e o
+laço da replicação atravessando a rede) eram exatamente a atividade longa que
+o painel existe para mostrar. Elas entraram, e o que impede a décima-quarta não
+é este parágrafo: é o teste `so_um_lugar_toma_a_trava`, que conta as tomadas no
+próprio fonte. **Documento não conta; teste conta.**
 
 ### 2.2 Leitura e escrita físicas — **deste processo**
 

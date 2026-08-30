@@ -473,12 +473,12 @@ footer p{max-width:var(--medida)}
 
   <div class="painel">
   <!-- projeto:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-    <div><div class="v">98.123</div><div class="r">linhas de Rust</div></div>
-    <div><div class="v">1.229</div><div class="r">testes</div></div>
+    <div><div class="v">99.749</div><div class="r">linhas de Rust</div></div>
+    <div><div class="v">1.242</div><div class="r">testes</div></div>
     <div><div class="v">0</div><div class="r">dependências</div></div>
     <div><div class="v">7</div><div class="r">crates</div></div>
     <div><div class="v">7</div><div class="r">arquivos/tabela</div></div>
-    <div><div class="v">25.326</div><div class="r">linhas de doc</div></div>
+    <div><div class="v">28.282</div><div class="r">linhas de doc</div></div>
   <!-- projeto:fim -->
   </div>
 </header>
@@ -3334,10 +3334,24 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   uma lista vazia daria a entender que o mecanismo existe e está parado. Ela
   lista o que <em>de fato</em> existe — a inserção que se desfaz sozinha quando
   um índice único recusa a chave, a trava global que serializa as escritas, o
-  <code>.log</code> que audita sem guardar a imagem anterior — e o que falta,
-  na ordem: journal com a imagem anterior de cada slot, identificador de
-  transação na sessão, e o <code>COMMIT</code> que troca o journal por um marco
-  no disco.</p>
+  <code>.log</code> que audita sem guardar a imagem anterior.</p>
+
+  <p>O que mudou é que agora existe um <strong>desenho escrito antes do
+  código</strong>: <code>docs/TRANSACOES.md</code>. A pergunta difícil dele é o
+  <code>ROLLBACK</code> de um <code>INSERT</code> — o slot foi escrito, o rowid
+  foi consumido, e a ordem de digitação proíbe reusá-lo. A resposta escolhida é
+  virar a pergunta do avesso: <strong>nada vai a disco antes do
+  <code>COMMIT</code></strong>, então desfazer é jogar fora uma lista em
+  memória. O «slot que nasceu e morreu» foi recusado com quatro motivos, e o
+  decisivo é da replicação: queimar o slot dos dois lados exigiria mandar a
+  inclusão <em>e</em> a exclusão para a réplica, que é literalmente a transação
+  revertida chegando aplicada lá.</p>
+
+  <p>E o efeito colateral bom da escolha: o <code>.log</code> <strong>não
+  muda</strong> — nem campo, nem <em>flag</em>, nem operação. Uma réplica
+  compilada antes desta rodada aplica um <code>COMMIT</code> sem saber que
+  houve transação. A tela continua dizendo que não há <code>BEGIN</code>, e
+  continua certa: o desenho não é o mecanismo.</p>
 
   <h3>A marca entra sem trazer dependência</h3>
 
@@ -5823,8 +5837,8 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
       <tbody>
         <tr><td><strong>Concorrência fina</strong></td>
             <td>uma trava única serializa <em>todo</em> acesso a dados. Lento sob carga e correto, em vez de rápido e corrompido — mas prioridade sobre uma fila de um só não é prioridade</td></tr>
-        <tr><td><strong>O ponto único da trava não é único</strong></td>
-            <td>medido: há 14 tomadas da trava de dados no <code>servidor.rs</code> e <strong>13 estão fora</strong> do <code>travar_dados()</code> que a telemetria cronometra. As duas que doem são o despejo do cache e o corpo de um gatilho — que é justamente a atividade longa que o painel existe para mostrar. Enquanto não passarem por ali, o tempo de espera do painel é o de <em>uma parte</em></td></tr>
+        <tr><td><strong><s>O ponto único da trava não é único</s></strong></td>
+            <td><strong>fechado.</strong> Eram 13 tomadas fora do <code>travar_dados()</code>, e as três que doíam — o despejo do cache, o corpo de um gatilho e o laço da replicação <em>atravessando uma ida e volta de rede</em> — já aparecem no tempo de espera do painel. O que impede a décima-quarta não é o comentário: é o teste <code>so_um_lugar_toma_a_trava</code>, que conta as tomadas no próprio fonte. Junto entrou a guarda que transforma o abraço mortal com a própria trava em <em>erro nomeado</em> em vez de servidor pendurado, e ela custa <strong>−0,05&nbsp;ns</strong> por tomada — abaixo da resolução do medidor</td></tr>
         <tr><td><strong>Compactação</strong></td>
             <td>o formato prevê e <em>mede</em> o espaço morto; o comando não existe. E há número contra: compactar renumeraria rowid, e rowid é <strong>endereço</strong></td></tr>
         <tr><td><strong>Chave estrangeira aplicada</strong></td>
@@ -5978,8 +5992,8 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
 
   <div class="painel">
 <!-- pedidos:inicio (gerado por docs/dossie/pagina-dos-pedidos.py) -->
-    <div><div class="v">143</div><div class="r">pedidos, ao todo</div></div>
-    <div><div class="v">139</div><div class="r">feitos</div></div>
+    <div><div class="v">146</div><div class="r">pedidos, ao todo</div></div>
+    <div><div class="v">142</div><div class="r">feitos</div></div>
     <div><div class="v">4</div><div class="r">parciais</div></div>
     <div><div class="v">0</div><div class="r">planejados</div></div>
   <!-- pedidos:fim -->
@@ -6014,14 +6028,14 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
     <table>
       <thead><tr><th>Área</th><th class="num">testes</th><th class="num">%</th></tr></thead>
       <tbody>
-        <tr><td>Motor de dados (arquivos, índice, diários)</td><td class="num">323</td><td class="num">26,3%</td></tr>
-        <tr><td>Protocolo e portões (despachar)</td><td class="num">177</td><td class="num">14,4%</td></tr>
-        <tr><td>Núcleo (JSON, tipos, UUID, zip, paralelo)</td><td class="num">133</td><td class="num">10,8%</td></tr>
-        <tr><td>Configuração</td><td class="num">82</td><td class="num">6,7%</td></tr>
-        <tr><td>Criptografia e codificação</td><td class="num">80</td><td class="num">6,5%</td></tr>
-        <tr><td>DbLink</td><td class="num">65</td><td class="num">5,3%</td></tr>
-        <tr><td>Telemetria e profiler</td><td class="num">45</td><td class="num">3,7%</td></tr>
-        <tr><td>Camada SQL (léxico, sintaxe, tradução)</td><td class="num">44</td><td class="num">3,6%</td></tr>
+        <tr><td>Motor de dados (arquivos, índice, diários)</td><td class="num">323</td><td class="num">26,0%</td></tr>
+        <tr><td>Protocolo e portões (despachar)</td><td class="num">183</td><td class="num">14,7%</td></tr>
+        <tr><td>Núcleo (JSON, tipos, UUID, zip, paralelo)</td><td class="num">133</td><td class="num">10,7%</td></tr>
+        <tr><td>Configuração</td><td class="num">82</td><td class="num">6,6%</td></tr>
+        <tr><td>Criptografia e codificação</td><td class="num">80</td><td class="num">6,4%</td></tr>
+        <tr><td>DbLink</td><td class="num">65</td><td class="num">5,2%</td></tr>
+        <tr><td>Telemetria e profiler</td><td class="num">45</td><td class="num">3,6%</td></tr>
+        <tr><td>Camada SQL (léxico, sintaxe, tradução)</td><td class="num">44</td><td class="num">3,5%</td></tr>
         <tr><td>Gatilhos e procedimentos</td><td class="num">38</td><td class="num">3,1%</td></tr>
         <tr><td>Jobs</td><td class="num">31</td><td class="num">2,5%</td></tr>
         <tr><td>Interface web (servidor HTTP)</td><td class="num">28</td><td class="num">2,3%</td></tr>
@@ -6031,15 +6045,16 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
         <tr><td><strong>Segurança de rede (blacklist, firewall)</strong></td><td class="num"><strong>18</strong></td><td class="num"><strong>1,5%</strong></td></tr>
         <tr><td><strong>ODBC</strong></td><td class="num"><strong>17</strong></td><td class="num"><strong>1,4%</strong></td></tr>
         <tr><td><strong>Mensagens (i18n do servidor)</strong></td><td class="num"><strong>14</strong></td><td class="num"><strong>1,1%</strong></td></tr>
-        <tr><td><strong>Exportação</strong></td><td class="num"><strong>13</strong></td><td class="num"><strong>1,1%</strong></td></tr>
-        <tr><td><strong>Junções e união</strong></td><td class="num"><strong>13</strong></td><td class="num"><strong>1,1%</strong></td></tr>
+        <tr><td><strong>Exportação</strong></td><td class="num"><strong>13</strong></td><td class="num"><strong>1,0%</strong></td></tr>
+        <tr><td><strong>Junções e união</strong></td><td class="num"><strong>13</strong></td><td class="num"><strong>1,0%</strong></td></tr>
         <tr><td><strong>Pivot</strong></td><td class="num"><strong>12</strong></td><td class="num"><strong>1,0%</strong></td></tr>
         <tr><td><strong>Replicação</strong></td><td class="num"><strong>11</strong></td><td class="num"><strong>0,9%</strong></td></tr>
-        <tr><td><strong>Alertas e e-mail</strong></td><td class="num"><strong>8</strong></td><td class="num"><strong>0,7%</strong></td></tr>
+        <tr><td><strong>Alertas e e-mail</strong></td><td class="num"><strong>8</strong></td><td class="num"><strong>0,6%</strong></td></tr>
+        <tr><td><strong>CLI</strong></td><td class="num"><strong>7</strong></td><td class="num"><strong>0,6%</strong></td></tr>
         <tr><td><strong>Cluster</strong></td><td class="num"><strong>7</strong></td><td class="num"><strong>0,6%</strong></td></tr>
         <tr><td><strong>Servidor (outros)</strong></td><td class="num"><strong>7</strong></td><td class="num"><strong>0,6%</strong></td></tr>
         <tr><td><strong>Monitor de máquina</strong></td><td class="num"><strong>6</strong></td><td class="num"><strong>0,5%</strong></td></tr>
-        <tr><td><strong>total</strong></td><td class="num"><strong>1228</strong></td><td class="num"></td></tr>
+        <tr><td><strong>total</strong></td><td class="num"><strong>1241</strong></td><td class="num"></td></tr>
       </tbody>
     </table>
   </div>
@@ -6073,8 +6088,8 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
 
 <footer>
   <!-- rodape:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-  <p>PhxSql 0.18.0 · 98.123 linhas de Rust em 7 crates,
-  mais 1033 KiB de interface · 1.229 testes ·
+  <p>PhxSql 0.18.0 · 99.749 linhas de Rust em 7 crates,
+  mais 1035 KiB de interface · 1.242 testes ·
   nenhuma dependência externa.
   Especificação byte a byte em <code>docs/FORMATO.md</code>, cadastro e
   permissões em <code>docs/USUARIOS.md</code>, a replicação em

@@ -10,6 +10,90 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
+## Não lançado — o terreno das transações, e o desenho delas
+
+O pedido é *transações*. Esta rodada entregou o **pré-requisito** e o
+**desenho escrito antes do código** — e não meia transação, que é o que a
+pressa produziria.
+
+### Corrigido
+
+- **A trava de dados tinha 13 tomadas fora do ponto único, e o comentário do
+  `travar_dados()` afirmava ser «o único lugar que a toma».** Era mentira
+  medida, e a consequência não era estética: o `espera_ms_s` da telemetria
+  mostrava a fila de uma parte, e as três piores ausências eram exatamente a
+  atividade longa que o painel existe para mostrar — o despejo do cache, o
+  corpo de um gatilho e o laço da replicação **atravessando uma ida e volta
+  de rede**. As 13 entraram, uma a uma, cada uma respondendo «quem chama isto
+  já tem a trava?». A tabela com a resposta de cada uma está em
+  `docs/TRANSACOES.md` §8.1.
+
+- **Pedir a trava que a própria thread já tem parava o servidor inteiro.**
+  `std::sync::Mutex` não é reentrante, e o abraço mortal já aconteceu **três
+  vezes** neste projeto — a última em configuração padrão, com escrita comum
+  em duas tabelas. Não havia log, não havia pilha, e as outras conexões
+  paravam junto, porque a trava fica presa na thread pendurada. Agora
+  `travar_dados` pergunta antes, numa `Cell` de thread, e devolve erro
+  nomeado: o pedido culpado falha dizendo o que houve, e o servidor continua
+  atendendo.
+
+### Adicionado
+
+- **`docs/TRANSACOES.md`** — o desenho, com os seis pontos respondidos:
+  escopo (uma conexão, um database; a web fora, e por quê), o rollback de um
+  `inserir` **sem queimar slot**, o isolamento dito sem enfeite (não é ANSI
+  SERIALIZABLE), a marca `.tx` sem a qual a recuperação não sabe para onde ir,
+  a replicação e o custo para quem não usa.
+
+  A decisão que mais custou foi a recusa do «slot que nasceu e morreu», com
+  quatro motivos — e o decisivo é da replicação: queimar o slot dos dois lados
+  exigiria mandar a inclusão **e** a exclusão para a réplica, que é
+  literalmente a transação revertida chegando aplicada lá.
+
+- **`so_um_lugar_toma_a_trava`**, a catraca que conta as tomadas **no próprio
+  fonte** — pelo mesmo `include_str!` do conferidor de textos, e pela mesma
+  razão: assim não há como contar um arquivo e compilar outro. Comentário que
+  se afirma único precisa de quem conte.
+
+- **Duas guardas novas no catálogo** (`trava-fora-do-ponto-unico` e
+  `trava-sem-guarda-de-reentrancia`), para que as duas provas feitas à mão
+  nesta rodada não se percam na próxima.
+
+- **`--example custo-da-trava`** e a **§9 do `docs/DESEMPENHO.md`**: a guarda
+  de reentrância está no caminho de **toda** leitura e **toda** escrita, então
+  medi-la não era opcional.
+
+### Mudado
+
+- **O teste `duas_tabelas_na_mesma_janela_nao_travam_o_servidor` ganhou a
+  asserção da consequência.** Ele provava o defeito pelo *travamento*, e a
+  guarda de reentrância acabou com o travamento: o defeito reposto passou a
+  devolver erro, que o `else { return }` do `descarregar_sujas` engole em
+  silêncio. Ele agora confere que a janela de durabilidade **esvaziou o
+  conjunto de sujas**, e reprova em 0,12 s em vez de 30. **Guarda que troca um
+  travamento por um erro engolido enfraquece todo teste cujo único sintoma era
+  o travamento** — quem a acrescenta tem de olhar a consequência no lugar.
+
+### Sabido
+
+- **Continua não havendo `BEGIN`, `COMMIT` nem `ROLLBACK`**, e a tela
+  *Ferramentas → Gestão de transações* continua dizendo isso. Ela **não foi
+  tocada de propósito**: nada passou a existir, e ela continua verdadeira.
+
+- ***ACID compliant* continua falso.** Sem transação não há o **A** nem o
+  **I**.
+
+### Medido
+
+| | |
+|---|---:|
+| guarda de reentrância, por tomada da trava | **−0,05 ns** (abaixo da resolução do medidor) |
+| `lock` + `unlock` sem disputa | 15,45 ns |
+| a operação mais barata do servidor (`ler`) | 41,31 µs |
+| a guarda, como fração dela | **< 0,01 %** |
+
+---
+
 ## Não lançado — os pacotes de download que se conferem
 ## Não lançado — a bateria única e o catálogo de defeitos repostos
 

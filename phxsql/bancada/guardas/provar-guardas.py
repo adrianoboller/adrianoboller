@@ -9,7 +9,7 @@
 
 A casa exige que todo teste novo FALHE com o defeito reposto. Isso sempre foi
 feito a mao, uma vez, por quem escreveu o teste -- e depois se perdia. Ninguem
-conseguia dizer, hoje, quais das 1.229 asercoes ainda pegariam o defeito que as
+conseguia dizer, hoje, quais das 1.242 asercoes ainda pegariam o defeito que as
 motivou. Este executor responde essa pergunta a cada rodada.
 
 Para cada entrada do `catalogo.py` ele:
