@@ -24,7 +24,7 @@ o código, não contra a lembrança — foi assim que a chave estrangeira saiu d
 | ☑️ | 14 | **Quantidade de registros e arquivos no create table** | op `criar_tabela` no protocolo e tela **Nova tabela** com registros por arquivo, dígitos do sufixo e teto de volumes. A CLI ainda não tem o comando |
 | ☑️ | 15 | Organograma, fluxograma e dossiê | 19 seções, 18 figuras, tudo em SVG à mão |
 | ☑️ | 16 | Log de IPs na porta 5000, com data e hora | JSON Lines, para caber `fail2ban` |
-| ☑️ | 17 | Download dos fontes e do compilado Linux/Windows, com manual | `./empacotar.sh`, três zips conferidos |
+| ☑️ | 17 | Download dos fontes e do compilado Linux/Windows, com manual | `./empacotar.sh`, três zips **conferidos de verdade**: cada um traz `MANIFESTO.sha256` de todos os seus arquivos, e o conferidor é o próprio `phxsql conferir-pacote`, que viaja dentro do pacote e roda igual no Windows — sete testes o reprovam com o defeito reposto, inclusive o arquivo **a mais**, que conferência de hash comum não vê. `pacotes/SHA256SUMS` fecha o download por fora. Antes de qualquer zip sair, quatro travas: versão igual em `Cargo.toml`/`Cargo.lock`/`MANUAL`/`CHANGELOG`, alvo e ligador de Windows conferidos com o comando exato de quem não os tem, árvore limpa para o pacote de fontes, e o `Cargo.toml` na raiz do zip. Provado no que o dono vai fazer: `cargo build --offline --release` num diretório limpo com `CARGO_HOME` vazio, 28,6 s. `docs/EMPACOTAMENTO.md` |
 | ◐ | 18 | **Subir o PhxSql no GitHub** | está na branch `claude/capacidades-disponiveis-y6auxh` de `adrianoboller/adrianoboller`, com histórico completo. **A causa não é permissão que falta: é identidade**, e isso foi medido nesta revisão. A credencial desta sessão autentica como **`EnginePrint`** (id 322529492, criada em 2026-08-29, zero repositórios públicos) — não como você. Ela **lê** `adrianoboller/adrianoboller` e enxerga a branch; o que ela não faz é criar repositório em nome de outra pessoa, e é daí que sai o 403 do `create_repository`. E um repositório criado por ela **não seria seu** — seria dela, com você de fora. Destrava com **você** criando `adrianoboller/phxsql` e dando acesso a essa app |
 | ☑️ | 19 | **Replicação como a do MySQL(R)**, com porta de envio e de retorno | **funcionando**: `.log` v2 com a imagem da linha, ops `posicao`/`replicar`/`aplicar`, e o laço da réplica dentro do `phxsqld`. Medido com quatro servidores — master 28.914 linhas/s, atraso de 1,3 a 2,1 s, retrato SHA-256 de **cada linha** idêntico. Depois disso entraram os **quatro modos** (A source→réplica, B multi-master com «mais recente vence», C spare que não atende ninguém até `spare_promover`, D read replica que recusa escrita apontando o master), o **agendamento por origem** (`cada_minutos`/`hora`; ausente = streaming, e o teste que trava isso é `origem_sem_agendamento_continua_streaming`), o **assistente na tela** e a **cascata** medida. A réplica alcança: 4.273 → 17.450 eventos/s (4,08×). Continuam faltando: **long-poll** no source, espera crescente na reconexão, **TLS** no transporte, gravar a configuração pela tela, e bidirecional com mais de dois servidores. `docs/REPLICACAO.md` §13 |
 | ☑️ | 20 | `Config_exemplo_01/02/03.json` | isolado, réplica e origem |
@@ -269,6 +269,46 @@ existindo (`docs/SPRINTS-CASSANDRA.md`, `-REDIS.md`, `-MARIADB.md`,
 Revisar serve para achar, e quase nunca o que aparece é recurso faltando: é o
 projeto se descrevendo errado. As seções abaixo estão da mais nova para a mais
 antiga.
+
+### O que a rodada dos pacotes de download achou
+
+O pedido 17 estava marcado como feito e o empacotador existia. Rodar o
+empacotador achou três defeitos, e nenhum deles aparecia lendo o código.
+
+- **`./empacotar.sh` não rodava num checkout limpo.** O `monta()` compila com
+  `--target`, que grava em `target/<alvo>/release`; o config de demonstração
+  pede o hash da senha ao `./target/release/phxsqld`, que é o binário do
+  **hospedeiro** e que `--target` nunca produz. Quem tivesse rodado
+  `cargo build --release` antes não via nada de errado — e é exatamente o caso
+  de quem escreveu o script. Reposto o defeito (o binário do hospedeiro fora
+  do lugar), o empacotador morre em `No such file or directory` **antes de
+  montar zip nenhum**. Agora há um `garante_host()`, e é o mesmo naipe do
+  binário velho da bancada: *o que se usa todo dia esconde o que só falha do
+  zero*.
+
+- **O `config.json` de demonstração escrevia um campo que o servidor não
+  lê.** `web.sessao_min` — o campo é `sessao_minutos`. O servidor avisa e
+  **ignora**, e como o padrão também é 60 minutos a tela ficava idêntica: o
+  aviso rolava para fora do terminal e ninguém conferia. Só apareceu subindo o
+  binário empacotado de verdade. É a lição do `recursos.cache_paginas` numa
+  casa nova: **configuração que não é lida mente**, e mente mais quando o
+  valor que ela promete por acaso coincide com o padrão.
+
+- **Não havia conferidor nenhum.** Os três zips saíam sem manifesto. O backup
+  de dados tem `backup.json` com SHA-256 por arquivo desde o pedido 43; o
+  pacote de distribuição, que é o que sai da máquina, não tinha nada. Entrou o
+  `MANIFESTO.sha256` e o `phxsql conferir-pacote` — e o caso que ele pega e
+  quase nenhum conferidor pega é o **arquivo a mais**: conferência de hash só
+  olha o que o manifesto lista, então acrescentar um binário ao pacote não
+  mexe em nenhuma linha e passaria batido.
+
+E uma trava que nasceu desta rodada porque o `MANUAL.txt` **não dizia versão
+nenhuma**: não havia como o pacote se contradizer, mas também não havia como
+ele se conferir. O cabeçalho ganhou o selo, e `confere_versoes()` reprova o
+empacotamento se `Cargo.toml`, `Cargo.lock`, o `MANUAL` e o `CHANGELOG` não
+disserem a mesma coisa. **Número visível ou sai de gerador, ou tem quem o
+confira** — o selo da capa do dossiê passou quatro lançamentos porque não
+tinha nem um nem outro.
 
 ### O que a revisão das quatro listas de sprint achou
 

@@ -18,9 +18,11 @@
 //!     --database <nome>     so esse banco
 //!     --admin <nome>        o nome que entra no arquivo
 //! phxsql conferir-backup <destino>             le a copia de volta e confere
+//! phxsql conferir-pacote [<dir>]               confere um pacote de download
 //! phxsql reparar   <dir> <tabela>              confere .reg contra .bkp e conserta
 //! ```
 
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::Path;
 use std::process::ExitCode;
@@ -41,6 +43,7 @@ macro_rules! diga {
 
 use phxsql_core::carga;
 use phxsql_core::datahora::{data_iso, hora_iso};
+use phxsql_core::hash::{para_hex, sha256};
 use phxsql_core::paginacao::Paginacao;
 use phxsql_core::schema::{AcaoRi, Column, ForeignKey, IndexColumn, IndexDef, Schema};
 use phxsql_core::types::ColumnType;
@@ -63,6 +66,7 @@ USO:
   phxsql tabelas   <base> <database>
   phxsql backup    <base> <destino> [--zip] [--database <n>] [--admin <n>]
   phxsql conferir-backup <destino>
+  phxsql conferir-pacote [<dir>]
   phxsql reparar   <dir> <tabela>
   phxsql importar  <dir> <tabela> <arquivo> [--formato csv|txt|json|xml|html]
                                             [--seguir] [--conferir]
@@ -87,6 +91,9 @@ fn main() -> ExitCode {
         "tabelas" => exigir(&args, 3).and_then(|_| tabelas(Path::new(&args[1]), &args[2])),
         "backup" => exigir(&args, 3).and_then(|_| backup(&args, &args[1], &args[2])),
         "conferir-backup" => exigir(&args, 2).and_then(|_| conferir_backup(&args[1])),
+        // Sem argumento vale o diretorio corrente: quem baixou o zip entra
+        // nele e roda `./phxsql conferir-pacote`, sem digitar caminho.
+        "conferir-pacote" => conferir_pacote(Path::new(args.get(1).map_or(".", |s| s.as_str()))),
         "reparar" => exigir(&args, 3).and_then(|_| reparar(Path::new(&args[1]), &args[2])),
         "importar" => exigir(&args, 4).and_then(|_| importar(&args)),
         outro => {
@@ -702,6 +709,121 @@ fn conferir_backup(destino: &str) -> phxsql_core::error::Result<()> {
     ))
 }
 
+/// Nome do manifesto que o `empacotar.sh` poe dentro de cada pacote.
+const MANIFESTO_PACOTE: &str = "MANIFESTO.sha256";
+
+/// Confere um pacote de download (fontes, Linux ou Windows) contra o
+/// `MANIFESTO.sha256` que veio dentro dele.
+///
+/// # Por que o conferidor e o proprio programa
+///
+/// O pacote precisa ser conferivel NA MAQUINA DE QUEM BAIXOU, e essa maquina
+/// pode nao ter `sha256sum` -- o Windows nao tem. O SHA-256 deste projeto ja
+/// existe, ja e conferido contra os vetores do FIPS 180-4 e viaja dentro do
+/// proprio pacote: o conferidor mais portatil possivel e o binario que ja
+/// esta ali do lado.
+///
+/// O formato do manifesto e o do `sha256sum` de proposito (`<hex>  <arquivo>`),
+/// para quem tiver a ferramenta poder conferir por um segundo caminho, que nao
+/// depende deste codigo.
+///
+/// # Arquivo A MAIS tambem e divergencia
+///
+/// Conferencia de hash so olha o que o manifesto LISTA. Quem acrescenta um
+/// arquivo ao pacote nao mexe em nenhuma linha do manifesto e passaria batido
+/// -- que e exatamente o jeito de entregar um binario a mais junto do pacote
+/// legitimo. E a mesma regra que o `backup.json` ja seguia.
+fn conferir_pacote(dir: &Path) -> Result<()> {
+    let texto = std::fs::read_to_string(dir.join(MANIFESTO_PACOTE)).map_err(|e| {
+        phxsql_core::PhxError::NaoEncontrado(format!(
+            "{} nao tem {MANIFESTO_PACOTE}: {e}",
+            dir.display()
+        ))
+    })?;
+
+    let mut esperado: BTreeMap<String, String> = BTreeMap::new();
+    for (n, linha) in texto.lines().enumerate() {
+        if linha.trim().is_empty() {
+            continue;
+        }
+        let (hex, nome) = linha.split_once("  ").ok_or_else(|| {
+            phxsql_core::PhxError::Corrompido(format!(
+                "{MANIFESTO_PACOTE}, linha {}: esperava `<sha256>  <arquivo>`",
+                n + 1
+            ))
+        })?;
+        esperado.insert(nome.trim().to_string(), hex.trim().to_ascii_lowercase());
+    }
+
+    let mut no_disco = Vec::new();
+    arquivos_sob(dir, dir, &mut no_disco)?;
+    no_disco.sort();
+
+    let mut divergencias = Vec::new();
+    let mut bytes = 0u64;
+    let mut conferidos = 0usize;
+
+    for nome in &no_disco {
+        if nome == MANIFESTO_PACOTE {
+            continue;
+        }
+        let dados = std::fs::read(dir.join(nome))?;
+        bytes += dados.len() as u64;
+        match esperado.get(nome) {
+            None => divergencias.push(format!("A MAIS  {nome} -- nao esta no manifesto")),
+            Some(hex) => {
+                if *hex != para_hex(&sha256(&dados)) {
+                    divergencias.push(format!("DIFERE  {nome} -- o SHA-256 nao bate"));
+                } else {
+                    conferidos += 1;
+                }
+            }
+        }
+    }
+
+    for nome in esperado.keys() {
+        if !no_disco.iter().any(|n| n == nome) {
+            divergencias.push(format!(
+                "FALTA   {nome} -- esta no manifesto e nao no pacote"
+            ));
+        }
+    }
+
+    diga!(
+        "{} arquivos no manifesto, {bytes} bytes no pacote",
+        esperado.len()
+    );
+    if divergencias.is_empty() {
+        diga!("INTEGRO -- os {conferidos} arquivos batem com o SHA-256 do manifesto.");
+        return Ok(());
+    }
+    diga!();
+    diga!("{} DIVERGENCIA(S):", divergencias.len());
+    for d in &divergencias {
+        diga!("  {d}");
+    }
+    Err(phxsql_core::PhxError::Corrompido(
+        "o pacote nao confere com o manifesto".into(),
+    ))
+}
+
+/// Lista, recursivamente, os arquivos sob `dir`, com o caminho relativo a
+/// `raiz` e sempre com barra normal -- o manifesto e o mesmo nos dois sistemas.
+fn arquivos_sob(dir: &Path, raiz: &Path, saida: &mut Vec<String>) -> Result<()> {
+    let mut entradas: Vec<_> = std::fs::read_dir(dir)?.collect::<std::io::Result<Vec<_>>>()?;
+    entradas.sort_by_key(|e| e.file_name());
+    for e in entradas {
+        let caminho = e.path();
+        if caminho.is_dir() {
+            arquivos_sob(&caminho, raiz, saida)?;
+        } else {
+            let rel = caminho.strip_prefix(raiz).unwrap_or(&caminho);
+            saida.push(rel.to_string_lossy().replace('\\', "/"));
+        }
+    }
+    Ok(())
+}
+
 /// Confere o `.reg` contra o `.bkp` e conserta o que der.
 ///
 /// Repara nos dois sentidos: registro ruim no principal volta do espelho, e
@@ -842,4 +964,97 @@ fn valor_da_opcao(args: &[String], nome: &str) -> Option<String> {
         .position(|a| a == nome)
         .and_then(|i| args.get(i + 1))
         .cloned()
+}
+
+#[cfg(test)]
+mod testes {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn temp(nome: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("phxpac-{nome}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    /// Monta um pacote de mentira com o mesmo formato que o `empacotar.sh`
+    /// grava: `<sha256>  <caminho>`, uma linha por arquivo, caminho relativo.
+    fn pacote(nome: &str) -> PathBuf {
+        let d = temp(nome);
+        std::fs::create_dir_all(d.join("demonstracao")).unwrap();
+        std::fs::write(d.join("phxsqld"), b"o servidor").unwrap();
+        std::fs::write(d.join("MANUAL.txt"), b"o manual").unwrap();
+        std::fs::write(d.join("demonstracao/config.json"), b"{}").unwrap();
+
+        let mut linhas = Vec::new();
+        for rel in ["MANUAL.txt", "demonstracao/config.json", "phxsqld"] {
+            let dados = std::fs::read(d.join(rel)).unwrap();
+            linhas.push(format!("{}  {rel}", para_hex(&sha256(&dados))));
+        }
+        std::fs::write(d.join(MANIFESTO_PACOTE), linhas.join("\n") + "\n").unwrap();
+        d
+    }
+
+    #[test]
+    fn pacote_intacto_confere() {
+        let d = pacote("intacto");
+        conferir_pacote(&d).unwrap();
+    }
+
+    /// A prova que importa: UM byte trocado tem de reprovar. Sem ela, o
+    /// conferidor e decoracao -- e um conferidor que aprova tudo e pior que
+    /// nenhum, porque quem baixou acha que conferiu.
+    #[test]
+    fn um_byte_trocado_reprova() {
+        let d = pacote("um-byte");
+        let mut dados = std::fs::read(d.join("phxsqld")).unwrap();
+        dados[0] ^= 0x01;
+        std::fs::write(d.join("phxsqld"), &dados).unwrap();
+
+        let e = conferir_pacote(&d).unwrap_err();
+        assert!(e.to_string().contains("nao confere"), "{e}");
+    }
+
+    /// Mesmo tamanho, conteudo diferente: o hash e o unico que pega isto, e e
+    /// o caso realista -- quem troca um binario nao muda o tamanho de graca.
+    #[test]
+    fn mesmo_tamanho_conteudo_outro_reprova() {
+        let d = pacote("mesmo-tamanho");
+        std::fs::write(d.join("MANUAL.txt"), b"o MANUAL").unwrap();
+        assert!(conferir_pacote(&d).is_err());
+    }
+
+    /// Arquivo A MAIS nao mexe em nenhuma linha do manifesto: quem so confere
+    /// hash de quem esta listado nunca o ve.
+    #[test]
+    fn arquivo_a_mais_reprova() {
+        let d = pacote("a-mais");
+        std::fs::write(d.join("brinde.sh"), b"rm -rf /").unwrap();
+        let e = conferir_pacote(&d).unwrap_err();
+        assert!(e.to_string().contains("nao confere"), "{e}");
+    }
+
+    #[test]
+    fn arquivo_que_falta_reprova() {
+        let d = pacote("faltando");
+        std::fs::remove_file(d.join("demonstracao/config.json")).unwrap();
+        assert!(conferir_pacote(&d).is_err());
+    }
+
+    #[test]
+    fn pacote_sem_manifesto_avisa_em_vez_de_aprovar() {
+        let d = temp("sem-manifesto");
+        std::fs::write(d.join("phxsqld"), b"o servidor").unwrap();
+        let e = conferir_pacote(&d).unwrap_err();
+        assert!(e.to_string().contains(MANIFESTO_PACOTE), "{e}");
+    }
+
+    #[test]
+    fn manifesto_com_linha_torta_avisa() {
+        let d = pacote("linha-torta");
+        std::fs::write(d.join(MANIFESTO_PACOTE), "isto nao e um manifesto\n").unwrap();
+        let e = conferir_pacote(&d).unwrap_err();
+        assert!(e.to_string().contains("linha 1"), "{e}");
+    }
 }
