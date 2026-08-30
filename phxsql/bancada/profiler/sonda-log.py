@@ -9,7 +9,7 @@
   (c) o caminho e um diretorio
   (d) o caminho nao existe
   (e) reinicio: o profiler volta ligado? o arquivo sobrevive? o append segue?
-  (f) rotacao: quanto o arquivo cresce por pedido
+  (f) rodizio: o arquivo VIRA no teto, e o gasto em disco para de crescer
 
 Os itens (a) e (b) precisam montar tmpfs, o que pede root. Sem root eles sao
 PULADOS com recado -- pular e honesto; fingir com um diretorio 0500 nao e,
@@ -21,7 +21,7 @@ import os
 import shutil
 import subprocess
 
-from comum import AQUI, Conexao, baixar, subir
+from comum import AQUI, Conexao, baixar, config_padrao, subir
 
 BASE = os.path.join(AQUI, "srv-log")
 CHEIO = os.path.join(AQUI, "cheio")
@@ -129,21 +129,69 @@ def main():
               % (len(final), len(final.splitlines()),
                  "sim" if final.startswith(antes[:60]) else "NAO"))
 
-        print("\n=== (f) ROTACAO ===")
+        print("\n=== (f) O QUE O ARQUIVO CUSTA POR PEDIDO ===")
         tam0 = os.path.getsize(alvo2)
         trafego(c, 500, "cresce")
         tam1 = os.path.getsize(alvo2)
+        por_pedido = (tam1 - tam0) / 500
         print("   %d B -> %d B em 500 pedidos (%.0f B/pedido)"
-              % (tam0, tam1, (tam1 - tam0) / 500))
-        print("   ha rotacao ou teto? %s"
-              % ("sim" if tam1 <= tam0 else "NAO -- cresce sem fim"))
+              % (tam0, tam1, por_pedido))
+        print("   a 1.000 pedidos/s isso da %.2f GB por hora"
+              % (por_pedido * 1000 * 3600 / 1e9))
         e = c.ok({"op": "profiler", "max": 1})
         print("   a tela mostra o tamanho? gravados_bytes = %s"
               % e.get("gravados_bytes", "(campo ausente)"))
         c.ok({"op": "profiler_desligar"})
         c.fechar()
-    finally:
         baixar(proc)
+        proc = None
+
+        # ---------------------------------------------------------------
+        # (g) O RODIZIO, contra o sistema de arquivos de verdade.
+        #
+        # Servidor proprio, com o teto no MINIMO que o campo aceita (1 MiB) e
+        # dois arquivos antigos: o gasto maximo tem de ser 3 MiB, e nao os
+        # ~4,5 MiB que 13.000 pedidos a 345 B produziriam sem rodizio.
+        # ---------------------------------------------------------------
+        print("\n=== (g) O RODIZIO ===")
+        cfg = config_padrao(PORTA)
+        cfg["profiler"] = {"arquivo_mib": 1, "arquivos": 2}
+        proc = subir(BASE, PORTA, config=cfg)
+        c = Conexao(PORTA)
+        c.entrar("adm", "senha-do-adm")
+        c.ok({"op": "criar_database", "database": "loja"})
+        c.ok({"op": "criar_tabela", "database": "loja", "tabela": "clientes",
+              "colunas": [{"nome": "id", "tipo": "Int8"},
+                          {"nome": "nome", "tipo": "Str(40)"},
+                          {"nome": "obs", "tipo": "Str(80)"}]})
+        alvo3 = os.path.join(BASE, "rodizio.txt")
+        r = c.ok({"op": "profiler_ligar", "arquivo": alvo3})
+        print("   teto por arquivo: %s B, guardando %s antigo(s) -- "
+              "no maximo %s B em disco"
+              % (r.get("teto_do_arquivo_bytes"), r.get("arquivos_guardados"),
+                 r.get("teto_em_disco_bytes")))
+        trafego(c, 13_000, "gira")
+        e = c.ok({"op": "profiler", "max": 1})
+        existentes = [alvo3] + ["%s.%d" % (alvo3, n) for n in (1, 2, 3, 4)]
+        tamanhos = [(os.path.basename(x), os.path.getsize(x))
+                    for x in existentes if os.path.exists(x)]
+        total = sum(t for _, t in tamanhos)
+        print("   rodizios=%s falhas_de_rodizio=%s falhas_de_escrita=%s"
+              % (e.get("rodizios"), e.get("falhas_de_rodizio"),
+                 e.get("falhas_de_escrita")))
+        for nome, t in tamanhos:
+            print("     %-16s %9d B" % (nome, t))
+        teto = e.get("teto_em_disco_bytes") or 0
+        print("   total em disco: %d B; teto anunciado: %d B -- %s"
+              % (total, teto,
+                 "DENTRO" if total <= teto * 1.02 else "PASSOU DO TETO"))
+        print("   o mais velho saiu? %s"
+              % ("sim" if not os.path.exists(alvo3 + ".3") else "NAO"))
+        c.ok({"op": "profiler_desligar"})
+        c.fechar()
+    finally:
+        if proc is not None:
+            baixar(proc)
         desmontar(CHEIO)
         desmontar(SO_LEITURA)
 

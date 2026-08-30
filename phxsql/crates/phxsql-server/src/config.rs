@@ -1215,6 +1215,83 @@ impl Default for Recursos {
     }
 }
 
+/// O rodizio do arquivo `.txt` do Profiler.
+///
+/// # Por que ele NASCE ligado, e a regra da casa
+///
+/// «Guarda nova entra pedida, nao imposta» existe para nao quebrar quem ja
+/// escreveu cliente contra o comportamento de antes. Aqui a pergunta e quem
+/// esta sendo protegido de que: o `.txt` mede **345 bytes por pedido** e nao
+/// parava nunca -- **1,2 GB por hora** a mil pedidos por segundo, o que enche
+/// a particao do servidor inteiro, e nao so o log.
+///
+/// E o arquivo nunca prometeu ser completo: com o disco cheio ele ja perdia
+/// linha em silencio (medido: 400 pedidos, 223 linhas), e o conserto de
+/// entao foi CONTAR a perda, nao evita-la. Trocar um arquivo sem teto que
+/// morre junto com a particao por um arquivo com teto que avisa quando vira e
+/// estritamente melhor -- e o Profiler e ferramenta de diagnostico, ligada
+/// por minutos, nao diario de auditoria.
+///
+/// Quem quiser o comportamento exato de antes escreve `arquivo_mib: 0`, e
+/// esta escrito no MANUAL ao lado do campo.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PerfilEmDisco {
+    /// Teto de cada arquivo, em MiB. **Zero = sem rodizio**, como era antes.
+    pub arquivo_mib: u64,
+    /// Quantos arquivos ANTIGOS guardar, alem do corrente.
+    ///
+    /// Zero e legitimo e quer dizer «nao guarde historico»: cheio o teto, o
+    /// arquivo recomeca. O gasto maximo e `arquivo_mib x (arquivos + 1)`.
+    pub arquivos: usize,
+}
+
+impl Default for PerfilEmDisco {
+    fn default() -> PerfilEmDisco {
+        // 64 x (4 + 1) = 320 MiB de teto, que a 345 bytes por pedido sao
+        // ~970.000 pedidos -- muito alem de qualquer sessao que alguem leia, e
+        // ainda assim um numero que cabe em qualquer particao de servidor.
+        PerfilEmDisco {
+            arquivo_mib: 64,
+            arquivos: 4,
+        }
+    }
+}
+
+impl PerfilEmDisco {
+    fn de_json(j: &Json) -> PerfilEmDisco {
+        let padrao = PerfilEmDisco::default();
+        let Some(c) = j.campo("profiler") else {
+            return padrao;
+        };
+        PerfilEmDisco {
+            arquivo_mib: c
+                .inteiro_ou("arquivo_mib", padrao.arquivo_mib as i64)
+                .max(0) as u64,
+            arquivos: (c.inteiro_ou("arquivos", padrao.arquivos as i64).max(0) as usize)
+                .min(crate::profiler::MAX_ARQUIVOS_ANTIGOS),
+        }
+    }
+
+    /// O teto por arquivo em BYTES, que e a unidade do profiler.
+    pub fn teto_do_arquivo(&self) -> u64 {
+        self.arquivo_mib.saturating_mul(1024 * 1024)
+    }
+
+    pub fn para_json(&self) -> Json {
+        Json::objeto(vec![
+            ("arquivo_mib", Json::de_u64(self.arquivo_mib)),
+            ("arquivos", Json::de_u64(self.arquivos as u64)),
+            // O produto sai daqui, e nao da tela: e o numero que o operador
+            // compara com o `df`, e uma segunda multiplicacao escrita no
+            // JavaScript envelheceria no dia em que a regra mudasse.
+            (
+                "teto_em_disco_mib",
+                Json::de_u64(self.arquivo_mib.saturating_mul(self.arquivos as u64 + 1)),
+            ),
+        ])
+    }
+}
+
 /// O interruptor da trilha de dado pessoal (`.lgpd`).
 ///
 /// # Nasce LIGADA, e por que isso nao quebra a regra da casa
@@ -1566,6 +1643,8 @@ pub struct Config {
     pub lgpd: Lgpd,
     /// As cores e os limiares do painel de bolhas. Ver [`Painel`].
     pub telemetria: Painel,
+    /// O rodizio do `.txt` do Profiler. Ver [`PerfilEmDisco`].
+    pub profiler: PerfilEmDisco,
     /// O idioma das mensagens do servidor: o nome de uma das seis colunas da
     /// tabela `phxsys.mensagens`. Vazio ou ausente = `Portugues`, que e o
     /// texto de fabrica -- e por isso config antigo nao muda nada.
@@ -1597,7 +1676,7 @@ pub struct Config {
 // no primeiro nivel -- quem a escrevesse no arquivo levava um "campo que este
 // servidor nao conhece" sobre um campo que ele le e obedece. Aviso falso gasta
 // a confianca do aviso verdadeiro.
-const CAMPOS_CONHECIDOS: [&str; 25] = [
+const CAMPOS_CONHECIDOS: [&str; 26] = [
     "bind",
     "base",
     "token",
@@ -1623,6 +1702,7 @@ const CAMPOS_CONHECIDOS: [&str; 25] = [
     "idioma",
     "lgpd",
     "telemetria",
+    "profiler",
 ];
 
 /// O que cada secao conhecida aceita por dentro.
@@ -1634,7 +1714,7 @@ const CAMPOS_CONHECIDOS: [&str; 25] = [
 /// as duas primeiras estao ganhando campos novos por outras frentes nesta
 /// rodada, e um aviso falso de "campo desconhecido" seria pior que a lacuna;
 /// as duas ultimas tem chaves livres (bases, tabelas).
-const SECOES_CONHECIDAS: [(&str, &[&str]); 8] = [
+const SECOES_CONHECIDAS: [(&str, &[&str]); 9] = [
     (
         "recursos",
         &[
@@ -1722,6 +1802,7 @@ const SECOES_CONHECIDAS: [(&str, &[&str]); 8] = [
             "stress_ms",
         ],
     ),
+    ("profiler", &["arquivo_mib", "arquivos"]),
 ];
 
 /// O que o arquivo trouxe e o servidor nao sabe ler.
@@ -1772,6 +1853,7 @@ impl Default for Config {
             cifra: Cifra::default(),
             lgpd: Lgpd::default(),
             telemetria: Painel::default(),
+            profiler: PerfilEmDisco::default(),
             idioma: String::new(),
             estranhas: Vec::new(),
             avisos: Vec::new(),
@@ -1927,6 +2009,7 @@ impl Config {
             cifra: Cifra::de_json(j),
             lgpd: Lgpd::de_json(j),
             telemetria: Painel::de_json(j, &mut avisos),
+            profiler: PerfilEmDisco::de_json(j),
             idioma: {
                 // O valor aceito e o NOME de uma coluna da tabela de
                 // mensagens. Desconhecido nao derruba o servidor -- vira
@@ -2244,6 +2327,7 @@ impl Config {
             // o painel de bolhas as recebe na propria resposta da telemetria,
             // ao lado dos limiares que decidiram o nivel.
             ("telemetria", self.telemetria.para_json()),
+            ("profiler", self.profiler.para_json()),
             // O idioma EM USO, ja resolvido: vazio no arquivo vira Portugues
             // aqui, para a tela nao ter de repetir a regra do fallback.
             (
@@ -2391,6 +2475,11 @@ pub const CAMPOS_EDITAVEIS: &[(&str, TipoDoCampo, bool)] = &[
     ("telemetria.cor_alto", TipoDoCampo::Cor, true),
     ("telemetria.cor_stress", TipoDoCampo::Cor, true),
     ("telemetria.cor_encerrando", TipoDoCampo::Cor, true),
+    // A quente: `gravar_campos` leva os dois ao profiler vivo, e eles valem
+    // para o arquivo CORRENTE -- quem viu o arquivo crescendo na tela quer o
+    // teto agora, e nao no proximo `profiler_ligar`.
+    ("profiler.arquivo_mib", TipoDoCampo::Inteiro, true),
+    ("profiler.arquivos", TipoDoCampo::Inteiro, true),
     ("telemetria.alto_uso_ms", TipoDoCampo::Inteiro, true),
     ("telemetria.stress_ms", TipoDoCampo::Inteiro, true),
 ];

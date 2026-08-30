@@ -10,6 +10,85 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
+## Não lançado — o `.txt` do Profiler para de crescer
+
+Escrito em paralelo com as outras seções «Não lançado» abaixo: na integração
+todas viram uma só, e o número da versão sai de lá.
+
+### Corrigido
+
+- **O cabeçalho do arquivo do Profiler aceitava linha forjada — e o furo era
+  antigo.** Ele interpola a descrição do filtro, e o filtro vem do pedido: um
+  `"operacao": "ping\n2000-01-01T00:00:00 9.9.9.9 …"` punha no `.txt` uma
+  segunda linha que se lê como evento de outro IP. É exatamente o defeito que
+  o *evento* já fechava desde a validação anterior, pela porta que ela não
+  cobria — o cabeçalho não é evento, e por isso escapou. Só apareceu ao
+  escrever o rodízio, que precisa de um cabeçalho por arquivo novo. Os dois
+  cabeçalhos e o rodapé passam pelo mesmo `de_uma_linha` dos campos do evento.
+
+- **`escrever_linha` voltava calada quando não havia descritor.** Com o
+  profiler só em memória isso está certo; com um **caminho escolhido** e sem
+  descritor — que é o que uma reabertura falhada deixa — é o defeito do disco
+  cheio de volta: a tela seguiria dizendo «gravando em …» com nada sendo
+  gravado. As duas situações passaram a ser distinguidas, e a segunda conta a
+  linha perdida.
+
+### Adicionado
+
+- **Rodízio do `.txt` do Profiler, por tamanho.** Ele media **345 bytes por
+  pedido** e não parava nunca — **1,2 GB por hora** a mil pedidos/s, num
+  arquivo que enche a partição do servidor inteiro. Cheio o teto,
+  `perfil.txt` vira `perfil.txt.1`, o `.1` vira `.2`, e o mais velho sai. O
+  gasto máximo deixa de ser «depende» e vira uma conta que se compara com o
+  `df` — e ela sai do **servidor** já multiplicada, porque uma segunda
+  multiplicação escrita no JavaScript envelheceria calada:
+
+  ```text
+  profiler.arquivo_mib x (profiler.arquivos + 1)
+  ```
+
+  Padrão `64 × (4 + 1)` = **320 MiB**, que a 345 B por pedido são ~970.000
+  pedidos. `profiler.arquivo_mib: 0` devolve o comportamento de antes — o
+  arquivo cresce sem teto —, e há teste cobrando que continue valendo.
+
+  **Por tamanho e não por tempo**, porque o perigo é disco e disco se mede em
+  bytes: um rodízio diário não põe teto nenhum — a mil pedidos/s o arquivo do
+  dia tem 29 GB, a um pedido/s tem 30 MB, a *mesma* política com mil vezes de
+  diferença, decidida pelo movimento do servidor e não por quem configurou. E
+  o Profiler é ferramenta de diagnóstico, ligada por minutos: um rodízio «todo
+  dia à meia-noite» quase nunca dispararia, e quando disparasse seria no meio
+  da única sessão que alguém estava lendo.
+
+- **A tela do Profiler diz o teto e quantas vezes o arquivo já virou.** Sem
+  isso, «gravando em `perfil.txt`» seria verdade e mentira ao mesmo tempo — o
+  começo da sessão não está mais lá, e quem fosse investigar procuraria no
+  arquivo errado. `rodizios` e `falhas_de_rodizio` entram na resposta ao lado
+  de `gravados_bytes` e `falhas_de_escrita`, e um rodízio que falha pinta a
+  caixa de vermelho como uma linha perdida pinta. Os oito textos novos entram
+  **pela fábrica de idiomas**, nos seis idiomas — a catraca continua em 1.999.
+
+- **`profiler.arquivo_mib` e `profiler.arquivos`** pelo ponto único
+  (`CAMPOS_CONHECIDOS`, `SECOES_CONHECIDAS`, `CAMPOS_EDITAVEIS`,
+  `editaveis_json`), no grupo «Arquivo do Profiler» da tela de configuração, e
+  **a quente**: quem está vendo o arquivo crescer e abaixa o teto quer o efeito
+  agora, não no próximo `profiler_ligar`.
+
+- **Três guardas novas**, as três **PROVADAS**: o zero deixando de desligar o
+  rodízio, o cabeçalho aceitando linha forjada, e a linha sumindo sem ser
+  contada.
+
+### Sabido
+
+- O rodízio **apaga** o arquivo mais velho, e isso é uma escolha declarada. A
+  regra da casa manda pensar duas vezes antes de ligar guarda nova por padrão;
+  o que se pesou está em `docs/SEGURANCA.md` §10: o `.txt` nunca prometeu ser
+  completo — com o disco cheio ele já perdia linha, e o conserto de então foi
+  **contar** a perda, não evitá-la. Um arquivo com teto que avisa quando vira é
+  melhor que um sem teto que morre junto com a partição. E a saída para quem
+  discordar é um campo: `arquivo_mib: 0`.
+
+---
+
 ## Não lançado — o `fsync` da exclusão, e quem escolhe pagá-lo
 
 Escrito em paralelo com as outras seções «Não lançado» abaixo: na integração

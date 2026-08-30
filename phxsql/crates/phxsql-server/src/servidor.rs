@@ -2828,6 +2828,12 @@ impl Servidor {
         phxsql_store::ndx::definir_cache_paginas(novo.recursos.cache_paginas);
         novo.recursos.aplicar();
         novo.lgpd.aplicar();
+        // O rodizio do Profiler vale para o arquivo CORRENTE: quem esta vendo
+        // o arquivo crescer na tela e abaixa o teto quer o efeito agora, e nao
+        // no proximo `profiler_ligar`.
+        if let Ok(mut prof) = self.profiler.lock() {
+            prof.definir_rodizio(novo.profiler.teto_do_arquivo(), novo.profiler.arquivos);
+        }
         // A cor vale na resposta seguinte da telemetria -- dois segundos. Cor
         // se escolhe VENDO, e uma que so aparecesse no proximo arranque seria
         // escolhida no escuro.
@@ -11428,6 +11434,12 @@ impl Servidor {
         let teto = p.inteiro_ou("guardar", 500).max(0) as usize;
         let agora = crate::agora_ms();
         let mut prof = self.profiler.lock().map_err(|_| trava_envenenada())?;
+        // ANTES do `ligar`: e ele quem le o tamanho do arquivo que ja existe
+        // para saber quanto falta para o primeiro rodizio.
+        prof.definir_rodizio(
+            self.config.profiler.teto_do_arquivo(),
+            self.config.profiler.arquivos,
+        );
         prof.ligar(filtro, &arquivo, teto, agora)?;
         // Dentro da trava, e DEPOIS de `ligar` ter dado certo: um espelho que
         // sobe antes faria o caminho quente pagar por um profiler que nao ligou.
@@ -11439,6 +11451,14 @@ impl Servidor {
                 "arquivo",
                 Json::texto_de(prof.caminho().display().to_string()),
             ),
+            // O teto vai na resposta de LIGAR porque e onde alguem escolhe o
+            // caminho do arquivo: e a hora de saber quanto ele pode comer.
+            (
+                "teto_do_arquivo_bytes",
+                Json::de_u64(prof.teto_do_arquivo()),
+            ),
+            ("arquivos_guardados", Json::de_u64(prof.manter() as u64)),
+            ("teto_em_disco_bytes", Json::de_u64(prof.teto_em_disco())),
             (
                 "desde",
                 Json::texto_de(phxsql_core::datahora::instante_iso(agora)),
@@ -11527,6 +11547,17 @@ impl Servidor {
             // pedidos, 223 linhas no arquivo, nenhum aviso.
             ("gravados_bytes", Json::de_u64(prof.gravados())),
             ("falhas_de_escrita", Json::de_u64(prof.falhas_de_escrita())),
+            // O rodizio, pelo mesmo motivo das duas de cima: sem estes tres, a
+            // tela diria «gravando em perfil.txt» sem contar que o arquivo ja
+            // virou quatro vezes e o comeco da sessao nao esta mais la.
+            ("rodizios", Json::de_u64(prof.rodizios())),
+            ("falhas_de_rodizio", Json::de_u64(prof.falhas_de_rodizio())),
+            (
+                "teto_do_arquivo_bytes",
+                Json::de_u64(prof.teto_do_arquivo()),
+            ),
+            ("arquivos_guardados", Json::de_u64(prof.manter() as u64)),
+            ("teto_em_disco_bytes", Json::de_u64(prof.teto_em_disco())),
             ("guardar", Json::de_u64(prof.teto() as u64)),
             (
                 "desde",

@@ -25,12 +25,37 @@
 //! tamanho dele. Ha teste que falha se uma senha aparecer no anel ou no
 //! arquivo.
 //!
-//! # Anel, e nao lista
+//! # Anel em memoria, rodizio em disco
 //!
 //! O que fica em memoria e um anel de tamanho fixo: um profiler esquecido
-//! ligado num servidor movimentado nao pode comer a memoria da maquina. O
-//! arquivo, esse, cresce -- mas quem o pediu escolheu o caminho e sabe onde
-//! ele esta, e a tela diz quanto ele ja tem.
+//! ligado num servidor movimentado nao pode comer a memoria da maquina.
+//!
+//! O arquivo tinha o problema oposto e nao tinha o remedio: media **345 bytes
+//! por pedido** e nao parava nunca -- **1,2 GB por hora** a mil pedidos por
+//! segundo. Agora ele roda: cheio o teto, `perfil.txt` vira `perfil.txt.1`,
+//! `.1` vira `.2`, e o mais velho sai. O gasto maximo passa a ser uma conta
+//! que o operador consegue comparar com o `df`:
+//!
+//! ```text
+//! teto do arquivo x (quantos guardar + 1)
+//! ```
+//!
+//! # Por que por TAMANHO, e nao por tempo
+//!
+//! Porque o perigo aqui e disco, e disco se mede em bytes. Um rodizio diario
+//! nao poe teto nenhum: a mil pedidos por segundo o arquivo do dia tem 29 GB,
+//! e a um pedido por segundo tem 30 MB -- a MESMA politica com mil vezes de
+//! diferenca, decidida pelo movimento do servidor e nao por quem configurou.
+//! Rodizio por tamanho da um teto duro que nao depende do movimento.
+//!
+//! E ha a segunda razao, que e o que este arquivo E: o Profiler nao e diario
+//! de auditoria, e ferramenta de diagnostico. Liga-se, olha-se o trafego,
+//! desliga-se. A vida dele se mede em minutos e em megabytes, nao em dias --
+//! um rodizio "todo dia a meia-noite" quase nunca dispararia, e quando
+//! disparasse seria no meio da unica sessao que alguem estava lendo.
+//!
+//! `profiler.arquivo_mib` em **zero** volta ao comportamento de antes: cresce
+//! sem parar. Nao e o padrao, e a razao esta em `docs/SEGURANCA.md` §10.
 //!
 //! # Uma linha do arquivo e UMA linha
 //!
@@ -43,6 +68,13 @@
 //! Log de monitoracao que aceita linha forjada nao serve para investigar
 //! nada, entao todo campo livre e reduzido a uma linha antes de entrar no
 //! evento.
+//!
+//! E o mesmo vale para as linhas que NAO sao evento -- o cabecalho de quando
+//! ligou, o de cada rodizio, o rodape de quando desligou. Elas trazem a
+//! descricao do filtro, e o filtro vem do pedido: um `"operacao"` com quebra
+//! de linha dentro punha no arquivo uma segunda linha que se le como evento.
+//! Era um furo do cabecalho de `ligar`, achado ao escrever o rodizio, e o
+//! conserto e o mesmo `de_uma_linha` dos campos do evento.
 //!
 //! # Gravacao que falha e gravacao que se conta
 //!
@@ -88,6 +120,18 @@ const TETO_DO_CAMPO: usize = 120;
 /// Teto do texto de erro na linha do arquivo. Maior porque explicacao boa e
 /// comprida -- a do `sql` sem indice passa de 200 caracteres.
 const TETO_DO_ERRO: usize = 500;
+
+/// Teto da descricao do filtro nas linhas de cabecalho e rodape.
+///
+/// Ela nao e evento, mas sai dos MESMOS campos que o cliente escreve -- ver o
+/// cabecalho do modulo.
+const TETO_DO_CABECALHO: usize = 400;
+
+/// Teto de arquivos antigos que o rodizio aceita guardar.
+///
+/// Nao e gosto: cada um custa `arquivo_mib`, e o produto e o que enche a
+/// particao. Trinta e dois ja sao 2 GiB com o padrao de 64 MiB.
+pub const MAX_ARQUIVOS_ANTIGOS: usize = 32;
 
 /// Operacoes que MUDAM dado. `so_escrita` filtra por esta lista.
 const ESCRITAS: &[&str] = &[
@@ -228,6 +272,24 @@ pub struct Profiler {
     /// Linhas que o arquivo RECUSOU: disco cheio, cota, sistema de arquivos
     /// somente-leitura, arquivo removido debaixo do descritor.
     falhas_de_escrita: u64,
+    /// Teto de bytes por arquivo. Zero = nao rodizia, e cresce sem parar.
+    teto_do_arquivo: u64,
+    /// Quantos arquivos ANTIGOS guardar, alem do corrente.
+    manter: usize,
+    /// Bytes no arquivo CORRENTE.
+    ///
+    /// Separado de `gravados`, que conta a sessao inteira: e a soma da sessao
+    /// que diz quanto o profiler ja produziu, e e a do arquivo corrente que
+    /// decide a hora de virar.
+    bytes_no_arquivo: u64,
+    /// Quantas vezes o arquivo virou desde que ligou.
+    rodizios: u64,
+    /// Rodizios que nao deram certo -- renomear ou reabrir falhou.
+    ///
+    /// Contado pelo mesmo motivo de `falhas_de_escrita`: um rodizio que falha
+    /// em silencio deixa a tela dizendo «gravando em ...» sobre um arquivo que
+    /// parou de receber, e isso ja aconteceu aqui uma vez com o disco cheio.
+    falhas_de_rodizio: u64,
 }
 
 impl Default for Profiler {
@@ -245,6 +307,11 @@ impl Default for Profiler {
             ligado_em_ms: 0,
             gravados: 0,
             falhas_de_escrita: 0,
+            teto_do_arquivo: 0,
+            manter: 0,
+            bytes_no_arquivo: 0,
+            rodizios: 0,
+            falhas_de_rodizio: 0,
         }
     }
 }
@@ -286,6 +353,40 @@ impl Profiler {
         self.falhas_de_escrita
     }
 
+    pub fn rodizios(&self) -> u64 {
+        self.rodizios
+    }
+
+    pub fn falhas_de_rodizio(&self) -> u64 {
+        self.falhas_de_rodizio
+    }
+
+    /// O teto por arquivo, em bytes. Zero = sem rodizio.
+    pub fn teto_do_arquivo(&self) -> u64 {
+        self.teto_do_arquivo
+    }
+
+    /// Quantos arquivos antigos o rodizio guarda, alem do corrente.
+    pub fn manter(&self) -> usize {
+        self.manter
+    }
+
+    /// O gasto MAXIMO em disco, em bytes. Zero = sem teto.
+    ///
+    /// E a conta que o operador compara com o `df`, e por isso ela sai daqui
+    /// e nao da tela: uma segunda multiplicacao escrita no JavaScript
+    /// envelheceria no dia em que o rodizio mudasse de regra.
+    pub fn teto_em_disco(&self) -> u64 {
+        self.teto_do_arquivo.saturating_mul(self.manter as u64 + 1)
+    }
+
+    /// Ajusta o rodizio. Vale para o arquivo corrente, e nao so no proximo
+    /// `ligar`: quem viu o arquivo crescendo na tela quer o teto AGORA.
+    pub fn definir_rodizio(&mut self, teto_do_arquivo: u64, manter: usize) {
+        self.teto_do_arquivo = teto_do_arquivo;
+        self.manter = manter.min(MAX_ARQUIVOS_ANTIGOS);
+    }
+
     /// Escreve uma linha no arquivo, e CONTA o que aconteceu.
     ///
     /// O `let _ = writeln!` de antes engolia a falha: com a particao cheia o
@@ -293,14 +394,105 @@ impl Profiler {
     /// linhas iam para o chao sem ninguem saber. Contar nao conserta o disco,
     /// mas troca um log que mente por um log que avisa.
     fn escrever_linha(&mut self, linha: &str) {
+        let cabem = linha.len() as u64 + 1;
+        self.girar_se_encheu(cabem);
         let resultado = match self.arquivo.as_mut() {
-            None => return,
+            None => {
+                // Sem CAMINHO nao ha arquivo pedido, e nao ha o que contar --
+                // o profiler roda so em memoria. COM caminho e sem descritor e
+                // outra coisa: o arquivo foi pedido e nao esta recebendo, e
+                // sumir com essa linha e exatamente o defeito do disco cheio,
+                // que a tela levou 223 de 400 linhas para nao mostrar.
+                if !self.caminho.as_os_str().is_empty() {
+                    self.falhas_de_escrita += 1;
+                }
+                return;
+            }
             Some(f) => writeln!(f, "{linha}").and_then(|_| f.flush()),
         };
         match resultado {
-            Ok(()) => self.gravados += linha.len() as u64 + 1,
+            Ok(()) => {
+                self.gravados += cabem;
+                self.bytes_no_arquivo += cabem;
+            }
             Err(_) => self.falhas_de_escrita += 1,
         }
+    }
+
+    /// Vira o arquivo se a linha que vem nao couber no teto.
+    ///
+    /// Confere ANTES de escrever, e nao depois: conferir depois deixaria a
+    /// ultima linha de cada arquivo passar do teto, e o teto de um arquivo de
+    /// log serve justamente para o produto `teto x arquivos` ser uma promessa.
+    ///
+    /// Um arquivo VAZIO nunca vira: uma linha maior que o teto inteiro --
+    /// possivel com um `erro` de 500 caracteres e um teto absurdamente
+    /// pequeno -- faria o rodizio girar a cada linha, apagando o historico
+    /// inteiro para gravar uma linha que continuaria nao cabendo.
+    fn girar_se_encheu(&mut self, proxima: u64) {
+        if self.teto_do_arquivo == 0 || self.arquivo.is_none() {
+            return;
+        }
+        if self.bytes_no_arquivo == 0 || self.bytes_no_arquivo + proxima <= self.teto_do_arquivo {
+            return;
+        }
+        self.girar();
+    }
+
+    /// `perfil.txt` vira `.1`, `.1` vira `.2`, e o mais velho sai.
+    ///
+    /// # A ordem, e o que acontece quando falha
+    ///
+    /// O descritor e SOLTO antes de renomear. No Unix renomear um arquivo
+    /// aberto funciona e as linhas seguintes iriam para o arquivo antigo pelo
+    /// nome novo; no Windows a renomeacao falha. Soltar primeiro faz os dois
+    /// se comportarem igual, e e o unico jeito de o teste valer nos dois.
+    ///
+    /// Falhou alguma etapa, o rodizio e CONTADO e o arquivo e reaberto em
+    /// append -- que no pior caso significa continuar no mesmo arquivo,
+    /// passando do teto. Perder linha para cumprir um teto seria trocar um
+    /// problema de disco por um problema de investigacao.
+    fn girar(&mut self) {
+        // Solta o descritor: ver a nota acima.
+        self.arquivo = None;
+        let base = self.caminho.clone();
+        let mut deu_errado = false;
+
+        // O mais velho sai primeiro. Sem isto, o `.1 -> .2` de baixo
+        // sobrescreveria o `.2` que ainda deveria existir.
+        if self.manter == 0 {
+            let _ = std::fs::remove_file(&base);
+        } else {
+            let ultimo = com_sufixo(&base, self.manter);
+            let _ = std::fs::remove_file(&ultimo);
+            for n in (1..self.manter).rev() {
+                let de = com_sufixo(&base, n);
+                if de.exists() && std::fs::rename(&de, com_sufixo(&base, n + 1)).is_err() {
+                    deu_errado = true;
+                }
+            }
+            if std::fs::rename(&base, com_sufixo(&base, 1)).is_err() {
+                deu_errado = true;
+            }
+        }
+
+        match OpenOptions::new().create(true).append(true).open(&base) {
+            Ok(f) => self.arquivo = Some(f),
+            // Sem descritor, `escrever_linha` passa a contar cada linha como
+            // falha -- e a tela para de dizer «gravando em ...» sem aviso.
+            Err(_) => deu_errado = true,
+        }
+        self.bytes_no_arquivo = 0;
+        self.rodizios += 1;
+        if deu_errado {
+            self.falhas_de_rodizio += 1;
+        }
+        let cabecalho = format!(
+            "=== profiler continua ({}o arquivo) === filtro: {}",
+            self.rodizios + 1,
+            de_uma_linha(&descrever(&self.filtro), TETO_DO_CABECALHO)
+        );
+        self.escrever_linha(&cabecalho);
     }
 
     /// Liga a observacao. `arquivo` vazio deixa so o anel em memoria.
@@ -341,9 +533,18 @@ impl Profiler {
                 f,
                 "\n=== profiler ligado em {} === filtro: {}",
                 phxsql_core::datahora::instante_iso(agora_ms),
-                descrever(&filtro)
+                // `de_uma_linha` porque o filtro vem do PEDIDO: um
+                // `"operacao": "ping\nFORJADO ..."` punha aqui uma segunda
+                // linha que se le como evento. Era o furo da linha forjada,
+                // que o evento ja fechava e o cabecalho nao.
+                de_uma_linha(&descrever(&filtro), TETO_DO_CABECALHO)
             )?;
             f.flush()?;
+            // Append: o arquivo pode ja ter conteudo de uma sessao anterior, e
+            // o teto e do ARQUIVO e nao da sessao. Perguntar ao sistema aqui e
+            // barato -- e uma vez por `ligar` --, e comecar do zero faria o
+            // primeiro rodizio acontecer com o dobro do teto no disco.
+            self.bytes_no_arquivo = f.metadata().map(|m| m.len()).unwrap_or(0);
             self.arquivo = Some(f);
             self.caminho = caminho;
         }
@@ -354,6 +555,8 @@ impl Profiler {
         self.esquecidos = 0;
         self.gravados = 0;
         self.falhas_de_escrita = 0;
+        self.rodizios = 0;
+        self.falhas_de_rodizio = 0;
         self.ligado = true;
         self.ligado_em_ms = agora_ms;
         Ok(())
@@ -361,17 +564,40 @@ impl Profiler {
 
     pub fn desligar(&mut self, agora_ms: i64) {
         let rodape = format!(
-            "=== profiler desligado em {} === {} evento(s){}",
+            "=== profiler desligado em {} === {} evento(s){}{}",
             phxsql_core::datahora::instante_iso(agora_ms),
             self.observados,
             match self.falhas_de_escrita {
                 0 => String::new(),
                 n => format!(", {n} linha(s) NAO gravada(s)"),
+            },
+            match (self.rodizios, self.falhas_de_rodizio) {
+                (0, _) => String::new(),
+                (r, 0) => format!(", {r} rodizio(s) de arquivo"),
+                (r, f) => format!(", {r} rodizio(s), {f} com falha"),
             }
         );
-        self.escrever_linha(&rodape);
+        // Sem `girar_se_encheu`: o rodape fecha o arquivo em que a sessao
+        // esteve, e virar de arquivo aqui poria o resumo sozinho num arquivo
+        // novo, longe do que ele resume.
+        self.escrever_rodape(&rodape);
         self.ligado = false;
         self.arquivo = None;
+    }
+
+    /// A linha final da sessao, escrita sem passar pelo rodizio.
+    fn escrever_rodape(&mut self, linha: &str) {
+        let resultado = match self.arquivo.as_mut() {
+            None => return,
+            Some(f) => writeln!(f, "{linha}").and_then(|_| f.flush()),
+        };
+        match resultado {
+            Ok(()) => {
+                self.gravados += linha.len() as u64 + 1;
+                self.bytes_no_arquivo += linha.len() as u64 + 1;
+            }
+            Err(_) => self.falhas_de_escrita += 1,
+        }
     }
 
     pub fn limpar(&mut self) {
@@ -477,6 +703,17 @@ fn descrever(f: &Filtro) -> String {
     } else {
         p.join(", ")
     }
+}
+
+/// `perfil.txt` com o sufixo `n`: `perfil.txt.1`, `perfil.txt.2`...
+///
+/// O sufixo vai DEPOIS da extensao, e nao antes: `perfil.1.txt` casaria com
+/// um `*.txt` de rotina de limpeza e levaria o historico junto, e `perfil.txt*`
+/// lista os arquivos em ordem sem nenhum truque.
+fn com_sufixo(base: &std::path::Path, n: usize) -> PathBuf {
+    let mut s = base.as_os_str().to_os_string();
+    s.push(format!(".{n}"));
+    PathBuf::from(s)
 }
 
 /// Reduz um campo livre a UMA linha, com teto de tamanho.
@@ -866,6 +1103,243 @@ mod testes {
         p.desligar(1);
         let texto = std::fs::read_to_string(&alvo).unwrap();
         assert!(texto.contains("inserir"), "{texto}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+    // ------------------------------------------------- o rodizio do arquivo
+
+    fn temp(rotulo: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!(
+            "phx-rodizio-{rotulo}-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    /// Enche o arquivo com pedidos ate ele ter de virar `quantos` vezes.
+    fn encher(p: &mut Profiler, quantas_linhas: usize) {
+        for i in 0..quantas_linhas {
+            let s = p
+                .chegou(
+                    "{}", "inserir", "adm", "loja", "clientes", "10.0.0.1", i as i64,
+                )
+                .unwrap();
+            p.terminou(s, 1, true, "");
+        }
+    }
+
+    /// **O teste do comportamento VELHO: `arquivo_mib: 0` cresce sem parar.**
+    ///
+    /// Quem escrever zero no `config.json` volta ao `.txt` de antes, byte por
+    /// byte. Reponha o defeito fazendo `girar_se_encheu` ignorar o zero e este
+    /// teste cai.
+    #[test]
+    fn teto_zero_nao_rodizia() {
+        let d = temp("sem-teto");
+        let alvo = d.join("perfil.txt");
+        let mut p = Profiler::default();
+        p.definir_rodizio(0, 4);
+        p.ligar(Filtro::default(), alvo.to_str().unwrap(), 10, 0)
+            .unwrap();
+        encher(&mut p, 300);
+        assert_eq!(p.rodizios(), 0, "rodiziou sem teto");
+        assert!(!com_sufixo(&alvo, 1).exists(), "criou arquivo antigo");
+        assert!(std::fs::metadata(&alvo).unwrap().len() > 4_000);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// O teto e um TETO: nenhum arquivo passa dele, e o gasto total e o
+    /// produto anunciado.
+    #[test]
+    fn o_rodizio_poe_teto_no_disco() {
+        let d = temp("teto");
+        let alvo = d.join("perfil.txt");
+        let mut p = Profiler::default();
+        p.definir_rodizio(2_000, 2);
+        p.ligar(Filtro::default(), alvo.to_str().unwrap(), 10, 0)
+            .unwrap();
+        assert_eq!(p.teto_em_disco(), 6_000);
+        encher(&mut p, 400);
+        p.desligar(1);
+
+        assert!(p.rodizios() >= 3, "nao rodiziou: {}", p.rodizios());
+        assert_eq!(p.falhas_de_rodizio(), 0, "rodizio com falha");
+        // O corrente, mais dois antigos, e nem um a mais.
+        assert!(alvo.exists());
+        assert!(com_sufixo(&alvo, 1).exists());
+        assert!(com_sufixo(&alvo, 2).exists());
+        assert!(
+            !com_sufixo(&alvo, 3).exists(),
+            "guardou mais arquivos do que o pedido"
+        );
+        let total: u64 = [alvo.clone(), com_sufixo(&alvo, 1), com_sufixo(&alvo, 2)]
+            .iter()
+            .map(|c| std::fs::metadata(c).unwrap().len())
+            .sum();
+        // O rodape do `desligar` entra sem passar pelo rodizio, de proposito:
+        // e por isso a folga de uma linha.
+        assert!(total <= 6_000 + 200, "passou do teto anunciado: {total}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// O arquivo mais novo e o SEM sufixo, e o `.1` traz o que veio antes.
+    ///
+    /// Importa para quem investiga: `perfil.txt` tem de ser o de agora, e nao
+    /// o mais velho. Trocar o sentido do rodizio deixaria o arquivo que a tela
+    /// nomeia parado no comeco da sessao.
+    #[test]
+    fn o_sem_sufixo_e_sempre_o_mais_novo() {
+        let d = temp("ordem");
+        let alvo = d.join("perfil.txt");
+        let mut p = Profiler::default();
+        p.definir_rodizio(1_200, 3);
+        p.ligar(Filtro::default(), alvo.to_str().unwrap(), 500, 0)
+            .unwrap();
+        for i in 0..200 {
+            let s = p
+                .chegou("{}", &format!("op{i:04}"), "adm", "d", "t", "ip", i)
+                .unwrap();
+            p.terminou(s, 1, true, "");
+        }
+        let novo = std::fs::read_to_string(&alvo).unwrap();
+        let velho = std::fs::read_to_string(com_sufixo(&alvo, 1)).unwrap();
+        assert!(
+            novo.contains("op0199"),
+            "o corrente nao tem o ultimo evento"
+        );
+        assert!(!velho.contains("op0199"), "o antigo tem o ultimo evento");
+        // E o cabecalho de continuacao diz que ha mais antes deste arquivo.
+        assert!(novo.contains("profiler continua"), "{novo}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **O primeiro perigo que o rodizio nao pode reabrir: linha forjada.**
+    ///
+    /// O cabecalho de cada arquivo novo traz a descricao do FILTRO, e o filtro
+    /// vem do pedido. Sem `de_uma_linha`, um `"operacao"` com quebra de linha
+    /// dentro poe no arquivo uma segunda linha que se le como evento de outro
+    /// IP -- exatamente o defeito que o evento ja fechava.
+    ///
+    /// E vale para o cabecalho de `ligar` tambem, que era o furo original:
+    /// ele existia antes deste rodizio, e so apareceu ao escrever o rodizio.
+    #[test]
+    fn o_cabecalho_do_rodizio_nao_aceita_linha_forjada() {
+        let d = temp("forjada");
+        let alvo = d.join("perfil.txt");
+        // O filtro casa com os eventos de proposito: sem isso nao haveria
+        // trafego, e o rodizio nunca giraria para escrever o cabecalho que
+        // este teste examina.
+        let forjada = "ping\n2000-01-01T00:00:00 9.9.9.9 forjado ping - ok 0ms 0B {}";
+        let filtro = Filtro {
+            op: forjada.into(),
+            ..Filtro::default()
+        };
+        let mut p = Profiler::default();
+        p.definir_rodizio(900, 2);
+        p.ligar(filtro, alvo.to_str().unwrap(), 500, 0).unwrap();
+        for i in 0..60 {
+            let s = p
+                .chegou("{}", forjada, "adm", "loja", "clientes", "10.0.0.1", i)
+                .unwrap();
+            p.terminou(s, 1, true, "");
+        }
+        p.desligar(1);
+
+        for caminho in [alvo.clone(), com_sufixo(&alvo, 1)] {
+            let Ok(texto) = std::fs::read_to_string(&caminho) else {
+                continue;
+            };
+            for linha in texto.lines() {
+                assert!(
+                    !linha.starts_with("2000-01-01T00:00:00 9.9.9.9"),
+                    "linha forjada em {}: {linha}",
+                    caminho.display()
+                );
+            }
+        }
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **O segundo perigo: parar de gravar em silencio.**
+    ///
+    /// Se o rodizio nao conseguir reabrir o arquivo, o profiler fica sem
+    /// descritor. Antes disto, `escrever_linha` voltava calada nesse caso --
+    /// e a tela seguiria dizendo «gravando em ...», que e o defeito do disco
+    /// cheio de volta pela porta do rodizio. Com CAMINHO escolhido e sem
+    /// descritor, cada linha conta como falha.
+    #[test]
+    fn sem_descritor_com_arquivo_pedido_a_perda_e_contada() {
+        let d = temp("mudo");
+        let alvo = d.join("perfil.txt");
+        let mut p = Profiler::default();
+        p.ligar(Filtro::default(), alvo.to_str().unwrap(), 10, 0)
+            .unwrap();
+        // O que uma reabertura falhada deixa: caminho escolhido, sem arquivo.
+        p.arquivo = None;
+        encher(&mut p, 3);
+        assert_eq!(p.falhas_de_escrita(), 3, "perdeu linha em silencio");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// Profiler so em memoria nao conta falha: nao ha arquivo pedido.
+    ///
+    /// O outro lado do teste acima -- sem ele, todo profiler sem arquivo
+    /// passaria a acusar perda que nao existe, e aviso falso gasta a confianca
+    /// do aviso verdadeiro.
+    #[test]
+    fn sem_arquivo_pedido_nao_ha_falha_a_contar() {
+        let mut p = Profiler::default();
+        p.ligar(Filtro::default(), "", 10, 0).unwrap();
+        encher(&mut p, 5);
+        assert_eq!(p.falhas_de_escrita(), 0);
+        assert_eq!(p.gravados(), 0);
+    }
+
+    /// Religar no mesmo arquivo nao zera a conta do TETO.
+    ///
+    /// O `ligar` abre em append de proposito, para nao apagar o registro
+    /// anterior. Se a conta do arquivo corrente comecasse do zero, o primeiro
+    /// rodizio da segunda sessao aconteceria com o dobro do teto no disco.
+    #[test]
+    fn religar_no_mesmo_arquivo_continua_a_conta_do_teto() {
+        let d = temp("religar");
+        let alvo = d.join("perfil.txt");
+        let mut p = Profiler::default();
+        p.definir_rodizio(4_000, 2);
+        p.ligar(Filtro::default(), alvo.to_str().unwrap(), 500, 0)
+            .unwrap();
+        encher(&mut p, 8);
+        p.desligar(1);
+        let tinha = std::fs::metadata(&alvo).unwrap().len();
+        assert!(tinha > 0);
+
+        p.ligar(Filtro::default(), alvo.to_str().unwrap(), 500, 2)
+            .unwrap();
+        assert!(
+            p.bytes_no_arquivo >= tinha,
+            "a segunda sessao comecou a conta do zero: {} contra {tinha}",
+            p.bytes_no_arquivo
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// Uma linha maior que o teto inteiro nao faz o rodizio girar a cada
+    /// linha, apagando o historico para gravar o que nao cabe de qualquer
+    /// jeito. Arquivo vazio nunca vira.
+    #[test]
+    fn linha_maior_que_o_teto_nao_gira_para_sempre() {
+        let d = temp("linha-grande");
+        let alvo = d.join("perfil.txt");
+        let mut p = Profiler::default();
+        p.definir_rodizio(64, 2);
+        p.ligar(Filtro::default(), alvo.to_str().unwrap(), 500, 0)
+            .unwrap();
+        encher(&mut p, 10);
+        // Dez linhas, dez rodizios no maximo -- e nao um laco infinito.
+        assert!(p.rodizios() <= 12, "girou demais: {}", p.rodizios());
+        assert!(std::fs::metadata(&alvo).unwrap().len() > 0, "ficou vazio");
         let _ = std::fs::remove_dir_all(&d);
     }
 }

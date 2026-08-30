@@ -843,12 +843,80 @@ log que mente por um log que avisa. O teste usa `/dev/full`, que aceita a
 abertura e recusa toda escrita com `ENOSPC`: é o disco cheio sem esperar o
 disco encher.
 
-**A rotação continua não existindo**, e agora com número: 345 B por pedido
+**A rotação entrou**, e o número que a motivou era este: 345 B por pedido
 significa que um profiler esquecido ligado num servidor com 1.000 pedidos por
-segundo escreve **1,2 GB por hora**. O anel de memória tem teto desde sempre;
-o arquivo não tem. Está anotado nas pendências — o que existe hoje é a tela
-mostrando o tamanho, para quem esqueceu ver o arquivo crescendo antes de ele
-comer a partição.
+segundo escreve **1,2 GB por hora**. O anel de memória sempre teve teto; o
+arquivo passou a ter.
+
+Cheio o teto, `perfil.txt` vira `perfil.txt.1`, o `.1` vira `.2`, e o mais
+velho sai. O gasto máximo deixa de ser «depende» e passa a ser uma conta que
+o operador compara com o `df` — e ela sai do **servidor** já multiplicada,
+porque uma segunda multiplicação escrita no JavaScript envelheceria calada:
+
+```text
+profiler.arquivo_mib x (profiler.arquivos + 1)
+```
+
+O padrão é `64 × (4 + 1)` = **320 MiB**, que a 345 B por pedido são ~970.000
+pedidos — muito além de qualquer sessão que alguém leia, e ainda assim um
+número que cabe em qualquer partição.
+
+**Por que por tamanho e não por tempo.** Porque o perigo é disco, e disco se
+mede em bytes. Um rodízio diário não põe teto nenhum: a mil pedidos por
+segundo o arquivo do dia tem 29 GB, e a um pedido por segundo tem 30 MB — a
+mesma política com mil vezes de diferença, decidida pelo movimento do servidor
+e não por quem configurou. E há a segunda razão, que é o que este arquivo é: o
+Profiler é ferramenta de diagnóstico, ligada por minutos, não diário de
+auditoria. Um rodízio «todo dia à meia-noite» quase nunca dispararia — e
+quando disparasse, seria no meio da única sessão que alguém estava lendo.
+
+**Ele nasce ligado, e a regra da casa diz para pensar duas vezes antes disso.**
+«Guarda nova entra pedida» existe para não quebrar quem escreveu cliente
+contra o comportamento de antes. O que se pesou: o `.txt` **nunca prometeu ser
+completo** — com o disco cheio ele já perdia linha, e o conserto de então foi
+contar a perda, não evitá-la. Trocar um arquivo sem teto que morre junto com a
+partição por um arquivo com teto que **avisa quando vira** é estritamente
+melhor. Quem quiser o comportamento exato de antes escreve
+`profiler.arquivo_mib: 0`, e está no `MANUAL.txt` ao lado do campo — com o
+teste `teto_zero_nao_rodizia` cobrando que ele continue valendo.
+
+**Os dois perigos que a rotação não podia reabrir**, e o que se fez com cada
+um:
+
+1. **Linha forjada.** Ao escrever o cabeçalho de cada arquivo novo apareceu um
+   furo que era **do cabeçalho de `ligar`, e já existia**: ele interpola a
+   descrição do filtro, e o filtro vem do pedido — um `"operacao"` com quebra
+   de linha dentro punha no `.txt` uma segunda linha que se lia como evento de
+   outro IP. Era exatamente o defeito que o *evento* já fechava e o cabeçalho
+   não. Os dois cabeçalhos e o rodapé passam pelo mesmo `de_uma_linha` dos
+   campos do evento, e o teste
+   `o_cabecalho_do_rodizio_nao_aceita_linha_forjada` o repõe.
+2. **Parar de gravar em silêncio.** Se o rodízio não conseguir reabrir o
+   arquivo, o profiler fica sem descritor — e `escrever_linha` **voltava
+   calada** nesse caso, o que traria de volta o «gravando em …» com nada sendo
+   gravado. Agora ela separa as duas situações: *sem caminho escolhido* é um
+   profiler só em memória e não conta nada; *com caminho e sem descritor* é
+   uma linha perdida, e conta. Mais `rodizios` e `falhas_de_rodizio` na
+   resposta e na tela, para «gravando em perfil.txt» nunca esconder que o
+   começo da sessão já saiu daquele arquivo.
+
+**A prova é contra o sistema de arquivos, e não só em teste unitário.** A
+sonda `bancada/profiler/sonda-log.py` ganhou a seção **(g)**: sobe um
+`phxsqld` com o teto no mínimo que o campo aceita (1 MiB) e dois arquivos
+antigos, manda 13.000 pedidos pelo soquete e olha o diretório. Medido:
+
+```
+teto por arquivo: 1048576 B, guardando 2 antigo(s) -- no maximo 3145728 B
+rodizios=3 falhas_de_rodizio=0 falhas_de_escrita=0
+  rodizio.txt         720642 B
+  rodizio.txt.1      1048455 B
+  rodizio.txt.2      1048462 B
+total em disco: 2817559 B; teto anunciado: 3145728 B -- DENTRO
+o mais velho saiu? sim
+```
+
+E a seção (f) confirmou o número que motivou tudo isto, na mesma corrida:
+**345 B por pedido**, que a mil pedidos por segundo são **1,24 GB por hora**.
 
 E o reinício merece uma frase, porque é uma escolha e não um esquecimento: o
 profiler é uma **sessão de observação**, não configuração. Quem o liga e vê o

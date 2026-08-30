@@ -913,4 +913,93 @@ GUARDAS = [
             "a_lixeira_esta_no_disco_antes_de_o_slot_sair",
         ],
     },
+    # -----------------------------------------------------------------------
+    # 16. O rodizio do Profiler ignorando o zero
+    # -----------------------------------------------------------------------
+    {
+        "id": "rodizio-do-profiler-ignora-o-zero",
+        "titulo": "`profiler.arquivo_mib: 0` deixa de querer dizer «sem rodízio»",
+        "porque": (
+            "o rodizio do .txt nasceu LIGADO, e a saida de quem quer o "
+            "comportamento de antes e escrever zero. Se o zero deixar de ser "
+            "lido, essa saida some sem ninguem perceber -- e o campo passa a "
+            "dizer uma coisa e fazer outra, que e a armadilha da configuracao "
+            "que mente."
+        ),
+        "arquivo": "crates/phxsql-server/src/profiler.rs",
+        "trecho": """        if self.teto_do_arquivo == 0 || self.arquivo.is_none() {
+""",
+        "troca": """        // DEFEITO REPOSTO: o zero deixa de desligar o rodizio.
+        if self.arquivo.is_none() {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "profiler::testes::teto_zero_nao_rodizia",
+        ],
+        "seguem": [
+            "profiler::testes::o_rodizio_poe_teto_no_disco",
+            "profiler::testes::o_sem_sufixo_e_sempre_o_mais_novo",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # 17. O cabecalho do rodizio aceitando linha forjada
+    # -----------------------------------------------------------------------
+    {
+        "id": "cabecalho-do-profiler-forjado",
+        "titulo": "o cabeçalho do arquivo do Profiler aceita linha forjada",
+        "porque": (
+            "o furo ORIGINAL era do cabecalho de `ligar`, e so apareceu ao "
+            "escrever o rodizio: ele interpola a descricao do filtro, e o "
+            "filtro vem do pedido. Um `\"operacao\"` com quebra de linha "
+            "dentro poe no .txt uma segunda linha que se le como evento de "
+            "outro IP -- exatamente o defeito que o EVENTO ja fechava."
+        ),
+        "arquivo": "crates/phxsql-server/src/profiler.rs",
+        "trecho": """            de_uma_linha(&descrever(&self.filtro), TETO_DO_CABECALHO)
+""",
+        "troca": """            // DEFEITO REPOSTO: o filtro entra no cabecalho como veio.
+            descrever(&self.filtro)
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "profiler::testes::o_cabecalho_do_rodizio_nao_aceita_linha_forjada",
+        ],
+        "seguem": [
+            "profiler::testes::quebra_de_linha_no_pedido_nao_forja_linha_no_arquivo",
+            "profiler::testes::o_rodizio_poe_teto_no_disco",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # 18. O profiler sem descritor voltando calado
+    # -----------------------------------------------------------------------
+    {
+        "id": "profiler-sem-descritor-calado",
+        "titulo": "sem descritor, com arquivo pedido, a linha some sem ser contada",
+        "porque": (
+            "e o defeito do disco cheio voltando pela porta do rodizio: um "
+            "rodizio que nao consegue reabrir o arquivo deixa o profiler sem "
+            "descritor, e a tela seguiria dizendo «gravando em ...» com nada "
+            "sendo gravado -- medido antes: 400 pedidos, 223 linhas."
+        ),
+        "arquivo": "crates/phxsql-server/src/profiler.rs",
+        "trecho": """                if !self.caminho.as_os_str().is_empty() {
+                    self.falhas_de_escrita += 1;
+                }
+                return;
+""",
+        "troca": """                // DEFEITO REPOSTO: volta calada, com arquivo pedido ou sem.
+                return;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "profiler::testes::sem_descritor_com_arquivo_pedido_a_perda_e_contada",
+        ],
+        "seguem": [
+            "profiler::testes::sem_arquivo_pedido_nao_ha_falha_a_contar",
+            "profiler::testes::linha_que_o_disco_recusa_e_contada",
+        ],
+    },
 ]

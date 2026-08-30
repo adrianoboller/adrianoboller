@@ -556,6 +556,36 @@ RECURSOS DA MAQUINA
     rede de recuperacao daquela exclusao, e nao uma linha que alguem queria
     manter. Nao ha caso em que linha NAO EXCLUIDA suma.
 
+O ARQUIVO .TXT DO PROFILER
+
+    A secao "profiler" do config.json diz onde o .txt do Profiler para de
+    crescer. Ele mede 345 bytes por pedido, medido -- num servidor com 1.000
+    pedidos por segundo sao 1,2 GB por hora.
+
+    "profiler": {
+      "arquivo_mib": 64,
+      "arquivos": 4
+    }
+
+    Cheio o teto, perfil.txt vira perfil.txt.1, o .1 vira .2, e o mais velho
+    sai. O gasto MAXIMO e uma conta:
+
+        arquivo_mib x (arquivos + 1)
+
+    Com o padrao, 64 x 5 = 320 MiB -- que a 345 bytes por pedido sao cerca de
+    970.000 pedidos. A tela do Profiler mostra essa conta e diz quantas vezes
+    o arquivo ja virou, para "gravando em perfil.txt" nunca esconder que o
+    comeco da sessao esta noutro arquivo.
+
+    POR TAMANHO E NAO POR TEMPO, porque o perigo e disco e disco se mede em
+    bytes. Um rodizio diario nao poria teto nenhum: a mil pedidos por segundo o
+    arquivo do dia teria 29 GB, e a um pedido por segundo teria 30 MB -- a
+    mesma politica com mil vezes de diferenca.
+
+    "arquivo_mib": 0 DESLIGA o rodizio e devolve o comportamento de antes: o
+    arquivo cresce sem parar. "arquivos": 0 e legitimo e quer dizer "nao guarde
+    historico" -- cheio o teto, o arquivo recomeca.
+
     CACHE DE PAGINAS. O "cache_paginas" diz quantas paginas do .ndx cada
     tabela aberta guarda em RAM. Cada pagina tem 4 KiB, entao 2.048 dao 8 MiB
     por tabela aberta -- e o servidor abre e fecha a tabela a cada operacao,
