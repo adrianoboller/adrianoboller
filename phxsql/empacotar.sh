@@ -604,7 +604,33 @@ dossie() {
 }
 
 # ---------------------------------------------------------------------------
+# A base de conhecimento, sozinha
+#
+# Pacote proprio porque o publico e outro: ela nao e o programa, e o que se
+# aprendeu FAZENDO o programa -- os pedidos em ordem, os briefings de agente,
+# os scripts de medicao e de prova, e as licoes. Serve para o proximo projeto,
+# nao para rodar este.
+conhecimento() {
+  local nome="phxsql-$VERSAO-conhecimento"
+  local dir="$SAIDA/$nome"
+  echo "== base de conhecimento"
+  [ -d ../base-de-conhecimento ] || { echo "   nao ha base-de-conhecimento/"; return 0; }
+  rm -rf "$dir"; mkdir -p "$dir"
+  cp -r ../base-de-conhecimento/. "$dir/"
+  ( cd "$dir" && find . -type f ! -name "$MANIFESTO" -print0 \
+      | sort -z | xargs -0 sha256sum > "$MANIFESTO" )
+  echo "   $(grep -c '' "$dir/$MANIFESTO") arquivos no $MANIFESTO"
+  ( cd "$SAIDA" && rm -f "$nome.zip" && zip -qr "$nome.zip" "$nome" && rm -rf "$nome" )
+  echo "   $SAIDA/$nome.zip"
+}
+
+# ---------------------------------------------------------------------------
 # O kit: tudo junto, para quem so quer baixar uma coisa
+#
+# Ele passa de 30 MB, e isso e consequencia de ser a soma de todos os outros --
+# nao ha o que apertar sem tirar peca. Canais com limite de anexo (o envio
+# desta sessao, correio) nao levam o kit: levam as pecas, que juntas SAO o kit.
+# Fica dito aqui para ninguem "consertar" o kit tirando os binarios ARM.
 #
 # Leva os zips ja prontos em vez de remontar o conteudo -- assim o hash de cada
 # um continua sendo o MESMO que o SHA256SUMS publica, e quem baixou o kit pode
@@ -618,9 +644,8 @@ kit() {
   for p in "$SAIDA"/phxsql-"$VERSAO"-{fontes,linux,windows,arm64,arm32,dossie}.zip; do
     [ -f "$p" ] && cp "$p" "$dir/pacotes/"
   done
-  # A base de conhecimento vai no kit e nao nos fontes: ela nao e o programa, e
-  # o que se aprendeu fazendo o programa. Publico diferente.
-  [ -d ../base-de-conhecimento ] && cp -r ../base-de-conhecimento "$dir/"
+  [ -f "$SAIDA/phxsql-$VERSAO-conhecimento.zip" ] \
+    && cp "$SAIDA/phxsql-$VERSAO-conhecimento.zip" "$dir/pacotes/"
   cp MANUAL.txt README.md CHANGELOG.md "$dir/"
   cat > "$dir/COMECE-AQUI.txt" <<FIM
 PhxSql $VERSAO -- kit completo
@@ -633,8 +658,8 @@ pacotes/
   phxsql-$VERSAO-arm32.zip     binarios ARMv7 (Pi 2, Zero W, roteador)
   phxsql-$VERSAO-dossie.zip    o dossie e os geradores dele
 
-base-de-conhecimento/
-  o que se aprendeu FAZENDO isto: os pedidos em ordem, os briefings de
+  phxsql-$VERSAO-conhecimento.zip
+                               o que se aprendeu FAZENDO isto: os pedidos em ordem, os briefings de
   agente, os scripts de medicao e de prova, e as licoes. Comece pelo
   04-LICOES.md -- e o unico escrito a mao, e o que viaja para outro projeto.
 
@@ -657,6 +682,7 @@ case "$QUAL" in
   arm32)   confere_versoes; monta "$ALVO_ARM32" arm32 "" sem_odbc ;;
   fontes)  confere_versoes; fontes ;;
   dossie)  confere_versoes; dossie ;;
+  conhecimento) confere_versoes; conhecimento ;;
   kit)     confere_versoes; kit ;;
   tudo)
     confere_versoes
@@ -666,9 +692,10 @@ case "$QUAL" in
     monta "$ALVO_ARM32" arm32 "" sem_odbc
     fontes
     dossie
+    conhecimento
     kit
     ;;
-  *) echo "uso: $0 [linux|windows|arm64|arm32|fontes|dossie|kit|tudo|conferir]" >&2; exit 2 ;;
+  *) echo "uso: $0 [linux|windows|arm64|arm32|fontes|dossie|conhecimento|kit|tudo|conferir]" >&2; exit 2 ;;
 esac
 
 # A lista de fora: o hash dos proprios zips, para quem baixou saber que o
