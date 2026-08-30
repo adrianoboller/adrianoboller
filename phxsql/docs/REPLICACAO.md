@@ -764,6 +764,10 @@ python3 bancada/replicacao/medir.py 100000
 # os quatro modos, nas portas 5330-5339 (leva ~3 min: o estágio (b)
 # espera uma janela de verdade):
 python3 bancada/replicacao/modos.py /tmp/phx-modos
+# a trava de dados contra a leitura de rede, nas portas 7050-7055
+# (~1,5 min; e a versao de loopback dos estagios (a3) e (b-abraco) da
+# bancada de conteiner -- ver a §18):
+python3 bancada/replicacao/trava.py
 ```
 
 ```bash
@@ -904,10 +908,12 @@ uma frase: a segunda tranca da §7 não existia, um vizinho com o `config.json`
 de réplica vazado levava **200 de 200 eventos** do diário com a lista
 preenchida, e hoje leva 0.
 
-**Achado 2 — a trava de dados fica presa atrás de uma leitura de rede.** O
-laço da réplica segura `self.dados.lock()` (`alcancar_tabela`, e o mesmo em
-`alcancar_tabela_bidi`) e, **de dentro dela**, faz a ida e volta de rede que
-busca o lote. Numa rede sã isso é invisível: a resposta chega em
+**Achado 2 — a trava de dados fica presa atrás de uma leitura de rede.**
+*(Consertado — a §18 conta o conserto, com os números dos dois lados. O que
+vem abaixo é o retrato do defeito, e ele fica porque é ele que explica por que
+a §18 existe.)* O laço da réplica segurava `self.dados.lock()`
+(`alcancar_tabela`, e o mesmo em `alcancar_tabela_bidi`) e, **de dentro dela**,
+fazia a ida e volta de rede que busca o lote. Numa rede sã isso é invisível: a resposta chega em
 microssegundos. Quando não chega, a trava fica presa até o prazo de leitura de
 **30 s** do cliente da réplica — e todo pedido de cliente que precise da trava
 espera atrás.
@@ -929,8 +935,9 @@ que não respondem são o caso comum de verdade (firewall, cabo, rota que
 sumiu). É a consequência medida do item 2 da §3.2 do `PENDENCIAS.md`, as
 tomadas da trava fora do ponto único.
 
-**Achado 2b — no bidirecional, os dois lados se trancam um ao outro.** É o
-mesmo mecanismo levado ao pior caso, e ele **não precisa de corte nenhum**.
+**Achado 2b — no bidirecional, os dois lados se trancam um ao outro.**
+*(Consertado junto, na §18.)* É o mesmo mecanismo levado ao pior caso, e ele
+**não precisa de corte nenhum**.
 `alcancar_tabela_bidi` toma a trava **deste** servidor e pede `replicar` ao
 outro; do outro lado, servir `replicar` (e `posicao`) também precisa da trava
 de **lá** — `op_replicar` e `op_posicao` chamam `travar_dados()`. Com fila nos
@@ -1150,3 +1157,197 @@ no `acessos.log`, e o IP **na lista negra** do source ao fim da fase.
    compila dentro do contêiner com `--offline`, que é o que prova a promessa
    de zero dependência; a da bancada carrega o binário musl da máquina, porque
    sobe e derruba dez contêineres por corrida. Mesmo alvo, mesmo `scratch`.
+
+---
+
+## 18. A trava de dados saiu de trás da rede
+
+A §17 deixou dois achados abertos, e eles eram o mesmo defeito visto de dois
+ângulos: **o laço da réplica segurava a trava global de dados enquanto lia do
+soquete**. Esta seção é o conserto, com os números antes e depois.
+
+### O ponto exato
+
+`alcancar_tabela` tomava a trava na **primeira linha** e a segurava até o fim
+da função — e dentro do laço mora `replica::puxar`, que é uma ida e volta de
+rede. `alcancar_tabela_bidi` fazia o mesmo, com dois agravantes: os **dois**
+lados de um par bidirecional rodam esse laço, e ela tomava `self.dados.lock()`
+**cru**, sem passar pelo `travar_dados()` — que é o ponto único que cronometra
+a trava. Ou seja: o pior dos dois caminhos era justamente o que a telemetria
+**não conseguia ver**. Ponto de medição que pula um chamador mente do mesmo
+jeito que campo de configuração que ninguém lê.
+
+O prazo que soltava a trava é o `set_read_timeout(30 s)` de `replica::montar`.
+Por isso o número do defeito é sempre ~30 s: não é uma lentidão, é um relógio.
+
+### As duas testemunhas, e o que elas mediram
+
+A bancada nova é `bancada/replicacao/trava.py`: quatro estágios, ~1,5 min,
+portas 7050-7055, sem Docker. Ela é a versão de **loopback** dos estágios
+`a3-congelamento` e `b-abraco` da §17 — no lugar do cabo cortado há um **tubo**
+em Python entre a réplica e o source, que repassa byte a byte até mandarem
+emudecer e a partir daí segura os dois soquetes abertos sem repassar nada. Do
+ponto de vista da réplica é o mesmo silêncio de um `iptables -j DROP`.
+
+O que o loopback **não** substitui continua sendo queda de processo e partição
+de rede de verdade; para essas vale a bancada de contêiner da §17.
+
+Duas testemunhas, e elas têm de contar a mesma história:
+
+- **de fora** — um cliente cronometrando `ping`, que não toca na trava, contra
+  `varrer`, que precisa dela. Se os dois travassem, o servidor estaria fora do
+  ar e o problema seria outro; só o segundo travar é o que aponta a trava;
+- **de dentro** — `totais.trava_ms` da telemetria da própria réplica, que só
+  existe porque `travar_dados()` é o ponto único.
+
+Com o source escrevendo sem parar e o tubo emudecido por 40 s:
+
+| na réplica | antes | depois |
+|---|---:|---:|
+| pior `ping` | 4 ms | 5 ms |
+| **pior `varrer`** | **30.079 ms** | **6 ms** |
+| trava na mão (telemetria) | 35,8 s de 40 | 11,4 s de 40 |
+
+O contêiner tinha medido 29.456 ms contra `ping` de 6 ms. O loopback reproduz
+o mesmo por outro caminho, o que confirma que o mecanismo nunca dependeu do
+Docker — o Docker só foi o primeiro lugar onde alguém conseguiu cortar a rede.
+
+As duas colunas de telemetria **não são comparáveis**, e vale dizer por quê: a
+sonda passou de 52.650 para 231.385 idas e voltas na mesma janela, porque
+depois do conserto ela consegue perguntar cinco vezes mais. Os 11,4 s são
+quase todos trabalho dela. Quem compara é o `varrer`.
+
+### O abraço do bidirecional
+
+200.000 linhas, metade escrita em cada lado ao mesmo tempo, rede sã, com um
+cliente sondando alfa **durante** a carga:
+
+| | antes | depois |
+|---|---:|---:|
+| escrita do cliente | 33,0 s | **1,7 s** |
+| as mesmas 200.000 num servidor sozinho | 2,4 s | 2,4 s |
+| razão | **14,0×** | **0,71×** |
+| `EAGAIN` novos no diário | +1 alfa, +1 beta | 0 e 0 |
+| **pior `varrer` durante a carga** | **31.375 ms** | **67 ms** |
+
+Com 1.000.000 de linhas o antes fica ainda mais feio — **240,7 s contra
+12,1 s, 19,8×, com sete `EAGAIN` de cada lado**. Sete e sete: a mesma
+assinatura simétrica que a §17 tinha visto nos contêineres, em outra máquina e
+por outro caminho. Contagem igual dos dois lados é o que só um abraço produz.
+
+### O conserto: três fases
+
+`alcancar_tabela` e `alcancar_tabela_bidi` estão partidas em três, e as duas
+funções auxiliares de cada uma existem só para que a trava tenha começo e fim
+visíveis:
+
+1. **com a trava** — garantir o database, abrir (ou criar) a tabela, ler a
+   posição local; soltar;
+2. **sem a trava** — ler o lote inteiro do soquete;
+3. **com a trava** — reabrir a tabela, **reler a posição**, aplicar, soltar.
+
+A regra geral, e ela vale para qualquer coisa que se acrescente aqui:
+**nenhuma leitura de rede acontece com a trava de dados na mão.** O `posicao`
+do começo da rodada já era assim; o `puxar` passou a ser. Sobra o `connect` do
+`ligar`, que também é fora da trava — e é por isso que ele continua sem prazo
+de conexão, com a nota que já estava em `replica.rs`.
+
+A releitura da posição na fase 3 não é enfeite. Entre a fase 2 e a 3 a trava
+esteve solta, e aplicar um lote pedido a partir de outra posição gravaria o
+evento errado no rowid errado. Quando a posição andou, o lote é **descartado**
+e o laço pede de novo a partir de onde a tabela está agora: descartar custa uma
+ida e volta, aplicar torto custaria o dado.
+
+### O teto de memória, que passou a ser obrigatório
+
+Enquanto o lote era lido **com** a trava na mão, o tamanho dele era o menor dos
+problemas. Agora ele mora inteiro na memória da réplica até a trava chegar, e
+«quanto isso pode crescer» virou pergunta com resposta obrigatória — e a
+resposta não podia ser «o que o outro lado mandar».
+
+- **no source**, `TETO_DO_LOTE_SERVIDO` = **16 MiB** de imagem por resposta. O
+  `max` do pedido conta *eventos*, e evento não tem tamanho fixo: 500 linhas de
+  60 bytes são 30 KiB, e 500 linhas com um memo de 200 KiB são 100 MiB — que em
+  hexadecimal viram 200 MiB de texto montados de uma vez dos dois lados. Lote
+  curto não perde nada, porque `ate` e `fim` saem do que foi realmente lido e a
+  réplica só pergunta de novo. E o lote **nunca sai vazio** por causa do teto:
+  o primeiro evento entra sempre, senão uma linha maior que o teto pararia a
+  replicação para sempre em vez de atrasá-la;
+- **na réplica**, `TETO_DA_RESPOSTA` = **128 MiB** por linha lida — o dobro do
+  que um par sadio produz, para que ele só sirva ao que existe: impedir que a
+  réplica aloque sem limite por ordem de quem está do outro lado do fio.
+  Estourou, a recusa é `LIMITE_EXCEDIDO` **com o número dentro**, e a conexão
+  não se reaproveita (ela ficou no meio de uma linha) — a rodada volta e a
+  próxima abre outra.
+
+### A queda da conexão entre a leitura e a aplicação
+
+O conserto abre uma janela que antes não existia: a conexão pode morrer com o
+lote já na memória e ainda não gravado. As três saídas possíveis são perder o
+lote, aplicá-lo duas vezes, ou aplicá-lo inteiro uma vez — e só a terceira
+presta.
+
+Na **réplica fiel** a posição nasce do diário daqui, então ela só anda depois
+de o lote estar gravado: queda antes da fase 3 devolve exatamente o mesmo lote
+na rodada seguinte. E não existe meio-lote, porque o lote inteiro chega antes
+de a trava ser pedida. No **bidirecional** a posição consumida é estado próprio
+e só é gravada depois da aplicação; repetir um lote ali é inofensivo, porque o
+casamento é por chave e a regra é «mais recente vence» (§12).
+
+Isso não se prova por teste unitário — é a lição do `BULKINSERT`. O estágio
+`queda` da bancada nova prova por soquete: **10 cortes de conexão de verdade no
+meio de um alcance de 200.000 eventos**, e a soma de verificação dos dois lados
+fecha igual, com as mesmas linhas e os **mesmos slots** —
+`('1aa1e8124df2cba0', 200000, 200000)` dos dois lados. O número de slots é o que
+prova que os dois chegaram à mesma numeração sozinhos; contar linhas não acharia
+uma que atravessou errada.
+
+### O que o conserto custou: nada — e a primeira conta estava errada
+
+Está medido em `DESEMPENHO.md` §4.12, e a conclusão em uma linha: partir em
+fases obriga a abrir a tabela uma vez por lote, e isso não custa o que parecia.
+O que custava era um `sincronizar()` que eu tinha deixado dentro da fase 3 —
+**400 `fsync` num alcance de 200.000 eventos em vez de um**, com a trava na
+mão. Com o `fsync` de volta ao fim do alcance, onde ele sempre esteve:
+
+| 200.000 eventos, rede sã | eventos/s | pior `varrer` do cliente |
+|---|---:|---:|
+| antes do conserto | 67.406 | **2.727 ms** |
+| conserto com `fsync` por lote | 55.433 | 292 ms |
+| **conserto com `fsync` por alcance** | **68.000** | **76 ms** |
+
+A linha do meio é o registro de uma hipótese que morreu: «reabrir a tabela por
+lote custa 17% da vazão» era plausível, tinha número, e estava errada.
+
+E a última coluna é o número que mais vale no dia a dia: durante um alcance
+**de rotina, com a rede perfeitamente sã**, o cliente da réplica esperava
+**2,7 segundos** por um `varrer`, porque a trava ficava presa pelo alcance
+inteiro. Esse defeito não precisava de corte nenhum para machucar; só ninguém
+tinha olhado.
+
+### O que trava a regressão
+
+- `crates/phxsql-server/tests/trava-atras-da-rede.rs` — por soquete, com um
+  source de mentira que responde `posicao` e **emudece** no `replicar`. Duas
+  provas no mesmo arquivo: a do defeito (`varrer` responde enquanto o source
+  está mudo) e a do **comportamento velho** (`com_a_rede_sa_a_replica_conversa_
+  e_o_servidor_atende`), sem a qual um conserto que quebrasse a replicação
+  inteira passaria com louvor — laço que não replica nada também não segura
+  trava nenhuma;
+- cada sonda tem **prazo próprio de 8 s**, e isso não é detalhe: com o defeito
+  reposto a sonda não falha, ela **pendura** por 30 s, e uma bateria que
+  pendura não reprova ninguém, ela trava;
+- a guarda `trava-atras-da-rede` no `bancada/guardas/catalogo.py`. Medido:
+  **PROVADA**, 14,1 s com o defeito reposto contra 1,3 s com a árvore limpa, e
+  a mensagem de reprovação já traz o diagnóstico pronto — *«`varrer` sem
+  resposta em 8 s; o `ping`, que não precisa da trava, respondeu em 570 µs»*.
+
+### O que ficou por fazer
+
+A bancada de contêiner da §17 **não foi refeita** nesta rodada: o daemon do
+Docker desta máquina caiu antes do trabalho começar e não pôde ser levantado.
+Os dois estágios que mediram o defeito lá (`a3-congelamento` e `b-abraco`)
+estão reproduzidos aqui no loopback, com números do mesmo tamanho — 30.079 ms
+contra os 29.456 ms de lá, 33,0 s contra os 33,3 s de lá —, o que é a razão de
+confiar no resultado. Ainda assim, refazer `provar.py` numa máquina com Docker
+é o passo que fecha a conta, e está anotado no `PENDENCIAS.md`.

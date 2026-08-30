@@ -133,6 +133,13 @@ Os números crus estão em `resultados.json`; o que eles significam está em
    silencioso, `varrer` na réplica esperou ~30 s enquanto `ping` respondia em
    milissegundos. No bidirecional os dois lados se trancam um ao outro, e isso
    acontece **sem corte nenhum** — só com carga simultânea dos dois lados.
+   **Consertado**, e o conserto está medido em `docs/REPLICACAO.md` §18: o
+   laço da réplica ficou partido em três fases e nenhuma leitura de rede
+   acontece mais com a trava na mão. Os `resultados.json` desta pasta são
+   **anteriores** ao conserto: os números de `a3-congelamento` e `b-abraco`
+   são o retrato do defeito, e refazer esta corrida numa máquina com Docker é
+   o que fecha a conta. A reprodução em loopback, que roda em 1,5 min e sem
+   daemon nenhum, é `bancada/replicacao/trava.py`.
 3. **O `REDIRECIONA` aponta o endereço da origem configurada**, que dentro de
    um `compose` é um nome de serviço que o cliente do hospedeiro não resolve.
 4. **`bind: 127.0.0.1` dentro do contêiner não replica e não avisa.**

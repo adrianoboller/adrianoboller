@@ -10,6 +10,108 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
+## Não lançado — a trava de dados saiu de trás da rede
+
+Escrito em paralelo com as outras seções «Não lançado» abaixo: na integração
+todas viram uma só, e o número da versão sai de lá.
+
+**O achado 2 do pedido 146 virou conserto.** O laço da réplica tomava a trava
+global de dados na **primeira linha** de `alcancar_tabela` e a segurava
+atravessando `replica::puxar`, que é uma ida e volta de rede.
+
+### Corrigido
+
+- **A trava de dados ficava presa atrás de uma leitura de rede.** Com um corte
+  silencioso — pacote que some, e não porta que recusa —, a leitura ficava
+  pendurada até o prazo de leitura de 30 s e a trava ia junto: o servidor no ar
+  e sem atender dado nenhum. Medido em `bancada/replicacao/trava.py`, com o
+  source escrevendo sem parar e o tubo emudecido por 40 s: pior `varrer` na
+  réplica **30.079 → 6 ms**, com o `ping` (que não toca na trava) em 4-5 ms nos
+  dois casos. A telemetria da própria réplica, que é a testemunha de dentro,
+  contava **35,8 s de trava na mão numa janela de 40 s**.
+
+- **No bidirecional, os dois lados se trancavam um ao outro — sem corte
+  nenhum.** Cada um segurava a própria trava esperando a resposta do outro, que
+  só podia vir depois de o outro soltar a dele. Um abraço mortal de verdade,
+  desfeito apenas pelo prazo de 30 s dos dois lados. 200.000 linhas escritas
+  metade em cada lado ao mesmo tempo: **33,0 s → 1,8 s**, de **14,0×** para
+  **0,72×** do servidor sozinho, e os `EAGAIN` sumiram do diário dos dois. Com
+  1.000.000 de linhas o antes era **240,7 s contra 12,1 s — 19,8× — com sete
+  `EAGAIN` de cada lado**, a mesma assinatura simétrica que o contêiner tinha
+  visto.
+
+- **E o que doía todo dia, sem corte nenhum:** num alcance de rotina de 200.000
+  eventos, com a rede perfeitamente sã, o cliente da réplica esperava **2.727 ms**
+  por um `varrer`, porque a trava ficava presa pelo alcance inteiro. Hoje espera
+  **48–98 ms**, que é o `fsync` final.
+
+- **`alcancar_tabela_bidi` tomava `self.dados.lock()` cru**, sem passar pelo
+  `travar_dados()`. O pior caminho do servidor era justamente o que a telemetria
+  não conseguia cronometrar. Ponto de medição que pula um chamador mente do
+  mesmo jeito que campo de configuração que ninguém lê. As tomadas fora do
+  ponto único caíram de 13 para 12.
+
+### Adicionado
+
+- **`bancada/replicacao/trava.py`** — quatro estágios, ~1,5 min, portas
+  7050-7055, sem Docker. É a versão de loopback dos estágios `a3-congelamento`
+  e `b-abraco` da bancada de contêiner: no lugar do cabo cortado há um **tubo**
+  em Python que repassa byte a byte até mandarem emudecer e a partir daí segura
+  os dois soquetes abertos sem repassar nada. Os números batem com os do
+  contêiner (30.079 contra 29.456 ms; 33,0 contra 33,3 s), o que confirma que o
+  mecanismo nunca dependeu do Docker. Entrou como a **17ª parte** do
+  `provar.py`.
+
+- **Dois tetos declarados de memória**, que passaram a ser obrigatórios porque
+  o lote agora mora inteiro na memória da réplica até a trava chegar:
+  `TETO_DO_LOTE_SERVIDO` = 16 MiB de imagem por resposta no source (com o
+  primeiro evento entrando **sempre**, senão uma linha maior que o teto pararia
+  a replicação em vez de atrasá-la) e `TETO_DA_RESPOSTA` = 128 MiB por linha
+  lida na réplica, com recusa `LIMITE_EXCEDIDO` que traz o número dentro. Antes
+  o `read_line` era ilimitado e quem escolhia o tamanho era o outro lado do fio.
+
+- **`crates/phxsql-server/tests/trava-atras-da-rede.rs`** — dois testes por
+  soquete, com um source de mentira que responde `posicao` e **emudece** no
+  `replicar`. O segundo é o do comportamento **velho**, sem o qual um conserto
+  que quebrasse a replicação inteira passaria com louvor. Cada sonda tem prazo
+  próprio de 8 s, porque com o defeito reposto ela **pendura** por 30 s em vez
+  de falhar — e bateria que pendura não reprova ninguém, trava.
+
+- **Guarda `trava-atras-da-rede`** no catálogo dos defeitos repostos.
+  **PROVADA**: 13,2 s com o defeito reposto, e a mensagem de reprovação já traz
+  o diagnóstico pronto. O catálogo passou de 18 para 19 guardas — 17 provadas,
+  2 redundantes, zero «não pegou», 182 s de mutação.
+
+### Mudado
+
+- `alcancar_tabela` e `alcancar_tabela_bidi` estão partidas em **três fases**:
+  abrir e ler a posição com a trava, ler o lote do soquete **sem** ela, reabrir
+  e aplicar com ela. A regra que sai daí vale para o que vier: *nenhuma leitura
+  de rede acontece com a trava de dados na mão*. A posição é **relida** na fase
+  3, e o lote é descartado quando ela andou — descartar custa uma ida e volta,
+  aplicar torto custaria o dado.
+
+### Sabido
+
+- **A bancada de contêiner não foi refeita**, porque o daemon do Docker desta
+  máquina estava fora do ar. Os `resultados.json` de
+  `bancada/replicacao/docker/` continuam sendo o retrato do **defeito**, e está
+  escrito lá que são. Refazer numa máquina com Docker é o que fecha a conta.
+
+- **A hipótese que morreu, registrada porque a recusa com número vale tanto
+  quanto o ganho:** a primeira versão do conserto mediu **−17% de vazão** de
+  aplicação e culpou a abertura de tabela por lote. Era plausível, tinha
+  número, e estava errada — o custo era um `sincronizar()` deixado dentro da
+  fase 3, **400 `fsync` num alcance de 200.000 eventos em vez de um**. Com o
+  `fsync` de volta ao fim do alcance a vazão é a de antes (67.406 → 68.000
+  eventos/s). E a segunda hipótese morreu junto: subir `LOTE` de 500 para 2.000
+  para amortizar a abertura foi **recusada** — o source lê `max` eventos antes
+  do corte por bytes, então quadruplicar o lote quadruplica o pior caso de
+  memória de quem serve, na direção contrária do teto que este mesmo trabalho
+  acabou de declarar.
+
+---
+
 ## Não lançado — os pacotes de download que se conferem
 ## Não lançado — a bateria única e o catálogo de defeitos repostos
 

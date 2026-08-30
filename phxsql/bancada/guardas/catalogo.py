@@ -50,6 +50,76 @@ uma lista de dicionarios, lida pelo executor ao lado.
              de falhar trava a bateria; o `sujas-com-a-trava` e exatamente esse
 """
 
+# O trecho de HOJE e o defeito de ONTEM do `alcancar_tabela`, em constantes:
+# eles tem 25 e 40 linhas, e um deles cabe mal dentro da entrada sem
+# esconder o resto dela.
+HOJE_ALCANCAR_TABELA = """        let Some(mut posicao) = self.abrir_para_replicar(database, no)? else {
+            return Ok(0);
+        };
+        if posicao >= no.eventos {
+            return Ok(0);
+        }
+        let mut aplicados = 0u64;
+        while posicao < no.eventos {
+            // FORA da trava. Se a conexao cair aqui, o lote se perde e nada
+            // foi gravado: a posicao local nao andou, e a proxima rodada pede
+            // exatamente os mesmos eventos. Nao ha meio-lote possivel porque
+            // o lote inteiro chega antes de a trava ser pedida.
+            let eventos = crate::replica::puxar(cliente, database, &no.nome, posicao)?;
+            if eventos.is_empty() {
+                break;
+            }
+            let (n, nova) = self.aplicar_lote_da_replica(database, no, posicao, &eventos)?;
+            aplicados += n;
+            posicao = nova;
+        }
+        if aplicados > 0 {
+            self.sincronizar_replicada(database, &no.nome)?;
+        }
+        Ok(aplicados)
+"""
+
+DEFEITO_ALCANCAR_TABELA = """        // DEFEITO REPOSTO: a trava de dados tomada aqui e segurada ate o fim
+        // da funcao -- e no meio do laco mora `replica::puxar`, que e uma ida
+        // e volta de rede. Rede sa esconde; source mudo prende o servidor
+        // inteiro ate o prazo de leitura de 30 s estourar.
+        let trava = self.travar_dados()?;
+        let db = trava.garantir_database(database)?;
+        let mut tabela = match db.abrir_qualificada(&no.nome) {
+            Ok(t) => t,
+            Err(_) => match &no.esquema {
+                Some(e) => {
+                    let schema = no.nome.split_once('.').map(|(s, _)| s.to_string());
+                    db.criar_tabela(schema.as_deref(), e.clone())?
+                }
+                None => return Ok(0),
+            },
+        };
+        tabela.ligar_imagem_no_diario(self.config.replicacao.imagem_da_linha);
+        let mut posicao = tabela.eventos()?;
+        if posicao >= no.eventos {
+            return Ok(0);
+        }
+        let mut aplicados = 0u64;
+        while posicao < no.eventos {
+            let eventos = crate::replica::puxar(cliente, database, &no.nome, posicao)?;
+            if eventos.is_empty() {
+                break;
+            }
+            for e in &eventos {
+                tabela.aplicar_evento(e.operacao, e.rowid, &e.imagem)?;
+                aplicados += 1;
+            }
+            let nova = tabela.eventos()?;
+            if nova <= posicao {
+                break;
+            }
+            posicao = nova;
+        }
+        tabela.sincronizar()?;
+        Ok(aplicados)
+"""
+
 GUARDAS = [
     # -----------------------------------------------------------------------
     # 1. O Profiler recortando o texto em vez de analisar
@@ -809,5 +879,40 @@ GUARDAS = [
             "conferidor::testes::reprova_o_rotulo_cravado_e_aprova_o_da_fabrica",
             "conferidor::testes::dado_interpolado_nunca_conta_como_rotulo",
         ],
+    },
+    # -----------------------------------------------------------------------
+    # 13. A trava de dados presa atras de uma leitura de rede
+    # -----------------------------------------------------------------------
+    {
+        "id": "trava-atras-da-rede",
+        "titulo": "o laço da réplica segura a trava de dados enquanto lê do soquete",
+        "porque": (
+            "achado da bancada de conteiner e reproduzido no loopback: com um "
+            "corte SILENCIOSO, `ping` na replica respondia em 4 ms e `varrer` "
+            "em 30.079 ms -- o servidor no ar e sem atender dado nenhum. No "
+            "bidirecional os dois lados se trancavam um ao outro sem corte "
+            "nenhum, 14x mais lento e com EAGAIN de 30 s no diario de cada. "
+            "A regra que sai daqui: nenhuma leitura de rede acontece com a "
+            "trava de dados na mao."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": HOJE_ALCANCAR_TABELA,
+        "troca": DEFEITO_ALCANCAR_TABELA,
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "trava-atras-da-rede"],
+        "caem": [
+            "source_mudo_nao_prende_a_trava_de_dados",
+        ],
+        # O teste do comportamento VELHO. Sem ele, um conserto que quebrasse a
+        # replicacao inteira passaria com louvor no de cima: laco que nao
+        # replica nada tambem nao segura trava nenhuma.
+        "seguem": [
+            "com_a_rede_sa_a_replica_conversa_e_o_servidor_atende",
+        ],
+        # Medido: 9,4 s com o defeito reposto (8 s de sonda pendurada + o
+        # arranque), contra 1,3 s com a arvore limpa. O prazo tem de ser MAIOR
+        # que a soma dos dois, senao o executor mata a rodada antes de o teste
+        # conseguir reprovar -- a mesma licao do `sujas-com-a-trava`.
+        "prazo": 120,
     },
 ]

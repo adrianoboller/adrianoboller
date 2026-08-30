@@ -238,6 +238,12 @@ PARTES = [
           [sys.executable, "bancada/replicacao/modos.py"],
           requisitos=[porta_livre(*range(5330, 5340))], prazo=2400),
 
+    parte("trava", "a trava de dados contra a leitura de rede: corte "
+          "silencioso, alcance, queda de conexao e o abraco do bidirecional",
+          [sys.executable, "bancada/replicacao/trava.py"],
+          requisitos=[porta_livre(*range(7050, 7056))], prazo=1200,
+          nota="o estagio do corte silencioso sonda por 40 s de proposito"),
+
     parte("jobs", "o aviso de jobs por e-mail, com SMTP falso -- e o servidor "
           "SEM bloco de e-mail, que nao pode mandar nada",
           [sys.executable, "bancada/jobs/prova-avisos.py"],
