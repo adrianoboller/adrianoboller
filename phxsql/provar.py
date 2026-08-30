@@ -209,6 +209,12 @@ PARTES = [
           [sys.executable, "bancada/profiler/sonda.py"],
           requisitos=[porta_livre(6251)], prazo=900),
 
+    parte("queda-na-exclusao", "que a janela de durabilidade da exclusao nao "
+          "perde linha numa queda do PROCESSO: 150 exclusoes pelo soquete e "
+          "um SIGKILL no meio da janela, nos dois modos",
+          [sys.executable, "bancada/exclusao/prova-da-queda.py"],
+          requisitos=[porta_livre(7100)], prazo=900),
+
     parte("telemetria-desenho", "o painel de bolhas por MEDIDA: rotulo na "
           "esfera, alvo de clique, contraste nos dois temas",
           ["node", "bancada/telemetria/conferir-desenho.mjs"],

@@ -2,7 +2,7 @@
 
 A casa exige que todo teste novo **falhe com o defeito reposto**. Isso sempre
 foi feito à mão, uma vez, por quem escreveu o teste — e depois se perdia.
-Ninguém conseguia dizer, hoje, quais das 1.242 asserções ainda pegariam o
+Ninguém conseguia dizer, hoje, quais das 1.259 asserções ainda pegariam o
 defeito que as motivou.
 
 ```bash

@@ -219,6 +219,74 @@ fn a_lixeira_esta_no_disco_antes_de_o_slot_sair() {
     );
 }
 
+/// **O teste do comportamento VELHO, e e ele o que mais importa aqui.**
+///
+/// A janela de durabilidade da exclusao entrou nesta rodada
+/// (`recursos.exclusao_na_janela`), e ela entra PEDIDA. Quem nao pede continua
+/// com a garantia de sempre: um `excluir` que retorna ja esta no disco.
+///
+/// O teste vizinho (`a_lixeira_esta_no_disco_antes_de_o_slot_sair`) reabre a
+/// tabela e acha a linha -- mas isso passaria com o `fsync` ligado OU
+/// desligado, porque o `write` ja esta no sistema operacional nos dois casos e
+/// quem reabre le a mesma pagina. Ele prova a ORDEM, e nao a espera. A espera
+/// so aparece numa queda de energia, que teste nenhum provoca, entao o que se
+/// confere e o unico rastro que ela deixa: a chamada.
+///
+/// Reponha o defeito tirando o `if !na_janela()` de `LixeiraFile::guardar`, ou
+/// virando o padrao do global para `true`, e este teste cai.
+#[test]
+fn sem_pedir_a_janela_cada_exclusao_espera_o_disco() {
+    assert!(
+        !phxsql_store::lixeira::na_janela(),
+        "a exclusao nasceu na janela: o padrao afrouxou sozinho"
+    );
+    let dir = DirTemp::novo("espera-o-disco");
+    let mut t = com_dados(&dir);
+    t.sincronizar().unwrap();
+
+    let antes = t.lixeira_sincronizacoes();
+    t.excluir_de_vez(1, "uma").unwrap();
+    assert_eq!(
+        t.lixeira_sincronizacoes(),
+        antes + 1,
+        "a exclusao voltou sem esperar o .trash chegar ao disco"
+    );
+    t.excluir_de_vez(2, "duas").unwrap();
+    t.excluir_de_vez(3, "tres").unwrap();
+    assert_eq!(
+        t.lixeira_sincronizacoes(),
+        antes + 3,
+        "uma exclusao por fsync: e essa a garantia de quem nao pediu nada"
+    );
+
+    // Excluir o que nao existe nao promete nada, entao nao paga nada.
+    let de_novo = t.lixeira_sincronizacoes();
+    assert!(!t.excluir_de_vez(1, "ja saiu").unwrap());
+    assert_eq!(t.lixeira_sincronizacoes(), de_novo);
+}
+
+/// O `.trash` fecha ANTES do `.reg`, e a ordem esta no codigo, nao no
+/// comentario.
+///
+/// Enquanto o `fsync` acontecia por exclusao a ordem daqui era indiferente --
+/// o `.trash` ja estava no disco muito antes. Com a exclusao na janela os dois
+/// passam a fechar aqui, e sincronizar o `.reg` primeiro seria escolher a
+/// unica ordem em que uma queda no meio do fechamento deixa a linha liberada
+/// sem a copia. Reponha o defeito trocando a ordem em `Table::sincronizar`.
+#[test]
+fn o_trash_fecha_antes_do_reg() {
+    let dir = DirTemp::novo("ordem-do-fsync");
+    let mut t = com_dados(&dir);
+    t.sincronizar().unwrap();
+    let (trash, reg) = t.selos_de_sincronizacao();
+    assert!(trash > 0 && reg > 0, "algum dos dois nao sincronizou");
+    assert!(
+        trash < reg,
+        "o .reg fechou antes do .trash ({trash} contra {reg}): \
+         a copia de recuperacao tem de ir ao disco antes da liberacao"
+    );
+}
+
 #[test]
 fn o_motivo_registra_quem_quando_e_por_que() {
     let dir = DirTemp::novo("motivo");

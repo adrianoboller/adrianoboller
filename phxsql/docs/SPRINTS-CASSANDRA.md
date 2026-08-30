@@ -210,7 +210,20 @@ depois a funcionalidade nova.
 
 ### Sprint 1 — O `fsync` da lixeira entra na janela de durabilidade
 
-**Tamanho: P.**
+**Tamanho: P.** — **FEITO**, e com duas correções ao que está escrito abaixo:
+
+> 1. **entrou pedido**, por `recursos.exclusao_na_janela`, e não por `por_lote` como o
+>    escopo abaixo diz. É a reescrita da §2.1 do `SPRINTS.md`, e o motivo está lá.
+> 2. **a premissa 2 estava errada, e a conferência a derrubou.** Ela afirma que só há
+>    dois casos numa queda dentro da janela. Há **quatro**: sem o `fsync` entre a
+>    escrita do `.trash` e a liberação do slot, a ordem de chegada ao disco passa a ser
+>    do sistema operacional, e existe o estado em que o `.reg` foi liberado e o `.trash`
+>    não chegou. Queda de PROCESSO não produz isso (provado a `kill -9`); queda de
+>    ENERGIA produz. O caso a caso, e o que foi feito com ele, estão em
+>    `docs/DESEMPENHO.md` §4.12.
+>
+> Os números foram refeitos: **3,10×** no que o servidor entrega e **6,50×** no teto —
+> que é o par que a §3 abaixo mediu como 7,8× noutra máquina.
 
 #### O que entra
 

@@ -450,7 +450,7 @@ GUARDAS = [
         ],
     },
     # -----------------------------------------------------------------------
-    # 6. O abraco mortal: `descarregar_sujas()` com a trava de dados na mao
+    # 3. O abraco mortal: `descarregar_sujas()` com a trava de dados na mao
     # -----------------------------------------------------------------------
     {
         "id": "sujas-com-a-trava",
@@ -500,7 +500,7 @@ GUARDAS = [
         "prazo": 420,
     },
     # -----------------------------------------------------------------------
-    # 7. A cadeia de gatilhos sem teto -- o unico que ABORTA o processo
+    # 4. A cadeia de gatilhos sem teto -- o unico que ABORTA o processo
     # -----------------------------------------------------------------------
     {
         "id": "cadeia-sem-teto",
@@ -534,7 +534,7 @@ GUARDAS = [
         "prazo": 420,
     },
     # -----------------------------------------------------------------------
-    # 8. `excluir_tabela` com a lista curta de extensoes
+    # 5. `excluir_tabela` com a lista curta de extensoes
     # -----------------------------------------------------------------------
     {
         "id": "excluir-tabela-lista-curta",
@@ -564,7 +564,7 @@ GUARDAS = [
         ],
     },
     # -----------------------------------------------------------------------
-    # 9. A conferencia de SHA-256 do backup desligada
+    # 6. A conferencia de SHA-256 do backup desligada
     # -----------------------------------------------------------------------
     {
         "id": "backup-sem-sha256",
@@ -598,10 +598,10 @@ GUARDAS = [
         ],
     },
     # -----------------------------------------------------------------------
-    # 10. O AAD fora do slot cifrado
+    # 7. O AAD fora do slot cifrado
     # -----------------------------------------------------------------------
     # -----------------------------------------------------------------------
-    # 10. A amarracao do corpo cifrado ao ENDERECO -- e as duas fechaduras
+    # 8. A amarracao do corpo cifrado ao ENDERECO -- e as duas fechaduras
     #
     # A entrada nasceu como uma so, "tirar o AAD", porque e o que a ficha do
     # teste manda ("Provado com o defeito reposto: tirando o `aad` do
@@ -792,7 +792,7 @@ GUARDAS = [
         ],
     },
     # -----------------------------------------------------------------------
-    # 12. A catraca dos textos fora da fabrica
+    # 9. A catraca dos textos fora da fabrica
     # -----------------------------------------------------------------------
     {
         "id": "catraca-dos-textos",
@@ -820,7 +820,7 @@ GUARDAS = [
         ],
     },
     # -----------------------------------------------------------------------
-    # 13. A trava de dados tomada fora do ponto unico
+    # 10. A trava de dados tomada fora do ponto unico
     # -----------------------------------------------------------------------
     {
         "id": "trava-fora-do-ponto-unico",
@@ -855,7 +855,7 @@ GUARDAS = [
         ],
     },
     # -----------------------------------------------------------------------
-    # 14. A guarda de reentrancia da trava
+    # 11. A guarda de reentrancia da trava
     # -----------------------------------------------------------------------
     {
         "id": "trava-sem-guarda-de-reentrancia",
@@ -891,5 +891,191 @@ GUARDAS = [
         # Mesmo motivo do `sujas-com-a-trava`: o `com_prazo` do teste espera
         # 30 s, e o executor precisa de folga sobre isso.
         "prazo": 420,
+    },
+    # 12. A exclusao na janela virando o PADRAO
+    # -----------------------------------------------------------------------
+    {
+        "id": "exclusao-na-janela-por-padrao",
+        "titulo": "a exclusão entra na janela por padrão, sem ninguém pedir",
+        "porque": (
+            "regra do CLAUDE.md: guarda nova entra pedida, nao imposta -- e "
+            "retirar guarda sem pedido e o mesmo estrago pelo outro lado. Hoje "
+            "um `excluir` que responde OK ja esta no disco; ligar a janela por "
+            "padrao mudaria o significado da resposta para todo cliente ja "
+            "escrito. E exatamente como o Sprint 1 do SPRINTS-CASSANDRA.md "
+            "estava redigido antes de a §2.1 do SPRINTS.md o reescrever."
+        ),
+        "arquivo": "crates/phxsql-server/src/config.rs",
+        "trecho": """            // Ver o campo: desligado e o comportamento de sempre.
+            exclusao_na_janela: false,
+""",
+        "troca": """            // DEFEITO REPOSTO: a janela ligada por padrao, que e como o
+            // Sprint 1 chegou escrito -- «por_lote (o padrao): a exclusao
+            // entra na janela que ja existe».
+            exclusao_na_janela: true,
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "exclusao-na-janela-pelo-config"],
+        "caem": [
+            "config_sem_o_campo_continua_esperando_o_disco",
+        ],
+        "seguem": [
+            "pedido_no_config_o_valor_chega_ao_motor",
+            "o_campo_esta_na_lista_que_a_tela_monta",
+        ],
+    },
+    # 13. O campo que ninguem le
+    # -----------------------------------------------------------------------
+    {
+        "id": "exclusao-na-janela-sem-leitor",
+        "titulo": "`exclusao_na_janela` no config.json, no MANUAL e na tela — e ninguém o lê",
+        "porque": (
+            "a armadilha do `recursos.cache_paginas`, que passou tres versoes "
+            "prometendo um cache que nao existia. Campo de configuracao sem "
+            "leitor e pior que campo ausente: o ausente ninguem ajusta "
+            "esperando efeito."
+        ),
+        "arquivo": "crates/phxsql-server/src/config.rs",
+        "trecho": """        phxsql_store::lixeira::definir_na_janela(self.exclusao_na_janela);
+""",
+        "troca": """        // DEFEITO REPOSTO: o campo existe, e nada o le.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "exclusao-na-janela-pelo-config"],
+        "caem": [
+            "pedido_no_config_o_valor_chega_ao_motor",
+        ],
+        "seguem": [
+            "config_sem_o_campo_continua_esperando_o_disco",
+            "o_campo_esta_na_lista_que_a_tela_monta",
+        ],
+    },
+    # 14. O `.reg` fechando antes do `.trash`
+    # -----------------------------------------------------------------------
+    {
+        "id": "reg-fecha-antes-do-trash",
+        "titulo": "a janela sincroniza o `.reg` antes do `.trash`",
+        "porque": (
+            "com a exclusao na janela os dois passam a fechar em "
+            "`Table::sincronizar`, e fechar o `.reg` primeiro e escolher, de "
+            "proposito, a unica ordem em que uma queda no meio do fechamento "
+            "deixa a linha liberada sem a copia de recuperacao. Ver "
+            "docs/DESEMPENHO.md §4.12 -- o quarto caso."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        self.lixeira.sincronizar()?;
+        self.bin.sincronizar()?;
+        self.memo.sincronizar()?;
+        self.log.sincronizar()?;
+        self.motivos.sincronizar()?;
+        self.trilha.sincronizar()?;
+        self.ndx.sincronizar()?;
+        self.reg.sincronizar()?;
+""",
+        "troca": """        // DEFEITO REPOSTO: a ordem antiga, com o `.reg` na frente.
+        self.reg.sincronizar()?;
+        self.ndx.sincronizar()?;
+        self.bin.sincronizar()?;
+        self.memo.sincronizar()?;
+        self.log.sincronizar()?;
+        self.lixeira.sincronizar()?;
+        self.motivos.sincronizar()?;
+        self.trilha.sincronizar()?;
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "exclusao"],
+        "caem": [
+            "o_trash_fecha_antes_do_reg",
+        ],
+        "seguem": [
+            "sem_pedir_a_janela_cada_exclusao_espera_o_disco",
+            "a_lixeira_esta_no_disco_antes_de_o_slot_sair",
+        ],
+    },
+    # 15. O rodizio do Profiler ignorando o zero
+    # -----------------------------------------------------------------------
+    {
+        "id": "rodizio-do-profiler-ignora-o-zero",
+        "titulo": "`profiler.arquivo_mib: 0` deixa de querer dizer «sem rodízio»",
+        "porque": (
+            "o rodizio do .txt nasceu LIGADO, e a saida de quem quer o "
+            "comportamento de antes e escrever zero. Se o zero deixar de ser "
+            "lido, essa saida some sem ninguem perceber -- e o campo passa a "
+            "dizer uma coisa e fazer outra, que e a armadilha da configuracao "
+            "que mente."
+        ),
+        "arquivo": "crates/phxsql-server/src/profiler.rs",
+        "trecho": """        if self.teto_do_arquivo == 0 || self.arquivo.is_none() {
+""",
+        "troca": """        // DEFEITO REPOSTO: o zero deixa de desligar o rodizio.
+        if self.arquivo.is_none() {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "profiler::testes::teto_zero_nao_rodizia",
+        ],
+        "seguem": [
+            "profiler::testes::o_rodizio_poe_teto_no_disco",
+            "profiler::testes::o_sem_sufixo_e_sempre_o_mais_novo",
+        ],
+    },
+    # 16. O cabecalho do rodizio aceitando linha forjada
+    # -----------------------------------------------------------------------
+    {
+        "id": "cabecalho-do-profiler-forjado",
+        "titulo": "o cabeçalho do arquivo do Profiler aceita linha forjada",
+        "porque": (
+            "o furo ORIGINAL era do cabecalho de `ligar`, e so apareceu ao "
+            "escrever o rodizio: ele interpola a descricao do filtro, e o "
+            "filtro vem do pedido. Um `\"operacao\"` com quebra de linha "
+            "dentro poe no .txt uma segunda linha que se le como evento de "
+            "outro IP -- exatamente o defeito que o EVENTO ja fechava."
+        ),
+        "arquivo": "crates/phxsql-server/src/profiler.rs",
+        "trecho": """            de_uma_linha(&descrever(&self.filtro), TETO_DO_CABECALHO)
+""",
+        "troca": """            // DEFEITO REPOSTO: o filtro entra no cabecalho como veio.
+            descrever(&self.filtro)
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "profiler::testes::o_cabecalho_do_rodizio_nao_aceita_linha_forjada",
+        ],
+        "seguem": [
+            "profiler::testes::quebra_de_linha_no_pedido_nao_forja_linha_no_arquivo",
+            "profiler::testes::o_rodizio_poe_teto_no_disco",
+        ],
+    },
+    # 17. O profiler sem descritor voltando calado
+    # -----------------------------------------------------------------------
+    {
+        "id": "profiler-sem-descritor-calado",
+        "titulo": "sem descritor, com arquivo pedido, a linha some sem ser contada",
+        "porque": (
+            "e o defeito do disco cheio voltando pela porta do rodizio: um "
+            "rodizio que nao consegue reabrir o arquivo deixa o profiler sem "
+            "descritor, e a tela seguiria dizendo «gravando em ...» com nada "
+            "sendo gravado -- medido antes: 400 pedidos, 223 linhas."
+        ),
+        "arquivo": "crates/phxsql-server/src/profiler.rs",
+        "trecho": """                if !self.caminho.as_os_str().is_empty() {
+                    self.falhas_de_escrita += 1;
+                }
+                return;
+""",
+        "troca": """                // DEFEITO REPOSTO: volta calada, com arquivo pedido ou sem.
+                return;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "profiler::testes::sem_descritor_com_arquivo_pedido_a_perda_e_contada",
+        ],
+        "seguem": [
+            "profiler::testes::sem_arquivo_pedido_nao_ha_falha_a_contar",
+            "profiler::testes::linha_que_o_disco_recusa_e_contada",
+        ],
     },
 ]

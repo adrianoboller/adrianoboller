@@ -34,7 +34,14 @@ from pathlib import Path
 
 JIFFY = os.sysconf("SC_CLK_TCK")
 BASE = Path(__file__).resolve().parent
-CARGA = "/home/user/adrianoboller/phxsql/target/release/examples/carga"
+# O caminho sai DA ARVORE em que este arquivo esta, e nao de um absoluto
+# escrito a mao: com o absoluto, uma bancada rodada numa arvore de trabalho
+# media o binario de OUTRA -- que e a armadilha do binario velho num degrau
+# mais alto, porque nem recompilar aqui resolveria.
+CARGA = os.environ.get(
+    "PHX_CARGA",
+    str(Path(__file__).resolve().parent.parent / "target/release/examples/carga"),
+)
 PHX_DIR = BASE / "phxsql"
 RESULTADOS = BASE / "resultados.json"
 # Enquanto a corrida anda, o progresso vai para ca. O arquivo versionado so e

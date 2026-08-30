@@ -1561,6 +1561,11 @@ impl RegFile {
     pub fn sincronizar(&mut self) -> Result<()> {
         self.volumes.sincronizar()
     }
+
+    /// A senha da ultima sincronizacao do `.reg`. Ver `Volumes::selo`.
+    pub fn selo(&self) -> u64 {
+        self.volumes.selo()
+    }
 }
 
 fn alinhar(v: u64, a: u64) -> u64 {

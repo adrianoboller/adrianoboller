@@ -487,6 +487,7 @@ RECURSOS DA MAQUINA
 
     "recursos": {
       "durabilidade": "por_lote",
+      "exclusao_na_janela": false,
       "lote_operacoes": 200,
       "lote_milissegundos": 200,
       "cache_paginas": 2048,
@@ -528,6 +529,62 @@ RECURSOS DA MAQUINA
 
     Um relogio de fundo fecha a janela quando ninguem grava. Sem ele, a ultima
     venda do dia as 18h ficaria sem fsync a noite inteira.
+
+    A EXCLUSAO FISICA TEM POLITICA PROPRIA, e ela e mais rigida. Antes de
+    liberar o slot do .reg, a linha inteira e gravada no .trash e o disco
+    CONFIRMA -- por exclusao, e nao por janela. Um "excluir" que responde OK
+    ja esta no disco, e e assim desde sempre.
+
+    Isso custa. Medido, 20.000 exclusoes fisicas numa tabela de 200.000, com a
+    janela de 200 dos dois lados:
+
+        fsync por exclusao (o padrao) ...... 4,52 s   mediana de 7 corridas
+        exclusao na janela ................. 1,46 s   3,10x
+
+    E o teto, com a janela que nao fecha (o caso do BULKINSERT): 3,75 s contra
+    0,58 s, 6,50x. O caso a caso esta em docs/DESEMPENHO.md secao 4.12.
+
+    O campo "exclusao_na_janela" liga isso, e ele NASCE DESLIGADO de proposito:
+    ligado por padrao, mudaria o significado da resposta do excluir para todo
+    cliente ja escrito, sem ninguem ter pedido.
+
+    O QUE SE ARRISCA AO LIGAR, exatamente. Queda do PROCESSO (kill -9, OOM,
+    reinicio do servico) NAO perde nada -- o write ja esta no sistema
+    operacional, e ha prova disso com um servidor morrendo a kill -9
+    (bancada/exclusao/prova-da-queda.py). Queda de ENERGIA dentro da janela
+    pode deixar uma linha ja liberada do .reg sem a copia no .trash: perde-se a
+    rede de recuperacao daquela exclusao, e nao uma linha que alguem queria
+    manter. Nao ha caso em que linha NAO EXCLUIDA suma.
+
+O ARQUIVO .TXT DO PROFILER
+
+    A secao "profiler" do config.json diz onde o .txt do Profiler para de
+    crescer. Ele mede 345 bytes por pedido, medido -- num servidor com 1.000
+    pedidos por segundo sao 1,2 GB por hora.
+
+    "profiler": {
+      "arquivo_mib": 64,
+      "arquivos": 4
+    }
+
+    Cheio o teto, perfil.txt vira perfil.txt.1, o .1 vira .2, e o mais velho
+    sai. O gasto MAXIMO e uma conta:
+
+        arquivo_mib x (arquivos + 1)
+
+    Com o padrao, 64 x 5 = 320 MiB -- que a 345 bytes por pedido sao cerca de
+    970.000 pedidos. A tela do Profiler mostra essa conta e diz quantas vezes
+    o arquivo ja virou, para "gravando em perfil.txt" nunca esconder que o
+    comeco da sessao esta noutro arquivo.
+
+    POR TAMANHO E NAO POR TEMPO, porque o perigo e disco e disco se mede em
+    bytes. Um rodizio diario nao poria teto nenhum: a mil pedidos por segundo o
+    arquivo do dia teria 29 GB, e a um pedido por segundo teria 30 MB -- a
+    mesma politica com mil vezes de diferenca.
+
+    "arquivo_mib": 0 DESLIGA o rodizio e devolve o comportamento de antes: o
+    arquivo cresce sem parar. "arquivos": 0 e legitimo e quer dizer "nao guarde
+    historico" -- cheio o teto, o arquivo recomeca.
 
     CACHE DE PAGINAS. O "cache_paginas" diz quantas paginas do .ndx cada
     tabela aberta guarda em RAM. Cada pagina tem 4 KiB, entao 2.048 dao 8 MiB

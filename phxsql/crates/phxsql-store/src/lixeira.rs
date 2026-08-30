@@ -12,6 +12,11 @@
 //! A ordem inversa (liberar e depois guardar) tem uma janela em que o registro
 //! nao existe em lugar nenhum, e essa janela nao tem conserto depois.
 //!
+//! **Quem pedir** (`recursos.exclusao_na_janela`) troca esse `fsync` por
+//! exclusao pelo da janela de durabilidade -- ver [`definir_na_janela`], e o
+//! preco exato em `docs/DESEMPENHO.md` §4.12. A ORDEM DE ESCRITA continua a
+//! mesma nos dois modos; o que muda e quem espera o disco.
+//!
 //! # Por que nao e um `.reg` paralelo
 //!
 //! Um `.reg` guarda payload de largura fixa, e as colunas `Bin`/`Memo` moram
@@ -59,6 +64,7 @@
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use phxsql_core::crc::{crc32, crc32_with};
 use phxsql_core::error::{PhxError, Result};
@@ -72,6 +78,44 @@ use crate::volume::Volumes;
 
 pub const MAGIC_LIXEIRA: &[u8; 8] = b"PHXTRH\0\0";
 pub const EXT_TRASH: &str = "trash";
+
+/// A exclusao espera o disco por operacao, ou entra na janela de durabilidade?
+///
+/// **Falso e o padrao, e falso e o comportamento de sempre**: `guardar`
+/// sincroniza antes de devolver, e quem chamou `excluir` com OK na mao sabe
+/// que a linha esta no disco. Ninguem precisa fazer nada para continuar
+/// assim -- guarda que se afrouxa sozinha nao e guarda.
+///
+/// Verdadeiro tira o `fsync` de dentro do `guardar` e deixa o `.trash` ser
+/// sincronizado com o resto da tabela, quando a janela fechar. Vale **3,10x**
+/// no que o servidor entrega e **6,50x** no teto -- medido em
+/// `docs/DESEMPENHO.md` §4.12 --, e cobra um preco que esta escrito la e no
+/// `MANUAL.txt`: numa QUEDA DE ENERGIA dentro da janela, uma linha ja
+/// liberada do `.reg` pode nao ter chegado ao `.trash`. Queda do PROCESSO nao
+/// perde nada -- o `write` ja esta no sistema operacional, e ha prova disso
+/// com um servidor morrendo a `kill -9` (`bancada/exclusao/prova-da-queda.py`).
+///
+/// # Por que um global, e nao um campo da tabela
+///
+/// Pela mesma razao do teto do cache de paginas (`ndx::definir_cache_paginas`)
+/// e do corte do diario (`diario::definir_bytes_por_volume`): e uma decisao do
+/// PROCESSO, tomada uma vez no arranque, e nao um atributo do dado. Como
+/// parametro, atravessaria servidor, instancia, database e tabela so para
+/// chegar aqui.
+static NA_JANELA: AtomicBool = AtomicBool::new(false);
+
+/// Poe (ou tira) a exclusao na janela de durabilidade.
+///
+/// Vale para as exclusoes DAQUI PARA A FRENTE. E chamado no arranque e a cada
+/// gravacao de configuracao, por `Recursos::aplicar`.
+pub fn definir_na_janela(ligado: bool) {
+    NA_JANELA.store(ligado, Ordering::Relaxed);
+}
+
+/// A exclusao esta na janela? Falso = espera o disco por operacao.
+pub fn na_janela() -> bool {
+    NA_JANELA.load(Ordering::Relaxed)
+}
 
 /// Bytes do cabecalho de cada registro, antes do payload.
 pub const REGISTRO_CAB: usize = 56;
@@ -330,12 +374,20 @@ impl LixeiraFile {
         Ok(())
     }
 
-    /// Guarda a linha e **espera o disco confirmar**.
+    /// Guarda a linha e **espera o disco confirmar** -- salvo se o dono pediu
+    /// o contrario em `recursos.exclusao_na_janela`.
     ///
     /// O `sincronizar` esta aqui dentro, e nao a cargo de quem chama, porque a
     /// garantia que este arquivo existe para dar depende dele: sem o disco
     /// confirmar, "ja esta na lixeira" e so uma pagina suja na memoria, e a
     /// exclusao que vem em seguida e definitiva.
+    ///
+    /// Com [`na_janela`] ligado o `fsync` sai daqui e passa a ser o da tabela
+    /// inteira, quando a janela fechar. **O `write` continua acontecendo
+    /// aqui**, e continua vindo ANTES de o slot ser liberado -- o que muda e
+    /// quem espera o disco, e nao a ordem em que as coisas acontecem. O preco
+    /// exato disso esta em `Table::sincronizar`, que por isso passou a
+    /// sincronizar o `.trash` primeiro.
     pub fn guardar(
         &mut self,
         rowid: RowId,
@@ -352,7 +404,9 @@ impl LixeiraFile {
             externos,
         };
         self.anexar(&d)?;
-        self.volumes.sincronizar()?;
+        if !na_janela() {
+            self.volumes.sincronizar()?;
+        }
         Ok(d)
     }
 
@@ -479,6 +533,16 @@ impl LixeiraFile {
 
     pub fn sincronizar(&mut self) -> Result<()> {
         self.volumes.sincronizar()
+    }
+
+    /// Quantas vezes o `.trash` esperou o disco. Ver `Volumes::sincronizacoes`.
+    pub fn sincronizacoes(&self) -> u64 {
+        self.volumes.sincronizacoes()
+    }
+
+    /// A senha da ultima sincronizacao do `.trash`. Ver `Volumes::selo`.
+    pub fn selo(&self) -> u64 {
+        self.volumes.selo()
     }
 
     pub fn fechar_todos(&mut self) {

@@ -1185,6 +1185,169 @@ Ligar a bandeira no build de lançamento teria trocado 1,28× no ChaCha por
 
 ---
 
+## 4.12 O `fsync` da exclusão: a única fase em que perdíamos, e quem escolhe
+
+É o sprint nº 1 de `docs/SPRINTS.md`, e o único da lista que chegou com número
+medido. Ele entrou **pedido**, e a §2.1 daquele documento explica por quê: com
+a configuração padrão, um `excluir` que responde OK **já está no disco**, e
+mudar isso por padrão mudaria o significado da resposta para todo cliente que
+já existe, sem ninguém ter pedido. Retirar garantia sem pedido é o mesmo
+estrago de impor guarda nova, pelo outro lado.
+
+O interruptor é `recursos.exclusao_na_janela`, e ele nasce **desligado**.
+
+### O que era, e por que doía
+
+`LixeiraFile::guardar` chamava `Volumes::sincronizar` **por exclusão**, com a
+razão escrita ali: «"está na lixeira" com a página ainda suja na memória não é
+uma garantia». A inserção e a alteração já respeitavam
+`recursos.durabilidade`; a exclusão tinha política própria, mais rígida, e
+ninguém escolheu isso — o `fsync` foi parar dentro da lixeira porque a garantia
+daquele arquivo depende dele, o que é certo, e acabou ficando fora da janela
+que governa todo o resto.
+
+### A medição refeita, com a condição declarada
+
+O sprint mandou **remedir em máquina quieta**, com o critério combinado antes:
+**abaixo de 2× o item morre.** A máquina desta rodada **não estava quieta** —
+outros agentes rodando bancadas ao lado, `loadavg` entre 2,4 e 5,0 —, e isso
+está dito aqui em vez de escondido. O que sustenta a conclusão não é a mediana:
+é que as duas distribuições **não se tocam**.
+
+O medidor não pede mais uma cópia editada do repositório, como pedia quando o
+número de 7,8× foi levantado. As duas variantes saem do mesmo binário:
+
+```bash
+cargo build --release --examples -p phxsql-store       # a regra do binario velho
+./target/release/examples/custo-do-excluir 200000 20000 200
+PHX_EXCLUSAO_NA_JANELA=1 ./target/release/examples/custo-do-excluir 200000 20000 200
+```
+
+**O que o servidor entrega**, que é o número que importa — os dois lados com a
+janela de 200 gravações que o `config.json` traz por padrão, sete corridas
+alternadas:
+
+| variante | corridas (s) | mediana |
+|---|---|---:|
+| hoje: `fsync` por exclusão | 4,293 · 4,412 · 4,461 · 4,517 · 5,824 · 8,504 · 18,083 | **4,517** |
+| pedida a janela | 1,405 · 1,408 · 1,454 · 1,458 · 1,550 · 1,722 · 1,981 | **1,458** |
+
+**3,10×** pela mediana. E o que sustenta: a **pior** corrida com a janela
+(1,981 s) ainda é **2,17×** melhor que a **melhor** corrida sem ela (4,293 s).
+Acima do critério de morte pelos dois caminhos.
+
+**O teto**, medido à parte (janela que nunca fecha — o caso do `BULKINSERT`, em
+que a reserva deixa a janela aberta de propósito), dez corridas de cada:
+
+| variante | mediana |
+|---|---:|
+| `fsync` por exclusão, sem janela | 3,748 s |
+| na janela, sem fechar | 0,577 s |
+
+**6,50×** — que é o mesmo par que o `SPRINTS-CASSANDRA.md` §3 mediu como 7,8×
+noutra máquina. Mesma ordem de grandeza, e a diferença é o custo do `fsync`
+deste disco, não do motor.
+
+### O que exatamente se perde na janela nova
+
+Esta é a metade do sprint que **não** é medição — é leitura, e tinha de estar
+escrita antes de uma linha de código. A ordem de escrita **não muda** em nenhum
+dos dois modos: `guardar` no `.trash` continua vindo antes de `reg.excluir`. O
+que muda é quem espera o disco.
+
+**Queda do PROCESSO** (`kill -9`, OOM, `panic`, o serviço reiniciado): **não se
+perde nada, e isso está provado**. O `write` já foi entregue ao sistema
+operacional em toda gravação — não há buffer nosso —, e quem reabre o arquivo lê
+a mesma página. A prova é `bancada/exclusao/prova-da-queda.py`, que sobe um
+`phxsqld` de verdade na porta 7100 com a janela **aberta durante a corrida
+inteira** (`lote_operacoes` em um milhão), manda 150 exclusões físicas pelo
+soquete, mata o processo com `SIGKILL` e reabre:
+
+```
+=== controle: o comportamento de sempre (exclusao_na_janela=False) ===
+  so no .reg (a exclusao nao aconteceu) : 0
+  so no .trash (aconteceu, e reversivel): 150
+  nos dois (duplicada)                  : 0
+  EM NENHUM (o caso que mata o sprint)  : 0
+=== pedida a janela (exclusao_na_janela=True) ===
+  ... o mesmo, linha por linha
+```
+
+Teste unitário não provaria isso: quem fecha uma `Table` executa `Drop`, libera
+descritores e volta ao teste, e nada disso é uma queda. É a mesma lição do
+`BULKINSERT` — o que depende do sistema operacional se prova contra o sistema
+operacional.
+
+**Queda de ENERGIA dentro da janela.** Aqui está o caso a caso, e ele é honesto
+até o fim. Duas escritas independentes, em dois arquivos, sem `fsync` entre
+elas: o `.trash` (W1) e a liberação do slot no `.reg` (W2). O que estiver no
+disco depois da queda dá quatro estados:
+
+| chegou ao disco | o que se vê | |
+|---|---|---|
+| nem W1 nem W2 | a linha continua no `.reg` | a exclusão não aconteceu — nada se perde |
+| W1 e não W2 | a linha está no `.trash` **e** no `.reg` | duplicada, e é o lado que a casa escolheu |
+| W1 e W2 | excluída e reversível | o caso normal |
+| **W2 e não W1** | **liberada no `.reg` e ausente do `.trash`** | **o quarto caso** |
+
+**O quarto caso existe, e é isto que o sprint mandou procurar.** Com o `fsync`
+por exclusão ele é impossível por construção: W2 nem chega a ser escrito antes
+de W1 estar no disco. Sem ele, a ordem de *escrita* continua sendo W1 antes de
+W2, mas a ordem de *chegada ao disco* passa a ser do sistema operacional, e o
+`.reg` de uma tabela em uso já tem páginas sujas mais velhas que as do
+`.trash` — o descarregamento periódico pode muito bem chegar nele primeiro.
+Nenhum `fsync` na hora de fechar a janela conserta isso, porque o problema não
+é a ordem em que **nós** sincronizamos: é a que o núcleo escolhe **antes** de
+alguém nos perguntar.
+
+Duas coisas foram feitas com esse achado, e nenhuma delas é escondê-lo:
+
+1. **`Table::sincronizar` passou a fechar o `.trash` primeiro e o `.reg` por
+   último.** Não fecha o buraco — fecha a metade dele que era nossa: com a
+   ordem antiga, uma queda no meio do próprio fechamento da janela produzia o
+   quarto caso *de propósito*, e não por azar. O teste
+   `o_trash_fecha_antes_do_reg` trava isso.
+2. **O item entrou pedido.** Ligado, `exclusao_na_janela` é a escolha de trocar
+   uma rede de recuperação estreita por 3,10× — e a linha perdida nessa janela
+   é uma linha que **alguém mandou apagar**, com o motivo já gravado no
+   `.reason`, e não uma linha que alguém queria manter. Desligado, nada disso
+   existe.
+
+E um consolo que não é garantia, mas é verdade e vale escrever: **o `.reg`
+nunca reaproveita slot excluído.** No quarto caso o *payload* da linha continua
+fisicamente no slot, com o byte de estado virado — quem investiga com uma
+ferramenta que leia o slot ainda acha os bytes. O que se perde de verdade é o
+conteúdo das colunas externas (`.bin`/`.memo`), cujos blocos a exclusão liberou
+e um insert seguinte pode reaproveitar.
+
+### O efeito na bancada: a fase vira
+
+E ela vira por dois motivos, não um. O primeiro é o ganho. O segundo é que a
+fase `excluir` da bancada **não comparava trabalho igual** — do lado do
+MySQL(R) as 20.000 instruções vão dentro de um `START TRANSACTION … COMMIT`,
+que é **um** `fsync` para as vinte mil; do nosso lado eram **vinte mil**. É a
+mesma família dos dois erros que a `bancada/LEIA-ME.md` conta, e desta vez o
+erro era contra nós.
+
+Medido nesta máquina, 1.000.000 de linhas, 20.000 exclusões, duas corridas de
+cada (`python3 bancada/medir.py 1000000`):
+
+| | PhxSql | MySQL(R) | |
+|---|---:|---:|---|
+| hoje (`fsync` por exclusão) | 6,30 s · 16,59 s | 1,45 s · 1,90 s | **perde 4,3×** |
+| pedida a janela | 0,91 s · 0,96 s | 1,80 s · 1,91 s | **ganha 1,9×** |
+
+Repare também na **estabilidade**: com a janela as duas corridas dão 0,91 e
+0,96; sem ela, 6,30 e 16,59. A fase que o §6 registrava como «varia demais
+entre corridas» variava porque esperava disco vinte mil vezes numa máquina
+compartilhada.
+
+Com a fase virada, **é a primeira vez que o PhxSql ganha em todas as cinco** —
+e o `resultados.json` do repositório continua sendo a corrida de 10.000.000 com
+o comportamento padrão, porque o padrão não mudou.
+
+---
+
 ## 5. Por que LSM não cabe dentro do motor atual
 
 Segmentos imutáveis com compactação é uma boa arquitetura, e é incompatível com
@@ -1225,7 +1388,13 @@ O cache de páginas mudou quatro das cinco linhas: a inserção ficou **2,92×**
 rápida, a busca por chave **empatou** com o MySQL(R) (era metade da velocidade
 dele), e a alteração passou de 1,36× para 3,30×.
 
-**Sobre a exclusão, honestamente.** É a única fase em que o PhxSql *espera
+**Sobre a exclusão, honestamente.** *(Esta leitura vale para o padrão de
+fábrica, e ela ficou explicada na §4.12: a variação entre corridas é o disco
+sendo esperado 20.000 vezes numa máquina compartilhada. Quem pedir
+`recursos.exclusao_na_janela` vira esta linha — 0,91 s contra 1,45 s do
+MySQL(R) numa bancada de 1.000.000 nesta máquina.)*
+
+É a única fase em que o PhxSql *espera
 disco*: 4,3 s de CPU para 8,16 s de relógio. Ela grava a linha inteira no
 `.trash` e **sincroniza antes** de liberar o slot — a ordem que garante que a
 linha nunca deixa de existir nos dois lugares ao mesmo tempo. O número anterior
@@ -1353,6 +1522,8 @@ ele: **diagnóstico plausível não é diagnóstico medido.**
 ```bash
 cargo run --release --example onde-doi -- 200000       # a tabela do §2
 cargo run --release --example custo-do-sync            # os modos de durabilidade
+cargo run --release --example custo-do-excluir -- 200000 20000 200   # o fsync da exclusao, §4.12
+python3 bancada/exclusao/prova-da-queda.py             # a queda do processo, §4.12
 cargo run --release --example custo-da-pagina -- 800000 200
 cargo run --release --example indice-em-lote -- 1000000   # o lote do §4.3
 cargo run --release --example onde-a-gpu-ajudaria -- 1000000  # o caso da GPU, §4.11

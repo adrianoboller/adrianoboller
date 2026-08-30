@@ -1202,6 +1202,15 @@ impl Table {
     /// O `sincronizar` esta dentro de `LixeiraFile::guardar`, e nao aqui,
     /// porque a garantia e daquele arquivo: "esta na lixeira" com a pagina
     /// ainda suja na memoria nao e uma garantia.
+    ///
+    /// # Quando o dono pede a janela
+    ///
+    /// Com `lixeira::na_janela` ligado (`recursos.exclusao_na_janela` no
+    /// `config.json`, que nasce DESLIGADO), aquele `fsync` sai do caminho e a
+    /// exclusao passa a fechar junto com o resto da tabela. A ordem de
+    /// escrita nao muda -- guardar continua vindo antes de liberar --, e o que
+    /// se ganha e a espera de disco; o que se arrisca esta escrito em
+    /// `docs/DESEMPENHO.md` §4.12 e no `MANUAL.txt`.
     pub fn excluir_de_vez(&mut self, rowid: RowId, motivo: &str) -> Result<bool> {
         let payload = match self.reg.ler(rowid)? {
             None => return Ok(false),
@@ -2083,6 +2092,22 @@ impl Table {
         Ok((self.lixeira.total()?, self.lixeira.bytes()?))
     }
 
+    /// Quantas vezes o `.trash` desta tabela esperou o disco.
+    ///
+    /// Existe para o teste do comportamento VELHO: sem alguem pedir a janela,
+    /// cada exclusao fisica tem de somar uma aqui.
+    pub fn lixeira_sincronizacoes(&self) -> u64 {
+        self.lixeira.sincronizacoes()
+    }
+
+    /// As senhas da ultima sincronizacao do `.trash` e do `.reg`, nesta ordem.
+    ///
+    /// A do `.trash` tem de ser MENOR: a copia de recuperacao vai ao disco
+    /// antes da liberacao contra a qual ela protege. Ver `sincronizar`.
+    pub fn selos_de_sincronizacao(&self) -> (u64, u64) {
+        (self.lixeira.selo(), self.reg.selo())
+    }
+
     /// Decodifica uma linha da lixeira usando o esquema ATUAL da tabela.
     ///
     /// Se o esquema mudou depois do descarte, o payload guardado nao bate com
@@ -2440,15 +2465,32 @@ impl Table {
         self.ndx.indices()
     }
 
+    /// Manda para o disco tudo que esta escrito e ainda nao chegou la.
+    ///
+    /// # A ordem importa, e o `.trash` vem primeiro
+    ///
+    /// A lixeira e a copia de recuperacao de uma linha que o `.reg` ja
+    /// liberou. Enquanto o `fsync` dela acontecia por exclusao
+    /// (`lixeira::na_janela` desligado), a ordem daqui era indiferente: o
+    /// `.trash` ja estava no disco muito antes.
+    ///
+    /// Com a exclusao na janela, os dois passam a ser sincronizados aqui -- e
+    /// sincronizar o `.reg` antes do `.trash` seria escolher, de proposito, a
+    /// unica ordem em que uma queda de energia no meio do fechamento deixa a
+    /// linha liberada no `.reg` sem a copia no `.trash`. E a mesma decisao que
+    /// `excluir_de_vez` toma na escrita, repetida na sincronizacao: entre
+    /// perder e duplicar, duplica.
+    ///
+    /// O `.reg` vai por ultimo pelo mesmo motivo, e ele fecha a lista.
     pub fn sincronizar(&mut self) -> Result<()> {
-        self.reg.sincronizar()?;
-        self.ndx.sincronizar()?;
+        self.lixeira.sincronizar()?;
         self.bin.sincronizar()?;
         self.memo.sincronizar()?;
         self.log.sincronizar()?;
-        self.lixeira.sincronizar()?;
         self.motivos.sincronizar()?;
         self.trilha.sincronizar()?;
+        self.ndx.sincronizar()?;
+        self.reg.sincronizar()?;
         // O descritor acompanha o disco: ele so vale se disser o que os
         // arquivos dizem, e o `sincronizar` e justamente o instante em que os
         // arquivos param de mudar.

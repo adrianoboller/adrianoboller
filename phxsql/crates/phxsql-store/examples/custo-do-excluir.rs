@@ -1,7 +1,7 @@
 //! Onde doi a exclusao fisica: o laco de exclusoes, cronometrado sozinho.
 //!
 //! ```bash
-//! cargo run --release --example custo-do-excluir -- <n> <m>
+//! cargo run --release --example custo-do-excluir -- <n> <m> [lote]
 //! ```
 //!
 //! Mesmo esquema e mesmo espalhamento da bancada (`carga.rs`): insere `n`
@@ -11,9 +11,25 @@
 //!
 //! A pergunta que ele foi escrito para responder esta em `docs/SPRINTS-CASSANDRA.md`
 //! (Sprint 1): quanto do tempo e o `fsync` que `LixeiraFile::guardar` faz por
-//! exclusao. Para medir a outra metade e preciso EDITAR UMA COPIA do
-//! repositorio -- a variante sem `fsync` nao existe aqui, e nao deve existir:
-//! e uma garantia, nao um ajuste. A receita esta no documento.
+//! exclusao.
+//!
+//! As DUAS variantes saem daqui, e nao de uma copia editada do repositorio:
+//!
+//! ```bash
+//! cargo run --release --example custo-do-excluir -- 200000 20000
+//! PHX_EXCLUSAO_NA_JANELA=1 cargo run --release --example custo-do-excluir -- 200000 20000 200
+//! PHX_EXCLUSAO_NA_JANELA=1 cargo run --release --example custo-do-excluir -- 200000 20000
+//! ```
+//!
+//! A variavel de ambiente liga o mesmo interruptor que
+//! `recursos.exclusao_na_janela` liga no servidor -- e ela existe porque
+//! medicao que so se refaz editando o codigo e medicao que ninguem refaz.
+//!
+//! O terceiro argumento e o TAMANHO DA JANELA, e ele separa o teto da
+//! entrega: `200` fecha a janela a cada 200 exclusoes, que e o que
+//! `recursos.lote_operacoes` faz no servidor de verdade; sem ele a janela
+//! nunca fecha, e o numero e o teto -- honesto so para a carga reservada
+//! (`BULKINSERT`), em que a janela fica aberta de proposito.
 
 use std::time::Instant;
 
@@ -71,6 +87,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let n: i64 = args.first().and_then(|s| s.parse().ok()).unwrap_or(200_000);
     let m: i64 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(20_000);
+    let lote: i64 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
+
+    // O mesmo global que `recursos.exclusao_na_janela` liga no servidor.
+    let na_janela =
+        std::env::var("PHX_EXCLUSAO_NA_JANELA").is_ok_and(|v| v != "0" && !v.is_empty());
+    phxsql_store::lixeira::definir_na_janela(na_janela);
 
     let dir = std::env::temp_dir().join(format!("phx-custo-do-excluir-{}", std::process::id()));
     std::fs::create_dir_all(&dir)?;
@@ -89,12 +111,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if t.excluir(alvo as u64)? {
             feitas += 1;
         }
+        // A janela do servidor, refeita aqui: `lote_operacoes` gravacoes e o
+        // `fsync` fecha a tabela inteira.
+        if lote > 0 && (k + 1) % lote == 0 {
+            t.sincronizar()?;
+        }
     }
     let s = inicio.elapsed().as_secs_f64();
     t.sincronizar()?;
 
     println!(
-        "excluir {feitas} de {n}: {s:.3} s  ({:.2} us/linha, {:.0}/s)",
+        "excluir {feitas} de {n} ({}): {s:.3} s  ({:.2} us/linha, {:.0}/s)",
+        match (na_janela, lote) {
+            (false, _) => "fsync por exclusao".to_string(),
+            (true, 0) => "na janela, sem fechar (o teto)".to_string(),
+            (true, n) => format!("na janela, fechando a cada {n}"),
+        },
         s * 1e6 / feitas.max(1) as f64,
         feitas as f64 / s.max(1e-9)
     );

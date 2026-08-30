@@ -34,46 +34,46 @@ teste que o motivou ainda cai. [§8](#8-as-guardas-provar-que-a-prova-pega).
 
 ## 1. A cobertura de hoje, medida
 
-`cargo test --workspace`: **1.242 testes, 0 falhas** (1.241 `#[test]` mais um
+`cargo test --workspace`: **1.255 testes, 0 falhas** (1.254 `#[test]` mais um
 doc-test) — somado dos `test result:` de uma rodada, e não digitado. Por área,
 contando `#[test]` por arquivo e agrupando:
 
 <!-- cobertura:inicio -->
 | área | testes | % |
 |---|---:|---:|
-| Motor de dados (arquivos, índice, diários) | 323 | 26,0 |
-| Protocolo e portões (despachar) | 183 | 14,7 |
-| Núcleo (JSON, tipos, UUID, zip, paralelo) | 133 | 10,7 |
-| Configuração | 82 | 6,6 |
+| Motor de dados (arquivos, índice, diários) | 328 | 26,2 |
+| Protocolo e portões (despachar) | 180 | 14,4 |
+| Núcleo (JSON, tipos, UUID, zip, paralelo) | 133 | 10,6 |
+| Configuração | 82 | 6,5 |
 | Criptografia e codificação | 80 | 6,4 |
 | DbLink | 65 | 5,2 |
-| Telemetria e profiler | 45 | 3,6 |
+| Telemetria e profiler | 53 | 4,2 |
 | Camada SQL (léxico, sintaxe, tradução) | 44 | 3,5 |
-| Gatilhos e procedimentos | 38 | 3,1 |
+| Gatilhos e procedimentos | 38 | 3,0 |
 | Jobs | 31 | 2,5 |
-| Interface web (servidor HTTP) | 28 | 2,3 |
+| Interface web (servidor HTTP) | 28 | 2,2 |
 | MCP | 19 | 1,5 |
 | Usuários e permissões | 19 | 1,5 |
-| **Console de terminal (phxsqlcmd)** | **18** | **1,5** |
-| **Segurança de rede (blacklist, firewall)** | **18** | **1,5** |
+| **Console de terminal (phxsqlcmd)** | **18** | **1,4** |
+| **Segurança de rede (blacklist, firewall)** | **18** | **1,4** |
 | **ODBC** | **17** | **1,4** |
 | **Mensagens (i18n do servidor)** | **14** | **1,1** |
 | **Exportação** | **13** | **1,0** |
 | **Junções e união** | **13** | **1,0** |
 | **Pivot** | **12** | **1,0** |
 | **Replicação** | **11** | **0,9** |
+| **Servidor (outros)** | **10** | **0,8** |
 | **Alertas e e-mail** | **8** | **0,6** |
 | **CLI** | **7** | **0,6** |
 | **Cluster** | **7** | **0,6** |
-| **Servidor (outros)** | **7** | **0,6** |
 | **Monitor de máquina** | **6** | **0,5** |
-| **total** | **1241** | |
+| **total** | **1254** | |
 
 Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 
 | arquivo | linhas |
 |---|---:|
-| `phxsql-store/src/table.rs` | 2458 |
+| `phxsql-store/src/table.rs` | 2500 |
 | `phxsql-store/src/ndx.rs` | 1580 |
 | `phxsql-server/src/main.rs` | 452 |
 | `phxsql-server/src/replica.rs` | 352 |
@@ -591,7 +591,7 @@ prova e se comportavam como sonda** — §9.1.
 
 A casa exige que todo teste novo **falhe com o defeito reposto**. Isso sempre
 foi feito à mão, uma vez, por quem escreveu o teste — e depois se perdia.
-Ninguém conseguia dizer, hoje, quais das 1.242 asserções ainda pegariam o
+Ninguém conseguia dizer, hoje, quais das 1.255 asserções ainda pegariam o
 defeito que as motivou.
 
 ```bash
@@ -636,10 +636,14 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `endereco-fora-da-amarracao` | as DUAS fechaduras somem: dá para embaralhar as linhas cifradas | 1 | ✅ provada |
 | `cache-de-chaves-nao-limpo` | trocar a senha da cifra não limpa o cache: a senha errada abre | 1 | ✅ provada |
 | `catraca-dos-textos` | mais um texto de tela cravado, fora da fábrica de idiomas | 1 | ✅ provada |
-| `trava-fora-do-ponto-unico` | uma tomada da trava de dados fora do `travar_dados()` | 1 | ✅ provada |
-| `trava-sem-guarda-de-reentrancia` | a trava pedida duas vezes pela mesma thread pendura o servidor | 1 | ✅ provada |
+| `exclusao-na-janela-por-padrao` | a exclusão entra na janela por padrão, sem ninguém pedir | 1 | ✅ provada |
+| `exclusao-na-janela-sem-leitor` | `exclusao_na_janela` no config.json, no MANUAL e na tela — e ninguém o lê | 1 | ✅ provada |
+| `reg-fecha-antes-do-trash` | a janela sincroniza o `.reg` antes do `.trash` | 1 | ✅ provada |
+| `rodizio-do-profiler-ignora-o-zero` | `profiler.arquivo_mib: 0` deixa de querer dizer «sem rodízio» | 1 | ✅ provada |
+| `cabecalho-do-profiler-forjado` | o cabeçalho do arquivo do Profiler aceita linha forjada | 1 | ✅ provada |
+| `profiler-sem-descritor-calado` | sem descritor, com arquivo pedido, a linha some sem ser contada | 1 | ✅ provada |
 
-**20 guardas: 18 provadas, 2 redundantes** — 205 s de mutação, medido em 2026-08-30 05:34.
+**24 guardas: 22 provadas, 2 redundantes** — 190 s de mutação, medido em 2026-08-30 06:15.
 
 As notas que a rodada deixou:
 

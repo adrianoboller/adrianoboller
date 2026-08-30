@@ -2169,7 +2169,8 @@ const DEMO = {
     log_acessos:"acessos.log", ips_permitidos:[], conexoes_max:64,
     somente_leitura:false, espelho:false, usuarios:4,
     dblink:"dblink.json", jobs:"jobs.json",
-    recursos:{durabilidade:"por_lote", lote_operacoes:200, lote_milissegundos:200,
+    recursos:{durabilidade:"por_lote", exclusao_na_janela:false,
+      lote_operacoes:200, lote_milissegundos:200,
       cache_paginas:2048, diario_volume_mib:0, carga_prazo_min:30, memoria_max_mb:0,
       threads:0, cpu_percentual:100, nucleos_efetivos:8, conexoes_max:64, usuarios_max:0},
     seguranca:{comandos_proibidos:["excluir"], bases_proibidas:[], tentativas_ate_bloquear:5,
@@ -2185,6 +2186,7 @@ const DEMO = {
         senha:"(vazia)", assunto:"PhxSql: espaco em disco", tls:false}},
     cifra:{ligada:false, iteracoes:210000, senha_env:"", senha:"(vazia)",
            modo:"aead", salto:5, separador:"|"},
+    profiler:{arquivo_mib:64, arquivos:4, teto_em_disco_mib:320},
     estranhas:[],
     editaveis:[
       {campo:"bind",tipo:"texto",a_quente:false},
@@ -2193,6 +2195,7 @@ const DEMO = {
       {campo:"somente_leitura",tipo:"booleano",a_quente:true},
       {campo:"espelho",tipo:"booleano",a_quente:true},
       {campo:"recursos.durabilidade",tipo:"texto",a_quente:false},
+      {campo:"recursos.exclusao_na_janela",tipo:"booleano",a_quente:true},
       {campo:"recursos.lote_operacoes",tipo:"inteiro",a_quente:false},
       {campo:"recursos.lote_milissegundos",tipo:"inteiro",a_quente:false},
       {campo:"recursos.cache_paginas",tipo:"inteiro",a_quente:true},
@@ -2203,6 +2206,8 @@ const DEMO = {
       {campo:"recursos.carga_prazo_min",tipo:"inteiro",a_quente:false},
       {campo:"recursos.memoria_max_mb",tipo:"inteiro",a_quente:false},
       {campo:"recursos.usuarios_max",tipo:"inteiro",a_quente:false},
+      {campo:"profiler.arquivo_mib",tipo:"inteiro",a_quente:true},
+      {campo:"profiler.arquivos",tipo:"inteiro",a_quente:true},
       {campo:"web.sessao_minutos",tipo:"inteiro",a_quente:false},
       {campo:"backup.agendado",tipo:"booleano",a_quente:false},
       {campo:"backup.hora",tipo:"texto",a_quente:false},
@@ -6219,6 +6224,7 @@ const ROTULO_AJUSTE = {
   espelho: "espelho .bkp",
   "web.sessao_minutos": "sessão da interface, em minutos",
   "recursos.durabilidade": "durabilidade",
+  "recursos.exclusao_na_janela": "excluir também espera a janela",
   "recursos.lote_operacoes": "gravações por janela",
   "recursos.lote_milissegundos": "janela, em milissegundos",
   "recursos.cache_paginas": "páginas do .ndx em RAM",
@@ -6240,6 +6246,8 @@ const ROTULO_AJUSTE = {
   "alertas.livre_minimo_mb": "mínimo livre, em MB",
   "alertas.checar_minutos": "conferir a cada, em minutos",
   "alertas.repetir_horas": "repetir o aviso após, em horas",
+  "profiler.arquivo_mib": "rodízio do .txt do Profiler, em MiB",
+  "profiler.arquivos": "quantos .txt antigos guardar",
   "telemetria.alto_uso_ms": "limiar de uso alto, em milissegundos",
   "telemetria.stress_ms": "limiar de stress, em milissegundos",
 };
@@ -6264,7 +6272,8 @@ const GRUPOS_AJUSTE = [
    ["bind", "timeout_s", "recursos.conexoes_max", "max_linhas",
     "recursos.usuarios_max", "web.sessao_minutos"]],
   ["Gravação e durabilidade",
-   ["recursos.durabilidade", "recursos.lote_operacoes", "recursos.lote_milissegundos",
+   ["recursos.durabilidade", "recursos.exclusao_na_janela",
+    "recursos.lote_operacoes", "recursos.lote_milissegundos",
     "recursos.diario_volume_mib", "recursos.carga_prazo_min", "espelho", "somente_leitura"]],
   ["Memória e CPU",
    ["recursos.cache_paginas", "recursos.memoria_max_mb", "recursos.threads",
@@ -6272,6 +6281,8 @@ const GRUPOS_AJUSTE = [
   ["Backup",
    ["backup.agendado", "backup.hora", "backup.cada_horas", "backup.destino",
     "backup.zip", "backup.manter"]],
+  ["Arquivo do Profiler",
+   ["profiler.arquivo_mib", "profiler.arquivos"]],
   ["Alerta de espaço em disco",
    ["alertas.ligado", "alertas.livre_minimo_percentual", "alertas.livre_minimo_mb",
     "alertas.checar_minutos", "alertas.repetir_horas"]],
@@ -11211,14 +11222,35 @@ async function verProfiler() {
     // pedidos observados e 223 linhas no arquivo, sem uma palavra sobre as
     // outras 177. Log que promete gravar e não grava é pior que log nenhum.
     const falhas = d.falhas_de_escrita || 0;
+    // O rodízio, pelo mesmo motivo das falhas: sem dizer que o arquivo já
+    // virou, «gravando em perfil.txt» seria verdade e mentira ao mesmo
+    // tempo — o começo da sessão não está mais lá, e quem for investigar
+    // procuraria no arquivo errado. E o teto sai do servidor já
+    // multiplicado: uma segunda conta escrita aqui envelheceria calada.
+    const giros = d.rodizios || 0;
+    const girosMal = d.falhas_de_rodizio || 0;
     // `bom`, não `bem`: a classe verde do resto da interface chama-se `bom`,
     // e esta caixa passou a vida inteira cinza por uma letra.
     est.innerHTML = d.ligado
-      ? `<div class="aviso ${falhas ? "mal" : "bom"}">observando desde <b>${esc(d.desde)}</b> ·
+      ? `<div class="aviso ${falhas || girosMal ? "mal" : "bom"}">observando desde <b>${esc(d.desde)}</b> ·
            ${fmt(d.observados)} evento(s)${d.esquecidos ? ` · ${fmt(d.esquecidos)} saíram do anel` : ""}
            ${d.arquivo
               ? ` · gravando em <code>${esc(d.arquivo)}</code> (${fmtBytes(d.gravados_bytes || 0)})`
               : " · só em memória"}
+           ${d.arquivo && d.teto_do_arquivo_bytes
+              ? `<br>${txt("tela.pf_rodizio_a_cada", "rodízio a cada")}
+                 ${fmtBytes(d.teto_do_arquivo_bytes)},
+                 ${txt("tela.pf_rodizio_guardando", "guardando")}
+                 ${fmt(d.arquivos_guardados || 0)} —
+                 ${txt("tela.pf_rodizio_teto", "no máximo")}
+                 <b>${fmtBytes(d.teto_em_disco_bytes || 0)}</b>
+                 ${txt("tela.pf_rodizio_em_disco", "em disco")}
+                 ${giros ? `· ${txt("tela.pf_rodizio_ja_virou", "já virou")}
+                            <b>${fmt(giros)}</b>
+                            ${txt("tela.pf_rodizio_vezes", "vez(es) — o começo da sessão está nos arquivos com sufixo .1 e seguintes")}` : ""}`
+              : d.arquivo ? `<br>${txt("tela.pf_sem_rodizio", "sem rodízio: o arquivo cresce sem teto")}` : ""}
+           ${girosMal ? `<br><b>${fmt(girosMal)}</b>
+                         ${txt("tela.pf_rodizio_falhou", "rodízio(s) com falha — não deu para renomear ou reabrir o arquivo")}` : ""}
            ${falhas ? `<br><b>${fmt(falhas)} linha(s) NÃO gravada(s)</b> — disco cheio,
                        cota, ou o caminho deixou de aceitar escrita. O anel continua;
                        o arquivo, não.` : ""}</div>`
@@ -12179,6 +12211,10 @@ async function verIps() {
 const DIZ_RECURSO = {
   durabilidade:       ["quando o gravado vai de fato para o disco",
                        "por_operacao é seguro e 20× mais lento; por_lote é o padrão"],
+  exclusao_na_janela: ["a exclusão física também espera a janela, em vez do disco",
+                       "desligado é o de sempre: excluir só responde OK com o .trash no disco. " +
+                       "Ligado vale 4,3× e arrisca, numa queda de ENERGIA dentro da janela, " +
+                       "a linha sair do .reg sem a cópia no .trash"],
   lote_operacoes:     ["gravações por janela de sincronização", ""],
   lote_milissegundos: ["duração máxima da janela", "um relógio de fundo fecha quando ninguém grava"],
   cache_paginas:      ["páginas do .ndx em RAM, por tabela aberta",
