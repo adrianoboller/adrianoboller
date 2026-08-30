@@ -810,4 +810,196 @@ GUARDAS = [
             "conferidor::testes::dado_interpolado_nunca_conta_como_rotulo",
         ],
     },
+    # -----------------------------------------------------------------------
+    # 13. A cifra do fio: o segredo todo-zeros aceito como chave de sessao
+    # -----------------------------------------------------------------------
+    {
+        "id": "ordem-pequena-aceita",
+        "titulo": "o segredo X25519 todo-zeros aceito como chave de sessão",
+        "porque": (
+            "regra da casa: criptografia se confere contra vetor oficial, e o "
+            "que a RFC 7748 secao 6.1 chama de opcional aqui NAO e: as chaves "
+            "de sessao saem deste segredo, e um ponto de ordem pequena faz os "
+            "dois lados fecharem o aperto sem ninguem ter provado nada."
+        ),
+        "arquivo": "crates/phxsql-core/src/x25519.rs",
+        "trecho": """    let k = multiplicar(privada, publica);
+    if iguais_em_tempo_constante(&k, &[0u8; CHAVE_LEN]) {
+        return Err(PhxError::Autorizacao(
+            "chave publica de ordem pequena: o segredo compartilhado sairia \\
+             todo-zeros, e um aperto assim fecha sem ninguem provar nada"
+                .into(),
+        ));
+    }
+    Ok(k)
+""",
+        "troca": """    // DEFEITO REPOSTO: a recusa do ponto de ordem pequena vira comentario, que
+    // e exatamente o que a RFC permite para o Diffie-Hellman puro -- e que
+    // aqui entrega o tunel a quem escolher a efemera.
+    Ok(multiplicar(privada, publica))
+""",
+        "pacote": "phxsql-core",
+        "alvo": ["--lib"],
+        "caem": [
+            "x25519::testes::ponto_de_ordem_pequena_e_recusado",
+            "fio::testes::efemera_de_ordem_pequena_derruba_o_aperto",
+        ],
+        "seguem": [
+            "x25519::testes::vetor_1_da_secao_5_2",
+            "x25519::testes::diffie_hellman_da_secao_6_1",
+            "fio::testes::aperto_fecha_e_os_dois_lados_derivam_o_mesmo",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # 14. A cifra do fio: o contador do nonce que nao anda
+    # -----------------------------------------------------------------------
+    {
+        "id": "contador-do-fio-parado",
+        "titulo": "o contador de registros do fio parado — nonce repetido",
+        "porque": (
+            "secao 3 do docs/CIFRA-DO-FIO.md: repetir o par (chave, nonce) e o "
+            "unico jeito de quebrar isto sem quebrar a matematica. O contador "
+            "por direcao e o que impede -- e sem ele o registro repetido volta "
+            "a abrir, que e replay puro."
+        ),
+        "arquivo": "crates/phxsql-core/src/fio.rs",
+        "trecho": """        let nonce = nonce_do_contador(self.n);
+        self.n += 1;
+        Ok(nonce)
+""",
+        "troca": """        // DEFEITO REPOSTO: o contador nao anda. Cada registro sai e entra com o
+        // nonce zero, entao o par (chave, nonce) se repete a cada linha.
+        Ok(nonce_do_contador(self.n))
+""",
+        "pacote": "phxsql-core",
+        "alvo": ["--lib"],
+        # Tres, e nao quatro -- e o corte foi MEDIDO, nao suposto.
+        #
+        # A primeira versao desta entrada listava tambem o `canal_leva_e_traz`,
+        # e o executor devolveu NAO PEGOU. Investigado: com o contador parado,
+        # os DOIS lados usam nonce zero em todo registro, entao uma conversa
+        # que vai e volta uma vez continua fechando -- ela nao repete registro
+        # nenhum, que e o unico jeito de sentir a falta do contador. O teste
+        # nao esta errado; errada estava a minha conta de quatro.
+        "caem": [
+            "fio::testes::registro_repetido_nao_abre",
+            "fio::testes::registro_fora_de_ordem_nao_abre",
+            "fio::testes::contador_no_teto_recusa_em_vez_de_repetir",
+        ],
+        "seguem": [
+            "fio::testes::aperto_fecha_e_os_dois_lados_derivam_o_mesmo",
+            "fio::testes::registro_mexido_nao_abre",
+            "fio::testes::canal_leva_e_traz",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # 15. A cifra do fio: o EOF sem despedida virando fim limpo
+    # -----------------------------------------------------------------------
+    {
+        "id": "fio-cortado-vira-fim",
+        "titulo": "o fio cortado no meio devolvido como fim de conversa",
+        "porque": (
+            "secao 4 do docs/CIFRA-DO-FIO.md: a camada de registro tem de "
+            "distinguir «fim de conversa» de «fio cortado no meio». Fio "
+            "cortado e erro, nunca sucesso silencioso -- senao falta dado e "
+            "ninguem ve faltar."
+        ),
+        "arquivo": "crates/phxsql-core/src/fio.rs",
+        "trecho": """                if lidos == 0 {
+                    return if t.fim_recebido() {
+                        Ok(Recebido::Fim)
+                    } else {
+                        Err(PhxError::Corrompido(
+                            "o fio cifrado foi cortado: a conexao acabou sem a \\
+                             despedida, entao pode faltar dado que ninguem viu \\
+                             faltar"
+                                .into(),
+                        ))
+                    };
+                }
+""",
+        "troca": """                // DEFEITO REPOSTO: EOF e fim, como em claro. E a tentacao de
+                // sempre -- parece que "a conexao acabou" e uma coisa so.
+                if lidos == 0 {
+                    return Ok(Recebido::Fim);
+                }
+""",
+        "pacote": "phxsql-core",
+        "alvo": ["--lib"],
+        "caem": [
+            "fio::testes::fim_e_corte_sao_vereditos_diferentes",
+        ],
+        "seguem": [
+            "fio::testes::canal_leva_e_traz",
+            "fio::testes::em_claro_o_eof_continua_sendo_fim",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # 16. A cifra do fio: o `exigir` imposto em vez de pedido
+    # -----------------------------------------------------------------------
+    {
+        "id": "cifra-do-fio-imposta",
+        "titulo": "a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho",
+        "porque": (
+            "regra petrea: guarda nova entra pedida, nao imposta. Protecao que "
+            "quebra todo cliente antigo nao e protecao, e estrago -- e o teste "
+            "que trava isso e o do comportamento VELHO, nao o do novo."
+        ),
+        "arquivo": "crates/phxsql-server/src/config.rs",
+        "trecho": """        CifraFio {
+            ligada: true,
+            exigir: false,
+""",
+        "troca": """        CifraFio {
+            ligada: true,
+            // DEFEITO REPOSTO: exigir o tunel por padrao. Parece o padrao
+            // seguro, e e o padrao que derruba toda instalacao existente no
+            // primeiro pedido depois da atualizacao.
+            exigir: true,
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "cifra-do-fio"],
+        "caem": [
+            "cliente_sem_cifra_continua_como_antes",
+        ],
+        "seguem": [
+            "com_o_aperto_o_mesmo_trabalho_acontece_cifrado",
+            "exigir_recusa_texto_claro_e_deixa_o_tunel_passar",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # 17. A cifra do fio: a transcricao que nao cobre o aperto inteiro
+    # -----------------------------------------------------------------------
+    {
+        "id": "transcricao-sem-o-cifrado",
+        "titulo": "o hash da transcrição sem o texto cifrado da mensagem 2",
+        "porque": (
+            "secao 4 do docs/CIFRA-DO-FIO.md: o hash da transcricao tem de "
+            "cobrir o aperto INTEIRO -- e o que faz a etiqueta final so fechar "
+            "se as duas mensagens chegaram byte a byte como sairam."
+        ),
+        "arquivo": "crates/phxsql-core/src/fio.rs",
+        "trecho": """        let claro = cifra::abrir(&self.k, &self.nonce(), &self.h, &cifrado[..corte], &tag)?;
+        self.n += 1;
+        // O hash come o CIFRADO, e nao o claro: e o que o outro lado viu.
+        self.misturar_hash(cifrado);
+        Ok(claro)
+""",
+        "troca": """        let claro = cifra::abrir(&self.k, &self.nonce(), &self.h, &cifrado[..corte], &tag)?;
+        self.n += 1;
+        // DEFEITO REPOSTO: a transcricao para de acompanhar o que chegou. Os
+        // dois lados divergem no `h` e a etiqueta seguinte nao fecha.
+        Ok(claro)
+""",
+        "pacote": "phxsql-core",
+        "alvo": ["--lib"],
+        "caem": [
+            "fio::testes::aperto_fecha_e_os_dois_lados_derivam_o_mesmo",
+            "fio::testes::pino_certo_passa_e_pino_errado_derruba",
+        ],
+        "seguem": [
+            "fio::testes::mensagem_2_mexida_nao_autentica",
+            "fio::testes::mensagem_do_tamanho_errado_e_recusada",
+        ],
+    },
 ]

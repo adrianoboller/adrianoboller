@@ -37,6 +37,9 @@ use phxsql_core::json::Json;
 use phxsql_core::schema::Schema;
 use phxsql_store::log::Operacao;
 
+use phxsql_core::base64;
+use phxsql_core::fio::{Canal, Iniciador, Recebido};
+
 use crate::config::Origem;
 use crate::valores::hex_para_bytes;
 
@@ -53,6 +56,9 @@ pub struct Cliente {
     fluxo: TcpStream,
     leitor: BufReader<TcpStream>,
     token: String,
+    /// Em claro (como sempre foi) ou dentro do tunel. Ver
+    /// `docs/CIFRA-DO-FIO.md`.
+    canal: Canal,
 }
 
 impl Cliente {
@@ -96,7 +102,51 @@ impl Cliente {
             fluxo,
             leitor,
             token: token.to_string(),
+            canal: Canal::Claro,
         })
+    }
+
+    /// Pede o aperto de mao e passa a falar por dentro do tunel.
+    ///
+    /// `pino` e a chave publica que se ESPERA do source. Com pino, um source
+    /// que apresente outra chave derruba a conexao -- e e assim que a replica
+    /// se protege de quem esta no meio. Sem pino, o tunel protege da escuta
+    /// PASSIVA e nada mais, porque o atacante apresenta a chave dele e nao ha
+    /// com o que comparar.
+    ///
+    /// Devolve a chave que o source apresentou, para quem quiser anota-la.
+    pub fn cifrar(&mut self, pino: Option<[u8; 32]>) -> Result<[u8; 32]> {
+        let (iniciador, m1) = Iniciador::comecar(pino);
+        let pedido = Json::objeto(vec![
+            ("op", Json::texto_de("cifrar")),
+            ("e", Json::texto_de(base64::codificar(&m1))),
+        ])
+        .escrever();
+        self.fluxo.write_all(pedido.as_bytes())?;
+        self.fluxo.write_all(b"\n")?;
+        self.fluxo.flush()?;
+
+        let mut resposta = String::new();
+        if self.leitor.read_line(&mut resposta)? == 0 {
+            return Err(PhxError::Io(std::io::Error::other(
+                "o source fechou a conexao no aperto de mao",
+            )));
+        }
+        let j = Json::analisar(&resposta)?;
+        if !j.booleano_ou("ok", false) {
+            return Err(PhxError::Autorizacao(format!(
+                "o source recusou o aperto de mao: {}",
+                j.texto_ou("erro", "sem motivo")
+            )));
+        }
+        let m2 = base64::decodificar(
+            j.campo("resultado")
+                .map(|r| r.texto_ou("m2", ""))
+                .unwrap_or(""),
+        )?;
+        let (transporte, apresentada) = iniciador.terminar(&m2)?;
+        self.canal = Canal::Cifrado(Box::new(transporte));
+        Ok(apresentada)
     }
 
     /// Manda um pedido e devolve o `resultado`, ou o erro que o source disse.
@@ -105,16 +155,16 @@ impl Cliente {
             campos.push(("token", Json::texto_de(self.token.clone())));
         }
         let linha = Json::objeto(campos).escrever();
-        self.fluxo.write_all(linha.as_bytes())?;
-        self.fluxo.write_all(b"\n")?;
-        self.fluxo.flush()?;
+        self.canal.escrever(&mut self.fluxo, &linha)?;
 
-        let mut resposta = String::new();
-        if self.leitor.read_line(&mut resposta)? == 0 {
-            return Err(PhxError::Io(std::io::Error::other(
-                "o source fechou a conexao",
-            )));
-        }
+        let resposta = match self.canal.ler(&mut self.leitor)? {
+            Recebido::Linha(l) => l,
+            Recebido::Fim => {
+                return Err(PhxError::Io(std::io::Error::other(
+                    "o source fechou a conexao",
+                )))
+            }
+        };
         let j = Json::analisar(&resposta)?;
         if !j.booleano_ou("ok", false) {
             // O erro do outro lado ja vem classificado -- `nome` e `classe`
@@ -345,6 +395,11 @@ pub fn ligar(origem: &Origem) -> Result<Cliente> {
         &origem.token,
         Duration::from_secs(30),
     )?;
+    // O tunel ANTES do login, de proposito: e a prova do desafio-resposta e o
+    // token que ele existe para esconder, e depois do login ja seria tarde.
+    if origem.cifra {
+        c.cifrar(origem.pino_do_fio()?)?;
+    }
     if !origem.usuario.is_empty() {
         c.autenticar(&origem.usuario, &origem.senha_hash, &origem.senha)?;
     }

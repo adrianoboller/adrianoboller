@@ -132,12 +132,40 @@ pub struct Origem {
     /// Replicacao DIARIA a uma hora marcada, "HH:MM" (ex.: "02:30", a noite).
     /// Vazia = nao ha hora marcada. Com as duas vazias, vale o streaming.
     pub hora: String,
+    /// Puxar por dentro do tunel cifrado. Ver `docs/CIFRA-DO-FIO.md`.
+    ///
+    /// `false` (o padrao) e como sempre foi: JSON em claro. Ligar exige que o
+    /// SOURCE atenda o aperto -- e um source de versao anterior nao atende,
+    /// entao ligar isto e uma decisao dos dois lados, nao de um.
+    pub cifra: bool,
+    /// A chave publica que se ESPERA do source, em hexadecimal -- o pino.
+    ///
+    /// Vazia com `cifra` ligada e tunel SEM pino: protege da escuta passiva e
+    /// nao protege de quem esta no meio, porque o atacante apresenta a chave
+    /// dele e nao ha com o que comparar. O arranque avisa exatamente isso.
+    pub chave_do_fio: String,
 }
 
 impl Origem {
     /// A replicacao desta origem e agendada (em vez de streaming)?
     pub fn agendada(&self) -> bool {
         self.cada_minutos > 0 || !self.hora.is_empty()
+    }
+
+    /// O pino do source, ja em bytes -- ou o erro que diz o que corrigir.
+    ///
+    /// `None` significa "sem pino", e nao "qualquer chave serve por engano":
+    /// hexadecimal torto vira ERRO em vez de virar `None`, senao um pino
+    /// escrito errado viraria silenciosamente um tunel sem pino, que e
+    /// exatamente o estrago que o pino existe para impedir.
+    pub fn pino_do_fio(&self) -> Result<Option<[u8; 32]>> {
+        if self.chave_do_fio.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(chave_de_hex(
+            &self.chave_do_fio,
+            &format!("origens[{}].chave_do_fio", self.nome),
+        )?))
     }
 }
 
@@ -977,6 +1005,218 @@ impl Cifra {
     }
 }
 
+// ---------------------------------------------------------------------------
+// A cifra do FIO -- que nao e a cifra dos arquivos acima
+// ---------------------------------------------------------------------------
+
+/// O aperto de mao estilo Noise da porta de dados. Ver `docs/CIFRA-DO-FIO.md`.
+///
+/// # Pedida, nao imposta -- e o motivo de `exigir` existir
+///
+/// `ligada` nasce LIGADA e isso nao muda nada para ninguem: o aperto so
+/// acontece se o CLIENTE pedir, e cliente que nunca ouviu falar dele nunca
+/// pede. `exigir` nasce DESLIGADA, e e ela que carrega a decisao dificil.
+///
+/// Cifra pedida e cifra que o atacante ativo apaga do pedido: ele corta o
+/// `cifrar` do fio, o cliente rebaixa para claro, e a protecao vira zero.
+/// Contra ele so vale `exigir: true` -- que quebra todo cliente velho, e por
+/// isso e uma decisao de quem implanta, e nao um padrao herdado.
+///
+/// **Com `exigir` desligado, o tunel protege contra escuta PASSIVA e nada
+/// mais.** Esta frase esta aqui, no `docs/SEGURANCA.md` e na tela pelo mesmo
+/// motivo: e a que o leitor nao pode ter de adivinhar.
+#[derive(Clone)]
+pub struct CifraFio {
+    /// O servidor ATENDE o aperto. `false` recusa -- e a unica maneira de um
+    /// servidor dizer "aqui nao tem".
+    pub ligada: bool,
+    /// Recusa qualquer pedido fora do tunel.
+    pub exigir: bool,
+    /// PRIVADA de proposito: quem quiser ler passa por [`CifraFio::estatica`],
+    /// e o `para_json` nunca a inclui.
+    chave_privada: String,
+    /// Nome da variavel de ambiente de onde a privada veio, quando veio de la.
+    pub chave_privada_env: String,
+    /// Onde a estatica e lida, ou criada na primeira vez que alguem pedir o
+    /// aperto. Relativo ao `config.json`, quando ele tem caminho.
+    pub arquivo: PathBuf,
+}
+
+/// `Debug` escrito a mao, pelo mesmo motivo do da [`Cifra`]: o derivado
+/// imprimiria a chave privada, e um `{:?}` num diagnostico a jogaria no log.
+impl std::fmt::Debug for CifraFio {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CifraFio")
+            .field("ligada", &self.ligada)
+            .field("exigir", &self.exigir)
+            .field("chave_privada", &"(oculta)")
+            .field("chave_privada_env", &self.chave_privada_env)
+            .field("arquivo", &self.arquivo)
+            .finish()
+    }
+}
+
+impl Default for CifraFio {
+    fn default() -> Self {
+        CifraFio {
+            ligada: true,
+            exigir: false,
+            chave_privada: String::new(),
+            chave_privada_env: String::new(),
+            arquivo: PathBuf::from("chave-do-fio.hex"),
+        }
+    }
+}
+
+impl CifraFio {
+    fn de_json(j: &Json) -> CifraFio {
+        let padrao = CifraFio::default();
+        let Some(c) = j.campo("cifra_fio") else {
+            return padrao;
+        };
+        let chave_privada_env = c.texto_ou("chave_privada_env", "").trim().to_string();
+        let chave_privada = if chave_privada_env.is_empty() {
+            c.texto_ou("chave_privada", "").trim().to_string()
+        } else {
+            std::env::var(&chave_privada_env).unwrap_or_default()
+        };
+        CifraFio {
+            ligada: c.booleano_ou("ligada", padrao.ligada),
+            exigir: c.booleano_ou("exigir", padrao.exigir),
+            chave_privada,
+            chave_privada_env,
+            arquivo: {
+                let a = c.texto_ou("arquivo", "").trim().to_string();
+                if a.is_empty() {
+                    padrao.arquivo
+                } else {
+                    PathBuf::from(a)
+                }
+            },
+        }
+    }
+
+    /// O caminho do arquivo da estatica, resolvido ao lado do `config.json`.
+    ///
+    /// Um caminho relativo escrito no `config.json` significa "ao lado dele", e
+    /// nao "ao lado de onde o processo por acaso subiu": um servico iniciado do
+    /// `/` criaria a chave na raiz, e o pino de todo cliente quebraria na
+    /// primeira vez que alguem o subisse de outro diretorio.
+    pub fn caminho_da_chave(&self, config_em: Option<&Path>) -> PathBuf {
+        if self.arquivo.is_absolute() {
+            return self.arquivo.clone();
+        }
+        match config_em.and_then(|c| c.parent()) {
+            Some(pasta) if !pasta.as_os_str().is_empty() => pasta.join(&self.arquivo),
+            _ => self.arquivo.clone(),
+        }
+    }
+
+    /// A privada estatica do servidor, e os avisos que a busca gerou.
+    ///
+    /// Ordem: variavel de ambiente, `config.json`, arquivo proprio. O arquivo
+    /// e CRIADO na primeira vez -- e so na primeira vez que alguem de fato
+    /// pede o aperto, para um servidor com quem ninguem faz aperto nao passar
+    /// a escrever arquivo que antes nao escrevia.
+    pub fn estatica(&self, config_em: Option<&Path>) -> Result<([u8; 32], Vec<String>)> {
+        let mut avisos = Vec::new();
+        if !self.chave_privada.is_empty() {
+            let de_onde = if self.chave_privada_env.is_empty() {
+                "cifra_fio.chave_privada".to_string()
+            } else {
+                format!("a variavel {}", self.chave_privada_env)
+            };
+            return Ok((chave_de_hex(&self.chave_privada, &de_onde)?, avisos));
+        }
+
+        let caminho = self.caminho_da_chave(config_em);
+        if caminho.exists() {
+            let texto = std::fs::read_to_string(&caminho).map_err(|e| {
+                PhxError::Esquema(format!("nao consegui ler {}: {e}", caminho.display()))
+            })?;
+            return Ok((
+                chave_de_hex(&texto, &caminho.display().to_string())?,
+                avisos,
+            ));
+        }
+
+        let nova = phxsql_core::x25519::gerar_privada();
+        if let Err(e) = gravar_chave(&caminho, &nova) {
+            // Nao derruba o servidor: ele estava funcionando antes disto
+            // existir. Mas AVISA alto, porque uma estatica que muda a cada
+            // arranque quebra o pino de todo cliente -- e quebra em silencio.
+            avisos.push(format!(
+                "cifra_fio: nao consegui gravar {} ({e}). A chave do fio vale \
+                 so enquanto este processo viver, entao o pino de todo cliente \
+                 quebra no proximo arranque",
+                caminho.display()
+            ));
+        }
+        Ok((nova, avisos))
+    }
+
+    pub fn para_json(&self) -> Json {
+        Json::objeto(vec![
+            ("ligada", Json::Bool(self.ligada)),
+            ("exigir", Json::Bool(self.exigir)),
+            (
+                "arquivo",
+                Json::texto_de(self.arquivo.display().to_string()),
+            ),
+            ("chave_privada_env", Json::texto_de(&self.chave_privada_env)),
+            // Nunca a privada -- nem mascarada, que o tamanho ja e informacao.
+            (
+                "chave_privada",
+                Json::texto_de(if self.chave_privada.is_empty() {
+                    "(do arquivo)"
+                } else if self.chave_privada_env.is_empty() {
+                    "(oculta)"
+                } else {
+                    "(do ambiente)"
+                }),
+            ),
+        ])
+    }
+}
+
+/// Le 32 bytes em hexadecimal, dizendo de onde vieram quando estao errados.
+fn chave_de_hex(texto: &str, de_onde: &str) -> Result<[u8; 32]> {
+    let limpo: String = texto.chars().filter(|c| !c.is_whitespace()).collect();
+    let bytes = phxsql_core::hash::de_hex(&limpo).ok_or_else(|| {
+        PhxError::Esquema(format!(
+            "a chave do fio em {de_onde} nao e hexadecimal valido"
+        ))
+    })?;
+    if bytes.len() != 32 {
+        return Err(PhxError::Esquema(format!(
+            "a chave do fio em {de_onde} tem {} bytes, e a X25519 tem 32",
+            bytes.len()
+        )));
+    }
+    let mut k = [0u8; 32];
+    k.copy_from_slice(&bytes);
+    Ok(k)
+}
+
+/// Grava a estatica com permissao 0600 no Unix.
+///
+/// A permissao e posta na CRIACAO, e nao depois: entre criar aberto e apertar
+/// ha uma janela em que qualquer um le a chave, e essa janela e a unica coisa
+/// que este arquivo existe para nao ter.
+fn gravar_chave(caminho: &Path, chave: &[u8; 32]) -> std::io::Result<()> {
+    use std::io::Write as _;
+    let mut opcoes = std::fs::OpenOptions::new();
+    opcoes.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        opcoes.mode(0o600);
+    }
+    let mut arq = opcoes.open(caminho)?;
+    writeln!(arq, "{}", phxsql_core::hash::para_hex(chave))?;
+    arq.sync_all()
+}
+
 /// Interface web: um servidor HTTP separado, que serve a pagina do Centro de
 /// Controle e traduz o clique do navegador no mesmo protocolo da porta 5000.
 ///
@@ -1538,6 +1778,8 @@ pub struct Config {
     pub jobs: PathBuf,
     /// A cifra dos diarios em repouso. Desligada por padrao.
     pub cifra: Cifra,
+    /// A cifra do FIO -- o aperto de mao da porta de dados. Ver [`CifraFio`].
+    pub cifra_fio: CifraFio,
     /// A trilha de dado pessoal. Ver [`Lgpd`].
     pub lgpd: Lgpd,
     /// As cores e os limiares do painel de bolhas. Ver [`Painel`].
@@ -1573,7 +1815,7 @@ pub struct Config {
 // no primeiro nivel -- quem a escrevesse no arquivo levava um "campo que este
 // servidor nao conhece" sobre um campo que ele le e obedece. Aviso falso gasta
 // a confianca do aviso verdadeiro.
-const CAMPOS_CONHECIDOS: [&str; 25] = [
+const CAMPOS_CONHECIDOS: [&str; 26] = [
     "bind",
     "base",
     "token",
@@ -1596,6 +1838,7 @@ const CAMPOS_CONHECIDOS: [&str; 25] = [
     "dblink",
     "jobs",
     "cifra",
+    "cifra_fio",
     "idioma",
     "lgpd",
     "telemetria",
@@ -1610,7 +1853,7 @@ const CAMPOS_CONHECIDOS: [&str; 25] = [
 /// as duas primeiras estao ganhando campos novos por outras frentes nesta
 /// rodada, e um aviso falso de "campo desconhecido" seria pior que a lacuna;
 /// as duas ultimas tem chaves livres (bases, tabelas).
-const SECOES_CONHECIDAS: [(&str, &[&str]); 8] = [
+const SECOES_CONHECIDAS: [(&str, &[&str]); 9] = [
     (
         "recursos",
         &[
@@ -1685,6 +1928,16 @@ const SECOES_CONHECIDAS: [(&str, &[&str]); 8] = [
             "separador",
         ],
     ),
+    (
+        "cifra_fio",
+        &[
+            "ligada",
+            "exigir",
+            "chave_privada",
+            "chave_privada_env",
+            "arquivo",
+        ],
+    ),
     ("lgpd", &["alteracoes", "acessos"]),
     (
         "telemetria",
@@ -1745,6 +1998,7 @@ impl Default for Config {
             dblink: PathBuf::from("dblink.json"),
             jobs: PathBuf::from("jobs.json"),
             cifra: Cifra::default(),
+            cifra_fio: CifraFio::default(),
             lgpd: Lgpd::default(),
             telemetria: Painel::default(),
             idioma: String::new(),
@@ -1826,6 +2080,8 @@ impl Config {
                                 senha: o.texto_ou("senha", "").to_string(),
                                 cada_minutos: o.inteiro_ou("cada_minutos", 0).max(0) as u64,
                                 hora: o.texto_ou("hora", "").trim().to_string(),
+                                cifra: o.booleano_ou("cifra", false),
+                                chave_do_fio: o.texto_ou("chave_do_fio", "").trim().to_string(),
                             })
                             .collect()
                     })
@@ -1900,6 +2156,7 @@ impl Config {
             dblink: PathBuf::from(j.texto_ou("dblink", "dblink.json")),
             jobs: PathBuf::from(j.texto_ou("jobs", "jobs.json")),
             cifra: Cifra::de_json(j),
+            cifra_fio: CifraFio::de_json(j),
             lgpd: Lgpd::de_json(j),
             telemetria: Painel::de_json(j, &mut avisos),
             idioma: {
@@ -2213,6 +2470,7 @@ impl Config {
             ("dblink", Json::texto_de(self.dblink.display().to_string())),
             ("jobs", Json::texto_de(self.jobs.display().to_string())),
             ("cifra", self.cifra.para_json()),
+            ("cifra_fio", self.cifra_fio.para_json()),
             ("lgpd", self.lgpd.para_json()),
             // As cores VAO para a tela por aqui -- o mesmo caminho de todo o
             // resto da configuracao. A tela de configuracao nao le arquivo, e
@@ -2564,6 +2822,142 @@ mod tests {
         // E aplicar uma cifra desligada nao liga cofre nenhum.
         c.cifra.aplicar().unwrap();
         assert!(!phxsql_store::cofre::ligado());
+    }
+
+    /// **O comportamento velho.** Um `config.json` que nunca ouviu falar da
+    /// cifra do fio nao exige nada de ninguem.
+    ///
+    /// E o teste que mais importa nesta frente: guarda nova entra PEDIDA.
+    #[test]
+    fn sem_a_secao_cifra_fio_nada_e_exigido() {
+        let j = Json::analisar(r#"{"token":"t"}"#).unwrap();
+        let c = Config::de_json(&j).unwrap();
+        assert!(
+            !c.cifra_fio.exigir,
+            "sem a secao, o servidor passou a EXIGIR o tunel: todo cliente \
+             velho para de funcionar na atualizacao"
+        );
+        // `ligada` NASCE ligada, e isso nao muda nada para ninguem: o aperto
+        // so acontece se o cliente pedir, e cliente velho nunca pede.
+        assert!(c.cifra_fio.ligada);
+        assert!(c.estranhas.is_empty());
+    }
+
+    #[test]
+    fn a_secao_cifra_fio_e_lida_e_nao_vira_campo_estranho() {
+        let j = Json::analisar(
+            r#"{"token":"t","cifra_fio":{"ligada":false,"exigir":true,
+                 "arquivo":"/tmp/uma-chave.hex"}}"#,
+        )
+        .unwrap();
+        let c = Config::de_json(&j).unwrap();
+        assert!(!c.cifra_fio.ligada);
+        assert!(c.cifra_fio.exigir);
+        assert_eq!(c.cifra_fio.arquivo, PathBuf::from("/tmp/uma-chave.hex"));
+        assert!(c.estranhas.is_empty(), "{:?}", c.estranhas);
+
+        // Campo escrito errado DENTRO da secao vira aviso, e nao silencio.
+        let j = Json::analisar(r#"{"token":"t","cifra_fio":{"exigirr":true}}"#).unwrap();
+        let c = Config::de_json(&j).unwrap();
+        assert_eq!(c.estranhas, vec!["cifra_fio.exigirr".to_string()]);
+    }
+
+    /// A privada do fio nao sai pelo `para_json` (que a tela le) nem pelo
+    /// `Debug` (que um `dbg!` apressado jogaria no log).
+    #[test]
+    fn a_privada_do_fio_nunca_sai() {
+        let segredo = "1122334455667788112233445566778811223344556677881122334455667788";
+        let j = Json::analisar(&format!(
+            r#"{{"token":"t","cifra_fio":{{"chave_privada":"{segredo}"}}}}"#
+        ))
+        .unwrap();
+        let c = Config::de_json(&j).unwrap();
+        let texto = c.para_json().escrever();
+        assert!(!texto.contains(segredo), "a privada vazou no para_json");
+        assert!(
+            texto.contains("cifra_fio"),
+            "a secao sumiu da tela: {texto}"
+        );
+        assert!(!format!("{:?}", c.cifra_fio).contains(segredo));
+        assert!(!format!("{c:?}").contains(segredo));
+
+        // E ela e mesmo LIDA -- campo de configuracao sem leitor mente.
+        let (privada, avisos) = c.cifra_fio.estatica(None).unwrap();
+        assert!(avisos.is_empty());
+        assert_eq!(phxsql_core::hash::para_hex(&privada), segredo);
+    }
+
+    /// A estatica nasce no arquivo, ao lado do `config.json`, e a SEGUNDA
+    /// leitura devolve a mesma -- senao o pino de todo cliente quebraria a
+    /// cada arranque.
+    #[test]
+    fn a_estatica_do_fio_nasce_no_arquivo_e_nao_muda() {
+        let d = std::env::temp_dir().join(format!("phxsql-chave-do-fio-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let config = d.join("config.json");
+
+        let cf = CifraFio::default();
+        assert!(!d.join("chave-do-fio.hex").exists());
+        let (primeira, avisos) = cf.estatica(Some(&config)).unwrap();
+        assert!(avisos.is_empty(), "{avisos:?}");
+        assert!(
+            d.join("chave-do-fio.hex").exists(),
+            "a estatica nao foi gravada ao lado do config"
+        );
+        let (segunda, _) = cf.estatica(Some(&config)).unwrap();
+        assert_eq!(primeira, segunda, "a estatica mudou entre duas leituras");
+
+        // Permissao 0600 na criacao: entre criar aberto e apertar ha uma
+        // janela em que qualquer um le a chave.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            let modo = std::fs::metadata(d.join("chave-do-fio.hex"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777;
+            assert_eq!(modo, 0o600, "a chave do fio nasceu legivel por outros");
+        }
+
+        // Hexadecimal torto e ERRO com o caminho dentro, e nao chave sorteada
+        // em silencio -- senao o pino do cliente pararia de bater sem motivo.
+        std::fs::write(d.join("chave-do-fio.hex"), "nao sou hexadecimal").unwrap();
+        let e = cf.estatica(Some(&config)).unwrap_err().to_string();
+        assert!(e.contains("hexadecimal"), "{e}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// O pino da origem: ausente e `None`, e torto e ERRO.
+    ///
+    /// Nunca `None` por engano -- um pino escrito errado que virasse "sem
+    /// pino" desligaria em silencio exatamente a protecao que ele existe para
+    /// dar.
+    #[test]
+    fn pino_torto_na_origem_e_erro_e_nao_ausencia() {
+        let mut o = Origem {
+            nome: "matriz".into(),
+            host: "10.0.0.1".into(),
+            porta: 5000,
+            token: String::new(),
+            databases: Vec::new(),
+            reconectar_em: 10,
+            usuario: String::new(),
+            senha_hash: String::new(),
+            senha: String::new(),
+            cada_minutos: 0,
+            hora: String::new(),
+            cifra: true,
+            chave_do_fio: String::new(),
+        };
+        assert!(o.pino_do_fio().unwrap().is_none());
+        o.chave_do_fio = "abacaxi".into();
+        assert!(o.pino_do_fio().is_err());
+        o.chave_do_fio = "aa".repeat(31);
+        assert!(o.pino_do_fio().is_err(), "31 bytes passaram por 32");
+        o.chave_do_fio = "aa".repeat(32);
+        assert_eq!(o.pino_do_fio().unwrap(), Some([0xaau8; 32]));
     }
 
     #[test]

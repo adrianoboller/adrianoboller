@@ -17,6 +17,38 @@
   "base": "/var/lib/phxsql/dados",
   "token": "TOKEN-DO-SOURCE-CURITIBA",
 
+  "_cifra_fio": [
+    "A CIFRA DO FIO da porta de dados: aperto de mao estilo Noise (X25519 +",
+    "HKDF + ChaCha20-Poly1305). O CLIENTE e quem pede, com {\"op\":\"cifrar\"};",
+    "quem nao pedir continua exatamente como antes. Ver docs/CIFRA-DO-FIO.md.",
+    "",
+    "ligada  (padrao true)  o servidor ATENDE o aperto. false recusa.",
+    "exigir  (padrao false) recusa QUALQUER pedido fora do tunel.",
+    "",
+    "ATENCAO ao `exigir`, que e o campo que decide tudo:",
+    "",
+    "  DESLIGADO (o padrao) o tunel protege contra escuta PASSIVA e nada",
+    "  mais. Quem esta no meio apaga o pedido de aperto, o cliente rebaixa",
+    "  para claro, e a protecao vira ZERO.",
+    "",
+    "  LIGADO   protege tambem do atacante ativo -- mas SO junto com o pino",
+    "  da chave deste servidor no cliente (phxsqld --chave-do-fio). E",
+    "  quebra todo cliente que nao fala o aperto, o driver ODBC inclusive.",
+    "",
+    "A estatica nasce na PRIMEIRA vez que alguem pede o aperto, no arquivo",
+    "chave-do-fio.hex ao lado deste config (0600). chave_privada_env e o",
+    "caminho recomendado quando o config vai para o controle de versao.",
+    "",
+    "Nao e TLS, e navegador nao fala isto: a interface web continua",
+    "dependendo de proxy TLS ou de tunel."
+  ],
+  "cifra_fio": {
+    "ligada": true,
+    "exigir": false,
+    "arquivo": "chave-do-fio.hex",
+    "chave_privada_env": ""
+  },
+
   "max_linhas": 5000,
   "timeout_s": 60,
   "conexoes_max": 128,

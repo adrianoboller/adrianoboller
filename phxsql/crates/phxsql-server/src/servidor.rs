@@ -20,12 +20,14 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
+
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use phxsql_core::error::{PhxError, Result};
+use phxsql_core::fio::{Canal, Recebido};
 use phxsql_core::json::Json;
 use phxsql_store::catalogo::Instancia;
 use phxsql_store::log::Operacao;
@@ -537,6 +539,13 @@ pub struct Servidor {
     /// virariam duas respostas no dia em que um caminho esquecesse o outro.
     max_linhas_vivo: AtomicU64,
     espelho_vivo: AtomicBool,
+    /// A privada estatica do aperto de mao da porta de dados.
+    ///
+    /// Preguicosa DE PROPOSITO: nasce na primeira vez que alguem pede o
+    /// aperto, e nao no arranque. Um servidor com quem ninguem faz aperto nao
+    /// passa a escrever um arquivo que antes nao escrevia -- que e a regra do
+    /// "guarda nova entra pedida" aplicada ao disco.
+    estatica_do_fio: Mutex<Option<[u8; 32]>>,
     /// O que o servidor esta fazendo AGORA: atividades, threads e as series.
     ///
     /// `Arc` porque as threads de fundo carregam o registro consigo para
@@ -612,6 +621,7 @@ impl Servidor {
             ha_gatilhos,
             max_linhas_vivo: AtomicU64::new(max_linhas),
             espelho_vivo: AtomicBool::new(espelho),
+            estatica_do_fio: Mutex::new(None),
             telemetria: Arc::new(crate::telemetria::Telemetria::default()),
         });
         // **O leitor do bloco `telemetria`.** Sem esta linha o `config.json`
@@ -2160,6 +2170,14 @@ impl Servidor {
                 // o pulso. Agendar aqui atrasaria a deteccao de master novo.
                 cada_minutos: 0,
                 hora: String::new(),
+                // O CLUSTER ainda fala em claro, e isso e limite declarado,
+                // nao esquecimento: o pulso da eleicao vai por outro caminho
+                // (`cluster.rs`), e cifrar so a replicacao dele deixaria
+                // metade do trafego do cluster protegida e a outra metade nao
+                // -- que e pior que nenhuma, porque parece protegido. Esta na
+                // secao 10 do `docs/CIFRA-DO-FIO.md`.
+                cifra: false,
+                chave_do_fio: String::new(),
             };
             match self.rodada_da_replica(&origem) {
                 // Nada novo: espera o pulso seguinte.
@@ -4446,14 +4464,39 @@ impl Servidor {
             self.soltar_cargas_da_ligacao(id_ligacao);
         });
 
-        let mut linha = String::new();
+        // O canal comeca EM CLARO, sempre. E o comportamento de hoje, e ele so
+        // muda se o cliente pedir o aperto -- cliente que nunca ouviu falar
+        // disto nunca pede, e para ele nada mudou.
+        let mut canal = Canal::Claro;
+        let mut linha;
         loop {
-            linha.clear();
-            match leitor.read_line(&mut linha) {
-                Ok(0) => return, // conexao fechada
-                Ok(_) => {}
-                Err(_) => return,
-            }
+            linha = match canal.ler(&mut leitor) {
+                Ok(Recebido::Linha(l)) => l,
+                // Fim limpo: EOF em claro, ou a despedida dentro do tunel.
+                Ok(Recebido::Fim) => return,
+                Err(e) => {
+                    // Aqui "nao deu erro" NAO pode virar "deu certo": dentro do
+                    // tunel, um EOF sem despedida e um fio cortado, e ele vai
+                    // para o log como erro em vez de sumir como fim de sessao.
+                    if canal.cifrado() {
+                        self.anotar(&Acesso {
+                            quando_ms: crate::agora_ms(),
+                            ip: ip.clone(),
+                            porta_origem: porta,
+                            op: "fio".into(),
+                            usuario: sessao.login().to_string(),
+                            autenticado: sessao.usuario.is_some(),
+                            ok: false,
+                            duracao_ms: 0,
+                            erro: Some(e.to_string()),
+                            database: String::new(),
+                            tabela: String::new(),
+                            codigo: 0,
+                        });
+                    }
+                    return;
+                }
+            };
             // Conferido AQUI, e nao so no `shutdown`: se o pedido chegou junto
             // com o encerramento, quem mandou encerrar ganha.
             if morrer.load(Ordering::SeqCst) {
@@ -4461,6 +4504,26 @@ impl Servidor {
             }
             if linha.trim().is_empty() {
                 continue;
+            }
+
+            // Os dois portoes do fio, e nenhum deles chega ao `despachar`.
+            //
+            // O `cifrar` e atendido ANTES do portao do token de proposito: o
+            // token e justamente uma das coisas que o tunel existe para
+            // esconder, e exigi-lo em claro para abrir o tunel esvaziaria
+            // metade do ganho. Ele nao concede nada -- quem o completa continua
+            // passando por token, login e permissao, agora por dentro.
+            if !canal.cifrado() {
+                if let Some(pedido) = Servidor::pedido_de_aperto(&linha) {
+                    if !self.responder_aperto(&pedido, &mut canal, &mut saida, &ip, porta) {
+                        return;
+                    }
+                    continue;
+                }
+                if self.config.cifra_fio.exigir {
+                    self.recusar_texto_claro(&mut saida, &ip, porta);
+                    return;
+                }
             }
 
             let inicio = Instant::now();
@@ -4578,11 +4641,145 @@ impl Servidor {
                 ..objeto_do_pedido(&linha, &resultado)
             });
 
-            if writeln!(saida, "{}", resposta.escrever()).is_err() {
+            if canal.escrever(&mut saida, &resposta.escrever()).is_err() {
                 return;
             }
-            let _ = saida.flush();
         }
+    }
+
+    /// A linha e o pedido de aperto? Devolve o pedido ja analisado.
+    ///
+    /// ANALISA em vez de recortar, pela mesma regra que o Profiler pagou: quem
+    /// procura `"op":"cifrar"` com um `find` depende de o cliente ter escrito
+    /// o JSON de um jeito, e erra nos dois sentidos.
+    fn pedido_de_aperto(linha: &str) -> Option<Json> {
+        let p = Json::analisar(linha).ok()?;
+        if p.texto_ou("op", "").trim() == "cifrar" {
+            Some(p)
+        } else {
+            None
+        }
+    }
+
+    /// A privada estatica deste servidor, criada na primeira vez que se pede.
+    fn estatica_do_fio(&self) -> Result<[u8; 32]> {
+        let mut guarda = self
+            .estatica_do_fio
+            .lock()
+            .map_err(|_| PhxError::Corrompido("trava da chave do fio envenenada".into()))?;
+        if let Some(k) = *guarda {
+            return Ok(k);
+        }
+        let (k, avisos) = self
+            .config
+            .cifra_fio
+            .estatica(self.config.caminho.as_deref())?;
+        for a in avisos {
+            eprintln!("aviso: {a}");
+        }
+        *guarda = Some(k);
+        Ok(k)
+    }
+
+    /// Responde o aperto e troca o canal. `false` = feche a conexao.
+    ///
+    /// Aperto que falha FECHA a conexao em vez de continuar em claro: o
+    /// cliente pediu tunel, e devolver-lhe uma sessao em claro depois de o
+    /// aperto ter falhado seria exatamente o rebaixamento silencioso que a
+    /// secao 2 do `docs/CIFRA-DO-FIO.md` recusa.
+    fn responder_aperto(
+        &self,
+        pedido: &Json,
+        canal: &mut Canal,
+        saida: &mut TcpStream,
+        ip: &str,
+        porta: u16,
+    ) -> bool {
+        let inicio = Instant::now();
+        let quando_ms = crate::agora_ms();
+        let feito = self.aperto(pedido);
+        let duracao = inicio.elapsed().as_millis() as u64;
+
+        let resposta = match &feito {
+            Ok((_, m2)) => Json::objeto(vec![
+                ("ok", Json::Bool(true)),
+                ("op", Json::texto_de("cifrar")),
+                (
+                    "resultado",
+                    Json::objeto(vec![("m2", Json::texto_de(m2.clone()))]),
+                ),
+                ("ms", Json::de_u64(duracao)),
+            ]),
+            Err(e) => self.resposta_erro("cifrar", e, duracao),
+        };
+        self.anotar(&Acesso {
+            quando_ms,
+            ip: ip.to_string(),
+            porta_origem: porta,
+            op: "cifrar".into(),
+            usuario: String::new(),
+            autenticado: false,
+            ok: feito.is_ok(),
+            duracao_ms: duracao,
+            erro: feito.as_ref().err().map(|e| e.to_string()),
+            database: String::new(),
+            tabela: String::new(),
+            codigo: 0,
+        });
+        // A resposta 2 vai EM CLARO -- ela e o aperto, nao o conteudo dele.
+        if writeln!(saida, "{}", resposta.escrever()).is_err() {
+            return false;
+        }
+        let _ = saida.flush();
+        match feito {
+            Ok((transporte, _)) => {
+                *canal = Canal::Cifrado(Box::new(transporte));
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
+    /// O aperto em si: mensagem 1 em Base64 entra, mensagem 2 em Base64 sai.
+    fn aperto(&self, pedido: &Json) -> Result<(phxsql_core::fio::Transporte, String)> {
+        if !self.config.cifra_fio.ligada {
+            return Err(PhxError::Autorizacao(
+                self.msg("erro.cifra_do_fio_desligada", &[]),
+            ));
+        }
+        let m1 = phxsql_core::base64::decodificar(pedido.texto_ou("e", ""))?;
+        let (transporte, m2) = phxsql_core::fio::responder(&self.estatica_do_fio()?, &m1)?;
+        Ok((transporte, phxsql_core::base64::codificar(&m2)))
+    }
+
+    /// A recusa de quem falou em claro com `cifra_fio.exigir` ligado.
+    ///
+    /// Sai como uma linha JSON comum, em claro, com erro nomeado: cliente velho
+    /// recebe algo que ele SABE exibir, em vez de um silencio ou de uma
+    /// conexao que morre sem motivo. O estrago de ligar isto por engano tem de
+    /// ser visivel no primeiro pedido.
+    fn recusar_texto_claro(&self, saida: &mut TcpStream, ip: &str, porta: u16) {
+        let erro = PhxError::Autorizacao(self.msg("erro.cifra_do_fio_exigida", &[]));
+        self.anotar(&Acesso {
+            quando_ms: crate::agora_ms(),
+            ip: ip.to_string(),
+            porta_origem: porta,
+            op: "cifrar".into(),
+            usuario: String::new(),
+            autenticado: false,
+            ok: false,
+            duracao_ms: 0,
+            erro: Some(erro.to_string()),
+            database: String::new(),
+            tabela: String::new(),
+            codigo: 0,
+        });
+        let _ = writeln!(
+            saida,
+            "{}",
+            self.resposta_erro("cifrar", &erro, 0).escrever()
+        );
+        let _ = saida.flush();
     }
 
     /// Le o pedido e o leva pelos portoes, nesta ordem: politica (o que ninguem
@@ -11857,6 +12054,8 @@ impl Servidor {
                     senha: p.texto_ou("senha", "").to_string(),
                     cada_minutos: 0,
                     hora: String::new(),
+                    cifra: p.booleano_ou("cifra", false),
+                    chave_do_fio: p.texto_ou("chave_do_fio", "").trim().to_string(),
                 }
             }
         };

@@ -37,7 +37,10 @@ use crate::sha512::sha512;
 // cada pedaco: da para somar e multiplicar varias vezes antes de precisar
 // propagar o carrego, e o carrego e onde mora o erro.
 
-type Fe = [u64; 5];
+// `pub(crate)` daqui para baixo por causa do `x25519.rs`: as duas curvas moram
+// no MESMO corpo finito, e escrever um segundo `fe_mul` ao lado deste dobraria
+// a superficie de erro justamente na parte que ninguem revisa duas vezes.
+pub(crate) type Fe = [u64; 5];
 
 const MASCARA: u64 = (1 << 51) - 1;
 /// 2p, pedaco a pedaco. Entra na subtracao para nunca haver emprestimo.
@@ -89,7 +92,7 @@ fn fe_carregar(mut h: Fe) -> Fe {
     h
 }
 
-fn fe_soma(a: Fe, b: Fe) -> Fe {
+pub(crate) fn fe_soma(a: Fe, b: Fe) -> Fe {
     fe_carregar([
         a[0] + b[0],
         a[1] + b[1],
@@ -99,7 +102,7 @@ fn fe_soma(a: Fe, b: Fe) -> Fe {
     ])
 }
 
-fn fe_sub(a: Fe, b: Fe) -> Fe {
+pub(crate) fn fe_sub(a: Fe, b: Fe) -> Fe {
     fe_carregar([
         a[0] + DOIS_P_0 - b[0],
         a[1] + DOIS_P_N - b[1],
@@ -113,7 +116,7 @@ fn fe_neg(a: Fe) -> Fe {
     fe_sub(ZERO, a)
 }
 
-fn fe_mul(a: Fe, b: Fe) -> Fe {
+pub(crate) fn fe_mul(a: Fe, b: Fe) -> Fe {
     let (a0, a1, a2, a3, a4) = (
         a[0] as u128,
         a[1] as u128,
@@ -146,7 +149,7 @@ fn fe_mul(a: Fe, b: Fe) -> Fe {
     fe_carregar(h)
 }
 
-fn fe_quadrado(a: Fe) -> Fe {
+pub(crate) fn fe_quadrado(a: Fe) -> Fe {
     fe_mul(a, a)
 }
 
@@ -159,7 +162,7 @@ fn fe_quadrados(mut a: Fe, n: u32) -> Fe {
 }
 
 /// a^(p-2) = a^-1. Cadeia de adicao classica do curve25519.
-fn fe_inverso(z: Fe) -> Fe {
+pub(crate) fn fe_inverso(z: Fe) -> Fe {
     let z2 = fe_quadrado(z);
     let z8 = fe_quadrados(z2, 2);
     let z9 = fe_mul(z, z8);
@@ -210,7 +213,7 @@ fn fe_pow_p58(z: Fe) -> Fe {
     fe_mul(z_252_2, z)
 }
 
-fn fe_de_bytes(b: &[u8; 32]) -> Fe {
+pub(crate) fn fe_de_bytes(b: &[u8; 32]) -> Fe {
     let carregar = |i: usize, n: usize| -> u64 {
         let mut v = 0u64;
         for k in 0..n {
@@ -231,7 +234,7 @@ fn fe_de_bytes(b: &[u8; 32]) -> Fe {
     ]
 }
 
-fn fe_para_bytes(h: Fe) -> [u8; 32] {
+pub(crate) fn fe_para_bytes(h: Fe) -> [u8; 32] {
     // Reduz de vez: soma 19, olha se passou de 2^255, e desconta p se passou.
     let mut h = fe_carregar(h);
     let mut q = (h[0] + 19) >> 51;
