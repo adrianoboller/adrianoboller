@@ -71,9 +71,17 @@ pareceria uma guarda excelente.
 Cada troca é desfeita num `finally`, e há uma rede no `atexit`: um Ctrl-C no
 meio não deixa defeito plantado em lugar nenhum.
 
+E esse caminho é **compartilhado**: duas árvores de trabalho na mesma máquina
+disputam a mesma cópia, e o estrago engana — três guardas saíram `QUEBRADA` com
+«o código com o defeito reposto não compila», citando campos de uma `struct`
+que não existe nesta árvore, porque a cópia era da árvore vizinha. Não é
+entrada envelhecida, é cópia trocada. **Quem roda em paralelo passa `--arvore`
+com um nome próprio** — a mesma rodada, com `--arvore` privado, deu 19/19 sem
+uma quebrada.
+
 **Só o binário de teste que a entrada nomeia.** Medido nesta máquina, com o
 `target/` quente e uma recompilação por mutação: o binário nomeado custa
-**8,1 s**, o `cargo test --workspace` custa **49,2 s**. Para as 18 entradas são
+**8,1 s**, o `cargo test --workspace` custa **49,2 s**. Para as 19 entradas são
 ~2 min contra ~15 min — não é «horas», como eu tinha escrito antes de medir, é
 uma ordem de grandeza. O que a escolha compra é caber **dentro** da bateria
 única (14m35s inteira) em vez de dobrá-la.
@@ -82,8 +90,15 @@ uma ordem de grandeza. O que a escolha compra é caber **dentro** da bateria
 bateria — e o `sujas-com-a-trava` é exatamente esse: um `Mutex` não reentrante
 pedido duas vezes pela mesma thread. O teste dele já tem prazo próprio de 30 s;
 o executor tem o dele por cima, e **mais largo**, senão mataria a rodada antes
-de o teste conseguir reprovar. Medido: essa guarda leva 33,8 s, e as outras 17
-levam de 1 a 12 s.
+de o teste conseguir reprovar. Medido: essa guarda leva 35,3 s, e as outras 18
+levam de 1,4 a 13,2 s.
+
+A `trava-atras-da-rede` é a segunda do mesmo naipe, e por outro caminho: o
+defeito dela é o laço da réplica segurando a trava de dados durante uma leitura
+de rede, e com ele reposto a sonda do teste **pendura** por 30 s em vez de
+falhar. O teste tem prazo próprio de 8 s em cada sonda, o executor tem o dele
+por cima (120 s), e a mensagem de reprovação já traz o diagnóstico: *«`varrer`
+sem resposta em 8 s; o `ping`, que não precisa da trava, respondeu em 570 µs»*.
 
 ## Três coisas que só apareceram rodando
 

@@ -28,7 +28,7 @@
 //! no cadastro de usuarios --, e dele sai a chave derivada sem nunca haver
 //! senha em claro em lugar nenhum.
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 use std::time::Duration;
 
@@ -47,6 +47,31 @@ use crate::valores::hex_para_bytes;
 /// seria uma resposta de dezenas de megabytes montada de uma vez dos dois
 /// lados.
 const LOTE: u64 = 500;
+
+/// O teto de UMA resposta do source, em bytes.
+///
+/// # Por que ele passou a existir
+///
+/// Enquanto o lote era lido COM a trava de dados na mao, o tamanho dele era o
+/// menor dos problemas. Agora que ele e lido antes -- e mora inteiro na
+/// memoria da replica ate a trava chegar --, «quanto isso pode crescer» virou
+/// uma pergunta com resposta obrigatoria, e a resposta nao pode ser «o que o
+/// outro lado mandar»: `read_line` sem teto aceita uma linha do tamanho da
+/// memoria da maquina, e quem escolhe o tamanho e o outro lado.
+///
+/// # A conta
+///
+/// [`LOTE`] eventos por resposta, e a imagem de cada linha viaja em
+/// hexadecimal -- dois caracteres por byte. O source corta o lote em
+/// [`crate::servidor::TETO_DO_LOTE_SERVIDO`] bytes de imagem, o que da
+/// ~32 MiB de texto mais o enfeite do JSON. Este teto e o DOBRO disso, para
+/// que um par sadio nunca encoste nele e ele sirva so para o que ele existe:
+/// impedir que a replica aloque sem limite por ordem de quem esta do outro
+/// lado do fio.
+///
+/// Uma linha unica maior que isto nao passa, e a recusa diz o numero -- o que
+/// e melhor que o `Killed` do nucleo, que nao diz nada.
+const TETO_DA_RESPOSTA: u64 = 128 * 1024 * 1024;
 
 /// Uma conexao com o source, falando o JSON por linha da porta de dados.
 pub struct Cliente {
@@ -109,10 +134,27 @@ impl Cliente {
         self.fluxo.write_all(b"\n")?;
         self.fluxo.flush()?;
 
+        // Le no MAXIMO `TETO_DA_RESPOSTA` + 1 byte: o `+1` e o que separa
+        // "coube" de "estourou" sem ter de contar o que ainda vem. Passou do
+        // teto, a conexao fica no meio de uma linha e nao serve mais -- por
+        // isso a recusa e um erro, que faz a rodada inteira voltar e a
+        // proxima abrir uma conexao nova.
         let mut resposta = String::new();
-        if self.leitor.read_line(&mut resposta)? == 0 {
+        let lidos = {
+            let mut limitado = (&mut self.leitor).take(TETO_DA_RESPOSTA + 1);
+            limitado.read_line(&mut resposta)?
+        };
+        if lidos == 0 {
             return Err(PhxError::Io(std::io::Error::other(
                 "o source fechou a conexao",
+            )));
+        }
+        if lidos as u64 > TETO_DA_RESPOSTA {
+            return Err(PhxError::LimiteExcedido(format!(
+                "o source mandou mais de {} MiB numa resposta so, e a replica \
+                 nao guarda um lote desse tamanho na memoria; baixe o tamanho \
+                 do lote do lado do source ou parta a tabela",
+                TETO_DA_RESPOSTA / (1024 * 1024)
             )));
         }
         let j = Json::analisar(&resposta)?;

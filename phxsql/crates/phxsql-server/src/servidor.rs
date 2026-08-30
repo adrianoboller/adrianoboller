@@ -372,6 +372,23 @@ impl Janela {
 /// bancada monta (tres) com sobra, e o custo de cada uma e 20 bytes.
 const MARCAS_POR_TABELA: usize = 8;
 
+/// Quantos bytes de IMAGEM cabem numa resposta de `replicar`.
+///
+/// # Por que um teto em bytes, e nao so em eventos
+///
+/// O `max` do pedido conta EVENTOS, e evento nao tem tamanho fixo: 500 linhas
+/// de 60 bytes sao 30 KiB, e 500 linhas com um memo de 200 KiB sao 100 MiB --
+/// que, em hexadecimal, viram 200 MiB de texto montados de uma vez dos dois
+/// lados. Contar so eventos e deixar o tamanho da resposta nas maos de quem
+/// escreveu a linha mais gorda.
+///
+/// Um lote curto nao perde nada: `ate` e `fim` saem do que foi realmente
+/// lido, entao a replica so pergunta de novo. E o lote nunca sai VAZIO por
+/// causa do teto -- o primeiro evento entra sempre, custe o que custar, senao
+/// uma linha maior que o teto pararia a replicacao para sempre em vez de
+/// atrasa-la.
+const TETO_DO_LOTE_SERVIDO: usize = 16 * 1024 * 1024;
+
 pub struct Servidor {
     config: Config,
     /// Trava unica de dados. Ver a nota de concorrencia no topo do modulo.
@@ -1652,16 +1669,18 @@ impl Servidor {
         Ok(aplicados)
     }
 
-    /// Traz UMA tabela ate a posicao do source.
-    fn alcancar_tabela(
+    /// Abre (criando se preciso) a tabela local e diz em que posicao ela esta.
+    ///
+    /// Toma a trava, faz o trabalho de disco e SOLTA -- e a fase 1 das tres em
+    /// que [`Self::alcancar_tabela`] esta partida. `None` quer dizer "nao ha
+    /// tabela aqui e o source nao mandou o esquema": nada a fazer.
+    fn abrir_para_replicar(
         &self,
-        cliente: &mut crate::replica::Cliente,
         database: &str,
         no: &crate::replica::NoSource,
-    ) -> Result<u64> {
-        let _trava = self.travar_dados()?;
-        let db = _trava.garantir_database(database)?;
-
+    ) -> Result<Option<u64>> {
+        let trava = self.travar_dados()?;
+        let db = trava.garantir_database(database)?;
         // Tabela que ainda nao existe aqui nasce do MESMO bloco de esquema que
         // o source tem, e nao de uma remontagem a partir de JSON: e assim que
         // o payload da imagem cai byte a byte no lugar certo.
@@ -1669,17 +1688,29 @@ impl Servidor {
             Ok(t) => t,
             Err(_) => match &no.esquema {
                 Some(e) => {
-                    let (schema, nome) = match no.nome.split_once('.') {
-                        Some((s, n)) => (Some(s.to_string()), n.to_string()),
-                        None => (None, no.nome.clone()),
-                    };
-                    let _ = nome;
+                    let schema = no.nome.split_once('.').map(|(s, _)| s.to_string());
                     eprintln!("replicacao: criando {database}.{} aqui", no.nome);
                     db.criar_tabela(schema.as_deref(), e.clone())?
                 }
-                None => return Ok(0),
+                None => return Ok(None),
             },
         };
+        Ok(Some(tabela.eventos()?))
+    }
+
+    /// Aplica UM lote ja lido do soquete. Fase 3: so trabalho no dado.
+    ///
+    /// Devolve quantos aplicou e a posicao LOCAL depois disso.
+    fn aplicar_lote_da_replica(
+        &self,
+        database: &str,
+        no: &crate::replica::NoSource,
+        posicao: u64,
+        eventos: &[crate::replica::EventoRecebido],
+    ) -> Result<(u64, u64)> {
+        let trava = self.travar_dados()?;
+        let db = trava.abrir_database(database)?;
+        let mut tabela = db.abrir_qualificada(&no.nome)?;
         // O diario DESTA replica tambem carrega a imagem quando configurado.
         // Sem isto, uma replica intermediaria grava eventos sem linha dentro, e
         // a replica que puxa DELA nao tem o que aplicar -- a cascata
@@ -1688,38 +1719,100 @@ impl Servidor {
         // imagem para os pedidos que vem pela porta.
         tabela.ligar_imagem_no_diario(self.config.replicacao.imagem_da_linha);
 
-        let mut posicao = tabela.eventos()?;
+        // A posicao e RELIDA com a trava na mao. Entre a leitura do soquete e
+        // este instante a trava esteve solta, e alguem pode ter escrito aqui;
+        // aplicar um lote pedido a partir de outra posicao gravaria o evento
+        // errado no rowid errado. Quando ela andou, o lote e descartado e o
+        // laco pede de novo a partir de onde a tabela esta agora -- descartar
+        // custa uma ida e volta, aplicar torto custaria o dado.
+        let agora = tabela.eventos()?;
+        if agora != posicao {
+            return Ok((0, agora));
+        }
+        let mut aplicados = 0u64;
+        for e in eventos {
+            tabela.aplicar_evento(e.operacao, e.rowid, &e.imagem)?;
+            aplicados += 1;
+        }
+        // A posicao LOCAL, e nao `posicao + eventos.len()`: aplicar gera
+        // eventos no diario daqui, e e por ele que a proxima rodada se
+        // orienta. Contar do lado do source deixaria os dois numeros
+        // andarem separados no primeiro evento que nao gerasse outro.
+        let nova = tabela.eventos()?;
+        if nova <= posicao {
+            // Aplicou e a posicao nao andou: o proximo pedido traria os
+            // mesmos eventos, e o laco giraria em falso para sempre.
+            return Err(PhxError::Corrompido(format!(
+                "replicacao de {database}.{}: {} evento(s) aplicado(s) e a \
+                 posicao continua em {posicao}",
+                no.nome,
+                eventos.len()
+            )));
+        }
+        // SEM `sincronizar` aqui, e isso foi medido. A versao anterior deste
+        // conserto sincronizava a cada lote -- 400 `fsync` num alcance de
+        // 200.000 eventos em vez de um -- e a bancada mostrou a conta: a vazao
+        // caiu para 21.194 eventos/s e o pior `varrer` do cliente subiu para
+        // 292 ms, com o `fsync` na mao da trava. A `Table` que sai de escopo
+        // aqui leva as paginas sujas ao arquivo pelo `Drop` do `NdxFile`, que
+        // e a mesma garantia de sempre contra queda do PROCESSO; a garantia
+        // contra queda da MAQUINA vem do `sincronizar` unico no fim do
+        // alcance, exatamente onde ela estava antes.
+        Ok((aplicados, nova))
+    }
+
+    /// Leva ao disco o que o alcance aplicou. Uma vez por alcance, com a trava.
+    fn sincronizar_replicada(&self, database: &str, tabela: &str) -> Result<()> {
+        let trava = self.travar_dados()?;
+        let db = trava.abrir_database(database)?;
+        db.abrir_qualificada(tabela)?.sincronizar()
+    }
+
+    /// Traz UMA tabela ate a posicao do source.
+    ///
+    /// # Por que isto esta partido em tres fases
+    ///
+    /// Ate a 0.18 esta funcao tomava a trava de dados na primeira linha e a
+    /// segurava ate o fim -- e no meio dela mora `replica::puxar`, que e uma
+    /// IDA E VOLTA DE REDE. Numa rede sa isso e invisivel; num corte
+    /// silencioso a leitura fica pendurada ate o prazo de 30 s do cliente e a
+    /// trava vai junto. Medido na bancada (`bancada/replicacao/trava.py`): com
+    /// o tubo emudecido, `ping` na replica respondia em 4 ms e `varrer` --
+    /// que precisa da trava -- em 30.079 ms, e a propria telemetria da replica
+    /// contou 35,8 s de trava na mao numa janela de 40 s.
+    ///
+    /// As tres fases sao: abrir e ler a posicao COM a trava, ler o lote do
+    /// soquete SEM ela, aplicar COM ela de novo. A regra que sai daqui e
+    /// geral: *nenhuma leitura de rede acontece com a trava de dados na mao*.
+    fn alcancar_tabela(
+        &self,
+        cliente: &mut crate::replica::Cliente,
+        database: &str,
+        no: &crate::replica::NoSource,
+    ) -> Result<u64> {
+        let Some(mut posicao) = self.abrir_para_replicar(database, no)? else {
+            return Ok(0);
+        };
         if posicao >= no.eventos {
             return Ok(0);
         }
         let mut aplicados = 0u64;
         while posicao < no.eventos {
+            // FORA da trava. Se a conexao cair aqui, o lote se perde e nada
+            // foi gravado: a posicao local nao andou, e a proxima rodada pede
+            // exatamente os mesmos eventos. Nao ha meio-lote possivel porque
+            // o lote inteiro chega antes de a trava ser pedida.
             let eventos = crate::replica::puxar(cliente, database, &no.nome, posicao)?;
             if eventos.is_empty() {
                 break;
             }
-            for e in &eventos {
-                tabela.aplicar_evento(e.operacao, e.rowid, &e.imagem)?;
-                aplicados += 1;
-            }
-            // A posicao LOCAL, e nao `posicao + eventos.len()`: aplicar gera
-            // eventos no diario daqui, e e por ele que a proxima rodada se
-            // orienta. Contar do lado do source deixaria os dois numeros
-            // andarem separados no primeiro evento que nao gerasse outro.
-            let nova = tabela.eventos()?;
-            if nova <= posicao {
-                // Aplicou e a posicao nao andou: o proximo pedido traria os
-                // mesmos eventos, e o laco giraria em falso para sempre.
-                return Err(PhxError::Corrompido(format!(
-                    "replicacao de {database}.{}: {} evento(s) aplicado(s) e a \
-                     posicao continua em {posicao}",
-                    no.nome,
-                    eventos.len()
-                )));
-            }
+            let (n, nova) = self.aplicar_lote_da_replica(database, no, posicao, &eventos)?;
+            aplicados += n;
             posicao = nova;
         }
-        tabela.sincronizar()?;
+        if aplicados > 0 {
+            self.sincronizar_replicada(database, &no.nome)?;
+        }
         Ok(aplicados)
     }
 
@@ -2393,23 +2486,20 @@ impl Servidor {
         Ok(aplicados)
     }
 
-    /// Traz UMA tabela ate a posicao do outro lado, casando pela chave.
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "o laco de uma tabela junta as identidades dos dois lados"
-    )]
-    fn alcancar_tabela_bidi(
+    /// Abre a tabela do lado de ca e prepara o confronto por chave.
+    ///
+    /// Fase 1 do bidirecional: toma a trava, garante a tabela, confere que ela
+    /// tem chave unica e absorve o diario local no mapa de toques. Solta a
+    /// trava ao voltar. `None` = nao ha o que replicar nesta tabela.
+    fn abrir_para_bidi(
         &self,
-        cliente: &mut crate::replica::Cliente,
         database: &str,
         no: &crate::replica::NoSource,
         origem: &crate::config::Origem,
-        meu_id: &str,
         meu_hash: u16,
-        hash_dele: u16,
-    ) -> Result<u64> {
-        let _trava = self.travar_dados()?;
-        let db = _trava.garantir_database(database)?;
+    ) -> Result<Option<(String, usize)>> {
+        let trava = self.travar_dados()?;
+        let db = trava.garantir_database(database)?;
         let mut tabela = match db.abrir_qualificada(&no.nome) {
             Ok(t) => t,
             Err(_) => match &no.esquema {
@@ -2418,15 +2508,9 @@ impl Servidor {
                     eprintln!("replicacao: criando {database}.{} aqui", no.nome);
                     db.criar_tabela(schema.as_deref(), e.clone())?
                 }
-                None => return Ok(0),
+                None => return Ok(None),
             },
         };
-        // No multi as duas imagens sao obrigatorias: a da linha porque a
-        // chave mora nela, e a da exclusao porque exclusao tambem viaja por
-        // chave. Este caminho abre a tabela direto, fora do `abrir_travada`.
-        tabela.ligar_imagem_no_diario(true);
-        tabela.ligar_imagem_na_exclusao(true);
-
         let chave_tab = format!("{database}/{}", no.nome);
         let Some((indice, pos_chave)) = bidirecional::chave_unica(tabela.esquema()) else {
             // A recusa com o motivo escrito: sem chave unica nao ha
@@ -2441,7 +2525,7 @@ impl Servidor {
             self.anotar_estado(&origem.nome, |e| {
                 e.recusas.insert(chave_tab.clone(), motivo.clone());
             });
-            return Ok(0);
+            return Ok(None);
         };
         // A tabela serve: se ela ja esteve recusada, o recado sai. Recado que
         // sobrevive ao conserto vira configuracao que mente -- alguem criou o
@@ -2449,11 +2533,83 @@ impl Servidor {
         self.anotar_estado(&origem.nome, |e| {
             e.recusas.remove(&chave_tab);
         });
-
         // O diario local que ainda nao passou pelo mapa de toques -- inclui a
         // escrita local desde a ultima rodada, que e quem disputa o conflito.
         self.absorver_diario_local(&mut tabela, &chave_tab, pos_chave, meu_hash)?;
+        Ok(Some((indice, pos_chave)))
+    }
 
+    /// Aplica UM lote bidirecional ja lido do soquete. Fase 3.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "o laco de uma tabela junta as identidades dos dois lados"
+    )]
+    fn aplicar_lote_bidi(
+        &self,
+        database: &str,
+        no: &crate::replica::NoSource,
+        indice: &str,
+        pos_chave: usize,
+        eventos: &[crate::replica::EventoRecebido],
+        meu_hash: u16,
+        hash_dele: u16,
+    ) -> Result<u64> {
+        let trava = self.travar_dados()?;
+        let db = trava.abrir_database(database)?;
+        let mut tabela = db.abrir_qualificada(&no.nome)?;
+        // No multi as duas imagens sao obrigatorias: a da linha porque a
+        // chave mora nela, e a da exclusao porque exclusao tambem viaja por
+        // chave. Este caminho abre a tabela direto, fora do `abrir_travada`.
+        tabela.ligar_imagem_no_diario(true);
+        tabela.ligar_imagem_na_exclusao(true);
+        let chave_tab = format!("{database}/{}", no.nome);
+        let mut aplicados = 0u64;
+        for e in eventos {
+            // Cinto e suspensorio: o source ja suprimiu pelo `para`, e
+            // ainda assim um evento com a MINHA origem nao se aplica --
+            // um source antigo, que ignora o campo, reabriria o laco.
+            if e.origem == meu_hash {
+                continue;
+            }
+            if self.aplicar_por_chave(&mut tabela, &chave_tab, indice, pos_chave, e, hash_dele)? {
+                aplicados += 1;
+            }
+        }
+        // Um `fsync` por alcance, e nao por lote -- ver a nota em
+        // `aplicar_lote_da_replica`, onde a conta esta medida.
+        Ok(aplicados)
+    }
+
+    /// Traz UMA tabela ate a posicao do outro lado, casando pela chave.
+    ///
+    /// Partida nas mesmas tres fases de [`Self::alcancar_tabela`], e aqui o
+    /// motivo e mais duro: no bidirecional os DOIS lados rodam este laco. Com
+    /// a trava na mao durante o `puxar_lote`, cada um segurava a propria trava
+    /// esperando a resposta do outro -- que so podia vir depois de o outro
+    /// soltar a dele. E um abraco mortal de verdade, e ele so se desfazia no
+    /// prazo de leitura de 30 s dos dois lados, deixando `EAGAIN` no diario de
+    /// cada um. Medido antes do conserto, com 200.000 linhas escritas nos dois
+    /// lados ao mesmo tempo: 33,0 s contra 2,4 s de um servidor sozinho -- 14×
+    /// -- e pior `varrer` de 31.375 ms enquanto o `ping` respondia em 5 ms.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "o laco de uma tabela junta as identidades dos dois lados"
+    )]
+    fn alcancar_tabela_bidi(
+        &self,
+        cliente: &mut crate::replica::Cliente,
+        database: &str,
+        no: &crate::replica::NoSource,
+        origem: &crate::config::Origem,
+        meu_id: &str,
+        meu_hash: u16,
+        hash_dele: u16,
+    ) -> Result<u64> {
+        let Some((indice, pos_chave)) = self.abrir_para_bidi(database, no, origem, meu_hash)?
+        else {
+            return Ok(0);
+        };
+        let chave_tab = format!("{database}/{}", no.nome);
         let chave_pos = format!("{}|{}", origem.nome, chave_tab);
         let mut desde = self
             .posicoes_bidi
@@ -2467,29 +2623,27 @@ impl Servidor {
 
         let mut aplicados = 0u64;
         loop {
+            // FORA da trava -- ver a nota da funcao.
             let lote =
                 crate::replica::puxar_lote(cliente, database, &no.nome, desde, Some(meu_id))?;
             if lote.ate <= desde {
                 break;
             }
-            for e in &lote.eventos {
-                // Cinto e suspensorio: o source ja suprimiu pelo `para`, e
-                // ainda assim um evento com a MINHA origem nao se aplica --
-                // um source antigo, que ignora o campo, reabriria o laco.
-                if e.origem == meu_hash {
-                    continue;
-                }
-                if self.aplicar_por_chave(
-                    &mut tabela,
-                    &chave_tab,
-                    &indice,
-                    pos_chave,
-                    e,
-                    hash_dele,
-                )? {
-                    aplicados += 1;
-                }
-            }
+            aplicados += self.aplicar_lote_bidi(
+                database,
+                no,
+                &indice,
+                pos_chave,
+                &lote.eventos,
+                meu_hash,
+                hash_dele,
+            )?;
+            // A posicao consumida so anda DEPOIS de o lote estar gravado: uma
+            // queda entre a leitura e a aplicacao deixa a posicao onde estava,
+            // e o mesmo lote volta na proxima rodada. Repetir e inofensivo
+            // aqui -- o casamento e por chave e a regra e "mais recente
+            // vence", entao aplicar duas vezes o mesmo evento da no mesmo.
+            // Andar antes seria o contrario: perderia o lote em silencio.
             desde = lote.ate;
             if let Ok(mut p) = self.posicoes_bidi.lock() {
                 p.insert(chave_pos.clone(), desde);
@@ -2505,7 +2659,9 @@ impl Servidor {
                 break;
             }
         }
-        tabela.sincronizar()?;
+        if aplicados > 0 {
+            self.sincronizar_replicada(database, &no.nome)?;
+        }
         Ok(aplicados)
     }
 
@@ -11728,7 +11884,16 @@ impl Servidor {
                     .copied(),
             );
         }
-        let eventos = t.diario_com_imagem(desde, max)?;
+        let mut eventos = t.diario_com_imagem(desde, max)?;
+        // O corte por BYTES, depois do corte por eventos -- ver
+        // `TETO_DO_LOTE_SERVIDO`. O primeiro evento entra sempre.
+        let mut somados = 0usize;
+        if let Some(corte) = eventos.iter().position(|(_, imagem)| {
+            somados += imagem.len();
+            somados > TETO_DO_LOTE_SERVIDO
+        }) {
+            eventos.truncate(corte.max(1));
+        }
         if let (Ok(mut m), Some(nova)) = (self.marcas_do_diario.lock(), t.marca_do_diario()) {
             let v = m.entry(chave).or_default();
             // A que esta replica acabou de usar sai: ela nao volta atras.

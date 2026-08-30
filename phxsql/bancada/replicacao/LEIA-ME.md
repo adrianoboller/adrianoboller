@@ -17,7 +17,9 @@ medir o segundo salto.
 | `montar.py` | escreve os quatro `config.json` e sobe os quatro processos |
 | `medir.py` | a bancada: atraso por tipo de escrita, vazão, queda e retomada |
 | `modos.py` | os quatro modos, nas portas 5330-5339 |
+| `trava.py` | **a trava de dados contra a leitura de rede**, nas portas 7050-7055 — ver abaixo |
 | `resultados.json` | a última corrida completa |
+| `trava.json` | a última corrida do `trava.py` |
 | `docker/` | **os mesmos quatro modos em contêineres**, que é onde endereço, firewall e partição existem de verdade — ver `docker/LEIA-ME.md` |
 
 ## O que esta bancada NÃO alcança, e por isso existe a de contêiner
@@ -34,6 +36,52 @@ provar, e as três acharam defeito quando ficaram possíveis
 - **partição** — matar um processo é fácil; cortar a rede **sem matar
   ninguém** não existe aqui. E é a partição que mostra o abraço mortal do
   bidirecional.
+
+## `trava.py` — o corte silencioso sem contêiner nenhum
+
+```bash
+python3 bancada/replicacao/trava.py            # os quatro estagios, ~1,5 min
+python3 bancada/replicacao/trava.py congela    # so o corte silencioso
+python3 bancada/replicacao/trava.py alcance    # so a vazao de aplicacao
+python3 bancada/replicacao/trava.py queda      # so a conexao caindo
+python3 bancada/replicacao/trava.py abraco     # so o bidirecional
+```
+
+O terceiro item da lista acima — cortar a rede sem matar ninguém — tem **uma
+metade** que o loopback alcança, e é a que achou o defeito da §18: um **tubo**
+em Python entre a réplica e o source, que repassa byte a byte até mandarem
+emudecer e a partir daí segura os dois soquetes abertos **sem repassar nada**.
+Do ponto de vista da réplica é o mesmo silêncio de um `iptables -j DROP`: a
+conexão de pé, o pedido enviado, e a resposta que nunca vem.
+
+O que ele **não** substitui continua sendo a queda de processo e a partição de
+verdade — para essas vale a bancada de contêiner. O que ele compra é rodar em
+1,5 min, em qualquer máquina, sem daemon nenhum: os dois números da §18 saíram
+daqui, e batem com os do contêiner (30.079 ms contra 29.456 ms; 33,0 s contra
+33,3 s).
+
+Os quatro estágios, e por que cada um:
+
+| estágio | o que mede |
+|---|---|
+| `congela` | com o tubo mudo, `ping` (não toca na trava) contra `varrer` (precisa dela) — mais `totais.trava_ms` da telemetria da réplica, que é a testemunha de dentro |
+| `alcance` | a vazão de aplicação e o pior `varrer` do cliente **durante** um alcance de rotina, com a rede sã |
+| `queda` | dez cortes de conexão de verdade no meio do alcance, julgados pela soma de verificação dos dois lados |
+| `abraco` | as duas metades da carga escritas ao mesmo tempo num par bidirecional, com sonda rodando durante a carga |
+
+Três armadilhas que esta bancada pagou, e que valem para qualquer uma:
+
+- **prazo de cliente menor que o defeito mede «não respondeu» em vez de
+  «esperou 30 s»**. A primeira versão morria de `timeout` no meio da medição.
+  Toda conexão daqui nasce com prazo de leitura de 120 s;
+- **o servidor fecha a conexão ociosa em `timeout_s` (30 s)**, e a sonda do
+  abraço fica parada durante os 33 s da carga. A `Ligacao` refaz a conexão e
+  repete o pedido uma vez — é a mesma armadilha que o `docker/LEIA-ME.md` já
+  tinha registrado;
+- **medir depois do estrago mede o que sobrou.** A primeira versão do `abraco`
+  só sondava na convergência e publicou «pior `posicao` 0 ms» com a trava presa
+  por segundos: quando as sondas começaram, a aplicação já tinha acabado. Hoje
+  a sonda roda **durante** a carga.
 
 ## A topologia
 
