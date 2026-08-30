@@ -862,7 +862,11 @@ impl Placar {
 ///
 /// **A partir daqui o numero so desce.** Subir de novo pede o mesmo que este
 /// comentario: dizer quais textos, de qual frente, e por que nao couberam.
-pub const TETO: usize = 2_000;
+///
+/// 2.000 -> 1.999 na revisao do dossie 0.18: o item «Jobs» do Gerir banco
+/// ganhou o par `rot:`/`txt:` ao passar a apontar para a tela que ja existia.
+/// Um so, e ele desce a catraca junto -- catraca frouxa nao segura nada.
+pub const TETO: usize = 1_999;
 
 #[cfg(test)]
 mod testes {

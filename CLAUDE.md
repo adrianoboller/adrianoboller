@@ -9,23 +9,30 @@ em `phxsql/`. Especificação do formato em `phxsql/docs/FORMATO.md`, roteiro em
 O dossiê é a página que o Adriano usa para enxergar o projeto inteiro:
 
 - **URL:** https://claude.ai/code/artifact/5c14044e-0dc5-4832-b015-224ab1e40033
-- **Fonte:** `phxsql/docs/dossie/dossie-phxsql-0.15.html` (versionado, para que
+- **Fonte:** `phxsql/docs/dossie/dossie-phxsql-0.18.html` (versionado, para que
   qualquer sessão consiga atualizá-lo)
 
 Publique sempre **passando essa URL**, para cair na mesma página em vez de
 criar outra. Instruções e as armadilhas de estilo em
 `phxsql/docs/dossie/LEIA-ME.md`.
 
-O nome do arquivo mudou na 0.15.0 (era `dossie-phxsql.html`), a pedido: o
-dossiê foi refeito conferindo cada seção contra o código. Os dois scripts de
-números aceitam o caminho do HTML como argumento, então trocar o nome de novo
-não exige editá-los.
+O nome muda a cada refação — era `dossie-phxsql.html`, virou `-0.15` e agora é
+`-0.18` — e **só existe um por vez**: o anterior sai do repositório no mesmo
+commit, para que ninguém atualize o errado. Todos os scripts aceitam o caminho
+do HTML como argumento, então trocar o nome de novo não exige editá-los.
 
 Os números do painel são **medidos, nunca estimados** — já saíram errados três
 vezes: arredondamento para cima, depois 276 testes quando eram 280, depois um
-rodapé inteiro parado numa versão anterior. Os da seção da bancada não se
-digitam mais: `python3 phxsql/docs/dossie/numeros-da-bancada.py` os regenera de
-`bancada/resultados.json`.
+rodapé inteiro parado numa versão anterior. **Nenhum número visível se digita
+mais**: são **cinco** geradores, listados no `LEIA-ME.md` da pasta, e eles
+escrevem o título, o selo, o painel da capa, o rodapé, os idiomas, a bancada, o
+painel da replicação, os pedidos, a cobertura por área e as capturas.
+
+E o corolário que a revisão da 0.18 pagou: **a receita de um número também
+envelhece.** A do KiB de interface era uma lista de três arquivos copiada no
+script; o `http.rs` passou a embutir nove, e o rodapé publicou **780 KiB**
+quando a interface tinha **1.032**. Hoje a lista sai do próprio `http.rs`.
+Quando um gerador depende de uma lista, a lista tem de sair do código.
 
 O que falta no projeto está em `phxsql/docs/PENDENCIAS.md` — atualize junto com
 o dossiê.
@@ -48,9 +55,11 @@ A marca **manda** sobre qualquer paleta inventada. Duas adaptações já
 decididas e documentadas: o corpo de texto longo não usa Exo 2, e o vermelhão
 escurece para `#C63C0A` no tema claro, por contraste.
 
-Atenção: a folha de marca afirma *ACID compliant* e *built-in replication*, e
-**nenhum dos dois é verdade hoje**. Não repita essas afirmações em documento
-técnico enquanto não forem.
+Atenção: a folha de marca afirma *ACID compliant* e *built-in replication*.
+O segundo **virou verdade** — a replicação funciona, está medida com quatro
+servidores, e o cluster faz eleição e promoção automática. O primeiro
+**continua falso**, e continuará enquanto não houver transação: sem ela não há
+o A nem o I do ACID. Não repita *ACID compliant* em documento técnico.
 
 ## Regras que não se quebram
 

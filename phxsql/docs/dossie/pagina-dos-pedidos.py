@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """Gera a pagina «O que voce pediu» a partir do docs/PENDENCIAS.md.
 
-    python3 docs/dossie/pagina-dos-pedidos.py [saida.html]
+    python3 docs/dossie/pagina-dos-pedidos.py [saida.html] [dossie.html]
 
 A pagina nao se digita, e a razao e a mesma do selo do dossie: numero
-digitado a mao envelhece calado. Aqui a lista tem 129 linhas e tres
+digitado a mao envelhece calado. Aqui a lista tem mais de cem linhas e tres
 contadores -- mantida a mao, ela estaria errada no dia seguinte.
 
 A fonte da verdade e uma so: `docs/PENDENCIAS.md`. Mexeu la, rode isto.
+
+Um argumento cujo nome contenha «dossie» nao e a saida da pagina: e o dossie,
+e nele o script grava o PAINEL da contagem, entre as marcas
+`<!-- pedidos:... -->`. Uma contagem, tres destinos.
 """
 
 import html
@@ -418,9 +422,47 @@ def gravar_contagem(itens):
     return True
 
 
+DOSSIE_ABRE = "<!-- pedidos:inicio (gerado por docs/dossie/pagina-dos-pedidos.py) -->"
+DOSSIE_FECHA = "<!-- pedidos:fim -->"
+
+
+def gravar_no_dossie(caminho, itens):
+    """O painel da secao «Estado e roteiro» do dossie.
+
+    Terceiro destino da MESMA contagem -- a pagina dos pedidos, o rodape do
+    PENDENCIAS.md e agora o dossie. Todos daqui, e nenhum digitado: a conta que
+    se escreve em dois lugares e a que diverge no dia seguinte.
+    """
+    alvo = pathlib.Path(caminho).resolve()
+    txt = alvo.read_text(encoding="utf-8")
+    i, j = txt.find(DOSSIE_ABRE), txt.find(DOSSIE_FECHA)
+    if i < 0 or j < 0:
+        raise SystemExit(f"{alvo} nao tem as marcas pedidos:inicio/fim")
+    c = {k: sum(1 for x in itens if x["classe"] == k)
+         for k in ("feito", "parcial", "planejado")}
+    fichas = [
+        (len(itens), "pedidos, ao todo"),
+        (c["feito"], "feitos"),
+        (c["parcial"], "parciais"),
+        (c["planejado"], "planejados"),
+    ]
+    bloco = "\n" + "\n".join(
+        f'    <div><div class="v">{v}</div><div class="r">{r}</div></div>'
+        for v, r in fichas) + "\n  "
+    txt = txt[:i] + DOSSIE_ABRE + bloco + DOSSIE_FECHA + txt[j + len(DOSSIE_FECHA):]
+    alvo.write_text(txt, encoding="utf-8")
+    print(f"{alvo.name}: painel dos pedidos regravado")
+
+
 def main():
-    saida = pathlib.Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else PADRAO
+    argumentos = [a for a in sys.argv[1:] if not a.startswith("--")]
+    # Um `.html` que seja o DOSSIE nao e a saida da pagina: e o alvo do painel.
+    dossies = [a for a in argumentos if "dossie" in pathlib.Path(a).name]
+    saidas = [a for a in argumentos if a not in dossies]
+    saida = pathlib.Path(saidas[0]).resolve() if saidas else PADRAO
     itens = ler()
+    for d in dossies:
+        gravar_no_dossie(d, itens)
     saida.write_text(cabeca(len(itens)) + "\n" + corpo(itens) + "\n", encoding="utf-8")
     contas = {c: sum(1 for i in itens if i["classe"] == c) for c in ("feito", "parcial", "planejado")}
     print(f"{len(itens)} pedidos: {contas['feito']} feitos, "

@@ -5472,20 +5472,28 @@ function itensDoDatabase(db) {
       diz:"Copiar com manifesto SHA-256, conferir uma cópia, e o que falta para restaurar.",
       faz:() => verBackupRestaure(db) },
 
-    { g:"falta", ico:"⚡", rot:"Triggers",
-      falta:"Onde disparar já existe: `inserir`, `atualizar` e `excluir` são os "
-          + "três pontos, e os três já escrevem no `.log`. O que falta é decidir "
-          + "EM QUE LINGUAGEM o gatilho é escrito — e essa escolha é sua. Sem "
-          + "camada SQL não há `BEGIN … END` para hospedar o corpo." },
-    { g:"falta", ico:"ƒ", rot:"Procedures",
-      falta:"Mesmo bloqueio dos triggers, e maior: procedimento é código "
-          + "guardado, e código guardado precisa de um executor. Ou uma "
-          + "linguagem própria pequena, ou esperar a camada SQL." },
-    { g:"falta", ico:"⏱", rot:"Jobs",
-      falta:"É o mais barato dos três. O agendador do backup — `hora_de_rodar`, "
-          + "`minuto_do_dia`, o laço que acorda de minuto em minuto — já é "
-          + "exatamente o desenho. Falta generalizar de «rodar backup» para "
-          + "«rodar operação nomeada»." },
+    // Os tres ficaram no grupo «Ainda nao existe» DEPOIS de os tres passarem a
+    // existir, e ninguem recontou: uma tela que NEGA um recurso que o produto
+    // tem e a mesma falha da configuracao que ninguem le, do avesso. Jobs tem
+    // tela desde o pedido 51; gatilho e procedimento existem pela op `sql`, e
+    // o que falta neles e a TELA -- que e o que o item passa a dizer.
+    { g:"operacao", ico:"⏱", rot:"Jobs de execução", txt:"tela.mi_jobs",
+      faz:telaJobs },
+    { g:"comando", ico:"⚡", rot:"Triggers",
+      falta:"EXISTEM, e não por esta tela. `CREATE TRIGGER nome BEFORE|AFTER "
+          + "INSERT|UPDATE|DELETE ON tabela FOR EACH ROW <corpo>` pela operação "
+          + "`sql` — no dialeto do MySQL(R), similar e não idêntico, com 17 "
+          + "recusas nomeadas em `docs/TRIGGERS.md`. `SHOW TRIGGERS` lista, "
+          + "`DROP TRIGGER` remove, e criar ou excluir exige `administrar`. "
+          + "O que falta aqui é o formulário — e ele não entrou de propósito: "
+          + "seria um SEGUNDO caminho para escrever rotina." },
+    { g:"comando", ico:"ƒ", rot:"Procedures",
+      falta:"EXISTEM, no MESMO interpretador do gatilho. `CREATE PROCEDURE` "
+          + "com `IN`/`OUT`/`INOUT`, `CALL`, `SHOW PROCEDURES` e `DROP "
+          + "PROCEDURE`, pela operação `sql`. Cada pedido que o corpo produz "
+          + "sai pelo portão de sempre com a sessão de quem chamou — por isso "
+          + "`CALL` não pede permissão própria: ele nunca dá poder que a "
+          + "pessoa já não tivesse." },
     { g:"falta", ico:"🔒", rot:"Modo exclusivo",
       falta:"Abrir a tabela em uso exclusivo, para reorganizar ou compactar sem "
           + "ninguém escrevendo junto. Hoje uma trava única já serializa todo "
@@ -5499,6 +5507,10 @@ const GRUPOS_DB = [
   ["dados",    "Dados e catálogo"],
   ["config",   "Configuração e acesso"],
   ["operacao", "Operação"],
+  // Grupo novo, e a diferenca importa: «existe pelo comando» nao e «ainda nao
+  // existe». Misturar os dois foi o que deixou triggers, procedures e jobs
+  // aparecendo como ausentes depois de os tres passarem a existir.
+  ["comando",  "Existe pelo comando, e não por esta tela"],
   ["falta",    "Ainda não existe"],
 ];
 
@@ -10349,9 +10361,11 @@ async function verReplicacao() {
        nela, os rowids saem <b>iguais</b> aos do master — sem transmitir nem
        negociar nada. Se não saírem, ela divergiu, e a replicação
        <b>para ali</b> em vez de espalhar.</p>
-       <p>Medido com quatro servidores: master a 18.773 linhas/s, réplica
-       aplicando 4.273 eventos/s, atraso de 1,3 a 2,1 s até as três, e o
-       retrato SHA-256 das quatro tabelas idêntico no fim.</p>
+       <p>Medido com quatro servidores: master a 34.048 linhas/s, réplica
+       aplicando 17.450 eventos/s, atraso de 0,1 a 2,0 s até as três, e o
+       retrato SHA-256 das quatro tabelas idêntico no fim. Os números que esta
+       tela mostrava — 18.773 e 4.273 — eram de antes da marca de posição no
+       source, e ficaram aqui uma rodada inteira depois de a medição mudar.</p>
      </div>`;
 
   // O assistente entra aqui como o do DbLink entrou na tela DbLink: um botão
