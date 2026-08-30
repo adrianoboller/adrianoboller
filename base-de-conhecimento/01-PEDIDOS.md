@@ -1,6 +1,6 @@
 # Os pedidos, na ordem em que chegaram
 
-152 mensagens. Extraidas de `34595649-0af6-575a-8f79-80dbe8cb7a5d.jsonl`.
+153 mensagens. Extraidas de `34595649-0af6-575a-8f79-80dbe8cb7a5d.jsonl`.
 
 ---
 
@@ -7679,6 +7679,14 @@ Tipos Agentes Obrigatórios:
 Atenção total: 
 Fontes, compilados e dossiê atualizado e zipados separadamente e kit com tudo.
 Importante todas as interações minhas e suas desse projetos devem ser lidas, revistas e gerado uma base de conhecimento completa inclusive com os códigos Python e outros scripts e roteiros que vc usou  para ser usada em projetos futuros.
+
+---
+
+## 153. 30/08 16:39
+
+Os trabalhos interações comandos, scripts, arquivos python e outros que vc usou deve sempre ter um arquivo md detalhado com as tecnologias usadas para servir de base de conhecimento e isso é uma regra geral para todos os projetos inclusive esse.
+De acordo continue as interações
+Zip esses 1302 scripts para eu analisar
 
 ---
 

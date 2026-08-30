@@ -1,6 +1,6 @@
 # Receitas de shell
 
-2732 comandos distintos, sem os triviais.
+2748 comandos distintos, sem os triviais.
 
 ---
 
@@ -61017,5 +61017,901 @@ T=/root/.claude/projects/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8
 
 ```bash
 cd base-de-conhecimento && du -sh . && ls -la *.md | awk '{print "  ", $5, $9}' && echo "scripts: $(ls scripts | wc -l), $(du -sh scripts | cut -f1)"; echo "=== amostra de nomes de script ==="; ls scripts | head -8; echo "..."; ls scripts | tail -4
+```
+
+### Write the curated lessons document  ·  30/08 16:28
+
+```bash
+cat > base-de-conhecimento/04-LICOES.md <<'DOC'
+# As lições
+
+Este arquivo é o único da base que **se edita à mão** — os outros o extrator
+refaz. Cada lição vem com a cicatriz que a produziu, porque regra sem o motivo
+junto não gruda: alguém a lê, acha exagero, e contorna.
+
+---
+
+## 1. Medir
+
+### Número citado é número que não se mede
+
+Um medidor dizia «~20 toques de página por linha», citando um `strace` de outro
+dia. Eram **10,86** — e é por isso que a conta do CRC nunca fechava naquele
+documento. O medidor passou a contar os toques por dentro.
+
+### Número digitado à mão envelhece calado
+
+O selo da capa de um relatório passou **quatro lançamentos** dizendo a versão
+errada. Havia um script justamente para impedir isso, e ele não cobria aquele
+pedaço. Hoje todo número visível sai de um gerador, ou está errado e ninguém
+percebeu ainda.
+
+### A receita de um número também envelhece
+
+Um gerador calculava o tamanho da interface a partir de uma **lista de três
+arquivos copiada dentro dele**. O código passou a embutir nove, e o rodapé
+publicou **780 KiB** quando a interface tinha **1.032**.
+
+A mesma coisa aconteceu de novo, meses depois, em outro lugar: o conferidor de
+textos varria cinco arquivos e o servidor entregava seis — **1.474 linhas de
+interface eram invisíveis**, e o número que todos citavam era medida sobre
+cinco sextos da tela.
+
+> **Quando um gerador depende de uma lista, a lista tem de sair do código.** E
+> uma guarda tem de reprovar quando as duas divergirem.
+
+### Medidor com binário velho mede o passado
+
+`cargo build --release` não recompila os *examples*, e a bancada chamava o
+binário direto. Uma rodada inteira de ganhos ficou invisível — e a conclusão «o
+esquema custa 2,2×» nasceu, com tabela e tudo, dessa diferença.
+
+Variante do mesmo erro: um script de bancada apontava para o binário de **outra
+árvore** por caminho absoluto.
+
+### Medir a premissa do item vem antes de implementar o item
+
+Um pedido dizia «ordene as chaves do lote antes do índice» e vinha com o alvo
+certo — o gargalo estava mesmo lá. Só que a causa era outra: não era
+localidade, era reler e recalcular o CRC da **mesma página** a cada descida da
+árvore. A desordem custava 1,06×; ordenar teria comprado quase nada. Um cache
+de páginas comprou **2,40×**.
+
+Vale inclusive quando a premissa é «isto é pré-requisito daquilo» — um item
+deixou de ser pré-requisito quando o desenho foi escrito.
+
+### Diagnóstico plausível não é diagnóstico medido
+
+Escrevi que «o mutex era o pior pedaço, porque serializa». Medido: o `lock` sem
+disputa custa **13,2 ns** e o parse do lote custa **3.456 µs** — 262.000× mais.
+
+> **O diagnóstico errado sobrevive melhor quando o conserto funcionou por outro
+> motivo.**
+
+### Hipótese que morre medida é resultado
+
+Acorde o **critério de morte antes de medir** («abaixo de 2× a hipótese
+morre»), e escreva a recusa com o número. Recusa medida é o que impede a mesma
+ideia de voltar sem medição.
+
+### Comparar trabalho igual, não só pergunta igual
+
+Dois erros opostos, os dois em bancada contra outro motor: um `WHERE id IN (…)`
+contra vinte mil buscas separadas (41× a favor do outro), e um `COUNT(*)+SUM`
+sobre 1.250.000 linhas contra a leitura de 20.000 (5× a favor do nosso).
+**Nenhum dos dois aparecia no número.**
+
+Um terceiro: comparar um motor que agrupa as escritas num `COMMIT` contra outro
+que faz vinte mil gravações separadas.
+
+---
+
+## 2. Provar
+
+### Prova real é nos dois sentidos
+
+**O teste tem de FALHAR com o defeito reposto e passar com o conserto.** Teste
+que passa por engano é pior que teste que falta, porque dá a sensação de
+cobertura.
+
+Um caso vivido: a prova de um teto de memória **passou com o defeito reposto**,
+porque conferia o *veredito* e a conferência acontecia **depois** da leitura —
+acusava mesmo sem a proteção, só que aí a memória já tinha sido gasta. O teste
+passou a medir **quanto** foi lido: com o defeito, 10.001 bytes num teto de 64.
+
+### O que depende do sistema operacional se prova contra o sistema operacional
+
+Dez testes unitários passavam, e a prova por soquete mostrou que a queda da
+conexão **não soltava a reserva**. A causa não estava no servidor: era o teste
+— `socket.makefile()` do Python segura o descritor, e fechar só o soquete
+deixa o fd aberto, então o servidor nunca via o fim da conexão.
+
+### Guarda que troca travamento por erro enfraquece o teste que dependia do travamento
+
+Um conserto fez um defeito parar de pendurar e virar um `return` silencioso —
+e com isso um teste cujo único sintoma era o travamento passou a **não pegar
+mais**. Ele ganhou a asserção da *consequência*, e reprova em 0,12 s em vez de
+30.
+
+### Defeito que trava precisa de prazo no teste
+
+Sem prazo, o teste trava junto e a bateria inteira para.
+
+---
+
+## 3. Integrar trabalho de vários agentes
+
+### Há defeito que só existe no encontro das frentes
+
+Numa rodada de seis frentes, **três defeitos só apareceram na integração**:
+
+1. Uma frente pôs um teto de memória num `read_line`; a outra trocou aquele
+   `read_line` por um canal cifrado que lia **sem teto**. Juntar as duas como
+   vieram devolveria a leitura ilimitada — **e não havia conflito de merge
+   nenhum**.
+2. A bateria ficou com **dezoito** partes quando cada frente contou dezessete:
+   cada uma somou as suas.
+3. O relatório perdeu **uma seção inteira** porque o merge escolheu o lado de
+   quem não a tinha.
+
+### Arquivo gerado se resolve regerando — se ele também tiver texto escrito à mão, não
+
+Nesse caso, escolher um lado apaga o texto do outro **sem conflito aparecer**.
+
+### Merge de conflito marca quem MEXEU, não quem perguntou por último
+
+Deixar «o meu» em todas as colunas desfaz em silêncio o trabalho do outro nas
+colunas que ninguém tocou. O padrão certo é por coluna.
+
+### Resolver catálogo e lista por IDENTIDADE, não por linha
+
+Guardas, entradas de catálogo e itens numerados são **acréscimos** de frentes
+diferentes: descartar um lado apaga a prova que ele carrega. Compare por id, e
+compare contra o estado **atual**, não contra a base do merge — a base pode ser
+anterior a três integrações.
+
+### Números escritos à mão que o compilador confere são guardas de graça
+
+Dois vetores de tamanho fixo pegaram um merge incompleto: o número não bateu e
+não compilou.
+
+### Colisão de numeração é rotina
+
+Duas frentes reivindicaram o mesmo número de pedido; itens apareceram
+duplicados com contas diferentes. Tenha um gerador que **detecte duplicata** e
+rode-o em toda integração.
+
+---
+
+## 4. O ambiente
+
+### Nunca matar processo por nome
+
+`pkill -f` **matou o meu próprio shell** (saída 144). Mate por PID, e confira
+antes o `cwd` do processo para saber se é seu.
+
+### Não é preciso VM para provar outra arquitetura
+
+A máquina não tinha `/dev/kvm` nem flag de virtualização — VM completa estava
+fora. Mas `qemu-user-static` emula o **binário**, não a máquina, e não depende
+de KVM. Um documento que dizia «os binários ARM nunca foram executados» durou
+uma hora: com o emulador, o servidor ARM subiu, autenticou e **gravou e leu 50
+linhas**.
+
+> Antes de dizer «não dá para testar», pergunte se o que falta é emular a
+> máquina ou só o binário.
+
+### O temporário de teste é uma fuga de disco silenciosa
+
+A bateria deixou **80.088 diretórios em `/tmp`, 6,4 GB**, o mais antigo de três
+dias. O ambiente chegou a 560 MB livres e ninguém sabia por quê.
+
+Duas coisas sobre o zelador que resolveu isso:
+
+- **Nada é apagado sem antes se provar que nenhum processo vivo está usando
+  aquilo** — por caminho real (`cwd`), nunca por data ou nome. Zelador que
+  apaga o `target` de quem compila não economiza espaço, perde uma rodada.
+- Conferir oitenta mil diretórios chamando `/proc` um a um **estoura o tempo**.
+  A lista de processos se levanta uma vez.
+
+E o total que ele imprimia estava errado: somava só a parte que o shell apagou
+e dizia **362 MiB** numa corrida que liberou quase 10 GB. Passou a sair da
+diferença medida no próprio disco.
+
+### A causa-raiz continua sendo do teste
+
+O diretório temporário tem de morrer com o teste que o criou — guarda que apaga
+no `Drop`, **não** um `rm` no fim do corpo: teste que falha no meio nunca chega
+ao fim.
+
+---
+
+## 5. Guardas e catracas
+
+### Catraca só desce, e catraca frouxa não segura nada
+
+Um contador de dívida (textos por traduzir, avisos por resolver) vira guarda se
+o teste reprovar quando ele **sobe** — e também quando alguém melhora e
+**esquece de baixar o número**.
+
+### Subir a catraca só se justifica quando o número de baixo era falso
+
+Aconteceu uma vez: o número não cobria a interface inteira. Isso não é
+afrouxar, é corrigir uma leitura — e o motivo tem de ficar escrito ao lado.
+
+### Toda guarda com o defeito que a motivou, provada periodicamente contra ele
+
+Um catálogo de guardas onde cada entrada guarda o trecho original e a troca que
+repõe o defeito. Roda-se a mutação e conta-se quantas **não pegaram**.
+
+### O portão de permissão é UM só — e o campo que ele lê é o furo
+
+O direito por tabela conferia o campo `"tabela"` do pedido. Duas operações não
+têm esse campo: uma guarda as tabelas em `a.tabela`/`b.tabela`, outra numa
+lista. Bastaria pedir a tabela negada como o lado B de uma junção. Apareceram
+**quatro furos** do mesmo tipo.
+
+> **Quando o portão passar a olhar um campo novo, procure quem não tem esse
+> campo.** E não espalhe o portão por quarenta operações: a que alguém esquecer
+> vira a porta dos fundos.
+
+### O teste que mais importa numa regra nova é o do comportamento VELHO
+
+`sem_regra_de_tabela_nada_muda`. Regra que muda o significado da configuração
+existente tira o direito de alguém sem ninguém ter pedido.
+
+### Guarda nova entra pedida, não imposta
+
+Uma proteção que recusa todo cliente escrito antes dela **não é proteção, é
+estrago**. Quem pede ganha a garantia; quem não pede continua como antes; e o
+administrador que quer obrigatoriedade liga a chave.
+
+O corolário de segurança: quando a proteção é opcional, **escreva em palavras
+claras o que ela vale desligada** — «isto protege contra escuta passiva e nada
+mais» — em vez de deixar parecer mais.
+
+---
+
+## 6. Interface
+
+### Interface só se prova exercitando
+
+Gravar um vídeo de demonstração achou **três defeitos em cinco minutos** que
+ler o código não acharia — e o pior quebrava todo salvar e todo incluir.
+
+### O CSS global morde todo componente novo
+
+`input{width:100%}` transformou um rádio numa bolinha do tamanho da célula.
+`label{text-transform:uppercase}` fez «Blumenau» aparecer como «BLUMENAU» — que
+é **mentira sobre o dado**, porque quem olha não sabe se está gravado assim.
+
+> **Rótulo se estiliza e se traduz; dado, nunca.**
+
+### Coluna de sistema nova quebra quem filtra pela primeira
+
+Quando entrar uma peça no fim de uma lista, procure quem usa `find(...)` onde
+devia usar `filter(...)`.
+
+---
+
+## 7. Texto de tela e tradução
+
+### Texto se resolve por CHAVE, nunca por comparação da frase
+
+No dia em que alguém melhorar a redação, quem compara frase quebra **calado**,
+mostrando o idioma de origem.
+
+### Chave morta é pior que chave faltando
+
+O tradutor a vê na tabela, traduz nos seis idiomas, e nada muda na tela. Teste
+para os dois lados do laço: chave que a tela pede e não existe, e texto que
+existe e ninguém pede.
+
+### Frase picada por marcação é intraduzível por construção
+
+`"funciona em"` + `<b>qualquer navegador</b>` + `"— é layout"` não se traduz em
+pedaços: a ordem das palavras muda de idioma para idioma, e em alemão o verbo
+vai para o fim. **A frase inteira vira uma chave**, com a ênfase como marca
+dentro do texto, e o corte em etiquetas acontece **depois** da tradução.
+
+### «Igual ao original» não é sinal de «não traduzido»
+
+Uma guarda ingênua reprovaria `Database`, `Profiler`, `Pivot` e `Menu
+principal` — que em francês é exatamente isso. O caso que denuncia de verdade é
+**todos os idiomas idênticos**, ou uma frase longa repetida em três ou mais.
+
+---
+
+## 8. Formato em disco
+
+- **Mudança de formato entra cedo.** Enquanto não há dado em produção é barata;
+  depois vira migração.
+- **A ordem de digitação é sagrada.** Um endereço que nunca se reaproveita
+  torna a replicação fiel linha a linha e a leitura O(1) — e é a garantia que
+  qualquer proposta de versionamento múltiplo precisa enfrentar antes de ser
+  aceita.
+- **Configuração que não é lida mente.** Um campo esteve no arquivo, no manual
+  e na tela por três versões, e **nenhuma linha de código o lia**. Campo sem
+  leitor é pior que campo ausente: o ausente ninguém ajusta esperando efeito.
+- **Slot com CRC torna escrita rasgada detectável** — o que muda o que é
+  preciso fazer contra corrupção.
+
+---
+
+## 9. Trabalhar com agentes
+
+### O briefing carrega a regra, não só o pedido
+
+Todo briefing desta sessão leva junto as armadilhas que o projeto já pagou. É
+isso que faz o agente não repetir o erro — e está tudo em
+`02-BRIEFINGS-DE-AGENTE.md`, que é o ativo mais reaproveitável desta base.
+
+### Peça o documento antes do código quando o desenho decide
+
+Nas frentes de risco (transação, criptografia, formato), o briefing manda
+escrever o documento com as decisões **antes** de implementar, listando as
+perguntas que ele precisa responder.
+
+### Acorde o critério de morte antes da medição
+
+Senão o número vira defesa da hipótese em vez de teste dela.
+
+### Peça a saída, não a afirmação
+
+«Mostre a saída de cada defeito reposto» em vez de «confirme que testou». Dois
+agentes reportaram, por conta própria, testes que passavam por engano.
+
+### Faixa de portas por agente, e nunca matar processo alheio
+
+Vários agentes na mesma máquina sobem servidores. Sem faixa reservada, um
+derruba o outro por «porta em uso».
+
+### Um agente pode recusar entregar metade
+
+Uma frente devolveu o terreno pronto e **recusou** entregar meia transação,
+dizendo que meia era o pior resultado possível. Estava certa.
+DOC
+wc -l base-de-conhecimento/04-LICOES.md | awk '{print $1" linhas de licoes"}'
+```
+
+### Commit the knowledge base  ·  30/08 16:28
+
+```bash
+git add -A && git commit -q -F - <<'MSG'
+Base de conhecimento: 152 pedidos, 53 briefings, 1.303 scripts e as licoes
+
+O transcrito da sessao tem 99 MB e 29.323 linhas -- ninguem le isso, e ninguem
+deveria precisar. O `extrair.py` le e produz a base, entao ela se REFAZ quando
+a proxima sessao acrescentar mais coisa. Base montada a mao e base que ninguem
+consegue atualizar.
+
+O que saiu:
+
+- **152 pedidos** em ordem. E a historia do requisito, e o unico lugar onde ela
+  existe inteira -- a lista de pendencias guarda o QUE ficou, nao o que foi
+  pedido nem em que ordem.
+- **53 briefings de agente**, que sao o ativo mais reaproveitavel: cada um leva
+  a REGRA junto do pedido, e e isso que faz o agente nao repetir erro que o
+  projeto ja pagou.
+- **2.732 comandos** distintos e **1.303 scripts** Python que rodaram por
+  heredoc e morreriam com a sessao.
+
+Os scripts vieram classificados por tecnica, porque mil e trezentos arquivos
+escondem os vinte que valem: medicao, prova real, sonda de protocolo, varredura
+e edicao em massa. As tres primeiras familias sao as que servem noutro projeto;
+a ultima e conserto de uma vez so, guardado pelo padrao e nao pelo conteudo.
+
+O `04-LICOES.md` e o unico arquivo que se edita a mao, e e o que de fato viaja.
+Cada licao vem com a cicatriz que a produziu, porque regra sem o motivo junto
+nao gruda: alguem le, acha exagero, e contorna. Nove capitulos -- medir, provar,
+integrar trabalho de varios agentes, o ambiente, guardas e catracas, interface,
+texto de tela, formato em disco, e trabalhar com agentes.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01NqzhoCqQuDveMBrrXUqpJb
+MSG
+git log --oneline -1; du -sh base-de-conhecimento
+```
+
+### Regenerate the dossier with current measured state  ·  30/08 16:28
+
+```bash
+cd phxsql && D=docs/dossie/dossie-phxsql-0.18.html
+for g in numeros-do-projeto numeros-da-bancada cobertura-por-area capturas-no-dossie; do python3 docs/dossie/$g.py $D 2>&1 | tail -1; done
+python3 docs/dossie/pagina-dos-pedidos.py docs/dossie/pedidos.html $D 2>&1 | tail -2
+echo "=== conferencia ==="; echo "secoes: $(grep -oE '<h2[ >]' $D | wc -l) | cifra do fio: $(grep -c 'cifra do fio' $D) | tamanho: $(du -h $D | cut -f1)"
+```
+
+### Run the project numbers generator  ·  30/08 16:31
+
+```bash
+cd phxsql && D=docs/dossie/dossie-phxsql-0.18.html && timeout 1800 python3 docs/dossie/numeros-do-projeto.py $D 2>&1 | tail -4
+```
+
+### Run the remaining four generators  ·  30/08 16:32
+
+```bash
+cd phxsql && D=docs/dossie/dossie-phxsql-0.18.html
+timeout 600 python3 docs/dossie/numeros-da-bancada.py $D 2>&1 | tail -2
+timeout 600 python3 docs/dossie/cobertura-por-area.py $D 2>&1 | tail -2
+timeout 600 python3 docs/dossie/pagina-dos-pedidos.py docs/dossie/pedidos.html $D 2>&1 | tail -2
+timeout 900 python3 docs/dossie/capturas-no-dossie.py $D 2>&1 | tail -2
+echo "=== conferencia final ==="; echo "secoes: $(grep -oE '<h2[ >]' $D | wc -l) | cifra do fio: $(grep -c 'cifra do fio' $D) | figuras: $(grep -oE 'Figura [0-9]+' $D | sort -u | wc -l) | $(du -h $D | cut -f1)"
+```
+
+### Verify the regenerated dossier  ·  30/08 16:32
+
+```bash
+D=docs/dossie/dossie-phxsql-0.18.html && echo "secoes: $(grep -oE '<h2[ >]' $D | wc -l)" && echo "cifra do fio presente: $(grep -c 'cifra do fio' $D)" && echo "figuras: $(grep -oE 'Figura [0-9]+' $D | sort -u | wc -l)" && echo "tamanho: $(du -h $D | cut -f1)" && echo "testes no dossie: $(grep -oE '1\.?328' $D | head -1)"
+```
+
+### Regenerate all five packages  ·  30/08 16:32
+
+```bash
+timeout 2400 ./empacotar.sh 2>&1 | grep -E "^==|^   pacotes/|FALTA" ; echo "---"; timeout 1200 ./empacotar.sh arm64 2>&1 | grep -E "^   pacotes/"; timeout 1200 ./empacotar.sh arm32 2>&1 | grep -E "^   pacotes/"
+```
+
+### Verify the kit and that inner zips match the outer checksums  ·  30/08 16:37
+
+```bash
+ls -lh pacotes/phxsql-0.18.0-*.zip | awk '{printf "  %-40s %s\n", $9, $5}'; echo; echo "=== a prova de que o kit se confere ==="; cd pacotes && rm -rf /tmp/kitteste && mkdir -p /tmp/kitteste && unzip -q phxsql-0.18.0-kit.zip -d /tmp/kitteste && cd /tmp/kitteste/phxsql-0.18.0-kit && sha256sum -c MANIFESTO.sha256 --quiet 2>&1 | head -3 && echo "manifesto do kit: TODOS OS $(grep -c '' MANIFESTO.sha256) ARQUIVOS CONFEREM"; echo "--- e os zips de dentro batem com o SHA256SUMS de fora? ---"; for z in pacotes/*.zip; do H=$(sha256sum "$z" | cut -c1-16); N=$(basename "$z"); F=$(grep "$N" /home/user/adrianoboller/phxsql/pacotes/SHA256SUMS 2>/dev/null | cut -c1-16); [ "$H" = "$F" ] && echo "  ok  $N" || echo "  DIFERE  $N"; done
+```
+
+### Commit the dossier and kit packaging targets  ·  30/08 16:37
+
+```bash
+cd phxsql && git add -A && git commit -q -F - <<'MSG'
+Pacote do dossie e kit completo, no empacotador
+
+Dois alvos novos, no mesmo molde dos outros -- nada montado a mao, porque
+pacote feito a mao e pacote que ninguem consegue refazer igual.
+
+O **dossie** vai separado porque tem publico proprio: quem quer entender o
+projeto sem compilar nada. E leva os GERADORES junto, nao so o HTML -- pagina
+sem o que a gerou e pagina que ninguem consegue atualizar, e este projeto ja
+publicou numero errado por exatamente isso.
+
+O **kit** leva os zips JA PRONTOS em vez de remontar o conteudo. A diferenca
+importa: assim o hash de cada peca continua sendo o mesmo que o SHA256SUMS
+publica, e quem baixou o kit confere peca por peca contra a lista de fora.
+Conferido: os seis batem.
+
+A base de conhecimento entra no kit e NAO nos fontes, de proposito: ela nao e
+o programa, e o que se aprendeu fazendo o programa. Publico diferente.
+
+Sao 1.320 arquivos no manifesto do kit, e os 1.320 conferem.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01NqzhoCqQuDveMBrrXUqpJb
+MSG
+git log --oneline -1
+```
+
+### Commit the knowledge base package split  ·  30/08 16:38
+
+```bash
+cd phxsql && git add -A && git commit -q -F - <<'MSG'
+A base de conhecimento vira pacote proprio, e o kit diz por que passa de 30 MB
+
+O motivo da separacao ja estava escrito quando a base entrou no kit -- publico
+diferente: ela nao e o programa, e o que se aprendeu FAZENDO o programa. O
+limite de anexo so tornou obrigatorio o que era boa organizacao: 1.310 arquivos
+que comprimem para 2,4 MB, e que servem ao proximo projeto e nao a rodar este.
+
+O kit continua em 32 MB, e isso e consequencia de ser a soma de todos os
+outros: nao ha o que apertar sem tirar peca. Ficou dito no proprio script, para
+ninguem "consertar" o kit tirando os binarios ARM -- canais com limite de anexo
+levam as pecas, que juntas SAO o kit.
+
+Conferido: o manifesto do kit fecha, e os sete zips de dentro tem os mesmos
+hashes que o SHA256SUMS publica de fora.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01NqzhoCqQuDveMBrrXUqpJb
+MSG
+git log --oneline -1
+```
+
+### Rebuild the git bundle with all current work  ·  30/08 16:39
+
+```bash
+cd /home/user/adrianoboller && git bundle create /tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/phxsql-commits.bundle d4dc4243dfdf954dbc3bb30e91fe7e4a17091d88..HEAD 2>&1 | tail -1; git bundle verify /tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/phxsql-commits.bundle 2>&1 | head -1; echo "commits: $(git rev-list --count d4dc4243dfdf954dbc3bb30e91fe7e4a17091d88..HEAD)"; ls -lh /tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/phxsql-commits.bundle | awk '{print "tamanho:", $5}'
+```
+
+### Gather the technology facts from the repo  ·  30/08 16:40
+
+```bash
+cd phxsql && echo "=== dependencias externas ==="; grep -A 20 "^\[dependencies\]" Cargo.toml crates/*/Cargo.toml 2>/dev/null | grep -vE "^--|dependencies\]|^$" | head -10 || echo "  (nenhuma)"
+echo "=== linhas por linguagem ==="
+printf "  Rust        %s\n" "$(find crates -name '*.rs' | xargs cat 2>/dev/null | wc -l)"
+printf "  JavaScript  %s\n" "$(find crates -name '*.js' | xargs cat 2>/dev/null | wc -l)"
+printf "  HTML        %s\n" "$(find crates -name '*.html' | xargs cat 2>/dev/null | wc -l)"
+printf "  CSS         %s\n" "$(find crates -name '*.css' | xargs cat 2>/dev/null | wc -l)"
+printf "  Python      %s\n" "$(find bancada docs -name '*.py' | xargs cat 2>/dev/null | wc -l)"
+printf "  Markdown    %s\n" "$(find docs -name '*.md' | xargs cat 2>/dev/null | wc -l)"
+echo "=== crates do projeto ==="; ls -d crates/*/ | sed 's|crates/||;s|/||' | tr '\n' ' '
+```
+
+### Inventory the hand-written cryptography and core modules  ·  30/08 16:40
+
+```bash
+cd phxsql && echo "=== criptografia escrita aqui ==="; for f in cifra fio senha; do [ -f crates/phxsql-core/src/$f.rs ] && printf "  %-10s %5s linhas\n" "$f.rs" "$(wc -l < crates/phxsql-core/src/$f.rs)"; done
+echo "=== o que mais e escrito a mao no core ==="; ls crates/phxsql-core/src/*.rs | xargs -n1 basename | tr '\n' ' '
+echo; echo "=== vetores oficiais citados ==="; grep -rohE "RFC [0-9]+|FIPS [0-9-]+" crates/ --include=*.rs | sort -u | tr '\n' ' '
+```
+
+### Write the technology inventory document  ·  30/08 16:41
+
+```bash
+cat > base-de-conhecimento/05-TECNOLOGIAS.md <<'DOC'
+# As tecnologias, e por que cada uma
+
+Inventário do que foi usado — **para fazer o produto** e **para fazer o
+trabalho**, que são coisas diferentes e as duas contam.
+
+Os números vêm de contagem no repositório, não de lembrança.
+
+---
+
+## 1. O produto
+
+### Linguagens, medidas
+
+| | Linhas | Onde |
+|---|---:|---|
+| Rust | **106.413** | `crates/` — o motor inteiro |
+| HTML | 12.870 | a interface, num arquivo só |
+| Python | 12.813 | bancadas, sondas e geradores |
+| JavaScript | 6.911 | grade, telemetria, multitela, diagrama ER |
+| Markdown | 23.558 | `docs/` |
+| CSS | 771 | |
+
+### A decisão que define tudo: zero dependências externas
+
+**Só a `std` do Rust.** Nenhuma crate de terceiro, conferido: as únicas linhas
+sob `[dependencies]` apontam para outros crates do próprio workspace.
+
+Isso não é purismo — é o que comprou, medido nesta sessão:
+
+- **Compilação cruzada de primeira** para ARM64 e ARMv7, sem nenhum `gcc`
+  cruzado instalado: o ligador é o `rust-lld` que já vem junto. Com uma crate
+  de C no meio, cada uma teria de compilar cruzado também, e é aí que a
+  compilação cruzada costuma morrer.
+- **`cargo build --offline`** funciona.
+- **Imagem Docker `FROM scratch`** de 6,42 MB — possível só porque não há
+  carregador dinâmico nem libc a arrastar.
+- **O motor sozinho pesa 790–930 KiB**, o que torna a pergunta do ESP32
+  respondível em vez de absurda.
+
+O preço: **26 módulos escritos e mantidos aqui**.
+
+### O que foi escrito à mão, no `phxsql-core`
+
+`base64` · `crc` (CRC-32) · `cifra` (ChaCha20-Poly1305, 982 linhas) ·
+`datahora` · `desafio` (desafio-resposta) · `ed25519` · `fio` (aperto de mão
+Noise, 935 linhas) · `frogcript` · `hash` (SHA-256) · `hkdf` · `json` ·
+`keyenc` · `paginacao` · `paralelo` · `schema` · `senha` (PBKDF2, 286 linhas) ·
+`sha1` · `sha512` · `types` · `uuid` · `value` · `x25519` · `zip`
+
+### Criptografia se confere contra vetor oficial
+
+Nada foi aceito por «parecer certo». As normas citadas nos testes:
+
+**FIPS 180-4** (SHA) · **RFC 8439** (ChaCha20-Poly1305) · **RFC 7748**
+(X25519) · **RFC 5869** (HKDF) · **RFC 4231** (HMAC) · **RFC 2104** (HMAC) ·
+**RFC 2898** (PBKDF2) · **RFC 8032** (Ed25519) · **RFC 9562** (UUID) ·
+**RFC 4648** (Base64) · **RFC 1951** (deflate) · **RFC 5802** e **RFC 7677**
+(SCRAM) · **RFC 4180** (CSV) · **RFC 5322**, **2045**, **2047** (correio)
+
+Dezessete normas. A escolha do ChaCha20 sobre AES tem motivo escrito: AES em
+software puro se escreve com tabelas, e **tabela em cache vaza a chave pelo
+tempo de acesso**; o ChaCha20 é soma, XOR e rotação — tempo constante por
+construção, sem tabela nenhuma. É a mesma escolha que o TLS 1.3 e o WireGuard
+fazem para máquina sem AES-NI.
+
+### Formato em disco
+
+Sete arquivos por tabela (`.reg` `.ndx` `.bin` `.memo` `.log` `.trash`
+`.reason`) mais três condicionais (`.lgpd` `.bkp` `.pag`), no modelo de
+arquivos separados do HFSQL®. Endereçamento **O(1) pelo rowid**, slots de
+tamanho fixo com **CRC-32** — o que torna escrita rasgada *detectável* em vez
+de silenciosa. Documentado em `docs/FORMATO.md`.
+
+### Protocolo e interface
+
+- **JSON sobre TCP**, com o analisador escrito aqui.
+- **Interface web sem framework**: JavaScript direto, e tudo embutido no
+  binário por `include_str!` — por isso o servidor é **um arquivo só**, sem
+  pasta de assets para se perder.
+- **Driver ODBC** próprio (`cdylib`), sem `unixODBC` no caminho dos testes.
+
+---
+
+## 2. O trabalho
+
+Esta metade costuma não ser escrita, e é a que se reaproveita.
+
+### Orquestração por agentes em worktrees isolados
+
+Cada frente roda num **git worktree próprio**, com **faixa de portas
+reservada**. Sem faixa, dois agentes derrubam um ao outro com «porta em uso»;
+sem worktree, dois agentes editam o mesmo arquivo ao mesmo tempo.
+
+A integração é sequencial, uma frente por vez, com portões completos entre
+cada uma — e é *lá* que aparecem os defeitos que nenhuma frente sozinha podia
+ver.
+
+### Prova de outra arquitetura sem VM
+
+`qemu-user-static`. A máquina não tinha `/dev/kvm` nem flag de virtualização —
+VM completa estava fora. Mas `qemu-user` emula o **binário**, não a máquina.
+Foi assim que o servidor ARM64 subiu, autenticou com um hash PBKDF2 gerado pelo
+próprio binário emulado, e gravou e leu 50 linhas.
+
+### Bancada de replicação em contêiner
+
+Docker com rede isolada — e foi **só** o isolamento de rede que revelou que uma
+opção de autorização não era lida por ninguém: um vizinho com configuração
+vazada levava 200 de 200 eventos.
+
+### Compilação cruzada
+
+`x86_64-pc-windows-gnu` (com `mingw-w64`), `aarch64-unknown-linux-musl` e
+`armv7-unknown-linux-musleabihf` (com `rust-lld`, sem `gcc` cruzado), e
+`x86_64-unknown-linux-musl` para a imagem `scratch`.
+
+### Medição
+
+Exemplos `cargo` dedicados (`onde-doi`, `custo-da-trava`,
+`custo-do-excluir`, `custo-do-alter`) que instrumentam por dentro em vez de
+cronometrar por fora. Mediana e dispersão de várias corridas, com a carga da
+máquina anotada — porque a máquina raramente está quieta.
+
+### Prova real, mecanizada
+
+Um **catálogo de guardas** onde cada entrada guarda o trecho original e a troca
+que **repõe o defeito**. Roda-se a mutação e conta-se quantas guardas *não
+pegaram*. Hoje são 37.
+
+### Catraca de dívida
+
+Um conferidor que conta o que falta (textos por traduzir) e **reprova quando o
+número sobe** — e também quando alguém melhora e esquece de baixá-lo.
+
+### Documentação gerada
+
+Cinco geradores escrevem todo número visível do relatório. Nenhum se digita.
+
+---
+
+## 3. O que foi avaliado e recusado, com o número
+
+Recusa medida é resultado, e evita a mesma proposta voltar.
+
+| Proposta | Veredito |
+|---|---|
+| **CUDA / GPU** | O `SUM` já roda a 28.234 MiB/s — **1,79× o pico teórico do PCIe 3.0 x16**, então não existe limiar onde a GPU compense. E 99,4% de uma inserção não é aritmética. A alternativa sem dependência deu 3,90× em 4 núcleos |
+| **WAL + group commit + LSM** | Receita para o gargalo do InnoDB. Medido o nosso: das dez propostas, **cinco já existiam**, duas miravam problema que não temos, uma quebraria a ordem de digitação, **duas eram reais** |
+| **Duas larguras de slot** | O formato não permite (o tamanho é um campo só), e cobraria **2,36× em toda leitura** para poupar uma passada uma vez |
+| **Lote de replicação 500 → 2.000** | Quadruplicaria o pior caso de memória de quem serve |
+| **MVCC** | Quebraria rowid-como-endereço e a replicação por rowid. **Decisão pendente do dono** |
+| **TLS 1.3 à mão** | Milhares de linhas e risco real: TLS mal escrito é pior que TLS ausente, porque parece seguro |
+DOC
+wc -l base-de-conhecimento/05-TECNOLOGIAS.md | awk '{print $1" linhas"}'
+```
+
+### Write the technology inventory at the correct path  ·  30/08 16:41
+
+```bash
+pwd; cat > /home/user/adrianoboller/base-de-conhecimento/05-TECNOLOGIAS.md <<'DOC'
+# As tecnologias, e por que cada uma
+
+Inventário do que foi usado — **para fazer o produto** e **para fazer o
+trabalho**, que são coisas diferentes e as duas contam.
+
+Os números vêm de contagem no repositório, não de lembrança.
+
+---
+
+## 1. O produto
+
+### Linguagens, medidas
+
+| | Linhas | Onde |
+|---|---:|---|
+| Rust | **106.413** | `crates/` — o motor inteiro |
+| Markdown | 23.558 | `docs/` |
+| HTML | 12.870 | a interface, num arquivo só |
+| Python | 12.813 | bancadas, sondas e geradores |
+| JavaScript | 6.911 | grade, telemetria, multitela, diagrama ER |
+| CSS | 771 | |
+
+### A decisão que define tudo: zero dependências externas
+
+**Só a `std` do Rust.** Nenhuma crate de terceiro — conferido: as únicas linhas
+sob `[dependencies]` apontam para outros crates do próprio workspace.
+
+Isso não é purismo. É o que comprou, medido nesta sessão:
+
+- **Compilação cruzada de primeira** para ARM64 e ARMv7, sem nenhum `gcc`
+  cruzado instalado — o ligador é o `rust-lld` que já vem junto. Com uma crate
+  de C no meio, cada uma teria de compilar cruzado também, e é aí que a
+  compilação cruzada costuma morrer.
+- **`cargo build --offline`** funciona.
+- **Imagem Docker `FROM scratch`** de 6,42 MB, possível só porque não há
+  carregador dinâmico nem libc a arrastar.
+- **O motor sozinho pesa 790–930 KiB**, o que torna a pergunta do ESP32
+  respondível em vez de absurda.
+
+O preço: **26 módulos escritos e mantidos aqui.**
+
+### O que foi escrito à mão no `phxsql-core`
+
+`base64` · `crc` (CRC-32) · `cifra` (ChaCha20-Poly1305, 982 linhas) ·
+`datahora` · `desafio` (desafio-resposta) · `ed25519` · `fio` (aperto de mão
+Noise, 935 linhas) · `frogcript` · `hash` (SHA-256) · `hkdf` · `json` ·
+`keyenc` · `paginacao` · `paralelo` · `schema` · `senha` (PBKDF2, 286 linhas) ·
+`sha1` · `sha512` · `types` · `uuid` · `value` · `x25519` · `zip`
+
+### Criptografia se confere contra vetor oficial
+
+Nada foi aceito por «parecer certo». As normas citadas nos testes:
+
+**FIPS 180-4** (SHA) · **RFC 8439** (ChaCha20-Poly1305) · **RFC 7748**
+(X25519) · **RFC 5869** (HKDF) · **RFC 4231** e **RFC 2104** (HMAC) ·
+**RFC 2898** (PBKDF2) · **RFC 8032** (Ed25519) · **RFC 9562** (UUID) ·
+**RFC 4648** (Base64) · **RFC 1951** (deflate) · **RFC 5802** e **RFC 7677**
+(SCRAM) · **RFC 4180** (CSV) · **RFC 5322**, **2045** e **2047** (correio)
+
+Dezessete normas. A escolha do ChaCha20 sobre AES tem motivo escrito: AES em
+software puro se escreve com tabelas, e **tabela em cache vaza a chave pelo
+tempo de acesso**; o ChaCha20 é soma, XOR e rotação — tempo constante por
+construção, sem tabela nenhuma. É a mesma escolha que o TLS 1.3 e o WireGuard
+fazem para máquina sem AES-NI.
+
+### Formato em disco
+
+Sete arquivos por tabela (`.reg` `.ndx` `.bin` `.memo` `.log` `.trash`
+`.reason`) mais três condicionais (`.lgpd` `.bkp` `.pag`), no modelo de
+arquivos separados do HFSQL®. Endereçamento **O(1) pelo rowid**, slots de
+tamanho fixo com **CRC-32** — o que torna escrita rasgada *detectável* em vez
+de silenciosa. Em `docs/FORMATO.md`.
+
+### Protocolo e interface
+
+- **JSON sobre TCP**, com o analisador escrito aqui.
+- **Interface web sem framework**: JavaScript direto, tudo embutido no binário
+  por `include_str!` — por isso o servidor é **um arquivo só**, sem pasta de
+  assets para se perder.
+- **Driver ODBC** próprio (`cdylib`), testado pela ABI sem passar pelo
+  `unixODBC`.
+
+---
+
+## 2. O trabalho
+
+Esta metade costuma não ser escrita, e é a que mais se reaproveita.
+
+### Orquestração por agentes em worktrees isolados
+
+Cada frente roda num **git worktree próprio**, com **faixa de portas
+reservada**. Sem faixa, dois agentes se derrubam com «porta em uso»; sem
+worktree, dois editam o mesmo arquivo ao mesmo tempo.
+
+A integração é **sequencial**, uma frente por vez, com portões completos entre
+cada uma — e é lá que aparecem os defeitos que nenhuma frente sozinha podia
+ver.
+
+### Prova de outra arquitetura sem VM
+
+`qemu-user-static`. A máquina não tinha `/dev/kvm` nem flag de virtualização —
+VM completa estava fora. Mas `qemu-user` emula o **binário**, não a máquina.
+Foi assim que o servidor ARM64 subiu, autenticou com um hash PBKDF2 gerado pelo
+próprio binário emulado, e gravou e leu 50 linhas.
+
+### Bancada de replicação em contêiner
+
+Docker com rede isolada — e foi **só** o isolamento de rede que revelou uma
+opção de autorização que ninguém lia: um vizinho com configuração vazada levava
+200 de 200 eventos.
+
+### Compilação cruzada
+
+`x86_64-pc-windows-gnu` (com `mingw-w64`), `aarch64-unknown-linux-musl` e
+`armv7-unknown-linux-musleabihf` (com `rust-lld`, sem `gcc` cruzado), e
+`x86_64-unknown-linux-musl` para a imagem `scratch`.
+
+### Medição
+
+Exemplos `cargo` dedicados (`onde-doi`, `custo-da-trava`, `custo-do-excluir`,
+`custo-do-alter`) que instrumentam **por dentro** em vez de cronometrar por
+fora. Mediana e dispersão de várias corridas, com a carga da máquina anotada —
+porque a máquina raramente está quieta.
+
+### Prova real, mecanizada
+
+Um **catálogo de guardas** onde cada entrada guarda o trecho original e a troca
+que **repõe o defeito**. Roda-se a mutação e conta-se quantas *não pegaram*.
+Hoje são 37.
+
+### Catraca de dívida
+
+Um conferidor que conta o que falta (textos por traduzir) e **reprova quando o
+número sobe** — e também quando alguém melhora e esquece de baixá-lo.
+
+### Documentação gerada
+
+Cinco geradores escrevem todo número visível do relatório. Nenhum se digita.
+
+### Zelador de ambiente
+
+Script em horário que libera disco **sem nunca tocar no que está em uso** —
+confere por `cwd` de processo vivo, e não mata processo nenhum.
+
+---
+
+## 3. O que foi avaliado e recusado, com o número
+
+Recusa medida é resultado, e é o que impede a mesma proposta de voltar.
+
+| Proposta | Veredito |
+|---|---|
+| **CUDA / GPU** | O `SUM` já roda a 28.234 MiB/s — **1,79× o pico teórico do PCIe 3.0 x16** —, então não existe limiar onde a GPU compense. E 99,4% de uma inserção não é aritmética. A alternativa sem dependência deu **3,90×** em 4 núcleos |
+| **WAL + group commit + LSM** | Receita para o gargalo do InnoDB. Medido o nosso: das dez propostas, **cinco já existiam**, duas miravam problema que não temos, uma quebraria a ordem de digitação, **duas eram reais** |
+| **Duas larguras de slot** | O formato não permite (o tamanho é um campo só), e cobraria **2,36× em toda leitura** para poupar uma passada uma vez |
+| **Lote de replicação 500 → 2.000** | Quadruplicaria o pior caso de memória de quem serve |
+| **MVCC** | Quebraria o rowid-como-endereço e a replicação por rowid. **Decisão pendente do dono** |
+| **TLS 1.3 à mão** | Milhares de linhas e risco real: TLS mal escrito é pior que TLS ausente, porque **parece** seguro |
+DOC
+wc -l /home/user/adrianoboller/base-de-conhecimento/05-TECNOLOGIAS.md | awk '{print $1" linhas em 05-TECNOLOGIAS.md"}'
+```
+
+### Package the scripts with a reading guide  ·  30/08 16:42
+
+```bash
+cd /home/user/adrianoboller && python3 base-de-conhecimento/extrair.py >/dev/null 2>&1
+D=/tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/scripts-phxsql
+rm -rf $D && mkdir -p $D && cp -r base-de-conhecimento/scripts/. $D/ && cp base-de-conhecimento/05-TECNOLOGIAS.md $D/
+cat > $D/LEIA-PRIMEIRO.md <<'FIM'
+# Os scripts, e como olhar para eles
+
+São os scripts Python que rodaram por heredoc durante a construção do PhxSql —
+extraídos do transcrito da sessão, deduplicados por conteúdo, e classificados
+por técnica em `00-INDICE.md`.
+
+## A ordem que vale a pena
+
+**Não leia os 1.303.** A maioria é conserto de uma vez só, guardada pelo
+*padrão* e não pelo conteúdo. O que se reaproveita são três famílias, e elas
+estão nomeadas no índice:
+
+1. **Medição** — cronometram, contam, comparam. O padrão que interessa: medir
+   por dentro em vez de cronometrar por fora, rodar várias vezes, publicar
+   mediana **e** dispersão, e anotar a carga da máquina.
+2. **Prova real** — repõem o defeito e conferem que o teste reprova. Este é o
+   padrão mais valioso do conjunto inteiro, e o mais fácil de fingir que se
+   cumpriu.
+3. **Sondas de protocolo** — falam com o servidor por soquete. Servem de molde
+   para testar qualquer serviço de rede sem framework.
+
+As outras duas famílias — varredura e edição em massa — são utilitárias: valem
+pelo idioma (`re.sub` sobre fonte, `os.walk` com critério de segurança), não
+pelo caso.
+
+## O que reparar, se for aproveitar
+
+- Vários scripts **medem antes de mudar**, e alguns terminam recusando a
+  hipótese com o número. Recusa medida é resultado.
+- Os de prova real quase sempre têm o mesmo esqueleto: *guarda o original →
+  repõe o defeito → roda → confere que REPROVOU → restaura → roda → confere que
+  passou.* Copie esse esqueleto.
+- Alguns consertam um script anterior que estava errado. Isso é de propósito:
+  o erro faz parte do registro, e há pelo menos um caso em que a primeira
+  versão de uma prova **passava com o defeito reposto**.
+
+O `05-TECNOLOGIAS.md` junto explica o contexto: o que se usou para fazer o
+produto e o que se usou para fazer o trabalho.
+FIM
+cd $(dirname $D) && zip -qr scripts-phxsql.zip $(basename $D) && ls -lh scripts-phxsql.zip | awk '{print "  zip:", $5}' && unzip -l scripts-phxsql.zip | tail -1
 ```
 

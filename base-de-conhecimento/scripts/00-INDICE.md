@@ -18,8 +18,9 @@ pelo padrao, nao pelo conteudo.
 - `802-test-cascading-replication.py` -- Test cascading replication
 - `805-verify-the-cascade-and-measure-the-two-hop-lag.py` -- Verify the cascade and measure the two-hop lag
 
-## Prova real -- repoem o defeito e conferem que reprova  (15)
+## Prova real -- repoem o defeito e conferem que reprova  (16)
 
+- `00-INDICE.md` -- Os scripts, por tecnica
 - `1103-registrar-a-regra-e-achar-a-barra-de-ferramentas.py` -- Registrar a regra e achar a barra de ferramentas
 - `1242-repose-the-defect.py` -- Repose the defect
 - `1245-repose-the-defect-and-check-the-proof-fails.py` -- Repose the defect and check the proof fails
@@ -77,7 +78,7 @@ pelo padrao, nao pelo conteudo.
 - `163-add-registered-trademark-marks-to-third-party-na.py` -- Add registered trademark marks to third-party names
 - `731-extract-the-conversion-functions.py` -- Extract the conversion functions
 
-## Edicao em massa -- mexem no fonte por padrao  (1094)
+## Edicao em massa -- mexem no fonte por padrao  (1100)
 
 - `001-write-table-module-and-build-workspace.py` -- Write table module and build workspace
 - `002-fix-borrow-errors-and-rebuild.py` -- Fix borrow errors and rebuild
@@ -407,6 +408,12 @@ pelo padrao, nao pelo conteudo.
 - `1295-update-the-packaging-doc-with-the-completed-proo.py` -- Update the packaging doc with the completed proof
 - `1299-make-the-freed-space-total-measured-rather-than-.py` -- Make the freed-space total measured rather than summed
 - `130-add-destinos-allow-list-to-web-config.py` -- Add destinos allow-list to web config
+- `1304-add-dossier-and-kit-targets-and-build-them.py` -- Add dossier and kit targets and build them
+- `1305-split-the-knowledge-base-into-its-own-package.py` -- Split the knowledge base into its own package
+- `1306-split-the-knowledge-base-out-and-rebuild-the-kit.py` -- Split the knowledge base out and rebuild the kit
+- `1307-document-the-kit-size-limit-and-verify-the-kit.py` -- Document the kit size limit and verify the kit
+- `1308-write-the-knowledge-base-rule-into-both-claude-m.py` -- Write the knowledge-base rule into both CLAUDE.md files
+- `1309-write-the-rule-into-the-user-level-claude-md-at-.py` -- Write the rule into the user-level CLAUDE.md at its real path
 - `131-add-destinos-allow-list-from-project-root.py` -- Add destinos allow-list from project root
 - `133-route-api-requests-through-the-remote-connection.py` -- Route API requests through the remote connection
 - `134-add-relay-open-and-forward-functions.py` -- Add relay open and forward functions
