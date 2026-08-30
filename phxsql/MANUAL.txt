@@ -1,7 +1,7 @@
 ================================================================================
 PHXSQL - PHOENIX DATABASE ENGINE
 Manual do operador                                        |   Linux e Windows
-Built to store. Engineered to scale.
+Built to store. Engineered to scale.                      |   versao 0.18.0
 ================================================================================
 
 
@@ -75,13 +75,32 @@ Bancos e schemas sao diretorios:
     phxsql        ferramenta de linha de comando
     phxsqld       servidor TCP (porta 5000) e Centro de Controle web
                   (porta 5001, desligado por padrao)
+    phxsqlcmd     console interativo: fala o protocolo com um servidor
+    libphxsql_odbc.so     driver ODBC 3.x (no Windows, phxsql_odbc.dll)
+
+    COMECE-AQUI.txt       sobe o servidor em tres passos
+    demonstracao/         um config.json que escuta so em 127.0.0.1
     exemplos/     Config_exemplo_01.json  isolado
                   Config_exemplo_02.json  source (origem da replicacao)
                   Config_exemplo_03.json  replica multi-source
     MANUAL.txt    este arquivo
-    docs/         especificacao do formato, plano e replicacao
+    README.md     o resumo do projeto
+    CHANGELOG.md  o que mudou em cada versao
+    docs/         ODBC.md, o registro do driver; CONSOLE.md, o console
+    MANIFESTO.sha256      o SHA-256 de cada arquivo acima
 
-No Windows os binarios sao phxsql.exe e phxsqld.exe.
+No Windows os binarios sao phxsql.exe, phxsqld.exe e phxsqlcmd.exe.
+
+CONFIRA O PACOTE ANTES DE RODAR. O conferidor viaja dentro dele:
+
+    phxsql conferir-pacote
+
+Ele responde INTEGRO, ou aponta o que difere, o que falta e o que veio A MAIS
+-- que e o caso que uma conferencia de hash comum nao ve, porque ela so olha o
+que o manifesto lista. Onde houver sha256sum, ha um segundo caminho, que nao
+depende de rodar nada do proprio pacote:
+
+    sha256sum -c MANIFESTO.sha256
 
 
 3. REQUISITOS
@@ -99,15 +118,19 @@ Nao e preciso instalar Rust para USAR. Rust so e preciso para compilar.
 --------------------------------------------------------------------------------
 LINUX
 
-    tar -xzf phxsql-linux-x86_64.tar.gz
-    cd phxsql-linux-x86_64
-    chmod +x phxsql phxsqld
-    sudo cp phxsql phxsqld /usr/local/bin/
+    unzip phxsql-0.18.0-linux.zip
+    cd phxsql-0.18.0-linux
+    chmod +x phxsql phxsqld phxsqlcmd
+    ./phxsql conferir-pacote
+    sudo cp phxsql phxsqld phxsqlcmd /usr/local/bin/
 
 WINDOWS
 
-    Extraia o zip, por exemplo em C:\phxsql
+    Extraia phxsql-0.18.0-windows.zip, por exemplo em C:\phxsql
     Acrescente C:\phxsql ao PATH, ou chame pelo caminho completo.
+    phxsql.exe conferir-pacote
+
+O driver ODBC nao se copia: ele se REGISTRA. Como, em docs/ODBC.md.
 
 
 5. PRIMEIROS PASSOS
@@ -172,6 +195,14 @@ Veja o diario:
     phxsql bancos    <base>
     phxsql tabelas   <base> <database>
         Navegam a hierarquia de databases e schemas.
+
+    phxsql conferir-pacote [<dir>]
+        Confere um pacote de download contra o MANIFESTO.sha256 que veio
+        dentro dele. Sem argumento, o diretorio corrente. Sai com codigo de
+        erro quando nao bate. Aponta tres coisas: o arquivo que DIFERE, o que
+        FALTA e o que veio A MAIS -- e o terceiro e o que quase nenhum
+        conferidor pega, porque quem acrescenta um arquivo ao pacote nao mexe
+        em nenhuma linha do manifesto.
 
 
 6b. phxsqlcmd -- O CONSOLE
@@ -2609,6 +2640,16 @@ Para Windows, a partir do Linux:
 
 Nao ha vendor de dependencias a fazer: o projeto nao usa nenhuma crate
 externa, entao `cargo build --offline` funciona numa maquina sem Internet.
+Medido tres vezes, com o CARGO_HOME vazio e sem rede: sete crates em 28,6 s,
+30,3 s e 34,3 s. Os sete sao deste repositorio, e nao ha o que baixar.
+
+Para refazer os tres zips de download:
+
+    ./empacotar.sh            fontes, Linux e Windows, em pacotes/
+    ./empacotar.sh conferir   desempacota e confere os tres
+
+O que cada zip leva, o que ele deliberadamente nao leva e as travas que rodam
+antes de qualquer um sair estao em docs/EMPACOTAMENTO.md.
 
 
 ================================================================================

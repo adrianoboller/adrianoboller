@@ -360,25 +360,53 @@ for (rowid, linha) in t.varrer()? {
 t.verificar()?;
 ```
 
+## Os pacotes de download
+
+```bash
+./empacotar.sh            # três zips em pacotes/: fontes, Linux e Windows
+./empacotar.sh conferir   # desempacota o que está lá e confere
+```
+
+Cada zip traz um `MANIFESTO.sha256` com o hash de todos os seus arquivos, e o
+conferidor viaja dentro do próprio pacote:
+
+```bash
+./phxsql conferir-pacote        # responde INTEGRO, ou o que difere, falta e veio a mais
+sha256sum -c MANIFESTO.sha256   # o segundo caminho, que não depende de rodar nada do zip
+```
+
+O que cada pacote leva, o que ele deliberadamente não leva e as quatro travas
+que rodam antes de qualquer zip sair estão em
+[`docs/EMPACOTAMENTO.md`](docs/EMPACOTAMENTO.md).
+
 ## Estrutura
 
 ```
 crates/
   phxsql-core/     tipos, valores, esquema, chaves estrangeiras, paginação,
-                   codificação de chaves, CRC, calendário
+                   codificação de chaves, CRC, SHA-256, calendário
   phxsql-store/    os sete arquivos, os volumes, a hierarquia e a tabela
-  phxsql-cli/      a ferramenta de linha de comando
+  phxsql-sql/      analisador SQL e tradutor para as operações do protocolo
+  phxsql-cli/      a ferramenta de linha de comando (phxsql)
+  phxsql-cmd/      o console interativo (phxsqlcmd)
   phxsql-server/   config, usuários, blacklist, servidor TCP e o HTTP da
                    interface; ui/index.html é o Centro de Controle
+  phxsql-odbc/     o driver ODBC 3.x, uma cdylib de ABI C
   phxsql-store/examples/basico.rs   exemplo executável
 docs/
   FORMATO.md       especificação byte a byte dos arquivos
   USUARIOS.md      cadastro, senha em hash e as dez permissões
   SEGURANCA.md     política, blacklist, firewall e as formas de login
   REPLICACAO.md    o desenho da replicação Source → Réplica
+  ODBC.md          registro do driver e connection string
+  EMPACOTAMENTO.md como os três zips de download são montados e conferidos
   PLANO.md         leitura do rusqlite e do FraseSQL, e o roteiro do projeto
 exemplos/
   Config_exemplo_0N.json   isolado, source e réplica
+bancada/           a medição: carga, comparação, profiler, telemetria
+testes-web/        as baterias que exercitam a tela num navegador
+marca/             a marca oficial e seus derivados
+empacotar.sh       monta os três zips de download
 MANUAL.txt         manual do operador
 CHANGELOG.md       o que mudou em cada versão, defeitos primeiro
 ```

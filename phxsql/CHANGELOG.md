@@ -10,6 +10,123 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
+## Não lançado — os pacotes de download que se conferem
+
+Escrito em paralelo com as outras seções «Não lançado» abaixo: na integração
+todas viram uma só, e o número da versão sai de lá.
+
+**O pedido 17 estava marcado como feito, e o empacotador não rodava num
+checkout limpo.** Rodá-lo achou três defeitos que ler o código não acharia — o
+mesmo padrão do vídeo de demonstração, por outro caminho.
+
+### Corrigido
+
+- **`./empacotar.sh` morria num checkout limpo, e só ali.** O `monta()`
+  compila com `--target`, que grava em `target/<alvo>/release`; o config de
+  demonstração pede o hash da senha ao `./target/release/phxsqld`, que é o
+  binário do **hospedeiro**, e `--target` nunca o produz. Quem tivesse rodado
+  `cargo build --release` antes não via defeito nenhum — inclusive quem
+  escreveu o script. Reposto o defeito (binário do hospedeiro fora do lugar),
+  o empacotador para em `No such file or directory` antes de montar zip
+  algum. Entrou o `garante_host()`, que o compila quando falta.
+
+- **O `demonstracao/config.json` gerado escrevia `web.sessao_min`, e o campo é
+  `web.sessao_minutos`.** O servidor avisa e **ignora** o valor; como o padrão
+  também é 60 minutos, a tela ficava idêntica e o aviso rolava para fora do
+  terminal. Só apareceu subindo o binário empacotado de verdade, numa porta da
+  faixa 6750–6799, e lendo a primeira linha da saída. Configuração que não é
+  lida mente — e mente melhor quando promete justamente o padrão.
+
+### Adicionado
+
+- **`MANIFESTO.sha256` em cada um dos três zips**, com o SHA-256 de todos os
+  arquivos do pacote, e `pacotes/SHA256SUMS` com o hash dos próprios zips, que
+  é a pergunta de quem acabou de baixar e ainda não abriu.
+
+- **`phxsql conferir-pacote [<dir>]`**, o conferidor que viaja **dentro** do
+  pacote. O Windows não tem `sha256sum`, e o `phxsql.exe` está ali do lado; o
+  SHA-256 é o deste projeto, já conferido contra os vetores do FIPS 180-4. O
+  formato do manifesto é o do `sha256sum` de propósito, para haver um segundo
+  caminho (`sha256sum -c MANIFESTO.sha256`) que não depende de rodar o binário
+  que está justamente conferindo.
+
+  Ele reprova três coisas, e a terceira é a que quase nenhum conferidor pega:
+  `DIFERE`, `FALTA` e **`A MAIS`**. Conferência de hash só olha o que o
+  manifesto **lista** — quem acrescenta um arquivo ao pacote não mexe em
+  nenhuma linha e passaria batido, que é exatamente o jeito de entregar um
+  binário a mais junto do pacote legítimo. É a regra que o `backup.json` já
+  seguia.
+
+  Sete testes, cada um com o defeito reposto: um byte trocado, conteúdo
+  diferente com o mesmo tamanho, arquivo a mais, arquivo faltando, pacote sem
+  manifesto e manifesto ilegível. Conferidor que aprova tudo é pior que
+  conferidor nenhum, porque quem baixou acha que conferiu.
+
+- **Quatro travas antes de qualquer zip sair.** A versão tem de bater em
+  `Cargo.toml`, `Cargo.lock`, no cabeçalho do `MANUAL.txt` e no título lançado
+  mais novo do `CHANGELOG.md` — o `MANUAL` não dizia versão nenhuma e ganhou o
+  selo, porque o que não se afirma também não se confere. O pacote de Windows
+  confere alvo e ligador **antes** do `cargo build`, imprimindo o comando
+  exato de quem não os tem. O pacote de fontes recusa árvore suja, porque o
+  `git archive` lê o `HEAD` e um zip diferente do que o autor está vendo não
+  avisa ninguém. E, depois de extrair, o empacotador confere que o
+  `Cargo.toml` caiu na raiz do zip — o recorte de subdiretório do `git
+  archive` é sutil demais para se confiar nele em silêncio.
+
+- **`./empacotar.sh conferir`**, que desempacota o que está em `pacotes/` e
+  confere os três com o próprio `phxsql`.
+
+- **O que faltava nos pacotes de binário**: os três `Config_exemplo_*.json`
+  (isolado, source e réplica), e `docs/ODBC.md` e `docs/CONSOLE.md` — os dois
+  documentos que o `COMECE-AQUI.txt` citava pelo nome, sem que quem baixou o
+  zip tivesse o repositório para ir buscá-los.
+
+- **`docs/EMPACOTAMENTO.md`**: o que cada zip leva, o que ele deliberadamente
+  não leva, e como quem baixou confere.
+
+### Medido
+
+- **Zero dependências externas continua verdade depois desta rodada.**
+  `cargo metadata --offline` dá **7 pacotes no grafo, os 7 deste repositório,
+  0 com `source`** — nenhum de registro, nenhum de git. O `Cargo.lock` inteiro
+  cabe em 53 linhas.
+
+- **O teste que o dono vai fazer.** Zip de fontes extraído num diretório limpo
+  fora da árvore, `CARGO_HOME` vazio (zero entradas), `CARGO_NET_OFFLINE=true`
+  e as variáveis de proxy apagadas: `cargo build --offline --release` em
+  **28,6 s, 30,3 s e 34,3 s** em três medições, sete crates, quatro binários. E
+  o laço fecha — desse diretório extraído, `./empacotar.sh linux` remonta o
+  pacote de Linux inteiro.
+
+- **O binário de Linux roda.** Subido do zip numa porta da faixa 6750–6799:
+  `ping` pela porta de dados responde `{"ok":true,...,"phxsql":"0.18.0"}`, a
+  interface web devolve 1.057.862 bytes de HTML, e o `phxsqlcmd` empacotado
+  faz login e lista bancos. Alvo `x86_64-unknown-linux-gnu`, `rustc 1.94.1`.
+
+- **O de Windows tem a forma certa.** Os três `.exe` e a `.dll` são PE32+
+  x86-64, e as únicas DLLs que importam são do sistema — `KERNEL32`,
+  `msvcrt`, `ntdll`, `WS2_32`, `bcryptprimitives`,
+  `api-ms-win-core-synch-l1-2-0`. Nenhuma do mingw, então não há runtime para
+  acompanhar o pacote. A `phxsql_odbc.dll` exporta os 21 símbolos ODBC.
+
+### Sabido
+
+- **Não há arquivo de licença no repositório**, e `Cargo.toml` e `README.md`
+  dizem `MIT OR Apache-2.0`. Escolher e colar o texto é decisão do dono; o
+  empacotador não inventa um.
+
+- **Os zips não são reproduzíveis byte a byte** entre duas rodadas: o hash da
+  senha de demonstração leva sal novo a cada execução, porque sai do próprio
+  `phxsqld --senha` e não de uma constante colada no script. Trocar isso
+  poria uma senha pré-computada em circulação; o preço não vale.
+
+- **O `.exe` não foi executado.** Sem Windows e sem `wine`, o pacote de
+  Windows é conferido pela forma (PE32+ x86-64), pelas DLLs que importa — só
+  as do sistema, nenhuma do mingw para acompanhar — e pelos 21 símbolos ODBC
+  que a `phxsql_odbc.dll` exporta. Dizer mais que isso seria inventar.
+
+---
+
 ## Não lançado — a área de trabalho multitela
 
 Escrito em paralelo com a restauração de backup, abaixo: na integração as duas
