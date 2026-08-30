@@ -19,8 +19,11 @@ const erros = [];
 p.on("pageerror", e => erros.push("erro: " + e.message));
 await p.goto("file://" + BASE + "/bancada.html");
 
-const diga = (rot, ok, extra = "") =>
+const reprovadas = [];
+const diga = (rot, ok, extra = "") => {
+  if (!ok) reprovadas.push(rot);
   console.log(`${ok ? "OK  " : "FALHA"} ${rot}${extra ? " — " + extra : ""}`);
+};
 
 // ---- 1. clicar na MENOR bolha, com o painel se mexendo
 await p.evaluate(() => window.montarCena(4));   // 40 atividades
@@ -152,3 +155,14 @@ diga("prefers-reduced-motion deixa tudo parado",
 
 await b.close();
 console.log(erros.length ? "ERROS DE CONSOLE:\n" + erros.join("\n") : "sem erro de console");
+
+/* O codigo de saida, que faltava.
+ *
+ * Ele imprimia «FALHA» e saia ZERO. Lido por gente, acusava; chamado pela
+ * bateria unica, que soma exit codes, mentia verde. Conferidor que nao sabe
+ * reprovar nao confere nada quando ninguem esta olhando -- e a mesma licao do
+ * teste que passa por engano, um andar acima. */
+if (reprovadas.length || erros.length) {
+  console.log(`\n${reprovadas.length} reprovada(s), ${erros.length} erro(s) de console`);
+}
+process.exitCode = (reprovadas.length || erros.length) ? 1 : 0;

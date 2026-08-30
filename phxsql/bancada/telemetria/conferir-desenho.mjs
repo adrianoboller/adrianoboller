@@ -98,10 +98,22 @@ await b.close();
 console.log(falhas.length ? "FALHAS (" + falhas.length + "):\n" + falhas.slice(0, 30).join("\n")
                           : "tudo dentro: rotulo na esfera, esfera na caixa, alvo de clique >= 11 px");
 const vistos = new Set();
+let contrasteRuim = false;
 for (const [nome, tema, c] of contrastes) {
   if (vistos.has(tema)) continue;
   vistos.add(tema);
+  const pior = Math.min(...Object.values(c));
+  if (pior < 4.5) contrasteRuim = true;
   console.log(`contraste do rotulo no tema ${tema}: `
     + Object.entries(c).map(([k, v]) => `${k} ${v.toFixed(2)}`).join("  ")
-    + (Math.min(...Object.values(c)) < 4.5 ? "   <<< ABAIXO DE 4,5" : ""));
+    + (pior < 4.5 ? "   <<< ABAIXO DE 4,5" : ""));
 }
+
+/* O codigo de saida, que faltava.
+ *
+ * Este conferidor media certo e imprimia certo -- e saia ZERO sempre, inclusive
+ * com «FALHAS (7)» na tela. Lido por gente, ele acusava; chamado por uma
+ * bateria que soma exit codes, ele mentia verde. E a mesma licao do teste que
+ * passa por engano, um andar acima: conferidor que nao sabe reprovar nao
+ * confere nada quando ninguem esta olhando. */
+process.exitCode = (falhas.length || contrasteRuim) ? 1 : 0;

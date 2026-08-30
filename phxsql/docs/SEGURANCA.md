@@ -1279,3 +1279,52 @@ e a implementação de referência é 410 000× mais cara do que ele imagina —
 pela cifra, e sim por derivar a chave quatro vezes **por valor**. O erro não é
 de criptografia, é de onde a derivação mora. Aqui ela mora no arquivo, uma vez,
 e é o mesmo motivo pelo qual a §8 guarda a chave derivada.
+
+### 11.11 A amarração ao endereço são DUAS fechaduras — medido, e a ficha dizia uma
+
+A §11 conta que o corpo cifrado de uma linha está amarrado ao **endereço** dela:
+copiar os bytes do slot 5 por cima do slot 9, consertar o CRC-32 — que é público
+— e a linha 9 devolver o conteúdo da 5 **não passa**. A garantia é verdadeira e
+o teste que a trava é o `trocar_o_corpo_de_uma_linha_pela_outra_nao_passa`.
+
+O que estava errado era **de onde ela vem**. A ficha do teste dizia:
+
+> Provado com o defeito reposto: tirando o `aad` do `montar_slot` e do
+> `abrir_slot`, este teste passa a ler a linha trocada.
+
+Medido pelo `bancada/guardas/`, repondo o defeito de verdade: **não passa a ler
+nada.** O teste continua verde. Seguindo o código depois da medição, o motivo
+apareceu: o endereço está amarrado **duas vezes**.
+
+| peça | o que carrega |
+|---|---|
+| `aad_do_slot(volume, rowid, versao)` | o dado associado do AEAD |
+| `cofre::nonce_de_pedaco(rowid, volume, versao, tempero)` | o nonce de 24 bytes |
+
+Nonce diferente já produz texto cifrado **e** etiqueta diferentes, então cada
+uma das duas segura sozinha. As três combinações, medidas:
+
+| o que sai | `trocar_o_corpo_de_uma_linha_pela_outra_nao_passa` |
+|---|---|
+| só o AAD | **passa** (verde) |
+| só o endereço do nonce | **passa** (verde) |
+| os dois | **cai** |
+
+**Nada foi removido.** O AAD fica: é defesa em profundidade, e no dia em que o
+nonce virar sorteado e guardado no slot — que é o caminho natural se o `tempero`
+mudar de forma — ele passa a ser a única coisa entre o arquivo e o
+embaralhamento. Tirar redundância de criptografia porque «hoje não é sentida» é
+o caminho para o dia em que ela era.
+
+O que mudou foram as **fichas** (a do teste e a do `aad_do_slot`), que agora
+dizem a verdade medida, e três entradas no catálogo de guardas que a travam:
+`aad-fora-do-slot` e `nonce-sem-endereco` **afirmam** a redundância
+(`espera: "nada muda"`), e `endereco-fora-da-amarracao` prova a garantia
+derrubando o teste. No dia em que uma das duas fechaduras deixar de cobrir, as
+duas primeiras viram `NAO PEGOU` e o relatório avisa.
+
+**A lição, que é do `CLAUDE.md` e apareceu aqui em criptografia:** diagnóstico
+plausível não é diagnóstico medido, **e o errado sobrevive melhor quando o
+conserto funcionou por outro motivo**. O AAD foi escrito, o embaralhamento
+parou de funcionar, e todo mundo — eu inclusive, até rodar — atribuiu a parada à
+peça recém-escrita.

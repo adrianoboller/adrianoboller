@@ -1616,6 +1616,18 @@ fn rotulo_da_prova(versao: u16, slot_size: usize) -> Vec<u8> {
 /// tem o arquivo mas nao a chave ainda poderia embaralhar as linhas, e o
 /// resultado abriria sem erro nenhum.
 ///
+/// # E ele nao esta sozinho -- medido
+///
+/// O `cofre::nonce_de_pedaco(rowid, volume, versao, tempero)` carrega os
+/// mesmos tres valores, e nonce diferente ja muda texto cifrado e etiqueta.
+/// Sao duas fechaduras na mesma porta: tirar SO este dado associado nao e
+/// sentido por teste nenhum, e tirar so o endereco do nonce tambem nao. E
+/// defesa em profundidade de proposito -- se um dia o nonce virar sorteado e
+/// guardado no slot, este aqui passa a ser a unica coisa entre o arquivo e o
+/// embaralhamento. As tres entradas do `bancada/guardas/catalogo.py` que
+/// travam essa conta sao `aad-fora-do-slot`, `nonce-sem-endereco` e
+/// `endereco-fora-da-amarracao`.
+///
 /// O `status` fica FORA de proposito: excluir regrava so o cabecalho de 24
 /// bytes e nao toca no corpo, entao um `status` no dado associado faria o
 /// corpo de toda linha excluida parar de abrir. A lixeira le a linha antes de

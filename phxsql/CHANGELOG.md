@@ -11,6 +11,7 @@ Os números são **medidos**, nunca estimados.
 ---
 
 ## Não lançado — os pacotes de download que se conferem
+## Não lançado — a bateria única e o catálogo de defeitos repostos
 
 Escrito em paralelo com as outras seções «Não lançado» abaixo: na integração
 todas viram uma só, e o número da versão sai de lá.
@@ -229,6 +230,89 @@ documento.
   ser *data URI*: a página publicada é um arquivo só, e a política de conteúdo
   do visualizador bloqueia imagem de qualquer outra origem — ao lado, seriam
   vinte quadros quebrados e nenhum erro visível.
+**As baterias estavam todas aqui; o relatório é que não estava.** Eram oito
+comandos, em três linguagens, espalhados por seis diretórios. Quem chegava no
+projeto não sabia o que rodar, e ninguém sabia dizer, num só lugar, se o
+projeto estava verde. E a regra da casa — *todo teste novo tem de falhar com o
+defeito reposto* — era cumprida à mão, uma vez, por quem escrevia o teste, e
+depois se perdia: ninguém conseguia dizer, hoje, quais das 1.229 asserções
+ainda pegariam o defeito que as motivou.
+
+### Adicionado
+
+- **`python3 phxsql/provar.py`** — um comando roda as **dezesseis** partes.
+  Ele não refaz bateria nenhuma: chama, cronometra, guarda o log de cada uma e
+  soma. **Recusa rodar com binário velho** (a página é `include_str!`), herdando
+  a guarda que a bateria de frontend já tinha, e estendendo-a aos `examples`,
+  que o `cargo build --release` não recompila sozinho. Recusa é `exit 2`: não
+  rodar não é reprovar.
+- **O que foi PULADO aparece no relatório, com o motivo.** Bateria que esconde
+  o que não rodou mente por omissão. Porta ocupada vira pulo e não reprovação —
+  há outras frentes na mesma máquina, e uma bateria que acusa a vizinha de
+  defeito é pior que uma que não roda. `--exigir-tudo` transforma pulo em
+  reprovação para quem quer o portão apertado.
+- **`bancada/guardas/`** — o catálogo dos **defeitos repostos**, e o executor
+  que os repõe. Cada entrada traz o arquivo, o trecho de hoje, o trecho do dia
+  do estrago e **quais testes têm de cair**. O executor copia a árvore, repõe um
+  defeito por vez, roda só o binário nomeado, desfaz num `finally` (com rede no
+  `atexit`) e julga. Cinco vereditos, e o que importa é o `NAO PEGOU`: teste que
+  passa por engano. **Medido: 18 guardas, 16 provadas, 2 redundantes, zero «não
+  pegou», em 162 s de mutação.** A tabela no `docs/TESTES.md` sai de um gerador.
+- **`bancada/odbc/provar.py`** — o passo do meio que faltava. A prova de ABI e a
+  montagem dos dados já existiam; o que estava escrito só em prosa era «suba um
+  phxsqld seu com token `prova-odbc`». Passo em prosa não entra em bateria, e
+  por isso a parte `odbc` era um pulo permanente.
+- **`bancada/guardas/tabela-no-testes.py`** — a tabela das guardas no
+  `docs/TESTES.md` sai de um gerador, como as duas de cobertura. Número visível
+  que não sai de gerador está errado e ninguém percebeu ainda.
+
+### Corrigido
+
+- **Dois conferidores da telemetria saíam com código 0 imprimindo «FALHAS» na
+  tela.** `conferir-desenho.mjs` e `conferir-interacao.mjs` mediam certo e
+  imprimiam certo, e nunca souberam reprovar. Lidos por gente, acusavam;
+  chamados por uma bateria que soma códigos de saída, mentiam verde — e o
+  buraco só existe a partir do dia em que aparece o orquestrador. O do desenho
+  também passou a reprovar quando o contraste medido fica abaixo de 4,5:1, que
+  ele já calculava e só imprimia.
+- **A ficha do teste da cifra afirmava algo falso.**
+  `trocar_o_corpo_de_uma_linha_pela_outra_nao_passa` dizia que tirar o `aad` do
+  `montar_slot` e do `abrir_slot` o derrubava. Medido, com o defeito reposto de
+  verdade: **não derruba.** O endereço está amarrado **duas vezes** — o
+  `aad_do_slot` e o `nonce_de_pedaco` carregam os mesmos `(volume, rowid,
+  versao)` —, cada uma segura sozinha, e o teste só cai quando as duas somem.
+  Nada foi removido: o AAD é defesa em profundidade, e no dia em que o nonce
+  virar sorteado ele passa a ser a única fechadura. O que mudou foram as
+  fichas, que agora dizem a verdade medida, e três entradas do catálogo que
+  travam a conta. `docs/SEGURANCA.md` §11.11.
+- **A prova da replicação estava reprovando, e ninguém sabia.**
+  `bancada/replicacao/modos.py`, estágio (g), exigia o nome de erro
+  `ESCRITA_NA_REPLICA`. O commit *«um redirecionamento, não dois»* fundiu esse
+  erro com o `Redireciona` do cluster — os dois sempre tiveram o código 4003 e
+  sempre quiseram dizer a mesma coisa — e atualizou o teste unitário, não a
+  bancada: ela não estava em portão nenhum, então ninguém a rodava. Agora
+  aceita os **dois** nomes, como o `replica.rs` já faz ao ler do fio, para uma
+  réplica de hoje continuar entendendo um source antigo. **Uma prova que não
+  está em nenhum portão não é uma prova — é um arquivo.**
+
+### Sabido
+
+- **A tela mente sobre si mesma quando o Painel demora.** `abrirAdmin` faz
+  `p.innerHTML = await vPainel()` e escreve sem perguntar se aquela ainda é a
+  tela aberta. Quem clica em Configurações antes de o Painel carregar fica com
+  o **título de Configurações e o corpo do Painel** — medido com sonda, o
+  rastro está em `docs/TESTES.md` §9.8. A janela cresce com a carga da máquina,
+  e é por isso que a prova das cores passava quando foi escrita e reprova hoje.
+  **Não consertado de propósito**: `ui/index.html` é a tela, há frentes mexendo
+  nela nesta rodada, e a decisão é de quem manda no Centro de Controle. A parte
+  `telemetria-cores` fica vermelha até lá, que é o comportamento certo.
+- A parte `dblink` continua pulando sem um MySQL(R) com o banco `crm` no ar, e
+  a `profiler-disco` roda como **sonda** (sai zero sempre) e não como prova —
+  as duas com o motivo declarado no relatório.
+- As **medições** (`bancada/carga/`, `custo.py`, `replicacao/medir.py`) ficam
+  fora de propósito: um número mais lento não é uma reprovação, é um número, e
+  bateria que fica vermelha por causa da carga da máquina ensina a ignorar
+  vermelho.
 
 ---
 
