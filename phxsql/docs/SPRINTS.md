@@ -374,6 +374,15 @@ Ordenada por **valor ÷ custo**. O custo (P/M/G) vem dos autores e é
 > **Trava de formato (§2.3).** Os dois mexem no diário, que é a fonte da
 > replicação. Nos dois, o teste que mais importa **não é o do recurso novo**:
 > é o de que uma réplica que não conhece a versão nova continua aplicando.
+>
+> **E o item 21 deixou de ser «o primeiro tijolo da transação».** O desenho
+> escolhido em `docs/TRANSACOES.md` §3 **não precisa da imagem anterior**:
+> dentro de uma transação nada vai a disco antes do `COMMIT`, então não há
+> estado anterior a guardar — desfazer é jogar fora uma lista em RAM. O item
+> 21 continua valendo pelo que ele vale sozinho (auditoria, `AS OF`), e a
+> pendência 3 não depende mais dele. *Medir a premissa do item vem antes de
+> implementar o item — inclusive quando a premissa é «isto é pré-requisito
+> daquilo».*
 
 | # | Sprint | Tam. | Origem | Valor | A premissa que pode matá-lo |
 |--:|---|:--:|---|---|---|

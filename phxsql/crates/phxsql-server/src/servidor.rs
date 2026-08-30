@@ -745,16 +745,39 @@ impl Servidor {
     /// espera por ela» e «quanto tempo alguem a segura» sao os dois numeros
     /// que explicam um servidor lento -- e nenhum dos dois existia.
     ///
-    /// Ha 50 tomadas de trava neste arquivo. Medir em cada uma seria copiar a
-    /// mesma conta 50 vezes, e a que alguem esquecesse viraria o buraco na
-    /// serie -- a mesma razao pela qual o portao de permissao e UM so.
+    /// Medir em cada tomada seria copiar a mesma conta dezenas de vezes, e a
+    /// que alguem esquecesse viraria o buraco na serie -- a mesma razao pela
+    /// qual o portao de permissao e UM so.
+    ///
+    /// # O «unico» ja foi mentira, e o teste que o segura
+    ///
+    /// Esta frase esteve errada por rodadas: havia 13 `self.dados.lock()`
+    /// fora daqui, e tres delas doiam -- o despejo do cache, o corpo de um
+    /// gatilho e o laco da replicacao, este ultimo segurando a trava atraves
+    /// de uma ida e volta de rede. As 13 entraram; `so_um_lugar_toma_a_trava`
+    /// conta as ocorrencias no proprio fonte e reprova a decima-quarta.
+    /// Comentario que se afirma unico precisa de quem conte.
+    ///
+    /// # A reentrancia, que era um servidor pendurado
+    ///
+    /// `std::sync::Mutex` nao e reentrante: pedir de novo a trava que esta na
+    /// mao DESTA thread parava o servidor inteiro, para sempre, sem log e sem
+    /// pilha. Aconteceu tres vezes neste projeto. A `COM_A_TRAVA` transforma
+    /// isso num erro comum: o pedido culpado falha dizendo o que houve, e os
+    /// outros continuam sendo atendidos.
     ///
     /// # O que custa
     ///
     /// Ligada: dois `Instant::now()` por OPERACAO (nao por linha), num
     /// caminho em que a operacao mais barata ja leva dezenas de
-    /// microssegundos. Desligada: um `load(Relaxed)`, e nem o relogio e lido.
+    /// microssegundos. Desligada: um `load(Relaxed)` e duas visitas a uma
+    /// `Cell` de thread, e nem o relogio e lido.
     fn travar_dados(&self) -> Result<TravaMedida<'_>> {
+        // ANTES de qualquer trabalho, e antes de parar na fila: se esta thread
+        // ja tem a trava, esperar por ela e esperar por si mesma.
+        if COM_A_TRAVA.with(std::cell::Cell::get) {
+            return Err(trava_reentrante());
+        }
         let medindo = self.telemetria.ligada();
         let atividade = if medindo {
             crate::telemetria::corrente()
@@ -780,8 +803,12 @@ impl Servidor {
             self.telemetria
                 .contar_espera(o.duration_since(t).as_micros() as u64);
         }
+        // So depois do `?`: trava envenenada nao chegou a ser tomada, e uma
+        // marca deixada aqui trancaria esta thread para o resto da vida dela.
+        let guarda = guarda?;
+        COM_A_TRAVA.with(|c| c.set(true));
         Ok(TravaMedida {
-            guarda: guarda?,
+            guarda,
             tomada: obtida,
             telemetria: &self.telemetria,
         })
@@ -1130,7 +1157,9 @@ impl Servidor {
         if !self.mensagens.precisa_recarregar() {
             return;
         }
-        let Ok(dados) = self.dados.lock() else { return };
+        let Ok(dados) = self.travar_dados() else {
+            return;
+        };
         let linhas = Self::ler_tabela_de_mensagens(&dados);
         self.mensagens.carregar(linhas);
     }
@@ -1186,7 +1215,7 @@ impl Servidor {
     ///
     /// Devolve (criou database, criou tabela, semeadas, ja existiam).
     fn semear_mensagens(&self) -> Result<(bool, bool, u64, u64)> {
-        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let dados = self.travar_dados()?;
         let mut criou_db = false;
         let db = match dados.abrir_database(crate::mensagens::DATABASE) {
             Ok(db) => db,
@@ -2101,7 +2130,7 @@ impl Servidor {
     /// carrega e que a eleicao compara. Toma a trava de dados; por isso quem
     /// chama e o arbitro, no ritmo do pulso, e o resultado fica em cache.
     fn posicao_do_diario(&self, so_estes: &[String]) -> u64 {
-        let Ok(trava) = self.dados.lock() else {
+        let Ok(trava) = self.travar_dados() else {
             return 0;
         };
         let bases = if so_estes.is_empty() {
@@ -2379,7 +2408,7 @@ impl Servidor {
         meu_hash: u16,
         hash_dele: u16,
     ) -> Result<u64> {
-        let _trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let _trava = self.travar_dados()?;
         let db = _trava.garantir_database(database)?;
         let mut tabela = match db.abrir_qualificada(&no.nome) {
             Ok(t) => t,
@@ -3944,7 +3973,7 @@ impl Servidor {
             ("GET", "/idiomas") => {
                 let idioma =
                     idiomas::indice_do_idioma(&http::parametro(&pedido.consulta, "idioma"));
-                let corpo = match self.dados.lock() {
+                let corpo = match self.travar_dados() {
                     Ok(dados) => idiomas::textos_para_a_pagina(&dados, idioma),
                     Err(_) => idiomas::textos_para_a_pagina_sem_tabela(idioma),
                 };
@@ -5432,7 +5461,7 @@ impl Servidor {
     fn op_mensagens(&self) -> Result<Json> {
         self.mensagens_atualizar();
         let (existe, linhas) = {
-            let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+            let dados = self.travar_dados()?;
             match dados.abrir_database(crate::mensagens::DATABASE) {
                 Err(_) => (false, 0u64),
                 Ok(db) => match db.existe_tabela(None, crate::mensagens::TABELA)? {
@@ -5507,7 +5536,7 @@ impl Servidor {
     fn op_idiomas(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         self.poder_nos_idiomas(sessao, Atividade::Ler)?;
         let idioma = idiomas::indice_do_idioma(p.texto_ou("idioma", ""));
-        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let dados = self.travar_dados()?;
         Ok(idiomas::estado(&dados, idioma))
     }
 
@@ -5518,7 +5547,7 @@ impl Servidor {
     /// ninguem -- quem sobrescreve e a `idiomas_padrao`, e ela pergunta antes.
     fn op_idiomas_carga(&self, _p: &Json, sessao: &Sessao) -> Result<Json> {
         self.poder_nos_idiomas(sessao, Atividade::Administrar)?;
-        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let dados = self.travar_dados()?;
         Ok(idiomas::carga(&dados, idiomas::Sobrescrever::Nenhum)?.para_json())
     }
 
@@ -5551,7 +5580,7 @@ impl Servidor {
                 ))
             }
         };
-        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let dados = self.travar_dados()?;
         let r = idiomas::carga(&dados, modo)?;
         let mut j = r.para_json();
         if let Json::Objeto(campos) = &mut j {
@@ -5568,7 +5597,7 @@ impl Servidor {
     /// deixa metade para tras nao e backup.
     fn op_idiomas_exportar(&self, sessao: &Sessao) -> Result<Json> {
         self.poder_nos_idiomas(sessao, Atividade::Ler)?;
-        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let dados = self.travar_dados()?;
         idiomas::exportar(&dados)
     }
 
@@ -5579,7 +5608,7 @@ impl Servidor {
             Some(b) => b,
             None => return Err(PhxError::Esquema("informe \"backup\"".into())),
         };
-        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let dados = self.travar_dados()?;
         Ok(idiomas::importar(&dados, backup)?.para_json())
     }
 
@@ -6415,7 +6444,9 @@ impl Servidor {
         if self.sujas.lock().map(|s| s.is_empty()).unwrap_or(true) {
             return;
         }
-        let Ok(dados) = self.dados.lock() else { return };
+        let Ok(dados) = self.travar_dados() else {
+            return;
+        };
         self.descarregar_sujas_com(&dados);
     }
 
@@ -6930,7 +6961,7 @@ impl Servidor {
                 // contra travessia, porque estes vieram de DENTRO do texto
                 // SQL, que a sonda do despachar nao ve.
                 {
-                    let trava = self.dados.lock().map_err(|_| trava_envenenada())?;
+                    let trava = self.travar_dados()?;
                     trava
                         .abrir_database(&base)?
                         .abrir_qualificada(&def.tabela)?;
@@ -12275,6 +12306,28 @@ fn trava_envenenada() -> PhxError {
     PhxError::Corrompido("uma operacao anterior entrou em panico e deixou a trava suja".into())
 }
 
+thread_local! {
+    /// Esta thread ja esta com a trava de dados na mao?
+    ///
+    /// Por thread porque e disso que a reentrancia trata: outra thread pedindo
+    /// a trava e o funcionamento normal -- ela espera e recebe. Quem nao pode
+    /// esperar e quem ja a tem.
+    static COM_A_TRAVA: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// O abraco mortal com a propria trava, transformado em erro.
+///
+/// Antes disto o servidor simplesmente PARAVA: nem log, nem pilha, nem
+/// resposta -- e as outras conexoes paravam junto, porque a trava fica presa
+/// na thread pendurada. Um erro nomeado custa um pedido; o abraco custava o
+/// servidor.
+fn trava_reentrante() -> PhxError {
+    PhxError::Corrompido(
+        "esta operacao pediu a trava de dados que a propria thread ja tem:          quem chama uma funcao a partir de dentro da trava usa a variante que          recebe a instancia por parametro (`_com`)"
+            .into(),
+    )
+}
+
 /// O erro de um gatilho, com o nome de quem errou — MENOS o `SIGNAL`.
 ///
 /// O `SIGNAL` passa intacto de proposito: a MESSAGE_TEXT e a mensagem que o
@@ -12422,6 +12475,10 @@ impl std::ops::DerefMut for TravaMedida<'_> {
 
 impl Drop for TravaMedida<'_> {
     fn drop(&mut self) {
+        // Fora do `if`: a marca de reentrancia nao depende da telemetria, e
+        // solta-la so com ela ligada trancaria a thread no modo comum -- que e
+        // o modo em que os tres abracos mortais aconteceram.
+        COM_A_TRAVA.with(|c| c.set(false));
         if let Some(t) = self.tomada {
             self.telemetria.contar_trava(t.elapsed().as_micros() as u64);
             // A atividade deixa de ser a que segura todo mundo no MESMO
@@ -18026,6 +18083,21 @@ mod testes_janela_e_cadeia {
         // E as 40 estao la, vinte de cada: travar nao e a unica forma de errar.
         assert_eq!(quantas(&s, "a"), 20);
         assert_eq!(quantas(&s, "b"), 20);
+        // E a janela FECHOU de verdade.
+        //
+        // Esta asercao entrou junto com a guarda de reentrancia, e ela e o
+        // preco dela: antes da guarda, o defeito reposto PENDURAVA, e o prazo
+        // do `com_prazo` era a prova inteira. Agora ele nao pendura -- a
+        // segunda tomada volta com erro, o `else { return }` do
+        // `descarregar_sujas` engole, e o conjunto de sujas fica cheio para
+        // sempre sem ninguem reparar. Guarda que troca um travamento por um
+        // erro engolido ENFRAQUECE todo teste cujo unico sintoma era o
+        // travamento; quem a acrescenta tem de olhar a consequencia no lugar.
+        assert!(
+            s.sujas.lock().unwrap().is_empty(),
+            "a janela fechou e o conjunto de sujas nao esvaziou: alguem pediu \
+             a trava que ja tinha e o erro foi engolido"
+        );
     }
 
     /// O comportamento VELHO, e ele e o que mais importa aqui: com UMA tabela
@@ -18107,5 +18179,117 @@ mod testes_janela_e_cadeia {
             }
         });
         assert_eq!(quantas(&s, "b"), 10);
+    }
+
+    /// O fonte deste arquivo, pelo mesmo `include_str!` do conferidor de
+    /// textos -- e pela mesma razao dele: assim nao ha como o teste contar um
+    /// arquivo e o binario ter sido compilado de outro.
+    const FONTE: &str = include_str!("servidor.rs");
+
+    /// A catraca do ponto unico: **UMA** tomada da trava de dados no arquivo,
+    /// e ela e a que esta dentro do `travar_dados`.
+    ///
+    /// Reposto o defeito -- um `self.dados.lock()` a mais em qualquer lugar --
+    /// este teste falha nomeando o numero. Foi assim que as 13 apareceram: o
+    /// comentario do `travar_dados` afirmava ser o unico lugar havia rodadas,
+    /// e ninguem contava. Comentario nao conta; teste conta.
+    #[test]
+    fn so_um_lugar_toma_a_trava() {
+        // A agulha e MONTADA, e nao escrita: um literal aqui apareceria no
+        // proprio fonte varrido e o teste contaria a si mesmo. Foi o primeiro
+        // jeito que escrevi, e ele acusou 4 onde havia 1.
+        let agulha = format!("self.{}.lock()", "dados");
+        // Linha de comentario fora: este arquivo CITA a tomada em tres
+        // comentarios, e cita-la e o oposto de faze-la.
+        let codigo = |l: &&str| !l.trim_start().starts_with("//");
+        let tomadas = FONTE
+            .lines()
+            .filter(codigo)
+            .filter(|l| l.contains(&agulha))
+            .count();
+        assert_eq!(
+            tomadas, 1,
+            "ha {tomadas} tomadas de `{agulha}` em servidor.rs, e so pode \
+             haver a de dentro do `travar_dados`: sem isso a telemetria \
+             cronometra uma parte da fila e o `docs/TELEMETRIA.md` afirma o \
+             contrario. Quem precisa da trava chama `travar_dados()`; quem ja \
+             a tem recebe a instancia por parametro"
+        );
+        // E a que sobrou esta MESMO dentro do `travar_dados` -- contar sem
+        // olhar onde deixaria passar o caso de mover a unica para outro lugar.
+        let corpo = FONTE
+            .split_once("fn travar_dados(&self)")
+            .expect("o `travar_dados` sumiu")
+            .1;
+        let fim = corpo.find("\n    }\n").expect("o corpo do travar_dados");
+        assert!(
+            corpo[..fim]
+                .lines()
+                .filter(codigo)
+                .any(|l| l.contains(&agulha)),
+            "a unica tomada da trava saiu de dentro do `travar_dados`"
+        );
+    }
+
+    /// O terceiro abraco mortal, reposto de proposito: a mesma thread pede a
+    /// trava que ela ja tem.
+    ///
+    /// Antes da `COM_A_TRAVA` isto **nao falhava** -- pendurava. Sem log, sem
+    /// pilha, e levando junto todas as outras conexoes, porque a trava fica
+    /// presa na thread parada. E por isso que o teste roda com prazo: se a
+    /// guarda for removida, ele acusa em 30 s em vez de pendurar o
+    /// `cargo test` inteiro.
+    #[test]
+    fn a_trava_pedida_duas_vezes_pela_mesma_thread_vira_erro() {
+        let s = servidor_janela_curta("reentrante");
+        let copia = Arc::clone(&s);
+        com_prazo("duas tomadas da trava na mesma thread", move || {
+            let primeira = copia.travar_dados().expect("a primeira tem de vir");
+            let segunda = copia.travar_dados();
+            assert!(
+                segunda.is_err(),
+                "a segunda tomada da MESMA thread tinha de ser recusada"
+            );
+            let recado = match segunda {
+                Ok(_) => unreachable!("a linha acima ja garantiu o erro"),
+                Err(e) => format!("{e}"),
+            };
+            assert!(
+                recado.contains("a propria thread ja tem"),
+                "o erro tem de dizer o que houve, e nao um `Corrompido` mudo: {recado}"
+            );
+            drop(primeira);
+            // E soltar de verdade: depois do `drop` a mesma thread volta a
+            // conseguir. Sem isto a guarda trocaria um abraco mortal por uma
+            // thread aleijada para o resto da vida dela.
+            assert!(
+                copia.travar_dados().is_ok(),
+                "depois de soltar, a mesma thread tem de conseguir de novo"
+            );
+        });
+    }
+
+    /// O comportamento VELHO, que e o que mais importa: quem nunca esbarra na
+    /// reentrancia nao ve diferenca nenhuma -- nem no resultado, nem no
+    /// caminho. A guarda so existe para quem ja estava pendurado.
+    #[test]
+    fn sem_reentrancia_nada_muda() {
+        let s = servidor_janela_curta("sem-reentrancia");
+        for i in 0..12 {
+            let t = if i % 2 == 0 { "a" } else { "b" };
+            s.executar(
+                "inserir",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"{t}","linha":{{"n":{i},"x":"y"}}}}"#
+                )),
+                &Sessao::default(),
+            )
+            .unwrap();
+        }
+        assert_eq!(quantas(&s, "a"), 6);
+        assert_eq!(quantas(&s, "b"), 6);
+        // E a trava esta livre no fim: uma marca que vazasse do `Drop`
+        // trancaria esta thread sem ninguem segurando nada.
+        assert!(s.travar_dados().is_ok());
     }
 }

@@ -1301,6 +1301,53 @@ CUDA**, e agora com número: `docs/GPU.md` e a §4.11.
 
 ---
 
+## 9. A guarda de reentrância da trava: medida, e ela não aparece
+
+A trava de dados ganhou uma pergunta a mais: *«esta thread já a tem?»*. Ela
+existe porque `std::sync::Mutex` não é reentrante e pedir de novo a trava que
+está na mão da própria thread **parava o servidor inteiro**, para sempre, sem
+log e sem pilha — aconteceu três vezes neste projeto. A guarda transforma isso
+num erro nomeado. O desenho está em `TRANSACOES.md` §8.3.
+
+O problema é onde ela mora: `travar_dados` é o caminho de **toda** leitura e
+**toda** escrita. Uma pergunta a mais ali é uma pergunta por operação, no
+servidor inteiro. Então ela foi medida, e não estimada.
+
+```bash
+cargo run --release -p phxsql-server --example custo-da-trava 3000000 9
+```
+
+Dois cenários sobre o mesmo `Mutex`, no mesmo processo, com as rodadas
+**intercaladas** (1,2, 1,2, …) para que a deriva da máquina atinja os dois
+igual:
+
+| Cenário | mediana | faixa |
+|---|---:|---|
+| 1. `lock` + `unlock`, sem guarda | **15,45 ns** | 15,21..19,44 |
+| 2. o mesmo, mais a guarda (uma leitura e duas escritas numa `Cell` de thread) | **15,40 ns** | 14,84..18,04 |
+
+**A guarda = −0,05 ns por tomada**, contra um espalhamento de 4,23 ns dentro de
+um cenário sozinho. O sinal negativo é o que ele parece: a diferença está
+**abaixo da resolução do próprio medidor**. A conclusão honesta é «a guarda não
+aparece», e não um número.
+
+E o denominador, medido no mesmo processo, num servidor limpo:
+
+| Operação | µs/operação |
+|---|---:|
+| `inserir` | 136,59 |
+| `ler` (a mais barata que passa pela trava — o **pior caso** para a guarda) | 41,31 |
+
+Mesmo tomando o limite superior do ruído como se fosse a guarda, ela ficaria em
+**0,01%** da operação mais barata do servidor. Repetido em duas execuções
+independentes, com −0,12 ns e −0,05 ns.
+
+O `lock` sem disputa em 15,45 ns confirma, de outro ângulo, o 13,2 ns que já
+estava registrado neste documento — e continua valendo a lição que veio com
+ele: **diagnóstico plausível não é diagnóstico medido.**
+
+---
+
 ## Como refazer tudo
 
 ```bash
@@ -1315,4 +1362,5 @@ python3 bancada/medir.py 10000000                      # o comparativo do §6
 python3 bancada/replicacao/montar.py /tmp/phx-replicacao
 python3 bancada/replicacao/medir.py 100000
 python3 bancada/bateria/prova-bateria.py --medir            # o §4.10
+cargo run --release -p phxsql-server --example custo-da-trava 3000000 9  # a §9
 ```

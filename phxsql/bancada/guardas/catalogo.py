@@ -461,7 +461,16 @@ GUARDAS = [
             "uma so o conjunto de sujas fica vazio e a funcao volta antes de "
             "pedir a trava. O teste tem PRAZO porque um abraco mortal sem "
             "prazo pendura o `cargo test` inteiro, e um teste que pendura nao "
-            "acusa nada."
+            "acusa nada. "
+            "ATUALIZADO na rodada da guarda de reentrancia: o defeito NAO "
+            "pendura mais -- a segunda tomada volta com erro, o `else "
+            "{ return }` do `descarregar_sujas` engole, e a janela de "
+            "durabilidade simplesmente nao fecha. O teste ganhou a asercao da "
+            "consequencia (o conjunto de sujas tem de esvaziar) e passou a "
+            "reprovar em 0,12 s em vez de 30. A licao vale para toda guarda "
+            "cujo unico sintoma era o travamento: quem troca um travamento "
+            "por um erro engolido ENFRAQUECE esses testes, e tem de olhar a "
+            "consequencia no lugar."
         ),
         "arquivo": "crates/phxsql-server/src/servidor.rs",
         "trecho": """        self.descarregar_sujas_com(dados);
@@ -809,5 +818,78 @@ GUARDAS = [
             "conferidor::testes::reprova_o_rotulo_cravado_e_aprova_o_da_fabrica",
             "conferidor::testes::dado_interpolado_nunca_conta_como_rotulo",
         ],
+    },
+    # -----------------------------------------------------------------------
+    # 13. A trava de dados tomada fora do ponto unico
+    # -----------------------------------------------------------------------
+    {
+        "id": "trava-fora-do-ponto-unico",
+        "titulo": "uma tomada da trava de dados fora do `travar_dados()`",
+        "porque": (
+            "o comentario do `travar_dados` afirmava ser «o unico lugar que a "
+            "toma» e ficou errado por rodadas: havia 13 fora dele, e o "
+            "`espera_ms_s` da telemetria media so uma parte da fila. "
+            "Comentario nao conta; teste conta -- e a conta sai do PROPRIO "
+            "fonte, pelo mesmo `include_str!` do conferidor de textos, para "
+            "nao haver como contar um arquivo e compilar outro."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        let dados = self.travar_dados()?;
+        Ok(idiomas::estado(&dados, idioma))
+""",
+        "troca": """        // DEFEITO REPOSTO: a decima-quarta tomada, fora do ponto unico.
+        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        Ok(idiomas::estado(&dados, idioma))
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_janela_e_cadeia::so_um_lugar_toma_a_trava",
+        ],
+        # A tomada direta funciona igual -- ela so nao e cronometrada. Por
+        # isso a escrita comum segue de pe: o que este defeito estraga e a
+        # MEDIDA, e e por isso que ele passou tanto tempo sem ninguem ver.
+        "seguem": [
+            "servidor::testes_janela_e_cadeia::uma_tabela_so_grava_como_sempre",
+            "servidor::testes_janela_e_cadeia::sem_reentrancia_nada_muda",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # 14. A guarda de reentrancia da trava
+    # -----------------------------------------------------------------------
+    {
+        "id": "trava-sem-guarda-de-reentrancia",
+        "titulo": "a trava pedida duas vezes pela mesma thread pendura o servidor",
+        "porque": (
+            "`std::sync::Mutex` nao e reentrante, e o abraco mortal ja "
+            "aconteceu tres vezes neste projeto -- a ultima em configuracao "
+            "padrao, com escrita comum em duas tabelas. Sem a guarda o "
+            "servidor nao falha: ele PARA, sem log e sem pilha, segurando "
+            "todas as outras conexoes. O teste tem prazo porque um defeito "
+            "que pendura penduraria o `cargo test` inteiro."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        if COM_A_TRAVA.with(std::cell::Cell::get) {
+            return Err(trava_reentrante());
+        }
+""",
+        "troca": """        // DEFEITO REPOSTO: sem a pergunta, a segunda tomada da mesma thread
+        // espera por si mesma e nao volta nunca.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_janela_e_cadeia::a_trava_pedida_duas_vezes_pela_mesma_thread_vira_erro",
+        ],
+        # O `sem_reentrancia_nada_muda` e o teste do comportamento VELHO: quem
+        # nunca aninha nao ve diferenca, com ou sem guarda. Ele TEM de seguir
+        # de pe -- se cair, a guarda esta cobrando de quem nao a usa.
+        "seguem": [
+            "servidor::testes_janela_e_cadeia::sem_reentrancia_nada_muda",
+            "servidor::testes_janela_e_cadeia::uma_tabela_so_grava_como_sempre",
+        ],
+        # Mesmo motivo do `sujas-com-a-trava`: o `com_prazo` do teste espera
+        # 30 s, e o executor precisa de folga sobre isso.
+        "prazo": 420,
     },
 ]
