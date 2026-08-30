@@ -15,6 +15,9 @@ deve acreditar.
 | `bateria/` | a bateria de **ponta a ponta**: os seis itens do pedido feitos como um usuário faria, pelo soquete e pela tela, e a medição do que o gatilho e a chave custam. Ver `bateria/LEIA-ME.md` |
 | `exclusao/` | a **prova pelo processo** da janela de durabilidade da exclusão: 150 exclusões pelo soquete e um `SIGKILL` no meio da janela. Ver `exclusao/LEIA-ME.md` |
 | `guardas/` | o catálogo dos **defeitos repostos** e o executor que os repõe: prova que cada teste ainda pega o defeito que o motivou. Não mede nada — julga as outras baterias. Ver `guardas/LEIA-ME.md` |
+| `sqlite/` | a comparação com o **SQLite(R)**, que é a que decide o caso do celular: motor contra motor, o custo do soquete medido à parte, e a durabilidade casada nos três regimes. Ver `sqlite/LEIA-ME.md` e `docs/MOBILE.md` |
+| `arm/` | a prova de que o binário **ARM64 roda** — sob `qemu-user-static`, sem VM. `docs/EMPACOTAMENTO.md` §7.3 |
+| `windows/` | a mesma prova para o **`.exe`**, sob `wine`. A sonda é a do `arm/`, com o rótulo vindo de fora. `docs/EMPACOTAMENTO.md` §6.1 |
 
 A carga do lado do PhxSql é `crates/phxsql-store/examples/carga.rs`, que roda
 cada fase num processo separado — assim os contadores são daquela fase e de

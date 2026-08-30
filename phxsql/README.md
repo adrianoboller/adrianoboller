@@ -400,6 +400,7 @@ docs/
   REPLICACAO.md    o desenho da replicação Source → Réplica
   ODBC.md          registro do driver e connection string
   EMPACOTAMENTO.md como os três zips de download são montados e conferidos
+  MOBILE.md        medido contra o SQLite(R), e a forma que cabe num aparelho
   PLANO.md         leitura do rusqlite e do FraseSQL, e o roteiro do projeto
 exemplos/
   Config_exemplo_0N.json   isolado, source e réplica
