@@ -146,6 +146,31 @@ def precisa_do_odbc():
     return None
 
 
+def precisa_do_embutido():
+    """As ferramentas da perna ARM da prova do PhxSql embutido.
+
+    A perna x86 precisa so de um `cc`, que toda maquina tem. A ARM precisa do
+    emulador, de um compilador cruzado de C (o `clang` e cruzado por natureza),
+    de um ligador que aceite o alvo (`ld.lld`) e da libc musl de aarch64, que
+    o proprio rustup instala junto com o alvo.
+
+    A prova roda as DUAS pernas ou nenhuma, de proposito: sem a ARM ela deixa
+    de responder a pergunta para a qual existe -- «isto roda onde vai morar?»
+    -- e viraria mais um teste de x86, que os 26 de unidade ja fazem.
+    """
+    for ferramenta in ("qemu-aarch64-static", "clang", "ld.lld", "cc"):
+        if not shutil.which(ferramenta):
+            return "falta %s" % ferramenta
+    alvo = os.path.join(
+        subprocess.run(["rustc", "--print", "sysroot"], capture_output=True,
+                       text=True).stdout.strip(),
+        "lib", "rustlib", "aarch64-unknown-linux-musl", "lib", "self-contained")
+    if not os.path.isdir(alvo):
+        return ("falta o alvo aarch64-unknown-linux-musl -- "
+                "rustup target add aarch64-unknown-linux-musl")
+    return None
+
+
 def precisa_de_root():
     if os.geteuid() != 0:
         return "monta tmpfs para provar disco cheio, e isso pede root"
@@ -281,6 +306,12 @@ PARTES = [
           "verdade: quem vence o conflito, e que exclusao nao viaja",
           [sys.executable, "bancada/dblink/prova-sincronia.py"],
           requisitos=[precisa_mysql], prazo=900),
+
+    parte("embutido", "o PhxSql EMBUTIDO: um programa em C ligado a biblioteca, "
+          "rodado contra o .a e contra o .so em x86-64 e contra o .a em ARM64 "
+          "sob emulacao -- porque «compila» nao e «roda»",
+          ["bash", "bancada/embutido/provar.sh"],
+          requisitos=[precisa_do_embutido], prazo=900),
 
     parte("odbc", "a ABI do driver ODBC pelo ctypes, sem passar pelo "
           "unixODBC -- a mesma .so que o gerenciador carregaria",
