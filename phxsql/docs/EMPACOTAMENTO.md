@@ -85,6 +85,23 @@ em nenhuma linha do manifesto e passaria batido — que é exatamente o jeito de
 entregar um binário a mais junto do pacote legítimo. É a mesma regra que o
 `backup.json` já seguia.
 
+E isso foi medido, não suposto. Num pacote de Linux com um `atualizador.sh`
+acrescentado e mais nada mexido:
+
+```
+$ sha256sum -c MANIFESTO.sha256
+...
+phxsqld: OK                       ← passa
+
+$ ./phxsql conferir-pacote
+1 DIVERGENCIA(S):
+  A MAIS  atualizador.sh -- nao esta no manifesto     ← reprova
+```
+
+Os dois conferidores não são intercambiáveis: o `sha256sum -c` é o segundo
+par de olhos sobre os arquivos **listados**, e o `conferir-pacote` é o único
+que responde pelo pacote **inteiro**.
+
 Sete testes travam isso, em `crates/phxsql-cli/src/main.rs`, e cada um é a
 prova de que o conferidor **reprova** o defeito, não só de que aprova o que
 está certo:
@@ -130,6 +147,12 @@ o `HEAD` de propósito.
 comportamento sutil, que o empacotador confere depois de extrair. Se o git
 mudar de ideia, o pacote deixa de compilar, e o empacotador tem de ser o
 primeiro a saber.
+
+E uma quinta, que não é trava e sim recado: rodado de dentro de um zip de
+fontes já extraído não há `.git`, e o pacote de fontes não sai dali — ele nasce
+do histórico. O empacotador diz isso em uma linha, em vez de repassar o
+`fatal: not a git repository` do git embaralhado com a mensagem de árvore suja.
+Os pacotes de binário saem normalmente de um diretório extraído.
 
 ---
 

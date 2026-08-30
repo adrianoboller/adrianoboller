@@ -395,6 +395,16 @@ fontes() {
   local dir="$SAIDA/$nome"
   echo "== fontes"
 
+  # Rodado de DENTRO do zip de fontes ja extraido nao ha .git, e o erro do git
+  # sai embaralhado com a mensagem de arvore suja. Quem esta ali quer os
+  # binarios, e esses saem: dizer isso vale mais que repetir o erro do git.
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "   isto nao e um clone do repositorio, e o pacote de fontes sai do"
+    echo "   historico (git archive). De um diretorio extraido saem os outros"
+    echo "   dois: ./empacotar.sh linux e ./empacotar.sh windows."
+    exit 7
+  fi
+
   # O `git archive` le o HEAD, e nao a arvore de trabalho: um pacote de fontes
   # feito com mudanca por commitar sai DIFERENTE do que o autor esta vendo, e
   # ninguem percebe -- nem ele, nem quem baixou.
@@ -449,9 +459,13 @@ Para o executavel de Windows a partir do Linux:
        sudo apt install mingw-w64            # ou o equivalente da sua distro
        cargo build --offline --release --target x86_64-pc-windows-gnu
 
-E, para refazer estes tres zips do zero:
+E, para refazer os pacotes de binario a partir daqui:
 
-       ./empacotar.sh
+       ./empacotar.sh linux
+       ./empacotar.sh windows
+
+O de fontes so sai de um clone do repositorio: ele nasce do historico do git,
+que este zip nao carrega.
 
 CONFERIR ESTE PACOTE
 --------------------------------------------------------------------------------
@@ -499,7 +513,14 @@ conferir() {
     nome=$(basename "$z" .zip)
     echo "== $nome"
     rm -rf "${tmp:?}/$nome"
-    unzip -q "$z" -d "$tmp"
+    # Zip com byte trocado nem sempre abre -- o CRC do proprio ZIP pega parte
+    # das adulteracoes antes do manifesto. Isso e resultado, e nao motivo para
+    # o conferidor desistir dos outros dois pacotes no meio do caminho.
+    if ! unzip -q "$z" -d "$tmp"; then
+      echo "   o zip nao abre inteiro -- ver a linha do SHA256SUMS acima"
+      falhas=$((falhas + 1))
+      continue
+    fi
     ./target/release/phxsql conferir-pacote "$tmp/$nome" || falhas=$((falhas + 1))
   done
   rm -rf "$tmp"
