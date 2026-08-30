@@ -16,7 +16,24 @@ medir o segundo salto.
 |---|---|
 | `montar.py` | escreve os quatro `config.json` e sobe os quatro processos |
 | `medir.py` | a bancada: atraso por tipo de escrita, vazão, queda e retomada |
+| `modos.py` | os quatro modos, nas portas 5330-5339 |
 | `resultados.json` | a última corrida completa |
+| `docker/` | **os mesmos quatro modos em contêineres**, que é onde endereço, firewall e partição existem de verdade — ver `docker/LEIA-ME.md` |
+
+## O que esta bancada NÃO alcança, e por isso existe a de contêiner
+
+Aqui tudo se enxerga por `127.0.0.1`. Isso torna três coisas impossíveis de
+provar, e as três acharam defeito quando ficaram possíveis
+(`bancada/replicacao/docker/`, `docs/REPLICACAO.md` §17):
+
+- **endereço** — o `bind` do servidor e o endereço que a réplica procura são o
+  mesmo por acidente. Num contêiner não são, e `bind: 127.0.0.1` não replica
+  nada **sem avisar**;
+- **firewall e isolamento** — no loopback não há o que trancar, e foi assim
+  que o `replicas_autorizadas` passou versões sendo um campo que ninguém lia;
+- **partição** — matar um processo é fácil; cortar a rede **sem matar
+  ninguém** não existe aqui. E é a partição que mostra o abraço mortal do
+  bidirecional.
 
 ## A topologia
 

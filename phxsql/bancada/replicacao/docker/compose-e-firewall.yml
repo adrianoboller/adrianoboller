@@ -1,0 +1,63 @@
+# A RAZAO DE ESTA FRENTE EXISTIR -- o desenho da secao 7 do REPLICACAO.md,
+# provado de verdade em vez de desenhado.
+#
+#   PHX_BASE=/tmp/phx-docker-replicacao \
+#   docker compose -f compose-e-firewall.yml up -d
+#
+# Tres nos na mesma rede:
+#
+#   fonte    172.28.90.10   o source
+#   replica  172.28.90.20   a replica autorizada
+#   intruso  172.28.90.30   uma replica NAO autorizada, com a configuracao
+#                           vazada (mesmo token, mesmo usuario, mesmo
+#                           `senha_hash`) -- o modelo de ameaca real
+#
+# Os IPs sao FIXOS de proposito, e isso ja e um achado: a secao 7 tranca por
+# IP (`ips_permitidos`, `replicas_autorizadas`), e num orquestrador o IP do
+# vizinho muda a cada recriacao. Lista por IP so funciona com IPAM fixo -- e
+# escrever isso e o `ipam` daqui.
+#
+# O gateway da ponte (172.28.90.1) tambem entra na lista de quem alcanca o
+# source: e por ele que a porta publicada do hospedeiro chega, e ele
+# representa a estacao do administrador. O intruso continua barrado, que e a
+# pergunta que este arquivo responde.
+name: phxrep-e
+services:
+  fonte:
+    image: ${PHX_IMAGEM:-phxsql-bancada:local}
+    container_name: phxrep-e-fonte
+    volumes: ["${PHX_BASE}/e/fonte:/dados"]
+    networks:
+      tunel:
+        ipv4_address: 172.28.90.10
+    ports: ["6841:5000"]
+    stop_grace_period: 2s
+
+  replica:
+    image: ${PHX_IMAGEM:-phxsql-bancada:local}
+    container_name: phxrep-e-replica
+    volumes: ["${PHX_BASE}/e/replica:/dados"]
+    networks:
+      tunel:
+        ipv4_address: 172.28.90.20
+    ports: ["6842:5000"]
+    depends_on: [fonte]
+    stop_grace_period: 2s
+
+  intruso:
+    image: ${PHX_IMAGEM:-phxsql-bancada:local}
+    container_name: phxrep-e-intruso
+    volumes: ["${PHX_BASE}/e/intruso:/dados"]
+    networks:
+      tunel:
+        ipv4_address: 172.28.90.30
+    ports: ["6843:5000"]
+    depends_on: [fonte]
+    stop_grace_period: 2s
+
+networks:
+  tunel:
+    name: phxrep-e-tunel
+    ipam:
+      config:
+        - subnet: 172.28.90.0/24

@@ -1,0 +1,37 @@
+# MODO A -- Primary -> Replica, em conteineres.
+#
+#   PHX_BASE=/tmp/phx-docker-replicacao \
+#   docker compose -f compose-a-primary-replica.yml up -d
+#
+# O que muda em relacao a bancada de processos (`montar.py`): a replica NAO
+# procura `127.0.0.1`. A origem no `config.json` dela e o nome de servico
+# `fonte`, resolvido pelo DNS embutido do Docker. Isso obriga o `bind` do
+# source a ser `0.0.0.0:5000` -- com `127.0.0.1` ele fica no loopback DO
+# CONTEINER e ninguem de fora alcanca. Em processos na mesma maquina esse erro
+# e invisivel, porque la o loopback e o mesmo para todos. O estagio 0 do
+# `provar.py` repoe esse defeito de proposito e mede o silencio.
+#
+# As portas do hospedeiro sao so para a bancada olhar de fora; a replicacao
+# acontece toda dentro da rede `tunel`, na porta 5000.
+name: phxrep-a
+services:
+  fonte:
+    image: ${PHX_IMAGEM:-phxsql-bancada:local}
+    container_name: phxrep-a-fonte
+    volumes: ["${PHX_BASE}/a/fonte:/dados"]
+    networks: [tunel]
+    ports: ["6801:5000"]
+    stop_grace_period: 2s
+
+  replica:
+    image: ${PHX_IMAGEM:-phxsql-bancada:local}
+    container_name: phxrep-a-replica
+    volumes: ["${PHX_BASE}/a/replica:/dados"]
+    networks: [tunel]
+    ports: ["6802:5000"]
+    depends_on: [fonte]
+    stop_grace_period: 2s
+
+networks:
+  tunel:
+    name: phxrep-a-tunel

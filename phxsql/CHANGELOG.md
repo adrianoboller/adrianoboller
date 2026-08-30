@@ -313,6 +313,75 @@ ainda pegariam o defeito que as motivou.
   fora de propósito: um número mais lento não é uma reprovação, é um número, e
   bateria que fica vermelha por causa da carga da máquina ensina a ignorar
   vermelho.
+## Não lançado — os quatro modos de replicação em contêiner
+
+O pedido era testar os quatro modos em Docker. O que ele valeu não foi
+repetir o teste dentro de um contêiner: foi que **rede própria, endereço de
+verdade e firewall de verdade acham defeito que loopback esconde**. A bancada
+está em `bancada/replicacao/docker/` — cinco `compose`, imagem `scratch` de
+6,42 MB, um comando só. `docs/REPLICACAO.md` §17.
+
+### Corrigido
+
+- **`replicas_autorizadas` não era lido por ninguém.** O campo estava no
+  `config.json`, na §7 do `REPLICACAO.md` e na tela de configuração desde que
+  os papéis novos entraram, e **nenhuma linha de código o lia** — a §7 dizia
+  que o desenho era imposto «em dois lugares» e havia um. Medido em contêiner,
+  com o modelo de ameaça real: um vizinho de rede com o `config.json` de
+  réplica vazado (mesmo token, mesmo usuário, mesmo `senha_hash`) levou os
+  **200 de 200 eventos** do diário do source *com a lista preenchida*. Hoje
+  leva 0. O portão é **um só** (`portoes_do_pedido`, portão 2a-bis, sobre
+  `posicao`/`replicar`/`aplicar`), a guarda entra **pedida e não imposta**
+  (lista vazia libera todos, byte a byte o comportamento de sempre), e a
+  pergunta obrigatória sobre o campo novo — o IP da sessão — foi respondida:
+  job, rotina interna e a replicação chamada de dentro chegam com `ip` vazio e
+  não são barrados. Três testes, e o que mais importa é o do comportamento
+  velho: `sem_replicas_autorizadas_nada_muda`.
+
+### Adicionado
+
+- **`bancada/replicacao/docker/`**, com um `compose` por modo (A
+  source→réplica, B multi-master, C spare, D read replica) e um quinto só para
+  o firewall da §7: rede própria com IPs fixos, um **intruso** e `iptables` de
+  verdade dentro do namespace de rede do source. Com as regras da §7, três
+  coisas medidas juntas: o intruso leva *timeout* (e não recusa — `DROP` não
+  responde), a réplica autorizada continua replicando, e **o source não
+  consegue abrir conexão para ninguém** — a metade de saída do desenho, que
+  nunca tinha sido provada.
+- **`erro.replica_nao_autorizada`** na tabela de mensagens, nos seis idiomas.
+- **`exemplos/Config_docker.json` e `Config_docker_replica.json`**, que o
+  `phxsql/Dockerfile` copia e que **não existiam** — moravam só na raiz do
+  repositório, e por isso o `docker build` oficial parava no `COPY` antes de
+  compilar coisa alguma. Além de existirem, os dois agora **replicam entre si**:
+  o modelo do master não tinha bloco `replicacao`, então subia isolado, e a
+  réplica que ele acompanha não teria o que aplicar.
+
+### Sabido
+
+- **O abraço mortal do bidirecional.** `alcancar_tabela_bidi` toma a trava de
+  dados **deste** servidor e, de dentro dela, pede `replicar` ao outro; do
+  outro lado, servir `replicar` e `posicao` também precisa da trava de lá. Com
+  fila nos dois ao mesmo tempo, cada um segura a própria trava esperando a
+  resposta do outro, e ninguém sai até o prazo de leitura de **30 s** estourar
+  nos dois — e eles podem reentrar em passo. Medido **sem corte nenhum**, só
+  com escrita simultânea nos dois lados: 50.000 linhas em cada metade ao mesmo
+  tempo levaram **33,3 s**, contra ~5,8 s das mesmas 100.000 num servidor só em
+  modo A, com um `EAGAIN` no diário de cada um. É a consequência do item 2 da §3.2 do
+  `PENDENCIAS.md` (as tomadas da trava fora do ponto único), agora com número.
+  Não foi consertado nesta rodada: mexer no laço da replicação para buscar
+  fora da trava é uma frente própria, com testes próprios.
+- **O `REDIRECIONA` aponta o endereço da origem configurada**, que é «por onde
+  *eu* alcanço o primário» e nem sempre «por onde *você* alcança». Em
+  contêiner isso é um nome de serviço que o cliente do hospedeiro não resolve.
+- **`bind: 127.0.0.1` dentro de um contêiner não replica e não avisa**: zero
+  evento na réplica, zero erro em qualquer log. É o erro de configuração mais
+  fácil de cometer ao pôr o PhxSql em produção.
+- **A compilação DENTRO do contêiner continua não provada nesta máquina.** O
+  `phxsql/Dockerfile` agora tem todos os arquivos que copia, mas o
+  `rustup target add` do estágio construtor não alcança `static.rust-lang.org`:
+  a saída passa por um proxy que intercepta TLS e o contêiner de build não
+  confia na CA dele. É limite do ambiente, e o que ficou provado é o resto —
+  a imagem `scratch`, o binário musl e os quatro modos em cima dela.
 
 ---
 

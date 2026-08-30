@@ -1,0 +1,32 @@
+{
+  "_leia": "Modelo do SOURCE para conteiner. A senha aqui e um HASH -- gere o seu com: docker run --rm --entrypoint /phxsqld phxsql --senha",
+  "base": "base",
+  "_bind": "0.0.0.0 e obrigatorio em conteiner. Com 127.0.0.1 o servidor fica no loopback DO CONTEINER e NINGUEM de fora alcanca -- nem a replica, nem a porta publicada. E o pior tipo de erro: a replica fica em zero evento e nao ha erro em log nenhum. Medido em bancada/replicacao/docker/, estagio (0).",
+  "bind": "0.0.0.0:5000",
+  "token": "troque-este-token",
+  "web": { "ligado": true, "bind": "0.0.0.0:5001" },
+  "espelho": true,
+  "recursos": { "durabilidade": "por_lote", "lote_operacoes": 200, "lote_milissegundos": 200 },
+  "_replicacao": "Sem este bloco o servidor sobe como ISOLADO, e o diario grava QUE a linha mudou sem gravar PARA QUE -- a replica do Config_docker_replica.json nao teria o que aplicar. Com papel source, a imagem ja vem ligada; ela esta escrita aqui para quem le o arquivo saber que ela existe.",
+  "replicacao": {
+    "papel": "source",
+    "id_servidor": "master",
+    "imagem_da_linha": true,
+    "_replicas_autorizadas": "IPs que podem pedir posicao/replicar/aplicar. VAZIO LIBERA TODOS, que e o comportamento de sempre. Preenchendo, so estes entram -- e num orquestrador isso exige IP fixo (ipam no compose), porque o IP do vizinho muda a cada recriacao.",
+    "replicas_autorizadas": []
+  },
+  "usuarios": [
+    {
+      "login": "adm",
+      "nome": "Administrador",
+      "id": 10,
+      "senha_hash": "pbkdf2-sha256$210000$44685ccef2b5d0b61ab667af8def37fc$a9c3be36c10541ea021a2175aa230682372f39a509677d8dd81b29e43d814b8c",
+      "_senha_do_exemplo": "segredo1 -- TROQUE antes de usar em qualquer lugar",
+      "bases": {
+        "*": { "ler": true, "inserir": true, "alterar": true, "excluir": true,
+               "criar": true, "administrar": true, "diario": true,
+               "verificar": true, "replicar": true }
+      }
+    }
+  ]
+}

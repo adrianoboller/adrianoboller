@@ -1,0 +1,45 @@
+# MODO C -- Primary -> Spare (contingencia e failover), em conteineres.
+#
+#   PHX_BASE=/tmp/phx-docker-replicacao \
+#   docker compose -f compose-c-spare.yml up -d
+#
+# O spare nao atende cliente nenhum -- nem leitura -- ate `spare_promover`.
+# O que so o conteiner prova: a MORTE do primario. `docker kill primario` mata
+# o processo sem aviso e sem chance de fechar arquivo, que e o que uma maquina
+# que perde energia faz; depois disso a promocao acontece com o primario
+# REALMENTE fora do ar, e nao com ele vivo ao lado.
+#
+# O `leitor` e uma read replica do MESMO primario, e existe aqui por um motivo
+# so: mostrar para onde ela manda o cliente DEPOIS do failover -- o endereco
+# do `REDIRECIONA` sai da configuracao dela, nao de quem esta vivo.
+name: phxrep-c
+services:
+  primario:
+    image: ${PHX_IMAGEM:-phxsql-bancada:local}
+    container_name: phxrep-c-primario
+    volumes: ["${PHX_BASE}/c/primario:/dados"]
+    networks: [contingencia]
+    ports: ["6821:5000"]
+    stop_grace_period: 2s
+
+  spare:
+    image: ${PHX_IMAGEM:-phxsql-bancada:local}
+    container_name: phxrep-c-spare
+    volumes: ["${PHX_BASE}/c/spare:/dados"]
+    networks: [contingencia]
+    ports: ["6822:5000"]
+    depends_on: [primario]
+    stop_grace_period: 2s
+
+  leitor:
+    image: ${PHX_IMAGEM:-phxsql-bancada:local}
+    container_name: phxrep-c-leitor
+    volumes: ["${PHX_BASE}/c/leitor:/dados"]
+    networks: [contingencia]
+    ports: ["6823:5000"]
+    depends_on: [primario]
+    stop_grace_period: 2s
+
+networks:
+  contingencia:
+    name: phxrep-c-contingencia

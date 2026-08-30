@@ -1,0 +1,40 @@
+{
+  "_leia": "Modelo de REPLICA para conteiner. Ela procura o source pelo NOME DO SERVICO da rede do compose -- e nao por IP, que muda a cada recriacao.",
+  "base": "base",
+  "bind": "0.0.0.0:5000",
+  "token": "troque-este-token",
+  "web": { "ligado": true, "bind": "0.0.0.0:5001" },
+  "_somente_leitura": "Nao e opcional na pratica: aplicacao escrevendo na replica quebra a numeracao dos rowids, e a proxima inclusao vinda do source para a replicacao inteira.",
+  "somente_leitura": true,
+  "replicacao": {
+    "papel": "replica",
+    "id_servidor": "replica01",
+    "_imagem_da_linha": "Ligada TAMBEM aqui para esta replica poder ser origem de outra (cascata). Sem isso o diario dela grava que a linha mudou sem gravar a linha, e o segundo salto morre.",
+    "imagem_da_linha": true,
+    "origens": [
+      {
+        "nome": "master",
+        "_host": "O nome do servico no compose. Dentro da rede o DNS do Docker o resolve; fora dela, nao -- e por isso que o REDIRECIONA que uma read replica devolve so serve para quem esta na mesma rede.",
+        "host": "master",
+        "porta": 5000,
+        "token": "troque-este-token",
+        "usuario": "adm",
+        "_senha": "O HASH, nunca a senha em claro. Dele sai a chave do desafio-resposta.",
+        "senha_hash": "pbkdf2-sha256$210000$44685ccef2b5d0b61ab667af8def37fc$a9c3be36c10541ea021a2175aa230682372f39a509677d8dd81b29e43d814b8c",
+        "databases": [],
+        "_reconectar_em": "O intervalo entre perguntas EM VAO. Ele e o teto do atraso normal: com 5, uma escrita leva ate 5 s para aparecer aqui. Rodada produtiva nao dorme.",
+        "reconectar_em": 5
+      }
+    ]
+  },
+  "usuarios": [
+    {
+      "login": "adm", "nome": "Administrador", "id": 10,
+      "senha_hash": "pbkdf2-sha256$210000$44685ccef2b5d0b61ab667af8def37fc$a9c3be36c10541ea021a2175aa230682372f39a509677d8dd81b29e43d814b8c",
+      "_senha_do_exemplo": "segredo1 -- TROQUE antes de usar em qualquer lugar",
+      "bases": { "*": { "ler": true, "inserir": true, "alterar": true, "excluir": true,
+                        "criar": true, "administrar": true, "diario": true,
+                        "verificar": true, "replicar": true } }
+    }
+  ]
+}

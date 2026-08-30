@@ -21,6 +21,36 @@ impossível de cumprir depois que o diretório temporário sumisse.
    uma nova.
 
 ## Os cinco geradores, e o que cada um regrava
+1. **LEIA o artefato publicado antes de qualquer coisa** (`action: "read"` com
+   a URL acima).
+2. Compare com `dossie-phxsql-0.15.html` — pelo menos o número de `<h2>`.
+3. Edite `dossie-phxsql-0.15.html`.
+4. Publique **passando a URL acima**, para cair na mesma página em vez de criar
+   uma nova.
+
+### O degrau 1 não é formalidade — medido
+
+Numa rodada de agosto de 2026, a página publicada tinha **33 seções e 2,4 MB**
+(com 21 imagens embutidas) e este arquivo tinha **24 seções e 383 KB**. Nove
+seções — multitela, as grades, telemetria e Profiler, o console em imagens, a
+cifra do dado pessoal, a restauração, SQL e gatilhos, ODBC/MCP e os seis
+idiomas — existiam **só na página**, publicadas de outros *worktrees* que
+ainda não tinham voltado para este branch.
+
+Quem seguisse «edite e publique» teria **apagado as nove**, com a melhor das
+intenções e sem ver nada errado no diff local. É a mesma família do
+`replicas_autorizadas` e do binário velho: **o que não se confere contra a
+fonte de verdade envelhece calado** — e aqui a fonte de verdade, na hora de
+publicar, é a página que está no ar, não o arquivo que está na sua mão.
+
+Se a página estiver à frente: **não publique deste branch**. Diga que ela está
+à frente e em quantas seções, e deixe a integração dos branches reconciliar o
+fonte. Publicar um merge montado em `/tmp` é pior — vira uma página que
+nenhum repositório reproduz.
+
+## O que conferir antes de publicar
+
+**Os números do painel e do rodapé não se digitam mais.** Saem de
 
 ```bash
 python3 docs/dossie/numeros-do-projeto.py    docs/dossie/dossie-phxsql-0.18.html
@@ -69,6 +99,19 @@ cargo build --release -p phxsql-server --bin phxsqld     # a página é include_
 node    docs/dossie/capturar-dossie.mjs . /tmp/brutas
 python3 docs/dossie/capturas-no-dossie.py --preparar /tmp/brutas
 python3 docs/dossie/capturas-no-dossie.py docs/dossie/dossie-phxsql-0.18.html
+find . -name '*.rs' -not -path './target/*' | xargs cat | wc -l    # linhas de Rust
+cargo test --workspace 2>&1 | grep '^test result' \
+  | awk '{s+=$4} END {print s}'                                    # testes
+$(( $(grep -c '^\[\[package\]\]' Cargo.lock) - 4 ))                # dependências externas
+cat docs/*.md README.md CHANGELOG.md MANUAL.txt \
+    bancada/LEIA-ME.md bancada/replicacao/LEIA-ME.md \
+    bancada/replicacao/docker/LEIA-ME.md \
+    bancada/carga/LEIA-ME.md \
+    marca/LEIA-ME.md docs/dossie/LEIA-ME.md \
+  | wc -l                                                          # linhas de doc
+stat -c%s crates/phxsql-server/ui/index.html \
+          crates/phxsql-server/ui/grid/phx-grid.{css,js} \
+  | paste -sd+ | bc                                                # bytes de interface
 ```
 
 O `capturar-dossie.mjs` sobe um `phxsqld` só dele na faixa **6700/6701**,

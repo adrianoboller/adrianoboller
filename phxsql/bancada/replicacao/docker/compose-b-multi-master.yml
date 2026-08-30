@@ -1,0 +1,34 @@
+# MODO B -- Multi-Master (bidirecional), em conteineres.
+#
+#   PHX_BASE=/tmp/phx-docker-replicacao \
+#   docker compose -f compose-b-multi-master.yml up -d
+#
+# Cada um e origem do outro pelo NOME do outro. O que so o conteiner prova
+# aqui e a PARTICAO: `docker network disconnect` corta o fio entre os dois sem
+# matar nenhum dos dois processos. Cada lado continua aceitando escrita
+# enquanto esta cego, e a reconexao mostra a convergencia por CHAVE -- com
+# rowids DIFERENTES nos dois lados, que e justamente o que a secao 12 do
+# REPLICACAO.md promete e o que a bancada de processos nunca conseguiu montar:
+# no mesmo loopback nao ha fio para cortar, e escrevendo em sequencia os dois
+# lados acabam com o mesmo rowid por acidente.
+name: phxrep-b
+services:
+  alfa:
+    image: ${PHX_IMAGEM:-phxsql-bancada:local}
+    container_name: phxrep-b-alfa
+    volumes: ["${PHX_BASE}/b/alfa:/dados"]
+    networks: [malha]
+    ports: ["6811:5000"]
+    stop_grace_period: 2s
+
+  beta:
+    image: ${PHX_IMAGEM:-phxsql-bancada:local}
+    container_name: phxrep-b-beta
+    volumes: ["${PHX_BASE}/b/beta:/dados"]
+    networks: [malha]
+    ports: ["6812:5000"]
+    stop_grace_period: 2s
+
+networks:
+  malha:
+    name: phxrep-b-malha

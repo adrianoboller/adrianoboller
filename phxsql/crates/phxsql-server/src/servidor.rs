@@ -183,6 +183,20 @@ pub(crate) const OPS_NO_SPARE: &[&str] = &[
     "spare_promover",
 ];
 
+/// O que uma REPLICA chama no source, e so isso.
+///
+/// E a lista que `replicacao.replicas_autorizadas` tranca. As tres sao as
+/// mesmas da secao 6 do `docs/REPLICACAO.md`: `posicao` diz ate onde o diario
+/// foi, `replicar` entrega os eventos com a linha dentro, e `aplicar` grava
+/// com o rowid escolhido. Juntas, elas SAO o dado -- quem pode chamar as tres
+/// leva a base inteira.
+///
+/// `replicacao_estado`, `replicacao_testar` e `spare_promover` NAO entram, e a
+/// ausencia e deliberada: sao operacoes de administracao, exigem
+/// `administrar`, e quem administra nao e uma replica remota. Trancar essas
+/// pela lista de replicas faria a lista significar duas coisas.
+pub(crate) const OPS_DE_REPLICACAO: &[&str] = &["posicao", "replicar", "aplicar"];
+
 /// Estado de uma conexao.
 ///
 /// A senha e conferida com PBKDF2, que custa da ordem de 100 ms de proposito.
@@ -4733,6 +4747,36 @@ impl Servidor {
                 )));
             }
             _ => {}
+        }
+
+        // Portao 2a-bis -- de ONDE a replicacao pode vir.
+        //
+        // `replicacao.replicas_autorizadas` existia no `config.json`, na
+        // secao 7 do REPLICACAO.md e na tela de configuracao, e NENHUMA linha
+        // de codigo o lia. A bancada de conteiner mediu o estrago: um vizinho
+        // de rede com um `config.json` de replica vazado -- mesmo token,
+        // mesmo usuario, mesmo `senha_hash` -- levou os 200 de 200 eventos do
+        // diario COM a lista preenchida. Configuracao que nao e lida mente, e
+        // mente pior quando o assunto e quem alcanca o dado.
+        //
+        // PEDIDA, NAO IMPOSTA: lista vazia -- o padrao, e o que todo
+        // `config.json` de hoje tem -- libera todos, byte a byte o
+        // comportamento de sempre. Quem preenche a lista ganha a garantia.
+        //
+        // O campo que este portao passou a olhar e o IP DA SESSAO, entao a
+        // pergunta obrigatoria e quem NAO tem esse campo: job agendado,
+        // rotina interna e a replicacao chamada de dentro chegam com `ip`
+        // vazio -- e vazio ali e a verdade, nao uma falta. Nao vieram de
+        // fora, nao ha IP para autorizar, e o portao nao se aplica a eles.
+        // Um portao so, aqui, e nao espalhado pelas tres operacoes.
+        if OPS_DE_REPLICACAO.contains(&op) && !sessao.ip.is_empty() {
+            let lista = &self.config.replicacao.replicas_autorizadas;
+            if !lista.is_empty() && !lista.iter().any(|p| p == &sessao.ip) {
+                self.violacao_leve(&sessao.ip, op, "ip fora de replicas_autorizadas");
+                return Err(PhxError::Autorizacao(
+                    self.msg("erro.replica_nao_autorizada", &[]),
+                ));
+            }
         }
 
         // Portao 2b -- a escrita. Com cluster, quem decide e o papel VIVO dele:
@@ -13249,6 +13293,102 @@ mod testes_papel {
 
         // Promover um source ja promovido e erro, nao silencio.
         assert!(s.promover_para_primario("de novo").is_err());
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    fn source_com_replicas(dir: &std::path::Path, autorizadas: &str) -> Arc<Servidor> {
+        let txt = format!(
+            r#"{{"token":"t",
+                 "replicacao":{{"papel":"source","id_servidor":"curitiba-01",
+                   "replicas_autorizadas":[{autorizadas}]}}}}"#
+        );
+        let mut c = Config::de_json(&Json::analisar(&txt).unwrap()).unwrap();
+        c.base = dir.to_path_buf();
+        c.log_acessos = dir.join("acessos.log");
+        c.blacklist = dir.join("blacklist.json");
+        c.dblink = dir.join("dblink.json");
+        c.jobs = dir.join("jobs.json");
+        Servidor::novo(c).unwrap()
+    }
+
+    fn sessao_de(ip: &str) -> Sessao {
+        Sessao {
+            ip: ip.to_string(),
+            ..Default::default()
+        }
+    }
+
+    /// **O teste que mais importa aqui: o comportamento VELHO.**
+    ///
+    /// Todo `config.json` que existe hoje tem `replicas_autorizadas` vazio (ou
+    /// nem tem o campo). Se a lista vazia passasse a significar «ninguem», a
+    /// replicacao de todo mundo pararia de um dia para o outro por causa de
+    /// uma guarda que ninguem pediu -- protecao que quebra todo cliente antigo
+    /// nao e protecao, e estrago. Lista vazia libera todos, e e este teste que
+    /// trava isso.
+    #[test]
+    fn sem_replicas_autorizadas_nada_muda() {
+        let d = dir("rep-vazia");
+        let s = source_com_replicas(&d, "");
+        for op in OPS_DE_REPLICACAO {
+            for ip in ["192.168.50.20", "10.9.9.9", ""] {
+                s.portoes_do_pedido(op, &pedido("{}"), &sessao_de(ip))
+                    .unwrap_or_else(|e| panic!("{op} de {ip:?} devia passar: {e}"));
+            }
+        }
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// **Prova real, com o defeito reposto.** Antes desta guarda o campo
+    /// existia e nao era lido: a bancada de conteiner mediu um vizinho com a
+    /// configuracao vazada levando os 200 de 200 eventos do diario COM a lista
+    /// preenchida. Tirando o portao, este teste volta a falhar na hora.
+    #[test]
+    fn replica_de_fora_da_lista_nao_le_o_diario() {
+        let d = dir("rep-lista");
+        let s = source_com_replicas(&d, r#""192.168.50.20""#);
+
+        for op in OPS_DE_REPLICACAO {
+            let erro = s
+                .portoes_do_pedido(op, &pedido("{}"), &sessao_de("192.168.50.31"))
+                .unwrap_err();
+            assert_eq!(erro.nome(), "ACESSO_NEGADO", "{op}");
+            assert!(
+                erro.to_string().contains("replicas_autorizadas"),
+                "{op}: a recusa tem de dizer QUAL lista barrou: {erro}"
+            );
+            // A replica da lista continua entrando -- a guarda tranca a porta,
+            // nao muda a fechadura.
+            s.portoes_do_pedido(op, &pedido("{}"), &sessao_de("192.168.50.20"))
+                .unwrap_or_else(|e| panic!("{op} da replica autorizada: {e}"));
+        }
+
+        // O que NAO e da replicacao nao passa a olhar a lista: quem administra
+        // nao e uma replica remota, e trancar `replicacao_estado` pela lista
+        // faria o campo significar duas coisas.
+        for op in ["replicacao_estado", "replicacao_testar", "ping", "varrer"] {
+            s.portoes_do_pedido(
+                op,
+                &pedido(r#"{"database":"x","tabela":"t"}"#),
+                &sessao_de("192.168.50.31"),
+            )
+            .unwrap_or_else(|e| panic!("{op} nao e da lista de replicas: {e}"));
+        }
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// O portao passou a olhar um campo novo -- o IP da sessao --, entao a
+    /// pergunta obrigatoria e quem NAO tem esse campo. Job agendado, rotina
+    /// interna e a replicacao chamada de dentro chegam com `ip` vazio, e vazio
+    /// ali e a verdade e nao uma falta: elas nao vieram de fora.
+    #[test]
+    fn caminho_interno_sem_ip_nao_e_barrado_pela_lista() {
+        let d = dir("rep-interno");
+        let s = source_com_replicas(&d, r#""192.168.50.20""#);
+        for op in OPS_DE_REPLICACAO {
+            s.portoes_do_pedido(op, &pedido("{}"), &Sessao::default())
+                .unwrap_or_else(|e| panic!("{op} de dentro devia passar: {e}"));
+        }
         std::fs::remove_dir_all(&d).unwrap();
     }
 
