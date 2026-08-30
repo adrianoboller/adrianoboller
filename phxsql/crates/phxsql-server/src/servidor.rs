@@ -7565,6 +7565,34 @@ impl Servidor {
         let (antes, depois) = self.gatilhos_para(p, evento)?;
         Self::conferir_gatilhos_compilam(&antes, &depois)?;
 
+        // AS TRAVAS VEM ANTES DA TRAVA DE DADOS, e a ordem foi corrigida por
+        // uma corrida que a revisao achou.
+        //
+        // Tomando-as depois, o rowid previsto era calculado com a trava de
+        // dados na mao e a trava do FIM DA TABELA so era pedida DEPOIS de a
+        // trava de dados sair -- e nessa fresta uma escrita comum de outra
+        // conexao podia anexar. O commit descobriria a divergencia
+        // (`saiu != e.rowid`), e ate ai tudo bem; o estrago vinha depois: a
+        // recuperacao encontraria o slot ocupado pela linha do OUTRO e o
+        // trataria como «ja aplicado», descartando a nossa em silencio.
+        //
+        // O que a trava precisa saber sai do PEDIDO, e nao do esquema: a
+        // chave da tabela e o rowid alvo (ou o fim, no anexar). Entao ela cabe
+        // aqui, antes de qualquer arquivo abrir -- e com o fim travado o
+        // `slots()` nao se move mais debaixo do calculo.
+        //
+        // Uma instrucao que falhar DEPOIS disto (chave duplicada, por
+        // exemplo) deixa a trava com a transacao ate o fim dela. E de
+        // proposito: a transacao anunciou a intencao de escrever ali, e
+        // devolver a trava por causa de uma instrucao recusada abriria a
+        // mesma fresta pela outra ponta.
+        let chave = crate::carga::chave(&database, &tabela);
+        let rowid_pedido = match acao {
+            Acao::Inserir => crate::travas::FIM_DA_TABELA,
+            _ => self.rowid(p)?,
+        };
+        self.travar_para_empilhar(sessao, &chave, rowid_pedido)?;
+
         let trava = self.travar_dados()?;
         let mut t = self.abrir_travada(&trava, p, sessao)?;
 
@@ -7733,13 +7761,6 @@ impl Servidor {
         drop(t);
         drop(trava);
 
-        // AS TRAVAS. Tabela primeiro, linha depois -- e sempre nessa ordem,
-        // que e o que a hierarquia de intencao existe para dar: quem quer a
-        // tabela inteira ve a intencao de quem esta nas linhas sem ter de
-        // varrer linha por linha.
-        let chave = crate::carga::chave(&database, &tabela);
-        self.travar_para_empilhar(sessao, &chave, &escrita)?;
-
         let teto = self.config.recursos.transacao_max_linhas as usize;
         let mut t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
         let tx = t.de_mut(sessao.ligacao).ok_or_else(sem_transacao)?;
@@ -7790,13 +7811,7 @@ impl Servidor {
     /// o que foi declarado na abertura. Quem quer a garantia declara o escopo
     /// inteiro; quem nao declara fica com o `LOCK TIMEOUT` de rede embaixo. E
     /// esse e exatamente o preco do `DYNAMIC`, dito antes de alguem descobrir.
-    fn travar_para_empilhar(
-        &self,
-        sessao: &Sessao,
-        chave: &str,
-        escrita: &crate::transacao::Escrita,
-    ) -> Result<()> {
-        use crate::transacao::Acao;
+    fn travar_para_empilhar(&self, sessao: &Sessao, chave: &str, rowid: u64) -> Result<()> {
         let (id, modo, escopo_modo, no_escopo, declarou) = {
             let t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
             let tx = t.de(sessao.ligacao).ok_or_else(sem_transacao)?;
@@ -7823,19 +7838,16 @@ impl Servidor {
                 tx.expandidas.push(chave.to_string());
             }
         }
+        // Tabela primeiro, linha depois -- e sempre nessa ordem, que e o que a
+        // hierarquia de intencao existe para dar: quem quer a tabela inteira ve
+        // a intencao de quem esta nas linhas sem varrer linha por linha.
         self.esperar_trava(sessao, id, chave, Alvo::Tabela(modo.na_tabela()))?;
         if modo.trava_linha() {
-            // Anexar disputa o FIM da tabela, e nao uma linha: o proximo slot
-            // e `slots() + 1` e ele e um so. Duas transacoes que anexam ao
-            // mesmo tempo preveem o MESMO rowid, e sem esta trava a segunda
-            // descobriria isso na passada de commit, com metade do trabalho
-            // gravado.
-            let alvo = if escrita.acao == Acao::Inserir {
-                crate::travas::FIM_DA_TABELA
-            } else {
-                escrita.rowid
-            };
-            self.esperar_trava(sessao, id, chave, Alvo::Linha(alvo))?;
+            // `rowid` ja vem sendo o FIM DA TABELA quando a acao e anexar: o
+            // proximo slot e `slots() + 1` e ele e um so, entao duas
+            // transacoes que anexam disputam o MESMO lugar -- e disputam de
+            // verdade, porque o rowid e o endereco.
+            self.esperar_trava(sessao, id, chave, Alvo::Linha(rowid))?;
         }
         Ok(())
     }
@@ -21462,6 +21474,24 @@ mod testes_transacoes {
         pede(&s, &ses, r#""op":"rollback""#).unwrap();
     }
 
+    /// Vence a transacao desta ligacao SEM dormir: poe o `expira_ms` no
+    /// passado e devolve o controle.
+    ///
+    /// A primeira versao destes dois testes abria com `TIMEOUT 1ms` e dormia
+    /// 30 ms. Ela reprovou de verdade numa rodada carregada, e nao por
+    /// defeito: com a bateria inteira rodando em paralelo, a PRIMEIRA insercao
+    /// -- a que precisa passar -- ja chegava depois do milissegundo, e o teste
+    /// morria na linha errada. Prazo medido em relogio de parede e corrida, e
+    /// corrida em teste e ruido que gasta a confianca da bateria toda.
+    ///
+    /// Mover o relogio da transacao prova a MESMA coisa e nao tem corrida: o
+    /// caminho exercitado continua sendo o de producao (a varredura ve a
+    /// vencida, o gestor a encerra, o dono recebe o erro com o numero).
+    fn vencer_agora(s: &Servidor, ligacao: u64) {
+        let mut t = s.transacoes.lock().unwrap();
+        t.de_mut(ligacao).unwrap().expira_ms = crate::agora_ms() - 1;
+    }
+
     /// O prazo da transacao estoura e **quem encerra e o gestor**: a transacao
     /// vai para `ABORT_ONLY`, as travas saem, e a proxima operacao recebe o
     /// erro com o NUMERO do prazo. Nenhuma thread e morta.
@@ -21471,7 +21501,7 @@ mod testes_transacoes {
         let s = servidor(&dir);
         let ses = sessao(7);
         base(&s, &ses);
-        pede(&s, &ses, r#""op":"begin","timeout":"1ms""#).unwrap();
+        pede(&s, &ses, r#""op":"begin","timeout":"10s""#).unwrap();
         pede(
             &s,
             &ses,
@@ -21479,7 +21509,7 @@ mod testes_transacoes {
         )
         .unwrap();
         assert_eq!(s.travas.lock().unwrap().quantas(), 1);
-        std::thread::sleep(Duration::from_millis(30));
+        vencer_agora(&s, 7);
 
         let e = pede(
             &s,
@@ -21537,7 +21567,7 @@ mod testes_transacoes {
         let dono = sessao(1);
         let outro = sessao(2);
         base(&s, &dono);
-        pede(&s, &dono, r#""op":"begin","timeout":"1ms""#).unwrap();
+        pede(&s, &dono, r#""op":"begin","timeout":"10s""#).unwrap();
         pede(
             &s,
             &dono,
@@ -21545,7 +21575,7 @@ mod testes_transacoes {
         )
         .unwrap();
         assert_eq!(s.travas.lock().unwrap().quantas(), 1);
-        std::thread::sleep(Duration::from_millis(30));
+        vencer_agora(&s, 1);
 
         // OUTRA conexao varre -- e e o `begin` dela que chama a varredura.
         pede(&s, &outro, r#""op":"begin""#).unwrap();
@@ -21709,6 +21739,74 @@ mod testes_transacoes {
         assert_eq!(r.campo("rowid").and_then(Json::inteiro), Some(2));
         pede(&s, &b, r#""op":"commit""#).unwrap();
         assert_eq!(quantas(&s, &a, "clientes"), 2);
+    }
+
+    /// **A fresta que a revisao achou, fechada pelos dois lados.**
+    ///
+    /// Uma escrita COMUM nao pode anexar enquanto uma transacao segura o fim
+    /// da tabela. Se pudesse, o rowid que a transacao prometeu passaria a ser
+    /// de outra linha — e o estrago nao seria o erro no `COMMIT` (esse e
+    /// visivel): seria a RECUPERACAO encontrar o slot ocupado pela linha do
+    /// outro, trata-lo como "ja aplicado" e descartar a nossa em silencio.
+    ///
+    /// Por isso a trava do fim e tomada **antes** da trava de dados, e nao
+    /// depois de o rowid ser calculado.
+    #[test]
+    fn escrita_comum_nao_anexa_enquanto_a_transacao_segura_o_fim() {
+        let dir = dir_temp("fresta");
+        let s = servidor(&dir);
+        let a = sessao(1);
+        let b = sessao(2);
+        base(&s, &a);
+
+        pede(&s, &a, r#""op":"begin""#).unwrap();
+        let r = pede(
+            &s,
+            &a,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"da tx"}"#,
+        )
+        .unwrap();
+        let prometido = r.campo("rowid").and_then(Json::inteiro).unwrap();
+
+        // A escrita comum, sem BEGIN nenhum, tem de ser BARRADA -- e sem
+        // esperar, porque ela nao declarou prazo nenhum.
+        let e = pede(
+            &s,
+            &b,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":9,"nome":"por fora"}"#,
+        )
+        .unwrap_err();
+        assert_eq!(e.nome(), "EM_TRANSACAO");
+        assert!(e.to_string().contains("fim de"), "{e}");
+        // O lote tambem anexa, e tambem e barrado.
+        assert_eq!(
+            pede(
+                &s,
+                &b,
+                r#""op":"inserir_lote","database":"loja","tabela":"clientes",
+                   "linhas":[{"id":10,"nome":"lote"}]"#,
+            )
+            .unwrap_err()
+            .nome(),
+            "EM_TRANSACAO"
+        );
+
+        // O commit encontra o slot que prometeu, e nao o de outro.
+        pede(&s, &a, r#""op":"commit""#).unwrap();
+        let l = pede(
+            &s,
+            &a,
+            &format!(r#""op":"ler","database":"loja","tabela":"clientes","rowid":{prometido}"#),
+        )
+        .unwrap();
+        assert_eq!(l.texto_ou("nome", ""), "da tx");
+        // E agora que a trava saiu, a escrita comum passa.
+        pede(
+            &s,
+            &b,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":9,"nome":"agora vai"}"#,
+        )
+        .unwrap();
     }
 
     /// Uma transacao abrange UM database, e a recusa diz por que.

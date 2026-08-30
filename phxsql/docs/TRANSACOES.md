@@ -246,6 +246,20 @@ O `INSERT` trava o **fim da tabela**, e não uma linha: o próximo slot é
 o mesmo rowid, e sem essa trava a segunda descobriria isso na passada de
 commit, com metade do trabalho gravado.
 
+> **A ordem em que as travas são tomadas foi corrigida por uma corrida que a
+> revisão achou, e ela merece estar escrita.** A primeira versão calculava o
+> rowid previsto com a trava de dados na mão e só pedia a trava do fim
+> **depois** de soltá-la. Nessa fresta uma escrita comum de outra conexão podia
+> anexar. O `COMMIT` até descobriria a divergência — e esse erro é visível. O
+> estrago vinha depois: a **recuperação** encontraria o slot ocupado pela linha
+> do outro, o trataria como «já aplicado», e descartaria a nossa **em
+> silêncio**.
+>
+> Hoje as travas são tomadas **antes** da trava de dados. O que elas precisam
+> saber sai do pedido — a tabela e o rowid alvo —, então cabem ali, e com o fim
+> travado o `slots()` não se move mais debaixo do cálculo. O teste é o
+> `escrita_comum_nao_anexa_enquanto_a_transacao_segura_o_fim`.
+
 As redes contra trava órfã são as três de sempre, e nenhuma delas basta
 sozinha: a queda da conexão solta, o `TIMEOUT` solta, e o `COMMIT`/`ROLLBACK`
 solta.
