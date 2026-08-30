@@ -235,3 +235,104 @@ x86_64-w64-mingw32-objdump -p .../phxsql_odbc.dll | grep -c 'SQL'
 O que **não** dá: rodar. Sem Windows e sem `wine`, o `.exe` é conferido pela
 forma (PE32+ x86-64), pelas DLLs que importa e pelos símbolos que exporta —
 nunca por execução. Dizer mais que isso seria inventar.
+
+---
+
+## 7. ARM: as placas pequenas, e onde a resposta para de ser medida
+
+A pergunta que abriu esta seção foi «será que roda num IoT, num Android e num
+iOS?». As três respostas são diferentes, e só a primeira é sim.
+
+### 7.1 O que foi medido
+
+Dois alvos novos entraram no `empacotar.sh` — `./empacotar.sh arm64` e
+`./empacotar.sh arm32`:
+
+| Alvo | Placa típica | Binário | Compilou em |
+|---|---|---:|---:|
+| `aarch64-unknown-linux-musl` | Raspberry Pi 3/4/5, gateway industrial, ARM de nuvem | **6,8 MB** | 25,9 s |
+| `armv7-unknown-linux-musleabihf` | Raspberry Pi 2, Zero W, roteador com flash | **6,7 MB** | 23,0 s |
+
+Os dois saíram **de primeira**, sem um `gcc` cruzado instalado: o ligador é o
+`rust-lld` que já vem com a ferramenta. Isso é consequência direta da regra da
+casa — **zero dependências externas**. Com uma crate de C no meio, cada uma
+delas teria de compilar cruzado também, e é aí que a compilação cruzada
+costuma morrer.
+
+Os dois são **estáticos**: um arquivo só, sem carregador dinâmico, sem depender
+da libc que a distribuição da placa trouxe. É o mesmo motivo que fez a imagem
+Docker `FROM scratch` funcionar.
+
+### 7.2 O consumo, que é o que decide numa placa
+
+Medido no servidor parado, com a interface web desligada:
+
+| | |
+|---|---:|
+| RSS parado | **4,9 MiB** |
+| threads | **3** |
+| RSS depois de aceitar conexão | 5,1 MiB |
+| cache de páginas do `.ndx`, quando cheio | 2.048 × 4 KiB = **8 MiB** |
+
+Ou seja: **~5 MiB de piso e ~13 MiB de teto** na configuração padrão. O teto é
+`recursos.cache_paginas`, e numa placa apertada ele desce — é o mesmo campo que
+comprou 2,40× de leitura no `DESEMPENHO.md`, então baixá-lo é uma troca
+consciente entre memória e velocidade, não um ajuste cego.
+
+### 7.3 A fronteira honesta
+
+**Os binários ARM não foram executados.** Esta máquina é x86 e não tem
+emulador; o que se conferiu é que o arquivo é um ELF ARM estático válido
+(`file` confirma arquitetura, ligação estática e ABI). Compilar não é rodar, e
+a diferença tem de ficar escrita — quem tiver uma placa na mão fecha essa conta
+em cinco minutos.
+
+O que dá confiança apesar disso: o alvo `x86_64-unknown-linux-musl`, que usa o
+**mesmo** caminho estático, é exercitado de verdade na bancada Docker.
+
+### 7.4 O driver ODBC não vai no pacote ARM, e não faz falta
+
+`musl` não produz `cdylib`, então `libphxsql_odbc.so` não sai para esses
+alvos. Isso não é perda: o driver é do lado **cliente** — ele mora na máquina
+que roda a ferramenta de relatório, não na placa que guarda o dado. Quem
+precisar mesmo de ODBC em ARM compila para o alvo `gnu` da mesma arquitetura.
+
+### 7.5 Android: compila, e para no ligador
+
+O alvo `aarch64-linux-android` **compilou** — todos os crates passaram. Falhou
+só no **link**, por não achar a libc do Android (bionic: `-lc`, `-lm`, `-ldl`),
+que vem no NDK e não está nesta máquina. É limite do ambiente, não do código.
+
+Mas «linkar» não é «ter um app», e são duas coisas diferentes:
+
+- **Termux** — um servidor de linha de comando num Android com Termux é o caso
+  fácil, e é essencialmente o caso Linux ARM da §7.1.
+- **Dentro de um aplicativo** — aí o motor precisaria virar biblioteca nativa
+  (`cdylib`) com uma camada JNI, **que não existe hoje**. E o Android moderno
+  mata processo em segundo plano com liberdade, então um daemon que escuta
+  porta não é uma forma que o sistema apoie.
+
+### 7.6 iOS: não é questão de compilar
+
+Aqui a resposta muda de natureza. O alvo `aarch64-apple-ios` exige o SDK da
+Apple e o Xcode, que só existem em macOS — não dá nem para tentar aqui. E
+mesmo com um Mac, **o formato do iOS não comporta o que o `phxsqld` é**: o
+sistema não permite processo em segundo plano de longa duração nem um app
+escutando porta para outros apps usarem.
+
+A forma que faria sentido é outra: o motor como **biblioteca estática** ligada
+dentro do aplicativo, com uma camada FFI em C/Swift. Isso é plausível
+justamente por não haver dependência externa — mas **essa camada não existe**,
+e a arquitetura cliente-servidor de hoje teria de virar embutida. É trabalho de
+projeto, não de compilação.
+
+### 7.7 Resumindo em uma tabela
+
+| Plataforma | Estado | O que falta |
+|---|---|---|
+| Linux x86-64 | **roda, exercitado** | — |
+| Windows x86-64 | **compila e empacota** | — |
+| Linux ARM64 / ARMv7 | **compila estático, 6,8/6,7 MB** | rodar numa placa de verdade |
+| Android (Termux) | **compila; link precisa do NDK** | o NDK, e uma corrida real |
+| Android (dentro de app) | não | `cdylib` + camada JNI + repensar o daemon |
+| iOS | não | Mac com Xcode, camada FFI, e virar biblioteca embutida |
