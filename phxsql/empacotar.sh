@@ -503,7 +503,7 @@ TXT
 # manifesto. Desempacotar e conferir e a unica prova de que o zip presta --
 # olhar o tamanho do arquivo nao e prova de nada.
 conferir() {
-  local falhas=0 z nome tmp
+  local falhas=0 sem_manifesto=0 z nome tmp
   shopt -s nullglob
   local zips=("$SAIDA"/*.zip)
   shopt -u nullglob
@@ -528,13 +528,25 @@ conferir() {
       falhas=$((falhas + 1))
       continue
     fi
+    # Pacote ANTERIOR ao manifesto nao e pacote corrompido: e pacote velho.
+    # Contar os dois como "nao confere" ensina quem le a ignorar o conferidor,
+    # e conferidor ignorado nao confere nada. A linha de detalhe ja dizia a
+    # verdade; era o resumo que confundia.
+    if [ ! -f "$tmp/$nome/MANIFESTO.sha256" ]; then
+      echo "   SEM MANIFESTO -- pacote anterior a versao que passou a gravar um."
+      echo "   Nada a conferir por aqui; a linha do SHA256SUMS acima ainda vale."
+      sem_manifesto=$((sem_manifesto + 1))
+      continue
+    fi
     ./target/release/phxsql conferir-pacote "$tmp/$nome" || falhas=$((falhas + 1))
   done
   rm -rf "$tmp"
 
   echo
+  [ $sem_manifesto -eq 0 ] || \
+    echo "$sem_manifesto pacote(s) sem manifesto (anteriores a ele) -- nao conferidos."
   [ $falhas -eq 0 ] || { echo "$falhas pacote(s) NAO conferem."; exit 1; }
-  echo "os ${#zips[@]} pacotes conferem."
+  echo "$(( ${#zips[@]} - sem_manifesto )) pacote(s) conferem."
 }
 
 case "$QUAL" in
