@@ -109,6 +109,35 @@ desenho — com uma seção reescrita, e o motivo dito.
 
 ### Corrigido
 
+- **Uma escrita comum podia anexar no slot que a transação já tinha
+  prometido**, e o estrago não era o erro visível no `COMMIT`: era a
+  **recuperação** encontrar aquele slot ocupado pela linha do outro, tratá-la
+  como «já aplicada» e **descartar a nossa em silêncio**.
+
+  A trava do fim da tabela era pedida *depois* de a trava de dados sair, e o
+  rowid previsto era calculado com ela na mão — uma fresta de milissegundos
+  entre prever e proteger. Hoje as travas vêm **antes** da trava de dados: o
+  que elas precisam saber (a tabela e o rowid alvo, ou o fim, no anexar) sai do
+  pedido e não do esquema, então cabem ali. Achado pela revisão, não por teste.
+
+- **Dois testes de prazo mediam o relógio da máquina, e não o servidor.**
+  Abriam com `TIMEOUT 1ms` e dormiam 30 ms; com a bateria inteira em paralelo,
+  a **primeira** inserção — a que precisa passar — já chegava atrasada, e o
+  teste reprovava na linha errada, acusando código correto. Vencer a transação
+  movendo o relógio dela prova o mesmo caminho sem corrida nenhuma.
+
+- **O executor das guardas dava veredito de mentira quando duas rodadas
+  corriam juntas.** A cópia mora num caminho fixo — de propósito, porque é o
+  que guarda o `target/` quente —, e uma rodada encontrava o defeito plantado
+  pela outra: quatro vereditos falsos numa rodada só, todos com cara de
+  «entrada do catálogo envelheceu». Agora o executor **tranca** a cópia com um
+  `flock` e a segunda rodada espera a primeira.
+
+  Descontada a contaminação sobraram duas entradas **de verdade** envelhecidas
+  (`aad-fora-do-slot`, `endereco-fora-da-amarracao`): a cifra do slot virou
+  função livre e o `rustfmt` recolheu a chamada. Atualizadas, e a amarração do
+  slot cifrado ao endereço voltou a estar provada.
+
 - **A recuperação não conseguia completar um commit depois de um `SIGKILL`, e
   quem achou foi a prova por SOQUETE.** A queda no meio da passada levanta a
   marca de «o índice ficou para trás», e enquanto ela estiver lá **toda**
