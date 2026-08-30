@@ -41,39 +41,40 @@ contando `#[test]` por arquivo e agrupando:
 <!-- cobertura:inicio -->
 | área | testes | % |
 |---|---:|---:|
-| Motor de dados (arquivos, índice, diários) | 346 | 25,0 |
-| Protocolo e portões (despachar) | 183 | 13,2 |
-| Núcleo (JSON, tipos, UUID, zip, paralelo) | 133 | 9,6 |
-| Criptografia e codificação | 122 | 8,8 |
-| Configuração | 93 | 6,7 |
-| DbLink | 65 | 4,7 |
-| Servidor (outros) | 62 | 4,5 |
-| Telemetria e profiler | 53 | 3,8 |
-| Camada SQL (léxico, sintaxe, tradução) | 44 | 3,2 |
-| Gatilhos e procedimentos | 38 | 2,7 |
+| Motor de dados (arquivos, índice, diários) | 346 | 24,1 |
+| Protocolo e portões (despachar) | 209 | 14,6 |
+| Núcleo (JSON, tipos, UUID, zip, paralelo) | 133 | 9,3 |
+| Criptografia e codificação | 122 | 8,5 |
+| Configuração | 93 | 6,5 |
+| DbLink | 65 | 4,5 |
+| Camada SQL (léxico, sintaxe, tradução) | 55 | 3,8 |
+| Telemetria e profiler | 53 | 3,7 |
+| Servidor (outros) | 51 | 3,6 |
+| Gatilhos e procedimentos | 38 | 2,6 |
 | Jobs | 31 | 2,2 |
-| Interface web (servidor HTTP) | 28 | 2,0 |
-| **MCP** | **19** | **1,4** |
-| **Usuários e permissões** | **19** | **1,4** |
+| Mensagens (i18n do servidor) | 28 | 1,9 |
+| Interface web (servidor HTTP) | 28 | 1,9 |
+| **MCP** | **19** | **1,3** |
+| **Usuários e permissões** | **19** | **1,3** |
 | **Console de terminal (phxsqlcmd)** | **18** | **1,3** |
 | **Segurança de rede (blacklist, firewall)** | **18** | **1,3** |
 | **ODBC** | **17** | **1,2** |
-| **Mensagens (i18n do servidor)** | **17** | **1,2** |
+| **Transações** | **16** | **1,1** |
 | **Exportação** | **13** | **0,9** |
 | **Junções e união** | **13** | **0,9** |
-| **Pivot** | **12** | **0,9** |
+| **Pivot** | **12** | **0,8** |
 | **Replicação** | **11** | **0,8** |
 | **Alertas e e-mail** | **8** | **0,6** |
 | **CLI** | **7** | **0,5** |
 | **Cluster** | **7** | **0,5** |
 | **Monitor de máquina** | **6** | **0,4** |
-| **total** | **1383** | |
+| **total** | **1436** | |
 
 Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 
 | arquivo | linhas |
 |---|---:|
-| `phxsql-store/src/table.rs` | 2604 |
+| `phxsql-store/src/table.rs` | 2614 |
 | `phxsql-store/src/ndx.rs` | 1580 |
 | `phxsql-ffi/src/lib.rs` | 1444 |
 | `phxsql-server/src/main.rs` | 479 |
@@ -494,16 +495,8 @@ continua rodando sozinha pelo comando dela. Ele chama, cronometra e soma.
 
 ### As partes
 
-A lista de verdade sai do próprio `provar.py`, e não daqui:
-
-```bash
-python3 provar.py --listar
-```
-
-A tabela abaixo é a leitura dela — e a primeira versão desta seção começava com
-um número escrito à mão no título («as dezessete partes») que **já mentia**
-enquanto quatro partes rodavam sem aparecer aqui. Número visível ou sai de um
-comando, ou está errado e ninguém percebeu ainda.
+A lista sai do `provar.py --listar`, e não desta tabela: uma contagem
+digitada aqui envelheceria calada na próxima parte que entrasse.
 
 | parte | o que prova | portas |
 |---|---|---|
@@ -512,21 +505,18 @@ comando, ou está errado e ninguém percebeu ainda.
 | `tela` | a interface contra o servidor de verdade: 120 telas, CSS global, contraste, primeira pintura | 6950/6951 |
 | `idiomas` | o caminho do idioma de ponta a ponta, e o comportamento velho | 6952/6953 |
 | `ponta-a-ponta` | os seis itens do dono pelo soquete, mais a passada pela tela | 6300/6301 |
-| `cifra-do-fio` | o aperto de mão da porta de dados contra um cliente escrito **de novo** em Python: o cliente velho, o túnel, o pino, o registro repetido e o fio cortado | — |
 | `alter` | acrescentar coluna numa tabela com dado pelo soquete: rowid preservado, backup, e a réplica que ainda não alterou | 7150/7152 |
+| `transacoes` | `BEGIN`/`COMMIT`/`ROLLBACK`/`SAVEPOINT` pelo soquete — com **SIGKILL no meio de um `COMMIT`**, e o banco reabrindo para dizer o que aconteceu | 7320 |
 | `rotinas` | gatilhos e procedimentos pelo soquete, com SIGNAL, lote e reinício | 5301/5701 |
 | `profiler` | a redação do Profiler por soquete: vinte pedidos torcidos, sentinela no anel e no `.txt` | 6251 |
-| `queda-na-exclusao` | que a janela de durabilidade da exclusão não perde linha numa queda do **processo**: 150 exclusões e um `SIGKILL` no meio | — |
 | `telemetria-desenho` | o painel de bolhas por medida: rótulo na esfera, alvo de clique, contraste | — |
 | `telemetria-interacao` | clicar na bolha menor com o painel em movimento, descer de nível, voltar | — |
 | `telemetria-cores` | as cores configuráveis, exercitando: escolher, salvar, conferir no painel | 6600/6601 |
 | `cluster` | eleição e promoção automática com três servidores e um SMTP falso | 5310-5312, 5316 |
 | `replicacao` | os quatro modos por soquete, com o comportamento velho no fim | 5330-5339 |
-| `trava` | que nenhuma leitura de rede acontece com a trava de dados na mão | 7050-7055 |
 | `jobs` | o aviso de jobs por e-mail — e o servidor **sem** bloco de e-mail, que não manda nada | 5303/5703 |
 | `profiler-disco` | o `.txt` do Profiler contra o sistema operacional: disco cheio, somente-leitura | 6253 |
 | `dblink` | a sincronia de tabelas primas contra um MySQL(R) de verdade | — |
-| `embutido` | o **PhxSql embutido**: um programa em C ligado à biblioteca, rodado contra o `.a` e contra o `.so` em x86-64 e contra o `.a` em **ARM64 sob emulação** — porque «compila» não é «roda» | — |
 | `odbc` | a ABI do driver pelo `ctypes`, sem passar pelo unixODBC | 6954 |
 
 Cada parte abre as portas dela — documentadas no cabeçalho de cada script — e
@@ -634,20 +624,6 @@ python3 bancada/guardas/provar-guardas.py --json /tmp/guardas.json
 python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 ```
 
-> **A tabela abaixo está atrasada em seis linhas, e isto fica escrito em vez de
-> ser tapado.** As seis guardas da fronteira de C (`ffi-…`, do
-> `crates/phxsql-ffi`) entraram no catálogo e foram **provadas uma a uma**
-> — as seis deram PROVADA, e a `ffi-panico-atravessa` pelo aborto, como a
-> `cadeia-sem-teto`. O que não foi feito foi a **rodada completa** que
-> regrava este bloco: ela precisa de ~1,3 GB de árvore copiada, e a máquina
-> desta rodada estava com 3,6 GB livres e outra compilação em curso. Uma
-> tabela parcial seria pior que uma atrasada, porque apagaria as 37 linhas
-> medidas. Rodar os dois comandos acima resolve.
->
-> Também há duas linhas `QUEBRADA` a esperar: `aad-fora-do-slot` e
-> `endereco-fora-da-amarracao` não acharam mais o trecho no `reg.rs`, e essas
-> são de outra frente.
-
 <!-- guardas:inicio -->
 | guarda | o defeito reposto | testes que caem | veredito |
 |---|---|---:|---|
@@ -669,18 +645,40 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `endereco-fora-da-amarracao` | as DUAS fechaduras somem: dá para embaralhar as linhas cifradas | 1 | ✅ provada |
 | `cache-de-chaves-nao-limpo` | trocar a senha da cifra não limpa o cache: a senha errada abre | 1 | ✅ provada |
 | `catraca-dos-textos` | mais um texto de tela cravado, fora da fábrica de idiomas | 1 | ✅ provada |
+| `trava-fora-do-ponto-unico` | uma tomada da trava de dados fora do `travar_dados()` | 1 | ✅ provada |
+| `trava-sem-guarda-de-reentrancia` | a trava pedida duas vezes pela mesma thread pendura o servidor | 1 | ✅ provada |
+| `exclusao-na-janela-por-padrao` | a exclusão entra na janela por padrão, sem ninguém pedir | 1 | ✅ provada |
+| `exclusao-na-janela-sem-leitor` | `exclusao_na_janela` no config.json, no MANUAL e na tela — e ninguém o lê | 1 | ✅ provada |
+| `reg-fecha-antes-do-trash` | a janela sincroniza o `.reg` antes do `.trash` | 1 | ✅ provada |
+| `rodizio-do-profiler-ignora-o-zero` | `profiler.arquivo_mib: 0` deixa de querer dizer «sem rodízio» | 1 | ✅ provada |
+| `cabecalho-do-profiler-forjado` | o cabeçalho do arquivo do Profiler aceita linha forjada | 1 | ✅ provada |
+| `profiler-sem-descritor-calado` | sem descritor, com arquivo pedido, a linha some sem ser contada | 1 | ✅ provada |
+| `trava-atras-da-rede` | o laço da réplica segura a trava de dados enquanto lê do soquete | 1 | ✅ provada |
+| `ordem-pequena-aceita` | o segredo X25519 todo-zeros aceito como chave de sessão | 2 | ✅ provada |
+| `contador-do-fio-parado` | o contador de registros do fio parado — nonce repetido | 3 | ✅ provada |
+| `fio-cortado-vira-fim` | o fio cortado no meio devolvido como fim de conversa | 1 | ✅ provada |
+| `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | 1 | ✅ provada |
+| `transcricao-sem-o-cifrado` | o hash da transcrição sem o texto cifrado da mensagem 2 | 2 | ✅ provada |
+| `fio-sem-teto-de-registro` | a leitura do fio volta a ser ilimitada | 1 | ✅ provada |
 | `alter-compacta-o-buraco` | a reescrita da coluna nova pula os slots excluídos e renumera o rowid | 1 | ✅ provada |
 | `alter-sem-remapear-posicao` | a coluna nova desloca as de sistema e ninguém remapeia quem guarda posição | 2 | ✅ provada |
 | `alter-espelho-para-tras` | o espelho `.bkp` fica com a largura velha depois de acrescentar coluna | 1 | ✅ provada |
 | `alter-queda-no-meio` | o conjunto de volumes misturado abre e lê o volume 3 com a largura do 1 | 2 | ✅ provada |
+| `transacao-nao-empilha` | a transação escreve direto no disco em vez de empilhar | 3 | ✅ provada |
+| `commit-confirma-abortada` | o COMMIT confirma uma transação que já estava em ABORT_ONLY | 1 | ✅ provada |
+| `marca-antes-do-fsync` | a marca `.tx` é apagada antes de a tabela sincronizar | 1 | ✅ provada |
+| `insert-sem-travar-o-fim` | duas transações que anexam preveem o mesmo rowid | 1 | ✅ provada |
+| `recuperar-sem-reindexar` | a recuperação não reconstrói o `.ndx` que a queda deixou para trás | — | 🟰 redundante |
+| `comum-anexa-no-fim-travado` | a escrita comum que anexa não olha o fim travado | 1 | ✅ provada |
 
-**22 guardas: 20 provadas, 2 redundantes** — 168 s de mutação, medido em 2026-08-30 06:32.
+**43 guardas: 40 provadas, 3 redundantes** — 329 s de mutação, medido em 2026-08-30 17:28.
 
 As notas que a rodada deixou:
 
 - `cadeia-sem-teto` — o binario abortou, que e como esta guarda pega
 - `aad-fora-do-slot` — confirmado: tirar so o AAD nao e sentido por teste nenhum, porque o `nonce_de_pedaco` carrega (rowid, volume, versao)
 - `nonce-sem-endereco` — confirmado: tirar so o endereco do nonce tambem passa despercebido
+- `recuperar-sem-reindexar` — confirmado: nenhum teste de unidade pega este defeito. O indice so fica para tras quando o PROCESSO morre no meio da passada, e isso so acontece de verdade em `bancada/transacoes/provar.py` -- que e por isso que a prova por soquete existe.
 <!-- guardas:fim -->
 
 ### As duas metades, e a terceira que ninguém pede
@@ -952,3 +950,101 @@ continua certo, e o motivo mudou de lugar — não é inviabilidade, é caber
 **dentro** da bateria única (14m35s inteira) em vez de dobrá-la. É a mesma
 correção que a casa já fez com o mutex: o número não muda a decisão, muda a
 frase que a explica, e a frase errada é a que sobrevive.
+
+
+## 10. O que a rodada das transações achou na própria bateria
+
+Três achados que não vieram do código novo: vieram de rodar a bateria e
+desconfiar do resultado dela.
+
+### 10.1 Prazo medido em relógio de parede é corrida, e a corrida disparou
+
+Dois testes das transações abriam com `TIMEOUT 1ms`, faziam uma inserção,
+dormiam 30 ms e exigiam que a operação seguinte recebesse o erro do prazo. A
+lógica está certa e o caminho exercitado é o de produção. **O teste, não.**
+
+Numa rodada com a bateria inteira em paralelo, `o_prazo_estourado_reverte_e_solta_as_travas`
+reprovou — e reprovou na linha **errada**:
+
+```
+called `Result::unwrap()` on an `Err` value: TransacaoAbortada(
+  "a transacao 1788109415658 passou do TIMEOUT de 1 ms e foi revertida; ...")
+   at ./src/servidor.rs:21492   <- a PRIMEIRA insercao, a que tem de passar
+```
+
+Com a máquina carregada, o milissegundo acabou **antes** de a primeira inserção
+chegar. Nada estava quebrado; o teste é que mediu o relógio da máquina em vez
+de medir o servidor.
+
+O conserto não é dormir mais — é não dormir. Um ajudante move o relógio da
+transação:
+
+```rust
+fn vencer_agora(s: &Servidor, ligacao: u64) {
+    let mut t = s.transacoes.lock().unwrap();
+    t.de_mut(ligacao).unwrap().expira_ms = crate::agora_ms() - 1;
+}
+```
+
+A transação abre com `TIMEOUT 10s` (folga de sobra para a primeira operação), e
+o vencimento passa a ser um fato, não uma aposta. O caminho provado é o mesmo —
+a varredura vê a vencida, o gestor a encerra, o dono recebe o erro com o número
+—, e os 26 testes de transação caíram de segundos para **0,54 s** porque os
+dois `sleep` saíram. Três rodadas de `cargo test --workspace` seguidas, verdes.
+
+**A lição é a irmã da que já estava escrita sobre teste que passa por engano:**
+teste que *reprova* por engano custa quase o mesmo, porque gasta a confiança na
+bateria inteira — e o primeiro impulso, diante dele, é olhar o código que está
+certo.
+
+### 10.2 A cópia das guardas é compartilhada, e duas rodadas se estragam
+
+A rodada completa das 42 guardas saiu com **36 provadas, 1 redundante, 1 não
+pegou e 4 quebradas**. Quatro dos cinco problemas eram mentira, e os quatro
+tinham cara de entrada envelhecida.
+
+O que denunciou foi olhar a cópia depois: `~/.cache/phx-guardas/crates/phxsql-server/src/servidor.rs`
+ainda tinha um `// DEFEITO REPOSTO` plantado dentro. O caminho da cópia é fixo —
+de propósito, porque é o que guarda o `target/` quente —, e **duas invocações ao
+mesmo tempo mexem nos mesmos arquivos**. O `LEIA-ME.md` das guardas já avisava
+disso e mandava passar `--arvore`; a regra dependia de alguém lembrar.
+
+Hoje o executor **tranca** a cópia com um `flock` num arquivo ao lado do
+diretório, e a segunda rodada espera a primeira em vez de a estragar. Provado
+segurando a tranca de fora e chamando o executor:
+
+```
+outra rodada esta usando /root/.cache/phx-guardas -- esperando a vez
+                 esperou 27 s pela vez
+  alter-espelho-para-tras      PROVADA                  1.0 s  1/1 cairam
+```
+
+O `flock` foi escolhido porque o núcleo o solta sozinho quando o processo morre,
+**inclusive num `SIGKILL`** — que é o único jeito de o `atexit` do executor não
+rodar. Tranca pendurada por rodada morta é impossível, e isso importa numa
+ferramenta cujo trabalho é justamente matar processos por prazo.
+
+### 10.3 Duas entradas do catálogo tinham envelhecido de verdade
+
+Descontada a contaminação da §10.2, sobraram duas quebradas legítimas:
+`aad-fora-do-slot` e `endereco-fora-da-amarracao`, ambas em
+`crates/phxsql-store/src/reg.rs`. O `trecho` que elas procuravam não existia
+mais **na árvore de verdade** — não era cópia trocada.
+
+A causa é inocente: a cifra do slot virou função livre, e o `rustfmt` recolheu
+a chamada para uma linha só.
+
+```rust
+// o que o catalogo procurava        // o que o codigo virou
+let selado = self                    let selado = material.selar(
+    .material                            &nonce, &aad_do_slot(volume, rowid, versao), &claro);
+    .selar(&nonce, ...);
+```
+
+Com os trechos atualizados, as duas voltaram a dar o veredito que declaram —
+`aad-fora-do-slot` **REDUNDANTE** (a entrada afirma que tirar só o AAD não é
+sentido por teste nenhum, e não é mesmo) e `endereco-fora-da-amarracao`
+**PROVADA**, 1/1 caiu. A amarração do slot cifrado ao endereço voltou a estar
+provada, e ficou **duas refações sem estar** — que é o tempo em que ninguém
+percebeu, porque a quebrada aparecia no relatório como texto e não como número
+que desce.

@@ -60,6 +60,7 @@ nada.
 
 import argparse
 import atexit
+import fcntl
 import os
 import re
 import shutil
@@ -109,7 +110,57 @@ class Arvore:
     def __init__(self, destino):
         self.dir = destino
         self.originais = {}
+        self._tranca = None
         atexit.register(self.desfazer_tudo)
+
+    def trancar(self):
+        """UMA rodada de cada vez nesta copia -- a segunda espera a primeira.
+
+        # O achado que obrigou a escrever isto
+
+        A copia mora num caminho FIXO (`~/.cache/phx-guardas`), e de proposito:
+        e o que guarda o `target/` quente entre rodadas. Ate aqui ninguem tinha
+        rodado duas de uma vez.
+
+        Duas rodadas ao mesmo tempo se estragam de tres jeitos, e os tres
+        apareceram numa rodada so, com veredito de mentira em cada um:
+
+          * a rodada A planta o defeito dela; a rodada B chama `repor` e nao
+            acha mais o trecho -- e declara QUEBRADA («o codigo mudou e a
+            entrada do catalogo envelheceu») uma entrada que esta perfeita;
+          * a rodada B roda o binario com o defeito de A dentro, e um teste que
+            nao tem nada com a guarda de B reprova -- vira NAO PEGOU, que e
+            justamente o veredito que a casa trata como o achado mais valioso
+            daqui;
+          * o defeito de A e um que PENDURA (o `sujas-com-a-trava`), e com o
+            `--limpar` de B apagando o `target/` embaixo dele a compilacao
+            recomeca do zero e o prazo de 420 s estoura -- QUEBRADA de novo,
+            por relogio.
+
+        Nenhum dos tres tem cara de contaminacao: os tres tem cara de codigo
+        que mudou. Foi preciso ir olhar a copia depois e achar o
+        `// DEFEITO REPOSTO` ainda plantado nela.
+
+        `flock` e o que resolve porque o nucleo a solta sozinho quando o
+        processo morre -- inclusive num SIGKILL, que e o unico jeito de o
+        `atexit` nao rodar. Tranca pendurada por rodada morta e impossivel.
+
+        A tranca fica FORA do diretorio: o `--limpar` apaga o diretorio inteiro,
+        e a tranca nao pode ir junto.
+        """
+        alvo = self.dir.rstrip(os.sep) + ".tranca"
+        os.makedirs(os.path.dirname(alvo) or ".", exist_ok=True)
+        self._tranca = open(alvo, "w")
+        try:
+            fcntl.flock(self._tranca, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return 0.0
+        except OSError:
+            pass
+        print(cor("aviso", "outra rodada esta usando %s -- esperando a vez"
+                  % self.dir))
+        inicio = time.time()
+        fcntl.flock(self._tranca, fcntl.LOCK_EX)
+        return time.time() - inicio
 
     def montar(self, reaproveitar):
         if reaproveitar and os.path.isdir(os.path.join(self.dir, "crates")):
@@ -350,6 +401,10 @@ def main():
     print("PROVANDO AS GUARDAS -- repor o defeito e conferir que o teste cai")
     print("=" * 72)
     print("copia da arvore: %s" % destino)
+    # A TRANCA VEM ANTES DO `montar`, porque o `--limpar` apaga o diretorio.
+    esperou = arvore.trancar()
+    if esperou:
+        print("                 esperou %.0f s pela vez" % esperou)
     estado = arvore.montar(reaproveitar=not opc.limpar)
     arvore.garantir_frescor(
         m["arquivo"] for g in GUARDAS for m in trocas_de(g))

@@ -2016,4 +2016,242 @@ pub fn limpar() {
             "rest::testes::o_status_http_sai_da_faixa_do_codigo",
         ],
     },
+    # -----------------------------------------------------------------------
+    # 28. A transacao gravando direto no disco em vez de empilhar
+    # -----------------------------------------------------------------------
+    {
+        "id": "transacao-nao-empilha",
+        "titulo": "a transação escreve direto no disco em vez de empilhar",
+        "porque": (
+            "a regra que decide o desenho inteiro: nada vai a disco antes do "
+            "COMMIT. Gravar ao empilhar faria o ROLLBACK ter de desfazer -- e "
+            "desfazer um insert exigiria devolver o slot, que o `.reg` nunca "
+            "reaproveita. O buraco seria permanente, e a replicacao teria de "
+            "receber a transacao revertida para queimar o mesmo slot do outro "
+            "lado."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        if OPS_EMPILHAVEIS.contains(&op) {
+            self.por_prazo_na_operacao(sessao);
+            return Some(self.empilhar(op, p, sessao));
+        }
+""",
+        "troca": """        // DEFEITO REPOSTO: a escrita passa direto, como se nao houvesse
+        // transacao nenhuma. O ROLLBACK deixa de desfazer.
+        if OPS_EMPILHAVEIS.contains(&op) {
+            return None;
+        }
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_transacoes::o_rollback_de_um_insert_nao_queima_slot",
+            "servidor::testes_transacoes::o_commit_aplica_na_ordem_e_com_o_rowid_prometido",
+            "servidor::testes_transacoes::o_savepoint_trunca_a_lista_e_a_transacao_segue",
+        ],
+        "seguem": [
+            # O comportamento VELHO nao pode mudar nem com o defeito reposto:
+            # ele nao passa por este portao.
+            "servidor::testes_transacoes::sem_transacao_nada_muda",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # 29. O COMMIT confirmando uma transacao em ABORT_ONLY
+    # -----------------------------------------------------------------------
+    {
+        "id": "commit-confirma-abortada",
+        "titulo": "o COMMIT confirma uma transação que já estava em ABORT_ONLY",
+        "porque": (
+            "e a melhor ideia do capitulo que o dono mandou, e o motivo dela: "
+            "depois de um erro de TRANSACAO o conjunto de escrita esta em "
+            "duvida, e confirmar trabalho meio invalido e pior do que recusar. "
+            "O `XACT_STATE()` do SQL Server e o estado abortado do "
+            "PostgreSQL(R) existem exatamente para isto."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        # O ramo inteiro, para a troca fechar as chaves e os parenteses: uma
+        # troca que so tira o `return Err(` deixa dois fechamentos sobrando, e
+        # a guarda vira QUEBRADA -- que nao prova nada.
+        "trecho": """                crate::transacao::Estado::AbortOnly => {
+                    return Err(PhxError::TransacaoAbortada(format!(
+                        "{}; a transacao nao pode ser confirmada -- mande ROLLBACK",
+                        if tx.motivo_do_aborto.is_empty() {
+                            "houve erro de TRANSACAO".to_string()
+                        } else {
+                            tx.motivo_do_aborto.clone()
+                        }
+                    )))
+                }
+""",
+        "troca": """                // DEFEITO REPOSTO: `ABORT_ONLY` confirma como se nada
+                // tivesse acontecido -- e o trabalho meio invalido vai para o
+                // disco.
+                crate::transacao::Estado::AbortOnly => {}
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_transacoes::o_teto_leva_a_abort_only_e_o_commit_recusa",
+        ],
+        "seguem": [
+            "servidor::testes_transacoes::erro_de_instrucao_nao_derruba_a_transacao",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # 30. A marca de commit apagada ANTES do fsync da tabela
+    # -----------------------------------------------------------------------
+    {
+        "id": "marca-antes-do-fsync",
+        "titulo": "a marca `.tx` é apagada antes de a tabela sincronizar",
+        "porque": (
+            "e a ordem que faz o group commit ser seguro, e ela nao se "
+            "inverte: a marca e o bilhete que traz o dado de volta se a "
+            "energia cair antes do `fsync`. Apaga-la antes abre a janela em "
+            "que o dado nao esta no disco e nao ha bilhete nenhum -- a mesma "
+            "janela sem conserto da lixeira, pelo outro lado."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                if self.tabelas_ainda_sujas(&database, &escritas) {
+                    if let Ok(mut m) = self.marcas_pendentes.lock() {
+                        m.push(marca.clone());
+                    }
+                } else {
+                    let _ = std::fs::remove_file(&marca);
+                }
+""",
+        "troca": """                // DEFEITO REPOSTO: a marca sai sempre, sem esperar o fsync.
+                let _ = std::fs::remove_file(&marca);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_transacoes::a_marca_espera_o_fsync_e_so_entao_e_apagada",
+        ],
+        "seguem": [
+            # Com `por_operacao` a janela fecha na propria gravacao, entao a
+            # marca sairia no commit de qualquer jeito -- e este teste
+            # continua verde, o que prova que o defeito e da OUTRA metade.
+            "servidor::testes_transacoes::sem_janela_a_marca_sai_no_commit",
+            "servidor::testes_transacoes::a_recuperacao_completa_o_commit_e_nao_duplica",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # 31. O `INSERT` sem travar o fim da tabela
+    # -----------------------------------------------------------------------
+    {
+        "id": "insert-sem-travar-o-fim",
+        "titulo": "duas transações que anexam preveem o mesmo rowid",
+        "porque": (
+            "o rowid E o endereco, e o proximo e `slots() + 1` -- um so. Sem "
+            "travar o fim, duas transacoes que anexam ao mesmo tempo preveem "
+            "o MESMO slot, e a segunda descobre isso na passada de commit, com "
+            "metade do trabalho gravado."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        let rowid_pedido = match acao {
+            Acao::Inserir => crate::travas::FIM_DA_TABELA,
+            _ => self.rowid(p)?,
+        };
+""",
+        "troca": """        let rowid_pedido = match acao {
+            // DEFEITO REPOSTO: o INSERT trava um lugar SEU em vez do fim da
+            // tabela. Dois que anexam ao mesmo tempo preveem o mesmo slot e
+            // deixam de se esbarrar, porque cada um travou outra coisa.
+            Acao::Inserir => sessao.ligacao,
+            _ => self.rowid(p)?,
+        };
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_transacoes::duas_transacoes_que_anexam_disputam_o_fim_da_tabela",
+        ],
+        "seguem": [
+            # A trava de LINHA continua inteira: o defeito e so no anexar.
+            "servidor::testes_transacoes::dois_caixas_em_linhas_diferentes_nao_se_esbarram",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # 32. A recuperacao sem reconstruir o indice que a queda deixou para tras
+    # -----------------------------------------------------------------------
+    {
+        "id": "recuperar-sem-reindexar",
+        "titulo": "a recuperação não reconstrói o `.ndx` que a queda deixou para trás",
+        "porque": (
+            "achado pela prova por SOQUETE, e por nenhum teste unitario: um "
+            "SIGKILL no meio da passada levanta a marca de «o indice ficou "
+            "para tras», e enquanto ela estiver la TODA operacao de indice "
+            "recusa. A recuperacao reabria a tabela, tentava inserir e recebia "
+            "«reconstrua com reparar indice» -- o commit ficava pela metade e "
+            "a tabela inutilizavel, sem ninguem ser avisado."
+        ),
+        "arquivo": "crates/phxsql-server/src/transacao.rs",
+        "trecho": """                        if t.indice_precisa_reconstruir() {
+                            match t.reindexar() {
+                                Ok(_) => r.indices_reconstruidos += 1,
+""",
+        "troca": """                        // DEFEITO REPOSTO: a recuperacao nao reconstroi o
+                        // indice, e o commit fica pela metade.
+                        if false {
+                            match t.reindexar() {
+                                Ok(_) => r.indices_reconstruidos += 1,
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        # Nenhum teste unitario cai, e a entrada AFIRMA isso: quem pega este
+        # defeito e o `bancada/transacoes/provar.py`, que mata o processo de
+        # verdade. Deixa-lo aqui trava a afirmacao -- no dia em que um teste
+        # de unidade passar a pegar, o executor avisa que a afirmacao morreu.
+        "espera": "nada muda",
+        "nota_da_redundancia": (
+            "confirmado: nenhum teste de unidade pega este defeito. O indice "
+            "so fica para tras quando o PROCESSO morre no meio da passada, e "
+            "isso so acontece de verdade em `bancada/transacoes/provar.py` -- "
+            "que e por isso que a prova por soquete existe."
+        ),
+        "caem": [],
+        "seguem": [
+            "servidor::testes_transacoes::a_recuperacao_completa_o_commit_e_nao_duplica",
+            "servidor::testes_transacoes::marca_que_nao_confere_e_commit_que_nunca_comecou",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # 33. A escrita COMUM anexando por baixo do fim que a transacao segura
+    # -----------------------------------------------------------------------
+    {
+        "id": "comum-anexa-no-fim-travado",
+        "titulo": "a escrita comum que anexa não olha o fim travado",
+        "porque": (
+            "a revisao achou a corrida pelo outro lado -- a transacao pedia a "
+            "trava do fim tarde demais --, e o teste defende a garantia pelos "
+            "dois: quem anexa SEM transacao nenhuma tambem tem de ver o fim "
+            "travado. O estrago nao e o erro no COMMIT, que e visivel: e a "
+            "RECUPERACAO encontrar o slot ocupado pela linha do outro, trata-lo "
+            "como «ja aplicado» e descartar a nossa em silencio."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                // Anexar disputa o FIM da tabela: o proximo slot e um so.
+                "inserir" | "inserir_lote" | "importar" | "carga" | "duplicar_tabela"
+                | "copiar_tabela" => {
+                    travas.conflito_de_linha(&chave, meu, crate::travas::FIM_DA_TABELA)
+                }
+""",
+        "troca": """                // DEFEITO REPOSTO: quem anexa sem transacao nenhuma passa por
+                // baixo do fim travado, e o slot que a transacao prometeu vira
+                // de outra linha.
+                "inserir" | "inserir_lote" | "importar" | "carga" | "duplicar_tabela"
+                | "copiar_tabela" => None,
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_transacoes::escrita_comum_nao_anexa_enquanto_a_transacao_segura_o_fim",
+        ],
+        "seguem": [
+            # A trava de LINHA da escrita comum continua inteira: o defeito e
+            # so no anexar, e um `atualizar` no rowid travado ainda recusa.
+            "servidor::testes_transacoes::sem_transacao_nada_muda",
+            "servidor::testes_transacoes::dois_caixas_em_linhas_diferentes_nao_se_esbarram",
+        ],
+    },
 ]

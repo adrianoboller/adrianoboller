@@ -35,6 +35,15 @@ pub enum PhxError {
     Conflito(String),
     /// A tabela esta reservada para uma carga, por outra sessao.
     EmCarga(String),
+    /// A tabela esta reservada por uma TRANSACAO aberta em outra conexao.
+    ///
+    /// O gemeo do `EmCarga`, e separado dele de proposito: quem esbarra
+    /// precisa saber se o que segura a tabela e uma carga (que termina
+    /// sozinha) ou uma transacao (que termina no `COMMIT` ou no `ROLLBACK` de
+    /// alguem). Os dois pedem a mesma coisa de quem recebe -- tentar de novo
+    /// --, e por isso os dois tem `repetir: true`; o que muda e a quem
+    /// perguntar quando a espera passar do razoavel.
+    EmTransacao(String),
     /// Credencial invalida ou poder insuficiente.
     Autorizacao(String),
     /// Valor excede o limite fisico do formato.
@@ -66,6 +75,16 @@ pub enum PhxError {
     /// para ler. Erro proprio porque a acao de quem recebe e outra --
     /// esperar ou promover, nunca insistir.
     SpareEmEspera(String),
+    /// A transacao desta conexao esta em `ABORT_ONLY`: houve erro de
+    /// TRANSACAO, e o unico caminho que sobra e o `ROLLBACK`.
+    ///
+    /// # Por que um erro proprio, e nao um `Esquema` qualquer
+    ///
+    /// Porque a acao de quem recebe e outra, e e a unica coisa que importa
+    /// aqui: nao adianta corrigir o pedido e repetir -- o pedido nao e o
+    /// problema. Um `COMMIT` que confirmasse trabalho meio invalido seria pior
+    /// do que a recusa, e e exatamente isso que este erro impede.
+    TransacaoAbortada(String),
 }
 
 impl PhxError {
@@ -93,7 +112,7 @@ impl PhxError {
     /// | 3000  | `dado`    | o dado em si recusa |
     /// | 4000  | `acesso`  | quem pediu nao podia |
     /// | 5000  | `sistema` | o sistema de arquivos falhou
-    /// | 6000  | `execucao`| a operacao foi interrompida por quem administra |
+    /// | 6000  | `execucao`| a operacao foi interrompida antes de completar |
     pub fn codigo(&self) -> u16 {
         match self {
             PhxError::Corrompido(_) => 1001,
@@ -112,8 +131,10 @@ impl PhxError {
             PhxError::EmCarga(_) => 4002,
             PhxError::Redireciona(_) => 4003,
             PhxError::SpareEmEspera(_) => 4004,
+            PhxError::EmTransacao(_) => 4005,
             PhxError::Io(_) => 5001,
             PhxError::Cancelado(_) => 6001,
+            PhxError::TransacaoAbortada(_) => 6002,
         }
     }
 
@@ -136,8 +157,10 @@ impl PhxError {
             PhxError::EmCarga(_) => "EM_CARGA",
             PhxError::Redireciona(_) => "REDIRECIONA",
             PhxError::SpareEmEspera(_) => "SPARE_EM_ESPERA",
+            PhxError::EmTransacao(_) => "EM_TRANSACAO",
             PhxError::Io(_) => "ERRO_DE_ES",
             PhxError::Cancelado(_) => "CANCELADO",
+            PhxError::TransacaoAbortada(_) => "TRANSACAO_ABORTADA",
         }
     }
 
@@ -162,14 +185,18 @@ impl PhxError {
     /// uma situacao PASSAGEIRA.
     ///
     /// * o de E/S -- disco cheio que liberou, arquivo que estava travado;
-    /// * o de tabela em carga -- alguem reservou a tabela e vai soltar.
+    /// * o de tabela em carga -- alguem reservou a tabela e vai soltar;
+    /// * o de tabela em transacao -- alguem a segura ate o `COMMIT` dele.
     ///
     /// Os outros vao dar o mesmo resultado quantas vezes forem tentados, e
     /// repetir e so gastar o servidor. E a distincao que importa para quem
     /// integra: «em carga» e «acesso negado» sao os dois uma recusa, mas a
     /// primeira funciona daqui a pouco e a segunda nao funciona nunca.
     pub fn adianta_repetir(&self) -> bool {
-        matches!(self, PhxError::Io(_) | PhxError::EmCarga(_))
+        matches!(
+            self,
+            PhxError::Io(_) | PhxError::EmCarga(_) | PhxError::EmTransacao(_)
+        )
     }
 }
 
@@ -203,6 +230,7 @@ impl fmt::Display for PhxError {
             PhxError::Conflito(m) => write!(f, "conflito de escrita: {m}"),
             PhxError::Autorizacao(m) => write!(f, "acesso negado: {m}"),
             PhxError::EmCarga(m) => write!(f, "tabela em carga: {m}"),
+            PhxError::EmTransacao(m) => write!(f, "tabela em transacao: {m}"),
             PhxError::LimiteExcedido(m) => write!(f, "limite excedido: {m}"),
             // Sem prefixo: a mensagem ja comeca com `REDIRECIONA host:porta`,
             // e e esse comeco que o cliente recorta.
@@ -214,6 +242,7 @@ impl fmt::Display for PhxError {
                 write!(f, "{mensagem} (SIGNAL SQLSTATE {estado})")
             }
             PhxError::SpareEmEspera(m) => write!(f, "spare em espera: {m}"),
+            PhxError::TransacaoAbortada(m) => write!(f, "transacao abortada: {m}"),
             // Sem prefixo de erro na frente: quem le a resposta esta vendo o
             // resultado de um botao que ele mesmo apertou, e nao uma falha.
             PhxError::Cancelado(m) => write!(f, "{m}"),
@@ -263,6 +292,8 @@ mod testes_codigo {
             PhxError::LimiteExcedido(String::new()),
             PhxError::Conflito(String::new()),
             PhxError::EmCarga(String::new()),
+            PhxError::EmTransacao(String::new()),
+            PhxError::TransacaoAbortada(String::new()),
             PhxError::Autorizacao(String::new()),
             PhxError::Redireciona(String::new()),
             PhxError::SpareEmEspera(String::new()),
@@ -295,6 +326,8 @@ mod testes_codigo {
         assert_eq!(PhxError::Conflito(String::new()).codigo(), 3004);
         assert_eq!(PhxError::Autorizacao(String::new()).codigo(), 4001);
         assert_eq!(PhxError::EmCarga(String::new()).codigo(), 4002);
+        assert_eq!(PhxError::EmTransacao(String::new()).codigo(), 4005);
+        assert_eq!(PhxError::TransacaoAbortada(String::new()).codigo(), 6002);
         assert_eq!(PhxError::Redireciona(String::new()).codigo(), 4003);
         assert_eq!(PhxError::SpareEmEspera(String::new()).codigo(), 4004);
         assert_eq!(PhxError::Io(std::io::Error::other("x")).codigo(), 5001);
@@ -347,6 +380,18 @@ mod testes_codigo {
         // entre ele e «acesso negado», que nao muda por esperar.
         assert!(PhxError::EmCarga(String::new()).adianta_repetir());
         assert_eq!(PhxError::EmCarga(String::new()).classe(), "acesso");
+        // «Em transacao» e passageiro pelo mesmo motivo, e por isso e da mesma
+        // familia: quem segura vai soltar no `COMMIT` ou no `ROLLBACK`.
+        assert!(PhxError::EmTransacao(String::new()).adianta_repetir());
+        assert_eq!(PhxError::EmTransacao(String::new()).classe(), "acesso");
+        // Ja a transacao abortada NAO adianta repetir: o pedido nao e o
+        // problema, e insistir nele so gasta o servidor. O caminho e o
+        // `ROLLBACK`.
+        assert!(!PhxError::TransacaoAbortada(String::new()).adianta_repetir());
+        assert_eq!(
+            PhxError::TransacaoAbortada(String::new()).classe(),
+            "execucao"
+        );
         assert!(!PhxError::Autorizacao(String::new()).adianta_repetir());
         // Redirecionado: repetir AQUI da a mesma resposta -- o que adianta e
         // ir ao endereco que a mensagem aponta.

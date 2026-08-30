@@ -1027,8 +1027,21 @@ pub const TETO_FRASE_REPETIDA: usize = 0;
 /// `diagrama-er.js` (2). O que sobra e o `index.html` inteiro, e ele ficou de
 /// fora de proposito: quatro frentes o estavam editando ao mesmo tempo, e
 /// mexer nos 1.806 no meio disso trocaria traducao por conflito.
-pub const TETO: usize = 1_806;
-
+/// A frente das transacoes, medindo sobre a base 1.996 dela, chegou a 1.961: a tela de *Gestao de transacoes*
+/// foi reescrita inteira, e os **35** textos cravados dela sairam junto. A
+/// tela velha era um caso de manual do que este conferidor existe para pegar:
+/// paragrafos picados por `<b>` e `<code>`, com pedacos como «, e por isso
+/// esta tela nao tem uma lista de transacoes abertas para mostrar» -- pedaco
+/// de frase que **nao se traduz**, porque a ordem das palavras muda de lingua
+/// para lingua. A tela nova tem 43 chaves de fabrica, cada uma uma frase
+/// INTEIRA, e a enfase entra como marca.
+/// 1.806 -> 1.771 na integracao da frente das transacoes. Nenhum dos dois
+/// lados do merge tinha este numero, e nao tinham como ter: a frente media
+/// 1.961 sobre a base 1.996 dela, a integracao anterior tinha deixado 1.806, e
+/// a tela de transacoes -- escrita inteira pela fabrica -- derrubou mais 35.
+/// Escolher um dos dois lados seria regressao silenciosa; o valor saiu de rodar
+/// o conferidor depois do merge.
+pub const TETO: usize = 1_771;
 #[cfg(test)]
 mod testes {
     use std::collections::HashSet;

@@ -2185,6 +2185,8 @@ const DEMO = {
     recursos:{durabilidade:"por_lote", exclusao_na_janela:false,
       lote_operacoes:200, lote_milissegundos:200,
       cache_paginas:2048, diario_volume_mib:0, carga_prazo_min:30, memoria_max_mb:0,
+      transacao_prazo_min:5, transacao_max_linhas:100000,
+      transacao_lock_timeout_ms:500, transacao_statement_ms:0,
       threads:0, cpu_percentual:100, nucleos_efetivos:8, conexoes_max:64, usuarios_max:0},
     seguranca:{comandos_proibidos:["excluir"], bases_proibidas:[], tentativas_ate_bloquear:5,
       janela_minutos:10, bloqueio_minutos:60, blacklist:"blacklist.json", firewall:false},
@@ -2217,6 +2219,10 @@ const DEMO = {
       {campo:"recursos.cpu_percentual",tipo:"inteiro",a_quente:true},
       {campo:"recursos.conexoes_max",tipo:"inteiro",a_quente:false},
       {campo:"recursos.carga_prazo_min",tipo:"inteiro",a_quente:false},
+      {campo:"recursos.transacao_prazo_min",tipo:"inteiro",a_quente:false},
+      {campo:"recursos.transacao_max_linhas",tipo:"inteiro",a_quente:false},
+      {campo:"recursos.transacao_lock_timeout_ms",tipo:"inteiro",a_quente:false},
+      {campo:"recursos.transacao_statement_ms",tipo:"inteiro",a_quente:false},
       {campo:"recursos.memoria_max_mb",tipo:"inteiro",a_quente:false},
       {campo:"recursos.usuarios_max",tipo:"inteiro",a_quente:false},
       {campo:"profiler.arquivo_mib",tipo:"inteiro",a_quente:true},
@@ -6255,6 +6261,10 @@ const ROTULO_AJUSTE = {
   "recursos.cache_paginas": "páginas do .ndx em RAM",
   "recursos.diario_volume_mib": "volume do diário, em MiB",
   "recursos.carga_prazo_min": "prazo da carga, em minutos",
+  "recursos.transacao_prazo_min": "prazo da transação, em minutos",
+  "recursos.transacao_max_linhas": "teto de linhas por transação",
+  "recursos.transacao_lock_timeout_ms": "espera por uma trava, em ms",
+  "recursos.transacao_statement_ms": "prazo de uma operação, em ms",
   "recursos.memoria_max_mb": "teto das tabelas em RAM, em MB",
   "recursos.threads": "linhas de execução",
   "recursos.cpu_percentual": "percentual de CPU",
@@ -6321,6 +6331,9 @@ const GRUPOS_AJUSTE = [
    ["recursos.durabilidade", "recursos.exclusao_na_janela",
     "recursos.lote_operacoes", "recursos.lote_milissegundos",
     "recursos.diario_volume_mib", "recursos.carga_prazo_min", "espelho", "somente_leitura"]],
+  ["Transações",
+   ["recursos.transacao_prazo_min", "recursos.transacao_max_linhas",
+    "recursos.transacao_lock_timeout_ms", "recursos.transacao_statement_ms"]],
   ["Memória e CPU",
    ["recursos.cache_paginas", "recursos.memoria_max_mb", "recursos.threads",
     "recursos.cpu_percentual"]],
@@ -6984,60 +6997,110 @@ function chaveEmPino(c) {
 }
 
 /* ==================================================== Gestão de transações
-   Uma tela que diz a verdade em vez de um botao apagado: o que ja existe hoje
-   (o desfazer de uma insercao, o diario por tabela) e o que nao existe (commit
-   e rollback de varias operacoes). Sem isto, "livro-razao" e conversa. */
+   A tela ficou de fora enquanto nada existia -- mostrar uma lista vazia daria
+   a entender que o mecanismo existia e estava parado. Agora ele existe, e ela
+   mostra o que ele é: o nível de isolamento pelo nome certo, quem está com o
+   quê, e o que continua NÃO existindo.
+
+   Todo texto daqui passa pela fábrica de idiomas. A tela anterior tinha 34
+   textos cravados; eles saíram junto com ela, e a catraca do conferidor desceu
+   no mesmo commit. */
 
 async function verTransacoes() {
-  // O espelho e por servidor, entao a ficha le a configuracao DESTE em vez de
-  // dizer "se ligado no config" -- que e verdade em toda parte e informacao em
-  // lugar nenhum.
-  let espelho = null;
-  try { espelho = !!(await api("config")).espelho; } catch (_) { /* sem sessão */ }
+  let dados = null, erro = "";
+  try {
+    dados = await api("transacoes");
+  } catch (e) {
+    // Quem não tem `administrar` não vê o movimento dos outros, e isso é
+    // decisão de permissão e não falha: a tela diz, e continua mostrando o
+    // que não depende de poder nenhum.
+    erro = String(e && e.message || e);
+  }
+  let minha = null;
+  try { minha = await api("transacao"); } catch (_) { /* sem sessão */ }
 
-  folha("Gestão de transações", "o que existe hoje, o que falta e por quê",
+  folha(txt("tela.mi_gestao_transacoes", "Gestão de transações"),
+        txt("tela.tx_sub", "o que existe, quem segura o quê, e o que não existe"),
     `<div class="fichas">
-       <div class="ficha"><div class="v">não</div><div class="r">commit/rollback</div>
-         <div class="u">de várias operações</div></div>
-       <div class="ficha"><div class="v">sim</div><div class="r">desfazer da inserção</div>
-         <div class="u">se um índice recusar</div></div>
-       <div class="ficha"><div class="v">sim</div><div class="r">diário .log</div>
-         <div class="u">por tabela</div></div>
-       <div class="ficha"><div class="v">${espelho === null ? "—" : espelho ? "sim" : "não"}</div>
-         <div class="r">espelho .bkp</div>
-         <div class="u">neste servidor</div></div>
+       <div class="ficha"><div class="v">${esc(String((dados && dados.total) ?? "—"))}</div>
+         <div class="r">${esc(txt("tela.tx_abertas", "transações abertas"))}</div>
+         <div class="u">${esc(txt("tela.tx_agora", "neste servidor, agora"))}</div></div>
+       <div class="ficha"><div class="v">${esc((minha && minha.transaction_state) || "IDLE")}</div>
+         <div class="r">${esc(txt("tela.tx_esta_sessao", "esta sessão"))}</div>
+         <div class="u">${esc(txt("tela.tx_pela_web", "a web não abre transação"))}</div></div>
+       <div class="ficha"><div class="v">AUTO</div>
+         <div class="r">${esc(txt("tela.tx_lock_padrao", "modo de trava padrão"))}</div>
+         <div class="u">${esc(txt("tela.tx_lock_padrao_u", "intenção na tabela, exclusiva na linha"))}</div></div>
+       <div class="ficha"><div class="v">DYNAMIC</div>
+         <div class="r">${esc(txt("tela.tx_escopo_padrao", "modo de escopo padrão"))}</div>
+         <div class="u">${esc(txt("tela.tx_escopo_padrao_u", "STRICT se pede"))}</div></div>
      </div>
 
      <div class="nota">
-       <p><strong>Transações de verdade não existem no PhxSql hoje.</strong>
-       Não há <code>BEGIN</code>, <code>COMMIT</code> nem <code>ROLLBACK</code>,
-       e por isso esta tela não tem uma lista de transações abertas para mostrar
-       — mostrar uma vazia daria a entender que o mecanismo existe e está
-       parado.</p>
-
-       <p>O que existe é menor e vale dizer com precisão:</p>
-       <ul>
-         <li><b>A inserção se desfaz sozinha.</b> Se a linha entra no
-         <code>.reg</code> e um índice único recusa a chave, o registro gravado
-         é desfeito antes do erro voltar. É atômico dentro de <em>uma</em>
-         operação, não entre várias.</li>
-         <li><b>Uma trava global serializa tudo.</b> Cada escrita toma o mesmo
-         <code>Mutex</code>, então duas conexões nunca escrevem ao mesmo tempo.
-         Isso dá isolamento, não durabilidade transacional.</li>
-         <li><b>O <code>.log</code> registra o que aconteceu</b>, por tabela,
-         e serve para auditar — mas não guarda a imagem anterior da linha,
-         então não dá para desfazer por ele.</li>
-       </ul>
-
-       <p><strong>O que falta, em ordem:</strong> um journal com a imagem
-       anterior de cada slot tocado; um identificador de transação carregado na
-       sessão; e o <code>COMMIT</code> que troca o journal por um marco no
-       disco. É o furo que o uso como livro-razão — a
-       <em>blockchain</em> e o correio — exigiria fechar primeiro, e por isso
-       os dois estão marcados como planejados.</p>
+       <p>${marcado(txt("tela.tx_isolamento_a", "**O nível de isolamento, sem enfeite:** escrita serializável por tabela, leitura confirmada e não bloqueante, sem leitura repetível."))}
+          ${marcado(txt("tela.tx_isolamento_b", "**Não é ANSI SERIALIZABLE** e não se chama assim: não há leitura repetível, e a transação não vê as próprias escritas."))}</p>
+       <p>${marcado(txt("tela.tx_nada_no_disco_a", "**Nada vai a disco antes do COMMIT.** A transação empilha o conjunto de escrita em RAM; desfazer é jogar a lista fora."))}
+          ${marcado(txt("tela.tx_nada_no_disco_b", "Nenhum slot queimado, nenhum rowid consumido -- e é por isso que quem lê nunca vê dado não confirmado nem espera por quem escreve."))}</p>
      </div>
 
-     <p class="leg">O estado de cada pedido está em <code>docs/PENDENCIAS.md</code>.</p>`);
+     <h3>${esc(txt("tela.tx_abertas_titulo", "Transações abertas"))}</h3>
+     ${erro ? `<p class="leg">${esc(erro)}</p>` : listaDeTransacoes(dados)}
+
+     <h3>${esc(txt("tela.tx_estados_titulo", "A máquina de estados"))}</h3>
+     <p class="leg">${marcado(txt("tela.tx_estados_a", "`IDLE`, `ACTIVE`, `COMMITTING`, `COMMITTED` -- ou `ROLLING_BACK` e `ROLLED_BACK`."))} ${marcado(txt("tela.tx_estados_b", "Depois de um erro de TRANSAÇÃO ela vai para `ABORT_ONLY`: ali o COMMIT **recusa** em vez de confirmar trabalho meio inválido, e só o ROLLBACK passa."))}</p>
+     <p class="leg">${marcado(txt("tela.tx_classes_a", "Erro de **instrução** -- chave duplicada, tipo errado -- cancela a instrução, e a transação segue `ACTIVE`."))} ${marcado(txt("tela.tx_classes_b", "Erro de **transação** leva a `ABORT_ONLY`, e a queda da conexão desfaz sozinha. O erro diz qual é pelo código: `4005` e `6002`."))}</p>
+
+     <h3>${esc(txt("tela.tx_abertura_titulo", "A abertura declarada"))}</h3>
+     <pre>BEGIN TRANSACTION
+  SCOPE (clientes, pedidos, pediditens, estoque)
+  SCOPE MODE STRICT
+  TIMEOUT 5s
+  LOCK TIMEOUT 500ms
+  STATEMENT TIMEOUT 2s
+  LOCK MODE AUTO;</pre>
+     <p class="leg">${marcado(txt("tela.tx_abertura_a", "Parâmetros **nomeados**, e as cláusulas **não têm ordem**: quem escreve TIMEOUT antes de SCOPE não está errado."))} ${marcado(txt("tela.tx_abertura_b", "Declarar o escopo é o que paga pela trava de linha: as tabelas conhecidas na abertura são tomadas sempre na mesma ordem canônica."))}
+        ${marcado(txt("tela.tx_abertura_c", "**Sem SCOPE nenhum, nada muda** -- guarda nova entra pedida, e nunca imposta."))}</p>
+     <p class="leg">${marcado(txt("tela.tx_nao_promete", "E o que ele **não** promete: a ordem canônica mata o ciclo entre TABELAS; entre LINHAS ele continua possível, e a resposta é o `LOCK TIMEOUT`."))} ${marcado(txt("tela.tx_espera_limitada", "Espera limitada e erro nomeado, nunca uma linha de execução pendurada."))}</p>
+
+     <h3>${esc(txt("tela.tx_falta_titulo", "O que NÃO existe, e o motivo"))}</h3>
+     <ul class="leg">
+       <li>${marcado(txt("tela.tx_sem_mvcc_a", "**MVCC.** Aqui o rowid **é** o endereço. Uma segunda versão da linha pede um segundo slot, logo um segundo rowid."))} ${marcado(txt("tela.tx_sem_mvcc_b", "Isso quebra a ordem de digitação **e** a replicação, que para quando o rowid diverge. A metade que se quer dele -- leitor que não bloqueia -- já está entregue."))}</li>
+       <li>${marcado(txt("tela.tx_sem_ddl", "**DDL dentro de transação.** Um `CREATE TABLE` no meio dela é **recusado**, e não confirma a transação aberta pelas costas -- que é o que outros motores fazem."))}</li>
+       <li>${marcado(txt("tela.tx_sem_dois_bancos", "**Transação entre dois databases.** Isso é *two-phase commit*, e é outro projeto: a marca de recuperação mora dentro do diretório do database."))}</li>
+       <li>${marcado(txt("tela.tx_sem_ler_o_proprio", "**Ler o que a própria transação escreveu.** Uma consulta dentro dela não vê o que ela mesma inseriu: o dado está em RAM, e não no disco de onde a leitura vem."))}</li>
+     </ul>
+     <p class="leg">${marcado(txt("tela.tx_docs", "O desenho inteiro, com o que foi recusado e por quê, está em `docs/TRANSACOES.md`. Os números estão em `docs/DESEMPENHO.md`."))}</p>`);
+}
+
+/** A lista de transações abertas -- e ela mostra o que é MEDIDO.
+ *
+ *  Declarado e efetivo aparecem separados de propósito: quem declarou quatro
+ *  tabelas e ficou com seis precisa ver quais duas entraram sem ele pedir. */
+function listaDeTransacoes(dados) {
+  const linhas = (dados && dados.transacoes) || [];
+  if (!linhas.length) return `<p class="leg">${esc(txt("tela.tx_vazia", "Nenhuma transação aberta agora."))}</p>`;
+  const cab = [
+    ["transaction_id", txt("tela.tx_c_id", "id")],
+    ["usuario", txt("tela.tx_c_usuario", "usuário")],
+    ["transaction_state", txt("tela.tx_c_estado", "estado")],
+    ["idade_ms", txt("tela.tx_c_idade", "idade (ms)")],
+    ["linhas", txt("tela.tx_c_linhas", "linhas empilhadas")],
+    ["lock_mode", txt("tela.tx_c_lock", "trava")],
+    ["esperando", txt("tela.tx_c_espera", "esperando")],
+  ];
+  const celula = (t, k) => k === "esperando" ? (t.esperando || "—") : String(t[k] ?? "—");
+  const trava = x => `${x.tabela} ${x.trava}` + (x.linhas ? ` (${x.linhas})` : "");
+  return `<div class="rolo"><table>
+    <thead><tr>${cab.map(([, r]) => `<th>${esc(r)}</th>`).join("")}
+      <th>${esc(txt("tela.tx_c_declaradas", "declaradas"))}</th>
+      <th>${esc(txt("tela.tx_c_efetivas", "efetivas"))}</th>
+      <th>${esc(txt("tela.tx_c_travas", "travas"))}</th></tr></thead>
+    <tbody>${linhas.map(t => `<tr>
+      ${cab.map(([k]) => `<td>${esc(celula(t, k))}</td>`).join("")}
+      <td>${esc((t.tabelas_declaradas || []).join(", ") || "—")}</td>
+      <td>${esc((t.tabelas_efetivas || []).join(", ") || "—")}</td>
+      <td>${esc((t.travas || []).map(trava).join(", ") || "—")}</td>
+    </tr>`).join("")}</tbody></table></div>`;
 }
 
 /* ------------------------------------------------------------------ creditos
@@ -12391,6 +12454,14 @@ const DIZ_RECURSO = {
                        "zero = não mexe, e vale o 1 GiB do esquema"],
   carga_prazo_min:    ["minutos que um BULKINSERT dura sem ser renovado",
                        "a segunda rede contra reserva órfã — a primeira é a queda da conexão"],
+  transacao_prazo_min: ["minutos que uma transação aberta dura sem confirmar",
+                       "estourado, ela vai para ABORT_ONLY e as travas saem — quem encerra é o gestor, nunca uma thread morta"],
+  transacao_max_linhas: ["teto de linhas empilhadas numa transação",
+                       "o conjunto de escrita fica em RAM até o COMMIT; estourado, a operação é recusada com erro nomeado"],
+  transacao_lock_timeout_ms: ["quanto uma transação espera por uma trava de outra",
+                       "zero = não espere, recuse na hora; é o que transforma um abraço entre linhas em erro nomeado"],
+  transacao_statement_ms: ["prazo de UMA operação dentro de uma transação",
+                       "zero = sem prazo; vale nos pontos de cancelamento que existem, e o docs/TRANSACOES.md diz onde"],
   memoria_max_mb:     ["teto das tabelas residentes (SelectMemory)",
                        "zero = sem teto; vale no memoria_carregar, que recusa acima dele"],
   threads:            ["linhas de execução do trabalho dividido", "zero = um por núcleo"],

@@ -1179,8 +1179,16 @@ pub unsafe extern "system" fn SQLGetInfo(
             SQL_DATA_SOURCE_NAME => texto(String::new()),
             SQL_SERVER_NAME => texto(servidor),
             SQL_USER_NAME => texto(usuario),
-            // Sem transacoes nesta porta -- dizer SQL_TC_NONE evita que a
-            // ferramenta ofereca um "rollback" que nao existiria.
+            // `SQL_TC_NONE`, e ele deixou de ser a verdade inteira: o
+            // SERVIDOR tem transacao desde a 0.19.0 (`docs/TRANSACOES.md`), e
+            // quem ESTE driver nao tem e o `SQLEndTran` que as dirige.
+            //
+            // Continua sendo a resposta certa enquanto for assim, e por um
+            // motivo que vale mais que a exatidao da palavra: anunciar
+            // `SQL_TC_ALL` faria a ferramenta oferecer um botao de rollback
+            // que este driver ignoraria em silencio -- e um rollback que nao
+            // reverte e pior do que um rollback que nao existe. Trocar isto
+            // pede o `SQLEndTran` implementado, e nao um numero diferente.
             SQL_TXN_CAPABLE => {
                 escrever_num(saida as *mut u16, 0);
                 escrever_num(tamanho_saida, 2);
@@ -1200,8 +1208,13 @@ pub unsafe extern "system" fn SQLGetInfo(
     })
 }
 
-/// Atributos de conexao. Autocommit LIGADO e aceito porque e o unico modo
-/// que existe; desliga-lo prometeria uma transacao que o servidor nao tem.
+/// Atributos de conexao. Autocommit LIGADO e aceito porque e o unico modo que
+/// ESTE DRIVER dirige -- e nao porque o servidor nao saiba fazer o outro.
+///
+/// O servidor tem `BEGIN`/`COMMIT`/`ROLLBACK` desde a 0.19.0; o que falta aqui
+/// e o `SQLEndTran` que os chama. Desligar o autocommit sem ele deixaria a
+/// ferramenta achando que abriu uma transacao que ninguem abriu -- e o
+/// `COMMIT` dela nao confirmaria coisa nenhuma.
 ///
 /// # Safety
 ///
@@ -1226,7 +1239,10 @@ pub unsafe extern "system" fn SQLSetConnectAttr(
                 anotar(
                     id,
                     "HYC00",
-                    "este servidor nao tem transacoes; autocommit nao se desliga",
+                    "este driver ainda nao dirige transacao (falta o \
+                     SQLEndTran), entao o autocommit nao se desliga. O \
+                     servidor tem BEGIN/COMMIT/ROLLBACK: use-os pela porta de \
+                     dados ou pela op sql",
                 );
                 SQL_ERROR
             };

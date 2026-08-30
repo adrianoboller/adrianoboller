@@ -1581,6 +1581,49 @@ pub struct Recursos {
     /// Zero nao desliga: cairia no padrao, porque reserva sem prazo nenhum e
     /// exatamente a que trava a tabela para sempre.
     pub carga_prazo_min: u64,
+    /// Minutos que uma transacao aberta dura sem ser confirmada.
+    ///
+    /// E a SEGUNDA rede contra transacao orfa, exatamente como no
+    /// `carga_prazo_min`: a primeira e a queda da conexao, que desfaz na hora;
+    /// esta pega o soquete pendurado vivo com o cliente morto do outro lado.
+    ///
+    /// Curto de proposito -- uma transacao segura tabelas contra a escrita de
+    /// todo mundo, e ninguem digita por dez minutos com uma transacao aberta.
+    /// Zero nao desliga: cairia no padrao, porque transacao sem prazo nenhum e
+    /// exatamente a que trava a tabela para sempre.
+    pub transacao_prazo_min: u64,
+    /// Teto de linhas empilhadas numa transacao. Zero = sem teto.
+    ///
+    /// O conjunto de escrita inteiro fica em RAM ate o `COMMIT` -- e o preco
+    /// declarado do desenho de «nada vai a disco antes do COMMIT». Estourado,
+    /// a operacao e RECUSADA com erro nomeado e a transacao vai para
+    /// `ABORT_ONLY`: nunca engolida, e nunca vazada para disco pelas costas.
+    pub transacao_max_linhas: u64,
+    /// Quanto uma transacao aceita ESPERAR por uma trava de outra, em ms.
+    ///
+    /// # Por que tres prazos, e nao um
+    ///
+    /// Sao problemas diferentes. O `transacao_prazo_min` limita a transacao
+    /// INTEIRA -- ela nao pode segurar tabela a tarde toda. Este limita a
+    /// espera por OUTRO, que e o que transforma a possibilidade de abraco
+    /// mortal entre linhas num erro nomeado em vez de numa thread pendurada. E
+    /// o `transacao_statement_ms` limita UMA operacao, que pode demorar sem
+    /// que nem a transacao nem a espera tenham estourado.
+    ///
+    /// Zero quer dizer **nao espere**: recusa na hora, que era o desenho
+    /// anterior desta frente e continua sendo uma escolha legitima.
+    pub transacao_lock_timeout_ms: u64,
+    /// Quanto UMA operacao dentro de uma transacao pode levar, em ms.
+    ///
+    /// **Zero = sem prazo**, e esse e o padrao: por o relogio em cima de toda
+    /// operacao mudaria o comportamento de quem nunca pediu isso.
+    ///
+    /// Vale nos PONTOS DE CANCELAMENTO que existem -- os lacos longos que ja
+    /// chamam `Atividade::siga`, como a conversao de uma carga. Uma insercao
+    /// de uma linha nao tem ponto de cancelamento no meio e nao poderia ter:
+    /// parar entre o slot e o indice deixaria a tabela e o indice discordando.
+    /// O `docs/TRANSACOES.md` diz exatamente onde ele morde.
+    pub transacao_statement_ms: u64,
     /// Usuarios DIFERENTES conectados ao mesmo tempo. Zero = sem teto.
     ///
     /// Nao e o mesmo que conexoes: um usuario pode ter varias. Este teto conta
@@ -1617,6 +1660,17 @@ impl Default for Recursos {
             cpu_percentual: 100,
             conexoes_max: 64,
             carga_prazo_min: 30,
+            transacao_prazo_min: 5,
+            // 100.000 linhas de umas duas centenas de bytes dao ~20 MiB de
+            // conjunto de escrita -- folga larga para a carga que motivou esta
+            // frente (2.500 linhas) e teto baixo o bastante para uma transacao
+            // esquecida nao comer a memoria do servidor.
+            transacao_max_linhas: 100_000,
+            // Meio segundo e o numero do proprio exemplo do desenho, e ele e
+            // curto de proposito: quem espera mais que isso por uma linha esta
+            // disputando de verdade, e a resposta certa e o erro nomeado.
+            transacao_lock_timeout_ms: 500,
+            transacao_statement_ms: 0,
             usuarios_max: 0,
             diario_volume_mib: 0,
         }
@@ -1939,6 +1993,29 @@ impl Recursos {
                     padrao.carga_prazo_min
                 }
             },
+            transacao_prazo_min: {
+                let m = r.inteiro_ou("transacao_prazo_min", padrao.transacao_prazo_min as i64);
+                if m > 0 {
+                    m as u64
+                } else {
+                    padrao.transacao_prazo_min
+                }
+            },
+            transacao_max_linhas: r
+                .inteiro_ou("transacao_max_linhas", padrao.transacao_max_linhas as i64)
+                .max(0) as u64,
+            transacao_lock_timeout_ms: r
+                .inteiro_ou(
+                    "transacao_lock_timeout_ms",
+                    padrao.transacao_lock_timeout_ms as i64,
+                )
+                .max(0) as u64,
+            transacao_statement_ms: r
+                .inteiro_ou(
+                    "transacao_statement_ms",
+                    padrao.transacao_statement_ms as i64,
+                )
+                .max(0) as u64,
             diario_volume_mib: r.inteiro_ou("diario_volume_mib", 0).max(0) as u64,
             cache_paginas: r
                 .inteiro_ou("cache_paginas", padrao.cache_paginas as i64)
@@ -1978,6 +2055,22 @@ impl Recursos {
             ("cache_paginas", Json::de_u64(self.cache_paginas as u64)),
             ("diario_volume_mib", Json::de_u64(self.diario_volume_mib)),
             ("carga_prazo_min", Json::de_u64(self.carga_prazo_min)),
+            (
+                "transacao_prazo_min",
+                Json::de_u64(self.transacao_prazo_min),
+            ),
+            (
+                "transacao_max_linhas",
+                Json::de_u64(self.transacao_max_linhas),
+            ),
+            (
+                "transacao_lock_timeout_ms",
+                Json::de_u64(self.transacao_lock_timeout_ms),
+            ),
+            (
+                "transacao_statement_ms",
+                Json::de_u64(self.transacao_statement_ms),
+            ),
             ("memoria_max_mb", Json::de_u64(self.memoria_max_mb)),
             ("threads", Json::de_u64(self.threads as u64)),
             ("cpu_percentual", Json::de_u64(self.cpu_percentual as u64)),
@@ -2142,6 +2235,10 @@ const SECOES_CONHECIDAS: [(&str, &[&str]); 11] = [
             "cpu_percentual",
             "conexoes_max",
             "carga_prazo_min",
+            "transacao_prazo_min",
+            "transacao_max_linhas",
+            "transacao_lock_timeout_ms",
+            "transacao_statement_ms",
             "usuarios_max",
             "diario_volume_mib",
         ],
@@ -2927,6 +3024,21 @@ pub const CAMPOS_EDITAVEIS: &[(&str, TipoDoCampo, bool)] = &[
     ("recursos.cpu_percentual", TipoDoCampo::Inteiro, true),
     ("recursos.conexoes_max", TipoDoCampo::Inteiro, false),
     ("recursos.carga_prazo_min", TipoDoCampo::Inteiro, false),
+    // Os dois da transacao NAO valem a quente, e a razao e a mesma dos outros
+    // tetos de recurso: mudar o teto no meio de uma transacao aberta mudaria a
+    // regra debaixo de quem ja empilhou metade do trabalho.
+    ("recursos.transacao_prazo_min", TipoDoCampo::Inteiro, false),
+    ("recursos.transacao_max_linhas", TipoDoCampo::Inteiro, false),
+    (
+        "recursos.transacao_lock_timeout_ms",
+        TipoDoCampo::Inteiro,
+        false,
+    ),
+    (
+        "recursos.transacao_statement_ms",
+        TipoDoCampo::Inteiro,
+        false,
+    ),
     ("recursos.memoria_max_mb", TipoDoCampo::Inteiro, false),
     ("recursos.usuarios_max", TipoDoCampo::Inteiro, false),
     ("web.sessao_minutos", TipoDoCampo::Inteiro, false),

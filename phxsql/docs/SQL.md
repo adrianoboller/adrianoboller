@@ -126,6 +126,70 @@ esquema, não a linguagem. A primeira é a única reservada pelo parser.
 
 ---
 
+## 2b. `BEGIN` / `COMMIT` / `ROLLBACK` / `SAVEPOINT`
+
+Também são comandos de **sessão**, e pelo mesmo motivo do `BULKINSERT`: a
+transação pertence à **conexão**, não ao texto do comando. Um driver que
+multiplexa conexões quebra a exclusividade sem avisar — e o servidor recusa
+quando a ligação é zero (a porta web, a ponte MCP, o job agendado).
+
+```sql
+BEGIN;                       -- e também BEGIN TRANSACTION, BEGIN WORK,
+START TRANSACTION;           --   START TRANSACTION
+COMMIT;                      -- COMMIT WORK também
+ROLLBACK;
+
+SAVEPOINT antes_do_lote;
+ROLLBACK TO SAVEPOINT antes_do_lote;   -- a palavra SAVEPOINT é facultativa
+RELEASE SAVEPOINT antes_do_lote;
+```
+
+E a abertura declarada, que é o que paga pela trava de linha:
+
+```sql
+BEGIN TRANSACTION
+  SCOPE (clientes, pedidos, pediditens, estoque)
+  SCOPE MODE STRICT          -- DYNAMIC é o padrão
+  TIMEOUT 5s
+  LOCK TIMEOUT 500ms
+  STATEMENT TIMEOUT 2s
+  LOCK MODE AUTO;            -- AUTO, ROW, TABLE ou EXCLUSIVE
+```
+
+**As cláusulas não têm ordem.** Ordem obrigatória é uma regra que existe para
+facilitar o analisador, e o preço dela é pago por quem digita.
+
+### Três coisas que a integração ensinou
+
+**1. O detector de transação vem ANTES do de rotina, e isso é medido.** O
+detector de rotina analisa o texto inteiro pelo léxico comum, e o léxico recusa
+`500ms` — número colado em identificador. Ele erra com `?` antes de o detector
+de transação ser consultado, e um `LOCK TIMEOUT 500ms` nunca chegaria lá.
+Inverter é seguro e não por sorte: o único `BEGIN` que **não** abre transação é
+o do corpo de um `CREATE PROCEDURE p() BEGIN … END`, e esse texto começa por
+`CREATE`.
+
+**2. `500ms` não pode virar `500s`.** A unidade é separada do número só dentro
+de um comando de transação, e só para os quatro sufixos de tempo (`ms`, `s`,
+`m`, `h`). `SELECT 5x` continua sendo o erro que sempre foi, e o resto da
+linguagem não muda um caractere. Há teste: quem lê `500ms` como 500 segundos
+erra por mil vezes, e erra calado.
+
+**3. Sobra depois do comando é erro.** `COMMIT AND CHAIN` não existe aqui, e
+aceitar calado devolveria um `COMMIT` simples a quem pediu encadeamento.
+
+### O que o `sintaxe.rs` faz com eles
+
+Nada — e é de propósito. Eles não são consulta: não têm `FROM`, não produzem
+linha e não dependem de esquema nenhum. Quem cai no analisador de `SELECT` com
+um `BEGIN` na mão escreveu uma forma que nenhum dos dois entende, e a recusa
+**lista as formas que existem** em vez de dizer que a transação não existe.
+
+O desenho inteiro, o nível de isolamento pelo nome certo e o que foi recusado
+estão em [TRANSACOES.md](TRANSACOES.md).
+
+---
+
 ## 3. O que a camada SQL vai ter de resolver, e não tem embaixo
 
 Honestidade sobre o tamanho do trabalho — estas não existem no motor:

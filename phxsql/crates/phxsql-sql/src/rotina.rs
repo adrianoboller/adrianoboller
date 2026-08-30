@@ -1313,10 +1313,11 @@ impl CorpoParser<'_> {
                 pos,
                 "bloco aninhado nao e aceito: um BEGIN … END so",
             )),
-            "START" | "COMMIT" | "ROLLBACK" => Err(lexico::erro(
+            "START" | "COMMIT" | "ROLLBACK" | "SAVEPOINT" => Err(lexico::erro(
                 pos,
-                "nao ha transacao no PhxSql; um corpo que falha no meio deixa \
-                 gravado o que ja gravou, e docs/TRIGGERS.md conta isso",
+                "transacao e comando de SESSAO e nao cabe num corpo de rotina: \
+                 ela pertence a CONEXAO, e o corpo roda dentro de UM pedido. \
+                 Abra a transacao pela conexao e chame a rotina de dentro dela",
             )),
             _ => Err(lexico::erro(
                 pos,

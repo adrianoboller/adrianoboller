@@ -423,13 +423,14 @@ footer p{max-width:var(--medida)}
     <li><a href="#s25"><span class="n">25</span> DbLink</a></li>
     <li><a href="#s26"><span class="n">26</span> Junções</a></li>
     <li><a href="#s27"><span class="n">27</span> SQL, gatilhos e jobs</a></li>
-    <li><a href="#s28"><span class="n">28</span> ODBC, MCP e a Claude</a></li>
-    <li><a href="#s29"><span class="n">29</span> Seis idiomas</a></li>
-    <li><a href="#s30"><span class="n">30</span> Operação</a></li>
-    <li><a href="#s31"><span class="n">31</span> A bancada</a></li>
-    <li><a href="#s32"><span class="n">32</span> O que ele não faz</a></li>
-    <li><a href="#s33"><span class="n">33</span> Decisões</a></li>
-    <li><a href="#s34"><span class="n">34</span> Estado e roteiro</a></li>
+    <li><a href="#s28"><span class="n">28</span> Transações: o que elas garantem</a></li>
+    <li><a href="#s29"><span class="n">29</span> ODBC, MCP e a Claude</a></li>
+    <li><a href="#s30"><span class="n">30</span> Seis idiomas</a></li>
+    <li><a href="#s31"><span class="n">31</span> Operação</a></li>
+    <li><a href="#s32"><span class="n">32</span> A bancada</a></li>
+    <li><a href="#s33"><span class="n">33</span> O que ele não faz</a></li>
+    <li><a href="#s34"><span class="n">34</span> Decisões</a></li>
+    <li><a href="#s35"><span class="n">35</span> Estado e roteiro</a></li>
   </ol>
 </details>
 
@@ -461,9 +462,9 @@ footer p{max-width:var(--medida)}
   <a href="#s19">modo multitela</a>, as
   <a href="#s20">grades com filtro, congelar e exportar a vista</a>,
   a <a href="#s27">camada SQL com gatilhos, procedimentos e jobs</a>, o
-  <a href="#s28">driver ODBC, o MCP e a integração com a Claude</a>, e a
-  <a href="#s29">interface em seis idiomas</a>. O que ele
-  <strong>não</strong> faz está na <a href="#s32">seção 32</a>, sem rodeio.</p>
+  <a href="#s29">driver ODBC, o MCP e a integração com a Claude</a>, e a
+  <a href="#s30">interface em seis idiomas</a>. O que ele
+  <strong>não</strong> faz está na <a href="#s33">seção 32</a>, sem rodeio.</p>
 
   <div class="acoes sem-impressao">
     <button class="botao" type="button" id="btBaixar">⤓ Baixar em PDF</button>
@@ -474,12 +475,12 @@ footer p{max-width:var(--medida)}
 
   <div class="painel">
   <!-- projeto:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-    <div><div class="v">112.554</div><div class="r">linhas de Rust</div></div>
-    <div><div class="v">1.383</div><div class="r">testes</div></div>
+    <div><div class="v">119.020</div><div class="r">linhas de Rust</div></div>
+    <div><div class="v">1.436</div><div class="r">testes</div></div>
     <div><div class="v">0</div><div class="r">dependências</div></div>
     <div><div class="v">8</div><div class="r">crates</div></div>
     <div><div class="v">7</div><div class="r">arquivos/tabela</div></div>
-    <div><div class="v">33.179</div><div class="r">linhas de doc</div></div>
+    <div><div class="v">34.173</div><div class="r">linhas de doc</div></div>
   <!-- projeto:fim -->
   </div>
 </header>
@@ -1568,8 +1569,9 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
     <code>.lgpd</code> <b>nunca numa inserção</b> — a trilha registra alteração e
     acesso, e os outros três diários já cobrem incluir e excluir
     (<a href="#s13">seção 13</a>). A aresta tracejada em vermelho é a que importa:
-    sem transações ainda, o desfazer explícito é o que impede uma falha de índice
-    de deixar a tabela inconsistente.</figcaption>
+    o desfazer explícito é o que impede uma falha de índice
+    de deixar a tabela inconsistente <em>numa escrita solta</em> — dentro de uma
+    transação nada disso chegou ao disco ainda (<a href="#s28">seção 28</a>).</figcaption>
   </figure>
 
   <h3>Uma linha por vez, ou mil de uma vez</h3>
@@ -1589,9 +1591,11 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   tabela e reaproveita as páginas quentes do índice.</p>
 
   <div class="nota">
-    <span class="t">Não há transação, e o lote não muda isso</span>
-    <p>Se a linha 700 de mil falhar, as 699 anteriores <strong>ficam
-    gravadas</strong>. Não há como desfazer: o <code>.reg</code> não reaproveita
+    <span class="t">O lote <strong>não</strong> é uma transação, e isso não mudou</span>
+    <p>Transação existe desde a 0.18.0 (<a href="#s28">seção 28</a>), e o
+    <code>inserir_lote</code> continua sendo outra coisa: <strong>ele grava
+    enquanto anda</strong>. Se a linha 700 de mil falhar, as 699 anteriores
+    <strong>ficam gravadas</strong>. Não há como desfazer: o <code>.reg</code> não reaproveita
     slot, então «desfazer» seria deixar 699 buracos. Por isso o padrão é
     <strong>parar</strong> na primeira recusada — entre uma carga que para na
     linha 700 e uma que grava 999 com uma faltando no meio, a primeira é a que dá
@@ -1963,9 +1967,9 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
           <text x="16" y="262" font-size="11.5" opacity=".75">
             <tspan font-weight="600">Toda</tspan> tentativa entra no log, inclusive as três recusadas — é justamente quem bateu na porta e não entrou que interessa.
           </text>
-          <text x="16" y="288" font-size="11" opacity=".6">A trava única existe porque o motor ainda não tem travas de arquivo nem de registro.</text>
+          <text x="16" y="288" font-size="11" opacity=".6">A trava única serializa os dados; a transação põe travas de tabela e de linha por cima dela.</text>
           <text x="16" y="306" font-size="11" opacity=".6">Conexões são aceitas em paralelo; as operações se enfileiram.</text>
-          <text x="16" y="308" font-size="11" opacity=".6">É lento sob carga e é correto — o contrário seria rápido e corrompido. Travas finas entram junto com as transações.</text>
+          <text x="16" y="308" font-size="11" opacity=".6">É lento sob carga e é correto — o contrário seria rápido e corrompido. Concorrência fina continua sendo outra frente.</text>
           <text x="16" y="330" font-size="11" opacity=".6">O protocolo trafega em claro: a porta 5000 pertence dentro de VPN ou IPSec, nunca exposta na Internet.</text>
         </g>
       </svg>
@@ -3010,15 +3014,24 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
 
   <h3>O que “consistente” quer dizer, exatamente</h3>
 
-  <p>Não há transações, então a palavra precisa ser precisa: <strong>nenhuma escrita
-  acontece durante a cópia</strong>. A operação <code>backup</code> segura a trava única
-  de dados do início ao fim, e como toda escrita passa por essa mesma trava, não há
-  registro pela metade no meio do caminho.</p>
+  <p>A palavra precisa ser precisa: <strong>nenhuma escrita acontece durante a
+  cópia</strong>. A operação <code>backup</code> segura a trava única de dados do
+  início ao fim, e como toda escrita passa por essa mesma trava, não há registro
+  pela metade no meio do caminho.</p>
 
-  <p>É menos do que um <em>snapshot</em> de verdade — uma escrita longa faz o backup
-  esperar, e o backup faz a escrita esperar. É o que dá para prometer sem mentir
-  enquanto não houver <code>commit</code>. Pela linha de comando não há nem isso: ela
-  não segura trava nenhuma, e por isso só serve com o servidor parado.</p>
+  <p><strong>A transação reforça esse argumento em vez de o complicar.</strong>
+  Como nada vai a disco antes do <code>COMMIT</code> (<a href="#s28">seção
+  28</a>), uma transação aberta durante a cópia não tem o que aparecer pela
+  metade — o trabalho dela está em RAM —, e um <code>COMMIT</code> inteiro roda
+  dentro da <em>mesma</em> trava que o backup segura: ou ele passou antes da
+  cópia, ou passa depois. A marca <code>.tx</code> viaja junto de propósito,
+  porque restaurar uma cópia feita no meio de um commit tem de reencontrar o
+  ponto de compromisso.</p>
+
+  <p>É menos do que um <em>snapshot</em> de verdade — uma escrita longa faz o
+  backup esperar, e o backup faz a escrita esperar. Pela linha de comando não há
+  nem isso: ela não segura trava nenhuma, e por isso só serve com o servidor
+  parado.</p>
 
   <div class="nota">
     <p>O <code>config.json</code> <strong>não</strong> vai na cópia. Ele tem o token e os
@@ -3319,7 +3332,7 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
         <tr><td>Configurações dos usuários</td><td>o cadastro e o poder de cada um sobre cada base</td><td><code>usuarios</code></td></tr>
         <tr><td>Diretivas do banco</td><td>os seis portões na ordem em que fecham, e quem alcança</td><td><code>config</code>, <code>usuarios</code>, <code>quem_sou</code></td></tr>
         <tr><td>Backup e restauração</td><td>copiar com manifesto, conferir uma cópia</td><td><code>backup</code>, <code>conferir_backup</code></td></tr>
-        <tr><td>Transações</td><td>o que existe hoje e o que falta — <em>mostra a ausência</em></td><td><code>config</code></td></tr>
+        <tr><td>Transações</td><td>as abertas agora, com escopo declarado e efetivo, travas e o que cada uma espera</td><td><code>transacoes</code>, <code>transacao</code></td></tr>
         <tr><td>Editor de menu</td><td>troca o nome exibido de qualquer item</td><td>o navegador de quem mexeu</td></tr>
         <tr><td>Painel</td><td>o servidor inteiro: sete gráficos e oito números</td><td><code>painel</code></td></tr>
         <tr><td>Consulta</td><td><code>SelectMemory</code> sobre uma tabela residente</td><td><code>memoria</code>, <code>SelectMemory</code></td></tr>
@@ -3509,18 +3522,25 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   dois operadores podem querer nomes diferentes, e nenhum dos dois deveria mudar
   a tela do outro.</p>
 
-  <h3>Transações: uma tela que diz que não existem</h3>
+  <h3>Transações: a tela que mostrava a ausência agora mostra o movimento</h3>
 
-  <p>O menu <em>Ferramentas</em> tem <em>Gestão de transações</em>, e o que ela
-  mostra é a ausência. Não há <code>BEGIN</code>, <code>COMMIT</code> nem
-  <code>ROLLBACK</code>, então a tela não traz uma lista de transações abertas:
-  uma lista vazia daria a entender que o mecanismo existe e está parado. Ela
-  lista o que <em>de fato</em> existe — a inserção que se desfaz sozinha quando
-  um índice único recusa a chave, a trava global que serializa as escritas, o
-  <code>.log</code> que audita sem guardar a imagem anterior — e o que falta,
-  na ordem: journal com a imagem anterior de cada slot, identificador de
-  transação na sessão, e o <code>COMMIT</code> que troca o journal por um marco
-  no disco.</p>
+  <p>Por muitas versões o menu <em>Ferramentas</em> tinha <em>Gestão de
+  transações</em> e o que ela mostrava era <strong>a ausência</strong> — de
+  propósito, porque uma lista vazia daria a entender que o mecanismo existe e
+  está parado. <strong>Ela foi reescrita inteira</strong>: hoje lista as
+  transações abertas com id, dono, estado, idade, linhas empilhadas, modo de
+  trava, o que cada uma está esperando, e as tabelas
+  <strong>declaradas e efetivas em colunas separadas</strong>.</p>
+
+  <p>Ela também diz o que <em>não</em> existe, e o motivo de cada um — MVCC, DDL
+  dentro da transação, transação entre dois databases, e ler o que a própria
+  transação escreveu. E diz que <strong>a web não abre transação</strong>: o
+  navegador não tem conexão persistente, e transação por conexão exige uma.</p>
+
+  <p>Todo texto dela passa pela fábrica de idiomas. A tela anterior tinha 34
+  textos cravados no fonte; eles saíram junto com ela, e a catraca do conferidor
+  desceu no mesmo <em>commit</em> — que é a regra: quem traduz um punhado baixa a
+  catraca ali mesmo, porque catraca frouxa não segura nada.</p>
 
   <h3>A marca entra sem trazer dependência</h3>
 
@@ -4961,6 +4981,241 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
 <!-- ============================= 28 ============================= -->
 <section id="s28">
   <div class="rotulo"><span class="num">28</span><span class="traco"></span></div>
+  <h2>Transações: o que elas garantem, e o que não prometem</h2>
+
+  <p>Esta seção substitui uma que dizia <em>«não há transação»</em>. Hoje há —
+  pelo protocolo e pelo SQL —, e a parte útil desta página não é o anúncio: é a
+  <strong>fronteira</strong>. Uma transação que promete mais do que entrega é
+  pior que nenhuma, porque quem confia nela para de conferir.</p>
+
+  <div class="nota">
+    <span class="t">A regra que decide o desenho inteiro</span>
+    <p><strong>Nada vai a disco antes do <code>COMMIT</code>.</strong> A
+    transação empilha o conjunto de escrita em RAM; desfazer é <em>jogar a lista
+    fora</em> — zero byte de trabalho. Nenhum slot queimado, nenhum rowid
+    consumido, e a <strong>ordem de digitação intacta</strong>, que é a regra
+    pétrea desta casa e a razão de o desenho ser este e não outro.</p>
+    <p>Ela também paga uma garantia que costuma custar MVCC: como não existe
+    escrita não confirmada em lugar nenhum, <strong>quem lê nunca vê dado
+    sujo e nunca espera por quem escreve</strong>.</p>
+  </div>
+
+  <h3>A abertura declara o que vai tocar, e por quanto tempo</h3>
+
+  <pre class="codigo"><code>BEGIN TRANSACTION
+  SCOPE (clientes, pedidos, pediditens, estoque)
+  SCOPE MODE STRICT        -- DYNAMIC é o padrão
+  TIMEOUT 5s               -- a transação inteira
+  LOCK TIMEOUT 500ms       -- quanto se aceita esperar por outro
+  STATEMENT TIMEOUT 2s     -- quanto uma operação pode levar
+  LOCK MODE AUTO;          -- AUTO, ROW, TABLE ou EXCLUSIVE</code></pre>
+
+  <p>Parâmetros <strong>nomeados</strong>, e cláusulas <strong>sem ordem</strong>.
+  A forma posicional foi recusada com o motivo escrito: <code>Transacao(a, b, c,
+  5s)</code> não estende — onde caberia o segundo prazo? — e mistura tabela com
+  duração na mesma lista. Os três prazos são três problemas diferentes, e por
+  isso são três palavras diferentes.</p>
+
+  <p><strong>Quem encerra é o gestor da transação, nunca a morte de uma linha de
+  execução.</strong> Estourado o prazo, ela vai para <code>ABORT_ONLY</code>,
+  recusa operação nova, desfaz, solta as travas e responde com um erro
+  <em>nomeado</em> que carrega o número. Matar a <em>thread</em> deixaria estado
+  interno pela metade.</p>
+
+  <h3>Por que <code>AUTO</code> é o padrão: 1,55×, e a disputa era imaginária</h3>
+
+  <p>O caso que matou o exclusivo-por-padrão é o do balcão: 500 caixas vendendo,
+  um mexe no pedido 9001 do produto 100 e outro no 18223 do 987. Não há conflito
+  nenhum — e uma trava de tabela <em>criaria</em> um. Em <code>AUTO</code> a
+  transação toma <strong>intenção na tabela e exclusiva na linha</strong>.</p>
+
+  <div class="rolo">
+    <table>
+      <thead><tr><th>64 caixas, cada um numa linha diferente</th><th>tempo</th><th>passaram</th><th>barrados</th></tr></thead>
+      <tbody>
+        <tr><td><code>LOCK MODE AUTO</code></td><td class="num"><strong>50,5&#8201;ms</strong></td><td class="num">64</td><td class="num">0</td></tr>
+        <tr><td><code>LOCK MODE EXCLUSIVE</code></td><td class="num">78,4&#8201;ms</td><td class="num">64</td><td class="num">0</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>Nenhum dos dois perde trabalho: o <code>EXCLUSIVE</code> não recusa ninguém,
+  ele <strong>serializa</strong>. O número é o preço de uma disputa que não
+  existia. O <code>INSERT</code>, esse, trava o <strong>fim da tabela</strong> e
+  não uma linha — ali a disputa é real, porque o próximo slot é um só.</p>
+
+  <div class="nota nao">
+    <span class="t">O que a declaração compra, e o que ela <em>não</em> compra</span>
+    <p>Com as tabelas conhecidas na abertura, o gestor toma as travas sempre na
+    <strong>mesma ordem canônica</strong>, e o ciclo clássico — A pega
+    <em>pedidos</em>→<em>estoque</em> enquanto B pega
+    <em>estoque</em>→<em>pedidos</em> — deixa de existir.</p>
+    <p><strong>E aqui a página não vende o que não tem:</strong> a ordenação mata
+    o ciclo entre <em>tabelas</em>. Entre <em>linhas da mesma tabela</em> ele
+    continua possível — A trava a 5 e depois a 9, B trava a 9 e depois a 5. Para
+    esse caso a resposta é o <code>LOCK TIMEOUT</code>: espera limitada e erro
+    nomeado, <strong>nunca</strong> uma linha de execução pendurada. Não se
+    escreve «sem deadlock» neste projeto.</p>
+  </div>
+
+  <h3>Escopo declarado, escopo efetivo — e os dois aparecem separados</h3>
+
+  <p><code>SCOPE MODE DYNAMIC</code> é o padrão: tabela não declarada
+  <em>entra</em>, e a transação avisa. <code>STRICT</code> recusa, e é o que um
+  ERP financeiro quer. A escolha do padrão não é gosto: <strong>guarda nova entra
+  pedida, nunca imposta</strong> — <code>STRICT</code> por padrão quebraria todo
+  cliente já escrito. E <strong>sem <code>SCOPE</code> nenhum, nada muda</strong>,
+  que é o teste que mais importa.</p>
+
+  <p>O escopo <em>efetivo</em> é o declarado mais o que o catálogo alcança: um
+  <strong>gatilho</strong> que grava noutra tabela arrasta essa tabela para
+  dentro. A tela de <em>Gestão de transações</em> mostra os dois em colunas
+  separadas, porque quem declarou quatro e ficou com seis precisa ver quais duas
+  entraram sem ele pedir.</p>
+
+  <p>A <strong>chave estrangeira não contribui</strong> — e isso é honestidade,
+  não descuido: ela é declarada e nunca imposta na gravação
+  (<a href="#s33">seção 33</a>), então <code>Cascata</code> não alcança tabela
+  nenhuma hoje. Há um teste que trava essa afirmação e que falha no dia em que
+  ela mudar.</p>
+
+  <h3>Se a energia cair exatamente aqui</h3>
+
+  <p>A pergunta que cada linha do código teve de responder foi sempre a mesma:
+  <em>se a máquina morrer nesta instrução, ao reabrir o banco consegue dizer, sem
+  ambiguidade, se esta transação foi <code>COMMITTED</code> ou
+  <code>ABORTED</code>?</em></p>
+
+  <p>Quem responde é a marca <code>transacao_&lt;id&gt;.tx</code>, gravada e
+  sincronizada no diretório do database <strong>antes</strong> de a passada tocar
+  em qualquer arquivo de dado. Ela é o <strong>ponto de compromisso</strong>:
+  antes dela a transação não aconteceu; depois dela ela aconteceu e a recuperação
+  a <strong>completa andando para a frente</strong>, nunca desfazendo. Como o
+  rowid é o endereço, reaplicar é idempotente — o slot já ocupado é reconhecido
+  como «já aplicado» e passa adiante.</p>
+
+  <div class="nota">
+    <span class="t">A prova por soquete achou o que dez testes de unidade não achavam</span>
+    <p><code>SIGKILL</code> no meio de um <code>COMMIT</code> de 3.000 linhas
+    levanta a marca de «o índice ficou para trás» — e enquanto ela estiver lá
+    <strong>toda</strong> operação de índice recusa. A recuperação tentava
+    inserir e ouvia «reconstrua com reparar índice»: o commit ficava pela metade e
+    a tabela inutilizável <strong>sem ninguém ser avisado</strong>, porque o
+    servidor subia normalmente. Hoje ela reconstrói o índice antes de completar, e
+    o relatório de arranque <strong>conta</strong> quantos foram.</p>
+    <p>O relatório só imprime linha que ele <em>mede</em>: sem índice
+    reconstruído, não há linha de índice reconstruído.</p>
+  </div>
+
+  <h3>O <em>group commit</em>: 2,63×, e o passo seguinte morreu medido</h3>
+
+  <p>Receita de fora se mede contra o nosso gargalo <strong>antes</strong> de
+  virar plano, e o critério de morte (1,5×) foi acordado <em>antes</em> da
+  medição. O <em>group commit</em> clássico amortiza <code>fsync</code> entre
+  commits <strong>concorrentes</strong> — e a trava única deste servidor nunca
+  tem dois em voo para agrupar. O que havia para amortizar era outra coisa.</p>
+
+  <div class="rolo">
+    <table>
+      <thead><tr><th>um <code>COMMIT</code> de uma linha</th><th>ms</th><th>o que é</th></tr></thead>
+      <tbody>
+        <tr><td>antes</td><td class="num">1,199</td><td><code>fsync</code> da tabela cobrado por commit</td></tr>
+        <tr><td>a marca <code>.tx</code></td><td class="num">0,289</td><td>escrever, sincronizar e apagar o ponto de compromisso</td></tr>
+        <tr><td>a linha</td><td class="num">0,050</td><td>o trabalho de verdade</td></tr>
+        <tr><td><strong>depois</strong></td><td class="num"><strong>0,457</strong></td><td><code>fsync</code> na janela de durabilidade que já existia</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p><strong>2,63×</strong>, e adiar é seguro porque <em>quem decide se a
+  transação aconteceu é a marca, não o <code>fsync</code> da tabela</em> — com a
+  ordem como peça que sustenta tudo: a marca só é apagada <em>depois</em> de a
+  tabela sincronizar. O passo seguinte, agrupar o <code>fsync</code> das marcas,
+  <strong>morre em 1,34×</strong>, abaixo do critério. Recusa registrada com o
+  número, para a ideia não voltar sem medição.</p>
+
+  <h3>Otimista e pessimista: nenhum dos dois é o certo sempre</h3>
+
+  <p>A janela de conflito de escrita já existia — o cliente manda
+  <code>"versao"</code> e o servidor recusa se ela mudou. É controle
+  <em>otimista</em>, e resolve escrita-contra-escrita <strong>sem travar</strong>.
+  A trava de linha é <em>pessimista</em>. Com 64 clientes disputando a
+  <strong>mesma</strong> linha:</p>
+
+  <div class="rolo">
+    <table>
+      <thead><tr><th></th><th>tempo</th><th>gravações</th><th>tentativas gastas</th></tr></thead>
+      <tbody>
+        <tr><td>otimista (<code>versao</code>)</td><td class="num"><strong>28,0&#8201;ms</strong></td><td class="num">64</td><td class="num"><strong>133</strong></td></tr>
+        <tr><td>pessimista (trava de linha)</td><td class="num">71,8&#8201;ms</td><td class="num">64</td><td class="num"><strong>64</strong></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>O otimista ainda ganha em relógio e já gasta 2,1× mais tentativas — e numa
+  segunda rodada gastou <strong>303</strong>. É a <em>subida dessa razão</em>, e
+  não o relógio, que diz quando trocar; o pessimista mediu 64 nas duas rodadas.
+  A instabilidade do otimista é informação, não ruído.</p>
+
+  <h3>O que <strong>não</strong> entrou, com o motivo</h3>
+
+  <div class="rolo">
+    <table>
+      <thead><tr><th>o que não entrou</th><th>por quê</th></tr></thead>
+      <tbody>
+        <tr><td><strong>MVCC</strong></td>
+            <td>aqui o rowid <strong>é</strong> o endereço. Uma segunda versão da linha pede um segundo slot, logo um segundo rowid — e isso quebra a ordem de digitação <em>e</em> a replicação, cujo <code>aplicar_evento</code> para quando o rowid diverge. Não é falta de tempo: é incompatível com o formato</td></tr>
+        <tr><td><strong>WAL, <em>undo log</em>, PageLSN, <em>full-page-write</em>, VACUUM</strong></td>
+            <td>todos existem para o problema que «nada a disco antes do <code>COMMIT</code>» não tem: não há página suja confirmada para refazer nem versão velha para varrer. O slot do <code>.reg</code> pode cruzar a fronteira de um setor, sim — e o CRC-32 torna a escrita rasgada <strong>detectável</strong>, com o espelho <code>.bkp</code> como conserto</td></tr>
+        <tr><td><strong>Detecção de <em>deadlock</em></strong></td>
+            <td>não há grafo de espera entre tabelas para percorrer, porque a ordem canônica impede o ciclo. Impedir é resposta mais forte que detectar — e o que sobra, entre linhas, é o <code>LOCK TIMEOUT</code></td></tr>
+        <tr><td><strong>DDL transacional</strong></td>
+            <td>o <code>ALTER TABLE ADD COLUMN</code> já tem duas fases e um ponto de compromisso próprio; o que falta é o <code>ROLLBACK</code> alcançá-lo. Um <code>CREATE TABLE</code> dentro de uma transação é <strong>recusado</strong>, e não confirma a transação aberta pelas costas — que é o que outros motores fazem</td></tr>
+        <tr><td><strong>Transação entre dois databases</strong></td>
+            <td>isso é <em>two-phase commit</em>, e é outro projeto: a marca de recuperação mora dentro do diretório de um database</td></tr>
+        <tr><td><strong>Ler o que a própria transação escreveu</strong></td>
+            <td>exigiria sobrepor o conjunto de escrita em todo caminho de leitura — o antipadrão do «portão espalhado por quarenta operações». Precisa de um ponto único de leitura antes</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>E o <em>ACID</em>, letra por letra</h3>
+
+  <div class="rolo">
+    <table>
+      <thead><tr><th>letra</th><th>estado</th><th>com precisão</th></tr></thead>
+      <tbody>
+        <tr><td><strong>A</strong> atomicidade</td><td><span class="pino ok">entregue</span></td>
+            <td>o conjunto é aplicado inteiro ou não é aplicado; o <code>ROLLBACK</code> não deixa slot, rowid nem evento; uma queda no meio da passada é completada pela marca</td></tr>
+        <tr><td><strong>I</strong> isolamento</td><td><span class="pino ok">entregue</span></td>
+            <td>com o nome certo: <em>escrita serializável por tabela, leitura confirmada e não bloqueante, sem leitura repetível</em>. <strong>Não é ANSI SERIALIZABLE</strong> e não se chama assim — não há leitura repetível, e a transação não vê as próprias escritas</td></tr>
+        <tr><td><strong>C</strong> consistência</td><td><span class="pino pend">parcial</span></td>
+            <td>tipo, unicidade e gatilhos são conferidos ao empilhar. A <strong>integridade referencial continua não sendo imposta</strong>, e enquanto isso valer o <strong>C</strong> não está inteiro</td></tr>
+        <tr><td><strong>D</strong> durabilidade</td><td><span class="pino ok">entregue</span></td>
+            <td>a marca é sincronizada antes da passada e é o ponto de compromisso. Com <code>durabilidade: sistema</code> quem abre mão é quem configurou, e está escrito</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="nota nao">
+    <span class="t">Continua errado escrever «ACID compliant» sem qualificação</span>
+    <p>A folha de marca afirma <em>«Reliable storage — ACID compliant»</em>. Ela
+    deixou de ser <strong>inteiramente</strong> falsa e não passou a ser
+    verdadeira. O que se pode escrever, e é verdade: <em>atomicidade e
+    durabilidade entregues, isolamento entregue no nível declarado acima,
+    consistência dependente da integridade referencial que o motor ainda não
+    impõe.</em></p>
+  </div>
+
+  <p class="chamada">O desenho inteiro — com cada recusa e o motivo dela — está em
+  <code>docs/TRANSACOES.md</code>; os números, em <code>docs/DESEMPENHO.md</code>
+  §12; e a prova pelo soquete, com o <code>SIGKILL</code> no meio do
+  <code>COMMIT</code>, em <code>bancada/transacoes/provar.py</code>.</p>
+</section>
+
+<!-- ============================= 29 ============================= -->
+<section id="s29">
+  <div class="rotulo"><span class="num">29</span><span class="traco"></span></div>
   <h2>As portas de fora: ODBC, MCP e a Claude</h2>
   <p>Três portas para três públicos que não são o navegador: um programa de
   terceiros, um modelo de linguagem, e a pessoa que prefere escrever. As três
@@ -5069,9 +5324,9 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   de ligar. <strong>O esquema viaja; o dado, não.</strong></p>
 </section>
 
-<!-- ============================= 29 ============================= -->
-<section id="s29">
-  <div class="rotulo"><span class="num">29</span><span class="traco"></span></div>
+<!-- ============================= 30 ============================= -->
+<section id="s30">
+  <div class="rotulo"><span class="num">30</span><span class="traco"></span></div>
   <h2>A interface em seis idiomas</h2>
   <p>Palavra do dono, e ela é pétrea: <em>«o agente multi linguagem deve fazer
   uma revisão constante para manter a possibilidade de mudar entre português,
@@ -5117,10 +5372,10 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   <div class="painel">
 <!-- idiomas:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
     <div><div class="v">6</div><div class="r">idiomas na tabela</div></div>
-    <div><div class="v">755</div><div class="r">textos na fábrica</div></div>
-    <div><div class="v">1.806</div><div class="r">ainda cravados</div></div>
-    <div><div class="v">29%</div><div class="r">da interface</div></div>
-    <div><div class="v">1.806</div><div class="r">catraca (o teto)</div></div>
+    <div><div class="v">799</div><div class="r">textos na fábrica</div></div>
+    <div><div class="v">1.771</div><div class="r">ainda cravados</div></div>
+    <div><div class="v">31%</div><div class="r">da interface</div></div>
+    <div><div class="v">1.771</div><div class="r">catraca (o teto)</div></div>
   <!-- idiomas:fim -->
   </div>
 
@@ -5162,9 +5417,9 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   texto já vem montado).</p>
 </section>
 
-<!-- ============================= 30 ============================= -->
-<section id="s30">
-  <div class="rotulo"><span class="num">30</span><span class="traco"></span></div>
+<!-- ============================= 31 ============================= -->
+<section id="s31">
+  <div class="rotulo"><span class="num">31</span><span class="traco"></span></div>
   <h2>Operação: o que se pergunta quando algo está estranho</h2>
 
 
@@ -5316,9 +5571,9 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   </div>
 </section>
 
-<!-- ============================= 31 ============================= -->
-<section id="s31">
-  <div class="rotulo"><span class="num">31</span><span class="traco"></span></div>
+<!-- ============================= 32 ============================= -->
+<section id="s32">
+  <div class="rotulo"><span class="num">32</span><span class="traco"></span></div>
   <h2>A bancada: dez milhões de linhas, medidas</h2>
 
 
@@ -5937,9 +6192,9 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   seção sai de lá; nenhum foi estimado.</p>
 </section>
 
-<!-- ============================= 32 ============================= -->
-<section id="s32">
-  <div class="rotulo"><span class="num">32</span><span class="traco"></span></div>
+<!-- ============================= 33 ============================= -->
+<section id="s33">
+  <div class="rotulo"><span class="num">33</span><span class="traco"></span></div>
   <h2>O que este motor não faz</h2>
   <p>Esta seção existe porque um dossiê é vitrine, e <strong>vitrine que mente é
   pior que vitrine feia</strong>. Tudo que está aqui é ausência conhecida — não
@@ -5948,20 +6203,20 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   <h3>As quatro que mais doem</h3>
 
   <div class="nota nao">
-    <span class="t">1 — Não há transação, logo não é ACID</span>
-    <p>Não existe <code>BEGIN</code>, <code>COMMIT</code> nem
-    <code>ROLLBACK</code>. Sem eles não há o <strong>A</strong> nem o
-    <strong>I</strong> do ACID. O que existe é durabilidade por CRC, a inserção
-    que desfaz o que gravou quando um índice único recusa a chave, e uma trava
-    global que serializa as escritas.</p>
-    <p>A <strong>folha de marca diz «ACID compliant», e isso continua
-    falso.</strong> Fica registrado aqui, e não escondido: a folha foi feita
-    antes do produto, e o dossiê diz o estado real. O que falta, na ordem:
-    <em>journal</em> com a imagem anterior de cada slot, identificador de
-    transação na sessão, e o <code>COMMIT</code> que troca o journal por um marco
-    no disco. Há uma tela de <em>Gestão de transações</em>, e o que ela mostra é
-    <strong>a ausência</strong> — uma lista vazia daria a entender que o
-    mecanismo existe e está parado.</p>
+    <span class="t">1 — «ACID compliant» ainda não se escreve sem qualificação</span>
+    <p>Esta entrada dizia <em>«não há transação, logo não é ACID»</em>, e essa
+    metade caiu: <code>BEGIN</code>, <code>COMMIT</code>, <code>ROLLBACK</code> e
+    <code>SAVEPOINT</code> existem (<a href="#s28">seção 28</a>), e com eles o
+    <strong>A</strong> e o <strong>I</strong>. O que <em>não</em> caiu é a
+    conclusão sobre a folha de marca.</p>
+    <p><strong>O <em>C</em> é que não está inteiro.</strong> A integridade
+    referencial continua não sendo imposta — a chave estrangeira é catálogo, e
+    <code>Restringir</code> e <code>Cascata</code> são intenção guardada. Enquanto
+    isso valer, <em>«Reliable storage — ACID compliant»</em> continua sendo uma
+    afirmação que este dossiê não repete. O que se pode dizer, e é verdade:
+    atomicidade e durabilidade entregues, isolamento entregue <strong>no nível
+    declarado</strong> — que <strong>não é ANSI SERIALIZABLE</strong> —, e
+    consistência dependente da integridade referencial que falta.</p>
   </div>
 
   <div class="nota nao">
@@ -5995,7 +6250,7 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
     <p>A máquina de idiomas existe desde a 0.17.0 e funciona; o que falta é o
     miolo das telas. O cromo inteiro e a tela de entrada estão nos seis idiomas;
     o resto está em português cravado no fonte. O número é medido, tem catraca
-    que impede subir, e está na <a href="#s29">seção 29</a>.</p>
+    que impede subir, e está na <a href="#s30">seção 29</a>.</p>
   </div>
 
   <h3>E o resto, sem rodeio</h3>
@@ -6006,8 +6261,8 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
       <tbody>
         <tr><td><strong>Concorrência fina</strong></td>
             <td>uma trava única serializa <em>todo</em> acesso a dados. Lento sob carga e correto, em vez de rápido e corrompido — mas prioridade sobre uma fila de um só não é prioridade</td></tr>
-        <tr><td><strong>O ponto único da trava não é único</strong></td>
-            <td>medido: há 14 tomadas da trava de dados no <code>servidor.rs</code> e <strong>13 estão fora</strong> do <code>travar_dados()</code> que a telemetria cronometra. As duas que doem são o despejo do cache e o corpo de um gatilho — que é justamente a atividade longa que o painel existe para mostrar. Enquanto não passarem por ali, o tempo de espera do painel é o de <em>uma parte</em></td></tr>
+        <tr><td><strong>Concorrência fina, de novo</strong></td>
+            <td>a transação pôs travas de tabela e de linha <em>por cima</em> da trava única, e não no lugar dela: duas transações em linhas diferentes não se esbarram, mas as operações continuam se enfileirando embaixo. Transação e paralelismo são frentes diferentes, e confundi-las é o que faz uma prometer a outra</td></tr>
         <tr><td><strong>Compactação</strong></td>
             <td>o formato prevê e <em>mede</em> o espaço morto; o comando não existe. E há número contra: compactar renumeraria rowid, e rowid é <strong>endereço</strong></td></tr>
         <tr><td><strong>Chave estrangeira aplicada</strong></td>
@@ -6045,14 +6300,17 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
     <strong>virou verdade</strong>: a replicação funciona, está medida com quatro
     servidores, e o cluster faz eleição e promoção automática com a escrita
     voltando em 3,9–4,3&#8201;s. <em>«Reliable storage — ACID compliant»</em>
-    <strong>continua falsa</strong>, e continuará enquanto não houver transação.
-    Nenhuma das duas se repete em documento técnico daqui até lá.</p>
+    <strong>deixou de ser inteiramente falsa e não passou a ser verdadeira</strong>:
+    a transação entregou o <strong>A</strong> e o <strong>I</strong>, e o
+    <strong>C</strong> depende da integridade referencial que o motor ainda não
+    impõe. Ela não se repete <em>sem qualificação</em> em documento técnico
+    nenhum daqui até lá.</p>
   </div>
 </section>
 
-<!-- ============================= 33 ============================= -->
-<section id="s33">
-  <div class="rotulo"><span class="num">33</span><span class="traco"></span></div>
+<!-- ============================= 34 ============================= -->
+<section id="s34">
+  <div class="rotulo"><span class="num">34</span><span class="traco"></span></div>
   <h2>Decisões tomadas</h2>
 
 
@@ -6091,9 +6349,29 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
           <td><code>f64</code> não representa 1,10. Dinheiro não perde centavo.</td>
         </tr>
         <tr>
+          <td>Como uma transação desfaz</td>
+          <td><strong>Nada vai a disco antes do <code>COMMIT</code></strong></td>
+          <td>Desfazer é jogar a lista fora: zero byte de trabalho, zero slot queimado, e a <strong>ordem de digitação intacta</strong>. O preço é o teto de linhas em RAM, e ele está no <code>config.json</code>.</td>
+        </tr>
+        <tr>
+          <td>Trava padrão da transação</td>
+          <td><code>AUTO</code>, e <code>EXCLUSIVE</code> se pede</td>
+          <td>Intenção na tabela, exclusiva na linha. Medido: 64 caixas em linhas diferentes custam 50,5&#8201;ms contra 78,4 — <strong>1,55×</strong> pago por uma disputa que não existia.</td>
+        </tr>
+        <tr>
+          <td>Escopo padrão da transação</td>
+          <td><code>DYNAMIC</code>, e <code>STRICT</code> se pede</td>
+          <td><code>STRICT</code> é melhor para ERP e quebraria todo cliente já escrito. <strong>Guarda nova entra pedida, nunca imposta</strong> — e sem <code>SCOPE</code> nenhum, nada muda.</td>
+        </tr>
+        <tr>
+          <td>MVCC</td>
+          <td>Não, e não é falta de tempo</td>
+          <td>O rowid <strong>é</strong> o endereço; uma segunda versão da linha pede um segundo rowid, e isso quebra a ordem de digitação <em>e</em> a replicação. A metade que se queria dele — leitor que não bloqueia — veio por outro caminho.</td>
+        </tr>
+        <tr>
           <td>Concorrência</td>
-          <td>Trava única por enquanto</td>
-          <td>Lento sob carga e correto, em vez de rápido e corrompido.</td>
+          <td>Trava única embaixo, travas de tabela e linha por cima</td>
+          <td>Lento sob carga e correto, em vez de rápido e corrompido. A transação evita que duas linhas diferentes se esbarrem; ela <em>não</em> traz paralelismo, e confundir as duas é o que faz uma prometer a outra.</td>
         </tr>
         <tr>
           <td>Interface web</td>
@@ -6146,9 +6424,9 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   </div>
 </section>
 
-<!-- ============================= 34 ============================= -->
-<section id="s34">
-  <div class="rotulo"><span class="num">34</span><span class="traco"></span></div>
+<!-- ============================= 35 ============================= -->
+<section id="s35">
+  <div class="rotulo"><span class="num">35</span><span class="traco"></span></div>
   <h2>Estado e roteiro</h2>
   <p>Esta seção já foi uma tabela de oitenta linhas digitadas à mão, com a
   contagem de testes de cada peça ao lado. Ela envelhecia a cada rodada, e por
@@ -6178,7 +6456,7 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   <em>não</em> quer dizer que não falta nada. Quer dizer que o que falta deixou
   de ser um pedido parado e virou ou uma <strong>parcial nomeada</strong>, ou um
   item da lista de propostas, ou uma das ausências da
-  <a href="#s32">seção 32</a>. As quatro parciais são: subir o projeto num
+  <a href="#s33">seção 32</a>. As quatro parciais são: subir o projeto num
   repositório próprio (impedimento de <em>identidade</em>, não de engenharia); a
   prova real do DbLink contra um PostgreSQL(R); o editor de modelo, que não
   altera estrutura de tabela com dado; e a chave estrangeira, que é declarada e
@@ -6197,33 +6475,34 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
     <table>
       <thead><tr><th>Área</th><th class="num">testes</th><th class="num">%</th></tr></thead>
       <tbody>
-        <tr><td>Motor de dados (arquivos, índice, diários)</td><td class="num">346</td><td class="num">25,0%</td></tr>
-        <tr><td>Protocolo e portões (despachar)</td><td class="num">183</td><td class="num">13,2%</td></tr>
-        <tr><td>Núcleo (JSON, tipos, UUID, zip, paralelo)</td><td class="num">133</td><td class="num">9,6%</td></tr>
-        <tr><td>Criptografia e codificação</td><td class="num">122</td><td class="num">8,8%</td></tr>
-        <tr><td>Configuração</td><td class="num">93</td><td class="num">6,7%</td></tr>
-        <tr><td>DbLink</td><td class="num">65</td><td class="num">4,7%</td></tr>
-        <tr><td>Servidor (outros)</td><td class="num">62</td><td class="num">4,5%</td></tr>
-        <tr><td>Telemetria e profiler</td><td class="num">53</td><td class="num">3,8%</td></tr>
-        <tr><td>Camada SQL (léxico, sintaxe, tradução)</td><td class="num">44</td><td class="num">3,2%</td></tr>
-        <tr><td>Gatilhos e procedimentos</td><td class="num">38</td><td class="num">2,7%</td></tr>
+        <tr><td>Motor de dados (arquivos, índice, diários)</td><td class="num">346</td><td class="num">24,1%</td></tr>
+        <tr><td>Protocolo e portões (despachar)</td><td class="num">209</td><td class="num">14,6%</td></tr>
+        <tr><td>Núcleo (JSON, tipos, UUID, zip, paralelo)</td><td class="num">133</td><td class="num">9,3%</td></tr>
+        <tr><td>Criptografia e codificação</td><td class="num">122</td><td class="num">8,5%</td></tr>
+        <tr><td>Configuração</td><td class="num">93</td><td class="num">6,5%</td></tr>
+        <tr><td>DbLink</td><td class="num">65</td><td class="num">4,5%</td></tr>
+        <tr><td>Camada SQL (léxico, sintaxe, tradução)</td><td class="num">55</td><td class="num">3,8%</td></tr>
+        <tr><td>Telemetria e profiler</td><td class="num">53</td><td class="num">3,7%</td></tr>
+        <tr><td>Servidor (outros)</td><td class="num">51</td><td class="num">3,6%</td></tr>
+        <tr><td>Gatilhos e procedimentos</td><td class="num">38</td><td class="num">2,6%</td></tr>
         <tr><td>Jobs</td><td class="num">31</td><td class="num">2,2%</td></tr>
-        <tr><td>Interface web (servidor HTTP)</td><td class="num">28</td><td class="num">2,0%</td></tr>
-        <tr><td><strong>MCP</strong></td><td class="num"><strong>19</strong></td><td class="num"><strong>1,4%</strong></td></tr>
-        <tr><td><strong>Usuários e permissões</strong></td><td class="num"><strong>19</strong></td><td class="num"><strong>1,4%</strong></td></tr>
+        <tr><td>Mensagens (i18n do servidor)</td><td class="num">28</td><td class="num">1,9%</td></tr>
+        <tr><td>Interface web (servidor HTTP)</td><td class="num">28</td><td class="num">1,9%</td></tr>
+        <tr><td><strong>MCP</strong></td><td class="num"><strong>19</strong></td><td class="num"><strong>1,3%</strong></td></tr>
+        <tr><td><strong>Usuários e permissões</strong></td><td class="num"><strong>19</strong></td><td class="num"><strong>1,3%</strong></td></tr>
         <tr><td><strong>Console de terminal (phxsqlcmd)</strong></td><td class="num"><strong>18</strong></td><td class="num"><strong>1,3%</strong></td></tr>
         <tr><td><strong>Segurança de rede (blacklist, firewall)</strong></td><td class="num"><strong>18</strong></td><td class="num"><strong>1,3%</strong></td></tr>
         <tr><td><strong>ODBC</strong></td><td class="num"><strong>17</strong></td><td class="num"><strong>1,2%</strong></td></tr>
-        <tr><td><strong>Mensagens (i18n do servidor)</strong></td><td class="num"><strong>17</strong></td><td class="num"><strong>1,2%</strong></td></tr>
+        <tr><td><strong>Transações</strong></td><td class="num"><strong>16</strong></td><td class="num"><strong>1,1%</strong></td></tr>
         <tr><td><strong>Exportação</strong></td><td class="num"><strong>13</strong></td><td class="num"><strong>0,9%</strong></td></tr>
         <tr><td><strong>Junções e união</strong></td><td class="num"><strong>13</strong></td><td class="num"><strong>0,9%</strong></td></tr>
-        <tr><td><strong>Pivot</strong></td><td class="num"><strong>12</strong></td><td class="num"><strong>0,9%</strong></td></tr>
+        <tr><td><strong>Pivot</strong></td><td class="num"><strong>12</strong></td><td class="num"><strong>0,8%</strong></td></tr>
         <tr><td><strong>Replicação</strong></td><td class="num"><strong>11</strong></td><td class="num"><strong>0,8%</strong></td></tr>
         <tr><td><strong>Alertas e e-mail</strong></td><td class="num"><strong>8</strong></td><td class="num"><strong>0,6%</strong></td></tr>
         <tr><td><strong>CLI</strong></td><td class="num"><strong>7</strong></td><td class="num"><strong>0,5%</strong></td></tr>
         <tr><td><strong>Cluster</strong></td><td class="num"><strong>7</strong></td><td class="num"><strong>0,5%</strong></td></tr>
         <tr><td><strong>Monitor de máquina</strong></td><td class="num"><strong>6</strong></td><td class="num"><strong>0,4%</strong></td></tr>
-        <tr><td><strong>total</strong></td><td class="num"><strong>1383</strong></td><td class="num"></td></tr>
+        <tr><td><strong>total</strong></td><td class="num"><strong>1436</strong></td><td class="num"></td></tr>
       </tbody>
     </table>
   </div>
@@ -6257,8 +6536,8 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
 
 <footer>
   <!-- rodape:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-  <p>PhxSql 0.18.0 · 112.554 linhas de Rust em 8 crates,
-  mais 1075 KiB de interface · 1.383 testes ·
+  <p>PhxSql 0.18.0 · 119.020 linhas de Rust em 8 crates,
+  mais 1082 KiB de interface · 1.436 testes ·
   nenhuma dependência externa.
   Especificação byte a byte em <code>docs/FORMATO.md</code>, cadastro e
   permissões em <code>docs/USUARIOS.md</code>, a replicação em

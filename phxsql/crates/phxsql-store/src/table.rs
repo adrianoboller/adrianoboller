@@ -2384,6 +2384,16 @@ impl Table {
     ///
     /// A varredura e feita na ordem de digitacao, entao a arvore sai com os
     /// rowids inseridos em ordem crescente dentro de cada chave.
+    /// O `.ndx` desta tabela ficou para tras numa queda?
+    ///
+    /// Enquanto a resposta for `true`, TODA operacao de indice recusa -- o
+    /// portao mora no `descritor`, de proposito. Quem pergunta isto e quem
+    /// pode consertar: a recuperacao de transacao reconstroi antes de
+    /// completar o commit, porque sem indice confiavel nao ha insercao.
+    pub fn indice_precisa_reconstruir(&self) -> bool {
+        self.ndx.precisa_reconstruir()
+    }
+
     pub fn reindexar(&mut self) -> Result<Vec<(String, u64)>> {
         // `NdxFile::criar` trunca o arquivo: a arvore antiga vai embora
         // inteira, em vez de ser remendada.

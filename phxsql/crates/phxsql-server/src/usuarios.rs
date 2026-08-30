@@ -202,6 +202,29 @@ impl Atividade {
             // pela mesma razao que `sessoes` pede.
             "bulkinsert" => Atividade::Inserir,
             "cargas" => Atividade::Administrar,
+            // O CONTROLE de transacao nao pede poder nenhum, e isso e
+            // deliberado: abrir uma transacao nao da acesso a nada. Cada
+            // escrita empilhada volta pelo portao de sempre com a atividade
+            // dela (`inserir`, `alterar`, `excluir`) e com a tabela do pedido,
+            // entao abrir nunca da poder que a pessoa ja nao tinha -- o mesmo
+            // argumento do `CALL`.
+            //
+            // `transacao` (o estado da PROPRIA conexao) entra aqui pelo mesmo
+            // motivo do `quem_sou`: e a ficha de quem esta perguntando.
+            "begin"
+            | "start_transaction"
+            | "begin_transaction"
+            | "commit"
+            | "rollback"
+            | "savepoint"
+            | "rollback_para"
+            | "rollback_to_savepoint"
+            | "release_savepoint"
+            | "transacao" => return None,
+            // Ja `transacoes` -- a lista de quem segura o que -- mostra o
+            // movimento dos outros, e por isso pede administrar, pela mesma
+            // razao que `cargas` e `sessoes` pedem.
+            "transacoes" => Atividade::Administrar,
             // Carga em lote e insercao, e nao mais que isso: quem pode gravar
             // uma linha pode gravar mil. O que muda e o custo, e para isso ha
             // o teto de linhas por carga.

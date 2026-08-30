@@ -234,6 +234,12 @@ PARTES = [
           [sys.executable, "bancada/alter/provar.py"],
           requisitos=[porta_livre(7150, 7152)], prazo=900),
 
+    parte("transacoes", "BEGIN/COMMIT/ROLLBACK/SAVEPOINT pelo soquete -- com "
+          "SIGKILL no meio de um COMMIT, e o banco reabrindo para dizer o que "
+          "aconteceu",
+          [sys.executable, "bancada/transacoes/provar.py"],
+          requisitos=[porta_livre(7320)], prazo=900),
+
     parte("rotinas", "gatilhos e procedimentos pelo soquete, com o SIGNAL, o "
           "lote, o reinicio e a tabela sem gatilho",
           [sys.executable, "bancada/rotinas/prova-rotinas.py"],
