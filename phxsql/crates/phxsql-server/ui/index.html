@@ -1519,6 +1519,19 @@ svg.er.editor text{user-select:none;-webkit-user-select:none}
 .er-campos td.num{width:34px;text-align:center}
 .er-campos input[type=checkbox],.er-campos input[type=radio]{
   width:15px;height:15px;padding:0;margin:0}
+/* A caixa de marcar do cartão de acrescentar coluna.
+   O `input{width:100%}` global a esticava para a largura do cartão -- 834px
+   medidos pela bateria, no primeiro dia em que o cartão existiu. É a mesma
+   armadilha do rádio que virou bolinha do tamanho da célula: componente novo
+   herda a folha global inteira, e nenhuma das duas aparece lendo o código.
+   O `text-transform:none` no rótulo é a outra metade da lição -- «Blumenau». */
+.linha-check{
+  display:flex;align-items:center;gap:8px;margin:2px 0 10px;
+  font-size:12.5px;color:var(--texto-2);
+  text-transform:none;letter-spacing:0;cursor:pointer}
+.linha-check input[type=checkbox]{
+  width:15px;height:15px;flex:none;padding:0;margin:0;accent-color:var(--laranja)}
+
 .er-fks{margin:8px 0 0;padding:0;list-style:none;font-size:12px}
 .er-fks li{display:flex;align-items:center;gap:8px;padding:5px 0;
   border-bottom:1px solid var(--linha)}
@@ -2650,6 +2663,11 @@ async function vEstrutura(database, tabela_) {
   let h = `<div class="fichas">${fichas.map(([r,v]) =>
     `<div class="ficha"><div class="v">${esc(v)}</div><div class="r">${r}</div></div>`).join("")}</div>`;
 
+  h += `<div class="barra-acao">
+    <button class="botao incluir" id="estAddCol"
+      >${esc(txt("tela.acrescentar_coluna", "✚ Acrescentar coluna…"))}</button>
+  </div>`;
+
   h += `<h3>Colunas</h3>` + tabela(
     [{t:"#",cls:""},{t:"nome"},{t:"tipo"},{t:"obrigatória"},{t:"onde mora"},{t:"LGPD"}],
     e.colunas, (c,i) => {
@@ -2738,6 +2756,12 @@ function celulaLgpd(c) {
 /// que junta tudo, e aí quem marca seis colunas e sai da tela perde as seis
 /// sem aviso. Cada mudança é um `marcar_lgpd` com uma coluna só.
 function ligarLgpdDaEstrutura(db, tab) {
+  // O botão de acrescentar coluna mora na mesma aba, e é ligado aqui pelo
+  // mesmo motivo: `vEstrutura` devolve HTML, e quem o insere é quem pode
+  // ligar os eventos.
+  const bt = $("#estAddCol");
+  if (bt) bt.onclick = () => cartaoAcrescentarColuna(db, tab);
+
   const salvar = async (coluna, grau) => {
     try {
       await api("marcar_lgpd", { database: db, tabela: tab,
@@ -9806,8 +9830,9 @@ function cartaoDeclararFk(db, de, para) {
 
 /** O clique numa caixa: o que esta tabela é, e o que DÁ para fazer nela.
  *
- * Alterar coluna de tabela criada não existe no servidor, e o cartão diz o
- * porquê em vez de oferecer um formulário que fingiria salvar.
+ * ACRESCENTAR coluna existe desde o sprint 25, e o botão abre o formulário
+ * real. TROCAR o tipo ou a largura de uma coluna que já existe continua não
+ * existindo, e o cartão diz o porquê em vez de fingir.
  */
 function cartaoTabelaER(db, nome) {
   const e = ER.esquemas.find(x => x.tabela === nome);
@@ -9840,22 +9865,19 @@ function cartaoTabelaER(db, nome) {
         declaração</button></li>`).join("")}</ul>` : ""}
 
     <div class="nota" style="margin-top:12px">
-      <p><strong>Alterar coluna de tabela criada não existe no servidor</strong>
-      — e este cartão diz isso em vez de fingir: o tipo e a largura decidem o
-      <code>slot_size</code>, e o <code>slot_size</code> decide o endereço de
-      cada linha já gravada (<code>offset = início + (rowid−1) × slot</code>).
-      O caminho hoje é duplicar ou recriar a tabela e reimportar. O que DÁ
-      para mudar por aqui: as chaves estrangeiras — declare puxando uma coluna
-      com o mouse, exclua no botão acima.</p>
+      <p>${esc(txt("tela.alter_pode", "Acrescentar coluna funciona nesta tabela, mesmo com dado dentro: o rowid de cada linha não muda, e por isso os índices não são refeitos."))}</p>
+      <p>${esc(txt("tela.alter_nao_pode", "Trocar o tipo ou a largura de uma coluna que já existe continua não existindo — o caminho é duplicar a tabela e reimportar."))}</p>
     </div>
     <div id="tabRecado"></div>
     <div class="acoes">
+      <button class="botao incluir" id="tabAddCol">${esc(txt("tela.acrescentar_coluna", "✚ Acrescentar coluna…"))}</button>
       <button class="botao consultar" id="tabConteudo">Conteúdo</button>
       <button class="botao secundario" id="tabEstrutura">Estrutura</button>
       <button class="botao secundario" id="tabGerir">Gerir tabela</button>
       <button class="botao secundario" id="tabFechar">${esc(txt("tela.fechar", "Fechar"))}</button>
     </div>`);
 
+  c.corpo.querySelector("#tabAddCol").onclick = () => { c.fechar(); cartaoAcrescentarColuna(db, nome); };
   c.corpo.querySelector("#tabFechar").onclick = c.fechar;
   c.corpo.querySelector("#tabConteudo").onclick = () => { c.fechar(); verConteudoEditavel(db, nome); };
   c.corpo.querySelector("#tabEstrutura").onclick = () => { c.fechar(); est.aba = "estrutura"; abrirTabela(db, nome); };
@@ -9871,6 +9893,82 @@ function cartaoTabelaER(db, nome) {
         `<div class="aviso mal">${esc(String(er))}</div>`;
     }
   });
+}
+
+/* ------------------------------------- o cartão de ACRESCENTAR uma coluna
+ *
+ * Ele existe desde o sprint 25, e é a segunda metade do pedido 127. O que ele
+ * mostra antes de qualquer campo é o preço: acrescentar coluna REESCREVE o
+ * `.reg` inteiro, porque o slot fica mais largo e o endereço de cada linha sai
+ * de uma conta sobre o `slot_size`. O rowid não muda — e é por isso que o
+ * `.ndx` não é refeito.
+ *
+ * A tabela é lida do servidor aqui dentro, e não do `ER.esquemas`: o cartão
+ * abre também da aba Estrutura, onde aquele cache não existe.
+ */
+async function cartaoAcrescentarColuna(db, tabela) {
+  let e;
+  try { e = await api("esquema", { database: db, tabela }); }
+  catch (er) { return avisar(String(er)); }
+
+  const c = cartaoER("");
+  const desenhar = (recado = "") => {
+    const linhas = e.registros || 0;
+    c.corpo.innerHTML = `
+      <h3>${esc(txt("tela.acrescentar_coluna_em", "Acrescentar coluna em"))} ${esc(tabela)}</h3>
+      <div class="sub">${esc(db)} · ${linhas} ${esc(txt("tela.registros", "registro(s)"))}</div>
+      <div class="form-dbl" style="margin-bottom:10px">
+        <label class="cmp"><span>${esc(txt("tela.col_nome", "nome da coluna"))}</span>
+          <input id="acNome" placeholder="situacao"></label>
+        <label class="cmp"><span>${esc(txt("tela.col_tipo", "tipo"))}</span>
+          <select id="acTipo">${TIPOS.map(([t, d]) =>
+            `<option value="${esc(t)}"${t === "Str(60)" ? " selected" : ""}>${esc(t)} — ${esc(d)}</option>`).join("")}
+          </select></label>
+        <label class="cmp"><span>${esc(txt("tela.col_caption", "rótulo de tela"))}</span>
+          <input id="acCaption"></label>
+        <label class="cmp"><span>${esc(txt("tela.col_padrao", "valor das linhas que já existem"))}</span>
+          <input id="acPadrao" placeholder="${esc(txt("tela.col_padrao_vazio", "vazio = nulo"))}"></label>
+      </div>
+      <label class="linha-check"><input type="checkbox" id="acObrig">
+        <span>${esc(txt("tela.col_obrigatoria", "obrigatória (não aceita nulo)"))}</span></label>
+      <div class="nota">
+        <p>${esc(txt("tela.alter_preco", "Acrescentar coluna reescreve o arquivo de dados inteiro, linha por linha, na mesma ordem. O rowid de cada linha NÃO muda — e por isso os índices não precisam ser refeitos. Medido: 0,55 µs por linha (10 milhões de linhas em 5,5 s)."))}</p>
+        <p>${esc(txt("tela.alter_obrigatoria", "Coluna obrigatória numa tabela que já tem linha exige um valor padrão: sem ele, o motor teria de inventar um dado para linhas que ninguém digitou — e ele recusa em vez de inventar."))}</p>
+      </div>
+      <div id="acRecado">${recado}</div>
+      <div class="acoes">
+        <button class="botao incluir" id="acFazer">${esc(txt("tela.acrescentar", "Acrescentar"))}</button>
+        <button class="botao secundario" id="acFechar">${esc(txt("tela.cancelar", "Cancelar"))}</button>
+      </div>`;
+
+    c.corpo.querySelector("#acFechar").onclick = c.fechar;
+    c.corpo.querySelector("#acFazer").onclick = async () => {
+      const pedido = {
+        database: db, tabela,
+        nome: c.corpo.querySelector("#acNome").value.trim(),
+        tipo: c.corpo.querySelector("#acTipo").value,
+        caption: c.corpo.querySelector("#acCaption").value.trim(),
+        obrigatoria: c.corpo.querySelector("#acObrig").checked,
+      };
+      const padrao = c.corpo.querySelector("#acPadrao").value;
+      if (padrao !== "") pedido.padrao = padrao;
+      const botao = c.corpo.querySelector("#acFazer");
+      botao.disabled = true;
+      try {
+        const r = await api("acrescentar_coluna", pedido);
+        c.fechar();
+        avisar(`${r.coluna}: ${r.slots_reescritos} ${txt("tela.slots_reescritos", "slot(s) reescrito(s)")} · ${Math.round(r.ms)} ms`);
+        // As duas telas de onde este cartão abre se redesenham sozinhas.
+        if (typeof ER === "object" && ER.db === db) telaDiagramaER(db);
+        else if (est.atual && est.atual.tab === tabela) abrirTabela(db, tabela);
+      } catch (er) {
+        botao.disabled = false;
+        c.corpo.querySelector("#acRecado").innerHTML =
+          `<div class="aviso mal">${esc(String(er))}</div>`;
+      }
+    };
+  };
+  desenhar();
 }
 
 /* -------------------------------------------- o cartão de criar a tabela */

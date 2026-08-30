@@ -666,6 +666,113 @@ impl Schema {
             .position(|c| c.ty == ColumnType::Sequence)
     }
 
+    /// Onde uma coluna NOVA entra: logo DEPOIS da ultima coluna do usuario --
+    /// que, na tabela comum, e logo antes da `softdeleted` e do `rownum`.
+    ///
+    /// # Por que nao no fim de tudo
+    ///
+    /// A `softdeleted` e o `rownum` entraram no fim para nao deslocar as
+    /// colunas do usuario. A coluna que o usuario acrescenta agora e do
+    /// usuario, e ela vai onde as dele estao: no fim das dele. Po-la depois do
+    /// `rownum` faria a lista do usuario ter um buraco no meio -- toda tela,
+    /// todo `inserir` posicional com N-2 valores e toda juncao teriam de saber
+    /// que as duas do motor ficaram entre as dele.
+    ///
+    /// # Por que DEPOIS DA ULTIMA, e nao antes da primeira de sistema
+    ///
+    /// As duas regras dao o mesmo lugar na tabela comum, em que as de sistema
+    /// estao no fim. Elas discordam na tabela que declarou `softdeleted` a mao
+    /// no meio da lista -- o que e permitido, porque quem recria uma tabela
+    /// precisa. Ali, "antes da primeira de sistema" empurraria as colunas do
+    /// usuario que vem depois dela, que e exatamente o que esta regra existe
+    /// para evitar.
+    ///
+    /// O preco, nos dois casos, e que a posicao das colunas de SISTEMA anda --
+    /// e quem guarda posicao (indice, chave estrangeira, coluna de particao)
+    /// tem de ser remapeado. E o que [`Schema::com_coluna`] faz, num lugar so.
+    ///
+    /// Numa tabela anterior a v4, que nao tem coluna de sistema nenhuma, a
+    /// resposta e o fim da lista.
+    pub fn posicao_de_coluna_nova(&self) -> usize {
+        self.colunas
+            .iter()
+            .rposition(|c| !e_coluna_de_sistema(&c.nome))
+            .map(|i| i + 1)
+            .unwrap_or(0)
+    }
+
+    /// O mesmo esquema com uma coluna a mais, inserida em `posicao`.
+    ///
+    /// # O que ele remapeia, e por que num lugar so
+    ///
+    /// Tres coisas guardam POSICAO de coluna, e nao nome: `IndexColumn.coluna`,
+    /// `ForeignKey.colunas` e a coluna de referencia da particao. Inserir uma
+    /// coluna no meio empurra todas as posicoes a partir dela, e quem ficar
+    /// para tras passa a apontar a vizinha -- indice sobre o campo errado,
+    /// particao pela coluna errada, e nenhum erro no caminho.
+    ///
+    /// Por isso o remapeamento mora aqui e nao em quem chama: a proxima coisa
+    /// que guardar posicao entra nesta funcao, e nao num quarto lugar que
+    /// alguem vai esquecer.
+    pub fn com_coluna(&self, coluna: Column, posicao: usize) -> Result<Schema> {
+        if posicao > self.colunas.len() {
+            return Err(PhxError::Esquema(format!(
+                "posicao {posicao} fora da lista de {} colunas",
+                self.colunas.len()
+            )));
+        }
+        if self.colunas.iter().any(|c| c.nome == coluna.nome) {
+            return Err(PhxError::Esquema(format!(
+                "a tabela {} ja tem uma coluna chamada {}",
+                self.nome, coluna.nome
+            )));
+        }
+
+        let desloca = |i: usize| if i >= posicao { i + 1 } else { i };
+
+        let mut colunas = self.colunas.clone();
+        colunas.insert(posicao, coluna);
+
+        let indices = self
+            .indices
+            .iter()
+            .map(|idx| {
+                let mut novo = idx.clone();
+                for ic in &mut novo.colunas {
+                    ic.coluna = desloca(ic.coluna);
+                }
+                novo
+            })
+            .collect();
+
+        let fks: Vec<ForeignKey> = self
+            .chaves_estrangeiras
+            .iter()
+            .map(|fk| {
+                let mut novo = fk.clone();
+                novo.colunas = fk.colunas.iter().map(|c| desloca(*c)).collect();
+                novo
+            })
+            .collect();
+
+        let mut paginacao = self.paginacao;
+        paginacao.modo = match paginacao.modo {
+            ModoParticao::PorQuantidade => ModoParticao::PorQuantidade,
+            ModoParticao::PorPeriodo { coluna, periodo } => ModoParticao::PorPeriodo {
+                coluna: desloca(coluna as usize) as u16,
+                periodo,
+            },
+            ModoParticao::PorLetra { coluna } => ModoParticao::PorLetra {
+                coluna: desloca(coluna as usize) as u16,
+            },
+        };
+
+        let novo = Schema::do_disco(self.nome.clone(), colunas, indices)?
+            .com_chaves_estrangeiras(fks)?
+            .com_paginacao(paginacao)?;
+        Ok(novo.com_motivo_obrigatorio(self.motivo_obrigatorio))
+    }
+
     /// Acrescenta as chaves estrangeiras da tabela.
     pub fn com_chaves_estrangeiras(mut self, fks: Vec<ForeignKey>) -> Result<Schema> {
         for (i, fk) in fks.iter().enumerate() {

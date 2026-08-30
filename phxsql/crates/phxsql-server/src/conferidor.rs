@@ -866,7 +866,13 @@ impl Placar {
 /// 2.000 -> 1.999 na revisao do dossie 0.18: o item «Jobs» do Gerir banco
 /// ganhou o par `rot:`/`txt:` ao passar a apontar para a tela que ja existia.
 /// Um so, e ele desce a catraca junto -- catraca frouxa nao segura nada.
-pub const TETO: usize = 1_999;
+///
+/// 1.999 -> 1.996 no sprint 25 (`acrescentar_coluna`): a nota do cartao de
+/// tabela do editor de modelo dizia, em portugues cravado, que alterar coluna
+/// nao existia. Ela virou o formulario que existe, e os textos dele nasceram
+/// na fabrica -- os tres paragrafos que sairam sao os tres que a catraca
+/// desce.
+pub const TETO: usize = 1_996;
 
 #[cfg(test)]
 mod testes {

@@ -268,6 +268,39 @@ fn acao_ri_de_texto(t: &str) -> Result<AcaoRi> {
 ///
 /// As chaves estrangeiras entram por `"chaves_estrangeiras"`, e a ausencia do
 /// campo e uma lista vazia -- que e o que toda tabela ja criada tem.
+/// Uma coluna, lida do JSON do pedido.
+///
+/// Num lugar so porque dois pedidos a montam -- o `criar_tabela` e o
+/// `acrescentar_coluna` --, e uma segunda copia deste bloco seria a que
+/// esqueceria o campo novo. `i` entra so na mensagem de erro.
+pub fn coluna_de_json(c: &Json, i: usize) -> Result<Column> {
+    let cn = c.texto_ou("nome", "").trim().to_string();
+    if cn.is_empty() {
+        return Err(PhxError::Esquema(format!("coluna {i} sem nome")));
+    }
+    let ty = tipo_de_texto(c.texto_ou("tipo", "Str(60)"))?;
+    let mut col = Column::new(cn, ty)
+        .com_caption(c.texto_ou("caption", ""))
+        .com_descricao(c.texto_ou("descricao", ""))
+        .com_mascara(c.texto_ou("mascara", ""))
+        // Ausente = `Nao`, que e o que toda tabela ja criada tem. Cliente
+        // escrito antes desta versao continua criando tabela igual.
+        .com_dado_pessoal(DadoPessoal::de_texto(c.texto_ou("dado_pessoal", ""))?);
+    // O `id` normalmente nasce aqui, sorteado. Aceitar um de fora existe
+    // para UM caso: recriar uma tabela mantendo a identidade das colunas,
+    // para que telas e relatorios que apontam para elas continuem valendo.
+    let id = c.texto_ou("id", "").trim().to_string();
+    if !id.is_empty() {
+        col = col.com_id(
+            Uuid::de_texto(&id).map_err(|e| PhxError::Esquema(format!("id da coluna {i}: {e}")))?,
+        );
+    }
+    if c.booleano_ou("obrigatoria", false) {
+        col = col.obrigatoria();
+    }
+    Ok(col)
+}
+
 pub fn esquema_de_json(j: &Json) -> Result<Schema> {
     let nome = j.texto_ou("tabela", "").trim().to_string();
     if nome.is_empty() {
@@ -286,32 +319,7 @@ pub fn esquema_de_json(j: &Json) -> Result<Schema> {
 
     let mut colunas = Vec::with_capacity(cols_json.len());
     for (i, c) in cols_json.iter().enumerate() {
-        let cn = c.texto_ou("nome", "").trim().to_string();
-        if cn.is_empty() {
-            return Err(PhxError::Esquema(format!("coluna {i} sem nome")));
-        }
-        let ty = tipo_de_texto(c.texto_ou("tipo", "Str(60)"))?;
-        let mut col = Column::new(cn, ty)
-            .com_caption(c.texto_ou("caption", ""))
-            .com_descricao(c.texto_ou("descricao", ""))
-            .com_mascara(c.texto_ou("mascara", ""))
-            // Ausente = `Nao`, que e o que toda tabela ja criada tem. Cliente
-            // escrito antes desta versao continua criando tabela igual.
-            .com_dado_pessoal(DadoPessoal::de_texto(c.texto_ou("dado_pessoal", ""))?);
-        // O `id` normalmente nasce aqui, sorteado. Aceitar um de fora existe
-        // para UM caso: recriar uma tabela mantendo a identidade das colunas,
-        // para que telas e relatorios que apontam para elas continuem valendo.
-        let id = c.texto_ou("id", "").trim().to_string();
-        if !id.is_empty() {
-            col = col.com_id(
-                Uuid::de_texto(&id)
-                    .map_err(|e| PhxError::Esquema(format!("id da coluna {i}: {e}")))?,
-            );
-        }
-        if c.booleano_ou("obrigatoria", false) {
-            col = col.obrigatoria();
-        }
-        colunas.push(col);
+        colunas.push(coluna_de_json(c, i)?);
     }
 
     let posicao = |nome: &str| -> Result<usize> {

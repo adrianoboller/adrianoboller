@@ -128,6 +128,8 @@ const VERSAO: u16 = 4;
 /// tabela criada com o cofre desligado nasce na 4. Guarda nova entra pedida.
 const VERSAO_CIFRADO: u16 = 5;
 const ALINHAMENTO: u64 = 64;
+/// Sufixo do arquivo que espera a troca, ao lado do volume que ele substitui.
+const SUFIXO_NOVO: &str = "novo";
 
 const STATUS_LIVRE: u8 = 0;
 const STATUS_ATIVO: u8 = 1;
@@ -461,9 +463,104 @@ impl RegFile {
             recuperados: 0,
             fronteiras: Vec::new(),
         };
+        r.terminar_troca_interrompida()?;
+        r.conferir_volumes_uniformes()?;
         r.reler_fronteiras()?;
         r.reler_baldes()?;
         Ok(r)
+    }
+
+    /// Termina a troca de volumes que uma queda no meio do
+    /// [`RegFile::acrescentar_coluna`] deixou pela metade.
+    ///
+    /// # O volume 1 e o ponto de compromisso
+    ///
+    /// A alteracao escreve TODOS os `*.novo` antes de trocar qualquer um, e
+    /// troca o volume 1 primeiro. Entao, ao abrir, o volume 1 responde
+    /// sozinho em que estado o conjunto esta:
+    ///
+    /// * volume 1 ainda **velho** -> a troca nem comecou. Os `*.novo` que
+    ///   houver sao lixo de uma fase que nunca decidiu nada, e nao se toca em
+    ///   nada. (A proxima alteracao os sobrescreve; apaga-los aqui seria
+    ///   apagar arquivo no caminho de LEITURA, e leitura nao apaga.)
+    /// * volume 1 ja **novo** e algum volume n com a largura velha -> a
+    ///   alteracao esta decidida e faltou terminar. O `*.novo` daquele volume
+    ///   e um arquivo completo e sincronizado: o `rename` que faltava acontece
+    ///   aqui, e a tabela abre inteira.
+    ///
+    /// So termina para a frente, e so quando o `*.novo` **se declara** com a
+    /// mesma largura de slot e o mesmo CRC de esquema do volume 1. Um arquivo
+    /// que nao se declara assim nao entra no lugar de nada.
+    fn terminar_troca_interrompida(&mut self) -> Result<()> {
+        if !self.esquema.paginacao().ligada() {
+            return Ok(());
+        }
+        for v in self.volumes.existentes() {
+            let caminho = self.volumes.caminho(v);
+            for alvo in [Some(caminho), self.volumes.caminho_do_espelho(v)]
+                .into_iter()
+                .flatten()
+            {
+                let novo = alvo.with_file_name(format!(
+                    "{}.{SUFIXO_NOVO}",
+                    alvo.file_name().unwrap_or_default().to_string_lossy()
+                ));
+                if !novo.exists() || !alvo.exists() {
+                    continue;
+                }
+                let atual = geometria_do_volume(&alvo);
+                if atual == Some((self.slot_size, self.data_offset, self.esquema_crc)) {
+                    continue; // ja trocado
+                }
+                if geometria_do_volume(&novo)
+                    == Some((self.slot_size, self.data_offset, self.esquema_crc))
+                {
+                    self.volumes.fechar_todos();
+                    std::fs::rename(&novo, &alvo)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Todo volume tem de declarar a MESMA largura de slot e o mesmo esquema.
+    ///
+    /// # Por que a conferencia existe
+    ///
+    /// Porque `abrir` le so o cabecalho do volume 1 e usa o `slot_size` dele
+    /// para achar linha em TODOS. Num conjunto misturado -- o que uma queda no
+    /// meio da troca pode deixar, se o `*.novo` que faltava tambem sumiu -- o
+    /// volume 2 seria lido com a largura do volume 1, e cada linha sairia
+    /// deslocada da anterior. Sem CRC batendo, mas tambem sem ninguem dizer o
+    /// que aconteceu.
+    ///
+    /// Recusar o conjunto e a resposta certa: a tabela nao esta pior por
+    /// recusar, e o volume que ficou para tras esta inteiro e legivel do jeito
+    /// dele. A mensagem diz qual e.
+    fn conferir_volumes_uniformes(&mut self) -> Result<()> {
+        if !self.esquema.paginacao().ligada() {
+            return Ok(());
+        }
+        let esperado = (self.slot_size, self.data_offset, self.esquema_crc);
+        for v in self.volumes.existentes() {
+            let caminho = self.volumes.caminho(v);
+            let Some(achado) = geometria_do_volume(&caminho) else {
+                continue; // volume ilegivel tem dono proprio: o `reparar`
+            };
+            if achado != esperado {
+                return Err(PhxError::Corrompido(format!(
+                    "{}: o volume 1 declara slot de {} bytes e este declara {} -- \
+                     uma alteracao de estrutura ficou pela metade. O volume esta \
+                     inteiro do jeito dele; restaure este arquivo do backup ou \
+                     reponha o `{}.{SUFIXO_NOVO}` que a alteracao tinha escrito",
+                    caminho.display(),
+                    self.slot_size,
+                    achado.0,
+                    caminho.file_name().unwrap_or_default().to_string_lossy(),
+                )));
+            }
+        }
+        Ok(())
     }
 
     /// Remonta os contadores dos baldes lendo o cabecalho de cada volume.
@@ -938,6 +1035,236 @@ impl RegFile {
         Ok(true)
     }
 
+    /// Acrescenta uma coluna a uma tabela que JA TEM DADO, reescrevendo cada
+    /// volume slot a slot e **preservando o rowid**.
+    ///
+    /// # Por que a tabela inteira se move
+    ///
+    /// O slot e de largura fixa e o endereco sai de uma conta:
+    /// `offset = data_offset + (rowid - 1) * slot_size`. Uma coluna a mais
+    /// aumenta o `slot_size`, entao *toda* linha depois da primeira muda de
+    /// endereco. Nao ha desenho em que ela nao se mova -- o que da para
+    /// escolher e se o **rowid** se move junto.
+    ///
+    /// Aqui ele nao se move: os slots saem na mesma ordem e entram na mesma
+    /// ordem, o i-esimo slot do arquivo novo e o i-esimo do velho. Como o
+    /// rowid E a posicao, preservar a posicao preserva o rowid -- e com ele o
+    /// `.ndx` inteiro, que aponta para rowid e nao para offset.
+    ///
+    /// # A queda no meio
+    ///
+    /// Cada volume e escrito num `*.novo` ao lado, sincronizado, e trocado por
+    /// `rename`. Uma queda deixa o volume velho inteiro ou o novo inteiro. O
+    /// que ela pode deixar e uma tabela **paginada** com uns volumes na
+    /// largura nova e outros na velha -- e por isso todo volume carrega o
+    /// proprio `slot_size` no cabecalho e o `abrir` recusa o conjunto
+    /// misturado, em vez de ler o volume 2 com a largura do volume 1.
+    ///
+    /// Devolve quantos slots foram reescritos.
+    pub fn acrescentar_coluna(
+        &mut self,
+        novo: Schema,
+        posicao: usize,
+        padrao: &[u8],
+        nulo: bool,
+    ) -> Result<u64> {
+        let velho = self.esquema.clone();
+        let n_velho = velho.colunas().len();
+        if novo.colunas().len() != n_velho + 1 || posicao > n_velho {
+            return Err(PhxError::Esquema(
+                "acrescentar coluna espera exatamente uma coluna a mais".into(),
+            ));
+        }
+        let largura = novo.colunas()[posicao].ty.largura();
+        if !nulo && padrao.len() != largura {
+            return Err(PhxError::Esquema(format!(
+                "o valor padrao tem {} bytes e a coluna tem {largura}",
+                padrao.len()
+            )));
+        }
+
+        let (bv, bn) = (velho.bitmap_len(), novo.bitmap_len());
+        let (pv, pn) = (velho.payload_len(), novo.payload_len());
+        let off_novo = novo.offset_coluna(posicao)?;
+        // Onde as colunas empurradas comecam, no payload VELHO.
+        let corte = if posicao < n_velho {
+            velho.offset_coluna(posicao)?
+        } else {
+            pv
+        };
+        // A conta tem de fechar antes de qualquer byte ser escrito: um payload
+        // remontado com um byte fora do lugar passa no CRC e so aparece como
+        // campo trocado meses depois.
+        if off_novo != bn + (corte - bv) || pn != pv + largura + (bn - bv) {
+            return Err(PhxError::Esquema(format!(
+                "o layout do payload novo nao fecha: {pv} + {largura} + {} != {pn}",
+                bn - bv
+            )));
+        }
+
+        let faixas_novas = faixas_pessoais(&novo)?;
+        let slot_novo = SLOT_CAB + pn + self.material.rabo(largura_marcada(&faixas_novas));
+        let bytes = novo.serializar();
+        let crc = crc32(&bytes);
+        let destino = alinhar(self.cab_len as u64 + bytes.len() as u64, ALINHAMENTO);
+
+        // Guardados ANTES de o `self` virar o esquema novo: a leitura de cada
+        // slot ainda usa a largura velha.
+        let origem = self.data_offset;
+        let slot_velho = self.slot_size;
+        let faixas_velhas = self.faixas.clone();
+        let material = self.material;
+
+        let refazer_payload = |antigo: &[u8]| -> Vec<u8> {
+            let mut p = vec![0u8; pn];
+            for i in 0..n_velho {
+                if antigo[i / 8] & (1 << (i % 8)) != 0 {
+                    let j = if i >= posicao { i + 1 } else { i };
+                    p[j / 8] |= 1 << (j % 8);
+                }
+            }
+            if nulo {
+                p[posicao / 8] |= 1 << (posicao % 8);
+            }
+            p[bn..bn + (corte - bv)].copy_from_slice(&antigo[bv..corte]);
+            if !nulo {
+                p[off_novo..off_novo + largura].copy_from_slice(padrao);
+            }
+            p[off_novo + largura..].copy_from_slice(&antigo[corte..pv]);
+            p
+        };
+
+        let mut transformar = |volume: u32,
+                               rowid: RowId,
+                               slot: &[u8],
+                               nome: &str|
+         -> Result<Vec<u8>> {
+            let status = slot[0];
+            let versao = Campos(slot).u64(8);
+            let claro =
+                match abrir_slot_com(&material, &faixas_velhas, pv, volume, rowid, slot, nome) {
+                    Ok(p) => p,
+                    // Slot LIVRE que nao abre e slot que nunca guardou linha viva
+                    // -- ou cujo corpo ja foi para a lixeira. Ele volta zerado, e
+                    // nao para a reescrita inteira. Um slot ATIVO que nao abre e
+                    // outra coisa: perder uma linha em silencio seria o pior
+                    // resultado possivel desta operacao.
+                    Err(e) => {
+                        if status == STATUS_ATIVO {
+                            return Err(e);
+                        }
+                        vec![0u8; pv]
+                    }
+                };
+            let mut fora = montar_slot_com(
+                &material,
+                &faixas_novas,
+                slot_novo,
+                volume,
+                rowid,
+                versao,
+                &refazer_payload(&claro),
+            );
+            // Depois do `montar_slot_com`, e nao antes: o CRC cobre de
+            // SLOT_CAB para a frente e nao inclui o status, entao repo-lo aqui
+            // nao invalida nada -- e e o que mantem excluido excluido.
+            fora[0] = status;
+            Ok(fora)
+        };
+
+        self.volumes.fechar_todos();
+        let volumes = self.volumes.existentes();
+        let mut primeiros: Vec<(u32, RowId, PathBuf, Option<PathBuf>)> = Vec::new();
+        for v in &volumes {
+            primeiros.push((
+                *v,
+                self.primeiro_rowid_do_volume(*v),
+                self.volumes.caminho(*v),
+                self.volumes.caminho_do_espelho(*v),
+            ));
+        }
+
+        self.esquema = novo;
+        self.esquema_bytes = bytes;
+        self.esquema_crc = crc;
+        self.faixas = faixas_novas.clone();
+        self.slot_size = slot_novo;
+        self.data_offset = destino;
+
+        // FASE A -- escrever. Nenhum `rename` acontece aqui: cada volume vira
+        // um `*.novo` completo e sincronizado ao lado do seu. Enquanto esta
+        // fase corre, a tabela no disco continua sendo a VELHA, inteira. Uma
+        // queda aqui nao deixa nada pela metade: os `*.novo` orfaos sao lixo,
+        // e o `abrir` os reconhece como lixo porque o volume 1 ainda e velho.
+        let mut slots = 0u64;
+        for (v, primeiro, caminho, espelho) in &primeiros {
+            let cab = self.montar_cabecalho(*v);
+            slots += escrever_volume_alargado(
+                caminho,
+                &cab,
+                &self.esquema_bytes,
+                origem,
+                destino,
+                slot_velho,
+                slot_novo,
+                *v,
+                *primeiro,
+                &mut transformar,
+            )?;
+            // O espelho e reescrito LENDO DO ESPELHO, como no `regravar_esquema`:
+            // a copia independente dele e o que ele existe para ser.
+            if let Some(espelho) = espelho {
+                if espelho.exists() {
+                    escrever_volume_alargado(
+                        espelho,
+                        &cab,
+                        &self.esquema_bytes,
+                        origem,
+                        destino,
+                        slot_velho,
+                        slot_novo,
+                        *v,
+                        *primeiro,
+                        &mut transformar,
+                    )?;
+                }
+            }
+        }
+
+        // FASE B -- trocar. So `rename`, sem I/O de dado: a janela em que a
+        // tabela pode ficar misturada e de n renomeacoes, e nao da reescrita
+        // inteira. **O volume 1 e o ponto de compromisso**, e por isso ele vem
+        // primeiro: dele para a frente a alteracao esta decidida, e o `abrir`
+        // TERMINA o que ficou faltando em vez de recusar (ver
+        // `terminar_troca_interrompida`).
+        for (v, _, caminho, espelho) in &primeiros {
+            trocar_pelo_novo(caminho)?;
+            if let Some(espelho) = espelho {
+                if espelho.exists() {
+                    trocar_pelo_novo(espelho)?;
+                }
+            }
+            let _ = v;
+        }
+        self.volumes.fechar_todos();
+        Ok(slots)
+    }
+
+    /// O primeiro rowid que mora num volume.
+    ///
+    /// Na particao por periodo sai da fronteira gravada no cabecalho; nos
+    /// outros modos e a inversa da conta do [`Paginacao::localizar`].
+    fn primeiro_rowid_do_volume(&self, volume: u32) -> RowId {
+        if let Some(f) = self.fronteiras.get(volume as usize - 1) {
+            return f.primeiro_rowid;
+        }
+        let p = self.esquema.paginacao();
+        if !p.ligada() {
+            return 1;
+        }
+        (volume as u64 - 1) * p.registros_por_arquivo + 1
+    }
+
     pub fn caminho(&self, volume: u32) -> PathBuf {
         self.volumes.caminho(volume)
     }
@@ -1169,78 +1496,29 @@ impl RegFile {
     /// exatamente igual: um dos dois com o nonce montado de outro jeito nao
     /// daria erro nenhum na hora, e sim uma linha que nao abre depois.
     fn montar_slot(&self, volume: u32, rowid: RowId, versao: u64, payload: &[u8]) -> Vec<u8> {
-        let mut slot = vec![0u8; self.slot_size];
-        slot[0] = STATUS_ATIVO;
-        por_u64(&mut slot, 8, versao);
-
-        let fim_corpo = SLOT_CAB + payload.len();
-        slot[SLOT_CAB..fim_corpo].copy_from_slice(payload);
-
-        if self.material.cifrado() {
-            // Oito bytes sorteados NESTA gravacao, nos que ja eram reservados
-            // no cabecalho do slot. Custam zero de formato e sao o que segura
-            // o nonce diferente quando a versao repete -- o que acontece se
-            // uma gravacao se perder no cache do sistema antes do `fsync` e a
-            // seguinte reler a versao antiga.
-            let tempero = cifra::sortear_u64();
-            por_u64(&mut slot, 16, tempero);
-            let nonce = cofre::nonce_de_pedaco(rowid, volume, versao as u32, tempero);
-
-            // As faixas marcadas viram UMA mensagem: uma etiqueta so para a
-            // linha, e nao uma por coluna. Cifrar cada coluna sozinha custaria
-            // 16 bytes por coluna marcada e permitiria trocar a coluna A de
-            // uma linha pela coluna A de outra sem a etiqueta reclamar.
-            let claro = self.juntar_faixas(payload);
-            let selado = self
-                .material
-                .selar(&nonce, &aad_do_slot(volume, rowid, versao), &claro);
-            if self.material.no_lugar() {
-                self.espalhar_faixas(&mut slot[SLOT_CAB..fim_corpo], &selado[..claro.len()]);
-                slot[fim_corpo..].copy_from_slice(&selado[claro.len()..]);
-            } else {
-                // O pacote nao cabe no lugar: a faixa marcada vai a zeros --
-                // o mesmo que uma coluna nunca preenchida -- e o pacote
-                // inteiro mora no rabo.
-                self.espalhar_faixas(&mut slot[SLOT_CAB..fim_corpo], &vec![0u8; claro.len()]);
-                slot[fim_corpo..].copy_from_slice(&selado);
-            }
-        }
-
-        // O CRC cobre o que esta no DISCO -- o payload ja com as faixas
-        // cifradas, mais a etiqueta. E o que deixa `reparar` e o espelho
-        // trabalharem sem a chave.
-        let crc = crc32(&slot[SLOT_CAB..]);
-        por_u32(&mut slot, 4, crc);
-        slot
+        montar_slot_com(
+            &self.material,
+            &self.faixas,
+            self.slot_size,
+            volume,
+            rowid,
+            versao,
+            payload,
+        )
     }
 
     /// Decifra as faixas marcadas de um slot lido. Sem cifra, devolve os
     /// proprios bytes do payload.
     fn abrir_slot(&self, volume: u32, rowid: RowId, slot: &[u8]) -> Result<Vec<u8>> {
-        let fim_corpo = SLOT_CAB + self.esquema.payload_len();
-        let mut payload = slot[SLOT_CAB..fim_corpo].to_vec();
-        if !self.material.cifrado() {
-            return Ok(payload);
-        }
-        let c = Campos(slot);
-        let versao = c.u64(8);
-        let tempero = c.u64(16);
-        let nonce = cofre::nonce_de_pedaco(rowid, volume, versao as u32, tempero);
-
-        let mut guardado = if self.material.no_lugar() {
-            self.juntar_faixas(&payload)
-        } else {
-            Vec::new()
-        };
-        guardado.extend_from_slice(&slot[fim_corpo..]);
-        let claro = self.material.abrir(
-            &nonce,
-            &aad_do_slot(volume, rowid, versao),
-            &guardado,
+        abrir_slot_com(
+            &self.material,
+            &self.faixas,
+            self.esquema.payload_len(),
+            volume,
+            rowid,
+            slot,
             &self.volumes.caminho(volume).display().to_string(),
-        )?;
-        self.espalhar_faixas(&mut payload, &claro);
-        Ok(payload)
+        )
     }
 
     /// Sela o conteudo de uma coluna EXTERNA marcada, antes de ele virar bloco
@@ -1269,7 +1547,131 @@ impl RegFile {
         fora.extend_from_slice(&self.material.selar(&nonce, &coluna.to_le_bytes(), dados));
         fora
     }
+}
 
+/// Monta o slot inteiro -- cabecalho, corpo e, se for o caso, etiqueta.
+///
+/// Existe como caminho unico porque inserir, atualizar e a reescrita do
+/// `acrescentar_coluna` tem de selar exatamente igual: um dos tres com o nonce
+/// montado de outro jeito nao daria erro nenhum na hora, e sim uma linha que
+/// nao abre depois.
+///
+/// Recebe material, faixas e `slot_size` em vez de sair do `&self` porque a
+/// reescrita sela com o esquema NOVO enquanto ainda abre com o velho -- e a
+/// alternativa era uma segunda copia desta selagem.
+fn montar_slot_com(
+    material: &cofre::Material,
+    faixas: &[(usize, usize)],
+    slot_size: usize,
+    volume: u32,
+    rowid: RowId,
+    versao: u64,
+    payload: &[u8],
+) -> Vec<u8> {
+    {
+        let mut slot = vec![0u8; slot_size];
+        slot[0] = STATUS_ATIVO;
+        por_u64(&mut slot, 8, versao);
+
+        let fim_corpo = SLOT_CAB + payload.len();
+        slot[SLOT_CAB..fim_corpo].copy_from_slice(payload);
+
+        if material.cifrado() {
+            // Oito bytes sorteados NESTA gravacao, nos que ja eram reservados
+            // no cabecalho do slot. Custam zero de formato e sao o que segura
+            // o nonce diferente quando a versao repete -- o que acontece se
+            // uma gravacao se perder no cache do sistema antes do `fsync` e a
+            // seguinte reler a versao antiga.
+            let tempero = cifra::sortear_u64();
+            por_u64(&mut slot, 16, tempero);
+            let nonce = cofre::nonce_de_pedaco(rowid, volume, versao as u32, tempero);
+
+            // As faixas marcadas viram UMA mensagem: uma etiqueta so para a
+            // linha, e nao uma por coluna. Cifrar cada coluna sozinha custaria
+            // 16 bytes por coluna marcada e permitiria trocar a coluna A de
+            // uma linha pela coluna A de outra sem a etiqueta reclamar.
+            let claro = juntar_faixas(faixas, payload);
+            let selado = material.selar(&nonce, &aad_do_slot(volume, rowid, versao), &claro);
+            if material.no_lugar() {
+                espalhar_faixas(
+                    faixas,
+                    &mut slot[SLOT_CAB..fim_corpo],
+                    &selado[..claro.len()],
+                );
+                slot[fim_corpo..].copy_from_slice(&selado[claro.len()..]);
+            } else {
+                // O pacote nao cabe no lugar: a faixa marcada vai a zeros --
+                // o mesmo que uma coluna nunca preenchida -- e o pacote
+                // inteiro mora no rabo.
+                espalhar_faixas(
+                    faixas,
+                    &mut slot[SLOT_CAB..fim_corpo],
+                    &vec![0u8; claro.len()],
+                );
+                slot[fim_corpo..].copy_from_slice(&selado);
+            }
+        }
+
+        // O CRC cobre o que esta no DISCO -- o payload ja com as faixas
+        // cifradas, mais a etiqueta. E o que deixa `reparar` e o espelho
+        // trabalharem sem a chave.
+        let crc = crc32(&slot[SLOT_CAB..]);
+        por_u32(&mut slot, 4, crc);
+        slot
+    }
+}
+
+/// Decifra as faixas marcadas de um slot lido, com material e faixas DADOS.
+/// Sem cifra, devolve os proprios bytes do payload.
+fn abrir_slot_com(
+    material: &cofre::Material,
+    faixas: &[(usize, usize)],
+    payload_len: usize,
+    volume: u32,
+    rowid: RowId,
+    slot: &[u8],
+    nome: &str,
+) -> Result<Vec<u8>> {
+    let fim_corpo = SLOT_CAB + payload_len;
+    let mut payload = slot[SLOT_CAB..fim_corpo].to_vec();
+    if !material.cifrado() {
+        return Ok(payload);
+    }
+    let c = Campos(slot);
+    let versao = c.u64(8);
+    let tempero = c.u64(16);
+    let nonce = cofre::nonce_de_pedaco(rowid, volume, versao as u32, tempero);
+
+    let mut guardado = if material.no_lugar() {
+        juntar_faixas(faixas, &payload)
+    } else {
+        Vec::new()
+    };
+    guardado.extend_from_slice(&slot[fim_corpo..]);
+    let claro = material.abrir(&nonce, &aad_do_slot(volume, rowid, versao), &guardado, nome)?;
+    espalhar_faixas(faixas, &mut payload, &claro);
+    Ok(payload)
+}
+
+/// Junta as faixas marcadas numa mensagem so, na ordem das colunas.
+fn juntar_faixas(faixas: &[(usize, usize)], payload: &[u8]) -> Vec<u8> {
+    let mut fora = Vec::with_capacity(faixas.iter().map(|(_, n)| n).sum());
+    for (off, n) in faixas {
+        fora.extend_from_slice(&payload[*off..*off + *n]);
+    }
+    fora
+}
+
+/// Devolve cada faixa ao lugar dela dentro do payload.
+fn espalhar_faixas(faixas: &[(usize, usize)], payload: &mut [u8], junto: &[u8]) {
+    let mut pos = 0;
+    for (off, n) in faixas {
+        payload[*off..*off + *n].copy_from_slice(&junto[pos..pos + *n]);
+        pos += *n;
+    }
+}
+
+impl RegFile {
     /// Abre o conteudo selado por [`RegFile::selar_externo`].
     pub fn abrir_externo(&self, coluna: u16, guardado: &[u8]) -> Result<Vec<u8>> {
         if !self.material.cifrado() || !self.externa_marcada(coluna) || guardado.is_empty() {
@@ -1297,24 +1699,6 @@ impl RegFile {
             .colunas()
             .get(coluna as usize)
             .is_some_and(|c| c.ty.externo() && c.dado_pessoal.e_pessoal())
-    }
-
-    /// Junta as faixas marcadas numa mensagem so, na ordem das colunas.
-    fn juntar_faixas(&self, payload: &[u8]) -> Vec<u8> {
-        let mut fora = Vec::with_capacity(self.faixas.iter().map(|(_, n)| n).sum());
-        for (off, n) in &self.faixas {
-            fora.extend_from_slice(&payload[*off..*off + *n]);
-        }
-        fora
-    }
-
-    /// Devolve cada faixa ao lugar dela dentro do payload.
-    fn espalhar_faixas(&self, payload: &mut [u8], junto: &[u8]) {
-        let mut pos = 0;
-        for (off, n) in &self.faixas {
-            payload[*off..*off + *n].copy_from_slice(&junto[pos..pos + *n]);
-            pos += *n;
-        }
     }
 
     fn escrever_slot(
@@ -1688,6 +2072,127 @@ fn reescrever_volume(
     drop(para);
     std::fs::rename(&tmp, caminho)?;
     Ok(())
+}
+
+/// Escreve o `*.novo` de UM volume com slots MAIS LARGOS, um a um, na mesma
+/// ordem. **Nao troca**: quem troca e o [`trocar_pelo_novo`], depois.
+///
+/// A diferenca para o [`reescrever_volume`] e que ali os slots viajam byte a
+/// byte e aqui cada um passa por `transformar` -- que e o unico ponto em que o
+/// payload muda de forma. A ordem e a garantia: o i-esimo slot lido e o
+/// i-esimo escrito, entao `rowid = primeiro + i` continua valendo dos dois
+/// lados, e e por isso que o `.ndx` sobrevive sem ser tocado.
+///
+/// Reescrever no proprio arquivo seria impossivel aqui de qualquer modo -- o
+/// slot novo e mais largo que o velho, e escrever o slot 1 comeria o comeco do
+/// slot 2.
+///
+/// Devolve quantos slots passaram.
+///
+/// O `transformar` recebe `(volume, rowid, slot velho, nome do arquivo)` e
+/// devolve o slot novo. Os quatro sao necessarios: o par volume/rowid entra no
+/// nonce e no dado associado da cifra, e o nome so aparece na mensagem de erro.
+type Transformador<'a> = &'a mut dyn FnMut(u32, RowId, &[u8], &str) -> Result<Vec<u8>>;
+
+/// `(slot_size, data_offset, CRC do esquema)` que um arquivo de volume
+/// **declara**, ou `None` se ele nem chega a ser um cabecalho valido.
+///
+/// Le 128 bytes e confere o magic e o CRC do cabecalho antes de acreditar em
+/// qualquer numero: e o mesmo cuidado do `achar_primeiro_volume`, e existe
+/// para que um arquivo pela metade nunca seja tomado por um volume pronto.
+fn geometria_do_volume(caminho: &Path) -> Option<(usize, u64, u32)> {
+    let mut cab = vec![0u8; CAB_LEN];
+    let mut f = File::open(caminho).ok()?;
+    ler_exato(&mut f, 0, &mut cab).ok()?;
+    if cab[0..8] != *MAGIC_REG {
+        return None;
+    }
+    let versao = u16::from_le_bytes([cab[8], cab[9]]);
+    let cab_len = if versao == VERSAO_CIFRADO {
+        CAB_LEN_CIFRADO
+    } else {
+        CAB_LEN
+    };
+    if cab_len > CAB_LEN {
+        cab.resize(cab_len, 0);
+        ler_exato(&mut f, 0, &mut cab).ok()?;
+    }
+    let c = Campos(&cab);
+    if crc32(&cab[..cab_len - 4]) != c.u32(cab_len - 4) {
+        return None;
+    }
+    Some((c.u32(16) as usize, c.u64(44), c.u32(56)))
+}
+
+/// Troca um volume pelo `*.novo` escrito ao lado dele. So `rename`.
+fn trocar_pelo_novo(caminho: &Path) -> Result<()> {
+    let nome = caminho
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let tmp = caminho.with_file_name(format!("{nome}.{SUFIXO_NOVO}"));
+    if tmp.exists() {
+        std::fs::rename(&tmp, caminho)?;
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn escrever_volume_alargado(
+    caminho: &Path,
+    cab: &[u8],
+    esquema_bytes: &[u8],
+    origem: u64,
+    destino: u64,
+    slot_velho: usize,
+    slot_novo: usize,
+    volume: u32,
+    primeiro_rowid: RowId,
+    transformar: Transformador,
+) -> Result<u64> {
+    let nome = caminho
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let tmp = caminho.with_file_name(format!("{nome}.{SUFIXO_NOVO}"));
+
+    let de = File::open(caminho)?;
+    let tamanho = de.metadata()?.len();
+    let quantos = if tamanho > origem {
+        (tamanho - origem) / slot_velho as u64
+    } else {
+        0
+    };
+    let mut de = std::io::BufReader::with_capacity(1 << 20, de);
+    de.seek(SeekFrom::Start(origem))?;
+
+    let para = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(&tmp)?;
+    let mut para = std::io::BufWriter::with_capacity(1 << 20, para);
+    para.write_all(cab)?;
+    para.write_all(esquema_bytes)?;
+    let escrito = cab.len() as u64 + esquema_bytes.len() as u64;
+    if escrito < destino {
+        para.write_all(&vec![0u8; (destino - escrito) as usize])?;
+    }
+
+    let mut slot = vec![0u8; slot_velho];
+    for i in 0..quantos {
+        de.read_exact(&mut slot)?;
+        let novo = transformar(volume, primeiro_rowid + i, &slot, &nome)?;
+        debug_assert_eq!(novo.len(), slot_novo);
+        para.write_all(&novo)?;
+    }
+    let para = para.into_inner().map_err(|e| e.into_error())?;
+    // Sincronizado AQUI, e nao depois do `rename`: a fase B so pode trocar
+    // arquivos que ja estao no disco inteiros, senao a troca "atomica"
+    // publicaria um arquivo cujo miolo ainda esta no cache.
+    para.sync_all()?;
+    drop(para);
+    Ok(quantos)
 }
 
 /// Acha o volume 1 de um conjunto sem saber, de antemao, se a tabela e

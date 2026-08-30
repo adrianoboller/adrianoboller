@@ -171,6 +171,25 @@ pub const FABRICA_TELA: &[TextoDeFabrica] = &[
     texto!("tela.fechar", "Fechar", "Fermer", "Close", "Chiudi", "Schließen", "Cerrar"),
     texto!("tela.salvar", "Salvar", "Enregistrer", "Save", "Salva", "Speichern", "Guardar"),
     texto!("tela.incluir", "Incluir", "Ajouter", "Add", "Inserisci", "Hinzufügen", "Añadir"),
+
+    // ------------------------------------- acrescentar coluna (sprint 25 / #127)
+    texto!("tela.acrescentar", "Acrescentar", "Ajouter", "Add", "Aggiungi", "Hinzufügen", "Añadir"),
+    texto!("tela.acrescentar_coluna", "✚ Acrescentar coluna…", "✚ Ajouter une colonne…", "✚ Add column…", "✚ Aggiungi colonna…", "✚ Spalte hinzufügen…", "✚ Añadir columna…"),
+    texto!("tela.acrescentar_coluna_em", "Acrescentar coluna em", "Ajouter une colonne à", "Add column to", "Aggiungi colonna a", "Spalte hinzufügen zu", "Añadir columna a"),
+    texto!("tela.registros", "registro(s)", "enregistrement(s)", "record(s)", "record", "Datensätze", "registro(s)"),
+    texto!("tela.col_nome", "nome da coluna", "nom de la colonne", "column name", "nome della colonna", "Spaltenname", "nombre de la columna"),
+    texto!("tela.col_tipo", "tipo", "type", "type", "tipo", "Typ", "tipo"),
+    texto!("tela.col_caption", "rótulo de tela", "libellé d'écran", "screen label", "etichetta a schermo", "Bildschirmbezeichnung", "rótulo de pantalla"),
+    texto!("tela.col_padrao", "valor das linhas que já existem", "valeur des lignes existantes", "value for the rows that already exist", "valore delle righe esistenti", "Wert für die vorhandenen Zeilen", "valor de las filas que ya existen"),
+    texto!("tela.col_padrao_vazio", "vazio = nulo", "vide = nul", "empty = null", "vuoto = nullo", "leer = null", "vacío = nulo"),
+    texto!("tela.col_obrigatoria", "obrigatória (não aceita nulo)", "obligatoire (n'accepte pas nul)", "required (no nulls)", "obbligatoria (non accetta nullo)", "pflicht (kein null)", "obligatoria (no acepta nulo)"),
+    texto!("tela.slots_reescritos", "slot(s) reescrito(s)", "emplacement(s) réécrit(s)", "slot(s) rewritten", "slot riscritti", "neu geschriebene Slots", "slot(s) reescrito(s)"),
+    // O preco e a parte que ninguem pode descobrir depois de clicar.
+    texto!("tela.alter_preco", "Acrescentar coluna reescreve o arquivo de dados inteiro, linha por linha, na mesma ordem. O rowid de cada linha NÃO muda — e por isso os índices não precisam ser refeitos. Medido: 0,55 µs por linha (10 milhões de linhas em 5,5 s).", "", "Adding a column rewrites the whole data file, row by row, in the same order. Each row keeps its rowid — which is why the indexes are not rebuilt. Measured: 0.55 µs per row (10 million rows in 5.5 s).", "", "", ""),
+    texto!("tela.alter_obrigatoria", "Coluna obrigatória numa tabela que já tem linha exige um valor padrão: sem ele, o motor teria de inventar um dado para linhas que ninguém digitou — e ele recusa em vez de inventar.", "", "A required column on a table that already has rows needs a default: without one the engine would have to invent data for rows nobody typed — and it refuses instead of inventing.", "", "", ""),
+    texto!("tela.alter_pode", "Acrescentar coluna funciona nesta tabela, mesmo com dado dentro: o rowid de cada linha não muda, e por isso os índices não são refeitos.", "", "Adding a column works on this table even with data in it: each row keeps its rowid, so the indexes are not rebuilt.", "", "", ""),
+    texto!("tela.alter_nao_pode", "Trocar o tipo ou a largura de uma coluna que já existe continua não existindo — o caminho é duplicar a tabela e reimportar.", "", "Changing the type or the width of an existing column still does not exist — the way through is to duplicate the table and reimport.", "", "", ""),
+
     texto!("tela.sim", "sim", "oui", "yes", "sì", "ja", "sí"),
     texto!("tela.nao", "não", "non", "no", "no", "nein", "no"),
     texto!("tela.ligado", "ligado", "activé", "on", "attivo", "ein", "activado"),

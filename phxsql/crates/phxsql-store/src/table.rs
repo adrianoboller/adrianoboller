@@ -317,6 +317,96 @@ impl Table {
         Ok(moveu)
     }
 
+    /// Acrescenta uma coluna a tabela, **preservando o rowid de cada linha**.
+    ///
+    /// # O que a linha antiga recebe, e por que a pergunta e de desenho
+    ///
+    /// Tres respostas possiveis, e duas delas mentem:
+    ///
+    /// * **nulo** -- honesto: a coluna nao existia quando a linha foi digitada,
+    ///   e "nao sei" e a verdade sobre ela. Exige `nullable`.
+    /// * **um padrao declarado** -- tambem honesto, desde que quem declarou
+    ///   saiba que esta AFIRMANDO aquele valor sobre linhas que ninguem
+    ///   digitou. `situacao = 'ativo'` em dez mil clientes e uma afirmacao.
+    /// * **obrigatoria sem padrao** -- e a que mente, e por isso e recusada
+    ///   aqui quando a tabela tem linha. Ou o motor inventaria um zero (e
+    ///   `saldo = 0` sobre linha antiga e um dado falso que passa no CRC), ou
+    ///   gravaria nulo numa coluna que se declarou nao-nula, e a proxima
+    ///   leitura teria de escolher entre mentir e falhar. Numa tabela VAZIA
+    ///   ela passa: nao ha linha sobre a qual mentir.
+    ///
+    /// # O que ela nao aceita
+    ///
+    /// `Sequence` (o contador do `.reg` e unico, e numerar linha antiga seria
+    /// inventar a ordem que ela teve), nome de coluna de sistema (elas ja
+    /// existem e sao do motor), e `Bin`/`Memo` com padrao -- o valor delas mora
+    /// fora do slot, e um padrao gravaria o mesmo bloco em toda linha; nulas
+    /// elas entram.
+    pub fn acrescentar_coluna(
+        &mut self,
+        coluna: phxsql_core::schema::Column,
+        padrao: Option<Value>,
+    ) -> Result<u64> {
+        if phxsql_core::schema::e_coluna_de_sistema(&coluna.nome) {
+            return Err(PhxError::Esquema(format!(
+                "{} e coluna do motor e ja existe na tabela",
+                coluna.nome
+            )));
+        }
+        if coluna.ty == ColumnType::Sequence {
+            return Err(PhxError::Esquema(
+                "coluna Sequence nao se acrescenta a tabela com dado: o contador do \
+                 `.reg` e unico, e numerar a linha antiga inventaria a ordem que ela teve"
+                    .into(),
+            ));
+        }
+        if let ColumnType::Str(0) = coluna.ty {
+            return Err(PhxError::Esquema(format!(
+                "coluna {} tem Str(0)",
+                coluna.nome
+            )));
+        }
+
+        let tem_linha = self.reg.slots() > 0;
+        let padrao = padrao.filter(|v| !v.e_null());
+        if padrao.is_some() && coluna.ty.externo() {
+            return Err(PhxError::Esquema(format!(
+                "a coluna {} e {:?} e o valor dela mora fora do slot; \
+                 acrescente-a nula e preencha linha a linha",
+                coluna.nome, coluna.ty
+            )));
+        }
+        if padrao.is_none() && !coluna.nullable && tem_linha {
+            return Err(PhxError::Esquema(format!(
+                "a coluna {} e obrigatoria e a tabela ja tem {} linha(s): \
+                 declare um valor padrao, ou deixe a coluna aceitar nulo. \
+                 Gravar um zero nas linhas antigas seria inventar dado",
+                coluna.nome,
+                self.reg.slots()
+            )));
+        }
+
+        let posicao = self.esquema.posicao_de_coluna_nova();
+        let novo = self.esquema.com_coluna(coluna.clone(), posicao)?;
+
+        // O padrao vira bytes AQUI, com o tipo da coluna: se o valor nao servir
+        // para o tipo, o erro aparece antes de qualquer arquivo ser tocado.
+        let mut bytes = vec![0u8; coluna.ty.largura()];
+        if let Some(v) = &padrao {
+            escrever_inline(v, &coluna.ty, &mut bytes)?;
+        }
+
+        let slots = self
+            .reg
+            .acrescentar_coluna(novo, posicao, &bytes, padrao.is_none())?;
+        self.esquema = self.reg.esquema().clone();
+        self.colunas_marcadas = marcadas_do_esquema(&self.esquema);
+        // O `.pag` descreve a tabela para quem le o diretorio sem abrir o
+        // `.reg`; desatualizado, ele viraria uma segunda verdade.
+        self.gravar_pag()?;
+        Ok(slots)
+    }
+
     pub fn abrir(diretorio: impl AsRef<Path>, nome: &str) -> Result<Table> {
         let diretorio = diretorio.as_ref().to_path_buf();
         let reg = RegFile::abrir(&diretorio, nome)?;
@@ -668,6 +758,20 @@ impl Table {
     /// `Bin`/`Memo` voltam como `Value::Null` -- util quando so precisamos
     /// dos valores que entram em indice.
     fn decodificar(&mut self, payload: &[u8], carregar_externos: bool) -> Result<Linha> {
+        // O payload tem de ter a largura do esquema ATUAL. Sem esta linha, um
+        // payload guardado antes de um `acrescentar_coluna` -- a imagem de um
+        // evento do diario, a linha de uma lixeira, o que chega de uma replica
+        // que ainda nao alterou -- seria lido com os offsets errados, e o
+        // curto sairia por indice fora da faixa em vez de por mensagem.
+        if payload.len() != self.esquema.payload_len() {
+            return Err(PhxError::Esquema(format!(
+                "a linha tem {} bytes de payload e o esquema atual de {} espera {}: \
+                 a estrutura da tabela mudou depois que ela foi gravada",
+                payload.len(),
+                self.nome,
+                self.esquema.payload_len()
+            )));
+        }
         let mut linha = Vec::with_capacity(self.esquema.colunas().len());
 
         for i in 0..self.esquema.colunas().len() {

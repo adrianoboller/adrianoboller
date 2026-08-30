@@ -386,7 +386,7 @@ Ordenada por **valor ÷ custo**. O custo (P/M/G) vem dos autores e é
 |--:|---|:--:|---|---|---|
 | 23 | **Poda de volumes na varredura** | M | MariaDB(R) 8 — **depende do 10** | **inferido, não medido**: 12 volumes mensais, uma consulta de um mês lê 1 — 12× no papel | quantos volumes a pergunta típica dispensa, medido numa tabela particionada de verdade. E o alerta que a fonte dá de graça: com gatilho `BEFORE`, o MariaDB(R) **desiste da poda** — e gatilho acabou de entrar aqui |
 | 24 | **`QUALIFY` + `ROW_NUMBER`/`RANK`** | M | Teradata(R) 5 — **depende do 10** (§2.4) | julgamento; «os 3 maiores pedidos de cada cliente» é o que uma ferramenta de BI gera sozinha pelo ODBC | o `PARTITION BY` cabe no `pivotar` que já existe? Se exigir ordenar a tabela em memória, **vira G e volta à mesa** |
-| 25 | **`ALTER TABLE ADD COLUMN`, preservando o rowid** | G | MariaDB(R) 10 | julgamento, com um destravamento concreto: é o que falta ao editor de modelo (pedido 127), e o cartão da tela já diz isso em vez de fingir | custo de reescrever o `.reg` de uma tabela grande — **inferido, não medido** (a casa dos minutos para 10 milhões). E a armadilha: a coluna nova entra **antes** de `softdeleted` e `rownum`, deslocando as colunas de sistema — a família de defeito que já quebrou todo salvar e todo incluir |
+| **25 ✔** | **`ALTER TABLE ADD COLUMN`, preservando o rowid** — **FEITO** | G | MariaDB(R) 10 | destravou o pedido 127: `acrescentar_coluna` existe no protocolo e na tela | **o custo era inferência, e a inferência estava errada por quase duas ordens de grandeza.** «A casa dos minutos para 10 milhões» virou **5,53 s medidos** (0,553 µs/linha, `--example custo-do-alter`). A armadilha nomeada era real e os dois testes que a cobriam **passavam com o defeito reposto** até a regra mudar de «antes da primeira coluna de sistema» para «depois da última coluna do usuário». `PENDENCIAS.md` 147 |
 | 26 | **Direito por linha** | G | Teradata(R) 9 | julgamento; a casa foi de direito por base a por tabela (124) e a marca por coluna (125); falta a linha | quanto custa por linha lida. **Se a varredura da bancada passar de 1,55 s (10%), o desenho está errado.** E o teste que importa é `sem_regra_de_linha_nada_muda` |
 | 27 | **Índice de texto completo (`.fts`)** | G | MariaDB(R) 13 | **desconhecido — e o autor diz isso:** o número que justificaria ou mataria este sprint nunca foi medido | quanto custa **hoje** achar uma palavra num `.memo` de uma tabela de um milhão. Sem ele, «índice de texto completo» é desejo, não plano. É o sprint com mais chance de a premissa mudar a decisão |
 
@@ -408,7 +408,12 @@ A regra da casa é que número sem medição não vira plano. Esta seção separ
 `.reg`), sobre uma largura que **foi** medida (`--example quanto-ocupa`).
 
 **Inferido e dito como inferência (2):** os itens 23 (12× no papel) e 25 (a
-casa dos minutos).
+casa dos minutos). **O 25 foi executado, e a inferência dele caiu na medição:**
+são 5,53 s para dez milhões de linhas, e não minutos — 0,553 µs por linha,
+linear, dominado pelo disco. Fica registrado porque é a régua funcionando: o
+item trazia o número **dito como inferência**, e medir antes de implementar era
+a única coisa que separava «reescrever é caro demais» de «reescrever é o
+barato».
 
 **Desconhecido, e o autor diz (1):** o item 27.
 
@@ -440,8 +445,9 @@ sobre ela.
    e as escolhidas entram juntas.
 5. **11, 12, 13, 14, 15** conforme a urgência.
 6. **21–22** como uma conversa só sobre o diário.
-7. **23–27** por último; o 25 é o que destrava o pedido 127, e o 26 é o único
-   que mexe em todo caminho de leitura.
+7. **23–27** por último; o 25 é o que destrava o pedido 127 — e **ele já foi
+   feito**, fora de ordem, porque o pedido 127 estava parado por causa dele —,
+   e o 26 é o único que mexe em todo caminho de leitura.
 
 ---
 

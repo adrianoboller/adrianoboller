@@ -486,3 +486,75 @@ fn regravar_a_mesma_linha_nunca_repete_o_texto_cifrado() {
     cofre::desligar();
     let _ = std::fs::remove_dir_all(&d);
 }
+
+// ---------------------------------------------------------------------------
+// Acrescentar coluna numa tabela CIFRADA
+// ---------------------------------------------------------------------------
+
+/// A reescrita do `acrescentar_coluna` decifra com o esquema velho e sela com
+/// o novo -- e a linha continua legivel, com o segredo ainda fora do disco.
+///
+/// # Por que a coluna a mais mexe com a cifra
+///
+/// O texto cifrado mora NO LUGAR do claro, no offset da coluna marcada. Uma
+/// coluna nova antes das de sistema move o offset de tudo que vem depois dela,
+/// e a etiqueta cobre as faixas marcadas juntas. Copiar o slot byte a byte
+/// deixaria a etiqueta cobrindo bytes que sairam do lugar, e a linha nao
+/// abriria mais -- perda total, sem erro na hora.
+#[test]
+fn acrescentar_coluna_em_tabela_cifrada_mantem_a_linha_legivel() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    cofre::desligar();
+    let d = dir("alter-cifrado");
+    cofre::definir(SENHA, RAPIDO).unwrap();
+
+    {
+        let mut t = Table::criar(&d, esquema("clientes")).unwrap();
+        for i in 1..=40 {
+            t.inserir(&linha(i)).unwrap();
+        }
+        t.sincronizar().unwrap();
+    }
+    // A tabela nasceu na versao 5: ha coluna marcada e o cofre esta ligado.
+    assert_eq!(versao(&d, "clientes", "reg"), 5);
+    let (slot_antes, _) = geometria(&d, "clientes");
+
+    {
+        let mut t = Table::abrir(&d, "clientes").unwrap();
+        let n = t
+            .acrescentar_coluna(
+                Column::new("situacao", ColumnType::Str(12)),
+                Some(Value::Str("ativo".into())),
+            )
+            .unwrap();
+        assert_eq!(n, 40);
+    }
+
+    // Continua na 5, e o slot cresceu exatamente a largura da coluna nova.
+    assert_eq!(versao(&d, "clientes", "reg"), 5);
+    let (slot_depois, _) = geometria(&d, "clientes");
+    assert_eq!(slot_depois, slot_antes + 12);
+
+    let mut t = Table::abrir(&d, "clientes").unwrap();
+    let situacao = t.esquema().coluna_por_nome("situacao").unwrap();
+    for i in 1..=40i64 {
+        let l = t.ler(i as u64).unwrap().unwrap();
+        assert_eq!(l[0], Value::Int(i));
+        assert_eq!(l[1], Value::Str(format!("{SEGREDO} {i:04}")));
+        assert_eq!(l[2], Value::Memo(format!("{MEMO_SECRETO} numero {i}")));
+        assert_eq!(l[situacao], Value::Str("ativo".into()));
+    }
+    drop(t);
+
+    // E o segredo continua fora do disco: nem o nome marcado nem o memo.
+    let reg = bytes_com_extensao(&d, "reg");
+    assert!(
+        !contem(&reg, SEGREDO.as_bytes()),
+        "o nome marcado voltou a aparecer em claro no .reg depois da alteracao"
+    );
+    let memo = bytes_com_extensao(&d, "memo");
+    assert!(!contem(&memo, MEMO_SECRETO.as_bytes()));
+
+    cofre::desligar();
+    let _ = std::fs::remove_dir_all(&d);
+}

@@ -473,12 +473,12 @@ footer p{max-width:var(--medida)}
 
   <div class="painel">
   <!-- projeto:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-    <div><div class="v">98.123</div><div class="r">linhas de Rust</div></div>
-    <div><div class="v">1.229</div><div class="r">testes</div></div>
+    <div><div class="v">101.283</div><div class="r">linhas de Rust</div></div>
+    <div><div class="v">1.257</div><div class="r">testes</div></div>
     <div><div class="v">0</div><div class="r">dependências</div></div>
     <div><div class="v">7</div><div class="r">crates</div></div>
     <div><div class="v">7</div><div class="r">arquivos/tabela</div></div>
-    <div><div class="v">25.326</div><div class="r">linhas de doc</div></div>
+    <div><div class="v">28.020</div><div class="r">linhas de doc</div></div>
   <!-- projeto:fim -->
   </div>
 </header>
@@ -4934,10 +4934,10 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   <div class="painel">
 <!-- idiomas:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
     <div><div class="v">6</div><div class="r">idiomas na tabela</div></div>
-    <div><div class="v">270</div><div class="r">textos na fábrica</div></div>
-    <div><div class="v">1.999</div><div class="r">ainda cravados</div></div>
-    <div><div class="v">11%</div><div class="r">da interface</div></div>
-    <div><div class="v">1.999</div><div class="r">catraca (o teto)</div></div>
+    <div><div class="v">287</div><div class="r">textos na fábrica</div></div>
+    <div><div class="v">1.996</div><div class="r">ainda cravados</div></div>
+    <div><div class="v">12%</div><div class="r">da interface</div></div>
+    <div><div class="v">1.996</div><div class="r">catraca (o teto)</div></div>
   <!-- idiomas:fim -->
   </div>
 
@@ -5833,8 +5833,8 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
             <td>quem escolhe o índice é quem escreve a operação. Estatística sem consumidor é arquivo para manter atualizado sem ninguém ler</td></tr>
         <tr><td><strong><code>WHERE</code> no <code>varrer</code></strong></td>
             <td>por isso o filtro da grade vale sobre a janela trazida, e não sobre a tabela — medido: 25 de Blumenau numa tabela com 2.500. O contrato de <em>pushdown</em> existe na grade e o servidor não o atende; <strong>enquanto não atende, a tela diz</strong></td></tr>
-        <tr><td><strong>Alterar a estrutura de uma tabela com dado</strong></td>
-            <td>o slot é de largura fixa e o <code>slot_size</code> decide o endereço de cada linha, então acrescentar coluna é reescrever o <code>.reg</code> preservando o rowid. A tela diz isso em vez de oferecer um formulário que fingiria salvar</td></tr>
+        <tr><td><strong>Trocar o tipo ou a largura de uma coluna que já existe</strong></td>
+            <td><strong>acrescentar</strong> coluna passou a funcionar (sprint 25): o <code>.reg</code> é reescrito slot a slot, na mesma ordem, e o rowid não muda — <strong>0,553&nbsp;µs por linha, dez milhões em 5,53&nbsp;s</strong>, medido, contra a inferência de «minutos» com que o item chegou. O que continua fora é mudar o tipo ou a largura de uma coluna existente, e tirar coluna: o caminho é duplicar a tabela e reimportar</td></tr>
         <tr><td><strong>Cadastro de usuários pela web</strong></td>
             <td>o <code>config_gravar</code> existe e grava parte do arquivo, com portão próprio e rastro. O que ele <em>não</em> grava é deliberado: token, segurança, usuários, cifra, credencial de e-mail e replicação — uma sessão roubada não abre o firewall nem cria supervisor. Falta a metade difícil: senha nunca em claro em ponto nenhum do caminho</td></tr>
         <tr><td><strong>Tela para gatilho e procedimento</strong></td>
@@ -5978,9 +5978,9 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
 
   <div class="painel">
 <!-- pedidos:inicio (gerado por docs/dossie/pagina-dos-pedidos.py) -->
-    <div><div class="v">143</div><div class="r">pedidos, ao todo</div></div>
-    <div><div class="v">139</div><div class="r">feitos</div></div>
-    <div><div class="v">4</div><div class="r">parciais</div></div>
+    <div><div class="v">147</div><div class="r">pedidos, ao todo</div></div>
+    <div><div class="v">144</div><div class="r">feitos</div></div>
+    <div><div class="v">3</div><div class="r">parciais</div></div>
     <div><div class="v">0</div><div class="r">planejados</div></div>
   <!-- pedidos:fim -->
   </div>
@@ -6014,32 +6014,33 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
     <table>
       <thead><tr><th>Área</th><th class="num">testes</th><th class="num">%</th></tr></thead>
       <tbody>
-        <tr><td>Motor de dados (arquivos, índice, diários)</td><td class="num">323</td><td class="num">26,3%</td></tr>
-        <tr><td>Protocolo e portões (despachar)</td><td class="num">177</td><td class="num">14,4%</td></tr>
-        <tr><td>Núcleo (JSON, tipos, UUID, zip, paralelo)</td><td class="num">133</td><td class="num">10,8%</td></tr>
-        <tr><td>Configuração</td><td class="num">82</td><td class="num">6,7%</td></tr>
-        <tr><td>Criptografia e codificação</td><td class="num">80</td><td class="num">6,5%</td></tr>
-        <tr><td>DbLink</td><td class="num">65</td><td class="num">5,3%</td></tr>
-        <tr><td>Telemetria e profiler</td><td class="num">45</td><td class="num">3,7%</td></tr>
-        <tr><td>Camada SQL (léxico, sintaxe, tradução)</td><td class="num">44</td><td class="num">3,6%</td></tr>
-        <tr><td>Gatilhos e procedimentos</td><td class="num">38</td><td class="num">3,1%</td></tr>
+        <tr><td>Motor de dados (arquivos, índice, diários)</td><td class="num">341</td><td class="num">27,1%</td></tr>
+        <tr><td>Protocolo e portões (despachar)</td><td class="num">180</td><td class="num">14,3%</td></tr>
+        <tr><td>Núcleo (JSON, tipos, UUID, zip, paralelo)</td><td class="num">133</td><td class="num">10,6%</td></tr>
+        <tr><td>Configuração</td><td class="num">82</td><td class="num">6,5%</td></tr>
+        <tr><td>Criptografia e codificação</td><td class="num">80</td><td class="num">6,4%</td></tr>
+        <tr><td>DbLink</td><td class="num">65</td><td class="num">5,2%</td></tr>
+        <tr><td>Telemetria e profiler</td><td class="num">45</td><td class="num">3,6%</td></tr>
+        <tr><td>Camada SQL (léxico, sintaxe, tradução)</td><td class="num">44</td><td class="num">3,5%</td></tr>
+        <tr><td>Gatilhos e procedimentos</td><td class="num">38</td><td class="num">3,0%</td></tr>
         <tr><td>Jobs</td><td class="num">31</td><td class="num">2,5%</td></tr>
-        <tr><td>Interface web (servidor HTTP)</td><td class="num">28</td><td class="num">2,3%</td></tr>
+        <tr><td>Interface web (servidor HTTP)</td><td class="num">28</td><td class="num">2,2%</td></tr>
         <tr><td>MCP</td><td class="num">19</td><td class="num">1,5%</td></tr>
         <tr><td>Usuários e permissões</td><td class="num">19</td><td class="num">1,5%</td></tr>
-        <tr><td><strong>Console de terminal (phxsqlcmd)</strong></td><td class="num"><strong>18</strong></td><td class="num"><strong>1,5%</strong></td></tr>
-        <tr><td><strong>Segurança de rede (blacklist, firewall)</strong></td><td class="num"><strong>18</strong></td><td class="num"><strong>1,5%</strong></td></tr>
+        <tr><td><strong>Console de terminal (phxsqlcmd)</strong></td><td class="num"><strong>18</strong></td><td class="num"><strong>1,4%</strong></td></tr>
+        <tr><td><strong>Segurança de rede (blacklist, firewall)</strong></td><td class="num"><strong>18</strong></td><td class="num"><strong>1,4%</strong></td></tr>
         <tr><td><strong>ODBC</strong></td><td class="num"><strong>17</strong></td><td class="num"><strong>1,4%</strong></td></tr>
         <tr><td><strong>Mensagens (i18n do servidor)</strong></td><td class="num"><strong>14</strong></td><td class="num"><strong>1,1%</strong></td></tr>
-        <tr><td><strong>Exportação</strong></td><td class="num"><strong>13</strong></td><td class="num"><strong>1,1%</strong></td></tr>
-        <tr><td><strong>Junções e união</strong></td><td class="num"><strong>13</strong></td><td class="num"><strong>1,1%</strong></td></tr>
+        <tr><td><strong>Exportação</strong></td><td class="num"><strong>13</strong></td><td class="num"><strong>1,0%</strong></td></tr>
+        <tr><td><strong>Junções e união</strong></td><td class="num"><strong>13</strong></td><td class="num"><strong>1,0%</strong></td></tr>
         <tr><td><strong>Pivot</strong></td><td class="num"><strong>12</strong></td><td class="num"><strong>1,0%</strong></td></tr>
         <tr><td><strong>Replicação</strong></td><td class="num"><strong>11</strong></td><td class="num"><strong>0,9%</strong></td></tr>
-        <tr><td><strong>Alertas e e-mail</strong></td><td class="num"><strong>8</strong></td><td class="num"><strong>0,7%</strong></td></tr>
+        <tr><td><strong>Alertas e e-mail</strong></td><td class="num"><strong>8</strong></td><td class="num"><strong>0,6%</strong></td></tr>
+        <tr><td><strong>CLI</strong></td><td class="num"><strong>7</strong></td><td class="num"><strong>0,6%</strong></td></tr>
         <tr><td><strong>Cluster</strong></td><td class="num"><strong>7</strong></td><td class="num"><strong>0,6%</strong></td></tr>
         <tr><td><strong>Servidor (outros)</strong></td><td class="num"><strong>7</strong></td><td class="num"><strong>0,6%</strong></td></tr>
         <tr><td><strong>Monitor de máquina</strong></td><td class="num"><strong>6</strong></td><td class="num"><strong>0,5%</strong></td></tr>
-        <tr><td><strong>total</strong></td><td class="num"><strong>1228</strong></td><td class="num"></td></tr>
+        <tr><td><strong>total</strong></td><td class="num"><strong>1256</strong></td><td class="num"></td></tr>
       </tbody>
     </table>
   </div>
@@ -6073,8 +6074,8 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
 
 <footer>
   <!-- rodape:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-  <p>PhxSql 0.18.0 · 98.123 linhas de Rust em 7 crates,
-  mais 1033 KiB de interface · 1.229 testes ·
+  <p>PhxSql 0.18.0 · 101.283 linhas de Rust em 7 crates,
+  mais 1040 KiB de interface · 1.257 testes ·
   nenhuma dependência externa.
   Especificação byte a byte em <code>docs/FORMATO.md</code>, cadastro e
   permissões em <code>docs/USUARIOS.md</code>, a replicação em

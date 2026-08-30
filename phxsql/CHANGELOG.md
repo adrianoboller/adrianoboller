@@ -10,6 +10,113 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
+## Não lançado — `ALTER TABLE ADD COLUMN`, com o rowid intacto
+
+Escrito em paralelo com as outras seções «Não lançado» abaixo: na integração
+todas viram uma só, e o número da versão sai de lá.
+
+O sprint 25, que era o que faltava ao pedido 127. Até aqui **não dava para
+acrescentar coluna a uma tabela que já tem dado** — e é disso que qualquer
+sistema em produção precisa no segundo mês.
+
+### Adicionado
+
+- **`acrescentar_coluna`**: uma coluna nova numa tabela com dado, **com o
+  rowid de cada linha preservado**. O `.reg` é reescrito slot a slot, na mesma
+  ordem — inclusive os slots livres, que continuam livres e continuam ocupando
+  o lugar deles. Como o rowid *é* a posição, preservar a posição preserva o
+  rowid, e por isso o **`.ndx` não é tocado**: há teste que compara o arquivo
+  byte a byte antes e depois, e ele cai no dia em que alguém resolver
+  reconstruir o índice aqui. `docs/FORMATO.md` §1.1.
+
+- **O medidor `--example custo-do-alter`**, e com ele a troca de uma
+  inferência por uma medida. O sprint dizia «a casa dos minutos para dez
+  milhões — inferido, não medido». **São 5,53 s**: 0,553 µs por linha, linear
+  do primeiro tamanho ao último, dominado pelo disco (427 MiB/s somando o
+  arquivo lido com o escrito). Para comparar, **construir** a mesma tabela de
+  dez milhões levou 90,4 s — a alteração custa 6,1% do que custou digitar o
+  dado. `docs/DESEMPENHO.md` §4.12.
+
+- **As outras duas saídas caíram com número, e não por opinião.** Slot de duas
+  larguras convivendo o formato **não permite** — o `slot_size` é um campo só,
+  nos bytes 16..20 do cabeçalho — e cobraria uma busca onde hoje há uma
+  multiplicação: medido, **2,36×** por linha lida (1,08 → 2,55 µs), em toda
+  leitura, para poupar uma passada uma vez. «Só em tabela vazia» custa 0,6 ms
+  e continua existindo — é o caminho de quem declara a coluna obrigatória sem
+  padrão —, mas não resolve o problema, evita-o.
+
+- **A resposta para a morte no meio da reescrita.** Duas fases: escreve
+  **todos** os `*.novo` e sincroniza cada um; só então troca, com `rename`, o
+  volume 1 primeiro. O volume 1 é o **ponto de compromisso**, e a abertura lê
+  o estado nele: velho, os `*.novo` são lixo de uma fase que não decidiu nada;
+  novo, a alteração está decidida e a abertura **termina** o `rename` que
+  faltou. Se o `*.novo` também sumiu, a abertura **recusa** o conjunto
+  nomeando o volume — em vez de ler o volume 3 com a largura do volume 1, que
+  sairia com cada linha deslocada da anterior e sem nenhum CRC reclamando,
+  porque os bytes lidos seriam bytes de outra linha.
+
+- **O botão na tela**, na aba Estrutura e no cartão do editor de modelo. O
+  cartão dizia, em português cravado, que alterar coluna «não existe no
+  servidor»; agora ele abre o formulário que funciona — e continua dizendo a
+  verdade sobre o que **não** dá: trocar tipo ou largura de coluna existente.
+  Os textos nasceram na fábrica de idiomas, e os três parágrafos que saíram
+  **baixaram a catraca de 1.999 para 1.996**.
+
+### Mudado
+
+- **A coluna nova entra depois da última coluna do usuário**, e não no fim da
+  lista: as de sistema (`softdeleted`, `rownum`) entraram no fim para não
+  deslocar as do usuário, e a coluna que o usuário acrescenta agora é dele. O
+  preço é que a **posição** das de sistema anda, e as três coisas que guardam
+  posição — `IndexColumn.coluna`, `ForeignKey.colunas` e a coluna de referência
+  da partição — são remapeadas em `Schema::com_coluna`, num lugar só.
+
+- **A decodificação de linha confere a largura do payload antes de ler.** Um
+  payload guardado antes da alteração — a imagem de um evento do diário, a
+  linha de uma lixeira, o que chega de uma réplica que ainda não alterou —
+  passa a dar *«a estrutura da tabela mudou depois que ela foi gravada»* em
+  vez de sair por índice fora da faixa ou, pior, com os campos deslocados.
+
+- **`acrescentar_coluna` exige `administrar`**, e não `criar`: é a maior
+  escrita de estrutura do motor e a que não tem desfazer barato — o mesmo
+  poder do `excluir_tabela` e do `marcar_lgpd` ao lado dela.
+
+### Corrigido
+
+- **A caixa de marcar do cartão novo nascia com 834px de largura**, esticada
+  pelo `input{width:100%}` da folha global. Achada no primeiro minuto em que o
+  cartão existiu, pela bateria de navegador, e invisível lendo o código — é a
+  mesma armadilha do rádio que virou bolinha do tamanho da célula, e a mesma
+  lição do «Blumenau» virando «BLUMENAU», que o `text-transform:none` do
+  rótulo fecha do outro lado.
+
+### Sabido
+
+- **Dois testes desta frente passavam por acaso.** Os que provam o
+  remapeamento de posição foram escritos primeiro contra uma tabela comum, e
+  ali nenhuma referência fica depois da coluna nova: com o remapeamento
+  trocado pela identidade, os dois continuavam verdes. Foram reescritos contra
+  um índice e uma chave sobre coluna de **sistema**, que é onde a posição
+  realmente anda, e aí caem. Teste que passa por engano é pior que teste que
+  falta.
+
+- **A alteração não se replica.** Ela é local, e uma réplica só volta a
+  aplicar eventos depois de receber a mesma alteração. Enquanto os dois lados
+  diferem, a réplica **para** em vez de aceitar um payload de outra largura —
+  medido em `bancada/alter/provar.py`, passos 9 e 10, que também mostram que
+  ela retoma sozinha do ponto em que parou.
+
+- **A lixeira anterior à alteração não volta.** O `.trash` guarda o payload com
+  a largura de quando a linha saiu, e restaurá-la agora daria campo trocado; a
+  mensagem diz isso em vez de devolver lixo. Migrar o `.trash` junto é
+  possível e não entrou nesta rodada.
+
+- **Não entram:** trocar tipo ou largura de coluna existente, tirar coluna,
+  renomear coluna pelo protocolo, e criar índice sobre a coluna nova no mesmo
+  gesto.
+
+---
+
 ## Não lançado — os pacotes de download que se conferem
 ## Não lançado — a bateria única e o catálogo de defeitos repostos
 

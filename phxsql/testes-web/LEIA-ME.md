@@ -10,8 +10,8 @@ node phxsql/testes-web/bateria.mjs
 
 Ela sobe um `phxsqld` só dela (portas **6200** e **6201**), num diretório
 temporário próprio, e o derruba **pelo PID** no fim — nunca por `pkill`.
-Roda os treze casos: onze nos **dois temas** e dois num tema só (os
-dois novos medem relógio, e cor não muda relógio) — **24 execuções**, ~4min30.
+Roda os catorze casos: doze nos **dois temas** e dois num tema só (os
+dois que medem relógio, e cor não muda relógio) — **26 execuções**, ~5min.
 
 | chave | o que faz |
 |---|---|
@@ -29,7 +29,7 @@ correção que ainda não existe. Esta casa já perdeu uma rodada inteira de
 ganhos medindo com binário velho, então a bateria **recusa rodar**: ela
 compara a data do binário com a do arquivo mais novo de `ui/` e diz qual.
 
-## Os treze casos
+## Os catorze casos
 
 | | o que prova |
 |---|---|
@@ -45,6 +45,7 @@ compara a data do binário com a do arquivo mais novo de `ui/` e diz qual.
 | `primeira-pintura` | a tela de entrada aparece mesmo quando a rede engole a fonte da marca |
 | `lgpd` | a tela de Dado pessoal audita de verdade |
 | `multitela` | abas vivas com estado próprio, regiões lado a lado com calha, janela solta dentro da página, e o pino. Mede os pedidos por minuto com a aba escondida, com ela fechada, e com as quatro telas nomeadas visíveis ao mesmo tempo |
+| `acrescentar-coluna` | acrescentar coluna **pela tela**, numa tabela com dado: o botão na aba Estrutura, o cartão dizendo o preço antes dos campos, a coluna aparecendo na Estrutura e no Conteúdo com o dado antigo intacto, e a recusa da coluna obrigatória sem padrão chegando ao cartão. Achou, no primeiro minuto em que o cartão existiu, a caixa de marcar esticada a **834px** pelo `input{width:100%}` global |
 | `monitores` | a emenda física entre dois monitores, o monitor pinado que sumiu, a janela destacada pegando a sessão pelo canal — e a sessão **não** aparecendo no `localStorage`. DPI de 2× num contexto próprio |
 
 ## A prova do multi-idioma, à parte

@@ -417,6 +417,54 @@ CHAVE ESTRANGEIRA DEPOIS DA CRIACAO: declarar_fk e excluir_fk
     inteiro, com os slots byte a byte; a resposta diz em
     "arquivos_reescritos"). As duas pedem o poder de CRIAR.
 
+ACRESCENTAR COLUNA NUMA TABELA QUE JA TEM DADO: acrescentar_coluna
+
+    {"op":"acrescentar_coluna","database":"loja","tabela":"clientes",
+     "nome":"situacao","tipo":"Str(12)","padrao":"ativo"}
+
+    E a unica operacao que muda a ESTRUTURA de uma tabela com dado dentro. O
+    slot e de largura fixa e o endereco de cada linha sai de uma conta sobre o
+    slot_size, entao uma coluna a mais move o arquivo inteiro. O que ela
+    garante e o que importa: o ROWID de cada linha NAO muda.
+
+    Como: o .reg e reescrito slot a slot, na mesma ordem -- inclusive os slots
+    livres, que continuam livres e continuam ocupando o lugar deles. Como o
+    rowid E a posicao, preservar a posicao preserva o rowid, e por isso o .ndx
+    NAO e refeito. A resposta traz "slots_reescritos", "ms" e
+    "indices_refeitos": false.
+
+    Custo medido: 0,553 us por linha. Dez milhoes de linhas em 5,53 s, com
+    pico de duas vezes o tamanho do .reg em disco enquanto a troca acontece.
+
+    O QUE A LINHA ANTIGA RECEBE. O valor de "padrao", ou nulo. Coluna
+    obrigatoria SEM padrao, numa tabela que ja tem linha, e RECUSADA -- gravar
+    um zero nas linhas que ninguem digitou seria inventar dado. Numa tabela
+    vazia ela passa.
+
+    O QUE ELA NAO ACEITA. Nome de coluna que ja existe, nome de coluna do
+    motor (softdeleted, rownum), e o tipo Sequence -- o contador do .reg e
+    unico, e numerar linha antiga inventaria a ordem que ela teve.
+
+    ONDE A COLUNA ENTRA. Depois da ultima coluna do usuario, que na tabela
+    comum e antes de softdeleted e rownum. Quem monta a linha posicionalmente
+    continua podendo mandar so as colunas que declarou.
+
+    O QUE ELA NAO FAZ. Nao troca tipo nem largura de coluna que ja existe, nao
+    tira coluna, nao cria indice sobre a coluna nova, e NAO SE REPLICA: uma
+    replica so volta a aplicar eventos depois de receber a mesma alteracao.
+    Enquanto os dois lados diferem, a replica PARA em vez de aceitar um
+    payload de outra largura.
+
+    QUEDA NO MEIO. Todos os arquivos novos sao escritos e sincronizados antes
+    de qualquer troca, e a troca e por rename com o volume 1 primeiro. O
+    volume 1 e o ponto de compromisso: se ele ja e novo, a proxima abertura
+    TERMINA as trocas que faltaram; se nao e, os arquivos ".novo" sao lixo e
+    nada e tocado. Sem o ".novo", a abertura RECUSA o conjunto misturado
+    dizendo qual volume ficou para tras.
+
+    Exige ADMINISTRAR: e a maior escrita de estrutura do motor, e a que nao
+    tem desfazer barato.
+
 SERVIDOR MCP (Model Context Protocol)
 
     phxsqld --mcp                                  pelo token de servico
@@ -1161,6 +1209,9 @@ OPERACOES
     declarar_fk     database, tabela, nome, colunas, tabela_ref,
                     [colunas_ref], [ao_excluir], [ao_alterar]
     excluir_fk      database, tabela, nome   desfaz a declaracao
+    acrescentar_coluna database, tabela, nome, [tipo], [obrigatoria],
+                    [padrao], [caption], [descricao], [mascara],
+                    [dado_pessoal]           reescreve o .reg; exige administrar
     duplicar_tabela database, tabela, destino
     copiar_tabela   database, tabela, destino_database, destino
     excluir_tabela  database, tabela, confirmar   confirmar repete o nome

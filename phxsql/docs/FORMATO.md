@@ -156,15 +156,108 @@ ponteiro, e cifrar o ponteiro não esconde o conteúdo. O conteúdo é selado an
 de virar bloco do `.bin`/`.memo`, com o nonce de 24 bytes à frente:
 `[nonce 24][conteúdo cifrado][etiqueta 16]`, 40 bytes por valor.
 
-O bloco de esquema é imutável, com **uma** exceção: `declarar_fk` e
-`excluir_fk` o regravam para mudar a lista de chaves estrangeiras — que é
-declaração, não estrutura: payload e `slot_size` não mudam. Quando o bloco
-novo cabe antes do `data_offset` (a folga do alinhamento deixa até 63 bytes),
-ele é regravado no lugar, em cada volume; quando não cabe, cada volume é
-reescrito num arquivo ao lado (`*.novo`) com o `data_offset` mais adiante e os
-slots copiados byte a byte, e um `rename` troca — uma queda no meio deixa o
-arquivo velho inteiro ou o novo inteiro, nunca um meio-termo. O espelho
-`.bkp` é reescrito da própria cópia, pelo mesmo caminho.
+O bloco de esquema é imutável, com **duas** exceções. A primeira é
+declaração: `declarar_fk` e `excluir_fk` o regravam para mudar a lista de
+chaves estrangeiras — payload e `slot_size` não mudam. Quando o bloco novo
+cabe antes do `data_offset` (a folga do alinhamento deixa até 63 bytes), ele é
+regravado no lugar, em cada volume; quando não cabe, cada volume é reescrito
+num arquivo ao lado (`*.novo`) com o `data_offset` mais adiante e os slots
+copiados byte a byte, e um `rename` troca — uma queda no meio deixa o arquivo
+velho inteiro ou o novo inteiro, nunca um meio-termo. O espelho `.bkp` é
+reescrito da própria cópia, pelo mesmo caminho.
+
+A segunda é estrutura, e tem seção própria: `acrescentar_coluna`. Ver
+§1.1.
+
+### 1.1 `acrescentar_coluna` — a coluna nova numa tabela que já tem dado
+
+Uma coluna a mais aumenta o `payload_len`, e portanto o `slot_size`. Como
+`offset(rowid) = data_offset + (rowid − 1) × slot_size`, **toda linha depois
+da primeira muda de endereço**. Não existe desenho em que ela não se mova; o
+que dá para escolher é se o **rowid** se move junto — e ele não se move.
+
+A tabela é reescrita **slot a slot, na mesma ordem**: o i-ésimo slot do
+arquivo novo é o i-ésimo do velho, inclusive os livres, que continuam livres e
+continuam ocupando o lugar deles. Como o rowid *é* a posição, preservar a
+posição preserva o rowid. Compactar os buracos na passagem — a otimização
+óbvia — renumeraria tudo depois do primeiro buraco e quebraria a ordem de
+digitação e todo o `.ndx` de uma vez.
+
+**Onde a coluna entra.** Logo depois da última coluna do usuário, que na
+tabela comum é logo antes da `softdeleted` e do `rownum`. As colunas de
+sistema entraram no fim justamente para não deslocar as do usuário; a coluna
+que o usuário acrescenta agora é dele, e vai onde as dele estão. O preço é que
+a **posição** das colunas de sistema anda, e três coisas guardam posição e não
+nome — `IndexColumn.coluna`, `ForeignKey.colunas` e a coluna de referência da
+partição. As três são remapeadas em `Schema::com_coluna`, num lugar só.
+
+**O que a linha antiga recebe.** O valor padrão declarado, ou nulo. Coluna
+obrigatória **sem** padrão, numa tabela que já tem linha, é **recusada**: ou o
+motor gravaria um zero (e `saldo = 0` sobre linha antiga é dado falso que
+passa no CRC), ou gravaria nulo numa coluna declarada não-nula. Numa tabela
+vazia ela passa — não há linha sobre a qual mentir. `Sequence` é recusada
+sempre: o contador do `.reg` é único, e numerar linha antiga inventaria a
+ordem que ela teve.
+
+**Na versão 5 (cifrada)** o slot é aberto com o layout velho e selado com o
+novo. Copiar o corpo cifrado byte a byte não serviria: o texto cifrado mora
+*no offset* da coluna marcada, e a etiqueta cobre as faixas marcadas juntas —
+mover os offsets sem reselar deixaria a linha ilegível para sempre, sem erro
+na hora.
+
+**Os arquivos irmãos:**
+
+| arquivo | o que acontece |
+|---|---|
+| `.reg` | reescrito inteiro, volume por volume |
+| `.bkp` | reescrito **lendo do espelho**, e não copiando o principal: a cópia independente é o que ele existe para ser |
+| `.ndx` | **não é tocado.** A entrada da folha é `chave do usuário + rowid`; nenhum dos dois muda |
+| `.bin` / `.memo` | não são tocados: o payload guarda o ponteiro, e o ponteiro viaja junto com o resto do slot |
+| `.pag` | regravado, porque é gerado do esquema e dos cabeçalhos |
+| `.log` / `.trash` / `.reason` / `.lgpd` | não são tocados: eles guardam o **passado**, e o passado não ganha coluna |
+
+O corolário do último: um payload guardado **antes** da alteração — a imagem
+de um evento do diário, a linha de uma lixeira, o que chega de uma réplica que
+ainda não alterou — tem a largura velha. Ler com o esquema novo daria campo
+deslocado; por isso a decodificação confere a largura primeiro e devolve *«a
+estrutura da tabela mudou depois que ela foi gravada»*.
+
+#### A queda no meio, e o volume 1 como ponto de compromisso
+
+A troca é em duas fases:
+
+```text
+fase A   escreve TODOS os `*.novo` (principal e espelho, todos os volumes)
+         e sincroniza cada um.  Nada foi trocado: a tabela no disco
+         continua sendo a VELHA, inteira.
+fase B   troca, com `rename`, na ordem dos volumes.  O volume 1 primeiro.
+```
+
+O volume 1 é o **ponto de compromisso**, e por isso ele responde sozinho em
+que estado o conjunto está:
+
+- volume 1 ainda velho → a troca nem começou. Os `*.novo` que houver são lixo
+  de uma fase que não decidiu nada, e a abertura não toca em nada;
+- volume 1 já novo e algum volume com a largura velha → a alteração está
+  **decidida** e faltou terminar. O `*.novo` daquele volume é um arquivo
+  completo e sincronizado: o `rename` que faltava acontece na abertura, e a
+  tabela abre inteira.
+
+E se o `*.novo` também sumiu, a abertura **recusa** o conjunto, dizendo qual
+volume ficou para trás — em vez de ler o volume 3 com a largura do volume 1,
+que sairia com cada linha deslocada da anterior e sem nenhum CRC reclamando,
+porque os bytes lidos seriam bytes de outra linha. A invariante nova é: **todo
+volume declara o mesmo `slot_size`, o mesmo `data_offset` e o mesmo CRC de
+esquema.**
+
+Numa tabela de um volume só não há conjunto misturado possível: ou o `rename`
+aconteceu, ou não.
+
+**O que ela não faz:** não troca tipo nem largura de coluna que já existe, não
+tira coluna, não cria índice sobre a coluna nova, e não replica a si mesma —
+`acrescentar_coluna` é uma operação local, e uma réplica só volta a aplicar
+eventos depois de receber a mesma alteração. Enquanto os dois lados diferem, a
+réplica **para** em vez de aceitar um payload de outra largura.
 
 ### O bloco de esquema (`PSCH`, versão 6)
 
