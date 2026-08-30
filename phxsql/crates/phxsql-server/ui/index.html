@@ -3370,7 +3370,32 @@ async function vPainel() {
   </div>`;
 }
 
+/* Quem chamou por ultimo manda no painel.
+ *
+ * Todo ramo daqui faz `p.innerHTML = await ...`, e o `await` e onde a pessoa
+ * clica noutra coisa. Sem esta guarda, clicar em Configuracoes antes de o
+ * Painel terminar de carregar deixava **titulo de uma tela e corpo da outra**
+ * -- a tela mentindo sobre si mesma. A bateria de guardas mediu: o `#painel`
+ * caia de 31.092 para 13.818 caracteres 2,5 s depois de a tela ja ter trocado.
+ *
+ * O contador e a resposta mais simples que funciona: cada chamada pega um
+ * numero, e so escreve se ainda for a ultima. Comparar o titulo, ou o `qual`,
+ * nao serve -- duas chamadas seguidas do MESMO `qual` tambem se atropelam.
+ *
+ * ATENCAO, e isto e desconforto honesto: esta guarda NAO tem prova real. A
+ * sonda que escrevi (`prova-atropelo.mjs`, no rascunho) passa com a guarda E
+ * passa com o defeito reposto -- ou seja, ela nao reproduz a corrida, e teste
+ * que passa por engano e pior que teste que falta. A suspeita, nao
+ * confirmada, e que o modo multitela ja tenha fechado esse caminho: cada tela
+ * virou um elemento proprio e so a que tem foco carrega o `id="painel"`,
+ * entao o `p` capturado na entrada pode nem ser mais o elemento visivel. A
+ * guarda fica porque e barata e correta; o pedido continua ABERTO no
+ * PENDENCIAS ate alguem escrever a sonda que de fato reproduz. */
+let admGeracao = 0;
+
 async function abrirAdmin(qual) {
+  const minhaVez = ++admGeracao;
+  const aindaEMinha = () => minhaVez === admGeracao;
   est.atual = null;
   // Trocar o idioma repinta ESTA tela, e nao a primeira: sem isto, escolher
   // a bandeira na tela de Idiomas jogaria a pessoa no Painel.
@@ -3388,7 +3413,9 @@ async function abrirAdmin(qual) {
       $("#titulo").textContent = txt("tela.painel", "Painel");
       $("#subtitulo").textContent = txt("tela.painel_sub",
         "o servidor inteiro numa tela · os monitores da máquina renovam sozinhos");
-      p.innerHTML = await vPainel();
+      const htmlPainel = await vPainel();
+      if (!aindaEMinha()) return;
+      p.innerHTML = htmlPainel;
       ligarMonitor();
       ligarLarguraDoGrafico();
       // Aba escondida para de perguntar pela maquina. Sem este par, quatro
@@ -3402,6 +3429,7 @@ async function abrirAdmin(qual) {
       $("#subtitulo").textContent = txt("tela.usuarios_sub",
         "cadastro do config.json · a senha nunca sai daqui");
       const us = await api("usuarios");
+      if (!aindaEMinha()) return;
       p.innerHTML = tabela(
         [{t:"id"},{t:"nome"},{t:"login"},{t:"e-mail"},{t:"telefone"},{t:"supervisor"},{t:"ativo"},{t:"poder por base"}],
         us, u => {
@@ -3421,6 +3449,7 @@ async function abrirAdmin(qual) {
       $("#subtitulo").textContent = txt("tela.acessos_sub",
         "toda tentativa entra, inclusive as recusadas");
       const a = await api("acessos", { max:200 });
+      if (!aindaEMinha()) return;
       p.innerHTML = `<div class="ferramentas"><span class="conta">${a.total}
           registros no <code>acessos.log</code></span></div>` + tabela(
         [{t:"quando"},{t:"ip"},{t:"operação"},{t:"usuário"},{t:"resultado"},{t:"ms"}],
@@ -3434,13 +3463,16 @@ async function abrirAdmin(qual) {
       $("#titulo").textContent = txt("tela.idiomas", "Idiomas");
       $("#subtitulo").textContent = txt("tela.idi_sub",
         "os textos da tela em seis idiomas · phxsys.mensagens, uma tabela como as outras");
-      p.innerHTML = await vIdiomas();
+      const htmlIdiomas = await vIdiomas();
+      if (!aindaEMinha()) return;
+      p.innerHTML = htmlIdiomas;
       ligarIdiomasAdmin();
     } else {
       $("#titulo").textContent = txt("tela.bloqueios", "Bloqueios");
       $("#subtitulo").textContent = txt("tela.bloqueios_sub",
         "blacklist.json · o IP é recusado antes do token");
       const b = await api("bloqueios");
+      if (!aindaEMinha()) return;
       const pol = b.politica || {};
       const wlConfig = b.whitelist_config || [];
       const wlEditavel = b.whitelist || [];
