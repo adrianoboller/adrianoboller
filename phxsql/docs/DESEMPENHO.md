@@ -1109,6 +1109,82 @@ O controle honesto desta bateria está dentro dela: o cenário «sem gatilho».
 
 ---
 
+## 4.11 GPU/CUDA: medido contra o nosso gargalo, e recusado com o número
+
+Chegou o pedido «GPU CUDA ativar para ajudar em processamento pesado». Vale a
+mesma regra que derrubou o WAL/LSM: **receita de fora se mede contra o nosso
+gargalo antes de virar plano**. O documento inteiro está em `docs/GPU.md`, com
+o medidor `--example onde-a-gpu-ajudaria`; aqui ficam só os números que mudam
+a leitura deste documento.
+
+**O candidato aritmético dentro da inserção não existe mais.** O CRC-32 é hoje
+**0,58%** de uma inserção de 7,35 µs — instantâneo, ele daria **1,006×**. Este
+documento registra na §2 que ele já foi 57%; o cache de write-back comprou essa
+diferença inteira, sem placa nenhuma.
+
+**O backup foi decomposto, e o dono do tempo não era o suspeito:**
+
+| parcela do backup de uma tabela de 236,6 MiB | segundos | % |
+|---|---:|---:|
+| **DEFLATE**, a 42 MiB/s no `.reg` real | **5,62** | **63,0%** |
+| SHA-256 do manifesto, a 219 MiB/s | 1,08 | 12,1% |
+| o resto (ler, montar o zip, gravar) | 2,22 | 24,9% |
+| **total** | **8,91** | 100% |
+
+O maior custo de CPU contígua deste motor é o **DEFLATE** — e ele é o **menos**
+paralelizável de todos, porque LZ77 procura repetição num dicionário que
+depende dos bytes anteriores. Nunca tinha sido medido; fica registrado.
+
+**A conta que mata a agregação, e mata em qualquer tamanho:** o `SUM` sobre uma
+coluna `i64` anda a **28.234 MiB/s** nesta CPU, contra **15.754 MiB/s** de pico
+*teórico* do PCIe 3.0 x16 — **1,79×**. Quando a CPU consome os bytes mais
+depressa do que o barramento os entregaria, não há limiar de tamanho: a GPU
+perde sempre.
+
+**E o que o pedido queria existe, do lado da CPU.** Dividindo pelos 4 núcleos
+com a `std` que já está aqui (`paralelo.rs`):
+
+| núcleo, 16 blocos de 1 MiB | 1 thread | 4 threads | ganho |
+|---|---:|---:|---:|
+| ChaCha20-Poly1305 selar | 45,0 ms | 11,6 ms | **3,90×** |
+| CRC-32 | 8,8 ms | 2,4 ms | **3,59×** |
+| SHA-256 | 72,5 ms | 28,9 ms | **2,51×** |
+
+Perto do 4× ideal porque os três são presos à **conta**. O contraste com a
+varredura em memória — que rende 1,8× e não 4×, por ser presa à **banda** — é a
+mesma fronteira que decide o caso da GPU.
+
+### Dois achados desta bateria que valem para este documento
+
+**1. Um item de desempenho novo, de graça: o `ORDER BY`.** Ordenar 1.000.000 de
+linhas custa **213,8 ms**; ordenar as mesmas 1.000.000 de chaves como `u64`
+custa **19,9 ms** — **10,7×** na mesma CPU. A diferença é comparar e mover
+`Value`, que é enum com `String` no monte, dentro do laço de comparação. Ordenar
+`(chave, índice)` e permutar uma vez no fim levaria o `ORDER BY` inteiro de
+635,4 ms para ~422 ms: **1,51×**, sem thread, sem SIMD e sem dependência.
+
+**2. `-C target-cpu=native` não é ganho de graça.** Três pares intercalados, os
+mesmos binários trocando só a bandeira:
+
+| núcleo | genérico | `native` | |
+|---|---:|---:|---:|
+| ChaCha20-Poly1305 | 355–359 MiB/s | 452–460 MiB/s | **1,28×** |
+| CRC-32 | 1.799–1.821 MiB/s | 1.805–1.806 MiB/s | 1,00× |
+| **SHA-256** | 215–221 MiB/s | **143–144 MiB/s** | **0,66× — pior** |
+
+Ligar a bandeira no build de lançamento teria trocado 1,28× no ChaCha por
+**−34% no SHA-256**, e ninguém perceberia.
+
+> E a armadilha de medição que esta bateria pagou, porque ela morde qualquer
+> medidor futuro: a primeira versão deu **12,5 bilhões de MiB/s** de banda de
+> memória e **192 milhões de MiB/s** de CRC-32, porque `crc32(&pagina)` é
+> função pura de um `slice` invariante e o compilador a ergueu para fora do
+> laço. `std::hint::black_box` na entrada **e** na saída conserta. Número
+> impossível é fácil de pegar; o perigoso é o mesmo erro rendendo um número
+> plausível.
+
+---
+
 ## 5. Por que LSM não cabe dentro do motor atual
 
 Segmentos imutáveis com compactação é uma boa arquitetura, e é incompatível com
@@ -1209,9 +1285,19 @@ Pela medição, e não pela moda:
    dariam 4,1 µs — enquanto o CRC de gravação sozinho já custa 4,8.
 5. **Trava por tabela.** Não acelera uma inserção; acelera o servidor com muita
    gente. É outro eixo, e o roteiro já o previa.
+6. **`ORDER BY` por chave, não por linha** (§4.11): **1,51×** medido, e é o item
+   mais barato desta lista — ordenar `(chave, índice)` e permutar uma vez, em
+   vez de mover `Value` com `String` dentro do laço de comparação.
+7. **Dividir os núcleos aritméticos pelos 4 processadores** (§4.11): **3,90×**
+   na cifra, **3,59×** no CRC, **2,51×** no SHA-256. A peça existe
+   (`paralelo.rs`); falta chamá-la de dentro do backup e da cifra.
+8. **O DEFLATE do backup**, que é **63,0% dele** a 42 MiB/s (§4.11) e nunca
+   tinha sido medido. Não é candidato a paralelismo fácil — o dicionário é
+   serial —, mas é o maior custo de CPU contígua deste motor.
 
 O que eu **não** faria agora: WAL, MemTable de escrita e group commit. Eles
-resolvem o gargalo do InnoDB, e a medição diz que ele não é o nosso.
+resolvem o gargalo do InnoDB, e a medição diz que ele não é o nosso. **Nem
+CUDA**, e agora com número: `docs/GPU.md` e a §4.11.
 
 ---
 
@@ -1222,6 +1308,7 @@ cargo run --release --example onde-doi -- 200000       # a tabela do §2
 cargo run --release --example custo-do-sync            # os modos de durabilidade
 cargo run --release --example custo-da-pagina -- 800000 200
 cargo run --release --example indice-em-lote -- 1000000   # o lote do §4.3
+cargo run --release --example onde-a-gpu-ajudaria -- 1000000  # o caso da GPU, §4.11
 cargo run --release --example adiar-vale-quando -- 200000 # o ponto de virada
 cargo run --release --example quanto-ocupa -- 1000000 5   # a ocupação do §4.7
 python3 bancada/medir.py 10000000                      # o comparativo do §6
