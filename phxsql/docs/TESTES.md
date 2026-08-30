@@ -41,24 +41,24 @@ contando `#[test]` por arquivo e agrupando:
 <!-- cobertura:inicio -->
 | área | testes | % |
 |---|---:|---:|
-| Motor de dados (arquivos, índice, diários) | 346 | 26,1 |
-| Protocolo e portões (despachar) | 183 | 13,8 |
-| Núcleo (JSON, tipos, UUID, zip, paralelo) | 133 | 10,0 |
-| Criptografia e codificação | 122 | 9,2 |
-| Configuração | 87 | 6,6 |
-| DbLink | 65 | 4,9 |
-| Telemetria e profiler | 53 | 4,0 |
-| Camada SQL (léxico, sintaxe, tradução) | 44 | 3,3 |
-| Gatilhos e procedimentos | 38 | 2,9 |
+| Motor de dados (arquivos, índice, diários) | 346 | 25,6 |
+| Protocolo e portões (despachar) | 183 | 13,5 |
+| Núcleo (JSON, tipos, UUID, zip, paralelo) | 133 | 9,8 |
+| Criptografia e codificação | 122 | 9,0 |
+| Configuração | 93 | 6,9 |
+| DbLink | 65 | 4,8 |
+| Telemetria e profiler | 53 | 3,9 |
+| Camada SQL (léxico, sintaxe, tradução) | 44 | 3,2 |
+| Gatilhos e procedimentos | 38 | 2,8 |
+| Servidor (outros) | 33 | 2,4 |
 | Jobs | 31 | 2,3 |
 | Interface web (servidor HTTP) | 28 | 2,1 |
 | **MCP** | **19** | **1,4** |
 | **Usuários e permissões** | **19** | **1,4** |
-| **Console de terminal (phxsqlcmd)** | **18** | **1,4** |
-| **Segurança de rede (blacklist, firewall)** | **18** | **1,4** |
+| **Console de terminal (phxsqlcmd)** | **18** | **1,3** |
+| **Segurança de rede (blacklist, firewall)** | **18** | **1,3** |
 | **ODBC** | **17** | **1,3** |
 | **Mensagens (i18n do servidor)** | **17** | **1,3** |
-| **Servidor (outros)** | **13** | **1,0** |
 | **Exportação** | **13** | **1,0** |
 | **Junções e união** | **13** | **1,0** |
 | **Pivot** | **12** | **0,9** |
@@ -66,8 +66,8 @@ contando `#[test]` por arquivo e agrupando:
 | **Alertas e e-mail** | **8** | **0,6** |
 | **CLI** | **7** | **0,5** |
 | **Cluster** | **7** | **0,5** |
-| **Monitor de máquina** | **6** | **0,5** |
-| **total** | **1328** | |
+| **Monitor de máquina** | **6** | **0,4** |
+| **total** | **1354** | |
 
 Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 
@@ -489,7 +489,12 @@ projeto estava verde.
 O `provar.py` **não refaz nenhuma delas** — cada uma tem dono, já foi provada e
 continua rodando sozinha pelo comando dela. Ele chama, cronometra e soma.
 
-### As dezessete partes
+### As vinte e duas partes
+
+> Esta tabela é escrita à mão, e por isso ela **já envelheceu uma vez**: dizia
+> dezessete quando o `provar.py` tinha vinte. A lista que manda é
+> `python3 phxsql/provar.py --listar`, que sai do código; esta aqui é para ler.
+
 
 | parte | o que prova | portas |
 |---|---|---|
@@ -498,17 +503,22 @@ continua rodando sozinha pelo comando dela. Ele chama, cronometra e soma.
 | `tela` | a interface contra o servidor de verdade: 120 telas, CSS global, contraste, primeira pintura | 6950/6951 |
 | `idiomas` | o caminho do idioma de ponta a ponta, e o comportamento velho | 6952/6953 |
 | `ponta-a-ponta` | os seis itens do dono pelo soquete, mais a passada pela tela | 6300/6301 |
+| `cifra-do-fio` | o aperto de mão da porta de dados contra um cliente escrito de novo em Python | 7210/7211 |
 | `alter` | acrescentar coluna numa tabela com dado pelo soquete: rowid preservado, backup, e a réplica que ainda não alterou | 7150/7152 |
 | `rotinas` | gatilhos e procedimentos pelo soquete, com SIGNAL, lote e reinício | 5301/5701 |
 | `profiler` | a redação do Profiler por soquete: vinte pedidos torcidos, sentinela no anel e no `.txt` | 6251 |
+| `queda-na-exclusao` | a janela de durabilidade da exclusão contra um `SIGKILL` no meio, nos dois modos | 7100 |
 | `telemetria-desenho` | o painel de bolhas por medida: rótulo na esfera, alvo de clique, contraste | — |
 | `telemetria-interacao` | clicar na bolha menor com o painel em movimento, descer de nível, voltar | — |
 | `telemetria-cores` | as cores configuráveis, exercitando: escolher, salvar, conferir no painel | 6600/6601 |
 | `cluster` | eleição e promoção automática com três servidores e um SMTP falso | 5310-5312, 5316 |
 | `replicacao` | os quatro modos por soquete, com o comportamento velho no fim | 5330-5339 |
+| `trava` | a trava de dados contra a leitura de rede: corte silencioso, alcance, queda de conexão | 7050-7055 |
 | `jobs` | o aviso de jobs por e-mail — e o servidor **sem** bloco de e-mail, que não manda nada | 5303/5703 |
 | `profiler-disco` | o `.txt` do Profiler contra o sistema operacional: disco cheio, somente-leitura | 6253 |
 | `dblink` | a sincronia de tabelas primas contra um MySQL(R) de verdade | — |
+| `rest` | o webservice REST por soquete, com cliente HTTP escrito na hora: o token da porta, o estreitamento que só estreita, e a especificação conferida rota a rota | 7510-7513 |
+| `rest-tela` | a seção do webservice na tela de configuração, exercitando: preencher, salvar, recarregar, trocar o idioma | 7530/7531 |
 | `odbc` | a ABI do driver pelo `ctypes`, sem passar pelo unixODBC | 6954 |
 
 Cada parte abre as portas dela — documentadas no cabeçalho de cada script — e
@@ -632,24 +642,54 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `cadeia-sem-teto` | a cadeia de gatilhos sem fundo: o binário aborta com stack overflow | 1 | ✅ provada |
 | `excluir-tabela-lista-curta` | `excluir_tabela` apaga SEIS extensões e a tabela já tem NOVE | 1 | ✅ provada |
 | `backup-sem-sha256` | restaurar aceita o backup adulterado: só o tamanho é conferido | 1 | ✅ provada |
-| `aad-fora-do-slot` | só o dado associado sai: o nonce sozinho ainda amarra o endereço | — | 🟰 redundante |
+| `aad-fora-do-slot` | só o dado associado sai: o nonce sozinho ainda amarra o endereço | — | ⚠️ quebrada |
 | `nonce-sem-endereco` | só o endereço sai do nonce: o AAD sozinho ainda amarra | — | 🟰 redundante |
-| `endereco-fora-da-amarracao` | as DUAS fechaduras somem: dá para embaralhar as linhas cifradas | 1 | ✅ provada |
+| `endereco-fora-da-amarracao` | as DUAS fechaduras somem: dá para embaralhar as linhas cifradas | 1 | ⚠️ quebrada |
 | `cache-de-chaves-nao-limpo` | trocar a senha da cifra não limpa o cache: a senha errada abre | 1 | ✅ provada |
 | `catraca-dos-textos` | mais um texto de tela cravado, fora da fábrica de idiomas | 1 | ✅ provada |
+| `trava-fora-do-ponto-unico` | uma tomada da trava de dados fora do `travar_dados()` | 1 | ✅ provada |
+| `trava-sem-guarda-de-reentrancia` | a trava pedida duas vezes pela mesma thread pendura o servidor | 1 | ✅ provada |
+| `exclusao-na-janela-por-padrao` | a exclusão entra na janela por padrão, sem ninguém pedir | 1 | ✅ provada |
+| `exclusao-na-janela-sem-leitor` | `exclusao_na_janela` no config.json, no MANUAL e na tela — e ninguém o lê | 1 | ✅ provada |
+| `reg-fecha-antes-do-trash` | a janela sincroniza o `.reg` antes do `.trash` | 1 | ✅ provada |
+| `rodizio-do-profiler-ignora-o-zero` | `profiler.arquivo_mib: 0` deixa de querer dizer «sem rodízio» | 1 | ✅ provada |
+| `cabecalho-do-profiler-forjado` | o cabeçalho do arquivo do Profiler aceita linha forjada | 1 | ✅ provada |
+| `profiler-sem-descritor-calado` | sem descritor, com arquivo pedido, a linha some sem ser contada | 1 | ✅ provada |
+| `trava-atras-da-rede` | o laço da réplica segura a trava de dados enquanto lê do soquete | 1 | ✅ provada |
+| `ordem-pequena-aceita` | o segredo X25519 todo-zeros aceito como chave de sessão | 2 | ✅ provada |
+| `contador-do-fio-parado` | o contador de registros do fio parado — nonce repetido | 3 | ✅ provada |
+| `fio-cortado-vira-fim` | o fio cortado no meio devolvido como fim de conversa | 1 | ✅ provada |
+| `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | 1 | ✅ provada |
+| `transcricao-sem-o-cifrado` | o hash da transcrição sem o texto cifrado da mensagem 2 | 2 | ✅ provada |
+| `fio-sem-teto-de-registro` | a leitura do fio volta a ser ilimitada | 1 | ✅ provada |
 | `alter-compacta-o-buraco` | a reescrita da coluna nova pula os slots excluídos e renumera o rowid | 1 | ✅ provada |
 | `alter-sem-remapear-posicao` | a coluna nova desloca as de sistema e ninguém remapeia quem guarda posição | 2 | ✅ provada |
 | `alter-espelho-para-tras` | o espelho `.bkp` fica com a largura velha depois de acrescentar coluna | 1 | ✅ provada |
 | `alter-queda-no-meio` | o conjunto de volumes misturado abre e lê o volume 3 com a largura do 1 | 2 | ✅ provada |
+| `rest-operacao-sem-documento` | operação nova no despachar que a especificação OpenAPI não documenta | 2 | ✅ provada |
+| `rest-rota-fantasma` | a especificação promete uma rota que o servidor não atende | 1 | ✅ provada |
+| `rest-nasce-ligado` | o webservice REST passa a escutar numa atualização, sem ninguém pedir | 1 | ✅ provada |
+| `rest-corpo-manda-no-caminho` | o corpo do pedido REST troca a operação do caminho, em silêncio | 1 | ✅ provada |
+| `rest-filtro-so-o-campo-tabela` | o filtro de tabelas do REST olha só o campo `tabela` — e a junção é a porta dos fundos | 1 | ✅ provada |
+| `rest-fecha-sem-escoar` | a recusa por lista negra é engolida por um RST, e quem foi barrado vê «connection reset» | — | 🟰 redundante |
 
-**22 guardas: 20 provadas, 2 redundantes** — 168 s de mutação, medido em 2026-08-30 06:32.
+**43 guardas: 39 provadas, 2 quebradas, 2 redundantes** — 311 s de mutação, medido em 2026-08-30 17:09.
 
 As notas que a rodada deixou:
 
 - `cadeia-sem-teto` — o binario abortou, que e como esta guarda pega
-- `aad-fora-do-slot` — confirmado: tirar so o AAD nao e sentido por teste nenhum, porque o `nonce_de_pedaco` carrega (rowid, volume, versao)
+- `aad-fora-do-slot` — o trecho nao esta mais em crates/phxsql-store/src/reg.rs -- o codigo mudou e a entrada do catalogo envelheceu
 - `nonce-sem-endereco` — confirmado: tirar so o endereco do nonce tambem passa despercebido
+- `endereco-fora-da-amarracao` — o trecho nao esta mais em crates/phxsql-store/src/reg.rs -- o codigo mudou e a entrada do catalogo envelheceu
+- `rest-fecha-sem-escoar` — confirmado: nenhum teste de unidade sente isto, e nao poderia -- o RST e do sistema operacional, e so aparece com um soquete de verdade. Quem pega e o passo 13 de `bancada/rest/provar.py`, e esta entrada existe para dizer, com o numero da rodada, que a cobertura mora la e nao aqui
 <!-- guardas:fim -->
+
+As duas **quebradas** não são falha de guarda: são entradas do catálogo que
+envelheceram quando o `reg.rs` mudou para o `acrescentar_coluna`, e o trecho
+que elas trocavam deixou de existir com aquele texto. Ficam aqui **visíveis**,
+e não apagadas — guarda que ninguém consegue rodar é exatamente o que a tabela
+existe para mostrar. Consertá-las é atualizar o `trecho` das duas entradas
+contra o `reg.rs` de hoje.
 
 ### As duas metades, e a terceira que ninguém pede
 

@@ -423,7 +423,7 @@ footer p{max-width:var(--medida)}
     <li><a href="#s25"><span class="n">25</span> DbLink</a></li>
     <li><a href="#s26"><span class="n">26</span> Junções</a></li>
     <li><a href="#s27"><span class="n">27</span> SQL, gatilhos e jobs</a></li>
-    <li><a href="#s28"><span class="n">28</span> ODBC, MCP e a Claude</a></li>
+    <li><a href="#s28"><span class="n">28</span> REST, ODBC, MCP e a Claude</a></li>
     <li><a href="#s29"><span class="n">29</span> Seis idiomas</a></li>
     <li><a href="#s30"><span class="n">30</span> Operação</a></li>
     <li><a href="#s31"><span class="n">31</span> A bancada</a></li>
@@ -474,12 +474,12 @@ footer p{max-width:var(--medida)}
 
   <div class="painel">
   <!-- projeto:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-    <div><div class="v">106.413</div><div class="r">linhas de Rust</div></div>
-    <div><div class="v">1.328</div><div class="r">testes</div></div>
+    <div><div class="v">108.603</div><div class="r">linhas de Rust</div></div>
+    <div><div class="v">1.354</div><div class="r">testes</div></div>
     <div><div class="v">0</div><div class="r">dependências</div></div>
     <div><div class="v">7</div><div class="r">crates</div></div>
     <div><div class="v">7</div><div class="r">arquivos/tabela</div></div>
-    <div><div class="v">30.660</div><div class="r">linhas de doc</div></div>
+    <div><div class="v">31.607</div><div class="r">linhas de doc</div></div>
   <!-- projeto:fim -->
   </div>
 </header>
@@ -4961,12 +4961,12 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
 <!-- ============================= 28 ============================= -->
 <section id="s28">
   <div class="rotulo"><span class="num">28</span><span class="traco"></span></div>
-  <h2>As portas de fora: ODBC, MCP e a Claude</h2>
-  <p>Três portas para três públicos que não são o navegador: um programa de
-  terceiros, um modelo de linguagem, e a pessoa que prefere escrever. As três
-  entram pelo <strong>mesmo despachar</strong> — porque o portão de permissão é
-  um só, e o segundo caminho até o dado é sempre o que esquece uma
-  conferência.</p>
+  <h2>As portas de fora: REST, ODBC, MCP e a Claude</h2>
+  <p>Quatro portas para quatro públicos que não são o navegador: um serviço que
+  fala HTTP, um programa de terceiros, um modelo de linguagem, e a pessoa que
+  prefere escrever. As quatro entram pelo <strong>mesmo despachar</strong> —
+  porque o portão de permissão é um só, e o segundo caminho até o dado é sempre
+  o que esquece uma conferência.</p>
 
   <h3>ODBC: um driver de verdade, provado pela ABI</h3>
 
@@ -5011,6 +5011,81 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
     <code>MSDASQL</code>, que vem no Windows e transforma qualquer driver ODBC em
     origem OLE DB. Durante décadas foi assim que o próprio SQL Server(R) aparecia
     em OLE DB, e cobre Excel(R), Access(R) e ADO.</p>
+  </div>
+
+  <h3>REST: e a especificação que sai do código</h3>
+
+  <p><code>POST /v1/&lt;operação&gt;</code> para as <strong>113 operações</strong>
+  do protocolo, e <code>GET /openapi.json</code> para a especificação. A porta é
+  a <strong>6000</strong>, e ela <strong>nasce desligada</strong> — servidor que
+  já roda hoje não passa a expor porta nenhuma porque alguém trocou o
+  binário.</p>
+
+<pre>curl -X POST http://127.0.0.1:6000/v1/ler \
+  -H 'Authorization: Bearer SEU-TOKEN' \
+  -H 'X-Sessao: a-sessao-do-login' \
+  -d '{"tabela":"clientes","rowid":1}'</pre>
+
+  <div class="nota">
+    <span class="t">A especificação é GERADA da tabela de despacho</span>
+    <p>São 113 operações. Uma spec OpenAPI digitada à mão envelhece na primeira
+    operação nova e <strong>passa a mentir com aparência de documento
+    oficial</strong> — que é pior do que não ter documento. Ela sai do catálogo
+    das operações, que já é travado contra o <code>match</code> do
+    <code>despachar</code>, e há <strong>duas guardas, uma para cada lado do
+    laço</strong>: operação que existe e a spec não documenta reprova; rota
+    documentada que o servidor não atende reprova. Mais a terceira, por soquete,
+    percorrendo as 113 rotas que o servidor <em>serviu</em>.</p>
+  </div>
+
+  <p>O visualizador fica numa <strong>porta separada</strong>, a 7000, com
+  interruptor próprio: quem sobe numa placa quer o serviço sem as docs, e aí a
+  7000 simplesmente não abre. E ele foi <strong>escrito aqui</strong>, não
+  importado — a decisão saiu de número medido:</p>
+
+  <div class="rolo">
+    <table>
+      <thead><tr><th>opção</th><th>binário</th><th>delta</th><th>offline?</th></tr></thead>
+      <tbody>
+        <tr><td>hoje, sem visualizador</td><td class="dado">7.296.144</td><td class="dado">—</td><td>—</td></tr>
+        <tr><td>embutir o <code>swagger-ui-dist</code></td><td class="dado">8.900.968</td><td class="dado">+1.604.824 (+22,0%)</td><td>sim</td></tr>
+        <tr><td>apontar para CDN</td><td class="dado">7.296.144</td><td class="dado">+0</td><td><strong>não</strong></td></tr>
+        <tr><td>este explorador</td><td class="dado">7.515.816</td><td class="dado">+13.629 de tela</td><td>sim</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>A CDN custaria zero byte e entregaria uma página <em>em branco</em> no IoT,
+  que é justamente o caso da placa. O explorador escrito aqui é
+  <strong>118× menor</strong> que o mínimo funcional do Swagger UI, e o binário
+  ARM64 foi <strong>executado</strong> sob emulação para provar: 113 rotas
+  geradas na placa, RSS 12,8 MB.</p>
+
+  <div class="nota nao">
+    <span class="t">A lista de tabelas só ESTREITA — e essa frase é a decisão</span>
+    <p>A seção do <code>config.json</code> traz o nome do serviço, o banco e as
+    tabelas que esta porta expõe. A lista é um <strong>filtro aplicado antes do
+    portão, nunca no lugar dele</strong>: tabela de fora não existe para o REST
+    (responde como inexistente, sem vazar que existe), e tabela de dentro
+    continua passando pelo direito do usuário exatamente como sempre.
+    <strong>Nunca alarga</strong> — se o usuário não pode, estar na lista não
+    dá.</p>
+    <p>O contrário seria um <em>segundo</em> sistema de permissão, e no primeiro
+    desacordo entre os dois alguém ganha acesso que ninguém concedeu. São dois
+    testes, porque são dois erros opostos — e a varredura das tabelas é
+    <strong>estrutural</strong>, então pedir a tabela escondida como o lado B de
+    uma junção também não passa.</p>
+  </div>
+
+  <div class="nota nao">
+    <span class="t">O que ele não tem, dito em vez de escondido</span>
+    <p><strong>Não há TLS.</strong> <code>Bearer</code> sobre HTTP em claro
+    entrega o token a quem escuta o fio, em todo pedido — a saída é um proxy que
+    termine TLS à frente, ou um túnel. A frase está no documento, na própria
+    especificação e na tela. <strong>macOS não tem alvo</strong> (o SDK da Apple
+    só existe em macOS), e <strong>Android e iOS não são caso de webservice</strong>:
+    o iOS proíbe app escutando porta e o Android mata processo em segundo plano
+    — lá o caminho é a biblioteca embutida.</p>
   </div>
 
   <h3>MCP: a ponte que não executa nada</h3>
@@ -5117,9 +5192,9 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   <div class="painel">
 <!-- idiomas:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
     <div><div class="v">6</div><div class="r">idiomas na tabela</div></div>
-    <div><div class="v">378</div><div class="r">textos na fábrica</div></div>
+    <div><div class="v">403</div><div class="r">textos na fábrica</div></div>
     <div><div class="v">1.996</div><div class="r">ainda cravados</div></div>
-    <div><div class="v">15%</div><div class="r">da interface</div></div>
+    <div><div class="v">16%</div><div class="r">da interface</div></div>
     <div><div class="v">1.996</div><div class="r">catraca (o teto)</div></div>
   <!-- idiomas:fim -->
   </div>
@@ -6161,8 +6236,8 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
 
   <div class="painel">
 <!-- pedidos:inicio (gerado por docs/dossie/pagina-dos-pedidos.py) -->
-    <div><div class="v">148</div><div class="r">pedidos, ao todo</div></div>
-    <div><div class="v">145</div><div class="r">feitos</div></div>
+    <div><div class="v">149</div><div class="r">pedidos, ao todo</div></div>
+    <div><div class="v">146</div><div class="r">feitos</div></div>
     <div><div class="v">3</div><div class="r">parciais</div></div>
     <div><div class="v">0</div><div class="r">planejados</div></div>
   <!-- pedidos:fim -->
@@ -6197,24 +6272,24 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
     <table>
       <thead><tr><th>Área</th><th class="num">testes</th><th class="num">%</th></tr></thead>
       <tbody>
-        <tr><td>Motor de dados (arquivos, índice, diários)</td><td class="num">346</td><td class="num">26,1%</td></tr>
-        <tr><td>Protocolo e portões (despachar)</td><td class="num">183</td><td class="num">13,8%</td></tr>
-        <tr><td>Núcleo (JSON, tipos, UUID, zip, paralelo)</td><td class="num">133</td><td class="num">10,0%</td></tr>
-        <tr><td>Criptografia e codificação</td><td class="num">122</td><td class="num">9,2%</td></tr>
-        <tr><td>Configuração</td><td class="num">87</td><td class="num">6,6%</td></tr>
-        <tr><td>DbLink</td><td class="num">65</td><td class="num">4,9%</td></tr>
-        <tr><td>Telemetria e profiler</td><td class="num">53</td><td class="num">4,0%</td></tr>
-        <tr><td>Camada SQL (léxico, sintaxe, tradução)</td><td class="num">44</td><td class="num">3,3%</td></tr>
-        <tr><td>Gatilhos e procedimentos</td><td class="num">38</td><td class="num">2,9%</td></tr>
+        <tr><td>Motor de dados (arquivos, índice, diários)</td><td class="num">346</td><td class="num">25,6%</td></tr>
+        <tr><td>Protocolo e portões (despachar)</td><td class="num">183</td><td class="num">13,5%</td></tr>
+        <tr><td>Núcleo (JSON, tipos, UUID, zip, paralelo)</td><td class="num">133</td><td class="num">9,8%</td></tr>
+        <tr><td>Criptografia e codificação</td><td class="num">122</td><td class="num">9,0%</td></tr>
+        <tr><td>Configuração</td><td class="num">93</td><td class="num">6,9%</td></tr>
+        <tr><td>DbLink</td><td class="num">65</td><td class="num">4,8%</td></tr>
+        <tr><td>Telemetria e profiler</td><td class="num">53</td><td class="num">3,9%</td></tr>
+        <tr><td>Camada SQL (léxico, sintaxe, tradução)</td><td class="num">44</td><td class="num">3,2%</td></tr>
+        <tr><td>Gatilhos e procedimentos</td><td class="num">38</td><td class="num">2,8%</td></tr>
+        <tr><td>Servidor (outros)</td><td class="num">33</td><td class="num">2,4%</td></tr>
         <tr><td>Jobs</td><td class="num">31</td><td class="num">2,3%</td></tr>
         <tr><td>Interface web (servidor HTTP)</td><td class="num">28</td><td class="num">2,1%</td></tr>
         <tr><td><strong>MCP</strong></td><td class="num"><strong>19</strong></td><td class="num"><strong>1,4%</strong></td></tr>
         <tr><td><strong>Usuários e permissões</strong></td><td class="num"><strong>19</strong></td><td class="num"><strong>1,4%</strong></td></tr>
-        <tr><td><strong>Console de terminal (phxsqlcmd)</strong></td><td class="num"><strong>18</strong></td><td class="num"><strong>1,4%</strong></td></tr>
-        <tr><td><strong>Segurança de rede (blacklist, firewall)</strong></td><td class="num"><strong>18</strong></td><td class="num"><strong>1,4%</strong></td></tr>
+        <tr><td><strong>Console de terminal (phxsqlcmd)</strong></td><td class="num"><strong>18</strong></td><td class="num"><strong>1,3%</strong></td></tr>
+        <tr><td><strong>Segurança de rede (blacklist, firewall)</strong></td><td class="num"><strong>18</strong></td><td class="num"><strong>1,3%</strong></td></tr>
         <tr><td><strong>ODBC</strong></td><td class="num"><strong>17</strong></td><td class="num"><strong>1,3%</strong></td></tr>
         <tr><td><strong>Mensagens (i18n do servidor)</strong></td><td class="num"><strong>17</strong></td><td class="num"><strong>1,3%</strong></td></tr>
-        <tr><td><strong>Servidor (outros)</strong></td><td class="num"><strong>13</strong></td><td class="num"><strong>1,0%</strong></td></tr>
         <tr><td><strong>Exportação</strong></td><td class="num"><strong>13</strong></td><td class="num"><strong>1,0%</strong></td></tr>
         <tr><td><strong>Junções e união</strong></td><td class="num"><strong>13</strong></td><td class="num"><strong>1,0%</strong></td></tr>
         <tr><td><strong>Pivot</strong></td><td class="num"><strong>12</strong></td><td class="num"><strong>0,9%</strong></td></tr>
@@ -6222,8 +6297,8 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
         <tr><td><strong>Alertas e e-mail</strong></td><td class="num"><strong>8</strong></td><td class="num"><strong>0,6%</strong></td></tr>
         <tr><td><strong>CLI</strong></td><td class="num"><strong>7</strong></td><td class="num"><strong>0,5%</strong></td></tr>
         <tr><td><strong>Cluster</strong></td><td class="num"><strong>7</strong></td><td class="num"><strong>0,5%</strong></td></tr>
-        <tr><td><strong>Monitor de máquina</strong></td><td class="num"><strong>6</strong></td><td class="num"><strong>0,5%</strong></td></tr>
-        <tr><td><strong>total</strong></td><td class="num"><strong>1328</strong></td><td class="num"></td></tr>
+        <tr><td><strong>Monitor de máquina</strong></td><td class="num"><strong>6</strong></td><td class="num"><strong>0,4%</strong></td></tr>
+        <tr><td><strong>total</strong></td><td class="num"><strong>1354</strong></td><td class="num"></td></tr>
       </tbody>
     </table>
   </div>
@@ -6257,8 +6332,8 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
 
 <footer>
   <!-- rodape:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-  <p>PhxSql 0.18.0 · 106.413 linhas de Rust em 7 crates,
-  mais 1052 KiB de interface · 1.328 testes ·
+  <p>PhxSql 0.18.0 · 108.603 linhas de Rust em 7 crates,
+  mais 1056 KiB de interface · 1.354 testes ·
   nenhuma dependência externa.
   Especificação byte a byte em <code>docs/FORMATO.md</code>, cadastro e
   permissões em <code>docs/USUARIOS.md</code>, a replicação em

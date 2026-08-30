@@ -1,0 +1,116 @@
+/* O estilo do explorador da API, com a paleta da marca.
+ *
+ * Curto de proposito: pagina de documentacao que precisa de folha de estilo
+ * grande esta escondendo o conteudo. E folha PROPRIA, e nao um pedaco do CSS
+ * da interface: o CSS global de la morde componente novo -- `input{width:100%}`
+ * transformaria a caixa de busca desta pagina numa barra da largura da tela, e
+ * `label{text-transform:uppercase}` gritaria o nome de cada operacao.
+ *
+ * Tema: escuro fixo. O explorador nao tem sessao, nao tem localStorage de tema
+ * e nao tem botao de alternar; um seletor de tema aqui seria uma tela a mais
+ * para manter, e a pagina inteira e leitura.
+ */
+:root {
+  color-scheme: dark;
+  --fundo: #010418;
+  --painel: #0a1122;
+  --tinta: #DDE2EB;
+  --ambar: #FFC43D;
+  --laranja: #FF8A1C;
+  --borda: #1d2740;
+  --suave: #8d97ad;
+}
+* { box-sizing: border-box }
+body {
+  margin: 0;
+  background: var(--fundo);
+  color: var(--tinta);
+  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+header {
+  padding: 22px 26px;
+  border-bottom: 1px solid var(--borda);
+  background: var(--painel);
+}
+h1 {
+  margin: 0;
+  font: 600 24px/1.2 "Exo 2", system-ui, sans-serif;
+  color: var(--ambar);
+}
+h2 {
+  font: 600 17px/1.2 "Exo 2", system-ui, sans-serif;
+  color: var(--laranja);
+  margin: 26px 0 10px;
+}
+h4 {
+  margin: 14px 0 6px;
+  font-size: 13px;
+  color: var(--suave);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+main { max-width: 74rem; margin: 0 auto; padding: 0 26px 60px }
+code { font-family: ui-monospace, "IBM Plex Mono", Consolas, monospace; font-size: .92em }
+.barra { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin: 18px 0 }
+input[type=search], select {
+  background: var(--painel);
+  color: var(--tinta);
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 14px;
+}
+input[type=search] { flex: 1; min-width: 16rem }
+.op { border: 1px solid var(--borda); border-radius: 8px; margin: 8px 0; background: var(--painel) }
+.op summary { cursor: pointer; padding: 10px 14px; display: flex; gap: 14px; flex-wrap: wrap; align-items: baseline }
+.op summary::marker { color: var(--suave) }
+.rota { color: var(--ambar); font-weight: 600 }
+.resumo { color: var(--suave); font-size: 13.5px }
+.corpo { padding: 4px 14px 16px; border-top: 1px solid var(--borda) }
+.marca {
+  display: inline-block;
+  border: 1px solid var(--borda);
+  border-radius: 999px;
+  padding: 2px 10px;
+  margin: 8px 8px 4px 0;
+  font-size: 12px;
+  color: var(--suave);
+}
+/* Contorno, nunca fundo cheio -- a convencao das cores da acao desta casa.
+   Laranja marca quem GRAVA, e e a unica distincao de cor da pagina. */
+.marca.grava { border-color: var(--laranja); color: var(--laranja) }
+table.par { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13.5px }
+table.par th {
+  text-align: left;
+  color: var(--suave);
+  font-weight: 600;
+  border-bottom: 1px solid var(--borda);
+  padding: 6px 8px;
+}
+table.par td { padding: 6px 8px; border-bottom: 1px solid var(--borda); vertical-align: top }
+.tipo { color: var(--laranja) }
+.obr { color: var(--ambar) }
+pre.curl {
+  background: #060b1a;
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+  padding: 12px;
+  overflow-x: auto;
+  font-size: 13px;
+  margin: 0;
+}
+.leg, .vazio { color: var(--suave); font-size: 13.5px }
+.aviso {
+  border-left: 3px solid var(--laranja);
+  padding: 8px 14px;
+  margin: 16px 0;
+  color: var(--suave);
+  font-size: 13.5px;
+}
+ul.seg { padding-left: 20px }
+ul.seg li { margin: 6px 0; font-size: 13.5px; color: var(--suave) }
+a { color: var(--ambar) }
+@media (max-width: 640px) {
+  main { padding: 0 14px 40px }
+  header { padding: 16px 14px }
+}

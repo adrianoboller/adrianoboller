@@ -206,13 +206,39 @@ pub fn ler_pedido(fluxo: &TcpStream) -> Option<Pedido> {
 /// Separada do envio para poder ser conferida em teste -- os cabecalhos de
 /// seguranca sao o tipo de coisa que some numa refatoracao sem ninguem notar.
 pub fn montar_resposta(codigo: u16, tipo: &str, corpo: &str) -> String {
+    // A folga das origens externas e da PAGINA da interface -- a fonte da
+    // marca e a chamada da Claude. Toda outra resposta, inclusive uma pagina
+    // HTML de outra porta, entra pela `montar_resposta_fechada`.
+    montar_com_folga(codigo, tipo, corpo, tipo.starts_with("text/html"))
+}
+
+/// A mesma resposta, com a politica FECHADA: nenhuma origem de fora.
+///
+/// Serve a pagina do explorador da API, que nao busca fonte nem fala com
+/// servidor nenhum: ela le a especificacao da propria origem e nada mais.
+/// Herdar a folga da interface daria a uma pagina que nao precisa dela o
+/// direito de chamar `api.anthropic.com` -- e folga que ninguem pediu e
+/// superficie que ninguem defende.
+pub fn montar_resposta_fechada(codigo: u16, tipo: &str, corpo: &str) -> String {
+    montar_com_folga(codigo, tipo, corpo, false)
+}
+
+fn montar_com_folga(codigo: u16, tipo: &str, corpo: &str, externo: bool) -> String {
     let motivo = match codigo {
         200 => "OK",
         400 => "Bad Request",
+        401 => "Unauthorized",
         403 => "Forbidden",
         404 => "Not Found",
         405 => "Method Not Allowed",
+        409 => "Conflict",
         413 => "Payload Too Large",
+        // Os tres do REST. A frase do 421 e a da norma: "o servidor nao
+        // consegue produzir uma resposta para a autoridade pedida" -- e e
+        // exatamente o caso de escrever numa replica.
+        421 => "Misdirected Request",
+        499 => "Client Closed Request",
+        503 => "Service Unavailable",
         _ => "Error",
     };
     // Cabecalhos de seguranca: a pagina nao vai para dentro de um quadro
@@ -230,7 +256,6 @@ pub fn montar_resposta(codigo: u16, tipo: &str, corpo: &str) -> String {
     // origem, so no HTML e so para `connect-src`: as respostas de dados
     // continuam com `connect-src 'self'`, e nenhum `script-src` novo entra --
     // nenhum script de fora roda nesta pagina.
-    let externo = tipo.starts_with("text/html");
     let estilo = if externo {
         "style-src 'unsafe-inline' https://fonts.googleapis.com; \
          font-src https://fonts.gstatic.com; "
@@ -260,6 +285,44 @@ pub fn montar_resposta(codigo: u16, tipo: &str, corpo: &str) -> String {
     )
 }
 
+/// Le e joga fora o que o cliente ainda estava mandando, antes de fechar.
+///
+/// # O que isto conserta, e como apareceu
+///
+/// A bancada do REST achou isto no primeiro dia: um IP na lista de bloqueio
+/// recebia **`Connection reset by peer`** em vez da recusa 403 que o servidor
+/// tinha acabado de escrever. A causa nao e do PhxSql, e do TCP -- fechar um
+/// soquete que ainda tem bytes por ler no buffer de recepcao faz o sistema
+/// mandar um RST, e o RST **descarta a resposta em voo**. Ou seja: a recusa
+/// com o motivo e o prazo, cuidadosamente redigida e traduzida, nunca chegava
+/// em quem mais precisava dela.
+///
+/// Vale para as tres portas HTTP, e vale desde que a interface web existe --
+/// a recusa por lista negra e por IP fora dos permitidos responde ANTES de ler
+/// o pedido, de proposito, e e justamente por isso que o corpo fica sem ler.
+///
+/// O escoamento tem teto e prazo curto: quem foi barrado nao ganha o direito
+/// de fazer o servidor ler um corpo de megabytes.
+pub fn escoar(fluxo: &TcpStream) {
+    use std::time::Duration;
+    let antes = fluxo.read_timeout().ok().flatten();
+    let _ = fluxo.set_read_timeout(Some(Duration::from_millis(250)));
+    let mut resto = [0u8; 8192];
+    let mut lidos = 0usize;
+    let mut leitor = fluxo;
+    // O teto e o mesmo de um pedido legitimo: escoar nao da a quem foi barrado
+    // o direito de fazer o servidor ler MAIS do que ele ja leria de qualquer
+    // um. E o primeiro teto (16 KiB) nao bastava -- um corpo de 20 KB ainda
+    // deixava resto, e resto e RST.
+    while lidos < MAX_CABECALHO + MAX_CORPO {
+        match leitor.read(&mut resto) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => lidos += n,
+        }
+    }
+    let _ = fluxo.set_read_timeout(antes);
+}
+
 /// Envia a resposta.
 pub fn responder(
     fluxo: &mut TcpStream,
@@ -268,6 +331,13 @@ pub fn responder(
     corpo: &str,
 ) -> std::io::Result<()> {
     fluxo.write_all(montar_resposta(codigo, tipo, corpo).as_bytes())?;
+    fluxo.flush()
+}
+
+/// Serve uma pagina HTML com a politica fechada. Ver [`montar_resposta_fechada`].
+pub fn responder_pagina(fluxo: &mut TcpStream, codigo: u16, corpo: &str) -> std::io::Result<()> {
+    fluxo
+        .write_all(montar_resposta_fechada(codigo, "text/html; charset=utf-8", corpo).as_bytes())?;
     fluxo.flush()
 }
 

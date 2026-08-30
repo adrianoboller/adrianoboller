@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{titulo}</title>
+<style>/*ESTILO*/</style>
+<script>
+// COMPORTAMENTO -- trocado pelo explorador.js ao servir. A marca e um
+// comentario de LINHA de proposito: o conferidor dos idiomas pula linha que
+// comeca com //, e um /*assim*/ dentro de <script> ele leria como texto de
+// tela e cobraria traducao de um marcador.
+</script>
+</head>
+<body>
+<!-- NENHUM texto de tela mora neste arquivo, e a ausencia e a regra, nao
+     esquecimento: os rotulos sao preenchidos pelo `explorador.js` a partir de
+     `/idiomas`, que e a MESMA fabrica da interface web. Um <span> vazio com id
+     e feio no fonte e honesto na tela; a alternativa seria portugues cravado
+     numa pagina que oferece seis idiomas no seletor. O que aparece escrito
+     aqui e DADO -- o nome do servico e a versao, que vem do servidor. -->
+<header>
+  <h1 id="titulo"></h1>
+  <p class="leg">PhxSql <span id="versao"></span></p>
+</header>
+<main>
+  <p id="resumo"></p>
+  <p class="aviso" id="rotAviso"></p>
+
+  <h2 id="rotSeguranca"></h2>
+  <ul class="seg" id="seguranca"></ul>
+
+  <h2 id="rotOperacoes"></h2>
+  <div class="barra">
+    <input type="search" id="busca" aria-labelledby="rotBusca">
+    <span class="leg" id="conta"></span>
+    <span class="leg" id="rotIdioma"></span>
+    <select id="idioma" aria-labelledby="rotIdioma"></select>
+    <a href="/openapi.json" id="rotEspec"></a>
+    <span hidden id="rotBusca"></span>
+  </div>
+  <div id="lista"></div>
+</main>
+</body>
+</html>

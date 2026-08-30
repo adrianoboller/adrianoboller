@@ -19,6 +19,16 @@ pub const PORTA_PADRAO: u16 = 5000;
 /// nao e quem fala JSON Lines, e separar deixa o firewall escolher.
 pub const PORTA_WEB_PADRAO: u16 = 5001;
 
+/// Porta padrao do webservice REST. Ver [`Rest`].
+pub const PORTA_REST_PADRAO: u16 = 6000;
+
+/// Porta padrao do explorador da especificacao (o "Swagger"). Ver [`Rest`].
+///
+/// Separada da do REST por decisao do dono, e a separacao e o que torna
+/// possivel subir o webservice numa placa SEM abrir a porta do visualizador:
+/// sao dois ouvintes, cada um com o proprio interruptor.
+pub const PORTA_SWAGGER_PADRAO: u16 = 7000;
+
 /// `"IP:porta"` em endereco, com a mensagem de erro escrita para gente.
 ///
 /// Extraida de `Config::endereco` porque a troca de porta pela tela precisa
@@ -1293,6 +1303,164 @@ impl Web {
     }
 }
 
+/// O webservice REST, e o explorador da especificacao ao lado dele.
+///
+/// # Duas portas, e por que
+///
+/// O REST escuta na 6000 e o explorador na 7000, cada um com o proprio
+/// `ligado`. Quem sobe numa placa quer o webservice e nao quer o visualizador:
+/// com uma porta so, desligar o segundo exigiria desligar o primeiro.
+///
+/// # As duas nascem DESLIGADAS
+///
+/// Regra petrea da casa: guarda nova -- e porta nova -- entra **pedida**. Um
+/// servidor que ja roda hoje nao pode passar a expor porta nenhuma so porque
+/// alguem atualizou o binario: isso e abrir superficie de ataque sem ninguem
+/// pedir. O teste que trava isso e `config_sem_a_secao_rest_nao_escuta`, e ele
+/// e do comportamento VELHO, que e o que mais importa.
+///
+/// # O filtro de tabelas SO ESTREITA
+///
+/// [`Self::tabelas`] **nao e um sistema de permissao**. Ela e um filtro
+/// aplicado ANTES do portao, nunca no lugar dele: tabela fora da lista nao
+/// existe para o REST, e tabela dentro da lista continua passando pelo
+/// `despachar` e pelo direito do usuario exatamente como sempre. Duas verdades
+/// sobre direito de acesso e onde nasce o furo -- a casa ja pagou quatro deles
+/// quando o portao passou a olhar um campo que algumas operacoes nao tem.
+#[derive(Debug, Clone)]
+pub struct Rest {
+    pub ligado: bool,
+    /// Endereco de escuta do REST. Padrao: so o proprio computador.
+    pub bind: String,
+    /// O nome deste webservice. Vai para o `info.title` da especificacao e
+    /// para o cabecalho do explorador -- e so para isso: nome nao e portao.
+    pub nome: String,
+    /// O banco que este webservice atende. Vazio = nao estreita nada.
+    ///
+    /// Preenchido, ele faz duas coisas e nenhuma delas alarga: preenche o
+    /// `database` do pedido que veio sem ele (conveniencia de quem publica UM
+    /// banco) e recusa, como inexistente, o pedido que nomeia outro.
+    pub database: String,
+    /// As tabelas que este webservice expoe. Vazia = nao estreita nada.
+    pub tabelas: Vec<String>,
+    /// O segredo da porta REST. Vazio = vale o `token` do protocolo.
+    ///
+    /// Preenchido, ele SUBSTITUI o token do protocolo **nesta porta**: o
+    /// `Bearer` tem de ser este, e o token do protocolo nao abre o REST. Nao e
+    /// uma identidade nem um poder -- e a chave da porta da rede, igual ao
+    /// outro, e quem entra continua sendo quem faz `login`.
+    pub token: String,
+    /// O explorador da especificacao escuta?
+    pub swagger_ligado: bool,
+    /// Endereco de escuta do explorador.
+    pub swagger_bind: String,
+}
+
+impl Default for Rest {
+    fn default() -> Self {
+        Rest {
+            ligado: false,
+            bind: format!("127.0.0.1:{PORTA_REST_PADRAO}"),
+            nome: String::new(),
+            database: String::new(),
+            tabelas: Vec::new(),
+            token: String::new(),
+            swagger_ligado: false,
+            swagger_bind: format!("127.0.0.1:{PORTA_SWAGGER_PADRAO}"),
+        }
+    }
+}
+
+impl Rest {
+    fn de_json(j: &Json) -> Rest {
+        let padrao = Rest::default();
+        match j.campo("rest") {
+            None => padrao,
+            Some(r) => Rest {
+                ligado: r.booleano_ou("ligado", false),
+                bind: r.texto_ou("bind", &padrao.bind).trim().to_string(),
+                nome: r.texto_ou("nome", "").trim().to_string(),
+                database: r.texto_ou("database", "").trim().to_string(),
+                tabelas: r
+                    .textos("tabelas")
+                    .into_iter()
+                    .map(|t| t.trim().to_string())
+                    .filter(|t| !t.is_empty())
+                    .collect(),
+                token: r.texto_ou("token", "").trim().to_string(),
+                swagger_ligado: r.booleano_ou("swagger_ligado", false),
+                swagger_bind: r
+                    .texto_ou("swagger_bind", &padrao.swagger_bind)
+                    .trim()
+                    .to_string(),
+            },
+        }
+    }
+
+    /// O que a tela ve. O TOKEN NAO SAI DAQUI -- so o fato de existir um.
+    ///
+    /// Senha nunca em texto puro, e um segredo de porta e senha: mandar o
+    /// token na resposta o poria no `localStorage` de quem abriu a tela, no
+    /// log do proxy e na captura de tela do suporte.
+    pub fn para_json(&self) -> Json {
+        Json::objeto(vec![
+            ("ligado", Json::Bool(self.ligado)),
+            ("bind", Json::texto_de(&self.bind)),
+            ("nome", Json::texto_de(&self.nome)),
+            ("database", Json::texto_de(&self.database)),
+            (
+                "tabelas",
+                Json::Lista(self.tabelas.iter().map(Json::texto_de).collect()),
+            ),
+            ("token_proprio", Json::Bool(!self.token.is_empty())),
+            ("swagger_ligado", Json::Bool(self.swagger_ligado)),
+            ("swagger_bind", Json::texto_de(&self.swagger_bind)),
+        ])
+    }
+
+    pub fn endereco(&self) -> Result<SocketAddr> {
+        endereco_de(&self.bind).map_err(|e| PhxError::Esquema(format!("rest.bind: {e}")))
+    }
+
+    pub fn endereco_do_swagger(&self) -> Result<SocketAddr> {
+        endereco_de(&self.swagger_bind)
+            .map_err(|e| PhxError::Esquema(format!("rest.swagger_bind: {e}")))
+    }
+
+    /// O nome que a especificacao e o explorador mostram.
+    pub fn titulo(&self) -> String {
+        if self.nome.is_empty() {
+            "PhxSql".to_string()
+        } else {
+            self.nome.clone()
+        }
+    }
+
+    /// Esta tabela existe para o REST?
+    ///
+    /// Lista vazia libera tudo -- e e o padrao, byte a byte o comportamento de
+    /// quem nao preencheu nada. Compara o nome como veio E sem o schema, para
+    /// `vendas.clientes` casar com `clientes` na lista: quem escreve a lista
+    /// esta pensando em tabela, nao em caminho.
+    pub fn tabela_exposta(&self, nome: &str) -> bool {
+        if self.tabelas.is_empty() {
+            return true;
+        }
+        let alvo = nome.trim();
+        let curto = alvo.rsplit('.').next().unwrap_or(alvo);
+        self.tabelas
+            .iter()
+            .any(|t| t.eq_ignore_ascii_case(alvo) || t.eq_ignore_ascii_case(curto))
+    }
+
+    /// Este banco existe para o REST? Vazio no arquivo libera todos.
+    pub fn database_exposto(&self, nome: &str) -> bool {
+        self.database.is_empty()
+            || nome.trim().is_empty()
+            || self.database.eq_ignore_ascii_case(nome.trim())
+    }
+}
+
 /// Quando o dado gravado vai de fato para o disco.
 ///
 /// # O numero que decide isto
@@ -1862,6 +2030,8 @@ pub struct Config {
     pub blacklist: PathBuf,
     /// Interface web.
     pub web: Web,
+    /// Webservice REST com OpenAPI. Ver [`Rest`].
+    pub rest: Rest,
     /// Backup agendado.
     pub backup: Backup,
     /// Aviso de disco apertado, e o e-mail por onde ele sai.
@@ -1918,7 +2088,7 @@ pub struct Config {
 // no primeiro nivel -- quem a escrevesse no arquivo levava um "campo que este
 // servidor nao conhece" sobre um campo que ele le e obedece. Aviso falso gasta
 // a confianca do aviso verdadeiro.
-const CAMPOS_CONHECIDOS: [&str; 27] = [
+const CAMPOS_CONHECIDOS: [&str; 28] = [
     "bind",
     "base",
     "token",
@@ -1936,6 +2106,7 @@ const CAMPOS_CONHECIDOS: [&str; 27] = [
     "usuarios",
     "seguranca",
     "web",
+    "rest",
     "backup",
     "alertas",
     "dblink",
@@ -1957,7 +2128,7 @@ const CAMPOS_CONHECIDOS: [&str; 27] = [
 /// as duas primeiras estao ganhando campos novos por outras frentes nesta
 /// rodada, e um aviso falso de "campo desconhecido" seria pior que a lacuna;
 /// as duas ultimas tem chaves livres (bases, tabelas).
-const SECOES_CONHECIDAS: [(&str, &[&str]); 10] = [
+const SECOES_CONHECIDAS: [(&str, &[&str]); 11] = [
     (
         "recursos",
         &[
@@ -1976,6 +2147,19 @@ const SECOES_CONHECIDAS: [(&str, &[&str]); 10] = [
         ],
     ),
     ("web", &["ligado", "bind", "sessao_minutos", "servidores"]),
+    (
+        "rest",
+        &[
+            "ligado",
+            "bind",
+            "nome",
+            "database",
+            "tabelas",
+            "token",
+            "swagger_ligado",
+            "swagger_bind",
+        ],
+    ),
     (
         "backup",
         &[
@@ -2099,6 +2283,7 @@ impl Default for Config {
             politica: Politica::default(),
             blacklist: PathBuf::from("blacklist.json"),
             web: Web::default(),
+            rest: Rest::default(),
             backup: Backup::default(),
             alertas: Alertas::default(),
             dblink: PathBuf::from("dblink.json"),
@@ -2258,6 +2443,7 @@ impl Config {
                     .unwrap_or("blacklist.json"),
             ),
             web: Web::de_json(j),
+            rest: Rest::de_json(j),
             backup: Backup::de_json(j)?,
             alertas: Alertas::de_json(j)?,
             dblink: PathBuf::from(j.texto_ou("dblink", "dblink.json")),
@@ -2310,6 +2496,28 @@ impl Config {
         let mut ocupadas = vec![("bind", self.endereco()?)];
         if self.web.ligado {
             ocupadas.push(("web.bind", self.web.endereco()?));
+        }
+        // As duas portas do REST entram na MESMA conta das outras: a colisao
+        // descoberta no arranque custa uma mensagem, e a descoberta depois
+        // custa um ouvinte calado que ninguem sabe que nao subiu.
+        for (rotulo, ligado, alvo) in [
+            ("rest.bind", self.rest.ligado, self.rest.endereco()),
+            (
+                "rest.swagger_bind",
+                self.rest.swagger_ligado,
+                self.rest.endereco_do_swagger(),
+            ),
+        ] {
+            if !ligado {
+                continue;
+            }
+            let alvo = alvo?;
+            if let Some((quem, _)) = ocupadas.iter().find(|(_, e)| *e == alvo) {
+                return Err(PhxError::Esquema(format!(
+                    "{rotulo} e {quem} apontam para o mesmo endereco ({alvo})"
+                )));
+            }
+            ocupadas.push((rotulo, alvo));
         }
         for (rotulo, texto) in self.replicacao.portas() {
             let alvo = Replicacao::resolver(rotulo, texto)?;
@@ -2551,6 +2759,7 @@ impl Config {
                     ),
                 ]),
             ),
+            ("rest", self.rest.para_json()),
             (
                 "backup",
                 Json::objeto(vec![
@@ -2640,6 +2849,13 @@ pub enum TipoDoCampo {
     Numero,
     Booleano,
     Texto,
+    /// Lista de textos -- a `rest.tabelas`, hoje.
+    ///
+    /// Tipo proprio, e nao `Texto` com virgula dentro, porque o que a tela
+    /// grava tem de ser o que o leitor le: `textos()` quer uma lista JSON, e
+    /// uma string com virgulas viraria UMA tabela chamada "a, b". O recorte
+    /// acontece na tela, que e onde a pessoa digita.
+    Lista,
     /// `#rrggbb` ou vazio. Ver [`cor_valida`].
     ///
     /// E um tipo proprio, e nao um `Texto` com conferencia solta, porque o
@@ -2657,6 +2873,9 @@ impl TipoDoCampo {
             TipoDoCampo::Numero => v.numero().is_some(),
             TipoDoCampo::Booleano => v.booleano().is_some(),
             TipoDoCampo::Texto => v.texto().is_some(),
+            TipoDoCampo::Lista => v
+                .lista()
+                .is_some_and(|l| l.iter().all(|x| x.texto().is_some())),
             TipoDoCampo::Cor => v.texto().is_some_and(cor_valida),
         }
     }
@@ -2667,6 +2886,7 @@ impl TipoDoCampo {
             TipoDoCampo::Numero => "numero",
             TipoDoCampo::Booleano => "booleano",
             TipoDoCampo::Texto => "texto",
+            TipoDoCampo::Lista => "lista",
             TipoDoCampo::Cor => "cor",
         }
     }
@@ -2710,6 +2930,21 @@ pub const CAMPOS_EDITAVEIS: &[(&str, TipoDoCampo, bool)] = &[
     ("recursos.memoria_max_mb", TipoDoCampo::Inteiro, false),
     ("recursos.usuarios_max", TipoDoCampo::Inteiro, false),
     ("web.sessao_minutos", TipoDoCampo::Inteiro, false),
+    // O webservice REST. Tudo aqui vale NO ARRANQUE, e a tela diz isso ao
+    // lado: abrir e fechar porta de rede a quente seria dar, a quem tomasse
+    // uma sessao de administrador, o poder de expor o servidor sem reiniciar
+    // nada -- e o `false` e o que faz a tela prometer o que o servidor cumpre.
+    //
+    // `rest.token` NAO esta aqui, e a ausencia e a mesma decisao que ja
+    // manteve `token` de fora: campo que carrega credencial se edita no
+    // arquivo. A tela mostra se existe um, nunca qual e.
+    ("rest.ligado", TipoDoCampo::Booleano, false),
+    ("rest.bind", TipoDoCampo::Texto, false),
+    ("rest.nome", TipoDoCampo::Texto, false),
+    ("rest.database", TipoDoCampo::Texto, false),
+    ("rest.tabelas", TipoDoCampo::Lista, false),
+    ("rest.swagger_ligado", TipoDoCampo::Booleano, false),
+    ("rest.swagger_bind", TipoDoCampo::Texto, false),
     ("backup.agendado", TipoDoCampo::Booleano, false),
     ("backup.hora", TipoDoCampo::Texto, false),
     ("backup.cada_horas", TipoDoCampo::Inteiro, false),
@@ -3373,6 +3608,175 @@ mod tests {
         assert_eq!(c.blacklist, PathBuf::from("bl.json"));
     }
 
+    // ================================================= o webservice REST
+
+    /// **O teste que mais importa desta frente inteira**: o comportamento
+    /// VELHO.
+    ///
+    /// Um `config.json` de hoje -- e todos sao de hoje -- nao tem a secao
+    /// `rest`. Depois de atualizar o binario ele nao pode passar a escutar
+    /// porta nenhuma: isso seria abrir superficie de ataque sem ninguem pedir,
+    /// e a regra da casa e petrea -- guarda nova, e porta nova, entra PEDIDA.
+    ///
+    /// **Prova real, com o defeito reposto:** troque o `booleano_ou("ligado",
+    /// false)` do `Rest::de_json` por `true` -- ou faca o `Default` nascer
+    /// ligado -- e este teste reprova nos dois campos.
+    #[test]
+    fn config_sem_a_secao_rest_nao_escuta() {
+        let c = Config::de_json(&Json::analisar(r#"{"token":"x"}"#).unwrap()).unwrap();
+        assert!(!c.rest.ligado, "o REST subiu sem ninguem pedir");
+        assert!(
+            !c.rest.swagger_ligado,
+            "o explorador subiu sem ninguem pedir"
+        );
+        // E os enderecos de fabrica sao do proprio computador: no dia em que
+        // alguem ligar, ligar nao pode significar publicar na rede.
+        assert!(c.rest.bind.starts_with("127.0.0.1:"));
+        assert!(c.rest.swagger_bind.starts_with("127.0.0.1:"));
+        // Nada estreitado, nada exigido, nenhum segredo proprio.
+        assert!(c.rest.database.is_empty());
+        assert!(c.rest.tabelas.is_empty());
+        assert!(c.rest.token.is_empty());
+        // E a secao ausente nao vira aviso de campo desconhecido.
+        assert!(c.estranhas.is_empty(), "{:?}", c.estranhas);
+    }
+
+    /// As duas portas sao independentes: o REST sem o explorador e o caso da
+    /// placa, e ele tem de ser dizivel numa linha do arquivo.
+    #[test]
+    fn o_rest_liga_sem_o_explorador() {
+        let c = Config::de_json(
+            &Json::analisar(
+                r#"{"token":"x","rest":{"ligado":true,"bind":"127.0.0.1:7500",
+                    "nome":"vendas","database":"loja","tabelas":["clientes"," "],
+                    "token":"outro"}}"#,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(c.rest.ligado);
+        assert!(!c.rest.swagger_ligado, "o explorador nao foi pedido");
+        assert_eq!(c.rest.endereco().unwrap().port(), 7500);
+        assert_eq!(c.rest.titulo(), "vendas");
+        // Item em branco na lista nao vira uma tabela chamada "".
+        assert_eq!(c.rest.tabelas, vec!["clientes".to_string()]);
+    }
+
+    /// Duas portas no mesmo endereco nao sobem, e descobrir isso no arranque e
+    /// melhor do que descobrir com uma delas calada.
+    #[test]
+    fn as_portas_do_rest_entram_na_conta_das_colisoes() {
+        let erro = Config::de_json(
+            &Json::analisar(
+                r#"{"token":"x","bind":"127.0.0.1:7501",
+                    "rest":{"ligado":true,"bind":"127.0.0.1:7501"}}"#,
+            )
+            .unwrap(),
+        )
+        .unwrap()
+        .validar()
+        .unwrap_err()
+        .to_string();
+        assert!(erro.contains("rest.bind"), "{erro}");
+
+        let erro = Config::de_json(
+            &Json::analisar(
+                r#"{"token":"x","rest":{"ligado":true,"bind":"127.0.0.1:7502",
+                    "swagger_ligado":true,"swagger_bind":"127.0.0.1:7502"}}"#,
+            )
+            .unwrap(),
+        )
+        .unwrap()
+        .validar()
+        .unwrap_err()
+        .to_string();
+        assert!(erro.contains("swagger_bind"), "{erro}");
+
+        // E a porta DESLIGADA nao colide com nada: quem deixou o campo
+        // apontando para a porta de dados e nao ligou o REST nao pode ficar
+        // sem servidor por causa de um endereco que ninguem vai abrir.
+        Config::de_json(
+            &Json::analisar(
+                r#"{"token":"x","bind":"127.0.0.1:7503",
+                    "rest":{"bind":"127.0.0.1:7503"}}"#,
+            )
+            .unwrap(),
+        )
+        .unwrap()
+        .validar()
+        .expect("porta desligada nao colide");
+    }
+
+    /// O token do REST nao sai na resposta de `config`, e nao entra pela tela.
+    ///
+    /// Senha nunca em texto puro vale para segredo de porta tambem: manda-lo
+    /// para a tela o poria no historico do navegador, no log do proxy e na
+    /// captura de tela do suporte. E a tela nao o grava pelo mesmo motivo que
+    /// ja mantinha `token` fora: uma sessao tomada nao troca a fechadura.
+    #[test]
+    fn o_token_do_rest_nao_sai_nem_entra_pela_tela() {
+        let c = Config::de_json(
+            &Json::analisar(r#"{"token":"x","rest":{"token":"SEGREDO-DA-PORTA"}}"#).unwrap(),
+        )
+        .unwrap();
+        let visto = c.para_json().escrever();
+        assert!(
+            !visto.contains("SEGREDO-DA-PORTA"),
+            "o token vazou para a tela"
+        );
+        let rest = c.para_json().campo("rest").cloned().expect("secao rest");
+        assert!(
+            rest.booleano_ou("token_proprio", false),
+            "a tela precisa saber que existe um"
+        );
+        assert!(rest.campo("token").is_none());
+        assert!(
+            campo_editavel("rest.token").is_none(),
+            "a tela nao grava credencial"
+        );
+        // Os que a tela GRAVA continuam gravaveis, senao a secao inteira
+        // viraria somente leitura por engano.
+        for campo in [
+            "rest.ligado",
+            "rest.bind",
+            "rest.nome",
+            "rest.database",
+            "rest.tabelas",
+            "rest.swagger_ligado",
+            "rest.swagger_bind",
+        ] {
+            assert!(campo_editavel(campo).is_some(), "{campo} sumiu da tela");
+        }
+    }
+
+    /// O tipo `lista` recusa o que nao e lista de textos.
+    ///
+    /// Sem a conferencia, gravar `"rest.tabelas": "clientes"` passaria: o
+    /// leitor usa `textos()`, que devolve vazio calado quando o tipo nao bate
+    /// -- e vazio, aqui, quer dizer "expoe tudo". Um erro de digitacao na tela
+    /// abriria as trinta tabelas de quem quis expor tres.
+    #[test]
+    fn a_lista_de_tabelas_so_aceita_lista_de_textos() {
+        let (tipo, _) = campo_editavel("rest.tabelas").unwrap();
+        assert!(tipo.confere(&Json::analisar(r#"["a","b"]"#).unwrap()));
+        assert!(tipo.confere(&Json::analisar("[]").unwrap()));
+        assert!(!tipo.confere(&Json::texto_de("clientes")));
+        assert!(!tipo.confere(&Json::analisar("[1,2]").unwrap()));
+        assert!(!tipo.confere(&Json::analisar(r#"{"a":1}"#).unwrap()));
+    }
+
+    /// Campo escrito errado dentro da secao vira aviso, e nao silencio.
+    #[test]
+    fn campo_estranho_dentro_do_rest_avisa() {
+        let c =
+            Config::de_json(&Json::analisar(r#"{"token":"x","rest":{"ligada":true}}"#).unwrap())
+                .unwrap();
+        assert!(
+            c.estranhas.iter().any(|e| e == "rest.ligada"),
+            "{:?}",
+            c.estranhas
+        );
+    }
     /// **O teste que mais importa da guarda nova**: sem o bloco `seguranca`,
     /// a politica e a de sempre -- nada proibido, whitelist vazia, e o grave
     /// bloqueia na primeira, como desde que a blacklist existe.

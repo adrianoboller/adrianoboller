@@ -6225,6 +6225,7 @@ const DIZ_AJUSTE = {
 
 /** A explicação de um ajuste, reusando a dos recursos em vez de repeti-la. */
 function dizDoAjuste(campo) {
+  if (AJUSTE_NA_FABRICA[campo]) return txt(AJUSTE_NA_FABRICA[campo][1]);
   if (DIZ_AJUSTE[campo]) return DIZ_AJUSTE[campo];
   if (campo.startsWith("recursos.")) {
     const d = DIZ_RECURSO[campo.slice(9)];
@@ -6276,9 +6277,30 @@ const ROTULO_AJUSTE = {
   "telemetria.stress_ms": "limiar de stress, em milissegundos",
 };
 
+/** Os ajustes cujo rótulo e explicação passam pela FÁBRICA DE IDIOMAS.
+ *
+ * Os dois dicionários acima são portugueses cravados — herança de quando a
+ * tela era só em português. O caminho novo é este: `campo → [chave do rótulo,
+ * chave da explicação]`, e a chave aparece aqui LITERAL porque o laço que
+ * confere a fábrica procura `"tela.` no fonte. Chave montada por concatenação
+ * seria invisível para ele, e chave morta é pior que chave faltando.
+ *
+ * Campo que entrar daqui para a frente entra por aqui. Os antigos migram
+ * quando alguém os traduzir — e enquanto não migram, continuam funcionando. */
+const AJUSTE_NA_FABRICA = {
+  "rest.ligado": ["tela.cfg_rest_ligado", "tela.cfg_rest_ligado_diz"],
+  "rest.bind": ["tela.cfg_rest_bind", "tela.cfg_rest_bind_diz"],
+  "rest.nome": ["tela.cfg_rest_nome", "tela.cfg_rest_nome_diz"],
+  "rest.database": ["tela.cfg_rest_database", "tela.cfg_rest_database_diz"],
+  "rest.tabelas": ["tela.cfg_rest_tabelas", "tela.cfg_rest_tabelas_diz"],
+  "rest.swagger_ligado": ["tela.cfg_rest_swagger", "tela.cfg_rest_swagger_diz"],
+  "rest.swagger_bind": ["tela.cfg_rest_swagger_bind", "tela.cfg_rest_swagger_bind_diz"],
+};
+
 /** O rótulo de um ajuste; sem entrada, o nome do campo serve de reserva. */
 const rotuloDoAjuste = campo =>
-  ROTULO_AJUSTE[campo] || campo.split(".").pop().replace(/_/g, " ");
+  (AJUSTE_NA_FABRICA[campo] ? txt(AJUSTE_NA_FABRICA[campo][0]) : null)
+  || ROTULO_AJUSTE[campo] || campo.split(".").pop().replace(/_/g, " ");
 
 /** Campo de escolha fechada: digitar livre aqui só produziria recusa. */
 const OPCOES_AJUSTE = {
@@ -6307,6 +6329,13 @@ const GRUPOS_AJUSTE = [
     "backup.zip", "backup.manter"]],
   ["Arquivo do Profiler",
    ["profiler.arquivo_mib", "profiler.arquivos"]],
+  // O webservice REST, com as DUAS portas juntas: separá-las deixaria metade
+  // da decisão numa tela e metade noutra, e a decisão é uma só — o que este
+  // servidor publica para fora.
+  ["tela.cfg_rest",
+   ["rest.ligado", "rest.bind", "rest.nome", "rest.database", "rest.tabelas",
+    "rest.swagger_ligado", "rest.swagger_bind"],
+   c => rodapeDoRest(c)],
   ["Alerta de espaço em disco",
    ["alertas.ligado", "alertas.livre_minimo_percentual", "alertas.livre_minimo_mb",
     "alertas.checar_minutos", "alertas.repetir_horas"]],
@@ -6352,6 +6381,17 @@ function campoEditavel(c, e) {
       <span>${esc(rotuloDoAjuste(e.campo))} ${quando}${espera}
         <span class="leg"><code>${esc(e.campo)}</code> · ${esc(dizDoAjuste(e.campo))}</span>
       </span></label>`;
+  }
+  // A lista de textos: uma por linha, e não separadas por vírgula. Vírgula
+  // obrigaria a decidir o que fazer com o espaço em volta e com o nome que
+  // tem vírgula dentro; a linha não tem essa dúvida, e é o que se lê melhor
+  // numa lista de cinco tabelas.
+  if (e.tipo === "lista") {
+    const itens = Array.isArray(v) ? v : [];
+    return `<label class="cmp cmp-lista">
+      <span>${esc(rotuloDoAjuste(e.campo))}</span>
+      <textarea rows="4" ${dados} data-antes="${esc(itens.join("\n"))}"
+        >${esc(itens.join("\n"))}</textarea>${rodape}</label>`;
   }
   const opcoes = OPCOES_AJUSTE[e.campo];
   const controle = opcoes
@@ -6399,6 +6439,22 @@ function campoDeCor(e, valor, rodape) {
     </div>
     <span class="cf-cor-diz"></span>
     ${rodape}</div>`;
+}
+
+/* O rodapé do grupo do REST: o estado do token, e os dois limites escritos.
+ *
+ * O token aparece como ESTADO — «tem um» ou «não tem» —, nunca como valor: a
+ * resposta de `config` não o traz, e é de propósito. Senha nunca em texto
+ * puro vale para segredo de porta também: mandá-lo para a tela o poria no
+ * histórico do navegador, no log do proxy e na captura de tela do suporte. */
+function rodapeDoRest(c) {
+  const r = (c || {}).rest || {};
+  return `<div class="nota">
+      <p><strong>${esc(txt("tela.token", "Token do servidor"))}:</strong>
+      ${esc(r.token_proprio ? txt("tela.cfg_rest_token_sim") : txt("tela.cfg_rest_token_nao"))}.
+      ${marcado(txt("tela.cfg_rest_token_diz"))}</p>
+      <p>${marcado(txt("tela.cfg_rest_nota"))} ${marcado(txt("tela.cfg_rest_nota2"))}</p>
+    </div>`;
 }
 
 /** O rodapé do grupo das cores: o botão de desfazer tudo e o que não muda. */
@@ -6503,14 +6559,20 @@ async function verConfigServidor() {
   const agrupados = new Set(GRUPOS_AJUSTE.flatMap(([, campos]) => campos));
   const sobrando = editaveis.filter(e => !agrupados.has(e.campo));
 
-  const grupo = (titulo, campos, extra) => {
+  // O título passa pela fábrica ANTES de ser escrito, e a chave é o próprio
+  // primeiro item do grupo: título que já é chave (`tela.…`) sai traduzido, e
+  // título que ainda é português cravado cai no padrão e continua como estava.
+  // Resolver aqui, e não na constante, é o que faz a tradução valer: a
+  // `GRUPOS_AJUSTE` é lida no arranque, quando não há texto carregado ainda.
+  const grupo = (chave, campos, extra) => {
+    const titulo = txt(chave, chave);
     const itens = campos.filter(x => porCampo[x]).map(x => campoEditavel(c, porCampo[x])).join("");
     // O `extra` é o rodapé do grupo — hoje só o das cores, com o botão de
     // voltar ao tema. Ele fica DEPOIS dos campos e só existe quando o grupo
     // existe: um botão de desfazer cor num servidor que não declarou os
     // campos de cor prometeria o que a tela não faz.
     if (itens && extra) return `<h3 class="secao">${esc(titulo)}</h3>
-      <div class="form-dbl">${itens}</div>${extra()}`;
+      <div class="form-dbl">${itens}</div>${extra(c)}`;
     return itens ? `<h3 class="secao">${esc(titulo)}</h3>
       <div class="form-dbl">${itens}</div>` : "";
   };
@@ -6648,6 +6710,14 @@ async function salvarConfigServidor() {
     }
     const texto = el.value.trim();
     if (texto === antes) return;
+    if (tipo === "lista") {
+      // Linha vazia não vira item: quem apaga uma tabela do meio da caixa
+      // deixaria um nome em branco na lista, e nome em branco no filtro
+      // significaria uma tabela chamada "".
+      campos[el.dataset.campo] = texto.split("\n")
+        .map(x => x.trim()).filter(x => x.length);
+      return;
+    }
     if (tipo === "inteiro" || tipo === "numero") {
       const n = Number(texto);
       // Vazio vira 0 em JavaScript, e 0 é um valor legítimo em quase todos

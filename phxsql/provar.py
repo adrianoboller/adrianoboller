@@ -282,6 +282,17 @@ PARTES = [
           [sys.executable, "bancada/dblink/prova-sincronia.py"],
           requisitos=[precisa_mysql], prazo=900),
 
+    parte("rest", "o webservice REST pelo soquete, com um cliente HTTP escrito "
+          "na hora: o token da porta, o estreitamento que so ESTREITA, e a "
+          "especificacao conferida rota a rota contra o servidor vivo",
+          [sys.executable, "bancada/rest/provar.py"],
+          requisitos=[porta_livre(7510, 7511, 7512, 7513)], prazo=900),
+
+    parte("rest-tela", "a secao do webservice na tela de configuracao, "
+          "exercitando: preencher, salvar, recarregar e trocar o idioma",
+          ["node", "testes-web/prova-rest.mjs", "--porta", "7530"],
+          requisitos=[precisa_playwright, porta_livre(7530, 7531)], prazo=900),
+
     parte("odbc", "a ABI do driver ODBC pelo ctypes, sem passar pelo "
           "unixODBC -- a mesma .so que o gerenciador carregaria",
           [sys.executable, "bancada/odbc/provar.py", "--porta", "6954"],
