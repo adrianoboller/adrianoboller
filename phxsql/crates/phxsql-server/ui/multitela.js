@@ -107,20 +107,30 @@ window.PhxTelas = (function () {
    *
    * Nem toda tela entra aqui, e isso e de proposito: so tem chave a tela que
    * se abre SEM contexto -- uma que dependa de um formulario meio preenchido
-   * nao se reabre por URL sem mentir sobre o que restaurou. */
+   * nao se reabre por URL sem mentir sobre o que restaurou.
+   *
+   * O par `rot`/`txt` e o mesmo dos `MENUS` e das `FERRAMENTAS` da pagina, e
+   * pelo mesmo motivo: este objeto nasce quando o modulo carrega, ANTES de a
+   * pagina ter pedido os textos ao servidor. Um `txt(...)` aqui devolveria
+   * portugues para sempre. Quem desenha e que resolve, no `rotuloDe`.
+   *
+   * As seis chaves ja existiam na fabrica -- sao os mesmos rotulos do menu e
+   * da barra de ferramentas. Chave nova para o mesmo texto seria uma segunda
+   * verdade, e o tradutor traduziria duas vezes o mesmo botao. */
   const CATALOGO = {
-    painel: { rot: "Painel", abre: () => abrirAdmin("painel") },
+    painel: { rot:"Painel", txt:"tela.painel", abre: () => abrirAdmin("painel") },
     tabela: {
+      // Sem `txt:` de proposito: o rotulo e o NOME DA TABELA, que e dado.
       rot: p => (p.tab || "tabela"),
       abre: p => abrirTabela(p.db, p.tab),
       valido: p => !!(p.db && p.tab),
     },
-    query: { rot: "Query", abre: () => abrirConsulta() },
-    diagrama: { rot: "Diagrama ER", abre: p => telaDiagramaER(p.db) },
-    telemetria: { rot: "Telemetria", abre: () => telaTelemetria() },
-    profiler: { rot: "Profiler", abre: () => verProfiler() },
-    ia: { rot: "Claude", abre: () => PhxIA.telaConfig() },
-    usuarios: { rot: "Usuários", abre: () => abrirAdmin("usuarios") },
+    query: { rot:"Query", txt:"tela.fer_query", abre: () => abrirConsulta() },
+    diagrama: { rot:"Diagrama ER", txt:"tela.fer_diagrama", abre: p => telaDiagramaER(p.db) },
+    telemetria: { rot:"Telemetria", txt:"tela.fer_telemetria", abre: () => telaTelemetria() },
+    profiler: { rot:"Profiler", txt:"tela.fer_profiler", abre: () => verProfiler() },
+    ia: { rot: "Claude", abre: () => PhxIA.telaConfig() },   // nome de produto
+    usuarios: { rot:"Usuários", txt:"tela.usuarios", abre: () => abrirAdmin("usuarios") },
   };
 
   const W = {
@@ -358,6 +368,20 @@ window.PhxTelas = (function () {
       t.janela.classList.toggle("frente", t === W.foco);
       t.janela.querySelector('[data-jan="pino"]')
         .setAttribute("aria-pressed", t.pino ? "true" : "false");
+      // O cromo da janela solta e montado UMA vez, no `soltar()`. Sem repor os
+      // rotulos aqui, trocar o idioma deixaria estes tres em portugues ate a
+      // pessoa acoplar e soltar de novo -- e a tela ficaria metade em cada
+      // lingua, que e pior que ficar inteira em portugues.
+      const rotulos = [
+        ['[data-jan="pino"]', "title", txt("tela.mt_pinar_solta_dica", "Pinar — guarda x, y, largura e altura desta janela neste navegador")],
+        ['[data-jan="acoplar"]', "title", txt("tela.mt_acoplar_dica", "Devolver esta tela para a área em regiões")],
+        ['[data-jan="fechar"]', "title", txt("tela.mt_fechar_tela", "Fechar esta tela")],
+        ['[data-jan="canto"]', "aria-label", txt("tela.mt_redimensionar", "Redimensionar")],
+      ];
+      for (const [alvo, atrib, valor] of rotulos) {
+        const el = t.janela.querySelector(alvo);
+        if (el) el.setAttribute(atrib, valor);
+      }
     }
   }
 
@@ -368,13 +392,17 @@ window.PhxTelas = (function () {
       c.className = "calha";
       c.setAttribute("role", "separator");
       c.setAttribute("aria-orientation", "vertical");
-      c.setAttribute("aria-label", "Largura das regiões");
       c.tabIndex = 0;
       c.dataset.i = String(i);
       ligarCalha(c);
       calhas[i] = c;
     }
     calhas[i].dataset.i = String(i);
+    // FORA do `if`: a calha e reaproveitada entre desenhos, e o rotulo de quem
+    // escuta ficaria no idioma da primeira vez -- que e o defeito mais dificil
+    // de notar, porque ninguem VE um aria-label.
+    calhas[i].setAttribute("aria-label",
+      txt("tela.mt_largura_regioes", "Largura das regiões"));
     return calhas[i];
   }
 
@@ -393,15 +421,15 @@ window.PhxTelas = (function () {
     const abas = r.abas.map((t, i) => `<button class="tira-aba${
       t === r.mostrando ? " sel" : ""}" draggable="true" role="tab"
       data-i="${i}" aria-selected="${t === r.mostrando}"
-      title="${E(t.rot)}${t.pino ? " · pinada: volta na próxima abertura" : ""}">
+      title="${E(t.rot)}${t.pino ? " · " + E(txt("tela.mt_aba_pinada", "pinada: volta na próxima abertura")) : ""}">
       <span class="rot">${E(t.rot)}</span>
       <span class="tira-pino" role="button" tabindex="-1" data-pino="${i}"
         aria-pressed="${t.pino ? "true" : "false"}"
-        title="${t.pino ? "Despinar — esta tela deixa de voltar sozinha"
-          : "Pinar — esta tela volta na próxima abertura, na mesma região"}"
+        title="${E(t.pino ? txt("tela.mt_despinar_dica", "Despinar — esta tela deixa de voltar sozinha")
+          : txt("tela.mt_pinar_aba_dica", "Pinar — esta tela volta na próxima abertura, na mesma região"))}"
         >${glifoPino()}</span>
       ${r.abas.length > 1 ? `<span class="tira-x" role="button" tabindex="-1"
-        data-x="${i}" title="Fechar esta tela">×</span>` : ""}
+        data-x="${i}" title="${E(txt("tela.mt_fechar_tela", "Fechar esta tela"))}">×</span>` : ""}
     </button>`).join("");
 
     const n = W.regioes.length;
@@ -409,28 +437,27 @@ window.PhxTelas = (function () {
     const primeira = r === W.regioes[0];
     const controles = W.destacada
       ? `<button class="tira-bt" data-acao="pinar-janela"
-           title="Pinar — guarda x, y, largura, altura e o monitor desta janela
-neste navegador, e ela volta assim na próxima vez">
-           ${glifoPino()} <span class="num">pinar aqui</span></button>
+           title="${E(txt("tela.mt_pinar_janela_dica", "Pinar — guarda x, y, largura, altura e o monitor desta janela neste navegador, e ela volta assim na próxima vez"))}">
+           ${glifoPino()} <span class="num">${E(txt("tela.mt_pinar_aqui", "pinar aqui"))}</span></button>
          <button class="tira-bt" data-acao="devolver"
-           title="Devolver esta tela para a janela principal e fechar esta">
-           ⤺ <span class="num">devolver</span></button>`
+           title="${E(txt("tela.mt_devolver_dica", "Devolver esta tela para a janela principal e fechar esta"))}">
+           ⤺ <span class="num">${E(txt("tela.mt_devolver", "devolver"))}</span></button>`
       : `<button class="tira-bt" data-acao="nova"
-           title="Abrir outra tela nesta região (a próxima escolha cai aqui)">+</button>
+           title="${E(txt("tela.mt_nova_dica", "Abrir outra tela nesta região (a próxima escolha cai aqui)"))}">+</button>
          <button class="tira-bt" data-acao="soltar"
-           title="Soltar esta tela numa janela flutuante DENTRO da página,
-arrastável pelo cabeçalho e redimensionável pelo canto">⇱</button>
+           title="${E(txt("tela.mt_soltar_dica", "Soltar esta tela numa janela flutuante DENTRO da página, arrastável pelo cabeçalho e redimensionável pelo canto"))}">⇱</button>
          <button class="tira-bt" data-acao="destacar"
-           title="Destacar numa janela do sistema, fora desta página
-(só serve para quem tem monitor separado — o modo em regiões não depende disto)"
+           title="${E(txt("tela.mt_destacar_dica", "Destacar numa janela do sistema, fora desta página (só serve para quem tem monitor separado — o modo em regiões não depende disto)"))}"
            >⧉</button>`
         + (primeira ? [1, 2, 3, 4].map(k => `<button class="tira-bt${
             k === n ? " sel" : ""}" data-acao="dividir" data-n="${k}"
             ${k > podeDividir ? "disabled" : ""}
-            title="${k === 1 ? "Uma região só"
-              : `${k} regiões lado a lado`}${k > podeDividir
-              ? ` — não cabe: cada região precisa de ${MIN_REGIAO}px`
-              : ""}">${"▮".repeat(k)}</button>`).join("") : "");
+            title="${E(k === 1 ? txt("tela.mt_uma_regiao", "Uma região só")
+              : preencher(txt("tela.mt_n_regioes", "{n} regiões lado a lado"), { n: k }))
+              + (k > podeDividir ? " — " + E(preencher(
+                  txt("tela.mt_nao_cabe", "não cabe: cada região precisa de {px}px"),
+                  { px: MIN_REGIAO })) : "")
+              }">${"▮".repeat(k)}</button>`).join("") : "");
 
     r.tira.innerHTML = abas + `<span class="tira-espaco"></span>` + controles;
   }
@@ -624,7 +651,25 @@ arrastável pelo cabeçalho e redimensionável pelo canto">⇱</button>
   function rotuloDe(chave, params) {
     const c = CATALOGO[chave];
     if (!c) return chave;
-    return typeof c.rot === "function" ? c.rot(params || {}) : c.rot;
+    if (typeof c.rot === "function") return c.rot(params || {});
+    return c.txt ? txt(c.txt, c.rot) : c.rot;
+  }
+
+  /** Repoe o rotulo das abas cujo nome vem da FABRICA, quando o idioma muda.
+   *
+   *  Por CHAVE, e nunca comparando a frase com o rotulo antigo: no dia em que
+   *  alguem melhorar a redacao de «Telemetria», quem compara frase para de
+   *  reconhecer a aba e ela fica em portugues calada.
+   *
+   *  Quem NAO entra: a aba sem chave (folha avulsa, cujo nome veio do titulo
+   *  que a propria tela escreveu) e a aba de tabela (cujo nome e o nome da
+   *  tabela, que e DADO -- rotulo se traduz, dado nunca). Sao exatamente as
+   *  duas que nao tem `txt` no catalogo, entao o crivo e o proprio catalogo. */
+  function reporRotulos() {
+    for (const t of todas()) {
+      const c = t.chave && CATALOGO[t.chave];
+      if (c && c.txt) t.rot = rotuloDe(t.chave, t.params);
+    }
   }
 
   /** Abre uma tela. Sem `nova`, ela SUBSTITUI o conteudo da aba com foco --
@@ -746,9 +791,9 @@ arrastável pelo cabeçalho e redimensionável pelo canto">⇱</button>
     t.pino = !t.pino;
     guardar();
     desenhar();
-    avisar(t.pino
-      ? `“${t.rot}” pinada: volta na próxima abertura, neste navegador`
-      : `“${t.rot}” despinada`);
+    avisar(preencher(t.pino
+      ? txt("tela.mt_pinada_aviso", "“{tela}” pinada: volta na próxima abertura, neste navegador")
+      : txt("tela.mt_despinada_aviso", "“{tela}” despinada"), { tela: t.rot }));
   }
 
   /** Divide a area central em N regioes lado a lado. */
@@ -756,7 +801,9 @@ arrastável pelo cabeçalho e redimensionável pelo canto">⇱</button>
     n = Math.max(1, Math.min(4, n | 0));
     const teto = maxRegioes();
     if (n > teto) {
-      avisar(`não cabem ${n} regiões: cada uma precisa de ${MIN_REGIAO}px`, true);
+      avisar(preencher(
+        txt("tela.mt_nao_cabem_regioes", "não cabem {n} regiões: cada uma precisa de {px}px"),
+        { n, px: MIN_REGIAO }), true);
       return;
     }
     while (W.regioes.length < n) {
@@ -869,8 +916,8 @@ arrastável pelo cabeçalho e redimensionável pelo canto">⇱</button>
       // vermelho o que e so uma diferenca de navegador ensina a ignorar o
       // vermelho. A divisao em partes iguais continua valendo.
       avisar(temApiDeTelas()
-        ? "esta janela está dentro de um monitor só — nada a alinhar"
-        : "este navegador não expõe o arranjo de monitores; a divisão fica em partes iguais");
+        ? txt("tela.mt_um_monitor_so", "esta janela está dentro de um monitor só — nada a alinhar")
+        : txt("tela.mt_sem_arranjo", "este navegador não expõe o arranjo de monitores; a divisão fica em partes iguais"));
       return false;
     }
     const l = cont.getBoundingClientRect().width;
@@ -882,7 +929,9 @@ arrastável pelo cabeçalho e redimensionável pelo canto">⇱</button>
     }
     desenhar();
     guardar();
-    avisar(`${n} regiões alinhadas com as bordas físicas dos monitores`);
+    avisar(preencher(
+      txt("tela.mt_alinhadas", "{n} regiões alinhadas com as bordas físicas dos monitores"),
+      { n }));
     return true;
   }
 
@@ -905,15 +954,22 @@ arrastável pelo cabeçalho e redimensionável pelo canto">⇱</button>
   async function destacar(t) {
     if (!t) return;
     const c = CATALOGO[t.chave];
-    if (!c) return avisar("esta tela não tem endereço próprio para destacar", true);
+    if (!c) return avisar(txt("tela.mt_sem_endereco_destacar",
+      "esta tela não tem endereço próprio para destacar"), true);
     const k = chaveDe(t.chave, t.params);
     const g = janelaGuardada(k);
     const feicoes = await feicoesDaJanela(g);
     const j = window.open(urlDaTela(t.chave, t.params), `phxsql-${k}`, feicoes);
-    if (!j) return avisar("o navegador bloqueou a janela — libere o popup desta origem", true);
+    if (!j) return avisar(txt("tela.mt_popup_bloqueado",
+      "o navegador bloqueou a janela — libere o popup desta origem"), true);
     W.janelas[k] = j;
     if (regiaoDe(t) && regiaoDe(t).abas.length > 1) fechar(t);
-    avisar(`“${t.rot}” foi para uma janela${g ? " na posição pinada" : ""}`);
+    // Duas frases inteiras, e nao uma frase mais um pedaco colado: «na posição
+    // pinada» sozinho nao se traduz, porque em outra lingua ele nao cabe no
+    // fim. E a mesma licao da nota da multitela, em miniatura.
+    avisar(preencher(g
+      ? txt("tela.mt_foi_para_janela_pinada", "“{tela}” foi para uma janela na posição pinada")
+      : txt("tela.mt_foi_para_janela", "“{tela}” foi para uma janela"), { tela: t.rot }));
   }
 
   /** Monta o `left,top,width,height` do `window.open`.
@@ -930,7 +986,9 @@ arrastável pelo cabeçalho e redimensionável pelo canto">⇱</button>
         || (g.monitor ? null : d.currentScreen);
       if (!achou) {
         const p = d.screens.find(s => s.isPrimary) || d.screens[0];
-        avisar(`o monitor “${g.monitor}” não está mais aqui — a janela abre no principal`, true);
+        avisar(preencher(
+          txt("tela.mt_monitor_sumiu", "o monitor “{monitor}” não está mais aqui — a janela abre no principal"),
+          { monitor: g.monitor }), true);
         const x = p.availLeft + Math.max(0, Math.min(g.x - (g.mx || 0), p.availWidth - g.w));
         const y = p.availTop + Math.max(0, Math.min(g.y - (g.my || 0), p.availHeight - g.h));
         return `${base},left=${Math.round(x)},top=${Math.round(y)},width=${g.w},height=${g.h}`;
@@ -953,7 +1011,7 @@ arrastável pelo cabeçalho e redimensionável pelo canto">⇱</button>
       dpr: window.devicePixelRatio,
       quando: new Date().toISOString(),
     });
-    avisar("posição, tamanho e monitor guardados neste navegador");
+    avisar(txt("tela.mt_janela_pinada", "posição, tamanho e monitor guardados neste navegador"));
     desenhar();
   }
 
@@ -1072,7 +1130,9 @@ arrastável pelo cabeçalho e redimensionável pelo canto">⇱</button>
       const antes = W.dpr;
       vigiarDpi();
       document.dispatchEvent(new CustomEvent("phx-dpi", { detail: { antes, agora: novo } }));
-      avisar(`monitor de outra densidade (${antes}× → ${novo}×) — redesenhando`);
+      avisar(preencher(
+        txt("tela.mt_outra_densidade", "monitor de outra densidade ({antes}× → {agora}×) — redesenhando"),
+        { antes, agora: novo }));
       // O desenho tem de se refazer: bolha, arco e diagrama medem em pixels,
       // e a mesma medida em outro DPI da outro tamanho na tela.
       desenhar();
@@ -1083,22 +1143,28 @@ arrastável pelo cabeçalho e redimensionável pelo canto">⇱</button>
 
   /* ----------------------------------------------------------- a nota da tela
    *
-   * Dizer na tela o que muda em qual navegador, em vez de fingir que e igual. */
+   * Dizer na tela o que muda em qual navegador, em vez de fingir que e igual.
+   *
+   * ESTE BLOCO E O CASO QUE ENSINOU A REGRA. Ele era um paragrafo picado pela
+   * marcacao: `"funcionam em"` + `<b>qualquer navegador</b>` + `"— e layout.
+   * Destacar em janela tambem, com"` + `<code>window.open</code>` + ... Treze
+   * literais, e nenhum deles traduzivel: a ordem das palavras muda de idioma
+   * para idioma, e em alemao o verbo vai para o fim. Nao ha ordem de pedacos
+   * que sirva para as seis linguas.
+   *
+   * O conserto e uma chave por FRASE, com a enfase virada MARCA dentro do
+   * texto (`**assim**` e a palavra entre crases). O corte em `<b>` e `<code>`
+   * acontece no `marcado()`, DEPOIS da traducao -- e cada tradutor poe a
+   * enfase onde a lingua dele pede. */
   function nota() {
     const api = temApiDeTelas();
     return `<div class="multitela-nota">
-      <b>Multitela.</b> Abas vivas e regiões lado a lado funcionam em
-      <b>qualquer navegador</b> — é layout. Destacar em janela também, com
-      <code>window.open</code>. O que depende do navegador é abrir a janela
-      <b>já no monitor certo</b>: ${api
-        ? "este navegador tem a <b>Window Management API</b>, então a posição "
-          + "pinada volta no monitor em que você a deixou."
-        : "este navegador <b>não tem</b> a Window Management API (Firefox e "
-          + "Safari não a têm). A janela abre onde o navegador quiser e você "
-          + "a arrasta; a posição volta, o monitor não é escolhido."}
-      <br>Arrastar uma janela do sistema de volta para a barra de abas
-      <b>não é possível</b> em navegador nenhum — o navegador não vê esse
-      arrasto. Use <b>⤺ devolver</b> na janela destacada.</div>`;
+      ${marcado(txt("tela.mt_nota", "**Multitela.** Abas vivas e regiões lado a lado funcionam em **qualquer navegador** — é layout."))}
+      ${marcado(txt("tela.mt_nota_janela", "Destacar em janela também, com `window.open`. O que depende do navegador é abrir a janela **já no monitor certo**:"))}
+      ${api
+        ? marcado(txt("tela.mt_nota_com_api", "este navegador tem a **Window Management API**, então a posição pinada volta no monitor em que você a deixou."))
+        : marcado(txt("tela.mt_nota_sem_api", "este navegador **não tem** a Window Management API (Firefox e Safari não a têm). A janela abre onde o navegador quiser e você a arrasta; a posição volta, o monitor não é escolhido."))}
+      <br>${marcado(txt("tela.mt_nota_docking", "Arrastar uma janela do sistema de volta para a barra de abas **não é possível** em navegador nenhum — o navegador não vê esse arrasto. Use **⤺ devolver** na janela destacada."))}</div>`;
   }
 
   /* --------------------------------------------------------------- inicio */
@@ -1111,7 +1177,7 @@ arrastável pelo cabeçalho e redimensionável pelo canto">⇱</button>
     const tela0 = r0el.querySelector(".tela");
     const r0 = novaRegiao(r0el);
     const t0 = {
-      id: `tela${++W.seq}`, chave: "painel", params: {}, rot: "Painel",
+      id: `tela${++W.seq}`, chave: "painel", params: {}, rot: rotuloDe("painel"),
       el: tela0, estado: estadoNovo(), pino: false, rolagem: 0,
       pausar: null, retomar: null,
     };
@@ -1213,14 +1279,14 @@ arrastável pelo cabeçalho e redimensionável pelo canto">⇱</button>
     j.innerHTML = `<div class="jan-topo">
         <span class="jan-tit">${E(t.rot)}</span>
         <button class="tira-pino" data-jan="pino" aria-pressed="false"
-          title="Pinar — guarda x, y, largura e altura desta janela neste navegador"
+          title="${E(txt("tela.mt_pinar_solta_dica", "Pinar — guarda x, y, largura e altura desta janela neste navegador"))}"
           >${glifoPino()}</button>
         <button class="tira-x" data-jan="acoplar"
-          title="Devolver esta tela para a área em regiões">⇤</button>
-        <button class="tira-x" data-jan="fechar" title="Fechar esta tela">×</button>
+          title="${E(txt("tela.mt_acoplar_dica", "Devolver esta tela para a área em regiões"))}">⇤</button>
+        <button class="tira-x" data-jan="fechar" title="${E(txt("tela.mt_fechar_tela", "Fechar esta tela"))}">×</button>
       </div>
       <div class="jan-corpo"></div>
-      <button class="jan-canto" data-jan="canto" aria-label="Redimensionar"></button>`;
+      <button class="jan-canto" data-jan="canto" aria-label="${E(txt("tela.mt_redimensionar", "Redimensionar"))}"></button>`;
 
     const g = geometriaDe(t);
     Object.assign(j.style, { left: g.x + "px", top: g.y + "px",
@@ -1275,7 +1341,8 @@ arrastável pelo cabeçalho e redimensionável pelo canto">⇱</button>
     const x = Math.max(0, Math.min(g.x, Math.round(c.width) - w));
     const y = Math.max(0, Math.min(g.y, Math.round(c.height) - h));
     if (x !== g.x || y !== g.y || w !== g.w || h !== g.h) {
-      avisar("a janela solta não cabia onde estava guardada — foi presa dentro da área visível");
+      avisar(txt("tela.mt_presa",
+        "a janela solta não cabia onde estava guardada — foi presa dentro da área visível"));
     }
     return { x, y, w, h };
   }
@@ -1360,14 +1427,15 @@ arrastável pelo cabeçalho e redimensionável pelo canto">⇱</button>
 
   function pinarSolta(t) {
     if (!t || !t.janela) return;
-    if (!t.chave) return avisar("esta tela não tem endereço próprio para pinar", true);
+    if (!t.chave) return avisar(txt("tela.mt_sem_endereco_pinar",
+      "esta tela não tem endereço próprio para pinar"), true);
     t.pino = !t.pino;
     guardar();
     t.janela.querySelector('[data-jan="pino"]')
       .setAttribute("aria-pressed", t.pino ? "true" : "false");
     avisar(t.pino
-      ? "esta janela volta solta, nesta posição e neste tamanho, na próxima abertura"
-      : "esta janela deixa de voltar sozinha");
+      ? txt("tela.mt_solta_pinada", "esta janela volta solta, nesta posição e neste tamanho, na próxima abertura")
+      : txt("tela.mt_solta_despinada", "esta janela deixa de voltar sozinha"));
   }
 
   const fecharAtiva = () => fechar(W.foco);
@@ -1391,60 +1459,63 @@ arrastável pelo cabeçalho e redimensionável pelo canto">⇱</button>
          <td class="num">${s.width}×${s.height}</td>
          <td class="num">${s.left},${s.top}</td>
          <td class="num">${s.devicePixelRatio}×</td>
-         <td>${s.isPrimary ? '<span class="pino ok">principal</span>' : ""}</td></tr>`).join("")
+         <td>${s.isPrimary ? `<span class="pino ok">${E(txt("tela.mt_principal", "principal"))}</span>` : ""}</td></tr>`).join("")
       : "";
 
-    folha("Multitela", "abas vivas, regiões lado a lado e janelas destacadas",
+    folha(txt("tela.mt_titulo", "Multitela"),
+      txt("tela.mt_subtitulo", "abas vivas, regiões lado a lado e janelas destacadas"),
       nota() +
       `<div class="fichas">
          <div class="ficha"><div class="v">${W.regioes.length}</div>
-           <div class="r">regiões abertas</div><div class="u">cabem ${maxRegioes()}</div></div>
+           <div class="r">${E(txt("tela.mt_regioes_abertas", "regiões abertas"))}</div>
+           <div class="u">${E(preencher(txt("tela.mt_cabem", "cabem {n}"), { n: maxRegioes() }))}</div></div>
          <div class="ficha"><div class="v">${todas().length}</div>
-           <div class="r">abas vivas</div>
-           <div class="u">${todas().filter(t => t.pino).length} pinada(s)</div></div>
+           <div class="r">${E(txt("tela.mt_abas_vivas", "abas vivas"))}</div>
+           <div class="u">${E(preencher(txt("tela.mt_pinadas", "{n} pinada(s)"),
+             { n: todas().filter(t => t.pino).length }))}</div></div>
          <div class="ficha"><div class="v">${l || "—"}</div>
-           <div class="r">largura útil</div><div class="u">pixels CSS</div></div>
+           <div class="r">${E(txt("tela.mt_largura_util", "largura útil"))}</div>
+           <div class="u">${E(txt("tela.mt_pixels_css", "pixels CSS"))}</div></div>
          <div class="ficha"><div class="v">${window.devicePixelRatio}×</div>
-           <div class="r">densidade desta janela</div>
-           <div class="u">devicePixelRatio</div></div>
+           <div class="r">${E(txt("tela.mt_densidade", "densidade desta janela"))}</div>
+           <div class="u"><code>devicePixelRatio</code></div></div>
        </div>
 
-       <h3>Os monitores</h3>
-       ${d ? `<div class="rolo"><table><thead><tr><th>monitor</th><th class="num">tamanho</th>
-           <th class="num">canto</th><th class="num">DPI</th><th></th></tr></thead>
+       <h3>${E(txt("tela.mt_os_monitores", "Os monitores"))}</h3>
+       ${d ? `<div class="rolo"><table><thead><tr>
+           <th>${E(txt("tela.mt_col_monitor", "monitor"))}</th>
+           <th class="num">${E(txt("tela.mt_col_tamanho", "tamanho"))}</th>
+           <th class="num">${E(txt("tela.mt_col_canto", "canto"))}</th>
+           <th class="num">DPI</th><th></th></tr></thead>
            <tbody>${linhas}</tbody></table></div>
          <p class="leg">${cortes.length
-            ? `${cortes.length} emenda(s) física(s) dentro desta janela, a
-               ${cortes.map(c => Math.round(c) + "px").join(" e ")} da borda
-               esquerda da área de trabalho. <b>Alinhar</b> põe uma calha em
-               cada uma, para nenhuma região ficar partida ao meio.`
-            : "Esta janela está inteira dentro de um monitor só."}</p>
+            ? marcado(txt("tela.mt_emendas", "{n} emenda(s) física(s) dentro desta janela, a {onde} da borda esquerda da área de trabalho."),
+                { n: cortes.length, onde: cortes.map(c => Math.round(c) + "px").join(" e ") })
+              + " " + marcado(txt("tela.mt_emendas_alinhar", "**Alinhar** põe uma calha em cada uma, para nenhuma região ficar partida ao meio."))
+            : E(txt("tela.mt_um_monitor_inteiro", "Esta janela está inteira dentro de um monitor só."))}</p>
          <div class="barra-acao">
-           <button class="botao consultar" id="mtAlinhar">Alinhar as regiões com os monitores</button>
+           <button class="botao consultar" id="mtAlinhar">${E(txt("tela.mt_alinhar_bt", "Alinhar as regiões com os monitores"))}</button>
          </div>`
-        : `<div class="aviso"><b>Este navegador não expõe os monitores.</b>
-             A <code>Window Management API</code> (<code>getScreenDetails</code>)
-             existe no Chrome e no Edge, em contexto seguro — e
-             <code>127.0.0.1</code> é contexto seguro. No Firefox e no Safari
-             ela não existe: as regiões dividem em partes iguais, e a janela
-             destacada abre onde o navegador quiser.</div>`}
+        : `<div class="aviso">
+             ${marcado(txt("tela.mt_sem_monitores", "**Este navegador não expõe os monitores.**"))}
+             ${marcado(txt("tela.mt_sem_monitores2", "A `Window Management API` (`getScreenDetails`) existe no Chrome e no Edge, em contexto seguro — e `127.0.0.1` é contexto seguro."))}
+             ${marcado(txt("tela.mt_sem_monitores3", "No Firefox e no Safari ela não existe: as regiões dividem em partes iguais, e a janela destacada abre onde o navegador quiser."))}</div>`}
 
-       <h3>O que este modo NÃO faz</h3>
+       <h3>${E(txt("tela.mt_nao_faz", "O que este modo NÃO faz"))}</h3>
        <div class="nota">
-         <p><b>Arrastar uma janela do sistema de volta para a barra de abas.</b>
-         O navegador não recebe evento nenhum quando uma janela passa por cima
-         de outra — o docking por arrasto do WINDEV(R) e do Visual Studio(R)
-         não é implementável aqui. Use <b>⤺ devolver</b>, na janela destacada.</p>
-         <p><b>Reabrir sozinho as janelas destacadas.</b>
-         <code>window.open</code> sem clique é bloqueio de popup em todo
-         navegador. O arranjo fica guardado; volta com um clique.</p>
-         <p><b>Guardar a sessão no disco do navegador.</b> A ficha de sessão
-         viaja pelo <code>BroadcastChannel</code>, em memória. Se a janela
-         principal fechar, a destacada pede login — e isso é de propósito.</p>
+         <p>${marcado(txt("tela.mt_nao_faz_docking", "**Arrastar uma janela do sistema de volta para a barra de abas.**"))}
+         ${marcado(txt("tela.mt_nao_faz_docking2", "O navegador não recebe evento nenhum quando uma janela passa por cima de outra — o docking por arrasto do WINDEV(R) e do Visual Studio(R) não é implementável aqui."))}
+         ${marcado(txt("tela.mt_use_devolver", "Use **⤺ devolver**, na janela destacada."))}</p>
+         <p>${marcado(txt("tela.mt_nao_faz_reabrir", "**Reabrir sozinho as janelas destacadas.**"))}
+         ${marcado(txt("tela.mt_nao_faz_reabrir2", "`window.open` sem clique é bloqueio de popup em todo navegador. O arranjo fica guardado; volta com um clique."))}</p>
+         <p>${marcado(txt("tela.mt_nao_faz_sessao", "**Guardar a sessão no disco do navegador.**"))}
+         ${marcado(txt("tela.mt_nao_faz_sessao2", "A ficha de sessão viaja pelo `BroadcastChannel`, em memória. Se a janela principal fechar, a destacada pede login — e isso é de propósito."))}</p>
        </div>
-       <p class="leg">Regiões, larguras e abas pinadas ficam
-       <b>neste navegador</b> — não no servidor. Desenho completo em
-       <code>docs/MULTITELA.md</code>.</p>`);
+       <p class="leg">${marcado(txt("tela.mt_rodape", "Regiões, larguras e abas pinadas ficam **neste navegador** — não no servidor. Desenho completo em `docs/MULTITELA.md`."))}</p>`);
+
+    // A tela sabe se redesenhar, entao ela repoe o gancho que o `folha()`
+    // limpa: sem ele, trocar o idioma daqui jogaria a pessoa no Painel.
+    est.repintar = () => telaAjuda();
 
     const bt = doc("#mtAlinhar");
     if (bt) bt.onclick = () => alinharComOsMonitores();
@@ -1463,6 +1534,10 @@ arrastável pelo cabeçalho e redimensionável pelo canto">⇱</button>
     dividir, renomear, laco, pararLaco, alternarPino, destacar, devolver,
     pinarJanela, alinharComOsMonitores, avisarArvore, pedirSessao, rotaDaUrl,
     nota, telaAjuda, temApiDeTelas, monitores, emendas, maxRegioes, marcar,
+    // O cromo deste modulo (tira de abas, calha, janela solta) e pintado uma
+    // vez e fica. Trocar o idioma tem de repinta-lo, como ja repinta o menu e
+    // a barra -- senao metade da moldura fica na lingua anterior.
+    repintar: () => { if (W.ligado) { reporRotulos(); desenhar(); } },
     destacadaAqui: () => W.destacada,
     // Expostos para o exercicio automatizado poder olhar por dentro sem
     // depender do desenho da tela -- o mesmo caminho da integracao com a

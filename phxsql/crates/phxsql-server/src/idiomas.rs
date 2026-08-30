@@ -334,6 +334,104 @@ pub const FABRICA_TELA: &[TextoDeFabrica] = &[
     texto!("tela.cfg_salvar_leg", "grava só o que você mudou · escrita atômica, com o arquivo antigo inteiro até o fim", "n'écrit que ce que vous avez changé · écriture atomique, l'ancien fichier entier jusqu'au bout", "writes only what you changed · atomic write, with the old file whole until the end", "scrive solo ciò che hai cambiato · scrittura atomica, con il vecchio file intero fino alla fine", "schreibt nur, was Sie geändert haben · atomarer Schreibvorgang, die alte Datei bleibt bis zuletzt vollständig", "graba solo lo que usted cambió · escritura atómica, con el archivo antiguo entero hasta el final"),
     texto!("tela.cfg_idioma", "Idioma desta interface", "Langue de cette interface", "Language of this interface", "Lingua di questa interfaccia", "Sprache dieser Oberfläche", "Idioma de esta interfaz"),
     texto!("tela.cfg_idioma_dica", "Vale neste navegador e na hora. O campo «idioma» do config.json é outro: ele manda nas mensagens que o servidor devolve pelo protocolo.", "Vaut dans ce navigateur et tout de suite. Le champ « idioma » du config.json est autre chose : il régit les messages que le serveur renvoie par le protocole.", "Applies to this browser, at once. The «idioma» field of config.json is a different thing: it governs the messages the server returns over the protocol.", "Vale in questo browser e subito. Il campo «idioma» del config.json è un'altra cosa: governa i messaggi che il server restituisce dal protocollo.", "Gilt in diesem Browser und sofort. Das Feld «idioma» in config.json ist etwas anderes: es steuert die Meldungen, die der Server über das Protokoll zurückgibt.", "Vale en este navegador y al instante. El campo «idioma» del config.json es otra cosa: manda en los mensajes que el servidor devuelve por el protocolo."),
+
+    // ================================================ o modo multitela
+    // Esta leva pagou uma licao de desenho que esta escrita no
+    // `docs/MENSAGENS.md`: **frase picada por marcacao e intraduzivel por
+    // construcao**. Os `<b>` e os `<code>` que quebravam um paragrafo em treze
+    // literais viraram MARCAS dentro do proprio texto -- `**assim**` e a frase
+    // entre crases -- e o corte em etiquetas passou a acontecer DEPOIS da
+    // traducao, no `marcado()` da pagina. Assim o tradutor move a enfase para
+    // onde a lingua dele pede, e o alemao pode mandar o verbo para o fim.
+    //
+    // A outra regra desta leva: a unidade e a FRASE, nunca o paragrafo. A
+    // celula so guarda 250 caracteres, e paragrafo alemao passa disso -- entao
+    // paragrafo longo entra partido em frases inteiras, que se traduzem
+    // sozinhas, e nunca em pedacos de frase, que nao se traduzem.
+
+    // ------------------------------------------------------ a tira de abas
+    texto!("tela.mt_aba_pinada", "pinada: volta na próxima abertura", "épinglée : revient à la prochaine ouverture", "pinned: comes back on the next opening", "fissata: torna alla prossima apertura", "angeheftet: kommt beim nächsten Öffnen zurück", "fijada: vuelve en la próxima apertura"),
+    texto!("tela.mt_despinar_dica", "Despinar — esta tela deixa de voltar sozinha", "Désépingler — cet écran cesse de revenir tout seul", "Unpin — this screen stops coming back on its own", "Sblocca — questa schermata smette di tornare da sola", "Lösen — dieser Bildschirm kommt nicht mehr von selbst zurück", "Desfijar — esta pantalla deja de volver sola"),
+    texto!("tela.mt_pinar_aba_dica", "Pinar — esta tela volta na próxima abertura, na mesma região", "Épingler — cet écran revient à la prochaine ouverture, dans la même région", "Pin — this screen comes back on the next opening, in the same region", "Fissa — questa schermata torna alla prossima apertura, nella stessa regione", "Anheften — dieser Bildschirm kommt beim nächsten Öffnen zurück, in derselben Region", "Fijar — esta pantalla vuelve en la próxima apertura, en la misma región"),
+    texto!("tela.mt_fechar_tela", "Fechar esta tela", "Fermer cet écran", "Close this screen", "Chiudi questa schermata", "Diesen Bildschirm schließen", "Cerrar esta pantalla"),
+    texto!("tela.mt_uma_regiao", "Uma região só", "Une seule région", "One region only", "Una sola regione", "Nur eine Region", "Una sola región"),
+    texto!("tela.mt_n_regioes", "{n} regiões lado a lado", "{n} régions côte à côte", "{n} regions side by side", "{n} regioni affiancate", "{n} Regionen nebeneinander", "{n} regiones lado a lado"),
+    texto!("tela.mt_nao_cabe", "não cabe: cada região precisa de {px}px", "ne tient pas : chaque région a besoin de {px}px", "does not fit: each region needs {px}px", "non ci sta: ogni regione ha bisogno di {px}px", "passt nicht: jede Region braucht {px}px", "no cabe: cada región necesita {px}px"),
+    texto!("tela.mt_largura_regioes", "Largura das regiões", "Largeur des régions", "Width of the regions", "Larghezza delle regioni", "Breite der Regionen", "Ancho de las regiones"),
+
+    // ------------------------------------------ os botoes da janela do sistema
+    texto!("tela.mt_pinar_janela_dica", "Pinar — guarda x, y, largura, altura e o monitor desta janela neste navegador, e ela volta assim na próxima vez", "Épingler — enregistre x, y, largeur, hauteur et l'écran de cette fenêtre dans ce navigateur ; elle revient ainsi la prochaine fois", "Pin — stores x, y, width, height and the monitor of this window in this browser, and it comes back like this next time", "Fissa — salva x, y, larghezza, altezza e il monitor di questa finestra in questo browser, e torna così la prossima volta", "Anheften — speichert x, y, Breite, Höhe und den Monitor dieses Fensters in diesem Browser; beim nächsten Mal kommt es genauso zurück", "Fijar — guarda x, y, ancho, alto y el monitor de esta ventana en este navegador, y vuelve así la próxima vez"),
+    texto!("tela.mt_pinar_aqui", "pinar aqui", "épingler ici", "pin here", "fissa qui", "hier anheften", "fijar aquí"),
+    texto!("tela.mt_devolver_dica", "Devolver esta tela para a janela principal e fechar esta", "Renvoyer cet écran vers la fenêtre principale et fermer celle-ci", "Send this screen back to the main window and close this one", "Riporta questa schermata alla finestra principale e chiudi questa", "Diesen Bildschirm ins Hauptfenster zurückgeben und dieses schließen", "Devolver esta pantalla a la ventana principal y cerrar esta"),
+    texto!("tela.mt_devolver", "devolver", "renvoyer", "send back", "riporta", "zurückgeben", "devolver"),
+    texto!("tela.mt_nova_dica", "Abrir outra tela nesta região (a próxima escolha cai aqui)", "Ouvrir un autre écran dans cette région (le prochain choix arrive ici)", "Open another screen in this region (the next choice lands here)", "Apri un'altra schermata in questa regione (la prossima scelta finisce qui)", "Einen weiteren Bildschirm in dieser Region öffnen (die nächste Wahl landet hier)", "Abrir otra pantalla en esta región (la próxima elección cae aquí)"),
+    texto!("tela.mt_soltar_dica", "Soltar esta tela numa janela flutuante DENTRO da página, arrastável pelo cabeçalho e redimensionável pelo canto", "Détacher cet écran dans une fenêtre flottante À L'INTÉRIEUR de la page, déplaçable par l'en-tête et redimensionnable par le coin", "Float this screen in a window INSIDE the page, draggable by the header and resizable by the corner", "Stacca questa schermata in una finestra mobile DENTRO la pagina, trascinabile dall'intestazione e ridimensionabile dall'angolo", "Diesen Bildschirm in ein schwebendes Fenster INNERHALB der Seite lösen, per Kopfzeile verschiebbar und per Ecke skalierbar", "Soltar esta pantalla en una ventana flotante DENTRO de la página, arrastrable por la cabecera y redimensionable por la esquina"),
+    texto!("tela.mt_destacar_dica", "Destacar numa janela do sistema, fora desta página (só serve para quem tem monitor separado — o modo em regiões não depende disto)", "Détacher dans une fenêtre du système, hors de cette page (utile seulement avec un écran séparé — le mode en régions n'en dépend pas)", "Detach into a system window, outside this page (only useful with a separate monitor — the region mode does not depend on it)", "Stacca in una finestra di sistema, fuori da questa pagina (serve solo a chi ha un monitor separato — la modalità a regioni non dipende da questo)", "In ein Systemfenster außerhalb dieser Seite lösen (nur sinnvoll mit einem separaten Monitor — der Regionenmodus hängt nicht davon ab)", "Separar en una ventana del sistema, fuera de esta página (solo sirve con monitor aparte — el modo en regiones no depende de esto)"),
+
+    // ---------------------------------- a janela solta DENTRO da propria pagina
+    texto!("tela.mt_pinar_solta_dica", "Pinar — guarda x, y, largura e altura desta janela neste navegador", "Épingler — enregistre x, y, largeur et hauteur de cette fenêtre dans ce navigateur", "Pin — stores x, y, width and height of this window in this browser", "Fissa — salva x, y, larghezza e altezza di questa finestra in questo browser", "Anheften — speichert x, y, Breite und Höhe dieses Fensters in diesem Browser", "Fijar — guarda x, y, ancho y alto de esta ventana en este navegador"),
+    texto!("tela.mt_acoplar_dica", "Devolver esta tela para a área em regiões", "Renvoyer cet écran vers la zone en régions", "Send this screen back to the region area", "Riporta questa schermata all'area a regioni", "Diesen Bildschirm in den Regionenbereich zurückgeben", "Devolver esta pantalla al área en regiones"),
+    texto!("tela.mt_redimensionar", "Redimensionar", "Redimensionner", "Resize", "Ridimensiona", "Größe ändern", "Redimensionar"),
+
+    // ---------------------------------------------------- os recados do modo
+    texto!("tela.mt_pinada_aviso", "“{tela}” pinada: volta na próxima abertura, neste navegador", "« {tela} » épinglée : revient à la prochaine ouverture, dans ce navigateur", "“{tela}” pinned: comes back on the next opening, in this browser", "«{tela}» fissata: torna alla prossima apertura, in questo browser", "„{tela}“ angeheftet: kommt beim nächsten Öffnen zurück, in diesem Browser", "«{tela}» fijada: vuelve en la próxima apertura, en este navegador"),
+    texto!("tela.mt_despinada_aviso", "“{tela}” despinada", "« {tela} » désépinglée", "“{tela}” unpinned", "«{tela}» sbloccata", "„{tela}“ gelöst", "«{tela}» desfijada"),
+    texto!("tela.mt_nao_cabem_regioes", "não cabem {n} regiões: cada uma precisa de {px}px", "{n} régions ne tiennent pas : chacune a besoin de {px}px", "{n} regions do not fit: each one needs {px}px", "non ci stanno {n} regioni: ognuna ha bisogno di {px}px", "{n} Regionen passen nicht: jede braucht {px}px", "no caben {n} regiones: cada una necesita {px}px"),
+    texto!("tela.mt_um_monitor_so", "esta janela está dentro de um monitor só — nada a alinhar", "cette fenêtre tient dans un seul écran — rien à aligner", "this window sits inside a single monitor — nothing to align", "questa finestra sta dentro un solo monitor — niente da allineare", "dieses Fenster liegt in einem einzigen Monitor — nichts auszurichten", "esta ventana está dentro de un solo monitor — nada que alinear"),
+    texto!("tela.mt_sem_arranjo", "este navegador não expõe o arranjo de monitores; a divisão fica em partes iguais", "ce navigateur n'expose pas la disposition des écrans ; le partage reste en parts égales", "this browser does not expose the monitor layout; the split stays in equal parts", "questo browser non espone la disposizione dei monitor; la divisione resta in parti uguali", "dieser Browser gibt die Monitoranordnung nicht preis; die Teilung bleibt gleichmäßig", "este navegador no expone la disposición de monitores; el reparto queda en partes iguales"),
+    texto!("tela.mt_alinhadas", "{n} regiões alinhadas com as bordas físicas dos monitores", "{n} régions alignées sur les bords physiques des écrans", "{n} regions aligned with the physical monitor edges", "{n} regioni allineate ai bordi fisici dei monitor", "{n} Regionen an den physischen Monitorkanten ausgerichtet", "{n} regiones alineadas con los bordes físicos de los monitores"),
+    texto!("tela.mt_sem_endereco_destacar", "esta tela não tem endereço próprio para destacar", "cet écran n'a pas d'adresse propre à détacher", "this screen has no address of its own to detach", "questa schermata non ha un indirizzo proprio da staccare", "dieser Bildschirm hat keine eigene Adresse zum Lösen", "esta pantalla no tiene dirección propia para separar"),
+    texto!("tela.mt_popup_bloqueado", "o navegador bloqueou a janela — libere o popup desta origem", "le navigateur a bloqué la fenêtre — autorisez la pop-up de cette origine", "the browser blocked the window — allow pop-ups from this origin", "il browser ha bloccato la finestra — consenti il popup di questa origine", "der Browser hat das Fenster blockiert — Pop-ups dieser Herkunft zulassen", "el navegador bloqueó la ventana — permita el popup de este origen"),
+    texto!("tela.mt_foi_para_janela", "“{tela}” foi para uma janela", "« {tela} » est passée dans une fenêtre", "“{tela}” moved to a window", "«{tela}» è passata in una finestra", "„{tela}“ ist in ein Fenster gewandert", "«{tela}» pasó a una ventana"),
+    texto!("tela.mt_foi_para_janela_pinada", "“{tela}” foi para uma janela na posição pinada", "« {tela} » est passée dans une fenêtre à la position épinglée", "“{tela}” moved to a window at the pinned position", "«{tela}» è passata in una finestra nella posizione fissata", "„{tela}“ ist in ein Fenster an der angehefteten Position gewandert", "«{tela}» pasó a una ventana en la posición fijada"),
+    texto!("tela.mt_monitor_sumiu", "o monitor “{monitor}” não está mais aqui — a janela abre no principal", "l'écran « {monitor} » n'est plus là — la fenêtre s'ouvre sur le principal", "the monitor “{monitor}” is no longer here — the window opens on the primary one", "il monitor «{monitor}» non c'è più — la finestra si apre sul principale", "der Monitor „{monitor}“ ist nicht mehr da — das Fenster öffnet auf dem primären", "el monitor «{monitor}» ya no está — la ventana abre en el principal"),
+    texto!("tela.mt_janela_pinada", "posição, tamanho e monitor guardados neste navegador", "position, taille et écran enregistrés dans ce navigateur", "position, size and monitor stored in this browser", "posizione, dimensione e monitor salvati in questo browser", "Position, Größe und Monitor in diesem Browser gespeichert", "posición, tamaño y monitor guardados en este navegador"),
+    texto!("tela.mt_outra_densidade", "monitor de outra densidade ({antes}× → {agora}×) — redesenhando", "écran d'une autre densité ({antes}× → {agora}×) — redessin en cours", "monitor of another density ({antes}× → {agora}×) — redrawing", "monitor di altra densità ({antes}× → {agora}×) — ridisegno in corso", "Monitor mit anderer Dichte ({antes}× → {agora}×) — wird neu gezeichnet", "monitor de otra densidad ({antes}× → {agora}×) — redibujando"),
+    texto!("tela.mt_presa", "a janela solta não cabia onde estava guardada — foi presa dentro da área visível", "la fenêtre flottante ne tenait pas où elle était enregistrée — elle a été ramenée dans la zone visible", "the floating window did not fit where it was stored — it was kept inside the visible area", "la finestra mobile non stava dov'era salvata — è stata riportata dentro l'area visibile", "das schwebende Fenster passte nicht dorthin, wo es gespeichert war — es wurde in den sichtbaren Bereich geholt", "la ventana flotante no cabía donde estaba guardada — se sujetó dentro del área visible"),
+    texto!("tela.mt_sem_endereco_pinar", "esta tela não tem endereço próprio para pinar", "cet écran n'a pas d'adresse propre à épingler", "this screen has no address of its own to pin", "questa schermata non ha un indirizzo proprio da fissare", "dieser Bildschirm hat keine eigene Adresse zum Anheften", "esta pantalla no tiene dirección propia para fijar"),
+    texto!("tela.mt_solta_pinada", "esta janela volta solta, nesta posição e neste tamanho, na próxima abertura", "cette fenêtre revient flottante, à cette position et à cette taille, à la prochaine ouverture", "this window comes back floating, at this position and size, on the next opening", "questa finestra torna mobile, in questa posizione e con questa dimensione, alla prossima apertura", "dieses Fenster kommt beim nächsten Öffnen schwebend zurück, an dieser Position und in dieser Größe", "esta ventana vuelve suelta, en esta posición y con este tamaño, en la próxima apertura"),
+    texto!("tela.mt_solta_despinada", "esta janela deixa de voltar sozinha", "cette fenêtre cesse de revenir toute seule", "this window stops coming back on its own", "questa finestra smette di tornare da sola", "dieses Fenster kommt nicht mehr von selbst zurück", "esta ventana deja de volver sola"),
+
+    // ------------------------- a nota que diz o que muda em qual navegador
+    // Uma chave por FRASE, com o `<b>` e o `<code>` virados marca dentro do
+    // texto: e por isso que a ordem das palavras e livre em cada idioma.
+    texto!("tela.mt_nota", "**Multitela.** Abas vivas e regiões lado a lado funcionam em **qualquer navegador** — é layout.", "**Multi-écran.** Les onglets vivants et les régions côte à côte fonctionnent dans **n'importe quel navigateur** — c'est de la mise en page.", "**Multi-screen.** Live tabs and side-by-side regions work in **any browser** — it is layout.", "**Multischermo.** Le schede vive e le regioni affiancate funzionano in **qualsiasi browser** — è impaginazione.", "**Mehrbildschirm.** Lebende Registerkarten und nebeneinanderliegende Regionen funktionieren in **jedem Browser** — das ist Layout.", "**Multipantalla.** Las pestañas vivas y las regiones lado a lado funcionan en **cualquier navegador** — es maquetación."),
+    texto!("tela.mt_nota_janela", "Destacar em janela também, com `window.open`. O que depende do navegador é abrir a janela **já no monitor certo**:", "Détacher en fenêtre aussi, avec `window.open`. Ce qui dépend du navigateur, c'est d'ouvrir la fenêtre **directement sur le bon écran** :", "Detaching into a window works too, with `window.open`. What depends on the browser is opening the window **already on the right monitor**:", "Anche staccare in finestra funziona, con `window.open`. Ciò che dipende dal browser è aprire la finestra **già sul monitor giusto**:", "Das Lösen in ein Fenster geht ebenfalls, mit `window.open`. Vom Browser hängt ab, das Fenster **gleich auf dem richtigen Monitor** zu öffnen:", "Separar en ventana también, con `window.open`. Lo que depende del navegador es abrir la ventana **ya en el monitor correcto**:"),
+    texto!("tela.mt_nota_com_api", "este navegador tem a **Window Management API**, então a posição pinada volta no monitor em que você a deixou.", "ce navigateur a la **Window Management API**, donc la position épinglée revient sur l'écran où vous l'avez laissée.", "this browser has the **Window Management API**, so the pinned position comes back on the monitor where you left it.", "questo browser ha la **Window Management API**, quindi la posizione fissata torna sul monitor dove l'hai lasciata.", "dieser Browser hat die **Window Management API**, daher kehrt die angeheftete Position auf den Monitor zurück, auf dem Sie sie gelassen haben.", "este navegador tiene la **Window Management API**, así que la posición fijada vuelve al monitor donde la dejó."),
+    texto!("tela.mt_nota_sem_api", "este navegador **não tem** a Window Management API (Firefox e Safari não a têm). A janela abre onde o navegador quiser e você a arrasta; a posição volta, o monitor não é escolhido.", "ce navigateur **n'a pas** la Window Management API (Firefox et Safari ne l'ont pas). La fenêtre s'ouvre où le navigateur veut et vous la déplacez ; la position revient, l'écran n'est pas choisi.", "this browser **does not have** the Window Management API (Firefox and Safari do not). The window opens wherever the browser likes and you drag it; the position comes back, the monitor is not chosen.", "questo browser **non ha** la Window Management API (Firefox e Safari non ce l'hanno). La finestra si apre dove vuole il browser e tu la trascini; la posizione torna, il monitor non viene scelto.", "dieser Browser **hat** die Window Management API **nicht** (Firefox und Safari haben sie nicht). Das Fenster öffnet, wo der Browser will, und Sie ziehen es hin; die Position kehrt zurück, der Monitor nicht.", "este navegador **no tiene** la Window Management API (Firefox y Safari no la tienen). La ventana abre donde el navegador quiera y usted la arrastra; la posición vuelve, el monitor no se elige."),
+    texto!("tela.mt_nota_docking", "Arrastar uma janela do sistema de volta para a barra de abas **não é possível** em navegador nenhum — o navegador não vê esse arrasto. Use **⤺ devolver** na janela destacada.", "Faire glisser une fenêtre du système jusqu'à la barre d'onglets **n'est possible** dans aucun navigateur — il ne voit pas ce glissement. Utilisez **⤺ renvoyer** dans la fenêtre détachée.", "Dragging a system window back onto the tab strip **is not possible** in any browser — the browser does not see that drag. Use **⤺ send back** in the detached window.", "Trascinare una finestra di sistema di nuovo sulla barra delle schede **non è possibile** in nessun browser — il browser non vede quel trascinamento. Usa **⤺ riporta** nella finestra staccata.", "Ein Systemfenster zurück auf die Registerleiste zu ziehen, **ist in keinem Browser möglich** — der Browser sieht dieses Ziehen nicht. Nutzen Sie **⤺ zurückgeben** im gelösten Fenster.", "Arrastrar una ventana del sistema de vuelta a la barra de pestañas **no es posible** en ningún navegador — el navegador no ve ese arrastre. Use **⤺ devolver** en la ventana separada."),
+
+    // -------------------------------------------- a tela de ajuda do modo
+    texto!("tela.mt_titulo", "Multitela", "Multi-écran", "Multi-screen", "Multischermo", "Mehrbildschirm", "Multipantalla"),
+    texto!("tela.mt_subtitulo", "abas vivas, regiões lado a lado e janelas destacadas", "onglets vivants, régions côte à côte et fenêtres détachées", "live tabs, side-by-side regions and detached windows", "schede vive, regioni affiancate e finestre staccate", "lebende Registerkarten, nebeneinanderliegende Regionen und gelöste Fenster", "pestañas vivas, regiones lado a lado y ventanas separadas"),
+    texto!("tela.mt_regioes_abertas", "regiões abertas", "régions ouvertes", "open regions", "regioni aperte", "offene Regionen", "regiones abiertas"),
+    texto!("tela.mt_cabem", "cabem {n}", "il en tient {n}", "{n} fit", "ne stanno {n}", "{n} passen", "caben {n}"),
+    texto!("tela.mt_abas_vivas", "abas vivas", "onglets vivants", "live tabs", "schede vive", "lebende Registerkarten", "pestañas vivas"),
+    texto!("tela.mt_pinadas", "{n} pinada(s)", "{n} épinglée(s)", "{n} pinned", "{n} fissata/e", "{n} angeheftet", "{n} fijada(s)"),
+    texto!("tela.mt_largura_util", "largura útil", "largeur utile", "usable width", "larghezza utile", "nutzbare Breite", "ancho útil"),
+    texto!("tela.mt_pixels_css", "pixels CSS", "pixels CSS", "CSS pixels", "pixel CSS", "CSS-Pixel", "píxeles CSS"),
+    texto!("tela.mt_densidade", "densidade desta janela", "densité de cette fenêtre", "density of this window", "densità di questa finestra", "Dichte dieses Fensters", "densidad de esta ventana"),
+    texto!("tela.mt_os_monitores", "Os monitores", "Les écrans", "The monitors", "I monitor", "Die Monitore", "Los monitores"),
+    texto!("tela.mt_col_monitor", "monitor", "écran", "monitor", "monitor", "Monitor", "monitor"),
+    texto!("tela.mt_col_tamanho", "tamanho", "taille", "size", "dimensione", "Größe", "tamaño"),
+    texto!("tela.mt_col_canto", "canto", "coin", "corner", "angolo", "Ecke", "esquina"),
+    texto!("tela.mt_principal", "principal", "principal", "primary", "principale", "primär", "principal"),
+    texto!("tela.mt_emendas", "{n} emenda(s) física(s) dentro desta janela, a {onde} da borda esquerda da área de trabalho.", "{n} jointure(s) physique(s) dans cette fenêtre, à {onde} du bord gauche du bureau.", "{n} physical seam(s) inside this window, at {onde} from the left edge of the desktop.", "{n} giuntura/e fisica/che dentro questa finestra, a {onde} dal bordo sinistro della scrivania.", "{n} physische Naht/Nähte in diesem Fenster, {onde} vom linken Rand des Desktops.", "{n} junta(s) física(s) dentro de esta ventana, a {onde} del borde izquierdo del escritorio."),
+    texto!("tela.mt_emendas_alinhar", "**Alinhar** põe uma calha em cada uma, para nenhuma região ficar partida ao meio.", "**Aligner** place une gouttière sur chacune, pour qu'aucune région ne soit coupée en deux.", "**Align** puts a gutter on each one, so no region is cut in half.", "**Allinea** mette una canalina su ciascuna, perché nessuna regione resti tagliata a metà.", "**Ausrichten** setzt an jede eine Rinne, damit keine Region in der Mitte zerschnitten wird.", "**Alinear** pone un canal en cada una, para que ninguna región quede partida por la mitad."),
+    texto!("tela.mt_um_monitor_inteiro", "Esta janela está inteira dentro de um monitor só.", "Cette fenêtre tient entièrement dans un seul écran.", "This window sits entirely inside a single monitor.", "Questa finestra sta interamente dentro un solo monitor.", "Dieses Fenster liegt vollständig in einem einzigen Monitor.", "Esta ventana está entera dentro de un solo monitor."),
+    texto!("tela.mt_alinhar_bt", "Alinhar as regiões com os monitores", "Aligner les régions sur les écrans", "Align the regions with the monitors", "Allinea le regioni ai monitor", "Regionen an den Monitoren ausrichten", "Alinear las regiones con los monitores"),
+    texto!("tela.mt_sem_monitores", "**Este navegador não expõe os monitores.**", "**Ce navigateur n'expose pas les écrans.**", "**This browser does not expose the monitors.**", "**Questo browser non espone i monitor.**", "**Dieser Browser gibt die Monitore nicht preis.**", "**Este navegador no expone los monitores.**"),
+    texto!("tela.mt_sem_monitores2", "A `Window Management API` (`getScreenDetails`) existe no Chrome e no Edge, em contexto seguro — e `127.0.0.1` é contexto seguro.", "La `Window Management API` (`getScreenDetails`) existe dans Chrome et Edge, en contexte sécurisé — et `127.0.0.1` est un contexte sécurisé.", "The `Window Management API` (`getScreenDetails`) exists in Chrome and Edge, in a secure context — and `127.0.0.1` is a secure context.", "La `Window Management API` (`getScreenDetails`) esiste in Chrome ed Edge, in contesto sicuro — e `127.0.0.1` è contesto sicuro.", "Die `Window Management API` (`getScreenDetails`) gibt es in Chrome und Edge, in sicherem Kontext — und `127.0.0.1` ist sicherer Kontext.", "La `Window Management API` (`getScreenDetails`) existe en Chrome y Edge, en contexto seguro — y `127.0.0.1` es contexto seguro."),
+    texto!("tela.mt_sem_monitores3", "No Firefox e no Safari ela não existe: as regiões dividem em partes iguais, e a janela destacada abre onde o navegador quiser.", "Dans Firefox et Safari elle n'existe pas : les régions se partagent en parts égales, et la fenêtre détachée s'ouvre où le navigateur veut.", "In Firefox and Safari it does not exist: the regions split into equal parts, and the detached window opens wherever the browser likes.", "In Firefox e Safari non esiste: le regioni si dividono in parti uguali, e la finestra staccata si apre dove vuole il browser.", "In Firefox und Safari gibt es sie nicht: die Regionen teilen sich gleichmäßig, und das gelöste Fenster öffnet, wo der Browser will.", "En Firefox y Safari no existe: las regiones se dividen en partes iguales, y la ventana separada abre donde el navegador quiera."),
+    texto!("tela.mt_nao_faz", "O que este modo NÃO faz", "Ce que ce mode NE fait PAS", "What this mode does NOT do", "Ciò che questa modalità NON fa", "Was dieser Modus NICHT tut", "Lo que este modo NO hace"),
+    texto!("tela.mt_nao_faz_docking", "**Arrastar uma janela do sistema de volta para a barra de abas.**", "**Faire glisser une fenêtre du système jusqu'à la barre d'onglets.**", "**Dragging a system window back onto the tab strip.**", "**Trascinare una finestra di sistema di nuovo sulla barra delle schede.**", "**Ein Systemfenster zurück auf die Registerleiste ziehen.**", "**Arrastrar una ventana del sistema de vuelta a la barra de pestañas.**"),
+    texto!("tela.mt_nao_faz_docking2", "O navegador não recebe evento nenhum quando uma janela passa por cima de outra — o docking por arrasto do WINDEV(R) e do Visual Studio(R) não é implementável aqui.", "Le navigateur ne reçoit aucun événement quand une fenêtre passe au-dessus d'une autre — l'ancrage par glisser de WINDEV(R) et de Visual Studio(R) n'est pas implémentable ici.", "The browser receives no event at all when one window passes over another — the drag docking of WINDEV(R) and Visual Studio(R) cannot be implemented here.", "Il browser non riceve alcun evento quando una finestra passa sopra un'altra — il docking a trascinamento di WINDEV(R) e Visual Studio(R) non è implementabile qui.", "Der Browser erhält kein Ereignis, wenn ein Fenster über ein anderes zieht — das Drag-Docking von WINDEV(R) und Visual Studio(R) ist hier nicht umsetzbar.", "El navegador no recibe ningún evento cuando una ventana pasa por encima de otra — el acoplamiento por arrastre de WINDEV(R) y Visual Studio(R) no es implementable aquí."),
+    texto!("tela.mt_use_devolver", "Use **⤺ devolver**, na janela destacada.", "Utilisez **⤺ renvoyer**, dans la fenêtre détachée.", "Use **⤺ send back**, in the detached window.", "Usa **⤺ riporta**, nella finestra staccata.", "Nutzen Sie **⤺ zurückgeben**, im gelösten Fenster.", "Use **⤺ devolver**, en la ventana separada."),
+    texto!("tela.mt_nao_faz_reabrir", "**Reabrir sozinho as janelas destacadas.**", "**Rouvrir toutes seules les fenêtres détachées.**", "**Reopening the detached windows on its own.**", "**Riaprire da sole le finestre staccate.**", "**Die gelösten Fenster von selbst wieder öffnen.**", "**Reabrir solas las ventanas separadas.**"),
+    texto!("tela.mt_nao_faz_reabrir2", "`window.open` sem clique é bloqueio de popup em todo navegador. O arranjo fica guardado; volta com um clique.", "`window.open` sans clic, c'est un blocage de pop-up dans tous les navigateurs. La disposition reste enregistrée ; elle revient d'un clic.", "`window.open` without a click is a pop-up block in every browser. The arrangement is stored; it comes back with one click.", "`window.open` senza clic è blocco popup in ogni browser. La disposizione resta salvata; torna con un clic.", "`window.open` ohne Klick ist in jedem Browser eine Pop-up-Blockade. Die Anordnung bleibt gespeichert; sie kommt mit einem Klick zurück.", "`window.open` sin clic es bloqueo de popup en todo navegador. La disposición queda guardada; vuelve con un clic."),
+    texto!("tela.mt_nao_faz_sessao", "**Guardar a sessão no disco do navegador.**", "**Enregistrer la session sur le disque du navigateur.**", "**Storing the session on the browser's disk.**", "**Salvare la sessione sul disco del browser.**", "**Die Sitzung auf der Browser-Festplatte speichern.**", "**Guardar la sesión en el disco del navegador.**"),
+    texto!("tela.mt_nao_faz_sessao2", "A ficha de sessão viaja pelo `BroadcastChannel`, em memória. Se a janela principal fechar, a destacada pede login — e isso é de propósito.", "La fiche de session voyage par `BroadcastChannel`, en mémoire. Si la fenêtre principale se ferme, la détachée redemande la connexion — et c'est voulu.", "The session record travels over `BroadcastChannel`, in memory. If the main window closes, the detached one asks for sign-in — and that is on purpose.", "La scheda di sessione viaggia su `BroadcastChannel`, in memoria. Se la finestra principale si chiude, quella staccata chiede l'accesso — ed è di proposito.", "Der Sitzungsdatensatz reist über `BroadcastChannel`, im Speicher. Schließt das Hauptfenster, verlangt das gelöste eine Anmeldung — und das ist Absicht.", "La ficha de sesión viaja por `BroadcastChannel`, en memoria. Si la ventana principal se cierra, la separada pide inicio de sesión — y eso es a propósito."),
+    texto!("tela.mt_rodape", "Regiões, larguras e abas pinadas ficam **neste navegador** — não no servidor. Desenho completo em `docs/MULTITELA.md`.", "Régions, largeurs et onglets épinglés restent **dans ce navigateur** — pas sur le serveur. Conception complète dans `docs/MULTITELA.md`.", "Regions, widths and pinned tabs stay **in this browser** — not on the server. Full design in `docs/MULTITELA.md`.", "Regioni, larghezze e schede fissate restano **in questo browser** — non sul server. Progetto completo in `docs/MULTITELA.md`.", "Regionen, Breiten und angeheftete Registerkarten bleiben **in diesem Browser** — nicht auf dem Server. Vollständiger Entwurf in `docs/MULTITELA.md`.", "Regiones, anchos y pestañas fijadas quedan **en este navegador** — no en el servidor. Diseño completo en `docs/MULTITELA.md`."),
 ];
 
 /// A posicao de um idioma pelo nome da coluna. Desconhecido = portugues.
@@ -859,6 +957,110 @@ mod testes {
 
     fn linha(v: [&str; QUANTOS]) -> [String; QUANTOS] {
         v.map(|s| s.to_string())
+    }
+
+    /// Etiqueta CRUA num texto de fabrica nunca vira etiqueta na tela.
+    ///
+    /// Os dois caminhos escapam antes de escrever: o `data-txt` do
+    /// `aplicarIdioma` grava por `textContent`, e o `marcado()` chama `esc()`
+    /// antes de marcar. Um `<b>` gravado na celula apareceria escrito, com
+    /// sinal de menor e tudo -- e apareceria so no idioma de quem digitou.
+    ///
+    /// Escapar e a decisao certa e nao se muda: o texto vem de
+    /// `phxsys.mensagens`, que um administrador edita pela grade, e celula
+    /// editavel e entrada de usuario. Aceitar `<b>` cru seria aceitar
+    /// `<script>` junto. A enfase e MARCA -- `**assim**`, ou a palavra entre
+    /// crases -- e o corte em etiqueta acontece depois da traducao.
+    ///
+    /// **Prova real, com o defeito reposto:** troque um `**qualquer
+    /// navegador**` de volta por `<b>qualquer navegador</b>` na
+    /// `FABRICA_TELA` e este teste reprova, nomeando a chave.
+    #[test]
+    fn nenhum_texto_da_fabrica_traz_etiqueta_crua() {
+        for f in FABRICA_TELA {
+            for (i, t) in f.textos.iter().enumerate() {
+                assert!(
+                    !t.contains('<') && !t.contains('>'),
+                    "{} em {}: etiqueta crua no texto de fabrica -- a enfase e \
+                     marca (**assim** ou entre crases), porque a pagina escapa \
+                     antes de escrever: {t:?}",
+                    f.nome,
+                    IDIOMAS[i]
+                );
+            }
+        }
+    }
+
+    /// Marca aberta e nao fechada aparece na tela como asterisco ou crase.
+    ///
+    /// E o erro de digitacao mais provavel de uma traducao -- quem escreve em
+    /// alemao mexe na frase inteira -- e o mais silencioso, porque so aparece
+    /// naquele idioma. Contar e barato; ler seis colunas a olho, nao.
+    #[test]
+    fn as_marcas_de_enfase_fecham() {
+        for f in FABRICA_TELA {
+            for (i, t) in f.textos.iter().enumerate() {
+                assert_eq!(
+                    t.matches("**").count() % 2,
+                    0,
+                    "{} em {}: ** aberto e nao fechado: {t:?}",
+                    f.nome,
+                    IDIOMAS[i]
+                );
+                assert_eq!(
+                    t.matches('`').count() % 2,
+                    0,
+                    "{} em {}: crase aberta e nao fechada: {t:?}",
+                    f.nome,
+                    IDIOMAS[i]
+                );
+            }
+        }
+    }
+
+    /// Marcador `{assim}` que existe numa lingua e some noutra vira buraco na
+    /// tela: o numero, o nome do monitor ou o rotulo da aba nao aparecem.
+    ///
+    /// A conferencia e contra o PORTUGUES, que e o degrau 2 e a origem de toda
+    /// traducao. Reordenar os marcadores e livre -- e para isso que eles sao
+    /// posicionais por nome; perder um, nao.
+    #[test]
+    fn todo_idioma_tem_os_mesmos_marcadores_do_portugues() {
+        for f in FABRICA_TELA {
+            let base = marcadores(f.textos[0]);
+            for (i, t) in f.textos.iter().enumerate().skip(1) {
+                if t.is_empty() {
+                    continue; // celula vazia cai no portugues, e ele ja tem
+                }
+                assert_eq!(
+                    marcadores(t),
+                    base,
+                    "{} em {}: os marcadores nao batem com os do portugues",
+                    f.nome,
+                    IDIOMAS[i]
+                );
+            }
+        }
+    }
+
+    /// Os `{nome}` de um texto, em ordem alfabetica e sem repetir.
+    fn marcadores(texto: &str) -> Vec<String> {
+        let mut achados: Vec<String> = Vec::new();
+        let mut resto = texto;
+        while let Some(i) = resto.find('{') {
+            resto = &resto[i + 1..];
+            let Some(f) = resto.find('}') else { break };
+            let nome = &resto[..f];
+            if !nome.is_empty()
+                && nome.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+                && !achados.iter().any(|a| a == nome)
+            {
+                achados.push(nome.to_string());
+            }
+            resto = &resto[f + 1..];
+        }
+        achados.sort();
+        achados
     }
 
     #[test]

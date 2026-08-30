@@ -266,6 +266,10 @@ pub const ISENTOS: &[(&str, &str)] = &[
     ("id", "nome de coluna"),
     ("uuid", "nome de coluna"),
     ("cpf", "nome de campo brasileiro, sem traducao"),
+    (
+        "devicePixelRatio",
+        "nome da propriedade do navegador, o mesmo em toda lingua",
+    ),
     ("Base64", "nome de codificacao"),
     ("Ed25519", "nome de algoritmo"),
     ("PBKDF2", "nome de algoritmo"),
@@ -881,7 +885,16 @@ impl Placar {
 /// medida sobre a interface inteira; 1.999 era medida sobre cinco sextos dela.
 /// A guarda `a_lista_cobre_tudo_que_o_http_serve` impede a proxima leitura
 /// falsa, e a frente que traduz os 69 desce a catraca de volta.
-pub const TETO: usize = 2_068;
+///
+/// 2.068 -> 1.999, e agora o numero quer dizer a mesma coisa que o de antes
+/// dizia por engano: os 69 do `multitela.js` sairam. Sessenta e oito viraram
+/// setenta chaves de fabrica; o sexagesimo nono, `devicePixelRatio`, entrou nos
+/// [`ISENTOS`] com a razao escrita, porque nome de propriedade do navegador nao
+/// se traduz. Trinta e nove dos sessenta e oito eram UMA frase picada pela
+/// marcacao, e o conserto deles esta no `docs/MENSAGENS.md`: frase picada e
+/// intraduzivel por construcao, entao a frase inteira virou uma chave so e o
+/// corte em `<b>`/`<code>` passou a acontecer DEPOIS da traducao.
+pub const TETO: usize = 1_999;
 
 #[cfg(test)]
 mod testes {

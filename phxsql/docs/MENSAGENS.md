@@ -135,12 +135,20 @@ A máquina funcionava e quase nada passava por ela. Medido antes desta rodada:
 um lado só (todo `data-txt` tem de existir na fábrica), e esse pega o nome
 escrito errado, não o buraco.
 
-| | antes | depois |
-|---|---|---|
-| textos na fábrica | 31 | 258 |
-| textos cravados em português | 2.185 | 1.994 |
-| cobertura | 1% | 11% |
-| chaves na `FABRICA_TELA` | 32 | 199 |
+| | antes | a leva do conferidor | a leva do multitela |
+|---|---|---|---|
+| textos na fábrica | 31 | 258 | 353 |
+| textos cravados em português | 2.185 | 1.994 | 1.999 |
+| cobertura | 1% | 11% | 15% |
+| chaves na `FABRICA_TELA` | 32 | 199 | 280 |
+
+A coluna do meio mede **cinco sextos da tela**, e a da direita mede a tela
+inteira: o `multitela.js` era servido pelo `http.rs` e não estava no `FONTES`
+do conferidor, então os 69 textos cravados dele nunca contaram. Por isso 1.994
+sobe para 1.999 numa leva que só traduziu — o piso mudou de lugar, e quem
+impede a próxima leitura falsa é a guarda
+`conferidor::a_lista_cobre_tudo_que_o_http_serve`, que lê o fonte do `http.rs`
+e cobra cada `.js` e `.html` que ele embute.
 
 Os números saem do conferidor, não da mão:
 
@@ -172,13 +180,109 @@ cargo run --example textos-fora-da-fabrica -p phxsql-server -- --isentos
    | HTML estático | `<button data-txt="tela.fechar">Fechar</button>` |
    | atributo que se lê | `data-txt-ph=`, `data-txt-tt=` (title), `data-txt-al=` (aria-label) |
    | HTML montado em JS | `` `<h3>${esc(txt("tela.painel", "Painel"))}</h3>` `` |
-   | tabela lida antes do login (`MENUS`, `FERRAMENTAS`) | `{ rot:"Painel", txt:"tela.painel" }` — o par, **na mesma linha** |
+   | frase com ênfase ou nome de API dentro | `` `${marcado(txt("tela.mt_nota", "**Multitela.** … `window.open` …"))}` `` |
+   | frase com um número ou um nome no meio | `avisar(preencher(txt("tela.mt_alinhadas", "{n} regiões alinhadas…"), { n }))` |
+   | tabela lida antes do login (`MENUS`, `FERRAMENTAS`, `CATALOGO`) | `{ rot:"Painel", txt:"tela.painel" }` — o par, **na mesma linha** |
 
    O par existe porque `MENUS` e `FERRAMENTAS` são lidos no arranque, quando
    ainda não há texto traduzido nenhum: `txt(…)` ali devolveria português para
    sempre. Quem desenha chama `txt(f.txt, f.rot)` na hora de pintar.
 
 3. **Rode os portões.** `cargo test --workspace` já cobre os três laços.
+
+### Frase picada por marcação é intraduzível **por construção**
+
+Esta é a lição que a leva do `multitela.js` pagou, e ela vale para toda tela
+que ainda falta traduzir — porque toda tela com texto corrido tem o mesmo
+formato.
+
+O bloco era este, e cada pedaço entre aspas era um literal separado:
+
+```js
+`<b>Multitela.</b> Abas vivas e regiões lado a lado funcionam em
+ <b>qualquer navegador</b> — é layout. Destacar em janela também, com
+ <code>window.open</code>. O que depende do navegador é abrir a janela
+ <b>já no monitor certo</b>: …`
+```
+
+Treze literais, e o conferidor via os treze. Traduzir os treze é **impossível**,
+e não por trabalho: é impossível por construção. Um pedaço como `— é layout.
+Destacar em janela também, com` não é uma frase — é o que sobrou entre dois
+`<b>`. A ordem das palavras muda de língua para língua (em alemão o verbo vai
+para o fim), e **não existe ordem de pedaços que sirva para as seis**. Quem
+traduz pedaço traduz a nossa sintaxe, não a frase.
+
+**O conserto: a frase inteira é UMA chave, e a ênfase é uma marca dentro
+dela.**
+
+```rust
+texto!("tela.mt_nota",
+  "**Multitela.** Abas vivas e regiões lado a lado funcionam em **qualquer navegador** — é layout.",
+  "**Multi-écran.** Les onglets vivants et les régions côte à côte fonctionnent dans **n'importe quel navigateur** — c'est de la mise en page.",
+  …),
+```
+
+```js
+`<div class="multitela-nota">${marcado(txt("tela.mt_nota", "**Multitela.** …"))}</div>`
+```
+
+O corte em `<b>` e `<code>` acontece **depois** da tradução, no `marcado()` —
+e por isso o tradutor move a ênfase para onde a língua dele pede. Na captura
+alemã a ênfase caiu em `**gleich auf dem richtigen Monitor**`, num lugar onde
+o português não tem nada.
+
+#### Por que marca, e não HTML dentro da célula
+
+Foi a alternativa considerada primeiro, e ela é **insegura**. O texto vem de
+`phxsys.mensagens`, que um administrador edita pela grade: célula editável é
+entrada de usuário. Aceitar `<b>` cru na célula é aceitar `<script>` junto, e
+seria desfazer a decisão que o `aplicarIdioma` já tinha tomado ao escrever por
+`textContent`.
+
+Então o `marcado()` **escapa tudo primeiro** e só depois transforma duas
+marcas em etiqueta:
+
+| marca | vira | para quê |
+|---|---|---|
+| `**assim**` | `<b>assim</b>` | ênfase |
+| `` `assim` `` | `<code>assim</code>` | nome de API, de arquivo, de comando |
+| `{nome}` | o dado, escapado à parte | número, nome de tela, nome de monitor |
+
+O dado entra **por último e escapado sozinho**: um valor que contenha `**`
+nunca vira negrito. É a regra de sempre por outro caminho — rótulo se marca,
+dado nunca.
+
+#### Duas regras que caem dessa
+
+- **A unidade é a FRASE, nunca o parágrafo.** A célula guarda 250 caracteres e
+  um parágrafo alemão passa disso. Parágrafo longo entra **partido em frases
+  inteiras** — cada uma se traduz sozinha —, e nunca em pedaços de frase, que
+  é o defeito que se está consertando. Na tela elas se juntam com um espaço.
+- **Marcador posicional por nome, e nunca `+` no meio da frase.**
+  `"o monitor “{monitor}” não está mais aqui"` deixa cada língua pôr o nome
+  onde quiser; `"o monitor “" + nome + "” não está mais aqui"` obriga todas a
+  pô-lo no meio. É a mesma convenção dos `{detalhe}` das mensagens do
+  protocolo — uma só, e não duas.
+
+#### O que trava isso, e a prova real
+
+| teste | reprova |
+|---|---|
+| `idiomas::nenhum_texto_da_fabrica_traz_etiqueta_crua` | `<b>` gravado numa célula: ele apareceria escrito na tela, com sinal de menor e tudo |
+| `idiomas::as_marcas_de_enfase_fecham` | `**` ou crase aberta e não fechada — o erro mais provável de quem reescreve a frase inteira em alemão, e o mais silencioso, porque só aparece naquele idioma |
+| `idiomas::todo_idioma_tem_os_mesmos_marcadores_do_portugues` | `{n}` que existe no português e sumiu no italiano: o número não apareceria |
+
+Os três **falham com o defeito reposto** — trocar um `**qualquer navegador**`
+de volta por `<b>qualquer navegador</b>`, apagar um asterisco, apagar um
+`{n}` — e cada um nomeia a chave e o idioma.
+
+E a prova que vale mais que as três, porque é no navegador:
+`prova-idiomas.mjs` abre a tela do modo multitela em português, confere que a
+frase sai **inteira e na ordem** e que a marca virou `<b>`/`<code>` de
+verdade, troca para alemão sem sair da tela e confere que não sobrou nem
+português nem marca crua. Repondo os dois defeitos ela reprova os dois: sem o
+gancho `est.repintar` a tela não troca de idioma, e sem a conversão de marcas
+a página mostra `**Multitela.**` com os asteriscos à mostra.
 
 ### O que o conferidor reprova
 
@@ -188,6 +292,9 @@ cargo run --example textos-fora-da-fabrica -p phxsql-server -- --isentos
 | `idiomas::todo_data_txt_da_pagina_existe_na_fabrica` | chave que a tela pede e a fábrica não tem (a tela ficaria em português para sempre) |
 | `idiomas::todo_texto_da_fabrica_e_pedido_por_alguem` | chave morta: traduzida nos seis idiomas e pedida por ninguém |
 | `idiomas::a_fabrica_e_bem_formada` | nome repetido, português vazio, ou texto que não cabe nos 250 da coluna |
+| `idiomas::nenhum_texto_da_fabrica_traz_etiqueta_crua` | `<b>` gravado na célula — a página escapa antes de escrever, e ele apareceria escrito |
+| `idiomas::as_marcas_de_enfase_fecham` | `**` ou crase aberta e não fechada num idioma só |
+| `idiomas::todo_idioma_tem_os_mesmos_marcadores_do_portugues` | `{n}` perdido numa tradução: o número não apareceria |
 
 O `TETO` **só desce**. Traduziu um punhado: rode o exemplo, veja o número novo
 e baixe a catraca no mesmo commit — catraca frouxa não segura nada.
@@ -254,13 +361,19 @@ ferramentas com os trinta e um botões, as cinco abas, a árvore e o painel
 lateral), a tela de **Idiomas**, e da tela de **Configurações gerais** o
 título, o subtítulo, os botões e a linha do idioma.
 
-Falta o **miolo das telas**: 1.994 textos, com arquivo e linha no
-`--tudo`. Por ordem do que a pessoa mais vê, a próxima leva é: os 99 títulos e
-subtítulos de `folha(`, os 136 cabeçalhos de coluna distintos (`{t:"…"}`), os
-39 recados de `avisar(` e as 19 perguntas de `confirm(`. Depois vêm os corpos
-de texto longo — telemetria, LGPD, replicação, a tela da Claude — onde
-tradução ruim é pior que português honesto, e por isso a célula vazia cai para
-o português.
+Traduzido 100% também o **modo multitela** inteiro (`ui/multitela.js`): a tira
+de abas, a calha, a janela solta dentro da página, os dezesseis recados e a
+tela «Sobre o modo multitela». É o primeiro arquivo de interface com zero
+texto cravado.
+
+Falta o **miolo das telas**: 1.999 textos, com arquivo e linha no
+`--tudo` — 1.809 no `index.html`, 126 no `claude.js`, 38 no `telemetria.js`, 24 no
+`phx-grid.js` e 2 no `diagrama-er.js`. Por ordem do que a pessoa mais
+vê, a próxima leva é: os títulos e subtítulos de `folha(`, os cabeçalhos de
+coluna distintos (`{t:"…"}`), os recados de `avisar(` e as perguntas de
+`confirm(`. Depois vêm os corpos de texto longo — telemetria, LGPD,
+replicação, a tela da Claude —, e para esses a receita já está escrita acima:
+uma chave por **frase**, com a ênfase virada marca.
 
 Traduzir os `{detalhe}` que o motor gera continua sendo outra metade, e essa
 pede `TextName` por mensagem do motor, não só a moldura.

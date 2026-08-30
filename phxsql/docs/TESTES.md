@@ -41,32 +41,33 @@ contando `#[test]` por arquivo e agrupando:
 <!-- cobertura:inicio -->
 | área | testes | % |
 |---|---:|---:|
-| Motor de dados (arquivos, índice, diários) | 323 | 26,3 |
-| Protocolo e portões (despachar) | 177 | 14,4 |
-| Núcleo (JSON, tipos, UUID, zip, paralelo) | 133 | 10,8 |
-| Configuração | 82 | 6,7 |
-| Criptografia e codificação | 80 | 6,5 |
-| DbLink | 65 | 5,3 |
-| Telemetria e profiler | 45 | 3,7 |
-| Camada SQL (léxico, sintaxe, tradução) | 44 | 3,6 |
+| Motor de dados (arquivos, índice, diários) | 323 | 26,0 |
+| Protocolo e portões (despachar) | 180 | 14,5 |
+| Núcleo (JSON, tipos, UUID, zip, paralelo) | 133 | 10,7 |
+| Configuração | 82 | 6,6 |
+| Criptografia e codificação | 80 | 6,4 |
+| DbLink | 65 | 5,2 |
+| Telemetria e profiler | 45 | 3,6 |
+| Camada SQL (léxico, sintaxe, tradução) | 44 | 3,5 |
 | Gatilhos e procedimentos | 38 | 3,1 |
 | Jobs | 31 | 2,5 |
 | Interface web (servidor HTTP) | 28 | 2,3 |
 | MCP | 19 | 1,5 |
 | Usuários e permissões | 19 | 1,5 |
-| **Console de terminal (phxsqlcmd)** | **18** | **1,5** |
-| **Segurança de rede (blacklist, firewall)** | **18** | **1,5** |
+| **Console de terminal (phxsqlcmd)** | **18** | **1,4** |
+| **Segurança de rede (blacklist, firewall)** | **18** | **1,4** |
 | **ODBC** | **17** | **1,4** |
-| **Mensagens (i18n do servidor)** | **14** | **1,1** |
-| **Exportação** | **13** | **1,1** |
-| **Junções e união** | **13** | **1,1** |
+| **Mensagens (i18n do servidor)** | **17** | **1,4** |
+| **Exportação** | **13** | **1,0** |
+| **Junções e união** | **13** | **1,0** |
 | **Pivot** | **12** | **1,0** |
 | **Replicação** | **11** | **0,9** |
-| **Alertas e e-mail** | **8** | **0,7** |
+| **Servidor (outros)** | **8** | **0,6** |
+| **Alertas e e-mail** | **8** | **0,6** |
+| **CLI** | **7** | **0,6** |
 | **Cluster** | **7** | **0,6** |
-| **Servidor (outros)** | **7** | **0,6** |
 | **Monitor de máquina** | **6** | **0,5** |
-| **total** | **1228** | |
+| **total** | **1242** | |
 
 Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 
@@ -74,7 +75,6 @@ Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 |---|---:|
 | `phxsql-store/src/table.rs` | 2458 |
 | `phxsql-store/src/ndx.rs` | 1580 |
-| `phxsql-cli/src/main.rs` | 845 |
 | `phxsql-server/src/main.rs` | 452 |
 | `phxsql-server/src/replica.rs` | 352 |
 | `phxsql-server/src/dblink/conexao.rs` | 238 |

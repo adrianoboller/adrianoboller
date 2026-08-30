@@ -61,11 +61,21 @@ bateria, na faixa **6650/6651**, e prova o caminho do idioma de ponta a ponta:
 5. a escolha sobrevive a **sair e entrar** de novo;
 6. o **alemão** (~30% mais longo) não corta rótulo da barra nem faz a página
    rolar de lado — o defeito que só aparece traduzindo;
-7. capturas da mesma tela em três idiomas × dois temas.
+7. a **frase que era picada**: a tela «Sobre o modo multitela» sai inteira e na
+   ordem em português, com a ênfase virada `<b>`/`<code>` de verdade e sem
+   marca crua à mostra; troca para alemão **sem sair da tela**, e nem o
+   corpo, nem o título, nem o `title` da tira de abas ficam em português;
+8. capturas da mesma tela em três idiomas × dois temas.
 
 Foi ela que achou o `txt` declarado como `const` sendo pedido pelo
 `aplicarTema` do arranque: a página morria na primeira pintura e o botão de
 tema ficava sem `onclick`. Ler o código não acharia.
+
+O passo 7 tem prova real nos dois sentidos, e os dois defeitos foram
+repostos: tirando o `est.repintar` que a tela do modo repõe, ela não troca de
+idioma e o passo estoura no `waitForFunction`; tirando a conversão de marcas
+do `marcado()`, a página mostra `**Multitela.**` com os asteriscos à mostra e
+o passo diz qual frase saiu errada.
 
 ## Os três canais de erro
 

@@ -357,3 +357,39 @@ esticado por vários monitores, a barra de 30 ferramentas e o menu de nove
 títulos atravessam a tela inteira**. Aqui eles apenas envolvem/rolam e não
 quebram nada, mas nada os impede de crescer. Se valer um teto de largura para
 eles, é decisão do dono das faixas — não deste documento.
+
+## Todo texto deste modo passa pela fábrica de idiomas
+
+Sessenta e oito rótulos deste arquivo viraram setenta chaves da `FABRICA_TELA`
+(`server/src/idiomas.rs`), com prefixo `tela.mt_`: as dicas da tira de abas, os
+botões da janela solta, os dezesseis recados e a tela «Sobre o modo multitela».
+É o primeiro arquivo de interface com **zero** texto cravado — o conferidor
+(`cargo run --example textos-fora-da-fabrica -p phxsql-server -- --tudo`) não
+o cita mais.
+
+Três coisas deste módulo, em particular:
+
+- **O `CATALOGO` usa o par `rot`/`txt`**, e não `txt(…)` direto, pelo mesmo
+  motivo dos `MENUS` da página: ele nasce quando o módulo carrega, antes de a
+  página ter pedido os textos ao servidor. Quem resolve é o `rotuloDe`. A
+  entrada `tabela` **não tem** `txt` de propósito — o rótulo dela é o nome da
+  tabela, que é dado, e dado não se traduz.
+- **`PhxTelas.repintar()`** é o que o `aplicarIdioma` chama para o cromo daqui:
+  a tira de abas e os botões da janela solta são pintados uma vez e ficariam
+  na língua anterior. Ele repõe também o rótulo das abas cujo nome vem da
+  fábrica — **por chave**, nunca comparando a frase com o rótulo antigo. O que
+  ele não alcança é a aba de segundo plano cujo nome veio do título que a
+  própria tela escreveu: repintá-la é repintar tela escondida, e isso
+  contraria a decisão [2] deste módulo. Está nomeado no `docs/PENDENCIAS.md`.
+- **A `telaAjuda` repõe o gancho `est.repintar`** que o `folha()` limpa: sem
+  ele, trocar o idioma com esta tela aberta jogaria a pessoa no Painel.
+
+E a lição de desenho que esta tela pagou, escrita por inteiro no
+`docs/MENSAGENS.md`: a nota do alto era **uma frase picada pela marcação** —
+`"funcionam em"` + `<b>qualquer navegador</b>` + `"— é layout…"` —, e pedaço
+de frase é intraduzível por construção, porque a ordem das palavras muda de
+língua para língua e em alemão o verbo vai para o fim. Hoje cada frase é uma
+chave e a ênfase é uma **marca dentro do texto** (`**assim**`, e a palavra
+entre crases); o corte em `<b>`/`<code>` acontece no `marcado()`, **depois**
+da tradução, e o `marcado()` escapa tudo antes de marcar, porque o texto vem
+de uma tabela que um administrador edita pela grade.
