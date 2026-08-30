@@ -1880,6 +1880,91 @@ SEM SERVIDOR: MODO DEMONSTRACAO
     o tempo todo. Nenhum dado seu passa por ali -- nao ha servidor para ter
     dado seu.
 
+9.1 WEBSERVICE REST (OpenAPI)
+--------------------------------------------------------------------------------
+As mesmas operacoes da porta 5000, por HTTP com um caminho por operacao. Serve
+quem integra de fora: linguagem que fala REST fala com o PhxSql sem driver.
+
+LIGAR
+
+    No config.json:
+
+        "rest": {
+          "ligado": true,
+          "bind": "127.0.0.1:6000",
+          "nome": "Loja",
+          "database": "loja",
+          "tabelas": ["clientes", "pedidos"],
+          "token": "",
+          "swagger_ligado": true,
+          "swagger_bind": "127.0.0.1:7000"
+        }
+
+    AS DUAS PORTAS VEM DESLIGADAS. Atualizar o binario nao abre porta nenhuma:
+    quem nao tem a secao `rest` no arquivo continua exatamente como estava.
+
+    Sao DUAS portas de proposito -- 6000 o servico, 7000 o visualizador da
+    especificacao. Quem sobe numa placa quer o REST sem o visualizador, e ai a
+    7000 simplesmente nao abre.
+
+CHAMAR
+
+    curl -X POST http://127.0.0.1:6000/v1/ler \
+      -H 'Authorization: Bearer SEU-TOKEN' \
+      -H 'X-Sessao: a-sessao-do-login' \
+      -H 'Content-Type: application/json' \
+      -d '{"tabela":"clientes","rowid":1}'
+
+    O caminho manda. Um "op" no corpo diferente do caminho e RECUSADO, e nao
+    ignorado: o caminho e o que aparece no log do proxy e no firewall.
+
+    A identidade sai do login, igual a interface web:
+
+        POST /v1/desafio  {"usuario":"adm"}
+        POST /v1/login    {"usuario":"adm","prova":"...","nonce_cliente":"..."}
+        -> a resposta traz "sessao", que volta no cabecalho X-Sessao
+
+A ESPECIFICACAO
+
+        GET http://127.0.0.1:6000/openapi.json
+
+    Ela e GERADA da tabela de despacho do servidor, e nao escrita a mao: ha
+    teste que reprova operacao existente que a especificacao nao documente, e
+    outro que reprova rota documentada que o servidor nao atenda.
+
+    O visualizador fica na outra porta:
+
+        http://127.0.0.1:7000
+
+    Ele nao executa nada -- mostra as operacoes, os campos e o curl pronto.
+
+TOKEN
+
+    "token" vazio = vale o token do protocolo, o mesmo da porta 5000.
+    "token" preenchido = SO ele abre o REST, e o token do protocolo deixa de
+    abrir esta porta. Serve para entregar uma credencial de webservice sem
+    entregar o token mestre.
+
+    Ele nao se edita pela tela, pelo mesmo motivo do "token": campo que carrega
+    credencial se edita no arquivo. A tela diz se existe um; nunca qual e.
+
+    ATENCAO: Bearer sobre HTTP em claro entrega o token a quem escuta o fio, em
+    todo pedido. Nao ha TLS aqui -- ponha um proxy que termine TLS na frente, ou
+    um tunel. E o mesmo limite da secao 7 do docs/SEGURANCA.md.
+
+QUAL BANCO E QUAIS TABELAS
+
+    "database" e "tabelas" ESTREITAM o que esta porta mostra, e so isso.
+
+    Tabela fora da lista NAO EXISTE para o REST: responde como inexistente, sem
+    contar que existe. Tabela dentro da lista continua passando pelo mesmo
+    portao de permissao de sempre -- estar na lista NAO da direito nenhum, e
+    quem nao pode continua nao podendo.
+
+    Listas vazias nao estreitam nada, que e o padrao.
+
+    Desenho completo, com os numeros e as recusas: docs/REST.md
+
 10. TABELA EM MEMORIA (SelectMemory)
 --------------------------------------------------------------------------------
 O .reg e rapido porque enderecar um registro e aritmetica -- mas ainda e um

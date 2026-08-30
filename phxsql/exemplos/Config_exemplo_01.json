@@ -207,6 +207,38 @@
     "sessao_minutos": 60
   },
 
+  "_rest": [
+    "O webservice REST: as mesmas operacoes da porta de dados, por HTTP, com",
+    "um caminho por operacao (POST /v1/ler) e a especificacao OpenAPI em",
+    "/openapi.json -- gerada da tabela de despacho, nunca escrita a mao.",
+    "",
+    "AS DUAS PORTAS VEM DESLIGADAS, e sao duas de proposito: 6000 e o servico",
+    "e 7000 e o visualizador da especificacao. Quem sobe numa placa quer o",
+    "REST sem o visualizador, e ai a 7000 nao abre.",
+    "",
+    "token vazio = vale o token do protocolo, o mesmo la de cima. Preenchido,",
+    "SO ele abre o REST, e o do protocolo deixa de abrir esta porta -- serve",
+    "para entregar credencial de webservice sem entregar o token mestre.",
+    "ATENCAO: Bearer sobre HTTP em claro entrega o token a quem escuta o fio.",
+    "",
+    "database e tabelas ESTREITAM o que esta porta mostra, e SO ISSO: tabela",
+    "de fora nao existe para o REST, e estar na lista NAO da direito nenhum --",
+    "quem nao pode continua nao podendo. Vazias nao estreitam nada.",
+    "",
+    "Tudo isto se ajusta pela tela (Configuracoes -> Gerais do servidor),",
+    "menos o token. Desenho completo em docs/REST.md."
+  ],
+  "rest": {
+    "ligado": false,
+    "bind": "127.0.0.1:6000",
+    "nome": "",
+    "database": "",
+    "tabelas": [],
+    "token": "",
+    "swagger_ligado": false,
+    "swagger_bind": "127.0.0.1:7000"
+  },
+
   "_seguranca": [
     "comandos_proibidos e bases_proibidas valem para TODO MUNDO, root incluso:",
     "e o que ninguem pede por esta porta. Pedir bloqueia o IP na hora -- e",

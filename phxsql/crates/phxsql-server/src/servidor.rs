@@ -887,6 +887,8 @@ impl Servidor {
         }
 
         self.subir_web();
+        self.subir_rest();
+        self.subir_swagger();
         self.subir_replicacao();
         self.subir_cluster();
         self.subir_backup_agendado();
@@ -4056,6 +4058,7 @@ impl Servidor {
                 codigo: 0,
             });
             let _ = http::erro_json(&mut fluxo, 403, &self.recado_de_bloqueio(&b));
+            http::escoar(&fluxo);
             return;
         }
         if !self.config.ip_permitido(&ip) {
@@ -4075,6 +4078,7 @@ impl Servidor {
                 codigo: 0,
             });
             let _ = http::erro_json(&mut fluxo, 403, &self.msg("erro.ip_nao_autorizado", &[]));
+            http::escoar(&fluxo);
             return;
         }
 
@@ -4174,6 +4178,462 @@ impl Servidor {
                 let _ = http::erro_json(&mut fluxo, 405, "use GET / ou POST /api");
             }
         }
+    }
+
+    // -------------------------------------------------- webservice REST
+
+    /// Sobe o webservice REST, se ligado. Falhar aqui NAO derruba o servidor.
+    ///
+    /// Mesmo desenho do `subir_web`, e pelo mesmo motivo: os dados sao o
+    /// servico, e uma porta a mais que nao consegue subir vira aviso no
+    /// terminal, nunca um servidor que nao arranca.
+    fn subir_rest(self: &Arc<Self>) {
+        if !self.config.rest.ligado {
+            return;
+        }
+        let endereco = match self.config.rest.endereco() {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!("webservice REST NAO subiu: {e}");
+                return;
+            }
+        };
+        let ouvinte = match TcpListener::bind(endereco) {
+            Ok(o) => o,
+            Err(e) => {
+                eprintln!("webservice REST NAO subiu em {endereco}: {e}");
+                return;
+            }
+        };
+        eprintln!(
+            "webservice REST em http://{endereco}{} | especificacao em \
+             http://{endereco}/openapi.json",
+            crate::rest::PREFIXO
+        );
+        self.aceitar_http(ouvinte, "rest", |s, fluxo, par| s.atender_rest(fluxo, par));
+    }
+
+    /// Sobe o explorador da especificacao, se ligado -- a OUTRA porta.
+    ///
+    /// Ele e um segundo ouvinte de proposito: quem sobe numa placa quer o
+    /// webservice sem o visualizador, e com uma porta so desligar o segundo
+    /// exigiria desligar o primeiro.
+    fn subir_swagger(self: &Arc<Self>) {
+        if !self.config.rest.swagger_ligado {
+            return;
+        }
+        let endereco = match self.config.rest.endereco_do_swagger() {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!("explorador da API NAO subiu: {e}");
+                return;
+            }
+        };
+        let ouvinte = match TcpListener::bind(endereco) {
+            Ok(o) => o,
+            Err(e) => {
+                eprintln!("explorador da API NAO subiu em {endereco}: {e}");
+                return;
+            }
+        };
+        eprintln!("explorador da API REST em http://{endereco}");
+        self.aceitar_http(ouvinte, "swagger", |s, fluxo, par| {
+            s.atender_swagger(fluxo, par)
+        });
+    }
+
+    /// O laco de aceitacao das portas HTTP, um pedido por conexao.
+    ///
+    /// Existe porque sao TRES ouvintes agora (web, REST e explorador) e o laco
+    /// e o mesmo: aceitar, tirar o Nagle do caminho, registrar a linha de
+    /// execucao na telemetria e entregar o pedido. Tres copias divergiriam na
+    /// primeira correcao feita numa so.
+    fn aceitar_http(
+        self: &Arc<Self>,
+        ouvinte: TcpListener,
+        familia: &'static str,
+        atender: fn(&Arc<Self>, TcpStream, SocketAddr),
+    ) {
+        let servidor = Arc::clone(self);
+        self.telemetria.subir(
+            format!("ouvinte-{familia}"),
+            "aceita as conexoes desta porta HTTP e entrega cada pedido a uma \
+             thread propria; ela so aceita, nunca atende",
+            "servico",
+            crate::agora_ms(),
+            move |fio| {
+                fio.fazendo("esperando conexao");
+                for conexao in ouvinte.incoming() {
+                    let fluxo = match conexao {
+                        Ok(f) => f,
+                        Err(_) => continue,
+                    };
+                    let _ = fluxo.set_nodelay(true);
+                    let par = fluxo
+                        .peer_addr()
+                        .unwrap_or_else(|_| SocketAddr::from(([0, 0, 0, 0], 0)));
+                    let s = Arc::clone(&servidor);
+                    s.telemetria.clone().subir(
+                        format!("{familia}-{}", par.port()),
+                        "atende UM pedido HTTP e sai: o protocolo aqui e uma \
+                         resposta por conexao (`Connection: close`)",
+                        familia,
+                        crate::agora_ms(),
+                        move |f| {
+                            f.fazendo(&format!("pedido de {par}"));
+                            atender(&s, fluxo, par);
+                        },
+                    );
+                }
+            },
+        );
+    }
+
+    /// Os portoes de rede que valem antes de qualquer rota HTTP.
+    ///
+    /// Lista negra e lista de IPs permitidos -- os mesmos do `atender_http` e
+    /// os mesmos da porta de dados. Devolve `false` quando ja respondeu a
+    /// recusa e nao ha mais nada a fazer com esta conexao.
+    fn portao_de_rede_http(&self, fluxo: &mut TcpStream, ip: &str, porta: u16, op: &str) -> bool {
+        let agora = crate::agora_ms();
+        if let Some(b) = self.barrado(ip, agora) {
+            self.anotar(&Acesso {
+                quando_ms: agora,
+                ip: ip.to_string(),
+                porta_origem: porta,
+                op: op.into(),
+                usuario: String::new(),
+                autenticado: false,
+                ok: false,
+                duracao_ms: 0,
+                erro: Some(Self::motivo_de_bloqueio(&b)),
+                database: String::new(),
+                tabela: String::new(),
+                codigo: 0,
+            });
+            // Escoa antes de fechar, senao o RST engole a recusa -- ver
+            // `http::escoar`. Sem isto, quem esta na lista negra recebe
+            // `Connection reset` e nunca sabe por que nem ate quando.
+            let _ = http::erro_json(fluxo, 403, &self.recado_de_bloqueio(&b));
+            http::escoar(fluxo);
+            return false;
+        }
+        if !self.config.ip_permitido(ip) {
+            self.violacao_leve(ip, op, "ip fora da lista de permitidos");
+            self.anotar(&Acesso {
+                quando_ms: agora,
+                ip: ip.to_string(),
+                porta_origem: porta,
+                op: op.into(),
+                usuario: String::new(),
+                autenticado: false,
+                ok: false,
+                duracao_ms: 0,
+                erro: Some("ip fora da lista de permitidos".into()),
+                database: String::new(),
+                tabela: String::new(),
+                codigo: 0,
+            });
+            let _ = http::erro_json(fluxo, 403, &self.msg("erro.ip_nao_autorizado", &[]));
+            http::escoar(fluxo);
+            return false;
+        }
+        true
+    }
+
+    /// Atende um pedido da porta REST.
+    fn atender_rest(&self, mut fluxo: TcpStream, par: SocketAddr) {
+        let ip = par.ip().to_string();
+        let porta = par.port();
+        let _ = fluxo.set_read_timeout(Some(Duration::from_secs(self.config.timeout_s)));
+        if !self.portao_de_rede_http(&mut fluxo, &ip, porta, "rest") {
+            return;
+        }
+        let pedido = match http::ler_pedido(&fluxo) {
+            Some(p) => p,
+            None => {
+                let _ = http::erro_json(&mut fluxo, 400, "pedido HTTP invalido ou grande demais");
+                return;
+            }
+        };
+        match (pedido.metodo.as_str(), pedido.caminho.as_str()) {
+            // A especificacao viaja pela MESMA porta do servico, e nao so pela
+            // do explorador: quem gera cliente a partir dela costuma nem abrir
+            // o visualizador, e um `openapi.json` que exigisse uma segunda
+            // porta ligada seria documentacao presa atras de uma opcao.
+            ("GET", "/openapi.json") => {
+                let _ = http::responder(
+                    &mut fluxo,
+                    200,
+                    "application/json; charset=utf-8",
+                    &crate::rest::openapi(&self.config.rest, VERSAO).escrever_identado(),
+                );
+            }
+            ("GET", "/saude") => {
+                let _ = http::responder_json(
+                    &mut fluxo,
+                    200,
+                    &Json::objeto(vec![
+                        ("ok", Json::Bool(true)),
+                        ("phxsql", Json::texto_de(VERSAO)),
+                        ("servico", Json::texto_de(self.config.rest.titulo())),
+                        ("openapi", Json::texto_de("/openapi.json")),
+                    ]),
+                );
+            }
+            ("POST", caminho) => match crate::rest::operacao_do_caminho(caminho) {
+                Some(o) => self.api_rest(&mut fluxo, &pedido, &ip, porta, o.nome),
+                None => {
+                    let _ = http::erro_json(
+                        &mut fluxo,
+                        404,
+                        "rota desconhecida: as operacoes estao em /openapi.json",
+                    );
+                }
+            },
+            ("GET", _) | ("HEAD", _) => {
+                let _ = http::erro_json(
+                    &mut fluxo,
+                    404,
+                    "esta porta atende POST /v1/<operacao>, GET /openapi.json e GET /saude",
+                );
+            }
+            _ => {
+                let _ = http::erro_json(&mut fluxo, 405, "use POST /v1/<operacao>");
+            }
+        }
+    }
+
+    /// Atende o explorador da especificacao -- a porta do visualizador.
+    ///
+    /// Ela NAO despacha operacao nenhuma, e isso e desenho: a porta que
+    /// documenta e a porta que executa sao coisas diferentes, e quem abre a
+    /// primeira para a equipe nao quer abrir a segunda junto.
+    fn atender_swagger(&self, mut fluxo: TcpStream, par: SocketAddr) {
+        let ip = par.ip().to_string();
+        let porta = par.port();
+        let _ = fluxo.set_read_timeout(Some(Duration::from_secs(self.config.timeout_s)));
+        if !self.portao_de_rede_http(&mut fluxo, &ip, porta, "swagger") {
+            return;
+        }
+        let pedido = match http::ler_pedido(&fluxo) {
+            Some(p) => p,
+            None => {
+                let _ = http::erro_json(&mut fluxo, 400, "pedido HTTP invalido ou grande demais");
+                return;
+            }
+        };
+        match (pedido.metodo.as_str(), pedido.caminho.as_str()) {
+            ("GET", "/") | ("GET", "/index.html") => {
+                let _ = http::responder_pagina(
+                    &mut fluxo,
+                    200,
+                    &crate::rest::explorador::pagina(&self.config.rest),
+                );
+            }
+            ("GET", "/openapi.json") => {
+                let _ = http::responder(
+                    &mut fluxo,
+                    200,
+                    "application/json; charset=utf-8",
+                    &crate::rest::openapi(&self.config.rest, VERSAO).escrever_identado(),
+                );
+            }
+            // Os mesmos textos de tela que a interface web serve, pela mesma
+            // funcao: o explorador nao tem uma segunda tabela de rotulos, e e
+            // por isso que trocar o idioma nele funciona sem nada a mais.
+            ("GET", "/idiomas") => {
+                let idioma =
+                    idiomas::indice_do_idioma(&http::parametro(&pedido.consulta, "idioma"));
+                let corpo = match self.travar_dados() {
+                    Ok(dados) => idiomas::textos_para_a_pagina(&dados, idioma),
+                    Err(_) => idiomas::textos_para_a_pagina_sem_tabela(idioma),
+                };
+                let _ = http::responder_json(&mut fluxo, 200, &corpo);
+            }
+            ("GET", _) | ("HEAD", _) => {
+                let _ = http::erro_json(
+                    &mut fluxo,
+                    404,
+                    "o explorador tem tres rotas: /, /openapi.json e /idiomas",
+                );
+            }
+            _ => {
+                let _ = http::erro_json(
+                    &mut fluxo,
+                    405,
+                    "esta porta so mostra a especificacao; os pedidos vao para a porta do REST",
+                );
+            }
+        }
+    }
+
+    /// Uma operacao pedida por REST: monta o pedido, estreita e despacha.
+    ///
+    /// Tudo o que decide ACESSO acontece no `despachar`, como em toda outra
+    /// porta. O que mora aqui e o que e proprio do HTTP: de onde vem o token,
+    /// de onde vem a sessao, e que codigo devolver.
+    fn api_rest(
+        &self,
+        fluxo: &mut TcpStream,
+        pedido: &http::Pedido,
+        ip: &str,
+        porta: u16,
+        op: &'static str,
+    ) {
+        let agora = crate::agora_ms();
+        let inicio = Instant::now();
+
+        // O portao da porta: o `Bearer`. Um segredo proprio, quando existe,
+        // SUBSTITUI o token do protocolo aqui -- e o do protocolo deixa de
+        // abrir esta porta, senao rodar o segredo do REST nao fecharia nada.
+        let apresentado = pedido
+            .cabecalho("authorization")
+            .unwrap_or("")
+            .trim()
+            .strip_prefix("Bearer ")
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        let token_do_pedido = if self.config.rest.token.is_empty() {
+            apresentado.clone()
+        } else if apresentado == self.config.rest.token {
+            // Passou pelo segredo da porta; o portao 1 continua conferindo o
+            // token do protocolo, que e o que ele sempre conferiu.
+            self.config.token.clone()
+        } else {
+            self.violacao_leve(ip, op, "token do REST invalido");
+            self.anotar(&Acesso {
+                quando_ms: agora,
+                ip: ip.to_string(),
+                porta_origem: porta,
+                op: op.into(),
+                usuario: String::new(),
+                autenticado: false,
+                ok: false,
+                duracao_ms: 0,
+                erro: Some("token do REST invalido".into()),
+                database: String::new(),
+                tabela: String::new(),
+                codigo: PhxError::Autorizacao(String::new()).codigo(),
+            });
+            let _ = http::responder_json(
+                fluxo,
+                401,
+                &Json::objeto(vec![
+                    ("ok", Json::Bool(false)),
+                    ("op", Json::texto_de(op)),
+                    ("erro", Json::texto_de(self.msg("erro.token_invalido", &[]))),
+                    ("codigo", Json::de_u64(4001)),
+                    ("nome", Json::texto_de("ACESSO_NEGADO")),
+                    ("classe", Json::texto_de("acesso")),
+                    ("repetir", Json::Bool(false)),
+                ]),
+            );
+            return;
+        };
+
+        let id_pedido = pedido
+            .cabecalho("x-sessao")
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        let (mut sessao, mut id_sessao) = self.sessao_do_cabecalho(&id_pedido, ip, agora);
+
+        // O pedido: o caminho manda a operacao, o corpo traz o resto, o
+        // `config.json` estreita, e so entao o `despachar` decide.
+        let montado = crate::rest::pedido_do_corpo(op, &pedido.corpo).and_then(|mut p| {
+            p.definir("token", Json::texto_de(&token_do_pedido));
+            crate::rest::estreitar(&self.config.rest, &mut p)?;
+            Ok(p)
+        });
+
+        let (op_atendida, resultado) = match montado {
+            Err(e) => (op.to_string(), Err(e)),
+            Ok(p) => {
+                let linha = p.escrever();
+                let (o, _, r) = self.despachar(&linha, &mut sessao, ip);
+                (o, r)
+            }
+        };
+        let ms = inicio.elapsed().as_millis() as u64;
+        self.telemetria.contar_pedido(
+            OPS_ESCRITA.contains(&op_atendida.as_str()),
+            resultado.is_ok(),
+        );
+
+        // Um desafio em aberto so e consumido por um login -- a mesma regra do
+        // `/api`, e pelo mesmo motivo: um pedido no meio do caminho devolveria
+        // o nonce para a sessao em vez de derrubar a prova.
+        if op != "login" && op != "desafio" {
+            if let (Ok(mut vivas), Some(d)) = (self.sessoes.lock(), sessao.desafio.clone()) {
+                vivas.guardar_desafio(&id_sessao, d);
+            }
+        }
+        if resultado.is_ok() {
+            self.acertar_sessao(op, &sessao, &mut id_sessao, agora);
+        }
+
+        let (codigo_http, mut campos) = match &resultado {
+            Ok(valor) => (
+                200,
+                vec![
+                    ("ok", Json::Bool(true)),
+                    ("op", Json::texto_de(&op_atendida)),
+                    ("resultado", valor.clone()),
+                    ("ms", Json::de_u64(ms)),
+                ],
+            ),
+            Err(e) => (
+                // 401 e 403 querem dizer coisas diferentes, e o cliente HTTP
+                // trata cada uma de um jeito: 401 e «a PORTA nao abriu, mande
+                // credencial»; 403 e «voce entrou e nao pode isso». Quando o
+                // token do protocolo nao confere, a recusa e da porta -- e sem
+                // esta linha ela saia 403, porque o `despachar` usa o mesmo
+                // tipo de erro para as duas coisas.
+                //
+                // Quem DECIDE continua sendo o `despachar`: o pedido foi
+                // despachado e recusado por ele. Isto so escolhe o numero, e
+                // nao dispensa portao nenhum.
+                if !self.config.token_confere(&token_do_pedido)
+                    && matches!(e, PhxError::Autorizacao(_))
+                {
+                    401
+                } else {
+                    crate::rest::status_do_erro(e)
+                },
+                vec![
+                    ("ok", Json::Bool(false)),
+                    ("op", Json::texto_de(&op_atendida)),
+                    ("erro", Json::texto_de(self.texto_do_erro(e))),
+                    ("codigo", Json::de_u64(e.codigo() as u64)),
+                    ("nome", Json::texto_de(e.nome())),
+                    ("classe", Json::texto_de(e.classe())),
+                    ("repetir", Json::Bool(e.adianta_repetir())),
+                    ("ms", Json::de_u64(ms)),
+                ],
+            ),
+        };
+        if !id_sessao.is_empty() {
+            campos.push(("sessao", Json::texto_de(&id_sessao)));
+        }
+
+        let alvo = objeto_do_pedido(&pedido.corpo, &resultado);
+        self.anotar(&Acesso {
+            quando_ms: agora,
+            ip: ip.to_string(),
+            porta_origem: porta,
+            op: op_atendida,
+            usuario: sessao.login().to_string(),
+            autenticado: sessao.usuario.is_some(),
+            ok: resultado.is_ok(),
+            duracao_ms: ms,
+            erro: resultado.as_ref().err().map(|e| e.to_string()),
+            database: alvo.database,
+            tabela: alvo.tabela,
+            codigo: resultado.as_ref().err().map(|e| e.codigo()).unwrap_or(0),
+        });
+        let _ = http::responder_json(fluxo, codigo_http, &Json::objeto(campos));
     }
 
     /// Abre uma conexao para outro PhxSql e manda o login por ela.
@@ -4285,6 +4745,84 @@ impl Servidor {
         }
     }
 
+    /// A sessao que um cabecalho `X-Sessao` reconstroi.
+    ///
+    /// # Por que ela nao mora dentro do `/api`
+    ///
+    /// Porque ha DOIS caminhos HTTP agora -- a interface web e o webservice
+    /// REST -- e os dois precisam da mesma memoria de quem entrou. Uma copia
+    /// em cada lugar seria duas ideias do que e estar logado, e a que alguem
+    /// esquecesse de atualizar viraria a porta dos fundos: e a mesma razao
+    /// pela qual o portao de permissao e um so.
+    ///
+    /// Devolve a sessao reconstruida e o identificador que continua valendo
+    /// (vazio quando o cabecalho veio vazio, errado ou vencido).
+    fn sessao_do_cabecalho(&self, id_pedido: &str, ip: &str, agora: i64) -> (Sessao, String) {
+        let duracao = self.config.web.sessao_ms();
+        let mut sessao = Sessao {
+            ip: ip.to_string(),
+            ..Sessao::default()
+        };
+        let mut id_sessao = String::new();
+        if !id_pedido.is_empty() {
+            if let Ok(mut vivas) = self.sessoes.lock() {
+                if let Some(login) = vivas.usar(id_pedido, duracao, agora) {
+                    id_sessao = id_pedido.to_string();
+                    sessao.desafio = vivas.tomar_desafio(id_pedido);
+                    if !login.is_empty() {
+                        sessao.usuario = self
+                            .config
+                            .cadastro
+                            .por_login(&login)
+                            .filter(|u| u.ativo)
+                            .cloned();
+                    }
+                }
+            }
+        }
+        (sessao, id_sessao)
+    }
+
+    /// Acerta a sessao web depois de um despacho que deu certo.
+    ///
+    /// Tres operacoes mexem nela e nenhuma outra: o `desafio` cria a sessao
+    /// anonima que carrega o nonce, o `login` lhe da nome, e o `sair` a
+    /// encerra. Esta funcao e chamada pelos DOIS caminhos HTTP -- ver
+    /// `sessao_do_cabecalho` para o motivo de nao haver duas copias.
+    fn acertar_sessao(&self, op: &str, sessao: &Sessao, id_sessao: &mut String, agora: i64) {
+        let duracao = self.config.web.sessao_ms();
+        match op {
+            "desafio" => {
+                if let (Ok(mut vivas), Some(d)) = (self.sessoes.lock(), sessao.desafio.clone()) {
+                    // O desafio vem antes da identidade: a sessao nasce
+                    // anonima so para carregar o nonce ate o login.
+                    if id_sessao.is_empty() {
+                        *id_sessao = vivas.nova("", duracao, agora);
+                    }
+                    vivas.guardar_desafio(id_sessao, d);
+                }
+            }
+            "login" => {
+                if let Ok(mut vivas) = self.sessoes.lock() {
+                    let login = sessao.login().to_string();
+                    if id_sessao.is_empty() || !vivas.definir_login(id_sessao, &login) {
+                        *id_sessao = vivas.nova(&login, duracao, agora);
+                    }
+                }
+            }
+            "sair" => {
+                if let Ok(mut vivas) = self.sessoes.lock() {
+                    vivas.encerrar(id_sessao);
+                }
+                if let Ok(mut r) = self.remotos.lock() {
+                    r.remove(id_sessao.as_str());
+                }
+                id_sessao.clear();
+            }
+            _ => {}
+        }
+    }
+
     /// O `/api`: o mesmo protocolo da porta 5000, um pedido por vez.
     ///
     /// A diferenca esta na identidade. Em TCP a conexao lembra quem entrou; em
@@ -4301,29 +4839,7 @@ impl Servidor {
             .trim()
             .to_string();
 
-        // Reconstroi, a partir da sessao, o mesmo estado que a conexao TCP
-        // teria: quem esta logado, que desafio esta em aberto, e de onde veio.
-        let mut sessao = Sessao {
-            ip: ip.to_string(),
-            ..Sessao::default()
-        };
-        let mut id_sessao = String::new();
-        if !id_pedido.is_empty() {
-            if let Ok(mut vivas) = self.sessoes.lock() {
-                if let Some(login) = vivas.usar(&id_pedido, duracao, agora) {
-                    id_sessao = id_pedido.clone();
-                    sessao.desafio = vivas.tomar_desafio(&id_pedido);
-                    if !login.is_empty() {
-                        sessao.usuario = self
-                            .config
-                            .cadastro
-                            .por_login(&login)
-                            .filter(|u| u.ativo)
-                            .cloned();
-                    }
-                }
-            }
-        }
+        let (mut sessao, mut id_sessao) = self.sessao_do_cabecalho(&id_pedido, ip, agora);
 
         // Abrir conexao para outro PhxSql, se o login pediu um servidor.
         //
@@ -4458,37 +4974,7 @@ impl Servidor {
 
         // Depois do despacho, acerta a sessao conforme o que aconteceu.
         if resultado.is_ok() && !remota {
-            match op.as_str() {
-                "desafio" => {
-                    if let (Ok(mut vivas), Some(d)) = (self.sessoes.lock(), sessao.desafio.clone())
-                    {
-                        // O desafio vem antes da identidade: a sessao nasce
-                        // anonima so para carregar o nonce ate o login.
-                        if id_sessao.is_empty() {
-                            id_sessao = vivas.nova("", duracao, agora);
-                        }
-                        vivas.guardar_desafio(&id_sessao, d);
-                    }
-                }
-                "login" => {
-                    if let Ok(mut vivas) = self.sessoes.lock() {
-                        let login = sessao.login().to_string();
-                        if id_sessao.is_empty() || !vivas.definir_login(&id_sessao, &login) {
-                            id_sessao = vivas.nova(&login, duracao, agora);
-                        }
-                    }
-                }
-                "sair" => {
-                    if let Ok(mut vivas) = self.sessoes.lock() {
-                        vivas.encerrar(&id_sessao);
-                    }
-                    if let Ok(mut r) = self.remotos.lock() {
-                        r.remove(&id_sessao);
-                    }
-                    id_sessao.clear();
-                }
-                _ => {}
-            }
+            self.acertar_sessao(&op, &sessao, &mut id_sessao, agora);
         }
 
         let mut campos = match &resultado {

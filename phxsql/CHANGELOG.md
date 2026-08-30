@@ -114,10 +114,12 @@ rodada não reescreveu motor — **expôs o que existe** por uma ABI de C.
 ---
 
 ## Não lançado — o terreno das transações, e o desenho delas
+## Não lançado — o webservice REST, e o terreno das transações
 
-O pedido é *transações*. Esta rodada entregou o **pré-requisito** e o
-**desenho escrito antes do código** — e não meia transação, que é o que a
-pressa produziria.
+Duas frentes. O **webservice REST com OpenAPI** (pedido 149) entrou inteiro,
+com a especificação saindo da tabela de despacho em vez da mão. E o pedido de
+*transações* recebeu o **pré-requisito** e o **desenho escrito antes do
+código** — e não meia transação, que é o que a pressa produziria.
 
 ### Corrigido
 
@@ -140,7 +142,118 @@ pressa produziria.
   nomeado: o pedido culpado falha dizendo o que houve, e o servidor continua
   atendendo.
 
+- **A recusa por lista negra era engolida por um `RST` e virava «connection
+  reset».** Cinco tokens errados bloqueiam o IP — certo. O pedido seguinte
+  devia trazer o `403` com o motivo e o prazo; trazia
+  `ConnectionResetError: [Errno 104]`. A causa é do TCP: fechar um soquete com
+  bytes por ler no buffer de recepção faz o sistema mandar um RST, e o RST
+  **descarta a resposta em voo**. As recusas por bloqueio e por IP fora dos
+  permitidos respondem **antes** de ler o pedido, de propósito — e é por isso
+  que o corpo fica sem ler. Valia para **todas** as portas HTTP, e valia desde
+  que a interface web existe: a recusa cuidadosamente redigida e traduzida
+  nunca chegava em quem mais precisava dela. Consertado com `http::escoar`,
+  com prazo curto e teto igual ao de um pedido legítimo. Achado pela bancada,
+  não por leitura — e nenhum teste de unidade sente isto, nem poderia; a guarda
+  está no catálogo marcada REDUNDANTE, com o motivo escrito e o passo do
+  soquete que a cobre. `docs/REST.md` §9.
+
 ### Adicionado
+
+- **O webservice REST com OpenAPI, e o visualizador da especificação** —
+  pedido 149, `docs/REST.md`. `POST /v1/<operação>` para as **113 operações**
+  do protocolo, `GET /openapi.json` para a especificação, e um explorador na
+  porta ao lado.
+
+  **A especificação sai da tabela de despacho**, e essa é a decisão que
+  sustenta o resto: uma spec digitada à mão envelheceria na primeira operação
+  nova e passaria a **mentir com aparência de documento oficial**. Ela é
+  gerada de `catalogo::OPERACOES` — que já é travado contra o `match` do
+  `despachar` — e há **duas guardas, uma para cada lado do laço**: operação
+  que existe e a spec não documenta reprova; rota documentada que o servidor
+  não atende reprova. Mais a terceira, por soquete, percorrendo as 113 rotas
+  que o servidor **serviu**.
+
+  **Não há um segundo caminho de dados.** Toda rota passa pelo mesmo
+  `despachar`, com os mesmos portões. As duas metades da sessão HTTP saíram de
+  dentro do `/api` (`sessao_do_cabecalho` e `acertar_sessao`) e são chamadas
+  pelos dois caminhos: duas cópias seriam duas ideias do que é estar logado.
+
+  **As duas portas nascem desligadas** — 6000 o serviço, 7000 as docs —, e
+  são duas de propósito: quem sobe numa placa quer o REST sem o visualizador.
+  O teste que mais importa é o do comportamento velho, e ele existe em dois
+  níveis: `config_sem_a_secao_rest_nao_escuta` no unitário, e o passo 1 da
+  bancada com um `config.json` em que a palavra `rest` não aparece, provando
+  contra o sistema operacional que as portas de fábrica estão **fechadas**.
+
+- **O explorador da especificação, escrito aqui em vez do Swagger UI** — e a
+  escolha saiu de número medido, não de gosto. Baixando o `swagger-ui-dist`
+  5.17.14 de verdade e compilando com ele dentro: o binário vai de
+  **7.296.144** para **8.900.968 bytes (+1.604.824, +22,0%)** com o mínimo
+  funcional, e para **9.131.896 (+25,2%)** com o preset junto. Apontar para
+  CDN custaria zero byte e **quebraria o uso offline**, que é justamente o
+  caso do IoT. Este explorador são **13.629 bytes** — 118× menor —, faz busca,
+  mostra parâmetros com tipo e obrigatoriedade, marca quem grava e monta o
+  `curl` pronto. **Sem «Try it out»**: um console executável exigiria abrir
+  CORS da porta REST para esta origem, e isso é folga de segurança que ninguém
+  pediu. Foi a medição que dispensou uma *feature* de compilação: a 1,53 MiB
+  ela seria obrigatória, a 13,3 KiB não se paga.
+
+- **A seção `rest` do `config.json` e a tela dela**, com o que o dono pediu:
+  nome do serviço, qual banco, quais tabelas e qual token. `database` e
+  `tabelas` **só ESTREITAM** — aplicados **antes** do portão e nunca no lugar
+  dele. Tabela fora da lista **não existe** para o REST (responde como
+  inexistente, sem vazar que existe); tabela dentro da lista continua passando
+  pelo direito do usuário **exatamente como hoje**. Dois testes, porque são
+  dois erros opostos: `tabela_fora_da_lista_nao_aparece` e
+  `tabela_na_lista_ainda_pede_direito_do_usuario` — o segundo é o que mais
+  importa, e é o mesmo padrão do `sem_regra_de_tabela_nada_muda`.
+
+  E a varredura das tabelas é **estrutural**, não por campo: ela desce a árvore
+  do pedido inteira atrás de `tabela`, `tabelas` e `tabela_ref`. Sem isso,
+  pedir a tabela escondida como o **lado B de uma junção** seria a porta dos
+  fundos — literalmente o furo que esta casa já pagou quatro vezes.
+
+- **`rest.token`, e a resposta de por que ele existe.** Vazio (o padrão) é o
+  **mesmo token do protocolo** — um segredo só. Preenchido, **só ele** abre o
+  REST, e o token do protocolo deixa de abrir esta porta: serve para entregar
+  uma credencial de webservice sem entregar o token mestre, e para revogá-la
+  sem tocar em cliente nenhum da porta 5000. Ele **não é identidade e não é
+  poder** — é a chave da porta, e quem entra continua sendo quem faz `login`.
+  E ele **não se edita pela tela**, pelo mesmo motivo que já mantinha `token`
+  fora: campo que carrega credencial se edita no arquivo. A tela diz **se
+  existe um**; nunca qual é.
+
+- **`bancada/rest/provar.py`** — 57 passos por soquete, com um cliente HTTP
+  escrito na hora porque `urllib` esconde justamente o que precisa ser provado
+  (ele segue redirecionamento, decide sozinho o que fazer com 401 e levanta
+  exceção em vez de devolver o código — e o código **é** o resultado).
+
+- **`bancada/rest/arm.sh`** — o mesmo REST sob `qemu-aarch64-static`, porque
+  «compilou» não é «atendeu um pedido»: 113 rotas geradas na placa emulada,
+  RSS 12,8 MB, e o portão continuando a fechar.
+
+- **`testes-web/prova-rest.mjs`** — a seção nova exercitada no navegador, que
+  é a única forma de achar o que o CSS global faz com componente novo. O
+  `<textarea>` da lista de tabelas mediu **260×66px**: nem esmagado a uma
+  linha, nem esticado pelo `input{width:100%}` global.
+
+- **40 chaves novas na `FABRICA_TELA`**, nos seis idiomas: os rótulos e as
+  explicações da seção nova, e todo o texto do explorador. Ele lê `/idiomas` —
+  a **mesma** resposta da interface web — e por isso trocar de idioma nele
+  funciona sem uma segunda tabela de rótulos. A catraca do `conferidor.rs`
+  **não subiu**: continua em 1.996. E a guarda `a_lista_cobre_tudo_que_o_http_serve`
+  passou a ler os **dois** módulos que embutem tela, porque o `rest.rs` virou o
+  segundo — uma guarda que continuasse lendo só o `http.rs` deixaria a tela
+  nova fora da conta, que é exatamente o defeito que ela existe para não
+  repetir.
+
+- **Seis guardas novas no catálogo** (43 no total), cinco PROVADAS e uma
+  declarada REDUNDANTE com o motivo medido.
+
+- **`TipoDoCampo::Lista`**, o primeiro campo de lista que a tela grava. O tipo
+  recusa o que não for lista de textos: sem isso, gravar
+  `"rest.tabelas": "clientes"` passaria, o leitor cairia em vazio calado — e
+  vazio, ali, quer dizer **expõe tudo**.
 
 - **`docs/TRANSACOES.md`** — o desenho, com os seis pontos respondidos:
   escopo (uma conexão, um database; a web fora, e por quê), o rollback de um
@@ -185,6 +298,23 @@ pressa produziria.
 
 - ***ACID compliant* continua falso.** Sem transação não há o **A** nem o
   **I**.
+
+- **O REST não tem TLS**, e isso não é pendência escondida: é a mesma decisão
+  da §7 do `SEGURANCA.md`. `Bearer` sobre HTTP em claro entrega o token a quem
+  escuta o fio, em todo pedido. A saída é um proxy que termine TLS à frente,
+  ou um túnel — e a frase está escrita no documento, na especificação e na
+  tela, em vez de escondida.
+
+- **Não há CORS, nem `GET` para leitura, nem «Try it out» no explorador.** As
+  três ausências são decisão, com o motivo em `docs/REST.md` §10.
+
+- **macOS continua sem alvo.** O caminho do REST não tem nada de específico de
+  plataforma, mas o SDK da Apple só existe em macOS: expectativa não é
+  medição, e esta casa não escreve «entregue» para o que ninguém executou.
+
+- **Android e iOS não são caso de webservice**, e a razão é do sistema, não
+  nossa: o iOS proíbe app escutando porta para outros apps, e o Android mata
+  processo em segundo plano. Lá o caminho é o `phxsql-ffi`, de outra frente.
 
 ### Medido
 

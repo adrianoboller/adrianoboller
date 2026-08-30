@@ -61,6 +61,8 @@ pub const FONTES: &[(&str, &str)] = &[
         "ui/grid/phx-grid.js",
         include_str!("../ui/grid/phx-grid.js"),
     ),
+    ("ui/explorador.html", include_str!("../ui/explorador.html")),
+    ("ui/explorador.js", include_str!("../ui/explorador.js")),
 ];
 
 /// Marcador que ocupa o lugar do que foi retirado antes da varredura: um
@@ -1073,23 +1075,32 @@ mod testes {
     /// medir errado.
     #[test]
     fn a_lista_cobre_tudo_que_o_http_serve() {
-        const HTTP: &str = include_str!("http.rs");
+        // Os modulos que EMBUTEM tela. Era um so; o `rest.rs` virou o segundo
+        // quando o explorador da API entrou, e uma guarda que continuasse
+        // lendo so o `http.rs` deixaria a tela nova fora da catraca --
+        // exatamente o defeito que ela existe para nao repetir.
+        const SERVEM_TELA: &[&str] = &[include_str!("http.rs"), include_str!("rest.rs")];
 
-        let servidos: Vec<&str> = HTTP
-            .match_indices("include_str!(\"../ui/")
-            .filter_map(|(i, _)| {
-                let resto = &HTTP[i + "include_str!(\"".len()..];
-                let fim = resto.find('"')?;
-                let caminho = &resto[..fim];
-                // O `.md` do changelog da grade e servido, mas nao e tela.
-                (caminho.ends_with(".js") || caminho.ends_with(".html")).then_some(caminho)
+        let servidos: Vec<&str> = SERVEM_TELA
+            .iter()
+            .flat_map(|fonte| {
+                fonte
+                    .match_indices("include_str!(\"../ui/")
+                    .filter_map(|(i, _)| {
+                        let resto = &fonte[i + "include_str!(\"".len()..];
+                        let fim = resto.find('"')?;
+                        let caminho = &resto[..fim];
+                        // O `.md` do changelog da grade e servido, mas nao e tela.
+                        (caminho.ends_with(".js") || caminho.ends_with(".html")).then_some(caminho)
+                    })
+                    .collect::<Vec<&str>>()
             })
             .collect();
 
         assert!(
             !servidos.is_empty(),
-            "nao achei nenhum include_str! de interface no http.rs -- a guarda \
-             ficou cega, conserte o reconhecimento antes de confiar nela"
+            "nao achei nenhum include_str! de interface -- a guarda ficou \
+             cega, conserte o reconhecimento antes de confiar nela"
         );
 
         let medidos: HashSet<&str> = FONTES.iter().map(|(nome, _)| *nome).collect();
@@ -1101,7 +1112,7 @@ mod testes {
 
         assert!(
             faltando.is_empty(),
-            "o http.rs serve {faltando:?} e o FONTES nao mede -- texto cravado \
+            "o servidor serve {faltando:?} e o FONTES nao mede -- texto cravado \
              ali nao conta para a catraca. Acrescente ao FONTES e reveja o TETO"
         );
     }

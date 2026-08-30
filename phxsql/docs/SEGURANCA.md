@@ -336,6 +336,29 @@ E a lista de bloqueio é do **servidor**, não da porta: cinco tokens errados
 pelo navegador bloqueiam também a 5000, e `phxsqld --desbloquear` solta as
 duas. Todo pedido pela web entra no `acessos.log` com IP, data e hora.
 
+### A recusa que não chegava — achado da bancada do REST
+
+Até esta rodada, **quem estava na lista de bloqueio recebia `connection reset`
+em vez do 403 com o motivo e o prazo**. O servidor escrevia a recusa; o sistema
+operacional a descartava.
+
+A causa é do TCP, e não do PhxSql: as recusas por bloqueio e por IP fora dos
+permitidos respondem **antes de ler o pedido**, de propósito — e fechar um
+soquete que ainda tem bytes por ler no buffer de recepção faz o sistema mandar
+um **RST**, que descarta a resposta em voo.
+
+Valia para **todas** as portas HTTP, e desde que a interface web existe. O
+conserto é `http::escoar`: lê e descarta o que o cliente ainda estava mandando
+antes de fechar, com prazo curto e teto igual ao de um pedido legítimo —
+escoar não dá a quem foi barrado o direito de fazer o servidor ler mais do que
+ele já leria de qualquer um.
+
+**Nenhum teste de unidade sente isto, e nenhum poderia**: o RST é do sistema
+operacional. Quem pega é o passo 13 de `bancada/rest/provar.py`, e a entrada
+`rest-fecha-sem-escoar` do catálogo das guardas está marcada REDUNDANTE com
+esse motivo escrito. É a mesma lição do `BULKINSERT`: teste unitário não prova
+queda de conexão, soquete prova.
+
 ### O que ela não faz
 
 Não serve arquivo do disco, não lista diretório e não interpreta caminho. Há
@@ -350,6 +373,22 @@ exceção para host nenhum.
 
 Tetos de tamanho: 16 KB de cabeçalho, 4 MB de corpo. Pedido maior é recusado
 antes de virar memória.
+
+### As outras duas portas HTTP
+
+Desde o pedido 149 há mais duas, e as duas seguem o desenho desta seção: vêm
+**desligadas**, escutam só em `127.0.0.1` de fábrica, entram na mesma conta de
+colisão de endereço e passam pelos mesmos portões — porque é o mesmo
+`despachar`.
+
+- **6000, o webservice REST.** O `Bearer` é o token que já existe (ou o
+  `rest.token`, quando há um), e a identidade continua saindo do `login`.
+  Nenhuma credencial nova foi inventada.
+- **7000, o explorador da especificação.** Ela **não despacha operação
+  nenhuma** — só mostra o `openapi.json` — e responde `405` a quem tentar.
+
+O limite do `Bearer` em claro é o da §7, e está escrito em `docs/REST.md` §4,
+na própria especificação e na tela, em vez de escondido.
 
 ### A senha, de novo
 

@@ -1839,4 +1839,181 @@ pub fn limpar() {
             "conferidor::testes::o_miolo_tira_os_marcadores",
         ],
     },
+    {
+        "id": "rest-operacao-sem-documento",
+        "titulo": "operação nova no despachar que a especificação OpenAPI não documenta",
+        "porque": (
+            "a regra desta casa: quando um gerador depende de uma lista, a "
+            "lista tem de sair do codigo. Uma especificacao que nao cobre "
+            "tudo mente por omissao -- e mente com aparencia de documento "
+            "oficial, que e pior que nao ter documento."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            "verificar" => self.op_verificar(p, sessao),
+""",
+        "troca": """            // DEFEITO REPOSTO: operacao nova no despachar, e nada a documenta.
+            "verificar" | "operacao_nova_sem_documento" => self.op_verificar(p, sessao),
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "rest::testes::toda_operacao_do_despachar_esta_na_especificacao",
+            "catalogo::testes::o_catalogo_e_o_despachar_sao_a_mesma_lista",
+        ],
+        "seguem": [
+            "rest::testes::toda_rota_da_especificacao_existe_no_despachar",
+        ],
+    },
+    {
+        "id": "rest-rota-fantasma",
+        "titulo": "a especificação promete uma rota que o servidor não atende",
+        "porque": (
+            "e o outro lado do laco, e o pior dos dois: quem le acredita e "
+            "integra, e descobre em producao. E a mesma armadilha da chave "
+            "morta dos idiomas -- o tradutor traduz e nada muda na tela."
+        ),
+        "arquivo": "crates/phxsql-server/src/rest.rs",
+        "trecho": """    let caminhos: Vec<(String, Json)> = OPERACOES
+        .iter()
+        .map(|o| (caminho_da_operacao(o), operacao_openapi(o)))
+        .collect();
+""",
+        "troca": """    // DEFEITO REPOSTO: uma rota escrita a mao, que o servidor nao atende.
+    let mut caminhos: Vec<(String, Json)> = OPERACOES
+        .iter()
+        .map(|o| (caminho_da_operacao(o), operacao_openapi(o)))
+        .collect();
+    caminhos.push(("/exportar_para_o_sap".to_string(), Json::objeto(Vec::new())));
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "rest::testes::toda_rota_da_especificacao_existe_no_despachar",
+        ],
+        "seguem": [
+            "rest::testes::toda_operacao_do_despachar_esta_na_especificacao",
+            "rest::testes::a_especificacao_e_json_valido_e_tem_as_pecas_obrigatorias",
+        ],
+    },
+    {
+        "id": "rest-nasce-ligado",
+        "titulo": "o webservice REST passa a escutar numa atualização, sem ninguém pedir",
+        "porque": (
+            "guarda nova entra PEDIDA, nao imposta -- e porta nova tambem. Um "
+            "servidor que ja roda hoje nao pode expor superficie de ataque so "
+            "porque alguem trocou o binario. O teste que mais importa e o do "
+            "comportamento velho."
+        ),
+        "arquivo": "crates/phxsql-server/src/config.rs",
+        "trecho": """        Rest {
+            ligado: false,
+""",
+        "troca": """        // DEFEITO REPOSTO: a secao ausente nasce ligada.
+        Rest {
+            ligado: true,
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "config::tests::config_sem_a_secao_rest_nao_escuta",
+        ],
+        "seguem": [
+            "config::tests::o_rest_liga_sem_o_explorador",
+            "config::tests::o_token_do_rest_nao_sai_nem_entra_pela_tela",
+        ],
+    },
+    {
+        "id": "rest-corpo-manda-no-caminho",
+        "titulo": "o corpo do pedido REST troca a operação do caminho, em silêncio",
+        "porque": (
+            "o caminho e o que o operador ve no log do proxy e nas regras do "
+            "firewall. Deixar o corpo mandar faz um `POST /v1/ping` ser um "
+            "`excluir` no servidor e continuar um `ping` em tudo o que "
+            "observa de fora."
+        ),
+        "arquivo": "crates/phxsql-server/src/rest.rs",
+        "trecho": """    match pedido.campo("op").and_then(Json::texto) {
+        Some(outro) if outro != op => {
+            return Err(PhxError::Esquema(format!(
+                "o caminho pede a operacao {op:?} e o corpo traz \\"op\\":{outro:?}; \\
+                 no REST quem manda e o caminho -- tire o campo do corpo"
+            )));
+        }
+        _ => {}
+    }
+""",
+        "troca": """    // DEFEITO REPOSTO: o corpo discordante e ignorado em vez de recusado.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "rest::testes::corpo_com_outra_operacao_e_recusado",
+        ],
+        "seguem": [
+            "rest::testes::corpo_vazio_vale_como_objeto_vazio",
+            "rest::testes::corpo_que_nao_e_objeto_e_recusado",
+        ],
+    },
+    {
+        "id": "rest-filtro-so-o-campo-tabela",
+        "titulo": "o filtro de tabelas do REST olha só o campo `tabela` — e a junção é a porta dos fundos",
+        "porque": (
+            "e literalmente o furo que a casa ja pagou quatro vezes: o portao "
+            "passou a olhar um campo novo e havia operacao sem esse campo. "
+            "`juntar` guarda em `a.tabela`/`b.tabela` e `unir` numa lista, "
+            "entao bastaria pedir a tabela escondida como o lado B."
+        ),
+        "arquivo": "crates/phxsql-server/src/rest.rs",
+        "trecho": """    for nome in tabelas_citadas(pedido) {
+""",
+        "troca": """    // DEFEITO REPOSTO: so o campo `tabela` do primeiro nivel.
+    for nome in pedido
+        .campo("tabela")
+        .and_then(Json::texto)
+        .map(str::to_string)
+        .into_iter()
+    {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "rest::testes::a_lista_pega_a_tabela_escondida_na_juncao_e_na_uniao",
+        ],
+        "seguem": [
+            "rest::testes::tabela_fora_da_lista_nao_aparece",
+            "rest::testes::sem_lista_de_tabelas_nada_muda",
+        ],
+    },
+    {
+        "id": "rest-fecha-sem-escoar",
+        "titulo": "a recusa por lista negra é engolida por um RST, e quem foi barrado vê «connection reset»",
+        "porque": (
+            "achado da bancada do REST no primeiro dia. Fechar um soquete com "
+            "bytes por ler faz o sistema mandar RST, e o RST descarta a "
+            "resposta em voo: a recusa com o motivo e o prazo nunca chegava em "
+            "quem mais precisava dela. Vale para as tres portas HTTP, e valia "
+            "desde que a interface web existe."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            let _ = http::erro_json(fluxo, 403, &self.recado_de_bloqueio(&b));
+            http::escoar(fluxo);
+""",
+        "troca": """            // DEFEITO REPOSTO: fecha sem escoar, e o RST engole a recusa.
+            let _ = http::erro_json(fluxo, 403, &self.recado_de_bloqueio(&b));
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [],
+        "espera": "nada muda",
+        "nota_da_redundancia": (
+            "confirmado: nenhum teste de unidade sente isto, e nao poderia -- "
+            "o RST e do sistema operacional, e so aparece com um soquete de "
+            "verdade. Quem pega e o passo 13 de `bancada/rest/provar.py`, e "
+            "esta entrada existe para dizer, com o numero da rodada, que a "
+            "cobertura mora la e nao aqui"
+        ),
+        "seguem": [
+            "rest::testes::o_status_http_sai_da_faixa_do_codigo",
+        ],
+    },
 ]
