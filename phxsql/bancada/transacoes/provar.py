@@ -441,9 +441,13 @@ def main():
            f"{total} (antes {antes_do_commit})")
 
     # E o que NUNCA pode acontecer, dito como asserção propria: metade.
+    # O detalhe conta o FATO, e nao a negacao: o `ok()` imprime esta string
+    # tambem quando passa, e «3001 nao e nem 1 nem 3001» ao lado de um OK faz
+    # quem le a bateria parar e desconfiar de um teste que esta certo.
     ok("em nenhum caso a transacao ficou pela METADE",
        total in (antes_do_commit, antes_do_commit + 3000),
-       f"{total} nao e nem {antes_do_commit} nem {antes_do_commit + 3000}")
+       f"{total}, e os unicos desfechos validos eram "
+       f"{antes_do_commit} ou {antes_do_commit + 3000}")
     ok("a marca sumiu depois da recuperacao", not marcas(), f"{marcas()}")
 
     # Reabrir de novo nao pode duplicar nada -- a recuperacao e idempotente.
@@ -457,8 +461,9 @@ def main():
     subir()
     esperar_porta(PORTA)
     h = Ligacao()
-    ok("reabrir de novo nao duplica nem perde", quantas(h, "pedidos") == total,
-       f"{quantas(h, 'pedidos')} != {total}")
+    de_novo = quantas(h, "pedidos")
+    ok("reabrir de novo nao duplica nem perde", de_novo == total,
+       f"{de_novo}, o mesmo de antes ({total})")
 
     print("\n== 9. o comportamento velho continua velho depois de tudo ==")
     r = h.fala({"op": "inserir", "database": "loja", "tabela": "clientes",
