@@ -194,7 +194,7 @@ cargo metadata --offline --format-version 1   # 7 pacotes no grafo, os 7 deste
                                               # repositório, 0 com "source"
 ```
 
-O `Cargo.lock` inteiro cabe em 30 linhas e não cita registro nem git. A prova
+O `Cargo.lock` inteiro cabe em 53 linhas e não cita registro nem git. A prova
 que vale é a do diretório limpo, que é o que o dono vai fazer:
 
 ```bash

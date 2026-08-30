@@ -220,9 +220,16 @@ monta() {
 #     aqui: nao existe uma segunda implementacao de senha neste projeto.
 demonstracao() {
   local dir=$1 rotulo=$2 sufixo=$3
-  local hash
+  local hash comandos
   garante_host
   hash=$(echo "demo" | ./target/release/phxsqld --senha | sed 's/.*: "//;s/"//')
+
+  # A quantidade de comandos do phxsql sai da PROPRIA ajuda do binario que
+  # esta sendo empacotado. Estava escrita a mao no COMECE-AQUI: dizia 10
+  # quando eram 13, e ninguem conferiu porque quem le o texto nao conta a
+  # lista. Numero digitado a mao envelhece calado, inclusive num arquivo-leia.
+  cargo build --release --offline -p phxsql-cli --bin phxsql
+  comandos=$(./target/release/phxsql | grep -cE '^  phxsql ')
 
   mkdir -p "$dir/demonstracao"
   # O campo e "sessao_minutos". Ele ja saiu daqui escrito "sessao_min", que o
@@ -308,7 +315,7 @@ tambem estao prontos em exemplos\\: 01 isolado, 02 source, 03 replica.
 Os tres programas:
 
        phxsqld.exe    o servidor
-       phxsql.exe     a linha de comando (11 comandos; rode sem argumentos)
+       phxsql.exe     a linha de comando ($comandos comandos; rode sem argumentos)
        phxsqlcmd.exe  o console interativo: conecta no servidor e /help
                       lista todos os comandos, /help <comando> detalha um
                       (docs\\CONSOLE.md)
@@ -376,7 +383,7 @@ tambem estao prontos em exemplos/: 01 isolado, 02 source, 03 replica.
 Os tres programas:
 
        phxsqld    o servidor
-       phxsql     a linha de comando (11 comandos; rode sem argumentos)
+       phxsql     a linha de comando ($comandos comandos; rode sem argumentos)
        phxsqlcmd  o console interativo: conecta no servidor e /help lista
                   todos os comandos, /help <comando> detalha um
                   (docs/CONSOLE.md)

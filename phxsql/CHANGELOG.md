@@ -89,7 +89,7 @@ mesmo padrão do vídeo de demonstração, por outro caminho.
 - **Zero dependências externas continua verdade depois desta rodada.**
   `cargo metadata --offline` dá **7 pacotes no grafo, os 7 deste repositório,
   0 com `source`** — nenhum de registro, nenhum de git. O `Cargo.lock` inteiro
-  cabe em 30 linhas.
+  cabe em 53 linhas.
 
 - **O teste que o dono vai fazer.** Zip de fontes extraído num diretório limpo
   fora da árvore, `CARGO_HOME` vazio (zero entradas), `CARGO_NET_OFFLINE=true`

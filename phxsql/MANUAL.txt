@@ -74,7 +74,7 @@ Bancos e schemas sao diretorios:
 --------------------------------------------------------------------------------
     phxsql        ferramenta de linha de comando
     phxsqld       servidor TCP (porta 5000) e Centro de Controle web
-                  (porta 8080, desligado por padrao)
+                  (porta 5001, desligado por padrao)
     phxsqlcmd     console interativo: fala o protocolo com um servidor
     libphxsql_odbc.so     driver ODBC 3.x (no Windows, phxsql_odbc.dll)
 
