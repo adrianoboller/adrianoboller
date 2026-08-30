@@ -1508,4 +1508,239 @@ GUARDAS = [
             "paginada_reescreve_cada_volume_e_preserva_a_ordem",
         ],
     },
+    # -----------------------------------------------------------------------
+    # 38 a 43. A fronteira de C do PhxSql embutido (crates/phxsql-ffi)
+    #
+    # Uma ABI e o unico lugar da casa em que um defeito nao vira teste
+    # vermelho: vira o aplicativo do cliente fechando sozinho, sem log. Por
+    # isso as seis entradas abaixo -- e a primeira delas e a unica de toda esta
+    # lista, junto com a `cadeia-sem-teto`, que espera ABORTO em vez de falha:
+    # o tamanho do estrago E a prova.
+    # -----------------------------------------------------------------------
+    {
+        "id": "ffi-panico-atravessa",
+        "titulo": "o pânico atravessa a fronteira de C em vez de virar código de erro",
+        "porque": (
+            "docs/EMBUTIDO.md secao 3.1: um panic desenrolando a pilha para "
+            "dentro de um quadro de C e comportamento indefinido, e num "
+            "aplicativo de celular ele nao aparece como erro tratavel -- "
+            "aparece como o app fechando sozinho."
+        ),
+        "arquivo": "crates/phxsql-ffi/src/punho.rs",
+        "trecho": """    match catch_unwind(AssertUnwindSafe(|| f(&mut punho.dentro))) {
+        Ok(codigo) => codigo,
+        Err(carga) => {
+""",
+        "troca": """    // DEFEITO REPOSTO: sem o catch_unwind o panico sai por uma funcao
+    // `extern "C"`, e o processo aborta em vez de devolver PHX_ERRO_PANICO.
+    // O binario de teste inteiro cai junto -- e esse e o tamanho do estrago.
+    #[allow(clippy::unnecessary_wraps)]
+    fn sem_rede<R>(r: R) -> std::result::Result<R, Box<dyn std::any::Any + Send>> {
+        Ok(r)
+    }
+    match sem_rede(f(&mut punho.dentro)) {
+        Ok(codigo) => codigo,
+        Err(carga) => {
+""",
+        "pacote": "phxsql-ffi",
+        "alvo": ["--lib"],
+        "espera": "aborta",
+        "caem": [
+            "testes::panico_nao_atravessa_a_fronteira",
+            "testes::panico_envenena_o_punho_e_so_o_fechar_passa",
+        ],
+        "seguem": [],
+        "prazo": 300,
+    },
+    {
+        "id": "ffi-panico-nao-envenena",
+        "titulo": "o punho continua sendo usado depois de um pânico capturado",
+        "porque": (
+            "capturar o panico salva o processo e NAO conserta o objeto: um "
+            "panico no meio de um inserir pode ter deixado o .reg com o "
+            "cabecalho gravado e o payload nao. E a mesma licao do "
+            "`aplicar_evento`, que PARA quando a replica divergiu."
+        ),
+        "arquivo": "crates/phxsql-ffi/src/punho.rs",
+        "trecho": """            punho.envenenado = true;
+            anotar(
+                PHX_ERRO_PANICO,
+""",
+        "troca": """            // DEFEITO REPOSTO: o punho volta ao trabalho como se nada
+            // tivesse acontecido, sobre um objeto que pode estar pela metade.
+            anotar(
+                PHX_ERRO_PANICO,
+""",
+        "pacote": "phxsql-ffi",
+        "alvo": ["--lib"],
+        "caem": [
+            "testes::panico_envenena_o_punho_e_so_o_fechar_passa",
+        ],
+        "seguem": [
+            "testes::panico_nao_atravessa_a_fronteira",
+            "testes::ciclo_basico_grava_le_e_varre",
+        ],
+    },
+    {
+        "id": "ffi-texto-ate-o-byte-zero",
+        "titulo": "a fronteira trunca o dado do cliente no primeiro byte zero",
+        "porque": (
+            "docs/EMBUTIDO.md secao 3.5: dado de cliente TEM byte zero -- um "
+            "Bin e binario por definicao, um Memo colado de arquivo pode ter "
+            "\\0 no meio. Um NUL-terminado grava metade e nao avisa, que e a "
+            "pior classe de defeito: a que nao da erro."
+        ),
+        "arquivo": "crates/phxsql-ffi/src/texto.rs",
+        "trecho": """    Some(std::slice::from_raw_parts(p, tam))
+}
+""",
+        "troca": """    // DEFEITO REPOSTO: para no primeiro byte zero, como faria um strlen.
+    // O `tam` que o chamador deu vira teto em vez de verdade.
+    let cru = std::slice::from_raw_parts(p, tam);
+    let ate = cru.iter().position(|b| *b == 0).unwrap_or(tam);
+    Some(&cru[..ate])
+}
+""",
+        "pacote": "phxsql-ffi",
+        "alvo": ["--lib"],
+        # A replicacao cai JUNTO, e isso foi medido, nao suposto: a primeira
+        # versao desta entrada a listava em `seguem` e o executor devolveu
+        # ESTRAGOU. Faz sentido -- a imagem de um evento e payload cru do
+        # `.reg`, cheio de bytes zero, e ela entra pelo mesmo `bytes()`. O
+        # truncamento no byte zero nao quebra so o memo do usuario: quebra a
+        # sincronia inteira.
+        "caem": [
+            "testes::byte_zero_no_dado_do_cliente_sobrevive",
+            "testes::replicacao_de_ponta_a_ponta_pela_abi",
+        ],
+        "seguem": [
+            "testes::ciclo_basico_grava_le_e_varre",
+            "testes::cursor_atravessa_a_fronteira_do_lote",
+        ],
+    },
+    {
+        "id": "ffi-erro-global",
+        "titulo": "a mensagem de erro é global e uma thread lê o erro da outra",
+        "porque": (
+            "docs/EMBUTIDO.md secao 3.2: a vaga do ultimo erro e por thread "
+            "pelo mesmo motivo do `errno`. Global, duas threads escrevendo "
+            "fazem uma ler a mensagem da outra -- e o diagnostico passa a "
+            "apontar para o lugar errado justamente quando ha concorrencia."
+        ),
+        "arquivo": "crates/phxsql-ffi/src/erro.rs",
+        "trecho": """thread_local! {
+    /// A mensagem do ultimo erro DESTA thread.
+    static ULTIMO: RefCell<String> = const { RefCell::new(String::new()) };
+}
+
+/// Guarda a mensagem e devolve o codigo, para o chamador escrever
+/// `return anotar(...)` numa linha so.
+pub fn anotar(codigo: i32, mensagem: impl Into<String>) -> i32 {
+    let m = mensagem.into();
+    ULTIMO.with(|u| *u.borrow_mut() = m);
+    codigo
+}
+
+/// Traduz um erro do motor no codigo publico dele, guardando o texto.
+pub fn do_motor(e: &PhxError) -> i32 {
+    anotar(e.codigo() as i32, e.to_string())
+}
+
+/// O que `phx_ultimo_erro` entrega. Vazio quando nada falhou nesta thread.
+pub fn ultimo() -> String {
+    ULTIMO.with(|u| u.borrow().clone())
+}
+
+/// Limpa a vaga. Toda entrada da ABI comeca por aqui, para que uma mensagem
+/// velha nunca seja lida como se fosse do erro de agora.
+pub fn limpar() {
+    ULTIMO.with(|u| u.borrow_mut().clear());
+}
+""",
+        "troca": """// DEFEITO REPOSTO: uma vaga so para o processo inteiro, em vez de uma por
+// thread. Duas threads escrevendo nela fazem uma ler a mensagem da outra.
+static ULTIMO: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
+pub fn anotar(codigo: i32, mensagem: impl Into<String>) -> i32 {
+    *ULTIMO.lock().unwrap() = mensagem.into();
+    codigo
+}
+
+pub fn do_motor(e: &PhxError) -> i32 {
+    anotar(e.codigo() as i32, e.to_string())
+}
+
+pub fn ultimo() -> String {
+    ULTIMO.lock().unwrap().clone()
+}
+
+pub fn limpar() {
+    ULTIMO.lock().unwrap().clear();
+}
+""",
+        "pacote": "phxsql-ffi",
+        "alvo": ["--lib"],
+        "caem": [
+            "testes::ultimo_erro_e_por_thread",
+        ],
+        "seguem": [
+            "testes::ciclo_basico_grava_le_e_varre",
+        ],
+    },
+    {
+        "id": "ffi-rowid-fora-e-erro",
+        "titulo": "«não há essa linha» volta de duas formas diferentes conforme o motivo",
+        "porque": (
+            "achado pelo programa em C na PRIMEIRA rodada dele, e nao lendo o "
+            "codigo: dentro do motor um slot livre devolve Ok(None) e um rowid "
+            "alem do fim devolve NaoEncontrado. A diferenca e real la dentro e "
+            "invisivel para quem chama -- sem a dobra o aplicativo mostra "
+            "caixa vermelha para metade dos «nao achei»."
+        ),
+        "arquivo": "crates/phxsql-ffi/src/lib.rs",
+        "trecho": """        resultado_do_rowid(x.t.ler(rowid), |l| match l {""",
+        "troca": """        // DEFEITO REPOSTO: o NaoEncontrado do motor atravessa como erro 3001.
+        resultado(x.t.ler(rowid), |l| match l {""",
+        "pacote": "phxsql-ffi",
+        "alvo": ["--lib"],
+        "caem": [
+            "testes::rowid_que_nao_existe_e_sempre_nao_ha_seja_qual_for_o_motivo",
+        ],
+        "seguem": [
+            "testes::ciclo_basico_grava_le_e_varre",
+        ],
+    },
+    {
+        "id": "ffi-cursor-para-no-lote",
+        "titulo": "o cursor entrega só o primeiro lote e diz que a tabela acabou",
+        "porque": (
+            "o cursor de digitacao anda em lotes pelo keyset do .reg para nao "
+            "materializar um milhao de rowids na memoria de um celular. Parar "
+            "na fronteira do lote entrega a tabela pela metade -- e sem erro "
+            "nenhum, que e o que faz ninguem perceber."
+        ),
+        "arquivo": "crates/phxsql-ffi/src/lib.rs",
+        # O defeito e mirado: nao "o cursor nao anda", que quebraria tudo e
+        # provaria nada (a primeira versao desta entrada devolveu ESTRAGOU,
+        # derrubando ate o ciclo basico de duas linhas). E "o cursor busca UMA
+        # vez" -- numa tabela pequena ninguem nota, e a de 519 linhas para em
+        # 256.
+        "trecho": """                    if (ids.len() as u64) < LOTE_CURSOR {
+                        cur.esgotado = true;
+                    }
+""",
+        "troca": """                    // DEFEITO REPOSTO: um lote so, e acabou. Numa tabela
+                    // menor que o lote isto nao muda nada -- e por isso passa.
+                    cur.esgotado = true;
+""",
+        "pacote": "phxsql-ffi",
+        "alvo": ["--lib"],
+        "caem": [
+            "testes::cursor_atravessa_a_fronteira_do_lote",
+        ],
+        "seguem": [
+            "testes::ciclo_basico_grava_le_e_varre",
+            "testes::cursor_de_indice_sai_na_ordem_do_indice",
+        ],
+    },
 ]

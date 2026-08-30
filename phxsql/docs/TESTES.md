@@ -616,6 +616,20 @@ python3 bancada/guardas/provar-guardas.py --json /tmp/guardas.json
 python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 ```
 
+> **A tabela abaixo está atrasada em seis linhas, e isto fica escrito em vez de
+> ser tapado.** As seis guardas da fronteira de C (`ffi-…`, do
+> `crates/phxsql-ffi`) entraram no catálogo e foram **provadas uma a uma**
+> — as seis deram PROVADA, e a `ffi-panico-atravessa` pelo aborto, como a
+> `cadeia-sem-teto`. O que não foi feito foi a **rodada completa** que
+> regrava este bloco: ela precisa de ~1,3 GB de árvore copiada, e a máquina
+> desta rodada estava com 3,6 GB livres e outra compilação em curso. Uma
+> tabela parcial seria pior que uma atrasada, porque apagaria as 37 linhas
+> medidas. Rodar os dois comandos acima resolve.
+>
+> Também há duas linhas `QUEBRADA` a esperar: `aad-fora-do-slot` e
+> `endereco-fora-da-amarracao` não acharam mais o trecho no `reg.rs`, e essas
+> são de outra frente.
+
 <!-- guardas:inicio -->
 | guarda | o defeito reposto | testes que caem | veredito |
 |---|---|---:|---|

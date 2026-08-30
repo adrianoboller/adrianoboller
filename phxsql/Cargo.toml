@@ -8,6 +8,7 @@ members = [
     "crates/phxsql-cmd",
     "crates/phxsql-server",
     "crates/phxsql-odbc",
+    "crates/phxsql-ffi",
 ]
 
 [workspace.package]

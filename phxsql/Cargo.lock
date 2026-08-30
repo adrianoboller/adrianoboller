@@ -23,6 +23,14 @@ name = "phxsql-core"
 version = "0.18.0"
 
 [[package]]
+name = "phxsql-ffi"
+version = "0.18.0"
+dependencies = [
+ "phxsql-core",
+ "phxsql-store",
+]
+
+[[package]]
 name = "phxsql-odbc"
 version = "0.18.0"
 dependencies = [

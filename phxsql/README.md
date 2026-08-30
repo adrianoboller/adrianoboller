@@ -392,6 +392,9 @@ crates/
   phxsql-server/   config, usuários, blacklist, servidor TCP e o HTTP da
                    interface; ui/index.html é o Centro de Controle
   phxsql-odbc/     o driver ODBC 3.x, uma cdylib de ABI C
+  phxsql-ffi/      o PhxSql EMBUTIDO: o motor como biblioteca (cdylib para o
+                   Android, staticlib para o iOS), com o cabeçalho phxsql.h e
+                   um programa em C que o exercita
   phxsql-store/examples/basico.rs   exemplo executável
 docs/
   FORMATO.md       especificação byte a byte dos arquivos
@@ -399,6 +402,8 @@ docs/
   SEGURANCA.md     política, blacklist, firewall e as formas de login
   REPLICACAO.md    o desenho da replicação Source → Réplica
   ODBC.md          registro do driver e connection string
+  EMBUTIDO.md      o motor como biblioteca no aparelho: a ABI de C, as seis
+                   decisões dela, e por que não é um "mini servidor"
   EMPACOTAMENTO.md como os três zips de download são montados e conferidos
   PLANO.md         leitura do rusqlite e do FraseSQL, e o roteiro do projeto
 exemplos/

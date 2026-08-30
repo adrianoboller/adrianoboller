@@ -15,6 +15,7 @@ deve acreditar.
 | `bateria/` | a bateria de **ponta a ponta**: os seis itens do pedido feitos como um usuário faria, pelo soquete e pela tela, e a medição do que o gatilho e a chave custam. Ver `bateria/LEIA-ME.md` |
 | `exclusao/` | a **prova pelo processo** da janela de durabilidade da exclusão: 150 exclusões pelo soquete e um `SIGKILL` no meio da janela. Ver `exclusao/LEIA-ME.md` |
 | `guardas/` | o catálogo dos **defeitos repostos** e o executor que os repõe: prova que cada teste ainda pega o defeito que o motivou. Não mede nada — julga as outras baterias. Ver `guardas/LEIA-ME.md` |
+| `embutido/` | a prova do **PhxSql embutido**: um programa em **C** ligado à biblioteca (`crates/phxsql-ffi`), rodado três vezes — contra o `.a` e contra o `.so` em x86-64, e contra o `.a` em **ARM64 sob `qemu-aarch64-static`**. Não mede tempo: prova que a ABI funciona onde ela vai morar. `bancada/embutido/provar.sh` |
 
 A carga do lado do PhxSql é `crates/phxsql-store/examples/carga.rs`, que roda
 cada fase num processo separado — assim os contadores são daquela fase e de
