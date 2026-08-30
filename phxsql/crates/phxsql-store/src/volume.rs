@@ -38,7 +38,36 @@ pub struct Volumes {
     /// sempre dos dois dobraria o custo de toda leitura para pagar por um caso
     /// que quase nunca acontece.
     espelho: Option<Box<Volumes>>,
+    /// Quantas vezes `sincronizar` chamou o disco neste conjunto.
+    ///
+    /// # Por que ele existe, e por que e um `u64` comum
+    ///
+    /// Porque «este caminho espera o disco» e uma AFIRMACAO, e afirmacao sem
+    /// medida e a mesma familia do numero digitado a mao. E a unica forma de
+    /// um teste provar que a exclusao continua sincronizando por operacao
+    /// quando ninguem pediu o contrario -- o efeito do `fsync` so aparece numa
+    /// queda de energia, que teste nenhum provoca.
+    ///
+    /// Nao e atomico e nao e global de proposito: e por conjunto, entao nao ha
+    /// disputa, nao ha contador do processo para dois testes paralelos
+    /// atrapalharem, e o custo e um `+= 1` ao lado de uma chamada de sistema
+    /// que custa quatro ordens de grandeza mais.
+    sincronizacoes: u64,
+    /// A senha da ULTIMA sincronizacao deste conjunto, tirada de [`SENHA`].
+    ///
+    /// Contar nao diz ordem, e a ordem e o que `Table::sincronizar` decide:
+    /// o `.trash` fecha antes do `.reg`, porque a copia de recuperacao tem de
+    /// estar no disco antes da liberacao contra a qual ela protege. Sem esta
+    /// senha a ordem estaria escrita no comentario e em lugar nenhum mais --
+    /// e comentario nao reprova ninguem.
+    selo: u64,
 }
+
+/// A senha que ordena as sincronizacoes do processo inteiro.
+///
+/// Um `fetch_add` sem disputa custa 13,2 ns, medidos nesta casa, ao lado de um
+/// `fsync` que custa dezenas de microssegundos: quatro ordens de grandeza.
+static SENHA: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 impl Volumes {
     pub fn novo(
@@ -56,6 +85,8 @@ impl Volumes {
             ordem: VecDeque::new(),
             limite: LIMITE_ABERTOS_PADRAO,
             espelho: None,
+            sincronizacoes: 0,
+            selo: 0,
         }
     }
 
@@ -303,6 +334,8 @@ impl Volumes {
     }
 
     pub fn sincronizar(&mut self) -> Result<()> {
+        self.sincronizacoes += 1;
+        self.selo = SENHA.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         for f in self.abertos.values_mut() {
             f.flush()?;
             f.sync_all()?;
@@ -311,6 +344,16 @@ impl Volumes {
             e.sincronizar()?;
         }
         Ok(())
+    }
+
+    /// Quantas vezes este conjunto pediu o disco. Ver o campo.
+    pub fn sincronizacoes(&self) -> u64 {
+        self.sincronizacoes
+    }
+
+    /// A senha da ultima sincronizacao. Zero = nunca sincronizou. Ver o campo.
+    pub fn selo(&self) -> u64 {
+        self.selo
     }
 
     /// Fecha todos os descritores. Usado antes de apagar arquivos.

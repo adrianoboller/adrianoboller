@@ -334,7 +334,7 @@ Ordenada por **valor ÷ custo**. O custo (P/M/G) vem dos autores e é
 
 | # | Sprint | Tam. | Origem | Valor | A premissa que pode matá-lo |
 |--:|---|:--:|---|---|---|
-| 1 | **O `fsync` da exclusão entra na janela — pedido, não imposto** | P | Cassandra(R) 1, reescrito pela §2.1 | **medido: 6,5 s → 0,83 s em 20.000 exclusões (7,8×)**, e é a única fase em que a bancada perde (6,27 s contra 4,73 s) | refazer em máquina quieta; **abaixo de 2× morre**. E provar que não existe queda em que a linha suma dos dois lados |
+| 1 | ~~**O `fsync` da exclusão entra na janela — pedido, não imposto**~~ — **FEITO**, `recursos.exclusao_na_janela` | P | Cassandra(R) 1, reescrito pela §2.1 | **remedido: 3,10× no que o servidor entrega, 6,50× no teto** (`DESEMPENHO.md` §4.12). A fase da bancada vira: 6,30 s → 0,91 s, contra 1,45–1,90 s do MySQL(R) na mesma máquina | sobreviveu ao critério de morte. A conferência da queda achou o **quarto caso** que o sprint dizia não existir — está escrito, e é por isso que o item entrou pedido |
 | 2 | **`DISABLE ON SLAVE`: o job que não roda na réplica** | P | MariaDB(R) 3(b) — a metade (a) já existe, §4.1 | julgamento, mas o defeito é de **hoje**: com os quatro modos de replicação no ar, um job de escrita ligado nos dois lados grava em dobro; num par bidirecional, cada lado sobrescreve o outro | subir um par e **contar**: a réplica já recusa a escrita por outro caminho? Se recusar, o sprint some quase inteiro |
 | 3 | **Cardinalidade por índice: o tradutor escolhe** | P | Teradata(R) 4 | julgamento; o insumo **já está gravado** (`ndx.rs:88`, `:596`) e o ODBC trouxe quem não sabe nomear índice nenhum | diferença entre o índice certo e o errado: **abaixo de 2× morre** (uma regra a mais para errar). Acima de 10×, sobe |
 | 4 | **Error table e a carga que se repete sem duplicar** | P | Teradata(R) 7 | julgamento; hoje as recusadas voltam só na resposta, e uma conexão cortada leva a única cópia | a chave externa sob índice único já torna a carga repetível? Se sim, **vira teste e documentação**, não código |
@@ -400,7 +400,7 @@ A regra da casa é que número sem medição não vira plano. Esta seção separ
 
 | item | número | quem mediu, e em que condição |
 |---|---|---|
-| 1 | 6,5 s → 0,83 s (**7,8×**) | `--example custo-do-excluir 200000 20000`, no `SPRINTS-CASSANDRA.md` §3. **Condição ruim declarada**: máquina disputada, uma corrida de 48,8 s descartada. O que sustenta não é a mediana — é que a pior corrida sem `fsync` (0,891 s) ainda é 6,7× melhor que a melhor com ele (5,928 s) |
+| 1 | **refeito**: 4,52 s → 1,46 s (**3,10×**) no que o servidor entrega; 3,75 s → 0,58 s (**6,50×**) no teto | `--example custo-do-excluir 200000 20000 200`, agora sem editar cópia do repositório — as duas variantes saem do mesmo binário. Máquina **de novo disputada** (`loadavg` 2,4–5,0), e de novo o que sustenta não é a mediana: a pior corrida com a janela (1,981 s) é 2,17× melhor que a melhor sem ela (4,293 s). O levantamento anterior (7,8×) media o **teto**, e o teto aqui deu 6,50× |
 | 8 | **1,45×–1,58×** | medição do `SPRINTS-REDIS.md` §2, pelo soquete. `load average` 4,00 e 4,17, com três `phxsqld` de outros no ar. **Não publicável** até refazer em máquina quieta, e o loopback é onde o pipelining rende menos |
 | 12 | 16,13 → 7,99 µs/linha (**2×**) | `DESEMPENHO.md` §4.9, `--example custo-do-fsync`. **É outro caminho** (a inserção), então aqui é inferência, não medida |
 

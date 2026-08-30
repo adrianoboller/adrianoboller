@@ -13,6 +13,7 @@ deve acreditar.
 | `resultados-3-milhoes.json` | a corrida de 3.000.000, guardada inteira |
 | `carga-3-milhoes.log` | o log dela |
 | `bateria/` | a bateria de **ponta a ponta**: os seis itens do pedido feitos como um usuário faria, pelo soquete e pela tela, e a medição do que o gatilho e a chave custam. Ver `bateria/LEIA-ME.md` |
+| `exclusao/` | a **prova pelo processo** da janela de durabilidade da exclusão: 150 exclusões pelo soquete e um `SIGKILL` no meio da janela. Ver `exclusao/LEIA-ME.md` |
 | `guardas/` | o catálogo dos **defeitos repostos** e o executor que os repõe: prova que cada teste ainda pega o defeito que o motivou. Não mede nada — julga as outras baterias. Ver `guardas/LEIA-ME.md` |
 
 A carga do lado do PhxSql é `crates/phxsql-store/examples/carga.rs`, que roda
@@ -103,6 +104,24 @@ com número, que é a mentira mais convincente que existe.
 **Durabilidade.** Os dois carregam em massa, com uma sincronização por lote.
 Uma bancada com `commit` por linha daria outros números — e é a que importa
 para quem grava pedido a pedido.
+
+E uma exceção, que é o **terceiro** caso de trabalho desigual escondido num
+número desta bancada — desta vez contra nós, e por isso demorou a aparecer. Na
+fase `excluir`, o MySQL(R) recebe as 20.000 instruções dentro de um
+`START TRANSACTION … COMMIT`: **um** `fsync` para as vinte mil. O PhxSql
+sincronizava o `.trash` **por linha** — vinte mil — porque a garantia da
+lixeira é por exclusão e não por janela (`docs/DESEMPENHO.md` §4.12).
+
+O padrão continua sendo esse, porque ele é o comportamento do servidor com o
+`config.json` de fábrica. Para comparar durabilidade equivalente:
+
+```bash
+PHX_EXCLUSAO_NA_JANELA=1 python3 bancada/medir.py 1000000
+```
+
+Medido a 1.000.000 nesta máquina, duas corridas de cada: a fase sai de
+**6,30 s / 16,59 s** (perde de 1,45 s / 1,90 s do MySQL(R)) para **0,91 s /
+0,96 s** — e vira a única fase em que o motor perdia.
 
 **Transações.** O MySQL(R) tem; o PhxSql não. Parte do custo de escrita dele é
 o log de *redo*, que compra algo que o PhxSql ainda não oferece.

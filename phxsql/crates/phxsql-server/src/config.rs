@@ -1124,6 +1124,22 @@ impl Durabilidade {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Recursos {
     pub durabilidade: Durabilidade,
+    /// A exclusao FISICA tambem entra na janela de durabilidade?
+    ///
+    /// # Nasce DESLIGADO, e e por isso que ele existe
+    ///
+    /// Hoje um `excluir` que responde OK **ja esta no disco**: o `fsync` mora
+    /// dentro de `LixeiraFile::guardar`, e ele acontece por exclusao. Poe-lo
+    /// na janela por padrao mudaria o significado da resposta para todo
+    /// cliente que ja existe, sem ninguem ter pedido -- e retirar garantia sem
+    /// pedido e o mesmo estrago que impor guarda nova, pelo outro lado.
+    ///
+    /// Ligado, a exclusao passa a fechar com o resto da tabela: 3,6 s -> 0,84 s
+    /// em 20.000 exclusoes, medido em `docs/DESEMPENHO.md` §4.12. O que se
+    /// arrisca esta escrito la, e cabe numa linha: numa QUEDA DE ENERGIA
+    /// dentro da janela, uma linha ja liberada do `.reg` pode nao ter chegado
+    /// ao `.trash`. Queda do PROCESSO nao perde nada.
+    pub exclusao_na_janela: bool,
     /// Quantas gravacoes cabem numa janela de sincronizacao.
     pub lote_operacoes: u64,
     /// Quantos milissegundos uma janela dura, no maximo.
@@ -1183,6 +1199,8 @@ impl Default for Recursos {
     fn default() -> Self {
         Recursos {
             durabilidade: Durabilidade::PorLote,
+            // Ver o campo: desligado e o comportamento de sempre.
+            exclusao_na_janela: false,
             lote_operacoes: 200,
             lote_milissegundos: 200,
             cache_paginas: 2_048,
@@ -1402,6 +1420,10 @@ impl Recursos {
     pub fn aplicar(&self) {
         phxsql_store::diario::definir_bytes_por_volume(self.diario_volume_mib * 1024 * 1024);
         phxsql_core::paralelo::definir_teto(self.nucleos());
+        // O leitor do `exclusao_na_janela`. Sem esta linha o campo estaria no
+        // config.json, no MANUAL e na tela sem nada o ler -- que e exatamente
+        // a armadilha do `cache_paginas` prometendo um cache que nao existia.
+        phxsql_store::lixeira::definir_na_janela(self.exclusao_na_janela);
     }
 
     fn de_json(j: &Json, conexoes_no_topo: usize) -> Result<Recursos> {
@@ -1417,6 +1439,7 @@ impl Recursos {
         };
         Ok(Recursos {
             durabilidade: Durabilidade::de_texto(r.texto_ou("durabilidade", ""))?,
+            exclusao_na_janela: r.booleano_ou("exclusao_na_janela", padrao.exclusao_na_janela),
             lote_operacoes: r
                 .inteiro_ou("lote_operacoes", padrao.lote_operacoes as i64)
                 .max(1) as u64,
@@ -1464,6 +1487,7 @@ impl Recursos {
     pub fn para_json(&self) -> Json {
         Json::objeto(vec![
             ("durabilidade", Json::texto_de(self.durabilidade.nome())),
+            ("exclusao_na_janela", Json::Bool(self.exclusao_na_janela)),
             ("lote_operacoes", Json::de_u64(self.lote_operacoes)),
             ("lote_milissegundos", Json::de_u64(self.lote_milissegundos)),
             ("cache_paginas", Json::de_u64(self.cache_paginas as u64)),
@@ -1615,6 +1639,7 @@ const SECOES_CONHECIDAS: [(&str, &[&str]); 8] = [
         "recursos",
         &[
             "durabilidade",
+            "exclusao_na_janela",
             "lote_operacoes",
             "lote_milissegundos",
             "cache_paginas",
@@ -2327,6 +2352,9 @@ pub const CAMPOS_EDITAVEIS: &[(&str, TipoDoCampo, bool)] = &[
     ("somente_leitura", TipoDoCampo::Booleano, true),
     ("espelho", TipoDoCampo::Booleano, true),
     ("recursos.durabilidade", TipoDoCampo::Texto, false),
+    // A quente: quem grava e `Recursos::aplicar`, e o global vale para a
+    // exclusao seguinte -- inclusive nesta mesma conexao.
+    ("recursos.exclusao_na_janela", TipoDoCampo::Booleano, true),
     ("recursos.lote_operacoes", TipoDoCampo::Inteiro, false),
     ("recursos.lote_milissegundos", TipoDoCampo::Inteiro, false),
     // O cache vale para o proximo abrir de tabela -- e a tabela abre e fecha

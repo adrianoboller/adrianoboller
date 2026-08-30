@@ -153,6 +153,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             t.sincronizar()?;
         }
         "excluir" => {
+            // A exclusao entra na janela quando o ambiente pedir -- o mesmo
+            // interruptor que `recursos.exclusao_na_janela` liga no servidor.
+            //
+            // Por que isto existe AQUI: do outro lado, a fase `excluir` da
+            // bancada manda as 20.000 instrucoes dentro de um
+            // `START TRANSACTION ... COMMIT`, que e UM `fsync` para as vinte
+            // mil. Deste lado, `LixeiraFile::guardar` sincroniza por linha --
+            // vinte mil. Isso e trabalho DESIGUAL escondido no numero, da
+            // mesma familia dos dois erros que a `bancada/LEIA-ME.md` conta,
+            // e desta vez contra nos. O padrao continua sendo o de sempre;
+            // com `PHX_EXCLUSAO_NA_JANELA=1` os dois lados sincronizam uma
+            // vez, no fim.
+            if std::env::var("PHX_EXCLUSAO_NA_JANELA").is_ok_and(|v| v != "0" && !v.is_empty()) {
+                phxsql_store::lixeira::definir_na_janela(true);
+            }
             let mut t = Table::abrir(&dir, "precos")?;
             let total = t.slots() as i64;
             for k in 0..n {

@@ -615,10 +615,22 @@ gerador foi consertado, porque ele calculava a razão certa e imprimia a palavra
 errada (§4). O que ele diz mudou de sinal: a inserção deixou de ser o buraco, e
 sobrou a exclusão.
 
-E, ao contrário de antes, o buraco que sobrou **já tem proposta com número**: o
-`fsync` da lixeira mede 6,5 s → 0,83 s (7,8×) em 20.000 exclusões, e é o item
-**1** de `docs/SPRINTS.md` — o único da lista de 27 cujo valor está medido em
-vez de julgado.
+E o buraco que sobrou **deixou de ser buraco nesta rodada**: o item **1** de
+`docs/SPRINTS.md` entrou, e o bloco gerado abaixo ainda não sabe disso porque
+o `resultados.json` do repositório continua sendo a corrida de 10.000.000 **com
+o comportamento padrão** — que não mudou, e não muda: o `fsync` por exclusão
+continua sendo o que um servidor de fábrica faz.
+
+Quem **pedir** `recursos.exclusao_na_janela` vira a fase. Medido a 1.000.000
+nesta máquina, duas corridas de cada: **6,30 s / 16,59 s → 0,91 s / 0,96 s**,
+contra 1,45 s / 1,90 s do MySQL(R). Ou seja, a fase sai de perder por 4,3× para
+ganhar por 1,9×, e o motor passa a ganhar **nas cinco**. O caso a caso do que
+se arrisca — inclusive o **quarto caso** de queda que o sprint dizia não
+existir — está em `docs/DESEMPENHO.md` §4.12.
+
+O que **continua** valendo do parágrafo antigo: com o padrão de fábrica, a
+exclusão é a única fase em que o motor perde, e é ela que o bloco abaixo
+descreve.
 
 <!-- pendencias:insercao:inicio -->
 A bancada de 10 milhões mede 5 fases: o motor ganha em 4 e perde em 1.

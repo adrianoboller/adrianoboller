@@ -10,6 +10,103 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
+## Não lançado — o `fsync` da exclusão, e quem escolhe pagá-lo
+
+Escrito em paralelo com as outras seções «Não lançado» abaixo: na integração
+todas viram uma só, e o número da versão sai de lá.
+
+É o sprint nº 1 de `docs/SPRINTS.md` — o único da lista de 27 cujo valor
+estava **medido** em vez de julgado. Ele entrou **pedido, e não imposto**, e o
+número foi refeito antes de uma linha de código.
+
+### Adicionado
+
+- **`recursos.exclusao_na_janela`: a exclusão física passa a respeitar a
+  janela de durabilidade — quando o dono pede.** O `fsync` que
+  `LixeiraFile::guardar` fazia **por exclusão** sai do caminho e passa a
+  fechar com o resto da tabela. **O campo nasce desligado**, e essa é a
+  decisão inteira: com o padrão de fábrica, um `excluir` que responde OK
+  continua já estando no disco, byte por byte como antes. Ligá-lo por padrão
+  mudaria o significado da resposta para todo cliente já escrito, sem ninguém
+  ter pedido — e retirar garantia sem pedido é o mesmo estrago de impor guarda
+  nova, pelo outro lado. Editável pela tela, na seção «Gravação e
+  durabilidade», pelo ponto único (`CAMPOS_EDITAVEIS`).
+
+  Medido em máquina **disputada**, e a condição está escrita: sete corridas
+  alternadas de cada lado, com a janela de 200 gravações que o `config.json`
+  traz por padrão — **4,52 s → 1,46 s, 3,10×**, e a pior corrida com a janela
+  (1,981 s) ainda é 2,17× melhor que a melhor sem ela (4,293 s). O teto, com a
+  janela que não fecha (o caso do `BULKINSERT`), é **3,75 s → 0,58 s, 6,50×**
+  — o mesmo par que o `SPRINTS-CASSANDRA.md` §3 mediu como 7,8× noutra
+  máquina. O critério de morte combinado antes era 2×.
+
+- **A fase `excluir` da bancada vira, e por dois motivos.** Medido a 1.000.000
+  nesta máquina, duas corridas de cada: **6,30 s / 16,59 s → 0,91 s / 0,96 s**,
+  contra 1,45 s / 1,90 s do MySQL(R) — de perder por 4,3× para ganhar por 1,9×.
+  O segundo motivo é que a fase **não comparava trabalho igual**: do lado do
+  MySQL(R) as 20.000 instruções vão dentro de um `START TRANSACTION … COMMIT`,
+  que é **um** `fsync` para as vinte mil, e do nosso lado eram vinte mil. É a
+  mesma família dos dois erros que a `bancada/LEIA-ME.md` conta, e desta vez o
+  erro era contra nós. O padrão da bancada continua sendo o de fábrica;
+  `PHX_EXCLUSAO_NA_JANELA=1` roda a comparação de durabilidade equivalente.
+
+- **`bancada/exclusao/prova-da-queda.py`: a prova pelo processo.** Sobe um
+  `phxsqld` de verdade na porta 7100 com a janela **aberta durante a corrida
+  inteira**, manda 150 exclusões físicas pelo soquete, mata o processo com
+  `SIGKILL` e reabre — nos dois modos, e conferindo linha a linha os quatro
+  estados possíveis. **Nenhuma linha some dos dois lados numa queda de
+  processo**, e o número de casos «em nenhum» é zero nos dois modos. Teste
+  unitário não provaria: quem fecha uma `Table` executa `Drop` e volta ao
+  teste, e nada disso é uma queda.
+
+- **Três guardas novas** no catálogo de defeitos repostos, as três **PROVADAS**
+  (`python3 bancada/guardas/provar-guardas.py --so exclusao-na-janela-por-padrao`):
+  a janela virando padrão, o campo sem leitor, e o `.reg` fechando antes do
+  `.trash`.
+
+### Corrigido
+
+- **`Table::sincronizar` fechava o `.reg` antes do `.trash`.** Enquanto o
+  `fsync` da lixeira acontecia por exclusão, a ordem era indiferente — o
+  `.trash` já estava no disco muito antes. Com a exclusão na janela os dois
+  passam a fechar ali, e o `.reg` na frente é a única ordem em que uma queda
+  no meio do próprio fechamento deixa a linha liberada sem a cópia de
+  recuperação. Agora o `.trash` abre a lista e o `.reg` a fecha, e o teste
+  `o_trash_fecha_antes_do_reg` trava isso com um selo de ordem por conjunto de
+  volumes.
+
+- **`bancada/medir.py` media o binário de OUTRA árvore.** O caminho do
+  `examples/carga` era um absoluto escrito à mão apontando para
+  `/home/user/adrianoboller/phxsql/…`; rodada numa árvore de trabalho, a
+  bancada media o binário do repositório principal. É a armadilha do binário
+  velho num degrau mais alto — nem recompilar na própria árvore resolveria.
+  Agora o caminho sai de onde o arquivo está, com `PHX_CARGA` para quem
+  precisar apontar noutro lugar.
+
+### Sabido
+
+- **A premissa 2 do Sprint 1 estava errada, e a conferência a derrubou.** Ela
+  afirmava que uma queda dentro da janela só produz dois estados: a linha só no
+  `.reg` (a exclusão não aconteceu) ou só no `.trash` (duplicada). São
+  **quatro**. Sem o `fsync` entre a escrita do `.trash` e a liberação do slot,
+  a ordem de **chegada ao disco** passa a ser do sistema operacional — e o
+  `.reg` de uma tabela em uso já tem páginas sujas mais velhas que as do
+  `.trash`. Existe, portanto, o estado em que o `.reg` foi liberado e o
+  `.trash` não chegou.
+
+  Queda de PROCESSO **não** produz esse estado, e isso está provado a
+  `kill -9`. Queda de ENERGIA produz. Nenhum `fsync` nosso ao fechar a janela
+  conserta, porque o problema não é a ordem em que nós sincronizamos — é a que
+  o núcleo escolhe antes de alguém nos perguntar.
+
+  Foi por isso que o item entrou **pedido**: ligado, `exclusao_na_janela` é a
+  escolha declarada de trocar uma rede de recuperação estreita por 3,10×, e a
+  linha em risco é uma que **alguém mandou apagar**, com o motivo já gravado
+  no `.reason`. Nenhuma linha não excluída corre risco em caso nenhum. O caso
+  a caso está em `docs/DESEMPENHO.md` §4.12 e no `MANUAL.txt`.
+
+---
+
 ## Não lançado — os pacotes de download que se conferem
 ## Não lançado — a bateria única e o catálogo de defeitos repostos
 

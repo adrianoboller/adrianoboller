@@ -810,4 +810,107 @@ GUARDAS = [
             "conferidor::testes::dado_interpolado_nunca_conta_como_rotulo",
         ],
     },
+    # -----------------------------------------------------------------------
+    # 13. A exclusao na janela virando o PADRAO
+    # -----------------------------------------------------------------------
+    {
+        "id": "exclusao-na-janela-por-padrao",
+        "titulo": "a exclusão entra na janela por padrão, sem ninguém pedir",
+        "porque": (
+            "regra do CLAUDE.md: guarda nova entra pedida, nao imposta -- e "
+            "retirar guarda sem pedido e o mesmo estrago pelo outro lado. Hoje "
+            "um `excluir` que responde OK ja esta no disco; ligar a janela por "
+            "padrao mudaria o significado da resposta para todo cliente ja "
+            "escrito. E exatamente como o Sprint 1 do SPRINTS-CASSANDRA.md "
+            "estava redigido antes de a §2.1 do SPRINTS.md o reescrever."
+        ),
+        "arquivo": "crates/phxsql-server/src/config.rs",
+        "trecho": """            // Ver o campo: desligado e o comportamento de sempre.
+            exclusao_na_janela: false,
+""",
+        "troca": """            // DEFEITO REPOSTO: a janela ligada por padrao, que e como o
+            // Sprint 1 chegou escrito -- «por_lote (o padrao): a exclusao
+            // entra na janela que ja existe».
+            exclusao_na_janela: true,
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "exclusao-na-janela-pelo-config"],
+        "caem": [
+            "config_sem_o_campo_continua_esperando_o_disco",
+        ],
+        "seguem": [
+            "pedido_no_config_o_valor_chega_ao_motor",
+            "o_campo_esta_na_lista_que_a_tela_monta",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # 14. O campo que ninguem le
+    # -----------------------------------------------------------------------
+    {
+        "id": "exclusao-na-janela-sem-leitor",
+        "titulo": "`exclusao_na_janela` no config.json, no MANUAL e na tela — e ninguém o lê",
+        "porque": (
+            "a armadilha do `recursos.cache_paginas`, que passou tres versoes "
+            "prometendo um cache que nao existia. Campo de configuracao sem "
+            "leitor e pior que campo ausente: o ausente ninguem ajusta "
+            "esperando efeito."
+        ),
+        "arquivo": "crates/phxsql-server/src/config.rs",
+        "trecho": """        phxsql_store::lixeira::definir_na_janela(self.exclusao_na_janela);
+""",
+        "troca": """        // DEFEITO REPOSTO: o campo existe, e nada o le.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "exclusao-na-janela-pelo-config"],
+        "caem": [
+            "pedido_no_config_o_valor_chega_ao_motor",
+        ],
+        "seguem": [
+            "config_sem_o_campo_continua_esperando_o_disco",
+            "o_campo_esta_na_lista_que_a_tela_monta",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # 15. O `.reg` fechando antes do `.trash`
+    # -----------------------------------------------------------------------
+    {
+        "id": "reg-fecha-antes-do-trash",
+        "titulo": "a janela sincroniza o `.reg` antes do `.trash`",
+        "porque": (
+            "com a exclusao na janela os dois passam a fechar em "
+            "`Table::sincronizar`, e fechar o `.reg` primeiro e escolher, de "
+            "proposito, a unica ordem em que uma queda no meio do fechamento "
+            "deixa a linha liberada sem a copia de recuperacao. Ver "
+            "docs/DESEMPENHO.md §4.12 -- o quarto caso."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        self.lixeira.sincronizar()?;
+        self.bin.sincronizar()?;
+        self.memo.sincronizar()?;
+        self.log.sincronizar()?;
+        self.motivos.sincronizar()?;
+        self.trilha.sincronizar()?;
+        self.ndx.sincronizar()?;
+        self.reg.sincronizar()?;
+""",
+        "troca": """        // DEFEITO REPOSTO: a ordem antiga, com o `.reg` na frente.
+        self.reg.sincronizar()?;
+        self.ndx.sincronizar()?;
+        self.bin.sincronizar()?;
+        self.memo.sincronizar()?;
+        self.log.sincronizar()?;
+        self.lixeira.sincronizar()?;
+        self.motivos.sincronizar()?;
+        self.trilha.sincronizar()?;
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "exclusao"],
+        "caem": [
+            "o_trash_fecha_antes_do_reg",
+        ],
+        "seguem": [
+            "sem_pedir_a_janela_cada_exclusao_espera_o_disco",
+            "a_lixeira_esta_no_disco_antes_de_o_slot_sair",
+        ],
+    },
 ]
