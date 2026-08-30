@@ -45,11 +45,18 @@
 /// Os arquivos de interface, embutidos aqui pelo mesmo `include_str!` que o
 /// servidor usa para servi-los -- assim nao ha como o conferidor medir uma
 /// pagina e o binario servir outra.
+///
+/// Essa frase era promessa e nao garantia ate a lista ganhar guarda. Ela e
+/// digitada, e o `multitela.js` entrou no `http.rs` sem entrar aqui: 1.474
+/// linhas de interface servidas ao navegador e invisiveis para a catraca. Quem
+/// impede a repeticao e `a_lista_cobre_tudo_que_o_http_serve`, que le o fonte
+/// do `http.rs` e reprova o arquivo servido que ninguem mede.
 pub const FONTES: &[(&str, &str)] = &[
     ("ui/index.html", include_str!("../ui/index.html")),
     ("ui/claude.js", include_str!("../ui/claude.js")),
     ("ui/telemetria.js", include_str!("../ui/telemetria.js")),
     ("ui/diagrama-er.js", include_str!("../ui/diagrama-er.js")),
+    ("ui/multitela.js", include_str!("../ui/multitela.js")),
     (
         "ui/grid/phx-grid.js",
         include_str!("../ui/grid/phx-grid.js"),
@@ -866,7 +873,15 @@ impl Placar {
 /// 2.000 -> 1.999 na revisao do dossie 0.18: o item «Jobs» do Gerir banco
 /// ganhou o par `rot:`/`txt:` ao passar a apontar para a tela que ja existia.
 /// Um so, e ele desce a catraca junto -- catraca frouxa nao segura nada.
-pub const TETO: usize = 1_999;
+///
+/// 1.999 -> 2.068, e este e o unico tipo de subida que nao afrouxa nada: **o
+/// numero de baixo era falso.** O `multitela.js` era servido pelo `http.rs` e
+/// nao estava no `FONTES`, entao seus 69 textos cravados nunca foram contados
+/// -- nao foram acrescentados agora, sempre estiveram la. 2.068 e a primeira
+/// medida sobre a interface inteira; 1.999 era medida sobre cinco sextos dela.
+/// A guarda `a_lista_cobre_tudo_que_o_http_serve` impede a proxima leitura
+/// falsa, e a frente que traduz os 69 desce a catraca de volta.
+pub const TETO: usize = 2_068;
 
 #[cfg(test)]
 mod testes {
@@ -900,6 +915,50 @@ mod testes {
             "sobraram {} e a catraca esta em {TETO}: baixe a catraca no mesmo \
              commit da traducao, senao ela deixa de segurar",
             faltando.len()
+        );
+    }
+
+    /// A lista do `FONTES` e digitada, e lista digitada envelhece calada: o
+    /// `multitela.js` passou a ser servido pelo `http.rs` e ficou de fora
+    /// daqui, entao 1.474 linhas de interface nao contavam para a catraca e
+    /// ninguem via pelo numero.
+    ///
+    /// A guarda tira a lista de quem digita e poe em quem serve: le o fonte do
+    /// `http.rs` e cobra cada `.js` e `.html` de interface que ele embute.
+    /// Quando entrar a proxima tela, este teste reprova antes de a catraca
+    /// medir errado.
+    #[test]
+    fn a_lista_cobre_tudo_que_o_http_serve() {
+        const HTTP: &str = include_str!("http.rs");
+
+        let servidos: Vec<&str> = HTTP
+            .match_indices("include_str!(\"../ui/")
+            .filter_map(|(i, _)| {
+                let resto = &HTTP[i + "include_str!(\"".len()..];
+                let fim = resto.find('"')?;
+                let caminho = &resto[..fim];
+                // O `.md` do changelog da grade e servido, mas nao e tela.
+                (caminho.ends_with(".js") || caminho.ends_with(".html")).then_some(caminho)
+            })
+            .collect();
+
+        assert!(
+            !servidos.is_empty(),
+            "nao achei nenhum include_str! de interface no http.rs -- a guarda \
+             ficou cega, conserte o reconhecimento antes de confiar nela"
+        );
+
+        let medidos: HashSet<&str> = FONTES.iter().map(|(nome, _)| *nome).collect();
+        let faltando: Vec<&str> = servidos
+            .iter()
+            .filter(|c| !medidos.contains(c.trim_start_matches("../")))
+            .copied()
+            .collect();
+
+        assert!(
+            faltando.is_empty(),
+            "o http.rs serve {faltando:?} e o FONTES nao mede -- texto cravado \
+             ali nao conta para a catraca. Acrescente ao FONTES e reveja o TETO"
         );
     }
 
