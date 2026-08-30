@@ -124,6 +124,111 @@ mesmo padrão do vídeo de demonstração, por outro caminho.
   Windows é conferido pela forma (PE32+ x86-64), pelas DLLs que importa — só
   as do sistema, nenhuma do mingw para acompanhar — e pelos 21 símbolos ODBC
   que a `phxsql_odbc.dll` exporta. Dizer mais que isso seria inventar.
+## Não lançado — o dossiê refeito contra o código
+
+O pedido foi curto: *«o dossiê está desatualizado, falta o `.bkp`, não é
+responsivo, precisa de download, e quero capturas do login até replicação,
+profiler e SQL Check»*. Refazê-lo conferindo **seção por seção contra o
+código** — que é o único jeito de achar o que envelheceu — devolveu seis
+afirmações erradas, e duas delas estavam **dentro do produto**, não só no
+documento.
+
+### Corrigido
+
+- **O painel da replicação dizia 28.914 linhas/s e 4.357 eventos/s** enquanto a
+  seção da bancada, **no mesmo documento**, mostrava 34.048 e 17.450. Número
+  digitado à mão em dois lugares é número que um dia diverge, e este já tinha
+  divergido. Agora sai do `bancada/replicacao/resultados.json`.
+- **A tela de Replicação do console** repetia os mesmos 18.773 e 4.273, de antes
+  da marca de posição no source. Corrigida, com o motivo escrito ao lado.
+- **O Gerir banco listava «Triggers · Procedures · Jobs» como *ainda não
+  existe*** — depois de os três passarem a existir. Jobs tem tela e botão na
+  barra desde o pedido 51; gatilho e procedimento entram pela op `sql` desde os
+  pedidos 49 e 50. É a mesma falha da *configuração que não é lida*, virada do
+  avesso: **uma tela que nega um recurso que o produto tem**. Entrou um grupo
+  com o nome certo, *«Existe pelo comando, e não por esta tela»*, e a diferença
+  entre as duas frases é a correção inteira.
+- **A receita do KiB de interface era uma lista de três arquivos copiada dentro
+  do gerador.** O `http.rs` passou a embutir **nove** — diagrama ER, telemetria,
+  multitela e a integração com a Claude entraram depois —, e o rodapé publicava
+  **780 KiB** quando a interface tinha **1.032**. A lista sai do próprio
+  `http.rs` agora, ignorando o `include_str!` que vive dentro de `#[cfg(test)]`,
+  senão 25 KiB de markdown entrariam na conta. *A receita de um número também
+  envelhece.*
+- **O `<title>` passou a versão inteira dizendo «Dossiê PhxSql 0.15»**, com o
+  selo logo abaixo dizendo 0.18.0 — o mesmo defeito que o selo existe para
+  impedir, uma linha acima dele. Agora ele é gerado.
+- **O organograma dos arquivos mostrava cinco.** Faltavam o `.trash`, o
+  `.reason`, o `.lgpd`, o `.pag` e — o que o dono apontou — o **`.bkp`**. A
+  figura passou a separar os **sete que sempre existem** dos **três
+  condicionais**, com o que decide a existência de cada um; e nos três, a
+  ausência do arquivo é uma resposta, nunca um erro.
+- **O organograma do código mostrava quatro crates**, e são sete: a
+  `phxsql-sql`, a `phxsql-cmd` e a `phxsql-odbc` entraram depois. A seta cheia é
+  *depende de* e a tracejada é *fala o protocolo* — o console de terminal e o
+  driver ODBC são clientes da porta 5000, e não linkam o motor.
+- **«57 das 60 operações do protocolo têm tela»** envelheceu junto com o
+  catálogo, que quase dobrou. Medido casando os `api("…")` de `ui/` com os nomes
+  de `OPERACOES`: **100 de 112**, e as 12 de fora estão nomeadas uma a uma.
+- **«Ainda não há SQL escrito à mão»** e **«camada SQL: rusqlite atrás de uma
+  *feature*»** ficaram no dossiê depois de a `phxsql-sql` existir — e ela não
+  foi por ali justamente porque uma crate furaria o zero dependências.
+
+### Adicionado
+
+- **Doze seções novas**, cada uma conferida contra o código ou contra um número
+  medido: o dado pessoal (a marca, a trilha `.lgpd` e a cifra da coluna), a
+  restauração de backup, o cluster, o console em imagens, o multitela, as
+  grades, a telemetria e o profiler, SQL/gatilhos/procedimentos/jobs, as portas
+  de fora (ODBC, MCP e a Claude), os seis idiomas, e **«O que este motor não
+  faz»** — a que diz, sem rodeio, que não há transação (logo não é ACID), que
+  não há TLS, que o `excluir` ainda perde para o MySQL(R) por 1,3× e que a
+  interface está 11% traduzida.
+- **Vinte capturas do console**, contra o servidor de verdade: login → painel →
+  tabelas → grade → query → diagrama ER → telemetria → profiler → replicação,
+  mais o **multitela com as quatro telas lado a lado** numa janela de 2.800 px,
+  nos dois temas. `docs/dossie/capturar-dossie.mjs` sobe um `phxsqld` só dele na
+  faixa **6700/6701**, popula três tabelas ligadas por chave estrangeira mais um
+  segundo banco, e derruba **pelo PID**.
+- **O download**, e ele é `window.print()` com uma folha `@media print` própria
+  — fundo branco, índice e botão fora, figura, tabela e captura sem quebra no
+  meio, galeria em duas colunas. `<a download>` seria **inerte**: o visualizador
+  do artefato bloqueia todo download que a própria página começa, `data:` e
+  `blob:` inclusive, e sem erro visível. A página **diz** o que o botão faz.
+- **Três geradores novos** — `capturas-no-dossie.py`, e o modo dossiê do
+  `pagina-dos-pedidos.py` e do `cobertura-por-area.py` —, mais quatro blocos
+  gerados nos que já existiam. **Nenhum número visível do dossiê se digita.**
+
+### Mudado
+
+- **Responsivo, e medido** nas seis larguras (390, 820, 1180, 1920, 3440 e
+  5120), nos dois temas: **zero rolagem lateral** em todas, texto corrido
+  parando em `74ch`, **nada centralizado** (o corpo começa a 310 px em qualquer
+  largura — num monitor duplo o meio da janela é a emenda física entre os dois),
+  e a largura extra virando **mais coluna** na galeria: 1 → 3 → 6.
+- **A seção «Estado e roteiro» deixou de ser digitada.** Eram oitenta linhas à
+  mão com a contagem de testes de cada peça ao lado, e envelheciam a cada
+  rodada. Viraram dois blocos de gerador — a contagem dos pedidos e a cobertura
+  por área — mais o roteiro apontando para onde ele é mantido.
+- **A catraca dos idiomas desceu de 2.000 para 1.999**: o item «Jobs» ganhou o
+  par `rot:`/`txt:` ao passar a apontar para a tela que já existia. Um só, e ele
+  desce a catraca junto.
+- **O dossiê 0.15 saiu do repositório.** Só existe um por vez, para que ninguém
+  atualize o errado.
+
+### Sabido
+
+- **A seção do fluxo de gravação ainda não desenha o `.lgpd`.** A legenda diz
+  que ele nunca é escrito numa inserção — que é a informação que importa —, mas
+  o caminho da *alteração*, que é onde a trilha grava, não tem figura própria.
+- **As capturas são de um servidor recém-populado**, então o painel mostra
+  números pequenos e a telemetria mostra poucas bolhas. É honesto e é pouco
+  vistoso: uma carga grande deixaria as telas mais bonitas e o dossiê menos
+  reproduzível.
+- **O dossiê fecha em ~2,4 MB** por causa das capturas embutidas. Elas precisam
+  ser *data URI*: a página publicada é um arquivo só, e a política de conteúdo
+  do visualizador bloqueia imagem de qualquer outra origem — ao lado, seriam
+  vinte quadros quebrados e nenhum erro visível.
 
 ---
 

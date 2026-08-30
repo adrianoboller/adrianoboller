@@ -23,6 +23,11 @@ O que ele conta, e a definicao de cada numero:
 
     python3 docs/dossie/cobertura-por-area.py             mede e grava
     python3 docs/dossie/cobertura-por-area.py --so-medir  mede e mostra
+
+Passando um `.html` junto, ele grava TAMBEM a tabela da secao «Estado e
+roteiro» do dossie, entre as marcas `<!-- cobertura:... -->`:
+
+    python3 docs/dossie/cobertura-por-area.py docs/dossie/dossie-phxsql-0.18.html
 """
 
 import collections
@@ -148,12 +153,55 @@ def tabelas(por_area, sem_teste):
     return "\n".join(linhas + fora)
 
 
+DOSSIE_ABRE = "<!-- cobertura:inicio (gerado por docs/dossie/cobertura-por-area.py) -->"
+DOSSIE_FECHA = "<!-- cobertura:fim -->"
+
+
+def tabela_html(por_area):
+    """A mesma contagem, em HTML, para a secao «Estado e roteiro» do dossie.
+
+    A secao ja foi oitenta linhas digitadas a mao, com o numero de testes de
+    cada peca ao lado -- e envelhecia a cada rodada. Uma contagem, dois
+    destinos: a duplicata e o que diverge.
+    """
+    total = sum(por_area.values())
+    l = ['  <div class="rolo">', "    <table>",
+         '      <thead><tr><th>Área</th><th class="num">testes</th><th class="num">%</th></tr></thead>',
+         "      <tbody>"]
+    for a, n in por_area.most_common():
+        p = 100.0 * n / total
+        pct = f"{p:.1f}".replace(".", ",")
+        m0, m1 = ("<strong>", "</strong>") if p < 1.5 else ("", "")
+        l.append(f'        <tr><td>{m0}{a}{m1}</td>'
+                 f'<td class="num">{m0}{n}{m1}</td>'
+                 f'<td class="num">{m0}{pct}%{m1}</td></tr>')
+    l.append(f'        <tr><td><strong>total</strong></td>'
+             f'<td class="num"><strong>{total}</strong></td><td class="num"></td></tr>')
+    l += ["      </tbody>", "    </table>", "  </div>"]
+    return "\n".join(l)
+
+
+def gravar_no_dossie(caminho, por_area):
+    alvo = pathlib.Path(caminho).resolve()
+    txt = alvo.read_text(encoding="utf-8")
+    i, j = txt.find(DOSSIE_ABRE), txt.find(DOSSIE_FECHA)
+    if i < 0 or j < 0:
+        raise SystemExit(f"{alvo} nao tem as marcas cobertura:inicio/fim")
+    txt = (txt[:i] + DOSSIE_ABRE + "\n" + tabela_html(por_area) + "\n"
+           + DOSSIE_FECHA + txt[j + len(DOSSIE_FECHA):])
+    alvo.write_text(txt, encoding="utf-8")
+    print(f"{alvo.name}: tabela de cobertura regravada")
+
+
 def main():
     por_area, sem_teste = medir()
     bloco = tabelas(por_area, sem_teste)
     if "--so-medir" in sys.argv:
         print(bloco)
         return
+    for a in sys.argv[1:]:
+        if a.endswith(".html"):
+            gravar_no_dossie(a, por_area)
     txt = ALVO.read_text(encoding="utf-8")
     if INICIO not in txt or FIM not in txt:
         raise SystemExit(f"{ALVO} nao tem as marcas {INICIO} / {FIM}")

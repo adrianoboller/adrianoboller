@@ -22,6 +22,11 @@ import sys
 
 RAIZ = pathlib.Path(__file__).resolve().parents[2]
 MEDICAO = RAIZ / "bancada" / "resultados.json"
+# A bancada dos quatro servidores. O painel da secao da replicacao saia
+# digitado, e chegou a dizer 28.914/4.357 enquanto a secao da bancada, no mesmo
+# documento, mostrava 34.048/17.450. Numero repetido a mao em dois lugares e
+# numero que um dia diverge -- e este ja tinha divergido.
+MEDICAO_REPLICACAO = RAIZ / "bancada" / "replicacao" / "resultados.json"
 # Qual dossie reescrever. O nome mudou na 0.15.0 e pode mudar de novo:
 # passar o caminho como primeiro argumento evita editar o script a cada vez.
 def _alvo():
@@ -30,7 +35,7 @@ def _alvo():
             # Resolvido: caminho relativo quebrava o `relative_to(RAIZ)`
             # da mensagem final, DEPOIS de ja ter gravado o arquivo.
             return pathlib.Path(a).resolve()
-    return RAIZ / "docs" / "dossie" / "dossie-phxsql-0.15.html"
+    return RAIZ / "docs" / "dossie" / "dossie-phxsql-0.18.html"
 
 
 DOSSIE = _alvo()
@@ -385,6 +390,29 @@ def resumo_md(por):
     return "\n\n".join(partes)
 
 
+def painel_da_replicacao():
+    """O painel da secao da replicacao, do `bancada/replicacao/resultados.json`.
+
+    Os cinco numeros que a secao mostra: o que o master escreve, o que cada
+    replica aplica, o atraso ate as tres, a retomada depois de uma queda, e se
+    o retrato SHA-256 das quatro bateu no fim.
+    """
+    d = json.loads(MEDICAO_REPLICACAO.read_text(encoding="utf-8"))
+    atrasos = [v for v in d["atraso_ms"].values()]
+    faixa = f"{min(atrasos) / 1000:.1f}–{max(atrasos) / 1000:.1f} s".replace(".", ",")
+    fichas = [
+        (mil(d["master_linhas_s"]), "linhas/s no master"),
+        (mil(d["replica_eventos_s"]), "eventos/s por réplica"),
+        (faixa, "atraso até as três"),
+        (f"{dec(d['retomada_alcance_s'], 1)} s", "retomada da queda"),
+        ("iguais" if d["iguais_no_fim"] else "DIVERGIRAM", "retrato das quatro"),
+    ]
+    return "\n" + "\n".join(
+        f'    <div><div class="v">{v}</div><div class="r">{r}</div></div>'
+        for v, r in fichas
+    ) + "\n  "
+
+
 def main():
     por = carregar()
     ins = por["inserir"]
@@ -419,6 +447,13 @@ def main():
     if i < 0 or j < 0:
         sys.exit("as marcas bancada:diagnostico nao estao no dossie")
     html = html[:i] + ABRE_D + "\n" + diagnostico(por) + "\n" + FECHA_D + html[j + len(FECHA_D):]
+
+    ABRE_R = "<!-- replicacao:inicio (gerado por docs/dossie/numeros-da-bancada.py) -->"
+    FECHA_R = "<!-- replicacao:fim -->"
+    i, j = html.find(ABRE_R), html.find(FECHA_R)
+    if i < 0 or j < 0:
+        sys.exit("as marcas replicacao:inicio/fim nao estao no dossie")
+    html = html[:i] + ABRE_R + painel_da_replicacao() + FECHA_R + html[j + len(FECHA_R):]
 
     DOSSIE.write_text(html)
 
