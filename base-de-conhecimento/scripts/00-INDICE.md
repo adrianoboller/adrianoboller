@@ -78,7 +78,7 @@ pelo padrao, nao pelo conteudo.
 - `163-add-registered-trademark-marks-to-third-party-na.py` -- Add registered trademark marks to third-party names
 - `731-extract-the-conversion-functions.py` -- Extract the conversion functions
 
-## Edicao em massa -- mexem no fonte por padrao  (1100)
+## Edicao em massa -- mexem no fonte por padrao  (1109)
 
 - `001-write-table-module-and-build-workspace.py` -- Write table module and build workspace
 - `002-fix-borrow-errors-and-rebuild.py` -- Fix borrow errors and rebuild
@@ -415,6 +415,15 @@ pelo padrao, nao pelo conteudo.
 - `1308-write-the-knowledge-base-rule-into-both-claude-m.py` -- Write the knowledge-base rule into both CLAUDE.md files
 - `1309-write-the-rule-into-the-user-level-claude-md-at-.py` -- Write the rule into the user-level CLAUDE.md at its real path
 - `131-add-destinos-allow-list-from-project-root.py` -- Add destinos allow-list from project root
+- `1310-renumber-the-ffi-request-and-regenerate.py` -- Renumber the FFI request and regenerate
+- `1311-renumber-the-embedded-request-from-the-right-dir.py` -- Renumber the embedded request from the right directory
+- `1312-resolve-the-guard-catalog-by-id-and-take-the-dos.py` -- Resolve the guard catalog by id and take the dossier
+- `1314-renumber-the-colliding-requests-and-regenerate.py` -- Renumber the colliding requests and regenerate
+- `1316-resolve-all-rest-front-conflicts.py` -- Resolve all REST-front conflicts
+- `1317-renumber-the-rest-request-and-run-fmt-clippy.py` -- Renumber the REST request and run fmt/clippy
+- `1319-resolve-the-dossier-changelog-and-guard-catalog.py` -- Resolve the dossier, changelog and guard catalog
+- `1321-set-the-measured-ratchet-and-run-clippy.py` -- Set the measured ratchet and run clippy
+- `1322-move-the-orphaned-comment-before-the-constant-an.py` -- Move the orphaned comment before the constant and recheck clippy
 - `133-route-api-requests-through-the-remote-connection.py` -- Route API requests through the remote connection
 - `134-add-relay-open-and-forward-functions.py` -- Add relay open and forward functions
 - `135-add-relay-open-and-forward-functions.py` -- Add relay open and forward functions
@@ -1181,7 +1190,7 @@ pelo padrao, nao pelo conteudo.
 - `998-add-the-atomic-gate-to-both-capture-points.py` -- Add the atomic gate to both capture points
 - `999-keep-the-mirror-in-sync-and-build.py` -- Keep the mirror in sync and build
 
-## Os demais  (148)
+## Os demais  (152)
 
 - `036-convert-svg-colors-to-theme-tokens-and-verify.py` -- Convert SVG colors to theme tokens and verify
 - `043-replace-despachar-with-the-three-gate-version.py` -- Replace despachar with the three-gate version
@@ -1260,6 +1269,10 @@ pelo padrao, nao pelo conteudo.
 - `1297-find-the-systematic-untranslated-case.py` -- Find the systematic untranslated case
 - `1300-register-the-janitor-and-its-root-cause-in-pende.py` -- Register the janitor and its root cause in PENDENCIAS
 - `1302-survey-the-transcript-structure.py` -- Survey the transcript structure
+- `1313-resolve-additive-docs-and-compare-both-dossier-v.py` -- Resolve additive docs and compare both dossier versions
+- `1315-resolve-all-rest-front-conflicts.py` -- Resolve all REST-front conflicts
+- `1318-resolve-the-dossier-changelog-and-guard-catalog.py` -- Resolve the dossier, changelog and guard catalog
+- `1320-resolve-the-ratchet-keeping-one-constant.py` -- Resolve the ratchet keeping one constant
 - `147-add-key-generation-to-the-cli.py` -- Add key generation to the CLI
 - `152-map-memory-ops-to-read-permission-and-test.py` -- Map memory ops to read permission and test
 - `161-add-replication-config-tests-and-honest-startup-.py` -- Add replication config tests and honest startup notice

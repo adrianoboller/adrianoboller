@@ -1,6 +1,6 @@
 # Receitas de shell
 
-2748 comandos distintos, sem os triviais.
+2789 comandos distintos, sem os triviais.
 
 ---
 
@@ -61913,5 +61913,570 @@ O `05-TECNOLOGIAS.md` junto explica o contexto: o que se usou para fazer o
 produto e o que se usou para fazer o trabalho.
 FIM
 cd $(dirname $D) && zip -qr scripts-phxsql.zip $(basename $D) && ls -lh scripts-phxsql.zip | awk '{print "  zip:", $5}' && unzip -l scripts-phxsql.zip | tail -1
+```
+
+### Commit the knowledge-base rule and technology inventory  ·  30/08 16:43
+
+```bash
+git add -A && git commit -q -F - <<'MSG'
+Regra geral: a base de conhecimento e entregavel, e o inventario de tecnologias
+
+Ordem do dono, valendo para todo projeto -- escrita aqui e no CLAUDE.md de
+usuario, que alcanca os outros.
+
+O documento que a regra cobra nao existia, e nao e nenhum dos que ja havia: o
+README diz como usar, o manual diz o que faz, e faltava o inventario do que se
+USOU. E ele tem duas metades, sendo a segunda a que ninguem escreve e a que
+mais se reaproveita:
+
+- **para fazer o produto**: 106.413 linhas de Rust e nenhuma emprestada, 26
+  modulos escritos a mao no core, 17 normas conferidas contra vetor oficial,
+  e o que a decisao de zero dependencias comprou -- compilacao cruzada de
+  primeira sem `gcc` cruzado, `--offline`, imagem `scratch` de 6,42 MB, e o
+  motor sozinho pesando 790 KiB, que e o que torna a pergunta do ESP32
+  respondivel em vez de absurda
+- **para fazer o trabalho**: worktree e faixa de portas por agente, integracao
+  sequencial, `qemu-user` para provar outra arquitetura sem VM, Docker com rede
+  isolada, catalogo de guardas por mutacao, catraca de divida, geradores de
+  numero e o zelador
+
+E uma terceira secao que poupa mais tempo que as duas: **o que foi avaliado e
+RECUSADO, com o numero.** GPU, WAL com group commit, duas larguras de slot,
+lote maior na replicacao, MVCC e TLS a mao -- cada um com a medida que o
+derrubou. Recusa medida impede a mesma proposta de voltar.
+
+O corolario ficou como regra: script, comando e roteiro que resolveram algo nao
+podem morrer com a sessao. Transcrito de 99 MB nao e base de conhecimento, e
+materia-prima -- a base sai dele por EXTRATOR, para se refazer na sessao
+seguinte em vez de envelhecer.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01NqzhoCqQuDveMBrrXUqpJb
+MSG
+git log --oneline -1
+```
+
+### Free disk and inspect the FFI front  ·  30/08 16:44
+
+```bash
+cd phxsql && ./zelador.sh 2>&1 | tail -3; git log --oneline HEAD..worktree-agent-a9fd634da090a3313 | head; echo "=== arquivos ==="; git diff --stat HEAD...worktree-agent-a9fd634da090a3313 | tail -20
+```
+
+### Merge the embedded FFI front  ·  30/08 16:44
+
+```bash
+cd /home/user/adrianoboller && git merge --no-commit --no-ff worktree-agent-a9fd634da090a3313 2>&1 | tail -6; echo "--- conflitos ---"; git diff --name-only --diff-filter=U
+```
+
+### Find the request-number collision  ·  30/08 16:44
+
+```bash
+cd phxsql && git checkout --theirs docs/dossie/pedidos.html 2>/dev/null; git add docs/dossie/pedidos.html
+echo "=== numeros repetidos ==="; grep -oE "^\| [^|]* \| [0-9]+ \|" docs/PENDENCIAS.md | grep -oE "[0-9]+" | sort -n | uniq -d | while read n; do echo "--- $n ---"; grep -n "^| .* | $n |" docs/PENDENCIAS.md | cut -c1-130; done
+```
+
+### Run the gates after the FFI merge  ·  30/08 16:45
+
+```bash
+cargo fmt --all && echo "fmt ok"; timeout 1800 cargo clippy --workspace --all-targets 2>&1 | grep -cE "^warning|^error" | xargs -I{} echo "clippy: {} avisos"; timeout 2400 cargo test --workspace > /tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/tf.txt 2>&1; grep -E "FAILED|^error|panicked" /tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/tf.txt | head -5; echo "verdes: $(grep -oE '^test result: ok\. [0-9]+ passed' /tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/tf.txt | grep -oE '[0-9]+' | paste -sd+ | bc)"
+```
+
+### Verify the library size and exported function count  ·  30/08 16:46
+
+```bash
+timeout 900 cargo build --release -p phxsql-ffi 2>&1 | tail -2; SO=target/release/libphxsql_ffi.so; A=target/release/libphxsql_ffi.a
+[ -f "$SO" ] && echo "  .so: $(stat -c%s $SO) B  |  funcoes exportadas: $(nm -D --defined-only $SO 2>/dev/null | grep -c ' T phx_')"
+[ -f "$A" ] && echo "  .a:  $(stat -c%s $A) B (o que o iOS exige)"
+cp $SO /tmp/x.so 2>/dev/null && strip /tmp/x.so && echo "  .so depois do strip: $(stat -c%s /tmp/x.so) B"
+```
+
+### Commit the embedded FFI integration  ·  30/08 16:47
+
+```bash
+cd /home/user/adrianoboller && git add -A && git commit -q -F - <<'MSG'
+Integra o PhxSql embutido: o motor no aparelho e biblioteca, nao mini servidor
+
+O pedido era "um mini servidor para rodar no Android e no iOS off-line". O
+objetivo estava certo e a FORMA nao passava, por motivo do sistema operacional:
+o iOS PROIBE processo de longa duracao em segundo plano e app escutando porta
+para outros apps, e o Android mata processo em segundo plano com liberdade.
+
+A forma certa e a mesma maquina com outra porta de entrada -- biblioteca
+embutida no processo, sem porta e sem daemon. E a frente conferiu antes de
+escrever codigo que o `phxsql-store` JA E o banco embutido: o `phxsql-server` e
+um envelope de rede em volta dele. Nao houve motor reescrito, houve motor
+exposto.
+
+Crate `phxsql-ffi`, `cdylib` mais `staticlib` -- o `.so` do Android e o `.a`
+que a Apple exige, porque ela nao aceita biblioteca dinamica de terceiro no
+app. Conferido na integracao: **44 funcoes exportadas**, `.so` de 1.155.480 B
+(962.664 depois do `strip`), com B+tree, CRC-32, ChaCha20-Poly1305, SHA-256 e
+diario dentro. Zero dependencias mantido.
+
+As decisoes de ABI vieram com o motivo, e duas merecem registro. Nenhum panico
+atravessa a fronteira, e o punho fica ENVENENADO depois de um: capturar salva o
+processo e nao conserta o objeto. E o erro volta por codigo de retorno mais
+ultimo-erro por thread em vez de struct de resultado, porque os codigos do
+`PhxError` ja sao publicos e estaveis -- uma struct inventaria um segundo
+vocabulario e cobraria alocacao em toda chamada que DEU CERTO.
+
+Prova real conferida por fora nesta integracao: o programa em C fez **40 passos
+e 0 falhas** contra as tres ligacoes -- `.a` e `.so` em x86-64, e ARM64 estatico
+sob emulacao.
+
+Exercitar achou quatro defeitos que ler nao acharia, e o segundo e o mais grave
+que esta rodada produziu: **no ARM64 o `catch_unwind` era enfeite.** Sem
+`--eh-frame-hdr` o binario sai sem `PT_GNU_EH_FRAME` e todo panico capturado
+vira aborto. A garantia principal da biblioteca some CALADA, por causa de uma
+bandeira do ligador, e so apareceu porque a prova rodou na perna ARM. E o
+alerta que quem for escrever o JNI ou o Swift precisa ler primeiro.
+
+Os outros tres: "nao ha essa linha" voltava de duas formas, `phx_tabela_registros`
+ignorava a visao (com exclusao suave a tela diria 2 e listaria 1), e um teste
+que passava por engano porque a vaga global era esvaziada por outro teste em
+paralelo.
+
+Na integracao: o pedido do embutido virou 151. Ele nasceu 149 porque a frente
+branchou antes do zelador existir, e o 149 ja era do zelador.
+
+Portoes: fmt, clippy zero, **1.354 testes verdes** (eram 1.328), 43 guardas no
+catalogo.
+
+Fica escrito o que a frente NAO fez, com o motivo: camada JNI e camada Swift
+sao so desenho, porque o NDK nao esta nesta maquina e o SDK da Apple so existe
+em macOS -- escrever codigo que nao se pode ligar nem rodar seria promessa.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01NqzhoCqQuDveMBrrXUqpJb
+MSG
+git log --oneline -1; git worktree remove --force .claude/worktrees/agent-a9fd634da090a3313 2>/dev/null && git branch -D worktree-agent-a9fd634da090a3313 >/dev/null 2>&1 && echo "worktree podada"
+```
+
+### Rebuild the bundle with the FFI integration  ·  30/08 16:47
+
+```bash
+B=/tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/phxsql-commits.bundle; git bundle create $B d4dc4243dfdf954dbc3bb30e91fe7e4a17091d88..HEAD 2>&1 | tail -1; git bundle verify $B 2>&1 | head -1; echo "commits: $(git rev-list --count d4dc4243dfdf954dbc3bb30e91fe7e4a17091d88..HEAD)"; ls -lh $B | awk '{print "tamanho:", $5}'
+```
+
+### Merge the i18n front  ·  30/08 16:52
+
+```bash
+git merge --no-commit --no-ff worktree-agent-a474d0a48526428f6 2>&1 | tail -6; echo "--- conflitos ---"; git diff --name-only --diff-filter=U
+```
+
+### Verify the dossier did not lose sections in this merge  ·  30/08 16:53
+
+```bash
+D=phxsql/docs/dossie/dossie-phxsql-0.18.html; echo "secoes: $(grep -oE '<h2[ >]' $D | wc -l)"; echo "cifra do fio: $(grep -c 'cifra do fio' $D)"; echo "figuras: $(grep -oE 'Figura [0-9]+' $D | sort -u | wc -l)"; echo "--- e a versao que HEAD tinha antes do merge? ---"; git show HEAD:$D > /tmp/antes.html 2>/dev/null && echo "  secoes: $(grep -oE '<h2[ >]' /tmp/antes.html | wc -l) | cifra: $(grep -c 'cifra do fio' /tmp/antes.html)"
+```
+
+### Run gates after the i18n merge  ·  30/08 16:53
+
+```bash
+cd phxsql 2>/dev/null; cargo fmt --all && echo "fmt ok"; timeout 1800 cargo clippy --workspace --all-targets 2>&1 | grep -cE "^warning|^error" | xargs -I{} echo "clippy: {} avisos"; timeout 2400 cargo test --workspace > /tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/ti.txt 2>&1; grep -E "FAILED|^error|panicked" /tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/ti.txt | head -5; echo "verdes: $(grep -oE '^test result: ok\. [0-9]+ passed' /tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/ti.txt | grep -oE '[0-9]+' | paste -sd+ | bc)"
+```
+
+### Measure the ratchet after merging both fronts  ·  30/08 16:54
+
+```bash
+timeout 900 cargo run --quiet --example textos-fora-da-fabrica -p phxsql-server 2>&1 | tail -8; echo "=== TETO no fonte ==="; grep -n "pub const TETO" crates/phxsql-server/src/conferidor.rs
+```
+
+### Confirm the measured total matches the ratchet  ·  30/08 16:54
+
+```bash
+timeout 900 cargo run --quiet --example textos-fora-da-fabrica -p phxsql-server 2>&1 | grep -E "fora da fabrica$"; echo "--- soma ---"; timeout 900 cargo run --quiet --example textos-fora-da-fabrica -p phxsql-server 2>&1 | grep -E "fora da fabrica$" | grep -oE "[0-9]+ fora" | grep -oE "[0-9]+" | paste -sd+ | bc
+```
+
+### Run all five dossier generators as the front requested  ·  30/08 16:54
+
+```bash
+D=docs/dossie/dossie-phxsql-0.18.html
+timeout 1800 python3 docs/dossie/numeros-do-projeto.py $D 2>&1 | tail -3
+timeout 600 python3 docs/dossie/numeros-da-bancada.py $D 2>&1 | tail -1
+timeout 600 python3 docs/dossie/cobertura-por-area.py $D 2>&1 | tail -2
+timeout 600 python3 docs/dossie/pagina-dos-pedidos.py docs/dossie/pedidos.html $D 2>&1 | tail -2
+timeout 900 python3 docs/dossie/capturas-no-dossie.py $D 2>&1 | tail -2
+echo "=== conferencia ==="; echo "secoes $(grep -oE '<h2[ >]' $D | wc -l) | cifra $(grep -c 'cifra do fio' $D) | figuras $(grep -oE 'Figura [0-9]+' $D | sort -u | wc -l)"
+```
+
+### Commit the i18n integration  ·  30/08 16:56
+
+```bash
+cd /home/user/adrianoboller && git add -A && git commit -q -F - <<'MSG'
+Integra o revisor multilingue: quatro arquivos em zero, e tres furos no proprio conferidor
+
+Os quatro arquivos do escopo fecharam em ZERO texto cravado: `claude.js` (126),
+`telemetria.js` (38), `phx-grid.js` (24) e `diagrama-er.js` (2). A fabrica foi
+de 303 para 730 chaves nos seis idiomas, a cobertura de 15% para **28%**, e o
+que resta cravado esta todo num arquivo so -- o `index.html`, deixado de fora
+de proposito porque quatro frentes o disputavam.
+
+Catraca de 1.996 para **1.806**, medida na integracao e nao aceita do relatorio:
+o conferidor agora lista um arquivo so.
+
+Mas o que essa frente entregou de mais valioso nao foi a traducao: foram **tres
+furos no proprio conferidor**, os tres achados exercitando no navegador, e os
+tres invisiveis para quem le codigo.
+
+1. `rot: "…"` com espaco depois dos dois pontos nao era reconhecido como par --
+   sete rotulos do `claude.js` seguiam contados como cravados tendo o `txt:` ao
+   lado.
+2. **Quem escreve por ultimo manda**: o `aplicarLegenda` da telemetria
+   reescrevia com texto cravado o botao que a fabrica ja tinha preenchido. Na
+   captura em frances ele aparecia em portugues no meio da tela traduzida.
+   Texto pela fabrica nao basta se outro codigo passa por cima depois.
+3. **`\uXXXX` some das duas vias do conferidor** -- os seis operadores do
+   filtro de numero da grade, a dica de arrastar coluna e dois `placeholder`. O
+   conferidor dizia zero e o navegador mostrava portugues.
+
+O terceiro e o mais grave, porque e a mesma familia do que ja aconteceu duas
+vezes aqui: **a ferramenta que mede diz que esta tudo certo, e a tela mostra o
+contrario.** Os nove foram traduzidos; a forma continua invisivel, e isso ficou
+escrito -- quem achar os proximos vai achar do mesmo jeito, no navegador.
+
+As duas guardas novas entraram como catraca em ZERO e foram provadas com o
+defeito reposto: colando portugues nas seis colunas de uma chave, e uma frase
+longa em tres idiomas. E o criterio nao e "igual ao portugues" -- medido, 33
+chaves tem espanhol identico e a maioria esta certa. O tamanho da frase se mede
+no MIOLO, sem os marcadores, senao "peso {peso}" seria falso positivo porque
+peso e a mesma palavra em pt/it/es.
+
+Na integracao: catalogo resolvido por identidade, 45 guardas com 45 ids unicos;
+o dossie conferido antes e depois do merge (34 secoes nas duas pontas, porque
+ja perdi uma secao inteira fazendo isso sem olhar); e os cinco geradores
+rodados, que era o que a frente pediu que a integracao fizesse.
+
+Portoes: fmt, clippy zero, **1.357 testes verdes**.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01NqzhoCqQuDveMBrrXUqpJb
+MSG
+git log --oneline -1; git worktree remove --force .claude/worktrees/agent-a474d0a48526428f6 2>/dev/null && git branch -D worktree-agent-a474d0a48526428f6 >/dev/null 2>&1 && echo "worktree podada"
+```
+
+### Merge the SQLite/Wine front  ·  30/08 17:10
+
+```bash
+git merge --no-commit --no-ff worktree-agent-acbfa9b9ed43230aa 2>&1 | tail -6; echo "--- conflitos ---"; git diff --name-only --diff-filter=U
+```
+
+### Resolve the dossier and find the numbering collisions  ·  30/08 17:11
+
+```bash
+git checkout --ours phxsql/docs/dossie/dossie-phxsql-0.18.html && git add -A && echo "conflitos: $(git diff --name-only --diff-filter=U | wc -l)"
+echo "=== numeros de pedido repetidos ==="; grep -oE "^\| [^|]* \| [0-9]+ \|" phxsql/docs/PENDENCIAS.md | grep -oE "[0-9]+" | sort -n | uniq -d | while read n; do echo "--- $n ---"; grep -n "^| .* | $n |" phxsql/docs/PENDENCIAS.md | cut -c1-110; done
+```
+
+### Run gates after the SQLite merge  ·  30/08 17:11
+
+```bash
+cargo fmt --all && echo "fmt ok"; timeout 1800 cargo clippy --workspace --all-targets 2>&1 | grep -cE "^warning|^error" | xargs -I{} echo "clippy: {} avisos"; timeout 2400 cargo test --workspace > /tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/ts.txt 2>&1; grep -E "FAILED|^error|panicked" /tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/ts.txt | head -4; echo "verdes: $(grep -oE '^test result: ok\. [0-9]+ passed' /tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/ts.txt | grep -oE '[0-9]+' | paste -sd+ | bc)"
+```
+
+### Check what the front left behind and whether the bench runs  ·  30/08 17:12
+
+```bash
+command -v wine >/dev/null && echo "wine ainda instalado" || echo "wine foi removido pela frente (690 MB do prefixo apagados)"; ls bancada/sqlite/ bancada/windows/ 2>/dev/null | head -12; echo "=== a bancada do SQLite roda? (so a fase de leitura, para conferir) ==="; timeout 900 python3 bancada/sqlite/provar.py --help 2>&1 | head -6 || ls bancada/sqlite/
+```
+
+### Commit the SQLite comparison integration  ·  30/08 17:12
+
+```bash
+cd /home/user/adrianoboller && git add -A && git commit -q -F - <<'MSG'
+Integra a comparacao com o SQLite -- e duas medicoes que mentiam A NOSSO FAVOR
+
+A tabela medida, motor contra motor, 200.000 linhas, mesmo gerador e mesmo
+esquema, mediana de cinco rodadas:
+
+| fase | PhxSql | SQLite(R) |
+|---|---|---|
+| inserir em lote | 6,34 us | 1,74 us -- SQLite 3,6x |
+| ler por chave | 3,13 us | 6,07 us -- **PhxSql 1,9x** |
+| varrer faixa | 1,20 us | 0,32 us -- SQLite 3,8x |
+| atualizar | 6,88 us | 10,12 us -- **PhxSql 1,5x** |
+| excluir de vez | 34,54 us | 8,16 us -- SQLite 4,2x |
+| em disco | 49,6 MiB | 11,4 MiB -- SQLite 4,3x |
+
+O que essa frente fez de mais dificil nao foi medir: foi achar duas armadilhas
+que mentiam A NOSSO FAVOR e desarma-las. A janela trocada no modo `sistema`
+comparava 20.000 transacoes do outro lado contra 100 janelas do nosso; e o piso
+do transporte foi medido com um eco que dividia o GIL com o cliente, dando
+custo NEGATIVO de -1,03 us para o servidor. Numero impossivel e a unica sorte
+que uma bancada da: ele denuncia a si mesmo. As duas ficaram escritas no
+LEIA-ME em vez de apagadas.
+
+E a dispersao foi publicada em vez de escondida atras da mediana: as medidas
+dominadas por `fsync` variaram entre 1,2x e 1,6x em dias diferentes.
+
+O Wine funciona, e a distincao importa: ele nao emula nada -- o `.exe` e x86-64
+e roda nativo, entao VM nunca foi necessaria. Conferido por fora nesta
+integracao: o `phxsqld.exe` sobe, gera o hash PBKDF2, faz login com ele, cria
+banco e tabela, e **grava e le 50 linhas**. `bancada/windows/provar.sh`, no
+molde do ARM.
+
+O que ela declarou NAO saber e o que mais vale registrar. Sobre o HFSQL(R) no
+celular so existe aqui uma folha de 2013, e dela se sustenta que a replicacao
+movel e offline esta entre os quatro tipos anunciados -- ou seja, o material
+que existe aponta na direcao OPOSTA a "tabelas soltas sem cuidado", e a frase
+ficou registrada como impressao do dono, nao como fato apurado. Tambem nao
+mediu bateria, abertura a frio nem pressao de memoria, que sao as tres coisas
+que mais reprovam um banco em telefone.
+
+Na integracao: os pedidos dela viraram 152 e 153 -- ela mesma avisou que ia
+colidir com o 149 e o 150 do zelador, e avisou certo.
+
+Portoes: fmt, clippy zero, 1.357 testes verdes. Zero Rust alterado.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01NqzhoCqQuDveMBrrXUqpJb
+MSG
+git log --oneline -1; git worktree remove --force .claude/worktrees/agent-acbfa9b9ed43230aa 2>/dev/null && git branch -D worktree-agent-acbfa9b9ed43230aa >/dev/null 2>&1 && echo "worktree podada"
+```
+
+### Merge the REST front  ·  30/08 17:18
+
+```bash
+git merge --no-commit --no-ff worktree-agent-a91e5d94c8250e0e4 2>&1 | tail -8; echo "--- conflitos ---"; git diff --name-only --diff-filter=U
+```
+
+### Check for request-number collisions  ·  30/08 17:19
+
+```bash
+grep -oE "^\| [^|]* \| [0-9]+ \|" phxsql/docs/PENDENCIAS.md | grep -oE "[0-9]+" | sort -n | uniq -d | while read n; do echo "--- $n ---"; grep -n "^| .* | $n |" phxsql/docs/PENDENCIAS.md | cut -c1-100; done; echo "(vazio = sem colisao)"
+```
+
+### Full test suite and ratchet after the REST merge  ·  30/08 17:19
+
+```bash
+timeout 2400 cargo test --workspace > /tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/tr.txt 2>&1; grep -E "FAILED|^error|panicked" /tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/tr.txt | head -5; echo "verdes: $(grep -oE '^test result: ok\. [0-9]+ passed' /tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/tr.txt | grep -oE '[0-9]+' | paste -sd+ | bc)"; echo "=== catraca ==="; timeout 900 cargo run --quiet --example textos-fora-da-fabrica -p phxsql-server 2>&1 | grep -E "fora da fabrica$"; grep -n "^pub const TETO: usize" crates/phxsql-server/src/conferidor.rs
+```
+
+### Prove the cipher guards the front reported as broken  ·  30/08 17:20
+
+```bash
+timeout 1800 python3 bancada/guardas/provar-guardas.py --so cifra --arvore /tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/guardas-integra 2>&1 | tail -18
+```
+
+### Find the guards anchored in reg.rs  ·  30/08 17:21
+
+```bash
+python3 -c "
+import sys; sys.path.insert(0,'bancada/guardas'); import catalogo
+g=[v for k,v in vars(catalogo).items() if isinstance(v,list) and v and isinstance(v[0],dict) and 'id' in v[0]][0]
+for x in g:
+    if 'reg.rs' in x.get('arquivo',''): print(' ', x['id'], '->', x['arquivo'])"
+```
+
+### Prove the ALTER guards  ·  30/08 17:21
+
+```bash
+timeout 1800 python3 bancada/guardas/provar-guardas.py --so alter --arvore /tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/guardas-integra 2>&1 | tail -14
+```
+
+### Commit the REST integration  ·  30/08 17:21
+
+```bash
+cd /home/user/adrianoboller && git add -A && git commit -q -F - <<'MSG'
+Integra o webservice REST: a especificacao sai do codigo, e o visualizador cabe
+
+A decisao central foi honrada: a especificacao OpenAPI sai de
+`catalogo::OPERACOES`, que ja era travado contra o `match` do `despachar` por um
+teste que le o texto do `servidor.rs`. Resumo, parametros, obrigatoriedade,
+permissao e "escreve?" vem todos do MESMO lugar que o portao le -- nada digitado
+duas vezes. Sao 113 rotas e 419 KB de `openapi.json`.
+
+E as duas guardas do laco entraram, uma por lado: operacao que o despachar
+atende e a spec nao documenta reprova nomeando; rota documentada que o
+despachar nao atende reprova nomeando. Mais uma terceira por soquete, que
+percorre as 113 rotas que o servidor SERVIU.
+
+O Swagger UI foi medido em vez de estimado, e a medicao decidiu: embutir o
+pacote oficial custa **+22,0%** no binario (7,3 -> 8,9 MB) e a CDN entregaria
+pagina em branco na placa, que e justamente o caso do IoT. Um explorador
+escrito aqui custa **13.629 B** -- 118x menor. A 13 KiB nem se paga uma opcao
+de compilacao, entao a medicao dispensou tambem a complexidade que eu tinha
+pedido para prever.
+
+O achado que so o soquete acha: **a recusa da lista negra era engolida por um
+RST** e chegava ao cliente como `ConnectionResetError` -- em TODAS as portas
+HTTP, desde que a interface web existe. Nenhum teste unitario sente RST, e por
+isso a guarda ficou marcada REDUNDANTE com o motivo escrito em vez de fingir
+cobertura.
+
+Na integracao, duas coisas conferidas por fora:
+
+- O pedido virou **154**; nasceu 149, que ja era do zelador.
+- A frente reportou **duas guardas quebradas**, ditas herdadas do
+  `acrescentar_coluna`. Rodei as quatro do `reg.rs` e as duas da cifra do fio
+  com arvore PRIVADA: **as seis PROVADAS, zero quebradas.** O que ela viu era
+  contaminacao do cache compartilhado `/root/.cache/phx-guardas`, que outro
+  agente estava corrend  o com outra arvore -- a mesma armadilha que a frente da
+  trava ja tinha documentado. Guarda quebrada por vizinho nao e guarda
+  quebrada, e a diferenca importa porque uma some com `--arvore` e a outra nao.
+
+Portoes: fmt, clippy zero, **1.383 testes verdes**, 51 guardas no catalogo,
+catraca dos idiomas inalterada em 1.806 (as 40 chaves novas entraram pela
+fabrica).
+
+Fica de fora com motivo escrito no `docs/REST.md` §10: TLS (proxy a frente e a
+saida honesta), CORS, `GET` para leitura (a URL vai para o log do proxy),
+macOS (sem alvo, e expectativa nao e medicao) e Android/iOS, onde o caminho e a
+biblioteca embutida e nao um servidor com porta.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01NqzhoCqQuDveMBrrXUqpJb
+MSG
+git log --oneline -1; git worktree remove --force .claude/worktrees/agent-a91e5d94c8250e0e4 2>/dev/null && git branch -D worktree-agent-a91e5d94c8250e0e4 >/dev/null 2>&1 && echo "worktree podada"
+```
+
+### Regenerate the dossier with all four integrations  ·  30/08 17:22
+
+```bash
+cd phxsql 2>/dev/null; D=docs/dossie/dossie-phxsql-0.18.html
+timeout 1800 python3 docs/dossie/numeros-do-projeto.py $D 2>&1 | tail -3
+timeout 600 python3 docs/dossie/numeros-da-bancada.py $D 2>&1 | tail -1
+timeout 600 python3 docs/dossie/cobertura-por-area.py $D 2>&1 | tail -2
+timeout 600 python3 docs/dossie/pagina-dos-pedidos.py docs/dossie/pedidos.html $D 2>&1 | tail -2
+timeout 900 python3 docs/dossie/capturas-no-dossie.py $D 2>&1 | tail -2
+echo "=== conferencia ==="; echo "secoes $(grep -oE '<h2[ >]' $D | wc -l) | cifra do fio $(grep -c 'cifra do fio' $D) | figuras $(grep -oE 'Figura [0-9]+' $D | sort -u | wc -l) | $(du -h $D | cut -f1)"
+```
+
+### Commit the regenerated dossier  ·  30/08 17:23
+
+```bash
+cd /home/user/adrianoboller && git add -A && git commit -q -m "$(printf 'Dossie regerado depois das quatro integracoes\n\nA frente do REST publicou a versao dela, que nao tinha as tres integracoes\nseguintes. Os cinco geradores rodados por cima do estado atual: 1.383 testes,\n755 chaves na fabrica contra 1.806 fora (29%%), 51 guardas. Conferido antes e\ndepois: 34 secoes nas duas pontas.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01NqzhoCqQuDveMBrrXUqpJb')" && git log --oneline -1
+python3 -c "
+import subprocess
+n=subprocess.run(['git','rev-list','--count','d4dc4243dfdf954dbc3bb30e91fe7e4a17091d88..HEAD'],capture_output=True,text=True).stdout.strip()
+print('commits acumulados:', n)"
+```
+
+### Rebuild the bundle with all four integrations  ·  30/08 17:24
+
+```bash
+B=/tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/phxsql-commits.bundle; git bundle create $B d4dc4243dfdf954dbc3bb30e91fe7e4a17091d88..HEAD 2>&1 | tail -1; git bundle verify $B 2>&1 | head -1; ls -lh $B | awk '{print "tamanho:", $5}'
+```
+
+### Compare the ratchet on both sides before merging  ·  30/08 17:40
+
+```bash
+git log --oneline HEAD..worktree-agent-a6b26a5742af8179c | head -12; echo "=== catraca nos dois lados ==="; git show HEAD:phxsql/crates/phxsql-server/src/conferidor.rs | grep -n "^pub const TETO: usize"; git show worktree-agent-a6b26a5742af8179c:phxsql/crates/phxsql-server/src/conferidor.rs | grep -n "^pub const TETO: usize"
+```
+
+### Merge the transactions front  ·  30/08 17:40
+
+```bash
+git merge --no-commit --no-ff worktree-agent-a6b26a5742af8179c 2>&1 | tail -8; echo "--- conflitos ---"; git diff --name-only --diff-filter=U
+```
+
+### Compare what each dossier side contains  ·  30/08 17:40
+
+```bash
+D=phxsql/docs/dossie/dossie-phxsql-0.18.html; git show :2:$D > /tmp/meu.html; git show :3:$D > /tmp/dela.html
+for f in /tmp/meu.html /tmp/dela.html; do echo "$(basename $f): secoes $(grep -oE '<h2[ >]' $f | wc -l) | figuras $(grep -oE 'Figura [0-9]+' $f | sort -u | wc -l) | cifra $(grep -c 'cifra do fio' $f) | transacao $(grep -ci 'transaç\|transacao' $f) | REST $(grep -c 'openapi\|OpenAPI' $f) | embutido $(grep -ci 'phxsql-ffi\|biblioteca embutida' $f)"; done
+```
+
+### Measure the true ratchet after the merge  ·  30/08 17:41
+
+```bash
+git add -A && echo "conflitos: $(git diff --name-only --diff-filter=U | wc -l)"; cargo fmt --all && echo "fmt ok"; timeout 900 cargo run --quiet --example textos-fora-da-fabrica -p phxsql-server 2>&1 | grep -E "fora da fabrica$"; echo "--- soma medida ---"; timeout 900 cargo run --quiet --example textos-fora-da-fabrica -p phxsql-server 2>&1 | grep -E "fora da fabrica$" | grep -oE "[0-9]+ fora" | grep -oE "[0-9]+" | paste -sd+ | bc
+```
+
+### Read the two clippy warnings  ·  30/08 17:41
+
+```bash
+timeout 1800 cargo clippy --workspace --all-targets 2>&1 | grep -E "^warning|^error" -A 10 | head -28
+```
+
+### Full test suite after the transactions merge  ·  30/08 17:42
+
+```bash
+timeout 2400 cargo test --workspace > /tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/tt.txt 2>&1; grep -E "FAILED|^error|panicked" /tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/tt.txt | head -5; echo "verdes: $(grep -oE '^test result: ok\. [0-9]+ passed' /tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/tt.txt | grep -oE '[0-9]+' | paste -sd+ | bc)"
+```
+
+### Regenerate the dossier and check the ACID claim is qualified  ·  30/08 17:43
+
+```bash
+D=docs/dossie/dossie-phxsql-0.18.html
+timeout 1800 python3 docs/dossie/numeros-do-projeto.py $D 2>&1 | tail -3
+timeout 600 python3 docs/dossie/numeros-da-bancada.py $D 2>&1 | tail -1
+timeout 600 python3 docs/dossie/cobertura-por-area.py $D 2>&1 | tail -2
+timeout 600 python3 docs/dossie/pagina-dos-pedidos.py docs/dossie/pedidos.html $D 2>&1 | tail -2
+timeout 900 python3 docs/dossie/capturas-no-dossie.py $D 2>&1 | tail -2
+echo "=== conferencia ==="; echo "secoes $(grep -oE '<h2[ >]' $D | wc -l) | figuras $(grep -oE 'Figura [0-9]+' $D | sort -u | wc -l) | cifra $(grep -c 'cifra do fio' $D)"; echo "=== a promessa ACID esta qualificada? ==="; grep -oE "ACID[^<.]{0,90}" $D | head -4
+```
+
+### Verify the isolation level is named honestly  ·  30/08 17:45
+
+```bash
+D=docs/dossie/dossie-phxsql-0.18.html; grep -oE "SERIALIZABLE[^<]{0,80}|serializável por tabela[^<]{0,80}" $D | head -3; echo "--- e no documento tecnico ---"; grep -n "ANSI SERIALIZABLE" docs/TRANSACOES.md | head -2 | cut -c1-160
+```
+
+### Commit the transactions integration  ·  30/08 17:45
+
+```bash
+cd /home/user/adrianoboller && git add -A && git commit -q -F - <<'MSG'
+Integra as transacoes -- o A e o I passam a valer, e sao chamados pelo nome certo
+
+BEGIN/COMMIT/ROLLBACK/SAVEPOINT nas duas superficies, protocolo e SQL, com a
+abertura declarada que o dono desenhou: SCOPE, SCOPE MODE, TIMEOUT, LOCK
+TIMEOUT, STATEMENT TIMEOUT e LOCK MODE, em clausulas sem ordem. AUTO e DYNAMIC
+sao os padroes; EXCLUSIVE e STRICT se pedem. Sem SCOPE nenhum, nada muda -- e o
+teste que trava isso e `sem_transacao_nada_muda`.
+
+Nada vai a disco antes do COMMIT, entao desfazer e jogar a lista fora: zero
+slot queimado, zero rowid consumido, ordem de digitacao intacta.
+
+**Sobre o ACID, com as palavras exatas.** O A e o I passaram a valer. O I se
+chama *escrita serializavel por tabela, leitura confirmada e nao bloqueante,
+sem leitura repetivel* -- **nao e ANSI SERIALIZABLE** e o documento diz isso em
+duas linhas diferentes. O C nao esta inteiro enquanto a integridade referencial
+nao for imposta (ela e declarada e nunca imposta -- a frente foi conferir).
+*ACID compliant* sem qualificacao continua proibido, e o dossie agora diz isso
+na frase certa em vez de calar.
+
+Group commit: criterio de morte (1,5x) acordado ANTES. O que havia para
+amortizar nao era o commit concorrente -- a trava unica nunca tem -- e sim o
+`fsync` da tabela: **1,199 -> 0,457 ms, 2,63x**. E o passo seguinte MORREU
+medido em 1,34x, com a recusa registrada no DESEMPENHO.md.
+
+O achado da propria revisao dela, que nenhum teste pegaria: a trava do fim era
+tomada DEPOIS da trava de dados. O estrago nao era o erro no COMMIT -- era a
+recuperacao tratar a linha do outro como "ja aplicada" e descartar a nossa **em
+silencio**.
+
+E a bateria das guardas mentiu quatro vezes: a copia morava em caminho fixo e
+duas rodadas ao mesmo tempo se estragavam. A prova foi achar um comentario de
+defeito reposto ainda plantado no cache. O executor agora tranca com `flock` --
+e isso explica as "2 quebradas" que a frente do REST reportou e que eu ja tinha
+conferido serem contaminacao.
+
+Na integracao, a catraca foi o ponto onde escolher um lado seria regressao
+silenciosa: a frente media 1.961 sobre a base 1.996 dela, a integracao anterior
+tinha deixado 1.806, e a tela de transacoes derrubou mais 35. Nenhum dos dois
+lados tinha o numero certo e nao tinham como ter. **Medido depois do merge:
+1.771.** Tambem movi para antes da constante um bloco de comentario que a
+resolucao deixou orfao depois dela.
+
+Portoes: fmt, clippy zero, **1.436 testes verdes**, 57 guardas, catraca 1.771,
+cobertura de idiomas em 31%. Dossie com 35 secoes, a das transacoes inclusa.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01NqzhoCqQuDveMBrrXUqpJb
+MSG
+git log --oneline -1; git worktree remove --force .claude/worktrees/agent-a6b26a5742af8179c 2>/dev/null && git branch -D worktree-agent-a6b26a5742af8179c >/dev/null 2>&1 && echo "worktree podada"; git worktree list | wc -l
+```
+
+### Clean and regenerate all packages  ·  30/08 17:46
+
+```bash
+cd phxsql 2>/dev/null; ./zelador.sh 2>&1 | tail -2; timeout 3000 ./empacotar.sh 2>&1 | grep -E "^==|^   pacotes/|FALTA" | tail -20
+```
+
+### Refresh the knowledge base and rebuild the bundle  ·  30/08 17:48
+
+```bash
+python3 base-de-conhecimento/extrair.py 2>/dev/null || python3 ../base-de-conhecimento/extrair.py; ls -lh pacotes/phxsql-0.18.0-*.zip | awk '{printf "  %-42s %s\n", $9, $5}'; cd /home/user/adrianoboller && B=/tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/phxsql-commits.bundle && git add -A && git commit -q -m "$(printf 'Pacotes regerados com as cinco frentes dentro\n\nOs zips anteriores nao tinham transacao, REST nem a biblioteca embutida. A base\nde conhecimento tambem foi reextraida do transcrito, que cresceu com as cinco\nintegracoes.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01NqzhoCqQuDveMBrrXUqpJb')" 2>/dev/null; git bundle create $B d4dc4243dfdf954dbc3bb30e91fe7e4a17091d88..HEAD 2>&1 | tail -1; echo "commits: $(git rev-list --count d4dc4243dfdf954dbc3bb30e91fe7e4a17091d88..HEAD) | pacote: $(ls -lh $B | awk '{print $5}')"
 ```
 
