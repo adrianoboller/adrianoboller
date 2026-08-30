@@ -23,8 +23,10 @@ pub mod datahora;
 pub mod desafio;
 pub mod ed25519;
 pub mod error;
+pub mod fio;
 pub mod frogcript;
 pub mod hash;
+pub mod hkdf;
 pub mod json;
 pub mod keyenc;
 pub mod paginacao;
@@ -36,6 +38,7 @@ pub mod sha512;
 pub mod types;
 pub mod uuid;
 pub mod value;
+pub mod x25519;
 pub mod zip;
 
 pub use cifra::{abrir, selar, Sequencia, CHAVE_LEN, NONCE_LEN, TAG_LEN};

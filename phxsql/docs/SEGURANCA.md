@@ -371,12 +371,64 @@ desafio-resposta por HTTP, já que o nonce precisa sobreviver de um pedido para
 o outro. Ele continua valendo **uma vez só**: sai da sessão no login, dando
 certo ou errado.
 
-## 7. O que ainda não tem
+## 7. A cifra do fio — e o que ela **não** é
 
-- **Sem TLS.** O tráfego (fora a credencial no desafio-resposta) vai em claro.
-  A porta 5000 pertence dentro de VPN ou IPSec, e a porta da interface web
-  também — em `http://` para outra máquina o próprio navegador desliga a
-  cifra do login.
+Isto era «Sem TLS», escrito como ausência. Virou decisão, e o limite dela
+está escrito em vez de escondido. O desenho inteiro, com o argumento de cada
+escolha, está em [CIFRA-DO-FIO.md](CIFRA-DO-FIO.md).
+
+**A porta 5000 tem um aperto de mão estilo Noise**
+(`Noise_NX_25519_ChaChaPoly_SHA256`): X25519 para a troca de chaves, HKDF-SHA256
+para derivar, e o ChaCha20-Poly1305 da §8 para cifrar. Duas mensagens, um
+ida-e-volta, e da linha seguinte em diante todo pedido e toda resposta viajam
+selados — **inclusive o token de serviço**, que hoje vai em texto puro em cada
+linha JSON.
+
+O cliente pede com `{"op":"cifrar","e":"…"}`; quem não pedir continua
+exatamente como antes.
+
+### O que ela protege, e contra quem — sem enfeite
+
+| atacante | sem túnel | túnel, `exigir` desligado | túnel, `exigir` ligado **e** pino |
+|---|---|---|---|
+| grava o tráfego (passivo) | lê tudo | **não lê nada** | **não lê nada** |
+| corta o fio no meio | o cliente vê EOF e não distingue | **erro nomeado** | **erro nomeado** |
+| está no meio e modifica | manda no diálogo | **apaga o aperto e manda igual** | o aperto não fecha |
+| rouba a estática do servidor depois | — | não lê o passado (sigilo futuro) | idem |
+
+> **Com `cifra_fio.exigir` desligado — que é o padrão — a proteção vale contra
+> escuta PASSIVA e nada mais.** Cifra pedida é cifra que o atacante ativo apaga
+> do pedido: ele corta o `cifrar`, o cliente rebaixa para claro, e a proteção
+> vira zero. Contra atacante ativo só vale `exigir: true` **mais** o pino da
+> chave do servidor no cliente. Um sem o outro não fecha.
+
+E `exigir` nasce desligada porque a regra da casa é pétrea: guarda nova entra
+**pedida**. Ligá-la quebra todo cliente que não fala o aperto — o driver ODBC
+inclusive — e por isso é decisão de quem implanta, não padrão herdado. Quando
+ligada, a recusa é uma linha JSON em claro com erro nomeado (e não um
+silêncio), e a conexão fecha em seguida.
+
+### O que ela NÃO é
+
+- **Não é TLS.** Não há certificado, cadeia, autoridade nem revogação. A
+  confiança é o **pino**: `phxsqld --chave-do-fio` imprime a chave pública do
+  servidor, e ela vai para o cliente pelo mesmo canal por onde já vai o token.
+  Sem pino, é TOFU — e quem estiver no meio na **primeira** conexão vence para
+  sempre.
+- **Não vale para a interface web**, e não é por falta de vontade: o navegador
+  fala TLS ou fala claro. Um aperto em JavaScript seria teatro, porque o
+  próprio script chega pelo canal em claro que se quer proteger — quem está no
+  meio troca o script. Para a porta web as saídas honestas continuam sendo as
+  duas da §6: TLS terminado por um proxy à frente, ou túnel (WireGuard, IPSec).
+- **Não interopera** com outras implementações de Noise: os tijolos são de
+  norma e conferidos contra vetor oficial (RFC 7748, RFC 5869, RFC 8439, FIPS
+  180-4), mas a composição não foi rodada contra os vetores do *cacophony*.
+- **Não autentica o cliente por chave.** Quem responde «quem é você» continua
+  sendo o desafio-resposta da §2 — agora por dentro do túnel.
+- **Não protege de quem lê o `config.json`.** Nunca protegeu.
+
+### O que ainda não tem
+
 - **Sem troca de senha pelo protocolo.** Muda no `config.json` e reinicia.
 - **Sem BLOQUEIO por faixa.** O bloqueio é IP a IP; banir um `/24` inteiro
   exige o firewall (a exportação da §5.1 ajuda). A *whitelist* aceita CIDR —
@@ -1095,7 +1147,7 @@ Toda escolha aqui deixa algo em claro. Esconder isso seria pior que não cifrar.
 | o **esquema**, inclusive o nome da coluna marcada | `porCPF` já conta o que a tabela guarda |
 | o **tamanho** de um `Memo` marcado | o bloco tem o comprimento no cabeçalho |
 | o **`.ndx` inteiro**, o `.pag`, o catálogo | não entraram nesta rodada |
-| **o tráfego** | continua sem TLS (§7). A cifra é do arquivo em repouso |
+| **o tráfego** | esta cifra é do arquivo em repouso. O fio tem a sua, e é outra coisa (§7) — e ela não é TLS |
 
 Isto está num teste, e não só aqui:
 `o_indice_sobre_a_coluna_marcada_continua_em_claro` **prova o vazamento** —
@@ -1325,8 +1377,10 @@ tiver a **mesma chave** — e a chave sai da senha **mais o sal do arquivo**, qu
 É o mesmo limite que o envelope da §10.5 resolveria: com a chave da tabela
 sorteada e envelopada, ela pode ser entregue à réplica sem entregar a senha
 mestra. Enquanto o envelope não existe, a recomendação é **não replicar tabela
-com coluna externa marcada** — e o tráfego continua sem TLS (§7), o que é o
-problema maior nessa mesma frase.
+com coluna externa marcada**. O tráfego da replicação hoje pode ir dentro da
+cifra do fio (§7), com `"cifra": true` na origem — o que reduz o problema dessa
+mesma frase, e não o elimina: a réplica continua recebendo o valor decifrado,
+porque quem o decifra é o source.
 
 ### 11.9 O que os testes provam, e a prova real
 

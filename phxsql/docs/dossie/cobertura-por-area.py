@@ -54,6 +54,7 @@ TESTES_DO_SERVER = {
     "dblink-postgres-no-fio.rs": "DbLink",
     "cifra-pelo-config.rs": "Configuração",
     "corte-do-diario-pelo-config.rs": "Configuração",
+    "cifra-do-fio.rs": "Criptografia e codificação",
 }
 
 # Modulos do servidor, por area. O que nao estiver aqui cai em "Servidor
@@ -86,8 +87,14 @@ DO_SERVIDOR = {
     "mcp.rs": "MCP",
 }
 
+# Esta lista e escrita a mao porque "isto e criptografia" e julgamento, e nao
+# coisa que se leia do codigo. O preco de ser escrita a mao e que ela envelhece:
+# arquivo de cripto novo que ninguem acrescentar aqui cai calado em "Nucleo" e
+# a tabela passa a mentir sobre onde a cobertura esta. Quem criar um modulo de
+# criptografia acrescenta o nome AQUI, no mesmo commit.
 CRIPTO = {"sha1.rs", "sha512.rs", "hash.rs", "cifra.rs", "ed25519.rs",
-          "senha.rs", "desafio.rs", "base64.rs", "crc.rs", "keyenc.rs"}
+          "senha.rs", "desafio.rs", "base64.rs", "crc.rs", "keyenc.rs",
+          "x25519.rs", "hkdf.rs", "fio.rs"}
 
 
 def area_de(crate, rel):

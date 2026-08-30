@@ -172,6 +172,11 @@ fn subir_replica(base: &std::path::Path, porta: u16, fonte: &FonteFalsa) -> Arc<
     c.replicacao.id_servidor = "replica-do-teste".into();
     c.replicacao.imagem_da_linha = true;
     c.replicacao.origens = vec![Origem {
+        // A cifra do fio nao entra aqui de proposito: esta guarda mede a
+        // trava com o fio em claro, que e o caminho que a cifra promete
+        // deixar como estava.
+        cifra: false,
+        chave_do_fio: String::new(),
         nome: "fonte-falsa".into(),
         host: "127.0.0.1".into(),
         porta: fonte.porta,

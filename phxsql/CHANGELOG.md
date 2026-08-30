@@ -92,6 +92,7 @@ pressa produziria.
 | a operação mais barata do servidor (`ler`) | 41,31 µs |
 | a guarda, como fração dela | **< 0,01 %** |
 ## Não lançado — o `.txt` do Profiler para de crescer
+## Não lançado — a cifra do fio, por aperto de mão estilo Noise
 
 Escrito em paralelo com as outras seções «Não lançado» abaixo: na integração
 todas viram uma só, e o número da versão sai de lá.
@@ -445,6 +446,82 @@ interface.
   `docs/PENDENCIAS.md` §3.2, item 12.
 
 ---
+O tráfego da porta 5000 ia em claro — o token de serviço em **toda** linha
+JSON, e os dados de volta. Faltava só a troca de chaves: o
+ChaCha20-Poly1305, o SHA-256, o HMAC e o desafio-resposta já existiam e já
+estavam conferidos contra vetor oficial. O desenho inteiro está em
+[`docs/CIFRA-DO-FIO.md`](docs/CIFRA-DO-FIO.md).
+
+### Adicionado
+
+- **X25519 (RFC 7748)**, tempo constante e sem tabela, reaproveitando a
+  aritmética de corpo do `ed25519.rs` — as duas curvas vivem no mesmo corpo
+  finito, e um segundo `fe_mul` ao lado do primeiro dobraria a superfície de
+  erro na parte que ninguém revisa duas vezes. Conferido contra **todos** os
+  vetores que dá para exercitar: os dois de multiplicação escalar da §5.2, o
+  iterado de 1 e de 1.000 vezes, e o Diffie-Hellman da §6.1. O de 1.000.000
+  fica atrás de `#[ignore]`, por custar minutos. Segredo compartilhado
+  todo-zeros (ponto de ordem pequena) é **erro**, e isso é teste, não
+  comentário.
+- **HKDF-SHA256 (RFC 5869)** sobre o HMAC que já existia, com os três casos
+  SHA-256 do anexo A.
+- **O aperto `Noise_NX_25519_ChaChaPoly_SHA256`** e a camada de registro, em
+  `phxsql-core/src/fio.rs`. Duas mensagens, um ida-e-volta; a estática do
+  servidor viaja cifrada e a etiqueta final só fecha se quem respondeu tiver a
+  privada dela. O cliente pina a chave (estilo `known_hosts`) ou aprende na
+  primeira vez.
+- **A porta de dados atende `{"op":"cifrar"}`** e, da linha seguinte em diante,
+  fala registros selados — inclusive o token, que hoje ia em texto puro.
+- **A replicação puxa por dentro do túnel** com `"cifra": true` na origem e o
+  pino em `"chave_do_fio"`.
+- **`phxsqld --chave-do-fio`** imprime a chave pública do servidor, que é o
+  que o cliente pina.
+- **`bancada/cifra-do-fio/prova.py`**: um cliente escrito **de novo**, em
+  Python puro — X25519, ChaCha20-Poly1305, HKDF e o aperto —, para os dois
+  lados fecharem deixar de ser «o mesmo código concordando consigo mesmo».
+
+### Mudado
+
+- `docs/SEGURANCA.md` §7 era «Sem TLS», escrito como ausência. Virou decisão,
+  com o limite escrito: **com `cifra_fio.exigir` desligado — o padrão — a
+  proteção vale contra escuta PASSIVA e nada mais.** Cifra pedida é cifra que
+  o atacante ativo apaga do pedido.
+- `docs/REPLICACAO.md` §13 e o item 8 da tabela de danos do
+  `docs/PENDENCIAS.md` deixaram de dizer «falta TLS» e passaram a dizer o que
+  existe e o que continua faltando.
+
+### Sabido — e é limite declarado, não esquecimento
+
+- **Não é TLS, e o navegador não fala isto.** A interface web **não** ganha o
+  túnel: um aperto em JavaScript seria teatro, porque o próprio script chega
+  pelo canal em claro que se quer proteger. Para a porta web continuam valendo
+  as duas saídas honestas: proxy TLS à frente, ou túnel.
+- **Não interopera** com outras implementações de Noise: os tijolos são de
+  norma e conferidos contra vetor oficial, mas a composição não foi rodada
+  contra os vetores do *cacophony*.
+- **O driver ODBC não fala o aperto**, e com `exigir: true` ele para.
+- **O pulso do cluster continua em claro** — cifrar metade do tráfego do
+  cluster é pior que não cifrar nenhuma, porque parece protegido.
+- **A credencial ainda não é amarrada ao canal.** O hash da transcrição existe
+  e está exposto; ninguém o consome.
+
+### O que a prova real achou, e não a leitura
+
+O executor das guardas (`bancada/guardas/provar-guardas.py`) devolveu **NÃO
+PEGOU** em duas das cinco entradas novas, e as duas eram achados de verdade:
+
+- **`cliente_sem_cifra_continua_como_antes` passava com o padrão trocado para
+  `exigir: true`** — porque ele mesmo montava o `Config` e escrevia
+  `exigir = false`, desfazendo a troca. Era um teste que passava por engano,
+  justamente o que a casa considera pior que teste que falta. Ele agora sobe de
+  um `config.json` **sem a seção `cifra_fio`**, que é literalmente o arquivo de
+  quem atualizou o binário e não mexeu em nada.
+- **`canal_leva_e_traz` não sente o contador parado.** Medido: com o contador
+  congelado os dois lados usam nonce zero em todo registro, e uma conversa que
+  vai e volta uma vez continua fechando — ela não repete registro nenhum, que é
+  o único jeito de sentir a falta do contador. O teste não estava errado;
+  errada estava a minha conta de quatro. Está escrito no catálogo, ao lado da
+  entrada.
 
 ## Não lançado — os pacotes de download que se conferem
 ## Não lançado — a bateria única e o catálogo de defeitos repostos

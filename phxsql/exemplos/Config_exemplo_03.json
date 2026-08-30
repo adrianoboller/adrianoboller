@@ -198,7 +198,23 @@
         "token": "TOKEN-DO-SOURCE-CURITIBA",
         "_databases": "Vazio replica todos os databases da origem.",
         "databases": ["Z"],
-        "reconectar_em": 10
+        "reconectar_em": 10,
+        "_cifra": [
+          "A CIFRA DO FIO desta origem: aperto de mao estilo Noise (X25519 +",
+          "HKDF + ChaCha20-Poly1305) antes do login, entao o token e a prova",
+          "do desafio-resposta nao andam em claro. Ver docs/CIFRA-DO-FIO.md.",
+          "",
+          "Ausente (o padrao) = como sempre foi, JSON em claro.",
+          "",
+          "chave_do_fio e o PINO: a chave publica que se ESPERA do source,",
+          "impressa la por `phxsqld --chave-do-fio`. SEM ela o tunel protege",
+          "de escuta PASSIVA e nada mais -- quem esta no meio apresenta a",
+          "chave dele e nao ha com o que comparar.",
+          "",
+          "Nao e TLS: nao ha certificado nem autoridade. A confianca e o pino."
+        ],
+        "cifra": false,
+        "chave_do_fio": ""
       },
       {
         "nome": "saopaulo",

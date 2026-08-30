@@ -199,6 +199,12 @@ PARTES = [
           [sys.executable, "bancada/bateria/prova-bateria.py", "--tela"],
           requisitos=[porta_livre(6300, 6301)], prazo=2400),
 
+    parte("cifra-do-fio", "o aperto de mao da porta de dados contra um cliente "
+          "escrito DE NOVO em Python: o cliente velho, o tunel, o pino, o "
+          "registro repetido e o fio cortado",
+          [sys.executable, "bancada/cifra-do-fio/prova.py"],
+          requisitos=[porta_livre(7210, 7211)], prazo=900),
+
     parte("rotinas", "gatilhos e procedimentos pelo soquete, com o SIGNAL, o "
           "lote, o reinicio e a tabela sem gatilho",
           [sys.executable, "bancada/rotinas/prova-rotinas.py"],

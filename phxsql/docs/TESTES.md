@@ -41,33 +41,33 @@ contando `#[test]` por arquivo e agrupando:
 <!-- cobertura:inicio -->
 | área | testes | % |
 |---|---:|---:|
-| Motor de dados (arquivos, índice, diários) | 323 | 26,0 |
-| Protocolo e portões (despachar) | 180 | 14,5 |
-| Núcleo (JSON, tipos, UUID, zip, paralelo) | 133 | 10,7 |
-| Configuração | 82 | 6,6 |
-| Criptografia e codificação | 80 | 6,4 |
-| DbLink | 65 | 5,2 |
-| Telemetria e profiler | 45 | 3,6 |
-| Camada SQL (léxico, sintaxe, tradução) | 44 | 3,5 |
-| Gatilhos e procedimentos | 38 | 3,1 |
-| Jobs | 31 | 2,5 |
-| Interface web (servidor HTTP) | 28 | 2,3 |
-| MCP | 19 | 1,5 |
-| Usuários e permissões | 19 | 1,5 |
+| Motor de dados (arquivos, índice, diários) | 323 | 25,2 |
+| Protocolo e portões (despachar) | 180 | 14,0 |
+| Núcleo (JSON, tipos, UUID, zip, paralelo) | 133 | 10,4 |
+| Criptografia e codificação | 121 | 9,4 |
+| Configuração | 87 | 6,8 |
+| DbLink | 65 | 5,1 |
+| Telemetria e profiler | 45 | 3,5 |
+| Camada SQL (léxico, sintaxe, tradução) | 44 | 3,4 |
+| Gatilhos e procedimentos | 38 | 3,0 |
+| Jobs | 31 | 2,4 |
+| Interface web (servidor HTTP) | 28 | 2,2 |
+| **MCP** | **19** | **1,5** |
+| **Usuários e permissões** | **19** | **1,5** |
 | **Console de terminal (phxsqlcmd)** | **18** | **1,4** |
 | **Segurança de rede (blacklist, firewall)** | **18** | **1,4** |
-| **ODBC** | **17** | **1,4** |
-| **Mensagens (i18n do servidor)** | **17** | **1,4** |
+| **ODBC** | **17** | **1,3** |
+| **Mensagens (i18n do servidor)** | **14** | **1,1** |
 | **Exportação** | **13** | **1,0** |
 | **Junções e união** | **13** | **1,0** |
-| **Pivot** | **12** | **1,0** |
+| **Pivot** | **12** | **0,9** |
 | **Replicação** | **11** | **0,9** |
-| **Servidor (outros)** | **8** | **0,6** |
 | **Alertas e e-mail** | **8** | **0,6** |
-| **CLI** | **7** | **0,6** |
-| **Cluster** | **7** | **0,6** |
+| **CLI** | **7** | **0,5** |
+| **Cluster** | **7** | **0,5** |
+| **Servidor (outros)** | **7** | **0,5** |
 | **Monitor de máquina** | **6** | **0,5** |
-| **total** | **1242** | |
+| **total** | **1284** | |
 
 Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 
@@ -75,8 +75,8 @@ Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 |---|---:|
 | `phxsql-store/src/table.rs` | 2458 |
 | `phxsql-store/src/ndx.rs` | 1580 |
-| `phxsql-server/src/main.rs` | 452 |
-| `phxsql-server/src/replica.rs` | 352 |
+| `phxsql-server/src/main.rs` | 479 |
+| `phxsql-server/src/replica.rs` | 407 |
 | `phxsql-server/src/dblink/conexao.rs` | 238 |
 | `phxsql-server/src/carga.rs` | 226 |
 | `phxsql-cmd/src/main.rs` | 162 |
@@ -429,10 +429,13 @@ a grade editável esconde `softdeleted` e `rownum` porque ali quem manda neles
 dia alguém uniformizar, um dos lados falha e a conversa acontece antes do
 commit, e não depois do relato.
 
-### 5.5 O `phxsql-cli` (845 linhas) sem nenhum teste
+### 5.5 O `phxsql-cli` com 7 testes — o número mudou, o anotado continua
 
-O `phxsqlcmd` tem 18; o `phxsql` da linha de comando, nenhum. Fica anotado
-com o tamanho: é a maior superfície sem cobertura depois do `replica.rs`.
+Estava escrito aqui «sem nenhum teste», e a regravação da tabela desta rodada
+mostrou **7**: entraram com o pacote de download, e a frase digitada envelheceu
+calada — a mesma lei que os geradores existem para cumprir. O `phxsqlcmd` tem
+18. Fica anotado com o tamanho: continua sendo superfície rala, agora com o
+número certo.
 
 ### 5.6 O `abrirAdmin` escreve na tela depois do `await`, sem perguntar se ainda é a dele
 
@@ -636,8 +639,13 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `endereco-fora-da-amarracao` | as DUAS fechaduras somem: dá para embaralhar as linhas cifradas | 1 | ✅ provada |
 | `cache-de-chaves-nao-limpo` | trocar a senha da cifra não limpa o cache: a senha errada abre | 1 | ✅ provada |
 | `catraca-dos-textos` | mais um texto de tela cravado, fora da fábrica de idiomas | 1 | ✅ provada |
+| `ordem-pequena-aceita` | o segredo X25519 todo-zeros aceito como chave de sessão | 2 | ✅ provada |
+| `contador-do-fio-parado` | o contador de registros do fio parado — nonce repetido | 3 | ✅ provada |
+| `fio-cortado-vira-fim` | o fio cortado no meio devolvido como fim de conversa | 1 | ✅ provada |
+| `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | 1 | ✅ provada |
+| `transcricao-sem-o-cifrado` | o hash da transcrição sem o texto cifrado da mensagem 2 | 2 | ✅ provada |
 
-**18 guardas: 16 provadas, 2 redundantes** — 162 s de mutação, medido em 2026-08-30 03:58.
+**23 guardas: 21 provadas, 2 redundantes** — 195 s de mutação, medido em 2026-08-30 06:10.
 
 As notas que a rodada deixou:
 

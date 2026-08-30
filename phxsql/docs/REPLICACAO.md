@@ -656,7 +656,8 @@ igual que já está registrado — custa releitura, nunca dado.
 | ☐ | Bidirecional com **mais de dois** servidores: o desenho suporta, só o par foi provado |
 | ☐ | Long-poll no Source, para a réplica não perguntar à toa |
 | ☐ | Espera crescente na reconexão (hoje é intervalo fixo) |
-| ☐ | TLS no transporte — hoje o JSON vai em claro e depende do IPSec |
+| ☑️ | **Cifra do fio no transporte** — aperto de mão estilo Noise (X25519 + HKDF + ChaCha20-Poly1305), ligado por origem com `"cifra": true` e o pino em `"chave_do_fio"`. Não é TLS, e o limite está escrito: sem pino protege só de escuta passiva. Ver [CIFRA-DO-FIO.md](CIFRA-DO-FIO.md) |
+| ☐ | **O pulso do CLUSTER continua em claro.** A replicação do cluster passa pelo mesmo laço e poderia ir cifrada, mas o pulso da eleição vai por outro caminho (`cluster.rs`): cifrar metade do tráfego do cluster é pior que não cifrar nenhuma, porque parece protegido |
 | ☑️ | **`replicas_autorizadas` passou a ser lido** — era campo sem leitor até a bancada de contêiner medir 200 de 200 eventos vazando com a lista preenchida (§7) |
 | ☐ | **Buscar o lote FORA da trava de dados.** Medido (§17): `varrer` esperou **30,7 s** numa réplica cortada em silêncio, e no bidirecional os dois lados se trancam por 30 s com a rede sã. É o item 2 da §3.2 do `PENDENCIAS.md` visto de dentro da replicação, e é a causa; a espera crescente e o `connect` com prazo tratam o sintoma |
 | ☐ | **O endereço do `REDIRECIONA` é o da origem configurada**, que é «por onde *eu* alcanço o primário» e nem sempre «por onde *você* alcança» (§17, achado 3). Um campo próprio para o endereço que se anuncia ao cliente resolveria |

@@ -294,6 +294,39 @@ pub const FABRICA: &[MensagemFabrica] = &[
             "IP no autorizada",
         ],
     },
+    // As duas do aperto de mao da porta de dados. Ver `docs/CIFRA-DO-FIO.md`.
+    //
+    // A segunda e a UNICA coisa que um cliente velho recebe de um servidor com
+    // `cifra_fio.exigir` ligado, entao ela tem de dizer o que fazer -- um
+    // "acesso negado" seco mandaria procurar a permissao errada.
+    MensagemFabrica {
+        nome: "erro.cifra_do_fio_desligada",
+        textos: [
+            "este servidor nao atende a cifra do fio (cifra_fio.ligada esta em false)",
+            "ce serveur ne prend pas en charge le chiffrement du lien",
+            "this server does not offer wire encryption",
+            "questo server non offre la cifratura del collegamento",
+            "dieser Server bietet keine Leitungsverschlüsselung an",
+            "este servidor no ofrece cifrado del enlace",
+        ],
+    },
+    MensagemFabrica {
+        nome: "erro.cifra_do_fio_exigida",
+        textos: [
+            "este servidor exige a cifra do fio: peca o aperto de mao com \
+             {\"op\":\"cifrar\"} antes de qualquer outro pedido",
+            "ce serveur exige le chiffrement du lien : demandez la poignée de main \
+             avec {\"op\":\"cifrar\"} avant toute autre requête",
+            "this server requires wire encryption: ask for the handshake with \
+             {\"op\":\"cifrar\"} before any other request",
+            "questo server richiede la cifratura del collegamento: chieda \
+             {\"op\":\"cifrar\"} prima di qualsiasi altra richiesta",
+            "dieser Server verlangt Leitungsverschlüsselung: fordern Sie den \
+             Handschlag mit {\"op\":\"cifrar\"} vor jeder anderen Anfrage an",
+            "este servidor exige el cifrado del enlace: pida el saludo con \
+             {\"op\":\"cifrar\"} antes de cualquier otra petición",
+        ],
+    },
     MensagemFabrica {
         nome: "erro.ip_bloqueado",
         textos: [

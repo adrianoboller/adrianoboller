@@ -6,6 +6,7 @@
 //! phxsqld --acessos [--config c]   mostra o log de acessos por IP
 //! phxsqld --senha [senha]          gera a linha senha_hash para o config.json
 //! phxsqld --gerar-chave             gera um par de chaves Ed25519
+//! phxsqld --chave-do-fio           a chave publica do aperto de mao
 //! phxsqld --pagina                  escreve o Centro de Controle num arquivo
 //! phxsqld --usuarios [--config c]  lista o cadastro e o poder de cada um
 //! phxsqld --bloqueios              lista os IPs bloqueados
@@ -28,6 +29,7 @@ USO:
   phxsqld --desbloquear <ip> [--config c] tira um IP da lista de bloqueio
   phxsqld --senha [senha]           gera a linha senha_hash para o config.json
   phxsqld --gerar-chave             gera um par de chaves Ed25519 (2o fator)
+  phxsqld --chave-do-fio            a chave publica do aperto de mao (o pino)
   phxsqld --pagina > centro.html    o Centro de Controle como arquivo unico
   phxsqld --exemplo <1|2|3>         imprime um config.json de exemplo
                                     1 = isolado, 2 = source, 3 = replica
@@ -265,6 +267,31 @@ fn main() -> ExitCode {
     // um "idioma" escrito errado calaria em portugues para sempre.
     for aviso in &config.avisos {
         eprintln!("AVISO: {aviso}");
+    }
+
+    // A chave publica do aperto de mao, para o cliente PINAR.
+    //
+    // Cria a estatica se ela ainda nao existir -- e a mesma que o servidor vai
+    // apresentar, porque sai do mesmo lugar. Imprimir uma chave calculada de
+    // outro jeito seria o pior dos mundos: o operador pinaria uma coisa e o
+    // servidor apresentaria outra.
+    if args.iter().any(|a| a == "--chave-do-fio") {
+        return match config.cifra_fio.estatica(config.caminho.as_deref()) {
+            Ok((privada, avisos)) => {
+                for a in avisos {
+                    eprintln!("AVISO: {a}");
+                }
+                println!(
+                    "{}",
+                    phxsql_core::hash::para_hex(&phxsql_core::x25519::chave_publica(&privada))
+                );
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("nao consegui obter a chave do fio: {e}");
+                ExitCode::FAILURE
+            }
+        };
     }
 
     if args.iter().any(|a| a == "--mcp") {

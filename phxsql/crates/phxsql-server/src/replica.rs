@@ -28,7 +28,7 @@
 //! no cadastro de usuarios --, e dele sai a chave derivada sem nunca haver
 //! senha em claro em lugar nenhum.
 
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
 use std::time::Duration;
 
@@ -36,6 +36,9 @@ use phxsql_core::error::{PhxError, Result};
 use phxsql_core::json::Json;
 use phxsql_core::schema::Schema;
 use phxsql_store::log::Operacao;
+
+use phxsql_core::base64;
+use phxsql_core::fio::{Canal, Iniciador, Recebido};
 
 use crate::config::Origem;
 use crate::valores::hex_para_bytes;
@@ -48,36 +51,19 @@ use crate::valores::hex_para_bytes;
 /// lados.
 const LOTE: u64 = 500;
 
-/// O teto de UMA resposta do source, em bytes.
-///
-/// # Por que ele passou a existir
-///
-/// Enquanto o lote era lido COM a trava de dados na mao, o tamanho dele era o
-/// menor dos problemas. Agora que ele e lido antes -- e mora inteiro na
-/// memoria da replica ate a trava chegar --, «quanto isso pode crescer» virou
-/// uma pergunta com resposta obrigatoria, e a resposta nao pode ser «o que o
-/// outro lado mandar»: `read_line` sem teto aceita uma linha do tamanho da
-/// memoria da maquina, e quem escolhe o tamanho e o outro lado.
-///
-/// # A conta
-///
-/// [`LOTE`] eventos por resposta, e a imagem de cada linha viaja em
-/// hexadecimal -- dois caracteres por byte. O source corta o lote em
-/// [`crate::servidor::TETO_DO_LOTE_SERVIDO`] bytes de imagem, o que da
-/// ~32 MiB de texto mais o enfeite do JSON. Este teto e o DOBRO disso, para
-/// que um par sadio nunca encoste nele e ele sirva so para o que ele existe:
-/// impedir que a replica aloque sem limite por ordem de quem esta do outro
-/// lado do fio.
-///
-/// Uma linha unica maior que isto nao passa, e a recusa diz o numero -- o que
-/// e melhor que o `Killed` do nucleo, que nao diz nada.
-const TETO_DA_RESPOSTA: u64 = 128 * 1024 * 1024;
+// O teto de um registro lido do fio NAO mora mais aqui: ele desceu para o
+// `Canal` do `phxsql-core` (`TETO_DO_REGISTRO`), porque a leitura passou a
+// ser dele. Um teto nesta camada voltaria a deixar o caminho cifrado sem
+// nenhum -- que foi exatamente o risco desta integracao.
 
 /// Uma conexao com o source, falando o JSON por linha da porta de dados.
 pub struct Cliente {
     fluxo: TcpStream,
     leitor: BufReader<TcpStream>,
     token: String,
+    /// Em claro (como sempre foi) ou dentro do tunel. Ver
+    /// `docs/CIFRA-DO-FIO.md`.
+    canal: Canal,
 }
 
 impl Cliente {
@@ -121,7 +107,51 @@ impl Cliente {
             fluxo,
             leitor,
             token: token.to_string(),
+            canal: Canal::Claro,
         })
+    }
+
+    /// Pede o aperto de mao e passa a falar por dentro do tunel.
+    ///
+    /// `pino` e a chave publica que se ESPERA do source. Com pino, um source
+    /// que apresente outra chave derruba a conexao -- e e assim que a replica
+    /// se protege de quem esta no meio. Sem pino, o tunel protege da escuta
+    /// PASSIVA e nada mais, porque o atacante apresenta a chave dele e nao ha
+    /// com o que comparar.
+    ///
+    /// Devolve a chave que o source apresentou, para quem quiser anota-la.
+    pub fn cifrar(&mut self, pino: Option<[u8; 32]>) -> Result<[u8; 32]> {
+        let (iniciador, m1) = Iniciador::comecar(pino);
+        let pedido = Json::objeto(vec![
+            ("op", Json::texto_de("cifrar")),
+            ("e", Json::texto_de(base64::codificar(&m1))),
+        ])
+        .escrever();
+        self.fluxo.write_all(pedido.as_bytes())?;
+        self.fluxo.write_all(b"\n")?;
+        self.fluxo.flush()?;
+
+        let mut resposta = String::new();
+        if self.leitor.read_line(&mut resposta)? == 0 {
+            return Err(PhxError::Io(std::io::Error::other(
+                "o source fechou a conexao no aperto de mao",
+            )));
+        }
+        let j = Json::analisar(&resposta)?;
+        if !j.booleano_ou("ok", false) {
+            return Err(PhxError::Autorizacao(format!(
+                "o source recusou o aperto de mao: {}",
+                j.texto_ou("erro", "sem motivo")
+            )));
+        }
+        let m2 = base64::decodificar(
+            j.campo("resultado")
+                .map(|r| r.texto_ou("m2", ""))
+                .unwrap_or(""),
+        )?;
+        let (transporte, apresentada) = iniciador.terminar(&m2)?;
+        self.canal = Canal::Cifrado(Box::new(transporte));
+        Ok(apresentada)
     }
 
     /// Manda um pedido e devolve o `resultado`, ou o erro que o source disse.
@@ -130,33 +160,16 @@ impl Cliente {
             campos.push(("token", Json::texto_de(self.token.clone())));
         }
         let linha = Json::objeto(campos).escrever();
-        self.fluxo.write_all(linha.as_bytes())?;
-        self.fluxo.write_all(b"\n")?;
-        self.fluxo.flush()?;
+        self.canal.escrever(&mut self.fluxo, &linha)?;
 
-        // Le no MAXIMO `TETO_DA_RESPOSTA` + 1 byte: o `+1` e o que separa
-        // "coube" de "estourou" sem ter de contar o que ainda vem. Passou do
-        // teto, a conexao fica no meio de uma linha e nao serve mais -- por
-        // isso a recusa e um erro, que faz a rodada inteira voltar e a
-        // proxima abrir uma conexao nova.
-        let mut resposta = String::new();
-        let lidos = {
-            let mut limitado = (&mut self.leitor).take(TETO_DA_RESPOSTA + 1);
-            limitado.read_line(&mut resposta)?
+        let resposta = match self.canal.ler(&mut self.leitor)? {
+            Recebido::Linha(l) => l,
+            Recebido::Fim => {
+                return Err(PhxError::Io(std::io::Error::other(
+                    "o source fechou a conexao",
+                )))
+            }
         };
-        if lidos == 0 {
-            return Err(PhxError::Io(std::io::Error::other(
-                "o source fechou a conexao",
-            )));
-        }
-        if lidos as u64 > TETO_DA_RESPOSTA {
-            return Err(PhxError::LimiteExcedido(format!(
-                "o source mandou mais de {} MiB numa resposta so, e a replica \
-                 nao guarda um lote desse tamanho na memoria; baixe o tamanho \
-                 do lote do lado do source ou parta a tabela",
-                TETO_DA_RESPOSTA / (1024 * 1024)
-            )));
-        }
         let j = Json::analisar(&resposta)?;
         if !j.booleano_ou("ok", false) {
             // O erro do outro lado ja vem classificado -- `nome` e `classe`
@@ -387,6 +400,11 @@ pub fn ligar(origem: &Origem) -> Result<Cliente> {
         &origem.token,
         Duration::from_secs(30),
     )?;
+    // O tunel ANTES do login, de proposito: e a prova do desafio-resposta e o
+    // token que ele existe para esconder, e depois do login ja seria tarde.
+    if origem.cifra {
+        c.cifrar(origem.pino_do_fio()?)?;
+    }
     if !origem.usuario.is_empty() {
         c.autenticar(&origem.usuario, &origem.senha_hash, &origem.senha)?;
     }
