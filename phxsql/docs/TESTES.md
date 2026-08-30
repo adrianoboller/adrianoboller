@@ -41,42 +41,42 @@ contando `#[test]` por arquivo e agrupando:
 <!-- cobertura:inicio -->
 | área | testes | % |
 |---|---:|---:|
-| Motor de dados (arquivos, índice, diários) | 323 | 25,2 |
-| Protocolo e portões (despachar) | 180 | 14,0 |
-| Núcleo (JSON, tipos, UUID, zip, paralelo) | 133 | 10,4 |
-| Criptografia e codificação | 121 | 9,4 |
-| Configuração | 87 | 6,8 |
-| DbLink | 65 | 5,1 |
-| Telemetria e profiler | 45 | 3,5 |
-| Camada SQL (léxico, sintaxe, tradução) | 44 | 3,4 |
+| Motor de dados (arquivos, índice, diários) | 341 | 27,1 |
+| Protocolo e portões (despachar) | 180 | 14,3 |
+| Núcleo (JSON, tipos, UUID, zip, paralelo) | 133 | 10,6 |
+| Configuração | 82 | 6,5 |
+| Criptografia e codificação | 80 | 6,4 |
+| DbLink | 65 | 5,2 |
+| Telemetria e profiler | 45 | 3,6 |
+| Camada SQL (léxico, sintaxe, tradução) | 44 | 3,5 |
 | Gatilhos e procedimentos | 38 | 3,0 |
-| Jobs | 31 | 2,4 |
+| Jobs | 31 | 2,5 |
 | Interface web (servidor HTTP) | 28 | 2,2 |
-| **MCP** | **19** | **1,5** |
-| **Usuários e permissões** | **19** | **1,5** |
+| MCP | 19 | 1,5 |
+| Usuários e permissões | 19 | 1,5 |
 | **Console de terminal (phxsqlcmd)** | **18** | **1,4** |
 | **Segurança de rede (blacklist, firewall)** | **18** | **1,4** |
-| **ODBC** | **17** | **1,3** |
+| **ODBC** | **17** | **1,4** |
 | **Mensagens (i18n do servidor)** | **14** | **1,1** |
 | **Exportação** | **13** | **1,0** |
 | **Junções e união** | **13** | **1,0** |
-| **Pivot** | **12** | **0,9** |
+| **Pivot** | **12** | **1,0** |
 | **Replicação** | **11** | **0,9** |
 | **Alertas e e-mail** | **8** | **0,6** |
-| **CLI** | **7** | **0,5** |
-| **Cluster** | **7** | **0,5** |
-| **Servidor (outros)** | **7** | **0,5** |
+| **CLI** | **7** | **0,6** |
+| **Cluster** | **7** | **0,6** |
+| **Servidor (outros)** | **7** | **0,6** |
 | **Monitor de máquina** | **6** | **0,5** |
-| **total** | **1284** | |
+| **total** | **1256** | |
 
 Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 
 | arquivo | linhas |
 |---|---:|
-| `phxsql-store/src/table.rs` | 2458 |
+| `phxsql-store/src/table.rs` | 2562 |
 | `phxsql-store/src/ndx.rs` | 1580 |
-| `phxsql-server/src/main.rs` | 479 |
-| `phxsql-server/src/replica.rs` | 407 |
+| `phxsql-server/src/main.rs` | 452 |
+| `phxsql-server/src/replica.rs` | 352 |
 | `phxsql-server/src/dblink/conexao.rs` | 238 |
 | `phxsql-server/src/carga.rs` | 226 |
 | `phxsql-cmd/src/main.rs` | 162 |
@@ -429,13 +429,10 @@ a grade editável esconde `softdeleted` e `rownum` porque ali quem manda neles
 dia alguém uniformizar, um dos lados falha e a conversa acontece antes do
 commit, e não depois do relato.
 
-### 5.5 O `phxsql-cli` com 7 testes — o número mudou, o anotado continua
+### 5.5 O `phxsql-cli` (845 linhas) sem nenhum teste
 
-Estava escrito aqui «sem nenhum teste», e a regravação da tabela desta rodada
-mostrou **7**: entraram com o pacote de download, e a frase digitada envelheceu
-calada — a mesma lei que os geradores existem para cumprir. O `phxsqlcmd` tem
-18. Fica anotado com o tamanho: continua sendo superfície rala, agora com o
-número certo.
+O `phxsqlcmd` tem 18; o `phxsql` da linha de comando, nenhum. Fica anotado
+com o tamanho: é a maior superfície sem cobertura depois do `replica.rs`.
 
 ### 5.6 O `abrirAdmin` escreve na tela depois do `await`, sem perguntar se ainda é a dele
 
@@ -492,7 +489,7 @@ projeto estava verde.
 O `provar.py` **não refaz nenhuma delas** — cada uma tem dono, já foi provada e
 continua rodando sozinha pelo comando dela. Ele chama, cronometra e soma.
 
-### As dezesseis partes
+### As dezessete partes
 
 | parte | o que prova | portas |
 |---|---|---|
@@ -501,6 +498,7 @@ continua rodando sozinha pelo comando dela. Ele chama, cronometra e soma.
 | `tela` | a interface contra o servidor de verdade: 120 telas, CSS global, contraste, primeira pintura | 6950/6951 |
 | `idiomas` | o caminho do idioma de ponta a ponta, e o comportamento velho | 6952/6953 |
 | `ponta-a-ponta` | os seis itens do dono pelo soquete, mais a passada pela tela | 6300/6301 |
+| `alter` | acrescentar coluna numa tabela com dado pelo soquete: rowid preservado, backup, e a réplica que ainda não alterou | 7150/7152 |
 | `rotinas` | gatilhos e procedimentos pelo soquete, com SIGNAL, lote e reinício | 5301/5701 |
 | `profiler` | a redação do Profiler por soquete: vinte pedidos torcidos, sentinela no anel e no `.txt` | 6251 |
 | `telemetria-desenho` | o painel de bolhas por medida: rótulo na esfera, alvo de clique, contraste | — |
@@ -639,13 +637,12 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `endereco-fora-da-amarracao` | as DUAS fechaduras somem: dá para embaralhar as linhas cifradas | 1 | ✅ provada |
 | `cache-de-chaves-nao-limpo` | trocar a senha da cifra não limpa o cache: a senha errada abre | 1 | ✅ provada |
 | `catraca-dos-textos` | mais um texto de tela cravado, fora da fábrica de idiomas | 1 | ✅ provada |
-| `ordem-pequena-aceita` | o segredo X25519 todo-zeros aceito como chave de sessão | 2 | ✅ provada |
-| `contador-do-fio-parado` | o contador de registros do fio parado — nonce repetido | 3 | ✅ provada |
-| `fio-cortado-vira-fim` | o fio cortado no meio devolvido como fim de conversa | 1 | ✅ provada |
-| `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | 1 | ✅ provada |
-| `transcricao-sem-o-cifrado` | o hash da transcrição sem o texto cifrado da mensagem 2 | 2 | ✅ provada |
+| `alter-compacta-o-buraco` | a reescrita da coluna nova pula os slots excluídos e renumera o rowid | 1 | ✅ provada |
+| `alter-sem-remapear-posicao` | a coluna nova desloca as de sistema e ninguém remapeia quem guarda posição | 2 | ✅ provada |
+| `alter-espelho-para-tras` | o espelho `.bkp` fica com a largura velha depois de acrescentar coluna | 1 | ✅ provada |
+| `alter-queda-no-meio` | o conjunto de volumes misturado abre e lê o volume 3 com a largura do 1 | 2 | ✅ provada |
 
-**23 guardas: 21 provadas, 2 redundantes** — 195 s de mutação, medido em 2026-08-30 06:10.
+**22 guardas: 20 provadas, 2 redundantes** — 168 s de mutação, medido em 2026-08-30 06:32.
 
 As notas que a rodada deixou:
 

@@ -815,6 +815,35 @@ pub const OPERACOES: &[Operacao] = &[
         ferramenta_mcp: false,
     },
     Operacao {
+        nome: "acrescentar_coluna",
+        apelidos: &[],
+        resumo: "Acrescenta uma coluna a uma tabela que já tem dado, \
+                 preservando o rowid de cada linha. Reescreve o `.reg` \
+                 inteiro; o `.ndx` não é tocado.",
+        parametros: &[
+            DB,
+            TAB,
+            obr("nome", "string", "o nome da coluna nova"),
+            opc("tipo", "string", "Str(60), Int8, Decimal(15,2)… (padrão Str(60))"),
+            opc(
+                "obrigatoria",
+                "boolean",
+                "não aceita nulo; numa tabela COM linha, exige \"padrao\"",
+            ),
+            opc(
+                "padrao",
+                "string",
+                "o valor que as linhas que já existem recebem, no tipo da coluna; sem ele, nulo",
+            ),
+            opc("caption", "string", "o rótulo de tela"),
+            opc("descricao", "string", "para que a coluna serve"),
+            opc("mascara", "string", "a PICTURE do Clarion(R)"),
+            opc("dado_pessoal", "string", "nao, pessoal ou sensivel (LGPD/GDPR)"),
+        ],
+        exemplo: r#"{"op":"acrescentar_coluna","database":"loja","tabela":"clientes","nome":"situacao","tipo":"Str(12)","padrao":"ativo"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
         nome: "excluir_tabela",
         apelidos: &[],
         resumo: "Apaga os arquivos de uma tabela. Não há desfazer, e por isso \

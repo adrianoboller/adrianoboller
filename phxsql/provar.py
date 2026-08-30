@@ -204,6 +204,10 @@ PARTES = [
           "registro repetido e o fio cortado",
           [sys.executable, "bancada/cifra-do-fio/prova.py"],
           requisitos=[porta_livre(7210, 7211)], prazo=900),
+    parte("alter", "acrescentar coluna numa tabela com dado, pelo soquete: o "
+          "rowid preservado, o backup, e a replica que ainda nao alterou",
+          [sys.executable, "bancada/alter/provar.py"],
+          requisitos=[porta_livre(7150, 7152)], prazo=900),
 
     parte("rotinas", "gatilhos e procedimentos pelo soquete, com o SIGNAL, o "
           "lote, o reinicio e a tabela sem gatilho",

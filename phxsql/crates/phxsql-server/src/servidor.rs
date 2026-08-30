@@ -73,6 +73,9 @@ pub(crate) const OPS_ESCRITA: &[&str] = &[
     // no `.reg` -- catalogo, mas catalogo gravado em disco.
     "declarar_fk",
     "excluir_fk",
+    // Acrescentar coluna reescreve o `.reg` inteiro. E a maior escrita de
+    // estrutura que existe aqui.
+    "acrescentar_coluna",
     "excluir_tabela",
     "duplicar_tabela",
     "copiar_tabela",
@@ -5503,6 +5506,7 @@ impl Servidor {
             "criar_database" => self.op_criar_database(p),
             "criar_schema" => self.op_criar_schema(p),
             "criar_tabela" => self.op_criar_tabela(p),
+            "acrescentar_coluna" => self.op_acrescentar_coluna(p, sessao),
             "declarar_fk" => self.op_declarar_fk(p, sessao),
             "excluir_fk" => self.op_excluir_fk(p, sessao),
             "excluir_tabela" => self.op_excluir_tabela(p),
@@ -7078,6 +7082,58 @@ impl Servidor {
             // na tela sem conhecer o motor de cor.
             ("imposta", Json::Bool(false)),
             ("arquivos_reescritos", Json::Bool(reescreveu)),
+        ]))
+    }
+
+    /// Acrescenta uma coluna a uma tabela que ja tem dado.
+    ///
+    /// # O que ele reescreve, e o que nao toca
+    ///
+    /// O `.reg` inteiro -- e o `.bkp`, quando ha espelho --, porque o slot fica
+    /// mais largo e o endereco de cada linha sai de
+    /// `data_offset + (rowid-1) * slot_size`. O `.ndx` NAO e tocado: ele aponta
+    /// para rowid, e o rowid nao muda. O `.log`, o `.trash`, o `.reason` e o
+    /// `.lgpd` tambem nao: eles guardam o passado, e o passado nao ganha coluna.
+    ///
+    /// Medido em `--example custo-do-alter`: 0,55 us por linha, 10 milhoes de
+    /// linhas em 5,5 s. A resposta traz `slots` e `ms` para quem chamou poder
+    /// dizer isso na tela em vez de estimar.
+    fn op_acrescentar_coluna(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        // A coluna chega como um objeto `coluna`, ou solta nos campos do
+        // proprio pedido -- que e como a tela mais curta a manda.
+        let corpo = p.campo("coluna").unwrap_or(p);
+        let coluna = crate::valores::coluna_de_json(corpo, 0)?;
+
+        let dados = self.travar_dados()?;
+        let mut t = self.abrir_travada(&dados, p, sessao)?;
+
+        // O padrao chega no tipo da coluna, e nao como texto solto: e o mesmo
+        // caminho de conversao de um `inserir`, entao "abc" numa coluna Int8
+        // e recusado aqui e nao gravado em dez mil linhas.
+        let padrao = match p.campo("padrao").or_else(|| p.campo("default")) {
+            None | Some(Json::Nulo) => None,
+            Some(j) => Some(crate::valores::json_para_valor(j, &coluna.ty)?),
+        };
+
+        let inicio = std::time::Instant::now();
+        let slots = t.acrescentar_coluna(coluna.clone(), padrao)?;
+        let ms = inicio.elapsed().as_secs_f64() * 1e3;
+
+        Ok(Json::objeto(vec![
+            ("database", Json::texto_de(p.texto_ou("database", ""))),
+            ("tabela", Json::texto_de(p.texto_ou("tabela", ""))),
+            ("coluna", Json::texto_de(coluna.nome.clone())),
+            (
+                "posicao",
+                Json::de_u64(t.esquema().coluna_por_nome(&coluna.nome).unwrap_or(0) as u64),
+            ),
+            ("colunas", Json::de_u64(t.esquema().colunas().len() as u64)),
+            ("slots_reescritos", Json::de_u64(slots)),
+            ("registros", Json::de_u64(t.registros())),
+            ("ms", Json::Numero(ms)),
+            // Quem chamou precisa poder dizer a verdade na tela: o indice nao
+            // foi refeito porque nao precisou.
+            ("indices_refeitos", Json::Bool(false)),
         ]))
     }
 

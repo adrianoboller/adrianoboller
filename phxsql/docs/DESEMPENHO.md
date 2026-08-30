@@ -1533,6 +1533,64 @@ declarar. E, depois que o `fsync` saiu da fase 3, não havia mais o que
 amortizar: a vazão com `LOTE = 500` já é a de antes do conserto. A hipótese
 morreu duas vezes, e a segunda foi por ter deixado de existir o problema que
 ela resolvia.
+## 4.12 `ALTER TABLE ADD COLUMN`: a inferência era «minutos», e são 5,5 s
+
+O item 25 de `docs/SPRINTS.md` chegou com o custo escrito como **inferência**,
+e com a palavra: *«a casa dos minutos para dez milhões — inferido, não
+medido»*. Medi antes de aceitar o desenho, com `--example custo-do-alter`, e a
+inferência estava errada por quase duas ordens de grandeza.
+
+O medidor não chuta dez milhões: ele mede vários tamanhos, mostra que o custo
+por linha é constante, e o maior deles **é** dez milhões.
+
+| linhas | `.reg` antes | alterar | µs/linha | MiB/s (lê + escreve) |
+|---:|---:|---:|---:|---:|
+| 50.000 | 5,6 MiB | 0,023 s | 0,470 | 504 |
+| 200.000 | 22,5 MiB | 0,107 s | 0,536 | 441 |
+| 1.000.000 | 112,5 MiB | 0,536 s | 0,536 | 441 |
+| 4.000.000 | 450,1 MiB | 3,096 s | 0,774 | 306 |
+| **10.000.000** | **1.125,3 MiB** | **5,53 s** | **0,553** | **427** |
+
+A tabela é a do medidor: `Int8` + `Str(40)` + `Str(20)` + `Decimal(15,2)` mais
+as duas colunas de sistema, e a coluna nova é `Str(12)` — 12 bytes a mais por
+slot, de 118 para 130. O custo é **linear e dominado pelo disco**: 427 MiB/s é
+a soma do arquivo lido com o escrito, e a passada é sequencial dos dois lados.
+A linha dos 4 milhões saiu mais lenta (306 MiB/s) por pressão de cache da
+máquina, e ela fica na tabela justamente para não fingir que a medição é
+silenciosa.
+
+Para comparar: **construir** a mesma tabela de dez milhões levou 90,4 s. A
+alteração custa **6,1% do que custou digitar o dado** — e é por isso que
+reescrever, que parecia a saída cara, é a barata.
+
+### As três saídas, com número
+
+**(a) reescrever a tabela** — a escolhida. 5,53 s por dez milhões de linhas,
+uma passada, e o rowid preservado porque a ordem é preservada. Ela **não** faz
+mais nada: não troca tipo de coluna, não tira coluna, não cria índice.
+
+**(b) coluna «à direita», com duas larguras de slot convivendo** — o formato
+**não permite**, e a conferência é de uma linha: o `slot_size` é **um campo
+só**, `u32` nos bytes 16..20 do cabeçalho do volume, e é dele que sai o
+endereço de toda linha. Duas larguras exigiriam um mapa `rowid → offset`, que
+é 8 bytes por linha (80 MiB para dez milhões) e uma **busca** onde hoje há uma
+multiplicação. Esse é o preço medido do outro lado: numa tabela de 200.000
+linhas, ler pela conta custa **1,08 µs** e ler passando por uma descida de
+árvore custa **2,55 µs** — **2,36×**, em *toda* leitura, para poupar uma
+passada *uma* vez. Recusada com o número.
+
+**(c) só em tabela vazia** — o que o Aria exige para desligar índice. Custa
+**0,6 ms**, e é honesta; ela apenas não resolve o problema que existe: quem
+precisa de coluna nova precisa dela no segundo mês, com dado dentro. Ela
+continua sendo o caminho de quem declara a coluna obrigatória sem padrão, que
+é o único caso em que a alteração é recusada numa tabela com linha.
+
+### O que isto custa de espaço, durante
+
+Pico de **2× o `.reg`** (o velho e o `*.novo` convivem até a troca), mais 2× o
+`.bkp` quando há espelho. Para dez milhões de linhas: 1,1 GiB viram 2,3 GiB no
+pico, e 1,2 GiB depois. É o preço de a queda no meio deixar o arquivo velho
+inteiro ou o novo inteiro, e nunca um meio-termo.
 
 ### Como refazer
 
@@ -1552,6 +1610,11 @@ ela **pendura** por 30 s, e uma bateria que pendura não reprova ninguém — el
 trava. Medido: a guarda leva 14,1 s com o defeito reposto e 1,3 s com a árvore
 limpa, e a mensagem de reprovação já traz o diagnóstico pronto (*«`varrer` sem
 resposta em 8 s; o `ping`, que não precisa da trava, respondeu em 570 µs»*).
+
+cargo build --release --examples -p phxsql-store
+./target/release/examples/custo-do-alter 50000 200000 1000000
+./target/release/examples/custo-do-alter 10000000     # ~1,5 GiB livres
+```
 
 ---
 
@@ -1728,6 +1791,7 @@ ele: **diagnóstico plausível não é diagnóstico medido.**
 
 ```bash
 cargo run --release --example onde-doi -- 200000       # a tabela do §2
+cargo run --release --example custo-do-alter -- 50000 200000 1000000  # a §4.12
 cargo run --release --example custo-do-sync            # os modos de durabilidade
 cargo run --release --example custo-do-excluir -- 200000 20000 200   # o fsync da exclusao, §4.12
 python3 bancada/exclusao/prova-da-queda.py             # a queda do processo, §4.12

@@ -894,7 +894,12 @@ impl Placar {
 /// marcacao, e o conserto deles esta no `docs/MENSAGENS.md`: frase picada e
 /// intraduzivel por construcao, entao a frase inteira virou uma chave so e o
 /// corte em `<b>`/`<code>` passou a acontecer DEPOIS da traducao.
-pub const TETO: usize = 1_999;
+/// 1.999 -> 1.996 no sprint 25 (`acrescentar_coluna`): a nota do cartao de
+/// tabela do editor de modelo dizia, em portugues cravado, que alterar coluna
+/// nao existia. Ela virou o formulario que existe, e os textos dele nasceram
+/// na fabrica -- os tres paragrafos que sairam sao os tres que a catraca
+/// desce.
+pub const TETO: usize = 1_996;
 
 #[cfg(test)]
 mod testes {

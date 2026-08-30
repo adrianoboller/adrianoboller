@@ -1366,7 +1366,7 @@ GUARDAS = [
             "fio::testes::mensagem_do_tamanho_errado_e_recusada",
         ],
     },
-    # 33. O teto do registro do fio, que a integracao quase perdeu
+    # 24. O teto do registro do fio, que a integracao quase perdeu
     # -----------------------------------------------------------------------
     {
         "id": "fio-sem-teto-de-registro",
@@ -1394,6 +1394,118 @@ GUARDAS = [
         "alvo": ["--lib"],
         "caem": [
             "fio::testes::o_teto_do_registro_para_a_leitura_e_nao_so_recusa_depois",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # 25. O `acrescentar_coluna` -- as quatro guardas do sprint 25
+    # -----------------------------------------------------------------------
+    {
+        "id": "alter-compacta-o-buraco",
+        "titulo": "a reescrita da coluna nova pula os slots excluídos e renumera o rowid",
+        "porque": (
+            "regra da casa: a ordem de digitacao e sagrada, e o `.reg` nunca "
+            "reaproveita slot excluido. Pular o buraco na reescrita e a "
+            "otimizacao obvia -- e ela renumera tudo depois do primeiro "
+            "buraco, quebrando a ordem e todo o `.ndx` de uma vez, sem erro "
+            "nenhum no caminho."
+        ),
+        "arquivo": "crates/phxsql-store/src/reg.rs",
+        "trecho": """        de.read_exact(&mut slot)?;
+        let novo = transformar(volume, primeiro_rowid + i, &slot, &nome)?;
+""",
+        "troca": """        de.read_exact(&mut slot)?;
+        // DEFEITO REPOSTO: compacta o buraco na passagem.
+        if slot[0] != STATUS_ATIVO {
+            continue;
+        }
+        let novo = transformar(volume, primeiro_rowid + i, &slot, &nome)?;
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "acrescentar-coluna"],
+        "caem": [
+            "a_coluna_entra_e_o_rowid_de_cada_linha_continua_o_mesmo",
+        ],
+        "seguem": [
+            "o_indice_nao_e_tocado_e_continua_achando_a_linha",
+            "sem_padrao_a_linha_antiga_recebe_nulo",
+        ],
+    },
+    {
+        "id": "alter-sem-remapear-posicao",
+        "titulo": "a coluna nova desloca as de sistema e ninguém remapeia quem guarda posição",
+        "porque": (
+            "a armadilha nomeada do sprint 25, e a familia do `rownum`: "
+            "coluna de sistema nova quebra quem filtra pela primeira. Tres "
+            "coisas guardam POSICAO e nao nome -- indice, chave estrangeira e "
+            "coluna de particao -- e a coluna nova empurra todas a partir "
+            "dela."
+        ),
+        "arquivo": "crates/phxsql-core/src/schema.rs",
+        "trecho": """        let desloca = |i: usize| if i >= posicao { i + 1 } else { i };
+""",
+        "troca": """        // DEFEITO REPOSTO: a posicao nao anda.
+        let desloca = |i: usize| i;
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "acrescentar-coluna"],
+        "caem": [
+            "indice_sobre_coluna_de_sistema_e_remapeado",
+            "a_chave_estrangeira_e_remapeada",
+        ],
+        "seguem": [
+            "a_coluna_entra_e_o_rowid_de_cada_linha_continua_o_mesmo",
+            "com_softdeleted_no_meio_a_coluna_do_usuario_nao_se_move",
+        ],
+    },
+    {
+        "id": "alter-espelho-para-tras",
+        "titulo": "o espelho `.bkp` fica com a largura velha depois de acrescentar coluna",
+        "porque": (
+            "o espelho e a segunda chance do `.reg`, e uma segunda chance com "
+            "a largura errada e pior que nenhuma: a leitura que recorresse a "
+            "ele leria o slot errado."
+        ),
+        "arquivo": "crates/phxsql-store/src/reg.rs",
+        "trecho": """        for (v, _, caminho, espelho) in &primeiros {
+            trocar_pelo_novo(caminho)?;
+""",
+        "troca": """        // DEFEITO REPOSTO: o espelho nao acompanha a troca.
+        for (v, _, caminho, espelho) in &primeiros {
+            let espelho: &Option<PathBuf> = &None;
+            trocar_pelo_novo(caminho)?;
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "acrescentar-coluna"],
+        "caem": [
+            "o_espelho_acompanha_e_continua_salvando",
+        ],
+        "seguem": [
+            "a_coluna_entra_e_o_rowid_de_cada_linha_continua_o_mesmo",
+        ],
+    },
+    {
+        "id": "alter-queda-no-meio",
+        "titulo": "o conjunto de volumes misturado abre e lê o volume 3 com a largura do 1",
+        "porque": (
+            "sem a recuperacao e a guarda, uma queda entre as trocas deixa a "
+            "tabela numa roleta: cada linha do volume que ficou para tras sai "
+            "deslocada da anterior, e nao ha CRC que reclame, porque os bytes "
+            "lidos sao bytes de outra linha."
+        ),
+        "arquivo": "crates/phxsql-store/src/reg.rs",
+        "trecho": """        r.terminar_troca_interrompida()?;
+        r.conferir_volumes_uniformes()?;
+""",
+        "troca": """        // DEFEITO REPOSTO: abrir nao termina a troca nem confere os volumes.
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "acrescentar-coluna"],
+        "caem": [
+            "a_queda_entre_as_trocas_e_terminada_na_abertura",
+            "a_queda_sem_o_novo_recusa_em_vez_de_ler_deslocado",
+        ],
+        "seguem": [
+            "paginada_reescreve_cada_volume_e_preserva_a_ordem",
         ],
     },
 ]

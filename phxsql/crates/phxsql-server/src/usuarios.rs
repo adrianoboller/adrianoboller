@@ -248,6 +248,11 @@ impl Atividade {
             // que sempre pode declara-la no proprio criar_tabela -- e o portao
             // por tabela vale, porque as duas operacoes tem o campo "tabela".
             "declarar_fk" | "excluir_fk" => Atividade::Criar,
+            // Acrescentar coluna reescreve o `.reg` INTEIRO -- e a maior
+            // escrita de estrutura do motor, e a que nao tem desfazer barato.
+            // Nao basta poder criar tabela: isto exige administrar, como o
+            // `marcar_lgpd` e o `excluir_tabela` ao lado.
+            "acrescentar_coluna" => Atividade::Administrar,
             // Apagar uma tabela apaga os cinco arquivos de uma vez, e nao ha
             // desfazer. Nao basta poder excluir LINHA para poder excluir a
             // TABELA: isto exige administrar.
