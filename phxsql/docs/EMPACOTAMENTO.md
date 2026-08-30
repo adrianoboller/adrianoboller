@@ -232,9 +232,57 @@ x86_64-w64-mingw32-objdump -p .../phxsql_odbc.dll | grep -c 'SQL'
 # os 21 símbolos ODBC que o gerenciador procura
 ```
 
-O que **não** dá: rodar. Sem Windows e sem `wine`, o `.exe` é conferido pela
-forma (PE32+ x86-64), pelas DLLs que importa e pelos símbolos que exporta —
-nunca por execução. Dizer mais que isso seria inventar.
+Esta seção dizia, até esta rodada: *«O que **não** dá: rodar. Sem Windows e
+sem `wine`, o `.exe` é conferido pela forma, pelas DLLs que importa e pelos
+símbolos que exporta — nunca por execução.»* A frase estava certa **enquanto
+não havia `wine`**, e o «sem `wine`» dela era a saída.
+
+### 6.1 Com o `wine`, «compila e empacota» virou «gravou e leu»
+
+```bash
+sudo apt install wine        # ~150 MB de download, ~700 MB em disco
+bancada/windows/provar.sh
+```
+
+Não precisa de VM, e não pelo mesmo motivo do ARM. Uma VM completa exige
+`/dev/kvm`, que esta máquina não tem — ela própria é uma máquina virtual sem
+aninhamento. O `qemu-user-static` contorna isso emulando o **binário**; o
+`wine` contorna de outro jeito: ele **não emula nada**. O `.exe` é x86-64 e a
+máquina é x86-64, então o código roda **nativo** — o que o `wine` reimplementa
+são as **DLLs** do Windows sobre a libc do Linux.
+
+O que a prova faz, com a **mesma sonda** da bancada ARM (`bancada/arm/sonda.py`,
+que agora recebe o rótulo de fora em vez de se anunciar «ARM64» em toda
+corrida):
+
+| Passo | Resultado |
+|---|---|
+| gerar o hash da senha **com o `.exe`** | `pbkdf2-sha256$…` — o PBKDF2 roda sob `wine` |
+| subir o `phxsqld.exe` | no ar, RSS **8.796 e 8.800 kB** em duas corridas (inclui o próprio `wine`) |
+| `ping` com token | `ok` |
+| `login` com a senha cujo hash o próprio `.exe` gerou | `ok` — a criptografia fecha dos dois lados |
+| `criar_database` + `criar_tabela` | `ok` — os sete arquivos nascem pelo `CreateFile` do `wine` |
+| inserir 50 linhas | **50 de 50** |
+| `varrer` de volta | **50 registros, 50 devolvidas** |
+
+E o binário provado pode ser **o do pacote**: sem `target/`, o script pega o
+`.exe` de `pacotes/phxsql-*-windows.zip`. É até melhor — o que se prova aí é o
+arquivo que o usuário baixa, e não um subproduto da compilação.
+
+### 6.2 O que isto **não** prova, e continua sem prova
+
+- **Desempenho no Windows.** As 50 linhas saíram a 4,5 ms/linha numa corrida e
+  60,3 ms noutra, com a máquina carregada no meio. Isso é ruído, não o custo do
+  `wine` nem o do motor. Para desempenho não há substituto: é preciso um
+  Windows.
+- **Compatibilidade completa.** O `wine` reimplementa as DLLs; ele não *é* o
+  Windows. O caminho que o script exercita é estreito de propósito — arquivo,
+  soquete, relógio e criptografia —, e é o caminho do servidor.
+- **O driver ODBC.** A `phxsql_odbc.dll` continua conferida só pela forma e
+  pelos 21 símbolos: provar um driver ODBC exige o **gerenciador** do Windows
+  carregando-o, e o `wine` traz o dele, mas isso é outra corrida.
+
+Detalhes e as três decisões do script em `bancada/windows/LEIA-ME.md`.
 
 ---
 
@@ -371,7 +419,7 @@ o invólucro em Swift; o desenho está em `docs/EMBUTIDO.md` §10.2.
 | Plataforma | Estado | O que falta |
 |---|---|---|
 | Linux x86-64 | **roda, exercitado** | — |
-| Windows x86-64 | **compila e empacota** | — |
+| Windows x86-64 | **roda: gravou e leu 50 linhas sob `wine`** (§6.1) | um Windows de verdade, para desempenho e para o driver ODBC |
 | Linux ARM64 / ARMv7 | **roda: gravou e leu 50 linhas sob emulação** | o desempenho real, que só a placa mede |
 | Android (Termux) | **compila; link precisa do NDK** | o NDK, e uma corrida real |
 | Android (dentro de app) | **a biblioteca existe e roda** (`cdylib`, provada em x86-64 e ARM64) | a camada JNI, e o NDK para o alvo bionic |
@@ -379,3 +427,22 @@ o invólucro em Swift; o desenho está em `docs/EMBUTIDO.md` §10.2.
 
 O `phxsqld` como daemon continua **não** sendo o caminho nesses dois últimos, e
 isso não é limitação nossa: é o que os dois sistemas permitem.
+| Android (dentro de app) | não | `staticlib` + camada FFI em C + camada JNI, e **largar o daemon** |
+| iOS | não | Mac com Xcode, camada FFI, e virar biblioteca embutida |
+
+As duas últimas linhas deixaram de ser só «o que falta compilar» e ganharam
+documento próprio: **`docs/MOBILE.md`** mede o motor contra o SQLite(R), diz
+onde cada um ganha, e desenha a forma que cabe num aparelho — biblioteca
+embutida mais cliente de sincronia, e **não** um mini-servidor escutando porta,
+porque o iOS proíbe e o Android mata.
+
+Duas correções que aquele documento trouxe para cá, e que valem no ato de
+empacotar:
+
+- **`cdylib` não é o caminho no aparelho, `staticlib` é.** A §7.4 já registrava
+  que `musl` não produz `cdylib`; para dentro de um aplicativo o que se liga é
+  uma biblioteca **estática**, e aí a restrição do `musl` deixa de importar.
+- **O binário não é o custo maior.** Os 6,8 MB da §7.1 são o que se soma ao
+  aplicativo; o **dado** é o que cresce, e ele ocupa **4,3× o do SQLite(R)**
+  nas mesmas 200.000 linhas (`docs/MOBILE.md` §2). Num telefone, é a segunda
+  conta que decide.

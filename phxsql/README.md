@@ -405,6 +405,7 @@ docs/
   EMBUTIDO.md      o motor como biblioteca no aparelho: a ABI de C, as seis
                    decisões dela, e por que não é um "mini servidor"
   EMPACOTAMENTO.md como os três zips de download são montados e conferidos
+  MOBILE.md        medido contra o SQLite(R), e a forma que cabe num aparelho
   PLANO.md         leitura do rusqlite e do FraseSQL, e o roteiro do projeto
 exemplos/
   Config_exemplo_0N.json   isolado, source e réplica
