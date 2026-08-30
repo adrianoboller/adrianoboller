@@ -642,18 +642,40 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `endereco-fora-da-amarracao` | as DUAS fechaduras somem: dá para embaralhar as linhas cifradas | 1 | ✅ provada |
 | `cache-de-chaves-nao-limpo` | trocar a senha da cifra não limpa o cache: a senha errada abre | 1 | ✅ provada |
 | `catraca-dos-textos` | mais um texto de tela cravado, fora da fábrica de idiomas | 1 | ✅ provada |
+| `trava-fora-do-ponto-unico` | uma tomada da trava de dados fora do `travar_dados()` | 1 | ✅ provada |
+| `trava-sem-guarda-de-reentrancia` | a trava pedida duas vezes pela mesma thread pendura o servidor | 1 | ✅ provada |
+| `exclusao-na-janela-por-padrao` | a exclusão entra na janela por padrão, sem ninguém pedir | 1 | ✅ provada |
+| `exclusao-na-janela-sem-leitor` | `exclusao_na_janela` no config.json, no MANUAL e na tela — e ninguém o lê | 1 | ✅ provada |
+| `reg-fecha-antes-do-trash` | a janela sincroniza o `.reg` antes do `.trash` | 1 | ✅ provada |
+| `rodizio-do-profiler-ignora-o-zero` | `profiler.arquivo_mib: 0` deixa de querer dizer «sem rodízio» | 1 | ✅ provada |
+| `cabecalho-do-profiler-forjado` | o cabeçalho do arquivo do Profiler aceita linha forjada | 1 | ✅ provada |
+| `profiler-sem-descritor-calado` | sem descritor, com arquivo pedido, a linha some sem ser contada | 1 | ✅ provada |
+| `trava-atras-da-rede` | o laço da réplica segura a trava de dados enquanto lê do soquete | 1 | ✅ provada |
+| `ordem-pequena-aceita` | o segredo X25519 todo-zeros aceito como chave de sessão | 2 | ✅ provada |
+| `contador-do-fio-parado` | o contador de registros do fio parado — nonce repetido | 3 | ✅ provada |
+| `fio-cortado-vira-fim` | o fio cortado no meio devolvido como fim de conversa | 1 | ✅ provada |
+| `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | 1 | ✅ provada |
+| `transcricao-sem-o-cifrado` | o hash da transcrição sem o texto cifrado da mensagem 2 | 2 | ✅ provada |
+| `fio-sem-teto-de-registro` | a leitura do fio volta a ser ilimitada | 1 | ✅ provada |
 | `alter-compacta-o-buraco` | a reescrita da coluna nova pula os slots excluídos e renumera o rowid | 1 | ✅ provada |
 | `alter-sem-remapear-posicao` | a coluna nova desloca as de sistema e ninguém remapeia quem guarda posição | 2 | ✅ provada |
 | `alter-espelho-para-tras` | o espelho `.bkp` fica com a largura velha depois de acrescentar coluna | 1 | ✅ provada |
 | `alter-queda-no-meio` | o conjunto de volumes misturado abre e lê o volume 3 com a largura do 1 | 2 | ✅ provada |
+| `transacao-nao-empilha` | a transação escreve direto no disco em vez de empilhar | 3 | ✅ provada |
+| `commit-confirma-abortada` | o COMMIT confirma uma transação que já estava em ABORT_ONLY | 1 | ✅ provada |
+| `marca-antes-do-fsync` | a marca `.tx` é apagada antes de a tabela sincronizar | 1 | ✅ provada |
+| `insert-sem-travar-o-fim` | duas transações que anexam preveem o mesmo rowid | 1 | ✅ provada |
+| `recuperar-sem-reindexar` | a recuperação não reconstrói o `.ndx` que a queda deixou para trás | — | 🟰 redundante |
+| `comum-anexa-no-fim-travado` | a escrita comum que anexa não olha o fim travado | 1 | ✅ provada |
 
-**22 guardas: 20 provadas, 2 redundantes** — 168 s de mutação, medido em 2026-08-30 06:32.
+**43 guardas: 40 provadas, 3 redundantes** — 329 s de mutação, medido em 2026-08-30 17:28.
 
 As notas que a rodada deixou:
 
 - `cadeia-sem-teto` — o binario abortou, que e como esta guarda pega
 - `aad-fora-do-slot` — confirmado: tirar so o AAD nao e sentido por teste nenhum, porque o `nonce_de_pedaco` carrega (rowid, volume, versao)
 - `nonce-sem-endereco` — confirmado: tirar so o endereco do nonce tambem passa despercebido
+- `recuperar-sem-reindexar` — confirmado: nenhum teste de unidade pega este defeito. O indice so fica para tras quando o PROCESSO morre no meio da passada, e isso so acontece de verdade em `bancada/transacoes/provar.py` -- que e por isso que a prova por soquete existe.
 <!-- guardas:fim -->
 
 ### As duas metades, e a terceira que ninguém pede

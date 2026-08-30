@@ -1624,16 +1624,18 @@ GUARDAS = [
             "metade do trabalho gravado."
         ),
         "arquivo": "crates/phxsql-server/src/servidor.rs",
-        "trecho": """            let alvo = if escrita.acao == Acao::Inserir {
-                crate::travas::FIM_DA_TABELA
-            } else {
-                escrita.rowid
-            };
+        "trecho": """        let rowid_pedido = match acao {
+            Acao::Inserir => crate::travas::FIM_DA_TABELA,
+            _ => self.rowid(p)?,
+        };
 """,
-        "troca": """            // DEFEITO REPOSTO: o INSERT trava o rowid previsto em vez do
-            // fim da tabela -- e dois que preveem o mesmo nao se esbarram,
-            // porque cada um trava o "seu".
-            let alvo = escrita.rowid;
+        "troca": """        let rowid_pedido = match acao {
+            // DEFEITO REPOSTO: o INSERT trava um lugar SEU em vez do fim da
+            // tabela. Dois que anexam ao mesmo tempo preveem o mesmo slot e
+            // deixam de se esbarrar, porque cada um travou outra coisa.
+            Acao::Inserir => sessao.ligacao,
+            _ => self.rowid(p)?,
+        };
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
@@ -1687,6 +1689,45 @@ GUARDAS = [
         "seguem": [
             "servidor::testes_transacoes::a_recuperacao_completa_o_commit_e_nao_duplica",
             "servidor::testes_transacoes::marca_que_nao_confere_e_commit_que_nunca_comecou",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # 43. A escrita COMUM anexando por baixo do fim que a transacao segura
+    # -----------------------------------------------------------------------
+    {
+        "id": "comum-anexa-no-fim-travado",
+        "titulo": "a escrita comum que anexa não olha o fim travado",
+        "porque": (
+            "a revisao achou a corrida pelo outro lado -- a transacao pedia a "
+            "trava do fim tarde demais --, e o teste defende a garantia pelos "
+            "dois: quem anexa SEM transacao nenhuma tambem tem de ver o fim "
+            "travado. O estrago nao e o erro no COMMIT, que e visivel: e a "
+            "RECUPERACAO encontrar o slot ocupado pela linha do outro, trata-lo "
+            "como «ja aplicado» e descartar a nossa em silencio."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                // Anexar disputa o FIM da tabela: o proximo slot e um so.
+                "inserir" | "inserir_lote" | "importar" | "carga" | "duplicar_tabela"
+                | "copiar_tabela" => {
+                    travas.conflito_de_linha(&chave, meu, crate::travas::FIM_DA_TABELA)
+                }
+""",
+        "troca": """                // DEFEITO REPOSTO: quem anexa sem transacao nenhuma passa por
+                // baixo do fim travado, e o slot que a transacao prometeu vira
+                // de outra linha.
+                "inserir" | "inserir_lote" | "importar" | "carga" | "duplicar_tabela"
+                | "copiar_tabela" => None,
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_transacoes::escrita_comum_nao_anexa_enquanto_a_transacao_segura_o_fim",
+        ],
+        "seguem": [
+            # A trava de LINHA da escrita comum continua inteira: o defeito e
+            # so no anexar, e um `atualizar` no rowid travado ainda recusa.
+            "servidor::testes_transacoes::sem_transacao_nada_muda",
+            "servidor::testes_transacoes::dois_caixas_em_linhas_diferentes_nao_se_esbarram",
         ],
     },
 ]
