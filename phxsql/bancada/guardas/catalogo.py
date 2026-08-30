@@ -702,26 +702,18 @@ GUARDAS = [
         "trocas": [
             {
                 "arquivo": "crates/phxsql-store/src/reg.rs",
-                "trecho": """            let selado = self
-                .material
-                .selar(&nonce, &aad_do_slot(volume, rowid, versao), &claro);
+                "trecho": """            let selado = material.selar(&nonce, &aad_do_slot(volume, rowid, versao), &claro);
 """,
                 "troca": """            // DEFEITO REPOSTO (1/2): a etiqueta cobre o conteudo, nao o endereco.
-            let selado = self.material.selar(&nonce, b"", &claro);
+            let selado = material.selar(&nonce, b"", &claro);
 """,
             },
             {
                 "arquivo": "crates/phxsql-store/src/reg.rs",
-                "trecho": """        let claro = self.material.abrir(
-            &nonce,
-            &aad_do_slot(volume, rowid, versao),
-            &guardado,
+                "trecho": """    let claro = material.abrir(&nonce, &aad_do_slot(volume, rowid, versao), &guardado, nome)?;
 """,
-                "troca": """        // DEFEITO REPOSTO (2/2): a conferencia tambem deixa de olhar o endereco.
-        let claro = self.material.abrir(
-            &nonce,
-            b"",
-            &guardado,
+                "troca": """    // DEFEITO REPOSTO (2/2): a conferencia tambem deixa de olhar o endereco.
+    let claro = material.abrir(&nonce, b"", &guardado, nome)?;
 """,
             },
         ],
@@ -777,26 +769,18 @@ GUARDAS = [
         "trocas": [
             {
                 "arquivo": "crates/phxsql-store/src/reg.rs",
-                "trecho": """            let selado = self
-                .material
-                .selar(&nonce, &aad_do_slot(volume, rowid, versao), &claro);
+                "trecho": """            let selado = material.selar(&nonce, &aad_do_slot(volume, rowid, versao), &claro);
 """,
                 "troca": """            // DEFEITO REPOSTO (1/3): a etiqueta deixa de cobrir o endereco.
-            let selado = self.material.selar(&nonce, b"", &claro);
+            let selado = material.selar(&nonce, b"", &claro);
 """,
             },
             {
                 "arquivo": "crates/phxsql-store/src/reg.rs",
-                "trecho": """        let claro = self.material.abrir(
-            &nonce,
-            &aad_do_slot(volume, rowid, versao),
-            &guardado,
+                "trecho": """    let claro = material.abrir(&nonce, &aad_do_slot(volume, rowid, versao), &guardado, nome)?;
 """,
-                "troca": """        // DEFEITO REPOSTO (2/3): a conferencia tambem deixa de olhar o endereco.
-        let claro = self.material.abrir(
-            &nonce,
-            b"",
-            &guardado,
+                "troca": """    // DEFEITO REPOSTO (2/3): a conferencia tambem deixa de olhar o endereco.
+    let claro = material.abrir(&nonce, b"", &guardado, nome)?;
 """,
             },
             {

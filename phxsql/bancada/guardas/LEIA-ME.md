@@ -75,9 +75,25 @@ E esse caminho é **compartilhado**: duas árvores de trabalho na mesma máquina
 disputam a mesma cópia, e o estrago engana — três guardas saíram `QUEBRADA` com
 «o código com o defeito reposto não compila», citando campos de uma `struct`
 que não existe nesta árvore, porque a cópia era da árvore vizinha. Não é
-entrada envelhecida, é cópia trocada. **Quem roda em paralelo passa `--arvore`
-com um nome próprio** — a mesma rodada, com `--arvore` privado, deu 19/19 sem
-uma quebrada.
+entrada envelhecida, é cópia trocada.
+
+**Hoje o executor tranca a cópia, e a segunda rodada espera a primeira.** A
+regra era passar `--arvore` com um nome próprio, e ela dependia de alguém
+lembrar — a rodada das transações não lembrou, e pagou os três vereditos de
+mentira de uma vez, todos com cara de código que mudou:
+
+| o que apareceu | o que era |
+|---|---|
+| `trava-sem-guarda-de-reentrancia` **QUEBRADA**, «o trecho não está mais em `servidor.rs`» | o trecho estava lá, uma vez só: a outra rodada tinha o defeito **dela** plantado no arquivo |
+| `recuperar-sem-reindexar` **NÃO PEGOU**, com um teste de trava reprovando | o binário rodou com o defeito da outra rodada dentro |
+| `sujas-com-a-trava` **QUEBRADA** por prazo, 420 s | o `--limpar` da outra rodada apagou o `target/` embaixo, e a compilação recomeçou do zero |
+
+A tranca é um `flock` num arquivo ao lado do diretório (`~/.cache/phx-guardas.tranca`,
+**fora** dele, porque o `--limpar` apaga o diretório inteiro). O núcleo a solta
+sozinho quando o processo morre — inclusive num `SIGKILL`, que é o único jeito
+de o `atexit` não rodar —, então tranca pendurada por rodada morta é
+impossível. Quem espera vê a linha `esperando a vez` e quanto esperou.
+`--arvore` continua valendo para quem prefere não esperar.
 
 **Só o binário de teste que a entrada nomeia.** Medido nesta máquina, com o
 `target/` quente e uma recompilação por mutação: o binário nomeado custa

@@ -924,3 +924,101 @@ continua certo, e o motivo mudou de lugar — não é inviabilidade, é caber
 **dentro** da bateria única (14m35s inteira) em vez de dobrá-la. É a mesma
 correção que a casa já fez com o mutex: o número não muda a decisão, muda a
 frase que a explica, e a frase errada é a que sobrevive.
+
+
+## 10. O que a rodada das transações achou na própria bateria
+
+Três achados que não vieram do código novo: vieram de rodar a bateria e
+desconfiar do resultado dela.
+
+### 10.1 Prazo medido em relógio de parede é corrida, e a corrida disparou
+
+Dois testes das transações abriam com `TIMEOUT 1ms`, faziam uma inserção,
+dormiam 30 ms e exigiam que a operação seguinte recebesse o erro do prazo. A
+lógica está certa e o caminho exercitado é o de produção. **O teste, não.**
+
+Numa rodada com a bateria inteira em paralelo, `o_prazo_estourado_reverte_e_solta_as_travas`
+reprovou — e reprovou na linha **errada**:
+
+```
+called `Result::unwrap()` on an `Err` value: TransacaoAbortada(
+  "a transacao 1788109415658 passou do TIMEOUT de 1 ms e foi revertida; ...")
+   at ./src/servidor.rs:21492   <- a PRIMEIRA insercao, a que tem de passar
+```
+
+Com a máquina carregada, o milissegundo acabou **antes** de a primeira inserção
+chegar. Nada estava quebrado; o teste é que mediu o relógio da máquina em vez
+de medir o servidor.
+
+O conserto não é dormir mais — é não dormir. Um ajudante move o relógio da
+transação:
+
+```rust
+fn vencer_agora(s: &Servidor, ligacao: u64) {
+    let mut t = s.transacoes.lock().unwrap();
+    t.de_mut(ligacao).unwrap().expira_ms = crate::agora_ms() - 1;
+}
+```
+
+A transação abre com `TIMEOUT 10s` (folga de sobra para a primeira operação), e
+o vencimento passa a ser um fato, não uma aposta. O caminho provado é o mesmo —
+a varredura vê a vencida, o gestor a encerra, o dono recebe o erro com o número
+—, e os 26 testes de transação caíram de segundos para **0,54 s** porque os
+dois `sleep` saíram. Três rodadas de `cargo test --workspace` seguidas, verdes.
+
+**A lição é a irmã da que já estava escrita sobre teste que passa por engano:**
+teste que *reprova* por engano custa quase o mesmo, porque gasta a confiança na
+bateria inteira — e o primeiro impulso, diante dele, é olhar o código que está
+certo.
+
+### 10.2 A cópia das guardas é compartilhada, e duas rodadas se estragam
+
+A rodada completa das 42 guardas saiu com **36 provadas, 1 redundante, 1 não
+pegou e 4 quebradas**. Quatro dos cinco problemas eram mentira, e os quatro
+tinham cara de entrada envelhecida.
+
+O que denunciou foi olhar a cópia depois: `~/.cache/phx-guardas/crates/phxsql-server/src/servidor.rs`
+ainda tinha um `// DEFEITO REPOSTO` plantado dentro. O caminho da cópia é fixo —
+de propósito, porque é o que guarda o `target/` quente —, e **duas invocações ao
+mesmo tempo mexem nos mesmos arquivos**. O `LEIA-ME.md` das guardas já avisava
+disso e mandava passar `--arvore`; a regra dependia de alguém lembrar.
+
+Hoje o executor **tranca** a cópia com um `flock` num arquivo ao lado do
+diretório, e a segunda rodada espera a primeira em vez de a estragar. Provado
+segurando a tranca de fora e chamando o executor:
+
+```
+outra rodada esta usando /root/.cache/phx-guardas -- esperando a vez
+                 esperou 27 s pela vez
+  alter-espelho-para-tras      PROVADA                  1.0 s  1/1 cairam
+```
+
+O `flock` foi escolhido porque o núcleo o solta sozinho quando o processo morre,
+**inclusive num `SIGKILL`** — que é o único jeito de o `atexit` do executor não
+rodar. Tranca pendurada por rodada morta é impossível, e isso importa numa
+ferramenta cujo trabalho é justamente matar processos por prazo.
+
+### 10.3 Duas entradas do catálogo tinham envelhecido de verdade
+
+Descontada a contaminação da §10.2, sobraram duas quebradas legítimas:
+`aad-fora-do-slot` e `endereco-fora-da-amarracao`, ambas em
+`crates/phxsql-store/src/reg.rs`. O `trecho` que elas procuravam não existia
+mais **na árvore de verdade** — não era cópia trocada.
+
+A causa é inocente: a cifra do slot virou função livre, e o `rustfmt` recolheu
+a chamada para uma linha só.
+
+```rust
+// o que o catalogo procurava        // o que o codigo virou
+let selado = self                    let selado = material.selar(
+    .material                            &nonce, &aad_do_slot(volume, rowid, versao), &claro);
+    .selar(&nonce, ...);
+```
+
+Com os trechos atualizados, as duas voltaram a dar o veredito que declaram —
+`aad-fora-do-slot` **REDUNDANTE** (a entrada afirma que tirar só o AAD não é
+sentido por teste nenhum, e não é mesmo) e `endereco-fora-da-amarracao`
+**PROVADA**, 1/1 caiu. A amarração do slot cifrado ao endereço voltou a estar
+provada, e ficou **duas refações sem estar** — que é o tempo em que ninguém
+percebeu, porque a quebrada aparecia no relatório como texto e não como número
+que desce.
