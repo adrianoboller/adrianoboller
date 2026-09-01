@@ -158,6 +158,27 @@ E o corolário sobre o oráculo: a conferência tem de ser contra o **cliente
 oficial do outro motor**, pelo mesmo transporte. Conferir contra o que o script
 espera prova que o script e o servidor concordam, que é uma coisa bem menor.
 
+### Erro de permissão: pergunte o DIREITO, não conclua do erro
+
+Um 403 no `git push` foi lido como «falta permissão» e ficou assim por rodadas,
+com três caminhos tentados no escuro. A conta fecha em duas perguntas ao
+próprio serviço, e nenhuma delas é um `retry`:
+
+- **qual pedido é recusado** — aqui, `info/refs?service=git-receive-pack` dá
+  403 enquanto o `git-upload-pack` responde, o que já separa «escrita negada»
+  de «rede/proxy/credencial ausente». O `X-Github-Request-Id` na resposta diz
+  que quem recusou foi o GitHub, e não o proxy;
+- **qual direito a identidade tem** — a API responde
+  `{admin, maintain, push, triage, pull}` por extenso.
+
+E o que isso matou: o `GH_TOKEN` do ambiente *parecia* uma segunda identidade
+com outro direito, e um `GET /user` mostrou ser **a mesma**. O experimento que
+ficaria pendente de permissão do dono não era necessário — ele já estava
+respondido.
+
+*Diagnóstico plausível não é diagnóstico medido*, e num erro de permissão o
+medidor é uma pergunta, não uma tentativa.
+
 ### A premissa que trancava um item também envelhece
 
 O pedido ficou parcial rodadas a fio com um motivo escrito no documento: «não
