@@ -1,0 +1,19 @@
+# Pino a versao EXATA do toolchain instalado nesta maquina (rustc 1.94.1,
+# canal stable, commit e408947bf de 2026-03-25 — conferido com
+# `rustc --version --verbose` e `rustup show`), com os componentes que os
+# tres portoes da casa exigem: rustfmt (formatacao) e clippy (lint).
+#
+# Por que pinar: sem este arquivo, `cargo` usa o toolchain "default" de quem
+# roda o comando — que muda sozinho quando alguem faz `rustup update`, e pode
+# ser outra versao inteira no CI. Um clippy mais novo acrescenta lints, um
+# rustfmt mais novo reformata diferente: o build passa numa maquina e falha
+# noutra sem nenhuma linha de codigo ter mudado. Build reproduzivel e o que
+# separa "funciona aqui" de "funciona" — a mesma versao roda em qualquer
+# maquina que clonar o repositorio e em qualquer corrida do CI, hoje ou daqui
+# a um ano.
+#
+# Zero dependencias externas continua valendo para as crates do workspace;
+# isto aqui pina apenas o compilador, nao acrescenta nenhuma crate.
+[toolchain]
+channel = "1.94.1"
+components = ["rustfmt", "clippy"]

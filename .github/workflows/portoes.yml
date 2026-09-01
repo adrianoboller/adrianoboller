@@ -1,0 +1,44 @@
+# Os tres portoes obrigatorios da casa (ver CLAUDE.md, secao "Antes de
+# commitar"): formatacao, lints sem aviso nenhum e a suite inteira. Roda em
+# todo push e em toda pull request para que nenhum branch avance com o
+# codigo fora do padrao ou com um teste quebrado.
+#
+# Sem cano nenhum na saida dos comandos (nada de "| tail", "| grep" etc.):
+# um cano troca o codigo de saida do comando pelo do ultimo elo do cano, e
+# ja foi defeito real aqui um portao que engolia o proprio fracasso porque
+# a saida ia por um cano. Cada portao roda puro, e o job falha se qualquer
+# um deles sair com codigo diferente de zero.
+name: Portoes
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  portoes:
+    name: fmt + clippy + testes
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        # O Cargo.toml do workspace mora em phxsql/, nao na raiz do repo.
+        working-directory: phxsql
+    steps:
+      - name: Baixar o codigo
+        uses: actions/checkout@v4
+
+      # phxsql/rust-toolchain.toml pina a versao exata do compilador e os
+      # componentes rustfmt/clippy. O rustup ja vem instalado nos runners do
+      # GitHub e le esse arquivo sozinho no primeiro comando cargo/rustc,
+      # baixando o toolchain pinado sem precisar de nenhuma acao de
+      # terceiro so para isso.
+      - name: Mostrar o toolchain resolvido
+        run: rustc --version --verbose
+
+      - name: "Portao 1: formatacao (cargo fmt --all --check)"
+        run: cargo fmt --all --check
+
+      - name: "Portao 2: lints, zero avisos (cargo clippy -D warnings)"
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: "Portao 3: suite de testes (cargo test --workspace)"
+        run: cargo test --workspace
