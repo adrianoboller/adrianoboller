@@ -113,7 +113,23 @@ impl Motor {
         Ok(match self {
             Motor::MySql => {
                 let onde = if base.trim().is_empty() {
-                    "TABLE_SCHEMA = DATABASE()".to_string()
+                    // Do lado do MySQL(R) base vazia so acontece de um jeito:
+                    // a ligacao foi salva SEM base padrao. E ai `DATABASE()`
+                    // e NULO, `TABLE_SCHEMA = NULL` nao casa com nada, e o
+                    // ramo devolvia lista VAZIA sem erro nenhum -- o mesmo
+                    // sintoma mudo que a prova contra um PostgreSQL(R) de
+                    // verdade achou do outro lado, e pelo mesmo motivo: uma
+                    // consulta montada com um qualificador que nao existe.
+                    //
+                    // Vazio quer dizer «tudo o que este usuario enxerga», e e
+                    // o que o ramo do PostgreSQL(R) ja fazia: tirar os
+                    // esquemas de sistema em vez de nomear um. Cada linha traz
+                    // o campo `schema`, entao quem for pedir a estrutura ou o
+                    // dado sabe com que `database` pedir -- a resposta carrega
+                    // o que a proxima pergunta precisa.
+                    "TABLE_SCHEMA NOT IN \
+                     ('mysql','information_schema','performance_schema','sys')"
+                        .to_string()
                 } else {
                     format!("TABLE_SCHEMA = {}", super::literal(base)?)
                 };
@@ -437,6 +453,74 @@ mod testes {
         // e `current_user()` e erro de sintaxe.
         assert!(Motor::Postgres.sql_quem_sou().contains("current_user,"));
         assert!(!Motor::Postgres.sql_quem_sou().contains("current_user()"));
+    }
+
+    /// O defeito que a prova contra um MySQL(R) DE VERDADE achou, e que o
+    /// servidor de protocolo nao tinha como achar: uma ligacao salva sem base
+    /// padrao listava ZERO tabelas, sem erro nenhum.
+    ///
+    /// A causa e de SQL, e nao de chamador: `TABLE_SCHEMA = DATABASE()` com
+    /// `DATABASE()` nulo nao casa com nada -- em SQL `x = NULL` nunca e
+    /// verdadeiro. E o ramo so e alcancado quando nao ha base padrao, entao
+    /// ele estava SEMPRE vazio.
+    ///
+    /// Prova real: trocar a clausula de volta por `TABLE_SCHEMA = DATABASE()`
+    /// derruba este teste.
+    #[test]
+    fn sem_base_padrao_o_mysql_nao_compara_com_o_database_nulo() {
+        let sql = Motor::MySql.sql_tabelas("").unwrap();
+        assert!(
+            !sql.contains("DATABASE()"),
+            "a comparacao com NULL voltou, e ela nunca casa: {sql}"
+        );
+        // Vazio quer dizer «tudo o que este usuario enxerga», como ja queria
+        // dizer no PostgreSQL(R): fora os esquemas de sistema.
+        for sistema in ["mysql", "information_schema", "performance_schema", "sys"] {
+            assert!(
+                sql.contains(&format!("'{sistema}'")),
+                "o esquema de sistema {sistema} nao foi filtrado: {sql}"
+            );
+        }
+        assert!(sql.contains("TABLE_SCHEMA NOT IN"), "{sql}");
+    }
+
+    /// O teste do comportamento VELHO, que e o que mais importa numa mudanca
+    /// destas: com base escolhida nada muda, e o outro motor nao se mexeu.
+    ///
+    /// A regra que ele guarda: quem ja tinha uma ligacao com base padrao --
+    /// que e o caso comum, e o que a tela cadastra -- ve exatamente a mesma
+    /// consulta de antes. So o ramo que estava sempre vazio mudou.
+    #[test]
+    fn com_base_escolhida_nada_muda_e_o_postgres_nao_se_mexeu() {
+        let sql = Motor::MySql.sql_tabelas("crm").unwrap();
+        assert!(sql.contains("TABLE_SCHEMA = 'crm'"), "{sql}");
+        assert!(
+            !sql.contains("NOT IN"),
+            "a base escolhida virou filtro de sistema: {sql}"
+        );
+        // E o filtro do PostgreSQL(R) continua o dele, pelo catalogo dele.
+        let p = Motor::Postgres.sql_tabelas("").unwrap();
+        assert!(p.contains("pg_catalog") && p.contains("pg_toast"), "{p}");
+        assert!(
+            !p.contains("TABLE_SCHEMA"),
+            "SQL de MySQL no PostgreSQL: {p}"
+        );
+        assert!(
+            Motor::Postgres
+                .sql_tabelas("vendas")
+                .unwrap()
+                .contains("n.nspname = 'vendas'"),
+            "o esquema pedido no PostgreSQL mudou"
+        );
+        // As outras duas perguntas de catalogo do MySQL nao foram tocadas.
+        assert_eq!(
+            Motor::MySql.sql_colunas("crm", "clientes").unwrap(),
+            "SHOW FULL COLUMNS FROM `crm`.`clientes`"
+        );
+        assert_eq!(
+            Motor::MySql.sql_indices("", "clientes").unwrap(),
+            "SHOW INDEX FROM `clientes`"
+        );
     }
 
     /// O nome que emendaria SQL nao chega ao catalogo do outro lado.
