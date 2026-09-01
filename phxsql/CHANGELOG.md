@@ -20,6 +20,37 @@ ausência de transação: ele as documenta extensamente.
 
 ### Corrigido
 
+- **A ligação de DbLink sem base padrão listava zero tabelas no MySQL®, calada.**
+  O dialeto perguntava `TABLE_SCHEMA = DATABASE()`, e sem base padrão
+  `DATABASE()` é **NULO** — em SQL `x = NULL` nunca é verdadeiro. Como o ramo só
+  é alcançado quando *não* há base padrão, **ele estava sempre vazio**. Não era
+  caso de laboratório: `dblink_salvar` aceita `database` vazio, e num servidor
+  de MySQL® uma conexão enxerga todas as bases, o que faz da ligação sem base
+  padrão a forma natural de navegar por várias. A tela escapava por sorte
+  (`DBL.database = … || bases[0]`); quem fala pela porta de dados, pelo MCP ou
+  por script, não. É o **gêmeo** do defeito que a prova contra o PostgreSQL®
+  achou, e pelo mesmo motivo: uma consulta montada com um qualificador que não
+  existe.
+
+- **A tela do DbLink dizia que TODA coluna do PostgreSQL® era obrigatória.**
+  Ela lia a estrutura **por posição**, e as posições do `SHOW FULL COLUMNS`
+  (nove colunas) não são as do lado do PostgreSQL® (seis). A posição 3 é o
+  *Null* no MySQL® e a **chave** no PostgreSQL®: como `'PRI' != 'YES'`, as
+  quatro colunas que aceitam nulo apareciam como obrigatórias. Isso é
+  **mentira sobre o dado** — quem olha não tem como saber que o banco diz outra
+  coisa. Na mesma folha: «chave» mostrava o padrão, «extra» e «comentário» liam
+  fora da linha e a tela imprimia a palavra `undefined`, e a chave primária
+  aparecia como *duplicado ok* porque a coluna do «único» lia o nome da coluna.
+
+  Consertado pelo padrão que a casa já tinha para o texto de tela:
+  **resolve-se por CHAVE, nunca por posição.** Os nomes são os do
+  `SHOW FULL COLUMNS` e do `SHOW INDEX` — contrato publicado do MySQL® —, e o
+  dialeto apelida o lado do PostgreSQL® com eles no lugar dos `case` e
+  `coalesce` que o servidor inventava, e que vinham **repetidos**. O ramo do
+  MySQL® **não muda uma letra**. Um valor mudou, e vale dizer qual: a
+  **polaridade do único** — o MySQL® publica `Non_unique`, que vale **0 quando
+  o índice É único**, e o ramo do PostgreSQL® publicava 1.
+
 - **Quatro documentos publicavam números digitados, e todos envelheceram.** O
   README dizia **390 testes** no motor e **619** no projeto (são **1.440**); o
   `docs/TESTES.md` dizia **1.229** — na mesma frase em que afirma «somado dos
