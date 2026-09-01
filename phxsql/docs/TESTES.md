@@ -35,30 +35,30 @@ teste que o motivou ainda cai. [§8](#8-as-guardas-provar-que-a-prova-pega).
 ## 1. A cobertura de hoje, medida
 
 <!-- testes:total:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-`cargo test --workspace`: **1.440 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
+`cargo test --workspace`: **1.444 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
 <!-- testes:total:fim --> Por área,
 contando `#[test]` por arquivo e agrupando:
 
 <!-- cobertura:inicio -->
 | área | testes | % |
 |---|---:|---:|
-| Motor de dados (arquivos, índice, diários) | 346 | 24,1 |
-| Protocolo e portões (despachar) | 209 | 14,6 |
-| Núcleo (JSON, tipos, UUID, zip, paralelo) | 133 | 9,3 |
-| Criptografia e codificação | 122 | 8,5 |
-| Configuração | 93 | 6,5 |
-| DbLink | 65 | 4,5 |
+| Motor de dados (arquivos, índice, diários) | 346 | 24,0 |
+| Protocolo e portões (despachar) | 209 | 14,5 |
+| Núcleo (JSON, tipos, UUID, zip, paralelo) | 133 | 9,2 |
+| Criptografia e codificação | 122 | 8,4 |
+| Configuração | 93 | 6,4 |
+| DbLink | 71 | 4,9 |
 | Camada SQL (léxico, sintaxe, tradução) | 55 | 3,8 |
+| Servidor (outros) | 53 | 3,7 |
 | Telemetria e profiler | 53 | 3,7 |
-| Servidor (outros) | 51 | 3,6 |
 | Gatilhos e procedimentos | 38 | 2,6 |
-| Jobs | 31 | 2,2 |
+| Jobs | 31 | 2,1 |
 | Mensagens (i18n do servidor) | 28 | 1,9 |
 | Interface web (servidor HTTP) | 28 | 1,9 |
 | **MCP** | **19** | **1,3** |
 | **Usuários e permissões** | **19** | **1,3** |
-| **Console de terminal (phxsqlcmd)** | **18** | **1,3** |
-| **Segurança de rede (blacklist, firewall)** | **18** | **1,3** |
+| **Console de terminal (phxsqlcmd)** | **18** | **1,2** |
+| **Segurança de rede (blacklist, firewall)** | **18** | **1,2** |
 | **ODBC** | **17** | **1,2** |
 | **Transações** | **16** | **1,1** |
 | **Exportação** | **13** | **0,9** |
@@ -69,7 +69,7 @@ contando `#[test]` por arquivo e agrupando:
 | **CLI** | **7** | **0,5** |
 | **Cluster** | **7** | **0,5** |
 | **Monitor de máquina** | **6** | **0,4** |
-| **total** | **1436** | |
+| **total** | **1444** | |
 
 Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 
@@ -78,13 +78,13 @@ Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 | `phxsql-store/src/table.rs` | 2614 |
 | `phxsql-store/src/ndx.rs` | 1580 |
 | `phxsql-ffi/src/lib.rs` | 1444 |
-| `phxsql-server/src/main.rs` | 479 |
+| `phxsql-server/src/main.rs` | 488 |
 | `phxsql-server/src/replica.rs` | 412 |
 | `phxsql-ffi/src/valor.rs` | 290 |
 | `phxsql-server/src/dblink/conexao.rs` | 238 |
 | `phxsql-server/src/carga.rs` | 226 |
 | `phxsql-ffi/src/punho.rs` | 188 |
-| `phxsql-cmd/src/main.rs` | 162 |
+| `phxsql-cmd/src/main.rs` | 171 |
 <!-- cobertura:fim -->
 
 As duas tabelas acima **não se digitam**: `python3
@@ -665,6 +665,20 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `alter-sem-remapear-posicao` | a coluna nova desloca as de sistema e ninguém remapeia quem guarda posição | 2 | ✅ provada |
 | `alter-espelho-para-tras` | o espelho `.bkp` fica com a largura velha depois de acrescentar coluna | 1 | ✅ provada |
 | `alter-queda-no-meio` | o conjunto de volumes misturado abre e lê o volume 3 com a largura do 1 | 2 | ✅ provada |
+| `ffi-panico-atravessa` | o pânico atravessa a fronteira de C em vez de virar código de erro | 2 | ✅ provada |
+| `ffi-panico-nao-envenena` | o punho continua sendo usado depois de um pânico capturado | 1 | ✅ provada |
+| `ffi-texto-ate-o-byte-zero` | a fronteira trunca o dado do cliente no primeiro byte zero | 2 | ✅ provada |
+| `ffi-erro-global` | a mensagem de erro é global e uma thread lê o erro da outra | 1 | ✅ provada |
+| `ffi-rowid-fora-e-erro` | «não há essa linha» volta de duas formas diferentes conforme o motivo | 1 | ✅ provada |
+| `ffi-cursor-para-no-lote` | o cursor entrega só o primeiro lote e diz que a tabela acabou | 1 | ✅ provada |
+| `texto-colado-nos-seis` | a mesma frase colada nas seis colunas de idioma | 2 | ✅ provada |
+| `frase-longa-repetida` | uma frase longa repetida em três das seis colunas de idioma | 1 | ✅ provada |
+| `rest-operacao-sem-documento` | operação nova no despachar que a especificação OpenAPI não documenta | 2 | ✅ provada |
+| `rest-rota-fantasma` | a especificação promete uma rota que o servidor não atende | 1 | ✅ provada |
+| `rest-nasce-ligado` | o webservice REST passa a escutar numa atualização, sem ninguém pedir | 1 | ✅ provada |
+| `rest-corpo-manda-no-caminho` | o corpo do pedido REST troca a operação do caminho, em silêncio | 1 | ✅ provada |
+| `rest-filtro-so-o-campo-tabela` | o filtro de tabelas do REST olha só o campo `tabela` — e a junção é a porta dos fundos | 1 | ✅ provada |
+| `rest-fecha-sem-escoar` | a recusa por lista negra é engolida por um RST, e quem foi barrado vê «connection reset» | — | 🟰 redundante |
 | `transacao-nao-empilha` | a transação escreve direto no disco em vez de empilhar | 3 | ✅ provada |
 | `commit-confirma-abortada` | o COMMIT confirma uma transação que já estava em ABORT_ONLY | 1 | ✅ provada |
 | `marca-antes-do-fsync` | a marca `.tx` é apagada antes de a tabela sincronizar | 1 | ✅ provada |
@@ -672,13 +686,15 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `recuperar-sem-reindexar` | a recuperação não reconstrói o `.ndx` que a queda deixou para trás | — | 🟰 redundante |
 | `comum-anexa-no-fim-travado` | a escrita comum que anexa não olha o fim travado | 1 | ✅ provada |
 
-**43 guardas: 40 provadas, 3 redundantes** — 329 s de mutação, medido em 2026-08-30 17:28.
+**57 guardas: 53 provadas, 4 redundantes** — 491 s de mutação, medido em 2026-09-01 21:52.
 
 As notas que a rodada deixou:
 
 - `cadeia-sem-teto` — o binario abortou, que e como esta guarda pega
 - `aad-fora-do-slot` — confirmado: tirar so o AAD nao e sentido por teste nenhum, porque o `nonce_de_pedaco` carrega (rowid, volume, versao)
 - `nonce-sem-endereco` — confirmado: tirar so o endereco do nonce tambem passa despercebido
+- `ffi-panico-atravessa` — o binario abortou, que e como esta guarda pega
+- `rest-fecha-sem-escoar` — confirmado: nenhum teste de unidade sente isto, e nao poderia -- o RST e do sistema operacional, e so aparece com um soquete de verdade. Quem pega e o passo 13 de `bancada/rest/provar.py`, e esta entrada existe para dizer, com o numero da rodada, que a cobertura mora la e nao aqui
 - `recuperar-sem-reindexar` — confirmado: nenhum teste de unidade pega este defeito. O indice so fica para tras quando o PROCESSO morre no meio da passada, e isso so acontece de verdade em `bancada/transacoes/provar.py` -- que e por isso que a prova por soquete existe.
 <!-- guardas:fim -->
 
