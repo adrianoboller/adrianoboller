@@ -1305,7 +1305,7 @@ uma que atravessou errada.
 
 ### O que o conserto custou: nada — e a primeira conta estava errada
 
-Está medido em `DESEMPENHO.md` §4.12, e a conclusão em uma linha: partir em
+Está medido em `DESEMPENHO.md` §4.13, e a conclusão em uma linha: partir em
 fases obriga a abrir a tabela uma vez por lote, e isso não custa o que parecia.
 O que custava era um `sincronizar()` que eu tinha deixado dentro da fase 3 —
 **400 `fsync` num alcance de 200.000 eventos em vez de um**, com a trava na

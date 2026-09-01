@@ -984,7 +984,7 @@ sistema em produção precisa no segundo mês.
   do primeiro tamanho ao último, dominado pelo disco (427 MiB/s somando o
   arquivo lido com o escrito). Para comparar, **construir** a mesma tabela de
   dez milhões levou 90,4 s — a alteração custa 6,1% do que custou digitar o
-  dado. `docs/DESEMPENHO.md` §4.12.
+  dado. `docs/DESEMPENHO.md` §4.14.
 
 - **As outras duas saídas caíram com número, e não por opinião.** Slot de duas
   larguras convivendo o formato **não permite** — o `slot_size` é um campo só,

@@ -1345,7 +1345,7 @@ compartilhada.
 Com a fase virada, **é a primeira vez que o PhxSql ganha em todas as cinco** —
 e o `resultados.json` do repositório continua sendo a corrida de 10.000.000 com
 o comportamento padrão, porque o padrão não mudou.
-## 4.12 A trava de dados presa atrás de uma leitura de rede
+## 4.13 A trava de dados presa atrás de uma leitura de rede
 
 O laço da réplica tomava a trava global de dados na **primeira linha** de
 `alcancar_tabela` e a segurava até o fim — e no meio dela mora
@@ -1533,7 +1533,7 @@ declarar. E, depois que o `fsync` saiu da fase 3, não havia mais o que
 amortizar: a vazão com `LOTE = 500` já é a de antes do conserto. A hipótese
 morreu duas vezes, e a segunda foi por ter deixado de existir o problema que
 ela resolvia.
-## 4.12 `ALTER TABLE ADD COLUMN`: a inferência era «minutos», e são 5,5 s
+## 4.14 `ALTER TABLE ADD COLUMN`: a inferência era «minutos», e são 5,5 s
 
 O item 25 de `docs/SPRINTS.md` chegou com o custo escrito como **inferência**,
 e com a palavra: *«a casa dos minutos para dez milhões — inferido, não
