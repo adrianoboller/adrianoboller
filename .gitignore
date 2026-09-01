@@ -5,3 +5,17 @@
 # inteiro dentro dele mesmo -- os dois worktrees de uma rodada ja somaram
 # 1,2 GiB.
 .claude/worktrees/
+
+# Os pacotes git do backup.
+#
+# Mesmo motivo dos worktrees, e por isso ficam na mesma folha: um `.bundle` e
+# uma copia do proprio repositorio -- 16 MB hoje, e cresce a cada rodada.
+# Commitar um poria o repositorio dentro dele mesmo, e commitar UM por rodada
+# enterraria essa copia na historia para sempre: `git rm` nao devolve o espaco,
+# porque o objeto continua alcancavel pelo commit que o trouxe.
+#
+# Eles existem porque o `push` desta sessao e recusado com 403 e a entrega sai
+# a mao. Sao ARTEFATO DE ENTREGA, nao fonte: se um se perder, o proximo se
+# refaz com `git bundle create` -- e refeito e identico, porque sai da mesma
+# historia.
+*.bundle
