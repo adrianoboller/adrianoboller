@@ -69,7 +69,7 @@ nenhum é gratuito.
 | # | Sprint | Estado medido |
 |---|---|---|
 | SP000001 | Contrato PhxSql 1.0 e congelamento do escopo | **não iniciado** |
-| SP000002 | Build limpo, toolchain fixo e CI obrigatória | **parcial** — os três portões existem e rodam à mão; faltavam `rust-toolchain.toml` e CI |
+| SP000002 | Build limpo, toolchain fixo e CI obrigatória | **feito, e parado** — `rust-toolchain.toml` pina 1.94.1 (conferido: é o `rustc` que roda aqui, commit `e408947bf`) e `.github/workflows/portoes.yml` roda os três **sem cano**. Nunca correu uma vez: depende do `push`, e o `push` é 403 |
 | SP000003 | Proveniência Git, versão e release reproduzível | **feito** — `build.rs` embute commit e árvore suja, `--version` uniforme nos três binários |
 | SP000004 | Fonte única de verdade e documentação gerada | **feito** — `CAPABILITIES.json` e os geradores escrevendo README, `TESTES.md` e `REST.md` |
 | SP000005 | Decomposição de `servidor.rs` e fronteiras arquiteturais | **não iniciado** — 22.396 linhas |
@@ -78,7 +78,7 @@ nenhum é gratuito.
 
 | # | Sprint | Estado medido |
 |---|---|---|
-| SP000006 | Visão transacional única e read-your-own-writes | **não iniciado** |
+| SP000006 | Visão transacional única e read-your-own-writes | **não iniciado, e agora MEDIDO** — `bancada/transacoes/visibilidade.py`, por soquete: dentro da transação a própria escrita **não** aparece (1→1), o commit aplica (→2) e o rollback descarta (2→2). Os dois últimos são o que separa *modelo de empilhamento coerente* de *transação com defeito*: o empilhamento entrega o **A** do ACID, falta o **I**. E falta por construção — a escrita fica fora da tabela até o commit e a leitura vai na tabela —, então o conserto é no caminho de **leitura**, consultando a pilha pendente |
 | SP000007 | Definição e validação estrutural de chaves estrangeiras | **parcial** — a FK se **declara** (`criar_tabela`, editor ER) |
 | SP000008 | Execução completa de FK e ações referenciais | **não iniciado** — «um teste trava que *declarar não é aplicar*» (pedido 127) |
 | SP000009 | FK em todos os caminhos e verificador de consistência | **não iniciado** |
