@@ -37,6 +37,41 @@ repositório sem erro), e ela tem leitura e não tem escrita.
 exatamente isso que o diagnóstico medido comprou: **parar de procurar** no
 lugar errado.
 
+## A decisão: o acesso, e não um contorno
+
+Posta a medição, o dono decidiu **conceder escrita à identidade da sessão** em
+vez de aceitar qualquer contorno. É a escolha certa por um motivo que vale
+registrar: os dois contornos possíveis custavam mais do que resolvem.
+
+- **Achatar pelo `push_files` do MCP** entregaria o conteúdo e perderia as
+  mensagens — e aqui *commit conta a decisão e o motivo*, então o que subiria
+  seria um retrato do último estado, não a história. Perder-se-ia exatamente o
+  que o versionador existe para guardar.
+- **Continuar só de pacote** mantém a história intacta, mas deixa o CI parado
+  para sempre (ver «O que o pacote NÃO substitui»).
+
+E há o ganho que só apareceu quando se mediu a segunda auditoria externa: das
+sete prioridades que ela lista para a 0.19.0, **duas — release reproduzível e
+CI — já estão construídas e não rodam por causa deste 403.** O acesso não
+destrava só o backup; destrava dois itens do caminho crítico sem uma linha de
+código nova.
+
+**O que o dono faz:** reconectar a autorização do GitHub em
+*claude.ai → Configurações → Conectores*, garantindo que
+`adrianoboller/adrianoboller` esteja no conjunto permitido **com escrita**. A
+leitura já funciona, então o que falta é só a permissão de escrita —
+`git-receive-pack`.
+
+**Como se confere que funcionou**, sem adivinhar:
+
+```bash
+git push --dry-run origin claude/capacidades-disponiveis-y6auxh
+```
+
+Se voltar a ponta em vez de `403`, está resolvido. O `--dry-run` é de
+propósito: ele exerce o **mesmo** `git-receive-pack` que o push real, sem
+mexer em nada.
+
 ## Enquanto isso: o pacote
 
 A entrega sai por `git bundle`, que é o formato do próprio git para carregar
