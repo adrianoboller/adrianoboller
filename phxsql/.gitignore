@@ -14,6 +14,11 @@
 /pid
 /bancada/resultados.parcial.json
 
+# A bancada dos tres motores tem os mesmos dois trabalhistas: o arquivo por
+# onde o comando vai ao mysql, e a medicao pela metade enquanto a corrida anda.
+/bancada/comparacao/comando.sql
+/bancada/comparacao/um-milhao.parcial.json
+
 # A prova da queda na exclusao sobe um phxsqld proprio e o mata a kill -9: a
 # base fica se a corrida morrer no meio, e ela se refaz com
 # `python3 bancada/exclusao/prova-da-queda.py`.

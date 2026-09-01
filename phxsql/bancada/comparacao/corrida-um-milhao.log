@@ -1,0 +1,16 @@
+=== 1.000.000 linhas, 20.000 operacoes, 3 rodadas ===
+    motores: phxsql, sqlite, mysql
+-- rodada 1/3
+   phxsql  inserir  11.646s  buscar   0.215s  atualizar   0.277s  excluir   1.053s
+   sqlite  inserir   2.942s  buscar   0.232s  atualizar   1.183s  excluir   0.488s
+   mysql   inserir  17.142s  buscar   2.474s  atualizar  22.969s  excluir   5.317s
+-- rodada 2/3
+   phxsql  inserir   9.928s  buscar   0.151s  atualizar   0.265s  excluir   1.078s
+   sqlite  inserir   2.557s  buscar   0.158s  atualizar   1.028s  excluir   0.574s
+   mysql   inserir  12.342s  buscar   2.481s  atualizar   3.537s  excluir   4.063s
+-- rodada 3/3
+   phxsql  inserir   8.385s  buscar   0.164s  atualizar   0.290s  excluir   0.949s
+   sqlite  inserir   2.526s  buscar   0.165s  atualizar   0.817s  excluir   0.772s
+   mysql   inserir  12.277s  buscar   2.526s  atualizar   3.479s  excluir   3.970s
+== trabalho igual conferido: [(1000000, 410099600000, 20199500000), (1000000, 421906270000, 20199500000), (980000, 401908270000, 19795510000)]
+== um-milhao.json publicado

@@ -1,0 +1,128 @@
+<!doctype html><meta charset="utf-8">
+<title>PhxSql x MySQL(R) x SQLite(R) -- 1.000.000 linhas</title>
+<style>
+:root{--papel:#fbf9f7;--tinta:#1a1210;--tinta-2:#4a3f3a;--tinta-3:#7a6d66;
+--linha:#ded6d0;--m-phx:#c63c0a;--m-sql:#1f5c93;--m-lite:#37702e}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+--papel:#040814;--tinta:#dde2eb;--tinta-2:#a8b0c0;--tinta-3:#7c8598;
+--linha:#1e2940;--m-phx:#d9741c;--m-sql:#4287cf;--m-lite:#54a84c}}
+body{margin:0;padding:32px;background:var(--papel);color:var(--tinta);
+font:15px/1.6 system-ui,sans-serif;max-width:1100px}
+h1{font-size:22px;margin:0 0 4px}
+.sub{color:var(--tinta-2);margin:0 0 20px}
+.grade{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:24px}
+.fig{margin:0;border:1px solid var(--linha);border-radius:10px;padding:12px}
+.fig svg{width:100%;height:auto;display:block}
+.tit{font:600 15px system-ui;fill:var(--tinta)}
+.nota{font:12px system-ui;fill:var(--tinta-3)}
+.eixo{font:13px system-ui;fill:var(--tinta-2)}
+.valor{font:600 13px system-ui;fill:var(--tinta);font-variant-numeric:tabular-nums}
+.valor.dentro{fill:#fff}
+.ausente{font:italic 13px system-ui;fill:var(--tinta-3)}
+.bigode{stroke:var(--tinta-3);stroke-width:2}
+.barra.vencedor{stroke:var(--tinta);stroke-width:2}
+.leg{margin-right:16px;color:var(--tinta-2);font-size:13px}
+.leg i{display:inline-block;width:11px;height:11px;border-radius:3px;
+margin-right:6px;vertical-align:-1px}
+.ress{margin-top:24px;border-left:3px solid var(--m-phx);padding:4px 0 4px 14px}
+.ress h2{font-size:15px;margin:0 0 6px}
+.ress li{color:var(--tinta-2);margin-bottom:4px}
+</style>
+<h1>PhxSql &times; MySQL&reg; &times; SQLite&reg;</h1>
+<p class="sub">tabela de 1.000.000 linhas &middot; menor &eacute; melhor &middot; cada painel
+tem escala pr&oacute;pria &middot; o bigode vai do m&iacute;nimo ao m&aacute;ximo das rodadas, e a
+seta diz que ele foi cortado no fim do painel &middot; o contorno s&oacute; marca vencedor
+quando as faixas <em>n&atilde;o</em> se cruzam</p>
+<p><span class="leg"><i style="background:var(--m-phx)"></i>PhxSql</span> <span class="leg"><i style="background:var(--m-sql)"></i>MySQL(R)</span> <span class="leg"><i style="background:var(--m-lite)"></i>SQLite(R)</span></p>
+<div class="grade">
+<figure class="fig">
+  <svg viewBox="0 0 460 224" role="img" aria-label="INSERT, gravar 1.000.000 linhas, uma a uma: PhxSql 9,93 s; MySQL(R) 12,3 s; SQLite(R) 2,56 s">
+    <text x="0" y="16" class="tit">INSERT</text>
+    <text x="0" y="34" class="nota">gravar 1.000.000 linhas, uma a uma</text>
+    <text x="0" y="61" class="eixo">PhxSql</text>
+    <rect x="96" y="46" width="202.6" height="34" rx="4" fill="var(--m-phx)" class="barra"/>
+    <line x1="267.1" y1="63.0" x2="333.7" y2="63.0" class="bigode"/><line x1="267.1" y1="57.0" x2="267.1" y2="69.0" class="bigode"/>
+    <line x1="333.7" y1="57.0" x2="333.7" y2="69.0" class="bigode"/>
+    <text x="341.7" y="68" class="valor">9,93 s</text>
+    <text x="0" y="123" class="eixo">MySQL(R)</text>
+    <rect x="96" y="108" width="251.9" height="34" rx="4" fill="var(--m-sql)" class="barra"/>
+    <line x1="346.5" y1="125.0" x2="436.0" y2="125.0" class="bigode"/><line x1="346.5" y1="119.0" x2="346.5" y2="131.0" class="bigode"/>
+    <path d="M429.0,119.0 L436.0,125.0 L429.0,131.0" class="bigode" fill="none"/>
+    <text x="339.9" y="130" class="valor dentro" text-anchor="end">12,3 s (pico 17,1 s)</text>
+    <text x="0" y="185" class="eixo">SQLite(R)</text>
+    <rect x="96" y="170" width="52.2" height="34" rx="4" fill="var(--m-lite)" class="barra vencedor"/>
+    <line x1="147.5" y1="187.0" x2="156.0" y2="187.0" class="bigode"/><line x1="147.5" y1="181.0" x2="147.5" y2="193.0" class="bigode"/>
+    <line x1="156.0" y1="181.0" x2="156.0" y2="193.0" class="bigode"/>
+    <text x="164.0" y="192" class="valor">2,56 s</text>
+  </svg>
+</figure>
+<figure class="fig">
+  <svg viewBox="0 0 460 224" role="img" aria-label="SELECT, achar 20.000 linhas pela chave, uma instrução cada: PhxSql 164 ms; MySQL(R) 2,48 s; SQLite(R) 166 ms">
+    <text x="0" y="16" class="tit">SELECT</text>
+    <text x="0" y="34" class="nota">achar 20.000 linhas pela chave, uma instrução cada</text>
+    <text x="0" y="61" class="eixo">PhxSql</text>
+    <rect x="96" y="46" width="16.6" height="34" rx="4" fill="var(--m-phx)" class="barra"/>
+    <line x1="111.3" y1="63.0" x2="117.8" y2="63.0" class="bigode"/><line x1="111.3" y1="57.0" x2="111.3" y2="69.0" class="bigode"/>
+    <line x1="117.8" y1="57.0" x2="117.8" y2="69.0" class="bigode"/>
+    <text x="125.8" y="68" class="valor">164 ms</text>
+    <text x="0" y="123" class="eixo">MySQL(R)</text>
+    <rect x="96" y="108" width="251.9" height="34" rx="4" fill="var(--m-sql)" class="barra"/>
+    <line x1="347.1" y1="125.0" x2="352.4" y2="125.0" class="bigode"/><line x1="347.1" y1="119.0" x2="347.1" y2="131.0" class="bigode"/>
+    <line x1="352.4" y1="119.0" x2="352.4" y2="131.0" class="bigode"/>
+    <text x="360.4" y="130" class="valor">2,48 s</text>
+    <text x="0" y="185" class="eixo">SQLite(R)</text>
+    <rect x="96" y="170" width="16.8" height="34" rx="4" fill="var(--m-lite)" class="barra"/>
+    <line x1="112.0" y1="187.0" x2="119.6" y2="187.0" class="bigode"/><line x1="112.0" y1="181.0" x2="112.0" y2="193.0" class="bigode"/>
+    <line x1="119.6" y1="181.0" x2="119.6" y2="193.0" class="bigode"/>
+    <text x="127.6" y="192" class="valor">166 ms</text>
+  </svg>
+</figure>
+<figure class="fig">
+  <svg viewBox="0 0 460 224" role="img" aria-label="UPDATE, regravar a linha inteira de 20.000 delas: PhxSql 277 ms; MySQL(R) 3,54 s; SQLite(R) 1,03 s">
+    <text x="0" y="16" class="tit">UPDATE</text>
+    <text x="0" y="34" class="nota">regravar a linha inteira de 20.000 delas</text>
+    <text x="0" y="61" class="eixo">PhxSql</text>
+    <rect x="96" y="46" width="19.7" height="34" rx="4" fill="var(--m-phx)" class="barra vencedor"/>
+    <line x1="114.9" y1="63.0" x2="116.7" y2="63.0" class="bigode"/><line x1="114.9" y1="57.0" x2="114.9" y2="69.0" class="bigode"/>
+    <line x1="116.7" y1="57.0" x2="116.7" y2="69.0" class="bigode"/>
+    <text x="124.7" y="68" class="valor">277 ms</text>
+    <text x="0" y="123" class="eixo">MySQL(R)</text>
+    <rect x="96" y="108" width="251.9" height="34" rx="4" fill="var(--m-sql)" class="barra"/>
+    <line x1="343.7" y1="125.0" x2="436.0" y2="125.0" class="bigode"/><line x1="343.7" y1="119.0" x2="343.7" y2="131.0" class="bigode"/>
+    <path d="M429.0,119.0 L436.0,125.0 L429.0,131.0" class="bigode" fill="none"/>
+    <text x="339.9" y="130" class="valor dentro" text-anchor="end">3,54 s (pico 23,0 s)</text>
+    <text x="0" y="185" class="eixo">SQLite(R)</text>
+    <rect x="96" y="170" width="73.2" height="34" rx="4" fill="var(--m-lite)" class="barra"/>
+    <line x1="154.2" y1="187.0" x2="180.3" y2="187.0" class="bigode"/><line x1="154.2" y1="181.0" x2="154.2" y2="193.0" class="bigode"/>
+    <line x1="180.3" y1="181.0" x2="180.3" y2="193.0" class="bigode"/>
+    <text x="188.3" y="192" class="valor">1,03 s</text>
+  </svg>
+</figure>
+<figure class="fig">
+  <svg viewBox="0 0 460 224" role="img" aria-label="DELETE, apagar 20.000 de vez: PhxSql 1,05 s; MySQL(R) 4,06 s; SQLite(R) 574 ms">
+    <text x="0" y="16" class="tit">DELETE</text>
+    <text x="0" y="34" class="nota">apagar 20.000 de vez</text>
+    <text x="0" y="61" class="eixo">PhxSql</text>
+    <rect x="96" y="46" width="65.3" height="34" rx="4" fill="var(--m-phx)" class="barra"/>
+    <line x1="154.8" y1="63.0" x2="162.8" y2="63.0" class="bigode"/><line x1="154.8" y1="57.0" x2="154.8" y2="69.0" class="bigode"/>
+    <line x1="162.8" y1="57.0" x2="162.8" y2="69.0" class="bigode"/>
+    <text x="170.8" y="68" class="valor">1,05 s</text>
+    <text x="0" y="123" class="eixo">MySQL(R)</text>
+    <rect x="96" y="108" width="251.9" height="34" rx="4" fill="var(--m-sql)" class="barra"/>
+    <line x1="342.1" y1="125.0" x2="425.6" y2="125.0" class="bigode"/><line x1="342.1" y1="119.0" x2="342.1" y2="131.0" class="bigode"/>
+    <line x1="425.6" y1="119.0" x2="425.6" y2="131.0" class="bigode"/>
+    <text x="339.9" y="130" class="valor dentro" text-anchor="end">4,06 s</text>
+    <text x="0" y="185" class="eixo">SQLite(R)</text>
+    <rect x="96" y="170" width="35.6" height="34" rx="4" fill="var(--m-lite)" class="barra vencedor"/>
+    <line x1="126.2" y1="187.0" x2="143.8" y2="187.0" class="bigode"/><line x1="126.2" y1="181.0" x2="126.2" y2="193.0" class="bigode"/>
+    <line x1="143.8" y1="181.0" x2="143.8" y2="193.0" class="bigode"/>
+    <text x="151.8" y="192" class="valor">574 ms</text>
+  </svg>
+</figure>
+</div>
+<div class="ress">
+<h2>Durabilidade de cada um durante a medida</h2>
+<p class="sub"><b>PhxSql</b>: sincroniza uma vez por fase (exclusão na janela) · <b>MySQL(R)</b>: uma transação por fase; flush_log_at_trx_commit=1, sync_binlog=1, versao=8.0.46-0ubuntu0.24.04.3 · <b>SQLite(R)</b>: synchronous=FULL, journal DELETE, uma transação por fase</p>
+<h2>O que estes n&uacute;meros n&atilde;o dizem</h2>
+<ul><li>A carga inicial não tem a mesma FORMA nos três: o PhxSql faz 1.000.000 chamadas de função, o SQLite(R) executa a mesma instrução preparada 1.000.000 vezes, e o MySQL(R) recebe 20 instruções de 50.000 linhas. A forma do MySQL(R) é a mais barata das três por linha, então a barra dele nesta fase é OTIMISTA. As fases pontuais são uma instrução por operação nos três.</li><li>O MySQL(R) é o único que recebe o trabalho como TEXTO por soquete — não existe MySQL(R) embutido nesta máquina, e os outros dois são biblioteca no próprio processo. O piso desse formato foi medido: 1.479 s para 20.000 instruções que não fazem nada (`DO 1;`), que é o que há para subtrair da barra dele nas fases pontuais.</li><li>O SQLite(R) publicado é a variante `rowid` (`id INTEGER PRIMARY KEY`), que é a que casa com o InnoDB por ter a chave agrupada e a que FAVORECE o SQLite(R) — são duas estruturas contra as três da variante `2ind`. A outra corre na mesma rodada e está no JSON, em `sqlite_2ind`.</li><li>Durabilidade casada: uma sincronização no fim de cada fase nos três. Não é o regime de quem grava pedido a pedido — uma bancada com `commit` por linha daria outros números, e é a que importa para esse caso.</li><li>Uma máquina só, com o que mais estivesse rodando nela. O bigode de mínimo a máximo das 3 rodadas é a medida dessa inquietude: barra lisa afirmaria uma precisão que o número não tem.</li></ul>
+</div>

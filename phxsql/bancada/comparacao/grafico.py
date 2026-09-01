@@ -37,27 +37,72 @@ MOTORES = [
     ("mysql", "MySQL(R)", "var(--m-sql)"),
     ("sqlite", "SQLite(R)", "var(--m-lite)"),
 ]
+# A nota de cada fase e um MOLDE: o numero de operacoes sai da medicao, e
+# nao de um texto digitado. A do UPDATE dizia «trocar o valor de uma coluna»
+# e estava errada -- as tres regravam a linha inteira, porque o `carga.rs`
+# regrava, e trocar so uma coluna seria menos trabalho de um lado.
 FASES = [
-    ("inserir", "INSERT", "gravar o milhao de linhas"),
-    ("buscar", "SELECT", "achar uma linha pela chave"),
-    ("atualizar", "UPDATE", "trocar o valor de uma coluna"),
-    ("excluir", "DELETE", "apagar de vez"),
+    ("inserir", "INSERT", "gravar {n} linhas, uma a uma"),
+    ("buscar", "SELECT", "achar {ops} linhas pela chave, uma instrução cada"),
+    ("atualizar", "UPDATE", "regravar a linha inteira de {ops} delas"),
+    ("excluir", "DELETE", "apagar {ops} de vez"),
 ]
 
-LARG, ALT = 460, 300
+LARG, ALT = 460, 224
 ESQ, DIR, TOPO, BASE_Y = 96, 24, 46, 54
+
+
+def mil(x):
+    return f"{x:,}".replace(",", ".")
+
+
+def numero(v, casas):
+    """Virgula decimal e ponto de milhar -- a pagina e em portugues.
+
+    Saia com ponto decimal («9.93 s») ate esta rodada. Nao muda o valor, mas
+    muda a LEITURA: quem le em portugues ve «nove mil e noventa e tres».
+    """
+    bruto = f"{v:,.{casas}f}"           # 1,234.56
+    return bruto.replace(",", "\x00").replace(".", ",").replace("\x00", ".")
 
 
 def fmt(v):
     if v is None:
         return "nao medido"
     if v >= 100:
-        return f"{v:,.0f} s".replace(",", ".")
+        return f"{numero(v, 0)} s"
     if v >= 10:
-        return f"{v:.1f} s"
+        return f"{numero(v, 1)} s"
     if v >= 1:
-        return f"{v:.2f} s"
-    return f"{v * 1000:.0f} ms"
+        return f"{numero(v, 2)} s"
+    return f"{numero(v * 1000, 0)} ms"
+
+
+def vencedor(candidatos):
+    """Quem ganhou a fase, ou None quando as faixas se cruzam.
+
+    `candidatos` sao tuplas (nome, mediana, minimo, maximo), so dos motores
+    MEDIDOS -- comparar contra fase que nao rodou daria vencedor por ausencia
+    do outro.
+
+    So ha vencedor quando a faixa do primeiro NAO cruza a do segundo. Marcar
+    164 ms contra 166 ms, com as duas faixas sobrepostas (151-215 contra
+    158-232), e publicar ruido da maquina como resultado.
+
+    Mora AQUI, e o dossie a importa daqui, porque a primeira versao tinha duas
+    copias da regra: consertei a do grafico e a da tabela continuou marcando
+    vencedor na busca -- o documento se contradizia a dois centimetros de
+    distancia.
+    """
+    if not candidatos:
+        return None
+    if len(candidatos) == 1:
+        return candidatos[0][0]
+    ordem = sorted(candidatos, key=lambda x: x[1])
+    p1, p2 = ordem[0], ordem[1]
+    teto_do_1o = p1[3] if p1[3] is not None else p1[1]
+    piso_do_2o = p2[2] if p2[2] is not None else p2[1]
+    return p1[0] if teto_do_1o < piso_do_2o else None
 
 
 def painel(chave, titulo, nota, dados):
@@ -68,14 +113,11 @@ def painel(chave, titulo, nota, dados):
         linhas.append((rotulo, cor, d.get("mediana_s"), d.get("min_s"), d.get("max_s")))
 
     medidos = [x for x in linhas if x[2] is not None]
-    teto = max((x[4] or x[2]) for x in medidos) if medidos else 1.0
-    teto = teto * 1.18 or 1.0
+    teto = (max(x[2] for x in medidos) * 1.35) if medidos else 1.0
     util = LARG - ESQ - DIR
     alt_barra, passo = 34, 62
 
-    # Quem ganhou -- e so entre os que foram medidos. Comparar contra fase que
-    # nao rodou daria vencedor por ausencia do outro.
-    melhor = min(medidos, key=lambda x: x[2])[0] if medidos else None
+    melhor = vencedor([(x[0], x[2], x[3], x[4]) for x in medidos])
 
     p = [
         f'<text x="0" y="16" class="tit">{titulo}</text>',
@@ -93,16 +135,47 @@ def painel(chave, titulo, nota, dados):
             f'<rect x="{ESQ}" y="{y}" width="{w:.1f}" height="{alt_barra}" rx="4" '
             f'fill="{cor}" class="barra{vitoria}"/>'
         )
+        fim_do_rotulo = ESQ + w
         if mn is not None and mx is not None and mx > mn:
-            x1 = ESQ + util * mn / teto
-            x2 = ESQ + util * mx / teto
+            x1 = min(ESQ + util * mn / teto, ESQ + util)
+            estourou = mx > teto
+            x2 = ESQ + util if estourou else ESQ + util * mx / teto
             ym = y + alt_barra / 2
             p.append(
                 f'<line x1="{x1:.1f}" y1="{ym}" x2="{x2:.1f}" y2="{ym}" class="bigode"/>'
                 f'<line x1="{x1:.1f}" y1="{ym - 6}" x2="{x1:.1f}" y2="{ym + 6}" class="bigode"/>'
-                f'<line x1="{x2:.1f}" y1="{ym - 6}" x2="{x2:.1f}" y2="{ym + 6}" class="bigode"/>'
             )
-        p.append(f'<text x="{ESQ + w + 8:.1f}" y="{y + 22}" class="valor">{fmt(med)}</text>')
+            if estourou:
+                # Seta em vez de traco: o bigode nao termina ali, ele foi
+                # CORTADO. Traco no fim leria como «o maximo e este».
+                p.append(
+                    f'<path d="M{x2 - 7:.1f},{ym - 6} L{x2:.1f},{ym} '
+                    f'L{x2 - 7:.1f},{ym + 6}" class="bigode" fill="none"/>'
+                )
+            else:
+                p.append(
+                    f'<line x1="{x2:.1f}" y1="{ym - 6}" x2="{x2:.1f}" y2="{ym + 6}"'
+                    f' class="bigode"/>'
+                )
+            fim_do_rotulo = max(fim_do_rotulo, x2)
+        # O rotulo vem DEPOIS do bigode, nunca por cima dele -- e se nao
+        # couber ali, vem DENTRO da barra, alinhado a direita. A primeira
+        # versao so empurrava para a direita, e o texto saia cortado pela
+        # borda do painel justamente nas linhas mais interessantes.
+        rotulo_valor = fmt(med)
+        if mx is not None and mx > teto:
+            rotulo_valor += f" (pico {fmt(mx)})"
+        largura = len(rotulo_valor) * 7.3          # 13px semibold, medido no desenho
+        if fim_do_rotulo + 8 + largura <= LARG - 2:
+            p.append(
+                f'<text x="{fim_do_rotulo + 8:.1f}" y="{y + 22}" class="valor">'
+                f'{rotulo_valor}</text>'
+            )
+        else:
+            p.append(
+                f'<text x="{ESQ + w - 8:.1f}" y="{y + 22}" class="valor dentro"'
+                f' text-anchor="end">{rotulo_valor}</text>'
+            )
 
     aria = "; ".join(f"{r} {fmt(m)}" for r, _, m, _, _ in linhas)
     return (
@@ -126,7 +199,11 @@ def main():
     fases = d.get("fases") or {}
     n = d.get("linhas", 0)
 
-    paineis = "\n".join(painel(c, t, nt, fases.get(c)) for c, t, nt in FASES)
+    ops = d.get("operacoes_por_fase_pontual", 0)
+    paineis = "\n".join(
+        painel(c, t, nt.format(n=mil(n), ops=mil(ops)), fases.get(c))
+        for c, t, nt in FASES
+    )
     legenda = " ".join(
         f'<span class="leg"><i style="background:{cor}"></i>{rot}</span>'
         for _, rot, cor in MOTORES
@@ -156,6 +233,7 @@ h1{{font-size:22px;margin:0 0 4px}}
 .nota{{font:12px system-ui;fill:var(--tinta-3)}}
 .eixo{{font:13px system-ui;fill:var(--tinta-2)}}
 .valor{{font:600 13px system-ui;fill:var(--tinta);font-variant-numeric:tabular-nums}}
+.valor.dentro{{fill:#fff}}
 .ausente{{font:italic 13px system-ui;fill:var(--tinta-3)}}
 .bigode{{stroke:var(--tinta-3);stroke-width:2}}
 .barra.vencedor{{stroke:var(--tinta);stroke-width:2}}
@@ -167,8 +245,10 @@ margin-right:6px;vertical-align:-1px}}
 .ress li{{color:var(--tinta-2);margin-bottom:4px}}
 </style>
 <h1>PhxSql &times; MySQL&reg; &times; SQLite&reg;</h1>
-<p class="sub">{n:,} linhas &middot; menor &eacute; melhor &middot; o bigode vai do
-m&iacute;nimo ao m&aacute;ximo das rodadas &middot; contorno marca o mais r&aacute;pido da fase</p>
+<p class="sub">tabela de {n:,} linhas &middot; menor &eacute; melhor &middot; cada painel
+tem escala pr&oacute;pria &middot; o bigode vai do m&iacute;nimo ao m&aacute;ximo das rodadas, e a
+seta diz que ele foi cortado no fim do painel &middot; o contorno s&oacute; marca vencedor
+quando as faixas <em>n&atilde;o</em> se cruzam</p>
 <p>{legenda}</p>
 <div class="grade">
 {paineis}

@@ -9,7 +9,9 @@
 //! aquela fase, sem misturar com as outras. E o mesmo tratamento que o mysqld
 //! recebe do outro lado -- la os contadores tambem sao lidos por diferenca.
 //!
-//! Fases: `criar`, `inserir`, `buscar`, `varrer`, `atualizar`, `excluir`.
+//! Fases: `criar`, `inserir`, `buscar`, `varrer`, `atualizar`, `excluir`,
+//! e `conferir`, que nao mede tempo -- mede se os motores chegaram ao
+//! mesmo estado, que e o que faz o tempo querer dizer alguma coisa.
 //!
 //! A ultima linha da saida e sempre `RESULTADO <json>`, para o medidor nao
 //! precisar adivinhar nada.
@@ -176,6 +178,41 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 feitas += 1;
             }
             t.sincronizar()?;
+        }
+        "conferir" => {
+            // Nao mede tempo: mede TRABALHO FEITO. As outras fases dizem
+            // quanto demorou; esta diz se os motores chegaram ao MESMO
+            // estado. Sem ela, «PhxSql inseriu em 8 s e o MySQL(R) em 30»
+            // continua sendo uma frase sobre dois trabalhos que ninguem
+            // conferiu serem o mesmo.
+            //
+            // Sao tres totais, e nao um: a contagem pega linha faltando, a
+            // soma de `valor` pega o `atualizar` que nao atualizou, e a de
+            // `cadastro` pega dado DIFERENTE gravado com o mesmo tamanho --
+            // que foi o defeito achado na bancada do MySQL(R), onde toda
+            // linha levava a data 2024-10-04 enquanto os outros dois lados
+            // gravavam o dia variavel.
+            let mut t = Table::abrir(&dir, "precos")?;
+            let total = t.slots();
+            let mut linhas = 0u64;
+            let mut soma_valor: i128 = 0;
+            let mut soma_cadastro: i128 = 0;
+            for r in 1..=total {
+                if let Some(l) = t.ler(r)? {
+                    linhas += 1;
+                    if let Some(Value::Decimal(v)) = l.get(3) {
+                        soma_valor += *v;
+                    }
+                    if let Some(Value::Date(d)) = l.get(4) {
+                        soma_cadastro += *d as i128;
+                    }
+                }
+            }
+            feitas = linhas;
+            println!(
+                "CONFERE {{\"linhas\":{linhas},\"soma_valor\":{soma_valor},\
+                 \"soma_cadastro\":{soma_cadastro}}}"
+            );
         }
         outra => {
             eprintln!("fase desconhecida: {outra}");
