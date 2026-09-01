@@ -4,7 +4,7 @@ O ativo mais reaproveitavel desta base. Cada briefing leva a
 REGRA junto do pedido -- e por isso que o agente nao repete o erro
 que o projeto ja pagou. Copie o formato, troque o assunto.
 
-53 despachos.
+54 despachos.
 
 ---
 
@@ -2801,6 +2801,88 @@ cargo test --workspace                    # hoje 1.328 verdes
 Portugues em codigo, comentarios, documentacao e commit. Identificadores e comentarios **sem acento** (texto de interface pode ter). Comentario explica **por que**. **Nenhum identificador de modelo** em nada que va para o repositorio.
 
 Commite no seu worktree. **Nao faca push e nao abra PR.** No relatorio: quantos traduziu por arquivo, o numero medido da catraca, a saida de cada guarda nova com o defeito reposto, e o que deixou na fila com o motivo.
+```
+
+---
+
+## 54. Medir os três a um milhão  ·  30/08 17:50
+
+```
+Voce trabalha no PhxSql, motor de dados em Rust do Adriano Boller, em `phxsql/`. LEIA `CLAUDE.md` na raiz ANTES de qualquer coisa. Portas 7600 a 7649. NUNCA `pkill -f`; mate so por PID que voce iniciou.
+
+# A frente: PhxSql x MySQL(R) x SQLite(R), a UM MILHAO de linhas
+
+O dono quer um grafico comparando os tres em **insert, update, delete e select** com **1.000.000 de registros**. Eu nao tenho isso medido: o que existe e o SQLite a 200.000 e o MySQL noutra corrida. **Extrapolar seria inventar**, entao voce mede.
+
+## O que ja existe e voce reaproveita
+
+- `bancada/medir.py` -- PhxSql x MySQL, com IO, CPU e memoria medidos por `/proc`. Recebe o numero de linhas como primeiro argumento. Fases: `inserir`, `buscar`, `atualizar`, `excluir`, `disco`.
+- `bancada/sqlite/medir.py` -- PhxSql x SQLite. `python3 bancada/sqlite/medir.py 200000 --rodadas 5`.
+- O `mysqld` esta **instalado e parado** (`/usr/sbin/mysqld`), com dados em `/var/lib/mysql`. Suba-o voce.
+
+**Antes de medir**: `cargo build --release --examples -p phxsql-store` e `cargo build --release -p phxsql-server --bin phxsqld`. A armadilha do binario velho ja custou uma conclusao inteira aqui -- «o esquema custa 2,2x» nasceu de medir com binario de antes.
+
+## A regra que esta frente NAO pode quebrar
+
+`bancada/LEIA-ME.md`: **bancada compara trabalho igual, nao so pergunta igual.** Esta casa errou TRES vezes nisso, e os erros apontaram para lados opostos:
+
+1. `WHERE id IN (…)` contra vinte mil buscas separadas -- 41x a favor do outro motor
+2. `COUNT(*)+SUM` sobre 1.250.000 linhas contra a leitura de 20.000 -- 5x a favor do nosso
+3. o MySQL recebendo 20.000 instrucoes num `START TRANSACTION` com **um** `fsync` enquanto o nosso fazia vinte mil
+
+E a frente do SQLite achou mais duas que mentiam **a nosso favor**: a janela trocada no modo `sistema`, e um piso de transporte medido com eco que dividia o GIL e deu custo **negativo**. Leia `bancada/sqlite/LEIA-ME.md` antes de comecar -- as duas estao escritas la.
+
+**Nenhum dos tres pode receber trabalho diferente.** Mesmo numero de linhas, mesmo esquema, mesmos indices, mesma politica de durabilidade -- e onde nao der para igualar, **meça as duas configuracoes e publique as duas** em vez de escolher a que favorece alguem.
+
+Durabilidade merece cuidado especial: o InnoDB com `innodb_flush_log_at_trx_commit=1` sincroniza a cada transacao; o SQLite tem `journal_mode` e `synchronous`; o PhxSql tem a janela. **Declare o que cada um estava fazendo**, e se possivel meça em dois regimes.
+
+## Como medir
+
+- **Mediana de pelo menos 5 rodadas**, com **minimo e maximo** publicados. A maquina nao esta quieta -- ha outras coisas rodando -- e a frente anterior mostrou que as medidas dominadas por `fsync` variam de 1,2x a 1,6x entre dias. **Anote a carga** (`loadavg`) de cada rodada.
+- Se uma fase for longa demais para 5 rodadas a um milhao, **diga quantas rodou** em vez de rodar menos e chamar de mediana.
+- `select` do pedido = a fase `buscar` (leitura por chave). Se voce tambem medir varredura de faixa, publique como fase separada e **nao** misture com `buscar`.
+
+## O que entregar
+
+**Um JSON so**, em `bancada/comparacao/um-milhao.json`, com esta forma -- eu vou construir o grafico dele:
+
+```json
+{
+  "linhas": 1000000,
+  "quando": "...",
+  "maquina": {"nucleos": 4, "loadavg_medio": 1.2, "observacao": "..."},
+  "durabilidade": {"phxsql": "...", "mysql": "...", "sqlite": "..."},
+  "fases": {
+    "inserir":  {"phxsql": {"mediana_s": 0.0, "min_s": 0.0, "max_s": 0.0, "rodadas": 5},
+                 "mysql":  {...}, "sqlite": {...}},
+    "buscar":   {...}, "atualizar": {...}, "excluir": {...}
+  },
+  "disco_mib": {"phxsql": 0.0, "mysql": 0.0, "sqlite": 0.0},
+  "ressalvas": ["frases curtas sobre o que o numero NAO diz"]
+}
+```
+
+As `ressalvas` sao obrigatorias e valem tanto quanto os numeros. Se algo nao deu para igualar, ou se uma medida esta instavel, ou se um motor levou vantagem estrutural, **escreva ali**.
+
+Mais um `bancada/comparacao/LEIA-ME.md` explicando como refazer, o que foi igualado e o que nao foi.
+
+## O que NAO fazer
+
+- Nao mexa em codigo Rust. Esta frente e medicao.
+- Nao construa o grafico -- eu construo, do seu JSON.
+- Nao ajuste configuracao de nenhum motor para favorecer ninguem sem **dizer** que ajustou e por que.
+
+## Portoes
+
+Se tocar em Python, mantenha o estilo. `cargo test --workspace` tem de continuar verde (hoje 1.436). Registre a parte nova no `provar.py` se fizer sentido.
+
+## Estilo
+
+Portugues em codigo, comentarios, documentacao e commit. Identificadores e comentarios **sem acento**. **Nenhum identificador de modelo** em nada que va para o repositorio.
+
+Ao terminar, remova `phxsql/target` do seu worktree e **pare o `mysqld` que voce subiu** (por PID). Commite no seu worktree, **sem push e sem PR**.
+
+No relatorio: a tabela medida com dispersao, o que voce igualou e o que nao deu, e o que os numeros NAO dizem.
 ```
 
 ---

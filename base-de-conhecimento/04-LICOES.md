@@ -81,6 +81,48 @@ que faz vinte mil gravações separadas.
 
 ---
 
+### Comparar três é diferente de comparar dois duas vezes
+
+Havia duas bancadas — PhxSql × MySQL(R) e PhxSql × SQLite(R) — e a tentação era
+somar as tabelas. Somar dá **três colunas e nenhuma comparação**: as medidas
+são de dias diferentes, com cargas diferentes na máquina, e parte da diferença
+passa a ser do ambiente em vez do motor. É o mesmo erro de comparar escalas
+diferentes, com outra roupa. Os três correm **intercalados na mesma rodada**.
+
+E montar a terceira achou o que duas não achavam: a bancada do MySQL(R) gravava
+`'2024-10-04'` em toda linha enquanto as outras duas gravavam o dia variável.
+**Dado diferente, do mesmo tamanho, invisível em qualquer medida de tempo.** O
+que o achou foi ter de conferir três em vez de dois.
+
+### Quando os lados não têm a mesma forma, meça o piso da forma
+
+O SQLite(R) é biblioteca em processo; o MySQL(R) é daemon que recebe texto por
+soquete. Não há como igualar — não existe MySQL(R) embutido. O que se faz é
+medir o piso: 20.000 instruções que **não fazem nada** custam 1,479 s, que são
+**59,6% da barra de busca dele**.
+
+Sem esse número teríamos publicado «15,16× mais rápido»; entre motores são
+**6,12×**. Mais da metade da vitória era do formato. **Vitória que vem do
+formato é a mentira mais convincente que existe.**
+
+### Não há vencedor quando as faixas se cruzam
+
+164 ms contra 166 ms, com as faixas em 151–215 e 158–232. Marcar um dos dois
+como vencedor é publicar ruído da máquina como resultado. O desenho passou a só
+contornar quando o **máximo do primeiro é menor que o mínimo do segundo**.
+
+E a regra tem de morar num lugar só: eu a consertei no gráfico e a tabela do
+dossiê continuou marcando vencedor na busca — **o documento se contradizia a
+dois centímetros de distância**.
+
+### Uma rodada fora da curva não pode mandar no eixo
+
+O `atualizar` do MySQL(R) foi 22,97 s numa rodada e 3,48 s na seguinte. Com o
+eixo ancorado no **máximo**, as barras de 277 ms e 1,03 s viravam lascas de 3
+px: uma rodada esmagava três painéis. O eixo passou a ser a maior **mediana**,
+com o bigode cortado por uma seta quando estoura — a excursão continua dita, no
+rótulo, em vez de mandar no desenho.
+
 ## 2. Provar
 
 ### Prova real é nos dois sentidos
@@ -93,6 +135,17 @@ Um caso vivido: a prova de um teto de memória **passou com o defeito reposto**,
 porque conferia o *veredito* e a conferência acontecia **depois** da leitura —
 acusava mesmo sem a proteção, só que aí a memória já tinha sido gasta. O teste
 passou a medir **quanto** foi lido: com o defeito, 10.001 bytes num teto de 64.
+
+### `| tail` mascara o código de saída — e o portão passa a mentir verde
+
+`cargo test --workspace 2>&1 | tail -25` guardou 25 linhas e devolveu o código
+de saída do **`tail`**, que é sempre 0. O portão dizia «passou» sem que ninguém
+tivesse olhado o resultado, e o arquivo de saída não tinha o resumo para
+conferir. Rodar de novo sem cano deu 1.436 testes em 46 binários e o zero de
+verdade.
+
+É a mesma família do teste que passa por engano: **o canal que resume também
+descarta a prova.**
 
 ### O que depende do sistema operacional se prova contra o sistema operacional
 

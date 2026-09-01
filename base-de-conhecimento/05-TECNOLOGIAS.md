@@ -122,6 +122,25 @@ Exemplos `cargo` dedicados (`onde-doi`, `custo-da-trava`, `custo-do-excluir`,
 fora. Mediana e dispersão de várias corridas, com a carga da máquina anotada —
 porque a máquina raramente está quieta.
 
+### Bancada de três motores no mesmo trabalho
+
+`bancada/comparacao/` mede PhxSql, MySQL(R) 8.0.46 e SQLite(R) 3.45.1
+**intercalados na mesma rodada** — somar bancadas de dias diferentes daria três
+colunas e nenhuma comparação. O SQLite(R) vem da biblioteca padrão do Python
+(o módulo `sqlite3` é extensão em C, não Python interpretado), o MySQL(R) é o
+cliente `mysql` recebendo o comando por arquivo, e o PhxSql é o
+`--example carga` cronometrado **por dentro**.
+
+Duas peças que valem reaproveitar:
+
+- **A fase `conferir`**, que não mede tempo — mede se os motores chegaram ao
+  mesmo estado. Contagem, soma de `valor` e soma de `cadastro`, em três marcos,
+  conferidas contra a **forma fechada** calculada à parte. Divergiu, a bancada
+  recusa publicar.
+- **O piso do formato**: 20.000 instruções que não fazem nada (`DO 1;`) pelo
+  mesmo caminho, para separar o motor do transporte quando os lados não têm a
+  mesma forma.
+
 ### Prova real, mecanizada
 
 Um **catálogo de guardas** onde cada entrada guarda o trecho original e a troca
@@ -135,7 +154,17 @@ número sobe** — e também quando alguém melhora e esquece de baixá-lo.
 
 ### Documentação gerada
 
-Cinco geradores escrevem todo número visível do relatório. Nenhum se digita.
+**Seis** geradores escrevem todo número visível do relatório. Nenhum se digita.
+O sexto insere o gráfico dos três motores e **recusa** se a figura for mais
+velha que a medição — a lição do binário velho aplicada a uma figura: um
+gráfico desenhado da corrida anterior publica o passado com data de hoje, e
+nada no desenho denuncia isso.
+
+E a prosa que acompanha um número medido também é gerada: um modo
+`--so-prosa` refaz as ressalvas a partir dos números já guardados, sem
+remedir. Sem ele, corrigir uma palavra custaria quinze minutos de bancada — e
+o que se faria em vez disso é editar o JSON à mão, que é como número gerado
+vira número digitado.
 
 ### Zelador de ambiente
 
@@ -155,4 +184,6 @@ Recusa medida é resultado, e é o que impede a mesma proposta de voltar.
 | **Duas larguras de slot** | O formato não permite (o tamanho é um campo só), e cobraria **2,36× em toda leitura** para poupar uma passada uma vez |
 | **Lote de replicação 500 → 2.000** | Quadruplicaria o pior caso de memória de quem serve |
 | **MVCC** | Quebraria o rowid-como-endereço e a replicação por rowid. **Decisão pendente do dono** |
+| **Somar as duas bancadas existentes para comparar três motores** | Daria três colunas e nenhuma comparação: medidas de dias diferentes carregam o ambiente junto. Custou uma bancada nova, e ela achou a violação da regra 1 que as duas anteriores escondiam |
+| **Publicar a variante `2ind` do SQLite(R)**, que é a que estruturalmente se parece com o nosso | Ela é mais lenta em todas as quatro fases (1,04× a 1,31×), então publicá-la melhoraria três dos nossos quatro números **sem o motor ter feito nada**. Publica-se a `rowid`, que casa com o InnoDB e nos desfavorece |
 | **TLS 1.3 à mão** | Milhares de linhas e risco real: TLS mal escrito é pior que TLS ausente, porque **parece** seguro |

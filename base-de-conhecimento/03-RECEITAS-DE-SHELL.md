@@ -1,6 +1,6 @@
 # Receitas de shell
 
-2789 comandos distintos, sem os triviais.
+2874 comandos distintos, sem os triviais.
 
 ---
 
@@ -62478,5 +62478,2355 @@ cd phxsql 2>/dev/null; ./zelador.sh 2>&1 | tail -2; timeout 3000 ./empacotar.sh 
 
 ```bash
 python3 base-de-conhecimento/extrair.py 2>/dev/null || python3 ../base-de-conhecimento/extrair.py; ls -lh pacotes/phxsql-0.18.0-*.zip | awk '{printf "  %-42s %s\n", $9, $5}'; cd /home/user/adrianoboller && B=/tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/phxsql-commits.bundle && git add -A && git commit -q -m "$(printf 'Pacotes regerados com as cinco frentes dentro\n\nOs zips anteriores nao tinham transacao, REST nem a biblioteca embutida. A base\nde conhecimento tambem foi reextraida do transcrito, que cresceu com as cinco\nintegracoes.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01NqzhoCqQuDveMBrrXUqpJb')" 2>/dev/null; git bundle create $B d4dc4243dfdf954dbc3bb30e91fe7e4a17091d88..HEAD 2>&1 | tail -1; echo "commits: $(git rev-list --count d4dc4243dfdf954dbc3bb30e91fe7e4a17091d88..HEAD) | pacote: $(ls -lh $B | awk '{print $5}')"
+```
+
+### Check what benches and databases are actually available  ·  30/08 17:49
+
+```bash
+cd phxsql 2>/dev/null; echo "=== bancadas que existem ==="; ls bancada/ | tr '\n' ' '; echo; echo "=== MySQL disponivel? ==="; command -v mysqld mysql mariadbd 2>/dev/null | head -3; pgrep -x mysqld >/dev/null && echo "  mysqld NO AR" || echo "  mysqld parado"; ls /var/lib/mysql 2>/dev/null | head -3
+echo "=== o que a bancada do MySQL mede, e em que escala ==="; grep -nE "LINHAS|linhas =|N_LINHAS|1_000_000|1000000" bancada/medir.py 2>/dev/null | head -6
+echo "=== e a do SQLite ==="; grep -nE "LINHAS|200_000|200000|1_000_000" bancada/sqlite/medir.py 2>/dev/null | head -4
+```
+
+### Find how to invoke the MySQL bench and what it measures  ·  30/08 17:50
+
+```bash
+grep -nE "^Uso|usage|argv|sys.argv|--rodadas|def main" bancada/medir.py | head -12; echo "--- as fases que ele mede ---"; grep -oE '"[a-z ]{4,20}"' bancada/medir.py | sort -u | head -14
+```
+
+### Read the existing chart generator  ·  30/08 18:03
+
+```bash
+cd phxsql 2>/dev/null; head -30 bancada/graficos.py; echo "..."; grep -nE "^def |svg|SVG" bancada/graficos.py | head -12
+```
+
+### Validate the three brand hues for the chart  ·  30/08 18:04
+
+```bash
+cd /tmp/claude-0/bundled-skills/2.1.251/e33a6f0f02f7cb096f0aef41017f7db1/dataviz && node scripts/validate_palette.js "#c63c0a,#1f5c93,#37702e" --mode light --surface "#fbf9f7" 2>&1 | tail -25
+```
+
+### Validate the dark-mode hues  ·  30/08 18:04
+
+```bash
+cd /tmp/claude-0/bundled-skills/2.1.251/e33a6f0f02f7cb096f0aef41017f7db1/dataviz && node scripts/validate_palette.js "#ff8a1c,#5fa6e8,#7bcb6a" --mode dark --surface "#040814" 2>&1 | tail -12
+```
+
+### Find dark hues that pass the lightness band  ·  30/08 18:04
+
+```bash
+cd /tmp/claude-0/bundled-skills/2.1.251/e33a6f0f02f7cb096f0aef41017f7db1/dataviz
+for p in "#e07a1e,#4a90d9,#5fb257" "#d9741c,#4287cf,#54a84c" "#ff8a1c,#5fa6e8,#7bcb6a"; do
+  echo "--- $p ---"; node scripts/validate_palette.js "$p" --mode dark --surface "#040814" 2>&1 | grep -E "Lightness|ALL CHECKS|FAILED"
+done
+```
+
+### Write the three-engine chart generator  ·  30/08 18:05
+
+```bash
+mkdir -p phxsql/bancada/comparacao && cat > phxsql/bancada/comparacao/grafico.py <<'PY'
+#!/usr/bin/env python3
+"""Desenha o grafico dos tres motores a partir do JSON medido.
+
+    python3 bancada/comparacao/grafico.py [um-milhao.json]
+
+Escreve `comparacao-tres-motores.svg` (fragmento, para entrar no dossie) e
+`comparacao-tres-motores.html` (pagina de pe, para olhar sozinha).
+
+Tres decisoes que valem explicar:
+
+**Um painel por fase, com escala propria.** Inserir um milhao de linhas e
+buscar uma custam ordens de grandeza diferentes. Num eixo compartilhado a fase
+barata vira um risco no chao e nao se le -- e ninguem precisa comparar o tempo
+de inserir com o de buscar, entao o eixo compartilhado nao compra nada e custa
+a legibilidade das fases rapidas.
+
+**A dispersao aparece.** Cada barra leva o bigode de minimo a maximo. Mediana
+sozinha esconde que a medida de `fsync` varia 1,2x a 1,6x entre dias -- foi
+medido aqui -- e uma barra lisa afirmaria uma precisao que o numero nao tem.
+
+**Fase nao medida vira «nao medido», nunca zero.** E a mesma regra do
+`graficos.py` que ja existia: barra de altura zero se le como "foi
+instantaneo", que e a mentira mais facil de publicar sem querer.
+
+As cores sao os tokens da marca, e passaram pelo validador do skill de
+visualizacao nos DOIS temas -- claro e escuro tem passos proprios, porque o
+tema escuro nao e o claro invertido. Cada barra tambem leva rotulo direto, que
+e a codificacao secundaria que a separacao tritan pede.
+"""
+import json
+import sys
+from pathlib import Path
+
+BASE = Path(__file__).resolve().parent
+MOTORES = [
+    ("phxsql", "PhxSql", "var(--m-phx)"),
+    ("mysql", "MySQL(R)", "var(--m-sql)"),
+    ("sqlite", "SQLite(R)", "var(--m-lite)"),
+]
+FASES = [
+    ("inserir", "INSERT", "gravar o milhao de linhas"),
+    ("buscar", "SELECT", "achar uma linha pela chave"),
+    ("atualizar", "UPDATE", "trocar o valor de uma coluna"),
+    ("excluir", "DELETE", "apagar de vez"),
+]
+
+LARG, ALT = 460, 300
+ESQ, DIR, TOPO, BASE_Y = 96, 24, 46, 54
+
+
+def fmt(v):
+    if v is None:
+        return "nao medido"
+    if v >= 100:
+        return f"{v:,.0f} s".replace(",", ".")
+    if v >= 10:
+        return f"{v:.1f} s"
+    if v >= 1:
+        return f"{v:.2f} s"
+    return f"{v * 1000:.0f} ms"
+
+
+def painel(chave, titulo, nota, dados):
+    """Um painel: tres barras horizontais com bigode de minimo a maximo."""
+    linhas = []
+    for mid, rotulo, cor in MOTORES:
+        d = (dados or {}).get(mid) or {}
+        linhas.append((rotulo, cor, d.get("mediana_s"), d.get("min_s"), d.get("max_s")))
+
+    medidos = [x for x in linhas if x[2] is not None]
+    teto = max((x[4] or x[2]) for x in medidos) if medidos else 1.0
+    teto = teto * 1.18 or 1.0
+    util = LARG - ESQ - DIR
+    alt_barra, passo = 34, 62
+
+    # Quem ganhou -- e so entre os que foram medidos. Comparar contra fase que
+    # nao rodou daria vencedor por ausencia do outro.
+    melhor = min(medidos, key=lambda x: x[2])[0] if medidos else None
+
+    p = [
+        f'<text x="0" y="16" class="tit">{titulo}</text>',
+        f'<text x="0" y="34" class="nota">{nota}</text>',
+    ]
+    for i, (rotulo, cor, med, mn, mx) in enumerate(linhas):
+        y = TOPO + i * passo
+        p.append(f'<text x="0" y="{y + 15}" class="eixo">{rotulo}</text>')
+        if med is None:
+            p.append(f'<text x="{ESQ}" y="{y + 15}" class="ausente">nao medido</text>')
+            continue
+        w = max(3, util * med / teto)
+        vitoria = ' vencedor' if rotulo == melhor else ''
+        p.append(
+            f'<rect x="{ESQ}" y="{y}" width="{w:.1f}" height="{alt_barra}" rx="4" '
+            f'fill="{cor}" class="barra{vitoria}"/>'
+        )
+        if mn is not None and mx is not None and mx > mn:
+            x1 = ESQ + util * mn / teto
+            x2 = ESQ + util * mx / teto
+            ym = y + alt_barra / 2
+            p.append(
+                f'<line x1="{x1:.1f}" y1="{ym}" x2="{x2:.1f}" y2="{ym}" class="bigode"/>'
+                f'<line x1="{x1:.1f}" y1="{ym - 6}" x2="{x1:.1f}" y2="{ym + 6}" class="bigode"/>'
+                f'<line x1="{x2:.1f}" y1="{ym - 6}" x2="{x2:.1f}" y2="{ym + 6}" class="bigode"/>'
+            )
+        p.append(f'<text x="{ESQ + w + 8:.1f}" y="{y + 22}" class="valor">{fmt(med)}</text>')
+
+    aria = "; ".join(f"{r} {fmt(m)}" for r, _, m, _, _ in linhas)
+    return (
+        f'<figure class="fig">\n'
+        f'  <svg viewBox="0 0 {LARG} {ALT}" role="img" '
+        f'aria-label="{titulo}, {nota}: {aria}">\n    '
+        + "\n    ".join(p)
+        + f'\n  </svg>\n</figure>'
+    )
+
+
+def main():
+    origem = Path(sys.argv[1]) if len(sys.argv) > 1 else BASE / "um-milhao.json"
+    if not origem.exists():
+        sys.exit(
+            f"nao achei {origem}.\n"
+            "O grafico sai da medicao, e nao ha medicao ainda -- rode a bancada\n"
+            "antes. Desenhar sem o numero seria inventar o numero."
+        )
+    d = json.loads(origem.read_text(encoding="utf-8"))
+    fases = d.get("fases") or {}
+    n = d.get("linhas", 0)
+
+    paineis = "\n".join(painel(c, t, nt, fases.get(c)) for c, t, nt in FASES)
+    legenda = " ".join(
+        f'<span class="leg"><i style="background:{cor}"></i>{rot}</span>'
+        for _, rot, cor in MOTORES
+    )
+    ress = "".join(f"<li>{r}</li>" for r in (d.get("ressalvas") or []))
+    dur = d.get("durabilidade") or {}
+    dur_txt = " · ".join(f"<b>{k}</b>: {v}" for k, v in dur.items())
+
+    (BASE / "comparacao-tres-motores.svg").write_text(paineis, encoding="utf-8")
+
+    pag = f"""<!doctype html><meta charset="utf-8">
+<title>PhxSql x MySQL(R) x SQLite(R) -- {n:,} linhas</title>
+<style>
+:root{{--papel:#fbf9f7;--tinta:#1a1210;--tinta-2:#4a3f3a;--tinta-3:#7a6d66;
+--linha:#ded6d0;--m-phx:#c63c0a;--m-sql:#1f5c93;--m-lite:#37702e}}
+@media (prefers-color-scheme:dark){{:root:not([data-theme="light"]){{
+--papel:#040814;--tinta:#dde2eb;--tinta-2:#a8b0c0;--tinta-3:#7c8598;
+--linha:#1e2940;--m-phx:#d9741c;--m-sql:#4287cf;--m-lite:#54a84c}}}}
+body{{margin:0;padding:32px;background:var(--papel);color:var(--tinta);
+font:15px/1.6 system-ui,sans-serif;max-width:1100px}}
+h1{{font-size:22px;margin:0 0 4px}}
+.sub{{color:var(--tinta-2);margin:0 0 20px}}
+.grade{{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:24px}}
+.fig{{margin:0;border:1px solid var(--linha);border-radius:10px;padding:12px}}
+.fig svg{{width:100%;height:auto;display:block}}
+.tit{{font:600 15px system-ui;fill:var(--tinta)}}
+.nota{{font:12px system-ui;fill:var(--tinta-3)}}
+.eixo{{font:13px system-ui;fill:var(--tinta-2)}}
+.valor{{font:600 13px system-ui;fill:var(--tinta);font-variant-numeric:tabular-nums}}
+.ausente{{font:italic 13px system-ui;fill:var(--tinta-3)}}
+.bigode{{stroke:var(--tinta-3);stroke-width:2}}
+.barra.vencedor{{stroke:var(--tinta);stroke-width:2}}
+.leg{{margin-right:16px;color:var(--tinta-2);font-size:13px}}
+.leg i{{display:inline-block;width:11px;height:11px;border-radius:3px;
+margin-right:6px;vertical-align:-1px}}
+.ress{{margin-top:24px;border-left:3px solid var(--m-phx);padding:4px 0 4px 14px}}
+.ress h2{{font-size:15px;margin:0 0 6px}}
+.ress li{{color:var(--tinta-2);margin-bottom:4px}}
+</style>
+<h1>PhxSql &times; MySQL&reg; &times; SQLite&reg;</h1>
+<p class="sub">{n:,} linhas &middot; menor &eacute; melhor &middot; o bigode vai do
+m&iacute;nimo ao m&aacute;ximo das rodadas &middot; contorno marca o mais r&aacute;pido da fase</p>
+<p>{legenda}</p>
+<div class="grade">
+{paineis}
+</div>
+<div class="ress">
+<h2>Durabilidade de cada um durante a medida</h2>
+<p class="sub">{dur_txt}</p>
+<h2>O que estes n&uacute;meros n&atilde;o dizem</h2>
+<ul>{ress}</ul>
+</div>
+""".replace("{n:,}".format(n=n), f"{n:,}".replace(",", "."))
+    (BASE / "comparacao-tres-motores.html").write_text(pag, encoding="utf-8")
+    print(f"grafico gerado de {origem.name}: {n} linhas, {len(FASES)} fases")
+    for c, t, _ in FASES:
+        got = [m for m, _, _ in MOTORES if ((fases.get(c) or {}).get(m) or {}).get("mediana_s") is not None]
+        print(f"  {t:<8} medido para: {', '.join(got) if got else 'NINGUEM'}")
+
+
+if __name__ == "__main__":
+    main()
+PY
+chmod +x phxsql/bancada/comparacao/grafico.py && python3 phxsql/bancada/comparacao/grafico.py 2>&1 | head -5
+```
+
+### Clean test output and verify the not-measured handling  ·  30/08 18:06
+
+```bash
+cp phxsql/bancada/comparacao/comparacao-tres-motores.html /tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/grafico-teste.html
+rm -f phxsql/bancada/comparacao/comparacao-tres-motores.html phxsql/bancada/comparacao/comparacao-tres-motores.svg
+echo "saidas de teste removidas do repositorio; so o gerador fica:"; ls phxsql/bancada/comparacao/
+echo "=== o DELETE do SQLite virou 'nao medido' e nao zero? ==="; grep -c "nao medido" /tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/grafico-teste.html
+```
+
+### Commit the chart generator  ·  30/08 18:06
+
+```bash
+git add -A && git commit -q -F - <<'MSG'
+O gerador do grafico dos tres motores -- que recusa desenhar sem medicao
+
+Pronto antes do numero de proposito, para que o grafico saia do JSON medido em
+vez de ser desenhado a mao depois. Sem o arquivo ele PARA com a mensagem
+dizendo por que: desenhar sem o numero seria inventar o numero.
+
+Tres decisoes que valem explicar:
+
+**Um painel por fase, com escala propria.** Inserir um milhao de linhas e
+buscar uma custam ordens de grandeza diferentes; num eixo compartilhado a fase
+barata vira um risco no chao. E ninguem precisa comparar o tempo de inserir com
+o de buscar, entao o eixo unico nao compra nada e custa a legibilidade.
+
+**A dispersao aparece**, em bigode de minimo a maximo. Mediana sozinha
+esconderia que a medida de `fsync` varia 1,2x a 1,6x entre dias -- medido aqui
+-- e barra lisa afirmaria uma precisao que o numero nao tem.
+
+**Fase nao medida vira "nao medido", nunca zero.** E a regra que o
+`graficos.py` ja trazia: barra de altura zero se le como "foi instantaneo", que
+e a mentira mais facil de publicar sem querer.
+
+As cores sao tokens da marca e passaram pelo VALIDADOR nos dois temas, em vez
+de pelo olho. O tema escuro tem passos proprios (#d9741c #4287cf #54a84c): os
+tokens claros reprovaram na faixa de luminosidade sobre fundo escuro, porque
+tema escuro nao e tema claro invertido. Cada barra leva rotulo direto, que e a
+codificacao secundaria que a separacao tritan pede.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01NqzhoCqQuDveMBrrXUqpJb
+MSG
+git log --oneline -1
+```
+
+### Check the existing alert path and how the TLS wall was solved before  ·  30/08 18:13
+
+```bash
+cd phxsql 2>/dev/null; echo "=== o caminho de alerta que ja existe ==="; grep -nE "^## |^### " docs/*.md 2>/dev/null | grep -iE "alerta|smtp|e-mail" | head -5; grep -rn "sem TLS" docs/PENDENCIAS.md | grep -i "alerta\|smtp" | cut -c1-200
+echo; echo "=== como a integracao com a Claude resolveu a parede do TLS ==="; sed -n '14,40p' docs/CLAUDE-IA.md
+```
+
+### Confere disco e existencia do zelador  ·  01/09 18:15
+
+```bash
+cd /home/user/adrianoboller/phxsql && df -h . | tail -1 && ls -la zelador.sh 2>/dev/null
+```
+
+### Estado do git: branch, alteracoes e ultimos commits  ·  01/09 18:15
+
+```bash
+cd /home/user/adrianoboller && git branch --show-current && echo "--- status ---" && git status --short | head -40 && echo "--- log ---" && git log --oneline -15
+```
+
+### Roda o zelador do ambiente  ·  01/09 18:15
+
+```bash
+cd /home/user/adrianoboller/phxsql && ./zelador.sh 2>&1 | tail -20; echo "=== disco depois ==="; df -h . | tail -1
+```
+
+### Conteudo da pasta de comparacao  ·  01/09 18:15
+
+```bash
+ls -la bancada/comparacao/ && echo "=== LEIA-ME comparacao ===" && sed -n '1,80p' bancada/comparacao/LEIA-ME.md 2>/dev/null
+```
+
+### Ve o que existe para SQLite e MySQL  ·  01/09 18:16
+
+```bash
+ls bancada/sqlite/ && echo "=== mysql? ===" && (which mysqld mysql 2>/dev/null || echo "sem mysql no PATH") && (service mysql status 2>&1 | head -3) ; echo "=== sqlite3? ===" && (python3 -c "import sqlite3; print('sqlite3 modulo', sqlite3.sqlite_version)"; which sqlite3 || echo "sem cli sqlite3")
+```
+
+### Pedidos ainda abertos  ·  01/09 18:16
+
+```bash
+grep -n "⬜\|🔄" docs/PENDENCIAS.md | head -40; echo "=== total ==="; grep -c "⬜" docs/PENDENCIAS.md
+```
+
+### Tamanho das bancadas e as fases do carga.rs  ·  01/09 18:16
+
+```bash
+wc -l bancada/medir.py bancada/sqlite/medir.py crates/phxsql-store/examples/carga.rs; echo "=== fases do carga.rs ==="; grep -n '"\(inserir\|buscar\|varrer\|atualizar\|excluir\)"\|fn fase\|match ' crates/phxsql-store/examples/carga.rs | head -30
+```
+
+### Estrutura da bancada do SQLite  ·  01/09 18:16
+
+```bash
+grep -n "def \|^FASES\|^PORTA\|argv\|rodadas" bancada/sqlite/medir.py | head -50
+```
+
+### Compila release com os examples  ·  01/09 18:17
+
+```bash
+cargo build --release --examples -p phxsql-store 2>&1 | tail -5 && ls -la target/release/examples/carga
+```
+
+### Sobe o MySQL e confere a versao  ·  01/09 18:17
+
+```bash
+service mysql start 2>&1 | tail -3; sleep 5; service mysql status 2>&1 | head -3; mysql -N -B -e "SELECT VERSION();" 2>&1 | head -3
+```
+
+### API da Table: excluir, ler, slots  ·  01/09 18:19
+
+```bash
+grep -n "pub fn excluir\|pub fn ler\|pub fn slots\|pub fn sincronizar\|pub fn contar\|softdeleted" crates/phxsql-store/src/table.rs | head -30
+```
+
+### Semantica de excluir() e contar()  ·  01/09 18:19
+
+```bash
+sed -n '1720,1740p' crates/phxsql-store/src/table.rs; echo "=== contar ==="; sed -n '1965,1995p' crates/phxsql-store/src/table.rs
+```
+
+### Epoca do tipo Date  ·  01/09 18:20
+
+```bash
+grep -rn "Date" crates/phxsql-core/src/types.rs | head -20; echo "=== epoca ==="; grep -rn "1970\|epoca\|dias desde" crates/phxsql-core/src/value.rs crates/phxsql-core/src/types.rs 2>/dev/null | head -20
+```
+
+### Prova rapida da fase conferir  ·  01/09 18:21
+
+```bash
+cd /tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad && rm -rf provac && /home/user/adrianoboller/phxsql/target/release/examples/carga provac criar && /home/user/adrianoboller/phxsql/target/release/examples/carga provac inserir 1000 | tail -2 && /home/user/adrianoboller/phxsql/target/release/examples/carga provac conferir | tail -2
+```
+
+### Escreve a bancada dos tres motores  ·  01/09 18:23
+
+```bash
+cat > bancada/comparacao/medir.py <<'ARQUIVO'
+#!/usr/bin/env python3
+"""Os tres motores no mesmo trabalho: PhxSql x MySQL(R) x SQLite(R).
+
+    python3 bancada/comparacao/medir.py                    # 1.000.000, 3 rodadas
+    python3 bancada/comparacao/medir.py 200000 --rodadas 5
+    python3 bancada/comparacao/medir.py --so phxsql,sqlite # sem o MySQL(R)
+
+Escreve `um-milhao.json`, que e de onde `grafico.py` desenha. Enquanto a
+corrida anda o progresso vai para `um-milhao.parcial.json`, que nao e
+versionado: uma corrida leva dezenas de minutos, e durante esse tempo o
+arquivo versionado ficaria com meia medicao dentro -- quem olhasse via
+numero, nao via «faltam duas fases».
+
+Por que uma bancada nova, em vez de juntar as duas que existem
+--------------------------------------------------------------
+`bancada/medir.py` mede PhxSql x MySQL(R) e `bancada/sqlite/medir.py` mede
+PhxSql x SQLite(R). Somar as duas tabelas daria um numero de tres motores
+sem que os tres tivessem feito o mesmo trabalho no mesmo dia, na mesma
+maquina, com a mesma carga em volta -- e comparar medidas de dias diferentes
+e como comparar escalas diferentes: parte da diferenca vem do ambiente, nao
+do motor. Aqui os tres correm intercalados, na mesma rodada.
+
+E ao montar esta juntar apareceu um defeito na bancada do MySQL(R): ela grava
+`'2024-10-04'` em TODA linha, enquanto PhxSql e SQLite(R) gravam
+`20000 + (i % 400)` -- dado diferente do mesmo tamanho, que e violacao da
+regra 1 e nao aparece em tempo nenhum. Aqui os tres recebem o dia variavel, e
+a fase `conferir` compara a SOMA de `cadastro` justamente para que a proxima
+divergencia dessa familia reprove em vez de publicar.
+
+As quatro regras da casa, aplicadas a este trio
+-----------------------------------------------
+1. **Mesmos dados.** O `linha(i)` daqui e a traducao literal do `linha(i)` do
+   `carga.rs`, inclusive a data. Sem sorteio.
+2. **Mesmo esquema.** Chave em `id` e indice secundario em `cidade` nos tres.
+   O SQLite(R) nao tem traducao unica para isso -- rodam as DUAS variantes, e
+   a publicada e a `rowid`, que e a que casa com o InnoDB (chave primaria
+   agrupada) e a que FAVORECE o SQLite(R). A outra fica no JSON.
+3. **Mesma forma de pergunta.** Uma instrucao por operacao nas fases
+   pontuais, nos tres. A excecao e a carga inicial, e ela esta nas ressalvas
+   com o nome de quem favorece.
+4. **Mesma quantidade de trabalho.** E a fase `conferir` prova: os tres tem
+   de sair de cada etapa com a MESMA contagem, a MESMA soma de `valor` e a
+   MESMA soma de `cadastro`, por tres codigos sem uma linha em comum.
+   Divergiu, a bancada RECUSA publicar.
+
+O piso do MySQL(R), e por que ele e medido
+------------------------------------------
+Os tres nao tem a mesma forma: o SQLite(R) e biblioteca em processo, o PhxSql
+aqui e biblioteca tambem (o `carga`), e o MySQL(R) e daemon que recebe TEXTO
+por soquete. A barra do MySQL(R) carrega transporte e analise de texto que as
+outras duas nao pagam, e nao ha como tirar isso -- nao existe MySQL(R)
+embutido nesta maquina.
+
+O que da para fazer e MEDIR quanto disso e piso: 20.000 instrucoes que nao
+fazem trabalho nenhum (`DO 1;`) pelo mesmo caminho. O numero vai para as
+ressalvas, e o leitor subtrai. Esconder isso seria publicar uma vitoria que e
+do formato, e essa e a familia de erro que esta casa ja cometeu tres vezes.
+"""
+
+import json
+import os
+import shutil
+import sqlite3
+import statistics
+import subprocess
+import sys
+import time
+from datetime import date, timedelta
+from pathlib import Path
+
+AQUI = Path(__file__).resolve().parent
+RAIZ = AQUI.parent.parent
+# O caminho sai DA ARVORE em que este arquivo esta: com um absoluto escrito a
+# mao, uma bancada rodada numa arvore de trabalho mede o binario de OUTRA.
+CARGA = Path(os.environ.get("PHX_CARGA", RAIZ / "target/release/examples/carga"))
+# O PID entra no nome porque o zelador guarda o que tem PID vivo nele. Sem
+# isso, uma fase longa do MySQL(R) deixa a base do PhxSql parada por mais de
+# meia hora e o zelador a apaga no meio da corrida.
+TRABALHO = Path(os.environ.get("PHX_TRABALHO", f"/tmp/phx-comparacao-{os.getpid()}"))
+RESULTADOS = AQUI / "um-milhao.json"
+PARCIAL = AQUI / "um-milhao.parcial.json"
+COMANDO = AQUI / "comando.sql"
+
+BANCO = "trio"
+LOTE = 50_000
+PASSO = 7_919  # o mesmo primo do `carga.rs`: espalha os alvos pela tabela
+
+CIDADES = [
+    "Blumenau", "Joinville", "Itajai", "Curitiba",
+    "Chapeco", "Lages", "Florianopolis", "Criciuma",
+]
+EPOCA = date(1970, 1, 1)  # o `Date` do PhxSql sao dias desde aqui
+
+FASES = ["inserir", "buscar", "atualizar", "excluir"]
+
+
+def linha(i):
+    """Traducao literal de `linha(i)` do `carga.rs`. Mesmos dados, sem sorteio."""
+    return (
+        i,
+        "Produto %08d" % i,
+        CIDADES[i % len(CIDADES)],
+        (i % 900_000) + 100,   # o Decimal(15,2) do PhxSql guarda CENTAVOS
+        20_000 + (i % 400),    # o Date do PhxSql guarda o NUMERO DO DIA
+    )
+
+
+def alvo(k, n):
+    return (k * PASSO) % n + 1
+
+
+def resumo(amostras):
+    """Mediana com o menor e o maior ao lado. Nunca um numero so."""
+    return {
+        "mediana_s": round(statistics.median(amostras), 4),
+        "min_s": round(min(amostras), 4),
+        "max_s": round(max(amostras), 4),
+        "amostras": [round(x, 4) for x in amostras],
+    }
+
+
+# ------------------------------------------------------------------- PhxSql
+
+
+def roda_carga(dir_dados, fase, n, ambiente=None):
+    """Uma fase do `carga`, em processo separado.
+
+    O tempo que volta e o que o PROPRIO `carga` cronometrou, e nao o relogio
+    de fora: subir o processo custa alguns milissegundos e uma fase de 20.000
+    buscas leva poucos milissegundos. Medida por fora, a fase apareceria com o
+    dobro do custo -- e o SQLite(R), que e chamada de funcao no mesmo
+    processo, nao pagaria nada disso.
+    """
+    env = dict(os.environ)
+    if ambiente:
+        env.update(ambiente)
+    p = subprocess.Popen(
+        [str(CARGA), str(dir_dados), fase, str(n)],
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env,
+    )
+    saida = p.communicate()[0].decode()
+    if p.returncode != 0:
+        raise SystemExit(f"carga {fase} falhou:\n{saida}")
+    marca = saida.rsplit("RESULTADO ", 1)
+    segundos = json.loads(marca[1])["segundos"] if len(marca) > 1 else 0.0
+    return segundos, saida
+
+
+def confere_phxsql(dir_dados):
+    _, saida = roda_carga(dir_dados, "conferir", 0)
+    bruto = saida.rsplit("CONFERE ", 1)[1].splitlines()[0]
+    d = json.loads(bruto)
+    return (d["linhas"], d["soma_valor"], d["soma_cadastro"])
+
+
+def corre_phxsql(n, ops, tempos):
+    d = TRABALHO / "phxsql"
+    shutil.rmtree(d, ignore_errors=True)
+    roda_carga(d, "criar", 0)
+
+    seg, _ = roda_carga(d, "inserir", n)
+    tempos["inserir"].append(seg)
+    marcos = [confere_phxsql(d)]
+
+    seg, saida = roda_carga(d, "buscar", ops)
+    tempos["buscar"].append(seg)
+    achados = int(saida.split("achados:")[1].split()[0])
+
+    seg, _ = roda_carga(d, "atualizar", ops)
+    tempos["atualizar"].append(seg)
+    marcos.append(confere_phxsql(d))
+
+    # A exclusao entra na janela: do outro lado as 20.000 vao dentro de UMA
+    # transacao -- um `fsync` para as vinte mil. Sem isto o PhxSql pagaria
+    # vinte mil, e o numero mentiria contra nos.
+    seg, _ = roda_carga(d, "excluir", ops, {"PHX_EXCLUSAO_NA_JANELA": "1"})
+    tempos["excluir"].append(seg)
+    marcos.append(confere_phxsql(d))
+
+    return {"marcos": marcos, "achados": achados, "disco": tamanho(d)}
+
+
+def tamanho(caminho):
+    p = Path(caminho)
+    if p.is_file():
+        return p.stat().st_size
+    return sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
+
+
+# ------------------------------------------------------------------ SQLite
+
+
+INSERE = "INSERT INTO precos (id, produto, cidade, valor, cadastro) VALUES (?,?,?,?,?)"
+# O `atualizar` do `carga.rs` regrava a LINHA INTEIRA, entao o UPDATE tambem:
+# trocar so `valor` seria menos trabalho de um lado.
+ATUALIZA = "UPDATE precos SET produto=?, cidade=?, valor=?, cadastro=? WHERE id=?"
+
+
+def abre_sqlite(caminho, variante):
+    for extra in ("", "-journal", "-wal", "-shm"):
+        Path(str(caminho) + extra).unlink(missing_ok=True)
+    con = sqlite3.connect(caminho, isolation_level=None)
+    con.execute("PRAGMA journal_mode=DELETE")  # o padrao; WAL seria outro compromisso
+    con.execute("PRAGMA synchronous=FULL")
+    if variante == "rowid":
+        con.execute(
+            "CREATE TABLE precos (id INTEGER PRIMARY KEY, produto TEXT NOT NULL,"
+            " cidade TEXT, valor INTEGER, cadastro INTEGER)"
+        )
+    else:
+        con.execute(
+            "CREATE TABLE precos (id INTEGER NOT NULL, produto TEXT NOT NULL,"
+            " cidade TEXT, valor INTEGER, cadastro INTEGER)"
+        )
+        con.execute("CREATE UNIQUE INDEX porId ON precos(id)")
+    con.execute("CREATE INDEX porCidade ON precos(cidade)")
+    return con
+
+
+def confere_sqlite(con):
+    n, v, c = con.execute(
+        "SELECT count(*), coalesce(sum(valor),0), coalesce(sum(cadastro),0) FROM precos"
+    ).fetchone()
+    return (n, v, c)
+
+
+def corre_sqlite(n, ops, tempos, variante):
+    arq = TRABALHO / f"sqlite-{variante}.db"
+    con = abre_sqlite(arq, variante)
+
+    t0 = time.monotonic()
+    con.execute("BEGIN")
+    con.executemany(INSERE, (linha(i) for i in range(1, n + 1)))
+    con.execute("COMMIT")
+    tempos["inserir"].append(time.monotonic() - t0)
+    marcos = [confere_sqlite(con)]
+    disco = tamanho(arq)
+
+    cur = con.cursor()
+    achados = 0
+    t0 = time.monotonic()
+    for k in range(ops):
+        cur.execute("SELECT * FROM precos WHERE id=?", (alvo(k, n),))
+        if cur.fetchone() is not None:
+            achados += 1
+    tempos["buscar"].append(time.monotonic() - t0)
+
+    t0 = time.monotonic()
+    con.execute("BEGIN")
+    for k in range(ops):
+        a = alvo(k, n)
+        _, produto, cidade, _, dia = linha(a)
+        con.execute(ATUALIZA, (produto, cidade, 999_900, dia, a))
+    con.execute("COMMIT")
+    tempos["atualizar"].append(time.monotonic() - t0)
+    marcos.append(confere_sqlite(con))
+
+    t0 = time.monotonic()
+    con.execute("BEGIN")
+    for k in range(ops):
+        con.execute("DELETE FROM precos WHERE id=?", (alvo(k, n),))
+    con.execute("COMMIT")
+    tempos["excluir"].append(time.monotonic() - t0)
+    marcos.append(confere_sqlite(con))
+    con.close()
+
+    return {"marcos": marcos, "achados": achados, "disco": disco}
+
+
+# ------------------------------------------------------------------- MySQL
+
+
+def sql(comando, banco=BANCO):
+    """Manda o comando por ARQUIVO, sempre.
+
+    Uma carga de um milhao de linhas nao cabe na linha de comando -- o sistema
+    recusa com «Argument list too long». Por arquivo cabe, e o caminho e o
+    mesmo para todo comando, entao a medicao nao muda de forma no meio.
+    """
+    COMANDO.write_text(comando)
+    return subprocess.run(
+        ["mysql", "--protocol=socket", "-N", "-B"] + ([banco] if banco else [])
+        + ["-e", f"SOURCE {COMANDO};"],
+        capture_output=True, text=True,
+    )
+
+
+def cronometra_mysql(comando):
+    """O arquivo e escrito ANTES do relogio: gravar 70 MB de texto e trabalho
+    do medidor, nao do motor, e entrar na conta seria cobrar do MySQL(R) uma
+    coisa que ele nao fez."""
+    COMANDO.write_text(comando)
+    t0 = time.monotonic()
+    r = subprocess.run(
+        ["mysql", "--protocol=socket", "-N", "-B", BANCO, "-e", f"SOURCE {COMANDO};"],
+        capture_output=True, text=True,
+    )
+    seg = time.monotonic() - t0
+    if r.returncode != 0:
+        raise SystemExit(f"mysql falhou:\n{r.stderr[:600]}")
+    return seg, r.stdout
+
+
+def data_sql(dia):
+    return (EPOCA + timedelta(days=dia)).isoformat()
+
+
+def confere_mysql():
+    # `TO_DAYS(x) - TO_DAYS('1970-01-01')` desfaz a conversao da data e devolve
+    # o numero do dia -- a mesma grandeza que os outros dois somam.
+    r = sql(
+        "SELECT count(*), coalesce(sum(valor),0),"
+        " coalesce(sum(TO_DAYS(cadastro) - TO_DAYS('1970-01-01')),0) FROM precos;"
+    )
+    campos = r.stdout.split()
+    return (int(campos[0]), int(float(campos[1])), int(float(campos[2])))
+
+
+def corre_mysql(n, ops, tempos):
+    sql(f"DROP DATABASE IF EXISTS {BANCO}; CREATE DATABASE {BANCO};", banco="")
+    sql(
+        """CREATE TABLE precos (
+             id BIGINT NOT NULL,
+             produto VARCHAR(40) NOT NULL,
+             cidade VARCHAR(20),
+             valor BIGINT,
+             cadastro DATE,
+             PRIMARY KEY (id),
+             KEY porCidade (cidade)
+           ) ENGINE=InnoDB"""
+    )
+
+    # UMA transacao para a carga inteira, como os outros dois: uma
+    # sincronizacao no fim da fase, e nao uma por lote. Os lotes de 50.000 sao
+    # so o tamanho da instrucao -- o `max_allowed_packet` nao aceita um
+    # `INSERT` de um milhao de linhas.
+    partes = ["START TRANSACTION;\n"]
+    for base in range(0, n, LOTE):
+        quantos = min(LOTE, n - base)
+        valores = ",".join(
+            "(%d,'%s','%s',%d,'%s')" % (i, p, c, v, data_sql(d))
+            for i, p, c, v, d in (linha(x) for x in range(base + 1, base + quantos + 1))
+        )
+        partes.append(f"INSERT INTO precos VALUES {valores};\n")
+    partes.append("COMMIT;\n")
+    seg, _ = cronometra_mysql("".join(partes))
+    tempos["inserir"].append(seg)
+    marcos = [confere_mysql()]
+
+    seg, saida = cronometra_mysql(
+        "".join(f"SELECT id FROM precos WHERE id={alvo(k, n)};\n" for k in range(ops))
+    )
+    tempos["buscar"].append(seg)
+    achados = len(saida.split())
+
+    seg, _ = cronometra_mysql(
+        "START TRANSACTION;\n"
+        + "".join(
+            "UPDATE precos SET produto='%s', cidade='%s', valor=999900, cadastro='%s'"
+            " WHERE id=%d;\n" % (p, c, data_sql(d), i)
+            for i, p, c, _, d in (linha(alvo(k, n)) for k in range(ops))
+        )
+        + "COMMIT;\n"
+    )
+    tempos["atualizar"].append(seg)
+    marcos.append(confere_mysql())
+
+    seg, _ = cronometra_mysql(
+        "START TRANSACTION;\n"
+        + "".join(f"DELETE FROM precos WHERE id={alvo(k, n)};\n" for k in range(ops))
+        + "COMMIT;\n"
+    )
+    tempos["excluir"].append(seg)
+    marcos.append(confere_mysql())
+
+    return {"marcos": marcos, "achados": achados, "disco": disco_mysql()}
+
+
+def piso_mysql(ops):
+    """Quanto custa mandar 20.000 instrucoes que nao fazem nada.
+
+    E o transporte mais a analise do texto -- o que a barra do MySQL(R)
+    carrega e as outras duas nao. Sem este numero o leitor nao tem como
+    separar o motor do formato.
+    """
+    seg, _ = cronometra_mysql("".join("DO 1;\n" for _ in range(ops)))
+    return seg
+
+
+def disco_mysql():
+    r = subprocess.run(
+        ["du", "-sb", f"/var/lib/mysql/{BANCO}"], capture_output=True, text=True
+    )
+    try:
+        return int(r.stdout.split()[0])
+    except (IndexError, ValueError):
+        return 0
+
+
+def ajuste_do_mysql():
+    """O regime de durabilidade sai do servidor, e nao de uma frase escrita a
+    mao aqui: campo de configuracao citado de memoria e campo que envelhece."""
+    r = sql(
+        "SELECT @@innodb_flush_log_at_trx_commit, @@sync_binlog, @@version;", banco=""
+    )
+    campos = r.stdout.split()
+    if len(campos) < 3:
+        return {}
+    return {"flush_log_at_trx_commit": campos[0], "sync_binlog": campos[1],
+            "versao": campos[2]}
+
+
+# -------------------------------------------------------------------- corrida
+
+
+def confere_trio(marcos, achados, etapas):
+    """A prova de trabalho igual. Divergiu, a bancada RECUSA publicar.
+
+    Tres codigos sem uma linha em comum tem de chegar a mesma contagem, a
+    mesma soma de `valor` e a mesma soma de `cadastro` em cada etapa. Um
+    numero de tempo so quer dizer alguma coisa depois disto.
+    """
+    motores = list(marcos)
+    problemas = []
+    for i, etapa in enumerate(etapas):
+        vistos = {m: marcos[m][i] for m in motores}
+        if len(set(vistos.values())) > 1:
+            problemas.append(f"  apos {etapa}: " + ", ".join(
+                f"{m}=({n:,} linhas, valor {v:,}, cadastro {c:,})".replace(",", ".")
+                for m, (n, v, c) in vistos.items()
+            ))
+    if len(set(achados.values())) > 1:
+        problemas.append("  buscar achou: " + ", ".join(
+            f"{m}={q}" for m, q in achados.items()
+        ))
+    if problemas:
+        raise SystemExit(
+            "os motores NAO fizeram o mesmo trabalho:\n"
+            + "\n".join(problemas)
+            + "\nA bancada nao publica numero de trabalho desigual."
+        )
+
+
+def guardar(d):
+    PARCIAL.write_text(json.dumps(d, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def principal():
+    argv = sys.argv[1:]
+    n = 1_000_000
+    if argv and argv[0].isdigit():
+        n, argv = int(argv[0]), argv[1:]
+    rodadas = int(argv[argv.index("--rodadas") + 1]) if "--rodadas" in argv else 3
+    ops = int(argv[argv.index("--ops") + 1]) if "--ops" in argv else 20_000
+    quais = (argv[argv.index("--so") + 1].split(",") if "--so" in argv
+             else ["phxsql", "sqlite", "mysql"])
+
+    if not CARGA.exists():
+        raise SystemExit(
+            f"nao achei {CARGA}.\n"
+            "Rode `cargo build --release --examples -p phxsql-store` antes: "
+            "binario velho mede o passado."
+        )
+    TRABALHO.mkdir(parents=True, exist_ok=True)
+
+    print(f"=== {n:,} linhas, {ops:,} operacoes, {rodadas} rodadas ==="
+          .replace(",", "."), flush=True)
+    print(f"    motores: {', '.join(quais)}", flush=True)
+
+    tempos = {m: {f: [] for f in FASES} for m in ("phxsql", "sqlite", "mysql")}
+    tempos["sqlite-2ind"] = {f: [] for f in FASES}
+    marcos, achados, disco, piso = {}, {}, {}, []
+
+    for r in range(rodadas):
+        print(f"-- rodada {r + 1}/{rodadas}", flush=True)
+        if "phxsql" in quais:
+            saiu = corre_phxsql(n, ops, tempos["phxsql"])
+            marcos["phxsql"], achados["phxsql"] = saiu["marcos"], saiu["achados"]
+            disco["phxsql"] = saiu["disco"]
+            print("   phxsql  " + fmt_rodada(tempos["phxsql"]), flush=True)
+        if "sqlite" in quais:
+            saiu = corre_sqlite(n, ops, tempos["sqlite"], "rowid")
+            marcos["sqlite"], achados["sqlite"] = saiu["marcos"], saiu["achados"]
+            disco["sqlite"] = saiu["disco"]
+            print("   sqlite  " + fmt_rodada(tempos["sqlite"]), flush=True)
+            corre_sqlite(n, ops, tempos["sqlite-2ind"], "2ind")
+        if "mysql" in quais:
+            saiu = corre_mysql(n, ops, tempos["mysql"])
+            marcos["mysql"], achados["mysql"] = saiu["marcos"], saiu["achados"]
+            disco["mysql"] = saiu["disco"]
+            piso.append(piso_mysql(ops))
+            print("   mysql   " + fmt_rodada(tempos["mysql"]), flush=True)
+        guardar({"parcial": True, "rodadas_feitas": r + 1, "tempos": tempos})
+
+    confere_trio(marcos, achados, ["inserir", "atualizar", "excluir"])
+    print(f"== trabalho igual conferido: {marcos[quais[0]]}", flush=True)
+
+    d = monta(n, ops, rodadas, tempos, marcos, achados, disco, piso, quais)
+    guardar(d)
+    os.replace(PARCIAL, RESULTADOS)
+    COMANDO.unlink(missing_ok=True)
+    shutil.rmtree(TRABALHO, ignore_errors=True)
+    print(f"== {RESULTADOS.name} publicado", flush=True)
+
+
+def fmt_rodada(t):
+    return "  ".join(f"{f} {t[f][-1]:7.3f}s" for f in FASES if t[f])
+
+
+def monta(n, ops, rodadas, tempos, marcos, achados, disco, piso, quais):
+    fases = {}
+    for f in FASES:
+        fases[f] = {}
+        for m in ("phxsql", "mysql", "sqlite"):
+            fases[f][m] = resumo(tempos[m][f]) if tempos[m][f] else {
+                "mediana_s": None, "min_s": None, "max_s": None
+            }
+
+    ress = [
+        f"A carga inicial nao tem a mesma FORMA nos tres: o PhxSql faz {n:,} "
+        "chamadas de funcao, o SQLite(R) executa a mesma instrucao preparada "
+        f"{n:,} vezes, e o MySQL(R) recebe {(n + LOTE - 1) // LOTE} instrucoes "
+        f"de {LOTE:,} linhas. A forma do MySQL(R) e a mais barata das tres por "
+        "linha, entao a barra dele nesta fase e OTIMISTA. As fases pontuais "
+        "sao uma instrucao por operacao nos tres.".replace(",", "."),
+        "O MySQL(R) e o unico que recebe o trabalho como TEXTO por soquete -- "
+        "nao existe MySQL(R) embutido nesta maquina, e os outros dois sao "
+        "biblioteca no proprio processo. O piso desse formato foi medido: "
+        + (f"{statistics.median(piso):.3f} s para {ops:,} instrucoes que nao "
+           "fazem nada (`DO 1;`), que e o que ha para subtrair da barra dele "
+           "nas fases pontuais.".replace(",", ".") if piso else "nao medido nesta corrida."),
+        "O SQLite(R) publicado e a variante `rowid` (`id INTEGER PRIMARY KEY`), "
+        "que e a que casa com o InnoDB por ter a chave agrupada e a que "
+        "FAVORECE o SQLite(R) -- sao duas estruturas contra as tres da variante "
+        "`2ind`. A outra corre na mesma rodada e esta no JSON, em `sqlite-2ind`.",
+        "Durabilidade casada: uma sincronizacao no fim de cada fase nos tres. "
+        "Nao e o regime de quem grava pedido a pedido -- uma bancada com "
+        "`commit` por linha daria outros numeros, e e a que importa para esse "
+        "caso.",
+        "Uma maquina so, com o que mais estivesse rodando nela. O bigode de "
+        f"minimo a maximo das {rodadas} rodadas e a medida dessa inquietude: "
+        "barra lisa afirmaria uma precisao que o numero nao tem.",
+    ]
+
+    return {
+        "linhas": n,
+        "operacoes_por_fase_pontual": ops,
+        "rodadas": rodadas,
+        "medido_em": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "carga_da_maquina": os.getloadavg(),
+        "motores_medidos": quais,
+        "fases": fases,
+        "sqlite_2ind": {f: (resumo(tempos["sqlite-2ind"][f])
+                            if tempos["sqlite-2ind"][f] else None) for f in FASES},
+        "piso_do_mysql_s": resumo(piso) if piso else None,
+        "trabalho_conferido": {
+            "etapas": ["inserir", "atualizar", "excluir"],
+            "marcos_por_motor": {m: [list(x) for x in v] for m, v in marcos.items()},
+            "buscar_achou": achados,
+        },
+        "disco_bytes": disco,
+        "durabilidade": {
+            "PhxSql": "sincroniza uma vez por fase (exclusao na janela)",
+            "MySQL(R)": "uma transacao por fase; "
+                        + ", ".join(f"{k}={v}" for k, v in ajuste_do_mysql().items()),
+            "SQLite(R)": "synchronous=FULL, journal DELETE, uma transacao por fase",
+        },
+        "ressalvas": ress,
+    }
+
+
+if __name__ == "__main__":
+    principal()
+ARQUIVO
+chmod +x bancada/comparacao/medir.py && python3 -c "import ast,sys; ast.parse(open('bancada/comparacao/medir.py').read()); print('sintaxe ok')"
+```
+
+### Escreve a bancada dos tres motores  ·  01/09 18:25
+
+```bash
+cat > /home/user/adrianoboller/phxsql/bancada/comparacao/medir.py <<'ARQUIVO'
+#!/usr/bin/env python3
+"""Os tres motores no mesmo trabalho: PhxSql x MySQL(R) x SQLite(R).
+
+    python3 bancada/comparacao/medir.py                    # 1.000.000, 3 rodadas
+    python3 bancada/comparacao/medir.py 200000 --rodadas 5
+    python3 bancada/comparacao/medir.py --so phxsql,sqlite # sem o MySQL(R)
+
+Escreve `um-milhao.json`, que e de onde `grafico.py` desenha. Enquanto a
+corrida anda o progresso vai para `um-milhao.parcial.json`, que nao e
+versionado: uma corrida leva dezenas de minutos, e durante esse tempo o
+arquivo versionado ficaria com meia medicao dentro -- quem olhasse via
+numero, nao via «faltam duas fases».
+
+Por que uma bancada nova, em vez de juntar as duas que existem
+--------------------------------------------------------------
+`bancada/medir.py` mede PhxSql x MySQL(R) e `bancada/sqlite/medir.py` mede
+PhxSql x SQLite(R). Somar as duas tabelas daria um numero de tres motores
+sem que os tres tivessem feito o mesmo trabalho no mesmo dia, na mesma
+maquina, com a mesma carga em volta -- e comparar medidas de dias diferentes
+e como comparar escalas diferentes: parte da diferenca vem do ambiente, nao
+do motor. Aqui os tres correm intercalados, na mesma rodada.
+
+E ao montar esta juntar apareceu um defeito na bancada do MySQL(R): ela grava
+`'2024-10-04'` em TODA linha, enquanto PhxSql e SQLite(R) gravam
+`20000 + (i % 400)` -- dado diferente do mesmo tamanho, que e violacao da
+regra 1 e nao aparece em tempo nenhum. Aqui os tres recebem o dia variavel, e
+a fase `conferir` compara a SOMA de `cadastro` justamente para que a proxima
+divergencia dessa familia reprove em vez de publicar.
+
+As quatro regras da casa, aplicadas a este trio
+-----------------------------------------------
+1. **Mesmos dados.** O `linha(i)` daqui e a traducao literal do `linha(i)` do
+   `carga.rs`, inclusive a data. Sem sorteio.
+2. **Mesmo esquema.** Chave em `id` e indice secundario em `cidade` nos tres.
+   O SQLite(R) nao tem traducao unica para isso -- rodam as DUAS variantes, e
+   a publicada e a `rowid`, que e a que casa com o InnoDB (chave primaria
+   agrupada) e a que FAVORECE o SQLite(R). A outra fica no JSON.
+3. **Mesma forma de pergunta.** Uma instrucao por operacao nas fases
+   pontuais, nos tres. A excecao e a carga inicial, e ela esta nas ressalvas
+   com o nome de quem favorece.
+4. **Mesma quantidade de trabalho.** E a fase `conferir` prova: os tres tem
+   de sair de cada etapa com a MESMA contagem, a MESMA soma de `valor` e a
+   MESMA soma de `cadastro`, por tres codigos sem uma linha em comum.
+   Divergiu, a bancada RECUSA publicar.
+
+O piso do MySQL(R), e por que ele e medido
+------------------------------------------
+Os tres nao tem a mesma forma: o SQLite(R) e biblioteca em processo, o PhxSql
+aqui e biblioteca tambem (o `carga`), e o MySQL(R) e daemon que recebe TEXTO
+por soquete. A barra do MySQL(R) carrega transporte e analise de texto que as
+outras duas nao pagam, e nao ha como tirar isso -- nao existe MySQL(R)
+embutido nesta maquina.
+
+O que da para fazer e MEDIR quanto disso e piso: 20.000 instrucoes que nao
+fazem trabalho nenhum (`DO 1;`) pelo mesmo caminho. O numero vai para as
+ressalvas, e o leitor subtrai. Esconder isso seria publicar uma vitoria que e
+do formato, e essa e a familia de erro que esta casa ja cometeu tres vezes.
+"""
+
+import json
+import os
+import shutil
+import sqlite3
+import statistics
+import subprocess
+import sys
+import time
+from datetime import date, timedelta
+from pathlib import Path
+
+AQUI = Path(__file__).resolve().parent
+RAIZ = AQUI.parent.parent
+# O caminho sai DA ARVORE em que este arquivo esta: com um absoluto escrito a
+# mao, uma bancada rodada numa arvore de trabalho mede o binario de OUTRA.
+CARGA = Path(os.environ.get("PHX_CARGA", RAIZ / "target/release/examples/carga"))
+# O PID entra no nome porque o zelador guarda o que tem PID vivo nele. Sem
+# isso, uma fase longa do MySQL(R) deixa a base do PhxSql parada por mais de
+# meia hora e o zelador a apaga no meio da corrida.
+TRABALHO = Path(os.environ.get("PHX_TRABALHO", f"/tmp/phx-comparacao-{os.getpid()}"))
+RESULTADOS = AQUI / "um-milhao.json"
+PARCIAL = AQUI / "um-milhao.parcial.json"
+COMANDO = AQUI / "comando.sql"
+
+BANCO = "trio"
+LOTE = 50_000
+PASSO = 7_919  # o mesmo primo do `carga.rs`: espalha os alvos pela tabela
+
+CIDADES = [
+    "Blumenau", "Joinville", "Itajai", "Curitiba",
+    "Chapeco", "Lages", "Florianopolis", "Criciuma",
+]
+EPOCA = date(1970, 1, 1)  # o `Date` do PhxSql sao dias desde aqui
+
+FASES = ["inserir", "buscar", "atualizar", "excluir"]
+
+
+def linha(i):
+    """Traducao literal de `linha(i)` do `carga.rs`. Mesmos dados, sem sorteio."""
+    return (
+        i,
+        "Produto %08d" % i,
+        CIDADES[i % len(CIDADES)],
+        (i % 900_000) + 100,   # o Decimal(15,2) do PhxSql guarda CENTAVOS
+        20_000 + (i % 400),    # o Date do PhxSql guarda o NUMERO DO DIA
+    )
+
+
+def alvo(k, n):
+    return (k * PASSO) % n + 1
+
+
+def resumo(amostras):
+    """Mediana com o menor e o maior ao lado. Nunca um numero so."""
+    return {
+        "mediana_s": round(statistics.median(amostras), 4),
+        "min_s": round(min(amostras), 4),
+        "max_s": round(max(amostras), 4),
+        "amostras": [round(x, 4) for x in amostras],
+    }
+
+
+# ------------------------------------------------------------------- PhxSql
+
+
+def roda_carga(dir_dados, fase, n, ambiente=None):
+    """Uma fase do `carga`, em processo separado.
+
+    O tempo que volta e o que o PROPRIO `carga` cronometrou, e nao o relogio
+    de fora: subir o processo custa alguns milissegundos e uma fase de 20.000
+    buscas leva poucos milissegundos. Medida por fora, a fase apareceria com o
+    dobro do custo -- e o SQLite(R), que e chamada de funcao no mesmo
+    processo, nao pagaria nada disso.
+    """
+    env = dict(os.environ)
+    if ambiente:
+        env.update(ambiente)
+    p = subprocess.Popen(
+        [str(CARGA), str(dir_dados), fase, str(n)],
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env,
+    )
+    saida = p.communicate()[0].decode()
+    if p.returncode != 0:
+        raise SystemExit(f"carga {fase} falhou:\n{saida}")
+    marca = saida.rsplit("RESULTADO ", 1)
+    segundos = json.loads(marca[1])["segundos"] if len(marca) > 1 else 0.0
+    return segundos, saida
+
+
+def confere_phxsql(dir_dados):
+    _, saida = roda_carga(dir_dados, "conferir", 0)
+    bruto = saida.rsplit("CONFERE ", 1)[1].splitlines()[0]
+    d = json.loads(bruto)
+    return (d["linhas"], d["soma_valor"], d["soma_cadastro"])
+
+
+def corre_phxsql(n, ops, tempos):
+    d = TRABALHO / "phxsql"
+    shutil.rmtree(d, ignore_errors=True)
+    roda_carga(d, "criar", 0)
+
+    seg, _ = roda_carga(d, "inserir", n)
+    tempos["inserir"].append(seg)
+    marcos = [confere_phxsql(d)]
+
+    seg, saida = roda_carga(d, "buscar", ops)
+    tempos["buscar"].append(seg)
+    achados = int(saida.split("achados:")[1].split()[0])
+
+    seg, _ = roda_carga(d, "atualizar", ops)
+    tempos["atualizar"].append(seg)
+    marcos.append(confere_phxsql(d))
+
+    # A exclusao entra na janela: do outro lado as 20.000 vao dentro de UMA
+    # transacao -- um `fsync` para as vinte mil. Sem isto o PhxSql pagaria
+    # vinte mil, e o numero mentiria contra nos.
+    seg, _ = roda_carga(d, "excluir", ops, {"PHX_EXCLUSAO_NA_JANELA": "1"})
+    tempos["excluir"].append(seg)
+    marcos.append(confere_phxsql(d))
+
+    return {"marcos": marcos, "achados": achados, "disco": tamanho(d)}
+
+
+def tamanho(caminho):
+    p = Path(caminho)
+    if p.is_file():
+        return p.stat().st_size
+    return sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
+
+
+# ------------------------------------------------------------------ SQLite
+
+
+INSERE = "INSERT INTO precos (id, produto, cidade, valor, cadastro) VALUES (?,?,?,?,?)"
+# O `atualizar` do `carga.rs` regrava a LINHA INTEIRA, entao o UPDATE tambem:
+# trocar so `valor` seria menos trabalho de um lado.
+ATUALIZA = "UPDATE precos SET produto=?, cidade=?, valor=?, cadastro=? WHERE id=?"
+
+
+def abre_sqlite(caminho, variante):
+    for extra in ("", "-journal", "-wal", "-shm"):
+        Path(str(caminho) + extra).unlink(missing_ok=True)
+    con = sqlite3.connect(caminho, isolation_level=None)
+    con.execute("PRAGMA journal_mode=DELETE")  # o padrao; WAL seria outro compromisso
+    con.execute("PRAGMA synchronous=FULL")
+    if variante == "rowid":
+        con.execute(
+            "CREATE TABLE precos (id INTEGER PRIMARY KEY, produto TEXT NOT NULL,"
+            " cidade TEXT, valor INTEGER, cadastro INTEGER)"
+        )
+    else:
+        con.execute(
+            "CREATE TABLE precos (id INTEGER NOT NULL, produto TEXT NOT NULL,"
+            " cidade TEXT, valor INTEGER, cadastro INTEGER)"
+        )
+        con.execute("CREATE UNIQUE INDEX porId ON precos(id)")
+    con.execute("CREATE INDEX porCidade ON precos(cidade)")
+    return con
+
+
+def confere_sqlite(con):
+    n, v, c = con.execute(
+        "SELECT count(*), coalesce(sum(valor),0), coalesce(sum(cadastro),0) FROM precos"
+    ).fetchone()
+    return (n, v, c)
+
+
+def corre_sqlite(n, ops, tempos, variante):
+    arq = TRABALHO / f"sqlite-{variante}.db"
+    con = abre_sqlite(arq, variante)
+
+    t0 = time.monotonic()
+    con.execute("BEGIN")
+    con.executemany(INSERE, (linha(i) for i in range(1, n + 1)))
+    con.execute("COMMIT")
+    tempos["inserir"].append(time.monotonic() - t0)
+    marcos = [confere_sqlite(con)]
+    disco = tamanho(arq)
+
+    cur = con.cursor()
+    achados = 0
+    t0 = time.monotonic()
+    for k in range(ops):
+        cur.execute("SELECT * FROM precos WHERE id=?", (alvo(k, n),))
+        if cur.fetchone() is not None:
+            achados += 1
+    tempos["buscar"].append(time.monotonic() - t0)
+
+    t0 = time.monotonic()
+    con.execute("BEGIN")
+    for k in range(ops):
+        a = alvo(k, n)
+        _, produto, cidade, _, dia = linha(a)
+        con.execute(ATUALIZA, (produto, cidade, 999_900, dia, a))
+    con.execute("COMMIT")
+    tempos["atualizar"].append(time.monotonic() - t0)
+    marcos.append(confere_sqlite(con))
+
+    t0 = time.monotonic()
+    con.execute("BEGIN")
+    for k in range(ops):
+        con.execute("DELETE FROM precos WHERE id=?", (alvo(k, n),))
+    con.execute("COMMIT")
+    tempos["excluir"].append(time.monotonic() - t0)
+    marcos.append(confere_sqlite(con))
+    con.close()
+
+    return {"marcos": marcos, "achados": achados, "disco": disco}
+
+
+# ------------------------------------------------------------------- MySQL
+
+
+def sql(comando, banco=BANCO):
+    """Manda o comando por ARQUIVO, sempre.
+
+    Uma carga de um milhao de linhas nao cabe na linha de comando -- o sistema
+    recusa com «Argument list too long». Por arquivo cabe, e o caminho e o
+    mesmo para todo comando, entao a medicao nao muda de forma no meio.
+    """
+    COMANDO.write_text(comando)
+    return subprocess.run(
+        ["mysql", "--protocol=socket", "-N", "-B"] + ([banco] if banco else [])
+        + ["-e", f"SOURCE {COMANDO};"],
+        capture_output=True, text=True,
+    )
+
+
+def cronometra_mysql(comando):
+    """O arquivo e escrito ANTES do relogio: gravar 70 MB de texto e trabalho
+    do medidor, nao do motor, e entrar na conta seria cobrar do MySQL(R) uma
+    coisa que ele nao fez."""
+    COMANDO.write_text(comando)
+    t0 = time.monotonic()
+    r = subprocess.run(
+        ["mysql", "--protocol=socket", "-N", "-B", BANCO, "-e", f"SOURCE {COMANDO};"],
+        capture_output=True, text=True,
+    )
+    seg = time.monotonic() - t0
+    if r.returncode != 0:
+        raise SystemExit(f"mysql falhou:\n{r.stderr[:600]}")
+    return seg, r.stdout
+
+
+def data_sql(dia):
+    return (EPOCA + timedelta(days=dia)).isoformat()
+
+
+def confere_mysql():
+    # `TO_DAYS(x) - TO_DAYS('1970-01-01')` desfaz a conversao da data e devolve
+    # o numero do dia -- a mesma grandeza que os outros dois somam.
+    r = sql(
+        "SELECT count(*), coalesce(sum(valor),0),"
+        " coalesce(sum(TO_DAYS(cadastro) - TO_DAYS('1970-01-01')),0) FROM precos;"
+    )
+    campos = r.stdout.split()
+    return (int(campos[0]), int(float(campos[1])), int(float(campos[2])))
+
+
+def corre_mysql(n, ops, tempos):
+    sql(f"DROP DATABASE IF EXISTS {BANCO}; CREATE DATABASE {BANCO};", banco="")
+    sql(
+        """CREATE TABLE precos (
+             id BIGINT NOT NULL,
+             produto VARCHAR(40) NOT NULL,
+             cidade VARCHAR(20),
+             valor BIGINT,
+             cadastro DATE,
+             PRIMARY KEY (id),
+             KEY porCidade (cidade)
+           ) ENGINE=InnoDB"""
+    )
+
+    # UMA transacao para a carga inteira, como os outros dois: uma
+    # sincronizacao no fim da fase, e nao uma por lote. Os lotes de 50.000 sao
+    # so o tamanho da instrucao -- o `max_allowed_packet` nao aceita um
+    # `INSERT` de um milhao de linhas.
+    partes = ["START TRANSACTION;\n"]
+    for base in range(0, n, LOTE):
+        quantos = min(LOTE, n - base)
+        valores = ",".join(
+            "(%d,'%s','%s',%d,'%s')" % (i, p, c, v, data_sql(d))
+            for i, p, c, v, d in (linha(x) for x in range(base + 1, base + quantos + 1))
+        )
+        partes.append(f"INSERT INTO precos VALUES {valores};\n")
+    partes.append("COMMIT;\n")
+    seg, _ = cronometra_mysql("".join(partes))
+    tempos["inserir"].append(seg)
+    marcos = [confere_mysql()]
+
+    seg, saida = cronometra_mysql(
+        "".join(f"SELECT id FROM precos WHERE id={alvo(k, n)};\n" for k in range(ops))
+    )
+    tempos["buscar"].append(seg)
+    achados = len(saida.split())
+
+    seg, _ = cronometra_mysql(
+        "START TRANSACTION;\n"
+        + "".join(
+            "UPDATE precos SET produto='%s', cidade='%s', valor=999900, cadastro='%s'"
+            " WHERE id=%d;\n" % (p, c, data_sql(d), i)
+            for i, p, c, _, d in (linha(alvo(k, n)) for k in range(ops))
+        )
+        + "COMMIT;\n"
+    )
+    tempos["atualizar"].append(seg)
+    marcos.append(confere_mysql())
+
+    seg, _ = cronometra_mysql(
+        "START TRANSACTION;\n"
+        + "".join(f"DELETE FROM precos WHERE id={alvo(k, n)};\n" for k in range(ops))
+        + "COMMIT;\n"
+    )
+    tempos["excluir"].append(seg)
+    marcos.append(confere_mysql())
+
+    return {"marcos": marcos, "achados": achados, "disco": disco_mysql()}
+
+
+def piso_mysql(ops):
+    """Quanto custa mandar 20.000 instrucoes que nao fazem nada.
+
+    E o transporte mais a analise do texto -- o que a barra do MySQL(R)
+    carrega e as outras duas nao. Sem este numero o leitor nao tem como
+    separar o motor do formato.
+    """
+    seg, _ = cronometra_mysql("".join("DO 1;\n" for _ in range(ops)))
+    return seg
+
+
+def disco_mysql():
+    r = subprocess.run(
+        ["du", "-sb", f"/var/lib/mysql/{BANCO}"], capture_output=True, text=True
+    )
+    try:
+        return int(r.stdout.split()[0])
+    except (IndexError, ValueError):
+        return 0
+
+
+def ajuste_do_mysql():
+    """O regime de durabilidade sai do servidor, e nao de uma frase escrita a
+    mao aqui: campo de configuracao citado de memoria e campo que envelhece."""
+    r = sql(
+        "SELECT @@innodb_flush_log_at_trx_commit, @@sync_binlog, @@version;", banco=""
+    )
+    campos = r.stdout.split()
+    if len(campos) < 3:
+        return {}
+    return {"flush_log_at_trx_commit": campos[0], "sync_binlog": campos[1],
+            "versao": campos[2]}
+
+
+# -------------------------------------------------------------------- corrida
+
+
+def confere_trio(marcos, achados, etapas):
+    """A prova de trabalho igual. Divergiu, a bancada RECUSA publicar.
+
+    Tres codigos sem uma linha em comum tem de chegar a mesma contagem, a
+    mesma soma de `valor` e a mesma soma de `cadastro` em cada etapa. Um
+    numero de tempo so quer dizer alguma coisa depois disto.
+    """
+    motores = list(marcos)
+    problemas = []
+    for i, etapa in enumerate(etapas):
+        vistos = {m: marcos[m][i] for m in motores}
+        if len(set(vistos.values())) > 1:
+            problemas.append(f"  apos {etapa}: " + ", ".join(
+                f"{m}=({q:,} linhas, valor {v:,}, cadastro {c:,})".replace(",", ".")
+                for m, (q, v, c) in vistos.items()
+            ))
+    if len(set(achados.values())) > 1:
+        problemas.append("  buscar achou: " + ", ".join(
+            f"{m}={q}" for m, q in achados.items()
+        ))
+    if problemas:
+        raise SystemExit(
+            "os motores NAO fizeram o mesmo trabalho:\n"
+            + "\n".join(problemas)
+            + "\nA bancada nao publica numero de trabalho desigual."
+        )
+
+
+def guardar(d):
+    PARCIAL.write_text(json.dumps(d, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def fmt_rodada(t):
+    return "  ".join(f"{f} {t[f][-1]:7.3f}s" for f in FASES if t[f])
+
+
+def monta(n, ops, rodadas, tempos, marcos, achados, disco, piso, quais):
+    fases = {}
+    for f in FASES:
+        fases[f] = {}
+        for m in ("phxsql", "mysql", "sqlite"):
+            fases[f][m] = resumo(tempos[m][f]) if tempos[m][f] else {
+                "mediana_s": None, "min_s": None, "max_s": None
+            }
+
+    ress = [
+        f"A carga inicial nao tem a mesma FORMA nos tres: o PhxSql faz {n:,} "
+        "chamadas de funcao, o SQLite(R) executa a mesma instrucao preparada "
+        f"{n:,} vezes, e o MySQL(R) recebe {(n + LOTE - 1) // LOTE} instrucoes "
+        f"de {LOTE:,} linhas. A forma do MySQL(R) e a mais barata das tres por "
+        "linha, entao a barra dele nesta fase e OTIMISTA. As fases pontuais "
+        "sao uma instrucao por operacao nos tres.".replace(",", "."),
+        "O MySQL(R) e o unico que recebe o trabalho como TEXTO por soquete -- "
+        "nao existe MySQL(R) embutido nesta maquina, e os outros dois sao "
+        "biblioteca no proprio processo. O piso desse formato foi medido: "
+        + (f"{statistics.median(piso):.3f} s para {ops:,} instrucoes que nao "
+           "fazem nada (`DO 1;`), que e o que ha para subtrair da barra dele "
+           "nas fases pontuais.".replace(",", ".") if piso
+           else "nao medido nesta corrida."),
+        "O SQLite(R) publicado e a variante `rowid` (`id INTEGER PRIMARY KEY`), "
+        "que e a que casa com o InnoDB por ter a chave agrupada e a que "
+        "FAVORECE o SQLite(R) -- sao duas estruturas contra as tres da variante "
+        "`2ind`. A outra corre na mesma rodada e esta no JSON, em `sqlite_2ind`.",
+        "Durabilidade casada: uma sincronizacao no fim de cada fase nos tres. "
+        "Nao e o regime de quem grava pedido a pedido -- uma bancada com "
+        "`commit` por linha daria outros numeros, e e a que importa para esse "
+        "caso.",
+        "Uma maquina so, com o que mais estivesse rodando nela. O bigode de "
+        f"minimo a maximo das {rodadas} rodadas e a medida dessa inquietude: "
+        "barra lisa afirmaria uma precisao que o numero nao tem.",
+    ]
+
+    return {
+        "linhas": n,
+        "operacoes_por_fase_pontual": ops,
+        "rodadas": rodadas,
+        "medido_em": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "carga_da_maquina": os.getloadavg(),
+        "motores_medidos": quais,
+        "fases": fases,
+        "sqlite_2ind": {f: (resumo(tempos["sqlite-2ind"][f])
+                            if tempos["sqlite-2ind"][f] else None) for f in FASES},
+        "piso_do_mysql_s": resumo(piso) if piso else None,
+        "trabalho_conferido": {
+            "etapas": ["inserir", "atualizar", "excluir"],
+            "marcos_por_motor": {m: [list(x) for x in v] for m, v in marcos.items()},
+            "buscar_achou": achados,
+        },
+        "disco_bytes": disco,
+        "durabilidade": {
+            "PhxSql": "sincroniza uma vez por fase (exclusao na janela)",
+            "MySQL(R)": "uma transacao por fase; "
+                        + ", ".join(f"{k}={v}" for k, v in ajuste_do_mysql().items()),
+            "SQLite(R)": "synchronous=FULL, journal DELETE, uma transacao por fase",
+        },
+        "ressalvas": ress,
+    }
+
+
+def principal():
+    argv = sys.argv[1:]
+    n = 1_000_000
+    if argv and argv[0].isdigit():
+        n, argv = int(argv[0]), argv[1:]
+    rodadas = int(argv[argv.index("--rodadas") + 1]) if "--rodadas" in argv else 3
+    ops = int(argv[argv.index("--ops") + 1]) if "--ops" in argv else 20_000
+    quais = (argv[argv.index("--so") + 1].split(",") if "--so" in argv
+             else ["phxsql", "sqlite", "mysql"])
+
+    if not CARGA.exists():
+        raise SystemExit(
+            f"nao achei {CARGA}.\n"
+            "Rode `cargo build --release --examples -p phxsql-store` antes: "
+            "binario velho mede o passado."
+        )
+    TRABALHO.mkdir(parents=True, exist_ok=True)
+
+    print(f"=== {n:,} linhas, {ops:,} operacoes, {rodadas} rodadas ==="
+          .replace(",", "."), flush=True)
+    print(f"    motores: {', '.join(quais)}", flush=True)
+
+    tempos = {m: {f: [] for f in FASES} for m in ("phxsql", "sqlite", "mysql")}
+    tempos["sqlite-2ind"] = {f: [] for f in FASES}
+    marcos, achados, disco, piso = {}, {}, {}, []
+
+    for r in range(rodadas):
+        print(f"-- rodada {r + 1}/{rodadas}", flush=True)
+        if "phxsql" in quais:
+            saiu = corre_phxsql(n, ops, tempos["phxsql"])
+            marcos["phxsql"], achados["phxsql"] = saiu["marcos"], saiu["achados"]
+            disco["phxsql"] = saiu["disco"]
+            print("   phxsql  " + fmt_rodada(tempos["phxsql"]), flush=True)
+        if "sqlite" in quais:
+            saiu = corre_sqlite(n, ops, tempos["sqlite"], "rowid")
+            marcos["sqlite"], achados["sqlite"] = saiu["marcos"], saiu["achados"]
+            disco["sqlite"] = saiu["disco"]
+            print("   sqlite  " + fmt_rodada(tempos["sqlite"]), flush=True)
+            corre_sqlite(n, ops, tempos["sqlite-2ind"], "2ind")
+        if "mysql" in quais:
+            saiu = corre_mysql(n, ops, tempos["mysql"])
+            marcos["mysql"], achados["mysql"] = saiu["marcos"], saiu["achados"]
+            disco["mysql"] = saiu["disco"]
+            piso.append(piso_mysql(ops))
+            print("   mysql   " + fmt_rodada(tempos["mysql"]), flush=True)
+        guardar({"parcial": True, "rodadas_feitas": r + 1, "tempos": tempos})
+
+    confere_trio(marcos, achados, ["inserir", "atualizar", "excluir"])
+    print(f"== trabalho igual conferido: {marcos[quais[0]]}", flush=True)
+
+    d = monta(n, ops, rodadas, tempos, marcos, achados, disco, piso, quais)
+    guardar(d)
+    os.replace(PARCIAL, RESULTADOS)
+    COMANDO.unlink(missing_ok=True)
+    shutil.rmtree(TRABALHO, ignore_errors=True)
+    print(f"== {RESULTADOS.name} publicado", flush=True)
+
+
+if __name__ == "__main__":
+    principal()
+ARQUIVO
+chmod +x /home/user/adrianoboller/phxsql/bancada/comparacao/medir.py && python3 -c "import ast; ast.parse(open('/home/user/adrianoboller/phxsql/bancada/comparacao/medir.py').read()); print('sintaxe ok')"
+```
+
+### Prova em escala pequena: 20.000 linhas, 1 rodada  ·  01/09 18:25
+
+```bash
+cd /home/user/adrianoboller/phxsql && python3 bancada/comparacao/medir.py 20000 --rodadas 1 --ops 1000 2>&1 | tail -25
+```
+
+### Prova real: repoe o defeito da data constante  ·  01/09 18:26
+
+```bash
+S=/tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/medir-com-defeito.py && sed 's|return (EPOCA + timedelta(days=dia)).isoformat()|return "2024-10-04"  # DEFEITO REPOSTO: a data constante da bancada antiga|' bancada/comparacao/medir.py > $S && grep -n "2024-10-04" $S | head -2 && echo "--- roda com o defeito ---" && python3 $S 20000 --rodadas 1 --ops 1000 2>&1 | tail -8; echo "codigo de saida: $?"
+```
+
+### Prova real com o binario certo  ·  01/09 18:26
+
+```bash
+S=/tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/medir-com-defeito.py && PHX_CARGA=/home/user/adrianoboller/phxsql/target/release/examples/carga python3 $S 20000 --rodadas 1 --ops 1000 > /tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/defeito.log 2>&1; echo "codigo de saida: $?"; tail -8 /tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/defeito.log
+```
+
+### Corrida real: 1.000.000 de linhas, 3 rodadas  ·  01/09 18:26
+
+```bash
+nohup python3 bancada/comparacao/medir.py 1000000 --rodadas 3 > /home/user/adrianoboller/phxsql/bancada/comparacao/corrida.log 2>&1; echo "saida: $?"; tail -20 /home/user/adrianoboller/phxsql/bancada/comparacao/corrida.log
+```
+
+### Estrutura do COMPARACAO.md  ·  01/09 18:27
+
+```bash
+head -50 docs/COMPARACAO.md; echo "..."; grep -n "^#\{1,3\} " docs/COMPARACAO.md | head -30; echo "=== linhas ==="; wc -l docs/COMPARACAO.md
+```
+
+### Seções do DESEMPENHO.md  ·  01/09 18:27
+
+```bash
+grep -n "^#\{1,3\} " docs/DESEMPENHO.md | tail -30; echo "=== linhas ==="; wc -l docs/DESEMPENHO.md
+```
+
+### Andamento da corrida  ·  01/09 18:27
+
+```bash
+tail -12 /tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/tasks/b9b2vg5fu.output 2>/dev/null || echo "sem saida ainda"
+```
+
+### Confere se a corrida esta viva  ·  01/09 18:27
+
+```bash
+ls -la bancada/comparacao/ 2>/dev/null; echo "=== processos ==="; pgrep -af "medir.py|carga|mysql " | head -5; echo "=== log ==="; cat bancada/comparacao/corrida.log 2>/dev/null | tail -6
+```
+
+### Numeracao das secoes do DESEMPENHO.md  ·  01/09 18:27
+
+```bash
+grep -n "^## 4\.\|^## 5\.\|^## 6\.\|^## 7\.\|^## 9\.\|^## 12\." docs/DESEMPENHO.md
+```
+
+### Quem cita a secao 4.12  ·  01/09 18:27
+
+```bash
+grep -rn "DESEMPENHO.md.*§4\.1[0-9]\|§4\.12\|§4\.13\|§4\.14" --include=*.md --include=*.rs --include=*.html --include=*.py . 2>/dev/null | grep -v "^./target" | head -20
+```
+
+### LEIA-ME da bancada dos tres  ·  01/09 18:29
+
+```bash
+cat > /home/user/adrianoboller/phxsql/bancada/comparacao/LEIA-ME.md <<'ARQUIVO'
+# Os três no mesmo trabalho
+
+PhxSql × MySQL(R) × SQLite(R), a um milhão de linhas, na mesma máquina e na
+mesma rodada. É a terceira bancada de comparação da casa, e existe por um
+motivo que as outras duas não resolviam.
+
+```bash
+cargo build --release --examples -p phxsql-store   # a regra do binário velho
+service mysql start
+python3 bancada/comparacao/medir.py                # ~15 min
+python3 bancada/comparacao/grafico.py
+```
+
+| Arquivo | O que é |
+|---|---|
+| `medir.py` | a bancada: os três motores, quatro fases, N rodadas |
+| `um-milhao.json` | a última medição completa, crua — é dela que o gráfico sai |
+| `grafico.py` | desenha o SVG e a página; **recusa** desenhar sem o JSON |
+| `comparacao-tres-motores.svg` | o fragmento que entra no dossiê |
+| `comparacao-tres-motores.html` | a página de pé, para olhar sozinha |
+
+## Por que uma terceira, e não a soma das duas
+
+`bancada/medir.py` mede PhxSql × MySQL(R). `bancada/sqlite/medir.py` mede
+PhxSql × SQLite(R). Juntar as duas tabelas dá **três colunas e nenhuma
+comparação**: as medidas são de dias diferentes, com cargas diferentes na
+máquina, e parte da diferença passa a ser do ambiente em vez do motor. É o
+mesmo erro de comparar escalas diferentes, com outra roupa.
+
+Aqui os três correm **intercalados dentro da mesma rodada**, e a dispersão
+entre rodadas aparece no gráfico como bigode, em vez de virar uma barra lisa
+que afirma uma precisão que o número não tem.
+
+## O que esta bancada achou ao ser montada
+
+**A bancada do MySQL(R) violava a regra 1 — mesmos dados.** Ela grava
+`'2024-10-04'` em **toda** linha, enquanto o `carga.rs` e a bancada do
+SQLite(R) gravam `20000 + (i % 400)` — o dia variável. Dado diferente, do
+mesmo tamanho, e **invisível em qualquer medida de tempo**: nenhum número
+ficava estranho por causa disso.
+
+O que o achou foi ter de conferir três motores em vez de dois. E o conserto
+não foi só gravar a data certa aqui: nasceu a fase `conferir` do `carga.rs`,
+que soma o que existe na tabela e obriga os três a chegarem ao **mesmo
+estado** antes de qualquer número de tempo ser publicado.
+
+## A prova de trabalho igual
+
+Três totais, em três marcos, por três códigos sem uma linha em comum:
+
+| | o que pega |
+|---|---|
+| contagem de linhas | linha que faltou ou sobrou |
+| soma de `valor` | o `atualizar` que não atualizou |
+| soma de `cadastro` | **dado diferente do mesmo tamanho** — o defeito acima |
+
+Os marcos são **depois de inserir**, **depois de atualizar** e **depois de
+excluir**. O do meio não é enfeite: `atualizar` e `excluir` mordem exatamente
+os mesmos 20.000 alvos, então no marco final o efeito do `atualizar` já
+desapareceu junto com as linhas excluídas. Sem o marco do meio, a fase
+`atualizar` não teria prova nenhuma.
+
+Divergiu, a bancada **recusa publicar** e diz qual motor e qual coluna. Isso
+está provado nos dois sentidos: repor a data constante da bancada antiga faz
+ela reprovar com `cadastro 400.000.000` contra `403.990.000` — e
+`400.000.000` é exatamente 20.000 linhas × dia 20.000, que é a assinatura do
+defeito.
+
+## As quatro regras da casa, aplicadas a este trio
+
+As regras estão em `bancada/LEIA-ME.md`. O que muda com três motores:
+
+1. **Mesmos dados.** O `linha(i)` do `medir.py` é a tradução literal do
+   `linha(i)` do `carga.rs`, agora **inclusive a data**.
+2. **Mesmo esquema.** Chave em `id`, índice secundário em `cidade`. O
+   SQLite(R) não tem tradução única para isso, então rodam as duas variantes;
+   a publicada é a `rowid`, que é a que casa com o InnoDB (chave agrupada) e
+   a que **favorece o SQLite(R)**. A outra fica no JSON, em `sqlite_2ind`.
+3. **Mesma forma de pergunta.** Uma instrução por operação nas fases
+   pontuais, nos três. A carga inicial é a exceção, e ela está nas ressalvas
+   **com o nome de quem favorece** — o MySQL(R), que recebe a forma mais
+   barata das três.
+4. **Mesma quantidade de trabalho.** É o que a fase `conferir` prova.
+
+## A assimetria que não dá para tirar, e por isso é medida
+
+Os três não têm a mesma forma. O SQLite(R) é biblioteca no processo, o PhxSql
+aqui também (o `carga`), e o **MySQL(R) é daemon que recebe texto por
+soquete** — não existe MySQL(R) embutido nesta máquina.
+
+Então a barra dele carrega transporte e análise de texto que as outras duas
+não pagam. Isso não se conserta; o que se faz é **medir**: 20.000 instruções
+que não fazem trabalho nenhum (`DO 1;`) pelo mesmo caminho. O número vai para
+as ressalvas do JSON e para a página, e o leitor subtrai.
+
+Esconder isso seria publicar uma vitória que é do formato, e essa é a família
+de erro que esta casa já cometeu três vezes — duas a favor do outro motor e
+uma a favor do nosso.
+
+## Durabilidade
+
+Uma sincronização no fim de cada fase, nos três. Do lado do PhxSql a exclusão
+entra na janela (`PHX_EXCLUSAO_NA_JANELA=1`), porque do outro lado as 20.000
+exclusões vão dentro de uma transação — um `fsync` para as vinte mil. Sem
+isso o PhxSql pagaria vinte mil, e o número mentiria **contra nós**.
+
+Não é o regime de quem grava pedido a pedido. Uma bancada com `commit` por
+linha daria outros números, e é a que importa para esse caso.
+ARQUIVO
+wc -l /home/user/adrianoboller/phxsql/bancada/comparacao/LEIA-ME.md
+```
+
+### Estrutura do gerador da bancada no dossie  ·  01/09 18:29
+
+```bash
+grep -n "def \|BLOCO\|resultados.json\|marcador\|escreve" docs/dossie/numeros-da-bancada.py | head -40; echo "=== linhas ==="; wc -l docs/dossie/numeros-da-bancada.py
+```
+
+### Como o gerador acha e troca os blocos  ·  01/09 18:29
+
+```bash
+sed -n '1,60p' docs/dossie/numeros-da-bancada.py; echo "=== main ==="; sed -n '416,481p' docs/dossie/numeros-da-bancada.py
+```
+
+### Estado final da corrida  ·  01/09 18:29
+
+```bash
+tail -5 /home/user/adrianoboller/phxsql/bancada/comparacao/corrida.log; echo "=== vivo? ==="; pgrep -f "medir.py 1000000" >/dev/null && echo "ainda rodando" || echo "terminou"
+```
+
+### Tokens de cor e marcas do dossie  ·  01/09 18:30
+
+```bash
+grep -n "^\s*--[a-z-]*:" docs/dossie/dossie-phxsql-0.18.html | head -30; echo "=== marcas de secao ==="; grep -n "<!-- [a-z]*:inicio" docs/dossie/dossie-phxsql-0.18.html
+```
+
+### Numeros finais da corrida  ·  01/09 18:30
+
+```bash
+tail -6 /home/user/adrianoboller/phxsql/bancada/comparacao/corrida.log; echo "=== medianas ==="; python3 -c "
+import json
+d=json.load(open('/home/user/adrianoboller/phxsql/bancada/comparacao/um-milhao.json'))
+print('linhas', d['linhas'], '| rodadas', d['rodadas'], '| carga', [round(x,2) for x in d['carga_da_maquina']])
+for f,v in d['fases'].items():
+    print(f'{f:<10}', '  '.join(f\"{m}={v[m]['mediana_s']:>8.3f}s [{v[m]['min_s']:.3f}-{v[m]['max_s']:.3f}]\" for m in ('phxsql','sqlite','mysql')))
+print('piso do mysql:', d['piso_do_mysql_s'])
+print('disco:', d['disco_bytes'])
+"
+```
+
+### Gera o grafico dos tres motores  ·  01/09 18:30
+
+```bash
+python3 bancada/comparacao/grafico.py && ls -la bancada/comparacao/ && mv bancada/comparacao/corrida.log bancada/comparacao/corrida-um-milhao.log
+```
+
+### Confere os numeros na pagina gerada  ·  01/09 18:30
+
+```bash
+grep -o "<title>[^<]*</title>" bancada/comparacao/comparacao-tres-motores.html; grep -o "1[.,]000[.,]000 linhas" bancada/comparacao/comparacao-tres-motores.html | head -3; echo "=== valores no svg ==="; grep -o 'class="valor">[^<]*' bancada/comparacao/comparacao-tres-motores.svg
+```
+
+### Playwright disponivel?  ·  01/09 18:31
+
+```bash
+python3 -c "import playwright; print('playwright ok')" 2>&1 | head -2; ls /opt/pw-browsers 2>/dev/null | head -5
+```
+
+### Acha o binario do Chromium  ·  01/09 18:31
+
+```bash
+find /opt/pw-browsers -maxdepth 3 -name "headless_shell" -o -maxdepth 3 -name "chrome" 2>/dev/null | head -5; ls /opt/pw-browsers/chromium-1194/ 2>/dev/null | head
+```
+
+### Captura o grafico nos dois temas  ·  01/09 18:31
+
+```bash
+D=/tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad && C=/opt/pw-browsers/chromium-1194/chrome-linux/chrome && for T in light dark; do $C --headless --no-sandbox --disable-gpu --hide-scrollbars --force-prefers-color-scheme=$T --window-size=1200,1500 --screenshot=$D/trio-$T.png --virtual-time-budget=3000 file:///home/user/adrianoboller/phxsql/bancada/comparacao/comparacao-tres-motores.html 2>&1 | grep -iv "^\[" | head -2; done; ls -la $D/trio-*.png
+```
+
+### Recaptura o grafico consertado  ·  01/09 18:33
+
+```bash
+D=/tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad && /opt/pw-browsers/chromium-1194/chrome-linux/chrome --headless --no-sandbox --disable-gpu --hide-scrollbars --window-size=1200,1500 --screenshot=$D/trio2.png --virtual-time-budget=3000 file:///home/user/adrianoboller/phxsql/bancada/comparacao/comparacao-tres-motores.html 2>&1 | tail -1
+```
+
+### Portoes: fmt, clippy e suite inteira  ·  01/09 18:36
+
+```bash
+cargo fmt --all && echo "fmt ok" && cargo clippy --workspace --all-targets 2>&1 | tail -5 && echo "--- testes ---" && cargo test --workspace 2>&1 | tail -25
+```
+
+### Quantas secoes vem depois, e se ha navegacao  ·  01/09 18:36
+
+```bash
+grep -n '<section id="s' docs/dossie/dossie-phxsql-0.18.html | tail -8; echo "=== nums ==="; grep -c 'class="num"' docs/dossie/dossie-phxsql-0.18.html; echo "=== navegacao? ==="; grep -n 'href="#s3[3-9]"' docs/dossie/dossie-phxsql-0.18.html | head
+```
+
+### Entrada de navegacao da secao da bancada  ·  01/09 18:37
+
+```bash
+grep -n 'href="#s32"' docs/dossie/dossie-phxsql-0.18.html; echo "=== h2 e h3 da s32 ==="; sed -n '5575,5600p' docs/dossie/dossie-phxsql-0.18.html | grep -n "h2\|h3\|<p>" | head
+```
+
+### Sexto gerador: o trio no dossie  ·  01/09 18:38
+
+```bash
+cat > /home/user/adrianoboller/phxsql/docs/dossie/trio-de-motores.py <<'ARQUIVO'
+#!/usr/bin/env python3
+"""Escreve o bloco dos tres motores no dossie, da medicao de um milhao.
+
+    python3 docs/dossie/trio-de-motores.py [caminho/do/dossie.html]
+
+E o SEXTO gerador do dossie. Escreve o bloco `trio:`, dentro da secao da
+bancada: o grafico, a tabela das medianas e o que os numeros nao dizem.
+
+Duas decisoes que valem explicar
+--------------------------------
+**Nao redesenha nada.** O SVG sai do `bancada/comparacao/grafico.py`, que e o
+dono do desenho, e este script so o INSERE. Duas receitas para a mesma figura
+e a mesma armadilha da lista de arquivos copiada dentro do gerador do rodape:
+elas divergem, e a divergencia aparece meses depois num numero publicado.
+
+**Recusa desenho velho.** Se o SVG for mais antigo que o JSON da medicao, o
+gerador PARA. E a licao do binario velho aplicada a uma figura: um grafico
+gerado antes da ultima corrida publica o passado com data de hoje, e nada no
+desenho denuncia isso.
+"""
+
+import json
+import pathlib
+import sys
+
+RAIZ = pathlib.Path(__file__).resolve().parents[2]
+MEDICAO = RAIZ / "bancada" / "comparacao" / "um-milhao.json"
+FIGURA = RAIZ / "bancada" / "comparacao" / "comparacao-tres-motores.svg"
+
+ABRE = "<!-- trio:inicio (gerado por docs/dossie/trio-de-motores.py) -->"
+FECHA = "<!-- trio:fim -->"
+
+MOTORES = [("phxsql", "PhxSql"), ("sqlite", "SQLite(R)"), ("mysql", "MySQL(R)")]
+FASES = [
+    ("inserir", "Inserir {n}"),
+    ("buscar", "Buscar {ops} pontuais"),
+    ("atualizar", "Atualizar {ops}"),
+    ("excluir", "Excluir {ops}"),
+]
+
+
+def _alvo():
+    for a in sys.argv[1:]:
+        if a.endswith(".html"):
+            return pathlib.Path(a).resolve()
+    return RAIZ / "docs" / "dossie" / "dossie-phxsql-0.18.html"
+
+
+def mil(x):
+    return f"{x:,}".replace(",", ".")
+
+
+def seg(v, casas=2):
+    if v is None:
+        return "—"
+    if v < 1:
+        return f"{v * 1000:.0f} ms"
+    bruto = f"{v:,.{casas}f}"
+    return bruto.replace(",", "\x00").replace(".", ",").replace("\x00", ".") + " s"
+
+
+def tabela(d):
+    n, ops = d["linhas"], d["operacoes_por_fase_pontual"]
+    piso = (d.get("piso_do_mysql_s") or {}).get("mediana_s")
+    linhas = [
+        "<table class=\"tab\">",
+        "<thead><tr><th>fase</th>"
+        + "".join(f"<th class=\"num\">{r}</th>" for _, r in MOTORES)
+        + "<th class=\"num\">MySQL(R) menos o piso</th></tr></thead>",
+        "<tbody>",
+    ]
+    for chave, molde in FASES:
+        por = d["fases"][chave]
+        medidos = {m: por[m]["mediana_s"] for m, _ in MOTORES if por[m]["mediana_s"]}
+        melhor = min(medidos, key=medidos.get) if medidos else None
+        celulas = ""
+        for m, _ in MOTORES:
+            v = por[m]["mediana_s"]
+            forte = " class=\"num destaque\"" if m == melhor else " class=\"num\""
+            celulas += f"<td{forte}>{seg(v)}</td>"
+        # A carga inicial nao leva desconto: o piso foi medido para 20.000
+        # instrucoes pontuais, e o `INSERT` sao 20 instrucoes grandes. Descontar
+        # ali seria aplicar um numero fora da condicao em que ele foi medido.
+        liquido = (
+            seg(por["mysql"]["mediana_s"] - piso)
+            if piso and chave != "inserir" and por["mysql"]["mediana_s"]
+            else "—"
+        )
+        rotulo = molde.format(n=mil(n), ops=mil(ops))
+        linhas.append(f"<tr><td>{rotulo}</td>{celulas}<td class=\"num\">{liquido}</td></tr>")
+    linhas += ["</tbody></table>"]
+    return "\n".join(linhas)
+
+
+def bloco(d):
+    n, ops = d["linhas"], d["operacoes_por_fase_pontual"]
+    piso = (d.get("piso_do_mysql_s") or {}).get("mediana_s")
+    fatia = ""
+    if piso:
+        b = d["fases"]["buscar"]["mysql"]["mediana_s"]
+        fatia = (
+            f" Para a busca isso é <strong>{piso / b * 100:.1f}% da barra dele</strong>:"
+            f" sem medir o piso teríamos publicado"
+            f" «{b / d['fases']['buscar']['phxsql']['mediana_s']:.2f}× mais rápido»"
+            " quando entre motores são"
+            f" <strong>{(b - piso) / d['fases']['buscar']['phxsql']['mediana_s']:.2f}×</strong>."
+        )
+    disco = d.get("disco_bytes") or {}
+    linha_disco = ""
+    if disco.get("phxsql") and disco.get("sqlite"):
+        mib = lambda b: f"{b / 1048576:.1f}".replace(".", ",")
+        linha_disco = (
+            f"<p><strong>E o disco:</strong> {mib(disco['phxsql'])} MiB contra"
+            f" {mib(disco['sqlite'])} do SQLite(R) e {mib(disco['mysql'])} do"
+            f" MySQL(R) — <strong>{disco['phxsql'] / disco['sqlite']:.2f}×</strong> e"
+            f" <strong>{disco['phxsql'] / disco['mysql']:.2f}×</strong>. É o preço do"
+            " modelo de arquivos separados, e no celular essa é a pergunta"
+            " inteira.</p>"
+        )
+    ress = "".join(f"<li>{r}</li>" for r in (d.get("ressalvas") or []))
+    dur = " · ".join(f"<strong>{k}</strong>: {v}" for k, v in (d.get("durabilidade") or {}).items())
+
+    return f"""
+  <h3>Os três motores, a um milhão de linhas</h3>
+  <p>Tabela de {mil(n)} linhas, {mil(ops)} operações nas fases pontuais,
+  {d['rodadas']} rodadas, os três <strong>intercalados na mesma rodada</strong> —
+  somar medições de dias diferentes daria três colunas e nenhuma comparação.
+  Medido em {d.get('medido_em', '—')}.</p>
+
+  <div class="trio">
+{FIGURA.read_text(encoding='utf-8')}
+  </div>
+
+  {tabela(d)}
+  <p class="legenda">Mediana de {d['rodadas']} rodadas; o bigode do gráfico vai
+  do mínimo ao máximo. O contorno só marca vencedor quando as faixas
+  <em>não</em> se cruzam — na busca elas se cruzam, e é empate.</p>
+
+  <p><strong>O piso que precisou ser medido.</strong> Os três não têm a mesma
+  forma: o SQLite(R) é biblioteca em processo, o <code>carga</code> do PhxSql
+  também, e o MySQL(R) é daemon que recebe <em>texto</em> por soquete. Não
+  existe MySQL(R) embutido nesta máquina, então a barra dele carrega transporte
+  e análise que as outras duas não pagam. Isso não se conserta — mede-se:
+  {seg(piso, 3) if piso else '—'} para {mil(ops)} instruções que não fazem nada
+  (<code>DO 1;</code>).{fatia}</p>
+
+  {linha_disco}
+
+  <p><strong>Onde perdemos, sem rodeio:</strong> a inserção, para o SQLite(R), e
+  a exclusão também. Ganhamos o <code>UPDATE</code>, e a busca empata. Está tudo
+  na tabela acima, com o vencedor de cada fase em destaque — inclusive quando
+  não somos nós.</p>
+
+  <p class="legenda">Durabilidade durante a medida — {dur}</p>
+  <p><strong>O que estes números não dizem</strong></p>
+  <ul>{ress}</ul>
+"""
+
+
+CSS = """
+<style>
+.trio{margin:18px 0}
+.trio .fig{margin:0 0 14px;border:1px solid var(--linha);border-radius:10px;padding:12px}
+.trio .fig svg{width:100%;height:auto;display:block}
+.trio .tit{font:600 15px system-ui;fill:var(--tinta)}
+.trio .nota{font:12px system-ui;fill:var(--tinta-3,var(--tinta))}
+.trio .eixo{font:13px system-ui;fill:var(--tinta-2,var(--tinta))}
+.trio .valor{font:600 13px system-ui;fill:var(--tinta);font-variant-numeric:tabular-nums}
+.trio .valor.dentro{fill:#fff}
+.trio .ausente{font:italic 13px system-ui;fill:var(--tinta-3,var(--tinta))}
+.trio .bigode{stroke:var(--tinta-3,var(--tinta));stroke-width:2}
+.trio .barra.vencedor{stroke:var(--tinta);stroke-width:2}
+/* As tres cores sao as da marca, com passo proprio no tema escuro: tema
+   escuro nao e tema claro invertido, e os tokens claros reprovam na faixa de
+   luminosidade sobre fundo escuro. */
+.trio{--m-phx:#c63c0a;--m-sql:#1f5c93;--m-lite:#37702e}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]) .trio{--m-phx:#d9741c;--m-sql:#4287cf;--m-lite:#54a84c}
+}
+:root[data-theme="dark"] .trio{--m-phx:#d9741c;--m-sql:#4287cf;--m-lite:#54a84c}
+</style>
+"""
+
+
+def main():
+    if not MEDICAO.exists():
+        sys.exit(
+            f"nao achei {MEDICAO}.\n"
+            "O bloco sai da medicao -- rode `python3 bancada/comparacao/medir.py`."
+        )
+    if not FIGURA.exists():
+        sys.exit(
+            f"nao achei {FIGURA}.\n"
+            "Rode `python3 bancada/comparacao/grafico.py` -- este script INSERE a\n"
+            "figura, nao a desenha: duas receitas para o mesmo desenho divergem."
+        )
+    if FIGURA.stat().st_mtime < MEDICAO.stat().st_mtime:
+        sys.exit(
+            "a figura e MAIS VELHA que a medicao.\n"
+            "Rode `python3 bancada/comparacao/grafico.py` antes: publicar um\n"
+            "grafico desenhado da corrida anterior e publicar o passado com data\n"
+            "de hoje, e nada no desenho denuncia isso."
+        )
+
+    d = json.loads(MEDICAO.read_text(encoding="utf-8"))
+    dossie = _alvo()
+    html = dossie.read_text(encoding="utf-8")
+    i, j = html.find(ABRE), html.find(FECHA)
+    if i < 0 or j < 0:
+        sys.exit("as marcas trio:inicio/trio:fim nao estao no dossie")
+    html = html[:i] + ABRE + CSS + bloco(d) + FECHA + html[j + len(FECHA):]
+    dossie.write_text(html, encoding="utf-8")
+
+    print(f"bloco do trio refeito em {dossie.name}, de {MEDICAO.name}")
+    for chave, _ in FASES:
+        por = d["fases"][chave]
+        print(f"  {chave:<10} " + "  ".join(
+            f"{r} {seg(por[m]['mediana_s'])}" for m, r in MOTORES
+        ))
+
+
+if __name__ == "__main__":
+    main()
+ARQUIVO
+chmod +x /home/user/adrianoboller/phxsql/docs/dossie/trio-de-motores.py && python3 docs/dossie/trio-de-motores.py
+```
+
+### Prova a guarda da figura velha  ·  01/09 18:38
+
+```bash
+touch bancada/comparacao/um-milhao.json && python3 docs/dossie/trio-de-motores.py; echo "codigo de saida: $?"; echo "--- e com a figura em dia ---"; python3 bancada/comparacao/grafico.py >/dev/null && python3 docs/dossie/trio-de-motores.py | head -2; echo "codigo de saida: $?"
+```
+
+### Estado dos portoes  ·  01/09 18:38
+
+```bash
+tail -25 /tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/tasks/b0uhjcwir.output 2>/dev/null; echo "=== ainda rodando? ==="; pgrep -f "cargo test|cargo clippy" >/dev/null && echo sim || echo nao
+```
+
+### Confere o paragrafo do piso  ·  01/09 18:40
+
+```bash
+python3 -c "
+import pathlib,re
+h=pathlib.Path('docs/dossie/dossie-phxsql-0.18.html').read_text()
+b=h[h.index('<!-- trio:inicio'):h.index('<!-- trio:fim')]
+i=b.index('O piso que precisou')
+print(re.sub(r'<[^>]+>','',b[i:i+560]))"
+```
+
+### Estrutura e ultimo pedido do PENDENCIAS  ·  01/09 18:40
+
+```bash
+grep -o "^| ☑️ | [0-9]*" docs/PENDENCIAS.md | awk '{print $4}' | sort -n | tail -3; echo "=== cabecalho da tabela ==="; grep -n "^| ☑️ | 15[0-9]" docs/PENDENCIAS.md | tail -3 | cut -c1-160; echo "=== marcas geradas ==="; grep -n "pendencias:\|<!-- " docs/PENDENCIAS.md | head
+```
+
+### Roda os demais geradores do dossie  ·  01/09 18:41
+
+```bash
+for g in numeros-do-projeto numeros-da-bancada cobertura-por-area; do echo "--- $g ---"; python3 docs/dossie/$g.py docs/dossie/dossie-phxsql-0.18.html 2>&1 | head -8; done
+```
+
+### Confirma que a suite passou inteira  ·  01/09 18:42
+
+```bash
+grep -c "test result: ok" /tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/tasks/b0uhjcwir.output; echo "--- falhas? ---"; grep -i "FAILED\|panicked\|test result: FAILED" /tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/tasks/b0uhjcwir.output | head -5 || echo "nenhuma"; echo "--- total ---"; grep -o "test result: ok. [0-9]* passed" /tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/tasks/b0uhjcwir.output | awk '{s+=$5} END {print s" testes passaram"}'; echo "--- avisos do clippy ---"; grep -c "^warning" /tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/tasks/b0uhjcwir.output
+```
+
+### Suite inteira, com o codigo de saida de verdade  ·  01/09 18:42
+
+```bash
+cargo test --workspace > /tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/testes.log 2>&1; echo "CODIGO DE SAIDA DO CARGO: $?"
+```
+
+### Compara a pagina publicada com a local  ·  01/09 18:42
+
+```bash
+PUB=/root/.claude/projects/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/tool-results/artifact-5c14044e-1788111940-cb80.html; LOC=docs/dossie/dossie-phxsql-0.18.html; echo "publicada: $(grep -c '<h2' $PUB) h2, $(stat -c%s $PUB) bytes"; echo "local:     $(grep -c '<h2' $LOC) h2, $(stat -c%s $LOC) bytes"; echo "--- h2 so na publicada ---"; diff <(grep -o '<h2[^>]*>[^<]*' $PUB | sed 's/<h2[^>]*>//' | sort) <(grep -o '<h2[^>]*>[^<]*' $LOC | sed 's/<h2[^>]*>//' | sort) | head -20
+```
+
+### Andamento da suite  ·  01/09 18:42
+
+```bash
+cat /tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/tasks/b2gg7gdb8.output 2>/dev/null | tail -3; echo "=== rodando? ==="; pgrep -f "cargo test" >/dev/null && echo sim || echo nao; grep -c "test result: ok" /tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/testes.log 2>/dev/null
+```
+
+### Contexto das citacoes ambiguas  ·  01/09 18:43
+
+```bash
+for f in "CHANGELOG.md:987" "docs/REPLICACAO.md:1308" "docs/PENDENCIAS.md:658" "docs/SPRINTS-CASSANDRA.md:223"; do a=${f%%:*}; l=${f##*:}; echo "=== $f ==="; sed -n "$((l-3)),$((l+1))p" $a | cut -c1-220; done
+```
+
+### Existe documento de tecnologias?  ·  01/09 18:43
+
+```bash
+ls docs/ | grep -i "tecno\|BASE\|CONHEC"; echo "---"; ls *.md; echo "=== testes ==="; grep -c "test result: ok" /tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/testes.log
+```
+
+### Veredito da suite  ·  01/09 18:43
+
+```bash
+cat /tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/tasks/b2gg7gdb8.output; L=/tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/testes.log; echo "--- resumo ---"; grep -o "test result: ok. [0-9]* passed" $L | awk '{s+=$5} END {print s" testes passaram"}'; echo "falhas: $(grep -c 'test result: FAILED' $L)"; grep -i "^error\|panicked at" $L | head -3 || true
+```
+
+### Contagem certa dos testes  ·  01/09 18:43
+
+```bash
+L=/tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/testes.log; grep -o "test result: ok\. [0-9]* passed" $L | awk '{s+=$4} END {print s" testes passaram"}'; echo "binarios de teste: $(grep -c 'test result: ok' $L)"; grep -c "ignored" $L >/dev/null; grep -o "[0-9]* ignored" $L | awk '{s+=$1} END {print s" ignorados"}'
+```
+
+### O que mudou  ·  01/09 18:43
+
+```bash
+git status --short; echo "=== tamanho do que entra ==="; git add -A -n 2>/dev/null | head -20
+```
+
+### Regras do gitignore  ·  01/09 18:44
+
+```bash
+grep -n "parcial\|comando" .gitignore 2>/dev/null || echo "(sem regra)"; echo "=== gitignore ==="; cat .gitignore 2>/dev/null | head -20
+```
+
+### Commit da frente 48  ·  01/09 18:44
+
+```bash
+git add -A && git commit -q -F - <<'MSG' && git log --oneline -1
+Os tres motores a um milhao -- e o piso que valia 59,6% de uma barra
+
+A terceira bancada de comparacao da casa, e ela existe porque somar as duas que
+ja havia daria tres colunas e NENHUMA comparacao: medidas de dias diferentes
+carregam o ambiente junto, e parte da diferenca deixa de ser do motor. Aqui os
+tres correm intercalados na mesma rodada.
+
+**O achado principal e sobre o que a barra do MySQL(R) NAO mede.** Os tres nao
+tem a mesma forma e nao ha como dar: o SQLite(R) e biblioteca em processo, o
+`carga` do PhxSql tambem, e o MySQL(R) e daemon que recebe TEXTO por soquete --
+nao existe MySQL(R) embutido nesta maquina. Entao mediu-se o piso: 20.000
+instrucoes que nao fazem nada custam 1,479 s, que sao **59,6% da barra de busca
+dele**. Sem esse numero teriamos publicado «15,16x mais rapido»; entre motores
+sao 6,12x. Mais da metade da vitoria era do formato.
+
+**E onde perdemos esta dito no mesmo tamanho de letra:** a insercao para o
+SQLite(R) por 3,88x, a exclusao por 1,83x, e o disco -- 253,6 MiB contra 57,3 e
+104,0, que e 4,42x e 2,44x, o preco do modelo de arquivos separados. A busca
+EMPATA (164 contra 166 ms, faixas inteiramente sobrepostas).
+
+**A regra 1 estava sendo violada, e nenhum tempo denunciava.** Montar a terceira
+bancada obrigou a conferir tres motores em vez de dois, e ai apareceu: a
+`bancada/medir.py` grava '2024-10-04' em TODA linha enquanto o `carga.rs` e a
+bancada do SQLite(R) gravam `20000 + (i % 400)`. Dado diferente, do mesmo
+tamanho, invisivel em qualquer medida de tempo.
+
+O conserto nao foi gravar a data certa: nasceu a fase `conferir` do `carga.rs`,
+que obriga os tres ao MESMO ESTADO antes de qualquer tempo ser publicado --
+contagem, soma de `valor` e soma de `cadastro`, em tres marcos. O marco do meio
+nao e enfeite: `atualizar` e `excluir` mordem os mesmos 20.000 alvos, entao no
+marco final o efeito do `atualizar` ja sumiu junto com as linhas excluidas.
+
+Os totais conferem contra a FORMA FECHADA calculada a parte (410.099.600.000 e
+20.199.500.000), e nao so entre si. Prova real nos dois sentidos: repor a data
+constante faz a bancada recusar publicar, apontando `cadastro 400.000.000` --
+que e exatamente 20.000 linhas x dia 20.000, a assinatura do defeito.
+
+**Exercitar a pagina achou cinco defeitos que ler o codigo nao acharia**, e um
+deles nasceu do conserto do anterior:
+
+- o rotulo do valor caia POR CIMA do bigode;
+- uma rodada fora da curva (22,97 s contra 3,48 dos outros dois) esmagava o
+  painel inteiro, e 277 ms virava uma lasca de 3 px -- o eixo passou a ser a
+  maior MEDIANA, com o bigode cortado por uma seta quando estoura;
+- o contorno declarava vencedor no SELECT com as faixas sobrepostas;
+- a nota do UPDATE dizia «trocar o valor de uma coluna» quando as tres regravam
+  a linha inteira;
+- a pagina nao dizia que as fases pontuais sao 20.000 e nao um milhao;
+- e o meu proprio conserto do rotulo o empurrou para FORA do painel, cortando
+  «12,3 s (pico 17,1 s)» em «12».
+
+A regra do vencedor mora num lugar so, e isso tambem foi defeito achado: eu a
+consertei no grafico e a tabela do dossie continuou marcando vencedor na busca
+-- o documento se contradizia a dois centimetros de distancia.
+
+O sexto gerador do dossie (`trio-de-motores.py`) NAO redesenha nada: insere o
+SVG que o `grafico.py` produz, e RECUSA se a figura for mais velha que a
+medicao. E a licao do binario velho aplicada a uma figura -- um grafico
+desenhado da corrida anterior publica o passado com data de hoje, e nada no
+desenho denuncia isso.
+
+Portoes: fmt limpo, clippy com zero avisos, 1.436 testes em 46 binarios.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01NqzhoCqQuDveMBrrXUqpJb
+MSG
+```
+
+### Confere que as 4.12 restantes sao mesmo da exclusao  ·  01/09 18:45
+
+```bash
+echo "=== quem ainda cita §4.12, e para o que ==="; grep -rn "DESEMPENHO.md\` §4\.12\|DESEMPENHO.md §4\.12" --include=*.md --include=*.rs --include=*.py . 2>/dev/null | grep -v "^./target\|pedidos.html" | sed 's/:.*§4.12/  -> 4.12/' | head -20
+```
+
+### CLAUDE.md cita? e regera a pagina dos pedidos  ·  01/09 18:45
+
+```bash
+grep -n "§4\.1[0-9]" /home/user/adrianoboller/CLAUDE.md /root/.claude/CLAUDE.md 2>/dev/null || echo "o CLAUDE.md nao cita secao numerada"; python3 docs/dossie/pagina-dos-pedidos.py docs/dossie/pedidos.html docs/dossie/dossie-phxsql-0.18.html | tail -2
+```
+
+### Commit da renumeracao  ·  01/09 18:45
+
+```bash
+git add -A && git commit -q -F - <<'MSG' && git log --oneline -2
+Tres secoes do DESEMPENHO.md tinham o mesmo numero, e 17 lugares apontavam para la
+
+O documento trazia TRES `## 4.12`: o `fsync` da exclusao, a trava de dados presa
+atras da leitura de rede, e o `ALTER TABLE ADD COLUMN`. Dezessete citacoes
+espalhadas pelo codigo, pelos LEIA-ME, pelo CHANGELOG e pelos sprints diziam
+«§4.12» -- e quem seguisse a referencia caia numa das tres, sem saber qual.
+
+Referencia ambigua nao avisa que e ambigua: ela leva a seção errada e o leitor
+acredita. E o mesmo naipe do numero digitado -- envelhece calado, so que aqui
+ja nasceu errada.
+
+A primeira fica com o numero, porque treze das dezessete a querem dizer. As
+outras duas viraram 4.13 e 4.14, e as quatro citacoes que apontavam para elas
+foram atras: `REPLICACAO.md` e dois pedidos do `PENDENCIAS.md` para a trava,
+o `CHANGELOG.md` para o `ALTER TABLE`.
+
+Conferido depois: sobrou uma unica `## 4.12`, e as treze citacoes restantes sao
+todas da exclusao.
+
+De passagem, dois links que diziam «seção 32» apontando para `#s33`.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01NqzhoCqQuDveMBrrXUqpJb
+MSG
+```
+
+### Push para a branch combinada  ·  01/09 18:45
+
+```bash
+cd /home/user/adrianoboller && timeout 120 git push -u origin claude/capacidades-disponiveis-y6auxh 2>&1 | tail -8; echo "codigo: $?"
+```
+
+### Remoto e credencial  ·  01/09 18:45
+
+```bash
+git remote -v && git config --get credential.helper 2>/dev/null; echo "--- ls-remote ---"; timeout 60 git ls-remote origin HEAD 2>&1 | head -3
+```
+
+### Onde esta a branch remota  ·  01/09 18:46
+
+```bash
+timeout 90 git ls-remote origin 'refs/heads/claude/capacidades-disponiveis-y6auxh' 2>&1; echo "--- local esta em ---"; git rev-parse HEAD; echo "--- commits nao enviados ---"; timeout 90 git log --oneline origin/claude/capacidades-disponiveis-y6auxh..HEAD 2>/dev/null | wc -l || echo "(sem ref remota local)"
+```
+
+### Existe script de pacote?  ·  01/09 18:46
+
+```bash
+ls *.sh 2>/dev/null; ls pacotes/ 2>/dev/null | head -5; grep -rn "bundle" --include=*.sh --include=*.md . 2>/dev/null | grep -v "^./target" | head -5
+```
+
+### Base de conhecimento e a receita do pacote  ·  01/09 18:46
+
+```bash
+ls -la /home/user/adrianoboller/base-de-conhecimento/; echo "=== receita do bundle ==="; awk '/Create and verify git bundle of unpushed commits/,/^### /' /home/user/adrianoboller/base-de-conhecimento/03-RECEITAS-DE-SHELL.md | head -40
+```
+
+### Push de novo apos o add_repo  ·  01/09 18:47
+
+```bash
+timeout 120 git push -u origin claude/capacidades-disponiveis-y6auxh 2>&1 | tail -3
+```
+
+### Cria e verifica o pacote incremental  ·  01/09 18:47
+
+```bash
+B=/tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/phxsql-131-commits.bundle && git bundle create $B d4dc4243dfdf954dbc3bb30e91fe7e4a17091d88..claude/capacidades-disponiveis-y6auxh 2>&1 | tail -3 && ls -lh $B && echo "--- verifica ---" && git bundle verify $B 2>&1 | tail -4
+```
+
+### Onde esta o link de download morto  ·  01/09 18:48
+
+```bash
+grep -o '<a[^>]*download[^>]*>' docs/dossie/dossie-phxsql-0.18.html | head -5; echo "--- blob/data href ---"; grep -c 'href="data:\|href="blob:' docs/dossie/dossie-phxsql-0.18.html; echo "--- no meu bloco? ---"; python3 -c "
+import pathlib; h=pathlib.Path('docs/dossie/dossie-phxsql-0.18.html').read_text()
+b=h[h.index('<!-- trio:inicio'):h.index('<!-- trio:fim')]
+print('download no bloco do trio:', 'download' in b)"
+```
+
+### Origem do link de download morto  ·  01/09 18:48
+
+```bash
+cd /home/user/adrianoboller/phxsql && grep -o '<a[^>]*download[^>]*>' docs/dossie/dossie-phxsql-0.18.html | head -3; echo "--- createObjectURL / save ---"; grep -c "createObjectURL\|URL.createObject" docs/dossie/dossie-phxsql-0.18.html; python3 -c "
+import pathlib; h=pathlib.Path('/home/user/adrianoboller/phxsql/docs/dossie/dossie-phxsql-0.18.html').read_text()
+b=h[h.index('<!-- trio:inicio'):h.index('<!-- trio:fim')]
+print('download no bloco do trio:', 'download' in b)"
+```
+
+### Contexto dos dois <a download>  ·  01/09 18:48
+
+```bash
+grep -n -o '.\{110\}<a download>.\{60\}' docs/dossie/dossie-phxsql-0.18.html | head -3
+```
+
+### Linhas com a download  ·  01/09 18:48
+
+```bash
+grep -n "a download" docs/dossie/dossie-phxsql-0.18.html | cut -c1-260 | head -3
+```
+
+### Compara os pedidos das duas versoes  ·  01/09 18:49
+
+```bash
+PUB=/root/.claude/projects/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/tool-results/artifact-d6c8f13c-1788110146-c8ce.html; python3 - "$PUB" <<'PY'
+import re, sys, pathlib
+def nums(p):
+    h = pathlib.Path(p).read_text(encoding="utf-8")
+    # so a tabela grande (id="tudo"), para nao contar duas vezes os parciais
+    i = h.index('<table id="tudo"')
+    return [int(x) for x in re.findall(r'<td class="n mono">(\d+)</td>', h[i:])]
+viva = nums(sys.argv[1])
+minha = nums("docs/dossie/pedidos.html")
+print(f"viva: {len(viva)} pedidos | minha: {len(minha)} pedidos")
+print("na viva e NAO na minha:", sorted(set(viva) - set(minha)) or "nenhum")
+print("na minha e nao na viva:", sorted(set(minha) - set(viva)))
+PY
+```
+
+### Como o extrator funciona  ·  01/09 18:50
+
+```bash
+head -40 /home/user/adrianoboller/base-de-conhecimento/extrair.py; echo "=== indice ==="; cat /home/user/adrianoboller/base-de-conhecimento/00-INDICE.md
+```
+
+### Refaz a base de conhecimento pelo extrator  ·  01/09 18:50
+
+```bash
+cd /home/user/adrianoboller && python3 base-de-conhecimento/extrair.py 2>&1 | tail -12
 ```
 

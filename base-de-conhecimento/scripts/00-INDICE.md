@@ -4,11 +4,17 @@ As tres primeiras familias sao as que se reaproveitam em outro
 projeto. `edicao-em-massa` e conserto de uma vez so -- guardado
 pelo padrao, nao pelo conteudo.
 
-## Medicao -- cronometram, contam, comparam  (11)
+## Medicao -- cronometram, contam, comparam  (17)
 
 - `126-insert-5000-rows-for-a-real-benchmark.py` -- Insert 5000 rows for a real benchmark
 - `1298-fix-the-temp-scan-to-be-o-n-and-dry-run-again.py` -- Fix the temp scan to be O(n) and dry-run again
 - `1303-add-script-classification-and-regenerate.py` -- Add script classification and regenerate
+- `1323-test-the-chart-rendering-with-synthetic-data.py` -- Test the chart rendering with synthetic data
+- `1327-conserta-os-cinco-defeitos-do-grafico.py` -- Conserta os cinco defeitos do grafico
+- `1331-numeros-derivados-da-medicao.py` -- Numeros derivados da medicao
+- `1332-secao-13-do-desempenho-md.py` -- Secao 13 do DESEMPENHO.md
+- `1337-unifica-a-regra-do-vencedor-e-conserta-os-decima.py` -- Unifica a regra do vencedor e conserta os decimais
+- `1338-pedido-155-e-a-pagina-dos-pedidos-regerada.py` -- Pedido 155 e a pagina dos pedidos regerada
 - `659-seed-20k-rows-for-the-ui-test.py` -- Seed 20k rows for the UI test
 - `660-time-the-server-side-of-paging.py` -- Time the server side of paging
 - `661-see-the-actual-varrer-response.py` -- See the actual varrer response
@@ -78,7 +84,7 @@ pelo padrao, nao pelo conteudo.
 - `163-add-registered-trademark-marks-to-third-party-na.py` -- Add registered trademark marks to third-party names
 - `731-extract-the-conversion-functions.py` -- Extract the conversion functions
 
-## Edicao em massa -- mexem no fonte por padrao  (1109)
+## Edicao em massa -- mexem no fonte por padrao  (1120)
 
 - `001-write-table-module-and-build-workspace.py` -- Write table module and build workspace
 - `002-fix-borrow-errors-and-rebuild.py` -- Fix borrow errors and rebuild
@@ -424,8 +430,19 @@ pelo padrao, nao pelo conteudo.
 - `1319-resolve-the-dossier-changelog-and-guard-catalog.py` -- Resolve the dossier, changelog and guard catalog
 - `1321-set-the-measured-ratchet-and-run-clippy.py` -- Set the measured ratchet and run clippy
 - `1322-move-the-orphaned-comment-before-the-constant-an.py` -- Move the orphaned comment before the constant and recheck clippy
+- `1324-acrescenta-a-fase-conferir-ao-carga-rs.py` -- Acrescenta a fase conferir ao carga.rs
+- `1325-conserta-a-formatacao-dos-milhares.py` -- Conserta a formatacao dos milhares
+- `1326-conserta-o-separador-decimal-do-grafico.py` -- Conserta o separador decimal do grafico
+- `1328-ressalvas-viram-funcao-propria-com-acento.py` -- Ressalvas viram funcao propria, com acento
+- `1329-rotulo-entra-na-barra-quando-nao-cabe-fora.py` -- Rotulo entra na barra quando nao cabe fora
 - `133-route-api-requests-through-the-remote-connection.py` -- Route API requests through the remote connection
+- `1330-durabilidade-com-acento-e-o-ajuste-do-servidor-c.py` -- Durabilidade com acento, e o ajuste do servidor como dado
+- `1333-poe-as-marcas-do-trio-no-dossie.py` -- Poe as marcas do trio no dossie
+- `1334-renderiza-o-bloco-do-trio-nos-dois-temas.py` -- Renderiza o bloco do trio nos dois temas
+- `1335-poe-a-grade-e-recaptura.py` -- Poe a grade e recaptura
+- `1339-ignora-os-trabalhistas-e-completa-o-leia-me.py` -- Ignora os trabalhistas e completa o LEIA-ME
 - `134-add-relay-open-and-forward-functions.py` -- Add relay open and forward functions
+- `1340-renumera-as-tres-secoes-4-12.py` -- Renumera as tres secoes 4.12
 - `135-add-relay-open-and-forward-functions.py` -- Add relay open and forward functions
 - `136-fix-borrow-error.py` -- Fix borrow error
 - `137-add-host-port-key-and-database-fields.py` -- Add host, port, key and database fields
@@ -1190,7 +1207,7 @@ pelo padrao, nao pelo conteudo.
 - `998-add-the-atomic-gate-to-both-capture-points.py` -- Add the atomic gate to both capture points
 - `999-keep-the-mirror-in-sync-and-build.py` -- Keep the mirror in sync and build
 
-## Os demais  (152)
+## Os demais  (153)
 
 - `036-convert-svg-colors-to-theme-tokens-and-verify.py` -- Convert SVG colors to theme tokens and verify
 - `043-replace-despachar-with-the-three-gate-version.py` -- Replace despachar with the three-gate version
@@ -1273,6 +1290,7 @@ pelo padrao, nao pelo conteudo.
 - `1315-resolve-all-rest-front-conflicts.py` -- Resolve all REST-front conflicts
 - `1318-resolve-the-dossier-changelog-and-guard-catalog.py` -- Resolve the dossier, changelog and guard catalog
 - `1320-resolve-the-ratchet-keeping-one-constant.py` -- Resolve the ratchet keeping one constant
+- `1336-poe-a-grade-e-recaptura.py` -- Poe a grade e recaptura
 - `147-add-key-generation-to-the-cli.py` -- Add key generation to the CLI
 - `152-map-memory-ops-to-read-permission-and-test.py` -- Map memory ops to read permission and test
 - `161-add-replication-config-tests-and-honest-startup-.py` -- Add replication config tests and honest startup notice
