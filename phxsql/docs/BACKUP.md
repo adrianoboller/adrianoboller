@@ -43,9 +43,12 @@ A entrega sai por `git bundle`, que é o formato do próprio git para carregar
 história por fora da rede:
 
 ```bash
-git bundle create phxsql-$(date +%Y%m%d-%H%M).bundle claude/capacidades-disponiveis-y6auxh
-git bundle verify phxsql-AAAAMMDD-HHMM.bundle    # confere ANTES de entregar
+./backup.sh                    # gera E PROVA; nao entregue pacote de outro jeito
 ```
+
+O script existe porque *pacote gerado por script, nunca montado à mão* — e
+porque o procedimento que estava escrito aqui **estava errado**, do jeito mais
+perigoso possível: ele aprovava pacote podre. Ver a seção seguinte.
 
 Do outro lado, ele é um remoto como outro qualquer:
 
@@ -55,9 +58,35 @@ git clone phxsql-AAAAMMDD-HHMM.bundle phxsql
 git fetch /caminho/para/o.bundle claude/capacidades-disponiveis-y6auxh
 ```
 
-O `verify` não é enfeite: ele é que diz **«the bundle records a complete
-history»**, e um pacote truncado só se descobre na hora de restaurar, que é a
-pior hora possível.
+### O `git bundle verify` NÃO confere o conteúdo — medido
+
+A primeira versão deste documento mandava conferir com `git bundle verify`, e
+dizia que era ele quem garantia a integridade. **Está errado.** Medido:
+
+```
+cortei 2 MiB do fim de um pacote bom
+git bundle verify  ->  «The bundle records a complete history»,  saída 0
+git clone dele     ->  «error: index-pack died»,                 saída 128
+```
+
+O `verify` lê o **cabeçalho**: quais refs o pacote traz e se a história é
+auto-suficiente — nenhum commit-pré-requisito faltando. Ele **não lê o
+packfile**, então não vê conteúdo corrompido nem truncado. Quem só roda o
+`verify` entrega backup podre com a consciência limpa.
+
+Por isso o `backup.sh` **restaura de verdade**, em três passos, e o critério do
+terceiro não é «o clone não deu erro»: é o SHA do objeto `tree` do HEAD ser o
+**mesmo** dos dois lados. Árvore igual quer dizer conteúdo idêntico byte a byte
+para todo arquivo versionado — e isso um clone que morreu no meio não consegue
+fingir.
+
+O `verify` continua no passo 1, porque vale **por si**: pega pré-requisito
+faltando, que é pacote incompleto por construção. Só não vale pelo que este
+documento dizia que ele valia.
+
+*Prova real nos dois sentidos, que é o que achou o erro:* com o pacote
+truncado, o passo 2 reprova (saída 128) e o `verify` sozinho aprova (saída 0).
+Um backup só reprova na hora de restaurar — e essa é a pior hora possível.
 
 ### Por que o `.bundle` não é versionado
 
