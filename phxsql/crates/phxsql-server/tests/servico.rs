@@ -81,7 +81,16 @@ fn pedir(porta: u16, linha: &str) -> String {
         .unwrap();
     let mut escrita = fluxo.try_clone().unwrap();
     let mut leitor = BufReader::new(fluxo);
-    writeln!(escrita, "{linha}").unwrap();
+    // A escrita pode falhar com `BrokenPipe`/`ConnectionReset` SEM que nada
+    // esteja errado: quando o IP esta bloqueado, o servidor recusa ANTES de
+    // ler o pedido -- escreve a recusa e fecha. Se o fechamento chega antes do
+    // nosso `write`, o `unwrap` derrubava o teste pelo COMPORTAMENTO CERTO.
+    //
+    // Foi o que aconteceu numa corrida de `--workspace`, com a maquina cheia
+    // de binarios em paralelo; sozinho o teste passa sempre, porque ali o
+    // cliente ganha a corrida. Ignorar a falha de escrita nao afrouxa nada: a
+    // resposta ja esta no soquete, e as asercoes sobre ela continuam iguais.
+    let _ = writeln!(escrita, "{linha}");
     let mut resposta = String::new();
     leitor.read_line(&mut resposta).unwrap();
     resposta

@@ -12,7 +12,7 @@ O nome vem do Centro de Controle do HFSQL(R), e a ideia é a mesma.
 | Motor | Estado |
 |---|---|
 | MySQL(R) / MariaDB(R) | **cliente e dialeto**, testado contra MySQL(R) 8.0.46 |
-| PostgreSQL(R) | **cliente e dialeto**, provados contra um servidor de protocolo no soquete — **ainda não contra um PostgreSQL(R) de verdade** (§ *O que ainda falta provar*) |
+| PostgreSQL(R) | **cliente e dialeto**, provados contra um servidor de protocolo no soquete **e contra um PostgreSQL(R) 16.13 de verdade** — 19 conferências, cada uma contra o `psql` (`bancada/dblink/prova-postgres.py`) |
 
 O cliente é escrito aqui, com a `std` do Rust e nada mais — a mesma regra do
 resto do projeto. Um protocolo de rede é um formato de bytes; ler e escrever
@@ -251,51 +251,83 @@ base exige reconectar. Por isso o campo `database` de `dblink_tabelas` filtra a
 base num motor e o **esquema** no outro — e é por isso que a ligação para
 PostgreSQL(R) precisa do `database` certo no cadastro, e não só do host.
 
-## A prova, e o que ainda falta provar
+## A prova contra um PostgreSQL(R) de verdade
 
-**Não há PostgreSQL(R) instalado na máquina onde este código foi escrito.** Isso
-está dito aqui porque muda o valor do que foi provado.
+**A premissa desta seção caducou, e isso é resultado.** Ela dizia «não há
+PostgreSQL(R) instalado na máquina onde este código foi escrito». Há: o
+**16.13**, com `scram-sha-256` já configurado no `pg_hba.conf` para 127.0.0.1.
+*A lista do que falta também é palpite até alguém medir* — inclusive quando o
+palpite é nosso.
 
-O que **foi** provado, em `crates/phxsql-server/tests/dblink-postgres-no-fio.rs`:
-um servidor que fala o protocolo de fio sobe num soquete e confere, byte a
-byte, o que o cliente manda.
+`bancada/dblink/prova-postgres.py` fecha o que faltava: as cinco operações
+contra o servidor real, com **cada resposta conferida contra o `psql`**, que é
+o oráculo independente. Dezenove conferências.
 
-| o que se prova | como |
+### O que a prova achou: um defeito com três sintomas
+
+O servidor falso não tinha como achar isto, e a razão é a que já estava escrita
+aqui — **servidor falso responde o que mandarem ele responder**.
+
+| sintoma | o que se via |
 |---|---|
-| a mensagem de abertura leva `user`, `database`, `client_encoding`, `application_name` | o servidor lê os pares e compara |
-| o `int32` de tamanho **inclui a si mesmo** em toda mensagem | o servidor confere tamanho declarado × lido |
-| o SCRAM-SHA-256 | o servidor **refaz a conta do RFC 5802 e confere a prova do cliente** |
-| a senha nunca viaja | o servidor procura a senha nos bytes de toda mensagem recebida |
-| o SQL é o do dialeto certo | compara o `Q` recebido com a cadeia esperada, e recusa crase |
-| erro do servidor não desencontra o ciclo | manda `E` e depois responde a consulta **seguinte** |
-| `md5` e `password` são recusados | o servidor os oferece e o cliente sai com o erro que diz o que mudar |
+| `dblink_tabelas` | lista **vazia**, sem erro nenhum |
+| `dblink_estrutura` | colunas **vazias** |
+| `dblink_ler` | `relation "bancada_phx.clientes" does not exist` |
 
-E, além disso, a implementação do SCRAM continua conferida contra o **vetor da
-§3 do RFC 7677**, no teste de `pg/scram.rs`.
+**Uma causa só, e ela estava no chamador, não no dialeto.** O `base` que as
+consultas de catálogo recebem quer dizer coisas diferentes nos dois motores —
+e o dialeto sabia disso desde sempre, está na tabela do §*Onde os dois
+divergem*. No MySQL(R) `base` é o database, que lá **é** o esquema. No
+PostgreSQL(R) a conexão já está dentro do database, e o qualificador é o
+**esquema**.
 
-### O que o servidor falso **não** prova
+`base_escolhida` entregava o database da ligação nos dois casos. Do lado do
+PostgreSQL(R) isso vira «procure o esquema `bancada_phx`», que não existe — e
+os dois primeiros efeitos são **mudos**.
 
-Que o SQL do dialeto é aceito por um PostgreSQL(R) de verdade. Um servidor
-falso responde o que mandarem ele responder: não valida sintaxe, não tem
-`pg_class` e não sabe se `unnest(...) WITH ORDINALITY` existe na versão do
-outro lado.
+**O pior caso era o da tela.** Ela lista os bancos com `dblink_bancos` — que no
+PostgreSQL(R) devolve **bancos** — e manda o escolhido de volta no campo
+`database`. Resultado: a grade do DbLink com PostgreSQL(R) mostrava **nenhuma
+tabela**, sem uma linha de erro.
 
-**Essa prova continua pendente.** O que ela exige:
+### O que `database` quer dizer, por motor
 
-1. um PostgreSQL(R) 10 ou mais novo alcançável pela rede, com
-   `scram-sha-256` na linha do usuário no `pg_hba.conf`;
-2. uma base com ao menos uma tabela, um índice e um comentário — o suficiente
-   para as três consultas de catálogo devolverem linha;
-3. rodar `dblink_testar`, `dblink_bancos`, `dblink_tabelas`,
-   `dblink_estrutura` e `dblink_ler` contra ela e comparar com o que o
-   `psql` mostra;
-4. repetir contra as versões que interessam: `unnest(...) WITH ORDINALITY`
-   pede 9.4+, e `reltuples` devolve `-1` em vez de `0` para tabela nunca
-   analisada a partir da 14 — o código já trata os dois, e o que falta é
-   **ver acontecer**.
+| | MySQL(R) | PostgreSQL(R) |
+|---|---|---|
+| ausente | a base da ligação | **nada** — todos os esquemas de usuário |
+| igual à base da ligação | a base da ligação | **todos os esquemas** dela (é o que a tela quer dizer) |
+| outro nome | outro database | aquele **esquema** |
 
-Até lá, a linha honesta é a da tabela do começo: cliente e dialeto escritos e
-provados no fio, **não** provados contra o servidor real.
+Cada tabela da resposta traz o campo `schema`, então quem precisa da distinção
+não a perde.
+
+### O que a prova conferiu
+
+| | contra o quê |
+|---|---|
+| o SCRAM-SHA-256 | um servidor que **confere de verdade** a prova do cliente |
+| `current_user` e `current_database` | o que o `psql` responde na mesma conexão |
+| a lista de bancos | `pg_database` |
+| a lista de tabelas, **pelos dois caminhos** | `pg_tables` |
+| comentário da tabela e da coluna | `obj_description` e `col_description` |
+| colunas, na ordem, e os tipos | `format_type`, como o próprio PostgreSQL os escreve |
+| a chave primária | `pg_index` |
+| o dado, e a **soma** | `sum(saldo)` |
+| o booleano | ele manda `t`/`f`, e **não** `1`/`0` — a armadilha que o §*Onde os dois divergem* já nomeava, agora vista acontecer |
+| o `reltuples` | **`-1`**, que é o que a 14+ devolve para tabela nunca analisada — e o DbLink publica `0`, não `-1` |
+
+### Prova real, nos dois sentidos
+
+Repondo o defeito, a prova **reprova em 14** das 19 e nomeia cada uma. E o
+teste de unidade `no_postgres_a_base_da_ligacao_nao_vira_esquema` cai junto —
+com o par `no_mysql_nada_muda` ao lado, que é o teste que mais importa numa
+mudança destas: **nada do lado do MySQL(R) mudou**.
+
+### O que continua de fora
+
+Repetir contra **outras versões**. O `unnest(...) WITH ORDINALITY` pede 9.4+ e
+o `reltuples` mudou de `0` para `-1` na 14; o código trata os dois, e o que
+está provado é a 16.13. Uma 12 ou uma 13 na mesa fechariam a outra ponta.
 
 ---
 

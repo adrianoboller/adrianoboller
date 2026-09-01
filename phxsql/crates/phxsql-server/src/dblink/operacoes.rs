@@ -55,7 +55,7 @@ use phxsql_core::error::{PhxError, Result};
 use phxsql_core::json::Json;
 
 use super::conexao::{Conexao, Resultado};
-use super::{nome_seguro, Definicao};
+use super::{nome_seguro, Definicao, Motor};
 
 /// Um campo de uma linha do resultado, como texto.
 fn campo(l: &[Option<String>], i: usize) -> String {
@@ -74,10 +74,47 @@ fn numero(l: &[Option<String>], i: usize) -> u64 {
         .unwrap_or(0) as u64
 }
 
-/// Qual base usar: a que o pedido escolheu, ou a do login.
+/// Qual base usar: a que o pedido escolheu, ou o padrao do motor.
+///
+/// **O padrao NAO e o mesmo nos dois**, e confundir isso foi o defeito que a
+/// prova contra um PostgreSQL(R) de verdade achou -- e que o servidor falso
+/// nao tinha como achar, porque servidor falso responde o que mandarem.
+///
+/// No MySQL(R) base e esquema sao a MESMA coisa, entao a base da ligacao
+/// serve de qualificador: `TABLE_SCHEMA = 'crm'` e `crm.clientes` funcionam.
+///
+/// No PostgreSQL(R) nao: a conexao ja esta DENTRO da base, e o qualificador e
+/// o ESQUEMA. Usar a base ali procura um esquema chamado `bancada_phx`, que
+/// nao existe -- e o efeito era silencioso nas duas primeiras operacoes e
+/// barulhento na terceira: `dblink_tabelas` e `dblink_estrutura` devolviam
+/// VAZIO (nenhum esquema com esse nome), e `dblink_ler` morria com
+/// `relation "bancada_phx.clientes" does not exist`.
+///
+/// Vazio e o certo ali, e o dialeto ja sabia lidar com ele: filtra os
+/// esquemas de sistema em vez de nomear um, usa `current_schema()` nas
+/// colunas, e nao qualifica a tabela. Quem QUISER outro esquema o passa em
+/// `database` -- que do lado do PostgreSQL(R) quer dizer esquema, e isso esta
+/// dito no `docs/DBLINK.md`.
 fn base_escolhida(d: &Definicao, p: &Json) -> String {
     match p.texto_ou("database", "").trim() {
-        "" => d.database.clone(),
+        "" => match d.motor {
+            Motor::MySql => d.database.clone(),
+            Motor::Postgres => String::new(),
+        },
+        // O caso que a TELA produz, e que sozinho ja deixava a lista de
+        // tabelas vazia e calada: o operador escolhe um banco na lista que o
+        // `dblink_bancos` devolveu -- e do lado do PostgreSQL(R) essa lista e
+        // de BANCOS -- e a tela o manda de volta aqui, onde o dialeto o le
+        // como esquema. Nao existe esquema com o nome do banco, entao a
+        // resposta era uma lista vazia sem erro nenhum.
+        //
+        // Quando o nome e o da PROPRIA base da conexao, o que o operador quis
+        // dizer foi «este banco», e nao «um esquema com o nome do banco»:
+        // vale por todos os esquemas de usuario dele. Se houver mesmo um
+        // esquema homonimo, ele continua na resposta -- cada tabela traz o
+        // campo `schema`, entao o leitor nao perde a informacao, ganha as
+        // outras.
+        outro if matches!(d.motor, Motor::Postgres) && outro == d.database => String::new(),
         outro => outro.to_string(),
     }
 }
@@ -268,6 +305,83 @@ mod testes {
         assert_eq!(numero(&linha, 0), 1234);
         let linha = vec![None];
         assert_eq!(numero(&linha, 0), 0);
+    }
+
+    fn ligacao(motor: Motor, database: &str) -> Definicao {
+        Definicao {
+            motor,
+            database: database.to_string(),
+            ..Definicao::default()
+        }
+    }
+
+    fn pedido(database: Option<&str>) -> Json {
+        match database {
+            None => Json::objeto(vec![]),
+            Some(d) => Json::objeto(vec![("database", Json::texto_de(d))]),
+        }
+    }
+
+    /// O defeito que a prova contra um PostgreSQL(R) DE VERDADE achou, e que o
+    /// servidor de protocolo nao tinha como achar.
+    ///
+    /// `base` quer dizer coisas diferentes nos dois motores: no MySQL(R) e o
+    /// database (que la e o mesmo que o esquema); no PostgreSQL(R) e o
+    /// ESQUEMA, porque a conexao ja esta dentro do database. Mandar o
+    /// database como esquema procura um esquema que nao existe -- e o efeito
+    /// e mudo: lista de tabelas VAZIA, sem erro nenhum.
+    ///
+    /// Prova real: trocar qualquer um dos tres ramos abaixo por
+    /// `d.database.clone()` derruba este teste.
+    #[test]
+    fn no_postgres_a_base_da_ligacao_nao_vira_esquema() {
+        // Sem `database` no pedido: o MySQL(R) usa a base da ligacao, e o
+        // PostgreSQL(R) nao usa nada -- e o dialeto trata vazio filtrando os
+        // esquemas de sistema, que e a resposta certa.
+        assert_eq!(
+            base_escolhida(&ligacao(Motor::MySql, "crm"), &pedido(None)),
+            "crm"
+        );
+        assert_eq!(
+            base_escolhida(&ligacao(Motor::Postgres, "loja"), &pedido(None)),
+            ""
+        );
+
+        // O caso da TELA: ela devolve o nome do BANCO que o `dblink_bancos`
+        // listou. No PostgreSQL(R) isso quer dizer «este banco», e nao «um
+        // esquema homonimo» -- que era a leitura que esvaziava a lista.
+        assert_eq!(
+            base_escolhida(&ligacao(Motor::Postgres, "loja"), &pedido(Some("loja"))),
+            ""
+        );
+
+        // Um esquema pedido pelo nome continua valendo, nos dois motores.
+        assert_eq!(
+            base_escolhida(&ligacao(Motor::Postgres, "loja"), &pedido(Some("vendas"))),
+            "vendas"
+        );
+        assert_eq!(
+            base_escolhida(&ligacao(Motor::MySql, "crm"), &pedido(Some("outra"))),
+            "outra"
+        );
+    }
+
+    /// O comportamento VELHO, que e o teste que mais importa numa mudanca
+    /// destas: nada do lado do MySQL(R) muda.
+    #[test]
+    fn no_mysql_nada_muda() {
+        for (base, pedido_db, esperado) in [
+            ("crm", None, "crm"),
+            ("crm", Some("crm"), "crm"),
+            ("crm", Some("outra"), "outra"),
+            ("", None, ""),
+        ] {
+            assert_eq!(
+                base_escolhida(&ligacao(Motor::MySql, base), &pedido(pedido_db)),
+                esperado,
+                "MySQL com base {base:?} e pedido {pedido_db:?}"
+            );
+        }
     }
 
     #[test]
