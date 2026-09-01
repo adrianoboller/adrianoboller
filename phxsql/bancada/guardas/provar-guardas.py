@@ -76,9 +76,17 @@ sys.path.insert(0, AQUI)
 from catalogo import GUARDAS  # noqa: E402
 
 PRAZO_PADRAO = 300
-# So o que a compilacao precisa. O `target/` NAO vem junto: ele tem 2 GB e os
-# caminhos ficam gravados dentro dele, entao copia-lo custaria mais que
-# recompilar. O diretorio novo compila uma vez e depois so incrementa.
+# So o que a compilacao precisa. O `target/` NAO vem junto, e por dois motivos
+# -- um que nao muda e outro que so cresce. O que nao muda: os caminhos ficam
+# gravados DENTRO dele, entao a copia nao serviria sem recompilar do mesmo
+# jeito. O que so cresce: este comentario dizia «2 GB», e quando alguem foi
+# medir o `target/` da arvore ja estava em 7,1 GB -- 3,5x o numero escrito
+# aqui. Numero em comentario envelhece calado igual a numero em documento, e a
+# licao e a mesma: nao se cita, mede-se. Hoje: `du -sh target`.
+#
+# O diretorio novo compila uma vez e depois so incrementa; e por isso que o
+# `alvo/` da copia fica em caminho FIXO e vale muito menos (1,2 GB, porque so
+# tem o que estas guardas exercitam).
 #
 # `exemplos/` esta aqui porque o `lib.rs` do servidor faz
 # `include_str!("../../../exemplos/Config_exemplo_01.json")` -- a copia so com
