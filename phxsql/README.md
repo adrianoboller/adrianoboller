@@ -212,10 +212,9 @@ nenhum. A árvore e o catálogo passam a listar só o que dá para abrir.
 
 ## Estado atual
 
-O motor de armazenamento está completo e testado: **390 testes** só nele
-(`phxsql-core` 163 + `phxsql-store` 227), **619 no projeto inteiro**, sem
-nenhuma dependência externa (só a `std`) — o que faz o projeto compilar
-offline.
+<!-- readme:testes:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
+O motor de armazenamento está completo e testado: **1.440 testes** no projeto inteiro, com **120 operações** no protocolo e **0 dependências externas** (só a `std`) — o que faz o projeto compilar offline.
+<!-- readme:testes:fim -->
 
 | Peça | Situação |
 |---|---|
@@ -273,10 +272,11 @@ offline.
 | Driver ODBC de saída — `cdylib` de ABI C, provada por 73 conferências e pelo `isql` | pronto |
 | Telemetria ao vivo, marca de dado pessoal (LGPD), DbLink com MySQL(R) e PostgreSQL(R) | pronto |
 | Cliente OLE DB nativo | recusado com motivo — a ponte `MSDASQL` cobre ([`docs/ODBC.md`](docs/ODBC.md) §6) |
-| Restaurar backup — a metade que falta de «Backup e restauração» | pendente |
+| Restaurar backup — a metade que faltava de «Backup e restauração» | pronto — dois modos, SHA-256 conferido antes de tocar o destino ([`docs/RESTAURACAO.md`](docs/RESTAURACAO.md)) |
 | Trava por tabela no lugar da trava única global | pendente |
 | Integração no FraseSQL como `engine = "phxsql"` | pendente |
-| Compactação, transações, modo exclusivo, TLS | pendente |
+| Transações `BEGIN`/`COMMIT`/`ROLLBACK`/`SAVEPOINT` | pronto — nada vai a disco antes do `COMMIT`, e a ordem de digitação fica intacta |
+| Compactação, modo exclusivo, TLS | pendente — a compactação esbarra na ordem de digitação (`docs/COMPARACAO.md`), e o TLS virou cifra própria do fio ([`docs/CIFRA-DO-FIO.md`](docs/CIFRA-DO-FIO.md)), que **não** é TLS |
 
 O roteiro completo, com as decisões tomadas e o que cada peça depende, está em
 [`docs/PLANO.md`](docs/PLANO.md); a revisão do que ainda falta, com o porquê de

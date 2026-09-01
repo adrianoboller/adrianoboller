@@ -74,6 +74,15 @@ USO:
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    // `--version` responde ANTES de tudo: sem ler `config.json`, sem conectar
+    // em servidor nenhum. Uma auditoria externa achou os tres binarios
+    // respondendo coisas diferentes -- «comando desconhecido», erro de
+    // config ausente e erro de conexao recusada --, e perguntar a versao de um
+    // binario e a PRIMEIRA linha de todo roteiro de operacao.
+    if args.iter().any(|a| a == "-V" || a == "--version") {
+        println!("{}", phxsql_core::versao_completa("phxsql"));
+        return ExitCode::SUCCESS;
+    }
     if args.is_empty() || args[0] == "-h" || args[0] == "--help" {
         diga!("{USO}");
         return ExitCode::SUCCESS;

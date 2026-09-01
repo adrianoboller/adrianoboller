@@ -191,6 +191,15 @@ fn servir_mcp(args: &[String], config: phxsql_server::Config) -> ExitCode {
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    // `--version` responde ANTES de tudo: sem ler `config.json`, sem conectar
+    // em servidor nenhum. Uma auditoria externa achou os tres binarios
+    // respondendo coisas diferentes -- «comando desconhecido», erro de
+    // config ausente e erro de conexao recusada --, e perguntar a versao de um
+    // binario e a PRIMEIRA linha de todo roteiro de operacao.
+    if args.iter().any(|a| a == "-V" || a == "--version") {
+        println!("{}", phxsql_core::versao_completa("phxsqld"));
+        return ExitCode::SUCCESS;
+    }
     if args.iter().any(|a| a == "-h" || a == "--help") {
         print!("{USO}");
         return ExitCode::SUCCESS;

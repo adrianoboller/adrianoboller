@@ -34,8 +34,9 @@ teste que o motivou ainda cai. [§8](#8-as-guardas-provar-que-a-prova-pega).
 
 ## 1. A cobertura de hoje, medida
 
-`cargo test --workspace`: **1.229 testes, 0 falhas** (1.228 `#[test]` mais um
-doc-test) — somado dos `test result:` de uma rodada, e não digitado. Por área,
+<!-- testes:total:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
+`cargo test --workspace`: **1.440 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
+<!-- testes:total:fim --> Por área,
 contando `#[test]` por arquivo e agrupando:
 
 <!-- cobertura:inicio -->

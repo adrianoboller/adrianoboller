@@ -10,6 +10,72 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
+## Não lançado — a auditoria externa, medida; e os números que ninguém digita mais
+
+Uma auditoria técnica externa da 0.18.0 chegou com 844 linhas. **Medida antes
+de virar plano**, que é a regra da casa para receita de fora — e ela se
+sustentou: as dez contradições de documentação que aponta são **todas
+verdadeiras**.
+
+### Corrigido
+
+- **Quatro documentos publicavam números digitados, e todos envelheceram.** O
+  README dizia **390 testes** no motor e **619** no projeto (são **1.440**); o
+  `docs/TESTES.md` dizia **1.229** — na mesma frase em que afirma «somado dos
+  `test result:` de uma rodada, e não digitado»; o `docs/REST.md` dizia **113
+  operações** na linha seguinte a «especificação digitada à mão envelhece na
+  primeira operação nova».
+
+  O número real é **120**, e ele aparecia como **108** no `PENDENCIAS.md` e
+  **121** no catálogo que a auditoria leu do binário: **quatro valores,
+  nenhum certo**. *Os documentos que pregam a regra eram os que a violavam.*
+
+- **O README marcava restauração e transações como pendentes** havia rodadas.
+  As duas estão prontas desde os pedidos 134 e a frente 37.
+
+- **`--version` não respondia em binário nenhum**, e cada um falhava de um
+  jeito: `phxsql` dizia «comando desconhecido», `phxsqld` tentava **ler o
+  `config.json`**, e `phxsqlcmd` tentava **conectar num servidor** — só para
+  dizer quem era. Perguntar a versão é a primeira linha de todo roteiro de
+  operação, e não pode exigir ambiente montado.
+
+### Adicionado
+
+- **`CAPABILITIES.json`**, gerado: versão, commit, árvore suja, branch, testes,
+  operações, crates, linhas e idiomas. É a recomendação da §15 da auditoria, e
+  ela está certa pelo motivo que esta casa já conhecia — enquanto cada
+  documento guarda a própria cópia do número, eles divergem.
+
+- O `numeros-do-projeto.py` passou a escrever **fora do dossiê**: README,
+  `docs/TESTES.md` e `docs/REST.md`. Ele já contava o que o `cargo test`
+  **reporta** (e não `grep #[test]`) e **aborta se a suíte falhar** — que é o
+  portão que a auditoria pediu; só faltava alcançar esses três.
+
+- **Commit embutido nos binários** por um `build.rs` de doze linhas, sem
+  dependência nenhuma, com a marca **`-sujo`** quando a árvore não corresponde
+  ao commit anunciado. Versão sem commit não identifica build: dois pacotes
+  «0.18.0» podem ser árvores diferentes.
+
+- Guarda `version_responde_sem_config_e_sem_servidor`, que roda o binário num
+  diretório **sem** `config.json` — que é exatamente onde o defeito aparecia.
+
+### Sabido
+
+- **O que a auditoria aponta e não é novidade:** a chave estrangeira é
+  declarativa e não aplicada. Já estava escrito no pedido 127 — «um teste trava
+  que *declarar não é aplicar*». É limitação conhecida e documentada.
+
+- **O que caducou entre a auditoria e hoje:** ela lista o DbLink como não
+  provado contra um PostgreSQL® real. Foi provado nesta mesma rodada, e a prova
+  achou três defeitos.
+
+- **O que fica para decisão do dono**, com o custo na mesa e sem começar por
+  conta própria: aplicar FK em todos os caminhos de escrita, trocar a trava
+  única global por travas por tabela, e TLS de verdade no lugar da cifra
+  própria do fio. São três frentes arquiteturais, e nenhuma cabe numa rodada.
+
+---
+
 ## Não lançado — o DbLink provado contra um PostgreSQL® de verdade
 
 ### Corrigido

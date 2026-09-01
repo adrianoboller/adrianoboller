@@ -62,3 +62,34 @@ pub const EXT_BIN: &str = "bin";
 pub const EXT_MEMO: &str = "memo";
 /// Espelho do `.reg`, quando ligado. Ver `volume::Volumes::com_espelho`.
 pub const EXT_BKP: &str = "bkp";
+
+/// A proveniencia deste build, numa linha -- versao, commit e alvo.
+///
+/// Existe porque `--version` precisava responder a mesma coisa nos tres
+/// binarios, e porque versao sem commit nao identifica build nenhum: dois
+/// pacotes com `0.18.0` no nome podem ser arvores diferentes.
+pub fn versao_completa(programa: &str) -> String {
+    let commit = env!("PHX_COMMIT");
+    let curto = if commit.is_empty() {
+        "desconhecido".to_string()
+    } else {
+        let mut c = commit[..commit.len().min(12)].to_string();
+        // Arvore suja e informacao de producao: o binario NAO corresponde ao
+        // commit que anuncia, e quem depura precisa saber disso.
+        if env!("PHX_SUJO") == "1" {
+            c.push_str("-sujo");
+        }
+        c
+    };
+    let alvo = env!("PHX_ALVO");
+    let alvo = if alvo.is_empty() { "" } else { alvo };
+    format!(
+        "{programa} {} ({curto}){}",
+        env!("CARGO_PKG_VERSION"),
+        if alvo.is_empty() {
+            String::new()
+        } else {
+            format!(" {alvo}")
+        }
+    )
+}

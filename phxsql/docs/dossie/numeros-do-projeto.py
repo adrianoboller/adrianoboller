@@ -34,10 +34,12 @@ Rodar `cargo test` demora; `--sem-testes` reaproveita o numero que ja esta no
 HTML em vez de medir de novo. Use so quando o que mudou nao foi codigo.
 """
 
+import json
 import pathlib
 import re
 import subprocess
 import sys
+import time
 
 RAIZ = pathlib.Path(__file__).resolve().parents[2]
 # Qual dossie reescrever. O nome mudou na 0.15.0 e pode mudar de novo:
@@ -196,6 +198,36 @@ def testes_que_passam() -> int:
     return total
 
 
+def operacoes() -> int:
+    """Quantas operacoes o protocolo tem, contadas na constante `OPERACOES`.
+
+    Este numero estava em QUATRO valores diferentes pela documentacao -- 108 no
+    `PENDENCIAS.md` (duas vezes), 113 no `REST.md`, 121 no que a auditoria
+    externa leu do catalogo vivo -- e nenhum era o certo. E o `REST.md` dizia,
+    na linha de cima do 113 digitado, que «especificacao digitada a mao
+    envelhece na primeira operacao nova». Envelheceu.
+    """
+    fonte = (RAIZ / "crates/phxsql-server/src/catalogo.rs").read_text(encoding="utf-8")
+    trecho = fonte[fonte.index("OPERACOES"):]
+    nomes = re.findall(r'^\s{8}nome:\s*"([a-z_0-9]+)"', trecho, re.M)
+    if len(nomes) != len(set(nomes)):
+        sys.exit("ha operacao repetida em OPERACOES")
+    if len(nomes) < 50:
+        sys.exit(f"so achei {len(nomes)} operacoes -- a forma da constante mudou?")
+    return len(nomes)
+
+
+def commit() -> dict:
+    """De onde este build veio. E a metade da recomendacao da auditoria que o
+    projeto nao tinha: versao sem commit nao identifica build nenhum."""
+    def git(*a):
+        r = subprocess.run(["git", *a], cwd=RAIZ, capture_output=True, text=True)
+        return r.stdout.strip() if r.returncode == 0 else ""
+    sujo = bool(git("status", "--porcelain"))
+    return {"commit": git("rev-parse", "HEAD"), "sujo": sujo,
+            "branch": git("rev-parse", "--abbrev-ref", "HEAD")}
+
+
 def idiomas() -> dict:
     """Quantos textos de tela passam pela fabrica de idiomas, e quantos nao.
 
@@ -239,6 +271,65 @@ def trocar(html: str, abre: str, fecha: str, novo: str, onde: str) -> str:
     return html[: i + len(abre)] + novo + html[j:]
 
 
+def escrever_fora_do_dossie(n: dict) -> None:
+    """Os numeros que viviam DIGITADOS no README, no TESTES.md e no REST.md.
+
+    A auditoria externa achou dez contradicoes de documentacao, e a receita que
+    ela recomendou e a que esta casa ja usa no dossie: um gerador escreve, e
+    ninguem digita. So faltava o gerador alcancar estes tres.
+    """
+    alvos = [
+        (RAIZ / "README.md", "readme:testes",
+         f"O motor de armazenamento está completo e testado: "
+         f"**{milhar(n['testes'])} testes** no projeto inteiro, com "
+         f"**{n['operacoes']} operações** no protocolo e **{n['deps']} "
+         f"dependências externas** (só a `std`) — o que faz o projeto compilar "
+         f"offline."),
+        (RAIZ / "docs/TESTES.md", "testes:total",
+         f"`cargo test --workspace`: **{milhar(n['testes'])} testes, 0 falhas** "
+         f"— somado dos `test result:` de uma rodada de verdade, e não digitado: "
+         f"quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele "
+         f"**aborta se a suíte falhar**."),
+        (RAIZ / "docs/REST.md", "rest:operacoes",
+         f"São **{n['operacoes']} operações**. Uma especificação OpenAPI digitada "
+         f"à mão envelhece na primeira operação nova e **passa a mentir com "
+         f"aparência de documento oficial** — que é pior do que não ter documento "
+         f"nenhum. (Este número também: ele já disse 113 aqui, 108 no "
+         f"`PENDENCIAS.md` e 121 no catálogo lido por uma auditoria externa. "
+         f"Hoje sai da constante `OPERACOES`.)"),
+    ]
+    for caminho, marca, texto in alvos:
+        doc = caminho.read_text(encoding="utf-8")
+        abre = f"<!-- {marca}:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->"
+        fecha = f"<!-- {marca}:fim -->"
+        i, j = doc.find(abre), doc.find(fecha)
+        if i < 0 or j < 0:
+            sys.exit(f"as marcas {marca} nao estao em {caminho.name}")
+        caminho.write_text(
+            doc[:i] + abre + "\n" + texto + "\n" + fecha + doc[j + len(fecha):],
+            encoding="utf-8",
+        )
+        print(f"  {caminho.relative_to(RAIZ)}: bloco {marca}")
+
+
+def escrever_capacidades(n: dict) -> None:
+    """`CAPABILITIES.json`: o que este build e, medido, num arquivo so.
+
+    E a recomendacao da secao 15 da auditoria externa, e ela esta certa pelo
+    motivo que esta casa ja conhece: enquanto cada documento guarda a propria
+    copia do numero, eles divergem -- e divergiram em quatro lugares.
+    """
+    d = dict(commit(), versao=n["versao"], testes=n["testes"],
+             operacoes=n["operacoes"], crates=n["crates"],
+             linhas_rust=n["rust"], linhas_doc=n["doc"],
+             dependencias_externas=n["deps"], idiomas=n["idiomas"],
+             medido_em=time.strftime("%Y-%m-%d %H:%M:%S"))
+    alvo = RAIZ / "CAPABILITIES.json"
+    alvo.write_text(json.dumps(d, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(f"  CAPABILITIES.json: {d['versao']} @ {d['commit'][:8]}"
+          + (" (arvore suja)" if d["sujo"] else ""))
+
+
 def main() -> None:
     so_medir = "--so-medir" in sys.argv
     html = DOSSIE.read_text(encoding="utf-8")
@@ -251,6 +342,7 @@ def main() -> None:
         "versao": versao(),
         "arquivos": len(ARQUIVOS_POR_TABELA),
         "deps": dependencias_externas(),
+        "operacoes": operacoes(),
     }
     n["testes"] = testes_do_html(html) if "--sem-testes" in sys.argv else testes_que_passam()
     idi = idiomas()
@@ -259,8 +351,11 @@ def main() -> None:
         print(f"  {chave:<9} {valor}")
     print(f"  idiomas   {idi['fabrica']} na fábrica, {idi['fora']} fora "
           f"({idi['pct']}%), catraca em {idi['teto']}")
+    n["idiomas"] = idi
     if so_medir:
         return
+    escrever_fora_do_dossie(n)
+    escrever_capacidades(n)
 
     painel = f"""
     <div><div class="v">{milhar(n['rust'])}</div><div class="r">linhas de Rust</div></div>
