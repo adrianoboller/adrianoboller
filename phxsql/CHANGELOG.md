@@ -10,6 +10,121 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
+## Não lançado — os três motores no mesmo trabalho, a um milhão de linhas
+
+A terceira bancada de comparação. Ela existe porque somar as duas que já havia
+daria **três colunas e nenhuma comparação**: medidas de dias diferentes
+carregam o ambiente junto, e parte da diferença deixa de ser do motor.
+
+### Corrigido
+
+- **A regra 1 da bancada estava sendo violada, e nenhum tempo denunciava.** A
+  `bancada/medir.py` grava `'2024-10-04'` em **toda** linha, enquanto o
+  `carga.rs` e a bancada do SQLite(R) gravam `20000 + (i % 400)`. Dado
+  diferente, do mesmo tamanho — invisível em qualquer medida de tempo. O que o
+  achou foi ter de conferir **três** motores em vez de dois.
+
+- **O rótulo do valor caía por cima do bigode** no gráfico, e o conserto dele
+  criou o defeito seguinte: empurrado para depois do bigode, o texto saía
+  **fora do painel** e `12,3 s (pico 17,1 s)` era publicado como `12`. Hoje ele
+  só vai para fora se couber; se não couber, entra na barra, alinhado à direita.
+
+- **Uma rodada fora da curva esmagava o painel inteiro.** Com o eixo ancorado
+  no máximo, os 22,97 s de uma rodada do `UPDATE` do MySQL(R) faziam as barras
+  de 277 ms e 1,03 s virarem lascas de 3 px. O eixo passou a ser a maior
+  **mediana**, com o bigode cortado por uma seta quando estoura — a excursão
+  continua dita, no rótulo, em vez de mandar no desenho.
+
+- **O contorno declarava vencedor com as faixas sobrepostas** — 164 ms contra
+  166 ms, faixas em 151–215 e 158–232. Marcar um dos dois é publicar ruído da
+  máquina como resultado. E a regra do vencedor estava em **duas cópias**:
+  consertei a do gráfico e a tabela do dossiê continuou marcando vencedor na
+  busca, com o documento se contradizendo a dois centímetros de distância. Hoje
+  ela mora num lugar só, e o dossiê a importa de lá.
+
+- **A nota do `UPDATE` dizia «trocar o valor de uma coluna»** quando os três
+  regravam a linha inteira, e a **página não dizia quantas operações eram** —
+  quem lia via «164 ms» sob o título «1.000.000 linhas» e entendia que achar
+  *uma* linha custava isso.
+
+- **Ponto decimal numa página em português.** O gráfico escrevia `9.93 s`, que
+  quem lê em português lê como nove mil e noventa e três.
+
+- **Três seções do `docs/DESEMPENHO.md` tinham o mesmo número** (`4.12`), com
+  **17 citações** espalhadas pelo código, pelos LEIA-ME, pelo CHANGELOG e pelos
+  sprints apontando para lá. Referência ambígua não avisa que é ambígua: leva à
+  seção errada e o leitor acredita. As duas últimas viraram **4.13** e **4.14**,
+  e as quatro citações que as queriam foram atrás.
+
+### Adicionado
+
+- **`bancada/comparacao/`** — PhxSql × MySQL(R) 8.0.46 × SQLite(R), três
+  rodadas, tabela de 1.000.000 de linhas, 20.000 operações nas fases pontuais,
+  os três **intercalados na mesma rodada**.
+
+  Medianas: inserir **9,93 s** contra 2,56 do SQLite(R) e 12,34 do MySQL(R);
+  buscar **164 ms** contra 166 e 2,48 s; atualizar **277 ms** contra 1,03 e
+  3,54 s; excluir **1,05 s** contra 574 ms e 4,06 s.
+
+- **A fase `conferir` do `carga.rs`**, que não mede tempo — mede se os motores
+  chegaram ao **mesmo estado**. Contagem, soma de `valor` e soma de `cadastro`,
+  em três marcos: depois de inserir, depois de atualizar e depois de excluir. O
+  marco do meio não é enfeite: `atualizar` e `excluir` mordem os mesmos 20.000
+  alvos, então no marco final o efeito do `atualizar` já sumiu junto com as
+  linhas excluídas.
+
+  Os totais conferem contra a **forma fechada** calculada à parte
+  (410.099.600.000 e 20.199.500.000), e não só entre si. Divergiu, a bancada
+  **recusa publicar**.
+
+- **A medição do piso do formato.** Os três não têm a mesma forma e não há como
+  dar: o SQLite(R) é biblioteca em processo, o `carga` também, e o MySQL(R) é
+  daemon que recebe **texto** por soquete — não existe MySQL(R) embutido nesta
+  máquina. Então mede-se: 20.000 instruções que não fazem nada (`DO 1;`) custam
+  **1,479 s**, que são **59,6% da barra de busca dele**.
+
+  Sem esse número teríamos publicado «15,16× mais rápido»; entre motores são
+  **6,12×**. Mais da metade da vitória era do formato.
+
+- **O sexto gerador do dossiê** (`docs/dossie/trio-de-motores.py`). Ele **não
+  redesenha nada** — insere o SVG que o `grafico.py` produz, porque duas
+  receitas para a mesma figura divergem —, e **recusa** se a figura for mais
+  velha que a medição: um gráfico desenhado da corrida anterior publica o
+  passado com data de hoje, e nada no desenho denuncia isso.
+
+- **O modo `--so-prosa`** do medidor, que refaz as ressalvas a partir dos
+  números já guardados, **sem remedir**. Sem ele, corrigir uma palavra do texto
+  que aparece na página custaria quinze minutos de bancada — e o atalho seria
+  editar o JSON à mão, que é como número gerado vira número digitado.
+
+### Mudado
+
+- `docs/DESEMPENHO.md` ganhou a **§13**, e a seção da bancada no dossiê passou a
+  se chamar «dez milhões de linhas, **e os três motores a um milhão**».
+
+### Sabido
+
+- **Onde perdemos, dito no mesmo tamanho de letra:** a inserção para o
+  SQLite(R) por **3,88×**, a exclusão por **1,83×**, e o disco — **253,6 MiB**
+  contra 57,3 e 104,0, que é **4,42×** e **2,44×**. É o preço do modelo de
+  arquivos separados, e no celular essa é a pergunta inteira. A busca
+  **empata**.
+
+- **A carga inicial não tem a mesma forma nos três**, e a do MySQL(R) é a mais
+  barata por linha (20 instruções de 50.000 contra um milhão de chamadas) — a
+  barra dele nessa fase é **otimista**, e isso está nas ressalvas do JSON e da
+  página.
+
+- **O SQLite(R) publicado é a variante `rowid`**, que casa com o InnoDB e é a
+  que **nos desfavorece**. A `2ind`, que estruturalmente se parece com o nosso,
+  é mais lenta em todas as quatro fases (1,04× a 1,31×) e corre na mesma rodada,
+  guardada no JSON.
+
+- **Durabilidade casada** — uma sincronização por fase nos três. Não é o regime
+  de quem grava pedido a pedido.
+
+---
+
 ## Não lançado — o PhxSql embutido: o motor como biblioteca, com ABI de C
 ## Não lançado — as transações
 

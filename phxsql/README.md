@@ -262,6 +262,7 @@ offline.
 | `sequencias` — o contador de cada tabela, ajustável pelo admin | pronto |
 | Espelho `.bkp`: segunda chance do `.reg` | pronto |
 | Bancada medida contra o MySQL(R), 10 milhões de registros | pronto |
+| Bancada dos **três motores** — PhxSql × MySQL(R) × SQLite(R), 1 milhão, intercalados na mesma rodada | pronto |
 | Replicação — `.log` v2 com imagem da linha, quatro modos e agendamento por origem | pronto |
 | Cluster com eleição e promoção automática, e `REDIRECIONA` na escrita | pronto |
 | Jobs de execução — operação nomeada no relógio, com o poder do usuário do job | pronto |
@@ -406,6 +407,8 @@ docs/
                    decisões dela, e por que não é um "mini servidor"
   EMPACOTAMENTO.md como os três zips de download são montados e conferidos
   MOBILE.md        medido contra o SQLite(R), e a forma que cabe num aparelho
+  DESEMPENHO.md    onde dói e o que já foi consertado, com número; a §13 traz os
+                   três motores a um milhão, e o piso que valia 59,6% de uma barra
   PLANO.md         leitura do rusqlite e do FraseSQL, e o roteiro do projeto
 exemplos/
   Config_exemplo_0N.json   isolado, source e réplica
