@@ -147,6 +147,45 @@ verdade.
 É a mesma família do teste que passa por engano: **o canal que resume também
 descarta a prova.**
 
+### Servidor falso responde o que mandarem — e por isso não acha nada
+
+Um cliente de protocolo provado contra um servidor de teste está provado no
+**fio**, e só. O servidor falso não valida sintaxe, não tem catálogo e não sabe
+que versão finge ser. Contra um PostgreSQL® real, três operações caíram de uma
+vez — duas delas **em silêncio**, devolvendo lista vazia sem erro nenhum.
+
+E o corolário sobre o oráculo: a conferência tem de ser contra o **cliente
+oficial do outro motor**, pelo mesmo transporte. Conferir contra o que o script
+espera prova que o script e o servidor concordam, que é uma coisa bem menor.
+
+### A premissa que trancava um item também envelhece
+
+O pedido ficou parcial rodadas a fio com um motivo escrito no documento: «não
+há PostgreSQL® instalado nesta máquina». Havia. Ninguém tinha olhado de novo
+porque o motivo estava *escrito*, e motivo escrito parece medido.
+
+*A lista do que falta também é palpite até alguém medir* — e isto vale para a
+razão de um item estar bloqueado tanto quanto para o item.
+
+### Prova que estoura diz menos que prova que reprova
+
+A primeira versão da prova morria com `StopIteration` quando a lista vinha
+vazia. Ela falhava — mas entregava um *traceback* em vez do veredito, e quem lê
+não fica sabendo **quantas** conferências caíram nem quais. Uma prova tem de
+degradar: registrar a falha, pular o que dependia dela **dizendo que pulou**, e
+chegar ao fim com o número.
+
+### Teste que só tolera uma das formas do sistema operacional falha pelo certo
+
+O servidor recusa o IP bloqueado **antes de ler o pedido**: escreve a recusa e
+fecha. O cliente do teste dava `unwrap` no `write`, então quando o fechamento
+ganhava a corrida — só com a máquina carregada — o teste caía **pelo
+comportamento que ele existe para afirmar**.
+
+Isolado passava sempre, o que é a assinatura desse erro: quem o vir vai chamar
+de flake e re-rodar. A pergunta certa não é «falha de novo?», é **«de quantas
+formas o sistema pode expressar o que estou afirmando?»**
+
 ### O que depende do sistema operacional se prova contra o sistema operacional
 
 Dez testes unitários passavam, e a prova por soquete mostrou que a queda da

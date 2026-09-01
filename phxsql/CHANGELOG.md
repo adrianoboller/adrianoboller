@@ -10,6 +10,68 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
+## Não lançado — o DbLink provado contra um PostgreSQL® de verdade
+
+### Corrigido
+
+- **`dblink_tabelas`, `dblink_estrutura` e `dblink_ler` estavam quebrados
+  contra PostgreSQL®** — e dois deles **em silêncio**. Uma causa só, no
+  chamador: `base` quer dizer o *database* no MySQL® (onde database **é** o
+  esquema) e o **esquema** no PostgreSQL®, onde a conexão já está dentro do
+  database. `base_escolhida` entregava o database nos dois.
+
+  Os sintomas: lista de tabelas **vazia sem erro**, colunas **vazias sem
+  erro**, e `relation "bancada_phx.clientes" does not exist`.
+
+  **O pior caso era o da tela**: ela lista os bancos com `dblink_bancos` — que
+  no PostgreSQL® devolve *bancos* — e manda o escolhido de volta no campo
+  `database`. A grade do DbLink com PostgreSQL® mostrava **nenhuma tabela**,
+  calada.
+
+- **Um teste podia reprovar pelo comportamento certo.** O
+  `ip_bloqueado_tem_a_proxima_conexao_recusada_e_soltar_devolve` falhou uma vez
+  num `--workspace` com `BrokenPipe`, e passou 8 de 8 isolado nos dois perfis.
+  Não é azar: o servidor recusa o IP bloqueado **antes de ler o pedido** —
+  escreve a recusa e fecha —, e o teste só tolerava uma das duas formas de o
+  sistema expressar isso. Com a máquina carregada, o fechamento ganha a corrida
+  do `write`. As asserções sobre a resposta continuam idênticas: ela já está no
+  soquete.
+
+### Adicionado
+
+- **`bancada/dblink/prova-postgres.py`** — as cinco operações contra um
+  PostgreSQL® **16.13 real**, com **19 conferências, cada uma contra o
+  `psql`**. O oráculo tinha de ser o cliente oficial do outro motor: conferir
+  contra o que o script espera provaria só que o script e o servidor
+  concordam.
+
+  Duas armadilhas que o `docs/DBLINK.md` já nomeava passaram de previstas a
+  **vistas acontecer**: o booleano chega como `t`/`f` e não `1`/`0`, e o
+  `reltuples` de tabela nunca analisada é **`-1`** da 14 em diante — o DbLink
+  publica `0`.
+
+- Os testes que travam a volta: `no_postgres_a_base_da_ligacao_nao_vira_esquema`
+  e, ao lado, **`no_mysql_nada_muda`** — o teste do comportamento *velho*, que é
+  o que mais importa numa mudança destas.
+
+### Mudado
+
+- O `docs/DBLINK.md` perdeu a seção «o que ainda falta provar» e ganhou a
+  tabela do que `database` quer dizer **por motor**.
+
+### Sabido
+
+- **A premissa que mantinha o pedido 86 parcial havia rodadas caducou**: o
+  documento dizia «não há PostgreSQL® instalado nesta máquina», e há. *A lista
+  do que falta também é palpite até alguém medir* — inclusive quando o palpite
+  é nosso.
+
+- **Fica de fora**: repetir contra outras versões. O `unnest(...) WITH
+  ORDINALITY` pede 9.4+ e o `reltuples` mudou na 14; o código trata os dois, e
+  o provado é a 16.13.
+
+---
+
 ## Não lançado — os três motores no mesmo trabalho, a um milhão de linhas
 
 A terceira bancada de comparação. Ela existe porque somar as duas que já havia
