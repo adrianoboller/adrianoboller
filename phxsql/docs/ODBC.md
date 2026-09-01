@@ -80,9 +80,20 @@ SQLGetDiagRec    SQLGetInfo       SQLSetConnectAttr SQLSetStmtAttr
   comprava funcionalidade nesta rodada. Consequencia pratica: acento chega
   como UTF-8 — aplicativo Windows que exija UCS-2 no buffer vai mostrar
   acento errado ate a rodada das `W`.
-* **Sem transacoes**, porque o servidor nao tem: `SQLGetInfo(SQL_TXN_CAPABLE)`
-  responde `SQL_TC_NONE` e desligar o autocommit e recusado com `HYC00` —
-  prometer rollback que nao existe seria pior.
+* **Sem transacoes NO DRIVER** — e o motivo mudou, entao a frase mudou junto.
+  `SQLGetInfo(SQL_TXN_CAPABLE)` responde `SQL_TC_NONE` e desligar o autocommit
+  e recusado com `HYC00`, como antes; o que ja **nao** e verdade e a
+  justificativa que estava escrita aqui, «porque o servidor nao tem».
+
+  O servidor tem: `BEGIN`/`COMMIT`/`ROLLBACK`/`SAVEPOINT` entraram e nada vai a
+  disco antes do `COMMIT`. Isso faz desta uma lacuna **do driver**, e nao um
+  limite do motor — o que e uma divida maior, nao menor, porque o driver esta
+  sub-relatando uma capacidade que existe. Uma auditoria externa achou esta
+  contradicao, e ela estava certa.
+
+  Continua valendo o principio: prometer `rollback` que o driver nao sabe
+  entregar seria pior que recusar. O que falta e ligar o `SQLEndTran` as
+  operacoes que ja existem no protocolo, e isso e uma rodada propria.
 * **Sem `SQLTables`/`SQLColumns`** (o catalogo): o servidor ja tem
   `sistabelas`/`siscolunas`, e ligar uma na outra e uma rodada propria.
   Ferramenta que exige catalogo para listar tabelas vai listar vazio; a

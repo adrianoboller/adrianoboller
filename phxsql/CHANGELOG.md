@@ -14,8 +14,9 @@ Os números são **medidos**, nunca estimados.
 
 Uma auditoria técnica externa da 0.18.0 chegou com 844 linhas. **Medida antes
 de virar plano**, que é a regra da casa para receita de fora — e ela se
-sustentou: as dez contradições de documentação que aponta são **todas
-verdadeiras**.
+sustentou em quase tudo: **nove das dez** contradições de documentação que
+aponta são verdadeiras. A falsa é a que diz que `docs/SQL.md` ainda alega
+ausência de transação: ele as documenta extensamente.
 
 ### Corrigido
 
