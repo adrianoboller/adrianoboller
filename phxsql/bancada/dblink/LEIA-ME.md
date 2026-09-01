@@ -6,7 +6,7 @@ protocolo, que respondem o que mandarem eles responder.
 | Arquivo | Contra o quê | O que prova |
 |---|---|---|
 | `prova-sincronia.py` | MySQL® 8.0.46 | a sincronia de tabelas primas: sentido, dono por linha, reentrância, e o limite documentado de a exclusão não viajar |
-| `prova-postgres.py` | PostgreSQL® 16.13 | o cliente e o dialeto: SCRAM, catálogo, tipos, chave, comentários e o dado — **19 conferências, cada uma contra o `psql`** |
+| `prova-postgres.py` | PostgreSQL® 16.13 | o cliente e o dialeto: SCRAM, catálogo, tipos, chave, comentários e o dado — **23 conferências, cada uma contra o `psql`** |
 | `prova-mysql.py` | MySQL® 8.0.46 | o cliente e o dialeto do outro lado: identidade, catálogo, forma da resposta, acento, NULO, estimativa e paginação — **47 conferências, cada uma contra o `mysql`** |
 
 ## Por que contra o cliente oficial, e não contra o que o script espera
@@ -90,6 +90,72 @@ conferindo o oráculo (`@@character_set_client` = `utf8mb4`) antes de fazer
 qualquer pergunta, e todo `mysql` que ela chama leva
 `--default-character-set=utf8mb4`. Sem isso a comparação é entre **transportes**
 e não entre motores.
+
+## A divergência de forma que a prova do MySQL® documentou, e que foi medida
+
+A prova do MySQL® fechou dizendo que **a forma da resposta de
+`dblink_estrutura` não é a mesma nos dois motores**, e que documentá-la era
+tudo o que ela podia fazer. Medir quem CONSUMIA a resposta mostrou que a
+divergência não era cosmética: era um defeito de tela inteiro.
+
+A tela lia **por posição**. Com os dois servidores no ar, a mesma tabela
+`clientes` pelas duas ligações:
+
+| o que a tela mostrava | MySQL® | PostgreSQL® |
+|---|---|---|
+| coluna «nulo» | `Null` (certo) | lia a posição 3, que ali é a **chave** — e como `'PRI' != 'YES'`, **toda** coluna aparecia como *obrigatória*, inclusive `cidade`, `saldo`, `ativo` e `cadastro`, que aceitam nulo |
+| coluna «chave» | `Key` (certo) | lia o **padrão** |
+| «extra» e «comentário» | certos | posições 6 e 8, **fora da linha** — a tela imprimia a palavra `undefined` |
+| índice: nome | `Key_name` (certo) | lia o **1/0** do único |
+| índice: único | `Non_unique` (certo) | lia o **nome da coluna**, que nunca é `"0"` — então a chave primária aparecia como *duplicado ok* |
+
+Dizer que uma coluna que aceita nulo é obrigatória é **mentira sobre o dado**,
+do mesmo naipe do «Blumenau» virando «BLUMENAU»: quem olha não tem como saber
+que o banco diz outra coisa.
+
+### O conserto, e por que ele não quebra o MySQL®
+
+O mesmo padrão que a casa já escreveu para o texto de tela: **resolve-se por
+CHAVE, nunca por posição.** Os nomes escolhidos são os do `SHOW FULL COLUMNS` e
+do `SHOW INDEX`, que são contrato publicado do MySQL®; o dialeto passa a
+apelidar o lado do PostgreSQL® com eles, no lugar dos `case` e `coalesce` que o
+servidor inventava — e que vinham **repetidos**, então nem por nome davam para
+ler.
+
+O ramo do MySQL® **não muda uma letra**, e a tela mostra exatamente o que
+mostrava: as posições que ela lia (0, 1, 3, 4, 5, 6, 8) são as mesmas que os
+nomes resolvem. O que só existe de um lado — `Extra`, `Privileges`, `Collation`
+— volta **vazio**, que é a verdade, e não `undefined`.
+
+Houve um valor que mudou, e vale dizer qual: a **polaridade do único**. O
+MySQL® publica `Non_unique`, que vale **0 quando o índice É único**; o ramo do
+PostgreSQL® publicava 1 no mesmo caso. Os dois agora falam `Non_unique` com a
+polaridade do nome. Quem lia a posição 2 da resposta do PostgreSQL® lê o valor
+oposto a partir de agora — e ninguém lia, porque a tela lia a posição 1.
+
+### Como a prova deixou isso passar, que é o achado sobre a prova
+
+A `prova-postgres.py` tinha 19 conferências e **nenhuma olhava os índices nem
+os nomes das colunas**. Foi por essa fresta que passou. Ela agora tem 23, e as
+quatro novas são exatamente as que teriam pego:
+
+| conferência nova | o que ela pega |
+|---|---|
+| os nomes que a tela pede estão na resposta | o apelido faltando |
+| quais colunas aceitam NULO, contra o `pg_attribute` | **a mentira da tela** |
+| índices e suas colunas, na ordem, contra o `pg_index` | a forma do bloco de índices |
+| os índices únicos, pela polaridade do `Non_unique` | a inversão silenciosa |
+
+Prova real, medida: tirando os apelidos — o estado de antes — **4 das 23
+reprovam**; invertendo só a polaridade de volta, **1**. Com o conserto, 23
+verdes. E os dois testes de unidade em `dialeto.rs`
+(`a_estrutura_responde_pelos_nomes_do_show_full_columns` e
+`o_unico_do_indice_tem_a_polaridade_do_nome_nos_dois`) travam os dois lados,
+inclusive afirmando que o SQL do MySQL® continua byte por byte o mesmo.
+
+**A lição, que é sobre a bancada e não sobre o DbLink:** uma prova mede o que
+ela olha. Ficou anotado que a forma divergia, e a anotação não vira conferência
+sozinha — *o que não se confere, não está provado*, mesmo estando escrito.
 
 ## Como refazer
 
@@ -190,13 +256,6 @@ qual guarda cobre o quê vale mais do que somar as duas contagens.
 
 ## O que esta prova NÃO prova
 
-- **A forma da resposta de `dblink_estrutura` não é a mesma nos dois motores.**
-  Do lado do MySQL® são as nove colunas do `SHOW FULL COLUMNS` (`Field`,
-  `Type`, `Collation`, `Null`, `Key`, `Default`, `Extra`, `Privileges`,
-  `Comment`); do lado do PostgreSQL® são seis, montadas para casar com uma
-  ordem que o `SHOW FULL COLUMNS` **não** tem. A prova confere a forma contra o
-  cabeçalho que o próprio `mysql` imprime, e por isso lê tudo **por nome** e
-  nunca por posição — mas ela não conserta a divergência, só a documenta.
 - **`caching_sha2_password` pelo caminho completo** continua fora: a prova usa
   `mysql_native_password`, que é o que a `docs/DBLINK.md` recomenda para a
   ponte. O caminho completo exige TLS ou a chave RSA, e nenhum dos dois cabe

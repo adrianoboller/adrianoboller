@@ -258,6 +258,82 @@ def principal():
                 next((l[5] for l in linhas if l[0] == "cidade"), "(sem a coluna)"),
                 psql("SELECT col_description('clientes'::regclass, 3)"))
 
+        # 4b. A FORMA da resposta, que e o contrato de quem a le.
+        #
+        # Esta prova tinha 19 conferencias e nenhuma olhava os indices nem os
+        # NOMES das colunas -- e foi por essa fresta que passou um defeito de
+        # tela inteiro. Lendo por posicao, a tela mostrava a CHAVE na coluna
+        # «nulo»: como 'PRI' != 'YES', TODA coluna do PostgreSQL(R) aparecia
+        # como obrigatoria, inclusive as que aceitam nulo. Mentira sobre o
+        # dado, do mesmo naipe do «Blumenau» virando «BLUMENAU».
+        #
+        # Daqui em diante le-se por NOME, como a tela passou a ler. E os nomes
+        # sao os do `SHOW FULL COLUMNS` / `SHOW INDEX`, que sao contrato
+        # publicado do MySQL(R): o dialeto apelida o lado do PostgreSQL(R) com
+        # eles para que UMA leitura sirva para os dois.
+        print("\n-- 4b. a FORMA da resposta: os nomes que a tela pede")
+        nomes_col = [x["nome"] for x in (est.get("colunas") or {}).get("colunas", [])]
+        pedidos = ["Field", "Type", "Null", "Key", "Default", "Comment"]
+        faltando = [n for n in pedidos if n not in nomes_col]
+        afirma("as colunas vem com os nomes que a tela pede",
+               not faltando, "faltam " + ",".join(faltando) if faltando else nomes_col)
+
+        def por_nome(bloco, linha, nome):
+            """Vazio quando a coluna nao existe -- que e a verdade.
+
+            Ler por posicao devolvia `undefined` aqui, e a tela imprimia a
+            palavra. Coluna ausente e coluna vazia sao a mesma resposta certa:
+            o motor nao tem o que dizer.
+            """
+            ns = [x["nome"] for x in bloco.get("colunas", [])]
+            if nome not in ns:
+                return ""
+            v = linha[ns.index(nome)]
+            return "" if v is None else str(v)
+
+        bl_col = est.get("colunas") or {"colunas": [], "linhas": []}
+        confere("quais colunas aceitam NULO (era isto que a tela mentia)",
+                ",".join(l[0] for l in bl_col["linhas"]
+                         if por_nome(bl_col, l, "Null") == "YES"),
+                ",".join(psql("SELECT a.attname FROM pg_attribute a"
+                              " WHERE a.attrelid='clientes'::regclass"
+                              " AND a.attnum > 0 AND NOT a.attisdropped"
+                              " AND NOT a.attnotnull"
+                              " ORDER BY a.attnum").splitlines()))
+
+        bl_idx = est.get("indices") or {"colunas": [], "linhas": []}
+        if not bl_idx.get("linhas"):
+            afirma("os indices de `clientes` vieram", False, "vazio")
+        else:
+            confere("indices e suas colunas, na ordem",
+                    ",".join(f'{por_nome(bl_idx, l, "Key_name")}.'
+                             f'{por_nome(bl_idx, l, "Column_name")}'
+                             for l in bl_idx["linhas"]),
+                    ",".join(psql(
+                        "SELECT ic.relname || '.' || a.attname FROM pg_index i"
+                        " JOIN pg_class c ON c.oid = i.indrelid"
+                        " JOIN pg_class ic ON ic.oid = i.indexrelid"
+                        " JOIN LATERAL unnest(i.indkey) WITH ORDINALITY"
+                        "   AS k(attnum, n) ON TRUE"
+                        " JOIN pg_attribute a ON a.attrelid = c.oid"
+                        "   AND a.attnum = k.attnum"
+                        " WHERE c.relname='clientes'"
+                        " ORDER BY ic.relname, k.n").splitlines()))
+            # A polaridade: `Non_unique` vale 0 quando o indice E unico, que e
+            # o que o NOME diz. Este ramo publicava 1 no mesmo caso -- ler
+            # indice unico como duplicado e afirmacao falsa sobre uma garantia
+            # do banco, e nenhuma conferencia olhava.
+            confere("os indices UNICOS, pela polaridade do `Non_unique`",
+                    ",".join(sorted({por_nome(bl_idx, l, "Key_name")
+                                     for l in bl_idx["linhas"]
+                                     if por_nome(bl_idx, l, "Non_unique") == "0"})),
+                    ",".join(sorted(psql(
+                        "SELECT ic.relname FROM pg_index i"
+                        " JOIN pg_class c ON c.oid = i.indrelid"
+                        " JOIN pg_class ic ON ic.oid = i.indexrelid"
+                        " WHERE c.relname='clientes' AND i.indisunique"
+                        " ORDER BY ic.relname").splitlines())))
+
         # 5. dblink_ler -- o dado, conferido pela soma.
         print("\n-- 5. dblink_ler: o dado, conferido pela SOMA")
         bruto = c.call({"op": "dblink_ler", "dblink": "pg", "tabela": "clientes",

@@ -140,6 +140,25 @@ Todas exigem `administrar`.
 | `dblink_ler` | o conteúdo de uma tabela, paginado |
 | `dblink_consultar` | uma instrução escrita à mão |
 
+### A resposta de `dblink_estrutura` se lê por NOME, nunca por posição
+
+Os dois motores respondem pelos nomes do `SHOW FULL COLUMNS` e do `SHOW INDEX`
+— `Field`, `Type`, `Null`, `Key`, `Default`, `Comment`; `Key_name`,
+`Column_name`, `Non_unique`, `Seq_in_index`. No MySQL® eles vêm do próprio
+servidor; no PostgreSQL® o dialeto apelida o catálogo com eles.
+
+**As contagens continuam diferentes de propósito, e é por isso que a leitura é
+por nome:** o `SHOW FULL COLUMNS` traz nove colunas e o `SHOW INDEX` quinze; o
+lado do PostgreSQL® traz seis e quatro, porque `Collation`, `Extra`,
+`Privileges` e `Cardinality` não existem lá. Quem lê por nome vê **vazio** para
+essas — que é a verdade. Quem lia por posição via a coluna errada.
+
+`Non_unique` tem a polaridade do nome nos dois: **0 quer dizer único.**
+
+Quem escrever cliente novo faz o mesmo: monta o mapa `nome → índice` a partir
+de `resultado.colunas.colunas[].nome` e pergunta por nome. Ler por posição
+funciona por sorte no MySQL® e mente no PostgreSQL®.
+
 `dblink_salvar` sem o campo `senha` **mantém** a que já estava. É o que faz a
 tela de edição funcionar: ela nunca recebe a senha, então não teria como
 devolvê-la, e sem essa regra mudar a porta apagaria a credencial.

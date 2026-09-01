@@ -8670,31 +8670,50 @@ async function estruturaDbl(tabela) {
   let e;
   try { e = await api("dblink_estrutura", { dblink: DBL.ligacao, database: DBL.database, tabela }); }
   catch (er) { return avisar(String(er), true); }
-  // O SHOW COLUMNS do MySQL(R) devolve as colunas na ordem Field, Type,
-  // Collation, Null, Key, Default, Extra, Privileges, Comment.
+  // Le por NOME, nunca por posicao -- e a mesma regra do texto de tela, e pelo
+  // mesmo motivo. Lendo por posicao, o PostgreSQL(R) mostrava a CHAVE na
+  // coluna «nulo» (e como 'PRI' != 'YES', toda coluna virava «obrigatorio»,
+  // mentindo sobre colunas que aceitam nulo) e as posicoes 6 e 8 caiam fora da
+  // linha, imprimindo a palavra `undefined`.
+  //
+  // Os nomes sao os do `SHOW FULL COLUMNS` e do `SHOW INDEX`, que sao contrato
+  // publicado do MySQL(R); o dialeto apelida o lado do PostgreSQL(R) com eles.
+  // O que so existe de um lado (`Extra`, `Privileges`, `Collation`) volta
+  // vazio -- que e a verdade, e nao `undefined`.
   const col = e.colunas, idx = e.indices;
-  const linha = (l, i) => l[i] === null ? "" : String(l[i]);
+  const porNome = r => {
+    const m = Object.create(null);
+    (r.colunas || []).forEach((c, i) => { if (!(c.nome in m)) m[c.nome] = i; });
+    return m;
+  };
+  const mCol = porNome(col), mIdx = porNome(idx);
+  const campo = (m, l, nome) => {
+    const i = m[nome];
+    return i === undefined || l[i] === null || l[i] === undefined ? "" : String(l[i]);
+  };
+  const c_ = (l, nome) => campo(mCol, l, nome);
+  const i_ = (l, nome) => campo(mIdx, l, nome);
   folha(`Estrutura de ${DBL.database}.${tabela}`,
     `colunas e índices como o ${DBL.ligacao} os reporta`,
     tabela([{t:"campo"},{t:"tipo"},{t:"nulo"},{t:"chave"},{t:"padrão"},{t:"extra"},{t:"comentário"}],
       col.linhas, l => `<tr>
-        <td class="dado"><b>${esc(linha(l,0))}</b></td>
-        <td class="dado">${esc(linha(l,1))}</td>
-        <td>${linha(l,3) === "YES" ? `<span class="pino nao">nulo ok</span>`
-                                   : `<span class="pino ok">obrigatório</span>`}</td>
-        <td>${linha(l,4) ? `<span class="pino ndx">${esc(linha(l,4))}</span>` : ""}</td>
-        <td class="dado">${esc(linha(l,5))}</td>
-        <td class="dado">${esc(linha(l,6))}</td>
-        <td class="dado">${esc(linha(l,8))}</td></tr>`) +
+        <td class="dado"><b>${esc(c_(l,"Field"))}</b></td>
+        <td class="dado">${esc(c_(l,"Type"))}</td>
+        <td>${c_(l,"Null") === "YES" ? `<span class="pino nao">nulo ok</span>`
+                                     : `<span class="pino ok">obrigatório</span>`}</td>
+        <td>${c_(l,"Key") ? `<span class="pino ndx">${esc(c_(l,"Key"))}</span>` : ""}</td>
+        <td class="dado">${esc(c_(l,"Default"))}</td>
+        <td class="dado">${esc(c_(l,"Extra"))}</td>
+        <td class="dado">${esc(c_(l,"Comment"))}</td></tr>`) +
     `<h4 style="margin:18px 0 6px">Índices</h4>` +
     tabela([{t:"nome"},{t:"único"},{t:"coluna"},{t:"ordem"},{t:"cardinalidade",cls:"num"}],
       idx.linhas, l => `<tr>
-        <td class="dado"><span class="pino ndx">${esc(linha(l,2))}</span></td>
-        <td>${linha(l,1) === "0" ? `<span class="pino ok">único</span>`
-                                 : `<span class="pino nao">duplicado ok</span>`}</td>
-        <td class="dado">${esc(linha(l,4))}</td>
-        <td class="dado">${esc(linha(l,5)) || "ASC"}</td>
-        <td class="num">${esc(linha(l,6))}</td></tr>`) +
+        <td class="dado"><span class="pino ndx">${esc(i_(l,"Key_name"))}</span></td>
+        <td>${i_(l,"Non_unique") === "0" ? `<span class="pino ok">único</span>`
+                                         : `<span class="pino nao">duplicado ok</span>`}</td>
+        <td class="dado">${esc(i_(l,"Column_name"))}</td>
+        <td class="dado">${esc(i_(l,"Collation")) || "ASC"}</td>
+        <td class="num">${esc(i_(l,"Cardinality"))}</td></tr>`) +
     `<div class="acoes">
        <button class="botao secundario" id="btVoltaEstr">← ${esc(tabela)}</button>
      </div>`);

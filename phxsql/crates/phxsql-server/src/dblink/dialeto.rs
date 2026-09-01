@@ -171,12 +171,32 @@ impl Motor {
         })
     }
 
-    /// As colunas de uma tabela.
+    /// As colunas de uma tabela, pelos NOMES do `SHOW FULL COLUMNS`.
     ///
-    /// Seis colunas, na mesma ordem nos dois: nome, tipo, aceita nulo, chave,
-    /// padrao, comentario. O `SHOW FULL COLUMNS` do MySQL(R) devolve nessa
-    /// ordem com nomes proprios; do lado do PostgreSQL(R) a consulta e montada
-    /// para casar.
+    /// # A forma nao casa por posicao, e nunca casou
+    ///
+    /// Esta doc dizia «seis colunas, na mesma ordem nos dois». Medido, e
+    /// falso: o `SHOW FULL COLUMNS` do MySQL(R) devolve NOVE (`Field`, `Type`,
+    /// `Collation`, `Null`, `Key`, `Default`, `Extra`, `Privileges`,
+    /// `Comment`) e o lado do PostgreSQL(R) devolvia seis. As duas primeiras
+    /// coincidiam por sorte; da terceira em diante nao.
+    ///
+    /// Quem pagou foi a tela, que lia por POSICAO: com PostgreSQL(R) ela
+    /// mostrava a chave na coluna «nulo» -- e como `'PRI' != 'YES'`, toda
+    /// coluna aparecia como **obrigatoria**, inclusive as que aceitam nulo.
+    /// Isso e mentira sobre o dado, do mesmo naipe do «Blumenau» virando
+    /// «BLUMENAU»: quem olha nao tem como saber que o banco diz outra coisa.
+    /// As posicoes 6 e 8 caiam fora da linha e viravam a palavra `undefined`
+    /// na tela.
+    ///
+    /// O conserto e o mesmo padrao que a casa ja escreveu para o texto de
+    /// tela: **resolve-se por CHAVE, nunca por posicao.** O ramo do MySQL(R)
+    /// nao muda uma letra -- os nomes sao os do proprio `SHOW FULL COLUMNS`;
+    /// o do PostgreSQL(R) ganha `AS` com esses mesmos nomes, no lugar dos
+    /// `case` e `coalesce` que o servidor inventava (e que vinham repetidos,
+    /// entao nem por nome davam para ler). `Extra` e `Privileges` nao existem
+    /// no PostgreSQL(R) e continuam ausentes: quem le por nome ve vazio, que
+    /// e a verdade.
     pub fn sql_colunas(self, base: &str, tabela: &str) -> Result<String> {
         let t = nome_seguro(tabela)?;
         Ok(match self {
@@ -188,15 +208,15 @@ impl Motor {
                     super::literal(base)?
                 };
                 format!(
-                    "SELECT a.attname, \
-                     format_type(a.atttypid, a.atttypmod), \
-                     CASE WHEN a.attnotnull THEN 'NO' ELSE 'YES' END, \
+                    "SELECT a.attname AS \"Field\", \
+                     format_type(a.atttypid, a.atttypmod) AS \"Type\", \
+                     CASE WHEN a.attnotnull THEN 'NO' ELSE 'YES' END AS \"Null\", \
                      CASE WHEN EXISTS ( \
                        SELECT 1 FROM pg_index i WHERE i.indrelid = c.oid \
                        AND i.indisprimary AND a.attnum = ANY(i.indkey)) \
-                     THEN 'PRI' ELSE '' END, \
-                     COALESCE(pg_get_expr(d.adbin, d.adrelid), ''), \
-                     COALESCE(col_description(c.oid, a.attnum), '') \
+                     THEN 'PRI' ELSE '' END AS \"Key\", \
+                     COALESCE(pg_get_expr(d.adbin, d.adrelid), '') AS \"Default\", \
+                     COALESCE(col_description(c.oid, a.attnum), '') AS \"Comment\" \
                      FROM pg_attribute a \
                      JOIN pg_class c ON c.oid = a.attrelid \
                      JOIN pg_namespace n ON n.oid = c.relnamespace \
@@ -210,10 +230,25 @@ impl Motor {
         })
     }
 
-    /// Os indices de uma tabela.
+    /// Os indices de uma tabela, pelos NOMES do `SHOW INDEX`.
     ///
-    /// Quatro colunas, na mesma ordem nos dois: nome do indice, coluna,
-    /// unico (`0`/`1`), ordem da coluna dentro do indice.
+    /// # Duas mentiras nesta doc, e a segunda era pior
+    ///
+    /// Dizia «quatro colunas, na mesma ordem nos dois». O `SHOW INDEX` do
+    /// MySQL(R) devolve QUINZE, comecando por `Table`, `Non_unique`,
+    /// `Key_name`, `Seq_in_index`, `Column_name` -- entao nem a ordem nem a
+    /// contagem casavam.
+    ///
+    /// A segunda e mais silenciosa: a POLARIDADE do «unico» era invertida. O
+    /// MySQL(R) publica `Non_unique`, que vale **0 quando o indice E unico**;
+    /// este ramo publicava 1 nesse caso. Quem lesse os dois pelo mesmo criterio
+    /// leria o oposto num deles -- e ler indice unico como duplicado (ou o
+    /// contrario) e afirmacao falsa sobre uma garantia do banco.
+    ///
+    /// Agora os dois falam `Non_unique`, com a polaridade do nome: 0 = unico.
+    /// `Collation` (a direcao, `A`/`D`) so existe no MySQL(R) e continua so
+    /// la; quem le por nome ve vazio, que e a verdade. O ramo do MySQL(R) nao
+    /// muda uma letra.
     pub fn sql_indices(self, base: &str, tabela: &str) -> Result<String> {
         let t = nome_seguro(tabela)?;
         Ok(match self {
@@ -225,8 +260,10 @@ impl Motor {
                     super::literal(base)?
                 };
                 format!(
-                    "SELECT ic.relname, a.attname, \
-                     CASE WHEN i.indisunique THEN 1 ELSE 0 END, k.n \
+                    "SELECT ic.relname AS \"Key_name\", \
+                     a.attname AS \"Column_name\", \
+                     CASE WHEN i.indisunique THEN 0 ELSE 1 END AS \"Non_unique\", \
+                     k.n AS \"Seq_in_index\" \
                      FROM pg_index i \
                      JOIN pg_class c ON c.oid = i.indrelid \
                      JOIN pg_class ic ON ic.oid = i.indexrelid \
@@ -520,6 +557,63 @@ mod testes {
         assert_eq!(
             Motor::MySql.sql_indices("", "clientes").unwrap(),
             "SHOW INDEX FROM `clientes`"
+        );
+    }
+
+    /// A forma da estrutura: os dois motores respondem pelos MESMOS NOMES.
+    ///
+    /// Medido antes de consertar, com os dois servidores no ar: o
+    /// `SHOW FULL COLUMNS` traz nove colunas e o ramo do PostgreSQL(R) trazia
+    /// seis, com nomes que o proprio servidor inventava -- `attname`,
+    /// `format_type`, `case`, `case`, `coalesce`, `coalesce`. Repetidos, entao
+    /// nem por nome davam para ler; e a tela lia por POSICAO.
+    ///
+    /// Prova real: tirar qualquer `AS` desta consulta derruba este teste.
+    #[test]
+    fn a_estrutura_responde_pelos_nomes_do_show_full_columns() {
+        let p = Motor::Postgres.sql_colunas("publico", "clientes").unwrap();
+        for nome in ["Field", "Type", "Null", "Key", "Default", "Comment"] {
+            assert!(
+                p.contains(&format!("AS \"{nome}\"")),
+                "o PostgreSQL nao apelida {nome}: {p}"
+            );
+        }
+        // O que o servidor inventava nao volta: nome repetido nao se le.
+        assert!(!p.contains("END, "), "coluna sem apelido sobrou: {p}");
+        // E o MySQL nao ganhou apelido nenhum: os nomes ja sao dele.
+        assert_eq!(
+            Motor::MySql.sql_colunas("crm", "clientes").unwrap(),
+            "SHOW FULL COLUMNS FROM `crm`.`clientes`"
+        );
+    }
+
+    /// A polaridade do «unico», que era invertida entre os dois e ninguem via.
+    ///
+    /// O MySQL(R) publica `Non_unique`: **0 quando o indice E unico**. Este
+    /// ramo publicava 1 no mesmo caso. Ler indice unico como duplicado e
+    /// afirmacao falsa sobre uma garantia do banco -- e o nome da coluna
+    /// dizia uma coisa enquanto o valor dizia a outra.
+    ///
+    /// Prova real: voltar para `THEN 1 ELSE 0` derruba este teste.
+    #[test]
+    fn o_unico_do_indice_tem_a_polaridade_do_nome_nos_dois() {
+        let p = Motor::Postgres.sql_indices("publico", "clientes").unwrap();
+        assert!(
+            p.contains("CASE WHEN i.indisunique THEN 0 ELSE 1 END AS \"Non_unique\""),
+            "a polaridade nao e a de `Non_unique` (0 = unico): {p}"
+        );
+        for nome in ["Key_name", "Column_name", "Non_unique", "Seq_in_index"] {
+            assert!(p.contains(&format!("AS \"{nome}\"")), "falta {nome}: {p}");
+        }
+        // `Collation` so existe no MySQL, e continua so la -- quem le por nome
+        // ve vazio, que e a verdade, e nao um valor inventado para preencher.
+        assert!(
+            !p.contains("Collation"),
+            "inventou a direcao no PostgreSQL: {p}"
+        );
+        assert_eq!(
+            Motor::MySql.sql_indices("crm", "clientes").unwrap(),
+            "SHOW INDEX FROM `crm`.`clientes`"
         );
     }
 
