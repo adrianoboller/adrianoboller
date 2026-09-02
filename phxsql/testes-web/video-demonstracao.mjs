@@ -31,7 +31,11 @@ import { subir, USUARIO, SENHA, TOKEN } from './servidor.mjs';
 
 const PORTA_DADOS = 6310;
 const PORTA_WEB = 6311;
-const SAIDA = process.env.SAIDA || '/tmp/phx-video';
+// Fora de `/tmp` de proposito: a primeira gravacao ficou la e o ZELADOR a
+// apagou -- ele limpa `/tmp` de hora em hora, e esta certo em limpar. Video
+// e entregavel, nao temporario.
+const SAIDA = process.env.SAIDA
+  || '/tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/video-phxsql';
 const BANCO = 'vendas';
 const TABELA = 'pedidos';
 const QUANTOS = 1000;
