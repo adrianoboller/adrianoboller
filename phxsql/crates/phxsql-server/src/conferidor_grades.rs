@@ -271,7 +271,7 @@ pub fn no_padrao() -> usize {
 /// que subcontava, e o proprio relatorio separa as duas formas.
 ///
 /// A partir daqui vale a regra de sempre: so desce.
-pub const TETO: usize = 43;
+pub const TETO: usize = 41;
 
 #[cfg(test)]
 mod testes {

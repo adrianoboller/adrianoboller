@@ -204,6 +204,19 @@ pub const FABRICA_TELA: &[TextoDeFabrica] = &[
     texto!("tela.col_caption", "rótulo de tela", "libellé d'écran", "screen label", "etichetta a schermo", "Bildschirmbezeichnung", "rótulo de pantalla"),
     texto!("tela.col_padrao", "valor das linhas que já existem", "valeur des lignes existantes", "value for the rows that already exist", "valore delle righe esistenti", "Wert für die vorhandenen Zeilen", "valor de las filas que ya existen"),
     texto!("tela.col_padrao_vazio", "vazio = nulo", "vide = nul", "empty = null", "vuoto = nullo", "leer = null", "vacío = nulo"),
+    // Estrutura de tabela externa (DbLink): os cabecalhos e os pinos da grade.
+    // O `col_padrao` que ja existia e da tela de acrescentar coluna ("valor
+    // das linhas que ja existem") e quer dizer outra coisa -- por isso aqui e
+    // `col_valor_padrao`, e nao um reaproveitamento que mentiria na traducao.
+    texto!("tela.col_nulo", "nulo", "nul", "null", "nullo", "Null", "nulo"),
+    texto!("tela.col_valor_padrao", "padrão", "défaut", "default", "predefinito", "Standard", "predeterminado"),
+    texto!("tela.col_extra", "extra", "extra", "extra", "extra", "Extra", "extra"),
+    texto!("tela.col_comentario", "comentário", "commentaire", "comment", "commento", "Kommentar", "comentario"),
+    texto!("tela.col_cardinalidade", "cardinalidade", "cardinalité", "cardinality", "cardinalità", "Kardinalität", "cardinalidad"),
+    texto!("tela.pino_nulo_ok", "nulo ok", "nul ok", "null ok", "nullo ok", "Null ok", "nulo ok"),
+    texto!("tela.pino_obrigatorio", "obrigatório", "obligatoire", "required", "obbligatorio", "Pflicht", "obligatorio"),
+    texto!("tela.pino_unico", "único", "unique", "unique", "unico", "eindeutig", "único"),
+    texto!("tela.pino_duplicado_ok", "duplicado ok", "doublon ok", "duplicates ok", "duplicato ok", "Duplikate ok", "duplicado ok"),
     texto!("tela.col_obrigatoria", "obrigatória (não aceita nulo)", "obligatoire (n'accepte pas nul)", "required (no nulls)", "obbligatoria (non accetta nullo)", "pflicht (kein null)", "obligatoria (no acepta nulo)"),
     texto!("tela.slots_reescritos", "slot(s) reescrito(s)", "emplacement(s) réécrit(s)", "slot(s) rewritten", "slot riscritti", "neu geschriebene Slots", "slot(s) reescrito(s)"),
     // O preco e a parte que ninguem pode descobrir depois de clicar.

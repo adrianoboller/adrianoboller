@@ -9012,42 +9012,84 @@ async function estruturaDbl(tabela) {
   // O que so existe de um lado (`Extra`, `Privileges`, `Collation`) volta
   // vazio -- que e a verdade, e nao `undefined`.
   const col = e.colunas, idx = e.indices;
-  const porNome = r => {
-    const m = Object.create(null);
-    (r.colunas || []).forEach((c, i) => { if (!(c.nome in m)) m[c.nome] = i; });
-    return m;
-  };
-  const mCol = porNome(col), mIdx = porNome(idx);
-  const campo = (m, l, nome) => {
-    const i = m[nome];
-    return i === undefined || l[i] === null || l[i] === undefined ? "" : String(l[i]);
-  };
-  const c_ = (l, nome) => campo(mCol, l, nome);
-  const i_ = (l, nome) => campo(mIdx, l, nome);
+
+  // A leitura por nome vai ate o fim: em vez de mapear nome->indice e ir
+  // buscar `l[i]` em cada celula, a linha CRUA (posicional) vira um objeto de
+  // campos nomeados uma vez so. A grade entao recebe dado com nome, que e o
+  // que ela sabe ordenar, filtrar e AGRUPAR -- agrupar por `Key` so existe
+  // porque a coluna tem nome.
+  const emObjetos = r => (r.linhas || []).map(l => {
+    const o = Object.create(null);
+    (r.colunas || []).forEach((c, i) => {
+      if (!(c.nome in o)) o[c.nome] = l[i] === null || l[i] === undefined ? "" : String(l[i]);
+    });
+    return o;
+  });
+  const linhasCol = emObjetos(col), linhasIdx = emObjetos(idx);
+
   folha(`Estrutura de ${DBL.database}.${tabela}`,
     `colunas e índices como o ${DBL.ligacao} os reporta`,
-    tabela([{t:"campo"},{t:"tipo"},{t:"nulo"},{t:"chave"},{t:"padrão"},{t:"extra"},{t:"comentário"}],
-      col.linhas, l => `<tr>
-        <td class="dado"><b>${esc(c_(l,"Field"))}</b></td>
-        <td class="dado">${esc(c_(l,"Type"))}</td>
-        <td>${c_(l,"Null") === "YES" ? `<span class="pino nao">nulo ok</span>`
-                                     : `<span class="pino ok">obrigatório</span>`}</td>
-        <td>${c_(l,"Key") ? `<span class="pino ndx">${esc(c_(l,"Key"))}</span>` : ""}</td>
-        <td class="dado">${esc(c_(l,"Default"))}</td>
-        <td class="dado">${esc(c_(l,"Extra"))}</td>
-        <td class="dado">${esc(c_(l,"Comment"))}</td></tr>`) +
-    `<h4 style="margin:18px 0 6px">Índices</h4>` +
-    tabela([{t:"nome"},{t:"único"},{t:"coluna"},{t:"ordem"},{t:"cardinalidade",cls:"num"}],
-      idx.linhas, l => `<tr>
-        <td class="dado"><span class="pino ndx">${esc(i_(l,"Key_name"))}</span></td>
-        <td>${i_(l,"Non_unique") === "0" ? `<span class="pino ok">único</span>`
-                                         : `<span class="pino nao">duplicado ok</span>`}</td>
-        <td class="dado">${esc(i_(l,"Column_name"))}</td>
-        <td class="dado">${esc(i_(l,"Collation")) || "ASC"}</td>
-        <td class="num">${esc(i_(l,"Cardinality"))}</td></tr>`) +
-    `<div class="acoes">
+    `<div id="gradeDblCol"></div>
+     <h4 style="margin:18px 0 6px">${esc(txt("tela.aba_indices", "Índices"))}</h4>
+     <div id="gradeDblIdx"></div>
+     <div class="acoes">
        <button class="botao secundario" id="btVoltaEstr">← ${esc(tabela)}</button>
      </div>`);
+
+  // Os nomes de campo sao os do `SHOW FULL COLUMNS` e do `SHOW INDEX`, que sao
+  // contrato publicado do MySQL(R); o dialeto apelida o lado do PostgreSQL(R)
+  // com eles.
+  //
+  // TRES CAMPOS SO EXISTEM DE UM LADO -- `Extra`, `Collation` e `Cardinality`
+  // vem do `SHOW` do MySQL(R) e nao tem equivalente no `pg_attribute`. O
+  // `emObjetos` acima nao inventa a chave que a origem nao mandou, e a grade
+  // desenha a celula vazia sozinha: o `esc()` dela trata `undefined` como nulo
+  // e devolve "", e o `fmt.numero` tambem. MEDIDO, e nao suposto -- eu vim
+  // conferir justamente achando que aqui reapareceria a palavra `undefined`
+  // que a leitura por nome tinha acabado de matar.
+  //
+  // Entao NAO ponha chave de enchimento no `emObjetos` para "garantir" isso:
+  // uma coluna vazia porque a origem nao a tem e a verdade; uma coluna vazia
+  // porque alguem a criou vazia e uma mentira com a mesma aparencia.
+  PhxGrid.criar("#gradeDblCol", {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    lembrar: "dblestr:" + DBL.ligacao + "." + DBL.database + "." + tabela,
+    nomeVista: "dblink-" + DBL.database + "-" + tabela + "-colunas",
+    colunas: [
+      { campo:"Field", titulo:txt("tela.col_campo","campo"), fixa:"esq",
+        formato:v => `<b>${esc(v)}</b>` },
+      { campo:"Type", titulo:txt("tela.col_tipo","tipo") },
+      { campo:"Null", titulo:txt("tela.col_nulo","nulo"),
+        formato:v => v === "YES" ? `<span class="pino nao">${esc(txt("tela.pino_nulo_ok","nulo ok"))}</span>`
+                                 : `<span class="pino ok">${esc(txt("tela.pino_obrigatorio","obrigatório"))}</span>` },
+      { campo:"Key", titulo:txt("tela.col_chave","chave"),
+        formato:v => v ? `<span class="pino ndx">${esc(v)}</span>` : "" },
+      { campo:"Default", titulo:txt("tela.col_valor_padrao","padrão") },
+      { campo:"Extra", titulo:txt("tela.col_extra","extra") },
+      { campo:"Comment", titulo:txt("tela.col_comentario","comentário") },
+    ],
+    dados: linhasCol,
+    pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+  });
+
+  PhxGrid.criar("#gradeDblIdx", {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    lembrar: "dblidx:" + DBL.ligacao + "." + DBL.database + "." + tabela,
+    nomeVista: "dblink-" + DBL.database + "-" + tabela + "-indices",
+    colunas: [
+      { campo:"Key_name", titulo:txt("tela.col_nome_curto","nome"), fixa:"esq",
+        formato:v => `<span class="pino ndx">${esc(v)}</span>` },
+      { campo:"Non_unique", titulo:txt("tela.col_unico","único"),
+        formato:v => v === "0" ? `<span class="pino ok">${esc(txt("tela.pino_unico","único"))}</span>`
+                               : `<span class="pino nao">${esc(txt("tela.pino_duplicado_ok","duplicado ok"))}</span>` },
+      { campo:"Column_name", titulo:txt("tela.col_coluna","coluna") },
+      { campo:"Collation", titulo:txt("tela.col_ordem","ordem"), formato:v => esc(v || "ASC") },
+      { campo:"Cardinality", titulo:txt("tela.col_cardinalidade","cardinalidade"), tipo:"numero" },
+    ],
+    dados: linhasIdx,
+    pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+  });
+
   $("#btVoltaEstr").onclick = () => { telaDbLink(DBL.ligacao); };
 }
 

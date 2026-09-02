@@ -1063,7 +1063,7 @@ pub const TETO_FRASE_REPETIDA: usize = 0;
 /// a nota do `RECEITAS` ja registrava: mover o titulo para a fabrica tira o
 /// literal da conta, e a queda e so a soma de ~85 cabecalhos que pararam de
 /// ser cravados.
-pub const TETO: usize = 1_667;
+pub const TETO: usize = 1_652;
 #[cfg(test)]
 mod testes {
     use std::collections::HashSet;
