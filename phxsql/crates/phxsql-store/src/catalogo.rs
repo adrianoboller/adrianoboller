@@ -20,6 +20,7 @@
 //! O nome qualificado de uma tabela e `schema.tabela`, ou so `tabela` quando
 //! ela esta na raiz. E o mesmo formato que o catalogo do FraseSQL espera.
 
+use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
 use phxsql_core::error::{PhxError, Result};
@@ -167,6 +168,39 @@ fn subdiretorios(diretorio: &Path) -> Result<Vec<String>> {
 /// A raiz que contem varios databases.
 pub struct Instancia {
     base: PathBuf,
+    /// O INVARIANTE DA TRAVA, escrito de um jeito que o compilador entende.
+    ///
+    /// # O que a trava global protege, e o que ela NAO protege
+    ///
+    /// O `servidor.rs` guarda esta `Instancia` num `Mutex`, e e facil ler isso
+    /// como «o mutex protege a instancia». **Nao protege**: ela tem UM campo,
+    /// um `PathBuf` imutavel, e todo metodo dela e `&self`. Nao ha estado
+    /// mutavel aqui dentro para proteger.
+    ///
+    /// O que o mutex e, de verdade, e uma FICHA DE EXCLUSAO: quem a tem mexe
+    /// no disco, e o estado protegido esta la fora, nos arquivos, alcancado
+    /// por um `Table` que se abre e se fecha a cada operacao. Isso e convencao,
+    /// e convencao que o compilador nao conhece e convencao que uma refacao
+    /// apaga em silencio.
+    ///
+    /// # A refacao que este campo mata na compilacao
+    ///
+    /// A troca «obvia» para destravar leitura seria `RwLock<Instancia>`:
+    /// leitores param de esperar leitores, e o compilador nao reclamaria de
+    /// nada -- porque todo metodo e `&self`, e `&self` e o que um guard de
+    /// LEITURA da. Dois escritores tomariam guard de leitura, abririam dois
+    /// `Table` sobre os mesmos arquivos, e a corrupcao apareceria em producao.
+    ///
+    /// `Mutex<T>` exige `T: Send`. `RwLock<T>` exige `T: Send + Sync`. Este
+    /// campo torna a `Instancia` **`!Sync`** sem custar um byte em execucao:
+    /// o `Mutex` continua compilando e o `RwLock` **para de compilar**, com a
+    /// mensagem apontando para ca.
+    ///
+    /// Nao e proibicao de mudar o desenho -- e exigencia de que quem mudar
+    /// **veja** este comentario primeiro, em vez de descobrir a razao dele por
+    /// um dado corrompido. Trocar a trava exige antes decidir o que passa a
+    /// proteger o disco, e ai este campo sai junto, de propósito e por escrito.
+    _so_com_a_ficha: PhantomData<std::cell::Cell<()>>,
 }
 
 impl Instancia {
@@ -174,7 +208,10 @@ impl Instancia {
     pub fn nova(base: impl AsRef<Path>) -> Result<Instancia> {
         let base = base.as_ref().to_path_buf();
         std::fs::create_dir_all(&base)?;
-        Ok(Instancia { base })
+        Ok(Instancia {
+            base,
+            _so_com_a_ficha: PhantomData,
+        })
     }
 
     pub fn base(&self) -> &Path {
@@ -1312,5 +1349,72 @@ mod testes_copia_entre_bancos {
         assert!(base.join("b").join("historico").is_dir());
 
         let _ = std::fs::remove_dir_all(&base);
+    }
+}
+
+#[cfg(test)]
+mod testes_do_invariante {
+    use super::*;
+
+    /// Pergunta ao compilador se um tipo e `Sync`, sem exigir que ele seja.
+    ///
+    /// Rust nao tem `assert!(!T: Sync)`. O truque e o de sempre: um metodo
+    /// INERENTE ganha do metodo do trait quando existe, entao `eh()` responde
+    /// `true` so quando a implementacao com o limite `Sync` se aplica.
+    struct Pergunta<T>(PhantomData<T>);
+
+    trait Talvez {
+        fn eh(&self) -> bool {
+            false
+        }
+    }
+    impl<T> Talvez for Pergunta<T> {}
+    impl<T: Sync> Pergunta<T> {
+        fn eh(&self) -> bool {
+            true
+        }
+    }
+
+    /// A `Instancia` e `Send` e **NAO** e `Sync` -- e isso e a trava por
+    /// construcao.
+    ///
+    /// # O que este teste impede, e por que ele parece estranho
+    ///
+    /// Ele nao confere comportamento: confere um LIMITE DE TIPO. Existe porque
+    /// a garantia que ele guarda nao esta em nenhuma linha executavel -- esta
+    /// no fato de `RwLock<T>` exigir `T: Sync` e `Mutex<T>` nao.
+    ///
+    /// **Prova real, nos dois sentidos:** tire o campo `_so_com_a_ficha` e este
+    /// teste reprova dizendo que a `Instancia` virou `Sync`; troque o
+    /// `Mutex<Instancia>` do `servidor.rs` por `RwLock<Instancia>` e o
+    /// PROJETO para de compilar, que e o sentido que mais importa.
+    #[test]
+    fn a_instancia_e_send_e_nao_e_sync() {
+        fn exige_send<T: Send>() {}
+        exige_send::<Instancia>();
+
+        assert!(
+            !Pergunta::<Instancia>(PhantomData).eh(),
+            "a Instancia virou Sync. Se isso foi de proposito, o `RwLock` passou \
+             a compilar -- e com ele dois escritores tomam guard de LEITURA e \
+             abrem dois Table sobre os mesmos arquivos. Leia o comentario do \
+             campo `_so_com_a_ficha` antes de tirar esta guarda."
+        );
+        // O controle: um tipo que E Sync tem de responder `true`, senao o
+        // truque estaria sempre dizendo `false` e este teste passaria por
+        // vacuidade -- que e o defeito que esta casa ja pegou tres vezes hoje.
+        assert!(
+            Pergunta::<PathBuf>(PhantomData).eh(),
+            "o medidor esta quebrado"
+        );
+
+        // E o custo, MEDIDO em vez de afirmado: o marcador e de tamanho zero,
+        // entao a `Instancia` continua sendo exatamente o `PathBuf` que ela
+        // sempre foi. Garantia que custasse memoria seria outra conversa.
+        assert_eq!(
+            std::mem::size_of::<Instancia>(),
+            std::mem::size_of::<PathBuf>(),
+            "o marcador da trava passou a ocupar espaco"
+        );
     }
 }

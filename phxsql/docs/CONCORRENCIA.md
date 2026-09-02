@@ -188,6 +188,41 @@ só a página é o que o caminho de digitação já faz. Enquanto isso não exis
 uma consulta ordenada por índice numa tabela grande **para o servidor inteiro**
 pelo tempo dela.
 
+### O invariante da trava, agora escrito para o COMPILADOR
+
+Segundo item da ordem recomendada, e ele vinha antes de qualquer refação: *«o
+invariante se escreve antes de mexer na trava».* Feito em 02/09.
+
+**O que a trava protege, e o que ela não protege.** O `servidor.rs` guarda a
+`Instancia` num `Mutex`, e é fácil ler isso como «o mutex protege a instância».
+Não protege: ela tem **um** campo, um `PathBuf` imutável, e **todo** método é
+`&self` — inclusive `criar_tabela`, `excluir_tabela` e `renomear_tabela`, que
+escrevem. Não há estado mutável ali dentro.
+
+O mutex é uma **ficha de exclusão**: quem a tem mexe no disco. O estado
+protegido está lá fora, nos arquivos. Isso é convenção — e convenção que o
+compilador não conhece é convenção que uma refação apaga em silêncio.
+
+**A enforcement custa uma linha e zero bytes.** `Mutex<T>` exige `T: Send`;
+`RwLock<T>` exige `T: Send + Sync`. Um campo marcador de tamanho zero
+(`PhantomData<Cell<()>>`) torna a `Instancia` **`!Sync`**: o `Mutex` continua
+compilando, e o `RwLock` **para de compilar**.
+
+Prova real, nos dois sentidos:
+
+| o que se faz | o que acontece |
+|---|---|
+| tirar o campo marcador | o teste reprova: *«a Instancia virou Sync…»* |
+| trocar por `RwLock<Instancia>` | **o projeto não compila** — `` `Cell<()>` cannot be shared between threads safely ``, *required for `RwLock<Instancia>` to implement `Sync`* |
+
+E o custo é **medido, não afirmado**: o teste confere que
+`size_of::<Instancia>() == size_of::<PathBuf>()`.
+
+**Isto não proíbe mudar o desenho** — exige que quem mudar **veja** o motivo
+primeiro, no comentário para onde o erro do compilador aponta, em vez de
+descobri-lo por um dado corrompido. Trocar a trava passa a exigir decidir antes
+o que protege o disco; aí o campo sai junto, de propósito e por escrito.
+
 ### O conserto: o caminho por índice PARA na página
 
 Feito em 02/09, e ele é o que a medição pediu. `Table::pagina_por_indice`
