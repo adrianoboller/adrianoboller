@@ -79,6 +79,7 @@ pub(crate) const OPS_ESCRITA: &[&str] = &[
     "excluir_tabela",
     "duplicar_tabela",
     "copiar_tabela",
+    "renomear_tabela",
     "ajustar_sequencia",
     "inserir_lote",
     // Reservar a tabela para carga e declarar intencao de gravar. Num servidor
@@ -6142,6 +6143,7 @@ impl Servidor {
             "excluir_tabela" => self.op_excluir_tabela(p),
             "duplicar_tabela" => self.op_duplicar_tabela(p, sessao),
             "copiar_tabela" => self.op_copiar_tabela(p, sessao),
+            "renomear_tabela" => self.op_renomear_tabela(p, sessao),
             "sistabelas" | "systables" => self.op_sistabelas(p, sessao),
             "siscolunas" | "syscolumns" => self.op_siscolunas(p, sessao),
             "dados_pessoais" | "lgpd" => self.op_dados_pessoais(p, sessao),
@@ -9405,6 +9407,44 @@ impl Servidor {
             ("origem", Json::texto_de(tabela)),
             ("destino", Json::texto_de(destino)),
             ("arquivos", Json::de_u64(copiados as u64)),
+        ]))
+    }
+
+    /// `RENAME TABLE` -- move a tabela para outro nome, no mesmo database.
+    ///
+    /// Exige direito nos DOIS nomes, e e a mesma armadilha que o
+    /// `duplicar_tabela` ao lado ja tinha pago: o portao geral confere o campo
+    /// `"tabela"`, que aqui e a ORIGEM. Sem a conferencia do destino, quem
+    /// pode mexer numa tabela nominalmente escreveria em qualquer nome, bastando
+    /// renomear a que ele pode para o nome que quiser.
+    ///
+    /// E pede `Criar` no destino e `Excluir` na origem porque e o que a
+    /// operacao FAZ: um nome nasce e o outro morre. Pedir so `Criar` deixaria
+    /// quem nao pode apagar uma tabela apaga-la, dando-lhe outro nome.
+    fn op_renomear_tabela(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let database = p.texto_ou("database", "");
+        let tabela = p.texto_ou("tabela", "");
+        let destino = p.texto_ou("destino", "");
+        if let Some(u) = &sessao.usuario {
+            if !u.pode_em(database, destino, Atividade::Criar) {
+                return Err(PhxError::Autorizacao(format!(
+                    "sem permissao de criar em {database}.{destino}"
+                )));
+            }
+            if !u.pode_em(database, tabela, Atividade::Excluir) {
+                return Err(PhxError::Autorizacao(format!(
+                    "sem permissao de excluir em {database}.{tabela}"
+                )));
+            }
+        }
+        let dados = self.travar_dados()?;
+        let db = dados.abrir_database(database)?;
+        let movidos = db.renomear_tabela(tabela, destino)?;
+        Ok(Json::objeto(vec![
+            ("database", Json::texto_de(database)),
+            ("origem", Json::texto_de(tabela)),
+            ("destino", Json::texto_de(destino)),
+            ("arquivos", Json::de_u64(movidos as u64)),
         ]))
     }
 

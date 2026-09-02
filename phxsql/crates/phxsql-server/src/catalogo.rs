@@ -939,6 +939,17 @@ pub const OPERACOES: &[Operacao] = &[
         ferramenta_mcp: false,
     },
     Operacao {
+        nome: "renomear_tabela",
+        apelidos: &[],
+        resumo: "Renomeia uma tabela no mesmo banco -- MOVE os arquivos, com o \
+                 dado e os rowids intactos. Recusa se alguma tabela declara \
+                 chave estrangeira para ela (a chave guarda a mãe pelo NOME), e \
+                 recusa nome que o catálogo leria como volume de outra tabela.",
+        parametros: &[DB, TAB, obr("destino", "string", "o novo nome")],
+        exemplo: r#"{"op":"renomear_tabela","database":"loja","tabela":"clientes","destino":"clientes_antigos"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
         nome: "copiar_tabela",
         apelidos: &[],
         resumo: "Copia uma tabela para OUTRO banco -- o «colar» da tela.",

@@ -365,6 +365,139 @@ impl Database {
         Ok(apagados)
     }
 
+    /// Renomeia uma tabela: MOVE os arquivos, nao copia.
+    ///
+    /// # Por que as NOVE extensoes, e nao as seis da copia
+    ///
+    /// A diferenca entre copiar e renomear e a mesma que ha entre copiar e
+    /// apagar: uma copia nao herda a lixeira da origem (decisao), mas um
+    /// renomear leva TUDO -- deixar o `.trash` e o `.reason` no nome velho
+    /// orfanaria o diario de exclusoes da propria tabela que se moveu.
+    ///
+    /// # Por que recusa quando alguem aponta para ela
+    ///
+    /// A chave estrangeira guarda a mae por NOME (`tabela_ref`), nao por
+    /// identificador. Renomear uma tabela referenciada deixaria a filha
+    /// apontando para um nome que nao existe mais -- e deixaria CALADO, que e
+    /// o estrago que a regra primordial desta casa existe para impedir. Entao
+    /// a recusa acontece antes de mover o primeiro arquivo, e ela DIZ qual
+    /// tabela aponta, em vez de mandar procurar.
+    ///
+    /// Repare a divergencia proposital com o `conferir_filhas` do `excluir`,
+    /// que pula a chave com `verificar: false`: la a pergunta e se a regra e
+    /// IMPOSTA, porque o que sai e uma linha. Aqui o que sai e o NOME, e uma
+    /// declaracao pendurada num nome inexistente e uma mentira sobre o modelo
+    /// mesmo quando ninguem a confere. Por isso aqui nao se pula nenhuma.
+    ///
+    /// # O meio do caminho
+    ///
+    /// Os arquivos sao colhidos ANTES de o primeiro se mover, e um erro no
+    /// meio desfaz os que ja foram: tabela partida entre dois nomes seria pior
+    /// que renomear nenhum, porque nenhum dos dois nomes abriria.
+    pub fn renomear_tabela(&self, origem: &str, destino: &str) -> Result<usize> {
+        let (schema_o, nome_o) = separar_qualificado(origem);
+        let (schema_d, nome_d) = separar_qualificado(destino);
+        let (schema_o, nome_o) = (schema_o.as_deref(), nome_o.as_str());
+        let (schema_d, nome_d) = (schema_d.as_deref(), nome_d.as_str());
+        validar_nome("tabela", nome_o)?;
+        validar_nome("tabela de destino", nome_d)?;
+        if !self.existe_tabela(schema_o, nome_o)? {
+            return Err(PhxError::NaoEncontrado(format!(
+                "tabela {origem} nao existe em {}",
+                self.nome()
+            )));
+        }
+        if self.existe_tabela(schema_d, nome_d)? {
+            return Err(PhxError::Duplicado(format!("a tabela {destino} ja existe")));
+        }
+        let dir_o = self.diretorio(schema_o)?;
+        let dir_d = self.diretorio(schema_d)?;
+        // Nome que o catalogo NAO leria de volta como ele mesmo faz a tabela
+        // sumir. `pedidos_2025.reg` e indistinguivel do volume 2025 de uma
+        // tabela `pedidos` -- o renomear funcionaria, moveria tudo, e a tabela
+        // nao apareceria mais na arvore. Achado pela propria prova deste
+        // renomear, que escolheu `pedidos_2025` sem pensar.
+        //
+        // A conferencia PERGUNTA em vez de reimplementar: quem sabe a regra do
+        // sufixo de volume e o `nome_da_tabela`, e uma segunda copia da regra
+        // divergiria dele calada.
+        if nome_da_tabela(&dir_d.join(format!("{nome_d}.{EXT_REG}"))).as_deref() != Some(nome_d) {
+            return Err(PhxError::Esquema(format!(
+                "{destino} nao serve como nome de tabela: o catalogo o leria \
+                 como um VOLUME de outra tabela (o sufixo `_` seguido so de \
+                 digitos, ou de letra da particao, e reservado para isso), e a \
+                 tabela renomeada sumiria da arvore. Escolha um nome que nao \
+                 termine assim"
+            )));
+        }
+        if let Some(filha) = self.quem_aponta_para(&dir_o, nome_o)? {
+            return Err(PhxError::Integridade(format!(
+                "a tabela {origem} nao pode ser renomeada: {filha} declara uma \
+                 chave estrangeira para ela, e a chave guarda a mae pelo NOME \
+                 -- renomear deixaria {filha} apontando para uma tabela que nao \
+                 existe. Tire a chave de {filha}, renomeie, e declare de novo"
+            )));
+        }
+
+        // Colher primeiro, mover depois: `read_dir` enquanto se renomeia dentro
+        // do mesmo diretorio pode enxergar o nome novo.
+        let mut mover: Vec<(std::path::PathBuf, std::path::PathBuf)> = Vec::new();
+        for ext in Self::EXTENSOES_TODAS {
+            for arq in std::fs::read_dir(&dir_o)?.flatten() {
+                let f = arq.file_name();
+                let f = f.to_string_lossy();
+                if pertence(&f, nome_o, ext) {
+                    // Preserva o sufixo do volume, como a copia faz:
+                    // `precos_002.reg` vira `novo_002.reg`.
+                    let novo = format!("{nome_d}{}", &f[nome_o.len()..]);
+                    mover.push((arq.path(), dir_d.join(novo)));
+                }
+            }
+        }
+        let mut feitos: Vec<(std::path::PathBuf, std::path::PathBuf)> = Vec::new();
+        for (de, para) in &mover {
+            if let Err(e) = std::fs::rename(de, para) {
+                // Desfaz na ordem inversa. Se o desfazer tambem falhar nao ha o
+                // que fazer alem de nao piorar -- o erro que sai e o primeiro,
+                // que e o que explica o que aconteceu.
+                for (d, p) in feitos.iter().rev() {
+                    let _ = std::fs::rename(p, d);
+                }
+                return Err(PhxError::Io(e));
+            }
+            feitos.push((de.clone(), para.clone()));
+        }
+        Ok(feitos.len())
+    }
+
+    /// A primeira tabela irma que declara chave estrangeira para `nome`.
+    ///
+    /// Devolve so a primeira: quem le a recusa precisa de UM nome para ir
+    /// consertar, e listar todas seria conselho que ninguem segue de uma vez.
+    fn quem_aponta_para(&self, dir: &std::path::Path, nome: &str) -> Result<Option<String>> {
+        for irma in tabelas_em(dir)? {
+            if irma == nome {
+                continue;
+            }
+            // Irma que nao abre nao tranca o renomear: o defeito dela e dela, e
+            // mistura-lo aqui faria uma tabela quebrada travar o banco inteiro.
+            // E o mesmo julgamento que o `conferir_filhas` ja faz.
+            let Ok(reg) = crate::reg::RegFile::abrir(dir, &irma) else {
+                continue;
+            };
+            for fk in reg.esquema().chaves_estrangeiras() {
+                let alvo = fk
+                    .tabela_ref
+                    .rsplit_once('.')
+                    .map_or(fk.tabela_ref.as_str(), |(_, t)| t);
+                if alvo == nome {
+                    return Ok(Some(irma));
+                }
+            }
+        }
+        Ok(None)
+    }
+
     /// Copia uma tabela inteira para outro nome, byte a byte.
     ///
     /// Copiar os arquivos preserva a ordem de digitacao e os rowids; reinserir
@@ -877,6 +1010,153 @@ mod testes_copia_entre_bancos {
             vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).primaria()],
         )
         .unwrap()
+    }
+
+    /// O renomear MOVE: o nome velho some, o novo abre, e o dado e o mesmo.
+    #[test]
+    fn renomear_move_a_tabela_inteira() {
+        let base = std::env::temp_dir().join(format!("phx-renom-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let cat = Instancia::nova(&base).unwrap();
+        let db = cat.criar_database("loja").unwrap();
+        let mut t = db.criar_tabela(None, esquema("pedidos")).unwrap();
+        for (i, txt) in ["um", "dois", "tres"].iter().enumerate() {
+            t.inserir(&[Value::Int(i as i64 + 1), Value::Str((*txt).into())])
+                .unwrap();
+        }
+        // Um furo, para provar que o renomear nao renumera nada: ele MOVE.
+        t.excluir(2).unwrap();
+        drop(t);
+
+        let movidos = db.renomear_tabela("pedidos", "pedidos_arquivados").unwrap();
+        let listadas = db.tabelas(None).unwrap();
+        assert!(
+            !db.existe_tabela(None, "pedidos").unwrap(),
+            "moveu {movidos} arquivo(s), mas `tabelas()` ainda lista: {listadas:?}"
+        );
+
+        // **NADA do nome velho pode sobrar.** Conferir so o `.reg` deixava
+        // este teste passar com o renomear movendo as SEIS extensoes da copia
+        // em vez das NOVE -- e o `.trash`, o `.reason` e o `.pag` ficariam
+        // para tras, orfaos, sob um nome que nao existe mais. Foi a prova real
+        // que pegou: reposto o defeito, o teste continuava verde.
+        let sobrou: Vec<String> = std::fs::read_dir(base.join("loja"))
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|f| f.starts_with("pedidos."))
+            .collect();
+        assert!(
+            sobrou.is_empty(),
+            "ficou para tras com o nome velho: {sobrou:?}"
+        );
+        assert!(db.existe_tabela(None, "pedidos_arquivados").unwrap());
+
+        // O dado e o mesmo, com o furo no mesmo lugar -- renomear nao toca na
+        // ordem de digitacao, que e pretrea.
+        let mut nova = db.abrir_tabela(None, "pedidos_arquivados").unwrap();
+        let rowids: Vec<u64> = nova.varrer().unwrap().into_iter().map(|(r, _)| r).collect();
+        assert_eq!(rowids, vec![1, 3], "o furo tinha de continuar onde estava");
+    }
+
+    /// **A recusa que este renomear existe para ter.**
+    ///
+    /// A chave estrangeira guarda a mae por NOME. Renomear a mae deixaria a
+    /// filha apontando para uma tabela que nao existe -- e calada. A recusa
+    /// acontece antes de mover o primeiro arquivo, e diz QUEM aponta.
+    #[test]
+    fn renomear_recusa_a_mae_que_tem_filha_apontando() {
+        use phxsql_core::schema::ForeignKey;
+        let base = std::env::temp_dir().join(format!("phx-renom-fk-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let cat = Instancia::nova(&base).unwrap();
+        let db = cat.criar_database("loja").unwrap();
+        db.criar_tabela(None, esquema("clientes")).unwrap();
+
+        let filha = Schema::new(
+            "pedidos",
+            vec![
+                Column::new("id", ColumnType::Int8).obrigatoria(),
+                Column::new("cliente", ColumnType::Int8),
+            ],
+            vec![
+                IndexDef::new("porId", vec![IndexColumn::asc(0)]).primaria(),
+                // A chave conferida exige indice dos DOIS lados -- sem este, o
+                // motor recusa a declaracao antes de este teste chegar ao ponto.
+                IndexDef::new("porCliente", vec![IndexColumn::asc(1)]),
+            ],
+        )
+        .unwrap()
+        .com_chaves_estrangeiras(vec![ForeignKey::new(
+            "fk_cliente",
+            vec![1],
+            "clientes",
+            vec!["id".into()],
+        )])
+        .unwrap();
+        db.criar_tabela(None, filha).unwrap();
+
+        let e = db
+            .renomear_tabela("clientes", "clientes_arquivados")
+            .unwrap_err();
+        let t = e.to_string();
+        assert!(
+            t.contains("pedidos"),
+            "a recusa tem de DIZER quem aponta: {t}"
+        );
+        // E nada se moveu: recusar depois de mover metade seria pior.
+        assert!(db.existe_tabela(None, "clientes").unwrap());
+        assert!(!db.existe_tabela(None, "clientes_arquivados").unwrap());
+    }
+
+    /// **O achado que a propria prova deste renomear trouxe.**
+    ///
+    /// A primeira versao do teste acima renomeava para `pedidos_2025`. Moveu
+    /// os oito arquivos, devolveu sucesso -- e a tabela SUMIU da arvore, porque
+    /// `nome_da_tabela` le `pedidos_2025.reg` como o volume 2025 de uma tabela
+    /// `pedidos`. Renomear com sucesso e perder a tabela e o pior par possivel:
+    /// nada avisa.
+    ///
+    /// A recusa nao reimplementa a regra do sufixo -- ela PERGUNTA ao
+    /// `nome_da_tabela`, que e quem a possui. Uma segunda copia da regra
+    /// divergiria dele calada, que e a mesma armadilha da receita de um numero
+    /// que envelhece.
+    #[test]
+    fn renomear_recusa_nome_que_o_catalogo_leria_como_volume() {
+        let base = std::env::temp_dir().join(format!("phx-renom-vol-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let cat = Instancia::nova(&base).unwrap();
+        let db = cat.criar_database("loja").unwrap();
+        db.criar_tabela(None, esquema("pedidos")).unwrap();
+
+        // `_` + so digitos: o sufixo de volume numerico.
+        let e = db.renomear_tabela("pedidos", "pedidos_2025").unwrap_err();
+        assert!(e.to_string().contains("VOLUME"), "{e}");
+        // A origem tem de continuar inteira: recusar depois de mover seria pior.
+        assert!(db.existe_tabela(None, "pedidos").unwrap());
+
+        // A regra e mais AMPLA do que parecia, e o teste corrigiu a suposicao:
+        // `pedidos_de_2025` tambem e recusado, porque o que conta e o ultimo
+        // trecho depois do `_` ser so digitos -- ele seria lido como o volume
+        // 2025 de uma tabela `pedidos_de`. Nao e so o nome curto que colide.
+        assert!(db.renomear_tabela("pedidos", "pedidos_de_2025").is_err());
+
+        // E o nome que de fato NAO e ambiguo passa -- senao a guarda recusaria
+        // tudo, que e o defeito irmao de uma guarda boa demais.
+        assert!(db.renomear_tabela("pedidos", "pedidos_de_janeiro").is_ok());
+    }
+
+    /// Destino ocupado recusa, e a origem fica intata.
+    #[test]
+    fn renomear_recusa_destino_que_ja_existe() {
+        let base = std::env::temp_dir().join(format!("phx-renom-ocup-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let cat = Instancia::nova(&base).unwrap();
+        let db = cat.criar_database("loja").unwrap();
+        db.criar_tabela(None, esquema("a")).unwrap();
+        db.criar_tabela(None, esquema("b")).unwrap();
+        assert!(db.renomear_tabela("a", "b").is_err());
+        assert!(db.existe_tabela(None, "a").unwrap(), "a origem sumiu");
     }
 
     /// A copia entre databases preserva rowid e ordem de digitacao -- que e o
