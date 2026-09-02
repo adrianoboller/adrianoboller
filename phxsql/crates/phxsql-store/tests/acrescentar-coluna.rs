@@ -383,12 +383,18 @@ fn a_chave_estrangeira_e_remapeada() {
     let esq = Schema::do_disco("clientes", colunas, vec![])
         .unwrap()
         .com_chaves_estrangeiras(vec![
+            // `.conferindo(false)` de proposito: desde que a chave declarada
+            // nasce conferida, uma chave para `cidades` -- tabela que este
+            // teste nunca cria -- pararia toda gravacao daqui. E o assunto
+            // deste teste e o REMAPEAMENTO da posicao da coluna quando entra
+            // uma nova, e nao a imposicao. Desligar aqui e escolha escrita.
             phxsql_core::schema::ForeignKey::new(
                 "fk_cidade",
                 vec![CIDADE],
                 "cidades",
                 vec!["nome".into()],
-            ),
+            )
+            .conferindo(false),
             // Nao e uma chave que alguem declararia na vida real -- e a que
             // prova o remapeamento, porque a posicao dela e a que anda.
             phxsql_core::schema::ForeignKey::new(
@@ -396,7 +402,8 @@ fn a_chave_estrangeira_e_remapeada() {
                 vec![rownum],
                 "ordens",
                 vec!["n".into()],
-            ),
+            )
+            .conferindo(false),
         ])
         .unwrap();
     let mut t = Table::criar(&d.0, esq).unwrap();

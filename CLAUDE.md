@@ -123,10 +123,28 @@ a filha, e na filha para responder «alguém aponta para esta linha?» ao apagar
 mãe. Sem um deles o motor **recusa** dizendo qual falta, em vez de esconder uma
 varredura dentro de um `excluir` que parece barato.
 
-A imposição segue o interruptor `verificar` da chave: a regra do dono diz o que
-a ação **é** (restringir, sempre), e o interruptor diz se aquela relação já é
-imposta. São perguntas diferentes, e misturá-las quebraria todo cliente que
-hoje apaga pais sem ter pedido nada.
+**Chave declarada NASCE conferida** — decisão do dono, tomada quando esta casa
+percebeu que as duas pétreas se contradiziam. A regra primordial diz «nunca»,
+sem condição, e uma chave que precisa ser *lembrada* de conferir não honra um
+«nunca»: o esquecimento vira o padrão.
+
+O interruptor `verificar` continua existindo, e agora só para o lado contrário
+— quem **quer** declarar sem conferir manda `"verificar": false`, e aí é
+escolha escrita em vez de omissão. O par de testes trava os dois sentidos:
+`a_chave_declarada_nasce_conferida` e `quem_pede_para_nao_conferir_continua_podendo`.
+
+E isto **não** quebra banco que já existe, por causa do formato: o `PSCH` v7
+grava o byte por chave, então o esquema em disco volta com o que foi gravado
+nele. Chave declarada antes desta decisão continua sem conferir até alguém
+ligar. Muda o que nasce daqui em diante — que é exatamente o alcance que
+«guarda nova entra pedida, não imposta» protege: ela protege o **dado que já
+está lá**, não o esquecimento de quem modela amanhã.
+
+Consequência medida ao ligar: declarar chave para uma tabela que ainda não
+existe é ordem legítima de modelagem, e a gravação passa a recusar. A recusa
+**diz isso** — nomeia a tabela que falta — em vez de vazar o erro cru «nenhum
+volume de clientes.reg em /tmp/…», que mandava procurar arquivo em vez de
+criar tabela.
 
 **A ordem de digitação é sagrada.** O `.reg` nunca reaproveita slot excluído.
 Qualquer proposta que quebre isso precisa ser discutida antes.
@@ -315,6 +333,14 @@ varredura, medição roteirizada — vai no mais leve que ainda faça direito. O
 orquestrador **diz qual escolheu e por quê**; modelo escolhido em silêncio vira
 custo que ninguém explica ou qualidade que ninguém entende.
 
+**No repositório vai o NÍVEL e o motivo, nunca o nome** — decisão do dono, e o
+motivo é um limite de plataforma e não uma preferência: esta sessão é proibida
+de pôr identificador de modelo em artefato versionado (commit, comentário,
+documento). Então o `docs/MODELOS.md` guarda «modelo forte porque é formato em
+disco» e «modelo leve porque é varredura roteirizada», e o nome fica só na
+conversa. O que a cláusula cobra — explicar custo e qualidade — sobrevive
+inteiro; o que se perde é a etiqueta, que era a parte que menos ensina.
+
 E a integração é papel dele por um motivo medido: numa rodada de seis frentes,
 **três defeitos só apareceram no encontro delas** — um teto de memória que uma
 frente pôs e a outra apagaria sem conflito nenhum aparecer, uma bateria que
@@ -383,6 +409,19 @@ não por teste unitário.
 Dona das catracas e do catálogo de guardas: cada guarda com o defeito que a
 motivou, provada periodicamente contra ele. Catraca **só desce**; quem traduz e
 esquece de baixar deixa a catraca frouxa, e catraca frouxa não segura nada.
+
+**E ela NUNCA sobe — nem quando a régua muda.** A regra nasceu de um caso real:
+o conferidor de grades contava só `<table>` cru, aprendeu a ver também a
+chamada ao ajudante `tabela(`, o número pulou de 24 para 43, e eu **subi** o
+teto com o motivo escrito ao lado. Decisão do dono: isso não se faz. Régua que
+passa a medir mais **aposenta** a catraca antiga e faz nascer uma nova, no
+número medido do dia, dizendo no próprio nome e no comentário que substitui a
+outra — é o que `TETO_TABELA_NA_MAO` registra.
+
+A série com o passado se perde de propósito, e o preço é o certo: perder a
+comparação é mais barato que deixar «mudei a régua» virar a porta pela qual se
+afrouxa uma catraca. Quem sobe um teto está pedindo confiança no motivo; quem
+aposenta e recomeça está pedindo confiança em nada.
 
 ### H — Documentação
 

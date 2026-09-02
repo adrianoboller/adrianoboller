@@ -251,37 +251,27 @@ pub fn no_padrao() -> usize {
         .sum()
 }
 
-/// A catraca. **So desce.**
+/// A catraca das tabelas montadas a mao. **So desce, e NUNCA sobe.**
 ///
-/// Converteu uma tela, baixe o TETO no mesmo commit: catraca frouxa nao
-/// segura nada. Se a tabela nao devia mesmo virar grade, ela entra em
-/// [`ISENTAS`] com o motivo -- e ai o TETO desce do mesmo jeito.
+/// Converteu uma tela, baixe o teto no mesmo commit: catraca frouxa nao segura
+/// nada. Se a tabela nao devia mesmo virar grade, ela entra em [`ISENTAS`] com
+/// o motivo -- e ai o teto desce do mesmo jeito.
 ///
-/// # A unica vez em que ele SOBE, e por que isto nao e afrouxar
+/// # Esta catraca SUBSTITUI outra, e e por isso que ela se chama assim
 ///
-/// Ele foi de 24 para 43 quando o conferidor aprendeu a enxergar a chamada ao
-/// ajudante `tabela(`. Nao entrou uma tabela nova na tela: entraram 19 que
-/// sempre estiveram la e que a medicao anterior nao via, porque contava so
-/// `<table>` cru e o ajudante monta a marcacao por dentro.
+/// Houve antes um teto que contava so `<table>` cru. Quando o conferidor
+/// aprendeu a enxergar tambem a chamada ao ajudante `tabela(`, o numero pulou
+/// de 24 para 43 -- e eu subi o teto, com o motivo escrito. **Decisao do dono:
+/// isso nao se faz.** Regua que passa a medir mais nao levanta a catraca
+/// existente; ela **aposenta** a antiga e nasce uma nova, no numero medido do
+/// dia, dizendo que substitui a outra.
 ///
-/// A diferenca entre subir a catraca e afrouxa-la e essa, e vale a pena
-/// deixar escrita: **afrouxar e mudar o TETO para o codigo caber; isto foi
-/// mudar o TETO porque a REGUA passou a medir o que ja existia.** Quem quiser
-/// conferir tem o numero dos dois lados -- 24 era o que se via com uma regua
-/// que subcontava, e o proprio relatorio separa as duas formas.
-///
-/// # De 40 para 24 -- e por que o numero repete o de antes, sem ser o mesmo
-///
-/// As 16 chamadas ao ajudante que sobravam em `index.html` (`abrirAdmin`
-/// tres vezes, `vEstrutura` e `verReplicacao` duas cada, e mais dez telas
-/// uma vez) viraram `PhxGrid.criar`. O TETO desceu de 40 para 24 -- o mesmo
-/// digito do 24 la de cima, e por acaso: aquele era o numero visto com a
-/// regua velha, que so contava `<table>` cru; este e o numero medido depois
-/// da conversao, com a regua que ja enxerga as duas formas. Nao confundir os
-/// dois -- um era subcontagem, o outro e progresso.
-///
-/// A partir daqui vale a regra de sempre: so desce.
-pub const TETO: usize = 24;
+/// E o que este nome registra: `TETO_TABELA_NA_MAO` conta as DUAS formas e
+/// substituiu o teto de `<table>` cru, que esta aposentado. A comparacao com o
+/// numero antigo se perde de proposito -- perder a serie e mais barato que
+/// deixar «mudei a regua» virar porta para afrouxar, que foi exatamente o
+/// risco que eu corri.
+pub const TETO_TABELA_NA_MAO: usize = 24;
 
 #[cfg(test)]
 mod testes {
@@ -291,8 +281,8 @@ mod testes {
     fn nenhuma_tabela_nova_fora_do_padrao() {
         let na_mao = sem_motivo();
         assert!(
-            na_mao.len() <= TETO,
-            "{} tabelas montadas na mao, e a catraca esta em {TETO}.\n\
+            na_mao.len() <= TETO_TABELA_NA_MAO,
+            "{} tabelas montadas na mao, e a catraca esta em {TETO_TABELA_NA_MAO}.\n\
              Tela nova usa `PhxGrid.criar` -- e se esta tabela nao e grade \
              (formulario, cartao de diagrama, legenda), ponha em ISENTAS com \
              o motivo.\nRelatorio: cargo run --example grades-fora-do-padrao \
@@ -301,8 +291,8 @@ mod testes {
             na_mao.iter().take(5).collect::<Vec<_>>()
         );
         assert!(
-            na_mao.len() >= TETO.saturating_sub(10),
-            "sobraram {} e a catraca esta em {TETO}: baixe a catraca no mesmo \
+            na_mao.len() >= TETO_TABELA_NA_MAO.saturating_sub(10),
+            "sobraram {} e a catraca esta em {TETO_TABELA_NA_MAO}: baixe a catraca no mesmo \
              commit da conversao, senao ela para de segurar",
             na_mao.len()
         );

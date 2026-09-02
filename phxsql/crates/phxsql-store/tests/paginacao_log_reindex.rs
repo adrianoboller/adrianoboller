@@ -271,7 +271,13 @@ fn chave_estrangeira_sobrevive_ao_fecha_e_abre() {
             vec!["nome".to_string()],
         )
         .ao_excluir(AcaoRi::Restringir)
-        .ao_alterar(AcaoRi::Cascata)])
+        .ao_alterar(AcaoRi::Cascata)
+        // Desligado de proposito: o assunto aqui e a chave SOBREVIVER ao
+        // fecha-e-abre, e `geografia.cidades` nunca e criada neste teste --
+        // desde que a chave declarada nasce conferida, a gravacao pararia por
+        // um motivo que nao e o que se quer provar. O byte do `verificar`
+        // continua atravessando a serializacao, so que valendo `false`.
+        .conferindo(false)])
         .unwrap();
 
     {

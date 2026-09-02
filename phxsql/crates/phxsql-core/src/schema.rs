@@ -164,7 +164,7 @@ impl ForeignKey {
             colunas_ref,
             ao_excluir: AcaoRi::Restringir,
             ao_alterar: AcaoRi::Restringir,
-            verificar: false,
+            verificar: true,
         }
     }
 

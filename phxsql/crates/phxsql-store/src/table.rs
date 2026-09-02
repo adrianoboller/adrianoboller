@@ -568,7 +568,25 @@ impl Table {
             //
             // O erro cru diria "indice corrompido", que manda o leitor
             // reparar um arquivo que esta sao. Este diz o que houve.
-            let mut mae = Table::abrir(&self.diretorio, nome_simples(&fk.tabela_ref))?;
+            // A MAE PODE NEM EXISTIR, e desde que a chave nasce conferida isso
+            // deixou de ser teorico: declarar `pedidos -> clientes` antes de
+            // `clientes` existir e ordem legitima de modelagem, e a recusa da
+            // gravacao tem de DIZER isso. O erro cru vazava caminho interno --
+            // «nenhum volume de clientes.reg em /tmp/.../b» --, que manda o
+            // leitor procurar arquivo em vez de criar a tabela.
+            let mut mae =
+                Table::abrir(&self.diretorio, nome_simples(&fk.tabela_ref)).map_err(|e| {
+                    if matches!(e, PhxError::NaoEncontrado(_)) {
+                        PhxError::Integridade(format!(
+                            "a chave {:?} confere contra a tabela {}, que nao existe neste \
+                             banco -- crie-a antes de gravar aqui, ou \
+                             desligue `verificar` na chave",
+                            fk.nome, fk.tabela_ref
+                        ))
+                    } else {
+                        e
+                    }
+                })?;
             let indice = indice_que_cobre(mae.esquema(), &fk.colunas_ref).ok_or_else(|| {
                 PhxError::Esquema(format!(
                     "a chave {:?} confere contra {}({}), e essa tabela nao tem \

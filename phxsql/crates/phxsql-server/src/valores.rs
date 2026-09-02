@@ -223,9 +223,18 @@ pub(crate) fn chave_estrangeira_de_json(
         v => v,
     };
 
-    // `verificar` ausente e FALSO, e essa e a diferenca entre declarar e impor.
-    // Toda tabela ja criada omitiu o campo -- porque ele nao existia --, entao
-    // ausente TEM de significar "como antes". Guarda nova entra pedida.
+    // `verificar` ausente e VERDADEIRO desde a decisao do dono: «padrao para
+    // chave NOVA». A regra primordial diz «nunca se mata o pai que tem filhos»
+    // sem condicao, e uma chave que precisa ser LEMBRADA de conferir nao honra
+    // um «nunca».
+    //
+    // Isto NAO quebra banco que ja existe, e o motivo e de formato: o `PSCH`
+    // v7 grava o byte por chave, entao o esquema em disco volta com o que foi
+    // gravado nele -- chave declarada antes desta decisao continua sem
+    // conferir ate alguem ligar. O que muda e o que nasce daqui em diante.
+    //
+    // Quem QUER declarar sem conferir continua podendo, mandando
+    // `"verificar": false` -- e ai e escolha escrita, e nao esquecimento.
     Ok(ForeignKey::new(nome, posicoes, tabela_ref, colunas_ref)
         .ao_excluir(acao_ri_de_texto(
             f.texto_ou("ao_excluir", ""),
@@ -235,7 +244,7 @@ pub(crate) fn chave_estrangeira_de_json(
             f.texto_ou("ao_alterar", ""),
             Lado::AoAlterar,
         )?)
-        .conferindo(f.booleano_ou("verificar", false)))
+        .conferindo(f.booleano_ou("verificar", true)))
 }
 
 /// Qual das duas acoes esta sendo lida -- e elas NAO aceitam as mesmas coisas.

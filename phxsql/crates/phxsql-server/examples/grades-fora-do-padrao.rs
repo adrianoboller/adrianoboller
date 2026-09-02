@@ -31,7 +31,7 @@ fn main() {
     println!("  na mao, pelo ajudante .. {ajud}  (chamadas a `tabela(`)");
     println!("  na mao, soma ........... {}", na_mao.len());
     println!("  na mao, isenta ......... {isentas} (com motivo registrado)");
-    println!("  catraca (TETO) ......... {}", cg::TETO);
+    println!("  catraca (so desce) ..... {}", cg::TETO_TABELA_NA_MAO);
 
     if ver_isentas {
         println!("\nISENTAS — quem monta tabela na mao com motivo\n");

@@ -19691,24 +19691,50 @@ mod testes_chave_estrangeira {
     /// desenha -- mas NENHUMA gravacao a consulta hoje. Uma linha filha
     /// apontando para um pai que nao existe entra sem reclamacao.
     ///
-    /// O teste trava o comportamento REAL, e nao o desejado: no dia em que a
-    /// imposicao entrar, ele falha e obriga quem a escreveu a atualizar o
-    /// MANUAL junto. Sem ele, alguem le "chave estrangeira" no `criar_tabela`
-    /// e supoe uma garantia que nao existe -- que e como a lista de pendencias
-    /// chegou a dizer "pronto" para isto.
+    /// O teste trava o comportamento REAL, e ele MUDOU por decisao do dono:
+    /// «padrao para chave NOVA». Antes ele afirmava que declarar nao impunha
+    /// nada; hoje afirma o contrario, e e o mesmo teste guardando o mesmo
+    /// lugar -- o que ele nunca deixou de fazer e impedir que alguem leia
+    /// `chaves_estrangeiras` no `criar_tabela` e suponha a garantia errada,
+    /// em qualquer dos dois sentidos.
+    ///
+    /// A regra primordial diz «nunca se mata o pai que tem filhos», sem
+    /// condicao. Uma chave que precisa ser LEMBRADA de conferir nao honra um
+    /// «nunca» -- e por isso o padrao virou conferir.
+    ///
+    /// Banco que ja existe NAO muda: o `PSCH` v7 grava o byte por chave, e o
+    /// esquema em disco volta com o que foi gravado nele.
     #[test]
-    fn a_chave_e_declarada_mas_ainda_nao_e_imposta_na_gravacao() {
-        let s = servidor(&dir_temp("nao-impoe"));
+    fn a_chave_declarada_nasce_conferida() {
+        let s = servidor(&dir_temp("nasce-conferida"));
         com_fk(&s, "").unwrap();
         // `clientes` nem existe, e o pai 999 muito menos.
+        let e = pede(
+            &s,
+            r#""op":"inserir","database":"b","tabela":"pedidos",
+               "linha":{"id":1,"cliente_id":999}"#,
+        )
+        .expect_err(
+            "o orfao entrou numa chave declarada sem dizer `verificar`: o padrao \
+             voltou a ser NAO conferir, e a regra primordial deixou de valer para \
+             quem nao lembrou de pedir",
+        );
+        assert_eq!(e.codigo(), 3006, "erro deveria ser INTEGRIDADE: {e}");
+    }
+
+    /// E o caminho de quem ESCOLHE nao conferir continua existindo -- escrito,
+    /// e nao por esquecimento. Sem este teste, a decisao do dono teria tirado
+    /// a opcao junto com o padrao.
+    #[test]
+    fn quem_pede_para_nao_conferir_continua_podendo() {
+        let s = servidor(&dir_temp("opt-out"));
+        com_fk(&s, r#","verificar":false"#).unwrap();
         pede(
             &s,
             r#""op":"inserir","database":"b","tabela":"pedidos",
                "linha":{"id":1,"cliente_id":999}"#,
         )
-        .expect(
-            "a insercao passou a ser recusada: a integridade referencial entrou.              Atualize o MANUAL e o docs/PENDENCIAS, que dizem que ela NAO e imposta",
-        );
+        .expect("com `verificar:false` explicito o orfao tem de entrar como antes");
     }
 
     /// A garantia NOVA: quem pede `verificar` ganha a recusa do orfao.
@@ -19992,12 +20018,16 @@ mod testes_chave_estrangeira {
     fn excluir_fk_tira_a_declaracao_e_nada_mais() {
         let s = servidor(&dir_temp("tira"));
         com_fk(&s, "").unwrap();
+        // Com a chave declarada -- e conferida, que e o padrao -- a gravacao
+        // para, porque `clientes` nao existe. Este passo era um `unwrap()` que
+        // provava nada; hoje ele e a METADE DE ANTES da prova, e sem ele o
+        // teste nao distingue «a remocao funcionou» de «nunca houve nada».
         pede(
             &s,
             r#""op":"inserir","database":"b","tabela":"pedidos",
                "linha":{"id":1,"cliente_id":2}"#,
         )
-        .unwrap();
+        .expect_err("a chave declarada tinha de estar conferindo antes de ser tirada");
 
         let e = pede(
             &s,
@@ -20017,6 +20047,13 @@ mod testes_chave_estrangeira {
             .and_then(Json::lista)
             .unwrap()
             .is_empty());
+        // E a metade DE DEPOIS: sem a declaracao, a mesma gravacao entra.
+        pede(
+            &s,
+            r#""op":"inserir","database":"b","tabela":"pedidos",
+               "linha":{"id":1,"cliente_id":2}"#,
+        )
+        .expect("tirada a chave, a gravacao tinha de voltar a entrar");
         let l = pede(
             &s,
             r#""op":"ler","database":"b","tabela":"pedidos","rowid":1"#,
