@@ -4702,16 +4702,7 @@ impl Servidor {
                 } else {
                     crate::rest::status_do_erro(e)
                 },
-                vec![
-                    ("ok", Json::Bool(false)),
-                    ("op", Json::texto_de(&op_atendida)),
-                    ("erro", Json::texto_de(self.texto_do_erro(e))),
-                    ("codigo", Json::de_u64(e.codigo() as u64)),
-                    ("nome", Json::texto_de(e.nome())),
-                    ("classe", Json::texto_de(e.classe())),
-                    ("repetir", Json::Bool(e.adianta_repetir())),
-                    ("ms", Json::de_u64(ms)),
-                ],
+                self.campos_do_erro(&op_atendida, e, ms),
             ),
         };
         if !id_sessao.is_empty() {
@@ -5088,16 +5079,7 @@ impl Servidor {
             // para quem le, o codigo e para quem programa. Trocar um pelo
             // outro obrigaria alguem a perder. O texto passa pela tabela de
             // mensagens; o codigo nunca muda com o idioma.
-            Err(e) => vec![
-                ("ok", Json::Bool(false)),
-                ("op", Json::texto_de(&op)),
-                ("erro", Json::texto_de(self.texto_do_erro(e))),
-                ("codigo", Json::de_u64(e.codigo() as u64)),
-                ("nome", Json::texto_de(e.nome())),
-                ("classe", Json::texto_de(e.classe())),
-                ("repetir", Json::Bool(e.adianta_repetir())),
-                ("ms", Json::de_u64(ms)),
-            ],
+            Err(e) => self.campos_do_erro(&op, e, ms),
         };
         if !id_sessao.is_empty() {
             campos.push(("sessao", Json::texto_de(&id_sessao)));
@@ -15425,17 +15407,32 @@ impl Servidor {
     /// A resposta de erro da porta de dados. O texto humano passa pela tabela
     /// de mensagens; `codigo`, `nome`, `classe` e `repetir` NUNCA mudam com o
     /// idioma -- e por eles que o cliente trata.
-    fn resposta_erro(&self, op: &str, e: &PhxError, ms: u64) -> Json {
-        Json::objeto(vec![
+    /// Os campos de uma resposta de erro, num lugar SO.
+    ///
+    /// Eram tres copias da mesma lista (protocolo, REST e a resposta com
+    /// sessao), e a `sprint` teria de entrar nas tres. E a mesma armadilha do
+    /// portao de permissao: a copia que alguem esquecer vira a resposta que
+    /// mente, e ninguem acha por leitura. Ha catraca cobrando que continue
+    /// sendo uma so (`os_campos_do_erro_saem_de_um_lugar_so`).
+    fn campos_do_erro(&self, op: &str, e: &PhxError, ms: u64) -> Vec<(&'static str, Json)> {
+        vec![
             ("ok", Json::Bool(false)),
             ("op", Json::texto_de(op)),
             ("erro", Json::texto_de(self.texto_do_erro(e))),
             ("codigo", Json::de_u64(e.codigo() as u64)),
             ("nome", Json::texto_de(e.nome())),
             ("classe", Json::texto_de(e.classe())),
+            // A sprint tambem como CAMPO, e nao so na moldura do texto: quem
+            // integra le o campo, e ninguem precisa recortar `[SP000008] `
+            // de volta da frase. Campo estruturado nao muda com o idioma.
+            ("sprint", Json::texto_de(e.sprint())),
             ("repetir", Json::Bool(e.adianta_repetir())),
             ("ms", Json::de_u64(ms)),
-        ])
+        ]
+    }
+
+    fn resposta_erro(&self, op: &str, e: &PhxError, ms: u64) -> Json {
+        Json::objeto(self.campos_do_erro(op, e, ms))
     }
 }
 
@@ -15808,7 +15805,7 @@ mod testes_firewall_e_mensagens {
         );
         assert_eq!(
             r.unwrap_err().to_string(),
-            "acesso negado: operacao excluir_tabela esta proibida neste servidor; o IP foi bloqueado"
+            "[SP000025] acesso negado: operacao excluir_tabela esta proibida neste servidor; o IP foi bloqueado"
         );
         assert!(s.barrado("203.0.113.9", crate::agora_ms()).is_some());
         let _ = std::fs::remove_dir_all(&dir);
@@ -15862,7 +15859,7 @@ mod testes_firewall_e_mensagens {
             let (_, _, r) = s.despachar(proibido, &mut sessao, "192.168.50.20");
             assert_eq!(
                 r.unwrap_err().to_string(),
-                "acesso negado: operacao excluir_tabela esta proibida neste servidor"
+                "[SP000025] acesso negado: operacao excluir_tabela esta proibida neste servidor"
             );
         }
         assert!(s.barrado("192.168.50.20", crate::agora_ms()).is_none());
@@ -15985,6 +15982,87 @@ mod testes_firewall_e_mensagens {
 
     /// Provas (g), (h) e (j) da rodada: com `idioma: Ingles` o texto humano
     /// sai da coluna Ingles e o CODIGO estruturado nao muda; celula vazia cai
+    /// **Catraca: os campos do erro saem de UM lugar so.**
+    ///
+    /// Eram tres copias, e a `sprint` teria de entrar nas tres. Quem
+    /// acrescentar um quarto construtor a mao reprova aqui, em vez de a
+    /// quarta resposta calar um campo que as outras dizem. E a mesma
+    /// armadilha do portao de permissao que so olhava o campo `"tabela"`.
+    #[test]
+    fn os_campos_do_erro_saem_de_um_lugar_so() {
+        let fonte = include_str!("servidor.rs");
+        let quantos = fonte
+            .matches("(\"classe\", Json::texto_de(e.classe()))")
+            .count();
+        assert_eq!(
+            quantos, 1,
+            "ha {quantos} construtores de resposta de erro; tem de haver 1 \
+             (`campos_do_erro`) -- veja o que o novo esqueceu de dizer"
+        );
+    }
+
+    /// **A OpenAPI descreve a resposta que existe, e nao a de antes.**
+    ///
+    /// O esquema do erro e uma lista escrita a mao dentro do `rest.rs`, longe
+    /// de quem monta a resposta -- foi por isso que a `sprint` quase entrou
+    /// so no servidor e deixou o contrato publicado mentindo. Em vez de
+    /// confiar, compara-se: os campos do erro de verdade contra as
+    /// `properties` do `Erro` na OpenAPI.
+    #[test]
+    fn a_openapi_descreve_os_campos_do_erro_que_existem() {
+        let dir = dir_temp("openapi-erro");
+        let s = Servidor::novo(config_base(&dir)).unwrap();
+        let e = PhxError::Integridade("x".into());
+        let mut reais: Vec<String> = s
+            .campos_do_erro("inserir", &e, 1)
+            .into_iter()
+            .map(|(k, _)| k.to_string())
+            .collect();
+
+        let doc = crate::rest::openapi(&crate::config::Rest::default(), "0.0.0");
+        let props = doc
+            .campo("components")
+            .and_then(|c| c.campo("schemas"))
+            .and_then(|c| c.campo("Erro"))
+            .and_then(|c| c.campo("properties"))
+            .expect("a OpenAPI nao tem components.schemas.Erro.properties");
+        let mut descritos: Vec<String> = props.chaves().into_iter().map(String::from).collect();
+
+        // So o `ms` fica de fora, e MEDIDO: a OpenAPI descreve o `op` (eu
+        // tinha suposto que nao, e o teste corrigiu a suposicao). O `ms` e
+        // do envelope de tempo, nao da recusa.
+        reais.retain(|k| k != "ms");
+        reais.sort();
+        descritos.sort();
+        assert_eq!(
+            reais, descritos,
+            "a OpenAPI e a resposta divergiram nos campos do erro"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A sprint chega como CAMPO, e nao so dentro da frase.
+    ///
+    /// E o que faz a moldura ser conveniencia de quem le o log, e nao um
+    /// formato que alguem precise analisar de volta.
+    #[test]
+    fn a_sprint_vem_no_campo_e_na_frase() {
+        let dir = dir_temp("sprint-campo");
+        let s = Servidor::novo(config_base(&dir)).unwrap();
+        let e = PhxError::Integridade("mae 7 nao existe".into());
+        let r = s.resposta_erro("inserir", &e, 1);
+        assert_eq!(r.texto_ou("sprint", ""), "SP000008");
+        assert!(
+            r.texto_ou("erro", "").starts_with("[SP000008] "),
+            "{}",
+            r.texto_ou("erro", "")
+        );
+        // E os campos de sempre continuam intactos.
+        assert_eq!(r.inteiro_ou("codigo", 0), 3006);
+        assert_eq!(r.texto_ou("nome", ""), "INTEGRIDADE");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// para o portugues; sem idioma no config, portugues de sempre.
     #[test]
     fn idioma_troca_o_texto_e_nunca_o_codigo() {
@@ -15999,7 +16077,7 @@ mod testes_firewall_e_mensagens {
         // (g) o texto vem da coluna Ingles...
         assert_eq!(
             s.texto_do_erro(&e),
-            "table under bulk load: clientes reservada"
+            "[SP000012] table under bulk load: clientes reservada"
         );
         // ...e o campo estruturado continua identico ao de sempre.
         let resposta = s.resposta_erro("bulkinsert", &e, 3);
@@ -16035,7 +16113,7 @@ mod testes_firewall_e_mensagens {
 
         // Aquece o cache com a tabela semeada.
         let e = PhxError::Duplicado("porNome".into());
-        assert_eq!(s.texto_do_erro(&e), "duplicate key: porNome");
+        assert_eq!(s.texto_do_erro(&e), "[SP000020] duplicate key: porNome");
 
         // Acha a linha de erro.duplicado na tabela, como a grade acharia.
         let v = s
@@ -16076,7 +16154,7 @@ mod testes_firewall_e_mensagens {
         // O cache rele quando o intervalo de conferencia passa -- e o teste
         // espera esse intervalo de proposito: reiniciar nao pode ser preciso.
         std::thread::sleep(crate::mensagens::INTERVALO_DE_CONFERENCIA + Duration::from_millis(200));
-        assert_eq!(s.texto_do_erro(&e), "key already used: porNome");
+        assert_eq!(s.texto_do_erro(&e), "[SP000020] key already used: porNome");
 
         // (i) excluir a linha devolve o texto de fabrica, byte a byte.
         s.executar(

@@ -545,7 +545,12 @@ mod testes {
     }
 
     /// A replica redireciona para o master que conhece -- com o pedaco
-    /// `REDIRECIONA host:porta` no comeco, que e o que o cliente recorta.
+    /// `REDIRECIONA host:porta` no comeco do CORPO.
+    ///
+    /// O teste desmonta a variante em vez de formatar, e por isso nao sentiu
+    /// a moldura da sprint: `PhxError::Redireciona(m)` entrega o corpo. E a
+    /// forma certa de conferir isto -- quem formata esta olhando o texto de
+    /// APRESENTACAO, que leva a moldura na frente.
     #[test]
     fn replica_redireciona_para_o_master() {
         let dir = std::env::temp_dir().join(format!(

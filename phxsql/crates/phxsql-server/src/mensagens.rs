@@ -183,9 +183,10 @@ pub const FABRICA: &[MensagemFabrica] = &[
     // As duas mensagens que NAO se traduzem, e por motivos diferentes:
     //
     // - `erro.redireciona` comeca com `REDIRECIONA host:porta`, que e o
-    //   pedaco que o cliente RECORTA para se reapontar. Traduzir quebraria
-    //   todo cliente que trata o redirecionamento -- a moldura e so o
-    //   detalhe, nos seis idiomas.
+    //   ENDERECO para onde ir. Traduzir quebraria todo cliente que trata o
+    //   redirecionamento -- a moldura e so o detalhe, nos seis idiomas.
+    //   (A moldura da SPRINT e outra coisa e vem antes de tudo, posta por
+    //   fora em `texto_do_erro`: identificador nao se traduz.)
     // - `erro.sinal` carrega a MESSAGE_TEXT que o DONO DO BANCO escreveu no
     //   gatilho. Substitui-la por texto nosso seria apagar a voz dele; o
     //   idioma dessa mensagem e escolha de quem escreveu o gatilho.
@@ -519,7 +520,9 @@ pub fn decompor(e: &PhxError) -> (&'static str, String) {
                 String::from_utf8_lossy(encontrado.as_slice())
             ),
         ),
-        PhxError::VersaoNaoSuportada { .. } => ("erro.versao_nao_suportada", e.to_string()),
+        // `corpo()` e nao `to_string()`: a moldura da sprint entra uma vez
+        // so, em `texto_do_erro`. Compor sobre o `Display` a poria duas.
+        PhxError::VersaoNaoSuportada { .. } => ("erro.versao_nao_suportada", e.corpo()),
         PhxError::Esquema(m) => ("erro.esquema_invalido", m.clone()),
         PhxError::Tipo(m) => ("erro.tipo_invalido", m.clone()),
         PhxError::NaoEncontrado(m) => ("erro.nao_encontrado", m.clone()),
@@ -663,9 +666,19 @@ impl Mensagens {
     }
 
     /// O texto humano de um erro, pela moldura da variante.
+    /// O texto de um erro no idioma configurado, com a moldura da sprint.
+    ///
+    /// A moldura entra POR FORA do texto traduzido, e nao dentro da tabela:
+    /// `SP000008` e identificador, nao frase -- traduzi-lo seria copiar o
+    /// mesmo simbolo em seis idiomas e deixar as seis copias envelhecerem
+    /// caladas. E a mesma linha que separa rotulo de dado.
     pub fn texto_do_erro(&self, e: &PhxError) -> String {
         let (nome, detalhe) = decompor(e);
-        self.texto(nome, &[("detalhe", &detalhe)])
+        format!(
+            "{}{}",
+            e.moldura(),
+            self.texto(nome, &[("detalhe", &detalhe)])
+        )
     }
 }
 
@@ -747,9 +760,11 @@ mod tests {
         );
         m.carregar(linhas);
 
+        // A moldura da sprint na frente, e a MESMA em todo idioma: ela e
+        // identificador, nao frase. O texto traduzido vem depois dela.
         assert_eq!(
             m.texto_do_erro(&PhxError::EmCarga("clientes".into())),
-            "table busy: clientes"
+            "[SP000012] table busy: clientes"
         );
         assert_eq!(
             m.texto("erro.token_invalido", &[]),
@@ -758,7 +773,7 @@ mod tests {
         // Linha ausente: fabrica, byte a byte.
         assert_eq!(
             m.texto_do_erro(&PhxError::Duplicado("porNome".into())),
-            "chave duplicada: porNome"
+            "[SP000020] chave duplicada: porNome"
         );
     }
 

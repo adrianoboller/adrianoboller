@@ -9,6 +9,16 @@ o documento histórico da leitura do rusqlite e do contrato do FraseSQL.
 > transações, FK, durabilidade, concorrência, RID, armazenamento e MVCC, não
 > faz sentido avançar para SQL ampliado ou recursos cognitivos.
 
+**Toda mensagem de erro diz de qual sprint se trata**, por decisão do dono
+(«prefixo em todas, e conserto os clientes»), no molde do MySQL(R) — o
+identificador primeiro, entre colchetes, e depois a frase:
+`[SP000008] integridade referencial: …`. A tabela mora no `sprint()` do
+`crates/phxsql-core/src/error.rs`, com o motivo escrito em cada braço, e a
+regra que a escolheu não é «de que área parece» e sim **qual sprint mudaria
+este comportamento**. Há teste que lê este arquivo e reprova sprint citada que
+não exista aqui — *número citado é número que não se mede*. Detalhes em
+[MENSAGENS.md](MENSAGENS.md).
+
 ---
 
 ## Antes da lista: três decisões que o roteiro exige do dono
@@ -90,10 +100,10 @@ nenhum é gratuito.
 |---|---|---|
 | SP000011 | Remoção do `Mutex<Instancia>` global | **parcial** — a trava virou **ponto único** (catraca `so_um_lugar_toma_a_trava`), mas continua **global** |
 | SP000012 | Deadlock, cancelamento e governança de recursos | **parcial** — há prazo e recusa de reentrância |
-| SP000013 | RID lógico estável e formato físico v2 | **não iniciado** — *ver decisão 2 acima* |
-| SP000014 | Reuso de espaço, VACUUM e compactação | **recusado hoje com motivo** — *ver decisão 1 acima* |
+| SP000013 | RID lógico estável e formato físico v2 | **não iniciado, e REBAIXADO a melhoria** — deixou de ser pré-requisito do MVCC. A premissa foi medida contra um MySQL(R) 8.0.46 de verdade (`bancada/mvcc/premissa-innodb.sh`): o que ancora uma cadeia de versões é a **identidade estável da linha** mais um ponteiro para a versão anterior, e não um identificador novo. O `rowid` daqui já é isso, por construção — o `.reg` nunca reaproveita slot. *A pétrea que parecia atrapalhar é o que torna o MVCC mais fácil aqui* |
+| SP000014 | Reuso de espaço, VACUUM e compactação | **RECUSADO POR DECISÃO DO DONO**, e não «hoje» — a pétrea vence: «a ordem de digitação é sagrada, o `.reg` nunca reaproveita slot excluído». O que ela compra é o que se perderia: `rowid` como identidade estável para sempre, que é o que a replicação usa para identificar linha e o que o `.trash`/`.reason` apontam. Espaço de linha excluída volta só em reconstrução explícita. **Não é pendência: é escopo fora**, e a 0.21 fecha sem ela |
 | SP000015 | Buffer pool, checkpoints e group commit | **parcial** — cache de páginas (2,40×) e group commit (2,63×) medidos |
-| SP000016 | MVCC e níveis de isolamento | **bloqueado pela SP000013** — *ver decisão 2 acima* |
+| SP000016 | MVCC e níveis de isolamento | **DESBLOQUEADO pela medição** — não depende mais da SP000013. Medido no oráculo: leitura aberta antes da escrita alheia continua vendo a versão velha sem bloquear (100 → 100 → 200, o 200 só após o próprio commit), as versões velhas acumulam enquanto a leitura está aberta (*history list* 7 → 207) e são recolhidas quando ela fecha (26 s → 0, demonstrado uma vez; uma segunda tentativa ficou inconclusiva e isso fica dito). O caminho aqui é cadeia de versões ancorada no `rowid` + área de undo, no molde do InnoDB |
 
 ## PhxSql 0.22 — SQL relacional
 

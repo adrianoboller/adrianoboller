@@ -69,6 +69,50 @@ do motor é outra rodada.
 A exceção inevitável: mensagens que os portões criam por inteiro entram no
 log já resolvidas; o filtro certo casa `"ok":false` e o `codigo`, não o texto.
 
+## A moldura da sprint
+
+Toda mensagem de erro **abre** com a sprint do roteiro que responde por ela:
+
+```
+[SP000008] integridade referencial: a chave "fk_pedido_cliente" aponta ...
+[SP000025] acesso negado: operacao excluir_tabela esta proibida neste servidor
+```
+
+O molde é o do MySQL(R) — `ERROR 1146 (42S02) at line 1: Table ... doesn't
+exist`: o identificador primeiro, dentro de uma moldura fixa, e só depois a
+frase. Quem lê um log ganha o *onde procurar* sem sair do log.
+
+**Qual sprint entra:** não é «de que área parece», e sim **qual sprint mudaria
+este comportamento**. Quando duas podiam reivindicar, ganha a que teria de
+mexer no código para o erro passar a dizer outra coisa. A tabela está no
+`sprint()` do `crates/phxsql-core/src/error.rs`, com o motivo escrito em cada
+braço — e há teste (`nenhuma_sprint_citada_e_inventada`) que lê o
+`docs/ROTEIRO-1.0.md` e reprova sprint citada que não existe lá. *Número
+citado é número que não se mede.*
+
+**A moldura NÃO passa pela tabela de mensagens**, e é decisão: `SP000008` é
+identificador, não frase. Traduzi-la seria copiar o mesmo símbolo em seis
+idiomas e deixar as seis cópias envelhecerem caladas — é a mesma linha que
+separa rótulo de dado, e o MySQL também não traduz o `1146`. Ela é posta uma
+vez, **por fora** do texto que sair (de fábrica ou traduzido), no
+`texto_do_erro`.
+
+**As três que não levam prefixo de recusa continuam sem ele** —
+`erro.redireciona`, `erro.sinal` e `erro.cancelado` —, e isso é outra coisa: a
+moldura da sprint é de **todas**, por decisão do dono («prefixo em todas, e
+conserto os clientes»). Quem recortava `REDIRECIONA host:porta` da posição
+zero passa a encontrá-lo depois da moldura. Medido antes de mexer: **nenhum
+cliente da árvore recorta** — o teste do cluster desmonta a variante
+(`PhxError::Redireciona(m)`) em vez de formatar, e o `replica.rs` reconstrói o
+erro pelo **nome** que vem no campo, não pelo texto.
+
+**E ela vem também como campo:** a resposta de erro ganhou `"sprint"`, ao lado
+de `codigo`, `nome` e `classe`. Quem integra lê o campo; a moldura no texto é
+conveniência de quem lê o log, e não um formato que alguém precise analisar de
+volta. Os campos saem de **um lugar só** (`campos_do_erro`), com catraca — eram
+três cópias, e a quarta que alguém escrevesse calaria um campo que as outras
+dizem.
+
 ## Semeadura
 
 `{"op":"mensagens_semear"}` (exige `administrar`) cria o database, a tabela e

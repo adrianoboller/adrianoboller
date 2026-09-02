@@ -524,6 +524,21 @@ fn componentes() -> Json {
                     Json::objeto(vec![("type", Json::texto_de("string"))]),
                 ),
                 (
+                    "sprint",
+                    Json::objeto(vec![
+                        ("type", Json::texto_de("string")),
+                        (
+                            "description",
+                            Json::texto_de(
+                                "a sprint do roteiro que responde por esta recusa \
+                                 (`SP000008`). Vem tambem no comeco do texto, entre \
+                                 colchetes; aqui esta o campo, para ninguem precisar \
+                                 recorta-la de volta da frase",
+                            ),
+                        ),
+                    ]),
+                ),
+                (
                     "repetir",
                     Json::objeto(vec![
                         ("type", Json::texto_de("boolean")),

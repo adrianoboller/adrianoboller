@@ -320,7 +320,10 @@ escolhe o número olhando se o token conferia — **quem decide continua sendo o
 `despachar`**, isto só escolhe o número.
 
 O envelope da resposta é o mesmo do `/api`: `ok`, `op`, `resultado`/`erro`,
-`codigo`, `nome`, `classe`, `repetir`, `ms`, e `sessao` quando há uma.
+`codigo`, `nome`, `classe`, `sprint`, `repetir`, `ms`, e `sessao` quando há
+uma. O `sprint` diz qual sprint do roteiro responde pela recusa — o mesmo
+identificador que abre o texto entre colchetes, aqui como **campo**, para
+ninguém precisar recortá-lo de volta da frase.
 
 ---
 

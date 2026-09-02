@@ -75,9 +75,13 @@ pub enum PhxError {
     /// gravado esta gravado, e o que faltava nao comecou.
     Cancelado(String),
     /// O pedido tem de ir para OUTRO servidor -- escrita numa replica de
-    /// cluster, por exemplo. A mensagem comeca com `REDIRECIONA host:porta`,
-    /// de proposito: e o pedaco que um cliente recorta para se apontar ao
-    /// destino certo sem interpretar prosa.
+    /// cluster, por exemplo. O CORPO comeca com `REDIRECIONA host:porta`, de
+    /// proposito: e o endereco, e nao prosa para interpretar.
+    ///
+    /// Atencao ao que mudou: no `Display` a moldura da sprint vem antes
+    /// (`[SP000028] REDIRECIONA ...`), porque a moldura e de TODAS as
+    /// variantes. Quem recortava a posicao zero recorta depois dela -- ou,
+    /// melhor, le o campo `sprint`/`nome` da resposta e para de recortar.
     Redireciona(String),
     /// Um `SIGNAL` de gatilho ou de procedimento: a recusa escrita pelo dono
     /// do banco, com o SQLSTATE e a MESSAGE_TEXT que ele escolheu. Num
@@ -206,6 +210,72 @@ impl PhxError {
     /// repetir e so gastar o servidor. E a distincao que importa para quem
     /// integra: «em carga» e «acesso negado» sao os dois uma recusa, mas a
     /// primeira funciona daqui a pouco e a segunda nao funciona nunca.
+    /// A sprint do roteiro que responde por esta recusa.
+    ///
+    /// Vem no comeco de toda mensagem, e o molde e o do MySQL(R): o
+    /// identificador primeiro, dentro de uma moldura fixa, e so depois a
+    /// frase -- `ERROR 1146 (42S02) at line 1: Table ... doesn't exist`.
+    /// Quem le um log ganha o «onde procurar» sem sair do log.
+    ///
+    /// # A regra que escolheu cada uma
+    ///
+    /// Nao e «de que area parece»: e **qual sprint MUDARIA este
+    /// comportamento**. Quando duas podiam reivindicar, ganha a que teria de
+    /// mexer no codigo para o erro passar a dizer outra coisa.
+    ///
+    /// # Por que nao entra na tabela de mensagens
+    ///
+    /// Pela mesma linha que separa rotulo de dado: `SP000008` e
+    /// identificador, nao frase. Traduzir seria copiar o numero em seis
+    /// idiomas e deixar as seis copias envelhecerem em silencio -- e o MySQL
+    /// tambem nao traduz o `1146`. A moldura e posta uma vez, por fora, sobre
+    /// o texto que sair (de fabrica ou traduzido).
+    pub fn sprint(&self) -> &'static str {
+        match self {
+            // Arquivo corrompido e falha de durabilidade: quem decide o que
+            // fazer com ela e a matriz de falhas que a SP000010 deve.
+            PhxError::Corrompido(_) => "SP000010",
+            // A assinatura do arquivo e contrato congelado da 1.0.
+            PhxError::BadMagic { .. } => "SP000001",
+            // Que versao esta build le e decisao de upgrade N/N-1.
+            PhxError::VersaoNaoSuportada { .. } => "SP000032",
+            // Esquema e tipo saem os dois do binder e do catalogo.
+            PhxError::Esquema(_) => "SP000018",
+            PhxError::Tipo(_) => "SP000018",
+            PhxError::NaoEncontrado(_) => "SP000018",
+            // O limite e do TIPO declarado (`Str(10)`), nao do dado.
+            PhxError::LimiteExcedido(_) => "SP000018",
+            // A unicidade nasce na declaracao do indice, no DDL.
+            PhxError::Duplicado(_) => "SP000020",
+            // A janela de conflito de escrita e o que o MVCC substitui.
+            PhxError::Conflito(_) => "SP000016",
+            // `SIGNAL SQLSTATE` e comando do SQL procedural.
+            PhxError::Sinal { .. } => "SP000021",
+            PhxError::Integridade(_) => "SP000008",
+            PhxError::Autorizacao(_) => "SP000025",
+            // Reserva de tabela para carga e governanca de recurso.
+            PhxError::EmCarga(_) => "SP000012",
+            // Quem manda escrever no master e a topologia de replicacao.
+            PhxError::Redireciona(_) => "SP000028",
+            // Spare e promocao sao eleicao: consenso e split-brain.
+            PhxError::SpareEmEspera(_) => "SP000029",
+            PhxError::EmTransacao(_) => "SP000006",
+            PhxError::TransacaoAbortada(_) => "SP000006",
+            PhxError::Io(_) => "SP000010",
+            // Cancelamento e literalmente o titulo da SP000012.
+            PhxError::Cancelado(_) => "SP000012",
+        }
+    }
+
+    /// A moldura que abre toda mensagem: `[SP000008] `.
+    ///
+    /// Existe como funcao para haver **um** lugar que a escreve -- o
+    /// `Display` daqui e a tabela de mensagens do servidor precisam produzir
+    /// o mesmo byte, e duas copias divergiriam calado.
+    pub fn moldura(&self) -> String {
+        format!("[{}] ", self.sprint())
+    }
+
     pub fn adianta_repetir(&self) -> bool {
         matches!(
             self,
@@ -214,16 +284,21 @@ impl PhxError {
     }
 }
 
-impl fmt::Display for PhxError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl PhxError {
+    /// A frase sem a moldura da sprint.
+    ///
+    /// Existe porque a tabela de mensagens do servidor compoe o texto dela
+    /// (traduzido) e depois poe a moldura por fora: se ela compusesse sobre
+    /// o `Display`, a moldura sairia duas vezes. Aqui fica o corpo, e num
+    /// lugar so.
+    pub fn corpo(&self) -> String {
         match self {
-            PhxError::Io(e) => write!(f, "erro de E/S: {e}"),
+            PhxError::Io(e) => format!("erro de E/S: {e}"),
             PhxError::BadMagic {
                 arquivo,
                 esperado,
                 encontrado,
-            } => write!(
-                f,
+            } => format!(
                 "assinatura invalida em {arquivo}: esperado {:?}, encontrado {:?}",
                 String::from_utf8_lossy(esperado.as_slice()),
                 String::from_utf8_lossy(encontrado.as_slice())
@@ -232,36 +307,49 @@ impl fmt::Display for PhxError {
                 arquivo,
                 encontrada,
                 suportada,
-            } => write!(
-                f,
+            } => format!(
                 "versao de formato {encontrada} nao suportada em {arquivo} (esta build le ate {suportada})"
             ),
-            PhxError::Corrompido(m) => write!(f, "arquivo corrompido: {m}"),
-            PhxError::Esquema(m) => write!(f, "esquema invalido: {m}"),
-            PhxError::Tipo(m) => write!(f, "tipo invalido: {m}"),
-            PhxError::NaoEncontrado(m) => write!(f, "nao encontrado: {m}"),
-            PhxError::Duplicado(m) => write!(f, "chave duplicada: {m}"),
-            PhxError::Integridade(m) => write!(f, "integridade referencial: {m}"),
-            PhxError::Conflito(m) => write!(f, "conflito de escrita: {m}"),
-            PhxError::Autorizacao(m) => write!(f, "acesso negado: {m}"),
-            PhxError::EmCarga(m) => write!(f, "tabela em carga: {m}"),
-            PhxError::EmTransacao(m) => write!(f, "tabela em transacao: {m}"),
-            PhxError::LimiteExcedido(m) => write!(f, "limite excedido: {m}"),
-            // Sem prefixo: a mensagem ja comeca com `REDIRECIONA host:porta`,
-            // e e esse comeco que o cliente recorta.
-            PhxError::Redireciona(m) => write!(f, "{m}"),
+            PhxError::Corrompido(m) => format!("arquivo corrompido: {m}"),
+            PhxError::Esquema(m) => format!("esquema invalido: {m}"),
+            PhxError::Tipo(m) => format!("tipo invalido: {m}"),
+            PhxError::NaoEncontrado(m) => format!("nao encontrado: {m}"),
+            PhxError::Duplicado(m) => format!("chave duplicada: {m}"),
+            PhxError::Integridade(m) => format!("integridade referencial: {m}"),
+            PhxError::Conflito(m) => format!("conflito de escrita: {m}"),
+            PhxError::Autorizacao(m) => format!("acesso negado: {m}"),
+            PhxError::EmCarga(m) => format!("tabela em carga: {m}"),
+            PhxError::EmTransacao(m) => format!("tabela em transacao: {m}"),
+            PhxError::LimiteExcedido(m) => format!("limite excedido: {m}"),
+            // Sem prefixo de recusa: a mensagem ja comeca com
+            // `REDIRECIONA host:porta`, que e o endereco para onde ir.
+            PhxError::Redireciona(m) => m.clone(),
             // A MESSAGE_TEXT na frente, porque ela e a mensagem que o dono do
             // banco escreveu para quem esbarrar na regra; o SQLSTATE vem
             // atras, para o driver que trata por codigo.
             PhxError::Sinal { estado, mensagem } => {
-                write!(f, "{mensagem} (SIGNAL SQLSTATE {estado})")
+                format!("{mensagem} (SIGNAL SQLSTATE {estado})")
             }
-            PhxError::SpareEmEspera(m) => write!(f, "spare em espera: {m}"),
-            PhxError::TransacaoAbortada(m) => write!(f, "transacao abortada: {m}"),
-            // Sem prefixo de erro na frente: quem le a resposta esta vendo o
+            PhxError::SpareEmEspera(m) => format!("spare em espera: {m}"),
+            PhxError::TransacaoAbortada(m) => format!("transacao abortada: {m}"),
+            // Sem prefixo de recusa: quem le a resposta esta vendo o
             // resultado de um botao que ele mesmo apertou, e nao uma falha.
-            PhxError::Cancelado(m) => write!(f, "{m}"),
+            PhxError::Cancelado(m) => m.clone(),
         }
+    }
+}
+
+impl fmt::Display for PhxError {
+    /// Moldura da sprint + corpo, sempre nessa ordem e para TODA variante.
+    ///
+    /// «Toda» inclusive as tres que nao levam prefixo de recusa
+    /// (`REDIRECIONA`, `SINAL`, `CANCELADO`): elas continuam sem o *prefixo
+    /// de recusa*, que e outra coisa -- a moldura da sprint e de todas, por
+    /// decisao do dono. Quem recortava `REDIRECIONA` da posicao zero passa a
+    /// recortar depois da moldura, e por isso o teste do cluster foi
+    /// corrigido no mesmo commit em vez de a moldura ser poupada ali.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}{}", self.moldura(), self.corpo())
     }
 }
 
@@ -284,11 +372,16 @@ impl From<std::io::Error> for PhxError {
 mod testes_codigo {
     use super::*;
 
-    /// Dois erros diferentes nao podem compartilhar codigo, senao o numero
-    /// nao serve para distinguir nada.
-    #[test]
-    fn cada_erro_tem_o_seu_codigo() {
-        let todos = [
+    /// Uma de cada variante -- a lista que os testes daqui varrem.
+    ///
+    /// Estava escrita a mao dentro de um teste so, e tinha FICADO PARA TRAS:
+    /// faltava a `Sinal`, que entrou com o `SIGNAL SQLSTATE` e nunca foi
+    /// acrescentada. Por isso agora existe o par `nome_da_variante` +
+    /// `a_lista_cobre_todas`: o compilador obriga a variante nova a entrar no
+    /// `match`, e o teste obriga a entrar AQUI. Lista digitada a mao so nao
+    /// envelhece quando alguem a cobra.
+    fn todas() -> Vec<PhxError> {
+        vec![
             PhxError::Corrompido(String::new()),
             PhxError::BadMagic {
                 arquivo: String::new(),
@@ -307,6 +400,10 @@ mod testes_codigo {
             PhxError::Integridade(String::new()),
             PhxError::LimiteExcedido(String::new()),
             PhxError::Conflito(String::new()),
+            PhxError::Sinal {
+                estado: "45000".into(),
+                mensagem: String::new(),
+            },
             PhxError::EmCarga(String::new()),
             PhxError::EmTransacao(String::new()),
             PhxError::TransacaoAbortada(String::new()),
@@ -315,7 +412,146 @@ mod testes_codigo {
             PhxError::SpareEmEspera(String::new()),
             PhxError::Io(std::io::Error::other("x")),
             PhxError::Cancelado(String::new()),
-        ];
+        ]
+    }
+
+    /// O nome da variante, num `match` SEM braco coringa.
+    ///
+    /// E aqui que o compilador entra: variante nova nao compila enquanto
+    /// ninguem a nomear, e o teste seguinte cobra a entrada na lista.
+    fn nome_da_variante(e: &PhxError) -> &'static str {
+        match e {
+            PhxError::Io(_) => "Io",
+            PhxError::BadMagic { .. } => "BadMagic",
+            PhxError::VersaoNaoSuportada { .. } => "VersaoNaoSuportada",
+            PhxError::Corrompido(_) => "Corrompido",
+            PhxError::Esquema(_) => "Esquema",
+            PhxError::Tipo(_) => "Tipo",
+            PhxError::NaoEncontrado(_) => "NaoEncontrado",
+            PhxError::Duplicado(_) => "Duplicado",
+            PhxError::Integridade(_) => "Integridade",
+            PhxError::Conflito(_) => "Conflito",
+            PhxError::Sinal { .. } => "Sinal",
+            PhxError::EmCarga(_) => "EmCarga",
+            PhxError::EmTransacao(_) => "EmTransacao",
+            PhxError::Autorizacao(_) => "Autorizacao",
+            PhxError::LimiteExcedido(_) => "LimiteExcedido",
+            PhxError::SpareEmEspera(_) => "SpareEmEspera",
+            PhxError::Redireciona(_) => "Redireciona",
+            PhxError::TransacaoAbortada(_) => "TransacaoAbortada",
+            PhxError::Cancelado(_) => "Cancelado",
+        }
+    }
+
+    /// O outro lado do laco: toda variante nomeada aparece em `todas()`, uma
+    /// vez so. Sem isto, o `match` acima ficaria completo e a lista, curta --
+    /// que e exatamente o defeito que a `Sinal` teve por meses.
+    #[test]
+    fn a_lista_cobre_todas() {
+        let mut nomes: Vec<&str> = todas().iter().map(nome_da_variante).collect();
+        let quantas = nomes.len();
+        nomes.sort_unstable();
+        nomes.dedup();
+        assert_eq!(
+            nomes.len(),
+            quantas,
+            "variante repetida em todas(): {nomes:?}"
+        );
+        // O numero e a catraca desta lista: variante nova obriga a mexer aqui
+        // e a olhar os testes que varrem `todas()`.
+        assert_eq!(quantas, 19, "entrou ou saiu variante: {nomes:?}");
+    }
+
+    /// **A sprint citada tem de EXISTIR no roteiro.**
+    ///
+    /// Sem esta prova, `sprint()` seria uma lista de numeros digitados a mao
+    /// -- e numero citado e numero que nao se mede. A lista de verdade e o
+    /// `docs/ROTEIRO-1.0.md`; aqui so se confere que nao se cita sprint que
+    /// nao existe (erro de digitacao, ou sprint que sumiu numa refacao).
+    #[test]
+    fn nenhuma_sprint_citada_e_inventada() {
+        let roteiro =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/ROTEIRO-1.0.md");
+        let texto = std::fs::read_to_string(&roteiro)
+            .unwrap_or_else(|e| panic!("nao li {}: {e}", roteiro.display()));
+        for e in todas() {
+            let sp = e.sprint();
+            assert!(
+                texto.contains(sp),
+                "{} cita {sp}, que nao esta no roteiro",
+                nome_da_variante(&e)
+            );
+        }
+    }
+
+    /// A moldura abre TODA mensagem, sem excecao.
+    ///
+    /// Inclusive as tres que nao levam prefixo de RECUSA (`REDIRECIONA`,
+    /// `SINAL`, `CANCELADO`): sao coisas diferentes, e a decisao do dono foi
+    /// «prefixo em todas, e conserto os clientes».
+    #[test]
+    fn toda_mensagem_abre_com_a_sprint() {
+        for e in todas() {
+            let t = e.to_string();
+            let esperado = format!("[{}] ", e.sprint());
+            assert!(
+                t.starts_with(&esperado),
+                "{} nao abre com {esperado:?}: {t:?}",
+                nome_da_variante(&e)
+            );
+            // E a moldura entra UMA vez: prefixo duplicado e o defeito que
+            // aparece quando alguem compoe sobre o `Display` em vez do corpo.
+            assert_eq!(
+                t.matches(&esperado).count(),
+                1,
+                "{} repetiu a moldura: {t:?}",
+                nome_da_variante(&e)
+            );
+        }
+    }
+
+    /// O corpo e o texto de antes, byte a byte -- a moldura nao reescreveu
+    /// frase nenhuma. E o que separa «acrescentar um prefixo» de «mexer nas
+    /// mensagens todas».
+    #[test]
+    fn o_corpo_continua_o_de_sempre() {
+        assert_eq!(
+            PhxError::Integridade("mae 7 nao existe".into()).corpo(),
+            "integridade referencial: mae 7 nao existe"
+        );
+        assert_eq!(
+            PhxError::NaoEncontrado("rowid 7".into()).corpo(),
+            "nao encontrado: rowid 7"
+        );
+        // As duas sem prefixo de recusa continuam sem ele NO CORPO.
+        assert_eq!(
+            PhxError::Redireciona("REDIRECIONA 10.0.0.2:5310 -- va la".into()).corpo(),
+            "REDIRECIONA 10.0.0.2:5310 -- va la"
+        );
+        assert_eq!(
+            PhxError::Cancelado("voce cancelou".into()).corpo(),
+            "voce cancelou"
+        );
+        // E o Display e a soma dos dois, sem nada no meio.
+        let e = PhxError::Cancelado("voce cancelou".into());
+        assert_eq!(e.to_string(), format!("{}{}", e.moldura(), e.corpo()));
+    }
+
+    /// **O campo estruturado NAO mudou.** E o que importa para quem integra:
+    /// cliente que trata por `codigo`/`nome` nao sente a moldura.
+    #[test]
+    fn a_moldura_nao_mexeu_no_codigo_nem_no_nome() {
+        assert_eq!(PhxError::Integridade(String::new()).codigo(), 3006);
+        assert_eq!(PhxError::Redireciona(String::new()).nome(), "REDIRECIONA");
+        assert_eq!(PhxError::Autorizacao(String::new()).classe(), "acesso");
+        assert!(PhxError::EmCarga(String::new()).adianta_repetir());
+    }
+
+    /// Dois erros diferentes nao podem compartilhar codigo, senao o numero
+    /// nao serve para distinguir nada.
+    #[test]
+    fn cada_erro_tem_o_seu_codigo() {
+        let todos = todas();
         let mut codigos: Vec<u16> = todos.iter().map(PhxError::codigo).collect();
         let quantos = codigos.len();
         codigos.sort_unstable();
