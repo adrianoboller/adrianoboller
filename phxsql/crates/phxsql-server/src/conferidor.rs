@@ -1183,7 +1183,7 @@ pub fn token_sem_definicao_e_sem_fallback() -> Vec<(&'static str, String)> {
     furos
 }
 
-pub const TETO: usize = 1_577;
+pub const TETO: usize = 1_549;
 #[cfg(test)]
 mod testes {
     use std::collections::HashSet;

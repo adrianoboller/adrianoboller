@@ -826,7 +826,7 @@ pub const OPERACOES: &[Operacao] = &[
             opc(
                 "chaves_estrangeiras",
                 "array",
-                "`{nome, colunas, tabela_ref, colunas_ref, ao_excluir, ao_alterar}`;                  a ação aceita restringir, cascata, anular ou nada",
+                "`{nome, colunas, tabela_ref, colunas_ref, ao_excluir, ao_alterar}`;                  ao_excluir aceita SÓ restringir; ao_alterar aceita restringir, cascata, anular ou nada",
             ),
             opc(
                 "schema",
@@ -867,9 +867,16 @@ pub const OPERACOES: &[Operacao] = &[
             opc(
                 "ao_excluir",
                 "string",
-                "restringir (padrão), cascata, anular ou nada",
+                "SÓ restringir. Nunca se mata o pai que tem filhos: cascata, \
+                 anular e nada não existem deste lado, e a recusa acontece na \
+                 declaração e não na gravação",
             ),
-            opc("ao_alterar", "string", "as mesmas quatro ações"),
+            opc(
+                "ao_alterar",
+                "string",
+                "cascata (padrão), restringir, anular ou nada — as quatro acontecem \
+                 na gravação desde a SP000057",
+            ),
         ],
         exemplo: r#"{"op":"declarar_fk","database":"loja","tabela":"pedidos","nome":"fk_cliente","colunas":["cliente_id"],"tabela_ref":"clientes","colunas_ref":["id"]}"#,
         ferramenta_mcp: false,

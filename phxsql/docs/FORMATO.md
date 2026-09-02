@@ -259,15 +259,16 @@ tira coluna, não cria índice sobre a coluna nova, e não replica a si mesma �
 eventos depois de receber a mesma alteração. Enquanto os dois lados diferem, a
 réplica **para** em vez de aceitar um payload de outra largura.
 
-### O bloco de esquema (`PSCH`, versão 6)
+### O bloco de esquema (`PSCH`, versão 7)
 
 O bloco começa com `PSCH` e a versão. A **3** acrescentou os metadados de
 coluna, o marcador de chave primária e o modo de partição. A **4** acrescentou
 a coluna de sistema `softdeleted` e um byte no fim, com o sinal de *motivo
 obrigatório*. A **5** acrescentou a coluna de sistema `rownum`. A **6**
 acrescentou a **marca de dado pessoal** de cada coluna, num bloco no fim. A
-leitura ainda aceita a 2: tabela gravada antes abre normalmente, ganha um `id`
-v7 sorteado na hora e os textos vazios. **Escrever, só na 6.**
+**7** acrescentou o byte `verificar` de cada chave estrangeira. A leitura ainda
+aceita a 2: tabela gravada antes abre normalmente, ganha um `id` v7 sorteado na
+hora e os textos vazios. **Escrever, só na 7.**
 
 Por coluna, nesta ordem:
 
@@ -434,6 +435,49 @@ das chaves estrangeiras, que são a verdade.
 
 Guardar "é primária" no próprio campo criaria uma segunda verdade ao lado do
 índice, e as duas divergiriam no primeiro `ALTER`.
+
+#### O que cada chave estrangeira grava (v7)
+
+Depois dos índices vem a contagem de chaves (`u16`) e, por chave, nesta ordem:
+
+| Campo | Tam | O que é |
+|---|---:|---|
+| `nome` | 2 + n | o nome da chave |
+| `tabela_ref` | 2 + n | a mãe, nome simples ou `schema.tabela` |
+| `ao_excluir` | 1 | tag da ação: 0 nada, 1 restringir, 2 cascata, 3 anular |
+| `ao_alterar` | 1 | a mesma tabela de tags |
+| `verificar` | 1 | **v7**: a relação é imposta, e não só declarada |
+| colunas locais | 2 + 2·n | quantas, e a posição de cada uma no esquema desta tabela |
+| colunas da mãe | (2 + n)·k | os **nomes** na tabela referenciada, na mesma ordem |
+
+O `verificar` é **um byte, e não um bit roubado da tag da ação** — bit
+escondido dentro de outro campo é o que faz a leitura recusar um arquivo válido
+no dia em que nascer uma quinta ação. Esquema gravado antes da v7 não tem o
+byte e lê como **desligado**, que é exatamente o comportamento que aquele
+arquivo sempre teve.
+
+As colunas locais vão por **posição** e as da mãe por **nome**, e a assimetria
+é deliberada: a posição só vale dentro deste esquema, que está aqui; o nome é o
+que sobrevive à outra tabela ainda não existir na hora de declarar a chave.
+
+**Os três bytes são lidos e executados**, e não só guardados:
+
+- `verificar` liga as duas imposições, e é a mesma pergunta nos dois momentos —
+  *esta relação já é imposta?* Ligado, o `inserir`/`atualizar` da filha confere
+  que a mãe existe, o `excluir` da mãe recusa enquanto houver filha, e a
+  alteração da chave da mãe leva o `ao_alterar` até as filhas.
+- `ao_excluir` só aceita **restringir**, e a recusa acontece na declaração
+  (`valores::acao_ri_de_texto`), não na gravação: uma tabela nasce uma vez e
+  grava um milhão de vezes.
+- `ao_alterar` aceita as quatro, e desde a SP000057 as quatro **acontecem**:
+  cascata copia a chave nova para as filhas, anular põe `Null` nelas,
+  restringir recusa a alteração da mãe, e nada é o silêncio de sempre. Antes
+  disso o byte era gravado, serializado, mostrado pelo `cli` e lido por
+  ninguém — a mãe mudava a chave e a filha ficava apontando para um pai que já
+  não existia, **calada**.
+
+Nada disso mudou o formato: o byte já estava no disco desde a v7. O que mudou
+foi passar a lê-lo.
 
 **Todo volume carrega o cabeçalho completo com o esquema**, então qualquer um
 deles se descreve sozinho — se o volume 1 se perder, os outros ainda sabem

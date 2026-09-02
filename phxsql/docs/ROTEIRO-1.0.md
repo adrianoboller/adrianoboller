@@ -59,15 +59,42 @@ como sprint **nova**, a partir da SP000056.
    tela. Medido por soquete: 1→1→2→2 virou **1→2→2→3→2**. Custo para quem não
    usa transação: um teste de `None` antes de qualquer trabalho. Detalhes,
    com as duas imprecisões nomeadas, na §4.4.1 do `TRANSACOES.md`.
-3. **SP000057** — `ao_alterar`, que fecha a SP000008.
+3. ~~**SP000057** — `ao_alterar`.~~ **FEITA** (02/09), e ela achou mais do que a
+   sprint dizia: o campo não nascia `cascata` — nascia `Restringir` pela API
+   Rust e `Cascata` pelo JSON, então **a mesma tabela nascia com integridade
+   referencial diferente conforme quem a criasse.** As quatro ações acontecem,
+   a cadeia alcança a neta, e o portão custa 64,9× menos que a varredura.
+   Fica um item novo: a cascata **escreve em tabela que a transação não
+   declarou** — sem corrida, porque a trava serializa, mas um `ROLLBACK` não
+   alcança a filha.
 4. **SP000016** — MVCC. Desbloqueada pela medição contra o MySQL(R): o que
    ancora a cadeia de versões é a identidade estável da linha, e o `rowid`
    daqui já é isso.
-5. **SP000011** — a trava global. Depois da SP000016, e não antes: a premissa
-   está confirmada (a trava come ~20% do paralelismo na leitura e ~25% na
-   escrita já com dois clientes, com metade da máquina ociosa), mas **escolher
-   entre trava por tabela, `RwLock` e MVCC é outra medição** — e a SP000016
-   responde parte dela.
+5. **SP000011 e SP000016 — a ordem MUDOU, e mudou medida** (02/09). O que
+   estava escrito aqui era: *«a SP000011 vem depois da SP000016, porque a
+   SP000016 responde parte da escolha»*. **Falso, e o número diz por quê:** a
+   medição que confirmou a premissa da SP000011 rodou **N leitores e nenhum
+   escritor** — o gap é **leitor-com-leitor**, que é exatamente o par que o
+   MVCC não conserta. E a refação que parecia barata está morta: o
+   `Mutex<Instancia>` **não protege a `Instancia`** (um campo, todos os
+   métodos `&self`), então `RwLock<Instancia>` **compila de primeira e está
+   errado** — dois escritores com guarda de leitura abrem dois `Table` sobre
+   os mesmos arquivos e o compilador não reclama.
+
+   A ordem recomendada passa a ser, e as duas primeiras **não** precisam de
+   máquina parada:
+   1. **encurtar as seções críticas** — 76 delas, das quais 24 alcançam
+      `fsync` com a trava na mão e **5 rodam código do dono** (gatilho
+      `BEFORE`) sem teto de duração. Não muda formato e melhora os três
+      desenhos;
+   2. escrever o invariante que o `RwLock` violaria, **antes** de qualquer
+      refação;
+   3. **SP000016** com a decisão de formato **cedo** (`.reg` v6 + área de
+      undo fora do `.reg`);
+   4. trava por tabela, se sobrar disputa.
+
+   Detalhes e o arnês que **recusa publicar número sujo** em
+   `docs/CONCORRENCIA.md`.
 6. **SP000005** — decompor o `servidor.rs`, hoje com 22.560 linhas.
 7. **SP000009**, **SP000010**, **SP000012**, **SP000015** — fechar as parciais.
 8. **SP000001** — o contrato, por último no bloco: congelar escopo antes de o

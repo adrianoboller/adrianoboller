@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use phxsql_core::datahora::civil_de_dias;
 use phxsql_core::error::{PhxError, Result};
 use phxsql_core::keyenc::{escrever_componente, largura_componente};
-use phxsql_core::schema::{ForeignKey, Schema};
+use phxsql_core::schema::{AcaoRi, ForeignKey, Schema};
 use phxsql_core::types::ColumnType;
 use phxsql_core::value::{escrever_inline, ler_inline, Ponteiro, Value};
 use phxsql_core::{RowId, EXT_BIN, EXT_MEMO, EXT_NDX, EXT_REG};
@@ -33,6 +33,29 @@ use crate::trilha::{self, TrilhaFile, EXT_LGPD};
 
 /// Uma linha: um valor por coluna do esquema.
 pub type Linha = Vec<Value>;
+
+/// Um passo do braco do `ao_alterar`: uma tabela filha, as linhas dela que
+/// apontam para a linha mae que mudou, e o que gravar nelas.
+///
+/// # Por que a filha ja vem ABERTA aqui dentro
+///
+/// Porque abrir a filha e achar o indice dela sao as duas coisas que ainda
+/// podem RECUSAR a alteracao, e recusa depois de gravar nao e recusa -- e a
+/// mesma razao de `valores::acao_ri_de_texto` recusar na declaracao e nao na
+/// gravacao. O planejamento abre, confere e procura; a aplicacao so grava.
+/// Reabrir a filha na aplicacao pagaria os sete arquivos duas vezes pela
+/// mesma resposta.
+struct PassoAoAlterar {
+    filha: Table,
+    /// Nome da filha e da chave, guardados para o recado do erro: depois de a
+    /// `filha` ser consumida pela gravacao nao ha mais de onde tira-los.
+    nome: String,
+    chave: String,
+    rowids: Vec<RowId>,
+    /// Posicao na FILHA de cada coluna da chave, e o valor que ela recebe --
+    /// o valor novo da mae na cascata, `Null` no anular.
+    destino: Vec<(usize, Value)>,
+}
 
 /// O que saiu de uma carga em lote.
 #[derive(Debug, Clone, Default)]
@@ -803,6 +826,250 @@ impl Table {
                     )));
                 }
             }
+        }
+        Ok(())
+    }
+
+    /// Alguma coluna que participa de algum indice mudou de valor?
+    ///
+    /// # O portao do `ao_alterar`, e por que ele e ESTE
+    ///
+    /// A licao do Profiler: o portao que decide vem ANTES do trabalho. E aqui
+    /// o trabalho e caro -- a varredura das irmas abre o `.reg` de cada tabela
+    /// do diretorio. Cobra-la de toda alteracao transformaria o `atualizar`
+    /// em outra operacao.
+    ///
+    /// O numero nao se digita aqui: quem o mede e o teste
+    /// `tests/portao-do-ao-alterar.rs`, na maquina que roda, e ele reprova se
+    /// a diferenca cair abaixo de 5x. Nesta maquina, com 30 irmas, deu **20,0
+    /// us** do lado de fora do indice contra **1.296,2 us** do lado de dentro
+    /// -- **64,9x**.
+    ///
+    /// Este portao nao toca em disco: compara valores que ja estao na mao.
+    ///
+    /// # Por que ele e EXATO, e nao um palpite conservador
+    ///
+    /// Porque a coluna referenciada por uma chave CONFERIDA e necessariamente
+    /// indexada aqui: o `conferir_fks` da filha recusa a gravacao quando a mae
+    /// nao tem indice comecando pelas colunas referenciadas. Entao uma coluna
+    /// referenciada sem indice nao tem filha nenhuma para acompanhar, e nao ha
+    /// cascata a perder. Chave com `verificar: false` fica de fora dos dois
+    /// lados -- do portao e da cascata --, que e a mesma pergunta.
+    ///
+    /// # Por que compara VALOR, e nao a chave codificada
+    ///
+    /// O `atualizar` ja tem `chaves_antigas` e `chaves_novas` na mao, e usa-las
+    /// custaria zero. Nao servem: um indice `sem_caixa` codifica «Ana» e «ANA»
+    /// na MESMA chave, e ali a cascata deixaria a filha gravada com a caixa
+    /// velha -- calada, que e o jeito pior.
+    fn alguma_coluna_indexada_mudou(&self, antes: &[Value], depois: &[Value]) -> bool {
+        self.esquema.indices().iter().any(|idx| {
+            idx.colunas
+                .iter()
+                .any(|ic| antes.get(ic.coluna) != depois.get(ic.coluna))
+        })
+    }
+
+    /// O braco do `ao_alterar`: quem acompanha esta linha mae, e para onde.
+    ///
+    /// Chamado ANTES de a mae escrever, e nao grava nada -- so acha as filhas
+    /// e RECUSA o que tem de ser recusado. Ver [`PassoAoAlterar`].
+    ///
+    /// # A busca reversa, e por que ela custa o mesmo do `excluir`
+    ///
+    /// Pelo mesmo motivo, palavra por palavra: a chave e declarada na FILHA, e
+    /// ninguem diz quem aponta para si. A mae pergunta as irmas -- varredura
+    /// dos esquemas do diretorio. A diferenca com o `conferir_filhas` e que
+    /// alterar NAO e raro como excluir, e por isso aqui ha o portao de
+    /// [`Table::alguma_coluna_indexada_mudou`] antes da varredura: mudar o
+    /// telefone do cliente nao paga nada.
+    ///
+    /// # NULO satisfaz, e so do lado ANTIGO
+    ///
+    /// Chave antiga com nulo nao tinha filha que a referenciasse (e o `MATCH
+    /// SIMPLE`, o mesmo do `conferir_fks`), entao nao ha o que acompanhar.
+    /// Chave NOVA nula e outra coisa: e a mae dizendo que deixou de ter
+    /// identidade, e ai a cascata copia o nulo para a filha -- que continua
+    /// satisfazendo a restricao, pela mesma regra.
+    ///
+    /// # A auto-referencia fica de fora, e isso e escrito
+    ///
+    /// `funcionarios.chefe_id -> funcionarios.id` nao cascateia. E o mesmo
+    /// limite que o `conferir_filhas` ja tem, e pela mesma razao: a tabela
+    /// esta aberta e no meio de uma escrita, e um segundo descritor sobre ela
+    /// leria o indice que ainda nao foi para o disco. Quem precisar da
+    /// hierarquia alterando a propria chave altera as filhas na mao.
+    fn planejar_ao_alterar(
+        &mut self,
+        antes: &[Value],
+        depois: &[Value],
+    ) -> Result<Vec<PassoAoAlterar>> {
+        if !self.alguma_coluna_indexada_mudou(antes, depois) {
+            return Ok(Vec::new());
+        }
+        let irmas = crate::catalogo::tabelas_em(&self.diretorio)?;
+        let eu = self.nome.clone();
+        let mut passos: Vec<PassoAoAlterar> = Vec::new();
+        for irma in irmas {
+            if irma == eu {
+                continue;
+            }
+            let esquema = match crate::reg::RegFile::abrir(&self.diretorio, &irma) {
+                Ok(r) => r.esquema().clone(),
+                // Irma que nao abre nao tranca a alteracao da mae: o defeito
+                // dela e dela. Mesmo julgamento do `conferir_filhas`.
+                Err(_) => continue,
+            };
+            for fk in esquema.chaves_estrangeiras() {
+                // `NaoFazerNada` sai aqui e nao no fim: e o comportamento de
+                // sempre, e ele nao paga nem a abertura da filha.
+                if !fk.verificar
+                    || fk.ao_alterar == AcaoRi::NaoFazerNada
+                    || nome_simples(&fk.tabela_ref) != eu
+                {
+                    continue;
+                }
+                let mut antiga = Vec::with_capacity(fk.colunas_ref.len());
+                let mut nova = Vec::with_capacity(fk.colunas_ref.len());
+                for nome in &fk.colunas_ref {
+                    let Some(i) = self.esquema.colunas().iter().position(|c| c.nome == *nome)
+                    else {
+                        break;
+                    };
+                    let (Some(a), Some(d)) = (antes.get(i), depois.get(i)) else {
+                        break;
+                    };
+                    if matches!(a, Value::Null) {
+                        break;
+                    }
+                    antiga.push(a.clone());
+                    nova.push(d.clone());
+                }
+                // Chave incompleta (coluna que nao existe, ou nulo do lado
+                // antigo) ou parada no lugar: nao ha o que levar a lugar nenhum.
+                if antiga.len() != fk.colunas_ref.len() || antiga == nova {
+                    continue;
+                }
+
+                let colunas_da_filha: Vec<String> = fk
+                    .colunas
+                    .iter()
+                    .filter_map(|&c| esquema.colunas().get(c).map(|x| x.nome.clone()))
+                    .collect();
+                if colunas_da_filha.len() != fk.colunas.len() {
+                    continue;
+                }
+                let mut filha = Table::abrir(&self.diretorio, &irma)?;
+                // A mesma exigencia dos DOIS lados que a chave conferida ja
+                // tem: sem indice na filha, achar quem aponta para esta linha
+                // seria uma varredura da tabela inteira escondida dentro de um
+                // `atualizar` que parece barato. Recusa-se dizendo qual falta.
+                let Some(indice) = indice_que_cobre(filha.esquema(), &colunas_da_filha) else {
+                    return Err(PhxError::Integridade(format!(
+                        "{eu}: a chave {:?} de {irma} pede {:?} ao alterar, e nao da para \
+                         levar a alteracao ate la: {irma} nao tem indice comecando por \
+                         ({}) -- crie o indice na filha ou desligue `verificar` na chave",
+                        fk.nome,
+                        fk.ao_alterar,
+                        colunas_da_filha.join(", ")
+                    )));
+                };
+                // Erro aqui NAO e "nao achou" -- nao achar e `Ok(vazio)`. E a
+                // guarda do indice da filha recusando responder, e ela recusa
+                // quando a filha esta aberta em outro lugar com escrita
+                // pendente. Mesmo limite de VISIBILIDADE do `conferir_fks`, e
+                // o recado tem de dizer isso: o erro cru manda reconstruir um
+                // indice que esta sao.
+                let rowids = filha.buscar(&indice, &antiga).map_err(|e| {
+                    PhxError::Integridade(format!(
+                        "{eu}: nao deu para procurar agora as filhas em {irma} pela chave \
+                         {:?} ({e}). A procura le o que ja foi gravado; filha escrita nesta \
+                         mesma transacao ainda nao esta visivel -- confirme-a antes de \
+                         alterar a mae",
+                        fk.nome
+                    ))
+                })?;
+                if rowids.is_empty() {
+                    continue;
+                }
+                if fk.ao_alterar == AcaoRi::Restringir {
+                    return Err(PhxError::Integridade(format!(
+                        "{eu}: esta linha tem filhas em {irma} pela chave {:?}, e a chave \
+                         declara \"ao_alterar\": restringir -- altere as filhas antes, ou \
+                         declare cascata",
+                        fk.nome
+                    )));
+                }
+                let anula = fk.ao_alterar == AcaoRi::AnularCampos;
+                let destino = fk
+                    .colunas
+                    .iter()
+                    .copied()
+                    .zip(
+                        nova.iter()
+                            .map(|v| if anula { Value::Null } else { v.clone() }),
+                    )
+                    .collect();
+                passos.push(PassoAoAlterar {
+                    filha,
+                    nome: irma.clone(),
+                    chave: fk.nome.clone(),
+                    rowids,
+                    destino,
+                });
+            }
+        }
+        Ok(passos)
+    }
+
+    /// Grava o que o [`Table::planejar_ao_alterar`] achou. Chamado DEPOIS de a
+    /// mae ter gravado.
+    ///
+    /// # Por que a mae vai para o disco antes, e por que isso foi medido
+    ///
+    /// A filha CONFERE a chave dela ao gravar, e a conferencia abre a mae num
+    /// SEGUNDO descritor -- que nao enxerga pagina suja. Medido: sem este
+    /// `sincronizar`, a gravacao da filha recusa dizendo «o indice ficou para
+    /// tras numa queda: reconstrua», que manda reparar um arquivo sao. Com
+    /// ele, passa.
+    ///
+    /// # Nao ha transacao, e a ordem foi escolhida sabendo disso
+    ///
+    /// Mae primeiro e filha depois deixa, numa queda no meio, a filha
+    /// apontando para um pai que mudou de chave -- orfa que DA ERRO e se acha
+    /// varrendo. A ordem inversa deixaria a filha apontando para uma chave que
+    /// a mae nunca chegou a ter, que e orfa igual e mais dificil de explicar.
+    /// O que NAO se aceitou foi recusar depois de gravar: tudo o que pode
+    /// recusar ja recusou no planejamento, antes da primeira escrita.
+    fn aplicar_ao_alterar(&mut self, passos: Vec<PassoAoAlterar>) -> Result<()> {
+        self.sincronizar()?;
+        for mut passo in passos {
+            for r in std::mem::take(&mut passo.rowids) {
+                // Linha que sumiu entre planejar e gravar nao e erro: outra
+                // sessao a apagou, e o que se ia consertar nela ja nao existe.
+                let Some(mut linha) = passo.filha.ler(r)? else {
+                    continue;
+                };
+                for (c, v) in &passo.destino {
+                    if let Some(alvo) = linha.get_mut(*c) {
+                        *alvo = v.clone();
+                    }
+                }
+                // A gravacao da filha e um `atualizar` inteiro, de proposito:
+                // e ele que mantem os indices dela, o diario, a trilha e a
+                // cascata da NETA. Um atalho por baixo economizaria pouco e
+                // deixaria a filha com indice mentindo.
+                passo.filha.atualizar(r, &linha).map_err(|e| {
+                    PhxError::Integridade(format!(
+                        "{}: a linha mae mudou, e a alteracao NAO chegou a linha {r} de {} \
+                         pela chave {:?} ({e}). Nao ha transacao aqui: a mae ja esta \
+                         gravada, e essa filha ficou para tras -- conserte-a antes de \
+                         seguir",
+                        self.nome, passo.nome, passo.chave
+                    ))
+                })?;
+            }
+            passo.filha.sincronizar()?;
         }
         Ok(())
     }
@@ -1714,6 +1981,12 @@ impl Table {
             }
         }
 
+        // O braco do `ao_alterar`, e ele vem AQUI por posicao, nao por acaso:
+        // achar as filhas e conferir o indice delas sao as ultimas coisas que
+        // ainda podem recusar, e recusa depois de gravar nao e recusa. Da
+        // primeira escrita para baixo nao ha mais `return Err` de guarda.
+        let cascata = self.planejar_ao_alterar(&valores_antigos, valores)?;
+
         let ponteiros_antigos = self.ponteiros(&antigo)?;
         let payload = self.montar_payload(valores)?;
         // `completar` herda a marca quando ela nao vem nos valores, mas quem
@@ -1738,6 +2011,11 @@ impl Table {
         // O `valores_antigos` ja esta decodificado aqui em cima por causa dos
         // indices, entao o par antes/depois nao custa leitura nova.
         self.trilhar_alteracao(rowid, &valores_antigos, valores)?;
+        // As filhas acompanham DEPOIS de a mae estar gravada, e o `is_empty()`
+        // e o portao: alteracao sem cascata nao paga nem a chamada.
+        if !cascata.is_empty() {
+            self.aplicar_ao_alterar(cascata)?;
+        }
         Ok(())
     }
 

@@ -394,7 +394,14 @@ dívida que só deve encolher, travam um comportamento em produção).
 
 | catraca | onde | constante hoje | medido agora | veredito |
 |---|---:|---:|---:|---|
-| `TETO` (textos fora da fábrica) | `crates/phxsql-server/src/conferidor.rs:1186` | 1.577 | **1.577** | em cima, sem folga |
+| `TETO` (textos fora da fábrica) | `crates/phxsql-server/src/conferidor.rs:1186` | 1.549 | **1.549** | em cima, sem folga |
+
+> **Este número já envelheceu uma vez, e a hora em que envelheceu diz o que ele
+> precisa.** Esta tabela foi levantada com `TETO` em **1.577**; na mesma rodada,
+> outra frente traduziu 28 textos e baixou a catraca para **1.549** — e nenhuma
+> das duas podia ver a outra. Enquanto o valor for digitado aqui, quem baixar a
+> catraca tem de lembrar de vir editar esta linha; o gerador desta seção existe
+> para que não precise.
 | `TETO_COLADO` (chave com os 6 idiomas colados) | `conferidor.rs:977` | 0 | **0** | em cima, sem folga |
 | `TETO_FRASE_REPETIDA` (frase longa repetida em 3+ idiomas) | `conferidor.rs:981` | 0 | **0** | em cima, sem folga |
 | `TETO_TABELA_NA_MAO` (`<table>` cru ou `tabela(...)`) | `crates/phxsql-server/src/conferidor_grades.rs:274` | 24 | **24** | em cima, sem folga |

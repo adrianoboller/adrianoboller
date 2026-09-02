@@ -504,14 +504,42 @@ nesta leva, os outros **quatro** arquivos de interface:
 | `ui/grid/phx-grid.js` | 24 | **0** | o rodapé, a paginação, o seletor de colunas, a caixa de grupos, a barra de filtros e o painel de filtro de coluna |
 | `ui/diagrama-er.js` | 2 | **0** | o toco da chave para fora e o rótulo do desenho |
 
-**Todo texto cravado que resta está no `index.html`**: 1.806, com arquivo e
-linha no `--tudo`. Ele ficou de fora de propósito — quatro frentes o editavam
-ao mesmo tempo, e mexer nele no meio disso trocaria tradução por conflito. Por
-ordem do que a pessoa mais vê, a próxima leva é: os títulos e subtítulos de
-`folha(`, os cabeçalhos de coluna distintos (`{t:"…"}`), os recados de
-`avisar(` e as perguntas de `confirm(`. Depois vêm os corpos de texto longo —
-LGPD, replicação, a página de Nova tabela —, e para esses a receita já está
-escrita acima: uma chave por **frase**, com a ênfase virada marca.
+**Todo texto cravado que resta está no `index.html`**: 1.549, com arquivo e
+linha no `--tudo`. Ele ficou de fora de propósito — várias frentes o editavam
+ao mesmo tempo, e mexer nele no meio disso trocaria tradução por conflito.
+
+Uma leva já entrou nessa ordem: as **duas telas de Sessões e Estatísticas de
+uso** (`verSessoes`, `histograma`, `verEstatisticas`) saíram inteiras — título,
+subtítulo, fichas, colunas, os dois recados de `avisar(`/`confirm(` de encerrar
+sessão, e o parágrafo de aviso do soquete. Baixou a catraca de **1.577 para
+1.549** (28 textos), medido pelo conferidor, não estimado.
+
+Duas lições saíram dela, e ficam registradas para a próxima leva:
+
+- **Traduzir um título quebra quem compara o título cru.** O relógio de
+  atualização da tela de Sessões fazia
+  `$("#titulo").textContent === "Sessões"` para saber se a pessoa ainda estava
+  na tela antes de se repintar sozinho. Com o título passando a sair traduzido
+  pelo `folha()`, essa comparação nunca mais bateria em nenhum idioma que não o
+  português, e o relógio pararia sozinho no primeiro ciclo — um defeito que só
+  apareceria testando noutra língua, não lendo o código. O conserto trocou a
+  comparação pelo `id` estável do container da grade (`#gradeSessoes`), que é o
+  mesmo em toda língua. Ao converter um título, procure quem compara esse
+  título como string em vez de por um marcador que não muda de idioma.
+- **A coluna do idioma é `Str(250)`.** O parágrafo de aviso de "Encerrar fecha
+  o soquete" tinha 344 caracteres em português — não cabia na coluna, e o
+  `idiomas::a_fabrica_e_bem_formada` reprovou dizendo exatamente qual chave e
+  quantos bytes passavam. Entrou partido em três chaves curtas (`_b`, `_p1`,
+  `_p2`), a mesma receita da seção "Duas regras que caem dessa" acima — a
+  unidade é a frase, nunca o parágrafo. É a mesma regra já escrita neste
+  documento, e a prova de que o teste segura mesmo quando ninguém lembra dela.
+
+Por ordem do que a pessoa mais vê, a próxima leva continua nos títulos e
+subtítulos de `folha(` que restam, os cabeçalhos de coluna distintos
+(`{t:"…"}`), os recados de `avisar(` e as perguntas de `confirm(`. Depois vêm
+os corpos de texto longo — LGPD, replicação, a página de Nova tabela —, e para
+esses a receita já está escrita acima: uma chave por **frase**, com a ênfase
+virada marca.
 
 ### O que ainda escapa da conta, e por quê
 
@@ -535,6 +563,28 @@ quais, porque o número não as conta:
 
 Traduzir os `{detalhe}` que o motor gera continua sendo outra metade, e essa
 pede `TextName` por mensagem do motor, não só a moldura.
+
+- **`avisar(`/`confirm(`/`folha(` com o literal entre CRASES em vez de aspas.**
+  `literal()` só reconhece `"` e `'` como início de string — uma crase não
+  entra no `RECEITAS` porque o `${…}` dentro dela também precisa sumir antes,
+  e a via de hoje trata as duas coisas juntas por posição, não por forma da
+  aspa. Resultado: `avisar(\`${tab} duplicada em ${r.destino}\`)` é invisível
+  às duas vias, mesmo carregando texto cravado ("duplicada em") ao lado do
+  dado. Medido nesta rodada: **57 `avisar(`, 13 `confirm(` e 38 `folha(`**
+  ainda começam por crase. Não é o mesmo defeito do `--n` do CSS (aquele era
+  falso positivo; este é falso **negativo**) — e por ser um numero grande,
+  ele pede a dança inteira da régua que passa a medir mais: aposentar o
+  `TETO` de hoje e nascer um novo, no número medido no dia em que alguém
+  fechar essa via, e não um remendo no meio de uma leva de tradução.
+- **Ajudantes locais com texto de tela no primeiro argumento.** `ficha(valor,
+  rotulo, unidade)` (63 chamadas, uma função global) e `carta(titulo, legenda,
+  corpo, larga)` (18 chamadas, reescrita local em três telas) recebem rótulo
+  cravado que nenhuma das duas vias enxerga — nenhum dos dois nomes está no
+  `RECEITAS`. Entrar com `ficha(` sozinho examinaria as 63 de uma vez só, fora
+  do tamanho de qualquer leva coerente; por isso as chamadas de `ficha(`/
+  `carta(` das telas de Sessões e Estatísticas foram traduzidas à mão nesta
+  rodada, sem alterar o `RECEITAS` — a mesma decisão do `linha(` da telemetria,
+  registrada acima.
 
 ## A prova das quatro telas, exercitando
 

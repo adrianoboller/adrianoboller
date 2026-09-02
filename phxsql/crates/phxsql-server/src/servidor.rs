@@ -7755,21 +7755,31 @@ impl Servidor {
     /// O escopo EFETIVO: o declarado mais o que as dependencias do catalogo
     /// alcancam. Devolve `(efetivo, como cada uma chegou)`.
     ///
-    /// # A chave estrangeira NAO entra, e isso foi conferido
+    /// # A chave estrangeira NAO entra -- e desde a SP000057 isso e um GAP,
+    /// nao mais uma constatacao
     ///
-    /// A tentacao era somar as tabelas apontadas por chave estrangeira com
-    /// `ao_excluir`/`ao_alterar` em cascata. **Elas nao alcancam nada aqui**:
-    /// o motor DECLARA a chave estrangeira e nao a IMPOE -- ha teste travando
-    /// isso pelo nome, `a_chave_e_declarada_mas_ainda_nao_e_imposta_na_gravacao`,
-    /// e o comentario dele diz que uma linha filha apontando para um pai que
-    /// nao existe entra sem reclamacao. Sem imposicao nao ha cascata, e sem
-    /// cascata a chave estrangeira nao toca tabela nenhuma.
+    /// O texto que estava aqui dizia que somar as tabelas apontadas por chave
+    /// estrangeira nao adiantava nada, porque *o motor DECLARA a chave e nao a
+    /// IMPOE*. Isso deixou de ser verdade em duas etapas, e o comentario ficou
+    /// para tras nas duas: a SP000008 ligou `conferir_fks` e `conferir_filhas`
+    /// (que so LEEM as irmas), e a SP000057 ligou o `ao_alterar`, que
+    /// **ESCREVE** nelas -- `Table::planejar_ao_alterar` leva a alteracao da
+    /// chave da mae ate as filhas, e a cadeia segue ate a neta.
     ///
-    /// Somar essas tabelas ao escopo efetivo travaria tabelas que a transacao
-    /// nunca vai tocar, e a ficha de diagnostico mostraria um alcance que nao
-    /// existe -- que e exatamente a linha que nao se imprime porque nao se
-    /// mede. O dia em que aquele teste falhar, este comentario e o
-    /// `escopo_por_gatilho` ao lado sao o lugar de acrescentar o braco da FK.
+    /// O teste citado no texto velho -- `a_chave_e_declarada_mas_ainda_nao_e_-
+    /// imposta_na_gravacao` -- ja nao existe. Um comentario que aponta para um
+    /// teste apagado nao trava nada; e por isso que ele esta sendo reescrito
+    /// em vez de corrigido.
+    ///
+    /// **A consequencia, dita com todas as letras:** uma transacao que declara
+    /// so a mae e altera a coluna referenciada dela grava na FILHA sem ter
+    /// declarado a filha. A trava global de dados serializa a escrita, entao
+    /// nao ha corrida; o que falta e o ESCOPO -- a filha nao esta na lista de
+    /// travas da transacao, e um desfazer nao a alcanca. Somar o fecho da FK
+    /// aqui e a correcao, e ela e decisao da frente que manda na concorrencia:
+    /// aumentar escopo efetivo muda quem espera por quem, e isso se decide
+    /// medindo, nao de passagem. O lugar continua sendo este e o
+    /// `escopo_por_gatilho` ao lado.
     ///
     /// # O GATILHO entra, e alcanca de verdade
     ///

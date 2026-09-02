@@ -131,22 +131,39 @@ pub struct ForeignKey {
     pub tabela_ref: String,
     /// Nomes das colunas na tabela referenciada, na mesma ordem.
     pub colunas_ref: Vec<String>,
+    /// O que fazer com as filhas quando a linha mae e APAGADA.
+    ///
+    /// So aceita `Restringir` -- a recusa mora em `valores::acao_ri_de_texto`,
+    /// na declaracao, e a imposicao em `Table::conferir_filhas`, na gravacao.
     pub ao_excluir: AcaoRi,
+    /// O que fazer com as filhas quando as colunas referenciadas da linha mae
+    /// MUDAM de valor.
+    ///
+    /// Ao contrario do `ao_excluir`, as quatro acoes valem aqui, e desde a
+    /// SP000057 as quatro sao EXECUTADAS -- ver `Table::planejar_ao_alterar`.
+    /// Antes dela o campo era guardado, serializado, mostrado pelo `cli` e
+    /// lido por ninguem: a mae mudava a chave e a filha ficava apontando para
+    /// um pai que nao existe mais, calada.
     pub ao_alterar: AcaoRi,
-    /// Se o motor CONFERE esta chave ao gravar a linha filha.
+    /// Se o motor CONFERE esta chave ao gravar a linha filha -- e, desde a
+    /// SP000057, se ele tambem LEVA a alteracao da mae ate as filhas.
     ///
-    /// # Por que um interruptor, e por que ele nasce DESLIGADO
+    /// # Por que um interruptor, e por que ele nasce LIGADO
     ///
-    /// Declarar chave estrangeira sempre foi aceito aqui, e nunca foi imposto.
-    /// Ligar a conferencia para todas as declaracoes que ja existem recusaria
-    /// gravacoes que hoje passam -- e *proteccao que quebra todo cliente antigo
-    /// nao e proteccao, e estrago*. Vale a mesma regra da janela de conflito:
-    /// quem PEDE a garantia ganha a garantia; quem nao pede continua como
-    /// antes.
+    /// Ele nasceu desligado, e o dono virou a decisao: *chave declarada nasce
+    /// conferida*. A regra primordial diz «nunca se mata o pai que tem filhos»
+    /// sem condicao, e uma chave que precisa ser LEMBRADA de conferir nao
+    /// honra um «nunca» -- o esquecimento vira o padrao.
     ///
-    /// Note que `ao_excluir` ja nasce `Restringir` no `new` e no JSON, e isso
-    /// NAO significa que o pai esteja protegido hoje: significa que a acao
-    /// esta declarada. Este campo e o que separa declarado de imposto.
+    /// Isto NAO quebra banco que ja existe, e o motivo e de formato: o `PSCH`
+    /// v7 grava o byte por chave, entao o esquema em disco volta com o que foi
+    /// gravado nele. Chave declarada antes daquela decisao continua com
+    /// `false` ate alguem ligar, e continua fora da conferencia E fora da
+    /// cascata -- as duas leem este mesmo campo, de proposito: sao a mesma
+    /// pergunta («esta relacao ja e imposta?») em dois momentos.
+    ///
+    /// Quem QUER declarar sem impor continua podendo, mandando
+    /// `"verificar": false`, e ai e escolha escrita em vez de omissao.
     pub verificar: bool,
 }
 
@@ -163,7 +180,15 @@ impl ForeignKey {
             tabela_ref: tabela_ref.into(),
             colunas_ref,
             ao_excluir: AcaoRi::Restringir,
-            ao_alterar: AcaoRi::Restringir,
+            // Cascata, e nao Restringir: e o par da regra do dono -- «1 para
+            // muitos, Cascade/Restrict sempre» -- e era a UNICA divergencia
+            // entre as duas portas de entrada. O JSON do servidor ja entregava
+            // `Cascata` quando `ao_alterar` vinha ausente (ver
+            // `valores::acao_ri_de_texto`), e esta aqui entregava `Restringir`:
+            // a MESMA tabela nascia com integridade referencial diferente
+            // conforme quem a criasse. Duas verdades sobre o mesmo modelo e o
+            // defeito que esta casa persegue, e a que estava errada era esta.
+            ao_alterar: AcaoRi::Cascata,
             verificar: true,
         }
     }

@@ -8576,34 +8576,37 @@ function ligarMotivos(regs) {
    quem responde «está rápido?» é o p95, não a média. */
 
 async function verSessoes() {
-  folha("Sessões", "carregando…", `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
+  folha(txt("tela.se_titulo", "Sessões"), txt("tela.carregando", "carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   let d;
   try { d = await api("sessoes"); }
-  catch (e) { return folha("Sessões", "", `<div class="aviso mal">${esc(String(e))}</div>`); }
+  catch (e) { return folha(txt("tela.se_titulo", "Sessões"), "", `<div class="aviso mal">${esc(String(e))}</div>`); }
 
   const dur = ms => ms == null ? "—"
     : ms < 1000 ? `${fmt(ms)} ms`
     : ms < 60000 ? `${(ms/1000).toFixed(1).replace(".", ",")} s`
     : `${Math.floor(ms/60000)} min ${Math.round((ms%60000)/1000)} s`;
 
-  folha("Sessões", "quem está falando com o servidor agora · atualiza a cada 3 s",
+  folha(txt("tela.se_titulo", "Sessões"), txt("tela.se_sub", "quem está falando com o servidor agora · atualiza a cada 3 s"),
     `<div class="fichas">
-       ${ficha(d.quantas, "na porta de dados")}
-       ${ficha(d.sessoes_web ?? 0, "sessões web")}
-       ${ficha(d.executando, "executando")}
-       ${ficha(dur(d.mais_longa_ms), "a mais demorada", d.mais_longa_ms > 5000 ? "há mais de 5 s" : "")}
+       ${ficha(d.quantas, txt("tela.se_fic_porta", "na porta de dados"))}
+       ${ficha(d.sessoes_web ?? 0, txt("tela.se_fic_web", "sessões web"))}
+       ${ficha(d.executando, txt("tela.tl_s_executando", "executando"))}
+       ${ficha(dur(d.mais_longa_ms), txt("tela.se_fic_demorada", "a mais demorada"), d.mais_longa_ms > 5000 ? txt("tela.se_mais_de_5s", "há mais de 5 s") : "")}
      </div>` +
     `<div id="gradeSessoes"></div>` +
     ((d.web || []).length
-      ? `<h3>Sessões do navegador</h3><div id="gradeSessoesWeb"></div>`
+      ? `<h3>${esc(txt("tela.se_navegador_h3", "Sessões do navegador"))}</h3><div id="gradeSessoesWeb"></div>`
       : "") +
-    `<div class="aviso"><b>Encerrar fecha o soquete.</b> É imediato para a conexão
-      que está esperando pedido — o caso comum da conexão esquecida aberta. Uma
-      operação que <em>já entrou</em> na trava de dados termina assim mesmo: não há
-      como abandonar uma varredura no meio sem arriscar deixar a tabela aberta pela
-      metade. O que muda é que o resultado não vai para lugar nenhum.</div>
+    `<div class="aviso">${marcado(txt("tela.se_aviso_b", "**Encerrar fecha o soquete.**"))}
+      ${marcado(txt("tela.se_aviso_p1",
+        "É imediato para a conexão que está esperando pedido — o caso comum da conexão "
+        + "esquecida aberta. Uma operação que **já entrou** na trava de dados termina assim "
+        + "mesmo:"))}
+      ${esc(txt("tela.se_aviso_p2",
+        "não há como abandonar uma varredura no meio sem arriscar deixar a tabela aberta pela "
+        + "metade. O que muda é que o resultado não vai para lugar nenhum."))}</div>
      <div class="acoes">
-       <button class="botao secundario" id="btEstat">Estatísticas de uso…</button>
+       <button class="botao secundario" id="btEstat">${esc(txt("tela.mi_estatisticas_p", "Estatísticas de uso…"))}</button>
      </div>`);
 
   $("#btEstat").onclick = () => verEstatisticas();
@@ -8621,16 +8624,19 @@ async function verSessoes() {
       { campo:"usuario", titulo:txt("tela.col_usuario","usuário"), formato:v => esc(v || "—") },
       { campo:"aberta_s", titulo:txt("tela.col_aberta_ha","aberta há"), tipo:"numero", formato:v => dur(v * 1000) },
       { campo:"estado", titulo:txt("tela.col_estado","estado"),
-        formato:(_, l) => l.encerrando ? `<span class="pino mal">encerrando</span>`
-          : l.estado === "executando" ? `<span class="pino ndx">executando</span>`
-          : `<span class="pino nao">esperando</span>` },
+        // `l.estado` comparado abaixo e o valor cru que a API devolve -- dado,
+        // nao rotulo -- e continua em portugues por isso. So o SPAN visivel
+        // (o que a pessoa le) passa pela fabrica.
+        formato:(_, l) => l.encerrando ? `<span class="pino mal">${esc(txt("tela.tl_s_encerrando","encerrando"))}</span>`
+          : l.estado === "executando" ? `<span class="pino ndx">${esc(txt("tela.tl_s_executando","executando"))}</span>`
+          : `<span class="pino nao">${esc(txt("tela.tl_s_esperando","esperando"))}</span>` },
       { campo:"op", titulo:txt("tela.col_operacao","operação"), formato:v => esc(v || "—") },
       { campo:"objeto", titulo:txt("tela.col_objeto","objeto"), formato:v => esc(v || "—") },
       { campo:"ha_ms", titulo:txt("tela.col_ha","há"), tipo:"numero",
         formato:v => v > 5000 ? `<span class="mal">${dur(v)}</span>` : dur(v) },
       { campo:"pedidos", titulo:txt("tela.col_pedidos","pedidos"), tipo:"numero", agregador:"sum", formato:fmt },
       { campo:"__acaoKill", titulo:"", ordenavel:false, filtravel:false,
-        formato:(_, l) => `<button class="botao secundario mini bt-kill" data-kill="${l.id}">Encerrar</button>` },
+        formato:(_, l) => `<button class="botao secundario mini bt-kill" data-kill="${l.id}">${esc(txt("tela.se_encerrar","Encerrar"))}</button>` },
     ],
     dados: d.sessoes,
   });
@@ -8638,10 +8644,12 @@ async function verSessoes() {
     const b = ev.target.closest(".bt-kill");
     if (!b) return;
     const id = b.dataset.kill;
-    if (!confirm(`Encerrar a conexão ${id}?\n\nO cliente do outro lado perde a conexão.`)) return;
+    if (!confirm(marcado(txt("tela.se_confirma_kill",
+        "Encerrar a conexão {id}?\n\nO cliente do outro lado perde a conexão."), { id }))) return;
     try {
       const r = await api("encerrar_sessao", { id: Number(id) });
-      avisar(`conexão ${r.encerrada} (${r.estava}) — ${r.aviso}`);
+      avisar(marcado(txt("tela.se_av_kill", "conexão {id} ({estava}) — {aviso}"),
+        { id: r.encerrada, estava: r.estava, aviso: r.aviso }));
       verSessoes();
     } catch (e) { avisar(String(e), true); }
   });
@@ -8655,7 +8663,7 @@ async function verSessoes() {
         { campo:"aberta_s", titulo:txt("tela.col_aberta_ha","aberta há"), tipo:"numero", formato:v => dur(v * 1000) },
         { campo:"expira_em_s", titulo:txt("tela.col_expira_em","expira em"), tipo:"numero", formato:v => dur(v * 1000) },
         { campo:"__acaoKillWeb", titulo:"", ordenavel:false, filtravel:false,
-          formato:(_, l) => `<button class="botao secundario mini bt-killweb" data-killweb="${esc(l.id)}">Encerrar</button>` },
+          formato:(_, l) => `<button class="botao secundario mini bt-killweb" data-killweb="${esc(l.id)}">${esc(txt("tela.se_encerrar","Encerrar"))}</button>` },
       ],
       dados: d.web,
     });
@@ -8663,10 +8671,12 @@ async function verSessoes() {
       const b = ev.target.closest(".bt-killweb");
       if (!b) return;
       const id = b.dataset.killweb;
-      if (!confirm(`Encerrar a sessão web ${id}…?\n\nO próximo clique de quem estava usando cai no login.`)) return;
+      if (!confirm(marcado(txt("tela.se_confirma_killweb",
+          "Encerrar a sessão web {id}…?\n\nO próximo clique de quem estava usando cai no login."), { id }))) return;
       try {
         const r = await api("encerrar_sessao", { id });
-        avisar(`sessão ${r.encerrada} encerrada — ${r.aviso}`);
+        avisar(marcado(txt("tela.se_av_killweb", "sessão {id} encerrada — {aviso}"),
+          { id: r.encerrada, aviso: r.aviso }));
         verSessoes();
       } catch (e) { avisar(String(e), true); }
     });
@@ -8677,7 +8687,12 @@ async function verSessoes() {
   pararMonitor();
   est.relogioMaquina = setInterval(() => {
     if (!$("#painel [data-kill], #painel .fichas")) return pararMonitor();
-    if ($("#titulo").textContent === "Sessões") verSessoes(); else pararMonitor();
+    // A GRADE, e nao o titulo traduzido: comparar contra o literal "Sessoes"
+    // quebrava em qualquer idioma que nao o portugues -- o #titulo ja sai
+    // traduzido pelo folha() acima, a comparacao nunca batia, e o relogio
+    // parava sozinho no primeiro ciclo. #gradeSessoes e o marcador estavel,
+    // o mesmo em toda lingua.
+    if ($("#gradeSessoes")) verSessoes(); else pararMonitor();
   }, 3000);
 }
 
@@ -8687,20 +8702,20 @@ async function verSessoes() {
 /// entre 1 s e 2 s. Faixa de largura fixa esmagaria a metade rápida num balde só.
 function histograma(faixas) {
   const vivas = faixas.filter(f => f.quantas > 0);
-  if (!vivas.length) return `<div class="vazioc">sem acessos no período</div>`;
+  if (!vivas.length) return `<div class="vazioc">${esc(txt("tela.st_sem_acessos", "sem acessos no período"))}</div>`;
   const L = 700, alt = 22, teto = Math.max(...vivas.map(f => f.quantas));
   const h = vivas.length * alt + 8;
-  return `<svg viewBox="0 0 ${L} ${h}" role="img" aria-label="Distribuição do tempo de resposta">` +
+  return `<svg viewBox="0 0 ${L} ${h}" role="img" aria-label="${esc(txt("tela.st_aria_dist", "Distribuição do tempo de resposta"))}">` +
     vivas.map((f, k) => {
       const y = k * alt + 4;
       const w = Math.max(2, (f.quantas / teto) * (L - 250));
-      const rot = f.ate_ms == null ? `${fmt(f.de_ms)} ms ou mais`
+      const rot = f.ate_ms == null ? `${fmt(f.de_ms)} ${txt("tela.st_ms_ou_mais", "ms ou mais")}`
         : `${fmt(f.de_ms)} – ${fmt(f.ate_ms)} ms`;
       // Acima de um segundo o olho precisa de aviso; a cor é o aviso.
       const cor = f.de_ms >= 1000 ? "var(--log)" : f.de_ms >= 100 ? "var(--ambar)" : "var(--laranja)";
       return `<g>
         <text x="140" y="${y + 15}" text-anchor="end" font-size="11"
-              font-family="IBM Plex Mono, monospace" fill="currentColor" opacity=".75">${rot}</text>
+              font-family="IBM Plex Mono, monospace" fill="currentColor" opacity=".75">${esc(rot)}</text>
         <rect x="150" y="${y + 4}" width="${w.toFixed(1)}" height="13" rx="3" fill="${cor}" opacity=".9"/>
         <text x="${(158 + w).toFixed(1)}" y="${y + 15}" font-size="10.5"
               font-family="IBM Plex Mono, monospace" fill="currentColor" opacity=".7">${fmt(f.quantas)}</text>
@@ -8709,15 +8724,15 @@ function histograma(faixas) {
 }
 
 async function verEstatisticas(horas) {
-  folha("Estatísticas de uso", "carregando…", `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
+  folha(txt("tela.mi_estatisticas", "Estatísticas de uso"), txt("tela.carregando", "carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   let d;
   try { d = await api("estatisticas", horas ? { horas } : {}); }
-  catch (e) { return folha("Estatísticas de uso", "", `<div class="aviso mal">${esc(String(e))}</div>`); }
+  catch (e) { return folha(txt("tela.mi_estatisticas", "Estatísticas de uso"), "", `<div class="aviso mal">${esc(String(e))}</div>`); }
 
   const lat = d.latencia || {};
   const carta = (titulo, legenda, corpo, larga) =>
-    `<div class="carta ${larga ? "larga" : ""}"><h4>${titulo}</h4>
-       <p class="leg">${legenda}</p>${corpo}</div>`;
+    `<div class="carta ${larga ? "larga" : ""}"><h4>${esc(titulo)}</h4>
+       <p class="leg">${esc(legenda)}</p>${corpo}</div>`;
 
   // PADRONIZACAO: PhxGrid. `listaDe` monta TRES grades com o mesmo formato de
   // colunas (por tabela, por operação, por usuário) -- so a primeira coluna
@@ -8729,36 +8744,43 @@ async function verEstatisticas(horas) {
     return `<div id="${id}"></div>`;
   };
 
-  folha("Estatísticas de uso",
-    `desde ${esc(d.desde)} · ${fmt(d.acessos)} acessos`,
+  folha(txt("tela.mi_estatisticas", "Estatísticas de uso"),
+    marcado(txt("tela.st_sub", "desde {desde} · {acessos} acessos"),
+      { desde: d.desde, acessos: fmt(d.acessos) }),
     `<div class="fichas">
-       ${ficha(fmt(lat.p50), "mediana", "ms · metade responde abaixo disso")}
+       ${ficha(fmt(lat.p50), txt("tela.st_fic_mediana", "mediana"), txt("tela.st_fic_mediana_un", "ms · metade responde abaixo disso"))}
        ${ficha(fmt(lat.p90), "p90", "ms")}
-       ${ficha(fmt(lat.p95), "p95", "ms · é este que responde «está rápido?»")}
+       ${ficha(fmt(lat.p95), "p95", txt("tela.st_fic_p95_un", "ms · é este que responde «está rápido?»"))}
        ${ficha(fmt(lat.p99), "p99", "ms")}
-       ${ficha(fmt(lat.pior), "pior", "ms")}
+       ${ficha(fmt(lat.pior), txt("tela.col_pior", "pior"), "ms")}
      </div>
      <div class="barra-dbl">
-       <label>Período <select id="stHoras">
-         <option value="0">tudo o que há no log</option>
-         <option value="1">última hora</option>
-         <option value="24">últimas 24 horas</option>
-         <option value="168">últimos 7 dias</option>
+       <label>${esc(txt("tela.st_periodo", "Período"))} <select id="stHoras">
+         <option value="0">${esc(txt("tela.st_todos_log", "tudo o que há no log"))}</option>
+         <option value="1">${esc(txt("tela.st_ultima_hora", "última hora"))}</option>
+         <option value="24">${esc(txt("tela.st_24h", "últimas 24 horas"))}</option>
+         <option value="168">${esc(txt("tela.st_7d", "últimos 7 dias"))}</option>
        </select></label>
-       <button class="botao secundario" id="btSessoes">← Sessões</button>
+       <button class="botao secundario" id="btSessoes">← ${esc(txt("tela.se_titulo", "Sessões"))}</button>
      </div>
      <div class="cartas">
-       ${carta("Tempo de resposta", "cada faixa dobra a anterior · vermelho é acima de um segundo",
+       ${carta(txt("tela.st_carta_tempo_resposta", "Tempo de resposta"),
+          txt("tela.st_carta_tempo_resposta_leg", "cada faixa dobra a anterior · vermelho é acima de um segundo"),
           histograma(d.histograma || []), true)}
-       ${carta("As mais demoradas", "o registro de consulta lenta, sem precisar ligar nada",
+       ${carta(txt("tela.st_carta_mais_demoradas", "As mais demoradas"),
+          txt("tela.st_carta_mais_demoradas_leg", "o registro de consulta lenta, sem precisar ligar nada"),
           `<div id="gradeStLentas"></div>`, true)}
-       ${carta("Por tabela", "qual tabela custa caro — o log não sabia dizer isso antes",
+       ${carta(txt("tela.st_carta_por_tabela", "Por tabela"),
+          txt("tela.st_carta_por_tabela_leg", "qual tabela custa caro — o log não sabia dizer isso antes"),
           listaDe(d.por_tabela || [], "gradeStTabela", "tela.col_tabela", "tabela"), true)}
-       ${carta("Por operação", "o que mais se pede",
+       ${carta(txt("tela.st_carta_por_operacao", "Por operação"),
+          txt("tela.st_carta_por_operacao_leg", "o que mais se pede"),
           listaDe(d.por_operacao || [], "gradeStOperacao", "tela.col_operacao", "operação"), true)}
-       ${carta("Por usuário", "quem mais usa",
+       ${carta(txt("tela.st_carta_por_usuario", "Por usuário"),
+          txt("tela.st_carta_por_usuario_leg", "quem mais usa"),
           listaDe(d.por_usuario || [], "gradeStUsuario", "tela.col_usuario", "usuário"), true)}
-       ${carta("Por erro", "agrupado pelo código, e não pelo texto da mensagem",
+       ${carta(txt("tela.st_carta_por_erro", "Por erro"),
+          txt("tela.st_carta_por_erro_leg", "agrupado pelo código, e não pelo texto da mensagem"),
           `<div id="gradeStErro"></div>`, true)}
      </div>`);
 
@@ -8772,7 +8794,7 @@ async function verEstatisticas(horas) {
     colunas: [
       { campo:"quando", titulo:txt("tela.col_quando","quando"), fixa:"esq" },
       { campo:"op", titulo:txt("tela.col_operacao","operação"),
-        formato:(v, l) => `${esc(v)}${l.ok ? "" : ' <span class="pino mal">falhou</span>'}` },
+        formato:(v, l) => `${esc(v)}${l.ok ? "" : ` <span class="pino mal">${esc(txt("tela.st_falhou","falhou"))}</span>`}` },
       { campo:"objeto", titulo:txt("tela.col_objeto","objeto"), formato:v => esc(v || "—") },
       { campo:"usuario", titulo:txt("tela.col_usuario","usuário"), formato:v => esc(v || "—") },
       { campo:"ms", titulo:txt("tela.col_ms","ms"), tipo:"numero", formato:fmt },

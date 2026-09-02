@@ -766,8 +766,12 @@ sobre rowid-como-endereço é do dono do projeto e não voltou.
 non-blocking* **este desenho já entrega**, por outro caminho e sem MVCC nenhum.
 Como nada vai a disco antes do `COMMIT`, um leitor concorrente nunca vê escrita
 não confirmada e **nunca espera por escritor**. O que continua faltando — e que
-só o MVCC daria — é **leitura repetível** ao longo de um leitor longo, e **ler o
-que a própria transação escreveu**.
+só o MVCC daria — é **leitura repetível** ao longo de um leitor longo.
+
+> Esta frase dizia também «e ler o que a própria transação escreveu». **Deixou
+> de valer em 02/09**, com a SP000006: o *read-your-own-writes* foi entregue por
+> sobreposição no caminho de leitura, sem MVCC nenhum (§4.4.1). Sobra a leitura
+> repetível, que é uma coisa só e não duas.
 
 ### 11.2 WAL, undo log, PageLSN, full-page-write, VACUUM
 
@@ -841,14 +845,20 @@ a única resposta útil é a precisa:
 | letra | estado | com precisão |
 |---|---|---|
 | **A** — atomicidade | **entregue** | o conjunto de escrita é aplicado inteiro ou não é aplicado; o `ROLLBACK` não deixa slot, rowid nem evento; uma queda no meio da passada é completada pela marca |
-| **I** — isolamento | **entregue, com o nome certo** | *escrita serializável por tabela, leitura confirmada e não bloqueante, sem leitura repetível.* **Não é ANSI SERIALIZABLE** e não pode ser chamado assim: não há leitura repetível, e a transação não vê as próprias escritas |
-| **C** — consistência | **parcial, e a parte que falta tem nome** | tipo, unicidade e gatilhos são conferidos ao empilhar. **A integridade referencial continua não sendo imposta** (§4.6) — a chave estrangeira é catálogo. Enquanto isso valer, o **C** não está inteiro |
+| **I** — isolamento | **entregue, com o nome certo** | *escrita serializável por tabela, leitura confirmada e não bloqueante, sem leitura repetível.* **Não é ANSI SERIALIZABLE** e não pode ser chamado assim: não há leitura repetível. A transação **vê** as próprias escritas desde a SP000006 |
+| **C** — consistência | **parcial, e a parte que falta MUDOU de nome** | tipo, unicidade e gatilhos são conferidos ao empilhar. A integridade referencial **passou a ser imposta na gravação**: o `excluir` recusa a linha que tem filha, o `conferir_fks` recusa a filha sem pai, e desde a SP000057 o `ao_alterar` executa as quatro ações. O que falta agora é outra coisa e é menor: **a cascata escreve em tabela que a transação não declarou** (§4.6), então um `ROLLBACK` não alcança a filha. Enquanto isso valer, o **C** não está inteiro |
 | **D** — durabilidade | **entregue, e configurável** | a marca `.tx` é sincronizada antes da passada e é o ponto de compromisso; uma queda depois dela é completada no arranque. Com `durabilidade: sistema` quem abre mão é quem configurou, e está escrito |
 
 **Então: continua sendo errado escrever *ACID compliant* sem qualificação.** O
 que se pode escrever, e é verdade: *atomicidade e durabilidade entregues,
-isolamento entregue no nível declarado acima, consistência dependente da
-integridade referencial que o motor ainda não impõe.*
+isolamento entregue no nível declarado acima, consistência dependente do escopo
+da cascata, que hoje escreve fora do que a transação declarou.*
+
+> Esta frase dizia «consistência dependente da integridade referencial que o
+> motor ainda não impõe». **O motor passou a impor** — no excluir primeiro, e no
+> alterar com a SP000057. A lacuna não sumiu: mudou de lugar, e ficou menor. É
+> por isso que a frase se reescreve em vez de sair: lacuna que muda de nome sem
+> ninguém reescrever vira documento que envelhece dizendo a verdade de ontem.
 
 ---
 
