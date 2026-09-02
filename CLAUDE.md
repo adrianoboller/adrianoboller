@@ -87,6 +87,30 @@ estar escrito de um jeito; analisar e reserializar não. O que não se analisa
 não vira texto — vira o tamanho em bytes. Se a estrutura não se lê, não há como
 tapar o campo dentro dela.
 
+**Regra primordial da integridade: nunca se mata o pai que tem filhos.**
+Palavra do dono: *«1 para muitos. Cascade/Restrict sempre. Nunca pode matar o
+registro pai se tem filhos em outra tabela(s). A opção Cascade/Cascade não
+existe em PhxSql.»*
+
+Em código: `ao_excluir` aceita **só** `restringir`, e `ao_alterar` nasce
+`cascata`. Cascata, anular e nada **não existem** no lado do excluir — e o par
+Cascata/Cascata some por **consequência**, não por uma segunda regra: sem
+cascata no excluir, não há par com cascata dos dois lados.
+
+A recusa acontece na **declaração**, não na gravação, e isso é decisão: uma
+tabela nasce uma vez e grava um milhão de vezes. Recusar cedo custa um erro
+lido enquanto se cria a tabela; recusar tarde custa um banco inteiro modelado
+errado, descoberto no dia do primeiro `excluir`. Está em
+`phxsql/crates/phxsql-server/src/valores.rs`, com o par de testes que trava os
+dois sentidos — `ao_excluir_so_aceita_restringir` e o irmão que impede um
+portão que recusaria tudo.
+
+**O que ainda NÃO está imposto**, e é o que falta da regra: a gravação em si.
+Declarar `restringir` hoje impede declarar outra coisa; ainda não impede o
+`excluir` de apagar um pai com filhas, porque isso pede a busca reversa — quem
+aponta para mim — que nenhuma tabela declara. É o próximo passo, e é o que
+fecha a regra.
+
 **A ordem de digitação é sagrada.** O `.reg` nunca reaproveita slot excluído.
 Qualquer proposta que quebre isso precisa ser discutida antes.
 

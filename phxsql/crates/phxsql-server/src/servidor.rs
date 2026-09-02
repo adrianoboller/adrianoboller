@@ -19604,10 +19604,11 @@ mod testes_chave_estrangeira {
             .and_then(Json::lista)
             .unwrap()[0];
         assert_eq!(fk.textos("colunas_ref"), vec!["id"]);
-        // E o padrao das duas acoes e o unico seguro: quem nao disse o que
-        // fazer com a filha nao pediu para apaga-la.
+        // O padrao de cada lado e o da REGRA PRIMORDIAL: restringir ao
+        // excluir (nunca se mata o pai que tem filhos) e cascata ao alterar
+        // (a chave do pai que muda leva as filhas junto).
         assert_eq!(fk.texto_ou("ao_excluir", ""), "Restringir");
-        assert_eq!(fk.texto_ou("ao_alterar", ""), "Restringir");
+        assert_eq!(fk.texto_ou("ao_alterar", ""), "Cascata");
     }
 
     /// A acao aceita o portugues, o SQL e a forma que o `esquema` DEVOLVE --
@@ -19618,18 +19619,18 @@ mod testes_chave_estrangeira {
             ("cascata", "Cascata"),
             ("CASCADE", "Cascata"),
             ("Cascata", "Cascata"),
-            ("set null", "AnularCampos"),
-            ("anular", "AnularCampos"),
-            ("nada", "NaoFazerNada"),
+            ("restringir", "Restringir"),
+            ("RESTRICT", "Restringir"),
+            ("Restringir", "Restringir"),
         ] {
             let s = servidor(&dir_temp(&format!("acao-{}", escrito.replace(' ', "-"))));
-            com_fk(&s, &format!(r#","ao_excluir":"{escrito}""#)).unwrap();
+            com_fk(&s, &format!(r#","ao_alterar":"{escrito}""#)).unwrap();
             let e = pede(&s, r#""op":"esquema","database":"b","tabela":"pedidos""#).unwrap();
             let fk = &e
                 .campo("chaves_estrangeiras")
                 .and_then(Json::lista)
                 .unwrap()[0];
-            assert_eq!(fk.texto_ou("ao_excluir", ""), esperado, "{escrito}");
+            assert_eq!(fk.texto_ou("ao_alterar", ""), esperado, "{escrito}");
         }
     }
 
@@ -19799,6 +19800,53 @@ mod testes_chave_estrangeira {
         assert!(txt.contains("clientes"), "{txt}");
     }
 
+    /// **A regra primordial: nunca se mata o pai que tem filhos.**
+    ///
+    /// Palavra do dono, e do naipe da ordem de digitacao. `ao_excluir` aceita
+    /// SO `restringir`; cascata, anular e nada deixam de existir ali -- e o par
+    /// cascata/cascata some por CONSEQUENCIA, porque sem cascata no excluir nao
+    /// ha par com cascata dos dois lados.
+    ///
+    /// A recusa e na DECLARACAO e nao na gravacao, de proposito: a tabela nasce
+    /// uma vez e grava um milhao de vezes. Recusar cedo custa um erro lido
+    /// enquanto se cria a tabela; recusar tarde custa um banco modelado errado,
+    /// descoberto no dia do primeiro `excluir`.
+    #[test]
+    fn ao_excluir_so_aceita_restringir() {
+        for proibido in [
+            "cascata",
+            "cascade",
+            "anular",
+            "set null",
+            "nada",
+            "no action",
+        ] {
+            let s = servidor(&dir_temp(&format!("proib-{}", proibido.replace(' ', "-"))));
+            let e = com_fk(&s, &format!(r#","ao_excluir":"{proibido}""#))
+                .expect_err(&format!("{proibido:?} passou no ao_excluir"));
+            let txt = e.to_string();
+            assert!(
+                txt.contains("sempre") && txt.contains("restringir"),
+                "a recusa nao ensina a regra: {txt}"
+            );
+            assert!(
+                txt.contains("cascata/cascata"),
+                "a recusa nao diz que o par nao existe: {txt}"
+            );
+        }
+    }
+
+    /// O par do de cima, sem o qual ele passaria com um portao que recusa TUDO
+    /// -- e um portao assim tambem impediria criar qualquer chave.
+    #[test]
+    fn ao_excluir_aceita_restringir_escrito_de_tres_jeitos() {
+        for escrito in ["restringir", "RESTRICT", "Restringir"] {
+            let s = servidor(&dir_temp(&format!("ok-{escrito}")));
+            com_fk(&s, &format!(r#","ao_excluir":"{escrito}""#))
+                .unwrap_or_else(|e| panic!("{escrito:?} foi recusado: {e}"));
+        }
+    }
+
     fn criar_clientes(s: &Arc<Servidor>) {
         pede(
             s,
@@ -19868,7 +19916,7 @@ mod testes_chave_estrangeira {
             r#""op":"declarar_fk","database":"b","tabela":"pedidos",
                "nome":"fk_cliente_com_nome_comprido_de_proposito_para_estourar_a_folga_do_alinhamento",
                "colunas":["cliente_id"],"tabela_ref":"clientes","colunas_ref":["id"],
-               "ao_excluir":"cascata""#,
+               "ao_alterar":"restringir""#,
         )
         .unwrap();
         // A resposta diz a verdade que a tela precisa repetir.
@@ -19881,7 +19929,9 @@ mod testes_chave_estrangeira {
             .unwrap();
         assert_eq!(fks.len(), 1, "a chave nao entrou: {}", e.escrever());
         assert_eq!(fks[0].texto_ou("tabela_ref", ""), "clientes");
-        assert_eq!(fks[0].texto_ou("ao_excluir", ""), "Cascata");
+        assert_eq!(fks[0].texto_ou("ao_alterar", ""), "Restringir");
+        // E o excluir e o da regra, mesmo sem ninguem ter pedido.
+        assert_eq!(fks[0].texto_ou("ao_excluir", ""), "Restringir");
 
         // A linha de antes continua inteira -- declarar e catalogo, nao dado.
         let l = pede(
@@ -19981,7 +20031,7 @@ mod testes_chave_estrangeira {
     #[test]
     fn o_que_o_esquema_devolve_volta_como_criar_tabela() {
         let s = servidor(&dir_temp("ida-e-volta"));
-        com_fk(&s, r#","ao_excluir":"cascata","verificar":true"#).unwrap();
+        com_fk(&s, r#","ao_alterar":"restringir","verificar":true"#).unwrap();
         let e = pede(&s, r#""op":"esquema","database":"b","tabela":"pedidos""#).unwrap();
 
         let mut recriar = vec![
@@ -20015,7 +20065,7 @@ mod testes_chave_estrangeira {
             .and_then(Json::lista)
             .unwrap()[0];
         assert_eq!(fk.texto_ou("nome", ""), "fk_cliente");
-        assert_eq!(fk.texto_ou("ao_excluir", ""), "Cascata");
+        assert_eq!(fk.texto_ou("ao_alterar", ""), "Restringir");
         // O campo que a ida-e-volta perdia em silencio. Sem ele na resposta,
         // recriar a tabela a partir do que o servidor devolveu DESLIGA a
         // conferencia -- e ninguem seria avisado, porque o pedido continua

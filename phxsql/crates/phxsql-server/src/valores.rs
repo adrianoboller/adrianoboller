@@ -227,9 +227,22 @@ pub(crate) fn chave_estrangeira_de_json(
     // Toda tabela ja criada omitiu o campo -- porque ele nao existia --, entao
     // ausente TEM de significar "como antes". Guarda nova entra pedida.
     Ok(ForeignKey::new(nome, posicoes, tabela_ref, colunas_ref)
-        .ao_excluir(acao_ri_de_texto(f.texto_ou("ao_excluir", ""))?)
-        .ao_alterar(acao_ri_de_texto(f.texto_ou("ao_alterar", ""))?)
+        .ao_excluir(acao_ri_de_texto(
+            f.texto_ou("ao_excluir", ""),
+            Lado::AoExcluir,
+        )?)
+        .ao_alterar(acao_ri_de_texto(
+            f.texto_ou("ao_alterar", ""),
+            Lado::AoAlterar,
+        )?)
         .conferindo(f.booleano_ou("verificar", false)))
+}
+
+/// Qual das duas acoes esta sendo lida -- e elas NAO aceitam as mesmas coisas.
+#[derive(Clone, Copy, PartialEq)]
+enum Lado {
+    AoExcluir,
+    AoAlterar,
 }
 
 /// A acao de integridade referencial escrita em texto.
@@ -238,23 +251,54 @@ pub(crate) fn chave_estrangeira_de_json(
 /// -- pela mesma razao do `tipo_de_texto`: o que a operacao devolve tem de
 /// poder voltar como entrada, senao recriar uma tabela exige traduzir na mao.
 ///
-/// Ausente e `Restringir`, que e o padrao do `ForeignKey::new` e o unico
-/// seguro: quem nao disse o que fazer com a filha nao pediu para apaga-la.
-fn acao_ri_de_texto(t: &str) -> Result<AcaoRi> {
-    Ok(
-        match t.trim().to_lowercase().replace([' ', '_'], "").as_str() {
-            "" | "restringir" | "restrict" => AcaoRi::Restringir,
-            "cascata" | "cascade" => AcaoRi::Cascata,
-            "anular" | "anularcampos" | "setnull" => AcaoRi::AnularCampos,
-            "nada" | "naofazernada" | "noaction" => AcaoRi::NaoFazerNada,
-            outro => {
-                return Err(PhxError::Esquema(format!(
-                    "acao de integridade desconhecida: {outro:?} \
-                 (use restringir, cascata, anular ou nada)"
-                )))
-            }
-        },
-    )
+/// # A regra primordial da casa, e por que ela mora AQUI
+///
+/// Palavra do dono, e ela e do mesmo naipe da ordem de digitacao:
+///
+/// > *1 para muitos. Cascata ao alterar, Restringir ao excluir, sempre.*
+/// > *Nunca pode matar o registro pai se tem filhos em outra tabela.*
+/// > *O par Cascata/Cascata nao existe no PhxSql.*
+///
+/// Entao `ao_excluir` aceita **so** `Restringir`. Nao e teimosia de sintaxe: e
+/// a unica forma de a regra ser verdadeira em todo banco criado daqui em
+/// diante. Guarda que so vale quando alguem lembra de pedir nao e guarda.
+///
+/// E a recusa acontece na DECLARACAO, e nao na gravacao, de proposito: uma
+/// tabela nasce uma vez e grava um milhao de vezes. Recusar cedo custa um erro
+/// que se le enquanto se cria a tabela; recusar tarde custa um banco inteiro
+/// modelado errado, descoberto no dia do primeiro `excluir`.
+///
+/// O par Cascata/Cascata some por CONSEQUENCIA disto, e nao por uma segunda
+/// regra: sem cascata no excluir, nao ha par com cascata dos dois lados.
+fn acao_ri_de_texto(t: &str, lado: Lado) -> Result<AcaoRi> {
+    let acao = match t.trim().to_lowercase().replace([' ', '_'], "").as_str() {
+        // Ausente vale o padrao de cada lado, e os padroes sao os da regra.
+        "" => {
+            return Ok(match lado {
+                Lado::AoExcluir => AcaoRi::Restringir,
+                Lado::AoAlterar => AcaoRi::Cascata,
+            })
+        }
+        "restringir" | "restrict" => AcaoRi::Restringir,
+        "cascata" | "cascade" => AcaoRi::Cascata,
+        "anular" | "anularcampos" | "setnull" => AcaoRi::AnularCampos,
+        "nada" | "naofazernada" | "noaction" => AcaoRi::NaoFazerNada,
+        outro => {
+            return Err(PhxError::Esquema(format!(
+                "acao de integridade desconhecida: {outro:?} \
+                 (use restringir ou cascata)"
+            )))
+        }
+    };
+    if lado == Lado::AoExcluir && acao != AcaoRi::Restringir {
+        return Err(PhxError::Esquema(format!(
+            "\"ao_excluir\": {t:?} nao existe no PhxSql -- ao excluir e sempre \
+             \"restringir\". Nunca se mata o registro pai que tem filhos em \
+             outra tabela, e por isso o par cascata/cascata tambem nao existe. \
+             Para apagar o pai, apague as filhas antes"
+        )));
+    }
+    Ok(acao)
 }
 
 /// Monta um `Schema` a partir do JSON de um pedido de criacao de tabela.
