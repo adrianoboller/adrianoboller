@@ -1,6 +1,6 @@
-# Crase dentro de template literal derruba o arquivo inteiro
+# Crase em contexto que a interpreta: template literal, e tambem o bash
 
-- **Quando:** 2026-09-02, 17:32 (e de novo às 19:32, no mesmo dia)
+- **Quando:** 2026-09-02, 17:32 — e de novo às 19:32 e às 21:06, no mesmo dia
 - **Onde:** `crates/phxsql-server/ui/telemetria.js:620`, e depois num gerador
   de PDF fora da árvore
 - **Custo:** 31 casos da bateria reprovados nos dois temas, com quatro
@@ -43,6 +43,29 @@ subir servidor e abrir navegador.
 embutido nos `.html`, com linhas em branco na frente para o número bater com o
 arquivo de verdade. Prova real nos dois sentidos: acusa `telemetria.js:620` com
 a crase reposta e `index.html:2057` com um `return );` plantado.
+
+### A terceira, e ela mudou o nome deste arquivo
+
+Às 21:06 aconteceu pela terceira vez, e num contexto que eu não tinha
+considerado: uma **mensagem de commit** passada por `git commit -m "…"`, com
+crases em volta de um nome de arquivo. O bash leu a crase como substituição de
+comando, tentou **executar** `custo-do-gatilho.rs`, e o commit entrou com a
+frase mutilada — *«com o medidor novo :»*.
+
+Não é a mesma armadilha do template literal: é a **mesma classe**. A crase é um
+metacaractere em mais de um lugar, e eu só tinha aprendido um deles. Por isso
+este arquivo mudou de nome — «template literal» era o alcance que eu conhecia,
+não o alcance real.
+
+E há uma ironia útil: **todos os outros commits do dia usaram heredoc com
+delimitador entre aspas** (`<<'FIM'`), onde nada se interpreta. Eu tinha a
+prática certa e escorreguei justamente no commit que contava um aprendizado
+sobre medir antes de afirmar.
+
+**A regra que fecha os três casos:** antes de escrever crase, pergunte quem lê
+aquele texto primeiro. Template literal, bash com aspas duplas e `eval` leem a
+crase; heredoc com delimitador entre aspas, aspas simples e arquivo lido do
+disco não leem.
 
 **O buraco que ficou:** o portão cobre **só `ui/`**. Às 19:32 do mesmo dia
 cometi o mesmo erro num script de geração de PDF no scratchpad, e nada o pegou

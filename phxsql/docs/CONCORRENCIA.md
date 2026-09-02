@@ -124,9 +124,35 @@ usuário **dentro** da seção crítica; os `AFTER` não — o próprio comentá
 `drop(_trava)` está no fonte, antes da chamada. As cinco são `op_inserir`,
 `op_atualizar`, `op_excluir`, `op_inserir_lote` e `empilhar` (a transação).
 
-A duração dessas cinco **não tem teto**: é o que quem escreveu o gatilho
-quiser. Nenhum desenho de trava conserta isso — é o argumento mais forte a
-favor de o leitor não depender do escritor de forma alguma.
+~~A duração dessas cinco **não tem teto**: é o que quem escreveu o gatilho
+quiser.~~ **Falso, e corrigido em 02/09 com medição.** A frase acima foi
+escrita lendo o mapa e não o avaliador. Existe teto, e ele estava no código o
+tempo todo: `PASSOS_MAX = 1_000_000` em `phxsql-sql/src/rotina.rs`, e o
+comentário dele já nomeia **esta** razão exata — *«num gatilho, roda com a
+trava de dados na mão»*.
+
+Só que teto em **passos** não limita a trava: o que limita é teto em **tempo**,
+e ninguém tinha feito a conversão. Feita agora, com
+`cargo run --release --example custo-do-gatilho -p phxsql-sql`:
+
+| caso | mediana de 3 |
+|---|---:|
+| pior caso honesto — `WHILE TRUE DO SET x = x + 1`, gastando o orçamento inteiro | **18,3 ms** |
+| corpo comum — `IF x < 10 THEN SET x = x + 1` | **1 µs** |
+
+**18,3 ms é o pior que um gatilho consegue impor a todas as outras conexões**,
+e ele já é o pior de propósito: um laço infinito. Um corpo honesto custa
+dezoito mil vezes menos.
+
+O gatilho `BEFORE` também **não alcança o motor** — ele roda sobre `MotorNulo`,
+sem ler nem gravar tabela nenhuma. Não há I/O ali para esticar o número.
+
+**Consequência para a ordem de trabalho:** estas cinco deixam de ser o primeiro
+alvo. O argumento de que «nenhum desenho de trava conserta isso» cai junto — um
+teto de 18,3 ms é da ordem de grandeza de uma gravação com `fsync`, e não de
+uma catástrofe. As **27 seções de leitura com varredura** (1.795 linhas) passam
+a ser as candidatas — mas isso é **hipótese, não conclusão**: elas ainda não
+foram medidas em tempo de trava, e trocar um palpite por outro não é medir.
 
 **(c) Nenhuma seção atravessa a rede.** O conserto registrado na §4.13 do
 `DESEMPENHO.md` **continua valendo**, e o mapa o confirma por outro caminho,
