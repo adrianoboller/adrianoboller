@@ -35,22 +35,22 @@ teste que o motivou ainda cai. [§8](#8-as-guardas-provar-que-a-prova-pega).
 ## 1. A cobertura de hoje, medida
 
 <!-- testes:total:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-`cargo test --workspace`: **1.444 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
+`cargo test --workspace`: **1.462 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
 <!-- testes:total:fim --> Por área,
 contando `#[test]` por arquivo e agrupando:
 
 <!-- cobertura:inicio -->
 | área | testes | % |
 |---|---:|---:|
-| Motor de dados (arquivos, índice, diários) | 346 | 24,0 |
-| Protocolo e portões (despachar) | 209 | 14,5 |
-| Núcleo (JSON, tipos, UUID, zip, paralelo) | 133 | 9,2 |
-| Criptografia e codificação | 122 | 8,4 |
+| Motor de dados (arquivos, índice, diários) | 353 | 24,1 |
+| Protocolo e portões (despachar) | 215 | 14,7 |
+| Núcleo (JSON, tipos, UUID, zip, paralelo) | 133 | 9,1 |
+| Criptografia e codificação | 122 | 8,3 |
 | Configuração | 93 | 6,4 |
 | DbLink | 71 | 4,9 |
+| Servidor (outros) | 58 | 4,0 |
 | Camada SQL (léxico, sintaxe, tradução) | 55 | 3,8 |
-| Servidor (outros) | 53 | 3,7 |
-| Telemetria e profiler | 53 | 3,7 |
+| Telemetria e profiler | 53 | 3,6 |
 | Gatilhos e procedimentos | 38 | 2,6 |
 | Jobs | 31 | 2,1 |
 | Mensagens (i18n do servidor) | 28 | 1,9 |
@@ -65,17 +65,17 @@ contando `#[test]` por arquivo e agrupando:
 | **Junções e união** | **13** | **0,9** |
 | **Pivot** | **12** | **0,8** |
 | **Replicação** | **11** | **0,8** |
-| **Alertas e e-mail** | **8** | **0,6** |
+| **Alertas e e-mail** | **8** | **0,5** |
 | **CLI** | **7** | **0,5** |
 | **Cluster** | **7** | **0,5** |
 | **Monitor de máquina** | **6** | **0,4** |
-| **total** | **1444** | |
+| **total** | **1462** | |
 
 Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 
 | arquivo | linhas |
 |---|---:|
-| `phxsql-store/src/table.rs` | 2614 |
+| `phxsql-store/src/table.rs` | 2875 |
 | `phxsql-store/src/ndx.rs` | 1580 |
 | `phxsql-ffi/src/lib.rs` | 1444 |
 | `phxsql-server/src/main.rs` | 488 |
