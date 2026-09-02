@@ -6265,7 +6265,97 @@ impl Servidor {
         // A imagem da linha no diario e decisao do servidor, como o espelho:
         // um source grava, um servidor isolado nao paga por ela.
         t.ligar_imagem_no_diario(self.config.replicacao.imagem_da_linha);
+        // E o READ-YOUR-OWN-WRITES. Aqui, e nao em cada operacao de leitura,
+        // pelo mesmo motivo do portao de permissao ser um so: espalhado por
+        // vinte operacoes, a que alguem esquecer mostra o disco enquanto as
+        // outras mostram a transacao -- e quem olha a tela nao tem como saber
+        // qual das duas esta certa.
+        if let Some(sob) = self.sobreposicao(database, tabela, sessao, &t) {
+            t.sobrepor(sob);
+        }
         Ok(t)
+    }
+
+    /// O que a transacao DESTA conexao ja pediu nesta tabela e ainda nao gravou.
+    ///
+    /// # O portao vem antes do trabalho
+    ///
+    /// Primeira linha: um `load` atomico. Servidor sem transacao aberta --
+    /// que e o caso comum -- nao toma mutex, nao percorre lista e nao aloca
+    /// nada. E a licao do Profiler, que cobrava 7% da carga fazendo o trabalho
+    /// antes de perguntar se estava ligado.
+    ///
+    /// # Por que a dobra acontece AQUI e nao no `transacao.rs`
+    ///
+    /// Porque marcar uma linha exige saber onde mora a coluna de sistema, e
+    /// isso e do ESQUEMA -- que so existe com a tabela aberta. Uma segunda
+    /// copia dessa regra no registro de transacoes seria a copia que envelhece.
+    fn sobreposicao(
+        &self,
+        database: &str,
+        tabela: &str,
+        sessao: &Sessao,
+        t: &Table,
+    ) -> Option<phxsql_store::table::Sobreposicao> {
+        if self.transacoes_abertas.load(Ordering::Relaxed) == 0 || sessao.ligacao == 0 {
+            return None;
+        }
+        let reg = self.transacoes.lock().ok()?;
+        let tx = reg.de(sessao.ligacao)?;
+        if tx.escritas.is_empty() {
+            return None;
+        }
+        let pos_soft = t.esquema().coluna_softdeleted();
+        let mut sob = phxsql_store::table::Sobreposicao::nova();
+        let mut houve = false;
+        // A ORDEM MANDA, e o `fold` e por isso: `BEGIN; UPDATE x; DELETE x`
+        // termina em «sumida», e `INSERT; excluir suave` termina na linha
+        // recem-criada JA marcada -- e nao numa marca sobre um slot que ainda
+        // nao existe em disco, que sumiria a linha inteira.
+        let mut nascidas: std::collections::HashMap<u64, Vec<phxsql_core::value::Value>> =
+            std::collections::HashMap::new();
+        for e in &tx.escritas {
+            if !e.database.eq_ignore_ascii_case(database) || !e.tabela.eq_ignore_ascii_case(tabela)
+            {
+                continue;
+            }
+            houve = true;
+            match e.acao {
+                crate::transacao::Acao::Inserir => {
+                    nascidas.insert(e.rowid, e.linha.clone());
+                    sob.nasceu(e.rowid, e.linha.clone());
+                }
+                crate::transacao::Acao::Atualizar => match nascidas.get_mut(&e.rowid) {
+                    // Alterar uma linha que nasceu na propria transacao troca
+                    // a linha guardada, e nao empilha uma troca sobre um slot
+                    // que ainda nao existe em disco.
+                    Some(guardada) => {
+                        *guardada = e.linha.clone();
+                        sob.nasceu(e.rowid, e.linha.clone());
+                    }
+                    None => sob.por(e.rowid, phxsql_store::table::Troca::Linha(e.linha.clone())),
+                },
+                crate::transacao::Acao::ExcluirSuave | crate::transacao::Acao::Restaurar => {
+                    let marca = e.acao == crate::transacao::Acao::ExcluirSuave;
+                    match (nascidas.get_mut(&e.rowid), pos_soft) {
+                        (Some(linha), Some(i)) => {
+                            linha[i] = phxsql_core::value::Value::Bool(marca);
+                            sob.nasceu(e.rowid, linha.clone());
+                        }
+                        _ => sob.por(e.rowid, phxsql_store::table::Troca::Marca(marca)),
+                    }
+                }
+                crate::transacao::Acao::ExcluirDeVez => {
+                    nascidas.remove(&e.rowid);
+                    sob.por(e.rowid, phxsql_store::table::Troca::Sumida);
+                }
+            }
+        }
+        if houve {
+            Some(sob)
+        } else {
+            None
+        }
     }
 
     /// Anota na trilha que uma operacao LEU dado pessoal.
@@ -8065,6 +8155,14 @@ impl Servidor {
 
         let trava = self.travar_dados()?;
         let mut t = self.abrir_travada(&trava, p, sessao)?;
+        // DISPENSA REGISTRADA da sobreposicao, e nao esquecimento. Este e o
+        // caminho que EMPILHA, e ele ja sabe o que esta pendente por conta
+        // propria -- e com mensagem melhor: `chave_ja_empilhada` diz «esta
+        // seria a linha 3 da lista», e a conferencia contra o disco diria so
+        // «o indice unico ja tem essa chave». Ligada aqui, a sobreposicao
+        // faria a conferencia de disco achar a linha pendente primeiro e
+        // responder com a frase que nao ajuda ninguem.
+        t.ver_so_o_disco();
 
         // A particao alfanumerica fica de fora, e o motivo e o rowid.
         //
@@ -10472,6 +10570,9 @@ impl Servidor {
         let ha_mais = ultimo > 0 && !t.pagina_depois_de(ultimo, 1, visao)?.is_empty();
         let ha_antes = primeiro > 1 && !t.pagina_antes_de(primeiro, 1, visao)?.is_empty();
 
+        // Fora do `vec!` porque contar passou a poder falhar: dentro de uma
+        // transacao ela le os slots que o conjunto de escrita tocou.
+        let visiveis = t.contar(visao)?;
         Ok(Json::objeto(vec![
             // `registros` e o que a tabela tem, e sai do cabecalho: nao custa
             // varredura. `total` era a contagem da varredura inteira, e por
@@ -10480,7 +10581,7 @@ impl Servidor {
             // Quantas linhas ESTA visao enxerga -- e a conta de «pagina 3 de
             // 40». Sai de dois contadores do cabecalho, sem varrer nada; era
             // por nao existir que a contagem tinha sido tirada da resposta.
-            ("visiveis", Json::de_u64(t.contar(visao))),
+            ("visiveis", Json::de_u64(visiveis)),
             ("marcadas", Json::de_u64(t.marcadas())),
             ("devolvidas", Json::de_u64(linhas.len() as u64)),
             ("modo", Json::texto_de(modo)),
@@ -21663,6 +21764,185 @@ mod testes_transacoes {
         assert_eq!(s.travas.lock().unwrap().quantas(), 0);
     }
 
+    // ------------------------------------ SP000006: read-your-own-writes
+
+    /// A transacao enxerga o que ela mesma ALTEROU, EXCLUIU e INSERIU.
+    ///
+    /// # Por que os quatro caminhos num teste so
+    ///
+    /// Porque o defeito que este teste existe para pegar nao e «o `ler` nao
+    /// mostra»: e o `ler` mostrar e o `varrer` nao, ou a lista mostrar e a
+    /// CONTA continuar a do disco. Uma tela que diz «5 de 4 linhas» nao tem
+    /// como estar certa, e quem olha nao sabe qual dos dois numeros mentiu.
+    ///
+    /// Por isso a sobreposicao mora num lugar so, e por isso a prova pergunta
+    /// pelos quatro caminhos na mesma transacao.
+    #[test]
+    fn a_transacao_enxerga_o_que_ela_mesma_escreveu() {
+        let dir = dir_temp("ryow");
+        let s = servidor(&dir);
+        let ses = sessao(21);
+        base(&s, &ses);
+        for i in 1..=3 {
+            pede(
+                &s,
+                &ses,
+                &format!(
+                    r#""op":"inserir","database":"loja","tabela":"clientes",
+                       "linha":{{"id":{i},"nome":"c{i}"}}"#
+                ),
+            )
+            .unwrap();
+        }
+        assert_eq!(quantas(&s, &ses, "clientes"), 3);
+
+        pede(&s, &ses, r#""op":"begin""#).unwrap();
+
+        // 1. INSERIR -- a linha nova aparece, e aparece no FIM, que e onde o
+        //    commit vai grava-la: a ordem de digitacao e sagrada tambem aqui.
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"clientes",
+               "linha":{"id":4,"nome":"nova"}"#,
+        )
+        .unwrap();
+        assert_eq!(quantas(&s, &ses, "clientes"), 4);
+        let r = pede(
+            &s,
+            &ses,
+            r#""op":"varrer","database":"loja","tabela":"clientes","max":100"#,
+        )
+        .unwrap();
+        // A CONTA se confere AQUI, e nao depois do excluir, e a diferenca
+        // custou uma sabotagem: la embaixo o disco tem 3 e a transacao tambem
+        // tem 3 (uma a mais, uma escondida), entao a asercao passava com a
+        // conta do disco -- teste que passa por engano e pior que teste que
+        // falta. Neste ponto os dois numeros DIVERGEM: 3 no disco, 4 aqui.
+        assert_eq!(
+            r.campo("visiveis").and_then(Json::inteiro),
+            Some(4),
+            "«4 linhas» na lista e «3» na conta seria a tela mentindo sobre si mesma"
+        );
+        let ultima = r
+            .campo("linhas")
+            .and_then(Json::lista)
+            .and_then(|l| l.last())
+            .and_then(|j| j.campo("nome"))
+            .and_then(Json::texto)
+            .unwrap_or("")
+            .to_string();
+        assert_eq!(ultima, "nova", "a linha empilhada tem de sair no fim");
+
+        // 2. LER pelo rowid previsto devolve a linha empilhada.
+        let r = pede(
+            &s,
+            &ses,
+            r#""op":"ler","database":"loja","tabela":"clientes","rowid":4"#,
+        )
+        .unwrap();
+        assert_eq!(r.texto_ou("nome", ""), "nova");
+
+        // 3. ALTERAR uma linha do disco -- a leitura devolve o valor NOVO, e o
+        //    contador nao se mexe: alterar nao cria nem apaga linha.
+        pede(
+            &s,
+            &ses,
+            r#""op":"atualizar","database":"loja","tabela":"clientes","rowid":2,
+               "valores":{"id":2,"nome":"MUDADA"}"#,
+        )
+        .unwrap();
+        let r = pede(
+            &s,
+            &ses,
+            r#""op":"ler","database":"loja","tabela":"clientes","rowid":2"#,
+        )
+        .unwrap();
+        assert_eq!(r.texto_ou("nome", ""), "MUDADA");
+        assert_eq!(quantas(&s, &ses, "clientes"), 4);
+
+        // 4. EXCLUIR (suave) some da lista E da conta, na mesma passada.
+        pede(
+            &s,
+            &ses,
+            r#""op":"excluir","database":"loja","tabela":"clientes","rowid":1,
+               "motivo":"prova""#,
+        )
+        .unwrap();
+        assert_eq!(quantas(&s, &ses, "clientes"), 3);
+        let r = pede(
+            &s,
+            &ses,
+            r#""op":"varrer","database":"loja","tabela":"clientes","max":100"#,
+        )
+        .unwrap();
+        assert_eq!(
+            r.campo("visiveis").and_then(Json::inteiro),
+            Some(3),
+            "a conta tem de descer junto com a exclusao suave"
+        );
+
+        // E o vizinho continua vendo o disco: tres linhas, nenhuma mudanca.
+        let outra = sessao(22);
+        assert_eq!(quantas(&s, &outra, "clientes"), 3);
+        let r = pede(
+            &s,
+            &outra,
+            r#""op":"ler","database":"loja","tabela":"clientes","rowid":2"#,
+        )
+        .unwrap();
+        assert_eq!(
+            r.texto_ou("nome", ""),
+            "c2",
+            "isolamento: o vizinho ve o disco"
+        );
+
+        pede(&s, &ses, r#""op":"rollback""#).unwrap();
+        assert_eq!(quantas(&s, &ses, "clientes"), 3);
+    }
+
+    /// A ordem manda: `UPDATE` e depois `DELETE` da mesma linha termina em
+    /// «sumida», e nao na linha alterada.
+    ///
+    /// Dentro da transacao as escritas se sobrepoem como se cada uma ja
+    /// tivesse ido a disco. Guardar a primeira e ignorar a segunda faria o
+    /// `varrer` mostrar uma linha que o commit vai apagar.
+    #[test]
+    fn a_ultima_escrita_da_mesma_linha_e_a_que_manda() {
+        let dir = dir_temp("ryow-ordem");
+        let s = servidor(&dir);
+        let ses = sessao(23);
+        base(&s, &ses);
+        for i in 1..=2 {
+            pede(
+                &s,
+                &ses,
+                &format!(
+                    r#""op":"inserir","database":"loja","tabela":"clientes",
+                       "linha":{{"id":{i},"nome":"c{i}"}}"#
+                ),
+            )
+            .unwrap();
+        }
+        pede(&s, &ses, r#""op":"begin""#).unwrap();
+        pede(
+            &s,
+            &ses,
+            r#""op":"atualizar","database":"loja","tabela":"clientes","rowid":1,
+               "valores":{"id":1,"nome":"passou por aqui"}"#,
+        )
+        .unwrap();
+        pede(
+            &s,
+            &ses,
+            r#""op":"excluir","database":"loja","tabela":"clientes","rowid":1,
+               "motivo":"e depois sumiu""#,
+        )
+        .unwrap();
+        assert_eq!(quantas(&s, &ses, "clientes"), 1);
+        pede(&s, &ses, r#""op":"rollback""#).unwrap();
+    }
+
     // ------------------------------------------------------- o basico
 
     /// `BEGIN; INSERT; ROLLBACK` nao consome slot, nao consome rowid e nao
@@ -21687,9 +21967,24 @@ mod testes_transacoes {
             )
             .unwrap();
         }
-        // Nada no disco ainda: a leitura nao ve o que a transacao empilhou.
-        assert_eq!(quantas(&s, &ses, "clientes"), 0);
+        // O PAR QUE PROVA O READ-YOUR-OWN-WRITES (SP000006), e ele so vale
+        // junto: a MESMA conexao ja enxerga as 50 linhas, e o disco continua
+        // sem nenhuma. Ate esta sprint a primeira asercao era `0` -- a leitura
+        // ia ao arquivo e o conjunto de escrita nao existia para ela.
+        //
+        // Separadas, cada uma passaria pelo motivo errado: so a de cima
+        // passaria num motor que gravou tudo na hora (e ai a transacao nao
+        // seria transacao), e so a de baixo passa no comportamento anterior,
+        // que era o defeito. Sao as duas ou nenhuma.
+        assert_eq!(quantas(&s, &ses, "clientes"), 50);
         assert_eq!(slots(&s, &ses, "clientes"), antes);
+
+        // E a visibilidade acaba na CONEXAO. Outra sessao, no mesmo servidor e
+        // no mesmo instante, continua vendo o disco -- e a diferenca entre
+        // «leio o que eu mesmo escrevi» e «leitura suja», que e o que nenhum
+        // motor serio entrega.
+        let outra = sessao(8);
+        assert_eq!(quantas(&s, &outra, "clientes"), 0);
 
         let r = pede(&s, &ses, r#""op":"rollback""#).unwrap();
         assert_eq!(r.campo("descartadas").and_then(Json::inteiro), Some(50));

@@ -689,8 +689,10 @@ pub unsafe extern "C" fn phx_tabela_registros(
             Ok(v) => v,
             Err(c) => return c,
         };
-        saida(qtd, x.t.contar(v));
-        PHX_OK
+        resultado(x.t.contar(v), |n| {
+            saida(qtd, n);
+            PHX_OK
+        })
     })
 }
 

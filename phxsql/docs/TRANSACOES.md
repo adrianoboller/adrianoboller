@@ -277,13 +277,73 @@ de resposta de todo cliente que já existe.
 |---|---|
 | **Entre escritores** | **serializável por linha** nas tabelas da transação, com a tabela inteira quando o modo é `TABLE`/`EXCLUSIVE` |
 | **Para quem lê** | **read committed**, e sem bloquear: um leitor nunca vê dado não confirmado, porque **não há dado não confirmado em lugar nenhum** — ele ainda está em RAM |
-| **Para a própria transação** | **nada.** Ela não tem *snapshot*: entre duas leituras dela, outra transação pode ter confirmado. E ela não vê as próprias escritas |
+| **Para a própria transação** | **read-your-own-writes** (SP000006): ela enxerga o que ela mesma escreveu, e mais nada. Continua **sem *snapshot*** — entre duas leituras dela, outra transação pode ter confirmado |
 
 **Não é ANSI SERIALIZABLE**, e não vai ser chamado assim. O nome que o servidor
 devolve em `transaction_isolation` é o que ele é:
 
 > *escrita serializável por tabela, leitura confirmada e não bloqueante, sem
 > leitura repetível.*
+
+### 4.4.1 O *read-your-own-writes*, e onde ele mora
+
+Até a SP000006 esta linha dizia **«e ela não vê as próprias escritas»**. Isso
+não era um erro a consertar: era consequência do desenho da §1 — a escrita fica
+fora da tabela até o `COMMIT`, e a leitura ia à tabela. O `A` do ACID já estava
+lá (o commit aplica, o rollback descarta, medido); faltava o `I`.
+
+**A medida veio antes do conserto**, por soquete, em
+`bancada/transacoes/visibilidade.py`: dentro da transação a contagem ficava em
+1→1, o commit levava a 2, o rollback voltava a 2. Hoje o mesmo roteiro mede
+1→**2**→2→3→2.
+
+**O conserto é no caminho de leitura**, e mora num lugar só: uma
+**sobreposição** (`store::table::Sobreposicao`) presa ao *handle* da tabela, que
+o servidor preenche a partir do conjunto de escrita ao abrir a tabela
+(`abrir_travada`). Todos os métodos de leitura passam por ela — `ler`,
+`varrer`, as cinco paginações, `contar`, `filtrar`, `buscar`.
+
+**Por que num lugar só**, e não em cada operação do protocolo: pela mesma razão
+de o portão de permissão ser um só. Uma sobreposição aplicada no `ler` e
+esquecida no `varrer` mostraria a ficha da transação e a lista do disco na
+mesma tela — e *quase certo numa visão* é pior que errado inteiro, porque quem
+olha não tem como saber qual das duas está mentindo. O teste que trava isso
+confere os quatro caminhos na mesma transação, e confere a **conta** junto com
+a lista: «4 linhas» na lista e «3» no rodapé é a tela mentindo sobre si mesma.
+
+**Custo para quem não usa transação: zero.** O campo é um `Option`, e a
+pergunta de toda leitura é um teste de `None` antes de qualquer trabalho — o
+laço quente da varredura continua decidindo pelo byte da coluna de sistema, sem
+decodificar linha nenhuma. É a lição do Profiler: o portão que decide vem antes
+do trabalho.
+
+**A visibilidade termina na CONEXÃO.** Outra sessão, no mesmo servidor e no
+mesmo instante, continua vendo o disco — e é essa fronteira que separa
+*read-your-own-writes* de leitura suja. Há teste para ela.
+
+#### As duas imprecisões, escritas em vez de escondidas
+
+1. **Na ordem do ÍNDICE, a linha pendente sai no fim.** Ela não está no `.ndx`,
+   e descobrir onde ela cairia exigiria calcular a chave de cada linha do
+   disco — que é exatamente o trabalho que o índice existe para não fazer.
+   Sumir e sair fora de ordem eram as duas opções: sumir mente sobre a
+   **existência** da linha, e é a mentira que ninguém percebe; sair no fim é
+   uma ordenação incompleta que o próprio `COMMIT` corrige. O `buscar` por
+   chave exata **não** tem essa imprecisão: a chave da linha pendente é
+   calculada e comparada, e isso custa o tamanho do conjunto de escrita.
+2. **`Sequence` e `rownum` só nascem no `COMMIT`.** Dentro da transação a
+   linha nova aparece com esses campos nulos, porque é o `.reg` que atribui o
+   slot e é o slot que dá o número. Adivinhar o número seria mentir quando
+   duas transações estão abertas — e nulo aqui quer dizer o que parece: *ainda
+   não numerada*.
+
+**A dispensa registrada:** o caminho que EMPILHA escrita desliga a sobreposição
+(`ver_so_o_disco`) logo depois de abrir a tabela. Ele já tem consciência
+própria do que está pendente (`nasceu_aqui`, `chave_ja_empilhada`) e com
+mensagem melhor — *«esta seria a linha 3 da lista»* diz onde procurar, e *«o
+índice único já tem essa chave»* não. Ligada ali, a conferência contra o disco
+acharia a linha pendente primeiro e responderia com a frase pior. Está escrito
+no código, ao lado da chamada.
 
 E fica registrado o que este desenho **não** compra: paralelismo. A trava única
 continua serializando toda operação, uma de cada vez. Transação e concorrência

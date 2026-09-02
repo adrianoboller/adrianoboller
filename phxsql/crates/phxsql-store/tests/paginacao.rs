@@ -401,7 +401,7 @@ fn contar_sem_varrer_bate_com_a_varredura() {
         for visao in [Visao::Ativas, Visao::Excluidas, Visao::Todas] {
             let varrido = t.varrer_com(visao).unwrap().len() as u64;
             assert_eq!(
-                t.contar(visao),
+                t.contar(visao).unwrap(),
                 varrido,
                 "{onde}: {visao:?} contou diferente da varredura"
             );
@@ -438,9 +438,9 @@ fn o_contador_de_marcadas_volta_do_disco() {
         t.sincronizar().unwrap();
         assert_eq!(t.marcadas(), 3);
     }
-    let t = Table::abrir(&dir.0, "clientes").unwrap();
+    let mut t = Table::abrir(&dir.0, "clientes").unwrap();
     assert_eq!(t.marcadas(), 3);
-    assert_eq!(t.contar(Visao::Ativas), 27);
+    assert_eq!(t.contar(Visao::Ativas).unwrap(), 27);
     assert!(!t.posicao_e_rownum(Visao::Ativas));
 }
 

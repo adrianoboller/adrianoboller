@@ -41,13 +41,24 @@ como sprint **nova**, a partir da SP000056.
 
 ### A ordem recomendada do caminho crítico
 
-1. **SP000056** — a bateria confiável. Vem primeiro porque tudo o que vier
-   depois vai ser julgado por ela, e hoje ela não separa sinal de ruído.
-2. **SP000006** — read-your-own-writes. A mais bem definida das abertas: já
-   medida por soquete (dentro da transação a própria escrita não aparece; o
-   commit aplica; o rollback descarta), com endereço conhecido — o caminho de
-   **leitura** consultando a pilha pendente — e é o **I** que a SP000016 vai
-   exigir de qualquer jeito.
+1. ~~**SP000056** — a bateria confiável.~~ **ADIADA PARA O FIM, por decisão do
+   dono** (02/09): *«Recomendo reescrever esse módulo com defeito no final,
+   deixe isso para o final. Estamos perdendo tempo em vez de fazer o que
+   precisa ser feito.»* O que a sprint já entregou fica e vale sozinho — o
+   `clicarOuExplicar`, que faz a falha dizer **quem está no ponto do clique**
+   em vez de dizer «timeout», e o portão de sintaxe da interface, que
+   transforma 31 reprovações sem endereço em uma linha com arquivo e número.
+   O que fica para o fim é a **reescrita do gestor de threads**, que é o
+   módulo com o defeito: perseguir o intermitente dele custou uma tarde e
+   quatro diagnósticos errados, e reescrever custa menos que caçar.
+2. ~~**SP000006** — read-your-own-writes.~~ **FEITA** (02/09). O endereço
+   estava certo: o conserto é o caminho de **leitura** consultando a pilha
+   pendente. Uma `Sobreposicao` presa ao *handle* da tabela, preenchida no
+   `abrir_travada` — **num lugar só**, porque aplicada no `ler` e esquecida no
+   `varrer` ela mostraria a ficha da transação e a lista do disco na mesma
+   tela. Medido por soquete: 1→1→2→2 virou **1→2→2→3→2**. Custo para quem não
+   usa transação: um teste de `None` antes de qualquer trabalho. Detalhes,
+   com as duas imprecisões nomeadas, na §4.4.1 do `TRANSACOES.md`.
 3. **SP000057** — `ao_alterar`, que fecha a SP000008.
 4. **SP000016** — MVCC. Desbloqueada pela medição contra o MySQL(R): o que
    ancora a cadeia de versões é a identidade estável da linha, e o `rowid`
@@ -150,7 +161,7 @@ nenhum é gratuito.
 
 | # | Sprint | Estado medido |
 |---|---|---|
-| SP000006 | Visão transacional única e read-your-own-writes | **não iniciado, e agora MEDIDO** — `bancada/transacoes/visibilidade.py`, por soquete: dentro da transação a própria escrita **não** aparece (1→1), o commit aplica (→2) e o rollback descarta (2→2). Os dois últimos são o que separa *modelo de empilhamento coerente* de *transação com defeito*: o empilhamento entrega o **A** do ACID, falta o **I**. E falta por construção — a escrita fica fora da tabela até o commit e a leitura vai na tabela —, então o conserto é no caminho de **leitura**, consultando a pilha pendente |
+| SP000006 | Visão transacional única e read-your-own-writes | **FEITA (02/09)** — a `Sobreposicao` do `store::table`, presa ao handle e preenchida pelo servidor a partir do conjunto de escrita; cobre `ler`, `varrer`, as cinco paginações, `contar`, `filtrar` e `buscar`. Medido por soquete: 1→**2**→2→3→2. Duas imprecisões nomeadas (ordem do índice para a linha pendente; `Sequence`/`rownum` só nascem no commit) e uma dispensa registrada (o caminho que empilha desliga a sobreposição). Estado anterior: **não iniciado, e MEDIDO** — `bancada/transacoes/visibilidade.py`, por soquete: dentro da transação a própria escrita **não** aparece (1→1), o commit aplica (→2) e o rollback descarta (2→2). Os dois últimos são o que separa *modelo de empilhamento coerente* de *transação com defeito*: o empilhamento entrega o **A** do ACID, falta o **I**. E falta por construção — a escrita fica fora da tabela até o commit e a leitura vai na tabela —, então o conserto é no caminho de **leitura**, consultando a pilha pendente |
 | SP000007 | Definição e validação estrutural de chaves estrangeiras | **parcial, e andou** — além de declarar (`criar_tabela`, editor ER), a declaração agora **valida**: `ao_excluir` aceita **só** `restringir` e a recusa acontece na criação da tabela, não na gravação (`valores.rs`, com o par de testes que trava os dois sentidos); e a chave conferida **exige índice dos dois lados**, recusando e dizendo qual falta em vez de esconder uma varredura dentro de um `excluir`. Esquema `PSCH` v7 |
 | SP000008 | Execução completa de FK e ações referenciais | **parcial** — deixou de ser «não iniciado». Medido: `conferir_fks` roda em **2** pontos de escrita (`inserir` e `atualizar`, `table.rs:1203` e `:1416`) e `conferir_filhas` em **2** de exclusão (de vez e **suave**, `:1574` e `:1634`) — o suave também porque pai logicamente morto deixa filha apontando para linha que a tela não mostra mais. NULL satisfaz (MATCH SIMPLE). **Duas metades faltam, e são nomeadas**: (1) a imposição é **pedida**, pelo interruptor `verificar` da chave — quem não pede continua como antes, e o teste do comportamento velho (`a_chave_e_declarada_mas_ainda_nao_e_imposta_na_gravacao`) segue verde de propósito; (2) `ao_alterar: cascata` é **declarado e nunca lido** — nada cascateia quando a chave da mãe muda. Medido: o campo só aparece em `schema.rs` (guardar/serializar) e no `phxsql-cli` (mostrar), em ponto nenhum de escrita. É a mesma frase do pedido 127 com o alvo deslocado: *declarar não é aplicar* virou *aplicar no excluir não é aplicar no alterar*. `crates/phxsql-store/tests/chave-estrangeira.rs` |
 | SP000009 | FK em todos os caminhos e verificador de consistência | **não iniciado** |

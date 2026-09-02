@@ -27,6 +27,11 @@ Consertar o RYOW nao e corrigir um erro: e fazer o caminho de LEITURA consultar
 a pilha pendente antes de responder. E trabalho de projeto, e por isso a
 decisao e do dono.
 
+ESTADO EM 02/09: FEITO, pela SP000006. Este script mede 1 -> 2 -> 2 -> 3 -> 2, e
+o papel dele inverteu: nasceu para PROVAR a ausencia, e hoje e a GUARDA contra a
+volta dela. A sobreposicao mora no `store::table` e o servidor a preenche no
+`abrir_travada`; o desenho esta na secao 4.4.1 do `docs/TRANSACOES.md`.
+
 Prova real, nos dois sentidos
 -----------------------------
 Se alguem implementar o RYOW, a primeira contagem passa de 1 para 2 e este
@@ -119,7 +124,7 @@ def principal():
             print("EMPILHAMENTO e coerente -- falta a visibilidade, nao a transacao.")
         if falhas:
             print(f"\n== ATENCAO em {len(falhas)}: " + "; ".join(falhas))
-            print("   (o RYOW ausente e o estado CONHECIDO; os outros nao)")
+            print("   (o RYOW existe desde a SP000006 -- se ele sumiu, e regressao)")
         return 0
     finally:
         srv.parar()

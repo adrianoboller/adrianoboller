@@ -554,7 +554,7 @@ fn listar(args: &[String]) -> Result<()> {
         }
     };
 
-    let total = t.contar(Visao::Ativas);
+    let total = t.contar(Visao::Ativas)?;
     diga!(
         "{} linha(s) de {total}, na ordem {}{}",
         rowids.len(),

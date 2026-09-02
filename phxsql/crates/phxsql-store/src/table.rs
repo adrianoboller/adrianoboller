@@ -10,6 +10,7 @@
 //! `.reg` e o que vai para os arquivos externos, e mantem os indices em dia a
 //! cada insercao, alteracao e exclusao.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use phxsql_core::datahora::civil_de_dias;
@@ -65,6 +66,85 @@ impl Visao {
             Visao::Excluidas => excluida,
             Visao::Todas => true,
         }
+    }
+}
+
+// ------------------------------------------- a sobreposicao da transacao
+
+/// O que uma escrita ainda NAO gravada faz com um rowid.
+///
+/// Nao ha nada de transacao aqui, e e de proposito: o `store` nao conhece
+/// `BEGIN` nem conjunto de escrita. Ele conhece «para quem le por este
+/// handle, este rowid passa a ser isto» -- e quem traduz uma coisa na outra e
+/// o servidor, que e onde a transacao mora.
+#[derive(Debug, Clone)]
+pub enum Troca {
+    /// Esta e a linha, no lugar do que o disco tem (insercao ou alteracao).
+    Linha(Linha),
+    /// A linha do disco, com a coluna de sistema virada para este valor.
+    ///
+    /// Existe separada de `Linha` porque o `excluir` suave nao carrega linha
+    /// nenhuma no conjunto de escrita -- so o rowid e o motivo. Montar a linha
+    /// no servidor exigiria ler do disco fora da trava; aqui a leitura
+    /// acontece no mesmo lugar em que ela ja acontecia.
+    Marca(bool),
+    /// Sumiu: excluida de vez por quem esta lendo.
+    Sumida,
+}
+
+/// O que esta pendente, visto SO por quem abriu este handle.
+///
+/// # Por que ela mora no `Table`, e nao em cada operacao do protocolo
+///
+/// Porque «quase certo numa visao» e pior que errado inteiro: uma
+/// sobreposicao aplicada no `ler` e esquecida no `varrer` mostraria a ficha da
+/// transacao e a lista do disco na mesma tela, e quem olha nao teria como
+/// saber qual das duas mente. E a mesma licao do portao de permissao, que e
+/// UM so: espalhado por quarenta operacoes, a que alguem esquecer vira a porta
+/// dos fundos e ninguem acha por leitura.
+///
+/// # E por que ela custa zero para quem nao tem transacao
+///
+/// O campo e `Option`, e a pergunta de cada leitura e um teste de `None`
+/// antes de qualquer trabalho -- a licao do Profiler, que cobrava 7% da carga
+/// analisando meio megabyte de JSON *antes* de perguntar se estava ligado.
+/// Handle sem transacao nao consulta mapa nenhum.
+#[derive(Debug, Clone, Default)]
+pub struct Sobreposicao {
+    trocas: BTreeMap<RowId, Troca>,
+    /// Os rowids que nasceram aqui, na ordem em que foram pedidos.
+    ///
+    /// Eles vem DEPOIS de tudo o que esta em disco porque e ali que o `.reg`
+    /// vai grava-los: ele sempre anexa no fim, e a ordem de digitacao e
+    /// sagrada. Nao ha ordenacao a inventar -- ha a ordem que o commit vai
+    /// produzir, antecipada.
+    novos: Vec<RowId>,
+}
+
+impl Sobreposicao {
+    pub fn nova() -> Sobreposicao {
+        Sobreposicao::default()
+    }
+
+    /// Registra o que este rowid passa a ser. A ULTIMA escrita manda.
+    ///
+    /// `BEGIN; UPDATE x; DELETE x` tem de acabar em «sumida», e nao em «a
+    /// linha alterada»: dentro da transacao as escritas se sobrepoem na ordem
+    /// em que foram pedidas, como se ja tivessem ido a disco uma a uma.
+    pub fn por(&mut self, rowid: RowId, troca: Troca) {
+        self.trocas.insert(rowid, troca);
+    }
+
+    /// Registra uma linha que NASCEU nesta transacao.
+    pub fn nasceu(&mut self, rowid: RowId, linha: Linha) {
+        self.trocas.insert(rowid, Troca::Linha(linha));
+        if !self.novos.contains(&rowid) {
+            self.novos.push(rowid);
+        }
+    }
+
+    pub fn vazia(&self) -> bool {
+        self.trocas.is_empty()
     }
 }
 
@@ -180,6 +260,11 @@ pub struct Table {
     /// senao o conflito "mais recente vence" elegeria sempre quem sincronizou
     /// por ultimo. `None` = escrita local, relogio local, origem zero.
     evento_forcado: Option<(i64, u16)>,
+    /// O que a transacao de quem abriu este handle ja pediu e ainda nao gravou.
+    ///
+    /// `None` no caminho comum, que e o de todo mundo que nao esta dentro de
+    /// um `BEGIN`. Ver [`Sobreposicao`].
+    sobreposta: Option<Sobreposicao>,
 }
 
 fn caminho(diretorio: &Path, nome: &str, ext: &str) -> PathBuf {
@@ -317,6 +402,7 @@ impl Table {
             imagem_no_diario: false,
             imagem_na_exclusao: false,
             evento_forcado: None,
+            sobreposta: None,
         };
         t.gravar_pag()?;
         Ok(t)
@@ -514,6 +600,7 @@ impl Table {
             imagem_no_diario: false,
             imagem_na_exclusao: false,
             evento_forcado: None,
+            sobreposta: None,
         })
     }
 
@@ -902,6 +989,126 @@ impl Table {
         match self.esquema.coluna_softdeleted() {
             Some(i) => matches!(linha.get(i), Some(Value::Bool(true))),
             None => false,
+        }
+    }
+
+    // ------------------------------------- a sobreposicao, do lado de dentro
+
+    /// Passa a enxergar o que esta transacao ja pediu e ainda nao gravou.
+    ///
+    /// Vale so para ESTE handle. Outra conexao abre o seu e continua vendo o
+    /// disco -- que e a diferenca entre *read-your-own-writes* e leitura suja.
+    pub fn sobrepor(&mut self, s: Sobreposicao) {
+        self.sobreposta = if s.vazia() { None } else { Some(s) };
+    }
+
+    /// Volta a enxergar SO o disco por este handle.
+    ///
+    /// E a dispensa registrada, e nao um esquecimento: o caminho que EMPILHA
+    /// escrita dentro de uma transacao ja tem a sua propria consciencia do que
+    /// esta pendente (`nasceu_aqui`, `chave_ja_empilhada`), e com mensagens
+    /// melhores -- «esta seria a linha 3 da lista» diz onde procurar, e «o
+    /// indice unico ja tem essa chave» nao. Deixar a sobreposicao ligada ali
+    /// faria a conferencia contra o disco achar a linha pendente primeiro e
+    /// responder com a frase pior.
+    pub fn ver_so_o_disco(&mut self) {
+        self.sobreposta = None;
+    }
+
+    /// O que a sobreposicao diz sobre este rowid. `None` = nada, siga o disco.
+    ///
+    /// O `as_ref()?` e o portao de custo zero: sem transacao a funcao devolve
+    /// na primeira linha, sem tocar em mapa nenhum.
+    fn troca_de(&self, rowid: RowId) -> Option<Troca> {
+        self.sobreposta.as_ref()?.trocas.get(&rowid).cloned()
+    }
+
+    /// Os rowids que nasceram na transacao e ainda nao foram gravados.
+    fn nascidos(&self) -> Vec<RowId> {
+        match &self.sobreposta {
+            Some(s) => s.novos.clone(),
+            None => Vec::new(),
+        }
+    }
+
+    /// A linha final deste rowid, com a sobreposicao ja aplicada.
+    ///
+    /// `None` quer dizer «nao existe para quem le»: slot livre, ou excluida de
+    /// vez pela propria transacao.
+    fn resolver(&mut self, rowid: RowId) -> Result<Option<Linha>> {
+        match self.troca_de(rowid) {
+            None => self.ler_do_disco(rowid),
+            Some(Troca::Sumida) => Ok(None),
+            Some(Troca::Linha(l)) => Ok(Some(l)),
+            Some(Troca::Marca(v)) => {
+                // Marca sobre linha que nasceu na transacao nao tem disco a
+                // ler -- e o `.reg` responderia «fora da faixa» em vez de
+                // «nao ha». O caminho normal nao chega aqui (quem empilha ja
+                // funde a marca na propria linha), e este e o cinto.
+                if self.nascidos().contains(&rowid) {
+                    return Ok(None);
+                }
+                let Some(mut l) = self.ler_do_disco(rowid)? else {
+                    return Ok(None);
+                };
+                if let Some(i) = self.esquema.coluna_softdeleted() {
+                    l[i] = Value::Bool(v);
+                }
+                Ok(Some(l))
+            }
+        }
+    }
+
+    /// Este rowid entra nesta visao, ja contando a sobreposicao?
+    ///
+    /// O `payload` e o do disco, quando quem chama ja o tinha na mao: no
+    /// caminho comum -- sem transacao -- a resposta sai do byte da coluna de
+    /// sistema, sem decodificar linha nenhuma, que e o que a paginacao existe
+    /// para nao fazer. So o rowid TROCADO paga a decodificacao, e trocados sao
+    /// os poucos que a transacao tocou.
+    fn visivel(&mut self, rowid: RowId, payload: Option<&[u8]>, visao: Visao) -> Result<bool> {
+        match self.troca_de(rowid) {
+            None => match payload {
+                Some(p) => self.visao_aceita_payload(p, visao),
+                None => match self.ler_do_disco(rowid)? {
+                    Some(l) => Ok(visao.aceita(self.esta_excluida(&l))),
+                    None => Ok(false),
+                },
+            },
+            Some(Troca::Sumida) => Ok(false),
+            Some(_) => match self.resolver(rowid)? {
+                Some(l) => Ok(visao.aceita(self.esta_excluida(&l))),
+                None => Ok(false),
+            },
+        }
+    }
+
+    /// Os nascidos na transacao que vem DEPOIS de `apos` e entram na visao.
+    ///
+    /// Toda varredura em ordem de digitacao termina chamando isto: as linhas
+    /// pendentes moram no fim porque e no fim que o `.reg` vai grava-las.
+    fn pendentes(&mut self, apos: RowId, visao: Visao) -> Result<Vec<RowId>> {
+        let novos = self.nascidos();
+        if novos.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut saida = Vec::new();
+        for id in novos {
+            if id > apos && self.visivel(id, None, visao)? {
+                saida.push(id);
+            }
+        }
+        Ok(saida)
+    }
+
+    /// Le a linha como ela esta em DISCO, sem sobreposicao nenhuma.
+    ///
+    /// Existe separada porque `resolver` precisa dela para o `Troca::Marca`:
+    /// chamar `ler` ali daria recursao infinita.
+    fn ler_do_disco(&mut self, rowid: RowId) -> Result<Option<Linha>> {
+        match self.reg.ler(rowid)? {
+            None => Ok(None),
+            Some(payload) => Ok(Some(self.decodificar(&payload, true)?)),
         }
     }
 
@@ -1362,17 +1569,25 @@ impl Table {
     }
 
     /// Le uma linha completa, carregando `.bin` e `.memo`.
+    ///
+    /// Com transacao aberta, a linha que ELA escreveu vem na frente da que
+    /// esta em disco -- e por aqui, e nao por um caminho paralelo, para o
+    /// `ler` e o `varrer` nunca discordarem.
     pub fn ler(&mut self, rowid: RowId) -> Result<Option<Linha>> {
-        match self.reg.ler(rowid)? {
-            None => Ok(None),
-            Some(payload) => Ok(Some(self.decodificar(&payload, true)?)),
-        }
+        self.resolver(rowid)
     }
 
     /// A versao do registro: 1 quando nasce, +1 a cada regravacao.
     ///
     /// `None` quer dizer slot inativo -- nunca usado, ou excluido de vez.
     pub fn versao(&mut self, rowid: RowId) -> Result<Option<u64>> {
+        // Linha que nasceu na transacao ainda nao tem slot: a versao dela e a
+        // que o commit vai gravar, que e 1. Sem isto o `conferir_versao`
+        // acusaria «excluido de vez» de uma linha recem-inserida.
+        if matches!(self.troca_de(rowid), Some(Troca::Linha(_))) && self.nascidos().contains(&rowid)
+        {
+            return Ok(Some(1));
+        }
         self.reg.versao(rowid)
     }
 
@@ -2019,11 +2234,26 @@ impl Table {
         let mut saida = Vec::new();
         let mut rowid = 1;
         while let Some((id, payload)) = self.reg.proximo_ativo(rowid)? {
-            let linha = self.decodificar(&payload, true)?;
+            rowid = id + 1;
+            // O payload JA esta na mao: sem transacao, decodificar dele custa o
+            // que sempre custou. Passar pelo `resolver` aqui releria o mesmo
+            // slot do disco para chegar ao mesmo lugar -- duas leituras por
+            // linha varrida, no laco mais quente que esta tabela tem.
+            let linha = match self.troca_de(id) {
+                None => self.decodificar(&payload, true)?,
+                Some(_) => match self.resolver(id)? {
+                    Some(l) => l,
+                    None => continue,
+                },
+            };
             if visao.aceita(self.esta_excluida(&linha)) {
                 saida.push((id, linha));
             }
-            rowid = id + 1;
+        }
+        for id in self.pendentes(0, visao)? {
+            if let Some(linha) = self.resolver(id)? {
+                saida.push((id, linha));
+            }
         }
         Ok(saida)
     }
@@ -2051,11 +2281,25 @@ impl Table {
         let mut saida = Vec::new();
         let mut vistos = 0u64;
         let mut rowid = 1;
+        let mut ultimo = 0u64;
         while let Some((id, payload)) = self.reg.proximo_ativo(rowid)? {
             rowid = id + 1;
-            if !self.visao_aceita_payload(&payload, visao)? {
+            ultimo = id;
+            if !self.visivel(id, Some(&payload), visao)? {
                 continue;
             }
+            if vistos >= pular {
+                saida.push(id);
+                if limite > 0 && saida.len() as u64 >= limite {
+                    return Ok(saida);
+                }
+            }
+            vistos += 1;
+        }
+        // As pendentes entram no fim, e tambem contam para o `pular`: quem
+        // pediu a segunda pagina de uma tabela com uma linha nova na
+        // transacao tem de receber a linha nova, e nao a de antes dela.
+        for id in self.pendentes(ultimo, visao)? {
             if vistos >= pular {
                 saida.push(id);
                 if limite > 0 && saida.len() as u64 >= limite {
@@ -2093,9 +2337,17 @@ impl Table {
         let mut rowid = cursor.saturating_add(1);
         while let Some((id, payload)) = self.reg.proximo_ativo(rowid)? {
             rowid = id + 1;
-            if !self.visao_aceita_payload(&payload, visao)? {
+            if !self.visivel(id, Some(&payload), visao)? {
                 continue;
             }
+            saida.push(id);
+            if limite > 0 && saida.len() as u64 >= limite {
+                return Ok(saida);
+            }
+        }
+        // O disco acabou e ainda cabe pagina: entram as pendentes, que moram
+        // depois de tudo porque e ali que o commit vai grava-las.
+        for id in self.pendentes(cursor, visao)? {
             saida.push(id);
             if limite > 0 && saida.len() as u64 >= limite {
                 break;
@@ -2224,6 +2476,14 @@ impl Table {
         if rowid == 0 || self.esquema.coluna_rownum().is_none() {
             return Ok(0);
         }
+        // Linha empilhada pela transacao ainda NAO tem numero de ordem: ele
+        // nasce no commit, junto com o slot. Zero e o «nao ha numero» que esta
+        // funcao ja devolvia para slot livre, e quem chama ja sabe trata-lo --
+        // sem esta linha, o `.reg` recebia um rowid alem do fim e respondia
+        // «fora da faixa 1..=1», que reprovava a varredura inteira.
+        if self.nascidos().contains(&rowid) {
+            return Ok(0);
+        }
         match self.reg.ler(rowid)? {
             Some(p) => self.rownum_do_payload(&p),
             None => Ok(0),
@@ -2243,18 +2503,47 @@ impl Table {
     ///
     /// Numa tabela sem a coluna de sistema nao ha marca: `Excluidas` da zero
     /// e as outras duas dao o total.
-    pub fn contar(&self, visao: Visao) -> u64 {
-        if self.esquema.coluna_softdeleted().is_none() {
-            return match visao {
+    pub fn contar(&mut self, visao: Visao) -> Result<u64> {
+        let no_disco = if self.esquema.coluna_softdeleted().is_none() {
+            match visao {
                 Visao::Excluidas => 0,
                 _ => self.reg.registros(),
+            }
+        } else {
+            match visao {
+                Visao::Ativas => self.reg.registros().saturating_sub(self.reg.marcadas()),
+                Visao::Excluidas => self.reg.marcadas(),
+                Visao::Todas => self.reg.registros(),
+            }
+        };
+        // O PORTAO VEM ANTES DO TRABALHO: sem transacao, a conta e a de sempre
+        // e nao ha mapa a percorrer. So dentro de um `BEGIN` se paga a
+        // diferenca, e ela custa o tamanho do conjunto de escrita -- nao o da
+        // tabela.
+        let Some(sob) = self.sobreposta.as_ref() else {
+            return Ok(no_disco);
+        };
+        // Contar «quantas a transacao mexeu» nao basta: alterar uma linha que
+        // ja contava nao muda numero nenhum, e marcar uma que ja estava
+        // marcada tambem nao. O que muda e a DIFERENCA entre o que o rowid
+        // valia no disco e o que ele vale agora, um a um.
+        let tocados: Vec<RowId> = sob.trocas.keys().copied().collect();
+        let novos = self.nascidos();
+        let mut n = no_disco as i64;
+        for r in tocados {
+            let nasceu = novos.contains(&r);
+            let antes = if nasceu {
+                false
+            } else {
+                match self.reg.ler(r)? {
+                    Some(p) => self.visao_aceita_payload(&p, visao)?,
+                    None => false,
+                }
             };
+            let depois = self.visivel(r, None, visao)?;
+            n += i64::from(depois) - i64::from(antes);
         }
-        match visao {
-            Visao::Ativas => self.reg.registros().saturating_sub(self.reg.marcadas()),
-            Visao::Excluidas => self.reg.marcadas(),
-            Visao::Todas => self.reg.registros(),
-        }
+        Ok(n.max(0) as u64)
     }
 
     /// Quantas linhas vivas estao marcadas como excluidas. Sai do cabecalho.
@@ -2367,10 +2656,23 @@ impl Table {
             return Ok(Vec::new());
         }
         let mut saida = Vec::new();
+        // As pendentes moram depois de tudo, entao a pagina anterior a um
+        // cursor que ja passou delas comeca nelas -- de tras para a frente,
+        // como o resto deste laco.
+        for id in self.pendentes(0, visao)?.into_iter().rev() {
+            if id >= cursor {
+                continue;
+            }
+            saida.push(id);
+            if limite > 0 && saida.len() as u64 >= limite {
+                saida.reverse();
+                return Ok(saida);
+            }
+        }
         let mut rowid = cursor - 1;
         while rowid >= 1 {
             if let Some(payload) = self.reg.ler(rowid)? {
-                if self.visao_aceita_payload(&payload, visao)? {
+                if self.visivel(rowid, Some(&payload), visao)? {
                     saida.push(rowid);
                     if limite > 0 && saida.len() as u64 >= limite {
                         break;
@@ -2428,22 +2730,25 @@ impl Table {
     /// Numa tabela sem a coluna de sistema nao ha o que marcar: a lista volta
     /// como veio, sem leitura nenhuma, e `Excluidas` volta vazia.
     pub fn filtrar(&mut self, rowids: &[RowId], visao: Visao) -> Result<Vec<RowId>> {
-        if visao == Visao::Todas {
-            return Ok(rowids.to_vec());
-        }
-        if self.esquema.coluna_softdeleted().is_none() {
-            return Ok(match visao {
-                Visao::Excluidas => Vec::new(),
-                _ => rowids.to_vec(),
-            });
+        // Os dois atalhos valem so quando NAO ha transacao: com uma aberta,
+        // ate `Visao::Todas` tem de perder a linha que a transacao excluiu de
+        // vez -- «todas» quer dizer marcadas e nao marcadas, e nao «tambem as
+        // que ja nao existem para quem esta lendo».
+        if self.sobreposta.is_none() {
+            if visao == Visao::Todas {
+                return Ok(rowids.to_vec());
+            }
+            if self.esquema.coluna_softdeleted().is_none() {
+                return Ok(match visao {
+                    Visao::Excluidas => Vec::new(),
+                    _ => rowids.to_vec(),
+                });
+            }
         }
         let mut saida = Vec::with_capacity(rowids.len());
         for &r in rowids {
-            if let Some(p) = self.reg.ler(r)? {
-                let linha = self.decodificar(&p, false)?;
-                if visao.aceita(self.esta_excluida(&linha)) {
-                    saida.push(r);
-                }
+            if self.visivel(r, None, visao)? {
+                saida.push(r);
             }
         }
         Ok(saida)
@@ -2557,7 +2862,31 @@ impl Table {
         let i = self.idx_por_nome(indice)?;
         let valores = self.espalhar(i, chave)?;
         let codificada = self.codificar_chave(i, &valores)?;
-        self.ndx.buscar(i, &codificada)
+        let achados = self.ndx.buscar(i, &codificada)?;
+        if self.sobreposta.is_none() {
+            return Ok(achados);
+        }
+        // A linha pendente NAO esta no `.ndx` -- o indice so aprende dela no
+        // commit. Aqui a chave dela e calculada e comparada com a procurada,
+        // que e exato e custa o tamanho do conjunto de escrita. Sem isto,
+        // `BEGIN; INSERT; buscar pela chave que acabei de inserir` devolveria
+        // vazio, e a mesma linha apareceria na varredura -- duas respostas
+        // diferentes para a mesma pergunta.
+        let mut saida = Vec::with_capacity(achados.len());
+        for r in achados {
+            if !matches!(self.troca_de(r), Some(Troca::Sumida)) {
+                saida.push(r);
+            }
+        }
+        for r in self.nascidos() {
+            let Some(linha) = self.resolver(r)? else {
+                continue;
+            };
+            if self.codificar_chave(i, &linha)? == codificada {
+                saida.push(r);
+            }
+        }
+        Ok(saida)
     }
 
     /// Rowids no intervalo de chaves `[de, ate]`, na ordem do indice.
@@ -2580,9 +2909,30 @@ impl Table {
     }
 
     /// Todos os rowids na ordem do indice.
+    ///
+    /// # A imprecisao que esta escrita aqui em vez de escondida
+    ///
+    /// Com transacao aberta, a linha ainda nao gravada NAO tem lugar na ordem
+    /// da chave: ela nao esta no `.ndx`, e descobrir onde ela cairia exigiria
+    /// calcular a chave de cada linha do disco -- que e exatamente o trabalho
+    /// que o indice existe para nao fazer. Entao ela entra no FIM.
+    ///
+    /// Some ou sai fora de ordem: escolhi fora de ordem. Sumir e mentir sobre
+    /// a EXISTENCIA da linha, e e a mentira que a pessoa nao tem como
+    /// perceber; sair no fim e uma ordenacao incompleta, que a proxima
+    /// leitura -- depois do commit -- corrige sozinha.
     pub fn varrer_indice(&mut self, indice: &str) -> Result<Vec<RowId>> {
         let i = self.idx_por_nome(indice)?;
-        self.ndx.varrer(i)
+        let achados = self.ndx.varrer(i)?;
+        if self.sobreposta.is_none() {
+            return Ok(achados);
+        }
+        let mut saida: Vec<RowId> = achados
+            .into_iter()
+            .filter(|r| !matches!(self.troca_de(*r), Some(Troca::Sumida)))
+            .collect();
+        saida.extend(self.nascidos());
+        Ok(saida)
     }
 
     /// Recebe os valores na ordem das colunas do INDICE e devolve um vetor
