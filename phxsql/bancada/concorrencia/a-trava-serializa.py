@@ -34,19 +34,45 @@ defensavel; serializar leitura e o que tornaria a SP000011 urgente.
 Prova real, nos dois sentidos
 -----------------------------
 O numero cai sozinho se alguem consertar a trava (o ganho de leitura sobe) ou
-se alguem piorar (cai para 1,0x). E o `--nucleos` do cabecalho diz quando a
-maquina, e nao a trava, e o teto: com N acima dos nucleos disponiveis o
-resultado e um PISO, nao um veredito.
+se alguem piorar (cai para 1,0x). E o cabecalho diz quantos nucleos ESTE
+processo alcanca: com N acima deles o resultado e um PISO, nao um veredito.
+
+E a maquina precisa estar parada -- senao ele RECUSA
+----------------------------------------------------
+Este medidor tem um modo de falhar que nao da erro: numa maquina ocupada a
+curva achata, e a curva achatada e exatamente o sintoma que se esperava da
+trava. O ruido aponta PARA O MESMO LADO que a hipotese, e sai com casas
+decimais.
+
+Por isso o `quieta.Vigia` mede a maquina nas duas pontas e durante cada
+rodada, roda a curva de controle no comeco E no fim, e quando alguma das tres
+se mexeu **esta bateria nao imprime numero nenhum**. Publicar sujo com uma
+ressalva ao lado nao resolve: tres documentos adiante a ressalva ficou para
+tras e o numero virou fato. O `--mesmo-sujo` existe so para depurar o proprio
+arnes, e carimba tudo o que sai.
+
+Qual desenho substitui a trava e OUTRA medicao, e ela mora ao lado, no
+`escolher-o-desenho.py`: este aqui responde «a trava custa?», e nao «o que
+por no lugar?».
 """
 import importlib.util
 import json
 import multiprocessing as mp
 import os
+import sys
 import time
 from pathlib import Path
 
-RAIZ = Path(__file__).resolve().parents[2]
-os.environ.setdefault("PORTA", "7497")
+AQUI = Path(__file__).resolve().parent
+RAIZ = AQUI.parents[1]
+sys.path.insert(0, str(AQUI))
+import quieta  # noqa: E402
+
+# A porta vem da FAIXA desta frente e e escolhida LIVRE, nao fixada. Fixa em
+# 7497 -- como estava -- ela caia fora da faixa reservada aqui e podia subir
+# por cima do soquete de outra frente medindo ao lado; e duas medicoes de
+# concorrencia dividindo maquina estragam as duas.
+os.environ.setdefault("PORTA", str(quieta.porta_livre()))
 os.environ.setdefault("PHX_TRABALHO", f"/tmp/phx-trava-{os.getpid()}")
 
 _p = RAIZ / "bancada/dblink/prova-postgres.py"
@@ -85,23 +111,16 @@ def trabalhador(modo, segundos, fila, tabela="c"):
     fila.put(n)
 
 
-def ocupado_por_cento():
-    """Quanto da maquina esta em uso, lido do /proc/stat -- o segundo controle.
+def rodada(modo, n, segundos, vigia, separadas=False):
+    """N processos em paralelo pelo mesmo prazo -> operacoes por segundo.
 
-    Plateau COM cpu sobrando acusa a trava; plateau com a maquina no teto
-    acusa a maquina. Sem este numero, os dois casos sao a mesma curva.
+    A ocupacao da maquina sai do `quieta.Vigia` e nao mais de uma leitura
+    solta do `/proc/stat` aqui: uma amostra por rodada nao pega o vizinho que
+    comeca depois dela, e nao compara as pontas da bateria. O vigia faz as
+    tres coisas, e -- o que importa -- RECUSA publicar quando a maquina se
+    mexeu, em vez de imprimir o numero com uma ressalva ao lado. Ressalva nao
+    viaja junto do numero para o documento seguinte.
     """
-    def amostra():
-        campos = [int(x) for x in open("/proc/stat").readline().split()[1:]]
-        return sum(campos), campos[3]  # total, ocioso
-    t0, i0 = amostra()
-    time.sleep(0.4)
-    t1, i1 = amostra()
-    return 100.0 * (1 - (i1 - i0) / max(1, t1 - t0))
-
-
-def rodada(modo, n, segundos, separadas=False):
-    """N processos em paralelo pelo mesmo prazo -> operacoes por segundo."""
     fila = mp.Queue()
     procs = [mp.Process(target=trabalhador,
                         args=(modo, segundos, fila, f"c{i}" if separadas else "c"))
@@ -109,18 +128,23 @@ def rodada(modo, n, segundos, separadas=False):
     t0 = time.monotonic()
     for p in procs:
         p.start()
-    cpu = ocupado_por_cento()  # medida COM a carga rodando, nao antes nem depois
+    # Os clientes mais o servidor sao NOSSOS: o vigia so acusa o excedente.
+    a = vigia.durante_a_rodada(meus=n + 1)
     total = sum(fila.get() for _ in procs)
     for p in procs:
         p.join()
-    return total / (time.monotonic() - t0), cpu
+    return total / (time.monotonic() - t0), a.ocupada
 
 
 def principal():
     if not pp.PHXSQLD.exists():
         print(f"falta {pp.PHXSQLD} -- rode `cargo build --release` antes")
         return 2
-    nucleos = os.cpu_count() or 1
+    # Nucleos que ESTE processo pode usar, e nao os da maquina: dentro de
+    # contentor com afinidade o teto real e outro, e um teto errado faz «N
+    # acima dos nucleos» ser dito na hora errada.
+    nucleos = quieta.nucleos()
+    vigia = quieta.Vigia().abrir()
     srv = pp.Phxsqld()
     try:
         c = pp.Cliente()
@@ -155,21 +179,42 @@ def principal():
         for modo, separadas in (("sem-trava", False), ("ler", False),
                                 ("gravar", False), ("ler-tabelas-separadas", True),
                                 ("gravar-tabelas-separadas", True)):
-            print(f"-- {modo}")
             base = None
             saida[modo] = {}
             for n in (1, 2, 4):
-                ops, cpu = rodada(modo, n, SEGUNDOS, separadas)
+                ops, cpu = rodada(modo, n, SEGUNDOS, vigia, separadas)
                 if base is None:
                     base = ops
-                ganho = ops / base
+                    if modo == "sem-trava" and vigia.controle_antes is None:
+                        vigia.controle_antes = ops
+                saida[modo][n] = {"ops": ops, "ganho": ops / base, "cpu": cpu}
+        # O CONTROLE de novo, no fim. Se o `ping` -- que nem toma a trava --
+        # mudou entre o comeco e o fim, quem mudou foi a maquina, e a bateria
+        # inteira perdeu a comparacao.
+        vigia.controle_depois = rodada("sem-trava", 1, SEGUNDOS, vigia)[0]
+        vigia.fechar()
+        vigia.relatar()
+
+        sujo_vale = "--mesmo-sujo" in sys.argv
+        if not vigia.publicavel() and not sujo_vale:
+            print("Nenhum numero sai desta rodada. Rode com a maquina parada,")
+            print("ou use --mesmo-sujo para depurar o proprio arnes.")
+            return 1
+        if not vigia.publicavel():
+            print(">>> NUMEROS SUJOS: a maquina nao estava parada. NAO CITAR. <<<\n")
+
+        for modo, curva in saida.items():
+            if not isinstance(curva, dict) or 1 not in curva:
+                continue
+            print(f"-- {modo}")
+            for n, d in curva.items():
                 teto = "  (N > nucleos: PISO, nao veredito)" if n > nucleos - 1 else ""
-                print(f"   {n} cliente(s): {ops:8.0f} op/s   ganho {ganho:.2f}x"
-                      f"   cpu {cpu:3.0f}%{teto}")
-                saida[modo][n] = {"ops": ops, "ganho": ganho, "cpu": cpu}
+                print(f"   {n} cliente(s): {d['ops']:8.0f} op/s   "
+                      f"ganho {d['ganho']:.2f}x   cpu {d['cpu']:3.0f}%{teto}")
             print()
-        print(json.dumps(saida, indent=2))
-        return 0
+        if "--json" in sys.argv:
+            print(json.dumps(saida, indent=2))
+        return 0 if vigia.publicavel() else 1
     finally:
         srv.parar()
 
