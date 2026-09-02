@@ -899,6 +899,38 @@ impl Table {
     /// esta aberta e no meio de uma escrita, e um segundo descritor sobre ela
     /// leria o indice que ainda nao foi para o disco. Quem precisar da
     /// hierarquia alterando a propria chave altera as filhas na mao.
+    /// Refaz **so a cascata** de uma alteracao cuja mae ja esta gravada.
+    ///
+    /// # Por que a recuperacao precisa disto
+    ///
+    /// Porque a cascata e planejada pelo DELTA da mae, e a reaplicacao nao tem
+    /// delta nenhum. `aplicar_uma` refaz a alteracao por `atualizar`, que e o
+    /// metodo que carrega a cascata -- e foi dai que se concluiu, lendo, que a
+    /// recuperacao se consertava sozinha. Medido, nao se conserta: se a queda
+    /// foi DEPOIS de a mae ir para o disco e ANTES de a cascata rodar, a
+    /// reaplicacao encontra a mae ja no valor de destino, `antes == depois`, o
+    /// plano sai vazio e a filha fica para tras. Pior: `atualizar` devolve
+    /// `Ok`, a operacao e contada em `reaplicadas`, e o relatorio do arranque
+    /// diz que o commit foi completado.
+    ///
+    /// A marca `.tx` v2 guarda a linha ANTIGA justamente para que a
+    /// recuperacao possa dizer aqui qual era o delta.
+    ///
+    /// # E idempotente, e e por construcao
+    ///
+    /// O plano procura as filhas pela chave ANTIGA. Se a cascata ja tinha
+    /// rodado, nao ha mais filha nessa chave e o plano sai vazio -- entao
+    /// chamar sempre custa o portao de `planejar_ao_alterar`, que sai na
+    /// primeira linha quando nenhuma coluna indexada mudou, e nao custa nem a
+    /// varredura dos esquemas irmaos.
+    pub fn recascatear(&mut self, antes: &[Value], depois: &[Value]) -> Result<()> {
+        let passos = self.planejar_ao_alterar(antes, depois)?;
+        if passos.is_empty() {
+            return Ok(());
+        }
+        self.aplicar_ao_alterar(passos)
+    }
+
     fn planejar_ao_alterar(
         &mut self,
         antes: &[Value],
@@ -1039,8 +1071,22 @@ impl Table {
     /// apontando para um pai que mudou de chave -- orfa que DA ERRO e se acha
     /// varrendo. A ordem inversa deixaria a filha apontando para uma chave que
     /// a mae nunca chegou a ter, que e orfa igual e mais dificil de explicar.
-    /// O que NAO se aceitou foi recusar depois de gravar: tudo o que pode
-    /// recusar ja recusou no planejamento, antes da primeira escrita.
+    /// O que se QUIS foi nao recusar depois de gravar -- e a um nivel de
+    /// profundidade e o que acontece: tudo o que pode recusar recusou no
+    /// planejamento.
+    ///
+    /// **A DOIS niveis nao e verdade, e isso esta medido.** O planejamento da
+    /// mae so olha quem aponta para a MAE; ele nao desce ate a neta. Com
+    /// `avo <- mae(cascata) <- neta(restringir)`, o plano da avo passa, a avo
+    /// vai para o disco, e so entao a cascata chama `mae.atualizar`, que
+    /// planeja a propria cascata, acha a neta com `restringir` e recusa. A avo
+    /// ficou gravada e a mae ficou para tras -- sem queda nenhuma, so com
+    /// declaracoes legitimas. O recado abaixo DIZ isso, e e por isso que ele
+    /// existe; o comentario e que dizia o contrario. O teste que trava o
+    /// cenario e `a_cascata_de_tres_niveis_recusa_depois_de_gravar_a_mae`, em
+    /// `phxsql-server/tests/cascata-na-recuperacao.rs`, e fechar o buraco pede
+    /// planejar a arvore inteira antes da primeira escrita -- pedido proprio,
+    /// no PENDENCIAS.
     fn aplicar_ao_alterar(&mut self, passos: Vec<PassoAoAlterar>) -> Result<()> {
         self.sincronizar()?;
         for mut passo in passos {

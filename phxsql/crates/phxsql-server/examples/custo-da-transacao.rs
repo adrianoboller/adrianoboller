@@ -196,6 +196,7 @@ fn so_a_marca(n: u64) -> f64 {
             phxsql_core::value::Value::Int(1),
             phxsql_core::value::Value::Int(2),
         ],
+        linha_antiga: Vec::new(),
         motivo: String::new(),
     }];
     let comeco = Instant::now();

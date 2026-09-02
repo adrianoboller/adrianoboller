@@ -575,6 +575,69 @@ saiba.
 * Uma marca cuja **tabela não abre mais** (alguém apagou a tabela entre a queda
   e o arranque) cai no mesmo lugar, pelo mesmo motivo.
 
+### 5.5.1 A cascata que a reaplicação não refazia — e o relatório dizendo que refez
+
+Este foi achado **medindo**, e a conclusão que veio antes da medida estava
+errada. A Frente A entregou o `ao_alterar: cascata` executando e apontou que as
+escritas da cascata não entram no conjunto de escrita nem na marca. Lendo o
+código eu concluí que não havia buraco: `aplicar_uma` reaplica a alteração por
+`Table::atualizar`, que é **exatamente** o método que carrega a cascata. A
+dedução é confortável e está errada.
+
+A cascata é planejada pelo **delta da mãe** — `planejar_ao_alterar` compara
+antes e depois. Se a queda foi depois de a mãe ir para o disco e antes de a
+cascata rodar, a reaplicação encontra a mãe **já no valor de destino**:
+`antes == depois`, o plano sai vazio, e a filha fica para trás. E o pior não é
+a filha: `atualizar` devolvia `Ok`, a operação era contada em `reaplicadas`,
+nada ia para `impossiveis`, e o **relatório do arranque dizia que o commit foi
+completado**. Um relatório que mente é pior que um relatório que falta.
+
+O conserto é a marca **`.tx` v2**, que guarda a **linha antiga** do
+`atualizar`; a reaplicação replaneja com ela por `Table::recascatear`.
+Três coisas valem registrar:
+
+* **custa zero leitura a mais.** O servidor já lê a linha do disco ao empilhar
+  o `atualizar`, para a guarda do `softdeleted`;
+* **é idempotente por construção.** O plano procura as filhas pela chave
+  *antiga*, e cascata que já rodou não deixou filha nenhuma ali. Por isso a
+  chamada é incondicional em vez de tentar adivinhar se a queda foi antes ou
+  depois;
+* **a linha antiga vem do DISCO, não da visão da transação**, e é a resposta
+  certa: a única operação que precisa dela na reaplicação é a **primeira** a
+  tocar aquela linha, e para essa o valor de disco é o valor de antes. Da
+  segunda em diante o `atualizar` da reaplicação já encontra delta de verdade e
+  cascateia sozinho.
+
+A **v1 continua sendo lida**. Marca é commit que já começou, e descartá-la por
+causa de uma mudança nossa de formato jogaria fora exatamente o que ela existe
+para salvar. Ela volta sem linha antiga e sem cascata refeita — o comportamento
+que já tinha.
+
+O arquivo é `phxsql-server/tests/cascata-na-recuperacao.rs`, com quatro provas
+e as duas sabotagens: tirar o `recascatear` derruba só o teste da cascata,
+recusar a v1 derruba só o teste da compatibilidade.
+
+### 5.5.2 A órfã que não precisa de queda nenhuma
+
+Apareceu no caminho, e é de outra família: não é da transação, é da própria
+cascata, e **continua acontecendo**.
+
+`aplicar_ao_alterar` dizia em comentário que «tudo o que pode recusar já
+recusou no planejamento, antes da primeira escrita». A **dois níveis** é
+verdade. A três não: o planejamento da mãe só olha quem aponta para a **mãe**,
+e não desce até a neta. Com `avó ← mãe (cascata) ← neta (restringir)`, o plano
+da avó passa, a avó vai para o disco, e só então a cascata chama
+`mae.atualizar`, que planeja a própria cascata, acha a neta com `restringir` e
+recusa. **A avó ficou gravada e a mãe ficou para trás** — sem queda nenhuma, só
+com declarações legítimas.
+
+O recado do erro já dizia a verdade («a mãe já está gravada, e essa filha ficou
+para trás»); era o comentário que dizia o contrário, e ele foi corrigido.
+Fechar o buraco pede planejar a **árvore inteira** antes da primeira escrita, e
+isso é pedido próprio no `PENDENCIAS.md` — dentro de uma transação o estrago
+não escapa, porque a passada inteira roda com a trava na mão e o erro leva a
+transação para `ABORT_ONLY`.
+
 ### 5.6 A lição que o próprio teste do `SIGKILL` deu
 
 A primeira versão da prova por soquete exigia **sempre** as 3.000 linhas depois

@@ -8249,6 +8249,7 @@ impl Servidor {
                     acao,
                     rowid,
                     linha,
+                    linha_antiga: Vec::new(),
                     motivo: String::new(),
                 }
             }
@@ -8297,6 +8298,11 @@ impl Servidor {
                     acao,
                     rowid,
                     linha,
+                    // De graca: a `velha` ja foi lida do disco aqui em cima
+                    // para a guarda do softdeleted. E ela vem do DISCO porque
+                    // este caminho chama `ver_so_o_disco` -- que e o valor de
+                    // antes de que a reaplicacao precisa.
+                    linha_antiga: velha.unwrap_or_default(),
                     motivo: String::new(),
                 }
             }
@@ -8332,6 +8338,9 @@ impl Servidor {
                     acao,
                     rowid,
                     linha: Vec::new(),
+                    // Nao ha cascata no excluir -- `ao_excluir` so aceita
+                    // `restringir` --, entao nao ha o que replanejar.
+                    linha_antiga: Vec::new(),
                     motivo,
                 }
             }
@@ -22981,6 +22990,7 @@ mod testes_transacoes {
                     Value::Str(format!("c{i}")),
                     Value::Bool(false),
                 ],
+                linha_antiga: Vec::new(),
                 motivo: String::new(),
             })
             .collect();
@@ -23011,6 +23021,7 @@ mod testes_transacoes {
             acao: crate::transacao::Acao::Inserir,
             rowid: 1,
             linha: vec![Value::Int(1), Value::Str("a".into()), Value::Bool(false)],
+            linha_antiga: Vec::new(),
             motivo: String::new(),
         }];
         let caminho =

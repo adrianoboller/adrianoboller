@@ -43,7 +43,18 @@ use phxsql_store::catalogo::Instancia;
 pub const MAGIC: &[u8; 8] = b"PHXTX\0\0\0";
 
 /// A versao do formato da marca. Ver `docs/FORMATO.md`.
-pub const VERSAO: u32 = 1;
+///
+/// A **v2** acrescentou a linha ANTIGA do `atualizar`, para a reaplicacao
+/// poder replanejar a cascata do `ao_alterar` -- sem ela a filha fica para
+/// tras e o relatorio ainda diz que completou. A v1 **continua sendo lida**:
+/// marca deixada por um servidor anterior e commit que ja comecou, e
+/// descarta-la seria jogar fora uma transacao confirmada por causa de uma
+/// mudanca nossa. Ela volta sem linha antiga, e a cascata dela nao se refaz --
+/// exatamente o comportamento que ela ja tinha.
+pub const VERSAO: u32 = 2;
+
+/// A primeira versao do formato, ainda aceita na leitura.
+pub const VERSAO_SEM_LINHA_ANTIGA: u32 = 1;
 
 /// O prefixo do nome do arquivo de marca, dentro do diretorio do database.
 pub const PREFIXO: &str = "transacao_";
@@ -210,6 +221,19 @@ pub struct Escrita {
     pub rowid: u64,
     /// A linha ja tipada. Vazia no `excluir` e no `restaurar`.
     pub linha: Vec<Value>,
+    /// A linha como o DISCO a tem, antes desta transacao. So no `atualizar`.
+    ///
+    /// Ela existe por um motivo unico e medido: a cascata do `ao_alterar` e
+    /// planejada pelo delta da mae, e a reaplicacao nao tem delta -- a mae ja
+    /// pode estar no valor de destino. Sem a linha antiga a recuperacao nao
+    /// consegue nem PERGUNTAR quais filhas ficaram para tras.
+    ///
+    /// Vem do disco, e nao da visao da transacao, e isso e a resposta certa:
+    /// a unica operacao que precisa dela na reaplicacao e a PRIMEIRA a tocar
+    /// aquela linha, e para essa o valor de disco e o valor de antes. Da
+    /// segunda em diante o `atualizar` da reaplicacao ja acha delta de
+    /// verdade e cascateia sozinho.
+    pub linha_antiga: Vec<Value>,
     /// O motivo da exclusao ou da restauracao. Vazio no resto.
     pub motivo: String,
 }
@@ -816,6 +840,8 @@ pub struct OperacaoDaMarca {
     pub acao: Acao,
     pub rowid: u64,
     pub linha: Vec<Value>,
+    /// Vazia na marca v1 e em tudo que nao e `atualizar`.
+    pub linha_antiga: Vec<Value>,
     pub motivo: String,
 }
 
@@ -866,6 +892,10 @@ pub fn gravar_marca(
         let motivo = e.motivo.as_bytes();
         payload.extend_from_slice(&(motivo.len() as u32).to_le_bytes());
         payload.extend_from_slice(motivo);
+        // A linha antiga vai no FIM do payload, e nao entre os campos que ja
+        // existiam: assim o leitor da v1 e o da v2 percorrem os mesmos bytes
+        // ate aqui, e o CRC continua cobrindo o bloco inteiro de uma vez.
+        payload.extend_from_slice(&codificar_linha(&e.linha_antiga));
         b.extend_from_slice(&(payload.len() as u32).to_le_bytes());
         b.extend_from_slice(&payload);
         let crc = crc32(&b[inicio..]);
@@ -909,7 +939,7 @@ pub fn ler_marca(caminho: &Path) -> Result<Option<Marca>> {
     }
     let mut leitor = Leitor { b: &b, i: 8 };
     let versao = leitor.u32()?;
-    if versao != VERSAO {
+    if versao != VERSAO && versao != VERSAO_SEM_LINHA_ANTIGA {
         return Ok(None);
     }
     let id = leitor.u64()?;
@@ -959,11 +989,22 @@ pub fn ler_marca(caminho: &Path) -> Result<Option<Marca>> {
             i: consumido,
         };
         let motivo = m.texto().unwrap_or_default();
+        // Marca v1 nao tem linha antiga, e isso nao e defeito dela: e a
+        // versao em que a reaplicacao nao sabia replanejar a cascata.
+        let linha_antiga = if versao == VERSAO {
+            match decodificar_linha_em(&payload[m.i..]) {
+                Ok((v, _)) => v,
+                Err(_) => return Ok(None),
+            }
+        } else {
+            Vec::new()
+        };
         operacoes.push(OperacaoDaMarca {
             tabela,
             acao,
             rowid,
             linha,
+            linha_antiga,
             motivo,
         });
     }
@@ -1213,6 +1254,19 @@ fn aplicar_uma(t: &mut phxsql_store::table::Table, op: &OperacaoDaMarca) -> Resu
                 )));
             }
             t.atualizar(op.rowid, &op.linha)?;
+            // **O `atualizar` sozinho NAO refaz a cascata, e isso esta
+            // medido.** A cascata do `ao_alterar` e planejada pelo delta da
+            // mae; se a queda foi depois de a mae ir para o disco e antes de a
+            // cascata rodar, a reaplicacao acha `antes == depois`, o plano sai
+            // vazio, a filha fica para tras -- e esta funcao devolvia `Ok`,
+            // somando em `reaplicadas`, com o relatorio do arranque dizendo
+            // que o commit foi completado.
+            //
+            // Com a linha antiga na mao da para perguntar. E idempotente:
+            // cascata que ja rodou nao deixa filha na chave antiga.
+            if !op.linha_antiga.is_empty() {
+                t.recascatear(&op.linha_antiga, &op.linha)?;
+            }
             Ok(true)
         }
         Acao::ExcluirSuave => Ok(t.excluir_suave(op.rowid, &op.motivo)?),
@@ -1271,6 +1325,7 @@ mod testes {
                 acao: Acao::Inserir,
                 rowid: 7,
                 linha: vec![Value::Int(1), Value::Str("Ana".into())],
+                linha_antiga: Vec::new(),
                 motivo: String::new(),
             },
             Escrita {
@@ -1279,6 +1334,7 @@ mod testes {
                 acao: Acao::ExcluirSuave,
                 rowid: 3,
                 linha: Vec::new(),
+                linha_antiga: Vec::new(),
                 motivo: "pedido do titular".into(),
             },
         ];
@@ -1307,6 +1363,7 @@ mod testes {
             acao: Acao::Inserir,
             rowid: 1,
             linha: vec![Value::Str("Blumenau".into())],
+            linha_antiga: Vec::new(),
             motivo: String::new(),
         }];
         let caminho = gravar_marca(&d, 1, 0, &ops).unwrap();
@@ -1330,6 +1387,7 @@ mod testes {
             acao: Acao::Inserir,
             rowid: 1,
             linha: vec![Value::Str("Joinville".into())],
+            linha_antiga: Vec::new(),
             motivo: String::new(),
         }];
         let caminho = gravar_marca(&d, 2, 0, &ops).unwrap();

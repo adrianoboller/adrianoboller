@@ -1788,7 +1788,7 @@ operação   [tam_tabela u16][tabela bytes][op u8][rowid alvo u64]
 | campo | tamanho | o que é |
 |---|---|---|
 | `magic` | 8 | `PHXTX\0\0\0`, como todo arquivo do motor |
-| `versao` | 4 | 1 |
+| `versao` | 4 | 2 (a 1 continua sendo **lida**, ver abaixo) |
 | `id` | 8 | o identificador da transação, o mesmo do nome do arquivo |
 | `carimbo` | 8 | ms desde a época, quando a marca foi escrita |
 | `n_operacoes` | 4 | quantas operações vêm a seguir |
@@ -1800,7 +1800,7 @@ E por operação:
 |---|---|---|
 | `op` | 1 | 1 inserir, 2 atualizar, 3 excluir suave, 4 excluir de vez, 5 restaurar |
 | `rowid alvo` | 8 | **o slot que esta operação vai escrever** |
-| `payload` | variável | a linha codificada, seguida do motivo |
+| `payload` | variável | a linha codificada, o motivo, e a **linha antiga** (v2) |
 | `crc32` | 4 | de toda a operação, do `tam_tabela` ao fim do payload |
 
 ### Por que o `rowid alvo`, e não só a linha
@@ -1809,6 +1809,44 @@ Porque a reaplicação é **idempotente pelo rowid**: cada operação diz o slot
 devia ter escrito, e a recuperação passa adiante quando ele já está ocupado. O
 rowid é previsível antes da passada porque o `.reg` sempre anexa no fim e o
 `INSERT` trava o fim da tabela — ninguém pode mudar isso no meio.
+
+### v2: a linha antiga, e por que ela é obrigatória
+
+A v2 acrescentou, **no fim do payload**, a linha como o disco a tinha antes da
+transação. Só o `atualizar` a preenche; no resto ela é uma linha vazia.
+
+Ela existe por um defeito medido, e o defeito não era o que parecia. A cascata
+do `ao_alterar` é planejada pelo **delta da mãe** — `planejar_ao_alterar`
+compara antes e depois. A recuperação reaplica a alteração por
+`Table::atualizar`, que é justamente o método que carrega a cascata, e foi daí
+que se concluiu, **lendo**, que ela se consertava sozinha. Medido, não se
+consertava: se a queda foi depois de a mãe ir para o disco e antes de a cascata
+rodar, a reaplicação encontra a mãe já no valor de destino, `antes == depois`,
+o plano sai vazio e a filha fica para trás. Pior: `atualizar` devolvia `Ok`, a
+operação era contada em `reaplicadas`, e o **relatório do arranque dizia que o
+commit foi completado**.
+
+Com a linha antiga na marca, a recuperação chama `Table::recascatear` e
+replaneja. É idempotente por construção: o plano procura as filhas pela chave
+**antiga**, e cascata que já rodou não deixou filha nenhuma ali.
+
+Ela custa zero leitura a mais: o servidor já lê a linha do disco ao empilhar o
+`atualizar`, para a guarda do `softdeleted`.
+
+O teste é `phxsql-server/tests/cascata-na-recuperacao.rs`, e a prova real é nos
+dois sentidos — tirar a chamada a `recascatear` devolve a filha no valor velho.
+
+### Por que a v1 continua sendo lida
+
+Porque **marca é commit que já começou**. Uma marca deixada por um servidor
+anterior representa uma transação confirmada, e descartá-la por causa de uma
+mudança nossa de formato jogaria fora exatamente o que ela existe para
+salvar — que é pior que o defeito que a v2 conserta.
+
+Uma marca v1 volta com a linha antiga vazia, e a cascata dela não se refaz:
+o comportamento que ela já tinha. O leitor da v1 e o da v2 percorrem os mesmos
+bytes até o motivo, e é por isso que o campo novo foi para o **fim** do
+payload em vez de entre os que já existiam.
 
 ### Por que a linha vai em bytes, e não em JSON
 
@@ -1828,7 +1866,8 @@ que a etiqueta virou outra coisa.
 ### O que a leitura faz com uma marca que não confere
 
 Devolve «não há marca». Um CRC quebrado, uma assinatura errada, uma versão
-desconhecida ou um arquivo truncado são todos a **mesma** resposta: um commit
+desconhecida (nem 1 nem 2) ou um arquivo truncado são todos a **mesma**
+resposta: um commit
 que **nunca começou** — porque a marca é sincronizada inteira antes de qualquer
 escrita. Ela é apagada, e o disco continua como estava.
 
