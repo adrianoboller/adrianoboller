@@ -26,6 +26,7 @@
  */
 import { chromium } from '/opt/node22/lib/node_modules/playwright/index.mjs';
 import { mkdirSync, rmSync, readdirSync, statSync, existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { subir, USUARIO, SENHA, TOKEN } from './servidor.mjs';
 
@@ -219,6 +220,22 @@ async function principal() {
     await srv.derrubar();
     const v = readdirSync(SAIDA).filter(f => f.endsWith('.webm'));
     console.log('video:', v.map(f => join(SAIDA, f)).join(' '));
+    // E o MP4 junto, sem precisar pedir. O Playwright grava SO WebM, e WebM
+    // nao abre em tudo -- H.264 abre. `faststart` poe o indice no comeco do
+    // arquivo, entao ele comeca a tocar antes de baixar inteiro.
+    // Falhar aqui NAO derruba a gravacao: o WebM ja esta salvo, e um conversor
+    // ausente e motivo para avisar, nao para perder o video.
+    for (const f of v) {
+      const mp4 = join(SAIDA, 'phxsql-demonstracao.mp4');
+      try {
+        execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', join(SAIDA, f),
+          '-c:v', 'libx264', '-preset', 'medium', '-crf', '23',
+          '-pix_fmt', 'yuv420p', '-movflags', '+faststart', mp4]);
+        console.log('mp4:', mp4);
+      } catch (e) {
+        console.log('mp4: NAO gerado --', String(e.message).slice(0, 80));
+      }
+    }
   }
 }
 
