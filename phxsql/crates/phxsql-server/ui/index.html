@@ -2019,6 +2019,14 @@ const est = { sessao:null, usuario:null, token:"", demo:false,
               // resolveu. Vazio = o portugues que ja esta no HTML.
               textos:null,
               teto:200, esquemaAtual:null, grade:null, painel:null,
+              // O cache das quatro abas que so leem (Estrutura, Indices,
+              // Diario, Integridade): a funcao `v*` busca e guarda aqui, e o
+              // `ligar*` que roda logo depois monta a PhxGrid a partir do
+              // cache -- sem isso o `PhxGrid.criar` teria de repetir o
+              // `await api(...)`, ou a funcao `v*` teria de conhecer o DOM
+              // antes de ele existir.
+              estruturaAtual:null, indicesAtual:null, diarioAtual:null,
+              integridadeAtual:null,
               maquina:null, relogioMaquina:null,
               // O formulario de nova tabela sobrevive a um "+ coluna": o
               // rascunho fica aqui e a tela se redesenha a partir dele.
@@ -2369,8 +2377,9 @@ function tabela(colunas, linhas, montar) {
 }
 
 /** O MIOLO da celula -- sem o `<td>`, para o `formato` da PhxGrid poder usar
- * o mesmo criterio de `celulaValor` (usada pela tabela a mao que ainda resta
- * em `abrirConsulta`) sem duplicar a regra do nulo e do texto cortado. */
+ * o mesmo criterio de `celulaValor` sem duplicar a regra do nulo e do texto
+ * cortado. E o formatador direto da coluna dinamica de `abrirConsulta` e de
+ * `ligarLixeira`, e do amostra de `telaImportar`. */
 function celulaValorTexto(v) {
   if (v === null || v === undefined) return `<span class="leg">NULL</span>`;
   if (typeof v === "number") return String(v);
@@ -2378,6 +2387,9 @@ function celulaValorTexto(v) {
   return esc(s.length > 60 ? s.slice(0, 57) + "…" : s);
 }
 
+/** A mesma celula, com `<td>` -- `index.html` nao chama mais esta funcao, mas
+ * `ui/claude.js` (`executar`) ainda a usa, global, e continua sendo a UNICA
+ * `tabela()` a mao que sobra na interface (fora desta rodada de conversao). */
 function celulaValor(v) {
   if (v === null || v === undefined) return `<td class="dado nulo">NULL</td>`;
   if (typeof v === "number") return `<td class="dado num">${v}</td>`;
@@ -2660,12 +2672,11 @@ async function desenharAba() {
   p.innerHTML = `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`;
   const { db, tab } = est.atual;
   try {
-    if (est.aba === "estrutura")   return p.innerHTML = await vEstrutura(db, tab),
-                                          ligarLgpdDaEstrutura(db, tab);
+    if (est.aba === "estrutura")   return p.innerHTML = await vEstrutura(db, tab), ligarEstrutura(db, tab);
     if (est.aba === "conteudo")    return p.innerHTML = await vConteudo(db, tab), ligarConteudo();
-    if (est.aba === "indices")     return p.innerHTML = await vIndices(db, tab);
-    if (est.aba === "diario")      return p.innerHTML = await vDiario(db, tab);
-    if (est.aba === "integridade") return p.innerHTML = await vIntegridade(db, tab);
+    if (est.aba === "indices")     return p.innerHTML = await vIndices(db, tab), ligarIndices();
+    if (est.aba === "diario")      return p.innerHTML = await vDiario(db, tab), ligarDiario();
+    if (est.aba === "integridade") return p.innerHTML = await vIntegridade(db, tab), ligarIntegridade();
   } catch (e) {
     p.innerHTML = `<div class="aviso mal">${esc(e.message)}</div>`;
   }
@@ -2673,6 +2684,7 @@ async function desenharAba() {
 
 async function vEstrutura(database, tabela_) {
   const e = await api("esquema", { database, tabela:tabela_ });
+  est.estruturaAtual = e;
   const pag = e.paginacao;
   const fichas = [
     ["registros", e.registros], ["slots usados", e.slots],
@@ -2688,36 +2700,10 @@ async function vEstrutura(database, tabela_) {
       >${esc(txt("tela.acrescentar_coluna", "✚ Acrescentar coluna…"))}</button>
   </div>`;
 
-  h += `<h3>Colunas</h3>` + tabela(
-    [{t:"#",cls:""},{t:"nome"},{t:"tipo"},{t:"obrigatória"},{t:"onde mora"},{t:"LGPD"}],
-    e.colunas, (c,i) => {
-      const ext = c.tipo === "Bin" ? "bin" : c.tipo === "Memo" ? "memo" : "reg";
-      const nota = c.tipo === "Uuid" ? " 16 bytes"
-                 : c.tipo === "Uuid256" ? " 32 bytes"
-                 : c.tipo === "Sequence" ? " conta sozinha" : "";
-      return `<tr><td class="num dado">${i}</td><td class="dado">${esc(c.nome)}</td>
-        <td class="dado">${esc(c.tipo)}<span class="leg">${nota}</span></td>
-        <td>${c.nullable ? '<span class="pino nao">nulo ok</span>' : '<span class="pino ok">not null</span>'}</td>
-        <td><span class="pino ${ext}">.${ext}</span></td>
-        <td>${celulaLgpd(c)}</td></tr>`;
-    });
+  h += `<h3>Colunas</h3><div id="gradeEstColunas"></div>`;
 
   if ((e.chaves_estrangeiras||[]).length) {
-    // A coluna «conferida» diz a diferenca entre declarar e impor, e ela e a
-    // unica coisa nesta tabela que muda o COMPORTAMENTO da gravacao. Sem ela,
-    // duas tabelas com a mesma chave apareceriam identicas na tela e se
-    // comportariam diferente -- que e mentira sobre o dado por omissao.
-    h += `<h3>Chaves estrangeiras</h3>` + tabela(
-      [{t:"nome"},{t:"colunas"},{t:"referencia"},
-       {t:txt("tela.fk_conferida","conferida")},
-       {t:"ao excluir"},{t:"ao alterar"}],
-      e.chaves_estrangeiras, f =>
-        `<tr><td class="dado">${esc(f.nome)}</td><td class="dado">${esc(f.colunas.join(", "))}</td>
-         <td class="dado">${esc(f.tabela_ref)}(${esc(f.colunas_ref.join(", "))})</td>
-         <td>${f.verificar
-             ? `<span class="pino ok">${esc(txt("tela.fk_imposta","imposta"))}</span>`
-             : `<span class="pino nao">${esc(txt("tela.fk_so_declarada","só declarada"))}</span>`}</td>
-         <td>${esc(f.ao_excluir)}</td><td>${esc(f.ao_alterar)}</td></tr>`);
+    h += `<h3>Chaves estrangeiras</h3><div id="gradeEstFks"></div>`;
   }
 
   if (pag) h += `<div class="aviso">Tabela paginada: <b>${pag.registros_por_arquivo}</b>
@@ -2779,6 +2765,74 @@ function celulaLgpd(c) {
   </span>`;
 }
 
+/// Monta as grades da aba Estrutura (Colunas e, se houver, Chaves
+/// estrangeiras) e liga o botão de acrescentar coluna e a coluna LGPD.
+///
+/// PADRONIZACAO: PhxGrid. Nenhuma das duas leva `aoAbrirLinha` -- e o proprio
+/// esquema da tabela aberta, sem "abrir" para onde ir a partir de uma linha.
+function ligarEstrutura(db, tab) {
+  const e = est.estruturaAtual;
+  if (!e) return;
+  const extDe = t => t === "Bin" ? "bin" : t === "Memo" ? "memo" : "reg";
+  const notaDoTipo = t => t === "Uuid" ? " 16 bytes"
+                        : t === "Uuid256" ? " 32 bytes"
+                        : t === "Sequence" ? " conta sozinha" : "";
+  PhxGrid.criar("#gradeEstColunas", {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    lembrar: "estcolunas:" + db + "." + tab,
+    nomeVista: "estcolunas-" + db + "-" + tab,
+    colunas: [
+      // "#" nao e palavra (duas letras seguidas e o piso do que o conferidor
+      // de idiomas chama de texto) -- e o mesmo `titulo:"#"` da SysColumns.
+      { campo:"posicao", titulo:"#", tipo:"numero", fixa:"esq" },
+      { campo:"nome", titulo:txt("tela.col_nome_curto","nome"), formato:v => `<b>${esc(v)}</b>` },
+      { campo:"tipo", titulo:txt("tela.col_tipo","tipo"),
+        formato:v => `${esc(v)}<span class="leg">${notaDoTipo(v)}</span>` },
+      { campo:"nullable", titulo:txt("tela.col_obrig","obrig."),
+        formato:v => v ? `<span class="pino nao">${esc(txt("tela.pino_nulo_ok","nulo ok"))}</span>`
+                       : `<span class="pino ok">not null</span>` },
+      { campo:"__ext", titulo:txt("tela.col_onde_mora","onde mora"),
+        formato:(_, l) => `<span class="pino ${extDe(l.tipo)}">.${extDe(l.tipo)}</span>` },
+      // LGPD e o unico campo que GRAVA a partir da grade -- e por isso nao
+      // ordena nem filtra: a caixa e o select tem de continuar nos MESMOS
+      // elementos DOM enquanto a pessoa marca, e ordenar os reconstroi.
+      { campo:"dado_pessoal", titulo:txt("tela.fer_lgpd","LGPD"),
+        ordenavel:false, filtravel:false,
+        formato:(_, l) => celulaLgpd(l) },
+    ],
+    // Cada linha ganha `posicao` (a ordem de digitação, que e a mesma da API
+    // `esquema`) porque a grade nao tem indice de array como o `.map` tinha.
+    dados: e.colunas.map((c, i) => ({ ...c, posicao: i })),
+    pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+  });
+
+  if ($("#gradeEstFks")) PhxGrid.criar("#gradeEstFks", {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    lembrar: "estfks:" + db + "." + tab,
+    nomeVista: "estfks-" + db + "-" + tab,
+    colunas: [
+      { campo:"nome", titulo:txt("tela.col_nome_curto","nome"), fixa:"esq" },
+      { campo:"colunas", titulo:txt("tela.col_colunas","colunas"), formato:v => (v || []).map(esc).join(", ") },
+      { campo:"tabela_ref", titulo:txt("tela.col_aponta_para","aponta para"),
+        formato:(v, l) => `<code>${esc(v)}</code>(${(l.colunas_ref || []).map(esc).join(", ")})` },
+      // A coluna «conferida» diz a diferenca entre declarar e impor, e ela e
+      // a unica coisa nesta tabela que muda o COMPORTAMENTO da gravacao. Sem
+      // ela, duas tabelas com a mesma chave apareceriam identicas na tela e
+      // se comportariam diferente -- que e mentira sobre o dado por omissao.
+      { campo:"verificar", titulo:txt("tela.fk_conferida","conferida"),
+        formato:v => v
+          ? `<span class="pino ok">${esc(txt("tela.fk_imposta","imposta"))}</span>`
+          : `<span class="pino nao">${esc(txt("tela.fk_so_declarada","só declarada"))}</span>` },
+      { campo:"ao_excluir", titulo:txt("tela.col_ao_excluir","ao excluir") },
+      { campo:"ao_alterar", titulo:txt("tela.col_ao_alterar","ao alterar") },
+    ],
+    dados: e.chaves_estrangeiras || [],
+    pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+  });
+
+  ligarLgpdDaEstrutura(db, tab);
+}
+
 /// Liga a coluna LGPD da tela de Estrutura ao servidor.
 ///
 /// Grava na hora, uma coluna por vez: a alternativa seria um botão «salvar»
@@ -2805,14 +2859,25 @@ function ligarLgpdDaEstrutura(db, tab) {
       abrirTabela(db, tab);
     }
   };
-  $$("#painel .lgpd-chk").forEach(chk => chk.onchange = () => {
-    const cel = chk.closest(".lgpd-cel");
-    const sel = cel.querySelector(".lgpd-grau");
-    sel.disabled = !chk.checked;
-    salvar(chk.dataset.col, chk.checked ? sel.value : "nao");
+  // PADRONIZACAO: a celula LGPD mora dentro da PhxGrid agora, e a grade
+  // REESCREVE a celula a cada ordenar/filtrar/agrupar -- um `onchange` ligado
+  // direto no elemento (como antes, via `forEach`) sumiria na primeira
+  // interacao. Por isso liga por DELEGACAO no container, como o LEIAME do
+  // phx-grid manda para todo controle que more dentro de `formato`.
+  const alvo = $("#gradeEstColunas");
+  if (!alvo) return;
+  alvo.addEventListener("change", ev => {
+    const chk = ev.target.closest(".lgpd-chk");
+    if (chk) {
+      const cel = chk.closest(".lgpd-cel");
+      const sel = cel.querySelector(".lgpd-grau");
+      sel.disabled = !chk.checked;
+      salvar(chk.dataset.col, chk.checked ? sel.value : "nao");
+      return;
+    }
+    const sel = ev.target.closest(".lgpd-grau");
+    if (sel) salvar(sel.dataset.col, sel.value);
   });
-  $$("#painel .lgpd-grau").forEach(sel => sel.onchange = () =>
-    salvar(sel.dataset.col, sel.value));
 }
 
 /// Mapeia o tipo do PhxSql no tipo que o grid entende.
@@ -2963,35 +3028,75 @@ function ligarConteudo() {
 
 async function vIndices(database, tabela_) {
   const e = await api("esquema", { database, tabela:tabela_ });
+  est.indicesAtual = e.indices || [];
   return `<div class="aviso">Todos os índices moram no mesmo <code>.ndx</code>.
     Ele é o único arquivo que <b>não</b> pagina: é uma B+tree por índice sobre a
-    tabela inteira, e partir o arquivo partiria a árvore.</div>` + tabela(
-    [{t:"nome"},{t:"único"},{t:"colunas"},{t:"ordem"}],
-    e.indices, i => `<tr>
-      <td class="dado"><span class="pino ndx">${esc(i.nome)}</span></td>
-      <td>${i.unico?'<span class="pino ok">único</span>':'<span class="pino nao">duplicado ok</span>'}</td>
-      <td class="dado">${i.colunas.map(c=>esc(c.coluna)).join(" + ")}</td>
-      <td class="dado">${i.colunas.map(c =>
-        (c.desc?"DESC":"ASC") + (c.nocase?" NOCASE":"")).join(" · ")}</td></tr>`);
+    tabela inteira, e partir o arquivo partiria a árvore.</div>
+    <div id="gradeAbaIndices"></div>`;
+}
+
+// PADRONIZACAO: PhxGrid. Sem clique proprio -- e leitura do esquema, e ja tem
+// destino proprio (a aba Estrutura, que mostra a mesma tabela por outro lado).
+function ligarIndices() {
+  PhxGrid.criar("#gradeAbaIndices", {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    lembrar: "abaindices",
+    nomeVista: "aba-indices",
+    colunas: [
+      { campo:"nome", titulo:txt("tela.col_indice","índice"), fixa:"esq",
+        formato:v => `<span class="pino ndx">${esc(v)}</span>` },
+      { campo:"unico", titulo:txt("tela.col_unico","único"),
+        formato:v => v ? `<span class="pino ok">${esc(txt("tela.pino_unico","único"))}</span>`
+                       : `<span class="pino nao">${esc(txt("tela.pino_duplicado_ok","duplicado ok"))}</span>` },
+      { campo:"colunas", titulo:txt("tela.col_colunas","colunas"),
+        formato:v => (v || []).map(c => esc(c.coluna)).join(" + ") },
+      // Coluna DERIVADA (nao existe campo "ordem" no esquema): ASC/DESC e
+      // NOCASE saem de dentro de `colunas`, e por isso nao ordena nem filtra
+      // por ela sozinha -- ordenar por um texto composto de varias colunas
+      // seria uma ordenacao que ninguem consegue prever.
+      { campo:"__ordem", titulo:txt("tela.col_ordem_indice","ordem"),
+        ordenavel:false, filtravel:false,
+        formato:(_, l) => (l.colunas || []).map(c =>
+          (c.desc ? "DESC" : "ASC") + (c.nocase ? " NOCASE" : "")).join(" · ") },
+    ],
+    dados: est.indicesAtual,
+    pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+  });
 }
 
 async function vDiario(database, tabela_) {
   const d = await api("diario", { database, tabela:tabela_, max:200 });
-  const cor = { inclusao:"ok", alteracao:"ndx", exclusao:"mal" };
+  est.diarioAtual = d.eventos || [];
   return `<div class="ferramentas"><span class="conta">${d.total} eventos no
-      <code>.log</code></span></div>` + tabela(
-    [{t:"quando"},{t:"operação"},{t:"rowid"},{t:"versão"},{t:"usuário"}],
-    d.eventos, ev => `<tr>
-      <td class="dado">${esc(ev.quando)}</td>
-      <td><span class="pino ${cor[ev.operacao]||"nao"}">${esc(ev.operacao)}</span></td>
-      <td class="dado num">${ev.rowid}</td>
-      <td class="dado num">${ev.versao}</td>
-      <td class="dado num">${ev.usuario||"—"}</td></tr>`);
+      <code>.log</code></span></div>
+    <div id="gradeAbaDiario"></div>`;
+}
+
+function ligarDiario() {
+  const cor = { inclusao:"ok", alteracao:"ndx", exclusao:"mal" };
+  PhxGrid.criar("#gradeAbaDiario", {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    lembrar: "abadiario",
+    nomeVista: "aba-diario",
+    colunas: [
+      { campo:"quando", titulo:txt("tela.col_quando","quando"), fixa:"esq" },
+      { campo:"operacao", titulo:txt("tela.col_operacao","operação"),
+        formato:v => `<span class="pino ${cor[v] || "nao"}">${esc(v)}</span>` },
+      // "rowid" e "nome da coluna de sistema": o mesmo em toda lingua, por
+      // isso e ISENTO no conferidor de idiomas, e nao passa por txt().
+      { campo:"rowid", titulo:"rowid", tipo:"numero" },
+      { campo:"versao", titulo:txt("tela.col_versao","versão"), tipo:"numero" },
+      { campo:"usuario", titulo:txt("tela.col_usuario","usuário"), tipo:"numero",
+        formato:v => v || "—" },
+    ],
+    dados: est.diarioAtual,
+    pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+  });
 }
 
 async function vIntegridade(database, tabela_) {
   const v = await api("verificar", { database, tabela:tabela_ });
-  const idx = Object.entries(v.indices||{});
+  est.integridadeAtual = { indices: Object.entries(v.indices || {}), registros: v.registros };
   const vol = v.volumes || {};
   let h = `<div class="aviso"><b>Íntegra.</b> Conferidos o CRC de cada registro,
     de cada página de índice, de cada bloco externo e de cada evento do diário —
@@ -3001,12 +3106,27 @@ async function vIntegridade(database, tabela_) {
       [".reg",vol.reg],[".bin",vol.bin],[".memo",vol.memo],[".log",vol.log]
     ].map(([r,x]) => `<div class="ficha"><div class="v">${esc(x)}</div>
       <div class="r">${r==="registros"||r==="slots"||r==="eventos"?r:r+" volumes"}</div></div>`).join("")}</div>`;
-  h += `<h3>Índices conferidos</h3>` + tabela(
-    [{t:"índice"},{t:"chaves"},{t:"situação"}],
-    idx, ([n,q]) => `<tr><td class="dado">${esc(n)}</td><td class="dado num">${q}</td>
-      <td><span class="pino ${q===v.registros?"ok":"mal"}">${
-        q===v.registros?"em dia":"fora de sincronia"}</span></td></tr>`);
+  h += `<h3>Índices conferidos</h3><div id="gradeAbaIntegridade"></div>`;
   return h;
+}
+
+function ligarIntegridade() {
+  const { indices, registros } = est.integridadeAtual || { indices: [], registros: 0 };
+  PhxGrid.criar("#gradeAbaIntegridade", {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    lembrar: "abaintegridade",
+    nomeVista: "aba-integridade",
+    colunas: [
+      { campo:"indice", titulo:txt("tela.col_indice","índice"), fixa:"esq" },
+      { campo:"chaves", titulo:txt("tela.col_chaves","chaves"), tipo:"numero" },
+      { campo:"situacao", titulo:txt("tela.col_situacao","situação"),
+        formato:(_, l) => l.chaves === registros
+          ? `<span class="pino ok">${esc(txt("tela.pino_em_dia","em dia"))}</span>`
+          : `<span class="pino mal">${esc(txt("tela.pino_fora_sincronia","fora de sincronia"))}</span>` },
+    ],
+    dados: indices.map(([nome, chaves]) => ({ indice: nome, chaves })),
+    pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+  });
 }
 
 // =====================================================================
@@ -3483,20 +3603,37 @@ async function abrirAdmin(qual) {
         "cadastro do config.json · a senha nunca sai daqui");
       const us = await api("usuarios");
       if (!aindaEMinha()) return;
-      p.innerHTML = tabela(
-        [{t:"id"},{t:"nome"},{t:"login"},{t:"e-mail"},{t:"telefone"},{t:"supervisor"},{t:"ativo"},{t:"poder por base"}],
-        us, u => {
-          const bases = u.supervisor ? "tudo, em toda base"
-            : Object.entries(u.bases||{}).map(([b,perm]) =>
-                `${b}=${Object.entries(perm).filter(([,v])=>v).map(([k])=>k).join("+")||"nada"}`
-              ).join("  ") || "nenhuma";
-          return `<tr><td class="dado num">${u.id}</td><td>${esc(u.nome)}</td>
-            <td class="dado">${esc(u.login)}</td><td class="dado">${esc(u.email)}</td>
-            <td class="dado">${esc(u.telefone)}</td>
-            <td>${u.supervisor?'<span class="pino ok">sim</span>':'<span class="pino nao">não</span>'}</td>
-            <td>${u.ativo?'<span class="pino ok">sim</span>':'<span class="pino mal">não</span>'}</td>
-            <td class="dado">${esc(bases)}</td></tr>`;
-        });
+      p.innerHTML = `<div id="gradeAdmUsuarios"></div>`;
+      // PADRONIZACAO: PhxGrid. Sem clique proprio -- criar e alterar usuario e
+      // por `phxsqld --senha`, e nao por aqui.
+      PhxGrid.criar("#gradeAdmUsuarios", {
+        agrupavel: true, buscaGlobal: true, filterRow: true,
+        lembrar: "admusuarios",
+        nomeVista: "adm-usuarios",
+        colunas: [
+          { campo:"id", titulo:txt("tela.col_id","id"), tipo:"numero", fixa:"esq" },
+          { campo:"nome", titulo:txt("tela.col_nome_curto","nome") },
+          { campo:"login", titulo:txt("tela.col_login","login") },
+          { campo:"email", titulo:txt("tela.col_email","e-mail") },
+          { campo:"telefone", titulo:txt("tela.col_telefone","telefone") },
+          { campo:"supervisor", titulo:txt("tela.col_supervisor","supervisor"),
+            formato:v => v ? `<span class="pino ok">${esc(txt("tela.sim","sim"))}</span>`
+                           : `<span class="pino nao">${esc(txt("tela.nao","não"))}</span>` },
+          { campo:"ativo", titulo:txt("tela.col_ativo","ativo"),
+            formato:v => v ? `<span class="pino ok">${esc(txt("tela.sim","sim"))}</span>`
+                           : `<span class="pino mal">${esc(txt("tela.nao","não"))}</span>` },
+          // Derivada -- resume o objeto `bases` de permissao por database em
+          // TEXTO, porque a grade nao tem coluna que abra em arvore.
+          { campo:"__bases", titulo:txt("tela.col_poder_por_base","poder por base"),
+            ordenavel:false, filtravel:false,
+            formato:(_, u) => esc(u.supervisor ? "tudo, em toda base"
+              : Object.entries(u.bases || {}).map(([b, perm]) =>
+                  `${b}=${Object.entries(perm).filter(([, v]) => v).map(([k]) => k).join("+") || "nada"}`
+                ).join("  ") || "nenhuma") },
+        ],
+        dados: us,
+        pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+      });
     } else if (qual === "acessos") {
       $("#titulo").textContent = txt("tela.acessos", "Acessos");
       $("#subtitulo").textContent = txt("tela.acessos_sub",
@@ -3504,14 +3641,25 @@ async function abrirAdmin(qual) {
       const a = await api("acessos", { max:200 });
       if (!aindaEMinha()) return;
       p.innerHTML = `<div class="ferramentas"><span class="conta">${a.total}
-          registros no <code>acessos.log</code></span></div>` + tabela(
-        [{t:"quando"},{t:"ip"},{t:"operação"},{t:"usuário"},{t:"resultado"},{t:"ms"}],
-        a.acessos, x => `<tr><td class="dado">${esc(x.quando)}</td>
-          <td class="dado">${esc(x.ip)}</td><td class="dado">${esc(x.op)}</td>
-          <td class="dado">${esc(x.usuario||"—")}</td>
-          <td>${x.ok?'<span class="pino ok">ok</span>'
-                    :`<span class="pino mal">${esc(x.erro||"negado")}</span>`}</td>
-          <td class="dado num">${x.ms}</td></tr>`);
+          registros no <code>acessos.log</code></span></div>
+        <div id="gradeAdmAcessos"></div>`;
+      PhxGrid.criar("#gradeAdmAcessos", {
+        agrupavel: true, buscaGlobal: true, filterRow: true,
+        lembrar: "admacessos",
+        nomeVista: "adm-acessos",
+        colunas: [
+          { campo:"quando", titulo:txt("tela.col_quando","quando"), fixa:"esq" },
+          { campo:"ip", titulo:txt("tela.col_ip","ip") },
+          { campo:"op", titulo:txt("tela.col_operacao","operação") },
+          { campo:"usuario", titulo:txt("tela.col_usuario","usuário"), formato:v => esc(v || "—") },
+          { campo:"ok", titulo:txt("tela.col_resultado","resultado"),
+            formato:(v, x) => v ? `<span class="pino ok">ok</span>`
+                                 : `<span class="pino mal">${esc(x.erro || "negado")}</span>` },
+          { campo:"ms", titulo:txt("tela.col_ms","ms"), tipo:"numero" },
+        ],
+        dados: a.acessos,
+        pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+      });
     } else if (qual === "idiomas") {
       $("#titulo").textContent = txt("tela.idiomas", "Idiomas");
       $("#subtitulo").textContent = txt("tela.idi_sub",
@@ -3549,20 +3697,11 @@ async function abrirAdmin(qual) {
             : '<span class="pino nao">desligado</span>'}
         </div>`;
 
-      // Lista vazia mostra UM recado, e não dois: o `tabela()` já põe o
-      // «nada aqui» dele, e os dois juntos só ocupam a tela dizendo o mesmo.
+      // Lista vazia mostra UM recado, e não dois: uma grade vazia já diz
+      // "nada aqui" sozinha, e os dois juntos só ocupam a tela dizendo o mesmo.
       const bloqueadosHtml = !b.ativos.length
         ? `<div class="aviso">Nenhum IP bloqueado.</div>`
-        : tabela(
-        [{t:"ip"},{t:"desde"},{t:"até"},{t:"motivo"},{t:"comando"},{t:"tentativas"},{t:"firewall"},{t:""}],
-        b.ativos, x => `<tr><td class="dado">${esc(x.ip)}</td>
-          <td class="dado">${esc(x.desde)}</td><td class="dado">${esc(x.ate)}</td>
-          <td>${esc(x.motivo)}</td><td class="dado">${esc(x.comando)}</td>
-          <td class="dado num">${x.tentativas}</td>
-          <td>${x.firewall?'<span class="pino ok">aplicado</span>'
-                          :'<span class="pino nao">só no servidor</span>'}</td>
-          <td><button class="botao mini excluir soltar-ip" data-ip="${esc(x.ip)}"
-            title="tira ${esc(x.ip)} da lista de bloqueio de vez">soltar</button></td></tr>`);
+        : `<div id="gradeAdmBloqueios"></div>`;
 
       // Whitelist: a fixa do config só se lê; a editável grava no
       // blacklist.json — arquivo próprio, como dblink e jobs.
@@ -3599,13 +3738,39 @@ async function abrirAdmin(qual) {
 
       p.innerHTML = politicaHtml + bloqueadosHtml + whitelistHtml + exportarHtml;
 
-      $$("#painel .soltar-ip").forEach(btn => btn.onclick = async () => {
-        try {
-          await api("desbloquear", { ip: btn.dataset.ip });
-          avisar(`${btn.dataset.ip} solto`);
-          abrirAdmin("bloqueios");
-        } catch (e) { avisar(String(e), true); }
-      });
+      if (b.ativos.length) {
+        // PADRONIZACAO: PhxGrid. O botao "soltar" nao recebe `onclick` direto
+        // -- `formato` reescreve a celula a cada ordenar/filtrar -- entao liga
+        // por DELEGACAO no container, como o LEIAME do phx-grid manda.
+        PhxGrid.criar("#gradeAdmBloqueios", {
+          agrupavel: true, buscaGlobal: true, filterRow: true,
+          lembrar: "admbloqueios",
+          nomeVista: "adm-bloqueios",
+          colunas: [
+            { campo:"ip", titulo:txt("tela.col_ip","ip"), fixa:"esq" },
+            { campo:"desde", titulo:txt("tela.col_desde","desde") },
+            { campo:"ate", titulo:txt("tela.col_ate","até") },
+            { campo:"motivo", titulo:txt("tela.col_motivo","motivo") },
+            { campo:"comando", titulo:txt("tela.col_comando","comando") },
+            { campo:"tentativas", titulo:txt("tela.col_tentativas","tentativas"), tipo:"numero" },
+            { campo:"firewall", titulo:txt("tela.col_firewall","firewall"),
+              formato:v => v ? `<span class="pino ok">${esc(txt("tela.pino_aplicado","aplicado"))}</span>`
+                             : `<span class="pino nao">${esc(txt("tela.pino_so_servidor","só no servidor"))}</span>` },
+            { campo:"__soltar", titulo:"", ordenavel:false, filtravel:false,
+              formato:(_, x) => `<button class="botao mini excluir soltar-ip" data-ip="${esc(x.ip)}"
+                title="tira ${esc(x.ip)} da lista de bloqueio de vez">soltar</button>` },
+          ],
+          dados: b.ativos,
+          pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+        });
+        $("#gradeAdmBloqueios").addEventListener("click", ev => {
+          const btn = ev.target.closest(".soltar-ip");
+          if (!btn) return;
+          api("desbloquear", { ip: btn.dataset.ip })
+            .then(() => { avisar(`${btn.dataset.ip} solto`); abrirAdmin("bloqueios"); })
+            .catch(e => avisar(String(e), true));
+        });
+      }
       $("#btSalvarWl").onclick = async () => {
         const linhas = $("#wlEditavel").value.split("\n")
           .map(l => l.trim()).filter(l => l);
@@ -6088,42 +6253,64 @@ async function listarBackups() {
       alvo.innerHTML = `<div class="vazio">nenhuma cópia do PhxSql nesta pasta</div>`;
       return;
     }
-    alvo.innerHTML = `<h3 class="secao">Cópias encontradas</h3>` + tabela(
-      [{t:"arquivo"}, {t:"quando"}, {t:"no disco", cls:"num"},
-       {t:"arquivos", cls:"num"}, {t:"o que tem dentro"}],
-      r.backups,
-      b => {
-        if (!b.legivel) return `<tr>
-          <td class="dado"><b>${esc(b.nome)}</b></td>
-          <td class="dado" colspan="4"><span class="pino mal">ilegível</span>
-            <span class="leg">${esc(b.erro || "")}</span></td></tr>`;
-        // Um botão por database de dentro, e é ele que abre o detalhe: assim
-        // a cópia da raiz inteira não vira um clique só que restaura seis
-        // bancos de uma vez.
-        const dbs = (b.databases || []).map(db =>
-          `<button class="botao mini consultar rst-abrir"
-             data-origem="${esc(b.caminho)}" data-de="${esc(db)}">${esc(db)}</button>`).join(" ")
-          || `<span class="leg">nenhum banco que você possa restaurar</span>`;
-        return `<tr>
-          <td class="dado"><b>${esc(b.nome)}</b>
-            <span class="pino crua">${b.zip ? "zip" : "pasta"}</span>
-            ${b.escopo_declarado ? "" : `<span class="pino crua"
-              title="o manifesto desta cópia não diz de que ela é cópia: o escopo foi deduzido dos caminhos">deduzido</span>`}</td>
-          <td class="dado">${esc(b.quando || "—")}</td>
-          <td class="dado num">${esc(fmtBytes(b.no_disco))}</td>
-          <td class="dado num">${fmt(b.arquivos)}</td>
-          <td class="dado">${dbs}</td></tr>`;
-      });
+    alvo.innerHTML = `<h3 class="secao">Cópias encontradas</h3><div id="gradeBackups"></div>`;
     if (r.escondidos) {
       alvo.insertAdjacentHTML("beforeend",
         `<p class="leg">${fmt(r.escondidos)} banco(s) ficaram de fora da lista:
          você não tem permissão de administrar neles.</p>`);
     }
-    $$(".rst-abrir").forEach(bt => bt.onclick = () =>
-      verDentroDoBackup(bt.dataset.origem, bt.dataset.de));
+    ligarBackups(r.backups);
   } catch (e) {
     alvo.innerHTML = `<div class="aviso mal">${esc(e.message || String(e))}</div>`;
   }
+}
+
+/// PADRONIZACAO: PhxGrid. O botao por database (que abre o detalhe de
+/// restaurar) nao recebe `onclick` direto -- `formato` reescreve a celula a
+/// cada ordenar/filtrar -- entao liga por DELEGACAO no container.
+function ligarBackups(backups) {
+  PhxGrid.criar("#gradeBackups", {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    lembrar: "backups",
+    nomeVista: "backups",
+    colunas: [
+      { campo:"nome", titulo:txt("tela.col_arquivo","arquivo"), fixa:"esq",
+        formato:(v, b) => {
+          if (!b.legivel) return `<b>${esc(v)}</b>`;
+          const zipOuPasta = b.zip ? txt("tela.pino_zip","zip") : txt("tela.pino_pasta","pasta");
+          const deduzido = b.escopo_declarado ? "" : `<span class="pino crua"
+              title="o manifesto desta cópia não diz de que ela é cópia: o escopo foi deduzido dos caminhos">${esc(txt("tela.pino_deduzido","deduzido"))}</span>`;
+          return `<b>${esc(v)}</b> <span class="pino crua">${esc(zipOuPasta)}</span> ${deduzido}`;
+        } },
+      { campo:"quando", titulo:txt("tela.col_quando","quando"),
+        formato:(v, b) => b.legivel
+          ? esc(v || "—")
+          : `<span class="pino mal">${esc(txt("tela.pino_ilegivel","ilegível"))}</span>
+             <span class="leg">${esc(b.erro || "")}</span>` },
+      { campo:"no_disco", titulo:txt("tela.col_no_disco","no disco"), tipo:"numero",
+        formato:(v, b) => b.legivel ? esc(fmtBytes(v)) : "" },
+      { campo:"arquivos", titulo:txt("tela.col_arquivos","arquivos"), tipo:"numero",
+        formato:(v, b) => b.legivel ? fmt(v) : "" },
+      // Um botao por database de dentro, e e ele que abre o detalhe: assim a
+      // copia da raiz inteira nao vira um clique so que restaura seis bancos
+      // de uma vez.
+      { campo:"__dentro", titulo:txt("tela.col_conteudo","o que tem dentro"),
+        ordenavel:false, filtravel:false,
+        formato:(_, b) => {
+          if (!b.legivel) return "";
+          return (b.databases || []).map(db =>
+            `<button class="botao mini consultar rst-abrir"
+               data-origem="${esc(b.caminho)}" data-de="${esc(db)}">${esc(db)}</button>`).join(" ")
+            || `<span class="leg">nenhum banco que você possa restaurar</span>`;
+        } },
+    ],
+    dados: backups,
+    pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+  });
+  $("#gradeBackups").addEventListener("click", ev => {
+    const bt = ev.target.closest(".rst-abrir");
+    if (bt) verDentroDoBackup(bt.dataset.origem, bt.dataset.de);
+  });
 }
 
 /** O que a cópia tem dentro, e as duas formas de trazer de volta. */
@@ -8106,15 +8293,6 @@ async function telaLixeira(db, tab) {
 
   const cols = (d.colunas || []).filter(c => !c.sistema);
   const itens = d.descartadas || [];
-  const EXTERNO = t => /^(Bin|Memo)$/.test(String(t || ""));
-  // Um campo externo vazio na listagem quer dizer «não carreguei», e não
-  // «não tinha». Dizer NULL nos dois casos faria quem investiga concluir que
-  // a foto nunca existiu — que é exatamente o oposto do que a lixeira serve
-  // para provar. O botão «ver» busca aquela linha inteira.
-  const celulaDa = (item, c) =>
-    (!d.anexos_carregados && EXTERNO(c.tipo) && item.anexos > 0)
-      ? `<td class="dado nulo">anexo · não carregado</td>`
-      : celulaValor((item.linha || {})[c.nome]);
   $("#subtitulo").textContent =
     `${esc(db)} · ${fmt(d.total)} linha(s), ${fmtBytes(d.bytes)}`;
 
@@ -8125,22 +8303,7 @@ async function telaLixeira(db, tab) {
      ${itens.length === 0
        ? `<div class="aviso">A lixeira está vazia. Nenhuma linha desta tabela
             foi excluída de vez.</div>`
-       : tabela(
-           [{ t: "quando" }, { t: "rowid" }, { t: "quem" }, { t: "anexos", cls: "num" },
-            ...cols.map(c => ({ t: c.rotulo || c.nome })), { t: "" }],
-           itens,
-           d_ => `<tr>
-             <td class="dado">${esc(d_.quando)}</td>
-             <td class="num">${d_.rowid}</td>
-             <td>${esc(d_.usuario_nome || (d_.usuario ? "#" + d_.usuario : "—"))}</td>
-             <td class="num">${d_.anexos}</td>
-             ${d_.aviso
-               ? `<td colspan="${cols.length}" class="mal">${esc(d_.aviso)}</td>`
-               : cols.map(c => celulaDa(d_, c)).join("")}
-             <td>${d_.anexos > 0 && !d.anexos_carregados
-               ? `<button class="botao mini ver-lixo" data-uuid="${esc(d_.uuid)}">ver inteira</button>`
-               : ""}</td>
-           </tr>`)}
+       : `<div id="gradeLixeira"></div>`}
      <div class="acoes">
        <button class="botao secundario" id="btVoltaLix">← Gerir tabelas</button>
        <button class="botao secundario" id="btVerMotivos">Ver os motivos</button>
@@ -8149,7 +8312,7 @@ async function telaLixeira(db, tab) {
 
   $("#btVoltaLix").onclick = () => gerirTabelasAtual();
   $("#btVerMotivos").onclick = () => telaMotivos(db, tab);
-  $$("#painel .ver-lixo").forEach(b => b.onclick = () => verLinhaDescartada(db, tab, b.dataset.uuid));
+  if (itens.length) ligarLixeira(db, tab, d, cols, itens);
   const bt = $("#btEsvaziar");
   if (bt) bt.onclick = async () => {
     const motivo = prompt(
@@ -8165,6 +8328,60 @@ async function telaLixeira(db, tab) {
       telaLixeira(db, tab);
     } catch (err) { avisar(String(err), true); }
   };
+}
+
+/// PADRONIZACAO: PhxGrid. As colunas de dado sao DINAMICAS -- saem do
+/// esquema, uma por campo que nao e de sistema -- e o botao "ver inteira"
+/// (para o anexo nao carregado) liga por DELEGACAO no container, porque
+/// `formato` reescreve a celula a cada ordenar/filtrar.
+function ligarLixeira(db, tab, d, cols, itens) {
+  const EXTERNO = t => /^(Bin|Memo)$/.test(String(t || ""));
+  const colunas = [
+    { campo:"quando", titulo:txt("tela.col_quando","quando"), fixa:"esq" },
+    // "rowid" e nome de coluna de sistema, o mesmo em toda lingua -- e por
+    // isso ISENTO no conferidor de idiomas, sem passar por txt().
+    { campo:"rowid", titulo:"rowid", tipo:"numero" },
+    { campo:"__quem", titulo:txt("tela.col_quem","quem"), ordenavel:false, filtravel:false,
+      formato:(_, l) => esc(l.usuario_nome || (l.usuario ? "#" + l.usuario : "—")) },
+    { campo:"anexos", titulo:txt("tela.col_anexos","anexos"), tipo:"numero" },
+  ];
+  // Um campo externo vazio na listagem quer dizer «não carreguei», e não
+  // «não tinha». Dizer NULL nos dois casos faria quem investiga concluir que
+  // a foto nunca existiu — que é exatamente o oposto do que a lixeira serve
+  // para provar.
+  //
+  // Quando o slot vem com `aviso` (raro: o `.trash` nao decodificou), a
+  // grade nao tem colspan por linha -- entao o aviso aparece na PRIMEIRA
+  // coluna de dado, e as demais ficam em branco, em vez de repetir a mesma
+  // frase em cada celula da linha.
+  cols.forEach((c, i) => colunas.push({
+    campo: c.nome,
+    // Nome de coluna e DADO do esquema da tabela do usuario, e nao rotulo da
+    // interface -- por isso nao passa por txt(), como em `ligarConteudo`.
+    titulo: c.rotulo || c.nome,
+    formato: (_, l) => {
+      if (l.aviso) return i === 0 ? `<span class="pino mal">${esc(l.aviso)}</span>` : "";
+      if (!d.anexos_carregados && EXTERNO(c.tipo) && l.anexos > 0)
+        return `<span class="dado nulo">${esc(txt("tela.pino_anexo_nao_carregado","anexo · não carregado"))}</span>`;
+      return celulaValorTexto((l.linha || {})[c.nome]);
+    },
+  }));
+  colunas.push({ campo:"__ver", titulo:"", ordenavel:false, filtravel:false,
+    formato:(_, l) => l.anexos > 0 && !d.anexos_carregados
+      ? `<button class="botao mini ver-lixo" data-uuid="${esc(l.uuid)}">ver inteira</button>` : "" });
+
+  PhxGrid.criar("#gradeLixeira", {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    lembrar: "lixeira:" + db + "." + tab,
+    nomeVista: "lixeira-" + db + "-" + tab,
+    colunas,
+    dados: itens,
+    pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+  });
+  $("#gradeLixeira").addEventListener("click", ev => {
+    const b = ev.target.closest(".ver-lixo");
+    if (b) verLinhaDescartada(db, tab, b.dataset.uuid);
+  });
 }
 
 /** Uma linha da lixeira, inteira, com os anexos. */
@@ -8233,8 +8450,6 @@ async function telaMotivos(db, tab) {
     return;
   }
 
-  const CORES = { suave: "var(--aviso)", fisica: "var(--log)",
-                  restauracao: "var(--ok)", expurgo: "var(--vermelhao)" };
   const regs = d.motivos || [];
   $("#subtitulo").textContent = `${esc(db)} · ${fmt(d.total)} registro(s)`;
   $("#painel").innerHTML =
@@ -8246,24 +8461,41 @@ async function telaMotivos(db, tab) {
          : `Esta tabela não exige motivo; o campo continua valendo.`}</p>
      ${regs.length === 0
        ? `<div class="aviso">Nenhuma exclusão registrada nesta tabela.</div>`
-       : tabela(
-           [{ t: "quando" }, { t: "o quê" }, { t: "rowid" }, { t: "registro" },
-            { t: "quem" }, { t: "motivo" }],
-           regs,
-           m => `<tr>
-             <td class="dado">${esc(m.quando)}</td>
-             <td><b style="color:${CORES[m.tipo] || "var(--texto-2)"}">${esc(m.tipo)}</b></td>
-             <td class="num">${m.rowid || "—"}</td>
-             <td class="dado">${esc(m.identidade || "—")}</td>
-             <td>${esc(m.usuario_nome || (m.usuario ? "#" + m.usuario : "—"))}</td>
-             <td>${esc(m.motivo || "—")}</td>
-           </tr>`)}
+       : `<div id="gradeMotivos"></div>`}
      <div class="acoes">
        <button class="botao secundario" id="btVoltaMot">← Gerir tabelas</button>
        <button class="botao secundario" id="btVerLixo">Ver a lixeira</button>
      </div>`;
   $("#btVoltaMot").onclick = () => gerirTabelasAtual();
   $("#btVerLixo").onclick = () => telaLixeira(db, tab);
+  if (regs.length) ligarMotivos(regs);
+}
+
+// PADRONIZACAO: PhxGrid. Sem clique proprio -- e o `.reason` na integra, so
+// leitura. A cor do "o que" continua por CIMA do dado (estilo, nao mentira
+// sobre ele): `m.tipo` e o valor GRAVADO, e o `formato` so pinta em volta.
+function ligarMotivos(regs) {
+  const CORES = { suave: "var(--aviso)", fisica: "var(--log)",
+                  restauracao: "var(--ok)", expurgo: "var(--vermelhao)" };
+  PhxGrid.criar("#gradeMotivos", {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    lembrar: "motivos",
+    nomeVista: "motivos",
+    colunas: [
+      { campo:"quando", titulo:txt("tela.col_quando","quando"), fixa:"esq" },
+      { campo:"tipo", titulo:txt("tela.col_o_que","o quê"),
+        formato:v => `<b style="color:${CORES[v] || "var(--texto-2)"}">${esc(v)}</b>` },
+      // "rowid" e nome de coluna de sistema, o mesmo em toda lingua -- e por
+      // isso ISENTO no conferidor de idiomas, sem passar por txt().
+      { campo:"rowid", titulo:"rowid", tipo:"numero", formato:v => v || "—" },
+      { campo:"identidade", titulo:txt("tela.col_registro","registro"), formato:v => esc(v || "—") },
+      { campo:"__quem", titulo:txt("tela.col_quem","quem"), ordenavel:false, filtravel:false,
+        formato:(_, m) => esc(m.usuario_nome || (m.usuario ? "#" + m.usuario : "—")) },
+      { campo:"motivo", titulo:txt("tela.col_motivo","motivo"), formato:v => esc(v || "—") },
+    ],
+    dados: regs,
+    pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+  });
 }
 
 /* ============================================ Sessões e estatísticas de uso
@@ -10880,10 +11112,12 @@ async function telaTrilhaLgpd(db, tab, tipo) {
 
   // O valor redigido aparece como CADEADO, e nunca como texto: se a marca de
   // redação fosse mostrada como se fosse o conteúdo, quem lê acharia que o
-  // campo passou a valer «(redigido: 60 bytes)».
-  const valor = (txt, redigido) => redigido
-    ? `<span class="pino mal" title="senha ou hash: o valor nunca entra na trilha">⛨ redigido</span>`
-    : (txt === "" ? `<span class="leg">(vazio)</span>` : `<span class="dado">${esc(txt)}</span>`);
+  // campo passou a valer «(redigido: 60 bytes)». `bruto` e nao `txt`: o nome
+  // do parametro nao pode sombrear a funcao global `txt()` de traducao, que
+  // este ajudante passa a chamar.
+  const valor = (bruto, redigido) => redigido
+    ? `<span class="pino mal" title="senha ou hash: o valor nunca entra na trilha">⛨ ${esc(txt("tela.pino_redigido","redigido"))}</span>`
+    : (bruto === "" ? `<span class="leg">${esc(txt("tela.pino_vazio","(vazio)"))}</span>` : `<span class="dado">${esc(bruto)}</span>`);
 
   folha("Trilha de LGPD", `${esc(db)}.${esc(tab)} · quem mexeu e quem viu`,
     `<div class="fichas">
@@ -10920,21 +11154,7 @@ async function telaTrilhaLgpd(db, tab, tipo) {
           <code>.lgpd</code> nem chega a ser criado.</p>
           <p>Marcar é na aba <b>Estrutura</b>, na coluna LGPD.</p></div>`}
 
-     ${regs.length ? tabela(
-       [{t:"quando"},{t:"o quê"},{t:"linha"},{t:"coluna"},{t:"antes"},{t:"depois"},
-        {t:"quem"},{t:"de onde"}],
-       regs, r => `<tr>
-         <td class="dado">${esc(r.quando)}</td>
-         <td><span class="pino ${r.tipo === "alteracao" ? "" : "reg"}">${
-             r.tipo === "alteracao" ? "alterou" : "leu"}</span></td>
-         <td class="dado">${esc(r.identidade || (r.rowid ? "rowid=" + r.rowid : "—"))}</td>
-         <td class="dado">${esc(r.coluna)}</td>
-         <td>${r.tipo === "alteracao" ? valor(r.antes, r.antes_redigido)
-                : `<span class="leg">—</span>`}</td>
-         <td>${r.tipo === "alteracao" ? valor(r.depois, r.depois_redigido)
-                : `<span class="leg">${fmt(r.linhas)} linha(s)</span>`}</td>
-         <td class="dado">${esc(r.usuario_nome || "—")}</td>
-         <td class="dado">${esc(r.ip || "—")}</td></tr>`)
+     ${regs.length ? `<div id="gradeTrilha"></div>`
        : (marcadas.length ? `<div class="vazio">a trilha ainda está vazia —
            ninguém alterou nem leu coluna marcada desta tabela</div>` : "")}
 
@@ -10960,6 +11180,36 @@ async function telaTrilhaLgpd(db, tab, tipo) {
   $("#btLgTrRec").onclick = () => telaTrilhaLgpd(db, tab, $("#lgTipo").value);
   $("#lgTipo").onchange = ev => telaTrilhaLgpd(db, tab, ev.target.value);
   $("#btLgTrEstr").onclick = () => { est.aba = "estrutura"; abrirTabela(db, tab); };
+  if (regs.length) ligarTrilha(regs, valor);
+}
+
+// PADRONIZACAO: PhxGrid. Sem clique proprio -- e a trilha na integra, so
+// leitura. `valor` vem de fora ja fechado sobre `esc`/`txt`, para nao
+// duplicar a regra do redigido e do vazio.
+function ligarTrilha(regs, valor) {
+  PhxGrid.criar("#gradeTrilha", {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    lembrar: "trilha",
+    nomeVista: "trilha-lgpd",
+    colunas: [
+      { campo:"quando", titulo:txt("tela.col_quando","quando"), fixa:"esq" },
+      { campo:"tipo", titulo:txt("tela.col_o_que","o quê"),
+        formato:v => `<span class="pino ${v === "alteracao" ? "" : "reg"}">${
+          v === "alteracao" ? esc(txt("tela.pino_alterou","alterou")) : esc(txt("tela.pino_leu","leu"))}</span>` },
+      { campo:"__linha", titulo:txt("tela.col_linha","linha"), ordenavel:false, filtravel:false,
+        formato:(_, r) => esc(r.identidade || (r.rowid ? "rowid=" + r.rowid : "—")) },
+      { campo:"coluna", titulo:txt("tela.col_coluna","coluna") },
+      { campo:"antes", titulo:txt("tela.col_antes","antes"), ordenavel:false, filtravel:false,
+        formato:(v, r) => r.tipo === "alteracao" ? valor(v, r.antes_redigido) : `<span class="leg">—</span>` },
+      { campo:"depois", titulo:txt("tela.col_depois","depois"), ordenavel:false, filtravel:false,
+        formato:(v, r) => r.tipo === "alteracao" ? valor(v, r.depois_redigido)
+                                                  : `<span class="leg">${fmt(r.linhas)} linha(s)</span>` },
+      { campo:"usuario_nome", titulo:txt("tela.col_quem","quem"), formato:v => esc(v || "—") },
+      { campo:"ip", titulo:txt("tela.col_de_onde","de onde"), formato:v => esc(v || "—") },
+    ],
+    dados: regs,
+    pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+  });
 }
 
 async function verDiretivas() {
@@ -11027,12 +11277,14 @@ async function verReplicacao() {
   // A posição de cada tabela de cada banco: é o que a réplica compara com a do
   // source para saber o que falta. Sai do cabeçalho do .log, sem ler evento.
   let posicoes = "";
+  // Declarada FORA do `try`: a grade nasce depois de `folha()`, la embaixo,
+  // e precisa do array mesmo quando a leitura deu certo mas nao achou nada.
+  let linhas = [];
   try {
     // `bancos` responde uma LISTA de nomes, e nao um objeto com `bancos`
     // dentro. Ler o campo errado devolvia vazio, e a tela dizia "nenhuma
     // tabela ainda" numa réplica que tinha a tabela na árvore ao lado.
     const bancos = await api("bancos");
-    const linhas = [];
     for (const b of bancos) {
       const nome = b.nome || b;
       const r = await api("posicao", { database: nome });
@@ -11040,13 +11292,8 @@ async function verReplicacao() {
         linhas.push({ db: nome, tabela: tab, eventos: d.eventos, registros: d.registros });
     }
     posicoes = linhas.length
-      ? `<h3 class="sub">Posição do diário</h3>` + tabela(
-          [{t:"database"},{t:"tabela"},{t:"registros",cls:"num"},{t:"eventos",cls:"num"}],
-          linhas, l => `<tr><td class="dado">${esc(l.db)}</td>
-            <td class="dado">${esc(l.tabela)}</td>
-            <td class="num">${fmt(l.registros)}</td>
-            <td class="num">${fmt(l.eventos)}</td></tr>`)
-        + `<p class="leg">O evento N <b>é</b> a posição N — não há GTID a inventar.
+      ? `<h3 class="sub">Posição do diário</h3><div id="gradePosicaoRep"></div>
+         <p class="leg">O evento N <b>é</b> a posição N — não há GTID a inventar.
            Uma réplica guarda um número por tabela e pede o que falta.</p>`
       : `<p class="leg">Nenhuma tabela ainda.</p>`;
   } catch (e) {
@@ -11066,14 +11313,8 @@ async function verReplicacao() {
      </div>`;
 
   const deOrigens = origens.length
-    ? `<h3 class="sub">De onde esta réplica puxa</h3>` + tabela(
-        [{t:"origem"},{t:"endereço"},{t:"usuário"},{t:"databases"},{t:"a cada",cls:"num"}],
-        origens, o => `<tr><td class="dado">${esc(o.nome)}</td>
-          <td class="dado">${esc(o.host)}:${esc(String(o.porta))}</td>
-          <td>${esc(o.usuario || "—")}</td>
-          <td>${esc((o.databases || []).join(", ") || "todos")}</td>
-          <td class="num">${esc(String(o.reconectar_em))}s</td></tr>`)
-      + `<p class="leg">Uma <b>thread por origem</b>: uma origem lenta ou caída
+    ? `<h3 class="sub">De onde esta réplica puxa</h3><div id="gradeOrigensRep"></div>
+       <p class="leg">Uma <b>thread por origem</b>: uma origem lenta ou caída
          não segura as outras. A senha não fica em claro nem viaja — a réplica
          se autentica pelo desafio-resposta, com a chave derivada do
          <code>senha_hash</code>.</p>`
@@ -11118,6 +11359,40 @@ async function verReplicacao() {
   $("#btAssistRep").onclick = () => assistenteReplicacao();
   const ac = $("#btAcompRep");
   if (ac) ac.onclick = () => abrirProvaReplicacao(origens);
+
+  // PADRONIZACAO: PhxGrid, nas duas tabelas -- sem clique proprio, e leitura
+  // de configuracao e de posicao. `folha()` ja escreveu o HTML acima; os
+  // containers so existem depois dela, entao a grade nasce aqui.
+  if (origens.length) PhxGrid.criar("#gradeOrigensRep", {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    lembrar: "origensrep",
+    nomeVista: "replicacao-origens",
+    colunas: [
+      { campo:"nome", titulo:txt("tela.col_origem","origem"), fixa:"esq" },
+      { campo:"__endereco", titulo:txt("tela.col_endereco","endereço"), ordenavel:false, filtravel:false,
+        formato:(_, o) => `${esc(o.host)}:${esc(String(o.porta))}` },
+      { campo:"usuario", titulo:txt("tela.col_usuario","usuário"), formato:v => esc(v || "—") },
+      { campo:"databases", titulo:txt("tela.col_databases_pl","databases"),
+        formato:v => esc((v || []).join(", ") || "todos") },
+      { campo:"reconectar_em", titulo:txt("tela.col_a_cada","a cada"), tipo:"numero",
+        formato:v => esc(String(v)) + "s" },
+    ],
+    dados: origens,
+    pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+  });
+  if (linhas.length) PhxGrid.criar("#gradePosicaoRep", {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    lembrar: "posicaorep",
+    nomeVista: "replicacao-posicao",
+    colunas: [
+      { campo:"db", titulo:txt("tela.col_database","database"), fixa:"esq" },
+      { campo:"tabela", titulo:txt("tela.col_tabela","tabela") },
+      { campo:"registros", titulo:txt("tela.col_registros","registros"), tipo:"numero" },
+      { campo:"eventos", titulo:txt("tela.col_eventos","eventos"), tipo:"numero" },
+    ],
+    dados: linhas,
+    pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+  });
 }
 
 /* ================================================ assistente de replicação
@@ -11684,24 +11959,43 @@ async function assistenteReplicacao() {
    de lá pela sonda (a MESMA conexão do laço), o de cá pela posição local. */
 function painelDaProva(alvo, origens) {
   let vivo = true;
+  // PAINEL VIVO: a estrutura (fichas + grade) nasce UMA VEZ por origem, e o
+  // relogio de 3s so troca o CONTEUDO -- nunca o `innerHTML` inteiro. Refazer
+  // a grade a cada volta perderia ordenacao, filtro e agrupamento no meio da
+  // leitura; e o mesmo padrao de `desenharThreads`, em telemetria.js: `dados:`
+  // mudado NO LUGAR, e `redesenhar()` a cada volta.
+  alvo.innerHTML = origens.map((org, i) => `
+    <div id="pdpFichas${i}"></div>
+    <div id="pdpErro${i}"></div>
+    <div id="pdpGrade${i}"></div>`).join("");
+  const porOrigem = origens.map(() => ({ linhas: [], grade: null }));
+
   const medir = async () => {
-    const blocos = [];
     // O estado do laço DESTE servidor, quando o motor o oferece: é ele que
     // sabe o modo em vigor, a última rodada, o último erro e as tabelas
     // recusadas — coisas que comparar posições nunca conta.
     let estado = null;
     try { estado = await api("replicacao_estado"); }
     catch { /* motor de hoje: o laço não se conta, e o resto ainda mede */ }
-    for (const org of origens) {
+    for (let i = 0; i < origens.length; i++) {
+      const org = origens[i];
+      // Escopado a `alvo`, e nao o `$` global: o dialogo pode ser aberto mais
+      // de uma vez (ver `abrirProvaReplicacao`), e um `id` repetido faria o
+      // `document.querySelector` global sempre achar o do primeiro dialogo.
+      const fichas = alvo.querySelector(`#pdpFichas${i}`), campoErro = alvo.querySelector(`#pdpErro${i}`);
+      // O diálogo pode ter sido fechado enquanto a sonda falava.
+      if (!fichas || !campoErro) continue;
       let s;
       try {
         // Origem configurada: a credencial sai do config do servidor e não
         // viaja.
         s = await sondarOutro(null, { origem: org.nome });
       } catch (e) {
-        blocos.push(`<div class="aviso mal">${esc(org.nome)}: ${esc(String(e))}</div>`);
+        fichas.innerHTML = "";
+        campoErro.innerHTML = `<div class="aviso mal">${esc(org.nome)}: ${esc(String(e))}</div>`;
         continue;
       }
+      campoErro.innerHTML = "";
       const eo = estado && estado.origens ? estado.origens[org.nome] : null;
       const linhas = [];
       let totalLa = 0, totalAqui = 0;
@@ -11724,8 +12018,7 @@ function painelDaProva(alvo, origens) {
                       atraso: la - (aqui || 0), recusa });
       }
       const atrasoTotal = totalLa - totalAqui;
-      blocos.push(`
-        <div class="fichas">
+      fichas.innerHTML = `<div class="fichas">
           <div class="ficha"><div class="v">${esc(org.nome)}</div>
             <div class="r">${esc(org.host)}:${org.porta}</div></div>
           <div class="ficha"><div class="v">${esc(eo ? eo.modo : "—")}</div>
@@ -11736,35 +12029,49 @@ function painelDaProva(alvo, origens) {
             <div class="r">atraso</div></div>
         </div>` +
         (eo && eo.ultimo_erro
-          ? `<div class="aviso mal">último erro do laço: ${esc(eo.ultimo_erro)}</div>` : "") +
-        (linhas.length ? tabela(
-          [{t:"database"},{t:"tabela"},{t:"eventos lá",cls:"num"},
-           {t:"eventos aqui",cls:"num"},{t:"estado"}],
-          linhas, l => `<tr><td class="dado">${esc(l.db)}</td>
-            <td class="dado">${esc(l.tab)}</td>
-            <td class="num">${fmt(l.la)}</td>
-            <td class="num">${l.aqui === null ? "—" : fmt(l.aqui)}</td>
-            <td>${l.recusa
-              ? `<span class="pino mal">recusada: ${esc(l.recusa)}</span>`
-              : l.aqui === null
-              ? `<span class="pino">ainda não chegou aqui</span>`
-              : l.atraso > 0
-              ? `<span class="pino mal">atrás ${fmt(l.atraso)}</span>`
-              : l.atraso < 0
-              ? `<span class="pino ndx">à frente ${fmt(-l.atraso)}</span>`
-              : `<span class="pino ok">em dia</span>`}</td></tr>`)
-        : `<p class="leg">nenhuma tabela na origem ainda</p>`));
+          ? `<div class="aviso mal">último erro do laço: ${esc(eo.ultimo_erro)}</div>` : "");
+
+      // `dados:` mudado NO LUGAR -- trocar a referencia faria a grade
+      // continuar lendo o array antigo (o mesmo cuidado de `desenharThreads`).
+      const st = porOrigem[i];
+      st.linhas.length = 0;
+      linhas.forEach(l => st.linhas.push(l));
+      if (st.grade) { st.grade.redesenhar(); continue; }
+      // `PhxGrid.criar` aceita um ELEMENTO, e nao so um seletor -- e por
+      // isso da para escopar em `alvo` aqui tambem.
+      st.grade = PhxGrid.criar(alvo.querySelector(`#pdpGrade${i}`), {
+        agrupavel: true, buscaGlobal: true, filterRow: true,
+        colunas: [
+          { campo:"db", titulo:txt("tela.col_database","database"), fixa:"esq" },
+          { campo:"tab", titulo:txt("tela.col_tabela","tabela") },
+          { campo:"la", titulo:txt("tela.col_eventos_la","eventos lá"), tipo:"numero" },
+          { campo:"aqui", titulo:txt("tela.col_eventos_aqui","eventos aqui"), tipo:"numero",
+            formato:v => v === null ? "—" : fmt(v) },
+          { campo:"__estado", titulo:txt("tela.col_estado","estado"),
+            ordenavel:false, filtravel:false,
+            formato:(_, l) => {
+              if (l.recusa) return `<span class="pino mal">${esc(
+                preencher(txt("tela.pino_recusada","recusada: {motivo}"), { motivo: l.recusa }))}</span>`;
+              if (l.aqui === null) return `<span class="pino">${esc(txt("tela.pino_nao_chegou","ainda não chegou aqui"))}</span>`;
+              if (l.atraso > 0) return `<span class="pino mal">${esc(
+                preencher(txt("tela.pino_atras_de","atrás {n}"), { n: fmt(l.atraso) }))}</span>`;
+              if (l.atraso < 0) return `<span class="pino ndx">${esc(
+                preencher(txt("tela.pino_a_frente_de","à frente {n}"), { n: fmt(-l.atraso) }))}</span>`;
+              return `<span class="pino ok">${esc(txt("tela.pino_em_dia","em dia"))}</span>`;
+            } },
+        ],
+        dados: st.linhas,
+        pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+      });
     }
-    return blocos.join("");
   };
   const rodar = async () => {
     if (!vivo) return;
-    let html;
-    try { html = await medir(); }
-    catch (e) { html = `<div class="aviso mal">${esc(String(e))}</div>`; }
-    // O diálogo pode ter sido fechado enquanto a sonda falava.
-    if (!vivo || !document.body.contains(alvo)) return;
-    alvo.innerHTML = html;
+    try { await medir(); }
+    catch (e) {
+      // O diálogo pode ter sido fechado enquanto a sonda falava.
+      if (vivo && document.body.contains(alvo)) alvo.innerHTML = `<div class="aviso mal">${esc(String(e))}</div>`;
+    }
   };
   rodar();
   const timer = setInterval(rodar, 3000);
@@ -12052,10 +12359,18 @@ async function abrirConsulta() {
         `<p class="leg">${r.achadas ?? linhas.length} achadas de
          ${r.examinadas ?? "?"} examinadas${r.por_mapa
            ? ` · atalho pelo mapa de <code>${esc(r.por_mapa)}</code>` : ""}</p>` +
-        (linhas.length
-          ? tabela(cols.map(c => ({ t: c })), linhas,
-              l => `<tr>${cols.map(c => celulaValor(l[c])).join("")}</tr>`)
-          : `<div class="vazio">nada encontrado</div>`);
+        (linhas.length ? `<div id="gradeConsulta"></div>` : `<div class="vazio">nada encontrado</div>`);
+      // PADRONIZACAO: PhxGrid. As colunas sao DINAMICAS -- saem do primeiro
+      // resultado, porque o `SelectMemory` nao declara esquema nenhum -- e o
+      // titulo NAO passa por `txt()`: e o nome do campo tal como esta na
+      // tabela do usuario (a mesma regra de `ligarConteudo`), nao vocabulario
+      // da interface.
+      if (linhas.length) PhxGrid.criar("#gradeConsulta", {
+        agrupavel: true, buscaGlobal: true, filterRow: true,
+        colunas: cols.map(c => ({ campo: c, titulo: c, formato: celulaValorTexto })),
+        dados: linhas,
+        pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+      });
     } catch (e) {
       saida.innerHTML = `<div class="nota"><p>${esc(String(e))}</p>
         <p class="leg">A tabela está na RAM? Menu <b>Memória → Carregar esta tabela</b>.</p></div>`;

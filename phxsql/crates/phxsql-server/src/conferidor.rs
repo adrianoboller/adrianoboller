@@ -1063,7 +1063,20 @@ pub const TETO_FRASE_REPETIDA: usize = 0;
 /// a nota do `RECEITAS` ja registrava: mover o titulo para a fabrica tira o
 /// literal da conta, e a queda e so a soma de ~85 cabecalhos que pararam de
 /// ser cravados.
-pub const TETO: usize = 1_652;
+///
+/// 1.652 -> 1.578 na segunda leva da mesma padronizacao: os 16 `tabela()` que
+/// sobravam em `index.html` (`abrirAdmin` tres vezes, `vEstrutura` e
+/// `verReplicacao` duas cada, e mais dez telas uma vez -- `vIndices`,
+/// `vDiario`, `vIntegridade`, `listarBackups`, `telaLixeira`, `telaMotivos`,
+/// `telaTrilhaLgpd`, `painelDaProva`, `abrirConsulta`) viraram
+/// `PhxGrid.criar(...)`. Todo cabecalho cravado virou `titulo:txt(...)`, e
+/// parte do texto de dentro do `formato` (o "em dia"/"atrás N"/"ilegível" que
+/// antes vivia direto no template da linha) foi junto -- 45 chaves novas na
+/// fabrica, a maioria reaproveitando um `tela.col_*` ou `tela.pino_*` que ja
+/// existia em outra tela (`tela.col_tipo`, `tela.pino_unico`…) e so as
+/// realmente novas (`tela.col_motivo`, `tela.pino_em_dia`…) precisaram de
+/// chave propria.
+pub const TETO: usize = 1_578;
 #[cfg(test)]
 mod testes {
     use std::collections::HashSet;

@@ -270,8 +270,18 @@ pub fn no_padrao() -> usize {
 /// conferir tem o numero dos dois lados -- 24 era o que se via com uma regua
 /// que subcontava, e o proprio relatorio separa as duas formas.
 ///
+/// # De 40 para 24 -- e por que o numero repete o de antes, sem ser o mesmo
+///
+/// As 16 chamadas ao ajudante que sobravam em `index.html` (`abrirAdmin`
+/// tres vezes, `vEstrutura` e `verReplicacao` duas cada, e mais dez telas
+/// uma vez) viraram `PhxGrid.criar`. O TETO desceu de 40 para 24 -- o mesmo
+/// digito do 24 la de cima, e por acaso: aquele era o numero visto com a
+/// regua velha, que so contava `<table>` cru; este e o numero medido depois
+/// da conversao, com a regua que ja enxerga as duas formas. Nao confundir os
+/// dois -- um era subcontagem, o outro e progresso.
+///
 /// A partir daqui vale a regra de sempre: so desce.
-pub const TETO: usize = 40;
+pub const TETO: usize = 24;
 
 #[cfg(test)]
 mod testes {
