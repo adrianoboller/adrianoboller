@@ -1109,6 +1109,80 @@ pub fn comentario_com_crase_em_template(fonte: &str) -> Vec<usize> {
     achados
 }
 
+/// As fontes que carregam CSS -- lista PROPRIA, e nao a `FONTES`.
+///
+/// Ampliar a `FONTES` moveria a catraca dos idiomas, e mudar a regua e
+/// exatamente o que esta casa nao faz com catraca. Aqui a pergunta e outra
+/// (token de CSS), entao a lista e outra.
+const FONTES_CSS: &[(&str, &str)] = &[
+    ("ui/index.html", include_str!("../ui/index.html")),
+    ("ui/explorador.css", include_str!("../ui/explorador.css")),
+    ("ui/multitela.css", include_str!("../ui/multitela.css")),
+    ("ui/telemetria.css", include_str!("../ui/telemetria.css")),
+    (
+        "ui/grid/phx-grid.css",
+        include_str!("../ui/grid/phx-grid.css"),
+    ),
+];
+
+/// **Todo `var(--x)` ou tem o token definido, ou tem fallback.**
+///
+/// A ideia veio de fora -- e a regra `validate_tokens` do Phoenix Web Absorber
+/// FX SDK, que existe para garantir «CSS sempre renderizavel». O SDK inteiro
+/// foi RECUSADO com numero (medido: 47 tokens usados, 46 definidos, e o unico
+/// ausente ja tinha fallback), mas a ideia dele vale e nao custa licenca
+/// nenhuma: absorve-se a regra, nao o codigo.
+///
+/// O que ela pega: um `var(--novo)` sem definicao E sem fallback torna a
+/// declaracao INVALIDA, e o navegador descarta a propriedade inteira em
+/// silencio. O componente nasce sem cor, sem fonte ou sem borda, e nada avisa
+/// -- e a mesma familia do «CSS global morde componente novo».
+///
+/// Devolve `(arquivo, token)` de cada furo.
+pub fn token_sem_definicao_e_sem_fallback() -> Vec<(&'static str, String)> {
+    let mut definidos: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // As definicoes sao colhidas de CSS **e** de JS, e o motivo veio da
+    // primeira execucao desta guarda: ela acusou `--n` do `telemetria.css`,
+    // e o token e legitimo -- o `telemetria.js` o poe num `style` EM LINHA
+    // (`style="--n:${…}"`), que e definicao tao valida quanto a do `:root`.
+    // O furo era da guarda, nao da tela. Uso se confere no CSS; definicao vem
+    // de onde vier.
+    for (_, fonte) in FONTES_CSS.iter().chain(FONTES.iter()) {
+        let mut resto = *fonte;
+        while let Some(i) = resto.find("--") {
+            let dep = &resto[i..];
+            let fim = dep
+                .find(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_')
+                .unwrap_or(dep.len());
+            // So conta como DEFINICAO quando vem `:` logo depois do nome.
+            if dep[fim..].starts_with(':') {
+                definidos.insert(dep[..fim].to_string());
+            }
+            resto = &resto[i + 2..];
+        }
+    }
+    let mut furos = Vec::new();
+    for (nome, fonte) in FONTES_CSS {
+        let mut resto = *fonte;
+        while let Some(i) = resto.find("var(") {
+            let dep = resto[i + 4..].trim_start();
+            let fim = dep
+                .find(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_')
+                .unwrap_or(dep.len());
+            let token = &dep[..fim];
+            // Virgula = fallback declarado, e ai o token faltante nao quebra.
+            let tem_fallback = dep[fim..].trim_start().starts_with(',');
+            if token.starts_with("--") && !tem_fallback && !definidos.contains(token) {
+                furos.push((*nome, token.to_string()));
+            }
+            resto = &resto[i + 4..];
+        }
+    }
+    furos.sort();
+    furos.dedup();
+    furos
+}
+
 pub const TETO: usize = 1_577;
 #[cfg(test)]
 mod testes {
@@ -1402,6 +1476,57 @@ mod testes_crase {
             comentario_com_crase_em_template(fora).is_empty(),
             "recusou fora do literal"
         );
+    }
+
+    /// **CSS sempre renderizavel** -- a regra absorvida do FX SDK, sem uma
+    /// linha do codigo dele.
+    ///
+    /// Medido no dia em que entrou: 47 tokens usados, 46 definidos, e o unico
+    /// ausente (`--phx-mono`) ja trazia fallback. Ou seja, a tela estava certa
+    /// -- mas certa por SORTE, porque nada cobrava. Agora cobra.
+    #[test]
+    fn todo_token_de_css_tem_definicao_ou_fallback() {
+        let furos = token_sem_definicao_e_sem_fallback();
+        assert!(
+            furos.is_empty(),
+            "estes `var(--x)` nao tem definicao NEM fallback -- o navegador \
+             descarta a declaracao inteira em silencio: {furos:?}"
+        );
+    }
+
+    /// **Prova real**: a guarda pega o furo, e nao recusa o que e legitimo.
+    ///
+    /// Sem este par, uma guarda que devolvesse sempre vazio passaria no teste
+    /// acima e nao guardaria nada -- que e a forma mais comum de guarda morta.
+    #[test]
+    fn a_guarda_de_token_pega_o_furo_e_poupa_o_fallback() {
+        // O crivo e o mesmo da funcao, exercitado em texto controlado.
+        let com_fallback = "a{font:12px var(--nao-existe,monospace)}";
+        let sem_fallback = "a{color:var(--nao-existe)}";
+        let definido = ":root{--existe:#fff} a{color:var(--existe)}";
+        let acha = |t: &str| {
+            let def: Vec<&str> = t
+                .match_indices("--")
+                .filter_map(|(i, _)| {
+                    let d = &t[i..];
+                    let f = d.find(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_')?;
+                    d[f..].starts_with(':').then(|| &d[..f])
+                })
+                .collect();
+            t.match_indices("var(").any(|(i, _)| {
+                let d = t[i + 4..].trim_start();
+                let f = d
+                    .find(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_')
+                    .unwrap_or(d.len());
+                !d[f..].trim_start().starts_with(',') && !def.contains(&&d[..f])
+            })
+        };
+        assert!(
+            acha(sem_fallback),
+            "nao pegou o token sem definicao e sem fallback"
+        );
+        assert!(!acha(com_fallback), "recusou um token que TEM fallback");
+        assert!(!acha(definido), "recusou um token que ESTA definido");
     }
 
     /// A tela de verdade nao tem nenhum -- e a catraca que impede o proximo.
