@@ -132,7 +132,11 @@ fn nome_da_tabela(caminho: &Path) -> Option<String> {
     Some(base.to_string())
 }
 
-fn tabelas_em(diretorio: &Path) -> Result<Vec<String>> {
+/// Os nomes de tabela que moram num diretorio, resolvendo o sufixo de
+/// volume das paginadas. Visivel ao `table` porque a busca reversa da
+/// integridade referencial precisa perguntar "quem mais mora aqui?" --
+/// e reescrever a varredura la seria a segunda copia de uma regra sutil.
+pub(crate) fn tabelas_em(diretorio: &Path) -> Result<Vec<String>> {
     if !diretorio.is_dir() {
         return Ok(Vec::new());
     }

@@ -609,6 +609,99 @@ impl Table {
         Ok(())
     }
 
+    /// **A regra primordial: nunca se mata o pai que tem filhos.**
+    ///
+    /// Chamada ANTES de apagar, e recusa a exclusao enquanto existir filha
+    /// apontando para esta linha.
+    ///
+    /// # A busca reversa, e por que ela custa o que custa
+    ///
+    /// Uma chave estrangeira e declarada na FILHA: ela diz para onde aponta, e
+    /// ninguem diz quem aponta para si. Entao a mae, para saber se tem filhas,
+    /// precisa perguntar as irmas -- uma varredura dos esquemas do diretorio.
+    ///
+    /// Isso e caro, e a escolha e deliberada: **excluir e raro, inserir e o
+    /// laco quente.** Pagar a varredura por exclusao mantem o `inserir` sem
+    /// custo nenhum, e e o inverso do que um catalogo reverso guardado faria --
+    /// ele barateia a exclusao e cobra manutencao de TODA criacao e alteracao
+    /// de tabela, inclusive das que nao tem chave nenhuma.
+    ///
+    /// O portao continua sendo o de sempre: sem nenhuma irma com chave
+    /// conferida, a varredura para no primeiro `is_empty()` e a exclusao nao
+    /// paga nada.
+    ///
+    /// # O que conta como filha
+    ///
+    /// So a chave que PEDIU conferencia (`verificar`). A regra do dono diz o
+    /// que a acao e -- restringir, sempre --, e o interruptor diz se esta
+    /// relacao ja e imposta; sao perguntas diferentes, e misturar as duas
+    /// quebraria todo cliente que hoje apaga pais sem pedir nada.
+    fn conferir_filhas(&mut self, rowid: RowId) -> Result<()> {
+        let irmas = crate::catalogo::tabelas_em(&self.diretorio)?;
+        let eu = self.nome.clone();
+        // A linha que vai sair, lida UMA vez: sem ela nao ha o que procurar.
+        let minha = match self.ler(rowid)? {
+            None => return Ok(()),
+            Some(l) => l,
+        };
+        for irma in irmas {
+            if irma == eu {
+                continue;
+            }
+            let esquema = match crate::reg::RegFile::abrir(&self.diretorio, &irma) {
+                Ok(r) => r.esquema().clone(),
+                // Irma que nao abre nao e motivo para a mae nao poder sair: o
+                // erro dela e problema dela, e mistura-lo aqui faria uma
+                // tabela quebrada trancar exclusoes no banco inteiro.
+                Err(_) => continue,
+            };
+            for fk in esquema.chaves_estrangeiras() {
+                if !fk.verificar || nome_simples(&fk.tabela_ref) != eu {
+                    continue;
+                }
+                // O valor da MINHA linha nas colunas que ela referencia.
+                let mut chave = Vec::with_capacity(fk.colunas_ref.len());
+                for nome in &fk.colunas_ref {
+                    let Some(i) = self.esquema.colunas().iter().position(|c| c.nome == *nome)
+                    else {
+                        continue;
+                    };
+                    match minha.get(i) {
+                        None | Some(Value::Null) => break,
+                        Some(v) => chave.push(v.clone()),
+                    }
+                }
+                if chave.len() != fk.colunas_ref.len() {
+                    continue;
+                }
+                let mut filha = Table::abrir(&self.diretorio, &irma)?;
+                let colunas: Vec<String> = fk
+                    .colunas
+                    .iter()
+                    .filter_map(|&c| filha.esquema().colunas().get(c).map(|x| x.nome.clone()))
+                    .collect();
+                let Some(indice) = indice_que_cobre(filha.esquema(), &colunas) else {
+                    return Err(PhxError::Integridade(format!(
+                        "{eu}: nao da para conferir as filhas de {irma} pela chave \
+                         {:?}, que nao tem indice comecando por ({}) -- crie o \
+                         indice na filha ou desligue `verificar` na chave",
+                        fk.nome,
+                        colunas.join(", ")
+                    )));
+                };
+                if !filha.buscar(&indice, &chave)?.is_empty() {
+                    return Err(PhxError::Integridade(format!(
+                        "{eu}: esta linha tem filhas em {irma} pela chave {:?}. \
+                         Nunca se apaga o registro pai que tem filhos -- apague \
+                         as filhas antes",
+                        fk.nome
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Liga a imagem da linha no diario. Ver o modulo `log`.
     ///
     /// Desligado por padrao porque custa: um registro de 200 bytes gasta ~244
@@ -1478,6 +1571,7 @@ impl Table {
     /// se ganha e a espera de disco; o que se arrisca esta escrito em
     /// `docs/DESEMPENHO.md` §4.12 e no `MANUAL.txt`.
     pub fn excluir_de_vez(&mut self, rowid: RowId, motivo: &str) -> Result<bool> {
+        self.conferir_filhas(rowid)?;
         let payload = match self.reg.ler(rowid)? {
             None => return Ok(false),
             Some(p) => p,
@@ -1534,6 +1628,10 @@ impl Table {
     /// marcada -- marcar duas vezes nao e erro, mas tambem nao gera um segundo
     /// motivo no `.reason`.
     pub fn excluir_suave(&mut self, rowid: RowId, motivo: &str) -> Result<bool> {
+        // O suave tambem. Pai logicamente morto deixa filha apontando para
+        // linha que a tela nao mostra mais -- e orfa que ninguem ve e pior que
+        // orfa que da erro.
+        self.conferir_filhas(rowid)?;
         self.exigir_softdeleted()?;
         self.conferir_motivo(motivo)?;
         if !self.marcar(rowid, true)? {

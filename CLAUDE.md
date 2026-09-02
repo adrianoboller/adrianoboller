@@ -105,11 +105,28 @@ errado, descoberto no dia do primeiro `excluir`. Está em
 dois sentidos — `ao_excluir_so_aceita_restringir` e o irmão que impede um
 portão que recusaria tudo.
 
-**O que ainda NÃO está imposto**, e é o que falta da regra: a gravação em si.
-Declarar `restringir` hoje impede declarar outra coisa; ainda não impede o
-`excluir` de apagar um pai com filhas, porque isso pede a busca reversa — quem
-aponta para mim — que nenhuma tabela declara. É o próximo passo, e é o que
-fecha a regra.
+**E ela é imposta na gravação**, não só na declaração: `excluir` — de vez e
+suave — recusa a linha que tem filha. O suave também, porque pai logicamente
+morto deixa filha apontando para linha que a tela não mostra mais, e órfã que
+ninguém vê é pior que órfã que dá erro.
+
+A busca reversa custa o que custa por escolha: a chave é declarada na **filha**,
+então a mãe pergunta às irmãs — uma varredura dos esquemas do diretório, por
+exclusão. **Excluir é raro, inserir é o laço quente**, e pagar ali mantém o
+`inserir` sem custo nenhum. Um catálogo reverso guardado faria o inverso:
+barateia a exclusão e cobra manutenção de toda criação e alteração de tabela,
+inclusive das que não têm chave nenhuma.
+
+E uma consequência que vale saber antes de modelar: **a chave conferida precisa
+de índice dos dois lados** — na mãe para responder «existe este pai?» ao gravar
+a filha, e na filha para responder «alguém aponta para esta linha?» ao apagar a
+mãe. Sem um deles o motor **recusa** dizendo qual falta, em vez de esconder uma
+varredura dentro de um `excluir` que parece barato.
+
+A imposição segue o interruptor `verificar` da chave: a regra do dono diz o que
+a ação **é** (restringir, sempre), e o interruptor diz se aquela relação já é
+imposta. São perguntas diferentes, e misturá-las quebraria todo cliente que
+hoje apaga pais sem ter pedido nada.
 
 **A ordem de digitação é sagrada.** O `.reg` nunca reaproveita slot excluído.
 Qualquer proposta que quebre isso precisa ser discutida antes.

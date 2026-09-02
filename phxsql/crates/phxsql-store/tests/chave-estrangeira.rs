@@ -42,7 +42,17 @@ fn filha(d: &std::path::Path, conferindo: bool) -> Table {
             Column::new("id", ColumnType::Int4).obrigatoria(),
             Column::new("cliente_id", ColumnType::Int4),
         ],
-        vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
+        vec![
+            IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico(),
+            // O indice da COLUNA DA CHAVE, e nao so o da primaria. A chave
+            // conferida precisa de indice dos DOIS lados, e por motivos
+            // diferentes: na mae para responder «existe este pai?» ao gravar a
+            // filha, e na FILHA para responder «alguem aponta para esta
+            // linha?» ao apagar a mae. Sem este, cada exclusao de mae varreria
+            // a tabela de filhas inteira -- e o motor recusa em vez de esconder
+            // esse custo dentro de um `excluir` que parece barato.
+            IndexDef::new("porCliente", vec![IndexColumn::asc(1)]),
+        ],
     )
     .unwrap()
     .com_chaves_estrangeiras(vec![ForeignKey::new(
@@ -132,4 +142,101 @@ fn sem_conferir_a_mae_aberta_nao_muda_nada() {
     let mut f = filha(&d, false);
     f.inserir(&[Value::Int(10), Value::Int(999)])
         .expect("o caminho sem conferencia mudou");
+}
+
+// ---------------------------------------------------------------------------
+// A REGRA PRIMORDIAL: nunca se mata o pai que tem filhos
+// ---------------------------------------------------------------------------
+
+/// O coracao da regra: a mae com filha NAO sai.
+///
+/// Prova real: tirar a chamada de `conferir_filhas` do `excluir_de_vez` faz
+/// este teste passar a apagar -- e e exatamente o que ele existe para impedir.
+#[test]
+fn a_mae_com_filha_nao_pode_ser_apagada() {
+    let d = dir("mae-com-filha");
+    let mut m = mae(&d);
+    let rowid = m.inserir(&[Value::Int(1)]).unwrap();
+    m.sincronizar().unwrap();
+    let mut f = filha(&d, true);
+    f.inserir(&[Value::Int(10), Value::Int(1)]).unwrap();
+    f.sincronizar().unwrap();
+
+    let e = m
+        .excluir_de_vez(rowid, "tentando")
+        .expect_err("a mae com filha foi apagada -- a regra primordial caiu");
+    let txt = e.to_string();
+    assert!(
+        matches!(e, PhxError::Integridade(_)),
+        "familia errada: {txt}"
+    );
+    assert!(txt.contains("pedidos"), "nao diz ONDE esta a filha: {txt}");
+    assert!(
+        txt.contains("apague as filhas antes"),
+        "nao diz o que fazer: {txt}"
+    );
+}
+
+/// A outra metade, sem a qual a de cima passaria com um portao que recusa TODA
+/// exclusao -- e um portao assim tornaria o banco inutil.
+#[test]
+fn a_mae_sem_filha_sai_normalmente() {
+    let d = dir("mae-sem-filha");
+    let mut m = mae(&d);
+    let com = m.inserir(&[Value::Int(1)]).unwrap();
+    let sem = m.inserir(&[Value::Int(2)]).unwrap();
+    m.sincronizar().unwrap();
+    let mut f = filha(&d, true);
+    f.inserir(&[Value::Int(10), Value::Int(1)]).unwrap();
+    f.sincronizar().unwrap();
+
+    // A linha 2 nao tem filha, e sai.
+    assert!(
+        m.excluir_de_vez(sem, "sem filha").unwrap(),
+        "a linha sem filha foi barrada"
+    );
+    // A 1 tem, e nao sai -- as duas afirmacoes na MESMA tabela, senao a de
+    // cima poderia estar passando por a tabela inteira estar trancada.
+    assert!(m.excluir_de_vez(com, "com filha").is_err());
+}
+
+/// A filha que aponta para OUTRA mae nao tranca esta linha.
+///
+/// Sem este teste, um portao que respondesse "ha alguma filha nesta tabela?"
+/// -- em vez de "ha filha DESTA linha?" -- passaria nos dois de cima.
+#[test]
+fn filha_de_outra_linha_nao_tranca_esta() {
+    let d = dir("filha-de-outra");
+    let mut m = mae(&d);
+    let um = m.inserir(&[Value::Int(1)]).unwrap();
+    m.inserir(&[Value::Int(2)]).unwrap();
+    m.sincronizar().unwrap();
+    let mut f = filha(&d, true);
+    f.inserir(&[Value::Int(10), Value::Int(2)]).unwrap();
+    f.sincronizar().unwrap();
+
+    assert!(
+        m.excluir_de_vez(um, "so a 2 tem filha").unwrap(),
+        "a linha 1 foi barrada por uma filha que aponta para a 2"
+    );
+}
+
+/// Chave que NAO pediu conferencia nao tranca ninguem.
+///
+/// E o teste do comportamento VELHO, o que mais importa numa guarda nova:
+/// quem nunca pediu a garantia continua apagando como sempre apagou.
+#[test]
+fn sem_conferir_a_mae_com_filha_sai_como_sempre() {
+    let d = dir("mae-sem-conferir");
+    let mut m = mae(&d);
+    let rowid = m.inserir(&[Value::Int(1)]).unwrap();
+    m.sincronizar().unwrap();
+    let mut f = filha(&d, false);
+    f.inserir(&[Value::Int(10), Value::Int(1)]).unwrap();
+    f.sincronizar().unwrap();
+
+    assert!(
+        m.excluir_de_vez(rowid, "sem conferencia").unwrap(),
+        "a guarda nova quebrou quem nunca pediu nada"
+    );
 }
