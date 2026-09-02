@@ -377,7 +377,6 @@ pub const FABRICA_TELA: &[TextoDeFabrica] = &[
     texto!("tela.fer_conexoes", "Conexões", "Connexions", "Connections", "Connessioni", "Verbindungen", "Conexiones"),
     texto!("tela.fer_telemetria", "Telemetria", "Télémétrie", "Telemetry", "Telemetria", "Telemetrie", "Telemetría"),
     texto!("tela.fer_profiler", "Profiler", "Profileur", "Profiler", "Profiler", "Profiler", "Profiler"),
-    texto!("tela.fer_config", "Config", "Config", "Config", "Config", "Konfig", "Config"),
     texto!("tela.fer_jobs", "Jobs", "Tâches", "Jobs", "Job", "Jobs", "Trabajos"),
     texto!("tela.fer_backup", "Backup", "Sauvegarde", "Backup", "Backup", "Sicherung", "Copia"),
     texto!("tela.fer_restaurar", "Restaurar", "Restaurer", "Restore", "Ripristina", "Rücksicherung", "Restaurar"),

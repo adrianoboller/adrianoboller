@@ -30,7 +30,19 @@ export const caso = {
     await capturar(ctx, ctx.nomeCaptura('entrou'));
 
     contem(await page.textContent('#eu'), CREDENCIAL.USUARIO, 'nao mostrou quem entrou');
-    contem(await page.textContent('#fita'), 'papel', 'a fita nao trouxe o ping do servidor');
+    // A fita prova que o `ping` chegou pela VERSAO, e nao mais pela palavra
+    // «papel»: o dono mandou tirar «papel isolado» do titulo, porque servidor
+    // sozinho e o caso comum e dize-lo o tempo todo e ruido. Este caso travava
+    // o comportamento VELHO -- e travava certo, por isso ele reprovou na hora.
+    // O que se afirma agora e o que ficou: a versao aparece sempre, e o papel
+    // aparece quando NAO e isolado, que e quando ele muda o que a tela faz.
+    const fita = await page.textContent('#fita');
+    contem(fita, 'v', 'a fita nao trouxe o ping do servidor');
+    const papel = await page.evaluate(async () => (await api('ping')).papel);
+    if (papel === 'isolado')
+      verdade(!/papel/i.test(fita), `«papel isolado» voltou ao titulo: "${fita}"`);
+    else
+      contem(fita, papel, 'a fita escondeu um papel que NAO e isolado');
     verdade(await page.locator('#arvore .no.painel').count() === 1,
       'a arvore nao montou o no do Painel');
 

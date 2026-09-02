@@ -93,6 +93,42 @@ export const caso = {
             'o Duplicar desligado nao explica por que esta desligado');
     await page.keyboard.press('Escape');
 
+    // ---- 5. o titulo nao repete «papel isolado» ------------------------
+    // Servidor sozinho e o caso comum: dizer isso na barra o tempo todo e
+    // ruido. Mas `source`/`replica` continuam aparecendo, e por isso o caso
+    // olha o PAPEL antes de exigir a ausencia -- exigir sempre esconderia a
+    // informacao que importa quando ela existe.
+    const fita = await page.locator('#fita').textContent();
+    const papel = await page.evaluate(async () => (await api('ping')).papel);
+    if (papel === 'isolado')
+      verdade(!/papel/i.test(fita), `o titulo ainda diz o papel isolado: "${fita}"`);
+    else
+      verdade(fita.includes(papel), `o titulo escondeu o papel "${papel}": "${fita}"`);
+    verdade(/^v\d/.test(fita.trim()), `a versao sumiu do titulo: "${fita}"`);
+
+    // ---- 6. Config saiu da barra, e o menu superior continua tendo ------
+    verdade(!naBarra.some(t => /^Config/i.test(t)), `o Config ficou na barra: ${naBarra}`);
+    const noMenu = await page.evaluate(() =>
+      MENUS.some(([, , , itens]) => itens.some(i => i.faz === verConfigServidor)));
+    verdade(noMenu, 'o Config saiu da barra E do menu -- ficou sem caminho nenhum');
+
+    // ---- 7. Gerir Banco e View DB na tela de Bancos ---------------------
+    verdade(!naBarra.some(t => /Gerir Banco|View DB/i.test(t)),
+            `Gerir Banco ou View DB ficaram na barra: ${naBarra}`);
+    const iBancos = naBarra.findIndex(t => /^Bancos/i.test(t));
+    verdade(iBancos >= 0, `nao achei o botao Bancos na barra: ${naBarra}`);
+    await page.locator('#ferramentas .fer').nth(iBancos).click();
+    await page.waitForSelector('#btGerirBancoLista', { timeout: 10000 });
+    verdade(await page.locator('#btViewDbLista').isVisible(),
+            'o View DB nao apareceu na tela de Bancos');
+    // E o View DB ABRE mesmo -- botao movido que nao responde no lugar novo e
+    // o defeito que so o clique pega.
+    await page.click('#btViewDbLista');
+    await page.waitForFunction(
+      () => !/Bancos de dados/i.test(
+        document.querySelector('#painel .folha-tit, #painel h2, #painel')?.textContent?.slice(0, 60) || ''),
+      null, { timeout: 10000 });
+
     await capturar(ctx, 'barra-e-popup');
   },
 };

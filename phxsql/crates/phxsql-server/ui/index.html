@@ -2544,7 +2544,15 @@ async function abrirApp() {
   // honesto; corte que perde o dado nao -- o texto inteiro fica aqui.
   $("#eu").title = quemSou;
   const p = await api("ping");
-  $("#fita").textContent = `v${p.phxsql} · papel ${p.papel}`;
+  // «papel isolado» sai do titulo: servidor sozinho e o caso comum, e dizer
+  // isso na barra o tempo todo e ruido que ocupa o lugar do que importa. Mas
+  // `source` e `replica` FICAM -- essas mudam o que a tela deixa fazer
+  // (replica recusa escrita), e esconde-las seria esconder o motivo de um
+  // «acesso negado» mais tarde. Tira-se a frase sem informacao, nao a
+  // informacao.
+  $("#fita").textContent = p.papel && p.papel !== "isolado"
+    ? `v${p.phxsql} · papel ${p.papel}`
+    : `v${p.phxsql}`;
   ligarMenu();
   montarFerramentas();
   ligarAtalhos();
@@ -2692,7 +2700,11 @@ async function abrirTabela(db, tab) {
   // Trocar o idioma repinta ESTA tabela, com a aba em que a pessoa estava.
   est.repintar = () => abrirTabela(db, tab);
   $("#titulo").textContent = tab;
-  $("#subtitulo").textContent = `${db} · .reg + .ndx + .bin + .memo + .log`;
+  // Sem a lista de arquivos ainda: ela vem do servidor, medida no disco, e o
+  // subtitulo se completa quando a aba Estrutura responde. Digitar a lista
+  // aqui foi o defeito: dizia CINCO extensoes quando a tabela ja tinha DEZ, e
+  // quem contou foi o dono, olhando a tela.
+  $("#subtitulo").textContent = db;
   $("#abas").innerHTML = ABAS.map(([k,r,chave]) =>
     `<button class="aba ${k===est.aba?"sel":""}" data-aba="${k}">${esc(txt(chave,r))}</button>`).join("");
   $("#abas").querySelectorAll(".aba").forEach(b => b.onclick = () => {
@@ -2722,6 +2734,11 @@ async function desenharAba() {
 async function vEstrutura(database, tabela_) {
   const e = await api("esquema", { database, tabela:tabela_ });
   est.estruturaAtual = e;
+  // Os arquivos que a tabela TEM, e nao os que alguem achou que ela teria.
+  // Lista vazia (servidor velho) deixa o subtitulo como esta, em vez de
+  // apagar o nome do database -- comportamento velho nao quebra.
+  if (Array.isArray(e.arquivos) && e.arquivos.length)
+    $("#subtitulo").textContent = `${database} · ${e.arquivos.join(" + ")}`;
   const pag = e.paginacao;
   const fichas = [
     ["registros", e.registros], ["slots usados", e.slots],
@@ -9897,8 +9914,6 @@ const FERRAMENTAS = [
      5. desligadas e ajuda ....... o que ainda nao existe fica visivel no fim,
                                    como promessa, e nao no meio, como tropeço */
   { ico:"banco",    rot:"Bancos", txt:"tela.fer_bancos",     cor:"var(--bin)",    faz:verBancos },
-  { ico:"gerir",    rot:"Gerir Banco", txt:"tela.fer_gerir_banco",cor:"var(--bin)",    faz:() => gerirDatabase() },
-  { ico:"grade",    rot:"View DB", txt:"tela.fer_view_db",    cor:"var(--bin)",    faz:viewDatabaseAtual },
   { ico:"tabelas",  rot:"Tabelas", txt:"tela.menu_tabelas",    cor:"var(--bin)",    faz:gerirTabelasAtual },
   { ico:"consulta", rot:"Query", txt:"tela.fer_query",      cor:"var(--ndx)",    faz:abrirConsulta },
   { ico:"pivot",    rot:"Pivot", txt:"tela.fer_pivot",      cor:"var(--ndx)",    faz:() => telaPivot() },
@@ -9919,7 +9934,6 @@ const FERRAMENTAS = [
     dica:"gráficos bolha ordenados por peso, no molde do SQL Check da Idera®", dicaTxt:"tela.fer_dica_telemetria" },
   { ico:"pulso",    rot:"Profiler", txt:"tela.fer_profiler",   cor:"var(--acao-consultar)", faz:verProfiler,
     dica:"o que chega pela porta de dados, antes de virar dado", dicaTxt:"tela.fer_dica_profiler" },
-  { ico:"engrenagem", rot:"Config", txt:"tela.fer_config",   cor:"var(--laranja)",faz:verConfigServidor },
   { ico:"relogio",  rot:"Jobs", txt:"tela.fer_jobs",       cor:"var(--log)",    faz:telaJobs },
   "risco",
   { ico:"cofre",    rot:"Backup", txt:"tela.fer_backup",     cor:"var(--ok)",     faz:backupAgora },
@@ -11279,9 +11293,31 @@ async function verDiretivas() {
 
 async function verBancos() {
   const bancos = await api("bancos");
+  // Gerir Banco e View DB moram AQUI, e nao mais na barra geral: as duas agem
+  // sobre um database, e esta e a tela dos databases. Na barra elas
+  // perguntavam «qual?» depois do clique -- a ordem invertida, a mesma que
+  // tirou o Duplicar de la.
+  // Os `id` terminam em `Lista` de proposito: `btGerirBanco` ja existe na tela
+  // de uma tabela, e no modo multitela as duas telas coexistem -- `$()`
+  // devolveria a primeira e o clique iria para a tela errada.
+  //
+  // E o comentario mora AQUI, e nao dentro do template literal abaixo: crase
+  // em volta de identificador e o estilo desta casa, e crase DENTRO de um
+  // template literal FECHA o literal. Um comentario explicativo derrubou a
+  // pagina inteira, e a bateria pegou em 200 ms -- ler o codigo nao pegaria,
+  // porque o texto do comentario esta certo; o que quebra e onde ele esta.
   folha("Bancos de dados", "o que existe em disco, sob a raiz do servidor",
-    `<div id="gradeBancos"></div>`
+    `<div class="acoes">
+       <button class="botao secundario" id="btGerirBancoLista">${
+         esc(txt("tela.fer_gerir_banco", "Gerir Banco"))}</button>
+       <button class="botao consultar" id="btViewDbLista">${
+         esc(txt("tela.fer_view_db", "View DB"))}</button>
+     </div>
+     <div id="gradeBancos"></div>`
     + `<p class="leg">Criar um novo: menu <b>Arquivo → Novo database</b>.</p>`);
+
+  $("#btGerirBancoLista").onclick = () => gerirDatabase();
+  $("#btViewDbLista").onclick = () => viewDatabaseAtual();
 
   // PADRONIZACAO: PhxGrid. Sem clique proprio -- entrar num database e pela
   // arvore lateral, nao por aqui.

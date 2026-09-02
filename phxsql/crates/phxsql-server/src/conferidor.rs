@@ -1076,6 +1076,39 @@ pub const TETO_FRASE_REPETIDA: usize = 0;
 /// existia em outra tela (`tela.col_tipo`, `tela.pino_unico`…) e so as
 /// realmente novas (`tela.col_motivo`, `tela.pino_em_dia`…) precisaram de
 /// chave propria.
+/// **Comentario HTML dentro de um template literal, com crase.**
+///
+/// Defeito real, e ele derrubou a pagina INTEIRA: um `<!-- ... -->` escrito
+/// dentro de uma `` `template literal` `` do JavaScript, com crases em volta
+/// dos identificadores -- que e o estilo desta casa em comentario. Crase
+/// dentro de template literal FECHA o literal, e o resto do arquivo virou
+/// sintaxe invalida.
+///
+/// O que torna este defeito perigoso e o texto do comentario estar CERTO: ler
+/// nao pega, revisar nao pega. Quem pegou foi a bateria, em 200 ms, porque a
+/// tela nao abriu.
+///
+/// A guarda procura o padrao: uma linha com `<!--` que esteja dentro de um
+/// template literal aberto e que contenha crase.
+pub fn comentario_com_crase_em_template(fonte: &str) -> Vec<usize> {
+    let mut achados = Vec::new();
+    let mut dentro = false;
+    for (n, linha) in fonte.lines().enumerate() {
+        // Conta crases nao escapadas da linha para saber se o literal segue
+        // aberto na proxima. Nao e um parser de JavaScript, e nao precisa
+        // ser: o alvo e uma linha de comentario HTML com crase, e essa so
+        // aparece de um jeito.
+        if dentro && linha.contains("<!--") && linha.contains('`') {
+            achados.push(n + 1);
+        }
+        let crases = linha.matches('`').count();
+        if crases % 2 == 1 {
+            dentro = !dentro;
+        }
+    }
+    achados
+}
+
 pub const TETO: usize = 1_577;
 #[cfg(test)]
 mod testes {
@@ -1336,6 +1369,51 @@ mod testes {
         let mut vistos = HashSet::new();
         for (t, _) in ISENTOS {
             assert!(vistos.insert(*t), "{t} esta duas vezes na lista de isentos");
+        }
+    }
+}
+
+#[cfg(test)]
+mod testes_crase {
+    use super::*;
+
+    /// **Prova real nos dois sentidos**, com o defeito de verdade: o
+    /// comentario que derrubou a tela de Bancos.
+    #[test]
+    fn a_crase_no_comentario_dentro_do_template_e_pega() {
+        let mau = "folha(\"x\", `<div>\n  <!-- `id` proprio -->\n</div>`);";
+        assert_eq!(
+            comentario_com_crase_em_template(mau),
+            vec![2],
+            "nao pegou o defeito"
+        );
+
+        // E o comentario SEM crase passa -- guarda que recusa tudo nao guarda
+        // nada, so atrapalha.
+        let bom = "folha(\"x\", `<div>\n  <!-- id proprio -->\n</div>`);";
+        assert!(
+            comentario_com_crase_em_template(bom).is_empty(),
+            "recusou o certo"
+        );
+
+        // E comentario com crase FORA de template literal e legitimo.
+        let fora = "// `id` proprio\nfolha(\"x\", `<div></div>`);";
+        assert!(
+            comentario_com_crase_em_template(fora).is_empty(),
+            "recusou fora do literal"
+        );
+    }
+
+    /// A tela de verdade nao tem nenhum -- e a catraca que impede o proximo.
+    #[test]
+    fn a_interface_nao_tem_comentario_com_crase_em_template() {
+        for (nome, fonte) in FONTES {
+            let achados = comentario_com_crase_em_template(fonte);
+            assert!(
+                achados.is_empty(),
+                "{nome}: comentario HTML com crase dentro de template literal nas \
+                 linhas {achados:?} -- a crase FECHA o literal e derruba a pagina"
+            );
         }
     }
 }

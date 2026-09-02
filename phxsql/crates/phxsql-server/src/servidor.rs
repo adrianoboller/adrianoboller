@@ -10192,8 +10192,20 @@ impl Servidor {
             })
             .collect();
         let pag = e.paginacao();
+        // Os arquivos que a tabela TEM, medidos no disco -- e nao a lista
+        // digitada que a tela carregava. Colhidos aqui porque a trava ja esta
+        // na mao e o database ja esta aberto.
+        let arquivos: Vec<Json> = _trava
+            .abrir_database(p.texto_ou("database", ""))
+            .ok()
+            .and_then(|db| db.arquivos_da_tabela(p.texto_ou("tabela", "")).ok())
+            .unwrap_or_default()
+            .into_iter()
+            .map(Json::texto_de)
+            .collect();
         Ok(Json::objeto(vec![
             ("tabela", Json::texto_de(e.nome())),
+            ("arquivos", Json::Lista(arquivos)),
             ("registros", Json::de_u64(t.registros())),
             ("slots", Json::de_u64(t.slots())),
             // A UNICA diretiva que e da tabela e nao da geometria nem do

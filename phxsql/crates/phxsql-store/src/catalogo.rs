@@ -328,8 +328,17 @@ impl Database {
     /// extensoes e recusa), e se nao fosse, a tabela nova herdaria a lixeira e
     /// os motivos de exclusao de uma tabela alheia — que e conteudo de linha,
     /// e so `administrar` pode ler.
-    const EXTENSOES_TODAS: [&'static str; 9] = [
-        "reg", "ndx", "bin", "memo", "log", "bkp", "trash", "reason", "pag",
+    /// O `.lgpd` entrou nesta lista DEPOIS de o dono olhar a tela e contar dez
+    /// arquivos onde a frase dizia cinco. A lista tinha nove e a tabela ja
+    /// tinha dez -- exatamente o mesmo defeito de quando tinha seis e a tabela
+    /// tinha nove, repetido pela mesma razao: extensao nova entra no motor e
+    /// ninguem volta aqui. E este era o pior deles, porque o que ficava para
+    /// tras era a trilha de dados PESSOAIS, sob um nome que nao existe mais.
+    ///
+    /// A guarda agora nao confere a lista contra ela mesma (isso passaria com
+    /// qualquer numero): confere o DIRETORIO depois de um `excluir_tabela`.
+    const EXTENSOES_TODAS: [&'static str; 10] = [
+        "reg", "ndx", "bin", "memo", "log", "bkp", "trash", "reason", "pag", "lgpd",
     ];
 
     /// Apaga os arquivos de uma tabela e devolve o que apagou.
@@ -363,6 +372,35 @@ impl Database {
         }
         apagados.sort();
         Ok(apagados)
+    }
+
+    /// Os arquivos que esta tabela TEM em disco, com extensao e sem o nome.
+    ///
+    /// Existe para a tela parar de digitar a lista. A frase do cabecalho dizia
+    /// «.reg + .ndx + .bin + .memo + .log» -- cinco, digitados a mao, quando a
+    /// tabela ja tinha dez. O dono contou olhando a tela.
+    ///
+    /// Devolve o que EXISTE, e nao a lista das dez: `.trash` so nasce quando
+    /// alguem exclui, `.lgpd` so quando ha dado pessoal, `.pag` so com
+    /// particao. Mostrar as dez sempre seria trocar um numero errado por
+    /// outro -- a presenca do arquivo e a informacao.
+    pub fn arquivos_da_tabela(&self, qualificado: &str) -> Result<Vec<String>> {
+        let (schema, nome) = separar_qualificado(qualificado);
+        let (schema, nome) = (schema.as_deref(), nome.as_str());
+        validar_nome("tabela", nome)?;
+        let dir = self.diretorio(schema)?;
+        let mut achados = Vec::new();
+        for ext in Self::EXTENSOES_TODAS {
+            for arq in std::fs::read_dir(&dir)?.flatten() {
+                let f = arq.file_name();
+                let f = f.to_string_lossy();
+                if pertence(&f, nome, ext) {
+                    achados.push(format!(".{ext}"));
+                    break; // um por extensao: volume nao vira item repetido.
+                }
+            }
+        }
+        Ok(achados)
     }
 
     /// Renomeia uma tabela: MOVE os arquivos, nao copia.
@@ -1010,6 +1048,47 @@ mod testes_copia_entre_bancos {
             vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).primaria()],
         )
         .unwrap()
+    }
+
+    /// **A lista das extensoes esta completa?** -- a pergunta que ja falhou
+    /// uma vez aqui, e que o dono fez de novo olhando a TELA.
+    ///
+    /// A lista nasceu com seis, a tabela tinha nove, e o comentario do
+    /// `EXTENSOES_TODAS` conta o estrago. O `.lgpd` entrou depois disso e
+    /// ninguem voltou aqui: `excluir_tabela` deixava a trilha de dados
+    /// PESSOAIS para tras, sob um nome que nao existe mais -- e uma tabela
+    /// nova com o mesmo nome herdaria a trilha de uma tabela alheia, que e
+    /// conteudo de linha e so `administrar` pode ler.
+    ///
+    /// Este teste nao confere a LISTA: confere o DIRETORIO. Conferir a lista
+    /// contra ela mesma passaria com qualquer numero.
+    #[test]
+    fn excluir_tabela_nao_deixa_arquivo_nenhum_para_tras() {
+        use phxsql_core::value::Value;
+        let base = std::env::temp_dir().join(format!("phx-ext-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let cat = Instancia::nova(&base).unwrap();
+        let db = cat.criar_database("loja").unwrap();
+        let mut t = db.criar_tabela(None, esquema("pedidos")).unwrap();
+        t.inserir(&[Value::Int(1), Value::Str("um".into())])
+            .unwrap();
+        // A trilha LGPD so nasce quando o primeiro evento aparece -- por isso
+        // o arquivo e criado a mao aqui, que e o que o motor faria.
+        std::fs::write(base.join("loja/pedidos.lgpd"), b"PLGP").unwrap();
+        drop(t);
+
+        db.excluir_tabela("pedidos").unwrap();
+        let sobrou: Vec<String> = std::fs::read_dir(base.join("loja"))
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|f| f.starts_with("pedidos."))
+            .collect();
+        assert!(
+            sobrou.is_empty(),
+            "excluir_tabela deixou para tras: {sobrou:?} -- a lista de extensoes \
+             ficou para tras de novo"
+        );
     }
 
     /// O renomear MOVE: o nome velho some, o novo abre, e o dado e o mesmo.
