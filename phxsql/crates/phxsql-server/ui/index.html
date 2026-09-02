@@ -803,6 +803,32 @@ table.montar td{padding:5px 7px}
 .menubar .item:hover:not(:disabled) .tecla{color:rgba(255,255,255,.75)}
 .menubar .sep{height:1px;background:var(--linha);margin:4px 0}
 
+/* O menu do botao direito da arvore. Herda a lista do `menubar` -- mesma
+   moldura, mesma sombra, mesmos itens -- em vez de nascer com paleta propria:
+   dois menus com aparencias diferentes na mesma tela leem como dois produtos.
+   O que muda e so o posicionamento, que aqui e no ponto do clique. */
+#popup{
+  position:fixed;z-index:60;min-width:238px;
+  background:var(--painel);border:1px solid var(--linha-forte);
+  border-radius:5px;box-shadow:0 8px 24px rgba(0,0,0,.22);padding:4px 0;
+}
+#popup .alvo{
+  padding:5px 12px 7px;font-size:11px;color:var(--texto-3);
+  border-bottom:1px solid var(--linha);margin-bottom:4px;
+  /* O nome da tabela e DADO: nao leva `text-transform` nem nada que mude o
+     que esta gravado. So a cor e o tamanho, que sao do rotulo em volta. */
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:320px;
+}
+#popup .item{
+  display:flex;align-items:center;gap:10px;width:100%;
+  background:none;border:0;text-align:left;padding:6px 14px 6px 12px;
+  font-family:inherit;font-size:12.5px;color:var(--texto);cursor:pointer;
+}
+#popup .item:hover:not(:disabled),
+#popup .item:focus-visible{background:var(--laranja);color:#fff;outline:none}
+#popup .item:disabled{color:var(--texto-3);cursor:default;opacity:.55}
+#popup .item .ico{width:16px;text-align:center;font-size:12px;flex:none}
+
 /* Em tela estreita a arvore some e o menu continua sendo o caminho. */
 @media (max-width:820px){
   .menubar .titulo{padding:0 9px;font-size:12px}
@@ -1943,6 +1969,13 @@ td label,td .rot-dado{text-transform:none;letter-spacing:0;font-size:inherit;
     <span class="espaco"></span>
     <span class="recado" id="aviso" role="status" aria-live="polite" hidden></span>
     <span class="demo" id="selo" hidden data-txt="tela.demo">modo demonstração</span>
+    <!-- A Ajuda mora AQUI, e nao no fim da barra de ferramentas: ajuda no fim
+         de uma fila de trinta botoes e ajuda que se procura. Ao lado da
+         lua/sol ela fica onde a pessoa ja olha quando quer mexer na propria
+         tela. Usa a mesma classe `tema` para nascer com o tamanho e o alvo de
+         clique do vizinho, em vez de um estilo novo que o CSS global mordia. -->
+    <button class="tema" id="btAjuda"
+            aria-label="Ajuda e sobre o PhxSql" data-txt-al="tela.menu_ajuda">?</button>
     <button class="tema" id="btTema"
             aria-label="Alternar tema claro e escuro" data-txt-al="tela.tema_dica">🌓</button>
     <span class="eu" id="eu"></span>
@@ -1951,6 +1984,10 @@ td label,td .rot-dado{text-transform:none;letter-spacing:0;font-size:inherit;
 
   <div class="menubar" id="menubar" role="menubar" aria-label="Menu principal"
        data-txt-al="tela.menu_principal"></div>
+
+  <!-- O menu do botao direito. Nasce vazio e escondido: quem o abre e o
+       `contextmenu` da arvore, que decide os itens pelo NO clicado. -->
+  <div id="popup" role="menu" hidden></div>
 
   <div id="ferramentas" role="toolbar"
        aria-label="Barra de ferramentas" data-txt-al="tela.barra_ferramentas"></div>
@@ -9865,7 +9902,9 @@ const FERRAMENTAS = [
   { ico:"tabelas",  rot:"Tabelas", txt:"tela.menu_tabelas",    cor:"var(--bin)",    faz:gerirTabelasAtual },
   { ico:"consulta", rot:"Query", txt:"tela.fer_query",      cor:"var(--ndx)",    faz:abrirConsulta },
   { ico:"pivot",    rot:"Pivot", txt:"tela.fer_pivot",      cor:"var(--ndx)",    faz:() => telaPivot() },
-  { ico:"venn",     rot:"Junção", txt:"tela.fer_juncao",     cor:"var(--ndx)",    faz:() => telaJuncao() },
+  // Onde ficava a Juncao, que se mudou para DENTRO da tela de Query -- juncao
+  // e consulta, e o lugar dela e junto do SQL, nao numa barra geral.
+  { ico:"energia",  rot:"Start/Stop", txt:"tela.fer_start_stop", cor:"var(--ok)",     faz:verServico },
   { ico:"exportar", rot:"Exportar", txt:"tela.fer_exportar",   cor:"var(--ok)",     faz:() => telaExportar() },
   { ico:"importar", rot:"Importar", txt:"tela.fer_importar",   cor:"var(--bin)",    faz:() => telaImportar() },
   "risco",
@@ -9898,13 +9937,8 @@ const FERRAMENTAS = [
   { ico:"replica",  rot:"Replicação", txt:"tela.mi_replicacao", cor:"var(--ndx)",    faz:verReplicacao },
   { ico:"escudo",   rot:"Diretivas", txt:"tela.fer_diretivas",  cor:"var(--laranja)",faz:verDiretivas },
   "risco",
-  { ico:"energia",  rot:"Start/Stop", txt:"tela.fer_start_stop", cor:"var(--ok)",     faz:verServico },
   { ico:"reparo",   rot:"Repair", txt:"tela.fer_repair",     cor:"var(--ambar)",  faz:repararPeloMenu },
   "risco",
-  { ico:"duplicar", rot:"Duplicar", txt:"tela.fer_duplicar",   cor:"var(--bin)",    faz:null,
-    falta:"Copiar um database inteiro para outro nome. O backup já sabe copiar "
-        + "árvore e conferir SHA-256; falta a operação que grava com outro nome "
-        + "e reescreve o catálogo." },
   { ico:"correio",  rot:"Server Mail", txt:"tela.fer_server_mail",cor:"var(--reg)",    faz:null,
     falta:"O armazenamento serve bem — uma tabela de mensagens com pasta "
         + "indexada, corpo no .memo e anexo no .bin. Falta o serviço. O SMTP "
@@ -9915,7 +9949,10 @@ const FERRAMENTAS = [
     falta:"O formato encaixa: a altura do bloco é o rowid, o Uuid256 guarda um "
         + "SHA-256 exato e a ordem de digitação é sagrada. Falta o serviço — e, "
         + "antes dele, as transações." },
-  { ico:"ajuda",    rot:"Ajuda", txt:"tela.menu_ajuda",      cor:"var(--texto-3)",faz:verSobre },
+  // A Ajuda NAO esta aqui de proposito: mora no topo, ao lado da lua/sol
+  // (`#btAjuda`). Ajuda no fim de uma barra de 30 ferramentas e ajuda que se
+  // procura; ao lado do tema, ela esta onde a pessoa ja olha quando quer
+  // mexer na propria tela.
 ];
 
 function montarFerramentas() {
@@ -12330,7 +12367,14 @@ async function abrirConsulta() {
          </select></label>
        <label>Valor <input id="cVal" placeholder="deixe vazio para trazer tudo"></label>
        <label>Máximo <input id="cMax" type="number" value="200" min="1"></label>
-       <button class="botao consultar" id="btConsultar">Consultar</button>
+       <button class="botao consultar" id="btConsultar">${
+         esc(txt("tela.consultar", "Consultar"))}</button>
+       <!-- A Juncao mora AQUI, e nao na barra geral: juntar tabelas e
+            consultar, e quem esta escrevendo um filtro e exatamente quem
+            precisa dela. Na barra ela era um botao entre trinta; aqui ela
+            esta no caminho de quem ja decidiu consultar. -->
+       <button class="botao secundario" id="btJuncaoQuery">${
+         esc(txt("tela.fer_juncao", "Junção"))}</button>
      </div>
      <div id="saidaConsulta"><p class="leg">A tabela precisa estar na RAM:
        menu <b>Memória → Carregar esta tabela</b>.</p></div>`);
@@ -12339,6 +12383,8 @@ async function abrirConsulta() {
   // e esta tela fica exatamente como era — o comportamento VELHO é o que o
   // teste trava, porque guarda nova entra pedida e não imposta.
   PhxIA.botaoDaConsulta($("#painel"));
+
+  $("#btJuncaoQuery").onclick = () => telaJuncao();
 
   $("#btConsultar").onclick = async () => {
     const saida = $("#saidaConsulta");
@@ -13420,6 +13466,100 @@ const sistemaClaro = () =>
   window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches;
 
 aplicarTema(lembrado("phxsql-tema") || (sistemaClaro() ? "claro" : "escuro"));
+// =====================================================================
+// O menu do botao direito da arvore.
+//
+// Nasceu porque o Duplicar saiu da barra de ferramentas: duplicar uma tabela
+// e acao SOBRE UM ALVO, e acao sobre alvo pede o alvo escolhido antes do
+// verbo -- na barra ela perguntava "duplicar qual?" depois do clique, que e
+// a ordem invertida.
+//
+// Os itens saem do NO clicado, e nao de uma lista fixa: tabela e database
+// oferecem coisas diferentes, e oferecer o que nao serve para o alvo e o
+// mesmo que nao oferecer.
+// =====================================================================
+
+/** Fecha o popup. Idempotente -- chamada de tres lugares diferentes. */
+function fecharPopup() {
+  const p = $("#popup");
+  p.hidden = true;
+  p.innerHTML = "";
+}
+
+/** Os itens para um no da arvore: `[icone, rotulo, chave, faz, falta]`. */
+function itensDoPopup(db, tab) {
+  if (tab) {
+    return [
+      ["⧉", "Duplicar tabela…", "tela.mi_duplicar_tabela",
+       () => duplicarTabelaPara(db, tab)],
+      ["⎘", "Copiar / colar tabela…", "tela.mi_copiar_colar",
+       () => copiarTabela(db, tab)],
+    ];
+  }
+  return [
+    // O database inteiro ainda NAO se duplica, e o item aparece assim mesmo,
+    // desligado e com o motivo -- e o mesmo trato que a barra de ferramentas
+    // dava as pecas por fazer. Promessa visivel e melhor que ausencia, e bem
+    // melhor que um item que aceita o clique e nao faz nada.
+    ["⧉", "Duplicar", "tela.fer_duplicar", null,
+     "Copiar um database inteiro para outro nome. O backup já sabe copiar "
+     + "árvore e conferir SHA-256; falta a operação que grava com outro nome "
+     + "e reescreve o catálogo."],
+    ["⎘", "Copiar / colar tabela…", "tela.mi_copiar_colar",
+     () => telaCopiarColar(db)],
+  ];
+}
+
+/** Abre o popup no ponto do clique, com os itens do no. */
+function abrirPopup(ev, db, tab) {
+  const itens = itensDoPopup(db, tab);
+  const p = $("#popup");
+  // O ALVO no topo: sem ele o menu nao diz sobre o que age, e um menu que nao
+  // diz o alvo e um menu em que a pessoa clica torcendo.
+  p.innerHTML = `<div class="alvo">${esc(tab ? `${db}.${tab}` : db)}</div>`
+    // `txt()` na hora de desenhar, e NAO `data-txt`: o varredor de `data-txt`
+    // passa uma vez sobre o DOM estatico, entao HTML criado depois dele nunca
+    // seria traduzido -- e, pior, o conferidor contaria o atributo como texto
+    // JA coberto. Chave que parece viva e nao e engana os dois lados.
+    + itens.map(([ico, rot, chave, faz, falta], i) => `
+      <button class="item" role="menuitem" data-i="${i}"
+        ${faz ? "" : "disabled"}
+        ${falta ? `title="${esc(falta)}"` : ""}>
+        <span class="ic">${ico}</span><span>${esc(txt(chave, rot))}</span>
+      </button>`).join("");
+  p.hidden = false;
+  // Posiciona DEPOIS de medir: o menu perto da borda precisa saber a propria
+  // altura para subir em vez de sair da tela.
+  const r = p.getBoundingClientRect();
+  const x = Math.min(ev.clientX, innerWidth - r.width - 6);
+  const y = Math.min(ev.clientY, innerHeight - r.height - 6);
+  p.style.left = `${Math.max(6, x)}px`;
+  p.style.top = `${Math.max(6, y)}px`;
+  p.querySelectorAll(".item").forEach(b => {
+    b.onclick = () => {
+      const faz = itens[+b.dataset.i][3];
+      fecharPopup();
+      if (faz) faz();
+    };
+  });
+}
+
+$("#arvore").addEventListener("contextmenu", ev => {
+  const no = ev.target.closest(".no");
+  if (!no || !no.dataset.db) return;   // Painel e Administracao nao tem alvo.
+  ev.preventDefault();
+  abrirPopup(ev, no.dataset.db, no.dataset.tab || "");
+});
+
+// Fecha por clique fora, por Esc e por rolagem -- os tres jeitos que a pessoa
+// tenta. So o clique fora nao basta: menu presa na tela depois de rolar fica
+// apontando para o no errado.
+addEventListener("click", e => { if (!e.target.closest("#popup")) fecharPopup(); });
+addEventListener("keydown", e => { if (e.key === "Escape") fecharPopup(); });
+addEventListener("scroll", fecharPopup, true);
+
+$("#btAjuda").onclick = () => verSobre();
+
 $("#btTema").onclick = () =>
   aplicarTema(document.documentElement.getAttribute("data-tema") === "claro"
     ? "escuro" : "claro");

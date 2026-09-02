@@ -388,6 +388,10 @@ pub const FABRICA_TELA: &[TextoDeFabrica] = &[
     texto!("tela.fer_start_stop", "Start/Stop", "Marche/Arrêt", "Start/Stop", "Avvio/Arresto", "Start/Stopp", "Marcha/Paro"),
     texto!("tela.fer_repair", "Repair", "Réparer", "Repair", "Ripara", "Reparieren", "Reparar"),
     texto!("tela.fer_duplicar", "Duplicar", "Dupliquer", "Duplicate", "Duplica", "Duplizieren", "Duplicar"),
+    // O botao da tela de Query. Estava cravado em portugues ate a Juncao mudar
+    // de lugar e a barra dessa tela ser mexida -- e foi por isso que ele
+    // apareceu: peca que se toca e peca que se conta.
+    texto!("tela.consultar", "Consultar", "Interroger", "Query", "Interroga", "Abfragen", "Consultar"),
     texto!("tela.fer_server_mail", "Server Mail", "Messagerie", "Server Mail", "Server Mail", "Server-Mail", "Correo"),
     texto!("tela.fer_dica_telemetria", "gráficos bolha ordenados por peso, no molde do SQL Check da Idera®", "graphiques à bulles triés par poids, dans l'esprit du SQL Check d'Idera®", "bubble charts sorted by weight, in the spirit of Idera® SQL Check", "grafici a bolle ordinati per peso, nello stile di SQL Check di Idera®", "Blasendiagramme nach Gewicht sortiert, im Stil von Idera® SQL Check", "gráficos de burbujas ordenados por peso, al estilo del SQL Check de Idera®"),
     texto!("tela.fer_dica_profiler", "o que chega pela porta de dados, antes de virar dado", "ce qui arrive par le port de données, avant de devenir donnée", "what arrives at the data port, before it becomes data", "ciò che arriva dalla porta dati, prima di diventare dato", "was am Datenport ankommt, bevor es zu Daten wird", "lo que llega por el puerto de datos, antes de volverse dato"),

@@ -1076,7 +1076,7 @@ pub const TETO_FRASE_REPETIDA: usize = 0;
 /// existia em outra tela (`tela.col_tipo`, `tela.pino_unico`…) e so as
 /// realmente novas (`tela.col_motivo`, `tela.pino_em_dia`…) precisaram de
 /// chave propria.
-pub const TETO: usize = 1_578;
+pub const TETO: usize = 1_577;
 #[cfg(test)]
 mod testes {
     use std::collections::HashSet;
