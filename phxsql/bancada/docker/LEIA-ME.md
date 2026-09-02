@@ -41,6 +41,32 @@ que não fala MySQL: ele **não trava o servidor**. Devolve
 essa espera outra conexão fez login e listou bancos em **0,32 s** — a tentativa
 não segura a trava global.
 
+## E o DbLink provado contra o motor que ele ALCANÇA
+
+    python3 bancada/docker/dblink-mariadb.py   # sobe erp-mariadb e prova
+
+Terceiro contêiner, terceira base, terceiras tabelas: `erp` com `fornecedores`
+e `notas`. Medido em 02/09/2026, de dentro do `phx-a`:
+
+| | |
+|---|---|
+| `dblink_testar` | **0,01 s** · `11.8.9-MariaDB-ubu2404` · usuário efetivo `leitor@%` |
+| `dblink_bancos` | `["erp","information_schema"]` |
+| `dblink_tabelas` | `fornecedores` (3) e `notas` (3), com motor e bytes |
+| `dblink_ler` | as três linhas, com tipo e `primaria: true` no `id` |
+| `dblink_consultar` | `LEFT JOIN` + `GROUP BY` rodando **lá**, resultado chegando aqui — inclusive o `SUM` nulo do fornecedor sem nota |
+
+E o `phx-a` continua com a base dele: `bancos` → `["loja"]`. O DbLink **lê de
+fora**, não importa para dentro.
+
+**A senha não vaza.** Ela entra por `senha_env` — variável de ambiente do
+contêiner —, e a ficha da ligação devolve `senha: "(oculta)"`.
+
+**O contraste que vale guardar:** `dblink_testar` contra o MariaDB responde em
+**0,01 s**; contra a porta de um PhxSql, que não fala o fio do MySQL, ele
+desiste em **10,2 s** com erro nomeado. Os dois números são o mesmo recurso
+funcionando.
+
 ## O que este roteiro NÃO prova
 
 O `Dockerfile` do projeto não foi usado inteiro: o estágio construtor falha
