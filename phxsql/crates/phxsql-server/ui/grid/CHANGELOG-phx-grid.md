@@ -2,6 +2,15 @@
 
 Formato baseado em *Keep a Changelog*. Versionamento semântico.
 
+## [0.9.2] — 2026-09-02 · **O PAINEL VIVO, E A BUSCA QUE ENVELHECIA**
+
+### Corrigido
+- **`redesenhar()` não derrubava o índice da busca global.** A fonte local guarda esse índice em cache por conjunto de campos, o que é certo para uma grade estática e errado para um painel que se atualiza sozinho: depois da primeira volta do relógio, a busca respondia pelas linhas de dois segundos atrás. Resposta errada com a cara da certa é pior que busca lenta. Agora `redesenhar()` quer dizer «o dado mudou» e não «pinte de novo»: ele chama `fonte.invalidar()` antes de recarregar.
+
+### Aprendido — a prova que passava por engano
+- O caso `fonte_viva_redesenha_sem_perder_o_estado`, escrito na 0.9.1 para provar o padrão do painel vivo, **conferia o ESTADO e não o EFEITO**: afirmava que `estado().ordem` continuava `desc` depois de `redesenhar()`, e não que as linhas saíam ordenadas. Passava com uma `fonte` que ignora o `ordem` recebido — que é justamente o defeito que ele deveria pegar, e que só apareceu quando o gestor de threads da telemetria saiu torto na tela.
+- A lição é a da casa, por outra porta: **com `fonte`, a ordenação é responsabilidade da FONTE** (o grid manda `{campo, dir, tipo}` e espera linhas ordenadas); com `dados`, é do grid. Painel vivo sobre um array em memória usa `dados` e muda o array NO LUGAR — nunca uma `fonte` caseira, que teria de reimplementar ordenar, filtrar e agrupar para não mentir.
+
 ## [0.9.1] — 2026-09-02 · **O ROTULO E O NOME SAO COISAS DIFERENTES**
 
 ### Corrigido

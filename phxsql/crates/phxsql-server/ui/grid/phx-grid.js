@@ -1,4 +1,4 @@
-/* phx-grid v0.9.1 — Phoenix / WX Soluções — ES5 estrito, zero dependências.
+/* phx-grid v0.9.2 — Phoenix / WX Soluções — ES5 estrito, zero dependências.
 
    O cabeçalho passou oito versões dizendo "v0.1.0 — Núcleo (S01)" enquanto o
    CHANGELOG ao lado ia até a 0.8.0 e o código já tinha ordem por nível de
@@ -343,6 +343,14 @@
     return {
       local: true,
       todos: dados,
+      /* O indice da busca global e caro de montar, entao fica em cache por
+         conjunto de campos. Num PAINEL VIVO -- uma grade sobre um array que o
+         dono muda no lugar a cada volta do relogio -- esse cache envelhece: a
+         busca passaria a responder pelas linhas de dois segundos atras, e isso
+         e pior que uma busca lenta, porque a resposta errada tem a cara da
+         certa. Quem chama `redesenhar()` esta dizendo «o dado mudou», e e ele
+         quem manda esquecer. */
+      invalidar: function () { idxBusca = null; idxChave = ""; },
       carregar: function (p, cb) {
         var t0 = agora();
         var fBusca = null, resto = [], j9;
@@ -1798,7 +1806,13 @@
       logs: function () { return logs.slice(); },
       _scoreBusca: function (linha) { var f9 = null, l9 = serializaFiltros(), j9; for (j9 = 0; j9 < l9.length; j9++) if (l9[j9].tipo === "busca") f9 = l9[j9]; return f9 ? scoreBusca(linha, f9) : 0; },
       _ultimoRender: function () { return { strMs: perfRender.strMs, domMs: perfRender.domMs, mestreMs: perfRender.mestreMs, pagMs: perfRender.pagMs, fonteMs: ultimaCarga && ultimaCarga._ms }; },
-      redesenhar: function () { carrega(null, true); return api; },
+      redesenhar: function () {
+        // `redesenhar` quer dizer «o dado mudou», e nao so «pinte de novo»:
+        // por isso ele derruba o cache da fonte antes de recarregar.
+        if (fonte.invalidar) fonte.invalidar();
+        carrega(null, true);
+        return api;
+      },
       destruir: function () { if (wrap.parentNode) wrap.parentNode.removeChild(wrap); }
     };
 
@@ -1817,7 +1831,7 @@
     return api;
   }
 
-  var PhxGrid = { versao: "0.9.1", criar: criar, fmt: fmt, _ordenaEstavel: ordenaEstavel };
+  var PhxGrid = { versao: "0.9.2", criar: criar, fmt: fmt, _ordenaEstavel: ordenaEstavel };
   if (typeof module !== "undefined" && module.exports) module.exports = PhxGrid;
   root.PhxGrid = PhxGrid;
 })(typeof window !== "undefined" ? window : this);

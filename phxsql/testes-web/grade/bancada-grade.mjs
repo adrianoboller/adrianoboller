@@ -131,50 +131,85 @@ caso('faixa_de_agrupamento_so_com_agrupavel', async (page) => {
   verdade(await page.$('#alvo .phx-groupbox') === null, 'veio faixa de agrupamento sem ninguem pedir');
 });
 
-/* O padrao do PAINEL VIVO, que e o que toda tela que se atualiza sozinha
- * precisa: a grade nasce uma vez sobre uma `fonte`, e cada volta do relogio
- * chama `redesenhar()`. Recriar a grade a cada volta seria pior que a tabela
- * na mao -- o usuario perderia a ordenacao, o agrupamento e o filtro a cada
- * dois segundos, no meio da leitura.
+/* O padrao do PAINEL VIVO: a grade nasce UMA VEZ sobre um array que o dono
+ * muda NO LUGAR, e cada volta do relogio chama `redesenhar()`.
  *
- * Este caso existe porque o gestor de threads da telemetria vai ser convertido
- * assim, e o padrao tem de estar provado ANTES de a tela depender dele. */
-caso('fonte_viva_redesenha_sem_perder_o_estado', async (page) => {
+ * A primeira versao deste caso passava POR ENGANO, e o engano vale mais que o
+ * caso: ela montava a grade sobre uma `fonte` caseira e conferia que
+ * `estado().ordem` continuava `desc` depois do redesenho. Estado nao e efeito.
+ * Com `fonte`, ORDENAR E RESPONSABILIDADE DA FONTE -- o grid manda
+ * `{campo, dir, tipo}` e espera as linhas ja ordenadas --, e uma fonte que
+ * ignora isso devolve dado fora de ordem com a seta ▲ no cabecalho. O caso
+ * dizia «passou», e o gestor de threads da telemetria saiu torto na tela.
+ *
+ * Hoje ele confere o que a pessoa VE: a coluna sai ordenada, e continua
+ * ordenada depois da volta do relogio. Com `dados`, quem ordena e o grid. */
+caso('painel_vivo_ordena_de_verdade_e_continua_ordenado', async (page) => {
   await page.setContent('<div id="alvo"></div>');
   await page.addStyleTag({ path: `${GRID}/phx-grid.css` });
   await page.addScriptTag({ path: `${GRID}/phx-grid.js` });
   await page.evaluate(() => {
-    // O painel e dono do array; a grade so pergunta por ele.
+    // O MESMO array, sempre: e ele que a grade le a cada `redesenhar()`.
     window.fios = [
-      { nome: 'rede-1', familia: 'rede', voltas: 10 },
-      { nome: 'disco-1', familia: 'disco', voltas: 7 },
+      { nome: 'rede-1', familia: 'rede' },
+      { nome: 'disco-1', familia: 'disco' },
+      { nome: 'aa-1', familia: 'aa' },
     ];
     window.grade = PhxGrid.criar('#alvo', {
-      colunas: [{ campo: 'nome' }, { campo: 'familia' }, { campo: 'voltas', tipo: 'numero' }],
-      agrupavel: true,
-      fonte: { carregar: function (p, cb) { cb(null, { linhas: window.fios.slice(), total: window.fios.length }); } },
+      colunas: [{ campo: 'nome' }, { campo: 'familia' }],
+      agrupavel: true, buscaGlobal: true,
+      dados: window.fios,
     });
   });
   await page.waitForSelector('#alvo table tbody tr');
+  const coluna = () => page.$$eval('#alvo tbody tr:not(.phx-grupo) td:nth-child(2)',
+    t => t.map(x => x.textContent.trim()));
+  const ordenada = v => v.every((x, k) => k === 0 || v[k - 1] <= x);
 
-  await page.evaluate(() => { grade.ordenar('nome', 'desc'); grade.agrupar(['familia']); });
-  const antes = await page.evaluate(() => ({
-    ordem: grade.estado().ordem, grupos: grade.grupos(), total: grade.estado().total,
-  }));
-  igual(antes.ordem.dir, 'desc', 'a ordenacao nao pegou');
-  igual(antes.grupos.join(','), 'familia', 'o agrupamento nao pegou');
+  await page.evaluate(() => grade.ordenar('familia', 'asc'));
+  const antes = await coluna();
+  verdade(ordenada(antes), `ordenar nao ordenou: ${JSON.stringify(antes)}`);
 
-  // Chega dado novo, como chegaria do servidor na volta seguinte.
+  // Chega dado novo, NO MESMO array -- como um painel vivo faz.
   await page.evaluate(() => {
-    window.fios.push({ nome: 'rede-2', familia: 'rede', voltas: 3 });
+    window.fios.length = 0;
+    [{ nome: 'zz-1', familia: 'zz' }, { nome: 'bb-1', familia: 'bb' },
+     { nome: 'cc-1', familia: 'cc' }].forEach(f => window.fios.push(f));
     grade.redesenhar();
   });
-  const depois = await page.evaluate(() => ({
-    ordem: grade.estado().ordem, grupos: grade.grupos(), total: grade.estado().total,
-  }));
-  igual(depois.total, antes.total + 1, 'o dado novo nao chegou na grade ao redesenhar');
-  igual(depois.ordem.dir, 'desc', 'redesenhar perdeu a ordenacao do usuario');
-  igual(depois.grupos.join(','), 'familia', 'redesenhar perdeu o agrupamento do usuario');
+  const depois = await coluna();
+  igual(depois.length, 3, 'o dado novo nao chegou na grade ao redesenhar');
+  verdade(depois.join() !== antes.join(), 'a grade redesenhou o dado velho');
+  verdade(ordenada(depois), `redesenhar perdeu a ordenacao do usuario: ${JSON.stringify(depois)}`);
+});
+
+/* A busca global guarda um indice em cache. Num painel vivo isso envelhece: a
+ * busca responderia pelas linhas da volta anterior -- e resposta errada com a
+ * cara da certa e pior que busca lenta. `redesenhar()` derruba o cache. */
+caso('painel_vivo_nao_busca_no_dado_velho', async (page) => {
+  await page.setContent('<div id="alvo"></div>');
+  await page.addStyleTag({ path: `${GRID}/phx-grid.css` });
+  await page.addScriptTag({ path: `${GRID}/phx-grid.js` });
+  await page.evaluate(() => {
+    window.fios = [{ nome: 'antigo-1' }, { nome: 'antigo-2' }];
+    window.grade = PhxGrid.criar('#alvo', {
+      colunas: [{ campo: 'nome' }], buscaGlobal: true, dados: window.fios,
+    });
+  });
+  await page.waitForSelector('#alvo table tbody tr');
+  // Uma busca ANTES da troca: e ela que monta o indice em cache.
+  await page.evaluate(() => grade.filtrar('*', { tipo: 'busca', termo: 'antigo', campos: ['nome'] }));
+  igual((await page.$$eval('#alvo tbody tr:not(.phx-grupo)', t => t.length)), 2,
+    'a busca nao achou o que existia antes da troca');
+
+  await page.evaluate(() => {
+    window.fios.length = 0;
+    [{ nome: 'novo-1' }, { nome: 'novo-2' }, { nome: 'novo-3' }].forEach(f => window.fios.push(f));
+    grade.redesenhar();
+  });
+  await page.evaluate(() => grade.filtrar('*', { tipo: 'busca', termo: 'novo', campos: ['nome'] }));
+  const achadas = await page.$$eval('#alvo tbody tr:not(.phx-grupo) td', t => t.map(x => x.textContent.trim()));
+  igual(achadas.length, 3, `a busca respondeu pelo dado velho: ${JSON.stringify(achadas)}`);
 });
 
 /* --------------------------------------------------------------- o corrida */

@@ -676,7 +676,7 @@ window.PhxTelemetria = (function () {
 
   <details class="tlm-threads">
     <summary>${esc(txt("tela.tl_gestor_threads", "Gestor de threads"))} <span id="tlmThreadsN"></span></summary>
-    <div class="rolo"><table class="tlm-tab" id="tlmThreads"></table></div>
+    <div class="rolo"><div id="tlmThreads"></div></div>
   </details>
 </div>`;
   }
@@ -1695,29 +1695,86 @@ window.PhxTelemetria = (function () {
 
   /* ------------------------------------------------------------ as threads */
 
+  /* O gestor de threads e uma LISTA DE DADOS, e por isso e grade: seis
+     colunas, e agrupar por familia responde a pergunta que se faz olhando
+     para ela («quantas de rede estao vivas?»). Era a ultima tabela a mao
+     fora do `index.html` que nao tinha motivo para continuar assim.
+
+     Ela se atualiza a cada duas voltas do relogio, entao usa o padrao do
+     PAINEL VIVO, provado na `testes-web/grade/bancada-grade.mjs`: a grade
+     NASCE UMA VEZ sobre `dados:` (o array abaixo, mudado no lugar) e cada
+     volta chama `redesenhar()`. Recriar a grade a cada volta seria pior que a
+     tabela a mao -- a pessoa perderia a ordenacao, o agrupamento e o filtro a
+     cada dois segundos, no meio da leitura.
+
+     `dados:` e nao `fonte:`, e isto custou uma tela torta antes de eu
+     entender: com `fonte`, ORDENAR E RESPONSABILIDADE DA FONTE -- o grid
+     manda `{campo, dir, tipo}` e espera as linhas ja ordenadas. Uma fonte
+     caseira que devolve o array como esta poe a seta ▲ no cabecalho e mostra
+     o dado fora de ordem, que e mentira com cara de verdade. Com `dados`,
+     quem ordena, filtra e agrupa e o grid. */
+  /* O MESMO array a vida toda, mudado NO LUGAR: a grade nasce sobre ele com
+     `dados:` e le o conteudo atual a cada `redesenhar()`. Trocar a referencia
+     (`fiosAtuais = fios`) faria a grade continuar lendo o array antigo. */
+  const fiosAtuais = [];
+  let gradeThreads = null;
+
+  /* A dispensa do `tr.morta` da folha: a grade nao tem gancho por linha, e o
+     `opacity:.45` da thread encerrada passa a valer por CELULA. Mesmo efeito,
+     e continua sendo ROTULO -- o dado nao muda, so a tinta. */
+  const apagada = (l, html) => l.viva ? html : `<span style="opacity:.45">${html}</span>`;
+
+  /* PREGUICOSA de proposito: o `<details>` nasce fechado, e criar a grade
+     dentro de um `display:none` mede largura zero em toda coluna. Ela nasce
+     no primeiro ABRIR, e ate la so o contador do resumo se mexe. */
+  function montaGradeThreads() {
+    if (gradeThreads) return;
+    gradeThreads = PhxGrid.criar("#tlmThreads", {
+      agrupavel: true, buscaGlobal: true, filterRow: true,
+      lembrar: "tlmthreads",
+      nomeVista: "gestor-de-threads",
+      colunas: [
+        { campo:"nome", titulo:txt("tela.tl_th_thread", "thread"), fixa:"esq",
+          formato:(v, l) => apagada(l, `<span class="tlm-nome">${esc(v)}</span>`) },
+        { campo:"familia", titulo:txt("tela.tl_th_familia", "família"),
+          formato:(v, l) => apagada(l, esc(v)) },
+        { campo:"finalidade", titulo:txt("tela.tl_th_finalidade", "finalidade"),
+          formato:(v, l) => apagada(l, `<span class="tlm-fim">${esc(v)}</span>`) },
+        { campo:"fazendo", titulo:txt("tela.tl_th_fazendo", "fazendo agora"),
+          formato:(v, l) => apagada(l, esc(l.viva ? v : txt("tela.tl_th_encerrada", "encerrada"))) },
+        { campo:"voltas", titulo:txt("tela.tl_th_voltas", "voltas"), tipo:"numero",
+          formato:(v, l) => apagada(l, esc(String(v))) },
+        { campo:"viva_s", titulo:txt("tela.tl_th_viva_ha", "viva há"),
+          formato:(v, l) => apagada(l, esc(dur(num(v) * 1000))) },
+      ],
+      dados: fiosAtuais,
+      pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+    });
+  }
+
   function desenharThreads(fios) {
-    const tab = $("#tlmThreads");
-    if (!tab) return;
+    fiosAtuais.length = 0;
+    for (let k = 0; k < fios.length; k++) fiosAtuais.push(fios[k]);
     const vivas = fios.filter(f => f.viva).length;
-    $("#tlmThreadsN").textContent = "· " + preencher(
-      txt("tela.tl_th_vivas", "{vivas} viva(s) de {total} registrada(s)"),
-      { vivas, total: fios.length });
-    tab.innerHTML =
-      `<thead><tr><th>${esc(txt("tela.tl_th_thread", "thread"))}</th>
-         <th>${esc(txt("tela.tl_th_familia", "família"))}</th>
-         <th>${esc(txt("tela.tl_th_finalidade", "finalidade"))}</th>
-         <th>${esc(txt("tela.tl_th_fazendo", "fazendo agora"))}</th>
-         <th class="num">${esc(txt("tela.tl_th_voltas", "voltas"))}</th>
-         <th class="num">${esc(txt("tela.tl_th_viva_ha", "viva há"))}</th></tr></thead>
-       <tbody>${fios.map(f => `
-        <tr class="${f.viva ? "" : "morta"}">
-          <td class="tlm-nome">${esc(f.nome)}</td>
-          <td>${esc(f.familia)}</td>
-          <td class="tlm-fim">${esc(f.finalidade)}</td>
-          <td>${esc(f.viva ? f.fazendo : txt("tela.tl_th_encerrada", "encerrada"))}</td>
-          <td class="num">${esc(String(f.voltas))}</td>
-          <td class="num">${esc(dur(num(f.viva_s) * 1000))}</td>
-        </tr>`).join("")}</tbody>`;
+    const n = $("#tlmThreadsN");
+    if (n) {
+      n.textContent = "· " + preencher(
+        txt("tela.tl_th_vivas", "{vivas} viva(s) de {total} registrada(s)"),
+        { vivas, total: fios.length });
+    }
+
+    const det = $("#tlmThreads") && $("#tlmThreads").closest("details");
+    if (det && !det.dataset.ligado) {
+      det.dataset.ligado = "1";
+      det.addEventListener("toggle", () => {
+        if (!det.open) return;
+        montaGradeThreads();
+        if (gradeThreads) gradeThreads.redesenhar();
+      });
+    }
+    if (!det || !det.open) return;
+    montaGradeThreads();
+    if (gradeThreads) gradeThreads.redesenhar();
   }
 
   /* `amostra`, `tintaDoRotulo`, `NIVEIS` e `PISO_CONTRASTE` saem daqui para a
