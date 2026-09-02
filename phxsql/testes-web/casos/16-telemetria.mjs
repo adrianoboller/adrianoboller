@@ -36,26 +36,37 @@ export const caso = {
     // exatamente isso que a primeira asercao quer confirmar.
     await page.waitForSelector('#tlmThreads', { state: 'attached', timeout: 15000 });
 
-    // ESPERA O EVENTO, NUNCA UMA DURACAO. A primeira versao dormia 2.600 ms
-    // «uma volta do relogio» e reprovava em 2 de 5 corridas da bateria
-    // INTEIRA -- nunca sozinha, nunca no tema escuro sozinho. Medido: o
-    // desenho da tela nao e o problema (42 voltas isoladas, pior caso 318 ms
-    // contra o limite de 15 s), e o painel nao e reescrito depois (12 voltas).
-    // O que varia e QUANDO a primeira volta do relogio traz as threads, e com
-    // o servidor carregado por trinta casos ela passa dos 2.600 ms. Dormir
-    // uma duracao e apostar; esperar o contador aparecer e conferir o que se
-    // precisa mesmo.
-    await page.waitForFunction(
-      () => /\d/.test((document.querySelector('#tlmThreadsN') || {}).textContent || ''),
-      { timeout: 20000 });
-    const resumo = await page.textContent('#tlmThreadsN');
-    verdade(/\d+/.test(resumo || ''),
-      `o resumo do gestor de threads nao contou nada: ${JSON.stringify(resumo)}`);
+    // ESPERA O EVENTO, NUNCA UMA DURACAO, E NUNCA UMA FRASE.
+    //
+    // A primeira versao dormia 2.600 ms («uma volta do relogio») e reprovava
+    // em 3 de 8 passadas da bateria INTEIRA -- nunca sozinha, nunca no tema
+    // escuro sozinho. Medido antes de consertar: o desenho da tela nao e o
+    // problema (42 voltas isoladas, pior caso 318 ms contra o limite de 15 s)
+    // e o painel nao e reescrito depois (12 voltas vigiadas). O que varia e
+    // QUANDO a volta do relogio traz as threads.
+    //
+    // O primeiro conserto trocou o sono por «esperar o contador ter digito»,
+    // e tinha DOIS furos. O menor: «0 viva(s) de 0 registrada(s)» tem digito,
+    // entao ele seguia com a grade vazia e o vermelho ia para a linha de
+    // baixo. O maior, e o que esta base ja tem escrito como regra: aquilo
+    // lia a FRASE. Texto se resolve por chave, nunca por comparacao da frase
+    // -- no dia em que alguem melhorar a redacao, ou a tela abrir noutro
+    // idioma, uma espera assim estoura parecendo defeito de produto.
+    //
+    // O que se espera aqui e o que a PESSOA espera: abrir o painel e a linha
+    // aparecer. O `waitForSelector` ja reconsulta sozinho enquanto as voltas
+    // do relogio chegam, entao ele e o instrumento certo -- e nao le texto
+    // nenhum.
     verdade(await page.$(GRADE) === null,
       'a grade nasceu com o painel fechado -- dentro de display:none ela mede largura zero');
 
     await page.click('.tlm-threads summary');
-    await page.waitForSelector(LINHA, { timeout: 15000 });
+    await page.waitForSelector(LINHA, { timeout: 25000 });
+
+    const resumo = await page.textContent('#tlmThreadsN');
+    verdade(/\d+/.test(resumo || ''),
+      `o resumo do gestor de threads nao contou nada: ${JSON.stringify(resumo)}`);
+
     await capturar(ctx, ctx.nomeCaptura('telemetria-threads'));
 
     verdade(await page.$('#tlmThreads .phx-groupbox') !== null,
