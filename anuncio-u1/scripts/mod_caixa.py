@@ -14,13 +14,46 @@
 # ruido de amostragem (persistiu a 48 amostras, sem bump e com mais raios de
 # sombra). Some com luz.use_shadow_jitter = True nas luzes. Quem monta as
 # luzes (modulo ambiente) precisa ligar isso; o teste daqui liga.
+#
+# Rodada 2 (o que a revisao mediu e o que foi feito):
+# - Logo palida: a revisao mediu a engrenagem cinza a 136 sRGB (fonte 56) e
+#   apontou o Sheen 0,35 branco da tampa. Ele entra na conta, mas nao e o
+#   grosso: medido aqui no topo ortografico, zerar sheen E specular no
+#   material inteiro moveu o cinza de 164 para 163. A causa medida e a
+#   EXPOSICAO sob o AgX: o papel branco esta a ~7x acima de 1,0 linear
+#   (albedo constante 0,04 rende 147 sRGB; 0,18 rende 212; 0,88 rende 243),
+#   e o ombro do AgX comprime a diferenca papel/tinta. O modulo nao manda na
+#   luz da cena, entao a tinta e escurecida por um no Gamma ('gamma_logo',
+#   medido no teste) - e o papel fica com Sheen 0,08 na cor do papel e, na
+#   area do decal, Sheen 0 e specular 0 (no close do beat 7 o reflexo das
+#   luzes na tinta era um piso de ~130 sRGB; medido, ver SPEC_TINTA). O
+#   multiplicador de saturacao 1,3 saiu (padrao 1,0): nao devolvia o escuro.
+# - Logo "pequena" no beat 1: medido de cima com camera ortografica, a
+#   engrenagem ocupa 44,9% da largura da tampa - o calculo pela alfa esta
+#   certo. O que a revisao viu (~28-33%) e geometria: no beat 1 a caixa esta
+#   girada ~35 graus e o topo aparece pela DIAGONAL (~1,35x a largura),
+#   enquanto a engrenagem redonda nao cresce com o giro. Nao e defeito do
+#   modulo; quem quiser a logo maior nesse plano sobe 'largura_logo'.
+# - Espuma: flocos de 6 a 10 cm (raio 0,03-0,05), 48 pecas, ruido em duas
+#   oitavas, cantos amassados por planos aleatorios, chanfro e subsurface
+#   0,15 - a 2,5 m os de 3-6 cm liam como arroz.
+# - Afundamento no topo do U1: a folga usava 0,7*raio, e o raio era o do
+#   eixo maior. Agora a base do floco vem da extensao REAL do floco girado
+#   (max |z| dos vertices) mais 3 mm; se o floco nao cabe na camada, ele e
+#   reduzido em vez de atravessar a tampa.
+# - Materiais e actions nao vazam mais: bpy.data.materials.get(nome) com
+#   os nos reconstruidos, e limpar_colecao remove a action orfa.
+# - Flocos do vao lateral saiam ATRAVES da parede (4 medidos na revisao):
+#   o arco agora so ganha deslocamento horizontal depois de passar da boca
+#   do corpo (instante tirado da propria parabola); o teste mede 0 furos.
+# - A imagem da logo e empacotada (img.pack()) para o .blend ser autocontido.
 
 import math
 import random
 
 import bmesh
 import bpy
-from mathutils import Vector, noise
+from mathutils import Euler, Vector, noise
 
 NOME = "caixa"
 
@@ -36,10 +69,17 @@ PARAMS_PADRAO = {
     "cor": "clara",
     "logo": "logo_engineprint.png",   # relativo a assets/; ou caminho absoluto
     "largura_logo": 0.45,             # fracao da largura externa da tampa
-    # O AgX empalidece cor saturada sob luz forte: o laranja da logo virava
-    # pessego na previa. Compensacao leve na tinta, nao no papel.
-    "saturacao_logo": 1.3,
-    "n_espumas": 64,
+    # Saturacao 1,3 foi a primeira tentativa contra o AgX e nao devolvia o
+    # escuro do cinza (medido); fica em 1,0 e a correcao e por gamma.
+    "saturacao_logo": 1.0,
+    # Gamma > 1 escurece a tinta antes do AgX. Medido no teste (topo
+    # ortografico, papel a 243 sRGB): gamma 1,0 -> cinza 164; 1,5 -> 104;
+    # 1,7 -> 84; 2,0 -> 58 (a fonte e 56); o laranja em 2,0 mede (237,135,6).
+    # Depende da exposicao da cena: quem iluminar diferente mede de novo e
+    # passa outro valor.
+    "gamma_logo": 2.0,
+    "n_espumas": 48,
+    "raio_espuma": (0.03, 0.05),       # meio eixo maior: flocos de 6 a 10 cm
     "semente": 7,
     # Onde o U1 vai ficar dentro da caixa: as espumas se arrumam em volta
     # desse volume, mesmo sem o U1 existir na cena de teste.
@@ -74,12 +114,17 @@ def limpar_colecao(nome):
         return
     for obj in list(col.all_objects):
         dados = obj.data
+        acao = obj.animation_data.action if obj.animation_data else None
         bpy.data.objects.remove(obj, do_unlink=True)
         # Malha orfa fica no arquivo ate o proximo salvar/recarregar;
         # apagar aqui evita acumular 'caixa.corpo.001' nas rodadas seguintes.
         if dados is not None and dados.users == 0:
             if isinstance(dados, bpy.types.Mesh):
                 bpy.data.meshes.remove(dados)
+        # A action da animacao tambem ficava orfa (65 por rodada, medido na
+        # revisao): na aba Scripting do cliente isso acumula lixo no .blend.
+        if acao is not None and acao.users == 0:
+            bpy.data.actions.remove(acao)
     for filha in list(col.children):
         limpar_colecao(filha.name)
     bpy.data.collections.remove(col)
@@ -186,32 +231,44 @@ def _caixa_oca(nome, ext, parede, altura_total, aberta_em_cima, z_origem):
 
 
 def _malha_espuma(nome, rng, raio):
-    """Floco de espuma: icosfera amassada por ruido coerente e achatada de
-    forma desigual. E o que faz parecer floco e nao bolinha."""
+    """Floco de espuma: icosfera amassada por ruido em duas oitavas, alongada
+    de forma desigual e com cantos AMASSADOS (vertices alem de planos
+    aleatorios sao empurrados para o plano - facetas chatas como num pedaco
+    de EPS quebrado). Icosfera lisa e o que lia como arroz a 2,5 m."""
     bm = bmesh.new()
-    bmesh.ops.create_icosphere(bm, subdivisions=2, radius=1.0)
+    bmesh.ops.create_icosphere(bm, subdivisions=3, radius=1.0)
     desloc = Vector((rng.uniform(-50, 50), rng.uniform(-50, 50), rng.uniform(-50, 50)))
-    freq = rng.uniform(1.2, 2.0)
-    amp = rng.uniform(0.3, 0.5)
-    # Alongado num eixo e com uma curva leve: o floco de embalagem e um
-    # "amendoim" torto, e seixo redondo e o que a icosfera daria sozinha.
-    escala = Vector((rng.uniform(1.3, 2.1), rng.uniform(0.6, 0.95), rng.uniform(0.55, 0.9)))
-    curva = rng.uniform(-0.45, 0.45)
-    cintura = rng.uniform(0.0, 0.35)
+    desloc2 = Vector((rng.uniform(-50, 50), rng.uniform(-50, 50), rng.uniform(-50, 50)))
+    freq = rng.uniform(1.0, 1.8)
+    amp = rng.uniform(0.3, 0.45)
+    amp2 = rng.uniform(0.10, 0.18)
+    # Alongado num eixo e fino no eixo Z local: o eixo fino e o que se deita
+    # na camada de cima (7 cm entre o U1 e a tampa) e o que atravessa o vao
+    # lateral (~4 cm). O floco de embalagem e um "amendoim" torto.
+    escala = Vector((rng.uniform(1.4, 2.2), rng.uniform(0.7, 1.0), rng.uniform(0.42, 0.62)))
+    curva = rng.uniform(-0.4, 0.4)
+    cintura = rng.uniform(0.0, 0.3)
     for v in bm.verts:
         n = noise.noise(v.co * freq + desloc)
-        n2 = noise.noise(v.co * 5.0 + desloc) * 0.1
-        fator = 1.0 + amp * n + n2
+        n2 = noise.noise(v.co * freq * 2.7 + desloc2)
+        fator = 1.0 + amp * n + amp2 * n2
         x, y, z = v.co.x * escala.x, v.co.y * escala.y, v.co.z * escala.z
-        # cintura no meio (amendoim) e curvatura ao longo do eixo maior
         aperto = 1.0 - cintura * math.exp(-(x / (0.45 * escala.x)) ** 2)
         y *= aperto
         z *= aperto
         z += curva * x * x
         v.co = Vector((x, y, z)) * fator
-    # Normaliza pelo maior raio real: "floco de 3 a 6 cm" e a maior dimensao
-    # do floco deformado, nao o raio da icosfera de partida. Sem isto os
-    # alongados furavam o topo da tampa.
+    # Cantos amassados: 2 a 4 planos aleatorios "cortam" o que sobra deles.
+    for _ in range(rng.randint(2, 4)):
+        normal = Vector((rng.gauss(0, 1), rng.gauss(0, 1), rng.gauss(0, 1))).normalized()
+        alcance = max(v.co.dot(normal) for v in bm.verts)
+        corte = alcance * rng.uniform(0.55, 0.8)
+        for v in bm.verts:
+            s = v.co.dot(normal)
+            if s > corte:
+                v.co -= normal * (s - corte) * 0.9
+    # Normaliza pelo maior raio real: "floco de 6 a 10 cm" e a maior dimensao
+    # do floco deformado, nao o raio da icosfera de partida.
     maior = max(v.co.length for v in bm.verts)
     for v in bm.verts:
         v.co *= raio / maior
@@ -222,34 +279,82 @@ def _malha_espuma(nome, rng, raio):
     return malha
 
 
+def _extensoes(malha, rot):
+    """Meias-extensoes (x, y, z) do floco girado por rot (Euler XYZ): o raio
+    REAL em cada eixo do mundo, que e o que decide se ele cabe na camada."""
+    R = rot.to_matrix() if hasattr(rot, "to_matrix") else Euler(rot).to_matrix()
+    mx = my = mz = 0.0
+    for v in malha.vertices:
+        w = R @ v.co
+        mx = max(mx, abs(w.x))
+        my = max(my, abs(w.y))
+        mz = max(mz, abs(w.z))
+    return mx, my, mz
+
+
+def _encolher(malha, fator):
+    if fator < 1.0:
+        for v in malha.vertices:
+            v.co *= fator
+        malha.update()
+
+
 # ---------------------------------------------------------------- materiais
 
-def _material_papel(nome, cor_hex, imagem=None, escala_logo=None, z_topo_local=None,
-                    centro_uv=(0.5, 0.5), saturacao=1.0):
-    """Papel fosco com toque de grao. Se houver imagem, ela entra como tinta
-    impressa: mistura pela alfa na Base Color e muda a rugosidade, sem relevo.
-    A projecao e plana no espaco local do objeto (coordenada Object), so na
-    face de cima (z local acima de z_topo_local)."""
-    mat = bpy.data.materials.new(nome)
+def _material_base(nome):
+    """Pega ou cria o material por nome e reconstroi os nos do zero, como o
+    mod_u1 faz: e o que impede 'caixa.papel.001' a cada rodada na aba
+    Scripting do cliente (a revisao contou 3 materiais novos por rodada)."""
+    mat = bpy.data.materials.get(nome)
+    if mat is None:
+        mat = bpy.data.materials.new(nome)
     mat.use_nodes = True
     nt = mat.node_tree
-    for n in list(nt.nodes):
-        nt.nodes.remove(n)
+    nt.nodes.clear()
     saida = nt.nodes.new("ShaderNodeOutputMaterial")
     bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
     saida.location = (600, 0)
     bsdf.location = (300, 0)
     nt.links.new(bsdf.outputs["BSDF"], saida.inputs["Surface"])
+    if mat.animation_data:
+        mat.animation_data_clear()
+    if nt.animation_data:
+        nt.animation_data_clear()
+    return mat, nt, bsdf
+
+
+# Papel x tinta. O sheen branco (tint padrao) sobre tinta escura entra na
+# conta da logo palida (a revisao mediu 136 -> 112 sRGB ao zera-lo na cena do
+# anuncio; aqui, com a luz do teste, 173 -> 164) - o grosso e a exposicao, ver
+# o cabecalho. O papel fica com um sheen minimo NA COR DO PAPEL e a tinta
+# zera. O specular da tinta tambem e ZERO: no beat 7 (camera a 12 cm da
+# tampa, olhando reto para baixo) o reflexo das luzes do ambiente na tinta
+# punha um piso de ~130 sRGB no cinza que nem gamma 2,4 baixava (medido:
+# 130 -> 120); com specular 0 o mesmo quadro mede 77-94.
+SHEEN_PAPEL, SHEEN_TINTA = 0.08, 0.0
+RUG_PAPEL, RUG_TINTA = 0.78, 0.5
+SPEC_PAPEL, SPEC_TINTA = 0.35, 0.0
+
+
+def _material_papel(nome, cor_hex, imagem=None, escala_logo=None, z_topo_local=None,
+                    centro_uv=(0.5, 0.5), saturacao=1.0, gamma=1.0):
+    """Papel fosco com toque de grao. Se houver imagem, ela entra como tinta
+    impressa: mistura pela alfa na Base Color e troca rugosidade, sheen e
+    specular por valores de tinta, sem relevo. A projecao e plana no espaco
+    local do objeto (coordenada Object), so na face de cima (z local acima
+    de z_topo_local)."""
+    mat, nt, bsdf = _material_base(nome)
 
     cor = cor_linear(cor_hex)
     bsdf.inputs["Base Color"].default_value = cor
-    bsdf.inputs["Roughness"].default_value = 0.78
-    bsdf.inputs["Specular IOR Level"].default_value = 0.35
+    bsdf.inputs["Roughness"].default_value = RUG_PAPEL
+    bsdf.inputs["Specular IOR Level"].default_value = SPEC_PAPEL
     try:
         # Sheen e o que da o "toque de papel" na luz rasante. So existe no
         # Principled v2 (4.0+); em versoes velhas o nome era "Sheen".
-        bsdf.inputs["Sheen Weight"].default_value = 0.35
+        bsdf.inputs["Sheen Weight"].default_value = SHEEN_PAPEL
         bsdf.inputs["Sheen Roughness"].default_value = 0.6
+        bsdf.inputs["Sheen Tint"].default_value = cor
     except KeyError:
         pass
 
@@ -311,36 +416,55 @@ def _material_papel(nome, cor_hex, imagem=None, escala_logo=None, z_topo_local=N
     mix_cor.blend_type = "MIX"
     mix_cor.inputs["Color1"].default_value = cor
     nt.links.new(mascara.outputs["Value"], mix_cor.inputs["Fac"])
-    hsv = nt.nodes.new("ShaderNodeHueSaturation")
-    hsv.location = (-150, 250)
-    hsv.inputs["Saturation"].default_value = saturacao
-    nt.links.new(tex.outputs["Color"], hsv.inputs["Color"])
-    nt.links.new(hsv.outputs["Color"], mix_cor.inputs["Color2"])
+    ultimo = tex.outputs["Color"]
+    if abs(saturacao - 1.0) > 1e-3:
+        hsv = nt.nodes.new("ShaderNodeHueSaturation")
+        hsv.location = (-250, 250)
+        hsv.inputs["Saturation"].default_value = saturacao
+        nt.links.new(ultimo, hsv.inputs["Color"])
+        ultimo = hsv.outputs["Color"]
+    if abs(gamma - 1.0) > 1e-3:
+        # Escurece os meios-tons da tinta (o AgX levanta o escuro); o branco
+        # e o transparente nao mudam, entao o papel em volta fica igual.
+        gam = nt.nodes.new("ShaderNodeGamma")
+        gam.location = (-100, 250)
+        gam.inputs["Gamma"].default_value = gamma
+        nt.links.new(ultimo, gam.inputs["Color"])
+        ultimo = gam.outputs["Color"]
+    nt.links.new(ultimo, mix_cor.inputs["Color2"])
     nt.links.new(mix_cor.outputs["Color"], bsdf.inputs["Base Color"])
 
-    # Tinta e um pouco mais acetinada que o papel: e o que faz "impresso" em
-    # vez de "colado".
-    mix_rug = nt.nodes.new("ShaderNodeMath")
-    mix_rug.location = (50, 50)
-    mix_rug.operation = "MULTIPLY_ADD"   # rug = 0.78 + mascara * (0.55 - 0.78)
-    nt.links.new(mascara.outputs["Value"], mix_rug.inputs[0])
-    mix_rug.inputs[1].default_value = 0.55 - 0.78
-    mix_rug.inputs[2].default_value = 0.78
-    nt.links.new(mix_rug.outputs["Value"], bsdf.inputs["Roughness"])
+    # Onde ha tinta, o material vira tinta: rugosidade, sheen e specular
+    # trocam pela mascara (valor = papel + mascara * (tinta - papel)).
+    def _pela_mascara(entrada, papel, tinta, y):
+        m = nt.nodes.new("ShaderNodeMath")
+        m.location = (50, y)
+        m.operation = "MULTIPLY_ADD"
+        nt.links.new(mascara.outputs["Value"], m.inputs[0])
+        m.inputs[1].default_value = tinta - papel
+        m.inputs[2].default_value = papel
+        nt.links.new(m.outputs["Value"], bsdf.inputs[entrada])
+
+    _pela_mascara("Roughness", RUG_PAPEL, RUG_TINTA, 50)
+    _pela_mascara("Specular IOR Level", SPEC_PAPEL, SPEC_TINTA, -100)
+    try:
+        _pela_mascara("Sheen Weight", SHEEN_PAPEL, SHEEN_TINTA, -250)
+    except KeyError:
+        pass
     return mat
 
 
 def _material_espuma(nome):
-    mat = bpy.data.materials.new(nome)
-    mat.use_nodes = True
-    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    mat, nt, bsdf = _material_base(nome)
     bsdf.inputs["Base Color"].default_value = cor_linear(COR_ESPUMA)
-    bsdf.inputs["Roughness"].default_value = 0.92
+    bsdf.inputs["Roughness"].default_value = 0.9
     bsdf.inputs["Specular IOR Level"].default_value = 0.25
     try:
-        # Um pouco de subsuperficie tira o "gesso" da espuma branca.
-        bsdf.inputs["Subsurface Weight"].default_value = 0.1
-        bsdf.inputs["Subsurface Radius"].default_value = (0.01, 0.01, 0.01)
+        # Subsuperficie branca leve: e o que separa espuma de ceramica - a luz
+        # entra um pouco e as sombras proprias ficam macias.
+        bsdf.inputs["Subsurface Weight"].default_value = 0.15
+        bsdf.inputs["Subsurface Radius"].default_value = (1.0, 1.0, 1.0)
+        bsdf.inputs["Subsurface Scale"].default_value = 0.01
     except KeyError:
         pass
     return mat
@@ -370,6 +494,14 @@ def _carregar_logo(caminho):
     import os
     if os.path.exists(caminho):
         img = bpy.data.images.load(caminho, check_existing=True)
+        # Empacotada no .blend: sem isto o arquivo gravado aponta para a
+        # pasta temporaria e a logo vira rosa em outra maquina (medido na
+        # revisao: packed_file = False nas tres imagens).
+        try:
+            if not img.packed_file:
+                img.pack()
+        except RuntimeError as e:
+            print("[caixa] AVISO: nao empacotou a logo:", e)
         return img, False
     # Sem o PNG, um quadrado provisorio para a projecao ter o que mostrar.
     import numpy as np
@@ -434,7 +566,7 @@ def construir_caixa(cena, colecao_pai=None, params=None):
     escala_quadrado = largura_logo / fracao
     tampa.data.materials.append(
         _material_papel("caixa.papel_tampa", cor_hex, imagem, escala_quadrado,
-                        h_tampa / 2.0, centro_uv, p["saturacao_logo"])
+                        h_tampa / 2.0, centro_uv, p["saturacao_logo"], p["gamma_logo"])
     )
 
     # Marcador (Empty, nao renderiza) no centro da logo, filho da tampa: a
@@ -452,42 +584,90 @@ def construir_caixa(cena, colecao_pai=None, params=None):
     espumas = []
     ux, uy, uz = p["u1"]
     n = int(p["n_espumas"])
+    r_min, r_max = p["raio_espuma"]
+    FOLGA_ESPUMA = 0.003
+    camada = iz - uz                      # entre o topo do U1 e o topo interno
+    vao_x, vao_y = (ix - ux) / 2.0, (iy - uy) / 2.0
+    ocupados = []                         # (x, y, raio) da camada de cima
     for i in range(n):
-        raio = rng.uniform(0.015, 0.03)          # floco de 3 a 6 cm
+        raio = rng.uniform(r_min, r_max)
         malha = _malha_espuma("caixa.espuma.%03d" % (i + 1), rng, raio)
         obj = bpy.data.objects.new("caixa.espuma.%03d" % (i + 1), malha)
         obj.data.materials.append(mat_espuma)
-        # Subdivisao leve por cima do ruido: tira as quinas da icosfera.
+        # Chanfro arredonda a crista entre as facetas amassadas e o corpo;
+        # a subdivisao por cima tira o que sobra de quina da icosfera.
+        bis = obj.modifiers.new("chanfro", "BEVEL")
+        bis.width = raio * 0.15
+        bis.segments = 2
+        bis.limit_method = "ANGLE"
+        bis.angle_limit = math.radians(35.0)
         sub = obj.modifiers.new("suave", "SUBSURF")
         sub.levels = 1
         sub.render_levels = 1
         # Onde fica: a maior parte por cima do U1 (e de la que voa quando a
-        # tampa abre); o resto nos vaos laterais entre o U1 e a parede.
-        if rng.random() < 0.62 or raio > 0.02:
-            # Camada de cima, entre o topo do U1 e o topo interno da tampa.
-            x = rng.uniform(-ix / 2 + raio, ix / 2 - raio)
-            y = rng.uniform(-iy / 2 + raio, iy / 2 - raio)
-            z_min = e + uz + raio * 0.7
-            z_max = e + iz - raio
+        # tampa abre); o resto nos vaos laterais entre o U1 e a parede. O
+        # eixo fino do floco (z local) fica na direcao apertada, e a folga
+        # sai da extensao REAL do floco girado - o 0,7*raio antigo enterrava
+        # a base do floco 5-9 mm no topo do U1 (medido na revisao).
+        if rng.random() < 0.62:
+            rot = Euler((rng.uniform(-0.35, 0.35), rng.uniform(-0.35, 0.35), rng.uniform(0, math.tau)))
+            rx, ry, rz = _extensoes(malha, rot)
+            if 2 * rz + 2 * FOLGA_ESPUMA > camada:
+                # Nao cabe deitado: encolhe em vez de atravessar a tampa.
+                f = (camada - 2 * FOLGA_ESPUMA) / (2 * rz)
+                _encolher(malha, f)
+                raio *= f
+                rx, ry, rz = rx * f, ry * f, rz * f
+            z_min = e + uz + rz + FOLGA_ESPUMA
+            z_max = e + iz - rz - FOLGA_ESPUMA
             z = rng.uniform(z_min, max(z_min, z_max))
+            # Espalha na camada sem empilhar dois no mesmo lugar (ate 40
+            # tentativas; depois aceita a sobreposicao).
+            for _ in range(40):
+                x = rng.uniform(-ix / 2 + rx, ix / 2 - rx)
+                y = rng.uniform(-iy / 2 + ry, iy / 2 - ry)
+                if all((x - ox) ** 2 + (y - oy) ** 2 > (0.8 * (raio + orr)) ** 2 for ox, oy, orr in ocupados):
+                    break
+            ocupados.append((x, y, raio))
         else:
-            # Vaos laterais: so os pequenos, porque o vao tem menos de 4 cm.
             lado = rng.choice(("x", "y"))
             sinal = rng.choice((-1.0, 1.0))
+            # O eixo fino (z local) atravessa o vao; sobra so um jogo pequeno
+            # nos outros dois angulos, porque girar em torno do eixo longo
+            # tambem gira o eixo fino para fora do vao (Euler XYZ: X, Y, Z).
+            pequeno = lambda: rng.uniform(-0.15, 0.15)  # noqa: E731
             if lado == "x":
-                x = sinal * (ux / 2 + (ix / 2 - ux / 2) / 2.0)
-                y = rng.uniform(-iy / 2 + raio, iy / 2 - raio)
+                rot = Euler((pequeno(), rng.choice((-1.0, 1.0)) * math.pi / 2 + pequeno(), pequeno()))
+                rx, ry, rz = _extensoes(malha, rot)
+                vao = vao_x
+                largo = rx
             else:
-                x = rng.uniform(-ix / 2 + raio, ix / 2 - raio)
-                y = sinal * (uy / 2 + (iy / 2 - uy / 2) / 2.0)
-            z = rng.uniform(e + 0.25, e + uz)
+                rot = Euler((rng.choice((-1.0, 1.0)) * math.pi / 2 + pequeno(), pequeno(), pequeno()))
+                rx, ry, rz = _extensoes(malha, rot)
+                vao = vao_y
+                largo = ry
+            if 2 * largo + 2 * FOLGA_ESPUMA > vao:
+                # O vao tem ~4 cm: o floco que nao cabe atravessado encolhe.
+                f = (vao - 2 * FOLGA_ESPUMA) / (2 * largo)
+                _encolher(malha, f)
+                raio *= f
+                rx, ry, rz = rx * f, ry * f, rz * f
+            # centro do vao: meio caminho entre o U1 e a parede
+            if lado == "x":
+                x = sinal * (ux / 2 + vao_x / 2)
+                y = rng.uniform(-iy / 2 + ry, iy / 2 - ry)
+            else:
+                x = rng.uniform(-ix / 2 + rx, ix / 2 - rx)
+                y = sinal * (uy / 2 + vao_y / 2)
+            z = rng.uniform(e + 0.25, e + uz - rz)
         obj.location = (x, y, z)
-        obj.rotation_euler = (rng.uniform(0, math.tau), rng.uniform(0, math.tau), rng.uniform(0, math.tau))
+        obj.rotation_euler = rot
         # Repouso guardado no objeto: as animacoes partem daqui e voltam para
         # ca, independentemente do estado em que a cena estiver.
         obj["caixa_repouso"] = list(obj.location)
         obj["caixa_rot_repouso"] = list(obj.rotation_euler)
         obj["caixa_raio"] = raio
+        obj["caixa_extensoes"] = [rx, ry, rz]
         col.objects.link(obj)
         espumas.append(obj)
 
@@ -507,6 +687,9 @@ def construir_caixa(cena, colecao_pai=None, params=None):
         "normal_logo": Vector((0.0, 0.0, 1.0)),
         "largura_logo": largura_logo,
         "colecao": col,
+        # Para a coreografia poder avisar na tela quando a logo e o quadrado.
+        "logo_provisoria": provisoria,
+        "imagem_logo": imagem,
     }
 
 
@@ -588,6 +771,16 @@ def _trajetoria_espuma(obj, i, semente, objs):
     t_desce = math.sqrt(2.0 * max(apice - fim.z, 0.01) / g)
     T = t_sobe + t_desce
     giro = Vector((rng.uniform(-1, 1), rng.uniform(-1, 1), rng.uniform(-1, 1))) * rng.uniform(4.0, 9.0)
+    # Nada de deslocamento horizontal enquanto o floco nao passou da boca do
+    # corpo: a revisao mediu quatro flocos do vao lateral (repouso a z~0,3)
+    # saindo ATRAVES da parede. O instante da saida vem da propria parabola.
+    z_saida = objs["exterior_corpo"][2] + raio
+    u_saida = 0.0
+    if ini.z < z_saida < apice:
+        # ini.z + g*t_sobe*t - 0.5*g*t^2 = z_saida  (raiz menor)
+        disc = (g * t_sobe) ** 2 - 2.0 * g * (z_saida - ini.z)
+        t_s = (g * t_sobe - math.sqrt(max(disc, 0.0))) / g
+        u_saida = min(t_s / T, 0.9)
     pontos = []
     passos = 16
     for k in range(passos + 1):
@@ -595,7 +788,8 @@ def _trajetoria_espuma(obj, i, semente, objs):
         t = u * T
         # Horizontal comeca devagar e acelera: a espuma sobe quase reta ao sair
         # da caixa e so depois abre o arco - e o que evita atravessar a parede.
-        w = u * (0.45 + 0.55 * u)
+        v = max(0.0, (u - u_saida) / (1.0 - u_saida))
+        w = v * (0.45 + 0.55 * v)
         xy = ini.xy.lerp(fim.xy, w)
         if t <= t_sobe:
             z = ini.z + g * t_sobe * t - 0.5 * g * t * t

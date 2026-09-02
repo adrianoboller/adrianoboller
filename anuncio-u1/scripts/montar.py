@@ -50,7 +50,13 @@ CABECALHO = '''# ===============================================================
 # tela acender e o botao afundar, indique os objetos em U1_TELA_OBJETO e
 # U1_BOTAO_OBJETO (a tela precisa de um material com Emission).
 #
-# Rodar de novo nao duplica nada: cada modulo apaga a propria colecao antes.
+# CAIXA_SOME: True (padrao) = a caixa afunda pelo chao no beat 2 e volta no
+# beat 6 enquanto o U1 flutua; False = o U1 sai da caixa, desliza para a
+# frente dela e pousa no chao (a caixa fica parada atras), e no beat 6 volta
+# para dentro dela. Escolha de direcao: o storyboard diz so "o U1 sai da caixa".
+#
+# Rodar de novo nao duplica nada: cada modulo apaga a propria colecao antes,
+# e o SEU modelo volta a pose original antes de ser medido de novo.
 # ============================================================================
 
 # ---------------------------- PARAMETROS -----------------------------------
@@ -63,6 +69,7 @@ U1_TELA_OBJETO = ""          # nome do objeto da tela (para acender), ou ""
 U1_BOTAO_OBJETO = ""         # nome do objeto do botao (para afundar), ou ""
 U1_LED_OBJETO = ""           # nome de um objeto com LED (Emission), ou ""
 DURACAO_S = 20               # 20 (referencia) ou 15 (preset frenetico)
+CAIXA_SOME = True            # True: caixa afunda no beat 2; False: U1 pousa na frente dela
 COR_CAIXA = "clara"          # "clara" (#F2EDE6) ou "escura" (#141416)
 RESOLUCAO = (1080, 1920)     # 9:16 vertical
 AMOSTRAS = 64                # amostras do EEVEE no render final
@@ -131,6 +138,7 @@ def main():
         "u1_led_objeto": U1_LED_OBJETO,
         "duracao_s": float(DURACAO_S),
         "cor_caixa": COR_CAIXA,
+        "caixa_some": bool(CAIXA_SOME),
         "pasta_assets": pasta_assets,
     }
     objs = mod_coreografia.construir_tudo(params)
@@ -144,6 +152,10 @@ def main():
         objs["cena"].frame_end, objs["camera"].name, objs["cena"].render.filepath))
     if SALVAR_BLEND:
         caminho = _os.path.join(pasta_saida, "anuncio_u1.blend")
+        # Logo e telas vem da pasta temporaria: empacotar, senao o .blend
+        # aponta para %TEMP% e as imagens somem na limpeza.
+        empacotadas = mod_coreografia.preparar_para_salvar()
+        print("[anuncio] imagens empacotadas no .blend:", ", ".join(empacotadas) or "nenhuma (ja estavam)")
         try:
             bpy.ops.wm.save_as_mainfile(filepath=caminho, copy=True)
             print("[anuncio] .blend gravado em", caminho)

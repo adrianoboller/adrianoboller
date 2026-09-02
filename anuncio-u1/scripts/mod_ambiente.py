@@ -55,8 +55,8 @@
 # era a borda: era a curva, que valia 0,10 na elevacao zero e 1,0 a 7 graus -
 # uma faixa escura entre o brilho e o chao, e o chao infinito copiava
 # justamente essa cor escura. Fundo Apple nao tem horizonte. Agora a curva
-# tem o valor maximo no horizonte, e o "chao infinito" (longe da origem, 6 ->
-# 30 m, o material do chao vira emissao com a cor do horizonte e perde o
+# tem o valor maximo no horizonte, e o "chao infinito" (longe da origem, 3 ->
+# 12 m, o material do chao vira emissao com a cor do horizonte e perde o
 # especular) funde no proprio brilho. De perto o chao e chao; de longe e o
 # brilho; a costura nao existe de nenhum angulo da orbita porque a camera
 # nunca sai de perto da caixa.
@@ -73,6 +73,37 @@
 # mais ingreme da curva a inclinacao e de 2 niveis por linha a 960 px (1 a
 # 1920), que e rampa, nao escada: o teste procura PATAMAR seguido de salto.
 #
+# RODADA 1 (revisao visual): o primeiro quadro do anuncio - chao vazio, camera
+# do beat 1 em (0, -2.2, 1.0) olhando (0, 0, 0.30) - tinha um ponto branco no
+# horizonte (69% da largura, 39% da altura) e uma faixa marrom mosqueada de
+# ~8% da altura entre o rose e o chao preto. A proposta era esconder top/key/
+# fill para achar a luz e zerar o specular_factor dela. Medido (cena vazia,
+# 360x640/8 amostras, scratchpad/amb2): esconder top, key ou fill NAO muda
+# nada (max L 0,322 nos quatro); esconder o rim ou zerar so o diffuse_factor
+# dele apaga o ponto (0,158, que e a borda do rose). O specular_factor do rim
+# ja era 0 nesse quadro. O ponto era a luz DIFUSA do rim no chao ao pe do
+# proprio painel: 2,2 m de altura centrado a 1,0 m e inclinado 11,5 graus
+# para baixo poe a borda inferior em z = -0,08 - o painel atravessava o chao,
+# e o pe dele cai exatamente onde a camera do beat 1 olha ((0,5, 2,6) no
+# chao). Abertura 20 graus nao muda nada (0,322 igual): o spread nao corta a
+# luz que sai rente ao painel. O que corta e geometria: painel de 1,2 m
+# centrado a 1,4 m (borda inferior a ~0,8 m do chao) deixa o ponto a 1 nivel
+# do rim escondido (0,159 contra 0,158); a 1,0 m com 1,0 m de painel ainda
+# ficavam 21 niveis, a 1,3 m ~10. Residuo que sobrar em plano largo se apaga
+# com chavear_fator_luz(rim, 'diffuse_factor', ...), que existe para isso.
+#
+# A faixa mosqueada tinha DUAS fontes, medidas por passa-alta na faixa
+# 26-40% (desvio horizontal de caixas de 12x6 px menos a media corrida, em
+# niveis de 8 bits): 0,85 no original; 0,52 sem o rim (a luz difusa dele
+# nesse trecho); 0,42 sem raytracing (o reflexo rasante do rose no chao
+# rugoso, que o denoise deixa em manchas - e nao converge: 0,56 a 32
+# amostras). Fusao do chao infinito (6, 30) -> (3, 12) tira o trecho da
+# zona rasante e cai para 0,17 com o rim novo; rugosidade 0,45 -> 0,6 no
+# trecho fundido cai para 0,10 - diferenca abaixo de um nivel de 8 bits, e
+# custaria o reflexo do produto perto da origem, entao a rugosidade ficou
+# em 0,45. A cor marrom da faixa e a do brilho (rose saturado 6x) a meia
+# forca - com a fusao curta ela nao tem mais onde aparecer.
+#
 # Eixos e medidas seguem docs/ESPECIFICACAO.md: metros, Z para cima, frente
 # em -Y (a camera padrao fica em -Y olhando +Y), chao em z = 0.
 
@@ -82,6 +113,22 @@ import bpy
 
 NOME = "ambiente"
 NOME_CAMERA = "camera"
+
+# Deslocamento do rig de luz em relacao ao azimute da camera, na orbita.
+# 90 poe o rim EXATAMENTE atras do produto e recorta a silhueta. A revisao
+# propos 60 (rig 15 -> 165 em vez de 195) para a face lateral, que saia
+# como 'slab branco liso' no q185, ganhar gradiente. MEDIDO no teste (cubo
+# branco semi-fosco de 0,4 m, camera na normal da face, 50 mm): amplitude
+# horizontal das medias de coluna na face = 1,4 / 1,7 / 4,3 / 5,6 / 1,2
+# niveis de 255 com offset 30 / 60 / 90 / 120 / 150, e vertical 3,8 / 2,9 /
+# 3,5 (60 / 90 / 120). Tudo chapado, e 60 e MAIS chapado que 90: com 60 a
+# key (2 x 2 m a 3,3 m) cai a 12 graus da normal da face, luz frontal; o
+# rim, a 138 graus, nem toca a face. A chapa vem do tamanho da key, nao do
+# lugar do rim - o offset nao e a alavanca. Por isso o padrao continua 90 e
+# o 60 fica como opcao (offset=OFFSET_RIM_LATERAL), com o numero medido
+# para quem quiser insistir.
+OFFSET_RIM_LATERAL = 60.0
+OFFSET_RIM_ATRAS = 90.0
 
 PARAMS_PADRAO = {
     "cor_escura": "#050507",
@@ -121,8 +168,11 @@ PARAMS_PADRAO = {
     "rugosidade_chao": 0.45,
     "especular_chao": 0.15,
     # Onde o chao comeca a virar o brilho do horizonte e onde termina (m da
-    # origem). A camera nunca passa de ~4 m da origem.
-    "fusao_chao": (6.0, 30.0),
+    # origem). A camera nunca passa de ~4 m da origem. Era (6, 30): entre 3 e
+    # 7 m o chao ainda era chao de verdade visto em angulo rasante, e o
+    # reflexo raytraced do rose nele saia em manchas marrons (ver cabecalho,
+    # rodada 1). Com (3, 12) esse trecho ja e emissao lisa.
+    "fusao_chao": (3.0, 12.0),
     # Luzes: posicao (m), tamanho (x, y em m), energia (W), cor. As posicoes
     # sao relativas ao rig, um Empty na origem que a coreografia gira junto
     # com a orbita - o rim so recorta a silhueta se ficar ATRAS do produto do
@@ -136,22 +186,36 @@ PARAMS_PADRAO = {
         # de 1 a luz continua iluminando o difuso e reflete menos no chao.
         "key":  {"pos": (2.2, -2.4, 2.8), "tam": (2.0, 2.0), "energia": 350.0, "cor": (1.0, 0.95, 0.90), "abertura": 100.0},
         "fill": {"pos": (-3.0, -2.0, 1.6), "tam": (3.0, 3.0), "energia": 110.0, "cor": (0.90, 0.94, 1.0), "abertura": 120.0},
-        # O rim fica BAIXO (na altura do produto) e longe. O ponto onde o
-        # reflexo dele cai no chao esta a t = z_cam / (z_cam + z_luz) do
+        # O rim fica baixo (perto da altura do produto) e longe. O ponto onde
+        # o reflexo dele cai no chao esta a t = z_cam / (z_cam + z_luz) do
         # caminho camera -> luz: com a camera a 0,75 m e o rim a 2,9 m era
         # t = 0,21, uma poca branca a 1,9 m NA FRENTE do produto (quanto mais
         # alto o rim, mais perto da camera cai a poca - o raciocinio anterior
-        # estava invertido). A 1,0 m, t = 0,43 e a poca cai em y ~ -0,5, sob a
-        # silhueta do produto: e o brilho no chao atras dele, o look Apple.
+        # estava invertido). A 1,4 m, t = 0,35 e a poca cai em y ~ -1,0 com a
+        # camera a 3 m, sob a silhueta do produto nos planos em que o
+        # especular esta ligado (a coreografia o zera nos planos largos).
+        # 1,4 m e nao 1,0: com painel de 2,2 m centrado a 1,0 m a borda
+        # inferior atravessava o chao e a luz difusa ao pe dele era o ponto
+        # branco do quadro 1 (medido no cabecalho). 1,2 m de painel a 1,4 m
+        # deixa a borda a ~0,8 m do chao e o ponto a 1 nivel de 'rim
+        # escondido'.
         # especular 0,6: o reflexo do rim no chao atras do produto era uma
         # cunha branca na camera de cima; 0,6 o deixa como brilho, e o recorte
         # no cromo e na aresta do cubo (que estava estourado) segue la.
-        "rim":  {"pos": (0.6, 2.8, 1.0), "tam": (0.3, 2.2), "energia": 350.0, "cor": (1.0, 1.0, 1.0), "abertura": 40.0, "especular": 0.6},
+        "rim":  {"pos": (0.6, 2.8, 1.4), "tam": (0.3, 1.2), "energia": 350.0, "cor": (1.0, 1.0, 1.0), "abertura": 40.0, "especular": 0.6},
         "top":  {"pos": (0.0, 0.3, 3.6), "tam": (3.0, 3.0), "energia": 80.0, "cor": (1.0, 0.98, 0.96), "abertura": 100.0},
     },
     # Flash
-    "forca_flash": 16.0,      # emissao branca; com AgX, 1.0 nao chega ao branco
+    "forca_flash": 16.0,      # emissao a forca=1.0; o padrao de animar_flash e 0.5 = 8
     "distancia_flash": 0.25,  # do sensor; acima do clip_start padrao (0,1)
+    # Alfa do veu no quadro seguinte ao pico: o decaimento que le como flash
+    # de foto em vez de dois quadros brancos solidos (revisao, beat 5). A
+    # proposta era 0,35 - MEDIDO: 0,35 x 8 de emissao = 2,8 de radiancia
+    # misturada sobre a cena, e o AgX satura em L 0,96 (branco de novo). O
+    # mix e em radiancia linear, nao em 'porcentagem de branco': 0,05 x 8 =
+    # 0,4 sobre a cena da L media 0,75 e minimo 0,66 (base 0,41) - meio veu
+    # com a cena visivel por tras. 0,08 -> 0,81; 0,12 -> 0,85; 0,20 -> 0,90.
+    "decaimento_flash": 0.05,
 }
 
 PARAMS_CAMERA_PADRAO = {
@@ -584,15 +648,40 @@ def _ajustar(objeto, nome, valor):
         return False
 
 
+def _arvore_compositor(cena):
+    """Arvore de nos do compositor da cena, criando-a se preciso.
+
+    Ate o 4.x ela e Scene.node_tree (que so existe depois de use_nodes = True).
+    No 5.0 Scene.use_nodes e Scene.node_tree sairam da API: o compositor e um
+    node group em Scene.compositing_node_group, que comeca None. Sem nenhum
+    dos dois, levanta RuntimeError e configurar_render segue sem bloom.
+    """
+    _ajustar(cena, "use_nodes", True)
+    nt = getattr(cena, "node_tree", None)
+    if nt is not None:
+        return nt
+    if hasattr(cena, "compositing_node_group"):
+        nt = cena.compositing_node_group
+        if nt is None:
+            nt = bpy.data.node_groups.new(NOME + ".compositor", "CompositorNodeTree")
+            cena.compositing_node_group = nt
+        return nt
+    raise RuntimeError("cena sem node_tree nem compositing_node_group")
+
+
 def _bloom(cena, p):
     """Glare/bloom no compositor. Os nos mudam de nome e de forma entre versoes."""
-    cena.use_nodes = True
-    nt = cena.node_tree
+    nt = _arvore_compositor(cena)
     for no in list(nt.nodes):
         nt.nodes.remove(no)
     camadas = nt.nodes.new("CompositorNodeRLayers")
     camadas.location = (-400, 0)
-    saida = nt.nodes.new("CompositorNodeComposite")
+    try:
+        saida = nt.nodes.new("CompositorNodeComposite")
+    except RuntimeError:
+        # Num node group de compositor a saida pode ser a do proprio grupo.
+        saida = nt.nodes.new("NodeGroupOutput")
+        nt.interface.new_socket("Image", in_out="OUTPUT", socket_type="NodeSocketColor")
     saida.location = (400, 0)
     glare = nt.nodes.new("CompositorNodeGlare")
     glare.location = (0, 0)
@@ -689,10 +778,35 @@ def configurar_render(cena, largura=1080, altura=1920, fps=30, amostras=64, para
             # Compositor sem saida ligada renderiza preto: melhor sem bloom
             # do que sem imagem.
             print("[ambiente] bloom desligado, compositor incompativel:", e)
-            cena.use_nodes = False
+            # No 5.0 use_nodes nao existe: escrever direto aqui levantava
+            # dentro do proprio handler e derrubava o main() na ultima etapa.
+            _ajustar(cena, "use_nodes", False)
     else:
-        cena.use_nodes = False
+        _ajustar(cena, "use_nodes", False)
     return p
+
+
+def empacotar_imagens():
+    """img.pack() em toda imagem com arquivo e ainda nao empacotada.
+
+    As imagens carregadas por load() apontam para a pasta temporaria de onde
+    o script as extraiu (%TEMP% no Windows): limpar temporarios, reiniciar ou
+    abrir o .blend em outra maquina deixava logo e telas rosa. A coreografia
+    chama isto antes de salvar. Devolve a lista de nomes empacotados; imagem
+    cujo arquivo sumiu e avisada e pulada, nao derruba o salvar.
+    """
+    feitas = []
+    for img in bpy.data.images:
+        if img.packed_file is not None or not img.filepath:
+            continue
+        if img.source not in {"FILE", "SEQUENCE"}:
+            continue
+        try:
+            img.pack()
+            feitas.append(img.name)
+        except RuntimeError as e:
+            print("[ambiente] nao empacotou '%s' (%s): %s" % (img.name, img.filepath, e))
+    return feitas
 
 
 # ---------------------------------------------------------------- flash
@@ -758,39 +872,96 @@ def _plano_flash(objs, camera, forca, distancia):
     return obj
 
 
-def animar_flash(objs, camera, quadro, forca=1.0, largura=1):
-    """Flash de foto: veu branco parented na camera, alfa 0 -> 1 -> 0 em 3 quadros.
+def animar_flash(objs, camera, quadro, forca=0.5, largura=1, decaimento=None):
+    """Flash de foto: veu branco parented na camera. Alfa 0 -> 1 -> 0,05 -> 0.
 
-    'forca' multiplica a emissao (1.0 = branco estourado com AgX); 'largura' e
-    quantos quadros de cada lado do pico (1 = os 3 quadros pedidos).
+    Chaves do alfa: 0 em quadro-1 e 1 em quadro, as duas CONSTANT; depois
+    'decaimento' (0,05, ver PARAMS_PADRAO) em quadro+largura e 0 em
+    quadro+2*largura, LINEAR.
+    'forca' multiplica a emissao (0,5 = 8: branco que le como flash, nao como
+    quadro solido; 1,0 = 16, estourado).
+
+    POR QUE CONSTANT nas duas primeiras: o render tem motion blur com o
+    obturador em START, entao o quadro q expoe de q a q+0,5. Com a rampa
+    linear 0 -> 1 entre q-1 e q, o quadro q-1 - o ULTIMO do plano anterior -
+    ja expunha alfa 0,25..0,5 x 16 de emissao e saia branco (revisao: q359,
+    o payoff da UI, veio quase branco). CONSTANT segura 0 ate q exato, e o
+    pico segura 1 por todo o obturador de q. O decaimento e LINEAR de
+    proposito: em q+1 o veu expoe 0,05 -> 0,025 (meio veu medido, L 0,75)
+    e some em q+2.
     """
     p = objs.get("params", PARAMS_PADRAO)
+    if decaimento is None:
+        decaimento = p.get("decaimento_flash", 0.35)
     obj = _plano_flash(objs, camera, p["forca_flash"] * forca, p["distancia_flash"])
     mat = obj.data.materials[0]
     nt = mat.node_tree
     alfa = nt.nodes["alfa"].outputs[0]
     emissao = next(n for n in nt.nodes if n.type == "EMISSION").inputs["Strength"]
+    chaves = (
+        (quadro - 1, 0.0, "CONSTANT"),
+        (quadro, 1.0, "CONSTANT"),
+        (quadro + largura, decaimento, "LINEAR"),
+        (quadro + 2 * largura, 0.0, "LINEAR"),
+    )
     # Forca por flash: a coreografia pode pedir um flash mais fraco no beat 5
-    # sem trocar o material.
-    for q, a in ((quadro - largura, 0.0), (quadro, 1.0), (quadro + largura, 0.0)):
+    # sem trocar o material - por isso a emissao tambem e chaveada.
+    for q, a, _ in chaves:
         alfa.default_value = a
         alfa.keyframe_insert("default_value", frame=q)
         emissao.default_value = p["forca_flash"] * forca
         emissao.keyframe_insert("default_value", frame=q)
-    # Linear e nao Bezier: com so tres chaves, o Bezier passaria de 1.0 no
-    # pico e daria um quadro extra meio branco de cada lado.
+    # So as chaves DESTE flash mudam de interpolacao: o material e um so para
+    # os tres flashes do beat 5, e mexer em todas desfaria as dos outros.
+    interp = {q: i for q, _, i in chaves}
     acao = nt.animation_data.action if nt.animation_data else None
     if acao is not None:
         for fc in acao.fcurves:
             for kp in fc.keyframe_points:
-                kp.interpolation = "LINEAR"
+                i = interp.get(int(round(kp.co.x)))
+                if i is not None:
+                    kp.interpolation = i if fc.data_path.startswith('nodes["alfa"]') else "CONSTANT"
+            fc.update()
     alfa.default_value = 0.0
     return obj
 
 
-def animar_rig(objs, quadro_ini, quadro_fim, angulo_ini, angulo_fim, easing="EASE_IN_OUT"):
-    """Gira o rig das luzes em Z (graus), para o rim acompanhar a orbita da camera."""
+def _valor_animado(dono, data_path, quadro, indice=-1):
+    # Valor que uma propriedade tem num quadro: da fcurve se houver chave, senao
+    # o valor atual - e o que "partir de onde esta" precisa saber.
+    ad = getattr(dono, "animation_data", None)
+    if ad is not None and ad.action is not None:
+        for fc in ad.action.fcurves:
+            if fc.data_path == data_path and (indice < 0 or fc.array_index == indice):
+                return fc.evaluate(quadro)
+    valor = dono.path_resolve(data_path)
+    return valor[indice] if indice >= 0 else valor
+
+
+def angulo_rig(azimute_camera, offset=OFFSET_RIM_LATERAL):
+    """Angulo do rig de luz para um azimute de camera (graus): azimute + offset."""
+    return azimute_camera + offset
+
+
+def animar_rig(objs, quadro_ini, quadro_fim, angulo_ini, angulo_fim, easing="EASE_IN_OUT",
+               azimutes=False, offset=OFFSET_RIM_ATRAS):
+    """Gira o rig das luzes em Z (graus), para o rim acompanhar a orbita da camera.
+
+    azimutes=False (comportamento antigo): angulo_ini/angulo_fim sao angulos
+    do proprio rig. azimutes=True: sao azimutes da CAMERA, e o rig vai para
+    azimute + offset - OFFSET_RIM_ATRAS (90, padrao: rim exatamente atras)
+    ou OFFSET_RIM_LATERAL (60, a proposta da revisao para a lateral; medido
+    chapado igual, ver o comentario das constantes). angulo_ini=None parte
+    do angulo que o rig ja tem em quadro_ini (a chave do beat anterior), o
+    caso do inicio de uma orbita.
+    """
     rig = objs["rig"]
+    if angulo_ini is None:
+        angulo_ini = math.degrees(_valor_animado(rig, "rotation_euler", quadro_ini, 2))
+    elif azimutes:
+        angulo_ini = angulo_rig(angulo_ini, offset)
+    if azimutes:
+        angulo_fim = angulo_rig(angulo_fim, offset)
     for q, ang in ((quadro_ini, angulo_ini), (quadro_fim, angulo_fim)):
         rig.rotation_euler = (0.0, 0.0, math.radians(ang))
         rig.keyframe_insert("rotation_euler", index=2, frame=q)
@@ -799,3 +970,79 @@ def animar_rig(objs, quadro_ini, quadro_fim, angulo_ini, angulo_fim, easing="EAS
         for kp in fc.keyframe_points:
             kp.interpolation = "BEZIER"
             kp.easing = easing
+
+
+# ---------------------------------------------------------------- fatores de luz
+
+def _luzes(luzes):
+    # Aceita o Object da luz, o Light, uma lista deles, o dict 'luzes' do
+    # construir_ambiente ou o proprio dict devolvido por ele.
+    if isinstance(luzes, dict):
+        luzes = luzes.get("luzes", luzes).values()
+    elif hasattr(luzes, "bl_rna"):
+        luzes = (luzes,)
+    for luz in luzes:
+        dados = getattr(luz, "data", None)
+        yield dados if dados is not None and hasattr(dados, "energy") else luz
+
+
+def chavear_fator_luz(luzes, atributo, quadro_ini, quadro_fim=None, de=None, para=0.0,
+                      rampa=12, easing="EASE_IN_OUT"):
+    """Rampa Bezier de um fator de luz (specular_factor, diffuse_factor, energy...).
+
+    Grava 'de' em quadro_ini e 'para' em quadro_fim (quadro_ini + rampa se
+    None), Bezier com o easing dado - NUNCA constant: a chave constante do
+    especular do rim no primeiro quadro do beat 3 fazia a cunha do reflexo no
+    chao aparecer de um quadro para o outro no meio de um plano continuo
+    (revisao, q160 -> q165). de=None parte do valor que a luz tem em
+    quadro_ini. rampa=0 e um corte de proposito: uma chave so, CONSTANT.
+    So as chaves gravadas aqui mudam de interpolacao. Devolve as luzes tocadas.
+    """
+    if quadro_fim is None:
+        quadro_fim = quadro_ini + rampa
+    tocadas = []
+    for dados in _luzes(luzes):
+        if not hasattr(dados, atributo):
+            continue
+        atual = _valor_animado(dados, atributo, quadro_ini)
+        if quadro_fim > quadro_ini:
+            inicio = atual if de is None else de
+            chaves = [(quadro_ini, inicio, "BEZIER"), (quadro_fim, para, "BEZIER")]
+            salto = abs(inicio - atual) > 1e-9
+        else:
+            chaves = [(quadro_ini, para, "CONSTANT")]
+            salto = abs(para - atual) > 1e-9
+        if salto:
+            # O trecho ANTES de quadro_ini e governado pela chave anterior, que
+            # e Bezier e rampearia devagar ate o valor novo (medido: um corte
+            # em q140 depois de uma rampa que acabou em q126 dava 0,49 em
+            # q139). Uma chave de espera em quadro_ini-1 segura o valor que a
+            # luz tinha ate o instante do salto.
+            chaves.insert(0, (quadro_ini - 1, _valor_animado(dados, atributo, quadro_ini - 1), "CONSTANT"))
+        try:
+            for q, v, _ in chaves:
+                setattr(dados, atributo, v)
+                dados.keyframe_insert(atributo, frame=q)
+        except (RuntimeError, TypeError):
+            # Versao sem a propriedade animavel: fica o valor final, sem rampa.
+            setattr(dados, atributo, para)
+            continue
+        interp = {int(round(q)): i for q, _, i in chaves}
+        for fc in dados.animation_data.action.fcurves:
+            if fc.data_path != atributo:
+                continue
+            for kp in fc.keyframe_points:
+                i = interp.get(int(round(kp.co.x)))
+                if i is not None:
+                    kp.interpolation = i
+                    if i == "BEZIER":
+                        kp.easing = easing
+            fc.update()
+        tocadas.append(dados)
+    return tocadas
+
+
+def chavear_especular(luzes, quadro_ini, quadro_fim=None, de=None, para=0.0, rampa=12,
+                      easing="EASE_IN_OUT"):
+    """specular_factor com rampa Bezier: chavear_fator_luz(..., 'specular_factor', ...)."""
+    return chavear_fator_luz(luzes, "specular_factor", quadro_ini, quadro_fim, de, para, rampa, easing)

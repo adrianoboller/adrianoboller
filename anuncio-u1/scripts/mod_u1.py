@@ -62,6 +62,46 @@
 # inteiro com a cor do trilho e so entao pinta o branco ate 'progresso', de
 # modo que a animacao fica certa com ou sem preenchimento cozido no asset. O
 # retangulo do trilho e parametro ('barra_boot_px'), medido com numpy no PNG.
+#
+# RODADA 2 (revisao em docs/REVISAO-RODADA-1.md):
+# - LIGAR E EVENTO DE LUZ: animar_ligar(objs, q_ini, q_fim) faz o que
+#   animar_botao faz (afunda o botao, acende a janela vermelha) e, a partir do
+#   fundo do curso, sobe as fitas de LED de 0 a 4 em 6 quadros (Bezier), liga
+#   uma area light por fita (u1.led.luz.N, 0 -> 60 W) e poe a tela em
+#   'standby' (cinza-escuro, emissao 0,15). As luzes existem porque no EEVEE
+#   uma malha emissiva NAO ilumina nada sem sonda de irradiancia cozida: a
+#   fita a 12 de forca do animar_botao brilhava sozinha e a camara continuava
+#   preta pelo acrilico (medido na rodada 1: 'nada muda de q246 a q268'). As
+#   luzes nascem com hide_render=True e energia 0; sem animar_ligar a cena e
+#   a de antes. animar_botao continua igual (mesmo curso, mesmas forcas).
+# - Material do cliente: a forca de emissao chaveada e a do no que esta
+#   LIGADO ao Material Output (seguindo Surface, e Mix/Add Shader por
+#   dentro); a varredura por ordem de nos so entra sem link. Vale para
+#   animar_tela, animar_botao e animar_ligar - mesmo furo nos tres.
+# - As imagens da tela sao empacotadas (img.pack()) ao carregar: o .blend do
+#   cliente nao pode depender de %TEMP%.
+# - Lateral: rasgos de ventilacao perto do fundo (confirmados: o proprio
+#   cabecalho ja os listava e nao os construia; a Snapmaker e os projetos de
+#   'side cover' da comunidade falam nos 'vent slots on the printer case'),
+#   junta vertical entre o painel frontal e o lateral logo depois do canto
+#   arredondado (CHUTE plausivel de carenagem injetada em duas pecas; nenhuma
+#   foto oficial mostra uma junta horizontal, por isso nao ha uma) e o aro
+#   preto do topo 10 mm acima do casco, com a boca em chanfro de 6 mm e o
+#   bordo externo arredondado - o aro do U1 real e uma moldura visivel, nao
+#   uma linha de 2 mm.
+# - Ruido no acrilico/vidro a 16 amostras (pontos brancos em beat_3.png): a
+#   rugosidade ja era 0,03/0,02 e o Principled 4.x nao tem 'Transmission
+#   Roughness', entao a proposta nao tinha o que reduzir. MEDIDO (contagem de
+#   pixels 0,18 acima da mediana 3x3 na janela do acrilico, q218 da cena
+#   completa a 360x640/16): beat_3 da rodada 1 tem 890 pontos (540x960); com
+#   o mod_ambiente da rodada 1 e este mod_u1, 372; com o rim escondido, 0;
+#   com o mod_ambiente atual (rim de 2,2 m a z=1,0 -> 1,2 m a z=1,4), 0; e
+#   rugosidade 0 nao muda nada (25 -> 29 pontos fora da janela). O chuvisco
+#   era o painel do rim de 350 W refratado/refletido no acrilico e mal
+#   denoised a 16 amostras - problema do ambiente, ja resolvido la; o
+#   material do vidro NAO foi mexido. O que sobra a 16 amostras e um halo
+#   claro nas bordas das paredes escuras vistas pelo acrilico (denoise da
+#   refracao raytraced), que nao e ponto e some com amostras finais.
 
 import math
 import os
@@ -117,6 +157,9 @@ def limpar_colecao(nome):
                 bpy.data.meshes.remove(dados)
             elif isinstance(dados, bpy.types.Curve):
                 bpy.data.curves.remove(dados)
+            elif isinstance(dados, bpy.types.Light):
+                # As area lights das fitas de LED; sem isto viram 'luz.001'.
+                bpy.data.lights.remove(dados)
     for filha in list(col.children):
         limpar_colecao(filha.name)
     bpy.data.collections.remove(col)
@@ -470,6 +513,12 @@ def _carregar_imagem(caminho, nome, largura=480, altura=320, cor=(0.0, 0.0, 0.0,
                 bpy.data.images.remove(antiga)
             img = bpy.data.images.load(c)
             img.name = nome
+            # Empacota no .blend: no Windows do cliente o PNG vive em %TEMP%
+            # e some na limpeza; a fonte ja era empacotada, a imagem nao.
+            try:
+                img.pack()
+            except RuntimeError as e:
+                print("[u1] aviso: nao empacotou %s: %s" % (nome, e))
             if c != caminho:
                 print("[u1] aviso: %s nao existe; usando %s" % (caminho, c))
             return img, False
@@ -590,7 +639,6 @@ def _mat_tela(nome, img_boot, img_ui, barra_px=(90, 390, 273, 276), cor_trilho="
     nt.links.new(mistura.outputs[0], troca.inputs["Fac"])
     nt.links.new(boot_com_barra.outputs["Color"], troca.inputs["Color1"])
     nt.links.new(tex_ui.outputs["Color"], troca.inputs["Color2"])
-    nt.links.new(troca.outputs["Color"], bsdf.inputs["Emission Color"])
 
     ligada = nt.nodes.new("ShaderNodeValue")
     ligada.name = "ligada"
@@ -599,7 +647,33 @@ def _mat_tela(nome, img_boot, img_ui, barra_px=(90, 390, 273, 276), cor_trilho="
     ligada.location = (-250, -250)
     # Tela real e bem mais clara que o vidro em volta: 4x para AgX nao apagar.
     forca = _math("MULTIPLY", (ligada, 0), 4.0, (-50, -250))
-    nt.links.new(forca.outputs["Value"], bsdf.inputs["Emission Strength"])
+    # 'standby': a tela acesa mas sem imagem, logo depois de ligar (cinza
+    # escuro, emissao 0,15). E um segundo termo SOMADO a radiancia - a imagem
+    # so tem uma entrada de emissao no Principled, entao a forca vai para 1 e
+    # a cor carrega os dois termos: imagem*4*ligada + cinza*0,15*standby.
+    standby = nt.nodes.new("ShaderNodeValue")
+    standby.name = "standby"
+    standby.label = "standby"
+    standby.outputs[0].default_value = 0.0
+    standby.location = (-250, -400)
+    forca_standby = _math("MULTIPLY", (standby, 0), 0.15, (-50, -400))
+    cor_ligada = nt.nodes.new("ShaderNodeVectorMath")
+    cor_ligada.operation = "SCALE"
+    cor_ligada.location = (150, -150)
+    nt.links.new(troca.outputs["Color"], cor_ligada.inputs[0])
+    nt.links.new(forca.outputs["Value"], cor_ligada.inputs["Scale"])
+    cor_standby = nt.nodes.new("ShaderNodeVectorMath")
+    cor_standby.operation = "SCALE"
+    cor_standby.location = (150, -350)
+    cor_standby.inputs[0].default_value = (0.80, 0.80, 0.85)
+    nt.links.new(forca_standby.outputs["Value"], cor_standby.inputs["Scale"])
+    soma = nt.nodes.new("ShaderNodeVectorMath")
+    soma.operation = "ADD"
+    soma.location = (300, -250)
+    nt.links.new(cor_ligada.outputs["Vector"], soma.inputs[0])
+    nt.links.new(cor_standby.outputs["Vector"], soma.inputs[1])
+    nt.links.new(soma.outputs["Vector"], bsdf.inputs["Emission Color"])
+    _entrada(bsdf, "Emission Strength", 1.0)
     return mat
 
 
@@ -644,6 +718,10 @@ def construir_u1(cena, colecao_pai, params=None):
     m_botao = _mat_emissivo("u1.botao", "#D8241E", 0.0)
     m_botao.node_tree.nodes["Principled BSDF"].inputs["Roughness"].default_value = 0.3
     m_cinza_texto = _mat_plastico("u1.texto", "#3A3B40", aspereza=0.5)
+    # Aro do topo mais escuro e menos especular que o preto fosco generico:
+    # na 3/4 alta a luz rasante clareava o preto e o aro lia como faixa clara.
+    m_aro = _mat_plastico("u1.aro", "#0C0D10", aspereza=0.5)
+    _entrada(m_aro.node_tree.nodes["Principled BSDF"], "Specular IOR Level", 0.3)
 
     img_boot, ph_boot = _carregar_imagem(p["imagem_boot"], "u1.tela_boot", cor=(0, 0, 0, 1))
     img_ui, ph_ui = _carregar_imagem(p["imagem_ui"], "u1.tela_ui", cor=(0.09, 0.09, 0.1, 1))
@@ -656,9 +734,9 @@ def construir_u1(cena, colecao_pai, params=None):
     col.objects.link(raiz)
 
     # --- Casco branco ------------------------------------------------------
-    # Casco de 4 mm acima do chao (pes) ate 2 mm abaixo do topo (aro): assim
-    # os pes ficam sobre z = 0 e o aro fecha o envelope em ALTURA.
-    corpo = _caixa("u1.corpo", col, (L, P, A - 0.006), (0, 0, (A + 0.002) / 2), m_painel,
+    # Casco de 4 mm acima do chao (pes) ate 10 mm abaixo do topo: o aro preto
+    # sobe esses 10 mm sobre o casco, como a moldura do U1 real.
+    corpo = _caixa("u1.corpo", col, (L, P, A - 0.014), (0, 0, (A - 0.006) / 2), m_painel,
                    chanfro=0.025, segmentos=8, pai=raiz, peso=(1.0, 0.16), suave=False)
     # Bolso do topo (a camara aparece por ele), abertura da porta, janela
     # traseira, bolso da tela e rebaixo circular das laterais.
@@ -670,13 +748,26 @@ def construir_u1(cena, colecao_pai, params=None):
         _cortador("u1.cortador.disco." + lado, col,
                   _malha_cilindro("u1.cortador.disco." + lado, 0.17, 0.012, "X", 64),
                   (x, 0.02, 0.36), corpo, raiz)
+    # Lateral: rasgos de ventilacao perto do fundo e a junta vertical entre o
+    # painel frontal e o lateral, logo depois do canto arredondado. Um so
+    # cortador com todos os rasgos: cada boolean EXACT custa na avaliacao.
+    rasgos = []
+    for sx in (-1, 1):
+        for k in range(8):
+            rasgos.append(((0.008, 0.036, 0.005), (sx * L / 2, -0.168 + k * 0.048, 0.055)))
+        rasgos.append(((0.0024, 0.0025, A), (sx * L / 2, frente + 0.034, A / 2)))
+    _cortador("u1.cortador.lateral", col, _malha_multicaixas("u1.cortador.lateral", rasgos), (0, 0, 0), corpo, raiz)
     # Quebra de quina de 1,5 mm nas arestas que os booleans criaram.
     _chanfro(corpo, 0.0015, 2, nome="quina")
 
-    # Aro preto do topo, com abertura um pouco menor que o bolso (faz o labio).
-    aro = _caixa("u1.aro", col, (L - 0.02, P - 0.02, 0.024), (0, 0, A - 0.012), m_preto,
+    # Aro preto do topo, 10 mm acima do casco, com abertura um pouco menor que
+    # o bolso (faz o labio). A boca do aro e um chanfro de 6 mm (o cortador e
+    # um 'funil' com a parte de cima alargada a 45 graus) e o bordo externo do
+    # topo e arredondado com 6 mm: e o que faz a moldura ler como moldura.
+    aro = _caixa("u1.aro", col, (L - 0.02, P - 0.02, 0.024), (0, 0, A - 0.012), m_aro,
                  chanfro=0.02, segmentos=6, pai=raiz, peso=(1.0, 0.12), suave=False)
-    _cortador("u1.cortador.aro", col, (L - 0.10, P - 0.12, 0.1), (0, 0, A), aro, raiz)
+    _peso_arestas_topo(aro.data, 0.30)
+    _cortador("u1.cortador.aro", col, _malha_funil("u1.cortador.aro", L - 0.10, P - 0.12, 0.1, 0.006), (0, 0, A), aro, raiz)
     _chanfro(aro, 0.0015, 2, nome="quina")
     for i, (sx, sy) in enumerate(((-1, -1), (1, -1), (-1, 1), (1, 1))):
         _cilindro("u1.tampao.%d" % (i + 1), col, 0.009, 0.003,
@@ -763,10 +854,14 @@ def construir_u1(cena, colecao_pai, params=None):
     for i, x in enumerate((-0.135, -0.045, 0.045, 0.135)):
         cabecotes.append(_cabecote(col, i + 1, Vector((x, 0.115, 0.575)), m_preto, m_preto_brilho, m_laranja, m_alu_z, m_latao, raiz))
 
-    # LEDs no teto da camara, na frente.
+    # LEDs no teto da camara, na frente - e uma area light por fita, porque a
+    # malha emissiva nao ilumina a camara no EEVEE. Nascem escondidas e a 0 W;
+    # animar_ligar e quem as acende.
     leds = []
+    luzes = []
     for i, x in enumerate((-0.11, 0.11)):
         leds.append(_caixa("u1.led.%d" % (i + 1), col, (0.16, 0.012, 0.003), (x, -cy / 2 + 0.03, A - 0.032), m_led, chanfro=0.0005, segmentos=1, pai=raiz))
+        luzes.append(_luz_de_fita("u1.led.luz.%d" % (i + 1), col, Vector((x, -cy / 2 + 0.03, A - 0.036)), (0.16, 0.012), raiz))
 
     # --- Mesa -----------------------------------------------------------------
     _caixa("u1.mesa.carro", col, (0.30, 0.30, 0.012), (0, 0.0, 0.146), m_preto, chanfro=0.002, segmentos=2, pai=raiz)
@@ -844,6 +939,8 @@ def construir_u1(cena, colecao_pai, params=None):
         "painel_traseiro": painel_traseiro,
         "leds": leds,
         "led": leds[0],
+        # Area lights das fitas (hide_render=True e 0 W ate animar_ligar).
+        "luzes_led": luzes,
         "tubos": tubos,
         "colecao": col,
         # Envelope MEDIDO da malha avaliada (com modificadores), nao o nominal.
@@ -858,8 +955,74 @@ def construir_u1(cena, colecao_pai, params=None):
         # Direcao em que o botao afunda, no espaco local dele (a coreografia
         # pode girar a raiz; a animacao continua certa porque e local).
         "botao_afunda_local": Vector((0, -1, 0)),
-        "materiais": {"tela": m_tela, "led": m_led, "botao": m_botao},
+        "materiais": {"tela": m_tela, "led": m_led, "botao": m_botao, "aro": m_aro},
     }
+
+
+def _luz_de_fita(nome, col, pos, tamanho, raiz):
+    """Area light retangular do tamanho da fita, apontando para baixo, escondida e a 0 W."""
+    dados = bpy.data.lights.new(nome, "AREA")
+    dados.shape = "RECTANGLE"
+    dados.size, dados.size_y = tamanho
+    dados.energy = 0.0
+    dados.color = _cor("#FFF6E8")[:3]
+    luz = bpy.data.objects.new(nome, dados)
+    col.objects.link(luz)
+    luz.location = pos
+    luz.parent = raiz
+    luz.hide_render = True
+    return luz
+
+
+def _malha_multicaixas(nome, caixas):
+    """Varias caixas (dims, centro) numa malha so, para um unico boolean."""
+    bm = bmesh.new()
+    for (dx, dy, dz), (x, y, z) in caixas:
+        novo = bmesh.ops.create_cube(bm, size=1.0)["verts"]
+        bmesh.ops.scale(bm, vec=(dx, dy, dz), verts=novo)
+        bmesh.ops.translate(bm, vec=(x, y, z), verts=novo)
+    malha = bpy.data.meshes.new(nome)
+    bm.to_mesh(malha)
+    bm.free()
+    return malha
+
+
+def _malha_funil(nome, dx, dy, dz, chanfro):
+    """Caixa cuja parte de cima alarga a 45 graus a partir de 'chanfro' abaixo de z=0.
+
+    Cortando o aro com isto, a boca ganha um chanfro de 'chanfro' de largura
+    no topo (z=0 e o topo do aro) e paredes retas abaixo dele.
+    """
+    bm = bmesh.new()
+    niveis = ((-dz / 2, 0.0), (-chanfro, 0.0), (dz / 2, dz / 2 + chanfro))
+    aneis = []
+    for z, alarga in niveis:
+        hx, hy = dx / 2 + alarga, dy / 2 + alarga
+        aneis.append([bm.verts.new(v) for v in ((-hx, -hy, z), (hx, -hy, z), (hx, hy, z), (-hx, hy, z))])
+    bm.faces.new(aneis[0][::-1])
+    for a, b in zip(aneis, aneis[1:]):
+        for k in range(4):
+            j = (k + 1) % 4
+            bm.faces.new((a[k], a[j], b[j], b[k]))
+    bm.faces.new(aneis[-1])
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    malha = bpy.data.meshes.new(nome)
+    bm.to_mesh(malha)
+    bm.free()
+    return malha
+
+
+def _peso_arestas_topo(malha, peso):
+    """Bevel weight das arestas da face de cima: bordo arredondado so no topo."""
+    attr = malha.attributes.get("bevel_weight_edge")
+    if attr is None:
+        return
+    z_max = max(v.co.z for v in malha.vertices)
+    for i, aresta in enumerate(malha.edges):
+        a = malha.vertices[aresta.vertices[0]].co
+        b = malha.vertices[aresta.vertices[1]].co
+        if abs(a.z - z_max) < 1e-6 and abs(b.z - z_max) < 1e-6:
+            attr.data[i].value = peso
 
 
 def _envelope(col):
@@ -983,6 +1146,80 @@ def _chave_socket(socket, valor, quadro):
     socket.keyframe_insert("default_value", frame=quadro)
 
 
+def _socket_forca_emissao(nt):
+    """Socket de forca de emissao do no LIGADO ao Material Output.
+
+    Parte do Output ativo, segue Surface e desce por Mix/Add Shader ate um
+    Emission ('Strength') ou Principled ('Emission Strength'). So sem link
+    algum cai na varredura por ordem de nos - a varredura sozinha chaveava um
+    Principled sobrando desligado e a tela do cliente nunca acendia.
+    """
+    saida = None
+    try:
+        saida = nt.get_output_node("ALL")
+    except (AttributeError, TypeError):
+        pass
+    if saida is None:
+        outs = [n for n in nt.nodes if n.type == "OUTPUT_MATERIAL"]
+        saida = next((n for n in outs if n.is_active_output), outs[0] if outs else None)
+
+    def _do_no(no, vistos):
+        if no is None or no in vistos:
+            return None
+        vistos.add(no)
+        if no.type == "EMISSION":
+            return no.inputs.get("Strength")
+        if no.type == "BSDF_PRINCIPLED":
+            return no.inputs.get("Emission Strength")
+        for ent in no.inputs:
+            if ent.type == "SHADER" and ent.is_linked:
+                s = _do_no(ent.links[0].from_node, vistos)
+                if s is not None:
+                    return s
+        return None
+
+    if saida is not None:
+        surf = saida.inputs.get("Surface")
+        if surf is not None and surf.is_linked:
+            s = _do_no(surf.links[0].from_node, set())
+            if s is not None:
+                return s
+    for no in nt.nodes:
+        s = no.inputs.get("Emission Strength") if no.type == "BSDF_PRINCIPLED" else (no.inputs.get("Strength") if no.type == "EMISSION" else None)
+        if s is not None:
+            return s
+    return None
+
+
+def _acender(mat, q_ini, q_fim, forca, easing="EASE_IN_OUT", de=0.0):
+    """Forca de emissao do material: 'de' em q_ini -> 'forca' em q_fim (Bezier)."""
+    if mat is None or not mat.use_nodes:
+        return False
+    s = _socket_forca_emissao(mat.node_tree)
+    if s is None:
+        return False
+    _chave_socket(s, de, q_ini)
+    _chave_socket(s, forca, q_fim)
+    _suavizar_fcurves(mat.node_tree.animation_data, {q_ini, q_fim}, easing)
+    return True
+
+
+def _afundar_botao(objs, q_ini, q_fim, easing, profundidade):
+    """Curso do botao (afunda e volta); devolve o quadro do fundo do curso."""
+    botao = objs["botao"]
+    eixo = objs.get("botao_afunda_local", Vector((0, -1, 0)))
+    meio = (q_ini + q_fim) // 2
+    repouso = botao.location.copy()
+    botao.location = repouso
+    botao.keyframe_insert("location", frame=q_ini)
+    botao.location = repouso + eixo * profundidade
+    botao.keyframe_insert("location", frame=meio)
+    botao.location = repouso
+    botao.keyframe_insert("location", frame=q_fim)
+    _suavizar_fcurves(botao.animation_data, {q_ini, meio, q_fim}, easing)
+    return meio
+
+
 def animar_tela(objs, q_boot_ini, q_ui_ini, q_fim, easing="EASE_IN_OUT", duracao_fade=6):
     """Desligada -> boot (fade rapido + barra) -> corte para a UI em q_ui_ini.
 
@@ -1005,14 +1242,21 @@ def animar_tela(objs, q_boot_ini, q_ui_ini, q_fim, easing="EASE_IN_OUT", duracao
         _chave_socket(s, 0.0, q_boot_ini)
         _chave_socket(s, 1.0, q_boot_ini + duracao_fade)
         _chave_socket(s, 1.0, q_fim)
+        # O standby (se animar_ligar o acendeu) apaga junto com a subida do
+        # boot; sem animar_ligar antes, e 0 -> 0 e nao muda nada.
+        standby = _no_valor(mat, "standby")
+        if standby is not None:
+            s = standby.outputs[0]
+            _chave_socket(s, s.default_value, q_boot_ini)
+            _chave_socket(s, 0.0, q_boot_ini + duracao_fade)
     else:
-        # Material do cliente: primeiro socket de forca de emissao que existir.
-        for no in nt.nodes:
-            s = no.inputs.get("Emission Strength") if no.type == "BSDF_PRINCIPLED" else (no.inputs.get("Strength") if no.type == "EMISSION" else None)
-            if s is not None:
-                _chave_socket(s, 0.0, q_boot_ini)
-                _chave_socket(s, 4.0, q_boot_ini + duracao_fade)
-                break
+        # Material do cliente: a forca do no ligado ao Output.
+        s = _socket_forca_emissao(nt)
+        if s is not None:
+            _chave_socket(s, 0.0, q_boot_ini)
+            _chave_socket(s, 4.0, q_boot_ini + duracao_fade)
+        else:
+            print("[u1] animar_tela: material sem forca de emissao; tela nao acende")
     if progresso is not None:
         s = progresso.outputs[0]
         _chave_socket(s, 0.0, q_boot_ini + 2)
@@ -1032,35 +1276,93 @@ def animar_tela(objs, q_boot_ini, q_ui_ini, q_fim, easing="EASE_IN_OUT", duracao
                     kp.interpolation = "CONSTANT"
 
 
-def animar_botao(objs, q_ini, q_fim, easing="EASE_IN_OUT", profundidade=0.002):
-    """Botao afunda 2 mm e volta; LEDs da camara e a janela do botao acendem."""
-    botao = objs["botao"]
-    eixo = objs.get("botao_afunda_local", Vector((0, -1, 0)))
-    meio = (q_ini + q_fim) // 2
-    repouso = botao.location.copy()
-    botao.location = repouso
-    botao.keyframe_insert("location", frame=q_ini)
-    botao.location = repouso + eixo * profundidade
-    botao.keyframe_insert("location", frame=meio)
-    botao.location = repouso
-    botao.keyframe_insert("location", frame=q_fim)
-    _suavizar_fcurves(botao.animation_data, {q_ini, meio, q_fim}, easing)
-
-    # LED: usa os materiais devolvidos; com modelo do cliente, procura
-    # 'led' no dict e chaveia o que tiver forca de emissao.
+def _materiais_de_led(objs):
+    """Materiais das fitas/LED: os devolvidos pelo modulo ou o do objeto 'led' do cliente."""
     mats = objs.get("materiais", {})
     alvos = [m for m in (mats.get("led"), mats.get("botao")) if m is not None]
     if not alvos and objs.get("led") is not None and objs["led"].active_material:
         alvos = [objs["led"].active_material]
-    for m in alvos:
-        if not m.use_nodes:
-            continue
-        for no in m.node_tree.nodes:
-            s = no.inputs.get("Emission Strength") if no.type == "BSDF_PRINCIPLED" else (no.inputs.get("Strength") if no.type == "EMISSION" else None)
-            if s is None:
-                continue
-            forca = 12.0 if m.name == "u1.led" else 3.0
-            _chave_socket(s, 0.0, meio)
-            _chave_socket(s, forca, q_fim)
-            _suavizar_fcurves(m.node_tree.animation_data, {meio, q_fim}, easing)
-            break
+    return alvos
+
+
+def animar_botao(objs, q_ini, q_fim, easing="EASE_IN_OUT", profundidade=0.002):
+    """Botao afunda 2 mm e volta; LEDs da camara e a janela do botao acendem.
+
+    Mantida como na rodada 1 (curso, quadros e forcas iguais); so a busca do
+    socket de emissao passou a seguir o link do Output, que para os
+    materiais daqui da o mesmo socket. Para ligar como evento de luz use
+    animar_ligar.
+    """
+    meio = _afundar_botao(objs, q_ini, q_fim, easing, profundidade)
+    for m in _materiais_de_led(objs):
+        _acender(m, meio, q_fim, 12.0 if m.name == "u1.led" else 3.0, easing)
+
+
+def animar_ligar(objs, quadro_ini, quadro_fim, easing="EASE_IN_OUT", profundidade=0.002,
+                 forca_fitas=4.0, energia_luz=60.0, duracao=6, standby=1.0):
+    """Ligar como evento de luz: botao, janela do botao, fitas, luzes internas e tela em standby.
+
+    O botao afunda entre quadro_ini e quadro_fim como em animar_botao; no fundo
+    do curso (meio) comeca a luz: fitas de LED 0 -> forca_fitas e area lights
+    das fitas 0 -> energia_luz em 'duracao' quadros (Bezier), janela do botao
+    0 -> 3, e a tela vai de preto ao cinza 'standby' (Value 'standby' 0 ->
+    standby, emissao 0,15). As luzes ficam escondidas do render ate meio-1.
+    60 W por fita porque a camara e escura (paredes #0F1013, chao preto): com
+    25 W a janela traseira subia 1% de luminancia - o que a luz encontra e a
+    mesa dourada, os cabecotes e o fundo.
+    Com o modelo do cliente sem fitas nem luzes, cria UMA area light no topo
+    do envelope (objs['envelope']) e a guarda em objs['luzes_led'].
+    """
+    if objs.get("botao") is not None:
+        q0 = _afundar_botao(objs, quadro_ini, quadro_fim, easing, profundidade)
+    else:
+        q0 = (quadro_ini + quadro_fim) // 2
+    q1 = q0 + max(1, duracao)
+
+    mats = objs.get("materiais", {})
+    if mats.get("botao") is not None:
+        _acender(mats["botao"], q0, q1, 3.0, easing)
+    for m in [m for m in _materiais_de_led(objs) if m is not mats.get("botao")]:
+        _acender(m, q0, q1, forca_fitas, easing)
+
+    luzes = list(objs.get("luzes_led") or [])
+    if not luzes and objs.get("envelope") is not None and objs.get("raiz") is not None:
+        mn, mx = objs["envelope"]
+        centro = Vector(((mn.x + mx.x) / 2, (mn.y + mx.y) / 2, mx.z - 0.04))
+        col = objs.get("colecao") or objs["raiz"].users_collection[0]
+        luzes = [_luz_de_fita("u1.led.luz.1", col, centro, (0.30, 0.02), objs["raiz"])]
+        objs["luzes_led"] = luzes
+        print("[u1] animar_ligar: modelo sem fitas de LED; criada uma area light no topo do envelope")
+    for luz in luzes:
+        luz.hide_render = True
+        luz.keyframe_insert("hide_render", frame=q0 - 1)
+        luz.hide_render = False
+        luz.keyframe_insert("hide_render", frame=q0)
+        luz.data.energy = 0.0
+        luz.data.keyframe_insert("energy", frame=q0)
+        luz.data.energy = energia_luz
+        luz.data.keyframe_insert("energy", frame=q1)
+        _suavizar_fcurves(luz.data.animation_data, {q0, q1}, easing)
+
+    mat_tela = mats.get("tela")
+    if mat_tela is None and objs.get("tela") is not None:
+        mat_tela = objs["tela"].active_material
+    no = _no_valor(mat_tela, "standby")
+    if no is not None:
+        s = no.outputs[0]
+        _chave_socket(s, 0.0, q0)
+        _chave_socket(s, standby, q1)
+        _suavizar_fcurves(mat_tela.node_tree.animation_data, {q0, q1}, easing)
+    else:
+        print("[u1] animar_ligar: tela sem no 'standby' (material do cliente); a tela so acende em animar_tela")
+
+
+def apagar_tela(objs, quadro):
+    """Chave direta: 'ligada' e 'standby' a 0 em 'quadro' (a maquina volta desligada para a caixa)."""
+    mat = objs.get("materiais", {}).get("tela")
+    if mat is None and objs.get("tela") is not None:
+        mat = objs["tela"].active_material
+    for nome in ("ligada", "standby"):
+        no = _no_valor(mat, nome)
+        if no is not None:
+            _chave_socket(no.outputs[0], 0.0, quadro)

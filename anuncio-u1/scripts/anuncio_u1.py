@@ -19,7 +19,13 @@
 # tela acender e o botao afundar, indique os objetos em U1_TELA_OBJETO e
 # U1_BOTAO_OBJETO (a tela precisa de um material com Emission).
 #
-# Rodar de novo nao duplica nada: cada modulo apaga a propria colecao antes.
+# CAIXA_SOME: True (padrao) = a caixa afunda pelo chao no beat 2 e volta no
+# beat 6 enquanto o U1 flutua; False = o U1 sai da caixa, desliza para a
+# frente dela e pousa no chao (a caixa fica parada atras), e no beat 6 volta
+# para dentro dela. Escolha de direcao: o storyboard diz so "o U1 sai da caixa".
+#
+# Rodar de novo nao duplica nada: cada modulo apaga a propria colecao antes,
+# e o SEU modelo volta a pose original antes de ser medido de novo.
 # ============================================================================
 
 # ---------------------------- PARAMETROS -----------------------------------
@@ -32,6 +38,7 @@ U1_TELA_OBJETO = ""          # nome do objeto da tela (para acender), ou ""
 U1_BOTAO_OBJETO = ""         # nome do objeto do botao (para afundar), ou ""
 U1_LED_OBJETO = ""           # nome de um objeto com LED (Emission), ou ""
 DURACAO_S = 20               # 20 (referencia) ou 15 (preset frenetico)
+CAIXA_SOME = True            # True: caixa afunda no beat 2; False: U1 pousa na frente dela
 COR_CAIXA = "clara"          # "clara" (#F2EDE6) ou "escura" (#141416)
 RESOLUCAO = (1080, 1920)     # 9:16 vertical
 AMOSTRAS = 64                # amostras do EEVEE no render final
@@ -115,8 +122,8 @@ def _modulo_ambiente():
     # era a borda: era a curva, que valia 0,10 na elevacao zero e 1,0 a 7 graus -
     # uma faixa escura entre o brilho e o chao, e o chao infinito copiava
     # justamente essa cor escura. Fundo Apple nao tem horizonte. Agora a curva
-    # tem o valor maximo no horizonte, e o "chao infinito" (longe da origem, 6 ->
-    # 30 m, o material do chao vira emissao com a cor do horizonte e perde o
+    # tem o valor maximo no horizonte, e o "chao infinito" (longe da origem, 3 ->
+    # 12 m, o material do chao vira emissao com a cor do horizonte e perde o
     # especular) funde no proprio brilho. De perto o chao e chao; de longe e o
     # brilho; a costura nao existe de nenhum angulo da orbita porque a camera
     # nunca sai de perto da caixa.
@@ -133,6 +140,37 @@ def _modulo_ambiente():
     # mais ingreme da curva a inclinacao e de 2 niveis por linha a 960 px (1 a
     # 1920), que e rampa, nao escada: o teste procura PATAMAR seguido de salto.
     #
+    # RODADA 1 (revisao visual): o primeiro quadro do anuncio - chao vazio, camera
+    # do beat 1 em (0, -2.2, 1.0) olhando (0, 0, 0.30) - tinha um ponto branco no
+    # horizonte (69% da largura, 39% da altura) e uma faixa marrom mosqueada de
+    # ~8% da altura entre o rose e o chao preto. A proposta era esconder top/key/
+    # fill para achar a luz e zerar o specular_factor dela. Medido (cena vazia,
+    # 360x640/8 amostras, scratchpad/amb2): esconder top, key ou fill NAO muda
+    # nada (max L 0,322 nos quatro); esconder o rim ou zerar so o diffuse_factor
+    # dele apaga o ponto (0,158, que e a borda do rose). O specular_factor do rim
+    # ja era 0 nesse quadro. O ponto era a luz DIFUSA do rim no chao ao pe do
+    # proprio painel: 2,2 m de altura centrado a 1,0 m e inclinado 11,5 graus
+    # para baixo poe a borda inferior em z = -0,08 - o painel atravessava o chao,
+    # e o pe dele cai exatamente onde a camera do beat 1 olha ((0,5, 2,6) no
+    # chao). Abertura 20 graus nao muda nada (0,322 igual): o spread nao corta a
+    # luz que sai rente ao painel. O que corta e geometria: painel de 1,2 m
+    # centrado a 1,4 m (borda inferior a ~0,8 m do chao) deixa o ponto a 1 nivel
+    # do rim escondido (0,159 contra 0,158); a 1,0 m com 1,0 m de painel ainda
+    # ficavam 21 niveis, a 1,3 m ~10. Residuo que sobrar em plano largo se apaga
+    # com chavear_fator_luz(rim, 'diffuse_factor', ...), que existe para isso.
+    #
+    # A faixa mosqueada tinha DUAS fontes, medidas por passa-alta na faixa
+    # 26-40% (desvio horizontal de caixas de 12x6 px menos a media corrida, em
+    # niveis de 8 bits): 0,85 no original; 0,52 sem o rim (a luz difusa dele
+    # nesse trecho); 0,42 sem raytracing (o reflexo rasante do rose no chao
+    # rugoso, que o denoise deixa em manchas - e nao converge: 0,56 a 32
+    # amostras). Fusao do chao infinito (6, 30) -> (3, 12) tira o trecho da
+    # zona rasante e cai para 0,17 com o rim novo; rugosidade 0,45 -> 0,6 no
+    # trecho fundido cai para 0,10 - diferenca abaixo de um nivel de 8 bits, e
+    # custaria o reflexo do produto perto da origem, entao a rugosidade ficou
+    # em 0,45. A cor marrom da faixa e a do brilho (rose saturado 6x) a meia
+    # forca - com a fusao curta ela nao tem mais onde aparecer.
+    #
     # Eixos e medidas seguem docs/ESPECIFICACAO.md: metros, Z para cima, frente
     # em -Y (a camera padrao fica em -Y olhando +Y), chao em z = 0.
 
@@ -142,6 +180,22 @@ def _modulo_ambiente():
 
     NOME = "ambiente"
     NOME_CAMERA = "camera"
+
+    # Deslocamento do rig de luz em relacao ao azimute da camera, na orbita.
+    # 90 poe o rim EXATAMENTE atras do produto e recorta a silhueta. A revisao
+    # propos 60 (rig 15 -> 165 em vez de 195) para a face lateral, que saia
+    # como 'slab branco liso' no q185, ganhar gradiente. MEDIDO no teste (cubo
+    # branco semi-fosco de 0,4 m, camera na normal da face, 50 mm): amplitude
+    # horizontal das medias de coluna na face = 1,4 / 1,7 / 4,3 / 5,6 / 1,2
+    # niveis de 255 com offset 30 / 60 / 90 / 120 / 150, e vertical 3,8 / 2,9 /
+    # 3,5 (60 / 90 / 120). Tudo chapado, e 60 e MAIS chapado que 90: com 60 a
+    # key (2 x 2 m a 3,3 m) cai a 12 graus da normal da face, luz frontal; o
+    # rim, a 138 graus, nem toca a face. A chapa vem do tamanho da key, nao do
+    # lugar do rim - o offset nao e a alavanca. Por isso o padrao continua 90 e
+    # o 60 fica como opcao (offset=OFFSET_RIM_LATERAL), com o numero medido
+    # para quem quiser insistir.
+    OFFSET_RIM_LATERAL = 60.0
+    OFFSET_RIM_ATRAS = 90.0
 
     PARAMS_PADRAO = {
         "cor_escura": "#050507",
@@ -181,8 +235,11 @@ def _modulo_ambiente():
         "rugosidade_chao": 0.45,
         "especular_chao": 0.15,
         # Onde o chao comeca a virar o brilho do horizonte e onde termina (m da
-        # origem). A camera nunca passa de ~4 m da origem.
-        "fusao_chao": (6.0, 30.0),
+        # origem). A camera nunca passa de ~4 m da origem. Era (6, 30): entre 3 e
+        # 7 m o chao ainda era chao de verdade visto em angulo rasante, e o
+        # reflexo raytraced do rose nele saia em manchas marrons (ver cabecalho,
+        # rodada 1). Com (3, 12) esse trecho ja e emissao lisa.
+        "fusao_chao": (3.0, 12.0),
         # Luzes: posicao (m), tamanho (x, y em m), energia (W), cor. As posicoes
         # sao relativas ao rig, um Empty na origem que a coreografia gira junto
         # com a orbita - o rim so recorta a silhueta se ficar ATRAS do produto do
@@ -196,22 +253,36 @@ def _modulo_ambiente():
             # de 1 a luz continua iluminando o difuso e reflete menos no chao.
             "key":  {"pos": (2.2, -2.4, 2.8), "tam": (2.0, 2.0), "energia": 350.0, "cor": (1.0, 0.95, 0.90), "abertura": 100.0},
             "fill": {"pos": (-3.0, -2.0, 1.6), "tam": (3.0, 3.0), "energia": 110.0, "cor": (0.90, 0.94, 1.0), "abertura": 120.0},
-            # O rim fica BAIXO (na altura do produto) e longe. O ponto onde o
-            # reflexo dele cai no chao esta a t = z_cam / (z_cam + z_luz) do
+            # O rim fica baixo (perto da altura do produto) e longe. O ponto onde
+            # o reflexo dele cai no chao esta a t = z_cam / (z_cam + z_luz) do
             # caminho camera -> luz: com a camera a 0,75 m e o rim a 2,9 m era
             # t = 0,21, uma poca branca a 1,9 m NA FRENTE do produto (quanto mais
             # alto o rim, mais perto da camera cai a poca - o raciocinio anterior
-            # estava invertido). A 1,0 m, t = 0,43 e a poca cai em y ~ -0,5, sob a
-            # silhueta do produto: e o brilho no chao atras dele, o look Apple.
+            # estava invertido). A 1,4 m, t = 0,35 e a poca cai em y ~ -1,0 com a
+            # camera a 3 m, sob a silhueta do produto nos planos em que o
+            # especular esta ligado (a coreografia o zera nos planos largos).
+            # 1,4 m e nao 1,0: com painel de 2,2 m centrado a 1,0 m a borda
+            # inferior atravessava o chao e a luz difusa ao pe dele era o ponto
+            # branco do quadro 1 (medido no cabecalho). 1,2 m de painel a 1,4 m
+            # deixa a borda a ~0,8 m do chao e o ponto a 1 nivel de 'rim
+            # escondido'.
             # especular 0,6: o reflexo do rim no chao atras do produto era uma
             # cunha branca na camera de cima; 0,6 o deixa como brilho, e o recorte
             # no cromo e na aresta do cubo (que estava estourado) segue la.
-            "rim":  {"pos": (0.6, 2.8, 1.0), "tam": (0.3, 2.2), "energia": 350.0, "cor": (1.0, 1.0, 1.0), "abertura": 40.0, "especular": 0.6},
+            "rim":  {"pos": (0.6, 2.8, 1.4), "tam": (0.3, 1.2), "energia": 350.0, "cor": (1.0, 1.0, 1.0), "abertura": 40.0, "especular": 0.6},
             "top":  {"pos": (0.0, 0.3, 3.6), "tam": (3.0, 3.0), "energia": 80.0, "cor": (1.0, 0.98, 0.96), "abertura": 100.0},
         },
         # Flash
-        "forca_flash": 16.0,      # emissao branca; com AgX, 1.0 nao chega ao branco
+        "forca_flash": 16.0,      # emissao a forca=1.0; o padrao de animar_flash e 0.5 = 8
         "distancia_flash": 0.25,  # do sensor; acima do clip_start padrao (0,1)
+        # Alfa do veu no quadro seguinte ao pico: o decaimento que le como flash
+        # de foto em vez de dois quadros brancos solidos (revisao, beat 5). A
+        # proposta era 0,35 - MEDIDO: 0,35 x 8 de emissao = 2,8 de radiancia
+        # misturada sobre a cena, e o AgX satura em L 0,96 (branco de novo). O
+        # mix e em radiancia linear, nao em 'porcentagem de branco': 0,05 x 8 =
+        # 0,4 sobre a cena da L media 0,75 e minimo 0,66 (base 0,41) - meio veu
+        # com a cena visivel por tras. 0,08 -> 0,81; 0,12 -> 0,85; 0,20 -> 0,90.
+        "decaimento_flash": 0.05,
     }
 
     PARAMS_CAMERA_PADRAO = {
@@ -644,15 +715,40 @@ def _modulo_ambiente():
             return False
 
 
+    def _arvore_compositor(cena):
+        """Arvore de nos do compositor da cena, criando-a se preciso.
+
+        Ate o 4.x ela e Scene.node_tree (que so existe depois de use_nodes = True).
+        No 5.0 Scene.use_nodes e Scene.node_tree sairam da API: o compositor e um
+        node group em Scene.compositing_node_group, que comeca None. Sem nenhum
+        dos dois, levanta RuntimeError e configurar_render segue sem bloom.
+        """
+        _ajustar(cena, "use_nodes", True)
+        nt = getattr(cena, "node_tree", None)
+        if nt is not None:
+            return nt
+        if hasattr(cena, "compositing_node_group"):
+            nt = cena.compositing_node_group
+            if nt is None:
+                nt = bpy.data.node_groups.new(NOME + ".compositor", "CompositorNodeTree")
+                cena.compositing_node_group = nt
+            return nt
+        raise RuntimeError("cena sem node_tree nem compositing_node_group")
+
+
     def _bloom(cena, p):
         """Glare/bloom no compositor. Os nos mudam de nome e de forma entre versoes."""
-        cena.use_nodes = True
-        nt = cena.node_tree
+        nt = _arvore_compositor(cena)
         for no in list(nt.nodes):
             nt.nodes.remove(no)
         camadas = nt.nodes.new("CompositorNodeRLayers")
         camadas.location = (-400, 0)
-        saida = nt.nodes.new("CompositorNodeComposite")
+        try:
+            saida = nt.nodes.new("CompositorNodeComposite")
+        except RuntimeError:
+            # Num node group de compositor a saida pode ser a do proprio grupo.
+            saida = nt.nodes.new("NodeGroupOutput")
+            nt.interface.new_socket("Image", in_out="OUTPUT", socket_type="NodeSocketColor")
         saida.location = (400, 0)
         glare = nt.nodes.new("CompositorNodeGlare")
         glare.location = (0, 0)
@@ -749,10 +845,35 @@ def _modulo_ambiente():
                 # Compositor sem saida ligada renderiza preto: melhor sem bloom
                 # do que sem imagem.
                 print("[ambiente] bloom desligado, compositor incompativel:", e)
-                cena.use_nodes = False
+                # No 5.0 use_nodes nao existe: escrever direto aqui levantava
+                # dentro do proprio handler e derrubava o main() na ultima etapa.
+                _ajustar(cena, "use_nodes", False)
         else:
-            cena.use_nodes = False
+            _ajustar(cena, "use_nodes", False)
         return p
+
+
+    def empacotar_imagens():
+        """img.pack() em toda imagem com arquivo e ainda nao empacotada.
+
+        As imagens carregadas por load() apontam para a pasta temporaria de onde
+        o script as extraiu (%TEMP% no Windows): limpar temporarios, reiniciar ou
+        abrir o .blend em outra maquina deixava logo e telas rosa. A coreografia
+        chama isto antes de salvar. Devolve a lista de nomes empacotados; imagem
+        cujo arquivo sumiu e avisada e pulada, nao derruba o salvar.
+        """
+        feitas = []
+        for img in bpy.data.images:
+            if img.packed_file is not None or not img.filepath:
+                continue
+            if img.source not in {"FILE", "SEQUENCE"}:
+                continue
+            try:
+                img.pack()
+                feitas.append(img.name)
+            except RuntimeError as e:
+                print("[ambiente] nao empacotou '%s' (%s): %s" % (img.name, img.filepath, e))
+        return feitas
 
 
     # ---------------------------------------------------------------- flash
@@ -818,39 +939,96 @@ def _modulo_ambiente():
         return obj
 
 
-    def animar_flash(objs, camera, quadro, forca=1.0, largura=1):
-        """Flash de foto: veu branco parented na camera, alfa 0 -> 1 -> 0 em 3 quadros.
+    def animar_flash(objs, camera, quadro, forca=0.5, largura=1, decaimento=None):
+        """Flash de foto: veu branco parented na camera. Alfa 0 -> 1 -> 0,05 -> 0.
 
-        'forca' multiplica a emissao (1.0 = branco estourado com AgX); 'largura' e
-        quantos quadros de cada lado do pico (1 = os 3 quadros pedidos).
+        Chaves do alfa: 0 em quadro-1 e 1 em quadro, as duas CONSTANT; depois
+        'decaimento' (0,05, ver PARAMS_PADRAO) em quadro+largura e 0 em
+        quadro+2*largura, LINEAR.
+        'forca' multiplica a emissao (0,5 = 8: branco que le como flash, nao como
+        quadro solido; 1,0 = 16, estourado).
+
+        POR QUE CONSTANT nas duas primeiras: o render tem motion blur com o
+        obturador em START, entao o quadro q expoe de q a q+0,5. Com a rampa
+        linear 0 -> 1 entre q-1 e q, o quadro q-1 - o ULTIMO do plano anterior -
+        ja expunha alfa 0,25..0,5 x 16 de emissao e saia branco (revisao: q359,
+        o payoff da UI, veio quase branco). CONSTANT segura 0 ate q exato, e o
+        pico segura 1 por todo o obturador de q. O decaimento e LINEAR de
+        proposito: em q+1 o veu expoe 0,05 -> 0,025 (meio veu medido, L 0,75)
+        e some em q+2.
         """
         p = objs.get("params", PARAMS_PADRAO)
+        if decaimento is None:
+            decaimento = p.get("decaimento_flash", 0.35)
         obj = _plano_flash(objs, camera, p["forca_flash"] * forca, p["distancia_flash"])
         mat = obj.data.materials[0]
         nt = mat.node_tree
         alfa = nt.nodes["alfa"].outputs[0]
         emissao = next(n for n in nt.nodes if n.type == "EMISSION").inputs["Strength"]
+        chaves = (
+            (quadro - 1, 0.0, "CONSTANT"),
+            (quadro, 1.0, "CONSTANT"),
+            (quadro + largura, decaimento, "LINEAR"),
+            (quadro + 2 * largura, 0.0, "LINEAR"),
+        )
         # Forca por flash: a coreografia pode pedir um flash mais fraco no beat 5
-        # sem trocar o material.
-        for q, a in ((quadro - largura, 0.0), (quadro, 1.0), (quadro + largura, 0.0)):
+        # sem trocar o material - por isso a emissao tambem e chaveada.
+        for q, a, _ in chaves:
             alfa.default_value = a
             alfa.keyframe_insert("default_value", frame=q)
             emissao.default_value = p["forca_flash"] * forca
             emissao.keyframe_insert("default_value", frame=q)
-        # Linear e nao Bezier: com so tres chaves, o Bezier passaria de 1.0 no
-        # pico e daria um quadro extra meio branco de cada lado.
+        # So as chaves DESTE flash mudam de interpolacao: o material e um so para
+        # os tres flashes do beat 5, e mexer em todas desfaria as dos outros.
+        interp = {q: i for q, _, i in chaves}
         acao = nt.animation_data.action if nt.animation_data else None
         if acao is not None:
             for fc in acao.fcurves:
                 for kp in fc.keyframe_points:
-                    kp.interpolation = "LINEAR"
+                    i = interp.get(int(round(kp.co.x)))
+                    if i is not None:
+                        kp.interpolation = i if fc.data_path.startswith('nodes["alfa"]') else "CONSTANT"
+                fc.update()
         alfa.default_value = 0.0
         return obj
 
 
-    def animar_rig(objs, quadro_ini, quadro_fim, angulo_ini, angulo_fim, easing="EASE_IN_OUT"):
-        """Gira o rig das luzes em Z (graus), para o rim acompanhar a orbita da camera."""
+    def _valor_animado(dono, data_path, quadro, indice=-1):
+        # Valor que uma propriedade tem num quadro: da fcurve se houver chave, senao
+        # o valor atual - e o que "partir de onde esta" precisa saber.
+        ad = getattr(dono, "animation_data", None)
+        if ad is not None and ad.action is not None:
+            for fc in ad.action.fcurves:
+                if fc.data_path == data_path and (indice < 0 or fc.array_index == indice):
+                    return fc.evaluate(quadro)
+        valor = dono.path_resolve(data_path)
+        return valor[indice] if indice >= 0 else valor
+
+
+    def angulo_rig(azimute_camera, offset=OFFSET_RIM_LATERAL):
+        """Angulo do rig de luz para um azimute de camera (graus): azimute + offset."""
+        return azimute_camera + offset
+
+
+    def animar_rig(objs, quadro_ini, quadro_fim, angulo_ini, angulo_fim, easing="EASE_IN_OUT",
+                   azimutes=False, offset=OFFSET_RIM_ATRAS):
+        """Gira o rig das luzes em Z (graus), para o rim acompanhar a orbita da camera.
+
+        azimutes=False (comportamento antigo): angulo_ini/angulo_fim sao angulos
+        do proprio rig. azimutes=True: sao azimutes da CAMERA, e o rig vai para
+        azimute + offset - OFFSET_RIM_ATRAS (90, padrao: rim exatamente atras)
+        ou OFFSET_RIM_LATERAL (60, a proposta da revisao para a lateral; medido
+        chapado igual, ver o comentario das constantes). angulo_ini=None parte
+        do angulo que o rig ja tem em quadro_ini (a chave do beat anterior), o
+        caso do inicio de uma orbita.
+        """
         rig = objs["rig"]
+        if angulo_ini is None:
+            angulo_ini = math.degrees(_valor_animado(rig, "rotation_euler", quadro_ini, 2))
+        elif azimutes:
+            angulo_ini = angulo_rig(angulo_ini, offset)
+        if azimutes:
+            angulo_fim = angulo_rig(angulo_fim, offset)
         for q, ang in ((quadro_ini, angulo_ini), (quadro_fim, angulo_fim)):
             rig.rotation_euler = (0.0, 0.0, math.radians(ang))
             rig.keyframe_insert("rotation_euler", index=2, frame=q)
@@ -859,6 +1037,82 @@ def _modulo_ambiente():
             for kp in fc.keyframe_points:
                 kp.interpolation = "BEZIER"
                 kp.easing = easing
+
+
+    # ---------------------------------------------------------------- fatores de luz
+
+    def _luzes(luzes):
+        # Aceita o Object da luz, o Light, uma lista deles, o dict 'luzes' do
+        # construir_ambiente ou o proprio dict devolvido por ele.
+        if isinstance(luzes, dict):
+            luzes = luzes.get("luzes", luzes).values()
+        elif hasattr(luzes, "bl_rna"):
+            luzes = (luzes,)
+        for luz in luzes:
+            dados = getattr(luz, "data", None)
+            yield dados if dados is not None and hasattr(dados, "energy") else luz
+
+
+    def chavear_fator_luz(luzes, atributo, quadro_ini, quadro_fim=None, de=None, para=0.0,
+                          rampa=12, easing="EASE_IN_OUT"):
+        """Rampa Bezier de um fator de luz (specular_factor, diffuse_factor, energy...).
+
+        Grava 'de' em quadro_ini e 'para' em quadro_fim (quadro_ini + rampa se
+        None), Bezier com o easing dado - NUNCA constant: a chave constante do
+        especular do rim no primeiro quadro do beat 3 fazia a cunha do reflexo no
+        chao aparecer de um quadro para o outro no meio de um plano continuo
+        (revisao, q160 -> q165). de=None parte do valor que a luz tem em
+        quadro_ini. rampa=0 e um corte de proposito: uma chave so, CONSTANT.
+        So as chaves gravadas aqui mudam de interpolacao. Devolve as luzes tocadas.
+        """
+        if quadro_fim is None:
+            quadro_fim = quadro_ini + rampa
+        tocadas = []
+        for dados in _luzes(luzes):
+            if not hasattr(dados, atributo):
+                continue
+            atual = _valor_animado(dados, atributo, quadro_ini)
+            if quadro_fim > quadro_ini:
+                inicio = atual if de is None else de
+                chaves = [(quadro_ini, inicio, "BEZIER"), (quadro_fim, para, "BEZIER")]
+                salto = abs(inicio - atual) > 1e-9
+            else:
+                chaves = [(quadro_ini, para, "CONSTANT")]
+                salto = abs(para - atual) > 1e-9
+            if salto:
+                # O trecho ANTES de quadro_ini e governado pela chave anterior, que
+                # e Bezier e rampearia devagar ate o valor novo (medido: um corte
+                # em q140 depois de uma rampa que acabou em q126 dava 0,49 em
+                # q139). Uma chave de espera em quadro_ini-1 segura o valor que a
+                # luz tinha ate o instante do salto.
+                chaves.insert(0, (quadro_ini - 1, _valor_animado(dados, atributo, quadro_ini - 1), "CONSTANT"))
+            try:
+                for q, v, _ in chaves:
+                    setattr(dados, atributo, v)
+                    dados.keyframe_insert(atributo, frame=q)
+            except (RuntimeError, TypeError):
+                # Versao sem a propriedade animavel: fica o valor final, sem rampa.
+                setattr(dados, atributo, para)
+                continue
+            interp = {int(round(q)): i for q, _, i in chaves}
+            for fc in dados.animation_data.action.fcurves:
+                if fc.data_path != atributo:
+                    continue
+                for kp in fc.keyframe_points:
+                    i = interp.get(int(round(kp.co.x)))
+                    if i is not None:
+                        kp.interpolation = i
+                        if i == "BEZIER":
+                            kp.easing = easing
+                fc.update()
+            tocadas.append(dados)
+        return tocadas
+
+
+    def chavear_especular(luzes, quadro_ini, quadro_fim=None, de=None, para=0.0, rampa=12,
+                          easing="EASE_IN_OUT"):
+        """specular_factor com rampa Bezier: chavear_fator_luz(..., 'specular_factor', ...)."""
+        return chavear_fator_luz(luzes, "specular_factor", quadro_ini, quadro_fim, de, para, rampa, easing)
     return locals()
 
 
@@ -885,13 +1139,46 @@ def _modulo_caixa():
     # ruido de amostragem (persistiu a 48 amostras, sem bump e com mais raios de
     # sombra). Some com luz.use_shadow_jitter = True nas luzes. Quem monta as
     # luzes (modulo ambiente) precisa ligar isso; o teste daqui liga.
+    #
+    # Rodada 2 (o que a revisao mediu e o que foi feito):
+    # - Logo palida: a revisao mediu a engrenagem cinza a 136 sRGB (fonte 56) e
+    #   apontou o Sheen 0,35 branco da tampa. Ele entra na conta, mas nao e o
+    #   grosso: medido aqui no topo ortografico, zerar sheen E specular no
+    #   material inteiro moveu o cinza de 164 para 163. A causa medida e a
+    #   EXPOSICAO sob o AgX: o papel branco esta a ~7x acima de 1,0 linear
+    #   (albedo constante 0,04 rende 147 sRGB; 0,18 rende 212; 0,88 rende 243),
+    #   e o ombro do AgX comprime a diferenca papel/tinta. O modulo nao manda na
+    #   luz da cena, entao a tinta e escurecida por um no Gamma ('gamma_logo',
+    #   medido no teste) - e o papel fica com Sheen 0,08 na cor do papel e, na
+    #   area do decal, Sheen 0 e specular 0 (no close do beat 7 o reflexo das
+    #   luzes na tinta era um piso de ~130 sRGB; medido, ver SPEC_TINTA). O
+    #   multiplicador de saturacao 1,3 saiu (padrao 1,0): nao devolvia o escuro.
+    # - Logo "pequena" no beat 1: medido de cima com camera ortografica, a
+    #   engrenagem ocupa 44,9% da largura da tampa - o calculo pela alfa esta
+    #   certo. O que a revisao viu (~28-33%) e geometria: no beat 1 a caixa esta
+    #   girada ~35 graus e o topo aparece pela DIAGONAL (~1,35x a largura),
+    #   enquanto a engrenagem redonda nao cresce com o giro. Nao e defeito do
+    #   modulo; quem quiser a logo maior nesse plano sobe 'largura_logo'.
+    # - Espuma: flocos de 6 a 10 cm (raio 0,03-0,05), 48 pecas, ruido em duas
+    #   oitavas, cantos amassados por planos aleatorios, chanfro e subsurface
+    #   0,15 - a 2,5 m os de 3-6 cm liam como arroz.
+    # - Afundamento no topo do U1: a folga usava 0,7*raio, e o raio era o do
+    #   eixo maior. Agora a base do floco vem da extensao REAL do floco girado
+    #   (max |z| dos vertices) mais 3 mm; se o floco nao cabe na camada, ele e
+    #   reduzido em vez de atravessar a tampa.
+    # - Materiais e actions nao vazam mais: bpy.data.materials.get(nome) com
+    #   os nos reconstruidos, e limpar_colecao remove a action orfa.
+    # - Flocos do vao lateral saiam ATRAVES da parede (4 medidos na revisao):
+    #   o arco agora so ganha deslocamento horizontal depois de passar da boca
+    #   do corpo (instante tirado da propria parabola); o teste mede 0 furos.
+    # - A imagem da logo e empacotada (img.pack()) para o .blend ser autocontido.
 
     import math
     import random
 
     import bmesh
     import bpy
-    from mathutils import Vector, noise
+    from mathutils import Euler, Vector, noise
 
     NOME = "caixa"
 
@@ -907,10 +1194,17 @@ def _modulo_caixa():
         "cor": "clara",
         "logo": "logo_engineprint.png",   # relativo a assets/; ou caminho absoluto
         "largura_logo": 0.45,             # fracao da largura externa da tampa
-        # O AgX empalidece cor saturada sob luz forte: o laranja da logo virava
-        # pessego na previa. Compensacao leve na tinta, nao no papel.
-        "saturacao_logo": 1.3,
-        "n_espumas": 64,
+        # Saturacao 1,3 foi a primeira tentativa contra o AgX e nao devolvia o
+        # escuro do cinza (medido); fica em 1,0 e a correcao e por gamma.
+        "saturacao_logo": 1.0,
+        # Gamma > 1 escurece a tinta antes do AgX. Medido no teste (topo
+        # ortografico, papel a 243 sRGB): gamma 1,0 -> cinza 164; 1,5 -> 104;
+        # 1,7 -> 84; 2,0 -> 58 (a fonte e 56); o laranja em 2,0 mede (237,135,6).
+        # Depende da exposicao da cena: quem iluminar diferente mede de novo e
+        # passa outro valor.
+        "gamma_logo": 2.0,
+        "n_espumas": 48,
+        "raio_espuma": (0.03, 0.05),       # meio eixo maior: flocos de 6 a 10 cm
         "semente": 7,
         # Onde o U1 vai ficar dentro da caixa: as espumas se arrumam em volta
         # desse volume, mesmo sem o U1 existir na cena de teste.
@@ -945,12 +1239,17 @@ def _modulo_caixa():
             return
         for obj in list(col.all_objects):
             dados = obj.data
+            acao = obj.animation_data.action if obj.animation_data else None
             bpy.data.objects.remove(obj, do_unlink=True)
             # Malha orfa fica no arquivo ate o proximo salvar/recarregar;
             # apagar aqui evita acumular 'caixa.corpo.001' nas rodadas seguintes.
             if dados is not None and dados.users == 0:
                 if isinstance(dados, bpy.types.Mesh):
                     bpy.data.meshes.remove(dados)
+            # A action da animacao tambem ficava orfa (65 por rodada, medido na
+            # revisao): na aba Scripting do cliente isso acumula lixo no .blend.
+            if acao is not None and acao.users == 0:
+                bpy.data.actions.remove(acao)
         for filha in list(col.children):
             limpar_colecao(filha.name)
         bpy.data.collections.remove(col)
@@ -1057,32 +1356,44 @@ def _modulo_caixa():
 
 
     def _malha_espuma(nome, rng, raio):
-        """Floco de espuma: icosfera amassada por ruido coerente e achatada de
-        forma desigual. E o que faz parecer floco e nao bolinha."""
+        """Floco de espuma: icosfera amassada por ruido em duas oitavas, alongada
+        de forma desigual e com cantos AMASSADOS (vertices alem de planos
+        aleatorios sao empurrados para o plano - facetas chatas como num pedaco
+        de EPS quebrado). Icosfera lisa e o que lia como arroz a 2,5 m."""
         bm = bmesh.new()
-        bmesh.ops.create_icosphere(bm, subdivisions=2, radius=1.0)
+        bmesh.ops.create_icosphere(bm, subdivisions=3, radius=1.0)
         desloc = Vector((rng.uniform(-50, 50), rng.uniform(-50, 50), rng.uniform(-50, 50)))
-        freq = rng.uniform(1.2, 2.0)
-        amp = rng.uniform(0.3, 0.5)
-        # Alongado num eixo e com uma curva leve: o floco de embalagem e um
-        # "amendoim" torto, e seixo redondo e o que a icosfera daria sozinha.
-        escala = Vector((rng.uniform(1.3, 2.1), rng.uniform(0.6, 0.95), rng.uniform(0.55, 0.9)))
-        curva = rng.uniform(-0.45, 0.45)
-        cintura = rng.uniform(0.0, 0.35)
+        desloc2 = Vector((rng.uniform(-50, 50), rng.uniform(-50, 50), rng.uniform(-50, 50)))
+        freq = rng.uniform(1.0, 1.8)
+        amp = rng.uniform(0.3, 0.45)
+        amp2 = rng.uniform(0.10, 0.18)
+        # Alongado num eixo e fino no eixo Z local: o eixo fino e o que se deita
+        # na camada de cima (7 cm entre o U1 e a tampa) e o que atravessa o vao
+        # lateral (~4 cm). O floco de embalagem e um "amendoim" torto.
+        escala = Vector((rng.uniform(1.4, 2.2), rng.uniform(0.7, 1.0), rng.uniform(0.42, 0.62)))
+        curva = rng.uniform(-0.4, 0.4)
+        cintura = rng.uniform(0.0, 0.3)
         for v in bm.verts:
             n = noise.noise(v.co * freq + desloc)
-            n2 = noise.noise(v.co * 5.0 + desloc) * 0.1
-            fator = 1.0 + amp * n + n2
+            n2 = noise.noise(v.co * freq * 2.7 + desloc2)
+            fator = 1.0 + amp * n + amp2 * n2
             x, y, z = v.co.x * escala.x, v.co.y * escala.y, v.co.z * escala.z
-            # cintura no meio (amendoim) e curvatura ao longo do eixo maior
             aperto = 1.0 - cintura * math.exp(-(x / (0.45 * escala.x)) ** 2)
             y *= aperto
             z *= aperto
             z += curva * x * x
             v.co = Vector((x, y, z)) * fator
-        # Normaliza pelo maior raio real: "floco de 3 a 6 cm" e a maior dimensao
-        # do floco deformado, nao o raio da icosfera de partida. Sem isto os
-        # alongados furavam o topo da tampa.
+        # Cantos amassados: 2 a 4 planos aleatorios "cortam" o que sobra deles.
+        for _ in range(rng.randint(2, 4)):
+            normal = Vector((rng.gauss(0, 1), rng.gauss(0, 1), rng.gauss(0, 1))).normalized()
+            alcance = max(v.co.dot(normal) for v in bm.verts)
+            corte = alcance * rng.uniform(0.55, 0.8)
+            for v in bm.verts:
+                s = v.co.dot(normal)
+                if s > corte:
+                    v.co -= normal * (s - corte) * 0.9
+        # Normaliza pelo maior raio real: "floco de 6 a 10 cm" e a maior dimensao
+        # do floco deformado, nao o raio da icosfera de partida.
         maior = max(v.co.length for v in bm.verts)
         for v in bm.verts:
             v.co *= raio / maior
@@ -1093,34 +1404,82 @@ def _modulo_caixa():
         return malha
 
 
+    def _extensoes(malha, rot):
+        """Meias-extensoes (x, y, z) do floco girado por rot (Euler XYZ): o raio
+        REAL em cada eixo do mundo, que e o que decide se ele cabe na camada."""
+        R = rot.to_matrix() if hasattr(rot, "to_matrix") else Euler(rot).to_matrix()
+        mx = my = mz = 0.0
+        for v in malha.vertices:
+            w = R @ v.co
+            mx = max(mx, abs(w.x))
+            my = max(my, abs(w.y))
+            mz = max(mz, abs(w.z))
+        return mx, my, mz
+
+
+    def _encolher(malha, fator):
+        if fator < 1.0:
+            for v in malha.vertices:
+                v.co *= fator
+            malha.update()
+
+
     # ---------------------------------------------------------------- materiais
 
-    def _material_papel(nome, cor_hex, imagem=None, escala_logo=None, z_topo_local=None,
-                        centro_uv=(0.5, 0.5), saturacao=1.0):
-        """Papel fosco com toque de grao. Se houver imagem, ela entra como tinta
-        impressa: mistura pela alfa na Base Color e muda a rugosidade, sem relevo.
-        A projecao e plana no espaco local do objeto (coordenada Object), so na
-        face de cima (z local acima de z_topo_local)."""
-        mat = bpy.data.materials.new(nome)
+    def _material_base(nome):
+        """Pega ou cria o material por nome e reconstroi os nos do zero, como o
+        mod_u1 faz: e o que impede 'caixa.papel.001' a cada rodada na aba
+        Scripting do cliente (a revisao contou 3 materiais novos por rodada)."""
+        mat = bpy.data.materials.get(nome)
+        if mat is None:
+            mat = bpy.data.materials.new(nome)
         mat.use_nodes = True
         nt = mat.node_tree
-        for n in list(nt.nodes):
-            nt.nodes.remove(n)
+        nt.nodes.clear()
         saida = nt.nodes.new("ShaderNodeOutputMaterial")
         bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
         saida.location = (600, 0)
         bsdf.location = (300, 0)
         nt.links.new(bsdf.outputs["BSDF"], saida.inputs["Surface"])
+        if mat.animation_data:
+            mat.animation_data_clear()
+        if nt.animation_data:
+            nt.animation_data_clear()
+        return mat, nt, bsdf
+
+
+    # Papel x tinta. O sheen branco (tint padrao) sobre tinta escura entra na
+    # conta da logo palida (a revisao mediu 136 -> 112 sRGB ao zera-lo na cena do
+    # anuncio; aqui, com a luz do teste, 173 -> 164) - o grosso e a exposicao, ver
+    # o cabecalho. O papel fica com um sheen minimo NA COR DO PAPEL e a tinta
+    # zera. O specular da tinta tambem e ZERO: no beat 7 (camera a 12 cm da
+    # tampa, olhando reto para baixo) o reflexo das luzes do ambiente na tinta
+    # punha um piso de ~130 sRGB no cinza que nem gamma 2,4 baixava (medido:
+    # 130 -> 120); com specular 0 o mesmo quadro mede 77-94.
+    SHEEN_PAPEL, SHEEN_TINTA = 0.08, 0.0
+    RUG_PAPEL, RUG_TINTA = 0.78, 0.5
+    SPEC_PAPEL, SPEC_TINTA = 0.35, 0.0
+
+
+    def _material_papel(nome, cor_hex, imagem=None, escala_logo=None, z_topo_local=None,
+                        centro_uv=(0.5, 0.5), saturacao=1.0, gamma=1.0):
+        """Papel fosco com toque de grao. Se houver imagem, ela entra como tinta
+        impressa: mistura pela alfa na Base Color e troca rugosidade, sheen e
+        specular por valores de tinta, sem relevo. A projecao e plana no espaco
+        local do objeto (coordenada Object), so na face de cima (z local acima
+        de z_topo_local)."""
+        mat, nt, bsdf = _material_base(nome)
 
         cor = cor_linear(cor_hex)
         bsdf.inputs["Base Color"].default_value = cor
-        bsdf.inputs["Roughness"].default_value = 0.78
-        bsdf.inputs["Specular IOR Level"].default_value = 0.35
+        bsdf.inputs["Roughness"].default_value = RUG_PAPEL
+        bsdf.inputs["Specular IOR Level"].default_value = SPEC_PAPEL
         try:
             # Sheen e o que da o "toque de papel" na luz rasante. So existe no
             # Principled v2 (4.0+); em versoes velhas o nome era "Sheen".
-            bsdf.inputs["Sheen Weight"].default_value = 0.35
+            bsdf.inputs["Sheen Weight"].default_value = SHEEN_PAPEL
             bsdf.inputs["Sheen Roughness"].default_value = 0.6
+            bsdf.inputs["Sheen Tint"].default_value = cor
         except KeyError:
             pass
 
@@ -1182,36 +1541,55 @@ def _modulo_caixa():
         mix_cor.blend_type = "MIX"
         mix_cor.inputs["Color1"].default_value = cor
         nt.links.new(mascara.outputs["Value"], mix_cor.inputs["Fac"])
-        hsv = nt.nodes.new("ShaderNodeHueSaturation")
-        hsv.location = (-150, 250)
-        hsv.inputs["Saturation"].default_value = saturacao
-        nt.links.new(tex.outputs["Color"], hsv.inputs["Color"])
-        nt.links.new(hsv.outputs["Color"], mix_cor.inputs["Color2"])
+        ultimo = tex.outputs["Color"]
+        if abs(saturacao - 1.0) > 1e-3:
+            hsv = nt.nodes.new("ShaderNodeHueSaturation")
+            hsv.location = (-250, 250)
+            hsv.inputs["Saturation"].default_value = saturacao
+            nt.links.new(ultimo, hsv.inputs["Color"])
+            ultimo = hsv.outputs["Color"]
+        if abs(gamma - 1.0) > 1e-3:
+            # Escurece os meios-tons da tinta (o AgX levanta o escuro); o branco
+            # e o transparente nao mudam, entao o papel em volta fica igual.
+            gam = nt.nodes.new("ShaderNodeGamma")
+            gam.location = (-100, 250)
+            gam.inputs["Gamma"].default_value = gamma
+            nt.links.new(ultimo, gam.inputs["Color"])
+            ultimo = gam.outputs["Color"]
+        nt.links.new(ultimo, mix_cor.inputs["Color2"])
         nt.links.new(mix_cor.outputs["Color"], bsdf.inputs["Base Color"])
 
-        # Tinta e um pouco mais acetinada que o papel: e o que faz "impresso" em
-        # vez de "colado".
-        mix_rug = nt.nodes.new("ShaderNodeMath")
-        mix_rug.location = (50, 50)
-        mix_rug.operation = "MULTIPLY_ADD"   # rug = 0.78 + mascara * (0.55 - 0.78)
-        nt.links.new(mascara.outputs["Value"], mix_rug.inputs[0])
-        mix_rug.inputs[1].default_value = 0.55 - 0.78
-        mix_rug.inputs[2].default_value = 0.78
-        nt.links.new(mix_rug.outputs["Value"], bsdf.inputs["Roughness"])
+        # Onde ha tinta, o material vira tinta: rugosidade, sheen e specular
+        # trocam pela mascara (valor = papel + mascara * (tinta - papel)).
+        def _pela_mascara(entrada, papel, tinta, y):
+            m = nt.nodes.new("ShaderNodeMath")
+            m.location = (50, y)
+            m.operation = "MULTIPLY_ADD"
+            nt.links.new(mascara.outputs["Value"], m.inputs[0])
+            m.inputs[1].default_value = tinta - papel
+            m.inputs[2].default_value = papel
+            nt.links.new(m.outputs["Value"], bsdf.inputs[entrada])
+
+        _pela_mascara("Roughness", RUG_PAPEL, RUG_TINTA, 50)
+        _pela_mascara("Specular IOR Level", SPEC_PAPEL, SPEC_TINTA, -100)
+        try:
+            _pela_mascara("Sheen Weight", SHEEN_PAPEL, SHEEN_TINTA, -250)
+        except KeyError:
+            pass
         return mat
 
 
     def _material_espuma(nome):
-        mat = bpy.data.materials.new(nome)
-        mat.use_nodes = True
-        bsdf = mat.node_tree.nodes.get("Principled BSDF")
+        mat, nt, bsdf = _material_base(nome)
         bsdf.inputs["Base Color"].default_value = cor_linear(COR_ESPUMA)
-        bsdf.inputs["Roughness"].default_value = 0.92
+        bsdf.inputs["Roughness"].default_value = 0.9
         bsdf.inputs["Specular IOR Level"].default_value = 0.25
         try:
-            # Um pouco de subsuperficie tira o "gesso" da espuma branca.
-            bsdf.inputs["Subsurface Weight"].default_value = 0.1
-            bsdf.inputs["Subsurface Radius"].default_value = (0.01, 0.01, 0.01)
+            # Subsuperficie branca leve: e o que separa espuma de ceramica - a luz
+            # entra um pouco e as sombras proprias ficam macias.
+            bsdf.inputs["Subsurface Weight"].default_value = 0.15
+            bsdf.inputs["Subsurface Radius"].default_value = (1.0, 1.0, 1.0)
+            bsdf.inputs["Subsurface Scale"].default_value = 0.01
         except KeyError:
             pass
         return mat
@@ -1241,6 +1619,14 @@ def _modulo_caixa():
         import os
         if os.path.exists(caminho):
             img = bpy.data.images.load(caminho, check_existing=True)
+            # Empacotada no .blend: sem isto o arquivo gravado aponta para a
+            # pasta temporaria e a logo vira rosa em outra maquina (medido na
+            # revisao: packed_file = False nas tres imagens).
+            try:
+                if not img.packed_file:
+                    img.pack()
+            except RuntimeError as e:
+                print("[caixa] AVISO: nao empacotou a logo:", e)
             return img, False
         # Sem o PNG, um quadrado provisorio para a projecao ter o que mostrar.
         import numpy as np
@@ -1305,7 +1691,7 @@ def _modulo_caixa():
         escala_quadrado = largura_logo / fracao
         tampa.data.materials.append(
             _material_papel("caixa.papel_tampa", cor_hex, imagem, escala_quadrado,
-                            h_tampa / 2.0, centro_uv, p["saturacao_logo"])
+                            h_tampa / 2.0, centro_uv, p["saturacao_logo"], p["gamma_logo"])
         )
 
         # Marcador (Empty, nao renderiza) no centro da logo, filho da tampa: a
@@ -1323,42 +1709,90 @@ def _modulo_caixa():
         espumas = []
         ux, uy, uz = p["u1"]
         n = int(p["n_espumas"])
+        r_min, r_max = p["raio_espuma"]
+        FOLGA_ESPUMA = 0.003
+        camada = iz - uz                      # entre o topo do U1 e o topo interno
+        vao_x, vao_y = (ix - ux) / 2.0, (iy - uy) / 2.0
+        ocupados = []                         # (x, y, raio) da camada de cima
         for i in range(n):
-            raio = rng.uniform(0.015, 0.03)          # floco de 3 a 6 cm
+            raio = rng.uniform(r_min, r_max)
             malha = _malha_espuma("caixa.espuma.%03d" % (i + 1), rng, raio)
             obj = bpy.data.objects.new("caixa.espuma.%03d" % (i + 1), malha)
             obj.data.materials.append(mat_espuma)
-            # Subdivisao leve por cima do ruido: tira as quinas da icosfera.
+            # Chanfro arredonda a crista entre as facetas amassadas e o corpo;
+            # a subdivisao por cima tira o que sobra de quina da icosfera.
+            bis = obj.modifiers.new("chanfro", "BEVEL")
+            bis.width = raio * 0.15
+            bis.segments = 2
+            bis.limit_method = "ANGLE"
+            bis.angle_limit = math.radians(35.0)
             sub = obj.modifiers.new("suave", "SUBSURF")
             sub.levels = 1
             sub.render_levels = 1
             # Onde fica: a maior parte por cima do U1 (e de la que voa quando a
-            # tampa abre); o resto nos vaos laterais entre o U1 e a parede.
-            if rng.random() < 0.62 or raio > 0.02:
-                # Camada de cima, entre o topo do U1 e o topo interno da tampa.
-                x = rng.uniform(-ix / 2 + raio, ix / 2 - raio)
-                y = rng.uniform(-iy / 2 + raio, iy / 2 - raio)
-                z_min = e + uz + raio * 0.7
-                z_max = e + iz - raio
+            # tampa abre); o resto nos vaos laterais entre o U1 e a parede. O
+            # eixo fino do floco (z local) fica na direcao apertada, e a folga
+            # sai da extensao REAL do floco girado - o 0,7*raio antigo enterrava
+            # a base do floco 5-9 mm no topo do U1 (medido na revisao).
+            if rng.random() < 0.62:
+                rot = Euler((rng.uniform(-0.35, 0.35), rng.uniform(-0.35, 0.35), rng.uniform(0, math.tau)))
+                rx, ry, rz = _extensoes(malha, rot)
+                if 2 * rz + 2 * FOLGA_ESPUMA > camada:
+                    # Nao cabe deitado: encolhe em vez de atravessar a tampa.
+                    f = (camada - 2 * FOLGA_ESPUMA) / (2 * rz)
+                    _encolher(malha, f)
+                    raio *= f
+                    rx, ry, rz = rx * f, ry * f, rz * f
+                z_min = e + uz + rz + FOLGA_ESPUMA
+                z_max = e + iz - rz - FOLGA_ESPUMA
                 z = rng.uniform(z_min, max(z_min, z_max))
+                # Espalha na camada sem empilhar dois no mesmo lugar (ate 40
+                # tentativas; depois aceita a sobreposicao).
+                for _ in range(40):
+                    x = rng.uniform(-ix / 2 + rx, ix / 2 - rx)
+                    y = rng.uniform(-iy / 2 + ry, iy / 2 - ry)
+                    if all((x - ox) ** 2 + (y - oy) ** 2 > (0.8 * (raio + orr)) ** 2 for ox, oy, orr in ocupados):
+                        break
+                ocupados.append((x, y, raio))
             else:
-                # Vaos laterais: so os pequenos, porque o vao tem menos de 4 cm.
                 lado = rng.choice(("x", "y"))
                 sinal = rng.choice((-1.0, 1.0))
+                # O eixo fino (z local) atravessa o vao; sobra so um jogo pequeno
+                # nos outros dois angulos, porque girar em torno do eixo longo
+                # tambem gira o eixo fino para fora do vao (Euler XYZ: X, Y, Z).
+                pequeno = lambda: rng.uniform(-0.15, 0.15)  # noqa: E731
                 if lado == "x":
-                    x = sinal * (ux / 2 + (ix / 2 - ux / 2) / 2.0)
-                    y = rng.uniform(-iy / 2 + raio, iy / 2 - raio)
+                    rot = Euler((pequeno(), rng.choice((-1.0, 1.0)) * math.pi / 2 + pequeno(), pequeno()))
+                    rx, ry, rz = _extensoes(malha, rot)
+                    vao = vao_x
+                    largo = rx
                 else:
-                    x = rng.uniform(-ix / 2 + raio, ix / 2 - raio)
-                    y = sinal * (uy / 2 + (iy / 2 - uy / 2) / 2.0)
-                z = rng.uniform(e + 0.25, e + uz)
+                    rot = Euler((rng.choice((-1.0, 1.0)) * math.pi / 2 + pequeno(), pequeno(), pequeno()))
+                    rx, ry, rz = _extensoes(malha, rot)
+                    vao = vao_y
+                    largo = ry
+                if 2 * largo + 2 * FOLGA_ESPUMA > vao:
+                    # O vao tem ~4 cm: o floco que nao cabe atravessado encolhe.
+                    f = (vao - 2 * FOLGA_ESPUMA) / (2 * largo)
+                    _encolher(malha, f)
+                    raio *= f
+                    rx, ry, rz = rx * f, ry * f, rz * f
+                # centro do vao: meio caminho entre o U1 e a parede
+                if lado == "x":
+                    x = sinal * (ux / 2 + vao_x / 2)
+                    y = rng.uniform(-iy / 2 + ry, iy / 2 - ry)
+                else:
+                    x = rng.uniform(-ix / 2 + rx, ix / 2 - rx)
+                    y = sinal * (uy / 2 + vao_y / 2)
+                z = rng.uniform(e + 0.25, e + uz - rz)
             obj.location = (x, y, z)
-            obj.rotation_euler = (rng.uniform(0, math.tau), rng.uniform(0, math.tau), rng.uniform(0, math.tau))
+            obj.rotation_euler = rot
             # Repouso guardado no objeto: as animacoes partem daqui e voltam para
             # ca, independentemente do estado em que a cena estiver.
             obj["caixa_repouso"] = list(obj.location)
             obj["caixa_rot_repouso"] = list(obj.rotation_euler)
             obj["caixa_raio"] = raio
+            obj["caixa_extensoes"] = [rx, ry, rz]
             col.objects.link(obj)
             espumas.append(obj)
 
@@ -1378,6 +1812,9 @@ def _modulo_caixa():
             "normal_logo": Vector((0.0, 0.0, 1.0)),
             "largura_logo": largura_logo,
             "colecao": col,
+            # Para a coreografia poder avisar na tela quando a logo e o quadrado.
+            "logo_provisoria": provisoria,
+            "imagem_logo": imagem,
         }
 
 
@@ -1459,6 +1896,16 @@ def _modulo_caixa():
         t_desce = math.sqrt(2.0 * max(apice - fim.z, 0.01) / g)
         T = t_sobe + t_desce
         giro = Vector((rng.uniform(-1, 1), rng.uniform(-1, 1), rng.uniform(-1, 1))) * rng.uniform(4.0, 9.0)
+        # Nada de deslocamento horizontal enquanto o floco nao passou da boca do
+        # corpo: a revisao mediu quatro flocos do vao lateral (repouso a z~0,3)
+        # saindo ATRAVES da parede. O instante da saida vem da propria parabola.
+        z_saida = objs["exterior_corpo"][2] + raio
+        u_saida = 0.0
+        if ini.z < z_saida < apice:
+            # ini.z + g*t_sobe*t - 0.5*g*t^2 = z_saida  (raiz menor)
+            disc = (g * t_sobe) ** 2 - 2.0 * g * (z_saida - ini.z)
+            t_s = (g * t_sobe - math.sqrt(max(disc, 0.0))) / g
+            u_saida = min(t_s / T, 0.9)
         pontos = []
         passos = 16
         for k in range(passos + 1):
@@ -1466,7 +1913,8 @@ def _modulo_caixa():
             t = u * T
             # Horizontal comeca devagar e acelera: a espuma sobe quase reta ao sair
             # da caixa e so depois abre o arco - e o que evita atravessar a parede.
-            w = u * (0.45 + 0.55 * u)
+            v = max(0.0, (u - u_saida) / (1.0 - u_saida))
+            w = v * (0.45 + 0.55 * v)
             xy = ini.xy.lerp(fim.xy, w)
             if t <= t_sobe:
                 z = ini.z + g * t_sobe * t - 0.5 * g * t * t
@@ -1590,6 +2038,46 @@ def _modulo_u1():
     # inteiro com a cor do trilho e so entao pinta o branco ate 'progresso', de
     # modo que a animacao fica certa com ou sem preenchimento cozido no asset. O
     # retangulo do trilho e parametro ('barra_boot_px'), medido com numpy no PNG.
+    #
+    # RODADA 2 (revisao em docs/REVISAO-RODADA-1.md):
+    # - LIGAR E EVENTO DE LUZ: animar_ligar(objs, q_ini, q_fim) faz o que
+    #   animar_botao faz (afunda o botao, acende a janela vermelha) e, a partir do
+    #   fundo do curso, sobe as fitas de LED de 0 a 4 em 6 quadros (Bezier), liga
+    #   uma area light por fita (u1.led.luz.N, 0 -> 60 W) e poe a tela em
+    #   'standby' (cinza-escuro, emissao 0,15). As luzes existem porque no EEVEE
+    #   uma malha emissiva NAO ilumina nada sem sonda de irradiancia cozida: a
+    #   fita a 12 de forca do animar_botao brilhava sozinha e a camara continuava
+    #   preta pelo acrilico (medido na rodada 1: 'nada muda de q246 a q268'). As
+    #   luzes nascem com hide_render=True e energia 0; sem animar_ligar a cena e
+    #   a de antes. animar_botao continua igual (mesmo curso, mesmas forcas).
+    # - Material do cliente: a forca de emissao chaveada e a do no que esta
+    #   LIGADO ao Material Output (seguindo Surface, e Mix/Add Shader por
+    #   dentro); a varredura por ordem de nos so entra sem link. Vale para
+    #   animar_tela, animar_botao e animar_ligar - mesmo furo nos tres.
+    # - As imagens da tela sao empacotadas (img.pack()) ao carregar: o .blend do
+    #   cliente nao pode depender de %TEMP%.
+    # - Lateral: rasgos de ventilacao perto do fundo (confirmados: o proprio
+    #   cabecalho ja os listava e nao os construia; a Snapmaker e os projetos de
+    #   'side cover' da comunidade falam nos 'vent slots on the printer case'),
+    #   junta vertical entre o painel frontal e o lateral logo depois do canto
+    #   arredondado (CHUTE plausivel de carenagem injetada em duas pecas; nenhuma
+    #   foto oficial mostra uma junta horizontal, por isso nao ha uma) e o aro
+    #   preto do topo 10 mm acima do casco, com a boca em chanfro de 6 mm e o
+    #   bordo externo arredondado - o aro do U1 real e uma moldura visivel, nao
+    #   uma linha de 2 mm.
+    # - Ruido no acrilico/vidro a 16 amostras (pontos brancos em beat_3.png): a
+    #   rugosidade ja era 0,03/0,02 e o Principled 4.x nao tem 'Transmission
+    #   Roughness', entao a proposta nao tinha o que reduzir. MEDIDO (contagem de
+    #   pixels 0,18 acima da mediana 3x3 na janela do acrilico, q218 da cena
+    #   completa a 360x640/16): beat_3 da rodada 1 tem 890 pontos (540x960); com
+    #   o mod_ambiente da rodada 1 e este mod_u1, 372; com o rim escondido, 0;
+    #   com o mod_ambiente atual (rim de 2,2 m a z=1,0 -> 1,2 m a z=1,4), 0; e
+    #   rugosidade 0 nao muda nada (25 -> 29 pontos fora da janela). O chuvisco
+    #   era o painel do rim de 350 W refratado/refletido no acrilico e mal
+    #   denoised a 16 amostras - problema do ambiente, ja resolvido la; o
+    #   material do vidro NAO foi mexido. O que sobra a 16 amostras e um halo
+    #   claro nas bordas das paredes escuras vistas pelo acrilico (denoise da
+    #   refracao raytraced), que nao e ponto e some com amostras finais.
 
     import math
     import os
@@ -1645,6 +2133,9 @@ def _modulo_u1():
                     bpy.data.meshes.remove(dados)
                 elif isinstance(dados, bpy.types.Curve):
                     bpy.data.curves.remove(dados)
+                elif isinstance(dados, bpy.types.Light):
+                    # As area lights das fitas de LED; sem isto viram 'luz.001'.
+                    bpy.data.lights.remove(dados)
         for filha in list(col.children):
             limpar_colecao(filha.name)
         bpy.data.collections.remove(col)
@@ -1998,6 +2489,12 @@ def _modulo_u1():
                     bpy.data.images.remove(antiga)
                 img = bpy.data.images.load(c)
                 img.name = nome
+                # Empacota no .blend: no Windows do cliente o PNG vive em %TEMP%
+                # e some na limpeza; a fonte ja era empacotada, a imagem nao.
+                try:
+                    img.pack()
+                except RuntimeError as e:
+                    print("[u1] aviso: nao empacotou %s: %s" % (nome, e))
                 if c != caminho:
                     print("[u1] aviso: %s nao existe; usando %s" % (caminho, c))
                 return img, False
@@ -2118,7 +2615,6 @@ def _modulo_u1():
         nt.links.new(mistura.outputs[0], troca.inputs["Fac"])
         nt.links.new(boot_com_barra.outputs["Color"], troca.inputs["Color1"])
         nt.links.new(tex_ui.outputs["Color"], troca.inputs["Color2"])
-        nt.links.new(troca.outputs["Color"], bsdf.inputs["Emission Color"])
 
         ligada = nt.nodes.new("ShaderNodeValue")
         ligada.name = "ligada"
@@ -2127,7 +2623,33 @@ def _modulo_u1():
         ligada.location = (-250, -250)
         # Tela real e bem mais clara que o vidro em volta: 4x para AgX nao apagar.
         forca = _math("MULTIPLY", (ligada, 0), 4.0, (-50, -250))
-        nt.links.new(forca.outputs["Value"], bsdf.inputs["Emission Strength"])
+        # 'standby': a tela acesa mas sem imagem, logo depois de ligar (cinza
+        # escuro, emissao 0,15). E um segundo termo SOMADO a radiancia - a imagem
+        # so tem uma entrada de emissao no Principled, entao a forca vai para 1 e
+        # a cor carrega os dois termos: imagem*4*ligada + cinza*0,15*standby.
+        standby = nt.nodes.new("ShaderNodeValue")
+        standby.name = "standby"
+        standby.label = "standby"
+        standby.outputs[0].default_value = 0.0
+        standby.location = (-250, -400)
+        forca_standby = _math("MULTIPLY", (standby, 0), 0.15, (-50, -400))
+        cor_ligada = nt.nodes.new("ShaderNodeVectorMath")
+        cor_ligada.operation = "SCALE"
+        cor_ligada.location = (150, -150)
+        nt.links.new(troca.outputs["Color"], cor_ligada.inputs[0])
+        nt.links.new(forca.outputs["Value"], cor_ligada.inputs["Scale"])
+        cor_standby = nt.nodes.new("ShaderNodeVectorMath")
+        cor_standby.operation = "SCALE"
+        cor_standby.location = (150, -350)
+        cor_standby.inputs[0].default_value = (0.80, 0.80, 0.85)
+        nt.links.new(forca_standby.outputs["Value"], cor_standby.inputs["Scale"])
+        soma = nt.nodes.new("ShaderNodeVectorMath")
+        soma.operation = "ADD"
+        soma.location = (300, -250)
+        nt.links.new(cor_ligada.outputs["Vector"], soma.inputs[0])
+        nt.links.new(cor_standby.outputs["Vector"], soma.inputs[1])
+        nt.links.new(soma.outputs["Vector"], bsdf.inputs["Emission Color"])
+        _entrada(bsdf, "Emission Strength", 1.0)
         return mat
 
 
@@ -2172,6 +2694,10 @@ def _modulo_u1():
         m_botao = _mat_emissivo("u1.botao", "#D8241E", 0.0)
         m_botao.node_tree.nodes["Principled BSDF"].inputs["Roughness"].default_value = 0.3
         m_cinza_texto = _mat_plastico("u1.texto", "#3A3B40", aspereza=0.5)
+        # Aro do topo mais escuro e menos especular que o preto fosco generico:
+        # na 3/4 alta a luz rasante clareava o preto e o aro lia como faixa clara.
+        m_aro = _mat_plastico("u1.aro", "#0C0D10", aspereza=0.5)
+        _entrada(m_aro.node_tree.nodes["Principled BSDF"], "Specular IOR Level", 0.3)
 
         img_boot, ph_boot = _carregar_imagem(p["imagem_boot"], "u1.tela_boot", cor=(0, 0, 0, 1))
         img_ui, ph_ui = _carregar_imagem(p["imagem_ui"], "u1.tela_ui", cor=(0.09, 0.09, 0.1, 1))
@@ -2184,9 +2710,9 @@ def _modulo_u1():
         col.objects.link(raiz)
 
         # --- Casco branco ------------------------------------------------------
-        # Casco de 4 mm acima do chao (pes) ate 2 mm abaixo do topo (aro): assim
-        # os pes ficam sobre z = 0 e o aro fecha o envelope em ALTURA.
-        corpo = _caixa("u1.corpo", col, (L, P, A - 0.006), (0, 0, (A + 0.002) / 2), m_painel,
+        # Casco de 4 mm acima do chao (pes) ate 10 mm abaixo do topo: o aro preto
+        # sobe esses 10 mm sobre o casco, como a moldura do U1 real.
+        corpo = _caixa("u1.corpo", col, (L, P, A - 0.014), (0, 0, (A - 0.006) / 2), m_painel,
                        chanfro=0.025, segmentos=8, pai=raiz, peso=(1.0, 0.16), suave=False)
         # Bolso do topo (a camara aparece por ele), abertura da porta, janela
         # traseira, bolso da tela e rebaixo circular das laterais.
@@ -2198,13 +2724,26 @@ def _modulo_u1():
             _cortador("u1.cortador.disco." + lado, col,
                       _malha_cilindro("u1.cortador.disco." + lado, 0.17, 0.012, "X", 64),
                       (x, 0.02, 0.36), corpo, raiz)
+        # Lateral: rasgos de ventilacao perto do fundo e a junta vertical entre o
+        # painel frontal e o lateral, logo depois do canto arredondado. Um so
+        # cortador com todos os rasgos: cada boolean EXACT custa na avaliacao.
+        rasgos = []
+        for sx in (-1, 1):
+            for k in range(8):
+                rasgos.append(((0.008, 0.036, 0.005), (sx * L / 2, -0.168 + k * 0.048, 0.055)))
+            rasgos.append(((0.0024, 0.0025, A), (sx * L / 2, frente + 0.034, A / 2)))
+        _cortador("u1.cortador.lateral", col, _malha_multicaixas("u1.cortador.lateral", rasgos), (0, 0, 0), corpo, raiz)
         # Quebra de quina de 1,5 mm nas arestas que os booleans criaram.
         _chanfro(corpo, 0.0015, 2, nome="quina")
 
-        # Aro preto do topo, com abertura um pouco menor que o bolso (faz o labio).
-        aro = _caixa("u1.aro", col, (L - 0.02, P - 0.02, 0.024), (0, 0, A - 0.012), m_preto,
+        # Aro preto do topo, 10 mm acima do casco, com abertura um pouco menor que
+        # o bolso (faz o labio). A boca do aro e um chanfro de 6 mm (o cortador e
+        # um 'funil' com a parte de cima alargada a 45 graus) e o bordo externo do
+        # topo e arredondado com 6 mm: e o que faz a moldura ler como moldura.
+        aro = _caixa("u1.aro", col, (L - 0.02, P - 0.02, 0.024), (0, 0, A - 0.012), m_aro,
                      chanfro=0.02, segmentos=6, pai=raiz, peso=(1.0, 0.12), suave=False)
-        _cortador("u1.cortador.aro", col, (L - 0.10, P - 0.12, 0.1), (0, 0, A), aro, raiz)
+        _peso_arestas_topo(aro.data, 0.30)
+        _cortador("u1.cortador.aro", col, _malha_funil("u1.cortador.aro", L - 0.10, P - 0.12, 0.1, 0.006), (0, 0, A), aro, raiz)
         _chanfro(aro, 0.0015, 2, nome="quina")
         for i, (sx, sy) in enumerate(((-1, -1), (1, -1), (-1, 1), (1, 1))):
             _cilindro("u1.tampao.%d" % (i + 1), col, 0.009, 0.003,
@@ -2291,10 +2830,14 @@ def _modulo_u1():
         for i, x in enumerate((-0.135, -0.045, 0.045, 0.135)):
             cabecotes.append(_cabecote(col, i + 1, Vector((x, 0.115, 0.575)), m_preto, m_preto_brilho, m_laranja, m_alu_z, m_latao, raiz))
 
-        # LEDs no teto da camara, na frente.
+        # LEDs no teto da camara, na frente - e uma area light por fita, porque a
+        # malha emissiva nao ilumina a camara no EEVEE. Nascem escondidas e a 0 W;
+        # animar_ligar e quem as acende.
         leds = []
+        luzes = []
         for i, x in enumerate((-0.11, 0.11)):
             leds.append(_caixa("u1.led.%d" % (i + 1), col, (0.16, 0.012, 0.003), (x, -cy / 2 + 0.03, A - 0.032), m_led, chanfro=0.0005, segmentos=1, pai=raiz))
+            luzes.append(_luz_de_fita("u1.led.luz.%d" % (i + 1), col, Vector((x, -cy / 2 + 0.03, A - 0.036)), (0.16, 0.012), raiz))
 
         # --- Mesa -----------------------------------------------------------------
         _caixa("u1.mesa.carro", col, (0.30, 0.30, 0.012), (0, 0.0, 0.146), m_preto, chanfro=0.002, segmentos=2, pai=raiz)
@@ -2372,6 +2915,8 @@ def _modulo_u1():
             "painel_traseiro": painel_traseiro,
             "leds": leds,
             "led": leds[0],
+            # Area lights das fitas (hide_render=True e 0 W ate animar_ligar).
+            "luzes_led": luzes,
             "tubos": tubos,
             "colecao": col,
             # Envelope MEDIDO da malha avaliada (com modificadores), nao o nominal.
@@ -2386,8 +2931,74 @@ def _modulo_u1():
             # Direcao em que o botao afunda, no espaco local dele (a coreografia
             # pode girar a raiz; a animacao continua certa porque e local).
             "botao_afunda_local": Vector((0, -1, 0)),
-            "materiais": {"tela": m_tela, "led": m_led, "botao": m_botao},
+            "materiais": {"tela": m_tela, "led": m_led, "botao": m_botao, "aro": m_aro},
         }
+
+
+    def _luz_de_fita(nome, col, pos, tamanho, raiz):
+        """Area light retangular do tamanho da fita, apontando para baixo, escondida e a 0 W."""
+        dados = bpy.data.lights.new(nome, "AREA")
+        dados.shape = "RECTANGLE"
+        dados.size, dados.size_y = tamanho
+        dados.energy = 0.0
+        dados.color = _cor("#FFF6E8")[:3]
+        luz = bpy.data.objects.new(nome, dados)
+        col.objects.link(luz)
+        luz.location = pos
+        luz.parent = raiz
+        luz.hide_render = True
+        return luz
+
+
+    def _malha_multicaixas(nome, caixas):
+        """Varias caixas (dims, centro) numa malha so, para um unico boolean."""
+        bm = bmesh.new()
+        for (dx, dy, dz), (x, y, z) in caixas:
+            novo = bmesh.ops.create_cube(bm, size=1.0)["verts"]
+            bmesh.ops.scale(bm, vec=(dx, dy, dz), verts=novo)
+            bmesh.ops.translate(bm, vec=(x, y, z), verts=novo)
+        malha = bpy.data.meshes.new(nome)
+        bm.to_mesh(malha)
+        bm.free()
+        return malha
+
+
+    def _malha_funil(nome, dx, dy, dz, chanfro):
+        """Caixa cuja parte de cima alarga a 45 graus a partir de 'chanfro' abaixo de z=0.
+
+        Cortando o aro com isto, a boca ganha um chanfro de 'chanfro' de largura
+        no topo (z=0 e o topo do aro) e paredes retas abaixo dele.
+        """
+        bm = bmesh.new()
+        niveis = ((-dz / 2, 0.0), (-chanfro, 0.0), (dz / 2, dz / 2 + chanfro))
+        aneis = []
+        for z, alarga in niveis:
+            hx, hy = dx / 2 + alarga, dy / 2 + alarga
+            aneis.append([bm.verts.new(v) for v in ((-hx, -hy, z), (hx, -hy, z), (hx, hy, z), (-hx, hy, z))])
+        bm.faces.new(aneis[0][::-1])
+        for a, b in zip(aneis, aneis[1:]):
+            for k in range(4):
+                j = (k + 1) % 4
+                bm.faces.new((a[k], a[j], b[j], b[k]))
+        bm.faces.new(aneis[-1])
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        malha = bpy.data.meshes.new(nome)
+        bm.to_mesh(malha)
+        bm.free()
+        return malha
+
+
+    def _peso_arestas_topo(malha, peso):
+        """Bevel weight das arestas da face de cima: bordo arredondado so no topo."""
+        attr = malha.attributes.get("bevel_weight_edge")
+        if attr is None:
+            return
+        z_max = max(v.co.z for v in malha.vertices)
+        for i, aresta in enumerate(malha.edges):
+            a = malha.vertices[aresta.vertices[0]].co
+            b = malha.vertices[aresta.vertices[1]].co
+            if abs(a.z - z_max) < 1e-6 and abs(b.z - z_max) < 1e-6:
+                attr.data[i].value = peso
 
 
     def _envelope(col):
@@ -2511,6 +3122,80 @@ def _modulo_u1():
         socket.keyframe_insert("default_value", frame=quadro)
 
 
+    def _socket_forca_emissao(nt):
+        """Socket de forca de emissao do no LIGADO ao Material Output.
+
+        Parte do Output ativo, segue Surface e desce por Mix/Add Shader ate um
+        Emission ('Strength') ou Principled ('Emission Strength'). So sem link
+        algum cai na varredura por ordem de nos - a varredura sozinha chaveava um
+        Principled sobrando desligado e a tela do cliente nunca acendia.
+        """
+        saida = None
+        try:
+            saida = nt.get_output_node("ALL")
+        except (AttributeError, TypeError):
+            pass
+        if saida is None:
+            outs = [n for n in nt.nodes if n.type == "OUTPUT_MATERIAL"]
+            saida = next((n for n in outs if n.is_active_output), outs[0] if outs else None)
+
+        def _do_no(no, vistos):
+            if no is None or no in vistos:
+                return None
+            vistos.add(no)
+            if no.type == "EMISSION":
+                return no.inputs.get("Strength")
+            if no.type == "BSDF_PRINCIPLED":
+                return no.inputs.get("Emission Strength")
+            for ent in no.inputs:
+                if ent.type == "SHADER" and ent.is_linked:
+                    s = _do_no(ent.links[0].from_node, vistos)
+                    if s is not None:
+                        return s
+            return None
+
+        if saida is not None:
+            surf = saida.inputs.get("Surface")
+            if surf is not None and surf.is_linked:
+                s = _do_no(surf.links[0].from_node, set())
+                if s is not None:
+                    return s
+        for no in nt.nodes:
+            s = no.inputs.get("Emission Strength") if no.type == "BSDF_PRINCIPLED" else (no.inputs.get("Strength") if no.type == "EMISSION" else None)
+            if s is not None:
+                return s
+        return None
+
+
+    def _acender(mat, q_ini, q_fim, forca, easing="EASE_IN_OUT", de=0.0):
+        """Forca de emissao do material: 'de' em q_ini -> 'forca' em q_fim (Bezier)."""
+        if mat is None or not mat.use_nodes:
+            return False
+        s = _socket_forca_emissao(mat.node_tree)
+        if s is None:
+            return False
+        _chave_socket(s, de, q_ini)
+        _chave_socket(s, forca, q_fim)
+        _suavizar_fcurves(mat.node_tree.animation_data, {q_ini, q_fim}, easing)
+        return True
+
+
+    def _afundar_botao(objs, q_ini, q_fim, easing, profundidade):
+        """Curso do botao (afunda e volta); devolve o quadro do fundo do curso."""
+        botao = objs["botao"]
+        eixo = objs.get("botao_afunda_local", Vector((0, -1, 0)))
+        meio = (q_ini + q_fim) // 2
+        repouso = botao.location.copy()
+        botao.location = repouso
+        botao.keyframe_insert("location", frame=q_ini)
+        botao.location = repouso + eixo * profundidade
+        botao.keyframe_insert("location", frame=meio)
+        botao.location = repouso
+        botao.keyframe_insert("location", frame=q_fim)
+        _suavizar_fcurves(botao.animation_data, {q_ini, meio, q_fim}, easing)
+        return meio
+
+
     def animar_tela(objs, q_boot_ini, q_ui_ini, q_fim, easing="EASE_IN_OUT", duracao_fade=6):
         """Desligada -> boot (fade rapido + barra) -> corte para a UI em q_ui_ini.
 
@@ -2533,14 +3218,21 @@ def _modulo_u1():
             _chave_socket(s, 0.0, q_boot_ini)
             _chave_socket(s, 1.0, q_boot_ini + duracao_fade)
             _chave_socket(s, 1.0, q_fim)
+            # O standby (se animar_ligar o acendeu) apaga junto com a subida do
+            # boot; sem animar_ligar antes, e 0 -> 0 e nao muda nada.
+            standby = _no_valor(mat, "standby")
+            if standby is not None:
+                s = standby.outputs[0]
+                _chave_socket(s, s.default_value, q_boot_ini)
+                _chave_socket(s, 0.0, q_boot_ini + duracao_fade)
         else:
-            # Material do cliente: primeiro socket de forca de emissao que existir.
-            for no in nt.nodes:
-                s = no.inputs.get("Emission Strength") if no.type == "BSDF_PRINCIPLED" else (no.inputs.get("Strength") if no.type == "EMISSION" else None)
-                if s is not None:
-                    _chave_socket(s, 0.0, q_boot_ini)
-                    _chave_socket(s, 4.0, q_boot_ini + duracao_fade)
-                    break
+            # Material do cliente: a forca do no ligado ao Output.
+            s = _socket_forca_emissao(nt)
+            if s is not None:
+                _chave_socket(s, 0.0, q_boot_ini)
+                _chave_socket(s, 4.0, q_boot_ini + duracao_fade)
+            else:
+                print("[u1] animar_tela: material sem forca de emissao; tela nao acende")
         if progresso is not None:
             s = progresso.outputs[0]
             _chave_socket(s, 0.0, q_boot_ini + 2)
@@ -2560,38 +3252,96 @@ def _modulo_u1():
                         kp.interpolation = "CONSTANT"
 
 
-    def animar_botao(objs, q_ini, q_fim, easing="EASE_IN_OUT", profundidade=0.002):
-        """Botao afunda 2 mm e volta; LEDs da camara e a janela do botao acendem."""
-        botao = objs["botao"]
-        eixo = objs.get("botao_afunda_local", Vector((0, -1, 0)))
-        meio = (q_ini + q_fim) // 2
-        repouso = botao.location.copy()
-        botao.location = repouso
-        botao.keyframe_insert("location", frame=q_ini)
-        botao.location = repouso + eixo * profundidade
-        botao.keyframe_insert("location", frame=meio)
-        botao.location = repouso
-        botao.keyframe_insert("location", frame=q_fim)
-        _suavizar_fcurves(botao.animation_data, {q_ini, meio, q_fim}, easing)
-
-        # LED: usa os materiais devolvidos; com modelo do cliente, procura
-        # 'led' no dict e chaveia o que tiver forca de emissao.
+    def _materiais_de_led(objs):
+        """Materiais das fitas/LED: os devolvidos pelo modulo ou o do objeto 'led' do cliente."""
         mats = objs.get("materiais", {})
         alvos = [m for m in (mats.get("led"), mats.get("botao")) if m is not None]
         if not alvos and objs.get("led") is not None and objs["led"].active_material:
             alvos = [objs["led"].active_material]
-        for m in alvos:
-            if not m.use_nodes:
-                continue
-            for no in m.node_tree.nodes:
-                s = no.inputs.get("Emission Strength") if no.type == "BSDF_PRINCIPLED" else (no.inputs.get("Strength") if no.type == "EMISSION" else None)
-                if s is None:
-                    continue
-                forca = 12.0 if m.name == "u1.led" else 3.0
-                _chave_socket(s, 0.0, meio)
-                _chave_socket(s, forca, q_fim)
-                _suavizar_fcurves(m.node_tree.animation_data, {meio, q_fim}, easing)
-                break
+        return alvos
+
+
+    def animar_botao(objs, q_ini, q_fim, easing="EASE_IN_OUT", profundidade=0.002):
+        """Botao afunda 2 mm e volta; LEDs da camara e a janela do botao acendem.
+
+        Mantida como na rodada 1 (curso, quadros e forcas iguais); so a busca do
+        socket de emissao passou a seguir o link do Output, que para os
+        materiais daqui da o mesmo socket. Para ligar como evento de luz use
+        animar_ligar.
+        """
+        meio = _afundar_botao(objs, q_ini, q_fim, easing, profundidade)
+        for m in _materiais_de_led(objs):
+            _acender(m, meio, q_fim, 12.0 if m.name == "u1.led" else 3.0, easing)
+
+
+    def animar_ligar(objs, quadro_ini, quadro_fim, easing="EASE_IN_OUT", profundidade=0.002,
+                     forca_fitas=4.0, energia_luz=60.0, duracao=6, standby=1.0):
+        """Ligar como evento de luz: botao, janela do botao, fitas, luzes internas e tela em standby.
+
+        O botao afunda entre quadro_ini e quadro_fim como em animar_botao; no fundo
+        do curso (meio) comeca a luz: fitas de LED 0 -> forca_fitas e area lights
+        das fitas 0 -> energia_luz em 'duracao' quadros (Bezier), janela do botao
+        0 -> 3, e a tela vai de preto ao cinza 'standby' (Value 'standby' 0 ->
+        standby, emissao 0,15). As luzes ficam escondidas do render ate meio-1.
+        60 W por fita porque a camara e escura (paredes #0F1013, chao preto): com
+        25 W a janela traseira subia 1% de luminancia - o que a luz encontra e a
+        mesa dourada, os cabecotes e o fundo.
+        Com o modelo do cliente sem fitas nem luzes, cria UMA area light no topo
+        do envelope (objs['envelope']) e a guarda em objs['luzes_led'].
+        """
+        if objs.get("botao") is not None:
+            q0 = _afundar_botao(objs, quadro_ini, quadro_fim, easing, profundidade)
+        else:
+            q0 = (quadro_ini + quadro_fim) // 2
+        q1 = q0 + max(1, duracao)
+
+        mats = objs.get("materiais", {})
+        if mats.get("botao") is not None:
+            _acender(mats["botao"], q0, q1, 3.0, easing)
+        for m in [m for m in _materiais_de_led(objs) if m is not mats.get("botao")]:
+            _acender(m, q0, q1, forca_fitas, easing)
+
+        luzes = list(objs.get("luzes_led") or [])
+        if not luzes and objs.get("envelope") is not None and objs.get("raiz") is not None:
+            mn, mx = objs["envelope"]
+            centro = Vector(((mn.x + mx.x) / 2, (mn.y + mx.y) / 2, mx.z - 0.04))
+            col = objs.get("colecao") or objs["raiz"].users_collection[0]
+            luzes = [_luz_de_fita("u1.led.luz.1", col, centro, (0.30, 0.02), objs["raiz"])]
+            objs["luzes_led"] = luzes
+            print("[u1] animar_ligar: modelo sem fitas de LED; criada uma area light no topo do envelope")
+        for luz in luzes:
+            luz.hide_render = True
+            luz.keyframe_insert("hide_render", frame=q0 - 1)
+            luz.hide_render = False
+            luz.keyframe_insert("hide_render", frame=q0)
+            luz.data.energy = 0.0
+            luz.data.keyframe_insert("energy", frame=q0)
+            luz.data.energy = energia_luz
+            luz.data.keyframe_insert("energy", frame=q1)
+            _suavizar_fcurves(luz.data.animation_data, {q0, q1}, easing)
+
+        mat_tela = mats.get("tela")
+        if mat_tela is None and objs.get("tela") is not None:
+            mat_tela = objs["tela"].active_material
+        no = _no_valor(mat_tela, "standby")
+        if no is not None:
+            s = no.outputs[0]
+            _chave_socket(s, 0.0, q0)
+            _chave_socket(s, standby, q1)
+            _suavizar_fcurves(mat_tela.node_tree.animation_data, {q0, q1}, easing)
+        else:
+            print("[u1] animar_ligar: tela sem no 'standby' (material do cliente); a tela so acende em animar_tela")
+
+
+    def apagar_tela(objs, quadro):
+        """Chave direta: 'ligada' e 'standby' a 0 em 'quadro' (a maquina volta desligada para a caixa)."""
+        mat = objs.get("materiais", {}).get("tela")
+        if mat is None and objs.get("tela") is not None:
+            mat = objs["tela"].active_material
+        for nome in ("ligada", "standby"):
+            no = _no_valor(mat, nome)
+            if no is not None:
+                _chave_socket(no.outputs[0], 0.0, quadro)
     return locals()
 
 
@@ -3231,36 +3981,76 @@ def _modulo_cartela():
     #   XY local, le-se ao longo de +X, sobe em +Y e o normal (+Z) aponta para
     #   quem olha. Assim a coreografia poe a cartela em frente a camera com uma
     #   linha - posicionar_cartela(objs, camera, distancia) faz
-    #   raiz.matrix_world = camera.matrix_world @ Translation(0, 0, -distancia) -
-    #   sem saber medida nenhuma do bloco. No teste a raiz fica em pe olhando -Y.
+    #   raiz.matrix_world = camera.matrix_world @ Translation(0, subida, -distancia) -
+    #   sem saber medida nenhuma do bloco. Com parentear=True a raiz vira filha da
+    #   camera e acompanha qualquer movimento dela sem chave nenhuma (no beat 7 a
+    #   camera continua derivando depois do corte). No teste a raiz fica em pe
+    #   olhando -Y.
+    #
+    # - 'subida' (0,18 m a 2 m = 8,7% da altura do quadro) sobe o bloco: a linha 4,
+    #   a que vende, saia a 78% da altura (medido na rodada 1), em cima da
+    #   transicao escuro -> rose do gradiente e dentro da faixa de legendas do
+    #   Reels. Era 0,13 na coreografia; a revisao mediu que nao bastava.
     #
     # - O tamanho das letras NAO e digitado: e MEDIDO. As linhas nascem com os
     #   tamanhos relativos de 'tamanhos', o modulo mede a largura de cada uma
     #   (bound_box depois do depsgraph) com o tracking FINAL, e escala o conjunto
     #   para a linha mais larga caber em 'largura_max' - que por padrao deriva da
     #   camera do projeto (35 mm, sensor 36 no lado maior, formato 9:16, a 2 m:
-    #   1,157 m de largura visivel, 0,9 disso = 1,041 m). Assim trocar a fonte
+    #   1,157 m de largura visivel, 0,83 disso = 0,960 m; era 0,9 e o bloco ficou
+    #   8% menor a pedido da revisao, para caber com folga). Assim trocar a fonte
     #   (que muda a largura dos glifos) nao corta nada nas bordas.
+    #
+    # - Hierarquia pelo TAMANHO, nao pelo peso: a marca sai na fonte regular/light
+    #   a 1,3x (era bold a 1,0x - a revisao mediu FreeSans Bold como "pesada, anos
+    #   90"; a Apple faz hierarquia com tamanho e no maximo semibold). O slot
+    #   'fonte_forte' continua existindo para o cliente trocar a fonte da marca;
+    #   a lista dele agora prefere Segoe UI Light / Semilight antes de Semibold, e
+    #   no Linux cai em FreeSans regular (nunca mais em Bold).
     #
     # - O fade NAO e pela forca da emissao, e pelo ALFA. Emissao com forca 0 e
     #   PRETO, nao invisivel: sobre a faixa rose do gradiente as letras entrariam
-    #   como silhuetas escuras. Cada linha tem Emission (branca, forca 1,0 - nao
-    #   estoura no AgX) misturada com Transparent por um Value 'alfa', que e o que
-    #   recebe as chaves; o material e BLENDED.
+    #   como silhuetas escuras. Cada linha tem Emission misturada com Transparent
+    #   por um Value 'alfa', que e o que recebe as chaves; o material e BLENDED.
+    #
+    # - Forca da emissao MEDIDA no render, nao chutada: com 1,0 o "branco" saia a
+    #   0,82 sRGB (209/255) sob AgX Medium High Contrast - cinza. A revisao propos
+    #   1,8 "para chegar a 0,95"; medido (varredura, mesmo AgX), o branco satura
+    #   devagar: 1,8 -> 227, 2,2 -> 232, 2,6 -> 236, 3,0 -> 239, 4,0 -> 245. Os
+    #   0,95 sRGB (242) exigiriam ~3,7, acima do limiar de bloom (2,5) do
+    #   mod_ambiente - o texto floresceria. Fica 2,4 (0,92 sRGB, #EBEBEB, o
+    #   maior valor sem bloom); mais branco que isso e decisao do look, nao da
+    #   forca. O cobre da linha 3 vai a 2,0: o AgX empalidece cor saturada quando
+    #   a forca sobe (B medido 55/65/73/87 para 2,2/2,4/2,6/3,0 a 270 px, e a 540 px
+    #   a mediana encosta no maximo: 78 com 2,2), e o criterio da revisao e
+    #   R >= 180 e B <= 80 no pixel do render - com 2,0 mede R 229 / B 73. O
+    #   teste_cartela imprime os dois numeros.
     #
     # - Tracking: o 'space_character' do TextCurve e um MULTIPLICADOR do avanco de
-    #   cada glifo (1,0 = a fonte como desenhada), nao um acrescimo em em. O
-    #   pedido "tracking 0,25 -> 0,05" e em fracao de em; a conversao e
-    #   space_character = 1 + tracking / AVANCO_MEDIO, com o avanco medio de uma
-    #   sans minuscula em ~0,55 em. Fica 1,45 -> 1,09.
+    #   cada glifo (1,0 = a fonte como desenhada), nao um acrescimo em em. O pedido
+    #   e em fracao de em; a conversao e space_character = 1 + tracking /
+    #   AVANCO_MEDIO, com o avanco medio de uma sans minuscula em ~0,55 em.
+    #   Tracking final POR LINHA: 0,08 em na marca (1,145) e 0,12 em nas outras
+    #   (1,218) - a revisao mediu os 0,05 de antes como "tracking praticamente
+    #   normal", e uma marca a 1,3x com o mesmo tracking das linhas pequenas
+    #   ficaria esparramada demais.
+    #
+    # - Match cut (beat 7): animar_cartela(..., logo_ja_visivel=True) poe a logo
+    #   com alfa 1 JA em q_ini (chave CONSTANT em q_ini-1, para o motion blur nao
+    #   vazar meio fade para o quadro anterior ao corte) e so as linhas entram
+    #   escalonadas depois - o corte 'logo da tampa -> logo da cartela' precisa
+    #   que a logo nao pisque. 'logo_origem' e 'logo_escala_inicial' (opcionais)
+    #   deixam a logo nascer maior e no centro e viajar ate o repouso enquanto o
+    #   texto entra, para casar o tamanho aparente com o ultimo quadro do mergulho.
     #
     # - Fonte: nenhuma sans fina de verdade existe aqui (/usr/share/fonts tem
     #   DejaVu, Liberation, FreeSans, Loma, IPA, Unifont). FreeSans e o clone
     #   metrico da Helvetica - a mais proxima do que a Apple usava antes da SF -
-    #   e e o padrao no Linux; no Windows do cliente a lista prefere Segoe UI
-    #   Light / Semibold, que e o "fino" de verdade. Sem nenhuma, fica a Bfont do
-    #   Blender (mais gorda; funciona). A fonte e embutida (pack) para o .blend
-    #   nao depender do caminho.
+    #   e e o padrao no Linux; no Windows do cliente as listas preferem Segoe UI
+    #   Light / Semilight, que e o "fino" de verdade. Sem nenhuma, fica a Bfont do
+    #   Blender (mais gorda; funciona). Fonte e logo sao embutidas (pack) para o
+    #   .blend nao depender do caminho (a revisao mediu as imagens apontando para
+    #   a pasta temporaria).
     #
     # Eixos e medidas seguem docs/ESPECIFICACAO.md: metros, Z para cima, frente
     # em -Y.
@@ -3280,17 +4070,23 @@ def _modulo_cartela():
 
     FONTES_FINAS = (
         "C:/Windows/Fonts/segoeuil.ttf",           # Segoe UI Light (Windows)
+        "C:/Windows/Fonts/segoeuisl.ttf",          # Segoe UI Semilight
         "C:/Windows/Fonts/segoeui.ttf",
         "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     )
+    # A fonte da MARCA. Light/Semilight vem antes do Semibold de proposito: a
+    # hierarquia vem do tamanho (1,3x), e um bold cheio pesa demais (medido na
+    # rodada 1). Nenhuma Bold na lista - no Linux o fallback e o FreeSans regular.
     FONTES_FORTES = (
-        "C:/Windows/Fonts/seguisb.ttf",            # Segoe UI Semibold (Windows)
-        "C:/Windows/Fonts/segoeuib.ttf",
-        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "C:/Windows/Fonts/segoeuil.ttf",           # Segoe UI Light (Windows)
+        "C:/Windows/Fonts/segoeuisl.ttf",          # Segoe UI Semilight
+        "C:/Windows/Fonts/seguisb.ttf",            # Segoe UI Semibold
+        "C:/Windows/Fonts/segoeui.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     )
 
     PARAMS_PADRAO = {
@@ -3300,31 +4096,40 @@ def _modulo_cartela():
             "13 unidades restantes",
             "compre em engineprint.com.br",
         ),
-        # Tamanho relativo (em) de cada linha; o absoluto sai da medicao.
-        "tamanhos": (1.0, 0.62, 0.62, 0.42),
+        # Tamanho relativo (em) de cada linha; o absoluto sai da medicao. A marca
+        # a 1,3x na fonte regular substitui o bold (hierarquia por tamanho); como
+        # ela passou a ser a linha mais larga e dita a escala, a linha 4 subiu de
+        # 0,42 para 0,46 para nao cair abaixo de ~11 px de x-altura num celular
+        # de 640 px (medido: 10 px com 0,42).
+        "tamanhos": (1.3, 0.62, 0.62, 0.46),
         # Distancia entre a linha de base de uma linha e a de baixo, em fracao do
         # tamanho da linha de CIMA - o que mantem a proporcao quando escala.
         "entrelinhas": (1.30, 1.45, 1.80),
-        # Peso: linha 1 forte, as outras finas.
+        # Qual linha usa o slot 'fonte_forte' (a marca). Com as listas padrao ele
+        # resolve para a mesma fonte regular/light; o slot existe para o cliente
+        # dar outra fonte so para a marca.
         "fortes": (True, False, False, False),
         "cor_texto": "#FFFFFF",
         "cor_destaque": "#C8641F",     # cobre da logo, na linha 3
-        "linha_destaque": 3,
-        # O AgX escurece e empalidece cor saturada a forca 1,0; o cobre saia
-        # marrom. So a linha de destaque sobe um pouco.
-        "forca_destaque": 1.6,
-        "forca_texto": 1.0,
+        "linha_destaque": 3,           # None = tudo branco
+        # Forcas MEDIDAS no render (ver cabecalho): 2,4 e o branco mais branco
+        # sem bloom (0,92 sRGB); o AgX empalidece cor saturada quando a forca
+        # sobe, entao o cobre fica em 2,0 (R 229 / B 73, dentro de R >= 180 e
+        # B <= 80). Quem passar mais que 2,2 no destaque perde o cobre.
+        "forca_destaque": 2.0,
+        "forca_texto": 2.4,
         # Fonte: caminho explicito ou None (percorre as listas acima).
         "fonte_fina": None,
         "fonte_forte": None,
         "extrusao": 0.0,
         "chanfro": 0.0,                # emissao nao sombreia: chanfro so engorda
         "resolucao": 12,               # curvas dos glifos: de perto, 12 e liso
-        # Tracking em fracao de em: assentado e no inicio da entrada. O inicial e
-        # um TETO: medido, 0,25 em poe a linha mais larga a 1,22 da largura do
-        # quadro (cortada dos dois lados) - por isso cada linha recebe o maior
-        # tracking inicial que ainda cabe no quadro (ver construir_cartela).
-        "tracking": 0.05,
+        # Tracking em fracao de em: assentado (um numero, ou um por linha: a marca
+        # grande pede menos que as linhas pequenas) e no inicio da entrada. O
+        # inicial e um TETO: medido, 0,25 em poe a linha mais larga a 1,22 da
+        # largura do quadro (cortada dos dois lados) - por isso cada linha recebe
+        # o maior tracking inicial que ainda cabe no quadro (ver construir_cartela).
+        "tracking": (0.08, 0.12, 0.12, 0.12),
         "tracking_inicial": 0.25,
         # Folga da borda ao limitar o tracking inicial: a largura cresce um pouco
         # mais que linearmente com o space_character (medido 1,356x para 1,33x).
@@ -3335,7 +4140,7 @@ def _modulo_cartela():
         "espaco_logo": 0.35,              # entre a base da logo e o topo da linha 1, em fracao do tamanho da linha 1
         # Camera do projeto, so para derivar largura_max (None = derivar).
         "largura_max": None,
-        "fracao_largura": 0.9,
+        "fracao_largura": 0.83,        # era 0,9; bloco 8% menor (revisao)
         "distancia": 2.0,
         "lente": 35.0,
         "sensor": 36.0,
@@ -3344,6 +4149,10 @@ def _modulo_cartela():
         # com o centro do bloco a 1 m do chao. A coreografia sobrescreve.
         "posicao": (0.0, 0.0, 1.0),
         "rotacao": (math.pi / 2.0, 0.0, 0.0),
+        # Quanto posicionar_cartela sobe o bloco no quadro (m, no 'para cima' da
+        # camera): a 2 m, 0,18 m = 8,7% da altura - tira a linha 4 da transicao
+        # escuro -> rose e da faixa de legendas do Reels.
+        "subida": 0.18,
     }
 
     FPS = 30.0
@@ -3423,6 +4232,18 @@ def _modulo_cartela():
 
     def _tracking_para_espacamento(tracking):
         return 1.0 + tracking / AVANCO_MEDIO
+
+
+    def _por_linha(valor, n):
+        """Um numero vale para todas as linhas; uma sequencia e por linha (a
+        ultima repete se faltar)."""
+        try:
+            seq = list(valor)
+        except TypeError:
+            return [valor] * n
+        if not seq:
+            return [0.0] * n
+        return [seq[i] if i < len(seq) else seq[-1] for i in range(n)]
 
 
     def _largura_visivel(distancia, lente, sensor, proporcao):
@@ -3524,6 +4345,13 @@ def _modulo_cartela():
     def _carregar_logo(caminho):
         if os.path.exists(caminho):
             img = bpy.data.images.load(caminho, check_existing=True)
+            try:
+                # Embutida: o .blend gravado no Windows do cliente apontava para
+                # %TEMP% (medido na revisao); sem o pack, a logo vira rosa.
+                if not img.packed_file:
+                    img.pack()
+            except RuntimeError:
+                pass
             return img, False
         # Sem o PNG, um quadrado cobre com furo, para a cartela nao ficar sem nada.
         import numpy as np
@@ -3608,14 +4436,15 @@ def _modulo_cartela():
 
         fonte_fina = _carregar_fonte(p["fonte_fina"], FONTES_FINAS)
         fonte_forte = _carregar_fonte(p["fonte_forte"], FONTES_FORTES)
-        esp_fim = _tracking_para_espacamento(p["tracking"])
+        n = len(p["textos"])
+        esp_finais = [_tracking_para_espacamento(t) for t in _por_linha(p["tracking"], n)]
 
         # 1) linhas em tamanho RELATIVO, para medir.
         linhas = []
         for i, texto in enumerate(p["textos"]):
             fonte = fonte_forte if p["fortes"][i] else fonte_fina
             linhas.append(_linha("%s.linha.%d" % (NOME, i + 1), texto, fonte,
-                                 p["tamanhos"][i], esp_fim, p, col, raiz))
+                                 p["tamanhos"][i], esp_finais[i], p, col, raiz))
         bpy.context.view_layer.update()
         larguras_rel = [_largura(o) for o in linhas]
         mais_larga = max(larguras_rel)
@@ -3686,7 +4515,7 @@ def _modulo_cartela():
         esp_ini_pedido = _tracking_para_espacamento(p["tracking_inicial"])
         esp_iniciais = [
             min(esp_ini_pedido, esp_fim * p["folga_borda"] * largura_quadro / max(l, 1e-6))
-            for l in larguras
+            for l, esp_fim in zip(larguras, esp_finais)
         ]
         return {
             "raiz": raiz,
@@ -3699,19 +4528,40 @@ def _modulo_cartela():
             "altura": topo - fundo,
             "largura_max": largura_max,
             "distancia": p["distancia"],
-            "espacamento_final": esp_fim,
+            "subida": p["subida"],
+            # Compatibilidade: um so valor (o mais largo); por linha, ver abaixo.
+            "espacamento_final": max(esp_finais),
+            "espacamentos_finais": esp_finais,
             "espacamentos_iniciais": esp_iniciais,
             "fonte_fina": fonte_fina.name if fonte_fina else "Bfont",
             "fonte_forte": fonte_forte.name if fonte_forte else "Bfont",
         }
 
 
-    def posicionar_cartela(objs, camera, distancia=None):
+    def posicionar_cartela(objs, camera, distancia=None, subida=None, parentear=False):
         """Poe a raiz a 'distancia' em frente a camera, de cara para ela, com o
-        'para cima' da camera. So mexe na raiz; a camera e apenas lida."""
+        'para cima' da camera, subida 'subida' m no quadro (None = o param do
+        construtor). So mexe na raiz; a camera e apenas lida.
+
+        parentear=True faz a raiz filha da camera (matrix_parent_inverse
+        identidade, pose local = a translacao): a cartela acompanha qualquer
+        movimento posterior da camera sem chave. A camera do projeto tem DoF com
+        foco no 'camera.alvo'; a coreografia precisa levar o foco ate a raiz (ou
+        keyar focus_distance = distancia) no beat 7, senao a cartela sai borrada -
+        o teste_cartela prova a nitidez com DoF f/2,8 focado na raiz."""
         if distancia is None:
             distancia = objs["distancia"]
-        objs["raiz"].matrix_world = camera.matrix_world @ Matrix.Translation(Vector((0.0, 0.0, -distancia)))
+        if subida is None:
+            subida = objs.get("subida", 0.0)
+        raiz = objs["raiz"]
+        local = Matrix.Translation(Vector((0.0, subida, -distancia)))
+        if parentear:
+            raiz.parent = camera
+            raiz.matrix_parent_inverse = Matrix.Identity(4)
+            raiz.matrix_basis = local
+        else:
+            raiz.parent = None
+            raiz.matrix_world = camera.matrix_world @ local
 
 
     # ---------------------------------------------------------------- animacao
@@ -3725,12 +4575,24 @@ def _modulo_cartela():
         return None, None
 
 
-    def _chave_alfa(obj, quadro, valor):
-        saida, _ = _no_alfa(obj)
+    def _chave_alfa(obj, quadro, valor, interpolacao=None):
+        saida, nt = _no_alfa(obj)
         if saida is None:
             return
         saida.default_value = valor
         saida.keyframe_insert("default_value", frame=quadro)
+        if interpolacao is None:
+            return
+        # So esta chave: e a que segura o valor ate o quadro seguinte (CONSTANT),
+        # para o motion blur nao expor meio fade no quadro anterior ao corte.
+        ad = nt.animation_data
+        if ad is None or ad.action is None:
+            return
+        for fc in ad.action.fcurves:
+            for kp in fc.keyframe_points:
+                if abs(kp.co.x - quadro) < 0.5:
+                    kp.interpolation = interpolacao
+            fc.update()
 
 
     def _suavizar(dono, q_ini, q_fim, easing, interpolacao="BEZIER"):
@@ -3768,32 +4630,53 @@ def _modulo_cartela():
 
 
     def animar_cartela(objs, q_ini, q_fim, easing="EASE_IN_OUT", subida=0.03,
-                       fracao_elemento=0.55):
+                       fracao_elemento=0.55, logo_ja_visivel=False,
+                       logo_origem=None, logo_escala_inicial=1.0):
         """Entrada escalonada: a logo primeiro, depois as linhas 1..4. Cada
         elemento gasta 'fracao_elemento' do intervalo fazendo fade (alfa 0 -> 1),
         subindo 'subida' m e fechando o tracking; os inicios se distribuem para o
-        ultimo terminar exatamente em q_fim - tudo assentado ate la."""
+        ultimo terminar exatamente em q_fim - tudo assentado ate la.
+
+        logo_ja_visivel=True (match cut): a logo esta com alfa 1 JA em q_ini
+        (0 em q_ini-1, chave CONSTANT), sem fade nem subida; as linhas entram
+        escalonadas no mesmo calendario de sempre. Opcionalmente a logo nasce em
+        'logo_origem' (x, y locais da raiz; (0, 0) = centro do quadro) com escala
+        'logo_escala_inicial' e viaja ate o repouso durante a sua fatia do
+        intervalo - e o que casa o tamanho aparente com a logo da tampa."""
         seq = _elementos(objs)
         n = len(seq)
         total = float(q_fim - q_ini)
         dur = max(1.0, total * fracao_elemento)
         passo = (total - dur) / (n - 1) if n > 1 else 0.0
-        esp_fim = objs["espacamento_final"]
+        esp_finais = objs.get("espacamentos_finais") or [objs["espacamento_final"]] * len(objs["linhas"])
         for i, obj in enumerate(seq):
             a = int(round(q_ini + i * passo))
             b = int(round(a + dur)) if i < n - 1 else q_fim
             repouso = _repouso(obj)
-            esp_ini = esp_fim
+            esp_ini = esp_fim = None
             if obj.type == "FONT":
-                esp_ini = objs["espacamentos_iniciais"][objs["linhas"].index(obj)]
+                k = objs["linhas"].index(obj)
+                esp_ini, esp_fim = objs["espacamentos_iniciais"][k], esp_finais[k]
+            ja_visivel = logo_ja_visivel and obj is objs.get("logo")
+            if ja_visivel:
+                origem = repouso if logo_origem is None else Vector((logo_origem[0], logo_origem[1], 0.0))
+                escala_ini = float(logo_escala_inicial)
+            else:
+                origem = repouso + Vector((0.0, -subida, 0.0))
+                escala_ini = 1.0
             # Invisivel ate a sua vez: chave no quadro anterior ao inicio, para o
             # elemento nao "aparecer" interpolando desde uma chave de outro beat.
-            for quadro, alfa, deslocamento, esp in ((a - 1, 0.0, -subida, esp_ini),
-                                                    (a, 0.0, -subida, esp_ini),
-                                                    (b, 1.0, 0.0, esp_fim)):
-                _chave_alfa(obj, quadro, alfa)
-                obj.location = repouso + Vector((0.0, deslocamento, 0.0))
+            # Com a logo ja visivel, o 0 -> 1 fica entre a-1 e a como degrau.
+            chaves = ((a - 1, 0.0, origem, esp_ini, escala_ini, "CONSTANT" if ja_visivel else None),
+                      (a, 1.0 if ja_visivel else 0.0, origem, esp_ini, escala_ini, None),
+                      (b, 1.0, repouso, esp_fim, 1.0, None))
+            for quadro, alfa, pos, esp, escala, interp in chaves:
+                _chave_alfa(obj, quadro, alfa, interp)
+                obj.location = pos
                 obj.keyframe_insert("location", frame=quadro)
+                if escala_ini != 1.0:
+                    obj.scale = (escala, escala, escala)
+                    obj.keyframe_insert("scale", frame=quadro)
                 if obj.type == "FONT":
                     obj.data.space_character = esp
                     obj.data.keyframe_insert("space_character", frame=quadro)
@@ -3840,16 +4723,25 @@ def _modulo_coreografia():
     #   sai de quadro(t, fator): mudar a duracao (preset de 15 s = fator 0,75)
     #   escala tudo junto, inclusive as folgas anti-colisao, que sao razoes.
     #
-    # - A CAIXA DESCE E SOME no beat 2 (em vez de o U1 pousar ao lado dela). O
-    #   motivo e o beat 3: a camera orbita 180 graus ate a traseira para ver o
-    #   cabo entrar numa tomada a 12 cm do chao. Com a caixa de 0,8 m atras do
-    #   U1 (ou ao lado), ela entraria entre a camera e a tomada em parte da
-    #   orbita. Com o U1 sozinho na origem, a orbita e os closes do beat 5 tem
-    #   360 graus livres, e o rig de luzes (centrado na origem) continua certo.
-    #   No beat 6 a caixa volta pelo chao enquanto o U1 flutua acima dela - e o
-    #   mesmo truque ao contrario, e a ordem (U1 sobe, caixa sobe, U1 desce,
-    #   espuma volta, tampa fecha) e a que nao atravessa nada: conferir_colisoes
-    #   mede isso quadro a quadro.
+    # - A CAIXA DESCE E SOME no beat 2 (em vez de o U1 pousar ao lado dela) - e
+    #   o PADRAO, com o parametro 'caixa_some' para o cliente escolher. O motivo
+    #   e o beat 3: a camera orbita 180 graus ate a traseira para ver o cabo
+    #   entrar numa tomada a 12 cm do chao. Com a caixa de 0,8 m atras do U1 (ou
+    #   ao lado), ela entraria entre a camera e a tomada em parte da orbita. Com
+    #   o U1 sozinho na origem, a orbita e os closes do beat 5 tem 360 graus
+    #   livres, e o rig de luzes (centrado na origem) continua certo. No beat 6 a
+    #   caixa volta pelo chao enquanto o U1 flutua acima dela - e o mesmo truque
+    #   ao contrario, e a ordem (U1 sobe, caixa sobe, U1 desce, espuma volta,
+    #   tampa fecha) e a que nao atravessa nada: conferir_colisoes mede isso
+    #   quadro a quadro.
+    #   Com caixa_some=False (o texto do cliente ao pe da letra: 'o U1 sai da
+    #   caixa') o U1 sobe, DESLIZA para -Y ('deslocamento_u1', 2,1 m) e pousa na
+    #   frente da caixa, que fica parada atras dele, fora do raio 1,7 da orbita
+    #   (a face da caixa fica a 1,8 m do centro do U1). Os dois rigs (camera e
+    #   luzes) acompanham o U1 por chave de posicao nos beats 3-5 - as chaves
+    #   (azimute, raio, altura) continuam iguais nos dois modos - e no beat 6 o
+    #   U1 volta por cima da caixa e desce nela. O plano do beat 6 nesse modo e
+    #   de lado (az -30), porque de frente o U1 estaria colado na camera.
     #
     # - A CAMERA anda num Empty 'camera.orbita' na origem: as chaves sao
     #   (azimute, raio, altura) em vez de XYZ. Orbita vira uma rampa de angulo
@@ -3871,6 +4763,88 @@ def _modulo_coreografia():
     #   tampa enquanto flutua a 1,6 m ao lado (apareceria nas orbitas), a cartela
     #   antes do corte. E o que o modulo de cada peca nao oferece.
     #
+    # RODADA 2 (o que a revisao em docs/REVISAO-RODADA-1.md mediu e o que mudou):
+    #
+    # - FLASH: a chamada com forca=1.0 saiu (o padrao do ambiente e 0,5 = emissao
+    #   8, um quadro de pico e decaimento), e o veu agora e CONSTANT em q-1 e q:
+    #   o quadro anterior a cada corte (359, 389, 419) nao expoe mais meio flash
+    #   sob o obturador START. Provado rerenderizando q-1/q/q+1 dos tres cortes.
+    #
+    # - LUZ NUNCA MUDA POR CHAVE CONSTANT NO MEIO DE UM PLANO. O specular do rim
+    #   (0 nos planos largos, 0,5 nos do produto - ver construir_tudo) vai por
+    #   chavear_especular do ambiente: rampa Bezier de 12 quadros que so comeca
+    #   quando a camera ja passou de azimute ~0 (q_ini + 0,25*(q_orb-q_ini) =
+    #   q178), onde o produto cobre a poca do reflexo no chao. No beat 2 o rim
+    #   sobe a 0,3 entre q(0,50) e q(0,90) - o chao ali esta coberto pelo U1 e
+    #   pela caixa - para o U1 branco recortar contra o rose (momento-heroi). Os
+    #   cortes de verdade (q450) continuam corte: rampa=0.
+    #
+    # - MODELO REAL IDEMPOTENTE: _u1_real guarda a matriz ORIGINAL de cada
+    #   objeto do cliente numa propriedade ('anuncio.matriz_original', mais o pai
+    #   e a inversa do pai) na primeira rodada e a RESTAURA no inicio de toda
+    #   rodada seguinte (tambem quando se volta ao substituto), antes de medir e
+    #   cozinhar de novo; a colecao 'u1' do substituto e limpa antes; a raiz e
+    #   sempre nova. A revisao provou o oposto: a segunda rodada media o
+    #   substituto e o bloco juntos, e a terceira dobrava a rotacao. Provado com
+    #   tres rodadas do arquivo unico (substituto, real, real): contagens iguais
+    #   entre 2 e 3 e a matriz do cubo igual nas duas.
+    #   E o substituto RECUSA rodar se existir uma colecao 'u1' que nao seja a
+    #   dele (limpar_colecao apagaria o modelo do cliente em silencio).
+    #
+    # - BEAT 3: azimute monotono (105 em q_orb -> 110 -> 120 em q_fim; antes
+    #   recuava 5 graus e a camera parava em q269 por ser minimo local), raio
+    #   1,7 -> 1,25 -> 1,15 (push-in leve no ligar) e o LIGAR e um evento de luz:
+    #   animar_ligar do u1 acende as fitas e as area lights da camara (o interior
+    #   aparece pelo acrilico traseiro). O plugue voa de mais alto (origem a 0,45
+    #   m, arco de 0,30) para cruzar o quadro contra o corpo branco e a faixa
+    #   rose em vez de preto sobre o chao preto.
+    #
+    # - BEAT 4: o dolly termina em q(0,78) e a MESMA chave e repetida em q_fim-1
+    #   com CONSTANT: duas chaves iguais seguram a tela parada 19 quadros. Boot
+    #   em 0,60 e UI em 0,85, para a UI entrar com a camera parada. Chave
+    #   intermediaria em q(0,30) com raio 2,1 e alvo no corpo para o meio da
+    #   orbita nao cortar o U1 na borda.
+    #
+    # - BEAT 5: rim 250/400/300 W nas fotos (era 550/650/800, estourava), fitas a
+    #   3,0 de emissao (abaixo do bloom), foto C reenquadrada de FORA da pegada
+    #   (camera acima e a frente-direita do aro, mesa e hastes na diagonal,
+    #   mesa no canto inferior direito), e cada foto e um push-in de 0,06 m em
+    #   30 quadros na direcao do sujeito com a lente indo de 50 a 52 mm (60 a 62
+    #   na A) em LINEAR - vida sem perder a ideia de 'foto'.
+    #
+    # - BEAT 6 E BEAT 1 aproveitam o 9:16: raio 2,2/2,1 e altura 1,0/1,7 no
+    #   beat 6 (era 3,0/2,8 e 1,3/2,3: produto a 28% da altura), com uma chave no
+    #   pico da subida do U1 (alvo a 0,78 m) para o topo dele nao sair do quadro
+    #   enquanto flutua; beat 1 acaba a orbita em -80 graus (3/4 leve) e raio
+    #   2,1; e a tampa comeca RENTE ao chao (profundidade = topo_tampa_z, nao
+    #   +0,25): o primeiro quadro ja tem produto, nao 0,27 s de chao vazio.
+    #
+    # - BEAT 7, TRAVESSIA DE VERDADE: o mergulho e uma chave por quadro com um
+    #   perfil de Hermite (parte parado no apice, acelera e chega a 0,047
+    #   m/quadro em vez de parar) ate 0,12 m da logo, segue LINEAR ate 0,02 m
+    #   DENTRO da tampa (clip_start 0,01), e o veu preto (o plano do flash com
+    #   emissao 0) sobe de alfa 0 a 1 nos dois quadros antes de a camera tocar a
+    #   tampa, para o preto nascer da propria logo - antes era um corte seco a
+    #   12 cm. A abertura vai de f/2,8 a f/8 no mergulho (LINEAR) para a logo
+    #   ficar nitida ate o veu. O corte cai na cartela com a logo JA visivel e
+    #   maior no centro (animar_cartela com logo_ja_visivel e escala inicial
+    #   1,6), que viaja ao repouso enquanto o texto entra: match cut logo -> logo.
+    #   O veu se aproxima da camera (1,5 cm) so nesses quadros: a 25 cm ele
+    #   estaria atras da tampa e nao apareceria.
+    #
+    # - Imagens empacotadas (empacotar_imagens do ambiente) antes de salvar o
+    #   .blend: a revisao mediu logo e telas apontando para a pasta temporaria.
+    #
+    # - O que a rodada 2 mediu e NAO era o que parecia: (a) a 'barra branca' da
+    #   foto A nao e a fita de LED - com a fita a 3,0 e a 1,2 o render e igual;
+    #   e o labio branco do casco sob o aro, visto de cima com a key em cima
+    #   (geometria do u1, nao luz); (b) o veu preto cobria so metade do quadro
+    #   nao por causa do plano, e sim do DoF com o foco a 2,7 cm/negativo (ver
+    #   'foco_min'); (c) baixar a camera no momento-heroi piorava o recorte
+    #   (ver 'camera_heroi'); (d) o rig de luz da orbita ficou em +90 (o
+    #   ambiente mediu +60 mais chapado que +90 no cubo branco; a face lateral
+    #   'slab' e o tamanho da key, nao o angulo do rim).
+    #
     # Eixos e medidas seguem docs/ESPECIFICACAO.md: metros, Z para cima, frente
     # em -Y, origem no centro da base da caixa, chao em z = 0.
 
@@ -3889,6 +4863,12 @@ def _modulo_coreografia():
     NOME = "coreografia"
     FPS = 30.0
     DURACAO_REFERENCIA = 20.0
+
+    # Propriedades gravadas nos objetos do cliente (modelo real) na primeira
+    # rodada, para as seguintes partirem da pose ORIGINAL e nao da cozida.
+    PROP_MATRIZ = "anuncio.matriz_original"
+    PROP_PAI = "anuncio.pai_original"
+    PROP_PAI_INVERSA = "anuncio.pai_inversa_original"
 
     # Tabela de beats da especificacao (segundos, na duracao de referencia).
     BEATS = (
@@ -3911,16 +4891,21 @@ def _modulo_coreografia():
             "u1_sobe": (0.50, 0.75),        # so depois de toda espuma ter saltado
             "caixa_desce": (0.62, 0.92),    # a caixa some pelo chao sob o U1
             "u1_desce": (0.80, 1.00),       # U1 pousa no chao, na origem
+            "u1_desliza": (0.75, 0.94),     # (caixa_some=False) U1 vai para -Y no ar
+            "rim": (0.50, 0.90),            # rim a 0,3 no momento-heroi
         },
         3: {
             "orbita": (0.00, 0.48),         # frente -> traseira pelo lado +X
+            "rim": 0.25,                    # fracao da orbita em que o rim comeca a subir
             "cabo": (0.19, 0.71),
             "botao": (0.77, 0.98),
+            "push_in": (0.77, 1.00),        # raio 1,25 -> 1,15 no ligar
         },
         4: {
             "orbita": (0.00, 0.56),         # traseira -> frente pelo lado -X
-            "boot": 0.58,                   # boot de ~0,8 s, corte seco para a UI
-            "ui": 0.84,
+            "dolly": 0.78,                  # fim do dolly; a chave repete em q_fim-1
+            "boot": 0.60,                   # boot de ~0,8 s, corte seco para a UI
+            "ui": 0.85,
         },
         5: {"fotos": (0.0, 1.0 / 3.0, 2.0 / 3.0)},
         6: {
@@ -3931,9 +4916,9 @@ def _modulo_coreografia():
             "tampa": (0.80, 1.00),
         },
         7: {
-            "sobe_para_logo": (0.00, 0.244),
-            "mergulho": (0.244, 0.444),     # quadro da travessia = fim do mergulho
-            "cartela": (0.456, 0.833),
+            "sobe_para_logo": (0.00, 0.20),
+            "mergulho": (0.20, 0.444),      # quadro da travessia = fim do mergulho
+            "cartela": (0.444, 0.86),
         },
     }
 
@@ -3961,9 +4946,58 @@ def _modulo_coreografia():
         "caixa": {},
         # Quanto o U1 sobe acima do topo do corpo da caixa ao sair/entrar.
         "folga_u1": 0.14,
-        # Deslocamento da cartela para cima no quadro (m a 2 m): tira a linha 4
-        # da zona de legendas do Reels e a logo do brilho do horizonte.
-        "cartela_subida": 0.13,
+        # Deslocamento da cartela para cima no quadro (m a 2 m). None = o padrao
+        # medido pelo modulo cartela (0,18: linha 4 fora da faixa de legendas).
+        "cartela_subida": None,
+        # True (padrao): a caixa afunda pelo chao no beat 2 e volta no beat 6.
+        # False: o U1 desliza para -Y e pousa na frente da caixa (ver cabecalho).
+        "caixa_some": True,
+        "deslocamento_u1": 2.1,        # m para -Y, so com caixa_some=False
+        # Rig de luz na orbita: rig = azimute da camera + offset. 90 poe o rim
+        # atras do produto (padrao medido do ambiente); 60 e a opcao lateral.
+        "offset_rig_orbita": mod_ambiente.OFFSET_RIM_ATRAS,
+        # Beat 3: de onde o plugue parte (altura, m) e altura do arco.
+        "origem_cabo_z": 0.45,
+        "arco_cabo": 0.30,
+        # Beat 5: energia do rim e da key em cada foto (W), das area lights da
+        # camara (W; 60 e o valor do ligar) e emissao das fitas de LED nas fotos.
+        # Medido: na foto C (de cima, mesa a 1,2 m) as luzes da camara a 60 W e a
+        # key a 240 W estouravam mesa e carro em branco; na A a fita a 3,0 era
+        # uma barra branca atravessando o quadro.
+        "rim_fotos": (250.0, 400.0, 150.0),
+        "key_fotos": (300.0, 260.0, 110.0),
+        "luz_camara_fotos": (60.0, 60.0, 10.0),
+        "forca_fitas": 3.0,
+        "forca_fitas_fotos": 1.2,
+        # Beat 7: distancia da logo no apice, a que o mergulho chega 'devagar',
+        # e quanto a camera entra na tampa; quadros da travessia e do veu.
+        # 'v_perto': velocidade (m/quadro) com que o mergulho chega a 'perto' -
+        # medido: chegando a 0,047 m/quadro a 0,12 m da logo (39% da distancia
+        # por quadro) o q545 era um borrao; a 0,02 a logo le ate o veu. A
+        # travessia acelera dali (o veu ja cobre). 'foco_min': o foco nunca fica a
+        # menos disto da camera - com o foco a 2,7 cm (e negativo dentro da
+        # tampa) o DoF do EEVEE deixava o veu cobrindo so metade do quadro
+        # (q548/q549 medidos); a 7,3 cm (q547) o veu cobria tudo.
+        # O mergulho e em duas fases: Hermite do apice ('alto', parado) ate
+        # 'meio' no primeiro terco dos quadros, e dali EXPONENCIAL ate 'perto'
+        # (a mesma fracao da distancia por quadro, ~15%: o borrao de movimento
+        # relativo a logo e constante e pequeno, e a chegada e naturalmente
+        # devagar, ~0,02 m/quadro a 0,12 m). Uma Hermite so, medida, chegava a
+        # 0,033 m/quadro e o q545 ainda borrava.
+        "mergulho": {"alto": 1.8, "meio": 0.9, "perto": 0.12, "dentro": -0.02, "travessia": 3, "veu": 2,
+                     "foco_min": 0.07, "f_ini": 2.8, "f_fim": 8.0},
+        "logo_escala_inicial": 1.5,    # match cut: logo maior no centro em q_t
+        "cartela_fracao": 0.40,        # fatia do intervalo que cada elemento gasta entrando
+        # Beat 2, momento-heroi: altura da camera com o U1 no alto e quanto o
+        # alvo fica acima da base dele. A revisao propos BAIXAR a camera (1,6 ->
+        # 1,25) para o U1 recortar contra a transicao escura; rendido q140/q150
+        # com 1,25, 1,6 e 1,85 (alvo z_alto + 0,05): a 1,25 o U1 fica INTEIRO
+        # dentro da faixa rose (branco sobre rose, o que se queria evitar), a
+        # 1,6 a base dele encosta na transicao, e a 1,85 - olhando mais para
+        # baixo - o chao escuro sobe atras dele e o U1 recorta contra o preto
+        # com o rose so em cima. A causa e geometrica: quanto mais alta a camera,
+        # mais chao escuro atras do produto; baixar fazia o contrario.
+        "camera_heroi": {"z": 1.85, "alvo": 0.05, "raio": 2.5},
     }
 
 
@@ -4045,9 +5079,35 @@ def _modulo_coreografia():
             fc.update()
 
 
+    def _interp_nas_chaves(dono, quadros, interp):
+        """Interpolacao so nas chaves dos quadros dados (todas as fcurves do dono)."""
+        ad = getattr(dono, "animation_data", None)
+        if ad is None or ad.action is None:
+            return
+        for fc in ad.action.fcurves:
+            for kp in fc.keyframe_points:
+                if int(round(kp.co.x)) in quadros:
+                    kp.interpolation = interp
+            fc.update()
+
+
+    def _valor_em(dono, data_path, quadro_, indice=-1):
+        """Valor de uma propriedade num quadro (da fcurve, se houver chave)."""
+        ad = getattr(dono, "animation_data", None)
+        if ad is not None and ad.action is not None:
+            for fc in ad.action.fcurves:
+                if fc.data_path == data_path and (indice < 0 or fc.array_index == indice):
+                    return fc.evaluate(quadro_)
+        valor = dono.path_resolve(data_path)
+        return valor[indice] if indice >= 0 else valor
+
+
     def _chave_rim_especular(objs, quadro_, valor):
-        """specular_factor do rim com chave constante: 0,0 nos planos largos, 0,5
-        nos planos do produto (que esconde o ponto de espelho no chao).
+        """specular_factor do rim num CORTE (chave constante, com chave de espera
+        no quadro anterior). Mantida pela assinatura; por dentro e o
+        chavear_especular do ambiente com rampa=0. Para transicao dentro de um
+        plano continuo use chavear_especular com rampa (ver _beat3): a chave
+        constante no meio de um plano era o pop de luz do q165.
 
         Medido no quadro 1 (chao vazio): o reflexo do painel do rim no chao e uma
         barra branca com rastro ate o pe do quadro; esconder o rim ou zerar o
@@ -4055,19 +5115,7 @@ def _modulo_coreografia():
         painel de 350 W espelhado em Fresnel rasante, ~100x acima do branco, e
         so o zero resolve. As outras tres luzes espelham fora do quadro.
         """
-        dados = objs["ambiente"]["luzes"]["rim"].data
-        dados.specular_factor = valor
-        try:
-            dados.keyframe_insert("specular_factor", frame=quadro_)
-        except (RuntimeError, TypeError):
-            # Versao sem a propriedade animavel: fica o valor dos planos largos.
-            dados.specular_factor = 0.0
-            return
-        for fc in dados.animation_data.action.fcurves:
-            if fc.data_path == "specular_factor":
-                for kp in fc.keyframe_points:
-                    kp.interpolation = "CONSTANT"
-                fc.update()
+        mod_ambiente.chavear_especular(objs["ambiente"]["luzes"]["rim"], quadro_, para=valor, rampa=0)
 
 
     def _chave_visivel(obj, quadro_, visivel):
@@ -4103,6 +5151,15 @@ def _modulo_coreografia():
             return False
 
 
+    def _achatar(m):
+        return [float(v) for linha in m for v in linha]
+
+
+    def _matriz(lista):
+        v = list(lista)
+        return Matrix((tuple(v[0:4]), tuple(v[4:8]), tuple(v[8:12]), tuple(v[12:16])))
+
+
     # ---------------------------------------------------------------- U1 real
 
     def _bbox_mundo(objetos):
@@ -4121,11 +5178,62 @@ def _modulo_coreografia():
         return mn, mx
 
 
+    def restaurar_modelo_cliente():
+        """Devolve a pose ORIGINAL a todo objeto do cliente que uma rodada anterior
+        cozinhou (parenteado em 'u1.raiz', girado e centralizado). Roda no inicio
+        de toda rodada - inclusive quando se volta ao substituto -, para a
+        rotacao e a centralizacao serem aplicadas uma vez so. Devolve a lista."""
+        restaurados = []
+        for obj in bpy.data.objects:
+            if PROP_MATRIZ not in obj:
+                continue
+            nome_pai = obj.get(PROP_PAI, "")
+            obj.parent = bpy.data.objects.get(nome_pai) if nome_pai else None
+            if PROP_PAI_INVERSA in obj:
+                obj.matrix_parent_inverse = _matriz(obj[PROP_PAI_INVERSA])
+            else:
+                obj.matrix_parent_inverse = Matrix.Identity(4)
+            obj.matrix_world = _matriz(obj[PROP_MATRIZ])
+            restaurados.append(obj)
+        if restaurados:
+            bpy.context.view_layer.update()
+        return restaurados
+
+
+    def _remover_objeto(obj):
+        dados = obj.data
+        bpy.data.objects.remove(obj, do_unlink=True)
+        if dados is not None and dados.users == 0:
+            if isinstance(dados, bpy.types.Light):
+                bpy.data.lights.remove(dados)
+            elif isinstance(dados, bpy.types.Mesh):
+                bpy.data.meshes.remove(dados)
+
+
+    def _limpar_u1_anterior(col_modelo):
+        """Tira da cena o que a rodada anterior deixou como 'u1': o substituto (ou
+        a raiz antiga e as luzes das fitas), sem tocar no modelo do cliente."""
+        raiz_antiga = bpy.data.objects.get("u1.raiz")
+        col_u1 = bpy.data.collections.get("u1")
+        if col_u1 is not None and col_u1 is not col_modelo:
+            mod_u1.limpar_colecao("u1")
+            raiz_antiga = bpy.data.objects.get("u1.raiz")
+        if raiz_antiga is not None:
+            # A colecao do cliente se chama 'u1' (ou a raiz sobrou fora dela): o
+            # que ainda desce da raiz antiga e nosso - os do cliente ja foram
+            # restaurados e desparenteados por restaurar_modelo_cliente.
+            for obj in [o for o in bpy.data.objects if _descende(o, raiz_antiga)]:
+                if PROP_MATRIZ not in obj:
+                    _remover_objeto(obj)
+            _remover_objeto(raiz_antiga)
+
+
     def _u1_real(cena, col_pai, p):
         """Modelo do cliente por nome (objeto ou colecao). Devolve o mesmo dict
         que construir_u1, com 'real': True, ou None se o nome nao existe.
 
-        O que faz: cria (ou reaproveita) o Empty 'u1.raiz', parenteia nele os
+        O que faz: restaura a pose original do que uma rodada anterior cozinhou,
+        limpa o 'u1' anterior, cria um Empty 'u1.raiz' NOVO, parenteia nele os
         objetos de topo do modelo mantendo a pose, aplica 'u1_rotacao_z', mede o
         bounding box avaliado e move a raiz para o modelo ficar centrado em XY com
         a base em z = 0 - a mesma pose do substituto, que e o que a caixa, o cabo
@@ -4134,36 +5242,37 @@ def _modulo_coreografia():
         uma heuristica pelo bounding box, documentada em _pontos_heuristicos.
         """
         nome = p["u1_nome"]
-        fontes = []
         col_modelo = bpy.data.collections.get(nome)
+        if col_modelo is None and nome not in bpy.data.objects:
+            return None
+        restaurar_modelo_cliente()
+        _limpar_u1_anterior(col_modelo)
+
         if col_modelo is not None:
             todos = set(o.name for o in col_modelo.all_objects)
             fontes = [o for o in col_modelo.all_objects if o.parent is None or o.parent.name not in todos]
             col = col_modelo
-        elif nome in bpy.data.objects:
+        else:
             fontes = [bpy.data.objects[nome]]
             col = bpy.data.collections.get("u1")
             if col is None:
                 col = bpy.data.collections.new("u1")
                 col_pai.children.link(col)
-        else:
-            return None
 
-        raiz = bpy.data.objects.get("u1.raiz")
-        if raiz is None or raiz.type != "EMPTY":
-            raiz = bpy.data.objects.new("u1.raiz", None)
-            raiz.empty_display_type = "ARROWS"
-            raiz.empty_display_size = 0.2
-            col.objects.link(raiz)
-        raiz.parent = None
-        raiz.matrix_world = Matrix.Identity(4)
-        if raiz.animation_data:
-            raiz.animation_data_clear()
+        raiz = bpy.data.objects.new("u1.raiz", None)
+        raiz.empty_display_type = "ARROWS"
+        raiz.empty_display_size = 0.2
+        col.objects.link(raiz)
         # matrix_world de objeto recem-criado ou recem-movido so e valido depois
         # de uma avaliacao (medido: sem isto a rotacao do bloco de teste saiu 0).
         bpy.context.view_layer.update()
-        fontes = [o for o in fontes if o is not raiz]
-        originais = {obj: obj.matrix_world.copy() for obj in fontes}
+        originais = {}
+        for obj in fontes:
+            if PROP_MATRIZ not in obj:
+                obj[PROP_MATRIZ] = _achatar(obj.matrix_world)
+                obj[PROP_PAI] = obj.parent.name if obj.parent is not None else ""
+                obj[PROP_PAI_INVERSA] = _achatar(obj.matrix_parent_inverse)
+            originais[obj] = _matriz(obj[PROP_MATRIZ])
         # A rotacao e a centralizacao ficam COZIDAS nos filhos, e a raiz fica na
         # identidade: as chaves da coreografia escrevem a raiz em valores
         # absolutos (0, 0, z), iguais para o substituto e para o modelo real.
@@ -4236,6 +5345,28 @@ def _modulo_coreografia():
         }
 
 
+    def _purgar_acoes_orfas():
+        """Actions sem usuario que os limpar_colecao dos modulos deixam para tras
+        (uma por objeto animado, a cada rodada: medido +37 a +43 por rodada).
+        Nao seriam salvas de qualquer jeito; sem isto cada rodada na cena do
+        cliente acumula lixo no .blend aberto. Fake user e respeitado."""
+        n = 0
+        for acao in list(bpy.data.actions):
+            if acao.users == 0 and not acao.use_fake_user:
+                bpy.data.actions.remove(acao)
+                n += 1
+        return n
+
+
+    def _colecao_u1_e_de_fora():
+        """True se existe uma colecao 'u1' com objetos que nao sao do substituto
+        (o modelo do cliente com esse nome): limpar_colecao a apagaria."""
+        col = bpy.data.collections.get("u1")
+        if col is None:
+            return False
+        return any(not o.name.startswith("u1.") for o in col.all_objects)
+
+
     # ---------------------------------------------------------------- construir
 
     def construir_tudo(params=None):
@@ -4246,15 +5377,16 @@ def _modulo_coreografia():
             p.update(params)
         cena = bpy.context.scene
         col = _colecao_raiz(cena)
+        _purgar_acoes_orfas()
 
         # Rim com especular 0,5 (padrao do modulo: 0,6) nos beats 3-5; nos
-        # planos largos (beats 1, 2, 6, 7) a coreografia CHAVEIA o specular_factor
-        # do rim para 0,05 (ver _beat1/_beat3/_beat6): o reflexo dele no chao cai
-        # no eixo da camera e saia como uma barra branca no horizonte com um
-        # rastro ate o pe do quadro - no quadro 1, antes de a caixa emergir, era a
-        # imagem inteira. Medido: 0,4 e 0,2 so encolhem a barra (e Fresnel
-        # rasante, nao intensidade). As outras tres luzes espelham fora do
-        # quadro; o recorte da aresta vem do difuso, que fica.
+        # planos largos (beats 1, 2, 6, 7) a coreografia leva o specular_factor
+        # do rim a 0 (chavear_especular, ver _beat1/_beat3/_beat6): o reflexo
+        # dele no chao cai no eixo da camera e saia como uma barra branca no
+        # horizonte com um rastro ate o pe do quadro - no quadro 1, antes de a
+        # caixa emergir, era a imagem inteira. Medido: 0,4 e 0,2 so encolhem a
+        # barra (e Fresnel rasante, nao intensidade). As outras tres luzes
+        # espelham fora do quadro; o recorte da aresta vem do difuso, que fica.
         pamb = {"luzes": {"rim": {"especular": 0.5}}}
         for k, v in p["ambiente"].items():
             if k == "luzes":
@@ -4270,6 +5402,12 @@ def _modulo_coreografia():
             if u1 is None:
                 print("[coreografia] AVISO: '%s' nao existe em bpy.data; usando o U1 substituto" % p["u1_nome"])
         if u1 is None:
+            # Rodada anterior com modelo real: devolve a pose original dele antes
+            # de o substituto limpar a colecao 'u1' (a raiz antiga esta la).
+            restaurar_modelo_cliente()
+            if _colecao_u1_e_de_fora():
+                raise RuntimeError("[coreografia] existe uma colecao 'u1' que nao e a do substituto; "
+                                   "para usa-la ponha o nome em U1_NOME - com U1_NOME vazio ela seria apagada")
             pu1 = {"imagem_boot": _asset(p, "tela_boot.png"), "imagem_ui": _asset(p, "tela_ui.png")}
             pu1.update(p["u1"])
             u1 = mod_u1.construir_u1(cena, col, pu1)
@@ -4278,6 +5416,8 @@ def _modulo_coreografia():
         pcaixa = {"cor": p["cor_caixa"], "logo": _asset(p, "logo_engineprint.png"), "u1": tuple(u1["dimensoes"])}
         pcaixa.update(p["caixa"])
         caixa = mod_caixa.construir_caixa(cena, col, pcaixa)
+        if caixa.get("logo_provisoria"):
+            print("[coreografia] AVISO: logo PROVISORIA na caixa (o PNG nao foi encontrado)")
         ix, iy, iz = caixa["interior"]
         if u1["dimensoes"][0] > ix or u1["dimensoes"][1] > iy or u1["dimensoes"][2] > iz:
             print("[coreografia] AVISO: o U1 (%.3f x %.3f x %.3f) nao cabe no interior da caixa (%.3f x %.3f x %.3f)"
@@ -4295,15 +5435,18 @@ def _modulo_coreografia():
                  "z_chao": 0.0, "penetracao": -mod_cabo.BICO[4]}
         cabo = mod_cabo.construir_cabo(cena, col, pcabo)
 
-        # Forca 1,8/2,2: com 1,0 o "branco" media 0,82 sRGB no render (pendencia
-        # do modulo cartela); bloco mais compacto (logo 0,24, entrelinha 3 menor)
-        # para a linha 4 subir acima da faixa de legendas do Reels.
-        pcart = {"logo": _asset(p, "logo_engineprint.png"), "forca_texto": 1.8, "forca_destaque": 2.2,
+        # Forcas de emissao: as do modulo (2,4 / 2,0, medidas no render sob o
+        # AgX); bloco mais compacto (logo 0,24, entrelinha 3 menor) para a linha
+        # 4 subir acima da faixa de legendas do Reels.
+        pcart = {"logo": _asset(p, "logo_engineprint.png"),
                  "largura_logo": 0.24, "entrelinhas": (1.30, 1.45, 1.55)}
         pcart.update(p["cartela"])
         cartela = mod_cartela.construir_cartela(cena, col, pcart)
 
         cam, alvo = mod_ambiente.criar_camera(cena, col, params=p["camera"])
+        # A travessia do beat 7 leva a camera a 2 cm dentro da tampa: o clip
+        # padrao (0,05) cortaria a logo antes do veu.
+        cam.data.clip_start = 0.01
         col_cam = bpy.data.collections.get(mod_ambiente.NOME_CAMERA)
         # Rig da camera: Empty na origem; a camera e filha e as chaves sao
         # (azimute no rig, raio e altura na camera) - ver cabecalho.
@@ -4318,6 +5461,7 @@ def _modulo_coreografia():
         foco.empty_display_size = 0.04
         col_cam.objects.link(foco)
         cam.data.dof.focus_object = foco
+        _purgar_acoes_orfas()
 
         return {
             "cena": cena,
@@ -4333,7 +5477,10 @@ def _modulo_coreografia():
             "alvo": alvo,
             "foco": foco,
             "rig_camera": rig,
+            # Onde o U1 esta nos beats 3-5 (origem, ou -Y com caixa_some=False).
+            "centro_u1": Vector((0.0, 0.0, 0.0)) if p["caixa_some"] else Vector((0.0, -p["deslocamento_u1"], 0.0)),
             "_chaves_camera": {},
+            "_lentes_rampa": set(),
         }
 
 
@@ -4365,6 +5512,25 @@ def _modulo_coreografia():
         objs["_chaves_camera"][q] = (interp, easing)
 
 
+    def _chave_centro(objs, q, centro, interp="BEZIER"):
+        """Posicao dos dois rigs (camera e luzes): so com caixa_some=False, quando
+        o U1 nao esta na origem nos beats 3-5. Com o padrao nao ha chave e os
+        rigs ficam na origem, como sempre."""
+        if objs["params"]["caixa_some"]:
+            return
+        for rig in (objs["rig_camera"], objs["ambiente"]["rig"]):
+            rig.location = Vector(centro)
+            rig.keyframe_insert("location", frame=q)
+            _interp_nas_chaves(rig, {q}, interp)
+
+
+    def _chave_f(objs, q, f):
+        """Abertura (f-stop) da camera com chave; interpolacao pela do registro."""
+        dof = objs["camera"].data.dof
+        dof.aperture_fstop = f
+        objs["camera"].data.keyframe_insert("dof.aperture_fstop", frame=q)
+
+
     def _aplicar_interpolacao_camera(objs):
         registro = objs["_chaves_camera"]
         donos = (objs["rig_camera"], objs["camera"], objs["alvo"], objs["foco"], objs["camera"].data)
@@ -4381,13 +5547,15 @@ def _modulo_coreografia():
                         kp.handle_left_type = "AUTO_CLAMPED"
                         kp.handle_right_type = "AUTO_CLAMPED"
                 fc.update()
-        # A lente so tem chave nos cortes: entre eles precisa segurar, nao rampar.
+        # A lente so tem chave nos cortes: entre eles precisa segurar, nao
+        # rampar - salvo o push-in de cada foto (chaves em _lentes_rampa, que
+        # rampam LINEAR ate a chave seguinte, CONSTANT).
         ad = objs["camera"].data.animation_data
         if ad and ad.action:
             for fc in ad.action.fcurves:
                 if fc.data_path == "lens":
                     for kp in fc.keyframe_points:
-                        kp.interpolation = "CONSTANT"
+                        kp.interpolation = "LINEAR" if int(round(kp.co.x)) in objs["_lentes_rampa"] else "CONSTANT"
                     fc.update()
 
 
@@ -4423,10 +5591,11 @@ def _modulo_coreografia():
                 "mesa": u1["mesa"].matrix_world.translation.copy(),
             }
         L, P, A = u1["dimensoes"]
+        c = objs["centro_u1"]
         return {
-            "cabecotes": Vector((0.0, 0.25 * P, 0.80 * A)),
-            "porta": Vector((0.35 * L, -P / 2.0, 0.35 * A)),
-            "mesa": Vector((0.0, 0.0, 0.21 * A)),
+            "cabecotes": c + Vector((0.0, 0.25 * P, 0.80 * A)),
+            "porta": c + Vector((0.35 * L, -P / 2.0, 0.35 * A)),
+            "mesa": c + Vector((0.0, 0.0, 0.21 * A)),
         }
 
 
@@ -4441,7 +5610,9 @@ def _modulo_coreografia():
         caixa, u1 = objs["caixa"], objs["u1"]
         n = float(q_fim - q_ini)
         voltas = 2.0                                   # inteiras: acaba com a frente em -Y
-        profundidade = caixa["topo_tampa_z"] + 0.25    # some inteira sob o chao
+        # Tampa RENTE ao chao no primeiro quadro (a revisao mediu 0,27 s de chao
+        # vazio com +0,25): o topo da tampa esta em z = 0 no quadro 1.
+        profundidade = caixa["topo_tampa_z"]
         objs["profundidade_caixa"] = profundidade
         corpo, tampa, raiz = caixa["corpo"], caixa["tampa"], u1["raiz"]
         z_tampa = tampa.location.z
@@ -4466,21 +5637,23 @@ def _modulo_coreografia():
             _interpolar(obj, q_ini, q_fim)
 
         # Camera frontal, um pouco alta, afastando de leve; o alvo acompanha o
-        # centro da caixa que sobe.
+        # centro da caixa que sobe. Acaba em -80 graus (3/4 leve, nao frente
+        # morta) e raio 2,1: caixa a ~38% da altura do 9:16.
         # A lente PRECISA de chave aqui: a fcurve extrapola a primeira chave para
         # tras, e sem esta os beats 1-4 saiam com os 60 mm da primeira foto do
         # beat 5 (medido: caixa 1,7x maior que o calculado).
         _chave_camera(objs, q_ini, -90.0, 2.2, 1.0, (0.0, 0.0, 0.30), lente=35.0)
-        _chave_camera(objs, q_fim, -90.0, 2.6, 1.2, (0.0, 0.0, 0.45))
+        _chave_camera(objs, q_fim, -80.0, 2.1, 1.1, (0.0, 0.0, 0.42))
         _chave_rim_especular(objs, q_ini, 0.0)
 
 
     def _beat2(objs, fator):
-        """Tampa sai, espuma explode, U1 sobe, caixa afunda no chao, U1 pousa."""
+        """Tampa sai, espuma explode, U1 sobe, caixa afunda no chao (ou o U1
+        desliza para a frente dela), U1 pousa."""
         r = ROTEIRO[2]
         q_ini, q_fim = quadros_do_beat(2, fator)
         q = lambda fr: q_em(2, fr, fator)  # noqa: E731
-        caixa, u1, amb = objs["caixa"], objs["u1"], objs["ambiente"]
+        caixa, u1, amb, p = objs["caixa"], objs["u1"], objs["ambiente"], objs["params"]
 
         mod_caixa.animar_tampa(caixa, q(r["tampa"][0]), q(r["tampa"][1]), abrir=True, lado=1.0)
         # Fora do quadro a tampa ficaria flutuando a 1,6 m do lado: esconder ate
@@ -4490,42 +5663,70 @@ def _modulo_coreografia():
         mod_caixa.animar_espuma(caixa, q(r["espuma"][0]), q(r["espuma"][1]))
 
         raiz = u1["raiz"]
-        z_alto = caixa["exterior_corpo"][2] + objs["params"]["folga_u1"]
+        z_alto = caixa["exterior_corpo"][2] + p["folga_u1"]
         objs["z_alto_u1"] = z_alto
         z0 = u1["z_na_caixa"]
+        centro = objs["centro_u1"]
         _chave(raiz, q(r["u1_sobe"][0]), (0.0, 0.0, z0))
         _chave(raiz, q(r["u1_sobe"][1]), (0.0, 0.0, z_alto))
-        _chave(raiz, q(r["u1_desce"][0]), (0.0, 0.0, z_alto))
-        _chave(raiz, q(r["u1_desce"][1]), (0.0, 0.0, 0.0))
+        if p["caixa_some"]:
+            _chave(raiz, q(r["u1_desce"][0]), (0.0, 0.0, z_alto))
+            _chave(raiz, q(r["u1_desce"][1]), (0.0, 0.0, 0.0))
+        else:
+            # Desliza no ar para -Y e pousa na frente da caixa, que fica parada.
+            _chave(raiz, q(r["u1_desliza"][1]), (0.0, centro.y, 0.12))
+            _chave(raiz, q_fim, (0.0, centro.y, 0.0))
         _interpolar(raiz, q(r["u1_sobe"][0]), q_fim)
 
         corpo = caixa["corpo"]
-        _chave(corpo, q(r["caixa_desce"][0]), (0.0, 0.0, 0.0))
-        _chave(corpo, q(r["caixa_desce"][1]), (0.0, 0.0, -objs["profundidade_caixa"]))
-        _interpolar(corpo, q(r["caixa_desce"][0]), q(r["caixa_desce"][1]))
+        if p["caixa_some"]:
+            _chave(corpo, q(r["caixa_desce"][0]), (0.0, 0.0, 0.0))
+            _chave(corpo, q(r["caixa_desce"][1]), (0.0, 0.0, -objs["profundidade_caixa"]))
+            _interpolar(corpo, q(r["caixa_desce"][0]), q(r["caixa_desce"][1]))
 
         # Camera acompanha o U1 subindo (alvo sobe com ele) e comeca a derivar
-        # para +X, de onde a orbita do beat 3 parte.
-        _chave_camera(objs, q(r["u1_sobe"][1]), -84.0, 2.5, 1.6, (0.0, 0.0, z_alto + 0.30))
-        _chave_camera(objs, q_fim, -75.0, 2.3, 1.1, (0.0, 0.0, 0.37))
+        # para +X, de onde a orbita do beat 3 parte. Alvo em z_alto + 0,05 e
+        # camera a 1,85 (medido, ver PARAMS_PADRAO['camera_heroi']): o U1
+        # recorta contra o chao escuro em vez de branco sobre rose.
+        ch = p["camera_heroi"]
+        _chave_camera(objs, q(r["u1_sobe"][1]), -84.0, ch["raio"], ch["z"], (0.0, 0.0, z_alto + ch["alvo"]))
+        _chave_centro(objs, q(r["u1_sobe"][1]), (0.0, 0.0, 0.0))
+        _chave_camera(objs, q_fim, -75.0, 2.3, 1.1, centro + Vector((0.0, 0.0, 0.37)))
+        _chave_centro(objs, q_fim, centro)
         mod_ambiente.animar_rig(amb, q_ini, q_fim, 0.0, 15.0)
+        # Rim a 0,3 so no trecho em que o chao esta coberto (U1 no alto sobre a
+        # caixa): recorte da silhueta branca sem a poca do reflexo aparecer.
+        rim = amb["luzes"]["rim"]
+        mod_ambiente.chavear_especular(rim, q(r["rim"][0]), para=0.3, rampa=12)
+        mod_ambiente.chavear_especular(rim, q(r["rim"][1]) - 12, q(r["rim"][1]), para=0.0)
 
 
     def _beat3(objs, fator):
-        """Orbita ate a traseira; cabo entra e encaixa; botao afunda, LED acende."""
+        """Orbita ate a traseira; cabo entra e encaixa; LIGAR como evento de luz
+        com um push-in leve."""
         r = ROTEIRO[3]
         q_ini, q_fim = quadros_do_beat(3, fator)
         q = lambda fr: q_em(3, fr, fator)  # noqa: E731
-        u1, cabo, amb, cena = objs["u1"], objs["cabo"], objs["ambiente"], objs["cena"]
+        u1, cabo, amb, cena, p = objs["u1"], objs["cabo"], objs["ambiente"], objs["cena"], objs["params"]
+        centro = objs["centro_u1"]
 
         q_orb = q(r["orbita"][1])
-        # Da orbita em diante o produto esconde o reflexo do rim no chao.
-        _chave_rim_especular(objs, q_ini, 0.5)
-        _chave_camera(objs, q_orb, 105.0, 1.5, 0.60, (0.15, 0.15, 0.30))
-        _chave_camera(objs, q_fim, 100.0, 1.25, 0.42, (0.20, 0.20, 0.18))
-        # Rim atras do produto do ponto de vista da camera: rig = azimute + 90.
-        mod_ambiente.animar_rig(amb, q_ini, q_orb, 15.0, 195.0)
-        mod_ambiente.animar_rig(amb, q_orb, q_fim, 195.0, 190.0)
+        # O rim so sobe quando a camera passou de azimute ~0 (o produto cobre a
+        # poca do reflexo no chao), em rampa Bezier: a chave constante em q_ini
+        # era o pop de luz medido pela revisao (q160 -> q165).
+        q_rim = int(round(q_ini + r["rim"] * (q_orb - q_ini)))
+        mod_ambiente.chavear_especular(amb["luzes"]["rim"], q_rim, para=0.5, rampa=12)
+        # Azimute MONOTONO (105 -> 110 -> 120) e raio sem inversao forte (1,7 ->
+        # 1,25 -> 1,15): a camera nunca para nem recua no meio do plano.
+        _chave_camera(objs, q_orb, 105.0, 1.7, 0.60, centro + Vector((0.15, 0.15, 0.30)))
+        # (medido com 112/115: 0,004 m/quadro no ligar - quase parado 25 quadros;
+        # com 110/120 o push-in e o giro somam ~0,008 m/quadro, sempre vivo).
+        _chave_camera(objs, q(r["push_in"][0]), 110.0, 1.25, 0.45, centro + Vector((0.20, 0.20, 0.20)))
+        _chave_camera(objs, q_fim, 120.0, 1.15, 0.42, centro + Vector((0.20, 0.20, 0.18)))
+        # Rig de luz = azimute da camera + offset (90: rim atras do produto).
+        off = p["offset_rig_orbita"]
+        mod_ambiente.animar_rig(amb, q_ini, q_orb, None, 105.0, azimutes=True, offset=off)
+        mod_ambiente.animar_rig(amb, q_orb, q_fim, 105.0, 115.0, azimutes=True, offset=off)
 
         # Tomada no mundo com o U1 ja no chao (a raiz esta na identidade aqui).
         cena.frame_set(q_ini)
@@ -4535,26 +5736,31 @@ def _modulo_coreografia():
         normal = -direcao
         lateral = normal.cross(Vector((0, 0, 1))).normalized() * cabo.get("lado", 1.0)
         # Origem fora do quadro (a 16 graus de meio-campo horizontal, 1,3 m atras
-        # e 0,9 m para o lado esta fora em qualquer ponto da orbita), no chao.
+        # e 0,9 m para o lado esta fora em qualquer ponto da orbita), a 0,45 m
+        # do chao: o plugue cruza o quadro contra o corpo branco e a faixa rose,
+        # nao preto sobre o chao preto (revisao, q205).
         origem = ponto + normal * 1.3 + lateral * 0.9
-        origem.z = 0.02
+        origem.z = p["origem_cabo_z"]
         q_cabo = (q(r["cabo"][0]), q(r["cabo"][1]))
         mod_cabo.animar_conexao(cabo, ponto, direcao, q_cabo[0], q_cabo[1],
-                                origem=origem, z_chao=0.0, penetracao=-mod_cabo.BICO[4])
+                                origem=origem, z_chao=0.0, penetracao=-mod_cabo.BICO[4],
+                                altura_arco=p["arco_cabo"])
         objs["_q_cabo"] = q_cabo
 
-        if u1.get("botao") is not None:
-            mod_u1.animar_botao(u1, q(r["botao"][0]), q(r["botao"][1]))
-        else:
-            print("[coreografia] modelo real sem 'u1_botao_objeto': botao/LED nao animados")
+        # Ligar e evento de luz: botao afunda, fitas e area lights da camara
+        # acendem, tela em standby (o modulo cria uma luz no modelo real sem
+        # fitas). As fitas a 3,0 ficam abaixo do limiar de bloom nas fotos.
+        mod_u1.animar_ligar(u1, q(r["botao"][0]), q(r["botao"][1]), forca_fitas=p["forca_fitas"])
 
 
     def _beat4(objs, fator):
-        """Orbita de volta pela frente e dolly ate a tela; boot rapido e UI."""
+        """Orbita de volta pela frente e dolly ate a tela; tela PARADA no close
+        enquanto o boot roda e a UI entra."""
         r = ROTEIRO[4]
         q_ini, q_fim = quadros_do_beat(4, fator)
         q = lambda fr: q_em(4, fr, fator)  # noqa: E731
-        u1, amb, cena = objs["u1"], objs["ambiente"], objs["cena"]
+        u1, amb, cena, p = objs["u1"], objs["ambiente"], objs["cena"], objs["params"]
+        centro = objs["centro_u1"]
 
         cena.frame_set(q_ini)
         bpy.context.view_layer.update()
@@ -4562,17 +5768,26 @@ def _modulo_coreografia():
         normal = mod_u1.ponto_no_mundo(u1, "posicao_tela", "normal")
         # Tela de 0,104 m a ~69% da largura do quadro: 0,26 m a 35 mm.
         pos_fim = tela + normal * 0.26 + Vector((0.02, 0.0, 0.015))
-        az_fim, r_fim, z_fim = _cil(pos_fim)
-        az_fim += 360.0          # continua girando no mesmo sentido (105 -> 292)
+        az_fim, r_fim, z_fim = _cil(pos_fim - centro)
+        az_fim += 360.0          # continua girando no mesmo sentido (120 -> 292)
         q_orb = q(r["orbita"][1])
-        _chave_camera(objs, q(0.30), 180.0, 1.9, 0.80, (0.0, 0.0, 0.42))
-        _chave_camera(objs, q_orb, 250.0, 1.35, 0.72, (tela + Vector((-0.08, 0.0, -0.10))))
-        # Ultima chave em q_fim-1, CONSTANT: o corte da primeira foto e em q_fim,
-        # e duas chaves no mesmo quadro fariam a foto sobrescrever o close da
-        # tela (medido: o quadro 350 saiu apontando para os cabecotes).
+        q_dolly = q(r["dolly"])
+        # Meio da orbita com raio 2,1 e alvo no corpo: o U1 inteiro no quadro
+        # (a revisao mediu o U1 cortado na borda esquerda em q315).
+        _chave_camera(objs, q(0.30), 180.0, 2.1, 0.80, centro + Vector((0.0, 0.0, 0.42)))
+        # Em q_orb o alvo ainda e o corpo (era a tela: com o centro do quadro no
+        # canto direito da frente, o lado esquerdo do U1 saia cortado em q315,
+        # medido no render); o dolly leva o alvo ate a tela.
+        _chave_camera(objs, q_orb, 250.0, 1.45, 0.72, centro + Vector((0.0, 0.0, 0.42)))
+        # Fim do dolly em q(0,78) e a MESMA chave em q_fim-1 (CONSTANT): duas
+        # chaves iguais zeram o handle e seguram a tela parada 19 quadros; o
+        # corte da primeira foto e em q_fim, e duas chaves no mesmo quadro fariam
+        # a foto sobrescrever o close (medido: q350 apontando aos cabecotes).
+        _chave_camera(objs, q_dolly, az_fim, r_fim, z_fim, tela)
         _chave_camera(objs, q_fim - 1, az_fim, r_fim, z_fim, tela, interp="CONSTANT")
-        mod_ambiente.animar_rig(amb, q_ini, q_orb, 190.0, 340.0)
-        mod_ambiente.animar_rig(amb, q_orb, q_fim - 1, 340.0, az_fim + 90.0)
+        off = p["offset_rig_orbita"]
+        mod_ambiente.animar_rig(amb, q_ini, q_orb, None, 250.0, azimutes=True, offset=off)
+        mod_ambiente.animar_rig(amb, q_orb, q_dolly, 250.0, az_fim, azimutes=True, offset=off)
 
         if u1.get("tela") is not None:
             mod_u1.animar_tela(u1, q(r["boot"]), q(r["ui"]), q_fim)
@@ -4582,41 +5797,66 @@ def _modulo_coreografia():
 
     def _beat5(objs, fator):
         """Tres fotos: cortes secos com flash, closes ancorados no canto inferior
-        direito, cada um com um drift lento e a luz mudando de angulo."""
+        direito, cada um com um push-in lento e a luz mudando de angulo."""
         q_ini, q_fim = quadros_do_beat(5, fator)
-        cena, amb, cam = objs["cena"], objs["ambiente"], objs["camera"]
+        cena, amb, cam, p = objs["cena"], objs["ambiente"], objs["camera"], objs["params"]
+        centro = objs["centro_u1"]
         cena.frame_set(q_ini)
         bpy.context.view_layer.update()
         s = _sujeitos_fotos(objs)
         cortes = [q_em(5, fr, fator) for fr in ROTEIRO[5]["fotos"]] + [q_fim]
+        e_rims, e_keys, e_cam = p["rim_fotos"], p["key_fotos"], p["luz_camara_fotos"]
 
-        # (sujeito, camera no inicio, deslocamento do drift, lente, rig relativo, energia key, energia rim)
+        # (sujeito, camera no inicio, lente, enquadramento (fx, fy), rig relativo, energia key, energia rim)
+        # Foto C de FORA da pegada: acima e a frente-direita do aro, olhando a
+        # mesa pelo topo aberto; mesa e hastes na diagonal, mesa embaixo a direita.
         fotos = [
-            (s["cabecotes"], s["cabecotes"] + Vector((-0.22, -0.38, 0.30)), Vector((0.03, 0.02, -0.02)), 60.0, +45.0, 300.0, 550.0),
-            (s["porta"], s["porta"] + Vector((0.38, -0.52, 0.18)), Vector((-0.02, 0.02, 0.01)), 50.0, -50.0, 260.0, 650.0),
-            (s["mesa"], s["mesa"] + Vector((-0.12, -0.16, 0.86)), Vector((0.02, 0.02, -0.03)), 50.0, +70.0, 240.0, 800.0),
+            (s["cabecotes"], s["cabecotes"] + Vector((-0.22, -0.38, 0.30)), 60.0, (0.68, 0.74), +45.0, e_keys[0], e_rims[0]),
+            (s["porta"], s["porta"] + Vector((0.38, -0.52, 0.18)), 50.0, (0.68, 0.74), -50.0, e_keys[1], e_rims[1]),
+            (s["mesa"], s["mesa"] + Vector((0.30, -0.30, 1.20)), 50.0, (0.70, 0.74), +70.0, e_keys[2], e_rims[2]),
         ]
+        # Luz propria do U1 nas fotos: fitas mais fracas (chave de espera em
+        # q_ini-1 e corte em q_ini) e area lights da camara por foto (cortes).
+        u1 = objs["u1"]
+        s_led = _socket_emissao(u1.get("materiais", {}).get("led"))
+        if s_led is not None:
+            nt = u1["materiais"]["led"].node_tree
+            s_led.default_value = _valor_em(nt, s_led.path_from_id("default_value"), q_ini - 1)
+            s_led.keyframe_insert("default_value", frame=q_ini - 1)
+            s_led.default_value = p["forca_fitas_fotos"]
+            s_led.keyframe_insert("default_value", frame=q_ini)
+            _interp_nas_chaves(nt, {q_ini - 1, q_ini}, "CONSTANT")
+        for luz in list(u1.get("luzes_led") or []):
+            dados = luz.data
+            chaves_luz = [(q_ini - 1, _valor_em(dados, "energy", q_ini - 1))] + list(zip(cortes[:-1], e_cam))
+            for q_, e in chaves_luz:
+                dados.energy = e
+                dados.keyframe_insert("energy", frame=q_)
+            _interp_nas_chaves(dados, {q_ for q_, _ in chaves_luz}, "CONSTANT")
         luzes = amb["luzes"]
         padrao_key = luzes["key"].data.energy
         padrao_rim = luzes["rim"].data.energy
-        rig_luz = amb["rig"]
         # Antes do primeiro corte as energias precisam de chave com o valor
         # padrao, senao a primeira chave extrapola para tras e muda os beats 1-4.
         for luz, val in ((luzes["key"], padrao_key), (luzes["rim"], padrao_rim)):
             luz.data.energy = val
             luz.data.keyframe_insert("energy", frame=cortes[0] - 1)
         objs["_chaves_rig_luz"] = {}
-        for i, (sujeito, pos, drift, lente, rig_rel, e_key, e_rim) in enumerate(fotos):
+        for i, (sujeito, pos, lente, (fx, fy), rig_rel, e_key, e_rim) in enumerate(fotos):
             q_a, q_b = cortes[i], cortes[i + 1] - 1
-            for q_, p_ in ((q_a, pos), (q_b, pos + drift)):
-                az, raio, z = _cil(p_)
-                alvo = _enquadrar(p_, sujeito, lente)
-                _chave_camera(objs, q_, az, raio, z, alvo, foco=sujeito, lente=lente,
+            # Push-in: 0,06 m na direcao do sujeito ao longo da foto, e a lente
+            # de 50 a 52 mm (LINEAR) - a foto quase parada lia como still.
+            direcao = (Vector(sujeito) - Vector(pos)).normalized()
+            for q_, p_, lente_ in ((q_a, pos, lente), (q_b, pos + direcao * 0.06, lente + 2.0)):
+                az, raio, z = _cil(p_ - centro)
+                alvo = _enquadrar(p_, sujeito, lente_, fx, fy)
+                _chave_camera(objs, q_, az, raio, z, alvo, foco=sujeito, lente=lente_,
                               interp="LINEAR" if q_ == q_a else "CONSTANT")
-            mod_ambiente.animar_flash(amb, cam, q_a, forca=1.0)
+            objs["_lentes_rampa"].add(q_a)
+            mod_ambiente.animar_flash(amb, cam, q_a)
             # Luz da foto: rig girado em relacao a camera (key mais lateral) e
             # rim mais forte; tudo em chave constante, e um corte.
-            az_cam = _cil(pos)[0]
+            az_cam = _cil(pos - centro)[0]
             objs["_chaves_rig_luz"][q_a] = az_cam + 90.0 + rig_rel
             for luz, val in ((luzes["key"], e_key), (luzes["rim"], e_rim)):
                 luz.data.energy = val
@@ -4626,9 +5866,65 @@ def _modulo_coreografia():
             luz.data.energy = val
             luz.data.keyframe_insert("energy", frame=q_fim)
             for fc in luz.data.animation_data.action.fcurves:
-                for kp in fc.keyframe_points:
-                    kp.interpolation = "CONSTANT"
+                if fc.data_path == "energy":
+                    for kp in fc.keyframe_points:
+                        kp.interpolation = "CONSTANT"
+                    fc.update()
         objs["_q_rig_luz_padrao"] = q_fim
+
+
+    def _socket_emissao(mat):
+        if mat is None or not mat.use_nodes:
+            return None
+        try:
+            return mod_u1._socket_forca_emissao(mat.node_tree)
+        except (AttributeError, RuntimeError):
+            return None
+
+
+    def _segurar_e_zerar(dono, socket, quadro_):
+        """Chave de espera (valor atual, CONSTANT) em quadro-1 e 0 em quadro: um
+        corte, sem a rampa Bezier que a chave sozinha faria desde o beat 4."""
+        caminho = socket.path_from_id("default_value")
+        atual = _valor_em(dono, caminho, quadro_ - 1)
+        socket.default_value = atual
+        socket.keyframe_insert("default_value", frame=quadro_ - 1)
+        socket.default_value = 0.0
+        socket.keyframe_insert("default_value", frame=quadro_)
+        _interp_nas_chaves(dono, {quadro_ - 1, quadro_}, "CONSTANT")
+
+
+    def _desligar_u1(objs, quadro_):
+        """No corte do beat 6 a maquina volta desligada para a caixa: tela, fitas,
+        janela do botao e as area lights da camara apagam de uma vez."""
+        u1 = objs["u1"]
+        mats = u1.get("materiais", {})
+        mat_tela = mats.get("tela")
+        if mat_tela is None and u1.get("tela") is not None:
+            mat_tela = u1["tela"].active_material
+        if mat_tela is not None and mat_tela.use_nodes:
+            nt = mat_tela.node_tree
+            if nt.nodes.get("ligada") is not None:
+                for nome in ("ligada", "standby"):
+                    no = nt.nodes.get(nome)
+                    if no is not None:
+                        _segurar_e_zerar(nt, no.outputs[0], quadro_)
+            else:
+                s = _socket_emissao(mat_tela)
+                if s is not None:
+                    _segurar_e_zerar(nt, s, quadro_)
+        for mat in (mats.get("led"), mats.get("botao")):
+            s = _socket_emissao(mat)
+            if s is not None:
+                _segurar_e_zerar(mat.node_tree, s, quadro_)
+        for luz in list(u1.get("luzes_led") or []):
+            dados = luz.data
+            dados.energy = _valor_em(dados, "energy", quadro_ - 1)
+            dados.keyframe_insert("energy", frame=quadro_ - 1)
+            dados.energy = 0.0
+            dados.keyframe_insert("energy", frame=quadro_)
+            _interp_nas_chaves(dados, {quadro_ - 1, quadro_}, "CONSTANT")
+            _chave_visivel(luz, quadro_, False)
 
 
     def _beat6(objs, fator):
@@ -4637,25 +5933,45 @@ def _modulo_coreografia():
         r = ROTEIRO[6]
         q_ini, q_fim = quadros_do_beat(6, fator)
         q = lambda fr: q_em(6, fr, fator)  # noqa: E731
-        caixa, u1, amb, cabo = objs["caixa"], objs["u1"], objs["ambiente"], objs["cabo"]
+        caixa, u1, amb, cabo, p = objs["caixa"], objs["u1"], objs["ambiente"], objs["cabo"], objs["params"]
+        centro = objs["centro_u1"]
+        z_alto = objs["z_alto_u1"]
 
-        _chave_camera(objs, q_ini, -80.0, 3.0, 1.3, (0.0, 0.0, 0.55), lente=35.0)
-        _chave_camera(objs, q_fim, -84.0, 2.8, 2.3, (0.0, 0.0, 0.70))
+        if p["caixa_some"]:
+            # 9:16 aproveitado: raio 2,2/2,1 e altura 1,0/1,7 (era 3,0/2,8 e
+            # 1,3/2,3, produto a 28% da altura). No pico da subida do U1 o alvo
+            # sobe a 0,78 m: com o alvo a 0,45 o topo dele (1,68 m) saia do quadro.
+            _chave_camera(objs, q_ini, -80.0, 2.2, 1.0, (0.0, 0.0, 0.45), lente=35.0)
+            _chave_camera(objs, q(r["u1_sobe"][1]), -81.0, 2.3, 1.15, (0.0, 0.0, 0.78))
+            _chave_camera(objs, q_fim, -84.0, 2.1, 1.7, (0.0, 0.0, 0.60))
+        else:
+            # De lado: o U1 esta 2,1 m na frente da caixa e de frente ele
+            # ficaria colado na camera.
+            _chave_camera(objs, q_ini, -30.0, 3.3, 1.3, (0.0, -1.0, 0.45), lente=35.0)
+            _chave_camera(objs, q_fim, -45.0, 2.8, 1.9, (0.0, -0.2, 0.60))
+        # Os rigs voltam a origem no corte (so tem efeito com caixa_some=False).
+        _chave_centro(objs, q_ini - 1, centro, interp="CONSTANT")
+        _chave_centro(objs, q_ini, (0.0, 0.0, 0.0), interp="CONSTANT")
         mod_ambiente.animar_rig(amb, q_ini, q_fim, 10.0, 6.0)
         _chave_rim_especular(objs, q_ini, 0.0)
 
         raiz = u1["raiz"]
-        z_alto = objs["z_alto_u1"]
-        _chave(raiz, q(r["u1_sobe"][0]), (0.0, 0.0, 0.0))
-        _chave(raiz, q(r["u1_sobe"][1]), (0.0, 0.0, z_alto))
-        _chave(raiz, q(r["u1_desce"][0]), (0.0, 0.0, z_alto))
+        if p["caixa_some"]:
+            _chave(raiz, q(r["u1_sobe"][0]), (0.0, 0.0, 0.0))
+            _chave(raiz, q(r["u1_sobe"][1]), (0.0, 0.0, z_alto))
+            _chave(raiz, q(r["u1_desce"][0]), (0.0, 0.0, z_alto))
+        else:
+            _chave(raiz, q(r["u1_sobe"][0]), (0.0, centro.y, 0.0))
+            _chave(raiz, q(r["u1_sobe"][1]), (0.0, centro.y * 0.5, z_alto))
+            _chave(raiz, q(r["u1_desce"][0]), (0.0, 0.0, z_alto))
         _chave(raiz, q(r["u1_desce"][1]), (0.0, 0.0, u1["z_na_caixa"]))
         _interpolar(raiz, q_ini, q_fim)
 
         corpo = caixa["corpo"]
-        _chave(corpo, q(r["caixa_sobe"][0]), (0.0, 0.0, -objs["profundidade_caixa"]))
-        _chave(corpo, q(r["caixa_sobe"][1]), (0.0, 0.0, 0.0))
-        _interpolar(corpo, q(r["caixa_sobe"][0]), q(r["caixa_sobe"][1]))
+        if p["caixa_some"]:
+            _chave(corpo, q(r["caixa_sobe"][0]), (0.0, 0.0, -objs["profundidade_caixa"]))
+            _chave(corpo, q(r["caixa_sobe"][1]), (0.0, 0.0, 0.0))
+            _interpolar(corpo, q(r["caixa_sobe"][0]), q(r["caixa_sobe"][1]))
 
         mod_caixa.animar_espuma_voltar(caixa, q(r["espuma"][0]), q(r["espuma"][1]))
         mod_caixa.animar_tampa(caixa, q(r["tampa"][0]), q(r["tampa"][1]), abrir=False, lado=1.0)
@@ -4663,25 +5979,70 @@ def _modulo_coreografia():
 
         # Cabo: visivel so do inicio do voo ate o corte do beat 6 (o modulo nao
         # acompanha o U1 subindo, e o plugue no chao apareceria nos beats 1-2).
+        # A invisibilidade do sumico depende da camera do beat 6 olhar de -Y
+        # (o cabo esta atras, em +Y).
         visiveis = _esconder_entre(list(cabo["colecao"].all_objects), 1, objs["_q_cabo"][0])
         for obj in visiveis:
             _chave_visivel(obj, q_ini, False)
-        # Tela apaga no corte: a maquina volta para a caixa desligada.
-        mat = u1.get("materiais", {}).get("tela")
-        no = mat.node_tree.nodes.get("ligada") if mat and mat.use_nodes else None
-        if no is not None:
-            no.outputs[0].default_value = 0.0
-            no.outputs[0].keyframe_insert("default_value", frame=q_ini)
+        # A maquina volta para a caixa desligada (tela, fitas, luzes).
+        _desligar_u1(objs, q_ini)
+
+
+    def _perfil_mergulho(u, s):
+        """Hermite em [0, 1]: 1 -> 0, parte parado (derivada 0) e chega com
+        derivada -s (nao para na logo: segue para a travessia)."""
+        return (2.0 * u ** 3 - 3.0 * u ** 2 + 1.0) - s * (u ** 3 - u ** 2)
+
+
+    def _veu_preto(objs, q_ini, q_fim, q_solta, distancia=0.0105):
+        """O plano do flash como veu PRETO: emissao 0, alfa 0 -> 1 (LINEAR) de
+        q_ini a q_fim, segura ate q_solta-1 e volta a 0 em q_solta (CONSTANT).
+        O plano chega a 'distancia' da camera nesses quadros: a 25 cm (o padrao
+        do flash) ele ficaria atras da tampa quando a camera esta a 12 cm dela.
+        1,05 cm = logo depois do clip_start (1 cm): a 1,5 cm, com a camera ja
+        dentro da tampa (q549), um floco de espuma da camada de cima entrava
+        entre a camera e o veu e aparecia como uma mancha (medido no render)."""
+        amb, cam = objs["ambiente"], objs["camera"]
+        plano = amb.get("flash")
+        if plano is None:
+            plano = mod_ambiente.animar_flash(amb, cam, q_ini - 1000, forca=0.0)
+        nt = plano.data.materials[0].node_tree
+        alfa = nt.nodes["alfa"].outputs[0]
+        emissao = next(n for n in nt.nodes if n.type == "EMISSION").inputs["Strength"]
+        chaves = ((q_ini, 0.0, "LINEAR"), (q_fim, 1.0, "CONSTANT"), (q_solta, 0.0, "CONSTANT"))
+        for q_, a, _ in chaves:
+            alfa.default_value = a
+            alfa.keyframe_insert("default_value", frame=q_)
+            emissao.default_value = 0.0
+            emissao.keyframe_insert("default_value", frame=q_)
+        interp = {q_: i for q_, _, i in chaves}
+        for fc in nt.animation_data.action.fcurves:
+            for kp in fc.keyframe_points:
+                i = interp.get(int(round(kp.co.x)))
+                if i is not None:
+                    kp.interpolation = i if fc.data_path.startswith('nodes["alfa"]') else "CONSTANT"
+            fc.update()
+        alfa.default_value = 0.0
+        # Distancia do plano: chave em 1 (padrao) para o beat 5 nao mudar.
+        z0 = plano.location.z
+        for q_, z in ((1, z0), (q_ini, -distancia), (q_solta, z0)):
+            plano.location = (0.0, 0.0, z)
+            plano.keyframe_insert("location", frame=q_)
+        _interp_nas_chaves(plano, {1, q_ini, q_solta}, "CONSTANT")
+        plano.location = (0.0, 0.0, z0)
+        return plano
 
 
     def _beat7(objs, fator):
-        """Camera sobe para o eixo da logo, mergulha ate atravessar a tampa;
-        corte para a cartela, parented na camera, que entra e fica."""
+        """Camera sobe para o eixo da logo, mergulha e ATRAVESSA a tampa sob um
+        veu preto; corte para a cartela (parented na camera) com a logo ja
+        visivel no centro - match cut logo -> logo."""
         r = ROTEIRO[7]
         q_ini, q_fim = quadros_do_beat(7, fator)
         q = lambda fr: q_em(7, fr, fator)  # noqa: E731
         caixa, cartela, cena, cam, amb = objs["caixa"], objs["cartela"], objs["cena"], objs["camera"], objs["ambiente"]
         p = objs["params"]
+        m = p["mergulho"]
 
         cena.frame_set(q_ini)
         bpy.context.view_layer.update()
@@ -4689,16 +6050,49 @@ def _modulo_coreografia():
         normal = (caixa["tampa"].matrix_world.to_3x3() @ caixa["normal_logo"]).normalized()
         q_topo, q_t = q(r["sobe_para_logo"][1]), q(r["mergulho"][1])
         objs["q_travessia"] = q_t
+        n_trav = max(1, int(m["travessia"]))
+        q_perto = q_t - 1 - n_trav
         # O alvo fica 1 m abaixo da camera, 4 mm para +Y: e o que define o "para
         # cima" do quadro (+Y = logo em pe) sem o Track To degenerar na vertical.
         # O foco fica na logo o mergulho inteiro.
-        alto = logo + normal * 1.8
-        _chave_camera(objs, q_topo, -90.0, 0.0, alto.z, (0.0, 0.004, alto.z - 1.0), foco=logo,
-                      interp="QUAD", easing="EASE_IN")
-        baixo = logo + normal * 0.12
-        _chave_camera(objs, q_t - 1, -90.0, 0.0, baixo.z, (0.0, 0.004, baixo.z - 1.0), foco=logo,
-                      interp="CONSTANT")
+        def chave_altura(q_, d, interp):
+            pos = logo + normal * d
+            # Foco na logo, mas nunca a menos de foco_min da camera (ver PARAMS).
+            foco = logo if d >= m["foco_min"] else pos - normal * m["foco_min"]
+            _chave_camera(objs, q_, -90.0, 0.0, pos.z, (0.0, 0.004, pos.z - 1.0), foco=foco, interp=interp)
+
+        # Mergulho: uma chave por quadro (ver PARAMS_PADRAO['mergulho']): Hermite
+        # do apice (parado) ate 'meio' na fase A, exponencial ate 'perto' na
+        # fase B (chega devagar, nao para), e a travessia ACELERA (u^2) ate
+        # 'dentro' da tampa - o veu ja esta cobrindo. Abertura f/2,8 -> f/8.
+        n_merg = max(2, q_perto - q_topo)
+        n_a = max(1, int(round(n_merg / 3.0)))
+        n_b = max(1, n_merg - n_a)
+        razao = (m["perto"] / m["meio"]) ** (1.0 / n_b)        # fracao por quadro na fase B
+        v_meio = m["meio"] * (1.0 - razao)                      # m/quadro no inicio da B
+        s = v_meio * n_a / max(m["alto"] - m["meio"], 1e-6)     # a A termina nessa velocidade
+        for f in range(q_topo, q_perto + 1):
+            k = f - q_topo
+            if k <= n_a:
+                d = m["meio"] + (m["alto"] - m["meio"]) * _perfil_mergulho(k / float(n_a), s)
+            else:
+                d = m["meio"] * razao ** (k - n_a)
+            chave_altura(f, d, "LINEAR")
+        for f in range(q_perto + 1, q_t):
+            u = (f - q_perto) / float(n_trav)
+            d = m["perto"] + (m["dentro"] - m["perto"]) * u * u
+            chave_altura(f, d, "CONSTANT" if f == q_t - 1 else "LINEAR")
+        _chave_f(objs, q_topo, m["f_ini"])
+        _chave_f(objs, q_t - 1, m["f_fim"])
+        _chave_f(objs, q_t, m["f_ini"])
         mod_ambiente.animar_rig(amb, q_ini, q_topo, 6.0, 0.0)
+        # Veu preto: alfa 0 -> 1 nos 'veu' quadros antes de a camera tocar a
+        # tampa (q_perto+1 e o primeiro quadro da travessia), segura preto ate o
+        # corte e solta no corte. O preto nasce da propria logo.
+        n_veu = max(1, int(m["veu"]))
+        q_veu_fim = q_t - 1 - max(0, n_trav - n_veu)
+        _veu_preto(objs, q_veu_fim - n_veu, q_veu_fim, q_t)
+        objs["_q_veu"] = (q_veu_fim - n_veu, q_veu_fim)
 
         # Corte: camera limpa, de costas para a cena, olhando 24 graus para cima.
         # Medido com 12 graus: o horizonte caia a 78% da altura e o brilho (ceu
@@ -4712,11 +6106,8 @@ def _modulo_coreografia():
         _chave_camera(objs, q_t, 90.0, raio0, z_cam, (0.0, raio0 + dist_alvo, alvo_z), interp="LINEAR")
         cena.frame_set(q_t)
         bpy.context.view_layer.update()
-        mod_cartela.posicionar_cartela(cartela, cam, cartela["distancia"])
+        mod_cartela.posicionar_cartela(cartela, cam, cartela["distancia"], subida=p["cartela_subida"], parentear=True)
         raiz = cartela["raiz"]
-        raiz.parent = cam
-        raiz.matrix_parent_inverse = Matrix.Identity(4)
-        raiz.matrix_basis = Matrix.Translation((0.0, p["cartela_subida"], -cartela["distancia"]))
         bpy.context.view_layer.update()
         foco_cartela = raiz.matrix_world.translation.copy()
         objs["foco"].location = foco_cartela
@@ -4725,9 +6116,17 @@ def _modulo_coreografia():
         _chave_camera(objs, q_fim, 90.0, raio0 + deriva, z_cam, (0.0, raio0 + deriva + dist_alvo, alvo_z),
                       foco=foco_cartela + Vector((0.0, deriva, 0.0)), interp="LINEAR")
 
+        # Cartela escondida ate o corte (visivel DE q_t, logo inclusive); a logo
+        # entra ja com alfa 1, maior e no centro do quadro, e viaja ao repouso
+        # enquanto as linhas entram: e o match cut com a logo da tampa.
         elementos = list(cartela["linhas"]) + ([cartela["logo"]] if cartela.get("logo") else [])
         _esconder_entre(elementos, 1, q_t)
-        mod_cartela.animar_cartela(cartela, q_t + 1, q(r["cartela"][1]))
+        subida = cartela.get("subida", 0.0) if p["cartela_subida"] is None else p["cartela_subida"]
+        # fracao 0,40 (padrao do modulo 0,55): com 0,55 a linha 1 entrava com a
+        # logo ainda no meio da viagem e cruzava a engrenagem (q560 medido).
+        mod_cartela.animar_cartela(cartela, q_t, q(r["cartela"][1]), fracao_elemento=p["cartela_fracao"],
+                                   logo_ja_visivel=True, logo_origem=(0.0, -subida),
+                                   logo_escala_inicial=p["logo_escala_inicial"])
 
 
     def _rig_luz_cortes(objs):
@@ -4754,6 +6153,8 @@ def _modulo_coreografia():
         rig.keyframe_insert("rotation_euler", index=2, frame=q_padrao)
         quadros = set(chaves) | {primeiro - 1}
         for fc in rig.animation_data.action.fcurves:
+            if fc.data_path != "rotation_euler":
+                continue
             for kp in fc.keyframe_points:
                 if int(round(kp.co.x)) in quadros:
                     kp.interpolation = "CONSTANT"
@@ -4779,6 +6180,10 @@ def _modulo_coreografia():
         _rig_luz_cortes(objs)
         _aplicar_interpolacao_camera(objs)
         cena.frame_set(1)
+        # Uma action de node tree fica orfa durante a coreografia da segunda
+        # rodada (medido: 'Shader NodetreeAction.003'); a purga de construir_tudo
+        # vem antes dela, por isso outra aqui.
+        _purgar_acoes_orfas()
         return objs
 
 
@@ -4797,6 +6202,17 @@ def _modulo_coreografia():
         # mistura o plano anterior (ver cabecalho).
         _ajustar(cena.render, "motion_blur_position", "START")
         return p
+
+
+    def preparar_para_salvar():
+        """Empacota as imagens no .blend (logo, telas): sem isto elas apontam para
+        a pasta temporaria de onde o arquivo unico as extraiu. Devolve os nomes
+        empacotados agora. O caminho de origem FICA gravado na imagem (e a
+        convencao do Blender para arquivo empacotado, e e por ele que os modulos
+        reaproveitam a imagem na rodada seguinte via check_existing - medido:
+        apagar o caminho fazia a segunda rodada criar 'logo_engineprint.png.001');
+        os pixels vem do .blend, provado reabrindo o arquivo em processo limpo."""
+        return mod_ambiente.empacotar_imagens()
 
 
     def renderizar_quadro(objs, quadro_, caminho):
@@ -4820,18 +6236,23 @@ def _modulo_coreografia():
         piores = {"u1_abaixo_do_fundo_m": 0.0, "espumas_no_u1": 0, "quadro_pior": None, "u1_x_tampa": 0}
         tampa = caixa["tampa"]
         ext_t = caixa["exterior_tampa"]
+        ext_c = caixa["exterior_corpo"]
         for n in (2, 6):
             a, b = quadros_do_beat(n, fator)
             for f in range(a, b + 1, passo):
                 cena.frame_set(f)
-                zu = u1["raiz"].matrix_world.translation.z
-                zc = caixa["corpo"].matrix_world.translation.z
-                fundo = zc + parede
-                if zu < fundo - 1e-4:
+                pu = u1["raiz"].matrix_world.translation
+                zu = pu.z
+                pc = caixa["corpo"].matrix_world.translation
+                fundo = pc.z + parede
+                # So conta quando o U1 esta sobre a pegada da caixa (com
+                # caixa_some=False ele pousa 2 m na frente dela).
+                sobre_caixa = abs(pu.x - pc.x) < ext_c[0] / 2.0 and abs(pu.y - pc.y) < ext_c[1] / 2.0
+                if sobre_caixa and zu < fundo - 1e-4:
                     piores["u1_abaixo_do_fundo_m"] = max(piores["u1_abaixo_do_fundo_m"], fundo - zu)
                 dentro = 0
                 for esp in caixa["espumas"]:
-                    p_ = esp.matrix_world.translation
+                    p_ = esp.matrix_world.translation - Vector((pu.x, pu.y, 0.0))
                     raio = float(esp["caixa_raio"])
                     if (mn.x + raio * 0.5 < p_.x < mx.x - raio * 0.5 and mn.y + raio * 0.5 < p_.y < mx.y - raio * 0.5
                             and zu + mn.z + raio * 0.5 < p_.z < zu + mx.z - raio * 0.5):
@@ -4846,13 +6267,14 @@ def _modulo_coreografia():
                 tm = tampa.matrix_world
                 teto = tm.translation.z + ext_t[2] / 2.0 - parede
                 base = tm.translation.z - ext_t[2] / 2.0
-                sobre = abs(tm.translation.x) < ext_t[0] / 2.0 + mx.x and abs(tm.translation.y) < ext_t[1] / 2.0 + mx.y
-                deslocada = abs(tm.translation.x) > 0.005 or abs(tm.translation.y) > 0.005
+                dx, dy = tm.translation.x - pu.x, tm.translation.y - pu.y
+                sobre = abs(dx) < ext_t[0] / 2.0 + mx.x and abs(dy) < ext_t[1] / 2.0 + mx.y
+                deslocada = abs(dx) > 0.005 or abs(dy) > 0.005
                 if sobre and not tampa.hide_render:
                     topo_u1 = zu + mx.z
                     if topo_u1 > teto + 1e-3 and zu + mn.z < teto:
                         piores["u1_x_tampa"] += 1
-                    elif deslocada and base < topo_u1 - 1e-3 and abs(tm.translation.x) < mx.x + ext_t[0] / 2.0 - 0.02:
+                    elif deslocada and base < topo_u1 - 1e-3 and abs(dx) < mx.x + ext_t[0] / 2.0 - 0.02:
                         piores["u1_x_tampa"] += 1
         print("[coreografia] colisoes: U1 abaixo do fundo da caixa = %.4f m; espumas dentro do U1 (pior quadro %s) = %d; quadros com tampa x U1 = %d"
               % (piores["u1_abaixo_do_fundo_m"], piores["quadro_pior"], piores["espumas_no_u1"], piores["u1_x_tampa"]))
@@ -6909,6 +8331,7 @@ def main():
         "u1_led_objeto": U1_LED_OBJETO,
         "duracao_s": float(DURACAO_S),
         "cor_caixa": COR_CAIXA,
+        "caixa_some": bool(CAIXA_SOME),
         "pasta_assets": pasta_assets,
     }
     objs = mod_coreografia.construir_tudo(params)
@@ -6922,6 +8345,10 @@ def main():
         objs["cena"].frame_end, objs["camera"].name, objs["cena"].render.filepath))
     if SALVAR_BLEND:
         caminho = _os.path.join(pasta_saida, "anuncio_u1.blend")
+        # Logo e telas vem da pasta temporaria: empacotar, senao o .blend
+        # aponta para %TEMP% e as imagens somem na limpeza.
+        empacotadas = mod_coreografia.preparar_para_salvar()
+        print("[anuncio] imagens empacotadas no .blend:", ", ".join(empacotadas) or "nenhuma (ja estavam)")
         try:
             bpy.ops.wm.save_as_mainfile(filepath=caminho, copy=True)
             print("[anuncio] .blend gravado em", caminho)

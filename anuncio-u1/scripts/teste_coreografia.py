@@ -5,10 +5,23 @@
 # Modos (variavel MODO):
 #   chave  (padrao) um quadro por beat (meio) -> saida/beat_N.png, 540x960,
 #          16 amostras; QUADROS="350,545" acrescenta quadros extras
-#          (saida/quadro_NNN.png).
+#          (saida/quadro_NNN.png); BEATS="1,4" limita os beats; PASTA=...
+#          troca a pasta de saida; LARG/ALT/AMOSTRAS trocam o tamanho.
 #   lote   quadros INI..FIM de PASSO em PASSO -> saida/previa_seq/quadro_NNNN.png
-#          em 360x640, 8 amostras (previa do video, em lotes de < 10 min).
+#          em 360x640, 8 amostras (previa do video, em lotes de < 10 min:
+#          scripts/lotes.sh faz os lotes).
+#   video  junta saida/previa_seq/quadro_*.png num MP4 a 15 fps (FPS_VIDEO)
+#          com o ffmpeg do Blender -> saida/previa_20s.mp4 (NOME_VIDEO).
 #   nada   so constroi, coreografa e confere (rapido; para depurar).
+#
+# Outras variaveis: DURACAO_S (20 ou 15), CAIXA_SOME=0 (o U1 pousa na frente
+# da caixa em vez de ela afundar), U1_NOME=MeuU1 (exercita o modelo real com
+# um bloco), SONDA_VEL="160-200,260-300" (velocidade da camera por quadro,
+# m/quadro, para achar paradas fora de corte), PASSO_COLISAO.
+#
+# Custo medido por software (llvmpipe, 4 nucleos): 16-41 s por quadro da cena
+# completa a 360x640 com 8 amostras (o previa.sh fala em 6 s: e para os
+# corpos de prova dos modulos, nao para a cena inteira).
 #
 # Quem roda isto abre os PNGs e olha - o script rodar sem erro nao prova nada.
 
@@ -26,7 +39,7 @@ for m in (mod_ambiente, mod_caixa, mod_u1, mod_cabo, mod_cartela, mod_coreografi
     importlib.reload(m)
 
 RAIZ = os.path.dirname(AQUI)
-SAIDA = os.path.join(RAIZ, "saida")
+SAIDA = os.environ.get("PASTA") or os.path.join(RAIZ, "saida")
 MODO = os.environ.get("MODO", "chave")
 DURACAO = float(os.environ.get("DURACAO_S", "20"))
 
@@ -39,7 +52,12 @@ if MODO == "video":
     quadros = sorted(f for f in os.listdir(pasta) if f.startswith("quadro_") and f.endswith(".png"))
     cena = bpy.context.scene
     cena.sequence_editor_create()
-    faixa = cena.sequence_editor.sequences.new_image("previa", os.path.join(pasta, quadros[0]), 1, 1)
+    # 4.4+ renomeou sequences -> strips (no 4.2 'sequences' existe e esta
+    # VAZIA: testar por None, nao por verdade - medido, 'or' caia em strips).
+    faixas = getattr(cena.sequence_editor, "sequences", None)
+    if faixas is None:
+        faixas = cena.sequence_editor.strips
+    faixa = faixas.new_image("previa", os.path.join(pasta, quadros[0]), 1, 1)
     for f in quadros[1:]:
         faixa.elements.append(f)
     fps = int(os.environ.get("FPS_VIDEO", "15"))
@@ -63,7 +81,12 @@ if MODO == "video":
     print("[teste] video: %d quadros a %d fps -> %s" % (len(quadros), fps, cena.render.filepath))
     raise SystemExit(0)
 
-params = {"duracao_s": DURACAO, "pasta_assets": os.path.join(RAIZ, "assets")}
+params = {"duracao_s": DURACAO, "pasta_assets": os.path.join(RAIZ, "assets"),
+          "caixa_some": os.environ.get("CAIXA_SOME", "1") not in ("0", "false", "False")}
+if os.environ.get("HEROI"):
+    # Variantes da camera do momento-heroi (beat 2): "z,alvo,raio".
+    z, alvo, raio = [float(v) for v in os.environ["HEROI"].split(",")]
+    params["camera_heroi"] = {"z": z, "alvo": alvo, "raio": raio}
 if os.environ.get("U1_NOME"):
     # Exercita o caminho do MODELO REAL sem o modelo real: um bloco nas
     # dimensoes do U1, deslocado e girado de proposito, com um filho 'tela'
@@ -99,7 +122,8 @@ if os.environ.get("U1_NOME"):
         mn.x, mx.x, mn.y, mx.y, mn.z, mx.z,
         tuple(round(v, 3) for v in u1["posicao_tela"]["centro"]), tuple(round(v, 3) for v in u1["posicao_tomada"]["ponto"])))
 mod_coreografia.coreografar(objs)
-print("[teste] quadros: 1..%d  fator=%.2f  travessia=%d" % (objs["cena"].frame_end, objs["fator"], objs["q_travessia"]))
+print("[teste] quadros: 1..%d  fator=%.2f  travessia=%d  caixa_some=%s" % (
+    objs["cena"].frame_end, objs["fator"], objs["q_travessia"], params["caixa_some"]))
 for n, q in mod_coreografia.quadros_chave(objs["fator"]):
     a, b = mod_coreografia.quadros_do_beat(n, objs["fator"])
     print("[teste] beat %d: %d..%d  chave %d" % (n, a, b, q))
@@ -112,14 +136,34 @@ for n, q in mod_coreografia.quadros_chave(objs["fator"]):
     objs["cena"].frame_set(q)
     p = cam.matrix_world.translation
     a = alvo.matrix_world.translation
-    print("[sonda] q%3d beat %d: cam (%.2f, %.2f, %.2f)  alvo (%.2f, %.2f, %.2f)  dist %.2f  lente %.0f"
-          % (q, n, p.x, p.y, p.z, a.x, a.y, a.z, (p - a).length, cam.data.lens))
+    print("[sonda] q%3d beat %d: cam (%.2f, %.2f, %.2f)  alvo (%.2f, %.2f, %.2f)  dist %.2f  lente %.0f  f/%.1f"
+          % (q, n, p.x, p.y, p.z, a.x, a.y, a.z, (p - a).length, cam.data.lens, cam.data.dof.aperture_fstop))
+
+# Velocidade da camera por quadro (m/quadro) nos trechos pedidos: parada
+# fora de corte (< 0,005) e solavanco aparecem aqui antes do render.
+if os.environ.get("SONDA_VEL"):
+    rim = objs["ambiente"]["luzes"]["rim"].data
+    for trecho in os.environ["SONDA_VEL"].split(","):
+        a, b = [int(v) for v in trecho.split("-")]
+        objs["cena"].frame_set(a - 1)
+        p0 = cam.matrix_world.translation.copy()
+        for q in range(a, b + 1):
+            objs["cena"].frame_set(q)
+            p1 = cam.matrix_world.translation.copy()
+            spec = getattr(rim, "specular_factor", -1.0)
+            print("[vel] q%3d  %.4f m/quadro  cam (%.2f, %.2f, %.2f)  rim spec %.2f  alfa veu %s" % (
+                q, (p1 - p0).length, p1.x, p1.y, p1.z, spec,
+                "%.2f" % objs["ambiente"]["flash"].data.materials[0].node_tree.nodes["alfa"].outputs[0].default_value
+                if objs["ambiente"].get("flash") else "-"))
+            p0 = p1
 objs["cena"].frame_set(1)
 
 if MODO == "chave":
-    mod_coreografia.configurar_render(objs, 540, 960, int(os.environ.get("AMOSTRAS", "16")))
+    mod_coreografia.configurar_render(objs, int(os.environ.get("LARG", "540")), int(os.environ.get("ALT", "960")),
+                                      int(os.environ.get("AMOSTRAS", "16")))
+    os.makedirs(SAIDA, exist_ok=True)
     for n, q in mod_coreografia.quadros_chave(objs["fator"]):
-        if os.environ.get("BEATS") and str(n) not in os.environ["BEATS"].split(","):
+        if os.environ.get("BEATS") is not None and str(n) not in os.environ["BEATS"].split(","):
             continue
         caminho = mod_coreografia.renderizar_quadro(objs, q, os.path.join(SAIDA, "beat_%d.png" % n))
         print("[teste] gravado", caminho)
