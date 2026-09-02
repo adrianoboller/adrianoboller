@@ -10,6 +10,7 @@ pub mod carga;
 pub mod catalogo;
 pub mod cluster;
 pub mod conferidor;
+pub mod conferidor_grades;
 pub mod config;
 pub mod dblink;
 pub mod email;
