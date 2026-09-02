@@ -45,6 +45,34 @@ cada um:
   `python3 phxsql/docs/dossie/pagina-dos-pedidos.py` a gera do `PENDENCIAS.md`
   e conta os três estados sozinho.
 
+## Todo aprendizado novo vira um arquivo de cognição
+
+Ordem do dono, 02/09/2026: *«Todo aprendizado novo seu deve virar um
+`cognicao_assunto_data_hora.md`.»*
+
+Eles moram em `phxsql/docs/cognicao/`, um por aprendizado, com o formato e as
+cinco seções em `phxsql/docs/cognicao/LEIA-ME.md`. A terceira seção é a que
+impede o documento de virar anedota: **o que eu concluí primeiro, e estava
+errado**. Sem ela o arquivo ensina só a resposta, e o erro volta pelo mesmo
+caminho.
+
+A hora do nome é a da **descoberta**, não a do commit — é ela que diz o que já
+se sabia quando outra frente errou o mesmo na mesma tarde. E numa rodada com
+frentes paralelas isso deixa de ser detalhe: nesta base, um número digitado
+envelheceu em **noventa minutos** porque duas frentes mexeram na mesma catraca
+sem se verem.
+
+**O que não vira cognição nova:** reafirmação de pétrea que já existe. Quando
+uma pétrea quebra de novo, o aprendizado é o **alcance** dela — «a guarda
+existe, mas só cobre `ui/`» —, e é isso que o arquivo registra. Terceira cópia
+da mesma lei não acrescenta lei: acrescenta lugar onde a lei pode divergir de
+si mesma.
+
+E a divisão com este arquivo: o `CLAUDE.md` é a **lei**, curta e sem discussão;
+a cognição é o **processo** — como se descobriu, o que se errou antes, e o
+número. Lei sem processo vira dogma que ninguém sabe defender; processo sem lei
+vira história que ninguém aplica.
+
 ## A marca é oficial
 
 Os arquivos estão em `phxsql/marca/`, com a especificação em
