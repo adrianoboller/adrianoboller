@@ -57,6 +57,28 @@ Duas regras ao usá-lo:
 Botão dentro de `formato` não recebe `onclick`: o corpo é reescrito a cada
 render. Ligue por delegação no contêiner, ou use `aoAbrirLinha`.
 
+## O RÓTULO da coluna e o NOME da coluna não são a mesma coisa
+
+O exemplo acima (`{ campo: "acoes", titulo: "" }`) é o jeito certo de escrever
+uma coluna de ação — e por oito versões ele **não funcionou**: a grade fazia
+`c.titulo || c.campo`, então título declarado vazio caía no nome do campo e o
+cabeçalho mostrava `__acao`. O CSV exportava a mesma mentira por outra porta.
+
+Desde a 0.9.1 os dois vocabulários estão separados, e a diferença importa na
+hora de escrever coluna:
+
+| O que é | Onde aparece | O que faz com `titulo: ""` |
+|---|---|---|
+| **rótulo** | cabeçalho da coluna, cabeçalho do CSV | fica **vazio**, como pedido |
+| **nome** | seletor de colunas, resumo de filtro, pastilha de grupo | cai no `campo` |
+
+O nome cai no campo de propósito: uma caixa de marcar sem etiqueta no seletor
+de colunas seria pior que `__acao`. Se a coluna vai ser vista nesses três
+lugares, dê um título de verdade a ela.
+
+E a armadilha para quem for mexer nisso: o teste usa `== null`, e não `||`.
+Com `||`, a correção simplesmente não existe.
+
 ## Contrato de fonte remota (PWS/REST)
 
 O grid envia `{ pagina, tamanho, ordem: { campo, dir: "asc"|"desc"|null, tipo } }` e espera
@@ -69,10 +91,32 @@ O grid envia `{ pagina, tamanho, ordem: { campo, dir: "asc"|"desc"|null, tipo } 
 `redesenhar()` · `destruir()`
 
 ## Qualidade
-- Suíte `tests/grid-nucleo.test.js` (16 blocos, verde 2× exigido): `node tests/run.js`
-- Gates: `node --check` + acorn `ecmaVersion: 5`
-- Demos single-file geradas por `demos/build.py` (0 CDN, 0 src externo)
-- Telemetria por sprint publicada no `CHANGELOG.md` (Chrome real, medida)
+
+**Aqui dentro** (roda neste repositório, sem servidor e sem login):
+
+```bash
+node phxsql/testes-web/grade/bancada-grade.mjs      # 5 casos, Chromium de verdade
+node --check phx-grid.js                            # sintaxe
+ACORN=$(node -e 'console.log(require.resolve("acorn",{paths:["/opt/node22/lib/node_modules/eslint/node_modules"]}))')
+node -e "require('$ACORN').parse(require('fs').readFileSync('phx-grid.js','utf8'),{ecmaVersion:5})"
+```
+
+A bancada carrega o `.js` e o `.css` **do disco**, monta grades em memória e
+olha o DOM que saiu. Ela existe porque o defeito do rótulo vazio não tinha onde
+falhar: a bateria de `testes-web/` é de ponta a ponta e só veria um defeito do
+componente **através da tela** que o usa, depois de recompilar o `phxsqld` que
+embute a página. Sem binário no meio, a armadilha do «binário velho» também
+não existe aqui — o arquivo que a bancada lê é o que se acabou de editar.
+
+**No projeto de origem** (`PHX-GRID`, não vendorizado aqui — os caminhos abaixo
+**não existem** nesta árvore): suíte `tests/grid-nucleo.test.js` (16 blocos,
+verde 2× exigido) por `node tests/run.js`, demos single-file por
+`demos/build.py`, e a telemetria por sprint no `CHANGELOG` (Chrome real).
+
+**A versão** é conferida nos quatro lugares (`.js` cabeçalho, `.js` `versao:`,
+`.css` cabeçalho, topo do `CHANGELOG`) pelo teste `grade_versao_nao_mente`, em
+`http.rs` — número visível sai de um gerador, ou está errado e ninguém
+percebeu ainda.
 
 ## Roadmap
 O plano completo (fases, aceites, telemetria e logs exigidos por sprint) está em

@@ -1,4 +1,4 @@
-/* phx-grid v0.9.0 — Phoenix / WX Soluções — ES5 estrito, zero dependências.
+/* phx-grid v0.9.1 — Phoenix / WX Soluções — ES5 estrito, zero dependências.
 
    O cabeçalho passou oito versões dizendo "v0.1.0 — Núcleo (S01)" enquanto o
    CHANGELOG ao lado ia até a 0.8.0 e o código já tinha ordem por nível de
@@ -20,6 +20,18 @@
      sem a pagina em volta ela desenha em portugues, e nao estoura. */
   function txt(nome, padrao) {
     return root.txt ? root.txt(nome, padrao) : padrao;
+  }
+
+  /* O ROTULO da coluna -- o que se pinta na cabeca dela -- e diferente do
+     NOME da coluna, que e como se fala dela no seletor de colunas, no resumo
+     de filtro e na pastilha de grupo. Os dois caiam no mesmo `c.titulo ||
+     c.campo`, e por isso uma coluna de acao (que declara `titulo: ""` de
+     proposito, como o LEIAME manda) aparecia com `__acao` escrito em cima.
+     Titulo DECLARADO manda, vazio inclusive; so quem nao declarou nenhum e
+     que cai no nome do campo. O `== null` e proposital: pega o ausente e o
+     nulo, e deixa o vazio passar -- com `||` a correcao nao existe. */
+  function rotulo(c) {
+    return c.titulo == null ? c.campo : c.titulo;
   }
 
   /* Poe os `{marcador}` no lugar. Posicional por nome, e nunca `+` no meio da
@@ -1105,7 +1117,7 @@
       if (c.fixa === "dir") th.className += " phx-fixa-dir";
       var ind = estado.ordem.campo === c.campo ? (estado.ordem.dir === "asc" ? " \u25b2" : " \u25bc") : "";
       th.innerHTML =
-        '<span class="phx-th-titulo">' + esc(c.titulo || c.campo) + '<span class="phx-sort-ind">' + ind + "</span></span>" +
+        '<span class="phx-th-titulo">' + esc(rotulo(c)) + '<span class="phx-sort-ind">' + ind + "</span></span>" +
         (c.dimensao ? '<span class="phx-th-dim">(' + esc(c.dimensao) + ")</span>" : "") +
         (c.agregador ? '<button type="button" class="phx-th-agg" title="' +
           esc(txt("tela.gr_alternar_agregador", "alternar agregador")) + '">' + esc(c.agregador.toUpperCase()) + "</button>" : "") +
@@ -1611,7 +1623,7 @@
         return /[";\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
       }
       var linhas = [], cab = [], j2, k2, lin;
-      for (j2 = 0; j2 < v.colunas.length; j2++) cab.push(cel(v.colunas[j2].titulo || v.colunas[j2].campo));
+      for (j2 = 0; j2 < v.colunas.length; j2++) cab.push(cel(rotulo(v.colunas[j2])));
       linhas.push(cab.join(";"));
       for (j2 = 0; j2 < v.linhas.length; j2++) {
         lin = [];
@@ -1805,7 +1817,7 @@
     return api;
   }
 
-  var PhxGrid = { versao: "0.9.0", criar: criar, fmt: fmt, _ordenaEstavel: ordenaEstavel };
+  var PhxGrid = { versao: "0.9.1", criar: criar, fmt: fmt, _ordenaEstavel: ordenaEstavel };
   if (typeof module !== "undefined" && module.exports) module.exports = PhxGrid;
   root.PhxGrid = PhxGrid;
 })(typeof window !== "undefined" ? window : this);

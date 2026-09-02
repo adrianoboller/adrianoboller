@@ -2,6 +2,17 @@
 
 Formato baseado em *Keep a Changelog*. Versionamento semântico.
 
+## [0.9.1] — 2026-09-02 · **O ROTULO E O NOME SAO COISAS DIFERENTES**
+
+### Corrigido
+- **A grade quebrava o contrato que ela mesma documenta.** O LEIAME manda escrever coluna de ação como `{ campo: "acoes", titulo: "", ordenavel: false, formato: ... }`, e o código fazia `c.titulo || c.campo`: título declarado vazio caía no nome do campo, então a coluna de ação aparecia com **`__acao` escrito no cabeçalho** — e o CSV exportava uma coluna sem valor nenhum com esse mesmo nome interno por cabeçalho. Dois lugares, uma causa.
+- A correção separa dois vocabulários que estavam no mesmo `||`: o **rótulo** é o que se pinta na cabeça da coluna (e aí título declarado manda, vazio inclusive); o **nome** é como se fala da coluna no seletor de colunas, no resumo de filtro e na pastilha de grupo (e aí uma caixa de marcar sem etiqueta seria pior que o nome do campo — esses três continuam caindo em `c.titulo || c.campo`, de propósito). O `rotulo()` usa `== null` e não `||`: com `||` a correção simplesmente não existe.
+
+### Adicionado — a bancada que faltava
+- **`testes-web/grade/bancada-grade.mjs`**: prova de contrato do componente, isolada, em Chromium de verdade. Carrega o `.js` e o `.css` **do disco** e monta grades em memória — sem servidor, sem login, e **sem a armadilha do binário velho**, porque não há binário no meio.
+- Ela existe porque este defeito não tinha onde falhar: a bateria de `testes-web/` é de ponta a ponta, e um defeito do componente só aparecia através da tela que o usa, depois de recompilar o `phxsqld` que embute a página. Prova real nos dois sentidos: com o `||` reposto, **dois** dos cinco casos falham dizendo `__acao`; com o `rotulo()`, os cinco passam.
+- Entre os cinco está o caso do comportamento **velho** (`sem_titulo_declarado_nada_muda`), que é o que mais importa numa mudança de significado: quem nunca declarou título continua vendo o nome do campo. Sem ele, «honrar o vazio» viraria «apagar o cabeçalho de quem não pediu».
+
 ## [0.9.0] — 2026-08-29 · **A GRADE QUE O CONSOLE LIGA** — a cerca, o congelar, a vista e a memória de layout
 
 ### Corrigido — o achado da rodada
