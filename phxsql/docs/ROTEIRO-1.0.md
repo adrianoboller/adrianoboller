@@ -19,6 +19,68 @@ este comportamento**. Há teste que lê este arquivo e reprova sprint citada que
 não exista aqui — *número citado é número que não se mede*. Detalhes em
 [MENSAGENS.md](MENSAGENS.md).
 
+
+---
+
+## A ordem de execução, reorganizada pelos gaps medidos
+
+As 55 sprints continuam com **os números que sempre tiveram**, e isso não é
+conservadorismo: **treze deles estão dentro das mensagens de erro do motor**
+(`SP000001`, `006`, `008`, `010`, `012`, `016`, `018`, `020`, `021`, `025`,
+`028`, `029`, `032`). Renumerar faria toda recusa apontar para a sprint errada,
+e apontaria **calado**. O que se reorganiza é a **ordem**; o que falta entra
+como sprint **nova**, a partir da SP000056.
+
+### Primeiro: as três que nasceram de gaps medidos
+
+| sprint | o que é | por que existe |
+|---|---|---|
+| **SP000056** | **A bateria confiável** | O caso `telemetria` falha em ~metade das rodadas e **troca de tema** entre elas; o clique nunca resolve (com 45 s estoura igual). Enquanto isso existir, o portão da bateria **não distingue regressão de ruído** — e isso não é teórico: custou uma tarde inteira perseguindo ruído, com quatro diagnósticos errados em sequência. Medidor que mede errado é pior que medidor que não roda. |
+| **SP000057** | **`ao_alterar: cascata` executado** | Medido: o campo aparece só em `schema.rs` (guardar/serializar) e no `phxsql-cli` (mostrar) — **em ponto nenhum de escrita**. É a metade nomeada que falta na SP000008: *declarar não é aplicar* virou *aplicar no excluir não é aplicar no alterar*. |
+| **SP000058** | **Destravar o `push` e fazer a CI correr** | A SP000002 está «feita e parada»: `rust-toolchain.toml` pina a versão e `.github/workflows/portoes.yml` roda os três portões — e **nunca correu uma vez**, porque depende do `push`, que devolve 403. Medido na API: a sessão fala como `EnginePrint`, com `pull: true` e **`push: false`**. Um acesso destrava dois itens. |
+
+### A ordem recomendada do caminho crítico
+
+1. **SP000056** — a bateria confiável. Vem primeiro porque tudo o que vier
+   depois vai ser julgado por ela, e hoje ela não separa sinal de ruído.
+2. **SP000006** — read-your-own-writes. A mais bem definida das abertas: já
+   medida por soquete (dentro da transação a própria escrita não aparece; o
+   commit aplica; o rollback descarta), com endereço conhecido — o caminho de
+   **leitura** consultando a pilha pendente — e é o **I** que a SP000016 vai
+   exigir de qualquer jeito.
+3. **SP000057** — `ao_alterar`, que fecha a SP000008.
+4. **SP000016** — MVCC. Desbloqueada pela medição contra o MySQL(R): o que
+   ancora a cadeia de versões é a identidade estável da linha, e o `rowid`
+   daqui já é isso.
+5. **SP000011** — a trava global. Depois da SP000016, e não antes: a premissa
+   está confirmada (a trava come ~20% do paralelismo na leitura e ~25% na
+   escrita já com dois clientes, com metade da máquina ociosa), mas **escolher
+   entre trava por tabela, `RwLock` e MVCC é outra medição** — e a SP000016
+   responde parte dela.
+6. **SP000005** — decompor o `servidor.rs`, hoje com 22.560 linhas.
+7. **SP000009**, **SP000010**, **SP000012**, **SP000015** — fechar as parciais.
+8. **SP000001** — o contrato, por último no bloco: congelar escopo antes de o
+   escopo parar de se mexer seria congelar o errado.
+
+### O que saiu do caminho, e por quê
+
+* **SP000013** — rebaixada a melhoria. Deixou de ser pré-requisito do MVCC:
+  medido contra um MySQL(R) real, o que ancora a cadeia de versões é a
+  identidade estável da linha mais um ponteiro, e não um identificador novo.
+* **SP000014** — **recusada pelo dono**. A pétrea vence: o `.reg` nunca
+  reaproveita slot. Não é pendência, é escopo fora.
+* **SP000024 (TLS)** — adiada por palavra do dono («pule o TLS, vemos depois»).
+  Continua encostando na pétrea de zero dependências.
+* **Impressão** e **FX SDK** — recusados com número (pedidos 161 e 160).
+
+### Os blocos seguintes, na ordem que já tinham
+
+SQL relacional (**SP000017–023**), segurança (**024–027**), alta
+disponibilidade (**028–033**), 1.0 GA (**034–035**), Phx Contract
+(**036–045**) e Cognitive Lab (**046–055**). Nenhum deles começou, e nenhum
+muda de lugar: o que os antecede é o bloco crítico, e é ele que foi
+reorganizado.
+
 ---
 
 ## Antes da lista: três decisões que o roteiro exige do dono
