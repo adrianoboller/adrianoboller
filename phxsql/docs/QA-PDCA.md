@@ -366,6 +366,402 @@ Cada uma tem o número medido, e o arquivo onde ele mora.
 
 ---
 
+## O catálogo de guardas — levantamento de 2026-09-02
+
+O ciclo acima descreve **como** o PDCA roda. Faltava responder uma pergunta
+mais simples e mais perigosa de deixar sem resposta: **quais guardas
+existem, contra qual defeito cada uma protege, e quando foram provadas pela
+última vez?** Sem essa lista, guarda vira uma coisa que ninguém sabe que
+existe — e guarda que ninguém sabe que existe é guarda que alguém apaga sem
+perceber, numa limpeza de "testes redundantes" ou numa reescrita de arquivo.
+
+Esta seção é esse levantamento, com data e comando de cada número. Reproduza
+com `cargo build --release --examples -p phxsql-store` primeiro (a regra do
+binário velho vale para conferidor também) e as duas árvores estão sujeitas a
+mudar **enquanto você lê**: outras frentes trabalham nesta mesma árvore, e o
+número de testes mudou de **1.485 para 1.495** entre duas medições desta
+própria rodada, minutos uma da outra (`git log -1` em `a727835`,
+2026-09-02T18:52:38Z). Trate os números abaixo como uma fotografia datada, não
+como uma verdade parada.
+
+### As catracas numéricas — constante contra medido agora
+
+Quatro catracas numéricas existem hoje na árvore (achadas varrendo `TETO` e
+`catraca` em `crates/`; os outros `TETO_*` — `TETO_DO_CAMPO`,
+`TETO_JUNCAO`, `TETO_PIVOT`, `TETO_DO_LOTE_SERVIDO`, `TETO_DO_REGISTRO` — são
+**limites operacionais** do motor, não catracas de qualidade: não medem uma
+dívida que só deve encolher, travam um comportamento em produção).
+
+| catraca | onde | constante hoje | medido agora | veredito |
+|---|---:|---:|---:|---|
+| `TETO` (textos fora da fábrica) | `crates/phxsql-server/src/conferidor.rs:1186` | 1.577 | **1.577** | em cima, sem folga |
+| `TETO_COLADO` (chave com os 6 idiomas colados) | `conferidor.rs:977` | 0 | **0** | em cima, sem folga |
+| `TETO_FRASE_REPETIDA` (frase longa repetida em 3+ idiomas) | `conferidor.rs:981` | 0 | **0** | em cima, sem folga |
+| `TETO_TABELA_NA_MAO` (`<table>` cru ou `tabela(...)`) | `crates/phxsql-server/src/conferidor_grades.rs:274` | 24 | **24** | em cima, sem folga |
+
+**Nenhuma catraca está frouxa nesta rodada** — as quatro batem exatamente
+com o medido, o que é o estado saudável (a constante nunca fica **abaixo**
+do medido, porque aí a suíte reprovaria sozinha; o achado seria uma catraca
+**acima** do medido por mais do que a folga que cada teste tolera, e não foi
+o caso). Comandos, na raiz do repositório:
+
+```bash
+cargo run --release --example textos-fora-da-fabrica -p phxsql-server   # imprime "catraca (TETO) ..... N"
+cargo run --release --example grades-fora-do-padrao   -p phxsql-server  # imprime "catraca (so desce) ..... N"
+cargo test --release -p phxsql-server --lib conferidor:: --lib conferidor_grades::
+```
+
+Não achei um quinto conferidor numérico na árvore — procurei por `TETO` e por
+`catraca` em `crates/`, `bancada/` e `docs/`; os únicos candidatos adicionais
+(`bancada/profiler/sonda-log.py`, que compara contra um `teto` calculado na
+hora, e `docs/dossie/numeros-do-projeto.py`, que só **lê** a constante acima
+para publicar no dossiê) não são catracas próprias — o primeiro é limiar de
+uma bancada de desempenho, o segundo é consumidor da tabela acima, não
+produtor. Registro a busca em vez de garantir que não existe um quinto em
+algum canto que a varredura não cobriu.
+
+### O catálogo de guardas nomeadas, por área
+
+`bancada/guardas/catalogo.py` é o catálogo **oficial** de mutação — hoje
+**57 entradas** (`python3 -c "import catalogo; print(len(catalogo.GUARDAS))"`
+dentro de `bancada/guardas/`), e a tabela em `docs/TESTES.md` §8 já está
+fresca desta mesma rodada: **57 guardas: 53 provadas, 4 redundantes**, medida
+em 2026-09-01 21:52 — a defasagem que a revisão anterior deste documento
+registrou (43 contra 57) **já foi corrigida** por outra frente antes desta
+rodada de QA começar. Nenhuma entrada veio como `NAO PEGOU` ou `ESTRAGOU`
+nesta rodada.
+
+Esse catálogo mede **mutação de trecho**, não **nome de teste**. Só ele não
+responde à pergunta desta seção, porque a maioria das guardas desta casa não
+está no `catalogo.py` — está espalhada pelo código, como um teste cujo nome
+**é** a frase do defeito, com o histórico no comentário `///` acima dele.
+Uma varredura de `#[test]` cujo comentário traz palavras de incidente
+(quebrava, defeito, escondia, vazava, achou, corrigiu, passava por engano…)
+achou **109** candidatos em `crates/` (script descartável, reproduza com:
+`grep -rln "#\[test\]" --include="*.rs" crates/` e leia o comentário de cada
+achado — não escrevi um gerador para isto porque o crivo é de leitura, não de
+sintaxe, e um gerador que só recorta a linha erraria a mesma forma que a
+regra "rótulo se analisa, nunca se recorta" já condena). A tabela abaixo é uma
+amostra de ~70 dessas guardas, organizada por área, com o defeito tal como o
+próprio comentário do teste conta — é a parte navegável deste levantamento;
+a lista completa de 109 fica no comando acima para quem for estender esta
+tabela.
+
+**Integridade referencial**
+
+| guarda | arquivo:linha | o defeito que ela protege |
+|---|---|---|
+| `a_mae_nao_gravada_recusa_dizendo_por_que` | `phxsql-store/tests/chave-estrangeira.rs:107` | filha aponta para mãe que não existe e a gravação passava calada |
+| `sem_indice_na_mae_a_recusa_diz_qual_indice_falta` | `phxsql-server/src/servidor.rs:20039` | sem índice na mãe, conferir a chave varreria a tabela por linha — o motor recusa e nomeia o índice |
+| `ao_excluir_so_aceita_restringir` | `servidor.rs:20072` | regra primordial: cascata, anular e nada aceitos no `ao_excluir` matariam pai com filhos |
+| `ao_excluir_aceita_restringir_escrito_de_tres_jeitos` | `servidor.rs:20097` | o par do teste acima — sem ele, um portão que recusa TUDO passaria disfarçado de conferência |
+| `a_chave_declarada_nasce_conferida` | `servidor.rs:19939` | chave declarada sem `"verificar"` deixava filha órfã entrar sem reclamação |
+| `quem_pede_para_nao_conferir_continua_podendo` | `servidor.rs:19960` | a opção de **não** conferir tinha de continuar existindo, escrita — a decisão do dono não podia levar a opção junto |
+| `declarar_fk_sem_tabela_ref_recusa_em_vez_de_apontar_para_si` | `servidor.rs:20220` | tabela-mãe inexistente na declaração apontava para si mesma em vez de recusar nomeando quem falta |
+| `duplicar_tabela_preserva_a_chave_estrangeira` | `servidor.rs:20123` | duplicar tabela perdia a FK do original |
+| `excluir_tabela_nao_deixa_arquivo_nenhum_para_tras` | `phxsql-store/src/catalogo.rs:1065` | `excluir_tabela` apagava só 6 extensões quando a tabela já tinha 9 (mesmo defeito que `excluir-tabela-lista-curta` no catálogo de mutação) |
+| `excluir_tabela_deixa_o_nome_livre_para_a_proxima` | `catalogo.rs:943` | nome da tabela excluída continuava reservado, impedindo recriar com o mesmo nome |
+| `chave_mal_escrita_recusa_e_a_tabela_nao_nasce` | `servidor.rs:19870` | `ao_excluir`/`ao_alterar` com valor inválido deixava a tabela nascer mesmo assim |
+
+**Permissão e portão de acesso**
+
+| guarda | arquivo:linha | o defeito que ela protege |
+|---|---|---|
+| `sem_regra_de_tabela_nada_muda` | `servidor.rs:18200` | regra de tabela nova negando tudo por padrão tiraria o direito de todo cliente que já funcionava |
+| `juntar_nao_e_a_porta_dos_fundos` | `servidor.rs:17983` | `juntar` guarda as tabelas em `a.tabela`/`b.tabela` — o portão que só olha `"tabela"` não via nenhuma das duas |
+| `unir_nao_e_a_porta_dos_fundos` | `servidor.rs:18002` | `unir` guarda numa lista — mesma porta dos fundos, campo diferente |
+| `pivotar_nao_e_a_porta_dos_fundos` | `servidor.rs:18028` | tabela de fatos passa pelo portão comum, mas a lista `juntar` do pivot tinha campo próprio sem conferência |
+| `pivotar_na_tabela_permitida_continua_valendo` | `servidor.rs:18054` | garante que a conferência nova não vira parede: quem tem direito continua pivotando |
+| `posicao_esconde_a_tabela_negada` | `servidor.rs:18104` | `posicao` devolvia eventos e o esquema cru de tabela negada |
+| `sem_regra_de_tabela_posicao_e_sequencias_veem_tudo` | `servidor.rs:18141` | sem regra de tabela nenhuma, `posicao`/`sequencias` mostravam tudo em vez de cair na regra da base |
+| `o_catalogo_esconde_a_tabela_negada` | `servidor.rs:17965` | `sistabelas`/`siscolunas` vazavam o nome da tabela negada |
+| `leitor_com_administrar_no_curinga_nao_liga_o_profiler` | `servidor.rs:18467` | regra de `*` com `administrar` não podia ligar instrumentação por acidente |
+| `os_campos_do_erro_saem_de_um_lugar_so` | `servidor.rs:16145` | três construtores de erro copiados — um quarto a mão caiu de calar um campo que os outros diziam |
+
+**Transação e concorrência**
+
+| guarda | arquivo:linha | o defeito que ela protege |
+|---|---|---|
+| `a_transacao_enxerga_o_que_ela_mesma_escreveu` | `servidor.rs:21780` | isolamento próprio: a transação tinha de ver o que ela mesma gravou antes do commit |
+| `escrita_comum_nao_anexa_enquanto_a_transacao_segura_o_fim` | `servidor.rs:22866` | escrita comum que anexa não olhava o fim travado por uma transação, arriscando colisão de rowid |
+| `marca_que_nao_confere_e_commit_que_nunca_comecou` | `servidor.rs:22995` | COMMIT confirmando transação que nunca tinha começado de verdade |
+| `so_um_lugar_toma_a_trava` | `servidor.rs:21505` | trava de dados tomada fora do ponto único — a mesma armadilha da guarda `trava-fora-do-ponto-unico` no catálogo de mutação |
+| `duas_tabelas_na_mesma_janela_nao_travam_o_servidor` | `servidor.rs:21374` | duas tabelas na mesma janela de conflito travando o servidor inteiro |
+| `a_cadeia_de_gatilhos_para_no_teto_e_avisa` | `servidor.rs:21436` | cadeia de gatilhos sem fundo abortava o binário em vez de parar e avisar |
+| `sem_transacao_nada_muda` | `servidor.rs:21714` | comportamento velho (sem transação) tinha de continuar idêntico depois da integração |
+| `sem_janela_a_marca_sai_no_commit` | `servidor.rs:22090` | sem janela de conflito configurada, a marca `.tx` tinha de sair só no commit |
+
+**Exclusão e janela de conflito**
+
+| guarda | arquivo:linha | o defeito que ela protege |
+|---|---|---|
+| `sem_pedir_a_janela_cada_exclusao_espera_o_disco` | `phxsql-store/tests/exclusao.rs:238` | sem pedir a janela, cada exclusão pagava fsync — a guarda nova tinha de ser **pedida**, não imposta |
+| `o_trash_fecha_antes_do_reg` | `exclusao.rs:276` | ordem de sincronização errada deixava o `.trash` atrás do `.reg` |
+| `pedida_a_janela_o_fsync_sai_do_caminho` | `phxsql-store/tests/exclusao-na-janela.rs:110` | com a janela pedida, o fsync tinha de sair do caminho crítico de fato |
+| `config_sem_o_campo_continua_esperando_o_disco` | `phxsql-server/tests/exclusao-na-janela-pelo-config.rs:46` | comportamento velho preservado quando o campo não está no config |
+| `pedido_no_config_o_valor_chega_ao_motor` | `exclusao-na-janela-pelo-config.rs:71` | a mesma armadilha do `cache_paginas`: campo no config que ninguém lia |
+
+**LGPD e trilha**
+
+| guarda | arquivo:linha | o defeito que ela protege |
+|---|---|---|
+| `insert_delete_e_soft_delete_nao_geram_trilha` | `phxsql-store/tests/trilha-lgpd.rs:164` | só UPDATE em coluna marcada gera trilha — inclusão e exclusão não, por decisão de custo |
+| `tabela_sem_coluna_marcada_nao_paga_nada` | `trilha-lgpd.rs:210` | tabela sem nenhuma coluna LGPD não podia pagar overhead nenhum de trilha |
+| `celula_vazia_nunca_vira_texto_vazio` | `phxsql-server/src/mensagens.rs:783` | célula de idioma vazia caindo para texto vazio em vez de cair para o português |
+
+**Criptografia (cifra do fio, dos dados, dos diários)**
+
+| guarda | arquivo:linha | o defeito que ela protege |
+|---|---|---|
+| `o_nonce_nunca_se_repete_no_arquivo` | `phxsql-store/tests/cifra-dos-diarios.rs:304` | nonce repetido quebraria a garantia da cifra |
+| `trocar_o_cabecalho_de_um_evento_cifrado_nao_passa` | `cifra-dos-diarios.rs:555` | cabeçalho de evento cifrado adulterado tinha de ser detectado |
+| `trocar_o_corpo_de_uma_linha_pela_outra_nao_passa` | `phxsql-store/tests/cifra-dos-dados.rs:403` | trocar o corpo cifrado de uma linha por outra linha tinha de falhar a autenticação |
+| `regravar_a_mesma_linha_nunca_repete_o_texto_cifrado` | `cifra-dos-dados.rs:459` | reuso de nonce/keystream ao regravar a mesma linha |
+| `o_indice_sobre_a_coluna_marcada_continua_em_claro` | `cifra-dos-dados.rs:251` | decisão documentada: o índice não cifra, e o teste prende esse limite conhecido |
+| `cliente_sem_cifra_continua_como_antes` | `phxsql-server/tests/cifra-do-fio.rs:258` | **histórico de vacuidade, já corrigido** — ver seção de guardas suspeitas abaixo |
+| `fio_cortado_vira_erro_e_despedida_nao` | `cifra-do-fio.rs:454` | fio cortado no meio virando "despedida normal" em vez de erro |
+| `a_privada_do_fio_nunca_sai` | `phxsql-server/src/config.rs:3331` | a chave privada do fio vazando pela resposta de configuração |
+| `a_estatica_do_fio_nasce_no_arquivo_e_nao_muda` | `config.rs:3357` | chave estática do fio tinha de nascer fixa no arquivo, não gerada a cada subida |
+
+**Senha e autenticação**
+
+| guarda | arquivo:linha | o defeito que ela protege |
+|---|---|---|
+| `a_ficha_nunca_devolve_a_senha` | `phxsql-server/src/usuarios.rs:1084` | a ficha do usuário vazando o hash da senha na resposta |
+| `senha_em_texto_puro_funciona_mas_avisa` | `usuarios.rs:1069` | senha legada em texto puro tinha de continuar autenticando, mas com aviso |
+| `a_senha_nunca_aparece` | `phxsql-server/src/profiler.rs:800` | Profiler expondo senha no registro de um pedido de login |
+
+**Interface e a fábrica de idiomas**
+
+| guarda | arquivo:linha | o defeito que ela protege |
+|---|---|---|
+| `a_catraca_dos_textos_fora_da_fabrica` | `conferidor.rs:1188` | texto de tela cravado em português entrando sem passar pela fábrica |
+| `nenhuma_chave_com_os_seis_idiomas_colados` | `conferidor.rs:1376` | tradução colada (copiar o português nos 6 idiomas) |
+| `nenhuma_frase_longa_repetida_em_tres_idiomas` | `conferidor.rs:1407` | colagem parcial — 3 das 6 colunas com a mesma frase longa |
+| `nenhum_texto_da_fabrica_traz_etiqueta_crua` | `phxsql-server/src/idiomas.rs:1676` | chave de tradução aparecendo crua na tela em vez do texto |
+| `todo_texto_da_fabrica_e_pedido_por_alguem` | `idiomas.rs:1896` | chave morta na fábrica — traduzida nos 6 idiomas e nunca usada pela tela |
+| `06-css-global.mjs` (caso de `testes-web/bateria.mjs`) | `testes-web/casos/06-css-global.mjs` | `input{width:100%}` global vira bolota o radio/checkbox em tabela; `label{text-transform:uppercase}` mostra dado em maiúscula (o caso «Blumenau» virando «BLUMENAU») |
+| `09-cores.mjs` (idem) | `testes-web/casos/09-cores.mjs` | as 5 cores da ação existem, são distintas, o contraste mede ≥4,5:1 nos dois temas, e o preenchimento só aparece no hover |
+
+**FFI (biblioteca embutida)**
+
+| guarda | arquivo:linha | o defeito que ela protege |
+|---|---|---|
+| `panico_nao_atravessa_a_fronteira` | `phxsql-ffi/src/testes.rs:255` | pânico em Rust atravessando a fronteira de C em vez de virar código de erro |
+| `toda_funcao_exportada_e_blindada` | `testes.rs:315` | função exportada nova esquecida do catch-unwind |
+| `ultimo_erro_e_por_thread` | `testes.rs:478` | **histórico de vacuidade, já corrigido** — vaga de erro global entre threads |
+| `o_cabecalho_de_c_e_a_biblioteca_declaram_as_mesmas_funcoes` | `testes.rs:1076` | `.h` e o `.so`/`.dll` saindo dessincronizados |
+
+**Replicação**
+
+| guarda | arquivo:linha | o defeito que ela protege |
+|---|---|---|
+| `sem_replicas_autorizadas_nada_muda` | `servidor.rs:16499` | comportamento velho preservado quando `replicas_autorizadas` não está configurado |
+| `replica_de_fora_da_lista_nao_le_o_diario` | `servidor.rs:16516` | réplica não autorizada conseguindo ler o diário mesmo assim |
+| `evento_nao_volta_para_quem_o_escreveu` | `servidor.rs:16632` | eco do próprio evento voltando para quem o escreveu na replicação bidirecional |
+
+**REST, MCP e DbLink**
+
+| guarda | arquivo:linha | o defeito que ela protege |
+|---|---|---|
+| `toda_operacao_do_despachar_esta_na_especificacao` | `phxsql-server/src/rest.rs:823` | operação nova no despachar sem entrada correspondente no OpenAPI |
+| `toda_rota_da_especificacao_existe_no_despachar` | `rest.rs:861` | OpenAPI prometendo rota que o servidor não atende |
+| `corpo_com_outra_operacao_e_recusado` | `rest.rs:909` | corpo do pedido REST trocando a operação do caminho, em silêncio |
+| `a_lista_pega_a_tabela_escondida_na_juncao_e_na_uniao` | `rest.rs:1009` | a mesma porta dos fundos de `juntar`/`unir`, agora na camada REST |
+| `no_postgres_a_base_da_ligacao_nao_vira_esquema` | `phxsql-server/src/dblink/operacoes.rs:336` | `base` significa *database* no MySQL(R) e *esquema* no PostgreSQL(R) — tratados como o mesmo campo |
+| `sem_base_padrao_o_mysql_nao_compara_com_o_database_nulo` | `phxsql-server/src/dblink/dialeto.rs:506` | comparação de base nula quebrando o dialeto MySQL |
+
+**Configuração**
+
+| guarda | arquivo:linha | o defeito que ela protege |
+|---|---|---|
+| `config_sem_a_secao_rest_nao_escuta` | `phxsql-server/src/config.rs:3736` | webservice REST subindo sozinho quando a seção não existe no config |
+| `campo_estranho_dentro_do_rest_avisa` | `config.rs:3881` | campo desconhecido dentro de uma seção válida passando sem aviso |
+| `tipo_errado_e_recusado_antes_de_gravar` | `config.rs:4794` | tipo de coluna errado só sendo pego na gravação, não na declaração |
+| `pino_torto_na_origem_e_erro_e_nao_ausencia` | `config.rs:3401` | endereço mal formado na origem de replicação sendo tratado como "ausente" em vez de erro |
+
+**Profiler**
+
+| guarda | arquivo:linha | o defeito que ela protege |
+|---|---|---|
+| `quebra_de_linha_no_pedido_nao_forja_linha_no_arquivo` | `phxsql-server/src/profiler.rs:1038` | campo livre do pedido com quebra de linha forjando uma linha inteira no `.txt` |
+| `o_cabecalho_do_rodizio_nao_aceita_linha_forjada` | `profiler.rs:1227` | cabeçalho de rodízio do arquivo aceitando linha adulterada |
+| `teto_zero_nao_rodizia` | `profiler.rs:1138` | `profiler.arquivo_mib: 0` deixando de significar "sem rodízio" |
+| `toda_operacao_com_ponto_de_cancelamento_esta_na_lista` | `phxsql-server/src/telemetria.rs:1885` | operação cancelável nova esquecida da lista que a telemetria audita |
+
+### As pétreas sem guarda — o achado principal desta rodada
+
+Percorri as pétreas do `CLAUDE.md` uma a uma. A maioria tem guarda forte —
+**zero dependências externas** dos exemplos do próprio pedido não entrou
+nesta lista por acaso: é justamente uma das que **não** tem guarda, abaixo.
+Os cinco achados reais:
+
+1. **Zero dependências externas não tem guarda nenhuma.** Os oito
+   `Cargo.toml` de `crates/*/` hoje só declaram `phxsql-*.workspace = true`
+   entre si (conferido lendo os oito arquivos) — mas nada no repositório
+   **impede** um `serde = "1.0"` de entrar num próximo commit. Não achei
+   script, teste ou passo de CI que rode `cargo metadata`/`cargo tree` e
+   reprove uma dependência de fora do workspace; `provar.py` e
+   `empacotar.sh` só **citam** "zero dependência" em comentário, e
+   `cargo build --offline` prova a garantia por acidente (falha se faltar
+   crate no cache), não por regra. É a pétrea mais repetida do documento e
+   a que depende inteiramente de revisão humana para não quebrar.
+
+2. **O merge de conflito por coluna (`dialogoConflito`) não tem nenhum
+   teste automatizado.** A função mora em
+   `crates/phxsql-server/ui/index.html:8181` e implementa exatamente a
+   regra "marca quem MEXEU, não quem perguntou por último" — compara coluna
+   por coluna (`linhas = editaveis.map(...)`, `briga = linhas.filter(l =>
+   !igual(l.outro, l.meu))`) para decidir o que precisa de escolha manual.
+   Procurei "conflito"/"Conflito"/"dialogoConflito"/"mesclar" nos catorze
+   casos de `testes-web/casos/*.mjs` e em `testes-web/*.mjs`: zero
+   ocorrências. Não há teste de unidade possível aqui (é JS de tela, sem
+   `cargo test` que o alcance) — a única prova real seria um décimo-quinto
+   caso na bateria de frontend, e ele não existe.
+
+3. **A metade "índice na filha" da regra de chave conferida não tem
+   guarda**, embora a metade "índice na mãe" tenha
+   (`sem_indice_na_mae_a_recusa_diz_qual_indice_falta`, achado acima). O
+   código da recusa existe e está comentado —
+   `crates/phxsql-store/src/table.rs:806-816`, a mensagem "crie o indice na
+   filha ou desligue `verificar`" — mas os dez testes de
+   `phxsql-store/tests/chave-estrangeira.rs` usam todos a mesma função
+   auxiliar `filha()` (linha 38), que **sempre** cria o índice
+   `porCliente`. Nenhum teste no arquivo constrói uma filha SEM esse
+   índice para exercitar a recusa do outro lado. A regra pétrea diz
+   textualmente "sem um deles o motor recusa dizendo qual falta" — hoje só
+   metade dessa frase está provada.
+
+4. **A própria armadilha que nomeou "configuração que não é lida mente" —
+   `recursos.cache_paginas` — não tem o teste "chega ao motor" que ela
+   inspirou em dois campos irmãos.** `exclusao_na_janela` e
+   `corte_do_diario` ganharam, cada um, um teste
+   `*_pelo_config.rs` que sobe um servidor com um `config.json` de verdade e
+   confere o efeito no motor — e os dois comentam explicitamente "é a
+   armadilha do `cache_paginas`" como motivação. Só que `cache_paginas` em
+   si nunca ganhou o irmão: o valor é lido de verdade
+   (`servidor.rs:664`, `definir_cache_paginas(config.recursos.cache_paginas)`)
+   e exposto pela telemetria (`servidor.rs:12071`, campo
+   `cache_ndx.paginas_teto`), mas procurei `paginas_teto`/`cache_ndx` em
+   `crates/phxsql-server/tests/telemetria.rs` e não achei nenhuma
+   ocorrência. O único teste que toca o campo
+   (`config.rs:4771`, `campo_dentro_de_secao_muda_so_ele`) confere que o
+   `Config` em memória guarda o valor — não que o valor chega ao
+   `ndx::cache_paginas()` real. A ligação código→config existe; a prova
+   ponta-a-ponta, não.
+
+5. **"Instrumentação desligada tem de custar zero" é MEDIDA, não
+   TRAVADA.** `bancada/profiler/custo.py` calcula exatamente essa
+   pergunta (`tudo["desligado custa zero?"] = comparar(...)`,
+   `bancada/profiler/custo.py:188`) — mas `custo.py` não aparece em
+   `provar.py` (conferido com `grep profiler provar.py`: só `sonda.py` e
+   `sonda-log.py` rodam na bateria única). Uma regressão de custo com o
+   Profiler desligado não reprova nenhuma bateria automática — só aparece
+   para quem lembrar de rodar essa bancada à parte. Não é ausência total
+   como os quatro itens acima, mas é uma catraca sem trava: mede e não
+   impede.
+
+Não incluí aqui "interface só se prova exercitando" nem "rótulo se
+estiliza, dado nunca" — as duas TÊM guarda real, `testes-web/casos/06-css-global.mjs`
+e a bateria de 14 casos inteira (`testes-web/bateria.mjs`), como a tabela
+acima mostra. Ficaram de fora da lista de achados por terem guarda, não por
+esquecimento.
+
+### Guardas suspeitas de vacuidade
+
+A pergunta certa aqui não é "este teste tem uma asserção fraca" — é "este
+teste passaria com o defeito que ele diz proteger de volta?", e só mutação
+responde isso com certeza. `bancada/guardas/` é a ferramenta que a casa já
+tem para essa pergunta, e rodando o catálogo inteiro nesta rodada (a tabela
+de `docs/TESTES.md` §8, fresca de 2026-09-01 21:52) o veredito é **zero**
+`NAO PEGOU` e **zero** `ESTRAGOU` nas 57 entradas — nenhuma vacuidade nova
+nas guardas que já estão catalogadas por mutação.
+
+Isso cobre 57 guardas. As ~1.495 restantes não passaram por mutação nesta
+rodada — reproduzir isso para todas exigiria um mutador genérico que este
+levantamento não tinha orçamento para escrever (seria, ele mesmo, o próximo
+item do papel J: pesquisar se existe um mutation tester para Rust que
+funcione **sem dependência externa**, e medir o custo antes de adotar).
+Fiz, em vez disso, uma leitura dirigida atrás do padrão que já quebrou duas
+vezes nesta casa — teste que **desfaz o próprio defeito** montando o objeto
+à mão antes de exercitar qualquer coisa — e o resultado é:
+
+- **As duas ocorrências históricas já estão corrigidas e ficaram melhores
+  que a média.** `cliente_sem_cifra_continua_como_antes`
+  (`phxsql-server/tests/cifra-do-fio.rs:258`) hoje sobe um `Config`
+  a partir de um `config.json` real **sem** a seção `cifra_fio`, em vez de
+  montar o struct com o campo já desarmado — conferido lendo o teste
+  inteiro. `ultimo_erro_e_por_thread` (`phxsql-ffi/src/testes.rs:478`) hoje
+  usa duas `Barrier` para forçar a ordem A-escreve/B-escreve/A-lê, o que
+  torna a corrida que escondia o defeito impossível de mascarar o teste de
+  novo — também conferido lendo o teste.
+- **Um vizinho de família (`config_de_ontem_continua_subindo_sem_cifra`,
+  `phxsql-server/tests/cifra-pelo-config.rs:104`) foi ao mesmo arquivo
+  histórico e escreveu certo desde o início**: sobe `Config::ler` de um
+  `config.json` de verdade, sem seção `cifra`, e confere o `.log` gravado no
+  disco byte a byte (`u16::from_le_bytes` na versão do cabeçalho) — não
+  monta struct nenhum à mão. Não é um achado de defeito; é a confirmação de
+  que a lição pegou na família de testes que mais fazia sentido repetir o
+  erro.
+- **Não achei uma terceira ocorrência do padrão específico "monta o objeto
+  já desfazendo o próprio defeito"** nas ~20 guardas de config/comportamento
+  velho que li por inteiro (`sem_*_nada_muda`, `*_continua_*`, listadas na
+  varredura de nomes desta rodada). A maioria sobe o `Config` por
+  `Config::ler`/`Config::de_json` a partir de texto, não por struct
+  montado — o que é exatamente o padrão que fecha essa classe de defeito.
+- **Busca ampla por asserção tautológica** (`assert!(true`,
+  `assert_eq!(1, 1)`, comparação `>= 0` contra tipo sem sinal) não achou
+  nada em `crates/`.
+- **141 ocorrências de `assert!(...is_err());`** — a forma mais fraca de
+  provar uma recusa, que confere que algo falhou sem conferir **por quê**.
+  Li uma amostra e a maioria é validação de fronteira (caminho `".."`,
+  arquivo inexistente, nome vazio) onde o "por quê" é óbvio pelo contexto —
+  não vejo isso como vacuidade, mas como uma classe de teste mais fraca que
+  a casa pratica em volume. Não listo as 141 individualmente porque isso
+  seria ruído, não achado: sinalizo a classe, com o comando para quem quiser
+  auditar por tabela (`grep -rn "assert!(.*\.is_err());" --include="*.rs"
+  crates/ | grep -v target`), e deixo a decisão de endurecer alguma para
+  quem tiver o contexto de cada uma.
+
+**O que eu não posso afirmar**: que não existe uma terceira guarda vacía
+nesta casa. Só afirmo que a busca dirigida ao padrão conhecido, mais a
+mutação já catalogada em `bancada/guardas/`, não achou uma agora. Número
+que não medi não vira "zero" por eu não ter achado.
+
+### Como refazer este levantamento
+
+```bash
+# as catracas
+cargo build --release --examples -p phxsql-store   # regra do binario velho
+cargo run --release --example textos-fora-da-fabrica -p phxsql-server
+cargo run --release --example grades-fora-do-padrao   -p phxsql-server
+
+# o catalogo de mutacao (57 entradas hoje)
+cd bancada/guardas && python3 -c "import catalogo; print(len(catalogo.GUARDAS))"
+python3 provar-guardas.py --json /tmp/guardas.json && python3 tabela-no-testes.py /tmp/guardas.json
+
+# a varredura de guardas nomeadas por comentario narrativo (109 hoje)
+grep -rn "#\[test\]" --include="*.rs" crates/ | grep -v target | wc -l
+
+# as pretreas sem guarda desta rodada, uma a uma
+grep crates/*/Cargo.toml -A3 -n "\[dependencies\]"                     # (1) zero dependencia
+grep -n "conflito" testes-web/casos/*.mjs testes-web/*.mjs             # (2) merge por coluna
+grep -n "fn filha" crates/phxsql-store/tests/chave-estrangeira.rs      # (3) indice na filha
+grep -n "paginas_teto\|cache_ndx" crates/phxsql-server/tests/telemetria.rs  # (4) cache_paginas
+grep -n "profiler" provar.py                                           # (5) desligado custa zero
+```
+
+Nenhum destes seis comandos tem gerador — são consultas de auditoria, não
+números que aparecem numa tela para o Adriano. Se este catálogo crescer a
+ponto de precisar de painel próprio (o que a cláusula do papel H pediria no
+dia em que ele virar número visível em algum lugar), aí sim caberia um
+script em `docs/qa/` que produza a tabela de catracas e a lista de pétreas
+sem guarda direto da árvore — hoje ele não existe porque cada número acima
+tem comando de uma linha, e um gerador para uma linha seria indireção sem
+ganho.
+
+---
+
 ## O que este documento não é
 
 Não é um roteiro de comandos — esses estão em `provar.py`,
