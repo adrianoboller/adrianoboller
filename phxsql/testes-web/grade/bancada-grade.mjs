@@ -131,6 +131,52 @@ caso('faixa_de_agrupamento_so_com_agrupavel', async (page) => {
   verdade(await page.$('#alvo .phx-groupbox') === null, 'veio faixa de agrupamento sem ninguem pedir');
 });
 
+/* O padrao do PAINEL VIVO, que e o que toda tela que se atualiza sozinha
+ * precisa: a grade nasce uma vez sobre uma `fonte`, e cada volta do relogio
+ * chama `redesenhar()`. Recriar a grade a cada volta seria pior que a tabela
+ * na mao -- o usuario perderia a ordenacao, o agrupamento e o filtro a cada
+ * dois segundos, no meio da leitura.
+ *
+ * Este caso existe porque o gestor de threads da telemetria vai ser convertido
+ * assim, e o padrao tem de estar provado ANTES de a tela depender dele. */
+caso('fonte_viva_redesenha_sem_perder_o_estado', async (page) => {
+  await page.setContent('<div id="alvo"></div>');
+  await page.addStyleTag({ path: `${GRID}/phx-grid.css` });
+  await page.addScriptTag({ path: `${GRID}/phx-grid.js` });
+  await page.evaluate(() => {
+    // O painel e dono do array; a grade so pergunta por ele.
+    window.fios = [
+      { nome: 'rede-1', familia: 'rede', voltas: 10 },
+      { nome: 'disco-1', familia: 'disco', voltas: 7 },
+    ];
+    window.grade = PhxGrid.criar('#alvo', {
+      colunas: [{ campo: 'nome' }, { campo: 'familia' }, { campo: 'voltas', tipo: 'numero' }],
+      agrupavel: true,
+      fonte: { carregar: function (p, cb) { cb(null, { linhas: window.fios.slice(), total: window.fios.length }); } },
+    });
+  });
+  await page.waitForSelector('#alvo table tbody tr');
+
+  await page.evaluate(() => { grade.ordenar('nome', 'desc'); grade.agrupar(['familia']); });
+  const antes = await page.evaluate(() => ({
+    ordem: grade.estado().ordem, grupos: grade.grupos(), total: grade.estado().total,
+  }));
+  igual(antes.ordem.dir, 'desc', 'a ordenacao nao pegou');
+  igual(antes.grupos.join(','), 'familia', 'o agrupamento nao pegou');
+
+  // Chega dado novo, como chegaria do servidor na volta seguinte.
+  await page.evaluate(() => {
+    window.fios.push({ nome: 'rede-2', familia: 'rede', voltas: 3 });
+    grade.redesenhar();
+  });
+  const depois = await page.evaluate(() => ({
+    ordem: grade.estado().ordem, grupos: grade.grupos(), total: grade.estado().total,
+  }));
+  igual(depois.total, antes.total + 1, 'o dado novo nao chegou na grade ao redesenhar');
+  igual(depois.ordem.dir, 'desc', 'redesenhar perdeu a ordenacao do usuario');
+  igual(depois.grupos.join(','), 'familia', 'redesenhar perdeu o agrupamento do usuario');
+});
+
 /* --------------------------------------------------------------- o corrida */
 
 const so = (() => { const i = process.argv.indexOf('--caso'); return i > 0 ? process.argv[i + 1] : null; })();

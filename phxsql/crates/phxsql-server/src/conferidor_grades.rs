@@ -59,11 +59,36 @@ pub struct Tabela {
 /// nela e nao converte o que ja daria para converter. Por isso
 /// `nenhuma_isencao_morta` reprova a entrada que nao corresponde mais a
 /// tabela nenhuma -- e a mesma licao da chave morta da fabrica de idiomas.
-pub const ISENTAS: &[(&str, &str, &str)] = &[(
-    "ui/grid/phx-grid.js",
-    "*",
-    "e a propria grade: e ela quem monta a `<table>` que todo mundo usa",
-)];
+pub const ISENTAS: &[(&str, &str, &str)] = &[
+    (
+        "ui/grid/phx-grid.js",
+        "*",
+        "e a propria grade: e ela quem monta a `<table>` que todo mundo usa",
+    ),
+    (
+        "ui/claude.js",
+        "desenharRevisao",
+        "pre-visualizacao das colunas que a IA PROPOE criar, dentro do cartao \
+         de cada tabela na tela de revisao. Ordenar aqui esconderia a ordem em \
+         que as colunas vao nascer -- e a ordem de digitacao e sagrada, entao \
+         uma grade que deixa reordenar a vista mentiria sobre o que vai gravar",
+    ),
+    (
+        "ui/multitela.js",
+        "telaAjuda",
+        "os monitores fisicos desta area de trabalho, na tela de ajuda. Sao de \
+         um a quatro e a ordem e a do sistema operacional; agrupar monitor por \
+         monitor nao responde pergunta nenhuma",
+    ),
+    (
+        "ui/explorador.js",
+        "blocoDaOperacao",
+        "os campos de UMA operacao da API, no explorador do OpenAPI. E \
+         documentacao: a tabela existe para ser lida junto do texto ao lado, e \
+         a ordem e a do contrato -- filtrar a definicao pela propria definicao \
+         nao e uso que exista",
+    ),
+];
 
 /// O nome da funcao declarada nesta linha, se ela declara alguma.
 ///
@@ -149,7 +174,7 @@ pub fn no_padrao() -> usize {
 /// Converteu uma tela, baixe o TETO no mesmo commit: catraca frouxa nao
 /// segura nada. Se a tabela nao devia mesmo virar grade, ela entra em
 /// [`ISENTAS`] com o motivo -- e ai o TETO desce do mesmo jeito.
-pub const TETO: usize = 27;
+pub const TETO: usize = 24;
 
 #[cfg(test)]
 mod testes {
