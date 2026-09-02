@@ -58,24 +58,28 @@ SEGUNDOS = float(os.environ.get("SEGUNDOS", "3"))
 LINHAS = int(os.environ.get("LINHAS", "2000"))
 
 
-def trabalhador(modo, segundos, fila):
-    """Um processo cliente: martela ate o prazo e devolve quantas operacoes fez."""
+def trabalhador(modo, segundos, fila, tabela="c"):
+    """Um processo cliente: martela ate o prazo e devolve quantas operacoes fez.
+
+    `tabela` existe para o DISCRIMINADOR: com cada cliente numa tabela
+    propria, uma trava POR TABELA deixaria a vazao escalar; a global nao.
+    """
     c = pp.Cliente()
     c.call({"op": "login", "usuario": "root", "senha": pp.SENHA})
     fim = time.monotonic() + segundos
     n = 0
     while time.monotonic() < fim:
-        if modo == "sem-trava":
+        if modo.startswith("ler"):
+            c.call({"op": "varrer", "database": "t", "tabela": tabela,
+                    "limite": 50}, exigir=False)
+        elif modo == "sem-trava":
             # O CONTROLE. Mesmo soquete, mesmo JSON, mesmo despacho, mesmo
             # cliente Python -- e `ping` responde SEM tomar `travar_dados`.
             # O que ele nao escalar nao e culpa da trava: e do medidor ou da
             # maquina. A diferenca entre esta curva e a de `ler` E a trava.
             c.call({"op": "ping"}, exigir=False)
-        elif modo == "ler":
-            c.call({"op": "varrer", "database": "t", "tabela": "c",
-                    "limite": 50}, exigir=False)
         else:
-            c.call({"op": "inserir", "database": "t", "tabela": "c",
+            c.call({"op": "inserir", "database": "t", "tabela": tabela,
                     "linha": {"nome": "x"}}, exigir=False)
         n += 1
     fila.put(n)
@@ -96,11 +100,12 @@ def ocupado_por_cento():
     return 100.0 * (1 - (i1 - i0) / max(1, t1 - t0))
 
 
-def rodada(modo, n, segundos):
+def rodada(modo, n, segundos, separadas=False):
     """N processos em paralelo pelo mesmo prazo -> operacoes por segundo."""
     fila = mp.Queue()
-    procs = [mp.Process(target=trabalhador, args=(modo, segundos, fila))
-             for _ in range(n)]
+    procs = [mp.Process(target=trabalhador,
+                        args=(modo, segundos, fila, f"c{i}" if separadas else "c"))
+             for i in range(n)]
     t0 = time.monotonic()
     for p in procs:
         p.start()
@@ -135,12 +140,26 @@ def principal():
         print(f"    nucleos: {nucleos} | {SEGUNDOS:.0f}s por rodada | "
               f"{LINHAS} linhas semeadas\n")
         saida = {"nucleos": nucleos, "segundos": SEGUNDOS, "linhas": LINHAS}
-        for modo in ("sem-trava", "ler", "gravar"):
+        # As tabelas por cliente, para o discriminador: cada uma com o mesmo
+        # tanto de linha, senao a comparacao mediria o volume e nao a trava.
+        for i in range(4):
+            c.call({"op": "criar_tabela", "database": "t", "tabela": f"c{i}",
+                    "colunas": [{"nome": "id", "tipo": "Sequence", "obrigatoria": True},
+                                {"nome": "nome", "tipo": "Str(20)"}],
+                    "indices": [{"nome": "porId", "colunas": ["id"],
+                                 "unico": True, "primario": True}]}, exigir=False)
+            for _ in range(LINHAS):
+                c.call({"op": "inserir", "database": "t", "tabela": f"c{i}",
+                        "linha": {"nome": "semente"}}, exigir=False)
+
+        for modo, separadas in (("sem-trava", False), ("ler", False),
+                                ("gravar", False), ("ler-tabelas-separadas", True),
+                                ("gravar-tabelas-separadas", True)):
             print(f"-- {modo}")
             base = None
             saida[modo] = {}
             for n in (1, 2, 4):
-                ops, cpu = rodada(modo, n, SEGUNDOS)
+                ops, cpu = rodada(modo, n, SEGUNDOS, separadas)
                 if base is None:
                     base = ops
                 ganho = ops / base

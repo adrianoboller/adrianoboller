@@ -2058,6 +2058,45 @@ O que **não** se conclui daqui: qual desenho a substitui. Trava por tabela,
 diferentes, e escolher entre elas é outra medição — esta só diz que há o que
 ganhar, e quanto.
 
+### O discriminador: e a trava, ou ha um segundo gargalo embaixo dela?
+
+A §14 fechou dizendo o que **não** concluía — qual desenho substitui a trava.
+O primeiro passo dessa escolha é barato: pôr **cada cliente numa tabela
+própria**. Se houvesse um segundo ponto de disputa *abaixo* da trava (páginas
+do `.ndx` compartilhadas, o mesmo arquivo, o mesmo índice), tabelas separadas
+escalariam melhor.
+
+| carga | 1 | 2 clientes | 4 clientes |
+|---|---|---|---|
+| `ping` — sem a trava | 1,00× | 1,96× | 3,31× |
+| ler — **mesma** tabela | 1,00× | 1,67× | 1,59× |
+| ler — **tabelas separadas** | 1,00× | **1,70×** | 1,68× |
+| gravar — **mesma** tabela | 1,00× | 1,45× | 1,35× |
+| gravar — **tabelas separadas** | 1,00× | **1,43×** | 1,28× |
+
+Escalam **igual** — 1,70 contra 1,67 na leitura, 1,43 contra 1,45 na escrita,
+dentro do ruído das duas amostras da §14.
+
+**E aqui eu quase publiquei o contrário.** O impulso foi escrever «logo trava
+por tabela não compra nada» — e isso é falso, porque *trava por tabela não
+existe para ser medida*: com uma trava global, clientes em tabelas diferentes
+disputam exatamente como na mesma tabela, e o resultado é o previsto pela
+construção. Um experimento que confirma o que já se sabia não vira veredito
+sobre um desenho que ninguém escreveu.
+
+**O que o número DIZ, corretamente:** não há um segundo gargalo escondido
+embaixo da trava. Se houvesse disputa de página, de índice ou de arquivo,
+tabelas separadas teriam escalado melhor, e não escalaram. Logo o ~2× de folga
+que a §14 mediu está **inteiro** atrás da trava única, sem nada no caminho —
+que é o que torna a SP000011 valer o trabalho, e o que faltaria saber antes de
+começar.
+
+**O que continua por medir**, e só depois de existir: se a separação certa é
+por tabela, por `RwLock` (leitor com leitor) ou por MVCC (SP000016). A pista
+que a §14 já dá é que a leitura custa **20× mais por operação** que a escrita
+(153 contra 3.462 op/s), então ela segura a trava por muito mais tempo — o que
+favorece o `RwLock`, mas *favorecer* não é medir.
+
 ```bash
 python3 bancada/concorrencia/a-trava-serializa.py   # SEGUNDOS= e LINHAS= ajustam
 ```
