@@ -1050,7 +1050,20 @@ pub const TETO_FRASE_REPETIDA: usize = 0;
 /// a tela de transacoes -- escrita inteira pela fabrica -- derrubou mais 35.
 /// Escolher um dos dois lados seria regressao silenciosa; o valor saiu de rodar
 /// o conferidor depois do merge.
-pub const TETO: usize = 1_764;
+///
+/// 1.764 -> 1.667 na padronizacao "toda tabela e PhxGrid": as ultimas
+/// dezenove funcoes que ainda montavam `tabela([...], linhas, montar)` a mao
+/// (`verDatabase`, `gerirTabelas`, `verParticoes`, `verSequencias`,
+/// `verConfigTabela`, `verDiretivasDoBanco`, `verConfigUsuarios`,
+/// `verSysColumns`, `telaImportar`, `verLinhaDescartada`, `verSessoes`,
+/// `verEstatisticas`, `verConfig`, `verResidentes`, `verIps`, `telaJobs`,
+/// `telaDbLinkDefinicoes`, `telaDadosPessoais`, `verBancos`) viraram
+/// `PhxGrid.criar(...)`, e todo cabecalho de coluna (`{t:"..."}`) que era
+/// literal virou `titulo:txt("tela.col_...", "...")`. Foi a mesma leitura que
+/// a nota do `RECEITAS` ja registrava: mover o titulo para a fabrica tira o
+/// literal da conta, e a queda e so a soma de ~85 cabecalhos que pararam de
+/// ser cravados.
+pub const TETO: usize = 1_667;
 #[cfg(test)]
 mod testes {
     use std::collections::HashSet;

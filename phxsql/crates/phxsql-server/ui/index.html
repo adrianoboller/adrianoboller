@@ -2368,11 +2368,20 @@ function tabela(colunas, linhas, montar) {
   }</tr></thead><tbody>${linhas.map(montar).join("")}</tbody></table></div>`;
 }
 
+/** O MIOLO da celula -- sem o `<td>`, para o `formato` da PhxGrid poder usar
+ * o mesmo criterio de `celulaValor` (usada pela tabela a mao que ainda resta
+ * em `abrirConsulta`) sem duplicar a regra do nulo e do texto cortado. */
+function celulaValorTexto(v) {
+  if (v === null || v === undefined) return `<span class="leg">NULL</span>`;
+  if (typeof v === "number") return String(v);
+  const s = String(v);
+  return esc(s.length > 60 ? s.slice(0, 57) + "…" : s);
+}
+
 function celulaValor(v) {
   if (v === null || v === undefined) return `<td class="dado nulo">NULL</td>`;
   if (typeof v === "number") return `<td class="dado num">${v}</td>`;
-  const s = String(v);
-  return `<td class="dado">${esc(s.length > 60 ? s.slice(0,57)+"…" : s)}</td>`;
+  return `<td class="dado">${celulaValorTexto(v)}</td>`;
 }
 
 // =====================================================================
@@ -3668,20 +3677,39 @@ async function verDatabase(db) {
   }));
 
   folha(db, `${nomes.length} ${nomes.length === 1 ? "tabela" : "tabelas"} · clique numa linha para ver e editar`,
-    nomes.length
-      ? tabela([{t:"tabela"},{t:"registros",cls:"num"},{t:"slots",cls:"num"},
-                {t:"colunas",cls:"num"},{t:"índices",cls:"num"},{t:""}],
-          fichas, f => `<tr class="linha-tab" data-tab="${esc(f.nome)}">
-            <td class="dado"><b>${esc(f.nome)}</b></td>
-            <td class="num">${esc(String(f.registros ?? "—"))}</td>
-            <td class="num">${esc(String(f.slots ?? "—"))}</td>
-            <td class="num">${esc(String(f.colunas ?? "—"))}</td>
-            <td class="num">${esc(String(f.indices ?? "—"))}</td>
-            <td><span class="pino">abrir</span></td></tr>`)
+    nomes.length ? `<div id="gradeDb"></div>`
       : `<div class="vazio">nenhuma tabela neste database</div>`);
 
-  $$("#painel .linha-tab").forEach(tr =>
-    tr.onclick = () => verConteudoEditavel(db, tr.dataset.tab));
+  if (!nomes.length) return;
+
+  // PADRONIZACAO: toda tabela e PhxGrid com agrupamento. O clique simples de
+  // antes (a linha inteira) vira um botao na primeira coluna -- visivel e
+  // alcancavel pelo teclado, ao contrario do clique na linha -- ligado por
+  // DELEGACAO, porque o corpo do grid e reescrito a cada ordenacao/filtro. O
+  // duplo clique entra de brinde via `aoAbrirLinha`.
+  const num = v => v ?? "—";
+  PhxGrid.criar("#gradeDb", {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    lembrar: "database:" + db,
+    nomeVista: "database-" + db,
+    colunas: [
+      { campo:"nome", titulo:txt("tela.col_tabela","tabela"), fixa:"esq",
+        formato:(v, l) => `<button class="botao mini consultar bt-db" data-tab="${esc(v)}"
+          ><b>${esc(v)}</b></button>${l.erro ? ' <span class="pino mal">ilegível</span>' : ""}` },
+      { campo:"registros", titulo:txt("tela.col_registros","registros"), tipo:"numero", agregador:"sum", formato:num },
+      { campo:"slots", titulo:txt("tela.col_slots","slots"), tipo:"numero", agregador:"sum", formato:num },
+      { campo:"colunas", titulo:txt("tela.col_colunas","colunas"), tipo:"numero", formato:num },
+      { campo:"indices", titulo:txt("tela.col_indices","índices"), tipo:"numero", formato:num },
+    ],
+    dados: fichas,
+    pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+    aoAbrirLinha: l => verConteudoEditavel(db, l.nome),
+  });
+
+  $("#gradeDb").addEventListener("click", ev => {
+    const b = ev.target.closest(".bt-db");
+    if (b) verConteudoEditavel(db, b.dataset.tab);
+  });
 }
 
 /** A grade de dados, com a coluna de acao que abre a ficha.
@@ -4125,27 +4153,45 @@ async function gerirTabelas(db) {
        <button class="botao secundario" id="btGerirBanco">⛁ Gerir ${esc(db)}</button>
        <span class="leg">clique numa linha para as oito operações</span>
      </div>` +
-    (nomes.length
-      ? tabela([{t:"tabela"},{t:"registros",cls:"num"},{t:"slots",cls:"num"},
-                {t:"colunas",cls:"num"},{t:"índices",cls:"num"},
-                {t:"volumes",cls:"num"},{t:""}],
-          fichas, f => `<tr class="linha-tab" data-tab="${esc(f.nome)}">
-            <td class="dado"><b>${esc(f.nome)}</b>${
-              f.erro ? ` <span class="pino mal">ilegível</span>` : ""}</td>
-            <td class="num">${esc(String(f.registros ?? "—"))}</td>
-            <td class="num">${esc(String(f.slots ?? "—"))}</td>
-            <td class="num">${esc(String(f.colunas ?? "—"))}</td>
-            <td class="num">${esc(String(f.indices ?? "—"))}</td>
-            <td class="num">${f.paginada ? esc(String(f.volumes)) : "1"}</td>
-            <td><span class="pino">gerir</span></td></tr>`)
+    (nomes.length ? `<div id="gradeGerirTabs"></div>`
       : `<div class="vazio">nenhuma tabela em ${esc(db)} — comece pelo “Nova tabela”</div>`));
 
   $("#btNovaTab").onclick = () => telaNovaTabela(db);
   $("#btRecarregarTabs").onclick = () => gerirTabelas(db);
   $("#btGerirBanco").onclick = () => gerirDatabase(db);
   $("#btColar").onclick = () => telaCopiarColar(db);
-  $$("#painel .linha-tab").forEach(tr =>
-    tr.onclick = () => gerirTabela(db, tr.dataset.tab));
+
+  if (!nomes.length) return;
+
+  // PADRONIZACAO: PhxGrid com agrupamento. O clique simples de antes (a linha
+  // inteira) vira botao na primeira coluna, ligado por DELEGACAO -- o corpo
+  // do grid e reescrito a cada ordenacao/filtro/agrupamento, e o `onclick` no
+  // botao morreria com o nó. O duplo clique entra de brinde.
+  const num = v => v ?? "—";
+  PhxGrid.criar("#gradeGerirTabs", {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    lembrar: "gerirtabs:" + db,
+    nomeVista: "gerirtabs-" + db,
+    colunas: [
+      { campo:"nome", titulo:txt("tela.col_tabela","tabela"), fixa:"esq",
+        formato:(v, l) => `<button class="botao mini consultar bt-gt" data-tab="${esc(v)}"
+          ><b>${esc(v)}</b></button>${l.erro ? ' <span class="pino mal">ilegível</span>' : ""}` },
+      { campo:"registros", titulo:txt("tela.col_registros","registros"), tipo:"numero", agregador:"sum", formato:num },
+      { campo:"slots", titulo:txt("tela.col_slots","slots"), tipo:"numero", agregador:"sum", formato:num },
+      { campo:"colunas", titulo:txt("tela.col_colunas","colunas"), tipo:"numero", formato:num },
+      { campo:"indices", titulo:txt("tela.col_indices","índices"), tipo:"numero", formato:num },
+      { campo:"volumes", titulo:txt("tela.col_volumes","volumes"), tipo:"numero",
+        formato:(v, l) => l.paginada ? esc(String(v)) : "1" },
+    ],
+    dados: fichas,
+    pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+    aoAbrirLinha: l => gerirTabela(db, l.nome),
+  });
+
+  $("#gradeGerirTabs").addEventListener("click", ev => {
+    const b = ev.target.closest(".bt-gt");
+    if (b) gerirTabela(db, b.dataset.tab);
+  });
 }
 
 /** As oito operacoes de uma tabela, cada uma dizendo o que faz antes de fazer. */
@@ -4334,17 +4380,7 @@ async function verParticoes(db, tab) {
        <div class="ficha"><div class="v">${esc(gb(pag.bytes_por_arquivo || 0))} GiB</div>
          <div class="r">volume dos externos</div><div class="u">.bin, .memo, .log</div></div>
      </div>` +
-    tabela([{t:"volume",cls:"num"},{t:"arquivo"},
-            ...(porPeriodo ? [{t:"período que o abriu"}] : []),
-            ...(porLetra ? [{t:"existe"}] : []),
-            {t:"do rowid",cls:"num"},{t:"até o rowid",cls:"num"},{t:"slots usados",cls:"num"}],
-      vols, v => `<tr${porLetra && !v.usados ? ' class="balde-vazio"' : ""}>
-        <td class="num dado">${v.volume}${porLetra ? ` <b>${esc(v.letra)}</b>` : ""}</td>
-        <td class="dado"><code>${esc(v.arquivo)}</code></td>
-        ${porPeriodo ? `<td class="dado">${esc(v.periodo || "—")}</td>` : ""}
-        ${porLetra ? `<td>${v.existe ? "sim" : "<span class=\"leg\">ainda não</span>"}</td>` : ""}
-        <td class="num">${v.de}</td><td class="num">${v.ate}</td>
-        <td class="num">${v.usados}</td></tr>`) +
+    `<div id="gradeParticoes"></div>` +
     `<div class="nota">
        ${porLetra ? `
        <p><strong>Um arquivo por letra inicial de
@@ -4386,6 +4422,38 @@ async function verParticoes(db, tab) {
        <button class="botao secundario" id="btVoltarGer">← Gestão de ${esc(tab)}</button>
      </div>`);
   ligarVoltarGestao(db, tab);
+
+  // PADRONIZACAO: PhxGrid. Sem clique proprio -- a tela e so leitura -- entao
+  // sem `aoAbrirLinha` e sem botao na primeira coluna. O balde vazio (modo
+  // letra) perdia o `opacity:.45` da linha inteira, que o grid nao tem como
+  // aplicar por linha; cada `formato` reduz a opacidade da PROPRIA celula
+  // quando o balde nunca recebeu linha, o que chega ao mesmo efeito visto por
+  // quem olha, sem tocar no dado.
+  const apaga = (html, v) => (porLetra && !v.usados) ? `<span style="opacity:.45">${html}</span>` : html;
+  const colunas = [
+    { campo:"volume", titulo:txt("tela.col_volume","volume"), tipo:"numero", fixa:"esq",
+      formato:(v, l) => apaga(`${v}${porLetra ? ` <b>${esc(l.letra)}</b>` : ""}`, l) },
+    { campo:"arquivo", titulo:txt("tela.col_arquivo","arquivo"),
+      formato:(v, l) => apaga(`<code>${esc(v)}</code>`, l) },
+  ];
+  if (porPeriodo) colunas.push({ campo:"periodo", titulo:txt("tela.col_periodo_abriu","período que o abriu"),
+    formato:(v, l) => apaga(esc(v || "—"), l) });
+  if (porLetra) colunas.push({ campo:"existe", titulo:txt("tela.col_existe","existe"),
+    formato:(v, l) => apaga(v ? "sim" : `<span class="leg">ainda não</span>`, l) });
+  colunas.push(
+    { campo:"de", titulo:txt("tela.col_do_rowid","do rowid"), tipo:"numero", formato:(v, l) => apaga(String(v), l) },
+    { campo:"ate", titulo:txt("tela.col_ate_rowid","até o rowid"), tipo:"numero", formato:(v, l) => apaga(String(v), l) },
+    { campo:"usados", titulo:txt("tela.col_slots_usados","slots usados"), tipo:"numero",
+      formato:(v, l) => apaga(String(v), l) },
+  );
+  PhxGrid.criar("#gradeParticoes", {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    lembrar: "particoes:" + db + "." + tab,
+    nomeVista: "particoes-" + db + "-" + tab,
+    colunas: colunas,
+    dados: vols,
+    pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+  });
 }
 
 function ligarVoltarGestao(db, tab) {
@@ -4895,16 +4963,7 @@ async function verSequencias(db) {
        ${ficha(com.length, "com contador")}
        ${ficha(com.filter(x => x.proxima === 0).length, "nunca usadas", "o primeiro sai 1")}
      </div>` +
-    tabela([{t:"tabela"},{t:"coluna"},{t:"próximo número",cls:"num"},
-            {t:"registros",cls:"num"},{t:""}],
-      linhas, x => `<tr${x.tem_sequencia ? ` class="linha-seq" data-t="${esc(x.tabela)}"
-          data-p="${x.proxima}"` : ""}>
-        <td class="dado"><b>${esc(x.tabela)}</b></td>
-        <td class="dado">${x.coluna ? `<code>${esc(x.coluna)}</code>`
-          : `<span class="leg">— sem Sequence</span>`}</td>
-        <td class="num">${x.tem_sequencia ? esc(String(x.proxima)) : ""}</td>
-        <td class="num">${esc(String(x.registros))}</td>
-        <td>${x.tem_sequencia ? `<span class="pino">ajustar</span>` : ""}</td></tr>`) +
+    `<div id="gradeSeq"></div>` +
 
     `<div class="nota">
        <p><strong>Zero quer dizer «nunca usada»</strong> — o primeiro número
@@ -4923,7 +4982,38 @@ async function verSequencias(db) {
      </div>`);
 
   $("#btVoltaDb").onclick = () => gerirDatabase(db);
-  $$("#painel .linha-seq").forEach(tr => tr.onclick = () => ajustarSequencia(db, tr.dataset.t, +tr.dataset.p));
+
+  // PADRONIZACAO: PhxGrid. So a linha COM Sequence e clicavel -- entao o botao
+  // na primeira coluna so nasce nela, e a delegacao confere `l.tem_sequencia`
+  // antes de abrir o ajuste, para o clique numa linha sem contador nao tentar
+  // ajustar o que nao existe.
+  PhxGrid.criar("#gradeSeq", {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    lembrar: "sequencias:" + db,
+    nomeVista: "sequencias-" + db,
+    colunas: [
+      { campo:"tabela", titulo:txt("tela.col_tabela","tabela"), fixa:"esq",
+        formato:(v, l) => l.tem_sequencia
+          ? `<button class="botao mini alterar bt-seq" data-t="${esc(v)}"><b>${esc(v)}</b></button>`
+          : `<b>${esc(v)}</b>` },
+      { campo:"coluna", titulo:txt("tela.col_coluna","coluna"),
+        formato:v => v ? `<code>${esc(v)}</code>` : `<span class="leg">— sem Sequence</span>` },
+      { campo:"proxima", titulo:txt("tela.col_proximo_numero","próximo número"), tipo:"numero",
+        formato:(v, l) => l.tem_sequencia ? esc(String(v)) : "" },
+      { campo:"registros", titulo:txt("tela.col_registros","registros"), tipo:"numero", agregador:"sum" },
+    ],
+    dados: linhas,
+    pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+    aoAbrirLinha: l => l.tem_sequencia && ajustarSequencia(db, l.tabela, l.proxima),
+  });
+
+  $("#gradeSeq").addEventListener("click", ev => {
+    const b = ev.target.closest(".bt-seq");
+    if (b) {
+      const l = linhas.find(x => x.tabela === b.dataset.t);
+      if (l) ajustarSequencia(db, l.tabela, l.proxima);
+    }
+  });
 }
 
 async function ajustarSequencia(db, tabela, atual) {
@@ -5437,14 +5527,7 @@ async function verConfigTabela(db, tab) {
      </tbody></table></div>
 
      <h3 class="secao">Índices e chaves</h3>
-     ${tabela([{t:"índice"},{t:"colunas"},{t:"único",cls:"num"},{t:"primária",cls:"num"},{t:"composta",cls:"num"}],
-       e.indices || [], i => `<tr>
-         <td class="dado"><b>${esc(i.nome)}</b></td>
-         <td class="dado">${(i.colunas || []).map(c =>
-            `${esc(c.coluna)}${c.desc ? " ↓" : ""}${c.nocase ? " ~" : ""}`).join(", ")}</td>
-         <td class="num">${i.unico ? "sim" : ""}</td>
-         <td class="num">${i.primario ? '<span class="pino ok">PK</span>' : ""}</td>
-         <td class="num">${i.composto ? "sim" : ""}</td></tr>`)}
+     <div id="gradeIdxTab"></div>
 
      ${(e.chaves_estrangeiras || []).length ? `
      <h3 class="secao">Chaves estrangeiras</h3>
@@ -5452,22 +5535,11 @@ async function verConfigTabela(db, tab) {
      estão gravadas no cabeçalho do <code>.reg</code> e aparecem aqui, mas
      nenhuma gravação as consulta: <code>RESTRICT</code> e <code>CASCADE</code>
      são intenção guardada, não comportamento.</p></div>
-     ${tabela([{t:"nome"},{t:"colunas"},{t:"aponta para"},{t:"ao excluir"},{t:"ao alterar"}],
-       e.chaves_estrangeiras, f => `<tr>
-         <td class="dado"><b>${esc(f.nome)}</b></td>
-         <td class="dado">${(f.colunas||[]).map(esc).join(", ")}</td>
-         <td class="dado"><code>${esc(f.tabela_ref)}</code> (${(f.colunas_ref||[]).map(esc).join(", ")})</td>
-         <td class="dado">${esc(f.ao_excluir)}</td>
-         <td class="dado">${esc(f.ao_alterar)}</td></tr>`)}` : ""}
+     <div id="gradeFkTab"></div>` : ""}
 
      ${pag && (e.volumes || []).length ? `
      <h3 class="secao">Volumes no disco</h3>
-     ${tabela([{t:"volume",cls:"num"},{t:"arquivo"},{t:"primeiro rowid",cls:"num"},{t:"período"}],
-       e.volumes, v => `<tr>
-         <td class="num dado">${v.volume}</td>
-         <td class="dado"><code>${esc(tab)}_${String(v.volume).padStart(pag.digitos, "0")}.reg</code></td>
-         <td class="num">${v.primeiro_rowid}</td>
-         <td class="dado">${v.periodo ? esc(v.periodo) : "<span class=leg>—</span>"}</td></tr>`)}` : ""}
+     <div id="gradeVolTab"></div>` : ""}
 
      <h3 class="secao">Diretiva desta tabela <em>— a única que é dela</em></h3>
      <div class="rolo"><table><thead><tr>
@@ -5525,6 +5597,62 @@ async function verConfigTabela(db, tab) {
 
   ligarVoltarGestao(db, tab);
   $("#btVerEstr").onclick = () => { est.aba = "estrutura"; abrirTabela(db, tab); };
+
+  // PADRONIZACAO: as tres tabelas desta tela viram PhxGrid. Nenhuma tinha
+  // clique proprio -- sao so leitura, cada uma alimentada por um pedaco
+  // diferente do esquema -- entao nenhuma leva `aoAbrirLinha`.
+  PhxGrid.criar("#gradeIdxTab", {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    lembrar: "idxtab:" + db + "." + tab,
+    nomeVista: "idxtab-" + db + "-" + tab,
+    colunas: [
+      { campo:"nome", titulo:txt("tela.col_indice","índice"), fixa:"esq", formato:v => `<b>${esc(v)}</b>` },
+      { campo:"colunas", titulo:txt("tela.col_colunas","colunas"),
+        formato:v => (v || []).map(c => `${esc(c.coluna)}${c.desc ? " ↓" : ""}${c.nocase ? " ~" : ""}`).join(", ") },
+      { campo:"unico", titulo:txt("tela.col_unico","único"), formato:v => v ? "sim" : "" },
+      { campo:"primario", titulo:txt("tela.col_primaria","primária"),
+        formato:v => v ? '<span class="pino ok">PK</span>' : "" },
+      { campo:"composto", titulo:txt("tela.col_composta","composta"), formato:v => v ? "sim" : "" },
+    ],
+    dados: e.indices || [],
+    pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+  });
+
+  if ($("#gradeFkTab")) PhxGrid.criar("#gradeFkTab", {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    lembrar: "fktab:" + db + "." + tab,
+    nomeVista: "fktab-" + db + "-" + tab,
+    colunas: [
+      { campo:"nome", titulo:txt("tela.col_nome_curto","nome"), fixa:"esq", formato:v => `<b>${esc(v)}</b>` },
+      { campo:"colunas", titulo:txt("tela.col_colunas","colunas"), formato:v => (v || []).map(esc).join(", ") },
+      { campo:"tabela_ref", titulo:txt("tela.col_aponta_para","aponta para"),
+        formato:(v, l) => `<code>${esc(v)}</code> (${(l.colunas_ref || []).map(esc).join(", ")})` },
+      { campo:"ao_excluir", titulo:txt("tela.col_ao_excluir","ao excluir") },
+      { campo:"ao_alterar", titulo:txt("tela.col_ao_alterar","ao alterar") },
+    ],
+    dados: e.chaves_estrangeiras || [],
+    pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+  });
+
+  if ($("#gradeVolTab")) PhxGrid.criar("#gradeVolTab", {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    lembrar: "voltab:" + db + "." + tab,
+    nomeVista: "voltab-" + db + "-" + tab,
+    colunas: [
+      { campo:"volume", titulo:txt("tela.col_volume","volume"), tipo:"numero", fixa:"esq" },
+      { campo:"arquivo", titulo:txt("tela.col_arquivo","arquivo"),
+        formato:v => `<code>${esc(v)}</code>` },
+      { campo:"primeiro_rowid", titulo:txt("tela.col_primeiro_rowid","primeiro rowid"), tipo:"numero" },
+      { campo:"periodo", titulo:txt("tela.col_periodo","período"),
+        formato:v => v ? esc(v) : `<span class="leg">—</span>` },
+    ],
+    // `arquivo` nao vem do servidor aqui (ao contrario de `volumesDe`, que ja
+    // o traz pronto) -- o nome sempre foi montado na tela a partir do numero
+    // do volume, e a grade so pode ler campo que exista na linha.
+    dados: (e.volumes || []).map(v => ({ ...v,
+      arquivo: `${tab}_${String(v.volume).padStart(pag.digitos, "0")}.reg` })),
+    pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+  });
 }
 
 /* ================================================= Gerir um database
@@ -5805,24 +5933,7 @@ async function verDiretivasDoBanco(db) {
      </tbody></table></div>
 
      <h3 class="secao">Quem alcança ${esc(db)}</h3>
-     ${tabela([{t:"login"},{t:"nível"},{t:"pode aqui"},{t:"como resolveu"}],
-       lista, x => {
-         const p = poder(x);
-         return `<tr>
-           <td class="dado"><b>${esc(x.login || "")}</b>${
-             eu.login === x.login ? ' <span class="pino">você</span>' : ""}</td>
-           <td class="dado">${esc(x.nivel || "—")}</td>
-           <td class="dado">${
-             p.tudo ? '<span class="pino ok">tudo</span>'
-             : p.nada ? '<span class="pino mal">nada</span>'
-             : p.vazio ? '<span class="pino mal">nada</span>'
-             : p.itens.map(i => `<span class="pino">${esc(i)}</span>`).join(" ")}</td>
-           <td class="leg">${
-             p.tudo ? "supervisor passa por cima da lista"
-             : p.nada ? 'sem a base e sem "*" — nega tudo'
-             : p.vazio ? "base listada vazia — nega tudo"
-             : p.curinga ? 'veio do "*"' : "base listada explicitamente"}</td></tr>`;
-       })}
+     <div id="gradeDiretivas"></div>
 
      <div class="nota">
        <p><strong>A base listada manda.</strong> Se <code>${esc(db)}</code>
@@ -5835,6 +5946,37 @@ async function verDiretivasDoBanco(db) {
        <button class="botao secundario" id="btVoltaDb">← Gerir ${esc(db)}</button>
      </div>`);
   $("#btVoltaDb").onclick = () => gerirDatabase(db);
+
+  // PADRONIZACAO: PhxGrid. Sem clique proprio -- criar e alterar usuario e
+  // outra tela (a 6874), entao esta so mostra. `poder(x)` e resolvida uma vez
+  // por usuario e vira DUAS colunas -- cada campo precisa do proprio nome, ou
+  // as duas colunas colidiriam no mesmo `campo` e a grade so enxergaria uma.
+  PhxGrid.criar("#gradeDiretivas", {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    lembrar: "diretivas:" + db,
+    nomeVista: "diretivas-" + db,
+    colunas: [
+      { campo:"login", titulo:txt("tela.col_login","login"), fixa:"esq",
+        formato:v => `<b>${esc(v)}</b>${eu.login === v ? ' <span class="pino">você</span>' : ""}` },
+      { campo:"nivel", titulo:txt("tela.col_nivel","nível"), formato:v => esc(v || "—") },
+      { campo:"__podeAqui", titulo:txt("tela.col_pode_aqui","pode aqui"), formato:v => v },
+      { campo:"__comoResolveu", titulo:txt("tela.col_como_resolveu","como resolveu"), formato:v => v },
+    ],
+    dados: lista.map(x => {
+      const p = poder(x);
+      return { ...x,
+        __podeAqui: p.tudo ? '<span class="pino ok">tudo</span>'
+          : p.nada ? '<span class="pino mal">nada</span>'
+          : p.vazio ? '<span class="pino mal">nada</span>'
+          : p.itens.map(i => `<span class="pino">${esc(i)}</span>`).join(" "),
+        __comoResolveu: p.tudo ? "supervisor passa por cima da lista"
+          : p.nada ? 'sem a base e sem "*" — nega tudo'
+          : p.vazio ? "base listada vazia — nega tudo"
+          : p.curinga ? 'veio do "*"' : "base listada explicitamente",
+      };
+    }),
+    pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+  });
 }
 
 /* ------------------------------------------------------ backup e restauração */
@@ -6882,15 +7024,7 @@ async function verConfigUsuarios() {
        ${ficha(lista.filter(x => x.exige_chave).length, "exigem chave", "Ed25519")}
      </div>
 
-     ${tabela([{t:"login"},{t:"nome"},{t:"nível"},{t:"supervisor"},{t:"ativo"},{t:"chave"},{t:"e-mail"}],
-       lista, x => `<tr>
-         <td class="dado"><b>${esc(x.login || "")}</b></td>
-         <td class="dado">${esc(x.nome || "")}</td>
-         <td class="dado">${esc(x.nivel || "—")}</td>
-         <td class="dado">${x.supervisor ? "<span class=\"pino ok\">sim</span>" : "não"}</td>
-         <td class="dado">${x.ativo === false ? "<span class=\"pino mal\">não</span>" : "sim"}</td>
-         <td class="dado">${x.exige_chave ? "exige" : "—"}</td>
-         <td class="dado">${esc(x.email || "")}</td></tr>`)}
+     <div id="gradeUsu"></div>
 
      <h3 class="secao">Poder sobre cada base</h3>
      ${lista.map(x => `<div class="bloco-user">
@@ -6938,6 +7072,27 @@ async function verConfigUsuarios() {
        <p class="leg">Nenhum campo desta tela traz o hash — o servidor não o
        devolve, e há teste que falha se a ficha vazar.</p>
      </div>`);
+
+  // PADRONIZACAO: PhxGrid. Sem clique proprio -- criar e alterar usuario e
+  // por `phxsqld --senha`, nao por aqui (a nota logo acima explica o porque).
+  PhxGrid.criar("#gradeUsu", {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    lembrar: "configusuarios",
+    nomeVista: "config-usuarios",
+    colunas: [
+      { campo:"login", titulo:txt("tela.col_login","login"), fixa:"esq", formato:v => `<b>${esc(v)}</b>` },
+      { campo:"nome", titulo:txt("tela.col_nome_curto","nome") },
+      { campo:"nivel", titulo:txt("tela.col_nivel","nível"), formato:v => esc(v || "—") },
+      { campo:"supervisor", titulo:txt("tela.col_supervisor","supervisor"),
+        formato:v => v ? '<span class="pino ok">sim</span>' : "não" },
+      { campo:"ativo", titulo:txt("tela.col_ativo","ativo"),
+        formato:v => v === false ? '<span class="pino mal">não</span>' : "sim" },
+      { campo:"exige_chave", titulo:txt("tela.col_chave","chave"), formato:v => v ? "exige" : "—" },
+      { campo:"email", titulo:txt("tela.col_email","e-mail") },
+    ],
+    dados: lista,
+    pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+  });
 }
 
 /* ================================================= Catálogo do sistema
@@ -7026,22 +7181,7 @@ async function verSysColumns(db, tabela_) {
        ${tabela_ ? `<button class="botao secundario" id="btTodas">todas as tabelas</button>` : ""}
        <button class="botao secundario" id="btVoltaDb">← Gerir ${esc(db)}</button>
      </div>` +
-    tabela([{t:"tabela"},{t:"#",cls:"num"},{t:"nome"},{t:"caption"},{t:"tipo"},
-            {t:"tam.",cls:"num"},{t:"obrig.",cls:"num"},{t:"chave"},{t:"máscara"},
-            {t:"índices"},{t:"id"},{t:"descrição"}],
-      linhas, c => `<tr>
-        <td class="dado">${esc(c.tabela)}</td>
-        <td class="num">${c.posicao}</td>
-        <td class="dado"><b>${esc(c.nome)}</b></td>
-        <td class="dado">${esc(c.caption || "")}</td>
-        <td class="dado"><code>${esc(tipoCurto(c.tipo))}</code></td>
-        <td class="num">${c.tamanho || "—"}</td>
-        <td class="num">${c.obrigatoria ? "sim" : ""}</td>
-        <td class="dado">${chaveEmPino(c)}</td>
-        <td class="dado">${c.mascara ? `<code>${esc(c.mascara)}</code>` : ""}</td>
-        <td class="dado leg">${(c.nos_indices || []).map(esc).join(", ")}</td>
-        <td class="dado leg"><code title="${esc(c.id)}">${esc((c.id || "").slice(0, 8))}…</code></td>
-        <td class="dado leg">${esc(c.descricao || "")}</td></tr>`) +
+    `<div id="gradeSysCol"></div>` +
     `<div class="nota"><p>O <code>id</code> é um UUID v7 sorteado quando a coluna
      nasce e <strong>nunca reaproveitado</strong>. Renomear a coluna troca o
      nome; o id segue o mesmo — é por ele que uma tela ou um relatório apontam
@@ -7053,6 +7193,34 @@ async function verSysColumns(db, tabela_) {
   $("#btSysTabs").onclick = () => verSysTables(db);
   if ($("#btTodas")) $("#btTodas").onclick = () => verSysColumns(db);
   $("#btVoltaDb").onclick = () => gerirDatabase(db);
+
+  // PADRONIZACAO: PhxGrid. Sem clique proprio -- e o dicionario de dados, so
+  // leitura; nao ha "abrir" para onde ir a partir de uma coluna.
+  PhxGrid.criar("#gradeSysCol", {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    lembrar: "syscolumns:" + db,
+    nomeVista: "syscolumns-" + db,
+    colunas: [
+      { campo:"tabela", titulo:txt("tela.col_tabela","tabela"), fixa:"esq" },
+      { campo:"posicao", titulo:"#", tipo:"numero" },
+      { campo:"nome", titulo:txt("tela.col_nome_curto","nome"), formato:v => `<b>${esc(v)}</b>` },
+      { campo:"caption", titulo:txt("tela.col_caption_grade","caption") },
+      { campo:"tipo", titulo:txt("tela.col_tipo","tipo"), formato:v => `<code>${esc(tipoCurto(v))}</code>` },
+      { campo:"tamanho", titulo:txt("tela.col_tam","tam."), tipo:"numero", formato:v => v || "—" },
+      { campo:"obrigatoria", titulo:txt("tela.col_obrig","obrig."), formato:v => v ? "sim" : "" },
+      { campo:"primaria", titulo:txt("tela.col_chave","chave"), formato:(_, l) => chaveEmPino(l) },
+      { campo:"mascara", titulo:txt("tela.col_mascara","máscara"),
+        formato:v => v ? `<code>${esc(v)}</code>` : "" },
+      { campo:"nos_indices", titulo:txt("tela.col_indices","índices"),
+        formato:v => `<span class="leg">${(v || []).map(esc).join(", ")}</span>` },
+      { campo:"id", titulo:txt("tela.col_id","id"),
+        formato:v => `<span class="leg"><code title="${esc(v)}">${esc((v || "").slice(0, 8))}…</code></span>` },
+      { campo:"descricao", titulo:txt("tela.col_descricao","descrição"),
+        formato:v => `<span class="leg">${esc(v || "")}</span>` },
+    ],
+    dados: linhas,
+    pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+  });
 }
 
 /** `Decimal { precisao: 15, escala: 2 }` cansa a vista numa grade. */
@@ -7550,12 +7718,29 @@ async function telaImportar(db, tab) {
              ? `<span class="leg">Ficam nulas: ${r.faltando.map(esc).join(", ")}</span>`
              : ""}</div>
          ${r.amostra && r.amostra.length
-           ? tabela(cols.map(c => ({ t: c })), r.amostra,
-               l => `<tr>${l.map(v => celulaValor(v)).join("")}</tr>`)
+           ? `<div id="gradeAmostraImp"></div>`
            : `<div class="vazio">nenhuma linha</div>`}
          <p class="leg">Amostra das primeiras ${r.amostra ? r.amostra.length : 0} linhas,
            como o leitor entendeu — <b>antes</b> de converter para o tipo de cada coluna.</p>`;
       $("#btImportar").disabled = !!(r.desconhecidas && r.desconhecidas.length) || !r.linhas_lidas;
+
+      // PADRONIZACAO: PhxGrid. Os titulos aqui sao os NOMES DAS COLUNAS DA
+      // CARGA -- dado que a pessoa digitou no cabecalho do arquivo, e nao
+      // rotulo fixo da tela -- entao nao passam por `txt()`, na mesma regra
+      // de `verConteudoEditavel`. Sem clique proprio: e so conferencia.
+      if (r.amostra && r.amostra.length) PhxGrid.criar("#gradeAmostraImp", {
+        agrupavel: true, buscaGlobal: true, filterRow: true,
+        colunas: cols.map(c => ({ campo: c, titulo: c, formato: celulaValorTexto })),
+        // A carga chega por LINHA POSICIONAL (`l[i]` casado com `cols[i]`), e
+        // a grade le por NOME de campo -- vira objeto uma vez aqui, em vez de
+        // duas funcoes de leitura por campo.
+        dados: r.amostra.map(l => {
+          const o = {};
+          cols.forEach((c, i) => { o[c] = l[i]; });
+          return o;
+        }),
+        pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+      });
     } catch (e) {
       $("#impSaida").innerHTML = `<div class="aviso mal">${esc(String(e))}</div>`;
       $("#btImportar").disabled = true;
@@ -7578,12 +7763,20 @@ async function telaImportar(db, tab) {
            ${r.ms} ms${r.por_segundo ? ` — ${fmt(r.por_segundo)} linhas/s` : ""}.
            ${r.gravadas ? `rowid ${r.primeiro_rowid} a ${r.ultimo_rowid}.` : ""}
            ${r.aviso ? `<br><b>${esc(r.aviso)}</b>` : ""}</div>
-         ${(r.erros || []).length
-           ? tabela([{t:"linha da carga",cls:"num"},{t:"por quê"}], r.erros,
-               e => `<tr><td class="num">${e.linha}</td><td>${esc(e.erro)}</td></tr>`)
-           : ""}`;
+         ${(r.erros || []).length ? `<div id="gradeErrosImp"></div>` : ""}`;
       if (r.gravadas) avisar(`${fmt(r.gravadas)} linha(s) gravadas em ${tab}`);
       $("#btImportar").disabled = true;
+
+      // PADRONIZACAO: PhxGrid. Sem clique proprio.
+      if ((r.erros || []).length) PhxGrid.criar("#gradeErrosImp", {
+        agrupavel: true, buscaGlobal: true, filterRow: true,
+        colunas: [
+          { campo:"linha", titulo:txt("tela.col_linha_carga","linha da carga"), tipo:"numero", fixa:"esq" },
+          { campo:"erro", titulo:txt("tela.col_por_que","por quê") },
+        ],
+        dados: r.erros,
+        pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+      });
     } catch (e) {
       $("#impSaida").innerHTML = `<div class="aviso mal">${esc(String(e))}</div>`;
     }
@@ -7992,10 +8185,7 @@ async function verLinhaDescartada(db, tab, uuid) {
        <div class="ficha"><div class="v">${fmtBytes(item.bytes)}</div><div class="r">no .trash</div></div>
      </div>
      ${item.aviso ? `<div class="aviso mal">${esc(item.aviso)}</div>` : ""}
-     ${tabela([{ t: "coluna" }, { t: "valor" }], cols,
-        c => `<tr><td class="dado"><b>${esc(c.rotulo || c.nome)}</b>
-                <span class="leg">${esc(c.tipo)}</span></td>
-              ${celulaValor((item.linha || {})[c.nome])}</tr>`)}
+     <div id="gradeLinhaDesc"></div>
      <p class="leg">O <code>uuid</code> deste descarte é
        <code>${esc(item.uuid)}</code>. É um v7: ordenar por ele é ordenar por
        quando aconteceu.</p>
@@ -8003,6 +8193,19 @@ async function verLinhaDescartada(db, tab, uuid) {
        <button class="botao secundario" id="btVoltaLinha">← Lixeira</button>
      </div>`);
   $("#btVoltaLinha").onclick = () => telaLixeira(db, tab);
+
+  // PADRONIZACAO: PhxGrid. Uma linha do descarte vira uma linha da grade POR
+  // COLUNA -- e' a mesma ficha transposta, entao sem clique proprio.
+  PhxGrid.criar("#gradeLinhaDesc", {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    colunas: [
+      { campo:"rotulo", titulo:txt("tela.col_coluna","coluna"), fixa:"esq",
+        formato:(_, l) => `<b>${esc(l.rotulo || l.nome)}</b> <span class="leg">${esc(l.tipo)}</span>` },
+      { campo:"valor", titulo:txt("tela.col_valor","valor"), formato:celulaValorTexto },
+    ],
+    dados: cols.map(c => ({ ...c, valor: (item.linha || {})[c.nome] })),
+    pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+  });
 }
 
 /* ------------------------------------------------------------ os motivos */
@@ -8090,33 +8293,9 @@ async function verSessoes() {
        ${ficha(d.executando, "executando")}
        ${ficha(dur(d.mais_longa_ms), "a mais demorada", d.mais_longa_ms > 5000 ? "há mais de 5 s" : "")}
      </div>` +
-    tabela([{t:"id",cls:"num"},{t:"origem"},{t:"usuário"},{t:"aberta há",cls:"num"},
-            {t:"estado"},{t:"operação"},{t:"objeto"},{t:"há",cls:"num"},
-            {t:"pedidos",cls:"num"},{t:""}],
-      d.sessoes, x => `<tr>
-        <td class="num dado">${x.id}</td>
-        <td class="dado">${esc(x.ip)}:${x.porta}</td>
-        <td class="dado">${esc(x.usuario || "—")}</td>
-        <td class="num">${dur(x.aberta_s * 1000)}</td>
-        <td>${x.encerrando ? `<span class="pino mal">encerrando</span>`
-             : x.estado === "executando" ? `<span class="pino ndx">executando</span>`
-             : `<span class="pino nao">esperando</span>`}</td>
-        <td class="dado">${esc(x.op || "—")}</td>
-        <td class="dado">${esc(x.objeto || "—")}</td>
-        <td class="num${x.ha_ms > 5000 ? " mal" : ""}">${dur(x.ha_ms)}</td>
-        <td class="num">${fmt(x.pedidos)}</td>
-        <td><button class="botao secundario mini" data-kill="${x.id}">Encerrar</button></td>
-      </tr>`) +
+    `<div id="gradeSessoes"></div>` +
     ((d.web || []).length
-      ? `<h3>Sessões do navegador</h3>` + tabela(
-          [{t:"id"},{t:"usuário"},{t:"aberta há",cls:"num"},{t:"expira em",cls:"num"},{t:""}],
-          d.web, x => `<tr>
-            <td class="dado">${esc(x.id)}…</td>
-            <td class="dado">${esc(x.usuario || "—")}</td>
-            <td class="num">${dur(x.aberta_s * 1000)}</td>
-            <td class="num">${dur(x.expira_em_s * 1000)}</td>
-            <td><button class="botao secundario mini" data-killweb="${esc(x.id)}">Encerrar</button></td>
-          </tr>`)
+      ? `<h3>Sessões do navegador</h3><div id="gradeSessoesWeb"></div>`
       : "") +
     `<div class="aviso"><b>Encerrar fecha o soquete.</b> É imediato para a conexão
       que está esperando pedido — o caso comum da conexão esquecida aberta. Uma
@@ -8128,16 +8307,36 @@ async function verSessoes() {
      </div>`);
 
   $("#btEstat").onclick = () => verEstatisticas();
-  $$("#painel [data-killweb]").forEach(b => b.onclick = async () => {
-    const id = b.dataset.killweb;
-    if (!confirm(`Encerrar a sessão web ${id}…?\n\nO próximo clique de quem estava usando cai no login.`)) return;
-    try {
-      const r = await api("encerrar_sessao", { id });
-      avisar(`sessão ${r.encerrada} encerrada — ${r.aviso}`);
-      verSessoes();
-    } catch (e) { avisar(String(e), true); }
+
+  // PADRONIZACAO: PhxGrid. Sem gesto de abrir linha -- so o botao "Encerrar",
+  // que ja era um botao antes. Por DELEGACAO no conteiner, e nao `onclick`
+  // direto: o corpo do grid e reescrito a cada ordenacao/filtro/agrupamento,
+  // e o `$$().forEach` de antes so funcionava porque a tabela a mao nunca era
+  // redesenhada sozinha.
+  PhxGrid.criar("#gradeSessoes", {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    colunas: [
+      { campo:"id", titulo:txt("tela.col_id","id"), tipo:"numero", fixa:"esq" },
+      { campo:"ip", titulo:txt("tela.col_origem","origem"), formato:(v, l) => `${esc(v)}:${l.porta}` },
+      { campo:"usuario", titulo:txt("tela.col_usuario","usuário"), formato:v => esc(v || "—") },
+      { campo:"aberta_s", titulo:txt("tela.col_aberta_ha","aberta há"), tipo:"numero", formato:v => dur(v * 1000) },
+      { campo:"estado", titulo:txt("tela.col_estado","estado"),
+        formato:(_, l) => l.encerrando ? `<span class="pino mal">encerrando</span>`
+          : l.estado === "executando" ? `<span class="pino ndx">executando</span>`
+          : `<span class="pino nao">esperando</span>` },
+      { campo:"op", titulo:txt("tela.col_operacao","operação"), formato:v => esc(v || "—") },
+      { campo:"objeto", titulo:txt("tela.col_objeto","objeto"), formato:v => esc(v || "—") },
+      { campo:"ha_ms", titulo:txt("tela.col_ha","há"), tipo:"numero",
+        formato:v => v > 5000 ? `<span class="mal">${dur(v)}</span>` : dur(v) },
+      { campo:"pedidos", titulo:txt("tela.col_pedidos","pedidos"), tipo:"numero", agregador:"sum", formato:fmt },
+      { campo:"__acaoKill", titulo:"", ordenavel:false, filtravel:false,
+        formato:(_, l) => `<button class="botao secundario mini bt-kill" data-kill="${l.id}">Encerrar</button>` },
+    ],
+    dados: d.sessoes,
   });
-  $$("#painel [data-kill]").forEach(b => b.onclick = async () => {
+  $("#gradeSessoes").addEventListener("click", async ev => {
+    const b = ev.target.closest(".bt-kill");
+    if (!b) return;
     const id = b.dataset.kill;
     if (!confirm(`Encerrar a conexão ${id}?\n\nO cliente do outro lado perde a conexão.`)) return;
     try {
@@ -8146,6 +8345,32 @@ async function verSessoes() {
       verSessoes();
     } catch (e) { avisar(String(e), true); }
   });
+
+  if ((d.web || []).length) {
+    PhxGrid.criar("#gradeSessoesWeb", {
+      agrupavel: true, buscaGlobal: true, filterRow: true,
+      colunas: [
+        { campo:"id", titulo:txt("tela.col_id","id"), fixa:"esq", formato:v => `${esc(v)}…` },
+        { campo:"usuario", titulo:txt("tela.col_usuario","usuário"), formato:v => esc(v || "—") },
+        { campo:"aberta_s", titulo:txt("tela.col_aberta_ha","aberta há"), tipo:"numero", formato:v => dur(v * 1000) },
+        { campo:"expira_em_s", titulo:txt("tela.col_expira_em","expira em"), tipo:"numero", formato:v => dur(v * 1000) },
+        { campo:"__acaoKillWeb", titulo:"", ordenavel:false, filtravel:false,
+          formato:(_, l) => `<button class="botao secundario mini bt-killweb" data-killweb="${esc(l.id)}">Encerrar</button>` },
+      ],
+      dados: d.web,
+    });
+    $("#gradeSessoesWeb").addEventListener("click", async ev => {
+      const b = ev.target.closest(".bt-killweb");
+      if (!b) return;
+      const id = b.dataset.killweb;
+      if (!confirm(`Encerrar a sessão web ${id}…?\n\nO próximo clique de quem estava usando cai no login.`)) return;
+      try {
+        const r = await api("encerrar_sessao", { id });
+        avisar(`sessão ${r.encerrada} encerrada — ${r.aviso}`);
+        verSessoes();
+      } catch (e) { avisar(String(e), true); }
+    });
+  }
 
   // O relógio das sessões usa o mesmo motor do monitor da máquina: uma tela
   // que mostra «agora» e não se renova sozinha mente depois de meio minuto.
@@ -8193,16 +8418,16 @@ async function verEstatisticas(horas) {
   const carta = (titulo, legenda, corpo, larga) =>
     `<div class="carta ${larga ? "larga" : ""}"><h4>${titulo}</h4>
        <p class="leg">${legenda}</p>${corpo}</div>`;
-  const listaDe = (linhas, rotulo) => tabela(
-    [{t:rotulo},{t:"vezes",cls:"num"},{t:"recusadas",cls:"num"},
-     {t:"ms médio",cls:"num"},{t:"pior",cls:"num"},{t:"tempo total",cls:"num"}],
-    linhas, x => `<tr>
-      <td class="dado">${esc(x.nome)}</td>
-      <td class="num">${fmt(x.quantas)}</td>
-      <td class="num${x.recusadas ? " mal" : ""}">${x.recusadas ? fmt(x.recusadas) : "—"}</td>
-      <td class="num">${fmt(x.ms_medio)}</td>
-      <td class="num">${fmt(x.ms_pior)}</td>
-      <td class="num">${fmt(x.ms_total)} ms</td></tr>`);
+
+  // PADRONIZACAO: PhxGrid. `listaDe` monta TRES grades com o mesmo formato de
+  // colunas (por tabela, por operação, por usuário) -- so a primeira coluna
+  // muda de nome -- entao so devolve o contêiner aqui e a criação real fica
+  // para depois do `folha()`, que e quem poe os `<div>` no DOM.
+  const pendentes = [];
+  const listaDe = (linhas, id, tituloChave, tituloPadrao) => {
+    pendentes.push({ id, linhas, tituloChave, tituloPadrao });
+    return `<div id="${id}"></div>`;
+  };
 
   folha("Estatísticas de uso",
     `desde ${esc(d.desde)} · ${fmt(d.acessos)} acessos`,
@@ -8226,29 +8451,62 @@ async function verEstatisticas(horas) {
        ${carta("Tempo de resposta", "cada faixa dobra a anterior · vermelho é acima de um segundo",
           histograma(d.histograma || []), true)}
        ${carta("As mais demoradas", "o registro de consulta lenta, sem precisar ligar nada",
-          tabela([{t:"quando"},{t:"operação"},{t:"objeto"},{t:"usuário"},{t:"ms",cls:"num"}],
-            d.mais_lentas || [], x => `<tr>
-              <td class="dado">${esc(x.quando)}</td>
-              <td class="dado">${esc(x.op)}${x.ok ? "" : ` <span class="pino mal">falhou</span>`}</td>
-              <td class="dado">${esc(x.objeto || "—")}</td>
-              <td class="dado">${esc(x.usuario || "—")}</td>
-              <td class="num">${fmt(x.ms)}</td></tr>`), true)}
+          `<div id="gradeStLentas"></div>`, true)}
        ${carta("Por tabela", "qual tabela custa caro — o log não sabia dizer isso antes",
-          listaDe(d.por_tabela || [], "tabela"), true)}
-       ${carta("Por operação", "o que mais se pede", listaDe(d.por_operacao || [], "operação"), true)}
-       ${carta("Por usuário", "quem mais usa", listaDe(d.por_usuario || [], "usuário"), true)}
+          listaDe(d.por_tabela || [], "gradeStTabela", "tela.col_tabela", "tabela"), true)}
+       ${carta("Por operação", "o que mais se pede",
+          listaDe(d.por_operacao || [], "gradeStOperacao", "tela.col_operacao", "operação"), true)}
+       ${carta("Por usuário", "quem mais usa",
+          listaDe(d.por_usuario || [], "gradeStUsuario", "tela.col_usuario", "usuário"), true)}
        ${carta("Por erro", "agrupado pelo código, e não pelo texto da mensagem",
-          tabela([{t:"código",cls:"num"},{t:"nome"},{t:"vezes",cls:"num"},{t:"exemplo"}],
-            d.por_erro || [], x => `<tr>
-              <td class="num dado">${x.codigo || "—"}</td>
-              <td class="dado"><span class="pino ${x.codigo ? "mal" : "nao"}">${esc(x.nome)}</span></td>
-              <td class="num">${fmt(x.quantas)}</td>
-              <td class="dado">${esc(String(x.exemplo).slice(0, 90))}</td></tr>`), true)}
+          `<div id="gradeStErro"></div>`, true)}
      </div>`);
 
   $("#stHoras").value = String(horas || 0);
   $("#stHoras").onchange = e => verEstatisticas(Number(e.target.value));
   $("#btSessoes").onclick = () => verSessoes();
+
+  // PADRONIZACAO: PhxGrid, as cinco. Nenhuma tinha clique proprio.
+  PhxGrid.criar("#gradeStLentas", {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    colunas: [
+      { campo:"quando", titulo:txt("tela.col_quando","quando"), fixa:"esq" },
+      { campo:"op", titulo:txt("tela.col_operacao","operação"),
+        formato:(v, l) => `${esc(v)}${l.ok ? "" : ' <span class="pino mal">falhou</span>'}` },
+      { campo:"objeto", titulo:txt("tela.col_objeto","objeto"), formato:v => esc(v || "—") },
+      { campo:"usuario", titulo:txt("tela.col_usuario","usuário"), formato:v => esc(v || "—") },
+      { campo:"ms", titulo:txt("tela.col_ms","ms"), tipo:"numero", formato:fmt },
+    ],
+    dados: d.mais_lentas || [],
+  });
+
+  pendentes.forEach(p => PhxGrid.criar("#" + p.id, {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    colunas: [
+      { campo:"nome", titulo:txt(p.tituloChave, p.tituloPadrao), fixa:"esq" },
+      { campo:"quantas", titulo:txt("tela.col_vezes","vezes"), tipo:"numero", agregador:"sum", formato:fmt },
+      { campo:"recusadas", titulo:txt("tela.col_recusadas","recusadas"), tipo:"numero",
+        formato:v => v ? `<span class="mal">${fmt(v)}</span>` : "—" },
+      { campo:"ms_medio", titulo:txt("tela.col_ms_medio","ms médio"), tipo:"numero", formato:fmt },
+      { campo:"ms_pior", titulo:txt("tela.col_pior","pior"), tipo:"numero", formato:fmt },
+      { campo:"ms_total", titulo:txt("tela.col_tempo_total","tempo total"), tipo:"numero",
+        formato:v => `${fmt(v)} ms` },
+    ],
+    dados: p.linhas,
+  }));
+
+  PhxGrid.criar("#gradeStErro", {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    colunas: [
+      { campo:"codigo", titulo:txt("tela.col_codigo","código"), tipo:"numero", fixa:"esq", formato:v => v || "—" },
+      { campo:"nome", titulo:txt("tela.col_nome_curto","nome"),
+        formato:(v, l) => `<span class="pino ${l.codigo ? "mal" : "nao"}">${esc(v)}</span>` },
+      { campo:"quantas", titulo:txt("tela.col_vezes","vezes"), tipo:"numero", agregador:"sum", formato:fmt },
+      { campo:"exemplo", titulo:txt("tela.col_exemplo","exemplo"),
+        formato:v => esc(String(v).slice(0, 90)) },
+    ],
+    dados: d.por_erro || [],
+  });
 }
 
 /* ================================================= Junções e união
@@ -9097,21 +9355,7 @@ async function telaDbLinkDefinicoes() {
   const ls = d.ligacoes || [];
   folha("Definições do DbLink",
     `${ls.length} ligação(ões) · guardadas em ${esc(d.arquivo)}`,
-    tabela([{t:"apelido"},{t:"motor"},{t:"endereço"},{t:"usuário"},{t:"base"},
-                 {t:"senha"},{t:"escrita"},{t:"teto",cls:"num"},{t:""}],
-      ls, l => `<tr class="linha-dbl" data-n="${esc(l.nome)}">
-        <td class="dado"><b>${esc(l.nome)}</b>${l.descricao
-          ? `<div class="leg">${esc(l.descricao)}</div>` : ""}</td>
-        <td>${l.conecta ? `<span class="pino ndx">${esc(l.motor)}</span>`
-          : `<span class="pino nao">${esc(l.motor)} · sem cliente</span>`}</td>
-        <td class="dado">${esc(l.host)}:${l.porta}</td>
-        <td class="dado">${esc(l.usuario)}</td>
-        <td class="dado">${esc(l.database) || "—"}</td>
-        <td class="dado">${esc(l.senha)}</td>
-        <td>${l.somente_leitura ? `<span class="pino ok">só lê</span>`
-                                : `<span class="pino mal">escreve</span>`}</td>
-        <td class="num">${fmt(l.max_linhas)}</td>
-        <td><span class="pino">editar</span></td></tr>`) +
+    `<div id="gradeDbl"></div>` +
     `<div class="aviso">
        <p><strong>A conversa com o banco do outro lado é em texto claro.</strong>
        Não há TLS: a <code>std</code> do Rust não traz TLS e o projeto não
@@ -9137,7 +9381,37 @@ async function telaDbLinkDefinicoes() {
      </div>`);
   $("#btNovaLig").onclick = () => editarDbLink(null);
   $("#btIrDbl").onclick = () => telaDbLink();
-  $$("#painel .linha-dbl").forEach(tr => tr.onclick = () => editarDbLink(tr.dataset.n));
+
+  // PADRONIZACAO: PhxGrid. O clique simples de antes (a linha inteira) vira
+  // botao na primeira coluna, por delegacao; o duplo clique entra de brinde.
+  PhxGrid.criar("#gradeDbl", {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    lembrar: "dbl-definicoes",
+    nomeVista: "dbl-definicoes",
+    colunas: [
+      { campo:"nome", titulo:txt("tela.col_apelido","apelido"), fixa:"esq",
+        formato:(v, l) => `<button class="botao mini alterar bt-dbl" data-n="${esc(v)}"
+          ><b>${esc(v)}</b></button>${l.descricao ? `<div class="leg">${esc(l.descricao)}</div>` : ""}` },
+      { campo:"motor", titulo:txt("tela.col_motor","motor"),
+        formato:(v, l) => l.conecta ? `<span class="pino ndx">${esc(v)}</span>`
+          : `<span class="pino nao">${esc(v)} · sem cliente</span>` },
+      { campo:"host", titulo:txt("tela.col_endereco","endereço"), formato:(v, l) => `${esc(v)}:${l.porta}` },
+      { campo:"usuario", titulo:txt("tela.col_usuario","usuário") },
+      { campo:"database", titulo:txt("tela.col_base","base"), formato:v => v ? esc(v) : "—" },
+      { campo:"senha", titulo:txt("tela.col_senha","senha") },
+      { campo:"somente_leitura", titulo:txt("tela.col_escrita","escrita"),
+        formato:v => v ? `<span class="pino ok">só lê</span>` : `<span class="pino mal">escreve</span>` },
+      { campo:"max_linhas", titulo:txt("tela.col_teto","teto"), tipo:"numero", formato:fmt },
+    ],
+    dados: ls,
+    pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+    aoAbrirLinha: l => editarDbLink(l.nome),
+  });
+
+  $("#gradeDbl").addEventListener("click", ev => {
+    const b = ev.target.closest(".bt-dbl");
+    if (b) editarDbLink(b.dataset.n);
+  });
 }
 
 async function editarDbLink(nome) {
@@ -9566,24 +9840,6 @@ async function telaJobs() {
     if (x.vencido) return `<div>${quando}</div><div class="leg">na próxima volta do relógio</div>`;
     return `<div>${quando}</div>`;
   };
-  const linha = x => `<tr class="linha-job" data-n="${esc(x.nome)}">
-    <td class="dado"><b>${esc(x.nome)}</b>${x.descricao
-      ? `<div class="leg">${esc(x.descricao)}</div>` : ""}</td>
-    <td>${pinoEstado(x)}</td>
-    <td class="dado agenda-job">${esc(x.agenda)}</td>
-    <td class="dado">${esc(x.op)}</td>
-    <td class="dado">${esc(x.usuario) || '<span class="leg">sem cadastro</span>'}</td>
-    <td class="dado">${celUltima(x)}</td>
-    <td class="dado">${celProxima(x)}</td>
-    <td class="acoes-job">
-      <button class="botao mini alterar bt-rodar" title="roda agora, fora da agenda"
-        data-n="${esc(x.nome)}">Rodar</button>
-      <button class="botao mini alterar bt-ligar" data-n="${esc(x.nome)}"
-        data-l="${x.ligado ? 0 : 1}">${x.ligado ? "Desligar" : "Ligar"}</button>
-      <button class="botao mini excluir bt-excluir" data-n="${esc(x.nome)}">Excluir</button>
-    </td>
-  </tr>`;
-
   // O quadro do aviso por e-mail diz a verdade da configuração: quem será
   // avisado, ou o que falta para alguém ser. Sem bloco de e-mail, nada muda —
   // e o quadro diz isso com todas as letras.
@@ -9608,9 +9864,7 @@ async function telaJobs() {
   folha("Jobs de execução",
     `${jobs.length} job(s) · cadastro em ${esc(j.arquivo)} · corridas em ${esc(j.log)}`
     + (j.relogio_no_ar ? "" : " · sem relógio neste arranque"),
-    (jobs.length
-      ? tabela([{t:"nome"},{t:"estado"},{t:"agenda"},{t:"operação"},{t:"roda como"},
-                {t:"última corrida"},{t:"próxima"},{t:""}], jobs, linha)
+    (jobs.length ? `<div id="gradeJobs"></div>`
       : `<div class="vazio">nenhum job cadastrado ainda</div>`)
     + `<div class="acoes">
          <button class="botao incluir" id="btJobNovo">Novo job…</button>
@@ -9619,17 +9873,7 @@ async function telaJobs() {
        <h3>Aviso por e-mail</h3>
        <div class="nota">${quadroAviso}</div>
        <h3>Últimas corridas</h3>
-       ${hist.length ? tabela(
-          [{t:"quando"},{t:"job"},{t:"operação"},{t:"como"},{t:"resultado"},
-           {t:"ms",cls:"num"},{t:"detalhe"}],
-          hist, h => `<tr><td class="dado">${esc(h.quando)}</td>
-            <td class="dado">${esc(h.job)}</td>
-            <td class="dado">${esc(h.op)}</td>
-            <td class="dado">${esc(h.usuario) || "—"}</td>
-            <td>${h.ok ? '<span class="pino ok">ok</span>'
-                       : '<span class="pino mal">falhou</span>'}</td>
-            <td class="num">${fmt(h.duracao_ms)}</td>
-            <td class="dado prof-pedido" title="${esc(h.detalhe)}">${esc(h.detalhe)}</td></tr>`)
+       ${hist.length ? `<div id="gradeJobsHist"></div>`
         : `<div class="vazio">nenhuma corrida registrada</div>`}
        <div class="nota">
          <p><strong>Um job roda com o poder do usuário dele</strong>, e nem um
@@ -9652,33 +9896,88 @@ async function telaJobs() {
 
   $("#btJobVer").onclick = () => telaJobs();
   $("#btJobNovo").onclick = () => editarJob(null);
-  // `filter`, e não `find`: cada botão precisa do próprio ouvinte. Ligar só o
-  // primeiro é exatamente o defeito que o vídeo achou no `rownum`.
-  $$("#painel .bt-rodar").forEach(b => b.onclick = async ev => {
-    ev.stopPropagation();
-    await rodarJob(b.dataset.n);
-  });
-  $$("#painel .bt-ligar").forEach(b => b.onclick = async ev => {
-    ev.stopPropagation();
-    const ligar = b.dataset.l === "1";
-    try {
-      const r = await api("job_ligar", { nome: b.dataset.n, ligado: ligar });
-      avisar(`job ${b.dataset.n} ${ligar ? "ligado" : "desligado"}`);
-      if (ligar && !r.relogio_no_ar) {
-        avisar("ligado — mas o relógio de jobs não subiu neste arranque: "
-             + "reinicie para ele andar sozinho, ou rode pela tela.", true);
+
+  // PADRONIZACAO: PhxGrid. O clique simples de antes (a linha inteira) vira
+  // botao na primeira coluna; as tres acoes (Rodar/Ligar/Excluir) continuam
+  // botao proprio, so que por DELEGACAO -- o corpo do grid e reescrito a cada
+  // ordenacao/filtro/agrupamento, e o `$$().forEach` de antes so ligava o
+  // primeiro clique porque a tabela a mao nunca era redesenhada sozinha.
+  if (jobs.length) {
+    PhxGrid.criar("#gradeJobs", {
+      agrupavel: true, buscaGlobal: true, filterRow: true,
+      lembrar: "jobs",
+      nomeVista: "jobs",
+      colunas: [
+        { campo:"nome", titulo:txt("tela.col_nome_curto","nome"), fixa:"esq",
+          formato:(v, l) => `<button class="botao mini alterar bt-job" data-n="${esc(v)}"
+            ><b>${esc(v)}</b></button>${l.descricao ? `<div class="leg">${esc(l.descricao)}</div>` : ""}` },
+        { campo:"estado", titulo:txt("tela.col_estado","estado"), formato:(_, l) => pinoEstado(l) },
+        { campo:"agenda", titulo:txt("tela.col_agenda","agenda") },
+        { campo:"op", titulo:txt("tela.col_operacao","operação") },
+        { campo:"usuario", titulo:txt("tela.col_roda_como","roda como"),
+          formato:v => v ? esc(v) : `<span class="leg">sem cadastro</span>` },
+        { campo:"ultima", titulo:txt("tela.col_ultima_corrida","última corrida"), formato:(_, l) => celUltima(l) },
+        { campo:"proximo_ms", titulo:txt("tela.col_proxima","próxima"), formato:(_, l) => celProxima(l) },
+        { campo:"__acoes", titulo:"", ordenavel:false, filtravel:false,
+          formato:(_, l) => `
+            <button class="botao mini alterar bt-rodar" title="roda agora, fora da agenda"
+              data-n="${esc(l.nome)}">Rodar</button>
+            <button class="botao mini alterar bt-ligar" data-n="${esc(l.nome)}"
+              data-l="${l.ligado ? 0 : 1}">${l.ligado ? "Desligar" : "Ligar"}</button>
+            <button class="botao mini excluir bt-excluir" data-n="${esc(l.nome)}">Excluir</button>` },
+      ],
+      dados: jobs,
+      pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+      aoAbrirLinha: l => editarJob(l.nome),
+    });
+
+    $("#gradeJobs").addEventListener("click", async ev => {
+      const bJob = ev.target.closest(".bt-job");
+      if (bJob) return editarJob(bJob.dataset.n);
+
+      const bRodar = ev.target.closest(".bt-rodar");
+      if (bRodar) return rodarJob(bRodar.dataset.n);
+
+      const bLigar = ev.target.closest(".bt-ligar");
+      if (bLigar) {
+        const ligar = bLigar.dataset.l === "1";
+        try {
+          const r = await api("job_ligar", { nome: bLigar.dataset.n, ligado: ligar });
+          avisar(`job ${bLigar.dataset.n} ${ligar ? "ligado" : "desligado"}`);
+          if (ligar && !r.relogio_no_ar) {
+            avisar("ligado — mas o relógio de jobs não subiu neste arranque: "
+                 + "reinicie para ele andar sozinho, ou rode pela tela.", true);
+          }
+        } catch (e) { avisar(`${e}`, true); }
+        return telaJobs();
       }
-    } catch (e) { avisar(`${e}`, true); }
-    telaJobs();
+
+      const bExcluir = ev.target.closest(".bt-excluir");
+      if (bExcluir) {
+        if (!confirm(`Excluir o job ${bExcluir.dataset.n}? O histórico das corridas dele fica.`)) return;
+        try { await api("job_excluir", { nome: bExcluir.dataset.n }); avisar(`job ${bExcluir.dataset.n} excluído`); }
+        catch (e) { avisar(`${e}`, true); }
+        return telaJobs();
+      }
+    });
+  }
+
+  if (hist.length) PhxGrid.criar("#gradeJobsHist", {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    colunas: [
+      { campo:"quando", titulo:txt("tela.col_quando","quando"), fixa:"esq" },
+      { campo:"job", titulo:txt("tela.col_job","job") },
+      { campo:"op", titulo:txt("tela.col_operacao","operação") },
+      { campo:"usuario", titulo:txt("tela.col_como","como"), formato:v => v ? esc(v) : "—" },
+      { campo:"ok", titulo:txt("tela.col_resultado","resultado"),
+        formato:v => v ? '<span class="pino ok">ok</span>' : '<span class="pino mal">falhou</span>' },
+      { campo:"duracao_ms", titulo:txt("tela.col_ms","ms"), tipo:"numero", formato:fmt },
+      { campo:"detalhe", titulo:txt("tela.col_detalhe","detalhe"),
+        formato:v => `<span class="prof-pedido" title="${esc(v)}">${esc(v)}</span>` },
+    ],
+    dados: hist,
+    pagina: { tamanho: 100, opcoes: [50, 100, 200] },
   });
-  $$("#painel .bt-excluir").forEach(b => b.onclick = async ev => {
-    ev.stopPropagation();
-    if (!confirm(`Excluir o job ${b.dataset.n}? O histórico das corridas dele fica.`)) return;
-    try { await api("job_excluir", { nome: b.dataset.n }); avisar(`job ${b.dataset.n} excluído`); }
-    catch (e) { avisar(`${e}`, true); }
-    telaJobs();
-  });
-  $$("#painel .linha-job").forEach(tr => tr.onclick = () => editarJob(tr.dataset.n));
 }
 
 async function rodarJob(nome) {
@@ -10427,29 +10726,7 @@ async function telaDadosPessoais(db) {
      </div>` : ""}
 
      ${achados.length
-       ? tabela([{t:"base"},{t:"tabela"},{t:"coluna"},{t:"grau"},{t:"rótulo"},
-                 {t:"tipo"},{t:"índices"},{t:"descrição"},{t:"trilha"}],
-           achados, a => `<tr class="linha-lg" data-db="${esc(a.base)}"
-             data-tab="${esc(a.tabela)}">
-             <td class="dado">${esc(a.base)}</td>
-             <td class="dado">${esc(a.tabela)}</td>
-             <td class="dado"><b>${esc(a.coluna.coluna)}</b></td>
-             <!-- crua porque o grau é o texto GRAVADO no esquema (pessoal /
-                  sensivel), e o pino normal o mostraria em caixa alta.
-                  Pino é enfeite; isto é dado. -->
-             <td><span class="pino crua ${a.coluna.grau === "sensivel" ? "log" : "ndx"}"
-                >${esc(a.coluna.grau)}</span></td>
-             <td><span class="rot-dado">${esc(a.coluna.rotulo || "—")}</span></td>
-             <td class="dado">${esc(a.coluna.tipo)}</td>
-             <!-- crua tambem aqui: o indice se chama porNome, e o pino
-                  normal o mostraria PORNOME. Nome de indice e dado. -->
-             <td>${(a.coluna.nos_indices || []).length
-                    ? `<span class="pino crua reg">${esc((a.coluna.nos_indices || []).join(", "))}</span>`
-                    : `<span class="leg">—</span>`}</td>
-             <td>${esc(a.coluna.descricao || "")}</td>
-             <td><button class="botao mini consultar trilha-lg"
-               data-db="${esc(a.base)}" data-tab="${esc(a.tabela)}"
-               >quem mexeu</button></td></tr>`)
+       ? `<div id="gradeLgpd"></div>`
        : (nadaClassificado ? "" : `<div class="vazio">nenhuma coluna marcada como dado
            pessoal nas ${fmt(colunasVistas)} colunas varridas</div>`)}
 
@@ -10480,19 +10757,55 @@ async function telaDadosPessoais(db) {
 
   $("#btLgVer").onclick = () => telaDadosPessoais($("#lgDb").value || null);
   $("#lgDb").onchange = ev => telaDadosPessoais(ev.target.value || null);
-  // O clique na LINHA leva ao lugar onde se AGE -- a Estrutura da tabela, com
-  // a coluna LGPD -- porque e o que a nota logo acima promete. A trilha ("quem
-  // mexeu") e outra pergunta e ganhou botao proprio: a bateria de frontend
-  // pegou esta divergencia no merge de duas frentes que consertaram a mesma
-  // tela por caminhos diferentes, e cada uma ligou o clique ao seu destino.
-  $$("#painel .linha-lg").forEach(tr => tr.onclick = ev => {
-    if (ev.target.closest(".trilha-lg")) return;
-    abrirTabela(tr.dataset.db, tr.dataset.tab).then(() => irAba("estrutura"));
-  });
-  $$("#painel .trilha-lg").forEach(b => b.onclick = ev => {
-    ev.stopPropagation();
-    telaTrilhaLgpd(b.dataset.db, b.dataset.tab);
-  });
+
+  if (achados.length) {
+    // PADRONIZACAO: PhxGrid. O clique simples de antes (a linha inteira) ia
+    // para a Estrutura da tabela, com a coluna LGPD -- e vira botao na coluna
+    // "tabela". A trilha ("quem mexeu") continua botao proprio -- ela sempre
+    // foi outra pergunta, por isso ja tinha o proprio destino antes.
+    PhxGrid.criar("#gradeLgpd", {
+      agrupavel: true, buscaGlobal: true, filterRow: true,
+      lembrar: "lgpd:" + (db || "todas"),
+      nomeVista: "lgpd-" + (db || "todas"),
+      colunas: [
+        { campo:"base", titulo:txt("tela.col_base","base") },
+        { campo:"tabela", titulo:txt("tela.col_tabela","tabela"), fixa:"esq",
+          formato:(v, l) => `<button class="botao mini consultar bt-lg" data-db="${esc(l.base)}"
+            data-tab="${esc(v)}">${esc(v)}</button>` },
+        { campo:"coluna_nome", titulo:txt("tela.col_coluna","coluna"), formato:v => `<b>${esc(v)}</b>` },
+        // crua porque o grau e o texto GRAVADO no esquema (pessoal/sensivel),
+        // e o pino normal o mostraria em caixa alta -- pino e enfeite, isto e
+        // dado. E o mesmo cuidado para os indices, duas linhas abaixo.
+        { campo:"grau", titulo:txt("tela.col_grau","grau"),
+          formato:v => `<span class="pino crua ${v === "sensivel" ? "log" : "ndx"}">${esc(v)}</span>` },
+        { campo:"rotulo", titulo:txt("tela.col_rotulo","rótulo"),
+          formato:v => `<span class="rot-dado">${esc(v || "—")}</span>` },
+        { campo:"tipo", titulo:txt("tela.col_tipo","tipo") },
+        { campo:"nos_indices", titulo:txt("tela.col_indices","índices"),
+          formato:v => (v || []).length
+            ? `<span class="pino crua reg">${esc(v.join(", "))}</span>`
+            : `<span class="leg">—</span>` },
+        { campo:"descricao", titulo:txt("tela.col_descricao","descrição") },
+        { campo:"__trilha", titulo:txt("tela.col_trilha","trilha"), ordenavel:false, filtravel:false,
+          formato:(_, l) => `<button class="botao mini consultar trilha-lg"
+            data-db="${esc(l.base)}" data-tab="${esc(l.tabela)}">quem mexeu</button>` },
+      ],
+      dados: achados.map(a => ({
+        base: a.base, tabela: a.tabela, coluna_nome: a.coluna.coluna,
+        grau: a.coluna.grau, rotulo: a.coluna.rotulo, tipo: a.coluna.tipo,
+        nos_indices: a.coluna.nos_indices, descricao: a.coluna.descricao,
+      })),
+      pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+      aoAbrirLinha: l => abrirTabela(l.base, l.tabela).then(() => irAba("estrutura")),
+    });
+
+    $("#gradeLgpd").addEventListener("click", ev => {
+      const bTrilha = ev.target.closest(".trilha-lg");
+      if (bTrilha) return telaTrilhaLgpd(bTrilha.dataset.db, bTrilha.dataset.tab);
+      const bLg = ev.target.closest(".bt-lg");
+      if (bLg) abrirTabela(bLg.dataset.db, bLg.dataset.tab).then(() => irAba("estrutura"));
+    });
+  }
 }
 
 /* ------------------------------------------------------- a trilha `.lgpd`
@@ -10638,10 +10951,25 @@ async function verDiretivas() {
 async function verBancos() {
   const bancos = await api("bancos");
   folha("Bancos de dados", "o que existe em disco, sob a raiz do servidor",
-    tabela([{t:"database"},{t:"tabelas",cls:"num"}], bancos,
-      b => `<tr><td class="dado">${esc(b.nome || b)}</td>
-        <td class="num">${esc(String(b.tabelas ?? "—"))}</td></tr>`)
+    `<div id="gradeBancos"></div>`
     + `<p class="leg">Criar um novo: menu <b>Arquivo → Novo database</b>.</p>`);
+
+  // PADRONIZACAO: PhxGrid. Sem clique proprio -- entrar num database e pela
+  // arvore lateral, nao por aqui.
+  PhxGrid.criar("#gradeBancos", {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    lembrar: "bancos",
+    nomeVista: "bancos",
+    colunas: [
+      { campo:"nome", titulo:txt("tela.col_database","database"), fixa:"esq" },
+      { campo:"tabelas", titulo:txt("tela.col_tabelas_pl","tabelas"), tipo:"numero",
+        agregador:"sum", formato:v => v ?? "—" },
+    ],
+    // `bancos` pode vir como lista de nomes crus OU de fichas {nome,tabelas}
+    // -- normaliza uma vez aqui, em vez de duas leituras no `formato`.
+    dados: bancos.map(b => typeof b === "string" ? { nome: b } : { nome: b.nome, tabelas: b.tabelas }),
+    pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+  });
 }
 
 /* A tela da replicação. Ela mostra a POSIÇÃO de cada tabela, que é o número
@@ -12510,28 +12838,54 @@ async function liberarDaMemoria() {
 
 async function verResidentes() {
   const r = await api("memoria");
-  const linhas = r.tabelas || r || [];
+  // Achado exercitando esta tela para a prova da PhxGrid: a op `memoria`
+  // devolve `residentes`, e nao `tabelas` -- a tela sempre leu o campo
+  // errado, e por isso sempre mostrou "nenhuma tabela na RAM" mesmo com
+  // tabela carregada. Bug pre-existente, sem relacao com o grid; corrigido
+  // aqui porque sem ele a conversao nao tinha como ser exercitada de verdade.
+  const linhas = r.residentes || r.tabelas || r || [];
+  const tem = Array.isArray(linhas) && linhas.length;
   folha("Tabelas em memória", "carregadas na RAM · a consulta não toca o disco",
-    Array.isArray(linhas) && linhas.length
-      ? tabela([{t:"tabela"},{t:"linhas",cls:"num"},{t:"bytes",cls:"num"},{t:"carregada em"}],
-          linhas, t => `<tr><td class="dado">${esc(t.tabela || t.nome || "—")}</td>
-            <td class="num">${esc(String(t.linhas ?? "—"))}</td>
-            <td class="num">${esc(String(t.bytes ?? "—"))}</td>
-            <td class="dado">${esc(String(t.carregada_em ?? "—"))}</td></tr>`)
-      : `<div class="centro">nenhuma tabela na RAM</div>`);
+    tem ? `<div id="gradeResidentes"></div>` : `<div class="centro">nenhuma tabela na RAM</div>`);
+
+  // PADRONIZACAO: PhxGrid. Sem clique proprio -- liberar da RAM e pelo menu
+  // da tabela (o `liberarDaMemoria` de `est.atual`), nao daqui.
+  if (tem) PhxGrid.criar("#gradeResidentes", {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    lembrar: "residentes",
+    nomeVista: "residentes",
+    colunas: [
+      { campo:"tabela", titulo:txt("tela.col_tabela","tabela"), fixa:"esq",
+        formato:(v, l) => esc(v || l.nome || "—") },
+      { campo:"linhas", titulo:txt("tela.col_linhas","linhas"), tipo:"numero", agregador:"sum", formato:v => v ?? "—" },
+      { campo:"bytes", titulo:txt("tela.col_bytes","bytes"), tipo:"numero", agregador:"sum", formato:v => v ?? "—" },
+      { campo:"carregada_em", titulo:txt("tela.col_carregada_em","carregada em"), formato:v => v ?? "—" },
+    ],
+    dados: linhas,
+    pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+  });
 }
 
 async function verIps() {
   const r = await api("ips");
   const linhas = Array.isArray(r) ? r : (r.ips || []);
   folha("De onde vêm", "resumo do acessos.log por IP",
-    linhas.length
-      ? tabela([{t:"IP"},{t:"acessos",cls:"num"},{t:"recusados",cls:"num"},{t:"último"}],
-          linhas, i => `<tr><td class="dado">${esc(i.ip)}</td>
-            <td class="num">${esc(String(i.acessos ?? 0))}</td>
-            <td class="num">${esc(String(i.recusados ?? 0))}</td>
-            <td class="dado">${esc(String(i.ultimo ?? "—"))}</td></tr>`)
-      : `<div class="centro">nenhum acesso registrado</div>`);
+    linhas.length ? `<div id="gradeIps"></div>` : `<div class="centro">nenhum acesso registrado</div>`);
+
+  // PADRONIZACAO: PhxGrid. Sem clique proprio -- e so o resumo do log.
+  if (linhas.length) PhxGrid.criar("#gradeIps", {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    lembrar: "ips",
+    nomeVista: "ips",
+    colunas: [
+      { campo:"ip", titulo:txt("tela.col_ip","IP"), fixa:"esq" },
+      { campo:"acessos", titulo:txt("tela.col_acessos","acessos"), tipo:"numero", agregador:"sum", formato:v => v ?? 0 },
+      { campo:"recusados", titulo:txt("tela.col_recusados","recusados"), tipo:"numero", agregador:"sum", formato:v => v ?? 0 },
+      { campo:"ultimo", titulo:txt("tela.col_ultimo","último"), formato:v => v ?? "—" },
+    ],
+    dados: linhas,
+    pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+  });
 }
 
 /* O que cada ajuste de `recursos` faz, em uma linha.
@@ -12588,22 +12942,12 @@ async function verConfig() {
   let cargas = null;
   try { cargas = await api("cargas"); } catch (e) { /* sem poder: segue */ }
 
-  const linhasRec = Object.entries(r).map(([k, v]) => {
-    const diz = DIZ_RECURSO[k] || ["", ""];
-    return `<tr>
-      <td class="dado"><b>${esc(k)}</b></td>
-      <td class="num">${esc(String(v))}</td>
-      <td>${esc(diz[0])}${diz[1] ? `<br><span class="leg">${esc(diz[1])}</span>` : ""}</td>
-    </tr>`;
-  }).join("");
-
-  const linhasCargas = (cargas && cargas.cargas || []).map(x => `<tr>
-      <td class="dado"><b>${esc(x.database)}.${esc(x.tabela)}</b></td>
-      <td class="dado">${esc(x.usuario || "—")}</td>
-      <td class="num">${esc(String(x.ligacao))}</td>
-      <td class="dado">${esc(x.desde)}</td>
-      <td class="num">${fmt(Math.round(x.expira_em_s))} s</td>
-    </tr>`).join("");
+  // As duas linhas de dados de verdade: um par [campo,valor] do JSON e uma
+  // carga em andamento. `k`/`v` do laco de recursos ficam DADO, e por isso
+  // nao passam pela fabrica -- e o mesmo motivo de `verConteudoEditavel` usar
+  // o nome de coluna como titulo direto.
+  const linhasRec = Object.entries(r).map(([k, v]) => ({ campo: k, valor: v }));
+  const linhasCargas = (cargas && cargas.cargas) || [];
 
   folha("Configuração", "o config.json como o servidor o entendeu · o token nunca sai",
     `<div class="acoes">
@@ -12613,15 +12957,13 @@ async function verConfig() {
      <h3 class="secao">Recursos</h3>
      <p class="leg">O que o servidor pode consumir e — o mais importante —
        <b>quando</b> o que foi gravado vai de fato para o disco.</p>
-     ${tabela([{t:"campo"},{t:"valor",cls:"num"},{t:"o que faz"}],
-              [0], () => linhasRec)}
+     <div id="gradeRecursos"></div>
 
      <h3 class="secao">Cargas em andamento</h3>
      ${cargas === null
        ? `<div class="nota"><p>A lista de cargas exige <b>administrar</b>.</p></div>`
        : (cargas.total
-          ? `${tabela([{t:"tabela"},{t:"usuário"},{t:"ligação",cls:"num"},
-                       {t:"desde"},{t:"expira em",cls:"num"}], [0], () => linhasCargas)}
+          ? `<div id="gradeCargas"></div>
              <p class="leg">Enquanto reservada, a tabela recusa todo mundo com
                <code>EM_CARGA</code> — inclusive a leitura. Solta na queda da
                conexão, ou quando o prazo vence.</p>`
@@ -12638,6 +12980,40 @@ async function verConfig() {
 
   const bt = $("#cfIrGerais");
   if (bt) bt.onclick = verConfigServidor;
+
+  // PADRONIZACAO: PhxGrid, as duas. Nenhuma tinha clique proprio -- e o
+  // "espelho" do que o servidor leu, e mudar e por Gerais do servidor.
+  PhxGrid.criar("#gradeRecursos", {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    lembrar: "config-recursos",
+    nomeVista: "config-recursos",
+    colunas: [
+      { campo:"campo", titulo:txt("tela.col_campo","campo"), fixa:"esq", formato:v => `<b>${esc(v)}</b>` },
+      { campo:"valor", titulo:txt("tela.col_valor","valor"), tipo:"numero", formato:v => esc(String(v)) },
+      { campo:"__oQueFaz", titulo:txt("tela.col_o_que_faz","o que faz"),
+        formato:(_, l) => {
+          const diz = DIZ_RECURSO[l.campo] || ["", ""];
+          return `${esc(diz[0])}${diz[1] ? `<br><span class="leg">${esc(diz[1])}</span>` : ""}`;
+        } },
+    ],
+    dados: linhasRec,
+  });
+
+  if (cargas && cargas.total) PhxGrid.criar("#gradeCargas", {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    lembrar: "config-cargas",
+    nomeVista: "config-cargas",
+    colunas: [
+      { campo:"tabela", titulo:txt("tela.col_tabela","tabela"), fixa:"esq",
+        formato:(v, l) => `<b>${esc(l.database)}.${esc(v)}</b>` },
+      { campo:"usuario", titulo:txt("tela.col_usuario","usuário"), formato:v => esc(v || "—") },
+      { campo:"ligacao", titulo:txt("tela.col_ligacao","ligação"), tipo:"numero" },
+      { campo:"desde", titulo:txt("tela.col_desde","desde") },
+      { campo:"expira_em_s", titulo:txt("tela.col_expira_em","expira em"), tipo:"numero",
+        formato:v => `${fmt(Math.round(v))} s` },
+    ],
+    dados: linhasCargas,
+  });
 }
 
 async function verQuemSou() {
