@@ -1337,8 +1337,17 @@ impl Table {
         match self.troca_de(rowid) {
             None => match payload {
                 Some(p) => self.visao_aceita_payload(p, visao),
-                None => match self.ler_do_disco(rowid)? {
-                    Some(l) => Ok(visao.aceita(self.esta_excluida(&l))),
+                // SEM o payload na mao, LE O PAYLOAD -- e nao a linha.
+                //
+                // A primeira versao disto chamava `ler_do_disco`, que decodifica
+                // COM os anexos: cada rowid filtrado passava a pagar a leitura
+                // do `.bin` e do `.memo` para olhar UM bit da coluna de sistema.
+                // O `filtrar` e o caminho quente da varredura por indice, entao
+                // isso multiplicava por linha da tabela inteira -- e nao apareceu
+                // na primeira medicao porque a tabela de prova nao tinha coluna
+                // externa. Tabela sem anexo nao distingue os dois caminhos.
+                None => match self.reg.ler(rowid)? {
+                    Some(p) => self.visao_aceita_payload(&p, visao),
                     None => Ok(false),
                 },
             },

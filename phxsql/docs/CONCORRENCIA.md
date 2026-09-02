@@ -154,6 +154,60 @@ uma catástrofe. As **27 seções de leitura com varredura** (1.795 linhas) pass
 a ser as candidatas — mas isso é **hipótese, não conclusão**: elas ainda não
 foram medidas em tempo de trava, e trocar um palpite por outro não é medir.
 
+### As 27 de varredura, medidas — e o alvo é UMA delas
+
+Feito em 02/09 com `bancada/concorrencia/custo-da-varredura.py`, numa tabela de
+50.000 linhas com coluna `Memo`. O arnês mede **dois vizinhos** e a diferença
+entre eles é o experimento inteiro: o `ping` **não toma a trava** (responde
+direto no despachar) e o `ler` **toma**. Sem esse par, a primeira rodada quase
+publicou *«a varredura de 357 ms não atrapalha ninguém»* — o instrumento não
+passava pelo que devia medir.
+
+| a varredura | dura | o vizinho que toma a trava espera |
+|---|---:|---:|
+| ordem de digitação, qualquer `pular` | 4,2–6,1 ms | 2,1–4,2 ms |
+| **por ÍNDICE** | **192,5 ms** | **190,0 ms — 1.847× a base** |
+
+**Duas conclusões, e a primeira derruba outra premissa.**
+
+**O `pular` NÃO anda linha a linha.** `pular 10.000` e `pular 190.000` custam o
+mesmo, porque `pagina_por_posicao` bisseta pelo `rownum` — vinte leituras, não
+cento e noventa mil. A frase «o `OFFSET` do SQL anda até lá» é verdadeira em
+outros motores e **falsa aqui**.
+
+**O caminho por ÍNDICE segura a trava por 98,7% da própria duração**, e é 40×
+mais longo. A causa está no `op_varrer`: por índice ele faz
+`varrer_indice` (todos os rowids, em ordem de chave) → `filtrar` (que **lê cada
+um**) → `skip(pular).take(max)`. O custo cresce com a **tabela**, e não com a
+página — que é exatamente o defeito que a paginação por cursor existe para não
+ter, sobrevivendo no caminho por índice.
+
+**O alvo da SP000011 muda de forma:** não é «encurtar as 27», é **fazer o
+caminho por índice paginar**. O `.ndx` é uma B+tree; descer até a posição e ler
+só a página é o que o caminho de digitação já faz. Enquanto isso não existe,
+uma consulta ordenada por índice numa tabela grande **para o servidor inteiro**
+pelo tempo dela.
+
+### A regressão que esta medição achou, e ela era minha
+
+Medindo, apareceu que o `filtrar` — o laço quente acima — passou a decodificar
+a linha **com os anexos** (`.bin` e `.memo`) para olhar **um bit** da coluna de
+sistema. Entrou na SP000006, junto com a sobreposição do read-your-own-writes,
+e **não apareceu na primeira medição porque a tabela de prova não tinha coluna
+externa**.
+
+Prova real, na mesma tabela com `Memo`:
+
+| | dura | o vizinho espera |
+|---|---:|---:|
+| com o defeito | 101,9 ms | 96,9 ms |
+| **sem o defeito** | **40,9 ms** | **34,7 ms** |
+
+**2,5× mais rápida, e 2,8× menos espera para quem está na fila.** O conserto é
+ler o *payload* e perguntar ao byte da coluna de sistema, em vez de montar a
+linha inteira — que é o que o código fazia antes de eu mexer, e o que o
+`visao_aceita_payload` já sabia fazer.
+
 **(c) Nenhuma seção atravessa a rede.** O conserto registrado na §4.13 do
 `DESEMPENHO.md` **continua valendo**, e o mapa o confirma por outro caminho,
 sem ler aquele documento: zero seções na classe `rede-ou-espera`.
