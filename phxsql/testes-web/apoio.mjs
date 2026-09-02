@@ -137,6 +137,61 @@ export async function cenario(page, db, tab = 'clientes') {
  * linha cuja celula `rowid` bate, que e como o caso da ficha precisa. Linha
  * de GRUPO (`.phx-grupo`) nunca conta: ela nao e linha de dado, e a propria
  * grade a recusa no `aoAbrirLinha`. */
+/** Clica -- e se nao conseguir, DIZ POR QUE em vez de dizer «timeout».
+ *
+ *  Nasceu da SP000056. O caso da telemetria estourava com
+ *  `page.click: Timeout 30000ms exceeded. waiting for locator(...)`, e essa
+ *  frase nao distingue as cinco coisas diferentes que o Playwright espera
+ *  antes de clicar: existir, estar visivel, estar PARADO, receber o evento, e
+ *  estar habilitado. Sem saber qual delas falhou, o diagnostico vira palpite
+ *  -- e eu errei quatro seguidos por causa disso: chamei de flake, depois de
+ *  regressao, depois de layout, depois de timeout curto.
+ *
+ *  O que ela mede no instante da falha, que e o unico instante que importa:
+ *  onde o alvo esta, onde a janela esta, se ele rolou para dentro, e SOBRETUDO
+ *  **quem esta no ponto do clique** -- porque «elemento coberto por outro» e a
+ *  causa que mais se parece com «timeout» e menos se parece com ela mesma.
+ *
+ *  Nao muda o veredito: o que falhava continua falhando. Muda o que a falha
+ *  CONTA. */
+export async function clicarOuExplicar(page, seletor, opc = {}) {
+  try {
+    await page.click(seletor, opc);
+    return;
+  } catch (erro) {
+    const diag = await page.evaluate(sel => {
+      const alvo = document.querySelector(sel);
+      if (!alvo) return { achou: false };
+      alvo.scrollIntoView({ block: 'center' });
+      const r = alvo.getBoundingClientRect();
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      const noPonto = document.elementFromPoint(cx, cy);
+      const quem = e => !e ? 'NADA (ponto fora da janela)'
+        : `${e.tagName}${e.id ? '#' + e.id : ''}${e.className && typeof e.className === 'string'
+            ? '.' + e.className.trim().split(/\s+/).join('.') : ''}`;
+      const cs = getComputedStyle(alvo);
+      return {
+        achou: true,
+        alvo: quem(alvo),
+        caixa: `${Math.round(r.width)}x${Math.round(r.height)} em (${Math.round(r.left)},${Math.round(r.top)})`,
+        janela: `${innerWidth}x${innerHeight}`,
+        dentroDaJanela: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth,
+        display: cs.display, visibility: cs.visibility, opacidade: cs.opacity,
+        ponteiro: cs.pointerEvents,
+        desabilitado: !!alvo.disabled,
+        // A pergunta decisiva: quem responde no ponto do clique? Se nao for o
+        // alvo nem filho dele, o Playwright fica tentando para sempre.
+        noPontoDoClique: quem(noPonto),
+        ehOAlvoOuFilho: !!noPonto && (noPonto === alvo || alvo.contains(noPonto)),
+      };
+    }, seletor).catch(e => ({ achou: 'a sonda nao rodou: ' + e.message }));
+    throw new Falha(
+      `nao consegui clicar em ${seletor} -- e o estado no instante da falha:\n`
+      + `      ${JSON.stringify(diag, null, 2).replace(/\n/g, '\n      ')}\n`
+      + `      (erro original: ${String(erro.message).split('\n')[0]})`);
+  }
+}
+
 export async function abrirLinhaDaGrade(page, { em = '#painel', rowid = null } = {}) {
   const linha = `${em} .phx-grid tbody tr:not(.phx-grupo)`;
   await page.waitForSelector(linha, { timeout: 15000 });

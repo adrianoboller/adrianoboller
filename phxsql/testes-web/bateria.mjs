@@ -26,7 +26,9 @@
  * verde numa correcao que ainda nao existe. Esta bateria RECUSA rodar nesse
  * caso -- ver `conferirBinario()`. */
 import { chromium } from '/opt/node22/lib/node_modules/playwright/index.mjs';
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -82,6 +84,72 @@ function conferirBinario(phxsqld) {
   }
 }
 
+// ------------------------------------------------- a interface ao menos PARSEIA?
+/** Recusa rodar quando algum script de `ui/` nao compila.
+ *
+ * O caso que a fez nascer: um comentario dentro de um template literal do
+ * `telemetria.js` trazia a palavra `toggle` entre CRASES, e a crase fechou a
+ * string. O arquivo inteiro deixou de compilar, `PhxTelemetria` virou
+ * undefined, e a bateria reprovou 31 casos nos dois temas com quatro
+ * mensagens diferentes -- `Unexpected identifier`, `PhxTelemetria is not
+ * defined` em `campoDeCor`, em `telaTelemetria`, em `verConfigServidor` --
+ * nenhuma delas apontando o arquivo nem a linha.
+ *
+ * A bateria JA pegava o defeito; o que faltava era ela DIZER o que era. Um
+ * erro de sintaxe nao e assunto de teste de ponta a ponta: e portao, e vem
+ * antes de subir servidor e abrir navegador. Uma linha nomeando arquivo e
+ * numero vale as 31 reprovacoes.
+ *
+ * Cobre os `.js` e tambem os `<script>` embutidos nos `.html` -- e nos
+ * embutidos que a armadilha mora, porque a pagina e um `include_str!` de
+ * quinze mil linhas onde o mesmo descuido some. */
+function conferirSintaxeDaInterface() {
+  const ui = join(RAIZ, 'crates', 'phxsql-server', 'ui');
+  const tmp = mkdtempSync(join(tmpdir(), 'phx-sintaxe-'));
+  const quebrados = [];
+
+  const checar = (rotulo, fonte, linhaBase) => {
+    // As linhas em branco na frente fazem o numero que o node reporta bater
+    // com o numero DO ARQUIVO DE VERDADE. Sem isso o portao diz «linha 8» de
+    // um pedaco que ninguem consegue achar.
+    const arq = join(tmp, 'p.js');
+    writeFileSync(arq, '\n'.repeat(linhaBase) + fonte);
+    const r = spawnSync(process.execPath, ['--check', arq], { encoding: 'utf8' });
+    if (r.status !== 0) {
+      const linhas = String(r.stderr).split('\n');
+      const util = linhas.filter(l => l.trim() && !/^\s+at /.test(l))
+        .map(l => l.replace(arq, rotulo)).slice(0, 6);
+      quebrados.push(`${rotulo}:\n      ${util.join('\n      ')}`);
+    }
+  };
+
+  const andar = d => {
+    for (const e of readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1)) {
+      const p = join(d, e.name);
+      if (e.isDirectory()) { andar(p); continue; }
+      if (e.name.endsWith('.js')) {
+        checar(p, readFileSync(p, 'utf8'), 0);
+      } else if (e.name.endsWith('.html')) {
+        const html = readFileSync(p, 'utf8');
+        const re = /<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g;
+        let m;
+        while ((m = re.exec(html)) !== null) {
+          const antes = html.slice(0, m.index + m[0].indexOf('>') + 1);
+          checar(p, m[1], antes.split('\n').length - 1);
+        }
+      }
+    }
+  };
+  andar(ui);
+  rmSync(tmp, { recursive: true, force: true });
+
+  if (quebrados.length) {
+    throw new Error(
+      `${quebrados.length} script(s) de ui/ nao compilam -- a pagina nao roda assim:\n`
+      + `  ${quebrados.join('\n  ')}`);
+  }
+}
+
 // ------------------------------------------------------------------- casos
 async function carregarCasos() {
   const dir = join(AQUI, 'casos');
@@ -100,6 +168,9 @@ const diz = (...a) => console.log(...a);
 
 async function principal() {
   const phxsqld = join(RAIZ, 'target', 'release', 'phxsqld');
+  // A ORDEM IMPORTA: sintaxe antes do binario. Um script que nao compila
+  // reprova tudo depois de cinco minutos de bateria; recusar aqui custa 200 ms.
+  conferirSintaxeDaInterface();
   conferirBinario(phxsqld);
 
   const casos = await carregarCasos();

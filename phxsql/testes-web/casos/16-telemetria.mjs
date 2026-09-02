@@ -19,7 +19,7 @@
  *
  * Ele nao inventa dado: as threads sao as do servidor de verdade -- o ouvinte,
  * o amostrador, o aceitador e as da web que a propria bateria abriu. */
-import { entrar, capturar, verdade, igual } from '../apoio.mjs';
+import { entrar, capturar, verdade, igual, clicarOuExplicar } from '../apoio.mjs';
 
 /* POR QUE AS ESPERAS AQUI SAO LONGAS, e por que isso nao e tapar buraco.
  *
@@ -84,7 +84,7 @@ export const caso = {
     verdade(await page.$(GRADE) === null,
       'a grade nasceu com o painel fechado -- dentro de display:none ela mede largura zero');
 
-    await page.click('.tlm-threads summary');
+    await clicarOuExplicar(page, '.tlm-threads summary');
     await page.waitForSelector(LINHA, { timeout: 25000 });
 
     const resumo = await page.textContent('#tlmThreadsN');

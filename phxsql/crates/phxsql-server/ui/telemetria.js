@@ -609,6 +609,22 @@ window.PhxTelemetria = (function () {
     </div>
   </div>
 
+  <!-- O gestor de threads mora AQUI, logo abaixo dos botoes, e nao mais no
+       rodape. Medido: la embaixo ele ficava em y ~1.351 numa janela de 900 --
+       fora da dobra, atras das faixas e do grafico, que sao o que cresce.
+       Painel que so aparece depois de rolar uma tela e meia e painel que nao
+       existe para quem nao sabe que ele existe; e, por decisao do dono, era
+       provavel que algo o estivesse encobrindo la. Aqui em cima nao ha o que
+       o cubra: o que desenha depois desenha ABAIXO.
+       Nasce FECHADO, como sempre -- a grade dentro de um <details> fechado
+       mede largura zero, e por isso ela so e criada no primeiro toggle.
+       (Sem crase aqui: este comentario mora DENTRO de um template literal,
+       e uma crase fecha a string -- foi o que quebrou a pagina inteira.) -->
+  <details class="tlm-threads">
+    <summary>${esc(txt("tela.tl_gestor_threads", "Gestor de threads"))} <span id="tlmThreadsN"></span></summary>
+    <div class="rolo"><div id="tlmThreads"></div></div>
+  </details>
+
   <div class="tlm-faixas" id="tlmFaixas">
     <div class="tlm-faixa" id="tlmEsperas"></div>
     <div class="tlm-faixa" id="tlmDisco"></div>
@@ -674,10 +690,6 @@ window.PhxTelemetria = (function () {
     </aside>
   </div>
 
-  <details class="tlm-threads">
-    <summary>${esc(txt("tela.tl_gestor_threads", "Gestor de threads"))} <span id="tlmThreadsN"></span></summary>
-    <div class="rolo"><div id="tlmThreads"></div></div>
-  </details>
 </div>`;
   }
 
