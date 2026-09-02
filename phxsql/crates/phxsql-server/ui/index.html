@@ -2694,11 +2694,20 @@ async function vEstrutura(database, tabela_) {
     });
 
   if ((e.chaves_estrangeiras||[]).length) {
+    // A coluna «conferida» diz a diferenca entre declarar e impor, e ela e a
+    // unica coisa nesta tabela que muda o COMPORTAMENTO da gravacao. Sem ela,
+    // duas tabelas com a mesma chave apareceriam identicas na tela e se
+    // comportariam diferente -- que e mentira sobre o dado por omissao.
     h += `<h3>Chaves estrangeiras</h3>` + tabela(
-      [{t:"nome"},{t:"colunas"},{t:"referencia"},{t:"ao excluir"},{t:"ao alterar"}],
+      [{t:"nome"},{t:"colunas"},{t:"referencia"},
+       {t:txt("tela.fk_conferida","conferida")},
+       {t:"ao excluir"},{t:"ao alterar"}],
       e.chaves_estrangeiras, f =>
         `<tr><td class="dado">${esc(f.nome)}</td><td class="dado">${esc(f.colunas.join(", "))}</td>
          <td class="dado">${esc(f.tabela_ref)}(${esc(f.colunas_ref.join(", "))})</td>
+         <td>${f.verificar
+             ? `<span class="pino ok">${esc(txt("tela.fk_imposta","imposta"))}</span>`
+             : `<span class="pino nao">${esc(txt("tela.fk_so_declarada","só declarada"))}</span>`}</td>
          <td>${esc(f.ao_excluir)}</td><td>${esc(f.ao_alterar)}</td></tr>`);
   }
 

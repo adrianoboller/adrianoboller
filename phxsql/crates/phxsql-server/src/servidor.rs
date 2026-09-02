@@ -10161,6 +10161,11 @@ impl Servidor {
                     ),
                     ("ao_excluir", Json::texto_de(format!("{:?}", fk.ao_excluir))),
                     ("ao_alterar", Json::texto_de(format!("{:?}", fk.ao_alterar))),
+                    // Sem este campo, a ida-e-volta DESLIGA a conferencia em
+                    // silencio: quem le o esquema e o manda de volta para
+                    // `criar_tabela` perde a garantia sem nenhum aviso. O que
+                    // a operacao devolve tem de poder voltar como entrada.
+                    ("verificar", Json::Bool(fk.verificar)),
                 ])
             })
             .collect();
@@ -19976,7 +19981,7 @@ mod testes_chave_estrangeira {
     #[test]
     fn o_que_o_esquema_devolve_volta_como_criar_tabela() {
         let s = servidor(&dir_temp("ida-e-volta"));
-        com_fk(&s, r#","ao_excluir":"cascata""#).unwrap();
+        com_fk(&s, r#","ao_excluir":"cascata","verificar":true"#).unwrap();
         let e = pede(&s, r#""op":"esquema","database":"b","tabela":"pedidos""#).unwrap();
 
         let mut recriar = vec![
@@ -20011,6 +20016,15 @@ mod testes_chave_estrangeira {
             .unwrap()[0];
         assert_eq!(fk.texto_ou("nome", ""), "fk_cliente");
         assert_eq!(fk.texto_ou("ao_excluir", ""), "Cascata");
+        // O campo que a ida-e-volta perdia em silencio. Sem ele na resposta,
+        // recriar a tabela a partir do que o servidor devolveu DESLIGA a
+        // conferencia -- e ninguem seria avisado, porque o pedido continua
+        // valido e a tabela continua nascendo.
+        assert!(
+            fk.booleano_ou("verificar", false),
+            "a ida-e-volta desligou a conferencia: {}",
+            fk.escrever()
+        );
     }
 }
 

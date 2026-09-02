@@ -153,6 +153,11 @@ pub const FABRICA_TELA: &[TextoDeFabrica] = &[
 
     // ------------------------------------------------------------- a arvore
     texto!("tela.painel", "Painel", "Tableau de bord", "Dashboard", "Pannello", "Übersicht", "Panel"),
+    // A diferenca entre declarar e impor, na folha do esquema. Duas
+    // tabelas com a mesma chave apareceriam identicas sem isto.
+    texto!("tela.fk_conferida", "conferida", "vérifiée", "checked", "verificata", "geprüft", "verificada"),
+    texto!("tela.fk_imposta", "imposta", "imposée", "enforced", "imposta", "erzwungen", "impuesta"),
+    texto!("tela.fk_so_declarada", "só declarada", "seulement déclarée", "declared only", "solo dichiarata", "nur deklariert", "solo declarada"),
     texto!("tela.bancos_de_dados", "Bancos de dados", "Bases de données", "Databases", "Basi di dati", "Datenbanken", "Bases de datos"),
     texto!("tela.novo_database", "Novo database", "Nouvelle base", "New database", "Nuovo database", "Neue Datenbank", "Nueva base"),
     texto!("tela.adicionar_database", "Adicionar um database", "Ajouter une base", "Add a database", "Aggiungi un database", "Eine Datenbank hinzufügen", "Añadir una base"),
