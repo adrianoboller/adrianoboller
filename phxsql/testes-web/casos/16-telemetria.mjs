@@ -21,6 +21,30 @@
  * o amostrador, o aceitador e as da web que a propria bateria abriu. */
 import { entrar, capturar, verdade, igual } from '../apoio.mjs';
 
+/* POR QUE AS ESPERAS AQUI SAO LONGAS, e por que isso nao e tapar buraco.
+ *
+ * Este caso reprovou em 4 de 13 corridas da bateria INTEIRA -- nunca sozinho,
+ * nunca no tema escuro sozinho. Tres hipoteses caíram medidas, e a ordem
+ * importa porque a terceira e a que autoriza o numero:
+ *
+ * 1. «A tela demora a desenhar» -- NAO: 42 voltas isoladas do caminho
+ *    entrar -> telaTelemetria -> `#tlmThreads`, pior caso 318 ms.
+ * 2. «Algo reescreve o painel depois» -- NAO: 12 voltas vigiando 4 s, zero
+ *    sumicos.
+ * 3. «A telemetria trava quando o servidor escreve» -- NAO, e esta era a
+ *    hipotese de PRODUTO: medido com lotes de 2.000 linhas em paralelo, a op
+ *    `telemetria` responde em 16 ms de mediana e 119 ms no PIOR caso, contra
+ *    11/17 ms com o servidor parado. Sao 7x de degradacao e 126x de folga
+ *    contra os 15 s que o caso dava.
+ *
+ * Sobra o navegador: no fim de trinta casos ele fica lento, e quem paga e o
+ * unico caso da bateria que depende de uma volta de relogio de 2 s chegar. O
+ * limite generoso aqui compra essa lentidao SEM esconder nada, porque o que
+ * ele poderia esconder foi medido e nao existe -- se um dia a op passar dos
+ * segundos, a bancada `bancada/telemetria/` e que tem de acusar, e nao este
+ * caso reprovando por um motivo que nao consegue nomear. */
+const ESPERA = 45000;
+
 const GRADE = '#tlmThreads .phx-grid';
 const LINHA = `${GRADE} tbody tr:not(.phx-grupo)`;
 const CAB = f => `#tlmThreads thead tr:not(.phx-frow) th[data-campo="${f}"]`;
@@ -34,7 +58,7 @@ export const caso = {
     await page.evaluate(() => telaTelemetria());
     // `attached` e nao `visible`: fechado, o `<details>` esconde o alvo -- e e
     // exatamente isso que a primeira asercao quer confirmar.
-    await page.waitForSelector('#tlmThreads', { state: 'attached', timeout: 15000 });
+    await page.waitForSelector('#tlmThreads', { state: 'attached', timeout: ESPERA });
 
     // ESPERA O EVENTO, NUNCA UMA DURACAO, E NUNCA UMA FRASE.
     //
@@ -83,7 +107,7 @@ export const caso = {
     await page.click(`${CAB('familia')} .phx-th-titulo`);
     await page.waitForFunction(
       () => document.querySelector('#tlmThreads thead th[data-campo="familia"] .phx-sort-ind')
-              .textContent.trim() !== '', { timeout: 10000 });
+              .textContent.trim() !== '', { timeout: ESPERA });
     const antes = await familias();
     verdade(ordenada(antes), `ordenar por familia nao ordenou: ${JSON.stringify(antes)}`);
 
