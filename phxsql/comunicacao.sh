@@ -114,11 +114,25 @@ if [ "$NAO_ENVIADOS" != "0" ] && [ "$NAO_ENVIADOS" != "?" ]; then
   if [ -n "$ULTIMO" ]; then
     PONTA=$(git bundle list-heads "$ULTIMO" 2>/dev/null | head -1 | cut -c1-8)
     HEAD8=$(git rev-parse --short=8 HEAD)
-    if [ "$PONTA" = "$HEAD8" ]; then
+    # QUANTO atrasado, e nao SE atrasado.
+    #
+    # A primeira versao acusava «ATRASADO» com UM commit de diferenca -- e como
+    # todo commit deixa o pacote um atras, o alarme disparava o tempo todo. Um
+    # alarme que se aprende a ignorar e pior que alarme nenhum, porque da a
+    # sensacao de cobertura sem a cobertura.
+    #
+    # O criterio passa a ser material: mais de cinco commits, ou mais de duas
+    # horas. Abaixo disso e informacao, e nao problema.
+    ATRAS=$(git rev-list --count "$PONTA..HEAD" 2>/dev/null || echo 0)
+    IDADE=$(( ( $(date +%s) - $(stat -c %Y "$ULTIMO") ) / 60 ))
+    if [ "$ATRAS" = "0" ]; then
       echo "   · backup em dia: $(basename "$ULTIMO")"
-    else
-      echo "   ⚠️ backup ATRASADO: $(basename "$ULTIMO") para na $PONTA, o topo e $HEAD8"
+    elif [ "$ATRAS" -gt 5 ] || [ "$IDADE" -gt 120 ]; then
+      echo "   ⚠️ backup ATRASADO em $ATRAS commit(s) e $IDADE min: $(basename "$ULTIMO")"
+      echo "      refaca com ./backup.sh -- NUNCA com git bundle a mao, que grava no lugar errado"
       PROBLEMAS=$((PROBLEMAS+1))
+    else
+      echo "   · backup a $ATRAS commit(s) e $IDADE min: $(basename "$ULTIMO")"
     fi
   else
     echo "   ⚠️ nao ha pacote de backup nenhum"
