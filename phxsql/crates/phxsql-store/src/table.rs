@@ -3041,6 +3041,69 @@ impl Table {
         Ok(saida)
     }
 
+    /// Uma pagina da ordem do INDICE, lendo so as linhas que a pagina precisa.
+    ///
+    /// # O que ela conserta, com numero
+    ///
+    /// O caminho anterior era `varrer_indice` -> `filtrar` -> `skip().take()`.
+    /// O `filtrar` LE CADA LINHA da tabela inteira para descobrir quais estao
+    /// visiveis, e so depois a pagina era recortada -- entao devolver mil
+    /// linhas de cinquenta mil custava cinquenta mil leituras.
+    ///
+    /// Medido em `bancada/concorrencia/custo-da-varredura.py`, numa tabela de
+    /// 50.000 linhas: a varredura por indice durava **192,5 ms** e segurava a
+    /// trava global por **98,7%** desse tempo -- o vizinho que tambem toma a
+    /// trava esperava **190 ms**, contra 0,1 ms de base. Enquanto isso, o
+    /// caminho da ordem de digitacao custava 4 ms, porque ele PARA na pagina.
+    ///
+    /// Aqui a conta passa a ser `pular + limite` leituras, e nao o tamanho da
+    /// tabela. Na primeira pagina -- que e a esmagadora maioria -- sao
+    /// `limite`.
+    ///
+    /// # Por que o filtro nao pode vir depois do `skip`
+    ///
+    /// Porque o `pular` conta linhas VISIVEIS, e nao entradas do indice. Pular
+    /// dez entradas das quais tres estao excluidas levaria a pagina errada, e
+    /// levaria calado. Entao o laco filtra enquanto anda -- e a economia vem de
+    /// PARAR, e nao de filtrar menos.
+    pub fn pagina_por_indice(
+        &mut self,
+        indice: &str,
+        visao: Visao,
+        pular: u64,
+        limite: u64,
+    ) -> Result<Vec<RowId>> {
+        let todos = self.varrer_indice(indice)?;
+        // `Todas` sem sobreposicao nao esconde nada: nao ha o que ler para
+        // decidir, e o recorte e direto na lista de rowids.
+        if visao == Visao::Todas && self.sobreposta.is_none() {
+            return Ok(todos
+                .into_iter()
+                .skip(pular as usize)
+                .take(if limite == 0 {
+                    usize::MAX
+                } else {
+                    limite as usize
+                })
+                .collect());
+        }
+        let mut saida = Vec::new();
+        let mut vistos = 0u64;
+        for r in todos {
+            if !self.visivel(r, None, visao)? {
+                continue;
+            }
+            if vistos >= pular {
+                saida.push(r);
+                if limite > 0 && saida.len() as u64 >= limite {
+                    break;
+                }
+            }
+            vistos += 1;
+        }
+        Ok(saida)
+    }
+
     /// Atalho para a visao comum. Ver [`Table::filtrar`].
     pub fn filtrar_ativos(&mut self, rowids: &[RowId]) -> Result<Vec<RowId>> {
         self.filtrar(rowids, Visao::Ativas)

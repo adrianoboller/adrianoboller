@@ -188,6 +188,11 @@ def principal():
             medir(porta, f"varrer, pular {pular:,}".replace(",", "."),
                   {"op": "varrer", "database": "b", "tabela": "grande",
                    "max": PAGINA, "pular": pular}, bases)
+        # A PRIMEIRA pagina por indice: o caso comum, e onde a economia aparece
+        # inteira -- ela le `limite` linhas, e nao a tabela.
+        medir(porta, "varrer por INDICE, primeira pagina",
+              {"op": "varrer", "database": "b", "tabela": "grande", "indice": "pk",
+               "max": PAGINA}, bases)
         medir(porta, "varrer por INDICE, pular 20.000",
               {"op": "varrer", "database": "b", "tabela": "grande", "indice": "pk",
                "max": PAGINA, "pular": 20_000}, bases)

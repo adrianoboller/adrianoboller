@@ -188,6 +188,37 @@ só a página é o que o caminho de digitação já faz. Enquanto isso não exis
 uma consulta ordenada por índice numa tabela grande **para o servidor inteiro**
 pelo tempo dela.
 
+### O conserto: o caminho por índice PARA na página
+
+Feito em 02/09, e ele é o que a medição pediu. `Table::pagina_por_indice`
+substitui `varrer_indice` → `filtrar` → `skip().take()` por um laço que **para
+quando a página fecha**. A conta passa a ser `pular + limite` leituras, e não o
+tamanho da tabela — na primeira página, que é a esmagadora maioria, são
+`limite`.
+
+Na mesma tabela de 50.000 linhas com `Memo`, e com o arnês confirmando a
+máquina quieta nas duas pontas:
+
+| a varredura por índice | dura | o vizinho espera |
+|---|---:|---:|
+| antes, com a regressão do `filtrar` | 101,9 ms | 96,9 ms |
+| depois de consertar o `filtrar` | 40,9 ms | 34,7 ms |
+| **depois de PARAR na página** — `pular 20.000` | **22,1 ms** | **17,3 ms** |
+| **primeira página** (o caso comum) | **12,7 ms** | **7,9 ms** |
+
+**8× mais rápida que o ponto de partida, e 12× menos espera** para quem estava
+na fila. O que restou de custo é honesto: `pular 20.000` ainda lê vinte mil
+linhas, porque o `pular` conta linhas **visíveis** e não entradas do índice.
+Descer a B+tree até a posição exigiria o índice guardar quantas linhas vivas
+existem abaixo de cada nó — outra medição, outra sprint.
+
+**A prova real desta mudança quase passou por engano**, e o caso está no teste:
+a primeira versão dele usava `excluir`, que é exclusão **física** — ela tira a
+entrada do índice junto, então não sobrava linha invisível na lista e filtrar
+antes ou depois do `pular` dava o mesmo resultado. Com `excluir_suave` os dois
+caminhos divergem, e o defeito reposto reprova nomeando o caso:
+`visao Ativas, pular 3, limite 5` → `[4,5,7,8,10]` contra `[5,7,8,10,11]`.
+
 ### A regressão que esta medição achou, e ela era minha
 
 Medindo, apareceu que o `filtrar` — o laço quente acima — passou a decodificar

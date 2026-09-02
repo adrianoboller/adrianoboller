@@ -497,3 +497,58 @@ fn linha_sem_as_duas_colunas_de_sistema_e_aceita() {
     ];
     assert!(t.inserir(&sobrando).is_err());
 }
+
+/// A pagina por INDICE que PARA devolve o mesmo que a que lia tudo.
+///
+/// O conserto trocou `varrer_indice` + `filtrar` + `skip().take()` por um laco
+/// que para no fim da pagina -- 192,5 ms para 25,4 ms numa tabela de 50.000,
+/// medido em `bancada/concorrencia/custo-da-varredura.py`. Ganho de velocidade
+/// que muda o RESULTADO nao e ganho, e defeito: este teste compara os dois
+/// caminhos linha a linha, com linhas excluidas no meio de proposito.
+///
+/// As excluidas sao o que separa os dois caminhos: o `pular` conta linhas
+/// VISIVEIS, e nao entradas do indice. Uma tabela sem exclusao nenhuma passaria
+/// nos dois jeitos e nao provaria nada -- e a mesma armadilha da tabela de
+/// prova sem a coluna que importa.
+#[test]
+fn a_pagina_por_indice_que_para_devolve_o_mesmo_que_a_que_lia_tudo() {
+    let dir = DirTemp::novo("indice-para");
+    let mut t = com(60, &dir);
+    // EXCLUSAO SUAVE, e a diferenca entre ela e a fisica e o teste inteiro.
+    //
+    // A primeira versao usava `excluir`, que e FISICA: ela tira a entrada do
+    // indice junto, entao `varrer_indice` ja devolvia so as sobreviventes e
+    // nao havia linha invisivel na lista. Filtrar antes ou depois do `pular`
+    // dava o MESMO resultado, e o teste passava com o defeito reposto -- teste
+    // que passa por engano e pior que teste que falta.
+    //
+    // A suave mantem a linha e a entrada do indice, e so marca. E ela que faz
+    // as duas ordens divergirem.
+    for rowid in (1..=60).filter(|r| r % 3 == 0) {
+        t.excluir_suave(rowid, "prova").unwrap();
+    }
+
+    for visao in [Visao::Ativas, Visao::Excluidas, Visao::Todas] {
+        for (pular, limite) in [(0, 5), (0, 100), (3, 5), (10, 7), (37, 40), (0, 0)] {
+            // O caminho ANTIGO, escrito aqui de proposito: se o novo divergir,
+            // o teste diz em qual visao e em qual recorte.
+            let todos = t.varrer_indice("porId").unwrap();
+            let vivos = t.filtrar(&todos, visao).unwrap();
+            let antigo: Vec<u64> = vivos
+                .into_iter()
+                .skip(pular as usize)
+                .take(if limite == 0 {
+                    usize::MAX
+                } else {
+                    limite as usize
+                })
+                .collect();
+
+            let novo = t.pagina_por_indice("porId", visao, pular, limite).unwrap();
+            assert_eq!(
+                novo, antigo,
+                "visao {visao:?}, pular {pular}, limite {limite}"
+            );
+        }
+    }
+}

@@ -10502,14 +10502,11 @@ impl Servidor {
             // continuar "depois do rowid X" nao quer dizer nada aqui, porque
             // o proximo da chave pode ter rowid menor. Entao por indice vale a
             // posicao, e a resposta diz isso em vez de fingir que paginou.
-            let todos = t.varrer_indice(&indice)?;
-            let vivos = t.filtrar(&todos, visao)?;
-            let corte: Vec<u64> = vivos
-                .into_iter()
-                .skip(pular as usize)
-                .take(max as usize)
-                .collect();
-            (corte, "posicao")
+            // E ela PARA no fim da pagina. O caminho anterior lia a tabela
+            // inteira para recortar mil linhas -- 192,5 ms com a trava global
+            // na mao, contra 4 ms do caminho da ordem de digitacao. Ver
+            // `Table::pagina_por_indice` e `docs/CONCORRENCIA.md`.
+            (t.pagina_por_indice(&indice, visao, pular, max)?, "posicao")
         } else if antes >= 0 {
             (t.pagina_antes_de(antes as u64, max, visao)?, "cursor")
         } else if depois >= 0 {
