@@ -33,6 +33,18 @@ fn main() {
     println!("  na mao, isenta ......... {isentas} (com motivo registrado)");
     println!("  catraca (so desce) ..... {}", cg::TETO_TABELA_NA_MAO);
 
+    // SAIDA DE MAQUINA -- ver o motivo no irmao `textos-fora-da-fabrica.rs`:
+    // gerador que le prosa publica o numero de ontem quando a prosa muda.
+    if std::env::args().any(|a| a == "--numeros") {
+        println!(
+            "catraca:nome=TETO_TABELA_NA_MAO;\
+             onde=crates/phxsql-server/src/conferidor_grades.rs;\
+             valor={};medido={};mede=tabelas montadas a mao em vez de PhxGrid",
+            cg::TETO_TABELA_NA_MAO,
+            na_mao.len()
+        );
+    }
+
     if ver_isentas {
         println!("\nISENTAS — quem monta tabela na mao com motivo\n");
         for (arq, funcao, porque) in cg::ISENTAS {

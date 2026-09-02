@@ -31,6 +31,42 @@ fn main() {
     );
     println!("  catraca (TETO) ..... {}", conferidor::TETO);
 
+    // SAIDA DE MAQUINA, para o gerador do QA-PDCA nao ler a prosa acima.
+    //
+    // Ler o relatorio por `grep` seria resolver numero por comparacao de
+    // FRASE -- a mesma armadilha que esta casa ja proibiu para texto de tela:
+    // no dia em que alguem melhorar a redacao, o gerador quebra calado e
+    // publica o numero de ontem. Aqui a chave e estavel e o rotulo e livre.
+    if std::env::args().any(|a| a == "--numeros") {
+        // Uma linha, e ela SE DESCREVE. O gerador do QA-PDCA nao precisa de
+        // lista de catracas nenhuma: ele varre os exemplos, acha quem imprime
+        // `catraca:`, e pergunta a cada um. Lista digitada num script e
+        // exatamente a receita que envelhece.
+        println!(
+            "catraca:nome=TETO;onde=crates/phxsql-server/src/conferidor.rs;\
+             valor={};medido={};mede=textos cravados fora da fabrica de idiomas",
+            conferidor::TETO,
+            placar.fora
+        );
+        // As duas catracas da FABRICA. Elas existiam, os testes as impunham, e
+        // nenhum conferidor as reportava -- entao o numero delas no QA-PDCA era
+        // digitado, e o gerador as acusou como «promessa» na primeira corrida.
+        // Catraca que ninguem mede nao segura nada, e ainda parece que segura.
+        println!(
+            "catraca:nome=TETO_COLADO;onde=crates/phxsql-server/src/conferidor.rs;\
+             valor={};medido={};mede=chaves com os seis idiomas identicos",
+            conferidor::TETO_COLADO,
+            conferidor::colados().len()
+        );
+        println!(
+            "catraca:nome=TETO_FRASE_REPETIDA;\
+             onde=crates/phxsql-server/src/conferidor.rs;\
+             valor={};medido={};mede=frase longa repetida em tres ou mais idiomas",
+            conferidor::TETO_FRASE_REPETIDA,
+            conferidor::frases_repetidas().len()
+        );
+    }
+
     if ver_isentos {
         println!("\nISENTOS — o que nao se traduz, e por que\n");
         for a in achados.iter().filter(|a| a.situacao == Situacao::Isento) {

@@ -392,19 +392,47 @@ Quatro catracas numéricas existem hoje na árvore (achadas varrendo `TETO` e
 **limites operacionais** do motor, não catracas de qualidade: não medem uma
 dívida que só deve encolher, travam um comportamento em produção).
 
-| catraca | onde | constante hoje | medido agora | veredito |
-|---|---:|---:|---:|---|
-| `TETO` (textos fora da fábrica) | `crates/phxsql-server/src/conferidor.rs:1186` | 1.549 | **1.549** | em cima, sem folga |
+<!-- catracas:inicio -->
 
-> **Este número já envelheceu uma vez, e a hora em que envelheceu diz o que ele
-> precisa.** Esta tabela foi levantada com `TETO` em **1.577**; na mesma rodada,
-> outra frente traduziu 28 textos e baixou a catraca para **1.549** — e nenhuma
-> das duas podia ver a outra. Enquanto o valor for digitado aqui, quem baixar a
-> catraca tem de lembrar de vir editar esta linha; o gerador desta seção existe
-> para que não precise.
-| `TETO_COLADO` (chave com os 6 idiomas colados) | `conferidor.rs:977` | 0 | **0** | em cima, sem folga |
-| `TETO_FRASE_REPETIDA` (frase longa repetida em 3+ idiomas) | `conferidor.rs:981` | 0 | **0** | em cima, sem folga |
-| `TETO_TABELA_NA_MAO` (`<table>` cru ou `tabela(...)`) | `crates/phxsql-server/src/conferidor_grades.rs:274` | 24 | **24** | em cima, sem folga |
+| Catraca | Onde mora | Valor | Medido hoje | Estado |
+|---|---|---:|---:|---|
+| `TETO_TABELA_NA_MAO` (tabelas montadas a mao em vez de PhxGrid) | `crates/phxsql-server/src/conferidor_grades.rs` | 24 | **24** | em cima, sem folga |
+| `TETO` (textos cravados fora da fabrica de idiomas) | `crates/phxsql-server/src/conferidor.rs` | 1.549 | **1.549** | em cima, sem folga |
+| `TETO_COLADO` (chaves com os seis idiomas identicos) | `crates/phxsql-server/src/conferidor.rs` | 0 | **0** | em cima, sem folga |
+| `TETO_FRASE_REPETIDA` (frase longa repetida em tres ou mais idiomas) | `crates/phxsql-server/src/conferidor.rs` | 0 | **0** | em cima, sem folga |
+
+*4 catraca(s) medida(s) por conferidor. Refaz com `python3 docs/qa/medir.py`.*
+
+**Constantes `TETO*` que NENHUM conferidor reporta.** Elas não são
+catracas: são limites, ou promessas. A diferença importa — catraca
+sem medidor não segura nada e ainda parece que segura:
+
+- `TETO_DO_REGISTRO` — `crates/phxsql-core/src/fio.rs:494`
+<!-- catracas:fim -->
+
+> **Esta tabela NÃO se edita à mão — ela se gera.** Com
+> `python3 docs/qa/medir.py --gravar`, e nada entre as duas marcas acima
+> sobrevive a isso.
+>
+> **A hora em que o número envelheceu diz por que o gerador precisou existir.**
+> A tabela foi levantada com `TETO` em **1.577**; na mesma rodada, outra frente
+> traduziu 28 textos e baixou a catraca para **1.549** — e nenhuma das duas
+> podia ver a outra. Com trabalho paralelo, número digitado não envelhece
+> «entre versões»: ele já nasce errado.
+>
+> **E o gerador não tem lista de catracas.** Ele varre `crates/*/examples/` atrás
+> de quem imprime `catraca:`, e pergunta a cada um — cada conferidor se
+> descreve. Lista digitada dentro de um script é exatamente a receita que
+> envelhece, e esta casa já pagou por ela: uma lista de três arquivos copiada
+> num gerador fez o rodapé publicar 780 KiB quando a interface tinha 1.032.
+>
+> **Ele acusa dois estados que uma tabela à mão esconde:** catraca **frouxa**
+> (valor acima do medido, e a folga é onde uma regressão se esconde) e
+> constante `TETO*` que **nenhum conferidor mede** — que não é catraca, é
+> promessa. Na primeira corrida ele apontou duas assim, e as duas eram catracas
+> de verdade: `TETO_COLADO` e `TETO_FRASE_REPETIDA` existiam, os testes as
+> impunham, e o número delas aqui era **digitado**. Hoje os conferidores as
+> reportam.
 
 **Nenhuma catraca está frouxa nesta rodada** — as quatro batem exatamente
 com o medido, o que é o estado saudável (a constante nunca fica **abaixo**
