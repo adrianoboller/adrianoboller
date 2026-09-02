@@ -135,6 +135,45 @@
 #   ambiente mediu +60 mais chapado que +90 no cubo branco; a face lateral
 #   'slab' e o tamanho da key, nao o angulo do rim).
 #
+# RODADA 3 (o que a revisao da rodada 2 mediu e o que mudou):
+#
+# - BEAT 7, ENTRADA DA CARTELA: a logo viaja SOZINHA ao repouso
+#   ('logo_viagem', 12 quadros) e so entao as linhas entram, escalonadas ate
+#   o fim do intervalo; cada linha fica em hide_render ate o proprio inicio.
+#   A sonda de projecao media 12 quadros de 'Engi[engrenagem]Print' com as
+#   duas entradas simultaneas; agora mede zero, geometrico e visivel.
+#
+# - BEAT 7, HORIZONTE: a camera da cartela e ROLADA 180 graus no eixo optico
+#   (Track To desligado por chave de influencia; rotacao por chave). Olhar
+#   para baixo nao serve: o chao do ambiente esta fundido no rose a 4 m da
+#   origem, onde a camera fica, e nao ha preto; olhar para cima poe o brilho
+#   no pe do quadro (o horizonte invertido da revisao). Com o rolo o brilho
+#   fica no topo, como nos outros 17 s. A raiz da cartela e filha da camera
+#   e roda junto - compensar o rolo nela punha o bloco de cabeca para baixo
+#   (medido com a sonda de projecao antes do render).
+#
+# - BEAT 7, APICE EM ARCO: a subida termina 0,3 m a frente do eixo da logo e
+#   o mergulho fecha esse raio nos primeiros 12 quadros partindo a 0,06
+#   m/quadro; a fase B e dimensionada pela velocidade de chegada (0,03
+#   m/quadro a 0,15 m, 20% da distancia por quadro) e a travessia parte
+#   nessa velocidade. Sonda 508-548: minimo 0,035 m/quadro (era 0,019).
+#
+# - BEAT 2, MOMENTO-HEROI: o que recorta o U1 branco contra o rose e
+#   escurecer o Background que a CAMERA ve (nao o que ilumina) - kicker
+#   atras nao muda um pixel (a lateral e vista de quina) e baixar a key
+#   leva a face ao mesmo tom do rose. Ver PARAMS_PADRAO['luz_heroi'].
+#
+# - BEAT 5: key da foto A 300 -> 180 W; area light da camara na foto C 10 ->
+#   0 (a haste polida a refletia como um tubo fluorescente).
+#
+# - BEATS 3-5: os flocos de espuma somem do chao com fade de escala
+#   ('espuma_some_nos_closes'); no arquivo unico, ESPUMA_SOME_NOS_CLOSES.
+#
+# - Objetos do cliente fora de ANUNCIO: avisar_objetos_de_fora lista os que
+#   continuam no render e, com ESCONDER_RESTO, os esconde marcando para a
+#   rodada seguinte devolver. E a recusa por colecao 'u1' de fora vem ANTES
+#   de purgar actions e reconstruir o ambiente: a cena fica intacta.
+#
 # Eixos e medidas seguem docs/ESPECIFICACAO.md: metros, Z para cima, frente
 # em -Y, origem no centro da base da caixa, chao em z = 0.
 
@@ -142,7 +181,7 @@ import math
 import os
 
 import bpy
-from mathutils import Matrix, Vector
+from mathutils import Matrix, Quaternion, Vector
 
 import mod_ambiente
 import mod_cabo
@@ -238,7 +277,10 @@ PARAMS_PADRAO = {
     "folga_u1": 0.14,
     # Deslocamento da cartela para cima no quadro (m a 2 m). None = o padrao
     # medido pelo modulo cartela (0,18: linha 4 fora da faixa de legendas).
-    "cartela_subida": None,
+    # Rodada 3, com o rolo da camera: 0,12 - com 0,18 o topo da engrenagem
+    # (a 17% da altura) caia sobre a cauda do brilho do horizonte (15-22%);
+    # 6 cm a menos descem o bloco 3% e a linha 4 fica a ~67%, fora da faixa.
+    "cartela_subida": 0.12,
     # True (padrao): a caixa afunda pelo chao no beat 2 e volta no beat 6.
     # False: o U1 desliza para -Y e pousa na frente da caixa (ver cabecalho).
     "caixa_some": True,
@@ -254,9 +296,17 @@ PARAMS_PADRAO = {
     # Medido: na foto C (de cima, mesa a 1,2 m) as luzes da camara a 60 W e a
     # key a 240 W estouravam mesa e carro em branco; na A a fita a 3,0 era
     # uma barra branca atravessando o quadro.
+    # Rodada 3, MEDIDO em q362: os 4,15% de pixels >= 250 (topos dos
+    # cabecotes e do carro no pe do quadro) NAO eram da key - com a key a
+    # 180 W continuavam 4,17%; eram as area lights das fitas a 60 W, a 8 cm
+    # dos topos brancos. A 10 W na foto A: 0,02% com a key a 300 (que fica,
+    # e a luz que desenha o metal). Na foto C a luz da camara vai a 0: a
+    # haste polida a refletia e lia como tubo fluorescente (0% >= 250 agora;
+    # o brilho que sobra na haste e o reflexo da key, e e o que a le como
+    # metal - 'rugosidade_hastes' do u1 e quem o suaviza).
     "rim_fotos": (250.0, 400.0, 150.0),
     "key_fotos": (300.0, 260.0, 110.0),
-    "luz_camara_fotos": (60.0, 60.0, 10.0),
+    "luz_camara_fotos": (10.0, 60.0, 0.0),
     "forca_fitas": 3.0,
     "forca_fitas_fotos": 1.2,
     # Beat 7: distancia da logo no apice, a que o mergulho chega 'devagar',
@@ -268,16 +318,62 @@ PARAMS_PADRAO = {
     # menos disto da camera - com o foco a 2,7 cm (e negativo dentro da
     # tampa) o DoF do EEVEE deixava o veu cobrindo so metade do quadro
     # (q548/q549 medidos); a 7,3 cm (q547) o veu cobria tudo.
-    # O mergulho e em duas fases: Hermite do apice ('alto', parado) ate
-    # 'meio' no primeiro terco dos quadros, e dali EXPONENCIAL ate 'perto'
-    # (a mesma fracao da distancia por quadro, ~15%: o borrao de movimento
-    # relativo a logo e constante e pequeno, e a chegada e naturalmente
-    # devagar, ~0,02 m/quadro a 0,12 m). Uma Hermite so, medida, chegava a
-    # 0,033 m/quadro e o q545 ainda borrava.
-    "mergulho": {"alto": 1.8, "meio": 0.9, "perto": 0.12, "dentro": -0.02, "travessia": 3, "veu": 2,
-                 "foco_min": 0.07, "f_ini": 2.8, "f_fim": 8.0},
+    # O mergulho e em duas fases: Hermite do apice ('alto') ate 'meio' na
+    # fase A, e dali EXPONENCIAL ate 'perto' (a mesma fracao da distancia por
+    # quadro: o borrao de movimento relativo a logo e constante, e a chegada
+    # e naturalmente devagar). Uma Hermite so, medida, chegava a 0,033
+    # m/quadro a 0,12 m e o q545 ainda borrava; a 0,02 a logo lia ate o veu.
+    # Rodada 3: o criterio passou a ser 'nenhum quadro abaixo de 0,03
+    # m/quadro ate q547', entao 'perto' sobe a 0,15 e 'v_perto' (0,03) fixa
+    # a fracao por quadro em 20% (era 15,5%; 39% era o borrao) - e a fase B
+    # e dimensionada por isso (8 quadros), nao por um terco fixo.
+    # 'arco' (rodada 3): a subida termina 'arco' m a FRENTE do eixo da logo
+    # (-Y) e o mergulho fecha esse raio nos primeiros 'arco_quadros' quadros
+    # enquanto a descida ja comeca a 'v_ini' m/quadro. Sem isso o apice era
+    # uma quase-parada: Bezier chegando num extremo (velocidade 0) e Hermite
+    # partindo de zero - a sonda media 0,183 -> 0,019 (q528) -> 0,197.
+    "mergulho": {"alto": 1.8, "meio": 0.9, "perto": 0.15, "dentro": -0.02, "travessia": 3, "veu": 2,
+                 "foco_min": 0.07, "f_ini": 2.8, "f_fim": 8.0,
+                 "v_perto": 0.03, "arco": 0.30, "arco_quadros": 12, "v_ini": 0.06},
     "logo_escala_inicial": 1.5,    # match cut: logo maior no centro em q_t
-    "cartela_fracao": 0.40,        # fatia do intervalo que cada elemento gasta entrando
+    # Quadros (a 20 s) que a logo gasta viajando do centro ao repouso ANTES de
+    # a primeira linha entrar. Rodada 3: com as duas entradas simultaneas a
+    # sonda de projecao media 12 quadros de 'Engi[engrenagem]Print'.
+    "logo_viagem": 12,
+    "cartela_fracao": 0.50,        # fatia do intervalo das LINHAS que cada uma gasta entrando
+    # Camera da cartela: inclinacao (graus, para cima) e rolo no eixo optico.
+    # O rolo de 180 e o que poe o rose em CIMA como nos outros 17 s: olhando
+    # para baixo nao ha preto disponivel (o chao do ambiente ja esta fundido
+    # no rose a 4 m da origem, onde a camera fica), e olhando para cima o
+    # brilho do horizonte cai no pe do quadro. A raiz da cartela, filha da
+    # camera, recebe o rolo inverso e o texto fica em pe.
+    "cartela_inclinacao": 32.0,
+    "cartela_rolo": 180.0,
+    # Beat 2, momento-heroi (q(0,50)..q(0,90)), rampas Bezier de 'rampa'
+    # quadros. A revisao mediu a metade de cima do U1 em L 224 contra rose L
+    # 219. MEDIDO em q140 (rodada 3): (a) kicker atras a +/-135 do azimute da
+    # camera nao muda UM pixel - a camera esta a 6 graus da frente e a face
+    # lateral e vista de quina (nao existe no quadro), o rim ja esta atras;
+    # (b) baixar a key a 0,6 leva a face a L 203-207 e a 0,4 a L 190-204,
+    # mas o rose atras da metade de cima vai de 200 a 217 (e gradiente) e a
+    # face cai NO MESMO tom em vez de recortar; (c) o que recorta e escurecer
+    # so o fundo que a CAMERA ve ('mundo': forca do Background da camera, e o
+    # chao fundido cai junto; a iluminacao e o outro Background e nao muda):
+    # o produto continua branco e o rose abaixa por 1,2 s. Medido em q140:
+    # 1,3 leva a faixa rose de L 220 a 209 (11 niveis, sem emenda) e a
+    # aresta a >= 33 niveis em toda linha da metade de cima (era 11-12);
+    # 1,1 da 39 com a faixa a 203. 'kicker' fica como opcao (dict como
+    # abaixo, ou None) para um modelo cuja lateral apareca; 'key' e a
+    # fracao da key.
+    "luz_heroi": {"mundo": 1.3, "key": 1.0, "rampa": 8,
+                  "kicker": None},
+    # Formato do kicker, se usado: {"energia": 300.0, "az_rel": 135.0, "raio": 2.4,
+    #   "z": 1.7, "tam": (0.4, 1.4), "abertura": 40.0, "especular": 0.3}
+    # Beats 3-5 (planos largos e closes): os flocos de espuma do chao somem
+    # com um fade de escala em 'espuma_fade' quadros (rodada 3: em volta do
+    # produto eles viravam poluicao). ESPUMA_SOME_NOS_CLOSES no arquivo unico.
+    "espuma_some_nos_closes": True,
+    "espuma_fade": 6,
     # Beat 2, momento-heroi: altura da camera com o U1 no alto e quanto o
     # alvo fica acima da base dele. A revisao propos BAIXAR a camera (1,6 ->
     # 1,25) para o U1 recortar contra a transicao escura; rendido q140/q150
@@ -356,7 +452,7 @@ def _interpolar(dono, q_ini, q_fim, interp="BEZIER", easing="EASE_IN_OUT", canai
     ad = getattr(dono, "animation_data", None)
     if ad is None or ad.action is None:
         return
-    for fc in ad.action.fcurves:
+    for fc in mod_ambiente.fcurves_de(ad):
         if canais is not None and fc.data_path not in canais:
             continue
         for kp in fc.keyframe_points:
@@ -374,7 +470,7 @@ def _interp_nas_chaves(dono, quadros, interp):
     ad = getattr(dono, "animation_data", None)
     if ad is None or ad.action is None:
         return
-    for fc in ad.action.fcurves:
+    for fc in mod_ambiente.fcurves_de(ad):
         for kp in fc.keyframe_points:
             if int(round(kp.co.x)) in quadros:
                 kp.interpolation = interp
@@ -385,7 +481,7 @@ def _valor_em(dono, data_path, quadro_, indice=-1):
     """Valor de uma propriedade num quadro (da fcurve, se houver chave)."""
     ad = getattr(dono, "animation_data", None)
     if ad is not None and ad.action is not None:
-        for fc in ad.action.fcurves:
+        for fc in mod_ambiente.fcurves_de(ad):
             if fc.data_path == data_path and (indice < 0 or fc.array_index == indice):
                 return fc.evaluate(quadro_)
     valor = dono.path_resolve(data_path)
@@ -657,6 +753,76 @@ def _colecao_u1_e_de_fora():
     return any(not o.name.startswith("u1.") for o in col.all_objects)
 
 
+def _recusar_u1_de_fora(p):
+    """Falha RAPIDA, antes de tocar em qualquer coisa: se o substituto vai
+    rodar (U1_NOME vazio, ou um nome que nao existe) e ha uma colecao 'u1'
+    que nao e a dele, recusa. Rodada 3: a checagem ficava depois de purgar
+    actions e reconstruir o ambiente, e a recusa deixava a cena meio-feita."""
+    nome = p["u1_nome"]
+    existe = bool(nome) and (nome in bpy.data.objects or bpy.data.collections.get(nome) is not None)
+    if not existe and _colecao_u1_e_de_fora():
+        raise RuntimeError("[coreografia] existe uma colecao 'u1' que nao e a do substituto; "
+                           "para usa-la ponha o nome em U1_NOME - com U1_NOME vazio ela seria apagada")
+
+
+# ---------------------------------------------------------------- objetos de fora
+
+PROP_ESCONDIDO = "anuncio.escondido_no_render"
+# Tipos que aparecem (ou iluminam) no render; Empty, camera e armadura nao.
+_TIPOS_RENDERIZAVEIS = {"MESH", "CURVE", "SURFACE", "META", "FONT", "CURVES", "POINTCLOUD",
+                        "VOLUME", "GPENCIL", "GREASEPENCIL", "LIGHT", "LIGHT_PROBE"}
+
+
+def objetos_fora_do_anuncio(objs=None):
+    """Objetos do CLIENTE que continuam no render: hide_render False, tipo
+    renderizavel, fora de toda colecao sob ANUNCIO e que nao descendem de
+    'u1.raiz' (o modelo real fica na colecao dele, fora de ANUNCIO)."""
+    raiz_anuncio = bpy.data.collections.get("ANUNCIO")
+    nossas = set()
+    if raiz_anuncio is not None:
+        nossas = {raiz_anuncio.name} | {c.name for c in raiz_anuncio.children_recursive}
+    raiz_u1 = bpy.data.objects.get("u1.raiz")
+    fora = []
+    for obj in bpy.data.objects:
+        if obj.hide_render or obj.type not in _TIPOS_RENDERIZAVEIS:
+            continue
+        if any(c.name in nossas for c in obj.users_collection):
+            continue
+        if raiz_u1 is not None and (obj is raiz_u1 or _descende(obj, raiz_u1)):
+            continue
+        fora.append(obj)
+    return fora
+
+
+def avisar_objetos_de_fora(objs=None, esconder=False):
+    """Devolve ao render o que uma rodada anterior escondeu (marcado com
+    PROP_ESCONDIDO), lista o que sobrou visivel fora de ANUNCIO e, com
+    esconder=True, poe hide_render neles (marcando, para a proxima rodada
+    restaurar). Imprime o aviso; devolve a lista. O padrao nao esconde: um
+    objeto do cliente que some do render sem ele pedir e estrago, nao ajuda."""
+    restaurados = 0
+    for obj in bpy.data.objects:
+        if obj.get(PROP_ESCONDIDO):
+            obj.hide_render = False
+            del obj[PROP_ESCONDIDO]
+            restaurados += 1
+    fora = objetos_fora_do_anuncio(objs)
+    nomes = ", ".join(o.name for o in fora[:12]) + (" ..." if len(fora) > 12 else "")
+    if not fora:
+        if restaurados:
+            print("[anuncio] %d objetos seus devolvidos ao render" % restaurados)
+        return fora
+    if esconder:
+        for obj in fora:
+            obj.hide_render = True
+            obj[PROP_ESCONDIDO] = True
+        print("[anuncio] ESCONDER_RESTO: %d objetos seus escondidos do render (ESCONDER_RESTO=False devolve): %s"
+              % (len(fora), nomes))
+    else:
+        print("[anuncio] AVISO: %d objetos seus continuam visiveis no render: %s" % (len(fora), nomes))
+    return fora
+
+
 # ---------------------------------------------------------------- construir
 
 def construir_tudo(params=None):
@@ -665,6 +831,9 @@ def construir_tudo(params=None):
     p = dict(PARAMS_PADRAO)
     if params:
         p.update(params)
+    # Antes de qualquer efeito colateral (purga, ambiente): a recusa por
+    # colecao 'u1' de fora deixa a cena exatamente como estava.
+    _recusar_u1_de_fora(p)
     cena = bpy.context.scene
     col = _colecao_raiz(cena)
     _purgar_acoes_orfas()
@@ -695,9 +864,7 @@ def construir_tudo(params=None):
         # Rodada anterior com modelo real: devolve a pose original dele antes
         # de o substituto limpar a colecao 'u1' (a raiz antiga esta la).
         restaurar_modelo_cliente()
-        if _colecao_u1_e_de_fora():
-            raise RuntimeError("[coreografia] existe uma colecao 'u1' que nao e a do substituto; "
-                               "para usa-la ponha o nome em U1_NOME - com U1_NOME vazio ela seria apagada")
+        # (a colecao 'u1' de fora ja foi recusada em _recusar_u1_de_fora)
         pu1 = {"imagem_boot": _asset(p, "tela_boot.png"), "imagem_ui": _asset(p, "tela_ui.png")}
         pu1.update(p["u1"])
         u1 = mod_u1.construir_u1(cena, col, pu1)
@@ -828,7 +995,7 @@ def _aplicar_interpolacao_camera(objs):
         ad = dono.animation_data
         if ad is None or ad.action is None:
             continue
-        for fc in ad.action.fcurves:
+        for fc in mod_ambiente.fcurves_de(ad):
             for kp in fc.keyframe_points:
                 interp, easing = registro.get(int(round(kp.co.x)), ("BEZIER", "EASE_IN_OUT"))
                 kp.interpolation = interp
@@ -842,7 +1009,7 @@ def _aplicar_interpolacao_camera(objs):
     # rampam LINEAR ate a chave seguinte, CONSTANT).
     ad = objs["camera"].data.animation_data
     if ad and ad.action:
-        for fc in ad.action.fcurves:
+        for fc in mod_ambiente.fcurves_de(ad):
             if fc.data_path == "lens":
                 for kp in fc.keyframe_points:
                     kp.interpolation = "LINEAR" if int(round(kp.co.x)) in objs["_lentes_rampa"] else "CONSTANT"
@@ -989,6 +1156,105 @@ def _beat2(objs, fator):
     rim = amb["luzes"]["rim"]
     mod_ambiente.chavear_especular(rim, q(r["rim"][0]), para=0.3, rampa=12)
     mod_ambiente.chavear_especular(rim, q(r["rim"][1]) - 12, q(r["rim"][1]), para=0.0)
+    _luz_heroi(objs, q(r["rim"][0]), q(r["rim"][1]))
+
+
+def _fundo_da_camera(mundo):
+    """Socket Strength do Background que so a CAMERA ve no world do ambiente
+    (o que ilumina e o outro, com o Strength LIGADO a mascara do horizonte).
+    None se o world nao tem a arvore esperada."""
+    if mundo is None or not mundo.use_nodes:
+        return None
+    for no in mundo.node_tree.nodes:
+        if no.type == "BACKGROUND" and not no.inputs["Strength"].is_linked:
+            return no.inputs["Strength"]
+    return None
+
+
+def _emissao_do_chao(chao):
+    """Socket 'Emission Color' do Principled do chao do ambiente (a cor do
+    horizonte que o chao infinito copia), ou None."""
+    if chao is None or not chao.data.materials or chao.data.materials[0] is None:
+        return None
+    nt = chao.data.materials[0].node_tree
+    if nt is None:
+        return None
+    for no in nt.nodes:
+        if no.type == "BSDF_PRINCIPLED" and no.inputs.get("Emission Color") is not None:
+            return no.inputs["Emission Color"]
+    return None
+
+
+def _rampa_socket(dono, socket, chaves):
+    """Chaves Bezier (ease in/out) num socket de no; 'chaves' = [(quadro, valor)]."""
+    for q_, v in chaves:
+        socket.default_value = v
+        socket.keyframe_insert("default_value", frame=q_)
+    _interpolar(dono, min(q for q, _ in chaves), max(q for q, _ in chaves),
+                canais=(socket.path_from_id("default_value"),))
+
+
+def _luz_heroi(objs, q_a, q_b):
+    """Luz do momento-heroi (ver PARAMS_PADRAO['luz_heroi']), de q_a a q_b com
+    rampas Bezier de 'rampa' quadros: 'mundo' abaixa o Background que a
+    camera ve (o ceu escurece, a iluminacao nao), 'key' e a fracao da key, e
+    'kicker' e uma area light temporaria filha do rig da camera (a 'az_rel'
+    graus do azimute dela, apontada para o eixo), visivel so no trecho e
+    vivendo na colecao do ambiente para o limpar_colecao dele a levar junto
+    na rodada seguinte."""
+    k = objs["params"].get("luz_heroi")
+    if not k:
+        return
+    amb = objs["ambiente"]
+    rampa = max(1, int(k.get("rampa", 8)))
+    mundo = k.get("mundo")
+    forca = _fundo_da_camera(amb.get("mundo"))
+    if mundo is not None and forca is not None:
+        padrao = forca.default_value
+        _rampa_socket(amb["mundo"].node_tree, forca,
+                      [(q_a, padrao), (q_a + rampa, mundo), (q_b - rampa, mundo), (q_b, padrao)])
+        forca.default_value = padrao
+        # O rose atras da metade de cima do U1 nao e o world: e o CHAO
+        # infinito, fundido em emissao com a cor do horizonte (medido: so o
+        # world a 1,2 deixava uma emenda a 17% da altura, ceu escuro sobre
+        # chao claro). A cor de emissao do chao cai pelo mesmo fator.
+        emissao = _emissao_do_chao(amb.get("chao"))
+        if emissao is not None and padrao > 1e-9:
+            cor = tuple(emissao.default_value)
+            fator_cor = mundo / padrao
+            baixa = tuple(c * fator_cor for c in cor[:3]) + (cor[3],)
+            _rampa_socket(amb["chao"].data.materials[0].node_tree, emissao,
+                          [(q_a, cor), (q_a + rampa, baixa), (q_b - rampa, baixa), (q_b, cor)])
+            emissao.default_value = cor
+    if k.get("key", 1.0) < 1.0:
+        key = amb["luzes"]["key"]
+        padrao = key.data.energy
+        mod_ambiente.chavear_fator_luz(key, "energy", q_a, q_a + rampa, de=padrao, para=padrao * k["key"])
+        mod_ambiente.chavear_fator_luz(key, "energy", q_b - rampa, q_b, para=padrao)
+    kick = k.get("kicker")
+    if not kick:
+        return
+    dados = bpy.data.lights.new("ambiente.kicker.heroi", "AREA")
+    dados.shape = "RECTANGLE"
+    dados.size, dados.size_y = kick["tam"]
+    dados.energy = 0.0
+    _ajustar(dados, "spread", math.radians(kick["abertura"]))
+    _ajustar(dados, "specular_factor", kick["especular"])
+    luz = bpy.data.objects.new("ambiente.kicker.heroi", dados)
+    amb["colecao"].objects.link(luz)
+    luz.parent = objs["rig_camera"]
+    luz.matrix_parent_inverse = Matrix.Identity(4)
+    ang = math.radians(kick["az_rel"])
+    pos = Vector((kick["raio"] * math.cos(ang), kick["raio"] * math.sin(ang), kick["z"]))
+    luz.location = pos
+    alvo = Vector((0.0, 0.0, objs["z_alto_u1"] + 0.35))
+    luz.rotation_euler = (alvo - pos).to_track_quat("-Z", "Y").to_euler()
+    _chave_visivel(luz, 1, False)
+    _chave_visivel(luz, q_a, True)
+    _chave_visivel(luz, q_b + 1, False)
+    mod_ambiente.chavear_fator_luz(luz, "energy", q_a, q_a + rampa, de=0.0, para=kick["energia"])
+    mod_ambiente.chavear_fator_luz(luz, "energy", q_b - rampa, q_b, para=0.0)
+    objs["kicker_heroi"] = luz
 
 
 def _beat3(objs, fator):
@@ -1155,7 +1421,7 @@ def _beat5(objs, fator):
     for luz, val in ((luzes["key"], padrao_key), (luzes["rim"], padrao_rim)):
         luz.data.energy = val
         luz.data.keyframe_insert("energy", frame=q_fim)
-        for fc in luz.data.animation_data.action.fcurves:
+        for fc in mod_ambiente.fcurves_de(luz.data.animation_data):
             if fc.data_path == "energy":
                 for kp in fc.keyframe_points:
                     kp.interpolation = "CONSTANT"
@@ -1278,10 +1544,33 @@ def _beat6(objs, fator):
     _desligar_u1(objs, q_ini)
 
 
-def _perfil_mergulho(u, s):
-    """Hermite em [0, 1]: 1 -> 0, parte parado (derivada 0) e chega com
-    derivada -s (nao para na logo: segue para a travessia)."""
-    return (2.0 * u ** 3 - 3.0 * u ** 2 + 1.0) - s * (u ** 3 - u ** 2)
+def _perfil_mergulho(u, s, a=0.0):
+    """Hermite em [0, 1]: 1 -> 0, parte com derivada -a (0 = parado; rodada 3
+    parte andando, e o arco do apice) e chega com derivada -s (nao para na
+    logo: segue para a travessia)."""
+    return (2.0 * u ** 3 - 3.0 * u ** 2 + 1.0) - a * (u ** 3 - 2.0 * u ** 2 + u) - s * (u ** 3 - u ** 2)
+
+
+def _rolar_camera(objs, q_ini, q_fim, az, direcao, graus):
+    """Camera olhando para 'direcao' (mundo) com o quadro girado 'graus' no
+    eixo optico, de q_ini a q_fim: o Track To nao tem 'up' negativo, entao a
+    influencia dele vai a 0 em q_ini (1 em q_ini-1, CONSTANT: o obturador
+    START do quadro anterior nao ve o rolo) e a rotacao vai por chave, no
+    espaco do rig (que so gira em Z, 'az')."""
+    cam = objs["camera"]
+    tr = next((c for c in cam.constraints if c.type == "TRACK_TO"), None)
+    if tr is not None:
+        caminho = tr.path_from_id("influence")
+        tr.influence = 1.0
+        cam.keyframe_insert(caminho, frame=q_ini - 1)
+        tr.influence = 0.0
+        cam.keyframe_insert(caminho, frame=q_ini)
+    mundo = Vector(direcao).to_track_quat("-Z", "Y") @ Quaternion((0.0, 0.0, 1.0), math.radians(graus))
+    local = Matrix.Rotation(-math.radians(az), 3, "Z") @ mundo.to_matrix()
+    euler = local.to_euler("XYZ")
+    for f in (q_ini, q_fim):
+        cam.rotation_euler = euler
+        cam.keyframe_insert("rotation_euler", frame=f)
 
 
 def _veu_preto(objs, q_ini, q_fim, q_solta, distancia=0.0105):
@@ -1306,7 +1595,7 @@ def _veu_preto(objs, q_ini, q_fim, q_solta, distancia=0.0105):
         emissao.default_value = 0.0
         emissao.keyframe_insert("default_value", frame=q_)
     interp = {q_: i for q_, _, i in chaves}
-    for fc in nt.animation_data.action.fcurves:
+    for fc in mod_ambiente.fcurves_de(nt.animation_data):
         for kp in fc.keyframe_points:
             i = interp.get(int(round(kp.co.x)))
             if i is not None:
@@ -1342,35 +1631,63 @@ def _beat7(objs, fator):
     objs["q_travessia"] = q_t
     n_trav = max(1, int(m["travessia"]))
     q_perto = q_t - 1 - n_trav
-    # O alvo fica 1 m abaixo da camera, 4 mm para +Y: e o que define o "para
+    # O alvo fica 1 m a frente da camera, 4 mm para +Y: e o que define o "para
     # cima" do quadro (+Y = logo em pe) sem o Track To degenerar na vertical.
-    # O foco fica na logo o mergulho inteiro.
-    def chave_altura(q_, d, interp):
-        pos = logo + normal * d
+    # Fora do eixo (o arco do apice) o alvo vai pela linha camera -> logo, para
+    # a logo ficar no centro. O foco fica na logo o mergulho inteiro.
+    frente = Vector((0.0, -1.0, 0.0))
+
+    def chave_altura(q_, d, interp, raio=0.0):
+        pos = logo + normal * d + frente * raio
         # Foco na logo, mas nunca a menos de foco_min da camera (ver PARAMS).
         foco = logo if d >= m["foco_min"] else pos - normal * m["foco_min"]
-        _chave_camera(objs, q_, -90.0, 0.0, pos.z, (0.0, 0.004, pos.z - 1.0), foco=foco, interp=interp)
+        if raio > 1e-6:
+            alvo = pos + (logo - pos).normalized() + Vector((0.0, 0.004, 0.0))
+        else:
+            alvo = Vector((0.0, 0.004, pos.z - 1.0))
+        _chave_camera(objs, q_, -90.0, raio, pos.z, alvo, foco=foco, interp=interp)
 
     # Mergulho: uma chave por quadro (ver PARAMS_PADRAO['mergulho']): Hermite
-    # do apice (parado) ate 'meio' na fase A, exponencial ate 'perto' na
-    # fase B (chega devagar, nao para), e a travessia ACELERA (u^2) ate
-    # 'dentro' da tampa - o veu ja esta cobrindo. Abertura f/2,8 -> f/8.
+    # do apice ate 'meio' na fase A (partindo a 'v_ini', nao parado - e o
+    # arco: o raio 'arco' fecha em 'arco_quadros' enquanto a descida comeca),
+    # exponencial ate 'perto' na fase B (chega devagar, nao para), e a
+    # travessia ACELERA (u^2) ate 'dentro' da tampa - o veu ja esta
+    # cobrindo. Abertura f/2,8 -> f/8.
     n_merg = max(2, q_perto - q_topo)
-    n_a = max(1, int(round(n_merg / 3.0)))
-    n_b = max(1, n_merg - n_a)
+    # A fase B chega a 'perto' a 'v_perto' m/quadro: isso fixa a fracao por
+    # quadro (razao = 1 - v_perto/perto) e, com ela, quantos quadros a B
+    # precisa; a A fica com o resto (rodada 2 dividia 1/3 - 2/3 fixo e
+    # chegava a 0,019 m/quadro, abaixo do criterio de 0,03 da rodada 3).
+    v_perto = float(m.get("v_perto", 0.0))
+    if 0.0 < v_perto < m["perto"]:
+        n_b = int(round(math.log(m["perto"] / m["meio"]) / math.log(1.0 - v_perto / m["perto"])))
+        n_b = max(1, min(n_merg - 1, n_b))
+    else:
+        n_b = max(1, n_merg - max(1, int(round(n_merg / 3.0))))
+    n_a = max(1, n_merg - n_b)
     razao = (m["perto"] / m["meio"]) ** (1.0 / n_b)        # fracao por quadro na fase B
     v_meio = m["meio"] * (1.0 - razao)                      # m/quadro no inicio da B
     s = v_meio * n_a / max(m["alto"] - m["meio"], 1e-6)     # a A termina nessa velocidade
+    a = float(m.get("v_ini", 0.0)) * n_a / max(m["alto"] - m["meio"], 1e-6)
+    arco = float(m.get("arco", 0.0))
+    n_arco = max(1, min(n_merg - 1, int(round(float(m.get("arco_quadros", 12)) * fator))))
     for f in range(q_topo, q_perto + 1):
         k = f - q_topo
         if k <= n_a:
-            d = m["meio"] + (m["alto"] - m["meio"]) * _perfil_mergulho(k / float(n_a), s)
+            d = m["meio"] + (m["alto"] - m["meio"]) * _perfil_mergulho(k / float(n_a), s, a)
         else:
             d = m["meio"] * razao ** (k - n_a)
-        chave_altura(f, d, "LINEAR")
+        # Raio fecha em (1-u)^2: velocidade horizontal 2*arco/n_arco no apice
+        # (0,05 m/quadro com 0,3 e 12) e zero, suave, ao entrar no eixo.
+        raio = arco * (1.0 - min(1.0, k / float(n_arco))) ** 2
+        chave_altura(f, d, "LINEAR", raio)
+    # Travessia: parte na velocidade de chegada da B (o u^2 puro comecava
+    # quase parado: 0,019 m/quadro no primeiro quadro) e acelera ate 'dentro'.
+    v_cheg = m["perto"] / razao * (1.0 - razao)
+    curso = m["perto"] - m["dentro"]
     for f in range(q_perto + 1, q_t):
         u = (f - q_perto) / float(n_trav)
-        d = m["perto"] + (m["dentro"] - m["perto"]) * u * u
+        d = m["perto"] - v_cheg * n_trav * u - (curso - v_cheg * n_trav) * u * u
         chave_altura(f, d, "CONSTANT" if f == q_t - 1 else "LINEAR")
     _chave_f(objs, q_topo, m["f_ini"])
     _chave_f(objs, q_t - 1, m["f_fim"])
@@ -1384,20 +1701,29 @@ def _beat7(objs, fator):
     _veu_preto(objs, q_veu_fim - n_veu, q_veu_fim, q_t)
     objs["_q_veu"] = (q_veu_fim - n_veu, q_veu_fim)
 
-    # Corte: camera limpa, de costas para a cena, olhando 24 graus para cima.
-    # Medido com 12 graus: o horizonte caia a 78% da altura e o brilho (ceu
-    # ate 15 graus acima dele mais o chao emissivo abaixo) cobria de 50% a
-    # 95% do quadro - as linhas 2-4 ficavam sobre rose claro. Com 24 graus o
-    # horizonte fica a ~96% e o brilho so no terco de baixo, sob o bloco.
+    # Corte: camera limpa, de costas para a cena, olhando 'cartela_inclinacao'
+    # graus para cima e ROLADA 'cartela_rolo' (180) no eixo optico. Rodada 2
+    # media, com 24 graus sem rolo, o brilho do horizonte no terco de BAIXO -
+    # o horizonte da cartela saia invertido contra os outros 17 s. O rolo
+    # vira o quadro: o brilho (do horizonte ate ~16 graus acima) fica no
+    # topo e o preto do ceu embaixo, sob o bloco. 31 graus deixa o horizonte
+    # logo fora da borda: o brilho ocupa ~22% do topo (medido no render).
     z_cam = 1.0
     dist_alvo = 4.0
-    alvo_z = z_cam + dist_alvo * math.tan(math.radians(24.0))
+    alvo_z = z_cam + dist_alvo * math.tan(math.radians(p["cartela_inclinacao"]))
     raio0 = 4.0
     _chave_camera(objs, q_t, 90.0, raio0, z_cam, (0.0, raio0 + dist_alvo, alvo_z), interp="LINEAR")
+    rolo = float(p.get("cartela_rolo", 0.0))
+    if abs(rolo) > 1e-6:
+        _rolar_camera(objs, q_t, q_fim, 90.0, (0.0, dist_alvo, alvo_z - z_cam), rolo)
     cena.frame_set(q_t)
     bpy.context.view_layer.update()
     mod_cartela.posicionar_cartela(cartela, cam, cartela["distancia"], subida=p["cartela_subida"], parentear=True)
     raiz = cartela["raiz"]
+    # A raiz e filha da camera e fica no espaco DELA (+Y = topo do quadro):
+    # rolada a camera, o bloco rola junto e continua em pe no quadro. So o
+    # fundo (o world) vira. Medido com a sonda de projecao: compensar o rolo
+    # na raiz punha o bloco de cabeca para baixo no pe do quadro.
     bpy.context.view_layer.update()
     foco_cartela = raiz.matrix_world.translation.copy()
     objs["foco"].location = foco_cartela
@@ -1406,17 +1732,67 @@ def _beat7(objs, fator):
     _chave_camera(objs, q_fim, 90.0, raio0 + deriva, z_cam, (0.0, raio0 + deriva + dist_alvo, alvo_z),
                   foco=foco_cartela + Vector((0.0, deriva, 0.0)), interp="LINEAR")
 
-    # Cartela escondida ate o corte (visivel DE q_t, logo inclusive); a logo
-    # entra ja com alfa 1, maior e no centro do quadro, e viaja ao repouso
-    # enquanto as linhas entram: e o match cut com a logo da tampa.
-    elementos = list(cartela["linhas"]) + ([cartela["logo"]] if cartela.get("logo") else [])
-    _esconder_entre(elementos, 1, q_t)
+    # Cartela escondida ate o corte (a logo visivel DE q_t); a logo entra ja
+    # com alfa 1, maior e no centro do quadro, e viaja SOZINHA ao repouso em
+    # 'logo_viagem' quadros: e o match cut com a logo da tampa. So depois de
+    # ela assentar as linhas entram, escalonadas ate o fim do intervalo - com
+    # as duas entradas simultaneas a sonda de projecao media 12 quadros de
+    # 'Engi[engrenagem]Print' (q550-561). Cada linha fica escondida
+    # (hide_render) ate o proprio inicio: a bbox dela nao existe no quadro
+    # antes disso, nem com alfa 0.
+    # Duas chamadas do animar_cartela, cada uma com uma copia do dict sem a
+    # outra metade: o modulo nao tem parametro para separar os calendarios.
     subida = cartela.get("subida", 0.0) if p["cartela_subida"] is None else p["cartela_subida"]
-    # fracao 0,40 (padrao do modulo 0,55): com 0,55 a linha 1 entrava com a
-    # logo ainda no meio da viagem e cruzava a engrenagem (q560 medido).
-    mod_cartela.animar_cartela(cartela, q_t, q(r["cartela"][1]), fracao_elemento=p["cartela_fracao"],
-                               logo_ja_visivel=True, logo_origem=(0.0, -subida),
-                               logo_escala_inicial=p["logo_escala_inicial"])
+    q_c = q(r["cartela"][1])
+    q_logo = min(q_t + max(1, int(round(p["logo_viagem"] * fator))), q_c - 1)
+    if cartela.get("logo") is not None:
+        _esconder_entre([cartela["logo"]], 1, q_t)
+        mod_cartela.animar_cartela(dict(cartela, linhas=[]), q_t, q_logo, fracao_elemento=1.0,
+                                   logo_ja_visivel=True, logo_origem=(0.0, -subida),
+                                   logo_escala_inicial=p["logo_escala_inicial"])
+    else:
+        q_logo = q_t
+    mod_cartela.animar_cartela(dict(cartela, logo=None), q_logo, q_c, fracao_elemento=p["cartela_fracao"])
+    for linha in cartela["linhas"]:
+        _esconder_entre([linha], 1, _primeira_chave(linha, "location", q_logo) + 1)
+
+
+def _primeira_chave(obj, data_path, padrao):
+    """Quadro da primeira chave de 'data_path' do objeto (a chave de espera
+    que animar_cartela grava em inicio-1), ou 'padrao' se nao ha fcurve."""
+    ad = getattr(obj, "animation_data", None)
+    if ad is None or ad.action is None:
+        return padrao
+    quadros = [kp.co.x for fc in mod_ambiente.fcurves_de(ad) if fc.data_path == data_path for kp in fc.keyframe_points]
+    return int(round(min(quadros))) if quadros else padrao
+
+
+def _esconder_espuma_nos_closes(objs, fator):
+    """Beats 3-5: os flocos de espuma somem do chao com um fade de escala
+    (1 -> 0 nos 'espuma_fade' quadros a partir do inicio do beat 3, e 0 -> 1
+    nos 'espuma_fade' antes do corte do beat 6) e hide_render entre os dois
+    fades. Sem fade um floco sumiria de um quadro para o outro no plano
+    largo do inicio da orbita. A posicao nao muda: entre q165 e q486 eles ja
+    estavam parados no chao."""
+    p = objs["params"]
+    if not p.get("espuma_some_nos_closes", True):
+        return
+    q_a = quadros_do_beat(3, fator)[0]
+    q_b = quadros_do_beat(6, fator)[0]
+    n = max(1, int(round(p.get("espuma_fade", 6) * fator)))
+    if q_b - n <= q_a + n:
+        return
+    for esp in objs["caixa"]["espumas"]:
+        if esp.hide_render:
+            continue
+        for f, s in ((q_a, 1.0), (q_a + n, 0.0), (q_b - n, 0.0), (q_b, 1.0)):
+            esp.scale = (s, s, s)
+            esp.keyframe_insert("scale", frame=f)
+        esp.scale = (1.0, 1.0, 1.0)
+        _interpolar(esp, q_a, q_b, canais=("scale",))
+        _chave_visivel(esp, 1, True)
+        _chave_visivel(esp, q_a + n, False)
+        _chave_visivel(esp, q_b - n, True)
 
 
 def _rig_luz_cortes(objs):
@@ -1442,7 +1818,7 @@ def _rig_luz_cortes(objs):
     rig.rotation_euler = (0.0, 0.0, ang_padrao)
     rig.keyframe_insert("rotation_euler", index=2, frame=q_padrao)
     quadros = set(chaves) | {primeiro - 1}
-    for fc in rig.animation_data.action.fcurves:
+    for fc in mod_ambiente.fcurves_de(rig.animation_data):
         if fc.data_path != "rotation_euler":
             continue
         for kp in fc.keyframe_points:
@@ -1467,6 +1843,7 @@ def coreografar(objs, fator=None):
     _beat5(objs, fator)
     _beat6(objs, fator)
     _beat7(objs, fator)
+    _esconder_espuma_nos_closes(objs, fator)
     _rig_luz_cortes(objs)
     _aplicar_interpolacao_camera(objs)
     cena.frame_set(1)

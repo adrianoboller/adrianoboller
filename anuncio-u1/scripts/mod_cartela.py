@@ -240,7 +240,12 @@ def _caminho_asset(nome_arquivo):
     if os.path.isabs(nome_arquivo):
         return nome_arquivo
     # scripts/ e assets/ sao irmaos na raiz do projeto.
-    raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    try:
+        raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    except NameError:
+        # Aba Scripting do Blender sem arquivo (colado direto): nao existe
+        # __file__; vale a pasta do .blend, ou a de trabalho se nem ele ha.
+        raiz = os.path.dirname(bpy.data.filepath) if bpy.data.filepath else os.getcwd()
     return os.path.join(raiz, "assets", nome_arquivo)
 
 
@@ -605,6 +610,16 @@ def _no_alfa(obj):
     return None, None
 
 
+def fcurves_de(animation_data):
+    """Fcurves da acao de um animation_data, em qualquer Blender 4.2+."""
+    # Action.fcurves virou legado no 4.4 (slotted actions); no 5.0 pode nao existir.
+    try:
+        return animation_data.action.fcurves
+    except AttributeError:
+        slot = animation_data.action_slot
+        return animation_data.action.layers[0].strips[0].channelbag(slot).fcurves
+
+
 def _chave_alfa(obj, quadro, valor, interpolacao=None):
     saida, nt = _no_alfa(obj)
     if saida is None:
@@ -618,7 +633,7 @@ def _chave_alfa(obj, quadro, valor, interpolacao=None):
     ad = nt.animation_data
     if ad is None or ad.action is None:
         return
-    for fc in ad.action.fcurves:
+    for fc in fcurves_de(ad):
         for kp in fc.keyframe_points:
             if abs(kp.co.x - quadro) < 0.5:
                 kp.interpolation = interpolacao
@@ -631,7 +646,7 @@ def _suavizar(dono, q_ini, q_fim, easing, interpolacao="BEZIER"):
     ad = getattr(dono, "animation_data", None)
     if ad is None or ad.action is None:
         return
-    for fc in ad.action.fcurves:
+    for fc in fcurves_de(ad):
         for kp in fc.keyframe_points:
             if q_ini - 0.5 <= kp.co.x <= q_fim + 0.5:
                 kp.interpolation = interpolacao

@@ -70,6 +70,8 @@ U1_BOTAO_OBJETO = ""         # nome do objeto do botao (para afundar), ou ""
 U1_LED_OBJETO = ""           # nome de um objeto com LED (Emission), ou ""
 DURACAO_S = 20               # 20 (referencia) ou 15 (preset frenetico)
 CAIXA_SOME = True            # True: caixa afunda no beat 2; False: U1 pousa na frente dela
+ESPUMA_SOME_NOS_CLOSES = True  # True: os flocos de espuma somem do chao nos beats 3-5 (fade de escala)
+ESCONDER_RESTO = False       # True: objetos SEUS fora de ANUNCIO saem do render (False devolve)
 COR_CAIXA = "clara"          # "clara" (#F2EDE6) ou "escura" (#141416)
 RESOLUCAO = (1080, 1920)     # 9:16 vertical
 AMOSTRAS = 64                # amostras do EEVEE no render final
@@ -139,9 +141,13 @@ def main():
         "duracao_s": float(DURACAO_S),
         "cor_caixa": COR_CAIXA,
         "caixa_some": bool(CAIXA_SOME),
+        "espuma_some_nos_closes": bool(ESPUMA_SOME_NOS_CLOSES),
         "pasta_assets": pasta_assets,
     }
     objs = mod_coreografia.construir_tudo(params)
+    # O que e seu e ficou visivel fora de ANUNCIO renderiza junto: avisa (e,
+    # com ESCONDER_RESTO, esconde - marcando, para a proxima rodada devolver).
+    mod_coreografia.avisar_objetos_de_fora(objs, esconder=bool(ESCONDER_RESTO))
     mod_coreografia.coreografar(objs)
     mod_coreografia.conferir_colisoes(objs, passo=3)
     largura, altura = RESOLUCAO

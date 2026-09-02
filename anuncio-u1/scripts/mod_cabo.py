@@ -572,6 +572,16 @@ def animar_conexao(objs, ponto_tomada, direcao_entrada, q_ini, q_fim, easing="EA
     _suavizar(objs, q_ini, q_fim)
 
 
+def fcurves_de(animation_data):
+    """Fcurves da acao de um animation_data, em qualquer Blender 4.2+."""
+    # Action.fcurves virou legado no 4.4 (slotted actions); no 5.0 pode nao existir.
+    try:
+        return animation_data.action.fcurves
+    except AttributeError:
+        slot = animation_data.action_slot
+        return animation_data.action.layers[0].strips[0].channelbag(slot).fcurves
+
+
 def _suavizar(objs, q_ini, q_fim):
     """Bezier auto-clamped em todas as chaves do intervalo: com uma chave por
     quadro nao muda o caminho, mas deixa o motion blur (sub-quadro) suave."""
@@ -579,7 +589,7 @@ def _suavizar(objs, q_ini, q_fim):
         ad = bloco.animation_data
         if ad is None or ad.action is None:
             continue
-        for fc in ad.action.fcurves:
+        for fc in fcurves_de(ad):
             for kp in fc.keyframe_points:
                 if q_ini - 0.5 <= kp.co.x <= q_fim + 0.5:
                     kp.interpolation = "BEZIER"

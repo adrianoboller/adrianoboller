@@ -872,6 +872,16 @@ def _plano_flash(objs, camera, forca, distancia):
     return obj
 
 
+def fcurves_de(animation_data):
+    """Fcurves da acao de um animation_data, em qualquer Blender 4.2+."""
+    # Action.fcurves virou legado no 4.4 (slotted actions); no 5.0 pode nao existir.
+    try:
+        return animation_data.action.fcurves
+    except AttributeError:
+        slot = animation_data.action_slot
+        return animation_data.action.layers[0].strips[0].channelbag(slot).fcurves
+
+
 def animar_flash(objs, camera, quadro, forca=0.5, largura=1, decaimento=None):
     """Flash de foto: veu branco parented na camera. Alfa 0 -> 1 -> 0,05 -> 0.
 
@@ -916,7 +926,7 @@ def animar_flash(objs, camera, quadro, forca=0.5, largura=1, decaimento=None):
     interp = {q: i for q, _, i in chaves}
     acao = nt.animation_data.action if nt.animation_data else None
     if acao is not None:
-        for fc in acao.fcurves:
+        for fc in fcurves_de(nt.animation_data):
             for kp in fc.keyframe_points:
                 i = interp.get(int(round(kp.co.x)))
                 if i is not None:
@@ -931,7 +941,7 @@ def _valor_animado(dono, data_path, quadro, indice=-1):
     # o valor atual - e o que "partir de onde esta" precisa saber.
     ad = getattr(dono, "animation_data", None)
     if ad is not None and ad.action is not None:
-        for fc in ad.action.fcurves:
+        for fc in fcurves_de(ad):
             if fc.data_path == data_path and (indice < 0 or fc.array_index == indice):
                 return fc.evaluate(quadro)
     valor = dono.path_resolve(data_path)
@@ -965,8 +975,7 @@ def animar_rig(objs, quadro_ini, quadro_fim, angulo_ini, angulo_fim, easing="EAS
     for q, ang in ((quadro_ini, angulo_ini), (quadro_fim, angulo_fim)):
         rig.rotation_euler = (0.0, 0.0, math.radians(ang))
         rig.keyframe_insert("rotation_euler", index=2, frame=q)
-    acao = rig.animation_data.action
-    for fc in acao.fcurves:
+    for fc in fcurves_de(rig.animation_data):
         for kp in fc.keyframe_points:
             kp.interpolation = "BEZIER"
             kp.easing = easing
@@ -1028,7 +1037,7 @@ def chavear_fator_luz(luzes, atributo, quadro_ini, quadro_fim=None, de=None, par
             setattr(dados, atributo, para)
             continue
         interp = {int(round(q)): i for q, _, i in chaves}
-        for fc in dados.animation_data.action.fcurves:
+        for fc in fcurves_de(dados.animation_data):
             if fc.data_path != atributo:
                 continue
             for kp in fc.keyframe_points:

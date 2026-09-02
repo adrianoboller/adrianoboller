@@ -102,6 +102,49 @@
 #   material do vidro NAO foi mexido. O que sobra a 16 amostras e um halo
 #   claro nas bordas das paredes escuras vistas pelo acrilico (denoise da
 #   refracao raytraced), que nao e ponto e some com amostras finais.
+#
+# RODADA 3 (teste_u1.py, PARTE=cena: o U1 no ambiente do anuncio, medido no
+# pixel a 540x960/16; os numeros 'antes' sao do mod_u1 da rodada 2 nos mesmos
+# enquadramentos):
+# - PRETO DA TELA LIGADA: a 0,26 m da tela (fim do dolly do beat 4, q359) o
+#   fundo da UI media L 69 max / 53 media no terco de cima contra 4 embaixo:
+#   reflexo da faixa rose do world no vidro (Specular IOR Level 0,5, rugosidade
+#   0,03). Subir a emissao nao serve, porque o fundo da UI e 0 e o reflexo
+#   SOMA. O especular agora e 0,5 * (1 - (1 - reflexo_tela_ligada) * ligada):
+#   com 0,2 sobrava L 19 de media em cima; com 0,05 (padrao) o pior terco da L
+#   max 9,8 e media 9,2 (o 'standby' sozinho e 5,5). Criterio: L < 15 em toda
+#   a tela.
+# - HASTE 'LAMPADA FLUORESCENTE' (foto C, q445): a fita de LED e paralela a
+#   haste e um cilindro reflete uma fonte como LINHA; com coat 1,0 a 0,08 a
+#   linha era >= 250 por 79 mm continuos (170 mm no total) com as luzes da
+#   camara a 10 W - e sem elas o max caia a 134: a linha e SO delas. Medido
+#   por rugosidade (base e coat): 0,35 -> 80 mm, 0,5 -> 43, 0,65 -> 26, e 26
+#   e o piso: a propria fita, que nessa camera passa na frente da haste (a
+#   medida agora exclui por ray cast o que nao e a haste). Padrao: rugosidade
+#   0,5 com coat 0,3 -> 5 mm (haste 1) e 0 (haste 2). Anisotropia 0,6 e 0,9
+#   dao o MESMO pixel: o EEVEE ignora o Anisotropic do Principled; o parametro
+#   fica para o Cycles.
+# - BARRA BRANCA DA FOTO A (q389): nao era fita de LED (escondendo as fitas
+#   nada muda) nem o aro (sem o aro ela cresce): era a parede do bolso do
+#   casco, BRANCA, entre o topo da parede de tras da camara (z 0,68) e o aro
+#   (z 0,706), vista por cima da frente. As fotos oficiais (guia rapido,
+#   figs. 18-20) mostram o interior sob a moldura preto em toda a volta e a
+#   moldura rente aos paineis: as paredes de tras e da frente da camara sobem
+#   ate a face de baixo do aro (a da frente so acima do vao da porta) e o aro
+#   passa a cobrir o casco inteiro (L x P), sem o degrau branco de 10 mm em
+#   volta; o casco termina onde o aro comeca (faces coincidentes davam uma
+#   franja hachurada na borda superior). Medido na linha do labio: 0 mm
+#   >= 235 (era a linha inteira).
+# - LATERAL 'SLAB' (q185/q300/q315): a hipotese da revisao era que a key de
+#   2 x 2 m a 3,3 m (4,0 m do alvo, medido) chapa a face por construcao.
+#   MEDIDO com a camera na normal da face +X a 2 m, 50 mm, rig a azimute+90,
+#   amplitude horizontal das medias de coluna de L na faixa z 0,57-0,66:
+#   key do ambiente 6,5 niveis; key 1 x 1 m a 2,5 m: 8,3; softbox 1 x 2 m
+#   vertical a 2,5 m: 8,3. Criterio era >= 15: NENHUMA passa - a hipotese
+#   MORREU medida, a chapa nao vem do tamanho da key (o rebaixo do disco, na
+#   faixa z 0,30-0,42, da 25-32 niveis: o que faz gradiente e geometria, nao a
+#   luz). O ambiente nao foi mexido. Para a coreografia/ambiente: a alavanca
+#   e outra (posicao da key fora da normal, ou o rim/fill), nao o tamanho.
 
 import math
 import os
@@ -109,6 +152,16 @@ import os
 import bpy
 import bmesh
 from mathutils import Vector, Matrix
+
+def fcurves_de(animation_data):
+    """Fcurves da acao de um animation_data, em qualquer Blender 4.2+."""
+    # Action.fcurves virou legado no 4.4 (slotted actions); no 5.0 pode nao existir.
+    try:
+        return animation_data.action.fcurves
+    except AttributeError:
+        slot = animation_data.action_slot
+        return animation_data.action.layers[0].strips[0].channelbag(slot).fcurves
+
 
 NOME = "u1"
 
@@ -130,6 +183,17 @@ PADROES = {
     # em assets/tela_boot.png: left/right 90 px, bottom 44 px, 3 px de altura.
     "barra_boot_px": (90, 390, 273, 276),
     "cor_trilho_boot": "#2A2A2E",
+    # Fracao do especular do vidro da tela que sobra com ela LIGADA (ver
+    # RODADA 3 no cabecalho): 1,0 = reflete o world como desligada. MEDIDO no
+    # fundo da UI a 0,26 m: 0,2 ainda dava L media 19 no terco de cima; 0,05
+    # da 9 (o resto e o 'standby', 5,5 em toda a tela).
+    "reflexo_tela_ligada": 0.05,
+    # Hastes de fibra de carbono: rugosidade da resina (base e coat) e
+    # anisotropia do escovado (so no Cycles: o EEVEE ignora o Anisotropic do
+    # Principled - medido, 0,6 e 0,9 dao o mesmo pixel). Era 0,28/0,08; 0,35
+    # ainda deixava 50 mm de linha >= 250 sob a fita de LED (RODADA 3).
+    "rugosidade_hastes": 0.5,
+    "anisotropia_hastes": 0.6,
 }
 
 # Quanto a porta+puxador (frente) e a coluna+botao (tras) saem do casco; o
@@ -412,8 +476,15 @@ def _mat_aluminio(nome, eixo):
     return mat
 
 
-def _mat_fibra_carbono(nome):
-    """Sarja de fibra de carbono procedural: duas ondas cruzadas, resina brilhante por cima."""
+def _mat_fibra_carbono(nome, rugosidade=0.35, anisotropia=0.6):
+    """Sarja de fibra de carbono procedural: duas ondas cruzadas, resina por cima.
+
+    'rugosidade' vale para a base E para o coat, e o coat cai a 0,3: com o
+    coat cheio a 0,08 a haste era um espelho cilindrico da area light da
+    camara - uma linha branca continua ao longo da haste (a 'lampada
+    fluorescente' da foto C), porque a fita de LED e PARALELA a haste e um
+    cilindro reflete uma fonte como linha. A anisotropia fica na base, com a
+    tangente radial no eixo da haste (o escovado; so o Cycles a usa)."""
     mat, nt, bsdf = _material(nome)
     coord = nt.nodes.new("ShaderNodeTexCoord")
     coord.location = (-900, 0)
@@ -441,11 +512,11 @@ def _mat_fibra_carbono(nome):
     mistura.inputs["Color2"].default_value = _cor("#34363B")
     nt.links.new(mult.outputs["Value"], mistura.inputs["Fac"])
     nt.links.new(mistura.outputs["Color"], bsdf.inputs["Base Color"])
-    _entrada(bsdf, "Roughness", 0.28)
+    _entrada(bsdf, "Roughness", rugosidade)
     _entrada(bsdf, "Metallic", 0.15)
-    _entrada(bsdf, "Coat Weight", 1.0)
-    _entrada(bsdf, "Coat Roughness", 0.08)
-    _entrada(bsdf, "Anisotropic", 0.6)
+    _entrada(bsdf, "Coat Weight", 0.3)
+    _entrada(bsdf, "Coat Roughness", rugosidade)
+    _entrada(bsdf, "Anisotropic", anisotropia)
     tang = nt.nodes.new("ShaderNodeTangent")
     tang.direction_type = "RADIAL"
     tang.axis = "X"
@@ -532,7 +603,8 @@ def _carregar_imagem(caminho, nome, largura=480, altura=320, cor=(0.0, 0.0, 0.0,
     return img, True
 
 
-def _mat_tela(nome, img_boot, img_ui, barra_px=(90, 390, 273, 276), cor_trilho="#2A2A2E"):
+def _mat_tela(nome, img_boot, img_ui, barra_px=(90, 390, 273, 276), cor_trilho="#2A2A2E",
+              reflexo_ligada=0.2):
     """Vidro preto brilhante que vira tela: emissao = imagem, forca comeca em 0.
 
     Nos nomeados 'ligada', 'mistura' e 'progresso' sao o que animar_tela chaveia:
@@ -541,6 +613,9 @@ def _mat_tela(nome, img_boot, img_ui, barra_px=(90, 390, 273, 276), cor_trilho="
     - progresso: 0..1 preenche a barra do boot por mascara em UV
     A imagem ocupa so a area ativa de 3,5"; a moldura em volta fica preta
     pela extensao CLIP do Image Texture.
+    Ligada, o Specular IOR Level cai para 'reflexo_ligada' do valor de vidro:
+    o reflexo do world (a faixa rose) competia com a UI e o preto da tela
+    media L 45-51 no terco de cima contra 5-6 embaixo (q359 da rodada 2).
     """
     mat, nt, bsdf = _material(nome)
     _entrada(bsdf, "Base Color", (0.005, 0.005, 0.006, 1.0))
@@ -647,6 +722,18 @@ def _mat_tela(nome, img_boot, img_ui, barra_px=(90, 390, 273, 276), cor_trilho="
     ligada.location = (-250, -250)
     # Tela real e bem mais clara que o vidro em volta: 4x para AgX nao apagar.
     forca = _math("MULTIPLY", (ligada, 0), 4.0, (-50, -250))
+    # Especular = 0,5 * (1 - (1 - reflexo_ligada) * ligada): vidro preto
+    # desligada, quase sem reflexo acesa. Subir a emissao nao resolveria: o
+    # reflexo SOMA a radiancia da imagem, e o preto da UI e preto (0) - so
+    # tirar o reflexo o deixa preto. Se o socket nao existir numa versao, a
+    # tela fica com o especular fixo de vidro, como antes.
+    especular_ligada = _math("MULTIPLY_ADD", (ligada, 0), -(1.0 - reflexo_ligada), (-50, -100))
+    especular_ligada.inputs[2].default_value = 1.0
+    especular = _math("MULTIPLY", (especular_ligada, 0), 0.5, (100, -100))
+    for nome_socket in ("Specular IOR Level", "Specular"):
+        if bsdf.inputs.get(nome_socket) is not None:
+            nt.links.new(especular.outputs["Value"], bsdf.inputs[nome_socket])
+            break
     # 'standby': a tela acesa mas sem imagem, logo depois de ligar (cinza
     # escuro, emissao 0,15). E um segundo termo SOMADO a radiancia - a imagem
     # so tem uma entrada de emissao no Principled, entao a forca vai para 1 e
@@ -704,7 +791,7 @@ def construir_u1(cena, colecao_pai, params=None):
     m_alu_x = _mat_aluminio("u1.aluminio.x", "X")
     m_alu_y = _mat_aluminio("u1.aluminio.y", "Y")
     m_alu_z = _mat_aluminio("u1.aluminio.z", "Z")
-    m_fibra = _mat_fibra_carbono("u1.fibra_carbono")
+    m_fibra = _mat_fibra_carbono("u1.fibra_carbono", p["rugosidade_hastes"], p["anisotropia_hastes"])
     m_pei = _mat_pei("u1.pei")
     m_vidro = _mat_vidro("u1.vidro", "#8E9096", 0.02)
     # Mesma polidez do vidro da porta: com 0,10 a refracao raytraced virava
@@ -725,7 +812,8 @@ def construir_u1(cena, colecao_pai, params=None):
 
     img_boot, ph_boot = _carregar_imagem(p["imagem_boot"], "u1.tela_boot", cor=(0, 0, 0, 1))
     img_ui, ph_ui = _carregar_imagem(p["imagem_ui"], "u1.tela_ui", cor=(0.09, 0.09, 0.1, 1))
-    m_tela = _mat_tela("u1.tela", img_boot, img_ui, tuple(p["barra_boot_px"]), p["cor_trilho_boot"])
+    m_tela = _mat_tela("u1.tela", img_boot, img_ui, tuple(p["barra_boot_px"]), p["cor_trilho_boot"],
+                       p["reflexo_tela_ligada"])
 
     # Raiz: a coreografia move isto e o U1 inteiro vai junto.
     raiz = bpy.data.objects.new("u1.raiz", None)
@@ -734,9 +822,14 @@ def construir_u1(cena, colecao_pai, params=None):
     col.objects.link(raiz)
 
     # --- Casco branco ------------------------------------------------------
-    # Casco de 4 mm acima do chao (pes) ate 10 mm abaixo do topo: o aro preto
-    # sobe esses 10 mm sobre o casco, como a moldura do U1 real.
-    corpo = _caixa("u1.corpo", col, (L, P, A - 0.014), (0, 0, (A - 0.006) / 2), m_painel,
+    # Casco de 4 mm acima do chao (pes) ate a face de baixo do aro (A - 24 mm):
+    # o aro preto, com o MESMO footprint, senta em cima dele, como a moldura
+    # do U1 real. Casco e aro nao se sobrepoem: quando o aro cobria o casco
+    # ate 14 mm abaixo do topo, as faces externas coincidentes viravam uma
+    # franja hachurada (z-fighting) em toda a borda superior, medida no
+    # close da tela e na frente 3/4.
+    z_aro = A - 0.024
+    corpo = _caixa("u1.corpo", col, (L, P, z_aro - 0.004), (0, 0, (z_aro + 0.004) / 2), m_painel,
                    chanfro=0.025, segmentos=8, pai=raiz, peso=(1.0, 0.16), suave=False)
     # Bolso do topo (a camara aparece por ele), abertura da porta, janela
     # traseira, bolso da tela e rebaixo circular das laterais.
@@ -764,8 +857,12 @@ def construir_u1(cena, colecao_pai, params=None):
     # o bolso (faz o labio). A boca do aro e um chanfro de 6 mm (o cortador e
     # um 'funil' com a parte de cima alargada a 45 graus) e o bordo externo do
     # topo e arredondado com 6 mm: e o que faz a moldura ler como moldura.
-    aro = _caixa("u1.aro", col, (L - 0.02, P - 0.02, 0.024), (0, 0, A - 0.012), m_aro,
-                 chanfro=0.02, segmentos=6, pai=raiz, peso=(1.0, 0.12), suave=False)
+    # O aro cobre o casco inteiro (L x P, mesmos cantos): nas fotos oficiais
+    # a moldura preta e rente aos paineis brancos, sem degrau branco em volta.
+    # (use_smooth no aro nao muda um pixel: o harden_normals do Bevel ja dita
+    # as normais - medido a 64 amostras, suave e plano dao as mesmas linhas.)
+    aro = _caixa("u1.aro", col, (L, P, 0.024), (0, 0, A - 0.012), m_aro,
+                 chanfro=0.025, segmentos=6, pai=raiz, peso=(1.0, 0.10), suave=False)
     _peso_arestas_topo(aro.data, 0.30)
     _cortador("u1.cortador.aro", col, _malha_funil("u1.cortador.aro", L - 0.10, P - 0.12, 0.1, 0.006), (0, 0, A), aro, raiz)
     _chanfro(aro, 0.0015, 2, nome="quina")
@@ -781,7 +878,13 @@ def construir_u1(cena, colecao_pai, params=None):
                (sx * (cx / 2 - 0.006), 0, 0.05 + (A - 0.06) / 2), m_camara, chanfro=0, pai=raiz)
     # Parede traseira preta so acima e abaixo da janela; a janela leva acrilico.
     _caixa("u1.camara.parede.tras.baixo", col, (cx, 0.012, 0.06), (0, cy / 2 - 0.006, 0.08), m_camara, chanfro=0, pai=raiz)
-    _caixa("u1.camara.parede.tras.cima", col, (cx, 0.012, A - 0.58 - 0.05), (0, cy / 2 - 0.006, 0.58 + (A - 0.58 - 0.05) / 2), m_camara, chanfro=0, pai=raiz)
+    # As paredes de tras e da frente sobem ate a face de baixo do aro
+    # (z_aro): a parede de tras parava 26 mm antes e o casco branco aparecia
+    # entre ela e o aro - a 'barra branca' da foto A da rodada 2. Nas fotos
+    # oficiais o interior sob a moldura e preto em toda a volta.
+    _caixa("u1.camara.parede.tras.cima", col, (cx, 0.012, z_aro - 0.58), (0, cy / 2 - 0.006, (0.58 + z_aro) / 2), m_camara, chanfro=0, pai=raiz)
+    # Frente: so acima do vao da porta (0,055..0,455), para nao aparecer por ela.
+    _caixa("u1.camara.parede.frente", col, (cx, 0.012, z_aro - 0.46), (0, -cy / 2 + 0.006, (0.46 + z_aro) / 2), m_camara, chanfro=0, pai=raiz)
     painel_traseiro = _caixa("u1.painel_traseiro", col, (0.42, 0.004, 0.48), (-0.02, tras - 0.03, 0.34), m_acrilico, chanfro=0.001, segmentos=2, pai=raiz)
 
     # Frente: wordmark e tela.
@@ -1127,7 +1230,7 @@ def ponto_no_mundo(objs, chave, campo="centro"):
 def _suavizar_fcurves(anim, quadros, easing="EASE_IN_OUT", interp="BEZIER"):
     if anim is None or anim.action is None:
         return
-    for fc in anim.action.fcurves:
+    for fc in fcurves_de(anim):
         for kp in fc.keyframe_points:
             if int(round(kp.co.x)) in quadros:
                 kp.interpolation = interp
@@ -1270,7 +1373,7 @@ def animar_tela(objs, q_boot_ini, q_ui_ini, q_fim, easing="EASE_IN_OUT", duracao
     _suavizar_fcurves(anim, {q_boot_ini, q_boot_ini + duracao_fade, q_fim, q_boot_ini + 2, max(q_boot_ini + 3, q_ui_ini - 2)}, easing)
     # A troca boot -> UI e um corte seco, como na maquina real.
     if mistura is not None and anim and anim.action:
-        for fc in anim.action.fcurves:
+        for fc in fcurves_de(anim):
             if "mistura" in fc.data_path:
                 for kp in fc.keyframe_points:
                     kp.interpolation = "CONSTANT"

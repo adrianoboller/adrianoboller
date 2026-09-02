@@ -147,7 +147,12 @@ def _caminho_asset(nome_arquivo):
     if os.path.isabs(nome_arquivo):
         return nome_arquivo
     # scripts/ e assets/ sao irmaos na raiz do projeto.
-    raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    try:
+        raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    except NameError:
+        # Aba Scripting do Blender sem arquivo (colado direto): nao existe
+        # __file__; vale a pasta do .blend, ou a de trabalho se nem ele ha.
+        raiz = os.path.dirname(bpy.data.filepath) if bpy.data.filepath else os.getcwd()
     return os.path.join(raiz, "assets", nome_arquivo)
 
 
@@ -695,13 +700,23 @@ def construir_caixa(cena, colecao_pai=None, params=None):
 
 # ---------------------------------------------------------------- animacao
 
+def fcurves_de(animation_data):
+    """Fcurves da acao de um animation_data, em qualquer Blender 4.2+."""
+    # Action.fcurves virou legado no 4.4 (slotted actions); no 5.0 pode nao existir.
+    try:
+        return animation_data.action.fcurves
+    except AttributeError:
+        slot = animation_data.action_slot
+        return animation_data.action.layers[0].strips[0].channelbag(slot).fcurves
+
+
 def _suavizar(obj, q_ini, q_fim, easing, canais=None, interpolacao="BEZIER"):
     """Deixa Bezier + easing em todas as chaves do intervalo. So mexe nas
     chaves deste intervalo para nao alterar animacao de outro beat."""
     ad = obj.animation_data
     if ad is None or ad.action is None:
         return
-    for fc in ad.action.fcurves:
+    for fc in fcurves_de(ad):
         if canais is not None and fc.data_path not in canais:
             continue
         for kp in fc.keyframe_points:

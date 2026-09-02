@@ -10,7 +10,10 @@
 # Uso: previa.sh <script.py> [-- args para o script]
 #      previa.sh --blend cena.blend <script.py>
 #
-# Custo medido: ~6 s por quadro em 540x960 com 16 amostras, 4 nucleos.
+# Custo medido (llvmpipe, 4 nucleos): ~6 s por quadro para um corpo de prova
+# simples (o cubo dos testes de modulo) em 540x960/16. A CENA COMPLETA do
+# anuncio custa 27-40 s por quadro, tanto a 360x640/8 quanto a 540x960/16 -
+# por isso os lotes da previa (lotes.sh) tem 14 quadros, para caber em 10 min.
 
 set -euo pipefail
 
