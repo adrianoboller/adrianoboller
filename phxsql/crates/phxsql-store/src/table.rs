@@ -153,6 +153,17 @@ pub struct Table {
     /// custa essa comparacao e mais nada: nao abre arquivo, nao decodifica
     /// valor, nao monta texto.
     colunas_marcadas: Vec<usize>,
+    /// Posicoes, em `esquema.chaves_estrangeiras`, das chaves que PEDIRAM
+    /// conferencia (`verificar: true`).
+    ///
+    /// # Por que uma lista guardada, e nao uma varredura
+    ///
+    /// Mesmo motivo de `colunas_marcadas`, e a mesma licao do Profiler: o
+    /// portao que decide vem ANTES do trabalho. Perguntar ao esquema "ha chave
+    /// a conferir?" a cada linha percorreria as chaves todas por gravacao;
+    /// esta lista se monta UMA vez, na abertura, e a pergunta vira
+    /// `is_empty()`. Tabela sem chave conferida nao paga nada.
+    fks_conferidas: Vec<usize>,
     /// Gravar a imagem da linha no diario? Ver [`Table::com_imagem_no_diario`].
     imagem_no_diario: bool,
     /// Gravar a imagem TAMBEM na exclusao fisica?
@@ -195,6 +206,54 @@ fn marcadas_do_esquema(esquema: &Schema) -> Vec<usize> {
         })
         .map(|(i, _)| i)
         .collect()
+}
+
+/// As chaves estrangeiras que pediram conferencia.
+///
+/// Declarar sempre foi aceito aqui e nunca foi imposto; conferir todas as
+/// declaracoes que ja existem recusaria gravacoes que hoje passam. Quem pede a
+/// garantia ganha a garantia -- ver [`phxsql_core::schema::ForeignKey::verificar`].
+fn fks_conferidas_do_esquema(esquema: &Schema) -> Vec<usize> {
+    esquema
+        .chaves_estrangeiras()
+        .iter()
+        .enumerate()
+        .filter(|(_, fk)| fk.verificar)
+        .map(|(i, _)| i)
+        .collect()
+}
+
+/// O nome sem o esquema: `vendas.clientes` abre como `clientes`.
+///
+/// A qualificacao existe no NOME declarado da chave; o arquivo em disco mora
+/// no diretorio do database, e e por ele que se abre.
+fn nome_simples(qualificado: &str) -> &str {
+    qualificado.rsplit_once('.').map_or(qualificado, |(_, t)| t)
+}
+
+/// O indice da mae que serve para procurar por estas colunas, se houver.
+///
+/// Serve o indice cujas PRIMEIRAS colunas sao exatamente as referenciadas, na
+/// ordem -- um indice por (empresa, cliente) serve para procurar por empresa
+/// sozinha, mas nao o contrario. Preferimos o unico quando ha os dois, porque
+/// referencia para chave nao-unica casa com varias linhas e a pergunta aqui e
+/// so "existe alguma?".
+fn indice_que_cobre(esquema: &Schema, colunas_ref: &[String]) -> Option<String> {
+    let serve = |idx: &phxsql_core::schema::IndexDef| {
+        idx.colunas.len() >= colunas_ref.len()
+            && colunas_ref.iter().enumerate().all(|(k, nome)| {
+                esquema
+                    .colunas()
+                    .get(idx.colunas[k].coluna)
+                    .is_some_and(|c| c.nome == *nome)
+            })
+    };
+    let indices = esquema.indices();
+    indices
+        .iter()
+        .find(|i| i.unico && serve(i))
+        .or_else(|| indices.iter().find(|i| serve(i)))
+        .map(|i| i.nome.clone())
 }
 
 impl Table {
@@ -240,6 +299,7 @@ impl Table {
         let reg = RegFile::criar(&diretorio, &nome, esquema.clone())?;
 
         let colunas_marcadas = marcadas_do_esquema(&esquema);
+        let fks_conferidas = fks_conferidas_do_esquema(&esquema);
         let mut t = Table {
             nome,
             diretorio,
@@ -253,6 +313,7 @@ impl Table {
             motivos,
             trilha,
             colunas_marcadas,
+            fks_conferidas,
             imagem_no_diario: false,
             imagem_na_exclusao: false,
             evento_forcado: None,
@@ -401,6 +462,7 @@ impl Table {
             .acrescentar_coluna(novo, posicao, &bytes, padrao.is_none())?;
         self.esquema = self.reg.esquema().clone();
         self.colunas_marcadas = marcadas_do_esquema(&self.esquema);
+        self.fks_conferidas = fks_conferidas_do_esquema(&self.esquema);
         // O `.pag` descreve a tabela para quem le o diretorio sem abrir o
         // `.reg`; desatualizado, ele viraria uma segunda verdade.
         self.gravar_pag()?;
@@ -434,6 +496,7 @@ impl Table {
 
         let esquema = reg.esquema().clone();
         let colunas_marcadas = marcadas_do_esquema(&esquema);
+        let fks_conferidas = fks_conferidas_do_esquema(&esquema);
         Ok(Table {
             nome: nome.to_string(),
             diretorio,
@@ -447,10 +510,103 @@ impl Table {
             motivos,
             trilha,
             colunas_marcadas,
+            fks_conferidas,
             imagem_no_diario: false,
             imagem_na_exclusao: false,
             evento_forcado: None,
         })
+    }
+
+    /// Confere as chaves estrangeiras que pediram conferencia.
+    ///
+    /// Chamada ANTES de gravar, e so quando ha o que conferir -- o portao e o
+    /// `is_empty()` de `fks_conferidas`, montado na abertura.
+    ///
+    /// # As duas regras que a norma exige e que sao faceis de errar
+    ///
+    /// **NULO satisfaz.** Se qualquer coluna local da chave estiver nula, a
+    /// restricao esta satisfeita e nao se procura a mae (e o `MATCH SIMPLE` do
+    /// SQL). Conferir mesmo assim recusaria a linha filha que ainda nao tem
+    /// pai -- que e justamente o caso que a coluna anulavel existe para
+    /// permitir. Quem quer o contrario declara a coluna obrigatoria.
+    ///
+    /// **A mae precisa de indice.** A conferencia procura por indice, nunca
+    /// por varredura: sem indice, cada linha filha gravada custaria uma
+    /// passada na tabela inteira, e esse custo ficaria escondido dentro de um
+    /// `inserir` que parece barato. Sem indice que cubra as colunas
+    /// referenciadas, a gravacao e RECUSADA dizendo qual indice falta -- um
+    /// erro que se le e se conserta vale mais que uma lentidao que ninguem
+    /// explica.
+    fn conferir_fks(&self, valores: &[Value]) -> Result<()> {
+        for &i in &self.fks_conferidas {
+            let fk = &self.esquema.chaves_estrangeiras()[i];
+            // NULO satisfaz: nada a procurar.
+            let mut chave = Vec::with_capacity(fk.colunas.len());
+            let mut tem_nulo = false;
+            for &c in &fk.colunas {
+                match valores.get(c) {
+                    None | Some(Value::Null) => {
+                        tem_nulo = true;
+                        break;
+                    }
+                    Some(v) => chave.push(v.clone()),
+                }
+            }
+            if tem_nulo {
+                continue;
+            }
+
+            // Abrir a mae num SEGUNDO descritor tem um limite, e ele foi
+            // medido: se a mae esta aberta em outro lugar COM ESCRITA
+            // PENDENTE, o indice dela ainda nao foi para o disco e o store
+            // recusa le-lo -- corretamente, porque ler seria pior.
+            //
+            // O limite nao e de descritor, e de VISIBILIDADE, e e o mesmo
+            // buraco do read-your-own-writes: a conferencia enxerga o que ja
+            // foi gravado, e nao o que a mesma unidade de trabalho ainda nao
+            // confirmou. Mae e filha na mesma transacao caem aqui.
+            //
+            // O erro cru diria "indice corrompido", que manda o leitor
+            // reparar um arquivo que esta sao. Este diz o que houve.
+            let mut mae = Table::abrir(&self.diretorio, nome_simples(&fk.tabela_ref))?;
+            let indice = indice_que_cobre(mae.esquema(), &fk.colunas_ref).ok_or_else(|| {
+                PhxError::Esquema(format!(
+                    "a chave {:?} confere contra {}({}), e essa tabela nao tem \
+                     indice comecando por essas colunas -- crie o indice ou \
+                     desligue `verificar` na chave",
+                    fk.nome,
+                    fk.tabela_ref,
+                    fk.colunas_ref.join(", ")
+                ))
+            })?;
+            // Erro do `buscar` NAO e "nao achou" -- nao achar e `Ok(vazio)`.
+            // Erro aqui e a guarda do indice da mae recusando responder, e ela
+            // recusa quando a mae esta aberta em outro lugar com escrita
+            // pendente. Medido: a limitacao nao e de descritor, e de
+            // VISIBILIDADE, e e o mesmo buraco do read-your-own-writes -- mae
+            // e filha na mesma transacao caem aqui.
+            //
+            // O erro cru manda "reconstrua o indice", o que faria o leitor
+            // reparar um arquivo sao. Este diz o que houve.
+            let achou = mae.buscar(&indice, &chave).map_err(|e| {
+                PhxError::Integridade(format!(
+                    "{}: nao deu para conferir contra {} agora ({e}). A \
+                     conferencia le o que ja foi gravado; mae escrita nesta \
+                     mesma transacao ainda nao esta visivel -- confirme a mae \
+                     antes da filha",
+                    fk.nome, fk.tabela_ref
+                ))
+            })?;
+            if achou.is_empty() {
+                return Err(PhxError::Integridade(format!(
+                    "{}: nao existe {}({}) com esse valor",
+                    fk.nome,
+                    fk.tabela_ref,
+                    fk.colunas_ref.join(", ")
+                )));
+            }
+        }
+        Ok(())
     }
 
     /// Liga a imagem da linha no diario. Ver o modulo `log`.
@@ -950,6 +1106,9 @@ impl Table {
 
     pub fn inserir(&mut self, valores: &[Value]) -> Result<RowId> {
         self.conferir_aridade(valores)?;
+        if !self.fks_conferidas.is_empty() {
+            self.conferir_fks(valores)?;
+        }
         // Numerar ANTES das chaves, pela mesma razao da sequencia: se a coluna
         // estiver num indice, a chave tem de ser a do numero gravado.
         let mut completos = match self.completar(valores, None) {
@@ -1160,6 +1319,9 @@ impl Table {
     /// fisica no `.reg`.
     pub fn atualizar(&mut self, rowid: RowId, valores: &[Value]) -> Result<()> {
         self.conferir_aridade(valores)?;
+        if !self.fks_conferidas.is_empty() {
+            self.conferir_fks(valores)?;
+        }
         let antigo = self
             .reg
             .ler(rowid)?
@@ -2486,6 +2648,7 @@ impl Table {
         let reescreveu = self.reg.remarcar_dado_pessoal(marcas)?;
         self.esquema = self.reg.esquema().clone();
         self.colunas_marcadas = marcadas_do_esquema(&self.esquema);
+        self.fks_conferidas = fks_conferidas_do_esquema(&self.esquema);
         Ok(reescreveu)
     }
 

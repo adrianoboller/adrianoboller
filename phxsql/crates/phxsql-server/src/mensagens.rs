@@ -148,6 +148,17 @@ pub const FABRICA: &[MensagemFabrica] = &[
         ],
     },
     MensagemFabrica {
+        nome: "erro.integridade",
+        textos: [
+            "integridade referencial: {detalhe}",
+            "intégrité référentielle : {detalhe}",
+            "referential integrity: {detalhe}",
+            "integrità referenziale: {detalhe}",
+            "referenzielle Integrität: {detalhe}",
+            "integridad referencial: {detalhe}",
+        ],
+    },
+    MensagemFabrica {
         nome: "erro.duplicado",
         textos: [
             "chave duplicada: {detalhe}",
@@ -513,6 +524,7 @@ pub fn decompor(e: &PhxError) -> (&'static str, String) {
         PhxError::Tipo(m) => ("erro.tipo_invalido", m.clone()),
         PhxError::NaoEncontrado(m) => ("erro.nao_encontrado", m.clone()),
         PhxError::Duplicado(m) => ("erro.duplicado", m.clone()),
+        PhxError::Integridade(m) => ("erro.integridade", m.clone()),
         PhxError::Conflito(m) => ("erro.conflito", m.clone()),
         PhxError::Autorizacao(m) => ("erro.acesso_negado", m.clone()),
         PhxError::EmCarga(m) => ("erro.em_carga", m.clone()),

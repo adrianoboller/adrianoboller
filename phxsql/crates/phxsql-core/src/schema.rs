@@ -39,7 +39,7 @@ const MAGIC_ESQUEMA: &[u8; 4] = b"PSCH";
 /// deslocaria o offset de todas as seguintes. Uma tabela v3 continua legivel
 /// exatamente como esta -- so nao tem exclusao suave, e a mensagem de erro
 /// diz isso em vez de ler lixo.
-const VERSAO_ESQUEMA: u16 = 6;
+const VERSAO_ESQUEMA: u16 = 7;
 const VERSAO_ESQUEMA_MINIMA: u16 = 2;
 
 /// Nome da coluna de sistema que marca a linha como excluida sem excluir.
@@ -133,6 +133,21 @@ pub struct ForeignKey {
     pub colunas_ref: Vec<String>,
     pub ao_excluir: AcaoRi,
     pub ao_alterar: AcaoRi,
+    /// Se o motor CONFERE esta chave ao gravar a linha filha.
+    ///
+    /// # Por que um interruptor, e por que ele nasce DESLIGADO
+    ///
+    /// Declarar chave estrangeira sempre foi aceito aqui, e nunca foi imposto.
+    /// Ligar a conferencia para todas as declaracoes que ja existem recusaria
+    /// gravacoes que hoje passam -- e *proteccao que quebra todo cliente antigo
+    /// nao e proteccao, e estrago*. Vale a mesma regra da janela de conflito:
+    /// quem PEDE a garantia ganha a garantia; quem nao pede continua como
+    /// antes.
+    ///
+    /// Note que `ao_excluir` ja nasce `Restringir` no `new` e no JSON, e isso
+    /// NAO significa que o pai esteja protegido hoje: significa que a acao
+    /// esta declarada. Este campo e o que separa declarado de imposto.
+    pub verificar: bool,
 }
 
 impl ForeignKey {
@@ -149,7 +164,14 @@ impl ForeignKey {
             colunas_ref,
             ao_excluir: AcaoRi::Restringir,
             ao_alterar: AcaoRi::Restringir,
+            verificar: false,
         }
+    }
+
+    /// Liga a conferencia desta chave na gravacao. Ver [`ForeignKey::verificar`].
+    pub fn conferindo(mut self, sim: bool) -> Self {
+        self.verificar = sim;
+        self
     }
 
     pub fn ao_excluir(mut self, acao: AcaoRi) -> Self {
@@ -1036,6 +1058,10 @@ impl Schema {
             escrever_texto(&mut out, &fk.tabela_ref);
             out.push(fk.ao_excluir.tag());
             out.push(fk.ao_alterar.tag());
+            // v7. Um byte, e nao um bit roubado da tag da acao: bit escondido
+            // dentro de outro campo e o que faz `de_tag` recusar um arquivo
+            // valido no dia em que alguem acrescentar uma quinta acao.
+            out.push(fk.verificar as u8);
             out.extend_from_slice(&(fk.colunas.len() as u16).to_le_bytes());
             for c in &fk.colunas {
                 out.extend_from_slice(&(*c as u16).to_le_bytes());
@@ -1150,6 +1176,9 @@ impl Schema {
             let tabela_ref = leitor.texto()?;
             let ao_excluir = AcaoRi::de_tag(leitor.u8()?)?;
             let ao_alterar = AcaoRi::de_tag(leitor.u8()?)?;
+            // Esquema gravado antes da v7 nao tem o byte, e le como DESLIGADO
+            // -- que e exatamente o comportamento que aquele arquivo tinha.
+            let verificar = versao >= 7 && leitor.u8()? != 0;
             let n = leitor.u16()? as usize;
             let mut cols = Vec::with_capacity(n);
             for _ in 0..n {
@@ -1166,6 +1195,7 @@ impl Schema {
                 colunas_ref: cols_ref,
                 ao_excluir,
                 ao_alterar,
+                verificar,
             });
         }
 

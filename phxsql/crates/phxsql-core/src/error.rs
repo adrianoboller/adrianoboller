@@ -31,6 +31,18 @@ pub enum PhxError {
     NaoEncontrado(String),
     /// Violacao de indice unico.
     Duplicado(String),
+    /// Violacao de integridade referencial: a linha aponta para uma mae que
+    /// nao existe, ou a mae tem filha que a impede de sair.
+    ///
+    /// # Por que nao reaproveitar `NaoEncontrado`
+    ///
+    /// O que nao foi encontrado nao e o que o cliente pediu -- ele pediu para
+    /// GRAVAR, e a gravacao e valida em tudo menos na referencia. Quem recebe
+    /// `NAO_ENCONTRADO` procura o proprio pedido; quem recebe `INTEGRIDADE`
+    /// sabe que precisa criar a mae antes, ou corrigir o valor. E a mesma
+    /// razao que separou `EmTransacao` de `EmCarga`: os dois pedem coisas
+    /// diferentes de quem recebe.
+    Integridade(String),
     /// Outra sessao mexeu no registro entre a leitura e a gravacao.
     Conflito(String),
     /// A tabela esta reservada para uma carga, por outra sessao.
@@ -122,6 +134,7 @@ impl PhxError {
             PhxError::Tipo(_) => 2002,
             PhxError::NaoEncontrado(_) => 3001,
             PhxError::Duplicado(_) => 3002,
+            PhxError::Integridade(_) => 3006,
             PhxError::LimiteExcedido(_) => 3003,
             PhxError::Conflito(_) => 3004,
             // A recusa de SIGNAL e da familia do DADO: o dado em si (ou a
@@ -150,6 +163,7 @@ impl PhxError {
             PhxError::Tipo(_) => "TIPO_INVALIDO",
             PhxError::NaoEncontrado(_) => "NAO_ENCONTRADO",
             PhxError::Duplicado(_) => "DUPLICADO",
+            PhxError::Integridade(_) => "INTEGRIDADE",
             PhxError::LimiteExcedido(_) => "LIMITE_EXCEDIDO",
             PhxError::Conflito(_) => "CONFLITO",
             PhxError::Sinal { .. } => "SINAL",
@@ -227,6 +241,7 @@ impl fmt::Display for PhxError {
             PhxError::Tipo(m) => write!(f, "tipo invalido: {m}"),
             PhxError::NaoEncontrado(m) => write!(f, "nao encontrado: {m}"),
             PhxError::Duplicado(m) => write!(f, "chave duplicada: {m}"),
+            PhxError::Integridade(m) => write!(f, "integridade referencial: {m}"),
             PhxError::Conflito(m) => write!(f, "conflito de escrita: {m}"),
             PhxError::Autorizacao(m) => write!(f, "acesso negado: {m}"),
             PhxError::EmCarga(m) => write!(f, "tabela em carga: {m}"),
@@ -289,6 +304,7 @@ mod testes_codigo {
             PhxError::Tipo(String::new()),
             PhxError::NaoEncontrado(String::new()),
             PhxError::Duplicado(String::new()),
+            PhxError::Integridade(String::new()),
             PhxError::LimiteExcedido(String::new()),
             PhxError::Conflito(String::new()),
             PhxError::EmCarga(String::new()),

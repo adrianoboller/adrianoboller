@@ -223,9 +223,13 @@ pub(crate) fn chave_estrangeira_de_json(
         v => v,
     };
 
+    // `verificar` ausente e FALSO, e essa e a diferenca entre declarar e impor.
+    // Toda tabela ja criada omitiu o campo -- porque ele nao existia --, entao
+    // ausente TEM de significar "como antes". Guarda nova entra pedida.
     Ok(ForeignKey::new(nome, posicoes, tabela_ref, colunas_ref)
         .ao_excluir(acao_ri_de_texto(f.texto_ou("ao_excluir", ""))?)
-        .ao_alterar(acao_ri_de_texto(f.texto_ou("ao_alterar", ""))?))
+        .ao_alterar(acao_ri_de_texto(f.texto_ou("ao_alterar", ""))?)
+        .conferindo(f.booleano_ou("verificar", false)))
 }
 
 /// A acao de integridade referencial escrita em texto.

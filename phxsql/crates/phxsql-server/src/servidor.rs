@@ -19705,6 +19705,106 @@ mod testes_chave_estrangeira {
         );
     }
 
+    /// A garantia NOVA: quem pede `verificar` ganha a recusa do orfao.
+    ///
+    /// Prova real: tirar `"verificar":true` faz este teste passar a inserir --
+    /// e e exatamente o que o teste irmao, `sem_verificar_o_orfao_ainda_entra`,
+    /// afirma que continua acontecendo.
+    #[test]
+    fn com_verificar_o_orfao_e_recusado() {
+        let s = servidor(&dir_temp("fk-orfao"));
+        criar_clientes(&s);
+        com_fk(&s, r#","verificar":true"#).unwrap();
+        let e = pede(
+            &s,
+            r#""op":"inserir","database":"b","tabela":"pedidos",
+               "linha":{"id":1,"cliente_id":999}"#,
+        )
+        .expect_err("o orfao entrou mesmo com a chave conferida");
+        let txt = e.to_string();
+        assert!(
+            txt.contains("fk_cliente"),
+            "o erro nao nomeia a chave: {txt}"
+        );
+        assert_eq!(e.codigo(), 3006, "familia errada: {txt}");
+    }
+
+    /// E a outra metade, sem a qual a de cima passaria por vacuidade: com a
+    /// mae no lugar, a MESMA insercao entra.
+    #[test]
+    fn com_verificar_a_linha_que_tem_mae_entra() {
+        let s = servidor(&dir_temp("fk-mae"));
+        criar_clientes(&s);
+        pede(
+            &s,
+            r#""op":"inserir","database":"b","tabela":"clientes","linha":{"id":7}"#,
+        )
+        .unwrap();
+        com_fk(&s, r#","verificar":true"#).unwrap();
+        pede(
+            &s,
+            r#""op":"inserir","database":"b","tabela":"pedidos",
+               "linha":{"id":1,"cliente_id":7}"#,
+        )
+        .expect("a linha com mae foi recusada");
+    }
+
+    /// NULO satisfaz a chave -- o `MATCH SIMPLE` da norma.
+    ///
+    /// Conferir o nulo recusaria a filha que ainda nao tem pai, que e
+    /// justamente o caso que a coluna anulavel existe para permitir. Quem quer
+    /// o contrario declara a coluna obrigatoria, e ai quem recusa e a
+    /// obrigatoriedade -- outra regra, outro erro.
+    #[test]
+    fn o_nulo_satisfaz_a_chave_estrangeira() {
+        let s = servidor(&dir_temp("fk-nulo"));
+        criar_clientes(&s);
+        com_fk(&s, r#","verificar":true"#).unwrap();
+        pede(
+            &s,
+            r#""op":"inserir","database":"b","tabela":"pedidos","linha":{"id":1}"#,
+        )
+        .expect("a linha com cliente_id nulo foi recusada");
+    }
+
+    /// Sem indice na mae, a gravacao RECUSA dizendo qual indice falta.
+    ///
+    /// A alternativa seria varrer a mae a cada linha filha gravada -- um custo
+    /// escondido dentro de um `inserir` que parece barato. *Erro que se le e
+    /// se conserta vale mais que lentidao que ninguem explica.*
+    #[test]
+    fn sem_indice_na_mae_a_recusa_diz_qual_indice_falta() {
+        let s = servidor(&dir_temp("fk-sem-ndx"));
+        // `clientes` nasce SEM indice em `id`.
+        pede(
+            &s,
+            r#""op":"criar_tabela","database":"b","tabela":"clientes",
+               "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true}]"#,
+        )
+        .unwrap();
+        com_fk(&s, r#","verificar":true"#).unwrap();
+        let e = pede(
+            &s,
+            r#""op":"inserir","database":"b","tabela":"pedidos",
+               "linha":{"id":1,"cliente_id":1}"#,
+        )
+        .expect_err("gravou sem indice na mae -- vai varrer a tabela por linha");
+        let txt = e.to_string();
+        assert!(txt.contains("indice"), "o erro nao diz o que falta: {txt}");
+        assert!(txt.contains("clientes"), "{txt}");
+    }
+
+    fn criar_clientes(s: &Arc<Servidor>) {
+        pede(
+            s,
+            r#""op":"criar_tabela","database":"b","tabela":"clientes",
+               "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true}],
+               "indices":[{"nome":"porId","colunas":["id"],"unico":true,
+                           "primario":true}]"#,
+        )
+        .unwrap();
+    }
+
     /// **`duplicar_tabela` preserva a chave.** Ele copia os arquivos byte a
     /// byte, e o esquema mora no `.reg` -- mas isso e uma consequencia de como
     /// ele foi feito, e nao uma promessa escrita. Este teste vira a promessa:
