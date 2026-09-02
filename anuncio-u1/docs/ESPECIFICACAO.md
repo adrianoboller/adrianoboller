@@ -122,7 +122,7 @@ projeto é que ler o código não acha o que a imagem mostra.
 | Fundo, ponto claro (rosé‑branco) | `#F4E6E4` |
 | Caixa (variante clara, padrão) | `#F2EDE6` fosca, toque de papel |
 | Caixa (variante escura) | `#141416` fosca |
-| U1 corpo | `#1E2024` grafite, painel plástico injetado semi‑fosco |
+| U1 corpo | **branco** `#F0F0EE`, painel plástico injetado semi‑fosco, aro superior e moldura da porta pretos — confirmado nas fotos oficiais do guia rápido (a primeira versão desta tabela dizia grafite e estava errada) |
 | U1 detalhes | alumínio escovado; hastes de fibra de carbono; mesa PEI dourada texturizada |
 | Espuma | branca fosca `#F6F6F4` |
 | Cabo | borracha preta `#111111`, plugue IEC C13 |
@@ -132,7 +132,7 @@ Sem serrilhado no gradiente: aplicar ruído sutil (dither) na cor do fundo.
 
 ## Fatos do U1 real (para o substituto)
 
-- Painéis plásticos injetados escondem mecânica; visual limpo e industrial.
+- Painéis plásticos injetados **brancos** escondem a mecânica; aro superior e moldura da porta pretos; visual limpo e industrial.
 - **Porta de vidro na frente**; **painel traseiro transparente**.
 - **Tela 3,5" (480×320 paisagem) embutida, nivelada com o painel frontal.**
 - CoreXY; hastes de fibra de carbono; 4 cabeçotes com estacionamento.

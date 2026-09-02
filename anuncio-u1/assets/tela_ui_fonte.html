@@ -1,0 +1,174 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Telas do U1 (boot e UI) - fonte dos PNGs</title>
+<!--
+  Fonte de assets/tela_boot.png e assets/tela_ui.png (480x320, a resolucao
+  real da tela 3,5" do Snapmaker U1).
+
+  Como gerar (o mesmo arquivo serve as duas telas, escolhe pelo fragmento da
+  URL). Usa o headless_shell (o "headless antigo"), porque no
+  chrome --headless=new o --window-size conta a barra do navegador: o viewport
+  fica 480x233, o PNG sai 480x320 e o terco de baixo vem preto - foi assim que
+  o botao Start e a barra de boot sumiram na primeira tentativa:
+    /opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell \
+      --no-sandbox --disable-gpu --hide-scrollbars --window-size=480,320 \
+      --screenshot=assets/tela_boot.png "file://.../tela_ui_fonte.html#boot"
+    ... --screenshot=assets/tela_ui.png "file://.../tela_ui_fonte.html#ui"
+
+  PESQUISA (2026-09-02). A tela inicial do U1 real foi CONFIRMADA em duas
+  capturas oficiais de 480x320 publicadas no wiki da Snapmaker
+  (wiki.snapmaker.com, guias "U1 touchscreen malfunction" e "Core Components
+  Maintenance Guide", e a tira firmware_update_2.jpg do guia de atualizacao):
+
+    CONFIRMADO na captura oficial:
+    - fundo preto; cartoes cinza-escuro com cantos bem arredondados; texto branco.
+    - barra de status no topo: escudo com o numero do cabecote ativo + temperatura
+      do bico ("103°C") e uma setinha para baixo; icone de mesa + "52°C"; icone
+      de camara + "36°C"; a direita, icones de camera, nuvem e Wi-Fi.
+    - coluna esquerda com tres botoes quadrados: reguas (controle), hexagono com
+      ponto no centro (cabecote/filamento), bandeja (arquivos).
+    - cartao superior direito com os QUATRO cabecotes: material ("PLA") em cima e
+      um circulo colorido com o numero 1-4 (na captura: roxo, preto, branco,
+      amarelo; o slot sem filamento mostra "/" e um circulo cinza).
+    - cartao principal com a frase "Let's make something wonderful." e o botao
+      azul em pilula "Start" no canto inferior direito.
+    - nao ha "Ready", relogio nem barra de progresso na tela inicial: o estado
+      ocioso e a propria frase. Por isso NAO escrevi "Ready" aqui.
+
+    APROXIMADO (nao havia medida exata):
+    - tipografia: a captura usa uma sans neo-grotesca (parece Roboto); aqui vai
+      a pilha Roboto > Inter > Noto Sans > Liberation Sans > FreeSans, o que houver
+      (neste container so ha Liberation Sans, que e metrica de Arial).
+    - tons exatos dos cinzas e do azul do botao foram lidos a olho da captura
+      (#1c1c1e para os cartoes, #1f5cff para o botao).
+    - os icones sao redesenhados em SVG simples a partir do que se ve na
+      captura; nao sao os glifos oficiais.
+    - as cores dos quatro filamentos sao uma escolha nossa (a captura e so um
+      exemplo de carga); as temperaturas mostram a maquina fria, recem-ligada,
+      porque no anuncio a tela acende logo apos o boot.
+
+  A tela de boot NAO foi encontrada em captura: e uma aproximacao (fundo
+  preto, wordmark "Snapmaker" em texto, barra fina de progresso), como pede a
+  especificacao. Nao desenha o logo oficial.
+-->
+<style>
+  /* Tamanho fixo e sem margem: a captura do Chromium tem de sair 480x320
+     exatos e sem borda branca de pagina. */
+  html, body { margin: 0; padding: 0; width: 480px; height: 320px; overflow: hidden; background: #000; }
+  body { font-family: "Roboto", "Inter", "Noto Sans", "Liberation Sans", "FreeSans", Arial, "DejaVu Sans", sans-serif;
+         color: #fff; -webkit-font-smoothing: antialiased; }
+  .tela { position: absolute; left: 0; top: 0; width: 480px; height: 320px; background: #000; display: none; }
+  .tela.ativa { display: block; }
+
+  /* ---------- BOOT ---------- */
+  #boot .marca { position: absolute; left: 0; right: 0; top: 128px; text-align: center;
+                 font-size: 40px; font-weight: 500; letter-spacing: 1px; color: #fff; }
+  #boot .trilho { position: absolute; left: 90px; right: 90px; bottom: 44px; height: 3px;
+                  background: #2a2a2e; border-radius: 2px; }
+  #boot .cheio { width: 80%; height: 100%; background: #fff; border-radius: 2px; }
+
+  /* ---------- UI (tela inicial) ---------- */
+  #ui .barra { position: absolute; left: 0; top: 0; width: 480px; height: 46px;
+               display: flex; align-items: center; padding: 0 12px; box-sizing: border-box;
+               font-size: 16px; font-weight: 500; }
+  #ui .barra .grupo { display: flex; align-items: center; gap: 4px; margin-right: 10px; }
+  #ui .barra svg { display: block; }
+  #ui .barra .direita { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+
+  .cartao { position: absolute; background: #1c1c1e; border-radius: 12px; }
+  .botao-lateral { width: 100px; height: 82px; left: 10px; display: flex; align-items: center; justify-content: center; }
+  #ui .lat1 { top: 50px; } #ui .lat2 { top: 141px; } #ui .lat3 { top: 232px; }
+
+  #ui .cabecotes { left: 122px; top: 50px; width: 348px; height: 82px;
+                   display: flex; justify-content: space-around; align-items: center; padding: 0 12px; box-sizing: border-box; }
+  #ui .cab { display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 14px; font-weight: 500; }
+  #ui .bola { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+              font-size: 14px; font-weight: 700; }
+
+  #ui .principal { left: 122px; top: 141px; width: 348px; height: 173px; }
+  #ui .frase { position: absolute; left: 18px; top: 22px; font-size: 18px; font-weight: 400; color: #fff; }
+  #ui .iniciar { position: absolute; right: 18px; bottom: 14px; width: 116px; height: 50px; border-radius: 25px;
+                 background: #1f5cff; color: #fff; font-size: 19px; font-weight: 500;
+                 display: flex; align-items: center; justify-content: center; }
+</style>
+</head>
+<body>
+
+<!-- ===================== BOOT ===================== -->
+<div id="boot" class="tela">
+  <div class="marca">Snapmaker</div>
+  <div class="trilho"><div class="cheio"></div></div>
+</div>
+
+<!-- ===================== UI ===================== -->
+<div id="ui" class="tela">
+  <!-- barra de status: cabecote ativo + bico, mesa, camara | camera, nuvem, wifi -->
+  <div class="barra">
+    <div class="grupo">
+      <!-- escudo com o numero do cabecote ativo -->
+      <svg width="20" height="22" viewBox="0 0 20 22"><path d="M3 2h14v10.5c0 4-3 6.5-7 8-4-1.5-7-4-7-8z" fill="none" stroke="#fff" stroke-width="1.8"/><text x="10" y="15" font-size="11" font-weight="700" fill="#fff" text-anchor="middle" font-family="inherit">1</text></svg>
+      <span>25°C</span>
+      <svg width="12" height="8" viewBox="0 0 12 8"><path d="M1 1.5l5 5 5-5" fill="none" stroke="#fff" stroke-width="1.8"/></svg>
+    </div>
+    <div class="grupo">
+      <!-- mesa aquecida: ondas de calor sobre uma linha -->
+      <svg width="24" height="20" viewBox="0 0 24 20"><path d="M2 17h20" stroke="#fff" stroke-width="2"/><path d="M6 12c0-3 2-3 2-6M12 12c0-3 2-3 2-6M18 12c0-3 2-3 2-6" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/></svg>
+      <span>24°C</span>
+    </div>
+    <div class="grupo">
+      <!-- camara: caixa com hachura -->
+      <svg width="24" height="18" viewBox="0 0 24 18"><rect x="2" y="2" width="20" height="14" rx="3" fill="none" stroke="#fff" stroke-width="1.8"/><path d="M8 13l5-8M13 13l5-8M4 11l3-5" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/></svg>
+      <span>24°C</span>
+    </div>
+    <div class="direita">
+      <!-- camera -->
+      <svg width="20" height="22" viewBox="0 0 20 22"><circle cx="10" cy="9" r="7.5" fill="none" stroke="#fff" stroke-width="1.8"/><circle cx="10" cy="9" r="2.6" fill="#fff"/><path d="M6 20h8" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/><path d="M10 16.5v3.5" stroke="#fff" stroke-width="1.8"/></svg>
+      <!-- nuvem -->
+      <svg width="26" height="20" viewBox="0 0 26 20"><path d="M7 17h12a5 5 0 0 0 .8-9.9A7 7 0 0 0 6.4 9.2 4 4 0 0 0 7 17z" fill="none" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/></svg>
+      <!-- wifi -->
+      <svg width="24" height="20" viewBox="0 0 24 20"><path d="M2 7a15 15 0 0 1 20 0M5.5 10.5a10 10 0 0 1 13 0M9 14a5 5 0 0 1 6 0" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round"/><circle cx="12" cy="17.2" r="1.6" fill="#fff"/></svg>
+    </div>
+  </div>
+
+  <!-- coluna esquerda: controle, cabecote, arquivos -->
+  <div class="cartao botao-lateral lat1">
+    <svg width="44" height="34" viewBox="0 0 44 34" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round">
+      <path d="M4 7h36M4 17h36M4 27h36"/>
+      <circle cx="30" cy="7" r="4" fill="#1c1c1e"/><circle cx="14" cy="17" r="4" fill="#1c1c1e"/><circle cx="26" cy="27" r="4" fill="#1c1c1e"/>
+    </svg>
+  </div>
+  <div class="cartao botao-lateral lat2">
+    <svg width="46" height="42" viewBox="0 0 46 42" fill="none" stroke="#fff" stroke-width="3" stroke-linejoin="round">
+      <path d="M13 3h20l10 18-10 18H13L3 21z"/><circle cx="23" cy="21" r="4" fill="#fff" stroke="none"/>
+    </svg>
+  </div>
+  <div class="cartao botao-lateral lat3">
+    <svg width="44" height="34" viewBox="0 0 44 34" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="3" width="38" height="28" rx="6"/><path d="M15 15l7 6 7-6"/>
+    </svg>
+  </div>
+
+  <!-- quatro cabecotes: material em cima, bola colorida com o numero -->
+  <div class="cartao cabecotes">
+    <div class="cab"><span>PLA</span><div class="bola" style="background:#e8e8ea;color:#111">1</div></div>
+    <div class="cab"><span>PLA</span><div class="bola" style="background:#d7362b;color:#fff">2</div></div>
+    <div class="cab"><span>PLA</span><div class="bola" style="background:#2a6df5;color:#fff">3</div></div>
+    <div class="cab"><span>PLA</span><div class="bola" style="background:#1a1a1c;color:#fff;box-shadow:0 0 0 1.5px #3a3a3e">4</div></div>
+  </div>
+
+  <!-- cartao principal -->
+  <div class="cartao principal">
+    <div class="frase">Let's make something wonderful.</div>
+    <div class="iniciar">Start</div>
+  </div>
+</div>
+
+<script>
+  // O fragmento da URL escolhe a tela; sem fragmento, mostra a UI.
+  var qual = (location.hash || "#ui").slice(1);
+  document.getElementById(qual === "boot" ? "boot" : "ui").classList.add("ativa");
+</script>
+</body>
+</html>
