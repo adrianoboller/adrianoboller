@@ -13,6 +13,23 @@
 //! desde a 0.17.0 e a tela tinha 16 `data-txt` em 11.987 linhas. Maquina que
 //! funciona e que ninguem usa e promessa, nao garantia.
 //!
+//! # As duas formas de montar tabela na mao
+//!
+//! Contar so `<table>` cru subcontava, e feio: a pagina tem um AJUDANTE
+//! (`tabela(cabecas, linhas, montar)`) que monta a marcacao por dentro, entao
+//! dezoito telas construidas a mao apareciam como **uma** ocorrencia -- a do
+//! proprio ajudante. Uma catraca que subconta e pior que catraca nenhuma:
+//! ela deixa declarar a padronizacao terminada com dezoito telas de fora.
+//!
+//! Por isso [`varrer`] conta as duas formas, e o relatorio as separa:
+//!
+//! - **marcacao crua** -- um `<table>` escrito na tela;
+//! - **ajudante** -- uma chamada a `tabela(`, que e a mesma tabela a mao com
+//!   menos letras.
+//!
+//! O dia em que o ultimo chamador sair, o ajudante vira codigo morto e sai
+//! junto -- e a ocorrencia dele desce sozinha.
+//!
 //! # O que ele NAO faz, e de proposito
 //!
 //! Ele nao manda converter tudo. Nem toda `<table>` e grade: a janela de
@@ -40,7 +57,16 @@
 
 use crate::conferidor::FONTES;
 
-/// Uma tabela montada na mao: onde esta e de quem e.
+/// Como a tabela foi montada a mao.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Forma {
+    /// `<table>` escrito na tela.
+    Marcacao,
+    /// Chamada ao ajudante `tabela(`, que monta a mesma marcacao por dentro.
+    Ajudante,
+}
+
+/// Uma tabela montada na mao: onde esta, de quem e, e de que jeito.
 #[derive(Debug, Clone)]
 pub struct Tabela {
     pub arquivo: &'static str,
@@ -50,6 +76,7 @@ pub struct Tabela {
     pub funcao: String,
     /// `Some(motivo)` quando esta em [`ISENTAS`]; `None` quando conta.
     pub isenta: Option<&'static str>,
+    pub forma: Forma,
 }
 
 /// Quem monta tabela na mao COM MOTIVO, e o motivo.
@@ -114,6 +141,45 @@ fn declara_funcao(linha: &str) -> Option<&str> {
     Some(nome)
 }
 
+/// As posicoes em que esta linha CHAMA o ajudante `tabela(`.
+///
+/// Duas armadilhas, as duas encontradas medindo e nao imaginando:
+///
+/// - **`tabela(s)`** aparece em texto de tela o tempo todo («3 tabela(s) têm
+///   coluna Sequence»). Nao e chamada, e sem esta recusa o numero inflava.
+/// - **`function tabela(`** e a DECLARACAO do ajudante, nao um uso dele. Quem
+///   conta a declaracao pede para o ajudante se converter a si mesmo.
+///
+/// Tambem sai fora `algo.tabela(`, que e metodo de outro objeto.
+///
+/// **Limite declarado**: comentario no MEIO da linha nao e reconhecido -- so
+/// a linha que COMECA comentada sai fora. Separar codigo de comentario no
+/// meio de uma linha pede um analisador que saiba de aspas, crase e barra de
+/// expressao regular, e um analisador frouxo erraria calado. Medido nos seis
+/// arquivos servidos, isso hoje nao acontece nenhuma vez: o reconhecedor acha
+/// exatamente as mesmas 18 chamadas que uma varredura independente achou.
+/// E o erro, se um dia vier, pesa para o lado seguro: conta a mais, e uma
+/// contagem a mais so obriga alguem a registrar a dispensa com o motivo.
+fn chamadas_ao_ajudante(linha: &str) -> Vec<usize> {
+    const ALVO: &str = "tabela(";
+    let b = linha.as_bytes();
+    let mut fora = Vec::new();
+    let mut de = 0;
+    while let Some(rel) = linha[de..].find(ALVO) {
+        let p = de + rel;
+        de = p + ALVO.len();
+        let antes = if p == 0 { None } else { Some(b[p - 1]) };
+        let e_identificador = matches!(antes, Some(c)
+            if c.is_ascii_alphanumeric() || c == b'_' || c == b'$' || c == b'.');
+        let plural = linha[de..].starts_with("s)");
+        let declaracao = p >= 9 && &linha[p - 9..p] == "function ";
+        if !e_identificador && !plural && !declaracao {
+            fora.push(p);
+        }
+    }
+    fora
+}
+
 /// Varre um arquivo e devolve toda `<table>` montada na mao que houver nele.
 pub fn varrer(arquivo: &'static str, fonte: &str) -> Vec<Tabela> {
     let mut achados = Vec::new();
@@ -122,20 +188,36 @@ pub fn varrer(arquivo: &'static str, fonte: &str) -> Vec<Tabela> {
         if let Some(n) = declara_funcao(linha) {
             dono = n.to_string();
         }
+        let isenta = ISENTAS
+            .iter()
+            .find(|(a, f, _)| *a == arquivo && (*f == dono || *f == "*"))
+            .map(|(_, _, porque)| *porque);
+        let mut poe = |linha_n: usize, forma: Forma| {
+            achados.push(Tabela {
+                arquivo,
+                linha: linha_n,
+                funcao: dono.clone(),
+                isenta,
+                forma,
+            });
+        };
+
         // Uma linha pode abrir mais de uma tabela; cada uma conta.
         let mut resto = linha;
         while let Some(p) = resto.find("<table") {
-            let isenta = ISENTAS
-                .iter()
-                .find(|(a, f, _)| *a == arquivo && (*f == dono || *f == "*"))
-                .map(|(_, _, porque)| *porque);
-            achados.push(Tabela {
-                arquivo,
-                linha: i + 1,
-                funcao: dono.clone(),
-                isenta,
-            });
+            poe(i + 1, Forma::Marcacao);
             resto = &resto[p + "<table".len()..];
+        }
+
+        // Comentario nao e codigo, e a palavra «tabela» aparece muito nos
+        // comentarios desta base.
+        let t = linha.trim_start();
+        if t.starts_with("//") || t.starts_with('*') || t.starts_with("/*") {
+            continue;
+        }
+        for p in chamadas_ao_ajudante(linha) {
+            let _ = p;
+            poe(i + 1, Forma::Ajudante);
         }
     }
     achados
@@ -174,7 +256,22 @@ pub fn no_padrao() -> usize {
 /// Converteu uma tela, baixe o TETO no mesmo commit: catraca frouxa nao
 /// segura nada. Se a tabela nao devia mesmo virar grade, ela entra em
 /// [`ISENTAS`] com o motivo -- e ai o TETO desce do mesmo jeito.
-pub const TETO: usize = 24;
+///
+/// # A unica vez em que ele SOBE, e por que isto nao e afrouxar
+///
+/// Ele foi de 24 para 43 quando o conferidor aprendeu a enxergar a chamada ao
+/// ajudante `tabela(`. Nao entrou uma tabela nova na tela: entraram 19 que
+/// sempre estiveram la e que a medicao anterior nao via, porque contava so
+/// `<table>` cru e o ajudante monta a marcacao por dentro.
+///
+/// A diferenca entre subir a catraca e afrouxa-la e essa, e vale a pena
+/// deixar escrita: **afrouxar e mudar o TETO para o codigo caber; isto foi
+/// mudar o TETO porque a REGUA passou a medir o que ja existia.** Quem quiser
+/// conferir tem o numero dos dois lados -- 24 era o que se via com uma regua
+/// que subcontava, e o proprio relatorio separa as duas formas.
+///
+/// A partir daqui vale a regra de sempre: so desce.
+pub const TETO: usize = 43;
 
 #[cfg(test)]
 mod testes {
@@ -233,6 +330,42 @@ async function telaCerta() {\n\
         assert_eq!(achados[0].funcao, "telaQualquer");
         assert_eq!(achados[0].linha, 2);
         assert!(achados[0].isenta.is_none());
+    }
+
+    /// O reconhecedor da chamada ao ajudante, nas duas armadilhas que ele
+    /// existe para nao cair -- e que so apareceram medindo o arquivo de
+    /// verdade, nao imaginando.
+    #[test]
+    fn o_ajudante_nao_conta_texto_nem_a_propria_declaracao() {
+        const FONTE: &str = "\
+function tabela(cabecas, linhas, montar) { return \"<table>\"; }\n\
+function telaA() { return tabela([{t:\"nome\"}], linhas, montar); }\n\
+function telaB() { avisar(`${n} tabela(s) têm coluna Sequence`); }\n\
+function telaC() { return obj.tabela(x) + minhaTabela(y); }\n\
+function telaD() { /* a tabela(...) daqui e comentario */ return 1; }\n";
+        let achados = varrer("ui/teste.html", FONTE);
+        let ajudante: Vec<_> = achados
+            .iter()
+            .filter(|t| t.forma == Forma::Ajudante)
+            .collect();
+        // DUAS, e nao uma: o `telaD` esta aqui para travar o limite declarado
+        // em `chamadas_ao_ajudante` -- comentario no MEIO da linha nao e
+        // reconhecido, e conta. O caso existe para que o limite seja uma
+        // decisao escrita, e nao uma surpresa; no dia em que alguem ensinar o
+        // reconhecedor a ver comentario inline, este numero cai para 1 e o
+        // caso avisa que a promessa mudou.
+        assert_eq!(ajudante.len(), 2, "achou: {ajudante:?}");
+        assert_eq!(ajudante[0].funcao, "telaA");
+        assert_eq!(ajudante[1].funcao, "telaD", "o limite declarado mudou");
+        // A declaracao do ajudante monta `<table>` -- isso conta como
+        // marcacao, e uma so.
+        assert_eq!(
+            achados
+                .iter()
+                .filter(|t| t.forma == Forma::Marcacao)
+                .count(),
+            1
+        );
     }
 
     /// Duas tabelas na mesma linha contam duas vezes. O laco que corta so a

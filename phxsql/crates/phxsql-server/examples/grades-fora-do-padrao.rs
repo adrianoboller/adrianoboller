@@ -21,9 +21,16 @@ fn main() {
     let grades = cg::no_padrao();
 
     println!("TABELAS DA TELA — quanto ja e PhxGrid\n");
+    let crua = na_mao
+        .iter()
+        .filter(|t| t.forma == cg::Forma::Marcacao)
+        .count();
+    let ajud = na_mao.len() - crua;
     println!("  PhxGrid.criar( ......... {grades}");
-    println!("  <table> na mao ......... {}", na_mao.len());
-    println!("  <table> na mao, isenta . {isentas} (com motivo registrado)");
+    println!("  na mao, marcacao crua .. {crua}");
+    println!("  na mao, pelo ajudante .. {ajud}  (chamadas a `tabela(`)");
+    println!("  na mao, soma ........... {}", na_mao.len());
+    println!("  na mao, isenta ......... {isentas} (com motivo registrado)");
     println!("  catraca (TETO) ......... {}", cg::TETO);
 
     if ver_isentas {
@@ -49,7 +56,14 @@ fn main() {
             funcao_atual = t.funcao.clone();
             println!("  {funcao_atual}");
         }
-        println!("      linha {}", t.linha);
+        println!(
+            "      linha {:<6} {}",
+            t.linha,
+            match t.forma {
+                cg::Forma::Marcacao => "<table> cru",
+                cg::Forma::Ajudante => "ajudante tabela(",
+            }
+        );
     }
 
     if na_mao.is_empty() {
