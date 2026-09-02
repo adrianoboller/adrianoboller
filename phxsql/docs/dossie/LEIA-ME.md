@@ -178,3 +178,22 @@ A caixa de impressão é do navegador, então ela abre, e «Salvar como PDF» es
 em todos eles. A folha `@media print` é própria: fundo branco, índice e botão
 fora, figura, tabela e captura sem quebra no meio, galeria em duas colunas. E a
 página **diz** o que o botão faz, ao lado dele.
+
+## O PDF de um relatório: `pdf.mjs`
+
+    node docs/dossie/pdf.mjs <html> <claro|escuro> <saida.pdf>
+
+Serve qualquer página deste projeto que use os tokens da marca. Duas coisas
+nele não são detalhe, e as duas nasceram de erro medido:
+
+**O CSS de impressão mora no gerador, não na página.** O que se publica é a
+tela; o que se imprime tem uma restrição que a tela não tem — a largura. O
+`min-width` do diagrama existe para ele não espremer no celular, e numa A4
+(794 px a 96 dpi) essa mesma regra **corta** o desenho dentro do
+`overflow-x: auto`. Em papel não há barra de rolagem: o que transborda **some**,
+e sumir calado é o pior jeito de errar.
+
+**Ele apaga a saída antes de gerar.** Um gerador que falha deixando o arquivo
+anterior em disco faz o conferidor seguinte ler o cadáver e dizer «ok» — foi
+assim que um PDF velho quase saiu daqui afirmando que os consertos estavam
+nele. Falha tem de aparecer como **ausência**.
