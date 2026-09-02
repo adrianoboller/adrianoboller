@@ -28,6 +28,35 @@ var grid = PhxGrid.criar("#alvo", {
 </script>
 ```
 
+## `formato` é o DESENHADOR DA CÉLULA — não é máscara de número
+
+Esta linha existe porque o nome engana, e engana de um jeito caro: procurando
+por `render` ou `desenhar` não se acha nada, e conclui-se que o grid não
+desenha célula. Um leitor experiente desta base já chegou a planejar
+**construir** o gancho que estava pronto e testado.
+
+```js
+{ campo: "obrigatoria", titulo: "Obrigatória",
+  // Recebe (valor, linha) e devolve HTML, que entra direto no <td>.
+  formato: (v) => v ? '<span class="pino ok">NOT NULL</span>'
+                    : '<span class="pino nao">NULO OK</span>' },
+
+{ campo: "acoes", titulo: "", ordenavel: false,
+  formato: (_, linha) => `<button class="botao mini" data-rowid="${linha.rowid}">editar</button>` }
+```
+
+Duas regras ao usá-lo:
+
+- **O HTML é seu, e o escape também.** O grid não escapa o que `formato`
+  devolve — é isso que permite o pino e o botão. Todo valor que vier do dado
+  passa pelo `esc()` de quem escreve.
+- **Rótulo pela fábrica de idiomas, dado nunca.** O texto do pino é rótulo e
+  se traduz; o valor da coluna é dado e não se estiliza. É a mesma lição do
+  «Blumenau» virando «BLUMENAU».
+
+Botão dentro de `formato` não recebe `onclick`: o corpo é reescrito a cada
+render. Ligue por delegação no contêiner, ou use `aoAbrirLinha`.
+
 ## Contrato de fonte remota (PWS/REST)
 
 O grid envia `{ pagina, tamanho, ordem: { campo, dir: "asc"|"desc"|null, tipo } }` e espera

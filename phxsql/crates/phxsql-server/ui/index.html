@@ -6921,31 +6921,61 @@ async function verSysTables(db) {
     `<div class="acoes">
        <button class="botao secundario" id="btSysCols">SysColumns →</button>
        <button class="botao secundario" id="btVoltaDb">← Gerir ${esc(db)}</button>
-     </div>` +
-    tabela([{t:"tabela"},{t:"schema"},{t:"registros",cls:"num"},{t:"slots",cls:"num"},
-            {t:"colunas",cls:"num"},{t:"índices",cls:"num"},{t:"chave primária"},
-            {t:"FKs",cls:"num"},{t:"bytes/linha",cls:"num"},{t:"partição"},{t:"volumes",cls:"num"}],
-      linhas, x => `<tr class="linha-tab" data-tab="${esc(x.tabela)}">
-        <td class="dado"><b>${esc(x.tabela)}</b>${x.erro ? ` <span class="pino mal">ilegível</span>` : ""}</td>
-        <td class="dado">${esc(x.schema || "")}</td>
-        <td class="num">${esc(String(x.registros ?? "—"))}</td>
-        <td class="num">${esc(String(x.slots ?? "—"))}</td>
-        <td class="num">${esc(String(x.colunas ?? "—"))}</td>
-        <td class="num">${esc(String(x.indices ?? "—"))}</td>
-        <td class="dado">${x.chave_primaria ? `<code>${esc(x.chave_primaria)}</code>` : "<span class=leg>—</span>"}</td>
-        <td class="num">${esc(String(x.chaves_estrangeiras ?? 0))}</td>
-        <td class="num">${esc(String(x.bytes_por_linha ?? "—"))}</td>
-        <td class="dado">${x.particao ? `<span class="pino">${esc(x.particao)}</span>` : "<span class=leg>—</span>"}</td>
-        <td class="num">${esc(String(x.volumes ?? 0))}</td></tr>`) +
-    `<div class="nota"><p>Uma linha por tabela do database. <em>bytes/linha</em> é o
+     </div>
+     <div id="gradeSys"></div>
+     <div class="nota"><p>Uma linha por tabela do database. <em>bytes/linha</em> é o
      payload do slot — o que cada registro ocupa no <code>.reg</code>, sem contar
      o cabeçalho de 24 bytes nem o que mora no <code>.bin</code> e no
      <code>.memo</code>.</p></div>`);
 
+  // TELA DE REFERENCIA da padronizacao: toda tabela e PhxGrid com agrupamento.
+  //
+  // O que a conversao TEM de preservar, e que uma troca mecanica perderia:
+  //
+  //  * a celula propria -- o pino «ilegivel», o `<code>` da chave primaria e o
+  //    travessao de ausente. Quem faz isso e `formato`, que apesar do nome e o
+  //    DESENHADOR da celula (ver o LEIAME do grid);
+  //  * o CLIQUE SIMPLES que desce para as colunas. O `aoAbrirLinha` do grid e
+  //    DUPLO clique, entao trocar um pelo outro mudaria o gesto sem avisar.
+  //    O clique simples fica por delegacao no botao da primeira coluna, que
+  //    tem a vantagem de ser visivel e alcancavel pelo teclado -- o clique na
+  //    linha inteira nunca foi descobrivel. O duplo clique entra de brinde.
+  const nada = '<span class=leg>—</span>';
+  const num = v => v ?? "—";
+  PhxGrid.criar("#gradeSys", {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    lembrar: "systables:" + db,
+    nomeVista: "systables-" + db,
+    colunas: [
+      { campo:"tabela", titulo:txt("tela.col_tabela","tabela"), fixa:"esq", largura:220,
+        formato:(v, l) => `<button class="botao mini consultar bt-sys" data-tab="${esc(v)}"
+          >${esc(v)}</button>${l.erro ? ' <span class="pino mal">ilegível</span>' : ""}` },
+      { campo:"schema", titulo:txt("tela.col_schema","schema") },
+      { campo:"registros", titulo:txt("tela.col_registros","registros"), tipo:"numero", agregador:"sum", formato:num },
+      { campo:"slots", titulo:txt("tela.col_slots","slots"), tipo:"numero", agregador:"sum", formato:num },
+      { campo:"colunas", titulo:txt("tela.col_colunas","colunas"), tipo:"numero", formato:num },
+      { campo:"indices", titulo:txt("tela.col_indices","índices"), tipo:"numero", formato:num },
+      { campo:"chave_primaria", titulo:txt("tela.col_chave_primaria","chave primária"),
+        formato:v => v ? `<code>${esc(v)}</code>` : nada },
+      { campo:"chaves_estrangeiras", titulo:txt("tela.col_fks","FKs"), tipo:"numero", formato:v => v ?? 0 },
+      { campo:"bytes_por_linha", titulo:txt("tela.col_bytes_linha","bytes/linha"), tipo:"numero", formato:num },
+      { campo:"particao", titulo:txt("tela.col_particao","partição"),
+        formato:v => v ? `<span class="pino">${esc(v)}</span>` : nada },
+      { campo:"volumes", titulo:txt("tela.col_volumes","volumes"), tipo:"numero", formato:v => v ?? 0 },
+    ],
+    dados: linhas,
+    pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+    aoAbrirLinha: l => verSysColumns(db, l.tabela),
+  });
+
+  // Delegacao, e nao `onclick` no botao: o corpo do grid e reescrito a cada
+  // ordenacao, filtro e virada de pagina, e o `onclick` morreria com o nó.
+  $("#gradeSys").addEventListener("click", ev => {
+    const b = ev.target.closest(".bt-sys");
+    if (b) verSysColumns(db, b.dataset.tab);
+  });
   $("#btSysCols").onclick = () => verSysColumns(db);
   $("#btVoltaDb").onclick = () => gerirDatabase(db);
-  $$("#painel .linha-tab").forEach(tr =>
-    tr.onclick = () => verSysColumns(db, tr.dataset.tab));
 }
 
 async function verSysColumns(db, tabela_) {

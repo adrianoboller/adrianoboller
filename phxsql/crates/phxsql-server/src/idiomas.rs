@@ -155,6 +155,20 @@ pub const FABRICA_TELA: &[TextoDeFabrica] = &[
     texto!("tela.painel", "Painel", "Tableau de bord", "Dashboard", "Pannello", "Übersicht", "Panel"),
     // A diferenca entre declarar e impor, na folha do esquema. Duas
     // tabelas com a mesma chave apareceriam identicas sem isto.
+    // Cabecalhos da SysTables -- a primeira tela da padronizacao «toda tabela
+    // e PhxGrid». Entram pela fabrica porque titulo de coluna e ROTULO, e
+    // rotulo se traduz; o valor da celula e dado, e dado nunca.
+    texto!("tela.col_tabela", "tabela", "table", "table", "tabella", "Tabelle", "tabla"),
+    texto!("tela.col_schema", "schema", "schéma", "schema", "schema", "Schema", "esquema"),
+    texto!("tela.col_registros", "registros", "enregistrements", "records", "record", "Datensätze", "registros"),
+    texto!("tela.col_slots", "slots", "emplacements", "slots", "slot", "Slots", "ranuras"),
+    texto!("tela.col_colunas", "colunas", "colonnes", "columns", "colonne", "Spalten", "columnas"),
+    texto!("tela.col_indices", "índices", "index", "indexes", "indici", "Indizes", "índices"),
+    texto!("tela.col_chave_primaria", "chave primária", "clé primaire", "primary key", "chiave primaria", "Primärschlüssel", "clave primaria"),
+    texto!("tela.col_fks", "FKs", "CLÉ", "FKs", "FK", "FKs", "FKs"),
+    texto!("tela.col_bytes_linha", "bytes/linha", "octets/ligne", "bytes/row", "byte/riga", "Bytes/Zeile", "bytes/fila"),
+    texto!("tela.col_particao", "partição", "partition", "partition", "partizione", "Partition", "partición"),
+    texto!("tela.col_volumes", "volumes", "volumes", "volumes", "volumi", "Volumes", "volúmenes"),
     texto!("tela.fk_conferida", "conferida", "vérifiée", "checked", "verificata", "geprüft", "verificada"),
     texto!("tela.fk_imposta", "imposta", "imposée", "enforced", "imposta", "erzwungen", "impuesta"),
     texto!("tela.fk_so_declarada", "só declarada", "seulement déclarée", "declared only", "solo dichiarata", "nur deklariert", "solo declarada"),

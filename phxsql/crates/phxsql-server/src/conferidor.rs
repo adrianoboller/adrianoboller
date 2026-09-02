@@ -107,6 +107,15 @@ pub struct Achado {
 pub const RECEITAS: &[(&str, &str)] = &[
     ("rot:", "rotulo de item de menu e de botao da barra"),
     ("{t:", "cabecalho de coluna da funcao tabela()"),
+    // O cabecalho da PhxGrid. Entrou porque a padronizacao «toda tabela e
+    // PhxGrid» move o titulo de `{t:"nome"}` para `titulo:"nome"` -- e sem
+    // esta linha o conferidor PARA DE VER o texto que continua cravado ali.
+    //
+    // Medido na primeira tela convertida: o numero caiu de 1.771 para 1.760
+    // sem ninguem ter traduzido uma palavra. Converter as 22 telas derrubaria
+    // ~200 do mesmo jeito, e a catraca acabaria a varredura frouxa com a tela
+    // tao em portugues quanto comecou. *Catraca frouxa nao segura nada.*
+    ("titulo:", "cabecalho de coluna da PhxGrid"),
     ("diz:", "a explicacao curta de um formato de exportacao"),
     ("dica:", "a dica que aparece no title do botao da barra"),
     ("avisar(", "o recado do alto da tela"),
@@ -1041,7 +1050,7 @@ pub const TETO_FRASE_REPETIDA: usize = 0;
 /// a tela de transacoes -- escrita inteira pela fabrica -- derrubou mais 35.
 /// Escolher um dos dois lados seria regressao silenciosa; o valor saiu de rodar
 /// o conferidor depois do merge.
-pub const TETO: usize = 1_771;
+pub const TETO: usize = 1_767;
 #[cfg(test)]
 mod testes {
     use std::collections::HashSet;
