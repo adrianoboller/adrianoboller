@@ -1050,7 +1050,7 @@ pub const TETO_FRASE_REPETIDA: usize = 0;
 /// a tela de transacoes -- escrita inteira pela fabrica -- derrubou mais 35.
 /// Escolher um dos dois lados seria regressao silenciosa; o valor saiu de rodar
 /// o conferidor depois do merge.
-pub const TETO: usize = 1_767;
+pub const TETO: usize = 1_764;
 #[cfg(test)]
 mod testes {
     use std::collections::HashSet;

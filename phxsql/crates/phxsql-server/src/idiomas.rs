@@ -155,6 +155,9 @@ pub const FABRICA_TELA: &[TextoDeFabrica] = &[
     texto!("tela.painel", "Painel", "Tableau de bord", "Dashboard", "Pannello", "Übersicht", "Panel"),
     // A diferenca entre declarar e impor, na folha do esquema. Duas
     // tabelas com a mesma chave apareceriam identicas sem isto.
+    texto!("tela.col_ordem", "nº", "n°", "no.", "n.", "Nr.", "n.º"),
+    texto!("tela.bt_restaurar", "restaurar", "restaurer", "restore", "ripristina", "wiederherstellen", "restaurar"),
+    texto!("tela.bt_editar", "editar", "modifier", "edit", "modifica", "bearbeiten", "editar"),
     // Cabecalhos da SysTables -- a primeira tela da padronizacao «toda tabela
     // e PhxGrid». Entram pela fabrica porque titulo de coluna e ROTULO, e
     // rotulo se traduz; o valor da celula e dado, e dado nunca.

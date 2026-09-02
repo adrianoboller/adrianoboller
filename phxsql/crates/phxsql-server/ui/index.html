@@ -3780,18 +3780,63 @@ async function verConteudoEditavel(db, tab, verExcluidos = false, cursor = null)
     ? `<div class="vazio">nenhuma linha marcada como excluída</div>`
     : `<div class="vazio">tabela vazia</div>`;
 
-  $("#painel").innerHTML = barra + (r.linhas.length
-    ? tabela([...(temRownum ? [{t:"nº",cls:"num"}] : []),
-              {t:"rowid",cls:"num"}, ...cols.map(c => ({t:c})), {t:""}],
-        r.linhas, l => `<tr class="linha-dado${verExcluidos ? " linha-excluida" : ""}"
-              data-rowid="${esc(String(l.rowid))}">
-          ${temRownum ? `<td class="num dado ordem">${esc(String(l.rownum ?? "—"))}</td>` : ""}
-          <td class="num dado">${esc(String(l.rowid))}</td>
-          ${cols.map(c => celulaValor(l[c])).join("")}
-          <td>${verExcluidos
-            ? `<button class="botao mini incluir restaurar" data-rowid="${esc(String(l.rowid))}">restaurar</button>`
-            : `<span class="pino">editar</span>`}</td></tr>`)
-    : vazio);
+  $("#painel").innerHTML = barra + (r.linhas.length ? `<div id="gradeEdit"></div>` : vazio);
+
+  if (r.linhas.length) {
+    // A PADRONIZACAO: esta tela tambem e PhxGrid, com agrupamento dinamico.
+    //
+    // Duas coisas desta tela NAO viraram grid, e cada uma por um motivo:
+    //
+    // 1. A PAGINACAO continua sendo a do servidor, por CURSOR -- e a barra de
+    //    cima continua sendo quem navega. E o cursor que faz a pagina 37
+    //    custar o mesmo que a 1; a paginacao interna do grid dividiria de novo
+    //    a pagina que o servidor ja mandou, e a tela ficaria com dois
+    //    paginadores dizendo coisas diferentes. Entao o grid recebe a pagina
+    //    inteira e nao pagina.
+    //
+    //    A consequencia e a mesma que a aba Conteudo ja avisa: agrupar,
+    //    filtrar e somar valem sobre as linhas TRAZIDAS, e nao sobre a tabela.
+    //
+    // 2. A GRAVACAO continua pela ficha. O duplo clique abre a ficha, que
+    //    carrega a versao do slot e recusa escrita concorrente; editar na
+    //    celula seria um caminho de escrita por fora da janela de conflito.
+    const colunas = [];
+    if (temRownum) colunas.push({ campo:"rownum", titulo:txt("tela.col_ordem","nº"),
+      tipo:"numero", largura:70, formato:v => v ?? "—" });
+    colunas.push({ campo:"rowid", titulo:"rowid", tipo:"numero", largura:90, fixa:"esq" });
+    cols.forEach(c => colunas.push({ campo:c, titulo:c }));
+    colunas.push({ campo:"__acao", titulo:"", ordenavel:false, filtravel:false, largura:110,
+      formato:(_, l) => verExcluidos
+        ? `<button class="botao mini incluir restaurar" data-rowid="${esc(String(l.rowid))}"
+            >${esc(txt("tela.bt_restaurar","restaurar"))}</button>`
+        : `<button class="botao mini alterar bt-editar" data-rowid="${esc(String(l.rowid))}"
+            >${esc(txt("tela.bt_editar","editar"))}</button>` });
+
+    if (est.gradeEdit && est.gradeEdit.destruir) { try { est.gradeEdit.destruir(); } catch {} }
+    est.gradeEdit = PhxGrid.criar("#gradeEdit", {
+      agrupavel: true, buscaGlobal: true, filterRow: true,
+      lembrar: "editar:" + db + "." + tab,
+      nomeVista: db + "-" + tab + "-editar",
+      colunas: colunas,
+      dados: r.linhas,
+      aoAbrirLinha: l => abrirFicha(db, tab, +l.rowid),
+    });
+
+    // Delegacao, e nao `onclick` no botao: o corpo do grid e reescrito a cada
+    // ordenacao, filtro, agrupamento e virada de pagina, e o `onclick` morreria
+    // junto com o nó. Foi o que o antigo `$$(".restaurar").forEach` fazia, e
+    // ali funcionava porque a tabela a mao nunca era redesenhada.
+    $("#gradeEdit").addEventListener("click", ev => {
+      const rest = ev.target.closest(".restaurar");
+      if (rest) {
+        ev.stopPropagation();
+        return restaurarLinha(db, tab, +rest.dataset.rowid,
+          () => verConteudoEditavel(db, tab, true));
+      }
+      const ed = ev.target.closest(".bt-editar");
+      if (ed) abrirFicha(db, tab, +ed.dataset.rowid);
+    });
+  }
 
   $("#btNova").onclick = () => abrirFicha(db, tab, null);
   $("#btVoltarDb").onclick = () => verDatabase(db);
@@ -3814,17 +3859,6 @@ async function verConteudoEditavel(db, tab, verExcluidos = false, cursor = null)
   $("#pgFim").onclick = () => irPara(paginas);
   $("#pgIr").onchange = ev => irPara(+ev.target.value);
   $("#pgIr").onkeydown = ev => { if (ev.key === "Enter") irPara(+ev.target.value); };
-  $$("#painel .linha-dado").forEach(tr =>
-    tr.onclick = ev => {
-      // O clique no botao de restaurar nao pode abrir a ficha junto.
-      if (ev.target.closest(".restaurar")) return;
-      abrirFicha(db, tab, +tr.dataset.rowid);
-    });
-  $$("#painel .restaurar").forEach(b => b.onclick = ev => {
-    ev.stopPropagation();
-    restaurarLinha(db, tab, +b.dataset.rowid,
-      () => verConteudoEditavel(db, tab, true));
-  });
 }
 
 /* As colunas FIXAS da programação, por tabela de sistema: aparecem na ficha e
