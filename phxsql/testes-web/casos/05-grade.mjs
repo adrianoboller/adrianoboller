@@ -31,17 +31,33 @@ export const caso = {
     await page.waitForSelector('#painel table');
     await capturar(ctx, ctx.nomeCaptura('grade-editavel'));
 
-    const cabecas = await page.$$eval('#painel table thead th', ths =>
-      ths.map(t => t.textContent.trim()));
+    // Le o CAMPO da coluna (`data-c`), e nao o texto do cabecalho.
+    //
+    // Este teste comparava `textContent` exato, e quebrou no dia em que a
+    // grade editavel virou PhxGrid: o cabecalho passou a carregar a seta de
+    // ordenacao, e «id» virou «id▼». A coluna estava la -- medido, o
+    // `data-c` dizia `id` --, entao o teste acusava um sumico que nao houve.
+    //
+    // Ler o campo NAO afrouxa a guarda, aperta: ela passa a perguntar «esta
+    // coluna existe?» em vez de «o cabecalho esta escrito assim?», que era
+    // uma pergunta sobre a APARENCIA respondendo por uma sobre a ESTRUTURA.
+    // E fica imune a seta, a marca de agregador e ao que a grade decidir
+    // desenhar amanha.
+    const campos = await page.$$eval('#painel table thead th',
+      ths => ths.map(t => t.getAttribute('data-c') || ''));
     for (const s of sistema) {
-      verdade(!cabecas.includes(s),
+      verdade(!campos.includes(s),
         `a coluna de sistema «${s}» virou coluna de dado na grade editavel`);
     }
     for (const c of doUsuario) {
-      verdade(cabecas.includes(c), `a coluna «${c}» sumiu da grade editavel`);
+      verdade(campos.includes(c), `a coluna «${c}» sumiu da grade editavel`);
     }
-    igual(cabecas[0], 'nº', 'a coluna do numero de ordem nao e a primeira');
-    igual(cabecas[1], 'rowid', 'a coluna do rowid nao e a segunda');
+    igual(campos[0], 'rownum', 'a coluna do numero de ordem nao e a primeira');
+    igual(campos[1], 'rowid', 'a coluna do rowid nao e a segunda');
+
+    // E a faixa de agrupamento, que e o motivo de a tela ter virado PhxGrid.
+    verdade(await page.$('#painel .phx-groupbox') !== null,
+      'a grade editavel perdeu a faixa de agrupamento');
 
     // O «nº» mostra o `rownum` de verdade, e nao o indice da linha na pagina.
     const varrido = await api(page, 'varrer', { database: db, tabela: tab, max: 50 });
