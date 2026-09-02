@@ -12,7 +12,7 @@
  * Nenhum dos 1.106 testes de `cargo test` podia pegar isto: o servidor
  * estava certo dos dois lados (o campo no esquema E a op `dados_pessoais`),
  * e quem lia errado era a pagina. */
-import { entrar, api, capturar, verdade, contem, bancoDoCaso } from '../apoio.mjs';
+import { entrar, api, capturar, verdade, contem, bancoDoCaso, abrirLinhaDaGrade } from '../apoio.mjs';
 
 export const caso = {
   nome: 'lgpd',
@@ -48,7 +48,10 @@ export const caso = {
       'a tela continua dizendo que o servidor nao sabe marcar dado pessoal — '
       + 'ela esta lendo um campo que o servidor nao manda');
 
-    const linhas = await page.$$eval('#painel .linha-lg', trs =>
+    // A auditoria virou PhxGrid, entao a linha nao tem mais `.linha-lg`.
+    // Medido: a tela mostra as duas colunas marcadas e a faixa de agrupar --
+    // quem tinha quebrado era o seletor, nao a tela.
+    const linhas = await page.$$eval('#painel .phx-grid tbody tr:not(.phx-grupo)', trs =>
       trs.map(tr => [...tr.querySelectorAll('td')].map(td => td.textContent.trim())));
     verdade(linhas.length === 2,
       `a tela listou ${linhas.length} coluna(s) marcada(s) — esperava 2 (nome e laudo)`);
@@ -77,7 +80,7 @@ export const caso = {
 
     // Clicar na linha leva para a tabela — a auditoria que aponta e melhor
     // que a auditoria que so lista.
-    await page.click('#painel .linha-lg');
+    await abrirLinhaDaGrade(page);
     await page.waitForTimeout(500);
     contem(await page.textContent('#titulo'), 'pacientes',
       'clicar na linha da auditoria nao abriu a tabela apontada');

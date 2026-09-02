@@ -10,7 +10,7 @@
  * A asercao que trava o defeito e a primeira -- NENHUMA coluna de sistema
  * vira campo. Ela falha com o `find` reposto mesmo antes de o botao ser
  * clicado, e diz o nome da coluna que sobrou. */
-import { entrar, capturar, cenario, api, verdade, igual, contem, bancoDoCaso } from '../apoio.mjs';
+import { entrar, capturar, cenario, api, verdade, igual, contem, bancoDoCaso, abrirLinhaDaGrade } from '../apoio.mjs';
 
 export const caso = {
   nome: 'ficha',
@@ -69,7 +69,7 @@ export const caso = {
     igual(nova.softdeleted, false, 'a linha nasceu marcada como excluida');
 
     // ------------------------------------------------------------- salvar
-    await page.click(`#painel .linha-dado[data-rowid="${nova.rowid}"]`);
+    await abrirLinhaDaGrade(page, { rowid: nova.rowid });
     await page.waitForSelector('#fichaEdit');
     for (const nome of sistema) {
       igual(await page.locator(`#f_${nome}`).count(), 0,

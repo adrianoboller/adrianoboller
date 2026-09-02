@@ -66,6 +66,16 @@ async function esperarPorta(porta, prazoMs = 20000) {
   return false;
 }
 
+/** A porta responde NESTE instante? (o `esperarPorta` insiste; esta pergunta.) */
+function portaAberta(porta) {
+  return new Promise(r => {
+    const s = connect(porta, '127.0.0.1');
+    s.on('connect', () => { s.destroy(); r(true); });
+    s.on('error', () => r(false));
+    s.setTimeout(400, () => { s.destroy(); r(false); });
+  });
+}
+
 /** Sobe um phxsqld isolado. Devolve o que a bateria precisa para o derrubar. */
 export async function subir({ phxsqld, portaDados = PORTA_DADOS, portaWeb = PORTA_WEB, log }) {
   const dir = mkdtempSync(join(tmpdir(), 'phx-bateria-'));
@@ -73,6 +83,29 @@ export async function subir({ phxsqld, portaDados = PORTA_DADOS, portaWeb = PORT
   const caminhoConfig = join(dir, 'config.json');
   writeFileSync(caminhoConfig,
     JSON.stringify(config(base, hashDaSenha(phxsqld, SENHA), portaDados, portaWeb), null, 2));
+
+  // PORTA JA OCUPADA E MEDIÇÃO DE OUTRO SERVIDOR.
+  //
+  // Sem esta conferencia o buraco e silencioso e caro: se sobrou um `phxsqld`
+  // de uma corrida anterior segurando a porta, o que subir agora MORRE ao
+  // tentar prende-la -- e o `esperarPorta` acha a porta aberta do mesmo jeito,
+  // porque quem responde e o VELHO. A bateria entao dirige o navegador contra
+  // um servidor com o estado acumulado de rodadas passadas, e as falhas saem
+  // parecendo defeito de produto: «a tabela pacientes ja existe», «a arvore
+  // esperava 26 bancos e achou 25». Custou duas corridas inteiras para
+  // aparecer, e as duas mediram outro servidor.
+  //
+  // E a mesma familia do binario velho, que esta bateria ja recusa: medidor
+  // que mede a coisa errada e pior que medidor que nao roda.
+  if (await portaAberta(portaWeb) || await portaAberta(portaDados)) {
+    throw new Error(
+      `a porta ${portaWeb} ou ${portaDados} ja esta ocupada -- provavelmente um `
+      + 'phxsqld de uma corrida anterior que nao caiu. A bateria RECUSA subir '
+      + 'assim: o servidor novo morreria e ela mediria o velho, com o estado '
+      + 'acumulado dele.\n'
+      + "Ache com:  ps -eo pid,etime,cmd | grep 'phxsqld --config /tmp/phx-bateria-'\n"
+      + 'e derrube pelo PID (nunca por `pkill -f`, que pega servidor de outro agente).');
+  }
 
   const proc = spawn(phxsqld, ['--config', caminhoConfig], {
     cwd: dir, stdio: ['ignore', 'pipe', 'pipe'],
@@ -92,6 +125,15 @@ export async function subir({ phxsqld, portaDados = PORTA_DADOS, portaWeb = PORT
   if (!(await esperarPorta(portaDados))) {
     matar(proc);
     throw new Error(`a porta de dados ${portaDados} nao abriu:\n${saida.join('')}`);
+  }
+  // O cinto, alem do suspensorio: a porta pode abrir e o NOSSO processo ter
+  // morrido -- e ai quem responde e outro. Perguntar pela porta responde
+  // «tem servidor»; so o `morreu` responde «e o MEU servidor».
+  if (morreu !== null) {
+    throw new Error(
+      `o phxsqld que esta bateria subiu morreu com codigo ${morreu}, mas a porta `
+      + `${portaWeb} respondeu -- entao quem esta atendendo e outro servidor. `
+      + `Nao da para medir assim.\n${saida.join('')}`);
   }
 
   return {

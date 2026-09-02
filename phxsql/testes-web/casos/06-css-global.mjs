@@ -38,7 +38,12 @@ async function medir(page, ondeEstou) {
 
     // B: dado em maiuscula por estilo.
     //    Percorre o TEXTO, e nao a folha: o que interessa e o que o leitor ve.
-    const dado = el => el.closest('td.dado, .rot-dado, #grade td, .celula-dado, .dado');
+    // `phx-td` entrou aqui porque a guarda tinha ficado meio cega: as telas
+    // viraram PhxGrid, `td.dado` sumiu, e este laco parou de olhar celula de
+    // dado nenhuma -- passando verde por nao ter o que reprovar. A outra
+    // metade (o texto MISTO que sai todo em caixa alta) nunca dependeu desta
+    // lista, e e ela que continuava pegando «Blumenau».
+    const dado = el => el.closest('td.dado, td.phx-td, .rot-dado, #grade td, .celula-dado, .dado');
     const and = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     const jaVistos = new Set();
     for (let n = and.nextNode(); n; n = and.nextNode()) {

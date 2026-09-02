@@ -14,7 +14,7 @@
  * `eval()` de um texto: a pagina serve `script-src 'unsafe-inline'` SEM
  * `unsafe-eval`, e um teste que precisasse afrouxar o CSP para rodar seria
  * pior que teste nenhum. */
-import { entrar, cenario, capturar, verdade, bancoDoCaso } from '../apoio.mjs';
+import { entrar, cenario, capturar, verdade, bancoDoCaso, abrirLinhaDaGrade } from '../apoio.mjs';
 
 const ACOES = ['incluir', 'alterar', 'marcar', 'excluir', 'consultar'];
 const PISO = 4.5;
@@ -52,8 +52,7 @@ export const caso = {
       ['grade', () => page.evaluate(([d, t]) => verConteudoEditavel(d, t), [db, tab])],
       ['ficha', async () => {
         await page.evaluate(([d, t]) => verConteudoEditavel(d, t), [db, tab]);
-        await page.waitForSelector('#painel .linha-dado');
-        await page.click('#painel .linha-dado');
+        await abrirLinhaDaGrade(page);
         await page.waitForSelector('#fichaEdit');
       }],
       // O dialogo de excluir e a unica tela com o «marcar»: e nele que a cor
@@ -61,8 +60,7 @@ export const caso = {
       // para a que nao volta.
       ['dialogo de excluir', async () => {
         await page.evaluate(([d, t]) => verConteudoEditavel(d, t), [db, tab]);
-        await page.waitForSelector('#painel .linha-dado');
-        await page.click('#painel .linha-dado');
+        await abrirLinhaDaGrade(page);
         await page.waitForSelector('#btExcluir');
         await page.click('#btExcluir');
         await page.waitForSelector('.sobre .caixa');

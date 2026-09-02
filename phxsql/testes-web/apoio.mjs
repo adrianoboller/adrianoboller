@@ -116,6 +116,52 @@ export async function cenario(page, db, tab = 'clientes') {
   return { db, tab };
 }
 
+/** Abre a linha de uma PhxGrid -- por DUPLO clique, e nao por um clique.
+ *
+ * A tabela montada a mao abria a ficha com um clique simples, e os casos
+ * clicavam em `.linha-dado`. Quando a tela virou PhxGrid, duas coisas mudaram
+ * ao mesmo tempo, e so a segunda e visivel lendo o codigo:
+ *
+ * 1. a classe `.linha-dado` deixou de existir (a grade poe as suas);
+ * 2. o gesto passou a ser o DUPLO clique, porque o simples e da SELECAO.
+ *
+ * O segundo nao e defeito a consertar: e a convencao do DevExpress e do
+ * Janus, que sao os dois moldes que o dono nomeou, e esta escrita no LEIAME
+ * da grade. Quem muda e o teste, que passa a fazer o gesto da pessoa.
+ *
+ * O ajudante existe para o gesto morar num lugar so. Espalhado por quatro
+ * casos, o dia em que a grade mudar de gesto de novo deixa tres deles
+ * quebrados e um consertado -- e o quarto vira o que ninguem acha.
+ *
+ * `rowid` opcional: sem ele abre a primeira linha de dado; com ele procura a
+ * linha cuja celula `rowid` bate, que e como o caso da ficha precisa. Linha
+ * de GRUPO (`.phx-grupo`) nunca conta: ela nao e linha de dado, e a propria
+ * grade a recusa no `aoAbrirLinha`. */
+export async function abrirLinhaDaGrade(page, { em = '#painel', rowid = null } = {}) {
+  const linha = `${em} .phx-grid tbody tr:not(.phx-grupo)`;
+  await page.waitForSelector(linha, { timeout: 15000 });
+  if (rowid == null) {
+    await page.locator(linha).first().dblclick();
+    return;
+  }
+  // A celula do CORPO nao carrega `data-campo` -- so o cabecalho carrega --,
+  // entao a coluna do `rowid` se acha pela POSICAO, e a posicao sai do
+  // cabecalho servido, medida na hora. Filtrar por `td[data-campo="rowid"]`
+  // nao acha nada e falha dizendo «nao achei a linha», que e a mensagem certa
+  // para a causa errada: parece dado faltando e e seletor furado.
+  const i = await page.$$eval(`${em} .phx-grid thead tr:not(.phx-frow)`, trs => {
+    const leaf = trs[trs.length - 1];
+    return [...leaf.querySelectorAll('th')].map(t => t.getAttribute('data-campo'));
+  }).then(cs => cs.indexOf('rowid') + 1);
+  if (i === 0) throw new Falha(`a grade de ${em} nao tem coluna rowid`);
+  const alvo = page.locator(linha)
+    .filter({ has: page.locator(`td:nth-child(${i}):text-is("${rowid}")`) }).first();
+  if (await alvo.count() === 0) {
+    throw new Falha(`nao achei a linha rowid=${rowid} na grade de ${em}`);
+  }
+  await alvo.dblclick();
+}
+
 /** Abre a tabela pela ARVORE, clicando -- que e como a pessoa chega la. */
 export async function abrirPelaArvore(page, db, tab) {
   await page.evaluate(() => montarArvore(false));
