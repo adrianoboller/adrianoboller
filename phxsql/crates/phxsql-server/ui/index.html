@@ -1000,6 +1000,20 @@ body,.cartao,.barra,.arvore,table,td,th{
 .vazio{padding:10px 16px;font-size:12px;color:var(--texto-3);font-style:italic}
 
 /* ----------------------------------------------------------------- corpo */
+/* `min-height:0` NAO e enfeite: e o irmao vertical do `min-width:auto` que o
+   comentario do `#app` ja explica. Filho de flex em coluna nasce com
+   `min-height:auto`, que quer dizer «nao encolha abaixo do seu conteudo» --
+   entao o `#painel`, que tem `flex:1;overflow:auto`, CRESCE em vez de rolar, e
+   o `overflow:auto` dele nunca entra em acao. O conteudo entao passa por baixo
+   do `overflow:hidden` daqui e fica INALCANCAVEL: nao aparece e nao ha como
+   rolar ate ele.
+   Achado medindo, e por acidente: tirar dois botoes da barra de ferramentas
+   deixou-a com uma linha em vez de duas, e o gestor de threads da telemetria
+   -- que fica no fim da tela mais alta que existe -- saiu da area visivel para
+   `top: 1428` numa janela de 900, com NENHUM ancestral rolavel. A bateria
+   acusou; a arvore limpa passava; a bisseccao apontou os dois botoes. Mas os
+   botoes so EXPUSERAM: o defeito e este `min-height` que faltava, e ele
+   voltaria em qualquer tela alta o suficiente. */
 .corpo{grid-area:corpo;overflow:hidden;display:flex;flex-direction:column}
 .cabecalho{padding:16px 22px 0}
 .cabecalho h2{margin:0;font-size:20px;font-weight:600;letter-spacing:-.01em}
@@ -9888,16 +9902,20 @@ const ICO = {
 const svg = nome =>
   `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none">${ICO[nome]}</svg>`;
 
-/* A cor agrupa por familia, nao por gosto: dezessete ferramentas para oito
-   matizes, entao a repeticao e inevitavel e deve significar alguma coisa.
+/* A cor agrupa por familia, nao por gosto: a repeticao e inevitavel com mais
+   ferramentas que matizes, e deve significar alguma coisa.
      verde   serviço e salvaguarda ... Start/Stop, Backup
-     roxo    consulta e réplica ...... Query, Replicação
-     azul    gente e mensagem ........ Usuários, Server Mail
-     laranja política ................ Diretivas
-     turquesa dados .................. Bancos, View DB, Tabelas, Duplicar, Importar
+     roxo    consulta e réplica ...... Query, Pivot, Replicação, Diagrama ER
+     azul    gente ................... Usuários
+     laranja política ................ Diretivas, LGPD
+     turquesa dados .................. Bancos, Tabelas, Importar
      verde-claro rede ................ Conexões
      vermelho risco .................. Transações
-     âmbar   conserto e cadeia ....... Repair, Blockchain
+     âmbar   conserto ................ Repair, Restaurar
+   Esta lista ja envelheceu uma vez: citava Server Mail, Blockchain, View DB e
+   Duplicar depois de as quatro terem saido da barra. Peca que sai daqui sai
+   TAMBEM deste comentario -- documentacao que descreve o que nao existe mais
+   ensina errado com a autoridade de estar no fonte.
    Atencao: `--vermelhao` e `--laranja` sao a MESMA cor no tema claro, por
    decisao da marca. Escolher entre os dois seria escolher nada. */
 const FERRAMENTAS = [
@@ -9953,20 +9971,6 @@ const FERRAMENTAS = [
   "risco",
   { ico:"reparo",   rot:"Repair", txt:"tela.fer_repair",     cor:"var(--ambar)",  faz:repararPeloMenu },
   "risco",
-  { ico:"correio",  rot:"Server Mail", txt:"tela.fer_server_mail",cor:"var(--reg)",    faz:null,
-    falta:"O armazenamento serve bem — uma tabela de mensagens com pasta "
-        + "indexada, corpo no .memo e anexo no .bin. Falta o serviço. O SMTP "
-        + "de ENVIO já existe (é o que manda o alerta de disco), mas ele só "
-        + "entrega para um relé interno e não sabe RECEBER — sem isso o "
-        + "correio é de mão única." },
-  { ico:"corrente", rot:"Blockchain", cor:"var(--ambar)",  faz:null,
-    falta:"O formato encaixa: a altura do bloco é o rowid, o Uuid256 guarda um "
-        + "SHA-256 exato e a ordem de digitação é sagrada. Falta o serviço — e, "
-        + "antes dele, as transações." },
-  // A Ajuda NAO esta aqui de proposito: mora no topo, ao lado da lua/sol
-  // (`#btAjuda`). Ajuda no fim de uma barra de 30 ferramentas e ajuda que se
-  // procura; ao lado do tema, ela esta onde a pessoa ja olha quando quer
-  // mexer na propria tela.
 ];
 
 function montarFerramentas() {
@@ -12635,6 +12639,22 @@ const MENUS = [
     { rot:"Profiler…", txt:"tela.mi_profiler",            ico:"∿", faz:verProfiler },
     "sep",
     { rot:"Reparar…", txt:"tela.mi_reparar",             ico:"⛨", faz:repararPeloMenu },
+    "sep",
+    // As duas que AINDA NAO EXISTEM. Sairam da barra de ferramentas por
+    // decisao do dono, e vieram para ca em vez de sumir: promessa visivel
+    // continua sendo melhor que ausencia -- so muda de lugar, e agora fica no
+    // fim do menu em vez de ocupar espaco na barra do que se usa todo dia.
+    // O `falta` desliga o item e poe o motivo no `title`.
+    { rot:"Server Mail", txt:"tela.fer_server_mail", ico:"✉",
+      falta:"O armazenamento serve bem — uma tabela de mensagens com pasta "
+          + "indexada, corpo no .memo e anexo no .bin. Falta o serviço. O SMTP "
+          + "de ENVIO já existe (é o que manda o alerta de disco), mas ele só "
+          + "entrega para um relé interno e não sabe RECEBER — sem isso o "
+          + "correio é de mão única." },
+    { rot:"Blockchain", ico:"⛓",
+      falta:"O formato encaixa: a altura do bloco é o rowid, o Uuid256 guarda "
+          + "um SHA-256 exato e a ordem de digitação é sagrada. Falta o "
+          + "serviço — e, antes dele, as transações." },
   ]],
 
   // Tres alcances, tres telas: o servidor inteiro, um banco, e quem entra.
@@ -12714,9 +12734,14 @@ function montarMenu() {
       : `<u>${nome[0]}</u>${nome.slice(1)}`;
     const linhas = itens.map((it, j) => {
       if (it === "sep") return `<div class="sep" role="separator"></div>`;
-      const off = it.quando && !it.quando();
+      // `falta` desliga E explica. Sem ele, uma peca que veio da barra de
+      // ferramentas para ca perderia o motivo de estar cinza -- e item cinza
+      // sem motivo e pior que item ausente: a pessoa fica procurando o que
+      // fez de errado.
+      const off = (it.quando && !it.quando()) || !!it.falta;
       return `<button class="item" role="menuitem" data-m="${i}" data-i="${j}"
-        ${off ? "disabled" : ""}><span class="ico">${it.ico || ""}</span
+        ${off ? "disabled" : ""}${it.falta ? ` title="${esc(it.falta)}"` : ""}
+        ><span class="ico">${it.ico || ""}</span
         ><span class="rot">${esc(rot(`menu.${i}.${j}`, txt(it.txt, it.rot)))}</span
         ><span class="tecla">${it.tecla || ""}</span></button>`;
     }).join("");

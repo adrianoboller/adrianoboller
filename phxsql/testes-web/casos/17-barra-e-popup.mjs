@@ -129,6 +129,23 @@ export const caso = {
         document.querySelector('#painel .folha-tit, #painel h2, #painel')?.textContent?.slice(0, 60) || ''),
       null, { timeout: 10000 });
 
+    // ---- 8. Server Mail e Blockchain no menu Ferramentas ---------------
+    verdade(!naBarra.some(t => /Server Mail|Blockchain/i.test(t)),
+            `Server Mail ou Blockchain ficaram na barra: ${naBarra}`);
+    // No menu, DESLIGADOS e com o motivo -- item cinza sem motivo e pior que
+    // item ausente, porque a pessoa fica procurando o que fez de errado.
+    const pendentes = await page.evaluate(() => {
+      const fer = MENUS.findIndex(([n]) => /Ferramentas/i.test(n));
+      return [...document.querySelectorAll(`#menubar .item[data-m="${fer}"]`)]
+        .filter(b => /Server Mail|Blockchain/i.test(b.textContent))
+        .map(b => ({ rot: b.textContent.trim(), off: b.disabled, motivo: (b.title || '').length }));
+    });
+    igual(pendentes.length, 2, `o menu Ferramentas nao tem as duas: ${JSON.stringify(pendentes)}`);
+    for (const p of pendentes) {
+      verdade(p.off, `${p.rot} aceita clique e nao faz nada`);
+      verdade(p.motivo > 40, `${p.rot} nao explica por que esta desligado`);
+    }
+
     await capturar(ctx, 'barra-e-popup');
   },
 };
