@@ -62,6 +62,40 @@ QA/PDCA) rodaram sem nenhum registro sobreviver. O que se sabe deles hoje veio
 de memória de sessão — e memória de sessão é exatamente o que este documento
 existe para substituir.
 
+### Frente «toda tabela é PhxGrid» — 2 de setembro de 2026
+
+Primeira frente com a escolha registrada na hora, e não reconstruída de memória.
+
+| parte | escalão | por quê |
+|---|---|---|
+| varredura das 27 tabelas | **mecânico**, feito inline | é um `grep`; convocar agente para isso é o exagero que a cláusula avisa |
+| tela de referência (`verSysTables`) | **projeto e risco** | vira o molde de 19 conversões — errar nela erra em 19 lugares |
+| `verConteudoEditavel` | **projeto e risco** | grava dado; é onde mora a janela de conflito, e a gravação tinha de continuar pela ficha |
+| `estruturaDbl` | **projeto e risco**, reservada | acabou de ganhar a leitura por nome; converter sem saber disso perderia o conserto |
+| as 19 telas de exibição | **mecânico**, um agente | têm molde escrito, e o erro salta na tela |
+
+**Papéis dispensados, e por quê** — dispensa registrada é decisão:
+
+- **DBA**: nenhuma das conversões toca formato em disco, chave ou índice.
+- **Pesquisador**: não há receita de fora nesta frente; o padrão saiu do
+  componente que já existe aqui.
+- **Designer**: convocado de fato, e não dispensado — as regras de gesto,
+  cor de ação e «rótulo se traduz, dado nunca» foram escritas no pedido do
+  agente porque são dele.
+
+**Um agente e não quatro em paralelo**, e o motivo é medido: as 22 funções
+moram no **mesmo arquivo**. Frentes paralelas ali produziriam exatamente o
+«defeito que só aparece no encontro delas» — por construção, e não por azar.
+
+**O escalão intermediário, e não o mais leve.** São 19 telas com preservação
+sutil: o gesto de clique simples, a célula própria, a catraca. O mais leve
+erraria em volume, e volume de erro numa passada única custa mais que a
+diferença de preço.
+
+**O que ainda não se sabe**: se a escolha foi certa. O relatório do agente não
+é prova — o do DbLink acertou e ainda assim a prova real foi refeita aqui antes
+do commit. Esta linha se fecha quando eu tiver exercitado as telas.
+
 ## Como registrar daqui em diante
 
 Uma linha por frente, no fim da rodada, junto do resto da documentação:
