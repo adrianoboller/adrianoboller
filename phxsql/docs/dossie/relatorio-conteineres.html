@@ -1,0 +1,276 @@
+<title>PhxSql entre Contêineres</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Exo+2:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --tinta:#010418; --painel:#0a1122; --painel-2:#0e1730; --linha:#1d2846;
+  --texto:#DDE2EB; --texto-2:#9aa6bf; --texto-3:#6d7a9c;
+  --ambar:#FFC43D; --laranja:#FF8A1C; --vermelhao:#FF4D10; --vermelho:#D71A1A;
+  --verde:#3FBF7F;
+  --display:"Exo 2",system-ui,sans-serif;
+  --corpo:"IBM Plex Sans",system-ui,-apple-system,Segoe UI,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    --tinta:#f4f6fb; --painel:#ffffff; --painel-2:#eef1f8; --linha:#d3daea;
+    --texto:#111a2e; --texto-2:#42506e; --texto-3:#66748f;
+    --ambar:#8a6200; --laranja:#b35400; --vermelhao:#C63C0A; --vermelho:#a81111;
+    --verde:#1d7a4d;
+  }
+}
+:root[data-theme="light"]{
+  --tinta:#f4f6fb; --painel:#ffffff; --painel-2:#eef1f8; --linha:#d3daea;
+  --texto:#111a2e; --texto-2:#42506e; --texto-3:#66748f;
+  --ambar:#8a6200; --laranja:#b35400; --vermelhao:#C63C0A; --vermelho:#a81111;
+  --verde:#1d7a4d;
+}
+*{box-sizing:border-box}
+body{background:var(--tinta);color:var(--texto);font-family:var(--corpo);line-height:1.62;font-size:16px}
+.folha{max-width:1180px;margin:0 auto;padding:56px 28px 96px}
+h1,h2,h3,.rot{font-family:var(--display);text-wrap:balance}
+h1{font-size:clamp(30px,4.4vw,50px);font-weight:700;letter-spacing:-.015em;margin:0 0 6px}
+h2{font-size:24px;font-weight:600;margin:60px 0 6px;letter-spacing:-.005em}
+h3{font-size:17px;font-weight:600;margin:0 0 8px}
+p{margin:0 0 14px;max-width:70ch}
+.sub{color:var(--texto-2);font-size:18px;margin:0 0 4px;max-width:72ch}
+.assina{font-family:var(--display);font-weight:500;letter-spacing:.08em;text-transform:uppercase;
+        font-size:11px;color:var(--laranja);margin:0 0 26px}
+.cinta{display:flex;flex-wrap:wrap;gap:10px;margin:22px 0 0}
+.selo{font-family:var(--mono);font-size:12px;color:var(--texto-2);border:1px solid var(--linha);
+      border-radius:999px;padding:5px 13px;background:var(--painel)}
+.selo b{color:var(--ambar);font-weight:500}
+.selo.sim b{color:var(--verde)} .selo.nao b{color:var(--vermelhao)}
+.legenda{color:var(--texto-2);font-size:14px;margin:10px 0 0;max-width:80ch}
+figure{margin:26px 0 0}
+.moldura{overflow-x:auto;background:var(--painel);border:1px solid var(--linha);border-radius:14px;padding:18px}
+svg.fluxo{display:block;min-width:900px;width:100%;height:auto;color:var(--texto)}
+.grade{display:grid;gap:16px;margin:18px 0 0}
+@media (min-width:820px){ .grade.tres{grid-template-columns:repeat(3,1fr)} .grade.dois{grid-template-columns:repeat(2,1fr)} }
+.cartao{background:var(--painel);border:1px solid var(--linha);border-radius:12px;padding:18px}
+.cartao .rot{font-size:11px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;margin:0 0 6px;color:var(--laranja)}
+.cartao.ok{border-left:3px solid var(--verde)} .cartao.ok .rot{color:var(--verde)}
+.cartao.nao{border-left:3px solid var(--vermelhao)} .cartao.nao .rot{color:var(--vermelhao)}
+.cartao p{font-size:14.5px;color:var(--texto-2);margin:0 0 10px}
+.cartao p:last-child{margin-bottom:0}
+pre{font-family:var(--mono);font-size:12.5px;line-height:1.7;background:var(--painel-2);border:1px solid var(--linha);
+    border-radius:9px;padding:12px 14px;overflow-x:auto;margin:0 0 12px;color:var(--texto)}
+pre:last-child{margin-bottom:0}
+code{font-family:var(--mono);font-size:.92em;color:var(--ambar)}
+pre code{color:inherit;font-size:inherit}
+.cmt{color:var(--texto-3)}
+.rolo{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px;margin:16px 0 0}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--linha);vertical-align:top}
+th{font-family:var(--display);font-weight:600;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--texto-3)}
+td.n{text-align:right;font-family:var(--mono);font-size:12.5px;color:var(--ambar);white-space:nowrap}
+td:first-child{font-family:var(--mono);font-size:12.5px;white-space:nowrap}
+.aviso{border-left:3px solid var(--vermelhao);background:var(--painel);border-radius:0 10px 10px 0;padding:14px 18px;margin:16px 0 0}
+.aviso .rot{font-family:var(--display);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+            color:var(--vermelhao);font-weight:600;margin:0 0 4px}
+.aviso p{margin:0;font-size:14.5px;color:var(--texto-2)}
+.aviso.calmo{border-left-color:var(--ambar)} .aviso.calmo .rot{color:var(--ambar)}
+.rodape{margin:72px 0 0;padding:20px 0 0;border-top:1px solid var(--linha);color:var(--texto-3);font-size:13px}
+</style>
+
+<div class="folha">
+  <h1>PhxSql entre Contêineres</h1>
+  <p class="sub">Dois PhxSql com bases e tabelas próprias, o canal direto entre eles, e o
+     DbLink — o que ele alcança, e o que ele <em>não</em> alcança.</p>
+  <p class="assina">Built to store. Engineered to scale.</p>
+
+  <div class="cinta">
+    <span class="selo">02/09/2026</span>
+    <span class="selo">imagem <b>FROM scratch, 12,8 MB</b></span>
+    <span class="selo sim">canal direto <b>~8 s</b></span>
+    <span class="selo sim">DbLink → MariaDB <b>0,01 s</b></span>
+    <span class="selo nao">DbLink → PhxSql <b>não existe</b></span>
+  </div>
+
+  <figure>
+    <div class="moldura">
+      <svg class="fluxo" viewBox="0 0 1080 470" role="img"
+           aria-label="Três contêineres numa rede Docker: phx-a com a base loja, phx-b com a base rh, e erp-mariadb com a base erp. Uma seta verde de phx-a para phx-b mostra o canal direto de replicação, que levou a base loja em oito segundos sem tocar no rh. Uma seta verde de phx-a para o MariaDB mostra o DbLink funcionando em um centésimo de segundo. Uma seta vermelha tracejada de phx-a para phx-b, marcada como DbLink, aparece cortada: o motor phxsql não existe no DbLink.">
+        <defs>
+          <marker id="ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--verde)"/></marker>
+          <marker id="nao" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--vermelhao)"/></marker>
+        </defs>
+
+        <rect x="14" y="14" width="1052" height="442" rx="14" fill="none"
+              stroke="var(--linha)" stroke-width="1.5" stroke-dasharray="7 5"/>
+        <text x="34" y="40" font-family="Exo 2, sans-serif" font-size="11" font-weight="600"
+              letter-spacing="2" fill="var(--texto-3)">REDE DO DOCKER — phxnet</text>
+
+        <!-- phx-a -->
+        <rect x="46" y="70" width="290" height="128" rx="11" fill="var(--painel-2)" stroke="var(--laranja)" stroke-width="1.6"/>
+        <text x="68" y="98" font-family="Exo 2, sans-serif" font-size="16" font-weight="600" fill="currentColor">phx-a</text>
+        <text x="68" y="118" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="var(--texto-2)">PhxSql · papel source</text>
+        <text x="68" y="146" font-family="JetBrains Mono, monospace" font-size="12" fill="var(--ambar)">base loja</text>
+        <text x="68" y="165" font-family="JetBrains Mono, monospace" font-size="11" fill="var(--texto-2)">clientes · pedidos</text>
+        <text x="68" y="184" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="var(--texto-3)">bancos → ["loja"]</text>
+
+        <!-- phx-b -->
+        <rect x="744" y="70" width="290" height="128" rx="11" fill="var(--painel-2)" stroke="var(--linha)" stroke-width="1.6"/>
+        <text x="766" y="98" font-family="Exo 2, sans-serif" font-size="16" font-weight="600" fill="currentColor">phx-b</text>
+        <text x="766" y="118" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="var(--texto-2)">PhxSql · papel replica</text>
+        <text x="766" y="146" font-family="JetBrains Mono, monospace" font-size="12" fill="var(--ambar)">base rh</text>
+        <text x="766" y="165" font-family="JetBrains Mono, monospace" font-size="11" fill="var(--texto-2)">funcionarios · cargos</text>
+        <text x="766" y="184" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="var(--verde)">bancos → ["loja","rh"]</text>
+
+        <!-- canal direto -->
+        <path d="M336 116 H 738" stroke="var(--verde)" stroke-width="2.2" fill="none" marker-end="url(#ok)"/>
+        <text x="537" y="106" text-anchor="middle" font-family="Exo 2, sans-serif" font-size="13"
+              font-weight="600" fill="var(--verde)">canal direto — replicação</text>
+        <text x="537" y="138" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="12"
+              fill="var(--texto-2)">a base «loja» chegou em ~8 s, pelo NOME do serviço</text>
+        <text x="537" y="157" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="12"
+              fill="var(--texto-2)">e o «rh» de phx-b continuou intacto</text>
+
+        <!-- dblink recusado -->
+        <path d="M336 232 H 500" stroke="var(--vermelhao)" stroke-width="2" stroke-dasharray="7 5" fill="none"/>
+        <path d="M574 232 H 738" stroke="var(--vermelhao)" stroke-width="2" stroke-dasharray="7 5"
+              fill="none" marker-end="url(#nao)" opacity="0.35"/>
+        <path d="M524 214 L 550 250 M 550 214 L 524 250" stroke="var(--vermelhao)" stroke-width="2.6"/>
+        <text x="537" y="285" text-anchor="middle" font-family="Exo 2, sans-serif" font-size="13"
+              font-weight="600" fill="var(--vermelhao)">DbLink entre dois PhxSql — não existe</text>
+        <text x="537" y="306" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11"
+              fill="var(--texto-2)">motor de dblink desconhecido: "phxsql"</text>
+        <text x="537" y="323" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11"
+              fill="var(--texto-2)">(use "mysql" ou "postgres")</text>
+
+        <!-- mariadb -->
+        <rect x="395" y="352" width="290" height="86" rx="11" fill="var(--painel-2)" stroke="var(--linha)" stroke-width="1.6"/>
+        <text x="417" y="380" font-family="Exo 2, sans-serif" font-size="15" font-weight="600" fill="currentColor">erp-mariadb</text>
+        <text x="417" y="400" font-family="JetBrains Mono, monospace" font-size="12" fill="var(--ambar)">base erp</text>
+        <text x="417" y="419" font-family="JetBrains Mono, monospace" font-size="11" fill="var(--texto-2)">fornecedores · notas</text>
+
+        <!-- dblink que funciona -->
+        <path d="M120 198 V 386 H 389" stroke="var(--verde)" stroke-width="2.2" fill="none" marker-end="url(#ok)"/>
+        <text x="136" y="300" font-family="Exo 2, sans-serif" font-size="13" font-weight="600" fill="var(--verde)">DbLink</text>
+        <text x="136" y="320" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="var(--texto-2)">testar em 0,01 s</text>
+        <text x="136" y="338" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="var(--texto-2)">JOIN roda LÁ</text>
+        <text x="136" y="356" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="var(--texto-2)">senha por variável</text>
+      </svg>
+    </div>
+    <figcaption class="legenda">
+      Duas setas verdes e uma cortada. A cortada não é defeito: o DbLink existe para
+      alcançar motor <strong>de fora</strong>, e entre dois PhxSql o canal é a replicação —
+      que é a seta de cima.
+    </figcaption>
+  </figure>
+
+  <h2>O que foi provado</h2>
+  <div class="grade tres">
+    <div class="cartao ok">
+      <p class="rot">Bases e tabelas próprias</p>
+      <p>Cada contêiner subiu com a sua base e as suas tabelas, e o <code>bancos</code> de
+         cada um mostrava só a própria: <code>["loja"]</code> e <code>["rh"]</code>.</p>
+    </div>
+    <div class="cartao ok">
+      <p class="rot">Canal direto</p>
+      <p>A <code>loja</code> chegou em <code>phx-b</code> em <strong>~8 s</strong> pelo nome do
+         serviço na rede, e o <code>rh</code> dele ficou intacto.</p>
+    </div>
+    <div class="cartao ok">
+      <p class="rot">DbLink → MariaDB</p>
+      <p><code>LEFT JOIN</code> + <code>GROUP BY</code> rodando <strong>lá</strong>, resultado
+         chegando aqui — inclusive o <code>SUM</code> nulo do fornecedor sem nota.</p>
+    </div>
+  </div>
+
+  <p style="margin-top:22px">As duas metades importam <strong>juntas</strong>: se <code>phx-b</code>
+     só tivesse a <code>loja</code>, isto seria replicação e não dois bancos; se só tivesse o
+     <code>rh</code>, seriam dois servidores isolados e não comunicação.</p>
+
+  <div class="rolo">
+  <table>
+    <thead><tr><th>Operação, de dentro do phx-a</th><th>Resultado medido</th><th>Tempo</th></tr></thead>
+    <tbody>
+      <tr><td>dblink_testar</td><td><code>11.8.9-MariaDB-ubu2404</code> · usuário efetivo <code>leitor@%</code></td><td class="n">0,01 s</td></tr>
+      <tr><td>dblink_bancos</td><td><code>["erp","information_schema"]</code></td><td class="n">—</td></tr>
+      <tr><td>dblink_tabelas</td><td><code>fornecedores</code> (3) e <code>notas</code> (3), com motor e bytes</td><td class="n">—</td></tr>
+      <tr><td>dblink_ler</td><td>as três linhas, com tipo e <code>primaria: true</code> no <code>id</code></td><td class="n">—</td></tr>
+      <tr><td>dblink_consultar</td><td><code>LEFT JOIN</code> + <code>GROUP BY</code> executado no MariaDB</td><td class="n">—</td></tr>
+      <tr><td>dblink_testar <span class="cmt">→ porta PhxSql</span></td><td><code>leitura falhou: Resource temporarily unavailable</code></td><td class="n">10,2 s</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+<pre><code><span class="cmt">-- o dado atravessando, do MariaDB para dentro do phx-a</span>
+['Metalurgica Sul', '2', '2090.75']
+['Papelaria Norte', '0',      None]   <span class="cmt">← o SUM nulo do fornecedor sem nota</span>
+['Tecidos Centro',  '1', '4300.00']</code></pre>
+
+  <h2>As duas garantias que valem mais que os números</h2>
+  <div class="grade dois">
+    <div class="cartao ok">
+      <p class="rot">A senha não vaza</p>
+      <p>Ela entra por <code>senha_env</code> — variável de ambiente do contêiner —, e a ficha
+         da ligação devolve <code>senha: "(oculta)"</code>. A regra pétrea vale também para
+         credencial de motor alheio.</p>
+    </div>
+    <div class="cartao ok">
+      <p class="rot">Lê de fora, não importa para dentro</p>
+      <p>Depois de todas as consultas, o <code>bancos</code> do <code>phx-a</code> continua
+         <code>["loja"]</code>. Nenhuma tabela do MariaDB entrou na base dele.</p>
+    </div>
+  </div>
+
+  <h2>O contraste que quase virou defeito</h2>
+  <p><code>dblink_testar</code> contra o MariaDB responde em <strong>0,01 s</strong>. Contra a
+     porta de um PhxSql, que não fala o fio do MySQL, ele desiste em <strong>10,2 s</strong> com
+     erro nomeado. <strong>Os dois números são o mesmo recurso funcionando.</strong></p>
+  <p>Na primeira tentativa eu ia relatar «o DbLink trava»: o prazo do meu cliente era de 8 s,
+     e o do recurso é de 10. <strong>O instrumento era mais curto que a coisa medida, e mediu a
+     si mesmo.</strong> Com prazo folgado, o servidor ainda atendeu outra conexão em
+     <strong>0,32 s</strong> durante a espera — a tentativa não segura a trava global, que era
+     exatamente o estrago que eu ia denunciar.</p>
+
+  <h2>O que este teste não prova</h2>
+  <div class="aviso">
+    <p class="rot">O estágio construtor do Dockerfile não rodou</p>
+    <p>Neste ambiente o <code>rustup target add x86_64-unknown-linux-musl</code> dentro do
+       contêiner não alcança <code>static.rust-lang.org</code> — a rede do build não passa pelo
+       proxy da sessão. Os binários vieram compilados de fora, com o mesmo alvo e o mesmo
+       <code>strip</code>. Isto prova a imagem e o comportamento; <strong>não</strong> prova o
+       <code>--offline</code> do construtor, que é a linha que pegaria uma dependência externa
+       entrando sem ninguém notar.</p>
+  </div>
+
+  <h2>O contador de versão parou na 0.18</h2>
+  <p>Duas coisas apareceram medindo isso, e a segunda é a que importa.</p>
+  <p><strong>Números do <code>Dockerfile</code> envelheceram:</strong> ele diz <strong>3,4 MB</strong>
+     para o servidor estático; o binário com <code>strip</code> tem <strong>7,66 MB</strong>.</p>
+  <p><strong>E o incremento de versão não é um <code>sed</code>.</strong> A <code>0.18.0</code>
+     aparece em <strong>mais de vinte arquivos</strong>, e o <code>confere_versoes</code> do
+     <code>empacotar.sh</code> guarda <strong>quatro</strong>. O resto se divide em duas
+     naturezas que precisam ser separadas antes de qualquer bump:</p>
+
+  <div class="rolo">
+  <table>
+    <thead><tr><th>Natureza</th><th>Exemplos medidos</th><th>No bump</th></tr></thead>
+    <tbody>
+      <tr><td>versão corrente</td><td><code>Cargo.toml</code>, <code>Cargo.lock</code>, cabeçalho do <code>MANUAL.txt</code>, seção nova do <code>CHANGELOG</code>, a linha de build do <code>index.html</code>, o nome do arquivo do dossiê</td><td><strong>muda</strong></td></tr>
+      <tr><td>história</td><td><code>«Desde a 0.18.0 o cache de páginas…»</code> · <code>«Até a 0.18.0 o PhxSql sabia copiar e…»</code> · <code>«A gravação NÃO atravessa mais (0.18.0)»</code></td><td><strong>fica</strong></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="aviso calmo">
+    <p class="rot">Por que isto merece ferramenta antes do próximo bump</p>
+    <p>São <strong>seis</strong> menções históricas medidas. Um <code>sed</code> global as
+       transformaria em afirmações falsas sobre o passado — e falsas de um jeito que ninguém
+       revisa, porque a frase continua bem escrita. O que falta é um conferidor que responda
+       <em>«o que um bump tocaria»</em>, separando as duas naturezas, e que rode antes de
+       alguém trocar o número.</p>
+  </div>
+
+  <p class="rodape">
+    Tudo aqui foi medido contra os contêineres em execução, e os roteiros ficaram no
+    repositório para se refazerem: <code>bancada/docker/montar-dois.py</code>,
+    <code>exercitar-dois.py</code> e <code>dblink-mariadb.py</code>, com o
+    <code>LEIA-ME.md</code> ao lado. O que não foi medido está dito como não medido.
+  </p>
+</div>
