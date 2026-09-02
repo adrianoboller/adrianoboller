@@ -72,15 +72,15 @@ nenhum é gratuito.
 | SP000002 | Build limpo, toolchain fixo e CI obrigatória | **feito, e parado** — `rust-toolchain.toml` pina 1.94.1 (conferido: é o `rustc` que roda aqui, commit `e408947bf`) e `.github/workflows/portoes.yml` roda os três **sem cano**. Nunca correu uma vez: depende do `push`, e o `push` é 403 |
 | SP000003 | Proveniência Git, versão e release reproduzível | **feito** — `build.rs` embute commit e árvore suja, `--version` uniforme nos três binários |
 | SP000004 | Fonte única de verdade e documentação gerada | **feito** — `CAPABILITIES.json` e os geradores escrevendo README, `TESTES.md` e `REST.md` |
-| SP000005 | Decomposição de `servidor.rs` e fronteiras arquiteturais | **não iniciado** — 22.396 linhas |
+| SP000005 | Decomposição de `servidor.rs` e fronteiras arquiteturais | **não iniciado** — **22.560** linhas (remedido; eram 22.396, e a conversão das telas não passa por aqui — o crescimento é das frentes de servidor) |
 
 ## PhxSql 0.20 — Transações e integridade
 
 | # | Sprint | Estado medido |
 |---|---|---|
 | SP000006 | Visão transacional única e read-your-own-writes | **não iniciado, e agora MEDIDO** — `bancada/transacoes/visibilidade.py`, por soquete: dentro da transação a própria escrita **não** aparece (1→1), o commit aplica (→2) e o rollback descarta (2→2). Os dois últimos são o que separa *modelo de empilhamento coerente* de *transação com defeito*: o empilhamento entrega o **A** do ACID, falta o **I**. E falta por construção — a escrita fica fora da tabela até o commit e a leitura vai na tabela —, então o conserto é no caminho de **leitura**, consultando a pilha pendente |
-| SP000007 | Definição e validação estrutural de chaves estrangeiras | **parcial** — a FK se **declara** (`criar_tabela`, editor ER) |
-| SP000008 | Execução completa de FK e ações referenciais | **não iniciado** — «um teste trava que *declarar não é aplicar*» (pedido 127) |
+| SP000007 | Definição e validação estrutural de chaves estrangeiras | **parcial, e andou** — além de declarar (`criar_tabela`, editor ER), a declaração agora **valida**: `ao_excluir` aceita **só** `restringir` e a recusa acontece na criação da tabela, não na gravação (`valores.rs`, com o par de testes que trava os dois sentidos); e a chave conferida **exige índice dos dois lados**, recusando e dizendo qual falta em vez de esconder uma varredura dentro de um `excluir`. Esquema `PSCH` v7 |
+| SP000008 | Execução completa de FK e ações referenciais | **parcial** — deixou de ser «não iniciado». Medido: `conferir_fks` roda em **2** pontos de escrita (`inserir` e `atualizar`, `table.rs:1203` e `:1416`) e `conferir_filhas` em **2** de exclusão (de vez e **suave**, `:1574` e `:1634`) — o suave também porque pai logicamente morto deixa filha apontando para linha que a tela não mostra mais. NULL satisfaz (MATCH SIMPLE). **Duas metades faltam, e são nomeadas**: (1) a imposição é **pedida**, pelo interruptor `verificar` da chave — quem não pede continua como antes, e o teste do comportamento velho (`a_chave_e_declarada_mas_ainda_nao_e_imposta_na_gravacao`) segue verde de propósito; (2) `ao_alterar: cascata` é **declarado e nunca lido** — nada cascateia quando a chave da mãe muda. Medido: o campo só aparece em `schema.rs` (guardar/serializar) e no `phxsql-cli` (mostrar), em ponto nenhum de escrita. É a mesma frase do pedido 127 com o alvo deslocado: *declarar não é aplicar* virou *aplicar no excluir não é aplicar no alterar*. `crates/phxsql-store/tests/chave-estrangeira.rs` |
 | SP000009 | FK em todos os caminhos e verificador de consistência | **não iniciado** |
 | SP000010 | Protocolo de commit e matriz real de durabilidade | **parcial** — durabilidade configurável em três regimes; falta a matriz de falhas |
 
