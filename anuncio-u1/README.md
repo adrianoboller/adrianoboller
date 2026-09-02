@@ -1,78 +1,88 @@
-# Anúncio cinemático — Snapmaker U1
+# Anúncio cinemático — Snapmaker U1 (EnginePrint)
 
-Comercial de produto em 3D, feito no Blender por script. O modelo do U1 fica
-na máquina do Adriano; o container que escreve os scripts não a enxerga. Por
-isso a cena **não viaja**: o script é que vai até ela.
+Comercial de produto em 3D, **9:16 vertical, 20 s a 30 fps**, feito no Blender
+por script. Tudo — caixa, U1 substituto, espuma, cabo, luz, câmera, tela,
+cartela e a coreografia dos sete beats — nasce de **um arquivo Python** que
+você cola na aba Scripting e roda. Nada para importar, nada para baixar.
 
-## Divisão do trabalho
+## Como rodar no seu Blender (4.2 ou mais novo)
 
-| Onde | O quê |
-|---|---|
-| Container (Blender 4.2.5 headless, 4 núcleos) | escreve os scripts, roda, corrige, renderiza prévias em baixa resolução (Cycles CPU) |
-| PC do Adriano (i7, RTX 4050, 32 GB) | abre o `.blend` e renderiza o filme final (EEVEE Next) |
+1. Abra o Blender com a sua cena (a do U1, ou uma vazia).
+2. Aba **Scripting** → **New** → cole o conteúdo de `scripts/anuncio_u1.py`.
+3. Ajuste o bloco **PARÂMETROS** no topo (abaixo).
+4. **Run Script**. Leva alguns segundos: monta a coleção `ANUNCIO`,
+   coreografa 600 quadros, configura o render e grava `anuncio_u1.blend` ao
+   lado do seu arquivo.
+5. **Render → Render Animation.** Na RTX 4050, com EEVEE Next a 1080×1920 e
+   64 amostras, conte de 20 a 40 minutos. O motion blur está ligado; o vidro
+   usa raytracing.
 
-## Decidido
+Rodar de novo não duplica nada: cada módulo apaga a própria coleção antes,
+e o seu modelo volta à pose original antes de ser medido de novo.
 
-- **Formato:** 9:16 vertical, 15 s — Reels / TikTok / Shorts.
-- **Motor:** EEVEE Next. O filme inteiro sai em 15–40 min na 4050, o que
-  permite rodada de correção no mesmo dia. Em Cycles cada ajuste custaria uma
-  noite.
-- **Modelo:** já aberto no Blender do Adriano, precisa de remodelagem.
+## Parâmetros que você decide
 
-## Falta
+| Parâmetro | Padrão | O que faz |
+|---|---|---|
+| `U1_NOME` | `""` | Nome do **objeto ou coleção** do seu U1. Vazio usa o substituto. |
+| `U1_ROTACAO_Z` | `0` | Graus para a frente do seu modelo apontar para −Y. |
+| `U1_TELA`, `U1_TOMADA`, `U1_BOTAO` | vazios | XYZ nas coordenadas originais do seu arquivo. Vazios saem de heurística pelo envelope. |
+| `U1_TELA_OBJETO`, `U1_BOTAO_OBJETO` | vazios | Objetos do seu modelo que acendem e afundam. A tela precisa de material com Emission. |
+| `DURACAO_S` | `20` | `15` é o preset frenético (só conferido por número, não por render). |
+| `CAIXA_SOME` | `True` | A caixa afunda pelo chão no beat 2 e volta no 6. `False`: o U1 pousa na frente dela. |
+| `ESPUMA_SOME_NOS_CLOSES` | `True` | Os flocos somem do chão nos beats 3 a 5, com fade. |
+| `ESCONDER_RESTO` | `False` | `True` tira do render objetos seus fora de `ANUNCIO`. O script avisa quais estão visíveis. |
+| `COR_CAIXA` | `"clara"` | `"escura"` existe mas não foi renderizada; a logo escura some sobre ela. |
+| `RESOLUCAO`, `AMOSTRAS` | `(1080, 1920)`, `64` | Render final. |
+| `SALVAR_BLEND` | `True` | Grava `anuncio_u1.blend` ao lado do seu `.blend`. |
 
-- **O storyboard.** É o que trava tudo: sem ele não dá para saber quantos
-  planos modelar nem em que nível de detalhe. Peça que só aparece desfocada ao
-  fundo não merece o mesmo trabalho de um close de 3 segundos no bico.
-- **O diagnóstico da cena** — rodar `scripts/01_diagnostico.py` (abaixo).
+## O que é provisório e o que você ainda me deve
 
-## Como rodar o diagnóstico
+- **Logo.** `assets/logo_engineprint.png` é uma **provisória** desenhada por
+  mim a partir da imagem que veio colada na conversa. Mande a oficial em PNG
+  com fundo transparente, ou SVG. Ela entra pelo mesmo nome e eu remonto o
+  arquivo único.
+- **Tela do U1.** Boot e interface são aproximações em HTML
+  (`assets/tela_ui_fonte.html`) da tela real, com o wordmark em texto. Se
+  tiver capturas oficiais, mande.
+- **Seu modelo.** Tudo foi validado com o **substituto** paramétrico nas
+  medidas reais. Rode `scripts/01_diagnostico.py` na sua cena e me mande o
+  `u1_diagnostico.txt` para eu ajustar tela, tomada e botão ao seu modelo.
 
-No Blender, com o arquivo do U1 aberto:
+## Decisões de direção que ficaram comigo (e você pode virar)
 
-1. Aba **Scripting** → **Novo**
-2. Cola o conteúdo de `scripts/01_diagnostico.py`
-3. **Executar** (Alt+P)
-4. O caminho do relatório aparece no fim do Console
+- **20 s em vez de 15.** Sete beats em 15 s ficam frenéticos e a cartela de
+  quatro linhas não se lê em 2 s. O preset de 15 existe.
+- **Caixa some pelo chão** no beat 2 (`CAIXA_SOME`). O storyboard só diz "o
+  U1 sai da caixa". Com `False` ele pousa na frente dela.
+- **Linha 3 da cartela em cobre**, a cor da logo. `linha_destaque=None`
+  no módulo tira.
+- **Travessia pelo centro da logo**, que é vazado: na tela o corte vai
+  branco → preto → logo. Mirar num dente daria engrenagem → preto → logo.
+- **Momento da revelação** (beat 2): o U1 branco recorta contra o rosé
+  escurecido por 1,2 s. A lateral não aparece nessa câmera; girá-la alguns
+  graus é a outra alavanca.
 
-Gera `u1_diagnostico.txt` (legível, é esse que interessa) e
-`u1_diagnostico.json` (completo) na pasta do `.blend`.
+## Pipeline daqui (para quem continuar)
 
-Ele responde as perguntas que decidem o anúncio:
+- `docs/ESPECIFICACAO.md` — o contrato: eixos, unidades, nomes, API, paleta,
+  linha do tempo por beat.
+- `scripts/mod_*.py` — um módulo por peça; `scripts/teste_*.py` prova cada um
+  renderizando e **olhando** o PNG.
+- `scripts/montar.py` — concatena os módulos e embute os PNGs em base64 no
+  `anuncio_u1.py`. Mexeu num módulo, roda de novo.
+- `scripts/previa.sh` — EEVEE Next **sem GPU** (Xvfb + llvmpipe). Cubo: ~6 s
+  por quadro; cena completa: 27 a 40 s.
+- `scripts/lotes.sh` + `MODO=video scripts/teste_coreografia.py` — prévia
+  em vídeo: 300 quadros (1 a cada 2) a 360×640 em lotes de 14, depois o MP4 a
+  15 fps pelo ffmpeg do Blender.
+- `docs/REVISAO-RODADA-1.md` — o que os revisores mediram na primeira
+  passagem; as rodadas 2 e 3 estão nas mensagens de commit.
 
-- **O U1 está separado em peças ou é uma malha só?** Peça separada permite
-  close individual e troca de cabeçote animada. Malha única, não.
-- **A malha é triangulada?** Cara de STL/CAD exportado: sem aresta de apoio, o
-  chanfro serrilha em close. Confirma a remodelagem.
-- **A escala bate com o produto real?** Compara a extensão da cena com os
-  584 × 499 × 730 mm oficiais, eixo por eixo. Escala errada estraga
-  profundidade de campo, chanfro e luz em watts de uma vez — e nada disso
-  aparece olhando o viewport.
-- Tem UV, tem material, tem luz, quantos polígonos, versão do Blender.
+## Ficha técnica do U1 (referência)
 
-## Ficha técnica do U1 (referência para a modelagem)
-
-| | |
-|---|---|
-| Dimensões externas | 584 × 499 × 730 mm |
-| Peso | 18,2 kg |
-| Volume de impressão | 270 × 270 × 270 mm |
-| Cabeçotes | 4, troca em 5 s |
-| Bico | aço inox 0,4 mm, até 300 °C |
-| Mesa | chapa de aço flexível com superfície PEI, até 100 °C |
-| Movimento | CoreXY, 500 mm/s, 20.000 mm/s² |
-| Tela | 3,5", 320 × 480, sensível ao toque |
-| Estrutura | quadro de metal, painéis compostos, hastes de fibra de carbono |
-
+584 × 499 × 730 mm, 18,2 kg, volume 270³, 4 cabeçotes, bico 0,4 mm até
+300 °C, mesa PEI até 100 °C, CoreXY 500 mm/s, tela 3,5" 480×320. Corpo
+**branco** com aro e moldura da porta pretos, porta de vidro na frente,
+painel traseiro transparente — confirmado no guia rápido oficial.
 Fonte: <https://www.snapmaker.com/snapmaker-u1/specs>
-
-Materialmente, o U1 vive de **reflexo anisotrópico e chanfro** — metal
-escovado, painel composto, fibra de carbono, chapa PEI. É o que a luz do
-anúncio tem de servir.
-
-## Cuidado com a folha de marca
-
-A comunicação da Snapmaker sobre o U1 traz números de desempenho comparativos.
-Nenhuma afirmação de desempenho entra no anúncio sem fonte na ficha oficial —
-a mesma regra que o PhxSql aplica ao *ACID compliant* da própria folha de
-marca.
