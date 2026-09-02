@@ -12268,6 +12268,15 @@ function irAba(qual) {
   est.aba = qual;
   const { db, tab } = est.atual;
   if (!$("#abas").children.length) return abrirTabela(db, tab);
+  // O REALCE tem de seguir o painel. `desenharAba` so reescreve o `#painel`;
+  // a barra de abas e desenhada uma vez, com o `sel` congelado no que era a
+  // aba na hora. Resultado medido: `Alt+3` mostrava a grade de conteudo com a
+  // aba «Estrutura» ainda acesa -- a tela dizendo uma coisa e mostrando outra.
+  //
+  // Marcar aqui, e nao no chamador, porque `est.aba` muda AQUI: quem chamar
+  // `irAba` de um lugar novo herda o realce certo sem lembrar de nada.
+  $("#abas").querySelectorAll(".aba").forEach(b =>
+    b.classList.toggle("sel", b.dataset.aba === qual));
   return desenharAba();
 }
 
