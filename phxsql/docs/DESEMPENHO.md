@@ -2001,6 +2001,67 @@ python3 bancada/comparacao/medir.py                # ~15 min
 python3 bancada/comparacao/grafico.py
 ```
 
+## 14. A premissa da SP000011 medida: a trava global **custa**, e agora com controle
+
+A SP000011 é «remoção do `Mutex<Instancia>` global», e ela chega com a premissa
+embutida: *a trava global custa caro*. Esta casa já errou exatamente este
+diagnóstico — escrevi que «o mutex era o pior pedaço, porque serializa», e
+medido o `lock` sem disputa custava **13,2 ns** contra **3.456 µs** do parse do
+lote: 262.000× menos. Por isso a premissa foi medida **antes** de a sprint
+começar.
+
+### Por que medir EFEITO, e não o que a telemetria já grava
+
+A telemetria já registra `espera_ms_s` — quanto se esperou na fila da trava.
+Seria o número fácil, e seria **estado**. Já houve prova aqui que passou por
+engano justamente por conferir estado em vez de efeito. O que se mede é a
+**vazão total com N clientes em paralelo**: se a trava serializa, N clientes
+entregam o que 1 entrega.
+
+### O confundidor que invalidaria tudo — e o controle que o mata
+
+Clientes como *threads* do Python seriam limitados pela GIL, e a vazão ficaria
+chata **mesmo com o servidor perfeitamente paralelo**: o medidor "provaria" a
+serialização do servidor medindo a do próprio medidor. Duas defesas:
+
+1. os clientes são **processos** separados, sem GIL comum;
+2. e há uma curva de **controle**: o `ping`, que percorre o mesmo soquete, o
+   mesmo JSON, o mesmo despacho e o mesmo cliente — e **não toma a trava de
+   dados**. O que o `ping` não escalar não é culpa da trava.
+
+A ociosidade da máquina é lida do `/proc/stat` **durante** a carga, porque
+platô com CPU sobrando e platô com a máquina no teto são a mesma curva sem
+esse número.
+
+### O resultado, duas amostras, 4 núcleos
+
+Ganho de vazão sobre um cliente:
+
+| carga | 1 cliente | **2 clientes** | 4 clientes | CPU em 2 |
+|---|---|---|---|---|
+| `ping` — **sem** a trava | 1,00× | **1,99× / 1,98×** | 2,98× / 2,69× | 52–54% |
+| `varrer` — leitura | 1,00× | **1,59× / 1,51×** | 1,49× / 1,56× | 52% |
+| `inserir` — escrita | 1,00× | **1,49× / 1,45×** | 1,39× / 1,53× | 52–53% |
+
+**O veredito está na coluna de 2 clientes, e não na de 4** — com 4 clientes a
+máquina está em 89–99% e o número é piso, não veredito. Com **2 clientes e
+metade da máquina ociosa**, o mesmo caminho entrega **1,99×** sem a trava e
+**1,51–1,59×** com ela.
+
+**A premissa da SP000011 está CONFIRMADA, e desta vez com controle:** a trava
+global come cerca de **20% do paralelismo disponível na leitura e 25% na
+escrita já com dois clientes**, e a CPU ociosa prova que não é a máquina. Com 4
+clientes o teto da trava fica em ~1,5× enquanto a máquina oferece ~2,7–3,0×.
+
+O que **não** se conclui daqui: qual desenho a substitui. Trava por tabela,
+`RwLock` para separar leitor de escritor e MVCC (SP000016) são três respostas
+diferentes, e escolher entre elas é outra medição — esta só diz que há o que
+ganhar, e quanto.
+
+```bash
+python3 bancada/concorrencia/a-trava-serializa.py   # SEGUNDOS= e LINHAS= ajustam
+```
+
 ## Como refazer tudo
 
 ```bash
@@ -2022,4 +2083,5 @@ cargo run --release -p phxsql-server --example custo-da-trava 3000000 9  # a §9
 cargo build --release --examples -p phxsql-server        # binario velho mede o passado
 cargo run --release -p phxsql-server --example custo-da-transacao 200 64  # a §12
 python3 bancada/transacoes/provar.py                     # a transacao pelo soquete
+python3 bancada/concorrencia/a-trava-serializa.py        # a premissa da SP000011, a §14
 ```
