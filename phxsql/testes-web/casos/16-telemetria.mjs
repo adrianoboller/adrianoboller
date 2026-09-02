@@ -35,8 +35,19 @@ export const caso = {
     // `attached` e nao `visible`: fechado, o `<details>` esconde o alvo -- e e
     // exatamente isso que a primeira asercao quer confirmar.
     await page.waitForSelector('#tlmThreads', { state: 'attached', timeout: 15000 });
-    await page.waitForTimeout(2600);
 
+    // ESPERA O EVENTO, NUNCA UMA DURACAO. A primeira versao dormia 2.600 ms
+    // «uma volta do relogio» e reprovava em 2 de 5 corridas da bateria
+    // INTEIRA -- nunca sozinha, nunca no tema escuro sozinho. Medido: o
+    // desenho da tela nao e o problema (42 voltas isoladas, pior caso 318 ms
+    // contra o limite de 15 s), e o painel nao e reescrito depois (12 voltas).
+    // O que varia e QUANDO a primeira volta do relogio traz as threads, e com
+    // o servidor carregado por trinta casos ela passa dos 2.600 ms. Dormir
+    // uma duracao e apostar; esperar o contador aparecer e conferir o que se
+    // precisa mesmo.
+    await page.waitForFunction(
+      () => /\d/.test((document.querySelector('#tlmThreadsN') || {}).textContent || ''),
+      { timeout: 20000 });
     const resumo = await page.textContent('#tlmThreadsN');
     verdade(/\d+/.test(resumo || ''),
       `o resumo do gestor de threads nao contou nada: ${JSON.stringify(resumo)}`);
@@ -59,12 +70,26 @@ export const caso = {
     const familias = () => page.$$eval(`${LINHA} td:nth-child(2)`, t => t.map(x => x.textContent.trim()));
     const ordenada = v => v.every((x, i) => i === 0 || v[i - 1] <= x);
     await page.click(`${CAB('familia')} .phx-th-titulo`);
-    await page.waitForTimeout(250);
+    await page.waitForFunction(
+      () => document.querySelector('#tlmThreads thead th[data-campo="familia"] .phx-sort-ind')
+              .textContent.trim() !== '', { timeout: 10000 });
     const antes = await familias();
     verdade(ordenada(antes), `ordenar por familia nao ordenou: ${JSON.stringify(antes)}`);
 
-    // ...e continua ordenada depois de o relogio redesenhar o painel.
-    await page.waitForTimeout(2600);
+    // ...e continua ordenada DEPOIS DE UM REDESENHO DE VERDADE. Aqui tambem
+    // nao se dorme: um observador avisa quando o corpo da grade foi trocado,
+    // que e o evento que o caso quer provar ter sobrevivido. Dormindo, ou se
+    // esperava demais (lento) ou se media antes de a volta chegar (falso
+    // verde) -- e o falso verde e o pior dos dois.
+    const redesenhou = await page.evaluate(() => new Promise(res => {
+      const alvo = document.querySelector('#tlmThreads tbody');
+      if (!alvo) return res(false);
+      const obs = new MutationObserver(() => { obs.disconnect(); res(true); });
+      obs.observe(alvo, { childList: true });
+      setTimeout(() => { obs.disconnect(); res(false); }, 20000);
+    }));
+    verdade(redesenhou,
+      'o painel vivo nao redesenhou em 20 s -- ou o relogio parou, ou a grade nao esta ligada nele');
     const depois = await familias();
     verdade(ordenada(depois),
       `o redesenho do painel vivo perdeu a ordenacao da pessoa: ${JSON.stringify(depois)}`);
