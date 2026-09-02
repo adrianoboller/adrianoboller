@@ -252,19 +252,37 @@ td:first-child{font-family:var(--mono);font-size:12.5px;white-space:nowrap}
   <table>
     <thead><tr><th>Natureza</th><th>Exemplos medidos</th><th>No bump</th></tr></thead>
     <tbody>
-      <tr><td>versão corrente</td><td><code>Cargo.toml</code>, <code>Cargo.lock</code>, cabeçalho do <code>MANUAL.txt</code>, seção nova do <code>CHANGELOG</code>, a linha de build do <code>index.html</code>, o nome do arquivo do dossiê</td><td><strong>muda</strong></td></tr>
+      <tr><td>versão corrente</td><td><code>Cargo.toml</code> (a fonte) e o cabeçalho do <code>MANUAL.txt</code></td><td><strong>muda à mão</strong></td></tr>
+      <tr><td>derivada</td><td><code>Cargo.lock</code> (roda <code>cargo build</code>) · <code>CAPABILITIES.json</code> (roda <code>numeros-do-projeto.py</code>)</td><td><strong>roda o gerador</strong></td></tr>
+      <tr><td>editorial</td><td>seção nova no <code>CHANGELOG</code> · o nome do arquivo do dossiê, com o anterior saindo no mesmo commit</td><td><strong>decisão humana</strong></td></tr>
       <tr><td>história</td><td><code>«Desde a 0.18.0 o cache de páginas…»</code> · <code>«Até a 0.18.0 o PhxSql sabia copiar e…»</code> · <code>«A gravação NÃO atravessa mais (0.18.0)»</code></td><td><strong>fica</strong></td></tr>
     </tbody>
   </table>
   </div>
 
   <div class="aviso calmo">
-    <p class="rot">Por que isto merece ferramenta antes do próximo bump</p>
-    <p>São <strong>seis</strong> menções históricas medidas. Um <code>sed</code> global as
-       transformaria em afirmações falsas sobre o passado — e falsas de um jeito que ninguém
-       revisa, porque a frase continua bem escrita. O que falta é um conferidor que responda
-       <em>«o que um bump tocaria»</em>, separando as duas naturezas, e que rode antes de
-       alguém trocar o número.</p>
+    <p class="rot">A ferramenta existe agora</p>
+    <p><code>python3 docs/versao/conferir.py</code> responde <em>«o que um bump tocaria»</em>.
+       Ele confere que os lugares correntes concordam, e põe as outras <strong>55
+       ocorrências, em 22 arquivos</strong>, na mesa com arquivo, linha e texto.
+       <code>conferir.py 0.19.0</code> ensaia o bump sem gravar; <code>--gravar</code> aplica
+       — e só nos correntes.</p>
+    <p><strong>Ele não tenta adivinhar o que é história.</strong> Classificar prosa por padrão
+       de frase seria resolver por comparação de frase — proibido nesta casa para texto de
+       tela, e quebraria calado no dia em que alguém reescrevesse um parágrafo. O script
+       garante que a lista é <em>completa</em>; quem decide é gente.</p>
+  </div>
+
+  <div class="aviso">
+    <p class="rot">O que ele achou na primeira corrida</p>
+    <p>O <code>CAPABILITIES.json</code> — que este projeto chama de <em>fonte única de
+       verdade</em> — estava <strong>parado no commit <code>eaed55e</code> e em 1.462
+       testes</strong>, com a árvore em <code>01c87b8</code> e <strong>1.494</strong>. Ele
+       <em>é</em> gerado; o gerador é que não rodava desde as 05:25. Rodado, voltou a bater.</p>
+    <p><strong>E eu quase o declarei feito à mão.</strong> Procurei quem o escreve com
+       <code>grep CAPABILITIES</code> e não achei — porque a linha que grava diz
+       <code>alvo.write_text(...)</code>, com o nome do arquivo <em>numa variável</em>.
+       Procurar pelo nome não acha quem escreve por variável.</p>
   </div>
 
   <p class="rodape">
