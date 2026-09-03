@@ -173,6 +173,10 @@ mesmas saídas reais dos prints, reproduzidas num terminal animado.
 
 ## Pacotes
 
+O plugin completo passa de 30 MB por causa do corpus do Help. Para distribuir
+em dois arquivos: o plugin sem o corpus e o `Help_WL_12k_Json.zip` à parte,
+que vai em `skills/conversao-wx/resources/` (o `--verify` confere o hash).
+
 Os zips não ficam no repositório (`dist/` está no `.gitignore`); gere com:
 
 ```bash
