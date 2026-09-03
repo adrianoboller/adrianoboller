@@ -2550,6 +2550,13 @@ async function entrar() {
 async function abrirApp() {
   $("#entrada").style.display = "none";
   $("#app").classList.add("ativo");
+  // «ENTREI» E O FIM DA ENTRADA, e nao o meio dela. A marca so aparece
+  // quando a arvore esta montada, a primeira tela pintada e as abas pinadas
+  // de volta -- tudo o que esta funcao ainda faz depois de `#app.ativo` e de
+  // `#arvore .no` existirem. Quem esperava so por esses dois esperava por um
+  // aplicativo que ainda estava se montando, e media a corrida em vez de
+  // medir a tela.
+  delete $("#app").dataset.pronto;
   $("#selo").hidden = !est.demo;
   const quemSou = est.usuario.login + (est.usuario.supervisor ? " · supervisor" : "");
   $("#eu").innerHTML = `<b>${esc(est.usuario.login)}</b>`
@@ -2585,6 +2592,7 @@ async function abrirApp() {
     // que o CSS esconde.
     $("#fita").textContent += ` · ${rota.tela}`;
     await PhxTelas.abrirRota();
+    $("#app").dataset.pronto = "1";
     return;
   }
 
@@ -2599,6 +2607,7 @@ async function abrirApp() {
   // As abas PINADAS voltam por ultimo, para nao competirem com o clique que
   // a arvore da no Painel. Quem nunca pinou nada nao ve diferenca nenhuma.
   if (window.PhxTelas) await PhxTelas.restaurar();
+  $("#app").dataset.pronto = "1";
 }
 
 // =====================================================================
@@ -2687,7 +2696,21 @@ async function montarArvore(abrirPainel = true) {
 
   // O painel e a primeira tela: quem entra ve o servidor inteiro antes de
   // escolher uma tabela.
-  if (abrirPainel) a.querySelector('[data-admin="painel"]').click();
+  //
+  // ESPERA-SE A PINTURA, e nao se dispara um clique e vai embora. O clique
+  // solto disparava `abrirAdmin` num `Promise` que ninguem segurava:
+  // `montarArvore` devolvia com o Painel ainda no `await`, `abrirApp`
+  // devolvia junto, e quem pintasse uma tela nos ~32 ms seguintes a via
+  // sumir. Medido na SP000056. A guarda do `#painel` impede o estrago; esta
+  // espera faz `montarArvore` devolver o que o nome promete -- a arvore
+  // montada E a primeira tela no ar --, que e o que deixa alguem escrever
+  // «entrei» sem estar mentindo.
+  if (abrirPainel) {
+    const no = a.querySelector('[data-admin="painel"]');
+    marcar(no);
+    await abrirAdmin("painel");
+    if (window.PhxTelas) PhxTelas.renomear();
+  }
 }
 
 function marcar(no) {
@@ -2731,16 +2754,28 @@ async function abrirTabela(db, tab) {
 }
 
 async function desenharAba() {
+  // A MESMA posse do `abrirAdmin`, pelo mesmo motivo: as cinco abas escrevem
+  // o painel DEPOIS de um `await`, e o `await` e onde a pessoa clica noutra
+  // coisa. Sem isto, abrir uma tabela e ir embora antes de ela responder
+  // repinta a grade por cima da tela nova.
+  const minhaVez = tomarPainel();
   const p = $("#painel");
   p.innerHTML = `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`;
   const { db, tab } = est.atual;
+  // O corpo chega do servidor; so escreve quem ainda for o dono do painel.
+  const por = (html, ligar) => {
+    if (!aindaNoPainel(minhaVez)) return;
+    p.innerHTML = html;
+    ligar();
+  };
   try {
-    if (est.aba === "estrutura")   return p.innerHTML = await vEstrutura(db, tab), ligarEstrutura(db, tab);
-    if (est.aba === "conteudo")    return p.innerHTML = await vConteudo(db, tab), ligarConteudo();
-    if (est.aba === "indices")     return p.innerHTML = await vIndices(db, tab), ligarIndices();
-    if (est.aba === "diario")      return p.innerHTML = await vDiario(db, tab), ligarDiario();
-    if (est.aba === "integridade") return p.innerHTML = await vIntegridade(db, tab), ligarIntegridade();
+    if (est.aba === "estrutura")   return por(await vEstrutura(db, tab), () => ligarEstrutura(db, tab));
+    if (est.aba === "conteudo")    return por(await vConteudo(db, tab), ligarConteudo);
+    if (est.aba === "indices")     return por(await vIndices(db, tab), ligarIndices);
+    if (est.aba === "diario")      return por(await vDiario(db, tab), ligarDiario);
+    if (est.aba === "integridade") return por(await vIntegridade(db, tab), ligarIntegridade);
   } catch (e) {
+    if (!aindaNoPainel(minhaVez)) return;
     p.innerHTML = `<div class="aviso mal">${esc(e.message)}</div>`;
   }
 }
@@ -3623,20 +3658,42 @@ async function vPainel() {
  * numero, e so escreve se ainda for a ultima. Comparar o titulo, ou o `qual`,
  * nao serve -- duas chamadas seguidas do MESMO `qual` tambem se atropelam.
  *
- * ATENCAO, e isto e desconforto honesto: esta guarda NAO tem prova real. A
- * sonda que escrevi (`prova-atropelo.mjs`, no rascunho) passa com a guarda E
- * passa com o defeito reposto -- ou seja, ela nao reproduz a corrida, e teste
- * que passa por engano e pior que teste que falta. A suspeita, nao
- * confirmada, e que o modo multitela ja tenha fechado esse caminho: cada tela
- * virou um elemento proprio e so a que tem foco carrega o `id="painel"`,
- * entao o `p` capturado na entrada pode nem ser mais o elemento visivel. A
- * guarda fica porque e barata e correta; o pedido continua ABERTO no
- * PENDENCIAS ate alguem escrever a sonda que de fato reproduz. */
-let admGeracao = 0;
+ * O ALCANCE DA GUARDA ERA O DEFEITO, e a SP000056 mediu qual era.
+ *
+ * Este contador era privado do `abrirAdmin`: so uma tela de administracao
+ * tomava a vez, entao ele defendia `abrirAdmin` de `abrirAdmin` e de mais
+ * ninguem. Toda tela que pinta por `folha()` -- a telemetria, o profiler, o
+ * backup, o monitor, umas cinquenta -- passava por fora da catraca, e o
+ * `abrirAdmin` pendente escrevia o Painel POR CIMA dela.
+ *
+ * Medido, e nao suposto: `.tlm` nasce no `#painel` e SOME 37 a 104 ms depois,
+ * substituida pelos `.kpis` do Painel, com o `#titulo` ainda dizendo
+ * «Telemetria» -- porque o titulo o `abrirAdmin` escreve ANTES do await e o
+ * corpo DEPOIS. Titulo de uma tela e corpo da outra, que e exatamente o
+ * defeito que este comentario ja descrevia e que a guarda nao alcancava.
+ * A janela dura 32 ms de mediana (min 29, max 35, n=12) entre a arvore
+ * aparecer e o Painel pintar.
+ *
+ * A guarda passa entao a ser do PAINEL, e nao do `abrirAdmin`: quem pinta
+ * TOMA a posse, e quem pinta depois de um `await` confere se ainda a tem.
+ * `folha()` toma no lugar de todas as telas que passam por ela -- e essa e a
+ * razao de a catraca morar la e nao espalhada por cinquenta funcoes: a que
+ * alguem esquecesse viraria a porta dos fundos.
+ *
+ * A prova real e a `testes-web/casos/18-tela-atropelada.mjs`, que segura a op
+ * `painel` no fio ate a segunda tela estar pintada -- e ela REPROVA com o
+ * defeito reposto (medida: reprova nos dois temas). O comentario anterior
+ * dizia, com honestidade, que a guarda nao tinha prova; tem agora, e a prova
+ * achou o furo. */
+let painelGeracao = 0;
+/** Toma a posse do `#painel` para quem esta pintando agora. */
+function tomarPainel() { return ++painelGeracao; }
+/** A posse ainda e minha, ou alguem pintou outra tela durante o meu `await`? */
+function aindaNoPainel(v) { return v === painelGeracao; }
 
 async function abrirAdmin(qual) {
-  const minhaVez = ++admGeracao;
-  const aindaEMinha = () => minhaVez === admGeracao;
+  const minhaVez = tomarPainel();
+  const aindaEMinha = () => aindaNoPainel(minhaVez);
   est.atual = null;
   // Trocar o idioma repinta ESTA tela, e nao a primeira: sem isto, escolher
   // a bandeira na tela de Idiomas jogaria a pessoa no Painel.
@@ -13173,6 +13230,13 @@ function atualizarVista() {
  * tabela na arvore continua com ela escolhida; o que muda e o que esta na
  * tela. */
 function folha(titulo, subtitulo, corpoHtml) {
+  // A POSSE DO PAINEL. Esta linha e o que faz a guarda do `abrirAdmin` valer
+  // para as ~50 telas que pintam por aqui: sem ela, um `abrirAdmin` que ainda
+  // esteja no `await` escreve o corpo dele por cima desta tela, e a pessoa
+  // fica com o titulo de uma e o corpo da outra. Uma linha aqui cobre todas;
+  // espalhar a conferencia por cinquenta funcoes deixaria a esquecida virar a
+  // porta dos fundos.
+  tomarPainel();
   $("#abas").innerHTML = "";
   // Toda folha comeca sem saber se repintar. Quem sabe (a tela de
   // Configurações) guarda DEPOIS de chamar esta funcao; quem nao sabe fica

@@ -1195,9 +1195,21 @@ FALHOU tela-atropelada  o Painel atrasado escreveu por cima da tela que a
                         (titulo="Telemetria", kpis do Painel no corpo=true)
 ```
 
-Ela cobre as **duas** vítimas — a telemetria e as Configurações do §9.8 — e
-tem a metade contrária, que é a que impede a guarda de virar «nunca pinta
-nada»: pedido **depois**, o Painel assume a tela normalmente.
+Ela cobre as **duas** vítimas e a metade contrária, que é a que impede a guarda
+de virar «nunca pinta nada»: pedido **depois**, o Painel assume a tela
+normalmente.
+
+E a segunda vítima foi **medida, não deduzida** — «as Configurações também
+pintam por `folha()`, logo a mesma linha as cobre» é raciocínio, e raciocínio
+não é medição. Com o defeito reposto e a primeira metade neutralizada para a
+segunda chegar a rodar, o §9.8 sai idêntico ao que ele registrou meses atrás:
+
+```
+titulo="Configurações gerais do servidor"   kpis do Painel no corpo=true
+```
+
+Ou seja: **o §9.8 continuava vivo** depois de a guarda que o citava ter
+entrado.
 
 **Como repor o defeito, para quem quiser conferir sozinho.** O catálogo de
 guardas (§8) só sabe repor defeito em Rust — ele roda `cargo test` —, e esta é

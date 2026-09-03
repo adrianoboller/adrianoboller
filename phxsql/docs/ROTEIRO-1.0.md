@@ -35,22 +35,46 @@ como sprint **nova**, a partir da SP000056.
 
 | sprint | o que é | por que existe |
 |---|---|---|
-| **SP000056** | **A bateria confiável** | O caso `telemetria` falha em ~metade das rodadas e **troca de tema** entre elas; o clique nunca resolve (com 45 s estoura igual). Enquanto isso existir, o portão da bateria **não distingue regressão de ruído** — e isso não é teórico: custou uma tarde inteira perseguindo ruído, com quatro diagnósticos errados em sequência. Medidor que mede errado é pior que medidor que não roda. |
+| ~~**SP000056**~~ | ~~**A bateria confiável**~~ **FEITA** (03/09) | O caso `telemetria` falhava em **4 de 40** execuções isoladas e **5 de 14** com a máquina carregada, trocando de tema entre elas. A causa não era o tema, nem o gestor de threads que a sprint mandava reescrever: `montarArvore()` disparava `abrirAdmin("painel")` num `Promise` que ninguém segurava, e o Painel voltava do `await` escrevendo **por cima** da tela pintada depois dele — janela de **32 ms de mediana**. A guarda para isso já existia e cobria só `abrirAdmin` contra `abrirAdmin`; as ~50 telas que pintam por `folha()` passavam por fora. Depois: **0 de 60**, **0 de 24**, bateria completa 36/36. `docs/TESTES.md` §11 |
 | **SP000057** | **`ao_alterar: cascata` executado** | Medido: o campo aparece só em `schema.rs` (guardar/serializar) e no `phxsql-cli` (mostrar) — **em ponto nenhum de escrita**. É a metade nomeada que falta na SP000008: *declarar não é aplicar* virou *aplicar no excluir não é aplicar no alterar*. |
 | **SP000058** | **Destravar o `push` e fazer a CI correr** | A SP000002 está «feita e parada»: `rust-toolchain.toml` pina a versão e `.github/workflows/portoes.yml` roda os três portões — e **nunca correu uma vez**, porque depende do `push`, que devolve 403. Medido na API: a sessão fala como `EnginePrint`, com `pull: true` e **`push: false`**. Um acesso destrava dois itens. |
 
 ### A ordem recomendada do caminho crítico
 
-1. ~~**SP000056** — a bateria confiável.~~ **ADIADA PARA O FIM, por decisão do
-   dono** (02/09): *«Recomendo reescrever esse módulo com defeito no final,
-   deixe isso para o final. Estamos perdendo tempo em vez de fazer o que
-   precisa ser feito.»* O que a sprint já entregou fica e vale sozinho — o
-   `clicarOuExplicar`, que faz a falha dizer **quem está no ponto do clique**
-   em vez de dizer «timeout», e o portão de sintaxe da interface, que
-   transforma 31 reprovações sem endereço em uma linha com arquivo e número.
-   O que fica para o fim é a **reescrita do gestor de threads**, que é o
-   módulo com o defeito: perseguir o intermitente dele custou uma tarde e
-   quatro diagnósticos errados, e reescrever custa menos que caçar.
+1. ~~**SP000056** — a bateria confiável.~~ **FEITA** (03/09), e ela terminou
+   contrariando a própria ordem de serviço — com número na mesa. A decisão do
+   dono (02/09) era *«reescrever esse módulo com defeito no final»*, e o
+   módulo apontado era o **gestor de threads**. **Ele não tinha defeito
+   nenhum:** não aparece em nenhuma das reprovações medidas, e as duas
+   promessas que só ele faz (grade preguiçosa por causa da largura zero, gesto
+   sobrevivendo à volta do relógio) passam em 60 de 60. Reescrevê-lo teria
+   custado uma frente e comprado zero.
+
+   O defeito estava na **entrada do aplicativo**: `montarArvore()` terminava
+   disparando o clique no nó Painel, e `Promise.resolve(abrirAdmin("painel"))`
+   ficava sem dono. `abrirApp()` devolvia, a árvore aparecia — o sinal por
+   onde o `entrar()` da bateria dizia «entrei» —, e o Painel voltava do
+   `await vPainel()` **32 ms depois** escrevendo `p.innerHTML` por cima de
+   quem tivesse pintado no meio-tempo, deixando **título de uma tela e corpo
+   da outra**.
+
+   O achado que dói: **a guarda para isso já existia**, com um comentário
+   descrevendo o defeito por extenso e admitindo que não tinha prova real.
+   Ela não tinha prova real porque não cobria o caso que descrevia — o
+   contador era privado do `abrirAdmin`, e a vítima documentada
+   (Configurações, `TESTES.md` §9.8) pinta por `folha()`. *Guarda sem prova
+   real não é guarda, é intenção.*
+
+   Entregue: a posse do painel promovida para `folha()`, `desenharAba()` e
+   `abrirAdmin()`; `montarArvore()` esperando a primeira tela pintar;
+   `#app[data-pronto="1"]` marcando o fim da entrada e o `entrar()` esperando
+   por ela; e o caso `18-tela-atropelada`, que **segura a op `painel` no fio**
+   e por isso prova a corrida sem virar ele próprio um intermitente — reprova
+   nos dois temas com o defeito reposto. Continua valendo o que a sprint já
+   tinha entregado: o `clicarOuExplicar` (foi ele que disse `achou: false` em
+   vez de «timeout», e foi isso que virou o caso) e o portão de sintaxe da
+   interface. **Medido depois:** 0 de 60, 0 de 24, e a bateria completa 36/36
+   repetidas vezes. Detalhes em `docs/TESTES.md` §11.
 2. ~~**SP000006** — read-your-own-writes.~~ **FEITA** (02/09). O endereço
    estava certo: o conserto é o caminho de **leitura** consultando a pilha
    pendente. Uma `Sobreposicao` presa ao *handle* da tabela, preenchida no

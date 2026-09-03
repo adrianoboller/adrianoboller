@@ -10,8 +10,11 @@ node phxsql/testes-web/bateria.mjs
 
 Ela sobe um `phxsqld` só dela (portas **6200** e **6201**), num diretório
 temporário próprio, e o derruba **pelo PID** no fim — nunca por `pkill`.
-Roda os catorze casos: doze nos **dois temas** e dois num tema só (os
-dois que medem relógio, e cor não muda relógio) — **26 execuções**, ~5min.
+Roda todos os casos de `casos/`, quase todos nos **dois temas** — os que medem
+relógio rodam num tema só, porque cor não muda relógio. **Quantos são não fica
+digitado aqui:** este texto já disse «treze» e «catorze» em rodadas em que o
+diretório tinha mais, e número digitado à mão envelhece calado. O rodapé da
+própria bateria conta as execuções que rodaram, e é ele que vale. ~5 min.
 
 | chave | o que faz |
 |---|---|
@@ -29,7 +32,10 @@ correção que ainda não existe. Esta casa já perdeu uma rodada inteira de
 ganhos medindo com binário velho, então a bateria **recusa rodar**: ela
 compara a data do binário com a do arquivo mais novo de `ui/` e diz qual.
 
-## Os catorze casos
+## Os casos
+
+Um por arquivo em `casos/`, na ordem do nome. A lista abaixo é o que cada um
+**prova** — para saber quais existem hoje, `ls testes-web/casos/`.
 
 | | o que prova |
 |---|---|
@@ -47,6 +53,8 @@ compara a data do binário com a do arquivo mais novo de `ui/` e diz qual.
 | `multitela` | abas vivas com estado próprio, regiões lado a lado com calha, janela solta dentro da página, e o pino. Mede os pedidos por minuto com a aba escondida, com ela fechada, e com as quatro telas nomeadas visíveis ao mesmo tempo |
 | `acrescentar-coluna` | acrescentar coluna **pela tela**, numa tabela com dado: o botão na aba Estrutura, o cartão dizendo o preço antes dos campos, a coluna aparecendo na Estrutura e no Conteúdo com o dado antigo intacto, e a recusa da coluna obrigatória sem padrão chegando ao cartão. Achou, no primeiro minuto em que o cartão existiu, a caixa de marcar esticada a **834px** pelo `input{width:100%}` global |
 | `monitores` | a emenda física entre dois monitores, o monitor pinado que sumiu, a janela destacada pegando a sessão pelo canal — e a sessão **não** aparecendo no `localStorage`. DPI de 2× num contexto próprio |
+| `telemetria` | o único **painel vivo** em forma de grade: a grade nasce preguiçosa (dentro de um `<details>` fechado ela mediria largura zero), o gesto da pessoa sobrevive à volta do relógio, e a ordenação se confere pelo **efeito** — o dado sai ordenado — e não pelo estado |
+| `tela-atropelada` | que uma tela lenta **não escreve por cima** da que a pessoa pediu depois dela. Segura a resposta da op `painel` no fio até a segunda tela estar pintada, então a corrida vira ordem fixa em vez de sorteio. Cobre as duas vítimas conhecidas (telemetria e Configurações) e a metade contrária, que impede a guarda de virar «nunca pinta nada». Ver `docs/TESTES.md` §11 |
 
 ## A prova do multi-idioma, à parte
 

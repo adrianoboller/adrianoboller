@@ -47,6 +47,22 @@ export async function entrar(page, url) {
   await page.click('#btEntrar');
   await page.waitForSelector('#app.ativo', { timeout: 20000 });
   await page.waitForSelector('#arvore .no', { timeout: 20000 });
+  // E ENTAO ESPERA A ENTRADA TERMINAR, que nao e a mesma coisa.
+  //
+  // `#arvore .no` aparece no meio do `abrirApp`: a arvore ja esta no DOM e a
+  // primeira tela ainda esta sendo pedida ao servidor. Medido na SP000056:
+  // sao 32 ms de mediana (min 29, max 35, n=12) entre uma coisa e a outra --
+  // e a viagem do `page.evaluate` seguinte cai dentro dessa janela ou fora
+  // dela conforme o humor da maquina. Quem pintava a propria tela ali via o
+  // Painel chegar por cima: o caso `telemetria` reprovava em 4 de 40 corridas
+  // isoladas e em 5 de 14 com a maquina carregada, sempre trocando de tema,
+  // porque o que sorteava era o relogio e nao o tema.
+  //
+  // `data-pronto` e a marca que o `abrirApp` poe quando acaba de verdade --
+  // arvore montada, primeira tela pintada, abas pinadas de volta. Esperar por
+  // ela e o que a pessoa faz sem pensar: ninguem clica no menu 30 ms depois
+  // de a tela abrir.
+  await page.waitForSelector('#app.ativo[data-pronto="1"]', { timeout: 20000 });
 }
 
 /** Chama uma operacao do protocolo pela MESMA `api()` da pagina.
