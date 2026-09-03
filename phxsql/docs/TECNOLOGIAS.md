@@ -277,18 +277,31 @@ leitura de 20.000 (5× a favor do PhxSql sem o motor ter feito nada por isso).
   com um duplo em memória. `bateria.mjs` é o comando que roda tudo.
 - **Conferidores de estilo/texto, com catraca que só desce**:
   `crates/phxsql-server/src/conferidor.rs` (textos fixos fora da fábrica de
-  idiomas, teto atual `TETO = 1.549`) e `conferidor_grades.rs` (tabela HTML
-  fora do padrão `PhxGrid`, teto atual `TETO_TABELA_NA_MAO = 24`). Ao todo,
-  **10** constantes `TETO*` no código do servidor — as duas de cima mais oito
-  em `profiler.rs` e `servidor.rs`, algumas delas limite de recurso (tamanho
-  de campo, de lote) e não catraca de varredura de texto; a lista completa
-  está na tabela gerada.
+  idiomas, teto atual `TETO_ROTULOS_E_CRASE = 1.720`, que **aposentou** o
+  antigo `TETO = 1.549` na letra da regra de QA — régua nova, catraca nova,
+  nunca a mesma catraca subindo) e `conferidor_grades.rs` (tabela HTML fora
+  do padrão `PhxGrid`, teto atual `TETO_TABELA_NA_MAO = 24`). Ao todo, **10**
+  constantes `TETO*` no código do servidor — as duas de cima mais oito em
+  `profiler.rs` e `servidor.rs`, algumas delas limite de recurso (tamanho de
+  campo, de lote) e não catraca de varredura de texto; a lista completa está
+  na tabela gerada.
 - **Guardas — prova de que a prova pega**: `bancada/guardas/catalogo.py`
-  cataloga **142** defeitos repostos, cada um com o trecho de código de hoje,
-  o trecho de antes do conserto, e os testes que têm de cair quando o defeito
-  volta. `python3 bancada/guardas/provar-guardas.py` copia a árvore, repõe
-  cada defeito, roda os testes nomeados e julga — prova real nos dois
-  sentidos, não só "o teste existe".
+  cataloga **77** defeitos repostos (contado de `len(GUARDAS)`, não por
+  regex), cada um com o trecho de código de hoje, o trecho de antes do
+  conserto, e os testes que têm de cair quando o defeito volta.
+  `python3 bancada/guardas/provar-guardas.py` copia a árvore, repõe cada
+  defeito, roda os testes nomeados e julga — prova real nos dois sentidos,
+  não só "o teste existe". **Achado desta rodada, no próprio extrator**: a
+  versão anterior de `bloco_guardas()` contava `"{" seguido de quebra de
+  linha` no texto do arquivo, e isso conta certo só enquanto toda guarda é um
+  dicionário raso. As guardas que usam o campo `trocas` — a lista documentada
+  no próprio `catalogo.py` para o defeito que mexe em mais de um ponto —
+  trazem sub-dicionários `{arquivo, trecho, troca}` que batem no mesmo padrão
+  sem ser guarda nova, e o número inflava por isso: dizia **142** aqui, e uma
+  nova rodada da mesma regex, sem nenhuma guarda a mais, deu **180** — o
+  padrão nunca teve relação estável com a contagem certa. Corrigido para
+  importar o módulo e contar `len(GUARDAS)`, do mesmo jeito que
+  `bancada/guardas/tabela-no-testes.py` já fazia ao lado.
 - **Executáveis de prova dedicados**, em `crates/phxsql-server/examples/`:
   `grades-fora-do-padrao.rs`, `prova-dblink.rs`, `prova-exportar.rs`,
   `textos-fora-da-fabrica.rs`.

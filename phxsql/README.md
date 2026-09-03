@@ -115,7 +115,12 @@ docker compose up -d     # um master e duas réplicas, em portas diferentes
 
 A imagem final é **`scratch`** — sem shell, sem gerenciador de pacotes, só o
 binário. Só é possível porque não há dependência externa nenhuma: com o alvo
-musl o servidor sai `static-pie` com **3,4 MB**.
+musl o servidor sai `static-pie`. O tamanho não vai aqui — o "3,4 MB" que
+esta linha dizia antes ficou parado enquanto o binário crescia, e o número
+medido de verdade (7,66 MB, com `strip`, em 02/09/2026) está em
+[`docs/dossie/relatorio-conteineres.html`](docs/dossie/relatorio-conteineres.html)
+e no `docs/PENDENCIAS.md` #167 — remeça de lá, não copie um número parado
+para cá de novo.
 
 ## Replicação: Master e espelhos
 
@@ -131,14 +136,19 @@ O `.log` sempre foi o binlog; o que faltava era a **imagem da linha** dentro do
 evento — o payload cru do `.reg` mais o *conteúdo* dos anexos, porque os
 ponteiros são offsets desta máquina.
 
-Medido com quatro servidores (`bancada/replicacao/`):
+Medido com quatro servidores (`bancada/replicacao/`), em 29/08/2026 — a
+mesma medição que `docs/dossie/numeros-da-bancada.py` usa para o painel do
+dossiê, e não repetida à mão de uma rodada anterior: os primeiros números
+publicados aqui (28.914 linhas/s, 4.357 eventos/s) eram os da primeira
+medição do pedido 19 e ficaram parados enquanto os quatro modos e a
+otimização da réplica avançavam a medição real para o que segue:
 
 | | |
 |---|---|
-| Master, com a imagem no diário | 28.914 linhas/s |
-| Aplicação, por réplica (as três em paralelo) | 4.357 eventos/s |
-| Atraso de uma escrita até as três | 1,3 s a 2,1 s |
-| Réplica derrubada: voltar a atender e alcançar 4.000 eventos | 343 ms + 1,0 s |
+| Master, com a imagem no diário | 34.048 linhas/s |
+| Aplicação, por réplica (as três em paralelo) | 17.450 eventos/s |
+| Atraso de uma escrita até as três | 0,1 s a 2,0 s |
+| Réplica derrubada: voltar a atender e alcançar o que perdeu | 323 ms + 0,3 s |
 | Retrato SHA-256 das quatro tabelas, no fim | idênticos |
 
 O `rowid` **não é transmitido**: o `.reg` nunca reaproveita slot, então uma

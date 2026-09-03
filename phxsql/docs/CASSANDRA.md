@@ -99,12 +99,16 @@ Os números nossos usados como base, todos medidos e registrados:
 | Durabilidade, os três modos | 1.289 → 18.264 → 24.858 → 26.301 linhas/s, **20,4×** (§3, item 4) |
 | `.log` por evento | **0,67 µs** sem imagem, **1,61 µs** com (§2.2) |
 
-> **Nota de manutenção, achada de passagem.** `docs/REPLICACAO.md` §10 e
-> `docs/CLUSTER.md` §2.2 ainda dizem «4.357 eventos/s contra 28.914 linhas/s».
-> O `DESEMPENHO.md` §4.5 refez essa medição e os números são **17.450 contra
-> 34.048** — 4,08×. Dois documentos ficaram para trás. É exatamente o defeito
-> que o `CLAUDE.md` registra («número digitado à mão envelhece calado»), e ele
-> não se conserta aqui: fica anotado para a rodada que atualizar os dois.
+> **Nota de manutenção, achada de passagem — RESOLVIDA.** Esta nota dizia que
+> `docs/REPLICACAO.md` §10 e `docs/CLUSTER.md` §2.2 ainda traziam «4.357
+> eventos/s contra 28.914 linhas/s», enquanto o `DESEMPENHO.md` §4.5 já
+> mostrava a medição refeita, **17.450 contra 34.048** — 4,08×. Conferido de
+> novo no inventário de números de `docs/NUMEROS.md`: os dois já foram
+> atualizados (`REPLICACAO.md` não tem mais número de vitrine na §10 nem em
+> lugar nenhum com o valor antigo, e o mesmo vale para `CLUSTER.md` §2.2). O
+> terceiro lugar que a mesma varredura achou com o número parado era o
+> `README.md`, fora do escopo desta nota — corrigido no mesmo commit. Fica
+> como registro do padrão, não como pendência aberta.
 
 ---
 

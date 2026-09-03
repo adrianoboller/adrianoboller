@@ -65,9 +65,11 @@ operações. Ler o fonte é feio e é honesto: Rust não deixa perguntar a um
 `match` quais braços ele tem, e a alternativa — a lista escrita à mão num
 segundo lugar — é exatamente a duplicação que esta frente existe para não ter.
 
-E há a terceira, no soquete: `bancada/rest/provar.py` percorre **as 113 rotas
-que o servidor serviu** e exige que cada uma seja roteada. A especificação e o
-servidor vivo, não a especificação e uma constante.
+E há a terceira, no soquete: `bancada/rest/provar.py` percorre **todas as
+rotas que o servidor serviu** (o número está na §1, gerado — não repetido
+aqui à mão, porque foi repetir «113» sem atualizar que deixou este parágrafo
+desatualizado da última vez) e exige que cada uma seja roteada. A
+especificação e o servidor vivo, não a especificação e uma constante.
 
 ### O que a especificação carrega além do padrão
 
@@ -112,9 +114,10 @@ placa. A CDN custaria zero byte e entregaria uma página em branco no IoT.
 
 ### O que este explorador faz, e o que ele não faz
 
-Ele lista as 113 operações com busca, mostra parâmetros com tipo e
-obrigatoriedade, marca quem grava, diz a permissão exigida, e monta o `curl`
-pronto a partir do exemplo que já vem na especificação.
+Ele lista todas as operações (o número está na §1, gerado) com busca, mostra
+parâmetros com tipo e obrigatoriedade, marca quem grava, diz a permissão
+exigida, e monta o `curl` pronto a partir do exemplo que já vem na
+especificação.
 
 **Não há «Try it out», e a ausência é decisão.** A porta que documenta e a porta
 que executa são separadas de propósito; um console executável aqui exigiria

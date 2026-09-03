@@ -259,12 +259,23 @@ docker build -t phxsql .
 docker compose up -d          # um master e duas réplicas
 ```
 
-Duas coisas medidas e uma não:
+Duas coisas medidas nesta seção, e as duas envelheceram desde que foram
+escritas:
 
-- O alvo **musl** produz binário `static-pie`: 3,4 MB o servidor, 1,2 MB o
-  cliente. O alvo padrão (gnu) linka `libc.so.6`, `libgcc_s.so.1` e o
-  carregador dinâmico — com ele `FROM scratch` **não sobe**.
+- O alvo **musl** produz binário `static-pie`. O tamanho não vai aqui — esta
+  linha dizia "3,4 MB o servidor, 1,2 MB o cliente" e ficou parada enquanto o
+  binário crescia; o número medido de verdade (7,66 MB o servidor, com
+  `strip`, em 02/09/2026) está em
+  [`docs/dossie/relatorio-conteineres.html`](dossie/relatorio-conteineres.html)
+  e no `docs/PENDENCIAS.md` #167. O alvo padrão (gnu) linka `libc.so.6`,
+  `libgcc_s.so.1` e o carregador dinâmico — com ele `FROM scratch` **não
+  sobe**.
 - O binário musl **roda**: subiu um servidor com ele e o `ping` respondeu.
-- O `docker build` em si **não foi executado** — não há daemon Docker na
-  máquina em que isto foi escrito. O `Dockerfile` está correto pelo que dá para
-  conferir; quem rodar primeiro, confirme.
+- **"`docker build` não foi executado" era verdade quando esta seção foi
+  escrita, e deixou de ser**: o `docs/PENDENCIAS.md` #118 registra o `docker
+  build` rodando de verdade, com o daemon no ar, mais de dez vezes numa
+  corrida — inclusive achando e corrigindo dois defeitos que só apareciam
+  construindo (o `Dockerfile` não construía por um caminho de `COPY` errado,
+  e o par de modelos de réplica não se enxergava). Ver `docs/PENDENCIAS.md`
+  #118 e #146 para o estado medido de hoje; esta seção fica como registro do
+  que se sabia antes disso.

@@ -173,7 +173,9 @@ nenhum é «faltou notar» — são decisões de sequência.
 Eles têm quatro tipos: entre servidores HFSQL(R), com bancos heterogêneos
 (Oracle, por exemplo), com dispositivos móveis, e **offline** (sem link
 permanente). Aqui há o primeiro, com um assistente a menos e um número a mais:
-4.357 eventos/s por réplica, quatro servidores, retrato SHA-256 idêntico.
+17.450 eventos/s por réplica, quatro servidores, retrato SHA-256 idêntico
+(`docs/DESEMPENHO.md` §4.5 — o 4.357 que esteve aqui era a medição anterior à
+otimização da réplica, parada num número que a bancada já tinha superado).
 
 A replicação **offline** é a mais interessante das que faltam, e o formato quase
 a permite de graça: a posição é o ordinal do evento no `.log`, então um arquivo

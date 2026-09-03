@@ -9,7 +9,17 @@
 # Medido neste projeto:
 #
 #     alvo gnu   (padrao) ... dinamico: libc.so.6, libgcc_s.so.1, ld-linux
-#     alvo musl  .......... static-pie, 3,4 MB o servidor + 1,2 MB o cliente
+#     alvo musl  .......... static-pie
+#
+# O tamanho do binario musl NAO esta aqui de proposito: o "3,4 MB o servidor
+# + 1,2 MB o cliente" que este comentario tinha ficou parado enquanto o
+# binario crescia, e so foi pego porque um relatorio a parte mediu o mesmo
+# binario com `strip` em 7,66 MB (medido em 02/09/2026, ver
+# docs/dossie/relatorio-conteineres.html e docs/PENDENCIAS.md #167). Numero
+# que nao sai de gerador nenhum envelhece calado -- e o do cliente nunca foi
+# remedido para confirmar se tambem mudou. Para o tamanho de hoje:
+# `ls -la target/x86_64-unknown-linux-musl/release/{phxsqld,phxsql}` depois
+# do `strip` deste Dockerfile.
 #
 # Por isso o alvo e musl e nao o padrao: com o padrao, `FROM scratch` nao sobe
 # -- falta o carregador dinamico dentro da imagem.

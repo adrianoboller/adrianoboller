@@ -645,17 +645,45 @@ def bloco_catracas() -> str:
 
 
 def bloco_guardas() -> str:
+    """Quantas guardas o catalogo tem -- IMPORTADO, nao contado por regex.
+
+    Achado desta rodada: a primeira versao contava `"{" seguido de quebra
+    de linha` no texto do arquivo. Isso conta certo enquanto cada guarda e
+    um dicionario raso, e erra assim que uma guarda usa `trocas` -- o campo
+    documentado no proprio catalogo.py para o defeito que mexe em MAIS DE UM
+    ponto, uma LISTA de sub-dicionarios `{arquivo, trecho, troca}`. Cada item
+    dessa lista tambem bate no padrao `{\\n` sem ser uma guarda nova. O
+    resultado nao era proximo por coincidencia de regex: media 142 quando
+    `len(GUARDAS)` real era 77 (e voltou a divergir na proxima rodada, para
+    180, so porque o catalogo cresceu -- a regex nunca teve relacao estavel
+    com a contagem certa). E o mesmo defeito que a lista digitada do KiB de
+    interface ja causou aqui: numero que sai de aproximar o arquivo em vez de
+    perguntar ao dado estruturado.
+    """
     catalogo = RAIZ / "bancada" / "guardas" / "catalogo.py"
     if not catalogo.exists():
         return "Nao encontrado: `bancada/guardas/catalogo.py`."
-    texto = ler(catalogo)
-    m = re.search(r"GUARDAS\s*=\s*\[(.*)\]\s*$", texto, re.S)
-    corpo = m.group(1) if m else texto
-    n_defeitos = len(re.findall(r"\{\s*\n", corpo))
+    pasta = str(catalogo.parent)
+    removido = pasta not in sys.path
+    if removido:
+        sys.path.insert(0, pasta)
+    try:
+        import importlib
+
+        import catalogo as modulo_catalogo  # noqa: PLC0415
+
+        importlib.reload(modulo_catalogo)
+        n_defeitos = len(modulo_catalogo.GUARDAS)
+    finally:
+        if removido:
+            sys.path.remove(pasta)
     return (
         f"`bancada/guardas/catalogo.py` cataloga **{n_defeitos}** defeitos "
-        f"repostos (linhas do arquivo: {len(linhas(catalogo))}). Refazer a "
-        f"prova: `python3 bancada/guardas/provar-guardas.py`."
+        f"repostos, contados de `len(GUARDAS)` depois de importar o modulo "
+        f"(nao por regex no texto -- entradas com `trocas` tem mais de um "
+        f"`{{` cada, e uma contagem de chaves as conta em dobro ou mais). "
+        f"Linhas do arquivo: {len(linhas(catalogo))}. Refazer a prova: "
+        f"`python3 bancada/guardas/provar-guardas.py`."
     )
 
 
