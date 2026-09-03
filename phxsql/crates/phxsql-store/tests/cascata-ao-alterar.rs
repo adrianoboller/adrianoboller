@@ -577,3 +577,114 @@ fn a_recascata_recusa_antes_de_gravar_a_primeira_filha() {
         "a recusa chegou DEPOIS de gravar a primeira filha: cascata pela metade"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Auto-referencia: RECUSA, e nao silencio
+// ---------------------------------------------------------------------------
+
+/// `funcionarios.chefe_id -> funcionarios.id`: uma tabela que aponta para si.
+fn hierarquia(d: &std::path::Path) -> Table {
+    let e = Schema::new(
+        "funcionarios",
+        vec![
+            Column::new("id", ColumnType::Int4).obrigatoria(),
+            Column::new("chefe_id", ColumnType::Int4),
+            Column::new("nome", ColumnType::Str(40)),
+        ],
+        vec![
+            IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico(),
+            IndexDef::new("porChefe", vec![IndexColumn::asc(1)]),
+        ],
+    )
+    .unwrap()
+    .com_chaves_estrangeiras(vec![ForeignKey::new(
+        "fk_chefe",
+        vec![1],
+        "funcionarios",
+        vec!["id".into()],
+    )
+    .ao_alterar(AcaoRi::Cascata)])
+    .unwrap();
+    Table::criar(d, e).unwrap()
+}
+
+/// A auto-referencia nao cascateia -- e ate 03/09/2026 ela saia do plano em
+/// SILENCIO, deixando a subordinada apontando para a chave velha com o
+/// `atualizar` devolvendo `Ok`.
+///
+/// # Por que recusar, e nao passar
+///
+/// Os dois motores de referencia escolheram o oposto do silencio, com a mesma
+/// frase: «it acts like RESTRICT». E a mesma lei desta casa -- orfa que
+/// ninguem ve e pior que orfa que da erro. Ver `docs/INTEGRIDADE.md` §7.4.
+///
+/// # Prova real
+///
+/// Trocar a recusa por `continue` -- que e como o codigo era -- faz o
+/// `atualizar` devolver `Ok` aqui, e a subordinada volta `Int(1)`: a orfa
+/// calada, que e o defeito de origem.
+#[test]
+fn a_auto_referencia_recusa_em_vez_de_orfanar_calada() {
+    let d = dir("auto-recusa");
+    let mut t = hierarquia(&d);
+    let chefe = t
+        .inserir(&[Value::Int(1), Value::Null, Value::Str("Ana".into())])
+        .unwrap();
+    t.sincronizar().unwrap();
+    let sub = t
+        .inserir(&[Value::Int(2), Value::Int(1), Value::Str("Bia".into())])
+        .unwrap();
+    t.sincronizar().unwrap();
+
+    let erro = t
+        .atualizar(
+            chefe,
+            &[Value::Int(7), Value::Null, Value::Str("Ana".into())],
+        )
+        .expect_err("a auto-referencia tinha de recusar, e nao passar calada");
+    let texto = erro.to_string();
+    assert!(
+        texto.contains("fk_chefe") && texto.contains("funcionarios"),
+        "a recusa tem de NOMEAR a chave e a tabela; veio: {texto}"
+    );
+
+    // E o principal: a recusa acontece ANTES de gravar. A subordinada continua
+    // apontando para um chefe que existe, e nao para um que sumiu.
+    let mut t = Table::abrir(&d, "funcionarios").unwrap();
+    assert_eq!(
+        t.ler(sub).unwrap().unwrap()[1],
+        Value::Int(1),
+        "a subordinada mudou apesar da recusa"
+    );
+    assert_eq!(
+        t.ler(chefe).unwrap().unwrap()[0],
+        Value::Int(1),
+        "a mae foi gravada apesar da recusa"
+    );
+}
+
+/// O teste que mais importa numa guarda nova: o do comportamento VELHO.
+///
+/// Quem tem auto-referencia declarada e altera uma coluna que NAO e a
+/// referenciada continua exatamente como antes. A `chefe_id` e indexada e e a
+/// coluna LOCAL da chave, entao ela passa pelo portao de
+/// `alguma_coluna_indexada_mudou` e chega no codigo novo -- e e por isso que
+/// ela serve de controle, e nao o `nome`, que pararia antes de chegar la.
+#[test]
+fn mudar_coluna_que_nao_e_a_referenciada_continua_passando() {
+    let d = dir("auto-controle");
+    let mut t = hierarquia(&d);
+    t.inserir(&[Value::Int(1), Value::Null, Value::Str("Ana".into())])
+        .unwrap();
+    t.sincronizar().unwrap();
+    let sub = t
+        .inserir(&[Value::Int(2), Value::Int(1), Value::Str("Bia".into())])
+        .unwrap();
+    t.sincronizar().unwrap();
+
+    t.atualizar(sub, &[Value::Int(2), Value::Null, Value::Str("Bia".into())])
+        .expect("trocar o chefe nao mexe na chave referenciada: tinha de passar");
+
+    let mut t = Table::abrir(&d, "funcionarios").unwrap();
+    assert_eq!(t.ler(sub).unwrap().unwrap()[1], Value::Null);
+}

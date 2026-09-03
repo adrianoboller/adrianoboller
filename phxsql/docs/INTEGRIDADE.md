@@ -295,3 +295,152 @@ corrompida esconder as órfãs das outras.
   declaração.** Dá para declarar uma chave conferida sem os índices e só
   descobrir no primeiro `excluir`. O verificador relata; a recusa na declaração
   quebraria a ordem legítima «declare a chave, crie o índice».
+
+## 7. O que MySQL(R) e MariaDB(R) fazem — medido contra o nosso gargalo
+
+Receita de fora se mede contra o nosso gargalo **antes de virar plano**, e é o
+que esta seção faz: cada mecanismo dos dois manuais aparece com a citação, com
+o veredito para o PhxSql, e com o número quando há número. Três confirmam
+desenho nosso, dois viram pedido, e um responde uma pergunta que estava aberta.
+
+### 7.1 O teto da cascata: eles pararam em 15, nós em 16
+
+> «Cascading operations may not be nested more than 15 levels deep.»
+> — MySQL 8.4, *FOREIGN KEY Constraint Differences*
+
+O nosso `TETO_DA_CASCATA` é **16**, e foi escolhido sem consultar ninguém, pelo
+mesmo raciocínio: é limite de **trabalho**, não detector de ciclo — ciclo
+conferido não se popula, e isso está medido. Achar o InnoDB no mesmo lugar não
+prova que 16 é certo; prova que a **natureza** do limite é a mesma, e é isso
+que vale registrar. **Nada a fazer.**
+
+### 7.2 Conferência imediata: os dois grandes fazem igual, e a pergunta se aposenta
+
+O padrão SQL tem restrições `DEFERRABLE`, adiadas até o commit. **Nenhum dos
+dois implementa**: o MariaDB documenta `NO ACTION` como *«Synonym for
+RESTRICT»*, e o pedido de recurso (MDEV-26097) segue fechado sem implementação.
+
+O PhxSql confere **na hora**, e isso deixava no ar a dúvida «será que devíamos
+adiar?». A dúvida está respondida: adiar não é o que os motores de referência
+fazem. **Nada a fazer** — e a pergunta não volta sem alguém trazer um caso.
+
+### 7.3 A cascata não dispara gatilho — coincidência que vira decisão escrita
+
+> «Cascaded foreign key actions do not activate triggers.» — MySQL 8.4
+> «Foreign key actions do not activate triggers.» — MariaDB KB
+
+A nossa cascata também não dispara, mas **por acidente de camada**: o `store`
+não conhece gatilho, e o interpretador mora no servidor. Comportamento certo
+pelo motivo errado é comportamento que a próxima refação quebra sem perceber.
+Agora está escrito como **decisão**, com quem mais a tomou.
+
+### 7.4 A auto-referência: eles RECUSAM, nós passamos em silêncio — é defeito
+
+> «If `ON UPDATE CASCADE` or `ON UPDATE SET NULL` recurses to update the same
+> table it has previously updated during the same cascade, **it acts like
+> RESTRICT**. This means that you cannot use self-referential
+> `ON UPDATE CASCADE` [...]. This is to prevent infinite loops.»
+> — MySQL 8.4, *FOREIGN KEY Constraint Differences* (a KB do MariaDB traz a
+> mesma frase)
+
+O nosso `planejar_ao_alterar` faz `if irma == eu { continue; }`: a
+auto-referência **sai do plano sem dizer nada**. `funcionarios.chefe_id ->
+funcionarios.id` alterada na chave deixa as filhas apontando para o valor
+velho, e o `atualizar` devolve `Ok`.
+
+Os dois motores escolheram o **oposto do silêncio**: recusam a operação. Numa
+casa cuja doutrina é que órfã que ninguém vê é pior que órfã que dá erro, o
+nosso lado da comparação é o errado. **Virou pedido 174, e FECHOU na mesma
+rodada:** onde havia `continue` há recusa nomeando a chave e a tabela, estreita
+de propósito — só quando a coluna **referenciada** mudou. Guarda
+`auto-referencia-em-silencio`, provada nos dois sentidos.
+
+### 7.5 O índice na declaração: havia uma terceira saída, e nós não a vimos
+
+> «MySQL requires indexes on foreign keys and referenced keys [...] **Such an
+> index is created on the referencing table automatically if it does not
+> exist.**» — MySQL 8.4, *FOREIGN KEY Constraints*
+> «If a foreign key constraint is added to a column without an index, InnoDB
+> will automatically create an index to enforce the foreign key constraint.»
+> — MariaDB KB
+
+A §6 deste documento diz que exigir índice **na declaração** «quebraria a ordem
+legítima *declare a chave, crie o índice*», e por isso a recusa ficou na
+gravação. A frase está certa e a conclusão não: os dois motores não recusam
+**nem** adiam — eles **criam**. Havia uma terceira saída, e ela não foi
+considerada.
+
+Do lado da mãe os dois recusam no DDL (MySQL: erro 1005 / errno 150), porque
+criar índice na tabela **alheia** é decisão que não cabe a quem declara a
+chave. A assimetria é dos dois, e faz sentido.
+
+**Custo medido do lado que se cria sozinho:** construir índice sai a **2,2 µs
+por linha** (`--example custo-do-reindexar-no-arranque`), e na declaração a
+tabela costuma estar **vazia** — o caso caro é o de quem declara chave sobre
+tabela que já tem dado, e mesmo esse são 219 ms a 100.000 linhas. **Vira
+pedido.**
+
+### 7.6 Desligar a conferência deixa resíduo, e o MySQL(R) diz isso ao lado do interruptor
+
+> «**Enabling `foreign_key_checks` does not trigger a scan of table data**,
+> which means that rows added to a table while `foreign_key_checks` was
+> disabled are not checked for consistency when `foreign_key_checks` is
+> re-enabled.» — MySQL 8.4
+
+É exatamente a nossa §4: `copiar_tabela_para` nasce com órfã (medido, com
+teste), restaurar backup não confere, `verificar: false` é escolha escrita. A
+diferença não está no comportamento — está em **onde a verdade fica escrita**.
+O MySQL põe a frase ao lado do interruptor, no manual que quem desliga está
+lendo. **Nada a construir; há o que dizer no lugar certo.**
+
+### 7.7 A recuperação: os dois DIVERGEM, e é a divergência que responde o 172
+
+Aqui os manuais não concordam, e a discordância é o achado.
+
+**MariaDB — repara sozinho, e é o padrão de fábrica:**
+
+> «If enabled each time the server opens a MyISAM table, it checks whether it
+> has been marked as crashed [...] mysqld will run a check and then attempt to
+> repair the table, **writing to the error log beforehand**.»
+> `aria_recover_options`, padrão **`"BACKUP,QUICK"`** desde a 10.2.4.
+
+**MySQL/InnoDB — recusa, e manda o DBA ligar à mão:**
+
+> «Only set `innodb_force_recovery` to a value greater than 0 in an emergency
+> situation [...] **Values of 4 or greater can permanently corrupt data
+> files.**»
+
+Quem está certo depende de **o que o reparo toca**, e é aí que a nossa situação
+se decide. O MySQL explica o próprio risco:
+
+> «If the recovery wouldn't be able to recover all rows [...] automatic repair
+> aborts with an error message [...] **If you specify `FORCE`**, a warning like
+> this is written instead: *Found 344 of 354 rows when repairing*.»
+
+Ou seja: o perigo do reparo automático é **perder linha**, e ele só existe
+quando o reparo mexe no arquivo de **dados**. O MariaDB nomeia a metade segura:
+
+> `REPAIR TABLE ... QUICK` — «**will not modify the data file**, only attempting
+> to repair the index file.»
+
+**O nosso caso é o `QUICK`, e não o `FORCE`.** O `reindexar()` trunca o `.ndx`
+e o reconstrói **lendo o `.reg`**, que está íntegro: o arquivo de dados é
+*append-only* e a queda foi na escrita do índice. Nenhuma linha pode se perder,
+porque nenhuma linha é reescrita. O risco que fez o InnoDB recusar **não existe
+aqui**.
+
+E há um segundo número que muda a leitura, e ele é nosso, não dos manuais: **a
+recuperação já reconstrói.** `transacao.rs:1176` chama `reindexar()` para toda
+tabela **nomeada na marca**, e conta em `indices_reconstruidos`. O que ela não
+alcança é a **filha da cascata**, por motivo estrutural: `completar()` itera
+`marca.operacoes`, e o `Escrita` só nasce da tabela pedida explicitamente
+(`servidor.rs:8280` e `:8329`) — a cascata nunca vira `Escrita`.
+
+Então o pedido 172 não pergunta «devemos passar a reparar sozinhos?». Nós já
+reparamos. Ele pergunta **por que o reparo não alcança a filha**, e a resposta
+é a mesma forma de defeito da §5.5.4 do `docs/TRANSACOES.md`: o mecanismo
+existe num caminho e não no irmão.
+
+**Custo:** 2,2 µs por linha, linear — 219 ms a 100.000 linhas, 1,16 s a
+500.000. É o mesmo que a recuperação já paga pelas outras tabelas, e paga uma
+vez, no arranque, por filha que a cascata tocou.

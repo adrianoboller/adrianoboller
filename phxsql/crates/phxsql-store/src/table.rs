@@ -1195,6 +1195,36 @@ impl Table {
         Ok(())
     }
 
+    /// A chave que ESTA `fk` aponta mudou entre `antes` e `depois`?
+    ///
+    /// Mesmas regras do plano, e nao uma segunda versao delas: chave
+    /// incompleta (coluna que nao existe) nao conta, nulo do lado ANTIGO nao
+    /// conta -- e o `MATCH SIMPLE`, o mesmo do `conferir_fks` --, e chave
+    /// parada no lugar nao conta.
+    fn chave_referenciada_mudou(
+        esquema: &Schema,
+        fk: &ForeignKey,
+        antes: &[Value],
+        depois: &[Value],
+    ) -> bool {
+        let mut antiga = Vec::with_capacity(fk.colunas_ref.len());
+        let mut nova = Vec::with_capacity(fk.colunas_ref.len());
+        for nome in &fk.colunas_ref {
+            let Some(i) = esquema.colunas().iter().position(|c| c.nome == *nome) else {
+                return false;
+            };
+            let (Some(a), Some(d)) = (antes.get(i), depois.get(i)) else {
+                return false;
+            };
+            if matches!(a, Value::Null) {
+                return false;
+            }
+            antiga.push(a.clone());
+            nova.push(d.clone());
+        }
+        antiga != nova
+    }
+
     fn planejar_ao_alterar(
         &mut self,
         antes: &[Value],
@@ -1208,6 +1238,40 @@ impl Table {
         let mut passos: Vec<PassoAoAlterar> = Vec::new();
         for irma in irmas {
             if irma == eu {
+                // A AUTO-REFERENCIA RECUSA -- ela nao passa em silencio.
+                //
+                // Que ela nao cascateie e limite consciente, e o motivo esta
+                // no comentario grande la em cima: a tabela esta aberta no
+                // meio de uma escrita, e um segundo descritor sobre ela leria
+                // o indice que ainda nao foi ao disco.
+                //
+                // O que estava errado era a SAIDA. Ate 03/09/2026 isto era um
+                // `continue` seco: a alteracao passava, a subordinada ficava
+                // apontando para a chave velha, e o `atualizar` devolvia `Ok`
+                // -- orfa calada, que e o jeito pior. Os dois motores de
+                // referencia escolheram o oposto, com a mesma frase: «it acts
+                // like RESTRICT». Ver `docs/INTEGRIDADE.md` §7.4.
+                //
+                // A recusa e ESTREITA de proposito: so quando a coluna
+                // REFERENCIADA mudou. Quem tem auto-referencia declarada e
+                // altera outra coluna -- inclusive a coluna local da chave --
+                // continua exatamente como antes, e ha teste travando esse
+                // lado. Guarda nova entra pedida, nao imposta.
+                for fk in self.esquema.chaves_estrangeiras() {
+                    if !fk.verificar
+                        || fk.ao_alterar == AcaoRi::NaoFazerNada
+                        || nome_simples(&fk.tabela_ref) != eu
+                        || !Self::chave_referenciada_mudou(&self.esquema, fk, antes, depois)
+                    {
+                        continue;
+                    }
+                    return Err(PhxError::Integridade(format!(
+                        "{eu}: a chave `{}` aponta para a propria tabela, e a \
+                         cascata nao desce na auto-referencia -- altere as \
+                         linhas subordinadas a mao ANTES de mudar a chave",
+                        fk.nome
+                    )));
+                }
                 continue;
             }
             let esquema = match crate::reg::RegFile::abrir(&self.diretorio, &irma) {

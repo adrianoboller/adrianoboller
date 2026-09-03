@@ -2790,4 +2790,31 @@ pub fn limpar() {
             "a_filha_acompanha_a_chave_que_a_mae_mudou",
         ],
     },
+    {
+        "id": "auto-referencia-em-silencio",
+        "titulo": "a auto-referência sai da cascata em silêncio e orfana a subordinada",
+        "porque": (
+            "ate 03/09/2026 `planejar_ao_alterar` fazia `if irma == eu "
+            "{ continue }` seco: alterar a chave de uma tabela que aponta para "
+            "si passava, a subordinada ficava na chave velha e o `atualizar` "
+            "devolvia Ok. Os dois motores de referencia recusam -- «it acts "
+            "like RESTRICT» --, e orfa que ninguem ve e pior que orfa que da "
+            "erro. `docs/INTEGRIDADE.md` SS7.4."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """                        || !Self::chave_referenciada_mudou(&self.esquema, fk, antes, depois)""",
+        "troca": """                        // DEFEITO REPOSTO: sem a conferencia da chave a recusa
+                        // nunca dispara, e a auto-referencia volta a sair do
+                        // plano em silencio.
+                        || true""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "cascata-ao-alterar"],
+        "caem": [
+            "a_auto_referencia_recusa_em_vez_de_orfanar_calada",
+        ],
+        "seguem": [
+            "mudar_coluna_que_nao_e_a_referenciada_continua_passando",
+            "a_cascata_alcanca_a_neta",
+        ],
+    },
 ]
