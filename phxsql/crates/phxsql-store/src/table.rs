@@ -856,15 +856,52 @@ impl Table {
             // e filha na mesma transacao caem aqui.
             //
             // O erro cru manda "reconstrua o indice", o que faria o leitor
-            // reparar um arquivo sao. Este diz o que houve.
+            // reparar um arquivo sao.
+            //
+            // **E este comentario ja dizia isso, com o `({e})` logo abaixo
+            // mandando o texto cru junto.** Medido em 03/09/2026: a mensagem
+            // saia com as duas metades se contradizendo -- primeiro "ficou
+            // para tras numa queda: reconstrua com `reparar indice`", depois a
+            // explicacao certa. Envolver nao e substituir, e um comentario que
+            // se declara resolvido e o motivo de ninguem olhar de novo.
+            //
+            // Quem separa os dois casos e a PERGUNTA A MAE, e nao o texto do
+            // erro: `indice_precisa_reconstruir()` distingue a marca de
+            // visibilidade de uma corrupcao de verdade -- e na corrupcao o
+            // "reconstrua o indice" e o conselho CERTO, entao ali o erro cru
+            // passa inteiro. Casar o texto do erro quebraria calado no dia em
+            // que alguem melhorasse a redacao dele.
+            let pendente = mae
+                .indice_precisa_reconstruir()
+                .then(|| caminho(mae.diretorio(), mae.nome(), EXT_NDX));
             let achou = mae.buscar(&indice, &chave).map_err(|e| {
-                PhxError::Integridade(format!(
-                    "{}: nao deu para conferir contra {} agora ({e}). A \
-                     conferencia le o que ja foi gravado; mae escrita nesta \
-                     mesma transacao ainda nao esta visivel -- confirme a mae \
-                     antes da filha",
-                    fk.nome, fk.tabela_ref
-                ))
+                if let Some(ndx) = pendente {
+                    // A causa CONTINUA nomeada -- qual arquivo e qual guarda --,
+                    // porque jogar a causa fora troca um recado ruim por um
+                    // recado cego, e isso ja era decisao escrita e testada
+                    // aqui. O que sai e so o IMPERATIVO do erro cru
+                    // («reconstrua com `reparar indice`»), que mandava reparar
+                    // um arquivo intacto.
+                    //
+                    // E o arquivo e montado do DADO (`diretorio` + `nome`), e
+                    // nao recortado do texto do erro: recortar quebra calado no
+                    // dia em que alguem melhorar a redacao dele.
+                    PhxError::Integridade(format!(
+                        "{}: nao deu para conferir contra {} agora -- a guarda \
+                         de visibilidade de {} recusou responder, e o arquivo \
+                         esta SAO: nao repare nada. A conferencia le o que ja \
+                         foi gravado; mae escrita nesta mesma transacao ainda \
+                         nao esta visivel -- confirme a mae antes da filha",
+                        fk.nome,
+                        fk.tabela_ref,
+                        ndx.display()
+                    ))
+                } else {
+                    PhxError::Integridade(format!(
+                        "{}: nao deu para conferir contra {} agora ({e})",
+                        fk.nome, fk.tabela_ref
+                    ))
+                }
             })?;
             if achou.is_empty() {
                 return Err(PhxError::Integridade(format!(

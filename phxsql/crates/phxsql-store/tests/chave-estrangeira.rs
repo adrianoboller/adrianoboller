@@ -98,11 +98,20 @@ fn a_mae_aberta_e_ja_gravada_e_vista() {
 /// o erro cru dizia "indice corrompido: reconstrua", mandando o leitor reparar
 /// um arquivo sao.
 ///
-/// A causa crua CONTINUA na mensagem, e de proposito: e ela que diz qual
-/// arquivo e qual guarda recusou. O que mudou e que ela virou parenteses
-/// dentro da explicacao, em vez de ser a mensagem inteira. Por isso o teste
-/// afirma que a explicacao vem DEPOIS da causa, e nao que a causa sumiu --
-/// jogar a causa fora trocaria um recado ruim por um recado cego.
+/// A causa CONTINUA na mensagem, e de proposito: e ela que diz qual arquivo e
+/// qual guarda recusou. Por isso o teste afirma que a explicacao vem DEPOIS da
+/// causa, e nao que a causa sumiu -- jogar a causa fora trocaria um recado ruim
+/// por um recado cego.
+///
+/// **O que mudou em 03/09/2026, e por que a intencao deste teste sobreviveu
+/// inteira:** a causa era o erro CRU embrulhado em parenteses, e ele carregava
+/// o imperativo «reconstrua com `reparar indice`» -- mandando reparar um
+/// arquivo intacto, o que era a primeira metade do recado contradizendo a
+/// segunda. Hoje a mensagem nomeia o `.ndx` a partir do DADO (`diretorio` +
+/// `nome`, nunca recortado do texto do erro) e diz que o arquivo esta sao.
+/// Entao a marca da causa neste teste deixou de ser a palavra «reconstrua» e
+/// passou a ser o proprio caminho do indice: o teste afirma a MESMA coisa, com
+/// a agulha que a mensagem nova oferece.
 #[test]
 fn a_mae_nao_gravada_recusa_dizendo_por_que() {
     let d = dir("mae-pendente");
@@ -119,12 +128,16 @@ fn a_mae_nao_gravada_recusa_dizendo_por_que() {
         "o recado nao explica o limite: {txt}"
     );
     let (i_causa, i_expl) = (
-        txt.find("reconstrua").unwrap_or(usize::MAX),
+        txt.find(".ndx").unwrap_or(usize::MAX),
         txt.find("ja foi gravado").unwrap_or(0),
     );
     assert!(
         i_expl > i_causa,
-        "a causa crua ficou por ultimo e vira a ultima palavra do recado: {txt}"
+        "a causa ficou por ultimo e vira a ultima palavra do recado: {txt}"
+    );
+    assert!(
+        !txt.contains("reconstrua") && !txt.contains("reparar indice"),
+        "voltou a mandar reparar um arquivo sao: {txt}"
     );
     assert!(
         matches!(e, PhxError::Integridade(_)),
@@ -538,5 +551,46 @@ fn sem_conferir_restaurar_nao_pergunta_nada() {
         f.restaurar(1, "volta")
             .expect("chave sem verificar: como sempre"),
         "restaurar tem de devolver true"
+    );
+}
+
+/// A mensagem nao pode mandar reparar uma tabela SA.
+///
+/// # O defeito, e por que o comentario do codigo o escondeu
+///
+/// A mae escrita e ainda nao sincronizada faz a conferencia recusar, e a recusa
+/// esta certa. Errado era o TEXTO: ele embrulhava o erro cru do indice
+/// («ficou para tras numa queda... reconstrua com `reparar indice`») e mandava
+/// junto com a explicacao correta -- duas metades se contradizendo, e a
+/// primeira mandando o operador reparar um arquivo intacto.
+///
+/// O que fez isso durar: o comentario acima da linha JA dizia «o erro cru manda
+/// reconstrua o indice, o que faria o leitor reparar um arquivo sao. Este diz o
+/// que houve» -- com o `({e})` logo abaixo. **Envolver nao e substituir**, e
+/// comentario que se declara resolvido e o motivo de ninguem olhar de novo.
+///
+/// # Prova real
+///
+/// Devolver o `({e})` a mensagem faz este teste cair em `nao pode mandar
+/// reparar` -- o texto cru volta a aparecer.
+#[test]
+fn a_mae_invisivel_nao_manda_reparar_indice_sao() {
+    let d = dir("mensagem-sem-reparar");
+    let mut m = mae(&d);
+    m.inserir(&[Value::Int(1)]).unwrap();
+    // DE PROPOSITO sem sincronizar: e o que levanta a marca de visibilidade.
+    let mut f = filha(&d, true);
+    let erro = f
+        .inserir(&[Value::Int(10), Value::Int(1)])
+        .expect_err("a mae ainda nao esta visivel: tinha de recusar");
+    let texto = erro.to_string();
+
+    assert!(
+        !texto.contains("reparar indice") && !texto.contains("ficou para tras"),
+        "nao pode mandar reparar: a tabela esta sa, so nao esta sincronizada -- {texto}"
+    );
+    assert!(
+        texto.contains("confirme a mae antes da filha"),
+        "tirou o texto cru mas perdeu a explicacao -- {texto}"
     );
 }

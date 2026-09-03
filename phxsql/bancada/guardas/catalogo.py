@@ -2817,4 +2817,37 @@ pub fn limpar() {
             "a_cascata_alcanca_a_neta",
         ],
     },
+    {
+        "id": "recado-manda-reparar-arquivo-sao",
+        "titulo": "a mãe invisível manda reparar o índice — de um arquivo intacto",
+        "porque": (
+            "mae escrita e nao sincronizada faz a conferencia de chave recusar, "
+            "e a recusa esta certa. Errado era o TEXTO: o erro cru vinha "
+            "embrulhado com o imperativo «reconstrua com `reparar indice`», "
+            "mandando reparar arquivo sao -- a primeira metade do recado "
+            "contradizendo a segunda. Durou porque o comentario acima da linha "
+            "JA dizia que o erro cru era ruim, com o `({e})` logo abaixo: "
+            "envolver nao e substituir."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """            let pendente = mae
+                .indice_precisa_reconstruir()
+                .then(|| caminho(mae.diretorio(), mae.nome(), EXT_NDX));""",
+        "troca": """            // DEFEITO REPOSTO: sem o portao, tudo cai no caminho do erro
+            // cru e o recado volta a mandar reparar arquivo intacto.
+            let pendente: Option<std::path::PathBuf> = None;""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "chave-estrangeira"],
+        "caem": [
+            "a_mae_invisivel_nao_manda_reparar_indice_sao",
+            "a_mae_nao_gravada_recusa_dizendo_por_que",
+        ],
+        # O controle e a mae JA gravada: ela nao passa pelo portao novo, e
+        # tem de continuar sendo vista com o defeito reposto -- senao a troca
+        # quebrou o arquivo inteiro em vez de provar a guarda.
+        "seguem": [
+            "a_mae_aberta_e_ja_gravada_e_vista",
+            "sem_conferir_a_mae_aberta_nao_muda_nada",
+        ],
+    },
 ]
