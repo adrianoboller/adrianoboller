@@ -1,8 +1,36 @@
-# O backup do repositório, e por que ele sai à mão
+# O backup do repositório
 
-Este documento existe porque um **papel que não está cumprindo tem de aparecer
+## RESOLVIDO em 03/09/2026: o `push` funciona
+
+**A recusa acabou, e a receita de conferência escrita neste documento foi
+exatamente o que a mediu.** Rodada em 03/09, às 12h: `git push -u origin
+claude/capacidades-disponiveis-y6auxh` empurrou `d4dc424..cd561ce` — **248
+commits** —, e a confirmação não é a palavra do `git`, é a do GitHub:
+`git ls-remote` devolve `cd561cec…` para a branch, idêntico ao `HEAD` local.
+São **391 commits** no `origin`.
+
+O acesso de escrita foi concedido em algum momento entre a medição de ontem e
+esta; nada mudou do lado do código. E é aí que está a lição, que vale mais que
+a boa notícia: **limitação registrada também envelhece.** O 403 estava medido,
+escrito com cabeçalho e request-id, e por isso ninguém o pôs em dúvida — nem
+eu, que passei a sessão inteira dizendo «o `push` recusa com 403» sem tentar
+uma vez. Número digitado envelhece calado; **limitação diagnosticada envelhece
+do mesmo jeito, e pior, porque vem com prova ao lado.**
+
+Fica valendo a regra: **limitação que bloqueia um papel se remede a cada
+rodada**, com a receita que o próprio documento carrega (o `--dry-run` da §
+«Como se confere que funcionou»). O pacote por `git bundle` continua existindo,
+agora como segunda via e não como única saída.
+
+O que segue abaixo é **história**, e não descrição do presente.
+
+---
+
+# Por que ele saía à mão (até 03/09/2026)
+
+Este documento existiu porque um **papel que não está cumprindo tem de aparecer
 como não cumprindo**, em vez de sumir do relatório. O papel é o do versionador:
-ele commita, e deveria empurrar para o `origin`. Ele não empurra.
+ele commitava, e deveria empurrar para o `origin`. Ele não empurrava.
 
 ## O diagnóstico, medido
 

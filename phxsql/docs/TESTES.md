@@ -699,8 +699,21 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `dependencia-de-fora-fica-invisivel` | o filtro de dependência externa vira mudo (mede e nunca acusa) | 1 | ✅ provada |
 | `sem-indice-na-filha-ignora-em-vez-de-recusar` | sem índice na filha, a exclusão da mãe ignora em vez de recusar | 1 | ✅ provada |
 | `cache-paginas-nao-chega-ao-motor` | `cache_paginas` do config.json deixa de chegar ao motor | 2 | ✅ provada |
+| `replica-julga-fk` | a replica volta a conferir chave estrangeira no evento que aplica | 2 | ✅ provada |
+| `cascata-sem-imagem-no-diario` | a filha que a cascata abre volta a nascer sem imagem no diario | 2 | ✅ provada |
+| `replica-refaz-a-cascata` | a replica volta a refazer a cascata que o source ja mandou | 1 | ✅ provada |
+| `marca-de-replica-fica-acesa` | a marca de replica nao se apaga na volta do `aplicar_evento` | 1 | ✅ provada |
+| `fk-nao-pergunta-se-a-mae-esta-viva` | a conferencia da chave volta a perguntar so se a mae EXISTE | 3 | ✅ provada |
+| `drop-table-mata-o-pai` | o `excluir_tabela` volta a apagar a mae com filha apontando | 1 | ✅ provada |
+| `before-sem-prazo-de-parede` | o corpo do gatilho BEFORE volta a rodar sem prazo, com a trava global na mão | 1 | ✅ provada |
+| `declara-conferida-sobre-orfa` | a chave volta a nascer conferida sobre tabela que ja tem orfa | 1 | ✅ provada |
+| `verificador-nao-pergunta-se-a-mae-esta-viva` | o verificador volta a aceitar mae excluida como mae | 1 | ✅ provada |
+| `restaurar-nao-pergunta-pela-mae` | restaurar volta a ressuscitar a filha sem olhar a mae | 1 | ✅ provada |
+| `bidirecional-julga-fk` | o bidirecional volta a conferir a chave do evento que aplica | 1 | ✅ provada |
+| `bidirecional-julga-as-filhas` | o bidirecional volta a recusar apagar a mae que tem filha | 1 | ✅ provada |
+| `recascata-sem-conferir-a-arvore` | a recuperação gravava a primeira filha e só então descobria que a neta da segunda restringe | 1 | ✅ provada |
 
-**60 guardas: 56 provadas, 4 redundantes** — 434 s de mutação, medido em 2026-09-03 02:54.
+**73 guardas: 69 provadas, 4 redundantes** — 696 s de mutação, medido em 2026-09-03 11:53.
 
 As notas que a rodada deixou:
 

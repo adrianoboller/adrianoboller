@@ -470,9 +470,16 @@ Commit que conta a decisão e o motivo, não a lista de arquivos. Branch
 combinada. Pacote de fontes e binários gerado por script, **nunca montado à
 mão** — pacote feito à mão é pacote que ninguém consegue refazer igual.
 
-**Este papel está degradado hoje e isso fica escrito**: o `push` recusa com 403
-por identidade da sessão, então o backup sai por pacote git entregue à mão. Um
-papel que não está cumprindo tem de aparecer como não cumprindo.
+**Este papel esteve degradado, e deixou de estar em 03/09/2026**: o `push`
+recusava com 403 e o backup saía por pacote git entregue à mão; hoje o `push`
+funciona — 391 commits no `origin`, conferidos por `git ls-remote` e não pela
+palavra do `git`. O pacote continua, como segunda via.
+
+E a lição que a correção deixou vale mais que ela: **limitação registrada também
+envelhece.** O 403 estava medido, com cabeçalho e request-id ao lado, e foi
+justamente a prova que impediu qualquer um de tentar de novo por três rodadas.
+**Limitação que bloqueia um papel se remede a cada rodada** — a receita está no
+`docs/BACKUP.md`.
 
 ### J — Pesquisador
 
