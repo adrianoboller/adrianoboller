@@ -21586,6 +21586,94 @@ mod testes_janela_e_cadeia {
         );
     }
 
+    /// A catraca do prazo: **todo corpo que roda com a trava de dados na mao
+    /// leva prazo de parede.**
+    ///
+    /// Ela e estatica e nao dinamica de proposito. O teste de ponta a ponta
+    /// abaixo prova que um corpo sem fundo nao derruba o servidor, mas ele nao
+    /// consegue provar QUAL dos tetos respondeu — isso depende da velocidade
+    /// da maquina, e teste que depende disso e teste que um dia falha sozinho.
+    /// Esta catraca prova a fiacao: quem apagar o `.com_prazo(...)` do
+    /// `rodar_gatilhos_antes` e acusado por nome, e nao por um tempo que
+    /// passou a caber.
+    ///
+    /// O irmao dela e o `rodar_gatilhos_depois`, que **nao** leva prazo e nao
+    /// pode levar: o AFTER roda SEM a trava, e por-lhe um relogio em cima
+    /// tiraria de quem audita um tempo que ninguem esta esperando.
+    #[test]
+    fn o_before_roda_com_prazo_e_o_after_nao() {
+        let corpo_antes = FONTE
+            .split_once("fn rodar_gatilhos_antes(")
+            .expect("o `rodar_gatilhos_antes` sumiu")
+            .1;
+        let fim = corpo_antes
+            .find("\n    }\n")
+            .expect("o corpo do rodar_gatilhos_antes");
+        assert!(
+            corpo_antes[..fim].contains(".com_prazo("),
+            "o corpo do BEFORE roda com a trava GLOBAL de dados na mao e \
+             perdeu o prazo de parede. Sem ele, um `WHILE` com passo caro \
+             segura o servidor inteiro por dezenas de segundos: medido, \
+             28.590 ms contra 500 ms"
+        );
+        let corpo_depois = FONTE
+            .split_once("fn rodar_gatilhos_depois(")
+            .expect("o `rodar_gatilhos_depois` sumiu")
+            .1;
+        let fim = corpo_depois
+            .find("\n    }\n")
+            .expect("o corpo do rodar_gatilhos_depois");
+        assert!(
+            !corpo_depois[..fim].contains(".com_prazo("),
+            "o AFTER roda SEM a trava: um prazo aqui nao protege ninguem e \
+             corta uma auditoria honesta pela metade"
+        );
+    }
+
+    /// **O defeito reposto:** um gatilho `BEFORE` cujo corpo dobra o texto a
+    /// cada volta.
+    ///
+    /// Sem os dois tetos este teste nao falha — ele **aborta o `cargo test`**
+    /// com `memory allocation failed`, que e o tamanho exato do estrago: em
+    /// producao seria o servidor inteiro caindo, com a trava global na mao,
+    /// por causa de um gatilho que o dono do banco escreveu. Medido a mao com
+    /// `ulimit -v 2000000`: 10,2 s e entao o aborto.
+    ///
+    /// Ele afere o TEMPO, e nao so o veredito: uma insercao recusada em 30 s
+    /// e tao ruim quanto uma recusa que nao acontece, e conferir «recusou»
+    /// passaria com as duas.
+    #[test]
+    fn gatilho_before_sem_fundo_nao_derruba_o_servidor() {
+        let s = servidor_janela_curta("gatilho-sem-fundo");
+        criar_gatilho(
+            &s,
+            "CREATE TRIGGER incha BEFORE INSERT ON a FOR EACH ROW \
+             WHILE TRUE DO SET NEW.x = CONCAT(NEW.x, NEW.x); END WHILE",
+        );
+        let comeco = Instant::now();
+        let r = s.executar(
+            "inserir",
+            &pedido(r#"{"database":"b","tabela":"a","linha":{"n":1,"x":"a"}}"#),
+            &Sessao::default(),
+        );
+        let gasto = comeco.elapsed();
+        let erro = r.expect_err("a insercao tinha de ser recusada pelo gatilho");
+        let texto = format!("{erro}");
+        // Qual dos DOIS tetos responde depende da velocidade da maquina, e por
+        // isso o teste aceita os dois pelo nome em vez de escolher um: o que
+        // ele nao aceita e nenhum dos dois.
+        assert!(
+            texto.contains("prazo") || texto.contains("CONCAT"),
+            "o erro tinha de nomear um dos dois tetos, e veio: {texto}"
+        );
+        assert!(
+            gasto < Duration::from_secs(5),
+            "a insercao levou {gasto:?} com a trava global na mao"
+        );
+        // E nada foi gravado: BEFORE que falha cancela a escrita.
+        assert_eq!(quantas(&s, "a"), 0);
+    }
+
     /// O terceiro abraco mortal, reposto de proposito: a mesma thread pede a
     /// trava que ela ja tem.
     ///
