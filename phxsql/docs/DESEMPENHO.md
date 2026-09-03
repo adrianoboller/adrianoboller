@@ -2101,6 +2101,60 @@ favorece o `RwLock`, mas *favorecer* não é medir.
 python3 bancada/concorrencia/a-trava-serializa.py   # SEGUNDOS= e LINHAS= ajustam
 ```
 
+### 14.1 Quanto a trava fica PRESA, e quanto disso é o `fsync` (03/09)
+
+O parágrafo acima termina com uma promessa em aberto — *«a leitura custa 20×
+mais por operação que a escrita […] então ela segura a trava por muito mais
+tempo — o que favorece o `RwLock`, mas favorecer não é medir»*. Isto é a
+medição, e ela responde de quebra o item que o `CONCORRENCIA.md` §8 listava
+como **não medido**: quanto o `fsync` sob a trava custa em milissegundos.
+
+**Como se mede, e por que não com um cronômetro do lado de fora.** Cronometrar
+o pedido pelo cliente mede rede, JSON, despacho, portão de permissão e a fila.
+A pergunta é outra — *quanto a trava fica presa*, que é o que a próxima conexão
+espera. Esse número só se vê de dentro, e a telemetria já o via: o `Drop` do
+`TravaMedida` soma, em microssegundos, o tempo de cada posse.
+
+**O experimento é um PAR**, e não um número solto: `durabilidade: por_lote` (o
+`fsync` a cada 200 operações) contra `por_operacao` (em todas). Mesmo binário,
+mesmo caminho, mesma trava — a única diferença é a frequência do `fsync`, então
+a diferença entre as curvas **é** o `fsync` sob a trava. Sozinha, uma rodada
+poria na conta do `fsync` também o `open` das sete tabelas, o índice e o JSON.
+
+Duas baterias limpas, com o `quieta.Vigia` aprovando as duas (4.000 gravações e
+400 leituras cada, tabela de uma coluna com índice primário):
+
+| durabilidade | trava presa GRAVANDO | trava presa LENDO (`varrer` 50) | pedido inteiro, gravando |
+|---|---:|---:|---:|
+| `por_lote` (padrão) | **121–137 µs** | 3.122–3.187 µs | 238–278 µs |
+| `por_operacao` | **1.404–1.492 µs** | 2.955–3.207 µs | 1.609–1.674 µs |
+
+**O `fsync` sob a trava custa 1.267–1.371 µs por gravação — 10,3× a 12,3× o
+tempo que uma gravação segura a trava sem ele.**
+
+**O controle é o que separa isto de um palpite**, e ele é a linha do meio: a
+leitura toma a **mesma** trava e não sincroniza nada. Entre as duas baterias ela
+andou **1,01×** e **0,95×** — ficou parada, como tinha de ficar. Se ela tivesse
+subido junto com a escrita, quem subiu teria sido a máquina, e o arnês diz isso
+em vez de deixar a deriva virar «custo do fsync».
+
+**E o achado que muda a ordem de trabalho:** no padrão desta casa, **uma leitura
+segura a trava 23× mais tempo que uma gravação** (3.122 contra 137 µs). O
+«favorece o `RwLock`» da §14 deixa de ser inferência e vira número — e a
+prioridade entre «encurtar as 23 seções que alcançam `fsync`» e «separar leitor
+de leitor» depende da durabilidade configurada:
+
+* com `por_lote`, a gravação é o barato: 137 µs contra 3.122 µs da leitura;
+* com `por_operacao`, as duas ficam da mesma ordem: 1.404 contra 2.955 µs.
+
+Isto conta **por operação**, e não por carga: quem decide o total é a frequência
+com que cada uma é chamada, e isso o medidor não sabe. O que ele descarta é a
+suposição de que o `fsync` sob a trava seja, no padrão, o pedaço grande.
+
+```bash
+python3 bancada/concorrencia/quanto-a-trava-fica-presa.py   # GRAVACOES= LEITURAS=
+```
+
 ## 15. A integridade referencial: o que a garantia custa, medido
 
 ### 15.1 «Existir» não é «estar viva»: +7,0 µs por linha, e por que se paga

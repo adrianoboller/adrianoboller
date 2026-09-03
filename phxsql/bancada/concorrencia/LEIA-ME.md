@@ -9,6 +9,7 @@ havia o que medir.
 | `mapa-da-trava.py` | **o que a trava segura?** Quantas seções críticas, e o que cada uma faz enquanto está com a trava na mão | **não** — lê o fonte |
 | `a-trava-serializa.py` | **a trava custa?** Vazão com N clientes, contra uma curva de controle que não toma a trava | sim |
 | `escolher-o-desenho.py` | **o que pôr no lugar?** O teto de cada um: trava por tabela, `RwLock`, MVCC | sim |
+| `quanto-a-trava-fica-presa.py` | **quanto a trava fica PRESA?** O µs de posse por operação, lido por dentro (telemetria), com o par `por_lote` × `por_operacao` isolando o `fsync` | sim |
 | `quieta.py` | **este número vale?** O vigia que reprova a bateria rodada em máquina ocupada | — |
 
 O relatório que sai dos quatro está em [`docs/CONCORRENCIA.md`](../../docs/CONCORRENCIA.md).
@@ -25,7 +26,16 @@ python3 bancada/concorrencia/mapa-da-trava.py --json          # para outro gerad
 
 python3 bancada/concorrencia/a-trava-serializa.py
 SEGUNDOS=5 CLIENTES=1,2,4 python3 bancada/concorrencia/escolher-o-desenho.py
+GRAVACOES=4000 LEITURAS=400 python3 bancada/concorrencia/quanto-a-trava-fica-presa.py
 ```
+
+**O quarto medidor tem um controle que os outros não têm**, e vale escrever por
+quê. Os três primeiros comparam contra o `ping`, que não toma a trava — isso
+prova que a máquina não andou. O `quanto-a-trava-fica-presa.py` compara também
+contra a **leitura**, que toma a MESMA trava e não sincroniza nada: se ela
+andar entre as duas baterias, a deriva é da máquina e não do `fsync`. Medido em
+03/09, ela andou 1,01× e 0,95× — ficou parada, e é isso que dá o direito de
+dizer que os 10,3×–12,3× da gravação são o `fsync`.
 
 Variáveis: `SEGUNDOS` (por rodada), `LINHAS` (semeadas por tabela), `CLIENTES`
 (a curva, só no `escolher-o-desenho.py`), `PHX_PHXSQLD` (outro binário).

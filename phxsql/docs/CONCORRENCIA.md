@@ -15,6 +15,12 @@ formato, não contra o de um motor genérico.
 
 ## 0. O que esta frente NÃO entrega, e por quê
 
+> **Lido em 03/09:** esta seção é da rodada de 02/09 e continua valendo como
+> registro do método. A rodada de 03/09 **conseguiu** duas baterias limpas — o
+> `quieta.Vigia` aprovou as duas —, e elas estão na §7.1. Foram necessárias
+> **seis tentativas** para conseguir as duas, e as outras quatro não imprimiram
+> número nenhum: é o arnês funcionando, e não um obstáculo a ele.
+
 **Nenhum número novo de concorrência medido nesta rodada.** A máquina não
 estava parada: outras frentes compilavam e rodavam testes ao lado durante todo
 o trabalho.
@@ -80,23 +86,30 @@ toca disco, e rotulá-la «disco» esconderia o que ela tem de pior.
 
 | classe | seções | linhas de código sob a trava |
 |---|---:|---:|
-| **código do dono** (corpo de gatilho `BEFORE`) | **5** | 369 |
+| **código do dono** (corpo de gatilho `BEFORE`) | **5** | 378 |
 | rede ou espera | **0** | 0 |
-| **escrita durável** (alcança `fsync`) | 20 | 566 |
+| **escrita durável** (alcança `fsync`) | 19 | 514 |
 | escrita | 14 | 293 |
-| leitura com varredura | 27 | 1.795 |
+| leitura com varredura | 28 | 1.844 |
 | leitura curta | 10 | 101 |
 
 Tamanho das seções: menor **3** linhas, mediana **26**, p90 **89**, maior
-**243** (`op_esquema`), somando **3.124** linhas de código sob a trava.
+**243** (`op_esquema`), somando **3.130** linhas de código sob a trava.
 **8 de 76** soltam a trava cedo por `drop` explícito; **40 de 76** têm laço
 direto dentro da própria seção.
 
 Cada seção aparece em **uma** classe, a mais grave — por isso a linha
-«escrita durável» diz 20 e o §1.3 abaixo diz que **24** alcançam `fsync`: as
+«escrita durável» diz 19 e o §1.3 abaixo diz que **23** alcançam `fsync`: as
 outras quatro estão na linha «código do dono», que é pior. As classes contam
 seções; as afirmações do §1.3 contam **fatos**, e um fato pode valer para
 seções de classes diferentes.
+
+> **Os números desta tabela mudaram entre 02/09 e 03/09 sem ninguém mexer neles,
+> e é por isso que o gerador existe.** A tabela dizia 20 / 27 / 24, e hoje o
+> `mapa-da-trava.py` diz 19 / 28 / 23. Não foi esta frente: rodado contra a
+> árvore em `5ae9319` — antes de qualquer commit meu — já dava 23. Foram as
+> frentes vizinhas mexendo nas cadeias que o mapa percorre. *Gerador que existe
+> e ninguém roda de novo é número digitado à mão com passo extra.*
 
 ### 1.3 Os três fatos que o mapa achou, e que decidem a matriz
 
@@ -130,6 +143,10 @@ escrita lendo o mapa e não o avaliador. Existe teto, e ele estava no código o
 tempo todo: `PASSOS_MAX = 1_000_000` em `phxsql-sql/src/rotina.rs`, e o
 comentário dele já nomeia **esta** razão exata — *«num gatilho, roda com a
 trava de dados na mão»*.
+
+> **E a correção acima também estava errada — ver §1.4.** «Existe teto» era
+> verdade sobre os PASSOS e falso sobre a TRAVA, e a diferença entre as duas
+> custou a medição de 03/09: **teto de passos não é teto de trabalho.**
 
 Só que teto em **passos** não limita a trava: o que limita é teto em **tempo**,
 e ninguém tinha feito a conversão. Feita agora, com
@@ -273,6 +290,87 @@ Prova real, na mesma tabela com `Memo`:
 ler o *payload* e perguntar ao byte da coluna de sistema, em vez de montar a
 linha inteira — que é o que o código fazia antes de eu mexer, e o que o
 `visao_aceita_payload` já sabia fazer.
+
+### 1.4 O teto que existia não era o teto que se precisava (03/09)
+
+O §1.3(b) fechou dizendo que os 18,3 ms do `PASSOS_MAX` resolviam as cinco
+seções que rodam código do dono, e que **elas deixavam de ser o primeiro alvo**.
+A conclusão estava errada, e o erro é o mesmo de sempre com outra roupa: o
+medidor só media corpos cujo **passo** é barato.
+
+**Teto de PASSOS não é teto de TRABALHO.** O `PASSOS_MAX` limita quantos passos
+um corpo dá; ele não limita o que **um** passo faz. E havia um passo sem fundo:
+
+```sql
+CREATE TRIGGER incha BEFORE INSERT ON t FOR EACH ROW
+  WHILE TRUE DO SET NEW.x = CONCAT(NEW.x, NEW.x); END WHILE
+```
+
+`CONCAT(s, s)` dobra o texto a cada volta. Trinta passos de um orçamento de um
+milhão chegam a um gigabyte — e o corpo **não morre no teto**: morre no
+alocador. Em Rust, alocação que falha **aborta o processo**. Medido, com o
+processo limitado a 2 GiB por `ulimit -v 2000000`:
+
+```text
+memory allocation of 536870912 bytes failed
+```
+
+**10,2 s com a trava global de dados na mão, e então o servidor inteiro cai** —
+todas as conexões, por um gatilho que o dono do banco escreveu. Não é uma
+conexão lenta; é uma negação de serviço com a assinatura de quem modelou o
+banco.
+
+E o segundo furo, que sobrevive a qualquer teto de tamanho: um corpo cujo passo
+é **caro mas limitado**. `WHILE TRUE DO SET s = CONCAT('x', s)` sobre um texto
+de 512 KiB cresce um byte por volta — nenhum teto de tamanho morde — e gasta o
+orçamento inteiro de passos copiando meio megabyte por vez.
+
+#### Os três tetos, e o que cada um pega
+
+| teto | limita | o pior caso, medido |
+|---|---|---:|
+| `PASSOS_MAX` (já existia) | quantos passos o corpo dá | 27,2 ms de aritmética |
+| **`TEXTO_MAX`** (03/09), 64 MiB | o que **um** passo aloca | 905,9 ms, com 0,0163% do orçamento de passos |
+| **prazo de parede** (03/09), 500 ms | o que a **trava** segura | 28.590 ms → **500,2 ms**, 57× menos |
+
+O corpo honesto custa **1 µs** e não vê nenhum dos três.
+
+**Por que 500 ms, e não um número de gosto.** Sai de dentro desta casa:
+`transacao_lock_timeout_ms` já vale 500, e é a resposta que este servidor já deu
+para «quanto uma conexão pode fazer outra esperar». O pior corpo que ainda
+*termina* custa 27,2 ms — 22× de folga, então nenhum corpo que hoje funciona
+quebra.
+
+**O prazo é do CHAMADOR, e isso é decisão.** O mesmo avaliador roda o `BEFORE`
+(com a trava global) e o corpo de um **procedimento**, que roda sem trava
+nenhuma e pode legitimamente varar a tarde inserindo. Um prazo fixo dentro do
+avaliador serviria a um e quebraria o outro. Então quem toma a trava paga o
+prazo, e quem não toma **não paga nem a leitura do relógio** — o portão vem
+antes do trabalho, e é um teste de `Option` por passo.
+
+#### A prova real, nos dois sentidos — e o teste que passava por engano
+
+| defeito reposto | o que acontece |
+|---|---|
+| `TEXTO_MAX` sem efeito | o teste **não falha: ABORTA** o `cargo test`, em 13,9 s |
+| `.com_prazo(...)` removido do `rodar_gatilhos_antes` | o mesmo corpo roda **79,8 s** em vez de 50 ms |
+
+E o achado que justifica a catraca estática: **com o prazo removido, o teste de
+ponta a ponta continua passando**, em 0,97 s. Ele promete «não derruba o
+servidor», e isso continua verdade — o teto de texto segura *aquele* corpo. Quem
+perde a garantia é o corpo de passo caro, que nenhum teto de tamanho vê. Por
+isso a guarda é a catraca `o_before_roda_com_prazo_e_o_after_nao`, que lê o
+próprio fonte pelo `include_str!`: ela é a **única** que acusa.
+
+O irmão dela fica **manual, e isso é decisão escrita**: repor o `TEXTO_MAX` faz
+o binário alocar até o alocador falhar — 8 a 16 GiB nesta máquina, com risco de
+o kernel matar o processo de outra frente. A receita é `ulimit -v 2000000`, e
+está no comentário do teste. *Guarda que derruba o trabalho do vizinho é a mesma
+falha do zelador que apaga o `target` de quem está compilando.*
+
+```bash
+cargo run --release --example custo-do-gatilho -p phxsql-sql
+```
 
 **(c) Nenhuma seção atravessa a rede.** O conserto registrado na §4.13 do
 `DESEMPENHO.md` **continua valendo**, e o mapa o confirma por outro caminho,
@@ -526,9 +624,11 @@ Três arquivos em `bancada/concorrencia/`:
 | `mapa-da-trava.py` | **estático.** Quantas seções críticas, e o que cada uma segura. Não depende de máquina parada |
 | `a-trava-serializa.py` | «a trava custa?» — vazão com N clientes, com curva de controle |
 | `escolher-o-desenho.py` | **«o que pôr no lugar?»** — o teto de cada um dos três |
+| `quanto-a-trava-fica-presa.py` | **«quanto a trava fica PRESA?»** — o µs de posse por operação, lido por dentro (telemetria), com o par `por_lote` × `por_operacao` isolando o `fsync` |
 | `quieta.py` | o vigia que decide se algum número da rodada vale |
 
 ```bash
+python3 bancada/concorrencia/quanto-a-trava-fica-presa.py   # quanto ela fica presa
 python3 bancada/concorrencia/mapa-da-trava.py --autoteste   # as guardas dele
 python3 bancada/concorrencia/mapa-da-trava.py               # o mapa
 python3 bancada/concorrencia/a-trava-serializa.py           # a trava custa?
@@ -616,10 +716,14 @@ confere o caminho em vez de acreditar no rótulo.
 
 **Trocar a ordem, e partir a SP000011 em duas.**
 
-1. **Encurtar as seções críticas** (a quarta linha da matriz, §3). Não é
-   sprint nova, não muda formato, não escolhe desenho, e melhora os três. Começa
-   pelas cinco que rodam gatilho `BEFORE` sob a trava — o `AFTER` já provou que
-   dá para sair antes.
+1. ~~**Encurtar as seções críticas**~~ — **feito o pedaço que dava para fazer,
+   em 03/09**, e ele mudou de forma no caminho. As cinco que rodam gatilho
+   `BEFORE` sob a trava não precisavam ser *encurtadas*: precisavam de **teto**,
+   porque o comprimento delas não é escrito aqui — é escrito por quem modelou o
+   banco. Hoje há dois (§1.4), e o pior caso caiu de «até o processo abortar»
+   para **500 ms**. As 68 que a seguram até o fim do bloco continuam como
+   estavam, e a §7.1 diz por quê: o pedaço grande da trava, no padrão, não está
+   no `fsync` — está na leitura, que segura 23× mais.
 2. **A parte da SP000011 que a medição já justifica**: separar leitor de leitor.
    A premissa está medida e é **de leitor com leitor** (§5.1), que é o par que a
    SP000016 não toca. E escrever antes o invariante do §2, porque a refação
@@ -639,6 +743,101 @@ responde não é a parte que foi medida.
 
 ---
 
+## 7.1 Quanto a trava fica PRESA, medido (03/09)
+
+O §8 listava como **não medido** o custo do `fsync` sob a trava, em
+milissegundos. Está medido, e o número está inteiro na §14.1 do
+`DESEMPENHO.md`. O que interessa aqui é o que ele decide:
+
+| durabilidade | trava presa GRAVANDO | trava presa LENDO (`varrer` 50) |
+|---|---:|---:|
+| `por_lote` (padrão) | **121–137 µs** | 3.122–3.187 µs |
+| `por_operacao` | **1.404–1.492 µs** | 2.955–3.207 µs |
+
+**O `fsync` sob a trava custa 1.267–1.371 µs por gravação — 10,3× a 12,3×** o
+tempo que uma gravação segura a trava sem ele. Duas baterias limpas, com o
+`quieta.Vigia` aprovando as duas.
+
+**O controle é a linha do meio**, e ele é o que separa isto de palpite: a
+leitura toma a **mesma** trava e não sincroniza nada. Entre as duas baterias ela
+andou **1,01×** e **0,95×** — ficou parada, como tinha de ficar.
+
+**E o que isso faz com a ordem de trabalho:** no padrão desta casa, **uma
+leitura segura a trava 23× mais tempo que uma gravação**. A pista da §14 do
+`DESEMPENHO.md` — *«a leitura custa 20× mais por operação, o que favorece o
+`RwLock`, mas favorecer não é medir»* — deixa de ser inferência e vira número.
+
+Então «atacar as 23 seções que alcançam `fsync`» **não é** a prioridade no
+padrão: elas custam 137 µs de trava, contra 3.122 µs de um `varrer(50)`. Com
+`durabilidade: por_operacao` a conta muda e as duas ficam da mesma ordem
+(1.404 contra 2.955 µs) — e é aí que encurtar o caminho do `fsync` compra
+alguma coisa. Isto conta **por operação**, e não por carga: quem decide o total
+é a frequência de cada uma, e isso o medidor não sabe.
+
+```bash
+python3 bancada/concorrencia/quanto-a-trava-fica-presa.py
+```
+
+---
+
+## 7.2 A SP000012 no mesmo território: o que existe, contado
+
+A SP000012 é «deadlock, cancelamento e governança de recursos», e o roteiro a
+dava como parcial com uma frase: *«há prazo e recusa de reentrância»*. Frase não
+é número. O que existe, contado:
+
+### Abraço mortal — três guardas, e as três com o defeito reposto
+
+| guarda | o que impede | onde |
+|---|---|---|
+| `COM_A_TRAVA` | a mesma thread pedir a trava que já tem — **pendurava** antes, sem log e sem pilha | `travar_dados`, teste `a_trava_pedida_duas_vezes_pela_mesma_thread_vira_erro` |
+| nenhuma leitura de rede sob a trava | o abraço mortal do bidirecional | `DESEMPENHO.md` §4.13, e o mapa confirma por outro caminho: **0 de 76** seções na classe `rede-ou-espera` |
+| `transacao_lock_timeout_ms` (500 ms) | a espera por linha travada por outra transação virar thread pendurada | `config.rs` |
+
+### Cancelamento — **4 de 76**, e este é o número que faltava
+
+O `KILL` e o `STATEMENT TIMEOUT` desta casa só mordem onde alguém chamou
+`Atividade::siga`, entre duas unidades de trabalho seguras. O mapa passou a
+contá-los, e o número é **4 de 76**: a leitura da página, a conversão da carga,
+a soma da tabela e a exportação.
+
+**Nas outras 72, mandar parar não para.** Isso não é, por si, defeito — uma
+seção de 3 linhas não precisa de ponto de cancelamento, e pôr um no meio de uma
+gravação deixaria a tabela e o índice discordando (é o que o campo
+`transacao_statement_ms` já documenta). O que era defeito é o caso em que a
+seção pode durar **o que quem escreveu o gatilho quiser** — e esse é o §1.4, que
+esta rodada fechou pelo outro lado: sem ponto de cancelamento, mas com teto.
+
+**A consequência honesta, e ela fica escrita:** um `KILL` sobre uma conexão
+parada num corpo de gatilho não a interrompe. Ele passa a ser atendido em **no
+máximo 500 ms**, que é o prazo — e não em «quando o gatilho quiser», que era
+antes. *Cancelamento que não cancela é pior que cancelamento ausente*; o que se
+entrega aqui não é o cancelamento, é o **teto** que o torna dispensável nesse
+caminho.
+
+### Governança de recursos — os tetos que existem, e o que faltava
+
+`conexoes_max` (64), `usuarios_max`, `memoria_max_mb`, `transacao_max_linhas`
+(100.000), `transacao_prazo_min` (5), `carga_prazo_min` (30), `cpu_percentual`,
+`threads`, `diario_volume_mib` — todos lidos, todos em `config.rs`.
+
+O buraco era o que **nenhum deles cobria**: a memória que o código do dono do
+banco aloca. Um corpo de gatilho podia alocar até o alocador falhar e **abortar
+o processo**, e nenhum teto de conexão, de linha ou de transação chegava perto
+disso. É o `TEXTO_MAX` do §1.4.
+
+### O que a SP000012 NÃO fecha, e por quê
+
+* **`Atividade::siga` não alcança o interpretador.** Levá-lo até lá exigiria o
+  `phxsql-sql` conhecer a telemetria do servidor — uma dependência de camada que
+  hoje não existe e que o `MotorNulo` foi escrito para não ter. Com o teto de
+  500 ms, o ganho seria de 500 ms para «imediato», e o preço é a camada. Fica
+  **nomeado e não feito**, que é diferente de esquecido.
+* **Ordem canônica de travas entre tabelas**: existe escrita no `TRANSACOES.md`
+  §11.3, e não foi reconferida nesta rodada.
+
+---
+
 ## 8. O que continua por medir, e nomeado
 
 * **O teto do MVCC**, que é o p99 do leitor com um escritor ao lado. O arnês
@@ -647,8 +846,9 @@ responde não é a parte que foi medida.
 * **O perfil de carga real.** A §3.1 mostra que a resposta muda com a razão
   entre o tempo de leitura e o de escrita, e o número de hoje vem de um
   `varrer(50)` contra um `inserir(1)`.
-* **O custo do `fsync` sob a trava, em milissegundos.** O mapa prova que ele
-  acontece ali; quanto ele dura é medição, e não foi feita.
+* ~~**O custo do `fsync` sob a trava, em milissegundos.**~~ **Medido em 03/09**:
+  1.267–1.371 µs por gravação, 10,3× a 12,3× o tempo de trava de uma gravação
+  sem ele. §7.1 aqui, e a bateria inteira na §14.1 do `DESEMPENHO.md`.
 * **Uma catraca para o mapa.** O `mapa-da-trava.py` está pronto para virar
   guarda de QA — «nenhuma seção nova roda código do dono sob a trava», «o
   número de seções que alcançam `fsync` só desce». Não entrou porque exigiria
@@ -671,7 +871,11 @@ porque manda procurar no lugar errado com ar de precisão. Nome se acha com
 
 | número | de onde |
 |---|---|
-| 76 seções, as seis classes, 37/24/5/8/40, os tamanhos | `bancada/concorrencia/mapa-da-trava.py` |
+| 76 seções, as seis classes, 38/23/5/**4**/8/40, os tamanhos | `bancada/concorrencia/mapa-da-trava.py` |
+| 4 de 76 com ponto de cancelamento | idem — marcador `cancelavel`, acrescentado em 03/09 |
+| 27,2 ms / 1 µs / 905,9 ms / 28.590 → 500,2 ms | `cargo run --release --example custo-do-gatilho -p phxsql-sql` |
+| 10,2 s e o aborto do processo | o mesmo, com `ulimit -v 2000000` — medição manual, registrada porque a automática derrubaria a máquina |
+| 121–137 / 1.404–1.492 / 3.122–3.187 µs de trava | `bancada/concorrencia/quanto-a-trava-fica-presa.py`, duas baterias aprovadas pelo `quieta.Vigia` |
 | 0 tomadas fora do ponto único | `grep -c 'self\.dados\.lock()' servidor.rs`, e a catraca `so_um_lugar_toma_a_trava` |
 | 24 bytes do cabeçalho do slot | `SLOT_CAB` e o layout do módulo, em `crates/phxsql-store/src/reg.rs` |
 | `Instancia` com um campo | `pub struct Instancia`, em `crates/phxsql-store/src/catalogo.rs` |

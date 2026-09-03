@@ -107,10 +107,15 @@ como sprint **nova**, a partir da SP000056.
 
    A ordem recomendada passa a ser, e as duas primeiras **não** precisam de
    máquina parada:
-   1. **encurtar as seções críticas** — 76 delas, das quais 24 alcançam
-      `fsync` com a trava na mão e **5 rodam código do dono** (gatilho
-      `BEFORE`) sem teto de duração. Não muda formato e melhora os três
-      desenhos;
+   1. ~~**encurtar as seções críticas**~~ — **o pedaço que dava para fazer está
+      feito (03/09)**, e ele mudou de forma: as 5 que rodam código do dono não
+      precisavam ser encurtadas, precisavam de **teto**, porque o comprimento
+      delas é escrito por quem modela o banco e não aqui. O «teto de passos»
+      que se citava não era teto da trava — medido, um gatilho `WHILE TRUE DO
+      SET s = CONCAT(s, s)` **abortava o processo** depois de 10,2 s com a
+      trava global na mão. Hoje há dois tetos e o pior caso é **500 ms**.
+      O mapa de hoje diz **76 seções, 23** com `fsync` (era 24, e não fui eu:
+      o gerador não vinha sendo rodado);
    2. escrever o invariante que o `RwLock` violaria, **antes** de qualquer
       refação;
    3. **SP000016** com a decisão de formato **cedo** (`.reg` v6 + área de
@@ -222,8 +227,8 @@ nenhum é gratuito.
 
 | # | Sprint | Estado medido |
 |---|---|---|
-| SP000011 | Remoção do `Mutex<Instancia>` global | **parcial, e a premissa agora está MEDIDA** — a trava virou **ponto único** (catraca `so_um_lugar_toma_a_trava`), mas continua **global**, e isso custa: `bancada/concorrencia/a-trava-serializa.py`, com **controle**. Com 2 clientes e metade da máquina ociosa, o mesmo caminho entrega **1,99×** no `ping` (que não toma a trava) e **1,51–1,59×** no `varrer` — a trava come ~20% do paralelismo disponível na leitura e ~25% na escrita já com dois clientes. O controle é o que separa este resultado de um palpite: esta casa já culpou um mutex sem medir e errou por 262.000×. O que a medição **não** diz é qual desenho substitui a trava — trava por tabela, `RwLock` e MVCC (SP000016) são três respostas, e escolher entre elas é outra medição. `docs/DESEMPENHO.md` §14 |
-| SP000012 | Deadlock, cancelamento e governança de recursos | **parcial** — há prazo e recusa de reentrância |
+| SP000011 | Remoção do `Mutex<Instancia>` global | **parcial, e a premissa agora está MEDIDA** — a trava virou **ponto único** (catraca `so_um_lugar_toma_a_trava`), mas continua **global**, e isso custa: `bancada/concorrencia/a-trava-serializa.py`, com **controle**. Com 2 clientes e metade da máquina ociosa, o mesmo caminho entrega **1,99×** no `ping` (que não toma a trava) e **1,51–1,59×** no `varrer` — a trava come ~20% do paralelismo disponível na leitura e ~25% na escrita já com dois clientes. O controle é o que separa este resultado de um palpite: esta casa já culpou um mutex sem medir e errou por 262.000×. O que a medição **não** diz é qual desenho substitui a trava — trava por tabela, `RwLock` e MVCC (SP000016) são três respostas, e escolher entre elas é outra medição. `docs/DESEMPENHO.md` §14.<br><br>**Etapa 1 fechada em 03/09**, e ela mudou de forma: as 5 seções que rodam código do dono ganharam **teto** em vez de serem encurtadas — o comprimento delas não é escrito aqui. Medido, o «teto de passos» que se citava não era teto da trava: um `BEFORE` com `CONCAT(s, s)` **abortava o processo** após 10,2 s com a trava global na mão, e o pior caso hoje é **500 ms** (57× menos).<br><br>E o `fsync` sob a trava, que a §8 do `CONCORRENCIA.md` listava como não medido, está medido: **1.267–1.371 µs por gravação, 10,3×–12,3×**. Com ele veio o número que reordena o resto — **uma leitura segura a trava 23× mais tempo que uma gravação** no padrão `por_lote` (3.122 contra 137 µs). O «favorece o `RwLock`» da §14 deixou de ser inferência. `docs/CONCORRENCIA.md` §1.4 e §7.1 |
+| SP000012 | Deadlock, cancelamento e governança de recursos | **parcial, e agora CONTADO** (03/09). Abraço mortal: três guardas, e o mapa confirma **0 de 76** seções na classe `rede-ou-espera`. Cancelamento: **4 de 76** seções têm ponto de cancelamento (`Atividade::siga`) — nas outras 72, mandar parar não para. Governança: os nove tetos de `Recursos` existem e são lidos, e o buraco que nenhum cobria era a **memória que o código do dono aloca** — um gatilho `BEFORE` podia alocar até o alocador falhar e ABORTAR o processo. Fechado com `TEXTO_MAX` + prazo de parede. Fica **nomeado e não feito**: levar o `Atividade::siga` até o interpretador, que exigiria o `phxsql-sql` conhecer a telemetria do servidor. `docs/CONCORRENCIA.md` §7.2 |
 | SP000013 | RID lógico estável e formato físico v2 | **não iniciado, e REBAIXADO a melhoria** — deixou de ser pré-requisito do MVCC. A premissa foi medida contra um MySQL(R) 8.0.46 de verdade (`bancada/mvcc/premissa-innodb.sh`): o que ancora uma cadeia de versões é a **identidade estável da linha** mais um ponteiro para a versão anterior, e não um identificador novo. O `rowid` daqui já é isso, por construção — o `.reg` nunca reaproveita slot. *A pétrea que parecia atrapalhar é o que torna o MVCC mais fácil aqui* |
 | SP000014 | Reuso de espaço, VACUUM e compactação | **RECUSADO POR DECISÃO DO DONO**, e não «hoje» — a pétrea vence: «a ordem de digitação é sagrada, o `.reg` nunca reaproveita slot excluído». O que ela compra é o que se perderia: `rowid` como identidade estável para sempre, que é o que a replicação usa para identificar linha e o que o `.trash`/`.reason` apontam. Espaço de linha excluída volta só em reconstrução explícita. **Não é pendência: é escopo fora**, e a 0.21 fecha sem ela |
 | SP000015 | Buffer pool, checkpoints e group commit | **parcial** — cache de páginas (2,40×) e group commit (2,63×) medidos |
