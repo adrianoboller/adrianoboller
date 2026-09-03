@@ -152,7 +152,7 @@ pub fn conferir_chave(
 ) -> Result<Vec<Violacao>> {
     let mut saida = Vec::new();
     let nome_filha = filha.nome().to_string();
-    let mut violacao = |rowid, valor, falha| Violacao {
+    let violacao = |rowid, valor, falha| Violacao {
         tabela: nome_filha.clone(),
         chave: fk.nome.clone(),
         rowid,
