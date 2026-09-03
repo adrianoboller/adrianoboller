@@ -1391,15 +1391,32 @@ impl Table {
                 // Erro aqui NAO e "nao achou" -- nao achar e `Ok(vazio)`. E a
                 // guarda do indice da filha recusando responder, e ela recusa
                 // quando a filha esta aberta em outro lugar com escrita
-                // pendente. Mesmo limite de VISIBILIDADE do `conferir_fks`, e
-                // o recado tem de dizer isso: o erro cru manda reconstruir um
-                // indice que esta sao.
+                // pendente. Mesmo limite de VISIBILIDADE do `conferir_fks`.
+                //
+                // **E este comentario tambem dizia «o erro cru manda
+                // reconstruir um indice que esta sao» com o `({e})` logo
+                // abaixo** -- o mesmo par que o `conferir_fks` pagou no pedido
+                // 176, no caminho IRMAO. Envolver nao e substituir. O conserto
+                // e o mesmo: a causa continua nomeada, montada do DADO e nao
+                // recortada do texto do erro, e sai so o imperativo.
+                let filha_com_indice_pendente = filha
+                    .indice_precisa_reconstruir()
+                    .then(|| caminho(filha.diretorio(), filha.nome(), EXT_NDX));
                 let rowids = filha.buscar(&indice, &antiga).map_err(|e| {
+                    if let Some(ndx) = filha_com_indice_pendente {
+                        return PhxError::Integridade(format!(
+                            "{eu}: nao deu para procurar agora as filhas em {irma} pela \
+                             chave {:?} -- a guarda de visibilidade de {} recusou responder, \
+                             e o arquivo esta SAO: nao repare nada. A procura le o que ja \
+                             foi gravado; filha escrita nesta mesma transacao ainda nao \
+                             esta visivel -- confirme-a antes de alterar a mae",
+                            fk.nome,
+                            ndx.display()
+                        ));
+                    }
                     PhxError::Integridade(format!(
                         "{eu}: nao deu para procurar agora as filhas em {irma} pela chave \
-                         {:?} ({e}). A procura le o que ja foi gravado; filha escrita nesta \
-                         mesma transacao ainda nao esta visivel -- confirme-a antes de \
-                         alterar a mae",
+                         {:?} ({e})",
                         fk.nome
                     ))
                 })?;

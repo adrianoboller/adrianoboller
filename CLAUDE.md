@@ -233,6 +233,28 @@ um `strace` de outro dia. Eram 10,86, e é por isso que a conta do CRC nunca
 fechava naquele documento. **Número citado é número que não se mede** — hoje o
 medidor conta os toques por dentro.
 
+**Conserto entra no caminho que o motivou, e o caminho IRMÃO fica.** Pago
+**três vezes em 03/09/2026**, e as três com prova real: `conferir_a_arvore`
+entrou no `atualizar` e não no `recascatear` (pedido 173, meia cascata na
+recuperação); o `reindexar` do arranque alcança as tabelas **nomeadas na
+marca** e não a filha da cascata, que nunca vira `Escrita` (pedido 172); e o
+recado que não deve mandar reparar índice são entrou no `conferir_fks` e não no
+`planejar_ao_alterar` (pedido 176, os dois lados da mesma chave).
+
+Irmão é **quem chama as mesmas funções na mesma ordem**, não quem tem nome
+parecido. E o agravante das três: em duas delas o **comentário acima da linha
+já dizia que o erro cru era ruim**, com o `({e})` logo abaixo mandando o texto
+cru junto. **Envolver não é substituir**, e comentário que se declara resolvido
+é o motivo de ninguém olhar de novo.
+
+E o conferidor genérico para isso está **recusado com número**: são **8**
+interpolações de erro cru em mensagem no repositório inteiro, e só **2** eram
+defeito — as duas consertadas. Um casador reprovaria as outras seis, que são
+legítimas porque o erro interno ali **informa** em vez de dar uma ordem. O que
+distingue o defeito é o erro interno carregar um **imperativo** que a
+explicação de fora desmente, e isso não se acha por padrão de texto: acha-se
+procurando o irmão.
+
 **Portão de permissão é UM só — e o campo que ele lê é o furo.** O direito por
 tabela entrou no despachar, que confere o campo `"tabela"` do pedido. Duas
 operações não têm esse campo: `juntar` guarda as tabelas em `a.tabela` e

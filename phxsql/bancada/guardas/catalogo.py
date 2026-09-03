@@ -2850,4 +2850,33 @@ pub fn limpar() {
             "sem_conferir_a_mae_aberta_nao_muda_nada",
         ],
     },
+    {
+        "id": "procura-das-filhas-manda-reparar-arquivo-sao",
+        "titulo": "a procura pelas filhas manda reparar o índice — de um arquivo intacto",
+        "porque": (
+            "o IRMAO do `recado-manda-reparar-arquivo-sao`: aquele e o lado "
+            "«existe esta mae?», este e o lado «quem aponta para esta mae?». "
+            "Os dois recusavam com o mesmo erro cru embrulhado, sob comentarios "
+            "que os dois afirmavam que o erro cru era ruim. Terceira vez no "
+            "mesmo dia em que um conserto entra num caminho e o irmao fica."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """                let filha_com_indice_pendente = filha
+                    .indice_precisa_reconstruir()
+                    .then(|| caminho(filha.diretorio(), filha.nome(), EXT_NDX));""",
+        "troca": """                // DEFEITO REPOSTO: sem o portao, o recado volta a mandar
+                // reparar um indice intacto.
+                let filha_com_indice_pendente: Option<std::path::PathBuf> = None;""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "cascata-ao-alterar"],
+        "caem": [
+            "a_procura_das_filhas_nao_manda_reparar_indice_sao",
+        ],
+        # Controles: a cascata normal e a que nao paga nada tem de seguir --
+        # senao a troca quebrou o arquivo em vez de provar a guarda.
+        "seguem": [
+            "a_filha_acompanha_a_chave_que_a_mae_mudou",
+            "a_cascata_alcanca_a_neta",
+        ],
+    },
 ]

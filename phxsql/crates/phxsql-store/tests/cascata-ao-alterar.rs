@@ -688,3 +688,56 @@ fn mudar_coluna_que_nao_e_a_referenciada_continua_passando() {
     let mut t = Table::abrir(&d, "funcionarios").unwrap();
     assert_eq!(t.ler(sub).unwrap().unwrap()[1], Value::Null);
 }
+
+/// A procura pelas filhas nao pode mandar reparar um `.ndx` SAO.
+///
+/// # O irmao do pedido 176, e o padrao que ja apareceu tres vezes num dia
+///
+/// O 176 consertou o recado do `conferir_fks` -- o lado que pergunta «existe
+/// esta mae?». Este e o lado oposto: `planejar_ao_alterar` pergunta «quem
+/// aponta para esta mae?», e recusava com o MESMO texto cru embrulhado, sob um
+/// comentario que tambem afirmava que o erro cru era ruim. Envolver nao e
+/// substituir, e o comentario que se declara resolvido e o motivo de ninguem
+/// olhar de novo -- duas vezes, no mesmo arquivo.
+///
+/// # Prova real
+///
+/// Devolver o `({e})` a este recado faz o teste cair em `nao pode mandar
+/// reparar`: o texto cru volta, mandando reconstruir um indice intacto.
+#[test]
+fn a_procura_das_filhas_nao_manda_reparar_indice_sao() {
+    let d = dir("filha-invisivel");
+    let mut m = mae(&d);
+    let r = m
+        .inserir(&[Value::Int(1), Value::Str("Ana".into())])
+        .unwrap();
+    m.sincronizar().unwrap();
+
+    // NAO se insere a mae de destino aqui: `id` e unico, e uma linha com 7 ja
+    // gravada faria o `atualizar` cair em «chave duplicada» ANTES de planejar
+    // a cascata -- que foi o primeiro jeito que eu escrevi este teste, e ele
+    // falhava pelo motivo errado. A recusa que se quer vem do PLANEJAMENTO.
+    //
+    // A filha fica com escrita PENDENTE: e o segundo descritor que
+    // `planejar_ao_alterar` abre que ve a marca de sujo.
+    let mut f = filha_com(&d, "pedidos", AcaoRi::Cascata, true, true);
+    f.inserir(&[Value::Int(10), Value::Int(1)]).unwrap();
+
+    let erro = m
+        .atualizar(r, &[Value::Int(7), Value::Str("Ana".into())])
+        .expect_err("a filha ainda nao esta visivel: tinha de recusar");
+    let texto = erro.to_string();
+
+    assert!(
+        !texto.contains("reconstrua") && !texto.contains("reparar indice"),
+        "nao pode mandar reparar: o arquivo esta sao, so nao esta sincronizado -- {texto}"
+    );
+    assert!(
+        texto.contains("confirme-a antes de alterar a mae"),
+        "tirou o texto cru mas perdeu a explicacao -- {texto}"
+    );
+    assert!(
+        texto.contains(".ndx"),
+        "perdeu a causa: o recado tem de dizer qual arquivo e qual guarda -- {texto}"
+    );
+}
