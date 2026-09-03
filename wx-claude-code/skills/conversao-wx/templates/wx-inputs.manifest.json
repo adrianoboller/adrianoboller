@@ -1,0 +1,122 @@
+{
+  "$schema": "./schemas/wx-inputs.schema.json",
+  "schema_version": "1.0",
+  "evidence_root": "./inputs",
+  "project": {
+    "name": "",
+    "products": [],
+    "wx_version": "",
+    "wx_update": "",
+    "source_revision": "",
+    "source_language": "pt-BR",
+    "wlanguage_help_version": "",
+    "wlanguage_help_language": "en-US",
+    "owner": "",
+    "human_approver": ""
+  },
+  "artifacts": {
+    "native_project_sources": {
+      "status": "missing",
+      "notes": "",
+      "items": []
+    },
+    "wlanguage_help_json": {
+      "status": "bundled",
+      "notes": "Corpus WLanguage Help empacotado com identidade verificável e defeitos conhecidos; use-o como evidência auxiliar, nunca como corpus completo.",
+      "corpus_id": "wlanguage-help-12k-2026-08",
+      "sha256": "a95ed5536549ecc39fb1163415042d6597c8913e5edbfdb531cba756546a82a2",
+      "expected_json_count": 12037,
+      "expected_page_count": 12036,
+      "valid_page_count": 12035,
+      "language": "en-US",
+      "version_coverage": ["24", "25", "26", "27", "28", "2024", "2025", "2026"],
+      "product_scope": ["WINDEV", "WEBDEV", "WINDEV Mobile"],
+      "known_invalid_members": [
+        "Help_WL_12k_Json/01-04-01_00655__emailgetall_function__1000018727.json"
+      ],
+      "known_gaps": [
+        {
+          "kind": "index_count_mismatch",
+          "index_page_count": 12037,
+          "physical_page_count": 12036
+        },
+        {
+          "kind": "missing_sequence",
+          "group": "02-03-01",
+          "sequence": "00223"
+        },
+        {
+          "kind": "progress_inconsistent",
+          "total_do_mapa": 12037,
+          "processadas": 7077,
+          "falhas": 1,
+          "restantes": 0,
+          "ultima_posicao": 12037
+        }
+      ],
+      "sanitization": {
+        "source_sha256": "a6b42f59796ccf51298712aff00c043a9be2c404ce761a99720ea31b91ca6b93",
+        "private_key_members_redacted": 2,
+        "private_key_blocks_redacted": 15,
+        "private_key_pem_blocks_remaining": 0
+      },
+      "archive": null,
+      "items": []
+    },
+    "code_documents": {
+      "status": "missing",
+      "notes": "Para cada PDF, informe page_count, searchable e content_scope.",
+      "items": []
+    },
+    "ui_documents": {
+      "status": "missing",
+      "notes": "Para cada PDF, informe page_count, searchable e content_scope.",
+      "items": []
+    },
+    "query_documents": {
+      "status": "missing",
+      "notes": "Para cada PDF, informe page_count, searchable e content_scope.",
+      "items": []
+    },
+    "business_rule_documents": {
+      "status": "missing",
+      "notes": "Para PDFs, informe page_count, searchable e content_scope.",
+      "items": []
+    },
+    "sql_scripts": {
+      "status": "missing",
+      "notes": "Cada item deve informar dialect, database_version, encoding, collation, charset e timezone.",
+      "items": []
+    },
+    "screenshots": {
+      "status": "missing",
+      "notes": "Cada item deve identificar screen_or_report, state e platform; dimensões são verificadas fisicamente.",
+      "items": []
+    },
+    "videos_and_runtime_baselines": {
+      "status": "missing",
+      "notes": "",
+      "items": []
+    },
+    "api_and_integration_docs": {
+      "status": "missing",
+      "notes": "",
+      "items": []
+    },
+    "auxiliary_sources": {
+      "status": "missing",
+      "notes": "",
+      "items": []
+    },
+    "sample_data_and_expected_results": {
+      "status": "missing",
+      "notes": "Somente dados sintéticos ou anonimizados.",
+      "items": []
+    },
+    "external_links": {
+      "status": "missing",
+      "notes": "",
+      "items": []
+    }
+  }
+}

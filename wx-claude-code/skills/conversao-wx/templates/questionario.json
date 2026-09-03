@@ -1,0 +1,94 @@
+{
+  "schema_version": "1.0",
+  "respondido_em": "",
+  "projeto": {
+    "nome": "",
+    "produtos": [],
+    "wx_versao": "",
+    "wx_update": "",
+    "idioma": "pt-BR",
+    "raiz_de_evidencias": "./inputs",
+    "modo": "inventario",
+    "aprovador": ""
+  },
+  "A_sql": {
+    "status": "missing",
+    "arquivos": [],
+    "dialeto": "",
+    "versao_do_banco": "",
+    "encoding": "utf-8",
+    "collation": "",
+    "observacao": "",
+    "charset": "utf8mb4",
+    "timezone": "America/Sao_Paulo"
+  },
+  "B_pdf_codigos": {
+    "status": "missing",
+    "arquivos": [],
+    "pesquisavel": null,
+    "observacao": ""
+  },
+  "C_pdf_interfaces": {
+    "status": "missing",
+    "arquivos": [],
+    "pesquisavel": null,
+    "observacao": ""
+  },
+  "D_pdf_queries": {
+    "status": "missing",
+    "arquivos": [],
+    "pesquisavel": null,
+    "observacao": ""
+  },
+  "E_pdf_completo": {
+    "status": "missing",
+    "arquivos": [],
+    "pesquisavel": null,
+    "observacao": ""
+  },
+  "F_estilo_impeccable": {
+    "ativar": false,
+    "preservar_ou_redesenhar": "preservar",
+    "tema": "ambos",
+    "paleta": {
+      "principal": "",
+      "secundaria": "",
+      "fundo": "",
+      "texto": "",
+      "acao": "",
+      "erro": "",
+      "aviso": "",
+      "sucesso": ""
+    },
+    "tipografia": "",
+    "densidade": "compacta",
+    "marca": "",
+    "observacao": ""
+  },
+  "G_help_json": {
+    "usar_corpus_do_plugin": true,
+    "override_da_versao": {
+      "status": "not_applicable",
+      "arquivos": [],
+      "versao": ""
+    },
+    "versao_do_help": "2026"
+  },
+  "H_backend": {
+    "linguagem": "",
+    "framework": "",
+    "banco": "",
+    "versoes_minimas": {},
+    "implantacao": ""
+  },
+  "I_frontend": {
+    "linguagem": "",
+    "framework": "",
+    "plataformas": [],
+    "navegadores_e_dispositivos": []
+  },
+  "J_economia_de_tokens": {
+    "ativar": false,
+    "instalar_estilo_no_claude_md": true
+  }
+}

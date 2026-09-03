@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wxsolucoes.local/schemas/conversion-config.schema.json",
+  "title": "WX conversion configuration",
+  "type": "object",
+  "required": ["schema_version", "mode", "evidence_class", "source_runtime", "target", "fidelity", "scope", "scale", "acceptance", "governance"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "mode": { "enum": ["inventory", "plan", "pilot", "complete"] },
+    "evidence_class": { "enum": ["auto", "native", "documentary", "forensic"] },
+    "source_execution_available": {
+      "type": "boolean",
+      "deprecated": true,
+      "description": "Compatibilidade; source_runtime.available é a fonte normativa."
+    },
+    "source_runtime": {
+      "type": "object",
+      "required": ["available", "authorized", "build_id", "configuration", "operating_system", "architecture", "wx_runtime", "locale", "timezone", "test_environment_ref", "credential_reference", "reset_procedure", "feature_flags"],
+      "properties": {
+        "available": { "type": "boolean" },
+        "authorized": { "type": "boolean" },
+        "build_id": { "type": "string" },
+        "configuration": { "type": "string" },
+        "operating_system": { "type": "string" },
+        "architecture": { "type": "string" },
+        "wx_runtime": { "type": "string" },
+        "locale": { "type": "string" },
+        "timezone": { "type": "string" },
+        "test_environment_ref": { "type": "string" },
+        "credential_reference": { "type": "string" },
+        "reset_procedure": { "type": "string" },
+        "feature_flags": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "target": {
+      "type": "object",
+      "required": ["language", "frameworks", "database", "platforms", "architecture", "deployment"],
+      "properties": {
+        "language": { "type": "string" },
+        "frameworks": { "type": "array", "items": { "type": "string" } },
+        "database": { "type": "string" },
+        "platforms": { "type": "array", "items": { "type": "string" } },
+        "architecture": { "type": "string" },
+        "deployment": { "type": "string" },
+        "minimum_versions": { "type": "object" }
+      },
+      "additionalProperties": true
+    },
+    "fidelity": {
+      "type": "object",
+      "required": ["business_behavior", "data_behavior", "ui", "allowed_modernizations"],
+      "properties": {
+        "business_behavior": { "enum": ["identical", "approved-change"] },
+        "data_behavior": { "enum": ["identical", "approved-change"] },
+        "ui": { "enum": ["pixel", "behavioral", "redesign"] },
+        "allowed_modernizations": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "non_functional_requirements": { "type": "object" },
+    "scope": {
+      "type": "object",
+      "required": ["priority_modules", "excluded_modules", "pilot_candidate"],
+      "properties": {
+        "priority_modules": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "excluded_modules": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "pilot_candidate": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "scale": {
+      "type": "object",
+      "required": ["applications", "estimated_modules", "estimated_wx_objects", "users_and_roles", "databases", "data_volume", "growth", "tenants", "integrations", "jobs", "reports", "supported_browsers_devices", "sla", "rto", "rpo", "cutover_window"],
+      "properties": {
+        "applications": { "type": "integer", "minimum": 1 },
+        "estimated_modules": { "type": "integer", "minimum": 0 },
+        "estimated_wx_objects": { "type": "integer", "minimum": 0 },
+        "users_and_roles": { "type": "array", "items": { "type": "string" } },
+        "databases": { "type": "array", "items": { "type": "string" } },
+        "data_volume": { "type": "string" },
+        "growth": { "type": "string" },
+        "tenants": { "type": "string" },
+        "integrations": { "type": "array", "items": { "type": "string" } },
+        "jobs": { "type": "array", "items": { "type": "string" } },
+        "reports": { "type": "array", "items": { "type": "string" } },
+        "supported_browsers_devices": { "type": "array", "items": { "type": "string" } },
+        "sla": { "type": "string" },
+        "rto": { "type": "string" },
+        "rpo": { "type": "string" },
+        "cutover_window": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "acceptance": {
+      "type": "object",
+      "required": ["approver", "critical_flows", "dimensions", "data_reconciliation_tolerances", "performance_thresholds", "visual_diff_threshold", "security_severity_limit", "accessibility_standard", "required_platform_matrix", "required_rehearsals"],
+      "properties": {
+        "approver": { "type": "string" },
+        "critical_flows": { "type": "array", "items": { "type": "string" } },
+        "dimensions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "dataset", "environment", "tolerance", "severity", "evidence"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "dataset": { "type": "string", "minLength": 1 },
+              "environment": { "type": "string", "minLength": 1 },
+              "tolerance": { "type": "string", "minLength": 1 },
+              "severity": { "enum": ["critical", "high", "medium", "low"] },
+              "evidence": { "type": "string", "minLength": 1 }
+            },
+            "additionalProperties": false
+          }
+        },
+        "data_reconciliation_tolerances": { "type": "object" },
+        "performance_thresholds": { "type": "object" },
+        "visual_diff_threshold": { "type": "string" },
+        "security_severity_limit": { "type": "string" },
+        "accessibility_standard": { "type": "string" },
+        "required_platform_matrix": { "type": "array", "items": { "type": "string" } },
+        "required_rehearsals": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "governance": {
+      "type": "object",
+      "required": ["missing_artifact_policy", "allow_unrecorded_assumptions", "approved_exceptions", "decision_owner"],
+      "properties": {
+        "missing_artifact_policy": { "enum": ["block", "allow-scoped-analysis"] },
+        "allow_unrecorded_assumptions": { "const": false },
+        "approved_exceptions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["code", "reason", "approver", "expires_at", "compensating_controls"],
+            "properties": {
+              "code": { "type": "string" },
+              "reason": { "type": "string" },
+              "approver": { "type": "string" },
+              "expires_at": { "type": "string", "format": "date-time" },
+              "compensating_controls": { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+            },
+            "additionalProperties": false
+          }
+        },
+        "decision_owner": { "type": "string" }
+      },
+      "additionalProperties": true
+    }
+  }
+}

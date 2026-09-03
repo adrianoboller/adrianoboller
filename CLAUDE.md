@@ -235,3 +235,23 @@ sobre papel.
 
 Trabalhe em `claude/capacidades-disponiveis-y6auxh`, em
 `adrianoboller/adrianoboller`. Não abra PR sem pedido explícito.
+
+## Plugin WX Claude Code
+
+O plugin de conversão de projetos WINDEV, WEBDEV e WINDEV Mobile vive em
+`wx-claude-code/` (manifesto em `.claude-plugin/plugin.json`; o marketplace na
+raiz do repositório aponta para ele). Leia `wx-claude-code/README.md`.
+
+A ordem é sempre a mesma: `/wx-claude-code:questionario` (letras A–J) antes de
+`/wx-claude-code:converter`. Anexo só é evidência depois de lido; o Help
+WLanguage é semântica técnica, não regra de negócio.
+
+Antes de commitar mudança no plugin:
+
+```bash
+python3 wx-claude-code/skills/conversao-wx/scripts/validate_plugin_bundle.py wx-claude-code --strict
+python3 wx-claude-code/skills/conversao-wx/scripts/query_wlanguage_help.py --verify
+```
+
+A skill `impeccable` é vendorizada de `pbakaus/impeccable` (Apache 2.0): não
+edite o conteúdo dela aqui, atualize da origem.

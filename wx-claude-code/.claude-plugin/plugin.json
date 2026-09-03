@@ -1,0 +1,13 @@
+{
+  "name": "wx-claude-code",
+  "displayName": "WX Claude Code",
+  "description": "Conversao governada de projetos WINDEV, WEBDEV e WINDEV Mobile para outra linguagem: questionario inicial (A-J), intake por gates G0-G7, corpus WLanguage 12k, estilo de telas com Impeccable, 22 agentes e laudo de uso de tokens.",
+  "version": "3.0.0",
+  "author": { "name": "Adriano Boller" },
+  "homepage": "https://github.com/adrianoboller/adrianoboller",
+  "keywords": ["windev", "webdev", "windev-mobile", "wlanguage", "migracao", "conversao", "impeccable", "tokens"],
+  "commands": ["./commands/"],
+  "skills": "./skills/",
+  "agents": ["./agents/"],
+  "hooks": "./hooks/hooks.json"
+}
