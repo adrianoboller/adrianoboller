@@ -2923,36 +2923,27 @@ pub fn limpar() {
             "com_a_mae_no_valor_velho_a_recuperacao_cascateia",
         ],
     },
-    {
-        "id": "portao-de-fk-com-esquema-velho",
-        "titulo": "trocar as chaves deixa o portão apontando para o esquema velho — e o insert entra em pânico",
-        "porque": (
-            "`fks_conferidas` guarda INDICES para dentro de "
-            "`esquema.chaves_estrangeiras()`. O `redeclarar_chaves_estrangeiras` "
-            "trocava `self.esquema` sem refazer a lista, entao uma redeclaracao "
-            "com MENOS chaves deixava indice apontando para fora e o "
-            "`conferir_fks` seguinte estourava em `index out of bounds`. O irmao "
-            "`acrescentar_coluna`, cem linhas abaixo, ja refazia -- quinta "
-            "instancia em 03/09/2026 da lei «conserto entra no caminho que o "
-            "motivou e o irmao fica»."
-        ),
-        "arquivo": "crates/phxsql-store/src/table.rs",
-        "trecho": """        self.colunas_marcadas = marcadas_do_esquema(&self.esquema);
-        self.fks_conferidas = fks_conferidas_do_esquema(&self.esquema);
-        // O `.pag` descreve o esquema para quem le o diretorio sem abrir a""",
-        "troca": """        // DEFEITO REPOSTO: o estado derivado nao se refaz com o esquema.
-        // O `.pag` descreve o esquema para quem le o diretorio sem abrir a""",
-        "pacote": "phxsql-store",
-        "alvo": ["--test", "chave-estrangeira"],
-        # ESPERA a falha normal, e a distincao custou uma rodada: eu classifiquei
-        # como "aborta" por analogia com o `cadeia-sem-teto`, que estoura a
-        # pilha. Nao e o mesmo caso -- panico dentro de um `#[test]` e CAPTURADO
-        # pelo arnes e vira FAILED; so o estouro de pilha escapa e derruba o
-        # binario. O executor recusou a entrada dizendo «esperava o binario
-        # abortar, e ele terminou», que e exatamente o trabalho dele.
-        "caem": [
-            "trocar_as_chaves_nao_deixa_o_portao_apontando_para_o_esquema_velho",
-        ],
-        "seguem": [],
-    },
+    # ---------------------------------------------------------------------
+    # APOSENTADA em 03/09/2026: `portao-de-fk-com-esquema-velho`
+    #
+    # Ela guardava o panico do `index out of bounds` quando
+    # `redeclarar_chaves_estrangeiras` trocava o esquema sem refazer
+    # `fks_conferidas` -- uma lista de INDICES para dentro das chaves.
+    #
+    # A entrada saiu porque o DEFEITO deixou de poder existir, e nao porque
+    # alguem afrouxou: a lista foi APAGADA no mesmo dia. O portao pergunta ao
+    # esquema na hora, entao nao ha indice para envelhecer nem para reordenar.
+    # Guarda cujo defeito virou impossivel nao se mantem por educacao -- ela
+    # passaria a provar que um trecho existe, e nao que uma garantia vale.
+    #
+    # A decisao foi por NUMERO e nao por gosto: a lista comprava 0,28-0,86 ns
+    # e calcular na hora custa 0,92-1,37 ns (`docs/PESQUISA-ESTADO-DERIVADO.md`).
+    # O irmao `colunas_marcadas` FICA, com a guarda dele, porque compra
+    # 4,6-26,6 ns -- trinta vezes mais.
+    #
+    # O teste continua: `trocar_as_chaves_nao_deixa_o_portao_apontando_para_o
+    # _esquema_velho`, em `tests/chave-estrangeira.rs`, deixou de poder cair
+    # por panico e passou a afirmar o comportamento -- redeclarar para lista
+    # vazia aceita a linha que ninguem confere mais.
+    # ---------------------------------------------------------------------
 ]

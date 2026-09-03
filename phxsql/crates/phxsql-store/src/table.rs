@@ -289,7 +289,6 @@ pub struct Table {
     /// a conferir?" a cada linha percorreria as chaves todas por gravacao;
     /// esta lista se monta UMA vez, na abertura, e a pergunta vira
     /// `is_empty()`. Tabela sem chave conferida nao paga nada.
-    fks_conferidas: Vec<usize>,
     /// Gravar a imagem da linha no diario? Ver [`Table::com_imagem_no_diario`].
     imagem_no_diario: bool,
     /// Gravar a imagem TAMBEM na exclusao fisica?
@@ -365,14 +364,29 @@ fn marcadas_do_esquema(esquema: &Schema) -> Vec<usize> {
 /// Declarar sempre foi aceito aqui e nunca foi imposto; conferir todas as
 /// declaracoes que ja existem recusaria gravacoes que hoje passam. Quem pede a
 /// garantia ganha a garantia -- ver [`phxsql_core::schema::ForeignKey::verificar`].
-fn fks_conferidas_do_esquema(esquema: &Schema) -> Vec<usize> {
+/// As chaves que CONFEREM, calculadas do esquema na hora.
+///
+/// # Por que nao existe mais uma lista guardada
+///
+/// Existia: um `Vec<usize>` com INDICES para dentro de
+/// `esquema.chaves_estrangeiras()`, montado na abertura. Ele cobrou um panico
+/// em 03/09/2026 -- redeclarar com menos chaves deixava indice apontando para
+/// fora --, e cobraria um segundo defeito PIOR e mudo: lista reordenada
+/// confere a chave errada sem estourar nada.
+///
+/// Medido antes de tirar (`docs/PESQUISA-ESTADO-DERIVADO.md`): a lista
+/// guardada comprava **0,28-0,86 ns** por chamada, e calcular na hora custa
+/// **0,92-1,37 ns**. Menos de um nanossegundo de diferenca num caminho que
+/// escreve em disco -- e em troca some a classe inteira de «estado derivado
+/// que envelhece», em vez de ganhar mais uma guarda.
+///
+/// O irmao `colunas_marcadas` FICA: ele compra 4,6-26,6 ns, trinta vezes
+/// mais, e a decisao foi tomada pelo numero e nao pela simetria.
+fn fks_que_conferem(esquema: &Schema) -> impl Iterator<Item = &ForeignKey> {
     esquema
         .chaves_estrangeiras()
         .iter()
-        .enumerate()
-        .filter(|(_, fk)| fk.verificar)
-        .map(|(i, _)| i)
-        .collect()
+        .filter(|fk| fk.verificar)
 }
 
 /// O nome sem o esquema: `vendas.clientes` abre como `clientes`.
@@ -451,7 +465,6 @@ impl Table {
         let reg = RegFile::criar(&diretorio, &nome, esquema.clone())?;
 
         let colunas_marcadas = marcadas_do_esquema(&esquema);
-        let fks_conferidas = fks_conferidas_do_esquema(&esquema);
         let mut t = Table {
             nome,
             diretorio,
@@ -465,7 +478,6 @@ impl Table {
             motivos,
             trilha,
             colunas_marcadas,
-            fks_conferidas,
             imagem_no_diario: false,
             imagem_na_exclusao: false,
             reconstruir_indice_da_filha: false,
@@ -578,21 +590,16 @@ impl Table {
         }
         let moveu = self.reg.redeclarar_chaves_estrangeiras(fks)?;
         self.esquema = self.reg.esquema().clone();
-        // TODO estado derivado do esquema se refaz JUNTO com ele.
+        // Estado derivado do esquema se refaz JUNTO com ele -- e nao se
+        // enumera aqui o que «pode ter mudado», porque enumerar excecao e como
+        // a proxima se perde.
         //
-        // `fks_conferidas` guarda INDICES para dentro de
-        // `esquema.chaves_estrangeiras()`. Trocar o esquema sem refazer a lista
-        // deixava indice apontando para fora quando a redeclaracao tinha MENOS
-        // chaves, e o `conferir_fks` seguinte estourava em `index out of
-        // bounds` -- panico, nao erro.
-        //
-        // O irmao que ja fazia certo e o `acrescentar_coluna`, cem linhas
-        // abaixo. O metodo cujo trabalho E mexer nas chaves era o unico que nao
-        // refazia. Nao se enumera aqui o que «pode ter mudado»: refaz-se TUDO o
-        // que deriva do esquema, porque enumerar excecao e como a proxima se
-        // perde.
+        // Sobrou UM derivado, e isso e decisao medida e nao descuido: a lista
+        // de chaves que conferem foi APAGADA em 03/09/2026 (ela guardava
+        // indices e cobrou um panico aqui), enquanto `colunas_marcadas` ficou
+        // -- ela compra 4,6-26,6 ns contra os 0,28-0,86 ns que a outra
+        // comprava. `docs/PESQUISA-ESTADO-DERIVADO.md`.
         self.colunas_marcadas = marcadas_do_esquema(&self.esquema);
-        self.fks_conferidas = fks_conferidas_do_esquema(&self.esquema);
         // O `.pag` descreve o esquema para quem le o diretorio sem abrir a
         // tabela; desatualizado, ele viraria uma segunda verdade.
         self.gravar_pag()?;
@@ -698,7 +705,6 @@ impl Table {
             .acrescentar_coluna(novo, posicao, &bytes, padrao.is_none())?;
         self.esquema = self.reg.esquema().clone();
         self.colunas_marcadas = marcadas_do_esquema(&self.esquema);
-        self.fks_conferidas = fks_conferidas_do_esquema(&self.esquema);
         // O `.pag` descreve a tabela para quem le o diretorio sem abrir o
         // `.reg`; desatualizado, ele viraria uma segunda verdade.
         self.gravar_pag()?;
@@ -732,7 +738,6 @@ impl Table {
 
         let esquema = reg.esquema().clone();
         let colunas_marcadas = marcadas_do_esquema(&esquema);
-        let fks_conferidas = fks_conferidas_do_esquema(&esquema);
         Ok(Table {
             nome: nome.to_string(),
             diretorio,
@@ -746,7 +751,6 @@ impl Table {
             motivos,
             trilha,
             colunas_marcadas,
-            fks_conferidas,
             imagem_no_diario: false,
             imagem_na_exclusao: false,
             reconstruir_indice_da_filha: false,
@@ -759,8 +763,8 @@ impl Table {
 
     /// Confere as chaves estrangeiras que pediram conferencia.
     ///
-    /// Chamada ANTES de gravar, e so quando ha o que conferir -- o portao e o
-    /// `is_empty()` de `fks_conferidas`, montado na abertura.
+    /// Chamada ANTES de gravar, e so quando ha o que conferir -- o portao
+    /// pergunta ao esquema na hora se alguma chave confere.
     ///
     /// # As duas regras que a norma exige e que sao faceis de errar
     ///
@@ -819,8 +823,7 @@ impl Table {
     }
 
     fn conferir_fks(&self, valores: &[Value]) -> Result<()> {
-        for &i in &self.fks_conferidas {
-            let fk = &self.esquema.chaves_estrangeiras()[i];
+        for fk in fks_que_conferem(&self.esquema) {
             // NULO satisfaz: nada a procurar.
             let mut chave = Vec::with_capacity(fk.colunas.len());
             let mut tem_nulo = false;
@@ -2218,7 +2221,7 @@ impl Table {
 
     pub fn inserir(&mut self, valores: &[Value]) -> Result<RowId> {
         self.conferir_aridade(valores)?;
-        if !self.fks_conferidas.is_empty() && self.julga_integridade() {
+        if fks_que_conferem(&self.esquema).next().is_some() && self.julga_integridade() {
             self.conferir_fks(valores)?;
         }
         // Numerar ANTES das chaves, pela mesma razao da sequencia: se a coluna
@@ -2439,7 +2442,7 @@ impl Table {
     /// fisica no `.reg`.
     pub fn atualizar(&mut self, rowid: RowId, valores: &[Value]) -> Result<()> {
         self.conferir_aridade(valores)?;
-        if !self.fks_conferidas.is_empty() && self.julga_integridade() {
+        if fks_que_conferem(&self.esquema).next().is_some() && self.julga_integridade() {
             self.conferir_fks(valores)?;
         }
         let antigo = self
@@ -2717,11 +2720,11 @@ impl Table {
     /// «existe?» e nao «esta viva?» -- e ninguem viu, durante versoes, porque
     /// a porta que faltava era a que ninguem olhava. **Porta que nao faz a
     /// pergunta que as irmas fazem e a proxima a virar buraco**, e o custo de
-    /// perguntar aqui e o de uma operacao rara: o portao `fks_conferidas`
-    /// continua vindo antes, e tabela sem chave conferida nao le nada.
+    /// perguntar aqui e o de uma operacao rara: o portao das chaves que
+    /// conferem continua vindo antes, e tabela sem chave conferida nao le nada.
     pub fn restaurar(&mut self, rowid: RowId, motivo: &str) -> Result<bool> {
         self.exigir_softdeleted()?;
-        if !self.fks_conferidas.is_empty() && self.julga_integridade() {
+        if fks_que_conferem(&self.esquema).next().is_some() && self.julga_integridade() {
             // A linha so se le quando ha chave a conferir: sem elas, restaurar
             // continua custando o que sempre custou.
             if let Some(linha) = self.ler(rowid)? {
@@ -4095,7 +4098,6 @@ impl Table {
         let reescreveu = self.reg.remarcar_dado_pessoal(marcas)?;
         self.esquema = self.reg.esquema().clone();
         self.colunas_marcadas = marcadas_do_esquema(&self.esquema);
-        self.fks_conferidas = fks_conferidas_do_esquema(&self.esquema);
         Ok(reescreveu)
     }
 
