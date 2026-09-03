@@ -3,8 +3,11 @@
 Este documento não substitui nada que já existe — só nomeia o ciclo que já
 está rodando, com os arquivos e os números de quem faz cada parte:
 
-- `provar.py` orquestra a bateria única, hoje **24 partes** (contadas em
-  `parte(...)` em `provar.py`), em **14m35s** (`docs/TESTES.md` §7).
+- `provar.py` orquestra a bateria única, hoje **25 partes** (contadas em
+  `parte(...)` em `provar.py`; a 25ª entrou nesta rodada —
+  `profiler-custo-zero`, abaixo), em **14m35s** (`docs/TESTES.md` §7, tempo
+  de antes desta rodada — a parte nova ainda não foi cronometrada na
+  bateria inteira).
 - `bancada/guardas/` é o catálogo dos defeitos já pagos e o executor que os
   repõe para conferir se o teste que cada um motivou ainda cai.
 - `docs/TESTES.md` é a cobertura por área, medida e regenerada.
@@ -152,7 +155,9 @@ A regra é dupla, e as duas metades importam igualmente: **o teste tem de
 FALHAR com o defeito reposto e passar com o conserto.** `bancada/guardas/`
 existe para provar a primeira metade em escala — hoje o catálogo carrega
 (medido nesta revisão, rodando `python3 -c "import catalogo;
-print(len(catalogo.GUARDAS))"` em `bancada/guardas/`) **57 entradas**. O
+print(len(catalogo.GUARDAS))"` em `bancada/guardas/`) **60 entradas** — 57
+mais as três que esta rodada de QA acrescentou (seção "As cinco, com guarda",
+abaixo). O
 executor devolve um de cinco vereditos por entrada (`bancada/guardas/LEIA-ME.md`):
 
 | veredito | o que quer dizer |
@@ -458,13 +463,18 @@ algum canto que a varredura não cobriu.
 ### O catálogo de guardas nomeadas, por área
 
 `bancada/guardas/catalogo.py` é o catálogo **oficial** de mutação — hoje
-**57 entradas** (`python3 -c "import catalogo; print(len(catalogo.GUARDAS))"`
-dentro de `bancada/guardas/`), e a tabela em `docs/TESTES.md` §8 já está
-fresca desta mesma rodada: **57 guardas: 53 provadas, 4 redundantes**, medida
-em 2026-09-01 21:52 — a defasagem que a revisão anterior deste documento
-registrou (43 contra 57) **já foi corrigida** por outra frente antes desta
-rodada de QA começar. Nenhuma entrada veio como `NAO PEGOU` ou `ESTRAGOU`
-nesta rodada.
+**60 entradas** (`python3 -c "import catalogo; print(len(catalogo.GUARDAS))"`
+dentro de `bancada/guardas/`; eram 57 no início desta rodada de QA, que
+acrescentou as três descritas em "As cinco, com guarda"), e a tabela em
+`docs/TESTES.md` §8 já está fresca desta mesma rodada: **60 guardas: 56
+provadas, 4 redundantes, 0 não pegaram, 0 estragaram, 0 quebradas** — a
+defasagem que a revisão anterior deste documento registrou (43 contra 57)
+**já foi corrigida** por outra frente antes desta rodada de QA começar.
+Nenhuma entrada veio como `NAO PEGOU` ou `ESTRAGOU` nesta rodada; a corrida
+completa só foi possível depois de um achado no caminho — o `COPIAR` do
+executor não incluía `docs/`, e um teste que lê `docs/ROTEIRO-1.0.md` em
+tempo de execução fazia a árvore limpa reprovar antes de qualquer defeito
+ser reposto (consertado, ver a cognição desta rodada).
 
 Esse catálogo mede **mutação de trecho**, não **nome de teste**. Só ele não
 responde à pergunta desta seção, porque a maioria das guardas desta casa não
@@ -701,6 +711,143 @@ estiliza, dado nunca" — as duas TÊM guarda real, `testes-web/casos/06-css-glo
 e a bateria de 14 casos inteira (`testes-web/bateria.mjs`), como a tabela
 acima mostra. Ficaram de fora da lista de achados por terem guarda, não por
 esquecimento.
+
+### As cinco, com guarda — a rodada que fechou este achado
+
+As cinco confirmaram, medindo. Nenhuma morreu na medição desta vez — as
+cinco levaram guarda nova, cada uma provada nos dois sentidos (falha com o
+defeito reposto, passa com o código são; a saída de cada reprovação está
+citada abaixo).
+
+1. **Zero dependências externas.** `crates/phxsql-server/src/conferidor_dependencias.rs`,
+   novo: compara os nomes do `Cargo.lock` contra os nomes que o
+   `[workspace] members` do `Cargo.toml` raiz DECLARA — não contra o campo
+   `source` do lock, que uma dependência de *caminho* de fora do workspace
+   também não leva (os oito membros do próprio workspace já provam isso: são
+   path deps entre si, e nenhum tem `source`). Dois testes: um contra o
+   `Cargo.lock` de VERDADE
+   (`conferidor_dependencias::testes::workspace_zero_dependencia_externa`,
+   a guarda que protege o repositório hoje) e um contra um `Cargo.lock` de
+   mentira embutido no teste
+   (`conferidor_dependencias::testes::deteta_pacote_de_fora_do_workspace`,
+   a guarda que entra no catálogo de mutação porque não depende de o
+   binário conseguir compilar com o defeito).
+
+   **Achado no caminho**: nenhuma das duas formas óbvias de mutação
+   sobrevive. Acrescentar um pacote fantasma ao `Cargo.lock` (sem nenhuma
+   dependência real apontando para ele) não sobrevive — o próprio
+   `cargo test` reescreve o arquivo e PODA a entrada antes de qualquer
+   teste rodar. E acrescentar uma dependência de verdade a um `Cargo.toml`
+   quebra a resolução antes de compilar qualquer coisa, então nenhum teste
+   chega a rodar para reprovar nada. Medido à parte, numa cópia isolada em
+   `/tmp` (fora do `bancada/guardas/`, que não teria como provar isto):
+   um `pacote-de-fora-do-workspace` de mentira, referenciado por *caminho*
+   a partir de `phxsql-core` — que resolve **offline**, sem rede, sem
+   precisar estar em cache — compila **sem erro nenhum**
+   (`cargo build --offline` aceitou de bom grado), e só
+   `workspace_zero_dependencia_externa` reprovou, dizendo qual pacote
+   sobrou:
+
+   ```
+   test conferidor_dependencias::testes::workspace_zero_dependencia_externa ... FAILED
+   thread '...' panicked: dependencia de fora do workspace no Cargo.lock:
+   [("pacote-de-fora-do-workspace", "0.1.0")] -- zero dependencias externas
+   e regra petrea do CLAUDE.md ("so a std e o proprio workspace")
+   ```
+
+   Essa é a prova de que a proteção de hoje era mesmo por acidente —
+   `cargo build --offline` só recusa dependência de registro sem rede; uma
+   dependência de caminho passa batida, e esta guarda é quem pega.
+
+2. **O merge de conflito por coluna (`dialogoConflito`).**
+   `testes-web/casos/19-conflito.mjs`, novo: duas ABAS do mesmo navegador
+   editam a mesma linha — a aba B grava primeiro mudando só o UF, a aba A
+   já tinha a ficha aberta com a versão de antes, edita só a CIDADE (coluna
+   diferente) e tenta gravar por cima. O núcleo da prova é o pré-marcado
+   dos rádios: `uf` tem de vir marcado "outro" (a aba A não tocou nele) e
+   `cidade` marcado "meu" (foi a aba A quem digitou) — e depois de gravar o
+   escolhido, as DUAS alterações sobrevivem. Reproduzi o defeito que a
+   pétrea proíbe (`const mexi = true;` em vez de
+   `!igual(l.meu, l.antes)`, marcando tudo "meu" — "quem perguntou por
+   último") e a bateria reprovou exatamente onde devia:
+
+   ```
+   FALHOU conflito     1389 ms
+       a coluna uf (que só a aba B mudou) não veio marcada com o valor do outro
+   ```
+
+   Não entra em `bancada/guardas/`: o executor de lá só sabe rodar
+   `cargo test`, e isto é JavaScript de tela sem `cargo test` que o
+   alcance — a prova real mora na própria bateria de frontend, como os
+   outros guardas de UI desta casa (`06-css-global.mjs` e companhia).
+
+3. **A metade "índice na filha".** Dois testes novos em
+   `crates/phxsql-store/tests/chave-estrangeira.rs`
+   (`sem_indice_na_filha_a_recusa_diz_qual_indice_falta` e o par do
+   comportamento velho, `sem_conferir_a_mae_sai_mesmo_sem_indice_na_filha`),
+   com uma segunda `filha_sem_indice()` que não cria o `porCliente`. Não
+   precisa de linha nenhuma em `pedidos`: `indice_que_cobre` olha o
+   ESQUEMA, não os dados — a recusa acontece antes de haver qualquer filha
+   de verdade para procurar. Provado pelo catálogo de mutação
+   (`sem-indice-na-filha-ignora-em-vez-de-recusar`, `table.rs`, trocando o
+   `return Err(...)` por `continue` — ignorar em vez de recusar):
+
+   ```
+   sem-indice-na-filha-ignora-em-vez-de-recusar PROVADA   1.8 s   1/1 cairam
+   ```
+
+4. **`recursos.cache_paginas` chega ao motor.** Arquivo novo,
+   `crates/phxsql-server/tests/cache-paginas-pelo-config.rs`, no molde dos
+   dois irmãos — mas mais pesado que eles por necessidade: `cache_paginas`
+   NÃO é aplicado dentro de `Recursos::aplicar` (o comentário do próprio
+   `aplicar` diz isso — "o teto do cache de páginas continua sendo
+   aplicado pelo servidor"), então `Config::ler` sozinho não bastava. Os
+   três testes sobem um `Servidor::novo` de verdade e conferem
+   `phxsql_store::ndx::cache_paginas()` — o mesmo global que a telemetria
+   lê em `cache_ndx.paginas_teto`. Provado pelo catálogo
+   (`cache-paginas-nao-chega-ao-motor`, comentando a chamada em
+   `Servidor::novo`):
+
+   ```
+   cache-paginas-nao-chega-ao-motor PROVADA   6.0 s   2/2 cairam
+   ```
+
+5. **"Instrumentação desligada custa zero" — de MEDIDA a TRAVADA.**
+   `bancada/profiler/custo.py` ganhou `falhou_desligado_custa_zero(medido,
+   minimo=0.90)`: julga a mediana do par "atual/sem" contra um piso de
+   90% (10% de folga para ruído de máquina compartilhada) e `main()` sai
+   `1` quando reprova. `provar.py` ganhou a 25ª parte,
+   `profiler-custo-zero`. A prova dos dois sentidos é o próprio
+   `--autoteste` do script (não compila nada, roda em milissegundos —
+   compilar as três variantes mexeria em `servidor.rs` três vezes, real
+   demais para rodar de acompanhamento numa árvore compartilhada com outra
+   frente):
+
+   ```
+   $ python3 bancada/profiler/custo.py --autoteste
+   autoteste: ok -- par saudavel passa, par degradado reprova, borda do minimo (0.90x) confere
+   ```
+
+   Com o defeito reposto (`return []` em vez do julgamento):
+
+   ```
+   AssertionError: um par degradado (0,61x no lote) passou sem reprovar
+   ```
+
+   **Achado no caminho, fora do escopo dos cinco**: rodar o catálogo
+   inteiro de `bancada/guardas/` para regravar a tabela do `docs/TESTES.md`
+   §8 esbarrou num sexto buraco — `COPIAR`, em
+   `bancada/guardas/provar-guardas.py`, nunca incluía `docs/`, e um teste
+   de `error.rs` (`nenhuma_sprint_citada_e_inventada`) lê
+   `docs/ROTEIRO-1.0.md` em tempo de execução. A árvore limpa reprovava
+   antes de qualquer defeito ser reposto — não por contaminação entre
+   rodadas concorrentes (cheguei a suspeitar disso primeiro, ver a
+   cognição desta rodada), mas porque a lista nunca cobriu aquele arquivo.
+   Consertado (`COPIAR` ganhou `"docs"`, 6,3 MB), e com o conserto o
+   catálogo completo rodou até o fim nesta mesma rodada: **60 guardas, 56
+   provadas, 4 redundantes, 0 não pegaram, 0 estragaram, 0 quebradas** —
+   nenhuma regressão nas 57 antigas, e a tabela do `docs/TESTES.md` §8 já
+   está regravada com este resultado.
 
 ### Guardas suspeitas de vacuidade
 

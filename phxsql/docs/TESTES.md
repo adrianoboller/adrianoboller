@@ -119,8 +119,11 @@ não tem nenhum. A prova dele é o `bancada/replicacao/`, que **não roda no
 
 ## 2. A bateria de frontend
 
-Como rodar, os treze casos e o que ela deliberadamente não faz:
-`testes-web/LEIA-ME.md`.
+Como rodar, os casos e o que ela deliberadamente não faz:
+`testes-web/LEIA-ME.md`. **O número de casos não fica escrito aqui de
+propósito** — ele dizia «treze» com dezenove no diretório, e número digitado à
+mão envelhece calado. Quem quiser a conta que ela vale: `ls testes-web/casos/`,
+ou o rodapé da própria bateria, que diz quantas execuções passaram.
 
 O resumo do desenho:
 
@@ -130,14 +133,21 @@ O resumo do desenho:
 - **Entra pela tela de login**, com o desafio-resposta de verdade. Se a página
   cair em modo demonstração, o caso falha — sem essa guarda a bateria inteira
   passaria sem tocar no motor.
-- **Percorre 120 telas** clicando cada item dos nove menus e cada botão da
-  barra, e reprova em qualquer erro. Esse laço sozinho vale mais que dez
+- **Percorre todas as telas** dos menus e da barra, clicando item por item, e
+  reprova em qualquer erro. Quantas foram sai como **nota do próprio caso** a
+  cada rodada (115 na última) em vez de ficar digitado aqui. Esse laço sozinho vale mais que dez
   asserções bonitas: foi ele que pegou um `` ` `` a mais dentro de um template
   literal em três segundos, com a página inteira morta.
 - **Um contexto de navegador por caso.** A página guarda tema, largura e
   estado da lateral no `localStorage`; com contexto compartilhado, o caso que
   recolhe a lateral fazia o próximo começar com a árvore invisível — e a falha
   aparecia no caso errado.
+- **Espera a entrada TERMINAR, e não começar.** O `entrar()` aguarda
+  `#app[data-pronto="1"]`, a marca que o `abrirApp()` põe quando a árvore está
+  montada, a primeira tela pintada e as abas pinadas de volta. Esperar só por
+  `#arvore .no` era esperar pelo meio da entrada, e deixava 32 ms de corrida
+  entre a bateria e a página — os 32 ms que faziam o caso `telemetria`
+  reprovar em 10% a 36% das rodadas. Ver §11.
 
 ### Os três canais de erro, e por que não basta o `pageerror`
 
@@ -439,18 +449,17 @@ commit, e não depois do relato.
 O `phxsqlcmd` tem 18; o `phxsql` da linha de comando, nenhum. Fica anotado
 com o tamanho: é a maior superfície sem cobertura depois do `replica.rs`.
 
-### 5.6 O `abrirAdmin` escreve na tela depois do `await`, sem perguntar se ainda é a dele
+### 5.6 ~~O `abrirAdmin` escreve na tela depois do `await`~~ — FECHADO na SP000056
 
-Achado por esta rodada e **medido**: `ui/index.html`, `abrirAdmin`, faz
-`p.innerHTML = await vPainel()`. Entre o `await` e a escrita cabe qualquer
-navegação, e quem clica em Configurações antes de o Painel terminar de carregar
-fica com o **título de Configurações e o corpo do Painel**. A reprodução, a
-sonda e o rastro estão em §9.8.
+**Consertado e provado nos dois sentidos.** Ver §11.
 
-**Por que não consertei:** `ui/index.html` é a tela, e há frentes mexendo nela
-nesta mesma rodada; o conserto é uma linha, mas a decisão é de quem manda no
-Centro de Controle. Enquanto isso a parte `telemetria-cores` da bateria única
-fica **vermelha**, que é o comportamento certo.
+Fica aqui a parte que ensina, e não o registro: entre este item ser anotado e
+ser fechado, **uma guarda entrou** — o contador `admGeracao` — com um
+comentário de vinte linhas descrevendo exatamente este defeito e admitindo que
+**não tinha prova real**. Ela não fechou o item, e ninguém percebeu, porque ela
+cobria `abrirAdmin` contra `abrirAdmin` e a vítima do §9.8 (Configurações)
+pinta por `folha()`. *Guarda sem prova real não é guarda, é intenção* — e o
+aviso estava escrito no próprio comentário.
 
 ---
 
@@ -510,6 +519,7 @@ digitada aqui envelheceria calada na próxima parte que entrasse.
 | `transacoes` | `BEGIN`/`COMMIT`/`ROLLBACK`/`SAVEPOINT` pelo soquete — com **SIGKILL no meio de um `COMMIT`**, e o banco reabrindo para dizer o que aconteceu | 7320 |
 | `rotinas` | gatilhos e procedimentos pelo soquete, com SIGNAL, lote e reinício | 5301/5701 |
 | `profiler` | a redação do Profiler por soquete: vinte pedidos torcidos, sentinela no anel e no `.txt` | 6251 |
+| `profiler-custo-zero` | que o Profiler DESLIGADO custa perto de zero — TRAVADO, não só medido (achado do QA-PDCA) | 6270/6272 |
 | `telemetria-desenho` | o painel de bolhas por medida: rótulo na esfera, alvo de clique, contraste | — |
 | `telemetria-interacao` | clicar na bolha menor com o painel em movimento, descer de nível, voltar | — |
 | `telemetria-cores` | as cores configuráveis, exercitando: escolher, salvar, conferir no painel | 6600/6601 |
@@ -685,8 +695,11 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `insert-sem-travar-o-fim` | duas transações que anexam preveem o mesmo rowid | 1 | ✅ provada |
 | `recuperar-sem-reindexar` | a recuperação não reconstrói o `.ndx` que a queda deixou para trás | — | 🟰 redundante |
 | `comum-anexa-no-fim-travado` | a escrita comum que anexa não olha o fim travado | 1 | ✅ provada |
+| `dependencia-de-fora-fica-invisivel` | o filtro de dependência externa vira mudo (mede e nunca acusa) | 1 | ✅ provada |
+| `sem-indice-na-filha-ignora-em-vez-de-recusar` | sem índice na filha, a exclusão da mãe ignora em vez de recusar | 1 | ✅ provada |
+| `cache-paginas-nao-chega-ao-motor` | `cache_paginas` do config.json deixa de chegar ao motor | 2 | ✅ provada |
 
-**57 guardas: 53 provadas, 4 redundantes** — 491 s de mutação, medido em 2026-09-01 21:52.
+**60 guardas: 56 provadas, 4 redundantes** — 434 s de mutação, medido em 2026-09-03 02:54.
 
 As notas que a rodada deixou:
 
@@ -1065,3 +1078,198 @@ sentido por teste nenhum, e não é mesmo) e `endereco-fora-da-amarracao`
 provada, e ficou **duas refações sem estar** — que é o tempo em que ninguém
 percebeu, porque a quebrada aparecia no relatório como texto e não como número
 que desce.
+
+---
+
+## 11. SP000056 — a bateria confiável: o intermitente medido, e o módulo que não tinha defeito
+
+O caso `telemetria` reprovava «em ~metade das rodadas, trocando de tema entre
+elas», e enquanto isso o portão da bateria **não distinguia regressão de
+ruído**. A decisão do dono era reescrever o gestor de threads, que é o módulo
+onde a falha aparecia. **Medido antes de reescrever, ele não tinha defeito
+nenhum** — e essa é a metade que mais interessa deste capítulo.
+
+### 11.1 A taxa, antes: 4 de 40 isoladas, 5 de 14 com a máquina carregada
+
+Nada de «~metade»: o número. Duas medições, e a diferença entre elas é a
+informação.
+
+| condição | reprovações |
+|---|---|
+| caso sozinho, 40 execuções seguidas num processo | **4** (10%) |
+| bateria completa `--caso telemetria`, 7 rodadas × 2 temas | **5 de 14** (36%) |
+
+A segunda rodou com outra frente compilando ao lado. **A carga não é ruído: ela
+é o que abre a janela**, e é por isso que o mesmo caso dava 10% e 36% no mesmo
+dia. Quem chamou isso de *flake* estava medindo a máquina sem saber.
+
+### 11.2 A falha não era «timeout»: era um elemento que não existia
+
+O `clicarOuExplicar`, que a própria SP000056 tinha entregado antes, disse o
+que a frase do Playwright nunca diria:
+
+```
+nao consegui clicar em .tlm-threads summary — e o estado no instante da falha:
+{ "achou": false }
+```
+
+Não coberto por outro, não invisível, não desabilitado: **ausente**. E ausente
+era impossível de explicar lendo o código, porque `#tlmThreads` (que a asserção
+anterior tinha acabado de achar) e `.tlm-threads summary` saem do **mesmo**
+template literal.
+
+### 11.3 O mecanismo, com um `MutationObserver` no lugar de um palpite
+
+```
+NASCEU .tlm   em #painel
+SUMIU  .tlm   em #painel      ← 37 ms depois (104 ms na outra reprovação)
+#painel  = <div class="kpis">…bancos…registros…      ← o corpo do Painel
+#titulo  = "Telemetria"                              ← o título de outra tela
+```
+
+`montarArvore()` terminava disparando o clique no nó Painel, e esse clique
+rodava `Promise.resolve(abrirAdmin("painel"))` **que ninguém segurava**.
+`abrirApp()` devolvia, `#arvore .no` aparecia — o sinal por onde o `entrar()`
+da bateria dizia «entrei» —, e o `abrirAdmin` ainda estava no `await
+vPainel()`. Ao voltar, escrevia `p.innerHTML` por cima de quem tivesse chegado
+no meio-tempo. O `#titulo` não voltava atrás porque `abrirAdmin` o escreve
+**antes** do `await` e o corpo **depois**.
+
+**A janela, medida em 12 logins:** 32 ms de mediana (min 29, máx 35) entre a
+árvore aparecer e o Painel pintar. A viagem do `page.evaluate` seguinte cai
+dentro ou fora dela conforme o humor da máquina. Era isso, e nada mais, que
+decidia o veredito — e o tema alternava porque o tema é só quem estava na vez.
+
+### 11.4 O achado que dói: a guarda existia e cobria só quem a escreveu
+
+O contador `admGeracao` já estava lá, com um comentário de vinte linhas
+descrevendo este defeito por extenso — «título de uma tela e corpo da outra» —
+e uma admissão rara:
+
+> **ATENCAO, e isto e desconforto honesto: esta guarda NAO tem prova real.** A
+> sonda que escrevi passa com a guarda E passa com o defeito reposto […] o
+> pedido continua ABERTO no PENDENCIAS.
+
+Ela não tinha prova real **porque não cobria o caso que descrevia**. O contador
+era privado do `abrirAdmin`: defendia `abrirAdmin` de `abrirAdmin` e de mais
+ninguém. Toda tela que pinta por `folha()` — telemetria, profiler, backup e as
+**Configurações**, que é a vítima do §9.8 — passava por fora.
+
+O §9.8 e o §5.6 ficaram abertos meses depois de uma guarda ter entrado
+justamente para fechá-los. *Guarda sem prova real não é guarda, é intenção.*
+
+### 11.5 O conserto: a posse é do PAINEL, e não de quem pinta
+
+```js
+let painelGeracao = 0;
+function tomarPainel()      { return ++painelGeracao; }
+function aindaNoPainel(v)   { return v === painelGeracao; }
+```
+
+- **`folha()` toma a posse.** Uma linha, e as ~50 telas que passam por ela
+  ficam cobertas. Espalhar a conferência por cinquenta funções é o que o
+  `CLAUDE.md` já proíbe: *a que alguém esquecer vira a porta dos fundos*.
+- **`abrirAdmin()` e `desenharAba()` conferem** depois de cada `await`, antes
+  de escrever. As cinco abas da tabela tinham o mesmo buraco.
+- **`montarArvore()` espera a primeira tela pintar** em vez de disparar um
+  clique e ir embora, e `abrirApp()` marca `#app[data-pronto="1"]` quando
+  termina de verdade — árvore montada, primeira tela no ar, abas pinadas de
+  volta.
+- **`entrar()` espera essa marca.** Ninguém clica no menu 30 ms depois de a
+  tela abrir; o teste deixou de medir uma corrida que a pessoa não corre.
+
+### 11.6 A prova real, e por que a de antes não provava
+
+`testes-web/casos/18-tela-atropelada.mjs`. A sonda antiga tentava vencer o
+relógio e por isso passava dos dois lados. Esta **não torce por timing**:
+segura a resposta da op `painel` no fio (`page.route`) até a segunda tela estar
+pintada, e só então solta. A corrida deixa de ser sorteio e vira ordem fixa —
+que é o único jeito de um caso de bateria provar uma corrida sem virar ele
+próprio um intermitente.
+
+Com o `tomarPainel()` do `folha` comentado, **reprova nos dois temas**:
+
+```
+FALHOU tela-atropelada  o Painel atrasado escreveu por cima da tela que a
+                        pessoa pediu depois dele
+                        (titulo="Telemetria", kpis do Painel no corpo=true)
+```
+
+Ela cobre as **duas** vítimas — a telemetria e as Configurações do §9.8 — e
+tem a metade contrária, que é a que impede a guarda de virar «nunca pinta
+nada»: pedido **depois**, o Painel assume a tela normalmente.
+
+**Como repor o defeito, para quem quiser conferir sozinho.** O catálogo de
+guardas (§8) só sabe repor defeito em Rust — ele roda `cargo test` —, e esta é
+de tela. A receita cabe em três linhas, e fica escrita por isso:
+
+```bash
+# em ui/index.html, dentro de folha(), comente a linha `tomarPainel();`
+cargo build --release -p phxsql-server --bin phxsqld
+node testes-web/bateria.mjs --caso tela-atropelada --porta 6520
+```
+
+### 11.7 A taxa, depois
+
+| medição | resultado |
+|---|---|
+| caso sozinho, 60 execuções seguidas | **0 falhas** |
+| bateria `--caso telemetria`, 12 rodadas × 2 temas | **0 de 24** |
+| bateria completa, 18 casos × 2 temas | **36/36**, repetida |
+
+Se a taxa de 10% tivesse continuado, ver 60 execuções limpas teria 0,18% de
+chance. Isso não é a prova — a prova é o §11.6; é o que sobra depois dela.
+
+### 11.8 O que NÃO foi feito, e por quê
+
+**O gestor de threads da telemetria não foi reescrito.** A sprint mandava
+reescrevê-lo, e a medição diz que ele nunca aparece na falha: o painel vivo
+sobre `phx-grid` nasce preguiçoso (por causa da largura zero dentro de
+`display:none`), sobrevive à volta do relógio, e as asserções que provam as
+duas coisas passam em 60 de 60. Reescrevê-lo teria custado uma frente e
+comprado zero, e teria trocado um módulo provado por um módulo novo.
+
+É o mesmo padrão do pedido 113: alvo certo, causa errada. *Medir a premissa do
+item vem antes de implementar o item — inclusive quando o item é nosso.*
+
+**Continua aberto:** uma tela que faz `await api(...)` e **só então** chama
+`folha()` — o profiler é uma — pinta por cima de quem chegou no meio-tempo.
+Título e corpo saem coerentes, então não é a mesma mentira do §9.8; é a tela
+que você pediu chegando atrasada e ganhando de quem você pediu depois. Sem
+guarda e sem prova real.
+
+---
+
+## 12. As pétreas sem guarda — o que ganhou guarda nesta rodada
+
+O `docs/QA-PDCA.md` (seção "As pétreas sem guarda") levantou cinco pétreas do
+`CLAUDE.md` sem prova real. A narrativa completa — o porquê de cada escolha,
+o que não deu certo no caminho, a saída de cada reprovação — mora lá; aqui só
+o inventário do que passou a existir.
+
+| pétrea | onde a guarda mora | como se prova |
+|---|---|---|
+| Zero dependências externas | `crates/phxsql-server/src/conferidor_dependencias.rs` (novo) | `cargo test -p phxsql-server --lib conferidor_dependencias`; catálogo `dependencia-de-fora-fica-invisivel` |
+| Merge de conflito por coluna (`dialogoConflito`) | `testes-web/casos/19-conflito.mjs` (novo) | `node testes-web/bateria.mjs --caso conflito` |
+| Índice na filha da chave conferida | `crates/phxsql-store/tests/chave-estrangeira.rs` (dois testes novos) | `cargo test -p phxsql-store --test chave-estrangeira`; catálogo `sem-indice-na-filha-ignora-em-vez-de-recusar` |
+| `recursos.cache_paginas` chega ao motor | `crates/phxsql-server/tests/cache-paginas-pelo-config.rs` (novo) | `cargo test -p phxsql-server --test cache-paginas-pelo-config`; catálogo `cache-paginas-nao-chega-ao-motor` |
+| "Instrumentação desligada custa zero" | `bancada/profiler/custo.py` (`falhou_desligado_custa_zero`, nova 25ª parte `profiler-custo-zero` em `provar.py`) | `python3 bancada/profiler/custo.py --autoteste` (a lógica, em segundos) e a bateria completa (a medição real, ~minutos) |
+
+As três primeiras entraram no catálogo de mutação (`bancada/guardas/`), e o
+catálogo completo — agora **60 entradas**, medido com
+`python3 -c "import catalogo; print(len(catalogo.GUARDAS))"` — rodou inteiro
+depois das três novas: **56 provadas, 4 redundantes, 0 não pegaram, 0
+estragaram, 0 quebradas** (`bancada/guardas/provar-guardas.py`, tabela acima
+regravada por `tabela-no-testes.py` a partir dessa rodada). As duas últimas
+pétreas não cabem no catálogo por natureza — o executor só sabe repor um
+trecho de código Rust e rodar `cargo test`, e uma é JavaScript de tela sem
+`cargo test` que a alcance, a outra é um script Python cuja prova real
+mexeria em `servidor.rs` três vezes só para medir. As duas provam-se nos
+dois sentidos do mesmo jeito, só que fora do catálogo — ver `docs/QA-PDCA.md`
+para a saída de cada reprovação.
+
+**O achado no caminho**: o `COPIAR` de `bancada/guardas/provar-guardas.py`
+nunca incluía `docs/`, e um teste de `error.rs` que lê `docs/ROTEIRO-1.0.md`
+em tempo de execução fazia a árvore limpa reprovar antes de qualquer defeito
+ser reposto — não a cada rodada, só em quem tentasse o catálogo completo.
+Consertado (`docs/cognicao/cognicao_alcance-da-copia-do-executor-de-guardas_20260903_0246.md`).
