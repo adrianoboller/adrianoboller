@@ -1,0 +1,1334 @@
+{
+  "gerado_em": "2026-09-03 10:56:36",
+  "regimes": {},
+  "marcador_por_regime": [
+    {
+      "regime": "por_operacao",
+      "logo_apos_commit": 0,
+      "50ms_depois": 0,
+      "1.25s_depois": 0
+    },
+    {
+      "regime": "por_lote",
+      "logo_apos_commit": 1,
+      "50ms_depois": 1,
+      "1.25s_depois": 0
+    },
+    {
+      "regime": "sistema",
+      "logo_apos_commit": 1,
+      "50ms_depois": 1,
+      "1.25s_depois": 1
+    }
+  ],
+  "ponto1": [
+    {
+      "marca_antes_de_matar": [],
+      "relatorio": null,
+      "registros": {
+        "a": 0,
+        "b": 0
+      },
+      "regime": "por_operacao"
+    },
+    {
+      "marca_antes_de_matar": [],
+      "relatorio": null,
+      "registros": {
+        "a": 0,
+        "b": 0
+      },
+      "regime": "por_lote"
+    },
+    {
+      "marca_antes_de_matar": [],
+      "relatorio": null,
+      "registros": {
+        "a": 0,
+        "b": 0
+      },
+      "regime": "sistema"
+    }
+  ],
+  "varredura": [
+    {
+      "regime": "por_operacao",
+      "n_a": 1500,
+      "n_b": 1500,
+      "t_calibracao_ms": 34.95907783508301,
+      "corridas": [
+        {
+          "rotulo": "por_operacao#0",
+          "atraso_ms": 0.0,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [],
+            "achadas": 1,
+            "descartadas": 1,
+            "completadas": 0,
+            "reaplicadas": 0,
+            "ja_aplicadas": 0,
+            "indices_reconstruidos": 0,
+            "impossiveis": 0
+          },
+          "registros": {
+            "a": 0,
+            "b": 0
+          },
+          "marca_sobrou": [],
+          "classe": "MARCA_INVALIDA (descartada)"
+        },
+        {
+          "rotulo": "por_operacao#1",
+          "atraso_ms": 5.899,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 2549,
+            "ja_aplicadas": 451,
+            "indices_reconstruidos": 1,
+            "impossiveis": 0
+          },
+          "registros": {
+            "a": 1500,
+            "b": 1500
+          },
+          "marca_sobrou": [],
+          "classe": "P3 parcial (reaplicadas=2549 ja_aplicadas=451)"
+        },
+        {
+          "rotulo": "por_operacao#2",
+          "atraso_ms": 11.799,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 2144,
+            "ja_aplicadas": 856,
+            "indices_reconstruidos": 1,
+            "impossiveis": 0
+          },
+          "registros": {
+            "a": 1500,
+            "b": 1500
+          },
+          "marca_sobrou": [],
+          "classe": "P3 parcial (reaplicadas=2144 ja_aplicadas=856)"
+        },
+        {
+          "rotulo": "por_operacao#3",
+          "atraso_ms": 17.698,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 3000,
+            "ja_aplicadas": 0,
+            "indices_reconstruidos": 0,
+            "impossiveis": 0
+          },
+          "registros": {
+            "a": 1500,
+            "b": 1500
+          },
+          "marca_sobrou": [],
+          "classe": "P2 nada aplicado (reaplicadas=3000)"
+        },
+        {
+          "rotulo": "por_operacao#4",
+          "atraso_ms": 23.597,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 3000,
+            "ja_aplicadas": 0,
+            "indices_reconstruidos": 0,
+            "impossiveis": 0
+          },
+          "registros": {
+            "a": 1500,
+            "b": 1500
+          },
+          "marca_sobrou": [],
+          "classe": "P2 nada aplicado (reaplicadas=3000)"
+        },
+        {
+          "rotulo": "por_operacao#5",
+          "atraso_ms": 29.497,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 84,
+            "ja_aplicadas": 2916,
+            "indices_reconstruidos": 2,
+            "impossiveis": 0
+          },
+          "registros": {
+            "a": 1500,
+            "b": 1500
+          },
+          "marca_sobrou": [],
+          "classe": "P3 parcial (reaplicadas=84 ja_aplicadas=2916)"
+        },
+        {
+          "rotulo": "por_operacao#6",
+          "atraso_ms": 35.396,
+          "marca_apareceu": true,
+          "relatorio": null,
+          "registros": {
+            "a": 1500,
+            "b": 1500
+          },
+          "marca_sobrou": [],
+          "classe": "TARDE_DEMAIS (concluiu sozinho antes do kill)"
+        },
+        {
+          "rotulo": "por_operacao#7",
+          "atraso_ms": 41.295,
+          "marca_apareceu": true,
+          "relatorio": null,
+          "registros": {
+            "a": 1500,
+            "b": 1500
+          },
+          "marca_sobrou": [],
+          "classe": "TARDE_DEMAIS (concluiu sozinho antes do kill)"
+        },
+        {
+          "rotulo": "por_operacao#8",
+          "atraso_ms": 47.195,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 0,
+            "ja_aplicadas": 3000,
+            "indices_reconstruidos": 0,
+            "impossiveis": 0
+          },
+          "registros": {
+            "a": 1500,
+            "b": 1500
+          },
+          "marca_sobrou": [],
+          "classe": "P4 tudo aplicado, marca pendente (ja_aplicadas=3000)"
+        }
+      ]
+    },
+    {
+      "regime": "por_lote",
+      "n_a": 1500,
+      "n_b": 1500,
+      "t_calibracao_ms": 33.68949890136719,
+      "corridas": [
+        {
+          "rotulo": "por_lote#0",
+          "atraso_ms": 0.0,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [],
+            "achadas": 1,
+            "descartadas": 1,
+            "completadas": 0,
+            "reaplicadas": 0,
+            "ja_aplicadas": 0,
+            "indices_reconstruidos": 0,
+            "impossiveis": 0
+          },
+          "registros": {
+            "a": 0,
+            "b": 0
+          },
+          "marca_sobrou": [],
+          "classe": "MARCA_INVALIDA (descartada)"
+        },
+        {
+          "rotulo": "por_lote#1",
+          "atraso_ms": 5.685,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 3000,
+            "ja_aplicadas": 0,
+            "indices_reconstruidos": 0,
+            "impossiveis": 0
+          },
+          "registros": {
+            "a": 1500,
+            "b": 1500
+          },
+          "marca_sobrou": [],
+          "classe": "P2 nada aplicado (reaplicadas=3000)"
+        },
+        {
+          "rotulo": "por_lote#2",
+          "atraso_ms": 11.37,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 3000,
+            "ja_aplicadas": 0,
+            "indices_reconstruidos": 0,
+            "impossiveis": 0
+          },
+          "registros": {
+            "a": 1500,
+            "b": 1500
+          },
+          "marca_sobrou": [],
+          "classe": "P2 nada aplicado (reaplicadas=3000)"
+        },
+        {
+          "rotulo": "por_lote#3",
+          "atraso_ms": 17.055,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 1219,
+            "ja_aplicadas": 1781,
+            "indices_reconstruidos": 2,
+            "impossiveis": 0
+          },
+          "registros": {
+            "a": 1500,
+            "b": 1500
+          },
+          "marca_sobrou": [],
+          "classe": "P3 parcial (reaplicadas=1219 ja_aplicadas=1781)"
+        },
+        {
+          "rotulo": "por_lote#4",
+          "atraso_ms": 22.74,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 3000,
+            "ja_aplicadas": 0,
+            "indices_reconstruidos": 0,
+            "impossiveis": 0
+          },
+          "registros": {
+            "a": 1500,
+            "b": 1500
+          },
+          "marca_sobrou": [],
+          "classe": "P2 nada aplicado (reaplicadas=3000)"
+        },
+        {
+          "rotulo": "por_lote#5",
+          "atraso_ms": 28.426,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 2834,
+            "ja_aplicadas": 166,
+            "indices_reconstruidos": 1,
+            "impossiveis": 0
+          },
+          "registros": {
+            "a": 1500,
+            "b": 1500
+          },
+          "marca_sobrou": [],
+          "classe": "P3 parcial (reaplicadas=2834 ja_aplicadas=166)"
+        },
+        {
+          "rotulo": "por_lote#6",
+          "atraso_ms": 34.111,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 174,
+            "ja_aplicadas": 2826,
+            "indices_reconstruidos": 2,
+            "impossiveis": 0
+          },
+          "registros": {
+            "a": 1500,
+            "b": 1500
+          },
+          "marca_sobrou": [],
+          "classe": "P3 parcial (reaplicadas=174 ja_aplicadas=2826)"
+        },
+        {
+          "rotulo": "por_lote#7",
+          "atraso_ms": 39.796,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 0,
+            "ja_aplicadas": 3000,
+            "indices_reconstruidos": 0,
+            "impossiveis": 0
+          },
+          "registros": {
+            "a": 1500,
+            "b": 1500
+          },
+          "marca_sobrou": [],
+          "classe": "P4 tudo aplicado, marca pendente (ja_aplicadas=3000)"
+        },
+        {
+          "rotulo": "por_lote#8",
+          "atraso_ms": 45.481,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 0,
+            "ja_aplicadas": 3000,
+            "indices_reconstruidos": 0,
+            "impossiveis": 0
+          },
+          "registros": {
+            "a": 1500,
+            "b": 1500
+          },
+          "marca_sobrou": [],
+          "classe": "P4 tudo aplicado, marca pendente (ja_aplicadas=3000)"
+        }
+      ]
+    },
+    {
+      "regime": "sistema",
+      "n_a": 1500,
+      "n_b": 1500,
+      "t_calibracao_ms": 64.93973731994629,
+      "corridas": [
+        {
+          "rotulo": "sistema#0",
+          "atraso_ms": 0.0,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 3000,
+            "ja_aplicadas": 0,
+            "indices_reconstruidos": 0,
+            "impossiveis": 0
+          },
+          "registros": {
+            "a": 1500,
+            "b": 1500
+          },
+          "marca_sobrou": [],
+          "classe": "P2 nada aplicado (reaplicadas=3000)"
+        },
+        {
+          "rotulo": "sistema#1",
+          "atraso_ms": 10.959,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 1906,
+            "ja_aplicadas": 1094,
+            "indices_reconstruidos": 1,
+            "impossiveis": 0
+          },
+          "registros": {
+            "a": 1500,
+            "b": 1500
+          },
+          "marca_sobrou": [],
+          "classe": "P3 parcial (reaplicadas=1906 ja_aplicadas=1094)"
+        },
+        {
+          "rotulo": "sistema#2",
+          "atraso_ms": 21.917,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 573,
+            "ja_aplicadas": 2427,
+            "indices_reconstruidos": 2,
+            "impossiveis": 0
+          },
+          "registros": {
+            "a": 1500,
+            "b": 1500
+          },
+          "marca_sobrou": [],
+          "classe": "P3 parcial (reaplicadas=573 ja_aplicadas=2427)"
+        },
+        {
+          "rotulo": "sistema#3",
+          "atraso_ms": 32.876,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 0,
+            "ja_aplicadas": 3000,
+            "indices_reconstruidos": 0,
+            "impossiveis": 0
+          },
+          "registros": {
+            "a": 1500,
+            "b": 1500
+          },
+          "marca_sobrou": [],
+          "classe": "P4 tudo aplicado, marca pendente (ja_aplicadas=3000)"
+        },
+        {
+          "rotulo": "sistema#4",
+          "atraso_ms": 43.834,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 3000,
+            "ja_aplicadas": 0,
+            "indices_reconstruidos": 0,
+            "impossiveis": 0
+          },
+          "registros": {
+            "a": 1500,
+            "b": 1500
+          },
+          "marca_sobrou": [],
+          "classe": "P2 nada aplicado (reaplicadas=3000)"
+        },
+        {
+          "rotulo": "sistema#5",
+          "atraso_ms": 54.793,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 3000,
+            "ja_aplicadas": 0,
+            "indices_reconstruidos": 0,
+            "impossiveis": 0
+          },
+          "registros": {
+            "a": 1500,
+            "b": 1500
+          },
+          "marca_sobrou": [],
+          "classe": "P2 nada aplicado (reaplicadas=3000)"
+        },
+        {
+          "rotulo": "sistema#6",
+          "atraso_ms": 65.751,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 0,
+            "ja_aplicadas": 3000,
+            "indices_reconstruidos": 0,
+            "impossiveis": 0
+          },
+          "registros": {
+            "a": 1500,
+            "b": 1500
+          },
+          "marca_sobrou": [],
+          "classe": "P4 tudo aplicado, marca pendente (ja_aplicadas=3000)"
+        },
+        {
+          "rotulo": "sistema#7",
+          "atraso_ms": 76.71,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 0,
+            "ja_aplicadas": 3000,
+            "indices_reconstruidos": 0,
+            "impossiveis": 0
+          },
+          "registros": {
+            "a": 1500,
+            "b": 1500
+          },
+          "marca_sobrou": [],
+          "classe": "P4 tudo aplicado, marca pendente (ja_aplicadas=3000)"
+        },
+        {
+          "rotulo": "sistema#8",
+          "atraso_ms": 87.669,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 0,
+            "ja_aplicadas": 3000,
+            "indices_reconstruidos": 0,
+            "impossiveis": 0
+          },
+          "registros": {
+            "a": 1500,
+            "b": 1500
+          },
+          "marca_sobrou": [],
+          "classe": "P4 tudo aplicado, marca pendente (ja_aplicadas=3000)"
+        }
+      ]
+    }
+  ],
+  "cascata": [
+    {
+      "regime": "por_operacao",
+      "filhas": 1200,
+      "t_calibracao_ms": 200.00863075256348,
+      "corridas": [
+        {
+          "rotulo": "por_operacao-cascata#0",
+          "atraso_ms": 0.0,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 1,
+            "ja_aplicadas": 0,
+            "indices_reconstruidos": 0,
+            "impossiveis": 0
+          },
+          "registros": {
+            "maes": 1,
+            "filhas": 1200
+          },
+          "marca_sobrou": [],
+          "classe": "COMPLETADA",
+          "indice_da_filha_precisou_reindexar": false,
+          "mae_id": 999,
+          "filhas_com_mae_nova": 1200,
+          "filhas_com_mae_velha": 0,
+          "veredito": "CONSISTENTE"
+        },
+        {
+          "rotulo": "por_operacao-cascata#1",
+          "atraso_ms": 45.002,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 1,
+            "ja_aplicadas": 0,
+            "indices_reconstruidos": 0,
+            "impossiveis": 0
+          },
+          "registros": {
+            "maes": 1,
+            "filhas": 1200
+          },
+          "marca_sobrou": [],
+          "classe": "COMPLETADA",
+          "indice_da_filha_precisou_reindexar": false,
+          "mae_id": 999,
+          "filhas_com_mae_nova": 1200,
+          "filhas_com_mae_velha": 0,
+          "veredito": "CONSISTENTE"
+        },
+        {
+          "rotulo": "por_operacao-cascata#2",
+          "atraso_ms": 90.004,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [
+              "transacao 1788433129912: atualizar rowid 1 em maes ([SP000008] integridade referencial: maes: nao deu para procurar agora as filhas em filhas pela chave \"fk_mae\" ([SP000010] arquivo corrompido: o indice de base/durab/filhas.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar). A procura le o que ja foi gravado; filha escrita nesta mesma transacao ainda nao esta visivel -- confirme-a antes de alterar a mae)"
+            ],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 0,
+            "ja_aplicadas": 0,
+            "indices_reconstruidos": 0,
+            "impossiveis": 1
+          },
+          "registros": {
+            "maes": 1,
+            "filhas": 1200
+          },
+          "marca_sobrou": [],
+          "classe": "COMPLETADA",
+          "indice_da_filha_precisou_reindexar": true,
+          "mae_id": 999,
+          "filhas_com_mae_nova": 359,
+          "filhas_com_mae_velha": 841,
+          "veredito": "PARCIAL_DENUNCIADO"
+        },
+        {
+          "rotulo": "por_operacao-cascata#3",
+          "atraso_ms": 135.006,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [
+              "transacao 1788433133657: atualizar rowid 1 em maes ([SP000008] integridade referencial: maes: nao deu para procurar agora as filhas em filhas pela chave \"fk_mae\" ([SP000010] arquivo corrompido: o indice de base/durab/filhas.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar). A procura le o que ja foi gravado; filha escrita nesta mesma transacao ainda nao esta visivel -- confirme-a antes de alterar a mae)"
+            ],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 0,
+            "ja_aplicadas": 0,
+            "indices_reconstruidos": 0,
+            "impossiveis": 1
+          },
+          "registros": {
+            "maes": 1,
+            "filhas": 1200
+          },
+          "marca_sobrou": [],
+          "classe": "COMPLETADA",
+          "indice_da_filha_precisou_reindexar": true,
+          "mae_id": 999,
+          "filhas_com_mae_nova": 624,
+          "filhas_com_mae_velha": 576,
+          "veredito": "PARCIAL_DENUNCIADO"
+        },
+        {
+          "rotulo": "por_operacao-cascata#4",
+          "atraso_ms": 180.008,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [
+              "transacao 1788433143200: atualizar rowid 1 em maes ([SP000008] integridade referencial: maes: nao deu para procurar agora as filhas em filhas pela chave \"fk_mae\" ([SP000010] arquivo corrompido: o indice de base/durab/filhas.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar). A procura le o que ja foi gravado; filha escrita nesta mesma transacao ainda nao esta visivel -- confirme-a antes de alterar a mae)"
+            ],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 0,
+            "ja_aplicadas": 0,
+            "indices_reconstruidos": 0,
+            "impossiveis": 1
+          },
+          "registros": {
+            "maes": 1,
+            "filhas": 1200
+          },
+          "marca_sobrou": [],
+          "classe": "COMPLETADA",
+          "indice_da_filha_precisou_reindexar": true,
+          "mae_id": 999,
+          "filhas_com_mae_nova": 975,
+          "filhas_com_mae_velha": 225,
+          "veredito": "PARCIAL_DENUNCIADO"
+        },
+        {
+          "rotulo": "por_operacao-cascata#5",
+          "atraso_ms": 225.01,
+          "marca_apareceu": true,
+          "relatorio": null,
+          "registros": {
+            "maes": 1,
+            "filhas": 1200
+          },
+          "marca_sobrou": [],
+          "classe": "SEM_MARCA",
+          "indice_da_filha_precisou_reindexar": false,
+          "mae_id": 999,
+          "filhas_com_mae_nova": 1200,
+          "filhas_com_mae_velha": 0,
+          "veredito": "CONSISTENTE"
+        },
+        {
+          "rotulo": "por_operacao-cascata#6",
+          "atraso_ms": 270.012,
+          "marca_apareceu": true,
+          "relatorio": null,
+          "registros": {
+            "maes": 1,
+            "filhas": 1200
+          },
+          "marca_sobrou": [],
+          "classe": "SEM_MARCA",
+          "indice_da_filha_precisou_reindexar": false,
+          "mae_id": 999,
+          "filhas_com_mae_nova": 1200,
+          "filhas_com_mae_velha": 0,
+          "veredito": "CONSISTENTE"
+        }
+      ]
+    },
+    {
+      "regime": "por_lote",
+      "filhas": 1200,
+      "t_calibracao_ms": 195.4214572906494,
+      "corridas": [
+        {
+          "rotulo": "por_lote-cascata#0",
+          "atraso_ms": 0.0,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 1,
+            "ja_aplicadas": 0,
+            "indices_reconstruidos": 0,
+            "impossiveis": 0
+          },
+          "registros": {
+            "maes": 1,
+            "filhas": 1200
+          },
+          "marca_sobrou": [],
+          "classe": "COMPLETADA",
+          "indice_da_filha_precisou_reindexar": false,
+          "mae_id": 999,
+          "filhas_com_mae_nova": 1200,
+          "filhas_com_mae_velha": 0,
+          "veredito": "CONSISTENTE"
+        },
+        {
+          "rotulo": "por_lote-cascata#1",
+          "atraso_ms": 43.97,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 1,
+            "ja_aplicadas": 0,
+            "indices_reconstruidos": 0,
+            "impossiveis": 0
+          },
+          "registros": {
+            "maes": 1,
+            "filhas": 1200
+          },
+          "marca_sobrou": [],
+          "classe": "COMPLETADA",
+          "indice_da_filha_precisou_reindexar": false,
+          "mae_id": 999,
+          "filhas_com_mae_nova": 1200,
+          "filhas_com_mae_velha": 0,
+          "veredito": "CONSISTENTE"
+        },
+        {
+          "rotulo": "por_lote-cascata#2",
+          "atraso_ms": 87.94,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [
+              "transacao 1788433159067: atualizar rowid 1 em maes ([SP000008] integridade referencial: maes: nao deu para procurar agora as filhas em filhas pela chave \"fk_mae\" ([SP000010] arquivo corrompido: o indice de base/durab/filhas.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar). A procura le o que ja foi gravado; filha escrita nesta mesma transacao ainda nao esta visivel -- confirme-a antes de alterar a mae)"
+            ],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 0,
+            "ja_aplicadas": 0,
+            "indices_reconstruidos": 0,
+            "impossiveis": 1
+          },
+          "registros": {
+            "maes": 1,
+            "filhas": 1200
+          },
+          "marca_sobrou": [],
+          "classe": "COMPLETADA",
+          "indice_da_filha_precisou_reindexar": true,
+          "mae_id": 999,
+          "filhas_com_mae_nova": 320,
+          "filhas_com_mae_velha": 880,
+          "veredito": "PARCIAL_DENUNCIADO"
+        },
+        {
+          "rotulo": "por_lote-cascata#3",
+          "atraso_ms": 131.909,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [
+              "transacao 1788433160757: atualizar rowid 1 em maes ([SP000008] integridade referencial: maes: nao deu para procurar agora as filhas em filhas pela chave \"fk_mae\" ([SP000010] arquivo corrompido: o indice de base/durab/filhas.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar). A procura le o que ja foi gravado; filha escrita nesta mesma transacao ainda nao esta visivel -- confirme-a antes de alterar a mae)"
+            ],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 0,
+            "ja_aplicadas": 0,
+            "indices_reconstruidos": 0,
+            "impossiveis": 1
+          },
+          "registros": {
+            "maes": 1,
+            "filhas": 1200
+          },
+          "marca_sobrou": [],
+          "classe": "COMPLETADA",
+          "indice_da_filha_precisou_reindexar": true,
+          "mae_id": 999,
+          "filhas_com_mae_nova": 742,
+          "filhas_com_mae_velha": 458,
+          "veredito": "PARCIAL_DENUNCIADO"
+        },
+        {
+          "rotulo": "por_lote-cascata#4",
+          "atraso_ms": 175.879,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [
+              "transacao 1788433162523: atualizar rowid 1 em maes ([SP000008] integridade referencial: maes: nao deu para procurar agora as filhas em filhas pela chave \"fk_mae\" ([SP000010] arquivo corrompido: o indice de base/durab/filhas.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar). A procura le o que ja foi gravado; filha escrita nesta mesma transacao ainda nao esta visivel -- confirme-a antes de alterar a mae)"
+            ],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 0,
+            "ja_aplicadas": 0,
+            "indices_reconstruidos": 0,
+            "impossiveis": 1
+          },
+          "registros": {
+            "maes": 1,
+            "filhas": 1200
+          },
+          "marca_sobrou": [],
+          "classe": "COMPLETADA",
+          "indice_da_filha_precisou_reindexar": true,
+          "mae_id": 999,
+          "filhas_com_mae_nova": 1059,
+          "filhas_com_mae_velha": 141,
+          "veredito": "PARCIAL_DENUNCIADO"
+        },
+        {
+          "rotulo": "por_lote-cascata#5",
+          "atraso_ms": 219.849,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 1,
+            "ja_aplicadas": 0,
+            "indices_reconstruidos": 0,
+            "impossiveis": 0
+          },
+          "registros": {
+            "maes": 1,
+            "filhas": 1200
+          },
+          "marca_sobrou": [],
+          "classe": "COMPLETADA",
+          "indice_da_filha_precisou_reindexar": false,
+          "mae_id": 999,
+          "filhas_com_mae_nova": 1200,
+          "filhas_com_mae_velha": 0,
+          "veredito": "CONSISTENTE"
+        },
+        {
+          "rotulo": "por_lote-cascata#6",
+          "atraso_ms": 263.819,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 1,
+            "ja_aplicadas": 0,
+            "indices_reconstruidos": 0,
+            "impossiveis": 0
+          },
+          "registros": {
+            "maes": 1,
+            "filhas": 1200
+          },
+          "marca_sobrou": [],
+          "classe": "COMPLETADA",
+          "indice_da_filha_precisou_reindexar": false,
+          "mae_id": 999,
+          "filhas_com_mae_nova": 1200,
+          "filhas_com_mae_velha": 0,
+          "veredito": "CONSISTENTE"
+        }
+      ]
+    },
+    {
+      "regime": "sistema",
+      "filhas": 1200,
+      "t_calibracao_ms": 185.60361862182617,
+      "corridas": [
+        {
+          "rotulo": "sistema-cascata#0",
+          "atraso_ms": 0.0,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 1,
+            "ja_aplicadas": 0,
+            "indices_reconstruidos": 0,
+            "impossiveis": 0
+          },
+          "registros": {
+            "maes": 1,
+            "filhas": 1200
+          },
+          "marca_sobrou": [],
+          "classe": "COMPLETADA",
+          "indice_da_filha_precisou_reindexar": false,
+          "mae_id": 999,
+          "filhas_com_mae_nova": 1200,
+          "filhas_com_mae_velha": 0,
+          "veredito": "CONSISTENTE"
+        },
+        {
+          "rotulo": "sistema-cascata#1",
+          "atraso_ms": 41.761,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 1,
+            "ja_aplicadas": 0,
+            "indices_reconstruidos": 0,
+            "impossiveis": 0
+          },
+          "registros": {
+            "maes": 1,
+            "filhas": 1200
+          },
+          "marca_sobrou": [],
+          "classe": "COMPLETADA",
+          "indice_da_filha_precisou_reindexar": false,
+          "mae_id": 999,
+          "filhas_com_mae_nova": 1200,
+          "filhas_com_mae_velha": 0,
+          "veredito": "CONSISTENTE"
+        },
+        {
+          "rotulo": "sistema-cascata#2",
+          "atraso_ms": 83.522,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [
+              "transacao 1788433173801: atualizar rowid 1 em maes ([SP000008] integridade referencial: maes: nao deu para procurar agora as filhas em filhas pela chave \"fk_mae\" ([SP000010] arquivo corrompido: o indice de base/durab/filhas.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar). A procura le o que ja foi gravado; filha escrita nesta mesma transacao ainda nao esta visivel -- confirme-a antes de alterar a mae)"
+            ],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 0,
+            "ja_aplicadas": 0,
+            "indices_reconstruidos": 0,
+            "impossiveis": 1
+          },
+          "registros": {
+            "maes": 1,
+            "filhas": 1200
+          },
+          "marca_sobrou": [],
+          "classe": "COMPLETADA",
+          "indice_da_filha_precisou_reindexar": true,
+          "mae_id": 999,
+          "filhas_com_mae_nova": 304,
+          "filhas_com_mae_velha": 896,
+          "veredito": "PARCIAL_DENUNCIADO"
+        },
+        {
+          "rotulo": "sistema-cascata#3",
+          "atraso_ms": 125.282,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [
+              "transacao 1788433175501: atualizar rowid 1 em maes ([SP000008] integridade referencial: maes: nao deu para procurar agora as filhas em filhas pela chave \"fk_mae\" ([SP000010] arquivo corrompido: o indice de base/durab/filhas.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar). A procura le o que ja foi gravado; filha escrita nesta mesma transacao ainda nao esta visivel -- confirme-a antes de alterar a mae)"
+            ],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 0,
+            "ja_aplicadas": 0,
+            "indices_reconstruidos": 0,
+            "impossiveis": 1
+          },
+          "registros": {
+            "maes": 1,
+            "filhas": 1200
+          },
+          "marca_sobrou": [],
+          "classe": "COMPLETADA",
+          "indice_da_filha_precisou_reindexar": true,
+          "mae_id": 999,
+          "filhas_com_mae_nova": 704,
+          "filhas_com_mae_velha": 496,
+          "veredito": "PARCIAL_DENUNCIADO"
+        },
+        {
+          "rotulo": "sistema-cascata#4",
+          "atraso_ms": 167.043,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [
+              "transacao 1788433177278: atualizar rowid 1 em maes ([SP000008] integridade referencial: maes: nao deu para procurar agora as filhas em filhas pela chave \"fk_mae\" ([SP000010] arquivo corrompido: o indice de base/durab/filhas.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar). A procura le o que ja foi gravado; filha escrita nesta mesma transacao ainda nao esta visivel -- confirme-a antes de alterar a mae)"
+            ],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 0,
+            "ja_aplicadas": 0,
+            "indices_reconstruidos": 0,
+            "impossiveis": 1
+          },
+          "registros": {
+            "maes": 1,
+            "filhas": 1200
+          },
+          "marca_sobrou": [],
+          "classe": "COMPLETADA",
+          "indice_da_filha_precisou_reindexar": true,
+          "mae_id": 999,
+          "filhas_com_mae_nova": 1040,
+          "filhas_com_mae_velha": 160,
+          "veredito": "PARCIAL_DENUNCIADO"
+        },
+        {
+          "rotulo": "sistema-cascata#5",
+          "atraso_ms": 208.804,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 1,
+            "ja_aplicadas": 0,
+            "indices_reconstruidos": 0,
+            "impossiveis": 0
+          },
+          "registros": {
+            "maes": 1,
+            "filhas": 1200
+          },
+          "marca_sobrou": [],
+          "classe": "COMPLETADA",
+          "indice_da_filha_precisou_reindexar": false,
+          "mae_id": 999,
+          "filhas_com_mae_nova": 1200,
+          "filhas_com_mae_velha": 0,
+          "veredito": "CONSISTENTE"
+        },
+        {
+          "rotulo": "sistema-cascata#6",
+          "atraso_ms": 250.565,
+          "marca_apareceu": true,
+          "relatorio": {
+            "impossiveis_linhas": [],
+            "achadas": 1,
+            "descartadas": 0,
+            "completadas": 1,
+            "reaplicadas": 1,
+            "ja_aplicadas": 0,
+            "indices_reconstruidos": 0,
+            "impossiveis": 0
+          },
+          "registros": {
+            "maes": 1,
+            "filhas": 1200
+          },
+          "marca_sobrou": [],
+          "classe": "COMPLETADA",
+          "indice_da_filha_precisou_reindexar": false,
+          "mae_id": 999,
+          "filhas_com_mae_nova": 1200,
+          "filhas_com_mae_velha": 0,
+          "veredito": "CONSISTENTE"
+        }
+      ]
+    }
+  ],
+  "tabela_apagada": [
+    {
+      "regime": "por_operacao",
+      "marca_achada_no_kill": true,
+      "relatorio": {
+        "impossiveis_linhas": [
+          "transacao 1788433183465: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433183465: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433183465: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433183465: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433183465: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433183465: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433183465: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433183465: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433183465: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433183465: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433183465: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433183465: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433183465: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433183465: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433183465: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433183465: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433183465: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433183465: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433183465: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433183465: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433183465: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433183465: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433183465: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433183465: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433183465: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433183465: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433183465: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433183465: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433183465: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433183465: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)"
+        ],
+        "achadas": 1,
+        "descartadas": 0,
+        "completadas": 1,
+        "reaplicadas": 0,
+        "ja_aplicadas": 0,
+        "indices_reconstruidos": 0,
+        "impossiveis": 30
+      }
+    },
+    {
+      "regime": "por_lote",
+      "marca_achada_no_kill": true,
+      "relatorio": {
+        "impossiveis_linhas": [
+          "transacao 1788433184772: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433184772: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433184772: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433184772: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433184772: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433184772: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433184772: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433184772: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433184772: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433184772: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433184772: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433184772: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433184772: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433184772: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433184772: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433184772: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433184772: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433184772: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433184772: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433184772: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433184772: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433184772: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433184772: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433184772: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433184772: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433184772: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433184772: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433184772: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433184772: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433184772: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)"
+        ],
+        "achadas": 1,
+        "descartadas": 0,
+        "completadas": 1,
+        "reaplicadas": 0,
+        "ja_aplicadas": 0,
+        "indices_reconstruidos": 0,
+        "impossiveis": 30
+      }
+    },
+    {
+      "regime": "sistema",
+      "marca_achada_no_kill": true,
+      "relatorio": {
+        "impossiveis_linhas": [
+          "transacao 1788433186090: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433186090: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433186090: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433186090: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433186090: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433186090: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433186090: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433186090: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433186090: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433186090: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433186090: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433186090: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433186090: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433186090: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433186090: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433186090: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433186090: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433186090: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433186090: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433186090: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433186090: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433186090: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433186090: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433186090: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433186090: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433186090: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433186090: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433186090: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433186090: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)",
+          "transacao 1788433186090: nao consegui abrir a ([SP000018] nao encontrado: nenhum volume de a.reg em base/durab)"
+        ],
+        "achadas": 1,
+        "descartadas": 0,
+        "completadas": 1,
+        "reaplicadas": 0,
+        "ja_aplicadas": 0,
+        "indices_reconstruidos": 0,
+        "impossiveis": 30
+      }
+    }
+  ]
+}
