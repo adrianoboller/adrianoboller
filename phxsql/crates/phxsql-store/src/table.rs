@@ -578,6 +578,21 @@ impl Table {
         }
         let moveu = self.reg.redeclarar_chaves_estrangeiras(fks)?;
         self.esquema = self.reg.esquema().clone();
+        // TODO estado derivado do esquema se refaz JUNTO com ele.
+        //
+        // `fks_conferidas` guarda INDICES para dentro de
+        // `esquema.chaves_estrangeiras()`. Trocar o esquema sem refazer a lista
+        // deixava indice apontando para fora quando a redeclaracao tinha MENOS
+        // chaves, e o `conferir_fks` seguinte estourava em `index out of
+        // bounds` -- panico, nao erro.
+        //
+        // O irmao que ja fazia certo e o `acrescentar_coluna`, cem linhas
+        // abaixo. O metodo cujo trabalho E mexer nas chaves era o unico que nao
+        // refazia. Nao se enumera aqui o que «pode ter mudado»: refaz-se TUDO o
+        // que deriva do esquema, porque enumerar excecao e como a proxima se
+        // perde.
+        self.colunas_marcadas = marcadas_do_esquema(&self.esquema);
+        self.fks_conferidas = fks_conferidas_do_esquema(&self.esquema);
         // O `.pag` descreve o esquema para quem le o diretorio sem abrir a
         // tabela; desatualizado, ele viraria uma segunda verdade.
         self.gravar_pag()?;

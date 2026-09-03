@@ -593,3 +593,47 @@ fn a_mae_invisivel_nao_manda_reparar_indice_sao() {
         "tirou o texto cru mas perdeu a explicacao -- {texto}"
     );
 }
+
+/// Trocar as chaves NAO pode deixar o portao apontando para o esquema velho.
+///
+/// # O defeito, e por que ele e panico e nao erro
+///
+/// `fks_conferidas` guarda INDICES para dentro de `esquema.chaves_estrangeiras()`.
+/// O `redeclarar_chaves_estrangeiras` trocava `self.esquema` e nao refazia a
+/// lista -- entao um esquema com MENOS chaves deixava indice apontando para
+/// fora, e o `conferir_fks` seguinte estourava em `index out of bounds`.
+///
+/// O irmao que faz certo esta cem linhas abaixo no mesmo arquivo: o
+/// `acrescentar_coluna` refaz `colunas_marcadas` e `fks_conferidas` logo depois
+/// de trocar o esquema. O metodo cujo trabalho E mexer nas chaves era o unico
+/// que nao refazia -- e e a quinta vez em 03/09/2026 que um mecanismo existe
+/// num caminho e falta no irmao.
+///
+/// # Prova real
+///
+/// Tirar as duas linhas do conserto faz este teste ABORTAR o binario com
+/// `index out of bounds`, e nao falhar: e por isso que ele confere o Ok em vez
+/// de so chamar.
+#[test]
+fn trocar_as_chaves_nao_deixa_o_portao_apontando_para_o_esquema_velho() {
+    let d = dir("portao-velho");
+    let mut m = mae(&d);
+    m.inserir(&[Value::Int(1)]).unwrap();
+    m.sincronizar().unwrap();
+
+    // A filha nasce com UMA chave conferida.
+    let mut f = filha(&d, true);
+    assert_eq!(f.esquema().chaves_estrangeiras().len(), 1);
+
+    // E passa a ter NENHUMA: o indice guardado vira ponteiro para fora.
+    f.redeclarar_chaves_estrangeiras(Vec::new())
+        .expect("redeclarar para lista vazia e ordem legitima");
+
+    // Sem o conserto, este `inserir` aborta o binario.
+    f.inserir(&[Value::Int(10), Value::Int(1)])
+        .expect("sem chave declarada, a filha entra sem conferir nada");
+
+    // E o portao tem de estar REALMENTE vazio, e nao so nao estourar.
+    f.inserir(&[Value::Int(11), Value::Int(999)])
+        .expect("chave que nao existe mais nao pode ser conferida");
+}
