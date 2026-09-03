@@ -99,6 +99,25 @@ confere_versoes() {
   [ -z "$fora" ] ||
     { echo "   nome de arquivo com versao velha: $(echo "$fora" | tr '\n' ' ')"; erro=1; }
 
+  # O sexto lugar nao cabe em `grep`: e a lista COMPLETA de onde a versao
+  # aparece, separando o que muda num bump do que e HISTORIA e nao pode mudar.
+  # Ela sai do `docs/versao/conferir.py`, e ele acrescenta o que as conferencias
+  # acima nao alcancam -- medido em 03/09/2026: elas guardam 4 arquivos
+  # (Cargo.toml, Cargo.lock, MANUAL.txt, CHANGELOG.md) e ele cobre esses mais o
+  # `CAPABILITIES.json`, o nome do arquivo do dossie e as 63 ocorrencias que
+  # ele se RECUSA a classificar sozinho, listadas para quem for ler.
+  #
+  # Guardado por `command -v` de proposito: este script nao usava python3 em
+  # linha nenhuma, e empacotar tem de continuar possivel onde ele nao existe.
+  # O pulo e RUIDOSO -- pulo silencioso e mentira por omissao, e um empacotador
+  # que finge ter conferido e pior que um que nao confere.
+  if command -v python3 >/dev/null 2>&1; then
+    python3 docs/versao/conferir.py ||
+      { echo "   o conferidor de versao reprovou"; erro=1; }
+  else
+    echo "   PULADO: sem python3, o conferidor de versao nao rodou"
+  fi
+
   [ $erro -eq 0 ] || { echo; echo "as versoes nao batem -- nada foi empacotado."; exit 4; }
 }
 
