@@ -12,6 +12,20 @@
 #
 # A marca do ultimo aviso mora fora do repositorio, para nao sujar o diff nem
 # virar conflito entre frentes.
+#
+# # O batimento de 15 min MORRE A CADA 30, e nao com a sessao
+#
+# Medido em 03/09/2026, duas vezes: o observador que roda este script a cada
+# 900 s e criado com `persistent: true`, e a ferramenta responde
+# `timeout 1800000ms` assim mesmo -- o teto de 30 minutos vale com persistente
+# ou sem. Na pratica cada armacao rende DOIS avisos e para.
+#
+# Entao o gatilho de hora em hora nao e redundancia: ele e o unico motivo de o
+# batimento fino voltar a existir, e quem o atender tem de REARMAR o observador,
+# nao so rodar o script. Supor que `persistent` e persistente deixa o aviso
+# calado parecendo que nao ha o que avisar -- que e o pior estado de um agente
+# de comunicacao, e o mesmo defeito que este arquivo ja teve de outro jeito:
+# silencio que passa por «tudo bem».
 
 set -u
 RAIZ="$(cd "$(dirname "$0")/.." && pwd)"
