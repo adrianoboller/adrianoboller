@@ -47,7 +47,9 @@ pesquisável (texto) a extração exige OCR, e o pré-flight marca isso.
 /wx-claude-code:questionario ./meu-projeto
 ```
 
-O plugin pergunta, uma letra por vez:
+O plugin pergunta **uma letra por mensagem** e espera. A resposta decide a próxima: quem não tem o PDF de códigos (B) ouve, em E, que o completo vai cobrir; quem diz «não» ao Impeccable (F) não é perguntado sobre paleta; quem escolhe mobile (I) é perguntado sobre versões de Android e iOS. Cada resposta é confirmada em uma linha antes da letra seguinte.
+
+As letras:
 
 | Letra | Pergunta | Resposta típica |
 | --- | --- | --- |

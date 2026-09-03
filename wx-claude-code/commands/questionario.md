@@ -12,8 +12,10 @@ Este é o **primeiro passo** de qualquer conversão de um projeto WINDEV, WEBDEV
 
 ## Como perguntar
 
-- Use `AskUserQuestion` quando a ferramenta existir; senão, faça as mesmas perguntas em texto e **espere** as respostas.
-- Uma rodada por letra, de **A** a **J**, na ordem abaixo. Não pule letra: quem não tem o item responde «não tenho» ou «não se aplica», e isso também é resposta.
+- **Uma letra por mensagem, sempre.** Pergunte a letra, encerre o turno e espere. Nunca liste duas letras na mesma mensagem, nem com `AskUserQuestion` nem em texto: quem lê dez perguntas responde três. Só a primeira mensagem tem uma frase de abertura; as seguintes começam direto pela letra.
+- Use `AskUserQuestion` quando a ferramenta existir (uma pergunta por chamada); senão, faça a pergunta em texto e **encerre o turno** sem perguntar mais nada.
+- A resposta de cada letra decide a próxima pergunta (tabela abaixo). Não pule letra: quem não tem o item responde «não tenho» ou «não se aplica», e isso também é resposta.
+- Antes de passar à letra seguinte, confirme em uma linha o que foi registrado (`A: inputs/banco.sql, HFSQL 2025 → provided`). O usuário corrige na hora, não no fim.
 - Um caminho só conta como fornecido depois de você **ler o arquivo** (`Glob` + `Read`, ou `ls -la` e `head`). Anexo que não abre é `missing`, não `provided`.
 - Não prometa relatório, plano nem prazo durante o questionário. Estado desta etapa: `INTAKE_PENDING`.
 - Respostas em português; o usuário pode responder em qualquer idioma.
@@ -39,6 +41,22 @@ Este é o **primeiro passo** de qualquer conversão de um projeto WINDEV, WEBDEV
 **I) Linguagens para o Frontend.** «Qual linguagem e framework para o frontend? (exemplos: React, Vue, Svelte, Angular, Flutter, Kotlin/Swift nativo, Tauri, Blazor, HTML+HTMX). Quais plataformas: web, desktop, Android, iOS? Navegadores e dispositivos mínimos?»
 
 **J) Economia de tokens.** «Deseja ativar e configurar a economia de tokens? Isso instala no `CLAUDE.md` do projeto a instrução de estilo de resposta (direto ao ponto, frases curtas, um assunto por parágrafo, problema em uma linha, solução em passos numerados) e deixa pronto o comando `/wx-claude-code:laudo-tokens`, a auditoria em três fases que **não altera nada sem aprovação**.»
+
+### A resposta decide a próxima
+
+| Depois de | Se a resposta for | Então |
+| --- | --- | --- |
+| A | caminho informado | abra o arquivo; se não abrir, diga e pergunte de novo A antes de ir a B |
+| A | «não tenho» | pergunte se existe a análise exportada ou um dump; sem nada, `missing` e siga para B |
+| B, C ou D | «não tenho» | anote e siga; em **E** avise que o PDF completo vai cobrir o que faltou como `partial` |
+| E | «não tenho» e B, C ou D também faltam | avise que o G0 vai dar `BLOCKED` para esses grupos e pergunte se quer seguir assim mesmo |
+| F | «não» | pule paleta, tema, tipografia e densidade; vá direto a G |
+| F | «sim» | faça as subperguntas de F uma por vez: preservar ou redesenhar → paleta → tema → tipografia → densidade → marca |
+| G | «não» ao corpus | pergunte de onde virá a semântica WLanguage (Help específico ou nenhuma); sem fonte, anote o risco |
+| G | «sim» | pergunte a versão e se há override; rode o `--verify` só depois de fechar o questionário |
+| H | linguagem informada | pergunte framework, banco e implantação **na mesma letra**, um item por vez |
+| I | plataforma inclui mobile | pergunte versões mínimas de Android e iOS; se só web, pergunte navegadores |
+| J | «sim» | confirme que o `CLAUDE.md` do projeto vai receber o bloco de estilo; se já existir, diga que não será sobrescrito |
 
 Feche com as três perguntas de governança da skill de conversão, que o questionário não substitui: versão/update/idioma do WX; modo desejado (`inventário`, `plano`, `piloto`, `completo`); quem aprova regras, divergências e aceite.
 

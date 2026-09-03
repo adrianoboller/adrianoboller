@@ -8,7 +8,7 @@ e renderizada num terminal pelo Chromium (Playwright), a 2× de escala.
 | --- | --- |
 | 01 | `claude plugin validate` no plugin e no marketplace, mais o validador offline em modo estrito |
 | 02 | sessão `-p` pedindo a lista de skills e agentes com prefixo `wx-claude-code:` |
-| 03 | `claude -p "/wx-claude-code:questionario <projeto>"`, sem `AskUserQuestion` (modo texto) |
+| 03 | três turnos reais (`claude -p` e `-c`): pergunta A, resposta, confirmação e pergunta B, resposta «não tenho», pergunta C |
 | 04 | `aplicar_questionario.py` sobre respostas de exemplo e o `wx_preflight.py` real (BLOCKED por PDF de mentira, como devia) |
 | 05 | o `DESIGN.md` que a letra F gera |
 | 06 | `query_wlanguage_help.py --verify` e `--query HReadSeekFirst` |
