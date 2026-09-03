@@ -241,7 +241,7 @@ O motor de armazenamento está completo e testado: **1.547 testes** no projeto i
 | `Uuid` v4/v7 (RFC 9562), `Uuid256` de 256 bits e `Sequence` | pronto |
 | CRC-32 slice-by-8 — inserção 3,1× mais rápida, medida | pronto |
 | Varredura em memória dividida entre núcleos — 1,8× em 4 núcleos | pronto |
-| Chave estrangeira **declarada** no esquema (CASCADE / RESTRICT / SET NULL) | parcial — guardada e reportada, **não aplicada** na gravação |
+| Chave estrangeira **conferida na gravação** — nasce conferida; `ao_excluir` só aceita **restringir**, `ao_alterar` nasce **cascata** | pronto — SP000007/008/009 (03/09), com verificador de consistência e as decisões de **não** conferir escritas em `docs/INTEGRIDADE.md` §3 e §4 |
 | Reindex — recria o `.ndx` do zero a partir do `.reg` | pronto |
 | `Table` — valores, nulos, índices sincronizados, verificação de integridade | pronto |
 | CLI `phxsql` | pronto |
