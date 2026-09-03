@@ -13,6 +13,8 @@ Subcomandos:
   kanban    regenera o quadro kanban.md da matriz de rastreabilidade, com limite de WIP
   sprint    abre ou fecha uma sprint Scrum (backlog, objetivo, definicao de pronto)
   painel    gera pmo/painel.html (status + kanban + base de conhecimento) para o aprovador abrir sem terminal
+  entregar  zipa a entrega da sprint para o stakeholder: resumo, tecnicas aplicadas, base de conhecimento,
+            ferramentas usadas (docstrings dos .py), decisoes, lacunas e o kanban do fechamento
 
 As tres tecnicas sao do mesmo PMO: o Scrum organiza o tempo (sprint por gate ou
 onda), o Kanban mostra o fluxo e trava o WIP, e o PDCA e como cada hipotese de
@@ -75,7 +77,7 @@ def iniciar(wx: Path, aprovador: str) -> list[str]:
     backlog = (
         "# Backlog do produto\n\n"
         "Uma linha por item, priorizada de cima para baixo. O trace_id liga ao traceability.csv.\n\n"
-        "| prioridade | trace_id | item | gate | estimativa | sprint |\n| ---: | --- | --- | --- | --- | --- |\n"
+        "| prioridade | trace_id | item | papel | gate | estimativa | sprint |\n| ---: | --- | --- | --- | --- | --- | --- |\n"
     )
     base = (
         "# Base de conhecimento\n\n"
@@ -104,6 +106,42 @@ def iniciar(wx: Path, aprovador: str) -> list[str]:
         write_new(pmo / "base_de_conhecimento.md", base),
         write_new(pmo / "pdca" / "LEIA-ME.md", "Um arquivo PDCA-NNN.md por ciclo: Plan, Do, Check, Act.\n"),
     ]
+
+
+PAPEIS = {"A": "orquestrador", "B": "engenheiro", "C": "dba", "D": "zelador", "E": "designer", "F": "prova-real", "G": "qa", "H": "documentacao", "I": "versionador", "J": "pesquisador"}
+
+
+def ler_backlog(wx: Path) -> dict[str, dict]:
+    """trace_id -> {papel, item, gate, sprint}; o backlog e a fonte do dono de cada item."""
+    p = wx / "pmo" / "backlog.md"
+    itens: dict[str, dict] = {}
+    if not p.is_file():
+        return itens
+    for l in p.read_text(encoding="utf-8").splitlines():
+        if not l.startswith("|") or l.startswith("| prioridade") or l.startswith("| ---"):
+            continue
+        c = [x.strip() for x in l.strip().strip("|").split("|")]
+        if len(c) >= 7 and re.match(r"^[A-Z]{2,3}-\d+", c[1]):
+            itens[c[1]] = {"prioridade": c[0], "item": c[2], "papel": c[3].upper(), "gate": c[4], "estimativa": c[5], "sprint": c[6]}
+    return itens
+
+
+def backlog_acrescentar(wx: Path, trace_id: str, papel: str, item: str, gate: str, sprint: str) -> None:
+    p = wx / "pmo" / "backlog.md"
+    linhas = p.read_text(encoding="utf-8").splitlines() if p.is_file() else []
+    if any(l.startswith(f"| ") and f"| {trace_id} |" in l for l in linhas):
+        novas = []
+        for l in linhas:
+            if f"| {trace_id} |" in l:
+                c = [x.strip() for x in l.strip().strip("|").split("|")]
+                c[3] = papel; c[6] = sprint
+                l = "| " + " | ".join(c) + " |"
+            novas.append(l)
+        linhas = novas
+    else:
+        n = len(ler_backlog(wx)) + 1
+        linhas.append(f"| {n} | {trace_id} | {item} | {papel} | {gate} |  | {sprint} |")
+    p.write_text("\n".join(linhas) + "\n", encoding="utf-8")
 
 
 def proximo_id(pasta: Path, prefixo: str) -> str:
@@ -158,7 +196,8 @@ def kanban(wx: Path) -> str:
     wip = dict(WIP_PADRAO)
     if plano_p.is_file():
         wip.update(json.loads(plano_p.read_text(encoding="utf-8")).get("kanban", {}).get("wip", {}))
-    linhas = ["# Kanban", "", f"Gerado por `pmo.py kanban` em {date.today().isoformat()} de `traceability.csv` ({len(rows)} itens). Não edite: mude o estado na matriz.", ""]
+    backlog = ler_backlog(wx)
+    linhas = ["# Kanban", "", f"Gerado por `pmo.py kanban` em {date.today().isoformat()} de `traceability.csv` ({len(rows)} itens) e `backlog.md` (papel dono). Não edite: mude o estado na matriz; o papel muda no backlog, pelo PMO.", ""]
     violacoes = []
     for coluna, estados in COLUNAS:
         cartoes = [r for r in rows if r.get("status", "").strip() in estados]
@@ -171,7 +210,9 @@ def kanban(wx: Path) -> str:
         for r in cartoes:
             resumo = (r.get("rule_summary") or "").strip()[:70]
             dono = r.get("approved_by") or r.get("target_component") or ""
-            linhas.append(f"- `{r.get('trace_id','?')}` {resumo}" + (f" — {dono}" if dono else "") + (f" — {r.get('notes','').strip()[:60]}" if coluna == "Bloqueado" and r.get("notes") else ""))
+            papel = backlog.get(r.get("trace_id", ""), {}).get("papel", "")
+            tag = f"[{papel} {PAPEIS.get(papel, '?')}] " if papel else "[sem papel] "
+            linhas.append(f"- {tag}`{r.get('trace_id','?')}` {resumo}" + (f" — {dono}" if dono else "") + (f" — {r.get('notes','').strip()[:60]}" if coluna == "Bloqueado" and r.get("notes") else ""))
         if not cartoes:
             linhas.append("- (vazio)")
         linhas.append("")
@@ -189,6 +230,22 @@ def sprint_abrir(wx: Path, nome: str, objetivo: str, gate: str, itens: list[str]
     if any(s.get("status") == "aberta" for s in plano["sprints"]):
         raise ValueError("já existe sprint aberta; feche-a antes (Scrum: uma sprint por vez)")
     numero = len(plano["sprints"]) + 1
+    # item pode vir como ID ou ID:PAPEL; o papel vai para o backlog, que e quem diz o dono
+    tr = wx / "traceability.csv"
+    resumos: dict[str, str] = {}
+    if tr.is_file():
+        with tr.open(encoding="utf-8", newline="") as f:
+            resumos = {r.get("trace_id"): (r.get("rule_summary") or "") for r in csv.DictReader(f)}
+    limpos = []
+    for it in itens:
+        tid, _, papel = it.partition(":")
+        papel = papel.upper()
+        if papel and papel not in PAPEIS:
+            raise ValueError(f"papel inválido em {it!r}: use uma letra de A a J")
+        if papel:
+            backlog_acrescentar(wx, tid, papel, resumos.get(tid, ""), gate, f"{numero:02d}")
+        limpos.append(tid)
+    itens = limpos
     sprint = {"numero": numero, "nome": nome, "objetivo": objetivo, "gate": gate, "itens": itens, "aberta_em": date.today().isoformat(), "status": "aberta", "aprovador": aprovador}
     plano["sprints"].append(sprint)
     plano_p.write_text(json.dumps(plano, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -425,6 +482,86 @@ def painel(wx: Path) -> Path:
     return destino
 
 
+def entregar(wx: Path, numero: int | None, plugin_root: Path | None) -> Path:
+    """Zip da sprint para o stakeholder. Tudo dentro e gerado ou copiado; nada e digitado aqui."""
+    import zipfile, ast
+    plano = json.loads((wx / "pmo" / "plano.json").read_text(encoding="utf-8"))
+    sprints = plano.get("sprints", [])
+    if not sprints:
+        raise ValueError("nenhuma sprint no plano")
+    s = next((x for x in sprints if x["numero"] == numero), None) if numero else sprints[-1]
+    if s is None:
+        raise ValueError(f"sprint {numero} não existe")
+    n = s["numero"]
+    pasta = wx / "pmo" / "entregas"
+    pasta.mkdir(parents=True, exist_ok=True)
+    destino = pasta / f"sprint-{n:02d}-{s['gate']}-{date.today().isoformat()}.zip"
+    hoje = date.today().isoformat()
+
+    # tecnicas aplicadas: contadas dos artefatos
+    base = wx / "pmo" / "base_de_conhecimento.md"
+    bl = [l for l in base.read_text(encoding="utf-8").splitlines() if l.startswith("| PDCA-")] if base.is_file() else []
+    kb = kanban(wx)
+    est = re.findall(r"^## (.+?) \((\d+)(?: / WIP (\d+))?\)(.*)$", kb, re.M)
+    rot = wx / "pmo" / "roteamento.jsonl"
+    decs = [json.loads(l) for l in rot.read_text(encoding="utf-8").splitlines() if l.strip()] if rot.is_file() else []
+    orc = json.loads((wx / "pmo" / "orcamento.json").read_text(encoding="utf-8"))["gates"].get(s["gate"], {}) if (wx / "pmo" / "orcamento.json").is_file() else {}
+    tecnicas = [
+        f"# Técnicas aplicadas na sprint {n:02d} ({s['gate']})", "",
+        f"Gerado por `pmo.py entregar` em {hoje}. Cada número tem a fonte ao lado; o que não tem fonte está marcado INDISPONÍVEL.", "",
+        "## Scrum", "",
+        f"- Sprint {n:02d} «{s['nome']}», objetivo: {s['objetivo']}. Aberta em {s['aberta_em']}" + (f", fechada em {s['fechada_em']} com decisão {s.get('decisao','')}" if s.get("status") == "fechada" else ", ainda aberta") + ".",
+        f"- Itens: {len(s['itens'])} ({', '.join(s['itens']) or 'nenhum'}); prontos pela definição de pronto: {s.get('prontos', 'INDISPONÍVEL (sprint aberta)')}. Fonte: `plano.json`.",
+        "- Definição de pronto: " + "; ".join(DEFINICAO_DE_PRONTO) + ".", "",
+        "## Kanban", "",
+        "- Colunas no fechamento: " + ", ".join(f"{c} {q}" + (f"/{w}" if w else "") + (" ESTOURADO" if "ESTOURADO" in x else "") for c, q, w, x in est) + ". Fonte: `kanban.md`.",
+        "- Limite de WIP: " + ", ".join(f"{k} {v}" for k, v in plano.get("kanban", {}).get("wip", WIP_PADRAO).items()) + ".", "",
+        "## PDCA", "",
+        f"- Ciclos fechados até aqui: {len(bl)} ({sum('| frutifero |' in l for l in bl)} frutíferos, {sum('| infrutifero |' in l for l in bl)} infrutíferos). Fonte: `base_de_conhecimento.md`.",
+        "- Regra: ciclo infrutífero só fecha com a próxima hipótese; a base recebe a linha nos dois casos.", "",
+        "## Balanceamento de modelos", "",
+        f"- Decisões de roteamento registradas: {len(decs)}" + (" (" + ", ".join(f"{k} {v}" for k, v in sorted(Counter(d['modelo'] for d in decs).items())) + ")" if decs else "") + ". Fonte: `roteamento.jsonl`.",
+        f"- Orçamento do gate {s['gate']}: previsto {orc.get('tokens_previstos', 'INDISPONÍVEL')}, gasto {orc.get('tokens_gastos', 'INDISPONÍVEL')} tokens, {orc.get('chamadas', 0)} chamadas. Fonte: `orcamento.json`.", "",
+        "## Papéis e subagentes", "",
+        "- Dez papéis (A orquestrador … J pesquisador), cada um com quatro subagentes Plan, Do, Check e Act; itens do backlog levam o papel dono. Fonte: `backlog.md`.", "",
+    ]
+
+    # ferramentas: docstrings dos .py do plugin (e do projeto, se houver)
+    ferr = [f"# Ferramentas usadas na sprint {n:02d}", "", "Descrição lida do cabeçalho (docstring) de cada script; nada aqui foi escrito à mão.", ""]
+    fontes = []
+    if plugin_root:
+        fontes += sorted((plugin_root / "skills" / "conversao-wx" / "scripts").glob("*.py")) + sorted((plugin_root / "hooks").glob("*.py"))
+    fontes += sorted((wx.parent).glob("**/*.py"))[:50] if False else []
+    for f in fontes:
+        try:
+            doc = ast.get_docstring(ast.parse(f.read_text(encoding="utf-8"))) or "(sem docstring)"
+        except SyntaxError:
+            doc = "(não foi possível ler)"
+        ferr += [f"## `{f.name}`", "", doc.strip(), ""]
+
+    with zipfile.ZipFile(destino, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr(f"sprint-{n:02d}/LEIA-ME.md", f"# Entrega da sprint {n:02d} ({s['gate']})\n\nGerado em {hoje} por `pmo.py entregar`.\n\n- `resumo-da-sprint.md`: resumo de doze seções (ou aviso se a sprint ainda estiver aberta)\n- `tecnicas-aplicadas.md`: Scrum, Kanban, PDCA e balanceamento, com números medidos\n- `base-de-conhecimento.md`: todos os ciclos PDCA fechados\n- `ferramentas.md`: o que cada script faz, lido do próprio script\n- `kanban.md`, `status.md`: estado no fechamento\n- `decisoes/`, `gaps.md`, `riscos.md`: decisões, lacunas e RAID\n- `desenvolvimento/`: os .md produzidos em specifications/ e architecture/\n")
+        resumo = sorted(pasta.parent.joinpath("sprints").glob(f"sprint-{n:02d}-*.md"))
+        z.writestr(f"sprint-{n:02d}/resumo-da-sprint.md", resumo[-1].read_text(encoding="utf-8") if resumo else f"Sprint {n:02d} ainda aberta: o resumo de doze seções é escrito por `pmo.py sprint fechar`.\n")
+        z.writestr(f"sprint-{n:02d}/tecnicas-aplicadas.md", "\n".join(tecnicas) + "\n")
+        z.writestr(f"sprint-{n:02d}/base-de-conhecimento.md", base.read_text(encoding="utf-8") if base.is_file() else "INDISPONÍVEL\n")
+        z.writestr(f"sprint-{n:02d}/ferramentas.md", "\n".join(ferr) + "\n")
+        z.writestr(f"sprint-{n:02d}/kanban.md", kb + "\n")
+        z.writestr(f"sprint-{n:02d}/status.md", status(wx) + "\n")
+        for nome_arq in ("gaps.md", "traceability.csv"):
+            if (wx / nome_arq).is_file():
+                z.write(wx / nome_arq, f"sprint-{n:02d}/{nome_arq}")
+        for nome_arq in ("riscos.md", "backlog.md", "plano.json", "orcamento.json"):
+            if (wx / "pmo" / nome_arq).is_file():
+                z.write(wx / "pmo" / nome_arq, f"sprint-{n:02d}/{nome_arq}")
+        for sub in ("decisions", "specifications", "architecture"):
+            for f in sorted((wx / sub).rglob("*.md")) if (wx / sub).is_dir() else []:
+                z.write(f, f"sprint-{n:02d}/{'decisoes' if sub == 'decisions' else 'desenvolvimento/' + sub}/{f.relative_to(wx / sub)}")
+        for f in sorted((wx / "pmo" / "pdca").glob("PDCA-*.md")) if (wx / "pmo" / "pdca").is_dir() else []:
+            z.write(f, f"sprint-{n:02d}/pdca/{f.name}")
+    return destino
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project-root", type=Path, default=Path("."))
@@ -441,8 +578,9 @@ def main() -> int:
     fch = pds.add_parser("fechar"); fch.add_argument("--id", required=True); fch.add_argument("--resultado", required=True, choices=["frutifero", "infrutifero"]); fch.add_argument("--medido", required=True); fch.add_argument("--aprendizado", required=True); fch.add_argument("--proxima", default="")
     sub.add_parser("kanban")
     sub.add_parser("painel")
+    en = sub.add_parser("entregar"); en.add_argument("--sprint", type=int, help="número; padrão: a última"); en.add_argument("--plugin-root", type=Path, help="para listar as ferramentas do plugin")
     sp = sub.add_parser("sprint"); sps = sp.add_subparsers(dest="acao", required=True)
-    sa = sps.add_parser("abrir"); sa.add_argument("--nome", required=True); sa.add_argument("--objetivo", required=True); sa.add_argument("--gate", required=True, choices=GATES); sa.add_argument("--item", action="append", default=[], help="trace_id do backlog; repetível"); sa.add_argument("--aprovador", default="")
+    sa = sps.add_parser("abrir"); sa.add_argument("--nome", required=True); sa.add_argument("--objetivo", required=True); sa.add_argument("--gate", required=True, choices=GATES); sa.add_argument("--item", action="append", default=[], help="trace_id, ou trace_id:PAPEL (A–J) para registrar o dono no backlog; repetível"); sa.add_argument("--aprovador", default="")
     sf = sps.add_parser("fechar"); sf.add_argument("--decisao", required=True, choices=["APPROVED", "CONDITIONAL", "REJECTED"]); sf.add_argument("--pedido", default="")
     args = parser.parse_args()
     wx = args.project_root.resolve(strict=True) / ".wx-migration"
@@ -459,6 +597,12 @@ def main() -> int:
         print(kanban(wx))
     elif args.cmd == "painel":
         print(f"CREATED {painel(wx)}")
+    elif args.cmd == "entregar":
+        z = entregar(wx, args.sprint, args.plugin_root)
+        import zipfile
+        with zipfile.ZipFile(z) as zz:
+            print("\n".join(f"  {i.filename} ({i.file_size} bytes)" for i in zz.infolist()))
+        print(f"CREATED {z}")
     elif args.cmd == "sprint":
         if args.acao == "abrir":
             print(sprint_abrir(wx, args.nome, args.objetivo, args.gate, args.item, args.aprovador))

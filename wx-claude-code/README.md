@@ -125,9 +125,20 @@ Veja `exemplos/estoque-wx/LEIA-ME.md`.
 - `extrair_pdf.py` precisa de `pypdf` ou `pdfminer.six`; sem eles diz isso e
   para, em vez de inventar texto.
 
+## Equipe de grande porte: dez papéis com PDCA
+
+Para projetos grandes, dez papéis com dono (A orquestrador, B engenheiro,
+C DBA, D zelador, E designer, F prova real, G QA, H documentação,
+I versionador, J pesquisador), cada um com quatro subagentes Plan, Do,
+Check e Act. Um papel só trabalha em item do backlog com a sua letra, e o
+backlog é do PMO. No fechamento, `pmo.py entregar` zipa para o stakeholder
+o resumo da sprint, as técnicas aplicadas com números, a base de
+conhecimento, o que cada ferramenta faz (lido dos scripts), decisões,
+lacunas e o Kanban. Regra em `references/papeis-e-pdca.md`.
+
 ## Agentes
 
-30 agentes da conversão (orquestrador, curadoria de evidências, WLanguage,
+30 agentes da conversão, mais 50 da camada de papéis (10 papéis × [papel + 4 fases PDCA]) (orquestrador, curadoria de evidências, WLanguage,
 regras, telas, dados, arquitetura, implementação, testes, segurança,
 integrações, relatórios, desempenho, cutover, auditoria de qualidade, design,
 grids e planilhas) mais os 4 do Impeccable. A topologia e os modelos estão em
@@ -153,6 +164,7 @@ geradas por `docs/prints/gerar.md`).
 | ![equipe](docs/prints/09-equipe-wlanguage-por-tema.png) delegação real aos `wl-*-specialist` | ![scrum](docs/prints/10-pmo-scrum-kanban-pdca.png) Scrum, Kanban e PDCA com a base de conhecimento |
 | ![pmo-sessao](docs/prints/11-pmo-sessao-real.png) `/wx-claude-code:pmo status` numa sessão real | ![painel](docs/prints/12-painel-pmo-html-tema-claro.png) `pmo.py painel`, tema claro |
 | ![letra-h](docs/prints/13-questionario-h-orientacao-de-linguagem.png) letra H: sinais e três opções, a recomendada primeiro | ![exemplo](docs/prints/14-exemplo-estoque-g0-extracao-golden.png) o exemplo ESTOQUE no G0, extração e golden |
+| ![papeis](docs/prints/15-papeis-backlog-e-entrega-zipada.png) backlog com papel dono, Kanban por papel e a entrega zipada ao stakeholder | |
 
 ## Vídeo de uso
 

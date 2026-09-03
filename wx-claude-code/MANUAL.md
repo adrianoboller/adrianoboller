@@ -191,6 +191,10 @@ hipótese não fecha.
 
 **Uso de tokens medido.** `uso_de_tokens.py --project-root . lancar --gate G4` lê o campo `usage` das sessões do Claude Code e lança no orçamento; `pmo.py gastar` fica para lançamento manual.
 
+**Papéis e backlog.** Em projeto grande, cada item do backlog tem um papel dono (A–J): `pmo.py sprint abrir ... --item BR-012:B --item DB-003:C`. O papel executa o item em Plan, Do, Check e Act com os seus quatro subagentes; o Kanban mostra `[B engenheiro]` em cada cartão.
+
+**Entrega ao stakeholder.** `pmo.py entregar --sprint N --plugin-root "$CLAUDE_PLUGIN_ROOT"` gera um zip com o resumo da sprint, as técnicas aplicadas com números, a base de conhecimento, o que cada ferramenta faz (lido dos scripts), decisões, lacunas, RAID e o Kanban do fechamento.
+
 **Painel.** `pmo.py painel` gera `pmo/painel.html` para abrir no navegador. `pmo.py status` regenera `pmo/status.md`: gates, itens por
 estado, lacunas, decisões pendentes, orçamento por modelo, sprint, quadro e
 PDCA. Nenhum número é digitado; cada linha diz a fonte; o que não tem fonte

@@ -133,6 +133,26 @@ class PMO(unittest.TestCase):
         resumo = next((self.tmp / ".wx-migration/pmo/sprints").glob("sprint-01-*.md")).read_text()
         self.assertIn("## 12. Retrospectiva", resumo); self.assertIn("BR-001", resumo)
 
+    def test_backlog_com_papel_e_entrega_zipada(self):
+        import zipfile
+        r = run(SCRIPTS / "pmo.py", "--project-root", self.tmp, "sprint", "abrir", "--nome", "s1", "--objetivo", "o", "--gate", "G5", "--item", "BR-001:B", "--item", "BR-009:F")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        r = run(SCRIPTS / "pmo.py", "--project-root", self.tmp, "sprint", "abrir", "--nome", "x", "--objetivo", "o", "--gate", "G5", "--item", "BR-002:Z")
+        self.assertEqual(r.returncode, 2)
+        kb = run(SCRIPTS / "pmo.py", "--project-root", self.tmp, "kanban").stdout
+        self.assertIn("[B engenheiro] `BR-001`", kb); self.assertIn("[F prova-real] `BR-009`", kb); self.assertIn("[sem papel] `BR-002`", kb)
+        run(SCRIPTS / "pmo.py", "--project-root", self.tmp, "sprint", "fechar", "--decisao", "APPROVED")
+        r = run(SCRIPTS / "pmo.py", "--project-root", self.tmp, "entregar", "--sprint", "1", "--plugin-root", RAIZ)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        z = next((self.tmp / ".wx-migration/pmo/entregas").glob("sprint-01-G5-*.zip"))
+        nomes = zipfile.ZipFile(z).namelist()
+        for n in ("sprint-01/resumo-da-sprint.md", "sprint-01/tecnicas-aplicadas.md", "sprint-01/base-de-conhecimento.md", "sprint-01/ferramentas.md", "sprint-01/kanban.md", "sprint-01/backlog.md"):
+            self.assertIn(n, nomes)
+        ferr = zipfile.ZipFile(z).read("sprint-01/ferramentas.md").decode()
+        self.assertIn("pmo.py", ferr); self.assertIn("golden.py", ferr)
+        tec = zipfile.ZipFile(z).read("sprint-01/tecnicas-aplicadas.md").decode()
+        self.assertIn("## PDCA", tec); self.assertIn("Fonte:", tec)
+
     def test_status_sem_numero_inventado(self):
         r = run(SCRIPTS / "pmo.py", "--project-root", self.tmp, "status")
         self.assertIn("1/9 = 11.1%", r.stdout)

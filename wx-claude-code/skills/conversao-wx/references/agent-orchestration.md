@@ -35,6 +35,8 @@
 | `wl-web-specialist` | Sonnet, high | Help temas 01-04-05, 02-05, 05-*: WEBDEV | não |
 | `wl-errors-specialist` | Sonnet, high | Help temas 01-01, 03-01: erros de compilação e runtime | não |
 
+Para projeto de grande porte há a camada de **papéis** (A orquestrador … J pesquisador), cada um com quatro subagentes PDCA, trabalhando só em itens do backlog com o seu papel: [papeis-e-pdca.md](papeis-e-pdca.md). Os especialistas desta tabela são chamados pelos papéis.
+
 O modelo da tabela é o ponto de partida; a escolha final por tarefa sai de `scripts/rotear_modelo.py`, conforme [balanceamento-de-modelos.md](balanceamento-de-modelos.md). A divisão da equipe WLanguage por tema do Help está em [equipe-wlanguage.md](equipe-wlanguage.md).
 
 Use aliases de modelo para acompanhar atualizações do Claude Code. Se um modelo não estiver autorizado na organização, registre o fallback efetivamente usado.
