@@ -299,6 +299,17 @@ pub struct Table {
     /// a identidade e a CHAVE, e a chave mora dentro da imagem: sem ela o
     /// outro lado recebe "excluiu o rowid 42" e nao sabe QUAL linha e essa la.
     imagem_na_exclusao: bool,
+    /// A cascata pode RECONSTRUIR o `.ndx` da filha que ficou sujo?
+    ///
+    /// Nasce `false`, e isso e decisao: no caminho normal de escrita um indice
+    /// sujo quer dizer que outro descritor tem escrita pendente, e reconstruir
+    /// ali seria reparar o que nao esta quebrado. So a RECUPERACAO liga, porque
+    /// so ela sabe que a queda ja aconteceu -- guarda nova entra pedida, nao
+    /// imposta.
+    reconstruir_indice_da_filha: bool,
+    /// Quantos `.ndx` de filha a cascata reconstruiu. O relatorio do arranque
+    /// CONTA, em vez de reparar em silencio.
+    indices_da_cascata_reconstruidos: usize,
     /// Carimbo e origem que o PROXIMO evento do diario deve levar, uma vez so.
     ///
     /// E o gancho do bidirecional: um evento aplicado aqui guarda o instante e
@@ -457,6 +468,8 @@ impl Table {
             fks_conferidas,
             imagem_no_diario: false,
             imagem_na_exclusao: false,
+            reconstruir_indice_da_filha: false,
+            indices_da_cascata_reconstruidos: 0,
             evento_forcado: None,
             sobreposta: None,
             como_replica: false,
@@ -721,6 +734,8 @@ impl Table {
             fks_conferidas,
             imagem_no_diario: false,
             imagem_na_exclusao: false,
+            reconstruir_indice_da_filha: false,
+            indices_da_cascata_reconstruidos: 0,
             evento_forcado: None,
             sobreposta: None,
             como_replica: false,
@@ -1399,6 +1414,24 @@ impl Table {
                 // 176, no caminho IRMAO. Envolver nao e substituir. O conserto
                 // e o mesmo: a causa continua nomeada, montada do DADO e nao
                 // recortada do texto do erro, e sai so o imperativo.
+                // A RECUPERACAO pode reconstruir; o caminho normal, nunca.
+                //
+                // Aqui esta o buraco do pedido 172, e ele era estrutural: o
+                // `completar()` reconstroi o `.ndx` de toda tabela NOMEADA NA
+                // MARCA, e a filha da cascata nunca vira `Escrita` -- entao a
+                // maquina existia, rodava, e nao alcancava justamente a tabela
+                // que a cascata ia consertar. Sem isto a recascata recusava e o
+                // commit saia em `operacoes IMPOSSIVEIS`: mae no valor novo,
+                // fracao das filhas no velho, marca ja apagada.
+                //
+                // E a §5.5.3 dizia que consertar «pediria a recuperacao saber
+                // tentar de novo mais tarde». NAO pede: pede reconstruir aqui,
+                // enquanto a marca ainda existe. Aquela decisao foi tomada
+                // contra outra proposta.
+                if self.reconstruir_indice_da_filha && filha.indice_precisa_reconstruir() {
+                    filha.reindexar()?;
+                    self.indices_da_cascata_reconstruidos += 1;
+                }
                 let filha_com_indice_pendente = filha
                     .indice_precisa_reconstruir()
                     .then(|| caminho(filha.diretorio(), filha.nome(), EXT_NDX));
@@ -1532,6 +1565,30 @@ impl Table {
     }
 
     /// O mesmo, sem consumir a tabela -- para quem ja a tem aberta.
+    /// Autoriza a cascata a reconstruir o `.ndx` da filha que ficou sujo.
+    ///
+    /// # Quem liga isto, e por que so ele
+    ///
+    /// A recuperacao de transacao, e ninguem mais. No caminho normal de escrita
+    /// a marca de sujo significa «outro descritor tem escrita pendente», e
+    /// reconstruir seria reparar arquivo sao; na recuperacao ela significa «a
+    /// queda deixou a arvore pela metade», e ai reconstruir e o unico caminho
+    /// -- que e exatamente o julgamento que o `completar()` da `transacao.rs`
+    /// ja fazia para as tabelas NOMEADAS NA MARCA.
+    ///
+    /// A filha da cascata nao aparece na marca (a cascata nunca vira
+    /// `Escrita`), e era por isso que a reconstrucao nao a alcancava. Medido:
+    /// ~2,2 us por linha, linear -- o mesmo preco que a recuperacao ja paga
+    /// pelas outras (`--example custo-do-reindexar-no-arranque`).
+    pub fn ligar_reconstrucao_do_indice_da_filha(&mut self, ligado: bool) {
+        self.reconstruir_indice_da_filha = ligado;
+    }
+
+    /// Quantos `.ndx` de filha a cascata reconstruiu desde que a tabela abriu.
+    pub fn indices_da_cascata_reconstruidos(&self) -> usize {
+        self.indices_da_cascata_reconstruidos
+    }
+
     pub fn ligar_imagem_no_diario(&mut self, ligado: bool) {
         self.imagem_no_diario = ligado;
     }

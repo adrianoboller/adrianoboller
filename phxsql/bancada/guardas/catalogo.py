@@ -2879,4 +2879,32 @@ pub fn limpar() {
             "a_cascata_alcanca_a_neta",
         ],
     },
+    {
+        "id": "recuperacao-nao-reconstroi-a-filha",
+        "titulo": "a recuperação não reconstrói o índice da filha, e a cascata fica pela metade",
+        "porque": (
+            "o `completar()` reconstruia o `.ndx` sujo de toda tabela NOMEADA "
+            "NA MARCA, e a filha da cascata nunca vira `Escrita` -- a maquina "
+            "existia, rodava, e nao alcancava justamente a tabela que a cascata "
+            "ia consertar. Medido pela matriz de durabilidade: 9 de 21 corridas "
+            "caiam nesse caso. Terceira instancia da lei «conserto entra no "
+            "caminho que o motivou e o irmao fica»."
+        ),
+        "arquivo": "crates/phxsql-server/src/transacao.rs",
+        "trecho": """                        t.ligar_reconstrucao_do_indice_da_filha(true);""",
+        "troca": """                        // DEFEITO REPOSTO: a recuperacao volta a recusar
+                        // cascatear para a filha com indice sujo.
+                        t.ligar_reconstrucao_do_indice_da_filha(false);""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "cascata-na-recuperacao"],
+        "caem": [
+            "a_recuperacao_reconstroi_o_indice_da_filha_e_completa_a_cascata",
+        ],
+        # Controles: a recuperacao SEM indice sujo tem de seguir completando --
+        # senao a troca desligou a cascata inteira em vez de provar a guarda.
+        "seguem": [
+            "a_recuperacao_refaz_a_cascata_que_a_queda_deixou_pela_metade",
+            "com_a_mae_no_valor_velho_a_recuperacao_cascateia",
+        ],
+    },
 ]

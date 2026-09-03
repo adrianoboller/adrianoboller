@@ -1186,6 +1186,21 @@ fn completar(db: &phxsql_store::catalogo::Database, marca: &Marca, r: &mut Relat
                                 }
                             }
                         }
+                        // A cascata desta tabela pode reconstruir o `.ndx`
+                        // da FILHA que ficou sujo -- pedido 172.
+                        //
+                        // O `reindexar` acima cobre a tabela nomeada na marca.
+                        // A filha da cascata nao esta nomeada em marca nenhuma,
+                        // porque a cascata nunca vira `Escrita`: a maquina
+                        // rodava e nao alcancava a tabela que ia consertar. Sem
+                        // isto o commit saia em `operacoes IMPOSSIVEIS` com a
+                        // mae no valor novo e parte das filhas no velho.
+                        //
+                        // Ligado SO aqui, e por isso nasce desligado: no
+                        // caminho normal de escrita, indice sujo quer dizer
+                        // «outro descritor tem escrita pendente», e reconstruir
+                        // seria reparar arquivo sao.
+                        t.ligar_reconstrucao_do_indice_da_filha(true);
                         e.insert(t)
                     }
                     Err(erro) => {
@@ -1211,6 +1226,10 @@ fn completar(db: &phxsql_store::catalogo::Database, marca: &Marca, r: &mut Relat
         }
     }
     for (_, mut t) in tabelas {
+        // O relatorio CONTA o que a cascata reconstruiu, junto do que a marca
+        // reconstruiu: reparar em silencio seria trocar um recado ruim por
+        // nenhum recado.
+        r.indices_reconstruidos += t.indices_da_cascata_reconstruidos();
         let _ = t.sincronizar();
     }
 }

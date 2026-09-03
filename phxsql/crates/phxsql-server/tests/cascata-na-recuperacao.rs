@@ -407,3 +407,101 @@ fn a_marca_da_versao_anterior_continua_sendo_completada() {
         "a linha da marca v1 tinha de ter sido gravada"
     );
 }
+
+// ---------------------------------------------------------------------------
+// 5. O pedido 172: a filha com o `.ndx` sujo
+// ---------------------------------------------------------------------------
+
+/// Deixa o `.ndx` da filha SUJO do jeito que ele fica de verdade.
+///
+/// # Por que nao se escreve o byte a mao
+///
+/// A marca de sujo e o byte 52 do cabecalho, e foi o que a frente da
+/// durabilidade viu levantado depois de `SIGKILL` real
+/// (`bancada/durabilidade/`). A primeira versao deste ajudante escrevia esse
+/// byte direto no arquivo -- e o teste caiu com **`cabecalho com CRC
+/// invalido`**, que e outro estado: o cabecalho tem CRC e ele protege a propria
+/// marca. Virar o bit a mao nao simula uma queda, simula uma adulteracao, e o
+/// motor distingue as duas -- corretamente.
+///
+/// O jeito honesto e deixar o CODIGO levantar a marca: um descritor com escrita
+/// pendente marca o indice como sujo e grava o cabecalho com o CRC certo. Basta
+/// nao sincronizar e manter o descritor vivo -- que e exatamente a situacao
+/// medida.
+fn descritor_deixando_o_indice_sujo(db: &Database, tabela: &str) -> Table {
+    let mut t = db.abrir_qualificada(tabela).unwrap();
+    // Aponta para 7, e nao para 1: a mae ja andou, e a chave conferida recusa
+    // a filha de um pai que nao existe mais -- foi o segundo jeito errado de
+    // montar este cenario. O valor nao importa aqui; o que importa e a escrita
+    // ficar PENDENTE.
+    t.inserir(&[Value::Int(999), Value::Int(7)]).unwrap();
+    t
+}
+
+/// A recuperacao RECONSTROI o `.ndx` da filha e completa a cascata.
+///
+/// # O buraco, e por que ele era estrutural
+///
+/// O `completar()` ja reconstruia o indice sujo -- para toda tabela NOMEADA NA
+/// MARCA. A filha da cascata nao esta nomeada em marca nenhuma, porque a
+/// cascata nunca vira `Escrita`: a maquina existia, rodava, e nao alcancava
+/// justamente a tabela que a cascata ia consertar.
+///
+/// A §5.5.3 dizia que consertar «pediria a recuperacao saber tentar de novo
+/// mais tarde». Nao pede: pede reconstruir enquanto a marca ainda existe.
+///
+/// # Prova real
+///
+/// Desligar o `ligar_reconstrucao_do_indice_da_filha(true)` do `completar()`
+/// faz este teste cair em `impossiveis` com a filha ainda no valor velho --
+/// que e o estado medido em 9 de 21 corridas da matriz de durabilidade.
+#[test]
+fn a_recuperacao_reconstroi_o_indice_da_filha_e_completa_a_cascata() {
+    let b = base("filha-suja");
+    let inst = Instancia::nova(&b).unwrap();
+    let db = inst.criar_database("t").unwrap();
+    let mut m = clientes(&db);
+    let r = m
+        .inserir(&[Value::Int(1), Value::Str("Ana".into())])
+        .unwrap();
+    m.sincronizar().unwrap();
+    let mut f = pedidos(&db);
+    let p = f.inserir(&[Value::Int(10), Value::Int(1)]).unwrap();
+    f.sincronizar().unwrap();
+    drop(f);
+    drop(m);
+
+    let dir = db.caminho().to_path_buf();
+    let guardados = esconder(&dir, "pedidos");
+    let mut m = db.abrir_qualificada("clientes").unwrap();
+    m.atualizar(r, &[Value::Int(7), Value::Str("Ana".into())])
+        .expect("sem filha a vista, a alteracao da mae nao cascateia nada");
+    m.sincronizar().unwrap();
+    drop(m);
+    devolver(&dir, &guardados);
+
+    // O que este teste acrescenta ao da secao 2: a queda tambem pegou o `.ndx`
+    // da filha no meio da passada. O descritor fica VIVO durante a recuperacao,
+    // porque e a escrita pendente dele que mantem a marca levantada.
+    let _sujo = descritor_deixando_o_indice_sujo(&db, "pedidos");
+
+    marca(&db, 4242, r, &[Value::Int(1), Value::Str("Ana".into())]);
+    let rel = recuperar(&inst);
+
+    assert!(
+        rel.impossiveis.is_empty(),
+        "a recusa por indice sujo voltou: {:?}",
+        rel.impossiveis
+    );
+    assert_eq!(rel.completadas, 1);
+    assert_eq!(
+        filha_aponta_para(&db, p),
+        Value::Int(7),
+        "a cascata nao chegou na filha: o indice sujo bloqueou a busca reversa"
+    );
+    assert!(
+        rel.indices_reconstruidos >= 1,
+        "reconstruiu em silencio: o relatorio tem de CONTAR ({} contados)",
+        rel.indices_reconstruidos
+    );
+}

@@ -724,12 +724,50 @@ proporção foi a mesma nos três regimes (3 de 7 em cada), porque o
 `filha.sincronizar()` da cascata não passa pela janela de
 `recursos.durabilidade`: ele sincroniza sempre, ou nunca sincronizou ainda.
 
-**O que fica `IMPOSSIVEL`, de propósito.** Consertar isto pediria a
-recuperação saber «tentar de novo mais tarde» para uma operação que já foi
-declarada impossível — outro tipo de retomada que este desenho não tem (a
-marca já não existe mais para retomar). Está aqui, escrito, e não escondido,
-porque a alternativa — devolver «completada» com a filha errada — é o defeito
-exato que a §5.5.1 já pagou uma vez, só que por uma porta diferente.
+**CONSERTADO em 03/09/2026, e a decisão anterior caiu pela premissa.** O
+parágrafo que estava aqui dizia: *«consertar isto pediria a recuperação saber
+tentar de novo mais tarde para uma operação que já foi declarada impossível —
+outro tipo de retomada que este desenho não tem (a marca já não existe mais
+para retomar)»*. **Não pede.** Pede reconstruir o índice da filha **enquanto a
+marca ainda existe**, dentro do próprio `completar()` — e a máquina para isso
+já estava ali, três dezenas de linhas acima, reconstruindo o `.ndx` de toda
+tabela **nomeada na marca**.
+
+O que faltava era **alcance**, e o motivo era estrutural: a filha da cascata
+não aparece em marca nenhuma, porque a cascata nunca vira `Escrita`
+(`servidor.rs`, os dois pontos que montam o conjunto de escrita). A
+reconstrução existia, rodava, e não alcançava justamente a tabela que a cascata
+ia consertar. **Terceira instância, no mesmo dia, da lei «conserto entra no
+caminho que o motivou e o caminho irmão fica»** — as outras duas foram o
+`conferir_a_arvore` (§5.5.4) e o recado que mandava reparar arquivo são.
+
+**Como entrou:** `Table::ligar_reconstrucao_do_indice_da_filha`, que nasce
+**desligada** e é ligada **só** pela recuperação. Isso é decisão e não
+descuido: no caminho normal de escrita, índice sujo significa «outro descritor
+tem escrita pendente», e reconstruir ali seria reparar o que não está quebrado;
+na recuperação significa «a queda deixou a árvore pela metade». *Guarda nova
+entra pedida, não imposta.*
+
+**E o relatório CONTA**, em vez de reparar em silêncio: o número entra em
+`indices_reconstruidos`, junto do que a marca já reconstruía.
+
+**Custo medido** (`--example custo-do-reindexar-no-arranque`): ~2,2 µs por
+linha, linear — 2,2 ms a mil linhas, 219 ms a cem mil, 1,16 s a meio milhão.
+Não é classe nova de gasto: é o mesmo preço que a recuperação já pagava pelas
+outras tabelas.
+
+**Prova real, nos dois sentidos:** desligado o interruptor no `completar()`, o
+commit volta para `operacoes IMPOSSIVEIS` com a mãe no valor novo e a filha no
+velho — que é o estado que a matriz da §5.7 mediu em **9 de 21 corridas**.
+Guarda `recuperacao-nao-reconstroi-a-filha`, provada, com as duas recuperações
+sem índice sujo como controle.
+
+**E uma armadilha do próprio teste, que vale mais que o conserto:** a primeira
+montagem levantava o byte 52 do cabeçalho **na mão**, e o teste caiu com
+*«cabeçalho com CRC inválido»* — outro estado. O cabeçalho tem CRC e ele
+protege a própria marca de sujo: virar o bit à mão não simula uma queda, simula
+uma **adulteração**, e o motor distingue as duas. O jeito honesto é deixar o
+código levantar a marca, mantendo vivo um descritor com escrita pendente.
 
 ### 5.5.4 A recascata que gravava a primeira filha antes de conferir a segunda
 
