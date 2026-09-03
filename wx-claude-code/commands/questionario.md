@@ -1,5 +1,5 @@
 ---
-description: "Questionario inicial do projeto WX: bloco 0 (empresa, prazo, orcamento, GitHub), letras A-J e K (Rust, bancos, Supabase, GitHub). Gera .wx-migration/."
+description: "Questionario inicial do projeto WX: bloco 0 (empresa, prazo, orcamento, GitHub), letras A-J, K (ambiente) e L (kickoff, hooks, MCP, deploy). Gera .wx-migration/ e o contexto do projeto."
 argument-hint: "[raiz-do-projeto-de-destino]"
 allowed-tools: "Read, Glob, Grep, Bash, Write, AskUserQuestion"
 ---
@@ -102,6 +102,18 @@ python3 "${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/verificar_ambiente.py
 
 Ele imprime a versão instalada de cada ferramenta pedida contra a mínima, e devolve 3 quando falta algo. Versão mínima acima da estável do dia aparece como `falta` mesmo depois do `rustup update`; nesse caso o mínimo é o que está errado, e é o que se corrige no questionário.
 
+**L) Contexto do Claude Code e implantação.** Depois de K, cinco itens, um por mensagem. É o que faz a primeira sessão de conversão começar com contexto completo em vez de uma conversa: o resultado do Claude Code depende do que ele lê antes do primeiro comando.
+
+| Item | Pergunta | Onde vai parar |
+| --- | --- | --- |
+| L1 | **Requisitos da primeira versão**: a lista «o sistema deve…» do que a v1 precisa ter, e o que fica fora dela | `prompts/kickoff.md`; cada item vira linha da matriz |
+| L2 | **Prototipação**: vai usar Google Stitch, Figma ou nenhuma? Quais telas primeiro? | `prompts/prototipacao.md` (montado da tela modelo e de F9–F13) |
+| L3 | **Implantação**: alvo (VPS com EasyPanel, Docker, serviço Windows, IIS, cloud, nenhum), domínio, porta, Dockerfile e compose, **nomes** das variáveis de ambiente, rota de healthcheck | `Dockerfile`, `docker-compose.yml`, kickoff |
+| L4 | **Hooks do projeto**: rodar os testes ao parar? lint ao editar? com quais comandos? | `.claude/settings.json`, `.claude/hooks/` |
+| L5 | **MCP e skills** do projeto: Supabase, PostgreSQL, GitHub, Playwright; pacotes de skills externos | `.mcp.json` (sem chaves), `.claude/skills/` |
+
+O script também gera `INDEX_FILES.md` (o mapa de tudo que o Claude Code pode ler, regravado sempre), as skills do projeto `regras-do-legado` e `legado-para-destino`, e o `CLAUDE.md` passa a apontar para o mapa e para o kickoff. A análise que motivou esta letra está em `docs/analise-aula-vibe-coding.md` do plugin.
+
 ### A resposta decide a próxima
 
 | Depois de | Se a resposta for | Então |
@@ -145,6 +157,10 @@ Ele imprime a versão instalada de cada ferramenta pedida contra a mínima, e de
 | K7 | «não» | registre `instalar: false` e encerre K; nada do n8n é gerado |
 | K7 | «sim» | siga os itens da tabela, um por mensagem; cada webhook e cada fluxo vira um `INT-*` na rastreabilidade, e o `integracao.md` diz o que o projeto precisa expor |
 | K7 | banco PostgreSQL sem K2 marcado | avise que o banco do n8n depende do PostgreSQL de K2; ofereça SQLite ou volte a K2 |
+| L1 | lista vazia | proponha a v1 a partir dos módulos do 0.8 e do piloto vertical (G4) e peça para confirmar; v1 sem lista vira o inventário inteiro, e isso é o oposto de um piloto |
+| L3 | alvo com Docker e H sem perfil | pergunte o perfil de H antes: o Dockerfile é por perfil |
+| L4 | não sabe os comandos | proponha os do perfil de H (`cargo test`, `pytest`, `dotnet test`, `npm test`) e registre |
+| L5 | usuário cola token de MCP | não repita, não grave; o `.mcp.json` usa `${VARIAVEL}` |
 
 Feche com as duas perguntas de governança da skill de conversão, que o questionário não substitui: versão/update/idioma do WX e modo desejado (`inventário`, `plano`, `piloto`, `completo`). O aprovador já foi perguntado no 0.16; não pergunte de novo.
 

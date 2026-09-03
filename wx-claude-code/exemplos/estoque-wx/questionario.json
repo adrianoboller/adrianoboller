@@ -562,7 +562,8 @@
       "branch_principal": "main",
       "ci": "github-actions",
       "proteger_branch": true,
-      "observacao": ""
+      "observacao": "",
+      "convencao_de_commits": "conventional (feat, fix, chore, docs, test)"
     },
     "K7_n8n": {
       "instalar": true,
@@ -617,8 +618,65 @@
           "estoque.baixo",
           "nfe.autorizada",
           "venda.fechada"
-        ]
+        ],
+        "documentacao_da_api": true,
+        "api_key_ref": "ESTOQUE_API_KEY"
       },
+      "observacao": ""
+    }
+  },
+  "L_contexto_e_implantacao": {
+    "L1_requisitos_da_v1": {
+      "itens": [
+        "O sistema deve permitir login com usuário e senha do legado",
+        "O sistema deve cadastrar produtos com código de barras e saldo por lote",
+        "O sistema deve registrar entrada e saída com o mesmo teclado do WINDEV (Enter avança, F2 grava)",
+        "O sistema deve emitir o relatório de posição em PDF igual ao legado",
+        "O sistema deve bloquear venda com estoque zero (BR-002)"
+      ],
+      "fora_da_v1": [
+        "Etiquetas térmicas (fica no G5, RPT-*)",
+        "Inventário rotativo",
+        "App mobile"
+      ],
+      "observacao": ""
+    },
+    "L2_prototipacao": {
+      "ferramenta": "stitch",
+      "telas_prioritarias": [
+        "WIN_Venda",
+        "WIN_Cliente",
+        "WIN_Produto"
+      ],
+      "observacao": ""
+    },
+    "L3_implantacao": {
+      "alvo": "easypanel-vps",
+      "dominio": "estoque.exemplo.com.br",
+      "porta": 8080,
+      "dockerfile": true,
+      "docker_compose": true,
+      "variaveis_de_ambiente": [
+        "DATABASE_URL",
+        "ESTOQUE_API_KEY",
+        "RUST_LOG"
+      ],
+      "healthcheck": "/health",
+      "observacao": ""
+    },
+    "L4_hooks_do_projeto": {
+      "testar_ao_parar": true,
+      "lint_ao_editar": true,
+      "comando_de_teste": "cargo test --workspace",
+      "comando_de_lint": "cargo clippy --workspace --all-targets -- -D warnings",
+      "observacao": ""
+    },
+    "L5_mcp_e_skills": {
+      "mcps": [
+        "postgresql",
+        "github"
+      ],
+      "skills_externas": [],
       "observacao": ""
     }
   }

@@ -43,6 +43,8 @@ class Questionario(unittest.TestCase):
         m = json.loads((self.tmp / ".wx-migration/wx-inputs.manifest.json").read_text())
         self.assertEqual(m["artifacts"]["sql_scripts"]["status"], "provided")
         self.assertEqual(m["evidence_root"], "../inputs")
+        self.assertEqual(m["artifacts"]["sample_data_and_expected_results"]["status"], "provided")
+        self.assertEqual(len(m["artifacts"]["sample_data_and_expected_results"]["items"]), 2)
         self.assertTrue((self.tmp / "DESIGN.md").exists())
         design = (self.tmp / "DESIGN.md").read_text()
         for secao in ("Grids (F3", "Formulários (F4", "Números, datas e moeda (F5", "Acessibilidade (F8"):
@@ -71,7 +73,7 @@ class Questionario(unittest.TestCase):
         self.assertIn("## Backend: Rust", proc); self.assertIn("**reescrita-guiada**", proc)
         self.assertIn("| Analise HFSQL | esquema PostgreSQL migrado por script; sqlx/diesel | G3 |", proc)
         self.assertIn("Ritmo: modulo a modulo", proc)
-        self.assertEqual(r2.stdout.count("SKIPPED"), 22); self.assertIn("UPDATED", r2.stdout)
+        self.assertEqual(r2.stdout.count("SKIPPED"), 32); self.assertIn("UPDATED", r2.stdout)
         resp = (self.tmp / ".wx-migration/respostas_questionario.md").read_text()
         self.assertIn("- Nome: **Adriano Boller**", resp); self.assertIn("## H · Backend de destino", resp)
         self.assertIn("0.15 github", resp); self.assertIn("credencial ref: GITHUB_TOKEN", resp)
@@ -137,6 +139,32 @@ class Questionario(unittest.TestCase):
         (t2 / ".wx-migration/questionario.json").write_text(json.dumps(q))
         run(SCRIPTS / "aplicar_questionario.py", "--questionario", t2 / ".wx-migration/questionario.json", "--project-root", t2, "--plugin-root", RAIZ)
         self.assertFalse((t2 / ".wx-migration/ambiente/n8n").exists()); shutil.rmtree(t2, ignore_errors=True)
+
+    def test_contexto_do_claude_code_kickoff_index_hooks_mcp_docker(self):
+        r = run(SCRIPTS / "aplicar_questionario.py", "--questionario", self.tmp / ".wx-migration/questionario.json", "--project-root", self.tmp, "--plugin-root", RAIZ)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        kick = (self.tmp / ".wx-migration/prompts/kickoff.md").read_text()
+        self.assertIn("**Isto não é vibe coding**", kick); self.assertIn("aprovador: **Adriano Boller**", kick)
+        self.assertIn("3. O sistema deve registrar entrada e saída", kick); self.assertIn("Fora da v1: Etiquetas térmicas", kick)
+        self.assertIn("Tela modelo (referência visual): WIN_Venda (principal", (self.tmp / ".wx-migration/prompts/prototipacao.md").read_text())
+        idx = (self.tmp / "INDEX_FILES.md").read_text()
+        self.assertIn("| `INDEX_FILES.md` | este mapa; regravado a cada aplicação do questionário | existe |", idx)
+        self.assertIn("| `.wx-migration/respostas_questionario.md` |", idx); self.assertIn("| existe |", idx.split("respostas_questionario.md")[1].split("\n")[0])
+        self.assertIn("| `./inputs/banco.sql` | script SQL |", idx)
+        st = json.loads((self.tmp / ".claude/settings.json").read_text())
+        self.assertEqual(st["hooks"]["Stop"][0]["hooks"][0]["command"], "bash .claude/hooks/testar.sh"); self.assertIn("Read(./.env)", st["permissions"]["deny"])
+        self.assertIn("cargo test --workspace", (self.tmp / ".claude/hooks/testar.sh").read_text())
+        self.assertTrue((self.tmp / ".claude/skills/regras-do-legado/SKILL.md").read_text().startswith("---\nname: regras-do-legado"))
+        mcp = json.loads((self.tmp / ".mcp.json").read_text())
+        self.assertEqual(set(mcp["mcpServers"]), {"postgresql", "github"}); self.assertIn("${GITHUB_TOKEN}", json.dumps(mcp))
+        self.assertIn("COPY --from=build /app/target/release/estoque", (self.tmp / "Dockerfile").read_text())
+        comp = (self.tmp / "docker-compose.yml").read_text(); self.assertIn("POSTGRES_PASSWORD=${PGPASSWORD}", comp); self.assertIn("- ESTOQUE_API_KEY=${ESTOQUE_API_KEY}", comp)
+        self.assertIn("INDEX_FILES.md", (self.tmp / "CLAUDE.md").read_text())
+        q = json.loads((self.tmp / ".wx-migration/questionario.json").read_text())
+        q["L_contexto_e_implantacao"]["L5_mcp_e_skills"]["mcps"] = ["slack"]
+        (self.tmp / ".wx-migration/q4.json").write_text(json.dumps(q))
+        r = run(SCRIPTS / "aplicar_questionario.py", "--questionario", self.tmp / ".wx-migration/q4.json", "--project-root", self.tmp, "--plugin-root", RAIZ)
+        self.assertEqual(r.returncode, 2); self.assertIn("slack", r.stderr)
 
     def test_verificar_ambiente_mede_e_devolve_3_quando_falta(self):
         q = {"K_ambiente": {"K1_rust": {"instalar_ou_atualizar": True, "versao_minima": "999.0"}, "K6_github": {"ligar_projeto": True}}}

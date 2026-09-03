@@ -198,6 +198,17 @@ def montar_manifesto(q: dict, modelo: dict, projeto: Path) -> dict:
         a["screenshots"]["items"] = shots
         a["screenshots"]["notes"] = "Lidos de screenshots/screenshots.json (tela, estado, plataforma declarados pelo usuário)."
 
+    # Dados de amostra e resultados esperados (golden master): so entram se os
+    # arquivos existirem em dados-de-amostra/. Achado por uma sessao real que
+    # viu os arquivos e o manifesto dizendo «missing».
+    amostra = (RAIZ_DE_EVIDENCIAS / "dados-de-amostra") if RAIZ_DE_EVIDENCIAS else None
+    if amostra and amostra.is_dir():
+        arqs = sorted(f for f in amostra.iterdir() if f.is_file())
+        if arqs:
+            a["sample_data_and_expected_results"]["status"] = "provided"
+            a["sample_data_and_expected_results"]["items"] = [{"path": f"dados-de-amostra/{f.name}", "description": "resultado esperado do legado (golden master)" if "esperad" in f.name else "dados sinteticos ou anonimizados de amostra"} for f in arqs]
+            a["sample_data_and_expected_results"]["notes"] = "Lidos de dados-de-amostra/; somente dados sinteticos ou anonimizados."
+
     g = q.get("G_help_json", {})
     m["project"]["wlanguage_help_version"] = str(g.get("versao_do_help", ""))
     if not g.get("usar_corpus_do_plugin", True):
@@ -599,7 +610,7 @@ ROTULOS = {
     "projeto": "Projeto", "0_empresa_e_projeto": "Bloco 0 · Empresa e projeto", "A_sql": "A · Script SQL",
     "B_pdf_codigos": "B · PDF dos códigos", "C_pdf_interfaces": "C · PDF das interfaces", "D_pdf_queries": "D · PDF das queries",
     "E_pdf_completo": "E · PDF completo", "F_estilo_impeccable": "F · Qualidade das telas (Impeccable)", "G_help_json": "G · Help WLanguage em JSON",
-    "H_backend": "H · Backend de destino", "I_frontend": "I · Frontend de destino", "J_economia_de_tokens": "J · Economia de tokens", "K_ambiente": "K · Ambiente e ferramentas",
+    "H_backend": "H · Backend de destino", "I_frontend": "I · Frontend de destino", "J_economia_de_tokens": "J · Economia de tokens", "K_ambiente": "K · Ambiente e ferramentas", "L_contexto_e_implantacao": "L · Contexto do Claude Code e implantação",
 }
 
 
@@ -901,6 +912,175 @@ def esboco_ambiente(k: dict, e: dict) -> str:
     return "\n".join(L)
 
 
+# ---------------------------------------------------------------------------
+# Letra L: contexto para o Claude Code e implantacao. A licao da aula de
+# vibe coding e que o resultado depende do CONTEXTO da primeira sessao:
+# kickoff + DESIGN.md + prints + skills + mapa de arquivos. Aqui isso vira
+# arquivo, montado das respostas, sem nenhum segredo.
+# ---------------------------------------------------------------------------
+
+DOCKERFILES = {
+    "rust": "FROM rust:1-slim AS build\nWORKDIR /app\nCOPY . .\nRUN cargo build --release --locked\n\nFROM debian:bookworm-slim\nRUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*\nCOPY --from=build /app/target/release/{bin} /usr/local/bin/{bin}\nEXPOSE {porta}\nHEALTHCHECK CMD curl -fsS http://localhost:{porta}{health} || exit 1\nCMD [\"{bin}\"]\n",
+    "python": "FROM python:3.12-slim\nWORKDIR /app\nCOPY requirements.txt .\nRUN pip install --no-cache-dir -r requirements.txt\nCOPY . .\nEXPOSE {porta}\nHEALTHCHECK CMD python -c \"import urllib.request; urllib.request.urlopen('http://localhost:{porta}{health}')\" || exit 1\nCMD [\"uvicorn\", \"app.main:app\", \"--host\", \"0.0.0.0\", \"--port\", \"{porta}\"]\n",
+    "csharp-wl": "FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build\nWORKDIR /src\nCOPY . .\nRUN dotnet publish -c Release -o /out\n\nFROM mcr.microsoft.com/dotnet/aspnet:8.0\nWORKDIR /app\nCOPY --from=build /out .\nEXPOSE {porta}\nENV ASPNETCORE_URLS=http://+:{porta}\nCMD [\"dotnet\", \"{bin}.dll\"]\n",
+    "node": "FROM node:22-alpine\nWORKDIR /app\nCOPY package*.json ./\nRUN npm ci --omit=dev\nCOPY . .\nRUN npm run build\nEXPOSE {porta}\nCMD [\"npm\", \"start\"]\n",
+    "go": "FROM golang:1.23 AS build\nWORKDIR /src\nCOPY . .\nRUN CGO_ENABLED=0 go build -o /out/{bin} ./...\n\nFROM gcr.io/distroless/static\nCOPY --from=build /out/{bin} /{bin}\nEXPOSE {porta}\nCMD [\"/{bin}\"]\n",
+    "java": "FROM eclipse-temurin:21-jdk AS build\nWORKDIR /src\nCOPY . .\nRUN ./mvnw -q package -DskipTests\n\nFROM eclipse-temurin:21-jre\nCOPY --from=build /src/target/*.jar /app.jar\nEXPOSE {porta}\nCMD [\"java\", \"-jar\", \"/app.jar\"]\n",
+}
+MCPS = {
+    "supabase": {"command": "npx", "args": ["-y", "@supabase/mcp-server-supabase@latest"], "env": {"SUPABASE_ACCESS_TOKEN": "${SUPABASE_ACCESS_TOKEN}"}},
+    "postgresql": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-postgres", "${DATABASE_URL}"]},
+    "github": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"], "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"}},
+    "playwright": {"command": "npx", "args": ["-y", "@playwright/mcp@latest"]},
+}
+
+
+def _slug(nome: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", (nome or "app").lower()).strip("-") or "app"
+
+
+def prompt_kickoff(q: dict) -> str:
+    p = q.get("projeto", {}) or {}; e = q.get("0_empresa_e_projeto", {}) or {}; a = q.get("A_sql", {}) or {}
+    h = q.get("H_backend", {}) or {}; i = q.get("I_frontend", {}) or {}; l = q.get("L_contexto_e_implantacao", {}) or {}
+    k = q.get("K_ambiente", {}) or {}; ap = e.get("0_16_aprovador", {}) or {}
+    v1 = (l.get("L1_requisitos_da_v1") or {}); imp = l.get("L3_implantacao") or {}
+    est_h = ((h.get("processo") or {}).get("estrategia")) or "(pendente)"
+    L = [f"# Kickoff — {p.get('nome') or 'projeto'}: conversão do legado {', '.join(p.get('produtos', []) or ['WX'])} {p.get('wx_versao', '')} para {h.get('linguagem') or h.get('perfil') or '?'} + {i.get('linguagem') or i.get('perfil') or '?'}", "",
+         "Cole este prompt na primeira sessão do Claude Code no projeto de destino, com `DESIGN.md`, `INDEX_FILES.md` e as capturas de tela anexadas. Gerado por `aplicar_questionario.py`; edite o `questionario.json` para mudar.", "",
+         "## O que você é e o que não é", "",
+         "Você é o engenheiro de conversão deste projeto. **Isto não é vibe coding**: as regras de negócio vêm do legado WINDEV, cada uma com origem localizável na matriz `.wx-migration/traceability.csv`, e a igualdade se prova com o golden master. Nunca invente regra; registre lacuna em `.wx-migration/gaps.md`.", "",
+         "## Contexto", "",
+         f"- Solicitante: {(e.get('0_1_softhouse') or {}).get('nome_fantasia') or (e.get('0_1_softhouse') or {}).get('razao_social') or '(pendente)'}; aprovador: **{ap.get('nome') or p.get('aprovador') or '(pendente)'}**; prazo final {((e.get('0_11_cronograma') or {}).get('prazo_final')) or '(pendente)'}.",
+         f"- Finalidade: {e.get('0_6_finalidade') or '(pendente)'}",
+         f"- Legado: {', '.join(p.get('produtos', []) or ['WX'])} {p.get('wx_versao', '')}, banco {a.get('dialeto') or '?'} {a.get('versao_do_banco', '')}, encoding {a.get('encoding', '')}, collation {a.get('collation') or '?'}, fuso {a.get('timezone', '')}. **Datas, decimais e fuso seguem o legado.**",
+         f"- Destino: backend **{h.get('linguagem') or h.get('perfil') or '?'}** ({h.get('framework') or 'framework a definir'}, banco {h.get('banco') or '?'}); frontend **{i.get('linguagem') or i.get('perfil') or '?'}** ({i.get('framework') or '?'}), plataformas {', '.join(i.get('plataformas', []) or []) or '?'}.",
+         f"- Estratégia de conversão: **{est_h}** (detalhe em `.wx-migration/processo-de-conversao.md`).",
+         f"- Implantação: {imp.get('alvo') or 'nenhum'}" + (f", {imp.get('dominio')}" if imp.get("dominio") else "") + f", porta {imp.get('porta', '')}, healthcheck `{imp.get('healthcheck', '/health')}`; variáveis de ambiente (só nomes): {', '.join(imp.get('variaveis_de_ambiente', []) or []) or 'nenhuma'}.", "",
+         "## Requisitos da primeira versão (v1)", ""]
+    L += [f"{n}. {r}" for n, r in enumerate(v1.get("itens", []) or [], 1)] or ["(nenhum informado em L1: use o inventário do G1 como escopo)"]
+    if v1.get("fora_da_v1"):
+        L += ["", "Fora da v1: " + "; ".join(v1["fora_da_v1"]) + "."]
+    L += ["", "## Como trabalhar", "",
+          "1. Leia `CLAUDE.md`, `INDEX_FILES.md` e `.wx-migration/respostas_questionario.md` antes de qualquer arquivo de código.",
+          "2. Siga os gates: `/wx-claude-code:converter` faz o G0 (pré-flight dos anexos) antes de escrever código.",
+          "3. Telas seguem `DESIGN.md` (tela modelo, vocabulário dos botões, cores, fundo) e passam por `/wx-claude-code:estilo-telas`.",
+          f"4. Teste com `{((l.get('L4_hooks_do_projeto') or {}).get('comando_de_teste')) or '(comando de teste pendente)'}`; o hook do projeto roda isso ao parar.",
+          f"5. Commits na convenção `{((k.get('K6_github') or {}).get('convencao_de_commits')) or 'conventional'}`; nunca commite `.env`.",
+          "6. Segredos só por nome de variável de ambiente; nunca em código, log ou resposta.", ""]
+    return "\n".join(L)
+
+
+def prompt_prototipacao(q: dict) -> str:
+    f = q.get("F_estilo_impeccable", {}) or {}; l = q.get("L_contexto_e_implantacao", {}) or {}; p = q.get("projeto", {}) or {}
+    pr = l.get("L2_prototipacao") or {}; t0 = f.get("F0_tela_modelo") or {}; f9 = f.get("F9_vocabulario_dos_botoes") or {}
+    f10 = f.get("F10_posicao_dos_botoes") or {}; f12 = f.get("F12_cores_das_acoes") or {}; f13 = f.get("F13_fundo_das_telas") or {}; f1 = f.get("F1_operacao") or {}
+    pal = f.get("paleta") or {}
+    L = [f"# Prompt de prototipação — {p.get('nome') or 'projeto'} ({pr.get('ferramenta') or 'ferramenta a definir'})", "",
+         "Cole na ferramenta de protótipo (Google Stitch, Figma Make…) junto com as capturas da tela modelo. O `DESIGN.md` que voltar de lá **complementa** o `DESIGN.md` do questionário; não o substitui.", "",
+         f"Desenhe as telas de um sistema de gestão (ERP) chamado {p.get('nome') or '…'}, para {f1.get('perfil_do_usuario') or 'operadores que ficam horas na tela'}, em {f1.get('ambiente') or 'ambiente de escritório'}, tela típica {f1.get('tela_tipica') or '1366×768'}. É a conversão de um sistema WINDEV: a estrutura das telas, os campos e a ordem de tabulação já existem e devem ser preservados; o visual pode mudar.", "",
+         "Telas prioritárias: " + (", ".join(pr.get("telas_prioritarias", []) or []) or "as da tela modelo") + ".", "",
+         "Tela modelo (referência visual): " + (", ".join(f"{a0.get('tela', '')} ({a0.get('papel', '')}, {a0.get('arquivo', '')})" for a0 in t0.get("arquivos", []) or []) or "nenhuma captura informada") + ".",
+         "Preservar: " + ("; ".join(t0.get("o_que_preservar", []) or []) or "(nada informado)") + ". Pode mudar: " + ("; ".join(t0.get("o_que_mudar", []) or []) or "(nada informado)") + ".", "",
+         f"Direção: {f.get('preservar_ou_redesenhar', 'preservar')}; tema {f.get('tema', 'ambos')}; densidade {f.get('densidade', 'compacta')}; tipografia {f.get('tipografia') or 'a definir'}.",
+         "Paleta: " + (", ".join(f"{k} {v}" for k, v in pal.items() if v) or "a definir") + ".",
+         f"Botões: estilo {f9.get('estilo') or '?'} em {f9.get('caixa') or '?'}; rótulos " + (", ".join(f"{k}={v}" for k, v in (f9.get("rotulos") or {}).items()) or "?") + f". Posição: {f10.get('barra_da_grade') or '?'} para a grade, {f10.get('barra_do_formulario') or '?'} para o formulário.",
+         "Cores por ação: " + (", ".join(f"{k} {v}" for k, v in (f12.get("cores") or {}).items()) or "padrão do plugin") + f"; {f12.get('preenchimento') or 'contorno'}.",
+         f"Fundo: {f13.get('tipo') or 'cor'} {f13.get('cor') or ''}; escuro {f13.get('cor_escuro') or ''}.", "",
+         "Entregue: cada tela em estado normal, vazio e com erro; exporte o design system como DESIGN.md.", ""]
+    return "\n".join(L)
+
+
+def index_files(q: dict, projeto: Path) -> str:
+    """Mapa de arquivos: uma linha por arquivo dizendo o que e e quando abrir. Regravado sempre."""
+    wx = projeto / ".wx-migration"
+    p = q.get("projeto", {}) or {}
+    raiz = p.get("raiz_de_evidencias", "./inputs")
+    fixos = [
+        ("CLAUDE.md", "regras do projeto; leia primeiro"),
+        ("INDEX_FILES.md", "este mapa; regravado a cada aplicação do questionário"),
+        ("DESIGN.md", "sistema de design: tela modelo, botões, cores, fundo (letra F)"),
+        ("PRODUCT.md", "quem opera e em que condições (F1)"),
+        (".claude/settings.json", "hooks do projeto (teste ao parar, lint ao editar) e permissões"),
+        (".claude/skills/regras-do-legado/SKILL.md", "como tratar regra de negócio do legado: origem, matriz, golden master"),
+        (".claude/skills/legado-para-destino/SKILL.md", "o que cada peça do WX vira no destino e a estratégia escolhida"),
+        (".mcp.json", "servidores MCP do projeto (sem chaves)"),
+        ("Dockerfile", "imagem do serviço para a implantação (L3)"),
+        ("docker-compose.yml", "serviço + banco para rodar local ou no painel"),
+        (".wx-migration/questionario.json", "as respostas brutas; edite aqui e reaplique"),
+        (".wx-migration/respostas_questionario.md", "as respostas legíveis, aprovador no topo; consulte antes de perguntar"),
+        (".wx-migration/prompts/kickoff.md", "prompt da primeira sessão de conversão"),
+        (".wx-migration/prompts/prototipacao.md", "prompt para a ferramenta de protótipo de telas"),
+        (".wx-migration/wx-inputs.manifest.json", "manifesto dos anexos que o pré-flight lê"),
+        (".wx-migration/conversion.config.json", "modo, destino, fidelidade"),
+        (".wx-migration/traceability.csv", "a matriz: todo BR-/QRY-/UI-/INT-/RPT-/DB- com estado"),
+        (".wx-migration/gaps.md", "lacunas GAP-*; o que falta para seguir"),
+        (".wx-migration/empresa.md", "softhouse, diretores, endereço, logotipos, objetivos, pessoal"),
+        (".wx-migration/processo-de-conversao.md", "o que cada peça vira, gate a gate, e a estratégia"),
+        (".wx-migration/entrega.json", "GitHub, branch, usuário, nome da credencial, diretório"),
+        (".wx-migration/ambiente.md", "ferramentas pedidas em K e onde a senha de cada uma fica"),
+        (".wx-migration/ambiente/instalar-ambiente.sh", "instalador idempotente (sudo/root resolvido em K0)"),
+        (".wx-migration/ambiente/.env.exemplo", "nomes das variáveis; copie para .env fora do repositório"),
+        (".wx-migration/ambiente/n8n/integracao.md", "webhooks, fluxos e o que o projeto expõe ao n8n"),
+        (".wx-migration/pmo/relatorio.md", "relatório de onze seções do PMO; gerado ao fechar sprint"),
+        (".wx-migration/pmo/painel.html", "o mesmo em HTML"),
+        (".wx-migration/pmo/backlog.md", "backlog priorizado com o papel dono de cada item"),
+        (".wx-migration/pmo/base_de_conhecimento.md", "ciclos PDCA fechados, frutíferos ou não"),
+    ]
+    L = ["# INDEX_FILES.md — mapa do projeto", "",
+         f"Gerado por `aplicar_questionario.py` em {date.today().isoformat()}. Uma linha por arquivo: o que é e quando abrir. Não abra tudo; ache aqui o arquivo certo. Arquivos marcados «ausente» ainda não existem.", "",
+         "| arquivo | o que é | estado |", "| --- | --- | --- |"]
+    for rel, desc in fixos:
+        L.append(f"| `{rel}` | {desc} | {'existe' if (projeto / rel).exists() else 'ausente'} |")
+    L += ["", f"## Evidências do legado (`{raiz}/`, somente leitura)", "", "| arquivo | grupo |", "| --- | --- |"]
+    for letra, grupo in (("A_sql", "script SQL"), ("B_pdf_codigos", "PDF dos códigos"), ("C_pdf_interfaces", "PDF das interfaces"), ("D_pdf_queries", "PDF das queries"), ("E_pdf_completo", "PDF completo")):
+        for arq in (q.get(letra, {}) or {}).get("arquivos", []) or []:
+            L.append(f"| `{raiz}/{arq}` | {grupo} |")
+    t0 = ((q.get("F_estilo_impeccable") or {}).get("F0_tela_modelo") or {})
+    for a0 in t0.get("arquivos", []) or []:
+        L.append(f"| `{raiz}/{a0.get('arquivo', '')}` | tela modelo {a0.get('tela', '')} ({a0.get('papel', '')}) |")
+    ss = projeto / raiz / "screenshots" / "screenshots.json"
+    if ss.is_file():
+        try:
+            n = len(json.loads(ss.read_text(encoding="utf-8")))
+            L.append(f"| `{raiz}/screenshots/` | {n} capturas listadas em `screenshots.json` |")
+        except (OSError, json.JSONDecodeError):
+            pass
+    L += ["", "## Fontes técnicas (RAG)", "",
+          "- Corpus WLanguage 12k do plugin, por tema: `query_wlanguage_help.py --group GG-SS-TT --query …` (semântica técnica, nunca regra de negócio).",
+          "- Perfis e processo de conversão: `references/perfis-de-destino.md` do plugin.",
+          "- Documentos deste projeto: os de `.wx-migration/` acima; procure por id (`BR-012`, `GAP-003`) antes de ler inteiro.", ""]
+    return "\n".join(L)
+
+
+def settings_do_projeto(l4: dict) -> dict:
+    hooks = {}
+    if l4.get("testar_ao_parar") and l4.get("comando_de_teste"):
+        hooks["Stop"] = [{"hooks": [{"type": "command", "command": "bash .claude/hooks/testar.sh", "timeout": 600, "statusMessage": "Testes do projeto"}]}]
+    if l4.get("lint_ao_editar") and l4.get("comando_de_lint"):
+        hooks["PostToolUse"] = [{"matcher": "Edit|Write|MultiEdit", "hooks": [{"type": "command", "command": "bash .claude/hooks/lint.sh", "timeout": 120, "statusMessage": "Lint"}]}]
+    return {"permissions": {"allow": ["Read", "Glob", "Grep", "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)"], "deny": ["Read(./.env)", "Read(./.env.*)", "Read(./**/.env)"]}, "hooks": hooks}
+
+
+def skill_regras_do_legado(q: dict) -> str:
+    return ("---\nname: regras-do-legado\ndescription: Como tratar toda regra de negócio vinda do WINDEV neste projeto: origem localizável, matriz, golden master. Use antes de implementar ou mudar qualquer BR-*.\n---\n\n"
+            "# Regras do legado\n\n"
+            "1. Toda regra tem um `BR-*` em `.wx-migration/traceability.csv` com origem (`source_locator`) no PDF de código ou no SQL. Sem origem, não é regra: é `GAP-*`.\n"
+            "2. Hierarquia de evidências (do `CLAUDE.md`): decisão humana > comportamento observado > código e SQL do legado > regra documentada > telas > Help WLanguage.\n"
+            "3. A prova é o golden master (`golden.py comparar`) com os dados de amostra; «parece igual» não conta.\n"
+            "4. Conflito entre evidências para o item, registra `DEC-*` e pede ao aprovador " + f"**{(((q.get('0_empresa_e_projeto') or {}).get('0_16_aprovador') or {}).get('nome')) or (q.get('projeto') or {}).get('aprovador') or '(pendente)'}**.\n"
+            "5. Precisão numérica, nulidade, datas, fuso, collation e transações seguem o legado, salvo `DEC-*` aprovada.\n")
+
+
+def skill_legado_para_destino(q: dict) -> str:
+    h = q.get("H_backend", {}) or {}; i = q.get("I_frontend", {}) or {}
+    ph = h.get("processo") or {}; pi = i.get("processo") or {}
+    return ("---\nname: legado-para-destino\ndescription: O que cada peça do projeto WINDEV vira em " + f"{h.get('linguagem') or h.get('perfil') or 'destino'} + {i.get('linguagem') or i.get('perfil') or 'frontend'}" + " e a estratégia de conversão escolhida. Use ao converter procedure, classe, tela, query ou relatório.\n---\n\n"
+            f"# Legado → destino\n\n- Backend: **{h.get('linguagem') or h.get('perfil') or '?'}** ({h.get('framework') or '?'}, {h.get('banco') or '?'}), estratégia **{ph.get('estrategia') or '(pendente)'}**.\n"
+            f"- Frontend: **{i.get('linguagem') or i.get('perfil') or '?'}** ({i.get('framework') or '?'}), estratégia **{pi.get('estrategia') or '(pendente)'}**, ritmo {pi.get('telas_por_vez') or 'tela a tela'}.\n"
+            f"- O que o usuário quer diferente: {ph.get('quer_diferente') or 'nada'}; {pi.get('quer_diferente') or 'nada'}.\n\n"
+            "A tabela peça a peça, com o gate de cada uma, está em `.wx-migration/processo-de-conversao.md`; leia antes de converter. Funções WLanguage: consulte o corpus por tema com `query_wlanguage_help.py --group`, e, no perfil C#, a WL_C# pelo nome da função.\n")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--questionario", required=True, type=Path)
@@ -946,7 +1126,8 @@ def main() -> int:
     ap_nome = ap.get("nome") or q.get("projeto", {}).get("aprovador") or "(pendente)"
     claude_md = claude_md.rstrip("\n") + "\n\n## Respostas do questionário\n\n" + \
         f"Todas as respostas do questionário (bloco 0 e letras A a J) estão em `.wx-migration/respostas_questionario.md`; o aprovador do projeto é **{ap_nome}**. " + \
-        "Consulte esse arquivo antes de perguntar de novo algo que já foi respondido; para mudar uma resposta, edite `.wx-migration/questionario.json` e reaplique `aplicar_questionario.py`.\n" + marca
+        "Consulte esse arquivo antes de perguntar de novo algo que já foi respondido; para mudar uma resposta, edite `.wx-migration/questionario.json` e reaplique `aplicar_questionario.py`.\n\n" + \
+        "## Mapa de arquivos\n\n`INDEX_FILES.md` na raiz diz o que é cada arquivo e quando abrir; ache lá antes de ler diretórios inteiros. A primeira sessão começa por `.wx-migration/prompts/kickoff.md`. Skills do projeto em `.claude/skills/`; hooks de teste e lint em `.claude/settings.json`.\n" + marca
     if q.get("J_economia_de_tokens", {}).get("ativar") and q["J_economia_de_tokens"].get("instalar_estilo_no_claude_md", True):
         claude_md = claude_md.rstrip("\n") + "\n" + ESTILO_DE_RESPOSTA
     saida.append(write_new(projeto / "CLAUDE.md", claude_md))
@@ -1000,10 +1181,55 @@ def main() -> int:
             write_new(wx / "entrega.json", json.dumps(montar_entrega(e), ensure_ascii=False, indent=2) + "\n"),
         ]
 
+    l = q.get("L_contexto_e_implantacao")
+    if l:
+        imp = l.get("L3_implantacao") or {}; l4 = l.get("L4_hooks_do_projeto") or {}; l5 = l.get("L5_mcp_e_skills") or {}
+        if imp.get("alvo") not in (None, "", "easypanel-vps", "docker", "windows-servico", "iis", "cloud", "nenhum"):
+            raise ValueError(f"L3_implantacao.alvo {imp.get('alvo')!r} desconhecido")
+        for m in l5.get("mcps", []) or []:
+            if m not in MCPS:
+                raise ValueError(f"L5 mcp {m!r} desconhecido (aceitos: {', '.join(MCPS)})")
+        saida += [write_new(wx / "prompts" / "kickoff.md", prompt_kickoff(q)),
+                  write_new(wx / "prompts" / "prototipacao.md", prompt_prototipacao(q)),
+                  write_new(projeto / ".claude" / "settings.json", json.dumps(settings_do_projeto(l4), ensure_ascii=False, indent=2) + "\n"),
+                  write_new(projeto / ".claude" / "skills" / "regras-do-legado" / "SKILL.md", skill_regras_do_legado(q)),
+                  write_new(projeto / ".claude" / "skills" / "legado-para-destino" / "SKILL.md", skill_legado_para_destino(q))]
+        if l4.get("comando_de_teste"):
+            saida.append(write_new(projeto / ".claude" / "hooks" / "testar.sh", "#!/usr/bin/env bash\n# Roda ao parar: o erro aparece aqui, nao em producao.\nset -o pipefail\n" + l4["comando_de_teste"] + " 2>&1 | tail -40\n"))
+        if l4.get("comando_de_lint"):
+            saida.append(write_new(projeto / ".claude" / "hooks" / "lint.sh", "#!/usr/bin/env bash\nset -o pipefail\n" + l4["comando_de_lint"] + " 2>&1 | tail -20\n"))
+        if l5.get("mcps"):
+            saida.append(write_new(projeto / ".mcp.json", json.dumps({"mcpServers": {m: MCPS[m] for m in l5["mcps"]}}, ensure_ascii=False, indent=2) + "\n"))
+        perfil = str((q.get("H_backend") or {}).get("perfil", "")).lower()
+        if imp.get("dockerfile") and perfil in DOCKERFILES:
+            saida.append(write_new(projeto / "Dockerfile", DOCKERFILES[perfil].format(bin=_slug((q.get("projeto") or {}).get("nome")), porta=imp.get("porta", 8080), health=imp.get("healthcheck", "/health"))))
+        if imp.get("docker_compose"):
+            k2 = ((q.get("K_ambiente") or {}).get("K2_postgresql") or {})
+            vars_ = "\n".join(f"      - {v}=${{{v}}}" for v in imp.get("variaveis_de_ambiente", []) or [])
+            comp = ("# Servico + banco, gerado do questionario (L3). Valores vem do .env (nunca versionado).\nservices:\n  app:\n    build: .\n    restart: unless-stopped\n"
+                    f"    ports: [\"{imp.get('porta', 8080)}:{imp.get('porta', 8080)}\"]\n    environment:\n{vars_ or '      - RUST_LOG=info'}\n")
+            if k2.get("instalar_ou_atualizar"):
+                comp += (f"    depends_on: [db]\n  db:\n    image: postgres:{k2.get('versao', '16')}\n    restart: unless-stopped\n    environment:\n      - POSTGRES_DB={k2.get('banco') or 'app'}\n      - POSTGRES_USER={k2.get('superusuario', 'postgres')}\n      - POSTGRES_PASSWORD=${{{k2.get('senha_ref', 'PGPASSWORD')}}}\n    volumes: [db_data:/var/lib/postgresql/data]\nvolumes:\n  db_data:\n")
+            saida.append(write_new(projeto / "docker-compose.yml", comp))
+        for sh in (projeto / ".claude" / "hooks").glob("*.sh"):
+            try:
+                os.chmod(sh, 0o755)
+            except OSError:
+                pass
+        gi = projeto / ".gitignore"
+        if not gi.exists():
+            saida.append(write_new(gi, "# nunca versionar segredos nem gerados\n.env\n.env.*\n!.env.exemplo\ntarget/\nnode_modules/\n.claude/worktrees/\n"))
+
     # As respostas legiveis: regravadas sempre, porque sao renderizacao do JSON.
     resp = wx / "respostas_questionario.md"
     resp.write_text(respostas_md(q) + "\n", encoding="utf-8")
     saida.append(f"UPDATED {resp}")
+
+    # O mapa de arquivos: regravado sempre, por ultimo, para refletir o que existe.
+    idx = projeto / "INDEX_FILES.md"
+    idx.write_text("", encoding="utf-8")
+    idx.write_text(index_files(q, projeto) + "\n", encoding="utf-8")
+    saida.append(f"UPDATED {idx}")
 
     for linha in saida:
         print(linha)

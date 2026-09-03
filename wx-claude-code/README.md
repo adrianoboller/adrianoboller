@@ -47,6 +47,7 @@ Requisitos: Python 3.10+ (scripts de intake e do corpus) e Node 22+ (Impeccable)
 | I | Linguagens para o frontend, com o processo e o ritmo (tela a tela, módulo a módulo) | `target.platforms`, navegadores e dispositivos |
 | J | Ativar economia de tokens | estilo de resposta no `CLAUDE.md` e `/laudo-tokens` |
 | K | Ambiente: privilégios (sudo ou root), Rust/Cargo, PostgreSQL, MySQL, MariaDB, Supabase (marcáveis, com login e papéis por nível; senha só por nome de variável), ligação com o GitHub e n8n integrado ao projeto (sim ou não, com webhooks e fluxos) | `ambiente.md`, `ambiente/`, `ambiente/n8n/` |
+| L | Contexto do Claude Code e implantação: requisitos da v1, prototipação, deploy (Dockerfile, compose), hooks do projeto, MCP e skills | `prompts/kickoff.md`, `INDEX_FILES.md`, `.claude/`, `.mcp.json`, `Dockerfile` |
 
 As respostas ficam em `.wx-migration/questionario.json` (modelo em
 `skills/conversao-wx/templates/questionario.json`) e o script
@@ -113,7 +114,7 @@ Veja `exemplos/estoque-wx/LEIA-ME.md`.
 - `uso_de_tokens.py`: lê o `usage` das sessões do Claude Code (MEDIDO) e lança no orçamento do gate.
 - `hooks/portao_g0.py`: nega `Write`/`Edit` fora de `.wx-migration/` enquanto o G0 estiver `BLOCKED`.
 - `pmo.py painel`: o painel do PMO em HTML, gerado do mesmo código do `status`.
-- `tests/testes.py`: 23 testes de regressão; o validador em modo estrito os executa.
+- `tests/testes.py`: 24 testes de regressão; o validador em modo estrito os executa.
 
 ## Limitações conhecidas
 
@@ -171,6 +172,7 @@ geradas por `docs/prints/gerar.md`).
 | ![processo](docs/prints/19-letra-h-processo-de-conversao.png) letra H: sinais, três opções e o processo de conversão para a escolhida, peça por peça | ![tela-modelo](docs/prints/20-letra-f0-tela-modelo.png) F0: a tela principal do legado como modelo, aberta antes de registrar, com o que preservar e o que mudar |
 | ![licenca](docs/prints/21-licenca-serial-de-ativacao.png) serial de ativação: sem ele o PMO recusa; instalado, a mesma sessão roda | ![respostas](docs/prints/22-respostas-do-questionario.png) sessão nova acha o aprovador e o prazo em `respostas_questionario.md`, sem perguntar |
 | ![ambiente](docs/prints/23-letra-k-ambiente-sem-senha.png) letra K: PostgreSQL, papéis por nível e a senha do root que não é gravada nem repetida | ![n8n](docs/prints/24-letra-k7-n8n-integrado.png) K7: n8n sim ou não, e cada item da integração um por mensagem |
+| ![kickoff](docs/prints/25-primeira-sessao-index-e-kickoff.png) primeira sessão: lê `INDEX_FILES.md` e o kickoff, sabe o escopo da v1 e recusa código sem G0 | |
 
 ## Licença e serial
 

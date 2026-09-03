@@ -29,6 +29,7 @@ e renderizada num terminal pelo Chromium (Playwright), a 2× de escala.
 | 22 | sessão nova, sem contexto, com leitura liberada: perguntada sobre o aprovador e o prazo, achou os dois em `respostas_questionario.md` pelo `CLAUDE.md`, sem perguntar de volta |
 | 23 | sessão limpa em que o usuário adianta a letra K2 com a senha do root do PostgreSQL: o agente não a reproduz de forma nenhuma, registra banco, superusuário e papéis, e diz que vai pedir só o nome da variável (a senha digitada foi mascarada no print; o `grep` pelo valor na saída do agente devolve 0) |
 | 24 | dois turnos reais (`-p` e `-c`): K7 «sim» ao n8n, o item K7.1 sozinho, resposta, e o K7.2 avisando que sem K2 o banco do n8n pode ser SQLite ou PostgreSQL |
+| 25 | sessão nova com leitura liberada, num projeto recém-aplicado: perguntada o que ler e qual o escopo da v1, listou a ordem de leitura, os cinco requisitos do kickoff, a estratégia, e recusou escrever código por falta de G0; de quebra achou um conflito real entre os anexos e o manifesto |
 | 07 | `claude -p "/wx-claude-code:laudo-tokens fase-1"` com fonte de sessões marcada INDISPONÍVEL |
 
 Para refazer: grave a saída em `.txt` e rode o renderizador (um `.mjs` de 40

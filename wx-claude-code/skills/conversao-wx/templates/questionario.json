@@ -409,7 +409,8 @@
       "branch_principal": "main",
       "ci": "github-actions",
       "proteger_branch": true,
-      "observacao": "URL, usuario, credencial_ref e diretorio vem do 0.15; aqui e o que fazer com eles"
+      "observacao": "URL, usuario, credencial_ref e diretorio vem do 0.15; aqui e o que fazer com eles",
+      "convencao_de_commits": "conventional (feat, fix, chore, docs, test)"
     },
     "K7_n8n": {
       "instalar": false,
@@ -436,9 +437,45 @@
         "api_token_ref": "PROJETO_API_TOKEN",
         "webhooks": [],
         "fluxos_iniciais": [],
-        "eventos_do_projeto": []
+        "eventos_do_projeto": [],
+        "documentacao_da_api": true,
+        "api_key_ref": "PROJETO_API_KEY"
       },
       "observacao": "modo: docker | npm | cloud; banco.tipo: postgresql | sqlite; webhooks: [{nome, caminho, metodo, o_que_faz}]; fluxos_iniciais: [{nome, gatilho, acao}]; senhas e chaves so por nome de variavel"
+    }
+  },
+  "L_contexto_e_implantacao": {
+    "L1_requisitos_da_v1": {
+      "itens": [],
+      "fora_da_v1": [],
+      "observacao": "itens: frases «o sistema deve…» que a primeira entrega precisa ter; cada uma vira item na matriz"
+    },
+    "L2_prototipacao": {
+      "ferramenta": "nenhuma",
+      "telas_prioritarias": [],
+      "observacao": "ferramenta: stitch | figma | nenhuma; o prompt sai em .wx-migration/prompts/prototipacao.md"
+    },
+    "L3_implantacao": {
+      "alvo": "nenhum",
+      "dominio": "",
+      "porta": 8080,
+      "dockerfile": false,
+      "docker_compose": false,
+      "variaveis_de_ambiente": [],
+      "healthcheck": "/health",
+      "observacao": "alvo: easypanel-vps | docker | windows-servico | iis | cloud | nenhum; variaveis_de_ambiente: so NOMES"
+    },
+    "L4_hooks_do_projeto": {
+      "testar_ao_parar": true,
+      "lint_ao_editar": true,
+      "comando_de_teste": "",
+      "comando_de_lint": "",
+      "observacao": "vira .claude/settings.json e .claude/hooks/ no projeto de destino"
+    },
+    "L5_mcp_e_skills": {
+      "mcps": [],
+      "skills_externas": [],
+      "observacao": "mcps: supabase | postgresql | github | playwright; skills_externas: pacotes npx skills add …; nenhuma chave aqui"
     }
   }
 }

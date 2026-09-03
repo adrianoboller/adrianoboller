@@ -53,7 +53,7 @@ python3 wx-claude-code/skills/conversao-wx/scripts/query_wlanguage_help.py --ver
 listagem que o modelo devolve pode omitir um item; confira por nome, não
 por contagem.
 
-**Validar o pacote** (roda os 23 testes de regressão):
+**Validar o pacote** (roda os 24 testes de regressão):
 
 ```bash
 python3 wx-claude-code/skills/conversao-wx/scripts/validate_plugin_bundle.py wx-claude-code --strict
@@ -346,6 +346,8 @@ para cada evento, uma rota de API por ação, e um `INT-*` na rastreabilidade
 para cada um. Chave de criptografia, senha do admin e do banco e token da
 API vêm do `.env`, nunca do compose.
 
+**A letra L, o contexto.** A lição que veio de fora (`docs/analise-aula-vibe-coding.md`): o que o Claude Code entrega depende do que ele lê antes do primeiro comando. Por isso o wizard fecha gerando o prompt de kickoff da primeira sessão (empresa, aprovador, prazo, legado, destino, estratégia, requisitos da v1, como trabalhar), o prompt de prototipação para a ferramenta de telas, o `INDEX_FILES.md` com uma linha por arquivo dizendo o que é e quando abrir, o `.claude/` do projeto com hooks de teste e lint e duas skills (regras do legado; legado para destino), o `.mcp.json` sem chaves, e o Dockerfile e compose por perfil quando L3 pede. Com isso a primeira sessão começa lendo, não perguntando.
+
 **Sobre a senha.** O wizard não pergunta a senha nem o token, e o script
 recusa o questionário se algum vier preenchido: a regra do projeto é senha
 nunca em texto puro. Você informa o **nome** da variável de ambiente ou do
@@ -367,6 +369,7 @@ o push. Se colar a senha na conversa por engano, revogue-a.
 | I | para qual linguagem e plataforma converter o frontend (capítulo 7) |
 | J | ativar a economia de tokens? |
 | K | ambiente: privilégios (sudo ou root); Rust/Cargo (versão mínima, hoje 1.98 no modelo); PostgreSQL, MySQL, MariaDB e Supabase atualizados, cada um marcável, com login do superusuário e papéis por nível; ligar o projeto ao GitHub (criar, remote, branch, CI); e **n8n, sim ou não**, com cada item da integração (banco, admin, chave, API do projeto, eventos, webhooks, fluxos) |
+| L | contexto do Claude Code e implantação: requisitos da v1, prototipação (Stitch ou Figma), alvo de deploy com Dockerfile e compose, hooks de teste e lint do projeto, MCP e skills. Gera o kickoff, o `INDEX_FILES.md` e o `.claude/` do projeto |
 
 E duas perguntas de governança no fim: versão e idioma do WX; modo
 (`inventário`, `plano`, `piloto`, `completo`). Quem aprova já foi o 0.16.
@@ -378,6 +381,10 @@ E duas perguntas de governança no fim: versão e idioma do WX; modo
   questionario.json          suas respostas
   respostas_questionario.md  todas as respostas legíveis, com o aprovador no topo; o CLAUDE.md aponta para ele
   ambiente.md, ambiente/     instalador, SQL dos papéis do banco e .env.exemplo (letra K)
+  prompts/                   kickoff.md e prototipacao.md (letra L)
+INDEX_FILES.md               mapa de arquivos, regravado sempre
+.claude/                     settings.json com hooks, hooks/, skills/ do projeto
+.mcp.json, Dockerfile, docker-compose.yml   quando L5 e L3 pedem
   wx-inputs.manifest.json    manifesto que o pré-flight lê
   conversion.config.json     modo, destino, fidelidade
   gaps.md, traceability.csv  vazios, prontos para o G1
