@@ -55,10 +55,13 @@ fn filha(d: &std::path::Path, conferindo: bool) -> Table {
         ],
     )
     .unwrap()
-    .com_chaves_estrangeiras(vec![
-        ForeignKey::new("fk_cliente", vec![1], "clientes", vec!["id".into()])
-            .conferindo(conferindo),
-    ])
+    .com_chaves_estrangeiras(vec![ForeignKey::new(
+        "fk_cliente",
+        vec![1],
+        "clientes",
+        vec!["id".into()],
+    )
+    .conferindo(conferindo)])
     .unwrap();
     Table::criar(d, e).unwrap()
 }
@@ -265,10 +268,13 @@ fn filha_sem_indice(d: &std::path::Path, conferindo: bool) -> Table {
         ],
     )
     .unwrap()
-    .com_chaves_estrangeiras(vec![
-        ForeignKey::new("fk_cliente", vec![1], "clientes", vec!["id".into()])
-            .conferindo(conferindo),
-    ])
+    .com_chaves_estrangeiras(vec![ForeignKey::new(
+        "fk_cliente",
+        vec![1],
+        "clientes",
+        vec!["id".into()],
+    )
+    .conferindo(conferindo)])
     .unwrap();
     Table::criar(d, e).unwrap()
 }

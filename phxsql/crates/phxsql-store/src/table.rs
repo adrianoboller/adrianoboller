@@ -18,18 +18,18 @@ use phxsql_core::error::{PhxError, Result};
 use phxsql_core::keyenc::{escrever_componente, largura_componente};
 use phxsql_core::schema::{AcaoRi, ForeignKey, Schema};
 use phxsql_core::types::ColumnType;
-use phxsql_core::value::{Ponteiro, Value, escrever_inline, ler_inline};
-use phxsql_core::{EXT_BIN, EXT_MEMO, EXT_NDX, EXT_REG, RowId};
+use phxsql_core::value::{escrever_inline, ler_inline, Ponteiro, Value};
+use phxsql_core::{RowId, EXT_BIN, EXT_MEMO, EXT_NDX, EXT_REG};
 
 use crate::blob::{BlobFile, MAGIC_BIN, MAGIC_MEMO};
-use crate::lixeira::{Descartada, EXT_TRASH, LixeiraFile};
-use crate::log::{EXT_LOG, Evento, LogFile, Operacao};
-use crate::motivo::{EXT_REASON, Motivo, MotivoFile, Tipo};
+use crate::lixeira::{Descartada, LixeiraFile, EXT_TRASH};
+use crate::log::{Evento, LogFile, Operacao, EXT_LOG};
+use crate::motivo::{Motivo, MotivoFile, Tipo, EXT_REASON};
 use crate::ndx::NdxFile;
 use crate::reg::RegFile;
 // Qualificado: `crate::log::Evento` ja ocupa o nome `Evento` aqui, e os dois
 // eventos sao coisas diferentes -- um e do diario, o outro e da trilha.
-use crate::trilha::{self, EXT_LGPD, TrilhaFile};
+use crate::trilha::{self, TrilhaFile, EXT_LGPD};
 
 /// Uma linha: um valor por coluna do esquema.
 pub type Linha = Vec<Value>;

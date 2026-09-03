@@ -29,11 +29,9 @@ fn esquema() -> Schema {
             Column::new("id", ColumnType::Int8).obrigatoria(),
             Column::new("nome", ColumnType::Str(40)).obrigatoria(),
         ],
-        vec![
-            IndexDef::new("porId", vec![IndexColumn::asc(0)])
-                .unico()
-                .primaria(),
-        ],
+        vec![IndexDef::new("porId", vec![IndexColumn::asc(0)])
+            .unico()
+            .primaria()],
     )
     .unwrap()
 }
@@ -169,9 +167,13 @@ fn filha_bidi(d: &std::path::Path) -> Table {
         ],
     )
     .unwrap()
-    .com_chaves_estrangeiras(vec![
-        ForeignKey::new("fk_cliente", vec![1], "clientes", vec!["id".into()]).conferindo(true),
-    ])
+    .com_chaves_estrangeiras(vec![ForeignKey::new(
+        "fk_cliente",
+        vec![1],
+        "clientes",
+        vec!["id".into()],
+    )
+    .conferindo(true)])
     .unwrap();
     Table::criar(d, e).unwrap()
 }

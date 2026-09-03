@@ -42,7 +42,7 @@ use phxsql_core::error::{PhxError, Result};
 use phxsql_core::schema::ForeignKey;
 use phxsql_core::value::Value;
 
-use crate::table::{Table, indice_que_cobre, nome_simples};
+use crate::table::{indice_que_cobre, nome_simples, Table};
 
 /// O que ha de errado com uma chave, ou com uma linha por ela.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -227,7 +227,11 @@ pub fn conferir_chave(
                     None => false,
                 })
             })?;
-            if viva { None } else { Some(Falha::MaeExcluida) }
+            if viva {
+                None
+            } else {
+                Some(Falha::MaeExcluida)
+            }
         };
         if let Some(f) = falha {
             saida.push(violacao(Some(rowid), chave, f));
