@@ -1,6 +1,6 @@
 ---
 name: "laudo-uso-tokens"
-description: "Audita, em fases aprovadas pelo usuário, evidências de uso de tokens em sessões autorizadas e propõe uma mudança reversível por vez."
+description: "Audita o uso de tokens do Claude Code em fases aprovadas pelo usuario e propoe uma mudanca por vez."
 license: "All rights reserved"
 compatibility: "Claude Cowork and Claude Code"
 metadata: {"author":"Adriano Boller","version":"3.0.0"}

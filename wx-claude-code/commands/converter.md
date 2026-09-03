@@ -1,5 +1,5 @@
 ---
-description: "Conduz a conversao do projeto WX (WINDEV, WEBDEV, WINDEV Mobile) por gates G0-G7: pre-flight, inventario, especificacao, arquitetura, piloto vertical, ondas, endurecimento e cutover."
+description: "Conversao do projeto WX por gates G0-G7: pre-flight, inventario, especificacao, arquitetura, piloto, ondas e cutover."
 argument-hint: "[inventario|plano|piloto|completo] [raiz-do-projeto]"
 allowed-tools: "Read, Glob, Grep, Bash, Write, Edit, Agent, AskUserQuestion"
 ---

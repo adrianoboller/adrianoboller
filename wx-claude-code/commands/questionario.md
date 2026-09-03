@@ -1,5 +1,5 @@
 ---
-description: "Questionario inicial (A-J) do projeto WX: anexos, Impeccable, corpus do Help, linguagens de destino e economia de tokens. Gera manifesto, configuracao e a pasta .wx-migration/."
+description: "Questionario inicial A-J do projeto WX: anexos, Impeccable, Help, linguagens de destino e economia de tokens. Gera .wx-migration/."
 argument-hint: "[raiz-do-projeto-de-destino]"
 allowed-tools: "Read, Glob, Grep, Bash, Write, AskUserQuestion"
 ---

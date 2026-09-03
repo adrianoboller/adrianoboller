@@ -79,10 +79,14 @@ def validate(root: Path, strict: bool = False) -> dict:
             errors.append(f"{path.relative_to(root)}: name inválido")
         if data.get("name") != path.parent.name:
             errors.append(f"{path.relative_to(root)}: name precisa coincidir com a pasta da skill")
-        # O limite do Claude Code para description e 1024; a skill vendorizada do
-        # Impeccable usa a descricao longa de proposito, para acionar bem.
-        if len(data.get("description", "")) > 1024:
+        # O limite formal do Claude Code e 1024, mas medido: com 895 caracteres a
+        # skill do Impeccable sumia da listagem quando o plugin inteiro carregava
+        # (26 agentes e 4 comandos). Acima de 300 e aviso; acima de 1024, erro.
+        tamanho = len(data.get("description", ""))
+        if tamanho > 1024:
             errors.append(f"{path.relative_to(root)}: description excede 1024 caracteres")
+        elif tamanho > 300:
+            warnings.append(f"{path.relative_to(root)}: description com {tamanho} caracteres; acima de 300 pode sumir da listagem")
         if data.get("model") and data["model"] not in MODELS and not data["model"].startswith("claude-"):
             errors.append(f"{path.relative_to(root)}: model inválido")
         if data.get("effort") and data["effort"] not in EFFORTS:

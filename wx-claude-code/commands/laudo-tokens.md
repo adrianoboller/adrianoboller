@@ -1,5 +1,5 @@
 ---
-description: "Laudo de uso de tokens do Claude Code neste projeto, em 3 fases (auditar, corrigir, habitos). Somente leitura; nada muda sem aprovacao explicita."
+description: "Laudo de uso de tokens em 3 fases (auditar, corrigir, habitos). Somente leitura; nada muda sem aprovacao."
 argument-hint: "[fase-1|fase-2|fase-3]"
 allowed-tools: "Read, Glob, Grep, Bash"
 ---

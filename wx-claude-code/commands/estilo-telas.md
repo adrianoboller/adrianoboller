@@ -1,5 +1,5 @@
 ---
-description: "Configura o estilo das telas do projeto convertido com o Impeccable: paleta de cores, tema, tipografia e densidade viram PRODUCT.md e DESIGN.md, e as telas do WX sao reconstruidas nesse sistema."
+description: "Estilo das telas convertidas com o Impeccable: paleta, tema e tipografia viram PRODUCT.md e DESIGN.md."
 argument-hint: "[raiz-do-projeto] [--preservar|--redesenhar]"
 allowed-tools: "Read, Glob, Grep, Bash, Write, Edit, AskUserQuestion"
 ---

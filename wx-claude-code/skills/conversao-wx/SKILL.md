@@ -1,6 +1,6 @@
 ---
 name: "conversao-wx"
-description: "Conduz inventário, planejamento, piloto e modernização rastreável de projetos WINDEV, WEBDEV e WINDEV Mobile com evidências, gates e validação humana."
+description: "Inventario, plano, piloto e conversao rastreavel de projetos WINDEV, WEBDEV e WINDEV Mobile, com evidencias e gates."
 license: "All rights reserved"
 compatibility: "Claude Cowork and Claude Code; Python 3.10 or newer for bundled helper scripts"
 metadata: {"author":"Adriano Boller","version":"3.0.0"}
