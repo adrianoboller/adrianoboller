@@ -164,11 +164,11 @@ geradas por `docs/prints/gerar.md`).
 | ![equipe](docs/prints/09-equipe-wlanguage-por-tema.png) delegação real aos `wl-*-specialist` | ![scrum](docs/prints/10-pmo-scrum-kanban-pdca.png) Scrum, Kanban e PDCA com a base de conhecimento |
 | ![pmo-sessao](docs/prints/11-pmo-sessao-real.png) `/wx-claude-code:pmo status` numa sessão real | ![painel](docs/prints/12-painel-pmo-html-tema-claro.png) `pmo.py painel`, tema claro |
 | ![letra-h](docs/prints/13-questionario-h-orientacao-de-linguagem.png) letra H: sinais e três opções, a recomendada primeiro | ![exemplo](docs/prints/14-exemplo-estoque-g0-extracao-golden.png) o exemplo ESTOQUE no G0, extração e golden |
-| ![papeis](docs/prints/15-papeis-backlog-e-entrega-zipada.png) backlog com papel dono, Kanban por papel e a entrega zipada ao stakeholder | |
+| ![papeis](docs/prints/15-papeis-backlog-e-entrega-zipada.png) backlog com papel dono, Kanban por papel e a entrega zipada ao stakeholder | ![letra-f](docs/prints/16-letra-f-erp-botoes-e-design-md.png) letra F para ERP: a tabela de botões, posição e fundo no `DESIGN.md` |
 
 ## Vídeo de uso
 
-`docs/video/wx-claude-code-video-de-uso.mp4` (e `.webm`), 1 min 31 s: dez cenas com as
+`docs/video/wx-claude-code-video-de-uso.mp4` (e `.webm`), 1 min 39 s: onze cenas com as
 mesmas saídas reais dos prints, reproduzidas num terminal animado.
 
 ## Pacotes
