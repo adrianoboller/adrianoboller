@@ -55,7 +55,25 @@ use phxsql_core::error::{PhxError, Result};
 use phxsql_core::json::Json;
 
 use super::conexao::{Conexao, Resultado};
-use super::{nome_seguro, Definicao, Motor};
+use super::{nome_seguro, phx, Definicao, Motor};
+
+/// Desvia a operacao para o motor que NAO fala SQL de catalogo.
+///
+/// O `phxsql` responde `bancos`, `sistabelas`, `esquema` e `varrer` -- nao ha
+/// instrucao a montar. O desvio acontece na PRIMEIRA linha de cada operacao,
+/// antes de qualquer `format!`, porque montar SQL para depois joga-lo fora e
+/// como o observador que trabalha antes de olhar o proprio interruptor.
+///
+/// A macro existe para que acrescentar uma operacao nova nao possa esquecer o
+/// desvio numa delas: quem escrever a setima copia a linha, e a linha e uma so.
+macro_rules! desviar_phx {
+    ($c:expr, $chamada:expr) => {
+        match $c {
+            Conexao::Phx(c) => return $chamada(*c),
+            outra => outra,
+        }
+    };
+}
 
 /// Um campo de uma linha do resultado, como texto.
 fn campo(l: &[Option<String>], i: usize) -> String {
@@ -100,6 +118,12 @@ fn base_escolhida(d: &Definicao, p: &Json) -> String {
         "" => match d.motor {
             Motor::MySql => d.database.clone(),
             Motor::Postgres => String::new(),
+            // Inalcancavel: o `phxsql` sai por `desviar_phx!` antes de chegar
+            // aqui, e tem a sua propria `phx::base_do_pedido`. O ramo existe
+            // porque o `match` e exaustivo -- e ser exaustivo e o que faz o
+            // compilador cobrar cada motor novo em cada decisao por motor,
+            // que e exatamente o esquecimento que este arquivo documenta.
+            Motor::Phx => d.database.clone(),
         },
         // O caso que a TELA produz, e que sozinho ja deixava a lista de
         // tabelas vazia e calada: o operador escolhe um banco na lista que o
@@ -120,7 +144,8 @@ fn base_escolhida(d: &Definicao, p: &Json) -> String {
 }
 
 /// `dblink_testar`: conecta, da `ping` e diz com quem esta falando.
-pub fn testar(d: &Definicao, mut c: Conexao) -> Result<Json> {
+pub fn testar(d: &Definicao, c: Conexao) -> Result<Json> {
+    let mut c = desviar_phx!(c, |c| phx::testar(d, c));
     let comeco = Instant::now();
     c.ping()?;
     let versao = c.versao();
@@ -128,7 +153,7 @@ pub fn testar(d: &Definicao, mut c: Conexao) -> Result<Json> {
     // A pergunta que o operador realmente quer: com quem o outro banco acha
     // que esta falando, e em que base caiu. As tres colunas saem na mesma
     // ordem nos dois motores porque o dialeto as montou assim.
-    let quem = c.consultar(d.motor.sql_quem_sou(), 1).ok();
+    let quem = c.consultar(d.motor.sql_quem_sou()?, 1).ok();
     c.encerrar();
     let dado = |i: usize| {
         quem.as_ref()
@@ -153,8 +178,9 @@ pub fn testar(d: &Definicao, mut c: Conexao) -> Result<Json> {
 }
 
 /// `dblink_bancos`: as bases do outro servidor.
-pub fn bancos(d: &Definicao, mut c: Conexao) -> Result<Json> {
-    let r = c.consultar(d.motor.sql_bancos(), 1_000);
+pub fn bancos(d: &Definicao, c: Conexao) -> Result<Json> {
+    let mut c = desviar_phx!(c, |c| phx::bancos(d, c));
+    let r = c.consultar(d.motor.sql_bancos()?, 1_000);
     c.encerrar();
     let r = r?;
     Ok(Json::objeto(vec![(
@@ -170,7 +196,8 @@ pub fn bancos(d: &Definicao, mut c: Conexao) -> Result<Json> {
 }
 
 /// `dblink_tabelas`: as tabelas de uma base, com tamanho e comentario.
-pub fn tabelas(d: &Definicao, mut c: Conexao, p: &Json) -> Result<Json> {
+pub fn tabelas(d: &Definicao, c: Conexao, p: &Json) -> Result<Json> {
+    let mut c = desviar_phx!(c, |c| phx::tabelas(d, c, p));
     let base = base_escolhida(d, p);
     let sql = d.motor.sql_tabelas(&base)?;
     let r = c.consultar(&sql, 5_000);
@@ -206,7 +233,8 @@ pub fn tabelas(d: &Definicao, mut c: Conexao, p: &Json) -> Result<Json> {
 }
 
 /// `dblink_estrutura`: colunas e indices de uma tabela.
-pub fn estrutura(d: &Definicao, mut c: Conexao, p: &Json) -> Result<Json> {
+pub fn estrutura(d: &Definicao, c: Conexao, p: &Json) -> Result<Json> {
+    let mut c = desviar_phx!(c, |c| phx::estrutura(d, c, p));
     let tabela = nome_seguro(p.texto_ou("tabela", ""))?;
     let base = base_escolhida(d, p);
     let colunas = c.consultar(&d.motor.sql_colunas(&base, &tabela)?, 2_000);
@@ -221,7 +249,8 @@ pub fn estrutura(d: &Definicao, mut c: Conexao, p: &Json) -> Result<Json> {
 }
 
 /// `dblink_ler`: o conteudo de uma tabela, paginado.
-pub fn ler(d: &Definicao, mut c: Conexao, p: &Json) -> Result<Json> {
+pub fn ler(d: &Definicao, c: Conexao, p: &Json) -> Result<Json> {
+    let mut c = desviar_phx!(c, |c| phx::ler(d, c, p));
     let tabela = nome_seguro(p.texto_ou("tabela", ""))?;
     let base = base_escolhida(d, p);
     let alvo = d.motor.alvo(&base, &tabela)?;
@@ -271,7 +300,12 @@ pub fn consultar(d: &Definicao, mut c: Conexao, sql: &str, limite: u64) -> Resul
         return Err(PhxError::Esquema("dblink_consultar sem \"sql\"".into()));
     }
     let comeco = Instant::now();
-    let r = c.consultar(sql, limite);
+    // Este e o unico caminho que o `phxsql` NAO desvia: a op `sql` do outro
+    // lado existe e e a mesma que a tela dele usa, entao a instrucao atravessa
+    // inteira e quem a executa e o motor de la. O `database` viaja junto
+    // porque a op `sql` do PhxSql o pede -- e sem ele um `FROM clientes` sem
+    // qualificacao nao acharia tabela nenhuma.
+    let r = c.consultar_em(&d.database, sql, limite);
     c.encerrar();
     let r = r?;
     let mut saida = r.para_json();

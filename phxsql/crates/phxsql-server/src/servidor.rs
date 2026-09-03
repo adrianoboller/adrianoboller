@@ -13019,7 +13019,7 @@ impl Servidor {
             (
                 "motores",
                 Json::Lista(
-                    [Motor::MySql, Motor::Postgres]
+                    [Motor::MySql, Motor::Postgres, Motor::Phx]
                         .iter()
                         .map(|m| {
                             Json::objeto(vec![
@@ -13045,6 +13045,12 @@ impl Servidor {
         if let Ok(antiga) = r.achar(&d.nome) {
             if p.campo("senha").is_none() && d.senha_env.is_empty() {
                 d = d.com_a_senha_de(antiga);
+            }
+            // O token tem a CONDICAO DELE, e nao a da senha: quem troca so a
+            // senha de uma ligacao `phxsql` nao pode perder a chave da porta
+            // da rede -- e a tela nunca o recebe de volta ("(oculto)").
+            if p.campo("token_remoto").is_none() && d.token_env.is_empty() {
+                d = d.com_o_token_de(antiga);
             }
             // A tela salva sem mandar as sincronias; um salvar comum nao pode
             // apagar o que o assistente montou.
@@ -13168,6 +13174,7 @@ impl Servidor {
         }
 
         let (mut d, mut c) = self.ligar(p)?;
+        d.exigir_catalogo_em_sql("dblink_ligar")?;
         let dados = self.travar_dados()?;
         let mut ligadas = Vec::new();
         for t in pedidos {
@@ -13246,6 +13253,7 @@ impl Servidor {
 
         let so = p.texto_ou("tabela", "").trim().to_string();
         let (d, mut c) = self.ligar(p)?;
+        d.exigir_catalogo_em_sql("dblink_sincronizar")?;
         if d.sincronias.is_empty() {
             return Err(PhxError::Esquema(format!(
                 "a ligacao {:?} nao tem tabela ligada: rode o assistente do DbLink",

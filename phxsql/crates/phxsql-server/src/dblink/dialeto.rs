@@ -51,14 +51,36 @@ impl Motor {
     pub fn citar(self, nome: &str) -> String {
         match self {
             Motor::MySql => format!("`{}`", nome.replace('`', "``")),
-            Motor::Postgres => format!("\"{}\"", nome.replace('"', "\"\"")),
+            // O PhxSql cita como o PostgreSQL(R), e isso nao e palpite: o
+            // lexico do `phxsql-sql` le identificador entre aspas duplas e
+            // dobra a aspa de dentro (`lexico::aspas_dobradas_viram_uma`).
+            Motor::Postgres | Motor::Phx => format!("\"{}\"", nome.replace('"', "\"\"")),
         }
     }
 
+    /// Recusa a montagem de SQL de CATALOGO para quem nao tem catalogo em SQL.
+    ///
+    /// O erro nomeia a operacao NATIVA que responde a mesma pergunta, em vez
+    /// de dizer so "nao da": quem chega aqui esta escrevendo codigo novo, e o
+    /// que ele precisa saber e por onde ir.
+    fn sem_catalogo_em_sql(self, pergunta: &str, op: &str) -> PhxError {
+        PhxError::Esquema(format!(
+            "o motor {} nao responde {pergunta} em SQL: ele responde a op {op:?} \
+             do protocolo proprio (ver dblink::phx)",
+            self.nome()
+        ))
+    }
+
     /// `base.tabela`, ou so a tabela quando nao ha base escolhida.
+    ///
+    /// O `phxsql` nunca qualifica: o database dele viaja num CAMPO do pedido
+    /// (`{"op":"sql","database":…}`), e nao dentro da instrucao. Qualificar
+    /// aqui produziria um `FROM "loja"."clientes"` que ninguem manda -- e a
+    /// forma qualificada do PhxSql tem TRES partes (database.schema.tabela),
+    /// entao o palpite de duas seria errado de um jeito calado.
     pub fn alvo(self, base: &str, tabela: &str) -> Result<String> {
         let t = self.citar(&nome_seguro(tabela)?);
-        if base.trim().is_empty() {
+        if base.trim().is_empty() || self == Motor::Phx {
             return Ok(t);
         }
         Ok(format!("{}.{t}", self.citar(&nome_seguro(base)?)))
@@ -76,11 +98,15 @@ impl Motor {
     /// "Com quem o outro banco acha que esta falando, e em que base."
     ///
     /// Tres colunas, na mesma ordem nos dois: usuario, base, versao.
-    pub fn sql_quem_sou(self) -> &'static str {
-        match self {
+    pub fn sql_quem_sou(self) -> Result<&'static str> {
+        Ok(match self {
             Motor::MySql => "SELECT current_user(), database(), version()",
             Motor::Postgres => "SELECT current_user, current_database(), version()",
-        }
+            // Devolver Result e o que impede o terceiro motor de receber SQL
+            // que ele nao entende: um `&'static str` obrigaria este ramo a
+            // INVENTAR uma instrucao, e uma instrucao inventada compila.
+            Motor::Phx => return Err(self.sem_catalogo_em_sql("quem sou", "quem_sou")),
+        })
     }
 
     /// As bases do outro servidor, uma por linha na primeira coluna.
@@ -88,14 +114,15 @@ impl Motor {
     /// No PostgreSQL(R) as bases-modelo (`datistemplate`) ficam de fora: elas
     /// aparecem na lista e nao se conectam, e uma tela que as mostra convida ao
     /// clique que falha.
-    pub fn sql_bancos(self) -> &'static str {
-        match self {
+    pub fn sql_bancos(self) -> Result<&'static str> {
+        Ok(match self {
             Motor::MySql => "SHOW DATABASES",
             Motor::Postgres => {
                 "SELECT datname FROM pg_database \
                  WHERE NOT datistemplate AND datallowconn ORDER BY datname"
             }
-        }
+            Motor::Phx => return Err(self.sem_catalogo_em_sql("as bases", "bancos")),
+        })
     }
 
     /// As tabelas de uma base, com tamanho e comentario.
@@ -168,6 +195,7 @@ impl Motor {
                      ORDER BY c.relname"
                 )
             }
+            Motor::Phx => return Err(self.sem_catalogo_em_sql("as tabelas", "sistabelas")),
         })
     }
 
@@ -227,6 +255,7 @@ impl Motor {
                     super::literal(&t)?
                 )
             }
+            Motor::Phx => return Err(self.sem_catalogo_em_sql("as colunas", "esquema")),
         })
     }
 
@@ -275,6 +304,7 @@ impl Motor {
                     super::literal(&t)?
                 )
             }
+            Motor::Phx => return Err(self.sem_catalogo_em_sql("os indices", "esquema")),
         })
     }
 
@@ -345,6 +375,39 @@ impl Motor {
                 ColumnType::Uuid256 => "bytea".into(),
                 ColumnType::Sequence => "bigserial".into(),
             },
+            // Do lado do PhxSql o tipo tem o NOME que ele proprio usa, e nao
+            // um equivalente: `valores::tipo_de_texto` le exatamente estes
+            // textos de volta, e ha teste que fecha o ciclo para todos eles.
+            //
+            // Isto NAO e SQL de `CREATE TABLE` -- o PhxSql cria tabela pela op
+            // `criar_tabela`, no campo `tipo`. Quem chama isto e a sincronia,
+            // que recusa o motor `phxsql` antes de chegar aqui (ver
+            // `docs/DBLINK.md`, secao da sincronia).
+            Motor::Phx => match tipo {
+                ColumnType::Decimal { precisao, escala } => {
+                    format!("Decimal({precisao},{escala})")
+                }
+                ColumnType::Str(n) => format!("Str({n})"),
+                ColumnType::Bool => "Bool".into(),
+                ColumnType::Int1 => "Int1".into(),
+                ColumnType::Int2 => "Int2".into(),
+                ColumnType::Int4 => "Int4".into(),
+                ColumnType::Int8 => "Int8".into(),
+                ColumnType::UInt1 => "UInt1".into(),
+                ColumnType::UInt2 => "UInt2".into(),
+                ColumnType::UInt4 => "UInt4".into(),
+                ColumnType::UInt8 => "UInt8".into(),
+                ColumnType::Real4 => "Real4".into(),
+                ColumnType::Real8 => "Real8".into(),
+                ColumnType::Date => "Date".into(),
+                ColumnType::Time => "Time".into(),
+                ColumnType::DateTime => "DateTime".into(),
+                ColumnType::Bin => "Bin".into(),
+                ColumnType::Memo => "Memo".into(),
+                ColumnType::Uuid => "Uuid".into(),
+                ColumnType::Uuid256 => "Uuid256".into(),
+                ColumnType::Sequence => "Sequence".into(),
+            },
         }
     }
 
@@ -369,7 +432,9 @@ impl Motor {
     pub fn data(self, iso: &str) -> Result<String> {
         let d = so_data_ou_hora(iso)?;
         Ok(match self {
-            Motor::MySql => format!("'{d}'"),
+            // O PhxSql compara texto com coluna `Date` sozinho, como o
+            // MySQL(R) -- o `DATE '…'` do PostgreSQL(R) e que e a excecao.
+            Motor::MySql | Motor::Phx => format!("'{d}'"),
             Motor::Postgres => format!("DATE '{d}'"),
         })
     }
@@ -378,7 +443,7 @@ impl Motor {
     pub fn data_hora(self, iso: &str) -> Result<String> {
         let d = so_data_ou_hora(iso)?;
         Ok(match self {
-            Motor::MySql => format!("'{d}'"),
+            Motor::MySql | Motor::Phx => format!("'{d}'"),
             Motor::Postgres => format!("TIMESTAMP '{d}'"),
         })
     }
@@ -425,6 +490,111 @@ pub fn booleano_lido(texto: &str) -> Option<bool> {
 mod testes {
     use super::*;
 
+    /// O terceiro motor NAO monta SQL de catalogo, e a recusa diz por onde ir.
+    ///
+    /// Prova real do outro lado: os dois motores de fora continuam montando.
+    /// Uma recusa que pegasse todo mundo passaria neste teste sem a segunda
+    /// metade -- e seria a regressao inteira.
+    #[test]
+    fn o_phxsql_recusa_catalogo_em_sql_e_diz_a_op_nativa() {
+        let e = Motor::Phx.sql_tabelas("loja").unwrap_err().to_string();
+        assert!(e.contains("sistabelas"), "nao ensinou a op nativa: {e}");
+        assert!(Motor::Phx
+            .sql_colunas("loja", "c")
+            .unwrap_err()
+            .to_string()
+            .contains("esquema"));
+        assert!(Motor::Phx
+            .sql_indices("loja", "c")
+            .unwrap_err()
+            .to_string()
+            .contains("esquema"));
+        assert!(Motor::Phx
+            .sql_bancos()
+            .unwrap_err()
+            .to_string()
+            .contains("bancos"));
+        assert!(Motor::Phx
+            .sql_quem_sou()
+            .unwrap_err()
+            .to_string()
+            .contains("quem_sou"));
+        // E os dois de fora continuam montando -- esta metade e a que importa.
+        assert!(Motor::MySql.sql_tabelas("crm").is_ok());
+        assert!(Motor::Postgres.sql_tabelas("public").is_ok());
+        assert!(Motor::MySql.sql_bancos().is_ok());
+        assert!(Motor::Postgres.sql_quem_sou().is_ok());
+    }
+
+    /// O `alvo` do PhxSql nao qualifica: o database viaja num CAMPO do pedido,
+    /// e a forma qualificada de la tem TRES partes, nao duas.
+    #[test]
+    fn o_phxsql_nao_qualifica_a_tabela_com_a_base() {
+        assert_eq!(Motor::Phx.alvo("loja", "clientes").unwrap(), "\"clientes\"");
+        // Aspas duplas como no PostgreSQL(R) -- e nao por analogia: o lexico
+        // do `phxsql-sql` le identificador entre aspas duplas e dobra a de
+        // dentro. O nome que emendaria SQL continua sem emendar.
+        assert_eq!(
+            Motor::Phx.citar("a\"; DROP TABLE x; --"),
+            "\"a\"\"; DROP TABLE x; --\""
+        );
+        // E os outros dois nao mudaram uma letra.
+        assert_eq!(Motor::MySql.alvo("erp", "t").unwrap(), "`erp`.`t`");
+        assert_eq!(
+            Motor::Postgres.alvo("public", "t").unwrap(),
+            "\"public\".\"t\""
+        );
+    }
+
+    /// O tipo do lado do PhxSql tem o NOME que ele proprio le de volta.
+    ///
+    /// O ciclo fecha contra `valores::tipo_de_texto`, que e o leitor de
+    /// verdade -- e nao contra o que este teste acha. Um texto novo que ele
+    /// nao leia reprova aqui, em vez de virar `criar_tabela` recusado depois.
+    #[test]
+    fn o_tipo_do_phxsql_volta_pelo_leitor_do_proprio_motor() {
+        let todos = [
+            ColumnType::Bool,
+            ColumnType::Int1,
+            ColumnType::Int2,
+            ColumnType::Int4,
+            ColumnType::Int8,
+            ColumnType::UInt1,
+            ColumnType::UInt2,
+            ColumnType::UInt4,
+            ColumnType::UInt8,
+            ColumnType::Real4,
+            ColumnType::Real8,
+            ColumnType::Decimal {
+                precisao: 12,
+                escala: 2,
+            },
+            ColumnType::Date,
+            ColumnType::Time,
+            ColumnType::DateTime,
+            ColumnType::Str(30),
+            ColumnType::Bin,
+            ColumnType::Memo,
+            ColumnType::Uuid,
+            ColumnType::Uuid256,
+            ColumnType::Sequence,
+        ];
+        for t in todos {
+            let texto = Motor::Phx.tipo_no_create(&t);
+            let volta = crate::valores::tipo_de_texto(&texto)
+                .unwrap_or_else(|e| panic!("{texto:?} nao volta: {e}"));
+            assert_eq!(volta, t, "{texto:?} voltou como outro tipo");
+        }
+        assert_eq!(Motor::Phx.tipo_no_create(&ColumnType::Str(30)), "Str(30)");
+        assert_eq!(
+            Motor::Phx.tipo_no_create(&ColumnType::Decimal {
+                precisao: 12,
+                escala: 2
+            }),
+            "Decimal(12,2)"
+        );
+    }
+
     #[test]
     fn cada_motor_cita_com_a_aspa_dele() {
         assert_eq!(Motor::MySql.citar("clientes"), "`clientes`");
@@ -467,10 +637,19 @@ mod testes {
 
     #[test]
     fn as_consultas_de_catalogo_falam_o_dialeto_certo() {
-        assert!(Motor::MySql.sql_bancos().contains("SHOW DATABASES"));
-        assert!(Motor::Postgres.sql_bancos().contains("pg_database"));
+        assert!(Motor::MySql
+            .sql_bancos()
+            .unwrap()
+            .contains("SHOW DATABASES"));
+        assert!(Motor::Postgres
+            .sql_bancos()
+            .unwrap()
+            .contains("pg_database"));
         assert!(
-            Motor::Postgres.sql_bancos().contains("datistemplate"),
+            Motor::Postgres
+                .sql_bancos()
+                .unwrap()
+                .contains("datistemplate"),
             "as bases-modelo apareceriam na lista e nao conectam"
         );
 
@@ -485,11 +664,20 @@ mod testes {
         let i = Motor::Postgres.sql_indices("", "clientes").unwrap();
         assert!(i.contains("pg_index") && i.contains("current_schema()"));
 
-        assert!(Motor::MySql.sql_quem_sou().contains("current_user()"));
+        assert!(Motor::MySql
+            .sql_quem_sou()
+            .unwrap()
+            .contains("current_user()"));
         // Sem parenteses: no PostgreSQL(R) `current_user` e palavra reservada,
         // e `current_user()` e erro de sintaxe.
-        assert!(Motor::Postgres.sql_quem_sou().contains("current_user,"));
-        assert!(!Motor::Postgres.sql_quem_sou().contains("current_user()"));
+        assert!(Motor::Postgres
+            .sql_quem_sou()
+            .unwrap()
+            .contains("current_user,"));
+        assert!(!Motor::Postgres
+            .sql_quem_sou()
+            .unwrap()
+            .contains("current_user()"));
     }
 
     /// O defeito que a prova contra um MySQL(R) DE VERDADE achou, e que o

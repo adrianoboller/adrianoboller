@@ -23,6 +23,7 @@ pub mod conexao;
 pub mod dialeto;
 pub mod mysql;
 pub mod operacoes;
+pub mod phx;
 pub mod sincronia;
 
 pub use conexao::{Conexao, Resultado};
@@ -38,6 +39,12 @@ use phxsql_core::json::Json;
 pub enum Motor {
     MySql,
     Postgres,
+    /// Outro PhxSql, pelo protocolo proprio -- e nao pelo fio do MySQL(R).
+    ///
+    /// Este e o unico motor que NAO fala SQL para o catalogo: as perguntas do
+    /// DbLink viram `bancos`, `sistabelas`, `esquema` e `varrer`, que sao as
+    /// mesmas operacoes que a tela ja usa. Ver `dblink::phx`.
+    Phx,
 }
 
 impl Motor {
@@ -45,9 +52,11 @@ impl Motor {
         Ok(match s.trim().to_lowercase().as_str() {
             "" | "mysql" | "mariadb" => Motor::MySql,
             "postgres" | "postgresql" | "pgsql" => Motor::Postgres,
+            "phxsql" | "phx" => Motor::Phx,
             outro => {
                 return Err(PhxError::Esquema(format!(
-                    "motor de dblink desconhecido: {outro:?} (use \"mysql\" ou \"postgres\")"
+                    "motor de dblink desconhecido: {outro:?} \
+                     (use \"mysql\", \"postgres\" ou \"phxsql\")"
                 )))
             }
         })
@@ -57,6 +66,7 @@ impl Motor {
         match self {
             Motor::MySql => "mysql",
             Motor::Postgres => "postgres",
+            Motor::Phx => "phxsql",
         }
     }
 
@@ -64,6 +74,7 @@ impl Motor {
         match self {
             Motor::MySql => 3306,
             Motor::Postgres => 5432,
+            Motor::Phx => crate::config::PORTA_PADRAO,
         }
     }
 
@@ -83,7 +94,17 @@ impl Motor {
     /// repositorio tem -- e por isso ele fica aqui, num lugar so, em vez de a
     /// tela adivinhar pelo nome do motor.
     pub fn conecta(self) -> bool {
-        matches!(self, Motor::MySql | Motor::Postgres)
+        matches!(self, Motor::MySql | Motor::Postgres | Motor::Phx)
+    }
+
+    /// Este motor responde o catalogo em SQL?
+    ///
+    /// Os dois de fora sim; o PhxSql nao -- ele responde `sistabelas` e
+    /// `esquema`, que ja trazem o que o `SHOW FULL COLUMNS` traz e mais. A
+    /// pergunta existe para que as operacoes que SO sabem montar SQL recusem
+    /// dizendo por que, em vez de mandarem crase para quem nao usa crase.
+    pub fn catalogo_em_sql(self) -> bool {
+        !matches!(self, Motor::Phx)
     }
 }
 
@@ -102,6 +123,24 @@ pub struct Definicao {
     senha: String,
     /// Nome da variavel de ambiente de onde a senha veio, quando veio de la.
     pub senha_env: String,
+    /// O token de servico do outro PhxSql -- so o motor `phxsql` o usa.
+    ///
+    /// PRIVADO pelo mesmo motivo da senha, e o motivo aqui e mais forte: no
+    /// PhxSql o token e o portao 1, conferido ANTES do login. Quem o tem
+    /// alcanca a porta de dados do outro servidor sem usuario nenhum, entao
+    /// ele nunca sai em JSON, em log nem na tela.
+    ///
+    /// # Por que `token_remoto`, e nao `token`
+    ///
+    /// Porque `token` JA EXISTE em todo pedido deste protocolo, e e o portao 1
+    /// DESTE servidor. Um campo `token` no `dblink_salvar` seria lido primeiro
+    /// pelo portao, que compararia o token do OUTRO servidor com o daqui e
+    /// responderia «token invalido» -- um erro que manda procurar no lugar
+    /// errado, e que nenhum teste de unidade acharia. Foi a prova por soquete
+    /// que pisou nele.
+    token: String,
+    /// Nome da variavel de ambiente de onde o token veio, quando veio de la.
+    pub token_env: String,
     pub database: String,
     pub descricao: String,
     pub somente_leitura: bool,
@@ -122,6 +161,8 @@ impl Default for Definicao {
             usuario: String::new(),
             senha: String::new(),
             senha_env: String::new(),
+            token: String::new(),
+            token_env: String::new(),
             database: String::new(),
             descricao: String::new(),
             somente_leitura: true,
@@ -144,6 +185,12 @@ impl Definicao {
         } else {
             std::env::var(&senha_env).unwrap_or_default()
         };
+        let token_env = j.texto_ou("token_remoto_env", "").trim().to_string();
+        let token = if token_env.is_empty() {
+            j.texto_ou("token_remoto", "").to_string()
+        } else {
+            std::env::var(&token_env).unwrap_or_default()
+        };
         Ok(Definicao {
             nome,
             motor,
@@ -154,6 +201,8 @@ impl Definicao {
             usuario: j.texto_ou("usuario", "").trim().to_string(),
             senha,
             senha_env,
+            token,
+            token_env,
             database: j.texto_ou("database", "").trim().to_string(),
             descricao: j.texto_ou("descricao", "").trim().to_string(),
             // Sem o campo, somente leitura. Negar por omissao e a regra do
@@ -193,6 +242,11 @@ impl Definicao {
         } else {
             campos.push(("senha_env", Json::texto_de(&self.senha_env)));
         }
+        if !self.token_env.is_empty() {
+            campos.push(("token_remoto_env", Json::texto_de(&self.token_env)));
+        } else if !self.token.is_empty() {
+            campos.push(("token_remoto", Json::texto_de(&self.token)));
+        }
         if !self.sincronias.is_empty() {
             campos.push((
                 "sincronias",
@@ -219,6 +273,17 @@ impl Definicao {
             ("timeout_s", Json::de_u64(self.timeout_s)),
             ("max_linhas", Json::de_u64(self.max_linhas)),
             ("senha_env", Json::texto_de(&self.senha_env)),
+            ("token_remoto_env", Json::texto_de(&self.token_env)),
+            (
+                "token_remoto",
+                Json::texto_de(if self.token.is_empty() {
+                    "(vazio)"
+                } else if self.token_env.is_empty() {
+                    "(oculto)"
+                } else {
+                    "(do ambiente)"
+                }),
+            ),
             (
                 "senha",
                 Json::texto_de(if self.senha.is_empty() {
@@ -236,6 +301,35 @@ impl Definicao {
         &self.senha
     }
 
+    pub fn token(&self) -> &str {
+        &self.token
+    }
+
+    /// Recusa a operacao que so sabe falar SQL contra o motor que nao fala.
+    ///
+    /// A sincronia de tabelas primas monta `SELECT … LIMIT 0`, `CREATE` e
+    /// `INSERT … ON DUPLICATE KEY UPDATE` -- SQL de MySQL(R) da primeira a
+    /// ultima linha. Entre dois PhxSql a convergencia ja existe e e outra: a
+    /// REPLICACAO, que le o diario dos dois lados e por isso propaga exclusao,
+    /// coisa que a sincronia do DbLink nao faz por desenho.
+    ///
+    /// Recusar aqui e a decisao: uma sincronia que rodasse meio caminho entre
+    /// dois PhxSql seria pior que nenhuma, porque pareceria a replicacao sem
+    /// as garantias dela.
+    pub fn exigir_catalogo_em_sql(&self, operacao: &str) -> Result<()> {
+        if self.motor.catalogo_em_sql() {
+            return Ok(());
+        }
+        Err(PhxError::Esquema(format!(
+            "{operacao} nao vale para o motor {}: a ligacao {:?} aponta para outro \
+             PhxSql, e entre dois PhxSql a convergencia e a REPLICACAO nativa \
+             (docs/REPLICACAO.md), que propaga exclusao -- a sincronia do DbLink \
+             nao propaga",
+            self.motor.nome(),
+            self.nome
+        )))
+    }
+
     /// Esta definicao, com a senha de outra.
     ///
     /// Existe para a tela de edicao: ela nunca RECEBE a senha (o `para_json`
@@ -244,6 +338,19 @@ impl Definicao {
     pub fn com_a_senha_de(mut self, outra: &Definicao) -> Definicao {
         self.senha = outra.senha.clone();
         self.senha_env = outra.senha_env.clone();
+        self
+    }
+
+    /// Esta definicao, com o token de outra.
+    ///
+    /// Separada do `com_a_senha_de` de proposito, e nao por simetria: as duas
+    /// credenciais chegam em campos diferentes do pedido, entao quem troca so
+    /// a senha nao pode perder o token. Juntar as duas numa funcao so faria a
+    /// condicao de UMA decidir pelas DUAS -- e o campo esquecido seria apagado
+    /// em silencio, que e exatamente o estrago que estas funcoes impedem.
+    pub fn com_o_token_de(mut self, outra: &Definicao) -> Definicao {
+        self.token = outra.token.clone();
+        self.token_env = outra.token_env.clone();
         self
     }
 
@@ -278,6 +385,11 @@ impl Definicao {
                  que escolhe o cliente pelo motor da ligacao"
                     .into(),
             )),
+            Motor::Phx => Err(PhxError::Esquema(
+                "esta ligacao e PhxSql: use `abrir`, que escolhe o cliente pelo \
+                 motor -- o outro PhxSql fala o protocolo proprio, nao o fio do MySQL(R)"
+                    .into(),
+            )),
         }
     }
 
@@ -294,6 +406,9 @@ impl Definicao {
             ),
             Motor::MySql => Err(PhxError::Esquema(
                 "esta ligacao e MySQL(R); use `conectar`".into(),
+            )),
+            Motor::Phx => Err(PhxError::Esquema(
+                "esta ligacao e PhxSql; use `abrir`".into(),
             )),
         }
     }

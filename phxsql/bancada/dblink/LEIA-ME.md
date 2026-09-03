@@ -1,6 +1,6 @@
 # A bancada do DbLink
 
-Três provas, contra os dois motores **de verdade** — não contra servidores de
+Quatro provas, contra os três motores **de verdade** — não contra servidores de
 protocolo, que respondem o que mandarem eles responder.
 
 | Arquivo | Contra o quê | O que prova |
@@ -8,6 +8,13 @@ protocolo, que respondem o que mandarem eles responder.
 | `prova-sincronia.py` | MySQL® 8.0.46 | a sincronia de tabelas primas: sentido, dono por linha, reentrância, e o limite documentado de a exclusão não viajar |
 | `prova-postgres.py` | PostgreSQL® 16.13 | o cliente e o dialeto: SCRAM, catálogo, tipos, chave, comentários e o dado — **23 conferências, cada uma contra o `psql`** |
 | `prova-mysql.py` | MySQL® 8.0.46 | o cliente e o dialeto do outro lado: identidade, catálogo, forma da resposta, acento, NULO, estimativa e paginação — **47 conferências, cada uma contra o `mysql`** |
+| `prova-phxsql.py` | **dois `phxsqld`** | o motor `phxsql`: os dois portões em série (token e login), catálogo pelo protocolo próprio, paginação, o SQL que roda lá, e o que ele **recusa** — **44 conferências, cada uma contra a mesma pergunta feita direto ao outro servidor** |
+
+A quarta é a única que **sobe os dois lados**: não há cliente oficial de outra
+gente para comparar, então o oráculo é o próprio `phx-b` na porta dele. Dois
+caminhos até o mesmo dado — pelo DbLink e direto — têm de dizer a mesma coisa,
+e é isso que ela confere. Ela não pede nada instalado; roda com o
+`target/release/phxsqld` e mata os dois pelo PID.
 
 ## Por que contra o cliente oficial, e não contra o que o script espera
 

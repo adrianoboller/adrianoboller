@@ -1653,7 +1653,7 @@ pub const OPERACOES: &[Operacao] = &[
         resumo: "Grava ou substitui uma ligação pelo nome.",
         parametros: &[
             obr("nome", "string", "o nome da ligação"),
-            obr("motor", "string", "`mysql` ou `postgres`"),
+            obr("motor", "string", "`mysql`, `postgres` ou `phxsql`"),
             obr("host", "string", "o endereço do outro servidor"),
             opc("porta", "integer", "a porta; sem ela, a do motor"),
             opc("usuario", "string", "o login no outro servidor"),
@@ -1661,6 +1661,13 @@ pub const OPERACOES: &[Operacao] = &[
                 "senha",
                 "string",
                 "a senha; prefira `senha_env` com o nome de uma variável de ambiente",
+            ),
+            opc(
+                "token_remoto",
+                "string",
+                "só para `phxsql`: o token de serviço do outro PhxSql. Não se \
+                 chama `token` porque esse nome já é o portão 1 DESTE servidor, \
+                 e o portão o leria primeiro. Prefira `token_remoto_env`",
             ),
             opc("database", "string", "o banco padrão da ligação"),
         ],

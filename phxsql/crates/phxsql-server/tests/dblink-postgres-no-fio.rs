@@ -396,7 +396,7 @@ fn o_aperto_de_mao_e_a_consulta_chegam_como_o_protocolo_manda() {
     // operador realmente quer.
     assert_eq!(
         visto.consultas,
-        vec!["SELECT 1", Motor::Postgres.sql_quem_sou()]
+        vec!["SELECT 1", Motor::Postgres.sql_quem_sou().unwrap()]
     );
     assert!(
         !visto.consultas[1].contains("current_user()"),

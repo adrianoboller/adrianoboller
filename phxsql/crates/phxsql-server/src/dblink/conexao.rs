@@ -24,7 +24,7 @@ use std::time::Duration;
 use phxsql_core::error::Result;
 use phxsql_core::json::Json;
 
-use super::{mysql, Definicao, Motor};
+use super::{mysql, phx, Definicao, Motor};
 use crate::pg;
 
 /// Uma coluna do resultado, no formato que a grade da tela espera.
@@ -164,16 +164,37 @@ impl From<pg::Resultado> for Resultado {
 }
 
 /// A conexao aberta com o outro banco.
+///
+/// O terceiro caso NAO fala SQL para o catalogo: `Conexao::Phx` responde as
+/// perguntas do DbLink pelo protocolo proprio, e por isso as operacoes o
+/// desviam ANTES de montarem instrucao nenhuma (ver `operacoes`). Um metodo
+/// aqui que fingisse aceitar SQL de catalogo compilaria e falharia na primeira
+/// consulta -- a mesma armadilha que este arquivo ja documenta no cabecalho.
 pub enum Conexao {
     MySql(Box<mysql::Conexao>),
     Postgres(Box<pg::Conexao>),
+    Phx(Box<phx::Conexao>),
 }
 
 impl Conexao {
+    /// Uma instrucao SQL contra o outro banco.
+    ///
+    /// O caso `Phx` precisa de um database, porque a op `sql` do PhxSql o pede
+    /// -- e o unico chamador que passa por aqui e o `dblink_consultar`, que
+    /// tem o pedido na mao. Ver `Conexao::consultar_em`.
     pub fn consultar(&mut self, sql: &str, teto: u64) -> Result<Resultado> {
+        self.consultar_em("", sql, teto)
+    }
+
+    /// A mesma consulta, dizendo em que database ela roda.
+    ///
+    /// O `database` so vale para o motor `phxsql`: nos outros dois a base ja
+    /// foi escolhida no aperto de mao, e mandar de novo nao mudaria nada.
+    pub fn consultar_em(&mut self, database: &str, sql: &str, teto: u64) -> Result<Resultado> {
         match self {
             Conexao::MySql(c) => Ok(c.consultar(sql, teto)?.into()),
             Conexao::Postgres(c) => Ok(c.consultar(sql, teto)?.into()),
+            Conexao::Phx(c) => c.consultar(database, sql, teto),
         }
     }
 
@@ -181,6 +202,7 @@ impl Conexao {
         match self {
             Conexao::MySql(c) => c.ping(),
             Conexao::Postgres(c) => c.ping(),
+            Conexao::Phx(c) => c.ping().map(|_| ()),
         }
     }
 
@@ -188,6 +210,8 @@ impl Conexao {
         match self {
             Conexao::MySql(c) => c.encerrar(),
             Conexao::Postgres(c) => c.encerrar(),
+            // O cliente do protocolo proprio fecha o soquete ao ser largado.
+            Conexao::Phx(_) => {}
         }
     }
 
@@ -196,15 +220,20 @@ impl Conexao {
         match self {
             Conexao::MySql(c) => c.versao.clone(),
             Conexao::Postgres(c) => c.versao.clone(),
+            Conexao::Phx(c) => c.versao.clone(),
         }
     }
 
     /// O identificador da conexao do lado de la: `connection_id()` no
     /// MySQL(R), o PID do processo no PostgreSQL(R).
+    ///
+    /// O PhxSql nao numera a conexao -- ele conta quantas ha --, entao ali
+    /// vale zero. Inventar um numero seria pior que nao ter nenhum.
     pub fn conexao_id(&self) -> u32 {
         match self {
             Conexao::MySql(c) => c.conexao_id,
             Conexao::Postgres(c) => c.conexao_id,
+            Conexao::Phx(_) => 0,
         }
     }
 }
@@ -231,6 +260,14 @@ impl Definicao {
                 &self.usuario,
                 self.senha(),
                 &self.database,
+                espera,
+            )?)),
+            Motor::Phx => Conexao::Phx(Box::new(phx::Conexao::abrir(
+                &self.host,
+                self.porta,
+                self.token(),
+                &self.usuario,
+                self.senha(),
                 espera,
             )?)),
         })

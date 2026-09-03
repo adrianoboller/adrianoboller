@@ -13,6 +13,7 @@ O nome vem do Centro de Controle do HFSQL(R), e a ideia é a mesma.
 |---|---|
 | MySQL(R) / MariaDB(R) | **cliente e dialeto**, testado contra MySQL(R) 8.0.46 |
 | PostgreSQL(R) | **cliente e dialeto**, provados contra um servidor de protocolo no soquete **e contra um PostgreSQL(R) 16.13 de verdade** — 19 conferências, cada uma contra o `psql` (`bancada/dblink/prova-postgres.py`) |
+| **PhxSql** | **cliente e dialeto**, provados por soquete contra **dois `phxsqld` de verdade** — 44 conferências (`bancada/dblink/prova-phxsql.py`). Ele **não fala SQL para o catálogo**: ver a seção *O terceiro motor*, no fim |
 
 O cliente é escrito aqui, com a `std` do Rust e nada mais — a mesma regra do
 resto do projeto. Um protocolo de rede é um formato de bytes; ler e escrever
@@ -475,3 +476,171 @@ O que as provas acharam — e teria passado sem elas:
   escalado é -50, o inteiro da divisão é 0, e 0 não carrega sinal. Sem o
   empréstimo do sinal, o outro banco gravaria crédito onde era dívida. O
   teste unitário falha com o defeito reposto e passa com o conserto.
+
+## O terceiro motor: outro PhxSql (0.18.0)
+
+O pedido 166 dizia, medido, que este caminho **não existia** — e a remedição
+antes desta rodada confirmou a frase palavra por palavra: `{"motor":"phxsql"}`
+respondia `[SP000018] motor de dblink desconhecido: "phxsql" (use "mysql" ou
+"postgres")`. Agora existe, e o que ele é está aqui inteiro, inclusive o que
+ele **não** faz.
+
+| Motor | Estado |
+|---|---|
+| PhxSql | **cliente e dialeto**, provados por soquete contra **dois `phxsqld` de verdade** — 44 conferências, cada uma contra a mesma pergunta feita direto ao outro servidor (`bancada/dblink/prova-phxsql.py`) |
+
+### Ele não fala SQL para o catálogo, e isso é o desenho
+
+Os dois motores de fora respondem «quais são as colunas desta tabela» em SQL
+(`SHOW FULL COLUMNS`, `pg_attribute`). O PhxSql não tem catálogo em SQL — ele
+tem `sistabelas`, `esquema` e `varrer`, que são as **mesmas operações que a
+tela dele já usa** e que trazem mais do que o `SHOW` traria: chave primária,
+papel da coluna nos índices, dado pessoal, rótulo.
+
+| Pergunta do DbLink | MySQL(R) / PostgreSQL(R) | PhxSql |
+|---|---|---|
+| `dblink_testar` | `SELECT current_user…` | `ping` + `quem_sou` |
+| `dblink_bancos` | `SHOW DATABASES` / `pg_database` | `bancos` |
+| `dblink_tabelas` | `information_schema.TABLES` | `sistabelas` |
+| `dblink_estrutura` | `SHOW FULL COLUMNS` + `SHOW INDEX` | `esquema` |
+| `dblink_ler` | `SELECT * … LIMIT n OFFSET m` | `varrer` com `pular`/`max` |
+| `dblink_consultar` | a instrução, pelo fio do motor | a instrução, pela op `sql` |
+
+Traduzir isso para SQL de ida e desinventá-lo do outro lado seria escrever uma
+língua só para desescrevê-la. O desvio acontece na **primeira linha** de cada
+operação (`operacoes::desviar_phx!`), antes de qualquer `format!` — montar SQL
+para depois jogá-lo fora é o mesmo erro do observador que trabalha antes de
+olhar o próprio interruptor.
+
+E o que sobra do lado SQL **recusa dizendo por onde ir**: `Motor::Phx` em
+`sql_tabelas` devolve «o motor phxsql não responde as tabelas em SQL: ele
+responde a op `"sistabelas"`». Um `&'static str` obrigaria aquele ramo a
+inventar uma instrução — e instrução inventada compila.
+
+### A resposta continua se lendo por NOME, e os nomes são os mesmos
+
+`dblink_estrutura` do PhxSql devolve `Field`, `Type`, `Null`, `Key`, `Default`,
+`Comment` — os nomes do `SHOW FULL COLUMNS` — e `Key_name`, `Column_name`,
+`Non_unique`, `Seq_in_index` para os índices, com a **polaridade do nome: 0 é
+único**. Um terceiro vocabulário faria cada cliente crescer um `if` por motor,
+e o motor esquecido é o que para de funcionar sem ninguém ver.
+
+O que o `esquema` tem a mais e não cabe nesses nomes vai em colunas **extra**,
+depois das seis: `Sistema`, `Rotulo`, `Mascara`, `DadoPessoal` (e `Primario`
+nos índices). Quem lê por nome as encontra; quem lia por posição já lia por
+sorte.
+
+O booleano sai **`1`/`0`**, e não `true`/`false`. É o que `booleano_lido` já
+entende e o que o MySQL(R) manda: `true` faria toda comparação ingênua
+(`== "1"`) tratar o valor como falso, sem erro nenhum — a mesma armadilha que
+o `t`/`f` do PostgreSQL(R) armou uma vez.
+
+### As duas credenciais, e o campo que colidiu
+
+O PhxSql tem **dois portões em série**: o token de serviço (a chave da porta da
+rede, conferido antes de tudo) e o login. Medido: `{"op":"login"}` sem token
+responde `token invalido`, então uma ligação com só usuário e senha nunca
+conectaria.
+
+```json
+{
+  "nome": "filial",
+  "motor": "phxsql",
+  "host": "10.0.0.30",
+  "porta": 5000,
+  "token_remoto_env": "PHXSQL_DBLINK_FILIAL_TOKEN",
+  "usuario": "leitor",
+  "senha_env": "PHXSQL_DBLINK_FILIAL_SENHA",
+  "database": "rh",
+  "somente_leitura": true
+}
+```
+
+**O campo se chama `token_remoto`, e não `token`, e isso custou uma rodada da
+prova.** `token` já existe em *todo* pedido deste protocolo — é o portão 1
+**deste** servidor. Um campo `token` no `dblink_salvar` seria lido primeiro
+pelo portão, que compararia o token do OUTRO servidor com o daqui e responderia
+`token invalido`: um erro que manda procurar no lugar errado. Nenhum teste de
+unidade acharia isso; a prova por soquete pisou nele na primeira execução.
+**Campo novo de pedido procura primeiro quem já usa aquele nome.**
+
+**A tela ainda não tem esse campo, e a recusa diz isso.** Uma ligação `phxsql`
+sem token contra um servidor que exige token recebe, em vez do cru «token
+invalido» — que fala do portão do *outro* servidor e manda procurar a senha —,
+a frase que nomeia o campo que falta e onde gravá-lo. A troca só acontece
+quando o token está **vazio**: com token preenchido, «token invalido» quer
+dizer mesmo que ele está errado, e trocar a frase ali esconderia a causa. O
+campo na tela é trabalho da frente de idiomas e da tela, porque rótulo novo
+entra pela fábrica (`docs/MENSAGENS.md`) e a catraca `TETO_ROTULOS_E_CRASE`
+**não sobe**.
+
+Com `usuario` vazio a ligação entra só pelo token, que é o modo do servidor sem
+cadastro. Nem o token nem a senha voltam na ficha: `"(oculto)"` e `"(oculta)"`,
+e a prova confere que o token do outro servidor **não aparece** na resposta do
+protocolo.
+
+E as duas credenciais sobrevivem à edição por caminhos **separados**
+(`com_a_senha_de` e `com_o_token_de`, cada uma com a sua condição). Juntá-las
+faria a condição de uma decidir pelas duas, e o campo esquecido seria apagado
+em silêncio — que é exatamente o estrago que essas funções existem para
+impedir.
+
+### Os números do que ele lê
+
+`dblink_tabelas` publica `registros_estimados` porque é esse o nome que a tela
+lê nos três motores — mas aqui ele é **contagem**, lida do cabeçalho da tabela,
+e não estimativa. O campo `registros` vai junto dizendo isso.
+
+`bytes` é o **`.reg`, e só ele** (`slots × bytes_por_linha`): não inclui
+`.ndx`, `.memo` nem `.bin`. A resposta traz `bytes_de: ".reg"` para que ninguém
+o leia como pegada em disco. Somar o que não se mediu seria número citado.
+
+### O que ele NÃO faz — dito, e não omitido
+
+- **Sem TLS.** Igual aos outros dois, e pelo mesmo motivo (a `std` não traz).
+  A **senha nunca viaja** — o desafio-resposta cuida disso —, mas o dado
+  devolvido sim, e o **token vai no pedido**. Rede interna, VPN ou túnel.
+- **`dblink_ler` não ordena por coluna qualquer.** O `varrer` lê na ordem de
+  digitação ou na de um índice nomeado; não há varredura que ordene. Aceitar
+  `ordem` e devolver a ordem de digitação mostraria a grade com o cabeçalho
+  marcado como ordenado e o dado na ordem errada — quem olha não teria como
+  saber. Então `ordem` **recusa**, e diz que `dblink_consultar` com `ORDER BY`
+  roda lá.
+- **A sincronia de tabelas primas não vale para este motor.** `dblink_ligar` e
+  `dblink_sincronizar` recusam nomeando o caminho certo: entre dois PhxSql a
+  convergência é a **replicação nativa** (`docs/REPLICACAO.md`), que lê o
+  diário dos dois lados e por isso **propaga exclusão** — coisa que a sincronia
+  do DbLink não faz por desenho. Uma sincronia que rodasse meio caminho entre
+  dois PhxSql seria pior que nenhuma: pareceria a replicação sem as garantias
+  dela.
+- **`conexao_id` é zero.** O PhxSql conta quantas conexões há, não numera a
+  nossa. Zero é a verdade; inventar um número seria pior.
+- **Sem `Default` por coluna.** O PhxSql não guarda padrão por coluna, então a
+  célula vem `NULL` — e não cadeia vazia, que diria «o padrão é vazio».
+
+### A prova, e o que ela achou
+
+`bancada/dblink/prova-phxsql.py` sobe **dois `phxsqld`**, em portas próprias,
+mortos pelo PID — nunca `pkill`, que derrubaria o servidor de outra frente na
+mesma máquina. Cada resposta que o `phx-a` dá **pelo DbLink** é conferida
+contra a mesma pergunta feita **direto** ao `phx-b`, que é o oráculo
+independente: dois caminhos sem uma linha em comum têm de dizer a mesma coisa.
+
+Ela achou **dois defeitos que nenhum teste de unidade acharia**:
+
+| defeito | o que se via |
+|---|---|
+| o campo `token` colidindo com o portão 1 | `dblink_salvar` respondia `token invalido` — sobre o token *deste* servidor |
+| `dblink_bancos` filtrando com `texto_ou("", "")` | lista **vazia**, sem erro nenhum |
+
+O segundo merece a explicação: `texto_ou` procura um **campo** com aquele nome,
+e num valor escalar devolve sempre o padrão. Filtrar `Json` já embrulhado em
+vez do texto fez toda base cair fora do filtro. É o mesmo sintoma mudo da lista
+de tabelas do PostgreSQL(R), pelo mesmo motivo — uma pergunta feita ao valor
+errado — e de novo foi o servidor de verdade que o mostrou.
+
+E o que ela prova além do caminho feliz: token errado recusa **dizendo token**,
+senha errada recusa **depois dele, dizendo login**, a porta que não responde
+devolve erro **sem pendurar o servidor** (outra conexão entra durante a espera),
+e com o `phx-b` **fora do ar** o `phx-a` continua vivo — com as bases dele
+intactas, porque o DbLink lê de fora e não importa para dentro.
