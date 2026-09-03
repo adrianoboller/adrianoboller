@@ -122,7 +122,10 @@ pub struct Relatorio {
     pub tabelas: usize,
     /// Chaves estrangeiras conferidas (as declaradas, todas).
     pub chaves: usize,
-    /// Linhas lidas.
+    /// Linhas lidas. Conta UMA vez por tabela, e nao uma por chave: duas
+    /// chaves na mesma tabela leem as mesmas linhas, e somar duas vezes faria o
+    /// relatorio inflar o proprio trabalho. Tabela sem chave nenhuma nao entra:
+    /// ela nao foi conferida.
     pub linhas: u64,
     /// Tabelas que nao abriram, com o motivo.
     ///

@@ -31,7 +31,7 @@ fn main() {
     };
 
     println!(
-        "{}: {} tabela(s), {} chave(s) declarada(s), {} linha(s)",
+        "{}: {} tabela(s), {} chave(s) declarada(s), {} linha(s) conferida(s)",
         dir.display(),
         r.tabelas,
         r.chaves,
