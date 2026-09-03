@@ -3,11 +3,51 @@
   "displayName": "WX Claude Code",
   "description": "Conversao governada de projetos WINDEV, WEBDEV e WINDEV Mobile para outra linguagem: questionario inicial (A-J), intake por gates G0-G7, corpus WLanguage 12k, estilo de telas com Impeccable, 22 agentes e laudo de uso de tokens.",
   "version": "3.0.0",
-  "author": { "name": "Adriano Boller" },
+  "author": {
+    "name": "Adriano Boller"
+  },
   "homepage": "https://github.com/adrianoboller/adrianoboller",
-  "keywords": ["windev", "webdev", "windev-mobile", "wlanguage", "migracao", "conversao", "impeccable", "tokens"],
-  "commands": ["./commands/"],
+  "keywords": [
+    "windev",
+    "webdev",
+    "windev-mobile",
+    "wlanguage",
+    "migracao",
+    "conversao",
+    "impeccable",
+    "tokens"
+  ],
+  "commands": [
+    "./commands/"
+  ],
   "skills": "./skills/",
-  "agents": ["./agents/"],
+  "agents": [
+    "./agents/business-rules-analyst.md",
+    "./agents/data-migration-architect.md",
+    "./agents/design-quality-specialist.md",
+    "./agents/evidence-curator.md",
+    "./agents/grid-migration-specialist.md",
+    "./agents/help-indexer.md",
+    "./agents/impeccable-asset-producer.md",
+    "./agents/impeccable-documenter.md",
+    "./agents/impeccable-finish-reviewer.md",
+    "./agents/impeccable-manual-edit-applier.md",
+    "./agents/implementation-lead.md",
+    "./agents/integration-specialist.md",
+    "./agents/module-converter.md",
+    "./agents/pdf-forensics.md",
+    "./agents/performance-capacity-specialist.md",
+    "./agents/quality-auditor.md",
+    "./agents/release-cutover-specialist.md",
+    "./agents/reports-printing-specialist.md",
+    "./agents/runtime-operations-specialist.md",
+    "./agents/security-privacy-specialist.md",
+    "./agents/spreadsheet-evidence-specialist.md",
+    "./agents/target-architect.md",
+    "./agents/test-engineer.md",
+    "./agents/ui-flow-analyst.md",
+    "./agents/wlanguage-specialist.md",
+    "./agents/wx-orchestrator.md"
+  ],
   "hooks": "./hooks/hooks.json"
 }
