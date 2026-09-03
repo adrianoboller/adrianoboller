@@ -92,7 +92,16 @@ PRAZO_PADRAO = 300
 # `include_str!("../../../exemplos/Config_exemplo_01.json")` -- a copia so com
 # `crates/` nem compila. Foi a primeira coisa que este executor descobriu, e o
 # recado do compilador dizia exatamente qual arquivo faltava.
-COPIAR = ["Cargo.toml", "Cargo.lock", "crates", "exemplos"]
+#
+# `docs/` (6,3 MB, achado numa rodada de QA): `error.rs` tem um teste que le
+# `docs/ROTEIRO-1.0.md` em TEMPO DE EXECUCAO (`std::fs::read_to_string`, nao
+# `include_str!`) para conferir que nenhuma sprint citada num erro e
+# inventada -- e essa lista NUNCA esteve aqui. A arvore limpa reprovava com
+# «nao li .../docs/ROTEIRO-1.0.md: No such file or directory» antes mesmo de
+# qualquer defeito ser reposto, o que e o proprio padrao que este arquivo
+# adverte: quando um gerador (aqui, a copia) depende de uma lista, a lista
+# tem de sair do codigo -- e a lista que faltava era esta.
+COPIAR = ["Cargo.toml", "Cargo.lock", "crates", "exemplos", "docs"]
 
 CORES = {"ok": "\033[32m", "mal": "\033[31m", "fraco": "\033[90m",
          "aviso": "\033[33m", "fim": "\033[0m"}

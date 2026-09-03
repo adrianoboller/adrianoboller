@@ -2238,4 +2238,126 @@ pub fn limpar() {
             "servidor::testes_transacoes::dois_caixas_em_linhas_diferentes_nao_se_esbarram",
         ],
     },
+    # -----------------------------------------------------------------------
+    # 34. Zero dependencias externas -- achado do QA-PDCA: a petrea mais
+    #     repetida do CLAUDE.md nao tinha guarda nenhuma
+    # -----------------------------------------------------------------------
+    {
+        "id": "dependencia-de-fora-fica-invisivel",
+        "titulo": "o filtro de dependência externa vira mudo (mede e nunca acusa)",
+        "porque": (
+            "`cargo build --offline` recusava uma dependencia de fora por "
+            "ACIDENTE (crate ausente do cache local), nao por regra -- numa "
+            "maquina com a crate ja em cache, ou com rede, passaria calado. "
+            "Isto e a regra escrita: um conjunto de nomes contra o "
+            "`Cargo.lock`, que nao depende de cache nem de conectividade."
+        ),
+        "arquivo": "crates/phxsql-server/src/conferidor_dependencias.rs",
+        "trecho": """    pacotes
+        .iter()
+        .filter(|(n, _)| !permitidos.contains(n))
+        .cloned()
+        .collect()
+""",
+        "troca": """    // DEFEITO REPOSTO: a guarda desligada -- mede, e nunca acusa nada.
+    let _ = permitidos;
+    Vec::new()
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "conferidor_dependencias::testes::deteta_pacote_de_fora_do_workspace",
+        ],
+        "seguem": [
+            # O Cargo.lock de VERDADE nao tem dependencia externa nenhuma
+            # hoje -- entao "sempre vazio" ainda bate com "vazio de verdade"
+            # nestes dois, e e por isso que a prova real deste defeito mora
+            # no fixture de cima, e nao no Cargo.lock real.
+            "conferidor_dependencias::testes::workspace_zero_dependencia_externa",
+            "conferidor_dependencias::testes::sem_pacote_de_fora_nao_acusa_nada",
+            "conferidor_dependencias::testes::os_nomes_do_workspace_batem_com_os_diretorios_de_crates",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # 35. A metade "indice na filha" da chave conferida -- a metade "indice
+    #     na mae" ja tinha guarda (servidor.rs, achado #11 acima); esta nao
+    # -----------------------------------------------------------------------
+    {
+        "id": "sem-indice-na-filha-ignora-em-vez-de-recusar",
+        "titulo": "sem índice na filha, a exclusão da mãe ignora em vez de recusar",
+        "porque": (
+            "a regra petrea diz \"sem um deles o motor recusa dizendo qual "
+            "falta\" -- e os dez testes historicos de chave-estrangeira.rs "
+            "usavam todos a mesma `filha()`, que SEMPRE cria o indice da "
+            "coluna da chave. Nenhum exercitava a recusa do outro lado: "
+            "sem indice, a exclusao varreria a tabela de filhas inteira a "
+            "cada exclusao de mae -- o custo escondido que a regra existe "
+            "para impedir."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """                let Some(indice) = indice_que_cobre(filha.esquema(), &colunas) else {
+                    return Err(PhxError::Integridade(format!(
+                        "{eu}: nao da para conferir as filhas de {irma} pela chave \\
+                         {:?}, que nao tem indice comecando por ({}) -- crie o \\
+                         indice na filha ou desligue `verificar` na chave",
+                        fk.nome,
+                        colunas.join(", ")
+                    )));
+                };
+""",
+        "troca": """                let Some(indice) = indice_que_cobre(filha.esquema(), &colunas) else {
+                    // DEFEITO REPOSTO: sem indice, ignora em vez de recusar.
+                    continue;
+                };
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "chave-estrangeira"],
+        "caem": [
+            "sem_indice_na_filha_a_recusa_diz_qual_indice_falta",
+        ],
+        "seguem": [
+            "a_mae_aberta_e_ja_gravada_e_vista",
+            "a_mae_nao_gravada_recusa_dizendo_por_que",
+            "sem_conferir_a_mae_aberta_nao_muda_nada",
+            "a_mae_com_filha_nao_pode_ser_apagada",
+            "a_mae_sem_filha_sai_normalmente",
+            "filha_de_outra_linha_nao_tranca_esta",
+            "sem_conferir_a_mae_com_filha_sai_como_sempre",
+            "sem_conferir_a_mae_sai_mesmo_sem_indice_na_filha",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # 36. `recursos.cache_paginas` -- o campo que deu nome a armadilha nunca
+    #     ganhou o teste ponta-a-ponta que ele proprio inspirou nos irmaos
+    # -----------------------------------------------------------------------
+    {
+        "id": "cache-paginas-nao-chega-ao-motor",
+        "titulo": "`cache_paginas` do config.json deixa de chegar ao motor",
+        "porque": (
+            "o campo que deu nome a \"configuracao que nao e lida mente\" -- "
+            "tres versoes no config.json, no MANUAL e na tela sem leitor -- "
+            "nunca ganhou o teste ponta-a-ponta que os campos irmaos "
+            "(`exclusao_na_janela`, `diario_volume_mib`) ganharam DEPOIS "
+            "dele, citando-o como motivo. O unico teste que tocava o campo "
+            "conferia o `Config` em memoria, nao o motor."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        phxsql_store::ndx::definir_cache_paginas(config.recursos.cache_paginas);
+""",
+        "troca": """        // DEFEITO REPOSTO: a armadilha do cache_paginas, de volta.
+        // phxsql_store::ndx::definir_cache_paginas(config.recursos.cache_paginas);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "cache-paginas-pelo-config"],
+        "caem": [
+            "o_campo_do_config_chega_ao_motor_no_arranque",
+            "um_segundo_arranque_com_outro_valor_muda_o_teto_de_novo",
+        ],
+        "seguem": [
+            # O teste do comportamento velho continua de pe: sem o campo no
+            # config.json, o teto ja nasce no padrao mesmo sem a linha --
+            # e o que prova que este `caem` nao e um portao que recusa tudo.
+            "config_sem_o_campo_sobe_com_o_teto_padrao",
+        ],
+    },
 ]
