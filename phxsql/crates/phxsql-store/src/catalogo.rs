@@ -23,10 +23,10 @@
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
-use phxsql_core::EXT_REG;
 use phxsql_core::error::{PhxError, Result};
 use phxsql_core::paginacao::BALDES;
 use phxsql_core::schema::Schema;
+use phxsql_core::EXT_REG;
 
 use crate::table::Table;
 
@@ -1319,6 +1319,64 @@ mod testes_copia_entre_bancos {
         db.criar_tabela(None, esquema("avulsa")).unwrap();
         db.excluir_tabela("avulsa")
             .expect("ninguem aponta para ela");
+    }
+
+    /// **A copia entre bancos NAO confere, e isto e decisao escrita.**
+    ///
+    /// Colar a filha num database onde a mae ainda nao esta e ordem legitima
+    /// de trabalho -- cola-se uma, cola-se a outra --, e recusar aqui obrigaria
+    /// uma ordem que a tela nao tem como impor. A copia e byte a byte: ela
+    /// preserva a ordem de digitacao e os rowids, e reinserir linha a linha
+    /// para conferir perderia os dois.
+    ///
+    /// O que a decisao custa esta MEDIDO neste teste em vez de suposto: a
+    /// tabela colada nasce com orfa. O que a torna aceitavel sao as duas
+    /// saidas que existem depois -- o motor RECUSA a proxima gravacao dizendo
+    /// que a tabela mae nao existe naquele banco, e o verificador de
+    /// consistencia acha a orfa sem que ninguem precise desconfiar dela.
+    ///
+    /// Trocar isto por uma recusa exige numero: quantas colagens legitimas
+    /// quebrariam contra quantas orfas evitadas. Sem esse numero, a recusa
+    /// seria preferencia.
+    #[test]
+    fn colar_a_filha_sem_a_mae_passa_e_o_verificador_acha_a_orfa() {
+        let base = std::env::temp_dir().join(format!("phx-colar-fk-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let cat = Instancia::nova(&base).unwrap();
+        let origem = cat.criar_database("loja").unwrap();
+        let destino = cat.criar_database("vazio").unwrap();
+        origem.criar_tabela(None, esquema("clientes")).unwrap();
+        origem.criar_tabela(None, filha_de_clientes()).unwrap();
+        {
+            let mut m = crate::table::Table::abrir(origem.caminho(), "clientes").unwrap();
+            m.inserir(&[Value::Int(1), Value::Str("Ana".into())])
+                .unwrap();
+            m.sincronizar().unwrap();
+            let mut f = crate::table::Table::abrir(origem.caminho(), "pedidos").unwrap();
+            f.inserir(&[Value::Int(10), Value::Int(1)]).unwrap();
+            f.sincronizar().unwrap();
+        }
+        // A origem esta limpa.
+        assert!(crate::integridade::conferir_diretorio(origem.caminho())
+            .unwrap()
+            .limpo());
+
+        origem
+            .copiar_tabela_para("pedidos", &destino, "pedidos")
+            .expect("colar a filha sozinha passa: colar a mae depois e ordem legitima");
+
+        // E a copia nasce com orfa -- dito por um numero, e nao por suposicao.
+        let r = crate::integridade::conferir_diretorio(destino.caminho()).unwrap();
+        assert_eq!(r.violacoes.len(), 1, "{:?}", r.violacoes);
+        assert_eq!(
+            r.violacoes[0].falha,
+            crate::integridade::Falha::TabelaMaeAusente
+        );
+
+        // A outra saida: a proxima gravacao ali RECUSA, e diz o que falta.
+        let mut f = crate::table::Table::abrir(destino.caminho(), "pedidos").unwrap();
+        let e = f.inserir(&[Value::Int(11), Value::Int(1)]).unwrap_err();
+        assert!(e.to_string().contains("nao existe neste banco"), "{e}");
     }
 
     /// A filha de `clientes`, com o indice dos dois lados que a chave exige.
