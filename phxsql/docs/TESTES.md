@@ -35,20 +35,20 @@ teste que o motivou ainda cai. [§8](#8-as-guardas-provar-que-a-prova-pega).
 ## 1. A cobertura de hoje, medida
 
 <!-- testes:total:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-`cargo test --workspace`: **1.542 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
+`cargo test --workspace`: **1.547 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
 <!-- testes:total:fim --> Por área,
 contando `#[test]` por arquivo e agrupando:
 
 <!-- cobertura:inicio -->
 | área | testes | % |
 |---|---:|---:|
-| Motor de dados (arquivos, índice, diários) | 401 | 26,0 |
-| Protocolo e portões (despachar) | 223 | 14,5 |
+| Motor de dados (arquivos, índice, diários) | 405 | 26,2 |
+| Protocolo e portões (despachar) | 223 | 14,4 |
 | Núcleo (JSON, tipos, UUID, zip, paralelo) | 138 | 8,9 |
 | Criptografia e codificação | 122 | 7,9 |
 | Configuração | 93 | 6,0 |
 | DbLink | 71 | 4,6 |
-| Servidor (outros) | 69 | 4,5 |
+| Servidor (outros) | 70 | 4,5 |
 | Camada SQL (léxico, sintaxe, tradução) | 55 | 3,6 |
 | Telemetria e profiler | 53 | 3,4 |
 | Gatilhos e procedimentos | 42 | 2,7 |
@@ -69,13 +69,13 @@ contando `#[test]` por arquivo e agrupando:
 | **CLI** | **7** | **0,5** |
 | **Cluster** | **7** | **0,5** |
 | **Monitor de máquina** | **6** | **0,4** |
-| **total** | **1542** | |
+| **total** | **1547** | |
 
 Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 
 | arquivo | linhas |
 |---|---:|
-| `phxsql-store/src/table.rs` | 4034 |
+| `phxsql-store/src/table.rs` | 4209 |
 | `phxsql-store/src/ndx.rs` | 1580 |
 | `phxsql-ffi/src/lib.rs` | 1446 |
 | `phxsql-server/src/main.rs` | 488 |
