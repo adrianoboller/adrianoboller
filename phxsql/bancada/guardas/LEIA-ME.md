@@ -212,11 +212,37 @@ nela.
 como causa, meça **qual delas sozinha sustenta**. A que não sustenta é
 exatamente a que alguém vai remover confiando na nota.
 
-E uma falta registrada como falta: no `julgar`, o ramo `"nada muda"` devolve
-**antes** de olhar a lista `seguem` — nessas quatro entradas ela é decorativa.
-Não é grave (exigir que nenhum teste caia é mais forte), mas um `seguem`
-renomeado numa entrada redundante **não** vira `QUEBRADA`, ao contrário do que
-aconteceria com um `caem`.
+E uma «falta» que foi registrada e **não existe** — a correção é de 03/09/2026,
+e a história dela vale mais que o fato.
+
+O que estava escrito aqui: *«no `julgar`, o ramo "nada muda" devolve antes de
+olhar a lista `seguem` — nessas quatro entradas ela é decorativa… um `seguem`
+renomeado não vira `QUEBRADA`»*. A **observação** sobre o `julgar` está certa; a
+**conclusão** é falsa, e por dois caminhos independentes:
+
+- **existência** já é conferida na conferência prévia, *antes* de repor o
+  defeito: o executor casa `caem + seguem` contra a árvore limpa e devolve
+  `QUEBRADA` ali (`provar-guardas.py`, o `faltando` do laço principal);
+- **passagem** já cai no `cairam` do próprio ramo, que olha **todos** os
+  vereditos e não só os `caem`.
+
+O controle **não é decorativo**. Provado repondo o defeito: renomear
+`cifrada_a_tabela_funciona_igual` no `seguem` do `aad-fora-do-slot` devolve
+`QUEBRADA` — *«teste que o catálogo nomeia e o binário não tem»* —, e desfeito
+volta a `REDUNDANTE`.
+
+**Como o engano quase virou código:** escreveu-se um conserto de doze linhas
+para o `julgar`, e ele *passou* na prova real — porque o `QUEBRADA` vinha da
+conferência prévia e o conserto nunca executou. O que denunciou foi a
+**mensagem não ser a do conserto**. O código foi removido: código morto que
+parece guarda é pior que código nenhum, porque o próximo leitor acredita que
+está protegido.
+
+E a lição para quem sabota: nas três primeiras tentativas a sabotagem **não
+sabotou** — um regex renomeou a chave `"seguem"` em vez do teste, e depois um
+`assert` pegou que o nome aparece três vezes no catálogo e abortou antes de
+gravar. Nas duas primeiras dava para reportar sucesso. *Teste que passa por
+engano é pior que teste que falta* — inclusive quando o teste é a sabotagem.
 
 ## A caça ao teste que passa por engano — e o que ela NÃO achou
 
