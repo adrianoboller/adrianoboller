@@ -2783,6 +2783,57 @@ impl Table {
         r
     }
 
+    /// Insere uma linha que OUTRO servidor ja aceitou, sem julgar de novo.
+    ///
+    /// # Para que existe, se ja ha o `aplicar_evento`
+    ///
+    /// O bidirecional nao aplica por ROWID -- ele casa por CHAVE, com "mais
+    /// recente vence", e o rowid e o rownum sao locais. Entao ele nao pode
+    /// passar pelo `aplicar_evento`, que confere o rowid; ele chama o
+    /// `inserir`, o `atualizar` e o `excluir_de_vez` de sempre.
+    ///
+    /// E ai ele caia no MESMO buraco da replica, medido pela leitura do fluxo:
+    /// a chave estrangeira era conferida, o evento da filha que chegasse antes
+    /// da mae era RECUSADO, o erro subia pelo `?` do laco, `desde` nunca
+    /// andava -- e o mesmo lote voltava na rodada seguinte, para sempre. Nao e
+    /// uma linha perdida: e o par de servidores parado.
+    ///
+    /// A decisao e a mesma, e pelo mesmo motivo: a replicacao anda por TABELA
+    /// e nao ha ordem global entre tabelas. A garantia e da ORIGEM, que a
+    /// imposse quando aceitou a escrita; aqui a filha orfa e temporaria e se
+    /// cura quando a mae chega, e a alternativa nao e "consistente" -- e
+    /// parado. Ver [`Table::julga_integridade`].
+    pub fn inserir_replicado(&mut self, valores: &[Value]) -> Result<RowId> {
+        self.como_replica = true;
+        let r = self.inserir(valores);
+        self.como_replica = false;
+        r
+    }
+
+    /// O `atualizar` do bidirecional. Ver [`Table::inserir_replicado`].
+    ///
+    /// Tambem NAO refaz a cascata: a origem ja cascateou, e o evento que a
+    /// cascata dela gerou vem replicado por conta propria.
+    pub fn atualizar_replicado(&mut self, rowid: RowId, valores: &[Value]) -> Result<()> {
+        self.como_replica = true;
+        let r = self.atualizar(rowid, valores);
+        self.como_replica = false;
+        r
+    }
+
+    /// O `excluir_de_vez` do bidirecional. Ver [`Table::inserir_replicado`].
+    ///
+    /// Nao confere as filhas: a origem ja apagou a filha antes da mae -- foi o
+    /// `conferir_filhas` DELA que a obrigou --, e os dois eventos chegam aqui
+    /// em qualquer ordem. Recusar o da mae travaria o par de servidores por
+    /// causa de uma ordem que se resolve sozinha no lote seguinte.
+    pub fn excluir_de_vez_replicado(&mut self, rowid: RowId, motivo: &str) -> Result<bool> {
+        self.como_replica = true;
+        let r = self.excluir_de_vez(rowid, motivo);
+        self.como_replica = false;
+        r
+    }
+
     fn aplicar_evento_interno(
         &mut self,
         operacao: Operacao,

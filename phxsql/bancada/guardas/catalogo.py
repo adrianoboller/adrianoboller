@@ -2699,4 +2699,68 @@ pub fn limpar() {
             "sem_conferir_restaurar_nao_pergunta_nada",
         ],
     },
+    {
+        "id": "bidirecional-julga-fk",
+        "titulo": "o bidirecional volta a conferir a chave do evento que aplica",
+        "porque": (
+            "o bidirecional casa por CHAVE, nao por rowid -- o rowid e o "
+            "rownum sao locais --, entao ele nao passa pelo `aplicar_evento` e "
+            "chamava o `inserir` de sempre. Caia no MESMO buraco da replica, e "
+            "com consequencia pior: o erro subia pelo `?` do laco, `desde` "
+            "nunca andava, e o mesmo lote voltava na rodada seguinte para "
+            "sempre. Nao e uma linha perdida, e o par de servidores PARADO."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """    pub fn inserir_replicado(&mut self, valores: &[Value]) -> Result<RowId> {
+        self.como_replica = true;
+        let r = self.inserir(valores);
+        self.como_replica = false;
+        r
+    }""",
+        "troca": """    pub fn inserir_replicado(&mut self, valores: &[Value]) -> Result<RowId> {
+        // DEFEITO REPOSTO: o bidirecional volta a julgar o que a origem julgou.
+        self.inserir(valores)
+    }""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "bidirecional-no-store"],
+        "caem": [
+            "o_bidirecional_aceita_a_filha_que_chega_antes_da_mae",
+        ],
+        "seguem": [
+            # A exclusao e a outra metade, e por outro caminho: sem este
+            # `seguem` a troca poderia estar quebrando o arquivo inteiro.
+            "o_bidirecional_apaga_a_mae_cuja_filha_ainda_nao_saiu",
+            "o_evento_forcado_guarda_carimbo_e_origem_do_nascimento",
+        ],
+    },
+    {
+        "id": "bidirecional-julga-as-filhas",
+        "titulo": "o bidirecional volta a recusar apagar a mae que tem filha",
+        "porque": (
+            "na origem a filha ja saiu ANTES da mae -- foi o `conferir_filhas` "
+            "dela que obrigou --, e os dois eventos chegam aqui em qualquer "
+            "ordem, porque a replicacao anda por tabela. Recusar o da mae "
+            "travaria o par de servidores por uma ordem que se resolve sozinha "
+            "no lote seguinte."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """    pub fn excluir_de_vez_replicado(&mut self, rowid: RowId, motivo: &str) -> Result<bool> {
+        self.como_replica = true;
+        let r = self.excluir_de_vez(rowid, motivo);
+        self.como_replica = false;
+        r
+    }""",
+        "troca": """    pub fn excluir_de_vez_replicado(&mut self, rowid: RowId, motivo: &str) -> Result<bool> {
+        // DEFEITO REPOSTO: o bidirecional volta a conferir as filhas.
+        self.excluir_de_vez(rowid, motivo)
+    }""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "bidirecional-no-store"],
+        "caem": [
+            "o_bidirecional_apaga_a_mae_cuja_filha_ainda_nao_saiu",
+        ],
+        "seguem": [
+            "o_bidirecional_aceita_a_filha_que_chega_antes_da_mae",
+        ],
+    },
 ]

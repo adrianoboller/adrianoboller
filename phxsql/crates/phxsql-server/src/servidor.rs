@@ -2908,9 +2908,14 @@ impl Servidor {
                     // O rowid e o rownum sao LOCAIS: `atualizar` mantem os
                     // daqui, `inserir` numera na ordem de chegada daqui. A
                     // ordem de digitacao de cada servidor e sagrada NELE.
-                    Some(rowid) => tabela.atualizar(*rowid, &valores)?,
+                    // Sem julgar: o outro lado ja aceitou esta escrita, e a
+                    // replicacao anda por TABELA -- a filha chega antes da mae.
+                    // Conferindo aqui, o erro subia pelo `?` do laco, a posicao
+                    // nunca andava, e o mesmo lote voltava para sempre: o par
+                    // de servidores PARADO. Ver `Table::inserir_replicado`.
+                    Some(rowid) => tabela.atualizar_replicado(*rowid, &valores)?,
                     None => {
-                        tabela.inserir(&valores)?;
+                        tabela.inserir_replicado(&valores)?;
                     }
                 }
             }
@@ -2921,7 +2926,7 @@ impl Servidor {
                 // impede uma alteracao MAIS VELHA de ressuscita-la.
                 if let Some(rowid) = achadas.first() {
                     tabela.forcar_proximo_evento(e.carimbo_ms, origem_ev);
-                    tabela.excluir_de_vez(*rowid, "replicacao bidirecional")?;
+                    tabela.excluir_de_vez_replicado(*rowid, "replicacao bidirecional")?;
                 }
             }
         }
