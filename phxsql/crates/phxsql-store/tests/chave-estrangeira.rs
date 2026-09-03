@@ -240,3 +240,102 @@ fn sem_conferir_a_mae_com_filha_sai_como_sempre() {
         "a guarda nova quebrou quem nunca pediu nada"
     );
 }
+
+// ---------------------------------------------------------------------------
+// A METADE QUE FALTAVA: indice na FILHA (achado do QA-PDCA)
+//
+// Os nove testes acima usam todos `filha()`, que SEMPRE cria o indice
+// "porCliente" -- nenhum deles passa pelo `else` de `indice_que_cobre` em
+// `conferir_filhas` (`table.rs`). A regra petrea diz "sem um deles o motor
+// recusa dizendo qual falta"; ate aqui so a metade "sem indice na mae"
+// (`sem_indice_na_mae_a_recusa_diz_qual_indice_falta`, em
+// `phxsql-server/src/servidor.rs`) tinha prova. Esta filha SEM indice cobre a
+// outra metade.
+// ---------------------------------------------------------------------------
+
+/// A filha SEM o indice da coluna da chave -- so o `porId` da chave primaria.
+/// Existe so para os dois testes abaixo; os outros continuam usando `filha()`.
+fn filha_sem_indice(d: &std::path::Path, conferindo: bool) -> Table {
+    let e = Schema::new(
+        "pedidos",
+        vec![
+            Column::new("id", ColumnType::Int4).obrigatoria(),
+            Column::new("cliente_id", ColumnType::Int4),
+        ],
+        vec![
+            IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico(),
+            // SEM o "porCliente" (indice da coluna 1) -- e o ponto do teste.
+        ],
+    )
+    .unwrap()
+    .com_chaves_estrangeiras(vec![ForeignKey::new(
+        "fk_cliente",
+        vec![1],
+        "clientes",
+        vec!["id".into()],
+    )
+    .conferindo(conferindo)])
+    .unwrap();
+    Table::criar(d, e).unwrap()
+}
+
+/// A outra metade da regra: sem indice na FILHA, a exclusao da mae RECUSA
+/// dizendo qual indice falta -- em vez de varrer a tabela de filhas inteira a
+/// cada exclusao, o custo que o comentario de `conferir_filhas` recusa
+/// esconder dentro de uma operacao que parece barata.
+///
+/// Nao precisa de linha nenhuma em `pedidos`: `indice_que_cobre` olha o
+/// ESQUEMA da filha, nao os dados -- a recusa acontece antes de haver
+/// qualquer filha de verdade para procurar.
+///
+/// Prova real: troque o `let Some(indice) = indice_que_cobre(...) else { ...
+/// }` de `conferir_filhas` por um indice fixo (`"porId"`, que existe e nao
+/// cobre `cliente_id`) e este teste vira "a mae saiu -- recusou a exclusao
+/// sem checar filha nenhuma", que e o buraco que ele existe para fechar.
+#[test]
+fn sem_indice_na_filha_a_recusa_diz_qual_indice_falta() {
+    let d = dir("filha-sem-ndx");
+    let mut m = mae(&d);
+    let rowid = m.inserir(&[Value::Int(1)]).unwrap();
+    m.sincronizar().unwrap();
+    let mut f = filha_sem_indice(&d, true);
+    f.sincronizar().unwrap();
+
+    let e = m
+        .excluir_de_vez(rowid, "sem indice na filha")
+        .expect_err("a exclusao passou sem indice na filha -- ia varrer a tabela inteira");
+    let txt = e.to_string();
+    assert!(
+        matches!(e, PhxError::Integridade(_)),
+        "familia errada: {txt}"
+    );
+    assert!(txt.contains("indice"), "o erro nao diz o que falta: {txt}");
+    assert!(
+        txt.contains("pedidos"),
+        "o erro nao diz ONDE falta o indice: {txt}"
+    );
+    assert!(
+        txt.contains("crie o indice na filha"),
+        "o erro nao diz o que fazer: {txt}"
+    );
+}
+
+/// Comportamento VELHO: sem `verificar`, a mae sai mesmo sem indice na
+/// filha -- quem nunca pediu a garantia nao paga o portao novo. E o par que
+/// impede o teste de cima de estar escondendo um portao que recusa toda
+/// exclusao, indice ou nao.
+#[test]
+fn sem_conferir_a_mae_sai_mesmo_sem_indice_na_filha() {
+    let d = dir("filha-sem-ndx-off");
+    let mut m = mae(&d);
+    let rowid = m.inserir(&[Value::Int(1)]).unwrap();
+    m.sincronizar().unwrap();
+    let mut f = filha_sem_indice(&d, false);
+    f.sincronizar().unwrap();
+
+    assert!(
+        m.excluir_de_vez(rowid, "sem indice, sem conferencia")
+            .unwrap(),
+        "a guarda nova quebrou quem nunca pediu nada"
+    );
+}
