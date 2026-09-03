@@ -849,6 +849,23 @@ disso. É o `TEXTO_MAX` do §1.4.
 * ~~**O custo do `fsync` sob a trava, em milissegundos.**~~ **Medido em 03/09**:
   1.267–1.371 µs por gravação, 10,3× a 12,3× o tempo de trava de uma gravação
   sem ele. §7.1 aqui, e a bateria inteira na §14.1 do `DESEMPENHO.md`.
+* **O comboio do fecho de janela**, que a medição de 03/09 deixou nomeado e não
+  medido. O `gravar_de_verdade` faz duas coisas quando a janela fecha: sincroniza
+  a **própria** tabela e chama `descarregar_sujas_com`, que **reabre e sincroniza
+  todas as outras sujas** — tudo com a trava global na mão. Com K tabelas sujas,
+  o escritor azarado que fecha a janela segura o servidor por `K × (open +
+  fsync)`, e os outros K−1 não pagaram nada.
+
+  A §7.1 **não** mede isso: ela roda com **uma** tabela, e com uma tabela o
+  conjunto de sujas fica vazio e o comboio nunca acontece. E a média não o
+  mostraria mesmo com K tabelas — a conta dá +19,5 µs sobre 4.000 gravações,
+  enquanto a seção individual segura 5,2 ms. *É a média que esconde o que se
+  procura*, e o instrumento certo é o **p99 de um leitor com um escritor ao
+  lado**, que é a forma que o `escolher-o-desenho.py` já usa para o MVCC.
+
+  Fica escrito porque é a única hipótese de hoje que ainda aponta para as 23
+  seções do `fsync` **no padrão** `por_lote` — as outras a §7.1 derrubou.
+
 * **Uma catraca para o mapa.** O `mapa-da-trava.py` está pronto para virar
   guarda de QA — «nenhuma seção nova roda código do dono sob a trava», «o
   número de seções que alcançam `fsync` só desce». Não entrou porque exigiria
