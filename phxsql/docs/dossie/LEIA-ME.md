@@ -85,6 +85,35 @@ envelheceu calada: o `http.rs` passou a embutir **nove**, e o rodapé publicava
 lendo os `include_str!("../ui/…")` fora do `#[cfg(test)]`. **Lista de arquivos é
 número como qualquer outro.**
 
+## O dossiê em PDF
+
+```bash
+python3 docs/dossie/embutir-fontes.py docs/dossie/dossie-phxsql-0.18.html /tmp/com-fontes.html
+node    docs/dossie/pdf-do-dossie.mjs /tmp/com-fontes.html dossie-phxsql-0.18.pdf
+```
+
+O primeiro baixa as **26 faces** do Google Fonts e as põe como `data:` numa
+cópia — a rede do contêiner engole `fonts.googleapis.com`, e sem isso o PDF
+nasce em fonte de *fallback* **sem erro nenhum**. O segundo imprime pela folha
+`@media print` que a própria página traz; ele não inventa estilo.
+
+**A armadilha que custou a primeira corrida:** as 20 capturas são
+`loading="lazy"` e o `page.pdf()` **não rola a página**. O PDF saiu com **uma**
+imagem em 67 páginas — a marca da capa, a única sem `lazy` — com o texto todo,
+as 67 páginas, e nenhum aviso. Hoje o script troca `lazy` por `eager`, espera
+cada `<img>` e **conta**: 21 de 21, ou reprova.
+
+**E a que ensina sobre medir:** `document.fonts.check()` responde `true` para o
+*fallback* — ele diz «consigo desenhar isto», não «a fonte chegou». Nem
+`document.fonts.size` serve: ele conta as regras declaradas. A medida que não
+mente é abrir o PDF pronto e listar as fontes (`get_fonts` do PyMuPDF).
+
+**Limitação conhecida, medida:** **Exo 2 e Source Serif 4 não são embutidas**
+pelo Chromium — saem substituídas por DejaVu Sans e Liberation/FreeSerif. O
+IBM Plex Mono, sim. Medido em caso mínimo e isolado, com as faces já embutidas
+como `data:`, então **não é a rede**. Texto, cor, desenho, tabelas e as vinte
+capturas saem certos; a tipografia dos títulos e do corpo não é a da marca.
+
 ## As capturas
 
 Elas moram em `capturas/`, já reduzidas, e entram no HTML como *data URI* —
