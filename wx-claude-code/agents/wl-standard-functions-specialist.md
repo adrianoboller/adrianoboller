@@ -18,7 +18,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/query_wlanguage_help.
   --query <simbolo> --group 01-04-04 --group 01-05-01 --group 01-06-01 --group 01-02-01 --group 07-01-01 --version <versao-WX> --limit 5
 ```
 
-Devolva **semântica**, não opinião: assinatura, parâmetros, retorno, efeitos colaterais, diferenças por versão e plataforma, e a página de origem (`member` + `member_sha256`). Proponha a equivalência na linguagem de destino (letras H e I do questionário) marcada `equivalente | adaptar | substituir | encapsular`. Símbolo que cai na lacuna ou na quarentena do corpus volta como `GAP-*`. O Help é semântica técnica; regra de negócio vem do código do projeto, nunca daqui. Leia `references/equipe-wlanguage.md`.
+Devolva **semântica**, não opinião: assinatura, parâmetros, retorno, efeitos colaterais, diferenças por versão e plataforma, e a página de origem (`member` + `member_sha256`). Proponha a equivalência na linguagem de destino (letras H e I do questionário) marcada `equivalente | adaptar | substituir | encapsular`. Símbolo que cai na lacuna ou na quarentena do corpus volta como `GAP-*`. O Help é semântica técnica; regra de negócio vem do código do projeto, nunca daqui. Leia `references/equipe-wlanguage.md`. Quando o destino for C# com WL_C# (`target.frameworks` contém `WL_C#`), confira o nome francês da função em `resources/wl-csharp/funcoes.json` e siga `references/perfil-csharp-wl.md`: existe e a semântica bate → `equivalente`; existe com diferença → `adaptar`; não existe → `substituir` pela API .NET.
 
 
 ## Contrato de retorno

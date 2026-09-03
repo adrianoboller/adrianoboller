@@ -3,7 +3,9 @@
   "respondido_em": "2026-09-03",
   "projeto": {
     "nome": "ESTOQUE",
-    "produtos": ["WINDEV"],
+    "produtos": [
+      "WINDEV"
+    ],
     "wx_versao": "2025",
     "wx_update": "1",
     "idioma": "pt-BR",
@@ -11,18 +13,110 @@
     "modo": "inventario",
     "aprovador": "Adriano Boller"
   },
-  "A_sql": {"status": "provided", "arquivos": ["banco.sql"], "dialeto": "HFSQL Client/Server", "versao_do_banco": "2025", "encoding": "utf-8", "collation": "utf8mb4_0900_ai_ci", "charset": "utf8mb4", "timezone": "America/Sao_Paulo", "observacao": "exportado da análise ESTOQUE"},
-  "B_pdf_codigos": {"status": "provided", "arquivos": ["estoque-codigo.pdf"], "pesquisavel": true, "observacao": ""},
-  "C_pdf_interfaces": {"status": "provided", "arquivos": ["estoque-interfaces.pdf"], "pesquisavel": true, "observacao": ""},
-  "D_pdf_queries": {"status": "provided", "arquivos": ["estoque-queries.pdf"], "pesquisavel": true, "observacao": ""},
-  "E_pdf_completo": {"status": "provided", "arquivos": ["estoque-completo.pdf"], "pesquisavel": true, "observacao": ""},
-  "F_estilo_impeccable": {
-    "ativar": true, "preservar_ou_redesenhar": "preservar", "tema": "ambos",
-    "paleta": {"principal": "#E2261C", "secundaria": "#14161F", "fundo": "#FBFAF7", "texto": "#14161F", "acao": "#1F7A4E", "erro": "#C63C0A", "aviso": "#9A6B00", "sucesso": "#1F7A4E"},
-    "tipografia": "Exo 2", "densidade": "compacta", "marca": "WX Claude Code", "observacao": ""
+  "A_sql": {
+    "status": "provided",
+    "arquivos": [
+      "banco.sql"
+    ],
+    "dialeto": "HFSQL Client/Server",
+    "versao_do_banco": "2025",
+    "encoding": "utf-8",
+    "collation": "utf8mb4_0900_ai_ci",
+    "charset": "utf8mb4",
+    "timezone": "America/Sao_Paulo",
+    "observacao": "exportado da análise ESTOQUE"
   },
-  "G_help_json": {"usar_corpus_do_plugin": true, "override_da_versao": {"status": "not_applicable", "arquivos": [], "versao": ""}, "versao_do_help": "2025"},
-  "H_backend": {"linguagem": "Rust", "framework": "Axum", "banco": "PostgreSQL 16", "versoes_minimas": {"rust": "1.85"}, "implantacao": "Docker"},
-  "I_frontend": {"linguagem": "TypeScript", "framework": "React", "plataformas": ["web"], "navegadores_e_dispositivos": ["Chrome 120+", "Firefox 120+", "Edge 120+"]},
-  "J_economia_de_tokens": {"ativar": true, "instalar_estilo_no_claude_md": true}
+  "B_pdf_codigos": {
+    "status": "provided",
+    "arquivos": [
+      "estoque-codigo.pdf"
+    ],
+    "pesquisavel": true,
+    "observacao": ""
+  },
+  "C_pdf_interfaces": {
+    "status": "provided",
+    "arquivos": [
+      "estoque-interfaces.pdf"
+    ],
+    "pesquisavel": true,
+    "observacao": ""
+  },
+  "D_pdf_queries": {
+    "status": "provided",
+    "arquivos": [
+      "estoque-queries.pdf"
+    ],
+    "pesquisavel": true,
+    "observacao": ""
+  },
+  "E_pdf_completo": {
+    "status": "provided",
+    "arquivos": [
+      "estoque-completo.pdf"
+    ],
+    "pesquisavel": true,
+    "observacao": ""
+  },
+  "F_estilo_impeccable": {
+    "ativar": true,
+    "preservar_ou_redesenhar": "preservar",
+    "tema": "ambos",
+    "paleta": {
+      "principal": "#E2261C",
+      "secundaria": "#14161F",
+      "fundo": "#FBFAF7",
+      "texto": "#14161F",
+      "acao": "#1F7A4E",
+      "erro": "#C63C0A",
+      "aviso": "#9A6B00",
+      "sucesso": "#1F7A4E"
+    },
+    "tipografia": "Exo 2",
+    "densidade": "compacta",
+    "marca": "WX Claude Code",
+    "observacao": ""
+  },
+  "G_help_json": {
+    "usar_corpus_do_plugin": true,
+    "override_da_versao": {
+      "status": "not_applicable",
+      "arquivos": [],
+      "versao": ""
+    },
+    "versao_do_help": "2025"
+  },
+  "H_backend": {
+    "linguagem": "Rust",
+    "framework": "Axum",
+    "banco": "PostgreSQL 16",
+    "versoes_minimas": {
+      "rust": "1.85"
+    },
+    "implantacao": "Docker",
+    "perfil": "rust",
+    "sinais": {
+      "quem_mantem": "equipe nova em Rust",
+      "produto": "web",
+      "prioridade": "desempenho",
+      "linguagem_ja_em_uso": "Rust (PhxSql)"
+    }
+  },
+  "I_frontend": {
+    "linguagem": "TypeScript",
+    "framework": "React",
+    "plataformas": [
+      "web"
+    ],
+    "navegadores_e_dispositivos": [
+      "Chrome 120+",
+      "Firefox 120+",
+      "Edge 120+"
+    ],
+    "perfil": "react"
+  },
+  "J_economia_de_tokens": {
+    "ativar": true,
+    "instalar_estilo_no_claude_md": true
+  }
 }

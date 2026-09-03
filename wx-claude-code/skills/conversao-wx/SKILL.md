@@ -25,7 +25,7 @@ Pergunte em rodadas curtas:
 2. “Qual é a versão/update do WINDEV, WEBDEV ou WINDEV Mobile e o idioma do projeto? O corpus WLanguage 12k incluído no plugin será a fonte técnica auxiliar; existe também Help específico da release que precise ser tratado como override?”
 3. “Os anexos estão separados em uma pasta ou dentro de um ZIP? Foram entregues os PDFs completos de código, telas, eventos, queries e regras de negócio, o script SQL, screenshots de todos os estados e os links/documentações de APIs ou fontes auxiliares?”
 4. “Há também o projeto WX original, procedimentos, classes, relatórios, componentes, DLLs, webservices, assets, exemplos de dados e resultados esperados? O que não existe ou não se aplica?”
-5. “Qual é o destino: linguagem, framework de UI/web/mobile, banco, plataformas, arquitetura, versões mínimas e forma de implantação?”
+5. “Qual é o destino?” — antes de perguntar, oriente com [perfis-de-destino.md](references/perfis-de-destino.md): Rust, Python e C# + WL_C# sempre entre as opções, a recomendada primeiro, com o porquê em uma frase; depois framework, banco, plataformas, versões mínimas e implantação.
 6. “Existem dados anonimizados, baseline, build/configuração exatos, ambiente reinicializável e autorização para executar o legado? Há uma referência segura para credenciais de teste, sem enviar valores secretos?”
 7. “Qual modo deseja agora: inventário, plano, piloto vertical ou implementação completa? Quem aprova regras, divergências e cada critério de aceite?”
 8. “Deseja habilitar algum companion opcional — Impeccable, Taste Skill, Higgsfield ou Sheets — e possui autorização, conta/licença e orçamento/créditos quando aplicável? A ausência deles não bloqueia a conversão.”

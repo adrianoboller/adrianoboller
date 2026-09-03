@@ -226,6 +226,10 @@ def montar_config(q: dict, modelo: dict) -> dict:
     h = q.get("H_backend", {})
     i = q.get("I_frontend", {})
     frameworks = [x for x in (h.get("framework", ""), i.get("framework", "")) if x]
+    # O perfil C# + WL_C# entra como framework para que o especialista de funcoes
+    # padrao saiba consultar resources/wl-csharp/funcoes.json.
+    if str(h.get("perfil", "")).lower() in {"csharp-wl", "c#-wl", "wl_c#"} and "WL_C#" not in frameworks:
+        frameworks.append("WL_C#")
     linguagens = [x for x in (h.get("linguagem", ""), i.get("linguagem", "")) if x]
     c["target"].update(
         {
@@ -238,6 +242,8 @@ def montar_config(q: dict, modelo: dict) -> dict:
         }
     )
     c["scale"]["supported_browsers_devices"] = i.get("navegadores_e_dispositivos", [])
+    if h.get("perfil") or i.get("perfil"):
+        c["target"]["architecture"] = f"perfil backend {h.get('perfil') or '?'} / frontend {i.get('perfil') or '?'} (references/perfis-de-destino.md)"
     f = q.get("F_estilo_impeccable", {})
     if f.get("ativar"):
         escolha = str(f.get("preservar_ou_redesenhar", "preservar")).lower()

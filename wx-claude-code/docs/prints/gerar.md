@@ -16,6 +16,9 @@ e renderizada num terminal pelo Chromium (Playwright), a 2× de escala.
 | 09 | sessão `-p` com `Agent` liberado: dois símbolos delegados aos `wl-hfsql-specialist` e `wl-communication-specialist`, com o member do Help de cada um |
 | 10 | `pmo.py sprint abrir`, dois ciclos `pdca` (um infrutífero, recusado sem `--proxima`), `kanban` com WIP e `sprint fechar` com resumo de doze seções |
 | 11 | sessão `-p` com `Agent` liberado: `/wx-claude-code:pmo status` delegado ao agente do PMO, que rodou os scripts e apontou a dessincronia entre plano e sprint |
+| 12 | `pmo.py painel` aberto no Chromium com `prefers-color-scheme: light` |
+| 13 | sessão `-p` e `-c`: letra H com «não sei a linguagem», sinais, três opções com a recomendada primeiro |
+| 14 | o exemplo `estoque-wx`: `aplicar_questionario.py`, G0 `CONDITIONAL` sem erros, `extrair_pdf.py`, `golden.py` 9/10 |
 | 07 | `claude -p "/wx-claude-code:laudo-tokens fase-1"` com fonte de sessões marcada INDISPONÍVEL |
 
 Para refazer: grave a saída em `.txt` e rode o renderizador (um `.mjs` de 40

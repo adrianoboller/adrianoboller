@@ -75,17 +75,27 @@
     "versao_do_help": "2026"
   },
   "H_backend": {
+    "perfil": "",
     "linguagem": "",
     "framework": "",
-    "banco": "",
+    "banco": "PostgreSQL 16",
     "versoes_minimas": {},
-    "implantacao": ""
+    "implantacao": "",
+    "sinais": {
+      "quem_mantem": "",
+      "produto": "",
+      "prioridade": "",
+      "linguagem_ja_em_uso": ""
+    },
+    "observacao": "perfil: rust | python | csharp-wl | go | java | node; sinais preenchidos quando o usuário não sabia a linguagem"
   },
   "I_frontend": {
+    "perfil": "",
     "linguagem": "",
     "framework": "",
     "plataformas": [],
-    "navegadores_e_dispositivos": []
+    "navegadores_e_dispositivos": [],
+    "observacao": "perfil: react | vue | svelte | blazor | flutter | tauri"
   },
   "J_economia_de_tokens": {
     "ativar": false,

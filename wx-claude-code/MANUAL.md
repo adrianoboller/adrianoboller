@@ -60,9 +60,11 @@ As letras:
 | E | PDF completo | `inputs/completo.pdf` |
 | F | estilo das telas com o Impeccable: paleta, tema, tipografia, densidade, preservar ou redesenhar | sim, `#E2261C` sobre `#010418`, Exo 2, compacta, redesenhar |
 | G | usar o corpus do Help WLanguage 12k? override da versão? | sim, versão 2025 |
-| H | backend: linguagem, framework, banco, implantação | Rust + Axum, PostgreSQL 16, Docker |
+| H | para qual linguagem converter o backend; se não souber, o plugin pergunta quatro sinais e mostra Rust, Python e C# + WL_C# com o porquê | C# + WL_C# (equipe WINDEV, desktop, prazo) ou Rust + Axum (desempenho) |
 | I | frontend: linguagem, framework, plataformas | TypeScript + React, web |
 | J | ativar economia de tokens? | sim |
+
+A orientação de linguagem está em `skills/conversao-wx/references/perfis-de-destino.md`, com o que cada perfil ganha, custa e para que projeto serve. O perfil **C# + WL_C#** usa a biblioteca de Bernard Sobra que porta mais de 480 funções do WLanguage com o mesmo nome; o `WL.dll` é baixado da release oficial e conferido por hash (`references/perfil-csharp-wl.md`).
 
 E as três de governança: versão e idioma do WX, modo (`inventário`, `plano`,
 `piloto`, `completo`) e quem aprova.

@@ -42,7 +42,7 @@ Requisitos: Python 3.10+ (scripts de intake e do corpus) e Node 22+ (Impeccable)
 | E | PDF completo | reserva de B, C, D e fonte de `business_rule_documents` |
 | F | Estilo das telas com o Impeccable (paleta, tema, tipografia, preservar ou redesenhar) | `fidelity.ui` e `DESIGN.md` |
 | G | Usar o Help completo do WX em JSON (corpus 12k) e override da versão | `wlanguage_help_json` |
-| H | Linguagens para o backend | `target` da configuração |
+| H | Para qual linguagem converter o backend: o plugin orienta (Rust, Python, C# + WL_C#, e mais) antes de perguntar | `target` e `DEC-0001` |
 | I | Linguagens para o frontend | `target.platforms`, navegadores e dispositivos |
 | J | Ativar economia de tokens | estilo de resposta no `CLAUDE.md` e `/laudo-tokens` |
 
@@ -78,6 +78,22 @@ nunca sobrescreve o que já existe.
   fechamento, frutífero ou infrutífero, grava em `base_de_conhecimento.md`).
   Painel em `.wx-migration/pmo/status.md`, tudo medido. Regra em
   `references/pmo.md`; manual em `MANUAL.md`.
+
+## Para qual linguagem converter
+
+A letra H não pergunta «qual linguagem». Quando o usuário não sabe, o plugin
+levanta quatro sinais (quem mantém, desktop/web/mobile, desempenho ou prazo,
+linguagem já em uso) e mostra três opções com o porquê, a recomendada
+primeiro: **Rust** (Axum + PostgreSQL), **Python** (FastAPI) e **C# (.NET 8) +
+WL_C#**, com Go, Java e Node quando os sinais apontarem. A matriz completa
+está em `skills/conversao-wx/references/perfis-de-destino.md`.
+
+**WL_C#** (https://bernardsobra.github.io/WL-web/) é a biblioteca de Bernard
+Sobra que porta mais de 480 funções do WLanguage para C# com o mesmo nome.
+O plugin embute um índice de 261 nomes lidos do `WL.dll` 1.0 e o perfil em
+`references/perfil-csharp-wl.md`; o `WL.dll` é baixado da release oficial e
+conferido por hash, não redistribuído. Provado em sessão real: com os sinais
+«equipe WINDEV, desktop Windows, prazo manda», a recomendação foi C# + WL_C#.
 
 ## Projeto de exemplo
 
@@ -135,11 +151,12 @@ geradas por `docs/prints/gerar.md`).
 | ![design](docs/prints/05-design-md-impeccable.png) `DESIGN.md` da letra F | ![help](docs/prints/06-corpus-help-wlanguage.png) corpus WLanguage 12k |
 | ![laudo](docs/prints/07-laudo-tokens-fase-1.png) `/wx-claude-code:laudo-tokens` | ![pmo](docs/prints/08-pmo-orcamento-e-roteamento.png) PMO: orçamento, roteamento e painel |
 | ![equipe](docs/prints/09-equipe-wlanguage-por-tema.png) delegação real aos `wl-*-specialist` | ![scrum](docs/prints/10-pmo-scrum-kanban-pdca.png) Scrum, Kanban e PDCA com a base de conhecimento |
-| ![pmo-sessao](docs/prints/11-pmo-sessao-real.png) `/wx-claude-code:pmo status` numa sessão real | |
+| ![pmo-sessao](docs/prints/11-pmo-sessao-real.png) `/wx-claude-code:pmo status` numa sessão real | ![painel](docs/prints/12-painel-pmo-html-tema-claro.png) `pmo.py painel`, tema claro |
+| ![letra-h](docs/prints/13-questionario-h-orientacao-de-linguagem.png) letra H: sinais e três opções, a recomendada primeiro | ![exemplo](docs/prints/14-exemplo-estoque-g0-extracao-golden.png) o exemplo ESTOQUE no G0, extração e golden |
 
 ## Vídeo de uso
 
-`docs/video/wx-claude-code-video-de-uso.mp4` (e `.webm`), 1 min 21 s: nove cenas com as
+`docs/video/wx-claude-code-video-de-uso.mp4` (e `.webm`), 1 min 31 s: dez cenas com as
 mesmas saídas reais dos prints, reproduzidas num terminal animado.
 
 ## Pacotes

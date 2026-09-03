@@ -36,9 +36,17 @@ Este é o **primeiro passo** de qualquer conversão de um projeto WINDEV, WEBDEV
 
 **G) Help completo do WX em JSON.** «O plugin traz o corpus WLanguage 12k (Help do WINDEV, WEBDEV e WINDEV Mobile em JSON, estado DEGRADED/CONDITIONAL). Deseja usá-lo como fonte técnica auxiliar? Tem um Help específico da sua versão/update para usar como override?» Se sim ao corpus, rode a verificação de hash (abaixo). Lembre: o Help é fonte de **semântica técnica**, nunca de regra de negócio.
 
-**H) Linguagens para o Backend.** «Qual linguagem e framework para o backend? (exemplos: Rust + Axum, Go + Chi, C# + ASP.NET, Java + Spring, Python + FastAPI, Node + NestJS, PHP + Laravel, Phoenix). Qual banco de destino? Versões mínimas? Forma de implantação?»
+**H) Para qual linguagem converter o backend.** Esta é a pergunta que mais muda o projeto, e o plugin **orienta antes de perguntar**. Leia `${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/references/perfis-de-destino.md` e siga em três passos, um por mensagem:
 
-**I) Linguagens para o Frontend.** «Qual linguagem e framework para o frontend? (exemplos: React, Vue, Svelte, Angular, Flutter, Kotlin/Swift nativo, Tauri, Blazor, HTML+HTMX). Quais plataformas: web, desktop, Android, iOS? Navegadores e dispositivos mínimos?»
+1. Se o usuário já sabe a linguagem, registre e pule ao passo 3. Se não sabe, faça as quatro perguntas de sinal, uma por vez: quem vai manter o código depois (a equipe WINDEV de hoje ou outra); o produto é desktop, web ou mobile; volume e desempenho importam ou o prazo manda; há linguagem já em uso na empresa.
+2. Com os sinais, mostre **três opções com o porquê em uma frase cada**, sempre com estas três presentes e a recomendada primeiro:
+   - **Rust** (Axum + PostgreSQL): desempenho e binário único; para volume alto, motor de cálculo ou quem já usa o PhxSql.
+   - **Python** (FastAPI + PostgreSQL): entrega rápida e biblioteca para fiscal, relatório e dados; para sistemas de gestão que vão evoluir rápido.
+   - **C# (.NET 8) + WL_C#**: a biblioteca WL_C# porta mais de 480 funções do WLanguage com o mesmo nome, o que torna a tradução das procedures quase mecânica; para a equipe WINDEV que vai manter o código.
+   Acrescente Go, Java ou Node quando os sinais apontarem para eles. O usuário escolhe; a escolha vira `DEC-0001` no G3.
+3. Feche a letra: framework, banco de destino (PostgreSQL por padrão), versões mínimas e forma de implantação.
+
+**I) Para qual linguagem converter o frontend.** Mesma orientação, do mesmo documento. Ofereça **React** (TypeScript) como padrão para web, e mais duas conforme H e a plataforma: **Blazor** se H foi C#; **Flutter** se há Android e iOS; **Tauri** (Rust + React) se o produto continua desktop; Vue ou Svelte para equipes pequenas. Depois: plataformas (web, desktop, Android, iOS), navegadores e dispositivos mínimos.
 
 **J) Economia de tokens.** «Deseja ativar e configurar a economia de tokens? Isso instala no `CLAUDE.md` do projeto a instrução de estilo de resposta (direto ao ponto, frases curtas, um assunto por parágrafo, problema em uma linha, solução em passos numerados) e deixa pronto o comando `/wx-claude-code:laudo-tokens`, a auditoria em três fases que **não altera nada sem aprovação**.»
 
@@ -54,7 +62,9 @@ Este é o **primeiro passo** de qualquer conversão de um projeto WINDEV, WEBDEV
 | F | «sim» | faça as subperguntas de F uma por vez: preservar ou redesenhar → paleta → tema → tipografia → densidade → marca |
 | G | «não» ao corpus | pergunte de onde virá a semântica WLanguage (Help específico ou nenhuma); sem fonte, anote o risco |
 | G | «sim» | pergunte a versão e se há override; rode o `--verify` só depois de fechar o questionário |
-| H | linguagem informada | pergunte framework, banco e implantação **na mesma letra**, um item por vez |
+| H | usuário não sabe a linguagem | faça as quatro perguntas de sinal, uma por vez, e só então mostre as três opções (Rust, Python, C# + WL_C#) com a recomendada primeiro |
+| H | linguagem escolhida | pergunte framework, banco e implantação **na mesma letra**, um item por vez |
+| H | escolheu C# | em I ofereça Blazor além de React; registre que o `WL.dll` será baixado da release oficial e conferido por hash |
 | I | plataforma inclui mobile | pergunte versões mínimas de Android e iOS; se só web, pergunte navegadores |
 | J | «sim» | confirme que o `CLAUDE.md` do projeto vai receber o bloco de estilo; se já existir, diga que não será sobrescrito |
 

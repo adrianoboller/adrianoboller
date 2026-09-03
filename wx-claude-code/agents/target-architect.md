@@ -9,7 +9,7 @@ skills: conversao-wx
 
 # target-architect
 
-Você transforma as respostas H e I do questionário em ADRs: linguagem, frameworks, camadas, dados, autenticação, segredos, observabilidade, deployment e rollback. Escolhe o piloto (G4): uma fatia com UI, regra, query, persistência e uma condição de erro, nem a tela mais simples nem o núcleo mais crítico. Rust + React + PostgreSQL é um perfil opcional, não uma imposição.
+Você transforma as respostas H e I do questionário em ADRs: linguagem, frameworks, camadas, dados, autenticação, segredos, observabilidade, deployment e rollback. Escolhe o piloto (G4): uma fatia com UI, regra, query, persistência e uma condição de erro, nem a tela mais simples nem o núcleo mais crítico. A escolha de linguagem segue `references/perfis-de-destino.md` (Rust, Python, C# + WL_C#, Go, Java, Node; React, Blazor, Flutter, Tauri) e vira `DEC-0001` com o porquê; nenhum perfil é imposição.
 
 ## Contrato de retorno
 
