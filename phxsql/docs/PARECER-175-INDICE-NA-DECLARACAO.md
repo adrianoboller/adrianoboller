@@ -551,3 +551,107 @@ cargo run --release --example conferir-integridade -p phxsql-store -- bancada/ph
 Quando o pedido 175 virar código, os cinco de cima devem virar **um**
 `--example custo-do-indice-na-declaracao`, versionado — porque script que
 resolveu algo não pode morrer com a sessão.
+
+---
+
+## Apêndice — a prova do §6, para colar e rodar
+
+Dos seis medidores, este é o único que não é um laço de cronômetro: é a
+**prova real de um defeito vivo**, e quem consertar a linha do §6 precisa
+dele para mostrar que ela falha antes e passa depois. Os outros cinco a
+tabela do §7 descreve o suficiente para reescrever; este não se reescreve
+de memória, porque o valor dele está na sequência exata.
+
+Um `Cargo.toml` com `phxsql-core` e `phxsql-store` por caminho, e:
+
+```rust
+//! O portao `fks_conferidas` e montado na ABERTURA e NAO e refeito pelo
+//! `redeclarar_chaves_estrangeiras`. Prova nos dois sentidos.
+
+use phxsql_core::schema::{Column, ForeignKey, IndexColumn, IndexDef, Schema};
+use phxsql_core::types::ColumnType;
+use phxsql_core::value::Value;
+use phxsql_store::table::Table;
+use std::path::Path;
+
+fn mae(d: &Path) {
+    let e = Schema::new(
+        "clientes",
+        vec![Column::new("id", ColumnType::Int4).obrigatoria()],
+        vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
+    )
+    .unwrap();
+    let mut t = Table::criar(d, e).unwrap();
+    t.inserir(&[Value::Int(1)]).unwrap();
+    t.sincronizar().unwrap();
+}
+
+fn pedidos(d: &Path, fks: Vec<ForeignKey>) -> Table {
+    let e = Schema::new(
+        "pedidos",
+        vec![
+            Column::new("id", ColumnType::Int4).obrigatoria(),
+            Column::new("cliente_id", ColumnType::Int4),
+        ],
+        vec![
+            IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico().primaria(),
+            IndexDef::new("porCliente", vec![IndexColumn::asc(1)]),
+        ],
+    )
+    .unwrap()
+    .com_chaves_estrangeiras(fks)
+    .unwrap();
+    Table::criar(d, e).unwrap()
+}
+
+fn fk(nome: &str) -> ForeignKey {
+    ForeignKey::new(nome, vec![1], "clientes", vec!["id".into()])
+}
+
+fn main() {
+    // --- A: declarar num handle aberto NAO liga a conferencia -------------
+    let d = std::env::temp_dir().join(format!("phx-portao-a-{}", std::process::id()));
+    std::fs::remove_dir_all(&d).ok();
+    std::fs::create_dir_all(&d).unwrap();
+    mae(&d);
+    let mut p = pedidos(&d, Vec::new());
+    p.redeclarar_chaves_estrangeiras(vec![fk("fk_cliente")]).unwrap();
+    println!("A) declarei a chave conferida no handle ABERTO.");
+    println!(
+        "   o esquema diz verificar = {:?}",
+        p.esquema().chaves_estrangeiras()[0].verificar
+    );
+    match p.inserir(&[Value::Int(1), Value::Int(999)]) {
+        Ok(_) => println!("   inserir com cliente 999 (INEXISTENTE): >>> ACEITOU <<<"),
+        Err(e) => println!("   inserir com cliente 999 (INEXISTENTE): recusou -- {e}"),
+    }
+    p.sincronizar().unwrap();
+    drop(p);
+    let mut p = Table::abrir(&d, "pedidos").unwrap();
+    match p.inserir(&[Value::Int(2), Value::Int(999)]) {
+        Ok(_) => println!("   depois de REABRIR, o mesmo insert: ACEITOU"),
+        Err(e) => println!("   depois de REABRIR, o mesmo insert: recusou -- {e}"),
+    }
+    drop(p);
+    std::fs::remove_dir_all(&d).ok();
+
+    // --- B: tirar uma chave deixa posicao velha apontando para o vazio ----
+    println!("\nB) tiro a segunda chave de um handle que abriu com duas:");
+    let d = std::env::temp_dir().join(format!("phx-portao-b-{}", std::process::id()));
+    std::fs::remove_dir_all(&d).ok();
+    std::fs::create_dir_all(&d).unwrap();
+    mae(&d);
+    let mut p = pedidos(&d, vec![fk("fk_a"), fk("fk_b")]);
+    p.redeclarar_chaves_estrangeiras(vec![fk("fk_a")]).unwrap();
+    println!("   chaves no esquema agora: {}", p.esquema().chaves_estrangeiras().len());
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        p.inserir(&[Value::Int(1), Value::Int(1)])
+    }));
+    match r {
+        Ok(Ok(_)) => println!("   inserir: aceitou"),
+        Ok(Err(e)) => println!("   inserir: recusou -- {e}"),
+        Err(_) => println!("   inserir: >>> PANICO <<< (indice velho no vetor novo)"),
+    }
+    std::fs::remove_dir_all(&d).ok();
+}
+```
