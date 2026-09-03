@@ -240,15 +240,20 @@ nenhum é gratuito.
 
 ## PhxSql 0.22 — SQL relacional
 
-| # | Sprint |
-|---|---|
-| SP000017 | Contrato SQL, lexer, parser e AST |
-| SP000018 | Binder, catálogo, tipos e coerção |
-| SP000019 | Expressões, NULL e funções |
-| SP000020 | DDL SQL e catálogo transacional |
-| SP000021 | DML SQL, prepared statements e transações SQL |
-| SP000022 | Operadores relacionais avançados |
-| SP000023 | Estatísticas, otimizador, `EXPLAIN` e conformidade SQL |
+**A coluna abaixo estava vazia — nunca tinha sido remedida.** Remedida em
+03/09: das sete, **cinco têm trabalho real e testado** (`crates/phxsql-sql`,
+89 testes unitários verdes — `flock /tmp/phx-cargo.lock cargo test -p
+phxsql-sql`), e só duas continuam do zero. «Vazio» era mentira por omissão.
+
+| # | Sprint | Estado medido |
+|---|---|---|
+| SP000017 | Contrato SQL, lexer, parser e AST | **PARCIAL (03/09)** — lexer (`lexico.rs`, 495 linhas, 11 testes), parser e AST do `SELECT` (`sintaxe.rs`, 771 linhas, 16 testes: `Selecao`, `Alvo`, `Condicao`, `Literal`, `Ordenacao`, `Projecao`), mais o parser próprio de `CREATE TRIGGER`/`CREATE PROCEDURE` (`rotina.rs`, 3203 linhas, 34 testes) e o dos comandos de transação (`transacao.rs`, 540 linhas, 11 testes) — total 89 testes, todos verdes. Ligado ao servidor pela op `{"op":"sql"}` (`servidor.rs:9644`), com erro citando a coluna. **Falta:** o contrato não cobre DDL de tabela nem DML como texto SQL — ambos recusam nomeando o motivo (ver SP000020/021), então «contrato» aqui é o de SELECT + transação + rotina, não o de SQL inteiro |
+| SP000018 | Binder, catálogo, tipos e coerção | **PARCIAL, pequeno (03/09)** — `traduzir()` (`traduzir.rs:99`) recebe um catálogo mínimo (`IndiceInfo`: nome, colunas, único, primário) buscado do `esquema` do servidor a cada consulta (`servidor.rs:9704`), e resolve `WHERE`/`ORDER BY` contra ele, recusando e listando os candidatos quando falta índice (`traduzir.rs:162-178`). Coerção: literal numérico do lexer é sempre texto (decimal exato), e o motor foi alargado para aceitar inteiro-como-texto em coluna `Int4` (`crates/phxsql-server/src/valores.rs`, teste `numero_continua_valendo_exatamente_como_antes`), achado ao ligar a op `sql` (`docs/SQL.md` §5). **Falta:** nenhum catálogo/tabela de símbolos mora no crate (é buscado ad hoc por consulta), colunas do `SELECT` (fora do filtro/ordem) nunca são validadas contra o esquema, e não há verificação de tipo além da coerção do literal do `WHERE` |
+| SP000019 | Expressões, NULL e funções | **PARCIAL, em dois territórios (03/09)** — no corpo de gatilho/procedimento existe um avaliador completo: `Expr` com literais, `NULL`, chamadas de função (`rotina.rs:501-524`: `CONCAT`, `UPPER`/`UCASE`, `LOWER`/`LCASE`, `TRIM`, `LENGTH`/`CHAR_LENGTH`, `ROUND`, `ABS`, `COALESCE`/`IFNULL`), aritmética decimal exata (mantissa `i128`, sem `f64`) e `IS NULL` funcionando (`rotina.rs:2320`, comentário «se achou compara com IS NULL»), coberto por parte dos 34 testes de `rotina`. **No SELECT/WHERE geral, nada**: `WHERE preco * 1.1 > 100` não tem quem avalie (doc do `lib.rs`), e `IS NULL` é explicitamente recusado ali (`sintaxe.rs:532`) — o avaliador não alcança consulta nenhuma |
+| SP000020 | DDL SQL e catálogo transacional | **PARCIAL (03/09)** — `CREATE TRIGGER`/`CREATE PROCEDURE`/`DROP` existem, testados e ligados ao servidor (`crates/phxsql-server/src/rotinas.rs`, 664 linhas, 8 testes; `docs/TRIGGERS.md`, 530 linhas, «17 recusas nomeadas e testadas» — pedido 49 do `PENDENCIAS.md`). **Falta:** `CREATE`/`ALTER`/`DROP TABLE` via SQL não existe — recusado nomeando a saída («Tabela se cria pela operação `criar_tabela` do protocolo», `rotina.rs:846-848`); e o catálogo (`information_schema`) só se lê pela op JSON própria (`sistabelas`/`siscolunas`, `servidor.rs:6181-6182`), nunca por `SELECT … FROM information_schema`. Nenhuma evidência de que o DDL de rotina participe de transação SQL |
+| SP000021 | DML SQL, prepared statements e transações SQL | **PARCIAL — metade feita, metade não (03/09)**. Transações: **completo e testado** — `BEGIN`/`START TRANSACTION` com `SCOPE`/`SCOPE MODE`/`TIMEOUT`/`LOCK TIMEOUT`/`STATEMENT TIMEOUT`/`LOCK MODE`, `COMMIT`, `ROLLBACK`, `SAVEPOINT` (`transacao.rs`, 540 linhas, 11 testes), ligado ao servidor (`servidor.rs:9669`) com teste de integração pelo próprio `op_sql` (`servidor.rs:22886`). DML de topo: **recusado pelo nome** — `INSERT`/`UPDATE`/`DELETE` como comando solto não existem (`sintaxe.rs:269`); só há `INSERT`/`SELECT…INTO` dentro de corpo de rotina. Prepared statements: **não existe** (nenhum `PREPARE`/`EXECUTE`; `Preparada::preparar` de `servidor.rs:11881` é de restauração de backup, sem relação com SQL) |
+| SP000022 | Operadores relacionais avançados | **NÃO INICIADO no nível SQL (03/09)** — `JOIN`/`INNER`/`LEFT`/`RIGHT`, `DISTINCT`, `GROUP BY` geral, `AND`/`OR`, `LIKE`, `IN`, `BETWEEN` são todos reconhecidos pelo léxico só para serem recusados, cada um com motivo próprio (`sintaxe.rs:306,317-326,334,520-533,539`). As operações embaixo (`juntar` com sete formas, `unir`, `pivotar`) já existem no protocolo e até têm UI própria (pedido 91, clicar no diagrama de Venn) — mas nenhuma é alcançável escrevendo SQL |
+| SP000023 | Estatísticas, otimizador, `EXPLAIN` e conformidade SQL | **NÃO INICIADO (03/09)** — nenhuma referência a `EXPLAIN`, `ANALYZE`, estatística ou custo em `crates/phxsql-sql/`. O tradutor documenta a ausência do lado de dentro: «não há planejador: se houvesse dois candidatos, o primeiro declarado venceria» (`traduzir.rs:224`). Nenhum teste do crate cobre otimização ou conformidade |
 
 Hoje o `phxsql-sql` é o começo da camada: `SELECT` simples traduzido para as
 operações que já existem no protocolo.
