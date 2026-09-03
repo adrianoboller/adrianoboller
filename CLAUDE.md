@@ -256,10 +256,24 @@ explicação de fora desmente, e isso não se acha por padrão de texto: acha-se
 procurando o irmão.
 
 **Portão de permissão é UM só — e o campo que ele lê é o furo.** O direito por
-tabela entrou no despachar, que confere o campo `"tabela"` do pedido. Duas
-operações não têm esse campo: `juntar` guarda as tabelas em `a.tabela` e
-`b.tabela`, e `unir` guarda numa **lista**. Sem conferência própria, bastaria
-pedir a tabela negada como o lado B de uma junção. **Quando o portão passar a
+tabela entrou no despachar, que confere o campo `"tabela"` do pedido. **Três**
+operações escondem tabela dele — e a terceira só apareceu em 03/09/2026, na
+varredura das 116 operações uma a uma: `juntar` guarda as tabelas em `a.tabela`
+e `b.tabela`; `unir` guarda numa **lista**; e `pivotar` põe a tabela de FATOS no
+campo que o portão lê, mas as de **consulta** dentro de um item de `juntar`
+aninhado. Sem conferência própria, bastaria pedir a tabela negada como o lado B
+de uma junção.
+
+**As três pagam conferência própria, e é por isso que a falta nunca apareceu
+como defeito: a lei estava incompleta e o código estava certo.** Lei que lista
+menos casos do que existem não protege menos hoje — protege menos no dia em que
+alguém usar a lista como inventário. São **7 das 116** operações nomeando tabela
+onde o portão não olha.
+
+E um risco que só existe daqui em diante, nomeado pela frente que mapeou o
+arquivo: numa divisão do `servidor.rs`, essa conferência própria **parece
+duplicação** do portão geral. Limpá-la reabre a porta dos fundos, e **nenhum
+teste do portão acusa** — os três que acusam viajam com as três operações. **Quando o portão passar a
 olhar um campo novo, procure quem não tem esse campo** — e não espalhe o portão
 por quarenta operações, porque a que alguém esquecer vira a porta dos fundos e
 ninguém acha por leitura.
