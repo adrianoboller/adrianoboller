@@ -104,40 +104,77 @@ echo
 # ------------------------------------------------------------- problemas
 PROBLEMAS=0
 
-# O push. E o problema conhecido desta sessao, e ele SEMPRE aparece enquanto
-# durar -- papel que nao esta cumprindo tem de aparecer como nao cumprindo.
-NAO_ENVIADOS=$(git rev-list --count origin/HEAD..HEAD 2>/dev/null \
-             || git rev-list --count HEAD 2>/dev/null || echo '?')
-if [ "$NAO_ENVIADOS" != "0" ] && [ "$NAO_ENVIADOS" != "?" ]; then
-  echo "⚠️  $NAO_ENVIADOS commit(s) sem enviar — o push responde 403 por identidade da sessao"
-  ULTIMO=$(ls -t "$RAIZ"/*.bundle 2>/dev/null | head -1)
-  if [ -n "$ULTIMO" ]; then
-    PONTA=$(git bundle list-heads "$ULTIMO" 2>/dev/null | head -1 | cut -c1-8)
-    HEAD8=$(git rev-parse --short=8 HEAD)
-    # QUANTO atrasado, e nao SE atrasado.
-    #
-    # A primeira versao acusava «ATRASADO» com UM commit de diferenca -- e como
-    # todo commit deixa o pacote um atras, o alarme disparava o tempo todo. Um
-    # alarme que se aprende a ignorar e pior que alarme nenhum, porque da a
-    # sensacao de cobertura sem a cobertura.
-    #
-    # O criterio passa a ser material: mais de cinco commits, ou mais de duas
-    # horas. Abaixo disso e informacao, e nao problema.
-    ATRAS=$(git rev-list --count "$PONTA..HEAD" 2>/dev/null || echo 0)
-    IDADE=$(( ( $(date +%s) - $(stat -c %Y "$ULTIMO") ) / 60 ))
-    if [ "$ATRAS" = "0" ]; then
-      echo "   · backup em dia: $(basename "$ULTIMO")"
-    elif [ "$ATRAS" -gt 5 ] || [ "$IDADE" -gt 120 ]; then
-      echo "   ⚠️ backup ATRASADO em $ATRAS commit(s) e $IDADE min: $(basename "$ULTIMO")"
-      echo "      refaca com ./backup.sh -- NUNCA com git bundle a mao, que grava no lugar errado"
-      PROBLEMAS=$((PROBLEMAS+1))
-    else
-      echo "   · backup a $ATRAS commit(s) e $IDADE min: $(basename "$ULTIMO")"
-    fi
-  else
-    echo "   ⚠️ nao ha pacote de backup nenhum"
+# O push. Papel que nao esta cumprindo tem de aparecer como nao cumprindo --
+# mas a MEDIDA e do estado, nunca do diagnostico guardado.
+#
+# Duas mentiras desta secao ja foram medidas e consertadas em 03/09/2026:
+#
+#   1. o contador usava `origin/HEAD`, que NUNCA foi definido neste clone --
+#      entao o `||` caia para `git rev-list --count HEAD` e chamava os 392
+#      commits do projeto inteiro de «sem enviar». Fallback que chuta e pior
+#      que fallback que se cala: ele mente com numero grande e ar de medido.
+#      Hoje a conta e contra o upstream de verdade, e sem upstream ele DIZ
+#      que nao sabe;
+#   2. a frase cravava «o push responde 403», que era verdade quando foi
+#      escrita e deixou de ser. Limitacao registrada tambem envelhece, e a
+#      prova ao lado e o que a conserva. Hoje, se ha commit por enviar, o
+#      script PERGUNTA ao GitHub com o `--dry-run` -- que exerce o mesmo
+#      `git-receive-pack` do push real sem mexer em nada -- e relata o que
+#      voltou.
+if git rev-parse --abbrev-ref '@{upstream}' >/dev/null 2>&1; then
+  NAO_ENVIADOS=$(git rev-list --count '@{upstream}..HEAD' 2>/dev/null || echo '?')
+else
+  NAO_ENVIADOS='sem-upstream'
+fi
+if [ "$NAO_ENVIADOS" = "sem-upstream" ]; then
+  echo "⚠️  branch sem upstream: nao da para dizer o que falta enviar"
+  PROBLEMAS=$((PROBLEMAS+1))
+elif [ "$NAO_ENVIADOS" != "0" ] && [ "$NAO_ENVIADOS" != "?" ]; then
+  SECO=$(timeout 45 git push --dry-run 2>&1 | tail -3)
+  case "$SECO" in
+    *403*|*denied*|*rejected*|*"not authorized"*)
+      echo "⚠️  $NAO_ENVIADOS commit(s) sem enviar — o push RECUSA:"
+      echo "$SECO" | sed 's/^/   · /'
+      ;;
+    *)
+      echo "⚠️  $NAO_ENVIADOS commit(s) sem enviar — o push NAO recusa; falta rodar"
+      ;;
+  esac
+  PROBLEMAS=$((PROBLEMAS+1))
+else
+  echo "✅ nada por enviar: o origin esta na mesma ponta"
+fi
+
+# O backup sai do `if` do push, e isso e conserto de 03/09/2026: ele estava
+# DENTRO do ramo «ha commit por enviar», entao no dia em que o push voltasse a
+# funcionar o estado do pacote sumiria do aviso -- calado, e justamente quando
+# o pacote vira segunda via em vez de unica saida.
+ULTIMO=$(ls -t "$RAIZ"/*.bundle 2>/dev/null | head -1)
+if [ -n "$ULTIMO" ]; then
+  PONTA=$(git bundle list-heads "$ULTIMO" 2>/dev/null | head -1 | cut -c1-8)
+  HEAD8=$(git rev-parse --short=8 HEAD)
+  # QUANTO atrasado, e nao SE atrasado.
+  #
+  # A primeira versao acusava «ATRASADO» com UM commit de diferenca -- e como
+  # todo commit deixa o pacote um atras, o alarme disparava o tempo todo. Um
+  # alarme que se aprende a ignorar e pior que alarme nenhum, porque da a
+  # sensacao de cobertura sem a cobertura.
+  #
+  # O criterio passa a ser material: mais de cinco commits, ou mais de duas
+  # horas. Abaixo disso e informacao, e nao problema.
+  ATRAS=$(git rev-list --count "$PONTA..HEAD" 2>/dev/null || echo 0)
+  IDADE=$(( ( $(date +%s) - $(stat -c %Y "$ULTIMO") ) / 60 ))
+  if [ "$ATRAS" = "0" ]; then
+    echo "✅ backup em dia: $(basename "$ULTIMO")"
+  elif [ "$ATRAS" -gt 5 ] || [ "$IDADE" -gt 120 ]; then
+    echo "⚠️  backup ATRASADO em $ATRAS commit(s) e $IDADE min: $(basename "$ULTIMO")"
+    echo "    refaca com ./backup.sh -- NUNCA com git bundle a mao, que grava no lugar errado"
     PROBLEMAS=$((PROBLEMAS+1))
+  else
+    echo "✅ backup a $ATRAS commit(s) e $IDADE min: $(basename "$ULTIMO")"
   fi
+else
+  echo "⚠️  nao ha pacote de backup nenhum"
   PROBLEMAS=$((PROBLEMAS+1))
 fi
 
