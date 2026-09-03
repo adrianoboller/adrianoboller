@@ -589,6 +589,83 @@ def esboco_processo(q: dict) -> str:
     return "\n".join(linhas)
 
 
+# ---------------------------------------------------------------------------
+# respostas_questionario.md: todas as respostas, legiveis, num arquivo so.
+# E o unico gerado que se REGRAVA a cada aplicacao, porque e uma renderizacao
+# do questionario.json, nao um documento que o usuario edita.
+# ---------------------------------------------------------------------------
+
+ROTULOS = {
+    "projeto": "Projeto", "0_empresa_e_projeto": "Bloco 0 · Empresa e projeto", "A_sql": "A · Script SQL",
+    "B_pdf_codigos": "B · PDF dos códigos", "C_pdf_interfaces": "C · PDF das interfaces", "D_pdf_queries": "D · PDF das queries",
+    "E_pdf_completo": "E · PDF completo", "F_estilo_impeccable": "F · Qualidade das telas (Impeccable)", "G_help_json": "G · Help WLanguage em JSON",
+    "H_backend": "H · Backend de destino", "I_frontend": "I · Frontend de destino", "J_economia_de_tokens": "J · Economia de tokens",
+}
+
+
+def _humano(chave: str) -> str:
+    chave = re.sub(r"^0_(\d+)_", lambda m: f"0.{m.group(1)} ", chave)
+    chave = re.sub(r"^F(\d+)_", lambda m: f"F{m.group(1)} ", chave)
+    return chave.replace("_", " ").strip()
+
+
+def _render(valor, nivel: int) -> list[str]:
+    ind = "  " * nivel
+    if isinstance(valor, dict):
+        out = []
+        for k, v in valor.items():
+            if k.startswith("_") or k == "observacao" and not v:
+                continue
+            if isinstance(v, (dict, list)) and v:
+                out.append(f"{ind}- **{_humano(k)}**:")
+                out += _render(v, nivel + 1)
+            else:
+                out.append(f"{ind}- {_humano(k)}: {_escalar(v)}")
+        return out
+    if isinstance(valor, list):
+        out = []
+        for v in valor:
+            if isinstance(v, dict):
+                out.append(f"{ind}- " + "; ".join(f"{_humano(k)}: {_escalar(x)}" for k, x in v.items() if not isinstance(x, (dict, list))))
+                for k, x in v.items():
+                    if isinstance(x, (dict, list)) and x:
+                        out.append(f"{ind}  - **{_humano(k)}**:")
+                        out += _render(x, nivel + 2)
+            else:
+                out.append(f"{ind}- {_escalar(v)}")
+        return out
+    return [f"{ind}- {_escalar(valor)}"]
+
+
+def _escalar(v) -> str:
+    if v is None or v == "" or v == [] or v == {}:
+        return "(não informado)"
+    if v is True:
+        return "sim"
+    if v is False:
+        return "não"
+    return str(v)
+
+
+def respostas_md(q: dict, vazados_removidos: bool = False) -> str:
+    p = q.get("projeto", {}) or {}
+    ap = (q.get("0_empresa_e_projeto", {}) or {}).get("0_16_aprovador", {}) or {}
+    L = ["# Respostas do questionário", "",
+         f"Projeto **{p.get('nome') or '(sem nome)'}** · respondido em {q.get('respondido_em') or '(sem data)'} · gerado por `aplicar_questionario.py` de `.wx-migration/questionario.json`.",
+         "Este arquivo é regravado a cada aplicação do questionário; para mudar uma resposta, edite o `questionario.json` e reaplique.", "",
+         "## Aprovador", "",
+         f"- Nome: **{ap.get('nome') or p.get('aprovador') or '(pendente)'}**",
+         f"- Cargo: {_escalar(ap.get('cargo'))}", f"- E-mail: {_escalar(ap.get('email'))}",
+         f"- Aprova: {', '.join(ap.get('aprova', []) or []) or '(não informado)'}", f"- Substituto: {_escalar(ap.get('substituto'))}", "",
+         "O aprovador decide nos gates G0 a G7, nas divergências e no aceite; o nome vai para `pmo/plano.json` e para toda sprint.", ""]
+    for chave, valor in q.items():
+        if chave in ("schema_version", "respondido_em") or not isinstance(valor, (dict, list)):
+            continue
+        L += [f"## {ROTULOS.get(chave, chave)}", ""] + _render(valor, 0) + [""]
+    L += ["## Segredos", "", "Senhas e tokens nunca entram no questionário nem neste arquivo: o `0.15` guarda só o nome da credencial (`credencial_ref`).", ""]
+    return "\n".join(L)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--questionario", required=True, type=Path)
@@ -605,6 +682,9 @@ def main() -> int:
         raise ValueError("senha ou token em texto puro no questionario (" + ", ".join(vazados) + "); guarde so o nome da credencial em credencial_ref e apague o valor")
     if not q.get("respondido_em"):
         q["respondido_em"] = date.today().isoformat()
+    ap = (q.get("0_empresa_e_projeto", {}) or {}).get("0_16_aprovador", {}) or {}
+    if ap.get("nome") and not q.get("projeto", {}).get("aprovador"):
+        q.setdefault("projeto", {})["aprovador"] = ap["nome"]
 
     manifesto = montar_manifesto(q, projeto=projeto, modelo=json.loads((modelos / "wx-inputs.manifest.json").read_text(encoding="utf-8")))
     config = montar_config(q, json.loads((modelos / "conversion.config.json").read_text(encoding="utf-8")))
@@ -628,7 +708,10 @@ def main() -> int:
     except Exception:  # sem modulo ou sem chave publica: segue sem marca
         lic = {"status": "ausente"}
     marca = f"\n<!-- Gerado sob a licenca WX Claude Code n. {lic['id']} para {lic['cliente']} -->\n" if lic.get("status") == "valida" else ""
-    claude_md = claude_md.rstrip("\n") + "\n" + marca
+    ap_nome = ap.get("nome") or q.get("projeto", {}).get("aprovador") or "(pendente)"
+    claude_md = claude_md.rstrip("\n") + "\n\n## Respostas do questionário\n\n" + \
+        f"Todas as respostas do questionário (bloco 0 e letras A a J) estão em `.wx-migration/respostas_questionario.md`; o aprovador do projeto é **{ap_nome}**. " + \
+        "Consulte esse arquivo antes de perguntar de novo algo que já foi respondido; para mudar uma resposta, edite `.wx-migration/questionario.json` e reaplique `aplicar_questionario.py`.\n" + marca
     if q.get("J_economia_de_tokens", {}).get("ativar") and q["J_economia_de_tokens"].get("instalar_estilo_no_claude_md", True):
         claude_md = claude_md.rstrip("\n") + "\n" + ESTILO_DE_RESPOSTA
     saida.append(write_new(projeto / "CLAUDE.md", claude_md))
@@ -653,6 +736,11 @@ def main() -> int:
             write_new(wx / "pmo" / "riscos.md", riscos_iniciais(e)),
             write_new(wx / "entrega.json", json.dumps(montar_entrega(e), ensure_ascii=False, indent=2) + "\n"),
         ]
+
+    # As respostas legiveis: regravadas sempre, porque sao renderizacao do JSON.
+    resp = wx / "respostas_questionario.md"
+    resp.write_text(respostas_md(q) + "\n", encoding="utf-8")
+    saida.append(f"UPDATED {resp}")
 
     for linha in saida:
         print(linha)

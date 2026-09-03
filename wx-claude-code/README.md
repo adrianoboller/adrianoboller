@@ -35,7 +35,7 @@ Requisitos: Python 3.10+ (scripts de intake e do corpus) e Node 22+ (Impeccable)
 
 | Letra | Pergunta | Onde cai |
 | --- | --- | --- |
-| 0 | Empresa e projeto: quinze itens, um por mensagem, antes de A | `empresa.md`, `entrega.json`, `pmo/` |
+| 0 | Empresa e projeto: dezesseis itens, um por mensagem, antes de A, incluindo quem aprova | `respostas_questionario.md`, `empresa.md`, `entrega.json`, `pmo/` |
 | A | O `.SQL` do projeto | `sql_scripts` do manifesto |
 | B | PDF só dos códigos | `code_documents` |
 | C | PDF só das interfaces | `ui_documents` |
@@ -168,7 +168,7 @@ geradas por `docs/prints/gerar.md`).
 | ![papeis](docs/prints/15-papeis-backlog-e-entrega-zipada.png) backlog com papel dono, Kanban por papel e a entrega zipada ao stakeholder | ![letra-f](docs/prints/16-letra-f-erp-botoes-e-design-md.png) letra F para ERP: a tabela de botões, posição e fundo no `DESIGN.md` |
 | ![bloco-0](docs/prints/17-bloco-0-empresa-e-projeto.png) bloco 0: softhouse, diretores, endereço, um item por mensagem | ![senha](docs/prints/18-senha-colada-nao-e-gravada.png) senha colada na conversa: não gravada, não repetida, revogar e usar `credencial_ref` |
 | ![processo](docs/prints/19-letra-h-processo-de-conversao.png) letra H: sinais, três opções e o processo de conversão para a escolhida, peça por peça | ![tela-modelo](docs/prints/20-letra-f0-tela-modelo.png) F0: a tela principal do legado como modelo, aberta antes de registrar, com o que preservar e o que mudar |
-| ![licenca](docs/prints/21-licenca-serial-de-ativacao.png) serial de ativação: sem ele o PMO recusa; instalado, a mesma sessão roda | |
+| ![licenca](docs/prints/21-licenca-serial-de-ativacao.png) serial de ativação: sem ele o PMO recusa; instalado, a mesma sessão roda | ![respostas](docs/prints/22-respostas-do-questionario.png) sessão nova acha o aprovador e o prazo em `respostas_questionario.md`, sem perguntar |
 
 ## Licença e serial
 

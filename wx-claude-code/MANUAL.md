@@ -301,7 +301,7 @@ vira `missing` no manifesto, nunca `not_applicable` por inferência.
 
 Um caminho só conta como fornecido depois que o wizard **abre o arquivo**.
 
-**Bloco 0, antes da letra A.** Quinze perguntas sobre quem pede e o que é o
+**Bloco 0, antes da letra A.** Dezesseis perguntas sobre quem pede e o que é o
 projeto, uma por mensagem:
 
 | Item | Pergunta |
@@ -321,6 +321,7 @@ projeto, uma por mensagem:
 | 0.13 | riscos conhecidos: probabilidade, impacto, resposta, dono |
 | 0.14 | pessoal envolvido |
 | 0.15 | GitHub de destino: URL, branch, usuário, **nome da credencial** e diretório de destino |
+| 0.16 | **quem aprova**: nome, cargo, e-mail, o que aprova e o substituto |
 
 **Sobre a senha.** O wizard não pergunta a senha nem o token, e o script
 recusa o questionário se algum vier preenchido: a regra do projeto é senha
@@ -343,14 +344,15 @@ o push. Se colar a senha na conversa por engano, revogue-a.
 | I | para qual linguagem e plataforma converter o frontend (capítulo 7) |
 | J | ativar a economia de tokens? |
 
-E três perguntas de governança no fim: versão e idioma do WX; modo
-(`inventário`, `plano`, `piloto`, `completo`); quem aprova.
+E duas perguntas de governança no fim: versão e idioma do WX; modo
+(`inventário`, `plano`, `piloto`, `completo`). Quem aprova já foi o 0.16.
 
 **O que sai:**
 
 ```text
 .wx-migration/
   questionario.json          suas respostas
+  respostas_questionario.md  todas as respostas legíveis, com o aprovador no topo; o CLAUDE.md aponta para ele
   wx-inputs.manifest.json    manifesto que o pré-flight lê
   conversion.config.json     modo, destino, fidelidade
   gaps.md, traceability.csv  vazios, prontos para o G1

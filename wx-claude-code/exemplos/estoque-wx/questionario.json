@@ -173,6 +173,18 @@
       "credencial_ref": "GITHUB_TOKEN",
       "diretorio_destino": "./estoque-rs",
       "observacao": "token configurado na variável de ambiente GITHUB_TOKEN da máquina que faz o push"
+    },
+    "0_16_aprovador": {
+      "nome": "Adriano Boller",
+      "cargo": "Diretor de tecnologia",
+      "email": "adriano@exemplo.com.br",
+      "aprova": [
+        "regras de negocio",
+        "divergencias",
+        "aceite dos gates"
+      ],
+      "substituto": "Maria Souza",
+      "observacao": ""
     }
   },
   "A_sql": {

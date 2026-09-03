@@ -81,6 +81,18 @@
       "credencial_ref": "",
       "diretorio_destino": "",
       "observacao": "credencial_ref: NOME da variavel de ambiente ou do segredo (ex.: GITHUB_TOKEN). A senha ou token em si nunca entra neste arquivo; o script recusa qualquer chave senha/token/password com valor"
+    },
+    "0_16_aprovador": {
+      "nome": "",
+      "cargo": "",
+      "email": "",
+      "aprova": [
+        "regras de negocio",
+        "divergencias",
+        "aceite dos gates"
+      ],
+      "substituto": "",
+      "observacao": "quem decide nos gates G0-G7; o nome vai para projeto.aprovador, plano.json e para toda sprint"
     }
   },
   "A_sql": {

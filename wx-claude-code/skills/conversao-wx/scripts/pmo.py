@@ -67,6 +67,11 @@ def write_new(destination: Path, payload: str) -> str:
 
 def iniciar(wx: Path, aprovador: str) -> list[str]:
     pmo = wx / "pmo"
+    # Sem --aprovador, vale o que o questionario registrou (0.16 ou projeto.aprovador).
+    qp = wx / "questionario.json"
+    if not aprovador and qp.is_file():
+        q = json.loads(qp.read_text(encoding="utf-8"))
+        aprovador = ((q.get("0_empresa_e_projeto") or {}).get("0_16_aprovador") or {}).get("nome") or (q.get("projeto") or {}).get("aprovador") or ""
     plano = {
         "criado_em": date.today().isoformat(),
         "aprovador_padrao": aprovador,

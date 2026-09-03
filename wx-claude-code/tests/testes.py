@@ -71,7 +71,11 @@ class Questionario(unittest.TestCase):
         self.assertIn("## Backend: Rust", proc); self.assertIn("**reescrita-guiada**", proc)
         self.assertIn("| Analise HFSQL | esquema PostgreSQL migrado por script; sqlx/diesel | G3 |", proc)
         self.assertIn("Ritmo: modulo a modulo", proc)
-        self.assertEqual(r2.stdout.count("SKIPPED"), 15)
+        self.assertEqual(r2.stdout.count("SKIPPED"), 15); self.assertIn("UPDATED", r2.stdout)
+        resp = (self.tmp / ".wx-migration/respostas_questionario.md").read_text()
+        self.assertIn("- Nome: **Adriano Boller**", resp); self.assertIn("## H · Backend de destino", resp)
+        self.assertIn("0.15 github", resp); self.assertIn("credencial ref: GITHUB_TOKEN", resp)
+        self.assertIn("respostas_questionario.md", (self.tmp / "CLAUDE.md").read_text())
 
     def test_tela_modelo_inexistente_e_recusada(self):
         q = json.loads((self.tmp / ".wx-migration/questionario.json").read_text())
@@ -100,8 +104,9 @@ class Questionario(unittest.TestCase):
 
     def test_pmo_iniciar_le_prazo_e_marcos_do_bloco_0(self):
         run(SCRIPTS / "aplicar_questionario.py", "--questionario", self.tmp / ".wx-migration/questionario.json", "--project-root", self.tmp, "--plugin-root", RAIZ)
-        run(SCRIPTS / "pmo.py", "--project-root", self.tmp, "iniciar", "--aprovador", "A")
+        run(SCRIPTS / "pmo.py", "--project-root", self.tmp, "iniciar")
         plano = json.loads((self.tmp / ".wx-migration/pmo/plano.json").read_text())
+        self.assertEqual(plano["aprovador_padrao"], "Adriano Boller")
         self.assertEqual(plano["prazo_final"], "2026-12-18"); self.assertEqual(plano["gates"]["G4"]["previsto_para"], "2026-10-30")
         st = run(SCRIPTS / "pmo.py", "--project-root", self.tmp, "status").stdout
         self.assertIn("Prazo final de entrega: 2026-12-18", st); self.assertIn("180000 BRL", st)

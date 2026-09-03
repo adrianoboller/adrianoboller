@@ -26,7 +26,7 @@ Este é o **primeiro passo** de qualquer conversão de um projeto WINDEV, WEBDEV
 
 ### Bloco 0 · Empresa e projeto (antes da letra A)
 
-Quinze itens, **um por mensagem**, na ordem. É o que o PMO, o stakeholder e a entrega precisam saber antes de qualquer anexo. Quem não tem o item responde «não tenho» e segue.
+Dezesseis itens, **um por mensagem**, na ordem. É o que o PMO, o stakeholder e a entrega precisam saber antes de qualquer anexo. Quem não tem o item responde «não tenho» e segue.
 
 | Item | Pergunta | Onde vai parar |
 | --- | --- | --- |
@@ -45,6 +45,7 @@ Quinze itens, **um por mensagem**, na ordem. É o que o PMO, o stakeholder e a e
 | 0.13 | Riscos conhecidos: risco, probabilidade, impacto, resposta, dono | `pmo/riscos.md` (RSK-*) |
 | 0.14 | Pessoal envolvido: nome, papel, empresa, contato | `empresa.md` |
 | 0.15 | GitHub de destino: URL, branch, usuário, **onde a credencial está configurada** e o diretório de destino | `entrega.json` |
+| 0.16 | **Quem aprova**: nome, cargo, e-mail, o que aprova (regras, divergências, aceite dos gates) e o substituto | `respostas_questionario.md`, `projeto.aprovador`, `pmo/plano.json` |
 
 **A senha nunca é perguntada nem gravada.** No 0.15 pergunte o **nome** da variável de ambiente ou do segredo onde o token vai morar (`GITHUB_TOKEN`, `gh auth`, credential manager) e registre só isso em `credencial_ref`. Se o usuário colar a senha ou o token na conversa, **não a reproduza de nenhuma forma** (nem entre parênteses, nem mascarada, nem «a senha que termina em…»): diga só «a credencial colada não foi gravada», peça que ele a revogue e configure no ambiente; o script `aplicar_questionario.py` recusa o questionário se qualquer chave `senha`, `token`, `password` ou `secret` vier com valor. Logotipo, organograma e fluxograma em arquivo só contam como `provided` depois de abertos, como qualquer anexo.
 
@@ -113,7 +114,7 @@ Quinze itens, **um por mensagem**, na ordem. É o que o PMO, o stakeholder e a e
 | I | plataforma inclui mobile | pergunte versões mínimas de Android e iOS; se só web, pergunte navegadores |
 | J | «sim» | confirme que o `CLAUDE.md` do projeto vai receber o bloco de estilo; se já existir, diga que não será sobrescrito |
 
-Feche com as três perguntas de governança da skill de conversão, que o questionário não substitui: versão/update/idioma do WX; modo desejado (`inventário`, `plano`, `piloto`, `completo`); quem aprova regras, divergências e aceite.
+Feche com as duas perguntas de governança da skill de conversão, que o questionário não substitui: versão/update/idioma do WX e modo desejado (`inventário`, `plano`, `piloto`, `completo`). O aprovador já foi perguntado no 0.16; não pergunte de novo.
 
 ## O que gravar
 
@@ -135,7 +136,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/aplicar_questionario.
 python3 "${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/query_wlanguage_help.py" --verify
 ```
 
-4. Mostre ao usuário o resumo: bloco 0 (o que ficou pendente) e, por letra, `provided | partial | missing | not_applicable`, e o que ficou em aberto.
+4. O script regrava `.wx-migration/respostas_questionario.md` com **todas** as respostas legíveis e o aprovador no topo; o `CLAUDE.md` do projeto aponta para ele, então qualquer sessão futura do Claude Code lê as respostas de lá em vez de perguntar de novo. Mostre ao usuário o resumo: bloco 0 (o que ficou pendente) e, por letra, `provided | partial | missing | not_applicable`, e o que ficou em aberto.
 
 ## Depois
 
