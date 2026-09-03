@@ -112,7 +112,7 @@ Veja `exemplos/estoque-wx/LEIA-ME.md`.
 - `uso_de_tokens.py`: lê o `usage` das sessões do Claude Code (MEDIDO) e lança no orçamento do gate.
 - `hooks/portao_g0.py`: nega `Write`/`Edit` fora de `.wx-migration/` enquanto o G0 estiver `BLOCKED`.
 - `pmo.py painel`: o painel do PMO em HTML, gerado do mesmo código do `status`.
-- `tests/testes.py`: 16 testes de regressão; o validador em modo estrito os executa.
+- `tests/testes.py`: 17 testes de regressão; o validador em modo estrito os executa.
 
 ## Limitações conhecidas
 
@@ -167,7 +167,7 @@ geradas por `docs/prints/gerar.md`).
 | ![letra-h](docs/prints/13-questionario-h-orientacao-de-linguagem.png) letra H: sinais e três opções, a recomendada primeiro | ![exemplo](docs/prints/14-exemplo-estoque-g0-extracao-golden.png) o exemplo ESTOQUE no G0, extração e golden |
 | ![papeis](docs/prints/15-papeis-backlog-e-entrega-zipada.png) backlog com papel dono, Kanban por papel e a entrega zipada ao stakeholder | ![letra-f](docs/prints/16-letra-f-erp-botoes-e-design-md.png) letra F para ERP: a tabela de botões, posição e fundo no `DESIGN.md` |
 | ![bloco-0](docs/prints/17-bloco-0-empresa-e-projeto.png) bloco 0: softhouse, diretores, endereço, um item por mensagem | ![senha](docs/prints/18-senha-colada-nao-e-gravada.png) senha colada na conversa: não gravada, não repetida, revogar e usar `credencial_ref` |
-| ![processo](docs/prints/19-letra-h-processo-de-conversao.png) letra H: sinais, três opções e o processo de conversão para a escolhida, peça por peça | |
+| ![processo](docs/prints/19-letra-h-processo-de-conversao.png) letra H: sinais, três opções e o processo de conversão para a escolhida, peça por peça | ![tela-modelo](docs/prints/20-letra-f0-tela-modelo.png) F0: a tela principal do legado como modelo, aberta antes de registrar, com o que preservar e o que mudar |
 
 ## Vídeo de uso
 

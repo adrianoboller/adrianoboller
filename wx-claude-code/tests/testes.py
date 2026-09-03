@@ -52,6 +52,8 @@ class Questionario(unittest.TestCase):
         self.assertIn("Barra da grade: acima da grade, alinhada à direita", design)
         self.assertIn("«Confirma a exclusão do registro?»", design)
         self.assertIn("Tipo: textura", design)
+        self.assertIn("| WIN_Venda | principal | screenshots/win-venda-com-itens.png | provided |", design)
+        self.assertIn("- totais no rodapé da grade", design)
         self.assertIn("Modo Impeccable: **Operate**", (self.tmp / "PRODUCT.md").read_text())
         self.assertIn("Estilo de resposta", (self.tmp / "CLAUDE.md").read_text())
         # bloco 0: empresa, governanca para o PMO e entrega sem senha
@@ -70,6 +72,14 @@ class Questionario(unittest.TestCase):
         self.assertIn("| Analise HFSQL | esquema PostgreSQL migrado por script; sqlx/diesel | G3 |", proc)
         self.assertIn("Ritmo: modulo a modulo", proc)
         self.assertEqual(r2.stdout.count("SKIPPED"), 15)
+
+    def test_tela_modelo_inexistente_e_recusada(self):
+        q = json.loads((self.tmp / ".wx-migration/questionario.json").read_text())
+        q["F_estilo_impeccable"]["F0_tela_modelo"]["arquivos"][0]["arquivo"] = "screenshots/nao-existe.png"
+        (self.tmp / ".wx-migration/questionario.json").write_text(json.dumps(q))
+        r = run(SCRIPTS / "aplicar_questionario.py", "--questionario", self.tmp / ".wx-migration/questionario.json", "--project-root", self.tmp, "--plugin-root", RAIZ)
+        self.assertEqual(r.returncode, 2); self.assertIn("nao-existe.png", r.stderr)
+        self.assertFalse((self.tmp / "DESIGN.md").exists())
 
     def test_estrategia_desconhecida_e_recusada(self):
         q = json.loads((self.tmp / ".wx-migration/questionario.json").read_text())

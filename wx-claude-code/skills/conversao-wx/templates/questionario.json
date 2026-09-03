@@ -136,6 +136,13 @@
     "densidade": "compacta",
     "marca": "",
     "observacao": "",
+    "F0_tela_modelo": {
+      "status": "missing",
+      "arquivos": [],
+      "o_que_preservar": [],
+      "o_que_mudar": [],
+      "observacao": "arquivos: [{arquivo, tela, papel}] com papel = principal | cadastro | grade | relatorio; caminho relativo a raiz de evidencias; e o modelo visual que toda tela nova segue"
+    },
     "F1_operacao": {
       "perfil_do_usuario": "",
       "horas_por_dia": "",

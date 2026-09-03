@@ -53,7 +53,7 @@ python3 wx-claude-code/skills/conversao-wx/scripts/query_wlanguage_help.py --ver
 listagem que o modelo devolve pode omitir um item; confira por nome, não
 por contagem.
 
-**Validar o pacote** (roda os 16 testes de regressão):
+**Validar o pacote** (roda os 17 testes de regressão):
 
 ```bash
 python3 wx-claude-code/skills/conversao-wx/scripts/validate_plugin_bundle.py wx-claude-code --strict
@@ -325,7 +325,7 @@ o push. Se colar a senha na conversa por engano, revogue-a.
 | C | PDF só das interfaces |
 | D | PDF só das queries |
 | E | PDF completo |
-| F | qualidade das telas com o Impeccable: oito subperguntas de ERP (quem opera, teclado, grids, formulários, formatos, impressão, estados, acessibilidade) e depois paleta, tema, tipografia, preservar ou redesenhar |
+| F | qualidade das telas com o Impeccable: a tela principal como modelo (F0), oito subperguntas de ERP (quem opera, teclado, grids, formulários, formatos, impressão, estados, acessibilidade) e depois paleta, tema, tipografia, preservar ou redesenhar |
 | G | usar o corpus do Help WLanguage 12k? há override da sua versão? |
 | H | para qual linguagem converter o backend (capítulo 7) |
 | I | para qual linguagem e plataforma converter o frontend (capítulo 7) |
@@ -350,7 +350,7 @@ CLAUDE.md                    regras do projeto (com estilo de resposta se J = si
 DESIGN.md                    esboço da paleta (se F = sim)
 ```
 
-**A letra F num ERP.** Paleta é o começo. As oito subperguntas (F1 a F8) alimentam o `PRODUCT.md` e seções próprias do `DESIGN.md`, cada uma ligada ao comando do Impeccable que a consome: `shape` para grids, `harden` para formulários e estados, `typeset` para números e moeda, `layout` para impressão, `audit` para acessibilidade. Cinco subperguntas a mais tratam dos botões e do fundo: F9 vocabulário (INCLUIR, ALTERAR, EXCLUIR, GRAVAR, SELECIONAR REGISTRO, VOLTAR, CANCELAR, DUPLICAR, ou a forma em substantivo) e as mensagens exatas; F10 posição das barras em relação à grade e aos campos; F11 ícone por ação; F12 cor por ação, contorno ou preenchido; F13 fundo em cor hexadecimal ou rgb, textura ou imagem. As três viram uma tabela por ação no `DESIGN.md`, que os agentes seguem letra por letra. Uma tela só está pronta quando passa por `polish` e `audit` e atende as seções que a afetam. Detalhe em `references/qualidade-erp.md`.
+**A letra F num ERP.** Começa pela tela modelo (F0): a captura da tela principal do projeto, o que preservar e o que pode mudar, que vira a seção «Tela modelo» do `DESIGN.md` e a referência do `critique` de toda tela nova. Paleta vem depois. As oito subperguntas (F1 a F8) alimentam o `PRODUCT.md` e seções próprias do `DESIGN.md`, cada uma ligada ao comando do Impeccable que a consome: `shape` para grids, `harden` para formulários e estados, `typeset` para números e moeda, `layout` para impressão, `audit` para acessibilidade. Cinco subperguntas a mais tratam dos botões e do fundo: F9 vocabulário (INCLUIR, ALTERAR, EXCLUIR, GRAVAR, SELECIONAR REGISTRO, VOLTAR, CANCELAR, DUPLICAR, ou a forma em substantivo) e as mensagens exatas; F10 posição das barras em relação à grade e aos campos; F11 ícone por ação; F12 cor por ação, contorno ou preenchido; F13 fundo em cor hexadecimal ou rgb, textura ou imagem. As três viram uma tabela por ação no `DESIGN.md`, que os agentes seguem letra por letra. Uma tela só está pronta quando passa por `polish` e `audit` e atende as seções que a afetam. Detalhe em `references/qualidade-erp.md`.
 
 **Repetir o wizard** é seguro: o script nunca sobrescreve arquivo que já
 existe. Para refazer do zero, apague `.wx-migration/` antes.

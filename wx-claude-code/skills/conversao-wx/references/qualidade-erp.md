@@ -18,6 +18,17 @@ comando roda no escuro.
 | F7 | **Estados e erros** o que a tela mostra vazia, carregando, sem permissão, offline, com erro do servidor; confirmação em ações destrutivas | `DESIGN.md` › estados | `onboard`, `harden`, `critique` | um estado por situação, sem tela em branco |
 | F8 | **Acessibilidade e conformidade** WCAG AA obrigatório? leitor de tela? daltonismo? tamanho de toque em tablet? | `DESIGN.md` › acessibilidade | `audit`, `adapt` | contraste medido 4,5:1, foco, rótulos, alvo de toque 44 px |
 
+## A tela modelo (F0)
+
+Antes de qualquer subpergunta, o wizard pede a captura da **tela principal** do
+projeto WX, e de um cadastro típico se houver, para servir de modelo visual.
+Registra também o que dela deve ser preservado (posição da barra de botões,
+ordem dos campos, totais) e o que pode mudar (fonte, espaçamento, cores). A
+captura só entra depois de aberta, como todo anexo. No `DESIGN.md` ela vira a
+seção «Tela modelo», e o `/impeccable critique` de cada tela nova compara com
+ela antes do `polish`: parecido onde o usuário pediu para preservar, diferente
+só onde ele pediu para mudar.
+
 ## As cinco subperguntas dos botões e do fundo (F9 a F13)
 
 Botão é onde o usuário do ERP mais percebe diferença entre o sistema velho e

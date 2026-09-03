@@ -265,6 +265,19 @@ def esboco_design(q: dict) -> str:
     linhas.append(f"- Densidade: {f.get('densidade', 'compacta')}")
     if f.get("marca"):
         linhas.append(f"- Marca a respeitar: {f['marca']}")
+    # F0: a tela principal do legado como modelo visual. So entra depois de aberta.
+    t0 = f.get("F0_tela_modelo", {}) or {}
+    if t0.get("status") not in (None, "missing", "not_applicable") or t0.get("arquivos"):
+        raiz = Path(f.get("_raiz_de_evidencias", "."))
+        linhas += ["", "## Tela modelo (F0)", "", "A tela principal do projeto WX e a referencia visual de toda tela nova: o Impeccable `critique` compara com ela antes de `polish`.", ""]
+        linhas += ["| Tela | Papel | Arquivo | Estado |", "| --- | --- | --- | --- |"]
+        for a0 in t0.get("arquivos", []) or []:
+            arq = a0.get("arquivo", "")
+            if arq and not (raiz / arq).is_file():
+                raise ValueError(f"tela modelo {arq!r} nao existe em {raiz}")
+            linhas.append(f"| {a0.get('tela','')} | {a0.get('papel','')} | {arq} | {'provided' if arq else 'missing'} |")
+        linhas += ["", "Preservar:", ""] + ([f"- {x}" for x in t0.get("o_que_preservar", []) or []] or ["- (nada informado)"])
+        linhas += ["", "Mudar:", ""] + ([f"- {x}" for x in t0.get("o_que_mudar", []) or []] or ["- (nada informado)"])
     linhas += ["", "## Tokens de cor", "", "| Papel | Valor | Contraste medido |", "| --- | --- | --- |"]
     for papel in ("principal", "secundaria", "fundo", "texto", "acao", "erro", "aviso", "sucesso"):
         linhas.append(f"| {papel} | {pal.get(papel) or '(pendente)'} | (medir, mínimo 4,5:1 em texto) |")
@@ -612,6 +625,7 @@ def main() -> int:
     saida.append(write_new(projeto / "CLAUDE.md", claude_md))
 
     if q.get("F_estilo_impeccable", {}).get("ativar"):
+        q["F_estilo_impeccable"]["_raiz_de_evidencias"] = str((projeto / q.get("projeto", {}).get("raiz_de_evidencias", "./inputs")).resolve())
         saida.append(write_new(projeto / "DESIGN.md", esboco_design(q)))
         saida.append(write_new(projeto / "PRODUCT.md", esboco_product(q)))
 

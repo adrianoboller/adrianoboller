@@ -238,6 +238,31 @@
     "densidade": "compacta",
     "marca": "WX Claude Code",
     "observacao": "",
+    "F0_tela_modelo": {
+      "status": "provided",
+      "arquivos": [
+        {
+          "arquivo": "screenshots/win-venda-com-itens.png",
+          "tela": "WIN_Venda",
+          "papel": "principal"
+        },
+        {
+          "arquivo": "screenshots/win-cliente-normal.png",
+          "tela": "WIN_Cliente",
+          "papel": "cadastro"
+        }
+      ],
+      "o_que_preservar": [
+        "barra de botões acima da grade, à direita",
+        "ordem dos campos e a tabulação",
+        "totais no rodapé da grade"
+      ],
+      "o_que_mudar": [
+        "fonte e espaçamento, pela densidade escolhida",
+        "cores dos botões pelo padrão de F12"
+      ],
+      "observacao": ""
+    },
     "F1_operacao": {
       "perfil_do_usuario": "balcão de vendas e estoque",
       "horas_por_dia": "8",
