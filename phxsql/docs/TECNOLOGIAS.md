@@ -280,7 +280,7 @@ leitura de 20.000 (5× a favor do PhxSql sem o motor ter feito nada por isso).
   idiomas, teto atual `TETO_ROTULOS_E_CRASE = 1.720`, que **aposentou** o
   antigo `TETO = 1.549` na letra da regra de QA — régua nova, catraca nova,
   nunca a mesma catraca subindo) e `conferidor_grades.rs` (tabela HTML fora
-  do padrão `PhxGrid`, teto atual `TETO_TABELA_NA_MAO = 24`). Ao todo, **10**
+  do padrão `PhxGrid`, teto atual `TETO_TABELA_NA_MAO = 0` — fechada em 03/09). Ao todo, **10**
   constantes `TETO*` no código do servidor — as duas de cima mais oito em
   `profiler.rs` e `servidor.rs`, algumas delas limite de recurso (tamanho de
   campo, de lote) e não catraca de varredura de texto; a lista completa está

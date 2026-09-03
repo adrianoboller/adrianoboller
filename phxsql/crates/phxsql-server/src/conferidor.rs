@@ -1245,7 +1245,12 @@ pub fn token_sem_definicao_e_sem_fallback() -> Vec<(&'static str, String)> {
 /// e o quinto -- o brinde do editor ER -- estava cravado e entrou pela
 /// fabrica junto com o conserto. Catraca desce por qualquer motivo que
 /// tire texto de fora dela; o motivo aqui e que a frase mentia.
-pub const TETO_ROTULOS_E_CRASE: usize = 1_715;
+/// 03/09, 20h: **1.707**. Efeito colateral do pedido 158, e nao leva de
+/// traducao: converter quatro tabelas a mao em PhxGrid trocou marcacao
+/// crua por colunas com `txt()`, e apagar o ajudante `tabela()` levou o
+/// vazio dele junto. Catraca desce por qualquer motivo que tire texto de
+/// fora dela.
+pub const TETO_ROTULOS_E_CRASE: usize = 1_707;
 #[cfg(test)]
 mod testes {
     use std::collections::HashSet;

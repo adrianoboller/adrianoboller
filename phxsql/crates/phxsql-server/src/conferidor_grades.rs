@@ -115,6 +115,127 @@ pub const ISENTAS: &[(&str, &str, &str)] = &[
          a ordem e a do contrato -- filtrar a definicao pela propria definicao \
          nao e uso que exista",
     ),
+    // ---------------------------------------------------------------- 03/09
+    // As 20 que sobraram, classificadas uma a uma. Nenhuma delas e lista de
+    // dado: sao FORMULARIO (input por celula), FICHA TECNICA (campo -> valor
+    // -> o que faz, em que a ORDEM e a informacao), PREVIA ilustrativa, o
+    // PIVOT (que ja e o resultado de agrupar) ou desenho. Converter qualquer
+    // uma seria estrago com cara de padronizacao -- e e a mesma frase que o
+    // cabecalho deste modulo ja dizia antes de alguem ter classificado.
+    (
+        "ui/index.html",
+        "desenharNovaTabela",
+        "as duas sao FORMULARIO: `input` por celula em campos e em indices. E \
+         a de campos e a ordem de digitacao sendo montada -- ordenar a vista \
+         ali mentiria sobre a ordem em que as colunas vao nascer, que e o \
+         mesmo motivo da `desenharRevisao`",
+    ),
+    (
+        "ui/index.html",
+        "cartaoNovaTabelaER",
+        "formulario, como a `desenharNovaTabela`, dentro do cartao do \
+         diagrama: `input` de nome, `select` de tipo e as caixas de obrigatorio \
+         e PK, com a linha vazia no fim para acrescentar campo",
+    ),
+    (
+        "ui/index.html",
+        "editorDeMenu",
+        "formulario: uma linha por rotulo, com o `input` do nome que a pessoa \
+         quer. O agrupamento que faria sentido -- por grupo de menu -- ja \
+         existe, e e um `<h3>` por grupo, decidido pelo codigo e nao arrastavel",
+    ),
+    (
+        "ui/index.html",
+        "dialogoConflito",
+        "a janela de conflito de escrita, e ela e o contrario de uma grade: \
+         cada linha e uma COLUNA em disputa e a pessoa escolhe um radio por \
+         linha. Ordenar ou agrupar aqui reordenaria as escolhas no meio da \
+         decisao, que e o estrago que esta janela existe para impedir",
+    ),
+    (
+        "ui/index.html",
+        "assistenteDbLink",
+        "passo 4 do assistente: caixa de marcar, `select` de sentido e `select` \
+         de conflito por tabela de la. Formulario com cara de tabela, e o que \
+         a pessoa faz nele e marcar, nao consultar",
+    ),
+    (
+        "ui/index.html",
+        "verConfigTabela",
+        "as tres sao FICHA TECNICA -- geometria, diretiva desta tabela, \
+         diretiva herdada --, no molde campo -> valor -> por que e assim. A \
+         ordem e a do raciocinio e nao a alfabetica: ordenar transformaria uma \
+         explicacao em lista",
+    ),
+    (
+        "ui/index.html",
+        "verConfigBanco",
+        "ficha tecnica de um database: onde ele mora e o que herda do \
+         servidor. Duas colunas, sem cabecalho, lida junto do texto ao lado",
+    ),
+    (
+        "ui/index.html",
+        "grupoDeAjustes",
+        "o AJUDANTE das fichas de configuracao (campo do `config.json` -> \
+         valor agora -> para que serve), usado por varias telas. Mesma \
+         natureza da `verConfigTabela`, num lugar so",
+    ),
+    (
+        "ui/index.html",
+        "verDiretivasDoBanco",
+        "os portoes NA ORDEM EM QUE FECHAM, e a ordem E a informacao: o \
+         portao 1 recusa antes de o 2 existir. Uma grade que deixa reordenar \
+         essa tabela apaga justamente o que ela ensina",
+    ),
+    (
+        "ui/index.html",
+        "verCreditos",
+        "sobre o que este motor se apoia: duas colunas escritas a mao, com RFC \
+         e norma ao lado de cada peca. Nao vem de dado nenhum e ninguem vai \
+         agrupar por «de onde vem»",
+    ),
+    (
+        "ui/index.html",
+        "gradeDeParticoes",
+        "as duas sao PREVIA ilustrativa, e nao dado: tres volumes de exemplo, \
+         uma linha de reticencias e a ultima, para mostrar como o nome do \
+         arquivo e o rowid vao ser cortados. Ordenar uma reticencia nao \
+         significa nada",
+    ),
+    (
+        "ui/index.html",
+        "pivotPasso1",
+        "as duas sao do assistente: a escolha da tabela de fatos (clique \
+         simples marca, e a grade abre linha no clique DUPLO -- trocar isso \
+         piora o passo) e a lista de juncoes ja declaradas, um conjunto de \
+         trabalho de zero a tres linhas com botao de tirar",
+    ),
+    (
+        "ui/index.html",
+        "pivotPasso3",
+        "o RESULTADO do pivot, e ele ja e o agrupamento: as colunas nascem do \
+         dado (`rotulos_coluna`), ha canto, total de linha e total de coluna. \
+         Agrupar um pivot e agrupar o que ja foi agrupado, e uma grade de \
+         colunas fixas nao expressa colunas que vem da consulta",
+    ),
+    (
+        "ui/index.html",
+        "cartaoTabelaER",
+        "as colunas da tabela dentro do cartao do diagrama ER -- um no de \
+         desenho que se arrasta, com 220px de altura. Filtro, paginacao e \
+         barra de agrupamento nao cabem num cartao que a pessoa esta \
+         arrastando pela tela",
+    ),
+    (
+        "ui/index.html",
+        "telaExportar",
+        "NAO E TABELA, e limite medido da regua: a ocorrencia e a palavra \
+         `<table>` DENTRO do texto que explica a importacao de HTML («a \
+         primeira <table> do documento»). A varredura casa `<table` em \
+         qualquer lugar da linha, e distinguir marcacao de prosa por padrao \
+         de texto seria heuristica fragil escondendo tabela de verdade \
+         amanha. E a unica em prosa nas 20 -- conferido linha a linha",
+    ),
 ];
 
 /// O nome da funcao declarada nesta linha, se ela declara alguma.
@@ -271,7 +392,23 @@ pub fn no_padrao() -> usize {
 /// numero antigo se perde de proposito -- perder a serie e mais barato que
 /// deixar «mudei a regua» virar porta para afrouxar, que foi exatamente o
 /// risco que eu corri.
-pub const TETO_TABELA_NA_MAO: usize = 24;
+/// 03/09, 20h: **0**, e este e o numero em que o pedido 158 fecha.
+///
+/// Nao houve conversao em massa: houve CLASSIFICACAO. Quatro viraram grade
+/// porque sao lista de dado de verdade -- o Profiler, as transacoes abertas,
+/// o resultado de consulta da tela da Claude, e o ajudante `tabela()` que
+/// morreu junto com o ultimo chamador dele. As outras 20 entraram em
+/// [`ISENTAS`] com o motivo: formulario, ficha tecnica, previa, o pivot, e
+/// uma que nem tabela e.
+///
+/// **Zero nao quer dizer «acabou a tela»**: quer dizer que nao ha mais tabela
+/// a mao SEM MOTIVO. E a partir daqui a catraca e a mais dura que ja houve
+/// aqui -- tabela nova sem grade e sem linha em `ISENTAS` reprova na hora.
+///
+/// Quem guarda a regua contra o zero por engano nao e esta catraca e sim
+/// `o_conferidor_acha_o_que_promete`, que a exercita com fonte sintetica; e
+/// quem guarda a isencao contra virar desculpa e `nenhuma_isencao_morta`.
+pub const TETO_TABELA_NA_MAO: usize = 0;
 
 #[cfg(test)]
 mod testes {
@@ -280,8 +417,12 @@ mod testes {
     #[test]
     fn nenhuma_tabela_nova_fora_do_padrao() {
         let na_mao = sem_motivo();
+        // `is_empty()` e nao `len() <= TETO`: com a catraca em ZERO os dois
+        // dizem a mesma coisa, e o clippy reprova o segundo por ser sempre
+        // verdadeiro ou sempre falso. O TETO continua existindo porque e ele
+        // que a mensagem cita e que a lei da casa proibe de subir.
         assert!(
-            na_mao.len() <= TETO_TABELA_NA_MAO,
+            na_mao.is_empty(),
             "{} tabelas montadas na mao, e a catraca esta em {TETO_TABELA_NA_MAO}.\n\
              Tela nova usa `PhxGrid.criar` -- e se esta tabela nao e grade \
              (formulario, cartao de diagrama, legenda), ponha em ISENTAS com \
@@ -290,12 +431,15 @@ mod testes {
             na_mao.len(),
             na_mao.iter().take(5).collect::<Vec<_>>()
         );
-        assert!(
-            na_mao.len() >= TETO_TABELA_NA_MAO.saturating_sub(10),
-            "sobraram {} e a catraca esta em {TETO_TABELA_NA_MAO}: baixe a catraca no mesmo \
-             commit da conversao, senao ela para de segurar",
-            na_mao.len()
-        );
+        // A guarda de PISO que existia aqui -- «sobraram muito menos que a
+        // catraca, baixe-a no mesmo commit» -- foi APOSENTADA com a catraca em
+        // zero, e nao esquecida: `>= 0.saturating_sub(10)` e sempre verdadeiro,
+        // e o clippy a reprovou por isso. Ela existia para forcar a catraca a
+        // descer junto da conversao, e em zero nao ha para onde descer.
+        //
+        // Quem guarda contra o zero POR ENGANO -- a regua quebrada medindo
+        // nada -- e `o_conferidor_acha_o_que_promete`, que a exercita com
+        // fonte sintetica e nao depende deste numero.
     }
 
     /// Isencao morta e pior que isencao faltando: o proximo leitor confia

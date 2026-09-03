@@ -71,8 +71,13 @@ export const caso = {
     // WEB: então a lista é exercitada com o retrato que o servidor devolve,
     // desenhado pela MESMA função da tela. É o componente que se prova aqui,
     // e ele é o que o CSS global morde.
+    // A tela monta a lista em DOIS passos desde que ela virou PhxGrid: a
+    // funcao devolve o recipiente e `ligarGradeTx` cria a grade depois de o
+    // recipiente estar no documento (grade dentro de `display:none` mede
+    // largura zero). O teste faz o mesmo par, pela mesma razao de sempre --
+    // o caminho da pessoa e o caminho do teste.
     await page.evaluate(() => {
-      $('#painel').innerHTML = listaDeTransacoes({
+      const dados = {
         total: 1,
         transacoes: [{
           transaction_id: 12,
@@ -86,7 +91,9 @@ export const caso = {
           tabelas_efetivas: ['loja/auditoria', 'loja/pedidos'],
           travas: [{ tabela: 'loja/pedidos', trava: 'IX', linhas: 2 }],
         }],
-      });
+      };
+      $('#painel').innerHTML = listaDeTransacoes(dados);
+      ligarGradeTx(dados);
     });
     await page.waitForSelector('#painel table', { timeout: 10000 });
     const grade = await page.textContent('#painel');

@@ -42,8 +42,8 @@ motivo que `TETO_DA_CASCATA` não entra: não há número que decresça.
 
 | Catraca | Onde mora | Teto | Medido hoje | Folga | Estado |
 |---|---|---:|---:|---:|---|
-| `TETO_TABELA_NA_MAO` | `crates/phxsql-server/src/conferidor_grades.rs:274` | 24 | **24** | **0** | sem folga |
-| `TETO_ROTULOS_E_CRASE` | `crates/phxsql-server/src/conferidor.rs:1239` | 1.720 | **1.720** | **0** | sem folga |
+| `TETO_TABELA_NA_MAO` | `crates/phxsql-server/src/conferidor_grades.rs` | 0 | **0** | **0** | **fechada** — pedido 158 |
+| `TETO_ROTULOS_E_CRASE` | `crates/phxsql-server/src/conferidor.rs` | 1.707 | **1.707** | **0** | sem folga |
 | `TETO_COLADO` | `crates/phxsql-server/src/conferidor.rs:1088` | 0 | **0** | **0** | sem folga |
 | `TETO_FRASE_REPETIDA` | `crates/phxsql-server/src/conferidor.rs:1092` | 0 | **0** | **0** | sem folga |
 
@@ -84,9 +84,25 @@ barato que deixar "mudei a régua" virar a porta pela qual se afrouxa uma
 catraca.
 
 **Medido hoje** (`cargo run --release --example grades-fora-do-padrao -p
-phxsql-server`): 52 chamadas a `PhxGrid.criar(` já no padrão; 24 na mão (23
-`<table>` cru + 1 ajudante), todas em `ui/index.html`; 4 isentas com motivo
-registrado (formulário, cartão, legenda — não são grade).
+phxsql-server`): **55** chamadas a `PhxGrid.criar(`; **0** na mão; **24**
+isentas com motivo registrado.
+
+**Ela fechou em 03/09**, e por CLASSIFICAÇÃO e não por conversão em massa: das
+24 que restavam, quatro eram lista de dado e viraram grade (Profiler,
+transações abertas, resultado de consulta da tela da Claude, e o ajudante
+`tabela()`, que morreu com o último chamador); as outras vinte entraram em
+`ISENTAS` com o motivo — formulário, ficha técnica, prévia, o pivot, o cartão
+do ER, e uma que não é tabela. Ver `docs/GRADE.md` §8.1.
+
+**Zero não quer dizer «acabou a tela»**: quer dizer que não há mais tabela à
+mão SEM MOTIVO, e é a catraca mais dura que já houve aqui — tabela nova sem
+grade e sem linha em `ISENTAS` reprova na hora.
+
+**A guarda de piso desta catraca foi APOSENTADA**, e o motivo fica escrito
+porque ele volta a valer um dia: ela dizia «sobraram muito menos que o teto,
+baixe-o no mesmo commit», e em zero virou `>= 0` — sempre verdadeira, e o
+clippy a reprovou. Se um dia a régua passar a medir mais e nascer uma catraca
+nova num número alto, **a nova precisa do piso de volta**.
 
 ### 2. `TETO_ROTULOS_E_CRASE` — textos de tela fora da fábrica de idiomas
 

@@ -1327,9 +1327,20 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
         + ((r.notas || []).length
             ? `<div class="aviso">${(r.notas || []).map(E).join("<br>")}</div>` : "")
         + (linhas.length
-            ? tabela(cols.map(x => ({ t: x })), linhas,
-                l => `<tr>${cols.map(x => celulaValor(l[x])).join("")}</tr>`)
+            ? `<div id="iaGradeSql"></div>`
             : `<div class="vazio">${E(txt("tela.ia_sem_linhas", "sem linhas"))}</div>`);
+      // O resultado de uma consulta e o caso mais forte de grade que existe
+      // nesta tela: quem roda um SELECT quer ordenar, filtrar e exportar o
+      // que voltou. As colunas sao DINAMICAS e o titulo NAO passa por `txt()`
+      // -- e o nome do campo na tabela do usuario, e nao vocabulario da
+      // interface. Mesma regra de `abrirConsulta`.
+      if (linhas.length) PhxGrid.criar("#iaGradeSql", {
+        agrupavel: true, buscaGlobal: true, filterRow: true,
+        nomeVista: "consulta-ia",
+        colunas: cols.map(c => ({ campo: c, titulo: c, formato: celulaValorTexto })),
+        dados: linhas,
+        pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+      });
     } catch (e) {
       alvo.innerHTML = `<div class="aviso mal">${E(String(e.message || e))}</div>`;
     }

@@ -2419,18 +2419,13 @@ function avisar(texto, ehErro) {
   sumicoDoAviso = setTimeout(() => { alvo.hidden = true; }, ehErro ? 9000 : 4000);
 }
 
-function tabela(colunas, linhas, montar) {
-  if (!linhas.length)
-    return `<div class="vazio">${esc(txt("tela.nada_aqui", "nada aqui"))}</div>`;
-  return `<div class="rolo"><table><thead><tr>${
-    colunas.map(c=>`<th class="${c.cls||""}">${esc(c.t)}</th>`).join("")
-  }</tr></thead><tbody>${linhas.map(montar).join("")}</tbody></table></div>`;
-}
 
-/** O MIOLO da celula -- sem o `<td>`, para o `formato` da PhxGrid poder usar
- * o mesmo criterio de `celulaValor` sem duplicar a regra do nulo e do texto
- * cortado. E o formatador direto da coluna dinamica de `abrirConsulta` e de
- * `ligarLixeira`, e do amostra de `telaImportar`. */
+/** O MIOLO da celula: o criterio unico do nulo e do texto cortado.
+ *
+ * E o `formato` das colunas DINAMICAS -- `abrirConsulta`, a consulta da tela
+ * da Claude, `ligarLixeira` e a amostra de `telaImportar`. Devolve o miolo e
+ * nao o `<td>` porque quem monta a celula e a PhxGrid; o par `celulaValor`,
+ * que embrulhava em `<td>`, morreu junto com o ajudante `tabela()`. */
 function celulaValorTexto(v) {
   if (v === null || v === undefined) return `<span class="leg">NULL</span>`;
   if (typeof v === "number") return String(v);
@@ -2438,14 +2433,6 @@ function celulaValorTexto(v) {
   return esc(s.length > 60 ? s.slice(0, 57) + "…" : s);
 }
 
-/** A mesma celula, com `<td>` -- `index.html` nao chama mais esta funcao, mas
- * `ui/claude.js` (`executar`) ainda a usa, global, e continua sendo a UNICA
- * `tabela()` a mao que sobra na interface (fora desta rodada de conversao). */
-function celulaValor(v) {
-  if (v === null || v === undefined) return `<td class="dado nulo">NULL</td>`;
-  if (typeof v === "number") return `<td class="dado num">${v}</td>`;
-  return `<td class="dado">${celulaValorTexto(v)}</td>`;
-}
 
 // =====================================================================
 // Entrada
@@ -7627,9 +7614,10 @@ async function verTransacoes() {
        <li>${marcado(txt("tela.tx_sem_mvcc_a", "**MVCC.** Aqui o rowid **é** o endereço. Uma segunda versão da linha pede um segundo slot, logo um segundo rowid."))} ${marcado(txt("tela.tx_sem_mvcc_b", "Isso quebra a ordem de digitação **e** a replicação, que para quando o rowid diverge. A metade que se quer dele -- leitor que não bloqueia -- já está entregue."))}</li>
        <li>${marcado(txt("tela.tx_sem_ddl", "**DDL dentro de transação.** Um `CREATE TABLE` no meio dela é **recusado**, e não confirma a transação aberta pelas costas -- que é o que outros motores fazem."))}</li>
        <li>${marcado(txt("tela.tx_sem_dois_bancos", "**Transação entre dois databases.** Isso é *two-phase commit*, e é outro projeto: a marca de recuperação mora dentro do diretório do database."))}</li>
-       <li>${marcado(txt("tela.tx_sem_ler_o_proprio", "**Ler o que a própria transação escreveu.** Uma consulta dentro dela não vê o que ela mesma inseriu: o dado está em RAM, e não no disco de onde a leitura vem."))}</li>
      </ul>
      <p class="leg">${marcado(txt("tela.tx_docs", "O desenho inteiro, com o que foi recusado e por quê, está em `docs/TRANSACOES.md`. Os números estão em `docs/DESEMPENHO.md`."))}</p>`);
+
+  if (!erro) ligarGradeTx(dados);
 }
 
 /** A lista de transações abertas -- e ela mostra o que é MEDIDO.
@@ -7639,28 +7627,47 @@ async function verTransacoes() {
 function listaDeTransacoes(dados) {
   const linhas = (dados && dados.transacoes) || [];
   if (!linhas.length) return `<p class="leg">${esc(txt("tela.tx_vazia", "Nenhuma transação aberta agora."))}</p>`;
-  const cab = [
-    ["transaction_id", txt("tela.tx_c_id", "id")],
-    ["usuario", txt("tela.tx_c_usuario", "usuário")],
-    ["transaction_state", txt("tela.tx_c_estado", "estado")],
-    ["idade_ms", txt("tela.tx_c_idade", "idade (ms)")],
-    ["linhas", txt("tela.tx_c_linhas", "linhas empilhadas")],
-    ["lock_mode", txt("tela.tx_c_lock", "trava")],
-    ["esperando", txt("tela.tx_c_espera", "esperando")],
-  ];
-  const celula = (t, k) => k === "esperando" ? (t.esperando || "—") : String(t[k] ?? "—");
+  // So o RECIPIENTE: `folha()` ainda vai por isto no documento, e grade dentro
+  // de `display:none` mede largura zero. Quem a cria e `ligarGradeTx`, chamado
+  // depois -- o mesmo par de `ligarLgpdDaEstrutura`.
+  return `<div id="gradeTx"></div>`;
+}
+
+/** Cria a grade das transacoes abertas, DEPOIS de a folha estar no documento.
+ *
+ *  Tres colunas sao listas (`tabelas_declaradas`, `tabelas_efetivas`,
+ *  `travas`), e listas viram TEXTO no dado -- nao no `formato`. Agrupar por
+ *  «declaradas» tem de agrupar por `clientes, pedidos`, e uma coluna que so
+ *  existe no formatador agrupa por `[object Array]`. */
+function ligarGradeTx(dados) {
+  const alvo = $("#gradeTx");
+  if (!alvo) return;
   const trava = x => `${x.tabela} ${x.trava}` + (x.linhas ? ` (${x.linhas})` : "");
-  return `<div class="rolo"><table>
-    <thead><tr>${cab.map(([, r]) => `<th>${esc(r)}</th>`).join("")}
-      <th>${esc(txt("tela.tx_c_declaradas", "declaradas"))}</th>
-      <th>${esc(txt("tela.tx_c_efetivas", "efetivas"))}</th>
-      <th>${esc(txt("tela.tx_c_travas", "travas"))}</th></tr></thead>
-    <tbody>${linhas.map(t => `<tr>
-      ${cab.map(([k]) => `<td>${esc(celula(t, k))}</td>`).join("")}
-      <td>${esc((t.tabelas_declaradas || []).join(", ") || "—")}</td>
-      <td>${esc((t.tabelas_efetivas || []).join(", ") || "—")}</td>
-      <td>${esc((t.travas || []).map(trava).join(", ") || "—")}</td>
-    </tr>`).join("")}</tbody></table></div>`;
+  const linhas = ((dados && dados.transacoes) || []).map(t => ({
+    ...t,
+    esperando: t.esperando || "—",
+    __declaradas: (t.tabelas_declaradas || []).join(", ") || "—",
+    __efetivas: (t.tabelas_efetivas || []).join(", ") || "—",
+    __travas: (t.travas || []).map(trava).join(", ") || "—",
+  }));
+  PhxGrid.criar(alvo, {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    lembrar: "transacoes", nomeVista: "transacoes",
+    colunas: [
+      { campo:"transaction_id", titulo:txt("tela.tx_c_id", "id"), fixa:"esq" },
+      { campo:"usuario", titulo:txt("tela.tx_c_usuario", "usuário") },
+      { campo:"transaction_state", titulo:txt("tela.tx_c_estado", "estado") },
+      { campo:"idade_ms", titulo:txt("tela.tx_c_idade", "idade (ms)"), tipo:"numero" },
+      { campo:"linhas", titulo:txt("tela.tx_c_linhas", "linhas empilhadas"), tipo:"numero" },
+      { campo:"lock_mode", titulo:txt("tela.tx_c_lock", "trava") },
+      { campo:"esperando", titulo:txt("tela.tx_c_espera", "esperando") },
+      { campo:"__declaradas", titulo:txt("tela.tx_c_declaradas", "declaradas") },
+      { campo:"__efetivas", titulo:txt("tela.tx_c_efetivas", "efetivas") },
+      { campo:"__travas", titulo:txt("tela.tx_c_travas", "travas") },
+    ],
+    dados: linhas,
+    pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+  });
 }
 
 /* ------------------------------------------------------------------ creditos
@@ -12270,7 +12277,11 @@ function abrirProvaReplicacao(origens) {
  * gerando mais tráfego do que a que ela observa. */
 let profTimer = null;
 let profVisto = 0;
-let profLinhas = [];
+// NUNCA reatribuido (`= []`): a grade guarda a REFERENCIA deste array, e
+// trocar a referencia a deixaria pintando o array velho para sempre. Esvaziar
+// e `length = 0`. E a mesma armadilha que `painelDaProva` documenta.
+const profLinhas = [];
+let profGrade = null;
 
 /* ============================== telemetria (o SQL Check da Idera(R))
  *
@@ -12299,7 +12310,7 @@ function telaTelemetria() {
 
 async function verProfiler() {
   clearInterval(profTimer);
-  profVisto = 0; profLinhas = [];
+  profVisto = 0; profLinhas.length = 0; profGrade = null;
   const bancos = await api("bancos").catch(() => []);
   const e = await api("profiler", { max: 200 }).catch(() => ({ ligado:false, filtro:{} }));
   const f = e.filtro || {};
@@ -12327,11 +12338,7 @@ async function verProfiler() {
        <button class="botao secundario" id="pfLimpar">Limpar</button>
      </div>
      <div id="pfEstado"></div>
-     <div class="rolo"><table class="prof">
-       <thead><tr><th>hora</th><th>ip</th><th>usuário</th><th>operação</th>
-         <th>alvo</th><th class="num">ms</th><th></th><th class="num">bytes</th>
-         <th>pedido, como chegou</th></tr></thead>
-       <tbody id="pfCorpo"></tbody></table></div>
+     <div id="pfGrade"></div>
      <div class="nota">
        <span class="t">A senha não passa por aqui</span>
        <p>O pedido é mostrado como chegou pelo soquete — <b>menos</b> os campos
@@ -12366,7 +12373,7 @@ async function verProfiler() {
         arquivo: $("#pfArq").value.trim(), guardar: +$("#pfTeto").value || 500,
       });
       avisar(r.arquivo ? `observando · gravando em ${r.arquivo}` : "observando");
-      profVisto = 0; profLinhas = [];
+      profVisto = 0; profLinhas.length = 0;
       verProfiler();
     } catch (err) { avisar(String(err), true); }
   };
@@ -12376,8 +12383,8 @@ async function verProfiler() {
     verProfiler();
   };
   $("#pfLimpar").onclick = async () => {
-    await api("profiler_limpar"); profVisto = 0; profLinhas = [];
-    $("#pfCorpo").innerHTML = ""; 
+    await api("profiler_limpar"); profVisto = 0; profLinhas.length = 0;
+    if (profGrade) profGrade.redesenhar();
   };
 
   const pintar = d => {
@@ -12427,29 +12434,56 @@ async function verProfiler() {
     let d;
     try { d = await api("profiler", { max: 200, desde_serial: profVisto }); }
     catch { clearInterval(profTimer); return; }
-    if (!$("#pfCorpo")) { clearInterval(profTimer); return; }   // saiu da tela
+    const alvo = $("#pfGrade");
+    if (!alvo) { clearInterval(profTimer); return; }   // saiu da tela
     pintar(d);
     for (const ev of (d.eventos || []).slice().reverse()) {
       profVisto = Math.max(profVisto, ev.serial);
+      // As duas derivadas nascem NO DADO, e nao num `formato`: agrupar por
+      // «alvo» tem de agrupar por `loja.clientes`, e ordenar por «estado» tem
+      // de ordenar por ok/erro. Coluna que so existe no formatador agrupa e
+      // ordena por `undefined` -- a grade nao ve o que a tela desenha.
+      ev.__alvo = ev.database ? (ev.tabela ? ev.database + "." + ev.tabela : ev.database) : "—";
+      ev.__estado = ev.ok === null || ev.ok === undefined ? "em curso" : (ev.ok ? "ok" : "erro");
       profLinhas.unshift(ev);
     }
     if (profLinhas.length > 300) profLinhas.length = 300;
-    $("#pfCorpo").innerHTML = profLinhas.map(ev => {
-      const estado = ev.ok === null || ev.ok === undefined
-        ? `<span class="pino">em curso</span>`
-        : ev.ok ? `<span class="pino ok">ok</span>`
-                : `<span class="pino mal" title="${esc(ev.erro || "")}">erro</span>`;
-      return `<tr class="${ev.ok === false ? "prof-mal" : ""}">
-        <td class="dado">${esc((ev.quando || "").slice(11))}</td>
-        <td class="dado">${esc(ev.ip)}</td>
-        <td>${esc(ev.usuario || "—")}</td>
-        <td class="dado"><b>${esc(ev.op)}</b></td>
-        <td class="dado">${esc(ev.database ? (ev.tabela ? ev.database + "." + ev.tabela : ev.database) : "—")}</td>
-        <td class="num">${ev.ms === null || ev.ms === undefined ? "—" : fmt(ev.ms)}</td>
-        <td>${estado}</td>
-        <td class="num">${fmt(ev.bytes)}</td>
-        <td class="dado prof-pedido" title="${esc(ev.pedido)}">${esc(ev.pedido)}</td></tr>`;
-    }).join("");
+    // PAINEL VIVO: a grade nasce UMA vez e so `redesenhar()` a cada segundo.
+    // Refazer a grade a cada volta jogaria fora a ordenacao, o filtro e o
+    // agrupamento no meio da leitura -- e o Profiler e justamente a tela em
+    // que alguem fica parado olhando, com o relogio batendo por baixo.
+    if (profGrade) { profGrade.redesenhar(); return; }
+    profGrade = PhxGrid.criar(alvo, {
+      agrupavel: true, buscaGlobal: true, filterRow: true,
+      lembrar: "profiler", nomeVista: "profiler",
+      classeDaLinha: l => l.ok === false ? "prof-mal" : "",
+      colunas: [
+        { campo:"quando", titulo:txt("tela.col_hora","hora"), fixa:"esq",
+          formato:v => esc((v || "").slice(11)) },
+        { campo:"ip", titulo:txt("tela.col_ip","ip") },
+        { campo:"usuario", titulo:txt("tela.col_usuario","usuário"),
+          formato:v => esc(v || "—") },
+        { campo:"op", titulo:txt("tela.col_operacao","operação"),
+          formato:v => `<b>${esc(v)}</b>` },
+        // O alvo e derivado de duas colunas, entao ele e uma coluna PROPRIA
+        // do dado e nao um `formato` sobre uma delas: agrupar por «alvo»
+        // tem de agrupar por `loja.clientes`, e nao por `loja`.
+        { campo:"__alvo", titulo:txt("tela.col_alvo","alvo") },
+        { campo:"ms", titulo:"ms", tipo:"numero",
+          formato:v => v === null || v === undefined ? "—" : fmt(v) },
+        { campo:"__estado", titulo:txt("tela.col_estado","estado"),
+          formato:(v, l) => l.ok === null || l.ok === undefined
+            ? `<span class="pino">${esc(txt("tela.pf_em_curso","em curso"))}</span>`
+            : l.ok ? `<span class="pino ok">ok</span>`
+                   : `<span class="pino mal" title="${esc(l.erro || "")}">${
+                        esc(txt("tela.pf_erro","erro"))}</span>` },
+        { campo:"bytes", titulo:"bytes", tipo:"numero", formato:v => fmt(v) },
+        { campo:"pedido", titulo:txt("tela.col_pedido_como_chegou","pedido, como chegou"),
+          formato:v => `<span class="prof-pedido" title="${esc(v)}">${esc(v)}</span>` },
+      ],
+      dados: profLinhas,
+      pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+    });
   };
   await atualizar();
   profTimer = setInterval(atualizar, 1000);

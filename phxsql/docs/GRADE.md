@@ -185,6 +185,18 @@ A grade não sabe editar, e **não é ela que deve saber** — ver §5.
 
 ---
 
+### Classe na linha (`classeDaLinha`) — opcional
+
+Uma função `(linha, indice) => "classe"`. Existe porque **o realce da linha
+inteira diz o que uma célula não diz**: no Profiler, o pedido que falhou tem de
+saltar numa lista de 300 correndo a cada segundo, e ler a coluna «estado» de
+cada uma não é ler, é procurar.
+
+**Guarda nova entra pedida, não imposta:** quem não passa a opção sai como
+sempre, e as outras grades não mudam um byte.
+
+---
+
 ## 5. Edição na célula: recusa fundamentada
 
 O `phx-grid` não tem edição na célula em nenhuma versão (0.6.0, 0.7.0, 0.8.0
@@ -348,6 +360,82 @@ Hoje os quatro são conferidos entre si pelo teste **`grade_versao_nao_mente`**
 (`v0.1.0` no cabeçalho), o teste falha dizendo qual dos quatro discorda.
 
 **Número digitado à mão envelhece calado.**
+
+---
+
+## 8.1 A padronização, fechada por CLASSIFICAÇÃO (pedido 158)
+
+Palavra do dono: *«todas as `table` são PhxGrid com agrupamento dinâmico»*. A
+leitura fácil desse pedido é «converter as 24 que sobraram». A leitura certa é
+outra, e o próprio conferidor já a dizia antes de alguém ter classificado:
+**nem toda `<table>` é grade.**
+
+Medido, e não estimado: das 24 que restavam, **quatro eram lista de dado de
+verdade** e viraram grade; **vinte não são lista**, e entraram em `ISENTAS` com
+o motivo escrito. A catraca fechou em **zero** — que não quer dizer «acabou a
+tela», quer dizer **não há mais tabela à mão sem motivo**.
+
+### As quatro que viraram grade
+
+| onde | por que é grade de verdade |
+|---|---|
+| **Profiler** | um fluxo de até 300 eventos correndo a **cada segundo**, com nove colunas. É a tela em que alguém fica parado olhando — e era a única sem filtrar, sem ordenar e sem exportar |
+| **Transações abertas** | dez colunas de estado vivo; agrupar por `estado` ou por `usuário` é a pergunta que a tela existe para responder |
+| **Consulta da tela da Claude** | resultado de `SELECT`, com colunas **dinâmicas** vindas do próprio resultado. O caso mais forte de todos: quem roda uma consulta quer ordenar e exportar o que voltou |
+| **o ajudante `tabela()`** | morreu junto com o último chamador dele, que era a consulta acima. Com ele foi o par `celulaValor`, que embrulhava a célula em `<td>` |
+
+### O padrão que as duas vivas seguem
+
+Profiler e transações repintam por relógio, e por isso seguem o **painel vivo**
+já estabelecido em `painelDaProva` e no gestor de threads: a grade nasce **uma
+vez** e o relógio chama `redesenhar()`. Refazer a grade a cada volta jogaria
+fora ordenação, filtro e agrupamento **no meio da leitura**.
+
+E a armadilha que isso trouxe, e que o comentário do `painelDaProva` já
+avisava: `profLinhas` era **reatribuído** (`= []`) em três lugares, e a grade
+guarda a *referência* do array. Trocar a referência a deixaria pintando o array
+velho para sempre. Hoje é `const`, e esvaziar é `length = 0`.
+
+### Duas colunas derivadas nascem NO DADO
+
+O «alvo» do Profiler (`database.tabela`) e o «estado» (ok / erro / em curso)
+existem como campo, e não como `formato`. **Coluna que só existe no formatador
+agrupa e ordena por `undefined`** — a grade não vê o que a tela desenha. Vale
+para toda coluna calculada.
+
+### As vinte dispensas, por natureza
+
+| natureza | quais | por que grade seria estrago |
+|---|---|---|
+| **Formulário** (`input` por célula) | `desenharNovaTabela` ×2, `cartaoNovaTabelaER`, `editorDeMenu`, `assistenteDbLink`, `dialogoConflito` | ordenar um formulário reordena as escolhas de quem está preenchendo. Na de campos, a ordem **é** a ordem de digitação; no diálogo de conflito, cada linha é uma coluna em disputa |
+| **Ficha técnica** (campo → valor → o que faz) | `verConfigTabela` ×3, `verConfigBanco`, `grupoDeAjustes`, `verCreditos` | a ordem é a do raciocínio. Ordenar transforma uma explicação em lista |
+| **Ordem que é informação** | `verDiretivasDoBanco` | os portões **na ordem em que fecham**: o 1 recusa antes de o 2 existir |
+| **Prévia ilustrativa** | `gradeDeParticoes` ×2 | três volumes de exemplo e uma linha de reticências. Ordenar uma reticência não significa nada |
+| **Assistente** | `pivotPasso1` ×2 | escolha por clique **simples**; a grade abre linha no clique **duplo**. Trocar piora o passo |
+| **Já é o agrupamento** | `pivotPasso3` | o resultado do pivot, com colunas vindas do dado e totais nas duas pontas |
+| **Desenho** | `cartaoTabelaER` | nó arrastável de 220px; filtro e paginação não cabem num cartão que a pessoa está movendo |
+| **Não é tabela** | `telaExportar` | limite medido da régua — ver abaixo |
+
+### O limite da régua, medido e registrado em vez de escondido
+
+Uma das 20 **não é uma tabela**: é a palavra `<table>` dentro do texto que
+explica a importação de HTML («a primeira `<table>` do documento»). A varredura
+casa `<table` em qualquer lugar da linha.
+
+Conferido **linha a linha nas 20**: é a única em prosa. Não virou heurística
+porque distinguir marcação de texto por padrão seria frágil — e uma régua
+frágil esconde tabela de verdade amanhã, que é o oposto do que ela existe para
+fazer. Ficou como dispensa nomeada, e `nenhuma_isencao_morta` reprova o dia em
+que a linha sumir.
+
+### A guarda de piso, aposentada com o motivo
+
+O teste tinha um piso (`sobraram muito menos que a catraca — baixe-a no mesmo
+commit`). Com a catraca em zero ele virou `>= 0`, sempre verdadeiro, e o clippy
+o reprovou. Ele existia para **forçar a catraca a descer junto da conversão**, e
+em zero não há para onde descer. Quem guarda contra o zero *por engano* — a
+régua quebrada medindo nada — é `o_conferidor_acha_o_que_promete`, que a
+exercita com fonte sintética e não depende do número.
 
 ---
 

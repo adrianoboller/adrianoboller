@@ -1375,7 +1375,13 @@
           html += "</tr>";
           continue;
         }
-        html += "<tr>";
+        // `classeDaLinha` e OPCIONAL, e sem ela a linha sai como sempre --
+        // as 52 grades que nao a passam nao mudam um byte. Existe porque o
+        // realce da linha inteira diz o que uma celula nao diz: no Profiler,
+        // o pedido que FALHOU tem de saltar numa lista de 300 correndo a cada
+        // segundo, e ler a coluna «estado» de cada uma nao e ler, e procurar.
+        var clsL = cfg.classeDaLinha ? cfg.classeDaLinha(linhas[j], j) : "";
+        html += clsL ? '<tr class="' + esc(clsL) + '">' : "<tr>";
         if (temSelecao) {
           ch = selecionadas[chaveDe(linhas[j], j)] ? " checked" : "";
           html += '<td class="phx-td phx-td-sel" data-ls="' + j + '"><input type="checkbox" tabindex="-1"' + ch + "></td>";
