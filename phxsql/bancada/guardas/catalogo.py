@@ -2763,4 +2763,31 @@ pub fn limpar() {
             "o_bidirecional_aceita_a_filha_que_chega_antes_da_mae",
         ],
     },
+    {
+        "id": "recascata-sem-conferir-a-arvore",
+        "titulo": "a recuperação gravava a primeira filha e só então descobria que a neta da segunda restringe",
+        "porque": (
+            "o pedido 168 pos `recascatear` na recuperacao; o 169 pos "
+            "`conferir_a_arvore` no `atualizar`. `recascatear` nasceu antes da "
+            "conferencia e ficou sem ela -- conserto novo entra no caminho que "
+            "o motivou, e o caminho irmao fica. So aparece com DUAS filhas no "
+            "nivel 1: com uma so, a recusa da neta chega antes de qualquer "
+            "escrita e nada denuncia o buraco."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        Self::conferir_a_arvore(&mut passos, 1)?;
+        self.aplicar_ao_alterar(passos)""",
+        "troca": """        // DEFEITO REPOSTO: aplica sem conferir a arvore, que e como
+        // `recascatear` nasceu -- grava a primeira filha e so entao recusa.
+        self.aplicar_ao_alterar(passos)""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "cascata-ao-alterar"],
+        "caem": [
+            "a_recascata_recusa_antes_de_gravar_a_primeira_filha",
+        ],
+        "seguem": [
+            "a_cascata_alcanca_a_neta",
+            "a_filha_acompanha_a_chave_que_a_mae_mudou",
+        ],
+    },
 ]

@@ -731,6 +731,41 @@ marca já não existe mais para retomar). Está aqui, escrito, e não escondido,
 porque a alternativa — devolver «completada» com a filha errada — é o defeito
 exato que a §5.5.1 já pagou uma vez, só que por uma porta diferente.
 
+### 5.5.4 A recascata que gravava a primeira filha antes de conferir a segunda
+
+Achado **lendo, na integração das duas frentes** — não por teste, e é isso que o
+torna incômodo: a suíte inteira estava verde.
+
+`Table::atualizar` confere a árvore da cascata inteira antes de gravar (pedido
+169). `Table::recascatear` — o caminho que a **recuperação** usa — não conferia:
+planejava o nível 1 e já aplicava. Os dois métodos são do mesmo dia e do mesmo
+assunto; `recascatear` é do pedido 168 e nasceu **antes** de a conferência
+existir, então ela entrou no caminho que a motivou e o irmão ficou.
+
+**Por que isso importa, e o motivo não é a mãe.** Na recuperação a mãe já está
+no disco — não há o que proteger nela recusando cedo. O que se protege são as
+**outras filhas**: com duas filhas no nível 1, aplicar sem conferir grava a
+primeira inteira e só então desce na segunda e descobre que a neta dela
+restringe. Meia cascata, gravada, num arranque que ninguém assiste. Recusar
+antes manda o caso inteiro para `operacoes IMPOSSIVEIS`, que é o mesmo
+comportamento que a §5.5.3 já defende para o índice sujo.
+
+**Prova real, nos dois sentidos.** Com o defeito de pé o teste devolve `Int(7)`
+para a primeira filha — gravada, com a cascata recusada logo depois; com o
+conserto, `Int(1)`. Duas condições que a montagem do teste exigiu, e as duas
+são conhecimento em si:
+
+* **com UMA filha o defeito não aparece**, porque cada `filha.atualizar`
+  confere a própria sub-árvore — numa cadeia mãe→filha→neta→bisneta a recusa
+  chega antes de qualquer escrita. É preciso um **leque** no nível 1;
+* **a ordem das irmãs não é sorteio**: `catalogo::tabelas_em` faz
+  `nomes.sort()`. Por isso o teste nomeia as filhas `aaa_pedidos` e
+  `zzz_pedidos` — sem isso ele passaria em metade das corridas, e teste que
+  passa por engano é pior que teste que falta.
+
+`crates/phxsql-store/tests/cascata-ao-alterar.rs`, guarda
+`recascata-sem-conferir-a-arvore`.
+
 ### 5.6 A lição que o próprio teste do `SIGKILL` deu
 
 A primeira versão da prova por soquete exigia **sempre** as 3.000 linhas depois

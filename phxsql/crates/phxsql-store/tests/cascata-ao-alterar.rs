@@ -487,3 +487,93 @@ fn a_chave_nasce_com_cascata_ao_alterar() {
     assert_eq!(fk.ao_alterar, AcaoRi::Cascata);
     assert_eq!(fk.ao_excluir, AcaoRi::Restringir);
 }
+
+// ---------------------------------------------------------------------------
+// O caminho da RECUPERACAO: `recascatear`
+// ---------------------------------------------------------------------------
+
+/// `recascatear` conferia a arvore TARDE -- e gravava a primeira filha antes.
+///
+/// # O defeito, e por que ele so aparece no encontro de dois pedidos
+///
+/// O 168 pos `recascatear` na recuperacao; o 169 pos `conferir_a_arvore` no
+/// `atualizar`, para recusar a arvore inteira ANTES de a mae ir ao disco.
+/// `recascatear` nasceu primeiro e ficou sem a conferencia: ele planejava o
+/// nivel 1 e ja aplicava.
+///
+/// A diferenca so e visivel com **duas filhas no nivel 1**, porque cada
+/// `filha.atualizar` confere a propria sub-arvore: com uma filha so, a recusa
+/// da neta chega antes de qualquer escrita e nada denuncia o buraco. Com duas,
+/// a primeira e gravada e so entao a segunda recusa -- cascata pela metade, e
+/// na recuperacao, que e onde ninguem esta olhando.
+///
+/// # A ordem NAO e sorteio, e e isso que torna o teste honesto
+///
+/// `catalogo::tabelas_em` ordena os nomes, entao `aaa_pedidos` e sempre
+/// planejada antes de `zzz_pedidos`. Sem isso o teste passaria em metade das
+/// corridas -- e teste que passa por engano e pior que teste que falta.
+///
+/// # Prova real
+///
+/// Tirar o `conferir_a_arvore` de `recascatear` faz `aaa_pedidos` voltar
+/// `Int(7)` aqui: gravada, com a cascata recusada logo depois.
+#[test]
+fn a_recascata_recusa_antes_de_gravar_a_primeira_filha() {
+    let d = dir("recascatear-arvore");
+    let mut m = mae(&d);
+    m.inserir(&[Value::Int(1), Value::Str("Ana".into())])
+        .unwrap();
+    // A chave de destino ja existe: a queda foi DEPOIS de a mae ir ao disco, e
+    // e esse o estado que `recascatear` encontra. Sem ela, a filha recusaria
+    // pela propria chave estrangeira e o teste passaria pelo motivo errado.
+    m.inserir(&[Value::Int(7), Value::Str("Ana".into())])
+        .unwrap();
+    m.sincronizar().unwrap();
+
+    let mut boa = filha_com(&d, "aaa_pedidos", AcaoRi::Cascata, true, true);
+    let pb = boa.inserir(&[Value::Int(10), Value::Int(1)]).unwrap();
+    boa.sincronizar().unwrap();
+
+    let mut ruim = filha_com(&d, "zzz_pedidos", AcaoRi::Cascata, true, true);
+    ruim.inserir(&[Value::Int(20), Value::Int(1)]).unwrap();
+    ruim.sincronizar().unwrap();
+
+    // A neta pendura RESTRINGIR na SEGUNDA filha: quem recusa esta no nivel 2,
+    // e so se descobre descendo.
+    let e = Schema::new(
+        "itens",
+        vec![
+            Column::new("id", ColumnType::Int4).obrigatoria(),
+            Column::new("cliente_id", ColumnType::Int4),
+        ],
+        vec![
+            IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico(),
+            IndexDef::new("porCliente", vec![IndexColumn::asc(1)]),
+        ],
+    )
+    .unwrap()
+    .com_chaves_estrangeiras(vec![ForeignKey::new(
+        "fk_pedido",
+        vec![1],
+        "zzz_pedidos",
+        vec!["cliente_id".into()],
+    )
+    .ao_alterar(AcaoRi::Restringir)])
+    .unwrap();
+    let mut n = Table::criar(&d, e).unwrap();
+    n.inserir(&[Value::Int(100), Value::Int(1)]).unwrap();
+    n.sincronizar().unwrap();
+
+    m.recascatear(
+        &[Value::Int(1), Value::Str("Ana".into())],
+        &[Value::Int(7), Value::Str("Ana".into())],
+    )
+    .expect_err("a neta restringe: a recascata tinha de recusar");
+
+    let mut boa = Table::abrir(&d, "aaa_pedidos").unwrap();
+    assert_eq!(
+        aponta_para(&mut boa, pb),
+        Value::Int(1),
+        "a recusa chegou DEPOIS de gravar a primeira filha: cascata pela metade"
+    );
+}

@@ -1105,10 +1105,17 @@ impl Table {
     /// primeira linha quando nenhuma coluna indexada mudou, e nao custa nem a
     /// varredura dos esquemas irmaos.
     pub fn recascatear(&mut self, antes: &[Value], depois: &[Value]) -> Result<()> {
-        let passos = self.planejar_ao_alterar(antes, depois)?;
+        let mut passos = self.planejar_ao_alterar(antes, depois)?;
         if passos.is_empty() {
             return Ok(());
         }
+        // A mesma conferencia que o `atualizar` faz, e pelo mesmo motivo: com
+        // DUAS filhas no nivel 1, aplicar sem conferir grava a primeira e so
+        // entao descobre que a neta da segunda restringe. Aqui a mae ja esta no
+        // disco e nao ha o que proteger nela -- o que se protege sao as OUTRAS
+        // filhas, e recusar inteiro manda o caso para `operacoes IMPOSSIVEIS`
+        // em vez de deixar meia cascata numa recuperacao que ninguem assiste.
+        Self::conferir_a_arvore(&mut passos, 1)?;
         self.aplicar_ao_alterar(passos)
     }
 
