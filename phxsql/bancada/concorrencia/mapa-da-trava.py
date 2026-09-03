@@ -108,6 +108,16 @@ MARCADORES = {
     # metade das mencoes a gatilho neste arquivo e do caminho que NAO segura.
     "usuario": [r"\brodar_gatilhos_antes\b", r"\brotina::executar\b",
                 r"\bContexto::de_gatilho\b"],
+    # A pergunta da SP000012, e nao a da SP000011: «esta secao pode ser
+    # INTERROMPIDA?». O KILL e o STATEMENT TIMEOUT desta casa so mordem onde
+    # alguem chamou `Atividade::siga` -- entre duas unidades de trabalho
+    # seguras. Secao critica sem nenhum ponto desses e secao que, uma vez
+    # comecada, vai ate o fim segurando todo mundo: mandar parar nao para.
+    #
+    # A agulha e a CHAMADA (`.siga(`) e a abertura da fase, nunca a palavra
+    # solta: `fn siga` tem uma unica definicao nesta arvore, e conta-la seria
+    # dizer que a telemetria cancela a si mesma.
+    "cancelavel": [r"\.siga\s*\(", r"\bfase_cancelavel\b"],
 }
 # A varredura e medida a parte: laco NA PROPRIA secao critica pesa diferente de
 # laco tres saltos abaixo, dentro de um ajudante que talvez nem seja chamado.
@@ -374,6 +384,9 @@ def classificar(classes, lacos):
     rotula-la «disco» esconderia o que ha de pior nela.
     """
     m = classes
+    # `cancelavel` responde outra pergunta (a da SP000012) e nao entra na
+    # ordem de gravidade: uma secao nao e mais nem menos grave por poder ser
+    # interrompida -- ela e mais ou menos SUPORTAVEL, que e coisa diferente.
     if "usuario" in m:
         return "codigo-do-dono"
     if "rede" in m or "espera" in m:
@@ -527,7 +540,14 @@ def para_o_desenho(secoes):
         "     e o que um RwLock NAO conserta -- o escritor continua exclusivo",
         f"{sum(1 for s in secoes if 'usuario' in certas(s, 'proprias'))}/{n} "
         "rodam codigo do DONO DO BANCO (gatilho BEFORE) com a trava na mao:",
-        "     duracao sem teto, decidida por quem escreveu o gatilho",
+        "     duracao com teto de PAREDE desde 03/09: 500 ms, o mesmo numero do",
+        "     `transacao_lock_timeout_ms`. Antes o teto era so em PASSOS, e teto",
+        "     de passos nao e teto de trabalho -- ver PRAZO_DO_GATILHO_ANTES",
+        f"{sum(1 for s in secoes if 'cancelavel' in certas(s, 'proprias'))}/{n} "
+        "tem PONTO DE CANCELAMENTO proprio (`Atividade::siga`):",
+        "     e o teto do que um KILL ou um STATEMENT TIMEOUT alcanca. Nas",
+        "     outras, mandar parar nao para -- a secao vai ate o fim segurando",
+        "     todo mundo. E o numero da SP000012, e nao o da SP000011",
         f"{sum(1 for s in secoes if s['solta_cedo'])}/{n} soltam a trava cedo, "
         "por `drop` explicito",
         f"{sum(1 for s in secoes if s['lacos_diretos'])}/{n} tem laco DIRETO "
