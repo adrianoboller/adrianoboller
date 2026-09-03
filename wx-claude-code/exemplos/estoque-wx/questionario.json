@@ -13,6 +13,168 @@
     "modo": "inventario",
     "aprovador": "Adriano Boller"
   },
+  "0_empresa_e_projeto": {
+    "0_1_softhouse": {
+      "razao_social": "Boller Sistemas Ltda",
+      "nome_fantasia": "Boller Sistemas",
+      "cnpj": "00.000.000/0001-00",
+      "solicitacao": "Converter o ESTOQUE (WINDEV 2025) para Rust + React, mantendo as regras de negócio e as telas do legado, com entrega até o fim do ano.",
+      "observacao": ""
+    },
+    "0_2_diretores": [
+      {
+        "nome": "Adriano Boller",
+        "cargo": "Diretor de tecnologia",
+        "email": "adriano@exemplo.com.br"
+      },
+      {
+        "nome": "Maria Souza",
+        "cargo": "Diretora comercial",
+        "email": "maria@exemplo.com.br"
+      }
+    ],
+    "0_3_endereco": {
+      "logradouro": "Rua XV de Novembro",
+      "numero": "1000",
+      "complemento": "sala 501",
+      "bairro": "Centro",
+      "cidade": "Blumenau",
+      "uf": "SC",
+      "cep": "89010-000",
+      "pais": "Brasil"
+    },
+    "0_4_logotipo_da_empresa": {
+      "status": "provided",
+      "arquivo": "marca/logotipo-empresa.svg",
+      "observacao": ""
+    },
+    "0_5_logotipo_do_software": {
+      "status": "provided",
+      "arquivo": "marca/logotipo-estoque.svg",
+      "observacao": ""
+    },
+    "0_6_finalidade": "Controlar o estoque de produtos e as movimentações de entrada e saída de uma distribuidora.",
+    "0_7_objetivos": [
+      "Sair do WINDEV sem perder nenhuma regra de negócio",
+      "Rodar na web com o mesmo teclado do legado",
+      "Fechar o inventário mensal em menos de um dia"
+    ],
+    "0_8_descricao_do_software": {
+      "descricao": "Sistema de estoque com cadastro de produtos e fornecedores, movimentação com saldo por lote e relatório de posição.",
+      "recursos": [
+        "Cadastro de produtos com código de barras",
+        "Movimentação de entrada e saída com saldo por lote",
+        "Relatório de posição e inventário",
+        "Etiquetas em impressora térmica"
+      ],
+      "modulos": [
+        "cadastros",
+        "movimentacao",
+        "relatorios"
+      ]
+    },
+    "0_9_organograma": {
+      "status": "not_applicable",
+      "arquivo": "",
+      "posicoes": [
+        {
+          "papel": "patrocinador",
+          "nome": "Adriano Boller",
+          "responde_a": ""
+        },
+        {
+          "papel": "gerente do projeto",
+          "nome": "PMO do plugin",
+          "responde_a": "patrocinador"
+        },
+        {
+          "papel": "analista do legado",
+          "nome": "João Lima",
+          "responde_a": "gerente do projeto"
+        }
+      ],
+      "observacao": "sem arquivo; posições informadas na conversa"
+    },
+    "0_10_fluxograma": {
+      "status": "not_applicable",
+      "arquivo": "",
+      "etapas": [
+        "Entrada de nota",
+        "Conferência",
+        "Lançamento no estoque",
+        "Saída por pedido",
+        "Inventário"
+      ],
+      "observacao": ""
+    },
+    "0_11_cronograma": {
+      "inicio": "2026-09-08",
+      "prazo_final": "2026-12-18",
+      "marcos": [
+        {
+          "marco": "Inventário aprovado",
+          "data": "2026-09-26",
+          "gate": "G1"
+        },
+        {
+          "marco": "Piloto vertical em produção",
+          "data": "2026-10-30",
+          "gate": "G4"
+        },
+        {
+          "marco": "Aceite final",
+          "data": "2026-12-18",
+          "gate": "G7"
+        }
+      ],
+      "observacao": ""
+    },
+    "0_12_orcamento": {
+      "valor": 180000,
+      "moeda": "BRL",
+      "base": "fechado",
+      "aprovado_por": "Adriano Boller",
+      "observacao": ""
+    },
+    "0_13_riscos": [
+      {
+        "risco": "PDF de código gerado como imagem em partes",
+        "probabilidade": "média",
+        "impacto": "alto",
+        "resposta": "OCR só como partial e GAP por procedure",
+        "dono": "analista do legado"
+      },
+      {
+        "risco": "Impressora térmica sem driver no destino",
+        "probabilidade": "baixa",
+        "impacto": "médio",
+        "resposta": "RPT-* comparado página a página no G4",
+        "dono": "engenheiro"
+      }
+    ],
+    "0_14_pessoal_envolvido": [
+      {
+        "nome": "Adriano Boller",
+        "papel": "patrocinador e aprovador",
+        "empresa": "Boller Sistemas",
+        "contato": "adriano@exemplo.com.br"
+      },
+      {
+        "nome": "João Lima",
+        "papel": "analista do legado",
+        "empresa": "Boller Sistemas",
+        "contato": "joao@exemplo.com.br"
+      }
+    ],
+    "0_15_github": {
+      "url": "https://github.com/adrianoboller/estoque-rs",
+      "branch": "main",
+      "usuario": "adrianoboller",
+      "credencial_ref": "GITHUB_TOKEN",
+      "diretorio_destino": "./estoque-rs",
+      "observacao": "token configurado na variável de ambiente GITHUB_TOKEN da máquina que faz o push"
+    }
+  },
   "A_sql": {
     "status": "provided",
     "arquivos": [

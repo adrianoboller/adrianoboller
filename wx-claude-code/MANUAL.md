@@ -53,7 +53,7 @@ python3 wx-claude-code/skills/conversao-wx/scripts/query_wlanguage_help.py --ver
 listagem que o modelo devolve pode omitir um item; confira por nome, não
 por contagem.
 
-**Validar o pacote** (roda os 13 testes de regressão):
+**Validar o pacote** (roda os 15 testes de regressão):
 
 ```bash
 python3 wx-claude-code/skills/conversao-wx/scripts/validate_plugin_bundle.py wx-claude-code --strict
@@ -121,6 +121,13 @@ que não tem fonte aparece como `INDISPONÍVEL`, nunca como zero.
 Cria `.wx-migration/pmo/` com plano por gate, orçamento, RAID (riscos,
 premissas, issues, dependências), backlog, base de conhecimento e a pasta de
 ciclos PDCA.
+
+**O que o PMO já recebe do wizard.** O bloco 0 do questionário (capítulo 6)
+deixa em `pmo/` o cronograma com o prazo final, o organograma, o fluxograma,
+os riscos iniciais (`RSK-*`) e `projeto.json` com o orçamento financeiro. O
+`iniciar` lê esse arquivo e preenche `previsto_para` de cada gate que tem
+marco; o `status` mostra quantos dias faltam para o prazo final e o orçamento
+aprovado, ou `INDISPONÍVEL` se não foram informados.
 
 **Gates.** O trabalho avança em oito portões, G0 a G7, e cada um depende de
 um aprovador humano:
@@ -245,6 +252,7 @@ Crie uma pasta de evidências dentro do projeto de destino, por exemplo
 | `screenshots/*.png` | cada tela em cada estado (normal, vazio, erro) | capturas |
 | `screenshots/screenshots.json` | para cada captura: `arquivo`, `tela`, `estado`, `plataforma` | à mão |
 | `dados-de-amostra/` | dados sintéticos e resultados esperados do legado (golden master) | à mão ou exportação anonimizada |
+| `marca/*.svg` ou `.png` | logotipo da empresa e do software, e organograma ou fluxograma se existirem como arquivo | do departamento de marketing |
 
 Regras:
 
@@ -253,7 +261,8 @@ Regras:
 - Os anexos são **somente leitura**. O plugin nunca escreve neles; tudo que
   gera vai para `.wx-migration/`.
 - Nada de senha, token, certificado ou dado real de pessoa. Dados de amostra
-  são sintéticos ou anonimizados.
+  são sintéticos ou anonimizados. A credencial do GitHub de destino fica na
+  máquina (variável de ambiente, `gh auth`); o questionário guarda só o nome.
 - Anexo dentro de zip: o plugin descompacta com `safe_unpack_bundle.py`
   numa pasta nova, com defesa contra travessia de caminho e zip bomb.
 
@@ -264,7 +273,7 @@ como modelo da pasta e como ensaio antes do seu projeto.
 
 ## 6. Como invocar o wizard
 
-O wizard é o questionário A–J. É sempre o primeiro comando de um projeto:
+O wizard é o questionário: o bloco 0 da empresa e do projeto, e as letras A–J. É sempre o primeiro comando de um projeto:
 
 ```text
 /wx-claude-code:questionario ./meu-projeto
@@ -279,6 +288,35 @@ versões de Android e iOS. Quem não tem um item responde «não tenho», e isso
 vira `missing` no manifesto, nunca `not_applicable` por inferência.
 
 Um caminho só conta como fornecido depois que o wizard **abre o arquivo**.
+
+**Bloco 0, antes da letra A.** Quinze perguntas sobre quem pede e o que é o
+projeto, uma por mensagem:
+
+| Item | Pergunta |
+| --- | --- |
+| 0.1 | softhouse solicitante (razão social, fantasia, CNPJ) e a solicitação em uma ou duas frases |
+| 0.2 | diretores: nome, cargo, contato |
+| 0.3 | endereço completo |
+| 0.4 | logotipo da empresa (arquivo na pasta de evidências) |
+| 0.5 | logotipo do software |
+| 0.6 | finalidade do software |
+| 0.7 | objetivos do projeto |
+| 0.8 | descrição do software, recursos e módulos |
+| 0.9 | organograma: arquivo ou as posições (papel, nome, responde a) |
+| 0.10 | fluxograma: arquivo ou as etapas em ordem (vira Mermaid) |
+| 0.11 | cronograma: início, marcos com data e gate, **prazo final de entrega** |
+| 0.12 | orçamento: valor, moeda, base e quem aprovou |
+| 0.13 | riscos conhecidos: probabilidade, impacto, resposta, dono |
+| 0.14 | pessoal envolvido |
+| 0.15 | GitHub de destino: URL, branch, usuário, **nome da credencial** e diretório de destino |
+
+**Sobre a senha.** O wizard não pergunta a senha nem o token, e o script
+recusa o questionário se algum vier preenchido: a regra do projeto é senha
+nunca em texto puro. Você informa o **nome** da variável de ambiente ou do
+segredo (`GITHUB_TOKEN`, por exemplo) e configura o valor na máquina que fará
+o push. Se colar a senha na conversa por engano, revogue-a.
+
+**Letras A a J:**
 
 | Letra | Pergunta |
 | --- | --- |
@@ -304,6 +342,10 @@ E três perguntas de governança no fim: versão e idioma do WX; modo
   wx-inputs.manifest.json    manifesto que o pré-flight lê
   conversion.config.json     modo, destino, fidelidade
   gaps.md, traceability.csv  vazios, prontos para o G1
+  empresa.md                 softhouse, diretores, endereço, logotipos, finalidade, objetivos, pessoal
+  entrega.json               GitHub, branch, usuário, nome da credencial, diretório de destino
+  pmo/projeto.json           prazo final, marcos, orçamento financeiro (o pmo.py iniciar lê)
+  pmo/cronograma.md, organograma.md, fluxograma.md, riscos.md
 CLAUDE.md                    regras do projeto (com estilo de resposta se J = sim)
 DESIGN.md                    esboço da paleta (se F = sim)
 ```

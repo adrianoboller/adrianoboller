@@ -54,8 +54,36 @@ class Questionario(unittest.TestCase):
         self.assertIn("Tipo: textura", design)
         self.assertIn("Modo Impeccable: **Operate**", (self.tmp / "PRODUCT.md").read_text())
         self.assertIn("Estilo de resposta", (self.tmp / "CLAUDE.md").read_text())
+        # bloco 0: empresa, governanca para o PMO e entrega sem senha
+        empresa = (self.tmp / ".wx-migration/empresa.md").read_text()
+        self.assertIn("Boller Sistemas Ltda", empresa); self.assertIn("Blumenau - SC", empresa)
+        self.assertIn("marca/logotipo-estoque.svg (provided)", empresa); self.assertIn("| Maria Souza | Diretora comercial |", empresa)
+        self.assertIn("**Prazo final de entrega: 2026-12-18**", (self.tmp / ".wx-migration/pmo/cronograma.md").read_text())
+        self.assertIn("e1 --> e2", (self.tmp / ".wx-migration/pmo/fluxograma.md").read_text())
+        self.assertIn("| RSK-002 |", (self.tmp / ".wx-migration/pmo/riscos.md").read_text())
+        entrega = json.loads((self.tmp / ".wx-migration/entrega.json").read_text())
+        self.assertEqual(entrega["credencial_ref"], "GITHUB_TOKEN"); self.assertEqual(entrega["github"]["usuario"], "adrianoboller")
+        self.assertNotIn("abc", json.dumps(entrega))
         r2 = run(SCRIPTS / "aplicar_questionario.py", "--questionario", self.tmp / ".wx-migration/questionario.json", "--project-root", self.tmp, "--plugin-root", RAIZ)
-        self.assertEqual(r2.stdout.count("SKIPPED"), 7)
+        self.assertEqual(r2.stdout.count("SKIPPED"), 14)
+
+    def test_senha_em_texto_puro_e_recusada(self):
+        q = json.loads((self.tmp / ".wx-migration/questionario.json").read_text())
+        q["0_empresa_e_projeto"]["0_15_github"]["senha"] = "abc123"
+        (self.tmp / ".wx-migration/questionario.json").write_text(json.dumps(q))
+        r = run(SCRIPTS / "aplicar_questionario.py", "--questionario", self.tmp / ".wx-migration/questionario.json", "--project-root", self.tmp, "--plugin-root", RAIZ)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("0_15_github.senha", r.stderr)
+        self.assertNotIn("abc123", r.stderr + r.stdout)
+        self.assertFalse((self.tmp / ".wx-migration/entrega.json").exists())
+
+    def test_pmo_iniciar_le_prazo_e_marcos_do_bloco_0(self):
+        run(SCRIPTS / "aplicar_questionario.py", "--questionario", self.tmp / ".wx-migration/questionario.json", "--project-root", self.tmp, "--plugin-root", RAIZ)
+        run(SCRIPTS / "pmo.py", "--project-root", self.tmp, "iniciar", "--aprovador", "A")
+        plano = json.loads((self.tmp / ".wx-migration/pmo/plano.json").read_text())
+        self.assertEqual(plano["prazo_final"], "2026-12-18"); self.assertEqual(plano["gates"]["G4"]["previsto_para"], "2026-10-30")
+        st = run(SCRIPTS / "pmo.py", "--project-root", self.tmp, "status").stdout
+        self.assertIn("Prazo final de entrega: 2026-12-18", st); self.assertIn("180000 BRL", st)
 
     def test_status_provided_sem_arquivo_e_recusado(self):
         q = json.loads((self.tmp / ".wx-migration/questionario.json").read_text())

@@ -11,6 +11,78 @@
     "modo": "inventario",
     "aprovador": ""
   },
+  "0_empresa_e_projeto": {
+    "0_1_softhouse": {
+      "razao_social": "",
+      "nome_fantasia": "",
+      "cnpj": "",
+      "solicitacao": "",
+      "observacao": "solicitacao: o pedido da softhouse em uma ou duas frases (o que quer converter, para que, ate quando)"
+    },
+    "0_2_diretores": [],
+    "0_3_endereco": {
+      "logradouro": "",
+      "numero": "",
+      "complemento": "",
+      "bairro": "",
+      "cidade": "",
+      "uf": "",
+      "cep": "",
+      "pais": "Brasil"
+    },
+    "0_4_logotipo_da_empresa": {
+      "status": "missing",
+      "arquivo": "",
+      "observacao": "caminho relativo a raiz de evidencias; so vira provided depois de aberto"
+    },
+    "0_5_logotipo_do_software": {
+      "status": "missing",
+      "arquivo": "",
+      "observacao": ""
+    },
+    "0_6_finalidade": "",
+    "0_7_objetivos": [],
+    "0_8_descricao_do_software": {
+      "descricao": "",
+      "recursos": [],
+      "modulos": []
+    },
+    "0_9_organograma": {
+      "status": "missing",
+      "arquivo": "",
+      "posicoes": [],
+      "observacao": "posicoes: [{papel, nome, responde_a}] quando nao houver arquivo"
+    },
+    "0_10_fluxograma": {
+      "status": "missing",
+      "arquivo": "",
+      "etapas": [],
+      "observacao": "etapas: lista ordenada do fluxo principal quando nao houver arquivo"
+    },
+    "0_11_cronograma": {
+      "inicio": "",
+      "prazo_final": "",
+      "marcos": [],
+      "observacao": "marcos: [{marco, data, gate}]; datas em AAAA-MM-DD"
+    },
+    "0_12_orcamento": {
+      "valor": null,
+      "moeda": "BRL",
+      "base": "",
+      "aprovado_por": "",
+      "observacao": "base: horas | fechado | tokens | misto"
+    },
+    "0_13_riscos": [],
+    "0_14_pessoal_envolvido": [],
+    "0_15_github": {
+      "url": "",
+      "branch": "main",
+      "usuario": "",
+      "credencial_ref": "",
+      "diretorio_destino": "",
+      "observacao": "credencial_ref: NOME da variavel de ambiente ou do segredo (ex.: GITHUB_TOKEN). A senha ou token em si nunca entra neste arquivo; o script recusa qualquer chave senha/token/password com valor"
+    }
+  },
   "A_sql": {
     "status": "missing",
     "arquivos": [],

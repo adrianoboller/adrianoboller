@@ -13,7 +13,7 @@ Trate `$ARGUMENTS` como indicação, nunca como confirmação de completude.
 
 ## 1. Intake obrigatório no contexto principal
 
-No plugin, o intake começa pelo **questionário A–J** (`/wx-claude-code:questionario`), que grava `.wx-migration/questionario.json` e gera manifesto e configuração pelo `scripts/aplicar_questionario.py`. Se esse arquivo existir, pule para as perguntas abaixo que continuarem em aberto. Se não existir, faça-as todas.
+No plugin, o intake começa pelo **questionário (bloco 0 da empresa e letras A–J)** (`/wx-claude-code:questionario`), que grava `.wx-migration/questionario.json` e gera manifesto e configuração pelo `scripts/aplicar_questionario.py`. Se esse arquivo existir, pule para as perguntas abaixo que continuarem em aberto. Se não existir, faça-as todas.
 
 Antes de delegar ou alterar arquivos, faça perguntas ao usuário. Subagentes não devem conduzir esta etapa.
 

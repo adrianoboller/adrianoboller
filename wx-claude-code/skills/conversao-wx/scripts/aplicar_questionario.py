@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Aplica as respostas do questionario A-J ao espaco de trabalho .wx-migration/.
+"""Aplica as respostas do questionario (bloco 0 e letras A-J) ao espaco de trabalho .wx-migration/.
 
 Le o questionario.json, gera o manifesto de entradas, a configuracao de conversao,
 o CLAUDE.md do projeto e o esboco de DESIGN.md. Nunca sobrescreve arquivo que ja
@@ -360,6 +360,156 @@ def esboco_product(q: dict) -> str:
     ])
 
 
+# ---------------------------------------------------------------------------
+# Bloco 0: empresa e projeto. Vai para empresa.md, para o PMO e para entrega.json.
+# ---------------------------------------------------------------------------
+
+# Chaves que nunca podem carregar valor no questionario: a senha se configura
+# na maquina (variavel de ambiente, gh auth, credential manager), e o arquivo
+# guarda so o NOME dessa referencia. Regra do projeto: senha nunca em texto puro.
+CHAVES_DE_SEGREDO = re.compile(r"(senha|password|passwd|token|secret|segredo|api_?key)$", re.IGNORECASE)
+
+
+def procurar_segredos(obj, caminho: str = "") -> list[str]:
+    """Devolve os caminhos das chaves de segredo que vieram com valor preenchido."""
+    achados: list[str] = []
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            aqui = f"{caminho}.{k}" if caminho else k
+            if CHAVES_DE_SEGREDO.search(k) and not k.endswith("_ref") and v not in (None, "", [], {}):
+                achados.append(aqui)
+            achados += procurar_segredos(v, aqui)
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            achados += procurar_segredos(v, f"{caminho}[{i}]")
+    return achados
+
+
+def anexo_verificado(bloco: dict, raiz: Path) -> tuple[str, str]:
+    """(status, caminho) de um anexo unico: provided so se o arquivo abrir de verdade."""
+    arq = (bloco or {}).get("arquivo") or ""
+    st = (bloco or {}).get("status", "missing")
+    if st == "not_applicable":
+        return st, ""
+    if not arq:
+        return "missing", ""
+    if not (raiz / arq).is_file():
+        raise ValueError(f"anexo {arq!r} marcado como {st} mas nao existe em {raiz}")
+    return "provided", arq
+
+
+def _tabela(cabecalho: list[str], linhas: list[list[str]]) -> list[str]:
+    if not linhas:
+        return ["(nao informado)", ""]
+    return ["| " + " | ".join(cabecalho) + " |", "| " + " | ".join("---" for _ in cabecalho) + " |"] + ["| " + " | ".join(str(c) for c in l) + " |" for l in linhas] + [""]
+
+
+def esboco_empresa(q: dict, raiz: Path) -> str:
+    e = q.get("0_empresa_e_projeto", {}) or {}
+    sh = e.get("0_1_softhouse", {}) or {}
+    en = e.get("0_3_endereco", {}) or {}
+    desc = e.get("0_8_descricao_do_software", {}) or {}
+    st_emp, arq_emp = anexo_verificado(e.get("0_4_logotipo_da_empresa"), raiz)
+    st_sw, arq_sw = anexo_verificado(e.get("0_5_logotipo_do_software"), raiz)
+    endereco = ", ".join(x for x in [
+        " ".join(x for x in [en.get("logradouro", ""), en.get("numero", "")] if x), en.get("complemento", ""), en.get("bairro", ""),
+        " - ".join(x for x in [en.get("cidade", ""), en.get("uf", "")] if x), en.get("cep", ""), en.get("pais", "")] if x)
+    linhas = [
+        "# Empresa e projeto (bloco 0 do questionario)", "",
+        "Preenchido por `aplicar_questionario.py` a partir de `.wx-migration/questionario.json`. Logotipo so conta como `provided` depois de o arquivo abrir.", "",
+        "## Softhouse", "",
+        f"- Razao social: {sh.get('razao_social') or '(pendente)'}",
+        f"- Nome fantasia: {sh.get('nome_fantasia') or '(pendente)'}",
+        f"- CNPJ: {sh.get('cnpj') or '(nao informado)'}",
+        f"- Endereco: {endereco or '(pendente)'}",
+        f"- Logotipo da empresa: {arq_emp or '-'} ({st_emp})",
+        f"- Logotipo do software: {arq_sw or '-'} ({st_sw})", "",
+        "## Solicitacao", "", sh.get("solicitacao") or "(pendente)", "",
+        "## Diretores", "",
+        *_tabela(["nome", "cargo", "contato"], [[d.get("nome", ""), d.get("cargo", ""), d.get("email", "")] for d in e.get("0_2_diretores", []) or []]),
+        "## Finalidade", "", e.get("0_6_finalidade") or "(pendente)", "",
+        "## Objetivos", "", *([f"{i}. {o}" for i, o in enumerate(e.get("0_7_objetivos", []) or [], 1)] or ["(pendente)"]), "",
+        "## Descricao do software", "", desc.get("descricao") or "(pendente)", "",
+        "Recursos:", "", *([f"- {r}" for r in desc.get("recursos", []) or []] or ["- (pendente)"]), "",
+        f"Modulos: {', '.join(desc.get('modulos', []) or []) or '(pendente)'}", "",
+        "## Pessoal envolvido", "",
+        *_tabela(["nome", "papel", "empresa", "contato"], [[x.get("nome", ""), x.get("papel", ""), x.get("empresa", ""), x.get("contato", "")] for x in e.get("0_14_pessoal_envolvido", []) or []]),
+        "## Onde esta o resto", "",
+        "- Organograma, fluxograma, cronograma, orcamento e riscos: `pmo/` (o PMO le de la).",
+        "- Repositorio de destino e diretorio: `entrega.json` (sem senha: so o nome da credencial).", "",
+    ]
+    return "\n".join(linhas)
+
+
+def esboco_organograma(e: dict, raiz: Path) -> str:
+    o = e.get("0_9_organograma", {}) or {}
+    st, arq = anexo_verificado(o, raiz)
+    linhas = ["# Organograma do projeto", "", f"Fonte: {'arquivo `' + arq + '` na raiz de evidencias' if arq else 'posicoes informadas no questionario'} ({st}).", ""]
+    linhas += _tabela(["papel", "nome", "responde a"], [[p.get("papel", ""), p.get("nome", ""), p.get("responde_a", "")] for p in o.get("posicoes", []) or []])
+    return "\n".join(linhas)
+
+
+def esboco_fluxograma(e: dict, raiz: Path) -> str:
+    f = e.get("0_10_fluxograma", {}) or {}
+    st, arq = anexo_verificado(f, raiz)
+    etapas = f.get("etapas", []) or []
+    linhas = ["# Fluxograma do processo principal", "", f"Fonte: {'arquivo `' + arq + '`' if arq else 'etapas informadas no questionario'} ({st}).", ""]
+    if etapas:
+        linhas += ["```mermaid", "flowchart LR"] + [f"  e{i}[{et}]" for i, et in enumerate(etapas, 1)] + [f"  e{i} --> e{i+1}" for i in range(1, len(etapas))] + ["```", ""]
+    else:
+        linhas += ["(nao informado)", ""]
+    return "\n".join(linhas)
+
+
+def esboco_cronograma(e: dict) -> str:
+    c = e.get("0_11_cronograma", {}) or {}
+    linhas = ["# Cronograma", "", f"- Inicio: {c.get('inicio') or '(pendente)'}", f"- **Prazo final de entrega: {c.get('prazo_final') or '(pendente)'}**", "", "## Marcos", ""]
+    linhas += _tabela(["marco", "data", "gate"], [[m.get("marco", ""), m.get("data", ""), m.get("gate", "")] for m in c.get("marcos", []) or []])
+    linhas += ["O `pmo.py status` compara o prazo final com a data de hoje; marco com gate preenche `previsto_para` em `plano.json` no `pmo.py iniciar`.", ""]
+    return "\n".join(linhas)
+
+
+def riscos_iniciais(e: dict) -> str:
+    """Mesmo cabecalho do pmo.py iniciar, ja com as linhas do questionario (RSK-001...)."""
+    rows = [[f"RSK-{i:03d}", r.get("risco", ""), r.get("probabilidade", ""), r.get("impacto", ""), r.get("resposta", ""), r.get("dono", ""), date.today().isoformat()] for i, r in enumerate(e.get("0_13_riscos", []) or [], 1)]
+    cab = "| id | risco | prob. | impacto | resposta | dono | data |\n| --- | --- | --- | --- | --- | --- | --- |\n"
+    corpo = "".join("| " + " | ".join(str(c) for c in r) + " |\n" for r in rows)
+    return ("# RAID da conversao\n\n## Riscos\n\n" + cab + corpo + "\n"
+            "## Premissas\n\n| id | premissa | quem confirma | ate |\n| --- | --- | --- | --- |\n\n"
+            "## Issues\n\n| id | o que aconteceu | efeito | tratamento | dono | data |\n| --- | --- | --- | --- | --- | --- |\n\n"
+            "## Dependencias\n\n| id | dependemos de | para | quando | dono |\n| --- | --- | --- | --- | --- |\n")
+
+
+def montar_projeto_pmo(e: dict) -> dict:
+    c = e.get("0_11_cronograma", {}) or {}
+    o = e.get("0_12_orcamento", {}) or {}
+    sh = e.get("0_1_softhouse", {}) or {}
+    return {
+        "softhouse": sh.get("nome_fantasia") or sh.get("razao_social") or "",
+        "solicitacao": sh.get("solicitacao", ""),
+        "inicio": c.get("inicio", ""),
+        "prazo_final": c.get("prazo_final", ""),
+        "marcos": c.get("marcos", []) or [],
+        "orcamento_financeiro": {"valor": o.get("valor"), "moeda": o.get("moeda", "BRL"), "base": o.get("base", ""), "aprovado_por": o.get("aprovado_por", "")},
+        "riscos_iniciais": len(e.get("0_13_riscos", []) or []),
+        "pessoas": len(e.get("0_14_pessoal_envolvido", []) or []),
+        "fonte": "questionario.json bloco 0",
+    }
+
+
+def montar_entrega(e: dict) -> dict:
+    g = e.get("0_15_github", {}) or {}
+    ref = g.get("credencial_ref", "")
+    if ref and not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_./:-]*", ref):
+        raise ValueError(f"credencial_ref {ref!r} nao parece nome de variavel ou de segredo")
+    return {
+        "github": {"url": g.get("url", ""), "branch": g.get("branch", "main"), "usuario": g.get("usuario", "")},
+        "credencial_ref": ref,
+        "senha": "NUNCA AQUI: configure a credencial no ambiente com o nome em credencial_ref",
+        "diretorio_destino": g.get("diretorio_destino", ""),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--questionario", required=True, type=Path)
@@ -371,6 +521,9 @@ def main() -> int:
     skill = (args.plugin_root / "skills" / "conversao-wx").resolve(strict=True)
     modelos = skill / "templates"
     q = json.loads(args.questionario.read_text(encoding="utf-8"))
+    vazados = procurar_segredos(q)
+    if vazados:
+        raise ValueError("senha ou token em texto puro no questionario (" + ", ".join(vazados) + "); guarde so o nome da credencial em credencial_ref e apague o valor")
     if not q.get("respondido_em"):
         q["respondido_em"] = date.today().isoformat()
 
@@ -395,6 +548,19 @@ def main() -> int:
     if q.get("F_estilo_impeccable", {}).get("ativar"):
         saida.append(write_new(projeto / "DESIGN.md", esboco_design(q)))
         saida.append(write_new(projeto / "PRODUCT.md", esboco_product(q)))
+
+    e = q.get("0_empresa_e_projeto")
+    if e:
+        raiz = (projeto / q.get("projeto", {}).get("raiz_de_evidencias", "./inputs")).resolve()
+        saida += [
+            write_new(wx / "empresa.md", esboco_empresa(q, raiz)),
+            write_new(wx / "pmo" / "projeto.json", json.dumps(montar_projeto_pmo(e), ensure_ascii=False, indent=2) + "\n"),
+            write_new(wx / "pmo" / "organograma.md", esboco_organograma(e, raiz)),
+            write_new(wx / "pmo" / "fluxograma.md", esboco_fluxograma(e, raiz)),
+            write_new(wx / "pmo" / "cronograma.md", esboco_cronograma(e)),
+            write_new(wx / "pmo" / "riscos.md", riscos_iniciais(e)),
+            write_new(wx / "entrega.json", json.dumps(montar_entrega(e), ensure_ascii=False, indent=2) + "\n"),
+        ]
 
     for linha in saida:
         print(linha)

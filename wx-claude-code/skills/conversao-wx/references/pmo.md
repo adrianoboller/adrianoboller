@@ -12,7 +12,9 @@ registra. O agente é `pmo-gerente-de-projetos`; o comando é
   plano.json          gates, ondas, sprints, responsáveis, datas previstas
   orcamento.json      tokens e chamadas previstos × gastos por gate (medidos)
   roteamento.jsonl    cada decisão de modelo do rotear_modelo.py
-  riscos.md           RAID: riscos, premissas, issues, dependências
+  riscos.md           RAID: riscos, premissas, issues, dependências (já com os RSK-* do bloco 0)
+  projeto.json        bloco 0 do questionário: softhouse, prazo final, marcos, orçamento financeiro
+  cronograma.md, organograma.md, fluxograma.md   do bloco 0; o iniciar lê os marcos com gate
   sprints/            um resumo por sprint, no formato abaixo
   backlog.md          backlog do produto priorizado (Scrum)
   kanban.md           quadro gerado da matriz, com WIP (Kanban)

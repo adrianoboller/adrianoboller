@@ -6,7 +6,7 @@ Manual de uso passo a passo em [`MANUAL.md`](MANUAL.md). Descrição para invest
 
 Plugin para o Claude Code que converte um projeto **WINDEV, WEBDEV ou WINDEV
 Mobile** para outra linguagem sem inventar o que o projeto faz. Começa por um
-questionário (A–J), passa por gates com aprovação humana e termina com cada
+questionário (bloco 0 e A–J), passa por gates com aprovação humana e termina com cada
 regra ligada a evidência, código e teste.
 
 ## Instalar
@@ -24,7 +24,7 @@ Requisitos: Python 3.10+ (scripts de intake e do corpus) e Node 22+ (Impeccable)
 
 | Comando | O que faz |
 | --- | --- |
-| `/wx-claude-code:questionario` | Perguntas **A–J** abaixo. Gera `.wx-migration/` com manifesto, configuração, `CLAUDE.md` e esboço de `DESIGN.md`. |
+| `/wx-claude-code:questionario` | Bloco **0** (softhouse, diretores, endereço, logotipos, finalidade, objetivos, organograma, fluxograma, cronograma e prazo final, orçamento, riscos, pessoal, GitHub de destino sem senha) e perguntas **A–J** abaixo. Gera `.wx-migration/` com manifesto, configuração, `empresa.md`, `entrega.json`, a semente do PMO, `CLAUDE.md` e esboço de `DESIGN.md`. |
 | `/wx-claude-code:converter` | Conversão por gates G0–G7 (pré-flight, inventário, especificação, arquitetura, piloto vertical, ondas, endurecimento, cutover). |
 | `/wx-claude-code:estilo-telas` | Paleta, tema, tipografia e densidade viram `PRODUCT.md` e `DESIGN.md` pelo Impeccable; cada tela convertida nasce nesse sistema. |
 | `/wx-claude-code:laudo-tokens` | Laudo de uso de tokens em 3 fases. Somente leitura; nada muda sem aprovação. |
@@ -35,6 +35,7 @@ Requisitos: Python 3.10+ (scripts de intake e do corpus) e Node 22+ (Impeccable)
 
 | Letra | Pergunta | Onde cai |
 | --- | --- | --- |
+| 0 | Empresa e projeto: quinze itens, um por mensagem, antes de A | `empresa.md`, `entrega.json`, `pmo/` |
 | A | O `.SQL` do projeto | `sql_scripts` do manifesto |
 | B | PDF só dos códigos | `code_documents` |
 | C | PDF só das interfaces | `ui_documents` |

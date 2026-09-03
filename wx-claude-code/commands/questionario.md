@@ -1,5 +1,5 @@
 ---
-description: "Questionario inicial A-J do projeto WX: anexos, Impeccable, Help, linguagens de destino e economia de tokens. Gera .wx-migration/."
+description: "Questionario inicial do projeto WX: bloco 0 (empresa, prazo, orcamento, GitHub) e letras A-J. Gera .wx-migration/."
 argument-hint: "[raiz-do-projeto-de-destino]"
 allowed-tools: "Read, Glob, Grep, Bash, Write, AskUserQuestion"
 ---
@@ -21,6 +21,32 @@ Este é o **primeiro passo** de qualquer conversão de um projeto WINDEV, WEBDEV
 - Respostas em português; o usuário pode responder em qualquer idioma.
 
 ## As perguntas
+
+### Bloco 0 · Empresa e projeto (antes da letra A)
+
+Quinze itens, **um por mensagem**, na ordem. É o que o PMO, o stakeholder e a entrega precisam saber antes de qualquer anexo. Quem não tem o item responde «não tenho» e segue.
+
+| Item | Pergunta | Onde vai parar |
+| --- | --- | --- |
+| 0.1 | Softhouse solicitante: razão social, nome fantasia, CNPJ (opcional) e **a solicitação** em uma ou duas frases (o que converter, para que, até quando) | `empresa.md`, `pmo/projeto.json` |
+| 0.2 | Quem são os diretores (nome, cargo, contato) | `empresa.md` |
+| 0.3 | Endereço completo (logradouro, número, complemento, bairro, cidade, UF, CEP, país) | `empresa.md` |
+| 0.4 | Logotipo da empresa: caminho do arquivo na raiz de evidências | `empresa.md` (verificado) |
+| 0.5 | Logotipo do software | `empresa.md` (verificado) |
+| 0.6 | Finalidade do software (uma frase) | `empresa.md` |
+| 0.7 | Objetivos do projeto (lista) | `empresa.md` |
+| 0.8 | Descrição do software, seus recursos e módulos | `empresa.md` |
+| 0.9 | Organograma do projeto: arquivo, ou as posições (papel, nome, responde a) | `pmo/organograma.md` |
+| 0.10 | Fluxograma do processo principal: arquivo, ou as etapas em ordem | `pmo/fluxograma.md` (Mermaid) |
+| 0.11 | Cronograma: início, marcos com data e gate, e **o prazo final de entrega** | `pmo/cronograma.md`, `plano.json` (`previsto_para`) |
+| 0.12 | Orçamento: valor, moeda, base (horas, fechado, tokens, misto) e quem aprovou | `pmo/projeto.json` |
+| 0.13 | Riscos conhecidos: risco, probabilidade, impacto, resposta, dono | `pmo/riscos.md` (RSK-*) |
+| 0.14 | Pessoal envolvido: nome, papel, empresa, contato | `empresa.md` |
+| 0.15 | GitHub de destino: URL, branch, usuário, **onde a credencial está configurada** e o diretório de destino | `entrega.json` |
+
+**A senha nunca é perguntada nem gravada.** No 0.15 pergunte o **nome** da variável de ambiente ou do segredo onde o token vai morar (`GITHUB_TOKEN`, `gh auth`, credential manager) e registre só isso em `credencial_ref`. Se o usuário colar a senha ou o token na conversa, não repita, não grave, peça que ele a revogue e configure no ambiente; o script `aplicar_questionario.py` recusa o questionário se qualquer chave `senha`, `token`, `password` ou `secret` vier com valor. Logotipo, organograma e fluxograma em arquivo só contam como `provided` depois de abertos, como qualquer anexo.
+
+### Letras A a J
 
 **A) O `.SQL` do projeto.** «Informe o caminho do script SQL do seu projeto (DDL, índices, constraints, views, triggers). Qual o dialeto e a versão do banco (HFSQL Classic, HFSQL Client/Server, MySQL, PostgreSQL, SQL Server, Oracle…)? Qual o encoding e o collation?» Se não houver `.SQL`, pergunte se existe a análise (`.wda`/`.wdd`) exportada ou um dump.
 
@@ -54,6 +80,12 @@ Este é o **primeiro passo** de qualquer conversão de um projeto WINDEV, WEBDEV
 
 | Depois de | Se a resposta for | Então |
 | --- | --- | --- |
+| 0.1 | solicitação menciona a linguagem ou o prazo | anote para reaproveitar em H e em 0.11; não pergunte de novo o que já foi dito |
+| 0.4, 0.5, 0.9, 0.10 | caminho informado | abra o arquivo; se não abrir, `missing` e siga (o logotipo vira `GAP-*` no G1, não trava) |
+| 0.9 ou 0.10 | «não tenho arquivo» | peça as posições ou as etapas em texto, que também são resposta |
+| 0.11 | prazo final sem marcos | proponha um marco por gate (G1, G4, G7) com datas e peça para confirmar |
+| 0.12 | «não sei o orçamento» | registre `valor: null` e quem vai aprovar; o `pmo.py` mostra INDISPONÍVEL, nunca um número inventado |
+| 0.15 | usuário cola senha ou token | não repita, não grave; peça que revogue e configure no ambiente, e registre só o nome em `credencial_ref` |
 | A | caminho informado | abra o arquivo; se não abrir, diga e pergunte de novo A antes de ir a B |
 | A | «não tenho» | pergunte se existe a análise exportada ou um dump; sem nada, `missing` e siga para B |
 | B, C ou D | «não tenho» | anote e siga; em **E** avise que o PDF completo vai cobrir o que faltou como `partial` |
@@ -87,7 +119,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/aplicar_questionario.
   --plugin-root "${CLAUDE_PLUGIN_ROOT}"
 ```
 
-   Ele cria `.wx-migration/wx-inputs.manifest.json`, `.wx-migration/conversion.config.json`, o `CLAUDE.md` do projeto (com o estilo de resposta quando **J** for sim) e o esboço `DESIGN.md` com a paleta quando **F** for sim.
+   Ele cria `.wx-migration/wx-inputs.manifest.json`, `.wx-migration/conversion.config.json`, o `CLAUDE.md` do projeto (com o estilo de resposta quando **J** for sim), o esboço `DESIGN.md` com a paleta quando **F** for sim e, do bloco 0, `empresa.md`, `entrega.json` e `pmo/{projeto.json, organograma.md, fluxograma.md, cronograma.md, riscos.md}`, que o `pmo.py iniciar` lê para preencher `previsto_para` dos gates.
 
 3. Se **G** for sim, verifique o corpus antes de citá-lo:
 
@@ -95,7 +127,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/aplicar_questionario.
 python3 "${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/query_wlanguage_help.py" --verify
 ```
 
-4. Mostre ao usuário o resumo: por letra, `provided | partial | missing | not_applicable`, e o que ficou em aberto.
+4. Mostre ao usuário o resumo: bloco 0 (o que ficou pendente) e, por letra, `provided | partial | missing | not_applicable`, e o que ficou em aberto.
 
 ## Depois
 

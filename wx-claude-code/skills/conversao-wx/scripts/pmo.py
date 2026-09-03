@@ -74,6 +74,15 @@ def iniciar(wx: Path, aprovador: str) -> list[str]:
         "kanban": {"wip": dict(WIP_PADRAO)},
         "scrum": {"duracao_dias": 10, "cerimonias": ["planejamento", "diario", "revisao", "retrospectiva"]},
     }
+    # O bloco 0 do questionario (cronograma, prazo final, orcamento) chega por
+    # pmo/projeto.json; marco com gate vira previsto_para, sem ninguem digitar.
+    proj_p = pmo / "projeto.json"
+    if proj_p.is_file():
+        proj = json.loads(proj_p.read_text(encoding="utf-8"))
+        plano["prazo_final"] = proj.get("prazo_final", "")
+        for m in proj.get("marcos", []):
+            if m.get("gate") in plano["gates"] and m.get("data"):
+                plano["gates"][m["gate"]]["previsto_para"] = m["data"]
     backlog = (
         "# Backlog do produto\n\n"
         "Uma linha por item, priorizada de cima para baixo. O trace_id liga ao traceability.csv.\n\n"
@@ -331,6 +340,27 @@ def status(wx: Path) -> str:
         linhas.append("INDISPONÍVEL: `pmo/plano.json` não existe; rode `pmo.py iniciar`.")
     linhas.append("")
 
+    # Prazo final e orcamento financeiro vem do bloco 0 do questionario
+    proj_p = wx / "pmo" / "projeto.json"
+    linhas += ["## Prazo e orçamento do contrato", ""]
+    if proj_p.is_file():
+        proj = json.loads(proj_p.read_text(encoding="utf-8"))
+        prazo = proj.get("prazo_final", "")
+        if prazo:
+            try:
+                dias = (date.fromisoformat(prazo) - date.today()).days
+                linhas.append(f"- Prazo final de entrega: {prazo} ({dias} dias {'restantes' if dias >= 0 else 'de atraso'}, contados de hoje). MEDIDO.")
+            except ValueError:
+                linhas.append(f"- Prazo final de entrega: {prazo} (data fora do formato AAAA-MM-DD; não dá para contar dias).")
+        else:
+            linhas.append("- Prazo final de entrega: INDISPONÍVEL (não informado no questionário).")
+        o = proj.get("orcamento_financeiro", {})
+        linhas.append(f"- Orçamento: {o.get('valor') if o.get('valor') is not None else 'INDISPONÍVEL'} {o.get('moeda', '')} ({o.get('base') or 'base não informada'}), aprovado por {o.get('aprovado_por') or '(pendente)'}.")
+        linhas.append(f"- Marcos: {len(proj.get('marcos', []))}; riscos iniciais: {proj.get('riscos_iniciais', 0)}; pessoas: {proj.get('pessoas', 0)}. Fonte: `pmo/projeto.json`.")
+    else:
+        linhas.append("INDISPONÍVEL: `pmo/projeto.json` não existe; o bloco 0 do questionário não foi aplicado.")
+    linhas.append("")
+
     # Rastreabilidade
     tr = wx / "traceability.csv"
     linhas += ["## Itens rastreados", ""]
@@ -551,7 +581,7 @@ def entregar(wx: Path, numero: int | None, plugin_root: Path | None) -> Path:
         for nome_arq in ("gaps.md", "traceability.csv"):
             if (wx / nome_arq).is_file():
                 z.write(wx / nome_arq, f"sprint-{n:02d}/{nome_arq}")
-        for nome_arq in ("riscos.md", "backlog.md", "plano.json", "orcamento.json"):
+        for nome_arq in ("riscos.md", "backlog.md", "plano.json", "orcamento.json", "projeto.json", "cronograma.md", "organograma.md", "fluxograma.md"):
             if (wx / "pmo" / nome_arq).is_file():
                 z.write(wx / "pmo" / nome_arq, f"sprint-{n:02d}/{nome_arq}")
         for sub in ("decisions", "specifications", "architecture"):
