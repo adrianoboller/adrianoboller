@@ -1,79 +1,302 @@
 # Manual de uso — WX Claude Code
 
 Plugin do Claude Code para converter um projeto **WINDEV, WEBDEV ou WINDEV
-Mobile** para outra linguagem sem inventar o que o projeto faz. Este manual
-é a sequência de uso, do zero até o corte, com o comando de cada passo.
+Mobile** para outra linguagem sem inventar o que o projeto faz. Sete
+capítulos, na ordem em que você vai precisar deles.
 
-## 1. Instalar
+1. Como instalar
+2. Comandos `/` do plugin
+3. Como funciona a gerência de projeto
+4. Como funciona a economia de tokens
+5. Como subir os arquivos
+6. Como invocar o wizard
+7. Como definir a linguagem e a plataforma de destino
 
-Requisitos: Claude Code, Python 3.10 ou mais novo, Node 22 ou mais novo (só
-para o Impeccable).
+---
+
+## 1. Como instalar
+
+**Requisitos.** Claude Code; Python 3.10 ou mais novo; Node 22 ou mais novo
+(só para o Impeccable, o módulo de qualidade gráfica). Para extrair texto de
+PDF, `pip install pypdf`.
+
+**Pelo marketplace** (recomendado):
 
 ```bash
 claude plugin marketplace add adrianoboller/adrianoboller
 claude plugin install wx-claude-code@wx-claude-code
 ```
 
-Para testar sem instalar, a partir da pasta do repositório:
+**Pelo zip.** O plugin vem em dois arquivos, porque o completo passa de
+30 MB: `wx-claude-code-<versão>-plugin-sem-corpus.zip` e
+`Help_WL_12k_Json-corpus-do-plugin.zip`.
+
+1. Descompacte o primeiro numa pasta, por exemplo `~/plugins/`. Ele cria
+   `wx-claude-code/` e `.claude-plugin/`.
+2. Copie o `Help_WL_12k_Json.zip` do segundo para
+   `wx-claude-code/skills/conversao-wx/resources/`. Não descompacte.
+3. Confira o corpus:
 
 ```bash
-claude --plugin-dir ./wx-claude-code
+python3 wx-claude-code/skills/conversao-wx/scripts/query_wlanguage_help.py --verify
 ```
 
-Confira se carregou: numa sessão nova, peça «liste as skills e os agentes com
-prefixo `wx-claude-code:`». Devem aparecer cinco comandos, três skills e 34
-agentes.
+   O hash tem de ser `a95ed553…` e o estado `DEGRADED/CONDITIONAL` (três
+   defeitos conhecidos e documentados; não é erro de instalação).
 
-## 2. Preparar os anexos
+4. Carregue sem instalar, para testar: `claude --plugin-dir ~/plugins/wx-claude-code`.
+   Ou instale de vez: `claude plugin marketplace add ~/plugins` e
+   `claude plugin install wx-claude-code@wx-claude-code`.
 
-Crie uma pasta de evidências (por exemplo `inputs/`) dentro do projeto de
-destino e coloque nela, com nomes claros:
+**Conferir.** Numa sessão nova, peça «liste as skills e os agentes com prefixo
+`wx-claude-code:`». Devem aparecer 5 comandos, 3 skills e 84 agentes. A
+listagem que o modelo devolve pode omitir um item; confira por nome, não
+por contagem.
 
-| Item | O que é | Como gerar no WX |
+**Validar o pacote** (roda os 13 testes de regressão):
+
+```bash
+python3 wx-claude-code/skills/conversao-wx/scripts/validate_plugin_bundle.py wx-claude-code --strict
+claude plugin validate wx-claude-code
+```
+
+---
+
+## 2. Comandos `/` do plugin
+
+| Comando | O que faz | Quando |
 | --- | --- | --- |
-| `.SQL` | DDL do banco: tabelas, índices, constraints, triggers | análise → exportar script SQL, ou dump do HFSQL |
-| PDF dos códigos | só procedures, classes e eventos | documentação técnica → filtrar código |
-| PDF das interfaces | só janelas, páginas, controles e relatórios | documentação técnica → filtrar telas |
-| PDF das queries | só as queries: nome, SQL, parâmetros | documentação técnica → filtrar queries |
-| PDF completo | a documentação técnica inteira | documentação técnica → tudo |
-| Screenshots | cada tela em cada estado (normal, vazio, erro) | capturas identificadas |
+| `/wx-claude-code:questionario <projeto>` | o wizard: dez perguntas A–J, uma por vez; gera `.wx-migration/` | sempre primeiro |
+| `/wx-claude-code:converter <modo> <projeto>` | conversão por gates G0–G7; `modo` é `inventario`, `plano`, `piloto` ou `completo` | depois do wizard |
+| `/wx-claude-code:pmo <ação> <projeto>` | gerência: `iniciar`, `status`, `sprint`, `kanban`, `pdca`, `orcamento`, `entregar`, `painel` | durante toda a conversão |
+| `/wx-claude-code:estilo-telas <projeto>` | paleta, tema e tipografia viram `PRODUCT.md` e `DESIGN.md` pelo Impeccable | quando a letra F foi «sim» |
+| `/wx-claude-code:laudo-tokens [fase]` | auditoria de consumo em três fases, somente leitura | quando quiser medir o custo |
+| `/impeccable <comando> <alvo>` | os 23 comandos de qualidade gráfica: `shape`, `polish`, `audit`, `critique`, `harden`… | em cada tela convertida |
 
-Os anexos são somente leitura: o plugin nunca escreve neles. Sem PDF
-pesquisável (texto) a extração exige OCR, e o pré-flight marca isso.
+Os comandos têm scripts por trás, que você também pode rodar direto. Todos
+ficam em `$CLAUDE_PLUGIN_ROOT/skills/conversao-wx/scripts/`:
 
-## 3. Responder o questionário (A–J)
+| Script | Faz |
+| --- | --- |
+| `aplicar_questionario.py` | respostas do wizard viram manifesto, configuração, `CLAUDE.md` e `DESIGN.md` |
+| `wx_preflight.py` | Gate G0: confere cada anexo fisicamente |
+| `extrair_pdf.py` | texto por página com `arquivo#page=N` e hash |
+| `query_wlanguage_help.py` | busca no corpus do Help por símbolo e tema |
+| `golden.py` | captura resultados do legado e compara com o novo |
+| `rotear_modelo.py` | escolhe o modelo Claude por classe de tarefa e orçamento |
+| `pmo.py` | plano, sprint, kanban, PDCA, painel, entrega |
+| `uso_de_tokens.py` | lê o consumo real das sessões e lança no orçamento |
+
+**Atalhos.** Crie os seus em `.claude/commands/<nome>.md` no projeto. Exemplo
+para polir telas com as regras da conversão já embutidas:
+
+```markdown
+---
+description: Polir uma tela convertida preservando campos, textos e paleta
+argument-hint: "<caminho-da-tela>"
+---
+Carregue a skill impeccable e execute `polish $ARGUMENTS`.
+Preserve a ordem dos campos, os textos e as validações do legado.
+Cores só do DESIGN.md; contraste mínimo 4,5:1, e diga o valor medido.
+```
+
+Aí `/polir-tela src/telas/Venda.tsx` faz a passada. O Impeccable também
+cria atalhos sozinho: `node "$CLAUDE_PLUGIN_ROOT/skills/impeccable/scripts/pin.mjs" pin audit` gera `/audit`.
+
+---
+
+## 3. Como funciona a gerência de projeto
+
+O PMO é código, não texto. Quem responde «em que pé está, quanto custou, o
+que trava, quem decide» é o agente `pmo-gerente-de-projetos` rodando
+`pmo.py`. Nenhum número do painel é digitado: cada linha cita a fonte, e o
+que não tem fonte aparece como `INDISPONÍVEL`, nunca como zero.
+
+**Começar:**
+
+```bash
+/wx-claude-code:pmo iniciar ./meu-projeto
+```
+
+Cria `.wx-migration/pmo/` com plano por gate, orçamento, RAID (riscos,
+premissas, issues, dependências), backlog, base de conhecimento e a pasta de
+ciclos PDCA.
+
+**Gates.** O trabalho avança em oito portões, G0 a G7, e cada um depende de
+um aprovador humano:
+
+| Gate | O que acontece | Quem aprova |
+| --- | --- | --- |
+| G0 | anexos conferidos fisicamente (pré-flight) | responsável pelos anexos |
+| G1 | inventário, hashes, extração de texto, índice do Help | líder técnico |
+| G2 | regras, telas, dados, queries, integrações, conflitos | responsável de negócio |
+| G3 | arquitetura-alvo, decisões, plano de ondas, rollback | arquitetura |
+| G4 | piloto vertical: uma fatia com tela, regra, query e erro, comparada ao legado | técnico + negócio |
+| G5 | ondas de implementação por módulo | líder técnico |
+| G6 | segurança, desempenho, concorrência, testes | qualidade |
+| G7 | ensaio, reconciliação, cutover e plano de retorno | patrocinador |
+
+O piloto (G4) nunca é pulado numa conversão completa. Quem implementa não
+aprova: o `quality-auditor` tenta refutar, o humano decide.
+
+**Os dez papéis.** Em projeto de grande porte o trabalho é distribuído por
+papéis com dono: A orquestrador, B engenheiro, C DBA, D zelador, E designer,
+F prova real, G QA, H documentação, I versionador, J pesquisador. Cada papel
+tem quatro subagentes, Plan, Do, Check e Act, e executa todo item como um
+ciclo PDCA.
+
+**Scrum.** Uma sprint por gate ou onda. O PMO abre a sprint atribuindo o
+papel dono de cada item do backlog:
+
+```bash
+pmo.py sprint abrir --nome "Onda 1 · vendas" --objetivo "..." --gate G5 --item QRY-001:C --item UI-001:E --item BR-003:F
+pmo.py sprint fechar --decisao APPROVED|CONDITIONAL|REJECTED --pedido "..."
+```
+
+O fechamento escreve o resumo de doze seções em `pmo/sprints/` e devolve ao
+backlog o que não atingiu a definição de pronto: evidência com localizador,
+implementação apontada, teste, resultado comparado, aprovação humana,
+confiança nunca `low`.
+
+**Kanban.** `pmo.py kanban` gera o quadro da matriz de rastreabilidade com o
+papel em cada cartão (`[C dba] QRY-001 …`) e limite de WIP (6 em andamento,
+4 em verificação). Coluna estourada não recebe cartão; item `[sem papel]`
+ninguém pega até o PMO atribuir. O quadro não se edita: muda-se o estado na
+matriz e o papel no backlog.
+
+**PDCA.** Toda hipótese de trabalho abre um ciclo com critério numérico e
+fecha como frutífero ou infrutífero, gravando uma linha na base de
+conhecimento nos dois casos. Infrutífero sem a próxima hipótese não fecha.
+
+```bash
+pmo.py pdca abrir --gate G4 --hipotese "..." --medida "..." --criterio "ganho >= 1,5x"
+pmo.py pdca fechar --id PDCA-001 --resultado infrutifero --medido "1,06x" --aprendizado "..." --proxima "..."
+```
+
+**Entrega ao stakeholder.** Fechada a sprint:
+
+```bash
+pmo.py entregar --sprint 2 --plugin-root "$CLAUDE_PLUGIN_ROOT"
+```
+
+Gera `pmo/entregas/sprint-02-G5-<data>.zip` com o resumo da sprint, as
+técnicas aplicadas com números e fonte, a base de conhecimento, o que cada
+ferramenta faz (lido do cabeçalho de cada script), decisões, lacunas, RAID,
+backlog e o Kanban do fechamento.
+
+**Painel.** `pmo.py status` regenera o texto e `pmo.py painel` gera o HTML
+para o aprovador abrir no navegador, em tema claro ou escuro.
+
+---
+
+## 4. Como funciona a economia de tokens
+
+Três mecanismos, todos medidos.
+
+**Balanceamento de modelos.** Antes de cada delegação o orquestrador chama
+`rotear_modelo.py` com a classe da tarefa e os sinais de risco. Haiku faz o
+mecânico (hash, contagem, busca no corpus), Sonnet analisa e implementa,
+Opus decide e revisa. Conflito, fiscal, permissão ou dado pessoal sobem um
+degrau; padrão já aprovado ou volume grande descem. Acima de 80 % do
+orçamento do gate rebaixa; acima de 100 % bloqueia e o PMO decide com o
+número.
+
+**Orçamento medido, não estimado.** O Claude Code grava o consumo de cada
+resposta. `uso_de_tokens.py` lê esses registros, deduplica por mensagem e
+lança no orçamento do gate:
+
+```bash
+uso_de_tokens.py --project-root . resumo
+uso_de_tokens.py --project-root . lancar --gate G4
+```
+
+Numa sessão real deste projeto, um único `/wx-claude-code:pmo status`
+delegado a um subagente custou 305.883 tokens. É esse tipo de número que o
+orçamento por gate precisa ver.
+
+**Hábitos que o plugin impõe.** Anexos e corpus são consultados por índice,
+nunca abertos inteiros. Cada especialista WLanguage lê só a sua fatia do
+Help (`--group`), o que reduziu uma busca de 5,4 s para 0,5 s. Saída longa
+de comando vai para `.wx-migration/logs/` e volta como localizador. Quando
+a letra J do wizard é «sim», o `CLAUDE.md` do projeto recebe o estilo de
+resposta direto ao ponto.
+
+**Laudo.** `/wx-claude-code:laudo-tokens` audita em três fases. A primeira é
+somente leitura e termina numa tabela de problemas por impacto; então para
+e espera o seu OK. A segunda propõe uma mudança por vez. A terceira entrega
+até três hábitos, só os que tiverem evidência nas suas sessões. Todo número
+é `MEDIDO`, `ESTIMADO` ou `INDISPONÍVEL`.
+
+---
+
+## 5. Como subir os arquivos
+
+O plugin não lê o projeto WINDEV binário. Ele lê o que a plataforma exporta.
+Crie uma pasta de evidências dentro do projeto de destino, por exemplo
+`inputs/`, e coloque nela:
+
+| Arquivo | O que é | Como gerar no WINDEV |
+| --- | --- | --- |
+| `banco.sql` | DDL do banco: tabelas, índices, constraints, triggers, views | análise → exportar script SQL, ou dump do HFSQL |
+| `codigo.pdf` | só procedures, classes e eventos | documentação técnica → filtrar código |
+| `interfaces.pdf` | só janelas, páginas, controles e relatórios | documentação técnica → filtrar telas |
+| `queries.pdf` | só as queries: nome, SQL, parâmetros, onde são usadas | documentação técnica → filtrar queries |
+| `completo.pdf` | a documentação técnica inteira; serve de reserva se algum dos três faltar | documentação técnica → tudo |
+| `screenshots/*.png` | cada tela em cada estado (normal, vazio, erro) | capturas |
+| `screenshots/screenshots.json` | para cada captura: `arquivo`, `tela`, `estado`, `plataforma` | à mão |
+| `dados-de-amostra/` | dados sintéticos e resultados esperados do legado (golden master) | à mão ou exportação anonimizada |
+
+Regras:
+
+- Os PDFs precisam ser **pesquisáveis** (texto, não imagem). Sem isso a
+  extração exige OCR e o pré-flight marca `OCR_REQUIRED`.
+- Os anexos são **somente leitura**. O plugin nunca escreve neles; tudo que
+  gera vai para `.wx-migration/`.
+- Nada de senha, token, certificado ou dado real de pessoa. Dados de amostra
+  são sintéticos ou anonimizados.
+- Anexo dentro de zip: o plugin descompacta com `safe_unpack_bundle.py`
+  numa pasta nova, com defesa contra travessia de caminho e zip bomb.
+
+O projeto de exemplo `exemplos/estoque-wx/` tem tudo isso montado. Use-o
+como modelo da pasta e como ensaio antes do seu projeto.
+
+---
+
+## 6. Como invocar o wizard
+
+O wizard é o questionário A–J. É sempre o primeiro comando de um projeto:
 
 ```text
 /wx-claude-code:questionario ./meu-projeto
 ```
 
-O plugin pergunta **uma letra por mensagem** e espera. A resposta decide a próxima: quem não tem o PDF de códigos (B) ouve, em E, que o completo vai cobrir; quem diz «não» ao Impeccable (F) não é perguntado sobre paleta; quem escolhe mobile (I) é perguntado sobre versões de Android e iOS. Cada resposta é confirmada em uma linha antes da letra seguinte.
+**Como ele se comporta.** Pergunta **uma letra por mensagem** e espera. Você
+responde, ele confirma em uma linha o que registrou (`A: inputs/banco.sql,
+HFSQL 2025 → provided`) e só então faz a próxima. A resposta decide o
+caminho: sem o PDF de código em B, ele avisa em E que o completo vai
+cobrir; «não» ao Impeccable em F pula paleta e tipografia; mobile em I pede
+versões de Android e iOS. Quem não tem um item responde «não tenho», e isso
+vira `missing` no manifesto, nunca `not_applicable` por inferência.
 
-As letras:
+Um caminho só conta como fornecido depois que o wizard **abre o arquivo**.
 
-| Letra | Pergunta | Resposta típica |
-| --- | --- | --- |
-| A | caminho do `.SQL`, dialeto, versão, encoding, collation | `inputs/banco.sql`, HFSQL 2025, utf-8 |
-| B | PDF só dos códigos, pesquisável? | `inputs/codigo.pdf`, sim |
-| C | PDF só das interfaces | `inputs/telas.pdf` |
-| D | PDF só das queries | `inputs/queries.pdf` |
-| E | PDF completo | `inputs/completo.pdf` |
-| F | estilo das telas com o Impeccable: paleta, tema, tipografia, densidade, preservar ou redesenhar | sim, `#E2261C` sobre `#010418`, Exo 2, compacta, redesenhar |
-| G | usar o corpus do Help WLanguage 12k? override da versão? | sim, versão 2025 |
-| H | para qual linguagem converter o backend; se não souber, o plugin pergunta quatro sinais e mostra Rust, Python e C# + WL_C# com o porquê | C# + WL_C# (equipe WINDEV, desktop, prazo) ou Rust + Axum (desempenho) |
-| I | frontend: linguagem, framework, plataformas | TypeScript + React, web |
-| J | ativar economia de tokens? | sim |
+| Letra | Pergunta |
+| --- | --- |
+| A | caminho do `.SQL`, dialeto, versão do banco, encoding, collation |
+| B | PDF só dos códigos; é pesquisável? |
+| C | PDF só das interfaces |
+| D | PDF só das queries |
+| E | PDF completo |
+| F | estilo das telas com o Impeccable: paleta, tema, tipografia, densidade, preservar ou redesenhar |
+| G | usar o corpus do Help WLanguage 12k? há override da sua versão? |
+| H | para qual linguagem converter o backend (capítulo 7) |
+| I | para qual linguagem e plataforma converter o frontend (capítulo 7) |
+| J | ativar a economia de tokens? |
 
-A orientação de linguagem está em `skills/conversao-wx/references/perfis-de-destino.md`, com o que cada perfil ganha, custa e para que projeto serve. O perfil **C# + WL_C#** usa a biblioteca de Bernard Sobra que porta mais de 480 funções do WLanguage com o mesmo nome; o `WL.dll` é baixado da release oficial e conferido por hash (`references/perfil-csharp-wl.md`).
+E três perguntas de governança no fim: versão e idioma do WX; modo
+(`inventário`, `plano`, `piloto`, `completo`); quem aprova.
 
-E as três de governança: versão e idioma do WX, modo (`inventário`, `plano`,
-`piloto`, `completo`) e quem aprova.
-
-Um caminho só conta como fornecido depois que o plugin **abre o arquivo**.
-Quem não tem um item responde «não tenho»: isso também é resposta, e vira
-`missing` no manifesto, nunca `not_applicable` por inferência.
-
-O que sai:
+**O que sai:**
 
 ```text
 .wx-migration/
@@ -85,183 +308,82 @@ CLAUDE.md                    regras do projeto (com estilo de resposta se J = si
 DESIGN.md                    esboço da paleta (se F = sim)
 ```
 
-## 4. Converter por gates
+**Repetir o wizard** é seguro: o script nunca sobrescreve arquivo que já
+existe. Para refazer do zero, apague `.wx-migration/` antes.
 
-```text
-/wx-claude-code:converter piloto ./meu-projeto
-```
+**Sem sessão interativa** (`claude -p`), o wizard faz a mesma coisa em
+texto, uma letra por turno, e você continua com `claude -c "resposta"`.
 
-O comando roda o **Gate G0** (pré-flight): verifica cada anexo fisicamente,
-hash, assinatura de PDF, metadados, e devolve `READY`, `CONDITIONAL` ou
-`BLOCKED` com a lista do que falta. `BLOCKED` não escreve código: entrega
-inventário, perguntas e lacunas.
+---
 
-Depois, gate a gate, até o modo pedido:
+## 7. Como definir a linguagem e a plataforma de destino
 
-| Gate | O que acontece | Quem aprova |
+Esta é a decisão que mais muda o projeto, e por isso o wizard **orienta
+antes de perguntar**, na letra H.
+
+**Se você já sabe**, responda a linguagem e siga para framework, banco,
+versões mínimas e implantação.
+
+**Se não sabe**, o wizard faz quatro perguntas de sinal, uma por vez:
+
+1. Quem vai manter o código depois: a equipe WINDEV de hoje ou outra?
+2. O produto é desktop, web ou mobile?
+3. Volume e desempenho importam, ou o prazo manda?
+4. Há linguagem já em uso na empresa?
+
+Com os sinais, mostra **três opções com o porquê em uma frase**, a
+recomendada primeiro. Estas três estão sempre presentes:
+
+| Perfil | Ganha | Custa | Serve para |
+| --- | --- | --- | --- |
+| **Rust** (Axum + PostgreSQL) | desempenho previsível, binário único, erros pegos em compilação | curva alta, equipe rara | volume alto, motor de cálculo, quem já usa o PhxSql |
+| **Python** (FastAPI + PostgreSQL) | entrega rápida, biblioteca para fiscal, relatório e dados | desempenho por processo, deploy com runtime | sistemas de gestão que vão evoluir rápido |
+| **C# (.NET 8) + WL_C#** | a biblioteca WL_C# porta mais de 480 funções do WLanguage com o mesmo nome; tradução das procedures quase mecânica | HFSQL e telas ficam fora da biblioteca; código fechado | a equipe WINDEV que vai manter o código; desktop Windows |
+
+Go, Java e Node entram quando os sinais apontarem. A escolha é sua e vira
+`DEC-0001` na abertura do G3.
+
+**Plataforma e frontend (letra I).** React (TypeScript) é o padrão para
+web. Blazor se H foi C#; Flutter se há Android e iOS; Tauri (Rust + React)
+se o produto continua desktop; Vue ou Svelte para equipes pequenas. Depois:
+plataformas (web, desktop, Android, iOS), navegadores e dispositivos
+mínimos.
+
+**Tabela de decisão** (a linha que mais casa é a recomendação):
+
+| Se… | Backend | Frontend |
 | --- | --- | --- |
-| G1 | inventário, hashes, extração de texto, índice do Help | líder técnico |
-| G2 | regras, telas, dados, queries, integrações, conflitos | responsável de negócio |
-| G3 | arquitetura-alvo, ADRs, plano de ondas, rollback | arquitetura |
-| G4 | piloto vertical: uma fatia com tela, regra, query e erro | técnico + negócio |
-| G5 | ondas de implementação por módulo | líder técnico |
-| G6 | segurança, desempenho, concorrência, testes | qualidade |
-| G7 | ensaio, reconciliação, cutover e plano de retorno | patrocinador |
+| a equipe WINDEV de hoje mantém e quer a menor mudança | C# + WL_C# | Blazor ou React |
+| é WEBDEV, ou vai para a web, e o time de front vai crescer | Python ou Node | React |
+| há cálculo pesado, volume alto ou o motor é o PhxSql | Rust | React, ou Tauri se desktop |
+| é WINDEV Mobile com Android e iOS | Python ou Go (API) | Flutter |
+| muito relatório, fiscal e integração, e o prazo manda | Python | React |
+| já existe Java ou .NET na empresa | Java ou C# | React ou Blazor |
 
-Regras que valem em todos: conflito entre evidências para o item e pergunta;
-o Help é semântica técnica, nunca regra de negócio; quem implementa não
-aprova; o piloto (G4) nunca é pulado numa conversão completa.
+**Sobre o WL_C#.** É a biblioteca de Bernard Sobra
+(https://bernardsobra.github.io/WL-web/). O plugin traz um índice de 261
+funções lido do `WL.dll` 1.0 e o hash da release; o DLL você baixa da
+release oficial, e o especialista de funções padrão marca cada função como
+`equivalente`, `adaptar` ou `substituir`. HFSQL, telas, comunicação e
+relatórios seguem pelos outros especialistas, em qualquer perfil.
 
-### Como o plugin consulta o Help
+**Duas regras que não mudam com o perfil.** O banco de destino é decisão
+separada, no G3. E regra de negócio não muda de comportamento por causa da
+linguagem: o golden master compara o novo com o legado seja qual for o
+destino.
 
-Cada símbolo WLanguage vai para o especialista do tema certo do corpus da PC
-SOFT (HFSQL, controles, comunicação, funções padrão, mobile, web, erros).
-O especialista lê só a fatia dele e devolve assinatura, parâmetros, retorno,
-efeitos e a página de origem com hash. Para consultar à mão:
+---
 
-```bash
-python3 "$CLAUDE_PLUGIN_ROOT/skills/conversao-wx/scripts/query_wlanguage_help.py" \
-  --query HReadSeekFirst --group 01-03-03 --version 2025 --limit 5
-```
+## Apêndice: problemas comuns
 
-### Como o plugin escolhe o modelo
+- **`BLOCKED` no G0.** Leia `preflight/runs/<run>/report.md`; cada erro diz o grupo e o arquivo. Enquanto estiver bloqueado, o hook do plugin nega qualquer escrita de código fora de `.wx-migration/`.
+- **Skill não aparece na sessão.** Descrição acima de 300 caracteres some da listagem; o validador avisa.
+- **Corpus com hash divergente.** Não use; o zip certo tem 26.750.976 bytes.
+- **Orçamento estourado.** `rotear_modelo.py` devolve `BLOQUEADO`; decida no PMO com o número.
+- **Ciclo PDCA infrutífero não fecha.** Faltou `--proxima`.
+- **`extrair_pdf.py` recusa.** Falta `pypdf` ou `pdfminer.six`; ele diz isso em vez de inventar texto.
 
-Antes de cada delegação o orquestrador chama `rotear_modelo.py` com a classe
-da tarefa (`mecanica`, `analise`, `decisao`, `revisao`) e os sinais de risco.
-Haiku faz o mecânico, Sonnet analisa e implementa, Opus decide e revisa.
-Conflito, fiscal ou dado pessoal sobem um degrau; padrão já aprovado desce;
-acima de 80 % do orçamento do gate rebaixa, acima de 100 % bloqueia e o PMO
-decide. Tudo fica em `.wx-migration/pmo/roteamento.jsonl`.
-
-### Extrair o texto dos PDFs e capturar o golden master
-
-```bash
-python3 "$P/extrair_pdf.py" --manifest .wx-migration/wx-inputs.manifest.json --allowed-evidence-root ./inputs --output .wx-migration/evidence/pdf-text
-python3 "$P/golden.py" capturar --casos inputs/dados-de-amostra/resultados-esperados.json --saida .wx-migration/tests/golden-master/casos.json
-python3 "$P/golden.py" comparar --golden .wx-migration/tests/golden-master/casos.json --comando "python3 novo/regras.py" --relatorio .wx-migration/tests/results/piloto.json
-```
-
-(`$P` é `$CLAUDE_PLUGIN_ROOT/skills/conversao-wx/scripts`.) A extração grava
-uma página por arquivo com `arquivo#page=N` e o hash do PDF. O golden compara
-cada caso com tolerância e devolve `equivalência: n/total`; é esse número que
-o piloto apresenta.
-
-### O portão do G0
-
-Enquanto o último pré-flight estiver `BLOCKED`, o hook do plugin nega qualquer
-escrita fora de `.wx-migration/`. Não é regra para o modelo obedecer: é o
-harness recusando. Resolva os anexos ou registre as lacunas e rode o G0 de novo.
-
-## 5. Gerir o projeto (PMO)
-
-```text
-/wx-claude-code:pmo iniciar ./meu-projeto
-```
-
-Cria `.wx-migration/pmo/` com plano por gate, orçamento, RAID, backlog, quadro
-e base de conhecimento. Daí em diante:
-
-**Scrum.** Uma sprint por gate ou onda:
-
-```bash
-pmo.py sprint abrir --nome "Piloto de vendas" --objetivo "..." --gate G4 --item BR-001 --item QRY-001
-pmo.py sprint fechar --decisao APPROVED|CONDITIONAL|REJECTED --pedido "..."
-```
-
-O fechamento escreve o resumo de doze seções em `pmo/sprints/` e devolve ao
-backlog o que não atingiu a definição de pronto (evidência, implementação,
-teste, resultado comparado, aprovação humana, confiança nunca `low`).
-
-**Kanban.** `pmo.py kanban` gera o quadro da matriz de rastreabilidade com
-limite de WIP (padrão 6 em andamento, 4 em verificação). Coluna estourada
-aparece marcada e não recebe cartão novo. O quadro não se edita: muda-se o
-estado na matriz.
-
-**PDCA.** Toda hipótese de trabalho abre um ciclo com critério numérico:
-
-```bash
-pmo.py pdca abrir --gate G4 --hipotese "..." --medida "..." --criterio "ganho >= 1,5x"
-pmo.py pdca fechar --id PDCA-001 --resultado infrutifero --medido "1,06x" --aprendizado "..." --proxima "..."
-```
-
-O fechamento grava uma linha em `pmo/base_de_conhecimento.md` **nos dois
-casos**. A recusa com o número é resultado tão válido quanto o ganho, e é o
-que impede a mesma ideia de voltar sem medição. Infrutífero sem a próxima
-hipótese não fecha.
-
-**Uso de tokens medido.** `uso_de_tokens.py --project-root . lancar --gate G4` lê o campo `usage` das sessões do Claude Code e lança no orçamento; `pmo.py gastar` fica para lançamento manual.
-
-**Papéis e backlog.** Em projeto grande, cada item do backlog tem um papel dono (A–J): `pmo.py sprint abrir ... --item BR-012:B --item DB-003:C`. O papel executa o item em Plan, Do, Check e Act com os seus quatro subagentes; o Kanban mostra `[B engenheiro]` em cada cartão.
-
-**Entrega ao stakeholder.** `pmo.py entregar --sprint N --plugin-root "$CLAUDE_PLUGIN_ROOT"` gera um zip com o resumo da sprint, as técnicas aplicadas com números, a base de conhecimento, o que cada ferramenta faz (lido dos scripts), decisões, lacunas, RAID e o Kanban do fechamento.
-
-**Painel.** `pmo.py painel` gera `pmo/painel.html` para abrir no navegador. `pmo.py status` regenera `pmo/status.md`: gates, itens por
-estado, lacunas, decisões pendentes, orçamento por modelo, sprint, quadro e
-PDCA. Nenhum número é digitado; cada linha diz a fonte; o que não tem fonte
-é `INDISPONÍVEL`, nunca zero.
-
-## 6. Estilo das telas
-
-```text
-/wx-claude-code:estilo-telas ./meu-projeto
-```
-
-Usa a resposta F e o Impeccable para escrever `PRODUCT.md` e `DESIGN.md`:
-tokens de cor com contraste medido (mínimo 4,5:1 em texto), tema, tipografia
-com fallback real, densidade, e a convenção das cores de ação (verde inclui,
-amarelo altera, vermelho exclui, azul consulta; sempre contorno). Cada tela
-convertida passa por `/impeccable polish` antes de ser dada como pronta e cada
-onda por `/impeccable audit`.
-
-## 7. Economia de tokens
-
-```text
-/wx-claude-code:laudo-tokens
-```
-
-Três fases. A primeira é somente leitura e termina numa tabela de problemas
-por impacto; então **para** e espera o seu OK. A segunda propõe uma mudança
-por vez. A terceira entrega até três hábitos, só os que tiverem evidência nas
-suas sessões. Todo número é `MEDIDO`, `ESTIMADO` ou `INDISPONÍVEL`.
-
-## 8. Onde fica cada coisa
-
-```text
-.wx-migration/
-  questionario.json, wx-inputs.manifest.json, conversion.config.json
-  preflight/runs/<run>/     report.md, inventory.csv, gaps.md
-  evidence/                 hashes, texto extraído, índices
-  specifications/           regras, telas, dados, integrações
-  architecture/adr/         decisões de arquitetura
-  decisions/DEC-*.md        decisões humanas
-  gaps.md                   lacunas GAP-*
-  traceability.csv          evidência → regra → decisão → código → teste → resultado
-  tests/golden-master/      resultados do legado para comparar
-  pmo/                      plano, orçamento, RAID, backlog, kanban, pdca/, base_de_conhecimento.md, sprints/, status.md
-  logs/                     saídas longas, citadas por localizador
-```
-
-## 8a. Projeto de exemplo
-
-`exemplos/estoque-wx/` tem tudo que o questionário pede, já respondido. Rode
-nele os passos 3 e 4 para ver o fluxo inteiro antes de usar um projeto seu.
-
-## 9. Problemas comuns
-
-- **«BLOCKED» no G0.** Leia `preflight/runs/<run>/report.md`: cada erro diz o
-  grupo e o arquivo. PDF sem `page_count` ou sem `%%EOF` é PDF que o plugin
-  não conseguiu abrir de verdade.
-- **Skill não aparece na sessão.** Descrição de skill acima de 300 caracteres
-  some da listagem quando o plugin inteiro carrega; o validador avisa.
-- **Corpus com hash divergente.** Não use o corpus; o plugin marca
-  `wlanguage_help_json` como bloqueado. O zip certo tem 26.750.976 bytes.
-- **Orçamento estourado.** `rotear_modelo.py` devolve `BLOQUEADO`; decida no
-  PMO com o número, não com adjetivo: aumentar a previsão, reduzir o escopo
-  da sprint ou rebaixar tarefas.
-- **Ciclo PDCA infrutífero não fecha.** Faltou `--proxima`. Hipótese que
-  morre gera a próxima.
-
-## 10. O que o plugin não faz
+## O que o plugin não faz
 
 Não lê o formato binário do WX, não faz OCR sozinho, não certifica LGPD, não
 aprova gate no lugar do humano e não afirma equivalência sem baseline
