@@ -3,6 +3,29 @@
 
     cargo build --release -p phxsql-server --bin phxsqld
     python3 bancada/profiler/custo.py
+    python3 bancada/profiler/custo.py --autoteste   # so o veredito, sem compilar
+
+# TRAVADO, e não só medido -- achado do QA-PDCA
+
+Até esta rodada este medidor só imprimia a razão "desligado custa zero?" e
+sempre saía zero -- media a pétrea (*"instrumentação desligada tem de custar
+zero"*) e não a impunha: uma regressão no ponto de captura não reprovava
+bateria nenhuma, e `provar.py` nem chamava este arquivo. Agora
+[`falhou_desligado_custa_zero`] julga a mediana medida contra
+[`MINIMO_DESLIGADO`] e `main()` sai `1` quando ela reprova -- é o que faz este
+arquivo virar um `parte()` de verdade em `provar.py`, e não mais invisível.
+
+O veredito é só sobre o par "atual/sem" (desligado custa zero?): é a metade da
+medição que É a garantia pétrea. As outras duas ("o portão vale quanto?" e
+"ligado custa quanto?") continuam informativas -- não são regra do CLAUDE.md,
+são contexto para quem for investigar uma reprovação.
+
+`--autoteste` prova SÓ o veredito (`falhou_desligado_custa_zero` contra um par
+saudável e um degradado, sem compilar nada) -- é o que se roda em segundos
+para conferir a lógica do portão sem competir pelo `servidor.rs` com quem
+estiver mexendo nele: `compilar()` reescreve o arquivo três vezes, mesmo que
+devolva o original no `finally`, e isso é real demais para rodar de
+acompanhamento numa árvore compartilhada.
 
 # Por que a medição é EMPARELHADA, e não uma corrida atrás da outra
 
@@ -56,6 +79,68 @@ VARIANTES = [("atual", PORTAO), ("sem", "false"), ("antigo", "true")]
 
 CIDADES = ["Blumenau", "Joinville", "Itajai", "Curitiba",
            "Chapeco", "Lages", "Florianopolis", "Criciuma"]
+
+# Abaixo disto, o Profiler DESLIGADO deixou de custar perto de zero. 0,90
+# tolera 10% de ruido de maquina compartilhada (a mesma folga que a nota do
+# cabecalho documenta) e ainda pega uma regressao real -- o defeito historico
+# da 0.17.0 (que este medidor tambem compara, no par "antigo") custava dois
+# `Json::analisar` do corpo inteiro por pedido: bem abaixo de 0,90.
+MINIMO_DESLIGADO = 0.90
+
+
+def falhou_desligado_custa_zero(medido, minimo=MINIMO_DESLIGADO):
+    """A TRAVA: julga o "desligado custa zero?" em vez de só imprimi-lo.
+
+    `medido` e o dict que `comparar()` devolve para esse par -- {"lote":
+    {"mediana": ..., ...}, "uma": {"mediana": ...}}. Devolve a lista de
+    problemas (vazia = passou); quem chama decide o que fazer com ela.
+
+    So este par entra no veredito: e o unico que mede a garantia pétrea
+    ("instrumentação desligada tem de custar zero"). Os outros dois que
+    `main()` calcula ("o portão vale quanto?", "ligado custa quanto?") sao
+    contexto para investigar uma reprovação, não a regra em si.
+    """
+    problemas = []
+    for tipo in ("lote", "uma"):
+        mediana = medido[tipo]["mediana"]
+        if mediana < minimo:
+            problemas.append(
+                "%s: o Profiler DESLIGADO rendeu %.3fx do binario sem ele -- "
+                "abaixo do minimo %.2fx. Instrumentacao desligada tem de "
+                "custar perto de zero (CLAUDE.md)." % (tipo, mediana, minimo))
+    return problemas
+
+
+def autoteste():
+    """Prova a PROPRIA porta, sem compilar nada: um par saudavel passa, um
+    par degradado reprova -- as duas metades da prova real, na função de
+    veredito e não no medidor inteiro.
+
+    Existe para se rodar sozinho (`--autoteste`) quando compilar as três
+    variantes -- que reescreve `servidor.rs` três vezes -- competiria com
+    quem estiver mexendo nesse arquivo na mesma árvore.
+    """
+    saudavel = {"lote": {"mediana": 0.98}, "uma": {"mediana": 1.02}}
+    problemas = falhou_desligado_custa_zero(saudavel)
+    assert problemas == [], "um par saudavel foi reprovado: %r" % problemas
+
+    # 0,61x e o numero que a rodada anterior mediu para o "antigo" (o dobro de
+    # `Json::analisar` por pedido) -- um degradado plausivel, nao inventado.
+    degradado = {"lote": {"mediana": 0.61}, "uma": {"mediana": 0.99}}
+    problemas = falhou_desligado_custa_zero(degradado)
+    assert problemas, "um par degradado (0,61x no lote) passou sem reprovar"
+    assert "lote" in problemas[0], problemas
+    assert "uma" not in " ".join(p.split(":")[0] for p in problemas), problemas
+
+    # A borda: exatamente no minimo passa (>=, nao >) -- e um tique abaixo
+    # reprova. Sem isto, um erro de < por <= no meio ficaria invisivel.
+    assert falhou_desligado_custa_zero({"lote": {"mediana": MINIMO_DESLIGADO},
+                                        "uma": {"mediana": 1.0}}) == []
+    assert falhou_desligado_custa_zero(
+        {"lote": {"mediana": MINIMO_DESLIGADO - 0.001}, "uma": {"mediana": 1.0}})
+
+    print("autoteste: ok -- par saudavel passa, par degradado reprova, "
+          "borda do minimo (%.2fx) confere" % MINIMO_DESLIGADO)
 
 
 def compilar():
@@ -199,6 +284,20 @@ def main():
     json.dump(tudo, open(os.path.join(AQUI, "custo.json"), "w"), indent=1)
     print("\nRESULTADO " + json.dumps(tudo))
 
+    # A TRAVA. Ate aqui era so o que "RESULTADO" imprime -- nenhuma linha
+    # decidia nada, e uma regressao no ponto de captura nao reprovava bateria
+    # nenhuma. Ver `falhou_desligado_custa_zero`.
+    problemas = falhou_desligado_custa_zero(tudo["desligado custa zero?"])
+    if problemas:
+        print("\nREPROVADO -- instrumentacao desligada nao custa perto de "
+              "zero:")
+        for p in problemas:
+            print("  " + p)
+        sys.exit(1)
+
 
 if __name__ == "__main__":
+    if "--autoteste" in sys.argv:
+        autoteste()
+        sys.exit(0)
     main()

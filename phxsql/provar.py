@@ -250,6 +250,18 @@ PARTES = [
           [sys.executable, "bancada/profiler/sonda.py"],
           requisitos=[porta_livre(6251)], prazo=900),
 
+    # ATE o QA-PDCA desta rodada, `custo.py` so MEDIA -- imprimia a razao e
+    # saia zero sempre, e provar.py nem o chamava. A pétrea ("instrumentacao
+    # desligada tem de custar zero") ficava sem catraca nenhuma: uma
+    # regressao no ponto de captura nao reprovava bateria nenhuma. Agora
+    # `falhou_desligado_custa_zero` julga a mediana e o script sai `1` quando
+    # ela reprova -- ver o cabecalho do arquivo.
+    parte("profiler-custo-zero", "o Profiler DESLIGADO custa perto de zero -- "
+          "TRAVADO contra o binario sem instrumentacao nenhuma, nao so medido",
+          [sys.executable, "bancada/profiler/custo.py"],
+          requisitos=[porta_livre(6270, 6272)], prazo=2400,
+          nota="compila tres variantes do phxsqld antes de medir"),
+
     parte("queda-na-exclusao", "que a janela de durabilidade da exclusao nao "
           "perde linha numa queda do PROCESSO: 150 exclusoes pelo soquete e "
           "um SIGKILL no meio da janela, nos dois modos",
