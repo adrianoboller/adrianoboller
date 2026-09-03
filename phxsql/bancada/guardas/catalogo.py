@@ -2521,4 +2521,38 @@ pub fn limpar() {
             "sem_conferir_a_mae_morta_nao_tranca_nada",
         ],
     },
+    {
+        "id": "drop-table-mata-o-pai",
+        "titulo": "o `excluir_tabela` volta a apagar a mae com filha apontando",
+        "porque": (
+            "a regra primordial vale no nivel da TABELA, e nao so no da linha. "
+            "Medido por sonda: este caminho apagava os 8 arquivos da mae e a "
+            "filha ficava com a linha intacta apontando para o vazio -- e o "
+            "`renomear_tabela` ja recusava o MESMO cenario, entao o motor "
+            "sabia fazer a pergunta e nao a fazia aqui."
+        ),
+        "arquivo": "crates/phxsql-store/src/catalogo.rs",
+        "trecho": """        if let Some(filha) = self.quem_aponta_para(&dir, nome)? {
+            return Err(PhxError::Integridade(format!(
+                "a tabela {qualificado} nao pode ser apagada: {filha} declara \\
+                 uma chave estrangeira para ela. Nunca se apaga o pai que tem \\
+                 filhos -- apague {filha} primeiro, ou tire a chave dela"
+            )));
+        }
+""",
+        "troca": """        // DEFEITO REPOSTO: o drop volta a matar o pai que tem filhos.
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "catalogo::testes_copia_entre_bancos::excluir_recusa_a_mae_que_tem_filha_apontando",
+        ],
+        "seguem": [
+            # Os dois controles: sem eles, um portao que recusasse TODO apagar
+            # passaria pelo `caem` acima sem proteger nada.
+            "catalogo::testes_copia_entre_bancos::apagada_a_filha_a_mae_sai_normalmente",
+            "catalogo::testes_copia_entre_bancos::excluir_tabela_sem_chave_nenhuma_nao_muda_nada",
+            "catalogo::testes_gestao::excluir_tabela_leva_os_arquivos_dela_e_so_os_dela",
+        ],
+    },
 ]

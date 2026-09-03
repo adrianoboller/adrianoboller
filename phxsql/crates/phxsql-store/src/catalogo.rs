@@ -23,10 +23,10 @@
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
+use phxsql_core::EXT_REG;
 use phxsql_core::error::{PhxError, Result};
 use phxsql_core::paginacao::BALDES;
 use phxsql_core::schema::Schema;
-use phxsql_core::EXT_REG;
 
 use crate::table::Table;
 
@@ -384,11 +384,45 @@ impl Database {
     /// pela metade se alguem recriasse uma com o mesmo nome.
     ///
     /// Nao ha desfazer. Quem chama confere antes.
+    ///
+    /// # Por que recusa quando alguem aponta para ela
+    ///
+    /// **A regra primordial vale no nivel da TABELA, e nao so no da linha.**
+    /// Medido por sonda (`--example sonda-fk-buracos`): este caminho apagava
+    /// os 8 arquivos da mae e deixava a filha com a linha intacta apontando
+    /// para o vazio. O `renomear_tabela` ja recusava o MESMO cenario, com o
+    /// recado que diz por que -- entao o motor sabia fazer a pergunta e nao a
+    /// fazia aqui.
+    ///
+    /// E apagar e pior que renomear: o renomear deixa a filha apontando para
+    /// um nome que nao existe mais, e este deixa a filha apontando para um
+    /// nome que nao existe mais **e** joga fora a linha mae, que era a unica
+    /// coisa que ainda diria qual pai era aquele.
+    ///
+    /// Como no renomear, **nao se pula a chave com `verificar: false`**: la a
+    /// pergunta e se a regra e IMPOSTA, porque o que sai e uma linha; aqui o
+    /// que sai e o NOME, e uma declaracao pendurada num nome inexistente e uma
+    /// mentira sobre o modelo mesmo quando ninguem a confere.
+    ///
+    /// # O limite, escrito em vez de escondido
+    ///
+    /// A busca e no diretorio do schema da tabela, e nao no database inteiro
+    /// -- e o mesmo alcance que o `renomear_tabela` ja tem. Uma filha em
+    /// OUTRO schema apontando para ca por nome qualificado nao e vista. Fecha-
+    /// -lo pede varrer todos os schemas por `excluir_tabela`, e essa e uma
+    /// decisao de custo que se toma com numero na mao, nao de passagem.
     pub fn excluir_tabela(&self, qualificado: &str) -> Result<Vec<String>> {
         let (schema, nome) = separar_qualificado(qualificado);
         let (schema, nome) = (schema.as_deref(), nome.as_str());
         validar_nome("tabela", nome)?;
         let dir = self.diretorio(schema)?;
+        if let Some(filha) = self.quem_aponta_para(&dir, nome)? {
+            return Err(PhxError::Integridade(format!(
+                "a tabela {qualificado} nao pode ser apagada: {filha} declara \
+                 uma chave estrangeira para ela. Nunca se apaga o pai que tem \
+                 filhos -- apague {filha} primeiro, ou tire a chave dela"
+            )));
+        }
         let mut apagados = Vec::new();
         for ext in Self::EXTENSOES_TODAS {
             // Uma tabela paginada tem varios volumes por extensao.
@@ -1223,6 +1257,92 @@ mod testes_copia_entre_bancos {
         // E nada se moveu: recusar depois de mover metade seria pior.
         assert!(db.existe_tabela(None, "clientes").unwrap());
         assert!(!db.existe_tabela(None, "clientes_arquivados").unwrap());
+    }
+
+    /// **A regra primordial no nivel da TABELA.**
+    ///
+    /// Medido por sonda antes desta guarda: o `excluir_tabela` apagava os oito
+    /// arquivos da mae e a filha ficava com a linha intacta apontando para o
+    /// vazio. O `renomear_tabela` recusava o MESMO cenario -- o motor sabia
+    /// fazer a pergunta e nao a fazia aqui.
+    #[test]
+    fn excluir_recusa_a_mae_que_tem_filha_apontando() {
+        let base = std::env::temp_dir().join(format!("phx-drop-fk-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let cat = Instancia::nova(&base).unwrap();
+        let db = cat.criar_database("loja").unwrap();
+        db.criar_tabela(None, esquema("clientes")).unwrap();
+        db.criar_tabela(None, filha_de_clientes()).unwrap();
+
+        let e = db.excluir_tabela("clientes").unwrap_err();
+        let t = e.to_string();
+        assert!(
+            matches!(e, PhxError::Integridade(_)),
+            "tinha de ser integridade: {e:?}"
+        );
+        assert!(
+            t.contains("pedidos"),
+            "a recusa tem de DIZER quem aponta: {t}"
+        );
+        // E nenhum arquivo saiu: recusar depois de apagar metade nao e recusar.
+        assert!(db.existe_tabela(None, "clientes").unwrap());
+        assert!(
+            !db.arquivos_da_tabela("clientes").unwrap().is_empty(),
+            "a mae ficou sem arquivo nenhum"
+        );
+    }
+
+    /// O conserto que a recusa manda fazer FUNCIONA -- e este teste e o que
+    /// impede o de cima de "passar" com um portao que recusasse todo apagar.
+    #[test]
+    fn apagada_a_filha_a_mae_sai_normalmente() {
+        let base = std::env::temp_dir().join(format!("phx-drop-fk-ok-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let cat = Instancia::nova(&base).unwrap();
+        let db = cat.criar_database("loja").unwrap();
+        db.criar_tabela(None, esquema("clientes")).unwrap();
+        db.criar_tabela(None, filha_de_clientes()).unwrap();
+
+        db.excluir_tabela("pedidos").expect("a filha sai sozinha");
+        db.excluir_tabela("clientes")
+            .expect("sem filha, a mae sai como sempre saiu");
+        assert!(!db.existe_tabela(None, "clientes").unwrap());
+    }
+
+    /// A tabela sem ninguem apontando continua saindo -- o controle do portao.
+    #[test]
+    fn excluir_tabela_sem_chave_nenhuma_nao_muda_nada() {
+        let base = std::env::temp_dir().join(format!("phx-drop-livre-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let cat = Instancia::nova(&base).unwrap();
+        let db = cat.criar_database("loja").unwrap();
+        db.criar_tabela(None, esquema("avulsa")).unwrap();
+        db.excluir_tabela("avulsa")
+            .expect("ninguem aponta para ela");
+    }
+
+    /// A filha de `clientes`, com o indice dos dois lados que a chave exige.
+    fn filha_de_clientes() -> Schema {
+        use phxsql_core::schema::ForeignKey;
+        Schema::new(
+            "pedidos",
+            vec![
+                Column::new("id", ColumnType::Int8).obrigatoria(),
+                Column::new("cliente", ColumnType::Int8),
+            ],
+            vec![
+                IndexDef::new("porId", vec![IndexColumn::asc(0)]).primaria(),
+                IndexDef::new("porCliente", vec![IndexColumn::asc(1)]),
+            ],
+        )
+        .unwrap()
+        .com_chaves_estrangeiras(vec![ForeignKey::new(
+            "fk_cliente",
+            vec![1],
+            "clientes",
+            vec!["id".into()],
+        )])
+        .unwrap()
     }
 
     /// **O achado que a propria prova deste renomear trouxe.**
