@@ -562,7 +562,10 @@ saiba.
 
 * Uma queda **entre** a última operação da passada e o `unlink` do `.tx` faz a
   recuperação reaplicar um commit que já estava inteiro — e ela encontra todos
-  os slots já certos e não faz nada. Custa uma varredura. É seguro.
+  os slots já certos e não faz nada. Custa uma varredura. É seguro. **Isto
+  deixou de ser dedução e passou a ser medido**: é o ponto P4 da matriz da
+  §5.7, com `SIGKILL` de verdade nos três regimes — sempre
+  `reaplicadas=0, ja_aplicadas=N`, nunca uma linha faltando.
 
 * **O caso sem conserto**, e ele é um só: se a passada gravou o slot e depois o
   liberou (o `inserir` desfazendo a si mesmo por falha de E/S no índice), o
@@ -570,10 +573,23 @@ saiba.
   aquela linha não volta para o lugar dela. A recuperação **não esconde isso**:
   a operação entra em `operacoes IMPOSSIVEIS` com a tabela e o rowid, e o
   arranque imprime. Perder a linha em silêncio seria pior do que dizer que ela
-  se perdeu.
+  se perdeu. **Continua verdadeiro** (código relido nesta rodada,
+  `aplicar_uma`, ramo `Acao::Inserir`) — e continua **sem** prova por `SIGKILL`
+  de propósito: reproduzi-lo pede uma falha de E/S no meio do `inserir`, que é
+  outra classe de defeito (injeção de falha), não um instante de queda. Dizer
+  isto é a diferença entre «não provado» e «provado que não se prova assim».
 
 * Uma marca cuja **tabela não abre mais** (alguém apagou a tabela entre a queda
-  e o arranque) cai no mesmo lugar, pelo mesmo motivo.
+  e o arranque) cai no mesmo lugar, pelo mesmo motivo. **Medido** na §5.7: nos
+  três regimes, apagar a tabela depois da queda e antes do arranque produz uma
+  linha por operação em `operacoes IMPOSSIVEIS`, nomeando a tabela — nunca um
+  arranque silencioso.
+
+* **Um quarto caso, achado medindo a §5.7 e não previsto por este documento**:
+  a cascata do `ao_alterar` pode deixar a **filha** com o índice sujo (o
+  write-back do `.ndx`, §4.8 de `docs/DESEMPENHO.md` — mecanismo geral, sem
+  relação com a marca `.tx`), e nesse caso a recuperação **recusa** cascatear
+  para ela em vez de arriscar uma árvore incompleta. Está na §5.5.3.
 
 ### 5.5.1 A cascata que a reaplicação não refazia — e o relatório dizendo que refez
 
@@ -676,6 +692,45 @@ integridade (E/S, índice para trás). Recusa depois de gravar ficou **rara**;
 deixar de dizer o que aconteceu quando ela acontece seria trocar um buraco por
 um pior.
 
+### 5.5.3 A filha com o índice sujo — a cascata que a recuperação recusa em vez de arriscar
+
+Achado medindo o ponto 5 da matriz da §5.7, e é de uma família diferente da
+§5.5.1: ali quem ficava velha era a **marca**; aqui quem fica suja é o
+**`.ndx` da filha**, e o mecanismo é geral — o *write-back* de página do
+índice (`docs/DESEMPENHO.md` §4.8), que existe para toda tabela deste motor e
+não tem nenhuma relação com transação.
+
+`Table::aplicar_ao_alterar` sincroniza cada filha por conta própria
+(`passo.filha.sincronizar()`), no **fim** do laço que reescreve as linhas
+dela. Uma queda **no meio** desse laço deixa o `.ndx` da filha com a marca de
+sujo levantada — o mesmo mecanismo que já protege qualquer tabela do
+*write-back*, fazendo exatamente o que promete: recusar confiar numa árvore
+que pode estar faltando chave.
+
+**O efeito na recuperação:** `Table::recascatear` precisa perguntar ao índice
+da filha «quem aponta para esta mãe?» para saber o que consertar, e se esse
+índice está sujo a pergunta recusa. A recusa **não é silenciosa** — vai para
+`operacoes IMPOSSIVEIS`, com a tabela e o motivo —, mas o efeito prático lembra
+o buraco antigo por outra porta: a mãe fica no valor novo, uma fração das
+filhas fica no velho, e ninguém conserta sozinho. A marca já foi apagada (a
+recuperação apaga a marca processada **incondicionalmente**, com
+`impossiveis` ou sem), então o caminho de volta é um operador rodar
+`reindexar` na filha e reconciliar as linhas nomeadas.
+
+**Medido** (`bancada/durabilidade/prova.py`, ponto 5, 1.200 filhas, 21
+corridas com `SIGKILL` nos três regimes): **9 de 21** caíram nesse caso, **as
+9 com o relatório denunciando** — zero cascatas parciais em silêncio — e a
+proporção foi a mesma nos três regimes (3 de 7 em cada), porque o
+`filha.sincronizar()` da cascata não passa pela janela de
+`recursos.durabilidade`: ele sincroniza sempre, ou nunca sincronizou ainda.
+
+**O que fica `IMPOSSIVEL`, de propósito.** Consertar isto pediria a
+recuperação saber «tentar de novo mais tarde» para uma operação que já foi
+declarada impossível — outro tipo de retomada que este desenho não tem (a
+marca já não existe mais para retomar). Está aqui, escrito, e não escondido,
+porque a alternativa — devolver «completada» com a filha errada — é o defeito
+exato que a §5.5.1 já pagou uma vez, só que por uma porta diferente.
+
 ### 5.6 A lição que o próprio teste do `SIGKILL` deu
 
 A primeira versão da prova por soquete exigia **sempre** as 3.000 linhas depois
@@ -693,6 +748,134 @@ nenhuma, e o relatório diz qual das duas sem o teste ter de adivinhar.
 É a mesma família do teste que passa por engano, pelo outro lado: um teste que
 **falha** por engano treina quem o vê a repetir a rodada até ficar verde — e aí
 ele deixa de valer para os dois lados.
+
+### 5.7 A matriz de falhas: ponto de morte × regime (SP000010)
+
+Os quatro pontos onde uma escrita transacional pode morrer, mais o meio de uma
+cascata — cruzados com os três regimes de `recursos.durabilidade` (§8 e
+`config.rs`) — provados por `SIGKILL` **real**, processo por processo, pelo
+script `bancada/durabilidade/prova.py` (o método está em
+`bancada/durabilidade/LEIA-ME.md`). A tabela abaixo é **colada** de
+`bancada/durabilidade/matriz-gerada.md`, que o script gera a partir do que
+mediu — nenhum número aqui foi digitado.
+
+**O achado que reorganiza a leitura da matriz, antes da tabela:** os quatro
+primeiros pontos têm a **mesma** garantia nos três regimes, e a razão está no
+código, não é coincidência — `gravar_marca` chama `sync_all` **incondicional**,
+sem olhar `recursos.durabilidade`. O regime só decide *quando* a tabela em si
+sincroniza; quem decide se a transação aconteceu é sempre a marca. E como uma
+queda de **processo** nunca perde um `write` que o kernel já recebeu (a mesma
+lei que `docs/DESEMPENHO.md` §4.12 já mediu para a exclusão), a linha só
+existe em três estados possíveis depois de qualquer `SIGKILL`: nada aconteceu,
+a recuperação completou sozinha, ou já estava tudo lá — nunca uma mistura. Os
+três regimes só divergem no **eixo do tempo**: quanto a marca fica pendurada
+no disco depois de um commit que não caiu (a tabela "quanto tempo a marca
+fica" abaixo) — e é esse tempo, não a segurança, que a escolha do regime
+compra ou vende.
+
+#### P1 — antes do `fsync` da marca
+
+| regime | queda determinística (meio da transação, sem `COMMIT`) | a corrida pegou o mesmo desfecho em |
+|---|---|---|
+| `por_operacao` | ABORTED (provado) — 0 linhas, 0 marca, `achadas=0` | 1 de 9 corridas da varredura |
+| `por_lote (padrão)` | ABORTED (provado) — 0 linhas, 0 marca, `achadas=0` | 1 de 9 corridas da varredura |
+| `sistema` | ABORTED (provado) — 0 linhas, 0 marca, `achadas=0` | 0 de 9 corridas da varredura |
+
+O caso determinístico (matar no meio da transação, antes de mandar `COMMIT`)
+não é corrida nenhuma — `gravar_marca` só roda dentro do `op_commit`, então
+sem `COMMIT` não há `write` de marca. A varredura por atraso também pegou o
+sub-caso mais difícil, **a marca truncada**: em `por_operacao` e `por_lote`,
+matar bem no instante em que o arquivo aparece no disco (`atraso=0`) produziu
+um `.tx` de zero bytes — o `File::create` já rodou, o `write_all` ainda não —,
+e a recuperação leu isso corretamente como `descartadas=1`, "commit que nunca
+começou". Em `sistema` a corrida não pegou esse instante nesta rodada (a
+varredura é uma amostragem, não uma garantia de cobrir toda janela — a mesma
+lição da §5.6), mas o caso determinístico prova o mesmo ponto sem depender de
+pegar o instante certo.
+
+#### P2, P3, P4 — durante e depois da passada
+
+Distribuição dos desfechos ao longo da varredura de atraso (cada célula é uma
+corrida com `SIGKILL` de verdade; `N/total` conta quantas das corridas
+caíram naquele ponto):
+
+| regime | calibração (commit limpo) | distribuição medida |
+|---|---:|---|
+| `por_operacao` | 35,0 ms (1500+1500 linhas) | 1/9 P1 · 2/9 P2 · 3/9 P3 · 1/9 P4 |
+| `por_lote (padrão)` | 33,7 ms (1500+1500 linhas) | 1/9 P1 · 3/9 P2 · 3/9 P3 · 2/9 P4 |
+| `sistema` | 64,9 ms (1500+1500 linhas) | 3/9 P2 · 2/9 P3 · 4/9 P4 |
+
+Em **nenhuma** das 27 corridas desta seção o relatório do arranque ficou
+ambíguo, e em nenhuma o número de linhas terminou fora de
+`{antes, antes+total}` — nunca metade. `sistema` calibra mais devagar (64,9
+contra ~34 ms) porque sem `fsync` nenhum a passada some dentro do orçamento de
+E/S do processo inteiro, e a máquina desta rodada tinha outras frentes
+compilando ao lado — o número muda com a carga da máquina, a **forma** da
+garantia não.
+
+#### O eixo em que o regime REALMENTE muda o que se vê: quanto tempo a marca fica no disco depois de um commit que NÃO caiu
+
+| regime | logo após o `COMMIT` | 50 ms depois | 1,25 s depois |
+|---|---:|---:|---:|
+| `por_operacao` | 0 marca(s) | 0 marca(s) | 0 marca(s) |
+| `por_lote (padrão)` | 1 marca(s) | 1 marca(s) | 0 marca(s) |
+| `sistema` | 1 marca(s) | 1 marca(s) | 1 marca(s) |
+
+`por_operacao` nunca deixa marca pendurada — a tabela sincroniza dentro do
+próprio `COMMIT`. `por_lote` deixa a marca até a janela fechar (aqui,
+`lote_milissegundos: 600`) e o relógio de fundo (`ligar_relogio_de_gravacao`)
+garante que ela fecha mesmo sem tráfego novo. `sistema` **nunca** fecha
+sozinha: como `hora_de_gravar()` devolve `false` sempre nesse regime, nenhum
+commit comum aciona `gravar_de_verdade`, e a marca só sai no próximo arranque
+— o `.tx` fica no disco por horas, se o servidor ficar de pé por horas. Não é
+inseguro (a §5.4 continua valendo célula a célula), mas é uma marca a mais
+para toda varredura de arranque contar, e vale saber antes de escolher
+`sistema` em produção.
+
+#### P5 — no meio da cascata do `ao_alterar`
+
+| regime | calibração (commit com a cascata) | veredito das corridas |
+|---|---:|---|
+| `por_operacao` | 200,0 ms | 4/7 CONSISTENTE · 3/7 PARCIAL_DENUNCIADO |
+| `por_lote (padrão)` | 195,4 ms | 4/7 CONSISTENTE · 3/7 PARCIAL_DENUNCIADO |
+| `sistema` | 185,6 ms | 4/7 CONSISTENTE · 3/7 PARCIAL_DENUNCIADO |
+
+Em 21 corridas (1.200 filhas cada, três regimes): **9** caíram no caso da
+§5.5.3 (a filha com o índice sujo) — **as 9 com o relatório denunciando em
+`operacoes IMPOSSIVEIS`**, e **zero** cascatas parciais em silêncio. A
+proporção saiu igual nos três regimes (3 de 7 cada) porque quem sincroniza a
+filha é a própria cascata (`Table::aplicar_ao_alterar`), fora da janela de
+`recursos.durabilidade`.
+
+#### §5.5(c) — a marca cuja tabela não abre mais
+
+| regime | a marca sobreviveu ao `SIGKILL`? | o relatório nomeou a tabela que falta? |
+|---|---|---|
+| `por_operacao` | sim | sim (30 op.) |
+| `por_lote (padrão)` | sim | sim (30 op.) |
+| `sistema` | sim | sim (30 op.) |
+
+Simulando "alguém apagou a tabela entre a queda e o arranque" (removendo os
+arquivos de uma tabela depois do `SIGKILL` e antes de religar o servidor), o
+item da §5.5 continua verdadeiro nos três regimes: a recuperação não trava nem
+mente — cada operação daquela tabela vira uma linha em `operacoes IMPOSSIVEIS`
+nomeando `a` e o motivo (`nenhum volume de a.reg`).
+
+#### O que a matriz NÃO prova, e por quê
+
+**Queda de energia**, não de processo. O parágrafo acima sobre "a queda do
+PROCESSO nunca perde um `write` que o kernel já recebeu" é a peça que faz os
+quatro primeiros pontos serem regime-independentes — e é também o limite do
+método: nenhum processo em espaço de usuário provoca uma queda de energia de
+verdade (a mesma linha de `docs/DESEMPENHO.md` §4.12, para a janela da
+exclusão). O que uma queda de energia arriscaria — páginas do `.ndx`/`.reg`
+que só existiam no *write-back* do kernel e nunca chegaram à mídia — é
+**descrito**, não medido: a marca `.tx`, por ser sincronizada sempre, continua
+sendo o bilhete que traz o commit de volta mesmo que a tabela tenha perdido
+bytes não sincronizados: a reaplicação é idempotente pelo rowid e reescreve o
+que faltar a partir da própria marca (§5.2). O caso sem conserto (slot gravado
+e depois liberado) e o caso da §5.5.3 (índice sujo) são os dois pontos onde
+mesmo essa rede não fecha — e os dois estão escritos, não escondidos.
 
 ---
 
@@ -983,5 +1166,6 @@ fonte. O relato inteiro está no histórico deste documento e em
 | o protocolo inteiro: `BEGIN`/`COMMIT`/`ROLLBACK`/`SAVEPOINT`, escopo, prazos, classes de erro, recuperação | `servidor.rs`, `testes_transacoes` |
 | o SQL: os três sinônimos, as cláusulas sem ordem, `500ms` que não vira `500s` | `phxsql-sql/src/transacao.rs` |
 | **pelo soquete**, com `SIGKILL` no meio de um `COMMIT` | `bancada/transacoes/provar.py` |
+| **a matriz ponto de morte × regime** (§5.7), `SIGKILL` de verdade nos cinco pontos e nos três regimes | `bancada/durabilidade/prova.py`, `bancada/durabilidade/LEIA-ME.md` |
 | que cada teste ainda pega o defeito que o motivou | `bancada/guardas/catalogo.py` |
 | os números | `--example custo-da-transacao`, e `DESEMPENHO.md` §12 |
