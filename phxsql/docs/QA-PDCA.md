@@ -402,7 +402,7 @@ dívida que só deve encolher, travam um comportamento em produção).
 | Catraca | Onde mora | Valor | Medido hoje | Estado |
 |---|---|---:|---:|---|
 | `TETO_TABELA_NA_MAO` (tabelas montadas a mao em vez de PhxGrid) | `crates/phxsql-server/src/conferidor_grades.rs` | 24 | **24** | em cima, sem folga |
-| `TETO` (textos cravados fora da fabrica de idiomas) | `crates/phxsql-server/src/conferidor.rs` | 1.549 | **1.549** | em cima, sem folga |
+| `TETO_ROTULOS_E_CRASE` (textos cravados fora da fabrica de idiomas) | `crates/phxsql-server/src/conferidor.rs` | 1.720 | **1.720** | em cima, sem folga |
 | `TETO_COLADO` (chaves com os seis idiomas identicos) | `crates/phxsql-server/src/conferidor.rs` | 0 | **0** | em cima, sem folga |
 | `TETO_FRASE_REPETIDA` (frase longa repetida em tres ou mais idiomas) | `crates/phxsql-server/src/conferidor.rs` | 0 | **0** | em cima, sem folga |
 
@@ -446,7 +446,7 @@ do medido, porque aí a suíte reprovaria sozinha; o achado seria uma catraca
 o caso). Comandos, na raiz do repositório:
 
 ```bash
-cargo run --release --example textos-fora-da-fabrica -p phxsql-server   # imprime "catraca (TETO) ..... N"
+cargo run --release --example textos-fora-da-fabrica -p phxsql-server   # imprime "catraca (so desce) ..... N"
 cargo run --release --example grades-fora-do-padrao   -p phxsql-server  # imprime "catraca (so desce) ..... N"
 cargo test --release -p phxsql-server --lib conferidor:: --lib conferidor_grades::
 ```

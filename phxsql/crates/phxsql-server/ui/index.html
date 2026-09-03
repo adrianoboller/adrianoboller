@@ -3262,7 +3262,7 @@ function fmtBytes(b) {
 /// Numa grade de três colunas o navegador mede o rótulo sozinho, o valor não
 /// quebra, e a barra fica com o que sobra.
 function barras(itens, opc = {}) {
-  if (!itens.length) return `<div class="vazioc">sem dados ainda</div>`;
+  if (!itens.length) return `<div class="vazioc">${esc(txt("tela.grafico_sem_dados", "sem dados ainda"))}</div>`;
   const teto = Math.max(...itens.map(i => i.valor), 1);
   const linhas = itens.map(it => {
     const p = (Math.max(0, it.valor) / teto) * 100;
@@ -3335,7 +3335,7 @@ function areaHoras(serie, recusadas, largura = 1180) {
 /// Anel. Para composição — quantos usuários de cada nível.
 function anel(fatias) {
   const total = fatias.reduce((a, f) => a + f.valor, 0);
-  if (!total) return `<div class="vazioc">sem dados ainda</div>`;
+  if (!total) return `<div class="vazioc">${esc(txt("tela.grafico_sem_dados", "sem dados ainda"))}</div>`;
   const R = 52, r = 33, cx = 70, cy = 70;
   let ang = -Math.PI / 2;
   const arcos = fatias.map(f => {
@@ -3426,7 +3426,7 @@ function medidor(percentual, rotulo, detalhe, limite = 90) {
 /// De quebra some um dos dois regimes de escala: o texto do disco passa a
 /// medir o mesmo do menu ao lado dele.
 function barrasCheias(itens) {
-  if (!itens.length) return `<div class="vazioc">sem dados ainda</div>`;
+  if (!itens.length) return `<div class="vazioc">${esc(txt("tela.grafico_sem_dados", "sem dados ainda"))}</div>`;
   return `<div class="discos">` + itens.map(it => {
     const p = Math.max(0, Math.min(100, it.percentual));
     const cor = it.alerta ? "var(--log)" : p >= 90 ? "var(--ambar)" : "var(--laranja)";
@@ -3455,11 +3455,12 @@ function maquinaHtml(m) {
        <p class="leg">${legenda}</p>${corpo}</div>`;
 
   if (!m.disponivel) {
-    return carta("A máquina", `monitor de sistema indisponível em <b>${esc(m.sistema)}</b>`,
-      `<div class="vazioc">CPU, memória e rede saem do /proc, que só existe no Linux.
-       O espaço em disco continua valendo — ele vem do <code>df</code>.</div>`,
-      true) + (m.discos && m.discos.length ? carta("Espaço em disco",
-        "cada caminho que este servidor usa", discosHtml(m), true) : "");
+    return carta(txt("tela.pa_maquina", "A máquina"),
+      marcado(txt("tela.pa_indisponivel_msg", "monitor de sistema indisponível em **{sistema}**"), { sistema: m.sistema }),
+      `<div class="vazioc">${marcado(txt("tela.pa_indisponivel_corpo",
+        "CPU, memória e rede saem do /proc, que só existe no Linux. O espaço em disco continua valendo — ele vem do `df`."))}</div>`,
+      true) + (m.discos && m.discos.length ? carta(txt("tela.pa_espaco_disco", "Espaço em disco"),
+        txt("tela.pa_espaco_disco_leg", "cada caminho que este servidor usa"), discosHtml(m), true) : "");
   }
 
   const cpu = m.cpu || {}, mem = m.memoria || {};
@@ -3480,26 +3481,28 @@ function maquinaHtml(m) {
   const rede = (m.rede || []).filter(r => r.rx_bytes || r.tx_bytes);
   const io = (m.io || []).filter(d => d.leituras || d.escritas);
 
-  return carta("A máquina", primeira
-      ? "primeira leitura · a taxa aparece na próxima, porque taxa precisa de dois instantes"
-      : `medido nos últimos ${(m.segundos_desde_a_ultima || "0").replace(".", ",")} s`,
+  return carta(txt("tela.pa_maquina", "A máquina"), primeira
+      ? txt("tela.pa_primeira_leitura", "primeira leitura · a taxa aparece na próxima, porque taxa precisa de dois instantes")
+      : marcado(txt("tela.pa_medido_ha", "medido nos últimos {s} s"), { s: (m.segundos_desde_a_ultima || "0").replace(".", ",") }),
       `<div class="maquina">${medidores}
          <div>${m.discos && m.discos.length ? discosHtml(m) : ""}</div>
        </div>`, true) +
-    carta("Placas de rede", primeira ? "aguardando o segundo instante" : "tráfego por interface",
+    carta(txt("tela.pa_placas_rede", "Placas de rede"),
+      primeira ? txt("tela.pa_aguardando", "aguardando o segundo instante") : txt("tela.pa_trafego_leg", "tráfego por interface"),
       barras(rede.map(r => ({
         nome: r.interface,
         valor: Number(r.rx_bytes_s) + Number(r.tx_bytes_s),
         texto: `↓${fmtTaxa(r.rx_bytes_s)}  ↑${fmtTaxa(r.tx_bytes_s)}`,
         cor: r.erros > 0 ? "var(--log)" : "var(--reg)",
-      })), { titulo: "Tráfego por placa de rede" })) +
-    carta("Discos", primeira ? "aguardando o segundo instante" : "leitura e escrita por disco físico",
+      })), { titulo: txt("tela.pa_trafego_titulo", "Tráfego por placa de rede") })) +
+    carta(txt("tela.pa_discos_titulo", "Discos"),
+      primeira ? txt("tela.pa_aguardando", "aguardando o segundo instante") : txt("tela.pa_disco_leg", "leitura e escrita por disco físico"),
       barras(io.map(d => ({
         nome: d.disco,
         valor: Number(d.lidos_bytes_s) + Number(d.escritos_bytes_s),
         texto: `↓${fmtTaxa(d.lidos_bytes_s)}  ↑${fmtTaxa(d.escritos_bytes_s)}`,
         cor: "var(--ndx)",
-      })), { titulo: "Leitura e escrita por disco" }));
+      })), { titulo: txt("tela.pa_disco_titulo_barras", "Leitura e escrita por disco") }));
 }
 
 function discosHtml(m) {
@@ -3623,26 +3626,26 @@ async function vPainel() {
 
   return `<div class="kpis">${kpis}</div><div class="cartas" id="cartas">
     <div id="maquina" class="passa">${maquinaHtml(maquina)}</div>
-    ${carta("Operações por hora", "últimas 24 horas · as barras vermelhas são as recusadas",
+    ${carta(txt("tela.pa_ops_hora_titulo", "Operações por hora"), txt("tela.pa_ops_hora_leg", "últimas 24 horas · as barras vermelhas são as recusadas"),
         `<div id="grafHoras"></div>`, true)}
-    ${carta("Operações mais pedidas", "verde é o que passou, vermelho o que foi recusado",
+    ${carta(txt("tela.pa_ops_pedidas_titulo", "Operações mais pedidas"), txt("tela.pa_ops_pedidas_leg", "verde é o que passou, vermelho o que foi recusado"),
         barras(d.por_operacao.map(o => ({ nome:o.op, valor:o.ok, segundo:o.recusados,
           texto: o.recusados ? `${fmt(o.ok)} + ${fmt(o.recusados)}✕` : fmt(o.ok) })),
-          { titulo:"Operações mais pedidas" }))}
-    ${carta("Usuários por nível", "quem pode o quê, do config.json",
+          { titulo:txt("tela.pa_ops_pedidas_titulo", "Operações mais pedidas") }))}
+    ${carta(txt("tela.pa_usuarios_nivel_titulo", "Usuários por nível"), txt("tela.pa_usuarios_nivel_leg", "quem pode o quê, do config.json"),
         anel(d.por_nivel.map(n => ({ nome:n.nivel, valor:n.quantos, cor:CORES[n.nivel] || "var(--texto-3)" }))))}
-    ${carta("Maiores tabelas", "por registro · o tamanho é o do .reg",
+    ${carta(txt("tela.pa_maiores_tabelas_titulo", "Maiores tabelas"), txt("tela.pa_maiores_tabelas_leg", "por registro · o tamanho é o do .reg"),
         barras(d.maiores_tabelas.map(t => ({ nome:t.tabela, valor:t.registros,
-          texto: `${fmt(t.registros)} · ${fmtBytes(t.bytes)}` })), { titulo:"Maiores tabelas" }))}
-    ${carta("De onde vêm", "por IP · vermelho é o que foi recusado",
+          texto: `${fmt(t.registros)} · ${fmtBytes(t.bytes)}` })), { titulo:txt("tela.pa_maiores_tabelas_titulo", "Maiores tabelas") }))}
+    ${carta(txt("tela.pa_de_onde_titulo", "De onde vêm"), txt("tela.pa_de_onde_leg", "por IP · vermelho é o que foi recusado"),
         barras(d.top_ips.map(i => ({ nome:i.ip, valor:i.acessos - i.recusados, segundo:i.recusados,
-          texto: fmt(i.acessos) })), { titulo:"Acessos por IP" }))}
-    ${carta("Bancos", "tabelas por banco de dados",
+          texto: fmt(i.acessos) })), { titulo:txt("tela.pa_acessos_ip_titulo", "Acessos por IP") }))}
+    ${carta(txt("tela.pa_bancos_titulo", "Bancos"), txt("tela.pa_bancos_leg", "tabelas por banco de dados"),
         barras(d.bancos.map(b => ({ nome:b.nome, valor:b.tabelas,
-          texto: `${b.tabelas} tab · ${fmt(b.registros)} reg`, cor:"var(--reg)" })), { titulo:"Tabelas por banco" }))}
-    ${carta("Quem mais usou", "por login, no log inteiro",
+          texto: `${b.tabelas} tab · ${fmt(b.registros)} reg`, cor:"var(--reg)" })), { titulo:txt("tela.pa_tabelas_banco_titulo", "Tabelas por banco") }))}
+    ${carta(txt("tela.pa_quem_mais_titulo", "Quem mais usou"), txt("tela.pa_quem_mais_leg", "por login, no log inteiro"),
         barras(d.usuarios_ativos.map(u => ({ nome:u.usuario, valor:u.acessos, cor:"var(--memo)" })),
-          { titulo:"Acessos por usuário" }))}
+          { titulo:txt("tela.pa_acessos_usuario_titulo", "Acessos por usuário") }))}
   </div>`;
 }
 

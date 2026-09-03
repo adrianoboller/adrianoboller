@@ -421,7 +421,7 @@ não é o defeito. A guarda começa a valer no terceiro.
 
 | teste | reprova |
 |---|---|
-| `conferidor::a_catraca_dos_textos_fora_da_fabrica` | texto de tela cravado **a mais** que o `TETO` — e também traduzir sem baixar a catraca |
+| `conferidor::a_catraca_dos_textos_fora_da_fabrica` | texto de tela cravado **a mais** que o `TETO_ROTULOS_E_CRASE` — e também traduzir sem baixar a catraca |
 | `idiomas::todo_data_txt_da_pagina_existe_na_fabrica` | chave que a tela pede e a fábrica não tem (a tela ficaria em português para sempre) |
 | `idiomas::todo_texto_da_fabrica_e_pedido_por_alguem` | chave morta: traduzida nos seis idiomas e pedida por ninguém |
 | `idiomas::a_fabrica_e_bem_formada` | nome repetido, português vazio, ou texto que não cabe nos 250 da coluna |
@@ -429,16 +429,28 @@ não é o defeito. A guarda começa a valer no terceiro.
 | `idiomas::as_marcas_de_enfase_fecham` | `**` ou crase aberta e não fechada num idioma só |
 | `idiomas::todo_idioma_tem_os_mesmos_marcadores_do_portugues` | `{n}` perdido numa tradução: o número não apareceria |
 
-O `TETO` **só desce**. Traduziu um punhado: rode o exemplo, veja o número novo
-e baixe a catraca no mesmo commit — catraca frouxa não segura nada.
+O `TETO_ROTULOS_E_CRASE` **só desce**. Traduziu um punhado: rode o exemplo,
+veja o número novo e baixe a catraca no mesmo commit — catraca frouxa não
+segura nada.
+
+> **Esta catraca substitui a `TETO` antiga (1.549).** O pedido 165 achou um
+> falso negativo grande — ver "O que o conferidor enxerga, e o que não",
+> abaixo — e regra que passa a medir mais não sobe o teto existente: ela
+> aposenta o antigo e faz nascer um novo, no número medido do dia. O
+> precedente já estava em `conferidor_grades::TETO_TABELA_NA_MAO`.
+> `TETO_ROTULOS_E_CRASE` nasceu em 1.744; o mesmo commit que ensinou o crivo
+> também traduziu o lote coerente do Painel, baixando para **1.720**.
 
 ### O que o conferidor enxerga, e o que não
 
 Duas vias, porque a interface escreve texto de dois jeitos: **marcação** (o
 texto entre `>` e `<` de uma etiqueta conhecida, mais `title`, `placeholder`,
 `aria-label` e `alt`) e **rótulo** (o literal em posição de rótulo no
-JavaScript: `rot:`, `{t:`, `diz:`, `dica:`, e o primeiro argumento de
-`avisar(`, `confirm(`, `prompt(` e `folha(`).
+JavaScript: `rot:`, `{t:`, `diz:`, `dica:`, o primeiro argumento de `avisar(`,
+`confirm(`, `prompt(`, `folha(` e `carta(`, e o SEGUNDO argumento de `ficha(`
+— o primeiro é o `valor`, que é dado). O literal pode vir entre aspa simples,
+dupla **ou crase**: `` avisar(`Tabela criada`) `` vale tanto quanto
+`avisar("Tabela criada")`.
 
 Fora dessas formas ele não vê — por exemplo o segundo item de um par solto
 `["registros", e.registros]`. Está declarado no `RECEITAS`: forma nova de
@@ -504,17 +516,29 @@ nesta leva, os outros **quatro** arquivos de interface:
 | `ui/grid/phx-grid.js` | 24 | **0** | o rodapé, a paginação, o seletor de colunas, a caixa de grupos, a barra de filtros e o painel de filtro de coluna |
 | `ui/diagrama-er.js` | 2 | **0** | o toco da chave para fora e o rótulo do desenho |
 
-**Todo texto cravado que resta está no `index.html`**: 1.549, com arquivo e
+**Todo texto cravado que resta está no `index.html`**: 1.720, com arquivo e
 linha no `--tudo`. Ele ficou de fora de propósito — várias frentes o editavam
-ao mesmo tempo, e mexer nele no meio disso trocaria tradução por conflito.
+ao mesmo tempo, e mexer nele no meio disso trocaria tradução por conflito. O
+número **subiu** desde a última medida (1.549) porque o crivo aprendeu a ver
+mais — ver "O que o conferidor enxerga, e o que não" acima — antes de a leva
+desta rodada baixá-lo de novo.
 
-Uma leva já entrou nessa ordem: as **duas telas de Sessões e Estatísticas de
-uso** (`verSessoes`, `histograma`, `verEstatisticas`) saíram inteiras — título,
-subtítulo, fichas, colunas, os dois recados de `avisar(`/`confirm(` de encerrar
-sessão, e o parágrafo de aviso do soquete. Baixou a catraca de **1.577 para
-1.549** (28 textos), medido pelo conferidor, não estimado.
+Duas levas já entraram nessa ordem. A primeira, as **duas telas de Sessões e
+Estatísticas de uso** (`verSessoes`, `histograma`, `verEstatisticas`) saíram
+inteiras — título, subtítulo, fichas, colunas, os dois recados de
+`avisar(`/`confirm(` de encerrar sessão, e o parágrafo de aviso do soquete.
+Baixou a catraca de **1.577 para 1.549** (28 textos), medido pelo conferidor,
+não estimado.
 
-Duas lições saíram dela, e ficam registradas para a próxima leva:
+A segunda, no pedido 165: o **Painel** (`vPainel()`/`maquinaHtml()`) inteiro —
+o widget "A máquina" (CPU, memória, rede, discos) e os sete cartões de
+métrica (operações por hora, operações mais pedidas, usuários por nível,
+maiores tabelas, de onde vêm, bancos, quem mais usou). 32 chaves novas
+(`tela.pa_*`, mais uma `tela.grafico_sem_dados` compartilhada por
+`barras()`/`anel()`/`barrasCheias()`), baixando a catraca em 24 no mesmo
+commit que ensinou o crivo a vê-las.
+
+Duas lições saíram da primeira leva, e ficam registradas:
 
 - **Traduzir um título quebra quem compara o título cru.** O relógio de
   atualização da tela de Sessões fazia
@@ -564,27 +588,31 @@ quais, porque o número não as conta:
 Traduzir os `{detalhe}` que o motor gera continua sendo outra metade, e essa
 pede `TextName` por mensagem do motor, não só a moldura.
 
-- **`avisar(`/`confirm(`/`folha(` com o literal entre CRASES em vez de aspas.**
-  `literal()` só reconhece `"` e `'` como início de string — uma crase não
-  entra no `RECEITAS` porque o `${…}` dentro dela também precisa sumir antes,
-  e a via de hoje trata as duas coisas juntas por posição, não por forma da
-  aspa. Resultado: `avisar(\`${tab} duplicada em ${r.destino}\`)` é invisível
-  às duas vias, mesmo carregando texto cravado ("duplicada em") ao lado do
-  dado. Medido nesta rodada: **57 `avisar(`, 13 `confirm(` e 38 `folha(`**
-  ainda começam por crase. Não é o mesmo defeito do `--n` do CSS (aquele era
-  falso positivo; este é falso **negativo**) — e por ser um numero grande,
-  ele pede a dança inteira da régua que passa a medir mais: aposentar o
-  `TETO` de hoje e nascer um novo, no número medido no dia em que alguém
-  fechar essa via, e não um remendo no meio de uma leva de tradução.
-- **Ajudantes locais com texto de tela no primeiro argumento.** `ficha(valor,
-  rotulo, unidade)` (63 chamadas, uma função global) e `carta(titulo, legenda,
-  corpo, larga)` (18 chamadas, reescrita local em três telas) recebem rótulo
-  cravado que nenhuma das duas vias enxerga — nenhum dos dois nomes está no
-  `RECEITAS`. Entrar com `ficha(` sozinho examinaria as 63 de uma vez só, fora
-  do tamanho de qualquer leva coerente; por isso as chamadas de `ficha(`/
-  `carta(` das telas de Sessões e Estatísticas foram traduzidas à mão nesta
-  rodada, sem alterar o `RECEITAS` — a mesma decisão do `linha(` da telemetria,
-  registrada acima.
+**Fechado no pedido 165 — o falso negativo grande, em duas partes.**
+`literal()` só reconhecia `"` e `'`: um rótulo entre CRASES —
+`` avisar(`${tab} duplicada em ${r.destino}`) `` — passava invisível enquanto
+o MESMO texto entre aspas duplas era pego. E `sem_interpolacao` apagava
+`${…}` de um golpe só, incluindo quando o que estava lá dentro não era só
+dado: `${carta("Título", ...)}` e `${ficha(valor, "rotulo")}` desapareciam
+inteiros — e como as 62 chamadas de `ficha(` desta base vivem TODAS dentro de
+um `${…}`, nem entrar com `ficha(` no `RECEITAS` bastava sozinho, porque a
+chamada nunca chegava a ser varrida. Medido antes do conserto: 1.549. Depois
+de `literal()` aprender a crase e de `carta(`/`ficha(` entrarem no
+`RECEITAS`: 1.685. Depois de `sem_interpolacao` aprender a NÃO apagar uma
+interpolação que abre com uma chamada do `RECEITAS` (preservando o texto para
+a segunda via continuar enxergando): **1.744** — a nova `TETO_ROTULOS_E_CRASE`.
+`ficha(` tem um jeito próprio: o rótulo é o SEGUNDO argumento (o primeiro é o
+`valor`, que é dado), então a via pula o primeiro argumento por um contador de
+parênteses/aspas antes de procurar o literal.
+
+O que continua fora, sem mudar nesta rodada:
+
+- o **primeiro argumento de `linha(`** — as vinte e cinco etiquetas do cartão
+  da telemetria («estado», «operação em curso», «peso (servidor gasto)»…), já
+  traduzidas à mão. `linha(` é um nome curto demais para casar sem falso
+  positivo, e existe também no `index.html` com outro sentido;
+- o **texto escrito com `\uXXXX`** — nenhuma das duas vias lê escape Unicode
+  como letra.
 
 ## A prova das quatro telas, exercitando
 

@@ -1052,7 +1052,8 @@ pub const FABRICA_TELA: &[TextoDeFabrica] = &[
     // -------------------------------------------- Sessões e Estatísticas de uso
     // As duas telas que o console nao tinha: quem esta falando agora (o SHOW
     // PROCESSLIST) e o que o log ja sabia (por tabela, por usuario, a cauda
-    // da latencia). Baixa a catraca do conferidor -- ver conferidor.rs TETO.
+    // da latencia). Baixa a catraca do conferidor -- ver conferidor.rs
+    // TETO_ROTULOS_E_CRASE.
     texto!("tela.se_titulo", "Sessões", "Sessions", "Sessions", "Sessioni", "Sitzungen", "Sesiones"),
     texto!("tela.se_sub", "quem está falando com o servidor agora · atualiza a cada 3 s", "qui parle avec le serveur en ce moment · actualise toutes les 3 s", "who is talking to the server right now · refreshes every 3 s", "chi sta parlando con il server ora · si aggiorna ogni 3 s", "wer gerade mit dem Server spricht · aktualisiert alle 3 s", "quién está hablando con el servidor ahora · se actualiza cada 3 s"),
     texto!("tela.se_fic_porta", "na porta de dados", "sur le port de données", "on the data port", "sulla porta dati", "am Datenport", "en el puerto de datos"),
@@ -1177,6 +1178,49 @@ pub const FABRICA_TELA: &[TextoDeFabrica] = &[
     texto!("tela.pino_a_frente_de", "à frente {n}", "en avance {n}", "ahead {n}", "avanti {n}", "voraus {n}", "adelante {n}"),
     texto!("tela.pino_recusada", "recusada: {motivo}", "refusée : {motivo}", "refused: {motivo}", "rifiutata: {motivo}", "abgelehnt: {motivo}", "rechazada: {motivo}"),
     texto!("tela.pino_nao_chegou", "ainda não chegou aqui", "pas encore arrivé ici", "hasn't arrived here yet", "non ancora arrivato qui", "noch nicht hier angekommen", "todavía no llegó aquí"),
+
+    // -------------------------------------------------- o Painel (dashboard)
+    // Pedido 165: o `${carta(...)}` e o `${ficha(...)}` escondiam rotulo
+    // dentro de dado, e `sem_interpolacao` apagava tudo de um golpe -- entao
+    // nenhuma das cartas do Painel (o widget "a maquina" e os sete cartoes de
+    // metrica) nem passava pelo conferidor. Lote coerente: e UMA tela, o
+    // `vPainel()`/`maquinaHtml()` de `index.html`.
+    texto!("tela.pa_maquina", "A máquina", "La machine", "The machine", "La macchina", "Die Maschine", "La máquina"),
+    texto!("tela.pa_indisponivel_msg", "monitor de sistema indisponível em **{sistema}**", "moniteur système indisponible sur **{sistema}**", "system monitor unavailable on **{sistema}**", "monitor di sistema non disponibile su **{sistema}**", "Systemmonitor auf **{sistema}** nicht verfügbar", "monitor de sistema no disponible en **{sistema}**"),
+    texto!("tela.pa_indisponivel_corpo", "CPU, memória e rede saem do /proc, que só existe no Linux. O espaço em disco continua valendo — ele vem do `df`.", "CPU, mémoire et réseau viennent de /proc, qui n'existe que sous Linux. L'espace disque reste valable — il vient de `df`.", "CPU, memory and network come from /proc, which only exists on Linux. Disk space still works — it comes from `df`.", "CPU, memoria e rete provengono da /proc, che esiste solo su Linux. Lo spazio su disco resta valido — viene da `df`.", "CPU, Speicher und Netzwerk stammen aus /proc, das es nur unter Linux gibt. Der Festplattenspeicher bleibt gültig — er kommt von `df`.", "CPU, memoria y red vienen de /proc, que solo existe en Linux. El espacio en disco sigue funcionando — viene de `df`."),
+    texto!("tela.pa_espaco_disco", "Espaço em disco", "Espace disque", "Disk space", "Spazio su disco", "Festplattenspeicher", "Espacio en disco"),
+    texto!("tela.pa_espaco_disco_leg", "cada caminho que este servidor usa", "chaque chemin que ce serveur utilise", "every path this server uses", "ogni percorso usato da questo server", "jeder Pfad, den dieser Server nutzt", "cada ruta que este servidor usa"),
+    texto!("tela.pa_primeira_leitura", "primeira leitura · a taxa aparece na próxima, porque taxa precisa de dois instantes", "première lecture · le taux apparaît à la prochaine, car un taux a besoin de deux instants", "first reading · the rate appears on the next one, because a rate needs two instants", "prima lettura · il tasso appare alla prossima, perché un tasso richiede due istanti", "erste Messung · die Rate erscheint bei der nächsten, weil eine Rate zwei Zeitpunkte braucht", "primera lectura · la tasa aparece en la próxima, porque una tasa necesita dos instantes"),
+    texto!("tela.pa_medido_ha", "medido nos últimos {s} s", "mesuré sur les {s} dernières s", "measured over the last {s} s", "misurato negli ultimi {s} s", "gemessen in den letzten {s} s", "medido en los últimos {s} s"),
+    texto!("tela.pa_placas_rede", "Placas de rede", "Cartes réseau", "Network cards", "Schede di rete", "Netzwerkkarten", "Tarjetas de red"),
+    texto!("tela.pa_aguardando", "aguardando o segundo instante", "en attente du second instant", "waiting for the second instant", "in attesa del secondo istante", "wartet auf den zweiten Zeitpunkt", "esperando el segundo instante"),
+    texto!("tela.pa_trafego_leg", "tráfego por interface", "trafic par interface", "traffic by interface", "traffico per interfaccia", "Datenverkehr pro Schnittstelle", "tráfico por interfaz"),
+    texto!("tela.pa_trafego_titulo", "Tráfego por placa de rede", "Trafic par carte réseau", "Traffic by network card", "Traffico per scheda di rete", "Datenverkehr pro Netzwerkkarte", "Tráfico por tarjeta de red"),
+    texto!("tela.pa_discos_titulo", "Discos", "Disques", "Disks", "Dischi", "Festplatten", "Discos"),
+    texto!("tela.pa_disco_leg", "leitura e escrita por disco físico", "lecture et écriture par disque physique", "reads and writes by physical disk", "lettura e scrittura per disco fisico", "Lese- und Schreibvorgänge pro physischer Festplatte", "lectura y escritura por disco físico"),
+    texto!("tela.pa_disco_titulo_barras", "Leitura e escrita por disco", "Lecture et écriture par disque", "Reads and writes by disk", "Lettura e scrittura per disco", "Lese- und Schreibvorgänge pro Festplatte", "Lectura y escritura por disco"),
+    // Compartilhada por `barras()`, `anel()` e `barrasCheias()` -- os tres
+    // desenhistas de grafico do painel, usados em bem mais telas que so o
+    // Painel. Prefixo `grafico_`, e nao `pa_`, porque o texto nao e do
+    // Painel: e do desenhista.
+    texto!("tela.grafico_sem_dados", "sem dados ainda", "pas encore de données", "no data yet", "nessun dato ancora", "noch keine Daten", "sin datos todavía"),
+    texto!("tela.pa_ops_hora_titulo", "Operações por hora", "Opérations par heure", "Operations per hour", "Operazioni per ora", "Vorgänge pro Stunde", "Operaciones por hora"),
+    texto!("tela.pa_ops_hora_leg", "últimas 24 horas · as barras vermelhas são as recusadas", "dernières 24 heures · les barres rouges sont les refusées", "last 24 hours · the red bars are the refused ones", "ultime 24 ore · le barre rosse sono quelle rifiutate", "letzte 24 Stunden · die roten Balken sind die abgelehnten", "últimas 24 horas · las barras rojas son las rechazadas"),
+    texto!("tela.pa_ops_pedidas_titulo", "Operações mais pedidas", "Opérations les plus demandées", "Most requested operations", "Operazioni più richieste", "Meistgefragte Vorgänge", "Operaciones más pedidas"),
+    texto!("tela.pa_ops_pedidas_leg", "verde é o que passou, vermelho o que foi recusado", "vert c'est ce qui est passé, rouge ce qui a été refusé", "green is what went through, red is what was refused", "verde è ciò che è passato, rosso ciò che è stato rifiutato", "grün ist, was durchging, rot, was abgelehnt wurde", "verde es lo que pasó, rojo lo que fue rechazado"),
+    texto!("tela.pa_usuarios_nivel_titulo", "Usuários por nível", "Utilisateurs par niveau", "Users by level", "Utenti per livello", "Benutzer nach Rolle", "Usuarios por nivel"),
+    texto!("tela.pa_usuarios_nivel_leg", "quem pode o quê, do config.json", "qui peut quoi, depuis le config.json", "who can do what, from config.json", "chi può fare cosa, dal config.json", "wer was darf, aus der config.json", "quién puede qué, desde config.json"),
+    texto!("tela.pa_maiores_tabelas_titulo", "Maiores tabelas", "Plus grandes tables", "Largest tables", "Tabelle più grandi", "Größte Tabellen", "Tablas más grandes"),
+    texto!("tela.pa_maiores_tabelas_leg", "por registro · o tamanho é o do .reg", "par enregistrement · la taille est celle du .reg", "by record · the size is that of the .reg", "per record · la dimensione è quella del .reg", "nach Datensatz · die Größe ist die der .reg", "por registro · el tamaño es el del .reg"),
+    texto!("tela.pa_de_onde_titulo", "De onde vêm", "D'où ça vient", "Where from", "Da dove arrivano", "Woher sie kommen", "De dónde vienen"),
+    texto!("tela.pa_de_onde_leg", "por IP · vermelho é o que foi recusado", "par IP · rouge c'est ce qui a été refusé", "by IP · red is what was refused", "per IP · rosso è ciò che è stato rifiutato", "nach IP · rot ist, was abgelehnt wurde", "por IP · rojo es lo que fue rechazado"),
+    texto!("tela.pa_acessos_ip_titulo", "Acessos por IP", "Accès par IP", "Access by IP", "Accessi per IP", "Zugriffe nach IP", "Accesos por IP"),
+    texto!("tela.pa_bancos_titulo", "Bancos", "Bases", "Databases", "Basi", "Datenbanken", "Bases"),
+    texto!("tela.pa_bancos_leg", "tabelas por banco de dados", "tables par base de données", "tables by database", "tabelle per database", "Tabellen pro Datenbank", "tablas por base de datos"),
+    texto!("tela.pa_tabelas_banco_titulo", "Tabelas por banco", "Tables par base", "Tables by database", "Tabelle per base", "Tabellen pro Datenbank", "Tablas por base"),
+    texto!("tela.pa_quem_mais_titulo", "Quem mais usou", "Qui a le plus utilisé", "Who used it most", "Chi ha usato di più", "Wer am meisten genutzt hat", "Quién más lo usó"),
+    texto!("tela.pa_quem_mais_leg", "por login, no log inteiro", "par identifiant, sur tout le journal", "by login, across the whole log", "per login, sull'intero log", "nach Login, im gesamten Protokoll", "por login, en todo el registro"),
+    texto!("tela.pa_acessos_usuario_titulo", "Acessos por usuário", "Accès par utilisateur", "Access by user", "Accessi per utente", "Zugriffe nach Benutzer", "Accesos por usuario"),
 ];
 
 /// A posicao de um idioma pelo nome da coluna. Desconhecido = portugues.

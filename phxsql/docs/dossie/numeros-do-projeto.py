@@ -245,7 +245,7 @@ def idiomas() -> dict:
     n = {}
     for chave, rotulo in (("na fabrica", "fabrica"),
                           ("fora da fabrica", "fora"),
-                          ("catraca (TETO)", "teto")):
+                          ("catraca (so desce)", "teto")):
         m = re.search(rf"{re.escape(chave)}\s*\.*\s*(\d+)", r.stdout)
         if not m:
             sys.exit(f"nao achei «{chave}» na saida do conferidor")

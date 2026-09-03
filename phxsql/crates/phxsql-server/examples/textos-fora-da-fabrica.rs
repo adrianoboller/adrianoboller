@@ -29,7 +29,16 @@ fn main() {
         "  isentos ............ {} (nome proprio, sigla, identificador)",
         placar.isentos
     );
-    println!("  catraca (TETO) ..... {}", conferidor::TETO);
+    // O rotulo da prosa fica GENERICO de proposito -- so a linha de maquina
+    // (`--numeros`, embaixo) carrega o nome da constante. Rotulo com o nome
+    // dentro e rotulo que quebra o `numeros-do-projeto.py` toda vez que esta
+    // catraca for aposentada e renascer com outro nome; e ela ja renasceu
+    // uma vez (`TETO` -> `TETO_ROTULOS_E_CRASE`, pedido 165). Mesmo molde do
+    // irmao `grades-fora-do-padrao.rs`: "catraca (so desce)".
+    println!(
+        "  catraca (so desce) ..... {}",
+        conferidor::TETO_ROTULOS_E_CRASE
+    );
 
     // SAIDA DE MAQUINA, para o gerador do QA-PDCA nao ler a prosa acima.
     //
@@ -43,9 +52,9 @@ fn main() {
         // `catraca:`, e pergunta a cada um. Lista digitada num script e
         // exatamente a receita que envelhece.
         println!(
-            "catraca:nome=TETO;onde=crates/phxsql-server/src/conferidor.rs;\
+            "catraca:nome=TETO_ROTULOS_E_CRASE;onde=crates/phxsql-server/src/conferidor.rs;\
              valor={};medido={};mede=textos cravados fora da fabrica de idiomas",
-            conferidor::TETO,
+            conferidor::TETO_ROTULOS_E_CRASE,
             placar.fora
         );
         // As duas catracas da FABRICA. Elas existiam, os testes as impunham, e

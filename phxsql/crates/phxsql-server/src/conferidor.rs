@@ -23,8 +23,12 @@
 //!    JavaScript monta dentro de crases, porque a forma e a mesma.
 //! 2. **rotulo** -- o literal em posicao de rotulo dentro do JavaScript:
 //!    `rot:"…"` (menu e barra), `{t:"…"}` (cabecalho de coluna), `diz:`,
-//!    `dica:`, e o primeiro argumento de `avisar(`, `confirm(`, `prompt(` e
-//!    `folha(` (titulo e subtitulo de tela).
+//!    `dica:`, o primeiro argumento de `avisar(`, `confirm(`, `prompt(` e
+//!    `folha(` (titulo e subtitulo de tela), o primeiro argumento de `carta(`
+//!    (titulo do cartao) e o SEGUNDO de `ficha(` (o rotulo -- o primeiro e o
+//!    `valor`, que e dado). O literal pode vir entre aspas simples, duplas OU
+//!    **crase**: `` avisar(`Tabela criada`) `` e tao rotulo quanto
+//!    `avisar("Tabela criada")`.
 //!
 //! # O que ele NAO enxerga, declarado
 //!
@@ -33,6 +37,18 @@
 //! campo daria falso positivo em toda lista de chaves do programa. Quando uma
 //! forma nova de rotulo aparecer, ela entra em [`RECEITAS`] e o numero sobe --
 //! e subir o numero e o conferidor funcionando, nao falhando.
+//!
+//! # O falso negativo que a segunda onda fechou
+//!
+//! Ate a rodada do pedido 165, [`literal`] so reconhecia aspa simples e
+//! dupla. `` avisar(`...`) ``, `` confirm(`...`) `` e `` folha(`...`) `` com o
+//! texto entre CRASE ficavam invisiveis a conta -- e os ajudantes `ficha(` e
+//! `carta(` nem estavam em [`RECEITAS`], entao todo texto por eles passado
+//! ficava fora independente da aspa. Medido antes do conserto: 57 + 13 + 38
+//! chamadas de `avisar`/`confirm`/`folha` com crase, mais 63 usos de `ficha(`
+//! e 18 de `carta(` inteiramente cegos. A regua passou a medir mais, e por
+//! isso `TETO` foi aposentado em favor de [`TETO_ROTULOS_E_CRASE`] -- ver o
+//! comentario dele.
 //!
 //! # Como o dado escapa de ser contado como rotulo
 //!
@@ -122,6 +138,17 @@ pub const RECEITAS: &[(&str, &str)] = &[
     ("confirm(", "a pergunta antes de uma acao que nao se desfaz"),
     ("prompt(", "a pergunta que pede um valor"),
     ("folha(", "titulo e subtitulo de tela"),
+    // Os dois ajudantes do pedido 165. `carta(titulo, legenda, corpo, larga)`
+    // tem o rotulo no PRIMEIRO argumento, igual a `avisar` -- so nao estava
+    // na lista. `ficha(valor, rotulo, unidade)` e diferente: o primeiro
+    // argumento e o DADO (`valor`), entao o rotulo e o SEGUNDO -- e
+    // `via_rotulo` trata esse caso a parte, pulando o primeiro argumento
+    // antes de procurar o literal.
+    ("carta(", "titulo do cartao de painel"),
+    (
+        "ficha(",
+        "o rotulo da ficha (valor,rotulo,unidade) -- o segundo argumento",
+    ),
 ];
 
 /// Os atributos que o usuario LE, e o `data-txt-*` que cobre cada um.
@@ -486,6 +513,23 @@ fn cobrir_pareados(linha: &str) -> String {
     saida
 }
 
+/// Se o que vem logo apos um `${` e uma das chamadas de [`RECEITAS`] --
+/// `carta(`, `ficha(`, `avisar(`... -- e nao dado comum.
+///
+/// Existe por causa do achado do pedido 165: `${ficha(valor, "rotulo")}` e
+/// `${carta("Título", ...)}` sao interpolacao por FORA (o `${…}` que embrulha
+/// a chamada) e rotulo por DENTRO. Apagar o bloco inteiro -- o que
+/// `sem_interpolacao` fazia sem esta checagem -- jogava o rotulo fora junto
+/// com o dado, e foi por isso que os 62 usos de `ficha(` (todos dentro de
+/// `${ficha(...)}`) e 13 dos 18 usos de `carta(` ficavam invisiveis mesmo
+/// depois de `literal()` aprender a crase: a chamada nunca chegava a
+/// `via_rotulo`, porque `limpar()` ja tinha apagado a linha inteira antes.
+fn abre_com_receita(s: &str) -> bool {
+    RECEITAS
+        .iter()
+        .any(|(receita, _)| receita.ends_with('(') && s.starts_with(*receita))
+}
+
 /// Troca `${…}` e `txt(…)` por um [`BURACO`], preservando o resto da linha.
 ///
 /// Interpolacao que nao fecha na linha (o `${x ? \`<div>` de varias linhas)
@@ -497,6 +541,15 @@ fn sem_interpolacao(linha: &str) -> String {
     let mut i = 0;
     while i < b.len() {
         if b[i] == b'$' && i + 1 < b.len() && b[i + 1] == b'{' {
+            if abre_com_receita(&linha[i + 2..]) {
+                // So o marcador `${` some. O resto da chamada segue intacto
+                // para o `via_rotulo` reconhecer -- o crivo de `normalizar`
+                // continua barrando qualquer pedaco de codigo que escape por
+                // essa fresta, exatamente como barra em qualquer outro lugar.
+                saida.push(BURACO);
+                i += 2;
+                continue;
+            }
             saida.push(BURACO);
             i = fim_do_balanco(b, i + 1, b'{', b'}');
         } else if b[i] == b't'
@@ -667,16 +720,28 @@ fn via_rotulo(arquivo: &'static str, limpo: &str, inicios: &[usize]) -> Vec<Acha
             {
                 continue;
             }
-            let resto = &limpo[i..];
+            // `ficha(valor, rotulo, unidade)`: o rotulo e o SEGUNDO
+            // argumento -- o primeiro e o `valor`, que e dado e nao se
+            // traduz. Pula ate a virgula de nivel zero antes de procurar o
+            // literal; sem segunda virgula (chamada incompleta ou so o
+            // primeiro argumento) nao ha o que julgar aqui.
+            let mut base = i;
+            if *receita == "ficha(" {
+                match fim_do_primeiro_argumento(&limpo[base..]) {
+                    Some(corte) => base += corte + 1,
+                    None => continue,
+                }
+            }
+            let resto = &limpo[base..];
             let cru = resto.trim_start();
             let pulo = resto.len() - cru.len();
             let Some(valor) = literal(cru) else { continue };
-            if let Some(a) = pesar(arquivo, limpo, inicios, i + pulo, valor, Canal::Rotulo) {
+            if let Some(a) = pesar(arquivo, limpo, inicios, base + pulo, valor, Canal::Rotulo) {
                 achados.push(a);
             }
             // `folha(` leva dois: titulo e subtitulo.
             if *receita == "folha(" {
-                let apos = i + pulo + valor.len() + 2;
+                let apos = base + pulo + valor.len() + 2;
                 let sobra = limpo[apos..].trim_start_matches([',', ' ', '\n']);
                 if let Some(sub) = literal(sobra) {
                     let onde = limpo.len() - sobra.len();
@@ -690,10 +755,56 @@ fn via_rotulo(arquivo: &'static str, limpo: &str, inicios: &[usize]) -> Vec<Acha
     achados
 }
 
-/// O conteudo de um literal que comeca em `s`, se `s` comeca com aspa.
+/// O byte logo apos a virgula que separa o primeiro argumento do resto, numa
+/// chamada que comeca em `s` (ja sem o nome da funcao e o `(`). `None` quando
+/// nao ha segundo argumento -- a chamada fecha no primeiro `)` de nivel zero
+/// antes de qualquer virgula.
+///
+/// So existe por causa de `ficha(valor, rotulo, unidade)`: o rotulo e o
+/// SEGUNDO argumento, e para achar onde ele comeca e preciso pular o
+/// primeiro sem se perder em parenteses, colchetes, chaves ou aspas
+/// aninhadas dentro dele -- `ficha(pk ? pk.nome : "—", "chave primária")` tem
+/// uma virgula dentro do proprio primeiro argumento (nenhuma aqui, mas o
+/// ternario e a chamada podiam trazer uma) e o corte tem de respeitar isso.
+fn fim_do_primeiro_argumento(s: &str) -> Option<usize> {
+    let b = s.as_bytes();
+    let mut nivel = 0i32;
+    let mut aspa: u8 = 0;
+    let mut i = 0;
+    while i < b.len() {
+        let c = b[i];
+        if aspa != 0 {
+            if c == aspa {
+                aspa = 0;
+            }
+        } else {
+            match c {
+                b'"' | b'\'' | b'`' => aspa = c,
+                b'(' | b'[' | b'{' => nivel += 1,
+                b')' | b']' | b'}' if nivel > 0 => nivel -= 1,
+                b',' if nivel == 0 => return Some(i),
+                b')' if nivel == 0 => return None,
+                _ => {}
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
+/// O conteudo de um literal que comeca em `s`, se `s` comeca com aspa --
+/// simples, dupla OU crase.
+///
+/// A crase entrou no pedido 165: ate entao so aspa simples e dupla contavam,
+/// e `` avisar(`Tabela criada`) `` passava invisivel pela conta enquanto
+/// `avisar("Tabela criada")` era pego -- o MESMO texto, reprovado ou nao
+/// conforme o estilo de aspa de quem escreveu a chamada. O `${…}` que possa
+/// estar dentro ja virou [`BURACO`] antes de chegar aqui (ve [`limpar`]),
+/// entao um literal em crase com dado interpolado se comporta igual a um em
+/// aspa dupla.
 fn literal(s: &str) -> Option<&str> {
     let aspa = s.chars().next()?;
-    if aspa != '"' && aspa != '\'' {
+    if aspa != '"' && aspa != '\'' && aspa != '`' {
         return None;
     }
     let resto = &s[1..];
@@ -984,98 +1095,6 @@ pub const TETO_FRASE_REPETIDA: usize = 0;
 // A catraca
 // =====================================================================
 
-/// Quantos textos de tela ainda estao fora da fabrica.
-///
-/// **Este numero so desce.** Ele nao e uma meta: e a catraca que impede a
-/// proxima frente de acrescentar tela em portugues cravado sem ninguem
-/// perceber -- que foi exatamente como a interface chegou a 11.987 linhas com
-/// 16 textos na fabrica. Traduziu um punhado? Rode
-/// `cargo run --example textos-fora-da-fabrica -p phxsql-server`, veja o
-/// numero novo e baixe a catraca no mesmo commit.
-/// **A unica subida registrada, e o motivo dela.** 1.994 -> 2.000, na
-/// integracao em que esta catraca NASCEU. Tres frentes paralelas fecharam na
-/// mesma rodada -- multitela, cores das bolhas e este conferidor -- e as duas
-/// primeiras comecaram antes de a regra existir: nao havia como elas nascerem
-/// na fabrica. Do que sobrou, as etiquetas curtas foram traduzidas na hora
-/// (`tela.abas_da_regiao`, `tela.cores_de_fabrica` e as nove do menu Ver); os
-/// seis que restam sao paragrafos de explicacao da tela de cores, e traduzi-los
-/// as pressas numa integracao daria texto pior que deixa-los na fila. Estao
-/// nomeados no `PENDENCIAS.md`.
-///
-/// **A partir daqui o numero so desce.** Subir de novo pede o mesmo que este
-/// comentario: dizer quais textos, de qual frente, e por que nao couberam.
-///
-/// 2.000 -> 1.999 na revisao do dossie 0.18: o item «Jobs» do Gerir banco
-/// ganhou o par `rot:`/`txt:` ao passar a apontar para a tela que ja existia.
-/// Um so, e ele desce a catraca junto -- catraca frouxa nao segura nada.
-///
-/// 1.999 -> 2.068, e este e o unico tipo de subida que nao afrouxa nada: **o
-/// numero de baixo era falso.** O `multitela.js` era servido pelo `http.rs` e
-/// nao estava no `FONTES`, entao seus 69 textos cravados nunca foram contados
-/// -- nao foram acrescentados agora, sempre estiveram la. 2.068 e a primeira
-/// medida sobre a interface inteira; 1.999 era medida sobre cinco sextos dela.
-/// A guarda `a_lista_cobre_tudo_que_o_http_serve` impede a proxima leitura
-/// falsa, e a frente que traduz os 69 desce a catraca de volta.
-///
-/// 2.068 -> 1.999, e agora o numero quer dizer a mesma coisa que o de antes
-/// dizia por engano: os 69 do `multitela.js` sairam. Sessenta e oito viraram
-/// setenta chaves de fabrica; o sexagesimo nono, `devicePixelRatio`, entrou nos
-/// [`ISENTOS`] com a razao escrita, porque nome de propriedade do navegador nao
-/// se traduz. Trinta e nove dos sessenta e oito eram UMA frase picada pela
-/// marcacao, e o conserto deles esta no `docs/MENSAGENS.md`: frase picada e
-/// intraduzivel por construcao, entao a frase inteira virou uma chave so e o
-/// corte em `<b>`/`<code>` passou a acontecer DEPOIS da traducao.
-/// 1.999 -> 1.996 no sprint 25 (`acrescentar_coluna`): a nota do cartao de
-/// tabela do editor de modelo dizia, em portugues cravado, que alterar coluna
-/// nao existia. Ela virou o formulario que existe, e os textos dele nasceram
-/// na fabrica -- os tres paragrafos que sairam sao os tres que a catraca
-/// desce.
-///
-/// 1.996 -> 1.806: os QUATRO arquivos que nao sao o `index.html` fecharam em
-/// zero -- `claude.js` (126), `telemetria.js` (38), `grid/phx-grid.js` (24) e
-/// `diagrama-er.js` (2). O que sobra e o `index.html` inteiro, e ele ficou de
-/// fora de proposito: quatro frentes o estavam editando ao mesmo tempo, e
-/// mexer nos 1.806 no meio disso trocaria traducao por conflito.
-/// A frente das transacoes, medindo sobre a base 1.996 dela, chegou a 1.961: a tela de *Gestao de transacoes*
-/// foi reescrita inteira, e os **35** textos cravados dela sairam junto. A
-/// tela velha era um caso de manual do que este conferidor existe para pegar:
-/// paragrafos picados por `<b>` e `<code>`, com pedacos como «, e por isso
-/// esta tela nao tem uma lista de transacoes abertas para mostrar» -- pedaco
-/// de frase que **nao se traduz**, porque a ordem das palavras muda de lingua
-/// para lingua. A tela nova tem 43 chaves de fabrica, cada uma uma frase
-/// INTEIRA, e a enfase entra como marca.
-/// 1.806 -> 1.771 na integracao da frente das transacoes. Nenhum dos dois
-/// lados do merge tinha este numero, e nao tinham como ter: a frente media
-/// 1.961 sobre a base 1.996 dela, a integracao anterior tinha deixado 1.806, e
-/// a tela de transacoes -- escrita inteira pela fabrica -- derrubou mais 35.
-/// Escolher um dos dois lados seria regressao silenciosa; o valor saiu de rodar
-/// o conferidor depois do merge.
-///
-/// 1.764 -> 1.667 na padronizacao "toda tabela e PhxGrid": as ultimas
-/// dezenove funcoes que ainda montavam `tabela([...], linhas, montar)` a mao
-/// (`verDatabase`, `gerirTabelas`, `verParticoes`, `verSequencias`,
-/// `verConfigTabela`, `verDiretivasDoBanco`, `verConfigUsuarios`,
-/// `verSysColumns`, `telaImportar`, `verLinhaDescartada`, `verSessoes`,
-/// `verEstatisticas`, `verConfig`, `verResidentes`, `verIps`, `telaJobs`,
-/// `telaDbLinkDefinicoes`, `telaDadosPessoais`, `verBancos`) viraram
-/// `PhxGrid.criar(...)`, e todo cabecalho de coluna (`{t:"..."}`) que era
-/// literal virou `titulo:txt("tela.col_...", "...")`. Foi a mesma leitura que
-/// a nota do `RECEITAS` ja registrava: mover o titulo para a fabrica tira o
-/// literal da conta, e a queda e so a soma de ~85 cabecalhos que pararam de
-/// ser cravados.
-///
-/// 1.652 -> 1.578 na segunda leva da mesma padronizacao: os 16 `tabela()` que
-/// sobravam em `index.html` (`abrirAdmin` tres vezes, `vEstrutura` e
-/// `verReplicacao` duas cada, e mais dez telas uma vez -- `vIndices`,
-/// `vDiario`, `vIntegridade`, `listarBackups`, `telaLixeira`, `telaMotivos`,
-/// `telaTrilhaLgpd`, `painelDaProva`, `abrirConsulta`) viraram
-/// `PhxGrid.criar(...)`. Todo cabecalho cravado virou `titulo:txt(...)`, e
-/// parte do texto de dentro do `formato` (o "em dia"/"atrás N"/"ilegível" que
-/// antes vivia direto no template da linha) foi junto -- 45 chaves novas na
-/// fabrica, a maioria reaproveitando um `tela.col_*` ou `tela.pino_*` que ja
-/// existia em outra tela (`tela.col_tipo`, `tela.pino_unico`…) e so as
-/// realmente novas (`tela.col_motivo`, `tela.pino_em_dia`…) precisaram de
-/// chave propria.
 /// **Comentario HTML dentro de um template literal, com crase.**
 ///
 /// Defeito real, e ele derrubou a pagina INTEIRA: um `<!-- ... -->` escrito
@@ -1183,7 +1202,41 @@ pub fn token_sem_definicao_e_sem_fallback() -> Vec<(&'static str, String)> {
     furos
 }
 
-pub const TETO: usize = 1_549;
+/// Quantos textos de tela ainda estao fora da fabrica. **So desce.**
+///
+/// Traduziu um punhado? Rode
+/// `cargo run --example textos-fora-da-fabrica -p phxsql-server`, veja o
+/// numero novo e baixe a catraca no mesmo commit -- catraca frouxa nao segura
+/// nada.
+///
+/// # Esta catraca SUBSTITUI `TETO`, e e por isso que ela tem nome novo
+///
+/// Ate o pedido 165, [`literal`] so reconhecia aspa simples e dupla, e
+/// `sem_interpolacao` apagava TODO `${…}` de um golpe so. Duas formas de
+/// rotulo ficavam invisiveis por isso: o texto escrito entre CRASE --
+/// `` avisar(`Tabela criada`) `` passava, `avisar("Tabela criada")` era pego,
+/// o MESMO texto tratado diferente conforme o estilo de aspa de quem
+/// escreveu -- e o rotulo escondido DENTRO de uma interpolacao, como
+/// `${carta("Título", ...)}` e `${ficha(valor, "rotulo")}` (todo uso de
+/// `ficha(` nesta base fica assim, e a chamada inteira, titulo e tudo,
+/// desaparecia com o `${…}` que a embrulha). Medido antes do conserto: 1.549.
+///
+/// Regua que passa a medir mais nao sobe a catraca existente -- ela **aposenta
+/// a antiga e faz nascer uma nova, no numero medido do dia**, dizendo que
+/// substitui a outra. O precedente ja estava no codigo, em
+/// `conferidor_grades::TETO_TABELA_NA_MAO`, e esta catraca segue o mesmo
+/// molde: `TETO` (1.549, com toda a serie de altos e baixos desde que nasceu
+/// em 2.000) fica aposentado, e a serie com o passado se perde de proposito
+/// -- perder a comparacao e mais barato que deixar "mudei a regua" virar a
+/// porta pela qual se afrouxa uma catraca. O historico completo continua
+/// legivel no `git log` deste arquivo.
+///
+/// `TETO_ROTULOS_E_CRASE` conta as MESMAS formas de antes mais as duas que a
+/// regua nova enxerga. Nasceu em 1.744; o mesmo commit que ensinou o crivo
+/// tambem traduziu o lote coerente do Painel (`vPainel()`/`maquinaHtml()` de
+/// `index.html` -- os sete cartoes de metrica e o widget "A maquina"), que
+/// baixou 24: **1.720**.
+pub const TETO_ROTULOS_E_CRASE: usize = 1_720;
 #[cfg(test)]
 mod testes {
     use std::collections::HashSet;
@@ -1197,14 +1250,14 @@ mod testes {
     fn a_catraca_dos_textos_fora_da_fabrica() {
         let achados = conferir();
         let faltando = fora(&achados);
-        if faltando.len() > TETO {
+        if faltando.len() > TETO_ROTULOS_E_CRASE {
             let mostra: Vec<String> = faltando
                 .iter()
                 .take(40)
                 .map(|a| format!("  {}:{} {:?}", a.arquivo, a.linha, a.texto))
                 .collect();
             panic!(
-                "{} textos de tela fora da fabrica, e a catraca esta em {TETO}.\n\
+                "{} textos de tela fora da fabrica, e a catraca esta em {TETO_ROTULOS_E_CRASE}.\n\
                  Os primeiros:\n{}\n\
                  Todos: cargo run --example textos-fora-da-fabrica -p phxsql-server",
                 faltando.len(),
@@ -1212,8 +1265,8 @@ mod testes {
             );
         }
         assert!(
-            faltando.len() >= TETO.saturating_sub(30),
-            "sobraram {} e a catraca esta em {TETO}: baixe a catraca no mesmo \
+            faltando.len() >= TETO_ROTULOS_E_CRASE.saturating_sub(30),
+            "sobraram {} e a catraca esta em {TETO_ROTULOS_E_CRASE}: baixe a catraca no mesmo \
              commit da traducao, senao ela deixa de segurar",
             faltando.len()
         );
@@ -1268,7 +1321,7 @@ mod testes {
         assert!(
             faltando.is_empty(),
             "o servidor serve {faltando:?} e o FONTES nao mede -- texto cravado \
-             ali nao conta para a catraca. Acrescente ao FONTES e reveja o TETO"
+             ali nao conta para a catraca. Acrescente ao FONTES e reveja o TETO_ROTULOS_E_CRASE"
         );
     }
 
