@@ -343,6 +343,11 @@
     "instalar_estilo_no_claude_md": true
   },
   "K_ambiente": {
+    "K0_privilegios": {
+      "modo": "sudo",
+      "usuario_root": "root",
+      "observacao": "modo: sudo | root | nenhum. sudo: o instalador antepoe sudo ao que precisa; root: sem sudo, ele entra como root com su; nenhum: so o que nao exige privilegio"
+    },
     "K1_rust": {
       "instalar_ou_atualizar": false,
       "versao_minima": "1.98",
@@ -405,6 +410,35 @@
       "ci": "github-actions",
       "proteger_branch": true,
       "observacao": "URL, usuario, credencial_ref e diretorio vem do 0.15; aqui e o que fazer com eles"
+    },
+    "K7_n8n": {
+      "instalar": false,
+      "modo": "docker",
+      "versao": "latest",
+      "host": "localhost",
+      "porta": 5678,
+      "url_publica": "",
+      "timezone": "America/Sao_Paulo",
+      "banco": {
+        "tipo": "postgresql",
+        "reusar_k2": true,
+        "nome": "n8n",
+        "usuario": "n8n",
+        "senha_ref": "N8N_DB_PASSWORD"
+      },
+      "admin": {
+        "email": "",
+        "senha_ref": "N8N_ADMIN_PASSWORD"
+      },
+      "encryption_key_ref": "N8N_ENCRYPTION_KEY",
+      "integracao": {
+        "api_do_projeto_url": "",
+        "api_token_ref": "PROJETO_API_TOKEN",
+        "webhooks": [],
+        "fluxos_iniciais": [],
+        "eventos_do_projeto": []
+      },
+      "observacao": "modo: docker | npm | cloud; banco.tipo: postgresql | sqlite; webhooks: [{nome, caminho, metodo, o_que_faz}]; fluxos_iniciais: [{nome, gatilho, acao}]; senhas e chaves so por nome de variavel"
     }
   }
 }

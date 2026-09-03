@@ -81,16 +81,18 @@ Dezesseis itens, **um por mensagem**, na ordem. É o que o PMO, o stakeholder e 
 
 **J) Economia de tokens.** «Deseja ativar e configurar a economia de tokens? Isso instala no `CLAUDE.md` do projeto a instrução de estilo de resposta (direto ao ponto, frases curtas, um assunto por parágrafo, problema em uma linha, solução em passos numerados) e deixa pronto o comando `/wx-claude-code:laudo-tokens`, a auditoria em três fases que **não altera nada sem aprovação**.»
 
-**K) Ambiente e ferramentas.** Depois de J, seis itens, um por mensagem. Cada um começa por «quer instalar ou atualizar?»; «não» pula os detalhes.
+**K) Ambiente e ferramentas.** Depois de J, oito itens (K0 a K7), um por mensagem. Cada um começa por «quer instalar ou atualizar?»; «não» pula os detalhes.
 
 | Item | Pergunta | Onde vai parar |
 | --- | --- | --- |
+| K0 | **Privilégios**: o instalador pode usar `sudo`? Se não houver sudo, pode entrar como root (`su`) para os passos que exigem, ou nada que exija root? Qual o usuário root? | `instalar-ambiente.sh` (bloco de privilégios) |
 | K1 | **Rust / Cargo**: instalar ou atualizar para a estável mais recente? Versão mínima (o modelo do questionário traz 1.98), canal, componentes (clippy, rustfmt), targets (Windows, por exemplo) | `ambiente/instalar-ambiente.sh` (rustup) |
 | K2 | **PostgreSQL** atualizado? Versão, host, porta, nome do banco, **login do superusuário**, e os **papéis** com nível: `superuser`, `owner`, `readwrite`, `readonly` | `ambiente/papeis-postgresql.sql` |
 | K3 | **MySQL** atualizado? Mesmos itens | `ambiente/papeis-mysql.sql` |
 | K4 | **MariaDB** atualizado? Mesmos itens (avise se MySQL e MariaDB estiverem na mesma porta) | `ambiente/papeis-mariadb.sql` |
 | K5 | **Supabase** atualizado? URL e ref do projeto, CLI local, e os **nomes** das variáveis da anon key e da service role key | `ambiente.md`, `.env.exemplo` |
 | K6 | **Ligar o projeto ao GitHub**: usar o repositório do 0.15, criar se não existir, visibilidade, remote, branch principal, CI (GitHub Actions) e proteção da branch | `ambiente/instalar-ambiente.sh` (git, gh) |
+| K7 | **n8n integrado ao projeto: instalar, sim ou não?** Se sim, um item por mensagem: modo (docker, npm ou cloud) e versão; host, porta e URL pública; fuso; banco do n8n (PostgreSQL de K2 ou SQLite) com usuário e **nome da variável** da senha; e-mail do admin e nome da variável da senha; nome da variável da chave de criptografia; URL da API do projeto e nome da variável do token; os **eventos** que o projeto emite; os **webhooks** que o n8n expõe (nome, método, caminho, o que faz), um por vez; os **fluxos iniciais** (nome, gatilho, ação), um por vez | `ambiente/n8n/docker-compose.yml`, `banco-n8n.sql`, `integracao.md` |
 
 **A senha do root e a de cada papel não são perguntadas nem gravadas.** Para cada login pergunte **em que variável de ambiente a senha vai ficar** (`PGPASSWORD`, `MYSQL_ROOT_PASSWORD`, `ESTOQUE_APP_PASSWORD`…) e registre só o nome em `senha_ref`. O script gera o `.env.exemplo` sem valores, o SQL dos papéis com `${VARIAVEL}` e o instalador que exige a variável definida antes de rodar. Se o usuário colar uma senha, não repita, não grave, peça que troque. Depois de aplicar, meça o que já está na máquina:
 
@@ -139,6 +141,10 @@ Ele imprime a versão instalada de cada ferramenta pedida contra a mínima, e de
 | K3 e K4 | os dois «sim» na mesma porta | avise que não convivem e peça uma porta diferente ou a escolha de um |
 | K5 | «sim» | pergunte URL, ref, e os nomes das variáveis das chaves; a service role key nunca vai para o frontend |
 | K6 | «sim» e 0.15 sem URL | volte ao 0.15 e peça a URL antes de seguir |
+| K0 | «não tenho sudo» | pergunte se pode entrar como root com `su` e o usuário; se não, registre `nenhum` e avise que instalar pacote e serviço vai aparecer como FALTA |
+| K7 | «não» | registre `instalar: false` e encerre K; nada do n8n é gerado |
+| K7 | «sim» | siga os itens da tabela, um por mensagem; cada webhook e cada fluxo vira um `INT-*` na rastreabilidade, e o `integracao.md` diz o que o projeto precisa expor |
+| K7 | banco PostgreSQL sem K2 marcado | avise que o banco do n8n depende do PostgreSQL de K2; ofereça SQLite ou volte a K2 |
 
 Feche com as duas perguntas de governança da skill de conversão, que o questionário não substitui: versão/update/idioma do WX e modo desejado (`inventário`, `plano`, `piloto`, `completo`). O aprovador já foi perguntado no 0.16; não pergunte de novo.
 

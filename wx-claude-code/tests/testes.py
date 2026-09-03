@@ -71,7 +71,7 @@ class Questionario(unittest.TestCase):
         self.assertIn("## Backend: Rust", proc); self.assertIn("**reescrita-guiada**", proc)
         self.assertIn("| Analise HFSQL | esquema PostgreSQL migrado por script; sqlx/diesel | G3 |", proc)
         self.assertIn("Ritmo: modulo a modulo", proc)
-        self.assertEqual(r2.stdout.count("SKIPPED"), 19); self.assertIn("UPDATED", r2.stdout)
+        self.assertEqual(r2.stdout.count("SKIPPED"), 22); self.assertIn("UPDATED", r2.stdout)
         resp = (self.tmp / ".wx-migration/respostas_questionario.md").read_text()
         self.assertIn("- Nome: **Adriano Boller**", resp); self.assertIn("## H · Backend de destino", resp)
         self.assertIn("0.15 github", resp); self.assertIn("credencial ref: GITHUB_TOKEN", resp)
@@ -114,6 +114,29 @@ class Questionario(unittest.TestCase):
         (self.tmp / ".wx-migration/q2.json").write_text(json.dumps(q))
         r = run(SCRIPTS / "aplicar_questionario.py", "--questionario", self.tmp / ".wx-migration/q2.json", "--project-root", self.tmp, "--plugin-root", RAIZ)
         self.assertEqual(r.returncode, 2); self.assertIn("admin", r.stderr)
+
+    def test_n8n_e_privilegios(self):
+        run(SCRIPTS / "aplicar_questionario.py", "--questionario", self.tmp / ".wx-migration/questionario.json", "--project-root", self.tmp, "--plugin-root", RAIZ)
+        amb = self.tmp / ".wx-migration/ambiente"
+        sh = (amb / "instalar-ambiente.sh").read_text()
+        self.assertIn('if command -v sudo >/dev/null; then SUDO="sudo"', sh); self.assertIn("exec su root -c", sh)
+        self.assertIn("priv apt-get install -y postgresql-16", sh); self.assertIn("docker compose up -d", sh)
+        comp = (amb / "n8n/docker-compose.yml").read_text()
+        self.assertIn("N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}", comp); self.assertIn("DB_POSTGRESDB_PASSWORD=${N8N_DB_PASSWORD}", comp)
+        self.assertNotRegex(comp, r"PASSWORD=[^$\n]")
+        itg = (amb / "n8n/integracao.md").read_text()
+        self.assertIn("| estoque-baixo | POST | /webhook/estoque-baixo |", itg); self.assertIn("| Fechamento diário | cron 23:00 |", itg)
+        self.assertIn("| n8n | sim | 1.100 (docker) |", (self.tmp / ".wx-migration/ambiente.md").read_text())
+        q = json.loads((self.tmp / ".wx-migration/questionario.json").read_text())
+        q["K_ambiente"]["K7_n8n"]["modo"] = "kubernetes"
+        (self.tmp / ".wx-migration/q3.json").write_text(json.dumps(q))
+        r = run(SCRIPTS / "aplicar_questionario.py", "--questionario", self.tmp / ".wx-migration/q3.json", "--project-root", self.tmp, "--plugin-root", RAIZ)
+        self.assertEqual(r.returncode, 2); self.assertIn("kubernetes", r.stderr)
+        q["K_ambiente"]["K7_n8n"]["modo"] = "docker"; q["K_ambiente"]["K7_n8n"]["instalar"] = False
+        t2 = Path(tempfile.mkdtemp()); shutil.copytree(EXEMPLO / "inputs", t2 / "inputs"); (t2 / ".wx-migration").mkdir()
+        (t2 / ".wx-migration/questionario.json").write_text(json.dumps(q))
+        run(SCRIPTS / "aplicar_questionario.py", "--questionario", t2 / ".wx-migration/questionario.json", "--project-root", t2, "--plugin-root", RAIZ)
+        self.assertFalse((t2 / ".wx-migration/ambiente/n8n").exists()); shutil.rmtree(t2, ignore_errors=True)
 
     def test_verificar_ambiente_mede_e_devolve_3_quando_falta(self):
         q = {"K_ambiente": {"K1_rust": {"instalar_ou_atualizar": True, "versao_minima": "999.0"}, "K6_github": {"ligar_projeto": True}}}

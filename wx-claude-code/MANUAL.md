@@ -53,7 +53,7 @@ python3 wx-claude-code/skills/conversao-wx/scripts/query_wlanguage_help.py --ver
 listagem que o modelo devolve pode omitir um item; confira por nome, não
 por contagem.
 
-**Validar o pacote** (roda os 22 testes de regressão):
+**Validar o pacote** (roda os 23 testes de regressão):
 
 ```bash
 python3 wx-claude-code/skills/conversao-wx/scripts/validate_plugin_bundle.py wx-claude-code --strict
@@ -332,6 +332,20 @@ senha, não: você diz em que variável de ambiente ela vai ficar, e o SQL usa
 `${VARIAVEL}`. O `verificar_ambiente.py` mede o que já está instalado contra
 a versão mínima e devolve 3 quando falta algo.
 
+**Root e sudo.** O instalador confere se já é root; se não, usa `sudo` quando
+existe (e pede a senha uma vez com `sudo -v`), ou entra como root com `su`
+quando você disse em K0 que não há sudo. Só os passos que exigem root passam
+por aí: instalar pacote e habilitar serviço. Rustup, git e o SQL dos papéis
+rodam como você.
+
+**n8n.** Marcado em K7, o script gera `ambiente/n8n/docker-compose.yml` (ou
+a instalação por npm), o SQL do banco do n8n no PostgreSQL de K2 e o
+`integracao.md`, que lista os webhooks que o n8n expõe, os fluxos iniciais e
+o que o projeto precisa ter para conversar com ele: cliente HTTP com retry
+para cada evento, uma rota de API por ação, e um `INT-*` na rastreabilidade
+para cada um. Chave de criptografia, senha do admin e do banco e token da
+API vêm do `.env`, nunca do compose.
+
 **Sobre a senha.** O wizard não pergunta a senha nem o token, e o script
 recusa o questionário se algum vier preenchido: a regra do projeto é senha
 nunca em texto puro. Você informa o **nome** da variável de ambiente ou do
@@ -352,7 +366,7 @@ o push. Se colar a senha na conversa por engano, revogue-a.
 | H | para qual linguagem converter o backend (capítulo 7) |
 | I | para qual linguagem e plataforma converter o frontend (capítulo 7) |
 | J | ativar a economia de tokens? |
-| K | ambiente: Rust/Cargo (versão mínima, hoje 1.98 no modelo), PostgreSQL, MySQL, MariaDB e Supabase atualizados, cada um marcável, com login do superusuário e papéis por nível; e ligar o projeto ao GitHub (criar, remote, branch, CI) |
+| K | ambiente: privilégios (sudo ou root); Rust/Cargo (versão mínima, hoje 1.98 no modelo); PostgreSQL, MySQL, MariaDB e Supabase atualizados, cada um marcável, com login do superusuário e papéis por nível; ligar o projeto ao GitHub (criar, remote, branch, CI); e **n8n, sim ou não**, com cada item da integração (banco, admin, chave, API do projeto, eventos, webhooks, fluxos) |
 
 E duas perguntas de governança no fim: versão e idioma do WX; modo
 (`inventário`, `plano`, `piloto`, `completo`). Quem aprova já foi o 0.16.

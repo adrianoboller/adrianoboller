@@ -28,6 +28,7 @@ e renderizada num terminal pelo Chromium (Playwright), a 2× de escala.
 | 21 | `licenca.py verificar` sem serial, sessão `-p` do PMO recusando pelo contexto do hook `SessionStart`, `licenca.py instalar` com um serial de demonstração e a mesma sessão rodando o PMO em seguida |
 | 22 | sessão nova, sem contexto, com leitura liberada: perguntada sobre o aprovador e o prazo, achou os dois em `respostas_questionario.md` pelo `CLAUDE.md`, sem perguntar de volta |
 | 23 | sessão limpa em que o usuário adianta a letra K2 com a senha do root do PostgreSQL: o agente não a reproduz de forma nenhuma, registra banco, superusuário e papéis, e diz que vai pedir só o nome da variável (a senha digitada foi mascarada no print; o `grep` pelo valor na saída do agente devolve 0) |
+| 24 | dois turnos reais (`-p` e `-c`): K7 «sim» ao n8n, o item K7.1 sozinho, resposta, e o K7.2 avisando que sem K2 o banco do n8n pode ser SQLite ou PostgreSQL |
 | 07 | `claude -p "/wx-claude-code:laudo-tokens fase-1"` com fonte de sessões marcada INDISPONÍVEL |
 
 Para refazer: grave a saída em `.txt` e rode o renderizador (um `.mjs` de 40

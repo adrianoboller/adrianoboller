@@ -478,6 +478,11 @@
     "instalar_estilo_no_claude_md": true
   },
   "K_ambiente": {
+    "K0_privilegios": {
+      "modo": "sudo",
+      "usuario_root": "root",
+      "observacao": ""
+    },
     "K1_rust": {
       "instalar_ou_atualizar": true,
       "versao_minima": "1.98",
@@ -557,6 +562,63 @@
       "branch_principal": "main",
       "ci": "github-actions",
       "proteger_branch": true,
+      "observacao": ""
+    },
+    "K7_n8n": {
+      "instalar": true,
+      "modo": "docker",
+      "versao": "1.100",
+      "host": "localhost",
+      "porta": 5678,
+      "url_publica": "https://n8n.exemplo.com.br",
+      "timezone": "America/Sao_Paulo",
+      "banco": {
+        "tipo": "postgresql",
+        "reusar_k2": true,
+        "nome": "n8n",
+        "usuario": "n8n",
+        "senha_ref": "N8N_DB_PASSWORD"
+      },
+      "admin": {
+        "email": "adriano@exemplo.com.br",
+        "senha_ref": "N8N_ADMIN_PASSWORD"
+      },
+      "encryption_key_ref": "N8N_ENCRYPTION_KEY",
+      "integracao": {
+        "api_do_projeto_url": "http://localhost:8080/api",
+        "api_token_ref": "ESTOQUE_API_TOKEN",
+        "webhooks": [
+          {
+            "nome": "estoque-baixo",
+            "caminho": "/webhook/estoque-baixo",
+            "metodo": "POST",
+            "o_que_faz": "recebe do backend o produto abaixo do mínimo e avisa compras por e-mail"
+          },
+          {
+            "nome": "nfe-autorizada",
+            "caminho": "/webhook/nfe-autorizada",
+            "metodo": "POST",
+            "o_que_faz": "recebe a NF-e autorizada e grava o XML no Drive"
+          }
+        ],
+        "fluxos_iniciais": [
+          {
+            "nome": "Reposição",
+            "gatilho": "webhook estoque-baixo",
+            "acao": "cria pedido de compra pela API do projeto e manda e-mail"
+          },
+          {
+            "nome": "Fechamento diário",
+            "gatilho": "cron 23:00",
+            "acao": "chama /api/relatorios/posicao e envia PDF ao diretor"
+          }
+        ],
+        "eventos_do_projeto": [
+          "estoque.baixo",
+          "nfe.autorizada",
+          "venda.fechada"
+        ]
+      },
       "observacao": ""
     }
   }

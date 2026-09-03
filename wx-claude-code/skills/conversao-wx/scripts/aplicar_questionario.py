@@ -731,10 +731,22 @@ def sql_papeis_mysql(k: dict, rotulo: str) -> str:
 def instalador(k: dict, e: dict) -> str:
     k1, k2, k3, k4, k5, k6 = (k.get(x, {}) or {} for x in ("K1_rust", "K2_postgresql", "K3_mysql", "K4_mariadb", "K5_supabase", "K6_github"))
     g = (e.get("0_15_github", {}) or {}) if e else {}
+    k0 = k.get("K0_privilegios", {}) or {}
+    modo_priv = k0.get("modo", "sudo"); root_user = k0.get("usuario_root") or "root"
     L = ["#!/usr/bin/env bash", "# Instalador do ambiente, gerado do questionario (letra K). Idempotente: cada",
          "# passo confere antes de agir. Senhas e tokens vem de variaveis de ambiente",
          "# (veja .env.exemplo); este arquivo nao contem nenhum.", "set -euo pipefail", "",
-         "falta() { echo \"FALTA: $1\"; FALTOU=1; }", "FALTOU=0", ""]
+         "falta() { echo \"FALTA: $1\"; FALTOU=1; }", "FALTOU=0", "",
+         f"# --- Privilegios (K0: modo {modo_priv}). Instalar pacote e servico exige root; o resto nao.", "SUDO=\"\"",
+         "if [ \"$(id -u)\" -ne 0 ]; then"]
+    if modo_priv == "sudo":
+        L += ["  if command -v sudo >/dev/null; then SUDO=\"sudo\"; sudo -v || { echo 'sudo recusado'; exit 3; }",
+              f"  else echo 'sem sudo: entrando como {root_user} (su) para os passos que exigem root'; exec su {root_user} -c \"bash '$0' $*\"; fi"]
+    elif modo_priv == "root":
+        L += [f"  echo 'entrando como {root_user} (su)'; exec su {root_user} -c \"bash '$0' $*\""]
+    else:
+        L += ["  echo 'K0 = nenhum: passos que exigem root serao marcados como FALTA'; SUDO=\"__sem_root__\""]
+    L += ["fi", "priv() { if [ \"$SUDO\" = __sem_root__ ]; then falta \"precisa de root: $*\"; else $SUDO \"$@\"; fi; }", ""]
     if k1.get("instalar_ou_atualizar"):
         L += ["# --- Rust / Cargo (minimo " + str(k1.get("versao_minima", "")) + ", canal " + k1.get("canal", "stable") + ")",
               "if ! command -v rustup >/dev/null; then curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain " + k1.get("canal", "stable") + "; source \"$HOME/.cargo/env\"; fi",
@@ -749,7 +761,7 @@ def instalador(k: dict, e: dict) -> str:
                                        (k4, "MariaDB", "mariadb-server", "mariadb", "papeis-mariadb.sql")):
         if kx.get("instalar_ou_atualizar"):
             L += [f"# --- {nome} {kx.get('versao', '')} em {kx.get('host', 'localhost')}:{kx.get('porta', '')}",
-                  f"if ! command -v {cli} >/dev/null; then if command -v apt-get >/dev/null; then sudo apt-get update && sudo apt-get install -y {pacote}; else falta '{nome}: instale pelo gerenciador da sua plataforma'; fi; fi",
+                  f"if ! command -v {cli} >/dev/null; then if command -v apt-get >/dev/null; then priv apt-get update && priv apt-get install -y {pacote}; else falta '{nome}: instale pelo gerenciador da sua plataforma'; fi; fi",
                   f": \"${{{kx.get('senha_ref', 'SENHA')}:?defina {kx.get('senha_ref', 'SENHA')} (senha do {kx.get('superusuario', 'root')}) no ambiente}}\"",
                   *(f": \"${{{pp['senha_ref']}:?defina {pp['senha_ref']} (senha do papel {pp['nome']})}}\"" for pp in kx.get("papeis", []) or []),
                   (f"PGPASSWORD=\"${{{kx.get('senha_ref')}}}\" envsubst < \"$(dirname \"$0\")/{sql}\" | psql -h {kx.get('host', 'localhost')} -p {kx.get('porta', 5432)} -U {kx.get('superusuario', 'postgres')} -d postgres"
@@ -761,6 +773,26 @@ def instalador(k: dict, e: dict) -> str:
               f": \"${{{k5.get('anon_key_ref', 'SUPABASE_ANON_KEY')}:?defina a anon key no ambiente}}\"",
               f": \"${{{k5.get('service_role_ref', 'SUPABASE_SERVICE_ROLE_KEY')}:?defina a service role key no ambiente}}\"",
               f"echo \"Supabase: projeto {k5.get('projeto_url') or '(url pendente)'} (ref {k5.get('projeto_ref') or '?'})\"", ""]
+    k7 = k.get("K7_n8n", {}) or {}
+    if k7.get("instalar"):
+        bd = k7.get("banco", {}) or {}; adm = k7.get("admin", {}) or {}; itg = k7.get("integracao", {}) or {}
+        L += [f"# --- n8n ({k7.get('modo', 'docker')}, versao {k7.get('versao', 'latest')}) em {k7.get('host', 'localhost')}:{k7.get('porta', 5678)}",
+              f": \"${{{k7.get('encryption_key_ref', 'N8N_ENCRYPTION_KEY')}:?defina a chave de criptografia do n8n (openssl rand -hex 32)}}\"",
+              f": \"${{{adm.get('senha_ref', 'N8N_ADMIN_PASSWORD')}:?defina a senha do admin do n8n}}\"",
+              *( [f": \"${{{bd.get('senha_ref', 'N8N_DB_PASSWORD')}:?defina a senha do usuario {bd.get('usuario', 'n8n')} do banco do n8n}}\""] if bd.get("tipo") == "postgresql" else []),
+              *( [f": \"${{{itg.get('api_token_ref', 'PROJETO_API_TOKEN')}:?defina o token da API do projeto para o n8n}}\""] if itg.get("api_do_projeto_url") else [])]
+        if k7.get("modo") == "docker":
+            L += ["if ! command -v docker >/dev/null; then if command -v apt-get >/dev/null; then priv apt-get update && priv apt-get install -y docker.io docker-compose-v2; else falta 'docker'; fi; fi",
+                  "priv systemctl enable --now docker 2>/dev/null || true",
+                  "(cd \"$(dirname \"$0\")/n8n\" && priv docker compose up -d)"]
+        elif k7.get("modo") == "npm":
+            L += ["if ! command -v n8n >/dev/null; then npm install -g n8n@" + str(k7.get("versao", "latest")) + " || falta 'n8n (npm)'; fi",
+                  "echo 'n8n via npm: rode `n8n start` com as variaveis de n8n/n8n.env carregadas'"]
+        else:
+            L += [f"echo 'n8n cloud: use {k7.get('url_publica') or '(url pendente)'}; nada a instalar'"]
+        if bd.get("tipo") == "postgresql":
+            L += [f"PGPASSWORD=\"${{{k2.get('senha_ref', 'PGPASSWORD')}}}\" envsubst < \"$(dirname \"$0\")/n8n/banco-n8n.sql\" | psql -h {k2.get('host', 'localhost')} -p {k2.get('porta', 5432)} -U {k2.get('superusuario', 'postgres')} -d postgres || falta 'banco do n8n (K2 precisa estar instalado)'"]
+        L += [f"curl -fsS http://{k7.get('host', 'localhost')}:{k7.get('porta', 5678)}/healthz >/dev/null 2>&1 && echo 'n8n respondendo' || falta 'n8n nao respondeu em /healthz (pode levar alguns segundos apos subir)'", ""]
     if k6.get("ligar_projeto"):
         url = g.get("url", ""); br = k6.get("branch_principal", "main"); rem = k6.get("remote", "origin")
         L += ["# --- GitHub", f": \"${{{g.get('credencial_ref') or 'GITHUB_TOKEN'}:?defina o token do GitHub no ambiente}}\"",
@@ -784,6 +816,13 @@ def env_exemplo(k: dict, e: dict) -> str:
     k5 = k.get("K5_supabase", {}) or {}
     if k5.get("instalar_ou_atualizar"):
         refs += [(k5.get("anon_key_ref"), "Supabase anon key"), (k5.get("service_role_ref"), "Supabase service role key (nunca no frontend)")]
+    k7 = k.get("K7_n8n", {}) or {}
+    if k7.get("instalar"):
+        refs += [(k7.get("encryption_key_ref"), "chave de criptografia do n8n (openssl rand -hex 32)"), ((k7.get("admin") or {}).get("senha_ref"), "senha do admin do n8n")]
+        if (k7.get("banco") or {}).get("tipo") == "postgresql":
+            refs.append(((k7.get("banco") or {}).get("senha_ref"), "senha do usuario do banco do n8n"))
+        if (k7.get("integracao") or {}).get("api_do_projeto_url"):
+            refs.append(((k7.get("integracao") or {}).get("api_token_ref"), "token que o n8n usa na API do projeto"))
     g = (e or {}).get("0_15_github", {}) or {}
     if (k.get("K6_github", {}) or {}).get("ligar_projeto"):
         refs.append((g.get("credencial_ref") or "GITHUB_TOKEN", "token do GitHub"))
@@ -791,6 +830,51 @@ def env_exemplo(k: dict, e: dict) -> str:
          "# Este exemplo nao tem valores de proposito: senha nunca em texto puro no repositorio.", ""]
     L += [f"# {desc}\n{ref}=" for ref, desc in refs if ref]
     return "\n".join(L) + "\n"
+
+
+def n8n_compose(k7: dict, k2: dict) -> str:
+    bd = k7.get("banco", {}) or {}; adm = k7.get("admin", {}) or {}
+    pg = bd.get("tipo") == "postgresql"
+    L = ["# n8n gerado do questionario (K7). Valores sensiveis vem do .env ao lado (copie de ../.env.exemplo).",
+         "services:", "  n8n:", f"    image: docker.n8n.io/n8nio/n8n:{k7.get('versao', 'latest')}", "    restart: unless-stopped",
+         f"    ports: [\"{k7.get('porta', 5678)}:5678\"]", "    environment:",
+         f"      - N8N_HOST={k7.get('host', 'localhost')}", f"      - N8N_PORT=5678", f"      - N8N_PROTOCOL={'https' if str(k7.get('url_publica', '')).startswith('https') else 'http'}",
+         *( [f"      - WEBHOOK_URL={k7['url_publica'].rstrip('/')}/"] if k7.get("url_publica") else []),
+         f"      - GENERIC_TIMEZONE={k7.get('timezone', 'America/Sao_Paulo')}", f"      - TZ={k7.get('timezone', 'America/Sao_Paulo')}",
+         f"      - N8N_ENCRYPTION_KEY=${{{k7.get('encryption_key_ref', 'N8N_ENCRYPTION_KEY')}}}",
+         "      - N8N_BASIC_AUTH_ACTIVE=true", f"      - N8N_BASIC_AUTH_USER={adm.get('email') or 'admin'}", f"      - N8N_BASIC_AUTH_PASSWORD=${{{adm.get('senha_ref', 'N8N_ADMIN_PASSWORD')}}}"]
+    if pg:
+        host = "host.docker.internal" if k2.get("host", "localhost") in ("localhost", "127.0.0.1") and bd.get("reusar_k2", True) else k2.get("host", "localhost")
+        L += ["      - DB_TYPE=postgresdb", f"      - DB_POSTGRESDB_HOST={host}", f"      - DB_POSTGRESDB_PORT={k2.get('porta', 5432)}",
+              f"      - DB_POSTGRESDB_DATABASE={bd.get('nome', 'n8n')}", f"      - DB_POSTGRESDB_USER={bd.get('usuario', 'n8n')}", f"      - DB_POSTGRESDB_PASSWORD=${{{bd.get('senha_ref', 'N8N_DB_PASSWORD')}}}",
+              "    extra_hosts: [\"host.docker.internal:host-gateway\"]"]
+    L += ["    volumes:", "      - n8n_data:/home/node/.n8n", "volumes:", "  n8n_data:"]
+    return "\n".join(L) + "\n"
+
+
+def n8n_banco_sql(k7: dict) -> str:
+    bd = k7.get("banco", {}) or {}
+    return (f"-- Banco do n8n no PostgreSQL de K2. Senha do ambiente: envsubst antes do psql.\n"
+            f"CREATE ROLE {bd.get('usuario', 'n8n')} LOGIN PASSWORD '${{{bd.get('senha_ref', 'N8N_DB_PASSWORD')}}}';\n"
+            f"CREATE DATABASE {bd.get('nome', 'n8n')} OWNER {bd.get('usuario', 'n8n')};\n")
+
+
+def n8n_integracao_md(k7: dict) -> str:
+    itg = k7.get("integracao", {}) or {}
+    endereco = k7.get("url_publica") or f"http://{k7.get('host', 'localhost')}:{k7.get('porta', 5678)}"
+    L = ["# Integração do n8n com o projeto (K7)", "",
+         f"- n8n em {endereco} ({k7.get('modo', 'docker')}, {k7.get('versao', 'latest')}), fuso {k7.get('timezone', '')}",
+         f"- API do projeto: {itg.get('api_do_projeto_url') or '(pendente)'}, token em `${itg.get('api_token_ref', '')}` (credencial «Header Auth» no n8n, nunca dentro do fluxo)",
+         f"- Eventos que o projeto emite: {', '.join(itg.get('eventos_do_projeto', []) or []) or '(pendente)'}", "",
+         "## Webhooks que o n8n expõe (o backend chama)", "", "| nome | método | caminho | o que faz |", "| --- | --- | --- | --- |"]
+    L += [f"| {w.get('nome', '')} | {w.get('metodo', 'POST')} | {w.get('caminho', '')} | {w.get('o_que_faz', '')} |" for w in itg.get("webhooks", []) or []] or ["| (nenhum) | | | |"]
+    L += ["", "## Fluxos iniciais", "", "| fluxo | gatilho | ação |", "| --- | --- | --- |"]
+    L += [f"| {f.get('nome', '')} | {f.get('gatilho', '')} | {f.get('acao', '')} |" for f in itg.get("fluxos_iniciais", []) or []] or ["| (nenhum) | | |"]
+    L += ["", "## O que o projeto precisa ter", "",
+          "- Um cliente HTTP que chame cada webhook acima quando o evento acontecer, com retry e idempotência (o n8n pode receber duas vezes).",
+          "- Uma rota de API por ação dos fluxos, autenticada pelo token acima; o n8n é um cliente como outro qualquer.",
+          "- Cada webhook e cada rota vira um item `INT-*` na matriz de rastreabilidade, com teste de ponta a ponta no G4.", ""]
+    return "\n".join(L)
 
 
 def esboco_ambiente(k: dict, e: dict) -> str:
@@ -809,6 +893,10 @@ def esboco_ambiente(k: dict, e: dict) -> str:
     for kx, nome in ((k2, "PostgreSQL"), (k3, "MySQL"), (k4, "MariaDB")):
         if kx.get("papeis"):
             L += [f"## Papéis do {nome}", "", "| papel | nível | senha em |", "| --- | --- | --- |"] + [f"| {pp['nome']} | {pp['nivel']} | `${pp['senha_ref']}` |" for pp in kx["papeis"]] + [""]
+    k0 = k.get("K0_privilegios", {}) or {}; k7 = k.get("K7_n8n", {}) or {}
+    L.insert(6, f"| Privilégios | — | — | modo {k0.get('modo', 'sudo')}: {'sudo antes do que exige root; sem sudo, entra como ' + (k0.get('usuario_root') or 'root') + ' com su' if k0.get('modo', 'sudo') == 'sudo' else ('entra como ' + (k0.get('usuario_root') or 'root') + ' com su' if k0.get('modo') == 'root' else 'nada que exija root')} |")
+    itg = k7.get("integracao", {}) or {}
+    L.insert(12, f"| n8n | {sim(k7.get('instalar'))} | {k7.get('versao') or '—'} ({k7.get('modo', 'docker')}) | {k7.get('url_publica') or (str(k7.get('host', '')) + ':' + str(k7.get('porta', '')))}, banco {(k7.get('banco') or {}).get('tipo', '—')}, admin {(k7.get('admin') or {}).get('email') or '?'}, {len(itg.get('webhooks', []) or [])} webhooks, {len(itg.get('fluxos_iniciais', []) or [])} fluxos; detalhes em `ambiente/n8n/integracao.md` |")
     L += ["## Regra", "", "Nenhuma senha, token ou chave fica no questionário, neste arquivo, no instalador ou no SQL: só o **nome** da variável de ambiente. O `.env` real fica fora do repositório.", ""]
     return "\n".join(L)
 
@@ -886,6 +974,14 @@ def main() -> int:
             saida.append(write_new(amb / "papeis-mysql.sql", sql_papeis_mysql(k["K3_mysql"], "MySQL")))
         if (k.get("K4_mariadb", {}) or {}).get("instalar_ou_atualizar"):
             saida.append(write_new(amb / "papeis-mariadb.sql", sql_papeis_mysql(k["K4_mariadb"], "MariaDB")))
+        k7 = k.get("K7_n8n", {}) or {}
+        if k7.get("instalar"):
+            if k7.get("modo") not in ("docker", "npm", "cloud"):
+                raise ValueError(f"K7_n8n.modo {k7.get('modo')!r} desconhecido (docker | npm | cloud)")
+            saida.append(write_new(amb / "n8n" / "docker-compose.yml", n8n_compose(k7, k.get("K2_postgresql", {}) or {})))
+            if (k7.get("banco") or {}).get("tipo") == "postgresql":
+                saida.append(write_new(amb / "n8n" / "banco-n8n.sql", n8n_banco_sql(k7)))
+            saida.append(write_new(amb / "n8n" / "integracao.md", n8n_integracao_md(k7)))
         try:
             os.chmod(amb / "instalar-ambiente.sh", 0o755)
         except OSError:
