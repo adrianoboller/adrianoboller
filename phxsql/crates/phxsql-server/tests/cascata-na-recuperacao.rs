@@ -123,6 +123,38 @@ fn filha_aponta_para(db: &Database, r: u64) -> Value {
     t.ler(r).unwrap().unwrap()[1].clone()
 }
 
+/// Tira do diretorio TODOS os arquivos de uma tabela, devolvendo o que levou.
+///
+/// Por que mover em vez de apagar: a tabela volta inteira, com o `.reg`, o
+/// `.ndx` e os diarios como estavam. Apagar e recriar daria outra tabela.
+fn esconder(dir: &std::path::Path, tabela: &str) -> Vec<std::path::PathBuf> {
+    let cofre = dir.join("__cofre");
+    std::fs::create_dir_all(&cofre).unwrap();
+    let mut levados = Vec::new();
+    for e in std::fs::read_dir(dir).unwrap().flatten() {
+        let p = e.path();
+        let casa = p
+            .file_stem()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n == tabela);
+        if casa && p.is_file() {
+            let destino = cofre.join(p.file_name().unwrap());
+            std::fs::rename(&p, &destino).unwrap();
+            levados.push(destino);
+        }
+    }
+    assert!(!levados.is_empty(), "nao achei arquivo nenhum de {tabela}");
+    levados
+}
+
+/// Devolve o que a [`esconder`] levou.
+fn devolver(dir: &std::path::Path, guardados: &[std::path::PathBuf]) {
+    for g in guardados {
+        std::fs::rename(g, dir.join(g.file_name().unwrap())).unwrap();
+    }
+    std::fs::remove_dir_all(dir.join("__cofre")).ok();
+}
+
 /// A marca `.tx` que a passada teria deixado: um `atualizar` de `clientes`
 /// levando a chave para 7, com a linha ANTIGA que a v2 carrega.
 fn marca(db: &Database, id: u64, rowid: u64, antiga: &[Value]) {
@@ -147,18 +179,21 @@ fn marca(db: &Database, id: u64, rowid: u64, antiga: &[Value]) {
 // 1. A orfa que nao precisa de queda nenhuma
 // ---------------------------------------------------------------------------
 
-/// Tres niveis bastam: a mae grava, a cascata recusa, e ninguem desfaz.
+/// Tres niveis: a recusa da neta chega ANTES de a avo ser gravada.
 ///
-/// `planejar_ao_alterar` de `clientes` so olha quem aponta para `clientes` --
-/// ve `pedidos` com cascata, aprova, e a mae vai para o disco. So entao a
-/// cascata chama `pedidos.atualizar`, que planeja a PROPRIA cascata, acha
-/// `itens` com `restringir` e recusa. A mae ficou em 7 e a filha em 1.
+/// `planejar_ao_alterar` so olha quem aponta para ESTA tabela -- um nivel. Com
+/// `avo <- mae (cascata) <- neta (restringir)` isso nao bastava: o plano da
+/// avo passava, a avo ia para o disco, e so entao a cascata chamava
+/// `mae.atualizar`, que achava a neta com `restringir` e recusava. **A avo
+/// ficava gravada e a mae para tras**, sem queda nenhuma e so com declaracoes
+/// legitimas. Quem fecha isso e a conferencia da ARVORE INTEIRA antes da
+/// primeira escrita.
 ///
-/// Prova real: com `itens` fora do caminho (o segundo teste tira a linha), a
-/// mesma chamada leva a filha para 7. Se este teste passar por acaso, aquele
-/// falha.
+/// Prova real: tirar a chamada a `conferir_a_arvore` do `atualizar` devolve
+/// `Int(7)` na avo e deixa a mae em `Int(1)` -- que e exatamente o defeito
+/// medido.
 #[test]
-fn a_cascata_de_tres_niveis_recusa_depois_de_gravar_a_mae() {
+fn a_recusa_da_neta_chega_antes_de_a_avo_ser_gravada() {
     let b = base("orfa");
     let inst = Instancia::nova(&b).unwrap();
     let db = inst.criar_database("t").unwrap();
@@ -174,25 +209,30 @@ fn a_cascata_de_tres_niveis_recusa_depois_de_gravar_a_mae() {
     n.inserir(&[Value::Int(100), Value::Int(1)]).unwrap();
     n.sincronizar().unwrap();
 
-    let saida = m.atualizar(r, &[Value::Int(7), Value::Str("Ana".into())]);
-    let erro = saida.expect_err("a cascata de tres niveis passou -- o cenario mudou");
+    let erro = m
+        .atualizar(r, &[Value::Int(7), Value::Str("Ana".into())])
+        .expect_err("a cascata de tres niveis passou -- o cenario mudou");
     let texto = erro.to_string();
     assert!(
-        texto.contains("a mae ja esta gravada"),
-        "o erro tem de DIZER que a mae ficou gravada; veio: {texto}"
+        texto.contains("restringir"),
+        "a recusa tem de ser a da neta; veio: {texto}"
+    );
+    assert!(
+        !texto.contains("a mae ja esta gravada"),
+        "a recusa chegou DEPOIS de gravar -- e o defeito que esta prova trava: {texto}"
     );
 
-    // O estado em disco: a mae andou, a filha nao. Nenhuma queda envolvida.
+    // O que importa: o disco NAO se mexeu, nem na avo nem na mae.
     let mut m = db.abrir_qualificada("clientes").unwrap();
     assert_eq!(
         m.ler(r).unwrap().unwrap()[0],
-        Value::Int(7),
-        "a mae devia estar gravada com a chave nova"
+        Value::Int(1),
+        "a avo foi gravada apesar da recusa"
     );
     assert_eq!(
         filha_aponta_para(&db, p),
         Value::Int(1),
-        "a filha devia ter ficado para tras -- e este e o defeito"
+        "a mae devia ter ficado como estava"
     );
 }
 
@@ -203,16 +243,24 @@ fn a_cascata_de_tres_niveis_recusa_depois_de_gravar_a_mae() {
 /// O estado que a queda no meio da passada deixa, e o que a recuperacao faz
 /// com ele.
 ///
-/// O teste 1 produz, pela API publica e sem matar processo nenhum, o MESMO
-/// estado em disco que um `SIGKILL` entre a gravacao da mae e a cascata: mae
-/// nova, filha velha, e nenhum rastro da cascata pendente. Tirada a neta que
-/// travava o caminho, escreve-se a marca `.tx` que a passada teria deixado e
-/// chama-se a recuperacao de verdade.
+/// # Como o estado pos-queda e montado, e por que assim
+///
+/// A queda que interessa cai ENTRE a gravacao da mae e a cascata: em disco
+/// ficam a mae nova e a filha velha, sem rastro nenhum da cascata pendente.
+/// Reproduzir isso por uma FALHA da cascata deixou de funcionar quando a
+/// conferencia da arvore passou a recusar antes de gravar -- e isso e bom, e o
+/// conserto do outro teste deste arquivo.
+///
+/// Entao o estado se monta pelo unico caminho que continua fiel: os arquivos
+/// da filha saem do diretorio, a mae e alterada (o planejamento nao ve filha
+/// nenhuma, entao nao cascateia), e a filha volta. O que fica em disco e
+/// **byte a byte** o que a queda deixaria, e sem depender de nenhum caminho de
+/// erro para produzi-lo.
 ///
 /// Prova real: tirar a chamada a `recascatear` do `aplicar_uma` devolve
-/// `Int(1)` na ultima linha, que e exatamente o defeito medido. E o teste 3 e
-/// a MESMA marca com a mae ainda no valor velho -- sem ele, este passaria
-/// tambem numa sonda que nao enxerga cascata nenhuma.
+/// `Int(1)` na ultima linha, que e o defeito medido. E o teste 3 e a MESMA
+/// marca com a mae ainda no valor velho -- sem ele, este passaria tambem numa
+/// sonda que nao enxerga cascata nenhuma.
 #[test]
 fn a_recuperacao_refaz_a_cascata_que_a_queda_deixou_pela_metade() {
     let b = base("reaplica");
@@ -226,25 +274,24 @@ fn a_recuperacao_refaz_a_cascata_que_a_queda_deixou_pela_metade() {
     let mut f = pedidos(&db);
     let p = f.inserir(&[Value::Int(10), Value::Int(1)]).unwrap();
     f.sincronizar().unwrap();
-    let mut n = itens(&db);
-    let i = n.inserir(&[Value::Int(100), Value::Int(1)]).unwrap();
-    n.sincronizar().unwrap();
+    drop(f);
+    drop(m);
 
-    // Produz o estado pos-queda e depois tira o estorvo: o que a recuperacao
-    // ve e so o disco, e o disco ficou igual ao de uma queda.
+    // A filha sai de cena, a mae anda sozinha, a filha volta.
+    let dir = db.caminho().to_path_buf();
+    let guardados = esconder(&dir, "pedidos");
+    let mut m = db.abrir_qualificada("clientes").unwrap();
     m.atualizar(r, &[Value::Int(7), Value::Str("Ana".into())])
-        .expect_err("cenario");
-    n.excluir_de_vez(i, "sai do caminho: a queda nao tem neta")
-        .unwrap();
-    n.sincronizar().unwrap();
+        .expect("sem filha a vista, a alteracao da mae nao cascateia nada");
+    m.sincronizar().unwrap();
+    drop(m);
+    devolver(&dir, &guardados);
+
     assert_eq!(
         filha_aponta_para(&db, p),
         Value::Int(1),
-        "o cenario mudou: a filha ja devia estar para tras antes da recuperacao"
+        "o cenario nao montou: a filha tinha de estar para tras"
     );
-    drop(m);
-    drop(f);
-    drop(n);
 
     marca(&db, 4242, r, &[Value::Int(1), Value::Str("Ana".into())]);
     let rel = recuperar(&inst);

@@ -57,6 +57,29 @@ struct PassoAoAlterar {
     destino: Vec<(usize, Value)>,
 }
 
+/// Ate onde a conferencia da cascata desce antes de recusar.
+///
+/// # Por que um TETO e nao um detector de ciclo
+///
+/// Porque o ciclo foi MEDIDO e nao se popula. Um ciclo `A -> B -> A` com
+/// conferencia dos dois lados nao aceita a primeira linha: inserir em `A`
+/// exige a chave em `B`, que esta vazia, e inserir em `B` exige a chave em
+/// `A`, que tambem esta. As duas recusas estao na sonda que originou este
+/// numero. E chave com `verificar: false` sai do planejamento na primeira
+/// linha, entao nem cascateia. Nao ha ciclo com linha dentro para detectar.
+///
+/// O teto existe pelo outro motivo: recursao sem fundo num caminho de
+/// ESCRITA e a pior falha possivel -- pilha estourada, processo morto, banco
+/// pela metade. Ele nao promete achar ciclo; promete que o trabalho e
+/// limitado e que a recusa DIZ onde parou. E o mesmo desenho do `PASSOS_MAX`
+/// do interpretador de gatilhos, pelo mesmo motivo.
+///
+/// Dezesseis porque a corrente mais funda que este projeto ja viu tem tres, e
+/// porque a medicao diz que cada nivel custa ~1,9 ms: dezesseis niveis sao
+/// ~30 ms de conferencia, que e caro e finito -- que e exatamente o que se
+/// quer de um teto.
+const TETO_DA_CASCATA: usize = 16;
+
 /// O que saiu de uma carga em lote.
 #[derive(Debug, Clone, Default)]
 pub struct Lote {
@@ -931,6 +954,82 @@ impl Table {
         self.aplicar_ao_alterar(passos)
     }
 
+    /// Desce a cascata ate o fim CONFERINDO, sem gravar nada.
+    ///
+    /// # O buraco que ela fecha, e por que ele nao aparecia
+    ///
+    /// `planejar_ao_alterar` so olha quem aponta para ESTA tabela -- um nivel.
+    /// A dois niveis isso basta; a tres, nao: com
+    /// `avo <- mae (cascata) <- neta (restringir)`, o plano da avo passa, a
+    /// avo vai para o disco, e so entao a cascata chama `mae.atualizar`, que
+    /// planeja a propria cascata, acha a neta com `restringir` e recusa. **A
+    /// avo ficou gravada e a mae ficou para tras**, sem queda nenhuma e so com
+    /// declaracoes legitimas.
+    ///
+    /// # O custo, medido antes de escrever isto
+    ///
+    /// A premissa do pedido era que conferir a arvore «passa a abrir netas e
+    /// bisnetas», e ela e FALSA: a arvore ja e percorrida hoje, porque a
+    /// gravacao da filha e um `atualizar` inteiro que planeja a propria
+    /// cascata. Medido em `--example custo-da-cascata-em-arvore`, o custo de
+    /// alterar a chave da avo cresce LINEARMENTE com a profundidade -- 254,6
+    /// us sem filha, 2.289,9 com uma, 4.204,1 com duas, 6.066,6 com tres,
+    /// 8.765,4 com quatro --, e crescer assim so e possivel se cada nivel ja
+    /// estiver sendo aberto.
+    ///
+    /// O que esta conferencia acrescenta e uma SEGUNDA travessia, a de
+    /// validacao, antes da primeira escrita -- e o preco dela foi medido
+    /// DEPOIS de escrita, com o mesmo medidor, em vez de previsto: **1,13x com
+    /// um nivel abaixo e ~1,35x de dois em diante** (2.289,9 -> 2.584,4 us com
+    /// um; 4.204,1 -> 5.676,7 com dois; 6.066,6 -> 8.302,1 com tres; 8.765,4 ->
+    /// 11.821,3 com quatro). Eu tinha previsto 2x, e errei para cima pelo
+    /// motivo certo: a passada de validacao so PLANEJA, e planejar e a metade
+    /// barata -- quem custa e gravar.
+    ///
+    /// Sem cascata nenhuma o custo nao se mexe (254,6 -> 268,6 us, dentro do
+    /// ruido), e isso e o portao `is_empty()` fazendo o que promete: alteracao
+    /// que nao toca chave nao paga conferencia de arvore.
+    ///
+    /// O preco esta escrito porque e real, e a alternativa
+    /// -- carregar a arvore no plano e gravar a filha por um atalho sem
+    /// cascata -- foi recusada de proposito: o comentario do
+    /// `aplicar_ao_alterar` explica que a gravacao da filha e um `atualizar`
+    /// INTEIRO porque e ele que mantem o indice, o diario e a trilha dela, e
+    /// atalho por baixo deixaria a filha com indice mentindo.
+    fn conferir_a_arvore(passos: &mut [PassoAoAlterar], nivel: usize) -> Result<()> {
+        if nivel > TETO_DA_CASCATA {
+            return Err(PhxError::Integridade(format!(
+                "a cascata do ao_alterar passou de {TETO_DA_CASCATA} niveis a partir de \
+                 {}: ou o modelo tem uma corrente absurda, ou ha um ciclo de chaves \
+                 conferidas com linha dentro -- que este motor nao consegue produzir. \
+                 Nada foi gravado",
+                passos.first().map_or("?", |p| p.nome.as_str())
+            )));
+        }
+        for passo in passos.iter_mut() {
+            // Os rowids saem por copia: a filha e emprestada mutavelmente logo
+            // abaixo, e o emprestimo do campo vizinho nao sobreviveria.
+            let alvos = passo.rowids.clone();
+            for r in alvos {
+                let Some(antes) = passo.filha.ler(r)? else {
+                    continue;
+                };
+                let mut depois = antes.clone();
+                for (c, v) in &passo.destino {
+                    if let Some(alvo) = depois.get_mut(*c) {
+                        *alvo = v.clone();
+                    }
+                }
+                // AQUI mora a recusa que hoje chega tarde: `restringir` na neta
+                // sai deste planejamento como `Err`, e sobe sem ninguem ter
+                // gravado byte nenhum.
+                let mut netas = passo.filha.planejar_ao_alterar(&antes, &depois)?;
+                Self::conferir_a_arvore(&mut netas, nivel + 1)?;
+            }
+        }
+        Ok(())
+    }
+
     fn planejar_ao_alterar(
         &mut self,
         antes: &[Value],
@@ -1075,18 +1174,19 @@ impl Table {
     /// profundidade e o que acontece: tudo o que pode recusar recusou no
     /// planejamento.
     ///
-    /// **A DOIS niveis nao e verdade, e isso esta medido.** O planejamento da
-    /// mae so olha quem aponta para a MAE; ele nao desce ate a neta. Com
-    /// `avo <- mae(cascata) <- neta(restringir)`, o plano da avo passa, a avo
-    /// vai para o disco, e so entao a cascata chama `mae.atualizar`, que
-    /// planeja a propria cascata, acha a neta com `restringir` e recusa. A avo
-    /// ficou gravada e a mae ficou para tras -- sem queda nenhuma, so com
-    /// declaracoes legitimas. O recado abaixo DIZ isso, e e por isso que ele
-    /// existe; o comentario e que dizia o contrario. O teste que trava o
-    /// cenario e `a_cascata_de_tres_niveis_recusa_depois_de_gravar_a_mae`, em
-    /// `phxsql-server/tests/cascata-na-recuperacao.rs`, e fechar o buraco pede
-    /// planejar a arvore inteira antes da primeira escrita -- pedido proprio,
-    /// no PENDENCIAS.
+    /// **A um nivel isso sempre valeu; a tres, nao valia, e agora vale.**
+    /// `planejar_ao_alterar` so olha quem aponta para ESTA tabela, entao com
+    /// `avo <- mae(cascata) <- neta(restringir)` o plano da avo passava, a avo
+    /// ia para o disco, e so entao a cascata achava a neta e recusava -- avo
+    /// gravada, mae para tras, sem queda nenhuma. Quem fecha isso e a
+    /// [`Table::conferir_a_arvore`], que desce a corrente inteira ANTES da
+    /// primeira escrita.
+    ///
+    /// O recado abaixo continua existindo, e nao por desconfianca do
+    /// conferidor: a linha pode sumir entre conferir e gravar, e a filha pode
+    /// recusar por motivo que nao e de integridade (E/S, indice para tras).
+    /// Recusa depois de gravar ficou RARA; deixar de dizer o que aconteceu
+    /// quando ela acontece seria trocar um buraco por um pior.
     fn aplicar_ao_alterar(&mut self, passos: Vec<PassoAoAlterar>) -> Result<()> {
         self.sincronizar()?;
         for mut passo in passos {
@@ -2040,7 +2140,13 @@ impl Table {
         // achar as filhas e conferir o indice delas sao as ultimas coisas que
         // ainda podem recusar, e recusa depois de gravar nao e recusa. Da
         // primeira escrita para baixo nao ha mais `return Err` de guarda.
-        let cascata = self.planejar_ao_alterar(&valores_antigos, valores)?;
+        let mut cascata = self.planejar_ao_alterar(&valores_antigos, valores)?;
+        // E a arvore INTEIRA que confere aqui, e nao so o primeiro nivel: a
+        // neta com `restringir` recusava depois de a avo estar gravada.
+        // `is_empty()` mantem o portao -- alteracao sem cascata nao desce nada.
+        if !cascata.is_empty() {
+            Self::conferir_a_arvore(&mut cascata, 1)?;
+        }
 
         let ponteiros_antigos = self.ponteiros(&antigo)?;
         let payload = self.montar_payload(valores)?;

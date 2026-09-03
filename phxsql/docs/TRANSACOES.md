@@ -617,26 +617,64 @@ O arquivo é `phxsql-server/tests/cascata-na-recuperacao.rs`, com quatro provas
 e as duas sabotagens: tirar o `recascatear` derruba só o teste da cascata,
 recusar a v1 derruba só o teste da compatibilidade.
 
-### 5.5.2 A órfã que não precisa de queda nenhuma
+### 5.5.2 A órfã que não precisava de queda nenhuma — fechada, e a premissa do pedido era falsa
 
-Apareceu no caminho, e é de outra família: não é da transação, é da própria
-cascata, e **continua acontecendo**.
+Apareceu medindo o §5.5.1, e é de outra família: não é da transação, é da
+própria cascata. Ficou registrada como pedido 169 e **foi fechada na mesma
+rodada**, porque as duas perguntas de projeto que a seguravam morreram
+medidas.
 
-`aplicar_ao_alterar` dizia em comentário que «tudo o que pode recusar já
-recusou no planejamento, antes da primeira escrita». A **dois níveis** é
-verdade. A três não: o planejamento da mãe só olha quem aponta para a **mãe**,
-e não desce até a neta. Com `avó ← mãe (cascata) ← neta (restringir)`, o plano
-da avó passa, a avó vai para o disco, e só então a cascata chama
-`mae.atualizar`, que planeja a própria cascata, acha a neta com `restringir` e
-recusa. **A avó ficou gravada e a mãe ficou para trás** — sem queda nenhuma, só
-com declarações legítimas.
+**O defeito.** `planejar_ao_alterar` só olha quem aponta para **esta** tabela —
+um nível. A dois níveis isso basta; a três, não: com
+`avó ← mãe (cascata) ← neta (restringir)`, o plano da avó passa, a avó vai para
+o disco, e só então a cascata chama `mae.atualizar`, que planeja a própria
+cascata, acha a neta com `restringir` e recusa. **A avó ficava gravada e a mãe
+ficava para trás** — sem queda nenhuma, só com declarações legítimas.
 
-O recado do erro já dizia a verdade («a mãe já está gravada, e essa filha ficou
-para trás»); era o comentário que dizia o contrário, e ele foi corrigido.
-Fechar o buraco pede planejar a **árvore inteira** antes da primeira escrita, e
-isso é pedido próprio no `PENDENCIAS.md` — dentro de uma transação o estrago
-não escapa, porque a passada inteira roda com a trava na mão e o erro leva a
-transação para `ABORT_ONLY`.
+**A primeira pergunta era o custo**, e a premissa do pedido estava errada. Ele
+dizia que conferir a árvore «passa a abrir netas e bisnetas a cada alteração de
+chave». Medido em `--example custo-da-cascata-em-arvore`, o custo de alterar a
+chave da avó **já crescia linearmente com a profundidade** — 254,6 µs sem
+filha, 2.289,9 com uma, 4.204,1 com duas, 6.066,6 com três, 8.765,4 com quatro
+—, e crescer assim só é possível se cada nível já estivesse sendo aberto. E
+estava: a gravação da filha é um `atualizar` **inteiro**, que planeja a própria
+cascata. O pedido não acrescentaria a travessia; acrescentaria uma **segunda**,
+a de validação, antes da primeira escrita.
+
+O preço dessa segunda foi medido **depois** de escrita, e não previsto:
+**1,13× com um nível abaixo e ~1,35× de dois em diante**. Eu tinha previsto 2×
+e errei para cima pelo motivo certo — a passada de validação só **planeja**, e
+planejar é a metade barata; quem custa é gravar. Sem cascata nenhuma o custo
+não se mexe (254,6 → 268,6 µs, dentro do ruído), que é o portão `is_empty()`
+fazendo o que promete.
+
+**A segunda pergunta era o ciclo `A ← B ← A`**, e ele não existe com linha
+dentro. Medido pela sonda: um ciclo com conferência dos dois lados **não aceita
+a primeira linha** — inserir em `A` exige a chave em `B`, que está vazia, e
+inserir em `B` exige a chave em `A`, que também está; as duas recusas saem
+nomeando a chave. E chave com `verificar: false` sai do planejamento na
+primeira linha, então nem cascateia. Não há ciclo populado para detectar.
+
+Por isso o que entrou **não é um detector de ciclo**, é um **teto de
+profundidade** (`TETO_DA_CASCATA = 16`), pelo outro motivo: recursão sem fundo
+num caminho de **escrita** é a pior falha possível — pilha estourada, processo
+morto, banco pela metade. Ele não promete achar ciclo; promete que o trabalho é
+limitado e que a recusa **diz onde parou**. É o mesmo desenho do `PASSOS_MAX`
+do interpretador de gatilhos, pelo mesmo motivo.
+
+**O que ficou de fora, com o motivo.** Carregar a árvore inteira no plano e
+gravar a filha por um atalho sem cascata faria **uma** travessia em vez de
+duas. Foi recusado: o comentário do `aplicar_ao_alterar` explica que a gravação
+da filha é um `atualizar` **inteiro** porque é ele que mantém o índice, o
+diário e a trilha dela, e atalho por baixo deixaria a filha com índice mentindo.
+Trocar 1,35× por um caminho de escrita que pula garantias é o negócio errado.
+
+E o recado «a mãe já está gravada» **continua existindo** no
+`aplicar_ao_alterar`, e não por desconfiança do conferidor: a linha pode sumir
+entre conferir e gravar, e a filha pode recusar por motivo que não é de
+integridade (E/S, índice para trás). Recusa depois de gravar ficou **rara**;
+deixar de dizer o que aconteceu quando ela acontece seria trocar um buraco por
+um pior.
 
 ### 5.6 A lição que o próprio teste do `SIGKILL` deu
 
