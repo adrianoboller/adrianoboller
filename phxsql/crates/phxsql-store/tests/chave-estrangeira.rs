@@ -55,13 +55,10 @@ fn filha(d: &std::path::Path, conferindo: bool) -> Table {
         ],
     )
     .unwrap()
-    .com_chaves_estrangeiras(vec![ForeignKey::new(
-        "fk_cliente",
-        vec![1],
-        "clientes",
-        vec!["id".into()],
-    )
-    .conferindo(conferindo)])
+    .com_chaves_estrangeiras(vec![
+        ForeignKey::new("fk_cliente", vec![1], "clientes", vec!["id".into()])
+            .conferindo(conferindo),
+    ])
     .unwrap();
     Table::criar(d, e).unwrap()
 }
@@ -268,13 +265,10 @@ fn filha_sem_indice(d: &std::path::Path, conferindo: bool) -> Table {
         ],
     )
     .unwrap()
-    .com_chaves_estrangeiras(vec![ForeignKey::new(
-        "fk_cliente",
-        vec![1],
-        "clientes",
-        vec!["id".into()],
-    )
-    .conferindo(conferindo)])
+    .com_chaves_estrangeiras(vec![
+        ForeignKey::new("fk_cliente", vec![1], "clientes", vec!["id".into()])
+            .conferindo(conferindo),
+    ])
     .unwrap();
     Table::criar(d, e).unwrap()
 }
@@ -465,4 +459,78 @@ fn a_mae_viva_continua_aceitando_filha() {
     let mut f = filha(&d, true);
     f.inserir(&[Value::Int(10), Value::Int(1)])
         .expect("mae viva: a filha entra");
+}
+
+// ---------------------------------------------------------------------------
+// A terceira porta: restaurar
+// ---------------------------------------------------------------------------
+//
+// `inserir` e `atualizar` conferem; restaurar era a porta que nao perguntava.
+// Nas invariantes de hoje ela nao poderia falhar -- a mae nao morre com filha,
+// nem suave --, e a conferencia entra mesmo assim: a orfa por construcao
+// sobreviveu versoes porque a porta que faltava era a que ninguem olhava.
+
+/// Uma filha marcada nao volta se a mae dela nao estiver viva.
+///
+/// O cenario e o que a replica produz legitimamente: la o `aplicar_evento`
+/// aplica sem julgar, entao a filha pode estar marcada e a mae pode nao ter
+/// chegado. Restaurar a filha ali criaria a orfa VISIVEL.
+#[test]
+fn a_filha_marcada_nao_volta_sem_mae_viva() {
+    let d = dir("restaurar-sem-mae");
+    // Um source, para tirar dele a imagem da filha.
+    let ds = dir("restaurar-source");
+    let mut ms = mae(&ds);
+    ms.inserir(&[Value::Int(1)]).unwrap();
+    ms.sincronizar().unwrap();
+    drop(ms);
+    let mut fs = filha(&ds, true).com_imagem_no_diario(true);
+    fs.inserir(&[Value::Int(10), Value::Int(1)]).unwrap();
+    fs.sincronizar().unwrap();
+    let (e, imagem) = fs.diario_com_imagem(0, 0).unwrap().remove(0);
+    drop(fs);
+
+    // A replica: a filha chega, a mae nao.
+    mae(&d).sincronizar().unwrap();
+    let mut f = filha(&d, true);
+    f.aplicar_evento(e.operacao, e.rowid, &imagem).unwrap();
+    f.excluir_suave(1, "some").unwrap();
+    f.sincronizar().unwrap();
+
+    let erro = f
+        .restaurar(1, "volta")
+        .expect_err("sem mae viva, a filha nao volta");
+    let t = erro.to_string();
+    assert!(t.contains("nao pode voltar"), "veio: {t}");
+    assert!(t.contains("fk_cliente"), "e tem de dizer qual chave: {t}");
+}
+
+/// E o controle: com a mae viva, restaurar continua funcionando como sempre.
+#[test]
+fn com_mae_viva_restaurar_continua_igual() {
+    let d = dir("restaurar-com-mae");
+    let mut m = mae(&d);
+    m.inserir(&[Value::Int(1)]).unwrap();
+    m.sincronizar().unwrap();
+    drop(m);
+
+    let mut f = filha(&d, true);
+    f.inserir(&[Value::Int(10), Value::Int(1)]).unwrap();
+    f.excluir_suave(1, "some").unwrap();
+    assert!(f.restaurar(1, "volta").expect("a mae esta viva"));
+}
+
+/// E o comportamento VELHO: chave sem `verificar` nao paga nem a leitura.
+#[test]
+fn sem_conferir_restaurar_nao_pergunta_nada() {
+    let d = dir("restaurar-sem-conferir");
+    mae(&d).sincronizar().unwrap();
+    let mut f = filha(&d, false);
+    f.inserir(&[Value::Int(10), Value::Int(999)]).unwrap();
+    f.excluir_suave(1, "some").unwrap();
+    assert!(
+        f.restaurar(1, "volta")
+            .expect("chave sem verificar: como sempre"),
+        "restaurar tem de devolver true"
+    );
 }

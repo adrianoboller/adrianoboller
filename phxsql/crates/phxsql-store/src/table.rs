@@ -2506,8 +2506,36 @@ impl Table {
     }
 
     /// Desfaz uma exclusao suave.
+    ///
+    /// # Por que ela CONFERE a chave, se hoje nao poderia falhar
+    ///
+    /// Restaurar e a terceira porta pela qual uma linha volta a existir para
+    /// quem le -- as outras duas sao o `inserir` e o `atualizar`, e as duas
+    /// conferem. Nas invariantes de hoje esta nunca falha: a mae nao morre
+    /// enquanto houver filha, nem suave (o `conferir_filhas` conta a filha
+    /// marcada tambem), e a chave nao nasce conferida sobre dado que ja viola.
+    ///
+    /// A conferencia entra mesmo assim, e a razao e o defeito de origem desta
+    /// rodada: a filha nascia de mae morta porque a conferencia perguntava
+    /// «existe?» e nao «esta viva?» -- e ninguem viu, durante versoes, porque
+    /// a porta que faltava era a que ninguem olhava. **Porta que nao faz a
+    /// pergunta que as irmas fazem e a proxima a virar buraco**, e o custo de
+    /// perguntar aqui e o de uma operacao rara: o portao `fks_conferidas`
+    /// continua vindo antes, e tabela sem chave conferida nao le nada.
     pub fn restaurar(&mut self, rowid: RowId, motivo: &str) -> Result<bool> {
         self.exigir_softdeleted()?;
+        if !self.fks_conferidas.is_empty() && self.julga_integridade() {
+            // A linha so se le quando ha chave a conferir: sem elas, restaurar
+            // continua custando o que sempre custou.
+            if let Some(linha) = self.ler(rowid)? {
+                self.conferir_fks(&linha).map_err(|e| {
+                    PhxError::Integridade(format!(
+                        "{}: a linha {rowid} nao pode voltar ({e})",
+                        self.nome
+                    ))
+                })?;
+            }
+        }
         if !self.marcar(rowid, false)? {
             return Ok(false);
         }

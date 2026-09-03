@@ -2670,4 +2670,33 @@ pub fn limpar() {
             "a_orfa_aparece_e_o_verificador_nao_a_conserta",
         ],
     },
+    {
+        "id": "restaurar-nao-pergunta-pela-mae",
+        "titulo": "restaurar volta a ressuscitar a filha sem olhar a mae",
+        "porque": (
+            "restaurar e a terceira porta pela qual uma linha volta a existir "
+            "para quem le -- as outras duas conferem. A orfa por construcao "
+            "sobreviveu versoes porque a porta que faltava era a que ninguem "
+            "olhava: porta que nao faz a pergunta que as irmas fazem e a "
+            "proxima a virar buraco."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        if !self.fks_conferidas.is_empty() && self.julga_integridade() {
+            // A linha so se le quando ha chave a conferir: sem elas, restaurar
+            // continua custando o que sempre custou.
+            if let Some(linha) = self.ler(rowid)? {""",
+        "troca": """        // DEFEITO REPOSTO: restaurar volta a nao perguntar pela mae.
+        if false {
+            if let Some(linha) = self.ler(rowid)? {""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "chave-estrangeira"],
+        "caem": [
+            "a_filha_marcada_nao_volta_sem_mae_viva",
+        ],
+        "seguem": [
+            # Os dois controles: com mae viva, e o comportamento velho.
+            "com_mae_viva_restaurar_continua_igual",
+            "sem_conferir_restaurar_nao_pergunta_nada",
+        ],
+    },
 ]
