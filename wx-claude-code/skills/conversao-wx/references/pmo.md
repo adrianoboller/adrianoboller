@@ -17,7 +17,7 @@ registra. O agente é `pmo-gerente-de-projetos`; o comando é
   riscos.md           RAID: riscos, premissas, issues, dependências (já com os RSK-* do bloco 0)
   projeto.json        bloco 0 do questionário: softhouse, prazo final, marcos, orçamento financeiro
   cronograma.md, organograma.md, fluxograma.md   do bloco 0; o iniciar lê os marcos com gate
-  sprints/            um resumo por sprint, no formato abaixo
+  sprints/            um resumo por sprint, BlocoNNNN-SPNNNNN-titulo.md, e a cópia .zip ao lado
   backlog.md          backlog do produto priorizado (Scrum)
   kanban.md           quadro gerado da matriz, com WIP (Kanban)
   pdca/               um PDCA-NNN.md por ciclo
@@ -96,6 +96,10 @@ sprint). A **definição de pronto** é a da matriz: evidência com localizador,
 implementação apontada, teste, resultado comparado, aprovação humana e
 confiança nunca `low`. Item que não fecha volta ao backlog, e o resumo diz
 quais.
+
+## Blocos e identificação
+
+O projeto se divide em blocos (`Bloco0001`…), capítulos abertos com `pmo.py bloco abrir --titulo`; cada sprint recebe `SP00001`… dentro do bloco atual. A identificação `BlocoNNNN-SPNNNNN-Título · data` abre toda resposta no projeto: `pmo.py identificacao` a imprime e os hooks `SessionStart` e `UserPromptSubmit` a injetam. Sem sprint aberta, a linha diz isso.
 
 ## Sprints
 

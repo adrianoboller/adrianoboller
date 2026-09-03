@@ -6,6 +6,8 @@ allowed-tools: "Read, Glob, Grep, Bash"
 
 # Laudo de uso de tokens
 
+> **Identificação obrigatória.** Comece toda resposta com a linha que o PMO fornece: `BlocoNNNN-SPNNNNN-Título · data` (`pmo.py identificacao`). O hook a injeta a cada interação; se não vier, gere-a antes de responder. Sem PMO iniciado, escreva `Bloco0000-SP00000-Sem PMO iniciado · data`.
+
 > **Licença.** Se o contexto da sessão disser que o WX Claude Code está sem licença válida, pare aqui: explique o estado (`licenca.py verificar`) e como instalar o serial (`licenca.py instalar`). Não tente contornar o hook.
 
 Carregue a skill `laudo-uso-tokens` (`${CLAUDE_PLUGIN_ROOT}/skills/laudo-uso-tokens/SKILL.md`) e execute o **prompt-mestre** dela, `PROMPT-MESTRE.md`, na íntegra.

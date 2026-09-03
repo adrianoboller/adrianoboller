@@ -61,6 +61,22 @@
             "type": "command",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/zelador.py\" hook-sessao",
             "timeout": 20
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/pmo.py\" hook-sessao-identificacao",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/pmo.py\" hook-identificacao",
+            "timeout": 5
           }
         ]
       }

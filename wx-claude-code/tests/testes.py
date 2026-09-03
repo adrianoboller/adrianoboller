@@ -311,8 +311,18 @@ class PMO(unittest.TestCase):
         self.assertEqual(r.returncode, 2)
         r = run(SCRIPTS / "pmo.py", "--project-root", self.tmp, "sprint", "fechar", "--decisao", "CONDITIONAL")
         self.assertIn("prontos 1/2", r.stdout)
-        resumo = next((self.tmp / ".wx-migration/pmo/sprints").glob("sprint-01-*.md")).read_text()
+        arq = next((self.tmp / ".wx-migration/pmo/sprints").glob("Bloco0001-SP00001-*.md")); resumo = arq.read_text()
         self.assertIn("## 12. Retrospectiva", resumo); self.assertIn("BR-001", resumo)
+        self.assertIn("| Identificação | Bloco0001-SP00001-", resumo)
+        import zipfile; self.assertEqual(zipfile.ZipFile(arq.with_suffix(".zip")).namelist(), [arq.name])  # toda sprint tem a copia .md zipada
+        ident = run(SCRIPTS / "pmo.py", "--project-root", self.tmp, "identificacao").stdout.strip()
+        self.assertRegex(ident, r"^Bloco0001-SP00001-.+ · \d{4}-\d{2}-\d{2} \(sprint fechada; abra a próxima\)$")
+        r = run(SCRIPTS / "pmo.py", "--project-root", self.tmp, "bloco", "abrir", "--titulo", "Análise da base de dados", "--gate", "G1")
+        self.assertIn("Bloco0002", r.stdout)
+        r = run(SCRIPTS / "pmo.py", "--project-root", self.tmp, "sprint", "abrir", "--nome", "Análise da base de dados", "--objetivo", "o", "--gate", "G1", "--item", "BR-001", "--aprovador", "A")
+        self.assertIn("Bloco0002-SP00002-Análise da base de dados", r.stdout)
+        h = run(SCRIPTS / "pmo.py", "--project-root", self.tmp, "hook-identificacao", entrada="{}").stdout
+        self.assertIn("Bloco0002-SP00002-Análise da base de dados ·", h); self.assertIn("UserPromptSubmit", h)
 
     def test_backlog_com_papel_e_entrega_zipada(self):
         import zipfile

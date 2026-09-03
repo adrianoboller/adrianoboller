@@ -69,7 +69,7 @@ claude plugin validate wx-claude-code
 | --- | --- | --- |
 | `/wx-claude-code:questionario <projeto>` | o wizard: bloco 0 e letras A–L, um item por mensagem; gera `.wx-migration/` e o contexto do projeto | sempre primeiro |
 | `/wx-claude-code:converter <modo> <projeto>` | conversão por gates G0–G7; `modo` é `inventario`, `plano`, `piloto` ou `completo` | depois do wizard |
-| `/wx-claude-code:pmo <ação> <projeto>` | gerência: `iniciar`, `status`, `relatorio`, `sprint`, `kanban`, `pdca`, `orcamento`, `entregar`, `painel`, `exportar`, `limpar` | durante toda a conversão |
+| `/wx-claude-code:pmo <ação> <projeto>` | gerência: `iniciar`, `bloco`, `sprint`, `identificacao`, `status`, `relatorio`, `kanban`, `pdca`, `orcamento`, `entregar`, `painel`, `exportar`, `limpar` | durante toda a conversão |
 | `/wx-claude-code:estilo-telas <projeto>` | paleta, tema e tipografia viram `PRODUCT.md` e `DESIGN.md` pelo Impeccable | quando a letra F foi «sim» |
 | `/wx-claude-code:laudo-tokens [fase]` | auditoria de consumo em três fases, somente leitura | quando quiser medir o custo |
 | `/impeccable <comando> <alvo>` | os comandos de qualidade gráfica (23 segundo o SKILL.md de origem): `shape`, `polish`, `audit`, `critique`, `harden`… | em cada tela convertida |
@@ -139,6 +139,15 @@ classe e modelo, a estratégia de conversão e o destino da entrega, e os
 próximos passos derivados do que está acima (próximo gate, sprint aberta,
 itens a desbloquear, decisões pendentes, lacunas críticas, prazo vencido).
 `pmo.py relatorio` imprime o mesmo texto a qualquer hora.
+
+**Blocos, sprints e a identificação de cada interação.** O projeto se divide
+em blocos numerados (`Bloco0001`, `Bloco0002`…), os capítulos, e cada bloco tem
+sprints numeradas (`SP00001`, `SP00002`…). Toda resposta do Claude Code no
+projeto começa com a linha `BlocoNNNN-SPNNNNN-Título · data`, por exemplo
+`Bloco0001-SP00001-Análise da base de dados · 2026-09-03`: o hook a injeta a
+cada mensagem e os comandos exigem que ela abra a resposta. Ao fechar, cada
+sprint deixa `pmo/sprints/Bloco0001-SP00001-analise-da-base-de-dados.md` e a
+cópia zipada ao lado, com o mesmo nome.
 
 **Salvar o projeto resultante numa pasta sua.** `/wx-claude-code:pmo exportar`
 (ou `exportar_projeto.py --destino <pasta>`) grava em `<pasta>/<nome>-<data>/`

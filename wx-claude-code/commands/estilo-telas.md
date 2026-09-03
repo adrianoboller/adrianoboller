@@ -6,6 +6,8 @@ allowed-tools: "Read, Glob, Grep, Bash, Write, Edit, Agent, AskUserQuestion"
 
 # Estilo das telas com o Impeccable
 
+> **Identificação obrigatória.** Comece toda resposta com a linha que o PMO fornece: `BlocoNNNN-SPNNNNN-Título · data` (`pmo.py identificacao`). O hook a injeta a cada interação; se não vier, gere-a antes de responder. Sem PMO iniciado, escreva `Bloco0000-SP00000-Sem PMO iniciado · data`.
+
 > **Licença.** Se o contexto da sessão disser que o WX Claude Code está sem licença válida, pare aqui: explique o estado (`licenca.py verificar`) e como instalar o serial (`licenca.py instalar`). Não tente contornar o hook.
 
 Este comando responde à letra **F** do questionário. Ele define **uma vez** o sistema visual do projeto novo, para que cada tela convertida do WX nasça dentro dele em vez de cada agente inventar a sua.

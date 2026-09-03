@@ -40,6 +40,10 @@ Uma funcionalidade só está concluída quando possui evidência de origem, impl
 
 Qualquer afirmação de equivalência vale somente para o escopo, build, configuração, ambiente, dataset e tolerâncias registrados. Este processo não certifica conformidade LGPD ou jurídica.
 
+## Identificação obrigatória
+
+Toda resposta começa com a linha `BlocoNNNN-SPNNNNN-Título · data`: o bloco (capítulo do projeto), a sprint vigente e o nome dela, como em `Bloco0001-SP00001-Análise da base de dados · 2026-09-03`. A linha vem de `pmo.py identificacao` e o hook do plugin a injeta a cada interação; sem sprint aberta, diga isso na própria linha. Cada sprint fechada deixa `pmo/sprints/<identificação>.md` e a cópia zipada ao lado.
+
 ## Estilo de resposta
 
 - Dê a resposta na primeira frase.

@@ -243,7 +243,55 @@ def kanban(wx: Path) -> str:
     return texto
 
 
-def sprint_abrir(wx: Path, nome: str, objetivo: str, gate: str, itens: list[str], aprovador: str) -> str:
+def _sp(s: dict) -> str:
+    return "SP%05d" % s["numero"]
+
+
+def _slug(t: str) -> str:
+    import unicodedata
+    t = unicodedata.normalize("NFKD", t).encode("ascii", "ignore").decode()
+    return re.sub(r"[^A-Za-z0-9]+", "-", t).strip("-")[:48] or "sem-titulo"
+
+
+def bloco_abrir(wx: Path, titulo: str, gate: str = "") -> str:
+    """Bloco = capitulo do projeto (Bloco0001, Bloco0002...). Toda sprint pertence a um."""
+    plano_p = wx / "pmo" / "plano.json"
+    plano = json.loads(plano_p.read_text(encoding="utf-8"))
+    blocos = plano.setdefault("blocos", [])
+    ident = f"Bloco{len(blocos) + 1:04d}"
+    blocos.append({"id": ident, "titulo": titulo, "gate": gate, "aberto_em": date.today().isoformat()})
+    plano["bloco_atual"] = ident
+    plano_p.write_text(json.dumps(plano, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return f"{ident} «{titulo}» aberto; toda sprint nova entra nele"
+
+
+def identificacao(wx: Path) -> str:
+    """A linha obrigatoria no inicio de cada interacao: BlocoNNNN-SPNNNNN-Titulo · data."""
+    plano_p = wx / "pmo" / "plano.json"
+    hoje = date.today().isoformat()
+    if not plano_p.is_file():
+        return f"Bloco0000-SP00000-Sem PMO iniciado · {hoje}"
+    plano = json.loads(plano_p.read_text(encoding="utf-8"))
+    sprints = plano.get("sprints", [])
+    abertas = [x for x in sprints if x.get("status") == "aberta"]
+    s = abertas[0] if abertas else (sprints[-1] if sprints else None)
+    bloco = (s or {}).get("bloco") or plano.get("bloco_atual") or "Bloco0000"
+    titulo_bloco = next((b["titulo"] for b in plano.get("blocos", []) if b["id"] == bloco), "")
+    if s:
+        estado = "" if abertas else " (sprint fechada; abra a próxima)"
+        return f"{bloco}-{s.get('id', _sp(s))}-{s['nome']} · {hoje}{estado}"
+    return f"{bloco}-SP00000-{titulo_bloco or 'Sem sprint aberta'} · {hoje}"
+
+
+def hook_identificacao(wx: Path, evento: str) -> int:
+    if not (wx / "pmo").is_dir():
+        return 0
+    linha = identificacao(wx)
+    print(json.dumps({"hookSpecificOutput": {"hookEventName": evento, "additionalContext": f"IDENTIFICAÇÃO OBRIGATÓRIA: comece a resposta com a linha «{linha}». É o bloco, a sprint e o título vigentes do PMO; se não houver sprint aberta, diga isso na mesma linha."}}, ensure_ascii=False))
+    return 0
+
+
+def sprint_abrir(wx: Path, nome: str, objetivo: str, gate: str, itens: list[str], aprovador: str, bloco: str = "") -> str:
     plano_p = wx / "pmo" / "plano.json"
     plano = json.loads(plano_p.read_text(encoding="utf-8"))
     if any(s.get("status") == "aberta" for s in plano["sprints"]):
@@ -265,10 +313,19 @@ def sprint_abrir(wx: Path, nome: str, objetivo: str, gate: str, itens: list[str]
             backlog_acrescentar(wx, tid, papel, resumos.get(tid, ""), gate, f"{numero:02d}")
         limpos.append(tid)
     itens = limpos
-    sprint = {"numero": numero, "nome": nome, "objetivo": objetivo, "gate": gate, "itens": itens, "aberta_em": date.today().isoformat(), "status": "aberta", "aprovador": aprovador}
+    blocos = plano.setdefault("blocos", [])
+    if bloco:
+        if bloco not in {b["id"] for b in blocos}:
+            raise ValueError(f"bloco {bloco!r} não existe; abra com `pmo.py bloco abrir --titulo ...`")
+    else:
+        bloco = plano.get("bloco_atual") or ""
+        if not bloco:
+            blocos.append({"id": "Bloco0001", "titulo": f"Gate {gate}", "gate": gate, "aberto_em": date.today().isoformat()})
+            plano["bloco_atual"] = bloco = "Bloco0001"
+    sprint = {"numero": numero, "id": f"SP{numero:05d}", "bloco": bloco, "nome": nome, "objetivo": objetivo, "gate": gate, "itens": itens, "aberta_em": date.today().isoformat(), "status": "aberta", "aprovador": aprovador}
     plano["sprints"].append(sprint)
     plano_p.write_text(json.dumps(plano, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    return f"sprint {numero} «{nome}» aberta para {gate} com {len(itens)} itens do backlog"
+    return f"{bloco}-SP{numero:05d}-{nome} aberta para {gate} com {len(itens)} itens do backlog"
 
 
 def sprint_fechar(wx: Path, decisao: str, pedido: str) -> str:
@@ -295,7 +352,7 @@ def sprint_fechar(wx: Path, decisao: str, pedido: str) -> str:
         f"```text\nSprint {s['numero']:02d} | {s['gate']} | {hoje}\n```", "",
         "## 1. Identificação", "", "| Campo | Valor |", "|---|---|",
         f"| Sprint | {s['numero']:02d} — {s['nome']} |", f"| Gate | {s['gate']} |", f"| Aberta / fechada | {s['aberta_em']} / {hoje} |",
-        f"| Objetivo | {s['objetivo']} |", f"| Aprovador | {s.get('aprovador','')} |", "",
+        f"| Objetivo | {s['objetivo']} |", f"| Aprovador | {s.get('aprovador','')} |", f"| Identificação | {s.get('bloco', 'Bloco0000')}-{s.get('id', '')}-{s['nome']} · {hoje} |", "",
         "## 2. Solicitação", "", pedido or "(registrar o pedido literal)", "",
         "## 3. Insumos recebidos", "", "| Arquivo | Bytes | Situação |", "|---|---:|---|", "| (do inventário do gate) | | |", "",
         "## 4. Atividades realizadas", "", "1. (do ledger de tarefas do orquestrador)", "",
@@ -314,11 +371,16 @@ def sprint_fechar(wx: Path, decisao: str, pedido: str) -> str:
     ]
     s["status"] = "fechada"; s["fechada_em"] = hoje; s["decisao"] = decisao; s["prontos"] = len(prontos)
     plano_p.write_text(json.dumps(plano, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    destino = wx / "pmo" / "sprints" / f"sprint-{s['numero']:02d}-{s['gate']}-{hoje}.md"
+    ident = f"{s.get('bloco', 'Bloco0000')}-{s.get('id', _sp(s))}-{_slug(s['nome'])}"
+    destino = wx / "pmo" / "sprints" / f"{ident}.md"
     saida = write_new(destino, "\n".join(md) + "\n")
+    # Toda sprint tem uma copia .md zipada, com o mesmo nome, ao lado do resumo.
+    import zipfile
+    with zipfile.ZipFile(destino.with_suffix(".zip"), "w", zipfile.ZIP_DEFLATED) as z:
+        z.write(destino, destino.name)
     # Fechar sprint e o momento em que o aprovador quer ver o todo: o painel sai junto.
     p = painel(wx)
-    return f"sprint {s['numero']} fechada ({decisao}); prontos {len(prontos)}/{len(s['itens'])}; {saida}; CREATED {p} (+ relatorio.md)"
+    return f"{ident} fechada ({decisao}); prontos {len(prontos)}/{len(s['itens'])}; {saida}; CREATED {destino.with_suffix('.zip')}; CREATED {p} (+ relatorio.md)"
 
 
 def gastar(wx: Path, gate: str, modelo: str, tokens: int, chamadas: int) -> str:
@@ -335,7 +397,7 @@ def gastar(wx: Path, gate: str, modelo: str, tokens: int, chamadas: int) -> str:
 
 
 def status(wx: Path) -> str:
-    linhas = ["# Painel do PMO", "", f"Gerado por `pmo.py` em {date.today().isoformat()}. Todo número tem fonte ao lado.", ""]
+    linhas = ["# Painel do PMO", "", f"**{identificacao(wx)}**", "", f"Gerado por `pmo.py` em {date.today().isoformat()}. Todo número tem fonte ao lado.", ""]
 
     # Gates
     plano_p = wx / "pmo" / "plano.json"
@@ -449,7 +511,7 @@ def status(wx: Path) -> str:
         fechadas = [s for s in plano.get("sprints", []) if s.get("status") == "fechada"]
         if abertas:
             s = abertas[0]
-            linhas.append(f"Sprint aberta: {s['numero']:02d} «{s['nome']}» ({s['gate']}), {len(s['itens'])} itens, desde {s['aberta_em']}.")
+            linhas.append(f"Sprint aberta: {s.get('bloco', 'Bloco0000')}-{s.get('id', _sp(s))}-{s['nome']} ({s['gate']}), {len(s['itens'])} itens, desde {s['aberta_em']}.")
         else:
             linhas.append("Nenhuma sprint aberta.")
         linhas.append(f"Sprints fechadas: {len(fechadas)}" + (" (" + ", ".join(f"{s['numero']:02d}: {s.get('prontos',0)}/{len(s['itens'])} prontos, {s.get('decisao','')}" for s in fechadas) + ")" if fechadas else "") + ". Fonte: `pmo/plano.json`. MEDIDO.")
@@ -502,7 +564,7 @@ def relatorio(wx: Path) -> str:
     as tabelas inteiras de lacunas, decisoes e riscos, a historia das sprints, o roteamento
     por classe e os proximos passos. Tudo lido dos arquivos; o que nao existe fica INDISPONIVEL."""
     hoje = date.today()
-    L = ["# Relatório do projeto", "", f"Gerado por `pmo.py relatorio` em {hoje.isoformat()}. Todo número tem fonte ao lado; o que não foi medido está marcado INDISPONÍVEL.", ""]
+    L = ["# Relatório do projeto", "", f"**{identificacao(wx)}**", "", f"Gerado por `pmo.py relatorio` em {hoje.isoformat()}. Todo número tem fonte ao lado; o que não foi medido está marcado INDISPONÍVEL.", ""]
 
     # 1. Contrato (bloco 0 do questionario)
     L += ["## 1. Empresa e contrato", ""]
@@ -587,9 +649,9 @@ def relatorio(wx: Path) -> str:
         plano = json.loads(plano_p.read_text(encoding="utf-8"))
         sp = plano.get("sprints", [])
         if sp:
-            L += ["| nº | nome | gate | itens | prontos | decisão | aberta em | fechada em |", "| ---: | --- | --- | ---: | ---: | --- | --- | --- |"]
+            L += ["| identificação | gate | itens | prontos | decisão | aberta em | fechada em |", "| --- | --- | ---: | ---: | --- | --- | --- |"]
             for s in sp:
-                L.append(f"| {s['numero']:02d} | {s['nome']} | {s['gate']} | {len(s['itens'])} | {s.get('prontos', '—') if s.get('status') == 'fechada' else '—'} | {s.get('decisao', 'aberta')} | {s.get('aberta_em', '')} | {s.get('fechada_em', '')} |")
+                L.append(f"| {s.get('bloco', 'Bloco0000')}-{s.get('id', _sp(s))}-{s['nome']} | {s['gate']} | {len(s['itens'])} | {s.get('prontos', '—') if s.get('status') == 'fechada' else '—'} | {s.get('decisao', 'aberta')} | {s.get('aberta_em', '')} | {s.get('fechada_em', '')} |")
             fech = [s for s in sp if s.get("status") == "fechada"]
             if fech:
                 tot = sum(len(s["itens"]) for s in fech); pr = sum(s.get("prontos", 0) for s in fech)
@@ -794,7 +856,7 @@ def entregar(wx: Path, numero: int | None, plugin_root: Path | None) -> Path:
 
     with zipfile.ZipFile(destino, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr(f"sprint-{n:02d}/LEIA-ME.md", f"# Entrega da sprint {n:02d} ({s['gate']})\n\nGerado em {hoje} por `pmo.py entregar`.\n\n- `resumo-da-sprint.md`: resumo de doze seções (ou aviso se a sprint ainda estiver aberta)\n- `tecnicas-aplicadas.md`: Scrum, Kanban, PDCA e balanceamento, com números medidos\n- `base-de-conhecimento.md`: todos os ciclos PDCA fechados\n- `ferramentas.md`: o que cada script faz, lido do próprio script\n- `kanban.md`, `status.md`: estado no fechamento\n- `relatorio.md`, `painel.html`: o relatório completo (contrato, rastreabilidade por tipo, lacunas, decisões, riscos, sprints, PDCA, roteamento, entrega, próximos passos) em texto e em HTML\n- `decisoes/`, `gaps.md`, `riscos.md`: decisões, lacunas e RAID\n- `desenvolvimento/`: os .md produzidos em specifications/ e architecture/\n")
-        resumo = sorted(pasta.parent.joinpath("sprints").glob(f"sprint-{n:02d}-*.md"))
+        resumo = sorted(pasta.parent.joinpath("sprints").glob(f"*-SP{n:05d}-*.md")) or sorted(pasta.parent.joinpath("sprints").glob(f"sprint-{n:02d}-*.md"))
         z.writestr(f"sprint-{n:02d}/resumo-da-sprint.md", resumo[-1].read_text(encoding="utf-8") if resumo else f"Sprint {n:02d} ainda aberta: o resumo de doze seções é escrito por `pmo.py sprint fechar`.\n")
         z.writestr(f"sprint-{n:02d}/tecnicas-aplicadas.md", "\n".join(tecnicas) + "\n")
         z.writestr(f"sprint-{n:02d}/base-de-conhecimento.md", base.read_text(encoding="utf-8") if base.is_file() else "INDISPONÍVEL\n")
@@ -835,13 +897,24 @@ def main() -> int:
     sub.add_parser("painel")
     sub.add_parser("relatorio")
     en = sub.add_parser("entregar"); en.add_argument("--sprint", type=int, help="número; padrão: a última"); en.add_argument("--plugin-root", type=Path, help="para listar as ferramentas do plugin")
+    bl = sub.add_parser("bloco"); bls = bl.add_subparsers(dest="acao", required=True)
+    ba = bls.add_parser("abrir"); ba.add_argument("--titulo", required=True); ba.add_argument("--gate", default="")
+    sub.add_parser("identificacao"); sub.add_parser("hook-identificacao"); sub.add_parser("hook-sessao-identificacao")
     sp = sub.add_parser("sprint"); sps = sp.add_subparsers(dest="acao", required=True)
-    sa = sps.add_parser("abrir"); sa.add_argument("--nome", required=True); sa.add_argument("--objetivo", required=True); sa.add_argument("--gate", required=True, choices=GATES); sa.add_argument("--item", action="append", default=[], help="trace_id, ou trace_id:PAPEL (A–J) para registrar o dono no backlog; repetível"); sa.add_argument("--aprovador", default="")
+    sa = sps.add_parser("abrir"); sa.add_argument("--nome", required=True); sa.add_argument("--objetivo", required=True); sa.add_argument("--gate", required=True, choices=GATES); sa.add_argument("--item", action="append", default=[], help="trace_id, ou trace_id:PAPEL (A–J) para registrar o dono no backlog; repetível"); sa.add_argument("--aprovador", default=""); sa.add_argument("--bloco", default="", help="BlocoNNNN; por padrao o bloco atual")
     sf = sps.add_parser("fechar"); sf.add_argument("--decisao", required=True, choices=["APPROVED", "CONDITIONAL", "REJECTED"]); sf.add_argument("--pedido", default="")
     args = parser.parse_args()
     wx = args.project_root.resolve(strict=True) / ".wx-migration"
     if args.cmd == "iniciar":
         print("\n".join(iniciar(wx, args.aprovador)))
+    elif args.cmd == "bloco":
+        print(bloco_abrir(wx, args.titulo, args.gate))
+    elif args.cmd == "identificacao":
+        print(identificacao(wx))
+    elif args.cmd == "hook-identificacao":
+        return hook_identificacao(wx, "UserPromptSubmit")
+    elif args.cmd == "hook-sessao-identificacao":
+        return hook_identificacao(wx, "SessionStart")
     elif args.cmd == "gastar":
         print(gastar(wx, args.gate, args.modelo, args.tokens, args.chamadas))
     elif args.cmd == "pdca":
@@ -863,7 +936,7 @@ def main() -> int:
         print(f"CREATED {z}")
     elif args.cmd == "sprint":
         if args.acao == "abrir":
-            print(sprint_abrir(wx, args.nome, args.objetivo, args.gate, args.item, args.aprovador))
+            print(sprint_abrir(wx, args.nome, args.objetivo, args.gate, args.item, args.aprovador, args.bloco))
         else:
             print(sprint_fechar(wx, args.decisao, args.pedido))
     else:

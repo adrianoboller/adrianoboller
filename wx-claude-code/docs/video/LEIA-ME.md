@@ -1,6 +1,6 @@
 # Vídeo de uso
 
-`wx-claude-code-video-de-uso.webm` (1280×720, VP8, 2 min 53 s): vinte e duas cenas, todas as telas usadas nos testes e nas provas reais até a 3.13.0, cada
+`wx-claude-code-video-de-uso.webm` (1280×720, VP8, 3 min 03 s): vinte e três cenas, todas as telas usadas nos testes e nas provas reais até a 3.14.0, cada
 uma reproduzindo uma saída real de sessão do Claude Code ou de script do
 plugin, as mesmas capturas dos prints em `../prints/`. O comando aparece
 digitado, a saída aparece linha a linha, e nada foi inventado ou editado.
