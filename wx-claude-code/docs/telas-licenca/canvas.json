@@ -1,0 +1,65 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 1200,
+      "h": 760
+    },
+    {
+      "file": "Chaves.dc.html",
+      "x": 0,
+      "y": 900,
+      "w": 1200,
+      "h": 760
+    },
+    {
+      "file": "Cliente.dc.html",
+      "x": 1290,
+      "y": 900,
+      "w": 1200,
+      "h": 760
+    },
+    {
+      "file": "Maquina.dc.html",
+      "x": 2580,
+      "y": 900,
+      "w": 1200,
+      "h": 760
+    },
+    {
+      "file": "Emissao.dc.html",
+      "x": 0,
+      "y": 1780,
+      "w": 1200,
+      "h": 760
+    },
+    {
+      "file": "Entrega.dc.html",
+      "x": 1290,
+      "y": 1780,
+      "w": 1200,
+      "h": 760
+    },
+    {
+      "file": "Instalacao.dc.html",
+      "x": 2580,
+      "y": 1780,
+      "w": 1200,
+      "h": 760
+    }
+  ],
+  "annotations": [
+    {
+      "id": "nota-fluxo",
+      "x": 1290,
+      "y": 0,
+      "w": 420,
+      "text": "Fluxo de liberação de licença do WX Claude Code 3.8.0.\nAcima: visão geral. Abaixo: os seis passos, na ordem.\nBotões seguem a convenção do plugin: contorno, verde conclui, azul segue, vermelho é a ação da marca."
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}
