@@ -44,7 +44,7 @@ Quinze itens, **um por mensagem**, na ordem. É o que o PMO, o stakeholder e a e
 | 0.14 | Pessoal envolvido: nome, papel, empresa, contato | `empresa.md` |
 | 0.15 | GitHub de destino: URL, branch, usuário, **onde a credencial está configurada** e o diretório de destino | `entrega.json` |
 
-**A senha nunca é perguntada nem gravada.** No 0.15 pergunte o **nome** da variável de ambiente ou do segredo onde o token vai morar (`GITHUB_TOKEN`, `gh auth`, credential manager) e registre só isso em `credencial_ref`. Se o usuário colar a senha ou o token na conversa, não repita, não grave, peça que ele a revogue e configure no ambiente; o script `aplicar_questionario.py` recusa o questionário se qualquer chave `senha`, `token`, `password` ou `secret` vier com valor. Logotipo, organograma e fluxograma em arquivo só contam como `provided` depois de abertos, como qualquer anexo.
+**A senha nunca é perguntada nem gravada.** No 0.15 pergunte o **nome** da variável de ambiente ou do segredo onde o token vai morar (`GITHUB_TOKEN`, `gh auth`, credential manager) e registre só isso em `credencial_ref`. Se o usuário colar a senha ou o token na conversa, **não a reproduza de nenhuma forma** (nem entre parênteses, nem mascarada, nem «a senha que termina em…»): diga só «a credencial colada não foi gravada», peça que ele a revogue e configure no ambiente; o script `aplicar_questionario.py` recusa o questionário se qualquer chave `senha`, `token`, `password` ou `secret` vier com valor. Logotipo, organograma e fluxograma em arquivo só contam como `provided` depois de abertos, como qualquer anexo.
 
 ### Letras A a J
 
@@ -85,7 +85,7 @@ Quinze itens, **um por mensagem**, na ordem. É o que o PMO, o stakeholder e a e
 | 0.9 ou 0.10 | «não tenho arquivo» | peça as posições ou as etapas em texto, que também são resposta |
 | 0.11 | prazo final sem marcos | proponha um marco por gate (G1, G4, G7) com datas e peça para confirmar |
 | 0.12 | «não sei o orçamento» | registre `valor: null` e quem vai aprovar; o `pmo.py` mostra INDISPONÍVEL, nunca um número inventado |
-| 0.15 | usuário cola senha ou token | não repita, não grave; peça que revogue e configure no ambiente, e registre só o nome em `credencial_ref` |
+| 0.15 | usuário cola senha ou token | não reproduza o valor em nenhuma forma, não grave; peça que revogue e configure no ambiente, e registre só o nome em `credencial_ref` |
 | A | caminho informado | abra o arquivo; se não abrir, diga e pergunte de novo A antes de ir a B |
 | A | «não tenho» | pergunte se existe a análise exportada ou um dump; sem nada, `missing` e siga para B |
 | B, C ou D | «não tenho» | anote e siga; em **E** avise que o PDF completo vai cobrir o que faltou como `partial` |

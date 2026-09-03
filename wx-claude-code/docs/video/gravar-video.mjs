@@ -5,7 +5,7 @@ import { chromium } from '/opt/node22/lib/node_modules/playwright/index.mjs';
 import { readFileSync, readdirSync, renameSync, rmSync } from 'node:fs';
 
 const [, , outDir, capsDir] = process.argv;
-const cap = (n) => readFileSync(`${capsDir}/${n}.txt`, 'utf8').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/(proj|pmo2|demo)/g, '.');
+const cap = (n) => readFileSync(`${capsDir}/${n}.txt`, 'utf8').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/(proj|pmo2|demo|ex2?)/g, '.');
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 function fmt(line) {
   let l = esc(line);
@@ -18,17 +18,22 @@ function fmt(line) {
   return l;
 }
 // cenas: [titulo, legenda, texto, comandoDigitado?, maxLinhas?]
+const MARCA = 'data:image/png;base64,' + readFileSync('/home/user/adrianoboller/wx-claude-code/marca-wx-claude-code.png').toString('base64');
 const scenes = [
-  ['card', 'WX Claude Code', 'Conversão governada de projetos WINDEV, WEBDEV e WINDEV Mobile\nQuestionário A–J · Gates G0–G7 · Equipe WLanguage sobre o Help da PC SOFT · PMO com Scrum, Kanban e PDCA\n\nTudo que aparece a seguir é saída real de sessões do Claude Code e dos scripts do plugin.'],
+  ['card', 'WX Claude Code', 'Conversão governada de projetos WINDEV, WEBDEV e WINDEV Mobile\nQuestionário: bloco 0 da empresa e letras A–J · Gates G0–G7 · Equipe WLanguage sobre o Help da PC SOFT · PMO com Scrum, Kanban e PDCA\n\nTudo que aparece a seguir é saída real de sessões do Claude Code e dos scripts do plugin.'],
   ['claude plugin validate', '1 · Instalar e validar o plugin', cap('validate')],
-  ['/wx-claude-code:questionario', '2 · O questionário A–J: o plugin pergunta antes de converter', cap('questionario'), '/wx-claude-code:questionario ./meu-projeto'],
-  ['aplicar_questionario.py + wx_preflight.py', '3 · As respostas viram manifesto; o Gate G0 confere cada anexo', cap('preflight').split('\n').slice(60).join('\n')],
-  ['query_wlanguage_help.py', '4 · O corpus WLanguage 12k, verificado por hash e consultado por tema', cap('help').split('\n').slice(0, 24).join('\n') + '\n…'],
-  ['subagentes wl-*-specialist', '5 · Cada símbolo vai ao especialista WLanguage do tema certo do Help', cap('equipe')],
-  ['/wx-claude-code:pmo', '6 · PMO: sprint Scrum, ciclos PDCA e a base de conhecimento', cap('pmo2').split('\n').slice(0, 33).join('\n')],
-  ['pmo.py kanban', '7 · Kanban gerado da matriz, com limite de WIP', cap('pmo2').split('\n').slice(33, 65).join('\n')],
-  ['/wx-claude-code:pmo status', '8 · O agente do PMO lê o painel e aponta o que trava', cap('pmo-sessao')],
-  ['/wx-claude-code:laudo-tokens', '9 · Laudo de uso de tokens: somente leitura, MEDIDO ou INDISPONÍVEL', cap('laudo'), '/wx-claude-code:laudo-tokens fase-1'],
+  ['/wx-claude-code:questionario · bloco 0', '2 · Antes da letra A: quem pede, diretores, endereço, logotipos, prazo, orçamento, riscos e GitHub, um item por vez', cap('questionario-0')],
+  ['/wx-claude-code:questionario · 0.15', '3 · Senha colada na conversa não é gravada nem repetida: só o nome da credencial entra no entrega.json', cap('senha').split('\n').slice(0,12).join('\n'), 'Boller Sistemas Ltda. Converter o ESTOQUE para Rust + React. Já adianto o GitHub: usuário adrianoboller, senha ●●●●●●●, repositório https://github.com/adrianoboller/estoque-rs'],
+  ['/wx-claude-code:questionario', '4 · As letras A a J: uma por vez, e a resposta decide a próxima', cap('questionario')],
+  ['/wx-claude-code:questionario · letra H', '5 · Para qual linguagem converter: sinais, três opções, a recomendada primeiro', cap('questionario-h')],
+  ['exemplos/estoque-wx', '6 · Projeto de exemplo real: G0 sem erros, texto com localizador, golden master 9/10', cap('exemplo').split('\n').slice(14).join('\n')],
+  ['DESIGN.md · letra F', '7 · Qualidade de ERP: treze subperguntas viram a tabela de botões, posição, ícone, cor e fundo', cap('design-erp').split('\n').slice(12, 48).join('\n')],
+  ['query_wlanguage_help.py', '8 · O corpus WLanguage 12k, verificado por hash e consultado por tema', cap('help').split('\n').slice(0, 24).join('\n') + '\n…'],
+  ['subagentes wl-*-specialist', '9 · Cada símbolo vai ao especialista WLanguage do tema certo do Help', cap('equipe')],
+  ['/wx-claude-code:pmo', '10 · PMO: sprint Scrum, ciclos PDCA e a base de conhecimento', cap('pmo2').split('\n').slice(0, 33).join('\n')],
+  ['pmo.py kanban', '11 · Kanban gerado da matriz, com limite de WIP', cap('pmo2').split('\n').slice(33, 65).join('\n')],
+  ['/wx-claude-code:pmo status', '12 · O agente do PMO lê o painel e aponta o que trava', cap('pmo-sessao')],
+  ['/wx-claude-code:laudo-tokens', '13 · Laudo de uso de tokens: somente leitura, MEDIDO ou INDISPONÍVEL', cap('laudo'), '/wx-claude-code:laudo-tokens fase-1'],
   ['card', 'Built to convert. Engineered to prove.', 'claude plugin marketplace add adrianoboller/adrianoboller\nclaude plugin install wx-claude-code@wx-claude-code\n\nManual completo em MANUAL.md'],
 ];
 const html = `<!doctype html><meta charset="utf-8"><style>
@@ -40,7 +45,7 @@ pre{margin:0;padding:16px 22px;color:#e6e8f2;font-size:14px;line-height:1.45;whi
 .prompt{color:#2FBF71;font-weight:700}.cmd{color:#fff;font-weight:600}.h{color:#F7B733;font-weight:700}.ok{color:#2FBF71}.warn{color:#F5A15A}b{color:#fff}code{color:#8fd3ff}
 .cap{position:absolute;left:40px;right:40px;bottom:10px;color:#c7cbe0;font-size:14px;text-align:center}
 .card{position:absolute;inset:0;background:#010418;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:#fff;padding:60px}
-.card h1{font-size:44px;margin:0 0 18px;color:#E2261C;letter-spacing:1px}.card p{font-size:18px;line-height:1.6;color:#c7cbe0;white-space:pre-wrap;margin:0}
+.card img{width:230px;margin-bottom:10px}.card h1{font-size:44px;margin:0 0 18px;color:#E2261C;letter-spacing:1px}.card p{font-size:18px;line-height:1.6;color:#c7cbe0;white-space:pre-wrap;margin:0}
 .cursor{display:inline-block;width:9px;height:16px;background:#2FBF71;vertical-align:-2px}
 </style><div id="root"></div>`;
 
@@ -51,7 +56,7 @@ await page.setContent(html);
 const sleep = (ms) => page.waitForTimeout(ms);
 for (const [title, caption, text, typed] of scenes) {
   if (title === 'card') {
-    await page.evaluate(([h, p]) => { document.getElementById('root').innerHTML = `<div class="card"><h1>${h}</h1><p>${p}</p></div>`; }, [esc(caption), esc(text)]);
+    await page.evaluate(([h, p, m]) => { document.getElementById('root').innerHTML = `<div class="card"><img src="${m}"><h1>${h}</h1><p>${p}</p></div>`; }, [esc(caption), esc(text), MARCA]);
     await sleep(4500); continue;
   }
   await page.evaluate(([t, c]) => { document.getElementById('root').innerHTML = `<div class="win"><div class="bar"><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span><span class="t">${t}</span><span class="brand">WX CLAUDE CODE</span></div><pre id="pre"></pre></div><div class="cap">${c}</div>`; }, [esc(title), esc(caption)]);

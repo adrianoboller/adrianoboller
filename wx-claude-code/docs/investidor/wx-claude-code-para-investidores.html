@@ -79,7 +79,7 @@ a{color:var(--accent)}
 
 <h2>O que ele faz, em uma frase por etapa</h2>
 <ol>
-<li><strong>Recebe o legado</strong> por um questionário de dez perguntas, uma por vez: script SQL, os PDFs que o WINDEV gera da documentação técnica, telas, o Help oficial. Um arquivo só conta como entregue depois que o plugin o abre e lê.</li>
+<li><strong>Recebe o pedido e o legado</strong> por um questionário, uma pergunta por vez. Primeiro quem pede: a softhouse, diretores, endereço, logotipos, finalidade, objetivos, organograma, cronograma com prazo final, orçamento, riscos, pessoal e o GitHub de destino, sem nunca guardar senha. Depois o legado: script SQL, os PDFs que o WINDEV gera da documentação técnica, telas, o Help oficial. Um arquivo só conta como entregue depois que o plugin o abre e lê.</li>
 <li><strong>Orienta para qual linguagem converter.</strong> Quando o cliente não sabe, levanta quatro sinais (quem mantém, desktop ou web ou mobile, desempenho ou prazo, linguagem já em uso) e mostra três opções com o porquê, a recomendada primeiro: Rust, Python ou C# com a biblioteca WL_C#, que porta mais de 480 funções do WLanguage com o mesmo nome. A escolha é do cliente e fica registrada.</li>
 <li><strong>Extrai as regras com prova de origem.</strong> Cada texto vem com arquivo, página e hash. Cada função WLanguage vai ao especialista do tema certo do Help, que devolve a semântica com a página de origem.</li>
 <li><strong>Converte por gates com aprovação humana</strong>, com um piloto vertical obrigatório antes de escalar.</li>
@@ -116,6 +116,7 @@ a{color:var(--accent)}
 <tr><th>Item</th><th>Estado</th><th>Como foi provado</th></tr>
 <tr><td>Plugin instalável, marketplace privado, 5 comandos, 3 skills, 34 agentes, 12 testes</td><td><span class="tag ok">provado</span></td><td>validação oficial do Claude Code e carga numa sessão nova</td></tr>
 <tr><td>Questionário letra a letra, respostas viram manifesto e configuração</td><td><span class="tag ok">provado</span></td><td>três turnos reais; pré-flight real sobre a saída</td></tr>
+<tr><td>Bloco da empresa alimenta o PMO; senha colada na conversa não é gravada nem repetida</td><td><span class="tag ok">provado</span></td><td>sessão real com senha fictícia: zero ocorrências na saída; o script recusa o arquivo com senha</td></tr>
 <tr><td>Corpus WLanguage 12k com hash fixo e busca por tema</td><td><span class="tag ok">provado</span></td><td>verificação de identidade; 5,4 s → 0,5 s medido</td></tr>
 <tr><td>Delegação a especialistas por tema do Help</td><td><span class="tag ok">provado</span></td><td>sessão real com dois símbolos e páginas de origem</td></tr>
 <tr><td>Roteador de modelos: sobe, desce, rebaixa, bloqueia, fallback</td><td><span class="tag ok">provado</span></td><td>cinco casos exercitados com saída registrada</td></tr>
