@@ -1,0 +1,86 @@
+{
+  "$schema": "./schemas/conversion-config.schema.json",
+  "schema_version": "1.0",
+  "mode": "inventory",
+  "evidence_class": "auto",
+  "source_execution_available": false,
+  "source_runtime": {
+    "available": false,
+    "authorized": false,
+    "build_id": "",
+    "configuration": "",
+    "operating_system": "",
+    "architecture": "",
+    "wx_runtime": "",
+    "locale": "pt-BR",
+    "timezone": "America/Sao_Paulo",
+    "test_environment_ref": "",
+    "credential_reference": "",
+    "reset_procedure": "",
+    "feature_flags": []
+  },
+  "target": {
+    "language": "",
+    "frameworks": [],
+    "database": "",
+    "platforms": [],
+    "architecture": "",
+    "deployment": "",
+    "minimum_versions": {}
+  },
+  "fidelity": {
+    "business_behavior": "identical",
+    "data_behavior": "identical",
+    "ui": "behavioral",
+    "allowed_modernizations": []
+  },
+  "non_functional_requirements": {
+    "performance": [],
+    "security": [],
+    "availability": [],
+    "accessibility": [],
+    "offline": [],
+    "observability": []
+  },
+  "scope": {
+    "priority_modules": [],
+    "excluded_modules": [],
+    "pilot_candidate": ""
+  },
+  "scale": {
+    "applications": 1,
+    "estimated_modules": 0,
+    "estimated_wx_objects": 0,
+    "users_and_roles": [],
+    "databases": [],
+    "data_volume": "",
+    "growth": "",
+    "tenants": "",
+    "integrations": [],
+    "jobs": [],
+    "reports": [],
+    "supported_browsers_devices": [],
+    "sla": "",
+    "rto": "",
+    "rpo": "",
+    "cutover_window": ""
+  },
+  "acceptance": {
+    "approver": "",
+    "critical_flows": [],
+    "dimensions": [],
+    "data_reconciliation_tolerances": {},
+    "performance_thresholds": {},
+    "visual_diff_threshold": "",
+    "security_severity_limit": "",
+    "accessibility_standard": "",
+    "required_platform_matrix": [],
+    "required_rehearsals": 0
+  },
+  "governance": {
+    "missing_artifact_policy": "block",
+    "allow_unrecorded_assumptions": false,
+    "approved_exceptions": [],
+    "decision_owner": ""
+  }
+}

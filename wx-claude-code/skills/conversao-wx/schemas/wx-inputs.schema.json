@@ -1,0 +1,384 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wxsolucoes.local/schemas/wx-inputs.schema.json",
+  "title": "WX conversion input manifest",
+  "type": "object",
+  "required": ["schema_version", "evidence_root", "project", "artifacts"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "evidence_root": { "type": "string", "minLength": 1 },
+    "project": {
+      "type": "object",
+      "required": ["name", "products", "wx_version", "wlanguage_help_version", "wlanguage_help_language", "human_approver"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "products": {
+          "type": "array",
+          "items": { "enum": ["WINDEV", "WEBDEV", "WINDEV Mobile"] },
+          "uniqueItems": true,
+          "minItems": 1
+        },
+        "wx_version": { "type": "string", "minLength": 1 },
+        "wx_update": { "type": "string" },
+        "source_revision": { "type": "string" },
+        "source_language": { "type": "string" },
+        "wlanguage_help_version": { "type": "string", "minLength": 1 },
+        "wlanguage_help_language": { "type": "string", "minLength": 1 },
+        "owner": { "type": "string" },
+        "human_approver": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
+    },
+    "artifacts": {
+      "type": "object",
+      "required": [
+        "native_project_sources",
+        "wlanguage_help_json",
+        "code_documents",
+        "ui_documents",
+        "query_documents",
+        "business_rule_documents",
+        "sql_scripts",
+        "screenshots",
+        "videos_and_runtime_baselines",
+        "api_and_integration_docs",
+        "auxiliary_sources",
+        "sample_data_and_expected_results",
+        "external_links"
+      ],
+      "properties": {
+        "native_project_sources": { "$ref": "#/$defs/group" },
+        "wlanguage_help_json": { "$ref": "#/$defs/helpGroup" },
+        "code_documents": { "$ref": "#/$defs/pdfGroup" },
+        "ui_documents": { "$ref": "#/$defs/pdfGroup" },
+        "query_documents": { "$ref": "#/$defs/pdfGroup" },
+        "business_rule_documents": { "$ref": "#/$defs/pdfGroup" },
+        "sql_scripts": { "$ref": "#/$defs/sqlGroup" },
+        "screenshots": { "$ref": "#/$defs/screenshotGroup" },
+        "videos_and_runtime_baselines": { "$ref": "#/$defs/group" },
+        "api_and_integration_docs": { "$ref": "#/$defs/group" },
+        "auxiliary_sources": { "$ref": "#/$defs/group" },
+        "sample_data_and_expected_results": { "$ref": "#/$defs/group" },
+        "external_links": { "$ref": "#/$defs/linkGroup" }
+      },
+      "additionalProperties": { "$ref": "#/$defs/group" }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "artifacts": {
+            "properties": {
+              "wlanguage_help_json": {
+                "properties": { "status": { "const": "bundled" } },
+                "required": ["status"]
+              }
+            },
+            "required": ["wlanguage_help_json"]
+          }
+        },
+        "required": ["artifacts"]
+      },
+      "then": {
+        "properties": {
+          "project": {
+            "properties": {
+              "wlanguage_help_language": { "const": "en-US" }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "item": {
+      "type": "object",
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "url": { "type": "string", "format": "uri", "pattern": "^https://" },
+        "description": { "type": "string" },
+        "purpose": { "type": "string" },
+        "access": { "enum": ["public", "authenticated", "vpn", "unverified"] },
+        "product": { "type": "string" },
+        "version": { "type": "string" },
+        "document_id": { "type": "string" },
+        "identity": { "type": "string" },
+        "language": { "type": "string" },
+        "page_count": { "type": "integer", "minimum": 1 },
+        "searchable": { "type": "boolean" },
+        "content_scope": {
+          "type": "array",
+          "items": { "enum": ["code", "events", "ui", "queries", "business_rules", "reports", "integrations"] },
+          "uniqueItems": true
+        },
+        "width_px": { "type": "integer", "minimum": 1 },
+        "height_px": { "type": "integer", "minimum": 1 },
+        "screen_or_report": { "type": "string" },
+        "state": { "type": "string" },
+        "platform": { "type": "string" },
+        "dialect": { "type": "string" },
+        "database_version": { "type": "string" },
+        "encoding": { "type": "string" },
+        "collation": { "type": "string" },
+        "charset": { "type": "string" },
+        "timezone": { "type": "string" }
+      },
+      "anyOf": [
+        { "required": ["path"] },
+        { "required": ["url"] }
+      ],
+      "additionalProperties": true
+    },
+    "group": {
+      "type": "object",
+      "required": ["status", "notes", "items"],
+      "properties": {
+        "status": { "enum": ["provided", "partial", "missing", "not_applicable"] },
+        "notes": { "type": "string" },
+        "expected_count": { "type": "integer", "minimum": 0 },
+        "expected_members": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "version": { "type": "string" },
+        "language": { "type": "string" },
+        "product_scope": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "archive": {
+          "anyOf": [
+            { "$ref": "#/$defs/item" },
+            { "type": "null" }
+          ]
+        },
+        "items": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/item" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "helpGroup": {
+      "oneOf": [
+        {
+          "allOf": [
+            { "$ref": "#/$defs/group" },
+            {
+              "type": "object",
+              "required": ["expected_count", "expected_members", "version", "language", "product_scope"],
+              "properties": {
+                "status": { "enum": ["provided", "partial"] },
+                "expected_count": { "const": 12 },
+                "expected_members": {
+                  "type": "array",
+                  "items": { "type": "string", "minLength": 1 },
+                  "uniqueItems": true,
+                  "minItems": 12,
+                  "maxItems": 12
+                },
+                "version": { "type": "string", "minLength": 1 },
+                "language": { "type": "string", "minLength": 1 },
+                "product_scope": {
+                  "type": "array",
+                  "items": { "enum": ["WINDEV", "WEBDEV", "WINDEV Mobile"] },
+                  "uniqueItems": true,
+                  "minItems": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/group" },
+            {
+              "type": "object",
+              "properties": {
+                "status": { "enum": ["missing", "not_applicable"] }
+              }
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "required": [
+            "status",
+            "notes",
+            "corpus_id",
+            "sha256",
+            "expected_json_count",
+            "expected_page_count",
+            "valid_page_count",
+            "language",
+            "version_coverage",
+            "product_scope",
+            "known_invalid_members",
+            "known_gaps",
+            "sanitization",
+            "archive",
+            "items"
+          ],
+          "properties": {
+            "status": { "const": "bundled" },
+            "notes": { "type": "string" },
+            "corpus_id": { "const": "wlanguage-help-12k-2026-08" },
+            "sha256": { "const": "a95ed5536549ecc39fb1163415042d6597c8913e5edbfdb531cba756546a82a2" },
+            "expected_json_count": { "const": 12037 },
+            "expected_page_count": { "const": 12036 },
+            "valid_page_count": { "const": 12035 },
+            "language": { "const": "en-US" },
+            "version_coverage": {
+              "const": ["24", "25", "26", "27", "28", "2024", "2025", "2026"]
+            },
+            "product_scope": {
+              "const": ["WINDEV", "WEBDEV", "WINDEV Mobile"]
+            },
+            "known_invalid_members": {
+              "const": [
+                "Help_WL_12k_Json/01-04-01_00655__emailgetall_function__1000018727.json"
+              ]
+            },
+            "known_gaps": {
+              "const": [
+                {
+                  "kind": "index_count_mismatch",
+                  "index_page_count": 12037,
+                  "physical_page_count": 12036
+                },
+                {
+                  "kind": "missing_sequence",
+                  "group": "02-03-01",
+                  "sequence": "00223"
+                },
+                {
+                  "kind": "progress_inconsistent",
+                  "total_do_mapa": 12037,
+                  "processadas": 7077,
+                  "falhas": 1,
+                  "restantes": 0,
+                  "ultima_posicao": 12037
+                }
+              ]
+            },
+            "sanitization": {
+              "const": {
+                "source_sha256": "a6b42f59796ccf51298712aff00c043a9be2c404ce761a99720ea31b91ca6b93",
+                "private_key_members_redacted": 2,
+                "private_key_blocks_redacted": 15,
+                "private_key_pem_blocks_remaining": 0
+              }
+            },
+            "archive": { "type": "null" },
+            "items": { "type": "array", "maxItems": 0 }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "sqlItem": {
+      "allOf": [
+        { "$ref": "#/$defs/item" },
+        {
+          "type": "object",
+          "required": ["dialect", "database_version", "encoding", "collation", "charset", "timezone"],
+          "properties": {
+            "dialect": { "type": "string", "minLength": 1 },
+            "database_version": { "type": "string", "minLength": 1 },
+            "encoding": { "type": "string", "minLength": 1 },
+            "collation": { "type": "string", "minLength": 1 },
+            "charset": { "type": "string", "minLength": 1 },
+            "timezone": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+    "sqlGroup": {
+      "allOf": [
+        { "$ref": "#/$defs/group" },
+        {
+          "properties": {
+            "items": { "type": "array", "items": { "$ref": "#/$defs/sqlItem" } }
+          }
+        }
+      ]
+    },
+    "pdfItem": {
+      "allOf": [
+        { "$ref": "#/$defs/item" },
+        {
+          "type": "object",
+          "required": ["path", "page_count", "searchable", "content_scope"],
+          "properties": {
+            "path": { "type": "string", "minLength": 1 },
+            "page_count": { "type": "integer", "minimum": 1 },
+            "searchable": { "type": "boolean" },
+            "content_scope": {
+              "type": "array",
+              "items": { "enum": ["code", "events", "ui", "queries", "business_rules", "reports", "integrations"] },
+              "uniqueItems": true,
+              "minItems": 1
+            }
+          }
+        }
+      ]
+    },
+    "pdfGroup": {
+      "allOf": [
+        { "$ref": "#/$defs/group" },
+        {
+          "properties": {
+            "items": { "type": "array", "items": { "$ref": "#/$defs/pdfItem" } }
+          }
+        }
+      ]
+    },
+    "screenshotItem": {
+      "allOf": [
+        { "$ref": "#/$defs/item" },
+        {
+          "type": "object",
+          "required": ["path", "width_px", "height_px", "screen_or_report", "state", "platform"],
+          "properties": {
+            "path": { "type": "string", "minLength": 1 },
+            "width_px": { "type": "integer", "minimum": 1 },
+            "height_px": { "type": "integer", "minimum": 1 },
+            "screen_or_report": { "type": "string", "minLength": 1 },
+            "state": { "type": "string", "minLength": 1 },
+            "platform": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+    "screenshotGroup": {
+      "allOf": [
+        { "$ref": "#/$defs/group" },
+        {
+          "properties": {
+            "items": { "type": "array", "items": { "$ref": "#/$defs/screenshotItem" } }
+          }
+        }
+      ]
+    },
+    "linkItem": {
+      "allOf": [
+        { "$ref": "#/$defs/item" },
+        {
+          "type": "object",
+          "required": ["url", "purpose", "access"],
+          "not": { "required": ["path"] },
+          "properties": {
+            "url": { "type": "string", "format": "uri", "pattern": "^https://" },
+            "purpose": { "type": "string", "minLength": 1 },
+            "access": { "enum": ["public", "authenticated", "vpn", "unverified"] }
+          }
+        }
+      ]
+    },
+    "linkGroup": {
+      "allOf": [
+        { "$ref": "#/$defs/group" },
+        {
+          "properties": {
+            "items": { "type": "array", "items": { "$ref": "#/$defs/linkItem" } }
+          }
+        }
+      ]
+    }
+  }
+}

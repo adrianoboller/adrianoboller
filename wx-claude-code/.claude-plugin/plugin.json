@@ -1,0 +1,61 @@
+{
+  "name": "wx-claude-code",
+  "displayName": "WX Claude Code",
+  "description": "Conversao governada de projetos WINDEV, WEBDEV e WINDEV Mobile: questionario A-J, gates G0-G7, equipe WLanguage por tema do Help, balanceamento de modelos, PMO, Impeccable e laudo de tokens.",
+  "version": "3.2.0",
+  "author": {
+    "name": "Adriano Boller"
+  },
+  "homepage": "https://github.com/adrianoboller/adrianoboller",
+  "keywords": [
+    "windev",
+    "webdev",
+    "windev-mobile",
+    "wlanguage",
+    "migracao",
+    "conversao",
+    "impeccable",
+    "tokens"
+  ],
+  "commands": [
+    "./commands/"
+  ],
+  "skills": "./skills/",
+  "agents": [
+    "./agents/business-rules-analyst.md",
+    "./agents/data-migration-architect.md",
+    "./agents/design-quality-specialist.md",
+    "./agents/evidence-curator.md",
+    "./agents/grid-migration-specialist.md",
+    "./agents/help-indexer.md",
+    "./agents/impeccable-asset-producer.md",
+    "./agents/impeccable-documenter.md",
+    "./agents/impeccable-finish-reviewer.md",
+    "./agents/impeccable-manual-edit-applier.md",
+    "./agents/implementation-lead.md",
+    "./agents/integration-specialist.md",
+    "./agents/module-converter.md",
+    "./agents/pdf-forensics.md",
+    "./agents/performance-capacity-specialist.md",
+    "./agents/pmo-gerente-de-projetos.md",
+    "./agents/quality-auditor.md",
+    "./agents/release-cutover-specialist.md",
+    "./agents/reports-printing-specialist.md",
+    "./agents/runtime-operations-specialist.md",
+    "./agents/security-privacy-specialist.md",
+    "./agents/spreadsheet-evidence-specialist.md",
+    "./agents/target-architect.md",
+    "./agents/test-engineer.md",
+    "./agents/ui-flow-analyst.md",
+    "./agents/wl-communication-specialist.md",
+    "./agents/wl-errors-specialist.md",
+    "./agents/wl-hfsql-specialist.md",
+    "./agents/wl-mobile-specialist.md",
+    "./agents/wl-standard-functions-specialist.md",
+    "./agents/wl-ui-controls-specialist.md",
+    "./agents/wl-web-specialist.md",
+    "./agents/wlanguage-specialist.md",
+    "./agents/wx-orchestrator.md"
+  ],
+  "hooks": "./hooks/hooks.json"
+}

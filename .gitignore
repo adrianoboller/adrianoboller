@@ -5,3 +5,6 @@
 # inteiro dentro dele mesmo -- os dois worktrees de uma rodada ja somaram
 # 1,2 GiB.
 .claude/worktrees/
+
+# Pacotes gerados do plugin; o zip tem 30 MB e se regenera do fonte.
+dist/
