@@ -34,6 +34,8 @@
 //! E a licao do `juntar`/`unir`: a rotina PRODUZ o pedido que o portao ja
 //! sabe conferir, em vez de ganhar uma porta propria.
 
+use std::time::{Duration, Instant};
+
 use crate::lexico::{self, Comparador, Token};
 use crate::sintaxe::Analisador;
 use phxsql_core::json::Json;
@@ -46,6 +48,25 @@ use phxsql_core::{PhxError, Result};
 /// qualquer corpo honesto e baixo o bastante para devolver o erro em
 /// milissegundos.
 pub const PASSOS_MAX: u64 = 1_000_000;
+
+/// Teto de bytes de um texto que o avaliador PRODUZ.
+///
+/// # Teto de passos nao e teto de trabalho, e isto custou a descoberta
+///
+/// O `PASSOS_MAX` acima limita quantos passos um corpo da. Ele nao limita o
+/// que UM passo faz — e havia um passo sem fundo: `SET s = CONCAT(s, s)`
+/// dobra o texto a cada volta, entao trinta passos de um orcamento de um
+/// milhao chegam a um gigabyte. Medido, com o corpo rodando como um `BEFORE`
+/// de verdade (`--example custo-do-gatilho`): o corpo nao morre no teto de
+/// passos, morre no alocador — e quando o alocador de Rust falha ele ABORTA
+/// o processo. Nao e uma conexao lenta: e o servidor inteiro caindo, com a
+/// trava global de dados na mao, por um gatilho que o dono do banco escreveu.
+///
+/// O teto e generoso de proposito: 64 MiB e maior que qualquer texto que um
+/// corpo honesto monte, e a diferenca entre morrer em 64 MiB ou em 1 MiB e
+/// de uma dobra — cinco milissegundos. Guarda nova entra larga o bastante
+/// para nao quebrar quem ja funcionava.
+pub const TEXTO_MAX: usize = 64 * 1024 * 1024;
 
 // ------------------------------------------------------------------ numeros
 
@@ -1995,6 +2016,12 @@ pub struct Contexto {
     /// coluna no esquema — e o que o servidor aplica de volta na linha.
     pub tocadas: Vec<String>,
     passos: u64,
+    /// O prazo de PAREDE deste corpo, quando quem chamou pediu um.
+    ///
+    /// `None` — o padrao — quer dizer sem prazo, e e o caso do procedimento:
+    /// ele roda SEM a trava de dados e pode legitimamente demorar. Quem pede
+    /// e quem segura a trava; ver [`Contexto::com_prazo`].
+    prazo: Option<(Instant, Duration)>,
 }
 
 impl Contexto {
@@ -2006,6 +2033,7 @@ impl Contexto {
             velha,
             tocadas: Vec::new(),
             passos: 0,
+            prazo: None,
         }
     }
 
@@ -2024,7 +2052,39 @@ impl Contexto {
             velha: None,
             tocadas: Vec::new(),
             passos: 0,
+            prazo: None,
         }
+    }
+
+    /// Poe um prazo de PAREDE neste corpo. **Quem pede e quem segura a trava.**
+    ///
+    /// # Por que o prazo nao mora aqui dentro
+    ///
+    /// O mesmo avaliador roda o corpo de um gatilho `BEFORE` — com a trava
+    /// global de dados na mao, onde cada milissegundo e de TODAS as conexoes —
+    /// e o corpo de um procedimento, que roda sem trava nenhuma e pode
+    /// legitimamente varar a tarde inserindo. Um prazo fixo no avaliador
+    /// serviria a um dos dois e quebraria o outro. Entao ele e do CHAMADOR:
+    /// quem toma a trava paga o prazo, quem nao toma nao paga nem a leitura
+    /// do relogio.
+    ///
+    /// # Por que ele existe, se ja ha `PASSOS_MAX`
+    ///
+    /// Porque teto de passos e teto de trabalho sao coisas diferentes. Um
+    /// milhao de passos de aritmetica leva dezenas de milissegundos; um milhao
+    /// de passos mexendo em texto de [`TEXTO_MAX`] leva minutos. O teto de
+    /// passos limita o corpo; este limita a TRAVA, que e o que importa para
+    /// quem esta na fila.
+    pub fn com_prazo(mut self, quanto: Duration) -> Contexto {
+        self.prazo = Some((Instant::now(), quanto));
+        self
+    }
+
+    /// Quantos passos este corpo deu. E o que separa «morreu no teto de
+    /// passos» de «morreu no teto de texto ou no prazo» — sem isto, um medidor
+    /// nao sabe qual dos tres tetos respondeu.
+    pub fn passos_dados(&self) -> u64 {
+        self.passos
     }
 
     pub fn valor_de(&self, nome: &str) -> Option<&Valor> {
@@ -2041,6 +2101,22 @@ impl Contexto {
             return Err(PhxError::LimiteExcedido(format!(
                 "o corpo passou de {PASSOS_MAX} passos; ha um WHILE sem fim?"
             )));
+        }
+        // O PORTAO VEM ANTES DO TRABALHO: sem prazo pedido, isto e um teste de
+        // `Option` e nenhuma leitura de relogio nunca. O procedimento — que e
+        // quem roda sem trava e por muito tempo — nao paga nada.
+        if let Some((comeco, quanto)) = self.prazo {
+            let gasto = comeco.elapsed();
+            if gasto > quanto {
+                return Err(PhxError::LimiteExcedido(format!(
+                    "o corpo passou do prazo de {} ms com a trava de dados na \
+                     mao (gastou {} ms em {} passos); a escrita foi recusada e \
+                     nada foi gravado",
+                    quanto.as_millis(),
+                    gasto.as_millis(),
+                    self.passos
+                )));
+            }
         }
         Ok(())
     }
@@ -2397,7 +2473,23 @@ fn chamar_funcao(f: Funcao, args: &[Valor]) -> Result<Valor> {
             if args.contains(&Valor::Nulo) {
                 return Ok(Valor::Nulo);
             }
-            Valor::Texto(args.iter().map(Valor::como_texto).collect())
+            // O `collect()` que estava aqui montava o texto inteiro antes de
+            // alguem poder olhar o tamanho -- e era por onde `SET s =
+            // CONCAT(s, s)` dobrava ate o alocador ABORTAR o processo. Somando
+            // pedaco a pedaco, o pico fica em TEXTO_MAX mais um argumento.
+            let mut junto = String::new();
+            for a in args {
+                junto.push_str(&a.como_texto());
+                if junto.len() > TEXTO_MAX {
+                    return Err(PhxError::LimiteExcedido(format!(
+                        "CONCAT passou de {TEXTO_MAX} bytes de texto ({} ja \
+                         montados); um corpo que dobra o texto a cada volta \
+                         derrubaria o servidor pelo alocador",
+                        junto.len()
+                    )));
+                }
+            }
+            Valor::Texto(junto)
         }
         Funcao::Maiusculas | Funcao::Minusculas | Funcao::Aparar | Funcao::Comprimento => {
             exigir(1)?;
@@ -2456,6 +2548,125 @@ fn chamar_funcao(f: Funcao, args: &[Valor]) -> Result<Valor> {
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    // ------------------------------------------- os dois tetos da trava
+
+    /// **O defeito que este teste repoe:** o `CONCAT` montava o texto com um
+    /// `collect()`, sem olhar tamanho. `SET s = CONCAT(s, s)` dobra a cada
+    /// volta, entao um orcamento de um milhao de passos chega a um gigabyte em
+    /// TRINTA — e o corpo nao morria no `PASSOS_MAX`, morria no alocador. Em
+    /// Rust, alocacao que falha ABORTA o processo: o servidor inteiro, com a
+    /// trava global de dados na mao, derrubado por um gatilho `BEFORE`.
+    ///
+    /// Com o `collect()` de volta este teste nao falha — ele **aborta o
+    /// `cargo test`**, e essa e a prova real ao contrario. Reposto a mao com
+    /// `ulimit -v 2000000`: 10,2 s e `memory allocation of 536870912 bytes
+    /// failed`.
+    ///
+    /// O teste nao confere so o veredito: confere **quanto** o texto chegou a
+    /// crescer. Conferir so «deu erro» passaria com um `CONCAT` que recusa
+    /// tudo, e passaria tambem se o teto fosse mil vezes maior que o escrito.
+    #[test]
+    fn o_texto_que_dobra_para_no_teto_em_vez_de_derrubar_o_processo() {
+        let corpo = corpo_de_procedimento("WHILE TRUE DO SET s = CONCAT(s, s); END WHILE");
+        let mut ctx =
+            Contexto::de_procedimento(vec![("s".into(), Tipo::Texto, Valor::Texto("a".into()))]);
+        let erro = executar(&corpo, &mut ctx, &mut MotorNulo)
+            .expect_err("um corpo que dobra o texto para sempre tinha de parar");
+        assert!(
+            matches!(erro, PhxError::LimiteExcedido(_)),
+            "tinha de morrer no teto de texto, e nao em {erro:?}"
+        );
+        let tamanho = match ctx.valor_de("s") {
+            Some(Valor::Texto(t)) => t.len(),
+            outro => panic!("a variavel tinha de continuar texto, e veio {outro:?}"),
+        };
+        assert!(
+            tamanho <= TEXTO_MAX,
+            "o texto passou do teto: {tamanho} bytes contra {TEXTO_MAX}"
+        );
+        assert!(
+            ctx.passos < PASSOS_MAX,
+            "o corpo morreu no teto de PASSOS, e nao no de texto — \
+             entao este teste nao esta medindo o que diz"
+        );
+    }
+
+    /// **O defeito que este teste repoe:** nao havia prazo nenhum, e o
+    /// `PASSOS_MAX` era citado como se fosse um. Ele nao e: um milhao de
+    /// passos de aritmetica custa 22,5 ms, e um milhao de passos copiando
+    /// meio megabyte custa minutos — com a trava GLOBAL de dados na mao.
+    ///
+    /// Tire o `.com_prazo(...)` e o teste nao falha por veredito: ele fica
+    /// **minutos** rodando, que e exatamente o estrago. Por isso ele mede o
+    /// TEMPO, e nao so o erro.
+    #[test]
+    fn o_corpo_lento_para_no_prazo_e_nao_no_teto_de_passos() {
+        // Cada volta copia meio megabyte: poucos passos, muito trabalho — que
+        // e a forma que o teto de passos nao ve.
+        let corpo = corpo_de_procedimento("WHILE TRUE DO SET s = CONCAT('x', s); END WHILE");
+        let semente = "y".repeat(512 * 1024);
+        let mut ctx =
+            Contexto::de_procedimento(vec![("s".into(), Tipo::Texto, Valor::Texto(semente))])
+                .com_prazo(Duration::from_millis(50));
+        let comeco = Instant::now();
+        let erro = executar(&corpo, &mut ctx, &mut MotorNulo)
+            .expect_err("o corpo tinha de morrer no prazo");
+        let gasto = comeco.elapsed();
+        assert!(
+            matches!(erro, PhxError::LimiteExcedido(_)),
+            "tinha de ser LimiteExcedido, e veio {erro:?}"
+        );
+        assert!(
+            format!("{erro}").contains("prazo"),
+            "o erro tem de dizer que foi o PRAZO, e nao o teto de passos: {erro}"
+        );
+        // Folga de 20x sobre os 50 ms pedidos: o que se prova aqui e que ele
+        // parou por tempo, nao que o relogio da maquina de teste e preciso.
+        assert!(
+            gasto < Duration::from_secs(1),
+            "o corpo gastou {gasto:?} — o prazo nao esta segurando nada"
+        );
+        assert!(
+            ctx.passos < PASSOS_MAX,
+            "morreu no teto de passos, e nao no prazo"
+        );
+    }
+
+    /// O outro lado do mesmo laco, e o que impede a guarda de virar estrago:
+    /// **sem prazo pedido, nada muda.** O procedimento roda sem a trava de
+    /// dados e pode legitimamente demorar; quem nao pede prazo nao paga nem a
+    /// leitura do relogio.
+    #[test]
+    fn quem_nao_pede_prazo_continua_rodando_ate_o_teto_de_passos() {
+        let corpo = corpo_de_procedimento("WHILE TRUE DO SET x = x + 1; END WHILE");
+        let mut ctx = Contexto::de_procedimento(vec![(
+            "x".into(),
+            Tipo::Inteiro,
+            Valor::Numero(Numero::inteiro(0)),
+        )]);
+        let erro = executar(&corpo, &mut ctx, &mut MotorNulo).expect_err("o WHILE TRUE nao para");
+        assert!(
+            format!("{erro}").contains("passos"),
+            "sem prazo, quem para o corpo e o teto de PASSOS: {erro}"
+        );
+        assert!(
+            ctx.passos > PASSOS_MAX,
+            "o teto de passos tinha de estourar"
+        );
+    }
+
+    /// E o corpo honesto nao vê nem um nem outro: com prazo pedido, ele
+    /// termina.
+    #[test]
+    fn corpo_honesto_com_prazo_termina_igual() {
+        let corpo = corpo_de_procedimento("SET s = CONCAT('a', 'b', 'c')");
+        let mut ctx =
+            Contexto::de_procedimento(vec![("s".into(), Tipo::Texto, Valor::Texto(String::new()))])
+                .com_prazo(Duration::from_millis(500));
+        executar(&corpo, &mut ctx, &mut MotorNulo).expect("corpo honesto tem de passar");
+        assert_eq!(ctx.valor_de("s"), Some(&Valor::Texto("abc".into())));
+    }
 
     fn corpo_de_procedimento(texto: &str) -> Vec<Instrucao> {
         analisar_corpo(texto, &regras_de_procedimento()).unwrap()

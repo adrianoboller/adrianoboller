@@ -435,6 +435,35 @@ const MARCAS_POR_TABELA: usize = 8;
 /// atrasa-la.
 const TETO_DO_LOTE_SERVIDO: usize = 16 * 1024 * 1024;
 
+/// Quanto tempo o corpo de um gatilho `BEFORE` pode segurar a trava GLOBAL de
+/// dados.
+///
+/// # O teto que faltava, e o que o teto que existia nao segurava
+///
+/// O avaliador ja tinha `PASSOS_MAX` — um milhao de passos por corpo — e o
+/// comentario dele nomeia esta razao exata. Medido, um milhao de passos de
+/// aritmetica custa 22,5 ms, e esse numero virou a resposta de que «as cinco
+/// secoes que rodam codigo do dono tem teto».
+///
+/// **Elas nao tinham.** Teto de PASSOS nao e teto de TRABALHO: `SET s =
+/// CONCAT(s, s)` dobra o texto a cada volta, e o corpo nao morre no teto de
+/// passos — morre no alocador, aos ~30 passos de um orcamento de um milhao.
+/// Medido com o processo limitado a 2 GiB de espaco: **10,2 s** com a trava
+/// global na mao, e entao `memory allocation failed` — que em Rust ABORTA o
+/// processo. O servidor inteiro, derrubado por um gatilho.
+///
+/// # Por que 500 ms, e nao um numero de gosto
+///
+/// Sai de dentro desta casa: `transacao_lock_timeout_ms` ja vale 500, e ele e
+/// a resposta que este servidor ja deu para «quanto uma conexao pode fazer
+/// outra esperar». Usar o mesmo numero mantem uma resposta so.
+///
+/// E ele nao pode quebrar corpo nenhum que hoje funcione: o corpo honesto
+/// medido custa **1 us**, e o pior corpo que ainda TERMINA e o que gasta o
+/// `PASSOS_MAX` inteiro, em 22,5 ms — 22x de folga. Quem passa de meio segundo
+/// aqui esta fazendo o que este teto existe para impedir.
+const PRAZO_DO_GATILHO_ANTES: Duration = Duration::from_millis(500);
+
 pub struct Servidor {
     config: Config,
     /// Trava unica de dados. Ver a nota de concorrencia no topo do modulo.
@@ -10018,7 +10047,8 @@ impl Servidor {
             let programa = g.programa.as_ref().map_err(|motivo| {
                 PhxError::Esquema(format!("o gatilho {:?} nao compila: {motivo}", g.nome))
             })?;
-            let mut ctx = Contexto::de_gatilho(nova_json.take(), gravavel, velha_json.clone());
+            let mut ctx = Contexto::de_gatilho(nova_json.take(), gravavel, velha_json.clone())
+                .com_prazo(PRAZO_DO_GATILHO_ANTES);
             let resultado = executar(programa, &mut ctx, &mut MotorNulo);
             // O NEW volta mesmo em erro: o proximo uso e de quem tratar.
             nova_json = ctx.nova.take();
