@@ -2609,4 +2609,65 @@ pub fn limpar() {
     # ai o defeito reposto aborta em 13,9 s dizendo «memory allocation of
     # 536870912 bytes failed» sem levar ninguem junto. Conferida assim em
     # 03/09.
+    {
+        "id": "declara-conferida-sobre-orfa",
+        "titulo": "a chave volta a nascer conferida sobre tabela que ja tem orfa",
+        "porque": (
+            "sonda `--example sonda-fk-buracos`, item 4: dava para declarar "
+            "`verificar: true` numa tabela que ja tinha orfa, e a orfa "
+            "continuava la. A tabela nascia com uma promessa falsa -- um "
+            "`verificar` que nunca valeu para as linhas ja gravadas --, e "
+            "promessa falsa e pior que a ausencia dela: quem le o esquema para "
+            "de perguntar. Mesma familia de \"configuracao que nao e lida "
+            "mente\"."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """            if !fk.verificar || self.ja_era_conferida(fk) {
+                continue;
+            }""",
+        "troca": """            // DEFEITO REPOSTO: a declaracao volta a nao olhar o dado gravado.
+            if true {
+                continue;
+            }""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "verificador-de-consistencia"],
+        "caem": [
+            "redeclarar_recusa_chave_conferida_sobre_orfa",
+        ],
+        "seguem": [
+            # Os controles: o comportamento VELHO (declarar sem conferir), o
+            # dado limpo, e a chave que ja conferia. Sem eles, um portao que
+            # recusasse toda declaracao passaria pelo `caem` acima.
+            "declarar_sem_conferir_continua_passando_com_orfa",
+            "com_dado_limpo_a_chave_nasce_conferida",
+            "redeclarar_chave_ja_conferida_nao_varre_de_novo",
+        ],
+    },
+    {
+        "id": "verificador-nao-pergunta-se-a-mae-esta-viva",
+        "titulo": "o verificador volta a aceitar mae excluida como mae",
+        "porque": (
+            "e a mesma pergunta que o `conferir_fks` faz na gravacao, e ela "
+            "tem de ser a mesma nos dois lugares: um verificador que diz "
+            "\"limpo\" sobre uma base que o motor recusaria gravar de novo "
+            "mente com a autoridade de uma ferramenta de diagnostico."
+        ),
+        "arquivo": "crates/phxsql-store/src/integridade.rs",
+        "trecho": """                Ok(match mae.ler(r)? {
+                    Some(l) => !mae.esta_excluida(&l),
+                    None => false,
+                })""",
+        "troca": """                // DEFEITO REPOSTO: existir volta a valer por estar viva.
+                let _ = r;
+                Ok(true)""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "verificador-de-consistencia"],
+        "caem": [
+            "a_mae_excluida_suave_e_uma_falha_com_nome_proprio",
+        ],
+        "seguem": [
+            "base_limpa_nao_acusa_nada",
+            "a_orfa_aparece_e_o_verificador_nao_a_conserta",
+        ],
+    },
 ]

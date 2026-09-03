@@ -19,6 +19,7 @@ pub mod blob;
 pub mod catalogo;
 pub mod cofre;
 pub mod diario;
+pub mod integridade;
 pub mod lixeira;
 pub mod log;
 pub mod memoria;

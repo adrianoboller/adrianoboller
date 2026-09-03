@@ -18,18 +18,18 @@ use phxsql_core::error::{PhxError, Result};
 use phxsql_core::keyenc::{escrever_componente, largura_componente};
 use phxsql_core::schema::{AcaoRi, ForeignKey, Schema};
 use phxsql_core::types::ColumnType;
-use phxsql_core::value::{escrever_inline, ler_inline, Ponteiro, Value};
-use phxsql_core::{RowId, EXT_BIN, EXT_MEMO, EXT_NDX, EXT_REG};
+use phxsql_core::value::{Ponteiro, Value, escrever_inline, ler_inline};
+use phxsql_core::{EXT_BIN, EXT_MEMO, EXT_NDX, EXT_REG, RowId};
 
 use crate::blob::{BlobFile, MAGIC_BIN, MAGIC_MEMO};
-use crate::lixeira::{Descartada, LixeiraFile, EXT_TRASH};
-use crate::log::{Evento, LogFile, Operacao, EXT_LOG};
-use crate::motivo::{Motivo, MotivoFile, Tipo, EXT_REASON};
+use crate::lixeira::{Descartada, EXT_TRASH, LixeiraFile};
+use crate::log::{EXT_LOG, Evento, LogFile, Operacao};
+use crate::motivo::{EXT_REASON, Motivo, MotivoFile, Tipo};
 use crate::ndx::NdxFile;
 use crate::reg::RegFile;
 // Qualificado: `crate::log::Evento` ja ocupa o nome `Evento` aqui, e os dois
 // eventos sao coisas diferentes -- um e do diario, o outro e da trilha.
-use crate::trilha::{self, TrilhaFile, EXT_LGPD};
+use crate::trilha::{self, EXT_LGPD, TrilhaFile};
 
 /// Uma linha: um valor por coluna do esquema.
 pub type Linha = Vec<Value>;
@@ -368,7 +368,7 @@ fn fks_conferidas_do_esquema(esquema: &Schema) -> Vec<usize> {
 ///
 /// A qualificacao existe no NOME declarado da chave; o arquivo em disco mora
 /// no diretorio do database, e e por ele que se abre.
-fn nome_simples(qualificado: &str) -> &str {
+pub(crate) fn nome_simples(qualificado: &str) -> &str {
     qualificado.rsplit_once('.').map_or(qualificado, |(_, t)| t)
 }
 
@@ -379,7 +379,7 @@ fn nome_simples(qualificado: &str) -> &str {
 /// sozinha, mas nao o contrario. Preferimos o unico quando ha os dois, porque
 /// referencia para chave nao-unica casa com varias linhas e a pergunta aqui e
 /// so "existe alguma?".
-fn indice_que_cobre(esquema: &Schema, colunas_ref: &[String]) -> Option<String> {
+pub(crate) fn indice_que_cobre(esquema: &Schema, colunas_ref: &[String]) -> Option<String> {
     let serve = |idx: &phxsql_core::schema::IndexDef| {
         idx.colunas.len() >= colunas_ref.len()
             && colunas_ref.iter().enumerate().all(|(k, nome)| {
@@ -504,21 +504,86 @@ impl Table {
         Ok(r)
     }
 
-    /// Redeclara as chaves estrangeiras da tabela -- e SO a declaracao.
+    /// Redeclara as chaves estrangeiras da tabela.
     ///
-    /// Nao mexe em linha, indice nem tipo de coluna: a chave estrangeira do
-    /// PhxSql e catalogo (o `esquema` a devolve, o diagrama a desenha, o
-    /// gerador de JOIN a le), e o motor nao a impoe na gravacao -- ha teste
-    /// que trava isso. O que acontece no disco esta em
-    /// [`RegFile::redeclarar_chaves_estrangeiras`]. Devolve `true` quando o
-    /// `.reg` precisou ser reescrito para o bloco de esquema maior caber.
+    /// Nao mexe em linha, indice nem tipo de coluna. O que acontece no disco
+    /// esta em [`RegFile::redeclarar_chaves_estrangeiras`]. Devolve `true`
+    /// quando o `.reg` precisou ser reescrito para o bloco de esquema maior
+    /// caber.
+    ///
+    /// # Declarar CONFERIDA sobre dado que ja viola e recusado
+    ///
+    /// Medido por sonda antes desta guarda: dava para declarar uma chave
+    /// conferida numa tabela que ja tinha orfa, e a orfa continuava la. A
+    /// tabela nascia com uma promessa falsa -- `verificar: true` que nunca
+    /// valeu para as linhas que ja estavam gravadas --, e a promessa falsa e
+    /// pior que a ausencia dela: quem le o esquema para de perguntar.
+    ///
+    /// E a mesma familia de «configuracao que nao e lida mente», e o lugar da
+    /// recusa e o mesmo que a casa ja escolheu para o `ao_excluir`: **a
+    /// declaracao, e nao a gravacao**. Uma tabela nasce uma vez e grava um
+    /// milhao de vezes; recusar cedo custa um erro lido enquanto se modela, e
+    /// recusar tarde custa um banco modelado errado.
+    ///
+    /// ## O que ela confere, e o que ela deliberadamente NAO confere
+    ///
+    /// So a chave que **passa a ser** conferida agora -- nova, ou que estava
+    /// com `verificar: false`. Redeclarar sem mexer numa chave ja conferida
+    /// nao varre nada: ela ja era garantida, e cobrar a varredura de novo
+    /// tornaria caro o `ALTER TABLE` que nem toca nela.
+    ///
+    /// E ela para na PRIMEIRA violacao. Contar todas exigiria a varredura
+    /// inteira mesmo com o dado sujo, e quem quer a lista tem o verificador
+    /// (`crate::integridade`), que existe para isso e diz que so relata.
+    ///
+    /// Nao recusa por falta de indice nem por tabela mae ausente. As duas sao
+    /// ordem legitima de modelagem -- declara-se a chave, cria-se o indice, e
+    /// a mae pode ainda estar por vir --, e as duas ja tem recusa propria na
+    /// GRAVACAO, com o recado que diz o que falta. Quando o indice falta, a
+    /// varredura nem acontece: o motor procura por indice, nunca por
+    /// varredura, e inventar aqui uma varredura que a gravacao recusa faria a
+    /// declaracao medir outra coisa.
+    ///
+    /// Quem tem dado sujo e quer declarar assim mesmo continua podendo, com
+    /// `"verificar": false` -- e ai e escolha escrita em vez de omissao.
     pub fn redeclarar_chaves_estrangeiras(&mut self, fks: Vec<ForeignKey>) -> Result<bool> {
+        for fk in &fks {
+            if !fk.verificar || self.ja_era_conferida(fk) {
+                continue;
+            }
+            let violacoes = crate::integridade::conferir_chave(self, fk, true)?;
+            if let Some(v) = violacoes.iter().find(|v| !v.falha.e_de_estrutura()) {
+                return Err(PhxError::Integridade(format!(
+                    "a chave {:?} nao pode nascer conferida em {}: {v}. Declarar \
+                     conferida sobre dado que ja viola e prometer o que nao se \
+                     pode cumprir -- conserte a linha, ou declare com \
+                     `verificar` desligado. `integridade::conferir_diretorio` \
+                     lista todas as violacoes sem consertar nenhuma",
+                    fk.nome, self.nome
+                )));
+            }
+        }
         let moveu = self.reg.redeclarar_chaves_estrangeiras(fks)?;
         self.esquema = self.reg.esquema().clone();
         // O `.pag` descreve o esquema para quem le o diretorio sem abrir a
         // tabela; desatualizado, ele viraria uma segunda verdade.
         self.gravar_pag()?;
         Ok(moveu)
+    }
+
+    /// Esta chave ja estava declarada E ja conferia, do jeito que esta vindo?
+    ///
+    /// Compara o que decide a garantia -- colunas, tabela e colunas da mae --,
+    /// e nao o `ao_alterar` nem o nome: mudar a acao de cascata para anular
+    /// nao torna falsa uma relacao que ja era conferida, e cobrar a varredura
+    /// por isso faria o `ALTER TABLE` pagar por uma garantia que nao mudou.
+    fn ja_era_conferida(&self, fk: &ForeignKey) -> bool {
+        self.esquema.chaves_estrangeiras().iter().any(|a| {
+            a.verificar
+                && a.colunas == fk.colunas
+                && nome_simples(&a.tabela_ref) == nome_simples(&fk.tabela_ref)
+                && a.colunas_ref == fk.colunas_ref
+        })
     }
 
     /// Acrescenta uma coluna a tabela, **preservando o rowid de cada linha**.
