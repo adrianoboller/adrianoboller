@@ -172,3 +172,91 @@ derruba o teste por outro motivo. Três entradas mostram o que isso custa:
   `supervisor_passa_por_cima` sobrevive, que é o `seguem` dela. A largura do
   estrago é o argumento: uma guarda imposta tira o direito de todo mundo que já
   funcionava, e quem trava isso é o teste do comportamento **velho**.
+
+## Auditar uma redundância: o veredito e o motivo são duas coisas
+
+```bash
+python3 bancada/guardas/medir-redundancia.py
+```
+
+O executor audita o **veredito** das quatro entradas `espera: "nada muda"`, e
+com rigor: para elas ele exige que **nenhum** teste do binário caia, e não só
+os da lista. No dia em que algum cair, a afirmação morreu e o relatório avisa.
+
+O que ele não audita é a `nota_da_redundancia` — a frase que diz **por que**
+nada muda. E ela envelhece primeiro, porque uma redundância pode continuar
+dando «nada muda» por um motivo diferente do declarado.
+
+Foi o que se mediu em 03/09/2026 nas duas entradas da cifra. As notas
+creditavam a redundância a `(rowid, volume, versao)`, os três valores que as
+duas fechaduras carregam. Só que o teste que decide copia o slot 5 **inteiro**
+por cima do slot 9 — cabeçalho junto, então a `versao` e o `tempero` viajam com
+a cópia — e os dois slots moram no mesmo volume: **dos três, dois são iguais
+dos dois lados.** Quem segura sozinho é o `rowid`.
+
+| o que sai | o teste que decide |
+|---|---|
+| só o AAD (a guarda de hoje) | ok — 0 de 9 caíram |
+| o AAD **e** só o `rowid` do nonce | **FAILED** |
+| só o endereço do nonce (a guarda de hoje) | ok — 0 de 9 caíram |
+| o endereço do nonce **e** só o `rowid` do AAD | **FAILED** |
+
+Quem removesse `volume` de qualquer uma das fechaduras leria a nota antiga como
+satisfeita e estaria certo por acaso. Quem removesse **o `rowid` de uma só**
+também a leria como satisfeita — e estaria errado, porque é o único dos três
+que trabalha. Por isso as notas de hoje nomeiam o `rowid`, e por isso este
+medidor está versionado: a próxima sessão refaz a tabela em vez de acreditar
+nela.
+
+**A regra que sai daí:** quando uma nota de redundância citar mais de uma coisa
+como causa, meça **qual delas sozinha sustenta**. A que não sustenta é
+exatamente a que alguém vai remover confiando na nota.
+
+E uma falta registrada como falta: no `julgar`, o ramo `"nada muda"` devolve
+**antes** de olhar a lista `seguem` — nessas quatro entradas ela é decorativa.
+Não é grave (exigir que nenhum teste caia é mais forte), mas um `seguem`
+renomeado numa entrada redundante **não** vira `QUEBRADA`, ao contrário do que
+aconteceria com um `caem`.
+
+## A caça ao teste que passa por engano — e o que ela NÃO achou
+
+Fora do catálogo há **163 testes** que afirmam recusa (`expect_err`,
+`assert!(… .is_err())`) e não têm guarda nenhuma. Nenhum deles foi provado nos
+dois sentidos: eles passam, e ninguém sabe se passariam também com o defeito
+reposto. Essa é a definição de «teste que passa por engano», e esta casa já
+teve dois.
+
+Em 03/09/2026 nove deles foram sondados — amostra escolhida pelas pétreas que
+mais importam, não pela facilidade: a integridade referencial, a permissão por
+tabela, a janela de conflito, o índice dos dois lados, a validação de nome, a
+recusa de UUID torto e a injeção de comando no firewall. Para cada um, o
+**portão de produção** foi neutralizado à mão e o binário rodou inteiro.
+
+| defeito reposto | teste | caiu? |
+|---|---|---|
+| o portão do `ao_excluir` sai (`valores.rs`) | `ao_excluir_so_aceita_restringir` | cai |
+| `verificar` nasce `false` (`valores.rs`) | `a_chave_declarada_nasce_conferida` | cai |
+| `executar_derivado` pula `portoes_do_pedido` | `o_sql_nao_e_a_porta_dos_fundos_para_a_tabela_negada` | cai |
+| `Uuid::de_texto` aceita qualquer texto | `uuid_torto_no_json_e_recusado` | cai |
+| o firewall deixa de conferir o IP | `firewall_recusa_o_que_nao_e_endereco` | cai |
+| `validar_nome` vira `Ok(())` | `nomes_perigosos_sao_recusados` | cai |
+| idem | `nome_de_destino_hostil_e_recusado` | cai |
+| versão divergente deixa de ser conflito | `gravar_com_versao_velha_recusa` | cai |
+| o índice da filha deixa de ser exigido | `sem_indice_na_filha_recusa_dizendo_qual_falta` | cai |
+
+**9 de 9 caíram. Zero achados.** Árvores limpas verdes antes de cada perna:
+`phxsql-server --lib` com 677 testes, `phxsql-store --lib` com 145,
+`--test conflito` com 10 e `--test cascata-ao-alterar` com 15.
+
+É recusa medida, e vale como resultado: **nesta amostra não há teste que passa
+por engano.** O que ela não autoriza é generalizar para os 154 restantes — o
+que se mediu é que a prática desta casa (escrever o teste junto do portão que
+ele defende) sobrevive à conferência nos casos onde a pétrea é mais forte, que
+é justamente onde a atenção era maior. A amostra é enviesada **a favor** do
+resultado, e dizer isso faz parte do resultado.
+
+O roteiro da caça não ficou versionado de propósito: ele é uma lista de
+defeitos de uma tarde, e cada entrada dele que valesse a pena guardar deveria
+virar **entrada do catálogo** em vez de script à parte. Nenhuma virou, porque
+todas as nove guardas já estavam provadas — acrescentá-las custaria nove
+recompilações por bateria para travar o que já se sabe travado.

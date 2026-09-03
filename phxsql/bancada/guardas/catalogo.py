@@ -680,6 +680,15 @@ GUARDAS = [
     # `nonce_de_pedaco(rowid, volume, versao, tempero)` leva os mesmos tres.
     # Sao duas fechaduras na mesma porta, e cada uma segura sozinha.
     #
+    # E DAS TRES, quem segura e o ROWID -- medido em 03/09/2026 com
+    # `medir-redundancia.py`, e nao lido. O teste que decide copia o slot 5
+    # INTEIRO por cima do slot 9 (cabecalho junto, entao a versao e o tempero
+    # viajam com a copia), e os dois moram no mesmo volume: dos tres valores,
+    # DOIS sao iguais dos dois lados. Tirar `volume` ou `versao` de qualquer
+    # uma das fechaduras nao muda nada; tirar o `rowid` de UMA delas, com a
+    # outra ja tirada, derruba o teste. Quem ler «(volume, rowid, versao)» e
+    # remover o rowid confiando na frase remove justamente o unico que trabalha.
+    #
     # Entao viraram tres entradas, e as tres sao medidas: as duas primeiras
     # AFIRMAM a redundancia (tirar so uma nao muda nada) e a terceira prova a
     # guarda de verdade (tirar as duas derruba o teste). No dia em que alguem
@@ -697,7 +706,11 @@ GUARDAS = [
         "espera": "nada muda",
         "nota_da_redundancia": (
             "confirmado: tirar so o AAD nao e sentido por teste nenhum, "
-            "porque o `nonce_de_pedaco` carrega (rowid, volume, versao)"
+            "porque o `nonce_de_pedaco` carrega o ROWID. Medido em 03/09/2026, "
+            "e nao deduzido: tirando o AAD e SO o rowid do nonce -- volume e "
+            "contador ficando --, o teste CAI. Volume e versao nao entram nesta "
+            "conta porque o teste copia o slot INTEIRO, e os dois slots moram no "
+            "mesmo volume com a mesma versao"
         ),
         "trocas": [
             {
@@ -734,7 +747,10 @@ GUARDAS = [
         ),
         "espera": "nada muda",
         "nota_da_redundancia": (
-            "confirmado: tirar so o endereco do nonce tambem passa despercebido"
+            "confirmado: tirar so o endereco do nonce tambem passa despercebido, "
+            "porque o AAD carrega o ROWID. Medido em 03/09/2026: tirando o "
+            "endereco do nonce e SO o rowid do AAD -- volume e versao ficando --, "
+            "o teste CAI"
         ),
         "arquivo": "crates/phxsql-store/src/cofre.rs",
         "trecho": """    let mut n = [0u8; XNONCE_LEN];
