@@ -3,7 +3,7 @@ name: "conversao-wx"
 description: "Inventario, plano, piloto e conversao rastreavel de projetos WINDEV, WEBDEV e WINDEV Mobile, com evidencias e gates."
 license: "All rights reserved"
 compatibility: "Claude Cowork and Claude Code; Python 3.10 or newer for bundled helper scripts"
-metadata: {"author":"Adriano Boller","version":"3.0.0"}
+metadata: {"author":"Adriano Boller"}
 allowed-tools: "Read, Glob, Grep, Bash, Write, Edit, Agent, AskUserQuestion"
 ---
 
@@ -13,7 +13,7 @@ Trate `$ARGUMENTS` como indicação, nunca como confirmação de completude.
 
 ## 1. Intake obrigatório no contexto principal
 
-No plugin, o intake começa pelo **questionário (bloco 0 da empresa e letras A–J)** (`/wx-claude-code:questionario`), que grava `.wx-migration/questionario.json` e gera manifesto e configuração pelo `scripts/aplicar_questionario.py`. Se esse arquivo existir, pule para as perguntas abaixo que continuarem em aberto. Se não existir, faça-as todas.
+No plugin, o intake começa pelo **questionário (bloco 0 da empresa, letras A–J, K do ambiente e L do contexto)** (`/wx-claude-code:questionario`), que grava `.wx-migration/questionario.json` e gera manifesto e configuração pelo `scripts/aplicar_questionario.py`. Se esse arquivo existir, pule para as perguntas abaixo que continuarem em aberto. Se não existir, faça-as todas.
 
 Antes de delegar ou alterar arquivos, faça perguntas ao usuário. Subagentes não devem conduzir esta etapa.
 
@@ -28,7 +28,7 @@ Pergunte em rodadas curtas:
 5. “Qual é o destino?” — antes de perguntar, oriente com [perfis-de-destino.md](references/perfis-de-destino.md): Rust, Python e C# + WL_C# sempre entre as opções, a recomendada primeiro, com o porquê em uma frase; depois framework, banco, plataformas, versões mínimas e implantação.
 6. “Existem dados anonimizados, baseline, build/configuração exatos, ambiente reinicializável e autorização para executar o legado? Há uma referência segura para credenciais de teste, sem enviar valores secretos?”
 7. “Qual modo deseja agora: inventário, plano, piloto vertical ou implementação completa? Quem aprova regras, divergências e cada critério de aceite?”
-8. “Deseja habilitar algum companion opcional — Impeccable, Taste Skill, Higgsfield ou Sheets — e possui autorização, conta/licença e orçamento/créditos quando aplicável? A ausência deles não bloqueia a conversão.”
+8. “Deseja habilitar algum companion opcional — Impeccable, vendorizado no plugin, ou outro externo que você já tenha instalado — e possui autorização, conta/licença e orçamento/créditos quando aplicável? A ausência deles não bloqueia a conversão.”
 
 Não aceite “está tudo anexado” sem verificar caminhos, formatos, legibilidade e contagem. Antes de existir um caminho verificável, use o estado `INTAKE_PENDING`: faça somente perguntas e não prometa relatórios ainda. Se a pessoa não souber, ofereça gerar os modelos de manifesto e configuração e pare no inventário.
 
@@ -134,7 +134,7 @@ Leia [traceability.md](references/traceability.md). Cada item implementado preci
 python3 "${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/validate_traceability.py" \
   <projeto>/.wx-migration/traceability.csv \
   --project-root <projeto> \
-  --inventory <projeto>/.wx-migration/preflight/<run>/inventory.csv
+  --inventory <projeto>/.wx-migration/preflight/runs/<run>/inventory.csv
 ```
 
 Antes de declarar um gate concluído, o agente `wx-claude-code:quality-auditor` deve revisar em modo somente leitura e emitir recomendação. Somente o aprovador humano decide o gate. Uma conclusão deve informar: escopo concluído, build/configuração/ambiente/dataset/tolerâncias, provas, testes executados, lacunas, decisões pendentes, riscos e próximo gate.

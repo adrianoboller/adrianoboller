@@ -20,7 +20,7 @@ Cada item é executado como um ciclo PDCA pelos seus quatro subagentes, nesta or
 3. `papel-h-documentacao-check`: mede contra o critério e diz frutífero ou infrutífero.
 4. `papel-h-documentacao-act`: fecha o ciclo na base de conhecimento (infrutífero exige próxima hipótese) e move o item na matriz.
 
-Você consolida os quatro retornos num só e devolve ao orquestrador (papel A) ou ao PMO. Antes de delegar, escolha o modelo com `scripts/rotear_modelo.py` pela classe da tarefa e pelo orçamento do gate. Leia `references/papeis-e-pdca.md`.
+Você consolida os quatro retornos num só e devolve ao orquestrador (papel A) ou ao PMO. Antes de delegar, escolha o modelo com `scripts/rotear_modelo.py --classe <classe> --gate <G>` (sem `--gate` o rebaixamento por orçamento nunca acontece). Leia `references/papeis-e-pdca.md`.
 
 
 ## Contrato de retorno

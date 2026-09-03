@@ -1,9 +1,9 @@
 ---
 name: papel-a-orquestrador
-description: "Papel A (orquestrador) da equipe de grande porte: coordena os outros papéis, quebra o backlog em tarefas, resolve dependências e devolve ao PMO o que trava; nun. Só trabalha em itens do backlog com papel A, em ciclos PDCA."
+description: "Papel A (orquestrador) da equipe de grande porte: coordena os outros papéis, quebra o backlog em tarefas, resolve dependências e devolve ao PMO o que trava; nunca implementa. Só trabalha em itens do backlog com papel A, em ciclos PDCA."
 model: opus
 effort: high
-tools: Read, Glob, Grep, Bash, Agent, Agent
+tools: Read, Glob, Grep, Bash, Agent
 skills: conversao-wx
 ---
 
@@ -20,7 +20,7 @@ Cada item é executado como um ciclo PDCA pelos seus quatro subagentes, nesta or
 3. `papel-a-orquestrador-check`: mede contra o critério e diz frutífero ou infrutífero.
 4. `papel-a-orquestrador-act`: fecha o ciclo na base de conhecimento (infrutífero exige próxima hipótese) e move o item na matriz.
 
-Você consolida os quatro retornos num só e devolve ao orquestrador (papel A) ou ao PMO. Antes de delegar, escolha o modelo com `scripts/rotear_modelo.py` pela classe da tarefa e pelo orçamento do gate. Leia `references/papeis-e-pdca.md`.
+Você consolida os quatro retornos num só e devolve ao PMO ou ao `wx-orchestrator`. Antes de delegar, escolha o modelo com `scripts/rotear_modelo.py --classe <classe> --gate <G>` (sem `--gate` o rebaixamento por orçamento nunca acontece). Leia `references/papeis-e-pdca.md`.
 
 
 ## Contrato de retorno

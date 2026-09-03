@@ -35,6 +35,8 @@ def normalizar(v, tol: float):
 
 
 def igual(a, b, tol: float) -> bool:
+    if isinstance(a, bool) != isinstance(b, bool):
+        return False  # True esperado e 1 obtido nao sao iguais
     if isinstance(a, (int, float)) and not isinstance(a, bool) and isinstance(b, (int, float)) and not isinstance(b, bool):
         return abs(float(a) - float(b)) <= tol
     if isinstance(a, list) and isinstance(b, list):
@@ -69,12 +71,15 @@ def comparar(golden_p: Path, comando: str | None, resultados_p: Path | None, rel
     ok = 0
     for c in golden["casos"]:
         if comando:
-            proc = subprocess.run(comando, shell=True, input=json.dumps({"id": c["id"], "regra": c["regra"], "entrada": c["entrada"]}), capture_output=True, text=True, timeout=60)
             try:
-                novo = json.loads(proc.stdout)
-                novo = novo.get("resultado", novo) if isinstance(novo, dict) and "resultado" in novo else novo
-            except json.JSONDecodeError:
-                novo = {"erro": (proc.stderr or proc.stdout).strip()[:200]}
+                proc = subprocess.run(comando, shell=True, input=json.dumps({"id": c["id"], "regra": c["regra"], "entrada": c["entrada"]}), capture_output=True, text=True, timeout=60)
+                try:
+                    novo = json.loads(proc.stdout)
+                    novo = novo.get("resultado", novo) if isinstance(novo, dict) and "resultado" in novo else novo
+                except json.JSONDecodeError:
+                    novo = {"erro": (proc.stderr or proc.stdout).strip()[:200]}
+            except subprocess.TimeoutExpired:
+                novo = {"erro": "timeout (60 s) neste caso; os demais seguem"}
         else:
             novo = novos.get(c["id"], {"erro": "sem resultado"})
         esperado = normalizar(c["esperado"], tol)

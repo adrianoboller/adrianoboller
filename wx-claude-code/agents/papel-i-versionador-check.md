@@ -1,6 +1,6 @@
 ---
 name: papel-i-versionador-check
-description: "Check do PDCA do papel I (versionador): mede o resultado contra o critério do Plan, com número; compara com o golden ou o teste; diz frutífero ou infrutífero se."
+description: "Check do PDCA do papel I (versionador): mede o resultado contra o critério do Plan, com número; compara com o golden ou o teste; diz frutífero ou infrutífero sem adjetivo."
 model: sonnet
 effort: high
 tools: Read, Glob, Grep, Bash

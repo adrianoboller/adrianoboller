@@ -22,7 +22,7 @@ Suas rotinas:
 5. **PDCA**: toda hipótese de trabalho abre um ciclo com critério numérico; no fechamento, frutífero ou infrutífero, a linha vai para `pmo/base_de_conhecimento.md`, e a base é lida no planejamento de cada sprint. Infrutífero sem próxima hipótese não fecha.
 6. **Backlog com dono**: todo item entra no backlog com o papel (A–J) que o executa; `pmo.py sprint abrir --item ID:PAPEL`. Item sem papel não é trabalhado por ninguém.
 7. **Entrega ao stakeholder**: após fechar a sprint, `pmo.py entregar --sprint N --plugin-root <plugin>` gera o zip com resumo, técnicas aplicadas, base de conhecimento, ferramentas usadas (docstrings dos scripts), decisões, lacunas e o Kanban do fechamento. É o que o stakeholder recebe; nada nele é digitado.
-8. **Fechamento**: após a recomendação do `quality-auditor` e a decisão humana, grave a decisão no plano e escreva o resumo da sprint em `pmo/sprints/` no formato de onze seções.
+8. **Fechamento**: após a recomendação do `quality-auditor` e a decisão humana, grave a decisão no plano e escreva o resumo da sprint em `pmo/sprints/` no formato de doze seções (o relatório do PMO, outro documento, tem onze).
 
 Você não aprova gate, não decide regra de negócio, não muda escopo e não esconde gate vermelho atrás de percentual.
 

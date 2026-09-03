@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import os
 import sys
 from collections import defaultdict
@@ -26,7 +27,7 @@ from pathlib import Path
 
 def pasta_do_projeto(project_root: Path) -> Path:
     # O Claude Code nomeia a pasta trocando os separadores do caminho absoluto por '-'.
-    nome = str(project_root.resolve()).replace("/", "-").replace("\\", "-")
+    nome = re.sub(r"[^A-Za-z0-9]", "-", str(project_root.resolve()))
     return Path.home() / ".claude" / "projects" / nome
 
 
@@ -107,14 +108,19 @@ def main() -> int:
         print("erro: sessão não encontrada"); return 2
     t = total_de(d["sessoes"][sid])
     orc = a.project_root / ".wx-migration" / "pmo" / "orcamento.json"
+    if not orc.is_file():
+        print(f"erro: {orc} não existe; rode pmo.py iniciar"); return 2
     o = json.loads(orc.read_text(encoding="utf-8"))
-    g = o["gates"][a.gate]
-    g["tokens_gastos"] += t["tokens"]; g["chamadas"] += t["chamadas"]
+    g = o.setdefault("gates", {}).get(a.gate)
+    if g is None:
+        print(f"erro: gate {a.gate!r} não existe no orçamento (G0 a G7)"); return 2
+    g["tokens_gastos"] = g.get("tokens_gastos", 0) + t["tokens"]; g["chamadas"] = g.get("chamadas", 0) + t["chamadas"]
+    g.setdefault("por_modelo", {})
     for c, n in t["por_classe"].items():
         g["por_modelo"][c] = g["por_modelo"].get(c, 0) + n
     g.setdefault("lancamentos", []).append({"sessao": sid, "tokens": t["tokens"], "chamadas": t["chamadas"], "fonte": "usage do Claude Code (MEDIDO)"})
     orc.write_text(json.dumps(o, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    prev = g["tokens_previstos"]
+    prev = g.get("tokens_previstos", 0)
     print(f"{a.gate}: +{t['tokens']} tokens da sessão {sid[:8]}… → {g['tokens_gastos']} gastos" + (f" ({100*g['tokens_gastos']/prev:.0f}% do previsto)" if prev else " (sem previsão)"))
     return 0
 

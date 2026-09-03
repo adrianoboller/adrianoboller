@@ -3,7 +3,7 @@ name: "laudo-uso-tokens"
 description: "Audita o uso de tokens do Claude Code em fases aprovadas pelo usuario e propoe uma mudanca por vez."
 license: "All rights reserved"
 compatibility: "Claude Cowork and Claude Code"
-metadata: {"author":"Adriano Boller","version":"3.0.0"}
+metadata: {"author":"Adriano Boller"}
 allowed-tools: "Read, Glob, Grep, Bash"
 ---
 

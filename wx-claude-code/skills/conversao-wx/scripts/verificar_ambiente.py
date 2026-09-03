@@ -22,7 +22,7 @@ FERRAMENTAS = {
     "K1_rust": [("rustc", ["--version"], r"(\d+\.\d+(?:\.\d+)?)"), ("cargo", ["--version"], r"(\d+\.\d+(?:\.\d+)?)")],
     "K2_postgresql": [("psql", ["--version"], r"(\d+(?:\.\d+)?)")],
     "K3_mysql": [("mysql", ["--version"], r"(\d+\.\d+(?:\.\d+)?)")],
-    "K4_mariadb": [("mariadb", ["--version"], r"(\d+\.\d+(?:\.\d+)?)")],
+    "K4_mariadb": [("mariadb", ["--version"], r"Distrib (\d+\.\d+(?:\.\d+)?)|(?:^|\s)(\d+\.\d+\.\d+)-MariaDB")],
     "K5_supabase": [("supabase", ["--version"], r"(\d+\.\d+(?:\.\d+)?)")],
     "K6_github": [("git", ["--version"], r"(\d+\.\d+(?:\.\d+)?)"), ("gh", ["--version"], r"(\d+\.\d+(?:\.\d+)?)")],
 }
@@ -36,14 +36,18 @@ def versao_de(prog: str, args: list[str], rx: str) -> str | None:
     except (OSError, subprocess.TimeoutExpired):
         return None
     m = re.search(rx, out.stdout + out.stderr)
-    return m.group(1) if m else "?"
+    if not m:
+        return "?"
+    return next((g for g in m.groups() if g), m.group(0))
 
 
 def atende(instalada: str | None, minima: str) -> bool:
     if not instalada or instalada == "?" or not minima:
         return bool(instalada) and instalada != "?"
     def n(v): return [int(x) for x in re.findall(r"\d+", v)]
-    return n(instalada) >= n(minima)
+    a, b = n(instalada), n(minima)
+    tam = max(len(a), len(b))
+    return a + [0] * (tam - len(a)) >= b + [0] * (tam - len(b))
 
 
 def medir(q: dict) -> list[dict]:

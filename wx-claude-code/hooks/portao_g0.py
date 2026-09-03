@@ -15,6 +15,7 @@ nao e afetado.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -38,24 +39,38 @@ def main() -> int:
         entrada = json.load(sys.stdin)
     except json.JSONDecodeError:
         return 0
-    if entrada.get("tool_name") not in {"Write", "Edit", "MultiEdit"}:
+    ferramenta = entrada.get("tool_name")
+    ti = entrada.get("tool_input", {}) or {}
+    if ferramenta in {"Write", "Edit", "MultiEdit", "NotebookEdit"}:
+        caminho = ti.get("file_path") or ti.get("notebook_path") or ""
+    elif ferramenta == "Bash":
+        # Escrita por shell: so o alvo de um redirecionamento; comando sem > nao e escrita.
+        m = re.search(r">>?\s*['\"]?([^\s'\"|;&]+)", ti.get("command") or "")
+        caminho = m.group(1) if m else ""
+    else:
         return 0
-    caminho = entrada.get("tool_input", {}).get("file_path") or ""
     if not caminho:
         return 0
-    alvo = Path(caminho)
+    alvo = Path(caminho.replace("\\", "/"))
     if not alvo.is_absolute():
         alvo = Path(entrada.get("cwd", ".")) / alvo
+    alvo = alvo.resolve()  # antes de olhar as partes: src/../.wx-migration/../src passava
     if ".wx-migration" in alvo.parts:
         return 0
     achado = ultimo_relatorio(alvo.parent if alvo.parent.exists() else Path(entrada.get("cwd", ".")))
-    if not achado:
+    if achado is None:
+        # Sem relatorio nenhum: projeto que nao usa o plugin. Relatorio ilegivel: fecha.
+        raiz = alvo.parent if alvo.parent.exists() else Path(entrada.get("cwd", "."))
+        if any((p / ".wx-migration" / "preflight" / "runs").is_dir() and list((p / ".wx-migration" / "preflight" / "runs").glob("*/report.json")) for p in (raiz, *raiz.parents)):
+            print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "Relatorio do G0 ilegivel; rode o pre-flight de novo antes de escrever codigo."}}))
         return 0
     rel_path, rel = achado
     if rel.get("status") != "BLOCKED":
         return 0
-    erros = rel.get("summary", {}).get("errors", rel.get("errors"))
-    n = len(erros) if isinstance(erros, list) else erros
+    erros = rel.get("counts", {}).get("errors")
+    if erros is None:
+        erros = rel.get("errors")
+    n = len(erros) if isinstance(erros, list) else (erros if isinstance(erros, int) else "?")
     print(json.dumps({
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",

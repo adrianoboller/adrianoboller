@@ -52,5 +52,5 @@ python3 "${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/query_wlanguage_help.
   localizador, não a página inteira: é aqui que o custo em tokens se controla.
 - Símbolo ambíguo entre dois temas é consultado nos dois, e o especialista
   diz qual página respondeu.
-- Versão do projeto (letra G do questionário) entra sempre em `--version`;
+- Versão do WX (registrada no fechamento do questionário, `projeto.wx_versao`) entra sempre em `--version`;
   divergência entre versões é achado, não ruído.

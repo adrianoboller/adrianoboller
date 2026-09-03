@@ -114,7 +114,7 @@ Veja `exemplos/estoque-wx/LEIA-ME.md`.
 - `uso_de_tokens.py`: lê o `usage` das sessões do Claude Code (MEDIDO) e lança no orçamento do gate.
 - `hooks/portao_g0.py`: nega `Write`/`Edit` fora de `.wx-migration/` enquanto o G0 estiver `BLOCKED`.
 - `pmo.py painel`: o painel do PMO em HTML, gerado do mesmo código do `status`.
-- `tests/testes.py`: 24 testes de regressão; o validador em modo estrito os executa.
+- `tests/testes.py`: 25 testes de regressão; o validador em modo estrito os executa.
 
 ## Limitações conhecidas
 

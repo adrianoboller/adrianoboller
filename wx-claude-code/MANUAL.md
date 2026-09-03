@@ -54,7 +54,7 @@ python3 wx-claude-code/skills/conversao-wx/scripts/query_wlanguage_help.py --ver
 listagem que o modelo devolve pode omitir um item; confira por nome, não
 por contagem.
 
-**Validar o pacote** (roda os 24 testes de regressão):
+**Validar o pacote** (roda os 25 testes de regressão):
 
 ```bash
 python3 wx-claude-code/skills/conversao-wx/scripts/validate_plugin_bundle.py wx-claude-code --strict
@@ -520,7 +520,7 @@ serial for preso a uma máquina, informe ao distribuidor o resultado de
 quem distribui; o plugin traz só a chave pública e não consegue emitir nem
 forjar serial. Um byte alterado invalida a assinatura. Estados possíveis:
 `valida`, `ausente`, `vencida`, `maquina-diferente`, `assinatura-invalida`,
-`formato-invalido`.
+`formato-invalido`, `chave-ausente`.
 
 **O que isso protege.** O plugin é texto, e quem instala lê tudo. O serial e
 os hooks são dissuasão para o cliente honesto, não muralha: quem apagar o hook

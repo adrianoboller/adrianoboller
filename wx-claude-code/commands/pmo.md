@@ -1,6 +1,6 @@
 ---
 description: "PMO da conversao WX com Scrum, Kanban e PDCA: sprints, quadro com WIP, base de conhecimento, orcamento de tokens e painel medido."
-argument-hint: "[iniciar|status|relatorio|sprint|kanban|pdca|orcamento|entregar|painel] [raiz-do-projeto]"
+argument-hint: "[iniciar|status|relatorio|sprint|kanban|pdca|entregar|painel|orcamento (só no comando: chama uso_de_tokens.py)] [raiz-do-projeto]"
 allowed-tools: "Read, Glob, Grep, Bash, Write, Edit, Agent, AskUserQuestion"
 ---
 
@@ -12,7 +12,7 @@ Delegue ao agente `wx-claude-code:pmo-gerente-de-projetos` com o subcomando de `
 
 Subcomandos:
 
-- `iniciar`: cria `.wx-migration/pmo/` (plano, orçamento, RAID) e pede ao usuário o aprovador de cada gate, as datas previstas e o orçamento de tokens por gate. Sem previsão o painel mostra `—`, não inventa.
+- `iniciar`: cria `.wx-migration/pmo/` (plano, orçamento, RAID) e usa o aprovador do item 0.16 do questionário e os marcos do bloco 0; pergunta só o que estiver vazio: aprovador, datas previstas e o orçamento de tokens por gate. Sem previsão o painel mostra `—`, não inventa.
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/pmo.py" --project-root <projeto> iniciar --aprovador "<nome>"

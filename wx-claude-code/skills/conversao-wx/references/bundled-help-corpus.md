@@ -4,7 +4,7 @@ O plugin usa um snapshot local da documentação WLanguage apenas como evidênci
 
 ## Identidade e localização
 
-- Caminho fixo: `skills/convert-wx-project/resources/Help_WL_12k_Json.zip`
+- Caminho fixo: `${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/resources/Help_WL_12k_Json.zip`
 - SHA-256 distribuído e exigido: `a95ed5536549ecc39fb1163415042d6597c8913e5edbfdb531cba756546a82a2`
 - SHA-256 do anexo recebido: `a6b42f59796ccf51298712aff00c043a9be2c404ce761a99720ea31b91ca6b93`
 - Raiz interna: `Help_WL_12k_Json/`
@@ -38,15 +38,15 @@ O `--verify` deve continuar retornando sucesso operacional (código 0) para o sn
 ## Uso somente leitura
 
 ```bash
-python3 skills/convert-wx-project/scripts/query_wlanguage_help.py --verify
-python3 skills/convert-wx-project/scripts/query_wlanguage_help.py \
+python3 ${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/query_wlanguage_help.py --verify
+python3 ${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/query_wlanguage_help.py \
   --query "HOpenAnalysis" --version 2026 --platform WINDEV --limit 5
 ```
 
 Para uma auditoria antes de o recurso ser copiado ao caminho fixo, o override exige tanto o caminho explícito quanto o hash esperado:
 
 ```bash
-python3 skills/convert-wx-project/scripts/query_wlanguage_help.py \
+python3 ${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/query_wlanguage_help.py \
   --verify \
   --corpus /caminho/controlado/Help_WL_12k_Json.zip \
   --expected-sha256 a95ed5536549ecc39fb1163415042d6597c8913e5edbfdb531cba756546a82a2

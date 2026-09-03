@@ -28,6 +28,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import random
 import secrets
 import sys
@@ -105,7 +106,14 @@ def assinar(mensagem: bytes, priv: dict) -> bytes:
 
 
 def conferir(mensagem: bytes, assinatura: bytes, pub: dict) -> bool:
-    n, e = int(pub["n"], 16), int(pub["e"])
+    try:
+        n, e = int(pub["n"], 16), int(pub["e"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    # Chave fraca ou expoente absurdo (e=1 aceitaria EMSA(payload) como assinatura).
+    # dois primos de 1024 bits dao 2047 ou 2048 bits; piso em 2040
+    if n.bit_length() < 2040 or e < 3 or e % 2 == 0:
+        return False
     k = (n.bit_length() + 7) // 8
     if len(assinatura) != k:
         return False
@@ -148,7 +156,11 @@ def caminho_da_licenca() -> Path:
 
 
 def verificar_serial(serial: str, pub: dict | None = None, hoje: date | None = None) -> dict:
-    pub = pub or json.loads(CHAVE_PUBLICA.read_text(encoding="utf-8"))
+    if pub is None:
+        try:
+            pub = json.loads(CHAVE_PUBLICA.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {"status": "chave-ausente"}
     hoje = hoje or date.today()
     partes = serial.strip().split(".")
     if len(partes) != 3 or partes[0] != VERSAO_DO_SERIAL:
@@ -157,6 +169,8 @@ def verificar_serial(serial: str, pub: dict | None = None, hoje: date | None = N
         payload, ass = _unb64(partes[1]), _unb64(partes[2])
         corpo = json.loads(payload)
     except (ValueError, json.JSONDecodeError):
+        return {"status": "formato-invalido"}
+    if not isinstance(corpo, dict):
         return {"status": "formato-invalido"}
     if not conferir(payload, ass, pub):
         return {"status": "assinatura-invalida"}
@@ -187,7 +201,23 @@ MENSAGEM = {
     "maquina-diferente": "serial preso a outra maquina; peca um serial para esta (licenca.py maquina)",
     "assinatura-invalida": "serial nao foi emitido com a chave desta distribuicao",
     "formato-invalido": "serial ilegivel",
+    "chave-ausente": "licenca/chave-publica.json nao existe ou nao e JSON; a distribuicao esta incompleta",
 }
+
+
+def _alvo_do_plugin(ferramenta: str, ti: dict) -> bool:
+    """Decide se a chamada e do plugin. Normaliza barras, // e caminhos Windows; libera o proprio licenca.py."""
+    if ferramenta == "Bash":
+        cmd = (ti.get("command") or "").replace("\\", "/")
+        while "//" in cmd:
+            cmd = cmd.replace("//", "/")
+        if re.search(r"licenca\.py\s+(instalar|verificar|maquina)\b", cmd):
+            return False
+        return bool(re.search(r"conversao-wx/\s*scripts|conversao-wx['\"]?\s*\+\s*['\"]?/?scripts|\.wx-migration", cmd))
+    if ferramenta in {"Write", "Edit", "MultiEdit", "NotebookEdit"}:
+        caminho = (ti.get("file_path") or ti.get("notebook_path") or "").replace("\\", "/")
+        return ".wx-migration" in caminho.split("/")
+    return False
 
 
 # ---------------------------------------------------------------- hooks
@@ -199,12 +229,7 @@ def hook_pre_tool() -> int:
         return 0
     ferramenta = entrada.get("tool_name", "")
     ti = entrada.get("tool_input", {}) or {}
-    alvo = False
-    if ferramenta == "Bash":
-        alvo = "conversao-wx/scripts" in (ti.get("command") or "")
-    elif ferramenta in {"Write", "Edit", "MultiEdit"}:
-        alvo = ".wx-migration" in Path(ti.get("file_path") or "").parts
-    if not alvo:
+    if not _alvo_do_plugin(ferramenta, ti):
         return 0
     r = verificar_instalada()
     if r["status"] == "valida":

@@ -5,6 +5,8 @@ soltos. Precisa de **papéis** com dono, um **backlog** que diga de quem é cada
 item, e um jeito único de executar cada item. É isso que esta camada faz, em
 cima dos especialistas técnicos que já existem.
 
+> Os comandos `pmo.py …` abaixo estão na forma abreviada; a forma completa é `python3 "${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/pmo.py" --project-root <projeto> …`, como em `commands/pmo.md`.
+
 ## Os papéis
 
 | Letra | Papel | Modelo | Faz | Não faz |

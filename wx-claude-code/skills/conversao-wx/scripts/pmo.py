@@ -135,7 +135,7 @@ def ler_backlog(wx: Path) -> dict[str, dict]:
     for l in p.read_text(encoding="utf-8").splitlines():
         if not l.startswith("|") or l.startswith("| prioridade") or l.startswith("| ---"):
             continue
-        c = [x.strip() for x in l.strip().strip("|").split("|")]
+        c = [x.strip() for x in re.split(r"(?<!\\)\|", l.strip().strip("|"))]
         if len(c) >= 7 and re.match(r"^[A-Z]{2,3}-\d+", c[1]):
             itens[c[1]] = {"prioridade": c[0], "item": c[2], "papel": c[3].upper(), "gate": c[4], "estimativa": c[5], "sprint": c[6]}
     return itens
@@ -144,13 +144,17 @@ def ler_backlog(wx: Path) -> dict[str, dict]:
 def backlog_acrescentar(wx: Path, trace_id: str, papel: str, item: str, gate: str, sprint: str) -> None:
     p = wx / "pmo" / "backlog.md"
     linhas = p.read_text(encoding="utf-8").splitlines() if p.is_file() else []
+    item = item.replace("|", "\\|")  # texto do usuario nao pode quebrar a tabela
     if any(l.startswith(f"| ") and f"| {trace_id} |" in l for l in linhas):
         novas = []
         for l in linhas:
             if f"| {trace_id} |" in l:
-                c = [x.strip() for x in l.strip().strip("|").split("|")]
-                c[3] = papel; c[6] = sprint
-                l = "| " + " | ".join(c) + " |"
+                c = [x.strip() for x in re.split(r"(?<!\\)\|", l.strip().strip("|"))]
+                if len(c) >= 7:
+                    c[3] = papel; c[6] = sprint
+                    l = "| " + " | ".join(c) + " |"
+                else:
+                    l = f"| 99 | {trace_id} | {item} | {papel} | {gate} | | {sprint} |"
             novas.append(l)
         linhas = novas
     else:
@@ -426,10 +430,11 @@ def status(wx: Path) -> str:
         o = json.loads(orc.read_text(encoding="utf-8"))
         linhas += ["| gate | previsto | gasto | % | chamadas | haiku | sonnet | opus |", "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
         for g in GATES:
-            d = o["gates"][g]
-            pct = f"{100.0*d['tokens_gastos']/d['tokens_previstos']:.0f}%" if d["tokens_previstos"] else "—"
+            d = (o.get("gates") or {}).get(g) or {}
+            prev, gasto = d.get("tokens_previstos", 0) or 0, d.get("tokens_gastos", 0) or 0
+            pct = f"{100.0*gasto/prev:.0f}%" if prev else "—"
             pm = d.get("por_modelo", {})
-            linhas.append(f"| {g} | {d['tokens_previstos']} | {d['tokens_gastos']} | {pct} | {d['chamadas']} | {pm.get('haiku',0)} | {pm.get('sonnet',0)} | {pm.get('opus',0)} |")
+            linhas.append(f"| {g} | {prev} | {gasto} | {pct} | {d.get('chamadas', 0)} | {pm.get('haiku',0)} | {pm.get('sonnet',0)} | {pm.get('opus',0)} |")
         linhas.append("")
         linhas.append("Fonte: `pmo/orcamento.json`, alimentado por `pmo.py gastar` com o uso medido. Gate sem previsão: `—`.")
     else:
@@ -483,8 +488,8 @@ def _tabela_md(caminho: Path, prefixo_id: str) -> list[str]:
     linhas = caminho.read_text(encoding="utf-8").splitlines()
     saida, cab = [], None
     for i, l in enumerate(linhas):
-        if l.startswith("| id") or l.startswith("| ID"):
-            cab = (l, linhas[i + 1] if i + 1 < len(linhas) else "| --- |")
+        if l.startswith("|") and i + 1 < len(linhas) and re.match(r"^\|\s*-{3,}", linhas[i + 1]):
+            cab = (l, linhas[i + 1])
         if l.startswith(f"| {prefixo_id}") and cab:
             if not saida:
                 saida += list(cab)
@@ -694,6 +699,9 @@ def painel(wx: Path) -> Path:
             nonlocal tabela
             if tabela:
                 linhas = [l for l in tabela if not re.match(r"^\|\s*-", l)]
+                if not linhas:
+                    tabela = []
+                    return
                 cab, corpo = linhas[0], linhas[1:]
                 celulas = lambda l, tag: "".join(f"<{tag}>{_html.escape(c.strip())}</{tag}>" for c in l.strip().strip("|").split("|"))
                 saida.append("<table><thead><tr>" + celulas(cab, "th") + "</tr></thead><tbody>" + "".join("<tr>" + celulas(l, "td") + "</tr>" for l in corpo) + "</tbody></table>")
@@ -777,7 +785,6 @@ def entregar(wx: Path, numero: int | None, plugin_root: Path | None) -> Path:
     fontes = []
     if plugin_root:
         fontes += sorted((plugin_root / "skills" / "conversao-wx" / "scripts").glob("*.py")) + sorted((plugin_root / "hooks").glob("*.py"))
-    fontes += sorted((wx.parent).glob("**/*.py"))[:50] if False else []
     for f in fontes:
         try:
             doc = ast.get_docstring(ast.parse(f.read_text(encoding="utf-8"))) or "(sem docstring)"

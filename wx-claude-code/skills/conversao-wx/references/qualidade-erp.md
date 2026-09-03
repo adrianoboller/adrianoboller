@@ -1,4 +1,4 @@
-# Qualidade gráfica e funcional para ERP: as oito subperguntas da letra F
+# Qualidade gráfica e funcional para ERP: a tela modelo e as treze subperguntas da letra F
 
 Um ERP não é um site. Quem usa fica oito horas na tela, digita com o
 teclado, vive dentro de grids, imprime e trabalha com número. Paleta e
@@ -49,7 +49,7 @@ voltar, cancelar, duplicar) para que a tabela seja comparável entre telas; o
 usuário escolhe o rótulo de cada uma, e o agente não «melhora» texto de
 botão. Mensagem que já exista no código do legado tem precedência.
 
-Depois das treze, a letra F fecha com as três de antes: paleta e marca, tema
+A ordem canônica da letra F, que o comando segue sem repetir a lista: F0 (tela modelo), F1 a F13, e então preservar ou redesenhar, paleta, tema, tipografia, densidade e marca. Depois das treze, a letra F fecha com as de antes: paleta e marca, tema
 (claro, escuro, ambos), preservar ou redesenhar o visual do WX.
 
 ## O que muda no fluxo

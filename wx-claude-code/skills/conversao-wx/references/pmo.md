@@ -5,6 +5,8 @@ quem decide». Ele não converte nada e não aprova gate: mede, planeja, cobra e
 registra. O agente é `pmo-gerente-de-projetos`; o comando é
 `/wx-claude-code:pmo`; os números saem de `scripts/pmo.py`, nunca digitados.
 
+> Os comandos `pmo.py …` abaixo estão na forma abreviada; a forma completa é `python3 "${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/pmo.py" --project-root <projeto> …`, como em `commands/pmo.md`.
+
 ## Onde vive
 
 ```text
@@ -112,7 +114,7 @@ formato já usado nos projetos do Adriano (`governanca-pmo`):
 11. Orçamento da sprint: previsto × gasto, por modelo
 12. Retrospectiva e decisão do gate (o que mudar vira PDCA)
 
-A seção 9 lista os ciclos PDCA fechados na sprint, copiados da base de conhecimento.
+A seção «Ciclos PDCA fechados na sprint» copia as linhas da base de conhecimento. O resumo da sprint tem doze seções; o relatório do PMO (`relatorio.md`), onze; são documentos diferentes.
 
 ## Cerimônias
 

@@ -250,7 +250,7 @@ def validate(root: Path, strict: bool = False) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Valida estrutura do plugin WX sem Claude CLI.")
-    parser.add_argument("root", nargs="?", default="../../../", type=Path)
+    parser.add_argument("root", nargs="?", default=Path(__file__).resolve().parents[3], type=Path)
     parser.add_argument("--strict", action="store_true")
     args = parser.parse_args()
     result = validate(args.root.resolve(), args.strict)

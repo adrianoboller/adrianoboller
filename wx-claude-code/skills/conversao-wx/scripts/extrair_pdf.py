@@ -66,9 +66,16 @@ def main() -> int:
             if raiz not in pdf.parents or not pdf.is_file():
                 sumario["arquivos"].append({"path": rel, "erro": "fora da raiz de evidências ou inexistente"})
                 continue
+            if pdf.suffix.lower() != ".pdf":
+                sumario["arquivos"].append({"path": rel, "erro": "nao e PDF; extraia por outro meio"})
+                continue
             h = sha256(pdf)
-            textos = paginas(pdf)
-            destino = args.output / Path(rel).stem
+            try:
+                textos = paginas(pdf)
+            except Exception as exc:  # PDF corrompido ou cifrado nao pode derrubar os demais
+                sumario["arquivos"].append({"path": rel, "sha256": h, "grupo": grupo, "erro": f"{type(exc).__name__}: {str(exc)[:160]}"})
+                continue
+            destino = args.output / Path(rel).with_suffix("")  # preserva a pasta: b/x.pdf e c/x.pdf nao colidem
             destino.mkdir(parents=True, exist_ok=True)
             pags = []
             for i, t in enumerate(textos, 1):

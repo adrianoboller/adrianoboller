@@ -2,7 +2,7 @@
 
 ## Resultado esperado
 
-Crie `.wx-migration/preflight/report.json`, `report.md`, `inventory.csv` e `gaps.md`. O pré-flight comprova disponibilidade; não prova completude funcional.
+O `wx_preflight.py` grava `.wx-migration/preflight/runs/<run>/report.json`, `report.md`, `inventory.csv` e `gaps.md` (é dessa pasta que o hook do portão G0 lê; um `report.json` escrito em outro lugar não conta). O pré-flight comprova disponibilidade; não prova completude funcional.
 
 Antes de haver caminhos confirmados, use `INTAKE_PENDING`; não há pré-flight nem arquivos de relatório legítimos nessa etapa. Passe ao script uma `allowed-evidence-root` confirmada pelo usuário e uma `workspace-root` separada. O manifesto nunca autoriza sozinho a leitura de outra pasta.
 

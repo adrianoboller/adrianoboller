@@ -15,6 +15,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import sys
 from datetime import date
 from pathlib import Path
@@ -116,6 +117,8 @@ def itens_screenshots(raiz: Path) -> list[dict]:
     lista = json.loads(sidecar.read_text(encoding="utf-8"))
     itens = []
     for s in lista:
+        if not isinstance(s, dict) or not all(s.get(c) for c in ("arquivo", "tela", "estado")):
+            raise ValueError("screenshots.json: cada item precisa de arquivo, tela e estado")
         arq = raiz / "screenshots" / s["arquivo"]
         if arq.is_file():
             itens.append({"path": f"screenshots/{s['arquivo']}", "screen_or_report": s["tela"], "state": s["estado"], "platform": s.get("plataforma", "WINDEV")})
@@ -391,22 +394,126 @@ def esboco_product(q: dict) -> str:
 # Chaves que nunca podem carregar valor no questionario: a senha se configura
 # na maquina (variavel de ambiente, gh auth, credential manager), e o arquivo
 # guarda so o NOME dessa referencia. Regra do projeto: senha nunca em texto puro.
-CHAVES_DE_SEGREDO = re.compile(r"(senha|password|passwd|token|secret|segredo|api_?key)$", re.IGNORECASE)
+# A palavra em QUALQUER posicao da chave (senha_do_banco, token_da_api), nao so
+# no fim; e os valores tambem sao varridos contra formatos conhecidos de token.
+CHAVES_DE_SEGREDO = re.compile(r"(?:^|_|\b)(senha|password|passwd|token|secret|segredo|api_?key|pwd)(?:$|_|\b)", re.IGNORECASE)
+VALORES_DE_SEGREDO = re.compile(r"(ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,})")
 
 
 def procurar_segredos(obj, caminho: str = "") -> list[str]:
-    """Devolve os caminhos das chaves de segredo que vieram com valor preenchido."""
+    """Devolve os caminhos de chaves de segredo com valor, e de valores que parecem token."""
     achados: list[str] = []
     if isinstance(obj, dict):
         for k, v in obj.items():
             aqui = f"{caminho}.{k}" if caminho else k
-            if CHAVES_DE_SEGREDO.search(k) and not k.endswith("_ref") and v not in (None, "", [], {}):
+            if CHAVES_DE_SEGREDO.search(k) and not k.endswith("_ref") and v not in (None, "", [], {}, False):
                 achados.append(aqui)
             achados += procurar_segredos(v, aqui)
     elif isinstance(obj, list):
         for i, v in enumerate(obj):
             achados += procurar_segredos(v, f"{caminho}[{i}]")
+    elif isinstance(obj, str) and VALORES_DE_SEGREDO.search(obj):
+        achados.append(caminho + " (valor com formato de token)")
     return achados
+
+
+# ---------------------------------------------------------------------------
+# Validacao do que vira bash, SQL ou YAML. Valor do questionario e escrito pelo
+# modelo a partir de anexos e conversa; e vetor de injecao. A regra e recusar
+# antes de gravar, nao escapar depois: identificador e identificador.
+# ---------------------------------------------------------------------------
+RX_IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,62}$")
+RX_VAR = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+RX_HOST = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9.-]{0,252}[A-Za-z0-9])?$")
+RX_BRANCH = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,120}$")
+RX_URL_GITHUB = re.compile(r"^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(\.git)?/?$")
+RX_CAMINHO = re.compile(r"^[A-Za-z0-9_./~-][A-Za-z0-9_./~ -]{0,200}$")
+RX_VERSAO = re.compile(r"^[A-Za-z0-9._-]{1,40}$")
+
+
+def _confere(valor, rx: re.Pattern, onde: str, opcional: bool = True) -> None:
+    if valor in (None, ""):
+        if opcional:
+            return
+        raise ValueError(f"{onde}: obrigatorio")
+    if not isinstance(valor, str) or not rx.fullmatch(valor):
+        raise ValueError(f"{onde}: valor {str(valor)[:40]!r} nao e aceito (so caracteres seguros)")
+
+
+def _porta(valor, onde: str) -> int:
+    if valor in (None, ""):
+        return 0
+    if isinstance(valor, bool) or not isinstance(valor, int) or not 1 <= valor <= 65535:
+        raise ValueError(f"{onde}: porta {valor!r} invalida (inteiro de 1 a 65535)")
+    return valor
+
+
+def validar_entradas(q: dict) -> None:
+    """Tudo que entra em shell, SQL, YAML ou JSON de configuracao passa por aqui antes."""
+    e = q.get("0_empresa_e_projeto") or {}
+    g = e.get("0_15_github") or {}
+    _confere(g.get("url"), RX_URL_GITHUB, "0.15 url")
+    _confere(g.get("branch"), RX_BRANCH, "0.15 branch")
+    _confere(g.get("usuario"), RX_IDENT, "0.15 usuario")
+    _confere(g.get("credencial_ref"), RX_VAR, "0.15 credencial_ref")
+    _confere(g.get("diretorio_destino"), RX_CAMINHO, "0.15 diretorio_destino")
+    k = q.get("K_ambiente") or {}
+    k0 = k.get("K0_privilegios") or {}
+    if k0.get("modo") not in (None, "", "sudo", "root", "nenhum"):
+        raise ValueError(f"K0 modo {k0.get('modo')!r} desconhecido (sudo | root | nenhum)")
+    _confere(k0.get("usuario_root"), RX_IDENT, "K0 usuario_root")
+    k1 = k.get("K1_rust") or {}
+    _confere(k1.get("versao_minima"), RX_VERSAO, "K1 versao_minima")
+    _confere(k1.get("canal"), RX_IDENT, "K1 canal")
+    for c in list(k1.get("componentes") or []) + list(k1.get("targets") or []):
+        _confere(c, re.compile(r"^[A-Za-z0-9_-]{1,64}$"), "K1 componente/target")
+    for chave in ("K2_postgresql", "K3_mysql", "K4_mariadb"):
+        kx = k.get(chave) or {}
+        _confere(kx.get("versao"), RX_VERSAO, f"{chave} versao")
+        _confere(kx.get("host"), RX_HOST, f"{chave} host")
+        _porta(kx.get("porta"), f"{chave} porta")
+        _confere(kx.get("banco"), RX_IDENT, f"{chave} banco")
+        _confere(kx.get("superusuario"), RX_IDENT, f"{chave} superusuario")
+        _confere(kx.get("senha_ref"), RX_VAR, f"{chave} senha_ref")
+        for pp in kx.get("papeis") or []:
+            _confere(pp.get("nome"), RX_IDENT, f"{chave} papel nome", opcional=False)
+            _confere(pp.get("senha_ref"), RX_VAR, f"{chave} papel {pp.get('nome')} senha_ref", opcional=False)
+    k5 = k.get("K5_supabase") or {}
+    _confere(k5.get("anon_key_ref"), RX_VAR, "K5 anon_key_ref")
+    _confere(k5.get("service_role_ref"), RX_VAR, "K5 service_role_ref")
+    _confere(k5.get("projeto_ref"), re.compile(r"^[A-Za-z0-9-]{1,64}$"), "K5 projeto_ref")
+    k6 = k.get("K6_github") or {}
+    _confere(k6.get("remote"), RX_IDENT, "K6 remote")
+    _confere(k6.get("branch_principal"), RX_BRANCH, "K6 branch_principal")
+    if k6.get("visibilidade") not in (None, "", "private", "public", "internal"):
+        raise ValueError("K6 visibilidade: private | public | internal")
+    k7 = k.get("K7_n8n") or {}
+    _confere(k7.get("versao"), RX_VERSAO, "K7 versao")
+    _confere(k7.get("host"), RX_HOST, "K7 host")
+    _porta(k7.get("porta"), "K7 porta")
+    _confere(k7.get("url_publica"), re.compile(r"^https?://[A-Za-z0-9.-]+(:\d+)?(/[A-Za-z0-9._/-]*)?$"), "K7 url_publica")
+    _confere(k7.get("timezone"), re.compile(r"^[A-Za-z_]+(/[A-Za-z_+-]+)*$"), "K7 timezone")
+    _confere(k7.get("encryption_key_ref"), RX_VAR, "K7 encryption_key_ref")
+    bd = k7.get("banco") or {}
+    _confere(bd.get("nome"), RX_IDENT, "K7 banco nome"); _confere(bd.get("usuario"), RX_IDENT, "K7 banco usuario"); _confere(bd.get("senha_ref"), RX_VAR, "K7 banco senha_ref")
+    adm = k7.get("admin") or {}
+    _confere(adm.get("senha_ref"), RX_VAR, "K7 admin senha_ref")
+    _confere(adm.get("email"), re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+$"), "K7 admin email")
+    itg = k7.get("integracao") or {}
+    _confere(itg.get("api_token_ref"), RX_VAR, "K7 api_token_ref"); _confere(itg.get("api_key_ref"), RX_VAR, "K7 api_key_ref")
+    l = q.get("L_contexto_e_implantacao") or {}
+    imp = l.get("L3_implantacao") or {}
+    _porta(imp.get("porta"), "L3 porta")
+    _confere(imp.get("dominio"), RX_HOST, "L3 dominio")
+    _confere(imp.get("healthcheck"), re.compile(r"^/[A-Za-z0-9._/-]*$"), "L3 healthcheck")
+    for v in imp.get("variaveis_de_ambiente") or []:
+        _confere(v, RX_VAR, "L3 variavel de ambiente", opcional=False)
+    l4 = l.get("L4_hooks_do_projeto") or {}
+    for c in (l4.get("comando_de_teste"), l4.get("comando_de_lint")):
+        if c and ("\n" in c or "\r" in c):
+            raise ValueError("L4: comando com quebra de linha nao e aceito")
+    raiz = (q.get("projeto") or {}).get("raiz_de_evidencias")
+    _confere(raiz, RX_CAMINHO, "projeto.raiz_de_evidencias")
 
 
 def anexo_verificado(bloco: dict, raiz: Path) -> tuple[str, str]:
@@ -524,8 +631,8 @@ def montar_projeto_pmo(e: dict) -> dict:
 def montar_entrega(e: dict) -> dict:
     g = e.get("0_15_github", {}) or {}
     ref = g.get("credencial_ref", "")
-    if ref and not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_./:-]*", ref):
-        raise ValueError(f"credencial_ref {ref!r} nao parece nome de variavel ou de segredo")
+    if ref and not RX_VAR.fullmatch(ref):
+        raise ValueError(f"credencial_ref {ref!r} nao e nome de variavel de ambiente")
     return {
         "github": {"url": g.get("url", ""), "branch": g.get("branch", "main"), "usuario": g.get("usuario", "")},
         "credencial_ref": ref,
@@ -703,24 +810,26 @@ def _papeis_ok(papeis: list, chave: str) -> None:
             raise ValueError(f"{chave}: nivel {pp.get('nivel')!r} do papel {pp.get('nome')!r} desconhecido (aceitos: {', '.join(NIVEIS_PG)})")
         if not pp.get("senha_ref"):
             raise ValueError(f"{chave}: papel {pp.get('nome')!r} sem senha_ref (nome da variavel de ambiente com a senha)")
+        if not pp.get("nome"):
+            raise ValueError(f"{chave}: papel sem nome")
 
 
 def sql_papeis_postgresql(k2: dict) -> str:
     banco = k2.get("banco") or "app"
     L = ["-- Papeis do PostgreSQL gerados do questionario (K2). Senhas vem do ambiente:",
          "-- rode com: envsubst < papeis-postgresql.sql | psql -U $PGUSER -h $PGHOST -d postgres", "",
-         f"CREATE DATABASE {banco};", ""]
+         f'CREATE DATABASE "{banco}";', ""]
     for pp in k2.get("papeis", []) or []:
-        n, nv = pp["nome"], pp["nivel"]
+        n, nv = f'"{pp["nome"]}"', pp["nivel"]
         L.append(f"CREATE ROLE {n} LOGIN {NIVEIS_PG[nv]} PASSWORD '${{{pp['senha_ref']}}}';")
         if nv == "owner":
-            L.append(f"ALTER DATABASE {banco} OWNER TO {n};")
+            L.append(f'ALTER DATABASE "{banco}" OWNER TO {n};')
         elif nv == "readwrite":
-            L += [f"GRANT CONNECT ON DATABASE {banco} TO {n};", f"GRANT USAGE ON SCHEMA public TO {n};",
+            L += [f'GRANT CONNECT ON DATABASE "{banco}" TO {n};', f"GRANT USAGE ON SCHEMA public TO {n};",
                   f"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {n};",
                   f"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO {n};"]
         elif nv == "readonly":
-            L += [f"GRANT CONNECT ON DATABASE {banco} TO {n};", f"GRANT USAGE ON SCHEMA public TO {n};",
+            L += [f'GRANT CONNECT ON DATABASE "{banco}" TO {n};', f"GRANT USAGE ON SCHEMA public TO {n};",
                   f"GRANT SELECT ON ALL TABLES IN SCHEMA public TO {n};",
                   f"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO {n};"]
         L.append("")
@@ -752,9 +861,9 @@ def instalador(k: dict, e: dict) -> str:
          "if [ \"$(id -u)\" -ne 0 ]; then"]
     if modo_priv == "sudo":
         L += ["  if command -v sudo >/dev/null; then SUDO=\"sudo\"; sudo -v || { echo 'sudo recusado'; exit 3; }",
-              f"  else echo 'sem sudo: entrando como {root_user} (su) para os passos que exigem root'; exec su {root_user} -c \"bash '$0' $*\"; fi"]
+              f"  else echo 'sem sudo: entrando como {root_user} (su) para os passos que exigem root'; exec su {root_user} -c 'cd \"$PWD\" && bash \"$(readlink -f \"$0\")\" \"$@\"' -- \"$@\"; fi"]
     elif modo_priv == "root":
-        L += [f"  echo 'entrando como {root_user} (su)'; exec su {root_user} -c \"bash '$0' $*\""]
+        L += [f"  echo 'entrando como {root_user} (su)'; exec su {root_user} -c 'cd \"$PWD\" && bash \"$(readlink -f \"$0\")\" \"$@\"' -- \"$@\""]
     else:
         L += ["  echo 'K0 = nenhum: passos que exigem root serao marcados como FALTA'; SUDO=\"__sem_root__\""]
     L += ["fi", "priv() { if [ \"$SUDO\" = __sem_root__ ]; then falta \"precisa de root: $*\"; else $SUDO \"$@\"; fi; }", ""]
@@ -767,7 +876,7 @@ def instalador(k: dict, e: dict) -> str:
               f"cargo --version | grep -Eo '[0-9]+\\.[0-9]+' | awk -F. -v maj=$(echo {k1.get('versao_minima','0')} | cut -d. -f1) -v min=$(echo {k1.get('versao_minima','0')} | cut -d. -f2) '($1>maj)||($1==maj&&$2>=min){{ok=1}} END{{exit !ok}}' || falta \"cargo abaixo de {k1.get('versao_minima','')}: a estavel de hoje pode ser mais antiga; o minimo do questionario e o que vale\"", ""]
     if k3.get("instalar_ou_atualizar") and k4.get("instalar_ou_atualizar") and k3.get("porta") == k4.get("porta"):
         L += ["echo 'AVISO: MySQL e MariaDB marcados na mesma porta; instale um deles ou mude a porta no questionario.'", ""]
-    for kx, nome, pacote, cli, sql in ((k2, "PostgreSQL", "postgresql-" + str(k2.get("versao", "")), "psql", "papeis-postgresql.sql"),
+    for kx, nome, pacote, cli, sql in ((k2, "PostgreSQL", ("postgresql-" + str(k2["versao"])) if k2.get("versao") else "postgresql", "psql", "papeis-postgresql.sql"),
                                        (k3, "MySQL", "mysql-server", "mysql", "papeis-mysql.sql"),
                                        (k4, "MariaDB", "mariadb-server", "mariadb", "papeis-mariadb.sql")):
         if kx.get("instalar_ou_atualizar"):
@@ -807,8 +916,8 @@ def instalador(k: dict, e: dict) -> str:
     if k6.get("ligar_projeto"):
         url = g.get("url", ""); br = k6.get("branch_principal", "main"); rem = k6.get("remote", "origin")
         L += ["# --- GitHub", f": \"${{{g.get('credencial_ref') or 'GITHUB_TOKEN'}:?defina o token do GitHub no ambiente}}\"",
-              f"cd \"{g.get('diretorio_destino') or '.'}\"", "git rev-parse --is-inside-work-tree >/dev/null 2>&1 || git init -b " + br,
-              *( [f"if command -v gh >/dev/null; then gh repo view {url.replace('https://github.com/', '')} >/dev/null 2>&1 || gh repo create {url.replace('https://github.com/', '')} --{k6.get('visibilidade', 'private')} --confirm; else falta 'gh (para criar o repositorio)'; fi"] if k6.get("criar_repositorio_se_nao_existir") and url else []),
+              "cd " + shlex.quote(g.get('diretorio_destino') or '.'), "git rev-parse --is-inside-work-tree >/dev/null 2>&1 || git init -b " + br,
+              *( [f"if command -v gh >/dev/null; then gh repo view {url.replace('https://github.com/', '')} >/dev/null 2>&1 || gh repo create {url.replace('https://github.com/', '')} --{k6.get('visibilidade', 'private')}; else falta 'gh (para criar o repositorio)'; fi"] if k6.get("criar_repositorio_se_nao_existir") and url else []),
               f"git remote get-url {rem} >/dev/null 2>&1 || git remote add {rem} {url or '<URL do 0.15>'}",
               *( [f"mkdir -p .github/workflows && [ -f .github/workflows/ci.yml ] || cat > .github/workflows/ci.yml <<'YML'\nname: ci\non: [push, pull_request]\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: cargo build --locked && cargo test --locked\nYML"] if k6.get("ci") == "github-actions" and k1.get("instalar_ou_atualizar") else []),
               *( [f"echo 'Protecao da branch {br}: configure em Settings > Branches (exige gh api ou a interface).'"] if k6.get("proteger_branch") else []),
@@ -866,8 +975,8 @@ def n8n_compose(k7: dict, k2: dict) -> str:
 def n8n_banco_sql(k7: dict) -> str:
     bd = k7.get("banco", {}) or {}
     return (f"-- Banco do n8n no PostgreSQL de K2. Senha do ambiente: envsubst antes do psql.\n"
-            f"CREATE ROLE {bd.get('usuario', 'n8n')} LOGIN PASSWORD '${{{bd.get('senha_ref', 'N8N_DB_PASSWORD')}}}';\n"
-            f"CREATE DATABASE {bd.get('nome', 'n8n')} OWNER {bd.get('usuario', 'n8n')};\n")
+            f"CREATE ROLE \"{bd.get('usuario', 'n8n')}\" LOGIN PASSWORD '${{{bd.get('senha_ref', 'N8N_DB_PASSWORD')}}}';\n"
+            f"CREATE DATABASE \"{bd.get('nome', 'n8n')}\" OWNER \"{bd.get('usuario', 'n8n')}\";\n")
 
 
 def n8n_integracao_md(k7: dict) -> str:
@@ -1095,6 +1204,7 @@ def main() -> int:
     vazados = procurar_segredos(q)
     if vazados:
         raise ValueError("senha ou token em texto puro no questionario (" + ", ".join(vazados) + "); guarde so o nome da credencial em credencial_ref e apague o valor")
+    validar_entradas(q)
     if not q.get("respondido_em"):
         q["respondido_em"] = date.today().isoformat()
     ap = (q.get("0_empresa_e_projeto", {}) or {}).get("0_16_aprovador", {}) or {}
@@ -1218,7 +1328,7 @@ def main() -> int:
                 pass
         gi = projeto / ".gitignore"
         if not gi.exists():
-            saida.append(write_new(gi, "# nunca versionar segredos nem gerados\n.env\n.env.*\n!.env.exemplo\ntarget/\nnode_modules/\n.claude/worktrees/\n"))
+            saida.append(write_new(gi, "# nunca versionar segredos nem gerados\n.env\n.env.*\n!.env.exemplo\n.claude/settings.local.json\n__pycache__/\n*.pyc\ntarget/\nnode_modules/\n.claude/worktrees/\n"))
 
     # As respostas legiveis: regravadas sempre, porque sao renderizacao do JSON.
     resp = wx / "respostas_questionario.md"

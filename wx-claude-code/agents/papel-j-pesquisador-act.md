@@ -1,6 +1,6 @@
 ---
 name: papel-j-pesquisador-act
-description: "Act do PDCA do papel J (pesquisador): fecha o ciclo com `pmo.py pdca fechar`; infrutífero exige a próxima hipótese; move o item na matriz (e por consequência ."
+description: "Act do PDCA do papel J (pesquisador): fecha o ciclo com `pmo.py pdca fechar`; infrutífero exige a próxima hipótese; move o item na matriz (e por consequência no Kanban) e devolve o retorno ao papel."
 model: haiku
 effort: medium
 tools: Read, Glob, Grep, Bash, Write, Edit

@@ -8,7 +8,7 @@
 | `evidence-curator` | Sonnet, high | inventário, hashes, PDFs, imagens e mapa de cobertura | sim |
 | `help-indexer` | Haiku, medium | verificação e consulta mecânica do corpus 12k e de overrides | não |
 | `pdf-forensics` | Sonnet, medium | qualidade de extração/OCR e localizadores | não |
-| `wlanguage-specialist` | Opus, high | semântica WLanguage e equivalências | não |
+| `wlanguage-specialist` | Opus, high | semântica WLanguage e equivalências | sim (os sete `wl-*-specialist`) |
 | `business-rules-analyst` | Opus, high | regras, exceções, conflitos e critérios de aceite | sim |
 | `ui-flow-analyst` | Sonnet, high | telas, estados, navegação e responsividade | não |
 | `data-migration-architect` | Sonnet, high | schema, queries, transações e migração de dados | sim |

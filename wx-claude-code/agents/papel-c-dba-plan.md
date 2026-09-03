@@ -1,6 +1,6 @@
 ---
 name: papel-c-dba-plan
-description: "Plan do PDCA do papel C (dba): recebe o item do backlog com o papel dele, lê a base de conhecimento, escreve a hipótese com critério numérico, o que me."
+description: "Plan do PDCA do papel C (dba): recebe o item do backlog com o papel dele, lê a base de conhecimento, escreve a hipótese com critério numérico, o que medir e a premissa a confirmar; abre o ciclo com `pmo.py pdca abrir`."
 model: haiku
 effort: medium
 tools: Read, Glob, Grep, Bash

