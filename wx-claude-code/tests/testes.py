@@ -65,7 +65,18 @@ class Questionario(unittest.TestCase):
         self.assertEqual(entrega["credencial_ref"], "GITHUB_TOKEN"); self.assertEqual(entrega["github"]["usuario"], "adrianoboller")
         self.assertNotIn("abc", json.dumps(entrega))
         r2 = run(SCRIPTS / "aplicar_questionario.py", "--questionario", self.tmp / ".wx-migration/questionario.json", "--project-root", self.tmp, "--plugin-root", RAIZ)
-        self.assertEqual(r2.stdout.count("SKIPPED"), 14)
+        proc = (self.tmp / ".wx-migration/processo-de-conversao.md").read_text()
+        self.assertIn("## Backend: Rust", proc); self.assertIn("**reescrita-guiada**", proc)
+        self.assertIn("| Analise HFSQL | esquema PostgreSQL migrado por script; sqlx/diesel | G3 |", proc)
+        self.assertIn("Ritmo: modulo a modulo", proc)
+        self.assertEqual(r2.stdout.count("SKIPPED"), 15)
+
+    def test_estrategia_desconhecida_e_recusada(self):
+        q = json.loads((self.tmp / ".wx-migration/questionario.json").read_text())
+        q["H_backend"]["processo"]["estrategia"] = "big-bang"
+        (self.tmp / ".wx-migration/questionario.json").write_text(json.dumps(q))
+        r = run(SCRIPTS / "aplicar_questionario.py", "--questionario", self.tmp / ".wx-migration/questionario.json", "--project-root", self.tmp, "--plugin-root", RAIZ)
+        self.assertEqual(r.returncode, 2); self.assertIn("big-bang", r.stderr)
 
     def test_senha_em_texto_puro_e_recusada(self):
         q = json.loads((self.tmp / ".wx-migration/questionario.json").read_text())

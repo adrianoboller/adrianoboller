@@ -43,8 +43,8 @@ Requisitos: Python 3.10+ (scripts de intake e do corpus) e Node 22+ (Impeccable)
 | E | PDF completo | reserva de B, C, D e fonte de `business_rule_documents` |
 | F | Qualidade das telas com o Impeccable: oito subperguntas de ERP (operação, teclado, grids, formulários, formatos, impressão, estados, acessibilidade) e depois paleta, tema, tipografia | `PRODUCT.md`, `DESIGN.md` por seção, `fidelity.ui` |
 | G | Usar o Help completo do WX em JSON (corpus 12k) e override da versão | `wlanguage_help_json` |
-| H | Para qual linguagem converter o backend: o plugin orienta (Rust, Python, C# + WL_C#, e mais) antes de perguntar | `target` e `DEC-0001` |
-| I | Linguagens para o frontend | `target.platforms`, navegadores e dispositivos |
+| H | Para qual linguagem converter o backend: o plugin orienta (Rust, Python, C# + WL_C#, e mais), mostra o processo de conversão de cada opção e pergunta a estratégia | `target`, `DEC-0001`, `processo-de-conversao.md` |
+| I | Linguagens para o frontend, com o processo e o ritmo (tela a tela, módulo a módulo) | `target.platforms`, navegadores e dispositivos |
 | J | Ativar economia de tokens | estilo de resposta no `CLAUDE.md` e `/laudo-tokens` |
 
 As respostas ficam em `.wx-migration/questionario.json` (modelo em
@@ -112,7 +112,7 @@ Veja `exemplos/estoque-wx/LEIA-ME.md`.
 - `uso_de_tokens.py`: lê o `usage` das sessões do Claude Code (MEDIDO) e lança no orçamento do gate.
 - `hooks/portao_g0.py`: nega `Write`/`Edit` fora de `.wx-migration/` enquanto o G0 estiver `BLOCKED`.
 - `pmo.py painel`: o painel do PMO em HTML, gerado do mesmo código do `status`.
-- `tests/testes.py`: 12 testes de regressão; o validador em modo estrito os executa.
+- `tests/testes.py`: 16 testes de regressão; o validador em modo estrito os executa.
 
 ## Limitações conhecidas
 
@@ -167,6 +167,7 @@ geradas por `docs/prints/gerar.md`).
 | ![letra-h](docs/prints/13-questionario-h-orientacao-de-linguagem.png) letra H: sinais e três opções, a recomendada primeiro | ![exemplo](docs/prints/14-exemplo-estoque-g0-extracao-golden.png) o exemplo ESTOQUE no G0, extração e golden |
 | ![papeis](docs/prints/15-papeis-backlog-e-entrega-zipada.png) backlog com papel dono, Kanban por papel e a entrega zipada ao stakeholder | ![letra-f](docs/prints/16-letra-f-erp-botoes-e-design-md.png) letra F para ERP: a tabela de botões, posição e fundo no `DESIGN.md` |
 | ![bloco-0](docs/prints/17-bloco-0-empresa-e-projeto.png) bloco 0: softhouse, diretores, endereço, um item por mensagem | ![senha](docs/prints/18-senha-colada-nao-e-gravada.png) senha colada na conversa: não gravada, não repetida, revogar e usar `credencial_ref` |
+| ![processo](docs/prints/19-letra-h-processo-de-conversao.png) letra H: sinais, três opções e o processo de conversão para a escolhida, peça por peça | |
 
 ## Vídeo de uso
 

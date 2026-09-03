@@ -69,10 +69,11 @@ Quinze itens, **um por mensagem**, na ordem. É o que o PMO, o stakeholder e a e
    - **Rust** (Axum + PostgreSQL): desempenho e binário único; para volume alto, motor de cálculo ou quem já usa o PhxSql.
    - **Python** (FastAPI + PostgreSQL): entrega rápida e biblioteca para fiscal, relatório e dados; para sistemas de gestão que vão evoluir rápido.
    - **C# (.NET 8) + WL_C#**: a biblioteca WL_C# porta mais de 480 funções do WLanguage com o mesmo nome, o que torna a tradução das procedures quase mecânica; para a equipe WINDEV que vai manter o código.
-   Acrescente Go, Java ou Node quando os sinais apontarem para eles. O usuário escolhe; a escolha vira `DEC-0001` no G3.
-3. Feche a letra: framework, banco de destino (PostgreSQL por padrão), versões mínimas e forma de implantação.
+   Acrescente Go, Java ou Node quando os sinais apontarem para eles. Junto com as opções, ofereça: **«Quer ver como seria o processo de conversão para alguma delas?»** Se pedir, mostre da seção «O processo de conversão, por perfil» do mesmo documento a tabela do que cada peça do WX vira naquele perfil (procedures, classes, análise HFSQL, queries, janelas, relatórios, funções de string e data), uma opção por mensagem. O usuário escolhe a linguagem; a escolha vira `DEC-0001` no G3.
+3. Pergunte a **estratégia de conversão**, com a recomendada primeiro e o porquê em uma frase: tradução assistida (recomende com C# + WL_C# e equipe WINDEV mantendo), reescrita guiada por regras (Rust ou Python, muito código morto), estrangulamento por módulo (sistema grande em produção que não pode parar), ondas com cutover único (pequeno e médio, banco muda junto). Pergunte se ele confirma o mapeamento mostrado e o que quer diferente. Registre em `H_backend.processo`.
+4. Feche a letra: framework, banco de destino (PostgreSQL por padrão), versões mínimas e forma de implantação.
 
-**I) Para qual linguagem converter o frontend.** Mesma orientação, do mesmo documento. Ofereça **React** (TypeScript) como padrão para web, e mais duas conforme H e a plataforma: **Blazor** se H foi C#; **Flutter** se há Android e iOS; **Tauri** (Rust + React) se o produto continua desktop; Vue ou Svelte para equipes pequenas. Depois: plataformas (web, desktop, Android, iOS), navegadores e dispositivos mínimos.
+**I) Para qual linguagem converter o frontend.** Mesma orientação, do mesmo documento. Ofereça **React** (TypeScript) como padrão para web, e mais duas conforme H e a plataforma: **Blazor** se H foi C#; **Flutter** se há Android e iOS; **Tauri** (Rust + React) se o produto continua desktop; Vue ou Svelte para equipes pequenas. Depois: plataformas (web, desktop, Android, iOS), navegadores e dispositivos mínimos. E o processo, como em H: ofereça ver como cada tela vira rota e componente, pergunte a estratégia e o ritmo (tela a tela, módulo a módulo, tudo) e o que quer diferente; registre em `I_frontend.processo`.
 
 **J) Economia de tokens.** «Deseja ativar e configurar a economia de tokens? Isso instala no `CLAUDE.md` do projeto a instrução de estilo de resposta (direto ao ponto, frases curtas, um assunto por parágrafo, problema em uma linha, solução em passos numerados) e deixa pronto o comando `/wx-claude-code:laudo-tokens`, a auditoria em três fases que **não altera nada sem aprovação**.»
 
@@ -100,7 +101,10 @@ Quinze itens, **um por mensagem**, na ordem. É o que o PMO, o stakeholder e a e
 | G | «não» ao corpus | pergunte de onde virá a semântica WLanguage (Help específico ou nenhuma); sem fonte, anote o risco |
 | G | «sim» | pergunte a versão e se há override; rode o `--verify` só depois de fechar o questionário |
 | H | usuário não sabe a linguagem | faça as quatro perguntas de sinal, uma por vez, e só então mostre as três opções (Rust, Python, C# + WL_C#) com a recomendada primeiro |
-| H | linguagem escolhida | pergunte framework, banco e implantação **na mesma letra**, um item por vez |
+| H | mostrou as opções | ofereça ver o processo de conversão; «todas» = uma opção por mensagem; «já conheço» = siga para a estratégia |
+| H | pediu o processo de uma opção | mostre a tabela de peças daquele perfil e pergunte se confirma o mapeamento ou o que quer diferente; anote em `quer_diferente` |
+| H | linguagem escolhida | pergunte a estratégia, depois framework, banco e implantação **na mesma letra**, um item por vez |
+| H | estratégia estrangulamento | avise que exige fachada e sincronização de dados entre HFSQL e o banco novo, e que isso entra como `RSK-*` |
 | H | escolheu C# | em I ofereça Blazor além de React; registre que o `WL.dll` será baixado da release oficial e conferido por hash |
 | I | plataforma inclui mobile | pergunte versões mínimas de Android e iOS; se só web, pergunte navegadores |
 | J | «sim» | confirme que o `CLAUDE.md` do projeto vai receber o bloco de estilo; se já existir, diga que não será sobrescrito |
@@ -119,7 +123,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/aplicar_questionario.
   --plugin-root "${CLAUDE_PLUGIN_ROOT}"
 ```
 
-   Ele cria `.wx-migration/wx-inputs.manifest.json`, `.wx-migration/conversion.config.json`, o `CLAUDE.md` do projeto (com o estilo de resposta quando **J** for sim), o esboço `DESIGN.md` com a paleta quando **F** for sim e, do bloco 0, `empresa.md`, `entrega.json` e `pmo/{projeto.json, organograma.md, fluxograma.md, cronograma.md, riscos.md}`, que o `pmo.py iniciar` lê para preencher `previsto_para` dos gates.
+   Ele cria `.wx-migration/wx-inputs.manifest.json`, `.wx-migration/conversion.config.json`, o `CLAUDE.md` do projeto (com o estilo de resposta quando **J** for sim), o esboço `DESIGN.md` com a paleta quando **F** for sim, `processo-de-conversao.md` de **H** e **I**, e, do bloco 0, `empresa.md`, `entrega.json` e `pmo/{projeto.json, organograma.md, fluxograma.md, cronograma.md, riscos.md}`, que o `pmo.py iniciar` lê para preencher `previsto_para` dos gates.
 
 3. Se **G** for sim, verifique o corpus antes de citá-lo:
 

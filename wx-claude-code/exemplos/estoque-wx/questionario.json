@@ -407,6 +407,13 @@
       "produto": "web",
       "prioridade": "desempenho",
       "linguagem_ja_em_uso": "Rust (PhxSql)"
+    },
+    "processo": {
+      "mostrado": "todas",
+      "estrategia": "reescrita-guiada",
+      "mapeamento_confirmado": true,
+      "quer_diferente": "relatórios: manter o gerador do legado até o G6, porque as etiquetas térmicas são o risco RSK-002",
+      "observacao": ""
     }
   },
   "I_frontend": {
@@ -420,7 +427,14 @@
       "Firefox 120+",
       "Edge 120+"
     ],
-    "perfil": "react"
+    "perfil": "react",
+    "processo": {
+      "mostrado": "uma",
+      "estrategia": "ondas",
+      "telas_por_vez": "modulo a modulo",
+      "quer_diferente": "a grade de movimentação é a primeira tela, por ser a mais usada",
+      "observacao": ""
+    }
   },
   "J_economia_de_tokens": {
     "ativar": true,

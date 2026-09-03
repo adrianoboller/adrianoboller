@@ -53,7 +53,7 @@ python3 wx-claude-code/skills/conversao-wx/scripts/query_wlanguage_help.py --ver
 listagem que o modelo devolve pode omitir um item; confira por nome, não
 por contagem.
 
-**Validar o pacote** (roda os 15 testes de regressão):
+**Validar o pacote** (roda os 16 testes de regressão):
 
 ```bash
 python3 wx-claude-code/skills/conversao-wx/scripts/validate_plugin_bundle.py wx-claude-code --strict
@@ -415,6 +415,28 @@ relatórios seguem pelos outros especialistas, em qualquer perfil.
 separada, no G3. E regra de negócio não muda de comportamento por causa da
 linguagem: o golden master compara o novo com o legado seja qual for o
 destino.
+
+---
+
+**Como seria a conversão.** Junto com as opções, o wizard oferece mostrar o
+processo de cada uma: o que cada peça do projeto WX vira naquela linguagem,
+em uma tabela por perfil (procedures, classes, análise HFSQL, queries `.WDR`,
+janelas, relatórios `.WDE`, funções de string e data), e em que gate isso
+acontece. Você pode pedir uma opção, todas, ou dizer que já conhece.
+
+Depois da linguagem, ele pergunta a **estratégia**, com a recomendada primeiro:
+
+| Estratégia | Como é | Quando é recomendada |
+| --- | --- | --- |
+| tradução assistida | cada procedure vira uma função, na mesma ordem; com a WL_C# é quase mecânica | C# + WL_C#, equipe WINDEV mantendo, prazo curto |
+| reescrita guiada por regras | o inventário extrai as regras BR-* e o código novo nasce delas | Rust ou Python, muito código morto, desenho vai mudar |
+| estrangulamento por módulo | o legado fica no ar e cada módulo migra atrás de uma fachada | sistema grande em produção que não pode parar |
+| ondas com cutover único | ondas no G5 e uma virada só no G7, com paralelo antes | pequeno e médio, banco muda junto |
+
+Em I a pergunta se repete para as telas, com o ritmo (tela a tela, módulo a
+módulo, tudo). O que você confirmou e o que quer diferente vão para
+`.wx-migration/processo-de-conversao.md`, a primeira versão do que o G3
+detalha. Tabelas completas em `references/perfis-de-destino.md`.
 
 ---
 

@@ -510,6 +510,72 @@ def montar_entrega(e: dict) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# Processo de conversao: o que cada peca do WX vira no perfil escolhido, e a
+# estrategia. Primeira versao do que o G3 detalha; a tabela completa esta em
+# references/perfis-de-destino.md.
+# ---------------------------------------------------------------------------
+
+MAPA_BACKEND = {
+    "rust": ("Rust", ["funcoes em modulos por dominio, tipos fortes", "struct + impl, traits so para heranca usada", "esquema PostgreSQL migrado por script; sqlx/diesel", "repositorio por arquivo HFSQL com SQL explicito", "uma funcao por query .WDR", "API por caso de uso", "gerador de PDF proprio, comparado pagina a pagina", "std e crates mapeadas no inventario"]),
+    "python": ("Python", ["funcoes em pacotes por dominio, type hints e pydantic", "classes e dataclasses", "esquema PostgreSQL; SQLAlchemy", "repositorio por arquivo HFSQL; sessao da ORM", "uma funcao por query .WDR", "API por caso de uso", "ReportLab ou WeasyPrint", "biblioteca padrao"]),
+    "csharp-wl": ("C# + WL_C#", ["metodos estaticos com o mesmo nome da funcao WLanguage quando existe na WL_C#", "classes C# quase um para um", "esquema PostgreSQL ou SQL Server; Entity Framework (HFSQL nao esta na WL_C#)", "repositorio por arquivo; leitura por chave vira LINQ", "uma funcao por query .WDR", "API por caso de uso ou Blazor", "QuestPDF ou Report Viewer", "WL_C# com o mesmo nome (Left, DateSys, fFileExist...)"]),
+    "go": ("Go", ["funcoes por dominio", "structs", "esquema PostgreSQL; ORM da pilha", "repositorio por arquivo", "uma funcao por query", "API por caso de uso", "biblioteca da pilha", "biblioteca padrao"]),
+    "java": ("Java", ["servicos por dominio", "classes", "esquema PostgreSQL; JPA", "repositorio por arquivo", "uma funcao por query", "API por caso de uso", "JasperReports", "biblioteca padrao"]),
+    "node": ("Node", ["servicos por dominio em TypeScript", "classes", "esquema PostgreSQL; Prisma ou TypeORM", "repositorio por arquivo", "uma funcao por query", "API por caso de uso", "biblioteca da pilha", "biblioteca padrao"]),
+}
+PECAS = ["Procedures globais e locais", "Classes WLanguage", "Analise HFSQL", "HReadSeek*/HAdd/HModify e navegacao", "Queries .WDR", "Janelas e paginas", "Relatorios .WDE", "Funcoes de string, data, arquivo, JSON"]
+ESTRATEGIAS = {
+    "traducao-assistida": "cada procedure vira uma funcao no destino, na mesma ordem, com a WL_C# ou um mapa de funcoes; regra preservada literalmente",
+    "reescrita-guiada": "o inventario extrai as regras BR-* e o codigo novo nasce delas, nao do codigo velho; o golden master e a unica prova de igualdade",
+    "estrangulamento": "o legado continua no ar e cada modulo migra por vez atras de uma fachada; usuarios mudam de tela aos poucos",
+    "ondas": "tudo e convertido por ondas (G5) e a virada acontece de uma vez no G7, com paralelo antes",
+}
+
+
+def esboco_processo(q: dict) -> str:
+    h = q.get("H_backend", {}) or {}
+    i = q.get("I_frontend", {}) or {}
+    ph = h.get("processo", {}) or {}
+    pi = i.get("processo", {}) or {}
+    perfil = str(h.get("perfil", "")).lower()
+    nome, colunas = MAPA_BACKEND.get(perfil, (h.get("linguagem") or "(perfil nao escolhido)", ["(a definir no G3)"] * len(PECAS)))
+    est = ph.get("estrategia", "")
+    if est and est not in ESTRATEGIAS:
+        raise ValueError(f"estrategia {est!r} desconhecida (aceitas: {', '.join(ESTRATEGIAS)})")
+    est_i = pi.get("estrategia", "")
+    if est_i and est_i not in ESTRATEGIAS:
+        raise ValueError(f"estrategia do frontend {est_i!r} desconhecida (aceitas: {', '.join(ESTRATEGIAS)})")
+    linhas = [
+        "# Processo de conversao (letras H e I do questionario)", "",
+        "Primeira versao, gerada por `aplicar_questionario.py`; o G3 detalha e a `DEC-0001` fecha. Tabela completa em `references/perfis-de-destino.md`.", "",
+        f"## Backend: {nome} ({h.get('framework') or 'framework a definir'}, {h.get('banco') or 'banco a definir'})", "",
+        f"- Estrategia: **{est or '(pendente)'}**" + (f" — {ESTRATEGIAS[est]}" if est else ""),
+        f"- Processo mostrado ao usuario: {ph.get('mostrado') or 'nenhuma'} opcao; mapeamento confirmado: {'sim' if ph.get('mapeamento_confirmado') else 'nao'}",
+        f"- O que o usuario quer diferente: {ph.get('quer_diferente') or 'nada'}", "",
+        "| Peca do legado | Vira | Gate |", "| --- | --- | --- |",
+    ]
+    gates = ["G5", "G5", "G3", "G4", "G4", "G4", "G5", "G1"]
+    linhas += [f"| {p} | {c} | {g} |" for p, c, g in zip(PECAS, colunas, gates)]
+    linhas += ["",
+        f"## Frontend: {i.get('linguagem') or i.get('perfil') or '(perfil nao escolhido)'} ({i.get('framework') or 'framework a definir'})", "",
+        f"- Estrategia: **{est_i or '(pendente)'}**" + (f" — {ESTRATEGIAS[est_i]}" if est_i else ""),
+        f"- Ritmo: {pi.get('telas_por_vez') or 'tela a tela'}; plataformas: {', '.join(i.get('plataformas', []) or []) or '(pendente)'}",
+        f"- O que o usuario quer diferente: {pi.get('quer_diferente') or 'nada'}", "",
+        "| Peca do legado | Vira | Gate |", "| --- | --- | --- |",
+        "| Janela ou pagina | uma rota e um componente por tela, com o mesmo trace_id | G4 piloto, G5 ondas |",
+        "| Controles (campo, combo, tabela) | componentes do sistema de design (DESIGN.md), grade virtualizada quando F3 pedir | G4 |",
+        "| Eventos de controle | validacao no cliente espelhando a regra do backend; atalhos de F2 | G4 |",
+        "| Relatorio na tela | visualizador de PDF gerado pelo backend | G5 |",
+        "| Estados (vazio, erro, offline) | os de F7, em todo componente | G6 |", "",
+        "## O que nao muda com o processo", "",
+        "- Regra de negocio nao muda de comportamento; o golden master compara com o legado.",
+        "- O banco de destino e decisao separada, no G3.",
+        "- Cada peca convertida carrega o trace_id do inventario.", "",
+    ]
+    return "\n".join(linhas)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--questionario", required=True, type=Path)
@@ -548,6 +614,9 @@ def main() -> int:
     if q.get("F_estilo_impeccable", {}).get("ativar"):
         saida.append(write_new(projeto / "DESIGN.md", esboco_design(q)))
         saida.append(write_new(projeto / "PRODUCT.md", esboco_product(q)))
+
+    if q.get("H_backend", {}).get("perfil") or q.get("H_backend", {}).get("processo", {}).get("estrategia"):
+        saida.append(write_new(wx / "processo-de-conversao.md", esboco_processo(q)))
 
     e = q.get("0_empresa_e_projeto")
     if e:

@@ -57,3 +57,55 @@ o produto é desktop, web ou mobile; volume e desempenho importam; há
 linguagem já em uso na empresa; prazo manda ou qualidade manda. Com isso
 aponta uma linha da tabela, diz o porquê em uma frase e registra a escolha
 como `DEC-0001` na abertura do G3.
+
+## O processo de conversão, por perfil
+
+Escolher a linguagem sem saber **como** o legado vira código nela é escolher
+às cegas. Por isso, depois de mostrar as três opções, o wizard oferece o
+processo de cada uma: o que cada peça do projeto WX vira no destino e em que
+gate isso acontece. O usuário pode pedir o processo de uma opção só, de todas,
+ou dizer que já conhece.
+
+### O que cada peça do WX vira
+
+| Peça do legado | Rust | Python | C# + WL_C# | Go / Java / Node |
+| --- | --- | --- | --- | --- |
+| Procedures globais e locais | funções em módulos por domínio; tipos fortes desde o inventário | funções em pacotes por domínio, com type hints e pydantic para os parâmetros | métodos estáticos com **o mesmo nome** da função WLanguage quando ela existe na WL_C#; o resto vira classe de serviço | funções ou serviços por domínio |
+| Classes WLanguage | `struct` + `impl`, traits para herança usada de verdade | classes Python, dataclasses para as que só carregam dados | classes C# quase um para um | classes ou structs, conforme a linguagem |
+| Análise HFSQL (arquivos, chaves, ligações) | esquema PostgreSQL migrado por script; `sqlx` ou `diesel` | esquema PostgreSQL; SQLAlchemy | esquema PostgreSQL ou SQL Server; Entity Framework (**HFSQL não está na WL_C#**) | esquema PostgreSQL; ORM da pilha |
+| `HReadSeekFirst`, `HAdd`, `HModify`, filtros e navegação | repositório por arquivo, com consultas SQL explícitas; cursor vira paginação | repositório por arquivo; sessão da ORM | repositório por arquivo; o padrão de leitura por chave vira consulta LINQ | repositório por arquivo |
+| Queries `.WDR` | SQL revisado e parametrizado, uma função por query | SQL revisado, uma função por query | SQL revisado, uma função por query | idem |
+| Janelas e páginas | API por caso de uso; a tela é do frontend | API por caso de uso | API por caso de uso, ou Blazor se a pilha for uma só | API por caso de uso |
+| Eventos de controle (`Exit`, `Modification`, `Click`) | validações viram regras no backend e comportamento no frontend, com o trace_id do evento | idem | idem, e os que só formatam texto usam a WL_C# | idem |
+| Relatórios `.WDE` | gerador de PDF próprio ou serviço; comparado página a página | ReportLab ou WeasyPrint | QuestPDF ou Report Viewer | biblioteca da pilha |
+| Funções de string, data, arquivo, JSON | crates da `std` e do ecossistema, mapeadas no inventário | biblioteca padrão | **WL_C# com o mesmo nome** (`Left`, `DateSys`, `fFileExist`…), conferida por hash | biblioteca padrão |
+| Threads, timers, sockets | `tokio` | `asyncio` ou jobs | `Task` e `HttpClient` | goroutines / executores / event loop |
+
+### As quatro estratégias
+
+O processo também é uma escolha, e o wizard pergunta qual, com a recomendada primeiro:
+
+| Estratégia | Como é | Quando recomendar | Custo |
+| --- | --- | --- | --- |
+| **Tradução assistida** | cada procedure vira uma função no destino, na mesma ordem, com a WL_C# ou um mapa de funções; regra de negócio preservada literalmente | C# + WL_C#; equipe WINDEV mantendo; prazo curto | carrega o desenho do legado para o novo |
+| **Reescrita guiada por regras** | o inventário extrai as regras de negócio (BR-*) e o código novo é escrito a partir delas, não do código velho | Rust ou Python; sistemas com muito código morto; quando o desenho vai mudar | exige regras completas antes do G3, e o golden master é a única prova de igualdade |
+| **Estrangulamento por módulo** | o legado continua no ar e cada módulo migra por vez atrás de uma fachada (API ou banco compartilhado); usuários mudam de tela aos poucos | sistemas grandes em produção que não podem parar; prazo longo | duas pilhas ao mesmo tempo; sincronizar dados entre HFSQL e o banco novo |
+| **Ondas com cutover único** | tudo é convertido por ondas (G5) e a virada acontece de uma vez no G7, com paralelo antes | sistemas pequenos e médios; quando o banco muda junto | período de paralelo, treinamento em bloco |
+
+O que fica registrado: `H_backend.processo` e `I_frontend.processo` com a
+estratégia, o que o usuário confirmou do mapeamento e o que quer diferente.
+O `aplicar_questionario.py` escreve `.wx-migration/processo-de-conversao.md`
+com a tabela do perfil escolhido, a estratégia e os gates em que cada peça é
+convertida. Esse arquivo é a primeira versão do que o G3 vai detalhar.
+
+### Como cada estratégia atravessa os gates
+
+| Gate | Tradução assistida | Reescrita guiada | Estrangulamento | Ondas |
+| --- | --- | --- | --- | --- |
+| G1 inventário | procedures e funções contadas; o mapa WL → destino é medido (quantas têm equivalente direto) | regras BR-* extraídas e aprovadas | módulos e suas dependências; ordem de estrangulamento | ondas definidas por dependência |
+| G2 especificação | contrato por procedure | contrato por regra | fachada e contrato de sincronização | contrato por onda |
+| G3 arquitetura | `DEC-0001` linguagem, mapa de funções fechado | `DEC-0001`, desenho novo | fachada, sincronização de dados | pilha e banco |
+| G4 piloto | um módulo traduzido de ponta a ponta, golden igual | um fluxo reescrito, golden igual | primeiro módulo estrangulado em produção | primeira onda em homologação |
+| G5 ondas | tradução em lote, por tema WLanguage | reescrita por domínio | um módulo por vez, em produção | ondas seguintes |
+| G6 endurecimento | dead code, desempenho, segurança | idem | desligar o legado módulo a módulo | paralelo |
+| G7 cutover | virada | virada | último módulo; legado desligado | virada única |

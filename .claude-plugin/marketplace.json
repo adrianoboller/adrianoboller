@@ -11,7 +11,7 @@
     {
       "name": "wx-claude-code",
       "description": "Conversao governada de projetos WX para outra linguagem, com questionario inicial, gates, Impeccable e laudo de tokens.",
-      "version": "3.7.0",
+      "version": "3.7.1",
       "source": "./wx-claude-code",
       "category": "migration",
       "tags": [

@@ -295,7 +295,14 @@
       "prioridade": "",
       "linguagem_ja_em_uso": ""
     },
-    "observacao": "perfil: rust | python | csharp-wl | go | java | node; sinais preenchidos quando o usuário não sabia a linguagem"
+    "observacao": "perfil: rust | python | csharp-wl | go | java | node; sinais preenchidos quando o usuário não sabia a linguagem",
+    "processo": {
+      "mostrado": "nenhuma",
+      "estrategia": "",
+      "mapeamento_confirmado": null,
+      "quer_diferente": "",
+      "observacao": "mostrado: nenhuma | uma | todas (quantas opcoes o usuario pediu para ver o processo); estrategia: traducao-assistida | reescrita-guiada | estrangulamento | ondas"
+    }
   },
   "I_frontend": {
     "perfil": "",
@@ -303,7 +310,14 @@
     "framework": "",
     "plataformas": [],
     "navegadores_e_dispositivos": [],
-    "observacao": "perfil: react | vue | svelte | blazor | flutter | tauri"
+    "observacao": "perfil: react | vue | svelte | blazor | flutter | tauri",
+    "processo": {
+      "mostrado": "nenhuma",
+      "estrategia": "",
+      "telas_por_vez": "tela a tela",
+      "quer_diferente": "",
+      "observacao": "estrategia: mesma lista de H; telas_por_vez: tela a tela | modulo a modulo | tudo"
+    }
   },
   "J_economia_de_tokens": {
     "ativar": false,
