@@ -53,7 +53,7 @@ python3 wx-claude-code/skills/conversao-wx/scripts/query_wlanguage_help.py --ver
 listagem que o modelo devolve pode omitir um item; confira por nome, não
 por contagem.
 
-**Validar o pacote** (roda os 19 testes de regressão):
+**Validar o pacote** (roda os 20 testes de regressão):
 
 ```bash
 python3 wx-claude-code/skills/conversao-wx/scripts/validate_plugin_bundle.py wx-claude-code --strict
@@ -121,6 +121,18 @@ que não tem fonte aparece como `INDISPONÍVEL`, nunca como zero.
 Cria `.wx-migration/pmo/` com plano por gate, orçamento, RAID (riscos,
 premissas, issues, dependências), backlog, base de conhecimento e a pasta de
 ciclos PDCA.
+
+**O relatório sai no fim, sozinho.** Fechar uma sprint (`pmo.py sprint
+fechar`) e entregar ao stakeholder (`pmo.py entregar`) geram
+`pmo/relatorio.md` e `pmo/painel.html` sem ninguém pedir. O relatório tem
+onze seções, todas lidas dos arquivos: empresa e contrato (prazo com os dias
+restantes, orçamento, marcos), o painel de gates, a rastreabilidade por tipo
+com os itens bloqueados, as tabelas inteiras de lacunas, decisões e riscos, a
+história das sprints com a vazão medida, os ciclos PDCA, o roteamento por
+classe e modelo, a estratégia de conversão e o destino da entrega, e os
+próximos passos derivados do que está acima (próximo gate, sprint aberta,
+itens a desbloquear, decisões pendentes, lacunas críticas, prazo vencido).
+`pmo.py relatorio` imprime o mesmo texto a qualquer hora.
 
 **O que o PMO já recebe do wizard.** O bloco 0 do questionário (capítulo 6)
 deixa em `pmo/` o cronograma com o prazo final, o organograma, o fluxograma,

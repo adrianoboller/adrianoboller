@@ -1,6 +1,6 @@
 ---
 description: "PMO da conversao WX com Scrum, Kanban e PDCA: sprints, quadro com WIP, base de conhecimento, orcamento de tokens e painel medido."
-argument-hint: "[iniciar|status|sprint|kanban|pdca|orcamento|entregar] [raiz-do-projeto]"
+argument-hint: "[iniciar|status|relatorio|sprint|kanban|pdca|orcamento|entregar|painel] [raiz-do-projeto]"
 allowed-tools: "Read, Glob, Grep, Bash, Write, Edit, Agent, AskUserQuestion"
 ---
 

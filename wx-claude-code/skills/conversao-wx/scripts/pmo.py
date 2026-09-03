@@ -12,7 +12,8 @@ Subcomandos:
   pdca      abre ou fecha um ciclo PDCA; o fechamento grava em base_de_conhecimento.md
   kanban    regenera o quadro kanban.md da matriz de rastreabilidade, com limite de WIP
   sprint    abre ou fecha uma sprint Scrum (backlog, objetivo, definicao de pronto)
-  painel    gera pmo/painel.html (status + kanban + base de conhecimento) para o aprovador abrir sem terminal
+  painel    gera pmo/painel.html e pmo/relatorio.md (relatorio completo + kanban + base) para o aprovador abrir sem terminal
+  relatorio imprime o relatorio completo em markdown (11 secoes, tudo medido dos arquivos)
   entregar  zipa a entrega da sprint para o stakeholder: resumo, tecnicas aplicadas, base de conhecimento,
             ferramentas usadas (docstrings dos .py), decisoes, lacunas e o kanban do fechamento
 
@@ -306,7 +307,9 @@ def sprint_fechar(wx: Path, decisao: str, pedido: str) -> str:
     plano_p.write_text(json.dumps(plano, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     destino = wx / "pmo" / "sprints" / f"sprint-{s['numero']:02d}-{s['gate']}-{hoje}.md"
     saida = write_new(destino, "\n".join(md) + "\n")
-    return f"sprint {s['numero']} fechada ({decisao}); prontos {len(prontos)}/{len(s['itens'])}; {saida}"
+    # Fechar sprint e o momento em que o aprovador quer ver o todo: o painel sai junto.
+    p = painel(wx)
+    return f"sprint {s['numero']} fechada ({decisao}); prontos {len(prontos)}/{len(s['itens'])}; {saida}; CREATED {p} (+ relatorio.md)"
 
 
 def gastar(wx: Path, gate: str, modelo: str, tokens: int, chamadas: int) -> str:
@@ -468,10 +471,214 @@ def status(wx: Path) -> str:
     return "\n".join(linhas)
 
 
+def _tabela_md(caminho: Path, prefixo_id: str) -> list[str]:
+    """Copia as linhas de tabela de um .md que comecem por um id (GAP-, RSK-...), com o cabecalho."""
+    if not caminho.is_file():
+        return []
+    linhas = caminho.read_text(encoding="utf-8").splitlines()
+    saida, cab = [], None
+    for i, l in enumerate(linhas):
+        if l.startswith("| id") or l.startswith("| ID"):
+            cab = (l, linhas[i + 1] if i + 1 < len(linhas) else "| --- |")
+        if l.startswith(f"| {prefixo_id}") and cab:
+            if not saida:
+                saida += list(cab)
+            saida.append(l)
+    return saida
+
+
+def relatorio(wx: Path) -> str:
+    """Relatorio detalhado do projeto: o status() mais o contrato, a rastreabilidade por tipo,
+    as tabelas inteiras de lacunas, decisoes e riscos, a historia das sprints, o roteamento
+    por classe e os proximos passos. Tudo lido dos arquivos; o que nao existe fica INDISPONIVEL."""
+    hoje = date.today()
+    L = ["# Relatório do projeto", "", f"Gerado por `pmo.py relatorio` em {hoje.isoformat()}. Todo número tem fonte ao lado; o que não foi medido está marcado INDISPONÍVEL.", ""]
+
+    # 1. Contrato (bloco 0 do questionario)
+    L += ["## 1. Empresa e contrato", ""]
+    proj_p = wx / "pmo" / "projeto.json"
+    emp_p = wx / "empresa.md"
+    if proj_p.is_file():
+        pj = json.loads(proj_p.read_text(encoding="utf-8"))
+        L.append(f"- Softhouse: {pj.get('softhouse') or '(pendente)'}")
+        L.append(f"- Solicitação: {pj.get('solicitacao') or '(pendente)'}")
+        prazo = pj.get("prazo_final", "")
+        if prazo:
+            try:
+                d = (date.fromisoformat(prazo) - hoje).days
+                L.append(f"- Prazo final: **{prazo}** ({d} dias {'restantes' if d >= 0 else 'de atraso'}). MEDIDO.")
+            except ValueError:
+                L.append(f"- Prazo final: {prazo} (fora do formato AAAA-MM-DD)")
+        else:
+            L.append("- Prazo final: INDISPONÍVEL")
+        o = pj.get("orcamento_financeiro", {})
+        L.append(f"- Orçamento: {o.get('valor') if o.get('valor') is not None else 'INDISPONÍVEL'} {o.get('moeda', '')} ({o.get('base') or 'base não informada'}), aprovado por {o.get('aprovado_por') or '(pendente)'}")
+        if pj.get("marcos"):
+            L += ["", "| marco | data | gate |", "| --- | --- | --- |"] + [f"| {m.get('marco','')} | {m.get('data','')} | {m.get('gate','')} |" for m in pj["marcos"]]
+        L += ["", "Fonte: `pmo/projeto.json` (bloco 0 do questionário)" + (", `empresa.md`" if emp_p.is_file() else "") + ".", ""]
+    else:
+        L += ["INDISPONÍVEL: `pmo/projeto.json` não existe; o bloco 0 do questionário não foi aplicado.", ""]
+
+    # 2. Painel resumido (status)
+    st, pular = [], False
+    for l in status(wx).split("\n")[3:]:
+        if l.startswith("## "):
+            pular = l.startswith("## Prazo e orçamento")  # ja esta na secao 1
+        if not pular:
+            st.append(l.replace("## ", "### "))
+    L += ["## 2. Painel", ""] + st + [""]
+
+    # 3. Rastreabilidade por tipo e itens bloqueados
+    tr = wx / "traceability.csv"
+    L += ["## 3. Rastreabilidade por tipo", ""]
+    if tr.is_file():
+        with tr.open(encoding="utf-8", newline="") as f:
+            rows = list(csv.DictReader(f))
+        tipos = {}
+        for r in rows:
+            k = r.get("kind") or "?"
+            tipos.setdefault(k, Counter())[r.get("status") or "?"] += 1
+        estados = ["inventoried", "specified", "implemented", "verified", "accepted", "blocked"]
+        L += ["| tipo | " + " | ".join(estados) + " | total |", "| --- | " + " | ".join("---:" for _ in estados) + " | ---: |"]
+        for k in sorted(tipos):
+            L.append(f"| {k} | " + " | ".join(str(tipos[k].get(e, 0)) for e in estados) + f" | {sum(tipos[k].values())} |")
+        bloq = [r for r in rows if r.get("status") == "blocked"]
+        L += ["", f"Itens bloqueados: {len(bloq)}" + ("" if not bloq else " — " + "; ".join(f"{r['trace_id']} ({r.get('notes') or r.get('rule_summary') or 'sem nota'})" for r in bloq)) + ". Fonte: `traceability.csv`. MEDIDO.", ""]
+    else:
+        L += ["INDISPONÍVEL: `traceability.csv` não existe.", ""]
+
+    # 4. Lacunas, 5. Decisoes, 6. Riscos
+    L += ["## 4. Lacunas (GAP-*)", ""]
+    t = _tabela_md(wx / "gaps.md", "GAP-")
+    L += (t + ["", "Fonte: `gaps.md`."]) if t else ["Nenhuma lacuna registrada" + ("" if (wx / "gaps.md").is_file() else " (`gaps.md` não existe)") + "."]
+    L.append("")
+    L += ["## 5. Decisões (DEC-*)", ""]
+    dec = wx / "decisions"
+    if dec.is_dir() and any(dec.glob("DEC-*.md")):
+        L += ["| id | título | status |", "| --- | --- | --- |"]
+        for p in sorted(dec.glob("DEC-*.md")):
+            txt = p.read_text(encoding="utf-8")
+            titulo = next((l.lstrip("# ").strip() for l in txt.splitlines() if l.startswith("# ")), p.stem)
+            m = re.search(r"Status:\s*(\w+)", txt)
+            L.append(f"| {p.stem} | {titulo} | {m.group(1) if m else 'INDISPONÍVEL'} |")
+        L += ["", "Fonte: `decisions/`."]
+    else:
+        L.append("Nenhuma decisão registrada em `decisions/`.")
+    L.append("")
+    L += ["## 6. Riscos (RAID)", ""]
+    t = _tabela_md(wx / "pmo" / "riscos.md", "RSK-")
+    L += (t + ["", "Fonte: `pmo/riscos.md`."]) if t else ["Nenhum risco registrado em `pmo/riscos.md`."]
+    L.append("")
+
+    # 7. Sprints
+    L += ["## 7. Sprints", ""]
+    plano_p = wx / "pmo" / "plano.json"
+    if plano_p.is_file():
+        plano = json.loads(plano_p.read_text(encoding="utf-8"))
+        sp = plano.get("sprints", [])
+        if sp:
+            L += ["| nº | nome | gate | itens | prontos | decisão | aberta em | fechada em |", "| ---: | --- | --- | ---: | ---: | --- | --- | --- |"]
+            for s in sp:
+                L.append(f"| {s['numero']:02d} | {s['nome']} | {s['gate']} | {len(s['itens'])} | {s.get('prontos', '—') if s.get('status') == 'fechada' else '—'} | {s.get('decisao', 'aberta')} | {s.get('aberta_em', '')} | {s.get('fechada_em', '')} |")
+            fech = [s for s in sp if s.get("status") == "fechada"]
+            if fech:
+                tot = sum(len(s["itens"]) for s in fech); pr = sum(s.get("prontos", 0) for s in fech)
+                L += ["", f"Vazão medida: {pr}/{tot} itens prontos em {len(fech)} sprint(s) fechada(s) ({100.0*pr/tot:.0f}%)." if tot else ""]
+            L += ["", "Fonte: `pmo/plano.json`; resumos em `pmo/sprints/`."]
+        else:
+            L.append("Nenhuma sprint registrada.")
+    else:
+        L.append("INDISPONÍVEL: `pmo/plano.json` não existe.")
+    L.append("")
+
+    # 8. PDCA
+    L += ["## 8. Ciclos PDCA e base de conhecimento", ""]
+    base = wx / "pmo" / "base_de_conhecimento.md"
+    bl = [l for l in base.read_text(encoding="utf-8").splitlines() if l.startswith("|")] if base.is_file() else []
+    L += (bl + ["", "Fonte: `pmo/base_de_conhecimento.md`."]) if len(bl) > 2 else ["Nenhum ciclo fechado ainda."]
+    L.append("")
+
+    # 9. Roteamento por classe e modelo
+    L += ["## 9. Roteamento de modelos", ""]
+    rot = wx / "pmo" / "roteamento.jsonl"
+    if rot.is_file():
+        decs = [json.loads(l) for l in rot.read_text(encoding="utf-8").splitlines() if l.strip()]
+        if decs:
+            por = {}
+            for d in decs:
+                classe = next((m.split(" ", 1)[1] for m in d.get("motivos", []) if m.startswith("classe ")), d.get("classe", "?"))
+                por.setdefault(classe, Counter())[d.get("modelo", "?")] += 1
+            modelos = sorted({d.get("modelo", "?") for d in decs})
+            L += ["| classe | " + " | ".join(modelos) + " |", "| --- | " + " | ".join("---:" for _ in modelos) + " |"]
+            for c in sorted(por):
+                L.append(f"| {c} | " + " | ".join(str(por[c].get(m, 0)) for m in modelos) + " |")
+            esc = Counter(m for d in decs for m in d.get("motivos", []))
+            L += ["", "Motivos de escalada e rebaixamento: " + (", ".join(f"{k} {v}" for k, v in esc.most_common(8)) if esc else "nenhum") + ". Fonte: `pmo/roteamento.jsonl`. MEDIDO."]
+        else:
+            L.append("0 decisões registradas.")
+    else:
+        L.append("0 decisões registradas (`pmo/roteamento.jsonl` não existe).")
+    L.append("")
+
+    # 10. Processo e entrega
+    L += ["## 10. Processo de conversão e entrega", ""]
+    proc = wx / "processo-de-conversao.md"
+    if proc.is_file():
+        pt = proc.read_text(encoding="utf-8")
+        est = re.findall(r"Estrategia: \*\*(.+?)\*\*", pt)
+        L.append(f"- Estratégia: backend **{est[0] if est else 'pendente'}**, frontend **{est[1] if len(est) > 1 else 'pendente'}**. Fonte: `processo-de-conversao.md`.")
+    else:
+        L.append("- Processo de conversão: INDISPONÍVEL (`processo-de-conversao.md` não existe).")
+    ent = wx / "entrega.json"
+    if ent.is_file():
+        e = json.loads(ent.read_text(encoding="utf-8"))
+        g = e.get("github", {})
+        L.append(f"- Destino: {g.get('url') or '(pendente)'} (branch `{g.get('branch', 'main')}`, usuário {g.get('usuario') or '?'}), diretório `{e.get('diretorio_destino') or '?'}`; credencial em `{e.get('credencial_ref') or '(pendente)'}`. Fonte: `entrega.json`.")
+    else:
+        L.append("- Destino: INDISPONÍVEL (`entrega.json` não existe).")
+    L.append("")
+
+    # 11. Proximos passos, derivados do que esta acima
+    L += ["## 11. Próximos passos (derivados)", ""]
+    passos = []
+    if plano_p.is_file():
+        plano = json.loads(plano_p.read_text(encoding="utf-8"))
+        prox = next((g for g in GATES if plano["gates"].get(g, {}).get("status") != "aprovado"), None)
+        if prox:
+            passos.append(f"Próximo gate: **{prox}** ({plano['gates'][prox].get('status', '?')}; previsto para {plano['gates'][prox].get('previsto_para') or 'sem data'}), aprovador {plano['gates'][prox].get('aprovador', '?')}.")
+        ab = [s for s in plano.get("sprints", []) if s.get("status") == "aberta"]
+        if ab:
+            passos.append(f"Fechar a sprint {ab[0]['numero']:02d} «{ab[0]['nome']}» com `pmo.py sprint fechar`.")
+    if tr.is_file():
+        with tr.open(encoding="utf-8", newline="") as f:
+            bloq = [r["trace_id"] for r in csv.DictReader(f) if r.get("status") == "blocked"]
+        if bloq:
+            passos.append(f"Desbloquear {len(bloq)} item(ns): {', '.join(bloq)}.")
+    if dec.is_dir():
+        pend = [p.stem for p in sorted(dec.glob("DEC-*.md")) if re.search(r"Status:\s*proposed", p.read_text(encoding="utf-8"))]
+        if pend:
+            passos.append(f"Decidir {', '.join(pend)}.")
+    if (wx / "gaps.md").is_file():
+        crit = len(re.findall(r"\|\s*cr[ií]tica\s*\|", (wx / "gaps.md").read_text(encoding="utf-8"), flags=re.I))
+        if crit:
+            passos.append(f"Resolver {crit} lacuna(s) crítica(s) antes do próximo gate.")
+    if proj_p.is_file():
+        pj = json.loads(proj_p.read_text(encoding="utf-8"))
+        try:
+            if pj.get("prazo_final") and (date.fromisoformat(pj["prazo_final"]) - hoje).days < 0:
+                passos.append("Prazo final vencido: renegociar o cronograma com o aprovador.")
+        except ValueError:
+            pass
+    L += [f"{i}. {p}" for i, p in enumerate(passos, 1)] or ["Nada derivado: os arquivos do PMO não existem ainda (`pmo.py iniciar`)."]
+    L.append("")
+    return "\n".join(L)
+
+
 def painel(wx: Path) -> Path:
-    """HTML do painel, gerado do mesmo status()/kanban(): nenhum numero e digitado aqui."""
+    """HTML do painel, gerado do mesmo relatorio()/kanban(): nenhum numero e digitado aqui."""
     import html as _html
-    md_status = status(wx)
+    md_status = relatorio(wx)
+    (wx / "pmo" / "relatorio.md").write_text(md_status + "\n", encoding="utf-8")
     md_kanban = kanban(wx)
     base = wx / "pmo" / "base_de_conhecimento.md"
     md_base = base.read_text(encoding="utf-8") if base.is_file() else "INDISPONÍVEL"
@@ -492,6 +699,10 @@ def painel(wx: Path) -> Path:
             fecha()
             if l.startswith("# "): saida.append(f"<h1>{_html.escape(l[2:])}</h1>")
             elif l.startswith("## "): saida.append(f"<h2>{_html.escape(l[3:])}</h2>")
+            elif l.startswith("### "): saida.append(f"<h3>{_html.escape(l[4:])}</h3>")
+            elif re.match(r"^\d+\. ", l):
+                item = re.sub(r"^\d+\. ", "", l)
+                saida.append(f"<li>{_html.escape(item)}</li>")
             elif l.startswith("- "): saida.append(f"<li>{_html.escape(l[2:])}</li>")
             elif l.strip(): saida.append(f"<p>{_html.escape(l)}</p>")
         fecha()
@@ -499,14 +710,14 @@ def painel(wx: Path) -> Path:
     css = ("<style>:root{--g:#FBFAF7;--p:#fff;--i:#14161F;--m:#7A7E90;--l:#E4E2DB;--a:#C63C0A}"
            "@media(prefers-color-scheme:dark){:root{--g:#0B0D17;--p:#121527;--i:#EDEDF3;--m:#8A8FA6;--l:#252A42;--a:#E2261C}}"
            "body{margin:0;background:var(--g);color:var(--i);font:15px/1.5 system-ui,sans-serif}.w{max-width:1000px;margin:0 auto;padding:28px 20px}"
-           "h1{font-size:26px;color:var(--a);margin:.2em 0}h2{font-size:17px;margin:1.6em 0 .4em;border-bottom:1px solid var(--l);padding-bottom:4px}"
+           "h1{font-size:26px;color:var(--a);margin:.2em 0}h2{font-size:17px;margin:1.6em 0 .4em;border-bottom:1px solid var(--l);padding-bottom:4px}h3{font-size:14px;margin:1.2em 0 .3em;color:var(--m);text-transform:uppercase;letter-spacing:.05em}"
            "table{border-collapse:collapse;width:100%;font-size:14px;background:var(--p)}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--l);vertical-align:top}th{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--m)}"
            "td:nth-child(n+2):not(:last-child){font-variant-numeric:tabular-nums}li{margin:.2em 0}code{font-family:ui-monospace,monospace}.est{color:var(--a);font-weight:700}"
            ".col{display:grid;grid-template-columns:1fr 1fr;gap:24px}@media(max-width:800px){.col{grid-template-columns:1fr}}</style>")
     corpo = (f"<!doctype html><html lang=\"pt-BR\"><head><meta charset=\"utf-8\"><title>Painel do PMO</title>{css}</head><body><div class=\"w\">"
              + md2html(md_status).replace("ESTOURADO", "<span class=\"est\">ESTOURADO</span>")
              + "<div class=\"col\"><div>" + md2html(md_kanban).replace("ESTOURADO", "<span class=\"est\">ESTOURADO</span>") + "</div><div>" + md2html(md_base) + "</div></div>"
-             + f"<p style=\"color:var(--m);font-size:12px\">Gerado por pmo.py painel em {date.today().isoformat()}; regenerar em vez de editar.</p></div></body></html>")
+             + f"<p style=\"color:var(--m);font-size:12px\">Gerado por pmo.py painel em {date.today().isoformat()}; regenerar em vez de editar. O mesmo conteúdo em texto está em pmo/relatorio.md.</p></div></body></html>")
     destino = wx / "pmo" / "painel.html"
     destino.write_text(corpo, encoding="utf-8")
     return destino
@@ -570,7 +781,7 @@ def entregar(wx: Path, numero: int | None, plugin_root: Path | None) -> Path:
         ferr += [f"## `{f.name}`", "", doc.strip(), ""]
 
     with zipfile.ZipFile(destino, "w", zipfile.ZIP_DEFLATED) as z:
-        z.writestr(f"sprint-{n:02d}/LEIA-ME.md", f"# Entrega da sprint {n:02d} ({s['gate']})\n\nGerado em {hoje} por `pmo.py entregar`.\n\n- `resumo-da-sprint.md`: resumo de doze seções (ou aviso se a sprint ainda estiver aberta)\n- `tecnicas-aplicadas.md`: Scrum, Kanban, PDCA e balanceamento, com números medidos\n- `base-de-conhecimento.md`: todos os ciclos PDCA fechados\n- `ferramentas.md`: o que cada script faz, lido do próprio script\n- `kanban.md`, `status.md`: estado no fechamento\n- `decisoes/`, `gaps.md`, `riscos.md`: decisões, lacunas e RAID\n- `desenvolvimento/`: os .md produzidos em specifications/ e architecture/\n")
+        z.writestr(f"sprint-{n:02d}/LEIA-ME.md", f"# Entrega da sprint {n:02d} ({s['gate']})\n\nGerado em {hoje} por `pmo.py entregar`.\n\n- `resumo-da-sprint.md`: resumo de doze seções (ou aviso se a sprint ainda estiver aberta)\n- `tecnicas-aplicadas.md`: Scrum, Kanban, PDCA e balanceamento, com números medidos\n- `base-de-conhecimento.md`: todos os ciclos PDCA fechados\n- `ferramentas.md`: o que cada script faz, lido do próprio script\n- `kanban.md`, `status.md`: estado no fechamento\n- `relatorio.md`, `painel.html`: o relatório completo (contrato, rastreabilidade por tipo, lacunas, decisões, riscos, sprints, PDCA, roteamento, entrega, próximos passos) em texto e em HTML\n- `decisoes/`, `gaps.md`, `riscos.md`: decisões, lacunas e RAID\n- `desenvolvimento/`: os .md produzidos em specifications/ e architecture/\n")
         resumo = sorted(pasta.parent.joinpath("sprints").glob(f"sprint-{n:02d}-*.md"))
         z.writestr(f"sprint-{n:02d}/resumo-da-sprint.md", resumo[-1].read_text(encoding="utf-8") if resumo else f"Sprint {n:02d} ainda aberta: o resumo de doze seções é escrito por `pmo.py sprint fechar`.\n")
         z.writestr(f"sprint-{n:02d}/tecnicas-aplicadas.md", "\n".join(tecnicas) + "\n")
@@ -578,6 +789,8 @@ def entregar(wx: Path, numero: int | None, plugin_root: Path | None) -> Path:
         z.writestr(f"sprint-{n:02d}/ferramentas.md", "\n".join(ferr) + "\n")
         z.writestr(f"sprint-{n:02d}/kanban.md", kb + "\n")
         z.writestr(f"sprint-{n:02d}/status.md", status(wx) + "\n")
+        z.writestr(f"sprint-{n:02d}/relatorio.md", relatorio(wx) + "\n")
+        z.write(painel(wx), f"sprint-{n:02d}/painel.html")
         for nome_arq in ("gaps.md", "traceability.csv"):
             if (wx / nome_arq).is_file():
                 z.write(wx / nome_arq, f"sprint-{n:02d}/{nome_arq}")
@@ -608,6 +821,7 @@ def main() -> int:
     fch = pds.add_parser("fechar"); fch.add_argument("--id", required=True); fch.add_argument("--resultado", required=True, choices=["frutifero", "infrutifero"]); fch.add_argument("--medido", required=True); fch.add_argument("--aprendizado", required=True); fch.add_argument("--proxima", default="")
     sub.add_parser("kanban")
     sub.add_parser("painel")
+    sub.add_parser("relatorio")
     en = sub.add_parser("entregar"); en.add_argument("--sprint", type=int, help="número; padrão: a última"); en.add_argument("--plugin-root", type=Path, help="para listar as ferramentas do plugin")
     sp = sub.add_parser("sprint"); sps = sp.add_subparsers(dest="acao", required=True)
     sa = sps.add_parser("abrir"); sa.add_argument("--nome", required=True); sa.add_argument("--objetivo", required=True); sa.add_argument("--gate", required=True, choices=GATES); sa.add_argument("--item", action="append", default=[], help="trace_id, ou trace_id:PAPEL (A–J) para registrar o dono no backlog; repetível"); sa.add_argument("--aprovador", default="")
@@ -627,6 +841,8 @@ def main() -> int:
         print(kanban(wx))
     elif args.cmd == "painel":
         print(f"CREATED {painel(wx)}")
+    elif args.cmd == "relatorio":
+        print(relatorio(wx))
     elif args.cmd == "entregar":
         z = entregar(wx, args.sprint, args.plugin_root)
         import zipfile

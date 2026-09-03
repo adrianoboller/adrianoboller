@@ -21,6 +21,8 @@ registra. O agente é `pmo-gerente-de-projetos`; o comando é
   pdca/               um PDCA-NNN.md por ciclo
   base_de_conhecimento.md  uma linha por ciclo fechado, frutífero ou não
   status.md           painel gerado: gates, cobertura, orçamento, bloqueios
+  relatorio.md        relatório de onze seções, gerado ao fechar sprint e no entregar
+  painel.html         o relatório, o kanban e a base em HTML (tema claro e escuro)
 ```
 
 ## O que o PMO mede (e de onde)

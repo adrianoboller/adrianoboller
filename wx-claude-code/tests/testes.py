@@ -211,6 +211,30 @@ class PMO(unittest.TestCase):
         tec = zipfile.ZipFile(z).read("sprint-01/tecnicas-aplicadas.md").decode()
         self.assertIn("## PDCA", tec); self.assertIn("Fonte:", tec)
 
+    def test_relatorio_e_painel_saem_ao_fechar_sprint_e_na_entrega(self):
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            shutil.copytree(EXEMPLO / "inputs", tmp / "inputs"); (tmp / ".wx-migration").mkdir()
+            shutil.copy(EXEMPLO / "questionario.json", tmp / ".wx-migration" / "questionario.json")
+            run(SCRIPTS / "aplicar_questionario.py", "--questionario", tmp / ".wx-migration/questionario.json", "--project-root", tmp, "--plugin-root", RAIZ)
+            run(SCRIPTS / "pmo.py", "--project-root", tmp, "iniciar", "--aprovador", "A")
+            (tmp / ".wx-migration/traceability.csv").write_text("trace_id,kind,status,notes\nBR-001,business_rule,accepted,\nINT-001,integration,blocked,sem ambiente\n")
+            r = run(SCRIPTS / "pmo.py", "--project-root", tmp, "relatorio").stdout
+            for secao in ("## 1. Empresa e contrato", "Prazo final: **2026-12-18**", "| business_rule |", "Itens bloqueados: 1", "| RSK-001 |", "## 11. Próximos passos", "Desbloquear 1 item(ns): INT-001", "credencial em `GITHUB_TOKEN`"):
+                self.assertIn(secao, r)
+            self.assertNotIn("abc123", r)
+            run(SCRIPTS / "pmo.py", "--project-root", tmp, "sprint", "abrir", "--nome", "S1", "--objetivo", "o", "--gate", "G4", "--item", "BR-001:B", "--aprovador", "A")
+            r = run(SCRIPTS / "pmo.py", "--project-root", tmp, "sprint", "fechar", "--decisao", "APPROVED", "--pedido", "")
+            self.assertIn("painel.html", r.stdout); self.assertTrue((tmp / ".wx-migration/pmo/painel.html").is_file()); self.assertTrue((tmp / ".wx-migration/pmo/relatorio.md").is_file())
+            self.assertIn("Empresa e contrato", (tmp / ".wx-migration/pmo/painel.html").read_text())
+            r = run(SCRIPTS / "pmo.py", "--project-root", tmp, "entregar", "--plugin-root", RAIZ)
+            import zipfile
+            z = zipfile.ZipFile(next((tmp / ".wx-migration/pmo/entregas").glob("*.zip")))
+            nomes = z.namelist()
+            self.assertTrue(any(n.endswith("/painel.html") for n in nomes)); self.assertTrue(any(n.endswith("/relatorio.md") for n in nomes))
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
     def test_status_sem_numero_inventado(self):
         r = run(SCRIPTS / "pmo.py", "--project-root", self.tmp, "status")
         self.assertIn("1/9 = 11.1%", r.stdout)
