@@ -255,8 +255,20 @@ phxsql-sql`), e só duas continuam do zero. «Vazio» era mentira por omissão.
 | SP000022 | Operadores relacionais avançados | **NÃO INICIADO no nível SQL (03/09)** — `JOIN`/`INNER`/`LEFT`/`RIGHT`, `DISTINCT`, `GROUP BY` geral, `AND`/`OR`, `LIKE`, `IN`, `BETWEEN` são todos reconhecidos pelo léxico só para serem recusados, cada um com motivo próprio (`sintaxe.rs:306,317-326,334,520-533,539`). As operações embaixo (`juntar` com sete formas, `unir`, `pivotar`) já existem no protocolo e até têm UI própria (pedido 91, clicar no diagrama de Venn) — mas nenhuma é alcançável escrevendo SQL |
 | SP000023 | Estatísticas, otimizador, `EXPLAIN` e conformidade SQL | **NÃO INICIADO (03/09)** — nenhuma referência a `EXPLAIN`, `ANALYZE`, estatística ou custo em `crates/phxsql-sql/`. O tradutor documenta a ausência do lado de dentro: «não há planejador: se houvesse dois candidatos, o primeiro declarado venceria» (`traduzir.rs:224`). Nenhum teste do crate cobre otimização ou conformidade |
 
-Hoje o `phxsql-sql` é o começo da camada: `SELECT` simples traduzido para as
-operações que já existem no protocolo.
+Uma frase resumia isto como «o começo da camada: `SELECT` simples traduzido
+para as operações que já existem no protocolo» — e ela envelheceu junto com a
+coluna vazia que a remedição acabou de encher. O resumo certo é outro, e as
+cinco parciais acima o dizem juntas: **o SQL não alcança o que o motor já sabe
+fazer.** `juntar`, `unir` e `pivotar` existem, têm tela e têm teste, e nenhuma
+é escrevível como `JOIN`; `INSERT` funciona dentro do corpo de uma rotina e é
+recusado como comando solto; o avaliador de expressão que atende `CONCAT` e
+`COALESCE` num gatilho não atende um `WHERE`. Não falta motor: falta o caminho
+do texto SQL até ele.
+
+Os números de cada sprint ficam **só na tabela acima**, e é lá que se
+atualizam. Repeti-los aqui seria a segunda contagem da mesma coisa — o jeito
+clássico de dois pedaços do mesmo documento discordarem, que já custou ao
+dossiê um painel dizendo 28.914 enquanto a seção ao lado dizia 34.048.
 
 ## PhxSql 0.23 — Segurança
 
