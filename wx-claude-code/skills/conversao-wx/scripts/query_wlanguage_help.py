@@ -675,6 +675,7 @@ def query_archive(
     version: str | None,
     platform: str | None,
     limit: int,
+    groups: tuple[str, ...] = (),
 ) -> tuple[list[dict[str, object]], int]:
     phrases = tuple(dict.fromkeys(normalize(query) for query in raw_queries))
     terms = tuple(dict.fromkeys(term for phrase in phrases for term in WORD_RE.findall(phrase)))
@@ -688,6 +689,10 @@ def query_archive(
     }
     for member in audit.page_members:
         if member in quarantined:
+            continue
+        # O nome do membro comeca pelo codigo do tema (GG-SS-TT): filtrar por
+        # prefixo evita ler o JSON das paginas que o especialista nao cobre.
+        if groups and not member.rsplit("/", 1)[-1].startswith(groups):
             continue
         raw, member_sha256 = read_member(archive, infos[member])
         try:
@@ -757,6 +762,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--version", help="filtra pela versão declarada, por exemplo 2026")
     parser.add_argument("--platform", help="filtra pela plataforma declarada")
+    parser.add_argument(
+        "--group",
+        action="append",
+        metavar="GG-SS-TT",
+        help="restringe aos temas do indice (prefixo do nome do membro); pode ser repetido",
+    )
     parser.add_argument("--limit", type=bounded_int, default=10, metavar="1..50")
     parser.add_argument(
         "--corpus",
@@ -784,8 +795,12 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("--expected-sha256 só pode ser usado com --corpus")
         corpus_path = DEFAULT_CORPUS
         expected_sha256 = EXPECTED_SHA256
-    if args.verify and (args.version is not None or args.platform is not None):
-        parser.error("--version e --platform são válidos somente com --query")
+    if args.verify and (args.version is not None or args.platform is not None or args.group):
+        parser.error("--version, --platform e --group são válidos somente com --query")
+    groups = tuple(args.group or ())
+    for group in groups:
+        if not re.fullmatch(r"\d{2}(-\d{2}(-\d{2})?)?", group):
+            parser.error(f"--group inválido: {group!r} (formato GG, GG-SS ou GG-SS-TT)")
     queries = tuple(args.query or ())
     if len(queries) > MAX_QUERY_COUNT:
         parser.error(f"--query pode ser repetido no máximo {MAX_QUERY_COUNT} vezes")
@@ -813,13 +828,14 @@ def main(argv: list[str] | None = None) -> int:
                     args.version,
                     args.platform,
                     args.limit,
+                    groups,
                 )
                 search_ms = round((time.perf_counter() - search_started) * 1000, 3)
                 output = {
                     "status": audit.metadata["status"],
                     "archive": audit.metadata["archive"],
                     "query": list(queries),
-                    "filters": {"version": args.version, "platform": args.platform},
+                    "filters": {"version": args.version, "platform": args.platform, "groups": list(groups)},
                     "matched": matched,
                     "returned": len(results),
                     "quarantined_members": audit.metadata["quarantined_members"],

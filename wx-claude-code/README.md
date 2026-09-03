@@ -26,6 +26,7 @@ Requisitos: Python 3.10+ (scripts de intake e do corpus) e Node 22+ (Impeccable)
 | `/wx-claude-code:converter` | Conversão por gates G0–G7 (pré-flight, inventário, especificação, arquitetura, piloto vertical, ondas, endurecimento, cutover). |
 | `/wx-claude-code:estilo-telas` | Paleta, tema, tipografia e densidade viram `PRODUCT.md` e `DESIGN.md` pelo Impeccable; cada tela convertida nasce nesse sistema. |
 | `/wx-claude-code:laudo-tokens` | Laudo de uso de tokens em 3 fases. Somente leitura; nada muda sem aprovação. |
+| `/wx-claude-code:pmo` | Gerente de projetos: plano por gates, orçamento de tokens por modelo, RAID, resumo de sprint e painel com números medidos. |
 | `/impeccable <comando> <alvo>` | Os 23 comandos do Impeccable (`polish`, `audit`, `critique`, `shape`, `harden`…). |
 
 ## O questionário
@@ -59,9 +60,23 @@ nunca sobrescreve o que já existe.
 - `laudo-uso-tokens`: a *SKILL Laudo_Uso_Tokens*, com o prompt-mestre curto
   (o que se cola) e o detalhado (o contrato das três fases).
 
+## Equipe WLanguage, balanceamento e PMO
+
+- **Sete especialistas WLanguage por tema do Help** (`wl-hfsql`, `wl-ui-controls`,
+  `wl-communication`, `wl-standard-functions`, `wl-mobile`, `wl-web`,
+  `wl-errors`). Cada um consulta só a sua fatia do corpus com `--group`, o
+  que reduziu uma busca de 5,4 s para 0,5 s. Divisão em
+  `skills/conversao-wx/references/equipe-wlanguage.md`.
+- **Balanceamento de modelos**: `rotear_modelo.py` escolhe `haiku`, `sonnet`
+  ou `opus` e o effort pela classe da tarefa, pelos sinais de risco e pelo
+  orçamento do gate; regra em `references/balanceamento-de-modelos.md`.
+- **PMO**: `pmo.py` mantém plano, orçamento medido, RAID e o painel
+  `.wx-migration/pmo/status.md`; o agente `pmo-gerente-de-projetos` abre e
+  fecha cada gate. Regra em `references/pmo.md`.
+
 ## Agentes
 
-22 agentes da conversão (orquestrador, curadoria de evidências, WLanguage,
+30 agentes da conversão (orquestrador, curadoria de evidências, WLanguage,
 regras, telas, dados, arquitetura, implementação, testes, segurança,
 integrações, relatórios, desempenho, cutover, auditoria de qualidade, design,
 grids e planilhas) mais os 4 do Impeccable. A topologia e os modelos estão em
@@ -83,7 +98,8 @@ geradas por `docs/prints/gerar.md`).
 | ![validar](docs/prints/01-instalar-e-validar.png) `claude plugin validate` | ![skills](docs/prints/02-skills-e-agentes.png) skills e agentes numa sessão nova |
 | ![questionario](docs/prints/03-questionario-a-j.png) `/wx-claude-code:questionario` | ![preflight](docs/prints/04-aplicar-e-preflight.png) respostas viram manifesto e Gate G0 |
 | ![design](docs/prints/05-design-md-impeccable.png) `DESIGN.md` da letra F | ![help](docs/prints/06-corpus-help-wlanguage.png) corpus WLanguage 12k |
-| ![laudo](docs/prints/07-laudo-tokens-fase-1.png) `/wx-claude-code:laudo-tokens` | |
+| ![laudo](docs/prints/07-laudo-tokens-fase-1.png) `/wx-claude-code:laudo-tokens` | ![pmo](docs/prints/08-pmo-orcamento-e-roteamento.png) PMO: orçamento, roteamento e painel |
+| ![equipe](docs/prints/09-equipe-wlanguage-por-tema.png) delegação real aos `wl-*-specialist` | |
 
 ## Pacotes
 

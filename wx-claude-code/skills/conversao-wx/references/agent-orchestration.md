@@ -26,6 +26,16 @@
 | `design-quality-specialist` | Sonnet, high | revisão visual/acessibilidade e companions opcionais | não |
 | `grid-migration-specialist` | Sonnet, high | contratos de grid, virtualização, edição e exportação | não |
 | `spreadsheet-evidence-specialist` | Sonnet, medium | plano seguro para sincronização opcional de evidências | não |
+| `pmo-gerente-de-projetos` | Opus, high | plano por gates, orçamento de tokens, RAID, sprints e painel medido | sim |
+| `wl-hfsql-specialist` | Sonnet, high | Help temas 01-03-*, 10-01, 12-01: HFSQL, Big Data, conectores | não |
+| `wl-ui-controls-specialist` | Sonnet, high | Help temas 01-04-02, 02-03-*, 02-04, 13-01: controles, janelas, páginas | não |
+| `wl-communication-specialist` | Sonnet, high | Help temas 01-04-01, 17-01: e-mail, HTTP, REST, SOAP, soquete | não |
+| `wl-standard-functions-specialist` | Sonnet, high | Help temas 01-04-04, 01-05, 01-06, 01-02, 07-01: funções, propriedades, sintaxe | não |
+| `wl-mobile-specialist` | Sonnet, high | Help temas 01-04-03, 15-01: WINDEV Mobile | não |
+| `wl-web-specialist` | Sonnet, high | Help temas 01-04-05, 02-05, 05-*: WEBDEV | não |
+| `wl-errors-specialist` | Sonnet, high | Help temas 01-01, 03-01: erros de compilação e runtime | não |
+
+O modelo da tabela é o ponto de partida; a escolha final por tarefa sai de `scripts/rotear_modelo.py`, conforme [balanceamento-de-modelos.md](balanceamento-de-modelos.md). A divisão da equipe WLanguage por tema do Help está em [equipe-wlanguage.md](equipe-wlanguage.md).
 
 Use aliases de modelo para acompanhar atualizações do Claude Code. Se um modelo não estiver autorizado na organização, registre o fallback efetivamente usado.
 
@@ -43,6 +53,8 @@ Use aliases de modelo para acompanhar atualizações do Claude Code. Se um model
 ## Subagentes
 
 - `wx-claude-code:evidence-curator` pode delegar a `wx-claude-code:help-indexer` e `wx-claude-code:pdf-forensics`.
+- `wx-claude-code:wlanguage-specialist` delega por tema aos sete `wx-claude-code:wl-*-specialist`, cada um restrito à sua fatia do corpus (`--group`).
+- `wx-claude-code:pmo-gerente-de-projetos` acompanha toda a sequência: abre a sprint do gate, registra o uso medido e escreve o resumo no fechamento.
 - `wx-claude-code:business-rules-analyst` pode delegar análises por domínio funcional.
 - `wx-claude-code:data-migration-architect` pode delegar schema, queries e ensaio de migração.
 - `wx-claude-code:implementation-lead` pode delegar por módulo e depois encadear testes.

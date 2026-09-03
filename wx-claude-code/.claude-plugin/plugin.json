@@ -1,8 +1,8 @@
 {
   "name": "wx-claude-code",
   "displayName": "WX Claude Code",
-  "description": "Conversao governada de projetos WINDEV, WEBDEV e WINDEV Mobile para outra linguagem: questionario inicial (A-J), intake por gates G0-G7, corpus WLanguage 12k, estilo de telas com Impeccable, 22 agentes e laudo de uso de tokens.",
-  "version": "3.0.0",
+  "description": "Conversao governada de projetos WINDEV, WEBDEV e WINDEV Mobile: questionario A-J, gates G0-G7, equipe WLanguage por tema do Help, balanceamento de modelos, PMO, Impeccable e laudo de tokens.",
+  "version": "3.1.0",
   "author": {
     "name": "Adriano Boller"
   },
@@ -37,6 +37,7 @@
     "./agents/module-converter.md",
     "./agents/pdf-forensics.md",
     "./agents/performance-capacity-specialist.md",
+    "./agents/pmo-gerente-de-projetos.md",
     "./agents/quality-auditor.md",
     "./agents/release-cutover-specialist.md",
     "./agents/reports-printing-specialist.md",
@@ -46,6 +47,13 @@
     "./agents/target-architect.md",
     "./agents/test-engineer.md",
     "./agents/ui-flow-analyst.md",
+    "./agents/wl-communication-specialist.md",
+    "./agents/wl-errors-specialist.md",
+    "./agents/wl-hfsql-specialist.md",
+    "./agents/wl-mobile-specialist.md",
+    "./agents/wl-standard-functions-specialist.md",
+    "./agents/wl-ui-controls-specialist.md",
+    "./agents/wl-web-specialist.md",
     "./agents/wlanguage-specialist.md",
     "./agents/wx-orchestrator.md"
   ],

@@ -77,7 +77,7 @@ Cada execução é versionada e não sobrescreve relatórios anteriores. No Wind
 
 ## 3. Orquestração
 
-Leia [agent-orchestration.md](references/agent-orchestration.md). Delegue primeiro ao agente `wx-claude-code:wx-orchestrator` com o caminho do manifesto, modo escolhido, status do pré-flight e respostas do usuário.
+Leia [agent-orchestration.md](references/agent-orchestration.md), [equipe-wlanguage.md](references/equipe-wlanguage.md) (sete especialistas, cada um numa fatia do Help por `--group`), [balanceamento-de-modelos.md](references/balanceamento-de-modelos.md) (`scripts/rotear_modelo.py` escolhe modelo e effort por classe de tarefa e orçamento) e [pmo.md](references/pmo.md) (o `pmo-gerente-de-projetos` abre e fecha cada gate com números medidos). Delegue primeiro ao agente `wx-claude-code:wx-orchestrator` com o caminho do manifesto, modo escolhido, status do pré-flight e respostas do usuário.
 
 O orquestrador deve usar agentes e subagentes especializados, paralelizando somente investigações independentes. Se os agentes do plugin não estiverem instalados, crie subagentes `general-purpose` com as funções e modelos de [agent-orchestration.md](references/agent-orchestration.md). Escritas concorrentes devem ocorrer em módulos separados ou worktrees. Nenhum agente decide requisito ausente.
 

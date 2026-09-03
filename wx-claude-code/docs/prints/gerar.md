@@ -12,6 +12,8 @@ e renderizada num terminal pelo Chromium (Playwright), a 2× de escala.
 | 04 | `aplicar_questionario.py` sobre respostas de exemplo e o `wx_preflight.py` real (BLOCKED por PDF de mentira, como devia) |
 | 05 | o `DESIGN.md` que a letra F gera |
 | 06 | `query_wlanguage_help.py --verify` e `--query HReadSeekFirst` |
+| 08 | `pmo.py iniciar/gastar/status` e `rotear_modelo.py` com subida, rebaixamento a 85 %, bloqueio a 105 % e fallback |
+| 09 | sessão `-p` com `Agent` liberado: dois símbolos delegados aos `wl-hfsql-specialist` e `wl-communication-specialist`, com o member do Help de cada um |
 | 07 | `claude -p "/wx-claude-code:laudo-tokens fase-1"` com fonte de sessões marcada INDISPONÍVEL |
 
 Para refazer: grave a saída em `.txt` e rode o renderizador (um `.mjs` de 40
