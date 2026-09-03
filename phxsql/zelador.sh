@@ -126,6 +126,93 @@ if guardados:
     print("  %d guardados: PID vivo ou mexidos ha menos de 30 min" % guardados)
 FIM
 
+# Os bundles do backup: 28 arquivos de ~19 MiB cresciam sem ninguem olhar, e o
+# zelador nao os enxergava -- a guarda existia, mas o alcance dela parava no
+# `target` e nos worktrees. Backup, porem, e a ultima coisa que um zelador pode
+# apagar por palpite, entao aqui a prova e por OBJETO, nunca por data:
+#
+#   1. nenhum processo vivo tem o arquivo aberto (por caminho real, em /proc)
+#   2. TODA cabeca do bundle antigo e alcancavel a partir das cabecas do bundle
+#      mais novo -- ou seja, ele nao carrega um commit que o novo perdeu
+#
+# O criterio 2 e o que importa: bundle de uma frente descartada guarda commit
+# que nao esta mais em ref nenhuma, e esse FICA. Foi para isso que ele existe.
+#
+# Duas geracoes sobrevivem, e nao uma: bundle corrompido nao avisa antes da
+# hora em que se precisa dele.
+echo "-- bundles do backup"
+python3 - "$VER" "$REPO" <<'FIM'
+import os, re, subprocess, sys, glob
+
+so_ver = sys.argv[1] == "--ver"
+repo = sys.argv[2]
+
+def git(*args, cwd=repo):
+    return subprocess.run(("git",) + args, cwd=cwd, capture_output=True, text=True)
+
+# So os que o proprio script de backup gera entram na rotacao. Bundle com nome
+# escolhido a mao -- `guardado.bundle` -- e decisao de alguem, e decisao nao se
+# desfaz por rotina, mesmo com a prova de que o conteudo esta contido: o que
+# esta guardado ali e o NOME, nao o objeto.
+gerado = re.compile(r"^phxsql-\d{8}-\d{4}\.bundle$")
+bundles = sorted(
+    (b for b in glob.glob(os.path.join(repo, "*.bundle"))
+     if gerado.match(os.path.basename(b))),
+    key=os.path.getmtime,
+)
+if len(bundles) < 3:
+    print("  %d bundles, nada a fazer (duas geracoes ficam sempre)" % len(bundles))
+    raise SystemExit
+
+novo = bundles[-1]
+if git("bundle", "verify", novo).returncode != 0:
+    print("  o bundle mais novo NAO passa no verify -- nao apago nada")
+    raise SystemExit
+
+def cabecas(b):
+    r = git("bundle", "list-heads", b)
+    return [l.split()[0] for l in r.stdout.splitlines() if l.strip()]
+
+# O conjunto de tudo o que o bundle novo alcanca. Uma varredura so, e nao uma
+# por bundle: `rev-list` com 30 cabecas custa o mesmo que com uma.
+alcanca = set(git("rev-list", *cabecas(novo)).stdout.split())
+
+# Arquivos abertos por processo vivo, por caminho real -- a mesma conferencia
+# que `em_uso` faz para diretorio, so que por descritor em vez de cwd.
+abertos = set()
+for p in os.listdir("/proc"):
+    if not p.isdigit():
+        continue
+    d = "/proc/%s/fd" % p
+    try:
+        for fd in os.listdir(d):
+            try:
+                abertos.add(os.readlink(os.path.join(d, fd)))
+            except OSError:
+                pass
+    except OSError:
+        pass
+
+apagados = bytes_ = 0
+for b in bundles[:-2]:          # as duas geracoes mais novas nunca entram
+    nome = os.path.basename(b)
+    if b in abertos:
+        print("  %-34s ABERTO por processo vivo, nao toco" % nome)
+        continue
+    sobra = [c for c in cabecas(b) if c not in alcanca]
+    if sobra:
+        print("  %-34s GUARDO: %d commit(s) que o novo nao tem" % (nome, len(sobra)))
+        continue
+    t = os.path.getsize(b)
+    print("  %-34s %4d MiB  contido no mais novo" % (nome, t // (1024 * 1024)))
+    if not so_ver:
+        os.remove(b)
+    apagados += 1
+    bytes_ += t
+print("  %d bundles, %d MiB%s" %
+      (apagados, bytes_ // (1024 * 1024), " (nao apagados: --ver)" if so_ver else ""))
+FIM
+
 LIVRE_DEPOIS=$(df -k "$REPO" | awk 'NR==2{print $4}')
 echo "== depois: $(df -h "$REPO" | awk 'NR==2{print $4}') livres"
 # Medido no disco, e nao somado das partes: a soma a mao ja disse 362 MiB numa

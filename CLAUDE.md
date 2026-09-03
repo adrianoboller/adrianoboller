@@ -396,8 +396,10 @@ depois vira migração.
 
 ### D — Zelador do ambiente
 
-Mantém espaço de trabalho. Existe como `phxsql/zelador.sh` e roda de hora em
-hora.
+Mantém espaço de trabalho. Existe como `phxsql/zelador.sh` — e **não roda de
+hora em hora**, ao contrário do que esta linha dizia: não há `cron` neste
+contêiner, e cada corrida foi alguém chamando o script. Papel que não está
+cumprindo aparece como não cumprindo.
 
 A regra que decide se ele ajuda ou destrói: **nada é apagado sem antes se
 provar que nenhum processo vivo está usando aquilo**. Zelador que apaga o
