@@ -146,6 +146,8 @@ def validate(root: Path, strict: bool = False) -> dict:
         "skills/conversao-wx/templates/questionario.json",
         "skills/conversao-wx/scripts/licenca.py",
         "skills/conversao-wx/scripts/verificar_ambiente.py",
+        "skills/conversao-wx/scripts/zelador.py",
+        "skills/conversao-wx/scripts/exportar_projeto.py",
         "licenca/chave-publica.json",
         "licenca/LEIA-ME.md",
         "commands/questionario.md",

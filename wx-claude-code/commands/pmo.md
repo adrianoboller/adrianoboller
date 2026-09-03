@@ -1,6 +1,6 @@
 ---
 description: "PMO da conversao WX com Scrum, Kanban e PDCA: sprints, quadro com WIP, base de conhecimento, orcamento de tokens e painel medido."
-argument-hint: "[iniciar|status|relatorio|sprint|kanban|pdca|entregar|painel|orcamento (só no comando: chama uso_de_tokens.py)] [raiz-do-projeto]"
+argument-hint: "[iniciar|status|relatorio|sprint|kanban|pdca|entregar|painel|exportar|limpar|orcamento (só no comando: chama uso_de_tokens.py)] [raiz-do-projeto]"
 allowed-tools: "Read, Glob, Grep, Bash, Write, Edit, Agent, AskUserQuestion"
 ---
 
@@ -28,6 +28,8 @@ python3 "${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/pmo.py" --project-roo
 - `kanban`: regenera `pmo/kanban.md` da matriz, com limite de WIP; coluna estourada não recebe cartão.
 - `pdca abrir|fechar`: abre um ciclo com hipótese, medida e critério numérico; fecha como frutífero ou infrutífero e grava a linha em `pmo/base_de_conhecimento.md`. Infrutífero exige a próxima hipótese.
 - `entregar`: zipa a entrega da sprint para o stakeholder (`pmo.py entregar --sprint N --plugin-root "${CLAUDE_PLUGIN_ROOT}"`): resumo de doze seções, técnicas aplicadas com números, base de conhecimento, ferramentas usadas lidas dos scripts, decisões, lacunas, RAID e o Kanban do fechamento.
+- `exportar`: grava o projeto resultante, organizado em sete pastas numeradas com manifesto de hashes, na pasta que o usuário definiu (`--destino`, ou `L3.pasta_de_saida` do questionário): `python3 "${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/exportar_projeto.py" --project-root <projeto> --destino <pasta> [--codigo <dir>] [--com-evidencias]`. `.env`, chaves, `target/`, `node_modules/` e `.git/` ficam de fora; arquivo com formato de token é recusado com o caminho.
+- `limpar`: o zelador (papel D) apaga temporários: execuções antigas do pré-flight (ficam as três últimas), logs com mais de 7 dias, `__pycache__`, worktrees parados. `python3 "${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/zelador.py" --project-root <projeto> limpar [--dias 7] [--executar]`. Sem `--executar` só relata. O hook `SessionStart` roda isso sozinho no máximo uma vez por dia e registra em `.wx-migration/logs/zelador.md`.
 - `painel`: gera `pmo/painel.html` (status, kanban e base de conhecimento) para o aprovador abrir no navegador; regenera-se, não se edita.
 - `orcamento`: prefira `uso_de_tokens.py --project-root <projeto> lancar --gate G<n>`, que lê o campo `usage` das sessões do Claude Code (MEDIDO); `pmo.py gastar` fica para lançamento manual. Depois, registra uso medido de tokens de uma rodada (`pmo.py gastar`) e reavalia o roteamento acima de 80 %.
 

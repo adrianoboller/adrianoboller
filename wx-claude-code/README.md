@@ -28,7 +28,7 @@ Requisitos: Python 3.10+ (scripts de intake e do corpus) e Node 22+ (Impeccable)
 | `/wx-claude-code:converter` | Conversão por gates G0–G7 (pré-flight, inventário, especificação, arquitetura, piloto vertical, ondas, endurecimento, cutover). |
 | `/wx-claude-code:estilo-telas` | Paleta, tema, tipografia e densidade viram `PRODUCT.md` e `DESIGN.md` pelo Impeccable; cada tela convertida nasce nesse sistema. |
 | `/wx-claude-code:laudo-tokens` | Laudo de uso de tokens em 3 fases. Somente leitura; nada muda sem aprovação. |
-| `/wx-claude-code:pmo` | Gerente de projetos: plano por gates, orçamento de tokens por modelo, RAID, resumo de sprint e o relatório de onze seções com painel HTML, gerado sozinho ao fechar sprint e na entrega. |
+| `/wx-claude-code:pmo` | Gerente de projetos: plano por gates, orçamento de tokens por modelo, RAID, resumo de sprint e o relatório de onze seções com painel HTML, gerado sozinho ao fechar sprint e na entrega; `exportar` salva o projeto organizado na pasta do usuário e `limpar` é o zelador dos temporários. |
 | `/impeccable <comando> <alvo>` | Os comandos do Impeccable (`polish`, `audit`, `critique`, `shape`, `harden`…; 23 segundo o SKILL.md de origem). |
 
 ## O questionário
@@ -114,7 +114,7 @@ Veja `exemplos/estoque-wx/LEIA-ME.md`.
 - `uso_de_tokens.py`: lê o `usage` das sessões do Claude Code (MEDIDO) e lança no orçamento do gate.
 - `hooks/portao_g0.py`: nega `Write`/`Edit` fora de `.wx-migration/` enquanto o G0 estiver `BLOCKED`.
 - `pmo.py painel`: o painel do PMO em HTML, gerado do mesmo código do `status`.
-- `tests/testes.py`: 25 testes de regressão; o validador em modo estrito os executa.
+- `tests/testes.py`: 27 testes de regressão; o validador em modo estrito os executa.
 
 ## Limitações conhecidas
 
@@ -173,7 +173,8 @@ geradas por `docs/prints/gerar.md`).
 | ![processo](docs/prints/19-letra-h-processo-de-conversao.png) letra H: sinais, três opções e o processo de conversão para a escolhida, peça por peça | ![tela-modelo](docs/prints/20-letra-f0-tela-modelo.png) F0: a tela principal do legado como modelo, aberta antes de registrar, com o que preservar e o que mudar |
 | ![licenca](docs/prints/21-licenca-serial-de-ativacao.png) serial de ativação: sem ele o PMO recusa; instalado, a mesma sessão roda | ![respostas](docs/prints/22-respostas-do-questionario.png) sessão nova acha o aprovador e o prazo em `respostas_questionario.md`, sem perguntar |
 | ![ambiente](docs/prints/23-letra-k-ambiente-sem-senha.png) letra K: PostgreSQL, papéis por nível e a senha do root que não é gravada nem repetida | ![n8n](docs/prints/24-letra-k7-n8n-integrado.png) K7: n8n sim ou não, e cada item da integração um por mensagem |
-| ![kickoff](docs/prints/25-primeira-sessao-index-e-kickoff.png) primeira sessão: lê `INDEX_FILES.md` e o kickoff, sabe o escopo da v1 e recusa código sem G0 | |
+| ![kickoff](docs/prints/25-primeira-sessao-index-e-kickoff.png) primeira sessão: lê `INDEX_FILES.md` e o kickoff, sabe o escopo da v1 e recusa código sem G0 | ![exportar](docs/prints/26-pmo-exportar-projeto-organizado.png) `pmo exportar`: o projeto organizado na pasta do usuário, sem segredo, com hashes |
+| ![zelador](docs/prints/27-zelador-limpeza-diaria.png) o zelador limpa temporários ao abrir a sessão e deixa o registro medido | |
 
 ## Licença e serial
 
@@ -181,7 +182,7 @@ O plugin só roda com serial válido em `~/.wx-claude-code/licenca`, assinado co
 
 ## Vídeo de uso
 
-`docs/video/wx-claude-code-video-de-uso.mp4` (e `.webm`), 2 min 03 s: catorze cenas com as
+`docs/video/wx-claude-code-video-de-uso.mp4` (e `.webm`), 2 min 53 s: vinte e duas cenas com as
 mesmas saídas reais dos prints, reproduzidas num terminal animado.
 
 ## Pacotes

@@ -54,7 +54,7 @@ python3 wx-claude-code/skills/conversao-wx/scripts/query_wlanguage_help.py --ver
 listagem que o modelo devolve pode omitir um item; confira por nome, não
 por contagem.
 
-**Validar o pacote** (roda os 25 testes de regressão):
+**Validar o pacote** (roda os 27 testes de regressão):
 
 ```bash
 python3 wx-claude-code/skills/conversao-wx/scripts/validate_plugin_bundle.py wx-claude-code --strict
@@ -69,7 +69,7 @@ claude plugin validate wx-claude-code
 | --- | --- | --- |
 | `/wx-claude-code:questionario <projeto>` | o wizard: bloco 0 e letras A–L, um item por mensagem; gera `.wx-migration/` e o contexto do projeto | sempre primeiro |
 | `/wx-claude-code:converter <modo> <projeto>` | conversão por gates G0–G7; `modo` é `inventario`, `plano`, `piloto` ou `completo` | depois do wizard |
-| `/wx-claude-code:pmo <ação> <projeto>` | gerência: `iniciar`, `status`, `relatorio`, `sprint`, `kanban`, `pdca`, `orcamento`, `entregar`, `painel` | durante toda a conversão |
+| `/wx-claude-code:pmo <ação> <projeto>` | gerência: `iniciar`, `status`, `relatorio`, `sprint`, `kanban`, `pdca`, `orcamento`, `entregar`, `painel`, `exportar`, `limpar` | durante toda a conversão |
 | `/wx-claude-code:estilo-telas <projeto>` | paleta, tema e tipografia viram `PRODUCT.md` e `DESIGN.md` pelo Impeccable | quando a letra F foi «sim» |
 | `/wx-claude-code:laudo-tokens [fase]` | auditoria de consumo em três fases, somente leitura | quando quiser medir o custo |
 | `/impeccable <comando> <alvo>` | os comandos de qualidade gráfica (23 segundo o SKILL.md de origem): `shape`, `polish`, `audit`, `critique`, `harden`… | em cada tela convertida |
@@ -90,6 +90,8 @@ ficam em `$CLAUDE_PLUGIN_ROOT/skills/conversao-wx/scripts/`:
 | `verificar_ambiente.py` | mede o que está instalado contra o mínimo pedido em K |
 | `licenca.py` | serial de ativação: chaves, gerar, instalar, verificar, hooks |
 | `safe_unpack_bundle.py` | descompacta anexo zipado com defesa contra travessia e zip bomb |
+| `exportar_projeto.py` | salva o projeto resultante organizado, com manifesto de hashes, na pasta do usuário |
+| `zelador.py` | limpa temporários uma vez por dia; nunca toca anexo, matriz, PMO ou código |
 
 **Atalhos.** Crie os seus em `.claude/commands/<nome>.md` no projeto. Exemplo
 para polir telas com as regras da conversão já embutidas:
@@ -137,6 +139,23 @@ classe e modelo, a estratégia de conversão e o destino da entrega, e os
 próximos passos derivados do que está acima (próximo gate, sprint aberta,
 itens a desbloquear, decisões pendentes, lacunas críticas, prazo vencido).
 `pmo.py relatorio` imprime o mesmo texto a qualquer hora.
+
+**Salvar o projeto resultante numa pasta sua.** `/wx-claude-code:pmo exportar`
+(ou `exportar_projeto.py --destino <pasta>`) grava em `<pasta>/<nome>-<data>/`
+sete pastas numeradas: questionário, evidências (por hash, ou copiadas com
+`--com-evidencias`), inventário e decisões, PMO, ambiente e prompts, código e
+relatório final, com um `00-LEIA-ME.md` e um `manifesto.json` que tem o
+SHA-256 de cada arquivo. `.env`, chaves, `target/`, `node_modules/` e `.git/`
+ficam de fora; arquivo com formato de token é recusado com o caminho. A pasta
+pode vir do questionário (`L3.pasta_de_saida`).
+
+**O zelador limpa os temporários.** Uma vez por dia, ao abrir a sessão, o
+hook roda `zelador.py` e apaga só o que é temporário: execuções antigas do
+pré-flight (ficam as três últimas), logs com mais de 7 dias, `__pycache__` e
+worktrees parados. Anexos, matriz, decisões, PMO, entregas e código não
+entram. Cada rodada fica em `.wx-migration/logs/zelador.md` com os bytes
+medidos; `/wx-claude-code:pmo limpar` roda na hora, e sem `--executar` só
+relata.
 
 **O que o PMO já recebe do wizard.** O bloco 0 do questionário (capítulo 6)
 deixa em `pmo/` o cronograma com o prazo final, o organograma, o fluxograma,

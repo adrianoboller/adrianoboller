@@ -56,6 +56,11 @@
             "type": "command",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/licenca.py\" hook-sessao",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/zelador.py\" hook-sessao",
+            "timeout": 20
           }
         ]
       }

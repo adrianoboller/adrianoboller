@@ -20,7 +20,7 @@ function fmt(line) {
 // cenas: [titulo, legenda, texto, comandoDigitado?, maxLinhas?]
 const MARCA = 'data:image/png;base64,' + readFileSync('/home/user/adrianoboller/wx-claude-code/marca-wx-claude-code.png').toString('base64');
 const scenes = [
-  ['card', 'WX Claude Code', 'Conversão governada de projetos WINDEV, WEBDEV e WINDEV Mobile\nQuestionário: bloco 0 da empresa e letras A–J · Gates G0–G7 · Equipe WLanguage sobre o Help da PC SOFT · PMO com Scrum, Kanban e PDCA\n\nTudo que aparece a seguir é saída real de sessões do Claude Code e dos scripts do plugin.'],
+  ['card', 'WX Claude Code', 'Conversão governada de projetos WINDEV, WEBDEV e WINDEV Mobile\nQuestionário: bloco 0 da empresa e letras A–L · Gates G0–G7 · Equipe WLanguage sobre o Help da PC SOFT · PMO com Scrum, Kanban e PDCA\n\nTudo que aparece a seguir é saída real de sessões do Claude Code e dos scripts do plugin.'],
   ['claude plugin validate', '1 · Instalar e validar o plugin', cap('validate')],
   ['/wx-claude-code:questionario · bloco 0', '2 · Antes da letra A: quem pede, diretores, endereço, logotipos, prazo, orçamento, riscos e GitHub, um item por vez', cap('questionario-0')],
   ['/wx-claude-code:questionario · 0.15', '3 · Senha colada na conversa não é gravada nem repetida: só o nome da credencial entra no entrega.json', cap('senha').split('\n').slice(0,12).join('\n'), 'Boller Sistemas Ltda. Converter o ESTOQUE para Rust + React. Já adianto o GitHub: usuário adrianoboller, senha ●●●●●●●, repositório https://github.com/adrianoboller/estoque-rs'],
@@ -35,6 +35,14 @@ const scenes = [
   ['pmo.py kanban', '12 · Kanban gerado da matriz, com limite de WIP', cap('pmo2').split('\n').slice(33, 65).join('\n')],
   ['/wx-claude-code:pmo status', '13 · O agente do PMO lê o painel e aponta o que trava', cap('pmo-sessao')],
   ['/wx-claude-code:laudo-tokens', '14 · Laudo de uso de tokens: somente leitura, MEDIDO ou INDISPONÍVEL', cap('laudo'), '/wx-claude-code:laudo-tokens fase-1'],
+  ['/wx-claude-code:questionario · F0', '15 · A tela principal do legado como modelo: aberta antes de registrar, o que preservar e o que mudar', cap('tela-modelo')],
+  ['sessão nova · respostas_questionario.md', '16 · Uma sessão nova acha o aprovador e o prazo nas respostas gravadas, sem perguntar', cap('respostas')],
+  ['sessão nova · INDEX_FILES.md e kickoff', '17 · A primeira sessão lê o mapa e o kickoff, sabe o escopo da v1 e recusa código sem G0', cap('kickoff')],
+  ['/wx-claude-code:questionario · K2', '18 · Ambiente: PostgreSQL, papéis por nível, e a senha do root que não é gravada nem repetida', cap('k2')],
+  ['/wx-claude-code:questionario · K7', '19 · n8n integrado ao projeto: sim ou não, e cada item da integração um por mensagem', cap('k7')],
+  ['licenca.py', '20 · Serial de ativação: sem ele o PMO recusa; instalado, a mesma sessão roda', cap('licenca')],
+  ['/wx-claude-code:pmo exportar', '21 · O projeto resultante salvo, organizado, na pasta do usuário, sem segredo e com hashes', cap('exportar')],
+  ['zelador.py · SessionStart', '22 · O zelador limpa temporários uma vez por dia e deixa o registro medido', cap('zelador')],
   ['card', 'Built to convert. Engineered to prove.', 'claude plugin marketplace add adrianoboller/adrianoboller\nclaude plugin install wx-claude-code@wx-claude-code\n\nManual completo em MANUAL.md'],
 ];
 const html = `<!doctype html><meta charset="utf-8"><style>

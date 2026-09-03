@@ -662,7 +662,8 @@
         "RUST_LOG"
       ],
       "healthcheck": "/health",
-      "observacao": ""
+      "observacao": "; pasta_de_saida: pasta do usuario onde exportar_projeto.py grava o projeto organizado (<nome>-<data>)",
+      "pasta_de_saida": "~/entregas-wx"
     },
     "L4_hooks_do_projeto": {
       "testar_ao_parar": true,

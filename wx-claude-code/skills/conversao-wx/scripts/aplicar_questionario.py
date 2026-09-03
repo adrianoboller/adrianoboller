@@ -506,6 +506,7 @@ def validar_entradas(q: dict) -> None:
     _porta(imp.get("porta"), "L3 porta")
     _confere(imp.get("dominio"), RX_HOST, "L3 dominio")
     _confere(imp.get("healthcheck"), re.compile(r"^/[A-Za-z0-9._/-]*$"), "L3 healthcheck")
+    _confere(imp.get("pasta_de_saida"), RX_CAMINHO, "L3 pasta_de_saida")
     for v in imp.get("variaveis_de_ambiente") or []:
         _confere(v, RX_VAR, "L3 variavel de ambiente", opcional=False)
     l4 = l.get("L4_hooks_do_projeto") or {}

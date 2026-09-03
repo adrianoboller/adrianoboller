@@ -419,6 +419,65 @@ class HookG0(unittest.TestCase):
 
 
 
+class ExportarEZelador(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        shutil.copytree(EXEMPLO / "inputs", self.tmp / "inputs"); (self.tmp / ".wx-migration").mkdir()
+        shutil.copy(EXEMPLO / "questionario.json", self.tmp / ".wx-migration" / "questionario.json")
+        run(SCRIPTS / "aplicar_questionario.py", "--questionario", self.tmp / ".wx-migration/questionario.json", "--project-root", self.tmp, "--plugin-root", RAIZ)
+        run(SCRIPTS / "pmo.py", "--project-root", self.tmp, "iniciar")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_exporta_organizado_sem_segredos_e_com_hashes(self):
+        cod = self.tmp / "estoque-rs"; (cod / "src").mkdir(parents=True); (cod / "target").mkdir()
+        (cod / "src/main.rs").write_text("fn main(){}"); (cod / ".env").write_text("X=1"); (cod / "target/app").write_text("bin")
+        (cod / "config.txt").write_text("T=ghp_abcdefghijklmnopqrstuvwxyz0123456789")
+        saida = Path(tempfile.mkdtemp())
+        r = run(SCRIPTS / "exportar_projeto.py", "--project-root", self.tmp, "--destino", saida, "--codigo", cod)
+        self.assertEqual(r.returncode, 0, r.stderr); raiz = next(saida.iterdir())
+        for pasta in ("01-questionario", "02-evidencias", "03-inventario-e-decisoes", "04-pmo", "05-ambiente-e-prompts", "06-codigo", "07-relatorio-final"):
+            self.assertTrue((raiz / pasta).is_dir(), pasta)
+        self.assertTrue((raiz / "06-codigo/src/main.rs").is_file()); self.assertFalse((raiz / "06-codigo/.env").exists()); self.assertFalse((raiz / "06-codigo/target").exists())
+        self.assertFalse((raiz / "06-codigo/config.txt").exists())
+        m = json.loads((raiz / "manifesto.json").read_text())
+        self.assertEqual(m["recusados_por_segredo"], ["estoque-rs/config.txt"])
+        um = next(x for x in m["arquivos"] if x["arquivo"].endswith("06-codigo/src/main.rs"))
+        import hashlib; self.assertEqual(um["sha256"], hashlib.sha256(b"fn main(){}").hexdigest())
+        self.assertTrue((raiz / "05-ambiente-e-prompts/ambiente/.env.exemplo").is_file())  # achado de sessao real: o regex de .env pegava o exemplo
+        self.assertTrue((raiz / "02-evidencias/hashes.json").is_file()); self.assertFalse((raiz / "02-evidencias/banco.sql").exists())
+        self.assertIn("| `06-codigo/` |", (raiz / "00-LEIA-ME.md").read_text())
+        r = run(SCRIPTS / "exportar_projeto.py", "--project-root", self.tmp, "--destino", saida, "--codigo", cod)
+        self.assertEqual(r.returncode, 2); self.assertIn("já existe", r.stderr)
+        r = run(SCRIPTS / "exportar_projeto.py", "--project-root", self.tmp, "--destino", self.tmp / "dentro")
+        self.assertEqual(r.returncode, 2); self.assertIn("dentro do projeto", r.stderr)
+        shutil.rmtree(saida, ignore_errors=True)
+
+    def test_zelador_limpa_so_temporarios_e_uma_vez_por_dia(self):
+        import time
+        runs = self.tmp / ".wx-migration/preflight/runs"
+        for i in range(5):
+            d = runs / f"run-{i}"; d.mkdir(parents=True); (d / "report.json").write_text("{}")
+            os.utime(d, (time.time() - 30 * 86400, time.time() - 30 * 86400))
+        logs = self.tmp / ".wx-migration/logs"; logs.mkdir()
+        (logs / "velho.log").write_text("x"); os.utime(logs / "velho.log", (time.time() - 10 * 86400,) * 2)
+        (logs / "novo.log").write_text("x")
+        (self.tmp / "src").mkdir(); (self.tmp / "src/__pycache__").mkdir(); (self.tmp / "src/__pycache__/a.pyc").write_text("x")
+        r = run(SCRIPTS / "zelador.py", "--project-root", self.tmp, "limpar")
+        self.assertIn("só relatório", r.stdout); self.assertTrue((logs / "velho.log").exists())
+        r = run(SCRIPTS / "zelador.py", "--project-root", self.tmp, "limpar", "--executar")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertFalse((logs / "velho.log").exists()); self.assertTrue((logs / "novo.log").exists())
+        self.assertEqual(sorted(p.name for p in runs.iterdir()), ["run-2", "run-3", "run-4"])
+        self.assertFalse((self.tmp / "src/__pycache__").exists())
+        self.assertTrue((self.tmp / "inputs/banco.sql").exists()); self.assertTrue((self.tmp / ".wx-migration/pmo/plano.json").exists())
+        self.assertIn("| apagou |", (logs / "zelador.md").read_text())
+        r = run(SCRIPTS / "zelador.py", "--project-root", self.tmp, "limpar", "--se-vencido")
+        self.assertIn("já rodou hoje", r.stdout)
+        r = run(SCRIPTS / "zelador.py", "--project-root", self.tmp, "hook-sessao"); self.assertEqual(r.stdout, "")
+
+
 class Licenca(unittest.TestCase):
     """Serial RSA: o plugin so tem a chave publica e nao forja serial."""
 

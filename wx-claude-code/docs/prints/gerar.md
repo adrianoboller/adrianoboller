@@ -12,6 +12,8 @@ e renderizada num terminal pelo Chromium (Playwright), a 2× de escala.
 | 04 | `aplicar_questionario.py` sobre respostas de exemplo e o `wx_preflight.py` real (BLOCKED por PDF de mentira, como devia) |
 | 05 | o `DESIGN.md` que a letra F gera |
 | 06 | `query_wlanguage_help.py --verify` e `--query HReadSeekFirst` |
+| 26 | sessão `-p` com `Agent` e `Bash`: `/wx-claude-code:pmo exportar` grava o projeto organizado na pasta pedida e explica o que ficou de fora; achou um defeito real (o `.env.exemplo` caía no filtro de `.env`), corrigido com teste |
+| 27 | sessão `-p` num projeto com log antigo: o hook `SessionStart` rodou o zelador e a sessão mostra o registro com bytes medidos |
 | 07 | `claude -p "/wx-claude-code:laudo-tokens fase-1"` com fonte de sessões marcada INDISPONÍVEL |
 | 08 | `pmo.py iniciar/gastar/status` e `rotear_modelo.py` com subida, rebaixamento a 85 %, bloqueio a 105 % e fallback |
 | 09 | sessão `-p` com `Agent` liberado: dois símbolos delegados aos `wl-hfsql-specialist` e `wl-communication-specialist`, com o member do Help de cada um |

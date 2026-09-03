@@ -23,6 +23,7 @@ registra. O agente é `pmo-gerente-de-projetos`; o comando é
   pdca/               um PDCA-NNN.md por ciclo
   base_de_conhecimento.md  uma linha por ciclo fechado, frutífero ou não
   status.md           painel gerado: gates, cobertura, orçamento, bloqueios
+  ../logs/zelador.md  rodadas do zelador (temporários apagados, bytes medidos)
   relatorio.md        relatório de onze seções, gerado ao fechar sprint e no entregar
   painel.html         o relatório, o kanban e a base em HTML (tema claro e escuro)
 ```

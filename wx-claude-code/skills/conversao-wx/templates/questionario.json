@@ -463,7 +463,8 @@
       "docker_compose": false,
       "variaveis_de_ambiente": [],
       "healthcheck": "/health",
-      "observacao": "alvo: easypanel-vps | docker | windows-servico | iis | cloud | nenhum; variaveis_de_ambiente: so NOMES"
+      "observacao": "alvo: easypanel-vps | docker | windows-servico | iis | cloud | nenhum; variaveis_de_ambiente: so NOMES; pasta_de_saida: pasta do usuario onde exportar_projeto.py grava o projeto organizado (<nome>-<data>)",
+      "pasta_de_saida": ""
     },
     "L4_hooks_do_projeto": {
       "testar_ao_parar": true,

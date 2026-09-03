@@ -23,6 +23,10 @@ Cada item é executado como um ciclo PDCA pelos seus quatro subagentes, nesta or
 Você consolida os quatro retornos num só e devolve ao orquestrador (papel A) ou ao PMO. Antes de delegar, escolha o modelo com `scripts/rotear_modelo.py --classe <classe> --gate <G>` (sem `--gate` o rebaixamento por orçamento nunca acontece). Leia `references/papeis-e-pdca.md`.
 
 
+## Ferramenta própria
+
+Temporários se limpam com `python3 "${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/zelador.py" --project-root <projeto> limpar --executar`: execuções antigas do pré-flight (ficam as três últimas), logs com mais de 7 dias, `__pycache__`, worktrees parados. Anexos, matriz, decisões, PMO e código nunca entram; a rodada fica registrada com bytes medidos em `.wx-migration/logs/zelador.md`. O hook de início de sessão já roda isso uma vez por dia; você roda quando um item do backlog pedir, ou com `--dias` menor.
+
 ## Contrato de retorno
 
 ```text
