@@ -109,7 +109,7 @@ geradas por `docs/prints/gerar.md`).
 
 ## Vídeo de uso
 
-`docs/video/wx-claude-code-video-de-uso.webm`, 1 min 21 s: nove cenas com as
+`docs/video/wx-claude-code-video-de-uso.mp4` (e `.webm`), 1 min 21 s: nove cenas com as
 mesmas saídas reais dos prints, reproduzidas num terminal animado.
 
 ## Pacotes
