@@ -16,14 +16,42 @@ use phxsql_server::{Config, Servidor};
 
 const TOKEN: &str = "teste-do-servico";
 
-/// Uma porta livre, tomada e solta na hora -- o jeito de nao brigar com outro
-/// teste rodando em paralelo.
+/// Uma porta livre, tomada e solta na hora -- e NUNCA uma que este binario ja
+/// entregou.
+///
+/// # O que o comentario antigo afirmava, e a CI desmentiu
+///
+/// Ele dizia ser «o jeito de nao brigar com outro teste rodando em paralelo».
+/// Nao era: entre soltar a porta e o servidor toma-la corre a construcao do
+/// `Config` inteiro, e um `bind(:0)` de outra thread do MESMO binario podia
+/// receber a porta recem-solta. Os testes de um arquivo rodam em threads de um
+/// processo so, entao a briga era interna.
+///
+/// A CI pegou em 03/09/2026, e pegou do jeito pior: o servidor avisou
+/// «interface web NAO subiu: Address already in use», o `esperar_porta` viu a
+/// porta ABERTA -- era quem a tinha tomado --, o teste conversou com um soquete
+/// alheio e morreu num `WouldBlock` que nao dizia nada sobre a causa.
+///
+/// O conserto e um conjunto das portas ja entregues neste processo, que e
+/// exatamente o caso observado. **Colisao com processo de FORA continua
+/// possivel** e isso fica escrito em vez de prometido: fecha-la exigiria o
+/// servidor aceitar um descritor ja aberto, que e outra mudanca.
 fn porta_livre() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
+    use std::collections::HashSet;
+    use std::sync::{Mutex, OnceLock};
+    static ENTREGUES: OnceLock<Mutex<HashSet<u16>>> = OnceLock::new();
+    let entregues = ENTREGUES.get_or_init(|| Mutex::new(HashSet::new()));
+    for _ in 0..64 {
+        let p = TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        if entregues.lock().unwrap().insert(p) {
+            return p;
+        }
+    }
+    panic!("64 tentativas e toda porta ja tinha sido entregue neste binario");
 }
 
 fn subir_servidor(base: &std::path::Path, porta: u16) -> Arc<Servidor> {
@@ -296,7 +324,17 @@ fn pela_web(porta: u16, corpo: &str) -> String {
     )
     .unwrap();
     let mut resposta = String::new();
-    BufReader::new(fluxo).read_to_string(&mut resposta).unwrap();
+    // O `unwrap` daqui foi o que a CI mostrou, e ele nao dizia nada: um
+    // `WouldBlock` cru. Ele acontece quando quem atende na porta NAO e o nosso
+    // servidor -- outro processo a tomou e nao fala HTTP --, e e essa a frase
+    // que o proximo a ler precisa.
+    if let Err(e) = BufReader::new(fluxo).read_to_string(&mut resposta) {
+        panic!(
+            "a porta {porta} aceitou a conexao mas nao respondeu como o nosso \
+             servidor ({e}) -- provavel colisao de porta: quem atende ali e de \
+             outro processo"
+        );
+    }
     resposta
 }
 
