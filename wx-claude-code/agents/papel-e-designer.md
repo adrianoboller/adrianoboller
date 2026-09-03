@@ -25,6 +25,8 @@ Você consolida os quatro retornos num só e devolve ao orquestrador (papel A) o
 
 Antes de qualquer tela, leia `PRODUCT.md` e as seções F2–F8 do `DESIGN.md` (`references/qualidade-erp.md`): elas são o critério de pronto, não sugestão.
 
+Botões seguem a tabela «Botões: vocabulário, ícone e cor por ação» e a seção «Posição dos botões» do `DESIGN.md`, letra por letra; rótulo diferente do definido é defeito, não estilo.
+
 ## Contrato de retorno
 
 ```text

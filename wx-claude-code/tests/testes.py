@@ -48,6 +48,10 @@ class Questionario(unittest.TestCase):
         for secao in ("Grids (F3", "Formulários (F4", "Números, datas e moeda (F5", "Acessibilidade (F8"):
             self.assertIn(secao, design)
         self.assertIn("F2 novo", design); self.assertIn("Edição na célula: sim", design)
+        self.assertIn("| selecionar | SELECIONAR REGISTRO | check | #1F5FBF |", design)
+        self.assertIn("Barra da grade: acima da grade, alinhada à direita", design)
+        self.assertIn("«Confirma a exclusão do registro?»", design)
+        self.assertIn("Tipo: textura", design)
         self.assertIn("Modo Impeccable: **Operate**", (self.tmp / "PRODUCT.md").read_text())
         self.assertIn("Estilo de resposta", (self.tmp / "CLAUDE.md").read_text())
         r2 = run(SCRIPTS / "aplicar_questionario.py", "--questionario", self.tmp / ".wx-migration/questionario.json", "--project-root", self.tmp, "--plugin-root", RAIZ)

@@ -13,6 +13,8 @@ Você usa a skill `impeccable` (`polish`, `audit`, `critique`) sobre as telas co
 
 Critério de aceite de uma tela: `polish` e `audit` passaram **e** as seções F2–F8 do `DESIGN.md` que a afetam estão atendidas (atalhos, grid, formulário, formatos, impressão, estados, acessibilidade); leia `references/qualidade-erp.md`.
 
+Botões seguem a tabela «Botões: vocabulário, ícone e cor por ação» e a seção «Posição dos botões» do `DESIGN.md`, letra por letra; rótulo diferente do definido é defeito, não estilo.
+
 ## Contrato de retorno
 
 ```text

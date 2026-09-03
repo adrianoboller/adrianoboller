@@ -125,6 +125,80 @@
       "leitor_de_tela": false,
       "daltonismo": true,
       "toque_minimo_px": 44
+    },
+    "F9_vocabulario_dos_botoes": {
+      "estilo": "imperativo",
+      "observacao": "imperativo = INCLUIR, ALTERAR, EXCLUIR, GRAVAR, SELECIONAR REGISTRO, VOLTAR, CANCELAR, DUPLICAR; substantivo = Inclusão, Alteração, Exclusão, Gravação, Selecionar, Abortar, Cancelar; caixa = maiusculas | capitalizado",
+      "caixa": "maiusculas",
+      "rotulos": {
+        "incluir": "INCLUIR",
+        "alterar": "ALTERAR",
+        "excluir": "EXCLUIR",
+        "gravar": "GRAVAR",
+        "selecionar": "SELECIONAR REGISTRO",
+        "voltar": "VOLTAR",
+        "cancelar": "CANCELAR",
+        "duplicar": "DUPLICAR"
+      },
+      "mensagens": {
+        "confirmar_exclusao": "Confirma a exclusão do registro?",
+        "gravado": "Registro gravado.",
+        "excluido": "Registro excluído.",
+        "cancelado": "Operação cancelada."
+      }
+    },
+    "F10_posicao_dos_botoes": {
+      "da_grade": "acima",
+      "dos_campos": "abaixo",
+      "alinhamento": "direita",
+      "ordem": [
+        "incluir",
+        "alterar",
+        "duplicar",
+        "excluir",
+        "selecionar",
+        "voltar"
+      ],
+      "gravar_e_cancelar": "abaixo dos campos, à direita, gravar por último",
+      "observacao": "da_grade e dos_campos: acima | abaixo | direita | esquerda"
+    },
+    "F11_icones": {
+      "usar": true,
+      "biblioteca": "Lucide",
+      "com_texto": true,
+      "tamanho_px": 16,
+      "por_acao": {
+        "incluir": "plus",
+        "alterar": "pencil",
+        "excluir": "trash-2",
+        "gravar": "save",
+        "selecionar": "check",
+        "voltar": "arrow-left",
+        "cancelar": "x",
+        "duplicar": "copy"
+      }
+    },
+    "F12_cores_das_acoes": {
+      "regra": "contorno; preenchimento so no hover",
+      "por_acao": {
+        "incluir": "#1F7A4E",
+        "alterar": "#9A6B00",
+        "excluir": "#C63C0A",
+        "gravar": "#1F7A4E",
+        "selecionar": "#1F5FBF",
+        "voltar": "#4A4E5E",
+        "cancelar": "#4A4E5E",
+        "duplicar": "#1F5FBF"
+      },
+      "observacao": "padrao do plugin: verde inclui/grava, amarelo altera, vermelho exclui, azul consulta/seleciona, cinza volta/cancela"
+    },
+    "F13_fundo_das_telas": {
+      "tipo": "cor",
+      "cor": "#FBFAF7",
+      "cor_escuro": "#0B0D17",
+      "textura_ou_imagem": "",
+      "opacidade_da_textura": 0,
+      "observacao": "tipo: cor | textura | imagem; cor em hexadecimal ou rgb(r,g,b)"
     }
   },
   "G_help_json": {

@@ -18,7 +18,27 @@ comando roda no escuro.
 | F7 | **Estados e erros** o que a tela mostra vazia, carregando, sem permissão, offline, com erro do servidor; confirmação em ações destrutivas | `DESIGN.md` › estados | `onboard`, `harden`, `critique` | um estado por situação, sem tela em branco |
 | F8 | **Acessibilidade e conformidade** WCAG AA obrigatório? leitor de tela? daltonismo? tamanho de toque em tablet? | `DESIGN.md` › acessibilidade | `audit`, `adapt` | contraste medido 4,5:1, foco, rótulos, alvo de toque 44 px |
 
-Depois das oito, a letra F fecha com as três de antes: paleta e marca, tema
+## As cinco subperguntas dos botões e do fundo (F9 a F13)
+
+Botão é onde o usuário do ERP mais percebe diferença entre o sistema velho e
+o novo. Por isso o vocabulário, a posição, o ícone e a cor são perguntados
+um a um, e a resposta é gravada como tabela por ação, que os agentes seguem
+letra por letra.
+
+| # | Subpergunta | O que se registra | Comando que consome |
+| --- | --- | --- | --- |
+| F9 | **Vocabulário dos botões**: imperativo (INCLUIR, ALTERAR, EXCLUIR, GRAVAR, SELECIONAR REGISTRO, VOLTAR, CANCELAR, DUPLICAR) ou substantivo (Inclusão, Alteração, Exclusão, Gravação, Selecionar, Abortar, Cancelar)? Maiúsculas ou capitalizado? Texto exato das mensagens (confirmar exclusão, gravado, excluído, cancelado) | um rótulo por ação, as mensagens padrão | `harden`, `polish` |
+| F10 | **Posição**: a barra fica acima, abaixo, à direita ou à esquerda da grade? E dos campos? Alinhada a que lado? Em que ordem? Onde ficam gravar e cancelar? | posição por barra, ordem fixa, igual em todas as telas | `layout`, `shape` |
+| F11 | **Ícones**: usar? qual biblioteca (Lucide, Material, Font Awesome, os do WINDEV)? com ou sem texto? tamanho? um ícone por ação | tabela ação → ícone | `polish` |
+| F12 | **Cores das ações**: uma cor por ação, contorno ou preenchido? O padrão do plugin é verde inclui e grava, amarelo altera, vermelho exclui, azul seleciona, cinza volta e cancela, sempre contorno e preenchimento só no *hover* | tabela ação → cor, com contraste a medir | `colorize`, `audit` |
+| F13 | **Fundo das telas**: cor lisa (hexadecimal ou rgb), textura ou imagem? Cor do tema escuro? Opacidade da textura? | tipo, cores, textura e a regra de não baixar o contraste | `colorize`, `adapt` |
+
+As oito ações são fixas (incluir, alterar, excluir, gravar, selecionar,
+voltar, cancelar, duplicar) para que a tabela seja comparável entre telas; o
+usuário escolhe o rótulo de cada uma, e o agente não «melhora» texto de
+botão. Mensagem que já exista no código do legado tem precedência.
+
+Depois das treze, a letra F fecha com as três de antes: paleta e marca, tema
 (claro, escuro, ambos), preservar ou redesenhar o visual do WX.
 
 ## O que muda no fluxo
@@ -26,7 +46,7 @@ Depois das oito, a letra F fecha com as três de antes: paleta e marca, tema
 1. `aplicar_questionario.py` grava as respostas em `PRODUCT.md` (F1) e em
    seções próprias do `DESIGN.md` (F2 a F8), além da paleta.
 2. `/wx-claude-code:estilo-telas` roda `init` já com o `PRODUCT.md`
-   preenchido, e depois um comando por seção respondida: `shape` para grids,
+   preenchido, e depois um comando por seção respondida (inclusive as tabelas de botões e o fundo): `shape` para grids,
    `harden` para formulários e estados, `typeset` para formatos, `layout`
    para impressão, `audit` para acessibilidade. Seção sem resposta não gera
    comando, gera pergunta.

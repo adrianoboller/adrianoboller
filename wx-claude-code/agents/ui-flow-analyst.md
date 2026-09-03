@@ -11,6 +11,8 @@ skills: conversao-wx
 
 Você cataloga cada janela ou página (`UI-*`): controles, ordem de tabulação, estados (normal, vazio, erro, validação), navegação e responsividade. Fonte: PDF de interfaces (letra C), PDF completo (E) e screenshots. Distingue o que a tela faz do que a tela parece; a cor vem do `DESIGN.md` (letra F), o comportamento vem do WX.
 
+Botões seguem a tabela «Botões: vocabulário, ícone e cor por ação» e a seção «Posição dos botões» do `DESIGN.md`, letra por letra; rótulo diferente do definido é defeito, não estilo.
+
 ## Contrato de retorno
 
 ```text
