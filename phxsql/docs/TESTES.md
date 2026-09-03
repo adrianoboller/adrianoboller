@@ -35,24 +35,24 @@ teste que o motivou ainda cai. [§8](#8-as-guardas-provar-que-a-prova-pega).
 ## 1. A cobertura de hoje, medida
 
 <!-- testes:total:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-`cargo test --workspace`: **1.547 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
+`cargo test --workspace`: **1.561 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
 <!-- testes:total:fim --> Por área,
 contando `#[test]` por arquivo e agrupando:
 
 <!-- cobertura:inicio -->
 | área | testes | % |
 |---|---:|---:|
-| Motor de dados (arquivos, índice, diários) | 405 | 26,2 |
-| Protocolo e portões (despachar) | 223 | 14,4 |
-| Núcleo (JSON, tipos, UUID, zip, paralelo) | 138 | 8,9 |
-| Criptografia e codificação | 122 | 7,9 |
+| Motor de dados (arquivos, índice, diários) | 409 | 26,2 |
+| Protocolo e portões (despachar) | 223 | 14,3 |
+| Núcleo (JSON, tipos, UUID, zip, paralelo) | 138 | 8,8 |
+| Criptografia e codificação | 122 | 7,8 |
 | Configuração | 93 | 6,0 |
-| DbLink | 71 | 4,6 |
+| DbLink | 81 | 5,2 |
 | Servidor (outros) | 70 | 4,5 |
-| Camada SQL (léxico, sintaxe, tradução) | 55 | 3,6 |
+| Camada SQL (léxico, sintaxe, tradução) | 55 | 3,5 |
 | Telemetria e profiler | 53 | 3,4 |
 | Gatilhos e procedimentos | 42 | 2,7 |
-| Mensagens (i18n do servidor) | 32 | 2,1 |
+| Mensagens (i18n do servidor) | 32 | 2,0 |
 | Jobs | 31 | 2,0 |
 | Interface web (servidor HTTP) | 28 | 1,8 |
 | **MCP** | **19** | **1,2** |
@@ -66,23 +66,23 @@ contando `#[test]` por arquivo e agrupando:
 | **Pivot** | **12** | **0,8** |
 | **Replicação** | **11** | **0,7** |
 | **Alertas e e-mail** | **8** | **0,5** |
-| **CLI** | **7** | **0,5** |
-| **Cluster** | **7** | **0,5** |
+| **CLI** | **7** | **0,4** |
+| **Cluster** | **7** | **0,4** |
 | **Monitor de máquina** | **6** | **0,4** |
-| **total** | **1547** | |
+| **total** | **1561** | |
 
 Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 
 | arquivo | linhas |
 |---|---:|
-| `phxsql-store/src/table.rs` | 4209 |
+| `phxsql-store/src/table.rs` | 4226 |
 | `phxsql-store/src/ndx.rs` | 1580 |
 | `phxsql-ffi/src/lib.rs` | 1446 |
 | `phxsql-server/src/main.rs` | 488 |
 | `phxsql-server/src/replica.rs` | 412 |
 | `phxsql-ffi/src/valor.rs` | 290 |
 | `phxsql-store/src/integridade.rs` | 278 |
-| `phxsql-server/src/dblink/conexao.rs` | 238 |
+| `phxsql-server/src/dblink/conexao.rs` | 275 |
 | `phxsql-server/src/carga.rs` | 226 |
 | `phxsql-ffi/src/punho.rs` | 188 |
 | `phxsql-cmd/src/main.rs` | 171 |

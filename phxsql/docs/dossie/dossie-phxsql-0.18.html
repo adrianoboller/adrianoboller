@@ -475,12 +475,12 @@ footer p{max-width:var(--medida)}
 
   <div class="painel">
   <!-- projeto:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-    <div><div class="v">128.745</div><div class="r">linhas de Rust</div></div>
-    <div><div class="v">1.547</div><div class="r">testes</div></div>
+    <div><div class="v">130.126</div><div class="r">linhas de Rust</div></div>
+    <div><div class="v">1.561</div><div class="r">testes</div></div>
     <div><div class="v">0</div><div class="r">dependências</div></div>
     <div><div class="v">8</div><div class="r">crates</div></div>
     <div><div class="v">7</div><div class="r">arquivos/tabela</div></div>
-    <div><div class="v">39.349</div><div class="r">linhas de doc</div></div>
+    <div><div class="v">43.321</div><div class="r">linhas de doc</div></div>
   <!-- projeto:fim -->
   </div>
 </header>
@@ -6361,14 +6361,22 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
     <code>SAVEPOINT</code> existem (<a href="#s28">seção 28</a>), e com eles o
     <strong>A</strong> e o <strong>I</strong>. O que <em>não</em> caiu é a
     conclusão sobre a folha de marca.</p>
-    <p><strong>O <em>C</em> é que não está inteiro.</strong> A integridade
-    referencial continua não sendo imposta — a chave estrangeira é catálogo, e
-    <code>Restringir</code> e <code>Cascata</code> são intenção guardada. Enquanto
-    isso valer, <em>«Reliable storage — ACID compliant»</em> continua sendo uma
-    afirmação que este dossiê não repete. O que se pode dizer, e é verdade:
-    atomicidade e durabilidade entregues, isolamento entregue <strong>no nível
-    declarado</strong> — que <strong>não é ANSI SERIALIZABLE</strong> —, e
-    consistência dependente da integridade referencial que falta.</p>
+    <p><strong>E esta entrada acabou de perder a outra metade.</strong> Ela
+    dizia que o <em>C</em> não estava inteiro porque a integridade referencial
+    não era imposta — «a chave estrangeira é catálogo». <strong>Não é mais</strong>:
+    a chave conferida é aplicada em <strong>todas</strong> as portas locais de
+    escrita, uma a uma, e a lista está em <code>docs/INTEGRIDADE.md</code> §1 —
+    <code>inserir</code>, o lote, <code>atualizar</code>, <code>restaurar</code>,
+    os dois <code>excluir</code>, a cascata do <code>ao_alterar</code> e a
+    reaplicação da recuperação. Chave declarada <strong>nasce</strong> conferida.
+    Custou <strong>+7,03 µs por linha (+11,2%)</strong> no laço quente, medido.</p>
+    <p><strong>O que ainda impede a frase da folha de marca</strong> são duas
+    coisas, e nenhuma é a FK: o isolamento <strong>não é ANSI SERIALIZABLE</strong>
+    (não há leitura repetível), e há <strong>dois caminhos que não conferem, por
+    decisão escrita</strong> — o que chega pela replicação, onde outro servidor já
+    julgou (§3), e o <code>copiar_tabela_para</code>, cujo custo alternativo está
+    medido em teste (§4.3). <em>«Reliable storage — ACID compliant»</em> continua
+    sendo afirmação que este dossiê não repete — mas agora pelo motivo certo.</p>
   </div>
 
   <div class="nota nao">
@@ -6417,8 +6425,8 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
             <td>a transação pôs travas de tabela e de linha <em>por cima</em> da trava única, e não no lugar dela: duas transações em linhas diferentes não se esbarram, mas as operações continuam se enfileirando embaixo. Transação e paralelismo são frentes diferentes, e confundi-las é o que faz uma prometer a outra</td></tr>
         <tr><td><strong>Compactação</strong></td>
             <td>o formato prevê e <em>mede</em> o espaço morto; o comando não existe. E há número contra: compactar renumeraria rowid, e rowid é <strong>endereço</strong></td></tr>
-        <tr><td><strong>Chave estrangeira aplicada</strong></td>
-            <td>ela é declarada, validada, gravada no cabeçalho, preservada pela cópia e desenhada no diagrama — e <strong>nenhuma gravação a consulta</strong>. <code>Restringir</code> e <code>Cascata</code> são intenção guardada, não comportamento. Há um teste que trava que <em>declarar não é aplicar</em>, e ele falha no dia em que isso mudar em silêncio</td></tr>
+        <tr><td><strong>Chave estrangeira conferida na réplica</strong></td>
+            <td>esta linha dizia «chave estrangeira aplicada — nenhuma gravação a consulta», e <strong>caiu</strong>: hoje toda porta local de escrita confere. O que sobra é a réplica, e é <strong>decisão</strong>, não falta: quem recebe já teve a garantia aplicada na origem, e reconferir ali recusaria a metade de um par que chega fora de ordem. Mesma decisão no <code>copiar_tabela_para</code>, com o custo da alternativa medido em teste</td></tr>
         <tr><td><strong>Planejador, <code>EXPLAIN</code> e estatísticas</strong></td>
             <td>quem escolhe o índice é quem escreve a operação. Estatística sem consumidor é arquivo para manter atualizado sem ninguém ler</td></tr>
         <tr><td><strong><code>WHERE</code> no <code>varrer</code></strong></td>
@@ -6592,9 +6600,9 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   <div class="painel">
 <!-- pedidos:inicio (gerado por docs/dossie/pagina-dos-pedidos.py) -->
     <div><div class="v">175</div><div class="r">pedidos, ao todo</div></div>
-    <div><div class="v">168</div><div class="r">feitos</div></div>
+    <div><div class="v">170</div><div class="r">feitos</div></div>
     <div><div class="v">4</div><div class="r">parciais</div></div>
-    <div><div class="v">3</div><div class="r">planejados</div></div>
+    <div><div class="v">1</div><div class="r">planejados</div></div>
   <!-- pedidos:fim -->
   </div>
 
@@ -6604,15 +6612,19 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   <code>docs/dossie/pagina-dos-pedidos.py</code>. Nenhuma das duas se digita: se
   as contagens discordarem, é porque alguém digitou uma delas.</p>
 
-  <p><strong>Nenhum pedido está na coluna «planejado»</strong>, e isso
-  <em>não</em> quer dizer que não falta nada. Quer dizer que o que falta deixou
-  de ser um pedido parado e virou ou uma <strong>parcial nomeada</strong>, ou um
-  item da lista de propostas, ou uma das ausências da
-  <a href="#s33">seção 33</a>. As quatro parciais são: subir o projeto num
-  repositório próprio (impedimento de <em>identidade</em>, não de engenharia); a
-  prova real do DbLink contra um PostgreSQL(R); o editor de modelo, que não
-  altera estrutura de tabela com dado; e a chave estrangeira, que é declarada e
-  não aplicada.</p>
+  <p><strong>Um pedido está na coluna «planejado»</strong>, e ele é uma
+  <em>decisão do dono</em>, não trabalho parado: criar o índice da chave na hora
+  da declaração. A §6 do <code>docs/INTEGRIDADE.md</code> dizia que só havia
+  duas saídas, e havia uma terceira — <strong>criar</strong> —, com as três e o
+  preço de cada uma no parecer. Ela acrescenta esquema que o modelador não
+  escreveu, e é por isso que é dele a palavra.</p>
+
+  <p>As <strong>quatro parciais</strong> são: subir o projeto num repositório
+  próprio (impedimento de <em>identidade</em>, não de engenharia — e a metade do
+  <code>push</code> fechou); os <em>prints</em> em celular, tablet e multi-monitor;
+  as grades com agrupamento arrastando o cabeçalho; e a trava global contra o
+  MVCC, medida e ainda sem plano aprovado. <strong>A chave estrangeira saiu
+  desta lista</strong> — ela é conferida hoje.</p>
 
   <h3>Onde os testes estão, e onde estão ralos</h3>
 
@@ -6627,17 +6639,17 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
     <table>
       <thead><tr><th>Área</th><th class="num">testes</th><th class="num">%</th></tr></thead>
       <tbody>
-        <tr><td>Motor de dados (arquivos, índice, diários)</td><td class="num">405</td><td class="num">26,2%</td></tr>
-        <tr><td>Protocolo e portões (despachar)</td><td class="num">223</td><td class="num">14,4%</td></tr>
-        <tr><td>Núcleo (JSON, tipos, UUID, zip, paralelo)</td><td class="num">138</td><td class="num">8,9%</td></tr>
-        <tr><td>Criptografia e codificação</td><td class="num">122</td><td class="num">7,9%</td></tr>
+        <tr><td>Motor de dados (arquivos, índice, diários)</td><td class="num">409</td><td class="num">26,2%</td></tr>
+        <tr><td>Protocolo e portões (despachar)</td><td class="num">223</td><td class="num">14,3%</td></tr>
+        <tr><td>Núcleo (JSON, tipos, UUID, zip, paralelo)</td><td class="num">138</td><td class="num">8,8%</td></tr>
+        <tr><td>Criptografia e codificação</td><td class="num">122</td><td class="num">7,8%</td></tr>
         <tr><td>Configuração</td><td class="num">93</td><td class="num">6,0%</td></tr>
-        <tr><td>DbLink</td><td class="num">71</td><td class="num">4,6%</td></tr>
+        <tr><td>DbLink</td><td class="num">81</td><td class="num">5,2%</td></tr>
         <tr><td>Servidor (outros)</td><td class="num">70</td><td class="num">4,5%</td></tr>
-        <tr><td>Camada SQL (léxico, sintaxe, tradução)</td><td class="num">55</td><td class="num">3,6%</td></tr>
+        <tr><td>Camada SQL (léxico, sintaxe, tradução)</td><td class="num">55</td><td class="num">3,5%</td></tr>
         <tr><td>Telemetria e profiler</td><td class="num">53</td><td class="num">3,4%</td></tr>
         <tr><td>Gatilhos e procedimentos</td><td class="num">42</td><td class="num">2,7%</td></tr>
-        <tr><td>Mensagens (i18n do servidor)</td><td class="num">32</td><td class="num">2,1%</td></tr>
+        <tr><td>Mensagens (i18n do servidor)</td><td class="num">32</td><td class="num">2,0%</td></tr>
         <tr><td>Jobs</td><td class="num">31</td><td class="num">2,0%</td></tr>
         <tr><td>Interface web (servidor HTTP)</td><td class="num">28</td><td class="num">1,8%</td></tr>
         <tr><td><strong>MCP</strong></td><td class="num"><strong>19</strong></td><td class="num"><strong>1,2%</strong></td></tr>
@@ -6651,10 +6663,10 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
         <tr><td><strong>Pivot</strong></td><td class="num"><strong>12</strong></td><td class="num"><strong>0,8%</strong></td></tr>
         <tr><td><strong>Replicação</strong></td><td class="num"><strong>11</strong></td><td class="num"><strong>0,7%</strong></td></tr>
         <tr><td><strong>Alertas e e-mail</strong></td><td class="num"><strong>8</strong></td><td class="num"><strong>0,5%</strong></td></tr>
-        <tr><td><strong>CLI</strong></td><td class="num"><strong>7</strong></td><td class="num"><strong>0,5%</strong></td></tr>
-        <tr><td><strong>Cluster</strong></td><td class="num"><strong>7</strong></td><td class="num"><strong>0,5%</strong></td></tr>
+        <tr><td><strong>CLI</strong></td><td class="num"><strong>7</strong></td><td class="num"><strong>0,4%</strong></td></tr>
+        <tr><td><strong>Cluster</strong></td><td class="num"><strong>7</strong></td><td class="num"><strong>0,4%</strong></td></tr>
         <tr><td><strong>Monitor de máquina</strong></td><td class="num"><strong>6</strong></td><td class="num"><strong>0,4%</strong></td></tr>
-        <tr><td><strong>total</strong></td><td class="num"><strong>1547</strong></td><td class="num"></td></tr>
+        <tr><td><strong>total</strong></td><td class="num"><strong>1561</strong></td><td class="num"></td></tr>
       </tbody>
     </table>
   </div>
@@ -6688,8 +6700,8 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
 
 <footer>
   <!-- rodape:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-  <p>PhxSql 0.18.0 · 128.745 linhas de Rust em 8 crates,
-  mais 1145 KiB de interface · 1.547 testes ·
+  <p>PhxSql 0.18.0 · 130.126 linhas de Rust em 8 crates,
+  mais 1145 KiB de interface · 1.561 testes ·
   nenhuma dependência externa.
   Especificação byte a byte em <code>docs/FORMATO.md</code>, cadastro e
   permissões em <code>docs/USUARIOS.md</code>, a replicação em

@@ -1236,7 +1236,16 @@ pub fn token_sem_definicao_e_sem_fallback() -> Vec<(&'static str, String)> {
 /// tambem traduziu o lote coerente do Painel (`vPainel()`/`maquinaHtml()` de
 /// `index.html` -- os sete cartoes de metrica e o widget "A maquina"), que
 /// baixou 24: **1.720**.
-pub const TETO_ROTULOS_E_CRASE: usize = 1_720;
+///
+/// 03/09, 19h: **1.715**. Nao foi leva de traducao -- foi conserto de
+/// frase FALSA. Cinco textos da tela afirmavam que a chave estrangeira e
+/// "declarada, nao imposta" e que a transacao "nao ve as proprias
+/// escritas", duas coisas que os pedidos 162 e 171 tinham desfeito. Quatro
+/// deles ja passavam pela fabrica (bastou trocar o texto nos seis idiomas)
+/// e o quinto -- o brinde do editor ER -- estava cravado e entrou pela
+/// fabrica junto com o conserto. Catraca desce por qualquer motivo que
+/// tire texto de fora dela; o motivo aqui e que a frase mentia.
+pub const TETO_ROTULOS_E_CRASE: usize = 1_715;
 #[cfg(test)]
 mod testes {
     use std::collections::HashSet;

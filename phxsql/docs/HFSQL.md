@@ -17,7 +17,7 @@ Os números do PhxSql são medidos; o do HFSQL(R) é o que a folha declara.
 | Índice simples e **composto** | `IndexDef` com lista de colunas, livre ou única | igual |
 | Restrição de unicidade | conferida **antes de gravar** | igual, com uma razão a mais: o `.reg` não reaproveita slot |
 | Identificador automático | `Sequence`, `Uuid` v4/v7, `Uuid256` | o v7 deles é recente; aqui já é RFC 9562 |
-| Chave primária e estrangeira | declaradas no esquema | FK **não é aplicada** na gravação — ver §3 |
+| Chave primária e estrangeira | declaradas no esquema | **empatado desde o pedido 171**: a FK é conferida em toda porta local de escrita, e a declarada nasce conferida (`INTEGRIDADE.md` §1). A diferença que sobra é o `SET NULL`, que aqui não existe por pétrea |
 | Tipos: texto, numérico, decimal, data, hora, booleano, blob/memo | todos | o decimal deles vai a 38 dígitos; aqui, 38 também (`i128`) |
 | Autenticação com direitos granulares por servidor/banco/tabela | por usuário, por base **e por tabela**, 10 atividades | empatado desde a 0.17.0; o que falta dos dois lados é a **coluna** |
 | Restringir acesso por IP | `ips_permitidos` + blacklist com bloqueio automático | aqui é mais rígido: violação grave bloqueia na primeira |

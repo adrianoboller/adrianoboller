@@ -1089,9 +1089,9 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
       ${conf.tabelas.map(linhaTabela).join("")}
       ${conf.fks.length ? `<h3>${E(txt("tela.ia_relacionamentos", "Relacionamentos"))}</h3>
         <div class="aviso">${marcado(txt("tela.ia_fk_declarada",
-          "**A chave estrangeira do PhxSql é DECLARADA, e não imposta.** O motor guarda a declaração e as telas a usam — mas ele **não confere** a referência na hora de gravar."))
+          "**A chave estrangeira do PhxSql nasce CONFERIDA.** Declarar já é impor: a gravação recusa filha sem mãe e mãe que ainda tem filha, e o `ao_alterar` cascateia. Para só o desenho, mande `\"verificar\": false`."))
         } ${marcado(txt("tela.ia_fk_declarada2",
-          "Quem promete integridade que não existe entrega um estrago com nome bonito."))}</div>
+          "O que ela **não** cobre é o que chega pela replicação: ali outro servidor já julgou, e este aplica."))}</div>
         ${conf.fks.map((f, n) => `
           <div style="border:1px solid var(--linha);border-radius:6px;
                padding:10px 12px;margin:8px 0;background:var(--painel)">

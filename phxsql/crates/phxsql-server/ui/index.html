@@ -5824,10 +5824,7 @@ async function verConfigTabela(db, tab) {
 
      ${(e.chaves_estrangeiras || []).length ? `
      <h3 class="secao">Chaves estrangeiras</h3>
-     <div class="nota mal"><p><strong>Declaradas, não aplicadas.</strong> Elas
-     estão gravadas no cabeçalho do <code>.reg</code> e aparecem aqui, mas
-     nenhuma gravação as consulta: <code>RESTRICT</code> e <code>CASCADE</code>
-     são intenção guardada, não comportamento.</p></div>
+     <div class="nota">${marcado(txt("tela.fk_nota_conferida", "**Conferidas na gravação.** Chave declarada **nasce** conferida, e a coluna diz por chave: a imposta recusa filha sem mãe, mãe que ainda tem filha, e alteração que quebre a ligação."))}</div>
      <div id="gradeFkTab"></div>` : ""}
 
      ${pag && (e.volumes || []).length ? `
@@ -5920,6 +5917,13 @@ async function verConfigTabela(db, tab) {
       { campo:"colunas", titulo:txt("tela.col_colunas","colunas"), formato:v => (v || []).map(esc).join(", ") },
       { campo:"tabela_ref", titulo:txt("tela.col_aponta_para","aponta para"),
         formato:(v, l) => `<code>${esc(v)}</code> (${(l.colunas_ref || []).map(esc).join(", ")})` },
+      // A grade IRMA (#gradeEstFks) ja tinha esta coluna e esta nao: duas
+      // telas mostrando a mesma chave, uma dizendo se ela e imposta e a
+      // outra nao. Sem ela o cartao mostrava so a intencao declarada.
+      { campo:"verificar", titulo:txt("tela.fk_conferida","conferida"),
+        formato:v => v
+          ? `<span class="pino ok">${esc(txt("tela.fk_imposta","imposta"))}</span>`
+          : `<span class="pino nao">${esc(txt("tela.fk_so_declarada","só declarada"))}</span>` },
       { campo:"ao_excluir", titulo:txt("tela.col_ao_excluir","ao excluir") },
       { campo:"ao_alterar", titulo:txt("tela.col_ao_alterar","ao alterar") },
     ],
@@ -7594,7 +7598,7 @@ async function verTransacoes() {
 
      <div class="nota">
        <p>${marcado(txt("tela.tx_isolamento_a", "**O nível de isolamento, sem enfeite:** escrita serializável por tabela, leitura confirmada e não bloqueante, sem leitura repetível."))}
-          ${marcado(txt("tela.tx_isolamento_b", "**Não é ANSI SERIALIZABLE** e não se chama assim: não há leitura repetível, e a transação não vê as próprias escritas."))}</p>
+          ${marcado(txt("tela.tx_isolamento_b", "**Não é ANSI SERIALIZABLE** e não se chama assim: não há leitura repetível. A transação **vê** as próprias escritas."))}</p>
        <p>${marcado(txt("tela.tx_nada_no_disco_a", "**Nada vai a disco antes do COMMIT.** A transação empilha o conjunto de escrita em RAM; desfazer é jogar a lista fora."))}
           ${marcado(txt("tela.tx_nada_no_disco_b", "Nenhum slot queimado, nenhum rowid consumido -- e é por isso que quem lê nunca vê dado não confirmado nem espera por quem escreve."))}</p>
      </div>
@@ -10763,7 +10767,9 @@ function cartaoDeclararFk(db, de, para) {
         ao_alterar: c.corpo.querySelector("#fkAlt").value,
       });
       c.fechar();
-      avisar(`chave ${nomeFk} declarada em ${de.tabela} — declarada, não imposta`);
+      avisar(preencher(txt("tela.fk_declarada_ok",
+        "chave {nome} declarada em {tabela} — e já conferida na gravação"),
+        { nome: nomeFk, tabela: de.tabela }));
       telaDiagramaER(db);
     } catch (e) {
       c.corpo.querySelector("#fkRecado").innerHTML =
