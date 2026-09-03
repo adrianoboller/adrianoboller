@@ -311,6 +311,16 @@ pub struct Table {
     /// `None` no caminho comum, que e o de todo mundo que nao esta dentro de
     /// um `BEGIN`. Ver [`Sobreposicao`].
     sobreposta: Option<Sobreposicao>,
+    /// Estamos aplicando um evento vindo do source? **A replica APLICA, nao
+    /// JULGA.**
+    ///
+    /// Ligado so por [`Table::aplicar_evento`], e desligado por ele mesmo na
+    /// volta -- por isso o `aplicar_evento` chama um interno e devolve o
+    /// resultado depois de apagar a marca, em vez de espalhar `false` por
+    /// cada `return`.
+    ///
+    /// Ver [`Table::julga_integridade`] para o motivo, que e medido.
+    como_replica: bool,
 }
 
 fn caminho(diretorio: &Path, nome: &str, ext: &str) -> PathBuf {
@@ -449,6 +459,7 @@ impl Table {
             imagem_na_exclusao: false,
             evento_forcado: None,
             sobreposta: None,
+            como_replica: false,
         };
         t.gravar_pag()?;
         Ok(t)
@@ -647,6 +658,7 @@ impl Table {
             imagem_na_exclusao: false,
             evento_forcado: None,
             sobreposta: None,
+            como_replica: false,
         })
     }
 
@@ -670,6 +682,47 @@ impl Table {
     /// referenciadas, a gravacao e RECUSADA dizendo qual indice falta -- um
     /// erro que se le e se conserta vale mais que uma lentidao que ninguem
     /// explica.
+    /// Este handle JULGA a integridade, ou so APLICA o que ja foi julgado?
+    ///
+    /// # A replica aplica, ela nao julga -- e a recusa esta medida
+    ///
+    /// A tentacao e conferir de novo na replica: guarda a mais nunca fez mal a
+    /// ninguem. Aqui fez, e a sonda `--example sonda-replica-fk` mostra o
+    /// tamanho do estrago.
+    ///
+    /// A replicacao anda por TABELA, cada uma com a sua posicao no diario. Nao
+    /// existe ordem global entre tabelas, e nem poderia existir sem serializar
+    /// o cluster inteiro. Entao a filha chega antes da mae, ou depois de a mae
+    /// ja ter mudado de chave -- e a conferencia, que enxerga so o instante em
+    /// que o evento chega, recusa uma linha que a ORIGEM aceitou.
+    ///
+    /// Medido antes deste portao, com `clientes.ins -> pedidos.ins ->
+    /// clientes.alt` no source e os tres eventos replicados:
+    ///
+    /// * **ordem «mae primeiro»**: a mae chega e ja muda de `1` para `2`; a
+    ///   inclusao da filha, que aponta para `1`, e RECUSADA. `pedidos` fica
+    ///   com **0 dos 2 eventos** e a linha simplesmente nao existe na replica.
+    /// * **ordem «filha primeiro»**: a mae ainda nao chegou, e a inclusao da
+    ///   filha e RECUSADA pelo mesmo portao. De novo **0 de 2**.
+    /// * **ordem entrelacada**: a filha entra, e a alteracao da mae dispara a
+    ///   CASCATA local -- que gera na replica um evento que o source nunca
+    ///   mandou. O diario da replica passa a ter mais eventos que o do source.
+    ///
+    /// Os tres sao divergencia, e os dois primeiros sao PERDA DE DADO causada
+    /// pela guarda. A garantia de integridade e da origem, que a impos quando
+    /// aceitou a escrita; a garantia da replica e de FIDELIDADE, e ela e
+    /// conferida por SHA-256 de cada linha. Conferir duas vezes nao soma as
+    /// duas: troca a segunda pela primeira.
+    ///
+    /// **Isto vale so para o `aplicar_evento`.** A reaplicacao da recuperacao
+    /// (`transacao.rs::aplicar_uma`) continua conferindo e continua
+    /// cascateando, e a diferenca e de natureza: ali a escrita e LOCAL e esta
+    /// sendo refeita neste mesmo servidor, entao o julgamento tambem e local e
+    /// as tabelas todas estao no mesmo disco.
+    fn julga_integridade(&self) -> bool {
+        !self.como_replica
+    }
+
     fn conferir_fks(&self, valores: &[Value]) -> Result<()> {
         for &i in &self.fks_conferidas {
             let fk = &self.esquema.chaves_estrangeiras()[i];
@@ -1090,7 +1143,24 @@ impl Table {
                 if colunas_da_filha.len() != fk.colunas.len() {
                     continue;
                 }
+                // A filha HERDA a imagem no diario da mae, e isso e a correcao
+                // de uma divergencia medida, nao um detalhe de estilo.
+                //
+                // A cascata grava na filha por um handle proprio, aberto aqui.
+                // Nascendo com o padrao (`imagem_no_diario: false`), o evento
+                // de alteracao da filha ia para o diario SEM a imagem da linha
+                // -- e a replica, que precisa da imagem para saber para QUE o
+                // valor mudou, recusava o evento com «veio sem imagem» e
+                // ficava com a filha na chave antiga para sempre.
+                //
+                // O source dizia `pedidos: 2 eventos` e a replica so conseguia
+                // aplicar 1, nas TRES ordens (`--example sonda-replica-fk`).
+                // Quem replica liga a imagem na tabela que abre; a tabela que
+                // o motor abre por baixo tem de sair igual, senao a garantia
+                // vale so para a escrita que passou pela mao de quem ligou.
                 let mut filha = Table::abrir(&self.diretorio, &irma)?;
+                filha.ligar_imagem_no_diario(self.imagem_no_diario);
+                filha.ligar_imagem_na_exclusao(self.imagem_na_exclusao);
                 // A mesma exigencia dos DOIS lados que a chave conferida ja
                 // tem: sem indice na filha, achar quem aponta para esta linha
                 // seria uma varredura da tabela inteira escondida dentro de um
@@ -1846,7 +1916,7 @@ impl Table {
 
     pub fn inserir(&mut self, valores: &[Value]) -> Result<RowId> {
         self.conferir_aridade(valores)?;
-        if !self.fks_conferidas.is_empty() {
+        if !self.fks_conferidas.is_empty() && self.julga_integridade() {
             self.conferir_fks(valores)?;
         }
         // Numerar ANTES das chaves, pela mesma razao da sequencia: se a coluna
@@ -2067,7 +2137,7 @@ impl Table {
     /// fisica no `.reg`.
     pub fn atualizar(&mut self, rowid: RowId, valores: &[Value]) -> Result<()> {
         self.conferir_aridade(valores)?;
-        if !self.fks_conferidas.is_empty() {
+        if !self.fks_conferidas.is_empty() && self.julga_integridade() {
             self.conferir_fks(valores)?;
         }
         let antigo = self
@@ -2140,7 +2210,17 @@ impl Table {
         // achar as filhas e conferir o indice delas sao as ultimas coisas que
         // ainda podem recusar, e recusa depois de gravar nao e recusa. Da
         // primeira escrita para baixo nao ha mais `return Err` de guarda.
-        let mut cascata = self.planejar_ao_alterar(&valores_antigos, valores)?;
+        //
+        // Na replica a cascata NAO roda: o source ja cascateou, e cada evento
+        // que a cascata dele gerou vem replicado por conta propria. Refazer
+        // aqui grava duas vezes a mesma filha e -- pior -- deixa no diario da
+        // replica um evento que o source nunca mandou, que e divergencia
+        // medida em `--example sonda-replica-fk`.
+        let mut cascata = if self.julga_integridade() {
+            self.planejar_ao_alterar(&valores_antigos, valores)?
+        } else {
+            Vec::new()
+        };
         // E a arvore INTEIRA que confere aqui, e nao so o primeiro nivel: a
         // neta com `restringir` recusava depois de a avo estar gravada.
         // `is_empty()` mantem o portao -- alteracao sem cascata nao desce nada.
@@ -2243,7 +2323,9 @@ impl Table {
     /// se ganha e a espera de disco; o que se arrisca esta escrito em
     /// `docs/DESEMPENHO.md` §4.12 e no `MANUAL.txt`.
     pub fn excluir_de_vez(&mut self, rowid: RowId, motivo: &str) -> Result<bool> {
-        self.conferir_filhas(rowid)?;
+        if self.julga_integridade() {
+            self.conferir_filhas(rowid)?;
+        }
         let payload = match self.reg.ler(rowid)? {
             None => return Ok(false),
             Some(p) => p,
@@ -2553,6 +2635,22 @@ impl Table {
     ///
     /// Devolve o rowid aplicado.
     pub fn aplicar_evento(
+        &mut self,
+        operacao: Operacao,
+        rowid: RowId,
+        imagem: &[u8],
+    ) -> Result<RowId> {
+        // A marca liga e desliga AQUI, num par so, e o trabalho fica num
+        // interno: cada `return` la dentro deixaria a marca acesa, e um handle
+        // que continuasse "sendo replica" depois do evento pararia de conferir
+        // integridade numa escrita local. Ver [`Table::julga_integridade`].
+        self.como_replica = true;
+        let r = self.aplicar_evento_interno(operacao, rowid, imagem);
+        self.como_replica = false;
+        r
+    }
+
+    fn aplicar_evento_interno(
         &mut self,
         operacao: Operacao,
         rowid: RowId,

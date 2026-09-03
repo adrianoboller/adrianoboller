@@ -2360,4 +2360,130 @@ pub fn limpar() {
             "config_sem_o_campo_sobe_com_o_teto_padrao",
         ],
     },
+    # -----------------------------------------------------------------------
+    # A replica APLICA, ela nao JULGA -- os quatro defeitos que a sonda mediu
+    # -----------------------------------------------------------------------
+    {
+        "id": "replica-julga-fk",
+        "titulo": "a replica volta a conferir chave estrangeira no evento que aplica",
+        "porque": (
+            "a replicacao anda por TABELA, cada uma com a sua posicao, e nao "
+            "existe ordem global entre tabelas. Conferindo, a replica recusava "
+            "a filha que a ORIGEM ja tinha aceitado: medido em "
+            "`--example sonda-replica-fk`, `pedidos` ficava com 0 dos 2 "
+            "eventos nas ordens \"mae primeiro\" e \"filha primeiro\". A guarda "
+            "causava a perda de dado que existe para impedir."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        self.conferir_aridade(valores)?;
+        if !self.fks_conferidas.is_empty() && self.julga_integridade() {
+            self.conferir_fks(valores)?;
+        }
+        // Numerar ANTES das chaves""",
+        "troca": """        // DEFEITO REPOSTO: a replica volta a julgar o que a origem ja julgou.
+        self.conferir_aridade(valores)?;
+        if !self.fks_conferidas.is_empty() {
+            self.conferir_fks(valores)?;
+        }
+        // Numerar ANTES das chaves""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "replicacao-integridade"],
+        "caem": [
+            "a_replica_converge_nas_tres_ordens_de_tabela",
+            # Este cai junto por consequencia, e nao por acaso: ele aplica um
+            # evento com a mae AUSENTE de proposito, para so entao provar que a
+            # marca nao vaza. Com o portao de volta o evento nem entra.
+            "a_marca_de_replica_nao_vaza_para_a_escrita_local",
+        ],
+        "seguem": [
+            # A imagem do evento da cascata e outra garantia, e nao se mexe:
+            # sem este `seguem` a troca poderia estar quebrando o arquivo todo.
+            "o_evento_da_cascata_carrega_a_imagem_da_linha",
+        ],
+    },
+    {
+        "id": "cascata-sem-imagem-no-diario",
+        "titulo": "a filha que a cascata abre volta a nascer sem imagem no diario",
+        "porque": (
+            "a cascata do `ao_alterar` grava na filha por um handle proprio, "
+            "aberto pelo motor. Nascendo com o padrao, o evento de alteracao "
+            "da filha ia para o diario SEM a imagem da linha, e a replica o "
+            "recusava com \"veio sem imagem\" nas TRES ordens. Quem replica liga "
+            "a imagem na tabela que abre; a que o motor abre por baixo tem de "
+            "sair igual, senao a garantia vale so para quem passou pela mao de "
+            "quem ligou."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """                filha.ligar_imagem_no_diario(self.imagem_no_diario);
+                filha.ligar_imagem_na_exclusao(self.imagem_na_exclusao);
+""",
+        "troca": """                // DEFEITO REPOSTO: a filha da cascata nao herda mais a imagem.
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "replicacao-integridade"],
+        "caem": [
+            "o_evento_da_cascata_carrega_a_imagem_da_linha",
+            "a_replica_converge_nas_tres_ordens_de_tabela",
+        ],
+        "seguem": [
+            "a_marca_de_replica_nao_vaza_para_a_escrita_local",
+        ],
+    },
+    {
+        "id": "replica-refaz-a-cascata",
+        "titulo": "a replica volta a refazer a cascata que o source ja mandou",
+        "porque": (
+            "o source cascateia e replica o evento que a cascata dele gerou. "
+            "Refazendo aqui, a replica grava a filha duas vezes e deixa no "
+            "diario dela um evento que o source nunca mandou -- divergencia "
+            "medida, e ela some de qualquer prova que compare so o VALOR da "
+            "linha em vez do diario."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        let mut cascata = if self.julga_integridade() {
+            self.planejar_ao_alterar(&valores_antigos, valores)?
+        } else {
+            Vec::new()
+        };""",
+        "troca": """        // DEFEITO REPOSTO: a replica planeja e roda a cascata de novo.
+        let mut cascata = self.planejar_ao_alterar(&valores_antigos, valores)?;""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "replicacao-integridade"],
+        "caem": [
+            # So o teste que conta os EVENTOS pega: o valor da linha fica certo
+            # dos dois jeitos, e e por isso que o defeito sobreviveu ate a
+            # sonda contar o diario.
+            "a_replica_converge_nas_tres_ordens_de_tabela",
+        ],
+        "seguem": [
+            "o_evento_da_cascata_carrega_a_imagem_da_linha",
+            "a_marca_de_replica_nao_vaza_para_a_escrita_local",
+        ],
+    },
+    {
+        "id": "marca-de-replica-fica-acesa",
+        "titulo": "a marca de replica nao se apaga na volta do `aplicar_evento`",
+        "porque": (
+            "a marca e de UM evento, e nao do handle. Sem o par liga/desliga, "
+            "o handle que aplicou um evento continuaria \"sendo replica\" e "
+            "pararia de conferir integridade na escrita LOCAL seguinte -- um "
+            "portao que se apaga sozinho e pior que portao nenhum, porque "
+            "ninguem procura por ele."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        let r = self.aplicar_evento_interno(operacao, rowid, imagem);
+        self.como_replica = false;
+        r""",
+        "troca": """        // DEFEITO REPOSTO: a marca fica acesa depois do evento.
+        self.aplicar_evento_interno(operacao, rowid, imagem)""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "replicacao-integridade"],
+        "caem": [
+            "a_marca_de_replica_nao_vaza_para_a_escrita_local",
+        ],
+        "seguem": [
+            "a_replica_converge_nas_tres_ordens_de_tabela",
+            "o_evento_da_cascata_carrega_a_imagem_da_linha",
+        ],
+    },
 ]
