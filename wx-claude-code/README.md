@@ -73,6 +73,27 @@ Não lê o formato binário do WX, não faz OCR sozinho, não certifica LGPD e n
 afirma equivalência sem baseline executável. O corpus do Help é derivado da
 documentação PC SOFT e não inclui licença de redistribuição: uso privado.
 
+## Prints de uso
+
+Capturas de sessões reais do Claude Code com o plugin carregado (`docs/prints/`,
+geradas por `docs/prints/gerar.md`).
+
+| | |
+| --- | --- |
+| ![validar](docs/prints/01-instalar-e-validar.png) `claude plugin validate` | ![skills](docs/prints/02-skills-e-agentes.png) skills e agentes numa sessão nova |
+| ![questionario](docs/prints/03-questionario-a-j.png) `/wx-claude-code:questionario` | ![preflight](docs/prints/04-aplicar-e-preflight.png) respostas viram manifesto e Gate G0 |
+| ![design](docs/prints/05-design-md-impeccable.png) `DESIGN.md` da letra F | ![help](docs/prints/06-corpus-help-wlanguage.png) corpus WLanguage 12k |
+| ![laudo](docs/prints/07-laudo-tokens-fase-1.png) `/wx-claude-code:laudo-tokens` | |
+
+## Pacotes
+
+Os zips não ficam no repositório (`dist/` está no `.gitignore`); gere com:
+
+```bash
+zip -r dist/wx-claude-code-plugin.zip wx-claude-code .claude-plugin -x 'wx-claude-code/docs/prints/*'
+(cd wx-claude-code/skills && zip -r ../../dist/skill-conversao-wx-cowork.zip conversao-wx)
+```
+
 ## Validar o pacote
 
 ```bash
