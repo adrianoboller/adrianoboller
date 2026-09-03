@@ -53,7 +53,7 @@ python3 wx-claude-code/skills/conversao-wx/scripts/query_wlanguage_help.py --ver
 listagem que o modelo devolve pode omitir um item; confira por nome, não
 por contagem.
 
-**Validar o pacote** (roda os 20 testes de regressão):
+**Validar o pacote** (roda os 22 testes de regressão):
 
 ```bash
 python3 wx-claude-code/skills/conversao-wx/scripts/validate_plugin_bundle.py wx-claude-code --strict
@@ -323,6 +323,15 @@ projeto, uma por mensagem:
 | 0.15 | GitHub de destino: URL, branch, usuário, **nome da credencial** e diretório de destino |
 | 0.16 | **quem aprova**: nome, cargo, e-mail, o que aprova e o substituto |
 
+**A letra K, o ambiente.** Para cada ferramenta marcada o script gera
+`.wx-migration/ambiente/instalar-ambiente.sh` (rustup para o Rust, o pacote
+do banco, `git` e `gh` para o GitHub, tudo idempotente), o SQL dos papéis do
+banco por nível (`superuser`, `owner`, `readwrite`, `readonly`) e um
+`.env.exemplo` sem valores. O login do root e de cada papel é perguntado; a
+senha, não: você diz em que variável de ambiente ela vai ficar, e o SQL usa
+`${VARIAVEL}`. O `verificar_ambiente.py` mede o que já está instalado contra
+a versão mínima e devolve 3 quando falta algo.
+
 **Sobre a senha.** O wizard não pergunta a senha nem o token, e o script
 recusa o questionário se algum vier preenchido: a regra do projeto é senha
 nunca em texto puro. Você informa o **nome** da variável de ambiente ou do
@@ -343,6 +352,7 @@ o push. Se colar a senha na conversa por engano, revogue-a.
 | H | para qual linguagem converter o backend (capítulo 7) |
 | I | para qual linguagem e plataforma converter o frontend (capítulo 7) |
 | J | ativar a economia de tokens? |
+| K | ambiente: Rust/Cargo (versão mínima, hoje 1.98 no modelo), PostgreSQL, MySQL, MariaDB e Supabase atualizados, cada um marcável, com login do superusuário e papéis por nível; e ligar o projeto ao GitHub (criar, remote, branch, CI) |
 
 E duas perguntas de governança no fim: versão e idioma do WX; modo
 (`inventário`, `plano`, `piloto`, `completo`). Quem aprova já foi o 0.16.
@@ -353,6 +363,7 @@ E duas perguntas de governança no fim: versão e idioma do WX; modo
 .wx-migration/
   questionario.json          suas respostas
   respostas_questionario.md  todas as respostas legíveis, com o aprovador no topo; o CLAUDE.md aponta para ele
+  ambiente.md, ambiente/     instalador, SQL dos papéis do banco e .env.exemplo (letra K)
   wx-inputs.manifest.json    manifesto que o pré-flight lê
   conversion.config.json     modo, destino, fidelidade
   gaps.md, traceability.csv  vazios, prontos para o G1

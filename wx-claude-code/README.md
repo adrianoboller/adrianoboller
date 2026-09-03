@@ -46,6 +46,7 @@ Requisitos: Python 3.10+ (scripts de intake e do corpus) e Node 22+ (Impeccable)
 | H | Para qual linguagem converter o backend: o plugin orienta (Rust, Python, C# + WL_C#, e mais), mostra o processo de conversão de cada opção e pergunta a estratégia | `target`, `DEC-0001`, `processo-de-conversao.md` |
 | I | Linguagens para o frontend, com o processo e o ritmo (tela a tela, módulo a módulo) | `target.platforms`, navegadores e dispositivos |
 | J | Ativar economia de tokens | estilo de resposta no `CLAUDE.md` e `/laudo-tokens` |
+| K | Ambiente: Rust/Cargo, PostgreSQL, MySQL, MariaDB, Supabase (marcáveis, com login e papéis por nível; senha só por nome de variável) e ligação com o GitHub | `ambiente.md`, `ambiente/` |
 
 As respostas ficam em `.wx-migration/questionario.json` (modelo em
 `skills/conversao-wx/templates/questionario.json`) e o script
@@ -112,7 +113,7 @@ Veja `exemplos/estoque-wx/LEIA-ME.md`.
 - `uso_de_tokens.py`: lê o `usage` das sessões do Claude Code (MEDIDO) e lança no orçamento do gate.
 - `hooks/portao_g0.py`: nega `Write`/`Edit` fora de `.wx-migration/` enquanto o G0 estiver `BLOCKED`.
 - `pmo.py painel`: o painel do PMO em HTML, gerado do mesmo código do `status`.
-- `tests/testes.py`: 20 testes de regressão; o validador em modo estrito os executa.
+- `tests/testes.py`: 22 testes de regressão; o validador em modo estrito os executa.
 
 ## Limitações conhecidas
 
@@ -169,6 +170,7 @@ geradas por `docs/prints/gerar.md`).
 | ![bloco-0](docs/prints/17-bloco-0-empresa-e-projeto.png) bloco 0: softhouse, diretores, endereço, um item por mensagem | ![senha](docs/prints/18-senha-colada-nao-e-gravada.png) senha colada na conversa: não gravada, não repetida, revogar e usar `credencial_ref` |
 | ![processo](docs/prints/19-letra-h-processo-de-conversao.png) letra H: sinais, três opções e o processo de conversão para a escolhida, peça por peça | ![tela-modelo](docs/prints/20-letra-f0-tela-modelo.png) F0: a tela principal do legado como modelo, aberta antes de registrar, com o que preservar e o que mudar |
 | ![licenca](docs/prints/21-licenca-serial-de-ativacao.png) serial de ativação: sem ele o PMO recusa; instalado, a mesma sessão roda | ![respostas](docs/prints/22-respostas-do-questionario.png) sessão nova acha o aprovador e o prazo em `respostas_questionario.md`, sem perguntar |
+| ![ambiente](docs/prints/23-letra-k-ambiente-sem-senha.png) letra K: PostgreSQL, papéis por nível e a senha do root que não é gravada nem repetida | |
 
 ## Licença e serial
 

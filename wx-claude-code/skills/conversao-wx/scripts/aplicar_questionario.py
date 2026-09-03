@@ -599,7 +599,7 @@ ROTULOS = {
     "projeto": "Projeto", "0_empresa_e_projeto": "Bloco 0 · Empresa e projeto", "A_sql": "A · Script SQL",
     "B_pdf_codigos": "B · PDF dos códigos", "C_pdf_interfaces": "C · PDF das interfaces", "D_pdf_queries": "D · PDF das queries",
     "E_pdf_completo": "E · PDF completo", "F_estilo_impeccable": "F · Qualidade das telas (Impeccable)", "G_help_json": "G · Help WLanguage em JSON",
-    "H_backend": "H · Backend de destino", "I_frontend": "I · Frontend de destino", "J_economia_de_tokens": "J · Economia de tokens",
+    "H_backend": "H · Backend de destino", "I_frontend": "I · Frontend de destino", "J_economia_de_tokens": "J · Economia de tokens", "K_ambiente": "K · Ambiente e ferramentas",
 }
 
 
@@ -666,6 +666,153 @@ def respostas_md(q: dict, vazados_removidos: bool = False) -> str:
     return "\n".join(L)
 
 
+# ---------------------------------------------------------------------------
+# Letra K: ambiente e ferramentas. Gera ambiente.md, o instalador, os papeis
+# de banco em SQL e um .env.exemplo SEM valores. A senha do root e de cada
+# papel vive na variavel de ambiente nomeada em senha_ref; nunca aqui.
+# ---------------------------------------------------------------------------
+
+NIVEIS_PG = {
+    "superuser": "SUPERUSER",
+    "owner": "NOSUPERUSER CREATEDB",
+    "readwrite": "NOSUPERUSER",
+    "readonly": "NOSUPERUSER",
+}
+NIVEIS_MY = {
+    "superuser": "ALL PRIVILEGES ON *.* WITH GRANT OPTION",
+    "owner": "ALL PRIVILEGES ON `{banco}`.*",
+    "readwrite": "SELECT, INSERT, UPDATE, DELETE, EXECUTE ON `{banco}`.*",
+    "readonly": "SELECT ON `{banco}`.*",
+}
+
+
+def _papeis_ok(papeis: list, chave: str) -> None:
+    for pp in papeis or []:
+        if pp.get("nivel") not in NIVEIS_PG:
+            raise ValueError(f"{chave}: nivel {pp.get('nivel')!r} do papel {pp.get('nome')!r} desconhecido (aceitos: {', '.join(NIVEIS_PG)})")
+        if not pp.get("senha_ref"):
+            raise ValueError(f"{chave}: papel {pp.get('nome')!r} sem senha_ref (nome da variavel de ambiente com a senha)")
+
+
+def sql_papeis_postgresql(k2: dict) -> str:
+    banco = k2.get("banco") or "app"
+    L = ["-- Papeis do PostgreSQL gerados do questionario (K2). Senhas vem do ambiente:",
+         "-- rode com: envsubst < papeis-postgresql.sql | psql -U $PGUSER -h $PGHOST -d postgres", "",
+         f"CREATE DATABASE {banco};", ""]
+    for pp in k2.get("papeis", []) or []:
+        n, nv = pp["nome"], pp["nivel"]
+        L.append(f"CREATE ROLE {n} LOGIN {NIVEIS_PG[nv]} PASSWORD '${{{pp['senha_ref']}}}';")
+        if nv == "owner":
+            L.append(f"ALTER DATABASE {banco} OWNER TO {n};")
+        elif nv == "readwrite":
+            L += [f"GRANT CONNECT ON DATABASE {banco} TO {n};", f"GRANT USAGE ON SCHEMA public TO {n};",
+                  f"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {n};",
+                  f"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO {n};"]
+        elif nv == "readonly":
+            L += [f"GRANT CONNECT ON DATABASE {banco} TO {n};", f"GRANT USAGE ON SCHEMA public TO {n};",
+                  f"GRANT SELECT ON ALL TABLES IN SCHEMA public TO {n};",
+                  f"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO {n};"]
+        L.append("")
+    return "\n".join(L)
+
+
+def sql_papeis_mysql(k: dict, rotulo: str) -> str:
+    banco = k.get("banco") or "app"
+    L = [f"-- Papeis do {rotulo} gerados do questionario. Senhas vem do ambiente:",
+         f"-- rode com: envsubst < papeis-{rotulo.lower()}.sql | {rotulo.lower()} -u {k.get('superusuario') or 'root'} -p", "",
+         f"CREATE DATABASE IF NOT EXISTS `{banco}`;", ""]
+    for pp in k.get("papeis", []) or []:
+        L += [f"CREATE USER IF NOT EXISTS '{pp['nome']}'@'%' IDENTIFIED BY '${{{pp['senha_ref']}}}';",
+              f"GRANT {NIVEIS_MY[pp['nivel']].format(banco=banco)} TO '{pp['nome']}'@'%';", ""]
+    L.append("FLUSH PRIVILEGES;")
+    return "\n".join(L)
+
+
+def instalador(k: dict, e: dict) -> str:
+    k1, k2, k3, k4, k5, k6 = (k.get(x, {}) or {} for x in ("K1_rust", "K2_postgresql", "K3_mysql", "K4_mariadb", "K5_supabase", "K6_github"))
+    g = (e.get("0_15_github", {}) or {}) if e else {}
+    L = ["#!/usr/bin/env bash", "# Instalador do ambiente, gerado do questionario (letra K). Idempotente: cada",
+         "# passo confere antes de agir. Senhas e tokens vem de variaveis de ambiente",
+         "# (veja .env.exemplo); este arquivo nao contem nenhum.", "set -euo pipefail", "",
+         "falta() { echo \"FALTA: $1\"; FALTOU=1; }", "FALTOU=0", ""]
+    if k1.get("instalar_ou_atualizar"):
+        L += ["# --- Rust / Cargo (minimo " + str(k1.get("versao_minima", "")) + ", canal " + k1.get("canal", "stable") + ")",
+              "if ! command -v rustup >/dev/null; then curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain " + k1.get("canal", "stable") + "; source \"$HOME/.cargo/env\"; fi",
+              "rustup update " + k1.get("canal", "stable"),
+              *(f"rustup component add {c}" for c in k1.get("componentes", []) or []),
+              *(f"rustup target add {t}" for t in k1.get("targets", []) or []),
+              f"cargo --version | grep -Eo '[0-9]+\\.[0-9]+' | awk -F. -v maj=$(echo {k1.get('versao_minima','0')} | cut -d. -f1) -v min=$(echo {k1.get('versao_minima','0')} | cut -d. -f2) '($1>maj)||($1==maj&&$2>=min){{ok=1}} END{{exit !ok}}' || falta \"cargo abaixo de {k1.get('versao_minima','')}: a estavel de hoje pode ser mais antiga; o minimo do questionario e o que vale\"", ""]
+    if k3.get("instalar_ou_atualizar") and k4.get("instalar_ou_atualizar") and k3.get("porta") == k4.get("porta"):
+        L += ["echo 'AVISO: MySQL e MariaDB marcados na mesma porta; instale um deles ou mude a porta no questionario.'", ""]
+    for kx, nome, pacote, cli, sql in ((k2, "PostgreSQL", "postgresql-" + str(k2.get("versao", "")), "psql", "papeis-postgresql.sql"),
+                                       (k3, "MySQL", "mysql-server", "mysql", "papeis-mysql.sql"),
+                                       (k4, "MariaDB", "mariadb-server", "mariadb", "papeis-mariadb.sql")):
+        if kx.get("instalar_ou_atualizar"):
+            L += [f"# --- {nome} {kx.get('versao', '')} em {kx.get('host', 'localhost')}:{kx.get('porta', '')}",
+                  f"if ! command -v {cli} >/dev/null; then if command -v apt-get >/dev/null; then sudo apt-get update && sudo apt-get install -y {pacote}; else falta '{nome}: instale pelo gerenciador da sua plataforma'; fi; fi",
+                  f": \"${{{kx.get('senha_ref', 'SENHA')}:?defina {kx.get('senha_ref', 'SENHA')} (senha do {kx.get('superusuario', 'root')}) no ambiente}}\"",
+                  *(f": \"${{{pp['senha_ref']}:?defina {pp['senha_ref']} (senha do papel {pp['nome']})}}\"" for pp in kx.get("papeis", []) or []),
+                  (f"PGPASSWORD=\"${{{kx.get('senha_ref')}}}\" envsubst < \"$(dirname \"$0\")/{sql}\" | psql -h {kx.get('host', 'localhost')} -p {kx.get('porta', 5432)} -U {kx.get('superusuario', 'postgres')} -d postgres"
+                   if nome == "PostgreSQL" else
+                   f"envsubst < \"$(dirname \"$0\")/{sql}\" | {cli} -h {kx.get('host', 'localhost')} -P {kx.get('porta', 3306)} -u {kx.get('superusuario', 'root')} -p\"${{{kx.get('senha_ref')}}}\""),
+                  ""]
+    if k5.get("instalar_ou_atualizar"):
+        L += ["# --- Supabase", *( ["if ! command -v supabase >/dev/null; then npm install -g supabase || falta 'supabase CLI (npm)'; fi"] if k5.get("cli_local") else []),
+              f": \"${{{k5.get('anon_key_ref', 'SUPABASE_ANON_KEY')}:?defina a anon key no ambiente}}\"",
+              f": \"${{{k5.get('service_role_ref', 'SUPABASE_SERVICE_ROLE_KEY')}:?defina a service role key no ambiente}}\"",
+              f"echo \"Supabase: projeto {k5.get('projeto_url') or '(url pendente)'} (ref {k5.get('projeto_ref') or '?'})\"", ""]
+    if k6.get("ligar_projeto"):
+        url = g.get("url", ""); br = k6.get("branch_principal", "main"); rem = k6.get("remote", "origin")
+        L += ["# --- GitHub", f": \"${{{g.get('credencial_ref') or 'GITHUB_TOKEN'}:?defina o token do GitHub no ambiente}}\"",
+              f"cd \"{g.get('diretorio_destino') or '.'}\"", "git rev-parse --is-inside-work-tree >/dev/null 2>&1 || git init -b " + br,
+              *( [f"if command -v gh >/dev/null; then gh repo view {url.replace('https://github.com/', '')} >/dev/null 2>&1 || gh repo create {url.replace('https://github.com/', '')} --{k6.get('visibilidade', 'private')} --confirm; else falta 'gh (para criar o repositorio)'; fi"] if k6.get("criar_repositorio_se_nao_existir") and url else []),
+              f"git remote get-url {rem} >/dev/null 2>&1 || git remote add {rem} {url or '<URL do 0.15>'}",
+              *( [f"mkdir -p .github/workflows && [ -f .github/workflows/ci.yml ] || cat > .github/workflows/ci.yml <<'YML'\nname: ci\non: [push, pull_request]\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: cargo build --locked && cargo test --locked\nYML"] if k6.get("ci") == "github-actions" and k1.get("instalar_ou_atualizar") else []),
+              *( [f"echo 'Protecao da branch {br}: configure em Settings > Branches (exige gh api ou a interface).'"] if k6.get("proteger_branch") else []),
+              ""]
+    L += ["[ \"$FALTOU\" = 0 ] && echo 'ambiente OK' || { echo 'ambiente incompleto (veja FALTA acima)'; exit 3; }"]
+    return "\n".join(L) + "\n"
+
+
+def env_exemplo(k: dict, e: dict) -> str:
+    refs = []
+    for chave in ("K2_postgresql", "K3_mysql", "K4_mariadb"):
+        kx = k.get(chave, {}) or {}
+        if kx.get("instalar_ou_atualizar"):
+            refs.append((kx.get("senha_ref"), f"senha do {kx.get('superusuario', 'root')} do {chave[3:]}"))
+            refs += [(pp["senha_ref"], f"senha do papel {pp['nome']} ({pp['nivel']})") for pp in kx.get("papeis", []) or []]
+    k5 = k.get("K5_supabase", {}) or {}
+    if k5.get("instalar_ou_atualizar"):
+        refs += [(k5.get("anon_key_ref"), "Supabase anon key"), (k5.get("service_role_ref"), "Supabase service role key (nunca no frontend)")]
+    g = (e or {}).get("0_15_github", {}) or {}
+    if (k.get("K6_github", {}) or {}).get("ligar_projeto"):
+        refs.append((g.get("credencial_ref") or "GITHUB_TOKEN", "token do GitHub"))
+    L = ["# Copie para .env (fora do repositorio: .env esta no .gitignore) e preencha.",
+         "# Este exemplo nao tem valores de proposito: senha nunca em texto puro no repositorio.", ""]
+    L += [f"# {desc}\n{ref}=" for ref, desc in refs if ref]
+    return "\n".join(L) + "\n"
+
+
+def esboco_ambiente(k: dict, e: dict) -> str:
+    def sim(b): return "sim" if b else "não"
+    k1, k2, k3, k4, k5, k6 = (k.get(x, {}) or {} for x in ("K1_rust", "K2_postgresql", "K3_mysql", "K4_mariadb", "K5_supabase", "K6_github"))
+    g = (e or {}).get("0_15_github", {}) or {}
+    L = ["# Ambiente e ferramentas (letra K do questionario)", "",
+         "Gerado por `aplicar_questionario.py`. Instalar: `bash .wx-migration/ambiente/instalar-ambiente.sh` depois de preencher o `.env` a partir de `.env.exemplo`. Medir: `verificar_ambiente.py`.", "",
+         "| Ferramenta | Pedido | Versão | Detalhes |", "| --- | --- | --- | --- |",
+         f"| Rust / Cargo | {sim(k1.get('instalar_ou_atualizar'))} | mínima {k1.get('versao_minima') or '—'} ({k1.get('canal', 'stable')}) | componentes: {', '.join(k1.get('componentes', []) or []) or '—'}; targets: {', '.join(k1.get('targets', []) or []) or '—'} |",
+         f"| PostgreSQL | {sim(k2.get('instalar_ou_atualizar'))} | {k2.get('versao') or '—'} | {k2.get('host', '')}:{k2.get('porta', '')}, banco `{k2.get('banco') or '?'}`, superusuário `{k2.get('superusuario', '')}` (senha em `${k2.get('senha_ref', '')}`) |",
+         f"| MySQL | {sim(k3.get('instalar_ou_atualizar'))} | {k3.get('versao') or '—'} | {k3.get('host', '')}:{k3.get('porta', '')}, superusuário `{k3.get('superusuario', '')}` (senha em `${k3.get('senha_ref', '')}`) |",
+         f"| MariaDB | {sim(k4.get('instalar_ou_atualizar'))} | {k4.get('versao') or '—'} | {k4.get('host', '')}:{k4.get('porta', '')}, superusuário `{k4.get('superusuario', '')}` (senha em `${k4.get('senha_ref', '')}`) |",
+         f"| Supabase | {sim(k5.get('instalar_ou_atualizar'))} | CLI local: {sim(k5.get('cli_local'))} | projeto {k5.get('projeto_url') or '—'}; chaves em `${k5.get('anon_key_ref', '')}` e `${k5.get('service_role_ref', '')}` |",
+         f"| GitHub | {sim(k6.get('ligar_projeto'))} | — | {g.get('url') or '(URL no 0.15)'}, remote `{k6.get('remote', 'origin')}`, branch `{k6.get('branch_principal', 'main')}`, criar se não existir: {sim(k6.get('criar_repositorio_se_nao_existir'))}, {k6.get('visibilidade', 'private')}, CI: {k6.get('ci') or '—'}, proteger branch: {sim(k6.get('proteger_branch'))} |", ""]
+    for kx, nome in ((k2, "PostgreSQL"), (k3, "MySQL"), (k4, "MariaDB")):
+        if kx.get("papeis"):
+            L += [f"## Papéis do {nome}", "", "| papel | nível | senha em |", "| --- | --- | --- |"] + [f"| {pp['nome']} | {pp['nivel']} | `${pp['senha_ref']}` |" for pp in kx["papeis"]] + [""]
+    L += ["## Regra", "", "Nenhuma senha, token ou chave fica no questionário, neste arquivo, no instalador ou no SQL: só o **nome** da variável de ambiente. O `.env` real fica fora do repositório.", ""]
+    return "\n".join(L)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--questionario", required=True, type=Path)
@@ -723,6 +870,26 @@ def main() -> int:
 
     if q.get("H_backend", {}).get("perfil") or q.get("H_backend", {}).get("processo", {}).get("estrategia"):
         saida.append(write_new(wx / "processo-de-conversao.md", esboco_processo(q)))
+
+    k = q.get("K_ambiente")
+    if k:
+        for chave in ("K2_postgresql", "K3_mysql", "K4_mariadb"):
+            _papeis_ok((k.get(chave, {}) or {}).get("papeis", []), chave)
+        amb = wx / "ambiente"
+        e0 = q.get("0_empresa_e_projeto") or {}
+        saida += [write_new(wx / "ambiente.md", esboco_ambiente(k, e0)),
+                  write_new(amb / "instalar-ambiente.sh", instalador(k, e0)),
+                  write_new(amb / ".env.exemplo", env_exemplo(k, e0))]
+        if (k.get("K2_postgresql", {}) or {}).get("instalar_ou_atualizar"):
+            saida.append(write_new(amb / "papeis-postgresql.sql", sql_papeis_postgresql(k["K2_postgresql"])))
+        if (k.get("K3_mysql", {}) or {}).get("instalar_ou_atualizar"):
+            saida.append(write_new(amb / "papeis-mysql.sql", sql_papeis_mysql(k["K3_mysql"], "MySQL")))
+        if (k.get("K4_mariadb", {}) or {}).get("instalar_ou_atualizar"):
+            saida.append(write_new(amb / "papeis-mariadb.sql", sql_papeis_mysql(k["K4_mariadb"], "MariaDB")))
+        try:
+            os.chmod(amb / "instalar-ambiente.sh", 0o755)
+        except OSError:
+            pass
 
     e = q.get("0_empresa_e_projeto")
     if e:

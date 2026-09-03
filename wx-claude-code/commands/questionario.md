@@ -1,5 +1,5 @@
 ---
-description: "Questionario inicial do projeto WX: bloco 0 (empresa, prazo, orcamento, GitHub) e letras A-J. Gera .wx-migration/."
+description: "Questionario inicial do projeto WX: bloco 0 (empresa, prazo, orcamento, GitHub), letras A-J e K (Rust, bancos, Supabase, GitHub). Gera .wx-migration/."
 argument-hint: "[raiz-do-projeto-de-destino]"
 allowed-tools: "Read, Glob, Grep, Bash, Write, AskUserQuestion"
 ---
@@ -21,6 +21,7 @@ Este é o **primeiro passo** de qualquer conversão de um projeto WINDEV, WEBDEV
 - Um caminho só conta como fornecido depois de você **ler o arquivo** (`Glob` + `Read`, ou `ls -la` e `head`). Anexo que não abre é `missing`, não `provided`.
 - Não prometa relatório, plano nem prazo durante o questionário. Estado desta etapa: `INTAKE_PENDING`.
 - Respostas em português; o usuário pode responder em qualquer idioma.
+- **Senha, token ou chave colados na conversa nunca são reproduzidos**: nem inteiros, nem parciais, nem mascarados, nem entre parênteses ou crases «para confirmar». Refira-se a eles só como «a senha que você colou». Diga que não foi gravada, peça a troca, e registre só o nome da variável de ambiente. Isso vale para o 0.15, para a letra K e para qualquer outro ponto.
 
 ## As perguntas
 
@@ -80,6 +81,25 @@ Dezesseis itens, **um por mensagem**, na ordem. É o que o PMO, o stakeholder e 
 
 **J) Economia de tokens.** «Deseja ativar e configurar a economia de tokens? Isso instala no `CLAUDE.md` do projeto a instrução de estilo de resposta (direto ao ponto, frases curtas, um assunto por parágrafo, problema em uma linha, solução em passos numerados) e deixa pronto o comando `/wx-claude-code:laudo-tokens`, a auditoria em três fases que **não altera nada sem aprovação**.»
 
+**K) Ambiente e ferramentas.** Depois de J, seis itens, um por mensagem. Cada um começa por «quer instalar ou atualizar?»; «não» pula os detalhes.
+
+| Item | Pergunta | Onde vai parar |
+| --- | --- | --- |
+| K1 | **Rust / Cargo**: instalar ou atualizar para a estável mais recente? Versão mínima (o modelo do questionário traz 1.98), canal, componentes (clippy, rustfmt), targets (Windows, por exemplo) | `ambiente/instalar-ambiente.sh` (rustup) |
+| K2 | **PostgreSQL** atualizado? Versão, host, porta, nome do banco, **login do superusuário**, e os **papéis** com nível: `superuser`, `owner`, `readwrite`, `readonly` | `ambiente/papeis-postgresql.sql` |
+| K3 | **MySQL** atualizado? Mesmos itens | `ambiente/papeis-mysql.sql` |
+| K4 | **MariaDB** atualizado? Mesmos itens (avise se MySQL e MariaDB estiverem na mesma porta) | `ambiente/papeis-mariadb.sql` |
+| K5 | **Supabase** atualizado? URL e ref do projeto, CLI local, e os **nomes** das variáveis da anon key e da service role key | `ambiente.md`, `.env.exemplo` |
+| K6 | **Ligar o projeto ao GitHub**: usar o repositório do 0.15, criar se não existir, visibilidade, remote, branch principal, CI (GitHub Actions) e proteção da branch | `ambiente/instalar-ambiente.sh` (git, gh) |
+
+**A senha do root e a de cada papel não são perguntadas nem gravadas.** Para cada login pergunte **em que variável de ambiente a senha vai ficar** (`PGPASSWORD`, `MYSQL_ROOT_PASSWORD`, `ESTOQUE_APP_PASSWORD`…) e registre só o nome em `senha_ref`. O script gera o `.env.exemplo` sem valores, o SQL dos papéis com `${VARIAVEL}` e o instalador que exige a variável definida antes de rodar. Se o usuário colar uma senha, não repita, não grave, peça que troque. Depois de aplicar, meça o que já está na máquina:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/verificar_ambiente.py" --questionario <projeto>/.wx-migration/questionario.json
+```
+
+Ele imprime a versão instalada de cada ferramenta pedida contra a mínima, e devolve 3 quando falta algo. Versão mínima acima da estável do dia aparece como `falta` mesmo depois do `rustup update`; nesse caso o mínimo é o que está errado, e é o que se corrige no questionário.
+
 ### A resposta decide a próxima
 
 | Depois de | Se a resposta for | Então |
@@ -113,6 +133,12 @@ Dezesseis itens, **um por mensagem**, na ordem. É o que o PMO, o stakeholder e 
 | H | escolheu C# | em I ofereça Blazor além de React; registre que o `WL.dll` será baixado da release oficial e conferido por hash |
 | I | plataforma inclui mobile | pergunte versões mínimas de Android e iOS; se só web, pergunte navegadores |
 | J | «sim» | confirme que o `CLAUDE.md` do projeto vai receber o bloco de estilo; se já existir, diga que não será sobrescrito |
+| K1 | «sim» | pergunte a versão mínima e os targets; se o destino H não for Rust, pergunte se ainda quer o toolchain (ferramentas do plugin não precisam dele) |
+| K2, K3 ou K4 | «sim» | pergunte, um por vez: versão, host e porta, banco, login do superusuário e **o nome da variável** da senha; depois os papéis, um por vez, com nível e nome da variável |
+| K2, K3 ou K4 | usuário cola a senha do root | não repita, não grave, peça que troque; registre só o nome da variável |
+| K3 e K4 | os dois «sim» na mesma porta | avise que não convivem e peça uma porta diferente ou a escolha de um |
+| K5 | «sim» | pergunte URL, ref, e os nomes das variáveis das chaves; a service role key nunca vai para o frontend |
+| K6 | «sim» e 0.15 sem URL | volte ao 0.15 e peça a URL antes de seguir |
 
 Feche com as duas perguntas de governança da skill de conversão, que o questionário não substitui: versão/update/idioma do WX e modo desejado (`inventário`, `plano`, `piloto`, `completo`). O aprovador já foi perguntado no 0.16; não pergunte de novo.
 
@@ -128,7 +154,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/aplicar_questionario.
   --plugin-root "${CLAUDE_PLUGIN_ROOT}"
 ```
 
-   Ele cria `.wx-migration/wx-inputs.manifest.json`, `.wx-migration/conversion.config.json`, o `CLAUDE.md` do projeto (com o estilo de resposta quando **J** for sim), o esboço `DESIGN.md` com a paleta quando **F** for sim, `processo-de-conversao.md` de **H** e **I**, e, do bloco 0, `empresa.md`, `entrega.json` e `pmo/{projeto.json, organograma.md, fluxograma.md, cronograma.md, riscos.md}`, que o `pmo.py iniciar` lê para preencher `previsto_para` dos gates.
+   Ele cria `.wx-migration/wx-inputs.manifest.json`, `.wx-migration/conversion.config.json`, o `CLAUDE.md` do projeto (com o estilo de resposta quando **J** for sim), o esboço `DESIGN.md` com a paleta quando **F** for sim, `processo-de-conversao.md` de **H** e **I**, `ambiente.md` e `ambiente/` (instalador, SQL dos papéis, `.env.exemplo`) de **K**, e, do bloco 0, `empresa.md`, `entrega.json` e `pmo/{projeto.json, organograma.md, fluxograma.md, cronograma.md, riscos.md}`, que o `pmo.py iniciar` lê para preencher `previsto_para` dos gates.
 
 3. Se **G** for sim, verifique o corpus antes de citá-lo:
 

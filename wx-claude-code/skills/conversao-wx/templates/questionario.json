@@ -341,5 +341,70 @@
   "J_economia_de_tokens": {
     "ativar": false,
     "instalar_estilo_no_claude_md": true
+  },
+  "K_ambiente": {
+    "K1_rust": {
+      "instalar_ou_atualizar": false,
+      "versao_minima": "1.98",
+      "canal": "stable",
+      "componentes": [
+        "clippy",
+        "rustfmt"
+      ],
+      "targets": [],
+      "observacao": "versao_minima: a estavel mais recente na data do questionario; o instalador roda rustup update e confere cargo --version"
+    },
+    "K2_postgresql": {
+      "instalar_ou_atualizar": false,
+      "versao": "16",
+      "host": "localhost",
+      "porta": 5432,
+      "banco": "",
+      "superusuario": "postgres",
+      "senha_ref": "PGPASSWORD",
+      "papeis": [],
+      "observacao": "papeis: [{nome, nivel: superuser|owner|readwrite|readonly, senha_ref}]; a senha em si nunca entra aqui: fica na variavel de ambiente nomeada em senha_ref"
+    },
+    "K3_mysql": {
+      "instalar_ou_atualizar": false,
+      "versao": "8.4",
+      "host": "localhost",
+      "porta": 3306,
+      "banco": "",
+      "superusuario": "root",
+      "senha_ref": "MYSQL_ROOT_PASSWORD",
+      "papeis": [],
+      "observacao": ""
+    },
+    "K4_mariadb": {
+      "instalar_ou_atualizar": false,
+      "versao": "11.4",
+      "host": "localhost",
+      "porta": 3306,
+      "banco": "",
+      "superusuario": "root",
+      "senha_ref": "MARIADB_ROOT_PASSWORD",
+      "papeis": [],
+      "observacao": "MySQL e MariaDB na mesma porta nao convivem; se os dois forem sim, o instalador avisa"
+    },
+    "K5_supabase": {
+      "instalar_ou_atualizar": false,
+      "projeto_url": "",
+      "projeto_ref": "",
+      "anon_key_ref": "SUPABASE_ANON_KEY",
+      "service_role_ref": "SUPABASE_SERVICE_ROLE_KEY",
+      "cli_local": true,
+      "observacao": "as chaves ficam nas variaveis nomeadas; o questionario guarda so os nomes"
+    },
+    "K6_github": {
+      "ligar_projeto": false,
+      "criar_repositorio_se_nao_existir": false,
+      "visibilidade": "private",
+      "remote": "origin",
+      "branch_principal": "main",
+      "ci": "github-actions",
+      "proteger_branch": true,
+      "observacao": "URL, usuario, credencial_ref e diretorio vem do 0.15; aqui e o que fazer com eles"
+    }
   }
 }

@@ -71,7 +71,7 @@ class Questionario(unittest.TestCase):
         self.assertIn("## Backend: Rust", proc); self.assertIn("**reescrita-guiada**", proc)
         self.assertIn("| Analise HFSQL | esquema PostgreSQL migrado por script; sqlx/diesel | G3 |", proc)
         self.assertIn("Ritmo: modulo a modulo", proc)
-        self.assertEqual(r2.stdout.count("SKIPPED"), 15); self.assertIn("UPDATED", r2.stdout)
+        self.assertEqual(r2.stdout.count("SKIPPED"), 19); self.assertIn("UPDATED", r2.stdout)
         resp = (self.tmp / ".wx-migration/respostas_questionario.md").read_text()
         self.assertIn("- Nome: **Adriano Boller**", resp); self.assertIn("## H · Backend de destino", resp)
         self.assertIn("0.15 github", resp); self.assertIn("credencial ref: GITHUB_TOKEN", resp)
@@ -91,6 +91,41 @@ class Questionario(unittest.TestCase):
         (self.tmp / ".wx-migration/questionario.json").write_text(json.dumps(q))
         r = run(SCRIPTS / "aplicar_questionario.py", "--questionario", self.tmp / ".wx-migration/questionario.json", "--project-root", self.tmp, "--plugin-root", RAIZ)
         self.assertEqual(r.returncode, 2); self.assertIn("big-bang", r.stderr)
+
+    def test_ambiente_gera_instalador_papeis_e_env_sem_valores(self):
+        r = run(SCRIPTS / "aplicar_questionario.py", "--questionario", self.tmp / ".wx-migration/questionario.json", "--project-root", self.tmp, "--plugin-root", RAIZ)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        amb = self.tmp / ".wx-migration/ambiente"
+        sql = (amb / "papeis-postgresql.sql").read_text()
+        self.assertIn("CREATE ROLE estoque_app LOGIN NOSUPERUSER PASSWORD '${ESTOQUE_APP_PASSWORD}';", sql)
+        self.assertIn("GRANT SELECT ON ALL TABLES IN SCHEMA public TO estoque_bi;", sql)
+        env = (amb / ".env.exemplo").read_text()
+        for l in env.splitlines():
+            if l and not l.startswith("#"):
+                self.assertTrue(l.endswith("="), l)
+        sh = (amb / "instalar-ambiente.sh").read_text()
+        self.assertIn("rustup update stable", sh); self.assertIn("${PGPASSWORD:?", sh); self.assertIn("git remote add origin https://github.com/adrianoboller/estoque-rs", sh)
+        self.assertEqual(subprocess.run(["bash", "-n", str(amb / "instalar-ambiente.sh")]).returncode, 0)
+        self.assertFalse((amb / "papeis-mysql.sql").exists())
+        self.assertIn("| PostgreSQL | sim | 16 |", (self.tmp / ".wx-migration/ambiente.md").read_text())
+        # papel sem senha_ref ou nivel desconhecido e recusado antes de gravar
+        q = json.loads((self.tmp / ".wx-migration/questionario.json").read_text())
+        q["K_ambiente"]["K2_postgresql"]["papeis"][0]["nivel"] = "admin"
+        (self.tmp / ".wx-migration/q2.json").write_text(json.dumps(q))
+        r = run(SCRIPTS / "aplicar_questionario.py", "--questionario", self.tmp / ".wx-migration/q2.json", "--project-root", self.tmp, "--plugin-root", RAIZ)
+        self.assertEqual(r.returncode, 2); self.assertIn("admin", r.stderr)
+
+    def test_verificar_ambiente_mede_e_devolve_3_quando_falta(self):
+        q = {"K_ambiente": {"K1_rust": {"instalar_ou_atualizar": True, "versao_minima": "999.0"}, "K6_github": {"ligar_projeto": True}}}
+        (self.tmp / "q.json").write_text(json.dumps(q))
+        r = run(SCRIPTS / "verificar_ambiente.py", "--questionario", self.tmp / "q.json", "--json")
+        self.assertEqual(r.returncode, 3)
+        linhas = json.loads(r.stdout)
+        rustc = next(l for l in linhas if l["programa"] == "rustc"); self.assertEqual(rustc["estado"], "falta")
+        git = next(l for l in linhas if l["programa"] == "git"); self.assertEqual(git["estado"], "ok")
+        q["K_ambiente"]["K1_rust"]["versao_minima"] = "1.0"; q["K_ambiente"]["K6_github"]["ligar_projeto"] = False
+        (self.tmp / "q.json").write_text(json.dumps(q))
+        self.assertEqual(run(SCRIPTS / "verificar_ambiente.py", "--questionario", self.tmp / "q.json").returncode, 0)
 
     def test_senha_em_texto_puro_e_recusada(self):
         q = json.loads((self.tmp / ".wx-migration/questionario.json").read_text())

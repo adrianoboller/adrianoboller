@@ -476,5 +476,88 @@
   "J_economia_de_tokens": {
     "ativar": true,
     "instalar_estilo_no_claude_md": true
+  },
+  "K_ambiente": {
+    "K1_rust": {
+      "instalar_ou_atualizar": true,
+      "versao_minima": "1.98",
+      "canal": "stable",
+      "componentes": [
+        "clippy",
+        "rustfmt"
+      ],
+      "targets": [
+        "x86_64-pc-windows-gnu"
+      ],
+      "observacao": ""
+    },
+    "K2_postgresql": {
+      "instalar_ou_atualizar": true,
+      "versao": "16",
+      "host": "localhost",
+      "porta": 5432,
+      "banco": "estoque",
+      "superusuario": "postgres",
+      "senha_ref": "PGPASSWORD",
+      "papeis": [
+        {
+          "nome": "estoque_owner",
+          "nivel": "owner",
+          "senha_ref": "ESTOQUE_OWNER_PASSWORD"
+        },
+        {
+          "nome": "estoque_app",
+          "nivel": "readwrite",
+          "senha_ref": "ESTOQUE_APP_PASSWORD"
+        },
+        {
+          "nome": "estoque_bi",
+          "nivel": "readonly",
+          "senha_ref": "ESTOQUE_BI_PASSWORD"
+        }
+      ],
+      "observacao": ""
+    },
+    "K3_mysql": {
+      "instalar_ou_atualizar": false,
+      "versao": "8.4",
+      "host": "localhost",
+      "porta": 3306,
+      "banco": "",
+      "superusuario": "root",
+      "senha_ref": "MYSQL_ROOT_PASSWORD",
+      "papeis": [],
+      "observacao": "não se aplica: destino é PostgreSQL"
+    },
+    "K4_mariadb": {
+      "instalar_ou_atualizar": false,
+      "versao": "11.4",
+      "host": "localhost",
+      "porta": 3306,
+      "banco": "",
+      "superusuario": "root",
+      "senha_ref": "MARIADB_ROOT_PASSWORD",
+      "papeis": [],
+      "observacao": ""
+    },
+    "K5_supabase": {
+      "instalar_ou_atualizar": false,
+      "projeto_url": "",
+      "projeto_ref": "",
+      "anon_key_ref": "SUPABASE_ANON_KEY",
+      "service_role_ref": "SUPABASE_SERVICE_ROLE_KEY",
+      "cli_local": false,
+      "observacao": ""
+    },
+    "K6_github": {
+      "ligar_projeto": true,
+      "criar_repositorio_se_nao_existir": true,
+      "visibilidade": "private",
+      "remote": "origin",
+      "branch_principal": "main",
+      "ci": "github-actions",
+      "proteger_branch": true,
+      "observacao": ""
+    }
   }
 }
