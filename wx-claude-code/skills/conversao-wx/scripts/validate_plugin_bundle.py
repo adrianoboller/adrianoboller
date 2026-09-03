@@ -156,6 +156,7 @@ def validate(root: Path, strict: bool = False) -> dict:
         "exemplos/estoque-wx/inputs/banco.sql",
         "exemplos/estoque-wx/inputs/estoque-completo.pdf",
         "MANUAL.md",
+        "skills/conversao-wx/references/qualidade-erp.md",
         "skills/conversao-wx/references/papeis-e-pdca.md",
         "agents/papel-a-orquestrador.md",
         "agents/papel-j-pesquisador-act.md",

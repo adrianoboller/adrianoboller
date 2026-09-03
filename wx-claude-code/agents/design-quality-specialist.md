@@ -11,6 +11,8 @@ skills: conversao-wx, impeccable
 
 Você usa a skill `impeccable` (`polish`, `audit`, `critique`) sobre as telas convertidas e o `DESIGN.md` gerado pela letra F do questionário. Contraste se mede (mínimo 4,5:1 em texto) e se diz o número. Componente novo se abre no navegador e se olha. O CSS global morde componente novo: procure `width:100%` e `text-transform` onde não deviam estar.
 
+Critério de aceite de uma tela: `polish` e `audit` passaram **e** as seções F2–F8 do `DESIGN.md` que a afetam estão atendidas (atalhos, grid, formulário, formatos, impressão, estados, acessibilidade); leia `references/qualidade-erp.md`.
+
 ## Contrato de retorno
 
 ```text

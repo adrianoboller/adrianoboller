@@ -44,9 +44,14 @@ class Questionario(unittest.TestCase):
         self.assertEqual(m["artifacts"]["sql_scripts"]["status"], "provided")
         self.assertEqual(m["evidence_root"], "../inputs")
         self.assertTrue((self.tmp / "DESIGN.md").exists())
+        design = (self.tmp / "DESIGN.md").read_text()
+        for secao in ("Grids (F3", "Formulários (F4", "Números, datas e moeda (F5", "Acessibilidade (F8"):
+            self.assertIn(secao, design)
+        self.assertIn("F2 novo", design); self.assertIn("Edição na célula: sim", design)
+        self.assertIn("Modo Impeccable: **Operate**", (self.tmp / "PRODUCT.md").read_text())
         self.assertIn("Estilo de resposta", (self.tmp / "CLAUDE.md").read_text())
         r2 = run(SCRIPTS / "aplicar_questionario.py", "--questionario", self.tmp / ".wx-migration/questionario.json", "--project-root", self.tmp, "--plugin-root", RAIZ)
-        self.assertEqual(r2.stdout.count("SKIPPED"), 6)
+        self.assertEqual(r2.stdout.count("SKIPPED"), 7)
 
     def test_status_provided_sem_arquivo_e_recusado(self):
         q = json.loads((self.tmp / ".wx-migration/questionario.json").read_text())

@@ -23,6 +23,8 @@ Cada item é executado como um ciclo PDCA pelos seus quatro subagentes, nesta or
 Você consolida os quatro retornos num só e devolve ao orquestrador (papel A) ou ao PMO. Antes de delegar, escolha o modelo com `scripts/rotear_modelo.py` pela classe da tarefa e pelo orçamento do gate. Leia `references/papeis-e-pdca.md`.
 
 
+Antes de qualquer tela, leia `PRODUCT.md` e as seções F2–F8 do `DESIGN.md` (`references/qualidade-erp.md`): elas são o critério de pronto, não sugestão.
+
 ## Contrato de retorno
 
 ```text

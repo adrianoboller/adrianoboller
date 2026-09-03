@@ -75,7 +75,78 @@
     "tipografia": "Exo 2",
     "densidade": "compacta",
     "marca": "WX Claude Code",
-    "observacao": ""
+    "observacao": "",
+    "F1_operacao": {
+      "perfil_do_usuario": "balcão de vendas e estoque",
+      "horas_por_dia": "8",
+      "ambiente": "loja, luz forte, ruído",
+      "tela_tipica": "1366x768"
+    },
+    "F2_teclado": {
+      "atalhos_a_preservar": [
+        "F2 novo",
+        "F5 salvar",
+        "F8 excluir",
+        "Esc cancelar"
+      ],
+      "enter_avanca_campo": true,
+      "ordem_de_tabulacao": "igual ao legado"
+    },
+    "F3_grids": {
+      "linhas_por_tela": "até 500 itens por venda; consulta de vendas até 20 mil",
+      "colunas_fixas": true,
+      "ordenar_e_filtrar_por_coluna": true,
+      "edicao_na_celula": true,
+      "totais_no_rodape": true,
+      "exportar": [
+        "xlsx",
+        "csv"
+      ],
+      "imprimir_grade": true
+    },
+    "F4_formularios": {
+      "validacao": "inline",
+      "preservar_mensagens_do_legado": true,
+      "obrigatorio_marcado_como": "asterisco",
+      "mascaras": [
+        "cpf",
+        "moeda",
+        "data",
+        "quantidade 12.3"
+      ],
+      "autocompletar": true
+    },
+    "F5_formatos": {
+      "locale": "pt-BR",
+      "decimais_moeda": 2,
+      "decimais_quantidade": 3,
+      "negativo": "vermelho",
+      "fuso": "America/Sao_Paulo"
+    },
+    "F6_impressao": {
+      "telas_que_imprimem": [
+        "RPT_SaldoMinimo",
+        "RPT_Comissao",
+        "cupom da venda"
+      ],
+      "papel": "A4 e bobina 80 mm",
+      "pdf": true,
+      "etiquetas": false
+    },
+    "F7_estados": {
+      "vazio": true,
+      "carregando": true,
+      "sem_permissao": true,
+      "offline": false,
+      "erro_do_servidor": true,
+      "confirmar_destrutivo": true
+    },
+    "F8_acessibilidade": {
+      "wcag": "AA",
+      "leitor_de_tela": false,
+      "daltonismo": true,
+      "toque_minimo_px": 44
+    }
   },
   "G_help_json": {
     "usar_corpus_do_plugin": true,

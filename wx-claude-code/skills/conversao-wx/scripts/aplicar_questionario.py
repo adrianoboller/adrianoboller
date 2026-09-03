@@ -282,9 +282,50 @@ def esboco_design(q: dict) -> str:
         "- Toda decisão visual tem origem: resposta F, marca do cliente ou `DEC-*`.",
         "",
     ]
+    def sec(titulo: str, chave: str, campos: list[tuple[str, str]]) -> None:
+        d = f.get(chave)
+        if not d:
+            linhas.extend([f"## {titulo}", "", "(sem resposta na letra F; o Impeccable pergunta antes de agir)", ""])
+            return
+        linhas.extend([f"## {titulo}", ""])
+        for rotulo, k in campos:
+            v = d.get(k)
+            if isinstance(v, list):
+                v = ", ".join(map(str, v)) or "(nenhum)"
+            if isinstance(v, bool):
+                v = "sim" if v else "não"
+            linhas.append(f"- {rotulo}: {v if v not in (None, '') else '(pendente)'}")
+        linhas.append("")
+
+    sec("Interação e teclado (F2 → harden, polish)", "F2_teclado", [("Atalhos a preservar", "atalhos_a_preservar"), ("Enter avança campo", "enter_avanca_campo"), ("Ordem de tabulação", "ordem_de_tabulacao")])
+    sec("Grids (F3 → shape, layout, audit)", "F3_grids", [("Linhas por tela", "linhas_por_tela"), ("Colunas fixas", "colunas_fixas"), ("Ordenar e filtrar por coluna", "ordenar_e_filtrar_por_coluna"), ("Edição na célula", "edicao_na_celula"), ("Totais no rodapé", "totais_no_rodape"), ("Exportar", "exportar"), ("Imprimir grade", "imprimir_grade")])
+    sec("Formulários (F4 → harden, clarify)", "F4_formularios", [("Validação", "validacao"), ("Preservar mensagens do legado", "preservar_mensagens_do_legado"), ("Obrigatório marcado como", "obrigatorio_marcado_como"), ("Máscaras", "mascaras"), ("Autocompletar", "autocompletar")])
+    sec("Números, datas e moeda (F5 → typeset, harden)", "F5_formatos", [("Locale", "locale"), ("Decimais de moeda", "decimais_moeda"), ("Decimais de quantidade", "decimais_quantidade"), ("Negativo", "negativo"), ("Fuso", "fuso")])
+    sec("Relatórios e impressão (F6 → layout, harden)", "F6_impressao", [("Telas que imprimem", "telas_que_imprimem"), ("Papel", "papel"), ("PDF", "pdf"), ("Etiquetas", "etiquetas")])
+    sec("Estados e erros (F7 → onboard, harden, critique)", "F7_estados", [("Vazio", "vazio"), ("Carregando", "carregando"), ("Sem permissão", "sem_permissao"), ("Offline", "offline"), ("Erro do servidor", "erro_do_servidor"), ("Confirmar ação destrutiva", "confirmar_destrutivo")])
+    sec("Acessibilidade (F8 → audit, adapt)", "F8_acessibilidade", [("WCAG", "wcag"), ("Leitor de tela", "leitor_de_tela"), ("Daltonismo", "daltonismo"), ("Alvo de toque mínimo (px)", "toque_minimo_px")])
+    linhas += ["## Critério de pronto de uma tela", "", "Passou por `/impeccable polish` e `/impeccable audit`, atende as seções acima que a afetam, e foi aberta no navegador ao lado do screenshot do legado no mesmo estado.", ""]
     if f.get("observacao"):
         linhas += ["## Observação do usuário", "", f.get("observacao"), ""]
     return "\n".join(linhas)
+
+
+def esboco_product(q: dict) -> str:
+    f = q.get("F_estilo_impeccable", {})
+    o = f.get("F1_operacao", {}) or {}
+    p = q.get("projeto", {})
+    return "\n".join([
+        "# PRODUCT.md — esboço do questionário (letra F1)", "",
+        "Preenchido por `aplicar_questionario.py`; `/impeccable init` completa e não sobrescreve.", "",
+        f"- Produto: {p.get('nome') or '(pendente)'} ({', '.join(p.get('produtos', [])) or 'WX'}), convertido do legado WINDEV",
+        f"- Modo Impeccable: **Operate** (ERP: o visitante completa tarefas; escaneabilidade e consistência acima de expressão)",
+        f"- Quem opera: {o.get('perfil_do_usuario') or '(pendente)'}",
+        f"- Horas por dia na tela: {o.get('horas_por_dia') or '(pendente)'}",
+        f"- Ambiente: {o.get('ambiente') or '(pendente)'}",
+        f"- Tela típica: {o.get('tela_tipica') or '(pendente)'}",
+        f"- Plataformas: {', '.join(q.get('I_frontend', {}).get('plataformas', [])) or '(pendente)'}",
+        "- Restrição que não muda: campos, textos, validações e fluxo vêm do legado; o visual pode mudar, o comportamento não.", "",
+    ])
 
 
 def main() -> int:
@@ -321,6 +362,7 @@ def main() -> int:
 
     if q.get("F_estilo_impeccable", {}).get("ativar"):
         saida.append(write_new(projeto / "DESIGN.md", esboco_design(q)))
+        saida.append(write_new(projeto / "PRODUCT.md", esboco_product(q)))
 
     for linha in saida:
         print(linha)

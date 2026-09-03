@@ -40,7 +40,7 @@ Requisitos: Python 3.10+ (scripts de intake e do corpus) e Node 22+ (Impeccable)
 | C | PDF só das interfaces | `ui_documents` |
 | D | PDF só das queries SQL | `query_documents` |
 | E | PDF completo | reserva de B, C, D e fonte de `business_rule_documents` |
-| F | Estilo das telas com o Impeccable (paleta, tema, tipografia, preservar ou redesenhar) | `fidelity.ui` e `DESIGN.md` |
+| F | Qualidade das telas com o Impeccable: oito subperguntas de ERP (operação, teclado, grids, formulários, formatos, impressão, estados, acessibilidade) e depois paleta, tema, tipografia | `PRODUCT.md`, `DESIGN.md` por seção, `fidelity.ui` |
 | G | Usar o Help completo do WX em JSON (corpus 12k) e override da versão | `wlanguage_help_json` |
 | H | Para qual linguagem converter o backend: o plugin orienta (Rust, Python, C# + WL_C#, e mais) antes de perguntar | `target` e `DEC-0001` |
 | I | Linguagens para o frontend | `target.platforms`, navegadores e dispositivos |

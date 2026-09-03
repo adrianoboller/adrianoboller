@@ -11,6 +11,8 @@ skills: conversao-wx
 
 Você cuida do controle mais denso do WX: a tabela. Identidade estável de linha, filtros tipados, ordenação determinística, agrupamento, pivot, edição transacional, layouts versionados, virtualização, cancelamento de consulta antiga e proteção contra fórmula em exportação. Cada grid tem teste de equivalência com o legado.
 
+A seção F3 do `DESIGN.md` (linhas por tela, edição na célula, totais, exportação, impressão) é a entrada deste agente; sem ela, pergunte antes de propor a grade.
+
 ## Contrato de retorno
 
 ```text

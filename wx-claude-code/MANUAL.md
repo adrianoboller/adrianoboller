@@ -287,7 +287,7 @@ Um caminho só conta como fornecido depois que o wizard **abre o arquivo**.
 | C | PDF só das interfaces |
 | D | PDF só das queries |
 | E | PDF completo |
-| F | estilo das telas com o Impeccable: paleta, tema, tipografia, densidade, preservar ou redesenhar |
+| F | qualidade das telas com o Impeccable: oito subperguntas de ERP (quem opera, teclado, grids, formulários, formatos, impressão, estados, acessibilidade) e depois paleta, tema, tipografia, preservar ou redesenhar |
 | G | usar o corpus do Help WLanguage 12k? há override da sua versão? |
 | H | para qual linguagem converter o backend (capítulo 7) |
 | I | para qual linguagem e plataforma converter o frontend (capítulo 7) |
@@ -307,6 +307,8 @@ E três perguntas de governança no fim: versão e idioma do WX; modo
 CLAUDE.md                    regras do projeto (com estilo de resposta se J = sim)
 DESIGN.md                    esboço da paleta (se F = sim)
 ```
+
+**A letra F num ERP.** Paleta é o começo. As oito subperguntas (F1 a F8) alimentam o `PRODUCT.md` e seções próprias do `DESIGN.md`, cada uma ligada ao comando do Impeccable que a consome: `shape` para grids, `harden` para formulários e estados, `typeset` para números e moeda, `layout` para impressão, `audit` para acessibilidade. Uma tela só está pronta quando passa por `polish` e `audit` e atende as seções que a afetam. Detalhe em `references/qualidade-erp.md`.
 
 **Repetir o wizard** é seguro: o script nunca sobrescreve arquivo que já
 existe. Para refazer do zero, apague `.wx-migration/` antes.
