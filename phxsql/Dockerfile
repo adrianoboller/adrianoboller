@@ -16,8 +16,21 @@
 # binario crescia, e so foi pego porque um relatorio a parte mediu o mesmo
 # binario com `strip` em 7,66 MB (medido em 02/09/2026, ver
 # docs/dossie/relatorio-conteineres.html e docs/PENDENCIAS.md #167). Numero
-# que nao sai de gerador nenhum envelhece calado -- e o do cliente nunca foi
-# remedido para confirmar se tambem mudou. Para o tamanho de hoje:
+# que nao sai de gerador nenhum envelhece calado.
+#
+# O do cliente FOI remedido em 03/09/2026, junto de uma reconferencia do
+# servidor: `phxsqld` 7.664.416 bytes (7,66 MB) -- o MESMO valor de 02/09, um
+# dia depois, por medicao independente -- e `phxsql` 1.331.928 bytes (1,33 MB),
+# contra o "1,2 MB" que estava aqui. O binario ja sai `stripped` do perfil de
+# release, entao o `strip` da linha abaixo e um no-op que se mantem por
+# clareza.
+#
+# E fica a armadilha que a reconferencia pagou: 7,66 MB (10^6) e 7,31 MiB
+# (2^20) sao O MESMO ARQUIVO. Ao remedir, o primeiro numero pareceu desmentir
+# o documento, e nao desmentia -- era `du`/`awk` em MiB contra um documento em
+# MB. Numero sem unidade e numero pela metade.
+#
+# Para o tamanho de hoje:
 # `ls -la target/x86_64-unknown-linux-musl/release/{phxsqld,phxsql}` depois
 # do `strip` deste Dockerfile.
 #
