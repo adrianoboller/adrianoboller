@@ -732,11 +732,13 @@ mod tests {
     use phxsql_core::types::ColumnType;
     use phxsql_core::value::Value;
 
-    fn dir_temp(rotulo: &str) -> PathBuf {
-        let mut p = std::env::temp_dir();
-        p.push(format!("phxsql-cat-{}-{rotulo}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&p);
-        p
+    // Pedido 150: guarda de Drop, nao `rm` no fim do corpo. O helper velho nao
+    // chamava `create_dir_all` (quem cria e' `Instancia::nova`, mais abaixo,
+    // e ela mesma chama `create_dir_all`) -- pre-criar aqui e' idempotente e
+    // nao muda o teste, so garante que o `Drop` tem o que limpar mesmo se
+    // `Instancia::nova` nunca chegar a rodar.
+    fn dir_temp(rotulo: &str) -> crate::apoio_teste::DirTemp {
+        crate::apoio_teste::DirTemp::novo(&format!("cat-{rotulo}"))
     }
 
     fn esquema(nome: &str) -> Schema {
@@ -971,11 +973,9 @@ mod testes_gestao {
         .unwrap()
     }
 
-    fn base_temp(rotulo: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("phxcat-{rotulo}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    // Pedido 150: guarda de Drop, nao `rm` no fim do corpo.
+    fn base_temp(rotulo: &str) -> crate::apoio_teste::DirTemp {
+        crate::apoio_teste::DirTemp::novo(&format!("cat2-{rotulo}"))
     }
 
     #[test]
@@ -1136,8 +1136,8 @@ mod testes_copia_entre_bancos {
     #[test]
     fn excluir_tabela_nao_deixa_arquivo_nenhum_para_tras() {
         use phxsql_core::value::Value;
-        let base = std::env::temp_dir().join(format!("phx-ext-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&base);
+        // Pedido 150: guarda de Drop, nao `rm` no fim do corpo.
+        let base = crate::apoio_teste::DirTemp::novo("phx-ext");
         let cat = Instancia::nova(&base).unwrap();
         let db = cat.criar_database("loja").unwrap();
         let mut t = db.criar_tabela(None, esquema("pedidos")).unwrap();
@@ -1165,8 +1165,8 @@ mod testes_copia_entre_bancos {
     /// O renomear MOVE: o nome velho some, o novo abre, e o dado e o mesmo.
     #[test]
     fn renomear_move_a_tabela_inteira() {
-        let base = std::env::temp_dir().join(format!("phx-renom-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&base);
+        // Pedido 150: guarda de Drop, nao `rm` no fim do corpo.
+        let base = crate::apoio_teste::DirTemp::novo("phx-renom");
         let cat = Instancia::nova(&base).unwrap();
         let db = cat.criar_database("loja").unwrap();
         let mut t = db.criar_tabela(None, esquema("pedidos")).unwrap();
@@ -1217,8 +1217,8 @@ mod testes_copia_entre_bancos {
     #[test]
     fn renomear_recusa_a_mae_que_tem_filha_apontando() {
         use phxsql_core::schema::ForeignKey;
-        let base = std::env::temp_dir().join(format!("phx-renom-fk-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&base);
+        // Pedido 150: guarda de Drop, nao `rm` no fim do corpo.
+        let base = crate::apoio_teste::DirTemp::novo("phx-renom-fk");
         let cat = Instancia::nova(&base).unwrap();
         let db = cat.criar_database("loja").unwrap();
         db.criar_tabela(None, esquema("clientes")).unwrap();
@@ -1267,8 +1267,8 @@ mod testes_copia_entre_bancos {
     /// fazer a pergunta e nao a fazia aqui.
     #[test]
     fn excluir_recusa_a_mae_que_tem_filha_apontando() {
-        let base = std::env::temp_dir().join(format!("phx-drop-fk-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&base);
+        // Pedido 150: guarda de Drop, nao `rm` no fim do corpo.
+        let base = crate::apoio_teste::DirTemp::novo("phx-drop-fk");
         let cat = Instancia::nova(&base).unwrap();
         let db = cat.criar_database("loja").unwrap();
         db.criar_tabela(None, esquema("clientes")).unwrap();
@@ -1296,8 +1296,8 @@ mod testes_copia_entre_bancos {
     /// impede o de cima de "passar" com um portao que recusasse todo apagar.
     #[test]
     fn apagada_a_filha_a_mae_sai_normalmente() {
-        let base = std::env::temp_dir().join(format!("phx-drop-fk-ok-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&base);
+        // Pedido 150: guarda de Drop, nao `rm` no fim do corpo.
+        let base = crate::apoio_teste::DirTemp::novo("phx-drop-fk-ok");
         let cat = Instancia::nova(&base).unwrap();
         let db = cat.criar_database("loja").unwrap();
         db.criar_tabela(None, esquema("clientes")).unwrap();
@@ -1312,8 +1312,8 @@ mod testes_copia_entre_bancos {
     /// A tabela sem ninguem apontando continua saindo -- o controle do portao.
     #[test]
     fn excluir_tabela_sem_chave_nenhuma_nao_muda_nada() {
-        let base = std::env::temp_dir().join(format!("phx-drop-livre-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&base);
+        // Pedido 150: guarda de Drop, nao `rm` no fim do corpo.
+        let base = crate::apoio_teste::DirTemp::novo("phx-drop-livre");
         let cat = Instancia::nova(&base).unwrap();
         let db = cat.criar_database("loja").unwrap();
         db.criar_tabela(None, esquema("avulsa")).unwrap();
@@ -1340,8 +1340,8 @@ mod testes_copia_entre_bancos {
     /// seria preferencia.
     #[test]
     fn colar_a_filha_sem_a_mae_passa_e_o_verificador_acha_a_orfa() {
-        let base = std::env::temp_dir().join(format!("phx-colar-fk-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&base);
+        // Pedido 150: guarda de Drop, nao `rm` no fim do corpo.
+        let base = crate::apoio_teste::DirTemp::novo("phx-colar-fk");
         let cat = Instancia::nova(&base).unwrap();
         let origem = cat.criar_database("loja").unwrap();
         let destino = cat.criar_database("vazio").unwrap();
@@ -1417,8 +1417,8 @@ mod testes_copia_entre_bancos {
     /// que envelhece.
     #[test]
     fn renomear_recusa_nome_que_o_catalogo_leria_como_volume() {
-        let base = std::env::temp_dir().join(format!("phx-renom-vol-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&base);
+        // Pedido 150: guarda de Drop, nao `rm` no fim do corpo.
+        let base = crate::apoio_teste::DirTemp::novo("phx-renom-vol");
         let cat = Instancia::nova(&base).unwrap();
         let db = cat.criar_database("loja").unwrap();
         db.criar_tabela(None, esquema("pedidos")).unwrap();
@@ -1443,8 +1443,8 @@ mod testes_copia_entre_bancos {
     /// Destino ocupado recusa, e a origem fica intata.
     #[test]
     fn renomear_recusa_destino_que_ja_existe() {
-        let base = std::env::temp_dir().join(format!("phx-renom-ocup-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&base);
+        // Pedido 150: guarda de Drop, nao `rm` no fim do corpo.
+        let base = crate::apoio_teste::DirTemp::novo("phx-renom-ocup");
         let cat = Instancia::nova(&base).unwrap();
         let db = cat.criar_database("loja").unwrap();
         db.criar_tabela(None, esquema("a")).unwrap();
@@ -1457,8 +1457,8 @@ mod testes_copia_entre_bancos {
     /// ponto de copiar arquivo em vez de reinserir linha a linha.
     #[test]
     fn colar_em_outro_banco_preserva_rowids_e_ordem() {
-        let base = std::env::temp_dir().join(format!("phx-colar-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&base);
+        // Pedido 150: guarda de Drop, nao `rm` no fim do corpo.
+        let base = crate::apoio_teste::DirTemp::novo("phx-colar");
         let cat = Instancia::nova(&base).unwrap();
         let origem = cat.criar_database("loja").unwrap();
         let destino = cat.criar_database("arquivo").unwrap();
@@ -1495,8 +1495,8 @@ mod testes_copia_entre_bancos {
 
     #[test]
     fn colar_por_cima_de_tabela_existente_e_recusado() {
-        let base = std::env::temp_dir().join(format!("phx-colar2-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&base);
+        // Pedido 150: guarda de Drop, nao `rm` no fim do corpo.
+        let base = crate::apoio_teste::DirTemp::novo("phx-colar2");
         let cat = Instancia::nova(&base).unwrap();
         let a = cat.criar_database("a").unwrap();
         let b = cat.criar_database("b").unwrap();
@@ -1515,8 +1515,8 @@ mod testes_copia_entre_bancos {
 
     #[test]
     fn colar_dentro_de_schema_que_ainda_nao_existe_cria_a_pasta() {
-        let base = std::env::temp_dir().join(format!("phx-colar3-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&base);
+        // Pedido 150: guarda de Drop, nao `rm` no fim do corpo.
+        let base = crate::apoio_teste::DirTemp::novo("phx-colar3");
         let cat = Instancia::nova(&base).unwrap();
         let a = cat.criar_database("a").unwrap();
         let b = cat.criar_database("b").unwrap();

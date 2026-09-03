@@ -12,17 +12,16 @@
 //!
 //! *Interface -- e garantia -- so se prova exercitando.*
 
+mod comum;
 use phxsql_core::error::PhxError;
 use phxsql_core::schema::{Column, ForeignKey, IndexColumn, IndexDef, Schema};
 use phxsql_core::types::ColumnType;
 use phxsql_core::value::Value;
 use phxsql_store::table::Table;
 
-fn dir(nome: &str) -> std::path::PathBuf {
-    let d = std::env::temp_dir().join(format!("phx-fk-{nome}-{}", std::process::id()));
-    std::fs::remove_dir_all(&d).ok();
-    std::fs::create_dir_all(&d).unwrap();
-    d
+fn dir(nome: &str) -> comum::DirTemp {
+    // Pedido 150: guarda de Drop, nao `rm` no fim do corpo.
+    comum::DirTemp::novo(&format!("fk-{nome}"))
 }
 
 fn mae(d: &std::path::Path) -> Table {

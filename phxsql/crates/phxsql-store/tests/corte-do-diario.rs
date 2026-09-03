@@ -9,7 +9,7 @@
 //! -- um teste que corta em 1 MiB faria o diario de outro virar de volume no
 //! meio da corrida.
 
-use std::path::PathBuf;
+mod comum;
 use std::sync::Mutex;
 
 use phxsql_core::paginacao::Paginacao;
@@ -20,12 +20,9 @@ use phxsql_store::motivo::{MotivoFile, Tipo};
 
 static UM_DE_CADA_VEZ: Mutex<()> = Mutex::new(());
 
-fn dir(rotulo: &str) -> PathBuf {
-    let mut p = std::env::temp_dir();
-    p.push(format!("phxsql-corte-{}-{rotulo}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&p);
-    std::fs::create_dir_all(&p).unwrap();
-    p
+fn dir(rotulo: &str) -> comum::DirTemp {
+    // Pedido 150: guarda de Drop, nao `rm` no fim do corpo.
+    comum::DirTemp::novo(&format!("corte-{rotulo}"))
 }
 
 /// Uma paginacao normal de tabela: volume de 1 GiB nos arquivos externos.

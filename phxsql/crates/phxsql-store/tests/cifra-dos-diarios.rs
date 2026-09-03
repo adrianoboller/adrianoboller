@@ -12,7 +12,7 @@
 //! Dentro DESTE arquivo os testes ainda dividem o mesmo processo, entao todos
 //! passam pela trava `UM_DE_CADA_VEZ`.
 
-use std::path::PathBuf;
+mod comum;
 use std::sync::Mutex;
 
 use phxsql_core::paginacao::Paginacao;
@@ -34,12 +34,9 @@ const RAPIDO: u32 = cofre::ITERACOES_MINIMAS;
 
 const SENHA: &str = "a chave do cofre de teste";
 
-fn dir(rotulo: &str) -> PathBuf {
-    let mut p = std::env::temp_dir();
-    p.push(format!("phxsql-cifra-{}-{rotulo}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&p);
-    std::fs::create_dir_all(&p).unwrap();
-    p
+fn dir(rotulo: &str) -> comum::DirTemp {
+    // Pedido 150: guarda de Drop, nao `rm` no fim do corpo.
+    comum::DirTemp::novo(&format!("cifra-diarios-{rotulo}"))
 }
 
 /// Os bytes crus de um volume, para olhar o que REALMENTE foi para o disco.

@@ -390,12 +390,9 @@ impl BlobFile {
 mod tests {
     use super::*;
 
-    fn dir_temp(rotulo: &str) -> PathBuf {
-        let mut p = std::env::temp_dir();
-        p.push(format!("phxsql-blob-{}-{rotulo}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&p);
-        std::fs::create_dir_all(&p).unwrap();
-        p
+    // Pedido 150: guarda de Drop, nao `rm` no fim do corpo.
+    fn dir_temp(rotulo: &str) -> crate::apoio_teste::DirTemp {
+        crate::apoio_teste::DirTemp::novo(&format!("blob-{rotulo}"))
     }
 
     #[test]

@@ -630,11 +630,9 @@ mod tests {
         t
     }
 
-    fn temp(nome: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("phxmem-{nome}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    // Pedido 150: guarda de Drop, nao `rm` no fim do corpo.
+    fn temp(nome: &str) -> crate::apoio_teste::DirTemp {
+        crate::apoio_teste::DirTemp::novo(&format!("mem-{nome}"))
     }
 
     #[test]

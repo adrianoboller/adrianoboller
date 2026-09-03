@@ -661,15 +661,9 @@ fn copiar_arvore(de: &Path, para: &Path) -> Result<()> {
 mod tests {
     use super::*;
 
-    fn temp(nome: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!(
-            "phxrst-{nome}-{}-{}",
-            std::process::id(),
-            crate::util::agora_ms()
-        ));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    // Pedido 150: guarda de Drop, nao `rm` no fim do corpo.
+    fn temp(nome: &str) -> crate::apoio_teste::DirTemp {
+        crate::apoio_teste::DirTemp::novo(&format!("rst-{nome}"))
     }
 
     /// Uma raiz com dois databases, um deles com schema e com volume.

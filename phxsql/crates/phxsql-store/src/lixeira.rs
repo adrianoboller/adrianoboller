@@ -571,11 +571,10 @@ impl LixeiraFile {
 mod testes {
     use super::*;
 
-    fn temp(nome: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("phx-lixeira-{nome}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    // Pedido 150: guarda de Drop, nao `rm` no fim do corpo -- teste que falha
+    // no meio nunca chega ao fim, e o `Drop` roda mesmo assim.
+    fn temp(nome: &str) -> crate::apoio_teste::DirTemp {
+        crate::apoio_teste::DirTemp::novo(&format!("lixeira-{nome}"))
     }
 
     #[test]

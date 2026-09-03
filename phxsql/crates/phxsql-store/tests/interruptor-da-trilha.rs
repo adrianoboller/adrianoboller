@@ -19,6 +19,7 @@
 //! com processo. Eu li o aviso e caí nele mesmo assim; fica aqui a segunda
 //! testemunha.
 
+mod comum;
 use phxsql_core::schema::{Column, IndexColumn, IndexDef, Schema};
 use phxsql_core::types::{ColumnType, DadoPessoal};
 use phxsql_core::value::Value;
@@ -40,11 +41,9 @@ fn fila() -> std::sync::MutexGuard<'static, ()> {
     EM_FILA.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-fn temp(nome: &str) -> std::path::PathBuf {
-    let d = std::env::temp_dir().join(format!("phx-interruptor-{nome}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&d);
-    std::fs::create_dir_all(&d).unwrap();
-    d
+fn temp(nome: &str) -> comum::DirTemp {
+    // Pedido 150: guarda de Drop, nao `rm` no fim do corpo.
+    comum::DirTemp::novo(&format!("interruptor-{nome}"))
 }
 
 fn esquema() -> Schema {

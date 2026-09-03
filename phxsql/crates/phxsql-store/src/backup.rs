@@ -383,11 +383,9 @@ pub fn conferir(destino: &Path) -> Result<Relatorio> {
 mod tests {
     use super::*;
 
-    fn temp(nome: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("phxbkp-{nome}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    // Pedido 150: guarda de Drop, nao `rm` no fim do corpo.
+    fn temp(nome: &str) -> crate::apoio_teste::DirTemp {
+        crate::apoio_teste::DirTemp::novo(&format!("bkp-{nome}"))
     }
 
     fn dados_de_exemplo(raiz: &Path) {

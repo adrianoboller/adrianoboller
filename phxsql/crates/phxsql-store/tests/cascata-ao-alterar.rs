@@ -10,17 +10,16 @@
 //! a cascata acontece, a alteracao que nao mexe na chave nao paga nada, e quem
 //! nunca pediu conferencia continua exatamente como antes.
 
+mod comum;
 use phxsql_core::error::PhxError;
 use phxsql_core::schema::{AcaoRi, Column, ForeignKey, IndexColumn, IndexDef, Schema};
 use phxsql_core::types::ColumnType;
 use phxsql_core::value::Value;
 use phxsql_store::table::Table;
 
-fn dir(nome: &str) -> std::path::PathBuf {
-    let d = std::env::temp_dir().join(format!("phx-casc-{nome}-{}", std::process::id()));
-    std::fs::remove_dir_all(&d).ok();
-    std::fs::create_dir_all(&d).unwrap();
-    d
+fn dir(nome: &str) -> comum::DirTemp {
+    // Pedido 150: guarda de Drop, nao `rm` no fim do corpo.
+    comum::DirTemp::novo(&format!("casc-{nome}"))
 }
 
 /// A mae: `id` indexado (a cascata precisa dele dos dois lados) e um `nome`

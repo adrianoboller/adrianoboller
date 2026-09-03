@@ -4,7 +4,7 @@
 //! volta inteira -- virar bytes no slot, virar chave no `.ndx`, voltar do
 //! disco depois de fechar e abrir a tabela.
 
-use std::path::PathBuf;
+mod comum;
 
 use phxsql_core::schema::{Column, IndexColumn, IndexDef, Schema};
 use phxsql_core::types::ColumnType;
@@ -12,11 +12,9 @@ use phxsql_core::uuid::{Uuid, Uuid256};
 use phxsql_core::value::Value;
 use phxsql_store::table::Table;
 
-fn temp(nome: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!("phxid-{nome}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&d);
-    std::fs::create_dir_all(&d).unwrap();
-    d
+fn temp(nome: &str) -> comum::DirTemp {
+    // Pedido 150: guarda de Drop, nao `rm` no fim do corpo.
+    comum::DirTemp::novo(&format!("id-{nome}"))
 }
 
 fn esquema_ids() -> Schema {

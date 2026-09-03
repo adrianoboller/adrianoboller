@@ -10,20 +10,15 @@
 //! Os que mexem no interruptor global ficam no fim, com a razao explicada la:
 //! e a mesma do `corte-do-diario.rs`.
 
+mod comum;
 use phxsql_core::schema::{Column, IndexColumn, IndexDef, Schema};
 use phxsql_core::types::{ColumnType, DadoPessoal};
 use phxsql_core::value::Value;
 use phxsql_store::table::Table;
 
-fn temp(nome: &str) -> std::path::PathBuf {
-    let d = std::env::temp_dir().join(format!(
-        "phx-trilha-lgpd-{nome}-{}-{:?}",
-        std::process::id(),
-        std::thread::current().id()
-    ));
-    let _ = std::fs::remove_dir_all(&d);
-    std::fs::create_dir_all(&d).unwrap();
-    d
+fn temp(nome: &str) -> comum::DirTemp {
+    // Pedido 150: guarda de Drop, nao `rm` no fim do corpo.
+    comum::DirTemp::novo(&format!("trilha-lgpd-{nome}"))
 }
 
 /// `clientes` como a tela do Adriano a desenhou: seis colunas marcadas de

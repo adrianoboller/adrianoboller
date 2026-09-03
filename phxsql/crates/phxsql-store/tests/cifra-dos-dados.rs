@@ -9,7 +9,8 @@
 //! da corrida. Aqui o processo e so deste arquivo -- e mesmo assim os testes
 //! passam pela trava, porque tambem dividem o processo entre si.
 
-use std::path::{Path, PathBuf};
+mod comum;
+use std::path::Path;
 use std::sync::Mutex;
 
 use phxsql_core::schema::{Column, IndexColumn, IndexDef, Schema};
@@ -26,15 +27,9 @@ static UM_DE_CADA_VEZ: Mutex<()> = Mutex::new(());
 const RAPIDO: u32 = cofre::ITERACOES_MINIMAS;
 const SENHA: &str = "a chave do cofre de teste";
 
-fn dir(rotulo: &str) -> PathBuf {
-    let mut p = std::env::temp_dir();
-    p.push(format!(
-        "phxsql-cifra-dados-{}-{rotulo}",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&p);
-    std::fs::create_dir_all(&p).unwrap();
-    p
+fn dir(rotulo: &str) -> comum::DirTemp {
+    // Pedido 150: guarda de Drop, nao `rm` no fim do corpo.
+    comum::DirTemp::novo(&format!("cifra-dados-{rotulo}"))
 }
 
 /// Um segredo bem reconhecivel: se ele aparecer nos bytes, a cifra falhou.

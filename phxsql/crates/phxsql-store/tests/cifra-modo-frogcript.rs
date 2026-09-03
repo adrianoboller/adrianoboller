@@ -8,7 +8,8 @@
 //! criptografica -- que ele nao acrescenta forca -- nao se prova em teste; esta
 //! escrita no cabecalho de `phxsql_core::frogcript` e em `SEGURANCA.md` §11.4.
 
-use std::path::{Path, PathBuf};
+mod comum;
+use std::path::Path;
 use std::sync::Mutex;
 
 use phxsql_core::frogcript::{self, Ajuste};
@@ -24,12 +25,9 @@ const RAPIDO: u32 = cofre::ITERACOES_MINIMAS;
 const SENHA: &str = "a chave do cofre de teste";
 const SEGREDO: &str = "Fulano de Tal da Silva";
 
-fn dir(rotulo: &str) -> PathBuf {
-    let mut p = std::env::temp_dir();
-    p.push(format!("phxsql-frog-{}-{rotulo}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&p);
-    std::fs::create_dir_all(&p).unwrap();
-    p
+fn dir(rotulo: &str) -> comum::DirTemp {
+    // Pedido 150: guarda de Drop, nao `rm` no fim do corpo.
+    comum::DirTemp::novo(&format!("frog-{rotulo}"))
 }
 
 /// A coluna `nome` e `Str(40)` e vai marcada; e ela que define o custo.

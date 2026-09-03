@@ -31,7 +31,7 @@
 //! A ordem de ESCRITA nao muda em nenhum dos dois modos, e e isso que
 //! `a_linha_esta_no_trash_mesmo_sem_fsync` trava.
 
-use std::path::PathBuf;
+mod comum;
 use std::sync::Mutex;
 
 use phxsql_core::schema::{Column, IndexColumn, IndexDef, Schema};
@@ -62,12 +62,9 @@ impl Drop for ComAJanela {
     }
 }
 
-fn dir(rotulo: &str) -> PathBuf {
-    let mut p = std::env::temp_dir();
-    p.push(format!("phxsql-exc-janela-{}-{rotulo}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&p);
-    std::fs::create_dir_all(&p).unwrap();
-    p
+fn dir(rotulo: &str) -> comum::DirTemp {
+    // Pedido 150: guarda de Drop, nao `rm` no fim do corpo.
+    comum::DirTemp::novo(&format!("exc-janela-{rotulo}"))
 }
 
 fn esquema() -> Schema {

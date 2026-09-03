@@ -17,6 +17,8 @@
 //! Sozinho no arquivo porque `cargo test` roda os testes de um binario em
 //! paralelo, e medir tempo com vizinho competindo pelo disco e medir o vizinho.
 
+mod comum;
+
 use phxsql_core::schema::{AcaoRi, Column, ForeignKey, IndexColumn, IndexDef, Schema};
 use phxsql_core::types::ColumnType;
 use phxsql_core::value::Value;
@@ -30,9 +32,8 @@ const VOLTAS: usize = 60;
 
 #[test]
 fn alterar_fora_do_indice_nao_paga_a_varredura_das_irmas() {
-    let d = std::env::temp_dir().join(format!("phx-portao-{}", std::process::id()));
-    std::fs::remove_dir_all(&d).ok();
-    std::fs::create_dir_all(&d).unwrap();
+    // Pedido 150: guarda de Drop, nao `rm` no fim do corpo.
+    let d = comum::DirTemp::novo("portao");
 
     // A mae tem tres colunas de proposito: `id` e referenciado pelas chaves,
     // `apelido` esta num indice e NAO e referenciado por ninguem, e `nome` nao

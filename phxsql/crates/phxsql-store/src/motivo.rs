@@ -471,11 +471,9 @@ fn cortar(s: &str, max: usize) -> String {
 mod testes {
     use super::*;
 
-    fn temp(nome: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("phx-motivo-{nome}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    // Pedido 150: guarda de Drop, nao `rm` no fim do corpo.
+    fn temp(nome: &str) -> crate::apoio_teste::DirTemp {
+        crate::apoio_teste::DirTemp::novo(&format!("motivo-{nome}"))
     }
 
     #[test]
