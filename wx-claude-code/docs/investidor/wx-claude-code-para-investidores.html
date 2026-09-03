@@ -65,8 +65,9 @@ a{color:var(--accent)}
 <div class="kpis">
   <div class="kpi"><b>34</b><span>agentes especializados</span><small>medido: <code>claude plugin validate</code></small></div>
   <div class="kpi"><b>12.035</b><span>páginas do Help WLanguage</span><small>corpus verificado por SHA-256</small></div>
+  <div class="kpi"><b>12</b><span>testes de regressão</span><small>rodam no validador do pacote</small></div>
   <div class="kpi"><b>8</b><span>gates com aprovação humana</span><small>G0 a G7, piloto obrigatório</small></div>
-  <div class="kpi"><b>10,8×</b><span>busca mais rápida por tema</span><small>5,4 s → 0,5 s, medido</small></div>
+  <div class="kpi"><b>9/10</b><span>golden master no exemplo</span><small>equivalência medida, uma falha deliberada</small></div>
 </div>
 
 <h2>O problema que ele resolve</h2>
@@ -75,8 +76,15 @@ a{color:var(--accent)}
 
 <div class="callout"><p><strong>A tese.</strong> O valor não está em «traduzir código com IA». Está em transformar um processo artesanal e dependente de pessoas raras num método repetível, com entradas verificadas, papéis especializados, decisões registradas e provas de equivalência. O plugin é esse método, em código.</p></div>
 
-<h2>Como funciona</h2>
-<p>O uso começa com um questionário de dez perguntas, uma por vez, em que o plugin recebe o que existe do sistema legado (script SQL, documentação em PDF gerada pela própria plataforma, telas) e o destino desejado (linguagem de backend e frontend, banco, estilo visual). Um arquivo só conta como entregue depois que o plugin o abre e lê.</p>
+<h2>O que ele faz, em uma frase por etapa</h2>
+<ol>
+<li><strong>Recebe o legado</strong> por um questionário de dez perguntas, uma por vez: script SQL, os PDFs que o WINDEV gera da documentação técnica, telas, o Help oficial. Um arquivo só conta como entregue depois que o plugin o abre e lê.</li>
+<li><strong>Orienta para qual linguagem converter.</strong> Quando o cliente não sabe, levanta quatro sinais (quem mantém, desktop ou web ou mobile, desempenho ou prazo, linguagem já em uso) e mostra três opções com o porquê, a recomendada primeiro: Rust, Python ou C# com a biblioteca WL_C#, que porta mais de 480 funções do WLanguage com o mesmo nome. A escolha é do cliente e fica registrada.</li>
+<li><strong>Extrai as regras com prova de origem.</strong> Cada texto vem com arquivo, página e hash. Cada função WLanguage vai ao especialista do tema certo do Help, que devolve a semântica com a página de origem.</li>
+<li><strong>Converte por gates com aprovação humana</strong>, com um piloto vertical obrigatório antes de escalar.</li>
+<li><strong>Prova a equivalência com números.</strong> O golden master captura resultados do sistema antigo e compara com o novo, caso a caso, com tolerância declarada.</li>
+<li><strong>Gerencia como projeto.</strong> Um PMO em código com Scrum, Kanban e PDCA, orçamento de tokens medido por gate e um painel em que nenhum número é digitado.</li>
+</ol>
 <p>Daí em diante, o trabalho avança por gates. Cada gate produz artefatos verificáveis e depende de um aprovador humano antes do próximo.</p>
 
 <div class="gates">
@@ -95,7 +103,7 @@ a{color:var(--accent)}
 <div class="flow">
   <div><b>Equipe WLanguage sobre o Help oficial</b>O corpus da PC SOFT vem embutido, indexado em 45 temas. Sete agentes especialistas (banco HFSQL, telas, comunicação, funções, mobile, web, erros) consultam só a sua fatia e devolvem a semântica com a página de origem e o hash. O Help é semântica técnica, nunca regra de negócio.</div>
   <div><b>Balanceamento de modelos</b>Um roteador escolhe entre três classes de modelo Claude pela natureza da tarefa e pelo orçamento do gate: o mecânico vai para o mais barato, a decisão e a auditoria para o mais capaz. Acima de 80 % do orçamento rebaixa; acima de 100 % bloqueia e o gerente decide.</div>
-  <div><b>PMO em código</b>Scrum organiza o tempo, Kanban mostra o fluxo com limite de trabalho em andamento, e o ciclo PDCA transforma cada hipótese em aprendizado registrado, inclusive quando a hipótese morre. O painel não tem número digitado: cada linha cita a fonte.</div>
+  <div><b>PMO em código</b>Scrum organiza o tempo (uma sprint por gate, definição de pronto igual à da matriz), Kanban mostra o fluxo com limite de trabalho em andamento, e o ciclo PDCA transforma cada hipótese em aprendizado registrado, inclusive quando a hipótese morre. O uso de tokens vem medido das sessões, não estimado. O painel não tem número digitado: cada linha cita a fonte.</div>
 </div>
 
 <h2>Rastreabilidade de ponta a ponta</h2>
@@ -105,13 +113,17 @@ a{color:var(--accent)}
 <h2>O que está construído e provado</h2>
 <div class="scroll"><table>
 <tr><th>Item</th><th>Estado</th><th>Como foi provado</th></tr>
-<tr><td>Plugin instalável, marketplace privado, 5 comandos, 3 skills, 34 agentes</td><td><span class="tag ok">provado</span></td><td>validação oficial do Claude Code e carga numa sessão nova</td></tr>
+<tr><td>Plugin instalável, marketplace privado, 5 comandos, 3 skills, 34 agentes, 12 testes</td><td><span class="tag ok">provado</span></td><td>validação oficial do Claude Code e carga numa sessão nova</td></tr>
 <tr><td>Questionário letra a letra, respostas viram manifesto e configuração</td><td><span class="tag ok">provado</span></td><td>três turnos reais; pré-flight real sobre a saída</td></tr>
 <tr><td>Corpus WLanguage 12k com hash fixo e busca por tema</td><td><span class="tag ok">provado</span></td><td>verificação de identidade; 5,4 s → 0,5 s medido</td></tr>
 <tr><td>Delegação a especialistas por tema do Help</td><td><span class="tag ok">provado</span></td><td>sessão real com dois símbolos e páginas de origem</td></tr>
 <tr><td>Roteador de modelos: sobe, desce, rebaixa, bloqueia, fallback</td><td><span class="tag ok">provado</span></td><td>cinco casos exercitados com saída registrada</td></tr>
 <tr><td>PMO com Scrum, Kanban e PDCA</td><td><span class="tag ok">provado</span></td><td>projeto de exemplo com dez itens; agente leu o painel e apontou inconsistência</td></tr>
 <tr><td>Estilo de telas com Impeccable (Apache 2.0, vendorizado)</td><td><span class="tag ok">provado</span></td><td>scripts rodam; <code>DESIGN.md</code> gerado da resposta do usuário</td></tr>
+<tr><td>Projeto de exemplo WINDEV completo (SQL, quatro PDFs, telas, dados, golden)</td><td><span class="tag ok">provado</span></td><td>G0 real: CONDITIONAL, zero erros; regressão automática</td></tr>
+<tr><td>Extração de PDF com localizador e hash; golden master com tolerância</td><td><span class="tag ok">provado</span></td><td>quatro PDFs, zero OCR; 9 de 10 casos, a décima falha de propósito</td></tr>
+<tr><td>Orientação de linguagem (Rust, Python, C# + WL_C#) e índice de 261 funções da WL_C#</td><td><span class="tag ok">provado</span></td><td>sessão real recomendou C# + WL_C# para «equipe WINDEV, desktop, prazo»</td></tr>
+<tr><td>Portão do G0 no harness (nega escrita de código com pré-flight bloqueado)</td><td><span class="tag ok">provado</span></td><td>hook testado nos três casos</td></tr>
 <tr><td>Conversão completa de um sistema WX real</td><td><span class="tag warn">não provado</span></td><td>exige anexos de um projeto autorizado e piloto aprovado</td></tr>
 <tr><td>Equivalência funcional medida por domínio</td><td><span class="tag warn">não provado</span></td><td>depende de baseline executável do legado</td></tr>
 <tr><td>Cliente pagante, receita, benchmark de produtividade</td><td><span class="tag warn">inexistente</span></td><td>nenhum dado ainda</td></tr>
@@ -167,5 +179,5 @@ a{color:var(--accent)}
 <h2>Próximo passo</h2>
 <p>Um piloto comercial controlado: um sistema WX autorizado, dados anonimizados, uma fatia vertical de valor. Medir horas, tokens, cobertura de evidência, divergências e defeitos. Esse é o dado que transforma a base técnica em valuation.</p>
 
-<footer>WX Claude Code 3.2.1 · repositório <span class="mono">adrianoboller/adrianoboller</span> · manual de uso, prints e vídeo em <span class="mono">wx-claude-code/docs</span>. Números medidos na data desta página; o que não foi medido está marcado.</footer>
+<footer>WX Claude Code 3.4.0 · repositório <span class="mono">adrianoboller/adrianoboller</span> · manual de uso, prints e vídeo em <span class="mono">wx-claude-code/docs</span>. Números medidos na data desta página; o que não foi medido está marcado.</footer>
 </div>
