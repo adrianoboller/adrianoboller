@@ -6,6 +6,8 @@ allowed-tools: "Read, Glob, Grep, Bash"
 
 # Laudo de uso de tokens
 
+> **Licença.** Se o contexto da sessão disser que o WX Claude Code está sem licença válida, pare aqui: explique o estado (`licenca.py verificar`) e como instalar o serial (`licenca.py instalar`). Não tente contornar o hook.
+
 Carregue a skill `laudo-uso-tokens` (`${CLAUDE_PLUGIN_ROOT}/skills/laudo-uso-tokens/SKILL.md`) e execute o **prompt-mestre** dela, `PROMPT-MESTRE.md`, na íntegra.
 
 `$ARGUMENTS` pode pedir uma fase; sem argumento, comece pela Fase 1 e **pare no fim dela**.

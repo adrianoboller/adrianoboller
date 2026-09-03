@@ -6,6 +6,8 @@ allowed-tools: "Read, Glob, Grep, Bash, Write, Edit, Agent, AskUserQuestion"
 
 # Converter projeto WX
 
+> **Licença.** Se o contexto da sessão disser que o WX Claude Code está sem licença válida, pare aqui: explique o estado (`licenca.py verificar`) e como instalar o serial (`licenca.py instalar`). Não tente contornar o hook.
+
 Pré-requisito: `<projeto>/.wx-migration/questionario.json` existe. Se não existir, pare e execute `/wx-claude-code:questionario` primeiro — o questionário é quem diz quais anexos foram entregues e para onde o projeto vai.
 
 Carregue a skill `conversao-wx` (`${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/SKILL.md`) e siga-a do **Gate G0** em diante. As respostas do questionário substituem a rodada de perguntas da seção 1 da skill; refaça só as perguntas cujo item continue em aberto.

@@ -271,5 +271,50 @@ class HookG0(unittest.TestCase):
             shutil.rmtree(tmp, ignore_errors=True)
 
 
+
+class Licenca(unittest.TestCase):
+    """Serial RSA: o plugin so tem a chave publica e nao forja serial."""
+
+    @classmethod
+    def setUpClass(cls):
+        sys.path.insert(0, str(SCRIPTS))
+        import licenca
+        cls.lic = licenca
+        cls.priv, cls.pub = licenca.gerar_chaves()
+
+    def test_serial_valido_alterado_vencido_e_de_outra_maquina(self):
+        from datetime import date
+        L = self.lic
+        s = L.gerar_serial("Softhouse X", "2099-01-01", self.priv)
+        self.assertEqual(L.verificar_serial(s, self.pub)["status"], "valida")
+        self.assertEqual(L.verificar_serial(s[:-2] + ("A" if s[-2] != "A" else "B") + s[-1], self.pub)["status"], "assinatura-invalida")
+        payload_alterado = s.split(".")[1][:-1] + ("A" if s.split(".")[1][-1] != "A" else "B")
+        self.assertNotEqual(L.verificar_serial(".".join([s.split(".")[0], payload_alterado, s.split(".")[2]]), self.pub)["status"], "valida")
+        self.assertEqual(L.verificar_serial(L.gerar_serial("X", "2000-01-01", self.priv), self.pub)["status"], "vencida")
+        self.assertEqual(L.verificar_serial(L.gerar_serial("X", "2099-01-01", self.priv, maquina="0000000000000000"), self.pub)["status"], "maquina-diferente")
+        self.assertEqual(L.verificar_serial(L.gerar_serial("X", "2099-01-01", self.priv, maquina=L.impressao_da_maquina()), self.pub)["status"], "valida")
+        outra_priv, _ = L.gerar_chaves()
+        self.assertEqual(L.verificar_serial(L.gerar_serial("X", "2099-01-01", outra_priv), self.pub)["status"], "assinatura-invalida")
+
+    def test_hook_nega_scripts_do_plugin_sem_licenca_e_libera_com(self):
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            (tmp / "chave-publica.json").write_text(json.dumps(self.pub))
+            env = dict(os.environ, WX_LICENCA=str(tmp / "licenca"))
+            def hook(entrada):
+                return subprocess.run([sys.executable, "-c", f"import sys; sys.path.insert(0, {str(SCRIPTS)!r}); import licenca; from pathlib import Path; licenca.CHAVE_PUBLICA = Path({str(tmp / 'chave-publica.json')!r}); sys.exit(licenca.hook_pre_tool())"], input=json.dumps(entrada), capture_output=True, text=True, env=env).stdout
+            plugin = {"tool_name": "Bash", "tool_input": {"command": "python3 x/skills/conversao-wx/scripts/pmo.py status"}}
+            self.assertIn('"deny"', hook(plugin))
+            self.assertIn('"deny"', hook({"tool_name": "Write", "tool_input": {"file_path": "/p/.wx-migration/gaps.md"}}))
+            self.assertEqual(hook({"tool_name": "Bash", "tool_input": {"command": "cargo test"}}), "")
+            self.assertEqual(hook({"tool_name": "Write", "tool_input": {"file_path": "/p/src/main.rs"}}), "")
+            (tmp / "licenca").write_text(self.lic.gerar_serial("Softhouse X", "2099-01-01", self.priv))
+            self.assertEqual(hook(plugin), "")
+            (tmp / "licenca").write_text(self.lic.gerar_serial("Softhouse X", "2000-01-01", self.priv))
+            self.assertIn("vencida", hook(plugin))
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

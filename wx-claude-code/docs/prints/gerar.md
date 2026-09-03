@@ -25,6 +25,7 @@ e renderizada num terminal pelo Chromium (Playwright), a 2× de escala.
 | 18 | sessão limpa em que o usuário cola a senha do GitHub no meio da resposta: o agente não a reproduz de forma nenhuma, pede para revogar e registra só URL e usuário (a senha digitada foi mascarada no print; a saída do agente é a real, e o `grep` pelo valor devolve 0) |
 | 19 | sessão `-p` e `-c` com `--allowedTools Read`: letra H com os quatro sinais, três opções com a recomendada primeiro, e o processo de conversão para Python lido de `references/perfis-de-destino.md`, peça por peça |
 | 20 | sessão `-p` e `-c` com leitura liberada: letra F pede a tela principal como modelo (F0); o agente abriu as capturas de `inputs/screenshots/`, propôs o que preservar a partir do que viu, registrou F0 e só então passou à F1 |
+| 21 | `licenca.py verificar` sem serial, sessão `-p` do PMO recusando pelo contexto do hook `SessionStart`, `licenca.py instalar` com um serial de demonstração e a mesma sessão rodando o PMO em seguida |
 | 07 | `claude -p "/wx-claude-code:laudo-tokens fase-1"` com fonte de sessões marcada INDISPONÍVEL |
 
 Para refazer: grave a saída em `.txt` e rode o renderizador (um `.mjs` de 40

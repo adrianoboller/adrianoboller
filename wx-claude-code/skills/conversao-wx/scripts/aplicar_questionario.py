@@ -620,6 +620,15 @@ def main() -> int:
     ]
 
     claude_md = (modelos / "CLAUDE.md").read_text(encoding="utf-8")
+    # Marca d'agua: com licenca valida, o arquivo gerado diz para quem foi emitido.
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from licenca import verificar_instalada  # noqa: E402
+        lic = verificar_instalada()
+    except Exception:  # sem modulo ou sem chave publica: segue sem marca
+        lic = {"status": "ausente"}
+    marca = f"\n<!-- Gerado sob a licenca WX Claude Code n. {lic['id']} para {lic['cliente']} -->\n" if lic.get("status") == "valida" else ""
+    claude_md = claude_md.rstrip("\n") + "\n" + marca
     if q.get("J_economia_de_tokens", {}).get("ativar") and q["J_economia_de_tokens"].get("instalar_estilo_no_claude_md", True):
         claude_md = claude_md.rstrip("\n") + "\n" + ESTILO_DE_RESPOSTA
     saida.append(write_new(projeto / "CLAUDE.md", claude_md))
@@ -636,7 +645,7 @@ def main() -> int:
     if e:
         raiz = (projeto / q.get("projeto", {}).get("raiz_de_evidencias", "./inputs")).resolve()
         saida += [
-            write_new(wx / "empresa.md", esboco_empresa(q, raiz)),
+            write_new(wx / "empresa.md", esboco_empresa(q, raiz) + marca),
             write_new(wx / "pmo" / "projeto.json", json.dumps(montar_projeto_pmo(e), ensure_ascii=False, indent=2) + "\n"),
             write_new(wx / "pmo" / "organograma.md", esboco_organograma(e, raiz)),
             write_new(wx / "pmo" / "fluxograma.md", esboco_fluxograma(e, raiz)),

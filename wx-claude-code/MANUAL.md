@@ -53,7 +53,7 @@ python3 wx-claude-code/skills/conversao-wx/scripts/query_wlanguage_help.py --ver
 listagem que o modelo devolve pode omitir um item; confira por nome, não
 por contagem.
 
-**Validar o pacote** (roda os 17 testes de regressão):
+**Validar o pacote** (roda os 19 testes de regressão):
 
 ```bash
 python3 wx-claude-code/skills/conversao-wx/scripts/validate_plugin_bundle.py wx-claude-code --strict
@@ -437,6 +437,40 @@ Em I a pergunta se repete para as telas, com o ritmo (tela a tela, módulo a
 módulo, tudo). O que você confirmou e o que quer diferente vão para
 `.wx-migration/processo-de-conversao.md`, a primeira versão do que o G3
 detalha. Tabelas completas em `references/perfis-de-destino.md`.
+
+---
+
+## 8. Licença e serial de ativação
+
+O plugin só executa com um serial válido. Sem ele, a sessão abre com o aviso
+«sem licença válida», os comandos `/wx-claude-code:*` param na primeira linha
+e o hook nega a execução dos scripts do plugin e qualquer escrita em
+`.wx-migration/`. O resto do Claude Code continua normal.
+
+**Instalar o serial que você recebeu:**
+
+```bash
+python3 "$CLAUDE_PLUGIN_ROOT/skills/conversao-wx/scripts/licenca.py" instalar "WX2.…"
+python3 "$CLAUDE_PLUGIN_ROOT/skills/conversao-wx/scripts/licenca.py" verificar
+```
+
+Ele fica em `~/.wx-claude-code/licenca` (ou onde `$WX_LICENCA` apontar). Se o
+serial for preso a uma máquina, informe ao distribuidor o resultado de
+`licenca.py maquina` antes de pedir o seu.
+
+**Como funciona.** O serial é assinado com RSA-2048 pela chave privada de
+quem distribui; o plugin traz só a chave pública e não consegue emitir nem
+forjar serial. Um byte alterado invalida a assinatura. Estados possíveis:
+`valida`, `ausente`, `vencida`, `maquina-diferente`, `assinatura-invalida`.
+
+**O que isso protege.** O plugin é texto, e quem instala lê tudo. O serial e
+os hooks são dissuasão para o cliente honesto, não muralha: quem apagar o hook
+remove a trava. A proteção de verdade é servir o corpus e os agentes de um
+servidor seu, com o serial conferido a cada chamada. Está explicado, com os
+comandos de quem distribui, em `licenca/LEIA-ME.md`.
+
+**Marca d'água.** Com licença válida, o `CLAUDE.md` e o `empresa.md` gerados
+dizem para quem o plugin foi licenciado.
 
 ---
 

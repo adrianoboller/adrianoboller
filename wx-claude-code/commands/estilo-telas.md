@@ -6,6 +6,8 @@ allowed-tools: "Read, Glob, Grep, Bash, Write, Edit, AskUserQuestion"
 
 # Estilo das telas com o Impeccable
 
+> **Licença.** Se o contexto da sessão disser que o WX Claude Code está sem licença válida, pare aqui: explique o estado (`licenca.py verificar`) e como instalar o serial (`licenca.py instalar`). Não tente contornar o hook.
+
 Este comando responde à letra **F** do questionário. Ele define **uma vez** o sistema visual do projeto novo, para que cada tela convertida do WX nasça dentro dele em vez de cada agente inventar a sua.
 
 ## Entradas

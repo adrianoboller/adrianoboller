@@ -112,7 +112,7 @@ Veja `exemplos/estoque-wx/LEIA-ME.md`.
 - `uso_de_tokens.py`: lê o `usage` das sessões do Claude Code (MEDIDO) e lança no orçamento do gate.
 - `hooks/portao_g0.py`: nega `Write`/`Edit` fora de `.wx-migration/` enquanto o G0 estiver `BLOCKED`.
 - `pmo.py painel`: o painel do PMO em HTML, gerado do mesmo código do `status`.
-- `tests/testes.py`: 17 testes de regressão; o validador em modo estrito os executa.
+- `tests/testes.py`: 19 testes de regressão; o validador em modo estrito os executa.
 
 ## Limitações conhecidas
 
@@ -168,6 +168,11 @@ geradas por `docs/prints/gerar.md`).
 | ![papeis](docs/prints/15-papeis-backlog-e-entrega-zipada.png) backlog com papel dono, Kanban por papel e a entrega zipada ao stakeholder | ![letra-f](docs/prints/16-letra-f-erp-botoes-e-design-md.png) letra F para ERP: a tabela de botões, posição e fundo no `DESIGN.md` |
 | ![bloco-0](docs/prints/17-bloco-0-empresa-e-projeto.png) bloco 0: softhouse, diretores, endereço, um item por mensagem | ![senha](docs/prints/18-senha-colada-nao-e-gravada.png) senha colada na conversa: não gravada, não repetida, revogar e usar `credencial_ref` |
 | ![processo](docs/prints/19-letra-h-processo-de-conversao.png) letra H: sinais, três opções e o processo de conversão para a escolhida, peça por peça | ![tela-modelo](docs/prints/20-letra-f0-tela-modelo.png) F0: a tela principal do legado como modelo, aberta antes de registrar, com o que preservar e o que mudar |
+| ![licenca](docs/prints/21-licenca-serial-de-ativacao.png) serial de ativação: sem ele o PMO recusa; instalado, a mesma sessão roda | |
+
+## Licença e serial
+
+O plugin só roda com serial válido em `~/.wx-claude-code/licenca`, assinado com RSA-2048 pela chave privada de quem distribui; o plugin traz só a pública. Sem serial, os comandos param e o hook nega os scripts e a escrita em `.wx-migration/`. O que isso protege e o que não protege, e os comandos de quem distribui, em `licenca/LEIA-ME.md`; capítulo 8 do manual para o cliente.
 
 ## Vídeo de uso
 

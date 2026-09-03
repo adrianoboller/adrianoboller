@@ -6,6 +6,8 @@ allowed-tools: "Read, Glob, Grep, Bash, Write, Edit, Agent, AskUserQuestion"
 
 # PMO da conversão
 
+> **Licença.** Se o contexto da sessão disser que o WX Claude Code está sem licença válida, pare aqui: explique o estado (`licenca.py verificar`) e como instalar o serial (`licenca.py instalar`). Não tente contornar o hook.
+
 Delegue ao agente `wx-claude-code:pmo-gerente-de-projetos` com o subcomando de `$ARGUMENTS` e a raiz do projeto. Leia antes `${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/references/pmo.md` e `balanceamento-de-modelos.md`.
 
 Subcomandos:
