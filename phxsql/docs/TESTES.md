@@ -712,8 +712,12 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `bidirecional-julga-fk` | o bidirecional volta a conferir a chave do evento que aplica | 1 | ✅ provada |
 | `bidirecional-julga-as-filhas` | o bidirecional volta a recusar apagar a mae que tem filha | 1 | ✅ provada |
 | `recascata-sem-conferir-a-arvore` | a recuperação gravava a primeira filha e só então descobria que a neta da segunda restringe | 1 | ✅ provada |
+| `auto-referencia-em-silencio` | a auto-referência sai da cascata em silêncio e orfana a subordinada | 1 | ✅ provada |
+| `recado-manda-reparar-arquivo-sao` | a mãe invisível manda reparar o índice — de um arquivo intacto | 2 | ✅ provada |
+| `procura-das-filhas-manda-reparar-arquivo-sao` | a procura pelas filhas manda reparar o índice — de um arquivo intacto | 1 | ✅ provada |
+| `recuperacao-nao-reconstroi-a-filha` | a recuperação não reconstrói o índice da filha, e a cascata fica pela metade | 1 | ✅ provada |
 
-**73 guardas: 69 provadas, 4 redundantes** — 696 s de mutação, medido em 2026-09-03 11:53.
+**77 guardas: 73 provadas, 4 redundantes** — 718 s de mutação, medido em 2026-09-03 15:22.
 
 As notas que a rodada deixou:
 
