@@ -661,6 +661,30 @@ pertence: campo e chave na seção 3 (*A tabela, peça a peça*), partição na 
   apareceu no teste de navegador, e só depois que o formulário ficou maior.
   Quem vai pintar a própria tela agora passa `montarArvore(false)`.
 
+### O que a revisão de tela (papel E, 20260903) achou
+
+Um achado, descrito e **não** consertado — é decisão de fluxo, maior que uma
+regra de CSS, e outra frente pode estar mexendo nesta mesma tela agora.
+Detalhe completo em `docs/REVISAO-DE-TELA-20260903.md`.
+
+- **A grade de conteúdo alcançada pela árvore não tem botão de incluir.**
+  Clicar uma tabela na árvore lateral abre a aba "Conteúdo"
+  (`vConteudo`/`ligarConteudo`), que tem agrupamento, busca e exclusão em
+  lote, mas nenhum botão de "Nova linha" — só dá para abrir a ficha de uma
+  linha já existente (duplo clique). Para incluir é preciso saber ir por
+  "Gerir as tabelas" → "Editar conteúdo da tabela" (ou o atalho `Alt+3`), que
+  abre uma tela **diferente** (`verConteudoEditavel`, com paginação por
+  cursor) e tem o `#btNova`. Quem chega pelo caminho mais natural — clicar a
+  tabela na árvore, o "ponto de partida de toda sessão" segundo o próprio
+  comentário de `FERRAMENTAS` no código — não encontra como incluir uma
+  linha sem já saber do segundo caminho.
+
+  A revisão também tentou reproduzir a pétrea do "Blumenau"/"BLUMENAU"
+  (dado mudando de aparência na grade) incluindo uma linha com cidade
+  digitada em minúsculo — não reproduziu: o valor gravado e o exibido
+  bateram, nos dois temas. Cores de ação, contraste (tema claro) e rolagem
+  lateral também saíram limpos na amostra exercitada, listada no documento.
+
 ## 5. Ninguém pediu, mas a medição aponta
 
 O bloco abaixo é **gerado** de `bancada/resultados.json` — e nesta revisão o
