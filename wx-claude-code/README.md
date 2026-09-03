@@ -107,6 +107,11 @@ geradas por `docs/prints/gerar.md`).
 | ![equipe](docs/prints/09-equipe-wlanguage-por-tema.png) delegação real aos `wl-*-specialist` | ![scrum](docs/prints/10-pmo-scrum-kanban-pdca.png) Scrum, Kanban e PDCA com a base de conhecimento |
 | ![pmo-sessao](docs/prints/11-pmo-sessao-real.png) `/wx-claude-code:pmo status` numa sessão real | |
 
+## Vídeo de uso
+
+`docs/video/wx-claude-code-video-de-uso.webm`, 1 min 21 s: nove cenas com as
+mesmas saídas reais dos prints, reproduzidas num terminal animado.
+
 ## Pacotes
 
 Os zips não ficam no repositório (`dist/` está no `.gitignore`); gere com:
