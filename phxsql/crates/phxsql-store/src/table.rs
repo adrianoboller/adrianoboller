@@ -809,6 +809,46 @@ impl Table {
                     fk.colunas_ref.join(", ")
                 )));
             }
+            // EXISTIR nao e ESTAR VIVA, e a conferencia perguntava so a
+            // primeira. A mae excluida de forma SUAVE continua no `.reg`, com
+            // a chave dela no indice -- entao um pedido novo podia nascer
+            // apontando para um cliente que a tela nao mostra mais.
+            //
+            // E a orfa por construcao, e e a mesma frase da petrea do
+            // `excluir_suave` valendo para o outro lado do tempo: la ela diz
+            // que pai logicamente morto deixa filha apontando para linha que a
+            // tela nao mostra mais, e por isso o suave tambem confere as
+            // filhas. Sem esta metade, a casa fechava a porta e deixava a
+            // janela: nao dava para MATAR a mae com filha, mas dava para
+            // NASCER filha de mae morta.
+            //
+            // O portao vem antes do trabalho: tabela sem a coluna de sistema
+            // nao tem marca nenhuma, e ali a pergunta custa um `Option`.
+            if mae.esquema.coluna_softdeleted().is_some() {
+                let mut viva = false;
+                for &r in &achou {
+                    // `reg.ler` devolve o payload cru; a marca sai do byte da
+                    // coluna de sistema, sem decodificar a linha nem carregar
+                    // `.bin`/`.memo` -- ler a linha inteira para olhar um byte
+                    // custaria os anexos da mae por filha gravada.
+                    if let Some(p) = mae.reg.ler(r)? {
+                        if !mae.marcada_no_payload(&p)? {
+                            viva = true;
+                            break;
+                        }
+                    }
+                }
+                if !viva {
+                    return Err(PhxError::Integridade(format!(
+                        "{}: {}({}) com esse valor existe, mas esta EXCLUIDA -- \
+                         restaure a linha mae antes de gravar esta, ou aponte \
+                         para outra",
+                        fk.nome,
+                        fk.tabela_ref,
+                        fk.colunas_ref.join(", ")
+                    )));
+                }
+            }
         }
         Ok(())
     }
@@ -1694,7 +1734,7 @@ impl Table {
                         outro => {
                             return Err(PhxError::Tipo(format!(
                                 "coluna {nome_col} espera Bin, recebeu {outro:?}"
-                            )))
+                            )));
                         }
                     };
                     let dados = self.reg.selar_externo(i as u16, &dados);
@@ -1707,7 +1747,7 @@ impl Table {
                         outro => {
                             return Err(PhxError::Tipo(format!(
                                 "coluna {nome_col} espera Memo, recebeu {outro:?}"
-                            )))
+                            )));
                         }
                     };
                     let bytes = self.reg.selar_externo(i as u16, texto.as_bytes());
@@ -1896,7 +1936,7 @@ impl Table {
                 return Err(PhxError::Tipo(format!(
                     "a coluna de particao {} precisa de uma data; recebi {outro:?}",
                     self.esquema.colunas()[i].nome
-                )))
+                )));
             }
         };
         let (ano, mes, _) = civil_de_dias(dias);

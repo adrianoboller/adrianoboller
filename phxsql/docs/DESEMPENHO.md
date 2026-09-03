@@ -2101,6 +2101,61 @@ favorece o `RwLock`, mas *favorecer* não é medir.
 python3 bancada/concorrencia/a-trava-serializa.py   # SEGUNDOS= e LINHAS= ajustam
 ```
 
+## 15. A integridade referencial: o que a garantia custa, medido
+
+### 15.1 «Existir» não é «estar viva»: +7,0 µs por linha, e por que se paga
+
+A conferência da chave estrangeira perguntava «esta linha existe?». A mãe
+excluída de forma **suave** continua no `.reg`, com a chave dela no índice —
+então um pedido novo nascia apontando para um cliente que a tela não mostra
+mais. É a órfã por construção, e é o outro lado do tempo da pétrea do
+`excluir_suave`, que já confere as filhas pela mesma frase.
+
+Fechar isso põe uma leitura a mais **no laço quente**, e o custo não se estima.
+Medido com `--example custo-da-fk` (20.000 filhas, 1.000 mães), mediana de três
+corridas por lado, com o binário recompilado entre elas:
+
+| | sem a pergunta | com a pergunta | diferença |
+|---|---|---|---|
+| chave declarada, **não** conferida | 8,13 µs/linha | 8,02 µs/linha | ruído |
+| chave **conferida** | 62,84 µs/linha | 69,87 µs/linha | **+7,03 µs (+11,2%)** |
+| — só a busca no índice (o resto) | 10,18 µs | 16,12 µs | +5,94 µs (+58%) |
+
+Três coisas que o número diz, e que a estimativa não diria:
+
+1. **Quem não pediu conferência não paga nada.** A lista `fks_conferidas` é o
+   portão do custo-zero, e ele continua antes do trabalho.
+2. **A conta bate com a natureza do trabalho.** O que entrou foi uma leitura de
+   slot do `.reg` da mãe por linha gravada — a marca sai do **byte** da coluna
+   de sistema, sem decodificar a linha nem carregar `.bin`/`.memo`. Ler a linha
+   inteira para olhar um byte custaria os anexos da mãe por filha gravada.
+3. **O gargalo da conferência continua sendo outro.** Abrir a mãe custa
+   **46,8 µs**, 70,8% do total; a garantia nova mora nos 5,9 µs do índice. Quem
+   quiser baratear a chave conferida ataca a abertura, não esta pergunta.
+
+A tabela **sem** a coluna `softdeleted` (gravada antes da v4 do esquema) não
+paga nem a comparação: a pergunta é um `Option` que sai `None`.
+
+### 15.2 A cascata na réplica: o evento que nunca chegava
+
+Não é custo, é correção, e mora aqui porque foi a **medição** que a achou.
+
+A cascata do `ao_alterar` grava na filha por um handle próprio, aberto pelo
+motor. Ele nascia com o padrão — imagem no diário **desligada** —, então o
+evento de alteração da filha ia para o diário sem a imagem da linha, e a
+réplica o recusava com «veio sem imagem». Medido em `--example
+sonda-replica-fk`: o source dizia `pedidos: 2 eventos` e a réplica só aplicava
+**1**, nas três ordens de entrega.
+
+A família do defeito é a do KiB do rodapé: a garantia valia só para o caminho
+que passou pela mão de quem a ligou. Quem replica liga a imagem na tabela que
+**abre**; a que o motor abre por baixo tinha de sair igual.
+
+```bash
+cargo run --release --example custo-da-fk -- 20000 1000
+cargo run --example sonda-replica-fk -p phxsql-store
+```
+
 ## Como refazer tudo
 
 ```bash
@@ -2123,4 +2178,5 @@ cargo build --release --examples -p phxsql-server        # binario velho mede o 
 cargo run --release -p phxsql-server --example custo-da-transacao 200 64  # a §12
 python3 bancada/transacoes/provar.py                     # a transacao pelo soquete
 python3 bancada/concorrencia/a-trava-serializa.py        # a premissa da SP000011, a §14
+cargo run --release --example custo-da-fk -- 20000 1000   # o custo da chave conferida, a §15
 ```

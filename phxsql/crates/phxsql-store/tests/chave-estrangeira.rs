@@ -339,3 +339,130 @@ fn sem_conferir_a_mae_sai_mesmo_sem_indice_na_filha() {
         "a guarda nova quebrou quem nunca pediu nada"
     );
 }
+
+// ---------------------------------------------------------------------------
+// EXISTIR nao e ESTAR VIVA: a orfa por construcao
+// ---------------------------------------------------------------------------
+//
+// A conferencia perguntava «esta linha existe?», e a mae excluida de forma
+// SUAVE continua no `.reg` com a chave dela no indice -- entao um pedido novo
+// nascia apontando para um cliente que a tela nao mostra mais.
+//
+// E o outro lado do tempo da mesma petrea: o `excluir_suave` da mae ja confere
+// as filhas «porque pai logicamente morto deixa filha apontando para linha que
+// a tela nao mostra mais». Sem esta metade a casa fechava a porta e deixava a
+// janela -- nao dava para MATAR a mae com filha, mas dava para NASCER filha de
+// mae morta.
+
+/// A filha NAO nasce apontando para mae excluida de forma suave.
+#[test]
+fn a_filha_nao_nasce_apontando_para_mae_excluida_suave() {
+    let d = dir("mae-morta-inserir");
+    let mut m = mae(&d);
+    m.inserir(&[Value::Int(1)]).unwrap();
+    m.excluir_suave(1, "saiu").unwrap();
+    m.sincronizar().unwrap();
+    drop(m);
+
+    let mut f = filha(&d, true);
+    let erro = f
+        .inserir(&[Value::Int(10), Value::Int(1)])
+        .expect_err("a mae esta morta: a filha nao pode nascer apontando para ela");
+    let t = erro.to_string();
+    assert!(
+        matches!(erro, PhxError::Integridade(_)),
+        "tinha de ser erro de integridade, e veio: {erro:?}"
+    );
+    assert!(
+        t.contains("EXCLUIDA"),
+        "a recusa tem de dizer que a mae existe mas esta excluida, e veio: {t}"
+    );
+    assert!(
+        t.contains("restaure"),
+        "a recusa tem de dizer o que fazer, e veio: {t}"
+    );
+}
+
+/// E o `atualizar` pela mesma porta: apontar uma filha VIVA para uma mae morta
+/// e o mesmo estrago com mais cliques.
+#[test]
+fn o_atualizar_tambem_nao_aponta_a_filha_para_mae_morta() {
+    let d = dir("mae-morta-atualizar");
+    let mut m = mae(&d);
+    m.inserir(&[Value::Int(1)]).unwrap();
+    m.inserir(&[Value::Int(2)]).unwrap();
+    m.sincronizar().unwrap();
+
+    let mut f = filha(&d, true);
+    f.inserir(&[Value::Int(10), Value::Int(1)]).unwrap();
+    f.sincronizar().unwrap();
+
+    // A mae 2 morre depois -- e ela nao tem filha, entao o suave passa.
+    m.excluir_suave(2, "saiu").unwrap();
+    m.sincronizar().unwrap();
+    drop(m);
+
+    let mut f = Table::abrir(&d, "pedidos").unwrap();
+    let erro = f
+        .atualizar(1, &[Value::Int(10), Value::Int(2)])
+        .expect_err("apontar para a mae morta tem de ser recusado tambem no atualizar");
+    assert!(erro.to_string().contains("EXCLUIDA"), "veio: {erro}");
+}
+
+/// A recusa DIZ o conserto, e o conserto funciona: mae restaurada, filha entra.
+///
+/// Sem este teste o par acima passaria com um portao que recusasse tudo.
+#[test]
+fn mae_restaurada_volta_a_aceitar_filha() {
+    let d = dir("mae-restaurada");
+    let mut m = mae(&d);
+    m.inserir(&[Value::Int(1)]).unwrap();
+    m.excluir_suave(1, "saiu").unwrap();
+    m.sincronizar().unwrap();
+
+    let mut f = filha(&d, true);
+    assert!(f.inserir(&[Value::Int(10), Value::Int(1)]).is_err());
+    drop(f);
+
+    m.restaurar(1, "voltou").unwrap();
+    m.sincronizar().unwrap();
+    drop(m);
+
+    let mut f = Table::abrir(&d, "pedidos").unwrap();
+    f.inserir(&[Value::Int(10), Value::Int(1)])
+        .expect("com a mae de volta, a filha entra");
+}
+
+/// O comportamento VELHO nao muda: quem nao pediu conferencia continua gravando.
+///
+/// E o teste que mais importa numa guarda nova. Chave sem `verificar` fica de
+/// fora do portao inteiro, e ficar viva ou morta a mae nao e pergunta que ela
+/// faz.
+#[test]
+fn sem_conferir_a_mae_morta_nao_tranca_nada() {
+    let d = dir("mae-morta-sem-conferir");
+    let mut m = mae(&d);
+    m.inserir(&[Value::Int(1)]).unwrap();
+    m.excluir_suave(1, "saiu").unwrap();
+    m.sincronizar().unwrap();
+    drop(m);
+
+    let mut f = filha(&d, false);
+    f.inserir(&[Value::Int(10), Value::Int(1)])
+        .expect("chave sem `verificar` continua como sempre foi");
+}
+
+/// Mae VIVA continua entrando, e este e o controle: sem ele, um portao que
+/// recusasse toda gravacao passaria pelos quatro testes acima.
+#[test]
+fn a_mae_viva_continua_aceitando_filha() {
+    let d = dir("mae-viva-controle");
+    let mut m = mae(&d);
+    m.inserir(&[Value::Int(1)]).unwrap();
+    m.sincronizar().unwrap();
+    drop(m);
+
+    let mut f = filha(&d, true);
+    f.inserir(&[Value::Int(10), Value::Int(1)])
+        .expect("mae viva: a filha entra");
+}

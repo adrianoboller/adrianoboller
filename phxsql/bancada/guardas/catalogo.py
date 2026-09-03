@@ -2486,4 +2486,39 @@ pub fn limpar() {
             "o_evento_da_cascata_carrega_a_imagem_da_linha",
         ],
     },
+    {
+        "id": "fk-nao-pergunta-se-a-mae-esta-viva",
+        "titulo": "a conferencia da chave volta a perguntar so se a mae EXISTE",
+        "porque": (
+            "a mae excluida de forma SUAVE continua no `.reg` com a chave dela "
+            "no indice. Perguntando so «existe?», a filha nascia apontando "
+            "para um cliente que a tela nao mostra mais -- a orfa por "
+            "construcao. E o outro lado do tempo da petrea do `excluir_suave`, "
+            "que ja confere as filhas pela mesma frase: a casa fechava a porta "
+            "e deixava a janela."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """            if mae.esquema.coluna_softdeleted().is_some() {
+                let mut viva = false;""",
+        "troca": """            // DEFEITO REPOSTO: existir volta a valer por estar viva.
+            if false {
+                let mut viva = false;""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "chave-estrangeira"],
+        "caem": [
+            "a_filha_nao_nasce_apontando_para_mae_excluida_suave",
+            "o_atualizar_tambem_nao_aponta_a_filha_para_mae_morta",
+            # Este entrou como `seguem` e o executor devolveu ESTRAGOU: ele
+            # confere a recusa ANTES de restaurar a mae, entao ele tambem pega
+            # o defeito. Medido, e nao lido -- e o terceiro caso desta casa em
+            # que "este teste pega aquele defeito" so vale depois de rodar.
+            "mae_restaurada_volta_a_aceitar_filha",
+        ],
+        "seguem": [
+            # O controle e o comportamento VELHO: sem eles, um portao que
+            # recusasse toda gravacao passaria pelos `caem` acima.
+            "a_mae_viva_continua_aceitando_filha",
+            "sem_conferir_a_mae_morta_nao_tranca_nada",
+        ],
+    },
 ]
