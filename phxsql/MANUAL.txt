@@ -379,30 +379,78 @@ CHAVE ESTRANGEIRA NO criar_tabela
     mas nenhuma operacao do protocolo a CRIAVA: so dava para declarar uma pela
     API Rust. Agora da.
 
-    AS ACOES aceitam o portugues, o SQL e a forma que o "esquema" devolve:
+    AS ACOES, E OS DOIS LADOS NAO ACEITAM AS MESMAS. Esta e a diferenca que
+    mais custa a quem chega de outro motor, entao ela vem antes da tabela:
+
+        "ao_excluir"    aceita SO "restringir".  Ausente = restringir.
+        "ao_alterar"    aceita as quatro.        Ausente = CASCATA.
 
         restringir | restrict | Restringir      recusa enquanto houver filha
         cascata    | cascade  | Cascata         repete a operacao nas filhas
         anular     | set null | AnularCampos    anula as colunas da filha
         nada       | no action| NaoFazerNada    nao faz nada
 
-    Ausente e "restringir", que e o unico padrao seguro: quem nao disse o que
-    fazer com a filha nao pediu para apaga-la. Sem "colunas_ref", referencia
-    colunas de MESMO NOME na outra tabela.
+    Mandar "ao_excluir":"cascata" -- ou "anular", ou "nada" -- e RECUSADO, e
+    recusado na DECLARACAO, nao na gravacao. Palavra do dono:
 
-    ATENCAO -- O QUE ISTO E E O QUE NAO E. A chave fica DECLARADA no esquema:
-    o "esquema" a devolve, o diagrama ER a desenha e um gerador de SQL a le. O
-    motor ainda NAO a IMPOE em insercao, alteracao ou exclusao. Declarar nao e
-    aplicar, e este manual nao vai dizer que e.
+        1 para muitos. Cascata ao alterar, Restringir ao excluir, sempre.
+        Nunca pode matar o registro pai se tem filhos em outra tabela.
+        O par Cascata/Cascata nao existe no PhxSql.
 
-    Sem o campo, a tabela nasce exatamente como sempre nasceu -- todo cliente
-    escrito antes desta versao continua criando tabela igual.
+    A recusa e cedo de proposito: uma tabela nasce uma vez e grava um milhao
+    de vezes. Recusar na criacao custa um erro lido enquanto se modela;
+    recusar na gravacao custaria um banco inteiro modelado errado, descoberto
+    no dia do primeiro excluir. E o par Cascata/Cascata some por CONSEQUENCIA
+    -- sem cascata no excluir, nao ha par com cascata dos dois lados.
+
+    Sem "colunas_ref", referencia colunas de MESMO NOME na outra tabela.
+
+    A CHAVE DECLARADA NASCE CONFERIDA. O motor a IMPOE em todas as portas
+    locais de escrita -- inserir, o lote, atualizar, restaurar, os dois
+    excluir (de vez e suave), a cascata do ao_alterar e a reaplicacao da
+    recuperacao. A lista dessas portas sai do codigo, uma a uma, em
+    docs/INTEGRIDADE.md secao 1.
+
+        "verificar": false    declara SEM conferir -- so o desenho
+
+    O interruptor existe para o lado contrario do que se esperaria: quem quer
+    a chave apenas desenhada e quem tem de pedir. Uma chave que precisasse ser
+    LEMBRADA de conferir nao honraria um "nunca", porque o esquecimento
+    viraria o padrao.
+
+    Custo medido da garantia: +7,03 microssegundos por linha, +11,2% no laco
+    quente da insercao. Tabela sem chave conferida nao paga nada.
+
+    A CHAVE CONFERIDA EXIGE INDICE DOS DOIS LADOS, e o motor recusa dizendo
+    qual falta em vez de esconder uma varredura:
+
+        na MAE     para responder "este pai existe?" ao gravar a filha
+        na FILHA   para responder "alguem aponta para esta linha?" ao
+                   apagar a mae
+
+    A busca reversa custa o que custa por escolha: a chave e declarada na
+    filha, entao a mae pergunta as irmas. Excluir e raro, inserir e o laco
+    quente -- pagar ali mantem o inserir sem custo nenhum.
+
+    O QUE NAO E CONFERIDO, e por decisao escrita: o que chega pela REPLICACAO
+    (o outro servidor ja julgou, e reconferir recusaria a metade de um par que
+    chega fora de ordem) e o copiar_tabela_para. Os dois estao em
+    docs/INTEGRIDADE.md secoes 3 e 4.3, com o custo da alternativa medido.
+
+    BANCO QUE JA EXISTE NAO MUDA. O PSCH v7 grava o byte por chave, entao o
+    esquema em disco volta com o que foi gravado nele: chave declarada antes
+    desta decisao continua sem conferir ate alguem ligar. Muda o que NASCE
+    daqui em diante.
+
+    Sem o campo "chaves_estrangeiras", a tabela nasce exatamente como sempre
+    nasceu -- todo cliente escrito antes desta versao continua criando tabela
+    igual.
 
 CHAVE ESTRANGEIRA DEPOIS DA CRIACAO: declarar_fk e excluir_fk
 
     {"op":"declarar_fk","database":"loja","tabela":"pedidos",
      "nome":"fk_cliente","colunas":["cliente_id"],
-     "tabela_ref":"clientes","colunas_ref":["id"],"ao_excluir":"cascata"}
+     "tabela_ref":"clientes","colunas_ref":["id"],"ao_excluir":"restringir"}
 
     {"op":"excluir_fk","database":"loja","tabela":"pedidos","nome":"fk_cliente"}
 
@@ -411,8 +459,11 @@ CHAVE ESTRANGEIRA DEPOIS DA CRIACAO: declarar_fk e excluir_fk
     "tabela" e a que RECEBE a declaracao, e por isso "tabela_ref" aqui e
     obrigatorio: sem ele a chave apontaria para si mesma sem ninguem pedir.
 
-    Declarar continua nao sendo impor -- vale tudo o que a secao acima diz.
-    Nenhuma linha e tocada: o que muda e o bloco de esquema no cabecalho do
+    Vale tudo o que a secao acima diz, inclusive o nasce conferida: declarar
+    aqui ja e impor daqui em diante -- as linhas que JA estao gravadas nao sao
+    revisitadas, e o verificador de consistencia existe para isso
+    (docs/INTEGRIDADE.md).
+    Nenhuma linha e tocada na declaracao: o que muda e o bloco de esquema no cabecalho do
     .reg (e, quando o bloco novo nao cabe na folga, o arquivo e reescrito por
     inteiro, com os slots byte a byte; a resposta diz em
     "arquivos_reescritos"). As duas pedem o poder de CRIAR.

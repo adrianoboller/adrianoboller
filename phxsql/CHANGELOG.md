@@ -20,6 +20,25 @@ ausência de transação: ele as documenta extensamente.
 
 ### Corrigido
 
+- **O MANUAL prometia o que a pétrea proíbe, e ninguém executava os exemplos
+  dele.** A seção de chave estrangeira listava as quatro ações numa tabela só,
+  sem dizer o lado — e `ao_excluir` aceita **só** `restringir`, recusando na
+  declaração. O exemplo do `declarar_fk` mandava `"ao_excluir":"cascata"`:
+  **quem copiasse do manual tomava erro**. Mais três: dizia que o motor «ainda
+  NÃO impõe» a chave (falso desde o pedido 171), dizia «ausente é restringir»
+  sem separar os lados (no `ao_alterar` o padrão é **cascata**), e omitia o
+  `"verificar"`, o nasce-conferida e a exigência de índice dos dois lados.
+  **Só um dos quatro tinha envelhecido — os outros três nasceram errados**, e
+  sobreviveram porque nunca ninguém rodou o que o manual manda rodar. Hoje
+  roda: `bancada/manual/provar-manual.py` sobe um servidor próprio, executa os
+  exemplos, confere **12** afirmações e é derrubado pelo PID; entrou na bateria
+  única. Prova real nos dois sentidos — reposto o exemplo antigo, o motor
+  responde *«"ao_excluir": "cascata" não existe no PhxSql»* e a prova reprova.
+  Duas armadilhas ficaram escritas na própria prova, porque as duas passaram
+  por engano na primeira versão: **conferir o veredito em vez do motivo** (dois
+  `ok:false` eram «acesso negado», não a FK) e **depender da ordem das
+  corridas** (a segunda reprovava por «chave duplicada»).
+
 - **A ligação de DbLink sem base padrão listava zero tabelas no MySQL®, calada.**
   O dialeto perguntava `TABLE_SCHEMA = DATABASE()`, e sem base padrão
   `DATABASE()` é **NULO** — em SQL `x = NULL` nunca é verdadeiro. Como o ramo só

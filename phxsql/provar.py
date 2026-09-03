@@ -240,6 +240,12 @@ PARTES = [
           [sys.executable, "bancada/transacoes/provar.py"],
           requisitos=[porta_livre(7320)], prazo=900),
 
+    parte("manual", "os EXEMPLOS do MANUAL.txt rodados contra um servidor de "
+          "verdade -- a secao de chave estrangeira prometia o que o motor "
+          "recusa, e nada disso aparecia lendo",
+          [sys.executable, "bancada/manual/provar-manual.py"],
+          requisitos=[porta_livre(6410)], prazo=300),
+
     parte("rotinas", "gatilhos e procedimentos pelo soquete, com o SIGNAL, o "
           "lote, o reinicio e a tabela sem gatilho",
           [sys.executable, "bancada/rotinas/prova-rotinas.py"],
