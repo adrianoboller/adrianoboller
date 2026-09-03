@@ -482,14 +482,18 @@ def medir(caminho: Path) -> dict:
     # `wc -l` em vez de com um numero errado publicado.
     import hashlib, subprocess, datetime
     sha = hashlib.sha256(caminho.read_bytes()).hexdigest()
+    # Do `git` sai so o ESTADO DO ARQUIVO MEDIDO, nunca o `HEAD`.
+    #
+    # A revisao do `HEAD` parecia informacao util e era uma armadilha: o
+    # carimbo e escrito ANTES do commit, entao ele nomeia sempre o commit
+    # ANTERIOR -- e regenerar depois de commitar sujava a pagina de novo, para
+    # sempre. Quem responde "esta pagina envelheceu?" e o `sha256` do
+    # `servidor.rs`, que nao depende de commit nenhum.
     try:
-        git = subprocess.run(["git", "-C", str(RAIZ), "rev-parse", "--short", "HEAD"],
-                             capture_output=True, text=True, timeout=10).stdout.strip()
         sujo = subprocess.run(["git", "-C", str(RAIZ), "status", "--porcelain",
                                str(caminho.relative_to(RAIZ))],
                               capture_output=True, text=True, timeout=10).stdout.strip()
-        if sujo:
-            git += " (com mudanca nao commitada neste arquivo)"
+        git = "com mudanca ainda nao commitada" if sujo else "sem mudanca pendente"
     except Exception:
         git = "(sem git)"
     pasta = caminho.parent
@@ -769,7 +773,7 @@ def blocos(m: dict) -> dict:
 
     b["carimbo"] = (
         f"**Medido em** {m['medido_em']} — `servidor.rs` com **{n(m['linhas'])}** "
-        f"linhas, sha256 `{m['sha256'][:16]}`, árvore em `{m['git']}`.\n\n"
+        f"linhas, sha256 `{m['sha256'][:16]}` ({m['git']}).\n\n"
         f"> A árvore é compartilhada: este arquivo cresceu **{n(m['linhas'])} − 22.560 = "
         f"{n(m['linhas'] - 22560)}** linhas desde o número do roteiro da SP000005.\n"
         f"> Se o `wc -l` de hoje não for {n(m['linhas'])}, **esta página envelheceu** — "

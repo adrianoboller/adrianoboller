@@ -23,7 +23,7 @@ suposta. A seção 3 mostra por quê.
 > morre no próximo `--escrever`.
 
 <!-- mapa:carimbo:inicio -->
-**Medido em** 2026-09-03 — `servidor.rs` com **23.171** linhas, sha256 `279a91244c8a7532`, árvore em `f57f61b (com mudanca nao commitada neste arquivo)`.
+**Medido em** 2026-09-03 — `servidor.rs` com **23.171** linhas, sha256 `279a91244c8a7532` (com mudanca ainda nao commitada).
 
 > A árvore é compartilhada: este arquivo cresceu **23.171 − 22.560 = 611** linhas desde o número do roteiro da SP000005.
 > Se o `wc -l` de hoje não for 23.171, **esta página envelheceu** — rode o gerador de novo.
