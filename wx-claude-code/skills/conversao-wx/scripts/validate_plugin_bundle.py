@@ -42,6 +42,14 @@ def frontmatter(path: Path) -> tuple[dict[str, str], str]:
 def validate(root: Path, strict: bool = False) -> dict:
     errors: list[str] = []
     warnings: list[str] = []
+    testes = "não executados (use --strict)"
+    if strict and (root / "tests" / "testes.py").is_file():
+        import subprocess
+        proc = subprocess.run([sys.executable, str(root / "tests" / "testes.py")], capture_output=True, text=True)
+        resumo = (proc.stderr.strip().splitlines() or ["?"])[-1]
+        if proc.returncode != 0:
+            errors.append(f"tests/testes.py falhou: {resumo}")
+        testes = resumo
     manifest_path = root / ".claude-plugin" / "plugin.json"
     try:
         if manifest_path.stat().st_size > 1_000_000:
@@ -138,6 +146,16 @@ def validate(root: Path, strict: bool = False) -> dict:
         "skills/conversao-wx/templates/questionario.json",
         "commands/questionario.md",
         "commands/pmo.md",
+        "skills/conversao-wx/scripts/extrair_pdf.py",
+        "skills/conversao-wx/scripts/golden.py",
+        "skills/conversao-wx/scripts/uso_de_tokens.py",
+        "skills/conversao-wx/references/corpus-saneamento.md",
+        "hooks/portao_g0.py",
+        "tests/testes.py",
+        "exemplos/estoque-wx/questionario.json",
+        "exemplos/estoque-wx/inputs/banco.sql",
+        "exemplos/estoque-wx/inputs/estoque-completo.pdf",
+        "MANUAL.md",
         "skills/conversao-wx/scripts/pmo.py",
         "skills/conversao-wx/scripts/rotear_modelo.py",
         "skills/conversao-wx/references/pmo.md",
@@ -211,6 +229,7 @@ def validate(root: Path, strict: bool = False) -> dict:
     return {
         "valid": valid,
         "plugin": name,
+        "tests": testes,
         "skills": len(skill_files),
         "agents": len(agent_files),
         "errors": errors,

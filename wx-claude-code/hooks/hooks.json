@@ -24,6 +24,19 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/portao_g0.py\"",
+            "timeout": 5,
+            "statusMessage": "Portão G0"
+          }
+        ]
+      }
     ]
   }
 }

@@ -20,4 +20,16 @@ Regras que este comando não afrouxa:
 - piloto vertical (G4) nunca é pulado numa conversão completa;
 - quem implementa não aprova o próprio gate: o `quality-auditor` recomenda, o humano decide.
 
+Scripts determinísticos que o G1 e o G4 usam, antes de qualquer agente opinar:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/extrair_pdf.py" --manifest <projeto>/.wx-migration/wx-inputs.manifest.json --allowed-evidence-root <anexos> --output <projeto>/.wx-migration/evidence/pdf-text
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/golden.py" capturar --casos <resultados-esperados.json> --saida <projeto>/.wx-migration/tests/golden-master/casos.json
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/golden.py" comparar --golden <casos.json> --comando "<executa o novo sistema>" --relatorio <projeto>/.wx-migration/tests/results/<data>.json
+```
+
+O texto extraído leva `arquivo#page=N` e o hash do PDF; página com pouco texto vira `OCR_REQUIRED`. O golden devolve `equivalência: n/total` com tolerância declarada.
+
+O hook `portao_g0.py` do plugin nega qualquer `Write`/`Edit` fora de `.wx-migration/` enquanto o último pré-flight estiver `BLOCKED`; não tente contornar, resolva o G0.
+
 Delegue ao agente `wx-claude-code:wx-orchestrator` com: caminho do manifesto, modo, resultado do pré-flight e o `questionario.json`.

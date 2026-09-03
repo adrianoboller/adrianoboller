@@ -1,0 +1,96 @@
+<style>
+body{margin:0;background:#d9d9d9;font-family:Tahoma,Verdana,sans-serif;font-size:12px;color:#111}
+.win{width:860px;background:#f0f0f0;border:1px solid #6a6a6a;box-shadow:2px 2px 8px #0006;margin:20px}
+.title{background:linear-gradient(#e8e8e8,#cfcfcf);padding:6px 10px;font-weight:bold;border-bottom:1px solid #999;display:flex;justify-content:space-between}
+.title span{font-weight:normal;color:#444}
+.body{padding:14px;display:grid;grid-template-columns:110px 1fr 110px 1fr;gap:8px 10px;align-items:center}
+label{text-align:right;color:#222}
+.edt{background:#fff;border:1px solid #7a7a7a;padding:3px 6px;min-height:16px}
+.ro{background:#ececec}
+.full{grid-column:2/5}
+.btns{grid-column:1/5;display:flex;gap:8px;justify-content:flex-end;margin-top:8px}
+button{font:inherit;padding:4px 14px;border:1px solid #555;background:linear-gradient(#fdfdfd,#dcdcdc)}
+button:disabled{color:#999;border-color:#aaa}
+table{grid-column:1/5;border-collapse:collapse;background:#fff;width:100%;font-size:12px}
+th{background:#e4e4e4;border:1px solid #aaa;text-align:left;padding:3px 6px}
+td{border:1px solid #ccc;padding:3px 6px}
+td.n{text-align:right}
+.err{grid-column:1/5;background:#fff3cd;border:1px solid #d9a300;padding:8px 10px;color:#5a4300}
+.status{background:#e4e4e4;border-top:1px solid #aaa;padding:3px 10px;color:#333;font-size:11px}
+</style>
+<div class="win" id="win-venda-com-itens">
+  <div class="title">Nova venda <span>ESTOQUE · WINDEV 2025</span></div>
+  <div class="body">
+    <label>Cliente</label><div class="edt">Maria Aparecida Souza (Comum · limite R$ 5.000,00)</div>
+    <label>Depósito</label><div class="edt">Matriz</div>
+    <label>Data</label><div class="edt">03/09/2026</div>
+    <label>Parcelas</label><div class="edt">3</div>
+    <label>Produto</label><div class="edt">PAR-0021 · Parafuso sextavado 3/8"</div>
+    <label>Quantidade</label><div class="edt">200,000</div>
+    <div class="btns" style="grid-column:1/5;justify-content:flex-start;margin:0"><button>Adicionar</button></div>
+    <table><tr><th>Código</th><th>Descrição</th><th>Qtde</th><th>Preço</th><th>Total</th></tr>
+      <tr><td>PAR-0021</td><td>Parafuso sextavado 3/8"</td><td class="n">200,000</td><td class="n">0,85</td><td class="n">170,00</td></tr>
+      <tr><td>CHA-0007</td><td>Chapa galvanizada 2 mm</td><td class="n">12,000</td><td class="n">148,90</td><td class="n">1.786,80</td></tr>
+      <tr><td>TIN-0130</td><td>Tinta esmalte 3,6 l branco</td><td class="n">6,000</td><td class="n">89,50</td><td class="n">537,00</td></tr></table>
+    <label>Subtotal</label><div class="edt ro">2.493,80</div>
+    <label>Desconto %</label><div class="edt">10,00</div>
+    <label>Desconto</label><div class="edt ro">249,38</div>
+    <label>Total</label><div class="edt ro"><b>2.244,42</b></div>
+    <div class="btns"><button>Fechar venda</button><button>Cancelar</button></div>
+  </div>
+  <div class="status">Usuário: carlos.m · Servidor HFSQL: srv-estoque:4900</div>
+</div>
+
+<div class="win" id="win-venda-vazia">
+  <div class="title">Nova venda <span>ESTOQUE · WINDEV 2025</span></div>
+  <div class="body">
+    <label>Cliente</label><div class="edt"></div>
+    <label>Depósito</label><div class="edt">Matriz</div>
+    <label>Data</label><div class="edt">03/09/2026</div>
+    <label>Parcelas</label><div class="edt">1</div>
+    <label>Produto</label><div class="edt"></div>
+    <label>Quantidade</label><div class="edt">0,000</div>
+    <div class="btns" style="grid-column:1/5;justify-content:flex-start;margin:0"><button>Adicionar</button></div>
+    <table><tr><th>Código</th><th>Descrição</th><th>Qtde</th><th>Preço</th><th>Total</th></tr><tr><td colspan="5" style="color:#888;text-align:center;padding:14px">nenhum item</td></tr></table>
+    <label>Subtotal</label><div class="edt ro">0,00</div>
+    <label>Desconto %</label><div class="edt">0,00</div>
+    <label>Desconto</label><div class="edt ro">0,00</div>
+    <label>Total</label><div class="edt ro"><b>0,00</b></div>
+    <div class="btns"><button disabled>Fechar venda</button><button>Cancelar</button></div>
+  </div>
+  <div class="status">Usuário: carlos.m · Servidor HFSQL: srv-estoque:4900</div>
+</div>
+
+<div class="win" id="win-venda-erro-estoque">
+  <div class="title">Nova venda <span>ESTOQUE · WINDEV 2025</span></div>
+  <div class="body">
+    <label>Cliente</label><div class="edt">Maria Aparecida Souza (Comum · limite R$ 5.000,00)</div>
+    <label>Depósito</label><div class="edt">Filial Norte</div>
+    <label>Data</label><div class="edt">03/09/2026</div>
+    <label>Parcelas</label><div class="edt">1</div>
+    <label>Produto</label><div class="edt">CHA-0007 · Chapa galvanizada 2 mm</div>
+    <label>Quantidade</label><div class="edt" style="border-color:#c00;background:#fff5f5">40,000</div>
+    <div class="err">⚠ Estoque insuficiente. Disponível: 12,000</div>
+    <table><tr><th>Código</th><th>Descrição</th><th>Qtde</th><th>Preço</th><th>Total</th></tr><tr><td colspan="5" style="color:#888;text-align:center;padding:14px">nenhum item</td></tr></table>
+    <label>Subtotal</label><div class="edt ro">0,00</div>
+    <label>Desconto %</label><div class="edt">0,00</div>
+    <label>Desconto</label><div class="edt ro">0,00</div>
+    <label>Total</label><div class="edt ro"><b>0,00</b></div>
+    <div class="btns"><button disabled>Fechar venda</button><button>Cancelar</button></div>
+  </div>
+  <div class="status">Usuário: carlos.m · Servidor HFSQL: srv-estoque:4900</div>
+</div>
+
+<div class="win" id="win-cliente-normal" style="width:640px">
+  <div class="title">Cliente <span>ESTOQUE · WINDEV 2025</span></div>
+  <div class="body" style="grid-template-columns:110px 1fr 90px 1fr">
+    <label>ID</label><div class="edt ro">17</div><label>Ativo</label><div>☑</div>
+    <label>Nome</label><div class="edt full">Maria Aparecida Souza</div>
+    <label>CPF</label><div class="edt">529.982.247-25</div><label>Tipo</label><div>◉ Comum &nbsp; ○ Especial</div>
+    <label>E-mail</label><div class="edt full">maria.souza@exemplo.com.br</div>
+    <label>Cidade</label><div class="edt">Blumenau</div><label>UF</label><div class="edt">SC</div>
+    <label>Limite crédito</label><div class="edt">5.000,00</div><div></div><div></div>
+    <div class="btns"><button>Salvar</button><button>Cancelar</button></div>
+  </div>
+  <div class="status">Cadastro em 14/02/2024</div>
+</div>

@@ -249,9 +249,14 @@ WLanguage é semântica técnica, não regra de negócio.
 Antes de commitar mudança no plugin:
 
 ```bash
-python3 wx-claude-code/skills/conversao-wx/scripts/validate_plugin_bundle.py wx-claude-code --strict
+python3 wx-claude-code/skills/conversao-wx/scripts/validate_plugin_bundle.py wx-claude-code --strict   # roda tests/testes.py
 python3 wx-claude-code/skills/conversao-wx/scripts/query_wlanguage_help.py --verify
+claude plugin validate wx-claude-code
 ```
+
+O projeto de exemplo `wx-claude-code/exemplos/estoque-wx/` é o teste de
+regressão do fluxo inteiro: G0 nele tem de continuar `CONDITIONAL` com zero
+erros. Mudou o questionário ou o manifesto? Rode o exemplo antes de commitar.
 
 A skill `impeccable` é vendorizada de `pbakaus/impeccable` (Apache 2.0): não
 edite o conteúdo dela aqui, atualize da origem — **exceto a `description`**, que

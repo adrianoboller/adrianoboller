@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from datetime import date
 from pathlib import Path
@@ -31,16 +32,13 @@ MODOS = {
     "complete": "complete",
 }
 
+# O template CLAUDE.md ja traz a secao «Estilo de resposta»; a letra J acrescenta
+# so o bloco de economia, para nao repetir a mesma regra duas vezes no arquivo.
 ESTILO_DE_RESPOSTA = """
-## Estilo de resposta (vale para a sessão inteira)
+## Economia de tokens (letra J do questionário)
 
-- Direto ao ponto: a resposta vem na primeira frase.
-- Frases curtas. Um assunto por parágrafo.
-- Problema em 1 linha; solução em passos numerados.
-- Termo técnico só se explicar em seguida, em uma frase.
-- Se faltar informação para executar, pergunte ANTES de fazer.
-
-## Economia de tokens
+O estilo de resposta acima vale para a sessão inteira: direto ao ponto, frases
+curtas, um assunto por parágrafo, problema em uma linha, solução em passos.
 
 - Não releia arquivo grande que já está no contexto; cite o trecho.
 - Saída de comando longa vai para arquivo em `.wx-migration/logs/` e volta como localizador.
@@ -72,13 +70,55 @@ def status_de(bloco: dict) -> str:
     return valor
 
 
+RAIZ_DE_EVIDENCIAS: Path | None = None
+
+
+def contar_paginas(pdf: Path) -> int | None:
+    """Mede page_count: pypdf quando existe; senao, conta objetos /Type /Page no
+    binario (funciona para PDFs de texto comuns; PDF cifrado ou incremental pode
+    escapar, e ai o campo fica ausente e o pre-flight cobra)."""
+    try:
+        from pypdf import PdfReader  # type: ignore
+        return len(PdfReader(str(pdf)).pages)
+    except Exception:  # noqa: BLE001 - qualquer falha cai no contador bruto
+        pass
+    try:
+        dados = pdf.read_bytes()
+    except OSError:
+        return None
+    n = len(re.findall(rb"/Type\s*/Page(?![s/\w])", dados))
+    return n or None
+
+
 def itens_pdf(bloco: dict, escopo: list[str]) -> list[dict]:
     itens = []
     for caminho in bloco.get("arquivos", []):
         item = {"path": caminho, "content_scope": escopo}
         if bloco.get("pesquisavel") is not None:
             item["searchable"] = bool(bloco["pesquisavel"])
+        if RAIZ_DE_EVIDENCIAS is not None:
+            pdf = RAIZ_DE_EVIDENCIAS / caminho
+            if pdf.is_file():
+                paginas = contar_paginas(pdf)
+                if paginas:
+                    item["page_count"] = paginas
         itens.append(item)
+    return itens
+
+
+def itens_screenshots(raiz: Path) -> list[dict]:
+    """Le screenshots/screenshots.json na raiz de evidencias: uma lista de
+    {arquivo, tela, estado, plataforma}. Sem o sidecar, o grupo fica missing e o
+    pre-flight cobra; adivinhar tela e estado pelo nome do arquivo seria inventar."""
+    sidecar = raiz / "screenshots" / "screenshots.json"
+    if not sidecar.is_file():
+        return []
+    lista = json.loads(sidecar.read_text(encoding="utf-8"))
+    itens = []
+    for s in lista:
+        arq = raiz / "screenshots" / s["arquivo"]
+        if arq.is_file():
+            itens.append({"path": f"screenshots/{s['arquivo']}", "screen_or_report": s["tela"], "state": s["estado"], "platform": s.get("plataforma", "WINDEV")})
     return itens
 
 
@@ -91,6 +131,8 @@ def montar_manifesto(q: dict, modelo: dict, projeto: Path) -> dict:
     if not raiz.is_absolute():
         raiz = projeto / raiz
     m["evidence_root"] = os.path.relpath(raiz.resolve(strict=False), (projeto / ".wx-migration").resolve(strict=False)).replace(os.sep, "/")
+    global RAIZ_DE_EVIDENCIAS
+    RAIZ_DE_EVIDENCIAS = raiz.resolve(strict=False)
     m["project"].update(
         {
             "name": p.get("nome", ""),
@@ -149,6 +191,12 @@ def montar_manifesto(q: dict, modelo: dict, projeto: Path) -> dict:
         a["business_rule_documents"]["notes"] = (
             "Regras extraídas do PDF completo (letra E); confirme cada regra com o responsável de negócio."
         )
+
+    shots = itens_screenshots(RAIZ_DE_EVIDENCIAS) if RAIZ_DE_EVIDENCIAS else []
+    if shots:
+        a["screenshots"]["status"] = "provided"
+        a["screenshots"]["items"] = shots
+        a["screenshots"]["notes"] = "Lidos de screenshots/screenshots.json (tela, estado, plataforma declarados pelo usuário)."
 
     g = q.get("G_help_json", {})
     m["project"]["wlanguage_help_version"] = str(g.get("versao_do_help", ""))

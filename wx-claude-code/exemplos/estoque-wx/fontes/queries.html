@@ -1,0 +1,57 @@
+<style>
+body{font-family:Arial,Helvetica,sans-serif;font-size:11pt;color:#111;margin:0}
+h1{font-size:18pt;border-bottom:2px solid #444;padding-bottom:4px}
+h2{font-size:13pt;margin-top:22px;background:#eee;padding:4px 6px}
+pre{font-family:"Courier New",monospace;font-size:9.5pt;background:#f7f7f7;border:1px solid #ddd;padding:8px;white-space:pre-wrap}
+table{border-collapse:collapse;font-size:9.5pt;margin:6px 0 12px}
+th,td{border:1px solid #bbb;padding:3px 6px;text-align:left}
+.meta{color:#666;font-size:9pt}
+</style>
+<h1>Projeto ESTOQUE — Documentação técnica: Queries</h1>
+<p class="meta">WINDEV 2025 · Update 1 · Gerado em 03/09/2026 · Escopo: queries do projeto, parâmetros e onde são usadas</p>
+
+<h2>QRY_VendasPeriodo</h2>
+<table><tr><th>Parâmetro</th><th>Tipo</th><th>Obrigatório</th></tr>
+<tr><td>pDataInicial</td><td>Date</td><td>sim</td></tr><tr><td>pDataFinal</td><td>Date</td><td>sim</td></tr><tr><td>pVendedor</td><td>string</td><td>não (vazio = todos)</td></tr></table>
+<pre>SELECT VENDA.IDVENDA, VENDA.DATA, CLIENTE.NOME AS CLIENTE, VENDA.VENDEDOR, VENDA.TOTAL, VENDA.STATUS
+FROM VENDA
+JOIN CLIENTE ON CLIENTE.IDCLIENTE = VENDA.IDCLIENTE
+WHERE VENDA.DATA BETWEEN {pDataInicial} AND {pDataFinal}
+  AND ({pVendedor} = '' OR VENDA.VENDEDOR = {pVendedor})
+ORDER BY VENDA.DATA DESC, VENDA.IDVENDA DESC</pre>
+<p>Usada em: WIN_ListaVendas (TABLE_Vendas). Ordenação decrescente por data e id; STATUS C aparece com a linha em cinza.</p>
+
+<h2>QRY_SaldoProduto</h2>
+<table><tr><th>Parâmetro</th><th>Tipo</th><th>Obrigatório</th></tr><tr><td>pIDProduto</td><td>int</td><td>sim</td></tr></table>
+<pre>SELECT DEPOSITO.NOME AS DEPOSITO, SALDO.QUANTIDADE, PRODUTO.ESTOQUE_MINIMO
+FROM SALDO
+JOIN DEPOSITO ON DEPOSITO.IDDEPOSITO = SALDO.IDDEPOSITO
+JOIN PRODUTO ON PRODUTO.IDPRODUTO = SALDO.IDPRODUTO
+WHERE SALDO.IDPRODUTO = {pIDProduto}
+ORDER BY DEPOSITO.NOME</pre>
+<p>Usada em: WIN_Produto (aba Saldos) e no tooltip de COMBO_Produto em WIN_Venda.</p>
+
+<h2>QRY_ComissaoMensal</h2>
+<table><tr><th>Parâmetro</th><th>Tipo</th><th>Obrigatório</th></tr><tr><td>pMes</td><td>int</td><td>sim</td></tr><tr><td>pAno</td><td>int</td><td>sim</td></tr></table>
+<pre>SELECT VENDA.VENDEDOR, COUNT(VENDA.IDVENDA) AS QTD_VENDAS, SUM(VENDA.TOTAL) AS TOTAL_VENDIDO,
+       SUM(VENDA.TOTAL) * 0.03 AS COMISSAO
+FROM VENDA
+WHERE MONTH(VENDA.DATA) = {pMes} AND YEAR(VENDA.DATA) = {pAno} AND VENDA.STATUS = 'F'
+GROUP BY VENDA.VENDEDOR
+ORDER BY TOTAL_VENDIDO DESC</pre>
+<p>Usada em: RPT_Comissao. Só vendas fechadas (STATUS = 'F'); canceladas e abertas não contam. Comissão de 3% calculada na query, não na tela.</p>
+
+<h2>QRY_TitulosVencidos</h2>
+<table><tr><th>Parâmetro</th><th>Tipo</th><th>Obrigatório</th></tr><tr><td>pDataBase</td><td>Date</td><td>sim</td></tr></table>
+<pre>SELECT TITULO.IDTITULO, VENDA.IDVENDA, CLIENTE.NOME, TITULO.VENCIMENTO, TITULO.VALOR,
+       DATEDIFF({pDataBase}, TITULO.VENCIMENTO) AS DIAS_ATRASO
+FROM TITULO
+JOIN VENDA ON VENDA.IDVENDA = TITULO.IDVENDA
+JOIN CLIENTE ON CLIENTE.IDCLIENTE = VENDA.IDCLIENTE
+WHERE TITULO.PAGO_EM IS NULL AND TITULO.VENCIMENTO < {pDataBase}
+ORDER BY TITULO.VENCIMENTO</pre>
+<p>Usada em: WIN_Cobranca. Os juros são calculados na tela por CalculaJurosAtraso, com a data de pagamento informada, não pela query.</p>
+
+<h2>QRY_ClientesAtivos</h2>
+<pre>SELECT IDCLIENTE, NOME, TIPO, LIMITE_CREDITO FROM CLIENTE WHERE ATIVO = 1 ORDER BY NOME</pre>
+<p>Sem parâmetros. Usada em: COMBO_Cliente de WIN_Venda.</p>

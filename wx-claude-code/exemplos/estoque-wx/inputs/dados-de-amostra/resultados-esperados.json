@@ -1,0 +1,15 @@
+{
+  "descricao": "Resultados esperados do legado, capturados a mão da tela e do relatório com os dados de amostra. Servem de golden master para o piloto.",
+  "casos": [
+    {"id": "TST-BR-001-a", "regra": "BR-001 CalculaDesconto", "entrada": {"subtotal": 2493.80, "percentual": 10, "tipo": "C"}, "esperado": 249.38},
+    {"id": "TST-BR-001-b", "regra": "BR-001 CalculaDesconto", "entrada": {"subtotal": 2493.80, "percentual": 20, "tipo": "C"}, "esperado": -1, "observacao": "acima do teto de 15% para cliente comum"},
+    {"id": "TST-BR-001-c", "regra": "BR-001 CalculaDesconto", "entrada": {"subtotal": 1000.00, "percentual": 25, "tipo": "E"}, "esperado": 250.00},
+    {"id": "TST-BR-003-a", "regra": "BR-003 CalculaJurosAtraso", "entrada": {"valor": 748.14, "vencimento": "2026-08-01", "pagamento": "2026-08-16"}, "esperado": 7.48},
+    {"id": "TST-BR-003-b", "regra": "BR-003 CalculaJurosAtraso", "entrada": {"valor": 748.14, "vencimento": "2026-08-01", "pagamento": "2026-08-01"}, "esperado": 0.00},
+    {"id": "TST-BR-004-a", "regra": "BR-004 GeraTitulos", "entrada": {"total": 2244.42, "parcelas": 3}, "esperado": [748.14, 748.14, 748.14]},
+    {"id": "TST-BR-004-b", "regra": "BR-004 GeraTitulos", "entrada": {"total": 100.00, "parcelas": 3}, "esperado": [33.33, 33.33, 33.34], "observacao": "diferença de arredondamento na última parcela"},
+    {"id": "TST-BR-005-a", "regra": "BR-005 ValidaCPF", "entrada": {"cpf": "529.982.247-25"}, "esperado": true},
+    {"id": "TST-BR-005-b", "regra": "BR-005 ValidaCPF", "entrada": {"cpf": "111.111.111-11"}, "esperado": false},
+    {"id": "TST-QRY-003-a", "regra": "QRY-003 ComissaoMensal", "entrada": {"mes": 8, "ano": 2026}, "esperado": [{"vendedor": "carlos.m", "qtd_vendas": 2, "total_vendido": 3244.42, "comissao": 97.33}], "observacao": "só vendas com STATUS = F; a venda cancelada de 20/08 não conta"}
+  ]
+}

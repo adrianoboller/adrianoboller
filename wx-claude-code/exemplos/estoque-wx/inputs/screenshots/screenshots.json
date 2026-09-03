@@ -1,0 +1,26 @@
+[
+  {
+    "arquivo": "win-venda-com-itens.png",
+    "tela": "WIN_Venda",
+    "estado": "com itens, desconto 10%",
+    "plataforma": "WINDEV"
+  },
+  {
+    "arquivo": "win-venda-vazia.png",
+    "tela": "WIN_Venda",
+    "estado": "vazia, botão Fechar desabilitado",
+    "plataforma": "WINDEV"
+  },
+  {
+    "arquivo": "win-venda-erro-estoque.png",
+    "tela": "WIN_Venda",
+    "estado": "erro de estoque insuficiente",
+    "plataforma": "WINDEV"
+  },
+  {
+    "arquivo": "win-cliente-normal.png",
+    "tela": "WIN_Cliente",
+    "estado": "alteração de cliente existente",
+    "plataforma": "WINDEV"
+  }
+]

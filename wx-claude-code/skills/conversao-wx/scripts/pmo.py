@@ -12,6 +12,7 @@ Subcomandos:
   pdca      abre ou fecha um ciclo PDCA; o fechamento grava em base_de_conhecimento.md
   kanban    regenera o quadro kanban.md da matriz de rastreabilidade, com limite de WIP
   sprint    abre ou fecha uma sprint Scrum (backlog, objetivo, definicao de pronto)
+  painel    gera pmo/painel.html (status + kanban + base de conhecimento) para o aprovador abrir sem terminal
 
 As tres tecnicas sao do mesmo PMO: o Scrum organiza o tempo (sprint por gate ou
 onda), o Kanban mostra o fluxo e trava o WIP, e o PDCA e como cada hipotese de
@@ -380,6 +381,50 @@ def status(wx: Path) -> str:
     return "\n".join(linhas)
 
 
+def painel(wx: Path) -> Path:
+    """HTML do painel, gerado do mesmo status()/kanban(): nenhum numero e digitado aqui."""
+    import html as _html
+    md_status = status(wx)
+    md_kanban = kanban(wx)
+    base = wx / "pmo" / "base_de_conhecimento.md"
+    md_base = base.read_text(encoding="utf-8") if base.is_file() else "INDISPONÍVEL"
+
+    def md2html(md: str) -> str:
+        saida, tabela = [], []
+        def fecha():
+            nonlocal tabela
+            if tabela:
+                linhas = [l for l in tabela if not re.match(r"^\|\s*-", l)]
+                cab, corpo = linhas[0], linhas[1:]
+                celulas = lambda l, tag: "".join(f"<{tag}>{_html.escape(c.strip())}</{tag}>" for c in l.strip().strip("|").split("|"))
+                saida.append("<table><thead><tr>" + celulas(cab, "th") + "</tr></thead><tbody>" + "".join("<tr>" + celulas(l, "td") + "</tr>" for l in corpo) + "</tbody></table>")
+                tabela = []
+        for l in md.splitlines():
+            if l.startswith("|"):
+                tabela.append(l); continue
+            fecha()
+            if l.startswith("# "): saida.append(f"<h1>{_html.escape(l[2:])}</h1>")
+            elif l.startswith("## "): saida.append(f"<h2>{_html.escape(l[3:])}</h2>")
+            elif l.startswith("- "): saida.append(f"<li>{_html.escape(l[2:])}</li>")
+            elif l.strip(): saida.append(f"<p>{_html.escape(l)}</p>")
+        fecha()
+        return "\n".join(saida).replace("**", "")
+    css = ("<style>:root{--g:#FBFAF7;--p:#fff;--i:#14161F;--m:#7A7E90;--l:#E4E2DB;--a:#C63C0A}"
+           "@media(prefers-color-scheme:dark){:root{--g:#0B0D17;--p:#121527;--i:#EDEDF3;--m:#8A8FA6;--l:#252A42;--a:#E2261C}}"
+           "body{margin:0;background:var(--g);color:var(--i);font:15px/1.5 system-ui,sans-serif}.w{max-width:1000px;margin:0 auto;padding:28px 20px}"
+           "h1{font-size:26px;color:var(--a);margin:.2em 0}h2{font-size:17px;margin:1.6em 0 .4em;border-bottom:1px solid var(--l);padding-bottom:4px}"
+           "table{border-collapse:collapse;width:100%;font-size:14px;background:var(--p)}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--l);vertical-align:top}th{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--m)}"
+           "td:nth-child(n+2):not(:last-child){font-variant-numeric:tabular-nums}li{margin:.2em 0}code{font-family:ui-monospace,monospace}.est{color:var(--a);font-weight:700}"
+           ".col{display:grid;grid-template-columns:1fr 1fr;gap:24px}@media(max-width:800px){.col{grid-template-columns:1fr}}</style>")
+    corpo = (f"<!doctype html><html lang=\"pt-BR\"><head><meta charset=\"utf-8\"><title>Painel do PMO</title>{css}</head><body><div class=\"w\">"
+             + md2html(md_status).replace("ESTOURADO", "<span class=\"est\">ESTOURADO</span>")
+             + "<div class=\"col\"><div>" + md2html(md_kanban).replace("ESTOURADO", "<span class=\"est\">ESTOURADO</span>") + "</div><div>" + md2html(md_base) + "</div></div>"
+             + f"<p style=\"color:var(--m);font-size:12px\">Gerado por pmo.py painel em {date.today().isoformat()}; regenerar em vez de editar.</p></div></body></html>")
+    destino = wx / "pmo" / "painel.html"
+    destino.write_text(corpo, encoding="utf-8")
+    return destino
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project-root", type=Path, default=Path("."))
@@ -395,6 +440,7 @@ def main() -> int:
     a = pds.add_parser("abrir"); a.add_argument("--gate", required=True, choices=GATES); a.add_argument("--hipotese", required=True); a.add_argument("--medida", required=True, help="o que será medido"); a.add_argument("--criterio", required=True, help="critério de sucesso, com número")
     fch = pds.add_parser("fechar"); fch.add_argument("--id", required=True); fch.add_argument("--resultado", required=True, choices=["frutifero", "infrutifero"]); fch.add_argument("--medido", required=True); fch.add_argument("--aprendizado", required=True); fch.add_argument("--proxima", default="")
     sub.add_parser("kanban")
+    sub.add_parser("painel")
     sp = sub.add_parser("sprint"); sps = sp.add_subparsers(dest="acao", required=True)
     sa = sps.add_parser("abrir"); sa.add_argument("--nome", required=True); sa.add_argument("--objetivo", required=True); sa.add_argument("--gate", required=True, choices=GATES); sa.add_argument("--item", action="append", default=[], help="trace_id do backlog; repetível"); sa.add_argument("--aprovador", default="")
     sf = sps.add_parser("fechar"); sf.add_argument("--decisao", required=True, choices=["APPROVED", "CONDITIONAL", "REJECTED"]); sf.add_argument("--pedido", default="")
@@ -411,6 +457,8 @@ def main() -> int:
             print(pdca_fechar(wx, args.id, args.resultado, args.medido, args.aprendizado, args.proxima))
     elif args.cmd == "kanban":
         print(kanban(wx))
+    elif args.cmd == "painel":
+        print(f"CREATED {painel(wx)}")
     elif args.cmd == "sprint":
         if args.acao == "abrir":
             print(sprint_abrir(wx, args.nome, args.objetivo, args.gate, args.item, args.aprovador))

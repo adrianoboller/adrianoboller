@@ -8,3 +8,8 @@
 
 # Pacotes gerados do plugin; o zip tem 30 MB e se regenera do fonte.
 dist/
+
+# Saída do exemplo, regenerada pelo questionário
+wx-claude-code/exemplos/*/.wx-migration/
+wx-claude-code/exemplos/*/CLAUDE.md
+wx-claude-code/exemplos/*/DESIGN.md

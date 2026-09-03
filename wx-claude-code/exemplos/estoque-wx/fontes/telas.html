@@ -1,0 +1,62 @@
+<style>
+body{font-family:Arial,Helvetica,sans-serif;font-size:11pt;color:#111;margin:0}
+h1{font-size:18pt;border-bottom:2px solid #444;padding-bottom:4px}
+h2{font-size:13pt;margin-top:22px;background:#eee;padding:4px 6px}
+table{border-collapse:collapse;width:100%;font-size:9.5pt;margin:6px 0 12px}
+th,td{border:1px solid #bbb;padding:3px 6px;text-align:left;vertical-align:top}
+th{background:#f0f0f0}
+.meta{color:#666;font-size:9pt}
+</style>
+<h1>Projeto ESTOQUE — Documentação técnica: Interfaces</h1>
+<p class="meta">WINDEV 2025 · Update 1 · Gerado em 03/09/2026 · Escopo: janelas, controles, navegação e relatórios</p>
+
+<h2>Janela WIN_Menu (janela principal)</h2>
+<p>Título: «Estoque — Menu principal». Tamanho 900×600. Menu: Cadastros (Clientes, Produtos, Depósitos), Movimento (Nova venda, Consultar vendas), Relatórios (Saldo abaixo do mínimo, Comissão mensal), Sair.</p>
+<table><tr><th>Controle</th><th>Tipo</th><th>Ação</th></tr>
+<tr><td>MENU_Cadastros_Clientes</td><td>Opção de menu</td><td>Abre WIN_ListaClientes</td></tr>
+<tr><td>MENU_Movimento_NovaVenda</td><td>Opção de menu</td><td>Abre WIN_Venda</td></tr>
+<tr><td>MENU_Relatorios_Minimo</td><td>Opção de menu</td><td>Imprime RPT_SaldoMinimo</td></tr>
+<tr><td>MENU_Relatorios_Comissao</td><td>Opção de menu</td><td>Abre WIN_ParamComissao e imprime RPT_Comissao</td></tr>
+<tr><td>STC_Usuario</td><td>Static</td><td>Mostra gsUsuarioNome na barra de status</td></tr></table>
+
+<h2>Janela WIN_Venda</h2>
+<p>Título: «Nova venda». Tamanho 860×560. Modal. Aberta por WIN_Menu e por WIN_ListaVendas (botão Nova).</p>
+<table><tr><th>Controle</th><th>Tipo</th><th>Vínculo</th><th>Regras na tela</th></tr>
+<tr><td>COMBO_Cliente</td><td>Combo box (arquivo CLIENTE, NOME)</td><td>VENDA.IDCLIENTE</td><td>Obrigatório. Mostra TIPO e LIMITE_CREDITO em STC_Cliente ao selecionar.</td></tr>
+<tr><td>COMBO_Deposito</td><td>Combo box (DEPOSITO, NOME)</td><td>VENDA.IDDEPOSITO</td><td>Obrigatório. Padrão: depósito 1.</td></tr>
+<tr><td>EDT_Data</td><td>Edit (data)</td><td>VENDA.DATA</td><td>Padrão hoje; não aceita data futura.</td></tr>
+<tr><td>COMBO_Produto</td><td>Combo box (PRODUTO ativo, DESCRICAO)</td><td>—</td><td>Busca por código ou descrição.</td></tr>
+<tr><td>EDT_Quantidade</td><td>Edit (numérico 12.3)</td><td>—</td><td>Maior que zero.</td></tr>
+<tr><td>BTN_AdicionarItem</td><td>Botão «Adicionar»</td><td>—</td><td>Valida estoque antes de incluir a linha.</td></tr>
+<tr><td>TABLE_Itens</td><td>Tabela memória</td><td>—</td><td>Colunas: COL_Codigo, COL_Descricao, COL_Quantidade, COL_Preco, COL_TotalItem. Ordenável por descrição. Duplo clique remove a linha.</td></tr>
+<tr><td>EDT_PercDesconto</td><td>Edit (numérico 5.2)</td><td>—</td><td>Recalcula ao sair; acima do teto zera e avisa.</td></tr>
+<tr><td>EDT_Subtotal, EDT_Desconto, EDT_Total</td><td>Edit (moeda), somente leitura</td><td>VENDA.SUBTOTAL, DESCONTO, TOTAL</td><td>Recalculados por RecalculaTotais.</td></tr>
+<tr><td>COMBO_Parcelas</td><td>Combo (1 a 6)</td><td>—</td><td>Padrão 1.</td></tr>
+<tr><td>BTN_Fechar</td><td>Botão «Fechar venda»</td><td>—</td><td>Grava venda, itens, baixa estoque, gera títulos.</td></tr>
+<tr><td>BTN_Cancelar</td><td>Botão «Cancelar»</td><td>—</td><td>Fecha sem gravar; pede confirmação se houver itens.</td></tr></table>
+<p>Estados: vazia (sem itens, botão Fechar desabilitado); com itens; erro de estoque (mensagem e foco em EDT_Quantidade); acima do limite de crédito (pergunta Sim/Não).</p>
+
+<h2>Janela WIN_Cliente</h2>
+<p>Título: «Cliente». Tamanho 640×420. Modal. Aberta por WIN_ListaClientes (Novo e Alterar).</p>
+<table><tr><th>Controle</th><th>Tipo</th><th>Vínculo</th><th>Regras na tela</th></tr>
+<tr><td>EDT_IDCliente</td><td>Edit, somente leitura</td><td>CLIENTE.IDCLIENTE</td><td>0 em inclusão.</td></tr>
+<tr><td>EDT_Nome</td><td>Edit (80)</td><td>CLIENTE.NOME</td><td>Obrigatório.</td></tr>
+<tr><td>EDT_CPF</td><td>Edit (máscara 999.999.999-99)</td><td>CLIENTE.CPF</td><td>Validado na saída; único.</td></tr>
+<tr><td>EDT_Email</td><td>Edit (120)</td><td>CLIENTE.EMAIL</td><td>Formato de e-mail quando preenchido.</td></tr>
+<tr><td>EDT_Cidade, COMBO_UF</td><td>Edit, combo (27 UF)</td><td>CLIENTE.CIDADE, UF</td><td>—</td></tr>
+<tr><td>RADIO_Tipo</td><td>Radio (Comum, Especial)</td><td>CLIENTE.TIPO</td><td>Padrão Comum.</td></tr>
+<tr><td>EDT_LimiteCredito</td><td>Edit (moeda)</td><td>CLIENTE.LIMITE_CREDITO</td><td>Não negativo.</td></tr>
+<tr><td>CBOX_Ativo</td><td>Check box</td><td>CLIENTE.ATIVO</td><td>Padrão marcado.</td></tr>
+<tr><td>BTN_Salvar, BTN_Cancelar</td><td>Botões</td><td>—</td><td>—</td></tr></table>
+
+<h2>Janela WIN_ListaClientes</h2>
+<p>Tabela TABLE_Clientes ligada ao arquivo CLIENTE, colunas NOME, CPF, CIDADE, UF, TIPO, ATIVO. Filtro por nome (EDT_Filtro) e por ativo (CBOX_SoAtivos, padrão marcado). Botões Novo, Alterar, Excluir (pede confirmação; não exclui cliente com venda). Ordenação por qualquer coluna.</p>
+
+<h2>Janela WIN_ListaVendas</h2>
+<p>Tabela sobre a query QRY_VendasPeriodo. Filtros: EDT_DataInicial, EDT_DataFinal (padrão: mês corrente), COMBO_Vendedor. Colunas: IDVENDA, DATA, CLIENTE, VENDEDOR, TOTAL, STATUS. Botão Nova abre WIN_Venda; botão Cancelar venda muda STATUS para C e devolve o estoque (procedure EstornaEstoque). Total do período em STC_TotalPeriodo.</p>
+
+<h2>Relatório RPT_SaldoMinimo</h2>
+<p>Fonte: view VW_SALDO_ABAIXO_MINIMO. Colunas: código, descrição, depósito, quantidade, mínimo. Quebra por depósito com contagem de itens. Retrato, A4.</p>
+
+<h2>Relatório RPT_Comissao</h2>
+<p>Fonte: QRY_ComissaoMensal com parâmetros pMes, pAno. Colunas: vendedor, quantidade de vendas, total vendido, comissão (3% do total das vendas fechadas). Totalizador geral. Paisagem, A4.</p>

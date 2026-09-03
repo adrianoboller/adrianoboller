@@ -79,6 +79,36 @@ nunca sobrescreve o que já existe.
   Painel em `.wx-migration/pmo/status.md`, tudo medido. Regra em
   `references/pmo.md`; manual em `MANUAL.md`.
 
+## Projeto de exemplo
+
+`exemplos/estoque-wx/` é um sistema WINDEV 2025 sintético e completo: `.SQL`
+com sete tabelas, os quatro PDFs no formato da documentação técnica (texto de
+verdade, gerados de `fontes/`), quatro screenshots com estado declarado,
+dados de amostra e dez casos de golden master. O G0 sobre ele dá
+`CONDITIONAL` com zero erros. Há uma divergência plantada para o G2 achar.
+Veja `exemplos/estoque-wx/LEIA-ME.md`.
+
+## Provas em código
+
+- `extrair_pdf.py`: texto por página com `arquivo#page=N` e hash; pouco texto vira `OCR_REQUIRED`.
+- `golden.py`: captura resultados do legado e compara com o novo, com tolerância; devolve `n/total`.
+- `uso_de_tokens.py`: lê o `usage` das sessões do Claude Code (MEDIDO) e lança no orçamento do gate.
+- `hooks/portao_g0.py`: nega `Write`/`Edit` fora de `.wx-migration/` enquanto o G0 estiver `BLOCKED`.
+- `pmo.py painel`: o painel do PMO em HTML, gerado do mesmo código do `status`.
+- `tests/testes.py`: 12 testes de regressão; o validador em modo estrito os executa.
+
+## Limitações conhecidas
+
+- A listagem de skills que o modelo devolve numa sessão nova oscila entre
+  itens; confira por nome, não por contagem.
+- O questionário pergunta uma letra por vez, mas não impede o usuário de
+  responder várias de uma vez; nesse caso ele confirma cada uma e segue.
+- O corpus do Help fica `DEGRADED/CONDITIONAL` por três defeitos medidos e
+  deliberadamente não saneados; o porquê e a pendência de licença estão em
+  `skills/conversao-wx/references/corpus-saneamento.md`.
+- `extrair_pdf.py` precisa de `pypdf` ou `pdfminer.six`; sem eles diz isso e
+  para, em vez de inventar texto.
+
 ## Agentes
 
 30 agentes da conversão (orquestrador, curadoria de evidências, WLanguage,

@@ -131,6 +131,25 @@ Conflito, fiscal ou dado pessoal sobem um degrau; padrão já aprovado desce;
 acima de 80 % do orçamento do gate rebaixa, acima de 100 % bloqueia e o PMO
 decide. Tudo fica em `.wx-migration/pmo/roteamento.jsonl`.
 
+### Extrair o texto dos PDFs e capturar o golden master
+
+```bash
+python3 "$P/extrair_pdf.py" --manifest .wx-migration/wx-inputs.manifest.json --allowed-evidence-root ./inputs --output .wx-migration/evidence/pdf-text
+python3 "$P/golden.py" capturar --casos inputs/dados-de-amostra/resultados-esperados.json --saida .wx-migration/tests/golden-master/casos.json
+python3 "$P/golden.py" comparar --golden .wx-migration/tests/golden-master/casos.json --comando "python3 novo/regras.py" --relatorio .wx-migration/tests/results/piloto.json
+```
+
+(`$P` é `$CLAUDE_PLUGIN_ROOT/skills/conversao-wx/scripts`.) A extração grava
+uma página por arquivo com `arquivo#page=N` e o hash do PDF. O golden compara
+cada caso com tolerância e devolve `equivalência: n/total`; é esse número que
+o piloto apresenta.
+
+### O portão do G0
+
+Enquanto o último pré-flight estiver `BLOCKED`, o hook do plugin nega qualquer
+escrita fora de `.wx-migration/`. Não é regra para o modelo obedecer: é o
+harness recusando. Resolva os anexos ou registre as lacunas e rode o G0 de novo.
+
 ## 5. Gerir o projeto (PMO)
 
 ```text
@@ -168,7 +187,9 @@ casos**. A recusa com o número é resultado tão válido quanto o ganho, e é o
 que impede a mesma ideia de voltar sem medição. Infrutífero sem a próxima
 hipótese não fecha.
 
-**Painel.** `pmo.py status` regenera `pmo/status.md`: gates, itens por
+**Uso de tokens medido.** `uso_de_tokens.py --project-root . lancar --gate G4` lê o campo `usage` das sessões do Claude Code e lança no orçamento; `pmo.py gastar` fica para lançamento manual.
+
+**Painel.** `pmo.py painel` gera `pmo/painel.html` para abrir no navegador. `pmo.py status` regenera `pmo/status.md`: gates, itens por
 estado, lacunas, decisões pendentes, orçamento por modelo, sprint, quadro e
 PDCA. Nenhum número é digitado; cada linha diz a fonte; o que não tem fonte
 é `INDISPONÍVEL`, nunca zero.
@@ -213,6 +234,11 @@ suas sessões. Todo número é `MEDIDO`, `ESTIMADO` ou `INDISPONÍVEL`.
   pmo/                      plano, orçamento, RAID, backlog, kanban, pdca/, base_de_conhecimento.md, sprints/, status.md
   logs/                     saídas longas, citadas por localizador
 ```
+
+## 8a. Projeto de exemplo
+
+`exemplos/estoque-wx/` tem tudo que o questionário pede, já respondido. Rode
+nele os passos 3 e 4 para ver o fluxo inteiro antes de usar um projeto seu.
 
 ## 9. Problemas comuns
 
