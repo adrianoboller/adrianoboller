@@ -2,6 +2,8 @@
 
 ![WX Claude Code](marca-wx-claude-code.png)
 
+Manual de uso passo a passo em [`MANUAL.md`](MANUAL.md).
+
 Plugin para o Claude Code que converte um projeto **WINDEV, WEBDEV ou WINDEV
 Mobile** para outra linguagem sem inventar o que o projeto faz. Começa por um
 questionário (A–J), passa por gates com aprovação humana e termina com cada
@@ -70,9 +72,12 @@ nunca sobrescreve o que já existe.
 - **Balanceamento de modelos**: `rotear_modelo.py` escolhe `haiku`, `sonnet`
   ou `opus` e o effort pela classe da tarefa, pelos sinais de risco e pelo
   orçamento do gate; regra em `references/balanceamento-de-modelos.md`.
-- **PMO**: `pmo.py` mantém plano, orçamento medido, RAID e o painel
-  `.wx-migration/pmo/status.md`; o agente `pmo-gerente-de-projetos` abre e
-  fecha cada gate. Regra em `references/pmo.md`.
+- **PMO** com as três técnicas em código: **Scrum** (sprint por gate, backlog,
+  definição de pronto, resumo de doze seções), **Kanban** (quadro gerado da
+  matriz com limite de WIP) e **PDCA** (ciclo com critério numérico cujo
+  fechamento, frutífero ou infrutífero, grava em `base_de_conhecimento.md`).
+  Painel em `.wx-migration/pmo/status.md`, tudo medido. Regra em
+  `references/pmo.md`; manual em `MANUAL.md`.
 
 ## Agentes
 
@@ -99,7 +104,8 @@ geradas por `docs/prints/gerar.md`).
 | ![questionario](docs/prints/03-questionario-a-j.png) `/wx-claude-code:questionario` | ![preflight](docs/prints/04-aplicar-e-preflight.png) respostas viram manifesto e Gate G0 |
 | ![design](docs/prints/05-design-md-impeccable.png) `DESIGN.md` da letra F | ![help](docs/prints/06-corpus-help-wlanguage.png) corpus WLanguage 12k |
 | ![laudo](docs/prints/07-laudo-tokens-fase-1.png) `/wx-claude-code:laudo-tokens` | ![pmo](docs/prints/08-pmo-orcamento-e-roteamento.png) PMO: orçamento, roteamento e painel |
-| ![equipe](docs/prints/09-equipe-wlanguage-por-tema.png) delegação real aos `wl-*-specialist` | |
+| ![equipe](docs/prints/09-equipe-wlanguage-por-tema.png) delegação real aos `wl-*-specialist` | ![scrum](docs/prints/10-pmo-scrum-kanban-pdca.png) Scrum, Kanban e PDCA com a base de conhecimento |
+| ![pmo-sessao](docs/prints/11-pmo-sessao-real.png) `/wx-claude-code:pmo status` numa sessão real | |
 
 ## Pacotes
 
