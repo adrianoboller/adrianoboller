@@ -2555,4 +2555,58 @@ pub fn limpar() {
             "catalogo::testes_gestao::excluir_tabela_leva_os_arquivos_dela_e_so_os_dela",
         ],
     },
+    {
+        "id": "before-sem-prazo-de-parede",
+        "titulo": "o corpo do gatilho BEFORE volta a rodar sem prazo, com a trava global na mão",
+        "porque": (
+            "o `PASSOS_MAX` do avaliador era citado como se fosse teto da "
+            "TRAVA, e nao e: teto de passos nao e teto de trabalho. Um milhao "
+            "de passos de aritmetica custa 27,2 ms e um milhao copiando meio "
+            "megabyte custa 28.590 ms -- medido, com a trava GLOBAL de dados "
+            "na mao. O prazo de parede e o unico dos tres tetos que limita a "
+            "trava."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            let mut ctx = Contexto::de_gatilho(nova_json.take(), gravavel, velha_json.clone())
+                .com_prazo(PRAZO_DO_GATILHO_ANTES);
+""",
+        "troca": """            // DEFEITO REPOSTO: o BEFORE volta a rodar sem prazo de parede.
+            let mut ctx =
+                Contexto::de_gatilho(nova_json.take(), gravavel, velha_json.clone());
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            # SO a catraca estatica pega. Medido: com o prazo removido, o teste
+            # de ponta a ponta `gatilho_before_sem_fundo_nao_derruba_o_servidor`
+            # continua PASSANDO em 0,97 s, porque o teto de TEXTO segura o
+            # mesmo corpo -- e ele so promete «nao derruba», que continua
+            # verdade. Prova de que a catraca nao e redundante: ela e a unica.
+            "servidor::testes_janela_e_cadeia::o_before_roda_com_prazo_e_o_after_nao",
+        ],
+        "seguem": [
+            # Os controles: tirar o prazo NAO pode quebrar gatilho honesto --
+            # se quebrasse, o `caem` acima passaria por uma razao errada.
+            "servidor::testes_gatilhos::before_insert_normaliza_o_campo",
+            "servidor::testes_gatilhos::sinal_cancela_a_escrita_e_a_linha_nao_entra",
+            "servidor::testes_gatilhos::lote_passa_pelo_before_por_linha",
+            # E este e o achado desta entrada, guardado como controle: o teste
+            # de ponta a ponta segue de pe com o defeito reposto.
+            "servidor::testes_janela_e_cadeia::gatilho_before_sem_fundo_nao_derruba_o_servidor",
+        ],
+    },
+    # O IRMAO DESTA ENTRADA NAO ESTA AQUI, E ISSO E DECISAO.
+    #
+    # O outro teto do mesmo commit e o `TEXTO_MAX`, e repo-lo faz o binario
+    # alocar ate o alocador falhar -- 8 a 16 GiB nesta maquina, com o risco de
+    # o kernel matar o processo de OUTRA frente para arranjar memoria. Guarda
+    # que derruba o trabalho do vizinho e a mesma falha do zelador que apaga o
+    # `target` de quem esta compilando.
+    #
+    # Ela fica MANUAL, com a receita escrita no comentario do teste
+    # `o_texto_que_dobra_para_no_teto_em_vez_de_derrubar_o_processo` e no
+    # `docs/CONCORRENCIA.md`: `ulimit -v 2000000` limita o processo a 2 GiB, e
+    # ai o defeito reposto aborta em 13,9 s dizendo «memory allocation of
+    # 536870912 bytes failed» sem levar ninguem junto. Conferida assim em
+    # 03/09.
 ]
