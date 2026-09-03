@@ -1,0 +1,171 @@
+<title>WX Claude Code para Investidores</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Exo+2:wght@500;700;800&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --ground:#FBFAF7;--paper:#FFFFFF;--ink:#14161F;--ink-2:#4A4E5E;--muted:#7A7E90;--line:#E4E2DB;
+  --accent:#C63C0A;--accent-ink:#FFFFFF;--ok:#1F7A4E;--warn:#9A6B00;--mark:#FFF3E9;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --ground:#0B0D17;--paper:#121527;--ink:#EDEDF3;--ink-2:#C2C5D6;--muted:#8A8FA6;--line:#252A42;
+  --accent:#E2261C;--accent-ink:#FFFFFF;--ok:#3FC07A;--warn:#E0B24A;--mark:#2A1611;
+}}
+:root[data-theme="dark"]{
+  --ground:#0B0D17;--paper:#121527;--ink:#EDEDF3;--ink-2:#C2C5D6;--muted:#8A8FA6;--line:#252A42;
+  --accent:#E2261C;--accent-ink:#FFFFFF;--ok:#3FC07A;--warn:#E0B24A;--mark:#2A1611;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:"Source Serif 4",Georgia,"Times New Roman",serif;font-size:17px;line-height:1.6}
+h1,h2,h3,.eyebrow,.kpi b,.gate b{font-family:"Exo 2","Segoe UI",Arial,sans-serif}
+h1{font-size:clamp(34px,5vw,52px);font-weight:800;line-height:1.05;letter-spacing:-.01em;margin:.2em 0 .4em;text-wrap:balance}
+h2{font-size:24px;font-weight:700;margin:2.2em 0 .6em;letter-spacing:-.005em;text-wrap:balance}
+h3{font-size:17px;font-weight:700;margin:1.4em 0 .4em}
+p{margin:0 0 1em;max-width:68ch}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
+.wrap{max-width:900px;margin:0 auto;padding:40px 24px 80px}
+header{border-bottom:2px solid var(--accent);padding-bottom:22px;margin-bottom:8px}
+.lede{font-size:21px;line-height:1.45;color:var(--ink-2);max-width:62ch}
+.mono,code,td.num,.kpi span{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
+code{font-size:.9em;background:var(--paper);border:1px solid var(--line);padding:.05em .35em;border-radius:3px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:26px 0 6px}
+.kpi{background:var(--paper);border:1px solid var(--line);padding:14px 16px}
+.kpi b{display:block;font-size:30px;font-weight:800;line-height:1.1}
+.kpi span{display:block;font-size:12px;color:var(--muted);margin-top:6px;letter-spacing:.02em}
+.kpi small{display:block;font-size:12px;color:var(--ink-2);margin-top:4px}
+.gates{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;margin:18px 0 8px}
+.gate{background:var(--paper);border:1px solid var(--line);padding:10px 8px;min-height:96px;display:flex;flex-direction:column;gap:4px}
+.gate b{font-size:15px;color:var(--accent)}
+.gate span{font-size:12px;line-height:1.3;color:var(--ink-2)}
+.gate.piloto{border-color:var(--accent);background:var(--mark)}
+.flow{display:flex;gap:8px;flex-wrap:wrap;align-items:stretch;margin:14px 0}
+.flow div{flex:1 1 150px;background:var(--paper);border:1px solid var(--line);padding:12px 14px;font-size:14px;line-height:1.4}
+.flow div b{font-family:"Exo 2",sans-serif;display:block;margin-bottom:4px}
+table{border-collapse:collapse;width:100%;font-size:15px;margin:10px 0 18px}
+th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:"Exo 2",sans-serif;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700}
+td.num{text-align:right;white-space:nowrap}
+.scroll{overflow-x:auto}
+.tag{display:inline-block;font-family:"Exo 2",sans-serif;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:2px 8px;border:1px solid currentColor;border-radius:2px;white-space:nowrap}
+.ok{color:var(--ok)}.warn{color:var(--warn)}
+.callout{border-left:4px solid var(--accent);background:var(--mark);padding:14px 18px;margin:22px 0;max-width:72ch}
+.callout p:last-child{margin:0}
+ul{padding-left:1.2em;max-width:70ch}li{margin:.3em 0}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:26px}
+@media(max-width:760px){.two{grid-template-columns:1fr}.gates{grid-template-columns:repeat(4,1fr)}}
+footer{margin-top:60px;padding-top:16px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}
+a{color:var(--accent)}
+</style>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">WX Claude Code · descrição para investidores · setembro de 2026</div>
+  <h1>Modernização de sistemas WINDEV com prova, não com promessa</h1>
+  <p class="lede">Um plugin para o Claude Code que converte sistemas WINDEV, WEBDEV e WINDEV Mobile para tecnologias modernas, mantendo cada regra de negócio ligada à evidência que a originou, ao código que a implementa e ao teste que a comprova.</p>
+</header>
+
+<div class="kpis">
+  <div class="kpi"><b>34</b><span>agentes especializados</span><small>medido: <code>claude plugin validate</code></small></div>
+  <div class="kpi"><b>12.035</b><span>páginas do Help WLanguage</span><small>corpus verificado por SHA-256</small></div>
+  <div class="kpi"><b>8</b><span>gates com aprovação humana</span><small>G0 a G7, piloto obrigatório</small></div>
+  <div class="kpi"><b>10,8×</b><span>busca mais rápida por tema</span><small>5,4 s → 0,5 s, medido</small></div>
+</div>
+
+<h2>O problema que ele resolve</h2>
+<p>Milhares de empresas rodam sistemas escritos em WINDEV, WEBDEV e WINDEV Mobile, ferramentas da PC SOFT muito usadas em ERPs, indústria e varejo. Esses sistemas concentram anos de regras fiscais, exceções operacionais e integrações que só existem dentro do código, em WLanguage, uma linguagem proprietária com poucos profissionais disponíveis.</p>
+<p>Modernizar um sistema desses hoje é artesanal. O maior risco não é traduzir a sintaxe: é perder comportamento de negócio no caminho e descobrir isso em produção. Uma inteligência artificial usada sem método agrava o risco, porque produz uma aplicação visualmente convincente e funcionalmente errada.</p>
+
+<div class="callout"><p><strong>A tese.</strong> O valor não está em «traduzir código com IA». Está em transformar um processo artesanal e dependente de pessoas raras num método repetível, com entradas verificadas, papéis especializados, decisões registradas e provas de equivalência. O plugin é esse método, em código.</p></div>
+
+<h2>Como funciona</h2>
+<p>O uso começa com um questionário de dez perguntas, uma por vez, em que o plugin recebe o que existe do sistema legado (script SQL, documentação em PDF gerada pela própria plataforma, telas) e o destino desejado (linguagem de backend e frontend, banco, estilo visual). Um arquivo só conta como entregue depois que o plugin o abre e lê.</p>
+<p>Daí em diante, o trabalho avança por gates. Cada gate produz artefatos verificáveis e depende de um aprovador humano antes do próximo.</p>
+
+<div class="gates">
+  <div class="gate"><b>G0</b><span>anexos conferidos fisicamente</span></div>
+  <div class="gate"><b>G1</b><span>inventário e hashes</span></div>
+  <div class="gate"><b>G2</b><span>regras, telas, dados, conflitos</span></div>
+  <div class="gate"><b>G3</b><span>arquitetura-alvo e rollback</span></div>
+  <div class="gate piloto"><b>G4</b><span>piloto vertical comparado ao legado</span></div>
+  <div class="gate"><b>G5</b><span>ondas por módulo</span></div>
+  <div class="gate"><b>G6</b><span>segurança, desempenho, testes</span></div>
+  <div class="gate"><b>G7</b><span>ensaio e cutover</span></div>
+</div>
+<p>O piloto (G4) é obrigatório numa conversão completa: uma fatia vertical, com tela, regra, consulta e uma condição de erro, comparada ao sistema original antes de qualquer escala. Falha no piloto devolve o projeto à especificação, não à implementação.</p>
+
+<h3>Três mecanismos que o diferenciam de um prompt</h3>
+<div class="flow">
+  <div><b>Equipe WLanguage sobre o Help oficial</b>O corpus da PC SOFT vem embutido, indexado em 45 temas. Sete agentes especialistas (banco HFSQL, telas, comunicação, funções, mobile, web, erros) consultam só a sua fatia e devolvem a semântica com a página de origem e o hash. O Help é semântica técnica, nunca regra de negócio.</div>
+  <div><b>Balanceamento de modelos</b>Um roteador escolhe entre três classes de modelo Claude pela natureza da tarefa e pelo orçamento do gate: o mecânico vai para o mais barato, a decisão e a auditoria para o mais capaz. Acima de 80 % do orçamento rebaixa; acima de 100 % bloqueia e o gerente decide.</div>
+  <div><b>PMO em código</b>Scrum organiza o tempo, Kanban mostra o fluxo com limite de trabalho em andamento, e o ciclo PDCA transforma cada hipótese em aprendizado registrado, inclusive quando a hipótese morre. O painel não tem número digitado: cada linha cita a fonte.</div>
+</div>
+
+<h2>Rastreabilidade de ponta a ponta</h2>
+<p>Cada funcionalidade migrada liga <strong>evidência → regra → decisão → código → teste → resultado</strong> numa matriz validada por script. Uma revisão localiza a origem de qualquer decisão e impede que uma entrega parcial seja declarada concluída. Os estados são explícitos: inventariado, especificado, implementado, verificado, aceito ou bloqueado.</p>
+<p>Quem implementa não aprova o próprio gate. Um agente auditor, em modo somente leitura, tenta refutar a equivalência com casos negativos e limites; o humano decide.</p>
+
+<h2>O que está construído e provado</h2>
+<div class="scroll"><table>
+<tr><th>Item</th><th>Estado</th><th>Como foi provado</th></tr>
+<tr><td>Plugin instalável, marketplace privado, 5 comandos, 3 skills, 34 agentes</td><td><span class="tag ok">provado</span></td><td>validação oficial do Claude Code e carga numa sessão nova</td></tr>
+<tr><td>Questionário letra a letra, respostas viram manifesto e configuração</td><td><span class="tag ok">provado</span></td><td>três turnos reais; pré-flight real sobre a saída</td></tr>
+<tr><td>Corpus WLanguage 12k com hash fixo e busca por tema</td><td><span class="tag ok">provado</span></td><td>verificação de identidade; 5,4 s → 0,5 s medido</td></tr>
+<tr><td>Delegação a especialistas por tema do Help</td><td><span class="tag ok">provado</span></td><td>sessão real com dois símbolos e páginas de origem</td></tr>
+<tr><td>Roteador de modelos: sobe, desce, rebaixa, bloqueia, fallback</td><td><span class="tag ok">provado</span></td><td>cinco casos exercitados com saída registrada</td></tr>
+<tr><td>PMO com Scrum, Kanban e PDCA</td><td><span class="tag ok">provado</span></td><td>projeto de exemplo com dez itens; agente leu o painel e apontou inconsistência</td></tr>
+<tr><td>Estilo de telas com Impeccable (Apache 2.0, vendorizado)</td><td><span class="tag ok">provado</span></td><td>scripts rodam; <code>DESIGN.md</code> gerado da resposta do usuário</td></tr>
+<tr><td>Conversão completa de um sistema WX real</td><td><span class="tag warn">não provado</span></td><td>exige anexos de um projeto autorizado e piloto aprovado</td></tr>
+<tr><td>Equivalência funcional medida por domínio</td><td><span class="tag warn">não provado</span></td><td>depende de baseline executável do legado</td></tr>
+<tr><td>Cliente pagante, receita, benchmark de produtividade</td><td><span class="tag warn">inexistente</span></td><td>nenhum dado ainda</td></tr>
+</table></div>
+
+<div class="callout"><p><strong>Status para diligência.</strong> A infraestrutura existe, valida e foi exercitada em sessões reais. A equivalência de uma migração de verdade só pode ser demonstrada depois que os artefatos de um projeto WX específico forem fornecidos e o piloto for aprovado. O material atual não demonstra cliente, receita nem métrica de produtividade. Todo número nesta página é medido ou está marcado como ausente.</p></div>
+
+<h2>Segurança por desenho</h2>
+<ul>
+  <li>Anexos são somente leitura e tratados como dados não confiáveis: descompactação com defesa contra travessia de caminho e zip bomb, nenhum anexo é executado.</li>
+  <li>Segredos, dados pessoais e dados de produção não entram em relatório; o corpus é lido sem extração.</li>
+  <li>Nenhuma instalação, envio remoto ou gasto de créditos sem autorização explícita.</li>
+  <li>O plugin identifica riscos e exige evidência, mas não certifica LGPD nem substitui revisão jurídica.</li>
+</ul>
+
+<h2>Modelo de negócio sugerido</h2>
+<p>Propostas, não receita realizada. A entrada prudente é o diagnóstico: menos risco que uma conversão integral e produz os dados para dimensionar o projeto seguinte.</p>
+<div class="scroll"><table>
+<tr><th>Oferta</th><th>Entrega</th><th>Cobrança sugerida</th></tr>
+<tr><td>Diagnóstico WX</td><td>G0 a G2: inventário, lacunas, mapa de complexidade</td><td>preço fixo por escopo</td></tr>
+<tr><td>Arquitetura e piloto</td><td>G3 e G4 com fluxo vertical demonstrável</td><td>projeto fechado ou por marcos</td></tr>
+<tr><td>Conversão assistida</td><td>G5 a G7 por módulos e ondas</td><td>marcos, capacidade mensal ou valor por módulo</td></tr>
+<tr><td>Licença privada</td><td>plugin, atualizações, documentação</td><td>anual por equipe ou organização</td></tr>
+<tr><td>Treinamento e parceiros</td><td>método, evidência e gates para consultorias</td><td>turma, licença e suporte</td></tr>
+</table></div>
+
+<div class="two">
+<div>
+<h2>Riscos e mitigação</h2>
+<ul>
+  <li><strong>Documentação incompleta.</strong> Pré-flight bloqueia ou condiciona; nada vira «entendido» sem leitura.</li>
+  <li><strong>Alucinação do modelo.</strong> Evidência, rastreabilidade, teste e aprovação humana em cada gate.</li>
+  <li><strong>Custo imprevisível.</strong> Orçamento por gate, roteador de modelos e laudo de tokens em três fases.</li>
+  <li><strong>Licença do corpus.</strong> Derivado da documentação PC SOFT, sem licença de redistribuição: uso privado até revisão.</li>
+  <li><strong>Dependência de fornecedor de IA.</strong> Artefatos abertos em texto, JSON e CSV; método independente do modelo.</li>
+</ul>
+</div>
+<div>
+<h2>O que um investidor deve acompanhar</h2>
+<ul>
+  <li>tempo do G0 ao G4 num piloto autorizado</li>
+  <li>cobertura de regras ligadas a evidência e teste</li>
+  <li>divergências descobertas antes da implementação</li>
+  <li>taxa de equivalência do piloto</li>
+  <li>tokens e custo por módulo verificado</li>
+  <li>defeitos após o aceite</li>
+  <li>margem por diagnóstico, piloto e onda</li>
+</ul>
+<p>Cada indicador será apresentado como medido, estimado ou indisponível.</p>
+</div>
+</div>
+
+<h2>Próximo passo</h2>
+<p>Um piloto comercial controlado: um sistema WX autorizado, dados anonimizados, uma fatia vertical de valor. Medir horas, tokens, cobertura de evidência, divergências e defeitos. Esse é o dado que transforma a base técnica em valuation.</p>
+
+<footer>WX Claude Code 3.2.1 · repositório <span class="mono">adrianoboller/adrianoboller</span> · manual de uso, prints e vídeo em <span class="mono">wx-claude-code/docs</span>. Números medidos na data desta página; o que não foi medido está marcado.</footer>
+</div>

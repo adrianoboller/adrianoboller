@@ -2,7 +2,7 @@
 
 ![WX Claude Code](marca-wx-claude-code.png)
 
-Manual de uso passo a passo em [`MANUAL.md`](MANUAL.md).
+Manual de uso passo a passo em [`MANUAL.md`](MANUAL.md). Descrição para investidores em `docs/investidor/`.
 
 Plugin para o Claude Code que converte um projeto **WINDEV, WEBDEV ou WINDEV
 Mobile** para outra linguagem sem inventar o que o projeto faz. Começa por um
