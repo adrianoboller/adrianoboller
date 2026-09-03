@@ -20,7 +20,7 @@ inputs/
   dados-de-amostra/
     amostra.sql                 dados sintéticos
     resultados-esperados.json   10 casos de golden master, capturados do legado
-questionario.json               as respostas A–J deste projeto
+questionario.json               as respostas do bloco 0 e das letras A–L deste projeto
 fontes/                         HTML de onde os PDFs e screenshots são gerados
 gerar.mjs                       regenera os PDFs e screenshots (Chromium via Playwright)
 ```

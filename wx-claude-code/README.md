@@ -6,7 +6,7 @@ Manual de uso passo a passo em [`MANUAL.md`](MANUAL.md). Descrição para invest
 
 Plugin para o Claude Code que converte um projeto **WINDEV, WEBDEV ou WINDEV
 Mobile** para outra linguagem sem inventar o que o projeto faz. Começa por um
-questionário (bloco 0 e A–J), passa por gates com aprovação humana e termina com cada
+questionário (bloco 0 e letras A–L), passa por gates com aprovação humana e termina com cada
 regra ligada a evidência, código e teste.
 
 ## Instalar
@@ -24,12 +24,12 @@ Requisitos: Python 3.10+ (scripts de intake e do corpus) e Node 22+ (Impeccable)
 
 | Comando | O que faz |
 | --- | --- |
-| `/wx-claude-code:questionario` | Bloco **0** (softhouse, diretores, endereço, logotipos, finalidade, objetivos, organograma, fluxograma, cronograma e prazo final, orçamento, riscos, pessoal, GitHub de destino sem senha) e perguntas **A–J** abaixo. Gera `.wx-migration/` com manifesto, configuração, `empresa.md`, `entrega.json`, a semente do PMO, `CLAUDE.md` e esboço de `DESIGN.md`. |
+| `/wx-claude-code:questionario` | Bloco **0** (softhouse, diretores, endereço, logotipos, finalidade, objetivos, organograma, fluxograma, cronograma e prazo final, orçamento, riscos, pessoal, GitHub de destino sem senha, aprovador) e letras **A–L** abaixo. Gera `.wx-migration/` (manifesto, configuração, respostas legíveis, empresa, processo, ambiente, prompts, semente do PMO) e o contexto do projeto (`CLAUDE.md`, `INDEX_FILES.md`, `DESIGN.md`, `PRODUCT.md`, `.claude/`, `.mcp.json`, `Dockerfile`); a lista inteira está em «O que sai» no MANUAL. |
 | `/wx-claude-code:converter` | Conversão por gates G0–G7 (pré-flight, inventário, especificação, arquitetura, piloto vertical, ondas, endurecimento, cutover). |
 | `/wx-claude-code:estilo-telas` | Paleta, tema, tipografia e densidade viram `PRODUCT.md` e `DESIGN.md` pelo Impeccable; cada tela convertida nasce nesse sistema. |
 | `/wx-claude-code:laudo-tokens` | Laudo de uso de tokens em 3 fases. Somente leitura; nada muda sem aprovação. |
 | `/wx-claude-code:pmo` | Gerente de projetos: plano por gates, orçamento de tokens por modelo, RAID, resumo de sprint e o relatório de onze seções com painel HTML, gerado sozinho ao fechar sprint e na entrega. |
-| `/impeccable <comando> <alvo>` | Os 23 comandos do Impeccable (`polish`, `audit`, `critique`, `shape`, `harden`…). |
+| `/impeccable <comando> <alvo>` | Os comandos do Impeccable (`polish`, `audit`, `critique`, `shape`, `harden`…; 23 segundo o SKILL.md de origem). |
 
 ## O questionário
 
@@ -41,7 +41,7 @@ Requisitos: Python 3.10+ (scripts de intake e do corpus) e Node 22+ (Impeccable)
 | C | PDF só das interfaces | `ui_documents` |
 | D | PDF só das queries SQL | `query_documents` |
 | E | PDF completo | reserva de B, C, D e fonte de `business_rule_documents` |
-| F | Qualidade das telas com o Impeccable: oito subperguntas de ERP (operação, teclado, grids, formulários, formatos, impressão, estados, acessibilidade) e depois paleta, tema, tipografia | `PRODUCT.md`, `DESIGN.md` por seção, `fidelity.ui` |
+| F | Qualidade das telas com o Impeccable: a tela principal como modelo (F0), treze subperguntas de ERP (F1–F13: operação, teclado, grids, formulários, formatos, impressão, estados, acessibilidade, botões, posição, ícones, cores, fundo) e depois paleta, tema, tipografia | `PRODUCT.md`, `DESIGN.md` por seção, `fidelity.ui` |
 | G | Usar o Help completo do WX em JSON (corpus 12k) e override da versão | `wlanguage_help_json` |
 | H | Para qual linguagem converter o backend: o plugin orienta (Rust, Python, C# + WL_C#, e mais), mostra o processo de conversão de cada opção e pergunta a estratégia | `target`, `DEC-0001`, `processo-de-conversao.md` |
 | I | Linguagens para o frontend, com o processo e o ritmo (tela a tela, módulo a módulo) | `target.platforms`, navegadores e dispositivos |
@@ -76,7 +76,7 @@ nunca sobrescreve o que já existe.
   ou `opus` e o effort pela classe da tarefa, pelos sinais de risco e pelo
   orçamento do gate; regra em `references/balanceamento-de-modelos.md`.
 - **PMO** com as três técnicas em código: **Scrum** (sprint por gate, backlog,
-  definição de pronto, resumo de doze seções), **Kanban** (quadro gerado da
+  definição de pronto, resumo da sprint em doze seções; o relatório do PMO, outro documento, tem onze), **Kanban** (quadro gerado da
   matriz com limite de WIP) e **PDCA** (ciclo com critério numérico cujo
   fechamento, frutífero ou infrutífero, grava em `base_de_conhecimento.md`).
   Painel em `.wx-migration/pmo/status.md`, tudo medido. Regra em
@@ -119,7 +119,7 @@ Veja `exemplos/estoque-wx/LEIA-ME.md`.
 ## Limitações conhecidas
 
 - A listagem de skills que o modelo devolve numa sessão nova oscila entre
-  itens; confira por nome, não por contagem.
+  6 e 7 itens; confira por nome, não por contagem.
 - O questionário pergunta uma letra por vez, mas não impede o usuário de
   responder várias de uma vez; nesse caso ele confirma cada uma e segue.
 - O corpus do Help fica `DEGRADED/CONDITIONAL` por três defeitos medidos e
@@ -149,9 +149,10 @@ grids e planilhas) mais os 4 do Impeccable. A topologia e os modelos estão em
 
 ## O que o plugin não faz
 
-Não lê o formato binário do WX, não faz OCR sozinho, não certifica LGPD e não
-afirma equivalência sem baseline executável. O corpus do Help é derivado da
-documentação PC SOFT e não inclui licença de redistribuição: uso privado.
+Não lê o formato binário do WX, não faz OCR sozinho, não certifica LGPD, não
+aprova gate no lugar do humano e não afirma equivalência sem baseline
+executável. O corpus do Help é derivado da documentação PC SOFT e não inclui
+licença de redistribuição: uso privado. A lista completa está no fim do MANUAL.
 
 ## Prints de uso
 

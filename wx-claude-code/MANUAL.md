@@ -1,7 +1,7 @@
 # Manual de uso — WX Claude Code
 
 Plugin do Claude Code para converter um projeto **WINDEV, WEBDEV ou WINDEV
-Mobile** para outra linguagem sem inventar o que o projeto faz. Sete
+Mobile** para outra linguagem sem inventar o que o projeto faz. Oito
 capítulos, na ordem em que você vai precisar deles.
 
 1. Como instalar
@@ -11,6 +11,7 @@ capítulos, na ordem em que você vai precisar deles.
 5. Como subir os arquivos
 6. Como invocar o wizard
 7. Como definir a linguagem e a plataforma de destino
+8. Licença e serial de ativação
 
 ---
 
@@ -66,19 +67,19 @@ claude plugin validate wx-claude-code
 
 | Comando | O que faz | Quando |
 | --- | --- | --- |
-| `/wx-claude-code:questionario <projeto>` | o wizard: dez perguntas A–J, uma por vez; gera `.wx-migration/` | sempre primeiro |
+| `/wx-claude-code:questionario <projeto>` | o wizard: bloco 0 e letras A–L, um item por mensagem; gera `.wx-migration/` e o contexto do projeto | sempre primeiro |
 | `/wx-claude-code:converter <modo> <projeto>` | conversão por gates G0–G7; `modo` é `inventario`, `plano`, `piloto` ou `completo` | depois do wizard |
-| `/wx-claude-code:pmo <ação> <projeto>` | gerência: `iniciar`, `status`, `sprint`, `kanban`, `pdca`, `orcamento`, `entregar`, `painel` | durante toda a conversão |
+| `/wx-claude-code:pmo <ação> <projeto>` | gerência: `iniciar`, `status`, `relatorio`, `sprint`, `kanban`, `pdca`, `orcamento`, `entregar`, `painel` | durante toda a conversão |
 | `/wx-claude-code:estilo-telas <projeto>` | paleta, tema e tipografia viram `PRODUCT.md` e `DESIGN.md` pelo Impeccable | quando a letra F foi «sim» |
 | `/wx-claude-code:laudo-tokens [fase]` | auditoria de consumo em três fases, somente leitura | quando quiser medir o custo |
-| `/impeccable <comando> <alvo>` | os 23 comandos de qualidade gráfica: `shape`, `polish`, `audit`, `critique`, `harden`… | em cada tela convertida |
+| `/impeccable <comando> <alvo>` | os comandos de qualidade gráfica (23 segundo o SKILL.md de origem): `shape`, `polish`, `audit`, `critique`, `harden`… | em cada tela convertida |
 
 Os comandos têm scripts por trás, que você também pode rodar direto. Todos
 ficam em `$CLAUDE_PLUGIN_ROOT/skills/conversao-wx/scripts/`:
 
 | Script | Faz |
 | --- | --- |
-| `aplicar_questionario.py` | respostas do wizard viram manifesto, configuração, `CLAUDE.md` e `DESIGN.md` |
+| `aplicar_questionario.py` | respostas do wizard viram o `.wx-migration/`, o contexto do projeto (`CLAUDE.md`, `INDEX_FILES.md`, `.claude/`, prompts) e o ambiente (letra K) |
 | `wx_preflight.py` | Gate G0: confere cada anexo fisicamente |
 | `extrair_pdf.py` | texto por página com `arquivo#page=N` e hash |
 | `query_wlanguage_help.py` | busca no corpus do Help por símbolo e tema |
@@ -86,6 +87,9 @@ ficam em `$CLAUDE_PLUGIN_ROOT/skills/conversao-wx/scripts/`:
 | `rotear_modelo.py` | escolhe o modelo Claude por classe de tarefa e orçamento |
 | `pmo.py` | plano, sprint, kanban, PDCA, painel, entrega |
 | `uso_de_tokens.py` | lê o consumo real das sessões e lança no orçamento |
+| `verificar_ambiente.py` | mede o que está instalado contra o mínimo pedido em K |
+| `licenca.py` | serial de ativação: chaves, gerar, instalar, verificar, hooks |
+| `safe_unpack_bundle.py` | descompacta anexo zipado com defesa contra travessia e zip bomb |
 
 **Atalhos.** Crie os seus em `.claude/commands/<nome>.md` no projeto. Exemplo
 para polir telas com as regras da conversão já embutidas:
@@ -139,7 +143,9 @@ deixa em `pmo/` o cronograma com o prazo final, o organograma, o fluxograma,
 os riscos iniciais (`RSK-*`) e `projeto.json` com o orçamento financeiro. O
 `iniciar` lê esse arquivo e preenche `previsto_para` de cada gate que tem
 marco; o `status` mostra quantos dias faltam para o prazo final e o orçamento
-aprovado, ou `INDISPONÍVEL` se não foram informados.
+aprovado, ou `INDISPONÍVEL` se não foram informados. O relatório também lê
+`processo-de-conversao.md` (estratégia), `entrega.json` (destino, sem
+credencial) e `ambiente.md`, todos do mesmo wizard.
 
 **Gates.** O trabalho avança em oito portões, G0 a G7, e cada um depende de
 um aprovador humano:
@@ -285,7 +291,7 @@ como modelo da pasta e como ensaio antes do seu projeto.
 
 ## 6. Como invocar o wizard
 
-O wizard é o questionário: o bloco 0 da empresa e do projeto, e as letras A–J. É sempre o primeiro comando de um projeto:
+O wizard é o questionário: o bloco 0 da empresa e do projeto, e as letras A–L. É sempre o primeiro comando de um projeto:
 
 ```text
 /wx-claude-code:questionario ./meu-projeto
@@ -354,7 +360,7 @@ nunca em texto puro. Você informa o **nome** da variável de ambiente ou do
 segredo (`GITHUB_TOKEN`, por exemplo) e configura o valor na máquina que fará
 o push. Se colar a senha na conversa por engano, revogue-a.
 
-**Letras A a J:**
+**Letras A a L:**
 
 | Letra | Pergunta |
 | --- | --- |
@@ -380,21 +386,26 @@ E duas perguntas de governança no fim: versão e idioma do WX; modo
 .wx-migration/
   questionario.json          suas respostas
   respostas_questionario.md  todas as respostas legíveis, com o aprovador no topo; o CLAUDE.md aponta para ele
-  ambiente.md, ambiente/     instalador, SQL dos papéis do banco e .env.exemplo (letra K)
-  prompts/                   kickoff.md e prototipacao.md (letra L)
-INDEX_FILES.md               mapa de arquivos, regravado sempre
-.claude/                     settings.json com hooks, hooks/, skills/ do projeto
-.mcp.json, Dockerfile, docker-compose.yml   quando L5 e L3 pedem
   wx-inputs.manifest.json    manifesto que o pré-flight lê
   conversion.config.json     modo, destino, fidelidade
   gaps.md, traceability.csv  vazios, prontos para o G1
   empresa.md                 softhouse, diretores, endereço, logotipos, finalidade, objetivos, pessoal
+  processo-de-conversao.md   o que cada peça vira e a estratégia (letras H e I)
   entrega.json               GitHub, branch, usuário, nome da credencial, diretório de destino
+  ambiente.md, ambiente/     instalador, SQL dos papéis do banco, .env.exemplo e n8n/ (letra K)
+  prompts/                   kickoff.md e prototipacao.md (letra L)
   pmo/projeto.json           prazo final, marcos, orçamento financeiro (o pmo.py iniciar lê)
   pmo/cronograma.md, organograma.md, fluxograma.md, riscos.md
-CLAUDE.md                    regras do projeto (com estilo de resposta se J = sim)
-DESIGN.md                    esboço da paleta (se F = sim)
+CLAUDE.md                    regras do projeto; aponta para INDEX_FILES.md e para as respostas (estilo de resposta se J = sim)
+INDEX_FILES.md               mapa de arquivos, regravado sempre
+DESIGN.md                    sistema de design: tela modelo, botões, cores, fundo (se F = sim)
+PRODUCT.md                   quem opera e em que condições (F1)
+.claude/                     settings.json com hooks, hooks/, skills/regras-do-legado e legado-para-destino
+.mcp.json, Dockerfile, docker-compose.yml, .gitignore   quando L5 e L3 pedem
 ```
+
+Depois do `pmo.py iniciar` e do fechamento de sprints, `pmo/` ganha ainda
+`backlog.md`, `base_de_conhecimento.md`, `relatorio.md` e `painel.html`.
 
 **A letra F num ERP.** Começa pela tela modelo (F0): a captura da tela principal do projeto, o que preservar e o que pode mudar, que vira a seção «Tela modelo» do `DESIGN.md` e a referência do `critique` de toda tela nova. Paleta vem depois. As oito subperguntas (F1 a F8) alimentam o `PRODUCT.md` e seções próprias do `DESIGN.md`, cada uma ligada ao comando do Impeccable que a consome: `shape` para grids, `harden` para formulários e estados, `typeset` para números e moeda, `layout` para impressão, `audit` para acessibilidade. Cinco subperguntas a mais tratam dos botões e do fundo: F9 vocabulário (INCLUIR, ALTERAR, EXCLUIR, GRAVAR, SELECIONAR REGISTRO, VOLTAR, CANCELAR, DUPLICAR, ou a forma em substantivo) e as mensagens exatas; F10 posição das barras em relação à grade e aos campos; F11 ícone por ação; F12 cor por ação, contorno ou preenchido; F13 fundo em cor hexadecimal ou rgb, textura ou imagem. As três viram uma tabela por ação no `DESIGN.md`, que os agentes seguem letra por letra. Uma tela só está pronta quando passa por `polish` e `audit` e atende as seções que a afetam. Detalhe em `references/qualidade-erp.md`.
 
@@ -411,8 +422,9 @@ texto, uma letra por turno, e você continua com `claude -c "resposta"`.
 Esta é a decisão que mais muda o projeto, e por isso o wizard **orienta
 antes de perguntar**, na letra H.
 
-**Se você já sabe**, responda a linguagem e siga para framework, banco,
-versões mínimas e implantação.
+**Se você já sabe**, responda a linguagem e siga para framework, banco e
+implantação em uma frase. A versão do toolchain e do banco a instalar entram
+na letra K; o alvo de deploy, Dockerfile e compose, na L3.
 
 **Se não sabe**, o wizard faz quatro perguntas de sinal, uma por vez:
 
@@ -457,8 +469,8 @@ release oficial, e o especialista de funções padrão marca cada função como
 `equivalente`, `adaptar` ou `substituir`. HFSQL, telas, comunicação e
 relatórios seguem pelos outros especialistas, em qualquer perfil.
 
-**Duas regras que não mudam com o perfil.** O banco de destino é decisão
-separada, no G3. E regra de negócio não muda de comportamento por causa da
+**Duas regras que não mudam com o perfil.** O banco é escolhido em H e
+instalado em K; o G3 confirma ou muda a decisão (`DEC-*`). E regra de negócio não muda de comportamento por causa da
 linguagem: o golden master compara o novo com o legado seja qual for o
 destino.
 
@@ -507,7 +519,8 @@ serial for preso a uma máquina, informe ao distribuidor o resultado de
 **Como funciona.** O serial é assinado com RSA-2048 pela chave privada de
 quem distribui; o plugin traz só a chave pública e não consegue emitir nem
 forjar serial. Um byte alterado invalida a assinatura. Estados possíveis:
-`valida`, `ausente`, `vencida`, `maquina-diferente`, `assinatura-invalida`.
+`valida`, `ausente`, `vencida`, `maquina-diferente`, `assinatura-invalida`,
+`formato-invalido`.
 
 **O que isso protege.** O plugin é texto, e quem instala lê tudo. O serial e
 os hooks são dissuasão para o cliente honesto, não muralha: quem apagar o hook
