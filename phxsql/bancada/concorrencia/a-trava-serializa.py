@@ -97,7 +97,7 @@ def trabalhador(modo, segundos, fila, tabela="c"):
     while time.monotonic() < fim:
         if modo.startswith("ler"):
             c.call({"op": "varrer", "database": "t", "tabela": tabela,
-                    "limite": 50}, exigir=False)
+                    "max": 50}, exigir=False)
         elif modo == "sem-trava":
             # O CONTROLE. Mesmo soquete, mesmo JSON, mesmo despacho, mesmo
             # cliente Python -- e `ping` responde SEM tomar `travar_dados`.

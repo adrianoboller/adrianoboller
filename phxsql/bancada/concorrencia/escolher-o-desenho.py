@@ -75,6 +75,20 @@ SENHA = "desenho-4321"
 SEGUNDOS = float(os.environ.get("SEGUNDOS", "3"))
 LINHAS = int(os.environ.get("LINHAS", "2000"))
 CLIENTES = [int(x) for x in os.environ.get("CLIENTES", "1,2,4").split(",")]
+# O TAMANHO DA LEITURA, e o campo dela e `max` -- nao `limite`.
+#
+# Ate 04/09 esta bancada mandava `"limite": 50` num pedido de `varrer`. O
+# `op_varrer` le `Servidor::limite(p)`, que le o campo **`max`**: `"limite"`
+# nao existe no protocolo, entao TODA leitura caia no teto de configuracao e
+# devolvia **1.000 linhas**. Provado com o servidor de pe: `limite: 1`,
+# `limite: 50` e `limite: 200` devolvem 1000, 1000 e 1000; `max: 50` devolve
+# 50. Ver `docs/CONCORRENCIA.md` §14.
+#
+# O padrao fica em 1.000 DE PROPOSITO: e o que as baterias de 03/09 e 04/09
+# mediram de fato, e mudar o numero junto com o campo tornaria as corridas
+# novas incomparaveis com as publicadas. Quem quiser o perfil de leitura curta
+# manda `LINHAS_LIDAS=50`.
+LINHAS_LIDAS = int(os.environ.get("LINHAS_LIDAS", "1000"))
 TABELAS = 4
 
 
@@ -160,7 +174,7 @@ def pedido(perfil, tabela):
         # nao e culpa da trava: e do medidor ou da maquina.
         return {"op": "ping"}
     if perfil == "ler":
-        return {"op": "varrer", "database": "t", "tabela": tabela, "limite": 50}
+        return {"op": "varrer", "database": "t", "tabela": tabela, "max": LINHAS_LIDAS}
     return {"op": "inserir", "database": "t", "tabela": tabela,
             "linha": {"nome": "x"}}
 

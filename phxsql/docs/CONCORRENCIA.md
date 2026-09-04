@@ -458,6 +458,8 @@ tornou visível:
 
 ### 3.1 A ressalva que a matriz precisa carregar: o formato da carga
 
+> **Correção de 04/09 (§14):** onde este trecho diz «`varrer` de 50 linhas», a leitura medida era de **1.000** — a bancada mandava o campo `limite`, que o `op_varrer` não lê. As razões continuam valendo; o rótulo, não.
+
 Os números da §14 do `DESEMPENHO.md` comparam um `varrer` de **50 linhas**
 contra um `inserir` de **uma**. Nessa forma, a leitura custa 20× mais por
 operação (153 contra 3.462 op/s) e portanto **segura a trava 20× mais tempo** —
@@ -768,6 +770,8 @@ responde não é a parte que foi medida.
 
 ## 7.1 Quanto a trava fica PRESA, medido (03/09)
 
+> **Correção de 04/09 (§14):** onde este trecho diz «`varrer` de 50 linhas», a leitura medida era de **1.000** — a bancada mandava o campo `limite`, que o `op_varrer` não lê. As razões continuam valendo; o rótulo, não.
+
 O §8 listava como **não medido** o custo do `fsync` sob a trava, em
 milissegundos. Está medido, e o número está inteiro na §14.1 do
 `DESEMPENHO.md`. O que interessa aqui é o que ele decide:
@@ -873,16 +877,13 @@ disso. É o `TEXTO_MAX` do §1.4.
   7%. E o teto de **vazão** dele, que é o número grande: **2,48×–2,99×**. §11.
 * ~~**A trava por tabela.**~~ **Respondida em 04/09**: ≈1,00× nas quatro
   medições (0,96 · 0,99 · 1,04 · 0,90). Não é a tabela que serializa. §11.
-* ~~**O perfil de carga real.**~~ **MEDIDO em 04/09, §13:** o teto do `RwLock`
-  fica em **~2,0×** com o `varrer` em limite 1, 10, 50 e 200 — uma faixa de
-  200× no número de linhas —, porque **o formato da leitura não muda o custo
-  dela**. A ressalva da §3.1 se aposenta, e pelo motivo errado: o alvo dela
-  estava certo (a leitura segura a trava ~20× mais) e a causa, não.
-* **Onde vão os ~4,8 ms dentro do caminho de LEITURA.** Achado ao fechar o
-  item acima: `inserir` paga trava global, `open` e caminho de escrita por
-  231 µs, e `varrer` de UMA linha custa 5.000 µs. Não é soquete, JSON,
-  despacho, trava nem `open` — o `inserir` paga todos. **Não medido, e não
-  estimado**; o `onde-doi-no-varrer` responde outra pergunta. §13.4.
+* **O perfil de carga real.** A §3.1 mostra que a resposta muda com a razão
+  entre o tempo de leitura e o de escrita. **Continua por medir**: a tentativa
+  de 04/09 mandava um campo que o servidor não lê (`limite` em vez de `max`) e
+  mediu quatro vezes a mesma leitura de 1.000 linhas — retratada na §13, com o
+  alcance na §14. O instrumento está consertado; a medição, refeita, é a §15.
+  E a ressalva sai **fortalecida**: com 1.000 linhas contra 1, os «20× a mais»
+  da leitura estão inteiramente explicados.
 * ~~**O custo do `fsync` sob a trava, em milissegundos.**~~ **Medido em 03/09**:
   1.267–1.371 µs por gravação, 10,3× a 12,3× o tempo de trava de uma gravação
   sem ele. §7.1 aqui, e a bateria inteira na §14.1 do `DESEMPENHO.md`.
@@ -1108,6 +1109,8 @@ e com paciência para repetir até o `quieta.Vigia` aceitar.
 
 ## 11. O teto do MVCC e o do `RwLock`, MEDIDOS (04/09) — e o do MVCC morre no ruído
 
+> **Correção de 04/09 (§14):** onde este trecho diz «`varrer` de 50 linhas», a leitura medida era de **1.000** — a bancada mandava o campo `limite`, que o `op_varrer` não lê. As razões continuam valendo; o rótulo, não.
+
 A §8 listava os dois primeiros itens como **«não medido, e não estimado — o
 arnês mede; falta a máquina parada»**. A máquina parou às 06:03 de 04/09, e
 duas baterias limpas saíram — o `quieta.Vigia` aprovando as duas, como a §7.1
@@ -1207,6 +1210,8 @@ impede a mesma ideia de voltar sem medição.*
 
 ## 12. O comboio do fecho de janela, MEDIDO (04/09) — e ele é real
 
+> **Correção de 04/09 (§14):** onde este trecho diz «`varrer` de 50 linhas», a leitura medida era de **1.000** — a bancada mandava o campo `limite`, que o `op_varrer` não lê. As razões continuam valendo; o rótulo, não.
+
 A §8 deixou isto **nomeado e não medido**, e era a última hipótese em pé
 apontando para as 23 seções de `fsync` no padrão `por_lote`. Está medido, em
 duas baterias limpas (07:22 e 07:31), com o `quieta.Vigia` aprovando as duas.
@@ -1293,78 +1298,91 @@ em pedaços mexe nessa ordem, e é decisão de formato e durabilidade — do pap
 
 ---
 
-## 13. A ressalva da §3.1, medida (04/09) — e ela se aposenta pelo motivo errado
+## 13. RETRATADA — a medição não mediu o que dizia medir
 
-A §3.1 carrega desde 03/09 a ressalva que impede generalizar tudo o que veio
-depois dela:
+**Publicada às 07:25 de 04/09 e retirada às 07:52, pelo autor.** Ela dizia:
 
-> «Os números comparam um `varrer` de **50 linhas** contra um `inserir` de
-> uma. Nessa forma a leitura custa 20× mais por operação e portanto segura a
-> trava 20× mais tempo — o que **favorece o `RwLock` por construção**. Isso não
-> invalida a medição; invalida generalizá-la.»
+> «O teto do `RwLock` fica em ~2,0× com o `varrer` em limite 1, 10, 50 e 200 —
+> uma faixa de 200× no número de linhas — porque *o formato da leitura não muda
+> o custo dela*. A ressalva da §3.1 se aposenta.»
 
-Duas baterias limpas (07:48 e 07:57), com o `quieta.Vigia` aprovando as duas.
-Varia-se **uma** coisa — quanto trabalho uma leitura faz — com a escrita parada
-em `inserir` de uma linha. Corridas cruas em `corridas/perfil-*`.
+**O medidor mandava um campo que o servidor não lê.** O `op_varrer` pega o
+tamanho da página em `Servidor::limite(p)`, que lê **`max`**; a bancada mandava
+**`limite`**, que não existe nesse pedido. Toda leitura caía no teto de
+configuração (`max_linhas`, padrão **1.000**). As quatro «variações» custaram
+o mesmo porque **eram a mesma leitura**.
 
-### 13.1 O teto do `RwLock` não se mexe
+Provado com o servidor de pé, tabela de 1.500 linhas:
 
-| `varrer` com limite | 1 | 10 | 50 | 200 |
-|---|---:|---:|---:|---:|
-| A · razão ler/gravar | 21,7× | — | 23,8× | — |
-| B · razão ler/gravar | 20,5× | 20,9× | 20,6× | **20,3×** |
-| B · teto do `RwLock` | 2,00× | 2,01× | 2,01× | **2,11×** |
+| pedido | linhas devolvidas |
+|---|---:|
+| `"limite": 1` | **1000** |
+| `"limite": 50` | **1000** |
+| `"limite": 200` | **1000** |
+| `"max": 1` | 1 |
+| `"max": 50` | 50 |
+| `"max": 200` | 200 |
+| nada | 1000 |
 
-**A ressalva se aposenta — e não do jeito que ela temia.** Ela supunha que o
-teto dependia do formato da leitura, e que uma carga de leitura barata o
-derrubaria. Medido: o teto fica em ~2,0× ao longo de uma faixa de **200× no
-número de linhas lidas**, porque *o formato da leitura não muda o custo dela*.
+**O pedido 182 morre junto.** Ele perguntava «onde vão os ~4,8 ms dentro do
+caminho de leitura», e não há mistério: os 5 ms são **mil linhas** lidas,
+convertidas em JSON e mandadas pelo fio. O `--example onde-doi-na-leitura`,
+escrito para caçá-los, mediu **44 µs** para `abrir + pagina + ler` com uma
+linha e **513 µs** com duzentas — as linhas custam, e quase linearmente. Era a
+bancada de rede que não pedia o que dizia pedir.
 
-**O alvo da §3.1 estava certo e a causa, errada:** a leitura de fato segura a
-trava ~20× mais que a escrita — isso se confirma. Só que **não é por causa das
-50 linhas**, e por isso não existe a «carga de leitura barata» que a ressalva
-imaginava como contraexemplo. É a terceira vez que esta casa encontra o par
-*alvo certo, causa errada* (o pedido 113 e a §12.1 são as outras duas).
+**Como apareceu:** não pela bancada, que era coerente consigo mesma e passou no
+vigia duas vezes. Apareceu porque o medidor **em processo** discordou dela —
+lá dentro 200 linhas custavam 11,6× uma linha, e pela rede custavam o mesmo.
+*Dois instrumentos que discordam é uma sorte: um deles está errado e agora se
+sabe disso.*
 
-### 13.2 O que a comparação estreita, sem precisar de instrumento novo
+---
 
-Os três caminhos, medidos na mesma bateria, pagam coisas em cascata:
+## 14. O alcance do campo errado — quatro bancadas, e o rótulo que ninguém conferiu
 
-| operação | A | B | o que ela paga |
-|---|---:|---:|---|
-| `ping` | 97 µs | 92 µs | soquete + JSON + despacho, **sem** a trava de dados |
-| `inserir` 1 linha | 231 µs | 245 µs | tudo isso **+ trava global + abrir a tabela + gravar** |
-| `varrer` limite 1 | 5.000 µs | 5.025 µs | tudo isso + ler **uma** linha |
-| `varrer` limite 200 | — | 4.975 µs | tudo isso + ler **duzentas** |
+O defeito da §13 não era só meu: **os quatro medidores de concorrência
+mandavam `"limite"`**, e três deles são de 03/09.
 
-O `inserir` paga a trava global, a abertura da tabela e um caminho de escrita
-inteiro por **231 µs**. O `varrer` de **uma** linha paga as mesmas coisas e
-custa **5.000 µs**. Então os ~4,8 ms de diferença **não são** do soquete, nem
-do JSON, nem do despacho, nem da trava, nem do `open` — o `inserir` paga todos
-eles e custa 231 µs. Estão **dentro do caminho de leitura**, e não crescem com
-as linhas.
+| medidor | mandava | lia de verdade |
+|---|---|---:|
+| `a-trava-serializa.py` | `"limite": 50` | 1.000 linhas |
+| `quanto-a-trava-fica-presa.py` | `"limite": 50` | 1.000 linhas |
+| `escolher-o-desenho.py` | `"limite": 50` | 1.000 linhas |
+| `o-comboio-do-fecho.py` | `"limite": 50` | 1.000 linhas |
+| `bancada/bateria/prova-bateria.py` | `"max": 500` | **500 — certo** |
 
-### 13.3 E NÃO é o defeito que a §1.4 já conhece
+A bateria de ponta a ponta sempre mandou `max`. **A família da concorrência
+inteira mandava `limite`** — e como todas mandavam o mesmo, nenhuma discordava
+de nenhuma, e o rótulo «`varrer` de 50 linhas» atravessou seis seções deste
+documento sem que ninguém tivesse motivo para conferi-lo.
 
-A §1.4 mostrou que o caminho **por índice** lê a tabela inteira e recorta a
-página depois, e que por isso o custo cresce com a tabela e não com a página.
-Seria natural ler esta seção como a mesma coisa por outra porta. **Não é.**
+### 14.1 O que isto muda no que já está publicado
 
-O `varrer` desta bancada não manda `indice`, nem `depois`/`antes`, nem
-`desde_rownum`, e `pular` fica em 0 — então o `op_varrer` cai no **último**
-ramo, `pagina_por_posicao`, que é justamente o caminho **bom**, o que bisseta
-pelo `rownum`. O defeito da §1.4 está no ramo que esta medição não tocou.
+**As razões continuam valendo; os RÓTULOS não.** Cada bateria comparou curvas
+medidas com a mesma leitura, então os tetos são comparações honestas entre
+desenhos. O que estava errado é *qual carga* elas descrevem:
 
-### 13.4 O que fica NOMEADO e não medido
+| seção | dizia | é |
+|---|---|---|
+| §3.1 | «um `varrer` de **50 linhas**» | de **1.000** |
+| §7.1 | «trava presa LENDO (`varrer` 50)» | `varrer` de 1.000 |
+| §11 | tetos com leitura de 50 | com leitura de 1.000 |
+| §12 | o leitor do comboio, 50 | 1.000 |
 
-**Onde vão os ~4,8 ms dentro do caminho de leitura.** Não se estima aqui, e o
-medidor que parece servir **não serve**: o `--example onde-doi-no-varrer`
-responde outra pergunta — quanto de uma consulta **filtrada** de 2.500 linhas é
-varredura e quanto é transporte. Aqui a página tem **uma** linha e o custo já
-está inteiro.
+E há uma consequência que **fortalece** a ressalva da §3.1 em vez de aposentá-la:
+ela dizia que a forma escolhida favorece o `RwLock` por construção, porque a
+leitura segura a trava ~20× mais que a escrita. Com 1.000 linhas contra 1, os
+20× estão **inteiramente explicados** — e a ressalva vale mais, não menos.
+**A §13 tentou aposentá-la e o que aconteceu foi o contrário.**
 
-E vale dizer por que este item importa mais do que parece: com 3,1 ms de trava
-presa por leitura (§7.1) e a leitura sendo o que segura a trava, **qualquer
-desenho de trava — `RwLock` ou MVCC — está dividindo um bolo que talvez não
-precisasse existir.** O teto de 2,0× do `RwLock` é o teto de *tolerar* esses
-5 ms; encurtá-los mexe no numerador.
+### 14.2 O conserto, e o que ele deliberadamente NÃO faz
+
+Os cinco medidores passam a mandar `max`. O `escolher-o-desenho.py` ganha
+`LINHAS_LIDAS`, com padrão **1.000** — e o padrão é 1.000 **de propósito**:
+é o que as baterias de 03/09 e 04/09 mediram de fato, e trocar o número junto
+com o campo tornaria toda corrida nova incomparável com as publicadas. Quem
+quiser o perfil de leitura curta manda `LINHAS_LIDAS=50`.
+
+*Consertar o instrumento e mudar a régua no mesmo commit é perder a série.*
+

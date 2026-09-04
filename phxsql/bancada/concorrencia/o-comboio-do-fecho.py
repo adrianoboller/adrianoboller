@@ -145,7 +145,7 @@ def trabalhador(papel, tabela, porta, segundos, fila):
     c = Cliente(porta)
     c.call({"op": "login", "usuario": "root", "senha": SENHA})
     if papel == "ler":
-        p = {"op": "varrer", "database": "t", "tabela": tabela, "limite": 50}
+        p = {"op": "varrer", "database": "t", "tabela": tabela, "max": 50}
     else:
         p = {"op": "inserir", "database": "t", "tabela": tabela,
              "linha": {"nome": "x"}}

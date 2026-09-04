@@ -129,7 +129,7 @@ def pedido(perfil, limite):
         return {"op": "ping"}
     if perfil == "ler":
         return {"op": "varrer", "database": "t", "tabela": "c",
-                "limite": limite}
+                "max": limite}
     return {"op": "inserir", "database": "t", "tabela": "c",
             "linha": {"nome": "x"}}
 

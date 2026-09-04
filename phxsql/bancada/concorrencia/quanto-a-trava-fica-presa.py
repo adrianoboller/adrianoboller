@@ -180,7 +180,7 @@ def uma_bateria(durabilidade, porta, base, vigia):
 
         t0 = time.monotonic()
         for _ in range(LEITURAS):
-            c.call({"op": "varrer", "database": "t", "tabela": "c", "limite": 50})
+            c.call({"op": "varrer", "database": "t", "tabela": "c", "max": 50})
         leu_s = time.monotonic() - t0
         no_fim = int(acha(c.call({"op": "telemetria"}), "trava_ms") or 0)
 
