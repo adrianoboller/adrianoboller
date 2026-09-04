@@ -486,6 +486,70 @@ class Questionario(unittest.TestCase):
         md = (saida / "estoque-codigo.md").read_text()
         self.assertIn("OCR_REQUERIDO", md); self.assertIn("Nada foi inventado aqui", md)
 
+    def test_comando_nao_cita_subcomando_que_nao_existe(self):
+        """Comando que manda rodar um subcomando inexistente so falha na hora do uso.
+        Este teste le o --help de cada script e confere a PRIMEIRA palavra depois do
+        script em cada linha que e mesmo um comando (comeca com python3). Achado
+        assim: /wx-claude-code:licenca dizia 'conferir' e 'ativar', que nunca
+        existiram."""
+        import shlex
+        subs = {}
+        for s_ in (RAIZ / "skills/conversao-wx/scripts").glob("*.py"):
+            h = subprocess.run([sys.executable, str(s_), "--help"], capture_output=True, text=True, timeout=60).stdout
+            m = re.search(r"\{([a-z0-9_,\-]+)\}", h)
+            subs[s_.name] = set(m.group(1).split(",")) if m else set()
+        problemas = []
+        conferidos = 0
+        for cmd in sorted((RAIZ / "commands").glob("*.md")):
+            for linha in cmd.read_text().splitlines():
+                # so linha de comando de verdade; prosa que cita um script nao conta
+                m = re.match(r'\s*python3\s+"?\$\{CLAUDE_PLUGIN_ROOT\}[^"\s]*/(\w+\.py)"?(.*)$', linha)
+                if not m:
+                    continue
+                script, resto = m.group(1), m.group(2)
+                if script not in subs:
+                    problemas.append(f"{cmd.name}: {script} nao existe no plugin")
+                    continue
+                if not subs[script]:
+                    continue
+                conferidos += 1
+                try:
+                    tokens = shlex.split(resto.replace("\\", " "), comments=False)
+                except ValueError:
+                    tokens = resto.split()
+                # o subcomando e o primeiro token que nao e opcao NEM valor de opcao:
+                # em `--project-root . resumo`, o subcomando e `resumo`, nao o ponto
+                primeiro = None
+                pular = False
+                for tok in tokens:
+                    if pular:
+                        pular = False
+                        continue
+                    if tok.startswith("-"):
+                        pular = "=" not in tok
+                        continue
+                    if tok.startswith("<"):
+                        continue
+                    primeiro = tok
+                    break
+                if primeiro and primeiro not in subs[script] and not primeiro.startswith("$"):
+                    problemas.append(f"{cmd.name}: {script} nao tem subcomando {primeiro!r} (tem: {', '.join(sorted(subs[script]))})")
+        self.assertGreater(conferidos, 5, "o teste nao achou linha de comando nenhuma; a heuristica quebrou")
+        self.assertEqual(problemas, [], "\n".join(problemas))
+
+    def test_licenca_continua_ligada_nos_hooks(self):
+        """A chave nao pode sumir numa refatoracao: o hook de sessao e o de ferramenta
+        continuam chamando a licenca, e a chave publica esta no pacote."""
+        hooks = json.loads((RAIZ / "hooks" / "hooks.json").read_text())
+        chamadas = json.dumps(hooks)
+        self.assertIn("licenca.py\\\" hook", chamadas)
+        self.assertIn("licenca.py\\\" hook-sessao", chamadas)
+        chave = json.loads((RAIZ / "licenca" / "chave-publica.json").read_text())
+        self.assertEqual(chave["algoritmo"], "RSA-2048/SHA-256")
+        self.assertGreater(int(str(chave["n"]), 16).bit_length(), 2040)
+        r = run(SCRIPTS / "licenca.py", "maquina")
+        self.assertEqual(r.returncode, 0, r.stderr)
+
     def test_skills_erp_presentes_com_descricao_curta(self):
         for nome in ("php-legado-e-destino", "pdf-para-markdown", "erp-accounting", "erp-inventory", "erp-brazil-fiscal", "erp-multi-company", "erp-approval-workflows", "erp-lgpd", "erp-integration-reliability", "windev-wlanguage-erp"):
             txt = (RAIZ / "skills" / nome / "SKILL.md").read_text()

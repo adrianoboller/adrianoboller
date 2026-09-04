@@ -7,9 +7,12 @@ allowed-tools: "Read, Glob, Grep, Bash"
 # Licença
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/licenca.py" conferir
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/licenca.py" ativar --serial "$2"
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/licenca.py" verificar
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/licenca.py" instalar "$2"
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/licenca.py" maquina
 ```
+
+`verificar` diz se há licença válida e até quando; `instalar <serial>` grava a licença; `maquina` mostra a impressão desta máquina, que é o que o cliente manda para receber o serial. `gerar` e `chaves` são do lado de quem emite, não do cliente.
 
 O serial é assinado (RSA-2048) e amarrado à máquina; alterado, vencido ou de outra máquina, é recusado, e o hook recusa os scripts do plugin.
 
