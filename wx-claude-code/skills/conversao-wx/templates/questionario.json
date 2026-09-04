@@ -458,6 +458,56 @@
         "api_key_ref": "PROJETO_API_KEY"
       },
       "observacao": "modo: docker | npm | cloud; banco.tipo: postgresql | sqlite; webhooks: [{nome, caminho, metodo, o_que_faz}]; fluxos_iniciais: [{nome, gatilho, acao}]; senhas e chaves so por nome de variavel"
+    },
+    "K8_backup_e_replicacao": {
+      "ativar": true,
+      "backup": {
+        "ferramenta": "",
+        "tipo": "completo+incremental",
+        "frequencia": "diaria",
+        "hora": "02:00",
+        "retencao_dias": 30,
+        "retencao_mensal_meses": 12,
+        "destino": "",
+        "caminho_ou_bucket": "",
+        "fora_do_servidor": true,
+        "cifrado": true,
+        "chave_ref": "BACKUP_ENCRYPTION_KEY",
+        "credencial_destino_ref": "",
+        "compressao": "zstd",
+        "inclui_arquivos": true,
+        "teste_de_restauracao": "mensal",
+        "restauracao_testada_em": "",
+        "janela_de_manutencao": "",
+        "responsavel": "",
+        "alerta_em_falha": {
+          "canal": "",
+          "destino_ref": ""
+        }
+      },
+      "replicacao": {
+        "ativar": false,
+        "tipo": "nenhuma",
+        "sincrona": false,
+        "replicas": [],
+        "lag_maximo_segundos": 30,
+        "failover": "manual",
+        "ferramenta_de_failover": "nenhum",
+        "monitoramento": "",
+        "responsavel": ""
+      },
+      "objetivos": {
+        "rpo_minutos": 60,
+        "rto_minutos": 240,
+        "observacao": ""
+      },
+      "legado": {
+        "como_e_hoje": "",
+        "backup_do_hfsql": "",
+        "o_que_nao_pode_parar": "",
+        "ja_perdeu_dado": ""
+      },
+      "observacao": "backup.ferramenta: pg_dump | pgbackrest | barman | wal-g | mysqldump | xtrabackup | mariabackup | nativo; tipo: completo | completo+incremental | continuo-wal; frequencia: horaria | diaria | semanal; destino: local | nfs | s3 | b2 | ftp | fita | outro; teste_de_restauracao: semanal | mensal | trimestral | nunca; replicacao.tipo: streaming | logica | mestre-escravo | mestre-mestre | galera | nenhuma; failover: manual | automatico; ferramenta_de_failover: patroni | repmgr | orchestrator | nenhum; replicas: [{nome, host, papel, regiao}] com papel primaria | leitura | espera; rpo: quanto dado se aceita perder, em minutos; rto: quanto tempo se aceita ficar fora, em minutos; senha e chave SO por nome de variavel (chave_ref, credencial_destino_ref, alerta.destino_ref)"
     }
   },
   "L_contexto_e_implantacao": {

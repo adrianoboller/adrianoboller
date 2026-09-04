@@ -121,6 +121,19 @@ Ele imprime a versão instalada de cada ferramenta pedida contra a mínima, e de
 
 Com L6 = sim, cada módulo do 0.8 ganha `docs/domain/<módulo>.md` e `src/<módulo>/` e o `CLAUDE.md` diz qual das oito skills `erp-*` do plugin orienta aquele módulo (contabilidade → `erp-accounting`, estoque → `erp-inventory`, fiscal → `erp-brazil-fiscal`…); nada disso é sobrescrito ao reaplicar. Índice das skills em `skills/LEIA-ME-erp.md`. O esqueleto inclui STRIDE, OpenAPI, AsyncAPI, ERD, dicionário de dados e runbooks, e `docs/skills-recomendadas.md` lista as skills externas do skills.sh que cabem nas respostas (o plugin não as instala).
 
+**K8) Backup e replicação.** Fecha a letra K, e é a pergunta que mais gente esquece de fazer antes de virar um sistema. Pergunte por partes, uma de cada vez:
+
+| Parte | O que perguntar |
+| --- | --- |
+| Objetivos | **RPO** (quanto dado a empresa aceita perder, em minutos) e **RTO** (quanto tempo aceita ficar fora do ar). Se o usuário não souber, pergunte: «se o banco morresse agora, quanto de trabalho pode ser refeito à mão?» |
+| Backup | ferramenta, tipo (completo, completo+incremental, contínuo por WAL/binlog), frequência e hora, destino e caminho, **fora do servidor do banco?**, cifrado (só o NOME da variável da chave), compressão, se inclui anexos e imagens, retenção em dias e em meses |
+| Prova | com que periodicidade a restauração é **testada**, e **a data da última restauração testada de verdade** |
+| Operação | janela de manutenção, responsável, e por qual canal chega o alerta quando o backup falha |
+| Replicação | tem? tipo (streaming, lógica, mestre-escravo, mestre-mestre, galera), síncrona?, lag máximo aceito, réplicas (nome, host, papel, região), failover manual ou automático e com qual ferramenta, monitoramento, responsável |
+| Legado | como é hoje, se o HFSQL tem backup e como, o que não pode parar, e **se já perdeu dado alguma vez** — essa última costuma destravar a conversa inteira |
+
+Duas coisas para dizer, não perguntar: **réplica não é backup** (ela copia o `DROP TABLE` junto), e **backup nunca restaurado é hipótese**. O validador recusa incoerência: RPO menor que a frequência do backup sem WAL contínuo, failover automático sem ferramenta, backup cifrado sem `chave_ref`. Sai em `.wx-migration/ambiente/backup-e-replicacao.md`.
+
 **M) Artefatos e anotações.** Depois de L, e sempre que o cliente mandar algo novo. É o que chega **fora** da evidência do WX: anotação de reunião, PDF com as classes OOP, `.sql` de consultas soltas, modelo de relatório impresso, manual, contrato de API, código PHP, dado de amostra.
 
 | Item | Pergunta | Onde vai parar |

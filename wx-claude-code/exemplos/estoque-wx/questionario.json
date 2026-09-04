@@ -641,6 +641,63 @@
         "api_key_ref": "ESTOQUE_API_KEY"
       },
       "observacao": ""
+    },
+    "K8_backup_e_replicacao": {
+      "ativar": true,
+      "backup": {
+        "ferramenta": "pgbackrest",
+        "tipo": "continuo-wal",
+        "frequencia": "diaria",
+        "hora": "02:00",
+        "retencao_dias": 30,
+        "retencao_mensal_meses": 12,
+        "destino": "s3",
+        "caminho_ou_bucket": "backups-estoque",
+        "fora_do_servidor": true,
+        "cifrado": true,
+        "chave_ref": "BACKUP_ENCRYPTION_KEY",
+        "credencial_destino_ref": "BACKUP_S3_SECRET",
+        "compressao": "zstd",
+        "inclui_arquivos": true,
+        "teste_de_restauracao": "mensal",
+        "restauracao_testada_em": "2026-08-30",
+        "janela_de_manutencao": "domingo 01:00-03:00",
+        "responsavel": "Adriano Boller",
+        "alerta_em_falha": {
+          "canal": "email",
+          "destino_ref": "BACKUP_ALERTA_EMAIL"
+        }
+      },
+      "replicacao": {
+        "ativar": true,
+        "tipo": "streaming",
+        "sincrona": false,
+        "replicas": [
+          {
+            "nome": "estoque-replica-1",
+            "host": "replica1.exemplo.com.br",
+            "papel": "leitura",
+            "regiao": "sp"
+          }
+        ],
+        "lag_maximo_segundos": 30,
+        "failover": "manual",
+        "ferramenta_de_failover": "repmgr",
+        "monitoramento": "lag conferido a cada 5 min pelo healthcheck",
+        "responsavel": "Adriano Boller"
+      },
+      "objetivos": {
+        "rpo_minutos": 15,
+        "rto_minutos": 120,
+        "observacao": "faturamento nao pode perder o dia"
+      },
+      "legado": {
+        "como_e_hoje": "copia manual da pasta do HFSQL para um HD externo, as sextas",
+        "backup_do_hfsql": "HBackup nao usado; copia de arquivo com o sistema fechado",
+        "o_que_nao_pode_parar": "emissao de nota e consulta de saldo",
+        "ja_perdeu_dado": "sim, em 2023: uma semana de movimentacao, por falha do HD externo"
+      },
+      "observacao": ""
     }
   },
   "L_contexto_e_implantacao": {

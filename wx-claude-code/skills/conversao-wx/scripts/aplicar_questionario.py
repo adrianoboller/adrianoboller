@@ -471,6 +471,46 @@ def validar_entradas(q: dict) -> None:
     if (p.get("legado_php") or {}).get("tem") and "php" not in prods:
         raise ValueError("projeto.legado_php.tem = true exige 'php' em projeto.produtos")
     k = q.get("K_ambiente") or {}
+    k8 = k.get("K8_backup_e_replicacao") or {}
+    if k8.get("ativar"):
+        b = k8.get("backup") or {}
+        rep = k8.get("replicacao") or {}
+        for campo, aceitos in (("ferramenta", FERRAMENTAS_BACKUP), ("tipo", {"completo", "completo+incremental", "continuo-wal"}),
+                               ("frequencia", {"horaria", "diaria", "semanal"}), ("destino", DESTINOS_BACKUP),
+                               ("teste_de_restauracao", {"semanal", "mensal", "trimestral", "nunca"})):
+            v = str(b.get(campo) or "").strip().lower()
+            if v and v not in aceitos:
+                raise ValueError(f"K8 backup.{campo} {v!r} desconhecido (aceitos: {', '.join(sorted(aceitos))})")
+        for campo in ("chave_ref", "credencial_destino_ref"):
+            _confere(b.get(campo), RX_VAR, f"K8 backup.{campo}")
+        _confere(((b.get("alerta_em_falha") or {}).get("destino_ref")), RX_VAR, "K8 backup.alerta_em_falha.destino_ref")
+        _confere(b.get("caminho_ou_bucket"), RX_CAMINHO, "K8 backup.caminho_ou_bucket")
+        if b.get("cifrado") and not (b.get("chave_ref") or "").strip():
+            raise ValueError("K8: backup cifrado exige chave_ref (o NOME da variavel, nunca a chave)")
+        for campo in ("retencao_dias", "retencao_mensal_meses"):
+            v = b.get(campo)
+            if v is not None and (not isinstance(v, int) or isinstance(v, bool) or not 0 < v <= 3650):
+                raise ValueError(f"K8 backup.{campo} tem de ser inteiro entre 1 e 3650")
+        if rep.get("ativar"):
+            if str(rep.get("tipo") or "").strip().lower() not in TIPOS_REPLICACAO:
+                raise ValueError(f"K8 replicacao.tipo {rep.get('tipo')!r} desconhecido (aceitos: {', '.join(sorted(TIPOS_REPLICACAO))})")
+            if str(rep.get("failover") or "manual").strip().lower() not in {"manual", "automatico"}:
+                raise ValueError("K8 replicacao.failover: manual | automatico")
+            for r in rep.get("replicas") or []:
+                _confere(r.get("nome"), RX_HOST, "K8 replica.nome", opcional=False)
+                _confere(r.get("host"), RX_HOST, "K8 replica.host", opcional=False)
+                if str(r.get("papel") or "").strip().lower() not in {"primaria", "leitura", "espera"}:
+                    raise ValueError(f"K8 replica {r.get('nome')!r}: papel primaria | leitura | espera")
+            if rep.get("failover") == "automatico" and str(rep.get("ferramenta_de_failover") or "nenhum").lower() == "nenhum":
+                raise ValueError("K8: failover automatico sem ferramenta_de_failover nao existe; escolha patroni, repmgr ou orchestrator")
+        obj = k8.get("objetivos") or {}
+        for campo in ("rpo_minutos", "rto_minutos"):
+            v = obj.get(campo)
+            if v is not None and (not isinstance(v, int) or isinstance(v, bool) or v < 0):
+                raise ValueError(f"K8 objetivos.{campo} tem de ser inteiro em minutos")
+        if isinstance(obj.get("rpo_minutos"), int) and str(b.get("frequencia") or "").lower() == "diaria" and obj["rpo_minutos"] < 1440 \
+                and str(b.get("tipo") or "").lower() != "continuo-wal":
+            raise ValueError(f"K8: RPO de {obj['rpo_minutos']} min nao cabe em backup diario; use continuo-wal (WAL/binlog) ou aumente o RPO")
     k0 = k.get("K0_privilegios") or {}
     if k0.get("modo") not in (None, "", "sudo", "root", "nenhum"):
         raise ValueError(f"K0 modo {k0.get('modo')!r} desconhecido (sudo | root | nenhum)")
@@ -754,12 +794,13 @@ ROTULOS = {
     "B_pdf_codigos": "B · PDF dos códigos", "C_pdf_interfaces": "C · PDF das interfaces", "D_pdf_queries": "D · PDF das queries",
     "E_pdf_completo": "E · PDF completo", "F_estilo_impeccable": "F · Qualidade das telas (Impeccable)", "G_help_json": "G · Help WLanguage em JSON",
     "H_backend": "H · Backend de destino", "I_frontend": "I · Frontend de destino", "J_economia_de_tokens": "J · Economia de tokens", "K_ambiente": "K · Ambiente e ferramentas", "L_contexto_e_implantacao": "L · Contexto do Claude Code e implantação",
+    "M_artefatos": "M · Artefatos e anotações submetidos",
 }
 
 
 def _humano(chave: str) -> str:
     chave = re.sub(r"^0_(\d+)_", lambda m: f"0.{m.group(1)} ", chave)
-    chave = re.sub(r"^F(\d+)_", lambda m: f"F{m.group(1)} ", chave)
+    chave = re.sub(r"^([FKL])(\d+)_", lambda m: f"{m.group(1)}{m.group(2)} ", chave)
     return chave.replace("_", " ").strip()
 
 
@@ -801,12 +842,51 @@ def _escalar(v) -> str:
     return str(v)
 
 
+def _indice_por_id(q: dict) -> list[str]:
+    """Indice id -> pergunta -> estado. Serve para o agente achar sem ler tudo,
+    e para ver de relance o que ainda nao foi respondido."""
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from listar_perguntas import perguntas  # noqa: E402
+        itens = perguntas()
+    except Exception:  # sem o modelo por perto, o indice some, o resto fica
+        return []
+    L = ["## Índice por id", "",
+         "| id | pergunta | respondido |", "| --- | --- | --- |"]
+    for i in itens:
+        no = q
+        for parte in i["caminho"].split("."):
+            no = (no or {}).get(parte) if isinstance(no, dict) else None
+        resp = "—"
+        if isinstance(no, dict):
+            resp = "sim" if any(_tem_valor(v) for k, v in no.items() if not k.startswith("observacao")) else "não"
+        elif no is not None:
+            resp = "sim" if _tem_valor(no) else "não"
+        L.append(f"| `{i['id']}` | {i['titulo']} | {resp} |")
+    L += ["", f"{len(itens)} perguntas. Refaça uma com `/wx-claude-code:pergunta <id>`; a lista completa sai de `listar_perguntas.py`.", ""]
+    return L
+
+
+def _tem_valor(v) -> bool:
+    if isinstance(v, bool):
+        return True
+    if v is None:
+        return False
+    if isinstance(v, (list, dict)):
+        return len(v) > 0
+    return str(v).strip() != ""
+
+
 def respostas_md(q: dict, vazados_removidos: bool = False) -> str:
     p = q.get("projeto", {}) or {}
     ap = (q.get("0_empresa_e_projeto", {}) or {}).get("0_16_aprovador", {}) or {}
     L = ["# Respostas do questionário", "",
          f"Projeto **{p.get('nome') or '(sem nome)'}** · respondido em {q.get('respondido_em') or '(sem data)'} · gerado por `aplicar_questionario.py` de `.wx-migration/questionario.json`.",
          "Este arquivo é regravado a cada aplicação do questionário; para mudar uma resposta, edite o `questionario.json` e reaplique.", "",
+         "> **Para os agentes:** toda resposta do questionário está aqui, e cada seção traz o id da pergunta.",
+         "> Antes de perguntar qualquer coisa ao usuário, **procure aqui pelo id** (`0.16` aprovador, `F0` tela modelo, `H` destino, `K8` backup, `L6` esqueleto de ERP, `M` artefatos).",
+         "> Perguntar de novo o que já foi respondido é o erro mais caro do fluxo. Resposta vazia significa **não respondido** — aí sim pergunte, e só aquele item, com `/wx-claude-code:pergunta <id>`.", ""] + \
+        _indice_por_id(q) + [
          "## Aprovador", "",
          f"- Nome: **{ap.get('nome') or p.get('aprovador') or '(pendente)'}**",
          f"- Cargo: {_escalar(ap.get('cargo'))}", f"- E-mail: {_escalar(ap.get('email'))}",
@@ -816,6 +896,11 @@ def respostas_md(q: dict, vazados_removidos: bool = False) -> str:
         if chave in ("schema_version", "respondido_em") or not isinstance(valor, (dict, list)):
             continue
         L += [f"## {ROTULOS.get(chave, chave)}", ""] + _render(valor, 0) + [""]
+    L += ["## Onde mais procurar", "",
+          "- `.wx-migration/questionario.json` — as respostas cruas, para editar.",
+          "- `.wx-migration/ambiente/backup-e-replicacao.md` — o plano de backup e replicação (K8) por extenso.",
+          "- `artefatos/CATALOGO.md` — o que o cliente mandou por fora (M), com onde usar e hash.",
+          "- `INDEX_FILES.md` — o mapa de todos os arquivos do projeto.", ""]
     L += ["## Segredos", "", "Senhas e tokens nunca entram no questionário nem neste arquivo: o `0.15` guarda só o nome da credencial (`credencial_ref`).", ""]
     return "\n".join(L)
 
@@ -825,6 +910,10 @@ def respostas_md(q: dict, vazados_removidos: bool = False) -> str:
 # de banco em SQL e um .env.exemplo SEM valores. A senha do root e de cada
 # papel vive na variavel de ambiente nomeada em senha_ref; nunca aqui.
 # ---------------------------------------------------------------------------
+
+FERRAMENTAS_BACKUP = {"pg_dump", "pgbackrest", "barman", "wal-g", "mysqldump", "xtrabackup", "mariabackup", "nativo"}
+DESTINOS_BACKUP = {"local", "nfs", "s3", "b2", "ftp", "fita", "outro"}
+TIPOS_REPLICACAO = {"streaming", "logica", "mestre-escravo", "mestre-mestre", "galera", "nenhuma"}
 
 NIVEIS_PG = {
     "superuser": "SUPERUSER",
@@ -1033,6 +1122,80 @@ def n8n_integracao_md(k7: dict) -> str:
     return "\n".join(L)
 
 
+def plano_de_backup(k8: dict, nome_do_projeto: str) -> str:
+    """Plano de backup e replicacao (K8), do jeito que foi respondido.
+
+    Escrito para ser lido na hora ruim: o que roda, onde cai, com que chave e,
+    o que mais falta em plano de backup, **quando foi a ultima restauracao
+    testada**. Backup nunca restaurado e hipotese, nao backup."""
+    b = k8.get("backup") or {}
+    r = k8.get("replicacao") or {}
+    o = k8.get("objetivos") or {}
+    leg = k8.get("legado") or {}
+    al = b.get("alerta_em_falha") or {}
+    rpo = o.get("rpo_minutos")
+    rto = o.get("rto_minutos")
+    testada = str(b.get("restauracao_testada_em") or "").strip()
+    cif = f"sim, chave em `{b.get('chave_ref') or '?'}`" if b.get("cifrado") else "**nao**"
+    fora = "sim" if b.get("fora_do_servidor") else "**nao** - um incendio leva o banco e o backup juntos"
+    L = [f"# Backup e replicacao - {nome_do_projeto}", "",
+         "Gerado do item **K8** do questionario por `aplicar_questionario.py`. Para mudar, refaca a pergunta com `/wx-claude-code:pergunta K8` e reaplique.", "",
+         "## Objetivos declarados", "",
+         f"- **RPO {rpo if rpo is not None else '(nao informado)'} min**: quanto dado a empresa aceita perder.",
+         f"- **RTO {rto if rto is not None else '(nao informado)'} min**: quanto tempo aceita ficar fora do ar.",
+         f"- {o.get('observacao') or 'sem observacao'}", "",
+         "## Backup", "", "| item | resposta |", "| --- | --- |",
+         f"| ativo | {'sim' if k8.get('ativar') else 'nao'} |",
+         f"| ferramenta | {b.get('ferramenta') or '(a definir)'} |",
+         f"| tipo | {b.get('tipo') or '(a definir)'} |",
+         f"| frequencia | {b.get('frequencia') or '(a definir)'}" + (f" as {b['hora']}" if b.get("hora") else "") + " |",
+         f"| destino | {b.get('destino') or '(a definir)'}" + (f" - {b['caminho_ou_bucket']}" if b.get("caminho_ou_bucket") else "") + " |",
+         f"| fora do servidor do banco | {fora} |",
+         f"| cifrado | {cif} |",
+         f"| compressao | {b.get('compressao') or 'nenhuma'} |",
+         f"| inclui arquivos (anexos, imagens) | {'sim' if b.get('inclui_arquivos') else 'nao, so o banco'} |",
+         f"| retencao | {b.get('retencao_dias') or '?'} dias, {b.get('retencao_mensal_meses') or '?'} meses de mensais |",
+         f"| teste de restauracao | {b.get('teste_de_restauracao') or 'nunca'} |",
+         f"| ultima restauracao testada | {testada or '**nunca** - enquanto for isso, o backup e hipotese'} |",
+         f"| janela de manutencao | {b.get('janela_de_manutencao') or '(nao informada)'} |",
+         f"| responsavel | {b.get('responsavel') or '(nao informado)'} |",
+         f"| alerta em falha | {al.get('canal') or 'nenhum'} para `{al.get('destino_ref') or '-'}` |", "",
+         "Senha e chave aparecem aqui **so pelo nome da variavel**; os valores ficam no `.env`, fora do repositorio.", "",
+         "## Replicacao", ""]
+    if not r.get("ativar"):
+        L += ["Nao ha replicacao nesta entrega. Consequencia declarada: a queda do banco derruba o sistema, e a volta depende do backup. O RTO acima e o do restore, nao o de um failover.", ""]
+    else:
+        ff = r.get("ferramenta_de_failover")
+        L += ["| item | resposta |", "| --- | --- |",
+              f"| tipo | {r.get('tipo')} |",
+              f"| sincrona | {'sim (nenhuma transacao confirmada se perde; escrita mais lenta)' if r.get('sincrona') else 'nao (perda possivel igual ao lag)'} |",
+              f"| lag maximo aceito | {r.get('lag_maximo_segundos')} s |",
+              f"| failover | {r.get('failover')}" + (f" com {ff}" if ff and ff != "nenhum" else "") + " |",
+              f"| monitoramento | {r.get('monitoramento') or '(nao informado)'} |",
+              f"| responsavel | {r.get('responsavel') or '(nao informado)'} |", "",
+              "| replica | host | papel | regiao |", "| --- | --- | --- | --- |"]
+        linhas = [f"| {x.get('nome','')} | `{x.get('host','')}` | {x.get('papel','')} | {x.get('regiao','')} |" for x in (r.get("replicas") or [])]
+        L += linhas or ["| (nenhuma declarada) | | | |"]
+        L.append("")
+        if not r.get("sincrona"):
+            L += ["Replica assincrona nao e backup: ela copia o `DROP TABLE` junto, em segundos. Quem protege de erro humano e o backup acima.", ""]
+    L += ["## Como era no legado", "",
+          f"- Hoje: {leg.get('como_e_hoje') or '(nao informado)'}",
+          f"- Backup do HFSQL: {leg.get('backup_do_hfsql') or '(nao informado)'}",
+          f"- O que nao pode parar: {leg.get('o_que_nao_pode_parar') or '(nao informado)'}",
+          f"- Ja perdeu dado: {leg.get('ja_perdeu_dado') or '(nao informado)'}", "",
+          "Isto entra na migracao: a virada (G7) so acontece com backup do legado feito e **restaurado num ambiente separado**, nao so copiado.", "",
+          "## O que ainda falta fazer", "",
+          "- [ ] Escrever o script em `scripts/backup/` com a ferramenta escolhida.",
+          "- [ ] Rodar uma restauracao completa num banco vazio e anotar a data em `K8.backup.restauracao_testada_em`.",
+          "- [ ] Ligar o alerta de falha e provocar uma falha para ver se ele chega.",
+          "- [ ] Medir quanto tempo a restauracao leva de verdade e comparar com o RTO declarado."]
+    if r.get("ativar"):
+        L.append("- [ ] Testar o failover fora do horario comercial e cronometrar.")
+    L.append("")
+    return "\n".join(L)
+
+
 def esboco_ambiente(k: dict, e: dict) -> str:
     def sim(b): return "sim" if b else "não"
     k1, k2, k3, k4, k5, k6 = (k.get(x, {}) or {} for x in ("K1_rust", "K2_postgresql", "K3_mysql", "K4_mariadb", "K5_supabase", "K6_github"))
@@ -1167,6 +1330,7 @@ def index_files(q: dict, projeto: Path) -> str:
         (".wx-migration/entrega.json", "GitHub, branch, usuário, nome da credencial, diretório"),
         (".wx-migration/ambiente.md", "ferramentas pedidas em K e onde a senha de cada uma fica"),
         (".wx-migration/ambiente/instalar-ambiente.sh", "instalador idempotente (sudo/root resolvido em K0)"),
+        (".wx-migration/ambiente/backup-e-replicacao.md", "plano de backup e replicação (K8): RPO, RTO, retenção, e quando a restauração foi testada"),
         (".wx-migration/ambiente/.env.exemplo", "nomes das variáveis; copie para .env fora do repositório"),
         (".wx-migration/ambiente/n8n/integracao.md", "webhooks, fluxos e o que o projeto expõe ao n8n"),
         (".wx-migration/pmo/relatorio.md", "relatório de onze seções do PMO; gerado ao fechar sprint"),
@@ -1343,6 +1507,9 @@ def main() -> int:
         saida += [write_new(wx / "ambiente.md", esboco_ambiente(k, e0)),
                   write_new(amb / "instalar-ambiente.sh", instalador(k, e0)),
                   write_new(amb / ".env.exemplo", env_exemplo(k, e0))]
+        k8 = k.get("K8_backup_e_replicacao") or {}
+        if k8:
+            saida.append(write_new(amb / "backup-e-replicacao.md", plano_de_backup(k8, (q.get("projeto") or {}).get("nome") or "projeto")))
         if (k.get("K2_postgresql", {}) or {}).get("instalar_ou_atualizar"):
             saida.append(write_new(amb / "papeis-postgresql.sql", sql_papeis_postgresql(k["K2_postgresql"])))
         if (k.get("K3_mysql", {}) or {}).get("instalar_ou_atualizar"):

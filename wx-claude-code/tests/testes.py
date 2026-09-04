@@ -76,7 +76,7 @@ class Questionario(unittest.TestCase):
         self.assertIn("Ritmo: modulo a modulo", proc)
         # fluxo + esqueleto ERP (L6) + skills-recomendadas + a pasta de artefatos (M):
         # nada e regravado na segunda aplicacao
-        self.assertEqual(r2.stdout.count("SKIPPED"), 100); self.assertEqual(r2.stdout.count("CREATED"), 0); self.assertIn("UPDATED", r2.stdout)
+        self.assertEqual(r2.stdout.count("SKIPPED"), 101); self.assertEqual(r2.stdout.count("CREATED"), 0); self.assertIn("UPDATED", r2.stdout)
         resp = (self.tmp / ".wx-migration/respostas_questionario.md").read_text()
         self.assertIn("- Nome: **Adriano Boller**", resp); self.assertIn("## H · Backend de destino", resp)
         self.assertIn("0.15 github", resp); self.assertIn("credencial ref: GITHUB_TOKEN", resp)
@@ -342,6 +342,71 @@ class Questionario(unittest.TestCase):
         for p in (RAIZ / "commands").glob("*.md"):
             desc = re.search(r'^description: "?(.+?)"?$', p.read_text(), re.M).group(1)
             self.assertLessEqual(len(desc), 300, f"{p.name}: {len(desc)} caracteres")
+
+    def test_k8_backup_e_replicacao_gera_plano_e_recusa_incoerencia(self):
+        """K8: o plano sai das respostas, senha so por nome de variavel, e o validador
+        recusa RPO que o tipo de backup nao sustenta, failover automatico sem ferramenta
+        e cifrado sem chave_ref."""
+        r = run(SCRIPTS / "aplicar_questionario.py", "--questionario", self.tmp / ".wx-migration/questionario.json", "--project-root", self.tmp, "--plugin-root", RAIZ)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        plano = (self.tmp / ".wx-migration/ambiente/backup-e-replicacao.md").read_text()
+        self.assertIn("**RPO 15 min**", plano); self.assertIn("**RTO 120 min**", plano)
+        self.assertIn("pgbackrest", plano); self.assertIn("estoque-replica-1", plano)
+        self.assertIn("BACKUP_ENCRYPTION_KEY", plano)
+        self.assertIn("Replica assincrona nao e backup", plano)
+        self.assertIn("ultima restauracao testada | 2026-08-30", plano)
+        self.assertNotIn("senha", plano.lower().replace("senha e chave aparecem aqui", ""))
+        self.assertIn("| `.wx-migration/ambiente/backup-e-replicacao.md` |", (self.tmp / "INDEX_FILES.md").read_text())
+        base = json.loads((self.tmp / ".wx-migration/questionario.json").read_text())
+
+        def recusa(muda, esperado):
+            q = json.loads(json.dumps(base)); muda(q["K_ambiente"]["K8_backup_e_replicacao"])
+            f = self.tmp / "k8.json"; f.write_text(json.dumps(q))
+            alvo = self.tmp / "k8out"; alvo.mkdir(exist_ok=True)
+            r = run(SCRIPTS / "aplicar_questionario.py", "--questionario", f, "--project-root", alvo, "--plugin-root", RAIZ)
+            self.assertEqual(r.returncode, 2, r.stdout); self.assertIn(esperado, r.stderr)
+
+        recusa(lambda k8: k8["backup"].__setitem__("tipo", "completo"), "nao cabe em backup diario")
+        recusa(lambda k8: k8["backup"].__setitem__("ferramenta", "rsync-do-primo"), "backup.ferramenta")
+        recusa(lambda k8: k8["backup"].__setitem__("chave_ref", ""), "chave_ref")
+        recusa(lambda k8: k8["replicacao"].__setitem__("ferramenta_de_failover", "nenhum") or k8["replicacao"].__setitem__("failover", "automatico"), "failover automatico")
+        recusa(lambda k8: k8["replicacao"]["replicas"][0].__setitem__("papel", "chefe"), "papel primaria | leitura | espera")
+        recusa(lambda k8: k8["backup"].__setitem__("retencao_dias", 0), "retencao_dias")
+        # senha em texto puro no K8 e recusada pelo filtro de segredos
+        q = json.loads(json.dumps(base)); q["K_ambiente"]["K8_backup_e_replicacao"]["backup"]["senha"] = "SenhaDoBackup123"
+        f = self.tmp / "k8s.json"; f.write_text(json.dumps(q))
+        alvo = self.tmp / "k8s"; alvo.mkdir(exist_ok=True)
+        r = run(SCRIPTS / "aplicar_questionario.py", "--questionario", f, "--project-root", alvo, "--plugin-root", RAIZ)
+        self.assertEqual(r.returncode, 2); self.assertNotIn("SenhaDoBackup123", r.stderr + r.stdout)
+
+    def test_respostas_md_tem_indice_por_id_para_os_agentes(self):
+        """As 60 respostas em md, com indice por id e o estado de cada uma: e o que
+        impede um agente de perguntar de novo o que ja foi respondido."""
+        r = run(SCRIPTS / "aplicar_questionario.py", "--questionario", self.tmp / ".wx-migration/questionario.json", "--project-root", self.tmp, "--plugin-root", RAIZ)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        md = (self.tmp / ".wx-migration/respostas_questionario.md").read_text()
+        self.assertIn("**Para os agentes:**", md)
+        self.assertIn("## Índice por id", md)
+        ids = set(re.findall(r"^\| `([^`]+)` \|", md, re.M))
+        itens = json.loads(run(SCRIPTS / "listar_perguntas.py", "--json").stdout)
+        self.assertEqual(len(itens), 60)
+        for i in itens:
+            self.assertIn(i["id"], ids, i["id"])
+        self.assertIn("60 perguntas.", md)
+        self.assertIn("**K8 backup e replicacao**", md)
+        self.assertIn("`artefatos/CATALOGO.md`", md)
+        self.assertIn("M · Artefatos e anotações submetidos", md)
+        self.assertNotIn("PGPASSWORD=", md)  # so o NOME da variavel, nunca o valor
+        # item esvaziado aparece como nao respondido: e isso que autoriza perguntar de novo
+        q = json.loads((self.tmp / ".wx-migration/questionario.json").read_text())
+        q["L_contexto_e_implantacao"]["L2_prototipacao"] = {"ferramenta": "", "telas_prioritarias": [], "observacao": ""}
+        vazio = self.tmp / "vazio"; (vazio / ".wx-migration").mkdir(parents=True)
+        shutil.copytree(EXEMPLO / "inputs", vazio / "inputs")
+        (vazio / ".wx-migration/questionario.json").write_text(json.dumps(q))
+        r = run(SCRIPTS / "aplicar_questionario.py", "--questionario", vazio / ".wx-migration/questionario.json", "--project-root", vazio, "--plugin-root", RAIZ)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        md2 = (vazio / ".wx-migration/respostas_questionario.md").read_text()
+        self.assertIn("| `L2` | Prototipacao | não |", md2)
 
     def test_skills_erp_presentes_com_descricao_curta(self):
         for nome in ("php-legado-e-destino", "erp-accounting", "erp-inventory", "erp-brazil-fiscal", "erp-multi-company", "erp-approval-workflows", "erp-lgpd", "erp-integration-reliability", "windev-wlanguage-erp"):
