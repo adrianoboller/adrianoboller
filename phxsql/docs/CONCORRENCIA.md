@@ -855,9 +855,16 @@ disso. É o `TEXTO_MAX` do §1.4.
 
 ## 8. O que continua por medir, e nomeado
 
-* **O teto do MVCC**, que é o p99 do leitor com um escritor ao lado. O arnês
-  mede; falta a máquina parada. **Não medido, e não estimado.**
-* **O teto do `RwLock` na espera** (p99 de dois leitores contra um). Idem.
+* ~~**O teto do MVCC**, que é o p99 do leitor com um escritor ao lado.~~
+  **Medido em 04/09**, em duas baterias limpas: 1,30× e 1,19× no `por_lote`,
+  1,38× e 1,24× no `por_operacao` — mas o que **só** ele compra (escritor ao
+  lado contra outro LEITOR ao lado, que é o que o `RwLock` não recupera) deu
+  **1,00× · 0,91× · 1,13× · 1,02×**, indistinguível do ruído. §11 aqui.
+* ~~**O teto do `RwLock` na espera** (p99 de dois leitores contra um).~~
+  **Medido em 04/09**: 1,30 · 1,31 · 1,22 · 1,22 — quatro medições dentro de
+  7%. E o teto de **vazão** dele, que é o número grande: **2,48×–2,99×**. §11.
+* ~~**A trava por tabela.**~~ **Respondida em 04/09**: ≈1,00× nas quatro
+  medições (0,96 · 0,99 · 1,04 · 0,90). Não é a tabela que serializa. §11.
 * **O perfil de carga real.** A §3.1 mostra que a resposta muda com a razão
   entre o tempo de leitura e o de escrita, e o número de hoje vem de um
   `varrer(50)` contra um `inserir(1)`.
@@ -1076,3 +1083,88 @@ esse custo sozinho, recusando em silêncio numérico (nenhum número sai) em vez
 de publicar sujo. Quem abrir a próxima frente pode rodar `escolher-o-desenho.py`
 e `quanto-a-trava-fica-presa.py` do mesmo jeito — com `--json` para automação,
 e com paciência para repetir até o `quieta.Vigia` aceitar.
+
+---
+
+## 11. O teto do MVCC e o do `RwLock`, MEDIDOS (04/09) — e o do MVCC morre no ruído
+
+A §8 listava os dois primeiros itens como **«não medido, e não estimado — o
+arnês mede; falta a máquina parada»**. A máquina parou às 06:03 de 04/09, e
+duas baterias limpas saíram — o `quieta.Vigia` aprovando as duas, como a §7.1
+exigiu para o `fsync`. As corridas cruas estão em
+`bancada/concorrencia/corridas/`.
+
+O custo do protocolo, medido e não citado: **quatro tentativas para duas
+baterias limpas.** As duas reprovadas não foram azar da árvore compartilhada —
+**a outra frente era eu**, rodando o aviso de comunicação e um `git push`
+dentro da janela de medição. O vigia pegou as duas (`até 7 vizinhos`, depois
+`até 3`), e é exatamente para isso que ele existe.
+
+### 11.1 Os tetos, nas duas corridas
+
+| teto | A, `por_lote` | B, `por_lote` | A, `por_operacao` | B, `por_operacao` |
+|---|---:|---:|---:|---:|
+| trava por tabela | 0,96× | 0,99× | 1,04× | 0,90× |
+| `RwLock`, vazão de leitura | **2,48×** | **2,65×** | **2,69×** | **2,99×** |
+| `RwLock`, na espera (p99) | 1,30× | 1,31× | 1,22× | 1,22× |
+| MVCC, na espera (p99) | 1,30× | 1,19× | 1,38× | 1,24× |
+
+**A trava por tabela está respondida: ≈1,00× nas quatro medições.** Ler em
+tabelas separadas não é mais rápido que ler na mesma tabela, e as duas corridas
+concordam. Não é a tabela que serializa — é a trava global, e trocá-la por uma
+trava por tabela move o gargalo de lugar sem tirá-lo do caminho. O próprio
+documento já dizia que *um desenho cujo teto é 1,05× está respondido antes de
+começar*; este é.
+
+**O `RwLock` é o número grande, e é o estável.** Entre 2,48× e 2,99× nas quatro
+medições, contra um controle que escala 4,0×–5,0× com quatro clientes enquanto
+a leitura escala 1,5×–1,6×. É paralelismo de leitura que a exclusividade está
+comendo, e ele se recupera sem mexer em byte nenhum do formato em disco.
+
+### 11.2 A conta que decide, e que o relatório não imprime
+
+A linha «MVCC, na espera» compara o leitor **com um escritor ao lado** contra o
+leitor **sozinho**. Só que uma parte desse custo é de ter *qualquer* segundo
+cliente na máquina, e o `RwLock` já a recupera. **O que só o MVCC compra é a
+diferença entre um ESCRITOR ao lado e outro LEITOR ao lado** — e essa conta é
+a última coluna:
+
+| corrida | sozinho | 2 leitores | c/ escritor | MVCC/sozinho | **só o MVCC** |
+|---|---:|---:|---:|---:|---:|
+| A, `por_lote` | 6.583 µs | 8.546 | 8.586 | 1,30× | **1,00×** |
+| B, `por_lote` | 7.317 µs | 9.580 | 8.704 | 1,19× | **0,91×** |
+| A, `por_operacao` | 6.906 µs | 8.407 | 9.525 | 1,38× | **1,13×** |
+| B, `por_operacao` | 7.071 µs | 8.638 | 8.780 | 1,24× | **1,02×** |
+
+**1,00× · 0,91× · 1,13× · 1,02×.** Duas baterias limpas, e o número que
+justifica o MVCC oscila em torno de **1,00×** — com uma corrida em que o
+escritor ao lado saiu **mais barato** que outro leitor ao lado. O ganho
+exclusivo do MVCC **não se distingue do ruído desta bancada**.
+
+Compare-se com o que a mesma bancada mede sem hesitar: o `RwLock` na espera deu
+1,30 · 1,31 · 1,22 · 1,22 — quatro medições dentro de 7% umas das outras. O
+instrumento **não** é cego a diferenças reais; ele é cego a esta.
+
+### 11.3 O que isto decide, e o que NÃO decide
+
+**Decide o desempenho.** A Sombra não se justifica por p99 de espera: não há
+1,3× para ela recuperar, há ~1,0×. Quem paga esse número é o `RwLock`, e ele
+custa muito menos — a `Instancia` já é `!Sync` por decisão escrita (§1.3), o
+que hoje faz o `RwLock` **não compilar**; trocá-la é uma decisão de uma linha,
+e não um gestor de versões.
+
+**NÃO decide a correção, e é aqui que a Sombra continua de pé.** A §4.3 já
+tinha nomeado a única coisa que só o MVCC dá: **leitura repetível**. Uma
+varredura longa hoje enxerga linhas gravadas no meio dela, e nenhum `RwLock`
+conserta isso — ele torna os leitores simultâneos, não consistentes. Esse é um
+defeito de *resultado*, não de *tempo*, e nenhuma medição de p99 o mostraria.
+
+**A premissa que morreu é a de velocidade, e ela era a que estava escrita.** Foi
+a §5 deste documento que disse *«MVCC não é substituto da SP000011»*; agora há
+o número, e ele diz mais: **MVCC não é acelerador de coisa nenhuma nesta
+bancada.** Se a Sombra for feita, é por leitura repetível — e o documento dela
+tem de dizer isso na primeira linha, senão daqui a três meses alguém a defende
+com um ganho de desempenho que ninguém mediu.
+
+*Hipótese que morre medida é resultado tão válido quanto ganho, e é o que
+impede a mesma ideia de voltar sem medição.*
