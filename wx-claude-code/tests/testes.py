@@ -660,6 +660,24 @@ class Questionario(unittest.TestCase):
         self.assertIn("Nenhuma dependência externa de Python é obrigatória", pre)
         self.assertIn("Python", pre); self.assertIn("3.11", pre)
 
+    def test_paginas_de_documentacao_nao_envelhecem_caladas(self):
+        """A revisao achou quatro paginas carimbadas numa versao antiga enquanto o
+        plugin andava: organograma, fluxo, ativacao e evolucao. O atualizador roda
+        todos os geradores e carimba o resto; este teste roda o --conferir dele."""
+        r = run(RAIZ / "docs/dossie/atualizar-paginas.py", "--conferir")
+        self.assertEqual(r.returncode, 0, f"pagina de documentacao desatualizada:\n{r.stdout}\n{r.stderr}")
+        # a evolucao tem de cobrir tudo o que ja esta no git. A versao em
+        # desenvolvimento ainda nao tem commit, entao o alvo e a ultima commitada.
+        dados = json.loads((RAIZ / "docs/dossie/evolucao.json").read_text(encoding="utf-8"))
+        log = subprocess.run(["git", "log", "--format=%s", "--", "wx-claude-code"],
+                             capture_output=True, text=True, cwd=RAIZ.parent).stdout
+        no_git = [m.group(1) for l in log.splitlines() if (m := re.match(r"^(\d+\.\d+\.\d+): ", l))]
+        self.assertTrue(no_git, "nao achei versao nenhuma no git")
+        self.assertEqual(dados[-1]["versao"], no_git[0],
+                         "evolucao.json parou antes da ultima versao commitada; rode gerar-evolucao.py")
+        html = (RAIZ / "docs/dossie/evolucao.html").read_text(encoding="utf-8")
+        self.assertIn(f'"versao": "{no_git[0]}"', html)
+
     def test_fontes_md_esta_em_dia(self):
         """FONTES.md e inventario medido: se alguem acrescentar arquivo e nao rodar o
         gerador, o documento passa a mentir sobre o pacote."""

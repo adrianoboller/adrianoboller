@@ -1,4 +1,4 @@
-# Fontes do WX Claude Code 3.25.0
+# Fontes do WX Claude Code 3.25.1
 
 Inventário medido em 2026-09-04 por `docs/dossie/gerar-fontes.py`. Não se edita à mão: rode o script depois de acrescentar arquivo, e o teste `test_fontes_md_esta_em_dia` avisa quando ele envelhece.
 
@@ -11,12 +11,12 @@ Inventário medido em 2026-09-04 por `docs/dossie/gerar-fontes.py`. Não se edit
 | Hooks | 3 | 304 | as guardas que rodam nos eventos do Claude Code |
 | Referências | 19 | 1.312 | o que os agentes leem antes de decidir |
 | Modelos | 6 | 853 | questionário, CLAUDE.md e matriz que viram o projeto do cliente |
-| Testes | 1 | 1.176 | a bateria; o validador estrito a roda |
+| Testes | 1 | 1.194 | a bateria; o validador estrito a roda |
 | Exemplo | 21 | 1.026 | projeto sintético que é o teste de regressão do fluxo inteiro |
-| Documentos | 4 | 1.078 | manual, README, fontes e a instrução de ativação, na raiz |
+| Documentos | 4 | 1.084 | manual, README, fontes e a instrução de ativação, na raiz |
 | Documentos de apoio | 5 | 193 | relatório, análises, origens dos prints e o vídeo |
 | Instaladores | 2 | 431 | bash para Linux e macOS, PowerShell para Windows |
-| **total** | **220** | **27.887** | |
+| **total** | **220** | **27.911** | |
 
 ## O que não é fonte, mas vem no pacote
 
@@ -45,4 +45,4 @@ python3 skills/conversao-wx/scripts/validate_plugin_bundle.py . --strict
 
 Esperado: `valid: true`, `tests: OK`, zero erros e zero avisos. O `--strict` roda a bateria inteira.
 
-Último commit no momento da medição: `bddab92 2026-09-04`.
+Último commit no momento da medição: `256a94b 2026-09-04`.
