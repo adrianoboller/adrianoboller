@@ -220,6 +220,38 @@ Ou seja: a fonte é excelente **e** cada receita dela continua passando pelo
 crivo do nosso gargalo. Inspiração que pula a medição não é inspiração — é
 cópia com outro nome.
 
+**Lógica que passou pela nossa cabeça e saiu DIFERENTE não é cópia — e a prova
+de que passou é a divergência.** Ordem do dono, 04/09/2026: *«uma lógica uma vez
+refatorada não é cópia.»*
+
+E a lei traz o **teste**, porque sem ele a regra não se aplica: o que torna uma
+lógica nossa não é tê-la reescrito — é tê-la **re-decidido contra as nossas
+restrições**. Renomear variável e reordenar bloco é refatoração *do alheio*, e
+sai igual porque as decisões continuam sendo as de quem escreveu primeiro. A
+pergunta que decide é uma só:
+
+> **Onde esta lógica DIVERGE da de origem, e qual restrição nossa causou a
+> divergência?**
+
+Se a resposta é «em lugar nenhum», não passou pela nossa cabeça — passou pelos
+nossos dedos. Se a resposta nomeia a restrição, é nossa, e o documento a
+registra.
+
+O caso que fundou a lei, medido em 04/09: a pesquisa de MVCC leu **oito**
+receitas de armazenamento de versão no fonte — InnoDB, PostgreSQL, Oracle, SQL
+Server, Firebird, RocksDB, LMDB/Bolt e Cassandra. A **ordem de digitação matou
+quatro** delas antes de qualquer código, e o desenho que saiu — a *Sombra* —
+tem **dez divergências justificadas por restrição nossa**: a undo não desfaz
+nada e por isso não paga `fsync`; toda linha do `.reg` já foi cometida, então
+basta uma marca onde os outros carregam lista de ativos; o `.ndx` adia em vez de
+marcar. Um refatoramento do undo do InnoDB teria trazido junto as premissas de
+reuso de espaço que a nossa pétrea proíbe — **e teria compilado**.
+
+É a mesma medida que já vale para o resto da casa: o SHA-256 e o HMAC daqui não
+são refatoração de implementação alheia, são a norma lida e reescrita, provada
+contra os vetores oficiais. A diferença entre as duas coisas não aparece no
+código pronto; aparece na pergunta acima.
+
 **Interface só se prova exercitando.** Gravar um vídeo de demonstração achou
 **três defeitos em cinco minutos** que ler o código não acharia — e o pior deles
 quebrava *todo salvar e todo incluir* pela tela desde que o `rownum` entrou. O
