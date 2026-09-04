@@ -809,6 +809,48 @@ python3 bancada/concorrencia/quanto-a-trava-fica-presa.py
 
 ---
 
+## 7.1-bis REFEITA na carga de 50 (04/09) — a escrita fica, a leitura cai 12×
+
+A §7.1 mediu com o `varrer` lendo **1.000 linhas** achando que lia 50 (§14).
+Refeita com o instrumento consertado, duas baterias limpas (09:13 e 09:18):
+
+| trava presa por operação | §7.1 (lendo 1.000) | A (lendo 50) | C (lendo 50) |
+|---|---:|---:|---:|
+| `por_lote`, **gravando** | 121–137 µs | 145,0 µs | 136,0 µs |
+| `por_lote`, **lendo** | **3.122–3.187 µs** | **265,0 µs** | **240,0 µs** |
+| `por_operacao`, gravando | 1.404–1.492 µs | 1.456,8 µs | 1.461,2 µs |
+| `fsync` sob a trava | 1.267–1.371 µs | 1.311,8 µs | 1.325,2 µs |
+
+**O achado central da §7.1 sobrevive inteiro**, e isso não é sorte: ele é um
+número da **escrita**, e o defeito era da **leitura**. O `fsync` sob a trava
+custa 1,3 ms e ~10× o tempo de trava de uma gravação sem ele — medido de novo,
+com outro instrumento, e cai no mesmo lugar.
+
+**O que estava errado por 12× era a leitura:** 265 e 240 µs contra os
+3.122–3.187 µs publicados. É exatamente o que 50 linhas em vez de 1.000
+prevê.
+
+### 7.1-bis.1 E aqui fecha o mecanismo da §11.2-bis, pelos dois lados
+
+Esta é a peça que faltava para a inversão do MVCC deixar de ser um número e
+virar uma explicação:
+
+| | trava presa lendo | `fsync` sob a trava | razão |
+|---|---:|---:|---:|
+| lendo 1.000 linhas | ~3.150 µs | ~1.320 µs | **0,42×** |
+| lendo **50** linhas | ~250 µs | ~1.320 µs | **5,3×** |
+
+Com a leitura segurando a trava por 3,1 ms, o `fsync` de 1,3 ms é **menos da
+metade dela**: um escritor ao lado custa ao leitor quase o mesmo que outro
+leitor, e o exclusivo do MVCC dá ~1,00×. Com a leitura em 250 µs, o `fsync`
+passa a ser **cinco vezes** o tempo de trava de uma leitura — e o escritor ao
+lado vira 2,77× o custo de outro leitor.
+
+**Não é que o MVCC tenha ficado melhor: é que a leitura inflada estava
+escondendo o `fsync` atrás de si.** Os dois medidores, o de espera (§11) e o de
+trava presa (§7.1), erravam pelo mesmo campo e concordavam por isso — e agora,
+consertados, concordam pelo motivo certo.
+
 ## 7.2 A SP000012 no mesmo território: o que existe, contado
 
 A SP000012 é «deadlock, cancelamento e governança de recursos», e o roteiro a
@@ -911,7 +953,12 @@ disso. É o `TEXTO_MAX` do §1.4.
   Fica escrito porque é a única hipótese de hoje que ainda aponta para as 23
   seções do `fsync` **no padrão** `por_lote` — as outras a §7.1 derrubou.
 
-* **Refazer a §7.1 com o instrumento consertado.** ~~E a §11.~~ **A §11 foi
+* ~~**Refazer a §7.1 com o instrumento consertado.**~~ **FEITA em 04/09
+  (§7.1-bis)**, e ela fecha o mecanismo da §11.2-bis pelos dois lados: o
+  achado da escrita sobrevive inteiro (o `fsync` custa 1,3 ms e ~10×), e a
+  leitura cai **12×** — de ~3.150 µs para ~250 µs. É essa queda que faz o
+  `fsync` passar de 0,42× para 5,3× o tempo de trava de uma leitura, e é por
+  isso que o exclusivo do MVCC sai de ~1,00× para 2,77×. ~~E a §11.~~ **A §11 foi
   refeita em 04/09 (§11.2-bis)**, e o resultado foi o maior desta rodada: o
   exclusivo do MVCC, que parecia ruído com 1.000 linhas, dá **2,77× e 3,23×**
   na carga de 50 com `por_operacao`. Refazer não é formalidade — mudou o
