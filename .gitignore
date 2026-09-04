@@ -11,3 +11,4 @@ anuncio-u1/scripts/__pycache__/
 anuncio-u1/saida/previa_seq/
 anuncio-u1/saida/*.log
 anuncio-u1/assets/som_*.wav
+anuncio-u1/scripts/*.bak
