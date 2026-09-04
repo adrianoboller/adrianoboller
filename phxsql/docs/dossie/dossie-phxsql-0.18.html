@@ -475,12 +475,12 @@ footer p{max-width:var(--medida)}
 
   <div class="painel">
   <!-- projeto:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-    <div><div class="v">131.172</div><div class="r">linhas de Rust</div></div>
-    <div><div class="v">1.567</div><div class="r">testes</div></div>
+    <div><div class="v">131.381</div><div class="r">linhas de Rust</div></div>
+    <div><div class="v">1.568</div><div class="r">testes</div></div>
     <div><div class="v">0</div><div class="r">dependências</div></div>
     <div><div class="v">8</div><div class="r">crates</div></div>
     <div><div class="v">7</div><div class="r">arquivos/tabela</div></div>
-    <div><div class="v">45.377</div><div class="r">linhas de doc</div></div>
+    <div><div class="v">46.187</div><div class="r">linhas de doc</div></div>
   <!-- projeto:fim -->
   </div>
 </header>
@@ -5192,7 +5192,7 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
       <thead><tr><th>o que não entrou</th><th>por quê</th></tr></thead>
       <tbody>
         <tr><td><strong>MVCC</strong></td>
-            <td>aqui o rowid <strong>é</strong> o endereço. Uma segunda versão da linha pede um segundo slot, logo um segundo rowid — e isso quebra a ordem de digitação <em>e</em> a replicação, cujo <code>aplicar_evento</code> para quando o rowid diverge. Não é falta de tempo: é incompatível com o formato</td></tr>
+            <td>Aqui o rowid <strong>é</strong> o endereço: uma segunda versão da linha num segundo <em>slot</em> pede um segundo rowid, e isso quebra a ordem de digitação <em>e</em> a replicação, cujo <code>aplicar_evento</code> para quando o rowid diverge. <strong>Corrigido em 04/09:</strong> essa objeção é a <em>uma implementação</em> — a que guarda a versão velha dentro do <code>.reg</code> — e não ao MVCC. Com a versão <strong>fora</strong> do <code>.reg</code>, a ordem de digitação, o rowid-endereço e a replicação ficam intactos. Continua não existindo, e o que falta hoje é decisão, não impossibilidade: <code>docs/PESQUISA-MVCC-E-FORMATO.md</code></td></tr>
         <tr><td><strong>WAL, <em>undo log</em>, PageLSN, <em>full-page-write</em>, VACUUM</strong></td>
             <td>todos existem para o problema que «nada a disco antes do <code>COMMIT</code>» não tem: não há página suja confirmada para refazer nem versão velha para varrer. O slot do <code>.reg</code> pode cruzar a fronteira de um setor, sim — e o CRC-32 torna a escrita rasgada <strong>detectável</strong>, com o espelho <code>.bkp</code> como conserto</td></tr>
         <tr><td><strong>Detecção de <em>deadlock</em></strong></td>
@@ -6568,8 +6568,8 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
         </tr>
         <tr>
           <td>MVCC</td>
-          <td>Não, e não é falta de tempo</td>
-          <td>O rowid <strong>é</strong> o endereço; uma segunda versão da linha pede um segundo rowid, e isso quebra a ordem de digitação <em>e</em> a replicação. A metade que se queria dele — leitor que não bloqueia — veio por outro caminho.</td>
+          <td>Não &mdash; e o motivo mudou de forma</td>
+          <td>O rowid <strong>é</strong> o endereço, e guardar a versão velha num segundo <em>slot</em> quebraria a ordem de digitação <em>e</em> a replicação. <strong>Isso continua verdade, e não é o motivo inteiro:</strong> a objeção é a essa implementação, não ao MVCC — com a versão <strong>fora</strong> do <code>.reg</code> o formato fica intacto. E em 04/09 o ganho dele foi <strong>medido</strong>, e depende da durabilidade &mdash; os n&uacute;meros est&atilde;o na §35, escritos por gerador e n&atilde;o aqui &mdash;, mais a <em>leitura repet&iacute;vel</em>, que nenhum outro desenho d&aacute;. O que falta é decisão do dono, não impossibilidade.</td>
         </tr>
         <tr>
           <td>Concorrência</td>
@@ -6642,10 +6642,10 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
 
   <div class="painel">
 <!-- pedidos:inicio (gerado por docs/dossie/pagina-dos-pedidos.py) -->
-    <div><div class="v">175</div><div class="r">pedidos, ao todo</div></div>
-    <div><div class="v">171</div><div class="r">feitos</div></div>
+    <div><div class="v">183</div><div class="r">pedidos, ao todo</div></div>
+    <div><div class="v">177</div><div class="r">feitos</div></div>
     <div><div class="v">3</div><div class="r">parciais</div></div>
-    <div><div class="v">1</div><div class="r">planejados</div></div>
+    <div><div class="v">3</div><div class="r">planejados</div></div>
   <!-- pedidos:fim -->
   </div>
 
@@ -6669,6 +6669,27 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   MVCC, medida e ainda sem plano aprovado. <strong>A chave estrangeira saiu
   desta lista</strong> — ela é conferida hoje.</p>
 
+  <h3>A trava global contra o MVCC: os quatro tetos, medidos</h3>
+
+  <p>Esta era a parcial mais antiga da lista, e em 04/09 ela deixou de ser
+  &laquo;medida e sem plano&raquo; para ser <strong>medida com quatro
+  n&uacute;meros</strong>. Nenhum deles se digita aqui: saem das corridas cruas
+  do medidor, por <code>docs/dossie/tetos-da-trava.py</code> &mdash; e a raz&atilde;o
+  de ser assim custou uma hora nesta mesma rodada, quando uma bancada mediu
+  quatro vezes a mesma coisa por um campo que o servidor n&atilde;o l&ecirc;.</p>
+
+  <!-- tetos:inicio (gerado por docs/dossie/tetos-da-trava.py) -->
+<div class="rolo"><table>
+<thead><tr><th>candidato</th><th class="dado">por_lote (padrão)</th><th class="dado">por_operacao</th><th>o que ele compra</th></tr></thead><tbody>
+<tr><td>trava por tabela</td><td class="dado">0,98x&ndash;1,02x</td><td class="dado">0,99x&ndash;1,09x</td><td>nada — não é a tabela que serializa</td></tr>
+<tr><td><code>RwLock</code></td><td class="dado">1,54x&ndash;2,15x</td><td class="dado">2,56x&ndash;2,73x</td><td>vazão de leitura; não mexe no escritor</td></tr>
+<tr><td>Sombra (MVCC), exclusivo</td><td class="dado">1,00x&ndash;1,21x</td><td class="dado">2,77x&ndash;3,23x</td><td>o <code>fsync</code> atrás da trava, que o <code>RwLock</code> não toca — e leitura repetível</td></tr>
+<tr><td>comboio do fecho de janela</td><td class="dado">2,13x&ndash;2,25x</td><td class="dado">—</td><td>nada compra: é código de hoje, e nem o <code>RwLock</code> nem o MVCC o consertam</td></tr>
+</tbody></table></div>
+<p>Medido em máquina parada, com o vigia da bancada aprovando cada corrida, e a leitura no tamanho de uma página de grade (<code>max: 50</code>). 2 baterias limpas do medidor de desenho; o comboio, 2. O p99 do <b>leitor</b> no comboio — que lê uma tabela que ninguém escreve — é 1,96x&ndash;2,01x. As corridas cruas estão versionadas em <code>bancada/concorrencia/corridas/</code>, e o parecer inteiro em <code>docs/CONCORRENCIA.md</code>.</p>
+<p><b>A resposta depende de uma configuração, e ela é do dono do banco:</b> em <code>recursos.durabilidade: por_operacao</code> o <code>fsync</code> acontece em toda gravação e a Sombra é o maior ganho da tabela; em <code>por_lote</code>, o padrão, ele acontece uma vez por janela e quem paga é o <code>RwLock</code> — com o comboio acima dos dois.</p>
+<!-- tetos:fim -->
+
   <h3>Onde os testes estão, e onde estão ralos</h3>
 
   <p>O que segue é <code>#[test]</code> contado por arquivo e agrupado por área —
@@ -6682,7 +6703,7 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
     <table>
       <thead><tr><th>Área</th><th class="num">testes</th><th class="num">%</th></tr></thead>
       <tbody>
-        <tr><td>Motor de dados (arquivos, índice, diários)</td><td class="num">409</td><td class="num">26,1%</td></tr>
+        <tr><td>Motor de dados (arquivos, índice, diários)</td><td class="num">410</td><td class="num">26,1%</td></tr>
         <tr><td>Protocolo e portões (despachar)</td><td class="num">229</td><td class="num">14,6%</td></tr>
         <tr><td>Núcleo (JSON, tipos, UUID, zip, paralelo)</td><td class="num">138</td><td class="num">8,8%</td></tr>
         <tr><td>Criptografia e codificação</td><td class="num">122</td><td class="num">7,8%</td></tr>
@@ -6709,7 +6730,7 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
         <tr><td><strong>CLI</strong></td><td class="num"><strong>7</strong></td><td class="num"><strong>0,4%</strong></td></tr>
         <tr><td><strong>Cluster</strong></td><td class="num"><strong>7</strong></td><td class="num"><strong>0,4%</strong></td></tr>
         <tr><td><strong>Monitor de máquina</strong></td><td class="num"><strong>6</strong></td><td class="num"><strong>0,4%</strong></td></tr>
-        <tr><td><strong>total</strong></td><td class="num"><strong>1567</strong></td><td class="num"></td></tr>
+        <tr><td><strong>total</strong></td><td class="num"><strong>1568</strong></td><td class="num"></td></tr>
       </tbody>
     </table>
   </div>
@@ -6743,8 +6764,8 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
 
 <footer>
   <!-- rodape:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-  <p>PhxSql 0.18.0 · 131.172 linhas de Rust em 8 crates,
-  mais 1156 KiB de interface · 1.567 testes ·
+  <p>PhxSql 0.18.0 · 131.381 linhas de Rust em 8 crates,
+  mais 1156 KiB de interface · 1.568 testes ·
   nenhuma dependência externa.
   Especificação byte a byte em <code>docs/FORMATO.md</code>, cadastro e
   permissões em <code>docs/USUARIOS.md</code>, a replicação em

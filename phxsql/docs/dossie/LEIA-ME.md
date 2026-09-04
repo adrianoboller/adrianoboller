@@ -16,11 +16,11 @@ impossível de cumprir depois que o diretório temporário sumisse.
 ## Como atualizar
 
 1. Edite `dossie-phxsql-0.18.html`.
-2. **Rode os cinco geradores** (abaixo). Nenhum número visível se digita.
+2. **Rode os seis geradores** (abaixo). Nenhum número visível se digita.
 3. Publique **passando a URL acima**, para cair na mesma página em vez de criar
    uma nova.
 
-## Os cinco geradores, e o que cada um regrava
+## Os seis geradores, e o que cada um regrava
 1. **LEIA o artefato publicado antes de qualquer coisa** (`action: "read"` com
    a URL acima).
 2. Compare com `dossie-phxsql-0.15.html` — pelo menos o número de `<h2>`.
@@ -48,6 +48,20 @@ Se a página estiver à frente: **não publique deste branch**. Diga que ela est
 fonte. Publicar um merge montado em `/tmp` é pior — vira uma página que
 nenhum repositório reproduz.
 
+### O sexto entrou em 04/09, e o motivo dele é uma cicatriz
+
+O `tetos-da-trava.py` lê as **corridas cruas** do medidor de concorrência e
+escreve os quatro tetos na §35. Ele não podia ser uma tabela escrita à mão, e a
+razão custou uma hora nesta casa: naquele mesmo dia uma bancada mediu **quatro
+vezes a mesma coisa** por mandar um campo que o servidor não lê, e o número
+publicado ficou errado até outro medidor discordar dele.
+
+Ele só lê arquivo com **`CERTO`** no nome. As corridas invalidadas continuam
+guardadas ao lado — apagá-las perderia a série e a lição —, e é por isso que o
+nome, e não a data, decide o que entra. Se não achar corrida nenhuma, ele
+**reprova em vez de devolver vazio**: gerador que emite nada quando a fonte
+sumiu é a mesma doença do conferidor que diz «limpo» sem ter conferido.
+
 ## O que conferir antes de publicar
 
 **Os números do painel e do rodapé não se digitam mais.** Saem de
@@ -58,6 +72,7 @@ python3 docs/dossie/numeros-da-bancada.py    docs/dossie/dossie-phxsql-0.18.html
 python3 docs/dossie/pagina-dos-pedidos.py    docs/dossie/pedidos.html docs/dossie/dossie-phxsql-0.18.html
 python3 docs/dossie/cobertura-por-area.py    docs/dossie/dossie-phxsql-0.18.html
 python3 docs/dossie/capturas-no-dossie.py    docs/dossie/dossie-phxsql-0.18.html
+python3 docs/dossie/tetos-da-trava.py        docs/dossie/dossie-phxsql-0.18.html
 ```
 
 | script | blocos que ele escreve |
@@ -67,6 +82,7 @@ python3 docs/dossie/capturas-no-dossie.py    docs/dossie/dossie-phxsql-0.18.html
 | `pagina-dos-pedidos.py` | `pedidos:` no dossiê, a página `pedidos.html` inteira, e a contagem de volta no `PENDENCIAS.md` |
 | `cobertura-por-area.py` | `cobertura:` no dossiê, e as tabelas do `docs/TESTES.md` |
 | `capturas-no-dossie.py` | `capturas:` — as vinte telas, como *data URI* |
+| `tetos-da-trava.py` | `tetos:` — os quatro tetos de concorrência (§35), lidos das corridas cruas em `bancada/concorrencia/corridas/` |
 
 `--so-medir` mostra sem gravar; `--sem-testes` no primeiro pula o `cargo test`,
 que demora. Use só quando o que mudou não foi código.
