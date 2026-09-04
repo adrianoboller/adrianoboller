@@ -7,17 +7,21 @@ fn main() {
     let target = env::var("TARGET").unwrap_or_default();
     let profile = env::var("PROFILE").unwrap_or_default();
 
-    println!("[build.rs] TARGET={}, PROFILE={}", target, profile);
-    eprintln!("[build.rs] TARGET={}, PROFILE={}", target, profile);
+    // Recado de build script vai por stderr: o STDOUT e o canal de
+    // DIRETIVAS do cargo (`cargo:rustc-link-arg-cdylib=...` abaixo), e
+    // misturar recado com protocolo e o mesmo erro do `erro.redireciona`.
+    eprintln!("[build.rs] TARGET={target}, PROFILE={profile}");
 
-    // Se compilando para Android ARM64, compi le o wrapper JNI
+    // Se compilando para Android ARM64, compila o wrapper JNI
     if target == "aarch64-linux-android" {
         eprintln!("[build.rs] Compilando wrapper JNI para Android ARM64");
 
         // Obtem o NDK e o path dos headers JNI
         let ndk_root = PathBuf::from("/opt/android-ndk-r27c");
-        let jni_include = ndk_root.join("toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include");
-        let jni_h = ndk_root.join("toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/jni.h");
+        let jni_include =
+            ndk_root.join("toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include");
+        let jni_h =
+            ndk_root.join("toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/jni.h");
 
         // Verifica se JNI headers existem
         if !jni_h.exists() {
@@ -34,13 +38,13 @@ fn main() {
 
         eprintln!("[build.rs] Compilando: {}", jni_c.display());
 
-        // Compi la o wrapper C para um objeto
+        // Compila o wrapper C para um objeto
         let cc_path = "/opt/android-ndk-r27c/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android28-clang";
         let out_dir = env::var("OUT_DIR").unwrap();
         let obj_path = PathBuf::from(&out_dir).join("phxsql_jni.o");
 
         let output = std::process::Command::new(cc_path)
-            .args(&["-c"])
+            .arg("-c")
             .arg("-fPIC")
             .arg(format!("-I{}", jni_include.display()))
             .arg(format!("-I{}", include.display()))
