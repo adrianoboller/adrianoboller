@@ -1,17 +1,18 @@
 <title>Fluxo do WX Claude Code</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Exo+2:wght@500;700;800&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Exo+2:wght@600;800&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
 <style>
-:root{--g:#FBFAF7;--p:#FFFFFF;--i:#14161F;--m:#6B6F82;--l:#E4E2DB;--a:#C63C0A;--a2:#1F5FBF;--ok:#1F7A4D;--grid:#ECEAE3}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--g:#0B0D17;--p:#121527;--i:#EDEDF3;--m:#9AA0B8;--l:#252A42;--a:#E2261C;--a2:#6FA3FF;--ok:#2FBF71;--grid:#1B1F33}}
-:root[data-theme="dark"]{--g:#0B0D17;--p:#121527;--i:#EDEDF3;--m:#9AA0B8;--l:#252A42;--a:#E2261C;--a2:#6FA3FF;--ok:#2FBF71;--grid:#1B1F33}
-*{box-sizing:border-box}body{margin:0;background:var(--g);color:var(--i);font-family:"Source Serif 4",Georgia,serif;font-size:15px;line-height:1.5}
-.wrap{max-width:1120px;margin:0 auto;padding:38px 26px 70px}
-h1,h2{font-family:"Exo 2","Segoe UI",sans-serif;margin:0;text-wrap:balance}
-h1{font-size:37px;font-weight:800;letter-spacing:-.5px;line-height:1.1;margin-top:8px}
-.eyebrow{font-family:"Exo 2",sans-serif;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--a);font-weight:700}
-.lead{max-width:70ch;color:var(--m);margin:12px 0 0;font-size:16px}
-header{border-bottom:2px solid var(--i);padding-bottom:18px}
-.mapa{margin:22px 0 6px;overflow-x:auto}.mapa svg{width:100%;min-width:900px;height:auto;display:block}
+:root{--g:#FBFAF7;--p:#FFFFFF;--i:#14161F;--m:#6B6F82;--l:#D9D6CE;--a:#C63C0A;--az:#1F5FBF;--vd:#1F7A4D;--am:#9A6A00;--capa:#010418;--grid:#ECEAE3;--a2:#1F5FBF}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--g:#0B0D17;--p:#121527;--i:#EDEDF3;--m:#9AA0B8;--l:#2E3454;--a:#E2261C;--az:#4EA1FF;--vd:#2FBF71;--am:#F7B733;--grid:#1B1F33;--a2:#6FA3FF}}
+:root[data-theme="dark"]{--g:#0B0D17;--p:#121527;--i:#EDEDF3;--m:#9AA0B8;--l:#2E3454;--a:#E2261C;--az:#4EA1FF;--vd:#2FBF71;--am:#F7B733}
+body{margin:0;background:var(--g);color:var(--i);font-family:"Source Serif 4",Georgia,serif;font-size:16px;line-height:1.5}
+.w{max-width:1240px;margin:0 auto;padding:28px 20px 40px}
+h1{font-family:"Exo 2",sans-serif;font-weight:800;font-size:28px;color:var(--a);margin:0 0 4px}
+.sub{color:var(--m);margin:0 0 18px;max-width:75ch}
+figure{margin:0;background:var(--p);border:1px solid var(--l);border-radius:12px;padding:16px;overflow-x:auto}
+svg{width:100%;height:auto;max-width:100%;font-family:"Exo 2",system-ui,sans-serif;color:var(--i)}
+figcaption{color:var(--m);font-size:14px;margin-top:12px;max-width:80ch}
+.leg{display:flex;flex-wrap:wrap;gap:16px;margin:14px 0 0;font-size:13px;color:var(--m)}
+.leg span{display:inline-flex;align-items:center;gap:6px}.sw{width:22px;height:0;border-top:2px solid var(--i)}.sw.d{border-top-style:dashed}.sw.a{border-color:var(--a)}.sw.az{border-color:var(--az)}.sw.vd{border-color:var(--vd)}
 .etapa{margin-top:22px;border-left:3px solid var(--a);padding-left:18px}
 .cab{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
 .cab .num{font-family:"Exo 2",sans-serif;font-weight:800;font-size:22px;color:var(--a)}
@@ -32,27 +33,205 @@ td.mono{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--a2);wh
 .kpis div{background:var(--p);border:1px solid var(--l);padding:10px 12px;font-family:"Exo 2",sans-serif}
 .kpis b{display:block;font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
 .kpis small{color:var(--m);font-size:11px;letter-spacing:.05em;text-transform:uppercase}
-@media(max-width:760px){.kpis{grid-template-columns:repeat(3,1fr)}.etapa li{grid-template-columns:1fr;gap:2px}}
 </style>
-<div class="wrap">
-<header>
- <div class="eyebrow">WX Claude Code 3.22.0 · medido em 2026-09-04</div>
- <h1>Fluxo atual do plugin</h1>
- <p class="lead">Do <code>install</code> à entrega: sete etapas, 14 blocos de pergunta, 19 comandos e 8 hooks que fazem as regras valerem sem depender de ninguém lembrar delas. O caso principal não muda: converter WLanguage — WINDEV, WEBDEV, WINDEV Mobile — para outra linguagem.</p>
- <div class="kpis">
-  <div><b>60</b><small>perguntas com id</small></div>
-  <div><b>19</b><small>comandos</small></div>
-  <div><b>94</b><small>agentes</small></div>
-  <div><b>13</b><small>skills</small></div>
-  <div><b>8</b><small>hooks</small></div>
-  <div><b>49</b><small>testes</small></div>
- </div>
-</header>
-<div class="mapa"><svg viewBox="0 0 1000 132" role="img" aria-label="As sete etapas do fluxo"><defs><marker id="seta" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--a)"/></marker></defs><text x="8" y="16" font-size="11" letter-spacing="1.5" fill="var(--m)" font-family="Exo 2,sans-serif">DO INSTALAR À ENTREGA</text><g><rect x="8" y="26" width="131" height="70" rx="4" fill="var(--p)" stroke="var(--l)"/><text x="18" y="48" font-size="20" font-weight="800" fill="var(--a)" font-family="Exo 2,sans-serif">1</text><text x="18" y="68" font-size="13.5" font-weight="700" fill="var(--i)" font-family="Exo 2,sans-serif">Instalar e ativar</text><text x="18" y="86" font-size="10.5" fill="var(--m)" font-family="JetBrains Mono,monospace">claude plugin install</text></g><path d="M141,61 h6" stroke="var(--a)" stroke-width="2" marker-end="url(#seta)"/><g><rect x="149" y="26" width="131" height="70" rx="4" fill="var(--p)" stroke="var(--l)"/><text x="159" y="48" font-size="20" font-weight="800" fill="var(--a)" font-family="Exo 2,sans-serif">2</text><text x="159" y="68" font-size="13.5" font-weight="700" fill="var(--i)" font-family="Exo 2,sans-serif">Perguntar</text><text x="159" y="86" font-size="10.5" fill="var(--m)" font-family="JetBrains Mono,monospace">/wx-claude-code:questionar</text></g><path d="M281,61 h6" stroke="var(--a)" stroke-width="2" marker-end="url(#seta)"/><g><rect x="289" y="26" width="131" height="70" rx="4" fill="var(--p)" stroke="var(--l)"/><text x="299" y="48" font-size="20" font-weight="800" fill="var(--a)" font-family="Exo 2,sans-serif">3</text><text x="299" y="68" font-size="13.5" font-weight="700" fill="var(--i)" font-family="Exo 2,sans-serif">Gerar o contexto</text><text x="299" y="86" font-size="10.5" fill="var(--m)" font-family="JetBrains Mono,monospace">aplicar_questionario.py</text></g><path d="M422,61 h6" stroke="var(--a)" stroke-width="2" marker-end="url(#seta)"/><g><rect x="430" y="26" width="131" height="70" rx="4" fill="var(--p)" stroke="var(--l)"/><text x="440" y="48" font-size="20" font-weight="800" fill="var(--a)" font-family="Exo 2,sans-serif">4</text><text x="440" y="68" font-size="13.5" font-weight="700" fill="var(--i)" font-family="Exo 2,sans-serif">Provar a entrada</text><text x="440" y="86" font-size="10.5" fill="var(--m)" font-family="JetBrains Mono,monospace">/wx-claude-code:preflight </text></g><path d="M562,61 h6" stroke="var(--a)" stroke-width="2" marker-end="url(#seta)"/><g><rect x="570" y="26" width="131" height="70" rx="4" fill="var(--p)" stroke="var(--l)"/><text x="580" y="48" font-size="20" font-weight="800" fill="var(--a)" font-family="Exo 2,sans-serif">5</text><text x="580" y="68" font-size="13.5" font-weight="700" fill="var(--i)" font-family="Exo 2,sans-serif">Converter</text><text x="580" y="86" font-size="10.5" fill="var(--m)" font-family="JetBrains Mono,monospace">/wx-claude-code:converter </text></g><path d="M703,61 h6" stroke="var(--a)" stroke-width="2" marker-end="url(#seta)"/><g><rect x="711" y="26" width="131" height="70" rx="4" fill="var(--p)" stroke="var(--l)"/><text x="721" y="48" font-size="20" font-weight="800" fill="var(--a)" font-family="Exo 2,sans-serif">6</text><text x="721" y="68" font-size="13.5" font-weight="700" fill="var(--i)" font-family="Exo 2,sans-serif">Governar</text><text x="721" y="86" font-size="10.5" fill="var(--m)" font-family="JetBrains Mono,monospace">/wx-claude-code:pmo</text></g><path d="M843,61 h6" stroke="var(--a)" stroke-width="2" marker-end="url(#seta)"/><g><rect x="851" y="26" width="131" height="70" rx="4" fill="var(--p)" stroke="var(--l)"/><text x="861" y="48" font-size="20" font-weight="800" fill="var(--a)" font-family="Exo 2,sans-serif">7</text><text x="861" y="68" font-size="13.5" font-weight="700" fill="var(--i)" font-family="Exo 2,sans-serif">Entregar</text><text x="861" y="86" font-size="10.5" fill="var(--m)" font-family="JetBrains Mono,monospace">/wx-claude-code:exportar</text></g></svg></div>
+<div class="w">
+<h1>Fluxo atual do WX Claude Code</h1>
+<p class="sub">Versão 3.22.0. Da esquerda para a direita: o que o usuário entrega, o que o questionário gera, os gates com aprovação humana e o laço de sprint da equipe. Os hooks do plugin correm por baixo de tudo. Cada caixa é um agente, um script ou um arquivo que existe no repositório.</p>
+<figure>
+<svg viewBox="0 0 1400 960" role="img" aria-label="Fluxo do plugin: usuário responde o questionário, o script gera o contexto do projeto, o pré-flight G0 libera os gates G1 a G7; dentro de cada gate o GP distribui itens do backlog ao Gestor de tarefas, que pesa e escolhe o modelo, aos papéis com PDCA, à equipe de testes, à prova real e ao supervisor de qualidade; o aprovador humano decide o gate; o fechamento da sprint gera relatório, painel, o .md zipado e alimenta a base de conhecimento, cujo infrutífero aciona o pesquisador; a exportação entrega o projeto na pasta do usuário; hooks de licença, portão G0, zelador e identificação correm em toda sessão.">
+<defs>
+<marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker>
+<marker id="ar-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--a)"/></marker>
+<marker id="ar-az" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--az)"/></marker>
+<marker id="ar-vd" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--vd)"/></marker>
+</defs>
+<g fill="none" stroke="currentColor" stroke-width="1.5" font-size="12">
+
+<!-- FAIXA 1: entrada -->
+<text x="20" y="34" font-size="13" fill="var(--m)" stroke="none" letter-spacing="1">1 · ENTRADA</text>
+<rect x="20" y="48" width="150" height="70" rx="8"/>
+<text x="95" y="76" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">Usuário</text>
+<text x="95" y="96" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">anexos WX + respostas</text>
+
+<rect x="230" y="40" width="210" height="86" rx="8"/>
+<text x="335" y="66" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">/questionario</text>
+<text x="335" y="84" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">bloco 0 · A–M (60 perguntas)</text>
+<text x="335" y="102" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">um item por mensagem</text>
+<line x1="170" y1="83" x2="228" y2="83" marker-end="url(#ar)"/>
+<text x="199" y="76" text-anchor="middle" fill="var(--m)" stroke="none" font-size="10">responde</text>
+
+<rect x="500" y="40" width="230" height="86" rx="8"/>
+<text x="615" y="66" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">aplicar_questionario.py</text>
+<text x="615" y="84" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">valida · recusa segredo</text>
+<text x="615" y="102" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">e injeção antes de gravar</text>
+<line x1="440" y1="83" x2="498" y2="83" marker-end="url(#ar)"/>
+<text x="469" y="76" text-anchor="middle" fill="var(--m)" stroke="none" font-size="10">json</text>
+
+<rect x="790" y="28" width="300" height="110" rx="8" stroke-dasharray="5 4"/>
+<text x="940" y="50" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">gera no projeto</text>
+<text x="805" y="70" fill="var(--m)" stroke="none" font-size="11">.wx-migration/ respostas por id · matriz · empresa</text>
+<text x="805" y="86" fill="var(--m)" stroke="none" font-size="11">processo · ambiente/ (com backup K8) · prompts</text>
+<text x="805" y="102" fill="var(--m)" stroke="none" font-size="11">CLAUDE.md · INDEX_FILES.md · DESIGN.md</text>
+<text x="805" y="118" fill="var(--m)" stroke="none" font-size="11">.claude/ · .mcp.json · Dockerfile · artefatos/ · logs/</text>
+<line x1="730" y1="83" x2="788" y2="83" marker-end="url(#ar)"/>
+<text x="759" y="76" text-anchor="middle" fill="var(--m)" stroke="none" font-size="10">escreve</text>
+
+<rect x="1150" y="40" width="230" height="86" rx="8" stroke="var(--a)"/>
+<text x="1265" y="66" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">G0 · pré-flight</text>
+<text x="1265" y="84" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">wx_preflight.py abre cada anexo</text>
+<text x="1265" y="102" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">READY · CONDITIONAL · BLOCKED</text>
+<line x1="1090" y1="83" x2="1148" y2="83" marker-end="url(#ar-a)" stroke="var(--a)"/>
+<text x="1119" y="76" text-anchor="middle" fill="var(--m)" stroke="none" font-size="10">manifesto</text>
+
+<!-- FAIXA 2: gates -->
+<text x="20" y="184" font-size="13" fill="var(--m)" stroke="none" letter-spacing="1">2 · GATES COM APROVAÇÃO HUMANA</text>
+<path d="M1265 126 V156 H700 V196" marker-end="url(#ar-a)" stroke="var(--a)"/>
+<text x="985" y="168" text-anchor="middle" fill="var(--m)" stroke="none" font-size="10">sem BLOCKED, o portão G0 libera a escrita de código</text>
+<g>
+<rect x="20" y="198" width="1360" height="60" rx="8"/>
+<text x="90" y="222" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">G1 inventário</text><text x="90" y="240" text-anchor="middle" fill="var(--m)" stroke="none" font-size="10">matriz BR/QRY/UI/INT/RPT</text>
+<text x="295" y="222" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">G2 especificação</text><text x="295" y="240" text-anchor="middle" fill="var(--m)" stroke="none" font-size="10">contrato por item</text>
+<text x="500" y="222" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">G3 arquitetura</text><text x="500" y="240" text-anchor="middle" fill="var(--m)" stroke="none" font-size="10">DEC-0001 linguagem e banco</text>
+<text x="700" y="222" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">G4 piloto vertical</text><text x="700" y="240" text-anchor="middle" fill="var(--m)" stroke="none" font-size="10">golden master igual</text>
+<text x="900" y="222" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">G5 ondas</text><text x="900" y="240" text-anchor="middle" fill="var(--m)" stroke="none" font-size="10">por estratégia (H/I)</text>
+<text x="1100" y="222" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">G6 endurecimento</text><text x="1100" y="240" text-anchor="middle" fill="var(--m)" stroke="none" font-size="10">desempenho, segurança</text>
+<text x="1300" y="222" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">G7 cutover</text><text x="1300" y="240" text-anchor="middle" fill="var(--m)" stroke="none" font-size="10">exportar, entregar</text>
+<line x1="185" y1="228" x2="205" y2="228" marker-end="url(#ar)"/><line x1="390" y1="228" x2="410" y2="228" marker-end="url(#ar)"/><line x1="595" y1="228" x2="615" y2="228" marker-end="url(#ar)"/><line x1="795" y1="228" x2="815" y2="228" marker-end="url(#ar)"/><line x1="995" y1="228" x2="1015" y2="228" marker-end="url(#ar)"/><line x1="1195" y1="228" x2="1215" y2="228" marker-end="url(#ar)"/>
+</g>
+<text x="700" y="280" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">cada gate = um ou mais blocos (Bloco0001…) com sprints (SP00001…); o laço abaixo roda em toda sprint</text>
+<path d="M700 258 V304" marker-end="url(#ar)"/>
+
+<!-- FAIXA 3: laço da sprint -->
+<text x="20" y="334" font-size="13" fill="var(--m)" stroke="none" letter-spacing="1">3 · LAÇO DA SPRINT (equipe prioritária A–J governa; papéis A–J executam em PDCA)</text>
+<rect x="20" y="350" width="1360" height="360" rx="10" stroke-dasharray="6 4"/>
+
+<rect x="40" y="380" width="190" height="80" rx="8" stroke="var(--az)"/>
+<text x="135" y="404" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">F · GP</text>
+<text x="135" y="422" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">backlog · Kanban WIP</text>
+<text x="135" y="440" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">bloco/sprint · commit por sprint</text>
+
+<rect x="290" y="380" width="200" height="80" rx="8" stroke="var(--az)"/>
+<text x="390" y="404" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">E · Gestor de tarefas</text>
+<text x="390" y="422" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">pesar_tarefa.py: linhas, horas,</text>
+<text x="390" y="440" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">sinais → haiku/sonnet/opus</text>
+<line x1="230" y1="420" x2="288" y2="420" marker-end="url(#ar-az)" stroke="var(--az)"/>
+<text x="259" y="413" text-anchor="middle" fill="var(--m)" stroke="none" font-size="10">item</text>
+
+<rect x="550" y="380" width="200" height="80" rx="8"/>
+<text x="650" y="404" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">rotear_modelo.py</text>
+<text x="650" y="422" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">escalada por sinal, rebaixa a 80 %</text>
+<text x="650" y="440" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">do orçamento, bloqueia a 100 %</text>
+<line x1="490" y1="420" x2="548" y2="420" marker-end="url(#ar)"/>
+<text x="519" y="413" text-anchor="middle" fill="var(--m)" stroke="none" font-size="10">modelo</text>
+
+<rect x="810" y="380" width="220" height="80" rx="8"/>
+<text x="920" y="404" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">papel-a…j (dono do item)</text>
+<text x="920" y="422" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">Plan → Do → Check → Act</text>
+<text x="920" y="440" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">wl-*-specialist por tema do Help</text>
+<line x1="750" y1="420" x2="808" y2="420" marker-end="url(#ar)"/>
+<text x="779" y="413" text-anchor="middle" fill="var(--m)" stroke="none" font-size="10">executa</text>
+
+<rect x="1090" y="380" width="270" height="80" rx="8" stroke="var(--vd)"/>
+<text x="1225" y="404" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">G · testes → papel-f prova real</text>
+<text x="1225" y="422" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">bateria + golden; falha com o defeito</text>
+<text x="1225" y="440" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">reposto, passa com o conserto</text>
+<line x1="1030" y1="420" x2="1088" y2="420" marker-end="url(#ar-vd)" stroke="var(--vd)"/>
+<text x="1059" y="413" text-anchor="middle" fill="var(--m)" stroke="none" font-size="10">entrega</text>
+
+<!-- linha de baixo do laço -->
+<rect x="1090" y="500" width="270" height="80" rx="8" stroke="var(--vd)"/>
+<text x="1225" y="524" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">D · Supervisor de qualidade</text>
+<text x="1225" y="542" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">fonte × docs × objetivos ×</text>
+<text x="1225" y="560" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">interjeições do stakeholder</text>
+<line x1="1225" y1="460" x2="1225" y2="498" marker-end="url(#ar-vd)" stroke="var(--vd)"/>
+<text x="1240" y="483" fill="var(--m)" stroke="none" font-size="10">números</text>
+
+<rect x="810" y="500" width="220" height="80" rx="8" stroke="var(--a)" stroke-width="2"/>
+<text x="920" y="524" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">Aprovador humano</text>
+<text x="920" y="542" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">APPROVED · CONDITIONAL · REJECTED</text>
+<text x="920" y="560" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">nenhum agente aprova gate</text>
+<line x1="1088" y1="540" x2="1032" y2="540" marker-end="url(#ar-vd)" stroke="var(--vd)"/>
+<text x="1060" y="533" text-anchor="middle" fill="var(--m)" stroke="none" font-size="10">recomenda</text>
+
+<rect x="550" y="500" width="200" height="80" rx="8"/>
+<text x="650" y="524" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">pmo.py sprint fechar</text>
+<text x="650" y="542" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">resumo 12 seções · .md + .zip</text>
+<text x="650" y="560" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">relatório 11 seções · painel.html</text>
+<line x1="808" y1="540" x2="752" y2="540" marker-end="url(#ar-a)" stroke="var(--a)"/>
+<text x="780" y="533" text-anchor="middle" fill="var(--m)" stroke="none" font-size="10">decide</text>
+
+<rect x="290" y="500" width="200" height="80" rx="8"/>
+<text x="390" y="524" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">I · Base de conhecimento</text>
+<text x="390" y="542" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">frutiferos.md · infrutiferos.md</text>
+<text x="390" y="560" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">indice.md · aviso ao GP</text>
+<line x1="548" y1="540" x2="492" y2="540" marker-end="url(#ar)"/>
+<text x="520" y="556" text-anchor="middle" fill="var(--m)" stroke="none" font-size="10">PDCA fechado</text>
+
+<rect x="40" y="500" width="190" height="80" rx="8"/>
+<text x="135" y="524" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">B · Pesquisador</text>
+<text x="135" y="542" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">internet + Help por tema</text>
+<text x="135" y="560" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">responde com a fonte</text>
+<line x1="288" y1="540" x2="232" y2="540" marker-end="url(#ar)"/>
+<text x="260" y="533" text-anchor="middle" fill="var(--m)" stroke="none" font-size="10">infrutífero</text>
+<path d="M135 500 V462" marker-end="url(#ar-az)" stroke="var(--az)" stroke-dasharray="4 3"/>
+<text x="150" y="484" fill="var(--m)" stroke="none" font-size="10">próxima hipótese</text>
+
+<!-- terceira linha: apoio -->
+<rect x="40" y="620" width="190" height="66" rx="8"/>
+<text x="135" y="644" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">C · Documentador</text>
+<text x="135" y="662" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">funcoes.md/.html · indice.json</text>
+<rect x="290" y="620" width="200" height="66" rx="8"/>
+<text x="390" y="644" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">H · Status</text>
+<text x="390" y="662" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">atividades.jsonl → status --por-agente</text>
+<rect x="550" y="620" width="200" height="66" rx="8"/>
+<text x="650" y="644" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">A · Zelador</text>
+<text x="650" y="662" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">sinal de espaço ou hook diário</text>
+<rect x="810" y="620" width="220" height="66" rx="8" stroke-dasharray="5 4"/>
+<text x="920" y="644" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">J · Tradutor</text>
+<text x="920" y="662" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">só a pedido · i18n/textos.json</text>
+<rect x="1090" y="620" width="270" height="66" rx="8" stroke="var(--a)"/>
+<text x="1225" y="644" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">exportar_projeto.py · entregar</text>
+<text x="1225" y="662" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">pasta do usuário, 7 partes, hashes, sem .env</text>
+<path d="M650 580 V618" marker-end="url(#ar)"/>
+<text x="665" y="603" fill="var(--m)" stroke="none" font-size="10">ao fechar</text>
+<path d="M750 653 H808" marker-end="url(#ar)" stroke-dasharray="4 3"/>
+<path d="M1030 653 H1088" marker-end="url(#ar-a)" stroke="var(--a)"/>
+<text x="1059" y="646" text-anchor="middle" fill="var(--m)" stroke="none" font-size="10">no G7</text>
+<path d="M230 653 H288" marker-end="url(#ar)" stroke-dasharray="4 3"/>
+<path d="M490 653 H548" marker-end="url(#ar)" stroke-dasharray="4 3"/>
+<text x="700" y="700" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">tracejado = sob demanda ou por sinal; todo agente registra com pmo.py atividade e começa a resposta pela identificação BlocoNNNN-SPNNNNN-Título · data</text>
+
+<!-- FAIXA 4: hooks -->
+<text x="20" y="760" font-size="13" fill="var(--m)" stroke="none" letter-spacing="1">4 · HOOKS DO PLUGIN, EM TODA SESSÃO</text>
+<rect x="20" y="776" width="320" height="70" rx="8" stroke="var(--am)"/>
+<text x="180" y="800" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">SessionStart</text>
+<text x="180" y="818" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">licença · zelador (1×/dia) · identificação · RAG</text>
+<rect x="370" y="776" width="320" height="70" rx="8" stroke="var(--am)"/>
+<text x="530" y="800" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">UserPromptSubmit</text>
+<text x="530" y="818" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">injeta BlocoNNNN-SPNNNNN-Título em cada mensagem</text>
+<rect x="720" y="776" width="320" height="70" rx="8" stroke="var(--am)"/>
+<text x="880" y="800" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">PreToolUse</text>
+<text x="880" y="818" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">licença, anexos e artefatos somente leitura, segredo;</text>
+<text x="880" y="834" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">G0 BLOCKED nega escrita de código · toda negativa vai ao log</text>
+<rect x="1070" y="776" width="310" height="70" rx="8" stroke="var(--am)"/>
+<text x="1225" y="800" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">PostToolUse · Stop</text>
+<text x="1225" y="818" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">Impeccable revisa a tela editada;</text>
+<text x="1225" y="834" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">no projeto: lint ao editar, testes ao parar (L4)</text>
+<text x="700" y="900" text-anchor="middle" fill="var(--m)" stroke="none" font-size="11">Corpus WLanguage 12k (verificado por hash, consultado por tema) e references/ do plugin são a fonte técnica de todos os agentes; regra de negócio só vem do legado com origem localizável.</text>
+<text x="700" y="936" text-anchor="middle" fill="var(--a)" stroke="none" font-size="12" font-weight="600">Built to convert. Engineered to prove.</text>
+</g>
+</svg>
+<figcaption>O plugin em três movimentos: o questionário produz o contexto da primeira sessão; os gates avançam só com o aprovador humano; dentro de cada sprint o GP distribui, o Gestor de tarefas pesa e escolhe o modelo, os papéis executam em PDCA, testes e prova real medem, o Supervisor recomenda e o humano decide. Cada ciclo infrutífero aciona o Pesquisador, e o resultado da sprint sai em relatório, painel, cópia zipada e, no fim, na pasta do usuário.</figcaption>
+<div class="leg"><span><i class="sw"></i>fluxo principal</span><span><i class="sw a"></i>portão ou decisão humana</span><span><i class="sw az"></i>distribuição do GP</span><span><i class="sw vd"></i>verificação</span><span><i class="sw d"></i>sob demanda ou por sinal</span></div>
+</figure>
+
+<h2 class="sec" style="font-family:'Exo 2',sans-serif;font-size:22px;margin:38px 0 4px">As sete etapas, do install à entrega</h2>
+<p class="sub">O diagrama acima mostra o mecanismo; a lista abaixo, a ordem em que um projeto passa por ele na 3.22.0.</p>
 <section class="etapa"><div class="cab"><span class="num">1</span><h2>Instalar e ativar</h2><code>claude plugin install</code></div><ul><li><b>licenca</b><span>serial confere a máquina; sem ele, os scripts do plugin recusam</span></li><li><b>comandos</b><span>o índice: 19 comandos e os 60 ids das perguntas</span></li></ul></section><section class="etapa"><div class="cab"><span class="num">2</span><h2>Perguntar</h2><code>/wx-claude-code:questionario</code></div><ul><li><b>bloco 0</b><span>empresa, diretores, logotipos, prazo, orçamento, riscos, GitHub, aprovador (0.1–0.16)</span></li><li><b>A–E</b><span>evidências: SQL da análise e os quatro PDFs</span></li><li><b>F</b><span>tela modelo e estilo (F0–F13)</span></li><li><b>G</b><span>corpus do Help WLanguage (12k)</span></li><li><b>H · I</b><span>destino: qualquer linguagem; perfil «outra» é aceito</span></li><li><b>J</b><span>economia de tokens</span></li><li><b>K</b><span>ambiente (K0–K7) e backup e replicação (K8)</span></li><li><b>L</b><span>kickoff, hooks, MCP, implantação, esqueleto de ERP (L1–L6)</span></li><li><b>M</b><span>artefatos do cliente, um por vez, com onde usar</span></li></ul></section><section class="etapa"><div class="cab"><span class="num">3</span><h2>Gerar o contexto</h2><code>aplicar_questionario.py</code></div><ul><li><b>CLAUDE.md · INDEX_FILES.md</b><span>o que a primeira sessão lê antes de qualquer comando</span></li><li><b>respostas_questionario.md</b><span>as 60 respostas com índice por id, para os agentes</span></li><li><b>esqueleto de ERP</b><span>AGENTS, CONTEXT, ADRs, domínios, database, src, tests, workflows</span></li><li><b>ambiente e backup</b><span>instalador, papéis SQL, .env.exemplo, plano de backup</span></li><li><b>102 arquivos</b><span>nada é sobrescrito ao reaplicar</span></li></ul></section><section class="etapa"><div class="cab"><span class="num">4</span><h2>Provar a entrada</h2><code>/wx-claude-code:preflight — G0</code></div><ul><li><b>inventário</b><span>cada evidência com hash e classificação</span></li><li><b>relatório</b><span>o hook portão_g0 falha fechado se não conseguir lê-lo</span></li><li><b>PDF → markdown</b><span>página, hash e OCR marcado em vez de inventado</span></li></ul></section><section class="etapa"><div class="cab"><span class="num">5</span><h2>Converter</h2><code>/wx-claude-code:converter — G1 a G7</code></div><ul><li><b>G1 inventário</b><span>BR-, QRY-, UI-, RPT-, INT-, DB- com origem localizável</span></li><li><b>G2 arquitetura</b><span>o que cada peça vira; a estratégia escolhida em H</span></li><li><b>G3 dados</b><span>esquema migrado, chaves e integridade</span></li><li><b>G4 piloto</b><span>uma vertical inteira, com golden master</span></li><li><b>G5 ondas</b><span>módulo a módulo, telas pelo Impeccable</span></li><li><b>G6 homologação</b><span>paralelo com o legado</span></li><li><b>G7 virada</b><span>só com backup do legado restaurado, não copiado</span></li></ul></section><section class="etapa"><div class="cab"><span class="num">6</span><h2>Governar</h2><code>/wx-claude-code:pmo</code></div><ul><li><b>sprints</b><span>BlocoNNNN-SPNNNNN, cada uma em .md zipado</span></li><li><b>PDCA</b><span>frutíferos e infrutíferos na base de conhecimento</span></li><li><b>relatório</b><span>onze seções, todo número saindo de arquivo</span></li><li><b>equipe A–J</b><span>zelador, pesquisador, documentador, qualidade, tarefas, GP, testes, status, base, tradutor</span></li></ul></section><section class="etapa"><div class="cab"><span class="num">7</span><h2>Entregar</h2><code>/wx-claude-code:exportar</code></div><ul><li><b>sete pastas</b><span>manifesto com SHA-256 de cada arquivo</span></li><li><b>sem segredo</b><span>recusa .env e arquivo com cara de token</span></li><li><b>registro</b><span>toda operação em .wx-migration/logs/</span></li></ul></section>
 <h2 class="sec">As guardas, que rodam sozinhas</h2>
 <p class="nota">Regra que depende de alguém lembrar não é regra. Estas rodam nos eventos do Claude Code, e cada negativa entra no registro de operações.</p>
 <div class="scroll"><table><thead><tr><th style="width:20%">guarda</th><th style="width:22%">evento</th><th>o que faz valer</th></tr></thead><tbody><tr><td><b>portão G0</b></td><td class="mono">PreToolUse</td><td>nenhuma escrita fora de .wx-migration antes do G0 passar; falha fechado</td></tr><tr><td><b>guarda de anexos</b></td><td class="mono">PreToolUse</td><td>inputs/ e artefatos/ são somente leitura; redirecionamento confere o alvo</td></tr><tr><td><b>filtro de segredos</b></td><td class="mono">PreToolUse</td><td>token em arquivo ou em linha de comando é recusado</td></tr><tr><td><b>licença</b></td><td class="mono">PreToolUse · SessionStart</td><td>serial confere a máquina antes de rodar script do plugin</td></tr><tr><td><b>sincronizar PMO</b></td><td class="mono">PostToolUse</td><td>Kanban acompanha a matriz sem ninguém digitar</td></tr><tr><td><b>identificação</b></td><td class="mono">UserPromptSubmit</td><td>BlocoNNNN-SPNNNNN-Título · data em toda resposta</td></tr><tr><td><b>RAG</b></td><td class="mono">UserPromptSubmit</td><td>injeta o trecho mais próximo com arquivo#linha, e o tema do Help</td></tr><tr><td><b>zelador</b></td><td class="mono">SessionStart</td><td>limpa temporário uma vez por dia e mede o que liberou</td></tr><tr><td><b>impeccable</b></td><td class="mono">PostToolUse · Stop</td><td>revisão de design da tela que acabou de mudar</td></tr></tbody></table></div>
 <h2 class="sec">Onde as coisas caem</h2>
 <p class="nota"><code>.wx-migration/</code> é a governança (respostas, matriz, PMO, ambiente, prompts, logs, extraídos); <code>inputs/</code> é a evidência do legado, somente leitura; <code>artefatos/</code> é o que o cliente mandou por fora, também somente leitura e com hash; a raiz do projeto recebe o que a primeira sessão lê e o esqueleto de ERP. O organograma de arquivos detalha os 102 arquivos que o questionário pode gerar.</p>
+
 </div>

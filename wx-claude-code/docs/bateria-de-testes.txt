@@ -1,0 +1,22 @@
+$ python3 tests/testes.py
+.................................................
+----------------------------------------------------------------------
+Ran 49 tests in 21.315s
+
+OK
+
+$ python3 skills/conversao-wx/scripts/validate_plugin_bundle.py . --strict
+{
+  "valid": true,
+  "plugin": "wx-claude-code",
+  "tests": "OK",
+  "skills": 13,
+  "agents": 94,
+  "errors": [],
+  "warnings": []
+}
+
+$ claude plugin validate .
+Validating plugin manifest: /home/user/adrianoboller/wx-claude-code/.claude-plugin/plugin.json
+
+√ Validation passed
