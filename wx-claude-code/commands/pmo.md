@@ -1,6 +1,6 @@
 ---
 description: "PMO da conversao WX com Scrum, Kanban e PDCA: sprints, quadro com WIP, base de conhecimento, orcamento de tokens e painel medido."
-argument-hint: "[iniciar|bloco|sprint|identificacao|status|relatorio|kanban|pdca|entregar|painel|exportar|limpar|orcamento (só no comando: chama uso_de_tokens.py)] [raiz-do-projeto]"
+argument-hint: "[iniciar|bloco|sprint|identificacao|atividade|status [--por-agente]|relatorio|kanban|pdca|entregar|painel|exportar|limpar|orcamento (só no comando: chama uso_de_tokens.py)] [raiz-do-projeto]"
 allowed-tools: "Read, Glob, Grep, Bash, Write, Edit, Agent, AskUserQuestion"
 ---
 
@@ -10,7 +10,7 @@ allowed-tools: "Read, Glob, Grep, Bash, Write, Edit, Agent, AskUserQuestion"
 
 > **Licença.** Se o contexto da sessão disser que o WX Claude Code está sem licença válida, pare aqui: explique o estado (`licenca.py verificar`) e como instalar o serial (`licenca.py instalar`). Não tente contornar o hook.
 
-Delegue ao agente `wx-claude-code:pmo-gerente-de-projetos` com o subcomando de `$ARGUMENTS` e a raiz do projeto. Leia antes `${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/references/pmo.md` e `balanceamento-de-modelos.md`.
+A equipe prioritária (`references/equipe-prioritaria.md`) tem dez agentes com gatilho próprio: o GP (`equipe-f-gp`) é o dono do backlog; ciclo infrutífero aciona o Pesquisador (`equipe-b`); item novo passa pelo Gestor de tarefas (`equipe-e`), que pesa e escolhe o modelo; o Status (`equipe-h`) relata por agente. Delegue ao agente `wx-claude-code:pmo-gerente-de-projetos` com o subcomando de `$ARGUMENTS` e a raiz do projeto. Leia antes `${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/references/pmo.md` e `balanceamento-de-modelos.md`.
 
 Subcomandos:
 
@@ -32,6 +32,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/pmo.py" --project-roo
 - `entregar`: zipa a entrega da sprint para o stakeholder (`pmo.py entregar --sprint N --plugin-root "${CLAUDE_PLUGIN_ROOT}"`): resumo de doze seções, técnicas aplicadas com números, base de conhecimento, ferramentas usadas lidas dos scripts, decisões, lacunas, RAID e o Kanban do fechamento.
 - `bloco abrir --titulo "<capítulo>" [--gate G<n>]`: abre um bloco (`Bloco0001`, `Bloco0002`…), o capítulo do projeto a que as próximas sprints pertencem. A primeira sprint sem bloco abre o `Bloco0001` sozinha.
 - `sprint abrir` recebe o id `SP00001`, `SP00002`… dentro do bloco atual (ou `--bloco BlocoNNNN`); `sprint fechar` grava `pmo/sprints/BlocoNNNN-SPNNNNN-<titulo>.md` **e a cópia zipada** com o mesmo nome, além do relatório e do painel.
+- `atividade --agente <nome> --item <id> --estado iniciou|andamento|bloqueado|concluiu|falhou [--nota]`: cada agente registra o que faz; `status --por-agente` (agente H) relata por agente, o que trava e os últimos registros.
 - `identificacao`: imprime a linha `BlocoNNNN-SPNNNNN-Título · data` que abre toda resposta; o hook `UserPromptSubmit` a injeta a cada interação.
 - `exportar`: grava o projeto resultante, organizado em sete pastas numeradas com manifesto de hashes, na pasta que o usuário definiu (`--destino`, ou `L3.pasta_de_saida` do questionário): `python3 "${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/exportar_projeto.py" --project-root <projeto> --destino <pasta> [--codigo <dir>] [--com-evidencias]`. `.env`, chaves, `target/`, `node_modules/` e `.git/` ficam de fora; arquivo com formato de token é recusado com o caminho.
 - `limpar`: o zelador (papel D) apaga temporários: execuções antigas do pré-flight (ficam as três últimas), logs com mais de 7 dias, `__pycache__`, worktrees parados. `python3 "${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/zelador.py" --project-root <projeto> limpar [--dias 7] [--executar]`. Sem `--executar` só relata. O hook `SessionStart` roda isso sozinho no máximo uma vez por dia e registra em `.wx-migration/logs/zelador.md`.

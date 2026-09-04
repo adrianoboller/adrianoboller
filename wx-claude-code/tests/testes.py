@@ -488,6 +488,70 @@ class ExportarEZelador(unittest.TestCase):
         r = run(SCRIPTS / "zelador.py", "--project-root", self.tmp, "hook-sessao"); self.assertEqual(r.stdout, "")
 
 
+class EquipePrioritaria(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp()); (self.tmp / ".wx-migration").mkdir()
+        run(SCRIPTS / "pmo.py", "--project-root", self.tmp, "iniciar", "--aprovador", "A")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_infrutifero_aciona_pesquisador_e_base_em_dois_arquivos_com_indice(self):
+        import re as _re
+        pid = _re.search(r"PDCA-\d+", run(SCRIPTS / "pmo.py", "--project-root", self.tmp, "pdca", "abrir", "--gate", "G4", "--hipotese", "H1", "--medida", "ms", "--criterio", "<1").stdout).group(0)
+        r = run(SCRIPTS / "pmo.py", "--project-root", self.tmp, "pdca", "fechar", "--id", pid, "--resultado", "infrutifero", "--medido", "9", "--aprendizado", "x", "--proxima", "H2")
+        self.assertIn("pedido ao Pesquisador", r.stdout)
+        self.assertIn("| PDCA-001 | ", (self.tmp / ".wx-migration/pmo/pesquisas.md").read_text()); self.assertIn("| aberto |", (self.tmp / ".wx-migration/pmo/pesquisas.md").read_text())
+        self.assertTrue((self.tmp / ".wx-migration/pmo/conhecimento/infrutiferos.md").is_file()); self.assertFalse((self.tmp / ".wx-migration/pmo/conhecimento/frutiferos.md").exists())
+        idx = (self.tmp / ".wx-migration/pmo/conhecimento/indice.md").read_text(); self.assertIn("| `infrutiferos.md` |", idx); self.assertIn("| 1 |", idx)
+        self.assertIn("para o GP", (self.tmp / ".wx-migration/pmo/avisos.md").read_text())
+        pid2 = _re.search(r"PDCA-\d+", run(SCRIPTS / "pmo.py", "--project-root", self.tmp, "pdca", "abrir", "--gate", "G4", "--hipotese", "H2", "--medida", "ms", "--criterio", "<1").stdout).group(0)
+        r = run(SCRIPTS / "pmo.py", "--project-root", self.tmp, "pdca", "fechar", "--id", pid2, "--resultado", "frutifero", "--medido", "0.5", "--aprendizado", "ok")
+        self.assertNotIn("Pesquisador", r.stdout); self.assertTrue((self.tmp / ".wx-migration/pmo/conhecimento/frutiferos.md").is_file())
+
+    def test_status_por_agente_e_atividades(self):
+        run(SCRIPTS / "pmo.py", "--project-root", self.tmp, "atividade", "--agente", "papel-c-dba", "--item", "DB-1", "--estado", "bloqueado", "--nota", "sem banco")
+        run(SCRIPTS / "pmo.py", "--project-root", self.tmp, "atividade", "--agente", "equipe-g-testes", "--item", "BR-1", "--estado", "concluiu")
+        r = run(SCRIPTS / "pmo.py", "--project-root", self.tmp, "atividade", "--agente", "x", "--item", "y", "--estado", "dormindo"); self.assertNotEqual(r.returncode, 0)
+        st = run(SCRIPTS / "pmo.py", "--project-root", self.tmp, "status", "--por-agente").stdout
+        self.assertIn("| papel-c-dba | 1 | 0 | 1 | 0 | 0 |", st); self.assertIn("DB-1: bloqueado — sem banco", st)
+        self.assertTrue((self.tmp / ".wx-migration/pmo/status-por-agente.md").is_file())
+
+    def test_gestor_de_tarefas_pesa_e_escolhe_modelo(self):
+        r = run(SCRIPTS / "pesar_tarefa.py", "--project-root", self.tmp, "pesar", "--id", "UI-1", "--titulo", "t"); self.assertIn("haiku", r.stdout); self.assertIn("[ESTIMADO]", r.stdout)
+        r = run(SCRIPTS / "pesar_tarefa.py", "--project-root", self.tmp, "pesar", "--id", "BR-1", "--titulo", "t", "--sinal", "fiscal", "--sinal", "concorrencia", "--sinal", "seguranca", "--sinal", "banco", "--referencia", "doc: linhas=1200 horas=20")
+        self.assertIn("critico", r.stdout); self.assertIn("opus effort max", r.stdout); self.assertIn("[MEDIDO]", r.stdout)
+        r = run(SCRIPTS / "pesar_tarefa.py", "--project-root", self.tmp, "pesar", "--id", "X", "--titulo", "t", "--sinal", "magia"); self.assertEqual(r.returncode, 2)
+        run(SCRIPTS / "pesar_tarefa.py", "--project-root", self.tmp, "registrar", "--id", "BR-1", "--linhas-reais", "900", "--horas-reais", "15")
+        r = run(SCRIPTS / "pesar_tarefa.py", "--project-root", self.tmp, "pesar", "--id", "BR-2", "--titulo", "t"); self.assertIn("linhas 900", r.stdout)
+
+    def test_documentador_gera_md_html_e_indice(self):
+        cod = self.tmp / "src"; cod.mkdir()
+        (cod / "a.py").write_text('def soma(a: int, b: int) -> int:\n    """Soma dois inteiros."""\n    return a + b\n\ndef sem_doc(x):\n    return x\n')
+        (cod / "b.rs").write_text("/// Calcula o saldo do lote.\npub fn saldo(lote: &Lote) -> Decimal {\n    lote.entradas - lote.saidas\n}\n")
+        (cod / "c.ts").write_text("/** Formata moeda. */\nexport function moeda(v: number): string { return v.toFixed(2) }\n")
+        r = run(SCRIPTS / "documentar_codigo.py", "--codigo", cod, "--saida", self.tmp / "docs", "--projeto", "t"); self.assertEqual(r.returncode, 0, r.stderr)
+        idx = json.loads((self.tmp / "docs/indice.json").read_text())
+        por = {i["funcao"]: i for i in idx["indice"]}
+        self.assertEqual(por["soma"]["finalidade"], "Soma dois inteiros."); self.assertEqual(por["soma"]["parametros"], ["a: int", "b: int"]); self.assertEqual(por["soma"]["retorno"], "int")
+        self.assertEqual(por["saldo"]["finalidade"], "Calcula o saldo do lote."); self.assertEqual(por["moeda"]["finalidade"], "Formata moeda."); self.assertEqual(por["sem_doc"]["finalidade"], "(nao documentado)")
+        self.assertEqual(idx["sem_finalidade"], 1); self.assertIn("<table>", (self.tmp / "docs/funcoes.html").read_text()); self.assertIn("### `soma`", (self.tmp / "docs/funcoes.md").read_text())
+
+    def test_tradutor_centraliza_e_verifica(self):
+        run(SCRIPTS / "i18n.py", "--project-root", self.tmp, "iniciar", "--idioma", "pt-BR", "--idioma", "en")
+        run(SCRIPTS / "i18n.py", "--project-root", self.tmp, "adicionar", "--chave", "botao.gravar", "--texto", "pt-BR=Gravar")
+        self.assertEqual(run(SCRIPTS / "i18n.py", "--project-root", self.tmp, "verificar").returncode, 3)
+        run(SCRIPTS / "i18n.py", "--project-root", self.tmp, "adicionar", "--chave", "botao.gravar", "--texto", "en=Save")
+        self.assertEqual(run(SCRIPTS / "i18n.py", "--project-root", self.tmp, "verificar").returncode, 0)
+        cod = self.tmp / "web"; cod.mkdir(); (cod / "Tela.tsx").write_text('<button title="Confirma a exclusão?">x</button>')
+        r = run(SCRIPTS / "i18n.py", "--project-root", self.tmp, "extrair", "--codigo", cod); self.assertIn("1 literal", r.stdout)
+        d = json.loads((self.tmp / "i18n/textos.json").read_text()); self.assertTrue(any(k.startswith("pendente.") for k in d["textos"]))
+
+    def test_zelador_por_sinal_de_espaco(self):
+        r = run(SCRIPTS / "zelador.py", "--project-root", self.tmp, "espaco", "--minimo-mb", "1"); self.assertIn("nada a fazer", r.stdout)
+        r = run(SCRIPTS / "zelador.py", "--project-root", self.tmp, "espaco", "--minimo-mb", "999999999", "--executar"); self.assertIn("abaixo de", r.stdout); self.assertIn("agora", r.stdout)
+
+
 class Licenca(unittest.TestCase):
     """Serial RSA: o plugin so tem a chave publica e nao forja serial."""
 

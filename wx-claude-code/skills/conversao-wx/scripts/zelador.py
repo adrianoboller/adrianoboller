@@ -97,6 +97,17 @@ def limpar(projeto: Path, dias: int, executar: bool, se_vencido: bool) -> str:
     return "\n".join(saida)
 
 
+def espaco(projeto: Path, minimo_mb: int, executar: bool) -> str:
+    """Sinal de outro agente: sem espaco. Mede o disco e, abaixo do minimo, limpa tudo que e temporario (dias=0)."""
+    st = shutil.disk_usage(projeto)
+    livre_mb = st.free // (1024 * 1024)
+    if livre_mb >= minimo_mb:
+        return f"zelador: {livre_mb} MB livres (mínimo {minimo_mb}); nada a fazer"
+    texto = limpar(projeto, 0, executar, False)
+    depois = shutil.disk_usage(projeto).free // (1024 * 1024)
+    return f"zelador: {livre_mb} MB livres, abaixo de {minimo_mb}; " + texto.splitlines()[0] + f"; agora {depois} MB livres"
+
+
 def hook_sessao(projeto: Path) -> int:
     if not (projeto / ".wx-migration").is_dir():
         return 0
@@ -115,10 +126,13 @@ def main() -> int:
     l.add_argument("--executar", action="store_true")
     l.add_argument("--se-vencido", action="store_true", help="so roda se a ultima rodada tiver mais de um dia")
     sub.add_parser("hook-sessao")
+    e = sub.add_parser("espaco", help="sinal de outro agente: mede o disco e limpa se estiver abaixo do minimo"); e.add_argument("--minimo-mb", type=int, default=500); e.add_argument("--executar", action="store_true")
     a = ap.parse_args()
     projeto = a.project_root.resolve()
     if a.cmd == "hook-sessao":
         return hook_sessao(projeto)
+    if a.cmd == "espaco":
+        print(espaco(projeto, a.minimo_mb, a.executar)); return 0
     texto = limpar(projeto, a.dias, a.executar, a.se_vencido)
     print(texto or "zelador: já rodou hoje")
     return 0

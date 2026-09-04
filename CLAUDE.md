@@ -261,7 +261,7 @@ erros. Mudou o questionário ou o manifesto? Rode o exemplo antes de commitar.
 A skill `impeccable` é vendorizada de `pbakaus/impeccable` (Apache 2.0): não
 edite o conteúdo dela aqui, atualize da origem — **exceto a `description`**, que
 foi encurtada de propósito. Medido: com 895 caracteres e o plugin inteiro
-carregado (na época, 26 agentes e 4 comandos; hoje 84 e 5), a skill sumia da listagem de uma sessão
+carregado (na época, 26 agentes e 4 comandos; hoje 94 e 5), a skill sumia da listagem de uma sessão
 nova; com 150 ela aparece, e as dos comandos foram encurtadas junto. Descrição
 de skill acima de 300 caracteres é aviso do validador. A listagem que o modelo
 devolve ainda oscila entre 6 e 7 itens: confira por nome, não por contagem. Prova: `claude --plugin-dir wx-claude-code -p "liste as skills"`.

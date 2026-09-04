@@ -50,7 +50,7 @@ python3 wx-claude-code/skills/conversao-wx/scripts/query_wlanguage_help.py --ver
    `claude plugin install wx-claude-code@wx-claude-code`.
 
 **Conferir.** Numa sessão nova, peça «liste as skills e os agentes com prefixo
-`wx-claude-code:`». Devem aparecer 5 comandos, 3 skills e 84 agentes. A
+`wx-claude-code:`». Devem aparecer 5 comandos, 3 skills e 94 agentes. A
 listagem que o modelo devolve pode omitir um item; confira por nome, não
 por contagem.
 
@@ -139,6 +139,24 @@ classe e modelo, a estratégia de conversão e o destino da entrega, e os
 próximos passos derivados do que está acima (próximo gate, sprint aberta,
 itens a desbloquear, decisões pendentes, lacunas críticas, prazo vencido).
 `pmo.py relatorio` imprime o mesmo texto a qualquer hora.
+
+**A equipe prioritária.** Dez agentes que têm de existir num projeto de
+grande porte, na ordem de prioridade, cada um com o seu gatilho: A Zelador
+(sinal de falta de espaço ou hook diário); B Pesquisador (todo ciclo PDCA
+infrutífero vira um pedido em `pmo/pesquisas.md`, e ele busca na internet e
+responde com a fonte); C Documentador (`documentar_codigo.py` gera
+`funcoes.md`, `funcoes.html` e `indice.json` com finalidade, parâmetros,
+processamento e resultados de cada função); D Supervisor de qualidade
+(confronta fonte, documentação, objetivos e as interjeições do stakeholder em
+`pmo/interjeicoes.md`); E Gestor de tarefas (`pesar_tarefa.py` pesa por linhas
+e tempo de tarefas similares e escolhe o modelo, do barato ao mais caro); F GP
+(backlog, Kanban, versionamento por sprint); G Equipe de testes (roda as
+baterias e entrega ao conferente de prova real); H Status (`pmo.py status
+--por-agente`, a partir do que cada agente registra com `pmo.py atividade`);
+I Gestor da base de conhecimento (`pmo/conhecimento/frutiferos.md`,
+`infrutiferos.md`, `indice.md`, com aviso ao GP); J Tradutor multilíngue, que
+só entra a pedido e centraliza os textos em `i18n/textos.json`. Detalhe em
+`references/equipe-prioritaria.md`.
 
 **Blocos, sprints e a identificação de cada interação.** O projeto se divide
 em blocos numerados (`Bloco0001`, `Bloco0002`…), os capítulos, e cada bloco tem

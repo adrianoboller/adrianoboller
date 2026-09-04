@@ -31,7 +31,7 @@ import os
 import re
 import sys
 from collections import Counter
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 GATES = ["G0", "G1", "G2", "G3", "G4", "G5", "G6", "G7"]
@@ -202,7 +202,68 @@ def pdca_fechar(wx: Path, ident: str, resultado: str, medido: str, aprendizado: 
     linha = f"| {ident} | {date.today().isoformat()} | {gate.group(1) if gate else ''} | {hip.group(1) if hip else ''} | {resultado} | {medido} | {aprendizado} | {proxima or '—'} |\n"
     with base.open("a", encoding="utf-8") as f:
         f.write(linha)
-    return f"{ident} fechado ({resultado}); base_de_conhecimento.md ganhou uma linha"
+    # Gestor da base (I): frutiferos.md, infrutiferos.md e indice.md, e o aviso ao GP.
+    pasta = wx / "pmo" / "conhecimento"; pasta.mkdir(exist_ok=True)
+    alvo = pasta / ("frutiferos.md" if resultado == "frutifero" else "infrutiferos.md")
+    if not alvo.is_file():
+        alvo.write_text(f"# Resultados {'frutíferos' if resultado == 'frutifero' else 'infrutíferos'}\n\n| ciclo | data | gate | hipótese | medido | aprendizado | próxima hipótese |\n| --- | --- | --- | --- | --- | --- | --- |\n", encoding="utf-8")
+    with alvo.open("a", encoding="utf-8") as f:
+        f.write(f"| {ident} | {date.today().isoformat()} | {gate.group(1) if gate else ''} | {hip.group(1) if hip else ''} | {medido} | {aprendizado} | {proxima or '—'} |\n")
+    _indice_conhecimento(pasta)
+    with (wx / "pmo" / "avisos.md").open("a", encoding="utf-8") as f:
+        f.write(f"- {date.today().isoformat()} · base de conhecimento: {ident} {resultado} ({hip.group(1) if hip else ''}); índice em `pmo/conhecimento/indice.md` — para o GP\n")
+    extra = ""
+    if resultado == "infrutifero":
+        # Pesquisador (B): todo infrutifero vira um pedido de pesquisa, com a hipotese e a proxima.
+        pend = wx / "pmo" / "pesquisas.md"
+        if not pend.is_file():
+            pend.write_text("# Pedidos ao Pesquisador\n\nUm por ciclo infrutífero; o Pesquisador responde na coluna «achado» com a fonte e fecha.\n\n| ciclo | data | hipótese que morreu | próxima hipótese | estado | achado (com fonte) |\n| --- | --- | --- | --- | --- | --- |\n", encoding="utf-8")
+        with pend.open("a", encoding="utf-8") as f:
+            f.write(f"| {ident} | {date.today().isoformat()} | {hip.group(1) if hip else ''} | {proxima} | aberto | |\n")
+        extra = "; pedido ao Pesquisador em pmo/pesquisas.md"
+    return f"{ident} fechado ({resultado}); base_de_conhecimento.md e pmo/conhecimento/ ganharam uma linha{extra}"
+
+
+def _indice_conhecimento(pasta: Path) -> None:
+    def conta(nome):
+        p = pasta / nome
+        return sum(1 for l in p.read_text(encoding="utf-8").splitlines() if l.startswith("| PDCA-")) if p.is_file() else 0
+    fr, inf = conta("frutiferos.md"), conta("infrutiferos.md")
+    (pasta / "indice.md").write_text(f"# Índice da base de conhecimento\n\nAtualizado em {date.today().isoformat()} pelo Gestor da base (I). Fonte: os ciclos PDCA fechados.\n\n| arquivo | o que há | ciclos |\n| --- | --- | ---: |\n| `frutiferos.md` | hipóteses que deram certo, com o número medido | {fr} |\n| `infrutiferos.md` | hipóteses que morreram, com o número e a próxima hipótese | {inf} |\n| `../base_de_conhecimento.md` | as duas juntas, em ordem de fechamento | {fr + inf} |\n\nInfrutífero não é fracasso: é o que impede a mesma ideia de voltar sem medição.\n", encoding="utf-8")
+
+
+def atividade(wx: Path, agente: str, item: str, estado: str, nota: str) -> str:
+    """Status (H): cada agente registra o que esta fazendo; o relatorio por agente le daqui."""
+    if estado not in ("iniciou", "andamento", "bloqueado", "concluiu", "falhou"):
+        raise ValueError("estado: iniciou | andamento | bloqueado | concluiu | falhou")
+    (wx / "pmo").mkdir(parents=True, exist_ok=True)
+    reg = {"quando": datetime.now().isoformat(timespec="minutes"), "agente": agente, "item": item, "estado": estado, "nota": nota}
+    with (wx / "pmo" / "atividades.jsonl").open("a", encoding="utf-8") as f:
+        f.write(json.dumps(reg, ensure_ascii=False) + "\n")
+    return f"{agente}: {item} {estado}"
+
+
+def status_por_agente(wx: Path) -> str:
+    p = wx / "pmo" / "atividades.jsonl"
+    L = ["# Status por agente", "", f"**{identificacao(wx)}**", "", f"Gerado por `pmo.py status --por-agente` em {datetime.now().isoformat(timespec='minutes')}. Fonte: `pmo/atividades.jsonl`, escrito por cada agente com `pmo.py atividade`.", ""]
+    if not p.is_file():
+        return "\n".join(L + ["INDISPONÍVEL: nenhum agente registrou atividade ainda."])
+    regs = [json.loads(l) for l in p.read_text(encoding="utf-8").splitlines() if l.strip()]
+    ultimo: dict = {}
+    for r in regs:
+        ultimo[(r["agente"], r["item"])] = r
+    por_agente: dict = {}
+    for (ag, it), r in ultimo.items():
+        por_agente.setdefault(ag, []).append(r)
+    L += ["| agente | itens | em andamento | bloqueados | concluídos | falhas | último registro |", "| --- | ---: | ---: | ---: | ---: | ---: | --- |"]
+    for ag in sorted(por_agente):
+        rs = por_agente[ag]
+        c = lambda e: sum(1 for r in rs if r["estado"] == e)
+        L.append(f"| {ag} | {len(rs)} | {c('iniciou') + c('andamento')} | {c('bloqueado')} | {c('concluiu')} | {c('falhou')} | {max(r['quando'] for r in rs)} |")
+    bloq = [r for r in ultimo.values() if r["estado"] in ("bloqueado", "falhou")]
+    L += ["", "## O que trava", ""] + ([f"- {r['agente']} · {r['item']}: {r['estado']} — {r['nota'] or 'sem nota'}" for r in bloq] or ["Nada bloqueado."]) + [""]
+    L += ["## Últimos 20 registros", "", "| quando | agente | item | estado | nota |", "| --- | --- | --- | --- | --- |"] + [f"| {r['quando']} | {r['agente']} | {r['item']} | {r['estado']} | {r['nota']} |" for r in regs[-20:]] + [""]
+    return "\n".join(L)
 
 
 def kanban(wx: Path) -> str:
@@ -884,7 +945,8 @@ def main() -> int:
     parser.add_argument("--project-root", type=Path, default=Path("."))
     sub = parser.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("iniciar"); s.add_argument("--aprovador", default="")
-    sub.add_parser("status")
+    st = sub.add_parser("status"); st.add_argument("--por-agente", action="store_true")
+    at = sub.add_parser("atividade"); at.add_argument("--agente", required=True); at.add_argument("--item", required=True); at.add_argument("--estado", required=True); at.add_argument("--nota", default="")
     g = sub.add_parser("gastar")
     g.add_argument("--gate", required=True, choices=GATES)
     g.add_argument("--modelo", required=True, choices=["haiku", "sonnet", "opus"])
@@ -939,6 +1001,12 @@ def main() -> int:
             print(sprint_abrir(wx, args.nome, args.objetivo, args.gate, args.item, args.aprovador, args.bloco))
         else:
             print(sprint_fechar(wx, args.decisao, args.pedido))
+    elif args.cmd == "atividade":
+        print(atividade(wx, args.agente, args.item, args.estado, args.nota))
+    elif args.cmd == "status" and args.por_agente:
+        texto = status_por_agente(wx)
+        (wx / "pmo" / "status-por-agente.md").write_text(texto + "\n", encoding="utf-8")
+        print(texto)
     else:
         texto = status(wx)
         (wx / "pmo").mkdir(parents=True, exist_ok=True)

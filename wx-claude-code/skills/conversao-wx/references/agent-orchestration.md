@@ -104,3 +104,7 @@ Não repasse logs extensos ao orquestrador. Salve-os em `.wx-migration/logs/` e 
 ## Independência de revisão
 
 Quem implementa não aprova o próprio gate. O `wx-claude-code:quality-auditor` não edita código e deve tentar refutar a equivalência com casos negativos, limites, falhas, concorrência e regressão.
+
+## Equipe prioritária
+
+Dez agentes de governança com gatilho próprio, em `references/equipe-prioritaria.md`: `equipe-a-zelador`, `equipe-b-pesquisador`, `equipe-c-documentador`, `equipe-d-supervisor-de-qualidade`, `equipe-e-gestor-de-tarefas`, `equipe-f-gp`, `equipe-g-testes`, `equipe-h-status`, `equipe-i-base-de-conhecimento`, `equipe-j-tradutor`. Só o GP tem `Agent`; o Tradutor só age a pedido do usuário.

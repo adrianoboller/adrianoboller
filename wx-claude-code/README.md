@@ -28,7 +28,7 @@ Requisitos: Python 3.10+ (scripts de intake e do corpus) e Node 22+ (Impeccable)
 | `/wx-claude-code:converter` | Conversão por gates G0–G7 (pré-flight, inventário, especificação, arquitetura, piloto vertical, ondas, endurecimento, cutover). |
 | `/wx-claude-code:estilo-telas` | Paleta, tema, tipografia e densidade viram `PRODUCT.md` e `DESIGN.md` pelo Impeccable; cada tela convertida nasce nesse sistema. |
 | `/wx-claude-code:laudo-tokens` | Laudo de uso de tokens em 3 fases. Somente leitura; nada muda sem aprovação. |
-| `/wx-claude-code:pmo` | Gerente de projetos: plano por gates, orçamento de tokens por modelo, RAID, resumo de sprint e o relatório de onze seções com painel HTML, gerado sozinho ao fechar sprint e na entrega; `exportar` salva o projeto organizado na pasta do usuário e `limpar` é o zelador dos temporários. Blocos `Bloco0001` e sprints `SP00001`, com a identificação `BlocoNNNN-SPNNNNN-Título · data` abrindo toda resposta e cada sprint fechada em `.md` e `.zip`. |
+| `/wx-claude-code:pmo` | Gerente de projetos: plano por gates, orçamento de tokens por modelo, RAID, resumo de sprint e o relatório de onze seções com painel HTML, gerado sozinho ao fechar sprint e na entrega; `exportar` salva o projeto organizado na pasta do usuário e `limpar` é o zelador dos temporários. Equipe prioritária de dez agentes com gatilho próprio (zelador por sinal, pesquisador por infrutífero, documentador, supervisor de qualidade, gestor de tarefas que pesa e escolhe o modelo, GP, testes, status por agente, base de conhecimento, tradutor a pedido). Blocos `Bloco0001` e sprints `SP00001`, com a identificação `BlocoNNNN-SPNNNNN-Título · data` abrindo toda resposta e cada sprint fechada em `.md` e `.zip`. |
 | `/impeccable <comando> <alvo>` | Os comandos do Impeccable (`polish`, `audit`, `critique`, `shape`, `harden`…; 23 segundo o SKILL.md de origem). |
 
 ## O questionário
@@ -175,6 +175,7 @@ geradas por `docs/prints/gerar.md`).
 | ![ambiente](docs/prints/23-letra-k-ambiente-sem-senha.png) letra K: PostgreSQL, papéis por nível e a senha do root que não é gravada nem repetida | ![n8n](docs/prints/24-letra-k7-n8n-integrado.png) K7: n8n sim ou não, e cada item da integração um por mensagem |
 | ![kickoff](docs/prints/25-primeira-sessao-index-e-kickoff.png) primeira sessão: lê `INDEX_FILES.md` e o kickoff, sabe o escopo da v1 e recusa código sem G0 | ![exportar](docs/prints/26-pmo-exportar-projeto-organizado.png) `pmo exportar`: o projeto organizado na pasta do usuário, sem segredo, com hashes |
 | ![zelador](docs/prints/27-zelador-limpeza-diaria.png) o zelador limpa temporários ao abrir a sessão e deixa o registro medido | ![identificacao](docs/prints/28-identificacao-bloco-sprint.png) toda resposta abre com `BlocoNNNN-SPNNNNN-Título · data`, injetado pelo hook |
+| ![equipe](docs/prints/29-equipe-prioritaria-pesquisador-e-status.png) equipe prioritária: infrutífero aciona o Pesquisador; status por agente sem inventar | |
 
 ## Licença e serial
 
