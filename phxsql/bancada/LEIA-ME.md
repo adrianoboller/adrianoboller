@@ -7,6 +7,7 @@ deve acreditar.
 | Arquivo | O que é |
 |---|---|
 | `medir.py` | a bancada: cerca cada fase com os contadores do `/proc` |
+| `esta-medindo.sh` | o **portão**: responde se há medição em curso. Sai 0 e lista quando achou, 1 e cala quando não. Consultado pelo `comunicacao.sh` e pelo `zelador.sh` antes de rodarem, e provado no **item 0b** da bateria |
 | `graficos.py` | gera a página de comparação a partir do `resultados.json` |
 | `resultados.json` | a última medição **completa**, crua — é dela que o dossiê se gera |
 | `carga-10-milhoes.log` | o log da corrida de 10.000.000 |
@@ -23,6 +24,33 @@ deve acreditar.
 A carga do lado do PhxSql é `crates/phxsql-store/examples/carga.rs`, que roda
 cada fase num processo separado — assim os contadores são daquela fase e de
 mais nada.
+
+## Antes de lançar qualquer bancada: pergunte ao portão
+
+```bash
+bancada/esta-medindo.sh && echo "ha medicao em curso -- espere"
+```
+
+Ele existe porque a pergunta «há bancada medindo agora?» era improvisada num
+`pgrep -f` a cada vez — e **`pgrep -f` se acha**: o padrão viaja na linha de
+comando do próprio `pgrep`, então ele casa o processo que perguntou. Com a
+máquina limpa, `pgrep -f "bancada/concorrencia"` acha **1**; o portão acha
+**0**.
+
+É a quarta vez que essa armadilha aparece nesta base, e a lei contra ela já
+estava escrita — dentro do `comunicacao.sh`, que é o único lugar que ela
+protegia. **Lei escrita dentro de um script só vale para aquele script.**
+
+E ela não se aplica aqui ao pé da letra: «o crivo é o nome do executável» não
+distingue nada quando o executável é `python3`. Daí os **dois** crivos — nome
+do executável onde ele diz algo, caminho do script onde não diz — e a exclusão
+do observador **por linhagem** (`/proc/<pid>/stat`), nunca por texto. É por
+isso que o shell que chama o portão, carregando o nome dele na própria linha de
+comando, não faz o portão achar a si mesmo.
+
+Rodar aviso ou zelador dentro de uma janela de medição **reprovou três
+baterias em 04/09/2026** — e o vizinho que as reprovou era o próprio agente
+que as tinha lançado.
 
 ## Como refazer
 

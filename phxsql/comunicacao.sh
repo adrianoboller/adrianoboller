@@ -29,6 +29,8 @@
 
 set -u
 RAIZ="$(cd "$(dirname "$0")/.." && pwd)"
+# Absoluto e tomado ANTES do `cd`, porque depois dele o `$0` relativo mente.
+PORTAO="$(cd "$(dirname "$0")" && pwd)/bancada/esta-medindo.sh"
 MARCA="${TMPDIR:-/tmp}/phx-comunicacao-marca"
 AGORA="$(date '+%d/%m/%Y %H:%M')"
 
@@ -104,13 +106,38 @@ EM_CURSO=$(ps -eo etime=,comm=,args= --sort=-etime \
   | awk '$2=="cargo"||$2=="rustc"||$2=="node"||$2=="phxsqld"' || true)
 VIVOS=$(printf '%s' "$EM_CURSO" | grep -c . || true)
 MEXIDOS=$(git status --porcelain | wc -l)
+
+# A lista de cima NAO enxerga bancada, e nao deve: o crivo dela e o `comm`, e
+# o `comm` de uma bancada e `python3` -- que nao distingue bancada de coisa
+# nenhuma. Por o `python3` naquela lista faria o aviso apontar todo script de
+# ninguem. Quem responde por essa metade e o portao, que cruza os dois crivos
+# (nome do executavel onde ele diz algo, caminho do script onde nao diz) e
+# exclui a si mesmo por LINHAGEM, nunca por texto.
+#
+# Sem ele o aviso dizia «nada compilando nem rodando agora» com uma bateria de
+# concorrencia no meio da janela -- a pior mentira que este relatorio pode
+# contar, porque e a que faz o proximo agente rodar por cima da medicao.
+#
+# E as duas metades se medem ANTES de qualquer uma imprimir. A primeira versao
+# desta emenda imprimia o «nada rodando agora» e o «BANCADA MEDINDO» no mesmo
+# relatorio, uma linha abaixo da outra: e o MESMO defeito que este arquivo ja
+# pagou uma vez, quando o cabecalho dizia «3 processos» e a lista vinha vazia.
+# Duas frases sobre o mesmo fato so nao se contradizem quando uma sabe da
+# outra antes de falar.
+MEDINDO=$("$PORTAO") || MEDINDO=''
+
 if [ "${VIVOS:-0}" -gt 0 ]; then
   echo "⏳ em curso: $VIVOS processo(s) de compilacao, teste ou servidor"
   printf '%s\n' "$EM_CURSO" | head -4 \
     | awk '{t=$1; n=$2; $1="";$2=""; sub(/^  /,"");
             if (length($0)>66) $0=substr($0,1,66)"…"; print "   · "t"  "n"  "$0}'
-else
+elif [ -z "$MEDINDO" ]; then
   echo "· nada compilando nem rodando agora"
+fi
+if [ -n "$MEDINDO" ]; then
+  echo "⏳ BANCADA MEDINDO — adie zelador, push e build ate ela acabar"
+  printf '%s\n' "$MEDINDO" | head -3 \
+    | awk -F'\t' '{if (length($3)>62) $3=substr($3,1,62)"…"; print "   · "$2"  "$3}'
 fi
 [ "$MEXIDOS" -gt 0 ] && echo "   · $MEXIDOS arquivo(s) mexidos e ainda nao commitados"
 echo

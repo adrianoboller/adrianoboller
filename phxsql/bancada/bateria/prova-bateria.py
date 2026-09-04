@@ -845,6 +845,63 @@ def item_0_catraca_do_mapa():
     confere("as tres catracas do mapa da trava seguram", r.returncode, 0)
 
 
+def item_0b_o_portao_nao_se_acha():
+    """O portao «esta medindo?» -- provado nos DOIS sentidos, sem servidor.
+
+    A armadilha que ele existe para tapar ja apareceu QUATRO vezes nesta base:
+    `pgrep -f cacar2`, `pgrep -f video-demonstracao`, a contagem do proprio
+    `comunicacao.sh`, e um improviso no prompt em 04/09. Sempre o mesmo
+    mecanismo: o crivo por linha de comando casa o processo que PERGUNTA,
+    porque a pergunta viaja na linha de comando dele.
+
+    A guarda mede o portao contra o defeito reposto, e nao so contra si mesma:
+    o crivo de texto e refeito aqui com `pgrep -f` e tem de ACHAR alguem com a
+    maquina limpa. Se um dia ele parar de se achar, esta conferencia cai --
+    e cair aqui e o aviso de que a regua mudou, nao de que o portao quebrou.
+    """
+    print("\n=== item 0b: o portao «esta medindo?» ===")
+    portao = os.path.join(AQUI, "..", "esta-medindo.sh")
+
+    # SENTIDO 1 -- com nada medindo, o portao cala e sai 1. Repare que o
+    # proprio shell desta bateria carrega o caminho do portao, que e
+    # exatamente o texto que derrubaria um crivo por linha de comando.
+    r = subprocess.run([portao], capture_output=True, text=True)
+    confere("com a maquina limpa, o portao diz que NAO ha medicao",
+            r.returncode, 1)
+
+    # O DEFEITO REPOSTO: o mesmo julgamento pelo crivo de texto, agora.
+    t = subprocess.run(["pgrep", "-cf", "bancada/"],
+                       capture_output=True, text=True)
+    achados = int((t.stdout or "0").strip() or 0)
+    print(f"  o crivo por texto (`pgrep -f bancada/`) acha {achados} com a "
+          f"maquina limpa; o portao acha 0")
+    confere("o crivo por TEXTO se acha (e por isso o portao nao o usa)",
+            achados > 0, True)
+
+    # SENTIDO 2 -- com uma medicao de pe, o portao acha e sai 0. `exec -a`
+    # da a um `sleep` a linha de comando de uma bancada: e o que o portao
+    # enxerga, e nao precisamos rodar uma bateria de verdade para prova-lo.
+    falso = subprocess.Popen(
+        ["bash", "-c",
+         'exec -a "python3 bancada/concorrencia/escolher-o-desenho.py" sleep 20'])
+    try:
+        time.sleep(1.0)
+        r = subprocess.run([portao], capture_output=True, text=True)
+        for linha in r.stdout.splitlines()[:2]:
+            print("  " + linha.replace("\t", "  ")[:90])
+        confere("com uma bancada de pe, o portao a ACHA", r.returncode, 0)
+        confere("e diz qual crivo a pegou", "bancada em python" in r.stdout,
+                True)
+    finally:
+        falso.kill()
+        falso.wait()
+
+    # e volta a calar, para que o sentido 1 nao tenha passado por acaso
+    r = subprocess.run([portao], capture_output=True, text=True)
+    confere("morta a bancada, o portao volta a dizer que nao ha medicao",
+            r.returncode, 1)
+
+
 def main():
     if not os.path.exists(PHXSQLD):
         sys.exit(f"nao achei {PHXSQLD} -- rode `cargo build --release` antes")
@@ -860,6 +917,7 @@ def main():
 
     # Estatica e sem servidor: roda antes de subir qualquer coisa.
     item_0_catraca_do_mapa()
+    item_0b_o_portao_nao_se_acha()
 
     srv = Servidor()
     resultados = {"quando": time.strftime("%Y-%m-%d"), "porta": PORTA}

@@ -25,6 +25,24 @@ REPO=$(cd .. && pwd)
 VER=${1:-}
 [ "$VER" = "--ver" ] && echo "== modo --ver: nada sera apagado =="
 
+# Segundo portao, e ele nao e sobre o que se apaga -- e sobre QUANDO. A regra
+# de cima ja garante que nada em uso e tocado; esta garante que a varredura
+# nao acontece dentro de uma janela de medicao. Um `du -sk` da arvore inteira
+# mais um `rm -rf` de gigabytes competem por disco com quem esta medindo
+# microssegundos, e em 04/09/2026 tres baterias foram reprovadas exatamente
+# assim -- o vizinho que as reprovou era o proprio agente que as lancou.
+#
+# Recusar e a resposta certa e nao um aviso, porque quem chama o zelador de
+# hora em hora nao esta lendo a saida dele. `--mesmo-assim` existe para o
+# disco acabando de verdade, que e mais caro que uma bateria perdida.
+if [ "$VER" != "--ver" ] && [ "${1:-}" != "--mesmo-assim" ] \
+  && MEDINDO=$("$RAIZ/bancada/esta-medindo.sh"); then
+  echo "== recusado: ha medicao em curso, e a varredura competiria com ela"
+  printf '%s\n' "$MEDINDO" | head -3 | sed 's/^/   · /'
+  echo "   (--ver mostra o que faria; --mesmo-assim manda apagar assim mesmo)"
+  exit 3
+fi
+
 kb() { du -sk "$1" 2>/dev/null | cut -f1; }
 LIBEROU=0
 
