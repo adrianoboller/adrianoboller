@@ -45,18 +45,24 @@
     "reg_d": 0,
     "reg_e": 0,
     "outros_d": 7,
-    "outros_e": 0,
+    "outros_e": 7,
     "matriz": {
       "d.trash": 1,
       "d.bin": 1,
       "d.memo": 1,
       "d.log": 1,
       "d.reason": 1,
-      "d.ndx": 2
+      "d.ndx": 2,
+      "e.trash": 1,
+      "e.bin": 1,
+      "e.memo": 1,
+      "e.log": 1,
+      "e.reason": 1,
+      "e.ndx": 2
     },
     "valido": true,
     "ms": 2000
   },
   "defeito_confirmado_a": true,
-  "defeito_confirmado_b": false
+  "defeito_confirmado_b": true
 }

@@ -1,3 +1,76 @@
+# O buraco do `.reg` no fecho da janela, contra o servidor de pé
+
+`crates/phxsql-store/examples/sonda-do-fecho.rs` achou, no `phxsql-store`
+isolado: reabrir uma tabela só para sincronizá-la (sem escrever nela) sincroniza
+sete arquivos e pula o `.reg` — porque `Table::abrir` lê o cabeçalho do `.reg`
+com um `File::open` cru, fora do `Volumes` que faz o `fsync`, enquanto os
+outros sete deixam o descritor no cache ao ler o cabeçalho deles. O que faltava
+era provar isso contra o `phxsqld` de pé — o artefato que importa — nos dois
+caminhos que fecham a janela em `recursos.durabilidade: por_lote`.
+
+## Como rodar
+
+```bash
+cargo build --release
+python3 bancada/durabilidade/prova-do-fecho.py
+```
+
+Sobe até três `phxsqld` (um por regime/cenário), ANEXA `strace -f -y` no PID de
+cada um (nunca substitui o processo por ele) e conta `fsync` por arquivo, já
+com o caminho resolvido pela própria opção `-y` — nenhum número é digitado.
+Escreve `bancada/durabilidade/resultado-do-fecho.json` com a matriz bruta de
+cada corrida. Leva de dez a trinta segundos, a maior parte no cenário (b)
+esperando o relógio de fundo.
+
+## Os dois cenários e os dois controles
+
+- **Controle 1**: `durabilidade: por_operacao`, uma inserção. Prova que o cano
+  `strace → regex → classificador` VÊ um `.reg` sincronizado quando o código
+  pede um — sem isso, "nenhum fsync no `.reg`" pode ser o defeito ou pode ser
+  o instrumento cego.
+- **Cenário (a)**: duas tabelas ficam sujas (`lote_operacoes: 3`, tempo
+  irrelevante) e uma terceira gravação fecha a janela por CONTAGEM. A terceira
+  tabela é o **controle 2**, na mesma sessão de `strace`: ela é quem disparou o
+  fecho, e sincroniza os oito arquivos — enquanto as duas primeiras reabrem e
+  sincronizam sete, sem o `.reg`.
+- **Cenário (b)**: duas tabelas ficam sujas e ninguém escreve depois — só o
+  relógio de fundo (`ligar_relogio_de_gravacao`) pode fechar a janela. Aqui não
+  há tabela-gatilho para se salvar; o controle é INTERNO (os outros sete
+  arquivos de cada tabela aparecem sincronizados, só o `.reg` falta — se o
+  instrumento estivesse surdo para aquele PID, os sete também sairiam zerados).
+
+## A armadilha que este script pagou, duas vezes, antes de confiar em um número
+
+`desde` (o relógio da janela) só reseta quando uma janela FECHA — nunca por
+estar ocioso, e começa a contar na SUBIDA DO SERVIDOR, não na primeira
+escrita. Se o tempo real entre a subida e as duas gravações de teste (DDL,
+login, o sono para o `strace` assentar, ida-e-volta de rede numa máquina
+ocupada) passar de `lote_milissegundos`, a PRIMEIRA gravação fecha a própria
+janela sozinha — pelo MESMO mecanismo do cenário (a), com etiqueta errada: o
+que sai medido não é "o relógio fechou sem ninguém escrevendo", é outro (a).
+Foi o que aconteceu com `lote_milissegundos=300`: as duas tabelas saíram com
+`.reg` sincronizado, e o `strace` estava certo — a premissa do cenário é que
+não era a que o nome dizia. `_tentativa_cenario_b` audita isso: exige
+`gravacoes_pendentes == 2` logo após as duas escritas, e refaz com um `ms`
+maior (2s, 5s, 10s) quando isso não se sustenta, em vez de publicar um número
+que mede outro caminho.
+
+A segunda: `janela.fechar()` (que zera o contador) roda ANTES do laço que de
+fato reabre e sincroniza cada tabela suja, na mesma thread do relógio — não no
+mesmo instante. Parar de olhar assim que `gravacoes_pendentes` volta a 0 pode
+cortar o `strace` antes de a SEGUNDA tabela da lista ser sequer tocada, e aí o
+"zero fsync" dela não prova nada, porque nada dela foi visto. O script espera
+um segundo depois de ver o contador zerar, e ainda audita: se alguma das duas
+tabelas aparecer com ZERO fsync em TODOS os arquivos (não só o `.reg`), refaz.
+
+## O que este script NÃO mede
+
+Tempo. Ele conta chamadas de sistema — imunes a máquina ocupada, ao contrário
+de latência. Ainda assim confere `bancada/esta-medindo.sh` de cortesia; não
+aborta por causa disso.
+
+---
+
 # A matriz real de durabilidade — SP000010
 
 O desenho do protocolo de commit está inteiro em `docs/TRANSACOES.md` §5. O

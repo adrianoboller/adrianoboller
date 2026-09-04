@@ -474,6 +474,18 @@ def _tentativa_cenario_b(ms):
         print("  gravacoes_pendentes apos a espera (sem NINGUEM escrever): "
               "%d" % n_depois)
 
+        # `janela.fechar()` (que zera `pendentes`) roda ANTES do laco que de
+        # fato reabre e sincroniza cada tabela suja, em
+        # `descarregar_sujas_com` -- os dois na mesma thread do relogio, mas
+        # nao no mesmo instante. `pendentes()==0` prova que o relogio
+        # DECIDIU fechar; nao prova que ja terminou de sincronizar a
+        # segunda tabela da lista. Um buffer aqui, ANTES de soltar o
+        # `strace`, e o que separa isso de um falso "e nao sincronizou nada"
+        # por termos parado de olhar cedo demais -- foi o que aconteceu
+        # numa corrida deste script antes deste ajuste.
+        if n_depois == 0:
+            time.sleep(1.0)
+
         soltar(tr)
         c.fechar()
 
@@ -492,6 +504,22 @@ def _tentativa_cenario_b(ms):
         reg_d, reg_e = (m.get((t, "reg"), 0) for t in "de")
         outros_d = sum(m.get(("d", e), 0) for e in EXTENSOES if e != "reg")
         outros_e = sum(m.get(("e", e), 0) for e in EXTENSOES if e != "reg")
+
+        # Controle INTERNO como pre-condicao, nao so como comentario: se
+        # QUALQUER uma das duas tabelas nao mostrar os outros sete
+        # arquivos, o `strace` foi solto ANTES de `descarregar_sujas_com`
+        # terminar a volta dela na lista -- e o "reg=0" dela nao prova nada,
+        # porque nada dela foi visto. Refaz, em vez de publicar um zero que
+        # pode ser o defeito ou pode ser corte cedo demais.
+        if outros_d == 0 or outros_e == 0:
+            print("\n  *** CONTROLE INTERNO FALHOU: %s ficou sem NENHUM "
+                  "fsync visto (outros_d=%d outros_e=%d) -- o strace foi "
+                  "solto antes de descarregar_sujas_com terminar. "
+                  "Tentando de novo. ***"
+                  % ("d" if outros_d == 0 else "e", outros_d, outros_e))
+            os.remove(arq)
+            return None
+
         print("\n  a janela fechou sozinha (pendentes voltou a 0)? True")
         print("  .reg sincronizado?  d=%s  e=%s" %
               (bool(reg_d), bool(reg_e)))
