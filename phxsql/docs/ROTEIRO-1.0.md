@@ -103,10 +103,15 @@ como sprint **nova**, a partir da SP000056.
    escritor-com-escritor), mas invalida a premissa, e **premissa invalida nao
    sustenta ordem, nem quando a ordem continua certa por outro motivo**.
 
-   **DECISAO do dono, 04/09/2026: a bateria longa do `gravar` roda ANTES de a
-   SP000011 comecar.** A SP000016 nao espera por ela — depois das respostas as
-   sete perguntas fechadas (`docs/PESQUISA-MVCC-E-FORMATO.md` §8.0) a Sombra
-   virou RAM + recusa, com **zero mudanca de formato**, e nao toca na trava.
+   **DECISAO do dono, 04/09/2026: a bateria longa do `gravar` roda antes de a
+   SP000011 comecar — e SO ELA espera.** As duas sprints DESACOPLARAM: depois
+   das respostas as sete perguntas fechadas
+   (`docs/PESQUISA-MVCC-E-FORMATO.md` §8.0) a Sombra virou RAM + recusa, com o
+   teto herdado do `transacao_prazo_min` que ja existe e **zero mudanca de
+   formato** — ela nao toca na trava e nao depende desse numero.
+
+   **A SP000016 pode comecar agora.** Segurar as duas seria pagar espera por
+   uma dependencia que deixou de existir.
 
    O que segue e o registro de 02/09, mantido como historia:
 

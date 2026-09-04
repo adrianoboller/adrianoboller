@@ -1233,20 +1233,49 @@ primeira, porque eram todas «se for disco».
 
 | # | pergunta | decisão |
 |---|---|---|
-| **1** | RAM ou disco? | **A — em RAM**, e o leitor longo é **recusado** quando a versão já foi recolhida, no molde do `ORA-01555`. **A decisão de formato da SP000016 desaparece: nenhum `.reg` v6, nenhuma migração, nenhum arquivo novo** |
+| **1** | RAM ou disco? | **A — em RAM, e o teto NÃO é número novo: é o `transacao_prazo_min` que já existe.** Ver 8.0.1 abaixo. **A decisão de formato da SP000016 desaparece: nenhum `.reg` v6, nenhuma migração, nenhum arquivo novo** |
 | 2 | se disco, no slot ou fora? | **caiu** — não há disco |
 | 3 | linha inteira ou delta? | **caiu** |
 | 3b | o `.bin`/`.memo` fixa bloco? | **caiu** |
 | **4** | o `.ndx` ganha marca? | **NÃO. Recusar MVCC em alteração de coluna indexada** — cedo e por escrito, como o `ao_excluir`. É a única das três que preserva o zero-formato da resposta 1; a marca reintroduziria um segundo formato a versionar |
 | 5 | a cópia leva a `.undo`? | **caiu** — não há `.undo` |
 | **6** | *snapshot* ou `SERIALIZABLE`? | ***Snapshot isolation*, e o documento DIZ isso**, com o exemplo do *write skew* onde o cliente o leia. `SERIALIZABLE` (SSI) é outro item, e não se promete pelo nome da sprint |
-| **7** | a ordem SP11×SP16 muda? | **A bateria longa do `gravar` roda ANTES de a SP000011 começar.** Premissa inválida não sustenta ordem, nem quando a ordem continua certa por outro motivo |
+| **7** | a ordem SP11×SP16 muda? | **A bateria longa do `gravar` roda antes de a SP000011 começar — e SÓ ela espera.** A SP000016 começa já: depois das respostas 1, 4 e 6 ela virou RAM + recusa, com teto herdado e zero formato, e não toca na trava. As duas **desacoplaram** |
 
 **O que a Sombra virou depois destas respostas:** cadeia de versões **em RAM**,
 sem `fsync`, **zero mudança de formato em disco** — nem no `.reg`, nem no
 `.ndx`, nem extensão nova —, com duas recusas escritas (leitor longo cuja versão
 foi recolhida; alteração de coluna indexada sob transação) e a limitação de
 *snapshot isolation* documentada.
+
+### 8.0.1 — A condição que o dono trouxe, e ela remove a objeção à opção A
+
+O dono apontou que *«o timeout tem um parâmetro no `config.json`, e o tempo
+máximo obedece essa config»*. **Medido, e o parâmetro é outro — melhor:**
+
+| campo | o que limita | padrão | imposto? |
+|---|---|---|---|
+| `timeout_s` | a **espera por um pedido** numa conexão ociosa (`set_read_timeout` no soquete) | 30 s | sim, mas **não** limita transação que continua conversando |
+| **`transacao_prazo_min`** | **a transação INTEIRA** | **5 min** | **sim** — `transacao.rs:620` filtra por `expira_ms`, e `bancada/transacoes/provar.py` exercita com prazo de 1 min |
+
+O comentário do próprio campo já dizia o raciocínio, escrito antes desta
+pesquisa existir: *«uma transação segura tabelas contra a escrita de todo
+mundo, e ninguém digita por dez minutos com uma transação aberta. Zero não
+desliga: cairia no padrão, porque transação sem prazo nenhum é exatamente a que
+trava a tabela para sempre.»*
+
+**O que isso muda:** a cadeia de versões da Sombra **não pode crescer sem fim**,
+porque a transação que a segura morre em 5 minutos por um prazo que já existe e
+já é imposto. A recusa estilo `ORA-01555` deixa de ser a primeira defesa e vira
+a **segunda rede** — só dispara se a memória estourar *antes* do prazo.
+
+É o mesmo desenho de duas redes do `carga_prazo_min`, e está escrito lá: *«a
+primeira é a queda da conexão, que desfaz na hora; esta pega o soquete pendurado
+vivo com o cliente morto do outro lado.»*
+
+**E o teto do prazo não sobe.** O campo é curto de propósito, e trocar risco de
+RAM por risco de tabela travada é uma troca que precisa de número, não de
+palpite.
 
 **O número da §9 continua valendo, e mudou de papel:** ele não decide mais entre
 A e B — decide se a recusa do leitor longo é confortável ou apertada. Medir
