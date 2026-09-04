@@ -110,5 +110,14 @@ def main() -> int:
     return comparar(a.golden, a.comando, a.resultados, a.relatorio, a.tolerancia, a.config)
 
 
+# Registro das operacoes do plugin (.wx-migration/logs/): sem projeto por
+# perto, nao grava nada; falha de registro nunca derruba a operacao.
+try:
+    import registro
+except ImportError:  # rodando de outro diretorio
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import registro
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(registro.envolver(__file__, main))

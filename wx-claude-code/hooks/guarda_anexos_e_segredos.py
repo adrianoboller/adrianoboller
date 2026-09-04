@@ -58,6 +58,7 @@ def pasta_de_artefatos(cwd: Path) -> Path | None:
 
 
 def negar(motivo: str) -> int:
+    _registrar_negativa(motivo)
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": motivo}}, ensure_ascii=False))
     return 0
 
@@ -70,6 +71,8 @@ def main() -> int:
     ferramenta = entrada.get("tool_name", "")
     ti = entrada.get("tool_input", {}) or {}
     cwd = Path(entrada.get("cwd", "."))
+    global _CWD_DO_PEDIDO
+    _CWD_DO_PEDIDO = cwd
     raiz = raiz_de_evidencias(cwd)
     artefatos = pasta_de_artefatos(cwd)
     if ferramenta in {"Write", "Edit", "MultiEdit", "NotebookEdit"}:
@@ -92,8 +95,17 @@ def main() -> int:
         cmd = ti.get("command") or ""
         protegidas = [(raiz, "raiz de evidências", "anexos são somente leitura"),
                       (artefatos, "pasta de artefatos", "use arquivar_artefato.py, que confere segredo e regrava o catálogo")]
-        if any(p for p, _, _ in protegidas) and DESTRUTIVO.search(cmd):
-            for tok in re.findall(r"[\w./~-]+", cmd):
+        # Ler de uma pasta protegida e legitimo; o que se barra e ESCREVER nela.
+        # Antes isto olhava todo token da linha, e negava
+        # `script.py --pdf inputs/x.pdf > /tmp/saida` -- que so le. Agora o
+        # redirecionamento confere o ALVO dele, e o comando destrutivo confere
+        # os operandos. Achado pelo registro de operacoes, que mostrou duas
+        # negativas onde nao havia escrita nenhuma.
+        alvos: list[str] = re.findall(r">>?\s*([^\s;|&<>]+)", cmd)
+        if re.search(r"(^|[;&|]\s*)(rm|mv|truncate|shred|sed\s+-i|tee|cp)\b", cmd):
+            alvos += re.findall(r"[\w./~-]+", cmd)
+        if any(p for p, _, _ in protegidas) and alvos:
+            for tok in alvos:
                 try:
                     p = Path(tok.replace("\\", "/"))
                     p = (p if p.is_absolute() else cwd / p).resolve()
@@ -107,6 +119,21 @@ def main() -> int:
         if TOKEN.search(cmd):
             return negar("Comando contém um token em texto: passe-o por variável de ambiente, nunca na linha.")
     return 0
+
+
+_CWD_DO_PEDIDO: Path | None = None
+
+
+def _registrar_negativa(motivo: str) -> None:
+    """Negativa de hook e operacao do plugin, e das mais uteis de registrar:
+    diz que um agente tentou escrever onde nao devia."""
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "skills" / "conversao-wx" / "scripts"))
+        import registro
+        raiz = registro.raiz_do_projeto([], _CWD_DO_PEDIDO or Path.cwd())
+        registro.registrar("HOOK_guarda_anexos", raiz, codigo=1, negado=motivo[:400])
+    except Exception:  # noqa: BLE001 - hook nunca cai por causa do registro
+        pass
 
 
 if __name__ == "__main__":

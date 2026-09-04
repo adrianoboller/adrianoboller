@@ -334,7 +334,8 @@ class Questionario(unittest.TestCase):
         self.assertEqual(r.returncode, 2)
         cmds = {p.stem for p in (RAIZ / "commands").glob("*.md")}
         for c in ("questionario", "pergunta", "comandos", "converter", "preflight", "artefato", "estilo-telas",
-                  "golden", "pmo", "equipe", "ambiente", "help-wl", "rag", "exportar", "zelador", "licenca", "laudo-tokens"):
+                  "golden", "pmo", "equipe", "ambiente", "help-wl", "rag", "exportar", "zelador", "licenca",
+                  "laudo-tokens", "pdf", "log"):
             self.assertIn(c, cmds, c)
         indice = (RAIZ / "commands" / "comandos.md").read_text()
         for c in cmds:
@@ -408,8 +409,85 @@ class Questionario(unittest.TestCase):
         md2 = (vazio / ".wx-migration/respostas_questionario.md").read_text()
         self.assertIn("| `L2` | Prototipacao | não |", md2)
 
+    def test_registro_grava_toda_operacao_sem_vazar_segredo(self):
+        """Toda operacao do plugin deixa linha em .wx-migration/logs; sem projeto por
+        perto nao grava nada; e argumento com nome de segredo vira <omitido>."""
+        r = run(SCRIPTS / "aplicar_questionario.py", "--questionario", self.tmp / ".wx-migration/questionario.json", "--project-root", self.tmp, "--plugin-root", RAIZ)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        run(SCRIPTS / "zelador.py", "--project-root", self.tmp, "espaco")
+        logs = sorted((self.tmp / ".wx-migration/logs").glob("plugin-*.jsonl"))
+        self.assertTrue(logs, "nenhum log gravado")
+        linhas = [json.loads(l) for l in logs[0].read_text().splitlines()]
+        ops = {i["operacao"] for i in linhas}
+        self.assertIn("aplicar_questionario", ops); self.assertIn("zelador", ops)
+        for i in linhas:
+            self.assertIn("instante", i); self.assertIn("codigo", i); self.assertIn("ms", i)
+        # erro tambem entra, com o codigo
+        run(SCRIPTS / "arquivar_artefato.py", "--project-root", self.tmp, "--arquivo", self.tmp / "nao-existe.txt", "--tipo", "anotacao", "--onde-usar", "G1")
+        linhas = [json.loads(l) for l in logs[0].read_text().splitlines()]
+        self.assertTrue(any(i["operacao"] == "arquivar_artefato" and i["codigo"] == 2 for i in linhas))
+        # argumento com nome de segredo nao vai para o log
+        run(SCRIPTS / "licenca.py", "conferir", "--serial", "SEGREDO-NAO-DEVE-APARECER")
+        texto = logs[0].read_text()
+        self.assertNotIn("SEGREDO-NAO-DEVE-APARECER", texto)
+        # fora de um projeto, nada e gravado
+        fora = self.tmp / "fora"; fora.mkdir()
+        run(SCRIPTS / "zelador.py", "--project-root", fora, "espaco")
+        self.assertFalse((fora / ".wx-migration").exists())
+        # negativa de hook entra como operacao
+        pedido = {"tool_name": "Write", "cwd": str(self.tmp), "tool_input": {"file_path": str(self.tmp / "artefatos" / "CATALOGO.md"), "content": "x"}}
+        subprocess.run([sys.executable, str(RAIZ / "hooks" / "guarda_anexos_e_segredos.py")], input=json.dumps(pedido), capture_output=True, text=True)
+        linhas = [json.loads(l) for l in logs[0].read_text().splitlines()]
+        self.assertTrue(any(i["operacao"] == "HOOK_guarda_anexos" for i in linhas))
+        # o resumo le do arquivo
+        r = run(SCRIPTS / "registro.py", "--project-root", self.tmp, "resumo")
+        self.assertEqual(r.returncode, 0, r.stderr); self.assertIn("aplicar_questionario", r.stdout)
+
+    def test_hook_nao_barra_leitura_com_redirecionamento_fora(self):
+        """Ler de inputs/ e escrever fora e legitimo: o hook confere o ALVO do
+        redirecionamento, nao todo caminho citado na linha. Defeito achado pelo
+        registro de operacoes, que mostrou duas negativas sem escrita nenhuma."""
+        r = run(SCRIPTS / "aplicar_questionario.py", "--questionario", self.tmp / ".wx-migration/questionario.json", "--project-root", self.tmp, "--plugin-root", RAIZ)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        hook = RAIZ / "hooks" / "guarda_anexos_e_segredos.py"
+
+        def decide(cmd):
+            pedido = {"tool_name": "Bash", "cwd": str(self.tmp), "tool_input": {"command": cmd}}
+            p = subprocess.run([sys.executable, str(hook)], input=json.dumps(pedido), capture_output=True, text=True)
+            return json.loads(p.stdout)["hookSpecificOutput"]["permissionDecision"] if p.stdout.strip() else "allow"
+
+        # le da evidencia e escreve fora dela: passa
+        self.assertEqual(decide("python3 x.py --pdf inputs/a.pdf > /tmp/saida.txt"), "allow")
+        self.assertEqual(decide("grep -n HReadSeek inputs/banco.sql | head -3"), "allow")
+        # escreve ou apaga dentro: continua negado
+        self.assertEqual(decide("echo x > inputs/banco.sql"), "deny")
+        self.assertEqual(decide("rm -rf inputs/screenshots"), "deny")
+        self.assertEqual(decide("echo y >> artefatos/CATALOGO.md"), "deny")
+
+    def test_pdf_para_markdown_guarda_pagina_hash_e_nao_inventa(self):
+        """PDF vira .md com pagina e hash; pagina sem texto vira OCR_REQUERIDO em vez
+        de texto inventado; e token no PDF nao chega ao markdown."""
+        saida = self.tmp / ".wx-migration/extraidos"
+        pdf = self.tmp / "inputs" / "estoque-codigo.pdf"
+        r = run(SCRIPTS / "pdf_para_markdown.py", "--pdf", pdf, "--saida", saida, "--linguagem", "wlanguage", "--project-root", self.tmp)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        md = (saida / "estoque-codigo.md").read_text()
+        self.assertIn("<!-- pagina 1 -->", md); self.assertIn("## Página 1", md)
+        self.assertRegex(md, r"(?m)^sha256: [0-9a-f]{64}$")
+        resumo = json.loads((saida / "estoque-codigo.json").read_text())
+        self.assertEqual(len(resumo["sha256"]), 64); self.assertGreater(resumo["paginas"], 0)
+        self.assertEqual(resumo["segredos_omitidos"], 0)
+        # nao sobrescreve sem --forcar
+        r = run(SCRIPTS / "pdf_para_markdown.py", "--pdf", pdf, "--saida", saida, "--project-root", self.tmp)
+        self.assertEqual(r.returncode, 2); self.assertIn("ja existe", r.stderr)
+        # pagina sem texto vira OCR_REQUERIDO, nao texto inventado
+        r = run(SCRIPTS / "pdf_para_markdown.py", "--pdf", pdf, "--saida", saida, "--minimo", "100000", "--forcar", "--project-root", self.tmp)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        md = (saida / "estoque-codigo.md").read_text()
+        self.assertIn("OCR_REQUERIDO", md); self.assertIn("Nada foi inventado aqui", md)
+
     def test_skills_erp_presentes_com_descricao_curta(self):
-        for nome in ("php-legado-e-destino", "erp-accounting", "erp-inventory", "erp-brazil-fiscal", "erp-multi-company", "erp-approval-workflows", "erp-lgpd", "erp-integration-reliability", "windev-wlanguage-erp"):
+        for nome in ("php-legado-e-destino", "pdf-para-markdown", "erp-accounting", "erp-inventory", "erp-brazil-fiscal", "erp-multi-company", "erp-approval-workflows", "erp-lgpd", "erp-integration-reliability", "windev-wlanguage-erp"):
             txt = (RAIZ / "skills" / nome / "SKILL.md").read_text()
             self.assertTrue(txt.startswith("---\n"), nome)
             desc = re.search(r"^description:\s*(.+)$", txt, re.M).group(1).strip().strip('"')
@@ -720,7 +798,7 @@ class ExportarEZelador(unittest.TestCase):
         for i in range(5):
             d = runs / f"run-{i}"; d.mkdir(parents=True); (d / "report.json").write_text("{}")
             os.utime(d, (time.time() - 30 * 86400, time.time() - 30 * 86400))
-        logs = self.tmp / ".wx-migration/logs"; logs.mkdir()
+        logs = self.tmp / ".wx-migration/logs"; logs.mkdir(exist_ok=True)
         (logs / "velho.log").write_text("x"); os.utime(logs / "velho.log", (time.time() - 10 * 86400,) * 2)
         (logs / "novo.log").write_text("x")
         (self.tmp / "src").mkdir(exist_ok=True); (self.tmp / "src/__pycache__").mkdir(); (self.tmp / "src/__pycache__/a.pyc").write_text("x")

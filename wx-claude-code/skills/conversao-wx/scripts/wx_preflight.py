@@ -3861,5 +3861,14 @@ def main() -> int:
     return {"READY": 0, "CONDITIONAL": 2, "BLOCKED": 3}[str(result)]
 
 
+# Registro das operacoes do plugin (.wx-migration/logs/): sem projeto por
+# perto, nao grava nada; falha de registro nunca derruba a operacao.
+try:
+    import registro
+except ImportError:  # rodando de outro diretorio
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import registro
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(registro.envolver(__file__, main))

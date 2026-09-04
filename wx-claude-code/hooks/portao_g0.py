@@ -84,5 +84,20 @@ def main() -> int:
     return 0
 
 
+_CWD_DO_PEDIDO: Path | None = None
+
+
+def _registrar_negativa(motivo: str) -> None:
+    """Negativa de hook e operacao do plugin, e das mais uteis de registrar:
+    diz que um agente tentou escrever onde nao devia."""
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "skills" / "conversao-wx" / "scripts"))
+        import registro
+        raiz = registro.raiz_do_projeto([], _CWD_DO_PEDIDO or Path.cwd())
+        registro.registrar("HOOK_portao_g0", raiz, codigo=1, negado=motivo[:400])
+    except Exception:  # noqa: BLE001 - hook nunca cai por causa do registro
+        pass
+
+
 if __name__ == "__main__":
     sys.exit(main())

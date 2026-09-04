@@ -18,6 +18,8 @@ Se `$1` vier preenchido, filtre por essa palavra e mostre só o que casa; sem ar
 | `/wx-claude-code:converter` | a conversão em si, gate a gate (G0 a G7) |
 | `/wx-claude-code:preflight` | só o G0: inventário das evidências, classificação, relatório |
 | `/wx-claude-code:artefato` | submeter e catalogar artefato do cliente (bloco M) |
+| `/wx-claude-code:pdf` | converter um PDF em Markdown citável, com página e hash |
+| `/wx-claude-code:log` | ver o registro das operações do plugin neste projeto |
 | `/wx-claude-code:estilo-telas` | qualidade de tela com o Impeccable, a partir do `DESIGN.md` |
 | `/wx-claude-code:golden` | golden master: comparar a saída do destino com a do legado |
 | `/wx-claude-code:pmo` | sprints, Kanban, PDCA, relatório de onze seções, entrega |
@@ -50,7 +52,7 @@ ls "${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/"*.py
 
 ## Skills
 
-`conversao-wx` (o fluxo), `php-legado-e-destino` (PHP como origem e como destino), `impeccable` (qualidade de tela), `laudo-uso-tokens`, e as oito de ERP (`erp-accounting`, `erp-inventory`, `erp-brazil-fiscal`, `erp-multi-company`, `erp-approval-workflows`, `erp-lgpd`, `erp-integration-reliability`, `windev-wlanguage-erp`). Índice das de ERP em `skills/LEIA-ME-erp.md`.
+`conversao-wx` (o fluxo), `php-legado-e-destino` (PHP como origem e como destino), `pdf-para-markdown` (PDF citável), `impeccable` (qualidade de tela), `laudo-uso-tokens`, e as oito de ERP (`erp-accounting`, `erp-inventory`, `erp-brazil-fiscal`, `erp-multi-company`, `erp-approval-workflows`, `erp-lgpd`, `erp-integration-reliability`, `windev-wlanguage-erp`). Índice das de ERP em `skills/LEIA-ME-erp.md`.
 
 ## O que o plugin faz, em uma frase
 
