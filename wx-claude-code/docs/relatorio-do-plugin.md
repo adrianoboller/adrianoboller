@@ -1,4 +1,4 @@
-# Relatório do plugin WX Claude Code 3.16.1
+# Relatório do plugin WX Claude Code 3.17.0
 
 Medido em 2026-09-04 por `docs/dossie/numeros-do-plugin.py`; nenhum número abaixo foi digitado.
 
@@ -15,29 +15,30 @@ Plugin do Claude Code que converte projetos WINDEV, WEBDEV e WINDEV Mobile para 
 | subagentes PDCA | 40 |
 | especialistas WLanguage por tema | 7 |
 | comandos / | 5 |
-| skills | 3 |
-| scripts Python | 21 |
-| linhas de Python (scripts e hooks) | 11846 |
+| skills | 11 |
+| skills de ERP (pacote skills.sh) | 8 |
+| scripts Python | 22 |
+| linhas de Python (scripts e hooks) | 12063 |
 | documentos de referência | 18 |
-| testes de regressão | 37 |
+| testes de regressão | 39 |
 | hooks do plugin | 8 |
 | blocos do questionário (0, A–L) | 13 |
 | itens do bloco 0 | 16 |
 | subperguntas de F (F0–F13) | 14 |
 | itens de K | 8 |
-| itens de L | 5 |
-| arquivos que o questionário pode gerar | 36 |
-| prints de sessões reais | 31 |
+| itens de L | 6 |
+| arquivos que o questionário pode gerar | 88 |
+| prints de sessões reais | 33 |
 | cenas do vídeo | 23 |
 | duração do vídeo | 3 min 03 s |
 | corpus do Help (bytes) | 26750976 |
 | páginas válidas do corpus | 12035 |
-| linhas do manual | 608 |
+| linhas do manual | 614 |
 | tabelas do exemplo ESTOQUE | 7 |
 
 ## O que foi provado em sessão real
 
-Cada print em `docs/prints/` é a saída de uma sessão do Claude Code ou de um script, sem edição; a origem de cada um está em `docs/prints/gerar.md`. Entre eles: o questionário uma letra por vez, a senha colada que não é gravada nem repetida, a letra H com o processo de conversão, a tela modelo aberta antes de registrar, o serial de ativação recusando e depois liberando, a primeira sessão lendo `INDEX_FILES.md` e o kickoff, a exportação organizada e o zelador.
+Cada print em `docs/prints/` é a saída de uma sessão do Claude Code ou de um script, sem edição; a origem de cada um está em `docs/prints/gerar.md`. Entre eles: o questionário uma letra por vez, a senha colada que não é gravada nem repetida, a letra H com o processo de conversão, a tela modelo aberta antes de registrar, o serial de ativação recusando e depois liberando, a primeira sessão lendo `INDEX_FILES.md` e o kickoff, a exportação organizada e o zelador, e o esqueleto de ERP (L6) com a sessão carregando a skill do módulo.
 
 ## O que não foi provado
 

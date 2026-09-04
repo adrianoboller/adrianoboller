@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -73,7 +74,8 @@ class Questionario(unittest.TestCase):
         self.assertIn("## Backend: Rust", proc); self.assertIn("**reescrita-guiada**", proc)
         self.assertIn("| Analise HFSQL | esquema PostgreSQL migrado por script; sqlx/diesel | G3 |", proc)
         self.assertIn("Ritmo: modulo a modulo", proc)
-        self.assertEqual(r2.stdout.count("SKIPPED"), 32); self.assertIn("UPDATED", r2.stdout)
+        # 32 arquivos do fluxo + 50 do esqueleto ERP (L6) + 2 (Dockerfile, compose): nada e regravado na segunda aplicacao
+        self.assertEqual(r2.stdout.count("SKIPPED"), 84); self.assertEqual(r2.stdout.count("CREATED"), 0); self.assertIn("UPDATED", r2.stdout)
         resp = (self.tmp / ".wx-migration/respostas_questionario.md").read_text()
         self.assertIn("- Nome: **Adriano Boller**", resp); self.assertIn("## H · Backend de destino", resp)
         self.assertIn("0.15 github", resp); self.assertIn("credencial ref: GITHUB_TOKEN", resp)
@@ -165,6 +167,42 @@ class Questionario(unittest.TestCase):
         (self.tmp / ".wx-migration/q4.json").write_text(json.dumps(q))
         r = run(SCRIPTS / "aplicar_questionario.py", "--questionario", self.tmp / ".wx-migration/q4.json", "--project-root", self.tmp, "--plugin-root", RAIZ)
         self.assertEqual(r.returncode, 2); self.assertIn("slack", r.stderr)
+
+    def test_esqueleto_erp_l6_gera_arvore_liga_skills_e_nao_sobrescreve(self):
+        """L6.gerar cria a arvore do pacote ERP; cada modulo do 0.8 aponta para uma skill erp-*; reaplicar nao sobrescreve."""
+        (self.tmp / "AGENTS.md").write_text("meu\n")
+        r = run(SCRIPTS / "aplicar_questionario.py", "--questionario", self.tmp / ".wx-migration/questionario.json", "--project-root", self.tmp, "--plugin-root", RAIZ)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual((self.tmp / "AGENTS.md").read_text(), "meu\n")
+        for rel in ("CONTEXT.md", "CONTEXT-MAP.md", "UBIQUITOUS_LANGUAGE.md", "ARCHITECTURE.md", "SECURITY.md", ".editorconfig",
+                    "docs/adr/0001-monolito-modular.md", "docs/adr/0004-fiscal-brasil.md", "docs/domain/cadastros.md", "docs/domain/financeiro.md",
+                    "database/migrations/0001_base.sql", "database/rollback/0001_base.sql", "src/movimentacao/README.md",
+                    "tests/security/.gitkeep", "scripts/verification/README.md", ".github/workflows/security.yml"):
+            self.assertTrue((self.tmp / rel).exists(), rel)
+        self.assertIn("erp-inventory", (self.tmp / "docs/domain/movimentacao.md").read_text())
+        self.assertIn("erp-accounting", (self.tmp / "docs/domain/financeiro.md").read_text())
+        self.assertIn("nenhuma alíquota fica em código", (self.tmp / "docs/adr/0004-fiscal-brasil.md").read_text())
+        self.assertIn("Não há multiempresa", (self.tmp / "docs/adr/0002-multiempresa.md").read_text())
+        cl = (self.tmp / "CLAUDE.md").read_text()
+        self.assertIn("## Skills de ERP", cl); self.assertIn("| movimentacao | `src/movimentacao/` | `erp-inventory` |", cl)
+        self.assertIn("| `docs/domain/financeiro.md` |", (self.tmp / "INDEX_FILES.md").read_text())
+        self.assertIn("cargo test --workspace", (self.tmp / ".github/workflows/tests.yml").read_text())
+        # sem L6.gerar nada disso aparece
+        q = json.loads((self.tmp / ".wx-migration/questionario.json").read_text())
+        q["L_contexto_e_implantacao"]["L6_esqueleto_erp"]["gerar"] = False
+        outro = self.tmp / "sem-erp"; (outro / ".wx-migration").mkdir(parents=True); shutil.copytree(EXEMPLO / "inputs", outro / "inputs")
+        (outro / ".wx-migration/questionario.json").write_text(json.dumps(q))
+        r = run(SCRIPTS / "aplicar_questionario.py", "--questionario", outro / ".wx-migration/questionario.json", "--project-root", outro, "--plugin-root", RAIZ)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertFalse((outro / "CONTEXT.md").exists()); self.assertNotIn("## Skills de ERP", (outro / "CLAUDE.md").read_text())
+
+    def test_skills_erp_presentes_com_descricao_curta(self):
+        for nome in ("erp-accounting", "erp-inventory", "erp-brazil-fiscal", "erp-multi-company", "erp-approval-workflows", "erp-lgpd", "erp-integration-reliability", "windev-wlanguage-erp"):
+            txt = (RAIZ / "skills" / nome / "SKILL.md").read_text()
+            self.assertTrue(txt.startswith("---\n"), nome)
+            desc = re.search(r"^description:\s*(.+)$", txt, re.M).group(1).strip().strip('"')
+            self.assertLessEqual(len(desc), 150, f"{nome}: {len(desc)} caracteres")
+            self.assertIn(f"name: {nome}", txt)
 
     def test_injecao_no_questionario_e_recusada_antes_de_gravar(self):
         """Valor do questionario vira bash com sudo, SQL de superusuario e YAML: tudo que nao e identificador e recusado."""
@@ -473,7 +511,7 @@ class ExportarEZelador(unittest.TestCase):
         logs = self.tmp / ".wx-migration/logs"; logs.mkdir()
         (logs / "velho.log").write_text("x"); os.utime(logs / "velho.log", (time.time() - 10 * 86400,) * 2)
         (logs / "novo.log").write_text("x")
-        (self.tmp / "src").mkdir(); (self.tmp / "src/__pycache__").mkdir(); (self.tmp / "src/__pycache__/a.pyc").write_text("x")
+        (self.tmp / "src").mkdir(exist_ok=True); (self.tmp / "src/__pycache__").mkdir(); (self.tmp / "src/__pycache__/a.pyc").write_text("x")
         r = run(SCRIPTS / "zelador.py", "--project-root", self.tmp, "limpar")
         self.assertIn("só relatório", r.stdout); self.assertTrue((logs / "velho.log").exists())
         r = run(SCRIPTS / "zelador.py", "--project-root", self.tmp, "limpar", "--executar")

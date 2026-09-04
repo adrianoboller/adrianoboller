@@ -44,6 +44,7 @@ const scenes = [
   ['/wx-claude-code:pmo exportar', '21 · O projeto resultante salvo, organizado, na pasta do usuário, sem segredo e com hashes', cap('exportar')],
   ['zelador.py · SessionStart', '22 · O zelador limpa temporários uma vez por dia e deixa o registro medido', cap('zelador')],
   ['sessão real · Bloco-SP', '23 · Toda resposta abre com a identificação BlocoNNNN-SPNNNNN-Título · data, e cada sprint fechada vira .md e .zip', cap('identificacao')],
+  ['projeto com L6 = sim · sessão real', '24 · Esqueleto de ERP gerado pelo questionário: módulo → skill no CLAUDE.md, ADR lida, skill erp-inventory carregada e citada', cap('esqueleto-erp')],
   ['card', 'Built to convert. Engineered to prove.', 'claude plugin marketplace add adrianoboller/adrianoboller\nclaude plugin install wx-claude-code@wx-claude-code\n\nManual completo em MANUAL.md'],
 ];
 const html = `<!doctype html><meta charset="utf-8"><style>

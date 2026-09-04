@@ -1136,6 +1136,10 @@ def index_files(q: dict, projeto: Path) -> str:
         (".wx-migration/pmo/backlog.md", "backlog priorizado com o papel dono de cada item"),
         (".wx-migration/pmo/base_de_conhecimento.md", "ciclos PDCA fechados, frutíferos ou não"),
     ]
+    if ((q.get("L_contexto_e_implantacao") or {}).get("L6_esqueleto_erp") or {}).get("gerar"):
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import esqueleto_erp  # noqa: E402
+        fixos += esqueleto_erp.entradas_index(q)
     L = ["# INDEX_FILES.md — mapa do projeto", "",
          f"Gerado por `aplicar_questionario.py` em {date.today().isoformat()}. Uma linha por arquivo: o que é e quando abrir. Não abra tudo; ache aqui o arquivo certo. Arquivos marcados «ausente» ainda não existem.", "",
          "| arquivo | o que é | estado |", "| --- | --- | --- |"]
@@ -1239,6 +1243,10 @@ def main() -> int:
         f"Todas as respostas do questionário (bloco 0 e letras A a J) estão em `.wx-migration/respostas_questionario.md`; o aprovador do projeto é **{ap_nome}**. " + \
         "Consulte esse arquivo antes de perguntar de novo algo que já foi respondido; para mudar uma resposta, edite `.wx-migration/questionario.json` e reaplique `aplicar_questionario.py`.\n\n" + \
         "## Mapa de arquivos\n\n`INDEX_FILES.md` na raiz diz o que é cada arquivo e quando abrir; ache lá antes de ler diretórios inteiros. A primeira sessão começa por `.wx-migration/prompts/kickoff.md`. Skills do projeto em `.claude/skills/`; hooks de teste e lint em `.claude/settings.json`.\n" + marca
+    if ((q.get("L_contexto_e_implantacao") or {}).get("L6_esqueleto_erp") or {}).get("gerar"):
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import esqueleto_erp  # noqa: E402
+        claude_md = claude_md.rstrip("\n") + "\n\n" + esqueleto_erp.secao_claude_md(q)
     if q.get("J_economia_de_tokens", {}).get("ativar") and q["J_economia_de_tokens"].get("instalar_estilo_no_claude_md", True):
         claude_md = claude_md.rstrip("\n") + "\n" + ESTILO_DE_RESPOSTA
     saida.append(write_new(projeto / "CLAUDE.md", claude_md))
@@ -1309,6 +1317,11 @@ def main() -> int:
             saida.append(write_new(projeto / ".claude" / "hooks" / "testar.sh", "#!/usr/bin/env bash\n# Roda ao parar: o erro aparece aqui, nao em producao.\nset -o pipefail\n" + l4["comando_de_teste"] + " 2>&1 | tail -40\n"))
         if l4.get("comando_de_lint"):
             saida.append(write_new(projeto / ".claude" / "hooks" / "lint.sh", "#!/usr/bin/env bash\nset -o pipefail\n" + l4["comando_de_lint"] + " 2>&1 | tail -20\n"))
+        l6 = l.get("L6_esqueleto_erp") or {}
+        if l6.get("gerar"):
+            import esqueleto_erp  # noqa: E402  (mesma pasta; sys.path ja tem o diretorio do script)
+            for rel, corpo in esqueleto_erp.arquivos(q).items():
+                saida.append(write_new(projeto / rel, corpo))
         if l5.get("mcps"):
             saida.append(write_new(projeto / ".mcp.json", json.dumps({"mcpServers": {m: MCPS[m] for m in l5["mcps"]}}, ensure_ascii=False, indent=2) + "\n"))
         perfil = str((q.get("H_backend") or {}).get("perfil", "")).lower()

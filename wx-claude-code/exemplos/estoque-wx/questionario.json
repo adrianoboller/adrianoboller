@@ -679,6 +679,15 @@
       ],
       "skills_externas": [],
       "observacao": ""
+    },
+    "L6_esqueleto_erp": {
+      "gerar": true,
+      "multi_empresa": false,
+      "fiscal_brasil": true,
+      "modulos_extras": [
+        "financeiro"
+      ],
+      "observacao": ""
     }
   }
 }

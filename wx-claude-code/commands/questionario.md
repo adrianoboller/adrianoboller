@@ -113,6 +113,9 @@ Ele imprime a versão instalada de cada ferramenta pedida contra a mínima, e de
 | L3 | **Implantação**: alvo (VPS com EasyPanel, Docker, serviço Windows, IIS, cloud, nenhum), domínio, porta, Dockerfile e compose, **nomes** das variáveis de ambiente, rota de healthcheck | `Dockerfile`, `docker-compose.yml`, kickoff |
 | L4 | **Hooks do projeto**: rodar os testes ao parar? lint ao editar? com quais comandos? | `.claude/settings.json`, `.claude/hooks/` |
 | L5 | **MCP e skills** do projeto: Supabase, PostgreSQL, GitHub, Playwright; pacotes de skills externos | `.mcp.json` (sem chaves), `.claude/skills/` |
+| L6 | **Esqueleto de ERP**: gerar? multiempresa? fiscal brasileiro? módulos além dos do 0.8? | `AGENTS.md`, `CONTEXT.md`, `CONTEXT-MAP.md`, `UBIQUITOUS_LANGUAGE.md`, `ARCHITECTURE.md`, `SECURITY.md`, `docs/` (PRD, ROADMAP, BACKLOG, adr, domain, data, api, security, operations, testing), `database/`, `src/<módulo>/`, `tests/<camada>/`, `scripts/`, `.github/workflows/`; seção «Skills de ERP» no `CLAUDE.md` |
+
+Com L6 = sim, cada módulo do 0.8 ganha `docs/domain/<módulo>.md` e `src/<módulo>/` e o `CLAUDE.md` diz qual das oito skills `erp-*` do plugin orienta aquele módulo (contabilidade → `erp-accounting`, estoque → `erp-inventory`, fiscal → `erp-brazil-fiscal`…); nada disso é sobrescrito ao reaplicar. Índice das skills em `skills/LEIA-ME-erp.md`.
 
 O script também gera `INDEX_FILES.md` (o mapa de tudo que o Claude Code pode ler, regravado sempre), as skills do projeto `regras-do-legado` e `legado-para-destino`, e o `CLAUDE.md` passa a apontar para o mapa e para o kickoff. A análise que motivou esta letra está em `docs/analise-aula-vibe-coding.md` do plugin.
 

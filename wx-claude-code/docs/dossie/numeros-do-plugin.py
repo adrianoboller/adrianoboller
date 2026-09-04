@@ -28,6 +28,9 @@ def medir() -> dict:
     def itens(b):
         v = q[b]
         return len([k for k in v if re.match(r"^(0_\d+_|F\d+_|K\d_|L\d_)", k)]) if isinstance(v, dict) else 0
+    sys.path.insert(0, str(RAIZ / "skills/conversao-wx/scripts"))
+    import esqueleto_erp as _e  # noqa: E402
+    esqueleto_erp = len(_e.arquivos(json.loads((RAIZ / "exemplos/estoque-wx/questionario.json").read_text(encoding="utf-8"))))
     testes = len(re.findall(r"^\s+def test_", (RAIZ / "tests/testes.py").read_text(encoding="utf-8"), re.M))
     corpus = RAIZ / "skills/conversao-wx/resources/Help_WL_12k_Json.zip"
     video = RAIZ / "docs/video/wx-claude-code-video-de-uso.mp4"
@@ -53,7 +56,8 @@ def medir() -> dict:
         "corpus_bytes": corpus.stat().st_size if corpus.is_file() else 0, "corpus_paginas_validas": 12035,
         "hooks": sum(len(v) for v in json.loads((RAIZ / "hooks/hooks.json").read_text(encoding="utf-8"))["hooks"].values()),
         "manual_linhas": linhas("MANUAL.md"), "exemplo_tabelas": len(re.findall(r"CREATE TABLE", (RAIZ / "exemplos/estoque-wx/inputs/banco.sql").read_text(encoding="utf-8"), re.I)),
-        "arquivos_gerados_pelo_questionario": len(re.findall(r"write_new\(", (RAIZ / "skills/conversao-wx/scripts/aplicar_questionario.py").read_text(encoding="utf-8"))),
+        "arquivos_gerados_pelo_questionario": len(re.findall(r"write_new\(", (RAIZ / "skills/conversao-wx/scripts/aplicar_questionario.py").read_text(encoding="utf-8"))) - 1 + esqueleto_erp,
+        "skills_erp": len(list((RAIZ / "skills").glob("erp-*"))) + len(list((RAIZ / "skills").glob("windev-wlanguage-erp"))),
     }
 
 
@@ -63,9 +67,9 @@ def relatorio(n: dict) -> str:
          "## O que é", "",
          "Plugin do Claude Code que converte projetos WINDEV, WEBDEV e WINDEV Mobile para outra plataforma sem inventar o que o projeto faz: questionário guiado, gates com aprovação humana, equipe de agentes WLanguage sobre o Help oficial, PMO com Scrum, Kanban e PDCA, qualidade de tela com o Impeccable, serial de ativação, e o contexto da primeira sessão do Claude Code gerado das respostas.", "",
          "## Números", "", "| medida | valor |", "| --- | ---: |"]
-    rot = {"agentes": "agentes", "papeis": "papéis A–J", "subagentes_pdca": "subagentes PDCA", "especialistas_wl": "especialistas WLanguage por tema", "comandos": "comandos /", "skills": "skills", "scripts": "scripts Python", "linhas_de_python": "linhas de Python (scripts e hooks)", "referencias": "documentos de referência", "testes": "testes de regressão", "hooks": "hooks do plugin", "blocos_do_questionario": "blocos do questionário (0, A–L)", "itens_do_bloco_0": "itens do bloco 0", "subperguntas_f": "subperguntas de F (F0–F13)", "itens_k": "itens de K", "itens_l": "itens de L", "arquivos_gerados_pelo_questionario": "arquivos que o questionário pode gerar", "prints": "prints de sessões reais", "video_cenas": "cenas do vídeo", "video_duracao": "duração do vídeo", "corpus_bytes": "corpus do Help (bytes)", "corpus_paginas_validas": "páginas válidas do corpus", "manual_linhas": "linhas do manual", "exemplo_tabelas": "tabelas do exemplo ESTOQUE"}
+    rot = {"agentes": "agentes", "papeis": "papéis A–J", "subagentes_pdca": "subagentes PDCA", "especialistas_wl": "especialistas WLanguage por tema", "comandos": "comandos /", "skills": "skills", "skills_erp": "skills de ERP (pacote skills.sh)", "scripts": "scripts Python", "linhas_de_python": "linhas de Python (scripts e hooks)", "referencias": "documentos de referência", "testes": "testes de regressão", "hooks": "hooks do plugin", "blocos_do_questionario": "blocos do questionário (0, A–L)", "itens_do_bloco_0": "itens do bloco 0", "subperguntas_f": "subperguntas de F (F0–F13)", "itens_k": "itens de K", "itens_l": "itens de L", "arquivos_gerados_pelo_questionario": "arquivos que o questionário pode gerar", "prints": "prints de sessões reais", "video_cenas": "cenas do vídeo", "video_duracao": "duração do vídeo", "corpus_bytes": "corpus do Help (bytes)", "corpus_paginas_validas": "páginas válidas do corpus", "manual_linhas": "linhas do manual", "exemplo_tabelas": "tabelas do exemplo ESTOQUE"}
     L += [f"| {rot[k]} | {n[k]} |" for k in rot]
-    L += ["", "## O que foi provado em sessão real", "", "Cada print em `docs/prints/` é a saída de uma sessão do Claude Code ou de um script, sem edição; a origem de cada um está em `docs/prints/gerar.md`. Entre eles: o questionário uma letra por vez, a senha colada que não é gravada nem repetida, a letra H com o processo de conversão, a tela modelo aberta antes de registrar, o serial de ativação recusando e depois liberando, a primeira sessão lendo `INDEX_FILES.md` e o kickoff, a exportação organizada e o zelador.", "",
+    L += ["", "## O que foi provado em sessão real", "", "Cada print em `docs/prints/` é a saída de uma sessão do Claude Code ou de um script, sem edição; a origem de cada um está em `docs/prints/gerar.md`. Entre eles: o questionário uma letra por vez, a senha colada que não é gravada nem repetida, a letra H com o processo de conversão, a tela modelo aberta antes de registrar, o serial de ativação recusando e depois liberando, a primeira sessão lendo `INDEX_FILES.md` e o kickoff, a exportação organizada e o zelador, e o esqueleto de ERP (L6) com a sessão carregando a skill do módulo.", "",
           "## O que não foi provado", "", "- Nenhum projeto WINDEV real passou pelos gates G1 a G7 de ponta a ponta; o exemplo ESTOQUE é sintético.", "- Os scripts de ambiente (K e L) são bash; não há versão PowerShell, e o público do plugin usa Windows.", "- A licença é dissuasão (hook); a proteção real, servir corpus e agentes de um servidor, ficou para depois por decisão do dono.", "- O custo em tokens do questionário inteiro numa sessão real não foi medido.", "",
           "## Onde está cada coisa", "", "- Manual: `MANUAL.md` (PDF em `docs/manual-de-uso.pdf`); oito capítulos.", "- Página para investidores: `docs/investidor/`.", "- Análise da aula de vibe coding: `docs/analise-aula-vibe-coding.md`.", "- Telas do fluxo de licença: `docs/telas-licenca/`.", "- Dossiê: `docs/dossie/dossie-wx-claude-code.html`, gerado deste mesmo medidor.", ""]
     return "\n".join(L)

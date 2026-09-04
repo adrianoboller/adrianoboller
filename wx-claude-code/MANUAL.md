@@ -413,6 +413,8 @@ API vêm do `.env`, nunca do compose.
 
 **A letra L, o contexto.** A lição que veio de fora (`docs/analise-aula-vibe-coding.md`): o que o Claude Code entrega depende do que ele lê antes do primeiro comando. Por isso o wizard fecha gerando o prompt de kickoff da primeira sessão (empresa, aprovador, prazo, legado, destino, estratégia, requisitos da v1, como trabalhar), o prompt de prototipação para a ferramenta de telas, o `INDEX_FILES.md` com uma linha por arquivo dizendo o que é e quando abrir, o `.claude/` do projeto com hooks de teste e lint e duas skills (regras do legado; legado para destino), o `.mcp.json` sem chaves, e o Dockerfile e compose por perfil quando L3 pede. Com isso a primeira sessão começa lendo, não perguntando.
 
+**L6, o esqueleto de ERP.** Veio de um pacote de oito skills pesquisado no skills.sh pelo dono do projeto (`skills/LEIA-ME-erp.md`): contabilidade, estoque, fiscal brasileiro, multiempresa, alçadas, LGPD, integrações e o WLanguage lido como ERP. Marcado sim, o questionário gera na raiz a árvore que o pacote descreve, preenchida com as respostas: `AGENTS.md` (ordem de leitura, regras que não se negociam, módulo → pasta → skill), `CONTEXT.md` (finalidade, objetivos, recursos e módulos do bloco 0), `CONTEXT-MAP.md`, `UBIQUITOUS_LANGUAGE.md`, `ARCHITECTURE.md`, `SECURITY.md`, quatro ADRs (monólito modular, multiempresa, auditoria e outbox, fiscal), um `docs/domain/<módulo>.md` por módulo, `database/` com migração e rollback pareados, `src/<módulo>/`, `tests/` por camada, `scripts/` e quatro workflows. O `CLAUDE.md` gerado ganha a seção «Skills de ERP» com a tabela módulo → skill, e a sessão carrega a skill certa antes de mexer no módulo (provado no print 33). Multiempresa e fiscal em «não» viram ADRs que dizem que não há, e o que custa entrar depois.
+
 **Sobre a senha.** O wizard não pergunta a senha nem o token, e o script
 recusa o questionário se algum vier preenchido: a regra do projeto é senha
 nunca em texto puro. Você informa o **nome** da variável de ambiente ou do
@@ -461,6 +463,10 @@ DESIGN.md                    sistema de design: tela modelo, botões, cores, fun
 PRODUCT.md                   quem opera e em que condições (F1)
 .claude/                     settings.json com hooks, hooks/, skills/regras-do-legado e legado-para-destino
 .mcp.json, Dockerfile, docker-compose.yml, .gitignore   quando L5 e L3 pedem
+AGENTS.md, CONTEXT.md, CONTEXT-MAP.md, UBIQUITOUS_LANGUAGE.md, ARCHITECTURE.md, SECURITY.md, CHANGELOG.md, .editorconfig
+docs/{PRD,ROADMAP,BACKLOG}.md, docs/adr/0001-0004, docs/domain/<módulo>.md, docs/{data,api,security,operations,testing}/
+database/{schema,migrations,seeds,views,procedures,rollback}, src/<módulo>/, tests/<camada>/, scripts/, .github/workflows/
+                             esqueleto de ERP, quando L6 = sim (50 arquivos no exemplo)
 ```
 
 Depois do `pmo.py iniciar` e do fechamento de sprints, `pmo/` ganha ainda

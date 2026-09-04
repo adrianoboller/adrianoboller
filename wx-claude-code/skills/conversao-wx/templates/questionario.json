@@ -477,6 +477,13 @@
       "mcps": [],
       "skills_externas": [],
       "observacao": "mcps: supabase | postgresql | github | playwright; skills_externas: pacotes npx skills add …; nenhuma chave aqui"
+    },
+    "L6_esqueleto_erp": {
+      "gerar": false,
+      "multi_empresa": true,
+      "fiscal_brasil": true,
+      "modulos_extras": [],
+      "observacao": "gerar: true cria na raiz do projeto o esqueleto de ERP (AGENTS, CONTEXT, CONTEXT-MAP, UBIQUITOUS_LANGUAGE, ARCHITECTURE, SECURITY, docs/adr, docs/domain por modulo, database, src/<modulo>, tests/<camada>, scripts, .github/workflows) e liga cada modulo do 0.8 a uma skill erp-* do plugin; modulos_extras: modulos alem dos do 0.8"
     }
   }
 }
