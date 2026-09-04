@@ -2210,6 +2210,101 @@ cargo run --release --example custo-da-fk -- 20000 1000
 cargo run --example sonda-replica-fk -p phxsql-store
 ```
 
+## 16. O fecho da janela: o `fsync` que faltava, e o `fsync` seletivo RECUSADO (04/09)
+
+Esta seção fecha uma correção e mata uma proposta — as duas com número, porque
+*hipótese que morre medida é resultado tão válido quanto ganho*.
+
+### 16.1 A correção: o fecho não sincronizava o `.reg`
+
+O fecho da janela de durabilidade (`Table::sincronizar`, chamado por
+`descarregar_sujas_com`) manda ao disco `.trash`, `.bin`, `.memo`, `.log`,
+`.reason` e o `.ndx` duas vezes — **sete** `fsync`, e nenhum no `.reg`.
+Mecanismo, formato e alcance estão em `FORMATO.md` §8, *«O que `sincronizar`
+alcança»*. O que interessa aqui é o **preço da correção** e o que ele revelou.
+
+Preço, contado: **7 → 8 `fsync` por fecho** (+14%), constante nas três escalas
+de semeadura — 20, 2.000 e 200.000 linhas —, porque o fecho é por ARQUIVO e
+não por linha (`cargo run --release --example fsync-por-fecho -p phxsql-store`).
+
+Preço, cronometrado: **não aparece**. Dez rodadas intercaladas do
+`o-comboio-por-dentro` com K=16, binários antes e depois construídos lado a
+lado, deram mediana **22,3 ms** (antes, 7 `fsync`) contra **21,6 ms** (depois,
+8) — o "antes" saiu mais lento, o que só pode ser ruído. O espalhamento desta
+máquina (±3 ms, de 18,6 a 27,6 ms) engole com folga os ~2,2 ms que um `fsync`
+sujo a mais custaria em 16 tabelas. **O número honesto da correção é o
+contado, não o cronometrado.**
+
+E o custo do registro de escritas pendentes no caminho QUENTE é zero medido:
+`custo-do-fsync 50000`, cinco corridas de cada lado, deu mediana de **11,88
+µs/linha** antes e **11,78 µs/linha** depois. Um `lock` sem disputa custa 13,2
+ns ao lado de uma inserção de ~12 µs — três ordens de grandeza, e é por isso
+que ele não aparece.
+
+### 16.2 A proposta recusada: pular o `fsync` de quem não mudou
+
+`PESQUISA-FSYNC-SELETIVO.md` (papel J) leu PostgreSQL, InnoDB, Cassandra,
+SQLite e LMDB e recomendou o molde do InnoDB: **um sinalizador de sujeira por
+arquivo**, para pular o `fsync` dos quatro que uma inserção comum não escreve
+— `.trash`, `.reason`, `.bin` e `.memo`. A pesquisa está certa sobre o
+mecanismo dos outros e sobre a contagem; a decisão do papel C é **recusar a
+forma recomendada**, por três motivos, e o primeiro sozinho decide.
+
+**1. O sinalizador POR INSTÂNCIA reabriria, em quatro arquivos, o defeito que
+a §16.1 acabou de fechar.** A pesquisa propõe *«um campo dentro do próprio
+`Table`»*. Com `recursos.exclusao_na_janela` ligado, o `fsync` do `.trash` sai
+de dentro do `excluir` e passa a ser o do fecho da janela (`lixeira.rs`,
+`guardar`). Quem escreveu o `.trash` é uma `Table` que já morreu; quem fecha a
+janela é outra, **que nunca escreveu nele** — o sinalizador dela está limpo e
+ela pularia. Hoje ele vai ao disco *por acidente*, porque `abrir` o abriu para
+ler o cabeçalho. Trocar «sincroniza o que abri» por «sincroniza o que eu
+escrevi» converteria quatro acertos acidentais em quatro defeitos novos, e o
+pior deles inverte justamente a ordem que `Table::sincronizar` existe para
+garantir: a cópia de recuperação tem de estar no disco **antes** da liberação
+do slot contra a qual ela protege.
+
+**2. A mesma marca, lida nos dois sentidos, tem modos de falha opostos.** O
+registro que a §16.1 implementou é do PROCESSO e não da instância, então ele
+não sofre do motivo 1 — e ainda assim ele é lido **só para somar** `fsync`.
+Marca esquecida num caminho de escrita, lida para somar, faz o motor cair no
+comportamento antigo: custa velocidade. Lida para subtrair, custa o **dado**,
+calada, e só numa queda de energia. E há três caminhos de escrita neste crate
+que já não passam pelo `Volumes` — o `ndx.rs` inteiro, e o `reescrever_volume`
+e o `escrever_volume_novo` do `reg.rs`. Hoje os três pagam o próprio
+`sync_all` e estão corretos; cada um é um lugar onde a marca pode faltar
+amanhã, e nenhum teste acusaria.
+
+**3. O número mata a premissa do «~2× mais barato».** Medido por **ablação** —
+um binário construído só para medir, com `Table::sincronizar` mandando ao
+disco apenas `.log`, `.ndx` e `.reg` (4 `fsync` em vez de 8), rodado
+intercalado com os outros dois em dez rodadas:
+
+| variante | `fsync` por fecho | fecho K=16, mediana |
+|---|---:|---:|
+| antes da correção | 7 | 22,3 ms |
+| **hoje** | **8** | **21,6 ms** |
+| seletivo (ablação) | 4 | **17,9 ms** |
+
+**Cortar metade dos `fsync` compra 17% do fecho, não 2×.** A conta fecha pelo
+custo por arquivo, medido à parte com `os.fsync` direto nesta máquina:
+**52–54 µs num arquivo limpo contra 139 µs num com página suja**. Os quatro que
+se cortariam são justamente os quatro mais baratos — 4 × 54 µs × 16 tabelas =
+3,5 ms previstos, e a ablação mediu 3,7 ms. As duas medições concordam, e é
+isso que dá confiança no 17%.
+
+**O que faria a proposta voltar**, escrito para não voltar sem isso: o
+registro ser do processo (já é), mais uma auditoria provando que **toda**
+escrita nos oito arquivos passa pelo `Volumes`, mais uma guarda que reprove
+quem acrescentar um caminho de escrita fora dele. Isso é o preço de 17% de uma
+operação que acontece uma vez por janela — 200 operações ou 200 ms. Não vale
+hoje; com a auditoria e a guarda escritas, volta a valer.
+
+```bash
+cargo run --release --example fsync-por-fecho -p phxsql-store -- --numeros
+cargo run --release --example o-comboio-por-dentro -p phxsql-store -- 16 2000
+cargo run --release --example custo-do-fsync -p phxsql-store -- 50000
+```
+
 ## Como refazer tudo
 
 ```bash
@@ -2233,4 +2328,5 @@ cargo run --release -p phxsql-server --example custo-da-transacao 200 64  # a §
 python3 bancada/transacoes/provar.py                     # a transacao pelo soquete
 python3 bancada/concorrencia/a-trava-serializa.py        # a premissa da SP000011, a §14
 cargo run --release --example custo-da-fk -- 20000 1000   # o custo da chave conferida, a §15
+cargo run --release --example fsync-por-fecho -p phxsql-store -- --numeros  # a §16
 ```

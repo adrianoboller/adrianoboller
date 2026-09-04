@@ -6,8 +6,11 @@
 //!
 //! # O defeito, e por que nenhum teste de biblioteca o via
 //!
-//! `Volumes::sincronizar` (`src/volume.rs`) so chama `fsync` nos arquivos que
-//! estao em `abertos` -- e um `Table` reaberto nunca tocou o volume do
+//! *(Descrito no presente, como estava no dia em que esta guarda nasceu. Ele
+//! foi consertado em 04/09/2026 -- ver o fim deste comentario.)*
+//!
+//! `Volumes::sincronizar` (`src/volume.rs`) so chamava `fsync` nos arquivos
+//! que estao em `abertos` -- e um `Table` reaberto nunca tocou o volume do
 //! `.reg`: o cabecalho vem de um `std::fs::File::open` direto, dentro de
 //! `RegFile::abrir`, fora do cache de `Volumes`. Entao `abertos` esta vazio,
 //! o laco de `fsync` roda zero vezes, e `sincronizar()` ainda devolve
@@ -43,6 +46,14 @@
 //! unitario -- "o que depende do sistema operacional se prova contra o
 //! sistema operacional".
 //!
+//! **O contador previsto aqui EXISTE hoje**: a frente do conserto acrescentou
+//! `Volumes::sincronizados()`, que conta o arquivo e nao a chamada, e tres
+//! testes de unidade em `src/volume.rs` provam por ele o registro de escritas
+//! pendentes -- sem `strace`. Esta guarda **continua sendo necessaria** e nao
+//! foi substituida por eles: o contador vive na memoria do processo, e o
+//! cenario daqui e' de DOIS processos (a semeadura aqui, o fecho no filho
+//! tracado). E' justamente a metade que so' o sistema operacional responde.
+//!
 //! # A forma
 //!
 //! `sonda_reabre_e_sincroniza` (abaixo, `#[ignore]`) e' o CORPO tracado: um
@@ -56,9 +67,12 @@
 //! (`fsync(7</.../sonda_1.reg>)`), entao contar quantos `fsync` tocaram um
 //! arquivo `.reg` e' so filtrar o log por `.reg>`.
 //!
-//! **Hoje isto reprova**: zero `fsync` toca o `.reg` nesse cenario. Passa
-//! depois que o conserto abrir (ou de algum jeito tocar) o volume do `.reg`
-//! antes ou durante o `sincronizar` do fecho de janela.
+//! **Isto reprovava quando esta guarda nasceu**, com zero `fsync` no `.reg`, e
+//! passou a valer em 04/09/2026: `RegFile::sincronizar` abre o volume 1 e o
+//! volume da fronteira antes de delegar ao `Volumes`, que e' o mesmo par que
+//! os seis componentes irmaos ja abrem ao abrir. Desfazer essas duas linhas
+//! devolve a guarda ao vermelho -- conferido nos dois sentidos. O motivo
+//! inteiro esta em `docs/FORMATO.md` §8 e em `docs/DESEMPENHO.md` §16.
 
 mod comum;
 
@@ -101,8 +115,9 @@ fn sonda_reabre_e_sincroniza() {
     t.sincronizar().expect("sincronizar o fecho da janela");
 }
 
-/// A guarda. Falha HOJE porque o `.reg` nao sincroniza nada quando quem fecha
-/// a janela e' um `Table` recem-reaberto -- ver a documentacao do modulo.
+/// A guarda: o `.reg` tem de ir ao disco quando quem fecha a janela e' um
+/// `Table` recem-reaberto. Nasceu vermelha e passou com o conserto de
+/// 04/09/2026 -- ver a documentacao do modulo.
 #[test]
 fn fecho_da_janela_sincroniza_o_reg_de_verdade() {
     let d = comum::DirTemp::novo("fecho-reg");

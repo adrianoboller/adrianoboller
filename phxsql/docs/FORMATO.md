@@ -1448,6 +1448,52 @@ largura do sufixo faz parte dela. Abrir uma tabela, então, começa varrendo o
 diretório atrás de `nome.reg` ou do menor `nome_<dígitos>.reg`, e só depois de
 ler o esquema é que o conjunto de volumes é montado.
 
+### O que `sincronizar` alcança — e a assimetria que decide a forma da marca
+
+**Regra (04/09/2026):** `Table::sincronizar()` promete que tudo o que foi
+escrito nesta tabela **por qualquer instância deste processo** está no disco. A
+implementação alcança isso por **duas listas**, e a segunda existe porque quem
+escreve e quem sincroniza são objetos diferentes:
+
+1. os descritores que a instância corrente tem abertos no cache LRU;
+2. os volumes marcados como **escritos e ainda não sincronizados** num registro
+   do processo inteiro (`ESCRITAS_PENDENTES`, em `volume.rs`), alimentado só
+   pelos caminhos de escrita do `Volumes` e por nenhum de leitura.
+
+A lista 1 sozinha era a implementação até aqui, e ela media o **cache**, não a
+durabilidade. Três buracos vieram dessa confusão, todos invisíveis a uma queda
+de processo — página suja no cache do núcleo sobrevive a `SIGKILL`, só a queda
+de **energia** os mostra:
+
+* o fecho da janela de durabilidade **reabre** a tabela só para sincronizar
+  (`descarregar_sujas_com`; e igualmente `sincronizar_replicada` e o
+  `BULKINSERT(false)`). O `.reg` dessa instância nova tem o cache vazio, porque
+  `RegFile::abrir` lê o cabeçalho com um `std::fs::File` direto — ele **tem**
+  de ler, pela seção acima: a largura do sufixo mora dentro do cabeçalho. O
+  laço rodava zero vezes e `sincronizar()` devolvia `Ok(())` tendo sincronizado
+  **nada**, com o `.ndx` indo ao disco duas vezes no mesmo fecho;
+* numa tabela paginada, um `atualizar` no meio suja um volume que a reabertura
+  não abre;
+* e o LRU de 64 posições despeja o descritor de quem escreveu antes de o
+  `fsync` chegar nele.
+
+**A marca SOMA `fsync`, e nunca subtrai — e essa assimetria é a regra, não um
+detalhe de implementação.** O mesmo registro serviria para *pular* o `fsync` de
+um arquivo que ninguém sujou, e é o que PostgreSQL e InnoDB fazem. Aqui ele é
+lido só no sentido de acrescentar, porque os dois sentidos têm modos de falha
+**opostos**: marca esquecida no caminho de escrita, lida para somar, faz o
+motor cair no comportamento antigo — custa velocidade; lida para subtrair,
+custa o **dado**, calada, e só numa queda de energia. Ver a recusa medida em
+`DESEMPENHO.md` §16.
+
+O que continua fora, e é decisão e não esquecimento: escreveu no meio de uma
+tabela **paginada**, morreu o **processo** sem sincronizar, e outro processo
+fechou a janela. Fechá-lo pediria `fsync` em todo volume existente a cada
+fecho — **52 µs cada um, medidos, mesmo em arquivo que ninguém sujou**, o que
+dá 13 ms numa tabela de 256 volumes, por fecho. O `.reg` paga, em vez disso, o
+mesmo par que os seis componentes irmãos já pagam: o volume 1 (cabeçalho e
+contadores) e o volume da fronteira de escrita.
+
 ---
 
 ## 9. `.pag` — o descritor de partição

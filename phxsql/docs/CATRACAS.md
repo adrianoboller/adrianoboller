@@ -46,12 +46,13 @@ motivo que `TETO_DA_CASCATA` não entra: não há número que decresça.
 | `TETO_ROTULOS_E_CRASE` | `crates/phxsql-server/src/conferidor.rs` | 1.707 | **1.707** | **0** | sem folga |
 | `TETO_COLADO` | `crates/phxsql-server/src/conferidor.rs:1088` | 0 | **0** | **0** | sem folga |
 | `TETO_FRASE_REPETIDA` | `crates/phxsql-server/src/conferidor.rs:1092` | 0 | **0** | **0** | sem folga |
-| `TETO_FSYNC_POR_FECHO_V1` | `crates/phxsql-store/tests/catraca-fsync-por-fecho.rs` | 7 | **7** | **0** | sem folga — nasceu nesta rodada |
+| `TETO_FSYNC_POR_FECHO_V2` | `crates/phxsql-store/src/conferidor_fsync.rs` | 8 | **8** | **0** | sem folga — **substitui a V1 (7)**, aposentada |
 
 As quatro primeiras foram medidas em 03/09/2026 (commit `5ca5326`, descrito no
 resto desta seção); a quinta é de 04/09/2026, desta rodada — a medição dela
 está isolada na seção 5, abaixo, para não misturar datas de medição na mesma
-prosa.
+prosa. A quinta **já nasceu e já foi aposentada no mesmo dia**: a `V1` valia 7
+e a `V2` vale 8, e a seção 5 conta por quê.
 
 **Achado principal (03/09): nenhuma catraca frouxa entre as quatro. As quatro
 estavam coladas no teto, folga zero.** Não há o que baixar naquele dia —
@@ -161,7 +162,47 @@ prova real do item 3: copiar o português para dois outros idiomas de uma
 chave existente faz reprovar nomeando a chave e quantos idiomas trazem a
 frase.
 
-### 5. `TETO_FSYNC_POR_FECHO_V1` — `fsync` desperdiçado no fecho de janela
+### 5. `TETO_FSYNC_POR_FECHO_V2` — `fsync` gasto no fecho de janela
+
+**Ela substitui a `TETO_FSYNC_POR_FECHO_V1`, que valia 7, e a substituição é a
+lei sendo cumprida e não contornada.** O defeito que a V1 descreveu — o `.reg`
+que não ia ao disco — foi consertado na mesma rodada (`FORMATO.md` §8,
+`DESEMPENHO.md` §16), e o número real subiu para **8** por CORREÇÃO: o oitavo
+`fsync` é o do dado. Subir o teto de 7 para 8 seria a mesma porta que subir
+`TETO_TABELA_NA_MAO` de 24 para 43 teria aberto, então a V1 foi **aposentada**
+e a V2 nasceu no número medido do dia. A série com o passado se perde de
+propósito.
+
+**E a mudança pagou por si no mesmo dia**: a V2 é cobrada nos dois sentidos —
+`medido <= teto` e `medido == teto` —, e foi o segundo lado (o de catraca
+frouxa) que reprovou um binário construído para uma **ablação de medição**, em
+que `Table::sincronizar` mandava ao disco só quatro dos oito arquivos. Um teto
+sem o lado da folga teria deixado passar: 4 é menor que 8.
+
+**Duas correções de forma vieram junto**, e a primeira é o motivo de esta
+seção existir:
+
+* **a catraca não estava no inventário.** O `docs/qa/medir.py` acha catraca
+  varrendo `crates/*/examples/*.rs` atrás de quem imprime `catraca:` e responde
+  a `--numeros`, e acha teto órfão varrendo `crates/*/src/**/*.rs` atrás de
+  `pub const TETO*`. A V1 morava num `tests/*.rs` e **escapava dos dois
+  crivos** — nem media, nem aparecia como buraco, que pelo critério escrito
+  neste próprio documento a tornava promessa. Hoje a constante mora em
+  `src/conferidor_fsync.rs`, quem mede é o exemplo `fsync-por-fecho` (que se
+  descreve), e o teste `tests/catraca-fsync-por-fecho.rs` **roda o exemplo** e
+  cobra o que ele reportou: uma conta só, num lugar só. A régua do `medir.py`
+  **não** mudou — mudar a régua obrigaria a aposentar as outras quatro
+  catracas junto, e não havia motivo para pagar isso;
+* **o teste recusa medir com binário velho.** `cargo test --test
+  catraca-fsync-por-fecho` compila o teste e **não** compila os exemplos: o
+  medidor ficaria o da rodada passada, publicando o número de ontem — é a
+  armadilha que já custou a esta casa uma rodada inteira de ganhos invisível
+  na bancada. O teste compara a data do binário do exemplo com a de todo
+  `.rs` de `src/` e `examples/`, e reprova nomeando os arquivos mais novos.
+
+O que segue descreve a V1 e continua valendo como história do defeito.
+
+### 5.1 O que a V1 mediu (04/09, antes do conserto)
 
 **O defeito que motivou**: o fecho da janela de durabilidade
 (`Table::sincronizar`, chamado por `descarregar_sujas_com` num `Table`
@@ -200,9 +241,12 @@ verdade de 7 para 8, e subir o TETO para acomodar isso quebraria a lei
 `TETO_TABELA_NA_MAO` de 24 para 43 teria quebrado — a saída é a mesma que já
 tem duas ocorrências nesta tabela: **aposentar `TETO_FSYNC_POR_FECHO_V1` (7)
 e fazer nascer `TETO_FSYNC_POR_FECHO_V2` (8) no mesmo commit que liga o
-`fsync` do `.reg`**, nunca só subir o número. Até lá, 7 é o teto e reprova
-qualquer coisa acima — inclusive um oitavo `fsync` solto por descuido que não
-seja o conserto do `.reg`.
+`fsync` do `.reg`**, nunca só subir o número.
+
+**E foi exatamente isso que aconteceu**, no mesmo dia: o conserto entrou, o
+número medido virou 8, a V1 saiu e a V2 nasceu. A previsão escrita aqui em
+04/09 pela frente que criou a V1 se cumpriu sem uma linha de discussão — que é
+o que uma catraca bem documentada compra.
 
 ## Os limites de funcionamento encontrados (não são catracas)
 
