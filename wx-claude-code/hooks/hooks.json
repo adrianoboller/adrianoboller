@@ -11,6 +11,17 @@
             "statusMessage": "Checking UI changes"
           }
         ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/sincronizar_pmo.py\"",
+            "timeout": 40,
+            "statusMessage": "PMO em dia"
+          }
+        ]
       }
     ],
     "Stop": [
@@ -47,6 +58,17 @@
             "statusMessage": "Licença WX"
           }
         ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/guarda_anexos_e_segredos.py\"",
+            "timeout": 5,
+            "statusMessage": "Anexos e segredos"
+          }
+        ]
       }
     ],
     "SessionStart": [
@@ -77,6 +99,12 @@
             "type": "command",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/pmo.py\" hook-identificacao",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/rag.py\" hook",
+            "timeout": 15,
+            "statusMessage": "RAG do projeto"
           }
         ]
       }

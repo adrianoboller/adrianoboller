@@ -16,6 +16,7 @@ e renderizada num terminal pelo Chromium (Playwright), a 2× de escala.
 | 27 | sessão `-p` num projeto com log antigo: o hook `SessionStart` rodou o zelador e a sessão mostra o registro com bytes medidos |
 | 28 | dois turnos reais (`-p` e `-c`): a resposta abre com a identificação `Bloco0001-SP00002-Análise da base de dados · data` injetada pelo hook; no segundo turno o agente se recusa a inventar o objetivo da sprint nova e antecipa a identificação `SP00003` |
 | 29 | sessão real: perguntada qual agente entra num PDCA infrutífero, apontou o Pesquisador (equipe B), achou o pedido pendente em `pmo/pesquisas.md` com a hipótese morta e a próxima, e deu o status por agente recusando inventar estado para quem não registrou |
+| 30 | duas sessões reais: a pergunta sobre a estratégia foi respondida citando `processo-de-conversao.md#L5-L9`, o localizador que o RAG injeta; pedido para apagar um anexo, o agente recusou pela regra antes de o hook precisar negar (o hook está provado por teste, com stdin) |
 | 07 | `claude -p "/wx-claude-code:laudo-tokens fase-1"` com fonte de sessões marcada INDISPONÍVEL |
 | 08 | `pmo.py iniciar/gastar/status` e `rotear_modelo.py` com subida, rebaixamento a 85 %, bloqueio a 105 % e fallback |
 | 09 | sessão `-p` com `Agent` liberado: dois símbolos delegados aos `wl-hfsql-specialist` e `wl-communication-specialist`, com o member do Help de cada um |

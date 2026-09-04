@@ -140,6 +140,17 @@ próximos passos derivados do que está acima (próximo gate, sprint aberta,
 itens a desbloquear, decisões pendentes, lacunas críticas, prazo vencido).
 `pmo.py relatorio` imprime o mesmo texto a qualquer hora.
 
+**Hooks e RAG.** O harness faz valer sozinho o que antes era só regra
+escrita: anexos são somente leitura (o hook nega escrita e `rm` na pasta de
+evidências), segredo nunca vai para arquivo (nega conteúdo com formato de
+token, gravação de `.env` e `git add .env`), o Kanban se regera quando a
+matriz ou o backlog mudam, e a cada pergunta sua o RAG do projeto injeta os
+trechos mais próximos com `arquivo#linha` para o Claude Code abrir o arquivo
+certo em vez de ler tudo. O RAG é `rag.py` (`indexar`, `buscar`), BM25 em
+Python puro sobre `.wx-migration/`, os arquivos de contexto e as referências
+do plugin; o corpus WLanguage continua por tema no `query_wlanguage_help.py`.
+Tabela completa em `references/hooks-e-rag.md`.
+
 **A equipe prioritária.** Dez agentes que têm de existir num projeto de
 grande porte, na ordem de prioridade, cada um com o seu gatilho: A Zelador
 (sinal de falta de espaço ou hook diário); B Pesquisador (todo ciclo PDCA

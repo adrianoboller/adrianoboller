@@ -552,6 +552,55 @@ class EquipePrioritaria(unittest.TestCase):
         r = run(SCRIPTS / "zelador.py", "--project-root", self.tmp, "espaco", "--minimo-mb", "999999999", "--executar"); self.assertIn("abaixo de", r.stdout); self.assertIn("agora", r.stdout)
 
 
+class HooksERag(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        shutil.copytree(EXEMPLO / "inputs", self.tmp / "inputs"); (self.tmp / ".wx-migration").mkdir()
+        shutil.copy(EXEMPLO / "questionario.json", self.tmp / ".wx-migration" / "questionario.json")
+        run(SCRIPTS / "aplicar_questionario.py", "--questionario", self.tmp / ".wx-migration/questionario.json", "--project-root", self.tmp, "--plugin-root", RAIZ)
+        run(SCRIPTS / "pmo.py", "--project-root", self.tmp, "iniciar")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def guarda(self, tool, ti):
+        return run(RAIZ / "hooks/guarda_anexos_e_segredos.py", entrada=json.dumps({"tool_name": tool, "tool_input": ti, "cwd": str(self.tmp)})).stdout
+
+    def test_guarda_anexos_somente_leitura_e_segredos(self):
+        self.assertIn('"deny"', self.guarda("Write", {"file_path": "inputs/banco.sql", "content": "x"}))
+        self.assertIn('"deny"', self.guarda("Edit", {"file_path": str(self.tmp / "inputs/screenshots/x.png"), "new_string": "x"}))
+        self.assertIn('"deny"', self.guarda("Bash", {"command": "rm -rf inputs/screenshots"}))
+        self.assertIn('"deny"', self.guarda("Bash", {"command": "echo x > inputs/banco.sql"}))
+        self.assertIn('"deny"', self.guarda("Write", {"file_path": "src/a.rs", "content": "ghp_abcdefghijklmnopqrstuvwxyz0123456789"}))
+        self.assertIn('"deny"', self.guarda("Write", {"file_path": ".env", "content": "X=1"}))
+        self.assertIn('"deny"', self.guarda("Bash", {"command": "git add .env && git commit -m x"}))
+        self.assertEqual(self.guarda("Write", {"file_path": ".env.exemplo", "content": "X="}), "")
+        self.assertEqual(self.guarda("Write", {"file_path": "src/main.rs", "content": "fn main(){}"}), "")
+        self.assertEqual(self.guarda("Bash", {"command": "cat inputs/banco.sql | head"}), "")
+        self.assertEqual(self.guarda("Bash", {"command": "cargo test"}), "")
+        outro = Path(tempfile.mkdtemp())  # projeto sem .wx-migration nao e afetado
+        r = run(RAIZ / "hooks/guarda_anexos_e_segredos.py", entrada=json.dumps({"tool_name": "Write", "tool_input": {"file_path": "inputs/x", "content": "x"}, "cwd": str(outro)}))
+        self.assertEqual(r.stdout, ""); shutil.rmtree(outro, ignore_errors=True)
+
+    def test_sincronizar_pmo_regera_kanban_e_marca_rag(self):
+        r = run(RAIZ / "hooks/sincronizar_pmo.py", entrada=json.dumps({"tool_name": "Edit", "tool_input": {"file_path": str(self.tmp / ".wx-migration/traceability.csv")}, "cwd": str(self.tmp)}))
+        self.assertIn("kanban.md regerado", r.stdout); self.assertTrue((self.tmp / ".wx-migration/pmo/kanban.md").is_file())
+        self.assertTrue((self.tmp / ".wx-migration/rag/indice.json.desatualizado").is_file())
+        r = run(RAIZ / "hooks/sincronizar_pmo.py", entrada=json.dumps({"tool_name": "Edit", "tool_input": {"file_path": str(self.tmp / "src/x.rs")}, "cwd": str(self.tmp)})); self.assertEqual(r.stdout, "")
+
+    def test_rag_indexa_busca_com_localizador_e_hook_injeta(self):
+        r = run(SCRIPTS / "rag.py", "--project-root", self.tmp, "--plugin-root", RAIZ, "indexar"); self.assertEqual(r.returncode, 0, r.stderr); self.assertIn("trechos", r.stdout)
+        r = run(SCRIPTS / "rag.py", "--project-root", self.tmp, "--plugin-root", RAIZ, "buscar", "prazo final de entrega", "--json")
+        res = json.loads(r.stdout); self.assertTrue(res); self.assertTrue(any("cronograma.md" in x["arquivo"] for x in res[:3])); self.assertTrue(all(x["linha"] >= 1 for x in res))
+        r = run(SCRIPTS / "rag.py", "--plugin-root", RAIZ, "hook", entrada=json.dumps({"prompt": "Qual é a estratégia de conversão do backend?"}), cwd=self.tmp)
+        self.assertIn("RAG do projeto", r.stdout); self.assertIn("#L", r.stdout)
+        r = run(SCRIPTS / "rag.py", "--plugin-root", RAIZ, "hook", entrada=json.dumps({"prompt": "/wx-claude-code:pmo status"}), cwd=self.tmp); self.assertEqual(r.stdout, "")
+        (self.tmp / ".wx-migration/rag/indice.json.desatualizado").write_text("x")
+        run(SCRIPTS / "rag.py", "--plugin-root", RAIZ, "hook", entrada=json.dumps({"prompt": "quem aprova os gates deste projeto"}), cwd=self.tmp)
+        self.assertFalse((self.tmp / ".wx-migration/rag/indice.json.desatualizado").exists())
+        self.assertNotIn("questionario.json", json.dumps([d["arquivo"] for d in json.loads((self.tmp / ".wx-migration/rag/indice.json").read_text())["docs"]]))
+
+
 class Licenca(unittest.TestCase):
     """Serial RSA: o plugin so tem a chave publica e nao forja serial."""
 

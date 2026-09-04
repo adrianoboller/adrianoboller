@@ -1,0 +1,174 @@
+#!/usr/bin/env python3
+"""RAG local do projeto, sem dependencias: indexa os documentos que o plugin gera
+e le (.wx-migration/*.md, matriz, decisoes, PMO, CLAUDE.md, DESIGN.md, docs/ do
+projeto e as references/ do plugin), em trechos com localizador arquivo#Lnn, e
+busca por BM25. O hook UserPromptSubmit injeta os melhores trechos como contexto
+de cada pergunta, com o localizador, para o modelo abrir o arquivo certo em vez
+de ler tudo.
+
+O corpus WLanguage 12k continua no query_wlanguage_help.py (por tema); este RAG
+e do PROJETO. Regra de negocio so vale com origem localizavel: o trecho traz o
+localizador justamente por isso.
+
+Uso:
+  rag.py --project-root <p> indexar [--plugin-root <r>]
+  rag.py --project-root <p> buscar "consulta" [--k 5]
+  rag.py --project-root <p> hook          # UserPromptSubmit: le o prompt do stdin
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import re
+import sys
+import time
+import unicodedata
+from collections import Counter
+from pathlib import Path
+
+TAM = 900      # caracteres por trecho
+PASSO = 700    # sobreposicao de 200
+PARAR = set("a o os as de do da dos das e em um uma para por com que se ao na no nas nos the of and to in is".split())
+
+
+def normalizar(t: str) -> list[str]:
+    t = unicodedata.normalize("NFKD", t.lower()).encode("ascii", "ignore").decode()
+    return [w for w in re.findall(r"[a-z0-9_]{2,}", t) if w not in PARAR]
+
+
+def fontes(projeto: Path, plugin_root: Path | None) -> list[Path]:
+    wx = projeto / ".wx-migration"
+    arqs: list[Path] = []
+    for pad in ("*.md", "*.csv", "*.json", "pmo/*.md", "pmo/*.json", "pmo/conhecimento/*.md", "pmo/sprints/*.md", "pmo/qualidade/*.md", "decisions/*.md", "specifications/**/*.md", "architecture/**/*.md", "prompts/*.md", "ambiente/**/*.md"):
+        arqs += sorted(wx.glob(pad))
+    for nome in ("CLAUDE.md", "INDEX_FILES.md", "DESIGN.md", "PRODUCT.md", "README.md"):
+        if (projeto / nome).is_file():
+            arqs.append(projeto / nome)
+    arqs += sorted((projeto / "docs").rglob("*.md")) if (projeto / "docs").is_dir() else []
+    if plugin_root:
+        arqs += sorted((plugin_root / "skills" / "conversao-wx" / "references").glob("*.md"))
+    vistos, saida = set(), []
+    for a in arqs:
+        if a.is_file() and a.name != "questionario.json" and "rag" not in a.parts and a.stat().st_size < 2_000_000 and a not in vistos:
+            vistos.add(a); saida.append(a)
+    return saida
+
+
+def trechos(arq: Path, projeto: Path) -> list[dict]:
+    try:
+        texto = arq.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    try:
+        rel = str(arq.relative_to(projeto))
+    except ValueError:
+        rel = "plugin:" + arq.name
+    linhas = texto.split("\n")
+    saida, i = [], 0
+    while i < len(linhas):
+        bloco, j = [], i
+        while j < len(linhas) and sum(len(x) + 1 for x in bloco) < TAM:
+            bloco.append(linhas[j]); j += 1
+        corpo = "\n".join(bloco).strip()
+        if corpo:
+            saida.append({"arquivo": rel, "linha": i + 1, "texto": corpo})
+        avanco = max(1, j - i - 2)
+        i += avanco
+    return saida
+
+
+def indexar(projeto: Path, plugin_root: Path | None) -> dict:
+    docs = []
+    for a in fontes(projeto, plugin_root):
+        docs += trechos(a, projeto)
+    df: Counter = Counter()
+    for d in docs:
+        d["termos"] = Counter(normalizar(d["texto"]))
+        d["tam"] = sum(d["termos"].values())
+        df.update(d["termos"].keys())
+    idx = {"gerado_em": time.strftime("%Y-%m-%dT%H:%M"), "n": len(docs), "media": (sum(d["tam"] for d in docs) / len(docs)) if docs else 0, "df": dict(df),
+           "docs": [{"arquivo": d["arquivo"], "linha": d["linha"], "texto": d["texto"], "termos": dict(d["termos"]), "tam": d["tam"]} for d in docs]}
+    pasta = projeto / ".wx-migration" / "rag"; pasta.mkdir(parents=True, exist_ok=True)
+    (pasta / "indice.json").write_text(json.dumps(idx, ensure_ascii=False), encoding="utf-8")
+    (pasta / "indice.json.desatualizado").unlink(missing_ok=True)
+    return idx
+
+
+def buscar(idx: dict, consulta: str, k: int) -> list[dict]:
+    q = normalizar(consulta)
+    if not q or not idx["docs"]:
+        return []
+    n, media, df = idx["n"], idx["media"] or 1, idx["df"]
+    k1, b = 1.5, 0.75
+    pont = []
+    for d in idx["docs"]:
+        s = 0.0
+        for t in q:
+            f = d["termos"].get(t, 0)
+            if not f:
+                continue
+            idf = math.log(1 + (n - df.get(t, 0) + 0.5) / (df.get(t, 0) + 0.5))
+            s += idf * f * (k1 + 1) / (f + k1 * (1 - b + b * d["tam"] / media))
+        if s > 0:
+            pont.append((s, d))
+    pont.sort(key=lambda x: -x[0])
+    return [{"pontos": round(s, 2), "arquivo": d["arquivo"], "linha": d["linha"], "trecho": d["texto"][:300].replace("\n", " ")} for s, d in pont[:k]]
+
+
+def carregar_ou_indexar(projeto: Path, plugin_root: Path | None) -> dict:
+    p = projeto / ".wx-migration" / "rag" / "indice.json"
+    if p.is_file() and not (p.parent / "indice.json.desatualizado").exists():
+        try:
+            return json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            pass
+    return indexar(projeto, plugin_root)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--project-root", type=Path, default=Path.cwd())
+    ap.add_argument("--plugin-root", type=Path, default=Path(__file__).resolve().parents[3])
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("indexar")
+    bq = sub.add_parser("buscar"); bq.add_argument("consulta"); bq.add_argument("--k", type=int, default=5); bq.add_argument("--json", action="store_true")
+    sub.add_parser("hook")
+    a = ap.parse_args()
+    projeto = a.project_root.resolve()
+    if a.cmd == "hook":
+        if not (projeto / ".wx-migration").is_dir():
+            return 0
+        try:
+            prompt = (json.load(sys.stdin).get("prompt") or "").strip()
+        except (json.JSONDecodeError, ValueError):
+            return 0
+        if len(prompt) < 12 or prompt.startswith("/"):
+            return 0
+        t0 = time.perf_counter()
+        idx = carregar_ou_indexar(projeto, a.plugin_root)
+        res = buscar(idx, prompt, 4)
+        if not res:
+            return 0
+        ctx = "RAG do projeto (trechos mais próximos da pergunta, com localizador; abra o arquivo antes de afirmar): " + " | ".join(f"{r['arquivo']}#L{r['linha']}: {r['trecho'][:160]}" for r in res) + f" [{len(idx['docs'])} trechos, {(time.perf_counter() - t0) * 1000:.0f} ms]"
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": ctx}}, ensure_ascii=False))
+        return 0
+    if a.cmd == "indexar":
+        idx = indexar(projeto, a.plugin_root)
+        print(f"CREATED {projeto / '.wx-migration' / 'rag' / 'indice.json'} ({idx['n']} trechos de {len({d['arquivo'] for d in idx['docs']})} arquivos)")
+        return 0
+    idx = carregar_ou_indexar(projeto, a.plugin_root)
+    res = buscar(idx, a.consulta, a.k)
+    if a.json:
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+    else:
+        for r in res:
+            print(f"{r['pontos']:6.2f}  {r['arquivo']}#L{r['linha']}  {r['trecho'][:120]}")
+        if not res:
+            print("nada encontrado")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

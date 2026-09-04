@@ -175,7 +175,11 @@ geradas por `docs/prints/gerar.md`).
 | ![ambiente](docs/prints/23-letra-k-ambiente-sem-senha.png) letra K: PostgreSQL, papéis por nível e a senha do root que não é gravada nem repetida | ![n8n](docs/prints/24-letra-k7-n8n-integrado.png) K7: n8n sim ou não, e cada item da integração um por mensagem |
 | ![kickoff](docs/prints/25-primeira-sessao-index-e-kickoff.png) primeira sessão: lê `INDEX_FILES.md` e o kickoff, sabe o escopo da v1 e recusa código sem G0 | ![exportar](docs/prints/26-pmo-exportar-projeto-organizado.png) `pmo exportar`: o projeto organizado na pasta do usuário, sem segredo, com hashes |
 | ![zelador](docs/prints/27-zelador-limpeza-diaria.png) o zelador limpa temporários ao abrir a sessão e deixa o registro medido | ![identificacao](docs/prints/28-identificacao-bloco-sprint.png) toda resposta abre com `BlocoNNNN-SPNNNNN-Título · data`, injetado pelo hook |
-| ![equipe](docs/prints/29-equipe-prioritaria-pesquisador-e-status.png) equipe prioritária: infrutífero aciona o Pesquisador; status por agente sem inventar | |
+| ![equipe](docs/prints/29-equipe-prioritaria-pesquisador-e-status.png) equipe prioritária: infrutífero aciona o Pesquisador; status por agente sem inventar | ![rag](docs/prints/30-rag-e-guarda-de-anexos.png) RAG do projeto cita `arquivo#linha`; anexo somente leitura recusado |
+
+## Hooks e RAG
+
+Os hooks do plugin fazem valer as regras: licença, portão G0, anexos somente leitura, nenhum segredo em arquivo, Kanban sincronizado com a matriz, identificação em toda interação, zelador diário. O RAG local (`rag.py`, BM25 sem dependência) indexa os documentos do projeto e injeta a cada pergunta os trechos mais próximos com `arquivo#linha`. Detalhe em `references/hooks-e-rag.md`.
 
 ## Licença e serial
 
