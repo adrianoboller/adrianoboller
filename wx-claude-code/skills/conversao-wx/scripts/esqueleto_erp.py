@@ -31,6 +31,16 @@ MAPA_MODULO_SKILL = [
 SKILLS_ERP = ["erp-accounting", "erp-inventory", "erp-brazil-fiscal", "erp-multi-company",
               "erp-approval-workflows", "erp-lgpd", "erp-integration-reliability", "windev-wlanguage-erp"]
 
+REGRAS_DE_TABELA = (
+    "## Regras de tabela (valem para todo módulo)\n\n"
+    "- Dinheiro em `NUMERIC(19,4)`; quantidade em `NUMERIC(19,6)`; nunca ponto flutuante. Moeda em coluna própria quando houver mais de uma.\n"
+    "- Instante em `TIMESTAMPTZ`; data civil em `DATE`; o fuso do legado fica registrado em `DEC-*`.\n"
+    "- Toda regra que cabe numa `CHECK`, `UNIQUE` ou chave estrangeira vai para o banco, não só para o código; a aplicação repete a mensagem, o banco garante.\n"
+    "- Toda chave estrangeira tem índice; consulta de tela tem índice que a cubra, medido com `EXPLAIN`.\n"
+    "- Escrita concorrente: `SELECT … FOR UPDATE` na linha de saldo, versão otimista (`versao`) nas fichas editadas por gente; nunca `LOCK TABLE`.\n"
+    "- Chave natural do legado preservada em coluna própria (`codigo_legado`), única, para o golden master e para a migração de dados.\n"
+    "- Exclusão é lógica (`excluido_em`) onde o legado permitia excluir; física só em tabela de apoio.\n\n")
+
 DOMINIOS = ["cadastros", "compras", "vendas", "estoque", "financeiro", "contabilidade", "fiscal", "rh", "integracoes", "auditoria"]
 
 
@@ -121,6 +131,8 @@ def arquivos(q: dict) -> dict[str, str]:
         "- Segregação de funções: quem cria não aprova (skill `erp-approval-workflows`).\n"
         "- Dados pessoais: inventário em `docs/security/dados-pessoais.md`, retenção e direitos do titular (skill `erp-lgpd`).\n"
         "- Toda rota de escrita exige autorização por módulo e por empresa.\n"
+        "- **Negar por padrão**: sem regra que conceda, o acesso é negado; a lista de permissões é por papel e por módulo (`docs/security/papeis-e-permissoes.md`), e um teste em `tests/security/` prova que usuário de uma empresa não lê a outra.\n"
+        "- Modelo de ameaças por módulo em `docs/security/threat-model.md` (STRIDE); toda mitigação vira requisito rastreável (`SEC-*`) e teste.\n"
         "- Dependências: `scripts/verification/` roda auditoria de vulnerabilidades no CI (`.github/workflows/security.yml`).\n")
     A["CHANGELOG.md"] = "# CHANGELOG\n\nFormato: Keep a Changelog; versões SemVer.\n\n## [Não lançado]\n\n- Esqueleto de ERP gerado pelo questionário (L6).\n"
     A[".editorconfig"] = "root = true\n\n[*]\ncharset = utf-8\nend_of_line = lf\ninsert_final_newline = true\nindent_style = space\nindent_size = 4\ntrim_trailing_whitespace = true\n\n[*.{md,yml,yaml,json}]\nindent_size = 2\n\n[Makefile]\nindent_style = tab\n"
@@ -140,10 +152,29 @@ def arquivos(q: dict) -> dict[str, str]:
     for m in mods:
         A[f"docs/domain/{slug(m)}.md"] = _cab(f"Domínio: {m}", q) + (
             f"Skill que orienta: `{skill_para(m)}` (plugin WX Claude Code).\n\n## Entidades\n\n- (a preencher)\n\n## Invariantes\n\n- (uma linha por `BR-*` da matriz que pertence a este módulo)\n\n## Eventos que publica\n\n- `{slug(m)}.` …\n\n## Origem no legado\n\n- Telas, procedures e queries do WX que viram este módulo (ids da `traceability.csv`).\n")
-    A["docs/data/modelo-de-dados.md"] = _cab("Modelo de dados", q) + f"Banco: {banco}. Uma seção por módulo; toda tabela de negócio {'tem `empresa_id`, ' if multi else ''}tem `criado_em`, `criado_por`, `atualizado_em`, `atualizado_por`.\n\n" + "\n".join(f"## {m}\n\n| tabela | chave | origem no legado (DB-*) |\n| --- | --- | --- |\n" for m in mods)
+    A["docs/data/modelo-de-dados.md"] = _cab("Modelo de dados", q) + f"Banco: {banco}. Uma seção por módulo; toda tabela de negócio {'tem `empresa_id`, ' if multi else ''}tem `criado_em`, `criado_por`, `atualizado_em`, `atualizado_por`.\n\n" + REGRAS_DE_TABELA + "\n".join(f"## {m}\n\n| tabela | chave | origem no legado (DB-*) |\n| --- | --- | --- |\n" for m in mods)
+    A["docs/data/erd.md"] = _cab("ERD — diagrama de entidades", q) + "Um diagrama por módulo, em Mermaid, com as relações entre módulos só por id (nunca junção direta na tabela alheia).\n\n" + "\n".join(f"## {m}\n\n```mermaid\nerDiagram\n    %% entidades de {m}; origem DB-* na matriz\n```\n" for m in mods)
+    A["docs/data/data-dictionary.md"] = _cab("Dicionário de dados", q) + "Uma linha por coluna. O nome no legado é o do HFSQL; o tipo no destino segue as regras de `modelo-de-dados.md`.\n\n| tabela | coluna | tipo no destino | nulo | regra | nome no legado (HFSQL) | dado pessoal |\n| --- | --- | --- | --- | --- | --- | --- |\n"
     A["docs/api/README.md"] = _cab("API", q) + "Contratos por módulo em `docs/api/<módulo>.md`; toda rota de escrita é idempotente por `Idempotency-Key` e exige empresa e papel. Testes de contrato em `tests/contracts/`.\n"
     A["docs/security/dados-pessoais.md"] = _cab("Inventário de dados pessoais (LGPD)", q) + "| dado | módulo | finalidade | base legal | retenção | titular pode |\n| --- | --- | --- | --- | --- | --- |\n"
     A["docs/security/papeis-e-permissoes.md"] = _cab("Papéis e permissões", q) + "| papel | módulo | pode | não pode | segregação |\n| --- | --- | --- | --- | --- |\n"
+    A["docs/security/threat-model.md"] = _cab("Modelo de ameaças (STRIDE)", q) + (
+        "Uma tabela por módulo. Toda linha com mitigação vira `SEC-*` em `docs/security/requisitos.md` e um teste em `tests/security/`.\n\n"
+        "| categoria | pergunta |\n| --- | --- |\n| S — falsificação | quem pode se passar por outro usuário, empresa ou sistema integrado? |\n| T — adulteração | que dado pode ser alterado sem passar pela regra (banco, fila, arquivo)? |\n| R — repúdio | que ação alguém pode negar ter feito? (auditoria imutável responde) |\n| I — vazamento | que dado de uma empresa ou titular pode aparecer para quem não deve? |\n| D — negação | que operação derruba o sistema se chamada em massa? |\n| E — elevação | que caminho dá a um papel mais do que a matriz permite? |\n\n"
+        + "\n".join(f"## {m}\n\n| ameaça | categoria | ativo | mitigação | SEC-* | teste |\n| --- | --- | --- | --- | --- | --- |\n" for m in mods))
+    A["docs/security/requisitos.md"] = _cab("Requisitos de segurança (SEC-*)", q) + "| id | origem (ameaça ou lei) | requisito | onde se prova |\n| --- | --- | --- | --- |\n"
+    A["docs/domain/invariants.md"] = _cab("Invariantes de todos os módulos", q) + "Consolidação: uma linha por `BR-*` que o sistema não pode violar em nenhuma transação, com o módulo dono. A origem de cada uma está na matriz.\n\n| BR-* | invariante | módulo dono | provada em |\n| --- | --- | --- | --- |\n"
+    A["docs/domain/workflows.md"] = _cab("Fluxos de trabalho", q) + "Um fluxo por processo empresarial que atravessa módulos (pedido → separação → faturamento → contas a receber). Cada passo diz o módulo, o evento publicado e a alçada, se houver.\n\n" + "\n".join(f"## (fluxo que começa em {m})\n\n| passo | módulo | evento | alçada | tela do legado |\n| --- | --- | --- | --- | --- |\n" for m in mods[:1])
+    A["docs/api/openapi.yaml"] = f"openapi: 3.1.0\ninfo:\n  title: {nome}\n  version: 0.1.0\n  description: Esboco gerado pelo questionario (L6); um path por caso de uso, nunca por tabela.\nservers:\n  - url: http://localhost:{(l.get('L3_implantacao') or {}).get('porta', 8080)}\npaths:\n  {(l.get('L3_implantacao') or {}).get('healthcheck') or '/health'}:\n    get:\n      summary: healthcheck\n      responses:\n        '200':\n          description: ok\ncomponents:\n  parameters:\n    IdempotencyKey:\n      name: Idempotency-Key\n      in: header\n      required: true\n      schema:\n        type: string\n" + "".join(f"  # modulo {m}: schemas e paths em docs/api/{slug(m)}.md\n" for m in mods)
+    A["docs/api/events.asyncapi.yaml"] = f"asyncapi: 3.0.0\ninfo:\n  title: Eventos de {nome}\n  version: 0.1.0\n  description: Eventos de dominio gravados no outbox na mesma transacao; consumidores idempotentes.\nchannels:\n" + "".join(f"  {slug(m)}:\n    address: {slug(m)}.*\n    description: eventos do modulo {m} (ver CONTEXT-MAP.md)\n" for m in mods)
+    A["docs/runbooks/incident-response.md"] = _cab("Resposta a incidente", q) + (
+        "1. **Conter**: revogar credencial ou papel envolvido; parar integração afetada (`scripts/deploy/`).\n"
+        "2. **Preservar**: exportar auditoria e logs do período antes de qualquer correção.\n"
+        "3. **Avaliar dado pessoal**: se houve, seguir a skill `erp-lgpd`; o titular e a autoridade têm prazo.\n"
+        f"4. **Comunicar**: aprovador **{ap}** e o responsável de `SECURITY.md`; registro em `docs/security/incidentes.md`.\n"
+        "5. **Corrigir e provar**: teste que reproduz o incidente falha antes e passa depois; entra em `tests/security/`.\n"
+        "6. **Aprender**: ciclo PDCA no PMO; a ameaça entra em `threat-model.md`.\n")
+    A["docs/runbooks/backup-restore.md"] = _cab("Backup e restauração", q) + f"- Backup: `scripts/backup/`, diário, cifrado, fora da máquina do banco ({banco}).\n- Restauração **testada** em `tests/migration/`: restaurar num banco vazio e rodar o golden master. Backup nunca restaurado é hipótese, não backup.\n- Retenção: a de `docs/security/dados-pessoais.md`; o que a lei manda apagar não fica no backup para sempre.\n"
     A["docs/operations/runbook.md"] = _cab("Runbook", q) + f"- Implantação: alvo `{(l.get('L3_implantacao') or {}).get('alvo') or 'nenhum'}`; `Dockerfile` e `docker-compose.yml` na raiz.\n- Backup: `scripts/backup/`; restauração testada em `tests/migration/`.\n- Healthcheck: `{(l.get('L3_implantacao') or {}).get('healthcheck') or '/health'}`.\n- Incidente com dado pessoal: `SECURITY.md` e skill `erp-lgpd`.\n"
     A["docs/testing/estrategia.md"] = _cab("Estratégia de testes", q) + (
         "| camada | pasta | prova |\n| --- | --- | --- |\n| unitário | `tests/unit/` | funções puras, cálculos |\n| domínio | `tests/domain/` | invariantes `BR-*`, golden master do legado |\n| integração | `tests/integration/` | banco real, transação e auditoria |\n| contratos | `tests/contracts/` | API e eventos |\n| segurança | `tests/security/` | isolamento por empresa, permissões, segredo em log |\n| migração | `tests/migration/` | up, rollback, backup/restore |\n| e2e | `tests/e2e/` | fluxo de tela igual ao legado |\n\nRegra: teste novo tem de falhar com o defeito reposto (prova real).\n")
@@ -196,6 +227,64 @@ def entradas_index(q: dict) -> list[tuple[str, str]]:
              ("docs/adr/", "decisões de arquitetura 0001–0004"),
              ("docs/data/modelo-de-dados.md", "tabelas por módulo com origem DB-*"),
              ("docs/testing/estrategia.md", "camadas de teste e o que cada uma prova"),
+             ("docs/security/threat-model.md", "STRIDE por módulo; toda mitigação vira SEC-* e teste"),
+             ("docs/api/openapi.yaml", "contrato REST, um path por caso de uso; eventos em events.asyncapi.yaml"),
+             ("docs/skills-recomendadas.md", "skills externas do skills.sh que cabem neste projeto, com o comando e a ressalva"),
              ("database/", "schema, migrations com rollback, seeds anonimizados"),
              (".github/workflows/", "build, tests, security, release")]
     return fixos + [(f"docs/domain/{slug(m)}.md", f"domínio {m}: entidades, invariantes, eventos, origem no legado") for m in mods]
+
+
+# Skills externas do catalogo skills.sh (pesquisa de 4 de setembro de 2026) que cabem
+# conforme as respostas. O plugin nao as instala: escreve a lista para o usuario
+# ler, revisar e fixar a versao. (nome, area, quando se aplica: funcao(q) -> bool)
+def _h(q): return ((q.get("H_backend") or {}).get("linguagem") or (q.get("H_backend") or {}).get("perfil") or "").lower()
+def _i(q):
+    i = q.get("I_frontend") or {}
+    return " ".join(str(i.get(k) or "") for k in ("linguagem", "framework", "perfil")).lower() + " " + " ".join(i.get("plataformas") or []).lower()
+def _k(q, k):
+    v = (q.get("K_ambiente") or {}).get(k) or {}
+    return bool(v.get("instalar_ou_atualizar") or v.get("instalar") or v.get("ativar"))
+SKILLS_EXTERNAS = [
+    ("ubiquitous-language", "linguagem empresarial", "complementa UBIQUITOUS_LANGUAGE.md", lambda q: True),
+    ("domain-modeling", "modelagem de domínio", "docs/domain/<módulo>.md", lambda q: True),
+    ("architecture-decision-records", "arquitetura", "docs/adr/", lambda q: True),
+    ("postgresql-table-design", "banco", "docs/data/modelo-de-dados.md", lambda q: "postgres" in ((q.get("H_backend") or {}).get("banco") or "").lower() or _k(q, "K2_postgresql")),
+    ("supabase-postgres-best-practices", "banco", "RLS e pooling", lambda q: _k(q, "K5_supabase")),
+    ("api-design-principles", "API", "docs/api/openapi.yaml", lambda q: True),
+    ("openapi-spec-generation", "API", "docs/api/openapi.yaml", lambda q: True),
+    ("auth-implementation-patterns", "autenticação", "SECURITY.md", lambda q: True),
+    ("access-control-patterns", "multiempresa", "negar por padrão, escopo por empresa", lambda q: bool(((q.get("L_contexto_e_implantacao") or {}).get("L6_esqueleto_erp") or {}).get("multi_empresa", True))),
+    ("stride-analysis-patterns", "segurança", "docs/security/threat-model.md", lambda q: True),
+    ("security-requirement-extraction", "segurança", "docs/security/requisitos.md", lambda q: True),
+    ("code-security", "segurança", "OWASP no código", lambda q: True),
+    ("operational-expert-tool-ui", "interface de ERP", "DESIGN.md: densidade, atalhos, uso diário", lambda q: True),
+    ("form-design", "cadastros", "DESIGN.md, Impeccable harden", lambda q: True),
+    ("data-display-and-selection", "grades", "DESIGN.md, Impeccable shape", lambda q: True),
+    ("table-filters", "consultas", "filtros por texto, status, data e valor", lambda q: True),
+    ("wcag-accessibility", "acessibilidade", "Impeccable audit", lambda q: True),
+    ("tdd", "testes", "tests/", lambda q: True),
+    ("risk-based-testing", "testes", "docs/testing/estrategia.md", lambda q: True),
+    ("webapp-testing", "testes", "tests/e2e/", lambda q: "web" in _i(q) or "react" in _i(q) or "vue" in _i(q) or "angular" in _i(q) or "svelte" in _i(q)),
+    ("verification-before-completion", "testes", "a regra da prova real", lambda q: True),
+    ("github-actions-templates", "produção", ".github/workflows/", lambda q: True),
+    ("database-backup-restore", "produção", "docs/runbooks/backup-restore.md", lambda q: True),
+    ("runbook-creation", "produção", "docs/operations/runbook.md", lambda q: True),
+    ("vercel-react-best-practices", "frontend React", "I = React", lambda q: "react" in _i(q) or "next" in _i(q)),
+    ("vercel-composition-patterns", "frontend React", "I = React", lambda q: "react" in _i(q) or "next" in _i(q)),
+    ("rust-async-patterns", "backend Rust", "H = Rust", lambda q: "rust" in _h(q)),
+]
+
+
+def skills_recomendadas(q: dict) -> str:
+    aplicam = [(n, a, o) for n, a, o, f in SKILLS_EXTERNAS if f(q)]
+    fora = [n for n, a, o, f in SKILLS_EXTERNAS if not f(q)]
+    L = [_cab("Skills externas recomendadas (skills.sh)", q).rstrip("\n"), "",
+         "Pesquisa no catálogo skills.sh em 4 de setembro de 2026 (`references/skills-sh.md` do plugin). Estas são as que cabem nas respostas deste projeto. **O plugin não as instala**: cada uma é de outro autor, com licença e auditoria próprias, e o próprio catálogo diz que a auditoria não garante todos os arquivos.", "",
+         "Antes de instalar qualquer uma: leia `SKILL.md`, `scripts/` e `references/`; fixe a versão; instale uma por vez, nunca um repositório inteiro com `--all`; e registre a versão instalada abaixo.", "",
+         "| skill | área | encaixa em | comando | versão instalada |", "| --- | --- | --- | --- | --- |"]
+    L += [f"| `{n}` | {a} | {o} | `npx skills add {n}` | |" for n, a, o in aplicam]
+    L += ["", "As oito skills de ERP (`erp-*`, `windev-wlanguage-erp`) já vêm no plugin WX Claude Code e não estão no catálogo; não precisam ser instaladas.", ""]
+    if fora:
+        L += ["Não se aplicam a estas respostas: " + ", ".join(f"`{n}`" for n in fora) + ".", ""]
+    return "\n".join(L)

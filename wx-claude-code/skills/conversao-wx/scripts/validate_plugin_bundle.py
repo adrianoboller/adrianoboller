@@ -155,6 +155,7 @@ def validate(root: Path, strict: bool = False) -> dict:
         "hooks/guarda_anexos_e_segredos.py",
         "hooks/sincronizar_pmo.py",
         "skills/conversao-wx/references/hooks-e-rag.md",
+        "skills/conversao-wx/references/skills-sh.md",
         "skills/conversao-wx/references/equipe-prioritaria.md",
         "agents/equipe-f-gp.md",
         "licenca/chave-publica.json",

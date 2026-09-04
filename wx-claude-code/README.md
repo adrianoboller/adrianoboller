@@ -70,6 +70,9 @@ nunca sobrescreve o que já existe.
   no skills.sh em 4 de setembro de 2026 (`skills/LEIA-ME-erp.md`). Descrições
   encurtadas a 150 caracteres para não sumirem da listagem; o item L6 do
   questionário gera o esqueleto de ERP e liga cada módulo à skill dele.
+  Skills externas do catálogo skills.sh não entram no plugin: o projeto
+  gerado recebe `docs/skills-recomendadas.md` com as que cabem nas respostas
+  (`references/skills-sh.md`).
 
 ## Equipe WLanguage, balanceamento e PMO
 
@@ -183,7 +186,7 @@ geradas por `docs/prints/gerar.md`).
 | ![zelador](docs/prints/27-zelador-limpeza-diaria.png) o zelador limpa temporários ao abrir a sessão e deixa o registro medido | ![identificacao](docs/prints/28-identificacao-bloco-sprint.png) toda resposta abre com `BlocoNNNN-SPNNNNN-Título · data`, injetado pelo hook |
 | ![equipe](docs/prints/29-equipe-prioritaria-pesquisador-e-status.png) equipe prioritária: infrutífero aciona o Pesquisador; status por agente sem inventar | ![rag](docs/prints/30-rag-e-guarda-de-anexos.png) RAG do projeto cita `arquivo#linha`; anexo somente leitura recusado |
 | ![corpus](docs/prints/31-corpus-no-claude-md-e-no-rag.png) o Help consultado por tema, com id e hash, a partir do `CLAUDE.md` gerado e do RAG | ![skills erp](docs/prints/32-skills-erp-listadas.png) as onze skills do plugin listadas numa sessão nova, oito delas de ERP |
-| ![esqueleto](docs/prints/33-esqueleto-erp-e-skill-por-modulo.png) esqueleto de ERP gerado por L6: módulo → skill, ADR lida, `erp-inventory` carregada e citada | |
+| ![esqueleto](docs/prints/33-esqueleto-erp-e-skill-por-modulo.png) esqueleto de ERP gerado por L6: módulo → skill, ADR lida, `erp-inventory` carregada e citada | ![skills.sh](docs/prints/34-skills-recomendadas-e-regras-absorvidas.png) skills do skills.sh que cabem nas respostas, tipos de dinheiro e data, STRIDE → SEC-* → teste |
 
 ## Hooks e RAG
 

@@ -1322,6 +1322,7 @@ def main() -> int:
             import esqueleto_erp  # noqa: E402  (mesma pasta; sys.path ja tem o diretorio do script)
             for rel, corpo in esqueleto_erp.arquivos(q).items():
                 saida.append(write_new(projeto / rel, corpo))
+            saida.append(write_new(projeto / "docs" / "skills-recomendadas.md", esqueleto_erp.skills_recomendadas(q)))
         if l5.get("mcps"):
             saida.append(write_new(projeto / ".mcp.json", json.dumps({"mcpServers": {m: MCPS[m] for m in l5["mcps"]}}, ensure_ascii=False, indent=2) + "\n"))
         perfil = str((q.get("H_backend") or {}).get("perfil", "")).lower()

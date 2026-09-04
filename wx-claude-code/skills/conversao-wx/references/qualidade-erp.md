@@ -78,6 +78,16 @@ A ordem canônica da letra F, que o comando segue sem repetir a lista: F0 (tela 
   `screenshots/`) ao lado da tela nova, no mesmo estado, como evidência do
   `fidelity.ui`.
 
+## Interface operacional: densidade e teclado
+
+Regras absorvidas da pesquisa no skills.sh (`skills-sh.md`), para ERP de uso diário por quem digita o dia inteiro:
+
+- A tela principal é densa de propósito: mais linhas visíveis, menos espaço em branco; o Impeccable `polish` não «arejar» uma grade de movimentação.
+- Todo caminho tem teclado: Enter avança, Esc cancela, F2 grava se o legado gravava com F2 (F9 do questionário), e o foco inicial vai para o primeiro campo editável. `audit` confere isso antes da estética.
+- Filtro por texto, status, data e valor em toda consulta com mais de uma página; seleção múltipla e ação em massa onde o legado tinha.
+- Máscara e validação no campo, com a mensagem exata do legado (F9), e o erro ao lado do campo, nunca só num alerta.
+- Contraste e foco visíveis (WCAG 2.2 AA) são requisito, não acabamento.
+
 ## O que não muda
 
 A cor vem do usuário ou da marca; sem resposta não há `DESIGN.md`, há

@@ -74,8 +74,8 @@ class Questionario(unittest.TestCase):
         self.assertIn("## Backend: Rust", proc); self.assertIn("**reescrita-guiada**", proc)
         self.assertIn("| Analise HFSQL | esquema PostgreSQL migrado por script; sqlx/diesel | G3 |", proc)
         self.assertIn("Ritmo: modulo a modulo", proc)
-        # 32 arquivos do fluxo + 50 do esqueleto ERP (L6) + 2 (Dockerfile, compose): nada e regravado na segunda aplicacao
-        self.assertEqual(r2.stdout.count("SKIPPED"), 84); self.assertEqual(r2.stdout.count("CREATED"), 0); self.assertIn("UPDATED", r2.stdout)
+        # 32 do fluxo + 62 do esqueleto ERP (L6) + skills-recomendadas: 95: nada e regravado na segunda aplicacao
+        self.assertEqual(r2.stdout.count("SKIPPED"), 95); self.assertEqual(r2.stdout.count("CREATED"), 0); self.assertIn("UPDATED", r2.stdout)
         resp = (self.tmp / ".wx-migration/respostas_questionario.md").read_text()
         self.assertIn("- Nome: **Adriano Boller**", resp); self.assertIn("## H · Backend de destino", resp)
         self.assertIn("0.15 github", resp); self.assertIn("credencial ref: GITHUB_TOKEN", resp)
@@ -187,6 +187,21 @@ class Questionario(unittest.TestCase):
         self.assertIn("## Skills de ERP", cl); self.assertIn("| movimentacao | `src/movimentacao/` | `erp-inventory` |", cl)
         self.assertIn("| `docs/domain/financeiro.md` |", (self.tmp / "INDEX_FILES.md").read_text())
         self.assertIn("cargo test --workspace", (self.tmp / ".github/workflows/tests.yml").read_text())
+        # 3.18.0: STRIDE, contratos, dicionario, runbooks e as regras absorvidas
+        for rel in ("docs/security/threat-model.md", "docs/security/requisitos.md", "docs/api/openapi.yaml", "docs/api/events.asyncapi.yaml",
+                    "docs/data/erd.md", "docs/data/data-dictionary.md", "docs/domain/invariants.md", "docs/domain/workflows.md",
+                    "docs/runbooks/incident-response.md", "docs/runbooks/backup-restore.md", "docs/skills-recomendadas.md"):
+            self.assertTrue((self.tmp / rel).exists(), rel)
+        self.assertIn("NUMERIC(19,4)", (self.tmp / "docs/data/modelo-de-dados.md").read_text())
+        self.assertIn("Negar por padrão", (self.tmp / "SECURITY.md").read_text())
+        self.assertIn("openapi: 3.1.0", (self.tmp / "docs/api/openapi.yaml").read_text())
+        rec = (self.tmp / "docs/skills-recomendadas.md").read_text()
+        # Rust + PostgreSQL + React web: entram; Supabase nao instalado e multiempresa=false: ficam fora
+        for s_ in ("rust-async-patterns", "postgresql-table-design", "vercel-react-best-practices", "webapp-testing"):
+            self.assertIn(f"`npx skills add {s_}`", rec, s_)
+        for s_ in ("supabase-postgres-best-practices", "access-control-patterns"):
+            self.assertNotIn(f"`npx skills add {s_}`", rec, s_)
+        self.assertIn("O plugin não as instala", rec)
         # sem L6.gerar nada disso aparece
         q = json.loads((self.tmp / ".wx-migration/questionario.json").read_text())
         q["L_contexto_e_implantacao"]["L6_esqueleto_erp"]["gerar"] = False
