@@ -189,6 +189,37 @@ inserção está no `.ndx`**, e o arquivo de dados já é *append-only* e custa
 não temos, uma quebraria a ordem de digitação, e duas eram reais. Está em
 `phxsql/docs/DESEMPENHO.md`, com o medidor (`--example onde-doi`).
 
+**O Apache Cassandra® é base de conhecimento permanente — na dúvida, vá ao
+fonte dele.** Ordem do dono, 04/09/2026: *«nada impede pensarmos juntos e
+melhorar a lógica, sendo algo novo. E daí não é cópia, é inspiração. O Cassandra
+é incrível, pode usar como base de conhecimento; na dúvida busque nos fontes.»*
+
+A licença ajuda: Cassandra é **Apache 2.0**, compatível com o nosso
+`MIT OR Apache-2.0`. Ler é livre e não há armadilha jurídica nenhuma ali — mas a
+regra continua sendo **inspiração, não cópia**, e o motivo é técnico antes de
+ser legal: *desenho que não passou pela nossa cabeça não sobrevive ao primeiro
+encontro com as nossas restrições*. É o mesmo método que deu o SHA-256, o HMAC e
+o PBKDF2 desta casa — ler a norma, entender, reescrever, provar contra vetor.
+
+E esta lei **não suspende a de cima; alimenta**. O estudo que já existe
+(`phxsql/docs/CASSANDRA.md`, lido no fonte da 5.0.10, commit `7b5ab44`) mostra
+as duas pontas:
+
+- **Onde eles estão à frente, às vezes já convergimos sem saber** — o CRC-32 da
+  página do `.ndx` passou a acontecer no despejo e não por linha, e nesse ponto
+  o desenho já era o deles.
+- **Onde a receita deles nos quebraria, o preço está no fonte deles** — o
+  `INSERT` do Cassandra **não sabe recusar chave repetida**, porque não lê antes
+  de gravar; o conflito se resolve depois, por carimbo de hora. Lá isso é
+  coerente; aqui mataria a conferência de unicidade e a regra primordial da
+  integridade. E o `QUORUM` deles **não** quer dizer «está em N discos»: no
+  padrão, quer dizer «N processos copiaram para um `mmap`», com `fsync` a cada
+  10 s numa thread de fundo.
+
+Ou seja: a fonte é excelente **e** cada receita dela continua passando pelo
+crivo do nosso gargalo. Inspiração que pula a medição não é inspiração — é
+cópia com outro nome.
+
 **Interface só se prova exercitando.** Gravar um vídeo de demonstração achou
 **três defeitos em cinco minutos** que ler o código não acharia — e o pior deles
 quebrava *todo salvar e todo incluir* pela tela desde que o `rownum` entrou. O
