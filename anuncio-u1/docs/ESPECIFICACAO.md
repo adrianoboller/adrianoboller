@@ -169,3 +169,109 @@ Sem serrilhado no gradiente: aplicar ruído sutil (dither) na cor do fundo.
 - Cada módulo escreve **só nos seus arquivos**: `scripts/mod_<nome>.py`,
   `scripts/teste_<nome>.py`, `saida/previa_<nome>*.png`, `assets/<nome>_*`.
   Ninguém commita; o commit é único no fim.
+
+---
+
+# Revisão 2 (04/09) — pedidos do Adriano depois da primeira prévia
+
+Estes pedidos **mandam** sobre o que está acima quando conflitam.
+
+## 1. A caixa é a dele (Meshy), remodelada ao máximo
+
+O cliente reafirmou: usar a caixa que ele mandou, não a reconstrução branca.
+Arquivo descomprimido: `scratchpad/caixa2_plana.glb` (68 MB; o `.glb`
+original usa `EXT_meshopt_compression`, que o Blender 4.2 não importa; o
+`caixa2.blend` no scratchpad já está importado). É uma caixa de papelão de
+transporte: fita no topo, etiqueta branca pendurada com código de barras,
+ícones de reciclagem/inflamável/este‑lado‑para‑cima. 3,03 M triângulos, 377
+ilhas, 1,90 × 1,52 × 1,47 m no arquivo. Texturas 2048²: `base_color`,
+`metallic_roughness`, `normal` (já extraídas em `scratchpad/caixa2_*.png`).
+
+"Remodelar ao máximo" = **geometria limpa com a aparência dela**:
+
+- Corpo de 5 faces + **4 abas** no topo (2 grandes ao longo de X, 2 pequenas
+  ao longo de Y) com dobradiça na aresta superior. É caixa de transporte:
+  abre por abas, não por tampa solta. A fita fica dividida entre as duas
+  abas grandes; ao abrir, "rasga" na emenda.
+- Chanfro pequeno nas arestas (papelão tem canto levemente arredondado).
+- **Bake** da Meshy para a geometria limpa (Cycles, selected‑to‑active, cage
+  e distância de raio): cor, normal e rugosidade, em 4096² (ou 2048² se o
+  tempo apertar). UV da caixa limpa com uma ilha por face, sem sobreposição.
+- A **etiqueta pendurada** é uma ilha da Meshy: separar por partes soltas,
+  identificar pela posição (fora do envelope do corpo), manter como objeto
+  próprio com o material original, filho do corpo. Se não der para isolar,
+  ela entra no bake como desenho plano e fica registrado.
+- Escala: **não uniforme moderada** para caber o U1 com espuma. Alvo externo
+  0,72 × 0,62 × 0,80 m (fatores ≈ 0,379 / 0,408 / 0,544; estica os ícones
+  ~1,4× na vertical, aceito e anotado). Interior = externo − 2 × 8 mm.
+- **Logo EnginePrint impressa no topo**, sobre o papelão, centrada entre as
+  abas (a câmera final mergulha nela). Decal como antes; a tinta sobre
+  papelão fica um pouco mais fosca que o papelão.
+- API igual à do módulo atual (`construir_caixa`, `animar_tampa` → agora
+  abre as abas, `animar_espuma`, `animar_espuma_voltar`, mesmas chaves
+  devolvidas: `corpo`, `tampa` passa a ser a lista de abas em `abas` mais um
+  Empty `tampa` no centro do topo para compatibilidade, `centro_logo`,
+  `normal_logo`, `topo_tampa_z`, `interior`, `espumas`).
+- Texturas resultantes em `assets/caixa_cor.png`, `caixa_normal.png`,
+  `caixa_rugosidade.png`, embutidas no arquivo único como as outras.
+
+## 2. Fundo infinito, sem chão, gradiente mais mesclado
+
+- **Não existe chão.** Nenhum plano, nenhuma sombra de contato. Os objetos
+  flutuam num vazio. O que era "pousar no chão" vira "parar no ar".
+- O fundo é o **World**: gradiente preto → rosé‑branco **mesclado**, não
+  uma faixa de horizonte. Mistura por ruído de grande escala (2 a 3 oitavas,
+  baixo contraste) sobre a rampa, de modo que preto e rosé se interpenetrem
+  em manchas suaves. Sem banding (dither).
+- Como o produto reflete o World, o gradiente precisa ser bonito em 360°:
+  usar direção no espaço de mundo (não de câmera), com o rosé
+  predominando em cima e o preto embaixo, e as manchas em volta.
+- Sem chão, o **rim** e a **key** fazem o recorte sozinhos; conferir que o
+  produto branco recorta em toda volta.
+- Espuma: sem chão para cair, os flocos **saem do quadro** por baixo/lados e
+  somem em fade; ao voltar, entram de fora.
+- Caixa "some": afunda para fora do quadro por baixo (não "pelo chão").
+
+## 3. Câmera mais perto
+
+Todos os planos **mais fechados**: o produto ocupa ≥ 60% da altura do
+quadro nos planos gerais, e nos closes o enquadramento é macro (lente 50 a
+85 mm, foco raso). O 9:16 fica cheio. Nada de produto pequeno no meio de
+vazio.
+
+## 4. Som
+
+Anúncio **com som**: trilha de fundo + efeitos sincronizados com os beats,
+mixados no MP4 final.
+
+- Sem asset externo: **sintetizar** com `numpy` (o Blender traz) e gravar
+  WAV. Módulo `scripts/mod_som.py` com `gerar_stems(pasta, fps, beats) ->
+  dict` e `montar_no_vse(cena, stems, beats)`, que cria as faixas no VSE e
+  liga a saída de áudio (AAC) no render.
+- Cue sheet por beat: whoosh grave na subida da caixa (b1); rasgo de fita +
+  "pop" da espuma + whoosh de revelação (b2); whoosh de órbita, "clique"
+  do plugue, "chime" de ligar com sub grave (b3); tique de boot + "ding"
+  suave da UI (b4); **obturador** de câmera em cada corte de foto (b5);
+  whoosh de descida + baque surdo da tampa (b6); sub grave na travessia e
+  "swell" na cartela (b7).
+- Trilha: pad ambiente lento (acordes, 2 a 4 notas, 70 a 90 BPM implícito)
+  com pulso sutil, que sobe na revelação e abre na cartela. Nível: trilha
+  −18 dBFS, efeitos até −6 dBFS, sem clipar.
+- Registrar que é **trilha provisória sintetizada**: um anúncio de verdade
+  usa música licenciada; o módulo aceita `trilha_externa.wav` pelo mesmo
+  nome e a usa no lugar.
+- A prévia em vídeo passa a ser montada com áudio.
+
+## 5. Estilo @nzj.3d
+
+Não foi possível abrir o perfil daqui (Instagram 429, espelhos 403). Até
+chegarem referências dele, aplicar o gênero: produto flutuando no vazio,
+gradiente suave, macros com foco raso, câmera sempre em movimento, cortes
+no ritmo do som, whoosh a cada movimento largo, bass hit nos impactos.
+
+## 6. Impressora Meshy
+
+`scratchpad/impressora_plana.glb` (1,88 M triângulos, 5.644 ilhas, malha
+com buracos na frente) é uma impressora **preta com tubos de filamento**,
+não um U1. **Não entra** no anúncio: o substituto branco continua até o
+arquivo real da Snapmaker chegar.
