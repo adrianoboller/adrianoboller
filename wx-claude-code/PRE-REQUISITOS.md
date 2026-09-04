@@ -8,6 +8,17 @@ no primeiro que faltar:
 .\instalar.ps1 -Conferir      # Windows
 ```
 
+**Faltando algum? O instalador resolve, perguntando antes.** Ele mostra o
+comando que instalaria (`apt-get`, `dnf`, `pacman`, `zypper`, `brew`, `winget`,
+`choco` ou `npm`, conforme a máquina) e espera você aprovar. Nada é instalado
+sem você ver e dizer sim: em `--conferir`, num terminal não interativo, ou se
+você responder não, ele apenas informa e segue — ou para, quando o item é
+obrigatório. `--sim` (ou `-Sim`) aprova tudo de uma vez, para automação.
+
+Sem o manifesto do plugin na pasta, ele oferece **baixar do repositório** com
+`git clone`, também pedindo aprovação; recusando, para com código 1 e diz o que
+fazer.
+
 ## Obrigatórios
 
 | item | versão | por quê | se faltar |

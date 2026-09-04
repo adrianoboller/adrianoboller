@@ -566,6 +566,20 @@ class Questionario(unittest.TestCase):
         for esperado in ("Pre-requisitos", "Corpus do Help", "Conferencia do pacote", "nada foi instalado", "Licenca"):
             self.assertIn(esperado, r.stdout, esperado)
         self.assertIn("skills, ", r.stdout)
+        # pre-requisito ausente: oferece, mostra o comando e NAO instala sem aprovacao
+        env = dict(os.environ, PATH="/usr/bin:/bin:/usr/local/bin")
+        r = subprocess.run(["bash", str(sh), "--conferir"], capture_output=True, text=True, timeout=300, env=env, stdin=subprocess.DEVNULL)
+        if "claude' nao esta no PATH" in r.stdout:
+            self.assertIn("nao instala", r.stdout, "sem terminal ou em --conferir, nada pode ser instalado")
+            self.assertNotIn("instalado\n", r.stdout.replace("nao foi instalado", "").replace("nada foi instalado", ""))
+        # sem manifesto: oferece baixar, e sem aprovacao para com codigo 1
+        vazio = Path(tempfile.mkdtemp())
+        r = subprocess.run(["bash", str(sh), "--raiz", str(vazio)], capture_output=True, text=True, timeout=300, stdin=subprocess.DEVNULL)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("baixar o plugin do repositorio agora?", r.stdout)
+        self.assertIn("git clone --depth 1", r.stdout)
+        self.assertIn("sem terminal interativo: nao instala", r.stdout)
+        self.assertFalse((vazio / "adrianoboller").exists(), "clonou sem aprovacao")
         # --conferir nao deixa rastro nem em /tmp (achado na prova real)
         import glob
         self.assertEqual(glob.glob("/tmp/wx-validacao*"), [], "--conferir deixou arquivo temporario para tras")
@@ -580,6 +594,10 @@ class Questionario(unittest.TestCase):
         for passo in ("1. Pre-requisitos", "2. Corpus", "3. Conferencia", "4. Instalacao", "5. Licenca"):
             self.assertIn(passo, texto, passo)
         self.assertIn("param(", texto); self.assertIn("$Conferir", texto)
+        # o mesmo fluxo de aprovacao do bash, no PowerShell
+        for peca in ("function Perguntar", "function InstalarComAprovacao", "function ComandoPara",
+                     "$Sim", "UserInteractive", "git clone --depth 1"):
+            self.assertIn(peca, texto, peca)
 
     def test_uiux_vendorizada_com_licenca_e_atribuicao(self):
         """Material de terceiro entra com licenca e origem, ou nao entra. MIT exige o
