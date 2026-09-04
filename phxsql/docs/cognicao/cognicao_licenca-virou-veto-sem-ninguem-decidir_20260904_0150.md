@@ -68,7 +68,7 @@ impedimento, rode o `GET`.** Um `HEAD` contra proxy devolve 403 em recurso que o
 * O `CLAUDE.md` do projeto ganhou a pétrea do Cassandra(R), que já enuncia o
   lado certo: **«nada impede pensarmos juntos e melhorar a lógica […] não é
   cópia, é inspiração»**, com a licença anotada como informação e não como veto.
-* O `docs/PESQUISA-MVCC-E-TRAVA.md` §10 lista **arquivo por arquivo** o que foi
+* O `docs/PESQUISA-MVCC-E-FORMATO.md` §10 lista **arquivo por arquivo** o que foi
   lido, com HTTP e tamanho, e diz explicitamente que a leitura não torna falsa a
   linha `license = "MIT OR Apache-2.0"` do `Cargo.toml` — **colar** é que
   tornaria.

@@ -521,16 +521,31 @@ O roteiro diz que «o `rowid` daqui já é» a identidade estável que ancora a
 cadeia. É verdade, e é a boa notícia. O que ele não diz é o resto da conta, e o
 resto da conta é do DBA:
 
-**(1) O cabeçalho do slot está CHEIO.** São 24 bytes
-(`SLOT_CAB`, no `reg.rs`), e os 24 estão usados:
+**(1) O cabeçalho do slot NÃO está cheio — e este parágrafo dizia que estava.**
+São 24 bytes (`SLOT_CAB`, no `reg.rs`), mas os 24 não estão usados:
 
 ```text
 [status u8][flags u8][res u16][crc32 u32][versao u64][tempero u64]
    1     +    1     +    2    +    4     +    8      +    8       = 24
+            ^^^^^^^^^^^^^^^^^                        ^^^^^^^^^^^^
+            3 bytes LIVRES SEMPRE                    só existe na tabela cifrada
 ```
 
-Um ponteiro para a versão anterior não cabe. Ele exige `slot_size` maior, logo
-**`.reg` versão 6**. O precedente existe e é bom: a cifra de coluna já fez a v4
+**Medido varrendo o `reg.rs` por quem escreve e por quem lê cada faixa:**
+`flags` (byte 1) e `res` (2..4) **não são tocados por ninguém** — nenhuma
+escrita, nenhuma leitura. O `tempero` (16..24) só é gravado dentro do ramo da
+cifra (`reg.rs:1585-1586`), então numa tabela **não cifrada** ele também está
+livre. São **3 bytes livres sempre, 11 na v4**.
+
+O número errado circulava em três lugares e foi repetido três vezes na rodada
+de 04/09 antes de alguém ir ao `reg.rs` conferir. *Número citado é número que
+não se mede* — e este mudava a **resposta**, não só a frase: com 3 bytes cabe
+um índice de 24 bits para um diretório por tabela, e o ponteiro de undo do
+InnoDB (7 bytes) mostra por que isso basta — ele é **endereço estruturado**, não
+deslocamento cru. Logo **o `.reg` v6 pode não ser necessário**, e a escolha
+volta a ser do DBA em vez de ser imposta pela aritmética.
+
+A alternativa de crescer o slot continua na mesa. O precedente existe e é bom: a cifra de coluna já fez a v4
 virar v5 crescendo o slot, com a versão no byte 8 decidindo quantos bytes ler
 (o «Por que uma versao NOVA» do `reg.rs`). O mecanismo está provado — mas **é mudança de formato em
 disco**, e a pétrea desta casa diz que mudança de formato entra **cedo**,
@@ -894,7 +909,7 @@ porque manda procurar no lugar errado com ar de precisão. Nome se acha com
 | 10,2 s e o aborto do processo | o mesmo, com `ulimit -v 2000000` — medição manual, registrada porque a automática derrubaria a máquina |
 | 121–137 / 1.404–1.492 / 3.122–3.187 µs de trava | `bancada/concorrencia/quanto-a-trava-fica-presa.py`, duas baterias aprovadas pelo `quieta.Vigia` |
 | 0 tomadas fora do ponto único | `grep -c 'self\.dados\.lock()' servidor.rs`, e a catraca `so_um_lugar_toma_a_trava` |
-| 24 bytes do cabeçalho do slot | `SLOT_CAB` e o layout do módulo, em `crates/phxsql-store/src/reg.rs` |
+| 24 bytes do cabeçalho do slot, **3 deles livres sempre e 11 na tabela não cifrada** | `SLOT_CAB` e o layout do módulo, em `crates/phxsql-store/src/reg.rs`; medido por quem escreve e quem lê cada faixa, e não pela soma do layout |
 | `Instancia` com um campo | `pub struct Instancia`, em `crates/phxsql-store/src/catalogo.rs` |
 | 200 operações / 200 ms | `lote_operacoes` / `lote_milissegundos`, em `crates/phxsql-server/src/config.rs` |
 | 1,99× / 1,51–1,59× | `docs/DESEMPENHO.md` §14 — **medição anterior, não refeita aqui** |

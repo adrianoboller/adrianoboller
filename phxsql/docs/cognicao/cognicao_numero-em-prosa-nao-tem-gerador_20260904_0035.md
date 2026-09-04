@@ -74,7 +74,7 @@ chega.
 
 ## 5. Como está guardado hoje
 
-* A medição está no `docs/PESQUISA-MVCC-E-TRAVA.md` §1.2, com a tabela de quem
+* A medição está no `docs/PESQUISA-MVCC-E-FORMATO.md` §1.2, com a tabela de quem
   escreve e quem lê cada faixa, e a linha do `reg.rs` ao lado de cada uma.
 * **O buraco, e ele é grande:** a §4.2 do `docs/CONCORRENCIA.md` e o pedido 164
   da `docs/PENDENCIAS.md` **continuam com o número errado**. Não os corrigi

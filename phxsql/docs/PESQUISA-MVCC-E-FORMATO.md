@@ -1,21 +1,23 @@
 # Pesquisa: onde os outros põem a versão velha, e o que o NOSSO formato aceita
 
-> ## Não confunda este arquivo com o irmão
+> ## Este arquivo e o irmão dele
 >
-> Existe neste repositório um `docs/PESQUISA-TRAVA-E-MVCC.md` — **o mesmo nome
-> com as duas palavras trocadas de lugar**. Ele não é versão antiga deste: é
-> outro documento, vivo, e os dois se dividem assim:
+> Há um `docs/PESQUISA-TRAVA-E-MVCC.md` neste repositório. Ele **não** é versão
+> antiga deste: é outro documento, vivo, e os dois se dividem assim:
 >
 > | | `PESQUISA-TRAVA-E-MVCC.md` (o irmão) | **este arquivo** |
 > |---|---|---|
 > | pergunta | como os outros separam **leitor de leitor** | **onde mora a versão velha**, e quanto isso custa no nosso disco |
 > | entrega | os dois níveis de trava (mapeamento × conteúdo) | os **bytes**, a taxonomia, e as perguntas fechadas para o DBA |
 >
-> **Dois arquivos a uma troca de palavra de distância é a armadilha que esta
-> casa já nomeou** («só existe um dossiê por vez, para que ninguém atualize o
-> errado»). A recomendação desta frente é renomear **este** para
-> `PESQUISA-MVCC-E-FORMATO.md`; o nome foi ordem do orquestrador e não se muda
-> por conta própria.
+> **Este arquivo nasceu chamado `PESQUISA-MVCC-E-TRAVA.md`** — o mesmo nome do
+> irmão com as duas palavras trocadas de lugar. A frente que o escreveu nomeou
+> a armadilha e pediu a troca, mas não a fez, porque o nome tinha vindo do
+> orquestrador; o orquestrador renomeou na integração. É a mesma lei do dossiê
+> («só existe um por vez, para que ninguém atualize o errado»), e a correção é
+> a mesma: **o nome distingue pelo ASSUNTO — formato — e não por reordenar as
+> palavras do irmão.** Nome que se distingue por ordem de palavra não distingue
+> nada: quem procura de memória erra os dois.
 
 Este documento é do papel **J (pesquisador)** e obedece à lei que dá sentido ao
 papel: *receita de fora se mede contra o nosso gargalo antes de virar plano*.
