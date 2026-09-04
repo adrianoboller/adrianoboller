@@ -231,7 +231,17 @@ def main():
     meio = visiveis(c, "clientes")
     r = c.fala({"op": "rollback"})
     depois = c.fala({"op": "esquema", "database": "loja", "tabela": "clientes"})["resultado"]["slots"]
-    ok("a leitura nao ve o que a transacao empilhou", meio == 1, f"viu {meio}")
+    # Ate o pedido 162 esta linha afirmava `meio == 1` -- a leitura NAO via o
+    # que a propria transacao tinha empilhado, e faltava o I do ACID. O
+    # SP000006 entrou em 02/09 e trocou o comportamento; esta asercao nao foi
+    # atras, e passou dois dias reprovando sem ninguem ver, porque a bateria
+    # inteira so voltou a rodar em 04/09.
+    #
+    # A asercao de hoje continua valendo NOS DOIS SENTIDOS, que e o que ela
+    # tem de fazer: se a `Sobreposicao` for desligada, a leitura volta a ver 1
+    # e este passo reprova. Conferir `meio > 1` nao serviria -- passaria com a
+    # sobreposicao meia funcionando.
+    ok("a transacao ve o que ela mesma empilhou", meio == 101, f"viu {meio}")
     ok("o rollback descarta as 100", r["resultado"]["descartadas"] == 100,
        json.dumps(r)[:160])
     ok("nenhum slot queimado", antes == depois, f"{antes} -> {depois}")

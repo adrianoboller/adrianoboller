@@ -361,24 +361,40 @@ def item_3_uuid_v7_e_1_para_n(c):
             [c_["estrangeira"] for c_ in e["colunas"] if c_["nome"] == "turma_id"],
             [True])
 
-    # O COMPORTAMENTO VELHO, e ele e o que este teste trava: a chave e
-    # DECLARADA e NAO E IMPOSTA. Escrito como teste para o dia em que isso
-    # mudar quebrar aqui -- e nao na cabeca de quem confiou na declaracao.
+    # ESTE BLOCO JA DISPAROU, e disparou como projetado.
+    #
+    # Ate 03/09 ele travava o comportamento VELHO -- a chave declarada e NAO
+    # imposta -- e o comentario dizia, com todas as letras: «o dia em que o
+    # motor a impuser, eles falham». O pedido 171 imps a chave, e eles
+    # falharam. Ninguem foi atender por dois dias, porque a bateria inteira
+    # nao foi rodada nesse intervalo.
+    #
+    # Teste-sentinela que dispara e ninguem colhe vira ruido vermelho, e
+    # bateria com vermelho cronico e bateria que ninguem le. Virado para o
+    # comportamento de HOJE, com a mesma disciplina: ele tem de falhar no dia
+    # em que a imposicao for embora.
+    #
+    # E a recusa se confere pelo CODIGO `SP000008`, nunca pela frase: quem
+    # casa a redacao quebra calado no dia em que alguem melhorar o texto. Foi
+    # exatamente assim que a prova do cluster quebrou -- ela esperava a
+    # palavra «NAO promovo» e a mensagem tinha sido reescrita.
     orfa = c.fala({"op": "inserir", "database": DB, "tabela": "alunos",
                    "linha": {"id": "novo",
                              "turma_id": "00000000-0000-7000-8000-000000000000",
                              "nome": "orfa", "cidade": "x", "nota": "1.00"}})
-    confere("HOJE a filha orfa ENTRA (a chave nao e imposta)", orfa.get("ok"), True)
+    confere("a filha orfa e RECUSADA, e pelo codigo da integridade",
+            (orfa.get("ok"), "SP000008" in str(orfa.get("erro", ""))),
+            (False, True))
     antes = visiveis(c, "turmas")
     saiu = c.fala({"op": "excluir", "database": DB, "tabela": "turmas",
                    "rowid": mae["rowid"]})
-    confere("HOJE a mae com filhas SAI (restringir nao restringe)",
-            saiu.get("ok"), True)
-    confere("e ela saiu mesmo", visiveis(c, "turmas"), antes - 1)
-    c.ok({"op": "restaurar", "database": DB, "tabela": "turmas",
-          "rowid": mae["rowid"]})
-    nota("a chave estrangeira e declarada e nao imposta -- os dois passos acima "
-         "travam esse limite; o dia em que o motor a impuser, eles falham")
+    confere("a mae com filhas NAO sai -- restringir restringe",
+            (saiu.get("ok"), "SP000008" in str(saiu.get("erro", ""))),
+            (False, True))
+    confere("e ela continua la", visiveis(c, "turmas"), antes)
+    nota("a chave estrangeira e declarada E IMPOSTA desde o pedido 171 -- os "
+         "tres passos acima travam a imposicao, e conferem pelo codigo "
+         "SP000008 e nao pela redacao da mensagem")
 
 
 # ======================================================================== 4
