@@ -38,7 +38,7 @@ dependências (`conferidor_dependencias.rs`) não têm "folga" — são
 verdadeiro/falso, não contagem. Não entram na tabela abaixo pelo mesmo
 motivo que `TETO_DA_CASCATA` não entra: não há número que decresça.
 
-## As quatro catracas de qualidade — medidas hoje
+## As cinco catracas de qualidade — medidas hoje
 
 | Catraca | Onde mora | Teto | Medido hoje | Folga | Estado |
 |---|---|---:|---:|---:|---|
@@ -46,11 +46,18 @@ motivo que `TETO_DA_CASCATA` não entra: não há número que decresça.
 | `TETO_ROTULOS_E_CRASE` | `crates/phxsql-server/src/conferidor.rs` | 1.707 | **1.707** | **0** | sem folga |
 | `TETO_COLADO` | `crates/phxsql-server/src/conferidor.rs:1088` | 0 | **0** | **0** | sem folga |
 | `TETO_FRASE_REPETIDA` | `crates/phxsql-server/src/conferidor.rs:1092` | 0 | **0** | **0** | sem folga |
+| `TETO_FSYNC_POR_FECHO_V1` | `crates/phxsql-store/tests/catraca-fsync-por-fecho.rs` | 7 | **7** | **0** | sem folga — nasceu nesta rodada |
 
-**Achado principal: nenhuma catraca frouxa. As quatro estão coladas no teto,
-folga zero.** Não há o que baixar hoje — baixar um teto que já é igual ao
-medido reprovaria a suíte imediatamente, e essa não é a lei ("catraca frouxa
-não segura nada"): é o oposto dela, uma catraca que já segura no talo. O
+As quatro primeiras foram medidas em 03/09/2026 (commit `5ca5326`, descrito no
+resto desta seção); a quinta é de 04/09/2026, desta rodada — a medição dela
+está isolada na seção 5, abaixo, para não misturar datas de medição na mesma
+prosa.
+
+**Achado principal (03/09): nenhuma catraca frouxa entre as quatro. As quatro
+estavam coladas no teto, folga zero.** Não há o que baixar naquele dia —
+baixar um teto que já é igual ao medido reprovaria a suíte imediatamente, e
+essa não é a lei ("catraca frouxa não segura nada"): é o oposto dela, uma
+catraca que já segura no talo. O
 outro lado da mesma moeda também vale nomear, porque é o que a tarefa pediu
 para procurar: **as quatro estão no ponto exato em que a PRÓXIMA violação —
 uma tabela nova montada à mão, um rótulo cravado, uma tradução colada — já
@@ -153,6 +160,49 @@ palavra só, igual em três idiomas por coincidência de pontuação).
 prova real do item 3: copiar o português para dois outros idiomas de uma
 chave existente faz reprovar nomeando a chave e quantos idiomas trazem a
 frase.
+
+### 5. `TETO_FSYNC_POR_FECHO_V1` — `fsync` desperdiçado no fecho de janela
+
+**O defeito que motivou**: o fecho da janela de durabilidade
+(`Table::sincronizar`, chamado por `descarregar_sujas_com` num `Table`
+recém-reaberto) faz `fsync` em sete arquivos e deveria fazer em oito — o
+`.reg` fica de fora porque `Volumes::sincronizar` só sincroniza volumes que
+estão em `abertos`, e um `Table` que só abre para fechar a janela (sem ler
+nem escrever nada antes) nunca tocou o volume do `.reg`: o cabeçalho vem de
+um `std::fs::File::open` direto em `RegFile::abrir`, fora do cache de
+`Volumes`. A guarda irmã, `fecho-da-janela-sincroniza-o-reg.rs`, prova esse
+FATO (zero `fsync` no `.reg`); esta catraca mede o CUSTO do mesmo fecho —
+quantos `fsync` ele gasta no total — e trava que ele não gaste mais do que
+gasta hoje.
+
+**Medido hoje** (`cargo test -p phxsql-store --test catraca-fsync-por-fecho`,
+reexecutando o próprio binário sob `strace -f -y -e trace=fsync`): **7**
+`fsync` por fecho de janela, constante em três escalas de semeadura — 20,
+2.000 e 200.000 linhas —, porque o custo é por ARQUIVO e não por linha. São
+eles: `.trash`, `.bin`, `.memo`, `.log`, `.reason`, `.ndx` (duas vezes — o
+principal e o espelho de páginas sujas). Confirmado batendo com a sonda que
+motivou a tarefa (`crates/phxsql-store/examples/sonda-do-fecho.rs`, sob
+`strace` manual): mesmos sete arquivos, mesma ordem, zero `.reg`.
+
+**Quatro dos sete não mudam nada com um `inserir` comum** — `.trash`,
+`.reason`, `.bin` e `.memo` só escrevem em exclusão/coluna externa —, e é
+essa a dívida que a catraca cobra: sincronizar arquivo que ninguém sujou
+desde o último `sincronizar`. Ela só desce à medida que um conserto aprender
+a pular esses `fsync` redundantes.
+
+**Ela NÃO cobre o defeito do `.reg`, de propósito.** Esta catraca mede
+DESPERDÍCIO (fsync de arquivo que não mudou), a guarda irmã mede CORREÇÃO
+(fsync que falta e devia estar lá) — são dívidas independentes e um conserto
+pode mexer numa sem mexer na outra. A consequência que fica registrada para
+a frente do conserto: ligar o `fsync` que falta no `.reg` SOBE o número de
+verdade de 7 para 8, e subir o TETO para acomodar isso quebraria a lei
+("catraca só desce, nunca sobe") do mesmo jeito que subir
+`TETO_TABELA_NA_MAO` de 24 para 43 teria quebrado — a saída é a mesma que já
+tem duas ocorrências nesta tabela: **aposentar `TETO_FSYNC_POR_FECHO_V1` (7)
+e fazer nascer `TETO_FSYNC_POR_FECHO_V2` (8) no mesmo commit que liga o
+`fsync` do `.reg`**, nunca só subir o número. Até lá, 7 é o teto e reprova
+qualquer coisa acima — inclusive um oitavo `fsync` solto por descuido que não
+seja o conserto do `.reg`.
 
 ## Os limites de funcionamento encontrados (não são catracas)
 

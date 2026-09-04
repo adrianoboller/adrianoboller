@@ -79,3 +79,62 @@ impl Rng {
         }
     }
 }
+
+/// Reexecuta o PROPRIO binario de testes sob `strace`, rodando so o teste
+/// `#[ignore]` de nome `nome_do_teste`, e devolve o log inteiro.
+///
+/// # Por que reexecutar em vez de tracar o processo corrente
+///
+/// `strace` tem de estar presente ANTES do primeiro syscall que importa --
+/// anexar a um processo ja rodando (`strace -p`) tem uma corrida entre o
+/// anexo e o syscall que se quer ver, e perderia justamente o `fsync` que
+/// acontece cedo. Reexecutar o proprio `current_exe()` filtrando por um
+/// unico teste `#[ignore]` da o mesmo binario, do zero, sob o `strace` desde
+/// a primeira instrucao -- sem compilar nada a mais.
+///
+/// Existe para as guardas e catracas que provam FATO do sistema operacional
+/// (um `fsync` que aconteceu ou nao), nao intencao de codigo -- e' a mesma
+/// lei que ja mandou provar a queda de conexao do BULKINSERT contra o
+/// soquete, e nao por teste unitario: "o que depende do sistema operacional
+/// se prova contra o sistema operacional".
+///
+/// `var`/`valor` viram uma variavel de ambiente que o teste `#[ignore]` le
+/// para saber ONDE trabalhar -- e' o unico jeito de passar o diretorio da
+/// semeadura para o processo filho sem arquivo de configuracao.
+///
+/// Devolve `None` quando esta maquina nao tem `strace` instalado; quem chama
+/// decide se pula a prova ou falha. Nao ha teste unitario substituto: sem o
+/// SO de verdade nao ha como saber se um `fsync` aconteceu.
+#[allow(dead_code)]
+pub fn tracar_syscalls(
+    nome_do_teste: &str,
+    eventos: &str,
+    var: &str,
+    valor: &std::path::Path,
+    log: &std::path::Path,
+) -> Option<String> {
+    if std::process::Command::new("strace")
+        .arg("-V")
+        .output()
+        .is_err()
+    {
+        return None;
+    }
+    let exe = std::env::current_exe().expect("o proprio binario de teste");
+    let status = std::process::Command::new("strace")
+        .args(["-f", "-y", "-e"])
+        .arg(format!("trace={eventos}"))
+        .arg("-o")
+        .arg(log)
+        .arg(&exe)
+        .args([nome_do_teste, "--exact", "--ignored", "--nocapture"])
+        .env(var, valor)
+        .status()
+        .expect("lancar o strace");
+    assert!(
+        status.success(),
+        "a sonda '{nome_do_teste}' sob strace nao terminou limpa -- ver {}",
+        log.display()
+    );
+    Some(std::fs::read_to_string(log).expect("ler o log do strace"))
+}
