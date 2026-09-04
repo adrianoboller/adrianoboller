@@ -626,12 +626,17 @@ mod tests {
             // teste passar mesmo com a marca do `escrever` apagada -- e teste
             // que passa por engano e' pior que teste que falta.
             a.sincronizar().unwrap();
-            a.escrever(1, 0, b"dado que ainda nao foi ao disco").unwrap();
+            a.escrever(1, 0, b"dado que ainda nao foi ao disco")
+                .unwrap();
             // Morre sem sincronizar: e' o `gravar_de_verdade` quando a janela
             // de durabilidade ainda nao fechou.
         }
         let mut b = Volumes::novo(&d, "t", "reg", Paginacao::DESLIGADA);
-        assert_eq!(b.sincronizados(), 0, "a instancia nova nao tocou nada ainda");
+        assert_eq!(
+            b.sincronizados(),
+            0,
+            "a instancia nova nao tocou nada ainda"
+        );
         b.sincronizar().unwrap();
         assert!(
             b.sincronizados() >= 1,
@@ -690,7 +695,8 @@ mod tests {
         v.sincronizar().unwrap();
         let ate_aqui = v.sincronizados();
         for n in 1..=8 {
-            v.escrever(n, 0, b"escrita que ainda nao foi ao disco").unwrap();
+            v.escrever(n, 0, b"escrita que ainda nao foi ao disco")
+                .unwrap();
         }
         assert!(
             !v.abertos.contains_key(&1),

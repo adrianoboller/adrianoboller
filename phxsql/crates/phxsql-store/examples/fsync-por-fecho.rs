@@ -81,7 +81,10 @@ fn semear(dir: &Path, linhas: i64) {
 /// verdade nao ha substituto -- um `fsync` que aconteceu ou nao e' fato do SO,
 /// e teste unitario nao o observa.
 fn contar(dir: &Path, log: &Path) -> Option<(usize, usize)> {
-    std::process::Command::new("strace").arg("-V").output().ok()?;
+    std::process::Command::new("strace")
+        .arg("-V")
+        .output()
+        .ok()?;
     let eu = std::env::current_exe().ok()?;
     let saida = std::process::Command::new("strace")
         .args(["-f", "-y", "-e", "trace=fsync", "-o"])

@@ -4209,8 +4209,11 @@ impl Table {
     ///
     /// O `.reg` vai por ultimo pelo mesmo motivo, e ele fecha a lista.
     pub fn sincronizar(&mut self) -> Result<()> {
-        // ABLACAO DE MEDICAO -- nao vai para o repositorio.
+        self.lixeira.sincronizar()?;
+        self.bin.sincronizar()?;
+        self.memo.sincronizar()?;
         self.log.sincronizar()?;
+        self.motivos.sincronizar()?;
         self.trilha.sincronizar()?;
         self.ndx.sincronizar()?;
         self.reg.sincronizar()?;
