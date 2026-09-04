@@ -1,0 +1,55 @@
+maquina parada na tentativa 9 (carga 0.24), medindo
+carga no arranque: 0.24 1.05 1.15 1/109 5207
+=== trava por tabela, RwLock ou MVCC: o teto de cada um ===
+    4 nucleos ao alcance deste processo | 5s por rodada | 2000 linhas semeadas
+    clientes: [1, 2, 4] | faixa de portas (7600, 7699)
+
+-- a maquina estava quieta?
+   antes:  1% ocupada, ate 0 vizinho(s)
+   durante (38 amostras): 25% a 100% ocupada, mediana 51%, ate 0 vizinho(s)
+   depois: 0% ocupada, ate 0 vizinho(s)
+   controle: 9378 -> 8621 op/s
+   VEREDITO: quieta o bastante. Os numeros valem.
+
+== durabilidade: por_lote ==
+
+-- vazao, ganho de 4 clientes sobre 1
+   controle                     1:1.00x   2:1.97x   4:4.01x
+   leitura-mesma-tabela         1:1.00x   2:1.63x   4:1.62x
+   leitura-tabelas-separadas    1:1.00x   2:1.62x   4:1.54x
+   escrita-mesma-tabela         1:1.00x   2:1.55x   4:1.43x
+   escrita-tabelas-separadas    1:1.00x   2:1.60x   4:1.37x
+
+-- espera de UM leitor (us), pelo p99
+   leitor-sozinho           p50    4995.6  p95    5913.6  p99    6583.2  pior    10131.2
+   dois-leitores            p50    6237.2  p95    7464.6  p99    8546.0  pior    12352.0
+   leitor-com-escritor      p50    5044.2  p95    6497.3  p99    8586.3  pior    10893.5
+
+-- os tetos: quanto cada desenho teria para recuperar
+   trava por tabela   0.96x   (leitura em tabelas separadas contra a mesma tabela)
+   RwLock             2.48x   (o controle, que nao toma a trava, contra a leitura)
+   RwLock, na espera  1.30x   (p99 de dois leitores contra um)
+   MVCC, na espera    1.30x   (p99 do leitor COM escritor contra sozinho -- so o MVCC mexe)
+
+== durabilidade: por_operacao ==
+
+-- vazao, ganho de 4 clientes sobre 1
+   controle                     1:1.00x   2:1.96x   4:4.08x
+   leitura-mesma-tabela         1:1.00x   2:1.57x   4:1.52x
+   leitura-tabelas-separadas    1:1.00x   2:1.66x   4:1.58x
+   escrita-mesma-tabela         1:1.00x   2:1.07x   4:1.04x
+   escrita-tabelas-separadas    1:1.00x   2:1.09x   4:1.01x
+
+-- espera de UM leitor (us), pelo p99
+   leitor-sozinho           p50    5007.5  p95    5626.3  p99    6905.6  pior    11103.0
+   dois-leitores            p50    6352.8  p95    7428.7  p99    8406.5  pior    15867.5
+   leitor-com-escritor      p50    6288.0  p95    8030.6  p99    9525.4  pior    13997.7
+
+-- os tetos: quanto cada desenho teria para recuperar
+   trava por tabela   1.04x   (leitura em tabelas separadas contra a mesma tabela)
+   RwLock             2.69x   (o controle, que nao toma a trava, contra a leitura)
+   RwLock, na espera  1.22x   (p99 de dois leitores contra um)
+   MVCC, na espera    1.38x   (p99 do leitor COM escritor contra sozinho -- so o MVCC mexe)
+
+
+[exited with code 0]
