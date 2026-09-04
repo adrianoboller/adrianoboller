@@ -475,12 +475,12 @@ footer p{max-width:var(--medida)}
 
   <div class="painel">
   <!-- projeto:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-    <div><div class="v">130.289</div><div class="r">linhas de Rust</div></div>
+    <div><div class="v">130.748</div><div class="r">linhas de Rust</div></div>
     <div><div class="v">1.561</div><div class="r">testes</div></div>
     <div><div class="v">0</div><div class="r">dependências</div></div>
     <div><div class="v">8</div><div class="r">crates</div></div>
     <div><div class="v">7</div><div class="r">arquivos/tabela</div></div>
-    <div><div class="v">43.510</div><div class="r">linhas de doc</div></div>
+    <div><div class="v">43.661</div><div class="r">linhas de doc</div></div>
   <!-- projeto:fim -->
   </div>
 </header>
@@ -4686,10 +4686,24 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   sentido e dono, e o job que roda a convergência sozinho — e cada passo só
   avança com o anterior provado.</p>
 
-  <p><strong>PostgreSQL(R): o cliente existe, a prova real não.</strong> O
-  SCRAM-SHA-256 está conferido contra o RFC 7677 e o dialeto por motor está
-  escrito; o que falta é exercitar contra um servidor de verdade, que não
-  existe nesta máquina — o que essa prova exige está em
+  <p><strong>PostgreSQL(R): o cliente e a prova real, os dois existem.</strong>
+  Esta entrada dizia «a prova real não existe nesta máquina», e a premissa
+  caducou: há um PostgreSQL(R) <strong>16.13</strong> de verdade, com
+  <code>scram-sha-256</code> já no <code>pg_hba.conf</code>.
+  <code>bancada/dblink/prova-postgres.py</code> roda as cinco operações contra
+  ele com <strong>23 conferências</strong>, cada uma contra o <code>psql</code>
+  — o oráculo independente, porque conferir contra o que o script espera só
+  provaria que o script e o servidor concordam. E rodá-la achou o que um
+  servidor de protocolo próprio não teria como achar: <code>base</code> quer
+  dizer <em>database</em> no MySQL(R) e <em>esquema</em> no PostgreSQL(R), e o
+  chamador entregava o database nos dois — a grade do DbLink com
+  PostgreSQL(R) mostrava nenhuma tabela, calada. Uma <strong>segunda
+  rodada</strong> achou que a prova em si lia por posição, do mesmo jeito que
+  a tela: toda coluna aparecia como obrigatória, mesmo as que aceitam nulo.
+  Consertado pelo padrão que a casa já tinha para texto — resolve-se por
+  <strong>chave</strong>, nunca por posição —, com quatro conferências novas
+  para não deixar a mesma fresta duas vezes. A história inteira, com os dois
+  defeitos e a prova real nos dois sentidos, está em
   <code>docs/DBLINK.md</code>.</p>
 </section>
 
@@ -6380,13 +6394,19 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   </div>
 
   <div class="nota nao">
-    <span class="t">2 — Não há TLS. O tráfego vai em claro</span>
-    <p>A <code>std</code> não traz TLS e o projeto não aceita crate. A
-    <strong>senha</strong> não vai em claro quando se usa o desafio-resposta — os
-    <strong>dados</strong>, sim. Isso vale para as três portas e para tudo que
-    sai daqui: a porta de dados 5000, a porta da interface, o transporte da
-    replicação, o cliente SMTP do alerta de disco e a conversa do DbLink com o
-    banco de fora.</p>
+    <span class="t">2 — Não há TLS. Em claro por padrão, cifrável em duas portas</span>
+    <p>A <code>std</code> não traz TLS e o projeto não aceita crate. Esta
+    entrada dizia que os <strong>dados</strong> — diferente da senha, que o
+    desafio-resposta já protegia — iam sempre em claro. <strong>Caducou pela
+    metade</strong>: a porta de dados 5000 e o transporte da replicação
+    ganharam um túnel próprio, um aperto estilo Noise (<a href="#s15">seção
+    15</a>) — não é TLS, e o navegador não o fala. O que continua igual é que
+    ele nasce <strong>pedido, não imposto</strong>: <code>cifra_fio.ligada</code>
+    é <code>true</code> por padrão porque o aperto só corre se o cliente
+    pedir, então um cliente de ontem continua em claro sem saber que a opção
+    existe. Sem pedir, ou nas portas que o túnel não alcança — a porta da
+    interface, o cliente SMTP do alerta de disco e a conversa do DbLink com o
+    banco de fora —, o dado continua em claro.</p>
     <p>A consequência é uma só, e é uma decisão de rede: <strong>este servidor
     pertence dentro do túnel</strong>. Em <code>http://</code> para outra máquina
     o navegador nem oferece <code>crypto.subtle</code>, e a tela cai em Base64
@@ -6406,14 +6426,27 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   </div>
 
   <div class="nota nao">
-    <span class="t">4 — A interface está 11% traduzida</span>
+    <span class="t">4 — A interface está 41% traduzida</span>
     <p>A máquina de idiomas existe desde a 0.17.0 e funciona; o que falta é o
     miolo das telas. O cromo inteiro e a tela de entrada estão nos seis idiomas;
-    o resto está em português cravado no fonte. O número é medido, tem catraca
-    que impede subir, e está na <a href="#s30">seção 29</a>.</p>
+    o resto está em português cravado no fonte — hoje concentrado quase todo
+    num arquivo só, o <code>index.html</code>. O número <strong>não</strong>
+    ficou parado em 11%: rodadas sucessivas de tradução levaram a fábrica de
+    303 para 645 e depois para 1.188 chaves, contra 1.707 textos ainda
+    cravados — e é medido, com catraca que só desce, na <a href="#s30">seção
+    30</a>.</p>
   </div>
 
   <h3>E o resto, sem rodeio</h3>
+
+  <p><strong>Duas linhas saíram desta tabela nesta revisão</strong>, porque o
+  comportamento mudou e a frase não: <strong>DbLink contra um PostgreSQL(R)
+  de verdade</strong> — provado com 23 conferências medidas contra um servidor
+  16.13 real, pedido 86, <a href="#s25">seção 25</a> — e a <strong>rotação do
+  <code>.txt</code> do Profiler</strong> — rodízio por tamanho entregue no
+  pedido 133, com <code>profiler.arquivo_mib</code> × <code>profiler.arquivos</code>
+  fechando o teto em disco. Ficam nomeadas aqui para a próxima leitura não
+  procurar o que já saiu.</p>
 
   <div class="rolo">
     <table>
@@ -6431,8 +6464,8 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
             <td>quem escolhe o índice é quem escreve a operação. Estatística sem consumidor é arquivo para manter atualizado sem ninguém ler</td></tr>
         <tr><td><strong><code>WHERE</code> no <code>varrer</code></strong></td>
             <td>por isso o filtro da grade vale sobre a janela trazida, e não sobre a tabela — medido: 25 de Blumenau numa tabela com 2.500. O contrato de <em>pushdown</em> existe na grade e o servidor não o atende; <strong>enquanto não atende, a tela diz</strong></td></tr>
-        <tr><td><strong>Alterar a estrutura de uma tabela com dado</strong></td>
-            <td>o slot é de largura fixa e o <code>slot_size</code> decide o endereço de cada linha, então acrescentar coluna é reescrever o <code>.reg</code> preservando o rowid. A tela diz isso em vez de oferecer um formulário que fingiria salvar</td></tr>
+        <tr><td><strong>Trocar tipo/largura de coluna, ou tirar coluna</strong></td>
+            <td>esta linha dizia que alterar a estrutura de uma tabela com dado não existia, e <strong>caiu pela metade</strong>: o sprint 25 entregou <code>acrescentar_coluna</code> — o <code>.reg</code> é reescrito slot a slot na mesma ordem, o rowid <strong>não muda</strong> e o <code>.ndx</code> não é tocado, medido em 0,553&#8201;µs por linha (10 milhões em 5,53&#8201;s, <code>--example custo-do-alter</code>). O que continua faltando é trocar o tipo ou a largura de uma coluna já existente, e tirar coluna</td></tr>
         <tr><td><strong>Cadastro de usuários pela web</strong></td>
             <td>o <code>config_gravar</code> existe e grava parte do arquivo, com portão próprio e rastro. O que ele <em>não</em> grava é deliberado: token, segurança, usuários, cifra, credencial de e-mail e replicação — uma sessão roubada não abre o firewall nem cria supervisor. Falta a metade difícil: senha nunca em claro em ponto nenhum do caminho</td></tr>
         <tr><td><strong>Tela para gatilho e procedimento</strong></td>
@@ -6441,10 +6474,6 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
             <td>um master e N réplicas, de propósito. E a lista de nós é do <code>config.json</code>: mudar a topologia é editar e reiniciar</td></tr>
         <tr><td><strong><em>Long-poll</em> na replicação</strong></td>
             <td>a réplica pergunta a cada N segundos, e o atraso <em>é</em> o intervalo do laço — não é trabalho. Baixar o intervalo baixa o atraso e sobe o tráfego de perguntas em vão</td></tr>
-        <tr><td><strong>DbLink contra um PostgreSQL(R) de verdade</strong></td>
-            <td>cliente, SCRAM contra o vetor do RFC 7677 e dialeto por motor estão prontos e provados por soquete contra um servidor de protocolo próprio. Falta a prova contra um servidor real, que não existe nesta máquina — e o precedente é o MySQL(R) 8.0.46, em que a prova real achou o que o servidor falso não achava</td></tr>
-        <tr><td><strong>Rotação do <code>.txt</code> do Profiler</strong></td>
-            <td>345&nbsp;B por pedido, sem teto: num servidor de 1.000 pedidos/s são 1,2&nbsp;GB por hora. O que entrou foi a tela mostrar o tamanho e avisar quando ele para de gravar</td></tr>
         <tr><td><strong>OLE DB nativo</strong></td>
             <td>recusa fundamentada, não pendência — é COM, só Windows, e impossível de provar nesta bancada. A ponte <code>MSDASQL</code> é o caminho suportado</td></tr>
         <tr><td><strong>Troca de senha pelo protocolo, e grupos</strong></td>
@@ -6700,7 +6729,7 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
 
 <footer>
   <!-- rodape:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-  <p>PhxSql 0.18.0 · 130.289 linhas de Rust em 8 crates,
+  <p>PhxSql 0.18.0 · 130.748 linhas de Rust em 8 crates,
   mais 1148 KiB de interface · 1.561 testes ·
   nenhuma dependência externa.
   Especificação byte a byte em <code>docs/FORMATO.md</code>, cadastro e

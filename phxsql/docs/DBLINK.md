@@ -12,7 +12,7 @@ O nome vem do Centro de Controle do HFSQL(R), e a ideia é a mesma.
 | Motor | Estado |
 |---|---|
 | MySQL(R) / MariaDB(R) | **cliente e dialeto**, testado contra MySQL(R) 8.0.46 |
-| PostgreSQL(R) | **cliente e dialeto**, provados contra um servidor de protocolo no soquete **e contra um PostgreSQL(R) 16.13 de verdade** — 19 conferências, cada uma contra o `psql` (`bancada/dblink/prova-postgres.py`) |
+| PostgreSQL(R) | **cliente e dialeto**, provados contra um servidor de protocolo no soquete **e contra um PostgreSQL(R) 16.13 de verdade** — 23 conferências, cada uma contra o `psql` (`bancada/dblink/prova-postgres.py`) |
 | **PhxSql** | **cliente e dialeto**, provados por soquete contra **dois `phxsqld` de verdade** — 44 conferências (`bancada/dblink/prova-phxsql.py`). Ele **não fala SQL para o catálogo**: ver a seção *O terceiro motor*, no fim |
 
 O cliente é escrito aqui, com a `std` do Rust e nada mais — a mesma regra do
@@ -281,7 +281,10 @@ palpite é nosso.
 
 `bancada/dblink/prova-postgres.py` fecha o que faltava: as cinco operações
 contra o servidor real, com **cada resposta conferida contra o `psql`**, que é
-o oráculo independente. Dezenove conferências.
+o oráculo independente. **23 conferências, medidas** — contando as linhas `ok`
+que o script imprime (`bancada/dblink/prova-postgres.py | grep -c '^  ok '`),
+e não digitadas aqui: o número já saiu errado uma vez por ficar cravado depois
+de uma segunda rodada acrescentar conferência nova, ver abaixo.
 
 ### O que a prova achou: um defeito com três sintomas
 
@@ -335,13 +338,46 @@ não a perde.
 | o dado, e a **soma** | `sum(saldo)` |
 | o booleano | ele manda `t`/`f`, e **não** `1`/`0` — a armadilha que o §*Onde os dois divergem* já nomeava, agora vista acontecer |
 | o `reltuples` | **`-1`**, que é o que a 14+ devolve para tabela nunca analisada — e o DbLink publica `0`, não `-1` |
+| os nomes que a tela pede (`Field`/`Type`/`Null`/`Key`/`Default`/`Comment`) | os apelidos do dialeto, contra o formato do `psql \d` — ver a segunda rodada abaixo |
+| quais colunas aceitam nulo | a mesma coluna «nulo» que a tela lê |
+| índices e suas colunas, na ordem | `pg_index` de novo, agora pelo **nome** |
+| os índices ÚNICOS, pela polaridade do `Non_unique` | idem |
 
-### Prova real, nos dois sentidos
+### Prova real, nos dois sentidos — primeira rodada
 
-Repondo o defeito, a prova **reprova em 14** das 19 e nomeia cada uma. E o
-teste de unidade `no_postgres_a_base_da_ligacao_nao_vira_esquema` cai junto —
-com o par `no_mysql_nada_muda` ao lado, que é o teste que mais importa numa
-mudança destas: **nada do lado do MySQL(R) mudou**.
+Repondo o defeito do `base_escolhida`, a prova **reprova em 14** das 19
+conferências originais e nomeia cada uma. E o teste de unidade
+`no_postgres_a_base_da_ligacao_nao_vira_esquema` cai junto — com o par
+`no_mysql_nada_muda` ao lado, que é o teste que mais importa numa mudança
+destas: **nada do lado do MySQL(R) mudou**.
+
+### A segunda rodada: a prova tinha 19 e nenhuma olhava índice nem nome
+
+**O achado foi sobre a PROVA, não sobre o dialeto.** As 19 conferências
+originais liam a resposta do PhxSql **por posição** — a mesma forma que a
+tela usava —, e nenhuma comparava os **nomes** das colunas nem os **índices**.
+Foi por essa fresta que passou um defeito de tela inteiro:
+
+| sintoma na tela | causa |
+|---|---|
+| toda coluna aparecia como **obrigatória**, inclusive as quatro que aceitam nulo | lia a chave na coluna «nulo»: como `'PRI' != 'YES'`, a comparação era sempre falsa |
+| `extra` e `comentário` apareciam como `undefined` | liam fora da linha certa |
+| a chave primária aparecia como **duplicado ok** | lia a polaridade errada |
+
+Consertado pelo padrão que a casa já tinha para texto — *resolve-se por
+CHAVE, nunca por posição* —, apelidando o lado do PostgreSQL(R) com os nomes
+do `SHOW FULL COLUMNS`/`SHOW INDEX` que a tela já esperava. **O ramo do
+MySQL(R) não muda uma letra.**
+
+Quatro conferências novas entraram para caçar exatamente isto: os nomes das
+colunas, quais aceitam nulo, os índices por nome e a polaridade do
+`Non_unique` — as quatro últimas linhas da tabela acima. **19 + 4 = 23.**
+
+Prova real, de novo: sem os apelidos, **4 das 23** reprovam; só com a
+polaridade do `Non_unique` invertida, **1**. *Anotar que a forma divergia não
+vira conferência sozinha: o que não se confere não está provado, mesmo
+estando escrito* — foi exatamente essa lição que fez a primeira rodada, com
+19 conferências e 0 falhas, conviver com um defeito de tela inteiro.
 
 ### O que continua de fora
 

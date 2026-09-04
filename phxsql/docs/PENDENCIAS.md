@@ -249,10 +249,17 @@ de um pedido marcado feito, e fica aqui para não sumir de vista.
 O 127 saiu daqui nesta rodada: o que faltava a ele era alterar a estrutura de
 uma tabela com dado, e o sprint 25 entregou `acrescentar_coluna`.
 
+**O 86 saiu desta lista nesta revisão** (varredura do §33 do dossiê,
+20260904): a linha aqui dizia «falta a prova contra um PostgreSQL(R) de
+verdade, que não existe nesta máquina» — e essa premissa caducou no pedido
+86 lá em cima, fechado com **23 conferências** medidas contra um PostgreSQL(R)
+16.13 de verdade. Duas linhas da mesma pendência, uma marcada feita e outra
+ainda dizendo parcial, é o mesmo defeito do §33: frase que não se reconfere
+contra o código sobrevive à mudança de comportamento que a devia ter matado.
+
 | # | O que você pediu | O que existe | O que falta |
 |---|---|---|---|
 | 18 | **Subir o PhxSql no GitHub** | a branch `claude/capacidades-disponiveis-y6auxh` em `adrianoboller/adrianoboller`, com o histórico completo. A credencial **lê** o repositório e enxerga a branch — conferido nesta revisão, não suposto | um repositório **próprio**, e o impedimento é de **identidade, não de permissão**: esta sessão autentica como `EnginePrint` (id 322529492, criada em 2026-08-29, zero repositórios públicos), que não é você. `create_repository` responde 403 porque ninguém cria repositório em nome de outra pessoa — e, se criasse, o repositório seria **dela**, não seu. Destrava com você criando `adrianoboller/phxsql` e dando acesso a essa app. **Não há trabalho de engenharia esperando aqui** |
-| 86 | **DbLink para PostgreSQL(R) e outros** | **cliente, dialeto e ligação prontos**: `server/src/pg/` (721 linhas de protocolo mais 278 de SCRAM-SHA-256 conferido contra o vetor do RFC 7677), SQL por motor em `dblink/dialeto.rs`, e as cinco operações do DbLink reescritas para não saberem qual motor atendem. Provado por soquete contra um servidor de protocolo próprio, byte a byte, nos dois sentidos | só o que o nome do pedido diz: **a prova contra um PostgreSQL(R) de verdade**, que não existe nesta máquina. O roteiro do que ela exige está em `docs/DBLINK.md`, e o precedente é o pedido 131, que fez exatamente isso contra um MySQL(R) 8.0.46 real e achou o que o servidor falso não acharia |
 | — | **Chave estrangeira** com CASCADE / RESTRICT / SET NULL | **conferida na gravação** desde o pedido 171: todas as portas locais de escrita perguntam, uma a uma (`docs/INTEGRIDADE.md` §1), e chave declarada **nasce** conferida. `ao_excluir` aceita só `restringir`, por pétrea | falta o **SET NULL**, e ele não vem: anular a coluna da filha para poder matar a mãe é a cascata disfarçada que a regra primordial recusa. O que **não** confere, por decisão escrita, são as portas que aplicam o que outro servidor já julgou (§3) e o `copiar_tabela_para` (§4.3). A leitura do Teradata(R) sobre *soft RI* — a chave que existe **para o otimizador** — continua valendo como proposta separada, e só vira valor quando houver planejador |
 
 ## 3. O que continua faltando
