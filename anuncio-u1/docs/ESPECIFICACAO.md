@@ -275,3 +275,28 @@ no ritmo do som, whoosh a cada movimento largo, bass hit nos impactos.
 com buracos na frente) é uma impressora **preta com tubos de filamento**,
 não um U1. **Não entra** no anúncio: o substituto branco continua até o
 arquivo real da Snapmaker chegar.
+
+
+---
+
+# Revisão 3 (04/09, à noite) — três ordens do Adriano
+
+1. **Os dois modelos dele são obrigatórios.** A impressora Meshy
+   (`scratchpad/impressora_plana.glb`, 1,88 M triângulos, 5.644 ilhas,
+   texturas `impressora_texture.png`, `impressora_metallic_roughness.png`,
+   `impressora_normal.png`) **entra** no lugar do substituto, consertando as
+   imperfeições: ilhas soltas, buracos na frente, escala. Escalar para
+   0,584 × 0,499 × 0,730 m, frente para −Y. Se faltar tela, botão ou tomada,
+   acrescentar peças plausíveis. O item 6 da Revisão 2 fica revogado. O aviso
+   de que não é um U1 foi dado e a decisão é dele.
+2. **Sem logo na caixa.** O topo é papelão e fita da Meshy, nada mais. A
+   câmera final mergulha no **centro do topo** (emenda das abas) e a logo
+   EnginePrint aparece pela primeira vez na cartela.
+3. **25 segundos** (fator 1,25). O tempo extra vai para o momento‑herói, a
+   tela e a cartela.
+
+Referência de estilo recebida: dois vídeos do @nzj.3d (anúncio animado para
+o Google Gemini). Quadros em `scratchpad/ref1/` e `ref2/`, folha em
+`scratchpad/folha_ref.png`. A paleta do cliente (preto/rosé) fica, mas o
+**movimento** segue esse gênero: tudo entra com um pequeno overshoot e
+assenta; câmera calma; nada corta seco fora das fotos.
