@@ -18,4 +18,6 @@ O serial é assinado (RSA-2048) e amarrado à máquina; alterado, vencido ou de 
 
 Seja honesto sobre o alcance: a licença é **dissuasão**. Ela não impede quem tem o pacote de ler os arquivos; a proteção real (servir corpus e agentes de um servidor) está documentada como pendente em `licenca/LEIA-ME.md`.
 
+O passo a passo de emissão para um cliente novo está em `licenca/ATIVACAO.md`.
+
 Nunca peça nem repita a chave privada. O serial do cliente pode aparecer na conversa; a chave, não.

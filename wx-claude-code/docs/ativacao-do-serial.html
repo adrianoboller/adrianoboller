@@ -1,0 +1,87 @@
+<title>Ativação por serial</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Exo+2:wght@500;700;800&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root{--g:#FBFAF7;--p:#FFFFFF;--i:#14161F;--m:#6B6F82;--l:#E4E2DB;--a:#C63C0A;--a2:#1F5FBF;--ok:#1F7A4D;--grid:#ECEAE3;--av:#9A6B00}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--g:#0B0D17;--p:#121527;--i:#EDEDF3;--m:#9AA0B8;--l:#252A42;--a:#E2261C;--a2:#6FA3FF;--ok:#2FBF71;--grid:#1B1F33;--av:#F7B733}}
+:root[data-theme="dark"]{--g:#0B0D17;--p:#121527;--i:#EDEDF3;--m:#9AA0B8;--l:#252A42;--a:#E2261C;--a2:#6FA3FF;--ok:#2FBF71;--grid:#1B1F33;--av:#F7B733}
+*{box-sizing:border-box}body{margin:0;background:var(--g);color:var(--i);font-family:"Source Serif 4",Georgia,serif;font-size:15.5px;line-height:1.55}
+.wrap{max-width:900px;margin:0 auto;padding:40px 28px 70px}
+h1,h2,h3{font-family:"Exo 2","Segoe UI",sans-serif;margin:0;text-wrap:balance}
+h1{font-size:36px;font-weight:800;letter-spacing:-.5px;line-height:1.1;margin-top:8px}
+.eyebrow{font-family:"Exo 2",sans-serif;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--a);font-weight:700}
+.lead{max-width:66ch;color:var(--m);margin:12px 0 0;font-size:16.5px}
+header{border-bottom:2px solid var(--i);padding-bottom:20px}
+.passo{margin-top:26px;page-break-inside:avoid}
+.cab{display:flex;gap:14px;align-items:flex-start}
+.cab .num{font-family:"Exo 2",sans-serif;font-weight:800;font-size:30px;color:var(--a);line-height:1;min-width:32px}
+.cab h2{font-size:20px;font-weight:700}
+.onde{font-family:"Exo 2",sans-serif;font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--m)}
+pre{background:var(--p);border:1px solid var(--l);border-left:3px solid var(--a2);padding:11px 14px;margin:10px 0 8px;overflow-x:auto;font-family:"JetBrains Mono",monospace;font-size:12.5px;line-height:1.6}
+.passo p{margin:0;color:var(--m);font-size:14.5px}
+code{font-family:"JetBrains Mono",monospace;font-size:13px;background:var(--grid);padding:1px 5px;border-radius:3px;color:var(--i)}
+h2.sec{font-size:22px;margin:40px 0 8px;page-break-after:avoid}
+p.sub{color:var(--m);margin:0 0 10px;max-width:70ch}
+.scroll{overflow-x:auto;border:1px solid var(--l);background:var(--p)}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th{font-family:"Exo 2",sans-serif;font-size:11px;letter-spacing:.08em;text-transform:uppercase;text-align:left;color:var(--m);padding:9px 11px;border-bottom:2px solid var(--l)}
+td{padding:8px 11px;border-bottom:1px solid var(--grid);vertical-align:top}
+td.mono{font-family:"JetBrains Mono",monospace;font-size:12.5px;color:var(--a2);white-space:nowrap}
+tr{page-break-inside:avoid}
+.aviso{border-left:3px solid var(--av);background:var(--p);padding:12px 16px;margin-top:14px}
+.aviso b{font-family:"Exo 2",sans-serif}
+.aviso p{margin:6px 0 0;color:var(--m);font-size:14.5px}
+ul{padding-left:20px;color:var(--m)}li{margin:5px 0}li b{color:var(--i);font-family:"Exo 2",sans-serif;font-size:14px}
+.rodape{margin-top:36px;border-top:1px solid var(--l);padding-top:14px;color:var(--m);font-size:13.5px}
+@media print{.wrap{padding:0 0 10px}}
+</style>
+<div class="wrap">
+<header>
+ <div class="eyebrow">WX Claude Code 3.22.1 · instrução de ativação</div>
+ <h1>Ativação por serial, cliente a cliente</h1>
+ <p class="lead">Quatro passos: o primeiro você faz uma vez na vida, os outros três a cada cliente. Todos os comandos abaixo foram rodados e conferidos nesta versão.</p>
+</header>
+
+<section class="passo"><div class="cab"><span class="num">0</span><div><h2>Crie o seu par de chaves</h2><span class="onde">Uma vez só</span></div></div><pre>python3 skills/conversao-wx/scripts/licenca.py chaves gerar --saida ~/.wx-claude-code/chaves
+cp ~/.wx-claude-code/chaves/chave-publica.json licenca/chave-publica.json</pre><p>A pública entra no plugin e vai para todo cliente. A privada fica só com você, gravada em <code>0600</code>, e <b>nunca</b> entra no repositório — quem a tiver emite serial no seu lugar. A chave que vem no pacote é de demonstração: troque antes do primeiro cliente.</p></section><section class="passo"><div class="cab"><span class="num">1</span><div><h2>Ele manda a impressão da máquina</h2><span class="onde">Com o cliente</span></div></div><pre>python3 skills/conversao-wx/scripts/licenca.py maquina</pre><p>Sai um código curto, como <code>7c76428b7ed7fd9e</code>. Não tem nada de sigiloso nele; é só o que amarra o serial àquele computador. Peça por e-mail mesmo.</p></section><section class="passo"><div class="cab"><span class="num">2</span><div><h2>Emita o serial do cliente</h2><span class="onde">Na sua máquina</span></div></div><pre>python3 skills/conversao-wx/scripts/licenca.py gerar \
+  --cliente &quot;Cliente Exemplo Ltda&quot; \
+  --validade 2027-12-31 \
+  --maquina 7c76428b7ed7fd9e \
+  --email contato@cliente.com.br \
+  --chave-privada ~/.wx-claude-code/chaves/chave-privada.json</pre><p>Sai um serial <code>WX2.…</code> com nome, e-mail, validade e máquina assinados em RSA-2048/SHA-256. Mande por qualquer canal: mudar um caractere invalida a assinatura. <b>Guarde o serial</b> — hoje ele não fica registrado em lugar nenhum.</p></section><section class="passo"><div class="cab"><span class="num">3</span><div><h2>Ele instala e confere</h2><span class="onde">Com o cliente</span></div></div><pre>python3 skills/conversao-wx/scripts/licenca.py instalar &quot;WX2.eyJjbGll…&quot;
+python3 skills/conversao-wx/scripts/licenca.py verificar</pre><p>Grava em <code>~/.wx-claude-code/licenca</code> (ou onde <code>WX_LICENCA</code> apontar) e responde <code>valida: Cliente Exemplo Ltda ate 2027-12-31</code>. A partir daí os hooks liberam os scripts, e o <code>CLAUDE.md</code> gerado no projeto sai com a marca d'água dizendo para quem a licença foi emitida.</p></section>
+
+<h2 class="sec">Quando o serial é recusado</h2>
+<p class="sub">O hook recusa os scripts do plugin e diz o motivo. Os quatro casos:</p>
+<div class="scroll"><table><thead><tr><th style="width:24%">o que aconteceu</th><th style="width:26%">por quê</th><th>o que fazer</th></tr></thead><tbody><tr><td><b>Serial alterado</b></td><td>assinatura não confere</td><td>Peça o serial de novo; provavelmente quebrou no copiar e colar (e-mail cortando linha é a causa comum).</td></tr><tr><td><b>Serial vencido</b></td><td>passou da validade</td><td>Emita outro com validade nova. Não há renovação no serial antigo.</td></tr><tr><td><b>Serial de outra máquina</b></td><td>a impressão não bate</td><td>O cliente trocou de computador ou copiou de um colega. Emita um novo para a máquina certa.</td></tr><tr><td><b>Licença ausente</b></td><td>nada instalado</td><td>O hook recusa os scripts do plugin e diz isso. Rode <code>instalar</code>.</td></tr></tbody></table></div>
+
+<h2 class="sec">O que vai dentro do serial</h2>
+<p class="sub">O serial é assinado, não cifrado: quem o tiver consegue ler estes campos. Nada sigiloso entra aqui — e é por isso que você consegue reconstruir seu cadastro a partir dos seriais que guardou, sem a chave privada.</p>
+<div class="scroll"><table><thead><tr><th style="width:18%">campo</th><th style="width:34%">o que é</th><th>para que serve</th></tr></thead><tbody><tr><td class="mono">id</td><td>8 caracteres, único por emissão</td><td>serve de número de contrato</td></tr><tr><td class="mono">cliente</td><td>razão social como você digitou</td><td>aparece na marca d&#x27;água do CLAUDE.md do projeto</td></tr><tr><td class="mono">email</td><td>contato do cliente</td><td>opcional, mas útil para achar depois</td></tr><tr><td class="mono">validade</td><td>AAAA-MM-DD</td><td>conferida contra o relógio da máquina do cliente</td></tr><tr><td class="mono">maquina</td><td>impressão do computador</td><td>vazio = funciona em qualquer máquina</td></tr><tr><td class="mono">emitido_em</td><td>data da emissão</td><td>preenchido sozinho</td></tr></tbody></table></div>
+
+<h2 class="sec">Como gerenciar as ativações</h2>
+<p class="sub">Sendo direto: <b>hoje não há gestão</b>. O <code>gerar</code> imprime o serial e não registra nada. Enquanto isso não muda, o procedimento é manual:</p>
+<ul>
+ <li><b>Guarde cada serial emitido</b> num arquivo ou planilha, junto do cliente e da data. É o seu cadastro.</li>
+ <li><b>Sempre passe <code>--maquina</code>.</b> Sem ela, o serial funciona em qualquer computador, e o cliente pode copiá-lo à vontade.</li>
+ <li><b>Use validade curta</b>, do tamanho do contrato. É o único controle que você tem.</li>
+ <li><b>Renove com antecedência</b>: o cliente descobre o vencimento quando o plugin para.</li>
+</ul>
+<div class="aviso">
+ <b>Revogação não existe.</b>
+ <p>Um serial emitido vale até a data de validade e não há como cancelar antes. Revogar de verdade exige o servidor de licença, que está documentado como pendente em <code>licenca/LEIA-ME.md</code>.</p>
+</div>
+<div class="aviso">
+ <b>A licença é dissuasão, não proteção.</b>
+ <p>Ela impede o uso casual e amarra o serial à máquina. Não impede quem tem o pacote de ler os arquivos, e a validade é conferida contra o relógio da máquina do cliente, que ele controla.</p>
+</div>
+
+<h2 class="sec">Referência rápida</h2>
+<div class="scroll"><table><thead><tr><th style="width:34%">comando</th><th>quem roda</th></tr></thead><tbody>
+<tr><td class="mono">licenca.py chaves gerar --saida &lt;pasta&gt;</td><td>você, uma vez</td></tr>
+<tr><td class="mono">licenca.py gerar --cliente … --validade … --maquina … --chave-privada …</td><td>você, por cliente</td></tr>
+<tr><td class="mono">licenca.py maquina</td><td>o cliente, antes de receber o serial</td></tr>
+<tr><td class="mono">licenca.py instalar &lt;serial&gt;</td><td>o cliente, uma vez</td></tr>
+<tr><td class="mono">licenca.py verificar [--json]</td><td>o cliente, quando algo recusar</td></tr>
+</tbody></table></div>
+<p class="rodape">Todos os comandos ficam em <code>skills/conversao-wx/scripts/licenca.py</code>, e o comando <code>/wx-claude-code:licenca</code> os invoca de dentro de uma sessão. O que a licença protege e o que não protege está em <code>licenca/LEIA-ME.md</code>.</p>
+</div>

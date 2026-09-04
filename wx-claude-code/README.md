@@ -226,6 +226,9 @@ Os hooks do plugin fazem valer as regras: licença, portão G0, anexos somente l
 
 ## Licença e serial
 
+Como ativar cliente a cliente, passo a passo: `licenca/ATIVACAO.md`
+(e `docs/ativacao-do-serial.pdf` para mandar ao cliente).
+
 O plugin só roda com serial válido em `~/.wx-claude-code/licenca`, assinado com RSA-2048 pela chave privada de quem distribui; o plugin traz só a pública. Sem serial, os comandos param e o hook nega os scripts e a escrita em `.wx-migration/`. O que isso protege e o que não protege, e os comandos de quem distribui, em `licenca/LEIA-ME.md`; capítulo 8 do manual para o cliente.
 
 ## Vídeo de uso
