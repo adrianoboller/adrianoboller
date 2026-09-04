@@ -66,6 +66,18 @@ pub struct Volumes {
     /// disco, compartilhados por todas as instancias do processo. Ver
     /// [`ESCRITAS_PENDENTES`].
     pendentes: Pendentes,
+    /// Quantos `fsync` de verdade este conjunto ja mandou.
+    ///
+    /// # Por que ele nao e' o `sincronizacoes`
+    ///
+    /// Porque o outro conta a CHAMADA e este conta o ARQUIVO, e a diferenca
+    /// entre os dois e' exatamente o defeito que esta rodada consertou:
+    /// `sincronizar()` incrementava `sincronizacoes`, devolvia `Ok(())` e nao
+    /// tocava disco nenhum quando `abertos` estava vazio. Um teste que
+    /// conferisse o contador antigo -- ou o selo -- passaria com o defeito de
+    /// pe, porque os dois medem a INTENCAO. Este mede o fato, e e' o que
+    /// permite provar a durabilidade sem `strace`.
+    sincronizados: u64,
 }
 
 /// A senha que ordena as sincronizacoes do processo inteiro.
@@ -166,6 +178,7 @@ impl Volumes {
             sincronizacoes: 0,
             selo: 0,
             pendentes,
+            sincronizados: 0,
         }
     }
 
@@ -492,24 +505,29 @@ impl Volumes {
     }
 
     /// As duas listas de `sincronizar`, sem o espelho e sem o registro.
+    ///
+    /// A lista sai INTEIRA antes do primeiro `fsync`, e isso nao e' estilo. Um
+    /// laco que sincroniza e ABRE ao mesmo tempo faz o LRU despejar quem acabou
+    /// de ser sincronizado, e a volta do laco o sincroniza de novo: com o cache
+    /// em 4 e oito volumes sujos saiam **12** `fsync` para oito arquivos.
     fn sincronizar_listas(&mut self, pendentes: &BTreeSet<u32>) -> Result<()> {
-        for f in self.abertos.values_mut() {
-            f.flush()?;
-            f.sync_all()?;
-        }
+        let mut alvos: BTreeSet<u32> = self.abertos.keys().copied().collect();
         for volume in pendentes {
-            if self.abertos.contains_key(volume) {
-                continue; // ja foi no laco de cima
-            }
             // O volume pode ter sumido entre a escrita e agora -- `apagar_tudo`
             // no reindex, um `rename` que trocou o arquivo inteiro. Arquivo que
             // nao existe nao tem pagina suja a levar.
-            if !self.existe(*volume) {
-                continue;
+            if !alvos.contains(volume) && self.existe(*volume) {
+                alvos.insert(*volume);
             }
-            let f = self.arquivo(*volume, false)?;
+        }
+        for volume in alvos {
+            // Quem ja esta em `abertos` volta pelo mesmo descritor, inclusive
+            // se o arquivo tiver sido apagado debaixo dele: `arquivo` so' pede
+            // o disco quando o volume nao esta no cache.
+            let f = self.arquivo(volume, false)?;
             f.flush()?;
             f.sync_all()?;
+            self.sincronizados += 1;
         }
         Ok(())
     }
@@ -517,6 +535,12 @@ impl Volumes {
     /// Quantas vezes este conjunto pediu o disco. Ver o campo.
     pub fn sincronizacoes(&self) -> u64 {
         self.sincronizacoes
+    }
+
+    /// Quantos arquivos este conjunto ja mandou ao disco de verdade. Ver o
+    /// campo -- ele conta o ARQUIVO, e o `sincronizacoes` conta a CHAMADA.
+    pub fn sincronizados(&self) -> u64 {
+        self.sincronizados
     }
 
     /// A senha da ultima sincronizacao. Zero = nunca sincronizou. Ver o campo.
@@ -582,6 +606,101 @@ mod tests {
         assert_eq!(
             v.caminho(42).file_name().unwrap().to_string_lossy(),
             "cadastroClientes_042.reg"
+        );
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// A prova do registro de escritas pendentes, no caso que motivou tudo:
+    /// quem escreveu ja morreu, e quem sincroniza nunca tocou o arquivo.
+    ///
+    /// **Prova real:** apague a chamada a `marcar_escrito` do `escrever` e este
+    /// teste falha com `sincronizados = 0` -- que era exatamente o que
+    /// `sincronizar()` fazia enquanto devolvia `Ok(())`.
+    #[test]
+    fn o_fecho_alcanca_o_que_outra_instancia_escreveu() {
+        let d = dir_temp("pendente-de-outro");
+        {
+            let mut a = Volumes::novo(&d, "t", "reg", Paginacao::DESLIGADA);
+            a.criar(1).unwrap();
+            // Sincroniza AQUI: sem isto a marca que o `criar` deixou faria o
+            // teste passar mesmo com a marca do `escrever` apagada -- e teste
+            // que passa por engano e' pior que teste que falta.
+            a.sincronizar().unwrap();
+            a.escrever(1, 0, b"dado que ainda nao foi ao disco").unwrap();
+            // Morre sem sincronizar: e' o `gravar_de_verdade` quando a janela
+            // de durabilidade ainda nao fechou.
+        }
+        let mut b = Volumes::novo(&d, "t", "reg", Paginacao::DESLIGADA);
+        assert_eq!(b.sincronizados(), 0, "a instancia nova nao tocou nada ainda");
+        b.sincronizar().unwrap();
+        assert!(
+            b.sincronizados() >= 1,
+            "o fecho da janela nao mandou nenhum arquivo ao disco: quem escreveu              foi outra instancia, e `abertos` desta esta vazio"
+        );
+        // E a marca sai depois de gastar: sincronizar de novo, sem escrita no
+        // meio, nao repete o `fsync` do que ja foi.
+        let gastos = b.sincronizados();
+        b.sincronizar().unwrap();
+        assert_eq!(
+            b.sincronizados(),
+            gastos + 1,
+            "o segundo fecho devia gastar so' o descritor que o primeiro deixou              aberto, e nao repetir a lista de pendentes"
+        );
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// O volume do MEIO de uma tabela paginada -- o que nem a reabertura abre,
+    /// porque nao e' o volume 1 nem a fronteira de escrita.
+    #[test]
+    fn o_fecho_alcanca_volume_do_meio_de_tabela_paginada() {
+        let d = dir_temp("pendente-do-meio");
+        let p = Paginacao::nova(10, 99).unwrap();
+        {
+            let mut a = Volumes::novo(&d, "t", "reg", p);
+            for v in 1..=5 {
+                a.criar(v).unwrap();
+            }
+            a.sincronizar().unwrap();
+            // So' o volume 3, que e' o caso de um `atualizar` no meio.
+            a.escrever(3, 0, b"linha alterada no meio").unwrap();
+        }
+        let mut b = Volumes::novo(&d, "t", "reg", p);
+        b.sincronizar().unwrap();
+        assert_eq!(
+            b.sincronizados(),
+            1,
+            "devia mandar ao disco exatamente o volume 3 -- nem menos (o dado              se perde numa queda de energia) nem mais (fsync em volume limpo              custa 52 us medidos)"
+        );
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// O terceiro buraco do mesmo defeito: o LRU despeja o descritor de quem
+    /// escreveu, e o `fsync` ia embora junto.
+    #[test]
+    fn o_despejo_do_lru_nao_leva_o_fsync_junto() {
+        let d = dir_temp("despejo-lru");
+        let p = Paginacao::nova(10, 999).unwrap();
+        let mut v = Volumes::novo(&d, "t", "reg", p);
+        v.limite = 4; // o mesmo mecanismo, numa escala que cabe num teste
+        for n in 1..=8 {
+            v.criar(n).unwrap();
+        }
+        // O mesmo cuidado do teste irmao: a marca do `criar` sai da frente
+        // antes de a do `escrever` ser cobrada.
+        v.sincronizar().unwrap();
+        let ate_aqui = v.sincronizados();
+        for n in 1..=8 {
+            v.escrever(n, 0, b"escrita que ainda nao foi ao disco").unwrap();
+        }
+        assert!(
+            !v.abertos.contains_key(&1),
+            "o teste so' prova algo se o volume 1 tiver mesmo sido despejado"
+        );
+        v.sincronizar().unwrap();
+        assert_eq!(
+            v.sincronizados() - ate_aqui,
+            8,
+            "os oito volumes foram escritos e nenhum pode ficar sem `fsync` --              quatro estao no cache e quatro sairam dele"
         );
         std::fs::remove_dir_all(&d).unwrap();
     }
