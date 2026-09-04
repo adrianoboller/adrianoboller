@@ -9,6 +9,15 @@ Mobile** para outra linguagem sem inventar o que o projeto faz. Começa por um
 questionário (bloco 0 e letras A–L), passa por gates com aprovação humana e termina com cada
 regra ligada a evidência, código e teste.
 
+## O principal, que não muda
+
+Este plugin converte **WLanguage** — WINDEV, WEBDEV e WINDEV Mobile — para outra linguagem. Isso é pétreo: tudo o mais existe para servir a esse caso.
+
+Duas aberturas, que não substituem o principal:
+
+- **Legado E/OU.** O projeto pode ser WX, PHP, outra linguagem, ou uma combinação. `projeto.produtos` aceita um ou mais de `windev`, `webdev`, `windev-mobile`, `php`, `outra`, e `projeto.principal` diz qual manda quando a evidência conflita.
+- **Destino em qualquer linguagem.** Os perfis (Rust, Python, C# + WL_C#, Go, Java, Node, PHP) são sugestão. Com `perfil: outra`, a linguagem e o framework são livres e o processo de conversão sai genérico.
+
 ## Instalar
 
 ```bash
@@ -191,7 +200,7 @@ geradas por `docs/prints/gerar.md`).
 | ![equipe](docs/prints/29-equipe-prioritaria-pesquisador-e-status.png) equipe prioritária: infrutífero aciona o Pesquisador; status por agente sem inventar | ![rag](docs/prints/30-rag-e-guarda-de-anexos.png) RAG do projeto cita `arquivo#linha`; anexo somente leitura recusado |
 | ![corpus](docs/prints/31-corpus-no-claude-md-e-no-rag.png) o Help consultado por tema, com id e hash, a partir do `CLAUDE.md` gerado e do RAG | ![skills erp](docs/prints/32-skills-erp-listadas.png) as onze skills do plugin listadas numa sessão nova, oito delas de ERP |
 | ![esqueleto](docs/prints/33-esqueleto-erp-e-skill-por-modulo.png) esqueleto de ERP gerado por L6: módulo → skill, ADR lida, `erp-inventory` carregada e citada | ![skills.sh](docs/prints/34-skills-recomendadas-e-regras-absorvidas.png) skills do skills.sh que cabem nas respostas, tipos de dinheiro e data, STRIDE → SEC-* → teste |
-| ![artefatos](docs/prints/35-artefatos-e-skill-de-php.png) artefatos: arquivado ≠ declarado, o hash como prova, e a skill de PHP nas armadilhas do legado | |
+| ![artefatos](docs/prints/35-artefatos-e-skill-de-php.png) artefatos: arquivado ≠ declarado, o hash como prova, e a skill de PHP nas armadilhas do legado | ![comandos](docs/prints/36-comandos-e-legado-e-ou.png) os dezessete comandos, as 59 perguntas por id, e legado só PHP com destino Elixir aceito |
 
 ## Hooks e RAG
 

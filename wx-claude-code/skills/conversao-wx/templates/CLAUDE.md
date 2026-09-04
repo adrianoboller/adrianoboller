@@ -1,5 +1,11 @@
 # Regras do projeto de conversão WX
 
+## O que este projeto é
+
+Conversão de sistema legado para outra linguagem, com evidência e prova. O caso principal, e a razão de o plugin existir, é **WLanguage — WINDEV, WEBDEV, WINDEV Mobile — indo para outra linguagem**. Legado em PHP ou em outra linguagem entra ao lado, ou sozinho; o destino é o que as letras H e I disseram, e pode ser qualquer linguagem.
+
+Regra que vale para todos os casos: **regra de negócio só existe com origem localizável**. Sem origem, é `GAP-*`.
+
 Este arquivo deve ser copiado para a raiz do repositório de destino.
 
 ## Objetivo

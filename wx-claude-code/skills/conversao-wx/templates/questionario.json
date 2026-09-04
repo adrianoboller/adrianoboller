@@ -17,7 +17,15 @@
       "framework": "",
       "estilo": "",
       "observacao": "framework: laravel | symfony | codeigniter | wordpress | nenhum; estilo: procedural | oop | misto; raiz: pasta do codigo PHP dentro da raiz de evidencias"
-    }
+    },
+    "principal": "windev",
+    "legado_outra": {
+      "linguagem": "",
+      "versao": "",
+      "framework": "",
+      "observacao": "preencher so quando produtos incluir 'outra'; a skill de conversao generica trata o resto"
+    },
+    "observacao_legado": "produtos: um ou mais de windev | webdev | windev-mobile | php | outra (E/OU, nao E). WLanguage (WINDEV, WEBDEV, WINDEV Mobile) e o caso principal e nunca sai do plugin; php e outra entram junto ou sozinhos. principal: qual deles manda quando houver conflito de evidencia"
   },
   "0_empresa_e_projeto": {
     "0_1_softhouse": {
@@ -322,7 +330,7 @@
       "prioridade": "",
       "linguagem_ja_em_uso": ""
     },
-    "observacao": "perfil: rust | python | csharp-wl | go | java | node; sinais preenchidos quando o usuário não sabia a linguagem",
+    "observacao": "perfil: rust | python | csharp-wl | go | java | node | php | outra; com 'outra', preencha linguagem e framework livremente e o processo sai generico; sinais preenchidos quando o usuario nao sabia a linguagem",
     "processo": {
       "mostrado": "nenhuma",
       "estrategia": "",
@@ -337,7 +345,7 @@
     "framework": "",
     "plataformas": [],
     "navegadores_e_dispositivos": [],
-    "observacao": "perfil: react | vue | svelte | blazor | flutter | tauri",
+    "observacao": "perfil: react | vue | blazor | htmx | flutter | react-native | outra; com 'outra', linguagem e framework livres",
     "processo": {
       "mostrado": "nenhuma",
       "estrategia": "",

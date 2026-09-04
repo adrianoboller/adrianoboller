@@ -1,10 +1,14 @@
 ---
-description: "Questionario inicial do projeto WX: bloco 0 (empresa, prazo, orcamento, GitHub), letras A-J, K (ambiente) e L (kickoff, hooks, MCP, deploy). Gera .wx-migration/ e o contexto do projeto."
+description: "Questionario do projeto: bloco 0, letras A a M. Legado WX e/ou PHP e/ou outra; destino em qualquer linguagem. Gera .wx-migration/ e o contexto."
 argument-hint: "[raiz-do-projeto-de-destino]"
 allowed-tools: "Read, Glob, Grep, Bash, Write, AskUserQuestion"
 ---
 
 # Questionário inicial do WX Claude Code
+
+**O que este plugin faz, e não muda:** converter **WLanguage** — WINDEV, WEBDEV, WINDEV Mobile — para outra linguagem. Isso é pétreo. Legado em **PHP ou em outra linguagem** entra **junto ou sozinho** (E/OU, nunca E obrigatório), e o **destino pode ser qualquer linguagem**: os perfis são sugestão, não limite. Se o cliente disser uma linguagem que não está na lista, use `perfil: outra` e escreva a linguagem e o framework; o processo sai genérico e o G3 detalha.
+
+Uma pergunta isolada se refaz com `/wx-claude-code:pergunta <id>`; a lista de todos os ids e de todos os comandos está em `/wx-claude-code:comandos`.
 
 > **Identificação obrigatória.** Comece toda resposta com a linha que o PMO fornece: `BlocoNNNN-SPNNNNN-Título · data` (`pmo.py identificacao`). O hook a injeta a cada interação; se não vier, gere-a antes de responder. Sem PMO iniciado, escreva `Bloco0000-SP00000-Sem PMO iniciado · data`.
 

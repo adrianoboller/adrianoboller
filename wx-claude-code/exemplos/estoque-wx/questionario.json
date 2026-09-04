@@ -19,7 +19,15 @@
       "framework": "",
       "estilo": "",
       "observacao": "framework: laravel | symfony | codeigniter | wordpress | nenhum; estilo: procedural | oop | misto; raiz: pasta do codigo PHP dentro da raiz de evidencias"
-    }
+    },
+    "principal": "windev",
+    "legado_outra": {
+      "linguagem": "",
+      "versao": "",
+      "framework": "",
+      "observacao": "preencher so quando produtos incluir 'outra'; a skill de conversao generica trata o resto"
+    },
+    "observacao_legado": "produtos: um ou mais de windev | webdev | windev-mobile | php | outra (E/OU, nao E). WLanguage (WINDEV, WEBDEV, WINDEV Mobile) e o caso principal e nunca sai do plugin; php e outra entram junto ou sozinhos. principal: qual deles manda quando houver conflito de evidencia"
   },
   "0_empresa_e_projeto": {
     "0_1_softhouse": {
@@ -459,7 +467,8 @@
       "mapeamento_confirmado": true,
       "quer_diferente": "relatórios: manter o gerador do legado até o G6, porque as etiquetas térmicas são o risco RSK-002",
       "observacao": ""
-    }
+    },
+    "observacao": "perfil: rust | python | csharp-wl | go | java | node | php | outra; com 'outra', preencha linguagem e framework livremente e o processo sai generico; sinais preenchidos quando o usuario nao sabia a linguagem"
   },
   "I_frontend": {
     "linguagem": "TypeScript",
@@ -479,7 +488,8 @@
       "telas_por_vez": "modulo a modulo",
       "quer_diferente": "a grade de movimentação é a primeira tela, por ser a mais usada",
       "observacao": ""
-    }
+    },
+    "observacao": ""
   },
   "J_economia_de_tokens": {
     "ativar": true,

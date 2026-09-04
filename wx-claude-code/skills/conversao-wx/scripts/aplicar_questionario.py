@@ -457,6 +457,19 @@ def validar_entradas(q: dict) -> None:
     _confere(g.get("usuario"), RX_IDENT, "0.15 usuario")
     _confere(g.get("credencial_ref"), RX_VAR, "0.15 credencial_ref")
     _confere(g.get("diretorio_destino"), RX_CAMINHO, "0.15 diretorio_destino")
+    # Legado E/OU: um ou mais produtos. WLanguage e o principal e nunca sai do
+    # plugin; php e outra entram ao lado, ou sozinhos.
+    p = q.get("projeto") or {}
+    prods = [str(x).strip().lower() for x in (p.get("produtos") or []) if str(x).strip()]
+    desconhecidos = [x for x in prods if x not in PRODUTOS_LEGADO]
+    if desconhecidos:
+        raise ValueError(f"projeto.produtos {desconhecidos} desconhecido(s); aceitos: {', '.join(sorted(PRODUTOS_LEGADO))}")
+    if prods and p.get("principal") and p["principal"].strip().lower() not in prods:
+        raise ValueError(f"projeto.principal {p['principal']!r} nao esta em produtos {prods}")
+    if "outra" in prods and not ((p.get("legado_outra") or {}).get("linguagem") or "").strip():
+        raise ValueError("projeto.produtos inclui 'outra': preencha projeto.legado_outra.linguagem")
+    if (p.get("legado_php") or {}).get("tem") and "php" not in prods:
+        raise ValueError("projeto.legado_php.tem = true exige 'php' em projeto.produtos")
     k = q.get("K_ambiente") or {}
     k0 = k.get("K0_privilegios") or {}
     if k0.get("modo") not in (None, "", "sudo", "root", "nenhum"):
@@ -666,13 +679,34 @@ ESTRATEGIAS = {
 }
 
 
+PRODUTOS_LEGADO = {"windev", "webdev", "windev-mobile", "php", "outra"}
+# WLanguage e o caso principal do plugin e nao sai dele: converter WINDEV,
+# WEBDEV e WINDEV Mobile para outra linguagem e a razao de o plugin existir.
+# PHP e "outra" entram ao lado (E/OU), nunca no lugar.
+PRODUTOS_WX = {"windev", "webdev", "windev-mobile"}
+
+
+def mapa_do_perfil(perfil: str, linguagem: str) -> tuple[str, list[str]]:
+    """O que cada peca vira no perfil. Perfil desconhecido ou 'outra' cai no
+    mapa generico, com o nome da linguagem que o usuario deu: destino livre nao
+    pode travar o questionario."""
+    if perfil in MAPA_BACKEND:
+        return MAPA_BACKEND[perfil]
+    nome = (linguagem or perfil or "destino escolhido").strip()
+    return (nome, [f"funcoes ou metodos por dominio em {nome}", f"classes ou o equivalente de {nome}; heranca so a que existe",
+                   "esquema do banco migrado por script, com as chaves e ligacoes da analise",
+                   "repositorio por arquivo HFSQL, com a consulta explicita", "uma funcao por query .WDR",
+                   "API ou tela por caso de uso", "gerador de relatorio comparado pagina a pagina",
+                   "biblioteca padrao da linguagem, mapeada no inventario"])
+
+
 def esboco_processo(q: dict) -> str:
     h = q.get("H_backend", {}) or {}
     i = q.get("I_frontend", {}) or {}
     ph = h.get("processo", {}) or {}
     pi = i.get("processo", {}) or {}
     perfil = str(h.get("perfil", "")).lower()
-    nome, colunas = MAPA_BACKEND.get(perfil, (h.get("linguagem") or "(perfil nao escolhido)", ["(a definir no G3)"] * len(PECAS)))
+    nome, colunas = mapa_do_perfil(perfil, h.get("linguagem") or "")
     est = ph.get("estrategia", "")
     if est and est not in ESTRATEGIAS:
         raise ValueError(f"estrategia {est!r} desconhecida (aceitas: {', '.join(ESTRATEGIAS)})")

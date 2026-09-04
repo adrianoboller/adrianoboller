@@ -275,6 +275,74 @@ class Questionario(unittest.TestCase):
         self.assertIn("## Backend: PHP 8.3", (outro / ".wx-migration/processo-de-conversao.md").read_text())
         self.assertIn("FROM php:8.3-fpm-alpine", (outro / "Dockerfile").read_text())
 
+    def test_legado_e_ou_e_destino_em_qualquer_linguagem(self):
+        """Legado e E/OU (um ou mais produtos) e o destino nao esta preso a lista;
+        mas o validador continua recusando produto desconhecido e 'outra' sem linguagem."""
+        base = json.loads((self.tmp / ".wx-migration/questionario.json").read_text())
+
+        def aplica(q, pasta):
+            d = self.tmp / pasta; (d / ".wx-migration").mkdir(parents=True)
+            shutil.copytree(EXEMPLO / "inputs", d / "inputs")
+            (d / ".wx-migration/questionario.json").write_text(json.dumps(q))
+            return d, run(SCRIPTS / "aplicar_questionario.py", "--questionario", d / ".wx-migration/questionario.json",
+                          "--project-root", d, "--plugin-root", RAIZ)
+
+        # so PHP, sem nenhum produto WX: o plugin aceita
+        q = json.loads(json.dumps(base))
+        q["projeto"]["produtos"] = ["php"]; q["projeto"]["principal"] = "php"
+        q["projeto"]["legado_php"] = {"tem": True, "raiz": "./inputs", "versao": "7.4", "framework": "nenhum", "estilo": "procedural"}
+        d, r = aplica(q, "so-php")
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+        # WX + PHP + outra, com destino fora da lista de perfis
+        q = json.loads(json.dumps(base))
+        q["projeto"]["produtos"] = ["windev", "php", "outra"]; q["projeto"]["principal"] = "windev"
+        q["projeto"]["legado_outra"] = {"linguagem": "Delphi 7", "versao": "7", "framework": "VCL", "observacao": ""}
+        q["H_backend"]["perfil"] = "outra"; q["H_backend"]["linguagem"] = "Elixir"; q["H_backend"]["framework"] = "Phoenix"
+        d, r = aplica(q, "misto")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        proc = (d / ".wx-migration/processo-de-conversao.md").read_text()
+        self.assertIn("## Backend: Elixir", proc)
+        self.assertIn("funcoes ou metodos por dominio em Elixir", proc)
+
+        # recusas: produto desconhecido, principal fora da lista, 'outra' sem linguagem
+        for muda, esperado in (
+            (lambda x: x["projeto"].__setitem__("produtos", ["cobol"]), "desconhecido"),
+            (lambda x: (x["projeto"].__setitem__("produtos", ["windev"]), x["projeto"].__setitem__("principal", "php")), "nao esta em produtos"),
+            (lambda x: (x["projeto"].__setitem__("produtos", ["outra"]), x["projeto"].__setitem__("principal", "outra"),
+                        x["projeto"].__setitem__("legado_outra", {"linguagem": ""})), "legado_outra.linguagem"),
+        ):
+            q = json.loads(json.dumps(base)); muda(q)
+            f = self.tmp / "ruim.json"; f.write_text(json.dumps(q))
+            alvo = self.tmp / "x"; alvo.mkdir(exist_ok=True)
+            r = run(SCRIPTS / "aplicar_questionario.py", "--questionario", f, "--project-root", alvo, "--plugin-root", RAIZ)
+            self.assertEqual(r.returncode, 2, r.stdout); self.assertIn(esperado, r.stderr)
+
+    def test_lista_de_perguntas_cobre_o_modelo_e_todo_recurso_tem_comando(self):
+        """A lista de ids sai do modelo (nada escrito a mao) e todo bloco aparece nela;
+        e cada recurso do plugin tem um comando que o invoca."""
+        r = run(SCRIPTS / "listar_perguntas.py", "--json")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        itens = json.loads(r.stdout)
+        ids = {i["id"] for i in itens}
+        for esperado in ("0", "0.16", "A", "F", "F0", "F9", "H", "I", "K", "K7", "L", "L6", "M", "PROJ"):
+            self.assertIn(esperado, ids, esperado)
+        modelo = json.loads((RAIZ / "skills/conversao-wx/templates/questionario.json").read_text())
+        blocos = {k for k in modelo if k not in {"schema_version", "respondido_em"}}
+        self.assertEqual({i["bloco"] for i in itens if i["nivel"] == 1}, blocos)
+        r = run(SCRIPTS / "listar_perguntas.py", "--id", "nao-existe")
+        self.assertEqual(r.returncode, 2)
+        cmds = {p.stem for p in (RAIZ / "commands").glob("*.md")}
+        for c in ("questionario", "pergunta", "comandos", "converter", "preflight", "artefato", "estilo-telas",
+                  "golden", "pmo", "equipe", "ambiente", "help-wl", "rag", "exportar", "zelador", "licenca", "laudo-tokens"):
+            self.assertIn(c, cmds, c)
+        indice = (RAIZ / "commands" / "comandos.md").read_text()
+        for c in cmds:
+            self.assertIn(f"/wx-claude-code:{c}", indice, f"{c} fora do índice")
+        for p in (RAIZ / "commands").glob("*.md"):
+            desc = re.search(r'^description: "?(.+?)"?$', p.read_text(), re.M).group(1)
+            self.assertLessEqual(len(desc), 300, f"{p.name}: {len(desc)} caracteres")
+
     def test_skills_erp_presentes_com_descricao_curta(self):
         for nome in ("php-legado-e-destino", "erp-accounting", "erp-inventory", "erp-brazil-fiscal", "erp-multi-company", "erp-approval-workflows", "erp-lgpd", "erp-integration-reliability", "windev-wlanguage-erp"):
             txt = (RAIZ / "skills" / nome / "SKILL.md").read_text()
