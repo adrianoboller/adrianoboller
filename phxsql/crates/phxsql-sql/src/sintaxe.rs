@@ -518,8 +518,10 @@ impl Analisador {
                     .unwrap_or_default();
                 let motivo = match palavra.as_str() {
                     "LIKE" => {
-                        "LIKE precisaria varrer comparando texto linha a linha, e o \
-                               varrer nao filtra"
+                        "LIKE precisaria varrer comparando texto linha a linha; o \
+                               varrer sabe fazer isso (`onde` com `contem`), mas \
+                               so dentro da pagina que examina, e um SELECT nao \
+                               tem onde dizer isso a quem le a resposta"
                     }
                     "IN" => {
                         "IN e uma lista de buscas; o motor faz cada uma, mas quem \

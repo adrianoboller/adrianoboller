@@ -10513,6 +10513,23 @@ impl Servidor {
         let _trava = self.travar_dados()?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
 
+        // O PREDICADO. Ele nasce vazio, e vazio quer dizer «tudo passa»: quem
+        // nao manda `"onde"` -- todo cliente escrito antes desta versao -- faz
+        // exatamente o que fazia, byte por byte. Guarda nova entra pedida.
+        //
+        // O que ele muda e o TRANSPORTE, e nao a varredura: sem indice, o
+        // motor le as mesmas `max` linhas para decidir quais passam. Medido em
+        // `--example onde-doi-no-varrer`, numa tabela de 100.000 linhas com
+        // `max=2500` e uma em cem casando: a leitura das linhas e 48,0% do
+        // tempo e o transporte (montar o JSON, serializar, o fio e a analise
+        // no cliente) e 52,0% -- 26.755 us viraram 12.902, e 532.777 bytes no
+        // fio viraram 5.638.
+        //
+        // Por isso `max` continua querendo dizer LINHAS EXAMINADAS: mudar o
+        // teto para «linhas devolvidas» faria o filtro que casa pouco varrer a
+        // tabela inteira com a trava global na mao, e esse custo ninguem mediu.
+        let onde = filtros_do_pedido(p, t.esquema())?;
+
         // `visao` decide o que a varredura enxerga. O padrao e "ativas": a
         // linha marcada como excluida some das listas, senao marcar nao teria
         // efeito nenhum.
@@ -10579,6 +10596,22 @@ impl Servidor {
                 a.siga(1)?;
             }
             if let Some(l) = t.ler(rowid)? {
+                // A PENEIRA VEM ANTES DE MONTAR O JSON, e essa ordem e a
+                // funcionalidade inteira: montar para depois jogar fora seria
+                // pagar o transporte que o filtro existe para nao pagar.
+                //
+                // `casa` e a MESMA funcao do `SelectMemory` (mora no
+                // `phxsql-store`): duas copias divergiriam, e a divergencia
+                // apareceria como o mesmo filtro dando respostas diferentes
+                // conforme a tabela estivesse carregada em memoria ou nao.
+                if !onde.iter().all(|f| {
+                    // `get` e nao indice: uma linha gravada antes de uma
+                    // coluna nova nasce curta, e coluna que a linha nao tem e
+                    // NULA -- que e o que ela e, e nao um panico.
+                    phxsql_store::memoria::casa(l.get(f.coluna).unwrap_or(&Value::Null), f)
+                }) {
+                    continue;
+                }
                 let mut obj = vec![("rowid".to_string(), Json::de_u64(rowid))];
                 if let Json::Objeto(pares) = linha_para_json(&l, t.esquema()) {
                     obj.extend(pares);
@@ -10592,19 +10625,28 @@ impl Servidor {
         // em vez de 10.000 vezes o numero de colunas marcadas. O criterio
         // guarda como a pagina foi pedida, que e o que um auditor precisa
         // para refazer o caminho.
+        // Fora da closure porque ela ja empresta `t` mutavel, e o esquema sai
+        // de `t`. Custa uma String so para quem MANDOU filtro; quem nao mandou
+        // nao paga nem essa.
+        let peneira = if onde.is_empty() {
+            String::new()
+        } else {
+            format!(" onde={}", descrever_filtros(&onde, t.esquema()))
+        };
         Self::trilhar_acesso(&mut t, 0, linhas.len() as u64, || {
-            let onde = if por_indice {
+            let ordem_pedida = if por_indice {
                 format!("indice={indice}")
             } else {
                 "ordem=digitacao".to_string()
             };
-            format!("varrer {onde} visao={} modo={modo} pular={pular}", {
+            format!(
+                "varrer {ordem_pedida} visao={} modo={modo} pular={pular}{peneira}",
                 match visao {
                     Visao::Ativas => "ativas",
                     Visao::Excluidas => "excluidas",
                     Visao::Todas => "todas",
                 }
-            })
+            )
         })?;
 
         // O cursor para pedir a proxima pagina e a anterior. Vai pronto na
@@ -10635,6 +10677,12 @@ impl Servidor {
             ("visiveis", Json::de_u64(visiveis)),
             ("marcadas", Json::de_u64(t.marcadas())),
             ("devolvidas", Json::de_u64(linhas.len() as u64)),
+            // Quantas linhas o motor OLHOU para responder. Sem filtro ela e
+            // igual a `devolvidas` -- que e a verdade de sempre, agora dita em
+            // voz alta. Com filtro as duas se separam, e e essa diferenca que
+            // deixa a tela dizer «olhei 2.500 das 100.000, 25 casaram» em vez
+            // de dizer que a tabela tem 25 linhas de Blumenau.
+            ("examinadas", Json::de_u64(rowids.len() as u64)),
             ("modo", Json::texto_de(modo)),
             // Como o inicio da pagina foi achado, quando o modo e por posicao.
             // «bisseccao» sao ~20 leituras; «passo» sao `pular` leituras.
@@ -14100,22 +14148,7 @@ impl Servidor {
             }
         }
 
-        let mut onde = Vec::new();
-        if let Some(l) = p.campo("onde").and_then(Json::lista) {
-            for f in l {
-                let coluna = coluna_de(
-                    f.campo("coluna")
-                        .ok_or_else(|| PhxError::Esquema("filtro sem \"coluna\"".into()))?,
-                    esquema,
-                )?;
-                let op = Operador::de_texto(f.texto_ou("op", "="))?;
-                let valor = match f.campo("valor") {
-                    Some(v) => crate::valores::json_para_valor(v, &esquema.colunas()[coluna].ty)?,
-                    None => phxsql_core::value::Value::Null,
-                };
-                onde.push(Filtro { coluna, op, valor });
-            }
-        }
+        let onde = filtros_do_pedido(p, esquema)?;
 
         let mut ordenar = Vec::new();
         if let Some(l) = p.campo("ordenar").and_then(Json::lista) {
@@ -15664,6 +15697,63 @@ fn coluna_de(j: &Json, esquema: &phxsql_core::schema::Schema) -> Result<usize> {
         .iter()
         .position(|c| c.nome == nome)
         .ok_or_else(|| PhxError::Esquema(format!("coluna {nome:?} nao existe")))
+}
+
+/// Os filtros `"onde"` de um pedido, contra o esquema da tabela.
+///
+/// UM parser para os dois caminhos -- o `SelectMemory`, que le da memoria, e
+/// o `varrer`, que le do disco. Escrever a leitura do `"onde"` duas vezes
+/// daria dois contratos com a mesma cara: bastava um deles aprender um
+/// operador novo, ou tratar um nulo de outro jeito, para o mesmo pedido
+/// responder coisas diferentes conforme a tabela estivesse carregada.
+///
+/// Pedido sem `"onde"` devolve lista vazia -- e e por isso que quem nunca
+/// ouviu falar de filtro continua pagando exatamente o que pagava.
+///
+/// # O que ele NAO abre
+///
+/// Nenhum caminho novo para NOMEAR TABELA. O filtro fala de COLUNA da tabela
+/// que ja esta em `"tabela"`, e o portao de permissao le esse campo. Se um dia
+/// o `"onde"` ganhar uma subconsulta, ela nomeia tabela e passa a precisar de
+/// conferencia propria, como `juntar`, `unir` e `pivotar` pagam hoje.
+fn filtros_do_pedido(p: &Json, esquema: &phxsql_core::schema::Schema) -> Result<Vec<Filtro>> {
+    let Some(l) = p.campo("onde").and_then(Json::lista) else {
+        return Ok(Vec::new());
+    };
+    let mut onde = Vec::with_capacity(l.len());
+    for f in l {
+        let coluna = coluna_de(
+            f.campo("coluna")
+                .ok_or_else(|| PhxError::Esquema("filtro sem \"coluna\"".into()))?,
+            esquema,
+        )?;
+        let op = Operador::de_texto(f.texto_ou("op", "="))?;
+        let valor = match f.campo("valor") {
+            Some(v) => crate::valores::json_para_valor(v, &esquema.colunas()[coluna].ty)?,
+            None => phxsql_core::value::Value::Null,
+        };
+        onde.push(Filtro { coluna, op, valor });
+    }
+    Ok(onde)
+}
+
+/// Como o criterio da trilha de acesso descreve um filtro.
+///
+/// Vai para a trilha porque «quem procurou os clientes de Blumenau?» e
+/// exatamente a pergunta que se faz a uma trilha de acesso -- a mesma razao
+/// de o `buscar` guardar o indice e a chave pedidos.
+fn descrever_filtros(onde: &[Filtro], esquema: &phxsql_core::schema::Schema) -> String {
+    onde.iter()
+        .map(|f| {
+            format!(
+                "{} {} {}",
+                esquema.colunas()[f.coluna].nome,
+                f.op.nome(),
+                f.valor.para_texto()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" E ")
 }
 
 /// O total residente cabe no teto de `recursos.memoria_max_mb`?
@@ -18983,9 +19073,11 @@ mod testes_sql {
     }
 
     /// **O que nao tem substrato recusa dizendo o que falta.** `cidade` nao
-    /// tem indice, e o `varrer` NAO filtra: aceitar calado devolveria a tabela
-    /// inteira com o filtro esquecido no caminho -- ler demais e responder
-    /// errado sem avisar.
+    /// tem indice. O `varrer` PASSOU a filtrar (`"onde"`), e mesmo assim a
+    /// recusa fica: ele filtra dentro da pagina que EXAMINA, e um SELECT nao
+    /// tem onde dizer «respondi sobre as primeiras mil». Responder sobre a
+    /// primeira pagina com cara de ter respondido sobre a tabela e pior que
+    /// recusar.
     #[test]
     fn where_sem_indice_recusa_em_vez_de_trazer_tudo() {
         let s = servidor(&dir_temp("sem-indice"));
@@ -23167,5 +23259,316 @@ mod testes_transacoes {
         let s = servidor(&dir);
         assert_eq!(quantas(&s, &ses, "clientes"), 0);
         assert!(!caminho.exists(), "a marca ruim tem de sair do disco");
+    }
+}
+
+/// O `WHERE` do `varrer`: o predicado que o protocolo nao tinha.
+///
+/// # Por que ele existe, e por que ele para onde para
+///
+/// A grade da tela filtra o que esta NELA: pedia `varrer max=2500`, recebia
+/// 2.500 linhas e jogava fora 2.475 no navegador. Medido em
+/// `--example onde-doi-no-varrer` numa tabela de 100.000 linhas, com uma em
+/// cem casando: a leitura das linhas e **48,0%** do tempo e o transporte
+/// (montar o JSON, serializar, o fio e a analise no cliente) e **52,0%**. O
+/// teto previsto era **2,06x** e o medido pelo fio deu **2,07x** -- a
+/// premissa se sustentou. Com metade da tabela casando, **1,35x**.
+///
+/// `max` continua querendo dizer LINHAS EXAMINADAS, e nao devolvidas. Trocar
+/// isso faria um filtro pouco seletivo varrer a tabela inteira com a trava
+/// global na mao -- um custo que ninguem mediu.
+#[cfg(test)]
+mod testes_varrer_onde {
+    use super::*;
+
+    fn dir(rotulo: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!(
+            "phx-varrer-onde-{}-{rotulo}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    /// `n` linhas, uma em cada cem de Blumenau -- a seletividade da tela.
+    fn servidor_com_clientes(d: &std::path::Path, n: i64) -> Arc<Servidor> {
+        let c = Config {
+            base: d.to_path_buf(),
+            log_acessos: d.join("acessos.log"),
+            blacklist: d.join("blacklist.json"),
+            dblink: d.join("dblink.json"),
+            token: "t".into(),
+            max_linhas: 100_000,
+            ..Config::default()
+        };
+        let s = Servidor::novo(c).unwrap();
+        let sessao = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"loja"}"#), &sessao)
+            .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"loja","tabela":"clientes","colunas":[
+                    {"nome":"id","tipo":"Int8","obrigatoria":true},
+                    {"nome":"cidade","tipo":"Str(30)"}]}"#,
+            ),
+            &sessao,
+        )
+        .unwrap();
+        let linhas: Vec<String> = (1..=n)
+            .map(|i| {
+                let cidade = if i % 100 == 0 { "Blumenau" } else { "Itajai" };
+                format!(r#"{{"id":{i},"cidade":"{cidade}"}}"#)
+            })
+            .collect();
+        s.executar(
+            "inserir_lote",
+            &pedido(&format!(
+                r#"{{"database":"loja","tabela":"clientes","linhas":[{}]}}"#,
+                linhas.join(",")
+            )),
+            &sessao,
+        )
+        .unwrap();
+        s
+    }
+
+    fn varrer(s: &Arc<Servidor>, extra: &str) -> Json {
+        s.executar(
+            "varrer",
+            &pedido(&format!(
+                r#"{{"database":"loja","tabela":"clientes"{extra}}}"#
+            )),
+            &Sessao::default(),
+        )
+        .unwrap()
+    }
+
+    /// **O teste que mais importa**, e e o do comportamento VELHO.
+    ///
+    /// Guarda nova entra pedida, nao imposta: quem nunca ouviu falar de
+    /// `"onde"` -- todo cliente escrito antes desta versao -- recebe a mesma
+    /// pagina, do mesmo tamanho, com os mesmos cursores. Se este teste
+    /// quebrar, a funcionalidade nova tirou algo de quem nao pediu nada.
+    #[test]
+    fn sem_onde_nada_muda() {
+        let d = dir("velho");
+        let s = servidor_com_clientes(&d, 2500);
+
+        let r = varrer(&s, r#","max":2500"#);
+        assert_eq!(r.inteiro_ou("devolvidas", -1), 2500);
+        // `examinadas` e campo NOVO, e sem filtro ele repete `devolvidas`:
+        // e a verdade de sempre, agora dita em voz alta.
+        assert_eq!(r.inteiro_ou("examinadas", -1), 2500);
+        assert_eq!(r.inteiro_ou("visiveis", -1), 2500);
+        assert_eq!(r.inteiro_ou("cursor_inicio", -1), 1);
+        assert_eq!(r.inteiro_ou("cursor_fim", -1), 2500);
+        assert!(!r.booleano_ou("ha_mais", true));
+
+        // E a pagina curta continua curta.
+        let r = varrer(&s, r#","max":10"#);
+        assert_eq!(r.inteiro_ou("devolvidas", -1), 10);
+        assert_eq!(r.inteiro_ou("examinadas", -1), 10);
+        assert!(r.booleano_ou("ha_mais", false));
+
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **A PROVA REAL, e ela mede QUANTO veio -- nao se filtrou.**
+    ///
+    /// Com o predicado desligado (o `continue` do `op_varrer` fora), a busca
+    /// por Blumenau volta a trazer 2.500 e este teste REPROVA na primeira
+    /// assercao. Um teste que so perguntasse "todas sao de Blumenau?" passaria
+    /// com o defeito reposto se o cliente peneirasse depois -- e teste que
+    /// passa por engano e pior que teste que falta.
+    #[test]
+    fn blumenau_volta_25_e_nao_2500() {
+        let d = dir("blumenau");
+        let s = servidor_com_clientes(&d, 2500);
+
+        let r = varrer(
+            &s,
+            r#","max":2500,"onde":[{"coluna":"cidade","op":"=","valor":"Blumenau"}]"#,
+        );
+        assert_eq!(
+            r.inteiro_ou("devolvidas", -1),
+            25,
+            "o servidor mandou o que a tela ia jogar fora"
+        );
+        // O que o filtro NAO remove: a varredura continua olhando as 2.500.
+        // E o numero que impede a tela de mentir dizendo «a tabela tem 25».
+        assert_eq!(r.inteiro_ou("examinadas", -1), 2500);
+        assert_eq!(r.inteiro_ou("visiveis", -1), 2500);
+
+        let linhas = r.campo("linhas").and_then(Json::lista).unwrap();
+        assert_eq!(linhas.len(), 25);
+        for l in linhas {
+            assert_eq!(l.texto_ou("cidade", ""), "Blumenau");
+            assert_eq!(l.inteiro_ou("id", -1) % 100, 0);
+        }
+
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// O mesmo filtro tem de dar a MESMA resposta na memoria e no disco.
+    ///
+    /// A guarda contra a divergencia que duas copias de `casa` teriam criado:
+    /// o `varrer` e o `SelectMemory` chamam a mesma funcao do `phxsql-store`,
+    /// e este teste e o que acusa se um dia alguem escrever a segunda.
+    #[test]
+    fn o_filtro_do_varrer_e_o_do_selectmemory() {
+        let d = dir("gemeos");
+        let s = servidor_com_clientes(&d, 500);
+        let sessao = Sessao::default();
+        s.executar(
+            "memoria_carregar",
+            &pedido(r#"{"database":"loja","tabela":"clientes"}"#),
+            &sessao,
+        )
+        .unwrap();
+
+        // Um de cada familia de operador: igualdade, faixa, texto e nulo.
+        for onde in [
+            r#"[{"coluna":"cidade","op":"=","valor":"Blumenau"}]"#,
+            r#"[{"coluna":"cidade","op":"contem","valor":"blu"}]"#,
+            r#"[{"coluna":"id","op":">","valor":400}]"#,
+            r#"[{"coluna":"id","op":"<=","valor":50},{"coluna":"cidade","op":"!=","valor":"Blumenau"}]"#,
+            r#"[{"coluna":"cidade","op":"nulo"}]"#,
+            r#"[{"coluna":"cidade","op":"nao_nulo"}]"#,
+        ] {
+            let disco = varrer(&s, &format!(r#","max":500,"onde":{onde}"#));
+            let memoria = s
+                .executar(
+                    "SelectMemory",
+                    &pedido(&format!(
+                        r#"{{"database":"loja","tabela":"clientes","max":500,"onde":{onde}}}"#
+                    )),
+                    &sessao,
+                )
+                .unwrap();
+            let ids = |j: &Json| -> Vec<i64> {
+                j.campo("linhas")
+                    .and_then(Json::lista)
+                    .unwrap()
+                    .iter()
+                    .map(|l| l.inteiro_ou("rowid", -1))
+                    .collect()
+            };
+            assert_eq!(
+                ids(&disco),
+                ids(&memoria),
+                "o filtro {onde} respondeu diferente no disco e na memoria"
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// O cursor e o ultimo rowid EXAMINADO, e nao o ultimo devolvido.
+    ///
+    /// Se ele fosse o ultimo devolvido, a pagina seguinte comecaria depois da
+    /// ultima linha que CASOU -- e as linhas entre ela e o fim da pagina
+    /// examinada sumiriam sem ninguem ver. Aqui a soma das paginas tem de dar
+    /// o mesmo que a varredura inteira.
+    #[test]
+    fn paginar_com_filtro_nao_perde_linha() {
+        let d = dir("cursor");
+        let s = servidor_com_clientes(&d, 1000);
+        let onde = r#""onde":[{"coluna":"cidade","op":"=","valor":"Blumenau"}]"#;
+
+        let inteiro = varrer(&s, &format!(r#","max":1000,{onde}"#));
+        assert_eq!(inteiro.inteiro_ou("devolvidas", -1), 10);
+
+        let mut juntas = Vec::new();
+        let mut cursor = 0i64;
+        loop {
+            let r = varrer(&s, &format!(r#","max":300,"depois":{cursor},{onde}"#));
+            for l in r.campo("linhas").and_then(Json::lista).unwrap() {
+                juntas.push(l.inteiro_ou("rowid", -1));
+            }
+            if !r.booleano_ou("ha_mais", false) {
+                break;
+            }
+            let novo = r.inteiro_ou("cursor_fim", -1);
+            assert!(novo > cursor, "o cursor nao andou: {novo} <= {cursor}");
+            cursor = novo;
+        }
+        let esperadas: Vec<i64> = (1..=10).map(|i| i * 100).collect();
+        assert_eq!(juntas, esperadas, "paginar com filtro perdeu linha");
+
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// Coluna que nao existe e recusada na hora, com o nome dela no recado.
+    #[test]
+    fn coluna_inventada_no_onde_e_recusada() {
+        let d = dir("coluna");
+        let s = servidor_com_clientes(&d, 10);
+        let e = s
+            .executar(
+                "varrer",
+                &pedido(
+                    r#"{"database":"loja","tabela":"clientes",
+                        "onde":[{"coluna":"bairro","op":"=","valor":"x"}]}"#,
+                ),
+                &Sessao::default(),
+            )
+            .unwrap_err();
+        assert!(e.to_string().contains("bairro"), "{e}");
+
+        // E operador inventado tambem, com a lista dos que valem.
+        let e = s
+            .executar(
+                "varrer",
+                &pedido(
+                    r#"{"database":"loja","tabela":"clientes",
+                        "onde":[{"coluna":"cidade","op":"~=","valor":"x"}]}"#,
+                ),
+                &Sessao::default(),
+            )
+            .unwrap_err();
+        assert!(e.to_string().contains("contem"), "{e}");
+
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// O filtro entra na TRILHA de acesso.
+    ///
+    /// «Quem procurou os clientes de Blumenau?» e exatamente a pergunta que se
+    /// faz a uma trilha, e um criterio que dissesse so «varrer» responderia
+    /// menos do que respondia antes de o filtro existir.
+    #[test]
+    fn o_criterio_da_trilha_guarda_o_filtro() {
+        let onde = vec![Filtro {
+            coluna: 1,
+            op: Operador::Igual,
+            valor: Value::Str("Blumenau".into()),
+        }];
+        let esquema = Schema::new(
+            "clientes",
+            vec![
+                Column::new("id", ColumnType::Int8).obrigatoria(),
+                Column::new("cidade", ColumnType::Str(30)),
+            ],
+            vec![IndexDef::new("porId", vec![IndexColumn::asc(0)])
+                .unico()
+                .primaria()],
+        )
+        .unwrap();
+        assert_eq!(
+            descrever_filtros(&onde, &esquema),
+            "cidade = Blumenau",
+            "a trilha nao diz o que foi procurado"
+        );
+        assert_eq!(descrever_filtros(&[], &esquema), "");
     }
 }

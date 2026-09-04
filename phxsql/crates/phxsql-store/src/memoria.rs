@@ -544,7 +544,14 @@ impl TabelaMemoria {
     }
 }
 
-fn casa(v: &Value, f: &Filtro) -> bool {
+/// Um valor casa com um filtro?
+///
+/// PUBLICA porque o `varrer` do servidor passou a filtrar tambem, e a
+/// semantica tem de ser UMA. Duas copias divergiriam no dia em que alguem
+/// mexesse numa delas -- e a divergencia apareceria como «o mesmo filtro da
+/// resposta diferente conforme a tabela esteja em memoria ou no disco», que e
+/// o pior defeito possivel num predicado.
+pub fn casa(v: &Value, f: &Filtro) -> bool {
     use std::cmp::Ordering::*;
     match f.op {
         Operador::ENulo => v.e_null(),

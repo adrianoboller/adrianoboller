@@ -2,6 +2,25 @@
 
 Formato baseado em *Keep a Changelog*. Versionamento semântico.
 
+## [0.9.3] — 2026-09-04 · **A FONTE LOCAL SAI PARA FORA, PARA O FILTRO PODER DESCER**
+
+`PhxGrid._fonteLocal` passa a ser exposto. Ele já existia e já fazia tudo —
+filtrar, ordenar, agrupar, paginar, totalizar —, mas era um segredo do
+arquivo: quem tinha um servidor capaz de filtrar não conseguia mandar o filtro
+para lá **sem reescrever o motor local inteiro**.
+
+Com ele exposto, uma fonte de pushdown fica em quinze linhas: traduz o que dá
+para traduzir, pede ao servidor o conjunto menor, e delega o resto ao motor
+local — que **reaplica todos os filtros** sobre o que voltou. Essa reaplicação
+é a rede de segurança e é o motivo de o desenho ser este: o servidor só pode
+DIMINUIR o que chega pelo fio, nunca mudar a resposta que a grade mostra.
+
+A primeira usuária é a aba Conteúdo do Centro de Controle, onde o `varrer`
+ganhou `WHERE` (ver `fonteVarrer`, no `index.html`).
+
+**Nada muda para quem passa `dados:`** — a fonte local continua sendo o padrão,
+e ninguém precisa saber que ela tem nome.
+
 ## [0.9.2] — 2026-09-02 · **O PAINEL VIVO, E A BUSCA QUE ENVELHECIA**
 
 ### Corrigido

@@ -1250,7 +1250,12 @@ pub fn token_sem_definicao_e_sem_fallback() -> Vec<(&'static str, String)> {
 /// crua por colunas com `txt()`, e apagar o ajudante `tabela()` levou o
 /// vazio dele junto. Catraca desce por qualquer motivo que tire texto de
 /// fora dela.
-pub const TETO_ROTULOS_E_CRASE: usize = 1_707;
+/// 04/09: **1.706**. O rodape da aba Conteudo entrou na fabrica junto com o
+/// `WHERE` do `varrer`: ele passou a ter DUAS redacoes (com e sem peneira do
+/// servidor), e um texto que muda conforme a resposta nao podia continuar
+/// cravado em portugues no meio de um template. Uma linha a menos, e ela sai
+/// da conta por ter sido traduzida -- que e o unico motivo que vale.
+pub const TETO_ROTULOS_E_CRASE: usize = 1_706;
 #[cfg(test)]
 mod testes {
     use std::collections::HashSet;

@@ -10,9 +10,21 @@
 //!
 //! O que nao tem operacao embaixo sai como recusa escrita, dizendo o que
 //! faltou. Um `WHERE cidade = 'Blumenau'` sem indice em `cidade` nao vira uma
-//! varredura filtrada em segredo -- porque o `varrer` NAO filtra, e o que
-//! voltaria seria a tabela inteira com o filtro esquecido no caminho. Ler
-//! demais e responder errado calado.
+//! varredura filtrada em segredo.
+//!
+//! # O motivo mudou, e a recusa ficou
+//!
+//! Ate a 0.18 o motivo era «o `varrer` NAO filtra», e isso deixou de ser
+//! verdade: o `varrer` ganhou `"onde"`. O que ele NAO ganhou foi varredura
+//! ilimitada -- o `max` continua sendo quantas linhas ele EXAMINA, e a
+//! resposta diz `examinadas` ao lado de `devolvidas` justamente para quem
+//! chama saber sobre o que a conta foi feita.
+//!
+//! Um `SELECT` nao tem onde dizer isso. Traduzido para um `varrer` filtrado,
+//! ele responderia sobre a PRIMEIRA PAGINA e teria a cara de ter respondido
+//! sobre a tabela -- resposta errada com cara de certa, que e pior que erro.
+//! Entao a recusa fica, sobre o motivo honesto: falta o indice que torna a
+//! pergunta respondivel inteira.
 
 use crate::sintaxe::{Alvo, Condicao, Ordenacao, Projecao, Selecao};
 use phxsql_core::json::Json;
@@ -169,9 +181,10 @@ fn plano_buscar(
             .map(|i| i.colunas[0].nome.as_str())
             .collect();
         return Err(PhxError::Esquema(format!(
-            "WHERE {} = ... exige um indice de uma coluna sobre {}. Nao existe, e o \
-             `varrer` NAO filtra -- filtrar aqui seria trazer a tabela inteira e \
-             esconder isso. Ha indice de coluna unica sobre: {}",
+            "WHERE {} = ... exige um indice de uma coluna sobre {}. Nao existe. O \
+             `varrer` filtra, mas dentro da pagina que ele EXAMINA -- e um SELECT \
+             que respondesse sobre a primeira pagina teria a cara de ter \
+             respondido sobre a tabela. Ha indice de coluna unica sobre: {}",
             c.coluna,
             c.coluna,
             if candidatos.is_empty() {
@@ -470,8 +483,13 @@ mod testes {
     /// destes, aceito calado, devolveria resposta errada sem erro nenhum.
     #[test]
     fn recusa_o_que_nao_tem_substrato() {
+        // Confere o que a recusa PROMETE -- a coluna pedida e a lista de
+        // saidas --, e nao a redacao dela. A versao anterior casava a frase
+        // «NAO filtra», que virou mentira no dia em que o `varrer` ganhou
+        // `"onde"`: o teste continuou verde defendendo um motivo falso.
         let e = recusa("SELECT * FROM Clientes WHERE cidade = 'Blumenau'");
-        assert!(e.contains("NAO filtra"), "{e}");
+        assert!(e.contains("cidade"), "{e}");
+        assert!(e.contains("indice"), "{e}");
         assert!(e.contains("porNome") || e.contains("nome"), "{e}");
 
         let e = recusa("SELECT * FROM Clientes WHERE id > 7");

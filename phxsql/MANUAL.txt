@@ -562,10 +562,14 @@ SQL: UM SELECT SIMPLES, TRADUZIDO
     lugar de "texto", que e o nome que um driver escreveria.
 
     O QUE NAO TEM SUBSTRATO RECUSA DIZENDO O QUE FALTA. Nao ha expressao, nao
-    ha JOIN e nao ha subconsulta -- e um WHERE sobre coluna
-    SEM indice recusa em vez de virar uma varredura com o filtro esquecido no
-    caminho, porque o "varrer" NAO filtra. A recusa diz quais colunas TEM
-    indice. Erro de sintaxe aponta a coluna do texto: «SQL, coluna 10: ...».
+    ha JOIN e nao ha subconsulta -- e um WHERE sobre coluna SEM indice recusa
+    em vez de virar uma varredura pela metade. O "varrer" FILTRA (campo
+    "onde"), mas dentro da pagina que ele EXAMINA, e a resposta dele diz
+    "examinadas" ao lado de "devolvidas" para quem chama saber sobre o que a
+    conta foi feita. Um SELECT nao tem onde dizer isso: traduzido, ele
+    responderia sobre a primeira pagina com a cara de ter respondido sobre a
+    tabela. A recusa diz quais colunas TEM indice. Erro de sintaxe aponta a
+    coluna do texto: «SQL, coluna 10: ...».
 
     O PORTAO E O MESMO. A op sql nao abre tabela nenhuma: ela pede o "esquema"
     da tabela do FROM (que ja exige ler naquela tabela) e depois executa o
@@ -857,8 +861,52 @@ PAGINACAO: ANDA POR CURSOR, SALTA POR POSICAO
         registros       quantas linhas ha no .reg, do CABECALHO
         visiveis        quantas ESTA visao enxerga -- a conta de "de quantas"
         marcadas        quantas estao marcadas como excluidas
+        devolvidas      quantas linhas vieram nesta resposta
+        examinadas      quantas o motor OLHOU para responder
         modo            "cursor", "posicao", "rownum" ou "indice"
         salto           so no modo posicao: "bisseccao" ou "passo"
+
+FILTRAR NA VARREDURA: O CAMPO "onde"
+
+    O "varrer" aceita um predicado, e ele vale para os quatro modos de
+    paginacao acima:
+
+        {"op":"varrer","database":"loja","tabela":"clientes","max":2500,
+         "onde":[{"coluna":"cidade","op":"=","valor":"Blumenau"}]}
+
+    Os filtros valem TODOS JUNTOS (E, nunca OU), e os operadores sao os mesmos
+    do SelectMemory -- e a mesma funcao de comparacao, para o mesmo filtro nao
+    responder uma coisa no disco e outra na memoria:
+
+        =  !=  <  <=  >  >=  contem  comeca  termina  nulo  nao_nulo
+
+    Nulo nao casa com comparacao nenhuma, nem com "!=": nao se sabe o que ele
+    e, entao nao se afirma nada sobre ele. Para perguntar por ele ha "nulo" e
+    "nao_nulo".
+
+    O "max" CONTINUA SENDO LINHAS EXAMINADAS, e isto e decisao, nao descuido.
+    Sem indice, o filtro nao economiza leitura nenhuma -- ele economiza
+    TRANSPORTE. Se "max" passasse a contar linhas devolvidas, um filtro que
+    casa pouco varreria a tabela inteira com a trava global na mao. A resposta
+    diz as duas contas ("examinadas" e "devolvidas") para quem chama saber
+    sobre o que a conta foi feita.
+
+    O QUE ISSO COMPRA, MEDIDO. Numa tabela de 100.000 linhas, com "max":2500 e
+    uma linha em cem casando (`--example onde-doi-no-varrer`):
+
+        varredura (ler as linhas)     48,0%   o filtro NAO remove
+        montar o JSON                  4,6%
+        serializar em texto            9,9%   o filtro remove
+        fio e analise no cliente      37,5%
+
+        antes  26.755 us   532.777 bytes no fio
+        com    12.902 us     5.638 bytes no fio     2,07x e 94,5x menos fio
+
+    Com metade da tabela casando o ganho cai para 1,35x -- e essa e a conta:
+    o teto e a fatia de transporte, e ela encolhe na proporcao do que casa.
+
+    QUEM NAO MANDA "onde" NAO MUDA NADA. Sem o campo, a resposta e a mesma de
+    sempre, campo por campo, e "examinadas" repete "devolvidas".
 
     POR QUE ANDAR E BARATO. Continuar depois do rowid um milhao e uma conta, e
     nao uma procura, porque aqui a ordem logica E a ordem fisica:
@@ -1335,7 +1383,7 @@ OPERACOES
                     [agregador], [juntar], [max]   a tabulacao cruzada
     ler             database, tabela, rowid, [com_versao]
     varrer          database, tabela, [indice], [max], [visao],
-                    [depois], [antes], [pular], [desde_rownum]
+                    [depois], [antes], [pular], [desde_rownum], [onde]
     buscar          database, tabela, indice, chave, [max]
     inserir         database, tabela, valores
     inserir_lote    database, tabela, linhas | texto+formato, [parar_no_erro]

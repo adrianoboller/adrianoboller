@@ -1,4 +1,4 @@
-/* phx-grid v0.9.2 — Phoenix / WX Soluções — ES5 estrito, zero dependências.
+/* phx-grid v0.9.3 — Phoenix / WX Soluções — ES5 estrito, zero dependências.
 
    O cabeçalho passou oito versões dizendo "v0.1.0 — Núcleo (S01)" enquanto o
    CHANGELOG ao lado ia até a 0.8.0 e o código já tinha ordem por nível de
@@ -1837,7 +1837,13 @@
     return api;
   }
 
-  var PhxGrid = { versao: "0.9.2", criar: criar, fmt: fmt, _ordenaEstavel: ordenaEstavel };
+  /* `_fonteLocal` sai para fora por causa do PUSHDOWN: quem tem um servidor
+     que sabe filtrar quer mandar o filtro para la e continuar usando o motor
+     local para ordenar, agrupar, paginar e -- isto e o que importa --
+     REAPLICAR os filtros sobre o que voltou. A reaplicacao e a rede de
+     seguranca: o servidor so pode DIMINUIR o que chega, nunca mudar a
+     resposta. Ver `fonteVarrer` no `index.html`. */
+  var PhxGrid = { versao: "0.9.3", criar: criar, fmt: fmt, _ordenaEstavel: ordenaEstavel, _fonteLocal: fonteLocal };
   if (typeof module !== "undefined" && module.exports) module.exports = PhxGrid;
   root.PhxGrid = PhxGrid;
 })(typeof window !== "undefined" ? window : this);

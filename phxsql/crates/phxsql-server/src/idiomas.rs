@@ -151,6 +151,14 @@ pub const FABRICA_TELA: &[TextoDeFabrica] = &[
     texto!("tela.aba_diario", "Diário", "Journal", "Journal", "Diario", "Journal", "Diario"),
     texto!("tela.aba_integridade", "Integridade", "Intégrité", "Integrity", "Integrità", "Integrität", "Integridad"),
 
+    // O rodape da aba Conteudo, e ele tem DUAS redacoes de proposito. Quando o
+    // servidor peneirou (o `WHERE` do `varrer`), «25 de 100.000» daria a
+    // entender que a tabela tem 25 linhas daquela cidade: a conta foi sobre as
+    // 2.500 EXAMINADAS, e as tres contas juntas sao a unica forma honesta de
+    // dizer isso.
+    texto!("tela.ct_trouxe", "{devolvidas} de {visiveis} linhas · {ordem}", "{devolvidas} sur {visiveis} lignes · {ordem}", "{devolvidas} of {visiveis} rows · {ordem}", "{devolvidas} di {visiveis} righe · {ordem}", "{devolvidas} von {visiveis} Zeilen · {ordem}", "{devolvidas} de {visiveis} filas · {ordem}"),
+    texto!("tela.ct_peneirado", "{devolvidas} de {examinadas} examinadas · {visiveis} na tabela · {ordem}", "{devolvidas} sur {examinadas} examinées · {visiveis} dans la table · {ordem}", "{devolvidas} of {examinadas} examined · {visiveis} in the table · {ordem}", "{devolvidas} di {examinadas} esaminate · {visiveis} nella tabella · {ordem}", "{devolvidas} von {examinadas} geprüften · {visiveis} in der Tabelle · {ordem}", "{devolvidas} de {examinadas} examinadas · {visiveis} en la tabla · {ordem}"),
+
     // ------------------------------------------------------------- a arvore
     texto!("tela.painel", "Painel", "Tableau de bord", "Dashboard", "Pannello", "Übersicht", "Panel"),
     // A diferenca entre declarar e impor, na folha do esquema. Duas

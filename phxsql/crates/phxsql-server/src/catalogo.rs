@@ -385,8 +385,15 @@ pub const OPERACOES: &[Operacao] = &[
                 "integer",
                 "começa no número de ordem informado, em vez de contar do começo",
             ),
+            opc(
+                "onde",
+                "array",
+                "filtros `{coluna, op, valor}`, todos valendo juntos (E); \
+                 `max` continua sendo quantas linhas o motor EXAMINA, e a \
+                 resposta traz `examinadas` ao lado de `devolvidas`",
+            ),
         ],
-        exemplo: r#"{"op":"varrer","database":"loja","tabela":"clientes","pular":0,"max":50}"#,
+        exemplo: r#"{"op":"varrer","database":"loja","tabela":"clientes","max":2500,"onde":[{"coluna":"cidade","op":"=","valor":"Blumenau"}]}"#,
         ferramenta_mcp: true,
     },
     Operacao {

@@ -2985,6 +2985,107 @@ function tipoDoGrid(t) {
   return "texto";                            // Uuid e Uuid256 vem em texto
 }
 
+/** Os filtros da grade que o SERVIDOR sabe responder, no contrato do `varrer`.
+ *
+ *  # A pergunta que decide o que desce, e ela não é «dá para traduzir?»
+ *
+ *  É «as duas peneiras concordam?». Há DOIS motores de filtro aqui — o da
+ *  grade, em JavaScript, e o do `phxsql-store`, em Rust — e eles não são
+ *  iguais. Medido lendo os dois: o `contem` da grade é *sem acento* e o do
+ *  servidor não é (buscar «sao» acha «São Paulo» aqui e não acha lá), e a
+ *  comparação de faixa da grade em coluna de TEXTO baixa a caixa
+ *  (`String(v).toLowerCase()`) enquanto a do servidor compara os bytes.
+ *
+ *  Um filtro traduzido errado **some com linha** — e some calado, porque quem
+ *  olha não sabe o que não veio. Então desce só o que prova concordar:
+ *
+ *  - `valores` com UM valor e sem nulos → `=` (a grade compara a cadeia
+ *    exata, o servidor também);
+ *  - `expr`, `faixa` e `multi` de E, **só em coluna inteira** (`Int`, `UInt`,
+ *    `Sequence`), onde as duas comparam número.
+ *
+ *  O resto — a busca global (que é OU entre colunas), `contem`, faixa de
+ *  texto, de data e de decimal, `valores` com muitos, `multi` de OU — fica
+ *  onde sempre esteve. Não é dívida: é a lista do que ninguém provou.
+ *
+ *  E a rede embaixo de tudo: a grade REAPLICA todos os filtros sobre o que
+ *  voltou. O servidor só pode diminuir o que atravessa o fio; a resposta na
+ *  tela é a mesma com pushdown e sem ele.
+ */
+function ondeDoServidor(filtros, tipoPhx) {
+  const OPS = { "=":"=", "==":"=", "!=":"!=", "<>":"!=", "<":"<", "<=":"<=", ">":">", ">=":">=" };
+  const inteira = c => /^Int|^UInt|^Sequence/.test(tipoPhx[c] || "");
+  const onde = [];
+  for (const f of (filtros || [])) {
+    // `rowid` não é coluna do esquema: pedi-lo no `onde` é erro do servidor.
+    if (!tipoPhx[f.campo]) continue;
+    if (f.tipo === "valores" && !f.incluiNulos && f.valores && f.valores.length === 1
+        && f.valores[0] !== "" && f.valores[0] != null) {
+      onde.push({ coluna: f.campo, op: "=", valor: f.valores[0] });
+    } else if (f.tipo === "expr" && inteira(f.campo) && OPS[f.op] && f.valor != null) {
+      onde.push({ coluna: f.campo, op: OPS[f.op], valor: Number(f.valor) });
+    } else if (f.tipo === "faixa" && inteira(f.campo)) {
+      if (f.de != null) onde.push({ coluna: f.campo, op: ">=", valor: Number(f.de) });
+      if (f.ate != null) onde.push({ coluna: f.campo, op: "<=", valor: Number(f.ate) });
+    } else if (f.tipo === "multi" && f.combinador !== "ou" && inteira(f.campo)) {
+      for (const c of (f.condicoes || []))
+        if (OPS[c.op] && c.valor != null)
+          onde.push({ coluna: f.campo, op: OPS[c.op], valor: Number(c.valor) });
+    }
+  }
+  return onde;
+}
+
+/** A fonte da grade que empurra o filtro para o `varrer`.
+ *
+ *  Sem isto, filtrar «Blumenau» numa tabela de 100.000 pedia 2.500 linhas ao
+ *  servidor para o navegador jogar fora 2.475. Medido em
+ *  `--example onde-doi-no-varrer`: a leitura das linhas é 48,0% do custo e o
+ *  transporte é 52,0%. O teto previsto era 2,06× e o medido pelo fio deu
+ *  2,07×, com 532.777 bytes virando 5.638.
+ *
+ *  O que ela NÃO faz: mudar o significado de `max`. O `Trazer` continua sendo
+ *  quantas linhas o servidor EXAMINA — se fosse quantas ele devolve, um
+ *  filtro que casa pouco varreria a tabela inteira com a trava global na mão,
+ *  e esse custo ninguém mediu.
+ *
+ *  E se o servidor recusar o pedido com filtro (versão antiga, coluna que ele
+ *  não conhece), ela repete SEM filtro em vez de deixar a grade vazia: a
+ *  novidade não pode ser o motivo de a tela parar de funcionar.
+ */
+function fonteVarrer(database, tabela_, pedidoBase, tipoPhx, aoContar, primeiras) {
+  // A primeira carga JA ACONTECEU: `vConteudo` pediu a página para montar o
+  // rodapé. Semear a fonte com ela é o que impede a abertura da aba de custar
+  // dois `varrer` iguais — e é ela também que volta quando alguém limpa o
+  // filtro, porque «sem filtro» é a mesma chave `[]` de agora.
+  const arr = (primeiras || []).slice();
+  const local = PhxGrid._fonteLocal(arr);
+  let ondeAtual = primeiras ? "[]" : null;
+  return {
+    local: true,
+    todos: arr,
+    invalidar() { ondeAtual = null; local.invalidar(); },
+    carregar(p, cb) {
+      const onde = ondeDoServidor(p.filtros, tipoPhx);
+      const chave = JSON.stringify(onde);
+      if (chave === ondeAtual) { local.carregar(p, cb); return; }
+      const pedido = { ...pedidoBase, database, tabela: tabela_ };
+      if (onde.length) pedido.onde = onde;
+      api("varrer", pedido)
+        .catch(e => (onde.length ? api("varrer", { ...pedidoBase, database, tabela: tabela_ }) : Promise.reject(e)))
+        .then(r => {
+          arr.length = 0;
+          for (const l of r.linhas) arr.push(l);
+          ondeAtual = chave;
+          local.invalidar();
+          if (aoContar) aoContar(r, onde.length);
+          local.carregar(p, cb);
+        })
+        .catch(e => cb(e));
+    }
+  };
+}
+
 async function vConteudo(database, tabela_) {
   const e = await api("esquema", { database, tabela:tabela_ });
   const r = await api("varrer", { database, tabela:tabela_,
@@ -2999,15 +3100,22 @@ async function vConteudo(database, tabela_) {
   // A GRADE FILTRA O QUE ESTA NELA, e o que esta nela e o teto acima. Sem
   // este aviso a tela mente: o funil de `cidade` responderia «25 linhas» numa
   // tabela que tem 2.500 daquela cidade, e nada na tela diria que a conta foi
-  // sobre as 200 que vieram. O servidor nao tem WHERE em `varrer` -- nao ha
-  // pushdown para esconder isso atras -- entao o honesto e dizer.
+  // sobre as 200 que vieram.
+  //
+  // O `varrer` GANHOU `WHERE`, e o aviso continua -- porque o `max` continua
+  // sendo quantas linhas o servidor EXAMINA. O que mudou e que agora ele
+  // atravessa o fio peneirado, e o rodape passa a dizer as duas contas:
+  // quantas foram examinadas e quantas casaram. Ver `fonteVarrer`.
   const truncou = (r.visiveis ?? r.registros) > r.devolvidas;
   return `<div class="ferramentas">
       <label for="ord">Percorrer por</label>
       <select id="ord">${opcoes.join("")}</select>
       <label for="teto">Trazer</label>
       <select id="teto">${tetos.join("")}</select>
-      <span class="conta">${fmt(r.devolvidas)} de ${fmt(r.visiveis ?? r.registros)} linhas · ${esc(r.ordem)}</span>
+      <span class="conta" id="contaConteudo">${esc(preencher(
+          txt("tela.ct_trouxe", "{devolvidas} de {visiveis} linhas · {ordem}"),
+          { devolvidas: fmt(r.devolvidas), visiveis: fmt(r.visiveis ?? r.registros),
+            ordem: r.ordem }))}</span>
       <span class="dica">Arraste um cabeçalho para a faixa de cima para agrupar.</span>
     </div>
     ${truncou ? `<div class="aviso corte-da-vista"><b>A grade enxerga
@@ -3054,6 +3162,29 @@ function ligarConteudo() {
   const { db, tab } = est.atual;
   if (est.grade && est.grade.destruir) { try { est.grade.destruir(); } catch {} }
   // Exposto para teste automatizado e para o console do navegador.
+  // O QUE A GRADE PEDE AO SERVIDOR. Uma pagina so, do tamanho do `Trazer`, na
+  // ordem escolhida -- exatamente o que `vConteudo` ja tinha pedido. O que a
+  // fonte acrescenta e o `onde`, quando ha filtro que desce.
+  const pedidoBase = { indice: est.ordem || undefined, max: est.teto };
+  const tipoPhx = {};
+  for (const c of est.esquemaAtual.colunas) tipoPhx[c.nome] = c.tipo;
+
+  // O rodape passa a dizer as DUAS contas quando o servidor peneirou. Sem
+  // isto ele diria «25 de 100.000», que da a entender que a tabela tem 25
+  // linhas de Blumenau -- e a conta foi sobre as 2.500 examinadas.
+  const contarNaTela = (r, houvePushdown) => {
+    const alvo = $("#contaConteudo");
+    if (!alvo) return;
+    alvo.textContent = houvePushdown
+      ? preencher(txt("tela.ct_peneirado",
+          "{devolvidas} de {examinadas} examinadas · {visiveis} na tabela · {ordem}"),
+          { devolvidas: fmt(r.devolvidas), examinadas: fmt(r.examinadas ?? r.devolvidas),
+            visiveis: fmt(r.visiveis ?? r.registros), ordem: r.ordem })
+      : preencher(txt("tela.ct_trouxe", "{devolvidas} de {visiveis} linhas · {ordem}"),
+          { devolvidas: fmt(r.devolvidas), visiveis: fmt(r.visiveis ?? r.registros),
+            ordem: r.ordem });
+  };
+
   est.grade = window.__phxgrade = PhxGrid.criar("#grade", {
     agrupavel: true,
     buscaGlobal: true,
@@ -3070,7 +3201,13 @@ function ligarConteudo() {
     lembrar: "conteudo:" + db + "." + tab,
     nomeVista: db + "-" + tab,
     colunas: colunas,
-    dados: est.linhas,
+    // A fonte que EMPURRA o filtro para o servidor, semeada com a página que
+    // `vConteudo` já trouxe.
+    // Exposta como a grade: e por ela que a bateria mede o que ATRAVESSOU o
+    // fio. Olhar a tela nao serviria -- a grade mostra as 25 com pushdown e
+    // sem ele, entao um teste de tela passaria com o defeito reposto.
+    fonte: (est.fonteConteudo = window.__phxfonte =
+      fonteVarrer(db, tab, pedidoBase, tipoPhx, contarNaTela, est.linhas)),
     pagina: { tamanho: 100, opcoes: [50, 100, 200] },
     // Duplo clique abre a FICHA, que e quem sabe gravar: ela carrega a versao
     // do slot e recusa escrita concorrente. Editar na celula por fora disso
