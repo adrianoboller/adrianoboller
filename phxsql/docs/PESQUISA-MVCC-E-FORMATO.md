@@ -1226,6 +1226,34 @@ deles; o número de fontes é nosso, e é o que impede a leitura de degradar.*
 
 Nenhuma é recomendação. São escolhas cujo preço eu consegui apurar.
 
+### 8.0 — RESPONDIDAS pelo dono em 04/09/2026
+
+As sete foram postas uma a uma. **Quatro caíram sozinhas** com a resposta da
+primeira, porque eram todas «se for disco».
+
+| # | pergunta | decisão |
+|---|---|---|
+| **1** | RAM ou disco? | **A — em RAM**, e o leitor longo é **recusado** quando a versão já foi recolhida, no molde do `ORA-01555`. **A decisão de formato da SP000016 desaparece: nenhum `.reg` v6, nenhuma migração, nenhum arquivo novo** |
+| 2 | se disco, no slot ou fora? | **caiu** — não há disco |
+| 3 | linha inteira ou delta? | **caiu** |
+| 3b | o `.bin`/`.memo` fixa bloco? | **caiu** |
+| **4** | o `.ndx` ganha marca? | **NÃO. Recusar MVCC em alteração de coluna indexada** — cedo e por escrito, como o `ao_excluir`. É a única das três que preserva o zero-formato da resposta 1; a marca reintroduziria um segundo formato a versionar |
+| 5 | a cópia leva a `.undo`? | **caiu** — não há `.undo` |
+| **6** | *snapshot* ou `SERIALIZABLE`? | ***Snapshot isolation*, e o documento DIZ isso**, com o exemplo do *write skew* onde o cliente o leia. `SERIALIZABLE` (SSI) é outro item, e não se promete pelo nome da sprint |
+| **7** | a ordem SP11×SP16 muda? | **A bateria longa do `gravar` roda ANTES de a SP000011 começar.** Premissa inválida não sustenta ordem, nem quando a ordem continua certa por outro motivo |
+
+**O que a Sombra virou depois destas respostas:** cadeia de versões **em RAM**,
+sem `fsync`, **zero mudança de formato em disco** — nem no `.reg`, nem no
+`.ndx`, nem extensão nova —, com duas recusas escritas (leitor longo cuja versão
+foi recolhida; alteração de coluna indexada sob transação) e a limitação de
+*snapshot isolation* documentada.
+
+**O número da §9 continua valendo, e mudou de papel:** ele não decide mais entre
+A e B — decide se a recusa do leitor longo é confortável ou apertada. Medir
+continua barato e continua valendo.
+
+---
+
 ### Pergunta 1 — A versão velha mora em RAM ou em disco?
 
 Ela só existe por causa da §5.4: **a undo daqui não desfaz nada**, logo não precisa

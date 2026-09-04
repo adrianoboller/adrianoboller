@@ -210,6 +210,20 @@ como sempre foi). As consequências práticas, sem eufemismo:
    fresta sem afirmá-la — guarda que afirmasse o defeito viraria catraca
    contra o próprio conserto.
 
+   **DECISÃO do dono, 04/09/2026: o motor NÃO é tocado.** As três saídas
+   estavam na mesa com preço — (A) contar só pares ouvidos depois do master
+   **morreu medida** (na corrida real o par foi ouvido 1 s depois e passaria
+   pelo filtro); (B) janela mais curta só para eleger custa um segundo número
+   mágico e falso-negativo em enlace lento; (C) pedir o quórum de forma
+   síncrona antes de promover fecha **por construção**, e é o `RequestVote` do
+   Raft sem a persistência do voto — mas **muda o comportamento de todo cluster
+   que já existe**, e *guarda nova entra pedida, não imposta*.
+
+   A fresta fica **documentada e medida**: ela não custa dado, só liderança, e
+   só aparece em **queda em sequência**. O `fresta.py` continua medindo sem
+   afirmar. Se um dia houver um cluster em produção com reinício em rolagem, a
+   saída (C) volta como pedido próprio — com quem precisa dela e por quê.
+
 ### 2.5 Roteiro de operação
 
 - **Subir:** um nó com `papel: source` (o master inicial), os demais

@@ -94,7 +94,23 @@ como sprint **nova**, a partir da SP000056.
 4. **SP000016** — MVCC. Desbloqueada pela medição contra o MySQL(R): o que
    ancora a cadeia de versões é a identidade estável da linha, e o `rowid`
    daqui já é isso.
-5. **SP000011 e SP000016 — a ordem MUDOU, e mudou medida** (02/09). O que
+5. **SP000011 e SP000016 — a premissa da inversao CAIU em 04/09, e a ordem
+   passou a depender de um numero que ainda nao existe.** A frase abaixo
+   justificou a inversao dizendo que «o gap e leitor-com-leitor». Em 04/09 a
+   bancada de concorrencia mediu o ESCRITOR pela primeira vez — o par que a
+   premissa antiga nunca tinha rodado — e ele **regride: 0,51x com 2
+   clientes**. Isso **nao devolve a ordem antiga** (o MVCC tambem nao conserta
+   escritor-com-escritor), mas invalida a premissa, e **premissa invalida nao
+   sustenta ordem, nem quando a ordem continua certa por outro motivo**.
+
+   **DECISAO do dono, 04/09/2026: a bateria longa do `gravar` roda ANTES de a
+   SP000011 comecar.** A SP000016 nao espera por ela — depois das respostas as
+   sete perguntas fechadas (`docs/PESQUISA-MVCC-E-FORMATO.md` §8.0) a Sombra
+   virou RAM + recusa, com **zero mudanca de formato**, e nao toca na trava.
+
+   O que segue e o registro de 02/09, mantido como historia:
+
+   **SP000011 e SP000016 — a ordem MUDOU, e mudou medida** (02/09). O que
    estava escrito aqui era: *«a SP000011 vem depois da SP000016, porque a
    SP000016 responde parte da escolha»*. **Falso, e o número diz por quê:** a
    medição que confirmou a premissa da SP000011 rodou **N leitores e nenhum
