@@ -154,6 +154,13 @@ def acha(no, chave):
     return None
 
 
+def pedido_de_leitura(linhas=50):
+    """O `varrer` que esta bancada mede, como funcao para que
+    `quieta.confira_a_pagina` percorra o MESMO caminho. Ate 04/09 ela mandava
+    `"limite"`, que o `op_varrer` nao le, e lia 1.000 linhas em vez de 50."""
+    return {"op": "varrer", "database": "t", "tabela": "c", "max": linhas}
+
+
 def uma_bateria(durabilidade, porta, base, vigia):
     """Grava N linhas e le M vezes, e devolve o us de trava por operacao."""
     srv = Servidor(durabilidade, porta, base)
@@ -169,6 +176,14 @@ def uma_bateria(durabilidade, porta, base, vigia):
         # A telemetria LIGA depois da criacao: o `criar_tabela` toma a trava e
         # sincroniza, e conta-lo junto poria o custo de UMA criacao em cima da
         # media de quatro mil gravacoes.
+        # A GUARDA percorre o pedido da bancada ANTES de a telemetria ligar:
+        # ela grava linhas de semente e faz leituras, e conta-las na media de
+        # trava poria o custo da propria conferencia dentro do numero.
+        for _ in range(60):
+            c.call({"op": "inserir", "database": "t", "tabela": "c",
+                    "linha": {"nome": "semente"}})
+        quieta.confira_a_pagina(c.call, lambda n: pedido_de_leitura(n))
+
         c.call({"op": "telemetria_ligar"})
 
         t0 = time.monotonic()
@@ -180,7 +195,7 @@ def uma_bateria(durabilidade, porta, base, vigia):
 
         t0 = time.monotonic()
         for _ in range(LEITURAS):
-            c.call({"op": "varrer", "database": "t", "tabela": "c", "max": 50})
+            c.call(dict(pedido_de_leitura()))
         leu_s = time.monotonic() - t0
         no_fim = int(acha(c.call({"op": "telemetria"}), "trava_ms") or 0)
 

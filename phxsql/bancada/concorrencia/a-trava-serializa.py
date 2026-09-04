@@ -84,6 +84,17 @@ SEGUNDOS = float(os.environ.get("SEGUNDOS", "3"))
 LINHAS = int(os.environ.get("LINHAS", "2000"))
 
 
+def pedido_de_leitura(tabela, linhas=50):
+    """O `varrer` que esta bancada mede.
+
+    Existe como funcao -- e nao inline no laco -- para que
+    `quieta.confira_a_pagina` percorra o MESMO caminho que a medicao. Ate 04/09
+    esta linha mandava `"limite"`, campo que o `op_varrer` nao le, e toda
+    leitura devolvia 1.000 linhas em vez de 50.
+    """
+    return {"op": "varrer", "database": "t", "tabela": tabela, "max": linhas}
+
+
 def trabalhador(modo, segundos, fila, tabela="c"):
     """Um processo cliente: martela ate o prazo e devolve quantas operacoes fez.
 
@@ -96,8 +107,7 @@ def trabalhador(modo, segundos, fila, tabela="c"):
     n = 0
     while time.monotonic() < fim:
         if modo.startswith("ler"):
-            c.call({"op": "varrer", "database": "t", "tabela": tabela,
-                    "max": 50}, exigir=False)
+            c.call(dict(pedido_de_leitura(tabela)), exigir=False)
         elif modo == "sem-trava":
             # O CONTROLE. Mesmo soquete, mesmo JSON, mesmo despacho, mesmo
             # cliente Python -- e `ping` responde SEM tomar `travar_dados`.
@@ -159,6 +169,9 @@ def principal():
         for _ in range(LINHAS):
             c.call({"op": "inserir", "database": "t", "tabela": "c",
                     "linha": {"nome": "semente"}}, exigir=False)
+
+        # A GUARDA, antes de qualquer numero: voltou o que se pediu?
+        quieta.confira_a_pagina(c.call, lambda n: pedido_de_leitura("c", n))
 
         print(f"=== a trava global serializa? ===")
         print(f"    nucleos: {nucleos} | {SEGUNDOS:.0f}s por rodada | "

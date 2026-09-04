@@ -134,8 +134,14 @@ sobrevive melhor quando o conserto funcionou por outro motivo.*
   parâmetro só para que a guarda passe por ele. *Guarda que não percorre o
   caminho do defeito é decoração* — e essa foi a terceira vez, na mesma hora,
   que a resposta certa exigiu perguntar «isto exercita o caminho que quebrou?».
-* **Onde o buraco ficou:** as outras duas bancadas de concorrência
-  (`a-trava-serializa.py` e `quanto-a-trava-fica-presa.py`) tiveram o campo
-  consertado, mas **não chamam a guarda** — elas leem com página fixa, e ligar
-  a guarda exigiria parametrizar o pedido delas também. **Nomeado, e não
-  feito.**
+* **Esse buraco também fechou, na mesma hora.** As outras duas bancadas
+  (`a-trava-serializa.py` e `quanto-a-trava-fica-presa.py`) ganharam um
+  `pedido_de_leitura()` com o tamanho da página como parâmetro — existir como
+  função é o que permite a guarda percorrer o mesmo caminho — e chamam
+  `confira_a_pagina`. As **quatro** bancadas conferem agora.
+* **Onde o buraco ficou de verdade:** as séries publicadas (§7.1, §11, §12)
+  descrevem uma carga de **1.000 linhas**. A série para a carga de **50** não
+  existe. Uma corrida curta de fumaça sugere que a trava presa lendo cai de
+  ~3.150 µs para a ordem de 500 µs — **e eu não publico esse número**, porque a
+  corrida foi curta e o vigia não conferiu a máquina. Fica nomeado na §8 e na
+  §14.3: refazer as três baterias com o instrumento consertado.

@@ -911,6 +911,11 @@ disso. É o `TEXTO_MAX` do §1.4.
   Fica escrito porque é a única hipótese de hoje que ainda aponta para as 23
   seções do `fsync` **no padrão** `por_lote` — as outras a §7.1 derrubou.
 
+* **Refazer a §7.1, a §11 e a §12 com o instrumento consertado.** Até 04/09 as
+  quatro bancadas liam 1.000 linhas dizendo 50 (§14). As razões publicadas
+  valem para a carga de 1.000; a série para a carga de 50 **não existe**, e uma
+  corrida curta de fumaça sugere que a trava presa lendo cai de ~3.150 µs para
+  a ordem de 500 µs. **Não medido em bateria limpa, e não estimado.**
 * **Uma catraca para o mapa.** O `mapa-da-trava.py` está pronto para virar
   guarda de QA — «nenhuma seção nova roda código do dono sob a trava», «o
   número de seções que alcançam `fsync` só desce». Não entrou porque exigiria
@@ -1387,6 +1392,25 @@ com o campo tornaria toda corrida nova incomparável com as publicadas. Quem
 quiser o perfil de leitura curta manda `LINHAS_LIDAS=50`.
 
 *Consertar o instrumento e mudar a régua no mesmo commit é perder a série.*
+
+E as quatro bancadas passam a chamar `quieta.confira_a_pagina` antes de
+qualquer número sair: ela pede 1, 7 e 50 linhas **pelo construtor de pedido da
+própria bancada** e confere que vieram 1, 7 e 50. Receber o construtor, e não
+montar o pedido dentro da guarda, é a diferença entre conferir o servidor e
+conferir a bancada — a primeira versão dela montava `{"max": n}` sozinha e
+teria passado com o defeito de pé. *Guarda que não percorre o caminho do
+defeito é decoração.*
+
+### 14.3 O que ISTO abre, e que fica nomeado
+
+Com o campo certo, o `quanto-a-trava-fica-presa.py` passa a ler **50 linhas de
+verdade** — e numa corrida curta de fumaça a trava presa lendo caiu de
+~3.150 µs para a ordem de **500 µs**, que é o que se espera de 50 linhas em vez
+de 1.000. **Não publico esse número**: a corrida foi curta e a máquina não foi
+conferida pelo vigia. Mas ele diz o que falta: **as baterias da §7.1, §11 e §12
+merecem ser refeitas com o instrumento consertado**, agora que «`varrer` 50»
+quer dizer 50. As razões publicadas continuam válidas para a carga de 1.000
+linhas; o que não existe ainda é a série para a carga de 50.
 
 ---
 
