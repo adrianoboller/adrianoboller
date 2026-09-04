@@ -380,6 +380,68 @@ tabela costuma estar **vazia** — o caso caro é o de quem declara chave sobre
 tabela que já tem dado, e mesmo esse são 219 ms a 100.000 linhas. **Vira
 pedido.**
 
+### 7.5.1 A medição do 175: o número é ZERO, e o zero não responde nada
+
+Decisão do dono, 04/09/2026: **medir primeiro** quantas tabelas declaram chave
+sem o índice — se a resposta for zero, o pedido vira documentação e não código.
+Medido em 04/09/2026, 05:35.
+
+**O instrumento já existia, e usá-lo era a primeira decisão.** A tentação era
+escrever um varredor novo; a regra que a impediu é a que esta casa pagou nesta
+mesma rodada — *conferidor que discorda de conferidor não acalma ninguém*. A
+conferência de índice dos dois lados está em `integridade::conferir_chave`, e
+é a **mesma** que a gravação usa; um segundo varredor mediria com outra régua e
+teria o direito de discordar. O `--example conferir-integridade` é o
+instrumento.
+
+**O corpus desta máquina:** 63 arquivos `.reg`, em cinco diretórios —
+`bancada/phxsql` (1), `bancada/profiler/srv-a/base/loja` (30),
+`srv-b/base/loja` (30), `srv-log` (1) e `srv-sonda` (1).
+
+| diretório | tabelas | chaves declaradas | violações |
+|---|---:|---:|---:|
+| `bancada/phxsql` | 1 | 0 | 0 |
+| `bancada/profiler/srv-a/base/loja` | 30 | 0 | 0 |
+| `bancada/profiler/srv-b/base/loja` | 30 | 0 | 0 |
+| `bancada/profiler/srv-log/base/loja` | 1 | 0 | 0 |
+| `bancada/profiler/srv-sonda/base/loja` | 1 | 0 | 0 |
+| **total** | **63** | **0** | **0** |
+
+**O número é zero, e ele é inútil como resposta.** Zero-porque-tudo-está-
+-indexado e zero-porque-ninguém-declara-chave são achados diferentes, e este é
+o segundo: a bancada que criou essas 63 tabelas é a do profiler, e ela não
+declara chave estrangeira nenhuma (`grep` por `declarar_fk`,
+`chaves_estrangeiras` e `estrangeira` em `bancada/profiler/`: nenhuma
+ocorrência). **Não há base de produção nesta máquina para medir.** O pedido
+continua aberto pela mesma decisão que o mandou medir: o número tem de sair de
+uma base real, e a régua para tirá-lo está pronta.
+
+**E a tentativa achou dois defeitos que o número não acharia.**
+
+**(a) O instrumento dizia «limpo» tendo medido nada.** `catalogo::tabelas_em`
+devolve lista vazia para caminho que não é diretório — correto para quem abre
+uma instância que ainda não tem pasta, e mentira no `--example`: apontado ao
+**nível errado** (as tabelas de um servidor moram em
+`<servidor>/base/<banco>/`, e a primeira corrida desta medição foi assim) ou a
+um caminho **inexistente**, ele imprimia `limpo: nenhuma violacao` e **saía
+0**. É o código de saída que um script de manutenção lê. Um erro de digitação
+no caminho comprava «limpo» para sempre.
+
+O conserto ficou no `--example`, e não em `tabelas_em`: mudar a função
+quebraria os chamadores para quem a lista vazia é a resposta certa. Hoje
+`tabelas == 0` sai **2** — o mesmo código de «não deu para varrer», porque é o
+que é — e o recado diz onde as tabelas ficam. **Nada conferido não é limpo.**
+
+**(b) O lado da MÃE nunca tinha sido provado.** A conferência é dos dois lados
+desde o começo, e o teste era de um só: `indice_que_falta_na_filha_e_falha_de_
+estrutura` existia desde a sonda; `SemIndiceNaMae` estava escrito e **nenhum
+teste o exercitava**. Contar «tabelas que declaram chave sem o índice» apoiaria
+metade da resposta num ramo não provado. O irmão entrou —
+`indice_que_falta_na_mae_e_falha_de_estrutura` — com prova real nos dois
+sentidos: com o `saida.push(...Falha::SemIndiceNaMae)` reposto por um
+descarte, ele **falha**; com o código certo, passa. E o teste da filha
+**passou nas duas rodadas**, que é a medida exata do que ele não cobria.
+
 ### 7.6 Desligar a conferência deixa resíduo, e o MySQL(R) diz isso ao lado do interruptor
 
 > «**Enabling `foreign_key_checks` does not trigger a scan of table data**,

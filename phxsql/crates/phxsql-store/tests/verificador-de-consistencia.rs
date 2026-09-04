@@ -184,6 +184,59 @@ fn indice_que_falta_na_filha_e_falha_de_estrutura() {
     assert!(r.violacoes.iter().all(|v| v.falha.e_de_estrutura()));
 }
 
+/// O IRMÃO do teste acima, e ele faltava.
+///
+/// O verificador confere índice **dos dois lados** — na filha para responder
+/// «alguém aponta para esta linha?» e na mãe para responder «existe este
+/// pai?». O lado da filha estava provado desde que a sonda o achou; o lado da
+/// mãe estava escrito e **nunca provado**, e foi a medição do pedido 175 que
+/// o encontrou: contar «tabelas que declaram chave sem o índice» apoia metade
+/// da resposta num ramo que nenhum teste exercitava.
+#[test]
+fn indice_que_falta_na_mae_e_falha_de_estrutura() {
+    let d = DirTemp::novo("vc-sem-indice-mae");
+    // A mãe indexa `nome`, e não `id`: nenhum índice cobre a coluna que a
+    // chave referencia.
+    let e = Schema::new(
+        "clientes",
+        vec![
+            Column::new("id", ColumnType::Int4).obrigatoria(),
+            Column::new("nome", ColumnType::Str(20)),
+        ],
+        vec![IndexDef::new("porNome", vec![IndexColumn::asc(1)])],
+    )
+    .unwrap();
+    let mut m = Table::criar(&d.0, e).unwrap();
+    m.inserir(&[Value::Int(1), Value::Str("ana".into())])
+        .unwrap();
+    m.sincronizar().unwrap();
+    drop(m);
+
+    let mut f = filha(&d.0, false);
+    f.inserir(&[Value::Int(10), Value::Int(1)]).unwrap();
+    f.sincronizar().unwrap();
+    drop(f);
+
+    let r = integridade::conferir_diretorio(&d.0).unwrap();
+    let est: Vec<_> = r
+        .violacoes
+        .iter()
+        .filter(|v| v.falha.e_de_estrutura())
+        .collect();
+    assert_eq!(est.len(), 1, "{:?}", r.violacoes);
+    assert_eq!(est[0].falha, Falha::SemIndiceNaMae);
+    assert_eq!(est[0].rowid, None, "falha de estrutura não é de uma linha");
+    // E ele PARA na estrutura: sem índice na mãe não há como perguntar por
+    // linha, e inventar uma varredura aqui faria o relatório medir outra
+    // coisa. A linha 10 aponta para uma mãe que EXISTE — acusá-la seria
+    // mentira, e não acusá-la por varredura seria sorte.
+    assert!(
+        r.violacoes.iter().all(|v| v.falha.e_de_estrutura()),
+        "{:?}",
+        r.violacoes
+    );
+}
+
 // ---------------------------------------------------------------------------
 // A recusa na DECLARAÇÃO
 // ---------------------------------------------------------------------------

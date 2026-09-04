@@ -37,6 +37,20 @@ fn main() {
         r.chaves,
         r.linhas
     );
+    // NADA CONFERIDO NAO E LIMPO. `tabelas_em` devolve lista vazia para
+    // caminho que nao e diretorio -- correto para quem abre uma instancia que
+    // ainda nao tem pasta, e mentira aqui: um script de manutencao apontado
+    // um nivel acima (as tabelas moram em `<servidor>/base/<banco>/`) ou com
+    // um erro de digitacao no caminho recebia `limpo` e saida 0 para sempre.
+    // Sai 2, o mesmo codigo de «nao deu para varrer», porque e o que e.
+    if r.tabelas == 0 {
+        eprintln!(
+            "nenhuma tabela em {} -- nada foi conferido. As tabelas de um \
+             servidor ficam em <servidor>/base/<banco>/.",
+            dir.display()
+        );
+        std::process::exit(2);
+    }
     for (t, e) in &r.nao_abriram {
         println!("  ! {t} nao abriu: {e}");
     }
