@@ -911,7 +911,12 @@ disso. É o `TEXTO_MAX` do §1.4.
   Fica escrito porque é a única hipótese de hoje que ainda aponta para as 23
   seções do `fsync` **no padrão** `por_lote` — as outras a §7.1 derrubou.
 
-* **Refazer a §7.1 e a §11 com o instrumento consertado.** Até 04/09 as cinco
+* **Refazer a §7.1 com o instrumento consertado.** ~~E a §11.~~ **A §11 foi
+  refeita em 04/09 (§11.2-bis)**, e o resultado foi o maior desta rodada: o
+  exclusivo do MVCC, que parecia ruído com 1.000 linhas, dá **2,77× e 3,23×**
+  na carga de 50 com `por_operacao`. Refazer não é formalidade — mudou o
+  número duas vezes, e uma delas inverteu uma recomendação.
+  O que sobra da linha antiga: Até 04/09 as cinco
   bancadas liam 1.000 linhas dizendo 50 (§14). As razões publicadas valem para
   a carga de 1.000; a série para a carga de 50 **não existe** nessas duas. Uma
   corrida curta de fumaça sugere que a trava presa lendo cai de ~3.150 µs para
@@ -1179,10 +1184,61 @@ Compare-se com o que a mesma bancada mede sem hesitar: o `RwLock` na espera deu
 1,30 · 1,31 · 1,22 · 1,22 — quatro medições dentro de 7% umas das outras. O
 instrumento **não** é cego a diferenças reais; ele é cego a esta.
 
+### 11.2-bis REFEITO na carga de 50 (04/09) — e o MVCC RESSUSCITA no `por_operacao`
+
+As baterias da §11.2 liam **1.000 linhas** dizendo 50 (§14). Refeito com
+`LINHAS_LIDAS=50`, duas baterias limpas (08:38 e 08:52) — e **quatro
+reprovadas** pelo vigia no meio, que é o preço que a §10.6 já dizia que o
+protocolo cobra. Corridas em `corridas/desenho-CERTO-50-*`.
+
+| teto | A · `por_lote` | B · `por_lote` | A · `por_operacao` | B · `por_operacao` |
+|---|---:|---:|---:|---:|
+| trava por tabela | 1,02× | 0,98× | 0,99× | 1,09× |
+| `RwLock`, vazão | 2,15× | 1,54× | 2,73× | 2,56× |
+| `RwLock`, na espera | 1,06× | 1,31× | 1,14× | 1,31× |
+| **MVCC, EXCLUSIVO** | **1,21×** | **1,00×** | **3,23×** | **2,77×** |
+
+**O achado, e ele desmente a §11.2:** o que **só** o MVCC compra dava ~1,00× na
+carga de 1.000 linhas e eu escrevi que morria no ruído. Na carga de **50** com
+durabilidade `por_operacao`, dá **2,77× e 3,23×**.
+
+O mecanismo é limpo, e sai das próprias medianas de B:
+
+```
+por_operacao, leitor com pagina de 50 linhas:
+  sozinho ................ p99    738 us
+  com outro LEITOR ....... p99    911 us   (+23%: e o que o RwLock recupera)
+  com um ESCRITOR ........ p99  2.527 us   (3,4x o sozinho)
+```
+
+Um escritor ao lado custa ao leitor **2,77× o que outro leitor custa**, e essa
+diferença é o `fsync` sob a trava global — 1.267–1.371 µs medidos na §7.1. Com
+a leitura de 1.000 linhas, ela custava 6.500 µs e **afogava** esse `fsync`:
+o gap sumia na razão. Com a leitura em 738 µs, o `fsync` passa a dominar.
+
+**O instrumento errado escondia exatamente o que só o MVCC compra** — e
+escondia no sentido mais traiçoeiro, fazendo-o parecer ruído em vez de fazê-lo
+parecer grande.
+
+**No `por_lote`, que é o padrão, o exclusivo continua ~1,00×–1,21×.** A janela
+de gravação faz o `fsync` acontecer uma vez a cada 200 gravações, e aí o
+escritor volta a custar o que outro leitor custa. **Os dois números valem, e a
+diferença entre eles é a durabilidade que o dono do banco escolher.**
+
 ### 11.3 O que isto decide, e o que NÃO decide
 
-**Decide o desempenho.** A Sombra não se justifica por p99 de espera: não há
-1,3× para ela recuperar, há ~1,0×. Quem paga esse número é o `RwLock`.
+**Decide o desempenho — e a §11.2-bis mudou esta resposta pela metade.** Na
+carga de 1.000 linhas, e no padrão `por_lote` em qualquer carga, a Sombra não
+se justifica por p99 de espera: não há 1,3× para ela recuperar, há ~1,0×, e
+quem paga esse número é o `RwLock`.
+
+**Mas em `por_operacao` com a carga da tela (50 linhas) o exclusivo dela é
+2,77× e 3,23×**, medido em duas baterias limpas, e é o `fsync` sob a trava que
+o `RwLock` não toca. Então a frase honesta não é «a Sombra não compra
+desempenho»; é **«a Sombra compra desempenho onde o `fsync` acontece em toda
+gravação, e não compra onde ele acontece uma vez por janela»**. Qual dos dois
+mundos é o do dono do banco é a configuração `recursos.durabilidade` — e ela é
+escolha dele, não nossa.
 
 **E aqui esta seção quase mentiu.** A primeira redação dela dizia que o
 `RwLock` «custa muito menos — trocá-lo é uma decisão de uma linha». **É

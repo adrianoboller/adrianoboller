@@ -38,32 +38,50 @@ lado como **informação para o dono, não como veto**.
 
 ---
 
-> ## ⚠ A premissa de DESEMPENHO deste documento morreu medida (04/09, 06:03/06:13)
+> ## ⚠ A premissa de DESEMPENHO: morreu numa carga e RESSUSCITOU noutra
 >
 > Quem chegar aqui para justificar a Sombra tem de ler isto **antes** da §5.
+> Este aviso já foi escrito uma vez com metade da verdade, às 06:17 de 04/09, e
+> a metade que faltava veio de consertar o instrumento.
 >
-> Duas baterias limpas de `escolher-o-desenho.py`, com o `quieta.Vigia`
-> aprovando as duas, mediram os tetos que faltavam. O teto que o relatório
-> imprime para o MVCC (leitor com um escritor ao lado contra o leitor sozinho)
-> deu 1,19×–1,38× — mas **parte desse custo é de haver qualquer segundo
-> cliente, e o `RwLock` já o recupera**. O que **só** o MVCC compra é a
-> diferença entre um escritor ao lado e outro leitor ao lado, e ela deu
-> **1,00× · 0,91× · 1,13× · 1,02×** — uma das corridas com o escritor **mais
-> barato** que o leitor. **Indistinguível do ruído.**
+> **O que se mede** é o que **só** o MVCC compra: o p99 de um leitor com um
+> **escritor** ao lado contra o mesmo leitor com outro **leitor** ao lado. A
+> primeira conta (contra o leitor sozinho) inclui o custo de haver qualquer
+> segundo cliente, e esse o `RwLock` já recupera.
 >
-> Na mesma bancada o `RwLock` deu **2,48×–2,99×** de vazão de leitura, com
-> quatro medições da espera dentro de 7% umas das outras: o instrumento não é
-> cego a diferenças reais.
+> | carga da leitura | `por_lote` (padrão) | `por_operacao` |
+> |---|---:|---:|
+> | 1.000 linhas | 1,00× e 0,91× | 1,13× e 1,02× |
+> | **50 linhas** (a da tela) | 1,21× e 1,00× | **3,23× e 2,77×** |
 >
-> **Então a Sombra não se justifica por velocidade.** O que sobra, e é real, é
-> a **leitura repetível** (§4.3 do `CONCORRENCIA.md`): uma varredura longa
-> enxerga hoje linhas gravadas no meio dela, e nenhum `RwLock` conserta isso —
-> ele torna os leitores simultâneos, não consistentes. É defeito de
-> **resultado**, não de tempo, e nenhum p99 o mostraria.
+> **Onde ela morre:** no padrão `por_lote`, em qualquer carga. A janela de
+> gravação faz o `fsync` acontecer uma vez a cada 200 gravações, e aí um
+> escritor ao lado custa ao leitor o mesmo que outro leitor — não há o que o
+> MVCC recupere que o `RwLock` não recupere.
+>
+> **Onde ela vive:** em `por_operacao`, com a carga da tela. Leitor sozinho
+> 738 µs; com outro leitor 911 µs; **com um escritor 2.527 µs**. A diferença é
+> o `fsync` sob a trava global (1.267–1.371 µs, §7.1 do `CONCORRENCIA.md`), e o
+> `RwLock` não a toca.
+>
+> **E por que isto quase não foi visto:** as primeiras baterias liam **1.000
+> linhas** achando que liam 50 — um campo que o servidor não lê (§14 do
+> `CONCORRENCIA.md`). A leitura de 6.500 µs **afogava** o `fsync` de 1,4 ms, e
+> o ganho exclusivo do MVCC aparecia como ruído. *O instrumento errado escondia
+> exatamente o que só ele compra.*
+>
+> **A frase honesta:** a Sombra **compra desempenho onde o `fsync` acontece em
+> toda gravação, e não compra onde ele acontece uma vez por janela.** Qual dos
+> dois mundos vale é a configuração `recursos.durabilidade`, e ela é escolha do
+> dono do banco.
+>
+> E o que **nunca** dependeu disso continua de pé: **leitura repetível** (§4.3
+> do `CONCORRENCIA.md`). Uma varredura longa enxerga hoje linhas gravadas no
+> meio dela, e nenhum `RwLock` conserta isso — é defeito de **resultado**, não
+> de tempo.
 >
 > Tudo o que este documento diz sobre **onde a versão velha mora** continua
 > valendo palavra por palavra: é trabalho de formato, e o formato não mudou.
-> O que mudou é **por que** se faria. `docs/CONCORRENCIA.md` §11.
 
 ## 0. O que este documento acrescenta
 
