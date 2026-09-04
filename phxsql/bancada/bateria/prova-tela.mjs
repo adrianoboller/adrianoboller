@@ -90,29 +90,41 @@ try {
   await p.evaluate(() => verConteudoEditavel('escola', 'alunos'));
   await esperar(1500);
   await tiro('t3-grade');
+  // O cabecalho se le pela CHAVE (`data-campo`), e nao pela frase que aparece.
+  // Quando esta tela virou PhxGrid, o `<th>` passou a ter o botao de filtro
+  // DENTRO dele, e `textContent` virou «cidade▼». Comparar com «cidade»
+  // quebrou em dois lugares de uma vez: aqui, e no `indexOf` logo abaixo, que
+  // devolvia -1 e fazia a celula da cidade sair `null` no lugar de «none» --
+  // uma guarda de dado maiusculo que parecia acusar o CSS e so nao achava a
+  // celula. Chave nao tem seta pendurada, e nao muda de idioma.
   const grade = await p.evaluate(() => {
-    const th = [...document.querySelectorAll('table thead th')].map(x => x.textContent.trim());
-    const td = [...document.querySelectorAll('table tbody tr')].slice(0, 1)
-      .map(tr => [...tr.querySelectorAll('td')].map(x => x.textContent.trim()));
-    return { th, primeira: td[0] || [] };
+    // A linha de titulos e a ultima que NAO e a linha de filtro; a de filtro
+    // repete os mesmos `data-campo` e dobraria a contagem.
+    const linhas = [...document.querySelectorAll('.phx-grid thead tr:not(.phx-frow)')];
+    const th = [...(linhas.at(-1)?.querySelectorAll('th') ?? [])];
+    return {
+      campos: th.map(x => x.getAttribute('data-campo')),
+      // O rotulo VISIVEL sai do span do titulo, sem o botao de filtro junto.
+      rotulos: th.map(x => (x.querySelector('.phx-th-titulo') || x).textContent.trim()),
+    };
   });
   // A de sistema que se ESCONDE e a `softdeleted`; a que se MOSTRA, como
   // coluna de ordem, e o `rownum`. Nenhuma das duas vira coluna de dado.
-  confere('softdeleted nao e coluna da grade',
-    grade.th.some(t => t.toLowerCase().includes('softdeleted')), false);
+  confere('softdeleted nao e coluna da grade', grade.campos.includes('softdeleted'), false);
   confere('as colunas declaradas estao la',
-    ['id', 'turma_id', 'nome', 'cidade', 'nota'].every(c => grade.th.includes(c)), true);
-  contem('e o cabecalho traz a coluna de ordem', grade.th.join(' | '), 'Nº');
+    ['id', 'turma_id', 'nome', 'cidade', 'nota'].every(c => grade.campos.includes(c)), true);
+  contem('e o cabecalho traz a coluna de ordem', grade.rotulos.join(' | '), 'Nº');
   // A cidade tem de sair como esta GRAVADA. Maiuscula por CSS seria uma
   // mentira sobre o dado -- ja aconteceu com «Blumenau».
-  const cidadeNaGrade = await p.evaluate(() => {
-    const th = [...document.querySelectorAll('table thead th')].map(x => x.textContent.trim());
-    const i = th.indexOf('cidade');
-    const tr = document.querySelector('table tbody tr');
+  // A celula do CORPO nao carrega `data-campo` -- so o cabecalho carrega --,
+  // entao a coluna se acha pela POSICAO, e a posicao sai da chave.
+  const cidadeNaGrade = await p.evaluate(i => {
+    const tr = document.querySelector('.phx-grid tbody tr:not(.phx-grupo)');
     if (i < 0 || !tr) return null;
     const td = tr.querySelectorAll('td')[i];
+    if (!td) return null;
     return { texto: td.textContent.trim(), caixa: getComputedStyle(td).textTransform };
-  });
+  }, grade.campos.indexOf('cidade'));
   confere('a grade nao troca a caixa do dado', cidadeNaGrade && cidadeNaGrade.caixa, 'none');
 
   console.log('\n=== T4. a Estrutura mostra a chave e a estrangeira ===\n');
@@ -175,18 +187,38 @@ try {
   // como 400 no HTTP, que e o que uma operacao recusada e. O que se confere e
   // que veio SO ela.
   const errosAntes = erros.length;
+  // A MOLDURA da sprint (`[SP000021] `) abre toda recusa DE PROPOSITO -- entrou
+  // em d4f8563, no molde do `ERROR 1064 (42000)` do MySQL, e a mesma resposta
+  // traz a sprint tambem no campo `sprint`, justamente para ninguem ter de
+  // recortar a frase de volta. Entao a moldura se LE do campo, e nao se digita
+  // aqui: numero digitado a mao envelhece calado, e este ja envelheceu uma
+  // vez -- foi a moldura nova que fez esta guarda reprovar sem que nada de
+  // errado tivesse acontecido com a frase do dono.
+  const sprints = [];
+  const anotarSprint = async r => {
+    if (!r.url().endsWith('/api')) return;
+    const j = await r.json().catch(() => null);
+    if (j && j.ok === false && j.sprint) sprints.push(j.sprint);
+  };
+  p.on('response', anotarSprint);
   await p.locator('#btSalvar').click();
   await esperar(1800);
+  p.off('response', anotarSprint);
+  const moldura = sprints.length ? `[${sprints.at(-1)}] ` : '';
   await tiro('t6-recusado');
   const recado = await p.evaluate(() => {
     const a = document.querySelector('#aviso');
     return a && !a.hidden ? a.textContent.trim() : '';
   });
-  // A frase INTEIRA e do dono, e comeca nela: `String(erro)` do JavaScript
-  // punha «Error: » na frente -- o nome da classe, em ingles, no lugar onde
-  // esta a regra que a pessoa acabou de esbarrar.
+  // Depois da moldura vem a frase INTEIRA do dono, e nada mais nosso no meio:
+  // `String(erro)` do JavaScript punha «Error: » ali -- o nome da classe, em
+  // ingles, no lugar onde esta a regra que a pessoa acabou de esbarrar. A
+  // guarda continua sendo essa; o que mudou e que a moldura, que e nossa e
+  // declarada, entra medida em vez de digitada.
+  confere('e a resposta traz a sprint como CAMPO, e nao so na frase',
+    /^SP\d{6}$/.test(sprints.at(-1) || ''), true);
   confere('o recado comeca com a frase do dono, sem prefixo nosso',
-    recado.startsWith('aluno sem nota nao entra'), true);
+    recado.startsWith(moldura + 'aluno sem nota nao entra'), true);
   contem('e ela chega inteira', recado, 'SIGNAL SQLSTATE 45000');
   const naoEntrou = await p.evaluate(() => api('varrer',
     { database: 'escola', tabela: 'alunos', max: 5000 })

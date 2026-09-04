@@ -239,3 +239,41 @@ export async function abrirPelaArvore(page, db, tab) {
   await page.locator(`.no.tab[data-db="${db}"][data-tab="${tab}"]`).first().click();
   await page.waitForSelector('#painel table, #painel .vazio', { timeout: 10000 }).catch(() => {});
 }
+
+/** Abre uma tela pelo MENU, achando o item pela CHAVE da fabrica de idiomas.
+ *
+ * Nasceu de um defeito que ficou dois dias verde e depois reprovou cinco
+ * passos de uma vez. A prova dos idiomas abria a tela de Configuracoes pela
+ * BARRA DE FERRAMENTAS, assim:
+ *
+ *     .fer[title^="Config"], .fer[title^="Konfig"], #ferramentas .fer >> nth=13
+ *
+ * Duas coisas erradas na mesma linha, e a segunda escondeu a primeira. O
+ * `title^=` compara a REDACAO -- e ela muda com o idioma, que e justamente o
+ * que esta prova exercita. E o `nth=13` e POSICAO: quando o botao «Config»
+ * saiu da barra (c153d71, «Config sai da barra», com o caminho do menu
+ * conferido no lugar), o seletor nao ficou vazio -- ele passou a acertar o
+ * 14o botao, que hoje e «Restaurar». A prova clicava, a tela abria, e o
+ * `#idiomasAqui` nunca aparecia: cinco passos reprovando por um seletor que
+ * mirava a peca errada com toda a confianca do mundo.
+ *
+ * A chave (`tela.mi_gerais_servidor`) nao muda com o idioma nem com a ordem
+ * dos itens, e e a MESMA que a fabrica usa para traduzir o rotulo: quem
+ * renomear o item ou o mover de menu continua sendo achado, e quem o APAGAR
+ * faz esta funcao falhar dizendo o nome da chave -- em vez de clicar noutra
+ * coisa. */
+export async function abrirPeloMenu(page, chave) {
+  // `MENUS` e const de topo de script, como o `est`: le-se pelo NOME.
+  const onde = await page.evaluate(c => {
+    for (let m = 0; m < MENUS.length; m++) {
+      const itens = MENUS[m][3];
+      for (let i = 0; i < itens.length; i++) {
+        if (itens[i] !== 'sep' && itens[i].txt === c) return { m, i };
+      }
+    }
+    return null;
+  }, chave);
+  if (!onde) throw new Falha(`nao achei item de menu com a chave «${chave}»`);
+  await page.click(`.menubar .titulo[data-m="${onde.m}"]`);
+  await page.click(`.menubar .item[data-m="${onde.m}"][data-i="${onde.i}"]`);
+}

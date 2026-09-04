@@ -14001,34 +14001,52 @@ function marcado(bruto, dados) {
 
 /** Desenha um seletor de bandeiras onde lhe mandarem.
  *
- *  Dois lugares o usam -- a tela de entrada e a tela de Idiomas -- e os dois
- *  chamam ESTA funcao. Um segundo seletor escrito a parte teria a sua propria
- *  lista de idiomas, e ela seria a que envelhece calada. */
+ *  TRES lugares o usam -- a tela de entrada, a de Configuracoes e a de
+ *  Idiomas --, e os tres chamam ESTA funcao. Um segundo seletor escrito a
+ *  parte teria a sua propria lista de idiomas, e ela seria a que envelhece
+ *  calada. (Dizia «dois» ate 04/09/2026; o da tela de Configuracoes entrou
+ *  depois e a frase ficou onde estava.) */
 function desenharIdiomas(seletor = "#idiomas") {
-  const alvo = $(seletor);
-  if (!alvo) return;
+  // TODOS os alvos, e nao o primeiro -- e este `$$` no lugar do `$` e a
+  // correcao de um defeito MEDIDO, nao precaucao. Duas telas trazem
+  // `id="idiomasAqui"`: a de Configuracoes e a de Idiomas. Numa regiao so
+  // elas nunca convivem (o `folha()` troca o `innerHTML` do painel, e a aba
+  // escondida sai do documento -- decisao [2] do `multitela.js`), e por isso
+  // o id repetido passou despercebido. Com a tela DIVIDIDA em duas regioes,
+  // que e para o que o modulo existe, as duas ficam anexadas ao mesmo tempo:
+  // medido em 04/09/2026, Configuracoes numa paina e Idiomas na outra deu
+  // SEIS bandeiras na primeira e ZERO na segunda, porque `querySelector`
+  // devolve o primeiro em ordem de documento. Quem abria a tela de Idiomas
+  // via um seletor de idioma vazio e a paina do lado se redesenhar sozinha.
+  const alvos = $$(seletor);
+  if (!alvos.length) return;
   const atual = idiomaEscolhido();
-  alvo.innerHTML = IDIOMAS.map(i => `
-    <button type="button" class="idi" role="radio" data-idi="${i.col}"
-            aria-checked="${i.col === atual}" tabindex="${i.col === atual ? 0 : -1}"
-            aria-label="${esc(i.nome)}" title="${esc(i.nome)}">
-      ${BANDEIRAS[i.bandeira]}<span class="nome">${esc(i.nome)}</span>
-    </button>`).join("");
-  const botoes = [...alvo.querySelectorAll(".idi")];
-  botoes.forEach((b, i) => {
-    b.onclick = () => escolherIdioma(b.dataset.idi);
-    // Seta anda entre as bandeiras, que e o que se espera de um radiogroup.
-    b.onkeydown = e => {
-      const passo = { ArrowRight:1, ArrowDown:1, ArrowLeft:-1, ArrowUp:-1 }[e.key];
-      if (!passo) return;
-      e.preventDefault();
-      const vizinho = botoes[(i + passo + botoes.length) % botoes.length];
-      escolherIdioma(vizinho.dataset.idi).then(() => {
-        const novo = $(`${seletor} .idi[data-idi="${vizinho.dataset.idi}"]`);
-        if (novo) novo.focus();
-      });
-    };
-  });
+  for (const alvo of alvos) {
+    alvo.innerHTML = IDIOMAS.map(i => `
+      <button type="button" class="idi" role="radio" data-idi="${i.col}"
+              aria-checked="${i.col === atual}" tabindex="${i.col === atual ? 0 : -1}"
+              aria-label="${esc(i.nome)}" title="${esc(i.nome)}">
+        ${BANDEIRAS[i.bandeira]}<span class="nome">${esc(i.nome)}</span>
+      </button>`).join("");
+    const botoes = [...alvo.querySelectorAll(".idi")];
+    botoes.forEach((b, i) => {
+      b.onclick = () => escolherIdioma(b.dataset.idi);
+      // Seta anda entre as bandeiras, que e o que se espera de um radiogroup.
+      b.onkeydown = e => {
+        const passo = { ArrowRight:1, ArrowDown:1, ArrowLeft:-1, ArrowUp:-1 }[e.key];
+        if (!passo) return;
+        e.preventDefault();
+        const vizinho = botoes[(i + passo + botoes.length) % botoes.length];
+        escolherIdioma(vizinho.dataset.idi).then(() => {
+          // O foco volta para a bandeira DESTE seletor. Procurar pelo seletor
+          // global devolveria o da outra paina, e a seta levaria o foco para
+          // uma tela em que ninguem estava digitando.
+          const novo = alvo.querySelector(`.idi[data-idi="${vizinho.dataset.idi}"]`);
+          if (novo) novo.focus();
+        });
+      };
+    });
+  }
 }
 
 async function escolherIdioma(col) {

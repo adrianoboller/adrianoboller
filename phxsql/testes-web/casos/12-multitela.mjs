@@ -195,6 +195,47 @@ export const caso = {
       'com duas telas na tela, so a que tem foco carrega o id #painel');
     await capturar(ctx, ctx.nomeCaptura('duas-regioes'));
 
+    // ------------------------- 4a. o id que o modulo NAO gerencia
+    //
+    // A afirmacao logo acima -- «so a que tem foco carrega o id #painel» --
+    // vale para os ids que ESTE modulo move. Os que cada tela traz no proprio
+    // HTML ninguem move, e `id="idiomasAqui"` esta em DUAS: a de Configuracoes
+    // e a de Idiomas. Numa regiao so elas nunca convivem (o `folha()` troca o
+    // `innerHTML` do painel e a aba escondida sai do documento), e por isso o
+    // id repetido atravessou o projeto inteiro sem sintoma. Com a tela
+    // DIVIDIDA, que e para o que este modulo existe, as duas ficam anexadas:
+    // `querySelector` devolvia a primeira e a segunda abria com o seletor de
+    // idioma VAZIO -- medido em 04/09/2026, seis bandeiras contra ZERO.
+    const idiomaAntes = await page.evaluate(() => idiomaEscolhido());
+    await page.locator('#regioes .regiao').nth(0).locator('.tira-aba').first().click();
+    await assentar(page, 300);
+    await page.evaluate(() => verConfigServidor());
+    await assentar(page, 1500);
+    await page.locator('#regioes .regiao').nth(1).locator('.tira-aba').first().click();
+    await assentar(page, 300);
+    await page.evaluate(() => irPara('idiomas'));
+    await assentar(page, 2000);
+    // Quantas bandeiras SAO -- a lista sai do codigo, nao do dedo.
+    const quantosIdiomas = await page.evaluate(() => IDIOMAS.length);
+    const desenhadas = await page.evaluate(() =>
+      [...document.querySelectorAll('.idi-aqui')].map(n => n.querySelectorAll('.idi').length));
+    igual(desenhadas.join(','), `${quantosIdiomas},${quantosIdiomas}`,
+      'as duas telas com seletor de idioma abertas lado a lado desenham as bandeiras cada uma');
+    ctx.notas.push(`seletor de idioma nas duas regioes: ${desenhadas.join(' e ')} bandeiras`);
+    // E clicar numa acende a MESMA nas duas -- que e o que o codigo ja
+    // prometia por comentario e so agora cumpre com as duas na tela.
+    const outro = await page.evaluate(() => IDIOMAS.find(i => i.col !== idiomaEscolhido()).col);
+    await page.locator('.idi-aqui').nth(1).locator(`.idi[data-idi="${outro}"]`).click();
+    await assentar(page, 900);
+    const acesas = await page.evaluate(() => [...document.querySelectorAll('.idi-aqui')].map(n =>
+      [...n.querySelectorAll('.idi')].filter(b => b.getAttribute('aria-checked') === 'true')
+        .map(b => b.dataset.idi).join(',') || '(nenhuma)'));
+    igual(acesas.join(' | '), `${outro} | ${outro}`,
+      'clicar a bandeira de uma regiao tem de acender a mesma nas duas');
+    // Devolve o idioma de antes: o resto do caso nao pediu para ser traduzido.
+    await page.evaluate(col => escolherIdioma(col), idiomaAntes);
+    await assentar(page, 700);
+
     // A calha arrasta.
     const antesDaCalha = await page.evaluate(() =>
       document.querySelectorAll('.regiao')[0].getBoundingClientRect().width);

@@ -24,7 +24,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { subir, USUARIO, SENHA, TOKEN } from './servidor.mjs';
-import { Falha, verdade, igual, entrar } from './apoio.mjs';
+import { Falha, verdade, igual, entrar, abrirPeloMenu } from './apoio.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const RAIZ = resolve(AQUI, '..');
@@ -61,6 +61,12 @@ function conferirBinario(phxsqld) {
     throw new Error(`o phxsqld e mais velho que ${maisNovo.p} — recompile antes`);
   }
 }
+
+/* A tela de Configuracoes se abre pelo menu «Configuracoes -> Gerais do
+ * servidor», e esta e a CHAVE dele na fabrica de idiomas. Uma constante, e
+ * nao a chave repetida em tres passos: e o mesmo motivo de sempre -- a copia
+ * que alguem esquecer de mudar vira a que mente. */
+const CHAVE_CONFIG = 'tela.mi_gerais_servidor';
 
 const passos = [];
 async function passo(nome, f) {
@@ -142,7 +148,11 @@ const main = async () => {
 
     // ---------------------------- 4. o outro caminho: a tela de configuracao
     await passo('a tela de Configuracoes troca o idioma e NAO muda de tela', async () => {
-      await page.click('.fer[title^="Config"], .fer[title^="Konfig"], #ferramentas .fer >> nth=13');
+      // Pelo MENU e pela CHAVE. Era pela barra de ferramentas e por posicao
+      // (`nth=13`), e o botao «Config» saiu da barra em c153d71: o seletor
+      // passou a acertar «Restaurar» e a prova esperava um seletor de
+      // bandeiras numa tela que nao tem nenhum.
+      await abrirPeloMenu(page, CHAVE_CONFIG);
       await page.waitForSelector('#idiomasAqui .idi', { timeout: 10000 });
       igual(await page.textContent('#titulo'), 'General server settings',
         'a tela de configuracoes em ingles');
@@ -191,7 +201,7 @@ const main = async () => {
         document.body.scrollWidth > document.body.clientWidth + 1);
       verdade(!rolaDeLado, 'a pagina rolou de lado com o texto alemao');
       await capturar(page, '06-app-alemao');
-      await page.click('#ferramentas .fer >> nth=13');
+      await abrirPeloMenu(page, CHAVE_CONFIG);
       await page.waitForSelector('#idiomasAqui .idi', { timeout: 10000 });
       await capturar(page, '07-config-alemao');
     });
@@ -204,16 +214,12 @@ const main = async () => {
     // sobreviveu a traducao -- e que o texto TROCA de idioma na hora.
     await passo('a nota da multitela troca de idioma inteira, com a ênfase no lugar', async () => {
       await escolher(page, '#idiomasAqui', 'Portugues');
-      const onde = await page.evaluate(() => {
-        for (const m of document.querySelectorAll('.menubar .menu'))
-          for (const b of m.querySelectorAll('.item'))
-            if (b.textContent.includes('multitela'))
-              return { m: b.dataset.m, i: b.dataset.i };
-        return null;
-      });
-      verdade(onde !== null, 'nao achei o item «Sobre o modo multitela» no menu');
-      await page.click(`.menubar .titulo[data-m="${onde.m}"]`);
-      await page.click(`.menubar .item[data-m="${onde.m}"][data-i="${onde.i}"]`);
+      // O IRMAO do defeito do passo 4, no mesmo arquivo e no mesmo dia: aqui
+      // o item era achado pela palavra «multitela» dentro do rotulo. Passa
+      // hoje por sorte -- a palavra sobrevive em portugues --, e quebraria
+      // calado no primeiro idioma que a traduzisse, ou na primeira redacao
+      // melhor. Chave tambem.
+      await abrirPeloMenu(page, 'tela.mi_sobre_multitela');
       await page.waitForSelector('.multitela-nota', { timeout: 10000 });
       igual(await page.textContent('#titulo'), 'Multitela', 'o titulo da tela');
       const pt = await page.textContent('.multitela-nota');
@@ -268,7 +274,7 @@ const main = async () => {
     await passo('a mesma tela em dois idiomas e nos dois temas', async () => {
       // O passo anterior deixou a Multitela na tela; o seletor de bandeiras
       // mora na de Configuracoes, entao volta-se para ela pela barra.
-      await page.click('#ferramentas .fer >> nth=13');
+      await abrirPeloMenu(page, CHAVE_CONFIG);
       await page.waitForSelector('#idiomasAqui .idi', { timeout: 10000 });
       for (const [col, nome] of [['Portugues', 'pt'], ['Ingles', 'en'], ['Alemao', 'de']]) {
         await escolher(page, '#idiomasAqui', col);
