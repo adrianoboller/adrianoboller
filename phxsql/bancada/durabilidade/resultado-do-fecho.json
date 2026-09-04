@@ -1,0 +1,62 @@
+{
+  "controle_por_operacao": {
+    "ok": true,
+    "matriz": {
+      "controle.trash": 1,
+      "controle.bin": 1,
+      "controle.memo": 1,
+      "controle.log": 1,
+      "controle.reason": 1,
+      "controle.ndx": 2,
+      "controle.reg": 1
+    }
+  },
+  "cenario_a": {
+    "reg_a": 0,
+    "reg_b": 0,
+    "reg_c": 1,
+    "outros_a": 7,
+    "outros_b": 7,
+    "matriz": {
+      "c.trash": 1,
+      "c.bin": 1,
+      "c.memo": 1,
+      "c.log": 1,
+      "c.reason": 1,
+      "c.ndx": 2,
+      "c.reg": 1,
+      "b.trash": 1,
+      "b.bin": 1,
+      "b.memo": 1,
+      "b.log": 1,
+      "b.reason": 1,
+      "b.ndx": 2,
+      "a.trash": 1,
+      "a.bin": 1,
+      "a.memo": 1,
+      "a.log": 1,
+      "a.reason": 1,
+      "a.ndx": 2
+    },
+    "valido": true
+  },
+  "cenario_b": {
+    "fechou": true,
+    "reg_d": 0,
+    "reg_e": 0,
+    "outros_d": 7,
+    "outros_e": 0,
+    "matriz": {
+      "d.trash": 1,
+      "d.bin": 1,
+      "d.memo": 1,
+      "d.log": 1,
+      "d.reason": 1,
+      "d.ndx": 2
+    },
+    "valido": true,
+    "ms": 2000
+  },
+  "defeito_confirmado_a": true,
+  "defeito_confirmado_b": false
+}
