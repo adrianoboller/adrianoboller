@@ -27,7 +27,7 @@ CARIMBAR = [
     (DOSSIE / "fluxo-atual.html", r"(Versão )\d+\.\d+\.\d+"),
     (RAIZ / "docs/ativacao-do-serial.html", r"(WX Claude Code )\d+\.\d+\.\d+(?= · instrução)"),
 ]
-GERADORES = ["numeros-do-plugin.py", "gerar-organograma.py", "gerar-evolucao.py", "gerar-dossie.py"]
+GERADORES = ["numeros-do-plugin.py", "gerar-organograma.py", "gerar-evolucao.py", "gerar-comandos.py", "gerar-dossie.py"]
 
 
 def main() -> int:

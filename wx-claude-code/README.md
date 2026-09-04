@@ -18,6 +18,12 @@ Duas aberturas, que não substituem o principal:
 - **Legado E/OU.** O projeto pode ser WX, PHP, outra linguagem, ou uma combinação. `projeto.produtos` aceita um ou mais de `windev`, `webdev`, `windev-mobile`, `php`, `outra`, e `projeto.principal` diz qual manda quando a evidência conflita.
 - **Destino em qualquer linguagem.** Os perfis (Rust, Python, C# + WL_C#, Go, Java, Node, PHP) são sugestão. Com `perfil: outra`, a linguagem e o framework são livres e o processo de conversão sai genérico.
 
+## Folha de referência
+
+`docs/comandos.pdf` traz os 19 comandos na ordem de uso e as 60 perguntas
+por id, em sete páginas. Sai dos próprios arquivos (`gerar-comandos.py`), então
+não discorda do que existe.
+
 ## Pré-requisitos
 
 Python 3.11+, o CLI `claude`, e mais nada obrigatório: os scripts usam só a

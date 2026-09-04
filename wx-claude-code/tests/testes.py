@@ -678,6 +678,35 @@ class Questionario(unittest.TestCase):
         html = (RAIZ / "docs/dossie/evolucao.html").read_text(encoding="utf-8")
         self.assertIn(f'"versao": "{no_git[0]}"', html)
 
+    def test_folha_de_comandos_cobre_todos_e_falha_se_faltar_ordem(self):
+        """A folha de referencia sai dos arquivos: todo comando aparece, e comando novo
+        sem lugar na ordem faz o gerador falhar, de proposito."""
+        alvo = Path(tempfile.mkdtemp()) / "comandos.html"
+        r = run(RAIZ / "docs/dossie/gerar-comandos.py", alvo)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        html = alvo.read_text(encoding="utf-8")
+        for p in (RAIZ / "commands").glob("*.md"):
+            self.assertIn(f"<b>{p.stem}</b>", html, f"{p.stem} fora da folha")
+        itens = json.loads(run(SCRIPTS / "listar_perguntas.py", "--json").stdout)
+        self.assertIn(f"{len(itens)} perguntas com id", html)
+        for i in itens:
+            # bloco de primeiro nivel vira cabecalho de grupo; subpergunta vira linha
+            marca = f'>{i["id"]} · ' if i["nivel"] == 1 else f'<b>{i["id"]}</b>'
+            self.assertIn(marca, html, i["id"])
+        # grupo nao pode aparecer em dois trechos: cabecalho repetido e defeito
+        import re as _re
+        grupos = _re.findall(r'class="grupo"><td colspan="3"[^>]*>([^<]+)<', html)
+        self.assertEqual(len(grupos), len(set(grupos)), f"grupo repetido na folha: {grupos}")
+        # comando novo sem lugar na ordem: o gerador recusa em vez de omitir
+        novo = RAIZ / "commands" / "zzz-teste-temporario.md"
+        novo.write_text('---\ndescription: "temporario"\n---\n# t\n', encoding="utf-8")
+        try:
+            r = run(RAIZ / "docs/dossie/gerar-comandos.py", alvo)
+            self.assertEqual(r.returncode, 2)
+            self.assertIn("sem lugar na ordem", r.stderr)
+        finally:
+            novo.unlink()
+
     def test_fontes_md_esta_em_dia(self):
         """FONTES.md e inventario medido: se alguem acrescentar arquivo e nao rodar o
         gerador, o documento passa a mentir sobre o pacote."""

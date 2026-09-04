@@ -204,6 +204,7 @@ def validate(root: Path, strict: bool = False) -> dict:
         "skills/ui-ux-pro-max/LICENSE",
         "skills/ui-ux-pro-max/NOTICE.md",
         "PRE-REQUISITOS.md",
+        "docs/comandos.html",
         "FONTES.md",
         "instalar.sh",
         "instalar.ps1",
