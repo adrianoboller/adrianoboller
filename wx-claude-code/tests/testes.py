@@ -581,6 +581,67 @@ class Questionario(unittest.TestCase):
             self.assertIn(passo, texto, passo)
         self.assertIn("param(", texto); self.assertIn("$Conferir", texto)
 
+    def test_uiux_vendorizada_com_licenca_e_atribuicao(self):
+        """Material de terceiro entra com licenca e origem, ou nao entra. MIT exige o
+        texto da licenca e a atribuicao; e as descricoes longas do upstream foram
+        encurtadas, com as originais guardadas."""
+        base = RAIZ / "skills" / "ui-ux-pro-max"
+        self.assertIn("MIT License", (base / "LICENSE").read_text(encoding="utf-8"))
+        notice = (base / "NOTICE.md").read_text(encoding="utf-8")
+        self.assertIn("nextlevelbuilder/ui-ux-pro-max-skill", notice)
+        self.assertIn("Next Level Builder", notice)
+        self.assertRegex(notice, r"commit `[0-9a-f]{40}`")
+        originais = json.loads((RAIZ / "skills/descricoes-originais-uiux.json").read_text(encoding="utf-8"))
+        for nome in ("ui-ux-pro-max", "design", "design-system", "ui-styling", "banner-design", "brand", "slides"):
+            txt = (RAIZ / "skills" / nome / "SKILL.md").read_text(encoding="utf-8")
+            self.assertIn("origem: nextlevelbuilder", txt, nome)
+            desc = re.search(r'^description:\s*(.+)$', txt, re.M).group(1).strip().strip('"')
+            self.assertLessEqual(len(desc), 150, f"{nome}: {len(desc)} caracteres")
+            self.assertIn(nome, originais, f"{nome} sem a descricao original guardada")
+            self.assertGreater(len(originais[nome]), len(desc), nome)
+        # a base de dados que da valor a skill veio junto
+        dados = base / "data"
+        self.assertTrue((dados / "styles.csv").is_file()); self.assertTrue((dados / "colors.csv").is_file())
+        self.assertTrue((dados / "ux-guidelines.csv").is_file())
+
+    def test_pre_requisitos_batem_com_o_que_os_scripts_importam(self):
+        """PRE-REQUISITOS.md diz que nenhuma dependencia externa e obrigatoria. Este
+        teste varre os imports e falha se alguem acrescentar uma sem avisar."""
+        import ast
+        padrao = set(sys.stdlib_module_names)
+        proprios = {p.stem for p in (RAIZ / "skills/conversao-wx/scripts").glob("*.py")}
+        externos = {}
+        for p in list((RAIZ / "skills/conversao-wx/scripts").glob("*.py")) + list((RAIZ / "hooks").glob("*.py")):
+            try:
+                arvore = ast.parse(p.read_text(encoding="utf-8"))
+            except SyntaxError:
+                continue
+            for no in ast.walk(arvore):
+                nomes = []
+                if isinstance(no, ast.Import):
+                    nomes = [a.name.split(".")[0] for a in no.names]
+                elif isinstance(no, ast.ImportFrom) and no.module and no.level == 0:
+                    nomes = [no.module.split(".")[0]]
+                for m in nomes:
+                    if m not in padrao and m not in proprios:
+                        externos.setdefault(m, set()).add(p.name)
+        # os unicos aceitos sao os de PDF, e so dentro de try/except
+        self.assertLessEqual(set(externos), {"pypdf", "pdfminer"},
+                             f"dependencia externa nova: {sorted(set(externos) - {'pypdf', 'pdfminer'})}; atualize PRE-REQUISITOS.md")
+        for modulo, arquivos in externos.items():
+            for nome in arquivos:
+                fonte = (RAIZ / "skills/conversao-wx/scripts" / nome)
+                fonte = fonte if fonte.is_file() else (RAIZ / "hooks" / nome)
+                texto = fonte.read_text(encoding="utf-8")
+                for linha_no, linha in enumerate(texto.splitlines()):
+                    if f"import {modulo}" in linha or f"from {modulo}" in linha:
+                        anteriores = texto.splitlines()[max(0, linha_no - 6):linha_no]
+                        self.assertTrue(any("try:" in a for a in anteriores),
+                                        f"{nome}: {modulo} importado fora de try/except; ele e opcional")
+        pre = (RAIZ / "PRE-REQUISITOS.md").read_text(encoding="utf-8")
+        self.assertIn("Nenhuma dependência externa de Python é obrigatória", pre)
+        self.assertIn("Python", pre); self.assertIn("3.11", pre)
+
     def test_fontes_md_esta_em_dia(self):
         """FONTES.md e inventario medido: se alguem acrescentar arquivo e nao rodar o
         gerador, o documento passa a mentir sobre o pacote."""
@@ -597,7 +658,8 @@ class Questionario(unittest.TestCase):
         self.assertIn("| Instaladores |", atual)
 
     def test_skills_erp_presentes_com_descricao_curta(self):
-        for nome in ("php-legado-e-destino", "pdf-para-markdown", "erp-accounting", "erp-inventory", "erp-brazil-fiscal", "erp-multi-company", "erp-approval-workflows", "erp-lgpd", "erp-integration-reliability", "windev-wlanguage-erp"):
+        for nome in ("php-legado-e-destino", "pdf-para-markdown", "ui-ux-pro-max", "design", "design-system",
+                     "ui-styling", "banner-design", "brand", "slides", "erp-accounting", "erp-inventory", "erp-brazil-fiscal", "erp-multi-company", "erp-approval-workflows", "erp-lgpd", "erp-integration-reliability", "windev-wlanguage-erp"):
             txt = (RAIZ / "skills" / nome / "SKILL.md").read_text()
             self.assertTrue(txt.startswith("---\n"), nome)
             desc = re.search(r"^description:\s*(.+)$", txt, re.M).group(1).strip().strip('"')

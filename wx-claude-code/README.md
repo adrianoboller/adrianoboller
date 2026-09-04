@@ -18,6 +18,12 @@ Duas aberturas, que não substituem o principal:
 - **Legado E/OU.** O projeto pode ser WX, PHP, outra linguagem, ou uma combinação. `projeto.produtos` aceita um ou mais de `windev`, `webdev`, `windev-mobile`, `php`, `outra`, e `projeto.principal` diz qual manda quando a evidência conflita.
 - **Destino em qualquer linguagem.** Os perfis (Rust, Python, C# + WL_C#, Go, Java, Node, PHP) são sugestão. Com `perfil: outra`, a linguagem e o framework são livres e o processo de conversão sai genérico.
 
+## Pré-requisitos
+
+Python 3.11+, o CLI `claude`, e mais nada obrigatório: os scripts usam só a
+biblioteca padrão. A lista completa, com o que é opcional e o que se perde sem
+cada coisa, está em `PRE-REQUISITOS.md`.
+
 ## Instalar
 
 ```bash
@@ -99,6 +105,12 @@ nunca sobrescreve o que já existe.
   gerado recebe `docs/skills-recomendadas.md` com as que cabem nas respostas
   (`references/skills-sh.md`).
 
+- **UI/UX Pro Max** (7 skills vendorizadas de
+  [nextlevelbuilder/ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill),
+  MIT): `ui-ux-pro-max` com base local pesquisável de estilos, paletas, pares de
+  fontes e diretrizes de UX, mais `design`, `design-system`, `ui-styling`,
+  `banner-design`, `brand` e `slides`. Servem à tela do destino, ao lado do
+  Impeccable. Atribuição em `skills/ui-ux-pro-max/NOTICE.md`.
 - `php-legado-e-destino`: PHP nos dois sentidos — ler um sistema PHP legado
   (procedural ou OOP, com as armadilhas que mudam o resultado convertido) e
   gerar PHP 8.3 como destino, com a tabela WLanguage → PHP.
@@ -234,7 +246,7 @@ geradas por `docs/prints/gerar.md`).
 | ![equipe](docs/prints/29-equipe-prioritaria-pesquisador-e-status.png) equipe prioritária: infrutífero aciona o Pesquisador; status por agente sem inventar | ![rag](docs/prints/30-rag-e-guarda-de-anexos.png) RAG do projeto cita `arquivo#linha`; anexo somente leitura recusado |
 | ![corpus](docs/prints/31-corpus-no-claude-md-e-no-rag.png) o Help consultado por tema, com id e hash, a partir do `CLAUDE.md` gerado e do RAG | ![skills erp](docs/prints/32-skills-erp-listadas.png) as onze skills do plugin listadas numa sessão nova, oito delas de ERP |
 | ![esqueleto](docs/prints/33-esqueleto-erp-e-skill-por-modulo.png) esqueleto de ERP gerado por L6: módulo → skill, ADR lida, `erp-inventory` carregada e citada | ![skills.sh](docs/prints/34-skills-recomendadas-e-regras-absorvidas.png) skills do skills.sh que cabem nas respostas, tipos de dinheiro e data, STRIDE → SEC-* → teste |
-| ![artefatos](docs/prints/35-artefatos-e-skill-de-php.png) artefatos: arquivado ≠ declarado, o hash como prova, e a skill de PHP nas armadilhas do legado | ![comandos](docs/prints/36-comandos-e-legado-e-ou.png) os dezessete comandos, as perguntas por id, e legado só PHP com destino Elixir aceito | ![backup](docs/prints/37-backup-e-respostas-por-id.png) K8: RPO, RTO e a última restauração testada; réplica não é backup; as 60 respostas achadas sozinhas | ![pdf e log](docs/prints/38-pdf-para-markdown-e-registro.png) PDF virou markdown citável por página; o registro mostrou as negativas do hook e revelou um excesso de bloqueio | ![bateria](docs/prints/39-bateria-de-testes-prova-real.png) a bateria rodada pelo próprio Claude Code: 13 skills, 94 agentes, zero erros | ![instalador](docs/prints/40-instalador-e-fontes.png) o instalador em modo conferência, cinco passos, e o inventário de fontes medido |
+| ![artefatos](docs/prints/35-artefatos-e-skill-de-php.png) artefatos: arquivado ≠ declarado, o hash como prova, e a skill de PHP nas armadilhas do legado | ![comandos](docs/prints/36-comandos-e-legado-e-ou.png) os dezessete comandos, as perguntas por id, e legado só PHP com destino Elixir aceito | ![backup](docs/prints/37-backup-e-respostas-por-id.png) K8: RPO, RTO e a última restauração testada; réplica não é backup; as 60 respostas achadas sozinhas | ![pdf e log](docs/prints/38-pdf-para-markdown-e-registro.png) PDF virou markdown citável por página; o registro mostrou as negativas do hook e revelou um excesso de bloqueio | ![bateria](docs/prints/39-bateria-de-testes-prova-real.png) a bateria rodada pelo próprio Claude Code: 13 skills, 94 agentes, zero erros | ![instalador](docs/prints/40-instalador-e-fontes.png) o instalador em modo conferência e o inventário de fontes medido | ![uiux](docs/prints/41-uiux-e-prerequisitos.png) a skill UI/UX Pro Max com origem, licença e dados citados por arquivo e linha |
 
 ## Hooks e RAG
 

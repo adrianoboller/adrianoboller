@@ -78,6 +78,15 @@ A ordem canônica da letra F, que o comando segue sem repetir a lista: F0 (tela 
   `screenshots/`) ao lado da tela nova, no mesmo estado, como evidência do
   `fidelity.ui`.
 
+## De onde vem a decisão de estilo
+
+Duas fontes, com papéis diferentes:
+
+- **Impeccable** revisa o que já existe: `shape`, `harden`, `typeset`, `layout`, `polish`, `audit`. É o que roda no hook depois de mexer numa tela.
+- **UI/UX Pro Max** (`ui-ux-pro-max` e as seis irmãs) responde antes de escrever: base local pesquisável de estilos, paletas por produto, pares de fontes, diretrizes de UX, tipos de gráfico e pilhas. Use quando a pergunta for «qual paleta, qual fonte, qual padrão» e o `DESIGN.md` ainda não decidiu.
+
+A ordem não muda: **a tela modelo (F0) manda**. As duas skills servem ao que o legado já faz; nenhuma delas autoriza redesenhar o que o usuário conhece sem `DEC-*`.
+
 ## Interface operacional: densidade e teclado
 
 Regras absorvidas da pesquisa no skills.sh (`skills-sh.md`), para ERP de uso diário por quem digita o dia inteiro:
