@@ -1,0 +1,145 @@
+<title>Evolução do WX Claude Code</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Exo+2:wght@500;700;800&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root{--g:#FBFAF7;--p:#FFFFFF;--i:#14161F;--m:#6B6F82;--l:#E4E2DB;--a:#C63C0A;--a2:#1F5FBF;--ok:#1F7A4D;--grid:#ECEAE3;--fill:rgba(198,60,10,.10)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--g:#0B0D17;--p:#121527;--i:#EDEDF3;--m:#9AA0B8;--l:#252A42;--a:#E2261C;--a2:#6FA3FF;--ok:#2FBF71;--grid:#1B1F33;--fill:rgba(226,38,28,.14)}}
+:root[data-theme="dark"]{--g:#0B0D17;--p:#121527;--i:#EDEDF3;--m:#9AA0B8;--l:#252A42;--a:#E2261C;--a2:#6FA3FF;--ok:#2FBF71;--grid:#1B1F33;--fill:rgba(226,38,28,.14)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--g);color:var(--i);font-family:"Source Serif 4",Georgia,serif;font-size:16px;line-height:1.55}
+.wrap{max-width:1180px;margin:0 auto;padding:40px 28px 72px}
+h1,h2,h3{font-family:"Exo 2","Segoe UI",sans-serif;text-wrap:balance;margin:0}
+h1{font-size:40px;font-weight:800;letter-spacing:-.5px;line-height:1.1}
+h2{font-size:22px;font-weight:700;margin-bottom:6px}
+.eyebrow{font-family:"Exo 2",sans-serif;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--a);font-weight:700}
+.lead{max-width:66ch;color:var(--m);margin:14px 0 0;font-size:17px}
+.mono{font-family:"JetBrains Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
+header{display:grid;grid-template-columns:1fr auto;gap:28px;align-items:end;border-bottom:2px solid var(--i);padding-bottom:22px}
+.resumo{display:grid;grid-template-columns:repeat(4,auto);gap:10px 26px}
+.resumo div{font-family:"Exo 2",sans-serif}
+.resumo b{display:block;font-size:30px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+.resumo small{color:var(--m);font-size:12px;letter-spacing:.06em;text-transform:uppercase}
+.resumo i{font-style:normal;color:var(--ok);font-size:14px;font-weight:700}
+section{margin-top:44px}
+.multiplos{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px;margin-top:16px}
+@media(max-width:900px){.multiplos{grid-template-columns:repeat(2,1fr)}header{grid-template-columns:1fr}}
+@media(max-width:520px){.multiplos{grid-template-columns:1fr}.resumo{grid-template-columns:repeat(2,auto)}}
+.painel{background:var(--p);border:1px solid var(--l);padding:14px 14px 8px}
+.painel h3{font-size:14px;font-weight:700;display:flex;justify-content:space-between;align-items:baseline}
+.painel h3 span{font-family:"JetBrains Mono",monospace;font-size:13px;color:var(--a);font-weight:600}
+.painel p{margin:2px 0 6px;font-size:12.5px;color:var(--m);line-height:1.35}
+.painel svg{width:100%;height:auto;display:block}
+.grande{background:var(--p);border:1px solid var(--l);padding:18px 18px 10px;margin-top:16px;overflow-x:auto}
+.grande svg{width:100%;min-width:760px;height:auto;display:block}
+.legenda{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;color:var(--m);margin-top:8px;font-family:"Exo 2",sans-serif}
+.legenda i{display:inline-block;width:18px;height:3px;vertical-align:middle;margin-right:6px}
+.scroll{overflow-x:auto;margin-top:14px;border:1px solid var(--l);background:var(--p)}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th{font-family:"Exo 2",sans-serif;font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;text-align:left;color:var(--m);padding:10px 12px;border-bottom:2px solid var(--l);white-space:nowrap}
+td{padding:8px 12px;border-bottom:1px solid var(--grid);vertical-align:top}
+td.n{text-align:right;font-family:"JetBrains Mono",monospace;font-variant-numeric:tabular-nums;white-space:nowrap}
+td.n em{font-style:normal;color:var(--ok);font-size:12px;margin-left:4px}
+tr.dia td{background:var(--grid);font-family:"Exo 2",sans-serif;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--m);padding:6px 12px}
+.nota{color:var(--m);font-size:14px;max-width:72ch;margin-top:12px}
+.nota code{font-family:"JetBrains Mono",monospace;font-size:13px}
+</style>
+<div class="wrap">
+<header>
+ <div>
+  <div class="eyebrow">WX Claude Code · medido no git, versão a versão</div>
+  <h1 style="margin-top:8px">Evolução do plugin</h1>
+  <p class="lead">Vinte e três versões em dois dias, 3 e 4 de setembro de 2026. Cada ponto abaixo foi contado no commit da própria versão: nada é estimado, e o eixo é a ordem das versões, não o relógio.</p>
+ </div>
+ <div class="resumo" id="resumo"></div>
+</header>
+
+<section>
+ <div class="eyebrow">Oito medidas, uma curva cada</div>
+ <h2>Pequenos múltiplos</h2>
+ <p class="nota" style="margin-top:4px">A área sombreada é o valor; o ponto grande é a 3.17.0. Degraus são a forma natural: cada versão entra inteira. A linha pontilhada marca a virada para 4 de setembro.</p>
+ <div class="multiplos" id="multiplos"></div>
+</section>
+
+<section>
+ <div class="eyebrow">Tudo na mesma escala</div>
+ <h2>Crescimento relativo à 1.0.0</h2>
+ <p class="nota" style="margin-top:4px">Cada medida dividida pelo valor que tinha na primeira versão (as que nasceram em zero partem da versão em que apareceram). Mostra onde o esforço foi: o questionário quintuplicou e os hooks quadruplicaram, enquanto o código em Python cresceu só 1,6×. O plugin ficou mais perguntador e mais vigiado do que maior.</p>
+ <div class="grande"><svg id="relativo" viewBox="0 0 1000 380"></svg><div class="legenda" id="legenda"></div></div>
+</section>
+
+<section>
+ <div class="eyebrow">Versão a versão</div>
+ <h2>O que entrou em cada uma</h2>
+ <div class="scroll"><table id="tabela"><thead><tr><th>versão</th><th>o que entrou</th><th style="text-align:right">agentes</th><th style="text-align:right">skills</th><th style="text-align:right">scripts</th><th style="text-align:right">Python</th><th style="text-align:right">testes</th><th style="text-align:right">prints</th><th style="text-align:right">hooks</th><th style="text-align:right">itens quest.</th><th style="text-align:right">manual</th></tr></thead><tbody></tbody></table></div>
+ <p class="nota">Método: para cada commit cujo título começa com um número de versão, <code>git ls-tree</code> contou agentes, skills, scripts, prints e referências; <code>git show</code> contou linhas de Python, métodos <code>test_</code>, hooks no <code>hooks.json</code>, itens do modelo de questionário e linhas do <code>MANUAL.md</code>. Versões 3.0 a 3.2.0 não tiveram commit próprio e por isso não aparecem. Itens do questionário são os blocos mais as subperguntas numeradas (0.x, F, K, L); as letras A a J contam uma cada.</p>
+</section>
+</div>
+<script>
+const D = [{"versao": "1.0.0", "data": "2026-09-03", "commit": "f1ffdfa", "agentes": 26, "skills": 3, "comandos": 4, "scripts": 8, "linhas_py": 7754, "testes": 0, "prints": 0, "referencias": 8, "hooks": 2, "itens_questionario": 10, "manual": 0, "titulo": "questionário A–J, Impeccable vendorizado e laudo de tokens\n"}, {"versao": "3.2.1", "data": "2026-09-03", "commit": "872f782", "agentes": 34, "skills": 3, "comandos": 5, "scripts": 10, "linhas_py": 8305, "testes": 0, "prints": 11, "referencias": 11, "hooks": 2, "itens_questionario": 10, "manual": 236, "titulo": "pacote com o questionário letra a letra\n"}, {"versao": "3.3.0", "data": "2026-09-03", "commit": "90538c7", "agentes": 34, "skills": 3, "comandos": 5, "scripts": 13, "linhas_py": 8817, "testes": 12, "prints": 11, "referencias": 12, "hooks": 3, "itens_questionario": 10, "manual": 262, "titulo": "projeto de exemplo real, provas em código, portão G0 e testes de regressão\n"}, {"versao": "3.4.0", "data": "2026-09-03", "commit": "777641b", "agentes": 34, "skills": 3, "comandos": 5, "scripts": 13, "linhas_py": 8826, "testes": 12, "prints": 14, "referencias": 14, "hooks": 3, "itens_questionario": 10, "manual": 264, "titulo": "para qual linguagem converter, WL_C# como perfil, prints e vídeo com o exemplo\n"}, {"versao": "3.5.0", "data": "2026-09-03", "commit": "9ea613a", "agentes": 84, "skills": 3, "comandos": 5, "scripts": 13, "linhas_py": 8973, "testes": 13, "prints": 15, "referencias": 15, "hooks": 3, "itens_questionario": 10, "manual": 268, "titulo": "dez papéis com PDCA, backlog com dono e entrega zipada ao stakeholder\n"}, {"versao": "3.6.0", "data": "2026-09-03", "commit": "876ae64", "agentes": 84, "skills": 3, "comandos": 5, "scripts": 13, "linhas_py": 9016, "testes": 13, "prints": 15, "referencias": 16, "hooks": 3, "itens_questionario": 18, "manual": 392, "titulo": "a letra F vira oito subperguntas de ERP, cada uma ligada a um comando do Impeccable\n"}, {"versao": "3.6.1", "data": "2026-09-03", "commit": "49f7fcb", "agentes": 84, "skills": 3, "comandos": 5, "scripts": 13, "linhas_py": 9048, "testes": 13, "prints": 15, "referencias": 16, "hooks": 3, "itens_questionario": 23, "manual": 392, "titulo": "botões perguntados um a um — vocabulário, posição, ícone, cor e fundo\n"}, {"versao": "3.7.0", "data": "2026-09-03", "commit": "3f65bc9", "agentes": 84, "skills": 3, "comandos": 5, "scripts": 13, "linhas_py": 9244, "testes": 15, "prints": 16, "referencias": 16, "hooks": 3, "itens_questionario": 33, "manual": 434, "titulo": "bloco 0 do questionário — empresa, projeto, prazo, orçamento e GitHub sem senha\n"}, {"versao": "3.7.1", "data": "2026-09-03", "commit": "7c0af41", "agentes": 84, "skills": 3, "comandos": 5, "scripts": 13, "linhas_py": 9313, "testes": 16, "prints": 19, "referencias": 16, "hooks": 3, "itens_questionario": 33, "manual": 456, "titulo": "H e I mostram o processo de conversão e perguntam a estratégia\n"}, {"versao": "3.7.2", "data": "2026-09-03", "commit": "722e0d2", "agentes": 84, "skills": 3, "comandos": 5, "scripts": 13, "linhas_py": 9327, "testes": 17, "prints": 20, "referencias": 16, "hooks": 3, "itens_questionario": 34, "manual": 456, "titulo": "a tela principal do projeto entra como modelo visual (F0)\n"}, {"versao": "3.8.0", "data": "2026-09-03", "commit": "1e6b370", "agentes": 84, "skills": 3, "comandos": 5, "scripts": 14, "linhas_py": 9618, "testes": 19, "prints": 21, "referencias": 16, "hooks": 5, "itens_questionario": 34, "manual": 490, "titulo": "serial de ativação assinado com RSA, hooks de licença e marca d'água\n"}, {"versao": "3.8.1", "data": "2026-09-03", "commit": "0b793dd", "agentes": 84, "skills": 3, "comandos": 5, "scripts": 14, "linhas_py": 9834, "testes": 20, "prints": 21, "referencias": 16, "hooks": 5, "itens_questionario": 34, "manual": 502, "titulo": "relatório de onze seções gerado sozinho ao fechar sprint e na entrega\n"}, {"versao": "3.9.0", "data": "2026-09-03", "commit": "1998213", "agentes": 84, "skills": 3, "comandos": 5, "scripts": 14, "linhas_py": 9927, "testes": 20, "prints": 22, "referencias": 16, "hooks": 5, "itens_questionario": 35, "manual": 504, "titulo": "o wizard pergunta o aprovador e grava todas as respostas em respostas_questionario.md\n"}, {"versao": "3.10.0", "data": "2026-09-03", "commit": "cd8f9c8", "agentes": 84, "skills": 3, "comandos": 5, "scripts": 15, "linhas_py": 10178, "testes": 22, "prints": 23, "referencias": 16, "hooks": 5, "itens_questionario": 42, "manual": 515, "titulo": "letra K — Rust/Cargo, PostgreSQL, MySQL, MariaDB, Supabase e GitHub no questionário\n"}, {"versao": "3.11.0", "data": "2026-09-03", "commit": "87e76f4", "agentes": 84, "skills": 3, "comandos": 5, "scripts": 15, "linhas_py": 10274, "testes": 23, "prints": 24, "referencias": 16, "hooks": 5, "itens_questionario": 44, "manual": 529, "titulo": "n8n integrado ao projeto (K7) e privilégios do instalador (K0)\n"}, {"versao": "3.12.0", "data": "2026-09-03", "commit": "72c5c3c", "agentes": 84, "skills": 3, "comandos": 5, "scripts": 15, "linhas_py": 10500, "testes": 24, "prints": 25, "referencias": 16, "hooks": 5, "itens_questionario": 50, "manual": 536, "titulo": "letra L — o contexto da primeira sessão sai pronto do questionário\n"}, {"versao": "3.12.1", "data": "2026-09-03", "commit": "52119eb", "agentes": 84, "skills": 3, "comandos": 5, "scripts": 15, "linhas_py": 10679, "testes": 25, "prints": 25, "referencias": 16, "hooks": 5, "itens_questionario": 50, "manual": 549, "titulo": "revisão inteira — injeção no gerador, filtro de segredos, portão G0 e 50 descrições cortadas\n"}, {"versao": "3.13.0", "data": "2026-09-03", "commit": "1001b89", "agentes": 84, "skills": 3, "comandos": 5, "scripts": 17, "linhas_py": 10974, "testes": 27, "prints": 27, "referencias": 16, "hooks": 5, "itens_questionario": 50, "manual": 568, "titulo": "exportar o projeto organizado, zelador diário, relatório e dossiê medidos, vídeo com todas as provas\n"}, {"versao": "3.14.0", "data": "2026-09-03", "commit": "505ae27", "agentes": 84, "skills": 3, "comandos": 5, "scripts": 17, "linhas_py": 11047, "testes": 27, "prints": 28, "referencias": 16, "hooks": 6, "itens_questionario": 50, "manual": 577, "titulo": "blocos e sprints numerados, identificação obrigatória em cada interação, sprint zipada\n"}, {"versao": "3.15.0", "data": "2026-09-04", "commit": "0042883", "agentes": 94, "skills": 3, "comandos": 5, "scripts": 20, "linhas_py": 11452, "testes": 33, "prints": 29, "referencias": 17, "hooks": 6, "itens_questionario": 50, "manual": 595, "titulo": "equipe prioritária de dez agentes, cada um com gatilho próprio\n"}, {"versao": "3.16.0", "data": "2026-09-04", "commit": "7eed2b0", "agentes": 94, "skills": 3, "comandos": 5, "scripts": 21, "linhas_py": 11780, "testes": 36, "prints": 30, "referencias": 18, "hooks": 8, "itens_questionario": 50, "manual": 606, "titulo": "hooks que fazem valer as regras e um RAG local do projeto\n"}, {"versao": "3.16.1", "data": "2026-09-04", "commit": "c815fea", "agentes": 94, "skills": 3, "comandos": 5, "scripts": 21, "linhas_py": 11846, "testes": 37, "prints": 31, "referencias": 18, "hooks": 8, "itens_questionario": 50, "manual": 608, "titulo": "o corpus WLanguage entra no CLAUDE.md gerado e no RAG por símbolo\n"}, {"versao": "3.17.0", "data": "2026-09-04", "commit": "a30884c", "agentes": 94, "skills": 11, "comandos": 5, "scripts": 22, "linhas_py": 12063, "testes": 39, "prints": 33, "referencias": 18, "hooks": 8, "itens_questionario": 51, "manual": 614, "titulo": "oito skills de ERP e o esqueleto de projeto que o questionário gera (L6)\n"}];
+const M = [
+ ['agentes','agentes','conversão, papéis PDCA, Impeccable, equipe A–J'],
+ ['testes','testes de regressão','métodos test_ em tests/testes.py'],
+ ['linhas_py','linhas de Python','scripts e hooks, sem o corpus'],
+ ['scripts','scripts Python','skills/conversao-wx/scripts'],
+ ['prints','prints de sessões reais','docs/prints, saída sem edição'],
+ ['itens_questionario','itens do questionário','blocos e subperguntas'],
+ ['hooks','hooks do plugin','entradas em hooks.json'],
+ ['manual','linhas do manual','MANUAL.md'],
+];
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const last = D[D.length-1], first = D[0];
+const fmt = n => n.toLocaleString('pt-BR');
+document.getElementById('resumo').innerHTML = [['versoes',D.length,'versões',''],['agentes',last.agentes,'agentes',first.agentes],['testes',last.testes,'testes',first.testes],['linhas_py',last.linhas_py,'linhas de Python',first.linhas_py]]
+ .map(([k,v,l,f])=>`<div><b>${fmt(v)}</b><small>${l}</small>${f!==''?`<br><i>${f}→</i>`:''}</div>`).join('');
+
+function pequeno(k){
+ const W=260,H=120,px=6,pt=10,pb=18;
+ const ys=D.map(r=>r[k]); const max=Math.max(...ys)||1;
+ const x=i=>px+i*(W-2*px)/(D.length-1), y=v=>pt+(H-pt-pb)*(1-v/max);
+ let path='', area=`M${x(0)},${H-pb}`;
+ D.forEach((r,i)=>{const X=x(i),Y=y(r[k]); if(i>0){const Xp=x(i-1); path+=` H${X}`; area+=` H${X}`;} path+= (i?`V${Y}`:`M${X},${Y}`); area+=` V${Y}`;});
+ area+=` H${x(D.length-1)} V${H-pb} Z`;
+ const sep=D.findIndex(r=>r.data!==first.data);
+ const xs=x(sep)-((W-2*px)/(D.length-1))/2;
+ return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${k}">
+  <line x1="${px}" x2="${W-px}" y1="${y(max)}" y2="${y(max)}" stroke="var(--grid)"/>
+  <line x1="${xs}" x2="${xs}" y1="${pt}" y2="${H-pb}" stroke="var(--l)" stroke-dasharray="3 3"/>
+  <path d="${area}" fill="var(--fill)"/>
+  <path d="${path}" fill="none" stroke="var(--a)" stroke-width="2" stroke-linejoin="round"/>
+  <circle cx="${x(D.length-1)}" cy="${y(last[k])}" r="4" fill="var(--a)"/>
+  <text x="${px}" y="${H-5}" font-size="10" fill="var(--m)" font-family="JetBrains Mono,monospace">${first.versao}</text>
+  <text x="${xs+3}" y="${pt+9}" font-size="9.5" fill="var(--m)" font-family="Exo 2,sans-serif">4 set</text>
+  <text x="${W-px}" y="${H-5}" font-size="10" fill="var(--m)" text-anchor="end" font-family="JetBrains Mono,monospace">${last.versao}</text>
+  <text x="${px+2}" y="${y(max)-2}" font-size="10" fill="var(--m)" font-family="JetBrains Mono,monospace">${fmt(max)}</text>
+ </svg>`;
+}
+document.getElementById('multiplos').innerHTML = M.map(([k,t,d])=>`<div class="painel"><h3>${t}<span>${fmt(first[k])} → ${fmt(last[k])}</span></h3><p>${d}</p>${pequeno(k)}</div>`).join('');
+
+// relativo
+(function(){
+ const svg=document.getElementById('relativo'); const W=1000,H=380,L=44,R=215,T=16,B=40;
+ const cores=['var(--a)','var(--a2)','var(--ok)','#8E5AC8','#C9A227','#4B8C9E','#B3467A','#7A7A7A'];
+ const series=M.map(([k,t],j)=>{const base=D.find(r=>r[k]>0)[k]; return {k,t,c:cores[j],v:D.map(r=>r[k]/base)};});
+ const max=Math.ceil(Math.max(...series.flatMap(s=>s.v)));
+ const x=i=>L+i*(W-L-R)/(D.length-1), y=v=>T+(H-T-B)*(1-v/max);
+ let g='';
+ for(let t=1;t<=max;t+= max>12?4:2){g+=`<line x1="${L}" x2="${W-R}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)"/><text x="${L-6}" y="${y(t)+4}" font-size="11" text-anchor="end" fill="var(--m)" font-family="JetBrains Mono,monospace">${t}×</text>`;}
+ D.forEach((r,i)=>{ if(i%2===0||i===D.length-1) g+=`<text x="${x(i)}" y="${H-B+18}" font-size="10.5" text-anchor="middle" fill="var(--m)" font-family="JetBrains Mono,monospace">${r.versao}</text>`;});
+ const sep=D.findIndex(r=>r.data!==first.data); const xs=x(sep)-((W-L-R)/(D.length-1))/2;
+ g+=`<line x1="${xs}" x2="${xs}" y1="${T}" y2="${H-B}" stroke="var(--l)" stroke-dasharray="4 4"/><text x="${xs+6}" y="${T+12}" font-size="11" fill="var(--m)" font-family="Exo 2,sans-serif">4 de setembro</text>`;
+ const usados=[];
+ series.forEach(s=>{ let p=''; s.v.forEach((v,i)=>{p+=(i?` H${x(i)} V${y(v)}`:`M${x(0)},${y(v)}`);});
+  g+=`<path d="${p}" fill="none" stroke="${s.c}" stroke-width="${s.k==='testes'||s.k==='prints'?2.4:1.6}" stroke-linejoin="round"/>`;
+  let ly=y(s.v[s.v.length-1]); while(usados.some(u=>Math.abs(u-ly)<13)) ly+=13; usados.push(ly);
+  g+=`<circle cx="${x(D.length-1)}" cy="${y(s.v[s.v.length-1])}" r="3.5" fill="${s.c}"/><text x="${W-R+8}" y="${ly+4}" font-size="11.5" fill="${s.c}" font-family="Exo 2,sans-serif" font-weight="700">${s.v[s.v.length-1].toFixed(1)}× ${s.t}</text>`;});
+ svg.innerHTML=g;
+ document.getElementById('legenda').innerHTML=series.map(s=>`<span><i style="background:${s.c}"></i>${s.t}</span>`).join('');
+})();
+
+// tabela
+const tb=document.querySelector('#tabela tbody'); let dia='';
+D.forEach((r,i)=>{ const p=D[i-1];
+ if(r.data!==dia){dia=r.data; tb.insertAdjacentHTML('beforeend',`<tr class="dia"><td colspan="11">${new Date(dia+'T12:00:00').toLocaleDateString('pt-BR',{day:'numeric',month:'long',year:'numeric'})}</td></tr>`);}
+ const c=(k)=>{const d=p?r[k]-p[k]:0; return `<td class="n">${fmt(r[k])}${d>0?`<em>+${fmt(d)}</em>`:''}</td>`;};
+ tb.insertAdjacentHTML('beforeend',`<tr><td class="mono">${r.versao}</td><td>${r.titulo}</td>${c('agentes')}${c('skills')}${c('scripts')}${c('linhas_py')}${c('testes')}${c('prints')}${c('hooks')}${c('itens_questionario')}${c('manual')}</td></tr>`);
+});
+</script>
