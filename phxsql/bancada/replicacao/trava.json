@@ -1,19 +1,19 @@
 {
   "congelamento": {
     "ok": true,
-    "medido": "em 40 s de tubo mudo, na replica: pior `ping` 3 ms (126679 amostras), pior `varrer` 13 ms (126679 amostras); a telemetria da replica contou 10.3 s de trava na mao",
-    "pior_ping_ms": 3,
-    "pior_varrer_ms": 13,
-    "amostras": 126679,
-    "posse_da_trava_s": 10.3
+    "medido": "em 40 s de tubo mudo, na replica: pior `ping` 2 ms (129309 amostras), pior `varrer` 1 ms (129309 amostras); a telemetria da replica contou 10.5 s de trava na mao",
+    "pior_ping_ms": 2,
+    "pior_varrer_ms": 1,
+    "amostras": 129309,
+    "posse_da_trava_s": 10.5
   },
   "alcance": {
     "ok": true,
-    "medido": "a replica alcancou 200000 eventos em 4.59s (43,554 eventos/s); durante a aplicacao, pior `varrer` 107 ms (7780 amostras)",
-    "alcance_s": 4.59,
-    "eventos_s": 43554,
-    "pior_varrer_ms": 107,
-    "amostras": 7780,
+    "medido": "a replica alcancou 200000 eventos em 4.71s (42,457 eventos/s); durante a aplicacao, pior `varrer` 100 ms (8228 amostras)",
+    "alcance_s": 4.71,
+    "eventos_s": 42457,
+    "pior_varrer_ms": 100,
+    "amostras": 8228,
     "linhas": 200000
   },
   "queda": {
@@ -34,16 +34,16 @@
   },
   "abraco": {
     "ok": true,
-    "medido": "200000 linhas nos dois lados ao mesmo tempo levaram 2.5s (as mesmas 200000 num servidor sozinho levam 3.8s = 0.7x); convergiram 3.0s depois; EAGAIN novos: alfa +0, beta +0; durante a carga, em alfa: pior `ping` 11 ms, pior `varrer` 84 ms (46 amostras)",
-    "escrita_s": 2.5,
-    "simples_s": 3.8,
-    "vezes": 0.66,
-    "convergencia_s": 3.0,
+    "medido": "200000 linhas nos dois lados ao mesmo tempo levaram 2.4s (as mesmas 200000 num servidor sozinho levam 3.7s = 0.7x); convergiram 2.5s depois; EAGAIN novos: alfa +0, beta +0; durante a carga, em alfa: pior `ping` 47 ms, pior `varrer` 69 ms (38 amostras)",
+    "escrita_s": 2.4,
+    "simples_s": 3.7,
+    "vezes": 0.65,
+    "convergencia_s": 2.5,
     "eagain_alfa": 0,
     "eagain_beta": 0,
-    "pior_ping_ms": 11,
-    "pior_varrer_ms": 84,
-    "amostras": 46,
+    "pior_ping_ms": 47,
+    "pior_varrer_ms": 69,
+    "amostras": 38,
     "linhas": 200000
   },
   "minutos": 1.5

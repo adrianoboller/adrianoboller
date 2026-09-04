@@ -35,18 +35,18 @@ teste que o motivou ainda cai. [§8](#8-as-guardas-provar-que-a-prova-pega).
 ## 1. A cobertura de hoje, medida
 
 <!-- testes:total:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-`cargo test --workspace`: **1.561 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
+`cargo test --workspace`: **1.567 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
 <!-- testes:total:fim --> Por área,
 contando `#[test]` por arquivo e agrupando:
 
 <!-- cobertura:inicio -->
 | área | testes | % |
 |---|---:|---:|
-| Motor de dados (arquivos, índice, diários) | 409 | 26,2 |
-| Protocolo e portões (despachar) | 223 | 14,3 |
+| Motor de dados (arquivos, índice, diários) | 409 | 26,1 |
+| Protocolo e portões (despachar) | 229 | 14,6 |
 | Núcleo (JSON, tipos, UUID, zip, paralelo) | 138 | 8,8 |
 | Criptografia e codificação | 122 | 7,8 |
-| Configuração | 93 | 6,0 |
+| Configuração | 93 | 5,9 |
 | DbLink | 81 | 5,2 |
 | Servidor (outros) | 70 | 4,5 |
 | Camada SQL (léxico, sintaxe, tradução) | 55 | 3,5 |
@@ -57,8 +57,8 @@ contando `#[test]` por arquivo e agrupando:
 | Interface web (servidor HTTP) | 28 | 1,8 |
 | **MCP** | **19** | **1,2** |
 | **Usuários e permissões** | **19** | **1,2** |
-| **Console de terminal (phxsqlcmd)** | **18** | **1,2** |
-| **Segurança de rede (blacklist, firewall)** | **18** | **1,2** |
+| **Console de terminal (phxsqlcmd)** | **18** | **1,1** |
+| **Segurança de rede (blacklist, firewall)** | **18** | **1,1** |
 | **ODBC** | **17** | **1,1** |
 | **Transações** | **16** | **1,0** |
 | **Exportação** | **13** | **0,8** |
@@ -69,7 +69,7 @@ contando `#[test]` por arquivo e agrupando:
 | **CLI** | **7** | **0,4** |
 | **Cluster** | **7** | **0,4** |
 | **Monitor de máquina** | **6** | **0,4** |
-| **total** | **1561** | |
+| **total** | **1567** | |
 
 Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 

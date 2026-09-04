@@ -20,6 +20,65 @@ ausência de transação: ele as documenta extensamente.
 
 ### Corrigido
 
+- **O `varrer` ganha `WHERE`.** A grade filtrava o que já estava nela: pedia
+  `varrer max=2500`, recebia 2.500 linhas e jogava fora 2.475 no navegador. A
+  premissa foi medida **antes** de o predicado existir, porque um `WHERE` sem
+  índice não remove varredura nenhuma — o motor lê as mesmas linhas para decidir
+  quais passam. Medido em 100.000 linhas, mediana de sete rodadas intercaladas
+  pelo soquete: a leitura é **48,0%** do tempo e o transporte é **52,0%**. Teto
+  previsto 2,06×, medido **2,07×**, com **532.777 bytes virando 5.638** no fio;
+  com metade da tabela casando o ganho cai para 1,35×. O `max` **continua sendo
+  linhas examinadas**, e isso é decisão: trocar para «devolvidas» faria um filtro
+  pouco seletivo varrer a tabela inteira **com a trava global na mão**, e esse
+  custo ninguém mediu. Desce **só o que prova concordar** — há dois motores do
+  mesmo filtro e eles discordam em silêncio (o `contem` da grade ignora acento,
+  o do servidor não), então a grade reaplica tudo e o servidor só pode diminuir
+  o que atravessa o fio, **nunca mudar a resposta**.
+
+- **Seletor de teste por posição acertava o vizinho em vez de ficar vazio.** A
+  prova dos idiomas abria Configurações pela barra com `… >> nth=13`. O botão
+  «Config» saiu da barra em 02/09, com o caminho do menu conferido no lugar — e o
+  seletor **não ficou vazio**: passou a acertar o 14º dos 23 botões, hoje
+  «Restaurar». Cinco passos reprovavam há dois dias esperando dez segundos por
+  bandeiras numa tela que não tem nenhuma, e a parte levava 1m38s para dizer
+  isso; hoje leva **12,1 s**. O caso 17 da parte `tela` **já afirmava** que o
+  Config estava no menu: duas baterias discordavam há dois dias, e a certa era a
+  que falhava alto. O item passa a ser achado pela **chave** da fábrica de
+  idiomas. E o diagnóstico que veio primeiro estava errado sobre este defeito e
+  **certo sobre outro**: o `id` repetido é inofensivo numa região só, mas com a
+  tela **dividida** as duas ficam anexadas e `querySelector` só desenhava a
+  primeira — seis bandeiras numa paina e **zero** na outra.
+
+- **A bancada do cluster saía cara ou coroa, e o commit culpado não era
+  culpado.** As três asserções que reprovavam tinham **uma** causa, e não era a
+  que parecia: a mensagem `NAO promovo` nunca foi reescrita (`git log -S` mostra
+  um commit só, o que criou o cluster), e a bancada rodada sem tocar em nada
+  passou verde. O que decide é a **ordem das mortes**: a eleição conta quem
+  pulsou dentro da janela e o silêncio do master sai do mesmo relógio, então um
+  par que morre **depois** do master ainda está dentro da janela quando o master
+  é declarado calado — e o nó que sobra vê **2 de 3** e se elege. **Não há
+  split-brain nem perda de dado**, e está medido: o portão é `escrita_liberada`,
+  recalculado a cada 500 ms e independente do papel; nas duas ordens a escrita
+  foi recusada e os retratos SHA-256 ficaram idênticos. O que a fresta custa é a
+  **liderança** — os dois nós que juntos *eram* a maioria voltam seguindo o que
+  esteve sozinho. Ela ganhou roteiro próprio (`bancada/cluster/fresta.py`, que
+  **mede** sem afirmar) e o conserto no motor está em **parecer, não feito**.
+
+- **Dois testes-sentinela dispararam como projetados, e ninguém foi colher.** O
+  do `ponta-a-ponta` anunciava o próprio disparo — *«o dia em que o motor a
+  impuser, eles falham»* — e o pedido 171 impôs a chave. O do `transacoes`
+  afirmava que a leitura **não** vê o que a transação empilhou, e o pedido 162
+  trocou isso em 02/09. Os dois reprovavam há dois dias porque a bateria inteira
+  não era rodada. Virados para o comportamento de hoje com a mesma disciplina, e
+  a recusa passa a ser conferida pelo **código `SP000008`**, nunca pela frase.
+
+- **Duas guardas do catálogo apontavam para código que não existe mais.** O
+  campo `fks_conferidas` saiu numa refatoração que **aposentou corretamente** a
+  guarda que a motivou e deixou **duas irmãs** citando o campo morto. Corrida
+  cheia: **77 guardas, 73 provadas, 0 quebradas** (era 71 + 2). E havia um
+  terceiro irmão, num comentário de teste que ainda descrevia o campo **no
+  presente** — datado como história, sem reescrevê-la.
+
 - **Três pacotes intactos reprovavam, e o segundo conferidor passava verde.**
   `./empacotar.sh conferir` reprovava `dossie`, `conhecimento` e `kit` — todos
   de 30/08 — com **duas divergências por arquivo**, uma `A MAIS` e uma `FALTA`,
