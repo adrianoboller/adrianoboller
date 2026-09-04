@@ -1,88 +1,100 @@
 # Anúncio cinemático — Snapmaker U1 (EnginePrint)
 
-Comercial de produto em 3D, **9:16 vertical, 20 s a 30 fps**, feito no Blender
-por script. Tudo — caixa, U1 substituto, espuma, cabo, luz, câmera, tela,
-cartela e a coreografia dos sete beats — nasce de **um arquivo Python** que
-você cola na aba Scripting e roda. Nada para importar, nada para baixar.
+Comercial de produto em 3D, **9:16 vertical, 25 s a 30 fps, com som**, feito
+no Blender por script, com **a caixa e a impressora enviadas pelo Adriano**
+(modelos Meshy, limpos e remodelados) num vazio sem chão com gradiente
+preto e rosé mesclado. Estilo de movimento do @nzj.3d: entradas com
+overshoot curto, câmera calma e sempre perto.
 
 ## Como rodar no seu Blender (4.2 ou mais novo)
 
-1. Abra o Blender com a sua cena (a do U1, ou uma vazia).
-2. Aba **Scripting** → **New** → cole o conteúdo de `scripts/anuncio_u1.py`.
-3. Ajuste o bloco **PARÂMETROS** no topo (abaixo).
-4. **Run Script**. Leva alguns segundos: monta a coleção `ANUNCIO`,
-   coreografa 600 quadros, configura o render e grava `anuncio_u1.blend` ao
-   lado do seu arquivo.
-5. **Render → Render Animation.** Na RTX 4050, com EEVEE Next a 1080×1920 e
-   64 amostras, conte de 20 a 40 minutos. O motion blur está ligado; o vidro
-   usa raytracing.
+O entregável é `saida/anuncio_u1_pacote.zip` (regenerável por
+`python3 scripts/empacotar.py`):
 
-Rodar de novo não duplica nada: cada módulo apaga a própria coleção antes,
-e o seu modelo volta à pose original antes de ser medido de novo.
+```
+anuncio_u1.py
+assets/
+  impressora_limpa.glb          sua impressora, limpa (25,8 MB)
+  caixa_cor_2k.png              sua caixa, textura transferida por bake
+  caixa_normal_2k.png
+  caixa_rugosidade_2k.png
+  caixa_etiqueta_cor.png        a etiqueta pendurada, peça 3D própria
+  caixa_etiqueta_normal.png
+  caixa_etiqueta_rugosidade.png
+  caixa_etiqueta_malha.png      a malha da etiqueta, como bytes
+```
 
-## Parâmetros que você decide
+1. Descompacte. **Salve um `.blend`** na mesma pasta do `anuncio_u1.py`
+   (a pasta `assets/` precisa ficar ao lado do `.blend`).
+2. Aba **Scripting** → **Open** (ou **New** e cole) `anuncio_u1.py`.
+3. Ajuste o bloco **PARÂMETROS** no topo, se quiser.
+4. **Run Script.** Alguns segundos: monta a coleção `ANUNCIO`, coreografa
+   750 quadros, gera o som, configura o render e grava `anuncio_u1.blend`.
+5. **Render → Render Animation.** Sai `anuncio_u1.mp4`, 1080×1920, H.264
+   com **AAC**. Na RTX 4050, EEVEE Next a 64 amostras, conte de 30 a 50
+   minutos.
+
+Se o script não achar `assets/`, ele para **antes de tocar na cena** e lista
+onde procurou e o que falta. Rodar de novo não duplica nada.
+
+## Parâmetros
 
 | Parâmetro | Padrão | O que faz |
 |---|---|---|
-| `U1_NOME` | `""` | Nome do **objeto ou coleção** do seu U1. Vazio usa o substituto. |
-| `U1_ROTACAO_Z` | `0` | Graus para a frente do seu modelo apontar para −Y. |
-| `U1_TELA`, `U1_TOMADA`, `U1_BOTAO` | vazios | XYZ nas coordenadas originais do seu arquivo. Vazios saem de heurística pelo envelope. |
-| `U1_TELA_OBJETO`, `U1_BOTAO_OBJETO` | vazios | Objetos do seu modelo que acendem e afundam. A tela precisa de material com Emission. |
-| `DURACAO_S` | `20` | `15` é o preset frenético (só conferido por número, não por render). |
-| `CAIXA_SOME` | `True` | A caixa afunda pelo chão no beat 2 e volta no 6. `False`: o U1 pousa na frente dela. |
-| `ESPUMA_SOME_NOS_CLOSES` | `True` | Os flocos somem do chão nos beats 3 a 5, com fade. |
-| `ESCONDER_RESTO` | `False` | `True` tira do render objetos seus fora de `ANUNCIO`. O script avisa quais estão visíveis. |
-| `COR_CAIXA` | `"clara"` | `"escura"` existe mas não foi renderizada; a logo escura some sobre ela. |
+| `PASTA_ASSETS` | `""` | Vazio procura `assets/` ao lado do `.blend`; ou aponte o caminho. |
+| `DURACAO_S` | `25` | Presets 15 / 20 / 25. O tempo extra vai para a revelação, a tela e a cartela. |
+| `COM_SOM` | `True` | Trilha e efeitos sintetizados no próprio Blender, mixados no MP4. |
+| `TRILHA_EXTERNA` | `""` | Caminho de um WAV seu (48 kHz) para substituir a trilha sintetizada; `assets/trilha_externa.wav` também é aceito sozinho. |
+| `U1_NOME` | `""` | Vazio usa a sua impressora Meshy. Nome de objeto/coleção troca por outro modelo seu. |
+| `U1_ROTACAO_Z`, `U1_TELA`, `U1_TOMADA`, `U1_BOTAO` | | Só para modelo trocado por `U1_NOME`. |
+| `CAIXA_SOME` | `True` | A caixa desce para fora do quadro no beat 2 e volta no 6. |
+| `ESPUMA_SOME_NOS_CLOSES` | `True` | Flocos somem com fade nos beats 3 a 5. |
+| `ESCONDER_RESTO` | `False` | `True` tira do render objetos seus fora de `ANUNCIO`. |
 | `RESOLUCAO`, `AMOSTRAS` | `(1080, 1920)`, `64` | Render final. |
-| `SALVAR_BLEND` | `True` | Grava `anuncio_u1.blend` ao lado do seu `.blend`. |
+| `SALVAR_BLEND` | `True` | Grava `anuncio_u1.blend` ao lado. |
 
-## O que é provisório e o que você ainda me deve
+## O que é provisório
 
-- **Logo.** `assets/logo_engineprint.png` é uma **provisória** desenhada por
-  mim a partir da imagem que veio colada na conversa. Mande a oficial em PNG
-  com fundo transparente, ou SVG. Ela entra pelo mesmo nome e eu remonto o
-  arquivo único.
-- **Tela do U1.** Boot e interface são aproximações em HTML
-  (`assets/tela_ui_fonte.html`) da tela real, com o wordmark em texto. Se
-  tiver capturas oficiais, mande.
-- **Seu modelo.** Tudo foi validado com o **substituto** paramétrico nas
-  medidas reais. Rode `scripts/01_diagnostico.py` na sua cena e me mande o
-  `u1_diagnostico.txt` para eu ajustar tela, tomada e botão ao seu modelo.
+- **Logo.** `logo_engineprint.png` (embutida) é uma provisória desenhada a
+  partir da imagem colada na conversa. Aparece **só na cartela**; a caixa não
+  tem logo, a pedido. Mande a oficial em PNG transparente ou SVG.
+- **Trilha.** Sintetizada, para provar timing e clima. Um anúncio de verdade
+  usa música licenciada: `TRILHA_EXTERNA`.
+- **Tela da impressora.** Boot e interface são aproximações em HTML.
 
-## Decisões de direção que ficaram comigo (e você pode virar)
+## Decisões de direção (todas reversíveis por parâmetro ou pedido)
 
-- **20 s em vez de 15.** Sete beats em 15 s ficam frenéticos e a cartela de
-  quatro linhas não se lê em 2 s. O preset de 15 existe.
-- **Caixa some pelo chão** no beat 2 (`CAIXA_SOME`). O storyboard só diz "o
-  U1 sai da caixa". Com `False` ele pousa na frente dela.
-- **Linha 3 da cartela em cobre**, a cor da logo. `linha_destaque=None`
-  no módulo tira.
-- **Travessia pelo centro da logo**, que é vazado: na tela o corte vai
-  branco → preto → logo. Mirar num dente daria engrenagem → preto → logo.
-- **Momento da revelação** (beat 2): o U1 branco recorta contra o rosé
-  escurecido por 1,2 s. A lateral não aparece nessa câmera; girá-la alguns
-  graus é a outra alavanca.
+- **A impressora é a Meshy** que você mandou, por sua decisão depois do
+  aviso de que não é um U1 (é branca com tubos de filamento e bobinas). Se o
+  arquivo real da Snapmaker chegar, entra por `U1_NOME`.
+- **Caixa:** geometria limpa de 14 faces e 4 abas com a textura da sua caixa
+  transferida por bake; ícones esticam 1,25× na vertical para caber a
+  impressora. A etiqueta pendurada é peça 3D.
+- **Sem chão:** tudo flutua; a caixa entra e sai por baixo do quadro; a
+  espuma sobe pela boca e sai do quadro; o cabo pende.
+- **Beat 7:** a câmera mergulha no centro do topo da caixa (fita) e a logo
+  nasce na cartela.
+- **Linha "13 unidades restantes" em cobre**, cor da logo.
 
 ## Pipeline daqui (para quem continuar)
 
-- `docs/ESPECIFICACAO.md` — o contrato: eixos, unidades, nomes, API, paleta,
-  linha do tempo por beat.
-- `scripts/mod_*.py` — um módulo por peça; `scripts/teste_*.py` prova cada um
-  renderizando e **olhando** o PNG.
-- `scripts/montar.py` — concatena os módulos e embute os PNGs em base64 no
-  `anuncio_u1.py`. Mexeu num módulo, roda de novo.
-- `scripts/previa.sh` — EEVEE Next **sem GPU** (Xvfb + llvmpipe). Cubo: ~6 s
-  por quadro; cena completa: 27 a 40 s.
-- `scripts/lotes.sh` + `MODO=video scripts/teste_coreografia.py` — prévia
-  em vídeo: 300 quadros (1 a cada 2) a 360×640 em lotes de 14, depois o MP4 a
-  15 fps pelo ffmpeg do Blender.
-- `docs/REVISAO-RODADA-1.md` — o que os revisores mediram na primeira
-  passagem; as rodadas 2 e 3 estão nas mensagens de commit.
+- `docs/ESPECIFICACAO.md` — o contrato, com as Revisões 2 e 3 no fim.
+- `scripts/mod_*.py` + `scripts/teste_*.py` — um módulo por peça, provado
+  renderizando e **olhando** o PNG. `mod_som.py` sintetiza o áudio e sua
+  cue sheet lê as frações do `ROTEIRO` da coreografia.
+- `scripts/limpar_impressora.py`, `scripts/bake_caixa.py` — rodam uma vez;
+  produzem os assets externos a partir dos GLB Meshy (no scratchpad, fora do
+  repositório; o `.glb` original usa `EXT_meshopt_compression`, que o Blender
+  não importa; descomprima com `npx @gltf-transform/cli copy`).
+- `scripts/montar.py` → `anuncio_u1.py`; `scripts/empacotar.py` → zip, com
+  prova de autossuficiência (`--provar`).
+- `scripts/previa.sh` — EEVEE Next sem GPU (Xvfb + llvmpipe), 27 a 40 s por
+  quadro na cena completa. `scripts/lotes.sh` + `scripts/video_com_som.py` —
+  prévia em vídeo com áudio (375 quadros de 750, 15 fps).
+- `docs/REVISAO-RODADA-1.md` — a primeira revisão medida; as demais estão
+  nas mensagens de commit.
 
-## Ficha técnica do U1 (referência)
+## Ficha técnica do U1 (referência de medidas)
 
-584 × 499 × 730 mm, 18,2 kg, volume 270³, 4 cabeçotes, bico 0,4 mm até
-300 °C, mesa PEI até 100 °C, CoreXY 500 mm/s, tela 3,5" 480×320. Corpo
-**branco** com aro e moldura da porta pretos, porta de vidro na frente,
-painel traseiro transparente — confirmado no guia rápido oficial.
+584 × 499 × 730 mm, volume 270³, 4 cabeçotes, tela 3,5" 480×320.
 Fonte: <https://www.snapmaker.com/snapmaker-u1/specs>
