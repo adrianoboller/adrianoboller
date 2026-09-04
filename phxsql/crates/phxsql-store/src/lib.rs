@@ -20,6 +20,7 @@ pub mod backup;
 pub mod blob;
 pub mod catalogo;
 pub mod cofre;
+pub mod conferidor_fsync;
 pub mod diario;
 pub mod integridade;
 pub mod lixeira;
