@@ -3861,14 +3861,28 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   mentira do dado em caixa alta, com uma noite de intervalo.</p>
 
   <div class="nota nao">
-    <span class="t">O que a grade não consegue responder, e diz</span>
-    <p>O <code>varrer</code> <strong>não tem <code>WHERE</code></strong>. Então
-    filtro, busca, agrupamento, total e exportação valem sobre a
-    <strong>janela</strong> que a tela trouxe, e não sobre a tabela. Medido: 25
-    linhas de Blumenau quando a tabela tem 2.500. O contrato de <em>pushdown</em>
-    existe na grade desde a 0.7.0 e o servidor ainda não o atende — e
-    <strong>enquanto não atende, a tela avisa</strong>, em vez de deixar quem
-    olha concluir errado.</p>
+    <span class="t">O que a grade desce para o servidor, e o que ainda não</span>
+    <p>O <code>varrer</code> <strong>ganhou <code>WHERE</code></strong>. A
+    premissa foi medida <em>antes</em> de o predicado existir, porque um
+    <code>WHERE</code> sem índice não remove varredura nenhuma — o motor lê as
+    mesmas linhas para decidir quais passam. Medido em 100.000 linhas com
+    <code>max=2500</code>, mediana de sete rodadas intercaladas pelo soquete: a
+    leitura é <strong>48,0%</strong> do tempo e o transporte — montar o JSON,
+    serializar, o fio e a análise no cliente — é <strong>52,0%</strong>. O teto
+    previsto era 2,06×; o medido deu <strong>2,07×</strong>, com
+    <strong>532.777 bytes virando 5.638</strong> no fio. Com metade da tabela
+    casando o ganho cai para 1,35×, e é essa a conta: o teto é a fatia de
+    transporte, e ela encolhe na proporção do que casa.</p>
+    <p>Mas desce <strong>só o que prova concordar</strong>. Há dois motores do
+    mesmo predicado — o da grade em JavaScript e o do <code>phxsql-store</code>
+    em Rust — e eles <strong>discordam em silêncio</strong>: o
+    <code>contem</code> da grade ignora acento e o do servidor não; a faixa da
+    grade em coluna de texto baixa a caixa e a do servidor compara bytes. Buscar
+    «sao» acharia «São Paulo» de um lado e não do outro. Então descem igualdade
+    de um valor e faixa em coluna inteira, a grade <strong>reaplica tudo</strong>
+    sobre o que voltou, e o servidor só pode <strong>diminuir o que atravessa o
+    fio, nunca mudar a resposta</strong>. O que não desce continua valendo sobre
+    a janela — e a tela continua dizendo qual conta é qual.</p>
   </div>
 
   <div class="nota">
@@ -6462,8 +6476,8 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
             <td>esta linha dizia «chave estrangeira aplicada — nenhuma gravação a consulta», e <strong>caiu</strong>: hoje toda porta local de escrita confere. O que sobra é a réplica, e é <strong>decisão</strong>, não falta: quem recebe já teve a garantia aplicada na origem, e reconferir ali recusaria a metade de um par que chega fora de ordem. Mesma decisão no <code>copiar_tabela_para</code>, com o custo da alternativa medido em teste</td></tr>
         <tr><td><strong>Planejador, <code>EXPLAIN</code> e estatísticas</strong></td>
             <td>quem escolhe o índice é quem escreve a operação. Estatística sem consumidor é arquivo para manter atualizado sem ninguém ler</td></tr>
-        <tr><td><strong><code>WHERE</code> no <code>varrer</code></strong></td>
-            <td>por isso o filtro da grade vale sobre a janela trazida, e não sobre a tabela — medido: 25 de Blumenau numa tabela com 2.500. O contrato de <em>pushdown</em> existe na grade e o servidor não o atende; <strong>enquanto não atende, a tela diz</strong></td></tr>
+        <tr><td><strong>Os predicados que o <code>pushdown</code> ainda não desce</strong></td>
+            <td>esta linha dizia que o <code>varrer</code> não tinha <code>WHERE</code>, e <strong>caiu pela metade</strong> na mesma rodada em que foi conferida: o predicado entrou, medido em <strong>2,07×</strong> com 532.777 bytes virando 5.638 no fio. O que continua faltando é o <strong>resto do predicado</strong>, e por um motivo que não é preguiça: há dois motores do mesmo filtro — o da grade em JavaScript e o do motor em Rust — e eles <strong>discordam em silêncio</strong> (o <code>contem</code> da grade ignora acento, o do servidor não). Descem igualdade e faixa em coluna inteira; o resto valeria sobre a janela com uma resposta diferente da do navegador, e <strong>servidor que muda a resposta é pior que servidor que manda linha demais</strong></td></tr>
         <tr><td><strong>Trocar tipo/largura de coluna, ou tirar coluna</strong></td>
             <td>esta linha dizia que alterar a estrutura de uma tabela com dado não existia, e <strong>caiu pela metade</strong>: o sprint 25 entregou <code>acrescentar_coluna</code> — o <code>.reg</code> é reescrito slot a slot na mesma ordem, o rowid <strong>não muda</strong> e o <code>.ndx</code> não é tocado, medido em 0,553&#8201;µs por linha (10 milhões em 5,53&#8201;s, <code>--example custo-do-alter</code>). O que continua faltando é trocar o tipo ou a largura de uma coluna já existente, e tirar coluna</td></tr>
         <tr><td><strong>Cadastro de usuários pela web</strong></td>
