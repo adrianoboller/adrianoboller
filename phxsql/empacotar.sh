@@ -617,6 +617,101 @@ conferir() {
 }
 
 # ---------------------------------------------------------------------------
+# A LEI e a base de conhecimento, sozinhas
+#
+# Publico proprio: quem vai TOCAR neste projeto, ou levar o metodo para outro.
+# Nao e o manual (que diz o que o produto faz) nem o dossie (que mostra o
+# projeto): e a lei, o processo que a gerou, e as receitas de area.
+#
+# A divisao que o COMECE-AQUI explica, e que e a razao de o pacote existir:
+# o `CLAUDE.md` e a LEI -- curta, sem discussao; a cognicao e o PROCESSO --
+# como se descobriu, o que se errou antes, e o numero. Lei sem processo vira
+# dogma que ninguem sabe defender; processo sem lei vira historia que ninguem
+# aplica. Levar so metade nao serve.
+#
+# Nenhum numero deste pacote se digita: todos saem do `find` abaixo.
+lei() {
+  local nome="phxsql-$VERSAO-lei"
+  local dir="$SAIDA/$nome"
+  echo "== lei e base de conhecimento"
+  rm -rf "$dir"; mkdir -p "$dir/lei" "$dir/docs" "$dir/cognicao" "$dir/leia-me"
+
+  # A lei em dois niveis: a de TODO projeto e a deste. A global mora fora do
+  # repositorio, entao ela pode nao existir na maquina de quem empacota -- e
+  # a falta e RUIDOSA, porque pacote que finge estar completo e pior que
+  # pacote que avisa o que ficou de fora.
+  cp CLAUDE.md "$dir/lei/CLAUDE-do-projeto.md" 2>/dev/null \
+    || cp ../CLAUDE.md "$dir/lei/CLAUDE-do-projeto.md"
+  if [ -f "$HOME/.claude/CLAUDE.md" ]; then
+    cp "$HOME/.claude/CLAUDE.md" "$dir/lei/CLAUDE-de-todo-projeto.md"
+  else
+    echo "   SEM a lei global (~/.claude/CLAUDE.md nao existe nesta maquina)"
+  fi
+
+  cp docs/*.md "$dir/docs/" 2>/dev/null
+  cp docs/cognicao/*.md "$dir/cognicao/" 2>/dev/null
+
+  # Os LEIA-ME viajam com o CAMINHO no nome, porque ha 25 deles e o nome
+  # sozinho nao diz de quem e: `bancada__concorrencia__LEIA-ME.md`.
+  local f alvo
+  while IFS= read -r f; do
+    alvo=$(printf '%s' "${f#./}" | sed 's|/LEIA-ME\.md$||; s|/|__|g')
+    cp "$f" "$dir/leia-me/${alvo}__LEIA-ME.md"
+  done < <(find . -name LEIA-ME.md -not -path "./target/*" -not -path "./pacotes/*")
+
+  local n_docs n_cog n_leia
+  n_docs=$(ls -1 "$dir/docs" | wc -l | tr -d ' ')
+  n_cog=$(ls -1 "$dir/cognicao" | wc -l | tr -d ' ')
+  n_leia=$(ls -1 "$dir/leia-me" | wc -l | tr -d ' ')
+
+  cat > "$dir/COMECE-AQUI.txt" <<FIM
+PhxSql $VERSAO -- a lei, o processo e as receitas
+
+Este pacote nao e o manual (que diz o que o produto faz) nem o dossie (que
+mostra o projeto). E o que GOVERNA o trabalho, e serve para duas pessoas: quem
+vai tocar neste projeto, e quem quer levar o metodo para outro.
+
+lei/           $( [ -f "$dir/lei/CLAUDE-de-todo-projeto.md" ] && echo 2 || echo 1 ) arquivo(s)
+  CLAUDE-do-projeto.md      a lei DESTE projeto: as regras que nao se quebram,
+                            e o motivo medido de cada uma
+  CLAUDE-de-todo-projeto.md a clausula petrea dos dez papeis, que vale para
+                            qualquer projeto (ausente se nao existia na
+                            maquina que empacotou)
+
+cognicao/      $n_cog arquivo(s)
+  Um por aprendizado, com data e hora da DESCOBERTA. A terceira secao de cada
+  um -- «o que eu conclui primeiro, e estava errado» -- e a que impede o
+  documento de virar anedota.
+
+docs/          $n_docs arquivo(s)
+  As receitas por area: formato em disco, desempenho, seguranca, concorrencia,
+  testes, catracas, mensagens, empacotamento, backup.
+
+leia-me/       $n_leia arquivo(s)
+  Os LEIA-ME de cada pasta, com o CAMINHO no nome (bancada__concorrencia__...),
+  porque ha $n_leia deles e o nome sozinho nao diz de quem e.
+
+A DIVISAO, que e a razao de o pacote existir inteiro
+----------------------------------------------------
+O CLAUDE.md e a LEI: curta, e o que ela diz vale sem discussao.
+A cognicao e o PROCESSO: como se descobriu, o que se errou antes, e o numero.
+
+Lei sem processo vira dogma que ninguem sabe defender.
+Processo sem lei vira historia que ninguem aplica.
+
+Levar so uma das metades nao serve, e e por isso que as duas estao aqui.
+
+CONFERIR
+--------
+       sha256sum -c MANIFESTO.sha256
+
+O manifesto tem o SHA-256 de cada arquivo desta pasta, com o caminho relativo.
+FIM
+
+  fecha "$nome"
+}
+
+# ---------------------------------------------------------------------------
 # O dossie, sozinho
 #
 # Vai separado porque tem publico proprio: quem quer entender o projeto sem
@@ -708,6 +803,7 @@ case "$QUAL" in
   arm64)   confere_versoes; monta "$ALVO_ARM64" arm64 "" sem_odbc ;;
   arm32)   confere_versoes; monta "$ALVO_ARM32" arm32 "" sem_odbc ;;
   fontes)  confere_versoes; fontes ;;
+  lei)     confere_versoes; lei ;;
   dossie)  confere_versoes; dossie ;;
   conhecimento) confere_versoes; conhecimento ;;
   kit)     confere_versoes; kit ;;
@@ -718,11 +814,12 @@ case "$QUAL" in
     monta "$ALVO_ARM64" arm64 "" sem_odbc
     monta "$ALVO_ARM32" arm32 "" sem_odbc
     fontes
+    lei
     dossie
     conhecimento
     kit
     ;;
-  *) echo "uso: $0 [linux|windows|arm64|arm32|fontes|dossie|conhecimento|kit|tudo|conferir|manifesto <dir>]" >&2; exit 2 ;;
+  *) echo "uso: $0 [linux|windows|arm64|arm32|fontes|lei|dossie|conhecimento|kit|tudo|conferir|manifesto <dir>]" >&2; exit 2 ;;
 esac
 
 # A lista de fora: o hash dos proprios zips, para quem baixou saber que o
