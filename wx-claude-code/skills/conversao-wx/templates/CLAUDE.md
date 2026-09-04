@@ -40,6 +40,17 @@ Uma funcionalidade só está concluída quando possui evidência de origem, impl
 
 Qualquer afirmação de equivalência vale somente para o escopo, build, configuração, ambiente, dataset e tolerâncias registrados. Este processo não certifica conformidade LGPD ou jurídica.
 
+## Corpus WLanguage 12k
+
+O Help do WINDEV, WEBDEV e WINDEV Mobile (12.035 páginas em JSON, estado DEGRADED/CONDITIONAL, verificado por hash) vem com o plugin e é a fonte de **semântica técnica** de toda função WLanguage: assinatura, parâmetros, comportamento, exemplos. Nunca é fonte de regra de negócio. Consulte sempre **por tema**, nunca varrendo tudo (13 s contra 0,5 s medidos):
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/query_wlanguage_help.py" --group 01-03-03 --query HReadSeekFirst --limit 3
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/query_wlanguage_help.py" --verify   # antes de citar
+```
+
+O hook de cada pergunta reconhece símbolos WLanguage citados (`HReadSeekFirst`, `fFileExist`, `StringBuild`…) e injeta o tema e o comando exato; os sete agentes `wl-*-specialist` já trabalham cada um dentro do seu tema. Os defeitos conhecidos do corpus (uma página em quarentena, uma lacuna de sequência, 609 ids duplicados) estão documentados e não são corrigidos à mão.
+
 ## Identificação obrigatória
 
 Toda resposta começa com a linha `BlocoNNNN-SPNNNNN-Título · data`: o bloco (capítulo do projeto), a sprint vigente e o nome dela, como em `Bloco0001-SP00001-Análise da base de dados · 2026-09-03`. A linha vem de `pmo.py identificacao` e o hook do plugin a injeta a cada interação; sem sprint aberta, diga isso na própria linha. Cada sprint fechada deixa `pmo/sprints/<identificação>.md` e a cópia zipada ao lado.

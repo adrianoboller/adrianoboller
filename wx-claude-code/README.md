@@ -176,6 +176,7 @@ geradas por `docs/prints/gerar.md`).
 | ![kickoff](docs/prints/25-primeira-sessao-index-e-kickoff.png) primeira sessão: lê `INDEX_FILES.md` e o kickoff, sabe o escopo da v1 e recusa código sem G0 | ![exportar](docs/prints/26-pmo-exportar-projeto-organizado.png) `pmo exportar`: o projeto organizado na pasta do usuário, sem segredo, com hashes |
 | ![zelador](docs/prints/27-zelador-limpeza-diaria.png) o zelador limpa temporários ao abrir a sessão e deixa o registro medido | ![identificacao](docs/prints/28-identificacao-bloco-sprint.png) toda resposta abre com `BlocoNNNN-SPNNNNN-Título · data`, injetado pelo hook |
 | ![equipe](docs/prints/29-equipe-prioritaria-pesquisador-e-status.png) equipe prioritária: infrutífero aciona o Pesquisador; status por agente sem inventar | ![rag](docs/prints/30-rag-e-guarda-de-anexos.png) RAG do projeto cita `arquivo#linha`; anexo somente leitura recusado |
+| ![corpus](docs/prints/31-corpus-no-claude-md-e-no-rag.png) o Help consultado por tema, com id e hash, a partir do `CLAUDE.md` gerado e do RAG | |
 
 ## Hooks e RAG
 

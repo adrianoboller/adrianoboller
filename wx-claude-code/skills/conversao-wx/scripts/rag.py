@@ -117,6 +117,66 @@ def buscar(idx: dict, consulta: str, k: int) -> list[dict]:
     return [{"pontos": round(s, 2), "arquivo": d["arquivo"], "linha": d["linha"], "trecho": d["texto"][:300].replace("\n", " ")} for s, d in pont[:k]]
 
 
+# ---------------------------------------------------------------------------
+# Corpus WLanguage 12k: o nome de cada membro do zip traz o simbolo e o tema
+# (01-03-03_00679__hreadseekfirst_function__3044036.json). Listar o zip custa
+# ~70 ms e nao extrai nada; e o suficiente para, numa pergunta que cita
+# HReadSeekFirst, apontar o tema e o comando exato de consulta por tema
+# (0,5 s) em vez da varredura inteira (13 s medidos).
+# ---------------------------------------------------------------------------
+
+def indexar_corpus(plugin_root: Path, pasta: Path) -> dict:
+    import zipfile
+    zp = plugin_root / "skills" / "conversao-wx" / "resources" / "Help_WL_12k_Json.zip"
+    mapa: dict = {}
+    if not zp.is_file():
+        return {"simbolos": {}, "membros": 0}
+    rx = re.compile(r"^Help_WL_12k_Json/(\d\d-\d\d-\d\d)_\d+__([a-z0-9_]+?)_(function|property|example|variable_type|type|constant|event|structure|class|keyword|operator|statement|control|element)__\d+\.json$")
+    with zipfile.ZipFile(zp) as z:
+        nomes = z.namelist()
+    for n in nomes:
+        m = rx.match(n)
+        if not m:
+            continue
+        grupo, simbolo, tipo = m.groups()
+        e = mapa.setdefault(simbolo, {"grupos": [], "tipos": []})
+        if grupo not in e["grupos"]:
+            e["grupos"].append(grupo)
+        if tipo not in e["tipos"]:
+            e["tipos"].append(tipo)
+    idx = {"gerado_em": time.strftime("%Y-%m-%dT%H:%M"), "membros": len(nomes), "simbolos": mapa}
+    pasta.mkdir(parents=True, exist_ok=True)
+    (pasta / "corpus-simbolos.json").write_text(json.dumps(idx, ensure_ascii=False), encoding="utf-8")
+    return idx
+
+
+def simbolos_wlanguage(texto: str, mapa: dict) -> list[str]:
+    """Palavras da pergunta que sao simbolos do Help: CamelCase (HReadSeekFirst), ou nome exato em minusculas."""
+    achados = []
+    for w in re.findall(r"[A-Za-z][A-Za-z0-9_]{2,}", texto):
+        k = w.lower()
+        if k in mapa and (re.match(r"^[A-Z][a-z0-9]+[A-Z]|^[a-z]+[A-Z]|^H[A-Z]|^f[A-Z]|^Str[A-Z]|^Date[A-Z]|^SQL[A-Z]", w) or len(k) > 6):
+            if k not in achados:
+                achados.append(k)
+    return achados[:4]
+
+
+def contexto_corpus(plugin_root: Path, pasta: Path, prompt: str) -> str:
+    p = pasta / "corpus-simbolos.json"
+    try:
+        mapa = json.loads(p.read_text(encoding="utf-8"))["simbolos"] if p.is_file() else indexar_corpus(plugin_root, pasta)["simbolos"]
+    except (OSError, json.JSONDecodeError):
+        return ""
+    achados = simbolos_wlanguage(prompt, mapa)
+    if not achados:
+        return ""
+    partes = []
+    for s in achados:
+        e = mapa[s]
+        partes.append(f"{s} ({', '.join(e['tipos'])}) → tema {', '.join(e['grupos'][:3])}: python3 \"${{CLAUDE_PLUGIN_ROOT}}/skills/conversao-wx/scripts/query_wlanguage_help.py\" --group {e['grupos'][0]} --query {s} --limit 3")
+    return " Help WLanguage 12k (semântica técnica, nunca regra de negócio; consulte por tema, 0,5 s): " + " | ".join(partes)
+
+
 def carregar_ou_indexar(projeto: Path, plugin_root: Path | None) -> dict:
     p = projeto / ".wx-migration" / "rag" / "indice.json"
     if p.is_file() and not (p.parent / "indice.json.desatualizado").exists():
@@ -133,6 +193,7 @@ def main() -> int:
     ap.add_argument("--plugin-root", type=Path, default=Path(__file__).resolve().parents[3])
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("indexar")
+    sub.add_parser("indexar-corpus")
     bq = sub.add_parser("buscar"); bq.add_argument("consulta"); bq.add_argument("--k", type=int, default=5); bq.add_argument("--json", action="store_true")
     sub.add_parser("hook")
     a = ap.parse_args()
@@ -149,10 +210,15 @@ def main() -> int:
         t0 = time.perf_counter()
         idx = carregar_ou_indexar(projeto, a.plugin_root)
         res = buscar(idx, prompt, 4)
-        if not res:
+        corpus = contexto_corpus(a.plugin_root, projeto / ".wx-migration" / "rag", prompt)
+        if not res and not corpus:
             return 0
-        ctx = "RAG do projeto (trechos mais próximos da pergunta, com localizador; abra o arquivo antes de afirmar): " + " | ".join(f"{r['arquivo']}#L{r['linha']}: {r['trecho'][:160]}" for r in res) + f" [{len(idx['docs'])} trechos, {(time.perf_counter() - t0) * 1000:.0f} ms]"
+        ctx = ("RAG do projeto (trechos mais próximos da pergunta, com localizador; abra o arquivo antes de afirmar): " + " | ".join(f"{r['arquivo']}#L{r['linha']}: {r['trecho'][:160]}" for r in res) if res else "RAG do projeto: nada próximo.") + corpus + f" [{len(idx['docs'])} trechos, {(time.perf_counter() - t0) * 1000:.0f} ms]"
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": ctx}}, ensure_ascii=False))
+        return 0
+    if a.cmd == "indexar-corpus":
+        idx = indexar_corpus(a.plugin_root, projeto / ".wx-migration" / "rag")
+        print(f"CREATED corpus-simbolos.json ({len(idx['simbolos'])} símbolos de {idx['membros']} membros)")
         return 0
     if a.cmd == "indexar":
         idx = indexar(projeto, a.plugin_root)

@@ -28,3 +28,7 @@ Projeto sem `.wx-migration/` não é afetado por nenhum deles. Os hooks de guard
 ## No projeto de destino
 
 `aplicar_questionario.py` gera `.claude/settings.json` com os hooks do projeto (teste ao parar, lint ao editar, com os comandos de L4) e nega `Read(./.env)`. Os hooks do plugin somam-se a esses.
+
+## O corpus no RAG
+
+O RAG do projeto não indexa as 12 mil páginas: lista os nomes dos membros do zip (72 ms medidos, nada é extraído) e guarda `rag/corpus-simbolos.json`, símbolo → tema (7.265 símbolos). Quando a pergunta cita um símbolo WLanguage (`HReadSeekFirst`, `fFileExist`), o hook injeta o tema e o comando de consulta por tema (`--group`, 0,5 s) em vez da varredura inteira (13 s medidos). O `CLAUDE.md` gerado explica o mesmo ao projeto na seção «Corpus WLanguage 12k».

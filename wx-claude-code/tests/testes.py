@@ -588,6 +588,15 @@ class HooksERag(unittest.TestCase):
         self.assertTrue((self.tmp / ".wx-migration/rag/indice.json.desatualizado").is_file())
         r = run(RAIZ / "hooks/sincronizar_pmo.py", entrada=json.dumps({"tool_name": "Edit", "tool_input": {"file_path": str(self.tmp / "src/x.rs")}, "cwd": str(self.tmp)})); self.assertEqual(r.stdout, "")
 
+    def test_rag_reconhece_simbolo_wlanguage_e_aponta_o_tema(self):
+        r = run(SCRIPTS / "rag.py", "--project-root", self.tmp, "indexar-corpus"); self.assertIn("CREATED corpus-simbolos.json", r.stdout)
+        m = json.loads((self.tmp / ".wx-migration/rag/corpus-simbolos.json").read_text())["simbolos"]
+        self.assertIn("hreadseekfirst", m); self.assertIn("01-03-03", m["hreadseekfirst"]["grupos"])
+        r = subprocess.run([sys.executable, str(SCRIPTS / "rag.py"), "--project-root", str(self.tmp), "hook"], input=json.dumps({"prompt": "Como converter HReadSeekFirst e fFileExist para Rust?"}), capture_output=True, text=True)
+        self.assertIn("--group 01-03-03 --query hreadseekfirst", r.stdout); self.assertIn("ffileexist", r.stdout)
+        r = subprocess.run([sys.executable, str(SCRIPTS / "rag.py"), "--project-root", str(self.tmp), "hook"], input=json.dumps({"prompt": "Qual é o prazo final do projeto?"}), capture_output=True, text=True)
+        self.assertNotIn("Help WLanguage", r.stdout)
+
     def test_rag_indexa_busca_com_localizador_e_hook_injeta(self):
         r = run(SCRIPTS / "rag.py", "--project-root", self.tmp, "--plugin-root", RAIZ, "indexar"); self.assertEqual(r.returncode, 0, r.stderr); self.assertIn("trechos", r.stdout)
         r = run(SCRIPTS / "rag.py", "--project-root", self.tmp, "--plugin-root", RAIZ, "buscar", "prazo final de entrega", "--json")

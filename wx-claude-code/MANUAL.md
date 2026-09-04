@@ -271,6 +271,8 @@ para o aprovador abrir no navegador, em tema claro ou escuro.
 
 ---
 
+**O corpus no CLAUDE.md e no RAG.** O `CLAUDE.md` gerado tem a seção «Corpus WLanguage 12k»: o que é, o comando de consulta por tema e a regra de nunca usá-lo como regra de negócio. O RAG reconhece símbolos WLanguage citados na pergunta e injeta o tema e o comando exato, lendo só os nomes dos membros do zip (7.265 símbolos, 72 ms).
+
 ## 4. Como funciona a economia de tokens
 
 Três mecanismos, todos medidos.

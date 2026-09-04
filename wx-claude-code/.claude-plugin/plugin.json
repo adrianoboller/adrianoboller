@@ -2,7 +2,7 @@
   "name": "wx-claude-code",
   "displayName": "WX Claude Code",
   "description": "Conversao governada de projetos WINDEV, WEBDEV e WINDEV Mobile: questionario 0 e A-L, gates G0-G7, equipe WLanguage por tema do Help, dez papeis com PDCA, PMO com Scrum e Kanban, Impeccable e laudo de tokens.",
-  "version": "3.16.0",
+  "version": "3.16.1",
   "author": {
     "name": "Adriano Boller"
   },
