@@ -1,0 +1,25 @@
+parada na tentativa 1 (carga 0.04)
+=== quanto a trava fica presa, e quanto disso e o fsync ===
+    4000 gravacoes e 400 leituras por bateria, porta 7600
+
+-- a maquina estava quieta?
+   antes:  7% ocupada, ate 1 vizinho(s)
+   durante (2 amostras): 0% a 2% ocupada, mediana 2%, ate 0 vizinho(s)
+   depois: 1% ocupada, ate 1 vizinho(s)
+   VEREDITO: quieta o bastante. Os numeros valem.
+
+-- tempo de TRAVA PRESA por operacao (o que a proxima conexao espera)
+        por_lote: gravando     145.0 us   lendo    265.0 us   cpu   0%
+    por_operacao: gravando    1456.8 us   lendo    232.5 us   cpu   2%
+
+-- o pedido INTEIRO, para ter com o que comparar
+        por_lote: gravando     297.9 us   lendo    574.7 us
+    por_operacao: gravando    1637.3 us   lendo    478.0 us
+
+-- o que o par diz
+   o `fsync` sob a trava custa 1311.8 us por gravacao
+   ou seja, 10.05x o tempo de trava de uma gravacao sem ele
+   CONTROLE DE CIMA -- a leitura, que toma a mesma trava e nao
+   sincroniza nada, andou 0.88x entre as duas baterias.
+
+[exited with code 0]
