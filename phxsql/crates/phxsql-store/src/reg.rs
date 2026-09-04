@@ -1942,7 +1942,42 @@ impl RegFile {
         Ok(vivos)
     }
 
+    /// Leva o `.reg` ao disco -- inclusive quando ESTE `RegFile` nunca o tocou.
+    ///
+    /// # O defeito que esta linha conserta
+    ///
+    /// `Volumes::sincronizar` so alcanca o que esta no cache de descritores, e
+    /// `RegFile::abrir` nunca poe nada la: o cabecalho e' lido por um
+    /// `std::fs::File` direto, porque a largura do sufixo de volume mora dentro
+    /// dele e o conjunto nao pode ser montado antes. Num `RegFile` recem-aberto
+    /// -- que e' exatamente o que o fecho da janela de durabilidade usa, e o
+    /// `sincronizar_replicada`, e o fim de um `BULKINSERT` -- o cache estava
+    /// vazio e `sincronizar()` devolvia `Ok(())` tendo mandado ZERO `fsync`.
+    /// O `.ndx` ia ao disco duas vezes no mesmo fecho: indice duravel apontando
+    /// para dado que nao foi e' pior do que perder os dois.
+    ///
+    /// # Quais volumes, e o que sobra de fora
+    ///
+    /// O volume 1, porque e' onde moram os contadores do cabecalho e, sem
+    /// paginacao, a tabela inteira; e o volume da FRONTEIRA, que e' onde a
+    /// insercao escreve. E' o mesmo par que os seis componentes irmaos ja
+    /// abrem ao abrir (`cab(1)` e `cab(volume_atual)`).
+    ///
+    /// O que sobra: numa tabela PAGINADA, um `atualizar` no meio suja um
+    /// volume que nao e' nenhum dos dois. Esse caso e' coberto pelo registro
+    /// de escritas pendentes do `Volumes`, que alcanca qualquer volume dentro
+    /// do processo que escreveu -- e as duas coberturas juntas so' deixam de
+    /// fora "escreveu no meio de uma tabela paginada, morreu o PROCESSO sem
+    /// sincronizar, e outro processo fechou a janela". Varrer os volumes
+    /// existentes fecharia tambem esse, e custaria um `fsync` por volume em
+    /// todo fecho: 52 us cada um, medidos, mesmo num arquivo que ninguem sujou
+    /// -- 13 ms numa tabela de 256 volumes. Ver `docs/FORMATO.md`.
     pub fn sincronizar(&mut self) -> Result<()> {
+        self.volumes.abrir_para_sincronizar(1)?;
+        let (fronteira, _) = self.localizar(self.slot_count.max(1));
+        if fronteira != 1 {
+            self.volumes.abrir_para_sincronizar(fronteira)?;
+        }
         self.volumes.sincronizar()
     }
 

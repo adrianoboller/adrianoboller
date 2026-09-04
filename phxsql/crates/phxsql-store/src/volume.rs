@@ -12,10 +12,11 @@
 //! menos usado e fechado quando o teto e atingido. E o mesmo *lazy open* que o
 //! `FileManager` do Clarion(R) faz.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use phxsql_core::error::{PhxError, Result};
 use phxsql_core::paginacao::Paginacao;
@@ -61,6 +62,10 @@ pub struct Volumes {
     /// senha a ordem estaria escrita no comentario e em lugar nenhum mais --
     /// e comentario nao reprova ninguem.
     selo: u64,
+    /// Os volumes desta FAMILIA de arquivos escritos e ainda nao levados ao
+    /// disco, compartilhados por todas as instancias do processo. Ver
+    /// [`ESCRITAS_PENDENTES`].
+    pendentes: Pendentes,
 }
 
 /// A senha que ordena as sincronizacoes do processo inteiro.
@@ -69,6 +74,76 @@ pub struct Volumes {
 /// `fsync` que custa dezenas de microssegundos: quatro ordens de grandeza.
 static SENHA: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
+/// Os volumes escritos e ainda nao sincronizados, por familia de arquivos.
+type Pendentes = Arc<Mutex<BTreeSet<u32>>>;
+
+/// O registro de escritas pendentes DO PROCESSO, e nao de uma instancia.
+///
+/// # Por que ele existe: quem escreve e quem sincroniza sao objetos diferentes
+///
+/// `sincronizar` percorria `self.abertos`, e isso e' uma promessa de
+/// durabilidade medida pelo CACHE de descritores desta instancia. As duas
+/// coisas nao sao a mesma, e a diferenca custava dado:
+///
+/// - o fecho da janela de durabilidade (`descarregar_sujas_com`, no servidor)
+///   REABRE a tabela so para sincronizar. Quem escreveu foi outra `Table`, ja
+///   morta; a instancia que sincroniza tem `abertos` vazio para o `.reg`,
+///   porque `RegFile::abrir` le o cabecalho com um `std::fs::File` direto --
+///   fora deste cache. O laco rodava zero vezes e `sincronizar()` devolvia
+///   `Ok(())` tendo sincronizado NADA;
+/// - o mesmo vale para o `.reg` de um volume no MEIO de uma tabela paginada,
+///   que um `atualizar` suja e que a reabertura nunca abre;
+/// - e vale ate' sem reabertura nenhuma: `abertos` e' um LRU de
+///   [`LIMITE_ABERTOS_PADRAO`] entradas, entao quem escreve no volume 1 e
+///   depois em outros 64 perde o descritor do primeiro por despejo, e com ele
+///   perderia o `fsync`.
+///
+/// Nada disso aparece numa queda de PROCESSO -- pagina suja no cache do nucleo
+/// sobrevive a `SIGKILL` --, so numa queda de ENERGIA. Por isso o defeito
+/// atravessou a bateria inteira sem uma falha.
+///
+/// # A regra que decide a forma: a marca SOMA fsync, nunca subtrai
+///
+/// Este registro e' consultado para acrescentar `fsync`, jamais para pular
+/// um. A assimetria e' a coisa mais importante deste modulo: uma marca
+/// esquecida no caminho de escrita faz `sincronizar` cair no comportamento
+/// ANTIGO (sincroniza o que esta aberto) -- custa velocidade. Uma marca
+/// esquecida num registro usado para PULAR `fsync` custaria o dado, calada, e
+/// so numa queda de energia. Mesmo registro, lido nos dois sentidos, com
+/// modos de falha opostos. Ver `docs/FORMATO.md`.
+///
+/// A chave e' a familia (`diretorio/nome.ext`), e nao o caminho de cada
+/// volume: e' o que permite a instancia B achar o que a instancia A escreveu.
+/// Duas grafias diferentes do mesmo diretorio dariam duas familias e a marca
+/// se perderia -- e ai a degradacao e a mesma de acima, para o comportamento
+/// antigo, nunca para menos que ele.
+static ESCRITAS_PENDENTES: Mutex<BTreeMap<PathBuf, Pendentes>> = Mutex::new(BTreeMap::new());
+
+/// O conjunto pendente desta familia, criado na primeira vez que alguem pede.
+///
+/// Resolvido UMA vez, na construcao do `Volumes`, e guardado num `Arc`: o
+/// caminho de escrita nao pode pagar uma busca por `PathBuf` a cada linha
+/// gravada. O que sobra no laco quente e' um `lock` sem disputa (13,2 ns
+/// medidos nesta casa) e a insercao de um `u32`.
+fn pendentes_da_familia(familia: PathBuf) -> Pendentes {
+    let mut reg = trava(&ESCRITAS_PENDENTES);
+    reg.entry(familia).or_default().clone()
+}
+
+/// Toma a trava ignorando envenenamento.
+///
+/// Envenenar acontece quando uma thread entra em panico segurando a trava, e o
+/// que ela protege aqui e' um conjunto de `u32`: nao ha estado meio-escrito que
+/// possa enganar ninguem. Propagar o envenenamento tiraria do ar o registro que
+/// decide o que vai ao disco -- perder durabilidade por causa do panico de
+/// outra thread seria trocar um defeito por um pior.
+fn trava<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    match m.lock() {
+        Ok(g) => g,
+        Err(e) => e.into_inner(),
+    }
+}
+
 impl Volumes {
     pub fn novo(
         diretorio: impl AsRef<Path>,
@@ -76,9 +151,12 @@ impl Volumes {
         ext: &'static str,
         paginacao: Paginacao,
     ) -> Volumes {
+        let diretorio = diretorio.as_ref().to_path_buf();
+        let nome = nome.into();
+        let pendentes = pendentes_da_familia(diretorio.join(format!("{nome}.{ext}")));
         Volumes {
-            diretorio: diretorio.as_ref().to_path_buf(),
-            nome: nome.into(),
+            diretorio,
+            nome,
             ext,
             paginacao,
             abertos: HashMap::new(),
@@ -87,6 +165,7 @@ impl Volumes {
             espelho: None,
             sincronizacoes: 0,
             selo: 0,
+            pendentes,
         }
     }
 
@@ -132,6 +211,7 @@ impl Volumes {
         let f = self.arquivo(volume, true)?;
         f.seek(SeekFrom::Start(offset))?;
         f.write_all(buf)?;
+        self.marcar_escrito(volume);
         Ok(())
     }
 
@@ -210,6 +290,15 @@ impl Volumes {
         self.ordem.push_back(volume);
     }
 
+    /// Anota que este volume foi escrito e ainda nao foi ao disco.
+    ///
+    /// Chamado de TODO caminho de escrita deste modulo, e de nenhum caminho de
+    /// leitura -- e' a distincao que `abertos` nao faz e que o registro
+    /// existe para fazer. Ver [`ESCRITAS_PENDENTES`].
+    fn marcar_escrito(&mut self, volume: u32) {
+        trava(&self.pendentes).insert(volume);
+    }
+
     fn fechar_menos_usado(&mut self) {
         while self.abertos.len() >= self.limite {
             match self.ordem.pop_front() {
@@ -242,6 +331,33 @@ impl Volumes {
         Ok(self.abertos.get_mut(&volume).expect("acabou de ser aberto"))
     }
 
+    /// Poe este volume no cache de descritores, para que `sincronizar` o
+    /// alcance -- e nao faz nada quando o arquivo ainda nao existe.
+    ///
+    /// # Por que ela e' PUBLICA, e por que o `.reg` precisa dela
+    ///
+    /// Seis dos oito componentes de uma tabela leem o proprio cabecalho pelo
+    /// `Volumes` ao abrir (`l.cab(1)?; l.cab(volume_atual)?;` na lixeira, e o
+    /// igual no `.bin`, `.memo`, `.log` e `.reason`), entao os volumes que eles
+    /// podem dever ao disco ja estao em `abertos` quando `sincronizar` chega.
+    /// O `.reg` e' o unico que nao faz isso: `RegFile::abrir` le o cabecalho
+    /// com um `std::fs::File` direto -- e tem de ler, porque a largura do
+    /// sufixo de volume mora DENTRO do cabecalho e o conjunto nao pode ser
+    /// montado antes de le-lo. O ovo e a galinha sao reais; o efeito colateral
+    /// de deixar o `.reg` fora do cache nao era intencional.
+    ///
+    /// Isto e' o irmao de disco do registro de [`ESCRITAS_PENDENTES`], e os
+    /// dois cobrem buracos diferentes: o registro alcanca qualquer volume, mas
+    /// so' dentro do PROCESSO que escreveu; este metodo atravessa processo,
+    /// mas so' alcanca o volume que quem chama souber nomear.
+    pub fn abrir_para_sincronizar(&mut self, volume: u32) -> Result<()> {
+        if !self.existe(volume) {
+            return Ok(());
+        }
+        self.arquivo(volume, false)?;
+        Ok(())
+    }
+
     /// Cria o volume zerado. Falha se ja existir.
     pub fn criar(&mut self, volume: u32) -> Result<()> {
         let caminho = self.caminho(volume);
@@ -259,6 +375,9 @@ impl Volumes {
             .open(&caminho)?;
         self.abertos.insert(volume, f);
         self.registrar_uso(volume);
+        // Volume que nasce ainda vazio ja conta como escrito: o inode e' novo,
+        // e quem o criou vai gravar nele em seguida.
+        self.marcar_escrito(volume);
         Ok(())
     }
 
@@ -284,6 +403,7 @@ impl Volumes {
         let f = self.arquivo(volume, true)?;
         f.seek(SeekFrom::Start(offset))?;
         f.write_all(buf)?;
+        self.marcar_escrito(volume);
         // O espelho recebe a mesma coisa, no mesmo lugar. Falhar aqui NAO
         // desfaz a escrita boa: o principal ja tem o dado, e um espelho
         // defasado e melhor do que uma gravacao recusada.
@@ -292,6 +412,7 @@ impl Volumes {
             let g = e.arquivo(volume, true)?;
             g.seek(SeekFrom::Start(offset))?;
             g.write_all(buf)?;
+            e.marcar_escrito(volume);
         }
         Ok(())
     }
@@ -308,12 +429,14 @@ impl Volumes {
         f.seek(SeekFrom::Start(offset))?;
         f.write_all(cabecalho)?;
         f.write_all(conteudo)?;
+        self.marcar_escrito(volume);
         if let Some(e) = &mut self.espelho {
             e.garantir(volume)?;
             let g = e.arquivo(volume, true)?;
             g.seek(SeekFrom::Start(offset))?;
             g.write_all(cabecalho)?;
             g.write_all(conteudo)?;
+            e.marcar_escrito(volume);
         }
         Ok(())
     }
@@ -326,22 +449,67 @@ impl Volumes {
     pub fn definir_tamanho(&mut self, volume: u32, tamanho: u64) -> Result<()> {
         let f = self.arquivo(volume, true)?;
         f.set_len(tamanho)?;
+        self.marcar_escrito(volume);
         if let Some(e) = &mut self.espelho {
             e.garantir(volume)?;
             e.arquivo(volume, true)?.set_len(tamanho)?;
+            e.marcar_escrito(volume);
         }
         Ok(())
     }
 
+    /// Leva ao disco tudo o que este conjunto de arquivos deve.
+    ///
+    /// Sao DUAS listas, e a segunda e' a que faz a promessa valer:
+    ///
+    /// 1. os descritores que esta instancia tem abertos -- o comportamento de
+    ///    sempre, e o unico que existia;
+    /// 2. os volumes marcados como escritos e ainda nao sincronizados NO
+    ///    PROCESSO, inclusive por uma instancia que ja morreu. E' o caso do
+    ///    fecho da janela de durabilidade, que reabre a tabela so para
+    ///    sincroniza-la, e o do volume despejado do LRU. Ver
+    ///    [`ESCRITAS_PENDENTES`].
+    ///
+    /// A marca so' sai depois que o disco confirmou: se qualquer `fsync`
+    /// falhar, a lista inteira volta ao registro. Uma sincronizacao repetida
+    /// custa tempo; uma marca perdida custaria o dado, e o `descarregar_sujas`
+    /// do servidor conta justamente com poder tentar de novo.
     pub fn sincronizar(&mut self) -> Result<()> {
         self.sincronizacoes += 1;
         self.selo = SENHA.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let pendentes: BTreeSet<u32> = std::mem::take(&mut trava(&self.pendentes));
+        match self.sincronizar_listas(&pendentes) {
+            Ok(()) => {}
+            Err(e) => {
+                trava(&self.pendentes).extend(pendentes);
+                return Err(e);
+            }
+        }
+        if let Some(e) = &mut self.espelho {
+            e.sincronizar()?;
+        }
+        Ok(())
+    }
+
+    /// As duas listas de `sincronizar`, sem o espelho e sem o registro.
+    fn sincronizar_listas(&mut self, pendentes: &BTreeSet<u32>) -> Result<()> {
         for f in self.abertos.values_mut() {
             f.flush()?;
             f.sync_all()?;
         }
-        if let Some(e) = &mut self.espelho {
-            e.sincronizar()?;
+        for volume in pendentes {
+            if self.abertos.contains_key(volume) {
+                continue; // ja foi no laco de cima
+            }
+            // O volume pode ter sumido entre a escrita e agora -- `apagar_tudo`
+            // no reindex, um `rename` que trocou o arquivo inteiro. Arquivo que
+            // nao existe nao tem pagina suja a levar.
+            if !self.existe(*volume) {
+                continue;
+            }
+            let f = self.arquivo(*volume, false)?;
+            f.flush()?;
+            f.sync_all()?;
         }
         Ok(())
     }
@@ -373,6 +541,11 @@ impl Volumes {
         for v in volumes {
             std::fs::remove_file(self.caminho(v))?;
         }
+        // As marcas de escrita morrem com os arquivos: nao ha pagina suja a
+        // levar para um inode que deixou de existir. `sincronizar_listas`
+        // tambem pula o que sumiu, mas limpar aqui evita o registro crescer
+        // com volume que nunca mais vai voltar.
+        trava(&self.pendentes).clear();
         Ok(())
     }
 }
