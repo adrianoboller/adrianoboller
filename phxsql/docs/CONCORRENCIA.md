@@ -911,11 +911,15 @@ disso. É o `TEXTO_MAX` do §1.4.
   Fica escrito porque é a única hipótese de hoje que ainda aponta para as 23
   seções do `fsync` **no padrão** `por_lote` — as outras a §7.1 derrubou.
 
-* **Refazer a §7.1, a §11 e a §12 com o instrumento consertado.** Até 04/09 as
-  quatro bancadas liam 1.000 linhas dizendo 50 (§14). As razões publicadas
-  valem para a carga de 1.000; a série para a carga de 50 **não existe**, e uma
+* **Refazer a §7.1 e a §11 com o instrumento consertado.** Até 04/09 as cinco
+  bancadas liam 1.000 linhas dizendo 50 (§14). As razões publicadas valem para
+  a carga de 1.000; a série para a carga de 50 **não existe** nessas duas. Uma
   corrida curta de fumaça sugere que a trava presa lendo cai de ~3.150 µs para
-  a ordem de 500 µs. **Não medido em bateria limpa, e não estimado.**
+  a ordem de 500 µs — **não medido em bateria limpa, e não estimado.**
+  ~~E a §12.~~ **A §12 foi refeita em 04/09 (§12.4-bis)**, e o comboio
+  **cresceu** na carga certa: 2,25× e 2,13× no escritor, contra 1,70× e 1,84×.
+  Refazer as outras duas não é formalidade — pode mudar o número para cima,
+  como mudou aqui.
 * **Uma catraca para o mapa.** O `mapa-da-trava.py` está pronto para virar
   guarda de QA — «nenhuma seção nova roda código do dono sob a trava», «o
   número de seções que alcançam `fsync` só desce». Não entrou porque exigiria
@@ -1284,6 +1288,28 @@ O pior caso é **uma amostra**: ele diz que o comboio pode custar dezenas de
 milissegundos — o que é informação —, mas não sustenta um fator. *O p99 é o
 achado; o pior é a anedota que o p99 explica.* Fica escrito porque eu o
 publiquei antes de ter a segunda corrida, e apagar deixaria a lição perdida.
+
+### 12.4-bis REFEITO na carga certa (04/09, 08:17 e 08:24) — e o comboio CRESCE
+
+As duas baterias acima liam **1.000 linhas** dizendo 50: é o defeito do campo,
+na §14. Com o instrumento consertado, duas baterias limpas na carga de **50
+linhas de verdade**:
+
+| p99, K=4 ÷ K=1 | A (08:17) | B (08:24) | as de 1.000 linhas |
+|---|---:|---:|---:|
+| escritor | **2,25×** | **2,13×** | 1,70× e 1,84× |
+| leitor em `quieta` | **2,01×** | **1,96×** | 1,61× e 1,72× |
+| média (escritor) | 1,16× | 1,12× | 1,08× e 1,17× |
+
+Monotônico nas quatro séries das duas corridas, como antes. E o número **subiu**
+— o que era de se esperar assim que se pensa nele: o comboio é um custo **fixo
+por fecho de janela** (K × (`open` + `fsync`)), e quanto mais barata a leitura,
+maior a fatia que ele ocupa da espera. Com 50 linhas o leitor sai de 4,0 ms
+para 7,9 ms; com 1.000 ele saía de 6,5 para 11,2.
+
+**A carga de 50 linhas é a que a tela usa** — uma página de grade —, então é
+esta a leitura que mais importa das duas. *O conserto do instrumento não
+derrubou o achado: engrandeceu-o.*
 
 ### 12.5 O que isto decide
 

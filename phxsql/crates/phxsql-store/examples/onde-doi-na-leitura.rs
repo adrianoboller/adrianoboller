@@ -120,18 +120,16 @@ fn main() {
             }
             ambas.push(i.elapsed().as_secs_f64() * 1e6);
         }
-        let (m_ab, m_pag, m_le, m_ambas) = (
-            mediana(ab),
-            mediana(pag),
-            mediana(le),
-            mediana(ambas),
-        );
+        let (m_ab, m_pag, m_le, m_ambas) = (mediana(ab), mediana(pag), mediana(le), mediana(ambas));
         println!("-- limite {limite}");
         println!("   abrir a tabela ............ {m_ab:>9.1} us");
         println!("   pagina (so os rowids) ..... {m_pag:>9.1} us");
         println!("   ler cada linha ............ {m_le:>9.1} us");
         println!("   pagina + ler .............. {m_ambas:>9.1} us");
-        println!("   abrir + pagina + ler ...... {:>9.1} us\n", m_ab + m_ambas);
+        println!(
+            "   abrir + pagina + ler ...... {:>9.1} us\n",
+            m_ab + m_ambas
+        );
     }
 
     println!("=== o veredito ===\n");
