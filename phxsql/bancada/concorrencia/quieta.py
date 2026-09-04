@@ -97,8 +97,16 @@ class Vigia:
 
       * **10 pontos de ocupacao** entre as pontas: abaixo disso a variacao e do
         proprio medidor subindo e derrubando servidor.
-      * **15% no controle**: e a dispersao que o `ping` mostra numa maquina
-        parada, medida antes de virar limite.
+      * **15% no controle**: media pelo `ruido-do-controle.py` em 04/09 --
+        30 corridas de `ping` puro, 1 cliente, 1s cada. A maquina nao ficou
+        parada em nenhum trecho longo o bastante naquele dia (esta arvore
+        tinha tres outras frentes ativas): mesmo nas corridas com 0-1 vizinho
+        rodavel a dispersao ficou em 15,6% de CV e ate 49,5% de salto --
+        MAIOR que este teto, entao a medicao NAO confirma "parada" e NAO
+        justifica apertar o numero. A clausula so deixa a catraca DESCER: sem
+        base para apertar, ele fica em 15%, que e o que ja estava. O
+        `ruido-do-controle.py` refaz esta conta quando alguem tiver uma
+        maquina de fato ociosa para medir contra.
       * **2 vizinhos rodaveis**: um `cargo` sozinho ja e um; dois e uma
         compilacao paralela ao lado, e ai a comparacao acabou.
     """

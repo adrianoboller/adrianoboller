@@ -11,8 +11,12 @@ havia o que medir.
 | `escolher-o-desenho.py` | **o que pôr no lugar?** O teto de cada um: trava por tabela, `RwLock`, MVCC | sim |
 | `quanto-a-trava-fica-presa.py` | **quanto a trava fica PRESA?** O µs de posse por operação, lido por dentro (telemetria), com o par `por_lote` × `por_operacao` isolando o `fsync` | sim |
 | `quieta.py` | **este número vale?** O vigia que reprova a bateria rodada em máquina ocupada | — |
+| `ruido-do-controle.py` | **o teto do próprio vigia está certo?** Muitas corridas seguidas de `ping` puro, para medir — e não citar — a dispersão que o controle mostra hoje, e testar se `tolerancia_controle` merece descer | sim, para achar a base limpa; sem ela, mede a sujeira mesmo |
 
-O relatório que sai dos quatro está em [`docs/CONCORRENCIA.md`](../../docs/CONCORRENCIA.md).
+O relatório que sai dos quatro primeiros está em
+[`docs/CONCORRENCIA.md`](../../docs/CONCORRENCIA.md). O quinto responde por
+ele mesmo: sem uma medição da dispersão do controle, "quieta" era uma palavra
+com um número ao lado que ninguém tinha corrido para confirmar.
 
 ## Como rodar
 
@@ -27,6 +31,9 @@ python3 bancada/concorrencia/mapa-da-trava.py --json          # para outro gerad
 python3 bancada/concorrencia/a-trava-serializa.py
 SEGUNDOS=5 CLIENTES=1,2,4 python3 bancada/concorrencia/escolher-o-desenho.py
 GRAVACOES=4000 LEITURAS=400 python3 bancada/concorrencia/quanto-a-trava-fica-presa.py
+
+RODADAS=30 python3 bancada/concorrencia/ruido-do-controle.py         # o teto do vigia
+RODADAS=40 RODADA_S=1.5 python3 bancada/concorrencia/ruido-do-controle.py --json
 ```
 
 **O quarto medidor tem um controle que os outros não têm**, e vale escrever por
@@ -67,6 +74,25 @@ ele classificou o `op_juntar` como «atravessa a rede com a trava na mão» com
 confiança 1,0 — por causa de uma **fechadura local** chamada `montar` que o
 resolvedor por nome confundiu com o `Cliente::montar(fluxo: TcpStream, …)` do
 `replica.rs`. Conferido à mão, `juncao.rs` tem zero operações de rede.
+
+**4. «Zero vizinhos» não é «máquina parada» nesta caixa.** Medido em 04/09 com
+o `ruido-do-controle.py`: em 10 das 30 corridas o `quieta.Amostra` não viu
+nenhum vizinho rodável (`procs_running` excedente = 0) e mesmo assim a
+ocupação ficou em 50–83% e o `ping` variou até 49,5% entre corridas.
+
+A explicação óbvia é `steal` (o hospedeiro tirando a vCPU de baixo do
+processo sem deixar rastro na fila local) — e é exatamente o tipo de
+diagnóstico plausível que esta casa já errou por não medir. Medido direto do
+`/proc/stat` no momento em que isto foi escrito, `steal` estava em **0,0%**;
+a explicação não se sustenta como causa geral, e fica como hipótese **morta**,
+não como fato. A explicação que os números sustentam é mais chata: o
+`Amostra` lê `procs_running` em só 3–5 instantes por janela (`passos`), e um
+pico de tarefa rodável entre dois desses instantes passa batido, enquanto a
+ocupação (`idle` acumulado pelo kernel ao longo da janela inteira) não perde
+nenhum. Não foi medido qual dos dois pesa mais neste dia — só que `vizinhos`
+sozinho já mostrou ter esse ponto cego, medido. É por isso que o vigia nunca
+decide por um sinal só: `vizinhos`, `ocupada` e o `controle` cobrem pontos
+cegos diferentes, e o `controle` foi o que pegou este.
 
 ## O método do mapa, em um parágrafo
 

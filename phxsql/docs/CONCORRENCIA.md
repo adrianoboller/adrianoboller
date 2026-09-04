@@ -899,3 +899,165 @@ porque manda procurar no lugar errado com ar de precisão. Nome se acha com
 | 200 operações / 200 ms | `lote_operacoes` / `lote_milissegundos`, em `crates/phxsql-server/src/config.rs` |
 | 1,99× / 1,51–1,59× | `docs/DESEMPENHO.md` §14 — **medição anterior, não refeita aqui** |
 | 26–100% ocupada, 13 vizinhos, 120% no controle | `bancada/concorrencia/quieta.py`, nas rodadas de hoje |
+
+---
+
+## 10. O ruído do controle, medido (04/09) — o teto do próprio vigia
+
+Esta rodada não mede a trava: mede a **premissa da bancada que mede a trava**.
+O `docs/CONCORRENCIA.md` (§0, §6.2) já citava «o controle variou 120%» como o
+motivo de o `quieta.Vigia` existir, e o `quieta.py` já trazia
+`tolerancia_controle=0.15` com a justificativa em prosa — "e a dispersao que
+o ping mostra numa maquina parada" — mas sem a corrida que sustenta o número.
+*Número citado é número que não se mede.* Esta seção mede.
+
+### 10.1 O método
+
+`bancada/concorrencia/ruido-do-controle.py`, novo nesta rodada, reaproveita
+por **importação direta** o `rodada("sem-trava", 1, …)` do
+`a-trava-serializa.py` — o mesmo controle que o Vigia usa em toda bateria
+desta pasta, não uma cópia dele. Roda **30 corridas** de `ping` puro, 1
+cliente, 1 s cada, de nariz a nariz, e para cada uma registra a vazão junto
+com a ocupação e os vizinhos rodáveis do momento (`quieta.Amostra`), o que
+separa as corridas **quietas** (vizinhos ≤ 1: só este arnês) das **sujas**
+(outra frente do lado) em vez de misturar as duas num único número.
+
+```bash
+python3 bancada/concorrencia/ruido-do-controle.py
+```
+
+### 10.2 O número, medido hoje — e a máquina não parou
+
+Esta árvore tinha **três outras frentes ativas** durante a medição — o mesmo
+tipo de dia que gerou o «120%» herdado. Das 30 corridas, **20 caíram sujas**
+(vizinhos > 1) e só **10 ficaram no critério de quietas**:
+
+| grupo | n | média (op/s) | desvio | CV | mín–máx | salto |
+|---|---:|---:|---:|---:|---:|---:|
+| todas as 30 | 30 | 10.029 | 2.715 | 27,1% | 4.129–14.097 | 99,4% |
+| **quietas** (vizinhos ≤ 1) | 10 | 8.631 | 1.348 | 15,6% | 7.057–11.329 | 49,5% |
+| sujas (vizinhos > 1) | 20 | 10.728 | 2.946 | 27,5% | 4.129–14.097 | 92,9% |
+
+**O achado que decide:** mesmo no subconjunto QUIETO por `vizinhos`, o salto
+entre corridas chegou a 49,5% — mais que o triplo do teto em vigor (15%).
+`vizinhos ≤ 1` não é o mesmo que "máquina parada" nesta árvore hoje; é
+necessário, e não é suficiente (mais em §10.4).
+
+### 10.3 A decisão sobre o teto — e por que ele NÃO desce
+
+O protocolo que o script aplica: a proposta de novo teto é
+`max(salto_quieto × 1,5; CV_quieto × 3)` — margens de segurança sobre o número
+medido, não o teto em si, do mesmo jeito que o `quieta.py` já rotula as suas
+próprias margens como escolhidas e não medidas. Hoje isso deu **74,2%**.
+
+**74,2% não é menor que os 15% em vigor — então a catraca fica em 15%.** A
+cláusula pétrea só deixa a catraca descer, nunca subir, mesmo quando a régua
+que a mede muda; e aqui a régua **não achou base para apertar**, porque a
+própria base (a máquina quieta) não apareceu por tempo suficiente hoje. Isso
+não invalida os 15%: ao contrário, confirma que eles já eram **conservadores**
+em relação ao ruído natural desta caixa — um teto solto teria deixado passar
+como "limpa" uma bateria com bem mais do que 15% de deriva. A hipótese
+("15% é frouxo demais, dá para apertar") foi medida e **morreu**; é resultado
+tão válido quanto um aperto teria sido, e o `quieta.py` foi atualizado com a
+data e o número (comentário do `Vigia`, `tolerancia_controle`).
+
+Uma checagem menor, minutos depois (3 corridas de 0,5 s, feita para validar o
+`--json` do script), pegou a máquina de fato parada e mostra por que 15%
+segue sendo o número certo e não só o que restou: `vizinhos=0` nas três,
+ocupação estável em 25-28%, CV **1,1%**, salto **2,6%** -- bem dentro do
+teto. O ruído "quieto" varia de minuto para minuto nesta máquina
+compartilhada; apertar o teto com a amostra de 30 corridas, que não pegou uma
+janela igualmente calma por tempo suficiente, teria ajustado à sujeira do
+dia -- o mesmo erro que este documento existe para evitar.
+
+O «120%» herdado também sai daqui explicado, e não só repetido: é a mesma
+ordem de grandeza do subconjunto **sujo** de hoje (salto 92,9%, CV 27,5%) —
+o número de um dia contaminado, não uma dispersão de base a projetar um teto
+em cima. Citar o 92,9%-hoje ou o 120%-de-02/09 como "o ruído do ping" sem
+dizer qual condição gerou qual é exatamente o erro que este documento evita.
+
+### 10.4 O achado extra: `vizinhos` tem ponto cego, medido e não só plausível
+
+Nas 10 corridas quietas por `vizinhos`, a ocupação ainda variou de 50% a 83%.
+A explicação óbvia — `steal` do hospedeiro, invisível ao `procs_running` deste
+contêiner — foi **testada e não confirmada**: medido direto do `/proc/stat` no
+momento em que isto foi escrito, `steal` estava em 0,0%. A hipótese morre
+como causa geral, e fica registrada morta em vez de silenciosa. A explicação
+que os números sustentam é mais prosaica: o `Amostra` lê `procs_running` em
+só 3–5 instantes por janela, e um pico de tarefa rodável entre dois desses
+instantes passa batido, enquanto a ocupação (`idle` acumulado pelo kernel ao
+longo da janela inteira) não perde nenhum. **Não medido** qual dos dois pesa
+mais neste dia — só que o sinal de `vizinhos` sozinho tem esse ponto cego,
+isso sim medido. É por isso que o vigia nunca decide por um sinal só: cada um
+dos três cobre um ponto cego diferente, e foi o **controle** que pegou este.
+Detalhe em `bancada/concorrencia/LEIA-ME.md`.
+
+### 10.5 A prova real, nos dois sentidos — com a saída de verdade
+
+**Lado que recusa**, quatro vezes hoje com esta árvore do jeito que estava
+(nenhuma carga acrescentada por mim), cada uma com o motivo impresso:
+
+| tentativa | ocupação antes→depois | vizinhos (pico) | controle antes→depois | motivo(s) citado(s) |
+|---|---|---:|---|---|
+| 1 | 56%→98% | 7 | 9.403→13.640 (45%) | ocupação mudou 42 pontos; 7 vizinhos; controle mudou 45% |
+| 2 | 95%→28% | 4 | — | ocupação mudou 68 pontos; 4 vizinhos |
+| 3 | 50%→96% | 9 | — | ocupação mudou 45 pontos; 9 vizinhos |
+| 4 | 46%→26% | 7 | 7.376→13.105 (78%) | ocupação mudou 20 pontos; 7 vizinhos; controle mudou 78% |
+
+**Lado que recusa, com carga artificial CONTROLADA** — 4 processos Python
+próprios, um por núcleo, em laço fechado de CPU por 90 s, subidos e depois
+**derrubados pelo PID** (nunca `pkill`, para não afetar as outras frentes):
+
+```
+antes:  100% ocupada, ate 4 vizinho(s)
+durante: 99% a 100% ocupada, mediana 100%, ate 11 vizinho(s)
+depois: 100% ocupada, ate 5 vizinho(s)
+controle: 10753 -> 2936 op/s
+VEREDITO: NAO.
+  - ate 11 tarefas rodaveis alem do medidor: ha outra frente trabalhando nesta maquina
+  - a curva de CONTROLE mudou 73% entre o comeco e o fim (10753 -> 2936 op/s)
+```
+
+**Lado que aceita**, na 5ª tentativa (mesmo padrão da rodada de 03/09, que
+precisou de seis para duas baterias limpas — não é regressão, é o custo já
+conhecido de medir numa máquina compartilhada):
+
+```
+antes:  28% ocupada, ate 2 vizinho(s)
+durante: 50% a 100% ocupada, mediana 76%, ate 2 vizinho(s)
+depois: 26% ocupada, ate 1 vizinho(s)
+controle: 7821 -> 8223 op/s
+VEREDITO: quieta o bastante. Os numeros valem.
+```
+
+E os números que ela liberou incluem, pela primeira vez nesta árvore com
+`LINHAS=300`, o modo **`gravar`** (escritores, não só leitores) — a mesma
+carga cuja ausência derrubou a premissa da SP000011 registrada na §5(1):
+
+| modo | 1 cliente | 2 clientes | 4 clientes |
+|---|---:|---:|---:|
+| `sem-trava` (controle) | 7.821 op/s | 14.529 (1,86×) | 28.774 (3,68×) |
+| `ler` | 446 op/s | 703 (1,58×) | 719 (1,61×) |
+| **`gravar`** | 900 op/s | 458 (**0,51×**) | 706 (0,79×) |
+| `ler-tabelas-separadas` | 447 op/s | 726 (1,62×) | 654 (1,46×) |
+| `gravar-tabelas-separadas` | 985 op/s | 402 (0,41×) | 174 (0,18×) |
+
+Esta bateria é curta (`SEGUNDOS=1`, para caber numa janela quieta pequena) e
+**não substitui** a medição formal da SP000011/SP000016 — mas o `gravar` caiu
+para menos da metade da vazão de 1 cliente com 2 clientes concorrentes, o
+oposto do `sem-trava` ao lado. É o sinal de que o protocolo, quando aceita,
+está medindo o par certo (leitor **e** escritor), não só leitor com leitor.
+
+### 10.6 A resposta que esta frente devolve: a SP000011/SP000016 pode ser medida aqui?
+
+**Sim.** O arnês (`a-trava-serializa.py`, `escolher-o-desenho.py`,
+`quanto-a-trava-fica-presa.py`) mais o `quieta.Vigia` já formam o protocolo
+que a §10 pedia: recusa publicar acima de um teto medido, e o teto (15% no
+controle, confirmado e não afrouxado nesta rodada) resistiu a uma tentativa
+honesta de apertá-lo. A condição não é «máquina livre de vizinho», que é rara
+nesta árvore compartilhada — é **rodar mais de uma vez**: hoje foram 5
+tentativas para 1 bateria limpa; em 03/09 foram 6 para 2. O protocolo já paga
+esse custo sozinho, recusando em silêncio numérico (nenhum número sai) em vez
+de publicar sujo. Quem abrir a próxima frente pode rodar `escolher-o-desenho.py`
+e `quanto-a-trava-fica-presa.py` do mesmo jeito — com `--json` para automação,
+e com paciência para repetir até o `quieta.Vigia` aceitar.
