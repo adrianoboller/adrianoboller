@@ -142,7 +142,9 @@ raiz = bpy.data.collections.new("ANUNCIO")
 cena.collection.children.link(raiz)
 # COM_LOGO=1 religa o decal (desligado a pedido do cliente) para provar que
 # o caminho continua funcionando; o padrao e a caixa limpa.
-PARAMS = {"com_logo": os.environ.get("COM_LOGO", "0") == "1"}
+# RES_TEX=4k troca para o conjunto 4096^2 (o padrao do modulo e 2k).
+PARAMS = {"com_logo": os.environ.get("COM_LOGO", "0") == "1",
+          "resolucao_texturas": os.environ.get("RES_TEX", "2k")}
 objs = mod_caixa.construir_caixa(cena, raiz, PARAMS)
 assert objs["com_logo"] == PARAMS["com_logo"]
 assert objs["logo_provisoria"] is False or PARAMS["com_logo"], "logo_provisoria acusou sem logo"
@@ -174,9 +176,11 @@ print("[medida] materiais/actions/imagens 'caixa*' apos 1a/2a construcao: %s / %
 assert depois == antes, "materiais, actions ou imagens vazaram"
 assert depois[0] == 3, "esperava caixa.papelao, caixa.etiqueta e caixa.espuma"
 for chave in ("cor", "normal", "rugosidade"):
-    img = bpy.data.images.get(mod_caixa.PARAMS_PADRAO["texturas"][chave])
+    nome = objs["texturas"][chave]
+    img = bpy.data.images.get(nome)
     assert img is not None and img.packed_file is not None, "%s nao empacotada" % chave
-    print("[medida] textura %s: %dx%d, empacotada, colorspace %s" % (chave, img.size[0], img.size[1], img.colorspace_settings.name))
+    print("[medida] textura %s = %s: %dx%d, %.1f MB, empacotada, colorspace %s" % (
+        chave, nome, img.size[0], img.size[1], os.path.getsize(mod_caixa._caminho_asset(nome)) / 1e6, img.colorspace_settings.name))
 if objs["com_logo"]:
     assert objs["imagem_logo"].packed_file is not None or objs["logo_provisoria"]
 

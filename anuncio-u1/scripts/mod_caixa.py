@@ -5,9 +5,11 @@
 # dobradica na aresta superior - duas grandes ao longo de X que se encontram
 # no meio (a fita fica dividida entre elas) e duas pequenas ao longo de Y por
 # baixo. Chanfro de 2,5 mm em toda aresta. A aparencia vem de um BAKE da
-# Meshy (3 M tris) para esta geometria limpa: assets/caixa_cor.png,
-# caixa_normal.png (espaco tangente) e caixa_rugosidade.png, feitos uma vez
-# por scripts/bake_caixa.py (Cycles, selected-to-active). Este modulo so
+# Meshy (3 M tris) para esta geometria limpa: assets/caixa_cor[_2k].png,
+# caixa_normal[_2k].png (espaco tangente) e caixa_rugosidade[_2k].png, feitos
+# uma vez por scripts/bake_caixa.py (Cycles, selected-to-active) em 4096^2 e
+# 2048^2 - 'resolucao_texturas' escolhe; o padrao e '2k' (5,1 MB) porque os
+# 15,7 MB do 4k viram ~21 MB em base64 no arquivo unico. Este modulo so
 # CARREGA os PNGs e os empacota no .blend. A etiqueta pendurada e a propria
 # malha da Meshy (decimada a 6 k tris e desdobrada de novo), guardada em
 # assets/caixa_etiqueta_malha.png como bytes, com as texturas originais dela
@@ -85,11 +87,12 @@ PARAMS_PADRAO = {
     "grade_atlas": 4096,
     "gutter_px": 16,
     "densidade_nao_impressa": 0.5,    # faces internas ocupam 1/4 da area
-    "texturas": {
-        "cor": "caixa_cor.png",
-        "normal": "caixa_normal.png",
-        "rugosidade": "caixa_rugosidade.png",
-    },
+    # '2k' (padrao) usa caixa_*_2k.png (2048^2, ~4 MB no total: e o que cabe
+    # no arquivo unico colado na aba Scripting); '4k' usa caixa_*.png
+    # (4096^2, 15,7 MB). 'texturas' explicito (dict cor/normal/rugosidade)
+    # manda sobre os dois.
+    "resolucao_texturas": "2k",
+    "texturas": None,
     "etiqueta": {
         "malha": "caixa_etiqueta_malha.png",
         "cor": "caixa_etiqueta_cor.png",
@@ -122,6 +125,21 @@ PARAMS_PADRAO = {
     # quadro fica em z ~ -0,65 a 2,1 m).
     "z_fora_do_quadro": -1.3,
 }
+
+SUFIXO_TEXTURAS = {"4k": "", "2k": "_2k"}
+
+
+def nomes_texturas(p):
+    """Arquivos de textura do corpo conforme 'resolucao_texturas' (ou o dict
+    'texturas' explicito)."""
+    if p.get("texturas"):
+        return dict(p["texturas"])
+    suf = SUFIXO_TEXTURAS.get(str(p.get("resolucao_texturas", "2k")).lower())
+    if suf is None:
+        print("[caixa] AVISO: resolucao_texturas %r desconhecida; usando '2k'" % (p.get("resolucao_texturas"),))
+        suf = "_2k"
+    return {k: "caixa_%s%s.png" % (k, suf) for k in ("cor", "normal", "rugosidade")}
+
 
 # Papelao liso para quando as texturas nao existirem (kraft medio da Meshy,
 # medido no atlas dela). Serve ao bake_caixa.py antes de existir o bake.
@@ -871,10 +889,11 @@ def construir_caixa(cena, colecao_pai=None, params=None):
     interior = (ex - 2 * t, ey - 2 * t, m["zx"] - t)     # ate a base das abas pequenas
     ix, iy, iz = interior
 
+    nomes = nomes_texturas(p)
     imagens = {
-        "cor": _carregar_imagem(_caminho_asset(p["texturas"]["cor"]), False),
-        "normal": _carregar_imagem(_caminho_asset(p["texturas"]["normal"]), True),
-        "rugosidade": _carregar_imagem(_caminho_asset(p["texturas"]["rugosidade"]), True),
+        "cor": _carregar_imagem(_caminho_asset(nomes["cor"]), False),
+        "normal": _carregar_imagem(_caminho_asset(nomes["normal"]), True),
+        "rugosidade": _carregar_imagem(_caminho_asset(nomes["rugosidade"]), True),
     }
     faltam = [k for k, v in imagens.items() if v is None]
     if faltam:
@@ -1035,6 +1054,7 @@ def construir_caixa(cena, colecao_pai=None, params=None):
         "logo_provisoria": provisoria,
         "imagem_logo": imagem,
         "texturas_ausentes": faltam,
+        "texturas": nomes,
         "params": p,
     }
 

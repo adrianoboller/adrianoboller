@@ -11,6 +11,7 @@
 #       [--etapa tudo|bake|etiqueta] [--mapas cor,normal,rugosidade]
 #       [--fonte tras:0.45,0.35,0.95,0.75] [--ilhas caixa2_ilhas.npy]
 #       [--tris-etiqueta 6000] [--etiqueta-modo bake|recorte] [--res-etiqueta 1024]
+#       [--sufixo _2k]   (nome dos PNGs do corpo: caixa_cor_2k.png etc.)
 #
 # Por que assim:
 # - Selected-to-active com cage por extrusao (3 cm) e raio maximo (10 cm): a
@@ -57,7 +58,7 @@ X_ETIQUETA_MAX, X_ETIQUETA_CENTRO = 0.70, 0.672
 def args():
     a = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     d = {"res": 4096, "etapa": "tudo", "mapas": "cor,normal,rugosidade", "fonte": "tras:0.45,0.35,0.95,0.75",
-         "ilhas": "", "tris_etiqueta": 6000, "res_etiqueta": 1024, "etiqueta_modo": "bake"}
+         "ilhas": "", "tris_etiqueta": 6000, "res_etiqueta": 1024, "etiqueta_modo": "bake", "sufixo": ""}
     # fonte padrao do papelao liso: miolo da face traseira, acima dos icones
     i = 0
     while i < len(a):
@@ -317,7 +318,7 @@ def bake(alvo, fonte, geo, a):
             continue
         print("[bake] %s: %.0fs" % (mapa, time.time() - t0))
         preencher_nao_impressas(img, geo, a, res, neutro=(0.5, 0.5, 1.0) if mapa == "normal" else None)
-        gravar_png(img, os.path.join(ASSETS, "caixa_%s.png" % mapa), bw=(mapa == "rugosidade"))
+        gravar_png(img, os.path.join(ASSETS, "caixa_%s%s.png" % (mapa, a["sufixo"])), bw=(mapa == "rugosidade"))
         saidas[mapa] = img
     return saidas
 
