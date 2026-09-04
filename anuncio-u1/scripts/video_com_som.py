@@ -1,17 +1,22 @@
-# Previa em VIDEO COM SOM: junta saida/previa_seq/quadro_*.png (300 quadros,
-# 1 a cada 2 da coreografia, tocando a 15 fps = 20 s) com os stems do mod_som
-# num MP4 H.264 + AAC pelo VSE, e PROVA que o arquivo tem video e audio.
+# Previa em VIDEO COM SOM: junta os quadros da previa (PASTA_SEQ, padrao
+# saida/previa_seq/quadro_*.png: 1 a cada 2 da coreografia, tocando a 15 fps;
+# 25 s = 750 quadros -> 375 PNG) com os stems do mod_som num MP4 H.264 + AAC
+# pelo VSE, e PROVA que o arquivo tem video e audio.
 #
 # Roda no Blender headless (xvfb + llvmpipe, o mesmo caminho da previa):
 #   bash scripts/previa.sh scripts/video_com_som.py
 #   PROVA_3D=1 bash scripts/previa.sh scripts/video_com_som.py   (+ prova 5)
+#   SO_CRUZAR=1 <blender> -b -P scripts/video_com_som.py          (so a prova 4)
+# Ambiente: PASTA_SEQ (pasta dos PNG), FATOR (1.0 = 25 s; 0.8 = 20 s; 0.6 =
+# 15 s - o mesmo fator_duracao da coreografia com que os quadros foram
+# renderizados), NOME_VIDEO (padrao previa_com_som.mp4 na pasta saida/).
 #
 # SINCRONIA: o quadro k da previa e o 2k-1 da coreografia e aparece em
 # (k-1)/15 = (2k-2)/30 s - o mesmo instante em que o 2k-1 apareceria a 30 fps.
-# O audio e gerado com fps=30 em tempo real (20 s) e entra no quadro 1: os
-# 20 s de som casam com os 300 quadros a 15 fps sem escalar nada. O fps da
-# cena e fixado ANTES das faixas de som, porque o comprimento delas em
-# quadros e calculado na criacao.
+# O audio e gerado com fps=30 em tempo real e entra no quadro 1: os segundos
+# de som casam com os PNG a 15 fps sem escalar nada. O fps da cena e fixado
+# ANTES das faixas de som, porque o comprimento delas em quadros e calculado
+# na criacao.
 #
 # PROVAS (impressas; as imagens ficam em saida/som_quadro_*.png):
 #   1. cabecalho do MP4 lido a mao (atomos moov/mvhd/trak/mdia/hdlr/mdhd/
@@ -20,7 +25,7 @@
 #   2. o audio DO MP4 decodificado pelo proprio Blender (aud): taxa, canais,
 #      duracao; correlacao com som_mix.wav (lag tem de ser 0) e cada clique
 #      do obturador (bloco isolado, mesma semente) correlacionado com o
-#      audio do MP4 em volta da cue (11,967 / 12,967 / 13,967 s) - prova de
+#      audio do MP4 em volta da cue (os tres cortes do beat 5) - prova de
 #      sincronia DENTRO do arquivo, nao so de presenca. Correlacao, e nao
 #      onset por energia: no audio mixado o pad da trilha tem energia
 #      comparavel a do clique em 3 ms, e o detector de energia disparava no
@@ -50,7 +55,14 @@ SAIDA = os.path.join(RAIZ, "saida")
 ASSETS = os.path.join(RAIZ, "assets")
 FPS_PREVIA = 15
 FPS_COREO = 30
-NOME_MP4 = os.environ.get("NOME_VIDEO", "previa_20s_com_som.mp4")
+FATOR = float(os.environ.get("FATOR", "1.0"))
+PASTA_SEQ = os.environ.get("PASTA_SEQ") or os.path.join(SAIDA, "previa_seq")
+NOME_MP4 = os.environ.get("NOME_VIDEO", "previa_com_som.mp4")
+# O que a coreografia produz com esse fator: frame_end, duracao e quantos PNG
+# de 2 em 2 (quadros impares 1, 3, ..., ate frame_end).
+Q_FIM = mod_som.quadro(mod_som.BEATS[-1]["t_fim"], FPS_COREO, FATOR)
+DURACAO = mod_som.duracao_total(mod_som.BEATS, FPS_COREO, FATOR)
+N_PNG = (Q_FIM + 1) // 2
 falhas = []
 
 
@@ -189,14 +201,69 @@ def media_do_png(caminho):
     return float(px.mean()), float(px.std())
 
 
+def cruzar_com_coreografia(cues):
+    """Prova 4: a tabela e as fracoes daqui contra a coreografia REAL (modulo
+    de outro agente, importa bpy: so roda dentro do Blender)."""
+    print("\n== 4. cruzamento com mod_coreografia")
+    try:
+        import mod_coreografia
+        iguais = tuple(dict(b) for b in mod_coreografia.BEATS) == tuple(dict(b) for b in mod_som.BEATS)
+        print("   mod_coreografia: DURACAO_REFERENCIA %.1f, fator_duracao(25) = %.2f, frame_end %d" % (
+            mod_coreografia.DURACAO_REFERENCIA, mod_coreografia.fator_duracao(25.0),
+            mod_coreografia.quadro(mod_coreografia.BEATS[-1]["t_fim"], FATOR)))
+        conferir(iguais, "mod_coreografia.BEATS == mod_som.BEATS")
+        conferir(abs(mod_coreografia.fator_duracao(mod_som.DURACAO_REFERENCIA) - 1.0) < 1e-9,
+                 "DURACAO_REFERENCIA igual (%.1f s)" % mod_som.DURACAO_REFERENCIA)
+        dif = []
+        for c in cues:
+            q_c = mod_coreografia.q_em(c["beat"], c["fracao"], FATOR)
+            print("   %-18s beat %d fracao %.3f  som q%3d  coreografia q%3d  %s" % (
+                c["efeito"], c["beat"], c["fracao"], c["quadro"], q_c, "ok" if q_c == c["quadro"] else "DIFERENTE"))
+            if q_c != c["quadro"]:
+                dif.append((c["efeito"], c["quadro"], q_c))
+        conferir(not dif, "q_em da coreografia = quadro da cue em todas as %d cues %s" % (len(cues), dif or ""))
+        r = mod_coreografia.ROTEIRO
+        esperado = {
+            ("rasgo_fita", 2): r[2]["tampa"][0], ("pop_espuma", 2): r[2]["espuma"][0],
+            ("whoosh_revelacao", 2): r[2]["u1_sobe"][0], ("clique_plugue", 3): r[3]["cabo"][1],
+            ("chime_ligar", 3): (r[3]["botao"][0] + r[3]["botao"][1]) / 2.0,
+            ("tique_boot", 4): r[4]["boot"], ("ding_ui", 4): r[4]["ui"],
+            ("whoosh_descida", 6): r[6]["u1_desce"][0], ("baque_surdo", 6): r[6]["tampa"][1],
+            ("impacto", 7): r[7]["mergulho"][1], ("swell", 7): r[7]["mergulho"][1],
+        }
+        fora = [(e, b, c["fracao"], fr) for (e, b), fr in esperado.items()
+                for c in cues if c["efeito"] == e and c["beat"] == b and abs(c["fracao"] - fr) > 1e-6]
+        conferir(not fora, "fracoes das cues = fracoes do ROTEIRO da coreografia %s" % (fora or ""))
+        fotos = sorted(c["fracao"] for c in cues if c["efeito"] == "obturador")
+        conferir(fotos == sorted(r[5]["fotos"]), "um obturador por corte de foto do ROTEIRO[5] (%d)" % len(fotos))
+        return True
+    except Exception as e:  # noqa: BLE001 - o modulo esta sendo editado em paralelo
+        print("   (mod_coreografia nao importou: %s: %s - cruzamento pulado)" % (type(e).__name__, e))
+        falhas.append("cruzamento com mod_coreografia nao rodou")
+        return False
+
+
+if os.environ.get("SO_CRUZAR"):
+    # So a prova 4, sem quadros nem render: a cue sheet resolvida contra a
+    # coreografia real. E o que se roda quando os quadros novos ainda nao existem.
+    cues = mod_som.cue_sheet_resolvida(mod_som.BEATS, FPS_COREO, FATOR)
+    cruzar_com_coreografia(cues)
+    print("\n== resultado:", "TUDO OK" if not falhas else "%d FALHA(S): %s" % (len(falhas), "; ".join(falhas)))
+    sys.exit(1 if falhas else 0)
+
+
 # ================================================================ montagem
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 cena = bpy.context.scene
-pasta_seq = os.path.join(SAIDA, "previa_seq")
+pasta_seq = PASTA_SEQ
 quadros = sorted(f for f in os.listdir(pasta_seq) if f.startswith("quadro_") and f.endswith(".png"))
-print("[video] %d quadros em %s (%s .. %s)" % (len(quadros), pasta_seq, quadros[0], quadros[-1]))
-conferir(len(quadros) == 300, "300 quadros na sequencia")
+print("[video] %d quadros em %s (%s .. %s); fator %.2f -> frame_end %d, %.1f s, %d PNG esperados" % (
+    len(quadros), pasta_seq, quadros[0], quadros[-1], FATOR, Q_FIM, DURACAO, N_PNG))
+conferir(len(quadros) == N_PNG, "%d quadros na sequencia (1 a cada 2 de %d)" % (N_PNG, Q_FIM))
+if len(quadros) != N_PNG:
+    print("[video] a pasta nao bate com o fator: abortando antes de gerar um MP4 fora de sincronia")
+    sys.exit(1)
 
 caminho_mp4 = os.path.join(SAIDA, NOME_MP4)
 saida_ffmpeg(cena, 360, 640, FPS_PREVIA, caminho_mp4)   # fps ANTES das faixas de som
@@ -208,25 +275,14 @@ for f in quadros[1:]:
     faixa.elements.append(f)
 
 print("[video] stems em", ASSETS)
-stems = mod_som.gerar_stems(ASSETS, fps=FPS_COREO, beats=mod_som.BEATS, fator=1.0)
+stems = mod_som.gerar_stems(ASSETS, fps=FPS_COREO, beats=mod_som.BEATS, fator=FATOR)
 criadas = mod_som.montar_no_vse(cena, stems, mod_som.BEATS, fps=FPS_PREVIA)
 conferir(set(criadas) == {"trilha", "efeitos"}, "faixas trilha e efeitos criadas no VSE")
 for nome, s in criadas.items():
-    conferir(s.frame_final_duration == 300, "faixa %s tem 300 quadros a 15 fps (%d)" % (nome, s.frame_final_duration))
+    conferir(s.frame_final_duration == N_PNG, "faixa %s tem %d quadros a 15 fps (%d)" % (nome, N_PNG, s.frame_final_duration))
+cruzar_com_coreografia(stems["cues"])
 conferir(cena.render.ffmpeg.audio_codec == "AAC" and cena.render.ffmpeg.audio_bitrate == 192,
          "saida FFMPEG com AAC a %d kbps" % cena.render.ffmpeg.audio_bitrate)
-
-# ---- 4. cruzamento com a coreografia real (modulo de outro agente: pode nao importar)
-print("\n== 4. cruzamento com mod_coreografia")
-try:
-    import mod_coreografia
-    iguais = tuple(dict(b) for b in mod_coreografia.BEATS) == tuple(dict(b) for b in mod_som.BEATS)
-    conferir(iguais, "mod_coreografia.BEATS == mod_som.BEATS")
-    dif = [(c["efeito"], c["quadro"], mod_coreografia.q_em(c["beat"], c["fracao"]))
-           for c in stems["cues"] if mod_coreografia.q_em(c["beat"], c["fracao"]) != c["quadro"]]
-    conferir(not dif, "q_em da coreografia = quadro da cue em todas as %d cues %s" % (len(stems["cues"]), dif or ""))
-except Exception as e:  # noqa: BLE001 - o modulo esta sendo editado em paralelo
-    print("   (mod_coreografia nao importou: %s: %s - cruzamento pulado)" % (type(e).__name__, e))
 
 print("\n[video] render: %d quadros a %d fps -> %s" % (len(quadros), FPS_PREVIA, caminho_mp4))
 bpy.ops.render.render(animation=True)
@@ -240,12 +296,12 @@ for tr in info["trilhas"]:
     print("   trilha %-4s codec %-4s taxa %6d  duracao %.3f s" % (tr.get("tipo"), tr.get("codec"), tr.get("taxa", 0),
                                                                     tr.get("duracao_s", -1)))
 tipos = {tr.get("tipo"): tr for tr in info["trilhas"]}
-conferir(abs(info.get("duracao_s", 0) - 20.0) < 0.05, "duracao do MP4 = 20,0 s (%.3f)" % info.get("duracao_s", 0))
+conferir(abs(info.get("duracao_s", 0) - DURACAO) < 0.05, "duracao do MP4 = %.1f s (%.3f)" % (DURACAO, info.get("duracao_s", 0)))
 conferir("vide" in tipos and tipos["vide"].get("codec") == "avc1", "trilha de video H.264 (avc1)")
 conferir("soun" in tipos and tipos["soun"].get("codec") == "mp4a", "trilha de audio AAC (mp4a)")
 conferir("soun" in tipos and tipos["soun"].get("taxa") == 48000, "audio a 48 kHz")
-conferir("soun" in tipos and abs(tipos["soun"].get("duracao_s", 0) - 20.0) < 0.1,
-         "audio dura 20 s (%.3f)" % tipos.get("soun", {}).get("duracao_s", 0))
+conferir("soun" in tipos and abs(tipos["soun"].get("duracao_s", 0) - DURACAO) < 0.1,
+         "audio dura %.1f s (%.3f)" % (DURACAO, tipos.get("soun", {}).get("duracao_s", 0)))
 
 # ---- 2. audio decodificado
 print("\n== 2. audio do MP4 decodificado pelo Blender (aud)")
@@ -255,7 +311,7 @@ try:
     rms = float(np.sqrt(np.mean(dados ** 2)))
     print("   %d Hz, %d canais, %.3f s, pico %.2f dBFS, rms %.2f dBFS" % (
         taxa, dados.shape[1], len(dados) / float(taxa), 20 * np.log10(pico), 20 * np.log10(rms)))
-    conferir(dados.shape[1] == 2 and abs(len(dados) / float(taxa) - 20.0) < 0.1, "estereo, 20 s decodificados")
+    conferir(dados.shape[1] == 2 and abs(len(dados) / float(taxa) - DURACAO) < 0.1, "estereo, %.1f s decodificados" % DURACAO)
     conferir(-30 < 20 * np.log10(rms) < -5, "nivel decodificado plausivel (nao e silencio)")
     mix, _ = mod_som.ler_wav(stems["mix"])
     lag_mix = lag_por_correlacao(dados.mean(axis=1), mix.mean(axis=1), taxa)
@@ -263,7 +319,7 @@ try:
     conferir(abs(lag_mix) * 1000 <= 1000.0 / FPS_PREVIA / 2.0, "audio do MP4 alinhado com os stems (lag %+.1f ms)" % (lag_mix * 1000))
     pior = 0.0
     for c in [c for c in stems["cues"] if c["efeito"] == "obturador"]:
-        bloco, ini = mod_som.sintetizar_cue(dict(c), 1.0)
+        bloco, ini = mod_som.sintetizar_cue(dict(c), FATOR)
         lag = lag_por_correlacao(dados.mean(axis=1), bloco.mean(axis=1), taxa, ini)
         pior = max(pior, abs(lag) * 1000)
         print("   obturador: cue %.3f s (q%d da coreografia, q%d da previa)  no MP4 %.3f s  (%+.1f ms)" % (
@@ -276,7 +332,10 @@ except Exception as e:  # noqa: BLE001
 # ---- 3. quadros extraidos
 print("\n== 3. quadros extraidos do MP4")
 extraidos = {}
-for nome, q in (("ini", 1), ("foto", 180), ("fim", 300)):
+# 'foto': o primeiro quadro da previa que ja mostra o corte da foto A (com o
+# flash): o quadro k da previa e o 2k-1 da coreografia, entao k = (q_a+2)//2.
+q_foto_a = min(c["quadro"] for c in stems["cues"] if c["efeito"] == "obturador")
+for nome, q in (("ini", 1), ("foto", (q_foto_a + 2) // 2), ("fim", N_PNG)):
     png = extrair_quadro(caminho_mp4, q, os.path.join(SAIDA, "som_quadro_%s.png" % nome), 360, 640, FPS_PREVIA)
     media, desvio = media_do_png(png)
     extraidos[nome] = (png, media, desvio)

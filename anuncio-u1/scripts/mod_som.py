@@ -32,11 +32,16 @@
 # ganho_db, pan). Vira segundos pela tabela de beats da especificacao com a
 # MESMA conversao do mod_coreografia (quadro = round(t*fps*fator); fracao
 # interpola em quadros), e o som cai em (quadro - 1)/fps - o instante em que
-# aquele quadro aparece. As fracoes copiam o ROTEIRO da coreografia: o plugue
-# encaixa em 0,71 do beat 3, o LED acende no MEIO do curso do botao
-# (0,77..0,98 -> 0,875), o boot comeca em 0,60 do beat 4, as fotos cortam em
-# 0, 1/3 e 2/3 do beat 5, a tampa termina de fechar em 1,0 do beat 6 e a
-# travessia da logo e o fim do mergulho, 0,444 do beat 7.
+# aquele quadro aparece. As fracoes copiam o ROTEIRO da coreografia (revisao
+# 3, 25 s): o plugue encaixa em 0,71 do beat 3, o LED acende no MEIO do curso
+# do botao (0,77..0,98 -> 0,875), o boot comeca em 0,52 do beat 4 e a UI corta
+# em 0,74, as fotos cortam em 0, 1/3 e 2/3 do beat 5 (as tres com flash), a
+# foto C NAO corta para o beat 6 - abre num pull-back ate 'u1_desce' (0,48),
+# que aqui e um whoosh leve e nao um obturador -, a tampa termina de fechar
+# em 1,0 do beat 6 e a travessia (centro do topo da caixa; a logo nasce na
+# cartela) e o fim do mergulho, 0,42 do beat 7. Os whooshes seguem os trechos
+# do obturador visual (_obturador da coreografia): b1 0-0,80, b2 espuma ->
+# u1_sobe, as duas orbitas ate 0,48, b6 ate 0,70 e b7 ate a travessia.
 #
 # NIVEIS: trilha -18 dBFS RMS; efeitos normalizados a -6 dBFS de pico; mix
 # (trilha + efeitos) por limitador soft-clip e normalizada a -1 dBFS de pico.
@@ -89,6 +94,8 @@
 #    Os assets/som_*.wav sao SAIDA do teste (11,5 MB): NAO entram na tupla
 #    ASSETS de montar.py - gerar_stems os refaz em ~2 s no Blender do cliente.
 #    Previa em video com som: bash scripts/previa.sh scripts/video_com_som.py
+#    (PASTA_SEQ= pasta dos quadros de 2 em 2; FATOR= 1.0 para 25 s);
+#    SO_CRUZAR=1 confere q_em da coreografia = quadro de cada cue, sem video.
 # ---------------------------------------------------------------------------
 
 import math
@@ -100,21 +107,21 @@ import numpy as np
 NOME = "som"
 TAXA = 48000                 # Hz: o AAC do Blender mixa a 48 kHz; gerar nela evita reamostrar
 FPS_REFERENCIA = 30.0
-DURACAO_REFERENCIA = 20.0
+DURACAO_REFERENCIA = 25.0    # revisao 3: 750 quadros; presets 20 s = 0,8 e 15 s = 0,6
 SEMENTE = 20260904           # espuma e rasgo sao aleatorios, mas iguais a cada render
 
-# Espelho da tabela da ESPECIFICACAO (mod_coreografia.BEATS). Fica aqui porque
-# este modulo nao pode importar a coreografia (ela importa bpy no topo e o
-# teste roda fora do Blender); gerar_stems aceita beats= com a tabela real e
-# video_com_som.py confere que as duas sao iguais.
+# Espelho da tabela da coreografia (mod_coreografia.BEATS, revisao 3, 25 s).
+# Fica aqui porque este modulo nao pode importar a coreografia (ela importa
+# bpy no topo e o teste roda fora do Blender); gerar_stems aceita beats= com
+# a tabela real e video_com_som.py confere que as duas sao iguais.
 BEATS = (
-    {"n": 1, "nome": "caixa_sobe", "t_ini": 0.0, "t_fim": 2.5},
-    {"n": 2, "nome": "abre", "t_ini": 2.5, "t_fim": 5.5},
-    {"n": 3, "nome": "traseira", "t_ini": 5.5, "t_fim": 9.0},
-    {"n": 4, "nome": "tela", "t_ini": 9.0, "t_fim": 12.0},
-    {"n": 5, "nome": "fotos", "t_ini": 12.0, "t_fim": 15.0},
-    {"n": 6, "nome": "volta", "t_ini": 15.0, "t_fim": 17.0},
-    {"n": 7, "nome": "cartela", "t_ini": 17.0, "t_fim": 20.0},
+    {"n": 1, "nome": "caixa_sobe", "t_ini": 0.0, "t_fim": 2.8},
+    {"n": 2, "nome": "abre", "t_ini": 2.8, "t_fim": 7.2},
+    {"n": 3, "nome": "traseira", "t_ini": 7.2, "t_fim": 11.2},
+    {"n": 4, "nome": "tela", "t_ini": 11.2, "t_fim": 15.2},
+    {"n": 5, "nome": "fotos", "t_ini": 15.2, "t_fim": 18.2},
+    {"n": 6, "nome": "volta", "t_ini": 18.2, "t_fim": 20.8},
+    {"n": 7, "nome": "cartela", "t_ini": 20.8, "t_fim": 25.0},
 )
 
 # (beat, fracao_do_beat, efeito, ganho_db, pan). pan: -1 esquerda .. +1 direita;
@@ -122,43 +129,45 @@ BEATS = (
 # camera: no beat 3 a orbita passa pelo lado +X, o mundo desliza para a
 # esquerda, o som vai direita -> esquerda; no beat 4 volta pelo lado -X).
 CUE_SHEET = (
-    (1, 0.000, "whoosh_grave", -3.0, (-0.5, 0.5)),      # caixa sobe girando
-    (1, 1.000, "impacto", -14.0, 0.0),                  # ...e para no ar
-    (2, 0.000, "rasgo_fita", -4.0, 0.15),               # abas abrem: a fita rasga na emenda
-    (2, 0.220, "pop_espuma", -6.0, 0.0),                # espuma explode
-    (2, 0.500, "whoosh_revelacao", -2.0, 0.0),          # U1 sobe da caixa
-    (3, 0.000, "whoosh_orbita", -6.0, (0.8, -0.8)),     # orbita frente -> traseira
+    (1, 0.000, "whoosh_grave", -3.0, (-0.5, 0.5)),      # caixa sobe girando (obturador visual 0-0,80)
+    (1, 1.000, "impacto", -14.0, 0.0),                  # ...e assenta no ar
+    (2, 0.000, "rasgo_fita", -4.0, 0.15),               # abas abrem (0,00-0,27): a fita rasga na emenda
+    (2, 0.200, "pop_espuma", -6.0, 0.0),                # espuma explode (0,20-0,72)
+    (2, 0.420, "whoosh_revelacao", -2.0, 0.0),          # U1 sobe da caixa (0,42-0,62)
+    (2, 1.000, "impacto", -16.0, 0.0),                  # U1 desce e assenta no ar (0,84-1,00)
+    (3, 0.000, "whoosh_orbita", -6.0, (0.8, -0.8)),     # orbita frente -> traseira (0,00-0,48)
     (3, 0.710, "clique_plugue", -4.0, 0.35),            # plugue encaixa (fim do arco do cabo)
-    (3, 0.875, "chime_ligar", 0.0, 0.0),                # LED acende no meio do curso do botao
-    (4, 0.000, "whoosh_orbita", -6.0, (-0.8, 0.8)),     # orbita traseira -> frente
-    (4, 0.600, "tique_boot", -8.0, 0.2),                # tela de boot
-    (4, 0.850, "ding_ui", -4.0, 0.2),                   # corte seco para a UI
-    (5, 0.000, "obturador", -2.0, -0.3),                # foto A
+    (3, 0.875, "chime_ligar", 0.0, 0.0),                # LED acende no meio do curso do botao (0,77-0,98)
+    (4, 0.000, "whoosh_orbita", -6.0, (-0.8, 0.8)),     # orbita traseira -> frente (0,00-0,48)
+    (4, 0.520, "tique_boot", -8.0, 0.2),                # tela de boot acende
+    (4, 0.740, "ding_ui", -4.0, 0.2),                   # corte seco para a UI
+    (5, 0.000, "obturador", -2.0, -0.3),                # foto A (corte + flash)
     (5, 1.0 / 3.0, "obturador", -2.0, 0.3),             # foto B
     (5, 2.0 / 3.0, "obturador", -2.0, 0.0),             # foto C
-    (6, 0.000, "whoosh_leve", -12.0, 0.0),              # U1 sobe para voltar
-    (6, 0.400, "whoosh_descida", -4.0, 0.0),            # U1 desce na caixa
-    (6, 1.000, "baque_surdo", -1.0, 0.0),               # abas fecham
-    (7, 0.444, "impacto", 0.0, 0.0),                    # sub na travessia da logo
-    (7, 0.444, "swell", -3.0, 0.0),                     # swell chega ao apice na travessia; a cartela abre
+    (6, 0.000, "whoosh_pullback", -10.0, 0.0),          # foto C abre em pull-back ate u1_desce (0,48), sem corte
+    (6, 0.480, "whoosh_descida", -4.0, 0.0),            # U1 desce na caixa (0,48-0,72)
+    (6, 1.000, "baque_surdo", -1.0, 0.0),               # abas fecham (0,82-1,00)
+    (7, 0.420, "impacto", 0.0, 0.0),                    # sub na travessia do topo da caixa (fim do mergulho)
+    (7, 0.420, "swell", -3.0, 0.0),                     # apice na travessia; comeca no inicio do beat (1,75 s)
 )
 
-# Variantes dos blocos: nome da cue -> (gerador, parametros).
+# Variantes dos blocos: nome da cue -> (gerador, parametros). Duracoes dos
+# whooshes = duracao do movimento na referencia de 25 s (escalam com o fator).
 EFEITOS = {
-    "whoosh_grave": ("whoosh", dict(dur=1.7, f_ini=90.0, f_fim=420.0, largura=1.4, apice=0.55)),
+    "whoosh_grave": ("whoosh", dict(dur=2.2, f_ini=90.0, f_fim=420.0, largura=1.4, apice=0.55)),
     "whoosh_revelacao": ("whoosh", dict(dur=1.1, f_ini=300.0, f_fim=3200.0, largura=1.1, apice=0.60)),
-    "whoosh_orbita": ("whoosh", dict(dur=1.7, f_ini=500.0, f_fim=1400.0, largura=1.0, apice=0.45)),
-    "whoosh_leve": ("whoosh", dict(dur=0.6, f_ini=400.0, f_fim=1600.0, largura=1.0, apice=0.50)),
+    "whoosh_orbita": ("whoosh", dict(dur=1.9, f_ini=500.0, f_fim=1400.0, largura=1.0, apice=0.45)),
+    "whoosh_pullback": ("whoosh", dict(dur=1.25, f_ini=1400.0, f_fim=350.0, largura=1.1, apice=0.40)),
     "whoosh_descida": ("whoosh", dict(dur=0.7, f_ini=1800.0, f_fim=220.0, largura=1.0, apice=0.35)),
     "impacto": ("impacto_sub", {}),
-    "pop_espuma": ("pop_espuma", {}),
+    "pop_espuma": ("pop_espuma", dict(dur=2.0)),
     "rasgo_fita": ("rasgo_fita", {}),
     "clique_plugue": ("clique_plugue", {}),
     "chime_ligar": ("chime_ligar", {}),
     "tique_boot": ("tique_boot", {}),
     "ding_ui": ("ding_ui", {}),
     "obturador": ("obturador", {}),
-    "swell": ("swell", {}),
+    "swell": ("swell", dict(dur=1.75)),
     "baque_surdo": ("baque_surdo", {}),
 }
 
@@ -173,16 +182,16 @@ ACORDES = (
     (7, 0.0, "Bb1", ("D3", "F3", "Bb3")),
 )
 BPM = 80                     # pulso implicito: um sub curto na raiz a cada tempo
-BRILHO = (7, 0.0, 1.5)       # oitava acima entra na cartela, em 1,5 s: a trilha "abre"
+BRILHO = (7, 0.42, 1.2)      # oitava acima entra na travessia (a logo nasce do preto), em 1,2 s: a trilha "abre"
 # Ganho da trilha ao longo dos beats: sobe na revelacao (beat 2, quando o U1
 # emerge), abre na cartela e cai a zero no ultimo quadro para nao cortar seco.
 DINAMICA = (
     (1, 0.000, 0.55),
-    (2, 0.220, 0.55),
-    (2, 0.750, 1.00),
+    (2, 0.200, 0.55),
+    (2, 0.620, 1.00),
     (6, 1.000, 1.00),
-    (7, 0.444, 1.35),
-    (7, 0.870, 1.35),
+    (7, 0.420, 1.35),
+    (7, 0.900, 1.35),
     (7, 1.000, 0.00),
 )
 
@@ -199,7 +208,7 @@ def fator_duracao(duracao_s):
 
 
 def quadro(t, fps=FPS_REFERENCIA, fator=1.0):
-    """Segundo (na referencia de 20 s) -> quadro. Igual ao mod_coreografia."""
+    """Segundo (na referencia de DURACAO_REFERENCIA) -> quadro. Igual ao mod_coreografia."""
     return max(1, int(round(t * fps * fator)))
 
 
@@ -659,7 +668,7 @@ def gerar_stems(pasta, fps=30, beats=None, fator=1.0, trilha_externa=None, cue_s
     """Sintetiza e grava som_trilha.wav, som_efeitos.wav e som_mix.wav em
     'pasta'. Devolve {'trilha', 'efeitos', 'mix': caminhos, 'ganho_vse': float,
     'duracao_s': float, 'cues': lista}. 'beats' e a tabela da coreografia
-    (dicts com n, t_ini, t_fim); 'fator' e o da duracao (15 s = 0,75).
+    (dicts com n, t_ini, t_fim); 'fator' e o da duracao (20 s = 0,8; 15 s = 0,6).
     'trilha_externa': WAV que substitui o pad; None procura
     <pasta>/trilha_externa.wav e assets/trilha_externa.wav ao lado do modulo."""
     beats = tuple(beats or BEATS)

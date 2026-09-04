@@ -4,17 +4,17 @@
 #   /caminho/do/blender/4.2/python/bin/python3.11 scripts/teste_som.py
 #
 # O que prova:
-#   1. gera assets/som_trilha.wav, som_efeitos.wav, som_mix.wav (20 s, 30 fps)
+#   1. gera assets/som_trilha.wav, som_efeitos.wav, som_mix.wav (25 s, 30 fps)
 #      e imprime a cue sheet resolvida: segundo, quadro (30 fps), quadro da
 #      previa (15 fps), efeito, ganho, pan;
 #   2. mede cada stem e a mix LENDO O ARQUIVO gravado: duracao, pico, RMS
 #      (trilha -18 dBFS RMS, efeitos -6 dBFS pico, mix < -1 dBFS pico);
 #   3. para cada cue, acha o onset no stem de efeitos (energia antes x depois
 #      da cue; no swell, o apice) e confere que cai no quadro pedido;
-#   4. preset de 15 s (fator 0,75) -> 15,0 s, e trilha externa a 44,1 kHz mono
-#      -> reamostrada, 20 s, -18 dBFS;
+#   4. preset de 15 s (fator 0,6) -> 15,0 s, e trilha externa a 44,1 kHz mono
+#      -> reamostrada, 25 s, -18 dBFS;
 #   5. desenha saida/som_forma_de_onda.png (3 pistas, linhas de beat, cues
-#      numeradas, regua de quadros) e saida/som_zoom_beat2.png (2,4-5,6 s).
+#      numeradas, regua de quadros) e zooms do beat 2 e do plugue/chime.
 #      PNG escrito a mao (zlib + struct): nao ha PIL aqui, e o teste nao deve
 #      precisar do Blender para rodar. QUEM RODA ABRE OS PNG E OLHA.
 #
@@ -184,7 +184,9 @@ def onset_e_pico(bloco, taxa):
     pico = float(env.max())
     i_on = int(np.argmax(env >= pico * 10 ** (-40 / 20.0)))
     k = int(0.02 * taxa)
-    rms = np.sqrt(np.convolve(env ** 2, np.ones(k) / k, "same"))
+    # potencia media dos DOIS canais: no swell sao ruidos independentes, e a
+    # media divide a variancia da estimativa por dois
+    rms = np.sqrt(np.convolve((bloco ** 2).mean(axis=1), np.ones(k) / k, "same"))
     return i_on / float(taxa), int(np.argmax(rms)) / float(taxa)
 
 
@@ -205,7 +207,9 @@ def atraso_por_correlacao(stem, bloco, ini, taxa, margem_s=2.0 / FPS):
 
 # ---------------------------------------------------------------- 1. stems de referencia
 
-print("== 1. stems (20 s, 30 fps) em", ASSETS)
+DURACAO = mod_som.duracao_total(mod_som.BEATS, FPS)
+Q_FIM = mod_som.quadro(mod_som.BEATS[-1]["t_fim"], FPS)
+print("== 1. stems (%.0f s = %d quadros, 30 fps) em %s" % (DURACAO, Q_FIM, ASSETS))
 stems = mod_som.gerar_stems(ASSETS, fps=FPS)
 cues = stems["cues"]
 print("\n   cue sheet resolvida (%d cues):" % len(cues))
@@ -224,9 +228,9 @@ for nome in ("trilha", "efeitos", "mix"):
     medidas[nome] = m
     print("   %-8s %7.3f s  %d Hz  pico %7.2f dBFS  rms %7.2f dBFS  (%s)" % (
         nome, m["duracao_s"], m["taxa"], m["pico_dbfs"], m["rms_dbfs"], stems[nome]))
-conferir(abs(medidas["trilha"]["duracao_s"] - 20.0) < 1e-3, "trilha dura 20,000 s")
-conferir(abs(medidas["efeitos"]["duracao_s"] - 20.0) < 1e-3, "efeitos duram 20,000 s")
-conferir(abs(medidas["mix"]["duracao_s"] - 20.0) < 1e-3, "mix dura 20,000 s")
+conferir(Q_FIM == 750 and abs(DURACAO - 25.0) < 1e-9, "referencia: 750 quadros = 25,000 s")
+for nome in ("trilha", "efeitos", "mix"):
+    conferir(abs(medidas[nome]["duracao_s"] - DURACAO) < 1e-3, "%s dura %.3f s" % (nome, DURACAO))
 conferir(abs(medidas["trilha"]["rms_dbfs"] + 18.0) < 0.1, "trilha RMS = -18 dBFS (+-0,1)")
 conferir(abs(medidas["efeitos"]["pico_dbfs"] + 6.0) < 0.1, "efeitos pico = -6 dBFS (+-0,1)")
 conferir(medidas["mix"]["pico_dbfs"] < -1.0, "mix pico < -1 dBFS (nao clipa)")
@@ -285,24 +289,30 @@ for i, c in enumerate(cues):
 # da travessia, com t_colocado exato). Um quadro tem 1.600 amostras.
 conferir(pior_lag <= 1, "todo bloco esta no stem onde a cue manda, a +-1 amostra (pior lag %d)" % pior_lag)
 conferir(pior_trans <= 1000.0 / FPS / 2.0, "transientes soam a menos de meio quadro da cue (pior %.1f ms)" % pior_trans)
-conferir(pior_swell <= 1000.0 / FPS / 2.0, "apice do swell a menos de meio quadro da travessia (%.1f ms)" % pior_swell)
+# Swell: a prova de sincronia e a colocacao (lag 0 e colocado = cue - dur,
+# acima); o argmax do RMS de um RUIDO perto de um apice quase plano e limitado
+# pelo proprio ruido - banda de ~3,5 kHz no apice x janela de 20 ms = ~140
+# amostras efetivas, ~8% de flutuacao do RMS, e o envelope x^2,2 so muda 5%
+# em 40 ms (medido: -11 ms com 1,5 s, -39 ms com 1,75 s). Tolerancia de 1,5
+# quadro: confere que o apice esta na travessia e nao no comeco do bloco.
+conferir(pior_swell <= 1.5 * 1000.0 / FPS, "apice medido do swell a menos de 1,5 quadro da travessia (%.1f ms)" % pior_swell)
 conferir(all(c["t_colocado"] + c["antecipacao"] - c["t"] < 1.0 / mod_som.TAXA + 1e-9 for c in cues),
          "colocacao = cue - antecipacao, a menos de uma amostra")
 
 # ---------------------------------------------------------------- 4. preset 15 s e trilha externa
 
-print("\n== 4. preset de 15 s (fator 0,75) e trilha externa, em", SCRATCH)
+FATOR_15 = mod_som.fator_duracao(15.0)     # PRESETS da coreografia: 15 s = 0,6
+print("\n== 4. preset de 15 s (fator %.2f) e trilha externa, em %s" % (FATOR_15, SCRATCH))
 os.makedirs(SCRATCH, exist_ok=True)
 p15 = os.path.join(SCRATCH, "preset15")
-s15 = mod_som.gerar_stems(p15, fps=FPS, fator=0.75)
+s15 = mod_som.gerar_stems(p15, fps=FPS, fator=FATOR_15)
 m15 = mod_som.medir(s15["mix"])
-print("   15 s: mix %.3f s, pico %.2f dBFS, %d cues, ultima em %.3f s (q%d)" % (
-    m15["duracao_s"], m15["pico_dbfs"], len(s15["cues"]), s15["cues"][-1]["t"], s15["cues"][-1]["quadro"]))
+q_trav_15 = mod_som.q_em(mod_som.BEATS, 7, 0.42, FPS, FATOR_15)
+print("   15 s: mix %.3f s, pico %.2f dBFS, %d cues, travessia em %.3f s (q%d; q_em = %d)" % (
+    m15["duracao_s"], m15["pico_dbfs"], len(s15["cues"]), s15["cues"][-1]["t"], s15["cues"][-1]["quadro"], q_trav_15))
 conferir(abs(m15["duracao_s"] - 15.0) < 1e-3, "preset 15 s dura 15,000 s")
 conferir(m15["pico_dbfs"] < -1.0, "preset 15 s nao clipa")
-conferir(s15["cues"][-1]["quadro"] == int(round(450 * (17.0 + 3.0 * 0.444) / 20.0)) or
-         abs(s15["cues"][-1]["t"] - (int(round(450 * 18.332 / 20.0)) - 1) / 30.0) < 0.04,
-         "travessia no preset 15 s cai em ~13,75 s (0,75 x 18,33)")
+conferir(s15["cues"][-1]["quadro"] == q_trav_15, "travessia no preset 15 s cai no q_em(7, 0,42) do fator")
 
 # trilha externa: 44,1 kHz, mono, 16-bit, 12 s (mais curta que o video, de proposito)
 ext = os.path.join(SCRATCH, "trilha_externa_44k.wav")
@@ -319,7 +329,7 @@ sext = mod_som.gerar_stems(pext, fps=FPS, trilha_externa=ext)
 mext = mod_som.medir(sext["trilha"])
 print("   externa: trilha %.3f s a %d Hz, pico %.2f dBFS, rms %.2f dBFS, origem %s" % (
     mext["duracao_s"], mext["taxa"], mext["pico_dbfs"], mext["rms_dbfs"], sext["origem_trilha"]))
-conferir(mext["taxa"] == 48000 and abs(mext["duracao_s"] - 20.0) < 1e-3, "trilha externa reamostrada a 48 kHz e com 20 s")
+conferir(mext["taxa"] == 48000 and abs(mext["duracao_s"] - DURACAO) < 1e-3, "trilha externa reamostrada a 48 kHz e com %.0f s" % DURACAO)
 conferir(abs(mext["rms_dbfs"] + 18.0) < 0.1, "trilha externa normalizada a -18 dBFS RMS")
 conferir(sext["origem_trilha"] == ext, "gerar_stems registrou a origem externa")
 # a frequencia sobreviveu a reamostragem? conta cruzamentos por zero no 2o segundo
@@ -332,12 +342,16 @@ conferir(abs(cruz - 220) <= 1, "reamostragem preservou a frequencia (220 Hz)")
 # ---------------------------------------------------------------- 5. graficos
 
 print("\n== 5. graficos")
-png1 = desenhar(os.path.join(SAIDA, "som_forma_de_onda.png"), stems, medidas, cues, 0.0, 20.0,
-                titulo="som do anuncio u1 - 20 s a 30 fps - trilha / efeitos / mix")
-png2 = desenhar(os.path.join(SAIDA, "som_zoom_beat2.png"), stems, medidas, cues, 2.4, 5.6,
-                titulo="zoom beat 2 - rasgo, espuma, whoosh de revelacao")
-png3 = desenhar(os.path.join(SAIDA, "som_zoom_beat3.png"), stems, medidas, cues, 7.8, 9.2,
-                titulo="zoom beat 3 - plugue e chime de ligar")
+# Janelas dos zooms saem dos beats, nao de numero solto: o beat 2 inteiro
+# (com 0,1 s de folga) e do plugue (3/0,71) ate a orbita do beat 4 (4/0,00).
+t2a, t2b = mod_som.instante(mod_som.BEATS, 2, 0.0, FPS) - 0.1, mod_som.instante(mod_som.BEATS, 2, 1.0, FPS) + 0.1
+t3a, t3b = mod_som.instante(mod_som.BEATS, 3, 0.71, FPS) - 0.15, mod_som.instante(mod_som.BEATS, 4, 0.0, FPS) + 0.5
+png1 = desenhar(os.path.join(SAIDA, "som_forma_de_onda.png"), stems, medidas, cues, 0.0, DURACAO,
+                titulo="som do anuncio u1 - %.0f s a 30 fps - trilha / efeitos / mix" % DURACAO)
+png2 = desenhar(os.path.join(SAIDA, "som_zoom_beat2.png"), stems, medidas, cues, t2a, t2b,
+                titulo="zoom beat 2 - rasgo, espuma, whoosh de revelacao, u1 assenta")
+png3 = desenhar(os.path.join(SAIDA, "som_zoom_beat3.png"), stems, medidas, cues, t3a, t3b,
+                titulo="zoom beat 3 - plugue, chime de ligar, orbita do beat 4")
 print("   ", png1)
 print("   ", png2)
 print("   ", png3)
