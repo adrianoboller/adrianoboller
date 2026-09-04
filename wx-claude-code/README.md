@@ -195,7 +195,7 @@ O plugin só roda com serial válido em `~/.wx-claude-code/licenca`, assinado co
 
 ## Vídeo de uso
 
-`docs/video/wx-claude-code-video-de-uso.mp4` (e `.webm`), 3 min 03 s: vinte e três cenas com as
+`docs/video/wx-claude-code-video-de-uso.mp4` (e `.webm`), 3 min 07 s: vinte e três cenas com as
 mesmas saídas reais dos prints, reproduzidas num terminal animado.
 
 ## Pacotes
