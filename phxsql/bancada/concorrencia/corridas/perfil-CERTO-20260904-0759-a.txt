@@ -1,0 +1,24 @@
+SEGUNDOS=6 LIMITES=1,10,50,200,1000 python3 bancada/concorrencia/o-perfil-da-carga.py
+parada na tentativa 1 (carga 0.08)
+=== o teto do RwLock contra o FORMATO da carga ===
+    4 nucleos | 6s por rodada | varrer com limite em [1, 10, 50, 200, 1000], contra inserir de 1 linha
+
+-- a maquina estava quieta?
+   antes:  4% ocupada, ate 0 vizinho(s)
+   durante (14 amostras): 24% a 100% ocupada, mediana 27%, ate 2 vizinho(s)
+   depois: 0% ocupada, ate 0 vizinho(s)
+   controle: 10094 -> 10210 op/s
+   VEREDITO: quieta o bastante. Os numeros valem.
+
+-- o controle (`ping`, que nao toma a trava): 10094 -> 32437 op/s, ganho 3.21x
+-- a escrita com 1 cliente: 4325 op/s
+
+    limite   ler 1cli   ler 4cli    ganho   razao ler/gravar   teto RwLock
+         1       4968       8868    1.79x               0.9x         1.80x
+        10       4118       6469    1.57x               1.1x         2.05x
+        50       2078       3581    1.72x               2.1x         1.86x
+       200        819       1223    1.49x               5.3x         2.15x
+      1000        192        300    1.56x              22.5x         2.06x
+
+
+[exited with code 0]
