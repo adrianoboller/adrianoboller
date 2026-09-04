@@ -16,6 +16,10 @@
 # POR QUE os PNGs vao em base64: na aba Scripting nao existe __file__ nem
 # pasta assets/. O main grava os tres arquivos na pasta temporaria do sistema
 # e passa os caminhos absolutos aos modulos (todos aceitam caminho absoluto).
+# A impressora da Meshy (GLB de 25,8 MB) e as texturas da caixa (2k, ~5 MB)
+# NAO vao embutidas: o GLB passa de qualquer criterio de embutir, entao os
+# dois modulos procuram a pasta assets/ ao lado do .blend do cliente - e o
+# cabecalho do arquivo unico diz isso a ele.
 #
 # Uso: python3 scripts/montar.py   (Python comum; nao precisa do Blender)
 
@@ -36,8 +40,9 @@ CABECALHO = '''# ===============================================================
 # COMO USAR: abra o Blender com a sua cena (ou uma vazia), aba Scripting,
 # New, cole este arquivo inteiro, ajuste os parametros abaixo e Run Script.
 # O script monta a colecao ANUNCIO (caixa, U1, cabo, luzes, camera, cartela),
-# coreografa os 600 quadros (20 s a 30 fps) e configura o render (EEVEE
-# Next, 1080x1920, AgX). Depois: Render > Render Animation.
+# coreografa os 750 quadros (25 s a 30 fps; 20 e 15 s sao presets) e
+# configura o render (EEVEE Next, 1080x1920, AgX). Depois: Render > Render
+# Animation.
 #
 # Para usar o SEU modelo do U1: ponha o nome do objeto (ou da colecao) em
 # U1_NOME. O script parenteia o modelo num Empty 'u1.raiz', mede o envelope,
@@ -50,10 +55,22 @@ CABECALHO = '''# ===============================================================
 # tela acender e o botao afundar, indique os objetos em U1_TELA_OBJETO e
 # U1_BOTAO_OBJETO (a tela precisa de um material com Emission).
 #
-# CAIXA_SOME: True (padrao) = a caixa afunda pelo chao no beat 2 e volta no
-# beat 6 enquanto o U1 flutua; False = o U1 sai da caixa, desliza para a
-# frente dela e pousa no chao (a caixa fica parada atras), e no beat 6 volta
-# para dentro dela. Escolha de direcao: o storyboard diz so "o U1 sai da caixa".
+# NAO HA CHAO (revisao 2): os objetos flutuam num vazio com o fundo em
+# gradiente preto/rose mesclado. A caixa sobe de fora do quadro por baixo,
+# some por baixo no beat 2 e volta por baixo no beat 6; o U1 para no ar.
+#
+# CAIXA_SOME: True (padrao) = a caixa some por baixo do quadro no beat 2 e
+# volta no beat 6 enquanto o U1 flutua; False = o U1 sai da caixa, desliza
+# para a frente dela e para no ar (a caixa fica parada atras), e no beat 6
+# volta para dentro dela. Escolha de direcao: o storyboard diz so "o U1 sai
+# da caixa". Este segundo modo nao foi reenquadrado na revisao 2.
+#
+# ASSETS QUE VIAJAM COMO ARQUIVO (revisao 3): a impressora da Meshy
+# (assets/impressora_limpa.glb, 25,8 MB) e as texturas da caixa
+# (assets/caixa_cor_2k.png, caixa_normal_2k.png, caixa_rugosidade_2k.png e
+# caixa_etiqueta_*.png) NAO estao embutidas aqui - so a logo e as telas
+# estao. Copie a pasta assets/ do projeto para AO LADO do seu .blend (salvo
+# antes de rodar): os modulos da caixa e do U1 procuram ali.
 #
 # Rodar de novo nao duplica nada: cada modulo apaga a propria colecao antes,
 # e o SEU modelo volta a pose original antes de ser medido de novo.
@@ -68,9 +85,9 @@ U1_BOTAO = None              # (x, y, z) do botao liga/desliga, ou None
 U1_TELA_OBJETO = ""          # nome do objeto da tela (para acender), ou ""
 U1_BOTAO_OBJETO = ""         # nome do objeto do botao (para afundar), ou ""
 U1_LED_OBJETO = ""           # nome de um objeto com LED (Emission), ou ""
-DURACAO_S = 20               # 20 (referencia) ou 15 (preset frenetico)
-CAIXA_SOME = True            # True: caixa afunda no beat 2; False: U1 pousa na frente dela
-ESPUMA_SOME_NOS_CLOSES = True  # True: os flocos de espuma somem do chao nos beats 3-5 (fade de escala)
+DURACAO_S = 25               # 25 (padrao), 20 ou 15 (presets; 15 fica frenetico)
+CAIXA_SOME = True            # True: caixa some por baixo no beat 2; False: U1 para no ar na frente dela
+ESPUMA_SOME_NOS_CLOSES = True  # True: os flocos de espuma que sobraram em volta somem nos beats 3-5 (fade de escala)
 ESCONDER_RESTO = False       # True: objetos SEUS fora de ANUNCIO saem do render (False devolve)
 COR_CAIXA = "clara"          # "clara" (#F2EDE6) ou "escura" (#141416)
 RESOLUCAO = (1080, 1920)     # 9:16 vertical

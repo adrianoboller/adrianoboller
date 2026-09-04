@@ -13,19 +13,20 @@
 #   sai de quadro(t, fator): mudar a duracao (preset de 15 s = fator 0,75)
 #   escala tudo junto, inclusive as folgas anti-colisao, que sao razoes.
 #
-# - A CAIXA DESCE E SOME no beat 2 (em vez de o U1 pousar ao lado dela) - e
+# - A CAIXA DESCE E SOME no beat 2 (em vez de o U1 parar ao lado dela) - e
 #   o PADRAO, com o parametro 'caixa_some' para o cliente escolher. O motivo
 #   e o beat 3: a camera orbita 180 graus ate a traseira para ver o cabo
-#   entrar numa tomada a 12 cm do chao. Com a caixa de 0,8 m atras do U1 (ou
+#   entrar numa tomada a 12 cm da base. Com a caixa de 0,8 m atras do U1 (ou
 #   ao lado), ela entraria entre a camera e a tomada em parte da orbita. Com
 #   o U1 sozinho na origem, a orbita e os closes do beat 5 tem 360 graus
 #   livres, e o rig de luzes (centrado na origem) continua certo. No beat 6 a
-#   caixa volta pelo chao enquanto o U1 flutua acima dela - e o mesmo truque
-#   ao contrario, e a ordem (U1 sobe, caixa sobe, U1 desce, espuma volta,
-#   tampa fecha) e a que nao atravessa nada: conferir_colisoes mede isso
-#   quadro a quadro.
+#   caixa volta por baixo do quadro enquanto o U1 flutua acima dela - e o
+#   mesmo truque ao contrario, e a ordem (U1 sobe, caixa sobe, U1 desce,
+#   espuma volta, tampa fecha) e a que nao atravessa nada: conferir_colisoes
+#   mede isso quadro a quadro. (Nas rodadas 1-3 "sumir" era afundar pelo
+#   chao; desde a revisao 2 nao ha chao e e sair do quadro por baixo.)
 #   Com caixa_some=False (o texto do cliente ao pe da letra: 'o U1 sai da
-#   caixa') o U1 sobe, DESLIZA para -Y ('deslocamento_u1', 2,1 m) e pousa na
+#   caixa') o U1 sobe, DESLIZA para -Y ('deslocamento_u1', 2,1 m) e para na
 #   frente da caixa, que fica parada atras dele, fora do raio 1,7 da orbita
 #   (a face da caixa fica a 1,8 m do centro do U1). Os dois rigs (camera e
 #   luzes) acompanham o U1 por chave de posicao nos beats 3-5 - as chaves
@@ -49,7 +50,7 @@
 #   e o foco fica na logo; na cartela o foco vai para a cartela.
 #
 # - O que nao deve aparecer e ESCONDIDO por chave de hide_render: o cabo
-#   antes de entrar (estaria deitado no chao atras do U1 desde o quadro 1), a
+#   antes de entrar (estaria pendurado atras do U1 desde o quadro 1), a
 #   tampa enquanto flutua a 1,6 m ao lado (apareceria nas orbitas), a cartela
 #   antes do corte. E o que o modulo de cada peca nao oferece.
 #
@@ -106,8 +107,9 @@
 #   beat 6 (era 3,0/2,8 e 1,3/2,3: produto a 28% da altura), com uma chave no
 #   pico da subida do U1 (alvo a 0,78 m) para o topo dele nao sair do quadro
 #   enquanto flutua; beat 1 acaba a orbita em -80 graus (3/4 leve) e raio
-#   2,1; e a tampa comeca RENTE ao chao (profundidade = topo_tampa_z, nao
-#   +0,25): o primeiro quadro ja tem produto, nao 0,27 s de chao vazio.
+#   2,1; e a tampa comecava RENTE ao chao (profundidade = topo_tampa_z, nao
+#   +0,25): o primeiro quadro ja tinha produto, nao 0,27 s de chao vazio
+#   (revisao 2: sem chao, a caixa parte de fora do quadro por baixo).
 #
 # - BEAT 7, TRAVESSIA DE VERDADE: o mergulho e uma chave por quadro com um
 #   perfil de Hermite (parte parado no apice, acelera e chega a 0,047
@@ -166,16 +168,109 @@
 # - BEAT 5: key da foto A 300 -> 180 W; area light da camara na foto C 10 ->
 #   0 (a haste polida a refletia como um tubo fluorescente).
 #
-# - BEATS 3-5: os flocos de espuma somem do chao com fade de escala
-#   ('espuma_some_nos_closes'); no arquivo unico, ESPUMA_SOME_NOS_CLOSES.
+# - BEATS 3-5: os flocos de espuma que sobraram em volta somem com fade de
+#   escala ('espuma_some_nos_closes'); no arquivo unico, ESPUMA_SOME_NOS_CLOSES.
 #
 # - Objetos do cliente fora de ANUNCIO: avisar_objetos_de_fora lista os que
 #   continuam no render e, com ESCONDER_RESTO, os esconde marcando para a
 #   rodada seguinte devolver. E a recusa por colecao 'u1' de fora vem ANTES
 #   de purgar actions e reconstruir o ambiente: a cena fica intacta.
 #
+# REVISAO 2 (docs/ESPECIFICACAO.md, itens 2, 3 e 5): VAZIO, CAMERA PERTO,
+# ESTILO DE ANUNCIO 3D.
+#
+# - NAO HA CHAO. O ambiente nao cria plano nem sombra de contato; z = 0 e so
+#   a cota de referencia em que o produto PARA NO AR (o cabo, a tela e as
+#   fotos foram medidos com a raiz do U1 na identidade, e continuam valendo).
+#   O que era "pousar" virou "parar no ar" com as mesmas chaves de altura.
+#
+# - A CAIXA VEM DE FORA DO QUADRO POR BAIXO (beat 1) e SOME POR BAIXO (beat 2),
+#   e volta por baixo no beat 6. As profundidades nao sao numeros soltos:
+#   _z_pe_do_quadro projeta a borda inferior do quadro da camera daquele
+#   momento no eixo da caixa e a caixa parte/chega 'margem_fora' abaixo
+#   disso. Enquanto esta fora, a caixa (corpo e descendentes) fica em
+#   hide_render: na foto C, de cima, ela apareceria sob o U1 se ficasse so
+#   'fora do quadro'. A sonda de enquadramento (medir_enquadramento) confere
+#   'fora' nos quadros de sumico e de volta.
+#
+# - O CABO PENDE para z = 'z_cabo_solto' (-0,5 m) em vez de deitar num plano
+#   invisivel: sem chao, um cabo correndo em z = 0 atras do U1 leria como
+#   apoiado em vidro.
+#
+# - CAMERA MAIS PERTO: raios 1,05-1,55 (eram 1,7-2,5) e o produto >= 60% da
+#   altura do 9:16 nos planos gerais; closes a 50-65 mm. medir_enquadramento
+#   projeta os cantos do envelope do U1 e da caixa pela camera e imprime a
+#   fracao da altura e da largura por quadro (teste_coreografia, SONDA_ENQ):
+#   numero visivel sai de medicao. A profundidade da caixa em beat 1/2/6 sai
+#   da mesma projecao. conferir_colisoes tambem mede a distancia minima da
+#   camera ao envelope do U1 e da caixa fora da travessia.
+#
+# - ESTILO: lente +3 mm nos 4 quadros antes de cada CORTE (_zoom_nos_cortes,
+#   o "punch" dos anuncios de Instagram; nao na travessia, que ja e o veu);
+#   obturador 0,5 -> 0,7 por chave SO nos movimentos largos (subida da caixa,
+#   explosao/subida no beat 2, as duas orbitas, o beat 6 e o mergulho), via
+#   animar_obturador do ambiente; dolly-zoom 35 -> 50 mm no dolly da tela e
+#   35 -> 50 no push-in do ligar (50 -> 35 de volta na saida da orbita do
+#   beat 4). As correcoes das rodadas 2 e 3 ficam: flash CONSTANT, rim em
+#   rampa, tela parada, ligar como luz, travessia com veu, logo sozinha
+#   primeiro, rose em cima na cartela.
+#
+# - CARTELA: sem chao nao ha mais motivo para o rolo de 180 graus (ele
+#   existia porque olhando para baixo o chao fundido nao tinha preto). Agora
+#   o world tem o preto embaixo: a camera olha 'cartela_inclinacao' graus
+#   para BAIXO (-32), sem rolo, e o rose fica no topo como nos outros 17 s.
+#   O rolo continua disponivel ('cartela_rolo' != 0).
+#
+# REVISAO 2b (pedidos do cliente depois da revisao 2):
+#
+# - 25 SEGUNDOS por padrao ("o anuncio esta rapido demais"). A tabela BEATS
+#   passou a ser escrita em 25 s (DURACAO_REFERENCIA), e os 5 s a mais nao
+#   foram espalhados por igual: beat 2 de 3,0 para 4,4 s com o ROTEIRO
+#   reescrito para o U1 flutuar sozinho ~1,0 s (era 0,22 s) no momento-heroi;
+#   beat 4 de 3,0 para 4,0 s com a UI parada ~1,0 s (era 0,45 s); beat 7 de
+#   3,0 para 4,2 s com a cartela assentada ~0,9 s antes do fim. Os outros
+#   beats cresceram 0,3 s cada. Presets: 15/20/25 s = fator 0,6/0,8/1,0.
+#
+# - A CAIXA NAO TEM LOGO NO TOPO. 'centro_logo'/'normal_logo' do modulo caixa
+#   passam a ser o centro do topo, na emenda das abas: o beat 7 alinha a
+#   camera nesse eixo, mergulha e atravessa o papelao com o veu preto
+#   nascendo da fita/emenda, e corta para a cartela, onde a logo EnginePrint
+#   aparece PELA PRIMEIRA VEZ - sozinha, em fade, e so entao as linhas. O
+#   match cut logo -> logo (rodada 2) deixou de existir; a logo nao aparece
+#   em plano nenhum antes da cartela.
+#
+# - O U1 sera trocado pelo modelo Meshy do cliente (mod_u1 mantem a API e as
+#   chaves do dict): a coreografia le tela, tomada e botao pelo dict, entao
+#   nada muda aqui alem de rodar de novo quando o modulo chegar.
+#
+# REVISAO 3 (estilo @nzj.3d, anuncio do Gemini - quadros em scratchpad/ref2):
+# tudo entra com um OVERSHOOT curto e assenta; camera calma, dolly lento,
+# nunca parada; nada corta seco fora das tres fotos.
+#
+# - OVERSHOOT ('overshoot': fracao 0,05 do percurso, pico 'quadros' = 6
+#   antes do destino): a subida da caixa do beat 1 e analitica (ease-out ate
+#   1 + fracao em N-6 e meio cosseno de volta a 1 - as duas metades chegam
+#   com velocidade zero, C1 no pico); as subidas/descidas do U1 (beats 2 e
+#   6) e a volta da caixa (beat 6) ganham uma chave a mais 6 quadros antes do
+#   destino, 5% alem dele, e o Bezier auto-clamped faz o resto (extremo =
+#   handle plano = chega, passa, assenta). A descida do U1 PARA DENTRO da
+#   caixa nao tem overshoot: o fundo esta ali. Cabo (o clique do modulo),
+#   espumas, abas e cartela sao dos outros modulos; so se chamam.
+#
+# - SEM CORTE SECO FORA DAS FOTOS: o corte da foto C para o beat 6 virou um
+#   PULL-BACK continuo - a camera sai do macro sobre a mesa e abre ate a pose
+#   do pico do U1 (q do fim de 'u1_sobe' do beat 6) enquanto ele sobe, com a
+#   lente 57 -> 35 LINEAR, o rig de luz e as energias em rampa Bezier no
+#   mesmo trecho, e o especular do rim tambem em rampa. Os tres cortes que
+#   ficam sao as fotos (com flash e punch de lente); a cartela entra do preto
+#   do veu, que e transicao, nao corte.
+#
+# - CAMERA NUNCA PARADA: a "tela parada" do beat 4 virou um dolly de 3 cm
+#   ao longo dos ~1,4 s parados (a UI continua legivel; a sonda de velocidade
+#   nao acusa parada), e a espera do momento-heroi tem drift.
+#
 # Eixos e medidas seguem docs/ESPECIFICACAO.md: metros, Z para cima, frente
-# em -Y, origem no centro da base da caixa, chao em z = 0.
+# em -Y, origem no centro da base da caixa; nao ha chao.
 
 import math
 import os
@@ -191,7 +286,7 @@ import mod_u1
 
 NOME = "coreografia"
 FPS = 30.0
-DURACAO_REFERENCIA = 20.0
+DURACAO_REFERENCIA = 25.0
 
 # Propriedades gravadas nos objetos do cliente (modelo real) na primeira
 # rodada, para as seguintes partirem da pose ORIGINAL e nao da cozida.
@@ -199,29 +294,34 @@ PROP_MATRIZ = "anuncio.matriz_original"
 PROP_PAI = "anuncio.pai_original"
 PROP_PAI_INVERSA = "anuncio.pai_inversa_original"
 
-# Tabela de beats da especificacao (segundos, na duracao de referencia).
+# Tabela de beats (segundos, na duracao de referencia de 25 s - revisao 2b;
+# a da especificacao era em 20 s: 2,5/3,0/3,5/3,0/3,0/2,0/3,0). O tempo a
+# mais foi para os beats 2, 4 e 7 (ver cabecalho); com fator 0,8 volta-se
+# aos 20 s e com 0,6 aos 15 s.
 BEATS = (
-    {"n": 1, "nome": "caixa_sobe", "t_ini": 0.0, "t_fim": 2.5},
-    {"n": 2, "nome": "abre", "t_ini": 2.5, "t_fim": 5.5},
-    {"n": 3, "nome": "traseira", "t_ini": 5.5, "t_fim": 9.0},
-    {"n": 4, "nome": "tela", "t_ini": 9.0, "t_fim": 12.0},
-    {"n": 5, "nome": "fotos", "t_ini": 12.0, "t_fim": 15.0},
-    {"n": 6, "nome": "volta", "t_ini": 15.0, "t_fim": 17.0},
-    {"n": 7, "nome": "cartela", "t_ini": 17.0, "t_fim": 20.0},
+    {"n": 1, "nome": "caixa_sobe", "t_ini": 0.0, "t_fim": 2.8},
+    {"n": 2, "nome": "abre", "t_ini": 2.8, "t_fim": 7.2},
+    {"n": 3, "nome": "traseira", "t_ini": 7.2, "t_fim": 11.2},
+    {"n": 4, "nome": "tela", "t_ini": 11.2, "t_fim": 15.2},
+    {"n": 5, "nome": "fotos", "t_ini": 15.2, "t_fim": 18.2},
+    {"n": 6, "nome": "volta", "t_ini": 18.2, "t_fim": 20.8},
+    {"n": 7, "nome": "cartela", "t_ini": 20.8, "t_fim": 25.0},
 )
-PRESETS = {"20s": 1.0, "15s": 0.75}
+PRESETS = {"25s": 1.0, "20s": 0.8, "15s": 0.6}
 
 # Fracao de cada beat (0 = inicio, 1 = fim) em que cada acao comeca e acaba.
 # A ordem dentro dos beats 2 e 6 e a que nao atravessa nada - ver cabecalho.
 ROTEIRO = {
     2: {
-        "tampa": (0.00, 0.30),          # tampa sai rapido, antes da espuma
-        "espuma": (0.22, 0.85),         # explode depois que a tampa saiu de cima
-        "u1_sobe": (0.50, 0.75),        # so depois de toda espuma ter saltado
-        "caixa_desce": (0.62, 0.92),    # a caixa some pelo chao sob o U1
-        "u1_desce": (0.80, 1.00),       # U1 pousa no chao, na origem
-        "u1_desliza": (0.75, 0.94),     # (caixa_some=False) U1 vai para -Y no ar
-        "rim": (0.50, 0.90),            # rim a 0,3 no momento-heroi
+        # Beat de 4,4 s (revisao 2b): as fracoes encolheram para o U1 FLUTUAR
+        # sozinho de 0,62 a 0,84 (~1,0 s; era 0,75-0,80 = 0,22 s).
+        "tampa": (0.00, 0.27),          # tampa sai rapido, antes da espuma
+        "espuma": (0.20, 0.72),         # explode depois que a tampa saiu de cima
+        "u1_sobe": (0.42, 0.62),        # so depois de toda espuma ter saltado
+        "caixa_desce": (0.52, 0.76),    # a caixa some por baixo do quadro
+        "u1_desce": (0.84, 1.00),       # U1 desce e PARA NO AR na cota de referencia
+        "u1_desliza": (0.80, 0.95),     # (caixa_some=False) U1 vai para -Y no ar
+        "rim": (0.42, 0.92),            # rim a 0,3 no momento-heroi
     },
     3: {
         "orbita": (0.00, 0.48),         # frente -> traseira pelo lado +X
@@ -231,23 +331,33 @@ ROTEIRO = {
         "push_in": (0.77, 1.00),        # raio 1,25 -> 1,15 no ligar
     },
     4: {
-        "orbita": (0.00, 0.56),         # traseira -> frente pelo lado -X
-        "dolly": 0.78,                  # fim do dolly; a chave repete em q_fim-1
-        "boot": 0.60,                   # boot de ~0,8 s, corte seco para a UI
-        "ui": 0.85,
+        # Beat de 4,0 s (revisao 2b): a camera para em 0,66 e a UI entra em
+        # 0,74 - fica parada ~1,0 s antes do corte (era 0,45 s).
+        "orbita": (0.00, 0.48),         # traseira -> frente pelo lado -X
+        "dolly": 0.66,                  # fim do dolly; a chave repete em q_fim-1
+        "boot": 0.52,                   # boot de ~0,9 s, corte seco para a UI
+        "ui": 0.74,
     },
     5: {"fotos": (0.0, 1.0 / 3.0, 2.0 / 3.0)},
     6: {
-        "u1_sobe": (0.00, 0.267),
-        "caixa_sobe": (0.033, 0.333),
-        "u1_desce": (0.40, 0.667),
-        "espuma": (0.60, 0.867),
-        "tampa": (0.80, 1.00),
+        # Revisao 3 (beat de 2,6 s; as fotos cederam 0,3 s): o U1 so sobe em
+        # 0,12, quando a camera do pull-back (foto C -> plano geral, que
+        # dura ate 'u1_desce'[0]) ja saiu de cima dele (a 0,00 a sonda media
+        # 0,069 m entre a camera e o U1 subindo); a caixa volta em 0,20 e a
+        # profundidade de partida dela e projetada pela camera AVALIADA nesse
+        # quadro (_conferir_volta_da_caixa), nao pela pose de referencia.
+        "u1_sobe": (0.12, 0.42),
+        "caixa_sobe": (0.20, 0.46),
+        "u1_desce": (0.48, 0.72),
+        "espuma": (0.66, 0.88),
+        "tampa": (0.82, 1.00),
     },
     7: {
-        "sobe_para_logo": (0.00, 0.20),
-        "mergulho": (0.20, 0.444),      # quadro da travessia = fim do mergulho
-        "cartela": (0.444, 0.86),
+        # Beat de 4,2 s (revisao 2b): a cartela termina de entrar em 0,78 e
+        # fica assentada ~0,9 s.
+        "sobe_para_logo": (0.00, 0.20), # sobe para o eixo do TOPO da caixa (sem logo)
+        "mergulho": (0.20, 0.42),       # quadro da travessia = fim do mergulho
+        "cartela": (0.42, 0.78),
     },
 }
 
@@ -275,14 +385,35 @@ PARAMS_PADRAO = {
     "caixa": {},
     # Quanto o U1 sobe acima do topo do corpo da caixa ao sair/entrar.
     "folga_u1": 0.14,
+    # Quanto a caixa fica ABAIXO da borda inferior do quadro quando "fora"
+    # (beats 1, 2 e 6): a profundidade e projetada pela camera do momento,
+    # esta e a folga sobre a projecao.
+    "margem_fora": 0.10,
+    # Onde o cabo pendurado para, no vazio (z absoluto; era o chao em 0).
+    "z_cabo_solto": -0.5,
+    # Obturador do motion blur: (base, forte). 'forte' so nos movimentos
+    # largos, por chave (ver cabecalho, estilo).
+    "obturador": (0.5, 0.7),
+    # Abertura: planos gerais a f/5,6 (produto inteiro nitido: a f/2,8 a
+    # frente da caixa a 0,3 m do alvo saia mole no beat 6), closes a f/2,8
+    # (tela e fotos: foco raso). O beat 7 tem a rampa propria.
+    "f_geral": 5.6,
+    "f_close": 2.8,
+    # Zoom-in nos cortes: +mm de lente nos 'n' ultimos quadros do plano que
+    # acaba (0 desliga).
+    "zoom_corte": {"mm": 3.0, "quadros": 4},
+    # Overshoot das entradas (revisao 3): fracao do percurso alem do destino
+    # e quantos quadros antes do destino fica o pico.
+    "overshoot": {"fracao": 0.05, "quadros": 6},
     # Deslocamento da cartela para cima no quadro (m a 2 m). None = o padrao
     # medido pelo modulo cartela (0,18: linha 4 fora da faixa de legendas).
     # Rodada 3, com o rolo da camera: 0,12 - com 0,18 o topo da engrenagem
     # (a 17% da altura) caia sobre a cauda do brilho do horizonte (15-22%);
     # 6 cm a menos descem o bloco 3% e a linha 4 fica a ~67%, fora da faixa.
     "cartela_subida": 0.12,
-    # True (padrao): a caixa afunda pelo chao no beat 2 e volta no beat 6.
-    # False: o U1 desliza para -Y e pousa na frente da caixa (ver cabecalho).
+    # True (padrao): a caixa some por baixo do quadro no beat 2 e volta por
+    # baixo no beat 6. False: o U1 desliza para -Y e para no ar na frente da
+    # caixa (ver cabecalho; este modo nao foi reenquadrado na revisao 2).
     "caixa_some": True,
     "deslocamento_u1": 2.1,        # m para -Y, so com caixa_some=False
     # Rig de luz na orbita: rig = azimute da camera + offset. 90 poe o rim
@@ -309,8 +440,9 @@ PARAMS_PADRAO = {
     "luz_camara_fotos": (10.0, 60.0, 0.0),
     "forca_fitas": 3.0,
     "forca_fitas_fotos": 1.2,
-    # Beat 7: distancia da logo no apice, a que o mergulho chega 'devagar',
-    # e quanto a camera entra na tampa; quadros da travessia e do veu.
+    # Beat 7: distancia do TOPO da caixa (emenda das abas; era a logo) no
+    # apice, a que o mergulho chega 'devagar', e quanto a camera entra no
+    # papelao; quadros da travessia e do veu.
     # 'v_perto': velocidade (m/quadro) com que o mergulho chega a 'perto' -
     # medido: chegando a 0,047 m/quadro a 0,12 m da logo (39% da distancia
     # por quadro) o q545 era um borrao; a 0,02 a logo le ate o veu. A
@@ -332,23 +464,30 @@ PARAMS_PADRAO = {
     # enquanto a descida ja comeca a 'v_ini' m/quadro. Sem isso o apice era
     # uma quase-parada: Bezier chegando num extremo (velocidade 0) e Hermite
     # partindo de zero - a sonda media 0,183 -> 0,019 (q528) -> 0,197.
-    "mergulho": {"alto": 1.8, "meio": 0.9, "perto": 0.15, "dentro": -0.02, "travessia": 3, "veu": 2,
+    # Revisao 2: 'alto' 1,8 -> 1,25 e 'meio' 0,9 -> 0,65 (camera mais perto:
+    # no apice o topo da caixa ocupa ~95% da largura a 35 mm, era 65%).
+    "mergulho": {"alto": 1.25, "meio": 0.65, "perto": 0.15, "dentro": -0.02, "travessia": 3, "veu": 2,
                  "foco_min": 0.07, "f_ini": 2.8, "f_fim": 8.0,
                  "v_perto": 0.03, "arco": 0.30, "arco_quadros": 12, "v_ini": 0.06},
-    "logo_escala_inicial": 1.5,    # match cut: logo maior no centro em q_t
-    # Quadros (a 20 s) que a logo gasta viajando do centro ao repouso ANTES de
-    # a primeira linha entrar. Rodada 3: com as duas entradas simultaneas a
-    # sonda de projecao media 12 quadros de 'Engi[engrenagem]Print'.
-    "logo_viagem": 12,
+    # Quadros (na referencia) que a logo gasta entrando SOZINHA (fade +
+    # subida) antes de a primeira linha entrar. Rodada 3: com as duas
+    # entradas simultaneas a sonda de projecao media 12 quadros de
+    # 'Engi[engrenagem]Print'. Revisao 2b: e a primeira vez que a logo
+    # aparece no anuncio (a caixa nao a tem mais), entao 18 quadros de fade.
+    "logo_viagem": 18,
+    # Beat 7: fracao da energia da key e da top a que as duas descem (rampa
+    # Bezier) da saida do beat 6 ao apice - o topo de papelao visto de cima
+    # recebe as duas de frente mais o ceu rose e saia estourado (medido no
+    # apice, revisao 3). 1,0 desliga.
+    "luz_mergulho": 0.45,
     "cartela_fracao": 0.50,        # fatia do intervalo das LINHAS que cada uma gasta entrando
-    # Camera da cartela: inclinacao (graus, para cima) e rolo no eixo optico.
-    # O rolo de 180 e o que poe o rose em CIMA como nos outros 17 s: olhando
-    # para baixo nao ha preto disponivel (o chao do ambiente ja esta fundido
-    # no rose a 4 m da origem, onde a camera fica), e olhando para cima o
-    # brilho do horizonte cai no pe do quadro. A raiz da cartela, filha da
-    # camera, recebe o rolo inverso e o texto fica em pe.
-    "cartela_inclinacao": 32.0,
-    "cartela_rolo": 180.0,
+    # Camera da cartela: inclinacao (graus; negativo = para BAIXO) e rolo no
+    # eixo optico. Revisao 2: sem chao o world tem preto embaixo e rose em
+    # cima, entao a camera olha 32 graus para baixo, sem rolo, e o rose fica
+    # no topo do quadro como nos outros 17 s (o rolo de 180 da rodada 3
+    # existia porque o chao fundido nao tinha preto; fica disponivel).
+    "cartela_inclinacao": -32.0,
+    "cartela_rolo": 0.0,
     # Beat 2, momento-heroi (q(0,50)..q(0,90)), rampas Bezier de 'rampa'
     # quadros. A revisao mediu a metade de cima do U1 em L 224 contra rose L
     # 219. MEDIDO em q140 (rodada 3): (a) kicker atras a +/-135 do azimute da
@@ -369,21 +508,19 @@ PARAMS_PADRAO = {
                   "kicker": None},
     # Formato do kicker, se usado: {"energia": 300.0, "az_rel": 135.0, "raio": 2.4,
     #   "z": 1.7, "tam": (0.4, 1.4), "abertura": 40.0, "especular": 0.3}
-    # Beats 3-5 (planos largos e closes): os flocos de espuma do chao somem
+    # Beats 3-5 (planos largos e closes): os flocos de espuma em volta somem
     # com um fade de escala em 'espuma_fade' quadros (rodada 3: em volta do
     # produto eles viravam poluicao). ESPUMA_SOME_NOS_CLOSES no arquivo unico.
     "espuma_some_nos_closes": True,
     "espuma_fade": 6,
-    # Beat 2, momento-heroi: altura da camera com o U1 no alto e quanto o
-    # alvo fica acima da base dele. A revisao propos BAIXAR a camera (1,6 ->
-    # 1,25) para o U1 recortar contra a transicao escura; rendido q140/q150
-    # com 1,25, 1,6 e 1,85 (alvo z_alto + 0,05): a 1,25 o U1 fica INTEIRO
-    # dentro da faixa rose (branco sobre rose, o que se queria evitar), a
-    # 1,6 a base dele encosta na transicao, e a 1,85 - olhando mais para
-    # baixo - o chao escuro sobe atras dele e o U1 recorta contra o preto
-    # com o rose so em cima. A causa e geometrica: quanto mais alta a camera,
-    # mais chao escuro atras do produto; baixar fazia o contrario.
-    "camera_heroi": {"z": 1.85, "alvo": 0.05, "raio": 2.5},
+    # Beat 2, momento-heroi: raio e altura da camera com o U1 no alto e
+    # quanto o alvo fica acima da base dele. Rodada 3 mediu: quanto mais
+    # alta a camera (olhando mais para baixo), mais escuro atras do produto
+    # - continua valendo sem chao, porque o preto do world esta embaixo.
+    # Revisao 2: raio 2,5 -> 1,25 e alvo no meio do U1 (0,33): o U1 a ~65%
+    # da altura em vez de 27% (a 1,05 a sonda media 72% com o topo e os
+    # lados cortados); a camera a 1,65 olha 16 graus para baixo.
+    "camera_heroi": {"z": 1.65, "alvo": 0.33, "raio": 1.25},
 }
 
 
@@ -394,7 +531,7 @@ def fator_duracao(duracao_s):
 
 
 def quadro(t, fator=1.0):
-    """Segundo (na referencia de 20 s) -> quadro, com o fator de duracao."""
+    """Segundo (na referencia de DURACAO_REFERENCIA) -> quadro, com o fator de duracao."""
     return max(1, int(round(t * FPS * fator)))
 
 
@@ -880,16 +1017,17 @@ def construir_tudo(params=None):
         print("[coreografia] AVISO: o U1 (%.3f x %.3f x %.3f) nao cabe no interior da caixa (%.3f x %.3f x %.3f)"
               % (tuple(u1["dimensoes"]) + (ix, iy, iz)))
 
-    # O U1 nasce dentro da caixa, apoiado no fundo (uma parede acima do chao).
+    # O U1 nasce dentro da caixa, apoiado no fundo (uma parede acima da base).
     parede = mod_caixa.PARAMS_PADRAO["parede"]
     u1["raiz"].location = Vector((0.0, 0.0, parede))
     u1["z_na_caixa"] = parede
 
-    # O cabo e construido encaixado na tomada com o U1 no CHAO (beat 3): os
-    # pontos do dict foram medidos com a raiz na identidade, que e essa pose.
+    # O cabo e construido encaixado na tomada com o U1 na cota de referencia
+    # (beat 3): os pontos do dict foram medidos com a raiz na identidade, que
+    # e essa pose. Sem chao, o cabo PENDE ate 'z_cabo_solto'.
     tomada = u1["posicao_tomada"]
     pcabo = {"ponto_tomada": tuple(tomada["ponto"]), "direcao_entrada": tuple(tomada["direcao"]),
-             "z_chao": 0.0, "penetracao": -mod_cabo.BICO[4]}
+             "z_chao": p["z_cabo_solto"], "penetracao": -mod_cabo.BICO[4]}
     cabo = mod_cabo.construir_cabo(cena, col, pcabo)
 
     # Forcas de emissao: as do modulo (2,4 / 2,0, medidas no render sob o
@@ -949,6 +1087,12 @@ def _cil(pos):
     return math.degrees(math.atan2(y, x)), math.hypot(x, y), z
 
 
+def _pos_camera(az, raio, z, centro=(0.0, 0.0, 0.0)):
+    """Posicao no mundo de uma chave (azimute, raio, z) do rig da camera."""
+    a = math.radians(az)
+    return Vector(centro) + Vector((raio * math.cos(a), raio * math.sin(a), z))
+
+
 def _chave_camera(objs, q, az, raio, z, alvo, foco=None, lente=None,
                   interp="BEZIER", easing="EASE_IN_OUT"):
     """Uma chave de camera: azimute (graus) no rig, raio e altura na camera,
@@ -967,6 +1111,30 @@ def _chave_camera(objs, q, az, raio, z, alvo, foco=None, lente=None,
         cam.data.lens = lente
         cam.data.keyframe_insert("lens", frame=q)
     objs["_chaves_camera"][q] = (interp, easing)
+
+
+def _perfil_overshoot(u, fracao, u_pico):
+    """Ease-out em [0, 1] que chega a 1 + fracao em u_pico (velocidade zero)
+    e volta a 1 em u = 1 por meio cosseno (velocidade zero nos dois lados):
+    e o "chega, passa, assenta" da revisao 3, C1 no pico."""
+    if fracao <= 0.0 or u_pico >= 1.0:
+        return 1.0 - (1.0 - u) ** 2.8
+    if u <= u_pico:
+        return (1.0 + fracao) * (1.0 - (1.0 - u / u_pico) ** 2.8)
+    v = (u - u_pico) / (1.0 - u_pico)
+    return 1.0 + fracao * 0.5 * (1.0 + math.cos(math.pi * v))
+
+
+def _chave_z_com_overshoot(objs, obj, q_ini, q_fim, z_ini, z_fim, xy=(0.0, 0.0)):
+    """Chaves de z de 'z_ini' (q_ini) a 'z_fim' (q_fim) com uma chave a mais
+    'quadros' antes do fim, 'fracao' do percurso ALEM do destino: com Bezier
+    auto-clamped o extremo vira handle plano - chega, passa, assenta."""
+    o = objs["params"].get("overshoot") or {}
+    fr, n = float(o.get("fracao", 0.0)), int(round(float(o.get("quadros", 6)) * objs["fator"]))
+    _chave(obj, q_ini, (xy[0], xy[1], z_ini))
+    if fr > 0.0 and q_fim - n > q_ini:
+        _chave(obj, q_fim - n, (xy[0], xy[1], z_fim + fr * (z_fim - z_ini)))
+    _chave(obj, q_fim, (xy[0], xy[1], z_fim))
 
 
 def _chave_centro(objs, q, centro, interp="BEZIER"):
@@ -1035,52 +1203,208 @@ def _enquadrar(pos_cam, sujeito, lente, fx=0.68, fy=0.74):
     return sujeito - direita * ((fx - 0.5) * 2.0 * meia_largura) + cima * ((fy - 0.5) * 2.0 * meia_altura)
 
 
+def _quadro_camera(pos_cam, alvo, lente):
+    """Base ortonormal do quadro da camera em 'pos_cam' olhando 'alvo': (d,
+    direita, cima) e a meia-tangente vertical (18/lente: sensor de 36 mm no
+    lado maior, que no 9:16 e a altura)."""
+    pos_cam = Vector(pos_cam)
+    d = (Vector(alvo) - pos_cam).normalized()
+    direita = d.cross(Vector((0, 0, 1)))
+    if direita.length < 1e-6:
+        direita = Vector((1, 0, 0))
+    direita.normalize()
+    cima = direita.cross(d).normalized()
+    return d, direita, cima, 18.0 / lente
+
+
+def _z_pe_do_quadro(pos_cam, alvo, lente, eixo_xy=(0.0, 0.0), avanco=0.0):
+    """Cota (z) da borda INFERIOR do quadro no plano vertical a 'avanco' m
+    ALEM do eixo 'eixo_xy' (visto da camera): e onde um objeto centrado
+    nesse eixo, com meia-diagonal 'avanco', deixa de aparecer por baixo - o
+    canto DISTANTE dele e o que projeta mais alto (medido: com avanco 0 a
+    tampa ainda mostrava 7% no quadro 1). A profundidade com que a caixa
+    parte (beat 1), some (beat 2) e volta (beat 6) sai daqui, nao de um
+    numero digitado."""
+    pos_cam = Vector(pos_cam)
+    d, _, cima, meia = _quadro_camera(pos_cam, alvo, lente)
+    raio = d - cima * meia                  # raio pelo centro da borda de baixo
+    dh = math.hypot(eixo_xy[0] - pos_cam.x, eixo_xy[1] - pos_cam.y) + avanco
+    rh = math.hypot(raio.x, raio.y)
+    if rh < 1e-6:
+        return -1e9
+    return pos_cam.z + raio.z * (dh / rh)
+
+
+def _meia_diagonal_caixa(caixa):
+    ext = caixa["exterior_tampa"] if caixa.get("exterior_tampa") else caixa["exterior_corpo"]
+    return 0.5 * math.hypot(max(ext[0], caixa["exterior_corpo"][0]), max(ext[1], caixa["exterior_corpo"][1]))
+
+
+def _cantos(obj):
+    """Cantos do bound box avaliado de um objeto, no mundo."""
+    dg = bpy.context.evaluated_depsgraph_get()
+    ev = obj.evaluated_get(dg)
+    return [ev.matrix_world @ Vector(c) for c in ev.bound_box]
+
+
+def _objetos_do_u1(objs):
+    raiz = objs["u1"]["raiz"]
+    return [o for o in bpy.data.objects if o.type == "MESH" and not o.hide_render and _descende(o, raiz)]
+
+
+def _objetos_da_caixa(objs, com_tampa=True):
+    caixa = objs["caixa"]
+    donos = [caixa["corpo"]]
+    if com_tampa:
+        donos += list(caixa.get("abas") or []) + [caixa["tampa"]]
+    objetos = []
+    for dono in donos:
+        for o in [dono] + list(dono.children_recursive):
+            if o.type == "MESH" and not o.hide_render and o not in objetos:
+                objetos.append(o)
+    return objetos
+
+
+def _com_descendentes(obj):
+    return [obj] + list(obj.children_recursive)
+
+
+def projetar_no_quadro(objs, pontos):
+    """Pontos do mundo -> coordenadas de quadro da camera atual: y em [-1, 1]
+    (altura), x em [-9/16, 9/16] (largura), pela lente e pelo sensor de 36 mm
+    no lado maior. Pontos atras da camera sao descartados."""
+    cam = objs["camera"]
+    m = cam.matrix_world.inverted()
+    k = cam.data.lens / (cam.data.sensor_width / 2.0)
+    saida = []
+    for p in pontos:
+        v = m @ Vector(p)
+        if v.z > -1e-6:
+            continue
+        saida.append((v.x / -v.z * k, v.y / -v.z * k))
+    return saida
+
+
+def medir_enquadramento(objs, quadros, alvos=("u1", "caixa")):
+    """Fracao da ALTURA e da LARGURA do quadro que o envelope do U1 (e da
+    caixa) ocupa em cada quadro, pela projecao dos cantos dos bound boxes
+    (clipada ao quadro) - e a medida de "o produto ocupa >= 60% da altura".
+    Devolve {quadro: {alvo: (alt, larg, estado)}} e imprime; estado diz se
+    esta 'fora', 'cortado em cima/embaixo' ou 'inteiro'. O quadro atual e
+    devolvido a 1 no fim."""
+    cena = objs["cena"]
+    resultado = {}
+    a = 9.0 / 16.0
+    for q_ in quadros:
+        cena.frame_set(q_)
+        bpy.context.view_layer.update()
+        resultado[q_] = {}
+        for alvo in alvos:
+            objetos = _objetos_do_u1(objs) if alvo == "u1" else _objetos_da_caixa(objs)
+            pontos = [c for o in objetos for c in _cantos(o)]
+            proj = projetar_no_quadro(objs, pontos)
+            if not proj:
+                resultado[q_][alvo] = (0.0, 0.0, "fora")
+                continue
+            xs = [x for x, _ in proj]
+            ys = [y for _, y in proj]
+            alt = (max(-1.0, min(1.0, max(ys))) - max(-1.0, min(1.0, min(ys)))) / 2.0
+            larg = (max(-a, min(a, max(xs))) - max(-a, min(a, min(xs)))) / (2.0 * a)
+            if max(ys) < -1.0 or min(ys) > 1.0 or max(xs) < -a or min(xs) > a:
+                estado = "fora"
+            else:
+                partes = []
+                if max(ys) > 1.0:
+                    partes.append("cortado em cima")
+                if min(ys) < -1.0:
+                    partes.append("cortado embaixo")
+                if min(xs) < -a or max(xs) > a:
+                    partes.append("cortado no lado")
+                estado = ", ".join(partes) or "inteiro"
+            resultado[q_][alvo] = (alt, larg, estado)
+        print("[enquadramento] q%03d: " % q_ + "  ".join(
+            "%s alt %3.0f%% larg %3.0f%% (%s)" % (k, 100 * v[0], 100 * v[1], v[2]) for k, v in resultado[q_].items()))
+    cena.frame_set(1)
+    return resultado
+
+
 def _sujeitos_fotos(objs):
-    """Os tres closes do beat 5: cabecotes, porta/puxador, mesa. Com o
-    substituto sao os objetos; com o modelo real, fracoes do envelope."""
+    """Os tres closes do beat 5: cabecotes, porta/puxador e - no modelo da
+    Meshy, que tem bobinas de filamento nas laterais (revisao 3) - as
+    bobinas do lado +X; sem bobinas, a mesa. Com objetos sao as posicoes
+    deles; com o modelo real por nome, fracoes do envelope. Devolve tambem
+    'terceira': 'bobinas' ou 'mesa'."""
     u1 = objs["u1"]
     if u1.get("cabecotes") and u1.get("puxador") is not None and u1.get("mesa") is not None:
         cabs = u1["cabecotes"]
         meio = (cabs[1].matrix_world.translation + cabs[2].matrix_world.translation) / 2.0
-        return {
+        s = {
             "cabecotes": meio + Vector((0.0, 0.0, 0.02)),
             "porta": u1["puxador"].matrix_world.translation.copy(),
             "mesa": u1["mesa"].matrix_world.translation.copy(),
+            "terceira": "mesa",
         }
+        bobinas = [o for o in (u1.get("bobinas") or []) if o is not None and o.type == "MESH"]
+        if bobinas:
+            # Bobina do lado +X: a face externa do envelope das bobinas, no
+            # meio em Y e Z (o objeto tem as quatro; o lado +X e o que a
+            # camera do pull-back ja tem pela frente-direita).
+            cantos = [c for o in bobinas for c in _cantos(o)]
+            mx = max(c.x for c in cantos)
+            s["bobinas"] = Vector((mx - 0.03, sum(c.y for c in cantos) / len(cantos), sum(c.z for c in cantos) / len(cantos)))
+            s["terceira"] = "bobinas"
+        return s
     L, P, A = u1["dimensoes"]
     c = objs["centro_u1"]
     return {
         "cabecotes": c + Vector((0.0, 0.25 * P, 0.80 * A)),
         "porta": c + Vector((0.35 * L, -P / 2.0, 0.35 * A)),
         "mesa": c + Vector((0.0, 0.0, 0.21 * A)),
+        "terceira": "mesa",
     }
 
 
 # ---------------------------------------------------------------- beats
 
 def _beat1(objs, fator):
-    """Caixa sobe do chao girando 2 voltas, rapido no inicio e assentando.
-    O U1 (dentro) e as espumas vao junto, uma chave por quadro: a espuma esta
+    """Caixa sobe de FORA DO QUADRO, por baixo, girando 2 voltas, rapido no
+    inicio e assentando NO AR na cota de referencia (base em z = 0). O U1
+    (dentro) e as espumas vao junto, uma chave por quadro: a espuma esta
     fora do eixo, e so a chave por quadro faz o giro dela ser o mesmo da
-    caixa sem parentear (a caixa afunda no beat 2 e a espuma nao pode ir)."""
+    caixa sem parentear (a caixa some no beat 2 e a espuma nao pode ir)."""
     q_ini, q_fim = quadros_do_beat(1, fator)
-    caixa, u1 = objs["caixa"], objs["u1"]
+    caixa, u1, p = objs["caixa"], objs["u1"], objs["params"]
     n = float(q_fim - q_ini)
     voltas = 2.0                                   # inteiras: acaba com a frente em -Y
-    # Tampa RENTE ao chao no primeiro quadro (a revisao mediu 0,27 s de chao
-    # vazio com +0,25): o topo da tampa esta em z = 0 no quadro 1.
-    profundidade = caixa["topo_tampa_z"]
+    # Camera do beat, definida ANTES das chaves da caixa: a profundidade de
+    # partida e projetada por ela. Frontal, um pouco alta, fechando de leve;
+    # acaba em -85 graus (quase de frente: a 80 a face lateral entrava e a
+    # caixa cortava no lado) e raio 1,5 (era 2,1): caixa a ~60% da altura do
+    # 9:16 com a frente a ~95% da largura (medido pela sonda de
+    # enquadramento). Raio 1,75 no inicio: girando, a diagonal da caixa (0,9
+    # m) precisa de mais largura do que a frente dela (0,68 m) no fim.
+    lente = 35.0
+    cam_ini = (-92.0, 1.75, 1.0, (0.0, 0.0, 0.42))
+    cam_fim = (-85.0, 1.50, 0.92, (0.0, 0.0, 0.45))
+    # Partida: topo da tampa 'margem_fora' abaixo da borda inferior do quadro
+    # no canto distante da caixa, com a camera do quadro 1 (era "tampa rente
+    # ao chao").
+    z_pe = _z_pe_do_quadro(_pos_camera(*cam_ini[:3]), cam_ini[3], lente, avanco=_meia_diagonal_caixa(caixa))
+    profundidade = caixa["topo_tampa_z"] - z_pe + p["margem_fora"]
     objs["profundidade_caixa"] = profundidade
     corpo, tampa, raiz = caixa["corpo"], caixa["tampa"], u1["raiz"]
     z_tampa = tampa.location.z
     z_u1 = raiz.location.z
     repousos = [(esp, Vector(esp["caixa_repouso"]), tuple(esp["caixa_rot_repouso"])) for esp in caixa["espumas"]]
+    o = p.get("overshoot") or {}
+    u_pico = 1.0 - float(o.get("quadros", 6)) * fator / n
     for f in range(q_ini, q_fim + 1):
         u = (f - q_ini) / n
         # Giro decai mais devagar que a subida: a caixa ja assentou em altura
-        # e ainda gira um pouco - le como "assentar", nao como parar.
+        # e ainda gira um pouco - le como "assentar", nao como parar. A
+        # altura passa 'fracao' do percurso alem do destino e volta (revisao 3).
         s_rot = 1.0 - (1.0 - u) ** 2.2
-        s_z = 1.0 - (1.0 - u) ** 2.8
+        s_z = _perfil_overshoot(u, float(o.get("fracao", 0.0)), u_pico)
         ang = -voltas * math.tau * (1.0 - s_rot)
         dz = -profundidade * (1.0 - s_z)
         _chave(corpo, f, (0.0, 0.0, dz), (0.0, 0.0, ang))
@@ -1088,25 +1412,23 @@ def _beat1(objs, fator):
         _chave(raiz, f, (0.0, 0.0, z_u1 + dz), (0.0, 0.0, ang))
         R = Matrix.Rotation(ang, 3, "Z")
         for esp, p0, r0 in repousos:
-            p = R @ p0
-            _chave(esp, f, (p.x, p.y, p.z + dz), (r0[0], r0[1], r0[2] + ang))
+            pe = R @ p0
+            _chave(esp, f, (pe.x, pe.y, pe.z + dz), (r0[0], r0[1], r0[2] + ang))
     for obj in [corpo, tampa, raiz] + caixa["espumas"]:
         _interpolar(obj, q_ini, q_fim)
 
-    # Camera frontal, um pouco alta, afastando de leve; o alvo acompanha o
-    # centro da caixa que sobe. Acaba em -80 graus (3/4 leve, nao frente
-    # morta) e raio 2,1: caixa a ~38% da altura do 9:16.
     # A lente PRECISA de chave aqui: a fcurve extrapola a primeira chave para
     # tras, e sem esta os beats 1-4 saiam com os 60 mm da primeira foto do
     # beat 5 (medido: caixa 1,7x maior que o calculado).
-    _chave_camera(objs, q_ini, -90.0, 2.2, 1.0, (0.0, 0.0, 0.30), lente=35.0)
-    _chave_camera(objs, q_fim, -80.0, 2.1, 1.1, (0.0, 0.0, 0.42))
+    _chave_camera(objs, q_ini, *cam_ini, lente=lente)
+    _chave_camera(objs, q_fim, *cam_fim)
+    _chave_f(objs, q_ini, p["f_geral"])
     _chave_rim_especular(objs, q_ini, 0.0)
 
 
 def _beat2(objs, fator):
-    """Tampa sai, espuma explode, U1 sobe, caixa afunda no chao (ou o U1
-    desliza para a frente dela), U1 pousa."""
+    """Tampa sai, espuma explode, U1 sobe, caixa some por baixo do quadro (ou
+    o U1 desliza para a frente dela), U1 desce e para no ar."""
     r = ROTEIRO[2]
     q_ini, q_fim = quadros_do_beat(2, fator)
     q = lambda fr: q_em(2, fr, fator)  # noqa: E731
@@ -1124,65 +1446,63 @@ def _beat2(objs, fator):
     objs["z_alto_u1"] = z_alto
     z0 = u1["z_na_caixa"]
     centro = objs["centro_u1"]
-    _chave(raiz, q(r["u1_sobe"][0]), (0.0, 0.0, z0))
-    _chave(raiz, q(r["u1_sobe"][1]), (0.0, 0.0, z_alto))
+    # Sobe com overshoot (passa 5% e assenta no alto); desce e PARA NO AR na
+    # cota de referencia (z = 0, a pose em que cabo, tela e fotos foram
+    # medidos), tambem com overshoot - nao ha chao para bater.
+    _chave_z_com_overshoot(objs, raiz, q(r["u1_sobe"][0]), q(r["u1_sobe"][1]), z0, z_alto)
     if p["caixa_some"]:
-        _chave(raiz, q(r["u1_desce"][0]), (0.0, 0.0, z_alto))
-        _chave(raiz, q(r["u1_desce"][1]), (0.0, 0.0, 0.0))
+        _chave_z_com_overshoot(objs, raiz, q(r["u1_desce"][0]), q(r["u1_desce"][1]), z_alto, 0.0)
     else:
-        # Desliza no ar para -Y e pousa na frente da caixa, que fica parada.
+        # Desliza no ar para -Y e para na frente da caixa, que fica parada.
         _chave(raiz, q(r["u1_desliza"][1]), (0.0, centro.y, 0.12))
         _chave(raiz, q_fim, (0.0, centro.y, 0.0))
     _interpolar(raiz, q(r["u1_sobe"][0]), q_fim)
 
+    # Camera: segura a caixa enquadrada enquanto a tampa sai e a espuma
+    # explode (chave em 0,45), depois sobe com o U1 ate o momento-heroi (raio
+    # 1,05, ver PARAMS_PADRAO['camera_heroi']) e desce com ele ate a pose de
+    # onde a orbita do beat 3 parte. Alvo no meio do U1 e nao na base: com o
+    # alvo na base o topo dele saia do quadro no pico.
+    lente = 35.0
+    ch = p["camera_heroi"]
+    pose_heroi = (-84.0, ch["raio"], ch["z"], Vector((0.0, 0.0, z_alto + ch["alvo"])))
+    pose_fim = (-76.0, 1.30, 0.62, centro + Vector((0.0, 0.0, 0.37)))
+    _chave_camera(objs, q(0.45), -82.0, 1.55, 1.05, (0.0, 0.0, 0.62))
+    _chave_camera(objs, q(r["u1_sobe"][1]), *pose_heroi)
+    _chave_centro(objs, q(r["u1_sobe"][1]), (0.0, 0.0, 0.0))
+    if p["caixa_some"]:
+        # A camera so comeca a descer QUANDO o U1 desce (chave de espera com
+        # um drift de 1 grau/3 cm, para nao parar): sem ela o alvo Bezier ja
+        # descia entre o heroi e o fim do beat e o topo do U1 saia do quadro
+        # em q150 (medido pela sonda de enquadramento).
+        _chave_camera(objs, q(r["u1_desce"][0]), pose_heroi[0] - 1.0, pose_heroi[1] + 0.03, pose_heroi[2] + 0.02,
+                      pose_heroi[3])
+    _chave_camera(objs, q_fim, *pose_fim)
+    _chave_centro(objs, q_fim, centro)
+
     corpo = caixa["corpo"]
     if p["caixa_some"]:
+        # Some por BAIXO do quadro: ate o topo do corpo ficar 'margem_fora'
+        # abaixo da borda inferior do quadro nas duas poses de camera do
+        # trecho; dali ate voltar (beat 6) fica em hide_render - na foto C,
+        # de cima, ela apareceria sob o U1 se ficasse so "fora do quadro".
+        z_pe = min(_z_pe_do_quadro(_pos_camera(*pose[:3]), pose[3], lente, avanco=_meia_diagonal_caixa(caixa))
+                   for pose in (pose_heroi, pose_fim))
+        profundidade = caixa["exterior_corpo"][2] - z_pe + p["margem_fora"]
+        objs["profundidade_saida"] = profundidade
         _chave(corpo, q(r["caixa_desce"][0]), (0.0, 0.0, 0.0))
-        _chave(corpo, q(r["caixa_desce"][1]), (0.0, 0.0, -objs["profundidade_caixa"]))
+        _chave(corpo, q(r["caixa_desce"][1]), (0.0, 0.0, -profundidade))
         _interpolar(corpo, q(r["caixa_desce"][0]), q(r["caixa_desce"][1]))
+        objs["_q_caixa_some"] = q(r["caixa_desce"][1]) + 1
 
-    # Camera acompanha o U1 subindo (alvo sobe com ele) e comeca a derivar
-    # para +X, de onde a orbita do beat 3 parte. Alvo em z_alto + 0,05 e
-    # camera a 1,85 (medido, ver PARAMS_PADRAO['camera_heroi']): o U1
-    # recorta contra o chao escuro em vez de branco sobre rose.
-    ch = p["camera_heroi"]
-    _chave_camera(objs, q(r["u1_sobe"][1]), -84.0, ch["raio"], ch["z"], (0.0, 0.0, z_alto + ch["alvo"]))
-    _chave_centro(objs, q(r["u1_sobe"][1]), (0.0, 0.0, 0.0))
-    _chave_camera(objs, q_fim, -75.0, 2.3, 1.1, centro + Vector((0.0, 0.0, 0.37)))
-    _chave_centro(objs, q_fim, centro)
     mod_ambiente.animar_rig(amb, q_ini, q_fim, 0.0, 15.0)
-    # Rim a 0,3 so no trecho em que o chao esta coberto (U1 no alto sobre a
-    # caixa): recorte da silhueta branca sem a poca do reflexo aparecer.
+    # Rim a 0,3 no momento-heroi: recorte da silhueta branca (a poca do
+    # reflexo no chao, motivo do 0 nos planos largos, nao existe mais; a
+    # rampa fica porque e o que a rodada 2 provou suave).
     rim = amb["luzes"]["rim"]
     mod_ambiente.chavear_especular(rim, q(r["rim"][0]), para=0.3, rampa=12)
     mod_ambiente.chavear_especular(rim, q(r["rim"][1]) - 12, q(r["rim"][1]), para=0.0)
     _luz_heroi(objs, q(r["rim"][0]), q(r["rim"][1]))
-
-
-def _fundo_da_camera(mundo):
-    """Socket Strength do Background que so a CAMERA ve no world do ambiente
-    (o que ilumina e o outro, com o Strength LIGADO a mascara do horizonte).
-    None se o world nao tem a arvore esperada."""
-    if mundo is None or not mundo.use_nodes:
-        return None
-    for no in mundo.node_tree.nodes:
-        if no.type == "BACKGROUND" and not no.inputs["Strength"].is_linked:
-            return no.inputs["Strength"]
-    return None
-
-
-def _emissao_do_chao(chao):
-    """Socket 'Emission Color' do Principled do chao do ambiente (a cor do
-    horizonte que o chao infinito copia), ou None."""
-    if chao is None or not chao.data.materials or chao.data.materials[0] is None:
-        return None
-    nt = chao.data.materials[0].node_tree
-    if nt is None:
-        return None
-    for no in nt.nodes:
-        if no.type == "BSDF_PRINCIPLED" and no.inputs.get("Emission Color") is not None:
-            return no.inputs["Emission Color"]
-    return None
 
 
 def _rampa_socket(dono, socket, chaves):
@@ -1208,24 +1528,14 @@ def _luz_heroi(objs, q_a, q_b):
     amb = objs["ambiente"]
     rampa = max(1, int(k.get("rampa", 8)))
     mundo = k.get("mundo")
-    forca = _fundo_da_camera(amb.get("mundo"))
+    forca = mod_ambiente.fundo_da_camera(amb.get("mundo"))
     if mundo is not None and forca is not None:
         padrao = forca.default_value
         _rampa_socket(amb["mundo"].node_tree, forca,
                       [(q_a, padrao), (q_a + rampa, mundo), (q_b - rampa, mundo), (q_b, padrao)])
         forca.default_value = padrao
-        # O rose atras da metade de cima do U1 nao e o world: e o CHAO
-        # infinito, fundido em emissao com a cor do horizonte (medido: so o
-        # world a 1,2 deixava uma emenda a 17% da altura, ceu escuro sobre
-        # chao claro). A cor de emissao do chao cai pelo mesmo fator.
-        emissao = _emissao_do_chao(amb.get("chao"))
-        if emissao is not None and padrao > 1e-9:
-            cor = tuple(emissao.default_value)
-            fator_cor = mundo / padrao
-            baixa = tuple(c * fator_cor for c in cor[:3]) + (cor[3],)
-            _rampa_socket(amb["chao"].data.materials[0].node_tree, emissao,
-                          [(q_a, cor), (q_a + rampa, baixa), (q_b - rampa, baixa), (q_b, cor)])
-            emissao.default_value = cor
+        # (Revisao 2: nao ha mais chao fundido para escurecer junto - o fundo
+        # atras do U1 e so o world.)
     if k.get("key", 1.0) < 1.0:
         key = amb["luzes"]["key"]
         padrao = key.data.energy
@@ -1272,19 +1582,25 @@ def _beat3(objs, fator):
     # era o pop de luz medido pela revisao (q160 -> q165).
     q_rim = int(round(q_ini + r["rim"] * (q_orb - q_ini)))
     mod_ambiente.chavear_especular(amb["luzes"]["rim"], q_rim, para=0.5, rampa=12)
-    # Azimute MONOTONO (105 -> 110 -> 120) e raio sem inversao forte (1,7 ->
-    # 1,25 -> 1,15): a camera nunca para nem recua no meio do plano.
-    _chave_camera(objs, q_orb, 105.0, 1.7, 0.60, centro + Vector((0.15, 0.15, 0.30)))
+    # Azimute MONOTONO (105 -> 110 -> 120) e raio sem inversao forte (1,45 ->
+    # 0,95 -> 0,85; era 1,7/1,25/1,15): a camera nunca para nem recua no meio
+    # do plano. Revisao 2: raio 1,45 na traseira poe o U1 a ~65% da altura
+    # (medido pela sonda: a 1,2 dava 81% com os lados cortados), e o push-in
+    # do ligar fecha a 0,85 m do eixo (0,6 m da face
+    # traseira; canto traseiro do U1 a 0,39 m da camera - sem colisao) com a
+    # lente indo de 35 a 50 mm (LINEAR): e o close macro do botao.
+    _chave_camera(objs, q_orb, 105.0, 1.45, 0.55, centro + Vector((0.04, 0.04, 0.33)))
     # (medido com 112/115: 0,004 m/quadro no ligar - quase parado 25 quadros;
     # com 110/120 o push-in e o giro somam ~0,008 m/quadro, sempre vivo).
-    _chave_camera(objs, q(r["push_in"][0]), 110.0, 1.25, 0.45, centro + Vector((0.20, 0.20, 0.20)))
-    _chave_camera(objs, q_fim, 120.0, 1.15, 0.42, centro + Vector((0.20, 0.20, 0.18)))
+    _chave_camera(objs, q(r["push_in"][0]), 110.0, 0.95, 0.40, centro + Vector((0.20, 0.20, 0.20)), lente=35.0)
+    objs["_lentes_rampa"].add(q(r["push_in"][0]))
+    _chave_camera(objs, q_fim, 120.0, 0.85, 0.36, centro + Vector((0.20, 0.20, 0.18)), lente=50.0)
     # Rig de luz = azimute da camera + offset (90: rim atras do produto).
     off = p["offset_rig_orbita"]
     mod_ambiente.animar_rig(amb, q_ini, q_orb, None, 105.0, azimutes=True, offset=off)
     mod_ambiente.animar_rig(amb, q_orb, q_fim, 105.0, 115.0, azimutes=True, offset=off)
 
-    # Tomada no mundo com o U1 ja no chao (a raiz esta na identidade aqui).
+    # Tomada no mundo com o U1 ja na cota de referencia (raiz na identidade).
     cena.frame_set(q_ini)
     bpy.context.view_layer.update()
     ponto = mod_u1.ponto_no_mundo(u1, "posicao_tomada", "ponto")
@@ -1298,8 +1614,9 @@ def _beat3(objs, fator):
     origem = ponto + normal * 1.3 + lateral * 0.9
     origem.z = p["origem_cabo_z"]
     q_cabo = (q(r["cabo"][0]), q(r["cabo"][1]))
+    # z_chao = 'z_cabo_solto': o cabo pende para fora do quadro (ver cabecalho).
     mod_cabo.animar_conexao(cabo, ponto, direcao, q_cabo[0], q_cabo[1],
-                            origem=origem, z_chao=0.0, penetracao=-mod_cabo.BICO[4],
+                            origem=origem, z_chao=p["z_cabo_solto"], penetracao=-mod_cabo.BICO[4],
                             altura_arco=p["arco_cabo"])
     objs["_q_cabo"] = q_cabo
 
@@ -1322,25 +1639,34 @@ def _beat4(objs, fator):
     bpy.context.view_layer.update()
     tela = mod_u1.ponto_no_mundo(u1, "posicao_tela", "centro")
     normal = mod_u1.ponto_no_mundo(u1, "posicao_tela", "normal")
-    # Tela de 0,104 m a ~69% da largura do quadro: 0,26 m a 35 mm.
-    pos_fim = tela + normal * 0.26 + Vector((0.02, 0.0, 0.015))
+    # Tela de 0,104 m a ~69% da largura do quadro: 0,37 m a 50 mm (era 0,26 m
+    # a 35 mm - mesmo enquadramento, foco mais raso e menos perspectiva).
+    pos_fim = tela + normal * 0.37 + Vector((0.02, 0.0, 0.015))
     az_fim, r_fim, z_fim = _cil(pos_fim - centro)
     az_fim += 360.0          # continua girando no mesmo sentido (120 -> 292)
     q_orb = q(r["orbita"][1])
     q_dolly = q(r["dolly"])
-    # Meio da orbita com raio 2,1 e alvo no corpo: o U1 inteiro no quadro
-    # (a revisao mediu o U1 cortado na borda esquerda em q315).
-    _chave_camera(objs, q(0.30), 180.0, 2.1, 0.80, centro + Vector((0.0, 0.0, 0.42)))
-    # Em q_orb o alvo ainda e o corpo (era a tela: com o centro do quadro no
-    # canto direito da frente, o lado esquerdo do U1 saia cortado em q315,
-    # medido no render); o dolly leva o alvo ate a tela.
-    _chave_camera(objs, q_orb, 250.0, 1.45, 0.72, centro + Vector((0.0, 0.0, 0.42)))
-    # Fim do dolly em q(0,78) e a MESMA chave em q_fim-1 (CONSTANT): duas
-    # chaves iguais zeram o handle e seguram a tela parada 19 quadros; o
-    # corte da primeira foto e em q_fim, e duas chaves no mesmo quadro fariam
-    # a foto sobrescrever o close (medido: q350 apontando aos cabecotes).
-    _chave_camera(objs, q_dolly, az_fim, r_fim, z_fim, tela)
-    _chave_camera(objs, q_fim - 1, az_fim, r_fim, z_fim, tela, interp="CONSTANT")
+    # A lente vem a 50 mm do push-in do beat 3 e volta a 35 (LINEAR) enquanto
+    # a camera abre para o raio da orbita: dolly-zoom de saida.
+    objs["_lentes_rampa"].add(q_ini)
+    # Meio da orbita com raio 1,45 (era 2,1) e alvo no meio do corpo: o U1
+    # inteiro no quadro (a revisao mediu o U1 cortado na borda em q315; a
+    # sonda de enquadramento confere 'inteiro' e a fracao da altura).
+    _chave_camera(objs, q(0.30), 180.0, 1.45, 0.60, centro + Vector((0.0, 0.0, 0.36)), lente=35.0)
+    # Em q_orb o alvo ainda e o corpo; o dolly leva o alvo ate a tela com a
+    # lente indo de 35 a 50 mm (LINEAR): dolly-zoom de entrada.
+    _chave_camera(objs, q_orb, 250.0, 1.30, 0.62, centro + Vector((0.0, 0.0, 0.40)), lente=35.0)
+    objs["_lentes_rampa"].add(q_orb)
+    # Fim do dolly em q(0,66) e uma chave quase igual em q_fim-1 (CONSTANT):
+    # segura a tela no close ate o corte; o corte da primeira foto e em
+    # q_fim, e duas chaves no mesmo quadro fariam a foto sobrescrever o
+    # close (medido: q350 apontando aos cabecotes, rodada 2).
+    _chave_camera(objs, q_dolly, az_fim, r_fim, z_fim, tela, lente=50.0)
+    _chave_f(objs, q_orb, p["f_geral"])
+    _chave_f(objs, q_dolly, p["f_close"])
+    # Revisao 3 (camera nunca parada): a chave de "parada" avanca 3 cm no
+    # raio - a tela cresce ~9% em 1,4 s, legivel, e a camera nao morre.
+    _chave_camera(objs, q_fim - 1, az_fim, r_fim - 0.03, z_fim, tela, interp="CONSTANT")
     off = p["offset_rig_orbita"]
     mod_ambiente.animar_rig(amb, q_ini, q_orb, None, 250.0, azimutes=True, offset=off)
     mod_ambiente.animar_rig(amb, q_orb, q_dolly, 250.0, az_fim, azimutes=True, offset=off)
@@ -1366,10 +1692,21 @@ def _beat5(objs, fator):
     # (sujeito, camera no inicio, lente, enquadramento (fx, fy), rig relativo, energia key, energia rim)
     # Foto C de FORA da pegada: acima e a frente-direita do aro, olhando a
     # mesa pelo topo aberto; mesa e hastes na diagonal, mesa embaixo a direita.
+    # Revisao 2 (macro, 50-85 mm): B a 60 mm de 0,54 m (era 50 de 0,67).
+    # Revisao 3 (modelo da Meshy: corpo fechado, aro a 0,45 m, vao aberto no
+    # topo, porta pintada): A olha os cabecotes PELO VAO DO TOPO de fora da
+    # parede da frente (a 0,45 m dela; com o recuo antigo a camera ficava
+    # sobre a face, 0,000 m do envelope na sonda), e C e a macro das BOBINAS
+    # do lado +X (a mesa so se ve pelo vao, e de cima os tubos tapam). Sem
+    # bobinas (substituto), C volta a mesa de cima.
+    if s["terceira"] == "bobinas":
+        terceira = (s["bobinas"], s["bobinas"] + Vector((0.50, -0.32, 0.22)), 60.0, (0.68, 0.74), +70.0, e_keys[2], e_rims[2])
+    else:
+        terceira = (s["mesa"], s["mesa"] + Vector((0.27, -0.27, 0.90)), 55.0, (0.70, 0.74), +70.0, e_keys[2], e_rims[2])
     fotos = [
-        (s["cabecotes"], s["cabecotes"] + Vector((-0.22, -0.38, 0.30)), 60.0, (0.68, 0.74), +45.0, e_keys[0], e_rims[0]),
-        (s["porta"], s["porta"] + Vector((0.38, -0.52, 0.18)), 50.0, (0.68, 0.74), -50.0, e_keys[1], e_rims[1]),
-        (s["mesa"], s["mesa"] + Vector((0.30, -0.30, 1.20)), 50.0, (0.70, 0.74), +70.0, e_keys[2], e_rims[2]),
+        (s["cabecotes"], s["cabecotes"] + Vector((-0.20, -0.58, 0.40)), 60.0, (0.68, 0.74), +45.0, e_keys[0], e_rims[0]),
+        (s["porta"], s["porta"] + Vector((0.30, -0.42, 0.15)), 60.0, (0.68, 0.74), -50.0, e_keys[1], e_rims[1]),
+        terceira,
     ]
     # Luz propria do U1 nas fotos: fitas mais fracas (chave de espera em
     # q_ini-1 e corte em q_ini) e area lights da camara por foto (cortes).
@@ -1398,8 +1735,15 @@ def _beat5(objs, fator):
         luz.data.energy = val
         luz.data.keyframe_insert("energy", frame=cortes[0] - 1)
     objs["_chaves_rig_luz"] = {}
+    # Revisao 3: a ultima foto NAO corta para o beat 6 - a chave final dela e
+    # Bezier e a camera abre num pull-back continuo (28 quadros: ate o inicio
+    # de 'u1_desce' do beat 6; com 18 chegava a 0,09 m/quadro, rapido para
+    # "camera calma") ate a pose do plano geral, com a lente 57 -> 35 LINEAR.
+    q_trans = q_em(6, ROTEIRO[6]["u1_desce"][0], fator)
+    objs["_q_transicao"] = (cortes[-1] - 1, q_trans)
     for i, (sujeito, pos, lente, (fx, fy), rig_rel, e_key, e_rim) in enumerate(fotos):
         q_a, q_b = cortes[i], cortes[i + 1] - 1
+        ultima = i == len(fotos) - 1
         # Push-in: 0,06 m na direcao do sujeito ao longo da foto, e a lente
         # de 50 a 52 mm (LINEAR) - a foto quase parada lia como still.
         direcao = (Vector(sujeito) - Vector(pos)).normalized()
@@ -1407,8 +1751,10 @@ def _beat5(objs, fator):
             az, raio, z = _cil(p_ - centro)
             alvo = _enquadrar(p_, sujeito, lente_, fx, fy)
             _chave_camera(objs, q_, az, raio, z, alvo, foco=sujeito, lente=lente_,
-                          interp="LINEAR" if q_ == q_a else "CONSTANT")
+                          interp="LINEAR" if q_ == q_a else ("BEZIER" if ultima else "CONSTANT"))
         objs["_lentes_rampa"].add(q_a)
+        if ultima:
+            objs["_lentes_rampa"].add(q_b)
         mod_ambiente.animar_flash(amb, cam, q_a)
         # Luz da foto: rig girado em relacao a camera (key mais lateral) e
         # rim mais forte; tudo em chave constante, e um corte.
@@ -1417,16 +1763,29 @@ def _beat5(objs, fator):
         for luz, val in ((luzes["key"], e_key), (luzes["rim"], e_rim)):
             luz.data.energy = val
             luz.data.keyframe_insert("energy", frame=q_a)
-    # De volta ao padrao no corte do beat 6.
-    for luz, val in ((luzes["key"], padrao_key), (luzes["rim"], padrao_rim)):
+    # De volta ao padrao em RAMPA durante o pull-back (revisao 3): chave de
+    # espera com o valor da foto C no fim dela (Bezier) e o padrao no fim da
+    # transicao; as chaves das fotos continuam cortes (CONSTANT).
+    q_b_ultima = cortes[-1] - 1
+    for luz, val, e_c in ((luzes["key"], padrao_key, e_keys[-1]), (luzes["rim"], padrao_rim, e_rims[-1])):
+        luz.data.energy = e_c
+        luz.data.keyframe_insert("energy", frame=q_b_ultima)
         luz.data.energy = val
-        luz.data.keyframe_insert("energy", frame=q_fim)
+        luz.data.keyframe_insert("energy", frame=q_trans)
         for fc in mod_ambiente.fcurves_de(luz.data.animation_data):
             if fc.data_path == "energy":
                 for kp in fc.keyframe_points:
-                    kp.interpolation = "CONSTANT"
+                    if int(round(kp.co.x)) in (q_b_ultima, q_trans):
+                        kp.interpolation = "BEZIER"
+                        kp.easing = "EASE_IN_OUT"
+                    else:
+                        kp.interpolation = "CONSTANT"
                 fc.update()
-    objs["_q_rig_luz_padrao"] = q_fim
+    objs["_q_rig_luz_padrao"] = q_trans
+    _chave_f(objs, q_b_ultima, p["f_close"])
+    _chave_f(objs, q_trans, p["f_geral"])
+    # Os cortes com punch de lente: so as tres fotos (o beat 6 nao corta mais).
+    objs["_cortes"] = list(cortes[:-1])
 
 
 def _socket_emissao(mat):
@@ -1484,8 +1843,8 @@ def _desligar_u1(objs, quadro_):
 
 
 def _beat6(objs, fator):
-    """Corte ao plano geral: U1 sobe, caixa volta pelo chao, U1 entra, espuma
-    volta, tampa fecha; camera sobe."""
+    """Pull-back continuo da foto C ao plano geral: U1 sobe, caixa volta por
+    baixo do quadro, U1 entra, espuma volta, tampa fecha; camera sobe."""
     r = ROTEIRO[6]
     q_ini, q_fim = quadros_do_beat(6, fator)
     q = lambda fr: q_em(6, fr, fator)  # noqa: E731
@@ -1493,13 +1852,20 @@ def _beat6(objs, fator):
     centro = objs["centro_u1"]
     z_alto = objs["z_alto_u1"]
 
+    lente = 35.0
+    # Pose de referencia do plano geral (a profundidade da volta da caixa e
+    # projetada por ela; revisao 3: nao ha mais chave de corte em q_ini - a
+    # camera chega aqui vindo da foto C em pull-back continuo).
+    pose_ini = (-80.0, 1.30, 0.65, Vector((0.0, 0.0, 0.36)))
+    q_trans = q(r["u1_desce"][0])
     if p["caixa_some"]:
-        # 9:16 aproveitado: raio 2,2/2,1 e altura 1,0/1,7 (era 3,0/2,8 e
-        # 1,3/2,3, produto a 28% da altura). No pico da subida do U1 o alvo
-        # sobe a 0,78 m: com o alvo a 0,45 o topo dele (1,68 m) saia do quadro.
-        _chave_camera(objs, q_ini, -80.0, 2.2, 1.0, (0.0, 0.0, 0.45), lente=35.0)
-        _chave_camera(objs, q(r["u1_sobe"][1]), -81.0, 2.3, 1.15, (0.0, 0.0, 0.78))
-        _chave_camera(objs, q_fim, -84.0, 2.1, 1.7, (0.0, 0.0, 0.60))
+        # Revisao 2: raio 1,35/1,65 (era 2,3/2,1): o U1 a >= 60% da altura no
+        # pico (camera sobe com ele: alvo no meio do U1, z_alto + 0,36 - com
+        # o alvo a 0,45 o topo dele (1,68 m) saia do quadro), e a caixa
+        # fechada a ~60% no fim. A caixa entra por baixo do quadro enquanto o
+        # U1 esta no pico.
+        _chave_camera(objs, q_trans, -81.0, 1.35, 1.35, (0.0, 0.0, z_alto + 0.36), lente=lente)
+        _chave_camera(objs, q_fim, -84.0, 1.65, 1.0, (0.0, 0.0, 0.50))
     else:
         # De lado: o U1 esta 2,1 m na frente da caixa e de frente ele
         # ficaria colado na camera.
@@ -1508,13 +1874,17 @@ def _beat6(objs, fator):
     # Os rigs voltam a origem no corte (so tem efeito com caixa_some=False).
     _chave_centro(objs, q_ini - 1, centro, interp="CONSTANT")
     _chave_centro(objs, q_ini, (0.0, 0.0, 0.0), interp="CONSTANT")
-    mod_ambiente.animar_rig(amb, q_ini, q_fim, 10.0, 6.0)
-    _chave_rim_especular(objs, q_ini, 0.0)
+    # Rig de luz e especular do rim em RAMPA durante o pull-back (revisao 3:
+    # nada corta seco aqui): o rig parte do angulo da foto C (chave de espera
+    # gravada por _rig_luz_cortes) e chega a 10 em q_trans.
+    mod_ambiente.animar_rig(amb, q_trans, q_fim, 10.0, 6.0)
+    mod_ambiente.chavear_especular(amb["luzes"]["rim"], q_ini - 1, q_trans, para=0.0)
 
     raiz = u1["raiz"]
     if p["caixa_some"]:
-        _chave(raiz, q(r["u1_sobe"][0]), (0.0, 0.0, 0.0))
-        _chave(raiz, q(r["u1_sobe"][1]), (0.0, 0.0, z_alto))
+        # Sobe com overshoot (revisao 3); a descida para dentro da caixa nao
+        # tem: o fundo esta ali.
+        _chave_z_com_overshoot(objs, raiz, q(r["u1_sobe"][0]), q(r["u1_sobe"][1]), 0.0, z_alto)
         _chave(raiz, q(r["u1_desce"][0]), (0.0, 0.0, z_alto))
     else:
         _chave(raiz, q(r["u1_sobe"][0]), (0.0, centro.y, 0.0))
@@ -1525,16 +1895,26 @@ def _beat6(objs, fator):
 
     corpo = caixa["corpo"]
     if p["caixa_some"]:
-        _chave(corpo, q(r["caixa_sobe"][0]), (0.0, 0.0, -objs["profundidade_caixa"]))
-        _chave(corpo, q(r["caixa_sobe"][1]), (0.0, 0.0, 0.0))
+        # Volta por BAIXO do quadro: parte 'margem_fora' abaixo da borda
+        # inferior do quadro da camera do corte, e so ai deixa de estar
+        # escondida (desde o sumico do beat 2).
+        z_pe = _z_pe_do_quadro(_pos_camera(*pose_ini[:3]), pose_ini[3], lente, avanco=_meia_diagonal_caixa(caixa))
+        profundidade = caixa["exterior_corpo"][2] - z_pe + p["margem_fora"]
+        objs["profundidade_volta"] = profundidade
+        # Volta com overshoot (6 cm acima e assenta - revisao 3): o topo dela
+        # (0,87 m no pico) fica abaixo da base do U1 no alto (0,95 m).
+        _chave_z_com_overshoot(objs, corpo, q(r["caixa_sobe"][0]), q(r["caixa_sobe"][1]), -profundidade, 0.0)
         _interpolar(corpo, q(r["caixa_sobe"][0]), q(r["caixa_sobe"][1]))
+        objs["_q_caixa_volta"] = q(r["caixa_sobe"][0])
+        _esconder_entre([o for o in _com_descendentes(corpo) if o.type != "EMPTY"],
+                        objs["_q_caixa_some"], objs["_q_caixa_volta"])
 
     mod_caixa.animar_espuma_voltar(caixa, q(r["espuma"][0]), q(r["espuma"][1]))
     mod_caixa.animar_tampa(caixa, q(r["tampa"][0]), q(r["tampa"][1]), abrir=False, lado=1.0)
     _esconder_entre([caixa["tampa"]], objs["_q_tampa_some"], q(r["tampa"][0]) - 1)
 
-    # Cabo: visivel so do inicio do voo ate o corte do beat 6 (o modulo nao
-    # acompanha o U1 subindo, e o plugue no chao apareceria nos beats 1-2).
+    # Cabo: visivel so do inicio do voo ate o inicio do beat 6 (o modulo nao
+    # acompanha o U1 subindo, e o plugue pendurado apareceria nos beats 1-2).
     # A invisibilidade do sumico depende da camera do beat 6 olhar de -Y
     # (o cabo esta atras, em +Y).
     visiveis = _esconder_entre(list(cabo["colecao"].all_objects), 1, objs["_q_cabo"][0])
@@ -1613,9 +1993,10 @@ def _veu_preto(objs, q_ini, q_fim, q_solta, distancia=0.0105):
 
 
 def _beat7(objs, fator):
-    """Camera sobe para o eixo da logo, mergulha e ATRAVESSA a tampa sob um
-    veu preto; corte para a cartela (parented na camera) com a logo ja
-    visivel no centro - match cut logo -> logo."""
+    """Camera sobe para o eixo do TOPO da caixa fechada (a emenda das abas;
+    revisao 2b: nao ha logo na caixa), mergulha e ATRAVESSA o papelao sob um
+    veu preto que nasce da emenda; corte para a cartela (parented na
+    camera), onde a logo aparece pela primeira vez - sozinha, em fade."""
     r = ROTEIRO[7]
     q_ini, q_fim = quadros_do_beat(7, fator)
     q = lambda fr: q_em(7, fr, fator)  # noqa: E731
@@ -1625,8 +2006,17 @@ def _beat7(objs, fator):
 
     cena.frame_set(q_ini)
     bpy.context.view_layer.update()
-    logo = caixa["tampa"].matrix_world @ caixa["centro_logo_local"]
-    normal = (caixa["tampa"].matrix_world.to_3x3() @ caixa["normal_logo"]).normalized()
+    # Centro do topo (o modulo caixa o chama 'centro_logo' por
+    # compatibilidade): pelo Empty 'tampa' se o modulo der o ponto local,
+    # senao o ponto no mundo medido na construcao (a caixa esta na origem
+    # aqui). 'logo' e o nome que as chaves do mergulho usam para o alvo.
+    centro_local = caixa.get("centro_logo_local")
+    if centro_local is not None:
+        logo = caixa["tampa"].matrix_world @ Vector(centro_local)
+        normal = (caixa["tampa"].matrix_world.to_3x3() @ Vector(caixa["normal_logo"])).normalized()
+    else:
+        logo = Vector(caixa["centro_logo"])
+        normal = Vector(caixa["normal_logo"]).normalized()
     q_topo, q_t = q(r["sobe_para_logo"][1]), q(r["mergulho"][1])
     objs["q_travessia"] = q_t
     n_trav = max(1, int(m["travessia"]))
@@ -1689,25 +2079,43 @@ def _beat7(objs, fator):
         u = (f - q_perto) / float(n_trav)
         d = m["perto"] - v_cheg * n_trav * u - (curso - v_cheg * n_trav) * u * u
         chave_altura(f, d, "CONSTANT" if f == q_t - 1 else "LINEAR")
+    _chave_f(objs, q_ini, p["f_geral"])
     _chave_f(objs, q_topo, m["f_ini"])
     _chave_f(objs, q_t - 1, m["f_fim"])
     _chave_f(objs, q_t, m["f_ini"])
     mod_ambiente.animar_rig(amb, q_ini, q_topo, 6.0, 0.0)
-    # Veu preto: alfa 0 -> 1 nos 'veu' quadros antes de a camera tocar a
-    # tampa (q_perto+1 e o primeiro quadro da travessia), segura preto ate o
-    # corte e solta no corte. O preto nasce da propria logo.
+    # Key, top E a luz do ceu (o Background que ilumina, nao o que a camera
+    # ve) descem a 'luz_mergulho' durante a subida ao apice: o topo da caixa
+    # visto de cima saia claro demais - MEDIDO no apice com so key/top a 45%:
+    # L media 0,850, p95 0,895, 0% dos pixels >= 0,95 (nao estoura, mas le
+    # como papel e nao como papelao), porque quem ilumina uma face virada
+    # para cima e sobretudo o ceu rose.
+    fr = float(p.get("luz_mergulho", 1.0))
+    if fr < 1.0:
+        for nome in ("key", "top"):
+            luz = amb["luzes"].get(nome)
+            if luz is not None:
+                mod_ambiente.chavear_fator_luz(luz, "energy", q_ini, q_topo, para=luz.data.energy * fr)
+        forca_ceu = mod_ambiente.forca_da_luz_do_mundo(amb.get("mundo"))
+        if forca_ceu is not None:
+            cheia = forca_ceu.default_value
+            _rampa_socket(amb["mundo"].node_tree, forca_ceu, [(q_ini, cheia), (q_topo, cheia * fr)])
+            forca_ceu.default_value = cheia
+    # Veu preto: alfa 0 -> 1 nos 'veu' quadros antes de a camera tocar o
+    # papelao (q_perto+1 e o primeiro quadro da travessia), segura preto ate
+    # o corte e solta no corte. O preto nasce da propria emenda das abas.
     n_veu = max(1, int(m["veu"]))
     q_veu_fim = q_t - 1 - max(0, n_trav - n_veu)
     _veu_preto(objs, q_veu_fim - n_veu, q_veu_fim, q_t)
     objs["_q_veu"] = (q_veu_fim - n_veu, q_veu_fim)
 
     # Corte: camera limpa, de costas para a cena, olhando 'cartela_inclinacao'
-    # graus para cima e ROLADA 'cartela_rolo' (180) no eixo optico. Rodada 2
-    # media, com 24 graus sem rolo, o brilho do horizonte no terco de BAIXO -
-    # o horizonte da cartela saia invertido contra os outros 17 s. O rolo
-    # vira o quadro: o brilho (do horizonte ate ~16 graus acima) fica no
-    # topo e o preto do ceu embaixo, sob o bloco. 31 graus deixa o horizonte
-    # logo fora da borda: o brilho ocupa ~22% do topo (medido no render).
+    # graus (negativo = para BAIXO; revisao 2: -32, sem rolo). O world novo
+    # tem o rose em cima e o preto embaixo: olhando 32 graus para baixo o
+    # quadro vai de -59 a -5 graus de elevacao - a cauda rose da transicao
+    # no topo (como nos outros 17 s) e o preto quase puro atras do bloco.
+    # O rolo de 180 da rodada 3 ('cartela_rolo') fica disponivel: existia
+    # porque o chao fundido nao tinha preto para olhar.
     z_cam = 1.0
     dist_alvo = 4.0
     alvo_z = z_cam + dist_alvo * math.tan(math.radians(p["cartela_inclinacao"]))
@@ -1732,24 +2140,21 @@ def _beat7(objs, fator):
     _chave_camera(objs, q_fim, 90.0, raio0 + deriva, z_cam, (0.0, raio0 + deriva + dist_alvo, alvo_z),
                   foco=foco_cartela + Vector((0.0, deriva, 0.0)), interp="LINEAR")
 
-    # Cartela escondida ate o corte (a logo visivel DE q_t); a logo entra ja
-    # com alfa 1, maior e no centro do quadro, e viaja SOZINHA ao repouso em
-    # 'logo_viagem' quadros: e o match cut com a logo da tampa. So depois de
-    # ela assentar as linhas entram, escalonadas ate o fim do intervalo - com
-    # as duas entradas simultaneas a sonda de projecao media 12 quadros de
-    # 'Engi[engrenagem]Print' (q550-561). Cada linha fica escondida
+    # Cartela escondida ate o corte; a logo entra SOZINHA (fade + subida) em
+    # 'logo_viagem' quadros - revisao 2b: e a primeira vez que ela aparece no
+    # anuncio, entao nasce do preto do veu, sem match cut. So depois de ela
+    # assentar as linhas entram, escalonadas ate o fim do intervalo - com as
+    # duas entradas simultaneas a sonda de projecao media 12 quadros de
+    # 'Engi[engrenagem]Print' (rodada 3). Cada linha fica escondida
     # (hide_render) ate o proprio inicio: a bbox dela nao existe no quadro
     # antes disso, nem com alfa 0.
     # Duas chamadas do animar_cartela, cada uma com uma copia do dict sem a
     # outra metade: o modulo nao tem parametro para separar os calendarios.
-    subida = cartela.get("subida", 0.0) if p["cartela_subida"] is None else p["cartela_subida"]
     q_c = q(r["cartela"][1])
     q_logo = min(q_t + max(1, int(round(p["logo_viagem"] * fator))), q_c - 1)
     if cartela.get("logo") is not None:
         _esconder_entre([cartela["logo"]], 1, q_t)
-        mod_cartela.animar_cartela(dict(cartela, linhas=[]), q_t, q_logo, fracao_elemento=1.0,
-                                   logo_ja_visivel=True, logo_origem=(0.0, -subida),
-                                   logo_escala_inicial=p["logo_escala_inicial"])
+        mod_cartela.animar_cartela(dict(cartela, linhas=[]), q_t, q_logo, fracao_elemento=1.0)
     else:
         q_logo = q_t
     mod_cartela.animar_cartela(dict(cartela, logo=None), q_logo, q_c, fracao_elemento=p["cartela_fracao"])
@@ -1768,12 +2173,12 @@ def _primeira_chave(obj, data_path, padrao):
 
 
 def _esconder_espuma_nos_closes(objs, fator):
-    """Beats 3-5: os flocos de espuma somem do chao com um fade de escala
+    """Beats 3-5: os flocos de espuma que sobraram em volta somem com um fade de escala
     (1 -> 0 nos 'espuma_fade' quadros a partir do inicio do beat 3, e 0 -> 1
     nos 'espuma_fade' antes do corte do beat 6) e hide_render entre os dois
     fades. Sem fade um floco sumiria de um quadro para o outro no plano
     largo do inicio da orbita. A posicao nao muda: entre q165 e q486 eles ja
-    estavam parados no chao."""
+    estavam parados no ar."""
     p = objs["params"]
     if not p.get("espuma_some_nos_closes", True):
         return
@@ -1815,6 +2220,12 @@ def _rig_luz_cortes(objs):
     for q_, ang in chaves.items():
         rig.rotation_euler = (0.0, 0.0, math.radians(ang))
         rig.keyframe_insert("rotation_euler", index=2, frame=q_)
+    # Revisao 3: a ultima foto segura o angulo dela ate o fim (chave de
+    # espera, Bezier) e RAMPA ate o padrao durante o pull-back.
+    q_espera = objs["_q_transicao"][0] if objs.get("_q_transicao") else None
+    if q_espera is not None:
+        rig.rotation_euler = (0.0, 0.0, math.radians(chaves[max(chaves)]))
+        rig.keyframe_insert("rotation_euler", index=2, frame=q_espera)
     rig.rotation_euler = (0.0, 0.0, ang_padrao)
     rig.keyframe_insert("rotation_euler", index=2, frame=q_padrao)
     quadros = set(chaves) | {primeiro - 1}
@@ -1822,9 +2233,94 @@ def _rig_luz_cortes(objs):
         if fc.data_path != "rotation_euler":
             continue
         for kp in fc.keyframe_points:
-            if int(round(kp.co.x)) in quadros:
+            q_kp = int(round(kp.co.x))
+            if q_kp in quadros:
                 kp.interpolation = "CONSTANT"
+            elif q_kp in (q_espera, q_padrao):
+                kp.interpolation = "BEZIER"
+                kp.easing = "EASE_IN_OUT"
         fc.update()
+
+
+def _conferir_volta_da_caixa(objs):
+    """Reprojeta as profundidades de SUMICO (beat 2, ultimo quadro visivel) e
+    de VOLTA (beat 6, primeiro quadro visivel) da caixa pela camera AVALIADA
+    nesses quadros e pela GEOMETRIA AVALIADA da caixa (corpo, abas abertas,
+    etiqueta): a projecao pela pose de referencia e pelo topo do corpo
+    deixava 9% da caixa no quadro na volta (a camera do pull-back esta mais
+    alta e mais perto) e nao sabia das abas abertas, que sobem ~0,6 m acima
+    do corpo na caixa da revisao 2. Roda depois de _aplicar_interpolacao_
+    camera; so aprofunda, nunca encurta; regrava a chave e uma de espera."""
+    if not objs["params"]["caixa_some"]:
+        return
+    cena, cam, caixa = objs["cena"], objs["camera"], objs["caixa"]
+    corpo = caixa["corpo"]
+    margem = objs["params"]["margem_fora"]
+    for chave, q_ in (("profundidade_saida", objs.get("_q_caixa_some", 0) - 1), ("profundidade_volta", objs.get("_q_caixa_volta"))):
+        if not q_ or q_ < 1:
+            continue
+        cena.frame_set(q_)
+        bpy.context.view_layer.update()
+        cantos = [c for o in _objetos_da_caixa(objs, com_tampa=False) for c in _cantos(o)]
+        if not cantos:
+            continue
+        z_corpo = corpo.matrix_world.translation.z
+        topo_rel = max(c.z for c in cantos) - z_corpo
+        avanco = max(math.hypot(c.x, c.y) for c in cantos)
+        z_pe = _z_pe_do_quadro(cam.matrix_world.translation, objs["alvo"].matrix_world.translation, cam.data.lens,
+                               avanco=avanco)
+        profundidade = topo_rel - z_pe + margem
+        if profundidade > objs[chave] + 1e-6:
+            for f in ((q_, q_ + 1) if chave == "profundidade_saida" else (q_ - 1, q_)):
+                corpo.location = (0.0, 0.0, -profundidade)
+                corpo.keyframe_insert("location", frame=f)
+            print("[coreografia] %s: %.2f -> %.2f m (topo real da caixa %.2f m acima do corpo, camera avaliada em q%d)"
+                  % (chave, objs[chave], profundidade, topo_rel, q_))
+            objs[chave] = profundidade
+    cena.frame_set(1)
+
+
+def _zoom_nos_cortes(objs):
+    """+'mm' de lente nos 'quadros' ultimos quadros do plano que ACABA em
+    cada corte (LINEAR), e o plano novo entra na lente dele: o "punch" dos
+    anuncios de Instagram (revisao 2, estilo). Nao na travessia do beat 7 -
+    ali a transicao ja e o veu. Roda com as interpolacoes ja aplicadas (o
+    valor de partida e o da fcurve LINEAR do push-in de cada foto) e pede
+    _aplicar_interpolacao_camera de novo."""
+    z = objs["params"].get("zoom_corte") or {}
+    mm = float(z.get("mm", 0.0))
+    n = int(round(float(z.get("quadros", 4)) * objs["fator"]))
+    if mm <= 0.0 or n < 1:
+        return
+    dados = objs["camera"].data
+    for q_c in objs.get("_cortes", []):
+        v = _valor_em(dados, "lens", q_c - n)
+        for q_, val in ((q_c - n, v), (q_c - 1, v + mm)):
+            dados.lens = val
+            dados.keyframe_insert("lens", frame=q_)
+        objs["_lentes_rampa"].add(q_c - n)
+        objs["_lentes_rampa"].discard(q_c - 1)
+
+
+def _obturador(objs, fator):
+    """Obturador do motion blur 'forte' so nos movimentos largos (subida da
+    caixa, explosao da espuma e subida do U1 no beat 2 - nao o flutuar, que
+    e calmo -, as duas orbitas, o beat 6 e o mergulho), 'base' no resto
+    (fotos, close da tela, cartela) - o whoosh visual."""
+    p = objs["params"]
+    base, forte = p["obturador"]
+    r2, r3, r4 = ROTEIRO[2], ROTEIRO[3], ROTEIRO[4]
+    trechos = [
+        (q_em(1, 0.0, fator), q_em(1, 0.80, fator)),
+        (q_em(2, r2["espuma"][0], fator), q_em(2, r2["u1_sobe"][1], fator)),
+        (quadros_do_beat(3, fator)[0], q_em(3, r3["orbita"][1], fator)),
+        (quadros_do_beat(4, fator)[0], q_em(4, r4["orbita"][1], fator)),
+        (quadros_do_beat(6, fator)[0], q_em(6, 0.70, fator)),
+        (quadros_do_beat(7, fator)[0], objs["q_travessia"] - 1),
+    ]
+    objs["_obturador"] = mod_ambiente.animar_obturador(objs["cena"], trechos, base=base, forte=forte,
+                                                       rampa=max(1, int(round(4 * fator))))
+    return objs["_obturador"]
 
 
 def coreografar(objs, fator=None):
@@ -1846,6 +2342,10 @@ def coreografar(objs, fator=None):
     _esconder_espuma_nos_closes(objs, fator)
     _rig_luz_cortes(objs)
     _aplicar_interpolacao_camera(objs)
+    _conferir_volta_da_caixa(objs)
+    _zoom_nos_cortes(objs)
+    _aplicar_interpolacao_camera(objs)
+    _obturador(objs, fator)
     cena.frame_set(1)
     # Uma action de node tree fica orfa durante a coreografia da segunda
     # rodada (medido: 'Shader NodetreeAction.003'); a purga de construir_tudo
@@ -1913,7 +2413,7 @@ def conferir_colisoes(objs, passo=1):
             pc = caixa["corpo"].matrix_world.translation
             fundo = pc.z + parede
             # So conta quando o U1 esta sobre a pegada da caixa (com
-            # caixa_some=False ele pousa 2 m na frente dela).
+            # caixa_some=False ele para 2 m na frente dela).
             sobre_caixa = abs(pu.x - pc.x) < ext_c[0] / 2.0 and abs(pu.y - pc.y) < ext_c[1] / 2.0
             if sobre_caixa and zu < fundo - 1e-4:
                 piores["u1_abaixo_do_fundo_m"] = max(piores["u1_abaixo_do_fundo_m"], fundo - zu)
@@ -1945,5 +2445,31 @@ def conferir_colisoes(objs, passo=1):
                     piores["u1_x_tampa"] += 1
     print("[coreografia] colisoes: U1 abaixo do fundo da caixa = %.4f m; espumas dentro do U1 (pior quadro %s) = %d; quadros com tampa x U1 = %d"
           % (piores["u1_abaixo_do_fundo_m"], piores["quadro_pior"], piores["espumas_no_u1"], piores["u1_x_tampa"]))
+    # Camera x objeto (revisao 2, camera mais perto): distancia minima da
+    # camera ao envelope (AABB no mundo) do U1 e da caixa, em todos os quadros
+    # menos os da travessia (ali a camera entra na tampa de proposito).
+    cam = objs["camera"]
+    q_t = objs.get("q_travessia")
+    m = objs["params"]["mergulho"]
+    excluidos = set(range(q_t - 2 - int(m["travessia"]), q_t + 1)) if q_t else set()
+    pior_cam = {"u1": (1e9, None), "caixa": (1e9, None)}
+    for f in range(1, cena.frame_end + 1, passo):
+        if f in excluidos:
+            continue
+        cena.frame_set(f)
+        pc = cam.matrix_world.translation
+        for nome, objetos in (("u1", _objetos_do_u1(objs)), ("caixa", _objetos_da_caixa(objs))):
+            if not objetos:
+                continue
+            pontos = [c for o in objetos for c in _cantos(o)]
+            mn_ = Vector((min(v.x for v in pontos), min(v.y for v in pontos), min(v.z for v in pontos)))
+            mx_ = Vector((max(v.x for v in pontos), max(v.y for v in pontos), max(v.z for v in pontos)))
+            d = Vector((max(mn_.x - pc.x, 0.0, pc.x - mx_.x), max(mn_.y - pc.y, 0.0, pc.y - mx_.y),
+                        max(mn_.z - pc.z, 0.0, pc.z - mx_.z))).length
+            if d < pior_cam[nome][0]:
+                pior_cam[nome] = (d, f)
+    piores["camera_u1_m"], piores["camera_caixa_m"] = pior_cam["u1"], pior_cam["caixa"]
+    print("[coreografia] camera: distancia minima ao U1 = %.3f m (q%s), a caixa = %.3f m (q%s), fora da travessia"
+          % (pior_cam["u1"][0], pior_cam["u1"][1], pior_cam["caixa"][0], pior_cam["caixa"][1]))
     cena.frame_set(1)
     return piores

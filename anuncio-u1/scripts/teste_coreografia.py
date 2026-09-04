@@ -14,10 +14,13 @@
 #          com o ffmpeg do Blender -> saida/previa_20s.mp4 (NOME_VIDEO).
 #   nada   so constroi, coreografa e confere (rapido; para depurar).
 #
-# Outras variaveis: DURACAO_S (20 ou 15), CAIXA_SOME=0 (o U1 pousa na frente
-# da caixa em vez de ela afundar), U1_NOME=MeuU1 (exercita o modelo real com
-# um bloco), SONDA_VEL="160-200,260-300" (velocidade da camera por quadro,
-# m/quadro, para achar paradas fora de corte), PASSO_COLISAO.
+# Outras variaveis: DURACAO_S (25 padrao, 20 ou 15), CAIXA_SOME=0 (o U1 para no ar na
+# frente da caixa em vez de ela sumir por baixo), U1_NOME=MeuU1 (exercita o
+# modelo real com um bloco), SONDA_VEL="160-200,260-300" (velocidade da
+# camera por quadro, m/quadro, para achar paradas fora de corte),
+# SONDA_ENQ="40,75,150" (fracao da altura/largura do quadro que o U1 e a
+# caixa ocupam - a medida do "produto >= 60% da altura" da revisao 2; o
+# padrao sao os quadros de medicao pedidos), PASSO_COLISAO.
 #
 # Custo medido por software (llvmpipe, 4 nucleos): 16-41 s por quadro da cena
 # completa a 360x640 com 8 amostras (o previa.sh fala em 6 s: e para os
@@ -41,7 +44,7 @@ for m in (mod_ambiente, mod_caixa, mod_u1, mod_cabo, mod_cartela, mod_coreografi
 RAIZ = os.path.dirname(AQUI)
 SAIDA = os.environ.get("PASTA") or os.path.join(RAIZ, "saida")
 MODO = os.environ.get("MODO", "chave")
-DURACAO = float(os.environ.get("DURACAO_S", "20"))
+DURACAO = float(os.environ.get("DURACAO_S", "25"))
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 
@@ -128,6 +131,27 @@ for n, q in mod_coreografia.quadros_chave(objs["fator"]):
     a, b = mod_coreografia.quadros_do_beat(n, objs["fator"])
     print("[teste] beat %d: %d..%d  chave %d" % (n, a, b, q))
 mod_coreografia.conferir_colisoes(objs, passo=int(os.environ.get("PASSO_COLISAO", "1")))
+
+# Enquadramento (revisao 2): fracao da altura e da largura do 9:16 que o
+# envelope do U1 e o da caixa ocupam, por projecao dos cantos pela camera.
+# Padrao (25 s): meio do beat 1, caixa parada no fim dele, momento-heroi,
+# meio da orbita traseira, meio da orbita da frente (q372; q396 ja e o dolly
+# na tela), pico do U1 no beat 6,
+# caixa fechada no fim do beat 6 e apice do beat 7 - os mesmos instantes dos
+# q040/q075/q150/q218/q315/q466/q507 pedidos na linha do tempo de 20 s.
+quadros_enq = [int(v) for v in os.environ.get("SONDA_ENQ", "1,42,84,180,276,372,396,579,620,649").split(",") if v.strip()]
+mod_coreografia.medir_enquadramento(objs, quadros_enq)
+# A caixa tem de estar FORA do quadro no quadro em que parte (1), no ultimo
+# em que ainda e visivel ao sumir (beat 2) e no primeiro em que volta (beat 6).
+if params["caixa_some"] and "_q_caixa_some" in objs:
+    fora = mod_coreografia.medir_enquadramento(
+        objs, [1, objs["_q_caixa_some"] - 1, objs["_q_caixa_volta"]], alvos=("caixa",))
+    for q_, res in fora.items():
+        print("[teste] caixa em q%d: %s%s" % (q_, res["caixa"][2], "" if res["caixa"][2] == "fora" else "  <-- DEVIA ESTAR FORA"))
+    print("[teste] profundidades: partida %.2f m, saida %.2f m, volta %.2f m" % (
+        objs["profundidade_caixa"], objs["profundidade_saida"], objs["profundidade_volta"]))
+if objs.get("_obturador"):
+    print("[teste] obturador por chave: " + " ".join("q%d=%.2f" % (q_, v) for q_, v in objs["_obturador"]))
 
 # Sonda da camera nos quadros-chave: posicao no mundo, alvo e lente - e o
 # que diz se o enquadramento e o planejado antes de gastar um render.

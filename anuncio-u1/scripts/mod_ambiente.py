@@ -1,111 +1,88 @@
 # Modulo AMBIENTE do anuncio do Snapmaker U1.
 #
-# Entrega o "estudio": fundo em gradiente preto -> rose-branco, chao escuro
-# com reflexo suave, quatro luzes de estudio (key, fill, rim, top), a camera
-# principal com profundidade de campo, a configuracao de render (EEVEE Next,
-# AgX, motion blur, raytracing, bloom no compositor) e o FLASH de foto do
-# beat 5. So definicoes aqui - nada roda no import. Quem integra e
-# mod_coreografia.py; quem prova este modulo sozinho e teste_ambiente.py.
+# Entrega o "estudio": fundo infinito no WORLD (gradiente preto -> rose-branco
+# MESCLADO por manchas de ruido), SEM CHAO, quatro luzes de estudio (key,
+# fill, rim, top), a camera principal com profundidade de campo, a
+# configuracao de render (EEVEE Next, AgX, motion blur, raytracing, bloom no
+# compositor), o FLASH de foto do beat 5 e o obturador por chave (whoosh).
+# So definicoes aqui - nada roda no import. Quem integra e mod_coreografia.py;
+# quem prova este modulo sozinho e teste_ambiente.py.
 #
-# DECISAO: o gradiente vive no WORLD, nao num ciclorama.
+# REVISAO 2 (docs/ESPECIFICACAO.md, item 2): NAO EXISTE CHAO.
 #
-# A camera orbita 360 graus e o produto e metal e vidro: tudo o que esta
-# atras da camera aparece refletido no produto. Um ciclorama e uma parede:
-# tem borda, tem costura onde o chao encontra a curva, e ou ele envolve a cena
-# inteira (uma cupula, que e o world com mais passos) ou a camera, em alguma
-# fase da orbita, enxerga o fim dele - direto ou num reflexo. O world nao tem
-# borda. O gradiente aqui e funcao SO da ELEVACAO da direcao de visada (o Z
-# do vetor normalizado): e por isso que ele e identico em qualquer angulo da
-# orbita e identico no reflexo, porque reflexo tambem e uma direcao. Uma
-# faixa rose baixa em volta do horizonte, escurecendo rumo ao zenite - e o
-# fundo de estudio da Apple: um brilho atras do produto, nao um ceu branco.
+# O plano de 400 m, a fusao "chao infinito" e a sombra de contato sairam. Os
+# objetos flutuam num vazio e o fundo e so o world. O que isso muda por aqui:
+# - a silhueta do produto branco depende SO do rim e da key (nao ha mais chao
+#   escuro por tras da metade de baixo): teste_ambiente confere um cubo
+#   branco de 4 azimutes;
+# - a "poca" do reflexo do rim no chao, que obrigava a coreografia a zerar o
+#   specular_factor do rim nos planos largos, deixou de existir - a API
+#   (chavear_especular) fica, porque a coreografia a usa e nao faz mal;
+# - o gradiente precisa ser bonito em 360 graus, porque agora a camera VE o
+#   hemisferio de baixo (nao ha chao tapando) e o produto o reflete.
 #
-# A CURVA do gradiente e feita para a camera do anuncio, nao para o ceu
-# inteiro. A 35 mm em 9:16 ve 54 graus na vertical; olhando de leve para
-# baixo (8 a 18 graus), o topo do quadro fica entre 9 e 19 graus de elevacao.
-# As tres primeiras versoes so chegavam ao preto acima de ~35 graus, ou seja,
-# NUNCA dentro do quadro: o topo saia cinza (#C0B8B6 medido) e o brilho caia
-# no meio da imagem. Agora o brilho e MAXIMO no horizonte e abaixo dele, cai
-# pela metade a ~7 graus e e preto a ~15 graus - a faixa e estreita, e e por
-# isso que a forca pode ser alta (1,8) sem inundar a cena.
+# O GRADIENTE: direcao no ESPACO DE MUNDO, rose em cima, preto embaixo,
+# manchas em volta.
 #
-# A curva tem UM segmento de queda, de proposito. O ColorRamp em EASE faz um
-# smoothstep entre cada par de pontos, com derivada zero nos nos: com cinco
-# pontos na descida a previa mostrou dois "degraus" (patamares em 27 e 98 de
-# 255 no perfil da coluna) que o olho le como faixas. Um so segmento e uma so
-# curva em S, sem patamar. O rose: o AgX puxa cor clara para o branco, e o
-# #F4E6E4 saia #D8D1D0 com saturacao 0,04. Medido em grade (forca x
-# saturacao, so o world): forca 1,8 e saturacao 6 dao L 0,86 e saturacao
-# ~0,10 depois do AgX - abaixo disso e cinza, acima vira salmao.
+# 'Generated' no world e a direcao de visada normalizada em coordenadas do
+# mundo: nao depende de onde a camera esta, so de para onde o raio aponta -
+# e por isso o fundo e identico em qualquer angulo da orbita e identico no
+# reflexo (reflexo tambem e uma direcao). A rampa base e funcao do Z dessa
+# direcao (seno da elevacao): preto abaixo de 'elevacao'[0], rose acima de
+# 'elevacao'[1], smoothstep entre os dois. O padrao (-0,42 .. 0,05, ou seja,
+# -25 a +3 graus) poe a transicao no terco de cima do quadro de uma camera
+# que olha 15 a 25 graus para baixo, que e a camera do anuncio: rose atras da
+# metade de cima do produto e preto atras da de baixo.
+#
+# A MESCLA: um Noise Texture de grande escala sobre a mesma direcao
+# ('escala_manchas' = quantas manchas cabem no diametro da esfera; 2-3
+# oitavas = Detail 'oitavas_manchas' - 1, baixo contraste) e SOMADO ao fator
+# da rampa antes do ColorRamp. Onde a rampa esta no meio, o ruido empurra a
+# fronteira para cima e para baixo (dedos de preto entrando no rose e
+# vice-versa); onde ela satura, so a metade do ruido que aponta para a outra
+# cor tem efeito (manchas escuras no rose, manchas rose no preto). A
+# amplitude e 'mesclagem' (0 = rampa lisa, 1 = o ruido vale a rampa inteira)
+# vezes um peso que e cheio em volta do centro da transicao e cai, com a
+# distancia em Z a esse centro ('largura_manchas'), ate 'manchas_nos_polos'
+# no zenite e no nadir: as manchas vivem em volta da transicao e os polos
+# ficam quase puros - e o preto quase puro no nadir e o que mantem o texto
+# branco da cartela legivel.
+#
+# O AgX empalidece cor clara: o rose #F4E6E4 saia cinza (saturacao 0,04).
+# Compensa na cor do world ('saturacao_clara' 6,0, medido para ~0,10 de
+# saturacao no PNG), nao na paleta. 'forca_mundo' 1,8 leva o rose pleno a L
+# 0,86 depois do AgX.
 #
 # O world e DOIS Backgrounds, separados por Light Path -> Is Camera Ray:
-# - a camera ve o gradiente inteiro, com o rose tambem abaixo do horizonte
-#   (o chao infinito funde nele, ver abaixo);
-# - a iluminacao (o probe do EEVEE, que tambem e o fallback do raytracing)
-#   ve o mesmo gradiente acima do horizonte e PRETO abaixo dele. Abaixo do
-#   horizonte, no mundo real, ha o chao - mas o probe do EEVEE nao e
-#   ocluido por geometria, e um hemisferio inteiro de rose a 1,8 de forca
-#   iluminaria todo objeto por baixo. Como acima do horizonte as duas
-#   versoes sao iguais, o cromo reflete o mesmo ceu que a camera ve; abaixo
-#   dele o raio bate no chao (raytracing) ou cai no probe escuro, que e a
-#   cor que o chao teria de qualquer jeito.
+# 'fundo_camera' (o gradiente inteiro, Strength livre - e por ele que a
+# coreografia escurece so o que a camera ve no momento-heroi) e 'fundo_luz'
+# (o mesmo gradiente, Strength ligado a uma mascara que apaga o hemisferio de
+# baixo entre -30 e -9 graus). O probe do EEVEE nao e ocluido por geometria:
+# sem a mascara, o resto de rose das manchas de baixo iluminaria todo objeto
+# por baixo. Acima de -9 graus as duas versoes sao iguais, entao o cromo
+# reflete o mesmo ceu que a camera ve.
 #
-# O horizonte: o chao e um plano de 400 m e a borda dele cai a menos de 0,3
-# grau abaixo do horizonte verdadeiro. A linha que APARECIA nas previas nao
-# era a borda: era a curva, que valia 0,10 na elevacao zero e 1,0 a 7 graus -
-# uma faixa escura entre o brilho e o chao, e o chao infinito copiava
-# justamente essa cor escura. Fundo Apple nao tem horizonte. Agora a curva
-# tem o valor maximo no horizonte, e o "chao infinito" (longe da origem, 3 ->
-# 12 m, o material do chao vira emissao com a cor do horizonte e perde o
-# especular) funde no proprio brilho. De perto o chao e chao; de longe e o
-# brilho; a costura nao existe de nenhum angulo da orbita porque a camera
-# nunca sai de perto da caixa.
+# Banding: ruido fino (grao abaixo do pixel: escala 3000 = 0,019 grau, contra
+# 0,028 grau por pixel a 1920 de altura) de +-0,05% somado ao fator ANTES do
+# ColorRamp, e dither_intensity no maximo na saida. Medido na rodada 1: o
+# ruido do shader nesta amplitude nao muda nenhum numero do perfil; o dither
+# de saida e o que faz o servico (+-2 niveis por pixel). O teste procura
+# PATAMAR seguido de SALTO no perfil de uma coluna.
 #
-# Banding: o gradiente recebe um ruido fino (Noise Texture sobre a direcao,
-# +-0,05% no fator do ramp, grao abaixo do pixel: escala 3000 = 0,019 grau,
-# contra 0,028 grau por pixel a 1920 de altura) ANTES do ColorRamp, e o
-# render sai com dither_intensity no maximo. A versao anterior tinha grao de
-# 2-3 px e amplitude 12x maior, e aparecia como mosqueado no ceu - e por ser
-# deterministico nao sumia com mais amostras. Medido (world so, 540x960, com
-# e sem cada um): o ruido do shader nesta amplitude nao muda nenhum numero
-# do perfil; o dither de saida e o que faz o servico - poe +-2 niveis por
-# pixel e derruba os niveis distintos numa coluna de 157 para 142. Na parte
-# mais ingreme da curva a inclinacao e de 2 niveis por linha a 960 px (1 a
-# 1920), que e rampa, nao escada: o teste procura PATAMAR seguido de salto.
+# HISTORICO (rodada 1, ainda vale para as luzes): o ponto branco do quadro 1
+# era a luz DIFUSA do rim no chao ao pe do proprio painel (2,2 m de painel
+# centrado a 1,0 m atravessava o chao). O painel de 1,2 m a 1,4 m ficou: e a
+# altura em que o rim recorta a silhueta sem inundar a face frontal.
 #
-# RODADA 1 (revisao visual): o primeiro quadro do anuncio - chao vazio, camera
-# do beat 1 em (0, -2.2, 1.0) olhando (0, 0, 0.30) - tinha um ponto branco no
-# horizonte (69% da largura, 39% da altura) e uma faixa marrom mosqueada de
-# ~8% da altura entre o rose e o chao preto. A proposta era esconder top/key/
-# fill para achar a luz e zerar o specular_factor dela. Medido (cena vazia,
-# 360x640/8 amostras, scratchpad/amb2): esconder top, key ou fill NAO muda
-# nada (max L 0,322 nos quatro); esconder o rim ou zerar so o diffuse_factor
-# dele apaga o ponto (0,158, que e a borda do rose). O specular_factor do rim
-# ja era 0 nesse quadro. O ponto era a luz DIFUSA do rim no chao ao pe do
-# proprio painel: 2,2 m de altura centrado a 1,0 m e inclinado 11,5 graus
-# para baixo poe a borda inferior em z = -0,08 - o painel atravessava o chao,
-# e o pe dele cai exatamente onde a camera do beat 1 olha ((0,5, 2,6) no
-# chao). Abertura 20 graus nao muda nada (0,322 igual): o spread nao corta a
-# luz que sai rente ao painel. O que corta e geometria: painel de 1,2 m
-# centrado a 1,4 m (borda inferior a ~0,8 m do chao) deixa o ponto a 1 nivel
-# do rim escondido (0,159 contra 0,158); a 1,0 m com 1,0 m de painel ainda
-# ficavam 21 niveis, a 1,3 m ~10. Residuo que sobrar em plano largo se apaga
-# com chavear_fator_luz(rim, 'diffuse_factor', ...), que existe para isso.
-#
-# A faixa mosqueada tinha DUAS fontes, medidas por passa-alta na faixa
-# 26-40% (desvio horizontal de caixas de 12x6 px menos a media corrida, em
-# niveis de 8 bits): 0,85 no original; 0,52 sem o rim (a luz difusa dele
-# nesse trecho); 0,42 sem raytracing (o reflexo rasante do rose no chao
-# rugoso, que o denoise deixa em manchas - e nao converge: 0,56 a 32
-# amostras). Fusao do chao infinito (6, 30) -> (3, 12) tira o trecho da
-# zona rasante e cai para 0,17 com o rim novo; rugosidade 0,45 -> 0,6 no
-# trecho fundido cai para 0,10 - diferenca abaixo de um nivel de 8 bits, e
-# custaria o reflexo do produto perto da origem, entao a rugosidade ficou
-# em 0,45. A cor marrom da faixa e a do brilho (rose saturado 6x) a meia
-# forca - com a fusao curta ela nao tem mais onde aparecer.
+# OBTURADOR POR CHAVE (revisao 2, item 5 - estilo Instagram): o whoosh visual
+# e motion blur mais forte SO nos movimentos largos. render.motion_blur_shutter
+# aceita keyframe (medido no 4.2.5: SceneAction, interpola); animar_obturador
+# escreve base 0,5 e 'forte' 0,7 nos trechos que a coreografia pede, com
+# rampa LINEAR de 4 quadros nas bordas, e limpa a fcurve antes (idempotente).
 #
 # Eixos e medidas seguem docs/ESPECIFICACAO.md: metros, Z para cima, frente
-# em -Y (a camera padrao fica em -Y olhando +Y), chao em z = 0.
+# em -Y (a camera padrao fica em -Y olhando +Y). Nao ha chao; a origem (z = 0)
+# e so a referencia onde o produto "para no ar".
 
 import math
 
@@ -133,75 +110,80 @@ OFFSET_RIM_ATRAS = 90.0
 PARAMS_PADRAO = {
     "cor_escura": "#050507",
     "cor_clara": "#F4E6E4",
-    # Curva do gradiente: (fator, mistura). fator = (sen(elevacao) + 0,1) / 1,1:
-    # 0 = 5,7 graus abaixo do horizonte, 0,091 = horizonte, 1 = zenite;
-    # mistura 0 = preto, 1 = rose-branco. E dado, nao numero solto, para a
-    # coreografia poder pedir um fundo mais fechado num beat.
-    # Maximo no horizonte E abaixo dele (os dois primeiros pontos iguais a 1,0:
-    # e a cor que o chao infinito copia, ver cor_horizonte), e UM segmento em
-    # S ate o preto a 14,6 graus (0,34): metade a ~7 graus, 0,29 a 10 graus. A
-    # camera do anuncio, de leve para baixo, tem o topo do quadro entre 9 e 19
-    # graus: e ali que o preto tem de estar, nao a 35 graus como antes. Nao
-    # acrescente pontos no meio da descida: cada no do EASE vira um patamar.
-    "curva": ((0.0, 1.0), (0.09, 1.0), (0.34, 0.0), (1.0, 0.0)),
-    # Forca do Background que a CAMERA ve. Com a faixa estreita, 1,8 e o que
-    # leva o pico do brilho a L 0,86 depois do AgX (0,55 dava cinza).
+    # Rampa base por ELEVACAO: Z da direcao de visada (seno da elevacao) em
+    # que o fundo e preto puro e em que e rose pleno; smoothstep entre os
+    # dois. (-0,55, 0,20) = -33 a +12 graus, centro a -10: a transicao fica
+    # no terco de cima do quadro de uma camera que olha 15-25 graus para
+    # baixo (a do anuncio), rose atras da metade de cima do produto e preto
+    # atras da de baixo. Larga de proposito: as manchas empurram a fronteira
+    # e uma rampa estreita viraria borda dura. E dado, nao numero solto.
+    "elevacao": (-0.55, 0.20),
+    # Mescla por manchas (ver cabecalho): amplitude do ruido em fracao da
+    # rampa (0 = gradiente liso, 1 = o ruido vale a rampa inteira), escala
+    # (manchas por diametro da esfera de direcoes: 2 = manchas de ~60 graus),
+    # numero de oitavas (2 a 3, baixo contraste) e quanto da amplitude sobra
+    # no zenite e no nadir (o preto quase puro embaixo e o que segura a
+    # legibilidade da cartela).
+    # MEDIDO em grade (so o world, 270x480, 2 azimutes + cubemap): 0,45/2,2/
+    # 2,5 oitavas/rugosidade 0,5 interpenetrava em dedos finos (fumaca);
+    # 0,30/1,6/2 oitavas virava um horizonte ondulado (faixa de novo); 0,55/
+    # 1,8/2 oitavas/rugosidade 0,3 sobre a rampa larga da lobos suaves de
+    # ~60 graus com o rose predominando em cima. 0,7 ja invertia o quadro em
+    # alguns azimutes (blob preto cobrindo o topo).
+    "mesclagem": 0.55,
+    "escala_manchas": 1.8,
+    "oitavas_manchas": 2.0,
+    "rugosidade_manchas": 0.3,    # peso das oitavas finas (0 = so a grande)
+    # 0,3 deixava o nadir em L 0,166 no cubemap (criterio 0,15): 0,2.
+    "manchas_nos_polos": 0.2,
+    # Rampa base por elevacao: LINEAR (padrao) ou SMOOTHSTEP. Com smoothstep
+    # E o EASE da rampa final sao dois S encadeados e a borda dos lobos
+    # endurece; um S so (o final) deixa as manchas suaves.
+    "rampa_base": "LINEAR",
+    # Meia-largura (em Z) da zona em que as manchas tem amplitude cheia, em
+    # volta do centro da transicao; fora dela o peso cai (quadratico) ate
+    # 'manchas_nos_polos'. 0,8 leva o nadir e o zenite ao minimo.
+    "largura_manchas": 0.8,
+    # Interpolacao da rampa final (fator somado -> cor): EASE e um S que
+    # comprime os meios-tons (borda mais definida); LINEAR deixa a borda mais
+    # difusa. Um so segmento em qualquer caso (no intermediario vira degrau).
+    "interpolacao_final": "EASE",
+    # Forca do Background que a CAMERA ve: 1,8 leva o rose pleno a L 0,86
+    # depois do AgX (0,55 dava cinza).
     "forca_mundo": 1.8,
     # Forca da versao que ILUMINA (probe), como fracao de forca_mundo. 1,0 =
-    # o cromo reflete exatamente o ceu que a camera ve; a protecao contra a
-    # inundacao e o preto abaixo do horizonte, nao este numero.
+    # o cromo reflete exatamente o ceu que a camera ve acima da mascara.
     "forca_luz": 1.0,
+    # Mascara da versao que ilumina: Z em que ela e 0 e em que volta a 1
+    # (-30 a -9 graus). O probe nao e ocluido por geometria; sem isto o resto
+    # de rose das manchas de baixo iluminaria todo objeto por baixo.
+    "mascara_luz": (-0.50, -0.15),
     # O AgX empalidece cor clara: o rose #F4E6E4 saia cinza (saturacao 0,04
     # com 1,6). Compensa na cor do world, nao na paleta (a mesma licao da logo
     # no modulo caixa). 6,0 e o medido para ~0,10 de saturacao no PNG.
     "saturacao_clara": 6.0,
-    # Amplitude do ruido no fator do ramp. 0,0015 ainda dava degrau de 3,8
-    # niveis entre linhas vizinhas na parte ingreme da curva.
+    # Amplitude do ruido fino no fator do ramp (anti-banding). 0,0015 ainda
+    # dava degrau de 3,8 niveis entre linhas vizinhas na parte ingreme.
     "dither": 0.0005,
     "escala_dither": 3000.0,  # grao do ruido: abaixo do pixel a 1920 de altura
-    # Chao
-    "tamanho_chao": 400.0,
-    "cor_chao": "#08080A",
-    # Reflexo SUTIL: rugosidade 0,45 e especular 0,15 - com 0,35/0,2 as area
-    # lights ainda viravam pocas brancas no chao (luminancia media 0,66
-    # medida na frente; a meta e o chao escuro, com o produto "sentado").
-    "rugosidade_chao": 0.45,
-    "especular_chao": 0.15,
-    # Onde o chao comeca a virar o brilho do horizonte e onde termina (m da
-    # origem). A camera nunca passa de ~4 m da origem. Era (6, 30): entre 3 e
-    # 7 m o chao ainda era chao de verdade visto em angulo rasante, e o
-    # reflexo raytraced do rose nele saia em manchas marrons (ver cabecalho,
-    # rodada 1). Com (3, 12) esse trecho ja e emissao lisa.
-    "fusao_chao": (3.0, 12.0),
     # Luzes: posicao (m), tamanho (x, y em m), energia (W), cor. As posicoes
     # sao relativas ao rig, um Empty na origem que a coreografia gira junto
     # com a orbita - o rim so recorta a silhueta se ficar ATRAS do produto do
     # ponto de vista da camera, e "atras" muda a cada quadro numa orbita.
     "alvo_luzes": (0.0, 0.0, 0.42),
     "luzes": {
-        # 'abertura' e o spread da area light, em graus: e a colmeia do softbox.
-        # 180 (padrao) espalha luz de lado e enche o chao de reflexo; o rim
-        # com 40 graus recorta a silhueta sem pintar o chao na frente.
-        # 'especular' e o multiplicador de especular da luz (so EEVEE): abaixo
-        # de 1 a luz continua iluminando o difuso e reflete menos no chao.
+        # 'abertura' e o spread da area light, em graus: e a colmeia do softbox
+        # (o rim com 40 graus recorta a silhueta sem espalhar luz de lado).
+        # 'especular' e o multiplicador de especular da luz (so EEVEE).
         "key":  {"pos": (2.2, -2.4, 2.8), "tam": (2.0, 2.0), "energia": 350.0, "cor": (1.0, 0.95, 0.90), "abertura": 100.0},
         "fill": {"pos": (-3.0, -2.0, 1.6), "tam": (3.0, 3.0), "energia": 110.0, "cor": (0.90, 0.94, 1.0), "abertura": 120.0},
-        # O rim fica baixo (perto da altura do produto) e longe. O ponto onde
-        # o reflexo dele cai no chao esta a t = z_cam / (z_cam + z_luz) do
-        # caminho camera -> luz: com a camera a 0,75 m e o rim a 2,9 m era
-        # t = 0,21, uma poca branca a 1,9 m NA FRENTE do produto (quanto mais
-        # alto o rim, mais perto da camera cai a poca - o raciocinio anterior
-        # estava invertido). A 1,4 m, t = 0,35 e a poca cai em y ~ -1,0 com a
-        # camera a 3 m, sob a silhueta do produto nos planos em que o
-        # especular esta ligado (a coreografia o zera nos planos largos).
-        # 1,4 m e nao 1,0: com painel de 2,2 m centrado a 1,0 m a borda
-        # inferior atravessava o chao e a luz difusa ao pe dele era o ponto
-        # branco do quadro 1 (medido no cabecalho). 1,2 m de painel a 1,4 m
-        # deixa a borda a ~0,8 m do chao e o ponto a 1 nivel de 'rim
-        # escondido'.
-        # especular 0,6: o reflexo do rim no chao atras do produto era uma
-        # cunha branca na camera de cima; 0,6 o deixa como brilho, e o recorte
-        # no cromo e na aresta do cubo (que estava estourado) segue la.
+        # O rim fica baixo (perto da altura do produto) e longe: painel de
+        # 1,2 m centrado a 1,4 m, 40 graus de abertura. A posicao foi medida
+        # na rodada 1 contra o chao (a luz difusa ao pe de um painel de 2,2 m
+        # a 1,0 m era o ponto branco do quadro 1); sem chao o que importa e
+        # que dali ele recorta a aresta do produto branco sem inundar a face
+        # frontal, e o teste_ambiente confere isso nos 4 azimutes. Especular
+        # 0,6: acima disso o recorte na aresta do cubo estourava.
         "rim":  {"pos": (0.6, 2.8, 1.4), "tam": (0.3, 1.2), "energia": 350.0, "cor": (1.0, 1.0, 1.0), "abertura": 40.0, "especular": 0.6},
         "top":  {"pos": (0.0, 0.3, 3.6), "tam": (3.0, 3.0), "energia": 80.0, "cor": (1.0, 0.98, 0.96), "abertura": 100.0},
     },
@@ -338,6 +320,41 @@ def _apontar(obj, alvo):
 
 # ---------------------------------------------------------------- world
 
+def _map_range(nt, local, de, para, valor=None, suave=False):
+    no = nt.nodes.new("ShaderNodeMapRange")
+    no.location = local
+    no.inputs["From Min"].default_value = de[0]
+    no.inputs["From Max"].default_value = de[1]
+    no.inputs["To Min"].default_value = para[0]
+    no.inputs["To Max"].default_value = para[1]
+    if suave:
+        try:
+            no.interpolation_type = "SMOOTHSTEP"
+        except AttributeError:
+            pass
+    if valor is not None:
+        nt.links.new(valor, no.inputs["Value"])
+    return no
+
+
+def _ruido_na_direcao(nt, local, direcao, escala, detalhe, rugosidade):
+    """Noise Texture sobre a direcao de visada escalada: 'escala' = manchas por
+    diametro da esfera de direcoes. Devolve o socket Fac."""
+    esc = nt.nodes.new("ShaderNodeVectorMath")
+    esc.operation = "SCALE"
+    esc.location = local
+    esc.inputs["Scale"].default_value = escala
+    nt.links.new(direcao, esc.inputs[0])
+    ruido = nt.nodes.new("ShaderNodeTexNoise")
+    ruido.location = (local[0] + 200, local[1])
+    ruido.inputs["Scale"].default_value = 1.0
+    _entrada(ruido, "Detail", detalhe)
+    _entrada(ruido, "Roughness", rugosidade)
+    _entrada(ruido, "Distortion", 0.0)
+    nt.links.new(esc.outputs["Vector"], ruido.inputs["Vector"])
+    return ruido.outputs["Fac"]
+
+
 def _mundo(p):
     nome = NOME + ".mundo"
     mundo = bpy.data.worlds.get(nome)
@@ -350,111 +367,119 @@ def _mundo(p):
         nt.nodes.remove(no)
 
     saida = nt.nodes.new("ShaderNodeOutputWorld")
-    saida.location = (900, 0)
+    saida.location = (1100, 0)
 
-    # No world, 'Generated' e a direcao de visada normalizada, em coordenadas
-    # do mundo: o Z dela e o seno da elevacao. E a unica coordenada que nao
-    # depende de onde a camera esta - so de para onde o raio aponta.
+    # 'Generated' no world = direcao de visada normalizada, em coordenadas do
+    # MUNDO (nao da camera): e o que faz o fundo ser o mesmo em toda a orbita
+    # e o mesmo no reflexo do produto.
     coord = nt.nodes.new("ShaderNodeTexCoord")
-    coord.location = (-900, 0)
+    coord.location = (-1300, 0)
+    direcao = coord.outputs["Generated"]
     sep = nt.nodes.new("ShaderNodeSeparateXYZ")
-    sep.location = (-700, 0)
-    nt.links.new(coord.outputs["Generated"], sep.inputs["Vector"])
+    sep.location = (-1100, 0)
+    nt.links.new(direcao, sep.inputs["Vector"])
+    z = sep.outputs["Z"]
 
-    # O fator comeca 5,7 graus abaixo do horizonte (-0,10) para o brilho
-    # continuar por baixo dele - e la que o chao infinito funde no ceu.
-    faixa = nt.nodes.new("ShaderNodeMapRange")
-    faixa.location = (-500, 0)
-    faixa.inputs["From Min"].default_value = -0.10
-    faixa.inputs["From Max"].default_value = 1.0
-    faixa.inputs["To Min"].default_value = 0.0
-    faixa.inputs["To Max"].default_value = 1.0
-    nt.links.new(sep.outputs["Z"], faixa.inputs["Value"])
+    # Rampa base: preto abaixo de elevacao[0], rose acima de elevacao[1].
+    rampa = _map_range(nt, (-900, 0), p["elevacao"], (0.0, 1.0), z, suave=(p["rampa_base"] == "SMOOTHSTEP"))
 
-    # Dither: ruido fino sobre a direcao, somado ao fator antes do ramp.
-    escala = nt.nodes.new("ShaderNodeVectorMath")
-    escala.operation = "SCALE"
-    escala.location = (-700, -300)
-    escala.inputs["Scale"].default_value = p["escala_dither"]
-    nt.links.new(coord.outputs["Generated"], escala.inputs[0])
-    ruido = nt.nodes.new("ShaderNodeTexNoise")
-    ruido.location = (-500, -300)
-    ruido.inputs["Scale"].default_value = 1.0
-    _entrada(ruido, "Detail", 0.0)
-    _entrada(ruido, "Roughness", 0.0)
-    nt.links.new(escala.outputs["Vector"], ruido.inputs["Vector"])
-    amplitude = nt.nodes.new("ShaderNodeMapRange")
-    amplitude.location = (-300, -300)
-    amplitude.inputs["From Min"].default_value = 0.35
-    amplitude.inputs["From Max"].default_value = 0.65
-    amplitude.inputs["To Min"].default_value = -p["dither"]
-    amplitude.inputs["To Max"].default_value = p["dither"]
-    nt.links.new(ruido.outputs["Fac"], amplitude.inputs["Value"])
-    soma = nt.nodes.new("ShaderNodeMath")
-    soma.operation = "ADD"
-    soma.location = (-100, 0)
-    nt.links.new(faixa.outputs["Result"], soma.inputs[0])
-    nt.links.new(amplitude.outputs["Result"], soma.inputs[1])
+    # Manchas: ruido de grande escala (2-3 oitavas) mapeado para +-mesclagem,
+    # com peso cheio em volta do centro da transicao e caindo (quadratico na
+    # distancia em Z ao centro, 'largura_manchas') ate 'manchas_nos_polos'
+    # no zenite e no nadir. O Noise do Blender concentra o Fac em ~0,3..0,7;
+    # e essa faixa que vira +-1 antes de multiplicar pela amplitude.
+    fac = _ruido_na_direcao(nt, (-1100, -350), direcao, p["escala_manchas"],
+                            max(0.0, p["oitavas_manchas"] - 1.0), p["rugosidade_manchas"])
+    manchas = _map_range(nt, (-700, -350), (0.3, 0.7), (-1.0, 1.0), fac)
+    centro = 0.5 * (p["elevacao"][0] + p["elevacao"][1])
+    dist = nt.nodes.new("ShaderNodeMath")
+    dist.operation = "SUBTRACT"
+    dist.location = (-1100, -600)
+    nt.links.new(z, dist.inputs[0])
+    dist.inputs[1].default_value = centro
+    d2 = nt.nodes.new("ShaderNodeMath")
+    d2.operation = "MULTIPLY"
+    d2.location = (-900, -600)
+    nt.links.new(dist.outputs["Value"], d2.inputs[0])
+    nt.links.new(dist.outputs["Value"], d2.inputs[1])
+    l2 = max(1e-6, float(p["largura_manchas"])) ** 2
+    peso = _map_range(nt, (-700, -600), (0.0, l2), (p["mesclagem"], p["mesclagem"] * p["manchas_nos_polos"]),
+                      d2.outputs["Value"])
+    amplitude = nt.nodes.new("ShaderNodeMath")
+    amplitude.operation = "MULTIPLY"
+    amplitude.location = (-500, -350)
+    nt.links.new(manchas.outputs["Result"], amplitude.inputs[0])
+    nt.links.new(peso.outputs["Result"], amplitude.inputs[1])
 
-    # Uma so rampa preto -> rose faz a cor; a curva de mistura por elevacao
-    # fica numa segunda rampa em escala de cinza, para a cor e a forma do
-    # brilho serem ajustaveis separadas.
+    # Dither: ruido fino (grao abaixo do pixel) de +-dither, somado tambem.
+    fac_d = _ruido_na_direcao(nt, (-1100, -900), direcao, p["escala_dither"], 0.0, 0.0)
+    dither = _map_range(nt, (-700, -900), (0.35, 0.65), (-p["dither"], p["dither"]), fac_d)
+
+    soma1 = nt.nodes.new("ShaderNodeMath")
+    soma1.operation = "ADD"
+    soma1.location = (-300, 0)
+    nt.links.new(rampa.outputs["Result"], soma1.inputs[0])
+    nt.links.new(amplitude.outputs["Value"], soma1.inputs[1])
+    soma2 = nt.nodes.new("ShaderNodeMath")
+    soma2.operation = "ADD"
+    soma2.location = (-100, 0)
+    nt.links.new(soma1.outputs["Value"], soma2.inputs[0])
+    nt.links.new(dither.outputs["Result"], soma2.inputs[1])
+
+    # Forma final: um ColorRamp EASE de dois pontos (smoothstep sobre o fator
+    # somado, ja clampado em 0..1) - uma so curva em S, sem patamar no meio:
+    # cada no intermediario do EASE viraria um degrau (licao da rodada 1).
     forma = nt.nodes.new("ShaderNodeValToRGB")
     forma.location = (100, 0)
-    forma.color_ramp.interpolation = "EASE"
+    forma.color_ramp.interpolation = p["interpolacao_final"]
     pontos = forma.color_ramp.elements
     while len(pontos) > 1:
         pontos.remove(pontos[-1])
-    pontos[0].position = p["curva"][0][0]
-    pontos[0].color = (p["curva"][0][1],) * 3 + (1.0,)
-    for pos, mist in p["curva"][1:]:
-        e = pontos.new(pos)
-        e.color = (mist,) * 3 + (1.0,)
-    nt.links.new(soma.outputs["Value"], forma.inputs["Fac"])
+    pontos[0].position = 0.0
+    pontos[0].color = (0.0, 0.0, 0.0, 1.0)
+    e = pontos.new(1.0)
+    e.color = (1.0, 1.0, 1.0, 1.0)
+    nt.links.new(soma2.outputs["Value"], forma.inputs["Fac"])
 
     cor = nt.nodes.new("ShaderNodeMix")
     cor.data_type = "RGBA"
-    cor.location = (320, 0)
+    cor.location = (400, 0)
     cor.inputs["A"].default_value = cor_linear(p["cor_escura"])
     cor.inputs["B"].default_value = saturar(cor_linear(p["cor_clara"]), p["saturacao_clara"])
     nt.links.new(forma.outputs["Color"], cor.inputs["Factor"])
 
-    # Background da CAMERA: o gradiente inteiro.
+    # Background da CAMERA: o gradiente inteiro, Strength livre (a coreografia
+    # o escurece no momento-heroi). Nomeado, para quem procura nao depender
+    # de qual socket esta ligado.
     fundo_cam = nt.nodes.new("ShaderNodeBackground")
-    fundo_cam.location = (500, 100)
+    fundo_cam.name = fundo_cam.label = "fundo_camera"
+    fundo_cam.location = (700, 100)
     fundo_cam.inputs["Strength"].default_value = p["forca_mundo"]
     nt.links.new(cor.outputs["Result"], fundo_cam.inputs["Color"])
 
-    # Background da ILUMINACAO: o mesmo gradiente, apagado abaixo do horizonte
-    # (ver cabecalho: o probe nao e ocluido pelo chao, e um hemisferio de rose
-    # forte iluminaria tudo por baixo). A rampa de -0,04 a 0,0 e curta para a
-    # versao da luz ser identica a da camera em toda a faixa que o cromo
-    # reflete acima do horizonte.
-    mascara = nt.nodes.new("ShaderNodeMapRange")
-    mascara.location = (-500, 300)
-    mascara.inputs["From Min"].default_value = -0.04
-    mascara.inputs["From Max"].default_value = 0.0
-    mascara.inputs["To Min"].default_value = 0.0
-    mascara.inputs["To Max"].default_value = 1.0
-    nt.links.new(sep.outputs["Z"], mascara.inputs["Value"])
+    # Background da ILUMINACAO: o mesmo gradiente, apagado no hemisferio de
+    # baixo (ver cabecalho: o probe nao e ocluido, e o resto de rose das
+    # manchas de baixo iluminaria tudo por baixo).
+    mascara = _map_range(nt, (-900, 350), p["mascara_luz"], (0.0, 1.0), z, suave=True)
     forca_luz = nt.nodes.new("ShaderNodeMath")
     forca_luz.operation = "MULTIPLY"
-    forca_luz.location = (320, 300)
+    forca_luz.location = (400, 350)
     forca_luz.inputs[1].default_value = p["forca_mundo"] * p["forca_luz"]
     nt.links.new(mascara.outputs["Result"], forca_luz.inputs[0])
     fundo_luz = nt.nodes.new("ShaderNodeBackground")
-    fundo_luz.location = (500, 300)
+    fundo_luz.name = fundo_luz.label = "fundo_luz"
+    fundo_luz.location = (700, 350)
     nt.links.new(cor.outputs["Result"], fundo_luz.inputs["Color"])
     nt.links.new(forca_luz.outputs["Value"], fundo_luz.inputs["Strength"])
 
     # Is Camera Ray: 1 no render pela camera, 0 no probe do world (EEVEE e
     # Cycles). Se o no faltar em alguma versao, fica so a versao da camera -
-    # a cena inunda, mas nao fica preta.
+    # a cena fica um pouco mais clara por baixo, mas nao fica preta.
     try:
         caminho = nt.nodes.new("ShaderNodeLightPath")
-        caminho.location = (500, -200)
+        caminho.location = (700, -200)
         mistura = nt.nodes.new("ShaderNodeMixShader")
-        mistura.location = (700, 0)
+        mistura.location = (900, 0)
         nt.links.new(caminho.outputs["Is Camera Ray"], mistura.inputs["Fac"])
         nt.links.new(fundo_luz.outputs["Background"], mistura.inputs[1])
         nt.links.new(fundo_cam.outputs["Background"], mistura.inputs[2])
@@ -465,74 +490,35 @@ def _mundo(p):
     return mundo
 
 
-# ---------------------------------------------------------------- chao
+def forca_da_luz_do_mundo(mundo):
+    """Socket do multiplicador de forca do Background que ILUMINA
+    ('fundo_luz' x mascara): e por ele que a coreografia abaixa a luz do ceu
+    num trecho (o topo da caixa visto de cima no beat 7) sem mudar o que a
+    camera ve. None se o world nao tem a arvore esperada."""
+    if mundo is None or not mundo.use_nodes:
+        return None
+    no = mundo.node_tree.nodes.get("fundo_luz")
+    if no is None or not no.inputs["Strength"].is_linked:
+        return None
+    origem = no.inputs["Strength"].links[0].from_node
+    if origem.type == "MATH" and len(origem.inputs) > 1 and not origem.inputs[1].is_linked:
+        return origem.inputs[1]
+    return None
 
-def cor_horizonte(p):
-    """Cor linear do world na elevacao zero, ja com a forca - o que o chao copia.
 
-    Com a curva padrao (mistura 1,0 no horizonte) e a propria cor do brilho:
-    e assim que o chao infinito funde no brilho, sem faixa escura entre os dois.
-    """
-    escura = cor_linear(p["cor_escura"])
-    clara = saturar(cor_linear(p["cor_clara"]), p["saturacao_clara"])
-    m = p["curva"][0][1]
-    return tuple((escura[i] * (1 - m) + clara[i] * m) * p["forca_mundo"] for i in range(3)) + (1.0,)
-
-
-def _chao(col, p):
-    nome = NOME + ".chao"
-    t = p["tamanho_chao"] / 2.0
-    malha = bpy.data.meshes.new(nome)
-    malha.from_pydata([(-t, -t, 0), (t, -t, 0), (t, t, 0), (-t, t, 0)], [], [(0, 1, 2, 3)])
-    malha.update()
-    obj = bpy.data.objects.new(nome, malha)
-    col.objects.link(obj)
-
-    mat, nt, bsdf = _material(nome)
-    _entrada(bsdf, "Base Color", cor_linear(p["cor_chao"]))
-    _entrada(bsdf, "Metallic", 0.0)
-
-    # Chao infinito: 'fusao' vai de 0 (perto, chao de verdade) a 1 (longe,
-    # emissao com a cor do ceu no horizonte, sem especular). Coordenada de
-    # objeto e nao de camera, para o resultado nao depender de onde a camera
-    # esta - a orbita passa por todo lado.
-    coord = nt.nodes.new("ShaderNodeTexCoord")
-    coord.location = (-900, 300)
-    comp = nt.nodes.new("ShaderNodeVectorMath")
-    comp.operation = "LENGTH"
-    comp.location = (-700, 300)
-    nt.links.new(coord.outputs["Object"], comp.inputs[0])
-    fusao = nt.nodes.new("ShaderNodeMapRange")
-    fusao.location = (-500, 300)
-    fusao.inputs["From Min"].default_value = p["fusao_chao"][0]
-    fusao.inputs["From Max"].default_value = p["fusao_chao"][1]
-    fusao.inputs["To Min"].default_value = 0.0
-    fusao.inputs["To Max"].default_value = 1.0
-    try:
-        fusao.interpolation_type = "SMOOTHSTEP"
-    except AttributeError:
-        pass
-    nt.links.new(comp.outputs["Value"], fusao.inputs["Value"])
-
-    rug = nt.nodes.new("ShaderNodeMapRange")
-    rug.location = (-300, 400)
-    rug.inputs["To Min"].default_value = p["rugosidade_chao"]
-    rug.inputs["To Max"].default_value = 1.0
-    nt.links.new(fusao.outputs["Result"], rug.inputs["Value"])
-    nt.links.new(rug.outputs["Result"], bsdf.inputs["Roughness"])
-
-    esp = nt.nodes.new("ShaderNodeMapRange")
-    esp.location = (-300, 200)
-    esp.inputs["To Min"].default_value = p["especular_chao"]
-    esp.inputs["To Max"].default_value = 0.0
-    nt.links.new(fusao.outputs["Result"], esp.inputs["Value"])
-    if bsdf.inputs.get("Specular IOR Level") is not None:
-        nt.links.new(esp.outputs["Result"], bsdf.inputs["Specular IOR Level"])
-
-    _entrada(bsdf, "Emission Color", cor_horizonte(p))
-    nt.links.new(fusao.outputs["Result"], bsdf.inputs["Emission Strength"])
-    malha.materials.append(mat)
-    return obj
+def fundo_da_camera(mundo):
+    """Socket Strength do Background que so a CAMERA ve (o que a coreografia
+    escurece no momento-heroi): pelo nome 'fundo_camera'; num world de outra
+    origem, o Background cujo Strength nao esta ligado. None se nao ha."""
+    if mundo is None or not mundo.use_nodes:
+        return None
+    no = mundo.node_tree.nodes.get("fundo_camera")
+    if no is not None:
+        return no.inputs["Strength"]
+    for no in mundo.node_tree.nodes:
+        if no.type == "BACKGROUND" and not no.inputs["Strength"].is_linked:
+            return no.inputs["Strength"]
+    return None
 
 
 # ---------------------------------------------------------------- luzes
@@ -565,14 +551,13 @@ def _luz(col, nome_curto, cfg, rig, alvo):
 # ---------------------------------------------------------------- API
 
 def construir_ambiente(cena, colecao_pai=None, params=None):
-    """Cria world, chao, rig com 4 luzes na sub-colecao 'ambiente'."""
+    """Cria world (fundo infinito, sem chao) e rig com 4 luzes na sub-colecao 'ambiente'."""
     p = _mesclar(PARAMS_PADRAO, params)
     limpar_colecao(NOME)
     col = _colecao(cena, colecao_pai, NOME)
 
     mundo = _mundo(p)
     cena.world = mundo
-    chao = _chao(col, p)
 
     rig = bpy.data.objects.new(NOME + ".rig", None)
     rig.empty_display_type = "PLAIN_AXES"
@@ -590,14 +575,15 @@ def construir_ambiente(cena, colecao_pai=None, params=None):
     objs = {
         "colecao": col,
         "mundo": mundo,
-        "chao": chao,
+        # Nao ha chao (revisao 2). A chave fica, com None, para quem lia
+        # amb["chao"] nao quebrar.
+        "chao": None,
         "rig": rig,
         "alvo_luzes": alvo,
         "luzes": luzes,
         "flash": None,
         "cor_escura": p["cor_escura"],
         "cor_clara": p["cor_clara"],
-        "z_chao": 0.0,
         "params": p,
     }
     objs.update(luzes)
@@ -784,6 +770,49 @@ def configurar_render(cena, largura=1080, altura=1920, fps=30, amostras=64, para
     else:
         _ajustar(cena, "use_nodes", False)
     return p
+
+
+def animar_obturador(cena, trechos, base=0.5, forte=0.7, rampa=4):
+    """Motion blur mais forte SO nos movimentos largos: render.motion_blur_shutter
+    = 'forte' dentro de cada (q_ini, q_fim) de 'trechos', 'base' fora, com
+    rampa LINEAR de 'rampa' quadros nas bordas. Idempotente: a fcurve antiga
+    e removida antes. Devolve a lista de chaves (quadro, valor).
+
+    E o "whoosh visual" do estilo (revisao 2, item 5): o obturador aberto a
+    0,7 arrasta a caixa que sobe e a orbita; nas fotos e no close da tela,
+    0,5. Medido no 4.2.5: a propriedade aceita keyframe e interpola.
+    """
+    r = cena.render
+    ad = cena.animation_data
+    if ad is not None and ad.action is not None:
+        for fc in list(fcurves_de(ad)):
+            if fc.data_path == "render.motion_blur_shutter":
+                fcurves_de(ad).remove(fc)
+    chaves = [(1, base)]
+    for q_a, q_b in sorted(trechos):
+        chaves += [(q_a - rampa, base), (q_a, forte), (q_b, forte), (q_b + rampa, base)]
+    # Chave repetida no mesmo quadro (trechos encostados): a ultima vale.
+    ordenadas = {}
+    for q, v in chaves:
+        ordenadas[max(1, int(q))] = v
+    gravadas = []
+    for q, v in sorted(ordenadas.items()):
+        r.motion_blur_shutter = v
+        try:
+            r.keyframe_insert("motion_blur_shutter", frame=q)
+        except (RuntimeError, TypeError) as e:
+            # Versao sem a propriedade animavel: fica o valor base, sem whoosh.
+            print("[ambiente] obturador nao aceita chave:", e)
+            r.motion_blur_shutter = base
+            return []
+        gravadas.append((q, v))
+    for fc in fcurves_de(cena.animation_data):
+        if fc.data_path == "render.motion_blur_shutter":
+            for kp in fc.keyframe_points:
+                kp.interpolation = "LINEAR"
+            fc.update()
+    r.motion_blur_shutter = base
+    return gravadas
 
 
 def empacotar_imagens():
