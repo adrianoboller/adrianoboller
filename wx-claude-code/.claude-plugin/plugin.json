@@ -2,7 +2,7 @@
   "name": "wx-claude-code",
   "displayName": "WX Claude Code",
   "description": "Converte projetos WINDEV, WEBDEV e WINDEV Mobile (WLanguage) para outra linguagem, com evidencia e prova: questionario 0 e A-M, gates G0-G7, equipe WLanguage por tema do Help, dez papeis com PDCA, PMO, Impeccable, esqueleto de ERP. Legado PHP ou outra linguagem entra junto ou sozinho.",
-  "version": "3.22.1",
+  "version": "3.23.0",
   "author": {
     "name": "Adriano Boller"
   },

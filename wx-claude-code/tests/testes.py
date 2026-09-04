@@ -550,6 +550,52 @@ class Questionario(unittest.TestCase):
         r = run(SCRIPTS / "licenca.py", "maquina")
         self.assertEqual(r.returncode, 0, r.stderr)
 
+    def test_instaladores_existem_e_o_de_bash_roda_conferindo(self):
+        """Os dois instaladores no pacote, o de bash rodando de verdade em modo
+        conferencia. O de PowerShell nao roda aqui (nao ha PowerShell neste
+        ambiente): confere-se a estrutura, e a prova real fica pendente numa
+        maquina Windows -- o que depende do sistema operacional so se prova
+        contra o sistema operacional."""
+        sh = RAIZ / "instalar.sh"
+        ps = RAIZ / "instalar.ps1"
+        self.assertTrue(sh.is_file()); self.assertTrue(ps.is_file())
+        self.assertTrue(os.access(sh, os.X_OK), "instalar.sh precisa ser executavel")
+        self.assertEqual(subprocess.run(["bash", "-n", str(sh)], capture_output=True).returncode, 0, "sintaxe do instalar.sh")
+        r = subprocess.run(["bash", str(sh), "--conferir"], capture_output=True, text=True, timeout=300)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        for esperado in ("Pre-requisitos", "Corpus do Help", "Conferencia do pacote", "nada foi instalado", "Licenca"):
+            self.assertIn(esperado, r.stdout, esperado)
+        self.assertIn("skills, ", r.stdout)
+        # --conferir nao deixa rastro nem em /tmp (achado na prova real)
+        import glob
+        self.assertEqual(glob.glob("/tmp/wx-validacao*"), [], "--conferir deixou arquivo temporario para tras")
+        # opcao desconhecida para com codigo 2, em vez de fazer algo errado
+        r = subprocess.run(["bash", str(sh), "--nao-existe"], capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 2); self.assertIn("desconhecida", r.stderr)
+        # PowerShell: estrutura balanceada e os cinco passos presentes
+        texto = ps.read_text(encoding="utf-8")
+        for a, b in (("{", "}"), ("(", ")"), ("[", "]")):
+            self.assertEqual(texto.count(a), texto.count(b), f"{a}{b} desbalanceado no instalar.ps1")
+        self.assertEqual(texto.count('@"'), texto.count('"@'), "here-string do instalar.ps1")
+        for passo in ("1. Pre-requisitos", "2. Corpus", "3. Conferencia", "4. Instalacao", "5. Licenca"):
+            self.assertIn(passo, texto, passo)
+        self.assertIn("param(", texto); self.assertIn("$Conferir", texto)
+
+    def test_fontes_md_esta_em_dia(self):
+        """FONTES.md e inventario medido: se alguem acrescentar arquivo e nao rodar o
+        gerador, o documento passa a mentir sobre o pacote."""
+        atual = (RAIZ / "FONTES.md").read_text(encoding="utf-8")
+        alvo = Path(tempfile.mkdtemp()) / "FONTES.md"
+        r = run(RAIZ / "docs/dossie/gerar-fontes.py", alvo)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        gerado = alvo.read_text(encoding="utf-8")
+        # a data e o commit mudam sozinhos; o que importa e a tabela
+        def tabela(t):
+            return [l for l in t.splitlines() if l.startswith("|")]
+        self.assertEqual(tabela(atual), tabela(gerado),
+                         "FONTES.md desatualizado: rode python3 docs/dossie/gerar-fontes.py")
+        self.assertIn("| Instaladores |", atual)
+
     def test_skills_erp_presentes_com_descricao_curta(self):
         for nome in ("php-legado-e-destino", "pdf-para-markdown", "erp-accounting", "erp-inventory", "erp-brazil-fiscal", "erp-multi-company", "erp-approval-workflows", "erp-lgpd", "erp-integration-reliability", "windev-wlanguage-erp"):
             txt = (RAIZ / "skills" / nome / "SKILL.md").read_text()
