@@ -873,9 +873,16 @@ disso. É o `TEXTO_MAX` do §1.4.
   7%. E o teto de **vazão** dele, que é o número grande: **2,48×–2,99×**. §11.
 * ~~**A trava por tabela.**~~ **Respondida em 04/09**: ≈1,00× nas quatro
   medições (0,96 · 0,99 · 1,04 · 0,90). Não é a tabela que serializa. §11.
-* **O perfil de carga real.** A §3.1 mostra que a resposta muda com a razão
-  entre o tempo de leitura e o de escrita, e o número de hoje vem de um
-  `varrer(50)` contra um `inserir(1)`.
+* ~~**O perfil de carga real.**~~ **MEDIDO em 04/09, §13:** o teto do `RwLock`
+  fica em **~2,0×** com o `varrer` em limite 1, 10, 50 e 200 — uma faixa de
+  200× no número de linhas —, porque **o formato da leitura não muda o custo
+  dela**. A ressalva da §3.1 se aposenta, e pelo motivo errado: o alvo dela
+  estava certo (a leitura segura a trava ~20× mais) e a causa, não.
+* **Onde vão os ~4,8 ms dentro do caminho de LEITURA.** Achado ao fechar o
+  item acima: `inserir` paga trava global, `open` e caminho de escrita por
+  231 µs, e `varrer` de UMA linha custa 5.000 µs. Não é soquete, JSON,
+  despacho, trava nem `open` — o `inserir` paga todos. **Não medido, e não
+  estimado**; o `onde-doi-no-varrer` responde outra pergunta. §13.4.
 * ~~**O custo do `fsync` sob a trava, em milissegundos.**~~ **Medido em 03/09**:
   1.267–1.371 µs por gravação, 10,3× a 12,3× o tempo de trava de uma gravação
   sem ele. §7.1 aqui, e a bateria inteira na §14.1 do `DESEMPENHO.md`.
@@ -1283,3 +1290,81 @@ pendentes **depois** de todas sincronizarem, e o comentário diz que *«esta é 
 ordem que faz o group commit ser seguro, e ela não se inverte»*. Quebrar o laço
 em pedaços mexe nessa ordem, e é decisão de formato e durabilidade — do papel
 **C**, não desta medição.
+
+---
+
+## 13. A ressalva da §3.1, medida (04/09) — e ela se aposenta pelo motivo errado
+
+A §3.1 carrega desde 03/09 a ressalva que impede generalizar tudo o que veio
+depois dela:
+
+> «Os números comparam um `varrer` de **50 linhas** contra um `inserir` de
+> uma. Nessa forma a leitura custa 20× mais por operação e portanto segura a
+> trava 20× mais tempo — o que **favorece o `RwLock` por construção**. Isso não
+> invalida a medição; invalida generalizá-la.»
+
+Duas baterias limpas (07:48 e 07:57), com o `quieta.Vigia` aprovando as duas.
+Varia-se **uma** coisa — quanto trabalho uma leitura faz — com a escrita parada
+em `inserir` de uma linha. Corridas cruas em `corridas/perfil-*`.
+
+### 13.1 O teto do `RwLock` não se mexe
+
+| `varrer` com limite | 1 | 10 | 50 | 200 |
+|---|---:|---:|---:|---:|
+| A · razão ler/gravar | 21,7× | — | 23,8× | — |
+| B · razão ler/gravar | 20,5× | 20,9× | 20,6× | **20,3×** |
+| B · teto do `RwLock` | 2,00× | 2,01× | 2,01× | **2,11×** |
+
+**A ressalva se aposenta — e não do jeito que ela temia.** Ela supunha que o
+teto dependia do formato da leitura, e que uma carga de leitura barata o
+derrubaria. Medido: o teto fica em ~2,0× ao longo de uma faixa de **200× no
+número de linhas lidas**, porque *o formato da leitura não muda o custo dela*.
+
+**O alvo da §3.1 estava certo e a causa, errada:** a leitura de fato segura a
+trava ~20× mais que a escrita — isso se confirma. Só que **não é por causa das
+50 linhas**, e por isso não existe a «carga de leitura barata» que a ressalva
+imaginava como contraexemplo. É a terceira vez que esta casa encontra o par
+*alvo certo, causa errada* (o pedido 113 e a §12.1 são as outras duas).
+
+### 13.2 O que a comparação estreita, sem precisar de instrumento novo
+
+Os três caminhos, medidos na mesma bateria, pagam coisas em cascata:
+
+| operação | A | B | o que ela paga |
+|---|---:|---:|---|
+| `ping` | 97 µs | 92 µs | soquete + JSON + despacho, **sem** a trava de dados |
+| `inserir` 1 linha | 231 µs | 245 µs | tudo isso **+ trava global + abrir a tabela + gravar** |
+| `varrer` limite 1 | 5.000 µs | 5.025 µs | tudo isso + ler **uma** linha |
+| `varrer` limite 200 | — | 4.975 µs | tudo isso + ler **duzentas** |
+
+O `inserir` paga a trava global, a abertura da tabela e um caminho de escrita
+inteiro por **231 µs**. O `varrer` de **uma** linha paga as mesmas coisas e
+custa **5.000 µs**. Então os ~4,8 ms de diferença **não são** do soquete, nem
+do JSON, nem do despacho, nem da trava, nem do `open` — o `inserir` paga todos
+eles e custa 231 µs. Estão **dentro do caminho de leitura**, e não crescem com
+as linhas.
+
+### 13.3 E NÃO é o defeito que a §1.4 já conhece
+
+A §1.4 mostrou que o caminho **por índice** lê a tabela inteira e recorta a
+página depois, e que por isso o custo cresce com a tabela e não com a página.
+Seria natural ler esta seção como a mesma coisa por outra porta. **Não é.**
+
+O `varrer` desta bancada não manda `indice`, nem `depois`/`antes`, nem
+`desde_rownum`, e `pular` fica em 0 — então o `op_varrer` cai no **último**
+ramo, `pagina_por_posicao`, que é justamente o caminho **bom**, o que bisseta
+pelo `rownum`. O defeito da §1.4 está no ramo que esta medição não tocou.
+
+### 13.4 O que fica NOMEADO e não medido
+
+**Onde vão os ~4,8 ms dentro do caminho de leitura.** Não se estima aqui, e o
+medidor que parece servir **não serve**: o `--example onde-doi-no-varrer`
+responde outra pergunta — quanto de uma consulta **filtrada** de 2.500 linhas é
+varredura e quanto é transporte. Aqui a página tem **uma** linha e o custo já
+está inteiro.
+
+E vale dizer por que este item importa mais do que parece: com 3,1 ms de trava
+presa por leitura (§7.1) e a leitura sendo o que segura a trava, **qualquer
+desenho de trava — `RwLock` ou MVCC — está dividindo um bolo que talvez não
+precisasse existir.** O teto de 2,0× do `RwLock` é o teto de *tolerar* esses
+5 ms; encurtá-los mexe no numerador.

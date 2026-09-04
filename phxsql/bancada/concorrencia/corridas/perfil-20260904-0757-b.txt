@@ -1,0 +1,22 @@
+parada na tentativa 16 (carga 0.23)
+=== o teto do RwLock contra o FORMATO da carga ===
+    4 nucleos | 6s por rodada | varrer com limite em [1, 10, 50, 200], contra inserir de 1 linha
+
+-- a maquina estava quieta?
+   antes:  0% ocupada, ate 0 vizinho(s)
+   durante (12 amostras): 25% a 100% ocupada, mediana 26%, ate 0 vizinho(s)
+   depois: 1% ocupada, ate 0 vizinho(s)
+   controle: 10849 -> 9801 op/s
+   VEREDITO: quieta o bastante. Os numeros valem.
+
+-- o controle (`ping`, que nao toma a trava): 10849 -> 34367 op/s, ganho 3.17x
+-- a escrita com 1 cliente: 4088 op/s
+
+    limite   ler 1cli   ler 4cli    ganho   razao ler/gravar   teto RwLock
+         1        199        316    1.59x              20.5x         2.00x
+        10        195        308    1.58x              20.9x         2.01x
+        50        198        311    1.57x              20.6x         2.01x
+       200        201        302    1.50x              20.3x         2.11x
+
+
+[exited with code 0]
