@@ -598,13 +598,20 @@ fn a_mae_invisivel_nao_manda_reparar_indice_sao() {
 ///
 /// # O defeito, e por que ele e panico e nao erro
 ///
-/// `fks_conferidas` guarda INDICES para dentro de `esquema.chaves_estrangeiras()`.
+/// LEIA COMO HISTORIA: o campo `fks_conferidas` NAO EXISTE MAIS. Ele saiu numa
+/// refatoracao posterior, trocado por `fks_que_conferem(&self.esquema)`, que
+/// calcula na hora -- medido em `docs/PESQUISA-ESTADO-DERIVADO.md`, menos de
+/// 1 ns de diferenca. O relato abaixo esta no presente porque era o presente
+/// quando o defeito aconteceu, e historia reescrita vira mentira; o que nao
+/// pode ficar e a impressao de que se procura esse campo no codigo de hoje.
+///
+/// `fks_conferidas` guardava INDICES para dentro de `esquema.chaves_estrangeiras()`.
 /// O `redeclarar_chaves_estrangeiras` trocava `self.esquema` e nao refazia a
 /// lista -- entao um esquema com MENOS chaves deixava indice apontando para
 /// fora, e o `conferir_fks` seguinte estourava em `index out of bounds`.
 ///
 /// O irmao que faz certo esta cem linhas abaixo no mesmo arquivo: o
-/// `acrescentar_coluna` refaz `colunas_marcadas` e `fks_conferidas` logo depois
+/// `acrescentar_coluna` refazia `colunas_marcadas` e `fks_conferidas` logo depois
 /// de trocar o esquema. O metodo cujo trabalho E mexer nas chaves era o unico
 /// que nao refazia -- e e a quinta vez em 03/09/2026 que um mecanismo existe
 /// num caminho e falta no irmao.
