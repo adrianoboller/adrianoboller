@@ -28,12 +28,12 @@ Plugin do Claude Code que converte projetos WINDEV, WEBDEV e WINDEV Mobile para 
 | itens de K | 9 |
 | itens de L | 6 |
 | arquivos que o questionário pode gerar | 102 |
-| prints de sessões reais | 37 |
+| prints de sessões reais | 39 |
 | cenas do vídeo | 24 |
 | duração do vídeo | 3 min 07 s |
 | corpus do Help (bytes) | 26750976 |
 | páginas válidas do corpus | 12035 |
-| linhas do manual | 638 |
+| linhas do manual | 640 |
 | tabelas do exemplo ESTOQUE | 7 |
 
 ## O que foi provado em sessão real
