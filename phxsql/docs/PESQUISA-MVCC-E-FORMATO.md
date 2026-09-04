@@ -38,6 +38,33 @@ lado como **informação para o dono, não como veto**.
 
 ---
 
+> ## ⚠ A premissa de DESEMPENHO deste documento morreu medida (04/09, 06:03/06:13)
+>
+> Quem chegar aqui para justificar a Sombra tem de ler isto **antes** da §5.
+>
+> Duas baterias limpas de `escolher-o-desenho.py`, com o `quieta.Vigia`
+> aprovando as duas, mediram os tetos que faltavam. O teto que o relatório
+> imprime para o MVCC (leitor com um escritor ao lado contra o leitor sozinho)
+> deu 1,19×–1,38× — mas **parte desse custo é de haver qualquer segundo
+> cliente, e o `RwLock` já o recupera**. O que **só** o MVCC compra é a
+> diferença entre um escritor ao lado e outro leitor ao lado, e ela deu
+> **1,00× · 0,91× · 1,13× · 1,02×** — uma das corridas com o escritor **mais
+> barato** que o leitor. **Indistinguível do ruído.**
+>
+> Na mesma bancada o `RwLock` deu **2,48×–2,99×** de vazão de leitura, com
+> quatro medições da espera dentro de 7% umas das outras: o instrumento não é
+> cego a diferenças reais.
+>
+> **Então a Sombra não se justifica por velocidade.** O que sobra, e é real, é
+> a **leitura repetível** (§4.3 do `CONCORRENCIA.md`): uma varredura longa
+> enxerga hoje linhas gravadas no meio dela, e nenhum `RwLock` conserta isso —
+> ele torna os leitores simultâneos, não consistentes. É defeito de
+> **resultado**, não de tempo, e nenhum p99 o mostraria.
+>
+> Tudo o que este documento diz sobre **onde a versão velha mora** continua
+> valendo palavra por palavra: é trabalho de formato, e o formato não mudou.
+> O que mudou é **por que** se faria. `docs/CONCORRENCIA.md` §11.
+
 ## 0. O que este documento acrescenta
 
 O irmão já cobriu, e não se refaz aqui: as travas do WAL do SQLite, o buffer
