@@ -40,11 +40,20 @@ apagar() {
 # Um diretorio esta EM USO se algum processo vivo tem o `cwd` dentro dele. E a
 # mesma conferencia que se faz antes de matar um servidor por PID -- por
 # caminho real, nunca por nome de processo.
+# Devolve 0 se algum processo vivo tem `cwd` dentro de `dir`, e guarda em
+# QUEM_SEGURA o PID e o comando -- porque «esta em uso» sem dizer por quem
+# manda o leitor procurar um processo que ele nao sabe qual e.
+QUEM_SEGURA=""
 em_uso() {
   local dir=$1 p cw
+  QUEM_SEGURA=""
   for p in /proc/[0-9]*; do
     cw=$(readlink "$p/cwd" 2>/dev/null) || continue
-    case "$cw" in "$dir"|"$dir"/*) return 0 ;; esac
+    case "$cw" in
+      "$dir"|"$dir"/*)
+        QUEM_SEGURA="PID ${p##*/} ($(tr -d '\0' < "$p/comm" 2>/dev/null))"
+        return 0 ;;
+    esac
   done
   return 1
 }
@@ -65,7 +74,12 @@ done
 
 echo "-- arvore principal"
 if em_uso "$RAIZ"; then
-  echo "  compilando aqui agora, nao toco no target"
+  # Esta linha dizia «compilando aqui agora», e o que ela mede e outra coisa:
+  # que ALGUEM tem `cwd` aqui -- o que inclui o shell de quem esta lendo este
+  # relatorio. Afirmar compilacao sem medir compilacao e a mesma doenca do
+  # conferidor que diz «limpo» sem ter conferido nada: quem le vai procurar um
+  # build que nao existe. O que se sabe se diz; o que nao se sabe, nao.
+  echo "  alguem trabalha aqui ($QUEM_SEGURA), nao toco no target"
 else
   apagar "$RAIZ/target/debug" "reconstroi em minutos"
   # Alvo cruzado ja virou pacote: o zip esta em pacotes/, o objeto nao serve
