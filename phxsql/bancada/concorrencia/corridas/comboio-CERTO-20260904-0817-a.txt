@@ -1,0 +1,28 @@
+parada na tentativa 1 (carga 0.17)
+=== o comboio do fecho de janela ===
+    4 nucleos | 6s por rodada | 4 escritores fixos | K em [1, 2, 4]
+    leitor sempre em `quieta`, que ninguem escreve
+
+-- a maquina estava quieta?
+   antes:  3% ocupada, ate 1 vizinho(s)
+   durante (5 amostras): 26% a 100% ocupada, mediana 100%, ate 1 vizinho(s)
+   depois: 1% ocupada, ate 0 vizinho(s)
+   controle: 10227 -> 9988 op/s
+   VEREDITO: quieta o bastante. Os numeros valem.
+
+-- O ESCRITOR -- quem paga o comboio (us)
+    K sujas      media        p50        p99        PIOR     ops/s
+          1      871.2      856.0     3314.1     12516.6      4597
+          2      942.6      904.2     4724.5      9626.7      4260
+          4     1006.2      901.4     7449.9     13913.6      4013
+   K=4 contra K=1:  p99 2.25x   PIOR 1.11x   media 1.16x
+
+-- O LEITOR em `quieta` -- quem espera atras (us)
+    K sujas      media        p50        p99        PIOR     ops/s
+          1     1207.8     1022.4     3976.3      9784.0       827
+          2     1240.4     1029.4     5339.5      9529.1       805
+          4     1355.3     1050.2     7983.3     14615.0       737
+   K=4 contra K=1:  p99 2.01x   PIOR 1.49x   media 1.12x
+
+
+[exited with code 0]
