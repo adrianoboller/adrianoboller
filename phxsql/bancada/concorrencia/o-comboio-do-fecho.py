@@ -139,13 +139,23 @@ class Cliente:
         return r
 
 
+def pedido_de_leitura(tabela, linhas=50):
+    """O `varrer` que esta bancada mede.
+
+    Existe como funcao para que `quieta.confira_a_pagina` percorra o MESMO
+    caminho da medicao. Ate 04/09 esta bancada mandava `"limite"`, campo que o
+    `op_varrer` nao le, e toda leitura devolvia 1.000 linhas em vez de 50.
+    """
+    return {"op": "varrer", "database": "t", "tabela": tabela, "max": linhas}
+
+
 def trabalhador(papel, tabela, porta, segundos, fila):
     """PROCESSO e nao thread: com threads a GIL limitaria a vazao e o medidor
     «provaria» a serializacao do servidor medindo a de si mesmo."""
     c = Cliente(porta)
     c.call({"op": "login", "usuario": "root", "senha": SENHA})
     if papel == "ler":
-        p = {"op": "varrer", "database": "t", "tabela": tabela, "max": 50}
+        p = pedido_de_leitura(tabela)
     else:
         p = {"op": "inserir", "database": "t", "tabela": tabela,
              "linha": {"nome": "x"}}
@@ -227,6 +237,8 @@ def principal():
         c = Cliente(porta)
         c.call({"op": "login", "usuario": "root", "senha": SENHA})
         semear(c)
+        # A GUARDA, antes de qualquer numero: voltou o que se pediu?
+        quieta.confira_a_pagina(c.call, lambda n: pedido_de_leitura("quieta", n))
         # O controle ANTES: `ping` nao toma a trava de dados. Se ele se mover
         # entre as pontas, quem mudou foi a maquina e a bateria nao compara.
         vigia.controle_antes = so_ping(porta, vigia)
