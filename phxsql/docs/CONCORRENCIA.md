@@ -972,10 +972,25 @@ disso. É o `TEXTO_MAX` do §1.4.
   **cresceu** na carga certa: 2,25× e 2,13× no escritor, contra 1,70× e 1,84×.
   Refazer as outras duas não é formalidade — pode mudar o número para cima,
   como mudou aqui.
-* **Uma catraca para o mapa.** O `mapa-da-trava.py` está pronto para virar
-  guarda de QA — «nenhuma seção nova roda código do dono sob a trava», «o
-  número de seções que alcançam `fsync` só desce». Não entrou porque exigiria
-  mexer em `crates/`, que não é desta frente.
+* ~~**Uma catraca para o mapa.**~~ **FEITA em 04/09**, e a razão pela qual ela
+  não tinha entrado estava errada: *«exigiria mexer em `crates/`»* — não exige.
+  A régua é o próprio `mapa-da-trava.py`, que lê o fonte, e quem a roda é a
+  bateria de ponta a ponta, que já é Python. Hoje
+  `mapa-da-trava.py --catraca` guarda três tetos, e é o **item 0** da
+  `prova-bateria.py`, antes de qualquer servidor subir:
+
+  | catraca | teto | o que ela impede |
+  |---|---:|---|
+  | `codigo-do-dono` | **5** | código do dono do banco (gatilho `BEFORE`) sob a trava global |
+  | `alcancam-fsync` | **22** | o que um `RwLock` **não** conserta — 1,3 ms de trava presa cada (§7.1-bis) |
+  | `rede-ou-espera` | **0** | uma só já ata o servidor ao tempo de outra máquina |
+
+  **Ela desce e nunca sobe**, e reprova nos dois sentidos: medir mais que o teto
+  é alguém acrescentando o que a lei proíbe; medir menos também reprova, porque
+  quem melhorou tem de baixar o teto no **mesmo commit** — catraca frouxa não
+  segura nada. Provada nos dois sentidos com o teto deslocado. E se a régua um
+  dia passar a medir mais coisas, a catraca **aposenta e renasce** no número
+  medido do dia, como o `TETO_TABELA_NA_MAO`; ela não sobe.
 
 ---
 

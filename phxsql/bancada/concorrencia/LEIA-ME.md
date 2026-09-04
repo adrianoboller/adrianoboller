@@ -36,7 +36,15 @@ RODADAS=30 python3 bancada/concorrencia/ruido-do-controle.py         # o teto do
 RODADAS=40 RODADA_S=1.5 python3 bancada/concorrencia/ruido-do-controle.py --json
 
 python3 bancada/concorrencia/escolher-o-desenho.py --autoteste   # a conta do teto exclusivo
+python3 bancada/concorrencia/mapa-da-trava.py --catraca           # os tres tetos de QA
 ```
+
+**A catraca do mapa e a unica coisa desta pasta que roda sozinha**, como item 0
+da `bancada/bateria/prova-bateria.py` -- antes de qualquer servidor subir,
+porque e estatica. Ela guarda tres tetos: `codigo-do-dono` (5),
+`alcancam-fsync` (22) e `rede-ou-espera` (0). SO DESCE: medir mais reprova
+porque alguem acrescentou o que a lei proibe, e medir MENOS tambem reprova,
+porque quem melhorou baixa o teto no mesmo commit.
 
 **As corridas limpas ficam versionadas em `corridas/`**, com data e hora no
 nome. O medidor imprime e some; guardar a corrida crua e o que permite

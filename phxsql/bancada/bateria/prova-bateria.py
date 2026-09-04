@@ -821,6 +821,30 @@ def provar_pela_tela(tiros):
         falhas.append("a bateria da tela")
 
 
+def item_0_catraca_do_mapa():
+    """A catraca do mapa da trava, ANTES do servidor -- ela e estatica.
+
+    A §8 do docs/CONCORRENCIA.md pedia esta guarda desde 03/09, e a frente de
+    entao a deixou fora dizendo que exigiria mexer em `crates/`. Nao exige: a
+    regua e o `mapa-da-trava.py`, que le o fonte, e quem a roda e esta bateria,
+    que ja e Python.
+
+    Ela entra AQUI, e nao no fim, porque nao precisa de servidor nenhum -- e
+    porque uma secao critica nova que roda codigo do dono do banco sob a trava
+    global e defeito antes de qualquer teste de comportamento passar.
+    """
+    print("\n=== item 0: a catraca do mapa da trava ===")
+    mapa = os.path.join(AQUI, "..", "concorrencia", "mapa-da-trava.py")
+    r = subprocess.run([sys.executable, mapa, "--catraca"],
+                       capture_output=True, text=True)
+    for linha in r.stdout.splitlines():
+        if linha.strip():
+            print("  " + linha)
+    if r.returncode != 0 and r.stderr:
+        print("  " + r.stderr.strip()[:400])
+    confere("as tres catracas do mapa da trava seguram", r.returncode, 0)
+
+
 def main():
     if not os.path.exists(PHXSQLD):
         sys.exit(f"nao achei {PHXSQLD} -- rode `cargo build --release` antes")
@@ -833,6 +857,9 @@ def main():
     if "--tiros" in sys.argv:
         tiros = sys.argv[sys.argv.index("--tiros") + 1]
         os.makedirs(tiros, exist_ok=True)
+
+    # Estatica e sem servidor: roda antes de subir qualquer coisa.
+    item_0_catraca_do_mapa()
 
     srv = Servidor()
     resultados = {"quando": time.strftime("%Y-%m-%d"), "porta": PORTA}

@@ -643,7 +643,106 @@ def autoteste():
     return 0
 
 
+
+# ---------------------------------------------------------------- a catraca
+
+
+# AS TRES CATRACAS DO MAPA, com o defeito que cada uma existe para impedir.
+#
+# A §8 do docs/CONCORRENCIA.md pedia isto desde 03/09 e a frente de entao
+# nao a fez, dizendo que exigiria mexer em `crates/`. Nao exige: a regua e
+# este arquivo, e quem a roda e a bateria de ponta a ponta, que ja e Python.
+#
+# CATRACA SO DESCE. Medir MAIS que o teto reprova -- alguem acrescentou o que
+# a lei proibe. Medir MENOS tambem reprova, e isso e de proposito: quem
+# melhorou baixa o teto no MESMO commit, senao a catraca fica frouxa e para
+# de segurar. Catraca frouxa nao segura nada.
+#
+# E ela NUNCA sobe. Se a regua passar a medir mais coisas -- como ja
+# aconteceu com o TETO_TABELA_NA_MAO --, a catraca antiga se APOSENTA e
+# nasce outra, no numero medido do dia, dizendo no nome que substitui a
+# anterior. Perder a serie e mais barato que deixar «mudei a regua» virar a
+# porta pela qual se afrouxa um teto.
+CATRACAS = [
+    (
+        "codigo-do-dono",
+        5,
+        "secoes rodam codigo do DONO DO BANCO (gatilho BEFORE) com a trava "
+        "global na mao. Cada uma delas e um pedaco de codigo que nao e nosso "
+        "segurando o servidor inteiro; o teto de parede de 500 ms limita a "
+        "duracao, nao o numero.",
+    ),
+    (
+        "alcancam-fsync",
+        22,
+        "secoes alcancam `fsync` com a trava na mao. E o que um `RwLock` NAO "
+        "conserta -- o escritor continua exclusivo --, e cada uma nova e "
+        "1,3 ms de trava presa (§7.1-bis) que a proxima conexao espera.",
+    ),
+    (
+        "rede-ou-espera",
+        0,
+        "secoes esperam REDE com a trava global na mao. Este teto e zero e "
+        "nao e um numero como os outros: uma so ja ata o servidor inteiro ao "
+        "tempo de resposta de outra maquina.",
+    ),
+]
+
+
+def medir_para_a_catraca(secoes):
+    """Os tres numeros da catraca, contados do mesmo jeito que o relatorio.
+
+    Contados AQUI e nao lidos do texto impresso: catraca que le a propria
+    saida em texto quebra no dia em que alguem melhorar a redacao, e quebra
+    em silencio. E a mesma licao do «texto se resolve por CHAVE, nunca por
+    comparacao da frase».
+    """
+    def certas(s):
+        return {k for k, v in s["proprias"].items()
+                if v[0]["confianca"] >= CERTO}
+
+    return {
+        "codigo-do-dono": sum(1 for s in secoes if "usuario" in certas(s)),
+        "alcancam-fsync": sum(1 for s in secoes if "durabilidade" in certas(s)),
+        "rede-ou-espera": sum(1 for s in secoes
+                              if s["classe"] == "rede-ou-espera"),
+    }
+
+
+def catraca():
+    secoes, _, _ = mapear()
+    medido = medir_para_a_catraca(secoes)
+    print("=== a catraca do mapa da trava ===")
+    print(f"    {len(secoes)} secoes criticas no {ALVO.name}\n")
+    reprovou = False
+    for nome, teto, porque in CATRACAS:
+        agora = medido[nome]
+        if agora > teto:
+            estado, reprovou = "SUBIU", True
+        elif agora < teto:
+            estado, reprovou = "DESCEU -- BAIXE O TETO", True
+        else:
+            estado = "ok"
+        print(f"   {estado:<24} {nome:<16} {agora:>3} (teto {teto})")
+        if agora != teto:
+            print(f"        {porque}")
+            if agora > teto:
+                print("        Reprovado: a catraca nao sobe. Desfaca, ou "
+                      "traga o motivo ao dono.")
+            else:
+                print(f"        Melhorou. Ponha {agora} em CATRACAS, no mesmo "
+                      "commit -- catraca frouxa nao segura nada.")
+    print()
+    if reprovou:
+        print("REPROVADO.")
+        return 1
+    print("As tres catracas seguram.")
+    return 0
+
+
 def principal():
+    if "--catraca" in sys.argv:
+        return catraca()
     if "--autoteste" in sys.argv:
         print("=== as guardas do proprio medidor ===")
         return autoteste()
