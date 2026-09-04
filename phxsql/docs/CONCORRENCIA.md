@@ -879,8 +879,13 @@ disso. É o `TEXTO_MAX` do §1.4.
 * ~~**O custo do `fsync` sob a trava, em milissegundos.**~~ **Medido em 03/09**:
   1.267–1.371 µs por gravação, 10,3× a 12,3× o tempo de trava de uma gravação
   sem ele. §7.1 aqui, e a bateria inteira na §14.1 do `DESEMPENHO.md`.
-* **O comboio do fecho de janela**, que a medição de 03/09 deixou nomeado e não
-  medido. O `gravar_de_verdade` faz duas coisas quando a janela fecha: sincroniza
+* ~~**O comboio do fecho de janela**, que a medição de 03/09 deixou nomeado e não
+  medido.~~ **MEDIDO em 04/09, e é real:** o p99 cresce **1,70× e 1,84×** para
+  o escritor e **1,61× e 1,72×** para o leitor quando K vai de 1 a 4 — em duas
+  baterias limpas, monotonicamente nas quatro séries. O leitor está numa tabela
+  que ninguém escreve. A média dá 1,08×–1,17× e esconderia tudo. §12 aqui.
+  **Nem `RwLock` nem MVCC consertam isto**, e o texto abaixo continua descrevendo
+  o mecanismo. O `gravar_de_verdade` faz duas coisas quando a janela fecha: sincroniza
   a **própria** tabela e chama `descarregar_sujas_com`, que **reabre e sincroniza
   todas as outras sujas** — tudo com a trava global na mão. Com K tabelas sujas,
   o escritor azarado que fecha a janela segura o servidor por `K × (open +
@@ -1190,3 +1195,91 @@ com um ganho de desempenho que ninguém mediu.
 
 *Hipótese que morre medida é resultado tão válido quanto ganho, e é o que
 impede a mesma ideia de voltar sem medição.*
+
+---
+
+## 12. O comboio do fecho de janela, MEDIDO (04/09) — e ele é real
+
+A §8 deixou isto **nomeado e não medido**, e era a última hipótese em pé
+apontando para as 23 seções de `fsync` no padrão `por_lote`. Está medido, em
+duas baterias limpas (07:22 e 07:31), com o `quieta.Vigia` aprovando as duas.
+Corridas cruas em `bancada/concorrencia/corridas/comboio-*`.
+
+### 12.1 A premissa, conferida no fonte ANTES de virar medição
+
+`servidor.rs`, `gravar_de_verdade` — que já roda **com a trava global na mão**:
+
+```rust
+// A janela fechou: esta vai agora, e as outras da janela junto.
+t.sincronizar()?;
+if let Ok(mut s) = self.sujas.lock() { s.remove(&chave); }
+self.descarregar_sujas_com(dados);
+```
+
+E `descarregar_sujas_com` drena o conjunto inteiro e faz, **por tabela suja**,
+`abrir_database → abrir_qualificada → sincronizar` — um `open` mais um `fsync`
+cada, em laço, sem soltar a trava. O comentário dela já dizia o custo («um
+`open` por tabela, uma vez por janela»); o que faltava era **quanto isso
+aparece para quem está esperando**.
+
+*Alvo certo com causa errada já custou uma rodada aqui* — o pedido 113 — e por
+isso a premissa se lê no fonte antes de o medidor existir.
+
+### 12.2 O que o medidor segura parado, e por que isso decide tudo
+
+Se eu variasse o número de escritores, mediria **contenção** e chamaria de
+comboio. Então os escritores ficam **fixos em 4** e varia só **em quantas
+tabelas distintas eles escrevem**: K=1 (todos em `w0`), K=2 (dois e dois), K=4
+(um em cada). Mesma carga, mesmos clientes, mesmo número de `fsync` no total.
+
+E o leitor lê sempre `quieta`, **uma tabela que ninguém escreve** — para que a
+espera dele seja espera de **trava**, e não disputa pela própria tabela.
+
+### 12.3 O número
+
+| série | K=1 | K=2 | K=4 | K=4 ÷ K=1 |
+|---|---:|---:|---:|---:|
+| A · escritor, p99 | 5.011 µs | 6.153 | 8.494 | **1,70×** |
+| B · escritor, p99 | 4.645 µs | 6.125 | 8.542 | **1,84×** |
+| A · leitor, p99 | 6.985 µs | 8.036 | 11.243 | **1,61×** |
+| B · leitor, p99 | 6.474 µs | 8.584 | 11.157 | **1,72×** |
+| A · escritor, média | 1.446 µs | 1.491 | 1.561 | 1,08× |
+| B · escritor, média | 1.306 µs | 1.519 | 1.533 | 1,17× |
+
+**O p99 cresce com K nas quatro séries, monotonicamente, nas duas corridas.** E
+o leitor — que lê uma tabela que ninguém toca — passa de 6,5 ms para 11,2 ms
+só porque *outras* tabelas ficaram sujas. É o servidor inteiro parando, que é
+exatamente o que a trava global faz.
+
+**A média esconde, como a §8 previu:** 1,08× e 1,17×. Quem olhasse a média
+concluiria que não há nada aqui.
+
+### 12.4 O número que eu destaquei primeiro, e que a segunda corrida derrubou
+
+Na primeira corrida o **pior caso** saltou de 10,8 ms para 38,2 ms (3,53×) no
+escritor e de 9,7 para 36,2 ms (3,75×) no leitor, e foi **esse** o número que
+eu relatei primeiro. A segunda corrida deu 1,11× e 1,89×, e **não é monotônico
+em K em três das quatro séries**.
+
+O pior caso é **uma amostra**: ele diz que o comboio pode custar dezenas de
+milissegundos — o que é informação —, mas não sustenta um fator. *O p99 é o
+achado; o pior é a anedota que o p99 explica.* Fica escrito porque eu o
+publiquei antes de ter a segunda corrida, e apagar deixaria a lição perdida.
+
+### 12.5 O que isto decide
+
+**Aponta para o código de HOJE, e não para um desenho futuro.** Nem `RwLock`
+nem MVCC consertam o comboio: ele não é leitor-contra-escritor, é um escritor
+segurando a trava global por trabalho que **não é dele** — as tabelas dos
+outros. Um `RwLock` deixaria os leitores simultâneos e eles continuariam todos
+parados atrás do mesmo comboio.
+
+E o teto é o K de uma base real. Aqui K vale 4 e custa 1,7×; numa base com
+dezenas de tabelas ativas, K é dezenas.
+
+**O que NÃO se mediu aqui**, e não se estima: se soltar a trava entre uma
+tabela e a seguinte é seguro. O `descarregar_sujas_com` apaga as marcas
+pendentes **depois** de todas sincronizarem, e o comentário diz que *«esta é a
+ordem que faz o group commit ser seguro, e ela não se inverte»*. Quebrar o laço
+em pedaços mexe nessa ordem, e é decisão de formato e durabilidade — do papel
+**C**, não desta medição.
