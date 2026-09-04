@@ -74,6 +74,10 @@ nunca sobrescreve o que já existe.
   gerado recebe `docs/skills-recomendadas.md` com as que cabem nas respostas
   (`references/skills-sh.md`).
 
+- `php-legado-e-destino`: PHP nos dois sentidos — ler um sistema PHP legado
+  (procedural ou OOP, com as armadilhas que mudam o resultado convertido) e
+  gerar PHP 8.3 como destino, com a tabela WLanguage → PHP.
+
 ## Equipe WLanguage, balanceamento e PMO
 
 - **Sete especialistas WLanguage por tema do Help** (`wl-hfsql`, `wl-ui-controls`,
@@ -187,6 +191,7 @@ geradas por `docs/prints/gerar.md`).
 | ![equipe](docs/prints/29-equipe-prioritaria-pesquisador-e-status.png) equipe prioritária: infrutífero aciona o Pesquisador; status por agente sem inventar | ![rag](docs/prints/30-rag-e-guarda-de-anexos.png) RAG do projeto cita `arquivo#linha`; anexo somente leitura recusado |
 | ![corpus](docs/prints/31-corpus-no-claude-md-e-no-rag.png) o Help consultado por tema, com id e hash, a partir do `CLAUDE.md` gerado e do RAG | ![skills erp](docs/prints/32-skills-erp-listadas.png) as onze skills do plugin listadas numa sessão nova, oito delas de ERP |
 | ![esqueleto](docs/prints/33-esqueleto-erp-e-skill-por-modulo.png) esqueleto de ERP gerado por L6: módulo → skill, ADR lida, `erp-inventory` carregada e citada | ![skills.sh](docs/prints/34-skills-recomendadas-e-regras-absorvidas.png) skills do skills.sh que cabem nas respostas, tipos de dinheiro e data, STRIDE → SEC-* → teste |
+| ![artefatos](docs/prints/35-artefatos-e-skill-de-php.png) artefatos: arquivado ≠ declarado, o hash como prova, e a skill de PHP nas armadilhas do legado | |
 
 ## Hooks e RAG
 

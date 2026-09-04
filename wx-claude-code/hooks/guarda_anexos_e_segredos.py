@@ -39,6 +39,24 @@ def raiz_de_evidencias(inicio: Path) -> Path | None:
     return None
 
 
+def pasta_de_artefatos(cwd: Path) -> Path | None:
+    """A pasta de artefatos e somente leitura como os anexos: quem arquiva e o
+    arquivar_artefato.py, que confere segredo e calcula o hash. Editar o
+    CATALOGO.md a mao faria o catalogo mentir sobre o que esta la."""
+    for pasta in [cwd, *cwd.parents]:
+        if (pasta / ".wx-migration").is_dir():
+            q = pasta / ".wx-migration" / "questionario.json"
+            rel = "artefatos"
+            if q.is_file():
+                try:
+                    rel = ((json.loads(q.read_text(encoding="utf-8")).get("M_artefatos") or {}).get("pasta") or "artefatos").strip("./") or "artefatos"
+                except (OSError, json.JSONDecodeError):
+                    pass
+            alvo = (pasta / rel).resolve()
+            return alvo if alvo.is_dir() else None
+    return None
+
+
 def negar(motivo: str) -> int:
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": motivo}}, ensure_ascii=False))
     return 0
@@ -53,6 +71,7 @@ def main() -> int:
     ti = entrada.get("tool_input", {}) or {}
     cwd = Path(entrada.get("cwd", "."))
     raiz = raiz_de_evidencias(cwd)
+    artefatos = pasta_de_artefatos(cwd)
     if ferramenta in {"Write", "Edit", "MultiEdit", "NotebookEdit"}:
         caminho = ti.get("file_path") or ti.get("notebook_path") or ""
         if not caminho:
@@ -61,6 +80,8 @@ def main() -> int:
         alvo = (alvo if alvo.is_absolute() else cwd / alvo).resolve()
         if raiz and (alvo == raiz or raiz in alvo.parents):
             return negar(f"Anexo é somente leitura: {alvo.name} está na raiz de evidências ({raiz}). O que o plugin gera vai para .wx-migration/.")
+        if artefatos and (alvo == artefatos or artefatos in alvo.parents):
+            return negar(f"Artefato é somente leitura: {alvo.name} está em {artefatos.name}/. Para incluir um artefato use arquivar_artefato.py (confere segredo, calcula o hash e regrava o CATALOGO.md).")
         if re.fullmatch(r"\.env(\..+)?", alvo.name) and alvo.name != ".env.exemplo":
             return negar(f"Não se grava {alvo.name} pelo agente: o usuário preenche o .env a partir do .env.exemplo, fora do repositório.")
         conteudo = ti.get("content") or ti.get("new_string") or ti.get("new_source") or ""
@@ -69,15 +90,18 @@ def main() -> int:
         return 0
     if ferramenta == "Bash":
         cmd = ti.get("command") or ""
-        if raiz and DESTRUTIVO.search(cmd):
+        protegidas = [(raiz, "raiz de evidências", "anexos são somente leitura"),
+                      (artefatos, "pasta de artefatos", "use arquivar_artefato.py, que confere segredo e regrava o catálogo")]
+        if any(p for p, _, _ in protegidas) and DESTRUTIVO.search(cmd):
             for tok in re.findall(r"[\w./~-]+", cmd):
                 try:
                     p = Path(tok.replace("\\", "/"))
                     p = (p if p.is_absolute() else cwd / p).resolve()
                 except (OSError, ValueError):
                     continue
-                if p == raiz or raiz in p.parents:
-                    return negar(f"Comando escreve ou apaga dentro da raiz de evidências ({raiz}); anexos são somente leitura.")
+                for alvo, nome, porque in protegidas:
+                    if alvo and (p == alvo or alvo in p.parents):
+                        return negar(f"Comando escreve ou apaga dentro da {nome} ({alvo}); {porque}.")
         if re.search(r"\bgit\s+(add|commit)\b", cmd) and re.search(r"(^|[\s/])\.env(\.\w+)?(\s|$)", cmd) and ".env.exemplo" not in cmd:
             return negar("git add/commit de .env: segredo nunca entra no repositório.")
         if TOKEN.search(cmd):

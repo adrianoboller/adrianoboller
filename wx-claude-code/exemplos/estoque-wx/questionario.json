@@ -11,7 +11,15 @@
     "idioma": "pt-BR",
     "raiz_de_evidencias": "./inputs",
     "modo": "inventario",
-    "aprovador": "Adriano Boller"
+    "aprovador": "Adriano Boller",
+    "legado_php": {
+      "tem": false,
+      "raiz": "",
+      "versao": "",
+      "framework": "",
+      "estilo": "",
+      "observacao": "framework: laravel | symfony | codeigniter | wordpress | nenhum; estilo: procedural | oop | misto; raiz: pasta do codigo PHP dentro da raiz de evidencias"
+    }
   },
   "0_empresa_e_projeto": {
     "0_1_softhouse": {
@@ -689,5 +697,43 @@
       ],
       "observacao": ""
     }
+  },
+  "M_artefatos": {
+    "pasta": "./artefatos",
+    "itens": [
+      {
+        "arquivo": "anotacoes-da-reuniao-2026-09-01.txt",
+        "tipo": "anotacao",
+        "onde_usar": "G1: regras que o cliente ditou e nao estao no codigo; cada uma vira BR-* com origem nesta anotacao",
+        "descricao": "reuniao com o gerente de estoque sobre bloqueio de venda com saldo zero",
+        "origem": "cliente",
+        "confidencial": false
+      },
+      {
+        "arquivo": "classes-negocio.pdf",
+        "tipo": "classe-oop",
+        "onde_usar": "G2: as classes WLanguage de negocio; viram servicos por dominio em src/<modulo>/",
+        "descricao": "PDF com as classes CLS_Produto, CLS_Venda e CLS_Estoque",
+        "origem": "IDE do WINDEV",
+        "confidencial": false
+      },
+      {
+        "arquivo": "consultas-do-financeiro.sql",
+        "tipo": "query-sql",
+        "onde_usar": "G3: viram QRY-* na matriz e metodos de repositorio; resultado comparado com o legado",
+        "descricao": "quatro consultas que o financeiro roda fora do sistema",
+        "origem": "cliente",
+        "confidencial": false
+      },
+      {
+        "arquivo": "modelo-posicao-de-estoque.pdf",
+        "tipo": "relatorio",
+        "onde_usar": "G5: RPT-001; o PDF gerado e comparado pagina a pagina com este",
+        "descricao": "relatorio de posicao impresso pelo legado, com os totais",
+        "origem": "legado",
+        "confidencial": false
+      }
+    ],
+    "observacao": ""
   }
 }

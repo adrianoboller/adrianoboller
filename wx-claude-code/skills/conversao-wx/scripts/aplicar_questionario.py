@@ -654,6 +654,7 @@ MAPA_BACKEND = {
     "csharp-wl": ("C# + WL_C#", ["metodos estaticos com o mesmo nome da funcao WLanguage quando existe na WL_C#", "classes C# quase um para um", "esquema PostgreSQL ou SQL Server; Entity Framework (HFSQL nao esta na WL_C#)", "repositorio por arquivo; leitura por chave vira LINQ", "uma funcao por query .WDR", "API por caso de uso ou Blazor", "QuestPDF ou Report Viewer", "WL_C# com o mesmo nome (Left, DateSys, fFileExist...)"]),
     "go": ("Go", ["funcoes por dominio", "structs", "esquema PostgreSQL; ORM da pilha", "repositorio por arquivo", "uma funcao por query", "API por caso de uso", "biblioteca da pilha", "biblioteca padrao"]),
     "java": ("Java", ["servicos por dominio", "classes", "esquema PostgreSQL; JPA", "repositorio por arquivo", "uma funcao por query", "API por caso de uso", "JasperReports", "biblioteca padrao"]),
+    "php": ("PHP 8.3", ["metodos de servico por dominio, strict_types em todo arquivo", "classes PHP; heranca so a que existe", "esquema PostgreSQL ou MySQL por migrations", "repositorio por entidade, sempre com parametro ligado", "metodo de repositorio com SQL explicito", "rota + controller por caso de uso", "template renderizado a PDF, comparado pagina a pagina", "biblioteca padrao e Composer com versao fixada"]),
     "node": ("Node", ["servicos por dominio em TypeScript", "classes", "esquema PostgreSQL; Prisma ou TypeORM", "repositorio por arquivo", "uma funcao por query", "API por caso de uso", "biblioteca da pilha", "biblioteca padrao"]),
 }
 PECAS = ["Procedures globais e locais", "Classes WLanguage", "Analise HFSQL", "HReadSeek*/HAdd/HModify e navegacao", "Queries .WDR", "Janelas e paginas", "Relatorios .WDE", "Funcoes de string, data, arquivo, JSON"]
@@ -1032,6 +1033,7 @@ def esboco_ambiente(k: dict, e: dict) -> str:
 DOCKERFILES = {
     "rust": "FROM rust:1-slim AS build\nWORKDIR /app\nCOPY . .\nRUN cargo build --release --locked\n\nFROM debian:bookworm-slim\nRUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*\nCOPY --from=build /app/target/release/{bin} /usr/local/bin/{bin}\nEXPOSE {porta}\nHEALTHCHECK CMD curl -fsS http://localhost:{porta}{health} || exit 1\nCMD [\"{bin}\"]\n",
     "python": "FROM python:3.12-slim\nWORKDIR /app\nCOPY requirements.txt .\nRUN pip install --no-cache-dir -r requirements.txt\nCOPY . .\nEXPOSE {porta}\nHEALTHCHECK CMD python -c \"import urllib.request; urllib.request.urlopen('http://localhost:{porta}{health}')\" || exit 1\nCMD [\"uvicorn\", \"app.main:app\", \"--host\", \"0.0.0.0\", \"--port\", \"{porta}\"]\n",
+    "php": "FROM composer:2 AS vendor\nWORKDIR /app\nCOPY composer.json composer.lock ./\nRUN composer install --no-dev --no-scripts --no-interaction --prefer-dist\n\nFROM php:8.3-fpm-alpine\nRUN docker-php-ext-install pdo_pgsql opcache\nWORKDIR /app\nCOPY --from=vendor /app/vendor ./vendor\nCOPY . .\nEXPOSE {porta}\nHEALTHCHECK CMD php -r \"exit(@file_get_contents('http://localhost:{porta}{health}') === false ? 1 : 0);\"\nCMD [\"php\", \"-S\", \"0.0.0.0:{porta}\", \"-t\", \"public\"]\n",
     "csharp-wl": "FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build\nWORKDIR /src\nCOPY . .\nRUN dotnet publish -c Release -o /out\n\nFROM mcr.microsoft.com/dotnet/aspnet:8.0\nWORKDIR /app\nCOPY --from=build /out .\nEXPOSE {porta}\nENV ASPNETCORE_URLS=http://+:{porta}\nCMD [\"dotnet\", \"{bin}.dll\"]\n",
     "node": "FROM node:22-alpine\nWORKDIR /app\nCOPY package*.json ./\nRUN npm ci --omit=dev\nCOPY . .\nRUN npm run build\nEXPOSE {porta}\nCMD [\"npm\", \"start\"]\n",
     "go": "FROM golang:1.23 AS build\nWORKDIR /src\nCOPY . .\nRUN CGO_ENABLED=0 go build -o /out/{bin} ./...\n\nFROM gcr.io/distroless/static\nCOPY --from=build /out/{bin} /{bin}\nEXPOSE {porta}\nCMD [\"/{bin}\"]\n",
@@ -1107,6 +1109,8 @@ def index_files(q: dict, projeto: Path) -> str:
     raiz = p.get("raiz_de_evidencias", "./inputs")
     fixos = [
         ("CLAUDE.md", "regras do projeto; leia primeiro"),
+        ("artefatos/CATALOGO.md", "o que o cliente mandou por fora, por tipo, com onde usar e hash; regravado por arquivar_artefato.py"),
+        ("artefatos/LEIA-ME.md", "como submeter um artefato e por que a pasta é somente leitura"),
         ("INDEX_FILES.md", "este mapa; regravado a cada aplicação do questionário"),
         ("DESIGN.md", "sistema de design: tela modelo, botões, cores, fundo (letra F)"),
         ("PRODUCT.md", "quem opera e em que condições (F1)"),
@@ -1163,6 +1167,34 @@ def index_files(q: dict, projeto: Path) -> str:
           "- Corpus WLanguage 12k do plugin, por tema: `query_wlanguage_help.py --group GG-SS-TT --query …` (semântica técnica, nunca regra de negócio).",
           "- Perfis e processo de conversão: `references/perfis-de-destino.md` do plugin.",
           "- Documentos deste projeto: os de `.wx-migration/` acima; procure por id (`BR-012`, `GAP-003`) antes de ler inteiro.", ""]
+    return "\n".join(L)
+
+
+def leia_me_artefatos(q: dict, pasta: str) -> str:
+    """Instrucoes da pasta de artefatos. O CATALOGO.md e do arquivar_artefato.py;
+    aqui fica so o que nao muda a cada submissao, para nao haver dois donos do
+    mesmo arquivo."""
+    m = q.get("M_artefatos") or {}
+    itens = m.get("itens") or []
+    L = [f"# {pasta}/ — artefatos submetidos", "",
+         "O que o cliente manda fora da evidência do projeto WX: anotação de reunião, PDF com as classes OOP, `.sql` de consultas, modelo de relatório impresso, manual, contrato de API, código PHP, dado de amostra.",
+         "", "## Como submeter", "",
+         "Um por vez, sempre pelo script (nunca copiando à mão): ele confere segredo, calcula o SHA-256, recusa sobrescrever um arquivo já arquivado com outro conteúdo, e regrava `CATALOGO.md` e `registro.json`.", "",
+         "```bash", 'python3 "${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/arquivar_artefato.py" \\',
+         "  --project-root . --arquivo ~/notas-da-reuniao.txt \\",
+         '  --tipo anotacao --onde-usar "G1: regras ditadas pelo cliente; cada uma vira BR-*" \\',
+         '  --descricao "reunião de 01/09 com o gerente" --origem cliente \\',
+         "  --questionario .wx-migration/questionario.json", "```", "",
+         "`--onde-usar` é obrigatório: artefato sem destino declarado vira arquivo que ninguém abre. `--confidencial` marca o que não pode ser copiado para documento gerado nem para resposta — cita-se o arquivo, não o conteúdo.", "",
+         "## Regras desta pasta", "",
+         "- **Somente leitura para o agente.** Um hook recusa escrita aqui; só o script arquiva.",
+         "- **`CATALOGO.md` e `registro.json` não se editam**: saem do script, dos fatos.",
+         "- **Nenhum segredo.** O script recusa arquivo de texto com token ou chave privada; senha nunca em texto puro, nem dentro de um anexo.",
+         "- **Não confunda com `inputs/`**: lá fica a evidência do projeto WX que o G0 inventaria; aqui, o que o cliente mandou por fora.", ""]
+    if itens:
+        L += ["## Declarados no questionário (bloco M)", "", "| arquivo | tipo | onde usar |", "| --- | --- | --- |"]
+        L += [f"| `{i.get('arquivo','')}` | `{i.get('tipo','')}` | {i.get('onde_usar','')} |" for i in itens]
+        L += ["", "Estes vieram do `questionario.json`. O que já foi arquivado aparece em `CATALOGO.md` com o hash; o que está só aqui ainda precisa ser submetido pelo script.", ""]
     return "\n".join(L)
 
 
@@ -1247,6 +1279,15 @@ def main() -> int:
         sys.path.insert(0, str(Path(__file__).resolve().parent))
         import esqueleto_erp  # noqa: E402
         claude_md = claude_md.rstrip("\n") + "\n\n" + esqueleto_erp.secao_claude_md(q)
+    _m = q.get("M_artefatos") or {}
+    if _m.get("itens"):
+        _p = (_m.get("pasta") or "./artefatos").strip("./") or "artefatos"
+        _linhas = "\n".join(f"| `{i.get('arquivo','')}` | `{i.get('tipo','')}` | {i.get('onde_usar','')} |" for i in _m["itens"])
+        claude_md = claude_md.rstrip("\n") + "\n\n## Artefatos submetidos\n\n" + \
+            f"{len(_m['itens'])} artefatos **declarados** no questionário, fora da evidência do WX. Declarado não é arquivado: o que já foi submetido está em `{_p}/CATALOGO.md`, com o hash de cada arquivo. " + \
+            f"O que aparece só na tabela abaixo ainda **não existe em `{_p}/`** — não use nem cite o conteúdo dele; peça a submissão por `arquivar_artefato.py`. " + \
+            "A pasta é **somente leitura**: um hook recusa escrita, e só o script arquiva. Artefato marcado confidencial se cita pelo nome, nunca copiando o conteúdo.\n\n" + \
+            "| arquivo | tipo | onde usar |\n| --- | --- | --- |\n" + _linhas + "\n"
     if q.get("J_economia_de_tokens", {}).get("ativar") and q["J_economia_de_tokens"].get("instalar_estilo_no_claude_md", True):
         claude_md = claude_md.rstrip("\n") + "\n" + ESTILO_DE_RESPOSTA
     saida.append(write_new(projeto / "CLAUDE.md", claude_md))
@@ -1344,6 +1385,21 @@ def main() -> int:
         gi = projeto / ".gitignore"
         if not gi.exists():
             saida.append(write_new(gi, "# nunca versionar segredos nem gerados\n.env\n.env.*\n!.env.exemplo\n.claude/settings.local.json\n__pycache__/\n*.pyc\ntarget/\nnode_modules/\n.claude/worktrees/\n"))
+
+    # Artefatos (bloco M): a pasta e o LEIA-ME saem daqui; o CATALOGO.md e o
+    # registro.json sao do arquivar_artefato.py, que e quem conhece os hashes.
+    m = q.get("M_artefatos") or {}
+    if m:
+        art = (projeto / (m.get("pasta") or "./artefatos")).resolve()
+        if projeto.resolve() not in art.parents:
+            raise ValueError(f"M_artefatos.pasta {m.get('pasta')!r} tem de ficar dentro do projeto")
+        art.mkdir(parents=True, exist_ok=True)
+        saida.append(write_new(art / "LEIA-ME.md", leia_me_artefatos(q, art.name)))
+        for tipo in sorted({(i.get("tipo") or "outro") for i in (m.get("itens") or [])}):
+            if not re.fullmatch(r"[a-z][a-z-]{1,30}", tipo):
+                raise ValueError(f"M_artefatos: tipo {tipo!r} invalido")
+            (art / tipo).mkdir(exist_ok=True)
+            saida.append(write_new(art / tipo / ".gitkeep", ""))
 
     # As respostas legiveis: regravadas sempre, porque sao renderizacao do JSON.
     resp = wx / "respostas_questionario.md"

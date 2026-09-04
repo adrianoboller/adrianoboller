@@ -117,6 +117,27 @@ Ele imprime a versão instalada de cada ferramenta pedida contra a mínima, e de
 
 Com L6 = sim, cada módulo do 0.8 ganha `docs/domain/<módulo>.md` e `src/<módulo>/` e o `CLAUDE.md` diz qual das oito skills `erp-*` do plugin orienta aquele módulo (contabilidade → `erp-accounting`, estoque → `erp-inventory`, fiscal → `erp-brazil-fiscal`…); nada disso é sobrescrito ao reaplicar. Índice das skills em `skills/LEIA-ME-erp.md`. O esqueleto inclui STRIDE, OpenAPI, AsyncAPI, ERD, dicionário de dados e runbooks, e `docs/skills-recomendadas.md` lista as skills externas do skills.sh que cabem nas respostas (o plugin não as instala).
 
+**M) Artefatos e anotações.** Depois de L, e sempre que o cliente mandar algo novo. É o que chega **fora** da evidência do WX: anotação de reunião, PDF com as classes OOP, `.sql` de consultas soltas, modelo de relatório impresso, manual, contrato de API, código PHP, dado de amostra.
+
+| Item | Pergunta | Onde vai parar |
+| --- | --- | --- |
+| M | **Tem anotação, .txt ou arquivo solto para mandar?** Um por vez: o que é, de que tipo, e **onde usar** (em que gate e em que arquivo do destino aquele artefato entra) | `artefatos/<tipo>/`, `artefatos/CATALOGO.md`, bloco M do `questionario.json`, seção «Artefatos submetidos» do `CLAUDE.md` |
+
+Tipos aceitos: `anotacao`, `classe-oop`, `query-sql`, `relatorio`, `regra-de-negocio`, `tela`, `manual`, `contrato-de-api`, `codigo-php`, `dado-de-amostra`, `outro`.
+
+Cada artefato é submetido pelo script, nunca copiado à mão:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/arquivar_artefato.py" \
+  --project-root . --arquivo ~/notas-da-reuniao.txt \
+  --tipo anotacao --onde-usar "G1: regras ditadas pelo cliente; cada uma vira BR-*" \
+  --descricao "reunião de 01/09" --questionario .wx-migration/questionario.json
+```
+
+O script confere segredo (recusa arquivo de texto com token ou chave), calcula o SHA-256, recusa sobrescrever um arquivo já arquivado com outro conteúdo, e regrava `CATALOGO.md` e `registro.json`. **`--onde-usar` é obrigatório**: artefato sem destino declarado vira arquivo que ninguém abre. A pasta é somente leitura — um hook recusa escrita de agente lá dentro.
+
+**PHP.** Quando o legado tem PHP ao lado do WX (ou é só PHP), preencha `projeto.legado_php` (raiz, versão, framework, estilo) e submeta o código como artefato `codigo-php`. Quando o **destino** for PHP, `H_backend.perfil = "php"`. Nos dois casos a skill `php-legado-e-destino` do plugin tem o inventário, as armadilhas e a tabela WLanguage → PHP.
+
 O script também gera `INDEX_FILES.md` (o mapa de tudo que o Claude Code pode ler, regravado sempre), as skills do projeto `regras-do-legado` e `legado-para-destino`, e o `CLAUDE.md` passa a apontar para o mapa e para o kickoff. A análise que motivou esta letra está em `docs/analise-aula-vibe-coding.md` do plugin.
 
 ### A resposta decide a próxima
@@ -166,6 +187,9 @@ O script também gera `INDEX_FILES.md` (o mapa de tudo que o Claude Code pode le
 | L3 | alvo com Docker e H sem perfil | pergunte o perfil de H antes: o Dockerfile é por perfil |
 | L4 | não sabe os comandos | proponha os do perfil de H (`cargo test`, `pytest`, `dotnet test`, `npm test`) e registre |
 | L5 | usuário cola token de MCP | não repita, não grave; o `.mcp.json` usa `${VARIAVEL}` |
+| M | usuário manda arquivo sem dizer onde usar | pergunte **onde usar** antes de arquivar; sem isso o script recusa, e com razão |
+| M | arquivo com senha ou token dentro | o script recusa e diz por quê; peça a versão sem o segredo, não arquive «só para não perder» |
+| M | usuário manda a mesma coisa duas vezes | o hash resolve: mesmo conteúdo não duplica, nome repetido com conteúdo diferente é recusado |
 
 Feche com as duas perguntas de governança da skill de conversão, que o questionário não substitui: versão/update/idioma do WX e modo desejado (`inventário`, `plano`, `piloto`, `completo`). O aprovador já foi perguntado no 0.16; não pergunte de novo.
 

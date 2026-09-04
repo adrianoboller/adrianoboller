@@ -74,8 +74,9 @@ class Questionario(unittest.TestCase):
         self.assertIn("## Backend: Rust", proc); self.assertIn("**reescrita-guiada**", proc)
         self.assertIn("| Analise HFSQL | esquema PostgreSQL migrado por script; sqlx/diesel | G3 |", proc)
         self.assertIn("Ritmo: modulo a modulo", proc)
-        # 32 do fluxo + 62 do esqueleto ERP (L6) + skills-recomendadas: 95: nada e regravado na segunda aplicacao
-        self.assertEqual(r2.stdout.count("SKIPPED"), 95); self.assertEqual(r2.stdout.count("CREATED"), 0); self.assertIn("UPDATED", r2.stdout)
+        # fluxo + esqueleto ERP (L6) + skills-recomendadas + a pasta de artefatos (M):
+        # nada e regravado na segunda aplicacao
+        self.assertEqual(r2.stdout.count("SKIPPED"), 100); self.assertEqual(r2.stdout.count("CREATED"), 0); self.assertIn("UPDATED", r2.stdout)
         resp = (self.tmp / ".wx-migration/respostas_questionario.md").read_text()
         self.assertIn("- Nome: **Adriano Boller**", resp); self.assertIn("## H · Backend de destino", resp)
         self.assertIn("0.15 github", resp); self.assertIn("credencial ref: GITHUB_TOKEN", resp)
@@ -211,8 +212,71 @@ class Questionario(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertFalse((outro / "CONTEXT.md").exists()); self.assertNotIn("## Skills de ERP", (outro / "CLAUDE.md").read_text())
 
+    def test_artefatos_bloco_m_arquiva_confere_segredo_e_cataloga(self):
+        """Bloco M: a pasta e o LEIA-ME saem do questionario; o script arquiva com hash,
+        recusa segredo, recusa sem onde_usar e recusa sobrescrever com outro conteudo."""
+        r = run(SCRIPTS / "aplicar_questionario.py", "--questionario", self.tmp / ".wx-migration/questionario.json", "--project-root", self.tmp, "--plugin-root", RAIZ)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        art = self.tmp / "artefatos"
+        self.assertTrue((art / "LEIA-ME.md").exists()); self.assertTrue((art / "query-sql").is_dir())
+        self.assertIn("## Artefatos submetidos", (self.tmp / "CLAUDE.md").read_text())
+        self.assertIn("| `artefatos/CATALOGO.md` |", (self.tmp / "INDEX_FILES.md").read_text())
+        arq = SCRIPTS / "arquivar_artefato.py"
+        bom = self.tmp / "notas.txt"; bom.write_text("Venda com saldo zero bloqueia.\n")
+        r = run(arq, "--project-root", self.tmp, "--arquivo", bom, "--tipo", "anotacao",
+                "--onde-usar", "G1: regras ditadas pelo cliente", "--questionario", self.tmp / ".wx-migration/questionario.json")
+        self.assertEqual(r.returncode, 0, r.stderr); self.assertIn("ARQUIVADO", r.stdout)
+        self.assertTrue((art / "anotacao" / "notas.txt").exists())
+        cat = (art / "CATALOGO.md").read_text()
+        self.assertIn("1 artefato em", cat); self.assertIn("G1: regras ditadas pelo cliente", cat)
+        reg = json.loads((art / "registro.json").read_text())
+        self.assertEqual(len(reg["itens"][0]["sha256"]), 64)
+        q = json.loads((self.tmp / ".wx-migration/questionario.json").read_text())
+        self.assertTrue(any(i["arquivo"] == "notas.txt" for i in q["M_artefatos"]["itens"]))
+        self.assertNotIn("sha256", json.dumps(q["M_artefatos"]))  # hash mora no registro, nao no questionario
+        # reenvio identico nao duplica
+        r = run(arq, "--project-root", self.tmp, "--arquivo", bom, "--tipo", "anotacao", "--onde-usar", "G1")
+        self.assertEqual(r.returncode, 0); self.assertIn("JA ARQUIVADO", r.stdout)
+        # segredo, onde_usar vazio e mesmo nome com outro conteudo sao recusados
+        seg = self.tmp / "com-token.txt"; seg.write_text("ghp_" + "a" * 36 + "\n")
+        r = run(arq, "--project-root", self.tmp, "--arquivo", seg, "--tipo", "anotacao", "--onde-usar", "G1")
+        self.assertEqual(r.returncode, 2); self.assertIn("token", r.stderr)
+        self.assertFalse((art / "anotacao" / "com-token.txt").exists())
+        r = run(arq, "--project-root", self.tmp, "--arquivo", bom, "--tipo", "anotacao", "--onde-usar", "  ")
+        self.assertEqual(r.returncode, 2); self.assertIn("onde-usar", r.stderr)
+        bom.write_text("outro conteudo\n")
+        r = run(arq, "--project-root", self.tmp, "--arquivo", bom, "--tipo", "anotacao", "--onde-usar", "G1")
+        self.assertEqual(r.returncode, 2); self.assertIn("nao se sobrescreve", r.stderr)
+        self.assertEqual((art / "anotacao" / "notas.txt").read_text(), "Venda com saldo zero bloqueia.\n")
+
+    def test_hook_recusa_escrita_em_artefatos(self):
+        """A pasta de artefatos e somente leitura como os anexos: so o script arquiva."""
+        r = run(SCRIPTS / "aplicar_questionario.py", "--questionario", self.tmp / ".wx-migration/questionario.json", "--project-root", self.tmp, "--plugin-root", RAIZ)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        hook = RAIZ / "hooks" / "guarda_anexos_e_segredos.py"
+        pedido = {"tool_name": "Write", "cwd": str(self.tmp), "tool_input": {"file_path": str(self.tmp / "artefatos" / "CATALOGO.md"), "content": "editado a mao"}}
+        p = subprocess.run([sys.executable, str(hook)], input=json.dumps(pedido), capture_output=True, text=True)
+        self.assertEqual(json.loads(p.stdout)["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.assertIn("arquivar_artefato.py", p.stdout)
+        # fora da pasta, segue liberado
+        pedido["tool_input"]["file_path"] = str(self.tmp / "docs" / "PRD.md")
+        p = subprocess.run([sys.executable, str(hook)], input=json.dumps(pedido), capture_output=True, text=True)
+        self.assertEqual(p.stdout.strip(), "")
+
+    def test_perfil_php_gera_dockerfile_e_processo(self):
+        """PHP como destino: perfil php no processo de conversao e no Dockerfile."""
+        q = json.loads((self.tmp / ".wx-migration/questionario.json").read_text())
+        q["H_backend"]["perfil"] = "php"; q["H_backend"]["linguagem"] = "PHP"; q["H_backend"]["framework"] = "Laravel 11"
+        outro = self.tmp / "php"; (outro / ".wx-migration").mkdir(parents=True)
+        shutil.copytree(EXEMPLO / "inputs", outro / "inputs")
+        (outro / ".wx-migration/questionario.json").write_text(json.dumps(q))
+        r = run(SCRIPTS / "aplicar_questionario.py", "--questionario", outro / ".wx-migration/questionario.json", "--project-root", outro, "--plugin-root", RAIZ)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("## Backend: PHP 8.3", (outro / ".wx-migration/processo-de-conversao.md").read_text())
+        self.assertIn("FROM php:8.3-fpm-alpine", (outro / "Dockerfile").read_text())
+
     def test_skills_erp_presentes_com_descricao_curta(self):
-        for nome in ("erp-accounting", "erp-inventory", "erp-brazil-fiscal", "erp-multi-company", "erp-approval-workflows", "erp-lgpd", "erp-integration-reliability", "windev-wlanguage-erp"):
+        for nome in ("php-legado-e-destino", "erp-accounting", "erp-inventory", "erp-brazil-fiscal", "erp-multi-company", "erp-approval-workflows", "erp-lgpd", "erp-integration-reliability", "windev-wlanguage-erp"):
             txt = (RAIZ / "skills" / nome / "SKILL.md").read_text()
             self.assertTrue(txt.startswith("---\n"), nome)
             desc = re.search(r"^description:\s*(.+)$", txt, re.M).group(1).strip().strip('"')

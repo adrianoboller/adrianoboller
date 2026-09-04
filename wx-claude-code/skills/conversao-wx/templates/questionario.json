@@ -9,7 +9,15 @@
     "idioma": "pt-BR",
     "raiz_de_evidencias": "./inputs",
     "modo": "inventario",
-    "aprovador": ""
+    "aprovador": "",
+    "legado_php": {
+      "tem": false,
+      "raiz": "",
+      "versao": "",
+      "framework": "",
+      "estilo": "",
+      "observacao": "framework: laravel | symfony | codeigniter | wordpress | nenhum; estilo: procedural | oop | misto; raiz: pasta do codigo PHP dentro da raiz de evidencias"
+    }
   },
   "0_empresa_e_projeto": {
     "0_1_softhouse": {
@@ -485,5 +493,10 @@
       "modulos_extras": [],
       "observacao": "gerar: true cria na raiz do projeto o esqueleto de ERP (AGENTS, CONTEXT, CONTEXT-MAP, UBIQUITOUS_LANGUAGE, ARCHITECTURE, SECURITY, docs/adr, docs/domain por modulo, database, src/<modulo>, tests/<camada>, scripts, .github/workflows) e liga cada modulo do 0.8 a uma skill erp-* do plugin; modulos_extras: modulos alem dos do 0.8"
     }
+  },
+  "M_artefatos": {
+    "pasta": "./artefatos",
+    "itens": [],
+    "observacao": "cada item e submetido um por vez e arquivado em artefatos/<tipo>/ por arquivar_artefato.py, que confere segredo, calcula o SHA-256 e escreve artefatos/registro.json e artefatos/CATALOGO.md; tipo: anotacao | classe-oop | query-sql | relatorio | regra-de-negocio | tela | manual | contrato-de-api | codigo-php | dado-de-amostra | outro; onde_usar diz em que gate e em que arquivo do destino aquele artefato entra; nada e submetido sem onde_usar"
   }
 }

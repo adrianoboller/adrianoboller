@@ -194,6 +194,8 @@ def validate(root: Path, strict: bool = False) -> dict:
         "skills/laudo-uso-tokens/SKILL.md",
         "skills/laudo-uso-tokens/PROMPT-MESTRE-CURTO.md",
         "skills/LEIA-ME-erp.md",
+        "skills/php-legado-e-destino/SKILL.md",
+        "skills/conversao-wx/scripts/arquivar_artefato.py",
         "skills/conversao-wx/scripts/esqueleto_erp.py",
     ] + [f"skills/{s}/SKILL.md" for s in ("erp-accounting", "erp-inventory", "erp-brazil-fiscal", "erp-multi-company",
                                             "erp-approval-workflows", "erp-lgpd", "erp-integration-reliability", "windev-wlanguage-erp")]

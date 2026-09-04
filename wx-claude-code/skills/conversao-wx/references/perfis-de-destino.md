@@ -16,6 +16,7 @@ a escolha é do usuário e vira `DEC-*`.
 | **C# (.NET 8) + WL_C#** | a biblioteca **WL_C#** porta mais de 480 funções do WLanguage com o mesmo nome e comportamento (strings, datas, arquivos, conversões, JSON, tabelas), o que torna a tradução das procedures quase mecânica; Visual Studio; Windows nativo | as funções de HFSQL e de tela não estão na biblioteca; .NET fora do Windows exige atenção; a biblioteca é gratuita mas de código fechado | equipes WINDEV que vão manter o código depois, sistemas desktop Windows, quem quer a menor curva de aprendizado |
 | **Go** (Chi ou Echo + PostgreSQL) | simples de aprender, binário único, concorrência fácil, deploy trivial | menos biblioteca para fiscal e relatório, generics recentes, ORMs mais fracos | APIs e serviços de integração, jobs, sistemas de médio volume com equipe pequena |
 | **Java** (Spring Boot + PostgreSQL) | ecossistema corporativo, ferramentas de relatório maduras, equipe abundante | verboso, memória alta, tempo de subida | ERPs grandes com integrações corporativas, empresas que já têm Java |
+| **PHP 8.3** (Laravel 11 ou Symfony 7 + PostgreSQL ou MySQL) | hospedagem barata e universal, equipe abundante e barata no Brasil, ecossistema pronto para ERP web (fiscal, PDF, filas), migração natural para quem já tem PHP ao lado do WX | tipagem fraca por herança da linguagem (exige `strict_types` e PHPStan), armadilhas de comparação e de ponto flutuante, desempenho por processo | ERP web de porte médio, quem já mantém PHP na casa, quem precisa de hospedagem comum; veja a skill `php-legado-e-destino` |
 | **Node** (NestJS + PostgreSQL) | mesma linguagem do frontend, equipe única, rápido para APIs | tipagem só com TypeScript, CPU limitado, muitas dependências | produtos web onde o time de frontend vai fazer o backend |
 
 ## Frontend
@@ -109,3 +110,9 @@ convertida. Esse arquivo é a primeira versão do que o G3 vai detalhar.
 | G5 ondas | tradução em lote, por tema WLanguage | reescrita por domínio | um módulo por vez, em produção | ondas seguintes |
 | G6 endurecimento | dead code, desempenho, segurança | idem | desligar o legado módulo a módulo | paralelo |
 | G7 cutover | virada | virada | último módulo; legado desligado | virada única |
+
+## PHP como origem, não só como destino
+
+O plugin também converte sistema PHP legado, sozinho ou ao lado do WX. Declare em `projeto.legado_php` (raiz, versão, framework, estilo procedural/OOP/misto) e submeta o código como artefato `codigo-php` (bloco M). A skill `php-legado-e-destino` traz o inventário (era e estilo, grafo de `include`, pontos de entrada, tabelas tocadas, dependências), onde a regra de negócio se esconde no PHP, e as armadilhas que mudam o resultado convertido: comparação frouxa que mudou entre PHP 7 e 8, dinheiro em `float`, `empty("0")`, sessão usada como estado de negócio, encoding `latin1`.
+
+A regra do projeto vale igual: regra de negócio só existe com origem localizável (`arquivo.php#linha`), e cada peça vira `BR-*`, `QRY-*`, `UI-*`, `RPT-*`, `INT-*` ou `DB-*` na matriz.
