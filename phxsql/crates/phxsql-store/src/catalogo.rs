@@ -28,7 +28,7 @@ use phxsql_core::paginacao::BALDES;
 use phxsql_core::schema::Schema;
 use phxsql_core::EXT_REG;
 
-use crate::table::Table;
+use crate::table::{SemEscrever, Table};
 
 /// O nome nao e um engano de digitacao: e uma tentativa de sair do diretorio.
 ///
@@ -256,6 +256,153 @@ impl Instancia {
 
     pub fn databases(&self) -> Result<Vec<String>> {
         subdiretorios(&self.base)
+    }
+}
+
+/// A raiz de dados como as DUAS fichas a enxergam.
+///
+/// # O que ela e, e por que ela existe
+///
+/// O servidor guardava a [`Instancia`] num `Mutex`: uma ficha de exclusao, uma
+/// operacao de cada vez, leitor esperando leitor. Trocar esse `Mutex` por um
+/// `RwLock<Instancia>` **compila e esta errado**, e o marcador `!Sync` da
+/// `Instancia` existe justamente para nao deixar: `&self` e o que um guard de
+/// LEITURA entrega, e todo metodo da `Instancia` -- inclusive `criar_tabela` e
+/// `excluir_tabela` -- e `&self`.
+///
+/// A `Raiz` e o que se poe dentro do `RwLock`, e ela separa as duas fichas
+/// pelo tipo de emprestimo, que e a unica coisa que o `RwLock` sabe distinguir:
+///
+/// * `&Raiz` -- o que o guard de LEITURA entrega a N threads ao mesmo tempo --
+///   so alcanca [`Raiz::abrir_para_ler`], que devolve uma
+///   [`TabelaLeitura`](crate::leitura::TabelaLeitura) sem um unico metodo de
+///   escrita;
+/// * `&mut Raiz` -- o que so o guard de ESCRITA entrega, e a um de cada vez --
+///   alcanca [`Raiz::exclusiva`], e por ela a `Instancia` inteira.
+///
+/// A `Instancia` NAO mora aqui dentro, e nao e por economia: guardar um campo
+/// `!Sync` faria a `Raiz` tambem `!Sync`, e ai o `RwLock` voltaria a nao
+/// compilar. Ela nasce do `PathBuf` a cada `exclusiva()`, presa a vida do
+/// emprestimo mutavel -- que e o que impede alguem de guardar a ficha
+/// exclusiva e continuar usando-a depois de soltar a trava.
+pub struct Raiz {
+    base: PathBuf,
+}
+
+/// A ficha EXCLUSIVA, presa a vida do guard que a entregou.
+///
+/// O `'a` e a garantia inteira: ele vem do `&mut Raiz`, que vem do guard de
+/// escrita. A `Instancia` nao pode sobreviver ao guard, entao nao ha como
+/// abrir uma tabela gravavel e leva-la para fora da trava.
+pub struct Exclusiva<'a> {
+    instancia: Instancia,
+    _guarda: PhantomData<&'a mut Raiz>,
+}
+
+impl std::ops::Deref for Exclusiva<'_> {
+    type Target = Instancia;
+    fn deref(&self) -> &Instancia {
+        &self.instancia
+    }
+}
+
+impl std::ops::DerefMut for Exclusiva<'_> {
+    fn deref_mut(&mut self) -> &mut Instancia {
+        &mut self.instancia
+    }
+}
+
+impl Exclusiva<'_> {
+    /// Solta a ficha da vida do emprestimo, para quem a guarda AO LADO do
+    /// proprio guard da trava.
+    ///
+    /// # Por que isto existe, e por que ha um chamador so
+    ///
+    /// O `TravaMedida` do servidor embrulha o guard de escrita e precisa
+    /// guardar a ficha no mesmo `struct`. Uma `Exclusiva<'a>` ali dentro seria
+    /// uma estrutura auto-referente -- o `'a` viria do campo vizinho --, e
+    /// Rust nao a aceita.
+    ///
+    /// O que se perde e a garantia do compilador de que a ficha morre com o
+    /// guard. Quem chama passa a responder por isso, e por isso o unico
+    /// chamador guarda os dois no mesmo `struct`: eles nascem e morrem na
+    /// mesma linha, e nao ha caminho pelo qual um sobreviva ao outro.
+    pub fn sem_amarra(self) -> Instancia {
+        self.instancia
+    }
+}
+
+/// O que a ficha compartilhada devolve ao tentar abrir uma tabela.
+///
+/// A segunda variante nao e erro: e «esta tabela quer a ficha exclusiva»,
+/// porque abri-la escreveria. Quem chama solta a compartilhada e refaz o
+/// trabalho por la -- e o comportamento visto de fora nao muda nada.
+// O `Table` ja viaja por valor num `Result<Table>` desde sempre, e a
+// variante grande e a comum. Um `Box` compraria 2,9 KiB de enum e
+// pagaria uma alocacao por ABERTURA, que acontece a cada operacao.
+#[allow(clippy::large_enum_variant)]
+pub enum Aberta {
+    Pronta(crate::leitura::TabelaLeitura),
+    PrecisaDaFichaExclusiva(&'static str),
+}
+
+impl Raiz {
+    /// Abre (criando se preciso) a raiz de dados.
+    pub fn nova(base: impl AsRef<Path>) -> Result<Raiz> {
+        let base = base.as_ref().to_path_buf();
+        std::fs::create_dir_all(&base)?;
+        Ok(Raiz { base })
+    }
+
+    pub fn base(&self) -> &Path {
+        &self.base
+    }
+
+    /// A ficha exclusiva. Exige `&mut self`, e so o guard de ESCRITA o da.
+    ///
+    /// O `PathBuf` e clonado aqui, uma vez por operacao de escrita. Custa uma
+    /// alocacao curta num caminho que ja paga abertura de arquivo e, quando a
+    /// janela fecha, `fsync` -- e a alternativa seria guardar a `Instancia`
+    /// dentro da `Raiz`, que e exatamente o que o marcador `!Sync` proibe.
+    pub fn exclusiva(&mut self) -> Exclusiva<'_> {
+        Exclusiva {
+            instancia: Instancia {
+                base: self.base.clone(),
+                _so_com_a_ficha: PhantomData,
+            },
+            _guarda: PhantomData,
+        }
+    }
+
+    /// Abre uma tabela para LER, e diz quando abrir exigiria escrever.
+    ///
+    /// # Nada aqui dentro escreve
+    ///
+    /// A resolucao do caminho passa por uma `Instancia` de propósito: os nomes
+    /// de database, schema e tabela se conferem num lugar so, e as mensagens
+    /// de recusa sao as mesmas das duas fichas. Uma segunda copia dessas
+    /// regras divergiria da primeira, e divergiria na mensagem que alguem le
+    /// as duas da manha.
+    ///
+    /// O que a torna segura nao e este comentario e sim o que ela DEVOLVE: uma
+    /// [`TabelaLeitura`](crate::leitura::TabelaLeitura), aberta por
+    /// [`Table::abrir_para_ler`], que recusa quando abrir escreveria.
+    pub fn abrir_para_ler(&self, database: &str, qualificado: &str) -> Result<Aberta> {
+        let so_para_achar_o_caminho = Instancia {
+            base: self.base.clone(),
+            _so_com_a_ficha: PhantomData,
+        };
+        let db = so_para_achar_o_caminho.abrir_database(database)?;
+        let (schema, nome) = separar_qualificado(qualificado);
+        validar_nome("tabela", &nome)?;
+        let dir = db.diretorio(schema.as_deref())?;
+        // O motivo vem do COMPONENTE que recusou, e nao de uma frase generica:
+        // quem le isto num log precisa saber se foi a lixeira que faltava ou o
+        // diario que precisava de cura, porque as duas se consertam diferente.
+        Ok(match Table::abrir_para_ler(dir, &nome)? {
+            SemEscrever::Aberta(t) => Aberta::Pronta(crate::leitura::TabelaLeitura::nova(t)),
+            SemEscrever::PrecisaEscrever(porque) => Aberta::PrecisaDaFichaExclusiva(porque),
+        })
     }
 }
 

@@ -3225,8 +3225,8 @@ function ligarConteudo() {
   $("#btLimparSel").onclick = () => { est.grade.limparSelecao(); atualizaBarra(); };
   $("#btCopiarSel").onclick = async () => {
     const ids = est.grade.selecionadas().join("\n");
-    try { await navigator.clipboard.writeText(ids); avisar(`${est.grade.selecionadas().length} rowid(s) copiados`); }
-    catch { avisar("o navegador não deixou copiar", true); }
+    try { await navigator.clipboard.writeText(ids); avisar(preencher(txt("tela.g_rowids_copiados","{n} rowid(s) copiados"), {n: est.grade.selecionadas().length})); }
+    catch { avisar(txt("tela.g_sem_copiar","o navegador não deixou copiar"), true); }
   };
   $("#btExcluirSel").onclick = async () => {
     const ids = est.grade.selecionadas();
@@ -3234,7 +3234,7 @@ function ligarConteudo() {
     // "marcadas" e nao "de vez": o excluir da tela e o reversivel, que e o
     // que a lixeira desfaz. Excluir de vez em lote, sem uma linha aberta na
     // frente, e estrago rapido demais para um botao.
-    if (!confirm(`Marcar ${ids.length} linha(s) como excluída(s)? A Lixeira desfaz.`)) return;
+    if (!confirm(preencher(txt("tela.g_confirmar_marcar_excluidas","Marcar {n} linha(s) como excluída(s)? A Lixeira desfaz."), {n: ids.length}))) return;
     let falhou = 0;
     for (const rowid of ids) {
       try { await api("excluir", { database: db, tabela: tab, rowid: +rowid }); }
@@ -4013,7 +4013,7 @@ async function abrirAdmin(qual) {
           const btn = ev.target.closest(".soltar-ip");
           if (!btn) return;
           api("desbloquear", { ip: btn.dataset.ip })
-            .then(() => { avisar(`${btn.dataset.ip} solto`); abrirAdmin("bloqueios"); })
+            .then(() => { avisar(preencher(txt("tela.g_ip_solto","{ip} solto"), {ip: btn.dataset.ip})); abrirAdmin("bloqueios"); })
             .catch(e => avisar(String(e), true));
         });
       }
@@ -4022,7 +4022,7 @@ async function abrirAdmin(qual) {
           .map(l => l.trim()).filter(l => l);
         try {
           await api("whitelist_salvar", { whitelist: linhas });
-          avisar("whitelist salva");
+          avisar(txt("tela.g_whitelist_salva","whitelist salva"));
           abrirAdmin("bloqueios");
         } catch (e) { avisar(String(e), true); }
       };
@@ -4061,7 +4061,7 @@ function viewDatabaseAtual() {
   const db = (est.atual && est.atual.db) || est.database
     || (est.bancos && est.bancos[0]);
   if (!db) {
-    avisar("nenhum database — crie um pelo [+] da árvore", true);
+    avisar(txt("tela.g_sem_database","nenhum database — crie um pelo [+] da árvore"), true);
     return;
   }
   return verDatabase(db);
@@ -4374,7 +4374,7 @@ async function abrirFicha(db, tab, rowid) {
   if (!novo) {
     const r = await api("ler", { database: db, tabela: tab, rowid, com_versao: true });
     if (!r) {
-      avisar(`o registro ${rowid} não existe mais`, true);
+      avisar(preencher(txt("tela.g_registro_nao_existe","o registro {rowid} não existe mais"), {rowid}), true);
       return verConteudoEditavel(db, tab);
     }
     linha = r.linha;
@@ -4444,11 +4444,11 @@ async function abrirFicha(db, tab, rowid) {
     try {
       if (novo) {
         const r = await api("inserir", { database: db, tabela: tab, valores: valores() });
-        avisar(`linha ${r.rowid} incluída em ${tab}`);
+        avisar(preencher(txt("tela.g_linha_incluida_em","linha {rowid} incluída em {tab}"), {rowid: r.rowid, tab}));
       } else {
         await api("atualizar",
           { database: db, tabela: tab, rowid, valores: valores(), versao });
-        avisar(`registro ${rowid} salvo`);
+        avisar(preencher(txt("tela.g_registro_salvo","registro {rowid} salvo"), {rowid}));
       }
       est.esquemaAtual = null;
       verConteudoEditavel(db, tab);
@@ -4533,14 +4533,14 @@ function databaseCorrente() {
 
 function gerirTabelasAtual() {
   const db = databaseCorrente();
-  if (!db) return avisar("nenhum database — crie um pelo [+] da árvore", true);
+  if (!db) return avisar(txt("tela.g_sem_database","nenhum database — crie um pelo [+] da árvore"), true);
   return gerirTabelas(db);
 }
 
 /** A grade de gestao: uma linha por tabela, com o que ela pesa. */
 async function gerirTabelas(db) {
   est.database = db;
-  folha(`Tabelas de ${db}`, "carregando…", `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
+  folha(`Tabelas de ${db}`, txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
 
   const t = await api("tabelas", { database: db });
   const nomes = t.tabelas || [];
@@ -4876,39 +4876,40 @@ function ligarVoltarGestao(db, tab) {
 
 async function duplicarTabelaPara(db, tab) {
   const destino = prompt(
-    `Duplicar ${tab} com que nome?\n\n`
-    + `Os cinco arquivos são copiados byte a byte: a cópia nasce com os MESMOS `
-    + `rowids e na MESMA ordem de digitação.`,
-    `${tab}_copia`);
+    preencher(txt("tela.g_prompt_duplicar_nome",
+      "Duplicar {tab} com que nome?\n\nOs cinco arquivos são copiados byte a byte: a cópia nasce com os MESMOS rowids e na MESMA ordem de digitação."), {tab}),
+    preencher(txt("tela.g_sufixo_copia","{tab}_copia"), {tab}));
   if (!destino || !destino.trim()) return;
   const r = await api("duplicar_tabela",
     { database: db, tabela: tab, destino: destino.trim() });
-  avisar(`${tab} duplicada em ${r.destino} · ${r.arquivos} arquivo(s)`);
+  avisar(preencher(txt("tela.g_tabela_duplicada","{tab} duplicada em {destino} · {arquivos} arquivo(s)"), {tab, destino: r.destino, arquivos: r.arquivos}));
   return gerirTabelas(db);
 }
 
 async function repararTabelaDe(db, tab) {
-  if (!confirm(`Reparar ${tab} pelo espelho .bkp?\n\nCada slot é conferido nos dois lados.`)) return;
+  if (!confirm(preencher(txt("tela.g_confirmar_reparar_bkp","Reparar {tab} pelo espelho .bkp?\n\nCada slot é conferido nos dois lados."), {tab}))) return;
   const r = await api("reparar", { database: db, tabela: tab });
-  folha(`Reparo de ${tab}`, `${db} · cada slot conferido no .reg e no .bkp`,
+  folha(preencher(txt("tela.tt_reparo_de","Reparo de {tab}"), {tab}),
+    preencher(txt("tela.st_cada_slot_reg_bkp","{db} · cada slot conferido no .reg e no .bkp"), {db}),
     fichasDe(r, [["conferidos","conferidos"],["reparados","reparados"],
                  ["perdidos","perdidos"]]) +
-    (r.perdidos ? `<div class="nota">Há ${r.perdidos} slot(s) perdido(s) dos dois
-       lados — nem o .reg nem o .bkp têm CRC válido para eles.</div>` : "") +
+    (r.perdidos ? `<div class="nota">${preencher(esc(txt("tela.g_nota_slots_perdidos",
+       "Há {perdidos} slot(s) perdido(s) dos dois lados — nem o .reg nem o .bkp têm CRC válido para eles.")), {perdidos: r.perdidos})}</div>` : "") +
     `<div class="acoes">
-       <button class="botao secundario" id="btVoltarGer">← Gestão de ${esc(tab)}</button>
+       <button class="botao secundario" id="btVoltarGer">${preencher(esc(txt("tela.bt_voltar_gestao","← Gestão de {tab}")), {tab: esc(tab)})}</button>
      </div>`);
   ligarVoltarGestao(db, tab);
 }
 
 async function reindexarTabelaDe(db, tab) {
-  if (!confirm(`Reparar o índice de ${tab}?\n\nO .ndx é jogado fora e refeito do zero a partir do .reg.`)) return;
+  if (!confirm(preencher(txt("tela.g_confirmar_reparar_indice","Reparar o índice de {tab}?\n\nO .ndx é jogado fora e refeito do zero a partir do .reg."), {tab}))) return;
   const r = await api("reindexar", { database: db, tabela: tab });
-  avisar(`índices de ${tab} refeitos`);
-  folha(`Índice de ${tab} refeito`, `${db} · a árvore foi reconstruída lendo o .reg`,
+  avisar(preencher(txt("tela.g_indices_refeitos","índices de {tab} refeitos"), {tab}));
+  folha(preencher(txt("tela.tt_indice_refeito","Índice de {tab} refeito"), {tab}),
+    preencher(txt("tela.st_arvore_reconstruida","{db} · a árvore foi reconstruída lendo o .reg"), {db}),
     `<pre class="dado">${esc(JSON.stringify(r, null, 1))}</pre>
      <div class="acoes">
-       <button class="botao secundario" id="btVoltarGer">← Gestão de ${esc(tab)}</button>
+       <button class="botao secundario" id="btVoltarGer">${preencher(esc(txt("tela.bt_voltar_gestao","← Gestão de {tab}")), {tab: esc(tab)})}</button>
      </div>`);
   ligarVoltarGestao(db, tab);
 }
@@ -4920,18 +4921,16 @@ async function reindexarTabelaDe(db, tab) {
  *  unica guarda -- e a primeira. */
 async function excluirTabelaDe(db, tab) {
   const digitado = prompt(
-    `EXCLUIR a tabela ${tab} de ${db}.\n\n`
-    + `Isto apaga o .reg, o .ndx, o .bin, o .memo, o .log e o espelho .bkp — `
-    + `todos os volumes de cada um. Não há desfazer, e não existe lixeira.\n\n`
-    + `Para confirmar, digite o nome da tabela:`);
+    preencher(txt("tela.g_prompt_excluir_tabela",
+      "EXCLUIR a tabela {tab} de {db}.\n\nIsto apaga o .reg, o .ndx, o .bin, o .memo, o .log e o espelho .bkp — todos os volumes de cada um. Não há desfazer, e não existe lixeira.\n\nPara confirmar, digite o nome da tabela:"), {tab, db}));
   if (digitado === null) return;
   if (digitado.trim() !== tab) {
-    return avisar(`nome não confere: a tabela não foi excluída`, true);
+    return avisar(txt("tela.g_nome_nao_confere","nome não confere: a tabela não foi excluída"), true);
   }
   const r = await api("excluir_tabela",
     { database: db, tabela: tab, confirmar: tab });
   est.atual = null;
-  avisar(`${tab} excluída · ${(r.arquivos_apagados || []).length} arquivo(s) apagados`);
+  avisar(preencher(txt("tela.g_tabela_excluida","{tab} excluída · {arquivos} arquivo(s) apagados"), {tab, arquivos: (r.arquivos_apagados || []).length}));
   await montarArvore(false);
   return gerirTabelas(db);
 }
@@ -5020,7 +5019,7 @@ function desenharNovaTabela(db) {
   const pk = r.indices.find(x => x.primario && x.nome);
   const colsDaPk = pk ? pk.colunas.split(",").map(s => s.trim().split(/\s+/)[0]).filter(Boolean) : [];
 
-  folha("Nova tabela", `${db} · sete arquivos nascem juntos`,
+  folha(txt("tela.tt_nova_tabela","Nova tabela"), `${db} · sete arquivos nascem juntos`,
     `<form class="criar" id="formNovaTab" autocomplete="off">
        <div class="bloco">
          <label class="largo"><span>nome da tabela</span>
@@ -5288,9 +5287,9 @@ function ligarNovaTabela(db) {
     ev.preventDefault();
     lerForm();
     const rec = $("#nt_recado");
-    if (!r.nome) return avisar("dê um nome à tabela", true);
+    if (!r.nome) return avisar(txt("tela.g_de_nome_tabela","dê um nome à tabela"), true);
     const cols = r.colunas.filter(c => c.nome);
-    if (!cols.length) return avisar("a tabela precisa de ao menos uma coluna", true);
+    if (!cols.length) return avisar(txt("tela.g_tabela_precisa_coluna","a tabela precisa de ao menos uma coluna"), true);
 
     const pedido = {
       database: db, tabela: r.nome,
@@ -5310,11 +5309,11 @@ function ligarNovaTabela(db) {
       const porLetra = r.particao === "letra";
       const porPeriodo = r.particao && r.particao !== "quantidade" && !porLetra;
       if (porLetra && !r.particao_coluna)
-        return avisar("a partição alfanumérica precisa de uma coluna de referência obrigatória", true);
+        return avisar(txt("tela.g_particao_alfa_obrig","a partição alfanumérica precisa de uma coluna de referência obrigatória"), true);
       if (porPeriodo && !r.particao_coluna)
-        return avisar("a partição por período precisa de uma coluna de data obrigatória", true);
+        return avisar(txt("tela.g_particao_periodo_obrig","a partição por período precisa de uma coluna de data obrigatória"), true);
       if (!porPeriodo && !porLetra && !r.pag)
-        return avisar("informe quantos registros cabem em cada arquivo", true);
+        return avisar(txt("tela.g_informe_registros_arquivo","informe quantos registros cabem em cada arquivo"), true);
       pedido.registros_por_arquivo = r.pag || 1000000;
       if (porLetra) {
         // Nem `digitos` nem `max_arquivos` vão: os 37 baldes e o sufixo de
@@ -5334,9 +5333,14 @@ function ligarNovaTabela(db) {
     rec.textContent = "criando…";
     try {
       const feito = await api("criar_tabela", pedido);
-      avisar(`tabela ${feito.tabela} criada${r.schema ? ` em ${r.schema}` : ""}`
-           + ` · ${feito.colunas} coluna(s), ${feito.indices} índice(s)`
-           + `${feito.paginada ? `, ${r.particao === "quantidade" ? "particionada por faixa" : `partição ${r.particao}`}` : ""}`);
+      const emSchema = r.schema ? preencher(txt("tela.g_em_schema"," em {schema}"), {schema: r.schema}) : "";
+      const particaoTxt = feito.paginada
+        ? ", " + (r.particao === "quantidade"
+            ? txt("tela.g_particionada_por_faixa","particionada por faixa")
+            : preencher(txt("tela.g_particao_x","partição {p}"), {p: r.particao}))
+        : "";
+      avisar(preencher(txt("tela.g_tabela_criada","tabela {tabela} criada{emschema} · {colunas} coluna(s), {indices} índice(s){particaotxt}"),
+        {tabela: feito.tabela, emschema: emSchema, colunas: feito.colunas, indices: feito.indices, particaotxt: particaoTxt}));
       est.rascunho = null;
       await montarArvore(false);
       return gerirTabelas(db);
@@ -5360,8 +5364,8 @@ function ligarNovaTabela(db) {
 
 async function verSequencias(db) {
   db = db || databaseCorrente();
-  if (!db) return avisar("nenhum database escolhido", true);
-  folha(`Sequências de ${db}`, "carregando…", `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
+  if (!db) return avisar(txt("tela.g_sem_database_escolhido","nenhum database escolhido"), true);
+  folha(`Sequências de ${db}`, txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
 
   const r = await api("sequencias", { database: db });
   const linhas = r.sequencias || [];
@@ -5438,10 +5442,11 @@ async function ajustarSequencia(db, tabela, atual) {
     String(atual));
   if (digitado === null) return;
   const n = Number(digitado.trim());
-  if (!Number.isInteger(n) || n < 0) return avisar("informe um inteiro de zero para cima", true);
+  if (!Number.isInteger(n) || n < 0) return avisar(txt("tela.g_informe_inteiro_zero","informe um inteiro de zero para cima"), true);
   try {
     const r = await api("ajustar_sequencia", { database: db, tabela, proxima: n });
-    avisar(`${tabela}: ${r.antes} → ${r.proxima}${r.aviso ? " · atenção" : ""}`, !!r.aviso);
+    avisar(preencher(txt("tela.g_sequencia_ajustada","{tabela}: {antes} → {proxima}{aviso}"),
+      {tabela, antes: r.antes, proxima: r.proxima, aviso: r.aviso ? " · " + txt("tela.g_atencao","atenção") : ""}), !!r.aviso);
     return verSequencias(db);
   } catch (e) { avisar(String(e), true); }
 }
@@ -5485,7 +5490,7 @@ function pivotNovo(db) {
 
 function telaPivot(db) {
   db = db || databaseCorrente();
-  if (!db) return avisar("nenhum database escolhido", true);
+  if (!db) return avisar(txt("tela.g_sem_database_escolhido","nenhum database escolhido"), true);
   if (!est.pivot || est.pivot.db !== db) est.pivot = pivotNovo(db);
   return desenharPivot();
 }
@@ -5500,7 +5505,7 @@ async function desenharPivot() {
       <span class="passo-n">${n}</span>${esc(p)}</button>`;
   }).join('<span class="passo-traco"></span>')}</div>`;
 
-  folha("Tabela dinâmica", `${w.db} · o cruzamento é somado no servidor`,
+  folha(txt("tela.tt_pivot","Tabela dinâmica"), `${w.db} · o cruzamento é somado no servidor`,
     trilha + `<div id="pvCorpo"><div class="centro">carregando…</div></div>`);
 
   $$("#painel .passo").forEach(b => b.onclick = () => {
@@ -5619,9 +5624,9 @@ async function pivotPasso1() {
       ev.preventDefault();
       const tabela = sel.value, coluna = $("#pv_jc").value;
       const prefixo = $("#pv_jp").value.trim() || tabela.split(".").pop();
-      if (!tabela || !coluna) return avisar("escolha a tabela e a coluna de ligação", true);
+      if (!tabela || !coluna) return avisar(txt("tela.g_escolha_tabela_coluna_ligacao","escolha a tabela e a coluna de ligação"), true);
       if (w.juncoes.some(j => j.prefixo === prefixo))
-        return avisar(`já existe uma junção com o prefixo ${prefixo}`, true);
+        return avisar(preencher(txt("tela.g_juncao_existe_prefixo","já existe uma junção com o prefixo {prefixo}"), {prefixo}), true);
       w.juncoes.push({ tabela, coluna, prefixo });
       pivotPasso1();
     };
@@ -5859,12 +5864,12 @@ async function pivotPasso3() {
     linhas.push(["total", ...r.total_coluna.map(c => c ?? ""), r.total ?? ""].join(";"));
     const txt = linhas.join("\n");
     if (navigator.clipboard) navigator.clipboard.writeText(txt).then(
-      () => avisar(`${linhas.length} linha(s) copiadas`),
-      () => avisar("o navegador não deixou copiar", true));
-    else avisar("o navegador não tem área de transferência", true);
+      () => avisar(preencher(txt("tela.g_linhas_copiadas","{n} linha(s) copiadas"), {n: linhas.length})),
+      () => avisar(txt("tela.g_sem_copiar","o navegador não deixou copiar"), true));
+    else avisar(txt("tela.g_sem_area_transferencia","o navegador não tem área de transferência"), true);
   };
-  $("#pv_json").onclick = () => folha("Tabela dinâmica · o pedido",
-    "o mesmo cruzamento pela porta 5000",
+  $("#pv_json").onclick = () => folha(txt("tela.tt_pivot_pedido","Tabela dinâmica · o pedido"),
+    txt("tela.st_mesmo_cruzamento_5000","o mesmo cruzamento pela porta 5000"),
     `<pre class="dado">${esc(JSON.stringify({
       op: "pivotar", database: w.db, tabela: w.tabela,
       juntar: w.juncoes, linhas: w.linhas, colunas: w.colunas,
@@ -6169,10 +6174,10 @@ const GRUPOS_DB = [
 
 async function gerirDatabase(db) {
   db = db || databaseCorrente();
-  if (!db) return avisar("nenhum database — crie um pelo [+] da árvore", true);
+  if (!db) return avisar(txt("tela.g_sem_database","nenhum database — crie um pelo [+] da árvore"), true);
   est.database = db;
 
-  folha(`Gerir ${db}`, "carregando…", `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
+  folha(`Gerir ${db}`, txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   let resumo = "";
   try {
     const st = await api("sistabelas", { database: db });
@@ -6189,7 +6194,7 @@ async function gerirDatabase(db) {
   } catch (e) { resumo = `<div class="aviso mal">${esc(String(e))}</div>`; }
 
   const itens = itensDoDatabase(db);
-  folha(`Gerir ${db}`, "tudo que se faz sobre este banco",
+  folha(`Gerir ${db}`, txt("tela.st_tudo_sobre_banco","tudo que se faz sobre este banco"),
     resumo + GRUPOS_DB.map(([g, titulo]) => {
       const doGrupo = itens.map((it, i) => [it, i]).filter(([it]) => it.g === g);
       if (!doGrupo.length) return "";
@@ -6219,7 +6224,7 @@ async function gerirDatabase(db) {
 /** O que esta na area de transferencia da gestao de tabelas. */
 function copiarTabela(db, tab) {
   est.copia = { db, tab };
-  avisar(`${db}.${tab} copiada — abra o banco de destino e use Colar`);
+  avisar(preencher(txt("tela.g_tabela_copiada_use_colar","{db}.{tab} copiada — abra o banco de destino e use Colar"), {db, tab}));
   const b = $("#btColar");
   if (b) b.disabled = false;
 }
@@ -6229,7 +6234,7 @@ function telaCopiarColar(db) {
   const c = est.copia;
   const bancos = est.bancos || [];
 
-  folha("Copiar e colar tabela", c ? `na área: ${c.db}.${c.tab}` : "nada copiado ainda",
+  folha(txt("tela.tt_copiar_colar","Copiar e colar tabela"), c ? `na área: ${c.db}.${c.tab}` : "nada copiado ainda",
     !c
       ? `<div class="nota">
            <p><strong>Nada na área de transferência.</strong> Abra a gestão de
@@ -6273,14 +6278,14 @@ function telaCopiarColar(db) {
     ev.preventDefault();
     const destinoDb = $("#cc_db").value;
     const destino = $("#cc_nome").value.trim();
-    if (!destino) return avisar("dê um nome à cópia", true);
+    if (!destino) return avisar(txt("tela.g_de_nome_copia","dê um nome à cópia"), true);
     $("#ccRecado").textContent = "copiando…";
     try {
       const r = await api("copiar_tabela", {
         database: c.db, tabela: c.tab,
         destino_database: destinoDb, destino,
       });
-      avisar(`${r.origem} colada em ${r.destino_database}.${r.destino} · ${r.arquivos} arquivo(s)`);
+      avisar(preencher(txt("tela.g_tabela_colada","{origem} colada em {destino_database}.{destino} · {arquivos} arquivo(s)"), {origem: r.origem, destino_database: r.destino_database, destino: r.destino, arquivos: r.arquivos}));
       await montarArvore(false);
       return gerirTabelas(destinoDb);
     } catch (err) {
@@ -6312,7 +6317,7 @@ async function verDiretivasDoBanco(db) {
     return { itens: ativos, vazio: !ativos.length, curinga: bases[db] === undefined };
   };
 
-  folha(`Diretivas de acesso · ${db}`, "quem alcança este banco, e o que o servidor recusa antes de olhar",
+  folha(`Diretivas de acesso · ${db}`, txt("tela.st_quem_alcanca_banco","quem alcança este banco, e o que o servidor recusa antes de olhar"),
     `${proibida ? `<div class="nota mal"><p><strong>Este banco está em
        <code>seguranca.bases_proibidas</code>.</strong> Nenhum usuário o alcança,
        nem supervisor: a recusa acontece no portão, antes da permissão ser
@@ -6399,7 +6404,7 @@ async function verDiretivasDoBanco(db) {
 async function verBackupRestaure(db) {
   const c = await api("config");
   const bkp = c.backup || {};
-  folha("Backup e restauração", `${db} · cópia com manifesto SHA-256`,
+  folha(txt("tela.mi_backup_restauracao","Backup e restauração"), `${db} · cópia com manifesto SHA-256`,
     `<div class="fichas">
        ${ficha(bkp.destino || "—", "destino")}
        ${ficha(bkp.hora || "não agendado", "agendamento")}
@@ -6453,8 +6458,8 @@ async function telaRestaurarBackup(pasta) {
   const c = await api("config").catch(() => ({}));
   const inicial = pasta || (c.backup || {}).destino || "backups";
 
-  folha("Restaurar um backup",
-    "a cópia volta com outro nome, ou por cima — e o SHA-256 é conferido antes",
+  folha(txt("tela.tt_restaurar_backup","Restaurar um backup"),
+    txt("tela.st_backup_volta_outro_nome","a cópia volta com outro nome, ou por cima — e o SHA-256 é conferido antes"),
     `<form class="criar" id="formRst" autocomplete="off" onsubmit="return false">
        <div class="bloco">
          <label class="largo"><span>pasta onde procurar
@@ -6652,7 +6657,7 @@ async function verDentroDoBackup(origem, de) {
 }
 
 async function restaurarAgora(origem, de, destino, porCima) {
-  if (!destino) return avisar("dê um nome ao database restaurado", true);
+  if (!destino) return avisar(txt("tela.g_de_nome_database_restaurado","dê um nome ao database restaurado"), true);
   $("#rstRecado").textContent = "conferindo o SHA-256 e restaurando…";
   try {
     const r = await api("restaurar_backup", {
@@ -6660,10 +6665,11 @@ async function restaurarAgora(origem, de, destino, porCima) {
       ...(porCima ? { modo: "por_cima", confirmar: true } : {}),
     });
     $("#rstRecado").textContent = "";
-    avisar(`${r.database} restaurado · ${fmt(r.arquivos)} arquivo(s), ${
-      fmtBytes(r.bytes)}, ${r.tabelas.length} tabela(s)`);
+    avisar(preencher(txt("tela.g_database_restaurado","{database} restaurado · {arquivos} arquivo(s), {bytes}, {tabelas} tabela(s)"),
+      {database: r.database, arquivos: fmt(r.arquivos), bytes: fmtBytes(r.bytes), tabelas: r.tabelas.length}));
     await montarArvore(false);
-    folha(`Restaurado: ${r.database}`, `de ${r.de}, em ${fmt(r.ms)} ms`,
+    folha(preencher(txt("tela.tt_restaurado_db","Restaurado: {database}"), {database: r.database}),
+      preencher(txt("tela.st_de_em_ms","de {de}, em {ms} ms"), {de: r.de, ms: fmt(r.ms)}),
       `<div class="fichas">
          ${ficha(r.database, "database")}
          ${ficha(fmt(r.arquivos), "arquivos")}
@@ -6712,7 +6718,7 @@ function rotulosSalvos() {
 
 function gravarRotulos(r) {
   try { localStorage.setItem(CHAVE_ROTULOS, JSON.stringify(r)); }
-  catch (_) { avisar("o navegador não deixou guardar a preferência", true); }
+  catch (_) { avisar(txt("tela.g_sem_guardar_preferencia","o navegador não deixou guardar a preferência"), true); }
 }
 
 /** O rotulo a exibir para uma chave, com o original como reserva. */
@@ -6739,7 +6745,7 @@ function editorDeMenu() {
   const trocados = Object.keys(est.rotulos).length;
   const grupos = [...new Set(itens.map(i => i.grupo))];
 
-  folha("Editor de menu", `${itens.length} rótulos · ${trocados} trocado(s) neste navegador`,
+  folha(txt("tela.tt_editor_menu","Editor de menu"), `${itens.length} rótulos · ${trocados} trocado(s) neste navegador`,
     `<div class="acoes">
        <button class="botao" id="emSalvar">Aplicar</button>
        <button class="botao secundario" id="emReverter">Voltar aos nomes de fábrica</button>
@@ -6772,14 +6778,14 @@ function editorDeMenu() {
     est.rotulos = novo;
     gravarRotulos(novo);
     montarMenu(); montarFerramentas();
-    avisar(`${Object.keys(novo).length} rótulo(s) trocado(s)`);
+    avisar(preencher(txt("tela.g_rotulos_trocados","{n} rótulo(s) trocado(s)"), {n: Object.keys(novo).length}));
     editorDeMenu();
   };
   $("#emReverter").onclick = () => {
     est.rotulos = {};
     gravarRotulos({});
     montarMenu(); montarFerramentas();
-    avisar("nomes de fábrica de volta");
+    avisar(txt("tela.g_nomes_fabrica_de_volta","nomes de fábrica de volta"));
     editorDeMenu();
   };
 }
@@ -7174,7 +7180,7 @@ function ligarCoresDaTelemetria() {
         bloco.querySelector("input[type=hidden]").value = "";
         pintar(bloco);
       });
-      avisar("as quatro voltaram ao tema — clique em «Salvar no config.json» para gravar");
+      avisar(txt("tela.g_quatro_voltaram_tema","as quatro voltaram ao tema — clique em «Salvar no config.json» para gravar"));
     };
   }
 }
@@ -7371,13 +7377,15 @@ async function salvarConfigServidor() {
 
   if (ruim) return avisar(ruim, true);
   const quantos = Object.keys(campos).length;
-  if (!quantos) return avisar("nada mudou — nenhum campo foi gravado");
+  if (!quantos) return avisar(txt("tela.g_nada_mudou","nada mudou — nenhum campo foi gravado"));
 
   try {
     const r = await api("config_gravar", { campos });
     const espera = r.exigem_reinicio || [];
-    avisar(`${quantos} campo(s) gravado(s) em ${r.arquivo}`
-      + (espera.length ? ` · ${espera.join(", ")} só vale(m) no próximo arranque` : ""));
+    avisar(preencher(txt("tela.g_campos_gravados","{quantos} campo(s) gravado(s) em {arquivo}{espera}"),
+      {quantos, arquivo: r.arquivo, espera: espera.length
+        ? preencher(txt("tela.g_so_vale_proximo_arranque"," · {lista} só vale(m) no próximo arranque"), {lista: espera.join(", ")})
+        : ""}));
     verConfigServidor();
   } catch (e) {
     avisar(`${e}`, true);
@@ -7398,7 +7406,7 @@ function grupoDeAjustes(titulo, linhas) {
 /** As configuracoes que valem para UM database. */
 async function verConfigBanco(db) {
   db = db || databaseCorrente();
-  if (!db) return avisar("nenhum database escolhido", true);
+  if (!db) return avisar(txt("tela.g_sem_database_escolhido","nenhum database escolhido"), true);
 
   const [c, t, st] = await Promise.all([
     api("config"),
@@ -7410,7 +7418,7 @@ async function verConfigBanco(db) {
   const tabelas = st.tabelas || [];
   const soma = (f) => tabelas.reduce((a, x) => a + (+x[f] || 0), 0);
 
-  folha(`Configurações do banco ${db}`, "o que vale para este database",
+  folha(`Configurações do banco ${db}`, txt("tela.st_vale_para_database","o que vale para este database"),
     `<div class="fichas">
        ${ficha(tabelas.length, "tabelas")}
        ${ficha((t.schemas || []).length, "schemas")}
@@ -7453,7 +7461,7 @@ async function verConfigBanco(db) {
 async function verConfigUsuarios() {
   const u = await api("usuarios");
   const lista = u.usuarios || u || [];
-  folha("Configurações dos usuários", `${lista.length} cadastrado(s) · o hash da senha nunca sai daqui`,
+  folha(txt("tela.tt_config_usuarios","Configurações dos usuários"), `${lista.length} cadastrado(s) · o hash da senha nunca sai daqui`,
     `<div class="fichas">
        ${ficha(lista.length, "usuários")}
        ${ficha(lista.filter(x => x.supervisor).length, "supervisores")}
@@ -7538,8 +7546,8 @@ async function verConfigUsuarios() {
 
 async function verSysTables(db) {
   db = db || databaseCorrente();
-  if (!db) return avisar("nenhum database escolhido", true);
-  folha(`SysTables · ${db}`, "carregando…", `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
+  if (!db) return avisar(txt("tela.g_sem_database_escolhido","nenhum database escolhido"), true);
+  folha(`SysTables · ${db}`, txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   const r = await api("sistabelas", { database: db });
   const linhas = r.tabelas || [];
 
@@ -7606,8 +7614,8 @@ async function verSysTables(db) {
 
 async function verSysColumns(db, tabela_) {
   db = db || databaseCorrente();
-  if (!db) return avisar("nenhum database escolhido", true);
-  folha(`SysColumns · ${db}`, "carregando…", `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
+  if (!db) return avisar(txt("tela.g_sem_database_escolhido","nenhum database escolhido"), true);
+  folha(`SysColumns · ${db}`, txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   const r = await api("siscolunas", tabela_ ? { database: db, tabela: tabela_ } : { database: db });
   const linhas = r.colunas || [];
 
@@ -7813,7 +7821,7 @@ function ligarGradeTx(dados) {
 const SIMBOLO_PHOENIX = "data:image/png;base64,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";
 
 function verCreditos() {
-  folha("Sobre", "quem fez, e sobre o que se apoiou",
+  folha(txt("tela.tt_sobre","Sobre"), txt("tela.st_quem_fez_apoiou","quem fez, e sobre o que se apoiou"),
     `<div class="creditos">
        <img class="ave" src="${SIMBOLO_PHOENIX}" width="224" height="133"
             alt="A fênix do projeto Phoenix">
@@ -7953,7 +7961,7 @@ function ligarIdiomasAdmin() {
   $("#btIdiCarga").onclick = async () => {
     try {
       const r = await api("idiomas_carga");
-      avisar(`carga feita: ${r.incluidas} incluída(s), ${r.intocadas} já estavam lá`);
+      avisar(preencher(txt("tela.g_carga_feita","carga feita: {incluidas} incluída(s), {intocadas} já estavam lá"), {incluidas: r.incluidas, intocadas: r.intocadas}));
       abrirAdmin("idiomas");
     } catch (e) { avisar(e.message, true); }
   };
@@ -7964,7 +7972,7 @@ function ligarIdiomasAdmin() {
       const quando = new Date().toISOString().slice(0, 10);
       baixar(`phxsql-idiomas-${quando}.json`, "application/json",
              JSON.stringify(b, null, 2), false);
-      avisar(`backup de ${b.linhas.length} linha(s) entregue ao navegador`);
+      avisar(preencher(txt("tela.g_backup_entregue","backup de {n} linha(s) entregue ao navegador"), {n: b.linhas.length}));
     } catch (e) { avisar(e.message, true); }
   };
 
@@ -7976,14 +7984,14 @@ function ligarIdiomasAdmin() {
     try {
       const backup = JSON.parse(await arq.text());
       const quantas = (backup.linhas || []).length;
-      if (!confirm(`Importar ${quantas} linha(s) de ${arq.name}?\n\n`
-        + "O que estiver no backup é GRAVADO POR CIMA do que está na tabela, "
-        + "TextName por TextName. O que não estiver no backup fica como está."))
+      if (!confirm(preencher(txt("tela.g_confirmar_importar_idiomas",
+        "Importar {quantas} linha(s) de {arq}?\n\nO que estiver no backup é GRAVADO POR CIMA do que está na tabela, TextName por TextName. O que não estiver no backup fica como está."),
+        {quantas, arq: arq.name})))
         return;
       const r = await api("idiomas_importar", { backup });
-      avisar(`importado: ${r.incluidas} incluída(s), ${r.alteradas} alterada(s)`);
+      avisar(preencher(txt("tela.g_importado","importado: {incluidas} incluída(s), {alteradas} alterada(s)"), {incluidas: r.incluidas, alteradas: r.alteradas}));
       abrirAdmin("idiomas");
-    } catch (e) { avisar(e.message || "arquivo ilegível", true); }
+    } catch (e) { avisar(e.message || txt("tela.g_arquivo_ilegivel","arquivo ilegível"), true); }
   };
 
   // O botão que apaga trabalho. Ele diz O QUE vai sobrescrever antes de
@@ -7991,18 +7999,17 @@ function ligarIdiomasAdmin() {
   $("#btIdiPadrao").onclick = async () => {
     const escopo = $("#idiEscopo").value;
     const tudo = escopo === "*";
-    const alvo = tudo ? "os SEIS idiomas" : `no idioma ${escopo}`;
-    if (!confirm(`Devolver os textos de fábrica ${tudo ? "em " : ""}${alvo}?\n\n`
-      + `Toda tradução que alguém tenha escrito ${tudo
-          ? "em qualquer um dos seis idiomas"
-          : `na coluna ${escopo}`} será SUBSTITUÍDA pelo texto de fábrica.\n\n`
-      + "As outras colunas não são tocadas. Isto não se desfaz — exporte um "
-      + "backup antes se houver tradução que valha guardar."))
+    const alvo = tudo ? txt("tela.g_os_seis_idiomas","os SEIS idiomas") : preencher(txt("tela.g_no_idioma_x","no idioma {escopo}"), {escopo});
+    if (!confirm(preencher(txt("tela.g_confirmar_devolver_fabrica",
+      "Devolver os textos de fábrica {emtudo}{alvo}?\n\nToda tradução que alguém tenha escrito {ondetudo} será SUBSTITUÍDA pelo texto de fábrica."),
+      { emtudo: tudo ? txt("tela.g_em_prefixo","em ") : "", alvo,
+        ondetudo: tudo ? txt("tela.g_em_qualquer_seis","em qualquer um dos seis idiomas") : preencher(txt("tela.g_na_coluna_x","na coluna {escopo}"), {escopo}) })
+      + txt("tela.g_confirmar_devolver_fabrica_aviso",
+        "\n\nAs outras colunas não são tocadas. Isto não se desfaz — exporte um backup antes se houver tradução que valha guardar.")))
       return;
     try {
       const r = await api("idiomas_padrao", tudo ? { tudo:true } : { idioma:escopo });
-      avisar(`carga padrão em ${esc(r.sobrescreveu)}: ${r.alteradas} alterada(s), `
-        + `${r.incluidas} incluída(s)`);
+      avisar(preencher(txt("tela.g_carga_padrao_em","carga padrão em {alvo}: {alteradas} alterada(s), {incluidas} incluída(s)"), {alvo: esc(r.sobrescreveu), alteradas: r.alteradas, incluidas: r.incluidas}));
       abrirAdmin("idiomas");
     } catch (e) { avisar(e.message, true); }
   };
@@ -8052,7 +8059,7 @@ function baixar(nome, mime, conteudo, ehBase64) {
 async function telaExportar(db, tab) {
   db = db || (est.atual || {}).db || databaseCorrente();
   tab = tab || (est.atual || {}).tab;
-  if (!db || !tab) return avisar("escolha uma tabela primeiro", true);
+  if (!db || !tab) return avisar(txt("tela.g_escolha_tabela_primeiro","escolha uma tabela primeiro"), true);
 
   folha(`Exportar ${tab}`, `${esc(db)} · escolha o formato`,
     `<div class="formatos" id="fmts">
@@ -8114,7 +8121,7 @@ const FORMATOS_ENTRADA = [
 async function telaImportar(db, tab) {
   db = db || (est.atual || {}).db || databaseCorrente();
   tab = tab || (est.atual || {}).tab;
-  if (!db || !tab) return avisar("escolha uma tabela primeiro", true);
+  if (!db || !tab) return avisar(txt("tela.g_escolha_tabela_primeiro","escolha uma tabela primeiro"), true);
 
   folha(`Importar para ${tab}`, `${esc(db)} · cole a carga e confira antes de gravar`,
     `<div class="form-dbl">
@@ -8147,7 +8154,7 @@ async function telaImportar(db, tab) {
 
   const previa = () => {
     const texto = $("#impTexto").value;
-    if (!texto.trim()) { avisar("cole a carga primeiro", true); return null; }
+    if (!texto.trim()) { avisar(txt("tela.g_cole_carga_primeiro","cole a carga primeiro"), true); return null; }
     return texto;
   };
 
@@ -8540,7 +8547,7 @@ async function restaurarLinha(db, tab, rowid, aoTerminar) {
 async function telaLixeira(db, tab) {
   db = db || (est.atual || {}).db || databaseCorrente();
   tab = tab || (est.atual || {}).tab;
-  if (!db || !tab) return avisar("escolha uma tabela primeiro", true);
+  if (!db || !tab) return avisar(txt("tela.g_escolha_tabela_primeiro","escolha uma tabela primeiro"), true);
 
   folha(`Lixeira de ${tab}`, `${esc(db)} · carregando…`,
     `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
@@ -8591,7 +8598,7 @@ async function telaLixeira(db, tab) {
       + `O expurgo fica registrado no .reason antes de o dado sair.\n\n`
       + `Motivo (obrigatório):`, "");
     if (motivo === null) return;
-    if (!motivo.trim()) return avisar("o motivo é obrigatório para esvaziar", true);
+    if (!motivo.trim()) return avisar(txt("tela.g_motivo_obrigatorio_esvaziar","o motivo é obrigatório para esvaziar"), true);
     try {
       const r = await api("esvaziar_lixeira", { database: db, tabela: tab, motivo: motivo.trim() });
       avisar(`${fmt(r.apagadas)} linha(s) apagadas de vez`);
@@ -8661,10 +8668,10 @@ async function verLinhaDescartada(db, tab, uuid) {
     d = await api("lixeira", { database: db, tabela: tab, uuid });
   } catch (e) { return avisar(String(e), true); }
   const item = (d.descartadas || [])[0];
-  if (!item) return avisar("essa linha não está mais na lixeira", true);
+  if (!item) return avisar(txt("tela.g_linha_nao_esta_lixeira","essa linha não está mais na lixeira"), true);
   const cols = (d.colunas || []).filter(c => !c.sistema);
 
-  folha(`Linha descartada`, `${esc(db)} · ${esc(tab)} · rowid ${item.rowid}`,
+  folha(txt("tela.tt_linha_descartada","Linha descartada"), `${esc(db)} · ${esc(tab)} · rowid ${item.rowid}`,
     `<div class="fichas">
        <div class="ficha"><div class="v">${esc(item.quando)}</div><div class="r">quando</div></div>
        <div class="ficha"><div class="v">${esc(item.usuario_nome || "—")}</div><div class="r">quem excluiu</div></div>
@@ -8700,7 +8707,7 @@ async function verLinhaDescartada(db, tab, uuid) {
 async function telaMotivos(db, tab) {
   db = db || (est.atual || {}).db || databaseCorrente();
   tab = tab || (est.atual || {}).tab;
-  if (!db || !tab) return avisar("escolha uma tabela primeiro", true);
+  if (!db || !tab) return avisar(txt("tela.g_escolha_tabela_primeiro","escolha uma tabela primeiro"), true);
 
   folha(`Motivos de ${tab}`, `${esc(db)} · carregando…`,
     `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
@@ -9102,13 +9109,13 @@ const JN = { db:"", a:"", b:"", chaveA:"", chaveB:"", tipo:"interna", grade:null
 
 async function telaJuncao(db) {
   JN.db = db || JN.db || databaseCorrente();
-  if (!JN.db) return avisar("escolha um banco primeiro", true);
-  folha("Junção de tabelas", "carregando…", `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
+  if (!JN.db) return avisar(txt("tela.g_escolha_banco_primeiro","escolha um banco primeiro"), true);
+  folha(txt("tela.tt_juncao","Junção de tabelas"), txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
 
   const t = await api("tabelas", { database: JN.db });
   const tabs = t.tabelas || [];
   if (tabs.length < 2) {
-    return folha("Junção de tabelas", esc(JN.db),
+    return folha(txt("tela.tt_juncao","Junção de tabelas"), esc(JN.db),
       `<div class="aviso mal">O banco <b>${esc(JN.db)}</b> tem
         ${tabs.length} tabela(s). Uma junção precisa de duas.</div>`);
   }
@@ -9118,7 +9125,7 @@ async function telaJuncao(db) {
   const opc = (lista, sel) => lista.map(x =>
     `<option ${x === sel ? "selected" : ""}>${esc(x)}</option>`).join("");
 
-  folha("Junção de tabelas", `${esc(JN.db)} · escolha o formato clicando no desenho`,
+  folha(txt("tela.tt_juncao","Junção de tabelas"), `${esc(JN.db)} · escolha o formato clicando no desenho`,
     `<div class="form-dbl">
        <label class="cmp"><span>Tabela A</span>
          <select id="jA" class="campo">${opc(tabs, JN.a)}</select></label>
@@ -9245,13 +9252,13 @@ const UN = { db:"", escolhidas:[], modo:"distinta" };
 
 async function telaUniao(db) {
   UN.db = db || UN.db || databaseCorrente();
-  if (!UN.db) return avisar("escolha um banco primeiro", true);
-  folha("União de tabelas", "carregando…", `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
+  if (!UN.db) return avisar(txt("tela.g_escolha_banco_primeiro","escolha um banco primeiro"), true);
+  folha(txt("tela.tt_uniao","União de tabelas"), txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   const t = await api("tabelas", { database: UN.db });
   const tabs = t.tabelas || [];
   UN.escolhidas = UN.escolhidas.filter(x => tabs.includes(x));
 
-  folha("União de tabelas",
+  folha(txt("tela.tt_uniao","União de tabelas"),
     `${esc(UN.db)} · empilha duas ou mais tabelas, posição a posição`,
     `<div class="un-lista">
        ${tabs.map(x => `<label class="un-item">
@@ -9282,7 +9289,7 @@ async function telaUniao(db) {
     UN.escolhidas = $$(".un-item input").filter(x => x.checked).map(x => x.value);
   });
   $("#unRodar").onclick = async () => {
-    if (UN.escolhidas.length < 2) return avisar("marque ao menos duas tabelas", true);
+    if (UN.escolhidas.length < 2) return avisar(txt("tela.g_marque_duas_tabelas","marque ao menos duas tabelas"), true);
     $("#unSaida").innerHTML = `<div class="centro">unindo…</div>`;
     let r;
     try { r = await api("unir", { database: UN.db, modo: UN.modo, tabelas: UN.escolhidas }); }
@@ -9369,10 +9376,10 @@ function linhasParaObjetos(r) {
 }
 
 async function telaDbLink(nome) {
-  folha("DbLink", "carregando…", `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
+  folha("DbLink", txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   let d;
   try { d = await api("dblink"); }
-  catch (e) { return folha("DbLink", "não deu", `<div class="aviso mal">${esc(String(e))}</div>`); }
+  catch (e) { return folha("DbLink", txt("tela.st_nao_deu","não deu"), `<div class="aviso mal">${esc(String(e))}</div>`); }
 
   const ligacoes = d.ligacoes || [];
   DBL.ligacao = nome || DBL.ligacao ||
@@ -9380,7 +9387,7 @@ async function telaDbLink(nome) {
   const atual = ligacoes.find(l => l.nome === DBL.ligacao);
 
   if (!ligacoes.length) {
-    return folha("DbLink", "nenhuma ligação cadastrada ainda",
+    return folha("DbLink", txt("tela.st_nenhuma_ligacao","nenhuma ligação cadastrada ainda"),
       `<div class="aviso">
          <p><strong>Um DbLink guarda um apelido, um endereço e uma
          credencial.</strong> Depois disso o banco de fora aparece nesta tela
@@ -9884,7 +9891,7 @@ async function telaDbLinkSql(nome) {
   $("#btVoltaDbl").onclick = () => telaDbLink(nome);
   $("#btRodar").onclick = async () => {
     const sql = $("#sqlDbl").value.trim();
-    if (!sql) return avisar("escreva a instrução", true);
+    if (!sql) return avisar(txt("tela.g_escreva_instrucao","escreva a instrução"), true);
     $("#saidaSql").innerHTML = `<div class="centro">executando…</div>`;
     let r;
     try { r = await api("dblink_consultar", { dblink: nome, sql }); }
@@ -9916,10 +9923,10 @@ async function telaDbLinkSql(nome) {
 /* ------------------------------------------------ o cadastro das ligações */
 
 async function telaDbLinkDefinicoes() {
-  folha("Definições do DbLink", "carregando…", `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
+  folha(txt("tela.tt_dblink_def","Definições do DbLink"), txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   const d = await api("dblink");
   const ls = d.ligacoes || [];
-  folha("Definições do DbLink",
+  folha(txt("tela.tt_dblink_def","Definições do DbLink"),
     `${ls.length} ligação(ões) · guardadas em ${esc(d.arquivo)}`,
     `<div id="gradeDbl"></div>` +
     `<div class="aviso">
@@ -10252,7 +10259,7 @@ function aindaNao(f) {
 async function verServico() {
   const [p, s] = await Promise.all([api("ping"), api("servico")]);
   const noAr = !!s.no_ar;
-  folha("Serviço",
+  folha(txt("tela.mi_servico","Serviço"),
     noAr ? "a porta de dados está aceitando conexão"
          : "a porta de dados está PARADA — a interface web continua no ar",
     `<div class="fichas">
@@ -10414,7 +10421,7 @@ async function telaJobs() {
            <code>alertas.email</code> no config.json (um relé SMTP interno) e
            acrescente <code>"avisar_jobs": true</code>.</p>`;
 
-  folha("Jobs de execução",
+  folha(txt("tela.tt_jobs","Jobs de execução"),
     `${jobs.length} job(s) · cadastro em ${esc(j.arquivo)} · corridas em ${esc(j.log)}`
     + (j.relogio_no_ar ? "" : " · sem relógio neste arranque"),
     (jobs.length ? `<div id="gradeJobs"></div>`
@@ -10498,7 +10505,7 @@ async function telaJobs() {
           const r = await api("job_ligar", { nome: bLigar.dataset.n, ligado: ligar });
           avisar(`job ${bLigar.dataset.n} ${ligar ? "ligado" : "desligado"}`);
           if (ligar && !r.relogio_no_ar) {
-            avisar("ligado — mas o relógio de jobs não subiu neste arranque: "
+            avisar(txt("tela.g_ligado_relogio_jobs_nao_subiu","ligado — mas o relógio de jobs não subiu neste arranque: ")
                  + "reinicie para ele andar sozinho, ou rode pela tela.", true);
           }
         } catch (e) { avisar(`${e}`, true); }
@@ -10660,7 +10667,7 @@ async function editarJob(nome) {
       const r = await api("job_salvar", { job });
       avisar(`job ${r.salvo} gravado`);
       if (job.ligado && !r.relogio_no_ar) {
-        avisar("gravado — mas o relógio de jobs não subiu neste arranque: "
+        avisar(txt("tela.g_gravado_relogio_jobs_nao_subiu","gravado — mas o relógio de jobs não subiu neste arranque: ")
              + "ele só sobe quando já há job ligado. Reinicie para o job andar sozinho.", true);
       }
       telaJobs();
@@ -10703,10 +10710,10 @@ async function telaDiagramaER(db) {
   db = db || databaseCorrente();
   const bancos = est.bancos || await api("bancos");
   if (!db) db = bancos[0];
-  if (!db) return folha("Diagrama ER", "não há database ainda",
+  if (!db) return folha(txt("tela.fer_diagrama","Diagrama ER"), txt("tela.st_sem_database_ainda","não há database ainda"),
     `<div class="vazio">crie um database primeiro</div>`);
 
-  folha("Diagrama ER", `${esc(db)} · lendo o esquema…`,
+  folha(txt("tela.fer_diagrama","Diagrama ER"), `${esc(db)} · lendo o esquema…`,
     `<div class="centro">lendo o esquema de cada tabela…</div>`);
   const t = await api("tabelas", { database: db });
   const esquemas = [];
@@ -10739,7 +10746,7 @@ async function telaDiagramaER(db) {
   ER.db = db; ER.esquemas = esquemas; ER.dblink = sincronias; ER.semDbl = semDbl;
   const r = PhxER.resumo(esquemas);
 
-  folha("Diagrama ER",
+  folha(txt("tela.fer_diagrama","Diagrama ER"),
     `${esc(db)} · ${r.tabelas} tabela(s), ${r.ligacoes} chave(s) estrangeira(s)`
     + (sincronias.length ? `, ${sincronias.length} sincronia(s) DbLink` : ""),
     `<div class="barra-acao">
@@ -11221,7 +11228,7 @@ function cartaoNovaTabelaER(db) {
 async function telaDadosPessoais(db) {
   const bancos = est.bancos || await api("bancos");
   const alvos = db ? [db] : bancos;
-  folha("Dado pessoal", "varrendo o esquema…",
+  folha(txt("tela.tt_dado_pessoal","Dado pessoal"), txt("tela.st_varrendo_esquema","varrendo o esquema…"),
     `<div class="centro">lendo o esquema de cada tabela…</div>`);
 
   const achados = [];
@@ -11243,7 +11250,7 @@ async function telaDadosPessoais(db) {
   const bases = new Set(achados.map(a => a.base)).size;
   const tabelasComDado = new Set(achados.map(a => `${a.base}.${a.tabela}`)).size;
 
-  folha("Dado pessoal",
+  folha(txt("tela.tt_dado_pessoal","Dado pessoal"),
     db ? `${esc(db)} · onde estão as marcas de LGPD/GDPR`
        : "todas as bases · onde estão as marcas de LGPD/GDPR",
     `<div class="fichas">
@@ -11371,14 +11378,14 @@ async function telaDadosPessoais(db) {
  * respostas muito diferentes para quem audita.
  */
 async function telaTrilhaLgpd(db, tab, tipo) {
-  folha("Trilha de LGPD", `${esc(db)}.${esc(tab)} · lendo…`,
+  folha(txt("tela.tt_trilha_lgpd","Trilha de LGPD"), `${esc(db)}.${esc(tab)} · lendo…`,
     `<div class="centro">lendo o <code>.lgpd</code>…</div>`);
   let t;
   try {
     t = await api("trilha", { database: db, tabela: tab, limite: 500,
                               tipo: tipo || undefined });
   } catch (e) {
-    return folha("Trilha de LGPD", `${esc(db)}.${esc(tab)}`,
+    return folha(txt("tela.tt_trilha_lgpd","Trilha de LGPD"), `${esc(db)}.${esc(tab)}`,
       `<div class="aviso mal"><p><strong>Não deu para ler a trilha.</strong>
        ${esc(e.message || String(e))}</p>
        <p>A trilha guarda o valor <b>antes</b> e <b>depois</b> das colunas
@@ -11400,7 +11407,7 @@ async function telaTrilhaLgpd(db, tab, tipo) {
     ? `<span class="pino mal" title="senha ou hash: o valor nunca entra na trilha">⛨ ${esc(txt("tela.pino_redigido","redigido"))}</span>`
     : (bruto === "" ? `<span class="leg">${esc(txt("tela.pino_vazio","(vazio)"))}</span>` : `<span class="dado">${esc(bruto)}</span>`);
 
-  folha("Trilha de LGPD", `${esc(db)}.${esc(tab)} · quem mexeu e quem viu`,
+  folha(txt("tela.tt_trilha_lgpd","Trilha de LGPD"), `${esc(db)}.${esc(tab)} · quem mexeu e quem viu`,
     `<div class="fichas">
        <div class="ficha"><div class="v">${fmt(t.total || 0)}</div>
          <div class="r">registros na trilha</div></div>
@@ -11502,7 +11509,7 @@ async function verDiretivas() {
   const lista = (arr, vazio) => Array.isArray(arr) && arr.length
     ? `<ul>${arr.map(x => `<li><code>${esc(String(x))}</code></li>`).join("")}</ul>`
     : `<p class="leg">${esc(vazio)}</p>`;
-  folha("Diretivas", "a política deste servidor · vale antes de qualquer coisa sair daqui",
+  folha(txt("tela.fer_diretivas","Diretivas"), txt("tela.st_politica_servidor","a política deste servidor · vale antes de qualquer coisa sair daqui"),
     `<div class="fichas">
        <div class="ficha"><div class="v">${c.somente_leitura ? "sim" : "não"}</div>
          <div class="r">somente leitura</div></div>
@@ -11536,7 +11543,7 @@ async function verBancos() {
   // template literal FECHA o literal. Um comentario explicativo derrubou a
   // pagina inteira, e a bateria pegou em 200 ms -- ler o codigo nao pegaria,
   // porque o texto do comentario esta certo; o que quebra e onde ele esta.
-  folha("Bancos de dados", "o que existe em disco, sob a raiz do servidor",
+  folha(txt("tela.bancos_de_dados","Bancos de dados"), txt("tela.st_o_que_existe_disco","o que existe em disco, sob a raiz do servidor"),
     `<div class="acoes">
        <button class="botao secundario" id="btGerirBancoLista">${
          esc(txt("tela.fer_gerir_banco", "Gerir Banco"))}</button>
@@ -11658,7 +11665,7 @@ async function verReplicacao() {
          : ""}
      </div>`;
 
-  folha("Replicação", `papel ${papel}`, fichas + acoes + aviso + deOrigens + posicoes);
+  folha(txt("tela.mi_replicacao","Replicação"), `papel ${papel}`, fichas + acoes + aviso + deOrigens + posicoes);
   $("#btAssistRep").onclick = () => assistenteReplicacao();
   const ac = $("#btAcompRep");
   if (ac) ac.onclick = () => abrirProvaReplicacao(origens);
@@ -12422,8 +12429,8 @@ let profGrade = null;
  * exercita-lo no navegador com um retrato inventado, sem servidor nenhum.
  */
 function telaTelemetria() {
-  folha("Telemetria",
-        "o que o servidor está fazendo agora — séries, atividades e threads, "
+  folha(txt("tela.fer_telemetria","Telemetria"),
+        txt("tela.st_telemetria_o_que_faz","o que o servidor está fazendo agora — séries, atividades e threads, ")
         + "em gráficos bolha no molde do SQL Check da Idera®",
         PhxTelemetria.html());
   const ligar = () => PhxTelemetria.iniciar({
@@ -12446,7 +12453,7 @@ async function verProfiler() {
   const e = await api("profiler", { max: 200 }).catch(() => ({ ligado:false, filtro:{} }));
   const f = e.filtro || {};
 
-  folha("Profiler", "o que chega pela porta 5000, antes de virar dado",
+  folha(txt("tela.fer_profiler","Profiler"), txt("tela.st_profiler_o_que_chega","o que chega pela porta 5000, antes de virar dado"),
     `<div class="acoes prof-topo">
        <label class="mini-campo">Database
          <select id="pfDb"><option value="">— todos —</option>
@@ -12631,7 +12638,7 @@ async function verProfiler() {
 
 async function repararPeloMenu() {
   if (!est.atual) {
-    avisar("abra uma tabela antes de reparar", true);
+    avisar(txt("tela.g_abra_tabela_antes_reparar","abra uma tabela antes de reparar"), true);
     return;
   }
   return repararTabela();
@@ -12640,7 +12647,7 @@ async function repararPeloMenu() {
 /* --------------------------------------------- consulta: SelectMemory, nao SQL */
 
 async function abrirConsulta() {
-  folha("Consulta", "SelectMemory — a consulta que não toca o disco",
+  folha(txt("tela.tt_consulta","Consulta"), txt("tela.st_select_memory","SelectMemory — a consulta que não toca o disco"),
     `<div class="nota">
        <p><strong>Isto não é SQL.</strong> Esta tela é o <code>SelectMemory</code>,
        que consulta uma tabela já carregada na RAM sem tocar o disco. A camada
@@ -13448,7 +13455,7 @@ function fichasDe(obj, rotulos) {
 }
 
 async function novoDatabase() {
-  const nome = prompt("Nome do database novo:");
+  const nome = prompt(txt("tela.g_prompt_nome_db_novo","Nome do database novo:"));
   if (!nome) return;
   const r = await api("criar_database", { database: nome.trim() });
   avisar(`database "${esc(r.database || nome)}" criado`);
@@ -13457,24 +13464,24 @@ async function novoDatabase() {
 
 async function backupAgora() {
   const db = est.atual ? est.atual.db : (est.database || "");
-  const alvo = prompt("Database para o backup (vazio = todos):", db);
+  const alvo = prompt(txt("tela.g_prompt_db_backup","Database para o backup (vazio = todos):"), db);
   if (alvo === null) return;
-  folha("Backup", "copiando e conferindo…", `<div class="centro">rodando…</div>`);
+  folha(txt("tela.fer_backup","Backup"), txt("tela.st_copiando_conferindo","copiando e conferindo…"), `<div class="centro">rodando…</div>`);
   const r = await api("backup", alvo.trim() ? { database: alvo.trim() } : {});
-  folha("Backup", r.zip ? "em zip, com manifesto SHA-256" : "com manifesto SHA-256",
+  folha(txt("tela.fer_backup","Backup"), r.zip ? "em zip, com manifesto SHA-256" : "com manifesto SHA-256",
     fichasDe(r, [["destino","destino"],["arquivos","arquivos"],
                  ["bytes","bytes"],["segundos","segundos"]]) +
     `<pre class="dado">${esc(JSON.stringify(r, null, 1))}</pre>`);
 }
 
 async function conferirBackup() {
-  const caminho = prompt("Caminho do backup a conferir:");
+  const caminho = prompt(txt("tela.g_prompt_caminho_backup","Caminho do backup a conferir:"));
   if (!caminho) return;
-  folha("Conferência do backup", "recalculando o SHA-256 de cada arquivo…",
+  folha(txt("tela.tt_conferencia_backup","Conferência do backup"), txt("tela.st_recalculando_sha","recalculando o SHA-256 de cada arquivo…"),
         `<div class="centro">conferindo…</div>`);
   const r = await api("conferir_backup", { destino: caminho.trim() });
   const ok = r.integro !== false;
-  folha("Conferência do backup",
+  folha(txt("tela.tt_conferencia_backup","Conferência do backup"),
         ok ? "confere com o manifesto" : "NÃO confere com o manifesto",
         fichasDe(r, [["conferidos","conferidos"],["diferentes","diferentes"],
                      ["faltando","faltando"]]) +
@@ -13484,7 +13491,7 @@ async function conferirBackup() {
 async function verificarTabela() {
   const { db, tab } = est.atual;
   const r = await api("verificar", { database: db, tabela: tab });
-  folha(`Integridade de ${tab}`, "CRC de cada registro e de cada página do índice",
+  folha(`Integridade de ${tab}`, txt("tela.st_crc_registro_pagina","CRC de cada registro e de cada página do índice"),
         `<pre class="dado">${esc(JSON.stringify(r, null, 1))}</pre>`);
 }
 
@@ -13495,13 +13502,13 @@ async function verificarTabela() {
 async function checksumTabela(db, tab) {
   db = db || (est.atual || {}).db;
   tab = tab || (est.atual || {}).tab;
-  if (!db || !tab) return avisar("escolha uma tabela primeiro", true);
-  folha(`Soma de verificação de ${tab}`, "lendo…", `<div class="centro">lendo…</div>`);
+  if (!db || !tab) return avisar(txt("tela.g_escolha_tabela_primeiro","escolha uma tabela primeiro"), true);
+  folha(`Soma de verificação de ${tab}`, txt("tela.st_lendo","lendo…"), `<div class="centro">lendo…</div>`);
   let r;
   try { r = await api("checksum", { database: db, tabela: tab }); }
   catch (e) { return folha(`Soma de verificação de ${tab}`, "", `<div class="aviso mal">${esc(String(e))}</div>`); }
   folha(`Soma de verificação de ${esc(db)}.${esc(tab)}`,
-    "para comparar duas cópias sem transportar as duas",
+    txt("tela.st_comparar_copias","para comparar duas cópias sem transportar as duas"),
     `<div class="fichas">
        ${ficha(`<code>${esc(r.checksum)}</code>`, "soma", "64 bits, em hexadecimal")}
        ${ficha(fmt(r.linhas), "linhas vivas")}
@@ -13530,7 +13537,7 @@ async function reindexarTabela() {
   if (!confirm(`Recriar os índices de ${tab} a partir do .reg?\n\nO .ndx é refeito do zero.`)) return;
   const r = await api("reindexar", { database: db, tabela: tab });
   avisar(`índices de ${tab} refeitos`);
-  folha(`Reindex de ${tab}`, "o .ndx foi recriado a partir do .reg",
+  folha(`Reindex de ${tab}`, txt("tela.st_ndx_recriado","o .ndx foi recriado a partir do .reg"),
         `<pre class="dado">${esc(JSON.stringify(r, null, 1))}</pre>`);
 }
 
@@ -13538,7 +13545,7 @@ async function repararTabela() {
   const { db, tab } = est.atual;
   if (!confirm(`Reparar ${tab} pelo espelho .bkp?\n\nCada slot é conferido nos dois lados.`)) return;
   const r = await api("reparar", { database: db, tabela: tab });
-  folha(`Reparo de ${tab}`, "cada slot conferido no .reg e no .bkp",
+  folha(`Reparo de ${tab}`, txt("tela.st_cada_slot_conferido","cada slot conferido no .reg e no .bkp"),
         fichasDe(r, [["conferidos","conferidos"],["reparados","reparados"],
                      ["perdidos","perdidos"]]) +
         (r.perdidos ? `<div class="nota">Há ${r.perdidos} slot(s) perdido(s) dos dois lados.</div>` : ""));
@@ -13548,7 +13555,7 @@ async function carregarNaMemoria() {
   const { db, tab } = est.atual;
   const r = await api("memoria_carregar", { database: db, tabela: tab });
   avisar(`${tab} está na RAM`);
-  folha(`${tab} em memória`, "a consulta deixa de tocar o disco",
+  folha(`${tab} em memória`, txt("tela.st_consulta_sem_disco","a consulta deixa de tocar o disco"),
         `<pre class="dado">${esc(JSON.stringify(r, null, 1))}</pre>`);
 }
 
@@ -13569,7 +13576,7 @@ async function verResidentes() {
   // aqui porque sem ele a conversao nao tinha como ser exercitada de verdade.
   const linhas = r.residentes || r.tabelas || r || [];
   const tem = Array.isArray(linhas) && linhas.length;
-  folha("Tabelas em memória", "carregadas na RAM · a consulta não toca o disco",
+  folha(txt("tela.tt_tabelas_memoria","Tabelas em memória"), txt("tela.st_carregadas_ram","carregadas na RAM · a consulta não toca o disco"),
     tem ? `<div id="gradeResidentes"></div>` : `<div class="centro">nenhuma tabela na RAM</div>`);
 
   // PADRONIZACAO: PhxGrid. Sem clique proprio -- liberar da RAM e pelo menu
@@ -13593,7 +13600,7 @@ async function verResidentes() {
 async function verIps() {
   const r = await api("ips");
   const linhas = Array.isArray(r) ? r : (r.ips || []);
-  folha("De onde vêm", "resumo do acessos.log por IP",
+  folha(txt("tela.mi_de_onde_vem","De onde vêm"), txt("tela.st_resumo_acessos_log","resumo do acessos.log por IP"),
     linhas.length ? `<div id="gradeIps"></div>` : `<div class="centro">nenhum acesso registrado</div>`);
 
   // PADRONIZACAO: PhxGrid. Sem clique proprio -- e so o resumo do log.
@@ -13673,7 +13680,7 @@ async function verConfig() {
   const linhasRec = Object.entries(r).map(([k, v]) => ({ campo: k, valor: v }));
   const linhasCargas = (cargas && cargas.cargas) || [];
 
-  folha("Configuração", "o config.json como o servidor o entendeu · o token nunca sai",
+  folha(txt("tela.mi_configuracao","Configuração"), txt("tela.st_config_como_entendeu","o config.json como o servidor o entendeu · o token nunca sai"),
     `<div class="acoes">
        <button class="botao alterar" id="cfIrGerais">Editar em Gerais do servidor</button>
        <span class="leg">esta tela mostra; a de Gerais grava</span>
@@ -13742,14 +13749,14 @@ async function verConfig() {
 
 async function verQuemSou() {
   const q = await api("quem_sou");
-  folha("Quem sou eu", "a sessão deste console",
+  folha(txt("tela.mi_quem_sou","Quem sou eu"), txt("tela.st_sessao_console","a sessão deste console"),
         `<pre class="dado">${esc(JSON.stringify(q, null, 1))}</pre>`);
 }
 
 async function verSobre() {
   let v = "—";
   try { v = (await api("ping")).versao || "—"; } catch (e) { /* offline: segue */ }
-  folha("Sobre o PhxSql", "Built to store. Engineered to scale.",
+  folha(txt("tela.mi_sobre","Sobre o PhxSql"), "Built to store. Engineered to scale.",
     `<div class="fichas">
        <div class="ficha"><div class="v">${esc(v)}</div><div class="r">versão</div></div>
        <div class="ficha"><div class="v">5</div><div class="r">arquivos por tabela</div>

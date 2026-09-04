@@ -34,6 +34,23 @@ use crate::trilha::{self, TrilhaFile, EXT_LGPD};
 /// Uma linha: um valor por coluna do esquema.
 pub type Linha = Vec<Value>;
 
+/// O resultado de abrir uma tabela SEM poder escrever nada.
+///
+/// Existe porque «nao abriu» e «abriria, mas escrevendo» sao respostas
+/// diferentes para quem chama: a primeira e erro, a segunda e um pedido de
+/// ficha exclusiva. Um `Option` dizia as duas com a mesma palavra e obrigava
+/// quem le o log a adivinhar qual dos quatro componentes recusou.
+// O `Table` ja viaja por valor num `Result<Table>` desde sempre, e a
+// variante grande e a comum. Um `Box` compraria 2,9 KiB de enum e
+// pagaria uma alocacao por ABERTURA, que acontece a cada operacao.
+#[allow(clippy::large_enum_variant)]
+pub enum SemEscrever {
+    /// Abriu, e nao escreveu byte nenhum.
+    Aberta(Table),
+    /// Abrir exigiria escrever. O texto diz qual componente, e por que.
+    PrecisaEscrever(&'static str),
+}
+
 /// Um passo do braco do `ao_alterar`: uma tabela filha, as linhas dela que
 /// apontam para a linha mae que mudou, e o que gravar nelas.
 ///
@@ -716,11 +733,12 @@ impl Table {
         // escrever: e este o caminho que cria o que falta e termina o que
         // ficou pela metade. Um `None` aqui seria defeito nosso, e o texto
         // diz isso -- um `unwrap` diria «alguem errou» sem dizer quem.
-        Table::abrir_com(diretorio, nome, true)?.ok_or_else(|| {
-            PhxError::Corrompido(
-                "abrir com a ficha exclusiva devolveu \"precisa escrever\"".into(),
-            )
-        })
+        match Table::abrir_com(diretorio, nome, true)? {
+            SemEscrever::Aberta(t) => Ok(t),
+            SemEscrever::PrecisaEscrever(o) => Err(PhxError::Corrompido(format!(
+                "abrir com a ficha exclusiva recusou por escrita: {o}"
+            ))),
+        }
     }
 
     /// Abre para LER, e recusa quando abrir exigiria escrever.
@@ -736,15 +754,11 @@ impl Table {
     ///
     /// `None` nao e erro nem defeito: e «esta tabela quer a ficha exclusiva».
     /// Quem chama solta a ficha compartilhada e refaz o trabalho por la.
-    pub fn abrir_para_ler(diretorio: impl AsRef<Path>, nome: &str) -> Result<Option<Table>> {
+    pub fn abrir_para_ler(diretorio: impl AsRef<Path>, nome: &str) -> Result<SemEscrever> {
         Table::abrir_com(diretorio, nome, false)
     }
 
-    fn abrir_com(
-        diretorio: impl AsRef<Path>,
-        nome: &str,
-        escrever: bool,
-    ) -> Result<Option<Table>> {
+    fn abrir_com(diretorio: impl AsRef<Path>, nome: &str, escrever: bool) -> Result<SemEscrever> {
         let diretorio = diretorio.as_ref().to_path_buf();
         let reg = if escrever {
             Some(RegFile::abrir(&diretorio, nome)?)
@@ -752,7 +766,9 @@ impl Table {
             RegFile::abrir_sem_escrever(&diretorio, nome)?
         };
         let Some(reg) = reg else {
-            return Ok(None);
+            return Ok(SemEscrever::PrecisaEscrever(
+                "o .reg tem uma troca de volume interrompida por terminar",
+            ));
         };
         let paginacao = reg.esquema().paginacao();
         let ndx = NdxFile::abrir(caminho(&diretorio, nome, EXT_NDX))?;
@@ -765,7 +781,9 @@ impl Table {
             LogFile::abrir_sem_escrever(&diretorio, nome, externos)?
         };
         let Some(log) = log else {
-            return Ok(None);
+            return Ok(SemEscrever::PrecisaEscrever(
+                "o diario .log ficou para tras numa queda e precisa de cura",
+            ));
         };
         // `abrir` destes dois CRIA quando falta: tabela feita antes deles
         // existirem tem de continuar abrindo.
@@ -775,7 +793,9 @@ impl Table {
             LixeiraFile::abrir_sem_escrever(&diretorio, nome, externos)?
         };
         let Some(lixeira) = lixeira else {
-            return Ok(None);
+            return Ok(SemEscrever::PrecisaEscrever(
+                "a lixeira .trash desta tabela ainda nao existe e seria criada",
+            ));
         };
         let motivos = if escrever {
             Some(MotivoFile::abrir(&diretorio, nome, externos)?)
@@ -783,7 +803,9 @@ impl Table {
             MotivoFile::abrir_sem_escrever(&diretorio, nome, externos)?
         };
         let Some(motivos) = motivos else {
-            return Ok(None);
+            return Ok(SemEscrever::PrecisaEscrever(
+                "o arquivo de motivos .reason ainda nao existe e seria criado",
+            ));
         };
         // Este NAO cria: arquivo ausente e tabela sem trilha, nunca erro --
         // e e assim que toda tabela gravada antes desta versao abre igual.
@@ -799,7 +821,7 @@ impl Table {
 
         let esquema = reg.esquema().clone();
         let colunas_marcadas = marcadas_do_esquema(&esquema);
-        Ok(Some(Table {
+        Ok(SemEscrever::Aberta(Table {
             nome: nome.to_string(),
             diretorio,
             esquema,

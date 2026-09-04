@@ -23,13 +23,14 @@ use std::net::{SocketAddr, TcpListener, TcpStream};
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use phxsql_core::error::{PhxError, Result};
 use phxsql_core::fio::{Canal, Recebido};
 use phxsql_core::json::Json;
-use phxsql_store::catalogo::Instancia;
+use phxsql_store::catalogo::{Aberta, Instancia, Raiz};
+use phxsql_store::leitura::{Legivel, TabelaLeitura};
 use phxsql_store::log::Operacao;
 use phxsql_store::memoria::{Consulta, Filtro, Operador, Ordem, TabelaMemoria};
 use phxsql_store::table::{Table, Visao};
@@ -467,7 +468,20 @@ const PRAZO_DO_GATILHO_ANTES: Duration = Duration::from_millis(500);
 pub struct Servidor {
     config: Config,
     /// Trava unica de dados. Ver a nota de concorrencia no topo do modulo.
-    dados: Mutex<Instancia>,
+    ///
+    /// # Por que um `RwLock`, e por que ele NAO guarda a `Instancia`
+    ///
+    /// `RwLock<Instancia>` compila de primeira e esta errado -- todo metodo da
+    /// `Instancia` e `&self`, que e o que um guard de LEITURA entrega, entao
+    /// dois escritores abririam dois `Table` sobre os mesmos arquivos sem um
+    /// erro do compilador. O marcador `!Sync` da `Instancia` existe para
+    /// transformar esse engano silencioso em erro de compilacao, e ele
+    /// continua no lugar.
+    ///
+    /// O que esta aqui e a [`Raiz`], que separa as duas fichas pelo tipo de
+    /// emprestimo: `&Raiz` (N leitores ao mesmo tempo) so alcanca tabela de
+    /// LEITURA; `&mut Raiz` (um de cada vez) alcanca a `Instancia` inteira.
+    dados: RwLock<Raiz>,
     /// Quando o gravado vai de fato para o disco.
     janela: Janela,
     /// Tabelas escritas desde o ultimo `fsync`, como "database/tabela".
@@ -694,7 +708,7 @@ impl Servidor {
         // Copiados ANTES de o `config` entrar no struct, que o consome.
         let (max_linhas, somente_leitura, espelho) =
             (config.max_linhas, config.somente_leitura, config.espelho);
-        let instancia = Instancia::nova(&config.base)?;
+        let mut raiz = Raiz::nova(&config.base)?;
         // A RECUPERACAO, e ela vem antes de tudo o mais.
         //
         // Um `transacao_<id>.tx` orfao quer dizer uma coisa so: alguem morreu
@@ -707,7 +721,7 @@ impl Servidor {
         // Silencio quando nao ha marca nenhuma, que e o arranque de sempre: um
         // bloco de relatorio dizendo zero em toda subida treina quem opera a
         // nao ler o relatorio.
-        let recuperacao = crate::transacao::recuperar(&instancia);
+        let recuperacao = crate::transacao::recuperar(&raiz.exclusiva());
         if recuperacao.houve() {
             eprintln!("{}", recuperacao.texto(&config.base));
         }
@@ -739,7 +753,7 @@ impl Servidor {
             janela: Janela::nova(&config.recursos),
             sujas: Mutex::new(std::collections::HashSet::new()),
             config,
-            dados: Mutex::new(instancia),
+            dados: RwLock::new(raiz),
             log: Mutex::new(log),
             lista_negra: Mutex::new(lista_negra),
             sessoes: Mutex::new(http::Sessoes::default()),
@@ -951,7 +965,7 @@ impl Servidor {
             a.esperando_trava();
         }
         let pedida = medindo.then(Instant::now);
-        let guarda = self.dados.lock().map_err(|_| trava_envenenada());
+        let guarda = self.dados.write().map_err(|_| trava_envenenada());
         // UM relogio para as duas contas: o instante em que a trava chegou na
         // mao e o fim da espera e o comeco da posse. Ler o relogio duas vezes
         // aqui pagaria duas chamadas para saber a mesma coisa.
@@ -965,9 +979,77 @@ impl Servidor {
         }
         // So depois do `?`: trava envenenada nao chegou a ser tomada, e uma
         // marca deixada aqui trancaria esta thread para o resto da vida dela.
+        let mut guarda = guarda?;
+        COM_A_TRAVA.with(|c| c.set(true));
+        // A ficha sai da vida do emprestimo e passa a viver ao lado do guard,
+        // no mesmo `struct` -- ver `Exclusiva::sem_amarra`. Os dois morrem
+        // juntos, no `Drop` daqui.
+        let instancia = guarda.exclusiva().sem_amarra();
+        Ok(TravaMedida {
+            guarda,
+            instancia,
+            tomada: obtida,
+            telemetria: &self.telemetria,
+        })
+    }
+
+    /// Toma a trava de dados PARA LER -- e e o unico lugar que a toma assim.
+    ///
+    /// # O que ela compra, e o que ela nao muda
+    ///
+    /// Leitor deixa de esperar leitor. Nada mais: escritor continua exclusivo,
+    /// e continua excluindo os leitores. O ganho medido esta no
+    /// `docs/CONCORRENCIA.md`.
+    ///
+    /// # Por que ela e uma porta SEPARADA, e nao um parametro
+    ///
+    /// Porque o que ela entrega e outro tipo. `travar_dados()` devolve a ficha
+    /// exclusiva, por onde se grava; esta devolve a [`Raiz`] emprestada em
+    /// modo compartilhado, e por ela so se alcanca tabela de LEITURA. Um
+    /// `travar_dados(modo)` devolveria o mesmo tipo nos dois casos, e ai a
+    /// garantia voltaria a ser convencao.
+    ///
+    /// # A reentrancia vale igual, e por um motivo pior
+    ///
+    /// `std::sync::RwLock` nao e reentrante e a segunda tomada NAO e so
+    /// esperar por si mesmo: com um escritor na fila, pedir a leitura de novo
+    /// enquanto se tem a leitura na mao trava as tres pontas. A `COM_A_TRAVA`
+    /// e a mesma dos dois lados de propósito -- misturar as duas fichas na
+    /// mesma thread e o mesmo defeito, com nome diferente.
+    ///
+    /// # O tempo entra na MESMA serie da trava
+    ///
+    /// Podia ter serie propria, e nao tem: a serie existe para responder «por
+    /// que este servidor esta lento», e uma operacao que sumisse dela levaria
+    /// junto a resposta. O que se perde e distinguir posse compartilhada de
+    /// exclusiva dentro do numero; o que se ganharia com duas series e um
+    /// buraco no dia em que alguem esquecesse de somar as duas.
+    fn travar_dados_para_ler(&self) -> Result<TravaDeLeitura<'_>> {
+        if COM_A_TRAVA.with(std::cell::Cell::get) {
+            return Err(trava_reentrante());
+        }
+        let medindo = self.telemetria.ligada();
+        let atividade = if medindo {
+            crate::telemetria::corrente()
+        } else {
+            None
+        };
+        if let Some(a) = &atividade {
+            a.esperando_trava();
+        }
+        let pedida = medindo.then(Instant::now);
+        let guarda = self.dados.read().map_err(|_| trava_envenenada());
+        let obtida = medindo.then(Instant::now);
+        if let Some(a) = &atividade {
+            a.com_a_trava();
+        }
+        if let (Some(t), Some(o)) = (pedida, obtida) {
+            self.telemetria
+                .contar_espera(o.duration_since(t).as_micros() as u64);
+        }
         let guarda = guarda?;
         COM_A_TRAVA.with(|c| c.set(true));
-        Ok(TravaMedida {
+        Ok(TravaDeLeitura {
             guarda,
             tomada: obtida,
             telemetria: &self.telemetria,
@@ -6304,10 +6386,56 @@ impl Servidor {
         // vinte operacoes, a que alguem esquecer mostra o disco enquanto as
         // outras mostram a transacao -- e quem olha a tela nao tem como saber
         // qual das duas esta certa.
-        if let Some(sob) = self.sobreposicao(database, tabela, sessao, &t) {
+        if let Some(sob) = self.sobreposicao(database, tabela, sessao, t.esquema()) {
             t.sobrepor(sob);
         }
         Ok(t)
+    }
+
+    /// Abre a tabela para LER, dentro da ficha compartilhada que quem chamou
+    /// ja tomou -- e devolve `None` quando esta tabela pede a ficha exclusiva.
+    ///
+    /// # As tres recusas, e as tres sao ESCRITA no caminho de leitura
+    ///
+    /// 1. abrir a tabela escreveria (`.trash` ou `.reason` que ainda nao
+    ///    existem, `.log` por curar, troca de volume interrompida no `.reg`);
+    /// 2. `recursos.espelho` esta ligado e a tabela ainda nao tem `.bkp` --
+    ///    abrir CRIA o espelho, e criar arquivo e escrever;
+    /// 3. a tabela tem coluna de dado pessoal -- toda leitura dela grava um
+    ///    registro na trilha, e trilha que perde registro em silencio e pior
+    ///    que trilha nenhuma.
+    ///
+    /// Nenhuma das tres e erro: quem chama solta esta ficha, toma a exclusiva
+    /// e refaz o trabalho por la, exatamente como antes. **Por isso o
+    /// comportamento visto de fora nao muda para tabela nenhuma** -- que e o
+    /// que `sem_a_ficha_compartilhada_nada_muda` trava.
+    ///
+    /// O `usuario` e a `origem` NAO sao definidos aqui, e nao e esquecimento:
+    /// os dois so servem para assinar o que se GRAVA (o `.log`) e o que se
+    /// registra na trilha -- e a trilha e justamente a recusa (3).
+    fn abrir_para_ler_travada(
+        &self,
+        raiz: &Raiz,
+        p: &Json,
+        sessao: &Sessao,
+    ) -> Result<Option<TabelaLeitura>> {
+        let database = p.texto_ou("database", "");
+        let tabela = p.texto_ou("tabela", "");
+        if database.is_empty() || tabela.is_empty() {
+            return Err(PhxError::Esquema(
+                "informe \"database\" e \"tabela\"".into(),
+            ));
+        }
+        let Aberta::Pronta(mut t) = raiz.abrir_para_ler(database, tabela)? else {
+            return Ok(None);
+        };
+        if (self.espelho() && !t.tem_espelho()) || t.tem_dado_pessoal() {
+            return Ok(None);
+        }
+        if let Some(sob) = self.sobreposicao(database, tabela, sessao, t.esquema()) {
+            t.sobrepor(sob);
+        }
+        Ok(Some(t))
     }
 
     /// O que a transacao DESTA conexao ja pediu nesta tabela e ainda nao gravou.
@@ -6324,12 +6452,18 @@ impl Servidor {
     /// Porque marcar uma linha exige saber onde mora a coluna de sistema, e
     /// isso e do ESQUEMA -- que so existe com a tabela aberta. Uma segunda
     /// copia dessa regra no registro de transacoes seria a copia que envelhece.
+    /// O `esquema` chega por parametro, e nao a tabela: e a unica coisa que
+    /// esta funcao precisa dela, e assim ela serve as DUAS fichas -- a
+    /// exclusiva, que traz um `Table`, e a compartilhada, que traz uma
+    /// `TabelaLeitura`. Uma segunda copia para a segunda ficha divergiria, e a
+    /// divergencia apareceria como a mesma consulta enxergando a transacao num
+    /// caminho e o disco no outro.
     fn sobreposicao(
         &self,
         database: &str,
         tabela: &str,
         sessao: &Sessao,
-        t: &Table,
+        esquema: &phxsql_core::schema::Schema,
     ) -> Option<phxsql_store::table::Sobreposicao> {
         if self.transacoes_abertas.load(Ordering::Relaxed) == 0 || sessao.ligacao == 0 {
             return None;
@@ -6339,7 +6473,7 @@ impl Servidor {
         if tx.escritas.is_empty() {
             return None;
         }
-        let pos_soft = t.esquema().coluna_softdeleted();
+        let pos_soft = esquema.coluna_softdeleted();
         let mut sob = phxsql_store::table::Sobreposicao::nova();
         let mut houve = false;
         // A ORDEM MANDA, e o `fold` e por isso: `BEGIN; UPDATE x; DELETE x`
@@ -10507,11 +10641,66 @@ impl Servidor {
         ]))
     }
 
+    /// `varrer`: uma pagina da grade.
+    ///
+    /// # As duas pistas, e por que a de leitura e uma TENTATIVA
+    ///
+    /// Esta e a unica operacao que tenta a ficha COMPARTILHADA primeiro --
+    /// leitor deixa de esperar leitor. Tres coisas fazem uma tabela voltar
+    /// para a ficha exclusiva (ver `abrir_para_ler_travada`), e as tres sao
+    /// escrita escondida num caminho de leitura. Quando alguma delas manda, a
+    /// ficha compartilhada e SOLTA antes de a exclusiva ser pedida -- pedir as
+    /// duas na mesma thread e o abraco mortal que a `COM_A_TRAVA` acusa.
+    ///
+    /// # Guarda nova entra pedida, nao imposta
+    ///
+    /// Nada muda para quem chama: mesma resposta, mesmos campos, mesma trilha.
+    /// A pista de leitura e uma decisao do servidor sobre COMO atender, e nao
+    /// um modo que o cliente liga -- e o teste que mais importa aqui e o do
+    /// comportamento velho, `sem_a_ficha_compartilhada_nada_muda`.
     fn op_varrer(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
-        let max = self.limite(p);
-        let indice = p.texto_ou("indice", "").to_string();
+        // O escopo existe para o guard MORRER aqui dentro. Sem ele, a ficha
+        // compartilhada continuaria viva na linha em que a exclusiva e pedida.
+        {
+            let trava = self.travar_dados_para_ler()?;
+            if let Some(mut t) = self.abrir_para_ler_travada(&trava, p, sessao)? {
+                let (resposta, trilha) = self.varrer_a_pagina(&mut t, p)?;
+                debug_assert!(
+                    trilha.is_none(),
+                    "a pista de leitura recusa tabela com dado pessoal: ninguem \
+                     deveria ter trilha para gravar aqui"
+                );
+                return Ok(resposta);
+            }
+        }
         let _trava = self.travar_dados()?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
+        let (resposta, trilha) = self.varrer_a_pagina(&mut t, p)?;
+        if let Some((criterio, linhas)) = trilha {
+            t.registrar_acesso(0, &criterio, linhas)?;
+        }
+        Ok(resposta)
+    }
+
+    /// O corpo da varredura, igual nas duas fichas.
+    ///
+    /// # Por que ele e generico, e o que isso garante
+    ///
+    /// Duas copias divergiriam, e a divergencia apareceria como a mesma
+    /// consulta respondendo coisas diferentes conforme a tabela tivesse ou nao
+    /// dado pessoal -- que e o pior jeito de um defeito aparecer.
+    ///
+    /// E o `Legivel` nao e so DRY: ele **nao tem metodo de escrita**, entao
+    /// este corpo nao consegue escrever, em ficha nenhuma. O que ele deixa
+    /// para a trilha volta como valor, e quem tem a ficha exclusiva e que
+    /// grava.
+    fn varrer_a_pagina<T: Legivel>(
+        &self,
+        t: &mut T,
+        p: &Json,
+    ) -> Result<(Json, Option<(String, u64)>)> {
+        let max = self.limite(p);
+        let indice = p.texto_ou("indice", "").to_string();
 
         // O PREDICADO. Ele nasce vazio, e vazio quer dizer «tudo passa»: quem
         // nao manda `"onde"` -- todo cliente escrito antes desta versao -- faz
@@ -10625,29 +10814,37 @@ impl Servidor {
         // em vez de 10.000 vezes o numero de colunas marcadas. O criterio
         // guarda como a pagina foi pedida, que e o que um auditor precisa
         // para refazer o caminho.
-        // Fora da closure porque ela ja empresta `t` mutavel, e o esquema sai
-        // de `t`. Custa uma String so para quem MANDOU filtro; quem nao mandou
-        // nao paga nem essa.
-        let peneira = if onde.is_empty() {
-            String::new()
-        } else {
-            format!(" onde={}", descrever_filtros(&onde, t.esquema()))
-        };
-        Self::trilhar_acesso(&mut t, 0, linhas.len() as u64, || {
+        //
+        // O `if` VEM ANTES do `format!`, como antes: numa tabela sem coluna
+        // marcada -- a maioria -- montar a frase seria alocar duas `String`
+        // por leitura para jogar fora. O que mudou e quem grava: o criterio
+        // volta como valor e a ficha exclusiva o leva ao disco, porque a
+        // compartilhada nao sabe escrever (e por isso ela recusou a tabela).
+        let trilha = if t.tem_dado_pessoal() && !linhas.is_empty() {
+            let peneira = if onde.is_empty() {
+                String::new()
+            } else {
+                format!(" onde={}", descrever_filtros(&onde, t.esquema()))
+            };
             let ordem_pedida = if por_indice {
                 format!("indice={indice}")
             } else {
                 "ordem=digitacao".to_string()
             };
-            format!(
-                "varrer {ordem_pedida} visao={} modo={modo} pular={pular}{peneira}",
-                match visao {
-                    Visao::Ativas => "ativas",
-                    Visao::Excluidas => "excluidas",
-                    Visao::Todas => "todas",
-                }
-            )
-        })?;
+            Some((
+                format!(
+                    "varrer {ordem_pedida} visao={} modo={modo} pular={pular}{peneira}",
+                    match visao {
+                        Visao::Ativas => "ativas",
+                        Visao::Excluidas => "excluidas",
+                        Visao::Todas => "todas",
+                    }
+                ),
+                linhas.len() as u64,
+            ))
+        } else {
+            None
+        };
 
         // O cursor para pedir a proxima pagina e a anterior. Vai pronto na
         // resposta para o cliente nao ter de saber que ele e um rowid -- e
@@ -10666,52 +10863,55 @@ impl Servidor {
         // Fora do `vec!` porque contar passou a poder falhar: dentro de uma
         // transacao ela le os slots que o conjunto de escrita tocou.
         let visiveis = t.contar(visao)?;
-        Ok(Json::objeto(vec![
-            // `registros` e o que a tabela tem, e sai do cabecalho: nao custa
-            // varredura. `total` era a contagem da varredura inteira, e por
-            // isso deixou de existir aqui.
-            ("registros", Json::de_u64(t.registros())),
-            // Quantas linhas ESTA visao enxerga -- e a conta de «pagina 3 de
-            // 40». Sai de dois contadores do cabecalho, sem varrer nada; era
-            // por nao existir que a contagem tinha sido tirada da resposta.
-            ("visiveis", Json::de_u64(visiveis)),
-            ("marcadas", Json::de_u64(t.marcadas())),
-            ("devolvidas", Json::de_u64(linhas.len() as u64)),
-            // Quantas linhas o motor OLHOU para responder. Sem filtro ela e
-            // igual a `devolvidas` -- que e a verdade de sempre, agora dita em
-            // voz alta. Com filtro as duas se separam, e e essa diferenca que
-            // deixa a tela dizer «olhei 2.500 das 100.000, 25 casaram» em vez
-            // de dizer que a tabela tem 25 linhas de Blumenau.
-            ("examinadas", Json::de_u64(rowids.len() as u64)),
-            ("modo", Json::texto_de(modo)),
-            // Como o inicio da pagina foi achado, quando o modo e por posicao.
-            // «bisseccao» sao ~20 leituras; «passo» sao `pular` leituras.
-            (
-                "salto",
-                match salto {
-                    Some(s) => Json::texto_de(s.nome()),
-                    None => Json::Nulo,
-                },
-            ),
-            ("cursor_inicio", Json::de_u64(primeiro)),
-            ("cursor_fim", Json::de_u64(ultimo)),
-            // O numero de ordem da primeira e da ultima linha da pagina: e o
-            // cursor de quem pagina por `desde_rownum`, e o que a caixa «ir
-            // para a linha N» devolve para a tela se localizar.
-            ("rownum_inicio", Json::de_u64(rownum_inicio)),
-            ("rownum_fim", Json::de_u64(rownum_fim)),
-            ("ha_mais", Json::Bool(ha_mais)),
-            ("ha_antes", Json::Bool(ha_antes)),
-            (
-                "ordem",
-                Json::texto_de(if por_indice {
-                    format!("indice {indice}")
-                } else {
-                    "digitacao".to_string()
-                }),
-            ),
-            ("linhas", Json::Lista(linhas)),
-        ]))
+        Ok((
+            Json::objeto(vec![
+                // `registros` e o que a tabela tem, e sai do cabecalho: nao custa
+                // varredura. `total` era a contagem da varredura inteira, e por
+                // isso deixou de existir aqui.
+                ("registros", Json::de_u64(t.registros())),
+                // Quantas linhas ESTA visao enxerga -- e a conta de «pagina 3 de
+                // 40». Sai de dois contadores do cabecalho, sem varrer nada; era
+                // por nao existir que a contagem tinha sido tirada da resposta.
+                ("visiveis", Json::de_u64(visiveis)),
+                ("marcadas", Json::de_u64(t.marcadas())),
+                ("devolvidas", Json::de_u64(linhas.len() as u64)),
+                // Quantas linhas o motor OLHOU para responder. Sem filtro ela e
+                // igual a `devolvidas` -- que e a verdade de sempre, agora dita em
+                // voz alta. Com filtro as duas se separam, e e essa diferenca que
+                // deixa a tela dizer «olhei 2.500 das 100.000, 25 casaram» em vez
+                // de dizer que a tabela tem 25 linhas de Blumenau.
+                ("examinadas", Json::de_u64(rowids.len() as u64)),
+                ("modo", Json::texto_de(modo)),
+                // Como o inicio da pagina foi achado, quando o modo e por posicao.
+                // «bisseccao» sao ~20 leituras; «passo» sao `pular` leituras.
+                (
+                    "salto",
+                    match salto {
+                        Some(s) => Json::texto_de(s.nome()),
+                        None => Json::Nulo,
+                    },
+                ),
+                ("cursor_inicio", Json::de_u64(primeiro)),
+                ("cursor_fim", Json::de_u64(ultimo)),
+                // O numero de ordem da primeira e da ultima linha da pagina: e o
+                // cursor de quem pagina por `desde_rownum`, e o que a caixa «ir
+                // para a linha N» devolve para a tela se localizar.
+                ("rownum_inicio", Json::de_u64(rownum_inicio)),
+                ("rownum_fim", Json::de_u64(rownum_fim)),
+                ("ha_mais", Json::Bool(ha_mais)),
+                ("ha_antes", Json::Bool(ha_antes)),
+                (
+                    "ordem",
+                    Json::texto_de(if por_indice {
+                        format!("indice {indice}")
+                    } else {
+                        "digitacao".to_string()
+                    }),
+                ),
+                ("linhas", Json::Lista(linhas)),
+            ]),
+            trilha,
+        ))
     }
 
     fn op_buscar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
@@ -15562,7 +15762,12 @@ fn conferir_versao_pedida(t: &mut Table, p: &Json, rowid: phxsql_core::RowId) ->
 /// `Drop`: o tempo que ela ficou na mao entra na serie. Sem isso, «o servidor
 /// esta lento» nunca distinguiria fila de trabalho.
 struct TravaMedida<'a> {
-    guarda: std::sync::MutexGuard<'a, Instancia>,
+    /// O guard de ESCRITA. Vive aqui so para excluir todo mundo enquanto esta
+    /// ficha existir -- quem chama nunca o ve.
+    #[allow(dead_code)]
+    guarda: std::sync::RwLockWriteGuard<'a, Raiz>,
+    /// A ficha exclusiva, que morre junto com o guard acima.
+    instancia: Instancia,
     /// Quando a trava foi obtida. `None` com a telemetria desligada -- e ai o
     /// `Drop` nao faz nada.
     tomada: Option<Instant>,
@@ -15572,13 +15777,44 @@ struct TravaMedida<'a> {
 impl std::ops::Deref for TravaMedida<'_> {
     type Target = Instancia;
     fn deref(&self) -> &Instancia {
-        &self.guarda
+        &self.instancia
     }
 }
 
 impl std::ops::DerefMut for TravaMedida<'_> {
     fn deref_mut(&mut self) -> &mut Instancia {
-        &mut self.guarda
+        &mut self.instancia
+    }
+}
+
+/// A trava de dados tomada em modo COMPARTILHADO, com o mesmo cronometro.
+///
+/// Ela nao entrega a `Instancia`: entrega a [`Raiz`] emprestada, e por ela so
+/// se abre tabela de leitura. E a diferenca entre os dois tipos que faz a
+/// garantia ser do compilador e nao da disciplina de quem escreve o proximo
+/// `op_`.
+struct TravaDeLeitura<'a> {
+    guarda: std::sync::RwLockReadGuard<'a, Raiz>,
+    tomada: Option<Instant>,
+    telemetria: &'a crate::telemetria::Telemetria,
+}
+
+impl std::ops::Deref for TravaDeLeitura<'_> {
+    type Target = Raiz;
+    fn deref(&self) -> &Raiz {
+        &self.guarda
+    }
+}
+
+impl Drop for TravaDeLeitura<'_> {
+    fn drop(&mut self) {
+        COM_A_TRAVA.with(|c| c.set(false));
+        if let Some(t) = self.tomada {
+            self.telemetria.contar_trava(t.elapsed().as_micros() as u64);
+            if let Some(a) = crate::telemetria::corrente() {
+                a.sem_a_trava();
+            }
+        }
     }
 }
 
@@ -21646,48 +21882,94 @@ mod testes_janela_e_cadeia {
     /// arquivo e o binario ter sido compilado de outro.
     const FONTE: &str = include_str!("servidor.rs");
 
-    /// A catraca do ponto unico: **UMA** tomada da trava de dados no arquivo,
-    /// e ela e a que esta dentro do `travar_dados`.
+    /// A catraca do ponto unico, agora com DUAS fichas: **UMA** tomada de cada
+    /// uma no arquivo, e cada uma dentro da funcao que a batiza.
     ///
-    /// Reposto o defeito -- um `self.dados.lock()` a mais em qualquer lugar --
+    /// Reposto o defeito -- um `self.dados.write()` a mais em qualquer lugar --
     /// este teste falha nomeando o numero. Foi assim que as 13 apareceram: o
     /// comentario do `travar_dados` afirmava ser o unico lugar havia rodadas,
     /// e ninguem contava. Comentario nao conta; teste conta.
+    ///
+    /// # Por que DUAS contagens de um, e nao uma de dois
+    ///
+    /// Porque uma catraca de «duas tomadas no arquivo» aceitaria as duas na
+    /// mesma funcao, ou a de leitura solta no meio de um `op_`. Cada ficha
+    /// continua com a porta dela, e a catraca continua valendo 1 em cada --
+    /// o teto nao subiu, nasceu outro ao lado.
     #[test]
     fn so_um_lugar_toma_a_trava() {
-        // A agulha e MONTADA, e nao escrita: um literal aqui apareceria no
-        // proprio fonte varrido e o teste contaria a si mesmo. Foi o primeiro
-        // jeito que escrevi, e ele acusou 4 onde havia 1.
-        let agulha = format!("self.{}.lock()", "dados");
-        // Linha de comentario fora: este arquivo CITA a tomada em tres
-        // comentarios, e cita-la e o oposto de faze-la.
+        // As agulhas sao MONTADAS, e nao escritas: um literal aqui apareceria
+        // no proprio fonte varrido e o teste contaria a si mesmo. Foi o
+        // primeiro jeito que escrevi, e ele acusou 4 onde havia 1.
+        // Linha de comentario fora: este arquivo CITA as tomadas em varios
+        // comentarios, e cita-las e o oposto de faze-las.
         let codigo = |l: &&str| !l.trim_start().starts_with("//");
-        let tomadas = FONTE
+        for (agulha, dono) in [
+            (format!("self.{}.write()", "dados"), "fn travar_dados(&self)"),
+            (
+                format!("self.{}.read()", "dados"),
+                "fn travar_dados_para_ler(&self)",
+            ),
+        ] {
+            let tomadas = FONTE
+                .lines()
+                .filter(codigo)
+                .filter(|l| l.contains(&agulha))
+                .count();
+            assert_eq!(
+                tomadas, 1,
+                "ha {tomadas} tomadas de `{agulha}` em servidor.rs, e so pode \
+                 haver a de dentro do `{dono}`: sem isso a telemetria \
+                 cronometra uma parte da fila e o `docs/TELEMETRIA.md` afirma o \
+                 contrario. Quem precisa da trava chama a funcao; quem ja \
+                 a tem recebe a ficha por parametro"
+            );
+            // E a que sobrou esta MESMO dentro da funcao que a batiza --
+            // contar sem olhar onde deixaria passar o caso de mover a unica
+            // para outro lugar.
+            let corpo = FONTE
+                .split_once(dono)
+                .unwrap_or_else(|| panic!("o `{dono}` sumiu"))
+                .1;
+            let fim = corpo.find("\n    }\n").expect("o corpo da funcao");
+            assert!(
+                corpo[..fim]
+                    .lines()
+                    .filter(codigo)
+                    .any(|l| l.contains(&agulha)),
+                "a unica tomada de `{agulha}` saiu de dentro do `{dono}`"
+            );
+        }
+    }
+
+    /// A catraca do ALCANCE da ficha compartilhada: **UMA** operacao a toma.
+    ///
+    /// A decisao do dono foi «so o `varrer`», e a segunda leva entra medida.
+    /// Sem esta catraca, a segunda leva entra por distracao: `op_ler`,
+    /// `op_buscar` e `op_sistabelas` sao todas leituras e todas parecem obvias
+    /// -- e cada uma delas tem escrita escondida propria para achar antes.
+    ///
+    /// Ela conta CHAMADAS, e nao operacoes: mover a tomada para um ajudante
+    /// chamado por vinte `op_` continuaria dando um. E ela vale nos dois
+    /// sentidos, como toda catraca desta casa -- quem tirar o `varrer` da
+    /// pista de leitura tambem reprova aqui, e tem de dizer por que no mesmo
+    /// commit.
+    #[test]
+    fn so_uma_operacao_usa_a_ficha_compartilhada() {
+        let codigo = |l: &&str| !l.trim_start().starts_with("//");
+        let agulha = format!("self.{}()?", "travar_dados_para_ler");
+        let usos = FONTE
             .lines()
             .filter(codigo)
             .filter(|l| l.contains(&agulha))
             .count();
         assert_eq!(
-            tomadas, 1,
-            "ha {tomadas} tomadas de `{agulha}` em servidor.rs, e so pode \
-             haver a de dentro do `travar_dados`: sem isso a telemetria \
-             cronometra uma parte da fila e o `docs/TELEMETRIA.md` afirma o \
-             contrario. Quem precisa da trava chama `travar_dados()`; quem ja \
-             a tem recebe a instancia por parametro"
-        );
-        // E a que sobrou esta MESMO dentro do `travar_dados` -- contar sem
-        // olhar onde deixaria passar o caso de mover a unica para outro lugar.
-        let corpo = FONTE
-            .split_once("fn travar_dados(&self)")
-            .expect("o `travar_dados` sumiu")
-            .1;
-        let fim = corpo.find("\n    }\n").expect("o corpo do travar_dados");
-        assert!(
-            corpo[..fim]
-                .lines()
-                .filter(codigo)
-                .any(|l| l.contains(&agulha)),
-            "a unica tomada da trava saiu de dentro do `travar_dados`"
+            usos, 1,
+            "ha {usos} operacoes tomando a ficha compartilhada, e a decisao \
+             era UMA -- o `varrer`. A segunda leva entra MEDIDA, e cada \
+             operacao nova precisa da propria varredura de escrita escondida: \
+             a trilha de dado pessoal, o espelho e a criacao do .trash ja \
+             pegaram esta"
         );
     }
 
@@ -21839,6 +22121,243 @@ mod testes_janela_e_cadeia {
         // E a trava esta livre no fim: uma marca que vazasse do `Drop`
         // trancaria esta thread sem ninguem segurando nada.
         assert!(s.travar_dados().is_ok());
+    }
+}
+
+/// A FICHA COMPARTILHADA do `varrer`: o que ela ganhou e o que ela nao pode
+/// ter perdido.
+///
+/// # O teste que mais importa neste modulo
+///
+/// Nao e o que prova o ganho: e o `sem_a_ficha_compartilhada_nada_muda`. A
+/// pista de leitura e uma decisao do servidor sobre COMO atender, e quem chama
+/// nao pediu nada e nao pode notar nada -- nem no resultado, nem na trilha,
+/// nem no espelho. Guarda nova entra pedida, nao imposta.
+#[cfg(test)]
+mod testes_da_ficha_compartilhada {
+    use super::*;
+
+    fn dir_temp(nome: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("phx-fc-{nome}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    /// Um servidor com uma tabela `c` de dez linhas, no database `b`.
+    fn servidor(nome: &str, espelho: bool) -> (Arc<Servidor>, std::path::PathBuf) {
+        let dir = dir_temp(nome);
+        let mut config = Config {
+            base: dir.clone(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            espelho,
+            ..Config::default()
+        };
+        config.recursos.lote_operacoes = 1;
+        let s = Servidor::novo(config).unwrap();
+        let dono = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &dono)
+            .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"c",
+                    "colunas":[{"nome":"n","tipo":"Int8"},
+                               {"nome":"cpf","tipo":"Str(20)"}]}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        for i in 1..=10 {
+            s.executar(
+                "inserir",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"c","linha":{{"n":{i},"cpf":"0{i}"}}}}"#
+                )),
+                &dono,
+            )
+            .unwrap();
+        }
+        (s, dir)
+    }
+
+    fn varrer(s: &Arc<Servidor>, extra: &str) -> Json {
+        s.executar(
+            "varrer",
+            &pedido(&format!(
+                r#"{{"database":"b","tabela":"c","max":4{extra}}}"#
+            )),
+            &Sessao::default(),
+        )
+        .unwrap()
+    }
+
+    /// **O comportamento velho, e a mesma resposta pelas DUAS fichas.**
+    ///
+    /// A ficha exclusiva e forcada sem mexer no pedido: sem o `.trash`, abrir
+    /// a tabela CRIARIA o arquivo -- e criar arquivo e escrever, entao a pista
+    /// de leitura recusa. O `.trash` voltar a existir depois da segunda
+    /// chamada e a prova de que ela desceu mesmo para a outra ficha; sem essa
+    /// conferencia, este teste passaria com as duas chamadas na mesma pista.
+    #[test]
+    fn sem_a_ficha_compartilhada_nada_muda() {
+        let (s, dir) = servidor("nada-muda", false);
+        let pela_compartilhada = varrer(&s, "");
+        let trash = dir.join("b/c.trash");
+        assert!(trash.exists(), "a tabela nasce com lixeira");
+        std::fs::remove_file(&trash).unwrap();
+
+        let pela_exclusiva = varrer(&s, "");
+        assert!(
+            trash.exists(),
+            "a lixeira nao voltou: a segunda chamada nao desceu para a ficha \
+             exclusiva, e entao este teste comparou a mesma pista com ela mesma"
+        );
+        assert_eq!(
+            pela_compartilhada.escrever(),
+            pela_exclusiva.escrever(),
+            "as duas fichas responderam coisas diferentes ao MESMO pedido"
+        );
+    }
+
+    /// A trilha de dado pessoal sobrevive: a tabela marcada desce para a ficha
+    /// exclusiva, e o registro de acesso continua sendo gravado.
+    ///
+    /// **Defeito reposto**: tirar `t.tem_dado_pessoal()` do
+    /// `abrir_para_ler_travada` faz a leitura passar pela pista de leitura, que
+    /// nao sabe escrever -- e o total da trilha fica em zero. Trilha que perde
+    /// registro em silencio e pior que trilha nenhuma: ela PARECE completa.
+    #[test]
+    fn a_trilha_de_dado_pessoal_sobrevive_a_pista_de_leitura() {
+        let (s, _dir) = servidor("trilha", false);
+        s.executar(
+            "marcar_lgpd",
+            &pedido(r#"{"database":"b","tabela":"c","colunas":{"cpf":"pessoal"}}"#),
+            &Sessao::default(),
+        )
+        .unwrap();
+        varrer(&s, "");
+        let r = s
+            .executar(
+                "trilha",
+                &pedido(r#"{"database":"b","tabela":"c","tipo":"acesso"}"#),
+                &Sessao::default(),
+            )
+            .unwrap();
+        let quantos = r
+            .campo("registros")
+            .and_then(Json::lista)
+            .map(|l| l.len())
+            .unwrap_or(0);
+        assert!(
+            quantos >= 1,
+            "a varredura de uma tabela com coluna marcada nao deixou rastro \
+             na trilha: a pista de leitura engoliu o registro"
+        );
+    }
+
+    /// O espelho continua nascendo numa leitura, como nascia antes.
+    ///
+    /// **Defeito reposto**: tirar `self.espelho() && !t.tem_espelho()` do
+    /// `abrir_para_ler_travada` deixa o `.bkp` sem nascer -- e a tabela fica
+    /// sem a copia que o `reparar` usa, sem ninguem ter mudado configuracao
+    /// nenhuma.
+    #[test]
+    fn o_espelho_continua_nascendo_no_varrer() {
+        let (s, dir) = servidor("espelho", true);
+        let bkp = dir.join("b/c.bkp");
+        // A insercao ja o cria; apagar poe a tabela no estado de quem ligou o
+        // espelho depois de a tabela existir, que e o caso que importa.
+        let _ = std::fs::remove_file(&bkp);
+        varrer(&s, "");
+        assert!(
+            bkp.exists(),
+            "o espelho nao nasceu: a pista de leitura aceitou uma tabela que \
+             precisava ser espelhada, e espelhar e escrever"
+        );
+    }
+
+    /// Quatro leitores ao mesmo tempo na mesma tabela leem a mesma pagina.
+    ///
+    /// E o unico teste daqui que exercita o que a mudanca existe para permitir:
+    /// quatro threads DENTRO da ficha compartilhada ao mesmo tempo. Ele nao
+    /// mede tempo -- medir tempo em teste unitario e como o `quieta.Vigia`
+    /// existe para provar que nao se faz --, prova a RESPOSTA.
+    #[test]
+    fn quatro_leitores_ao_mesmo_tempo_leem_a_mesma_pagina() {
+        let (s, _dir) = servidor("quatro", false);
+        let esperado = varrer(&s, "").escrever();
+        let mut fios = Vec::new();
+        for _ in 0..4 {
+            let copia = Arc::clone(&s);
+            let alvo = esperado.clone();
+            fios.push(std::thread::spawn(move || {
+                for _ in 0..25 {
+                    assert_eq!(varrer(&copia, "").escrever(), alvo);
+                }
+            }));
+        }
+        for f in fios {
+            f.join().expect("um leitor entrou em panico");
+        }
+    }
+
+    /// Um escritor no meio de quatro leitores nao perde gravacao nenhuma.
+    ///
+    /// A pergunta que ele responde e a que o `RwLock` levanta e o `Mutex` nao
+    /// levantava: **o escritor passa fome?** Quatro leitores em laco fechado
+    /// poderiam, num `RwLock` de preferencia ao leitor, deixar o escritor
+    /// esperando para sempre. Aqui ele grava vinte linhas e as vinte tem de
+    /// chegar -- e o prazo do teste e o que acusa a fome, porque fome nao da
+    /// erro: ela demora.
+    #[test]
+    fn o_escritor_nao_passa_fome_entre_leitores() {
+        let (s, _dir) = servidor("fome", false);
+        let parar = Arc::new(AtomicBool::new(false));
+        let mut fios = Vec::new();
+        for _ in 0..4 {
+            let copia = Arc::clone(&s);
+            let pare = Arc::clone(&parar);
+            fios.push(std::thread::spawn(move || {
+                while !pare.load(Ordering::Relaxed) {
+                    varrer(&copia, "");
+                }
+            }));
+        }
+        let comeco = Instant::now();
+        for i in 11..=30 {
+            s.executar(
+                "inserir",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"c","linha":{{"n":{i},"cpf":"x"}}}}"#
+                )),
+                &Sessao::default(),
+            )
+            .unwrap();
+        }
+        let gasto = comeco.elapsed();
+        parar.store(true, Ordering::Relaxed);
+        for f in fios {
+            f.join().expect("um leitor entrou em panico");
+        }
+        let r = varrer(&s, "");
+        assert_eq!(
+            r.campo("visiveis").and_then(Json::inteiro),
+            Some(30),
+            "faltou gravacao: o escritor perdeu linha entre os leitores"
+        );
+        assert!(
+            gasto < Duration::from_secs(20),
+            "vinte gravacoes levaram {gasto:?} com quatro leitores ao lado: \
+             o escritor esta passando fome"
+        );
     }
 }
 
