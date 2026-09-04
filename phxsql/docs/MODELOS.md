@@ -96,6 +96,36 @@ diferença de preço.
 é prova — o do DbLink acertou e ainda assim a prova real foi refeita aqui antes
 do commit. Esta linha se fecha quando eu tiver exercitado as telas.
 
+### Rodada das sprints abertas — 4 de setembro de 2026
+
+Quatro frentes abertas ao mesmo tempo, das dez sprints que o retrato de 03/09
+listou. **Não são dez agentes**: a cláusula não pede dez, pede que nenhum papel
+fique sem dono quando o trabalho toca o domínio dele — e que a dispensa seja
+registrada.
+
+| frente | escalão | por quê | papéis convocados | dispensados, e por quê |
+|---|---|---|---|---|
+| **S-A** — o `varrer` ganha `WHERE` | **projeto e risco** | é **contrato de protocolo**, e encosta no portão de permissão, que é UM só e já tem três operações que escondem tabela dele. Erro aqui não aparece no teste: aparece como porta dos fundos | **B** escreve, **C** decide o contrato, **F** prova nos dois sentidos | **D** (não mexe no ambiente), **I** (não comita nem empacota), **J** (não há receita de fora) |
+| **S-B** — bancada em máquina parada | **mecânico e verificável** | **medição roteirizada**: ou o ruído do controle está abaixo do teto, ou não está. O resultado se confere sozinho | **F** dono, **G** pela catraca do ruído | **C** (não toca formato em disco), **E** (não há tela), **B** (não há motor novo) |
+| **S-D** — o §33 do dossiê, linha a linha | **mecânico e verificável** | **varredura**: cada afirmação de limitação se confere contra um teste, um script ou um pedido fechado. E os números saem de gerador | **H** dona | **C**, **E**, **F**, **G** (documento não muda comportamento; o que a varredura achar de comportamento errado volta para mim, não vira código lá) |
+| **S-E** — Android: medir ou nomear o bloqueio | **mecânico e verificável** | a premissa é do **ambiente** — o NDK está alcançável, sim ou não. É `rustup target list` e um `cc`, não arquitetura | **B**, **D** (zelador confere o ambiente) | **C**, **E**, **G**, **H** (se o NDK não estiver lá, a sprint não é de código e não há o que projetar) |
+
+**Por que quatro e não sete.** Duas frentes na mesma árvore mexendo em
+`crates/phxsql-server/src/` se derrubam por motivo que não é delas: uma
+compila no meio da edição da outra e persegue fantasma. Só a **S-A** ficou
+autorizada ali. A **S-C** (conferidor de frase vencida) entra quando a S-A
+devolver a árvore; a **S-G** (trava única) espera a resposta medida da S-B,
+porque *sem máquina parada não há número*; a **S-H** espera a S-G; e a **S-J**
+não é de agente nenhum — é a palavra do dono sobre o pedido 175.
+
+**O papel A, que não se delega.** A integração é minha, e não sobra de
+ninguém: numa rodada de seis frentes desta casa, **três defeitos só apareceram
+no encontro delas** — um teto de memória que uma frente pôs e a outra apagaria
+sem conflito nenhum, uma bateria que ficou com dezoito partes quando cada
+frente contou dezessete, e o dossiê que perdeu uma seção porque o merge
+escolheu o lado de quem não a tinha. Por isso nenhuma frente comita
+`CHANGELOG.md`, nenhuma dá `git add -A` e nenhuma dá `push`.
+
 ## Como registrar daqui em diante
 
 Uma linha por frente, no fim da rodada, junto do resto da documentação:
