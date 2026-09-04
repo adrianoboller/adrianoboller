@@ -1,0 +1,25 @@
+=== quanta RAM de cache do `.ndx` uma leitura ocupa ===
+    400000 linhas semeadas | pagina de 4096 bytes | teto de 2048 paginas = 8 MiB
+
+  CONTROLE POSITIVO -- a semeadura de 400000 linhas:
+    3563540 acertos, 1348 faltas. Se isto fosse zero, o medidor estaria cego
+
+                       leitura    acertos   carregou    residente   do teto
+  --------------------------------------------------------------------------
+          grade sem ordem (50)          0          0      0.00 MiB      0.0%
+       grade sem ordem (1.000)          0          0      0.00 MiB      0.0%
+           grade ORDENADA (50)          0       3335      8.00 MiB    100.0%
+        grade ORDENADA (1.000)          0       3335      8.00 MiB    100.0%
+               busca por chave          0          3      0.01 MiB      0.1%
+   varredura do indice inteiro          0       3335      8.00 MiB    100.0%
+
+=== o veredito ===
+
+  A leitura mais cara desta bancada deixou 2048 paginas residentes = 8.00 MiB,
+  contra um teto de 8,00 MiB por tabela aberta. Acima do teto o cache
+  despeja: a RAM para de crescer e o TRABALHO continua -- releitura.
+
+   2 leitores simultaneos: ate   16.0 MiB pelo uso medido,   16.0 MiB pelo teto
+   4 leitores simultaneos: ate   32.0 MiB pelo uso medido,   32.0 MiB pelo teto
+   8 leitores simultaneos: ate   64.0 MiB pelo uso medido,   64.0 MiB pelo teto
+  16 leitores simultaneos: ate  128.0 MiB pelo uso medido,  128.0 MiB pelo teto
