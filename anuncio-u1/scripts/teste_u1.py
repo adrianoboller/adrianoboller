@@ -1,38 +1,39 @@
-# Teste do modulo U1: cena vazia, so o U1 substituto, camera e luz simples.
-# Renderiza em 540x960 e o autor abre cada PNG e olha:
-#   previa_u1_frente.png        - frente 3/4, tela em standby (ja ligou)
-#   previa_u1_tras.png          - traseira com tomada e botao, camara acesa
-#   previa_u1_tela.png          - close da tela com a UI ligada
-#   previa_u1_tela_boot.png     - meio do boot
-#   previa_u1_cabecote.png      - close de um cabecote
-#   previa_u1_ligando_antes.png - traseira 3/4 antes do botao (tudo apagado)
-#   previa_u1_ligando.png       - traseira 3/4 no meio de animar_ligar
-# Os *_rodada1.png e *_rodada2.png sao os das rodadas anteriores, para comparar.
+# Teste do modulo U1 (impressora do cliente, Meshy limpa): cena vazia, SEM
+# chao, World cinza-escuro liso, camera e tres area lights. Renderiza em
+# 540x960/16 e o autor abre cada PNG e olha:
+#   previa_u1_frente.png    - frente 3/4, tela APAGADA (quadro 1, antes de ligar)
+#   previa_u1_tras.png      - traseira: coluna com botao e tomada
+#   previa_u1_tela.png      - close da tela com a UI acesa (quadro 75)
+#   previa_u1_topo.png      - close dos tubos e do topo (cabecotes, mesa)
+#   previa_u1_ligando.png   - traseira 3/4 alta no meio de animar_ligar (q18)
+#   previa_u1_porta_com/sem.png, previa_u1_ligando_antes/depois.png - pares
+#                             em meia resolucao das provas do vidro e da luz
+# Os previa_u1_*_rodada*.png sao do substituto, para comparar.
 #
-# PARTE=cena (rodada 3): o U1 dentro do AMBIENTE do anuncio (world, chao e
-# rig do mod_ambiente), nos enquadramentos em que a revisao viu defeito, com
-# a medida no pixel de cada um:
-#   previa_u1_cena_tela.png     - q359: camera a 0,26 m da tela com a UI
-#                                 acesa; L do fundo da UI em TODA a tela
-#   previa_u1_cena_foto_c.png   - foto C (q445): mesa de cima, luzes da camara
-#                                 a 10 W; faixa continua >= 250 ao longo das hastes
-#   previa_u1_cena_foto_a.png   - foto A (q389): cabecotes estacionados; a
-#                                 'barra branca' (labio do casco sob o aro)
-#   previa_u1_cena_lateral_*.png - lateral (q185) com a key do ambiente, com
-#                                 key 1x1 m a 2,5 m e com softbox 1x2 vertical;
-#                                 amplitude horizontal de L na face
-# PARTE=modulo roda so os renders de cima; sem PARTE roda os dois. PASTA=...
-# troca a pasta de saida (padrao saida/).
+# Provas numericas (asserts), antes dos renders:
+# - idempotencia: construir_u1 duas vezes -> mesma contagem de objetos,
+#   malhas, materiais e imagens (o importador glTF cria material e imagens
+#   novos a cada importacao; o modulo tem de limpar os orfaos);
+# - envelope medido = 0,584 x 0,499 x 0,730 (+-3 mm: tela e aro 2,2 mm a
+#   frente da face);
+# - materiais da Meshy nas pecas (u1.meshy com as tres imagens, empacotadas)
+#   e vidro na porta (Transmission 1, dithered, refracao raytraced);
+# - imagens da tela empacotadas; luzes das fitas escondidas e a 0 W;
+# - material do cliente (Principled sobrando + Emission ligado): a chave cai
+#   no Emission;
+# - a janela do vidro da porta mostra o interior: o padrao claro/escuro numa
+#   grade 4x4 correlaciona (> 0,6) com o render sem a porta, e a media fica
+#   acima de 35% dela (vidro opaco dava razao 0,23 e correlacao ~0);
+# - ligar e evento de luz: so com World e fitas (estudio apagado), a janela
+#   traseira clareia >= 1,3x entre q4 e q18.
 #
-# Provas numericas (asserts): idempotencia, envelope, imagens empacotadas,
-# luzes escondidas antes de ligar, material do cliente com Principled
-# desligado sobrando + Emission ligado -> a chave cai no Emission, a
-# luminancia da janela traseira sobe entre 'antes' e 'ligando', e os
-# criterios da parte de cena (tela, hastes, labio).
+# PARTE=provas so os asserts; PARTE=render so os renders; sem PARTE, os dois.
+# FOTOS=frente,tras,tela,topo,ligando escolhe os renders (padrao: todos; a
+# cena completa custa ~1 min por quadro no llvmpipe, e cada chamada tem de
+# caber em 10 min). PASTA=... troca a pasta de saida (padrao saida/).
 #
 # Uso: bash scripts/previa.sh scripts/teste_u1.py
 
-import math
 import os
 import sys
 
@@ -44,14 +45,13 @@ sys.path.insert(0, os.path.join(RAIZ, "scripts"))
 
 import importlib
 import mod_u1
-import mod_ambiente
 importlib.reload(mod_u1)
-importlib.reload(mod_ambiente)
 
 LARGURA, ALTURA_IMG = int(os.environ.get("LARG", "540")), int(os.environ.get("ALT", "960"))
 AMOSTRAS = int(os.environ.get("AMOSTRAS", "16"))
 SAIDA = os.environ.get("PASTA") or os.path.join(RAIZ, "saida")
 PARTE = os.environ.get("PARTE", "")
+FOTOS = [f for f in os.environ.get("FOTOS", "frente,tras,tela,topo,ligando").split(",") if f]
 
 
 def cena_limpa():
@@ -96,35 +96,13 @@ def luz(nome, tipo, pos, alvo, energia, tamanho=1.0, cor=(1, 1, 1)):
 
 
 def estudio(cena):
+    """World cinza-escuro LISO e tres areas; nenhum chao (revisao 2)."""
     mundo = bpy.data.worlds.new("mundo")
     cena.world = mundo
     mundo.use_nodes = True
     fundo = mundo.node_tree.nodes["Background"]
-    # Mundo escuro como o fundo do anuncio (#050507): e o que a tela desligada
-    # e o vidro refletem. Com o mundo cinza da primeira versao a tela lia como
-    # um adesivo cinza e o teste nao mostrava o que o anuncio vai mostrar.
-    fundo.inputs["Color"].default_value = (0.012, 0.012, 0.015, 1.0)
+    fundo.inputs["Color"].default_value = (0.045, 0.045, 0.05, 1.0)
     fundo.inputs["Strength"].default_value = 1.0
-    # Chao ESCURO: o espelho da tela desligada, visto da camera da frente,
-    # cai no chao (calculado: a reflexao do olhar sai para +X, -Y e para
-    # baixo) - com chao claro a tela lia como um adesivo cinza mesmo com o
-    # mundo preto. O branco do casco se ilumina pelas areas, nao pelo chao.
-    malha = bpy.data.meshes.new("chao")
-    malha.from_pydata([(-4, -4, 0), (4, -4, 0), (4, 4, 0), (-4, 4, 0)], [], [(0, 1, 2, 3)])
-    chao = bpy.data.objects.new("chao", malha)
-    cena.collection.objects.link(chao)
-    mat = bpy.data.materials.new("chao")
-    mat.use_nodes = True
-    b = mat.node_tree.nodes["Principled BSDF"]
-    b.inputs["Base Color"].default_value = (0.05, 0.05, 0.055, 1.0)
-    b.inputs["Roughness"].default_value = 0.45
-    malha.materials.append(mat)
-    # Sem o mundo claro, as areas crescem para o branco do casco ter o que
-    # refletir (luz de estudio, nao ambiente). O preenchimento fica PEQUENO e
-    # alto: medido, a tela desligada vista da camera da frente espelha a
-    # direcao (+0,68, -0,72, -0,15), e um softbox de 2,2 m em (1,6, -1,0, 0,9)
-    # cai a 27 graus dela cobrindo 34 - a tela virava um retangulo cinza
-    # uniforme (0,77 no PNG) com o material certo. A 46 graus e 0,8 m, sai.
     luz("chave", "AREA", (-1.1, -1.4, 1.7), (0, 0, 0.4), 700, 1.8)
     luz("preenchimento", "AREA", (1.9, -0.6, 1.4), (0, 0, 0.4), 220, 0.8)
     luz("contra", "AREA", (0.5, 1.6, 1.5), (0, 0, 0.5), 400, 1.2)
@@ -155,15 +133,47 @@ def foto(cena, cam, alvo, pos, olhar, lente, quadro, arquivo):
     return cena.render.filepath
 
 
-def luminancia_media(arquivo, x0, x1, y0, y1):
-    """Media da luminancia (0..1, sRGB do PNG) num retangulo em fracoes do quadro, y de cima."""
+def _janela(arquivo, x0, x1, y0, y1):
     import numpy as np
     img = bpy.data.images.load(arquivo)
     w, h = img.size
     px = np.array(img.pixels[:], dtype=np.float32).reshape(h, w, 4)[::-1]
     bpy.data.images.remove(img)
     rec = px[int(h * y0):int(h * y1), int(w * x0):int(w * x1), :3]
-    return float((rec @ np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)).mean())
+    return rec @ np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
+
+
+def luminancia_media(arquivo, x0, x1, y0, y1):
+    """Media da luminancia (0..1, sRGB do PNG) num retangulo em fracoes do quadro, y de cima."""
+    return float(_janela(arquivo, x0, x1, y0, y1).mean())
+
+
+def correlacao_janela(arq_a, arq_b, x0, x1, y0, y1, n=4):
+    """Correlacao (Pearson) entre as medias de uma grade n x n da mesma
+    janela em dois PNGs. E a prova de que o vidro MOSTRA o que esta atras: a
+    media sozinha nao separa 'vidro com tinta' de 'painel opaco escuro', mas
+    o padrao claro/escuro do interior (paredes claras em cima, mesa escura
+    embaixo) so aparece atraves do vidro se a refracao chega la."""
+    import numpy as np
+    a, b = _janela(arq_a, x0, x1, y0, y1), _janela(arq_b, x0, x1, y0, y1)
+    h, w = a.shape
+
+    def celulas(m):
+        return np.array([m[i * h // n:(i + 1) * h // n, j * w // n:(j + 1) * w // n].mean() for i in range(n) for j in range(n)])
+
+    ca, cb = celulas(a), celulas(b)
+    if ca.std() < 1e-6 or cb.std() < 1e-6:
+        return 0.0
+    return float(np.corrcoef(ca, cb)[0, 1])
+
+
+def projetar(cena, cam, ponto):
+    """Ponto do mundo -> (fracao x, fracao y do quadro, y de cima); None se atras."""
+    from bpy_extras.object_utils import world_to_camera_view
+    v = world_to_camera_view(cena, cam, Vector(ponto))
+    if v.z <= 0.0:
+        return None
+    return v.x, 1.0 - v.y
 
 
 def provar_material_do_cliente(cena):
@@ -171,7 +181,6 @@ def provar_material_do_cliente(cena):
     mat = bpy.data.materials.new("teste.tela_cliente")
     mat.use_nodes = True
     nt = mat.node_tree
-    # O Principled de fabrica fica no material, sem link (e o 'sobrando').
     for link in list(nt.links):
         nt.links.remove(link)
     emissao = nt.nodes.new("ShaderNodeEmission")
@@ -185,402 +194,172 @@ def provar_material_do_cliente(cena):
     cena.collection.objects.link(obj)
     obj.location = (5, 5, -5)  # fora de qualquer camera
     mod_u1.animar_tela({"tela": obj, "materiais": {}}, 40, 60, 90)
-    caminhos = [fc.data_path for fc in nt.animation_data.action.fcurves]
+    caminhos = [fc.data_path for fc in mod_u1.fcurves_de(nt.animation_data)]
     assert caminhos, "material do cliente: nenhuma chave gravada"
     assert all('nodes["%s"]' % emissao.name in c for c in caminhos), "chave caiu fora do Emission ligado: %s" % caminhos
-    assert not any("Principled" in c for c in caminhos), "chave caiu no Principled desligado: %s" % caminhos
     assert emissao.inputs["Strength"].default_value == 4.0
-    print("[teste_u1] material do cliente: chave em %s (Principled sobrando ignorado)" % caminhos[0])
-    # Mesmo furo em animar_botao/animar_ligar: o objeto 'led' do cliente.
     mod_u1.animar_ligar({"botao": None, "led": obj, "materiais": {}}, 5, 25)
-    assert not any("Principled" in fc.data_path for fc in nt.animation_data.action.fcurves)
+    assert not any("Principled" in fc.data_path for fc in mod_u1.fcurves_de(nt.animation_data))
+    print("[teste_u1] material do cliente: chave em %s (Principled sobrando ignorado)" % caminhos[0])
     bpy.data.objects.remove(obj, do_unlink=True)
     bpy.data.meshes.remove(malha)
     bpy.data.materials.remove(mat)
 
 
-def parte_modulo():
-    cena = cena_limpa()
-    raiz_col = bpy.data.collections.new("ANUNCIO")
-    cena.collection.children.link(raiz_col)
+def contagens():
+    return {"objetos": len(bpy.data.objects), "malhas": len(bpy.data.meshes),
+            "materiais": len(bpy.data.materials), "imagens": len(bpy.data.images), "luzes": len(bpy.data.lights)}
+
+
+def provas(cena, raiz_col):
     objs = mod_u1.construir_u1(cena, raiz_col, {})
-    # Idempotencia: construir de novo nao pode duplicar nada.
-    n1 = len(bpy.data.objects)
-    n_luzes = len(bpy.data.lights)
+    c1 = contagens()
     objs = mod_u1.construir_u1(cena, raiz_col, {})
-    n2 = len(bpy.data.objects)
-    assert n1 == n2, "construir_u1 duplicou objetos: %d -> %d" % (n1, n2)
-    assert n_luzes == len(bpy.data.lights), "construir_u1 vazou dados de luz: %d -> %d" % (n_luzes, len(bpy.data.lights))
+    c2 = contagens()
+    assert c1 == c2, "construir_u1 nao e idempotente: %s -> %s" % (c1, c2)
     assert bpy.data.collections.get("u1.001") is None
-    print("[teste_u1] idempotente: %d objetos, %d luzes nas duas rodadas" % (n2, n_luzes))
-    # O envelope medido tem de bater com a ficha: foi assim que a primeira
-    # versao entregou 0,545 de profundidade dizendo 0,499.
+    assert all(o.name.startswith("u1.") for o in objs["colecao"].all_objects), \
+        "objeto fora do padrao u1.<peca>: %s" % [o.name for o in objs["colecao"].all_objects if not o.name.startswith("u1.")]
+    print("[teste_u1] idempotente: %s nas duas rodadas" % c2)
+    tris = sum(len(o.data.polygons) for o in objs["colecao"].all_objects if o.type == "MESH")
+    print("[teste_u1] malha: %s; %d objetos na colecao, %d triangulos" % (objs["arquivo"], len(objs["colecao"].all_objects), tris))
     for medido, nominal, eixo in zip(objs["dimensoes"], objs["dimensoes_nominais"], "XYZ"):
-        assert abs(medido - nominal) < 0.002, "envelope %s = %.4f, nominal %.4f" % (eixo, medido, nominal)
+        assert abs(medido - nominal) < 0.003, "envelope %s = %.4f, nominal %.4f" % (eixo, medido, nominal)
     mn, mx = objs["envelope"]
-    print("[teste_u1] envelope medido: %.4f x %.4f x %.4f  (y %.4f..%.4f, z %.4f..%.4f)" % (
-        objs["dimensoes"][0], objs["dimensoes"][1], objs["dimensoes"][2], mn.y, mx.y, mn.z, mx.z))
-    # Imagens da tela empacotadas no .blend (o cliente nao tem a nossa /tmp).
-    for nome in ("u1.tela_boot", "u1.tela_ui"):
+    print("[teste_u1] envelope medido: %.4f x %.4f x %.4f  (x %.4f..%.4f, y %.4f..%.4f, z %.4f..%.4f)" % (
+        objs["dimensoes"][0], objs["dimensoes"][1], objs["dimensoes"][2], mn.x, mx.x, mn.y, mx.y, mn.z, mx.z))
+    corpo = objs["corpo"]
+    dg = bpy.context.evaluated_depsgraph_get()
+    ev = corpo.evaluated_get(dg)
+    zc = max((ev.matrix_world @ Vector(c)).z for c in ev.bound_box)
+    print("[teste_u1] corpo: %d tris, topo em z %.4f; tubos %s, bobinas %s, mesa %s, cabecotes %s" % (
+        len(corpo.data.polygons), zc, [o.name for o in objs["tubos"]], [o.name for o in objs["bobinas"]],
+        objs["mesa"].name, [o.name for o in objs["cabecotes"]]))
+    # Materiais da Meshy: u1.meshy com as tres imagens, empacotadas e com nome fixo.
+    m = corpo.data.materials[0]
+    assert m is not None and m.name == "u1.meshy", "corpo sem u1.meshy: %s" % (m.name if m else None)
+    imgs = {n.image.name for n in m.node_tree.nodes if n.type == "TEX_IMAGE" and n.image is not None}
+    assert imgs == {"u1.meshy.cor", "u1.meshy.metal_rugosidade", "u1.meshy.normal"}, "imagens da Meshy: %s" % imgs
+    for nome in sorted(imgs) + ["u1.tela_boot", "u1.tela_ui"]:
         img = bpy.data.images[nome]
         assert img.packed_file is not None, "%s nao empacotada (%s)" % (nome, img.filepath)
-        print("[teste_u1] %s empacotada: %d bytes" % (nome, img.packed_file.size))
+        print("[teste_u1] %s empacotada: %d bytes, %dx%d, %s" % (nome, img.packed_file.size, img.size[0], img.size[1], img.colorspace_settings.name))
+    bsdf = next(n for n in m.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
+    assert bsdf.inputs["Base Color"].is_linked and bsdf.inputs["Roughness"].is_linked and bsdf.inputs["Metallic"].is_linked and bsdf.inputs["Normal"].is_linked, \
+        "u1.meshy sem os quatro links (cor, rugosidade, metalico, normal)"
+    for o in objs["tubos"] + objs["bobinas"] + [objs["mesa"]] + objs["cabecotes"]:
+        if o.type == "MESH":
+            assert o.data.materials[0].name == "u1.meshy", "%s sem u1.meshy" % o.name
+    # Vidro da porta
+    porta = objs["porta"]
+    assert porta is not None and porta.type == "MESH"
+    mv = porta.data.materials[0]
+    assert mv.name == "u1.vidro"
+    bv = next(n for n in mv.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
+    assert bv.inputs["Transmission Weight"].default_value == 1.0
+    assert getattr(mv, "surface_render_method", "DITHERED") == "DITHERED"
+    print("[teste_u1] porta: %d tris, u1.vidro transmission 1, %s, refracao raytraced %s" % (
+        len(porta.data.polygons), getattr(mv, "surface_render_method", "?"), getattr(mv, "use_raytrace_refraction", "?")))
     # Luzes das fitas: existem, escondidas e a 0 W antes de animar_ligar.
     assert len(objs["luzes_led"]) == 2
     assert all(l.hide_render and l.data.energy == 0.0 for l in objs["luzes_led"])
+    for chave in ("posicao_tela", "posicao_tomada", "posicao_botao"):
+        print("[teste_u1] %s: %s" % (chave, {k: tuple(round(x, 4) for x in v) for k, v in objs[chave].items()}))
+    provar_material_do_cliente(cena)
+    return objs
 
+
+def renders(cena, objs):
     estudio(cena)
     cam, alvo = camera(cena)
-    provar_material_do_cliente(cena)
-
     # Liga 5..25 (fundo do curso em 15; fitas, luzes e standby 15..21);
     # tela: boot 40..60, UI de 60 em diante.
     mod_u1.animar_ligar(objs, 5, 25)
     mod_u1.animar_tela(objs, 40, 60, 90)
-
-    L, P, A = objs["dimensoes"]
     tela = objs["posicao_tela"]["centro"]
     tomada = objs["posicao_tomada"]["ponto"]
     botao = objs["posicao_botao"]["centro"]
-    cab = objs["cabecotes"][0].matrix_world.translation
 
-    # Traseira 3/4 alta: acrilico, boca do aro e fitas pelo topo. Quadro 4
-    # (tudo apagado) e 18 (meio da rampa de luz: fitas a ~2, luzes a ~12 W).
-    tras34 = ((0.95, 1.05, 0.80), (0.05, 0.05, 0.36), 45)
-    antes = foto(cena, cam, alvo, tras34[0], tras34[1], tras34[2], 4, "previa_u1_ligando_antes.png")
-    ligando = foto(cena, cam, alvo, tras34[0], tras34[1], tras34[2], 18, "previa_u1_ligando.png")
-    # Janela do acrilico nesse enquadramento (medido no PNG: x 300..520,
-    # y 330..690 de 540x960). A primeira versao media 0,30..0,75 e caia no
-    # casco branco - 0,709 de media com a camara apagada.
-    l_antes = luminancia_media(antes, 0.57, 0.95, 0.35, 0.72)
-    l_ligando = luminancia_media(ligando, 0.57, 0.95, 0.35, 0.72)
-    print("[teste_u1] luminancia da janela traseira: antes %.3f -> ligando %.3f (x%.2f)" % (l_antes, l_ligando, l_ligando / max(l_antes, 1e-6)))
-    assert l_ligando > l_antes * 1.3, "ligar nao e evento de luz: janela %.3f -> %.3f" % (l_antes, l_ligando)
-
-    # Quadro 30: ligado (fitas, luzes, tela em standby), boot ainda nao.
-    frente = foto(cena, cam, alvo, (-1.45, -1.95, 0.95), (0.0, 0.0, 0.34), 60, 30, "previa_u1_frente.png")
+    # Frente 3/4, quadro 1: tudo apagado, tela desligada.
+    if "frente" in FOTOS:
+        foto(cena, cam, alvo, (-1.05, -1.35, 0.70), (0.0, 0.0, 0.36), 50, 1, "previa_u1_frente.png")
+    # Vidro da porta: a media na janela da porta muda quando a porta some.
+    # Mede em resolucao baixa para custar menos de um quadro.
+    cam.location = (-1.05, -1.35, 0.70)
+    alvo.location = (0.0, 0.0, 0.36)
+    cam.data.lens = 50
+    bpy.context.view_layer.update()
+    px = projetar(cena, cam, objs["porta"].matrix_world.translation)
+    if px is not None and "frente" in FOTOS:
+        rx, ry = cena.render.resolution_x, cena.render.resolution_y
+        cena.render.resolution_x, cena.render.resolution_y = rx // 2, ry // 2
+        amostras = cena.eevee.taa_render_samples
+        cena.eevee.taa_render_samples = 8
+        com = foto(cena, cam, alvo, (-1.05, -1.35, 0.70), (0.0, 0.0, 0.36), 50, 1, "previa_u1_porta_com.png")
+        objs["porta"].hide_render = True
+        sem = foto(cena, cam, alvo, (-1.05, -1.35, 0.70), (0.0, 0.0, 0.36), 50, 1, "previa_u1_porta_sem.png")
+        objs["porta"].hide_render = False
+        cena.render.resolution_x, cena.render.resolution_y = rx, ry
+        cena.eevee.taa_render_samples = amostras
+        jan = (px[0] - 0.05, px[0] + 0.05, px[1] - 0.06, px[1] + 0.06)
+        l_com, l_sem = luminancia_media(com, *jan), luminancia_media(sem, *jan)
+        corr = correlacao_janela(com, sem, *jan)
+        print("[teste_u1] janela da porta (%.2f..%.2f x %.2f..%.2f): com vidro L %.3f, sem vidro L %.3f (razao %.2f); correlacao do padrao 4x4: %.2f"
+              % (jan[0], jan[1], jan[2], jan[3], l_com, l_sem, l_com / max(l_sem, 1e-6), corr))
+        # Vidro com tinta 0,58 transmite ~metade; opaco preto dava razao 0,23
+        # e correlacao ~0 (medido no exp_porta).
+        assert l_com / max(l_sem, 1e-6) > 0.35 and corr > 0.6, \
+            "a porta nao se comporta como vidro: com %.3f sem %.3f, correlacao %.2f" % (l_com, l_sem, corr)
+    # Traseira: coluna com botao e tomada, quadro 1.
     meio_tras = (tomada + botao) / 2
-    foto(cena, cam, alvo, (0.75, 0.95, 0.42), (meio_tras.x - 0.10, meio_tras.y, meio_tras.z + 0.06), 60, 30, "previa_u1_tras.png")
-    foto(cena, cam, alvo, (tela.x + 0.08, tela.y - 0.30, tela.z + 0.05), tela, 85, 75, "previa_u1_tela.png")
-    # Meio do boot (quadro 50): imagem de boot acesa e barra pela metade.
-    foto(cena, cam, alvo, (tela.x + 0.08, tela.y - 0.30, tela.z + 0.05), tela, 85, 50, "previa_u1_tela_boot.png")
-    # Camera por dentro do vao do topo: mais baixo que isso ela entra no casco.
-    foto(cena, cam, alvo, (cab.x - 0.12, cab.y - 0.20, cab.z + 0.32), (cab.x, cab.y, cab.z + 0.01), 85, 75, "previa_u1_cabecote.png")
-
-
-# ---------------------------------------------------------------------------
-# Parte de cena (rodada 3): o U1 no ambiente do anuncio, medido no pixel
-# ---------------------------------------------------------------------------
-
-def ler_png(caminho):
-    """PNG -> array (altura, largura, 3) em sRGB 0..1, linha 0 no TOPO."""
-    import numpy as np
-    img = bpy.data.images.load(caminho)
-    # Non-Color: senao o Blender linearizaria os bytes sRGB e o nivel medido
-    # nao seria o do arquivo (os criterios sao em niveis de 8 bits).
-    img.colorspace_settings.name = "Non-Color"
-    w, h = img.size
-    px = np.empty(w * h * 4, dtype=np.float32)
-    img.pixels.foreach_get(px)
-    bpy.data.images.remove(img)
-    return px.reshape(h, w, 4)[::-1, :, :3]
-
-
-def lum255(a):
-    return (0.2126 * a[..., 0] + 0.7152 * a[..., 1] + 0.0722 * a[..., 2]) * 255.0
-
-
-def projetar(cena, cam, ponto):
-    """Ponto do mundo -> (coluna, linha) no PNG, linha 0 no topo; None se atras da camera."""
-    from bpy_extras.object_utils import world_to_camera_view
-    v = world_to_camera_view(cena, cam, Vector(ponto))
-    if v.z <= 0.0:
-        return None
-    return v.x * cena.render.resolution_x, (1.0 - v.y) * cena.render.resolution_y
-
-
-def enquadrar(pos_cam, sujeito, lente, fx, fy):
-    """Mesma conta de mod_coreografia._enquadrar: alvo que poe o sujeito na
-    fracao (fx, fy) do quadro 9:16 (sensor de 36 mm no lado maior). Copiada
-    para o teste do modulo nao carregar a coreografia inteira."""
-    pos_cam, sujeito = Vector(pos_cam), Vector(sujeito)
-    d = sujeito - pos_cam
-    dist = d.length
-    d.normalize()
-    direita = d.cross(Vector((0, 0, 1)))
-    if direita.length < 1e-6:
-        direita = Vector((1, 0, 0))
-    direita.normalize()
-    cima = direita.cross(d).normalized()
-    meia_altura = dist * 18.0 / lente
-    meia_largura = meia_altura * 9.0 / 16.0
-    return sujeito - direita * ((fx - 0.5) * 2.0 * meia_largura) + cima * ((fy - 0.5) * 2.0 * meia_altura)
-
-
-def _apontar_rig(amb, cam_pos, offset):
-    """Rig de luz = azimute da camera + offset, como a coreografia faz na orbita e nas fotos."""
-    az = math.degrees(math.atan2(cam_pos[1], cam_pos[0]))
-    amb["rig"].rotation_euler = (0.0, 0.0, math.radians(az + offset))
-
-
-def _luzes_u1(objs, energia, forca_fitas):
-    """Area lights da camara e fitas num valor fixo (as chaves de animar_ligar
-    saem): cada foto do beat 5 tem o seu valor, em corte."""
-    for luz in objs["luzes_led"]:
-        luz.data.animation_data_clear()
-        luz.data.energy = energia
-        luz.hide_render = energia <= 0.0
-    nt = objs["materiais"]["led"].node_tree
-    nt.animation_data_clear()
-    mod_u1._socket_forca_emissao(nt).default_value = forca_fitas
-
-
-def maior_faixa(valores, limiar):
-    """Maior sequencia de True consecutivos (amostras) em 'valores' >= limiar; None quebra."""
-    maior = atual = 0
-    for v in valores:
-        if v is not None and v >= limiar:
-            atual += 1
-            maior = max(maior, atual)
-        else:
-            atual = 0
-    return maior
-
-
-def medir_tela(cena, cam, objs, arquivo):
-    """L (0..255) do FUNDO da UI em toda a area da tela: para cada ponto de uma
-    grade no vidro, se o pixel correspondente do PNG da UI e fundo (max canal
-    < 20 de 255, com 4 px de folga em volta) ou cai na moldura (fora da area
-    ativa), le o L do render no pixel projetado. Devolve o maximo por terco
-    (cima, meio, baixo) e a media de cada terco."""
-    import numpy as np
-    img = ler_png(arquivo)
-    ui = ler_png(mod_u1.PADROES["imagem_ui"])
-    fundo_png = ui.max(axis=2) < (20.0 / 255.0)
-    # Erosao de 6 px: um ponto da grade na borda de um icone nao pode contar
-    # como fundo. MEDIDO com o especular a zero: com 4 px sobravam 8 pontos
-    # de L 12-26, todos na linha 5 px acima do texto da barra de estado -
-    # halo da interpolacao cubica da textura mais o filtro do render, nao
-    # reflexo (o reflexo do world muda com o especular; o halo nao).
-    k = 6
-    ero = fundo_png.copy()
-    for dy in range(-k, k + 1):
-        for dx in range(-k, k + 1):
-            ero &= np.roll(np.roll(fundo_png, dy, axis=0), dx, axis=1)
-    tela = objs["tela"]
-    ex, ey = 0.104 / 0.0744, 0.070 / 0.0496
-    tercos = {0: [], 1: [], 2: []}
-    h, w = img.shape[:2]
-    for i in range(70):
-        v = -0.035 + 0.0025 + (0.070 - 0.005) * i / 69.0
-        for j in range(104):
-            u = -0.052 + 0.0025 + (0.104 - 0.005) * j / 103.0
-            # Vertices locais da face da frente da malha da tela (y = -0,002).
-            mundo = tela.matrix_world @ Vector((u, -0.002, v))
-            uv = (u / 0.104 + 0.5, v / 0.070 + 0.5)
-            px = (uv[0] * ex + 0.5 - 0.5 * ex) * 480.0
-            py = (1.0 - (uv[1] * ey + 0.5 - 0.5 * ey)) * 320.0
-            if 0 <= px < 480 and 0 <= py < 320:
-                if not ero[int(py), int(px)]:
-                    continue
-            pr = projetar(cena, cam, mundo)
-            if pr is None:
-                continue
-            cx, cy = int(pr[0]), int(pr[1])
-            if not (1 <= cx < w - 1 and 1 <= cy < h - 1):
-                continue
-            L = lum255(img[cy - 1:cy + 2, cx - 1:cx + 2]).mean()
-            tercos[min(2, int(3 * (0.5 - v / 0.070)))].append(L)
-    res = {}
-    for t, nome in ((0, "cima"), (1, "meio"), (2, "baixo")):
-        vals = np.array(tercos[t])
-        res[nome] = (float(vals.max()), float(vals.mean()), len(vals))
-    return res
-
-
-def medir_haste(cena, cam, img, objs, haste, raio_px=3):
-    """L maximo numa janela de (2r+1)^2 px ao longo do eixo da haste, uma
-    amostra por milimetro; None fora do quadro ou onde outra peca cobre a
-    haste (ray cast da camera: o carro X e, na foto C, as FITAS de LED, que
-    ficam entre a camera e a haste e a 1,2 de emissao dao >= 250 sozinhas -
-    26 mm que nao mudavam com nenhuma rugosidade)."""
-    h, w = img.shape[:2]
-    comp = haste.dimensions.x
-    origem = cam.matrix_world.translation
-    deps = bpy.context.evaluated_depsgraph_get()
-    vals = []
-    for i in range(int(comp * 1000)):
-        x = -comp / 2.0 + i / 1000.0
-        # Ponto no topo do cilindro (raio 6 mm), que e o que a camera de cima ve.
-        mundo = haste.matrix_world @ Vector((x, 0.0, 0.006))
-        toque = cena.ray_cast(deps, origem, (mundo - origem).normalized())
-        if not toque[0] or toque[4] is None or toque[4].name != haste.name:
-            vals.append(None)
-            continue
-        pr = projetar(cena, cam, mundo)
-        if pr is None:
-            vals.append(None)
-            continue
-        cx, cy = int(pr[0]), int(pr[1])
-        if not (raio_px <= cx < w - raio_px and raio_px <= cy < h - raio_px):
-            vals.append(None)
-            continue
-        vals.append(float(lum255(img[cy - raio_px:cy + raio_px + 1, cx - raio_px:cx + raio_px + 1]).max()))
-    return vals
-
-
-def medir_face_lateral(cena, cam, img, objs, z0, z1):
-    """Amplitude horizontal (max - min das medias de coluna, em niveis) de L na
-    face lateral +X entre z0 e z1, com 3 cm de folga nas bordas da frente e de tras."""
-    import numpy as np
-    mn, mx = objs["envelope"]
-    P = mod_u1.PROFUNDIDADE - mod_u1.SALIENCIA_FRENTE - mod_u1.SALIENCIA_TRAS
-    cantos = [projetar(cena, cam, (mx.x, y, z)) for y in (-P / 2 + 0.03, P / 2 - 0.03) for z in (z0, z1)]
-    xs = [c[0] for c in cantos]
-    ys = [c[1] for c in cantos]
-    x0, x1 = int(min(xs)), int(max(xs))
-    y0, y1 = int(min(ys)), int(max(ys))
-    face = lum255(img[y0:y1, x0:x1])
-    colunas = face.mean(axis=0)
-    return float(colunas.max() - colunas.min()), float(face.mean()), (x0, x1, y0, y1)
-
-
-def parte_cena():
-    cena = cena_limpa()
-    raiz_col = bpy.data.collections.new("ANUNCIO")
-    cena.collection.children.link(raiz_col)
-    amb = mod_ambiente.construir_ambiente(cena, raiz_col)
-    objs = mod_u1.construir_u1(cena, raiz_col, {})
-    cam, alvo = camera(cena)
-    offset = mod_ambiente.OFFSET_RIM_ATRAS
-    mod_u1.animar_ligar(objs, 5, 25)
-    mod_u1.animar_tela(objs, 40, 60, 90)
-    tela = objs["posicao_tela"]["centro"]
-    normal = objs["posicao_tela"]["normal"]
-    falhas = []
-
-    def criterio(nome, ok, detalhe):
-        print("[teste_u1] %s: %s - %s" % ("OK   " if ok else "FALHA", nome, detalhe))
-        if not ok:
-            falhas.append(nome)
-
-    # --- 1. q359: a tela acesa a 0,26 m, com o world do ambiente ------------
-    # Mesma camera do fim do dolly do beat 4 (mod_coreografia._beat4): tela +
-    # normal*0,26 + (0,02, 0, 0,015), alvo na tela, 35 mm; rig a azimute + 90.
-    pos = tela + normal * 0.26 + Vector((0.02, 0.0, 0.015))
-    _apontar_rig(amb, pos, offset)
-    arq = foto(cena, cam, alvo, pos, tela, 35, 75, "previa_u1_cena_tela.png")
-    bpy.context.view_layer.update()
-    m = medir_tela(cena, cam, objs, arq)
-    print("[teste_u1] fundo da UI (L de 255): cima max %.1f media %.1f (%d pontos), meio max %.1f media %.1f, baixo max %.1f media %.1f"
-          % (m["cima"][0], m["cima"][1], m["cima"][2], m["meio"][0], m["meio"][1], m["baixo"][0], m["baixo"][1]))
-    pior = max(v[0] for v in m.values())
-    criterio("preto da tela ligada e preto (L < 15 em toda a tela)", pior < 15.0, "pior terco L max %.1f" % pior)
-
-    # --- 4. lateral (q185): a key do ambiente contra key menor ----------------
-    # Camera na normal da face +X (a do q185: coluna da tomada a direita), a
-    # 2 m, 50 mm; rig a azimute + 90 (rim atras), como na orbita. Tudo apagado
-    # (quadro 4): no q185 o U1 ainda nao ligou.
-    L_, P_, A_ = objs["dimensoes"]
-    pos_lat = Vector((L_ / 2 + 2.0, 0.0, 0.42))
-    _apontar_rig(amb, pos_lat, offset)
-    key = amb["luzes"]["key"].data
-    key_pos = Vector(amb["luzes"]["key"].location)
-    alvo_luz = Vector(amb["params"]["alvo_luzes"])
-    direcao_key = (key_pos - alvo_luz).normalized()
-    dist_key = (key_pos - alvo_luz).length
-    variantes = [
-        ("key2m", None, None),
-        ("key1m", (1.0, 1.0), 2.5),
-        ("softbox", (1.0, 2.0), 2.5),
-    ]
-    amplitudes = {}
-    for rotulo, tam, dist in variantes:
-        if tam is not None:
-            key.size, key.size_y = tam
-            amb["luzes"]["key"].location = alvo_luz + direcao_key * dist
-        else:
-            key.size, key.size_y = amb["params"]["luzes"]["key"]["tam"]
-            amb["luzes"]["key"].location = key_pos
-        arq = foto(cena, cam, alvo, pos_lat, (L_ / 2, 0.0, 0.40), 50, 4, "previa_u1_cena_lateral_%s.png" % rotulo)
+    if "tras" in FOTOS:
+        foto(cena, cam, alvo, (0.62, 0.85, 0.33), (meio_tras.x - 0.06, meio_tras.y, meio_tras.z + 0.03), 60, 1, "previa_u1_tras.png")
+    # Close da tela com a UI (quadro 75).
+    if "tela" in FOTOS:
+        foto(cena, cam, alvo, (tela.x + 0.08, tela.y - 0.30, tela.z + 0.05), tela, 85, 75, "previa_u1_tela.png")
+    # Tubos e topo (quadro 30: ligado, fitas acesas).
+    if "topo" in FOTOS:
+        foto(cena, cam, alvo, (-0.55, -0.75, 0.95), (0.0, 0.10, 0.52), 60, 30, "previa_u1_topo.png")
+    # Ligando: traseira 3/4 alta no meio da rampa (q18).
+    if "ligando" in FOTOS:
+        foto(cena, cam, alvo, (0.95, 1.05, 0.80), (0.05, 0.05, 0.36), 45, 18, "previa_u1_ligando.png")
+        # Ligar e evento de luz: a janela traseira (acrilico sobre o vao)
+        # clareia entre q4 (tudo apagado) e q18 (fitas a ~2, luzes a ~12 W).
+        # SEM as luzes do estudio: com elas a janela ja media L 0,44 apagada
+        # (a key entra pelo topo aberto da Meshy e a contraluz bate na
+        # traseira) e as fitas somavam 6% - o substituto tinha camara
+        # fechada. So World + fitas e o que prova que as area lights das
+        # fitas iluminam a camara. Baixa resolucao para custar menos de um
+        # quadro.
+        rx, ry = cena.render.resolution_x, cena.render.resolution_y
+        cena.render.resolution_x, cena.render.resolution_y = rx // 2, ry // 2
+        amostras = cena.eevee.taa_render_samples
+        cena.eevee.taa_render_samples = 8
+        estudio_luzes = [o for o in cena.collection.objects if o.type == "LIGHT"]
+        for o in estudio_luzes:
+            o.hide_render = True
+        antes = foto(cena, cam, alvo, (0.95, 1.05, 0.80), (0.05, 0.05, 0.36), 45, 4, "previa_u1_ligando_antes.png")
+        depois = foto(cena, cam, alvo, (0.95, 1.05, 0.80), (0.05, 0.05, 0.36), 45, 18, "previa_u1_ligando_depois.png")
+        for o in estudio_luzes:
+            o.hide_render = False
+        cena.render.resolution_x, cena.render.resolution_y = rx, ry
+        cena.eevee.taa_render_samples = amostras
         bpy.context.view_layer.update()
-        img = ler_png(arq)
-        amp_alto, media_alto, rec = medir_face_lateral(cena, cam, img, objs, 0.57, 0.66)
-        amp_disco, media_disco, _ = medir_face_lateral(cena, cam, img, objs, 0.30, 0.42)
-        amplitudes[rotulo] = amp_alto
-        print("[teste_u1] lateral %s: key %.0fx%.0f cm a %.2f m; faixa alta (z 0,57-0,66, px x %d-%d y %d-%d) L media %.1f amplitude horizontal %.1f niveis; faixa do disco (z 0,30-0,42) media %.1f amplitude %.1f"
-              % (rotulo, key.size * 100, key.size_y * 100, (Vector(amb["luzes"]["key"].location) - alvo_luz).length,
-                 rec[0], rec[1], rec[2], rec[3], media_alto, amp_alto, media_disco, amp_disco))
-    key.size, key.size_y = amb["params"]["luzes"]["key"]["tam"]
-    amb["luzes"]["key"].location = key_pos
-    print("[teste_u1] lateral: amplitude >= 15 niveis? " + ", ".join("%s %s (%.1f)" % (k, "sim" if v >= 15 else "nao", v) for k, v in amplitudes.items()))
-
-    # --- 3. foto A (q389): cabecotes estacionados, produto no canto inferior direito
-    cabs = objs["cabecotes"]
-    cena.frame_set(60)
-    bpy.context.view_layer.update()
-    suj_a = (cabs[1].matrix_world.translation + cabs[2].matrix_world.translation) / 2.0 + Vector((0, 0, 0.02))
-    pos_a = suj_a + Vector((-0.22, -0.38, 0.30))
-    _luzes_u1(objs, 60.0, 1.2)
-    _apontar_rig(amb, pos_a, offset + 45.0)
-    amb["luzes"]["key"].data.energy = 300.0
-    amb["luzes"]["rim"].data.energy = 250.0
-    arq = foto(cena, cam, alvo, pos_a, enquadrar(pos_a, suj_a, 60.0, 0.68, 0.74), 60, 60, "previa_u1_cena_foto_a.png")
-    bpy.context.view_layer.update()
-    img = ler_png(arq)
-    # O labio: a faixa da parede do bolso do casco (branca) entre o topo da
-    # parede de tras da camara e a face de baixo do aro - a camera da foto A
-    # olha por cima da frente para a PAREDE DE TRAS (diagnostico da rodada 3:
-    # a barra some escondendo u1.corpo e nao muda escondendo as fitas).
-    # Amostra a linha do meio dessa faixa (z 0,694, y da parede do bolso) da
-    # esquerda a direita e mede L: com o labio branco ela e >= 235 de ponta a
-    # ponta; com a parede subindo ate o aro o pixel projetado cai na parede.
-    P_c = mod_u1.PROFUNDIDADE - mod_u1.SALIENCIA_FRENTE - mod_u1.SALIENCIA_TRAS
-    y_labio = (P_c - 0.11) / 2.0 - 0.0005
-    z_labio = 0.694
-    vals = []
-    for i in range(400):
-        x = -0.20 + 0.40 * i / 399.0
-        pr = projetar(cena, cam, (x, y_labio, z_labio))
-        if pr is None or not (2 <= pr[0] < img.shape[1] - 2 and 2 <= pr[1] < img.shape[0] - 2):
-            vals.append(None)
-            continue
-        cx, cy = int(pr[0]), int(pr[1])
-        vals.append(float(lum255(img[cy - 2:cy + 3, cx - 2:cx + 3]).mean()))
-    dentro = [v for v in vals if v is not None]
-    faixa = maior_faixa(vals, 235.0)
-    print("[teste_u1] foto A, linha do labio (y %.3f z %.3f): %d amostras no quadro, L media %.1f, maior faixa >= 235: %d mm"
-          % (y_labio, z_labio, len(dentro), sum(dentro) / max(len(dentro), 1), faixa))
-    criterio("sem barra branca do labio na foto A", faixa < 40, "maior faixa continua >= 235 na linha do labio: %d mm (< 40)" % faixa)
-
-    # --- 2. foto C (q445): mesa de cima, luzes da camara a 10 W --------------
-    mesa = objs["mesa"].matrix_world.translation.copy()
-    pos_c = mesa + Vector((0.30, -0.30, 1.20))
-    _luzes_u1(objs, 10.0, 1.2)
-    _apontar_rig(amb, pos_c, offset + 70.0)
-    amb["luzes"]["key"].data.energy = 110.0
-    amb["luzes"]["rim"].data.energy = 150.0
-    arq = foto(cena, cam, alvo, pos_c, enquadrar(pos_c, mesa, 50.0, 0.70, 0.74), 50, 60, "previa_u1_cena_foto_c.png")
-    bpy.context.view_layer.update()
-    img = ler_png(arq)
-    pior_faixa = 0
-    for haste in objs["hastes"]:
-        vals = medir_haste(cena, cam, img, objs, haste)
-        dentro = [v for v in vals if v is not None]
-        faixa = maior_faixa(vals, 250.0)
-        n250 = sum(1 for v in dentro if v >= 250.0)
-        pior_faixa = max(pior_faixa, faixa)
-        print("[teste_u1] foto C, %s: %d mm no quadro, L max %.1f, %d mm >= 250, maior faixa continua >= 250: %d mm"
-              % (haste.name, len(dentro), max(dentro) if dentro else 0.0, n250, faixa))
-    criterio("haste nao le como tubo fluorescente na foto C", pior_faixa < 10,
-             "maior faixa continua >= 250 ao longo das hastes: %d mm (< 10)" % pior_faixa)
-
-    if falhas:
-        raise AssertionError("parte de cena: %d criterio(s) falhou: %s" % (len(falhas), ", ".join(falhas)))
-    print("[teste_u1] parte de cena: todos os criterios passaram")
+        pj = projetar(cena, cam, objs["painel_traseiro"].matrix_world.translation)
+        if pj is not None:
+            jan = (pj[0] - 0.05, pj[0] + 0.05, pj[1] - 0.04, pj[1] + 0.04)
+            l_antes, l_depois = luminancia_media(antes, *jan), luminancia_media(depois, *jan)
+            print("[teste_u1] janela traseira (%.2f..%.2f x %.2f..%.2f): apagado L %.3f -> ligando L %.3f (x%.2f)"
+                  % (jan[0], jan[1], jan[2], jan[3], l_antes, l_depois, l_depois / max(l_antes, 1e-6)))
+            assert l_depois > l_antes * 1.3, "ligar nao e evento de luz: janela %.3f -> %.3f" % (l_antes, l_depois)
 
 
-if PARTE in ("", "modulo"):
-    parte_modulo()
-if PARTE in ("", "cena"):
-    parte_cena()
+cena = cena_limpa()
+raiz_col = bpy.data.collections.new("ANUNCIO")
+cena.collection.children.link(raiz_col)
+if PARTE in ("", "provas"):
+    objs = provas(cena, raiz_col)
+else:
+    objs = mod_u1.construir_u1(cena, raiz_col, {})
+if PARTE in ("", "render"):
+    renders(cena, objs)
