@@ -34,7 +34,23 @@ GRAVACOES=4000 LEITURAS=400 python3 bancada/concorrencia/quanto-a-trava-fica-pre
 
 RODADAS=30 python3 bancada/concorrencia/ruido-do-controle.py         # o teto do vigia
 RODADAS=40 RODADA_S=1.5 python3 bancada/concorrencia/ruido-do-controle.py --json
+
+python3 bancada/concorrencia/escolher-o-desenho.py --autoteste   # a conta do teto exclusivo
 ```
+
+**As corridas limpas ficam versionadas em `corridas/`**, com data e hora no
+nome. O medidor imprime e some; guardar a corrida crua e o que permite
+conferir depois se o numero de um documento saiu dela ou da memoria de quem
+escreveu.
+
+**O `--autoteste` do `escolher-o-desenho.py` prova UMA conta**, e ela merece o
+teste porque eu errei a leitura dela: o teto que o relatorio imprime para o
+MVCC (`leitor-com-escritor / leitor-sozinho`) inclui o custo de haver
+**qualquer** segundo cliente, que o `RwLock` ja recupera. O que so o MVCC
+compra e `leitor-com-escritor / dois-leitores` -- e a diferenca nao e
+academica: em 04/09 o primeiro deu 1,19x-1,38x e o segundo deu 0,91x-1,13x.
+O autoteste traz as quatro medicoes gravadas e exige que o denominador antigo
+de um numero DIFERENTE, senao troca-lo de volta passaria despercebido.
 
 **O quarto medidor tem um controle que os outros não têm**, e vale escrever por
 quê. Os três primeiros comparam contra o `ping`, que não toma a trava — isso

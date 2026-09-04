@@ -27,9 +27,15 @@ Os tres tetos, e o que separa um do outro
   de CONTROLE (o `ping`, que nao toma a trava): a distancia entre as duas e o
   paralelismo que a exclusividade da leitura esta comendo.
 * **MVCC** e o unico que tira o leitor de tras do ESCRITOR. O teto dele nao e
-  vazao, e ESPERA: o p99 de um `varrer` com um escritor ao lado contra o p99 do
-  mesmo `varrer` sozinho. `RwLock` nao mexe nesse numero -- o escritor continua
-  exclusivo.
+  vazao, e ESPERA -- e ele se le em DUAS contas, nao numa:
+    - contra o leitor SOZINHO (`teto-do-mvcc-p99`), que e o que a espera custa
+      por inteiro;
+    - contra DOIS LEITORES (`teto-do-mvcc-exclusivo`), que e o que sobra
+      depois de descontar o que o `RwLock` ja recupera.
+  Esta linha dizia que «`RwLock` nao mexe nesse numero», e estava errada: ele
+  mexe na parte que e de haver um segundo cliente qualquer. O que resta ao
+  MVCC e a segunda conta, e ela deu 0,91x a 1,13x em duas baterias limpas de
+  04/09 -- ruido, contra 1,19x-1,38x da primeira.
 
 A media esconde justamente o que se procura
 --------------------------------------------
@@ -311,6 +317,21 @@ def tetos(b):
                                  / e["leitor-sozinho"]["p99"])
         t["teto-do-rwlock-p99"] = (e["dois-leitores"]["p99"]
                                    / e["leitor-sozinho"]["p99"])
+        # O TETO EXCLUSIVO do MVCC, e ele nao e o de cima.
+        #
+        # `leitor-com-escritor / leitor-sozinho` mede DUAS coisas somadas: o
+        # custo de haver qualquer segundo cliente -- que o `RwLock` ja
+        # recupera -- e o custo de esse cliente ser um ESCRITOR, que e a unica
+        # parte que so o MVCC endereca. Creditar a soma ao MVCC e credita-lo
+        # pelo trabalho do `RwLock`.
+        #
+        # Medido em 04/09 (duas baterias limpas): o teto do par deu 1,19x a
+        # 1,38x e o exclusivo deu 0,91x a 1,13x -- uma corrida com o escritor
+        # ao lado MAIS BARATO que outro leitor. Sem esta linha, quem le o
+        # relatorio conclui 1,30x, que foi o que eu conclui.
+        if e["dois-leitores"]["p99"]:
+            t["teto-do-mvcc-exclusivo"] = (e["leitor-com-escritor"]["p99"]
+                                           / e["dois-leitores"]["p99"])
     return t
 
 
@@ -338,11 +359,62 @@ def imprimir(b, t):
     print(f"   RwLock, na espera  {t.get('teto-do-rwlock-p99', 0):.2f}x"
           "   (p99 de dois leitores contra um)")
     print(f"   MVCC, na espera    {t.get('teto-do-mvcc-p99', 0):.2f}x"
-          "   (p99 do leitor COM escritor contra sozinho -- so o MVCC mexe)")
+          "   (p99 do leitor COM escritor contra SOZINHO)")
+    print(f"   MVCC, EXCLUSIVO    {t.get('teto-do-mvcc-exclusivo', 0):.2f}x"
+          "   (contra DOIS LEITORES: o que o RwLock nao recupera)")
     print()
 
 
+def autoteste():
+    """A conta do teto EXCLUSIVO, provada contra as duas baterias limpas.
+
+    Prova real nos dois sentidos: com a formula certa os quatro numeros batem
+    as corridas guardadas em `corridas/`, e com a formula ANTIGA (dividir pelo
+    leitor sozinho) nenhum deles bate. Se alguem trocar o denominador de volta,
+    isto falha aqui em vez de falhar tres documentos adiante.
+    """
+    # As quatro medicoes de 04/09, das corridas guardadas: (sozinho, dois
+    # leitores, com escritor, exclusivo esperado).
+    casos = [
+        ("A por_lote", 6583.2, 8546.0, 8586.3, 1.00),
+        ("B por_lote", 7316.5, 9579.6, 8703.6, 0.91),
+        ("A por_operacao", 6905.6, 8406.5, 9525.4, 1.13),
+        ("B por_operacao", 7071.4, 8637.9, 8780.0, 1.02),
+    ]
+    ok = True
+    for nome, soz, dois, esc, esperado in casos:
+        # `tetos` calcula a vazao antes da espera, e precisa das curvas: um
+        # dicionario vazio nao exercita o mesmo caminho que uma bateria de
+        # verdade percorre, e este autoteste existe para exercitar esse.
+        curva = {k: {"ops_s": 1000.0} for k in CLIENTES}
+        b = {"curvas": {n: dict(curva) for n in (
+                 "controle", "leitura-mesma-tabela",
+                 "leitura-tabelas-separadas", "escrita-mesma-tabela",
+                 "escrita-tabelas-separadas")},
+             "espera": {
+            "leitor-sozinho": {"p99": soz},
+            "dois-leitores": {"p99": dois},
+            "leitor-com-escritor": {"p99": esc}}}
+        t = tetos(b)
+        deu = t["teto-do-mvcc-exclusivo"]
+        bate = abs(deu - esperado) < 0.005
+        ok &= bate
+        # E o denominador ERRADO (o leitor sozinho) tem de dar OUTRA coisa:
+        # sem esta metade, trocar o denominador passaria despercebido.
+        antigo = t["teto-do-mvcc-p99"]
+        distingue = abs(antigo - esperado) >= 0.05
+        ok &= distingue
+        print(f"   {'ok ' if bate and distingue else 'FALHOU'} {nome:16} "
+              f"exclusivo {deu:.2f}x (esperado {esperado:.2f}x)  "
+              f"| pelo denominador antigo daria {antigo:.2f}x")
+    print("   autoteste:", "passou" if ok else "FALHOU")
+    return 0 if ok else 1
+
+
 def principal():
+    if "--autoteste" in sys.argv:
+        print("=== autoteste: a conta do teto exclusivo ===")
+        return autoteste()
     if not PHXSQLD.exists():
         print(f"falta {PHXSQLD} -- rode `cargo build --release` antes")
         return 2

@@ -667,9 +667,17 @@ antes de começar.
 * **`RwLock`**: a curva de **controle** (o `ping`, que não toma a trava) contra
   a de leitura — a distância entre as duas é o paralelismo que a exclusividade
   entre leitores está comendo;
-* **MVCC**: o **p99** de um `varrer` com um escritor ao lado contra o p99 do
-  mesmo `varrer` sozinho. Este é o único par que o `RwLock` não mexe, porque o
-  escritor continua exclusivo nos dois.
+* **MVCC**: **duas** contas, e não uma — esta linha dizia uma só, e por isso
+  creditava ao MVCC trabalho que é do `RwLock`.
+  - o **p99** de um `varrer` com um escritor ao lado contra o p99 do mesmo
+    `varrer` **sozinho** (`teto-do-mvcc-p99`): é a espera por inteiro. A
+    redação anterior dizia que *«este é o único par que o `RwLock` não mexe»*,
+    e **está errada**: parte desse custo é o de haver um segundo cliente
+    qualquer, e é justamente o que o `RwLock` recupera.
+  - o **p99** com um escritor ao lado contra o p99 com **dois leitores**
+    (`teto-do-mvcc-exclusivo`): o que sobra depois desse desconto, e a única
+    parte que só o MVCC compra. Medido em 04/09, §11.2: **0,91×–1,13×**,
+    contra 1,19×–1,38× da primeira conta.
 
 A distribuição, e não a média, porque **é a média que esconde o que se
 procura**: uma parada de dezenas de milissegundos num `varrer` de centenas de
@@ -1148,10 +1156,24 @@ instrumento **não** é cego a diferenças reais; ele é cego a esta.
 ### 11.3 O que isto decide, e o que NÃO decide
 
 **Decide o desempenho.** A Sombra não se justifica por p99 de espera: não há
-1,3× para ela recuperar, há ~1,0×. Quem paga esse número é o `RwLock`, e ele
-custa muito menos — a `Instancia` já é `!Sync` por decisão escrita (§1.3), o
-que hoje faz o `RwLock` **não compilar**; trocá-la é uma decisão de uma linha,
-e não um gestor de versões.
+1,3× para ela recuperar, há ~1,0×. Quem paga esse número é o `RwLock`.
+
+**E aqui esta seção quase mentiu.** A primeira redação dela dizia que o
+`RwLock` «custa muito menos — trocá-lo é uma decisão de uma linha». **É
+exatamente a premissa que o pedido 164 já tinha matado**, e a §2 deste mesmo
+documento a desmente em letras maiúsculas: `RwLock<Instancia>` **compila de
+primeira e está errado**, porque nenhum método pede `&mut` e o tipo não tem o
+que proteger — dois escritores com guarda de leitura abririam dois `Table`
+sobre os mesmos arquivos, sem um erro do compilador. O marcador `!Sync` da
+§1.3 existe **para transformar esse erro silencioso em erro de compilação**, e
+ler «o `RwLock` não compila hoje» como «falta uma linha» é ler a guarda ao
+contrário: ela não está no caminho, ela é o aviso.
+
+O que o `RwLock` custa, então, é o **invariante**: separar de verdade os
+caminhos que só leem dos que escrevem, que hoje são o mesmo `&self`. É trabalho
+menor que um gestor de versões, e não é uma linha. *Documento que se contradiz
+na mesma página é pior que documento que falta, porque quem lê a página certa
+sai convencido.*
 
 **NÃO decide a correção, e é aqui que a Sombra continua de pé.** A §4.3 já
 tinha nomeado a única coisa que só o MVCC dá: **leitura repetível**. Uma
