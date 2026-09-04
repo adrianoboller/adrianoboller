@@ -316,6 +316,40 @@ impl RegFile {
     }
 
     pub fn abrir(diretorio: impl AsRef<Path>, nome: &str) -> Result<RegFile> {
+        let mut r = RegFile::montar(diretorio, nome)?;
+        r.terminar_troca_interrompida()?;
+        r.conferir_volumes_uniformes()?;
+        r.reler_fronteiras()?;
+        r.reler_baldes()?;
+        Ok(r)
+    }
+
+    /// Abre SEM escrever nada, e devolve `None` quando abrir exigiria escrever.
+    ///
+    /// # Por que devolver `None` em vez de escrever assim mesmo
+    ///
+    /// Porque quem chama esta atendendo sob a ficha COMPARTILHADA: outros
+    /// leitores estao nos mesmos arquivos ao mesmo tempo, e a unica coisa que
+    /// torna isso seguro e nenhum deles escrever. O unico `write` que
+    /// [`RegFile::abrir`] faz e o `rename` que termina uma troca de volume
+    /// interrompida -- raro, e caminho de RECUPERACAO, que e o oposto de algo
+    /// para acontecer duas vezes em paralelo.
+    ///
+    /// `None` nao e erro: quem chama desce para a ficha exclusiva e refaz o
+    /// trabalho por la, onde a troca se termina uma vez so.
+    pub fn abrir_sem_escrever(diretorio: impl AsRef<Path>, nome: &str) -> Result<Option<RegFile>> {
+        let mut r = RegFile::montar(diretorio, nome)?;
+        if !r.trocas_por_terminar().is_empty() {
+            return Ok(None);
+        }
+        r.conferir_volumes_uniformes()?;
+        r.reler_fronteiras()?;
+        r.reler_baldes()?;
+        Ok(Some(r))
+    }
+
+    /// Le o cabecalho e monta o conjunto de volumes, sem conferir nem curar.
+    fn montar(diretorio: impl AsRef<Path>, nome: &str) -> Result<RegFile> {
         // A paginacao mora dentro do esquema, que mora dentro do primeiro
         // volume -- e a largura do sufixo faz parte dela. Para nao chutar,
         // acha-se o primeiro volume varrendo o diretorio e le-se o cabecalho
@@ -443,7 +477,7 @@ impl RegFile {
         // houver ALTERAR ESQUEMA, ele tera de mover os dados -- e sera uma
         // operacao com esse nome, e nao um efeito de abrir o arquivo.
         let esquema_crc = schema_crc;
-        let mut r = RegFile {
+        let r = RegFile {
             volumes: Volumes::novo(diretorio, nome, EXT_REG, esquema.paginacao()),
             esquema,
             esquema_bytes: bytes_esquema,
@@ -463,10 +497,6 @@ impl RegFile {
             recuperados: 0,
             fronteiras: Vec::new(),
         };
-        r.terminar_troca_interrompida()?;
-        r.conferir_volumes_uniformes()?;
-        r.reler_fronteiras()?;
-        r.reler_baldes()?;
         Ok(r)
     }
 
@@ -492,8 +522,29 @@ impl RegFile {
     /// mesma largura de slot e o mesmo CRC de esquema do volume 1. Um arquivo
     /// que nao se declara assim nao entra no lugar de nada.
     fn terminar_troca_interrompida(&mut self) -> Result<()> {
+        for (novo, alvo) in self.trocas_por_terminar() {
+            self.volumes.fechar_todos();
+            std::fs::rename(&novo, &alvo)?;
+        }
+        Ok(())
+    }
+
+    /// As trocas que faltam terminar, como `(novo, alvo)`.
+    ///
+    /// # Por que a lista sai separada de quem a executa
+    ///
+    /// Porque ha um caminho que precisa da PERGUNTA sem a resposta: a
+    /// abertura somente-leitura, que atende sob a ficha COMPARTILHADA e nao
+    /// pode escrever byte nenhum. Ela precisa saber se abrir exigiria um
+    /// `rename` -- e nao pode descobrir isso fazendo o `rename`.
+    ///
+    /// Uma segunda copia do criterio dentro dela divergiria da primeira no
+    /// dia em que o formato mudasse, e divergiria calada: um conjunto meio
+    /// trocado passaria a abrir como se estivesse inteiro.
+    fn trocas_por_terminar(&self) -> Vec<(PathBuf, PathBuf)> {
+        let mut saida = Vec::new();
         if !self.esquema.paginacao().ligada() {
-            return Ok(());
+            return saida;
         }
         for v in self.volumes.existentes() {
             let caminho = self.volumes.caminho(v);
@@ -515,12 +566,11 @@ impl RegFile {
                 if geometria_do_volume(&novo)
                     == Some((self.slot_size, self.data_offset, self.esquema_crc))
                 {
-                    self.volumes.fechar_todos();
-                    std::fs::rename(&novo, &alvo)?;
+                    saida.push((novo, alvo));
                 }
             }
         }
-        Ok(())
+        saida
     }
 
     /// Todo volume tem de declarar a MESMA largura de slot e o mesmo esquema.

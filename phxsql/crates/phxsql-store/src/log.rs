@@ -358,8 +358,48 @@ impl LogFile {
         // So o volume CORRENTE pode ter ficado atrasado: os anteriores foram
         // fechados quando a paginacao virou, e ali o cabecalho vai a disco na
         // hora.
-        l.curar(volume_atual)?;
+        l.curar(volume_atual, true)?;
         Ok(l)
+    }
+
+    /// Abre SEM escrever nada, e devolve `None` quando abrir exigiria escrever.
+    ///
+    /// O unico `write` de [`LogFile::abrir`] esta na CURA: um diario cujo
+    /// cabecalho ficou para tras numa queda tem o fim recalculado e regravado.
+    /// Isso e recuperacao, e recuperacao acontece sob a ficha exclusiva -- sob
+    /// a compartilhada ha outros leitores nos mesmos arquivos, e o que os
+    /// mantem seguros e ninguem escrever.
+    pub fn abrir_sem_escrever(
+        diretorio: impl AsRef<Path>,
+        nome: &str,
+        paginacao: Paginacao,
+    ) -> Result<Option<LogFile>> {
+        let paginacao = crate::diario::paginacao(paginacao);
+        let volumes = Volumes::novo(diretorio, nome, EXT_LOG, paginacao);
+        let existentes = volumes.existentes();
+        if existentes.is_empty() {
+            return Err(PhxError::NaoEncontrado(format!(
+                "nenhum volume de {}",
+                volumes.caminho(1).display()
+            )));
+        }
+        let volume_atual = *existentes.last().unwrap();
+        let mut l = LogFile {
+            volumes,
+            cabs: HashMap::new(),
+            volume_atual,
+            marca: None,
+            usuario: 0,
+        };
+        l.cab(1)?;
+        l.cab(volume_atual)?;
+        // A cura ANDA, e nao grava: se ela achou evento alem do fim que o
+        // cabecalho declara, e porque o cabecalho precisa ser corrigido -- e
+        // corrigir e escrever.
+        if l.curar(volume_atual, false)? > 0 {
+            return Ok(None);
+        }
+        Ok(Some(l))
     }
 
     fn cab(&mut self, volume: u32) -> Result<Cabecalho> {
@@ -513,7 +553,7 @@ impl LogFile {
     /// Cada evento carrega o proprio CRC, entao a varredura sabe onde parar: no
     /// primeiro que nao confere, ou no fim do arquivo. Regiao zerada nao passa
     /// -- o CRC-32 de 36 bytes zerados nao e zero.
-    fn curar(&mut self, volume: u32) -> Result<u64> {
+    fn curar(&mut self, volume: u32, gravar: bool) -> Result<u64> {
         // O reparo pode cortar o rabo do arquivo: uma marca apontando para
         // dentro do que sumiu passaria a apontar para nada.
         self.marca = None;
@@ -546,7 +586,7 @@ impl LogFile {
             achados += 1;
         }
 
-        if achados > 0 {
+        if achados > 0 && gravar {
             self.gravar_cab(cab)?;
         }
         Ok(achados)

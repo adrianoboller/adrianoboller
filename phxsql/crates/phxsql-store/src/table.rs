@@ -712,18 +712,79 @@ impl Table {
     }
 
     pub fn abrir(diretorio: impl AsRef<Path>, nome: &str) -> Result<Table> {
+        // Com a ficha EXCLUSIVA nenhum componente recusa por precisar
+        // escrever: e este o caminho que cria o que falta e termina o que
+        // ficou pela metade. Um `None` aqui seria defeito nosso, e o texto
+        // diz isso -- um `unwrap` diria «alguem errou» sem dizer quem.
+        Table::abrir_com(diretorio, nome, true)?.ok_or_else(|| {
+            PhxError::Corrompido(
+                "abrir com a ficha exclusiva devolveu \"precisa escrever\"".into(),
+            )
+        })
+    }
+
+    /// Abre para LER, e recusa quando abrir exigiria escrever.
+    ///
+    /// # O que ela existe para garantir
+    ///
+    /// Sob a ficha COMPARTILHADA ha N leitores nos mesmos arquivos ao mesmo
+    /// tempo, e a unica coisa que torna isso seguro e nenhum deles escrever.
+    /// Abrir uma tabela escreve em quatro situacoes, todas raras e todas de
+    /// RECUPERACAO ou de estreia: a troca de volume interrompida no `.reg`, a
+    /// cura do `.log`, e a criacao do `.trash` e do `.reason` que ainda nao
+    /// nasceram. Nenhuma delas e coisa para acontecer duas vezes em paralelo.
+    ///
+    /// `None` nao e erro nem defeito: e «esta tabela quer a ficha exclusiva».
+    /// Quem chama solta a ficha compartilhada e refaz o trabalho por la.
+    pub fn abrir_para_ler(diretorio: impl AsRef<Path>, nome: &str) -> Result<Option<Table>> {
+        Table::abrir_com(diretorio, nome, false)
+    }
+
+    fn abrir_com(
+        diretorio: impl AsRef<Path>,
+        nome: &str,
+        escrever: bool,
+    ) -> Result<Option<Table>> {
         let diretorio = diretorio.as_ref().to_path_buf();
-        let reg = RegFile::abrir(&diretorio, nome)?;
+        let reg = if escrever {
+            Some(RegFile::abrir(&diretorio, nome)?)
+        } else {
+            RegFile::abrir_sem_escrever(&diretorio, nome)?
+        };
+        let Some(reg) = reg else {
+            return Ok(None);
+        };
         let paginacao = reg.esquema().paginacao();
         let ndx = NdxFile::abrir(caminho(&diretorio, nome, EXT_NDX))?;
         let externos = paginacao.para_externos();
         let bin = BlobFile::abrir(&diretorio, nome, EXT_BIN, MAGIC_BIN, externos)?;
         let memo = BlobFile::abrir(&diretorio, nome, EXT_MEMO, MAGIC_MEMO, externos)?;
-        let log = LogFile::abrir(&diretorio, nome, externos)?;
+        let log = if escrever {
+            Some(LogFile::abrir(&diretorio, nome, externos)?)
+        } else {
+            LogFile::abrir_sem_escrever(&diretorio, nome, externos)?
+        };
+        let Some(log) = log else {
+            return Ok(None);
+        };
         // `abrir` destes dois CRIA quando falta: tabela feita antes deles
         // existirem tem de continuar abrindo.
-        let lixeira = LixeiraFile::abrir(&diretorio, nome, externos)?;
-        let motivos = MotivoFile::abrir(&diretorio, nome, externos)?;
+        let lixeira = if escrever {
+            Some(LixeiraFile::abrir(&diretorio, nome, externos)?)
+        } else {
+            LixeiraFile::abrir_sem_escrever(&diretorio, nome, externos)?
+        };
+        let Some(lixeira) = lixeira else {
+            return Ok(None);
+        };
+        let motivos = if escrever {
+            Some(MotivoFile::abrir(&diretorio, nome, externos)?)
+        } else {
+            MotivoFile::abrir_sem_escrever(&diretorio, nome, externos)?
+        };
+        let Some(motivos) = motivos else {
+            return Ok(None);
+        };
         // Este NAO cria: arquivo ausente e tabela sem trilha, nunca erro --
         // e e assim que toda tabela gravada antes desta versao abre igual.
         let trilha = TrilhaFile::abrir(&diretorio, nome, externos)?;
@@ -738,7 +799,7 @@ impl Table {
 
         let esquema = reg.esquema().clone();
         let colunas_marcadas = marcadas_do_esquema(&esquema);
-        Ok(Table {
+        Ok(Some(Table {
             nome: nome.to_string(),
             diretorio,
             esquema,
@@ -758,7 +819,7 @@ impl Table {
             evento_forcado: None,
             sobreposta: None,
             como_replica: false,
-        })
+        }))
     }
 
     /// Confere as chaves estrangeiras que pediram conferencia.

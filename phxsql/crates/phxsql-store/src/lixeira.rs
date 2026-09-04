@@ -336,6 +336,26 @@ impl LixeiraFile {
         Ok(l)
     }
 
+    /// Abre SEM escrever nada, e devolve `None` quando abrir exigiria escrever.
+    ///
+    /// O `abrir` CRIA a lixeira quando ela falta -- e tabela nascida antes de
+    /// o `.trash` existir cai nesse caminho toda primeira vez. Criar arquivo e
+    /// escrever, e sob a ficha compartilhada dois leitores criariam o mesmo
+    /// arquivo ao mesmo tempo: o `create_new` do segundo falha, ou pior, ele
+    /// le o cabecalho que o primeiro ainda nao terminou de gravar.
+    pub fn abrir_sem_escrever(
+        diretorio: impl AsRef<Path>,
+        nome: &str,
+        paginacao: Paginacao,
+    ) -> Result<Option<LixeiraFile>> {
+        let paginacao = crate::diario::paginacao(paginacao);
+        let volumes = Volumes::novo(&diretorio, nome, EXT_TRASH, paginacao);
+        if volumes.existentes().is_empty() {
+            return Ok(None);
+        }
+        LixeiraFile::abrir(diretorio, nome, paginacao).map(Some)
+    }
+
     /// Abre; cria se nao existir, pela mesma razao do `.reason`.
     pub fn abrir(
         diretorio: impl AsRef<Path>,

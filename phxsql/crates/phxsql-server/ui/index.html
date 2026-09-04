@@ -2461,18 +2461,16 @@ async function detectarModo() {
       }
       document.body.appendChild(dl);
     }
-    $("#modo").innerHTML = "Servidor encontrado nesta origem. Informe o token do "
-      + "<code>config.json</code> e as suas credenciais.<br>"
+    $("#modo").innerHTML = marcado(txt("tela.lg_servidor_achado",
+        "Servidor encontrado nesta origem. Informe o token do `config.json` e as suas credenciais.")) + "<br>"
       + (podeProvar()
-          ? "Login por <b>desafio&#8209;resposta</b>: a senha não sai desta máquina."
-          : "Contexto não seguro: o login cai em <b>Base64</b>, que esconde a senha "
-            + "de quem olha, não de quem captura. Use HTTPS ou um túnel.");
+          ? marcado(txt("tela.lg_desafio_resposta", "Login por **desafio‑resposta**: a senha não sai desta máquina."))
+          : marcado(txt("tela.lg_contexto_inseguro", "Contexto não seguro: o login cai em **Base64**, que esconde a senha de quem olha, não de quem captura. Use HTTPS ou um túnel.")));
     $("#t").parentElement.hidden = false;
   } catch {
     est.demo = true;
-    $("#modo").innerHTML = "<b>Nenhum servidor nesta origem.</b> A interface abre em "
-      + "modo demonstração, com dados embutidos, para ser avaliada antes de instalar. "
-      + "Entre com qualquer coisa.";
+    $("#modo").innerHTML = marcado(txt("tela.lg_sem_servidor",
+      "**Nenhum servidor nesta origem.** A interface abre em modo demonstração, com dados embutidos, para ser avaliada antes de instalar. Entre com qualquer coisa."));
     $("#t").parentElement.hidden = true;
     $("#s").value = "demonstracao";
   }
@@ -2790,35 +2788,27 @@ async function vEstrutura(database, tabela_) {
       >${esc(txt("tela.acrescentar_coluna", "✚ Acrescentar coluna…"))}</button>
   </div>`;
 
-  h += `<h3>Colunas</h3><div id="gradeEstColunas"></div>`;
+  h += `<h3>${esc(txt("tela.et_colunas_titulo","Colunas"))}</h3><div id="gradeEstColunas"></div>`;
 
   if ((e.chaves_estrangeiras||[]).length) {
-    h += `<h3>Chaves estrangeiras</h3><div id="gradeEstFks"></div>`;
+    h += `<h3>${esc(txt("tela.et_fks_titulo","Chaves estrangeiras"))}</h3><div id="gradeEstFks"></div>`;
   }
 
-  if (pag) h += `<div class="aviso">Tabela paginada: <b>${pag.registros_por_arquivo}</b>
-    registros por arquivo × <b>${pag.max_arquivos}</b> arquivos =
-    capacidade de <b>${pag.capacidade}</b> registros. O volume sai do rowid por divisão,
-    então o <code>.ndx</code> não sabe que volume existe.</div>`;
+  if (pag) h += `<div class="aviso">${marcado(txt("tela.et_paginada",
+      "Tabela paginada: **{por_arquivo}** registros por arquivo × **{max_arquivos}** arquivos = capacidade de **{capacidade}** registros."),
+      { por_arquivo: pag.registros_por_arquivo, max_arquivos: pag.max_arquivos, capacidade: pag.capacidade })}
+    ${marcado(txt("tela.et_paginada_ndx", "O volume sai do rowid por divisão, então o `.ndx` não sabe que volume existe."))}</div>`;
 
   h += `<div class="nota">
-    <p><strong>A coluna LGPD é uma declaração, não uma dedução.</strong> O motor
-    não adivinha pelo nome: <code>cpf</code> é óbvio, <code>documento</code> não
-    é, e um palpite errado num relatório de conformidade é pior que nenhum
-    relatório, porque quem lê acredita. Marcar é dizer «eu conheço este
-    negócio e este campo guarda dado de gente».</p>
-    <p>Marcar liga a <b>trilha</b> daquela coluna: toda alteração passa a
-    gravar o valor antes e depois no <code>.lgpd</code>, com quem, quando e de
-    que IP. Inclusão e exclusão não geram trilha — o <code>.log</code>, a
-    <code>.trash</code> e o <code>.reason</code> já registram as duas.</p>
-    <p>O <b>grau</b> ao lado da caixa não é enfeite: <i>sensível</i> (saúde,
-    biometria, convicção, origem racial) exige base legal própria, e é isso que
-    separa <code>nome</code> de <code>prontuário</code> num relatório jurídico.
-    Marcar sem escolher dá <i>pessoal</i>.</p>
-    <p>Em dúvida, deixe <b>desmarcado</b>. A ausência de marca é uma resposta
-    válida — e é por isso que a tela de LGPD conta separadamente quantas
-    colunas ainda estão <b>sem classificação</b>: é o número que diz o tamanho
-    do trabalho que falta, e ele não se confunde com «não tem dado pessoal».</p>
+    <p>${marcado(txt("tela.lgpd_declaracao", "**A coluna LGPD é uma declaração, não uma dedução.**"))}
+    ${marcado(txt("tela.lgpd_nao_adivinha", "O motor não adivinha pelo nome: `cpf` é óbvio, `documento` não é, e um palpite errado num relatório de conformidade é pior que nenhum relatório, porque quem lê acredita."))}
+    ${marcado(txt("tela.lgpd_marcar_e_dizer", "Marcar é dizer «eu conheço este negócio e este campo guarda dado de gente»."))}</p>
+    <p>${marcado(txt("tela.lgpd_liga_trilha", "Marcar liga a **trilha** daquela coluna: toda alteração passa a gravar o valor antes e depois no `.lgpd`, com quem, quando e de que IP."))}
+    ${marcado(txt("tela.lgpd_inclusao_exclusao", "Inclusão e exclusão não geram trilha — o `.log`, a `.trash` e o `.reason` já registram as duas."))}</p>
+    <p>${marcado(txt("tela.lgpd_grau", "O **grau** ao lado da caixa não é enfeite: `sensível` (saúde, biometria, convicção, origem racial) exige base legal própria, e é isso que separa `nome` de `prontuário` num relatório jurídico."))}
+    ${marcado(txt("tela.lgpd_sem_escolher", "Marcar sem escolher dá `pessoal`."))}</p>
+    <p>${marcado(txt("tela.lgpd_em_duvida", "Em dúvida, deixe **desmarcado**. A ausência de marca é uma resposta válida — e é por isso que a tela de LGPD conta separadamente quantas colunas ainda estão **sem classificação**."))}
+    ${marcado(txt("tela.lgpd_numero_diz", "É o número que diz o tamanho do trabalho que falta, e ele não se confunde com «não tem dado pessoal»."))}</p>
   </div>`;
   return h;
 }
@@ -2842,15 +2832,15 @@ function celulaLgpd(c) {
   const grau = c.dado_pessoal || "nao";
   const marcada = grau !== "nao";
   if (c.sistema) {
-    return `<span class="lgpd-cel fixa"><span class="leg">coluna do motor</span></span>`;
+    return `<span class="lgpd-cel fixa"><span class="leg">${esc(txt("tela.lgpd_coluna_motor","coluna do motor"))}</span></span>`;
   }
   const nome = esc(c.nome);
   return `<span class="lgpd-cel">
     <label><input type="checkbox" class="lgpd-chk" data-col="${nome}"
-      ${marcada ? "checked" : ""}> <span>dado pessoal</span></label>
+      ${marcada ? "checked" : ""}> <span>${esc(txt("tela.lgpd_dado_pessoal","dado pessoal"))}</span></label>
     <select class="lgpd-grau" data-col="${nome}" ${marcada ? "" : "disabled"}>
-      <option value="pessoal" ${grau === "pessoal" ? "selected" : ""}>pessoal</option>
-      <option value="sensivel" ${grau === "sensivel" ? "selected" : ""}>sensível</option>
+      <option value="pessoal" ${grau === "pessoal" ? "selected" : ""}>${esc(txt("tela.lgpd_grau_pessoal","pessoal"))}</option>
+      <option value="sensivel" ${grau === "sensivel" ? "selected" : ""}>${esc(txt("tela.lgpd_grau_sensivel","sensível"))}</option>
     </select>
   </span>`;
 }
@@ -2939,10 +2929,12 @@ function ligarLgpdDaEstrutura(db, tab) {
     try {
       await api("marcar_lgpd", { database: db, tabela: tab,
                                  colunas: { [coluna]: grau } });
-      avisar(grau === "nao" ? `${coluna}: marca de LGPD retirada`
-                            : `${coluna}: classificada como ${grau}`);
+      avisar(grau === "nao"
+        ? preencher(txt("tela.lgpd_marca_retirada", "{coluna}: marca de LGPD retirada"), { coluna })
+        : preencher(txt("tela.lgpd_classificada", "{coluna}: classificada como {grau}"),
+            { coluna, grau: grau === "pessoal" ? txt("tela.lgpd_grau_pessoal","pessoal") : txt("tela.lgpd_grau_sensivel","sensível") }));
     } catch (e) {
-      avisar(`não deu para classificar ${coluna}: ${e.message || e}`, true);
+      avisar(preencher(txt("tela.lgpd_falha_classificar", "não deu para classificar {coluna}: {erro}"), { coluna, erro: e.message || e }), true);
       // A tela volta ao que o SERVIDOR diz, e não ao que o clique quis: uma
       // caixa marcada que não gravou é a pior mentira que esta tela pode
       // contar, porque quem marcou acredita que marcou.
@@ -3092,11 +3084,11 @@ async function vConteudo(database, tabela_) {
                                   indice: est.ordem || undefined, max: est.teto });
   est.linhas = r.linhas;
   est.esquemaAtual = e;
-  const opcoes = [`<option value="">ordem de digitação (.reg)</option>`]
+  const opcoes = [`<option value="">${esc(txt("tela.ct_ordem_digitacao","ordem de digitação (.reg)"))}</option>`]
     .concat(e.indices.map(i =>
-      `<option value="${esc(i.nome)}" ${est.ordem===i.nome?"selected":""}>índice ${esc(i.nome)}</option>`));
+      `<option value="${esc(i.nome)}" ${est.ordem===i.nome?"selected":""}>${preencher(esc(txt("tela.ct_indice_opcao","índice {nome}")), {nome: esc(i.nome)})}</option>`));
   const tetos = [200, 1000, 5000, 20000].map(n =>
-    `<option value="${n}" ${est.teto===n?"selected":""}>${fmt(n)} linhas</option>`);
+    `<option value="${n}" ${est.teto===n?"selected":""}>${preencher(esc(txt("tela.ct_n_linhas","{n} linhas")), {n: fmt(n)})}</option>`);
   // A GRADE FILTRA O QUE ESTA NELA, e o que esta nela e o teto acima. Sem
   // este aviso a tela mente: o funil de `cidade` responderia «25 linhas» numa
   // tabela que tem 2.500 daquela cidade, e nada na tela diria que a conta foi
@@ -3108,26 +3100,28 @@ async function vConteudo(database, tabela_) {
   // quantas foram examinadas e quantas casaram. Ver `fonteVarrer`.
   const truncou = (r.visiveis ?? r.registros) > r.devolvidas;
   return `<div class="ferramentas">
-      <label for="ord">Percorrer por</label>
+      <label for="ord">${esc(txt("tela.ct_percorrer_por","Percorrer por"))}</label>
       <select id="ord">${opcoes.join("")}</select>
-      <label for="teto">Trazer</label>
+      <label for="teto">${esc(txt("tela.ct_trazer","Trazer"))}</label>
       <select id="teto">${tetos.join("")}</select>
       <span class="conta" id="contaConteudo">${esc(preencher(
           txt("tela.ct_trouxe", "{devolvidas} de {visiveis} linhas · {ordem}"),
           { devolvidas: fmt(r.devolvidas), visiveis: fmt(r.visiveis ?? r.registros),
             ordem: r.ordem }))}</span>
-      <span class="dica">Arraste um cabeçalho para a faixa de cima para agrupar.</span>
+      <span class="dica">${esc(txt("tela.ct_arraste_agrupar","Arraste um cabeçalho para a faixa de cima para agrupar."))}</span>
     </div>
-    ${truncou ? `<div class="aviso corte-da-vista"><b>A grade enxerga
-      ${fmt(r.devolvidas)} das ${fmt(r.visiveis ?? r.registros)} linhas.</b>
-      Filtro, busca, agrupamento, total e exportação valem sobre estas
-      ${fmt(r.devolvidas)} — e não sobre a tabela. Aumente o
-      <b>Trazer</b> para responder sobre mais.</div>` : ""}
+    ${truncou ? `<div class="aviso corte-da-vista">${marcado(
+        txt("tela.ct_grade_enxerga", "**A grade enxerga {devolvidas} das {visiveis} linhas.**"),
+        { devolvidas: fmt(r.devolvidas), visiveis: fmt(r.visiveis ?? r.registros) })}
+      ${marcado(
+        txt("tela.ct_filtro_vale_sobre", "Filtro, busca, agrupamento, total e exportação valem sobre estas {devolvidas} — e não sobre a tabela."),
+        { devolvidas: fmt(r.devolvidas) })}
+      ${marcado(txt("tela.ct_aumente_trazer", "Aumente o **{trazer}** para responder sobre mais."), { trazer: txt("tela.ct_trazer","Trazer") })}</div>` : ""}
     <div class="acoes-da-grade" id="acoesGrade" hidden>
       <span class="conta" id="acoesConta"></span>
-      <button class="botao mini consultar" id="btCopiarSel">copiar rowids</button>
-      <button class="botao mini marcar" id="btExcluirSel">excluir marcadas</button>
-      <button class="botao mini" id="btLimparSel">desmarcar</button>
+      <button class="botao mini consultar" id="btCopiarSel">${esc(txt("tela.ct_copiar_rowids","copiar rowids"))}</button>
+      <button class="botao mini marcar" id="btExcluirSel">${esc(txt("tela.ct_excluir_marcadas","excluir marcadas"))}</button>
+      <button class="botao mini" id="btLimparSel">${esc(txt("tela.ct_desmarcar","desmarcar"))}</button>
     </div>
     <div id="grade"></div>`;
 }

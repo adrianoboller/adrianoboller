@@ -274,6 +274,24 @@ impl MotivoFile {
     /// Tabela feita antes deste arquivo existir nao tem `.reason`, e recusar
     /// abrir por causa disso deixaria o banco inteiro inacessivel por um
     /// arquivo que ainda esta vazio de qualquer jeito.
+    /// Abre SEM escrever nada, e devolve `None` quando abrir exigiria escrever.
+    ///
+    /// Pelo mesmo motivo da lixeira: o `abrir` CRIA o `.reason` quando falta, e
+    /// criar arquivo sob a ficha compartilhada e dois leitores criando o mesmo
+    /// arquivo ao mesmo tempo.
+    pub fn abrir_sem_escrever(
+        diretorio: impl AsRef<Path>,
+        nome: &str,
+        paginacao: Paginacao,
+    ) -> Result<Option<MotivoFile>> {
+        let pag = crate::diario::paginacao(paginacao);
+        let volumes = Volumes::novo(&diretorio, nome, EXT_REASON, pag);
+        if volumes.existentes().is_empty() {
+            return Ok(None);
+        }
+        MotivoFile::abrir(diretorio, nome, paginacao).map(Some)
+    }
+
     pub fn abrir(
         diretorio: impl AsRef<Path>,
         nome: &str,
