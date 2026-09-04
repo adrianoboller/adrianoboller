@@ -463,5 +463,20 @@
   "itens_questionario": 60,
   "hooks": 8,
   "manual": 662
+ },
+ {
+  "versao": "3.25.1",
+  "data": "2026-09-04",
+  "titulo": "revisão geral — quatro páginas envelheciam caladas, e agora um comando as atualiza",
+  "agentes": 94,
+  "skills": 20,
+  "comandos": 19,
+  "scripts": 26,
+  "linhas_py": 26735,
+  "prints": 42,
+  "testes": 56,
+  "itens_questionario": 60,
+  "hooks": 8,
+  "manual": 668
  }
 ]
