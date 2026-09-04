@@ -167,14 +167,19 @@ class Cliente:
 # ------------------------------------------------------------ os perfis
 
 
-def pedido(perfil, tabela):
+def pedido(perfil, tabela, linhas=None):
+    """O pedido que a bancada mede. `linhas` existe para a GUARDA poder pedir
+    uma pagina de tamanho conhecido pelo mesmo caminho -- sem ela, a guarda
+    teria de montar o pedido por conta propria e voltaria a conferir o servidor
+    em vez de conferir esta funcao."""
     if perfil == "controle":
         # A CURVA DE CONTROLE. Mesmo soquete, mesmo JSON, mesmo despacho -- e
         # `ping` responde SEM tomar a trava de dados. O que ele nao escalar
         # nao e culpa da trava: e do medidor ou da maquina.
         return {"op": "ping"}
     if perfil == "ler":
-        return {"op": "varrer", "database": "t", "tabela": tabela, "max": LINHAS_LIDAS}
+        return {"op": "varrer", "database": "t", "tabela": tabela,
+                "max": LINHAS_LIDAS if linhas is None else linhas}
     return {"op": "inserir", "database": "t", "tabela": tabela,
             "linha": {"nome": "x"}}
 
@@ -266,6 +271,8 @@ def bateria(durabilidade, vigia):
         c = Cliente(porta)
         c.call({"op": "login", "usuario": "root", "senha": SENHA})
         semear(c)
+        # A GUARDA, antes de qualquer numero: voltou o que se pediu?
+        quieta.confira_a_pagina(c.call, lambda n: pedido("ler", "c", n))
 
         saida = {"durabilidade": durabilidade, "porta": porta, "curvas": {},
                  "espera": {}}

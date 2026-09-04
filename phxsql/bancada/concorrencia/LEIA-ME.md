@@ -43,6 +43,21 @@ nome. O medidor imprime e some; guardar a corrida crua e o que permite
 conferir depois se o numero de um documento saiu dela ou da memoria de quem
 escreveu.
 
+**A guarda `quieta.confira_a_pagina` roda antes de qualquer numero**, e vale
+saber por que ela existe: ate 04/09 as QUATRO bancadas desta pasta mandavam
+`{"varrer", ..., "limite": 50}`. O `op_varrer` le o campo **`max`**; `limite`
+nao existe no pedido e era ignorado em silencio, entao toda leitura devolvia
+1.000 linhas -- o teto de configuracao. Nenhuma das quatro podia perceber:
+**como todas mandavam o mesmo campo errado, nenhuma discordava de nenhuma.**
+Quem pegou foi um medidor de OUTRA camada (`--example onde-doi-na-leitura`,
+em processo) discordando do de rede.
+
+A guarda recebe o **construtor de pedido da propria bancada** e confere que
+pedir N linhas devolve N. Receber o construtor, e nao montar o pedido por
+conta propria, e a diferenca entre conferir o servidor e conferir a bancada --
+a primeira versao dela montava `{"max": n}` sozinha e teria passado com o
+defeito de pe.
+
 **O `--autoteste` do `escolher-o-desenho.py` prova UMA conta**, e ela merece o
 teste porque eu errei a leitura dela: o teto que o relatorio imprime para o
 MVCC (`leitor-com-escritor / leitor-sozinho`) inclui o custo de haver

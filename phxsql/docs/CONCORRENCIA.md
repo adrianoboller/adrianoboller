@@ -458,6 +458,8 @@ tornou visível:
 
 ### 3.1 A ressalva que a matriz precisa carregar: o formato da carga
 
+> **APOSENTADA em 04/09 (§15).** Medido: a razão ler/gravar percorre **28×** — de 0,8×, onde a leitura é mais barata que a escrita, a 22,5× — e o teto do `RwLock` fica entre **1,79× e 2,15×** nas dez medições, sem tendência. **O perfil em que a escrita domina NÃO inverte a conclusão.** O texto abaixo fica como está porque a §11 e a §12 ainda o citam, e porque o motivo pelo qual ele não valia é o que se aprendeu: *o que serializa não é só o tempo sob a trava, é o pedido dela.*
+
 > **Correção de 04/09 (§14):** onde este trecho diz «`varrer` de 50 linhas», a leitura medida era de **1.000** — a bancada mandava o campo `limite`, que o `op_varrer` não lê. As razões continuam valendo; o rótulo, não.
 
 Os números da §14 do `DESEMPENHO.md` comparam um `varrer` de **50 linhas**
@@ -877,13 +879,13 @@ disso. É o `TEXTO_MAX` do §1.4.
   7%. E o teto de **vazão** dele, que é o número grande: **2,48×–2,99×**. §11.
 * ~~**A trava por tabela.**~~ **Respondida em 04/09**: ≈1,00× nas quatro
   medições (0,96 · 0,99 · 1,04 · 0,90). Não é a tabela que serializa. §11.
-* **O perfil de carga real.** A §3.1 mostra que a resposta muda com a razão
-  entre o tempo de leitura e o de escrita. **Continua por medir**: a tentativa
-  de 04/09 mandava um campo que o servidor não lê (`limite` em vez de `max`) e
-  mediu quatro vezes a mesma leitura de 1.000 linhas — retratada na §13, com o
-  alcance na §14. O instrumento está consertado; a medição, refeita, é a §15.
-  E a ressalva sai **fortalecida**: com 1.000 linhas contra 1, os «20× a mais»
-  da leitura estão inteiramente explicados.
+* ~~**O perfil de carga real.**~~ **MEDIDO em 04/09, §15**, na segunda
+  tentativa — a primeira mandava um campo que o servidor não lê e está
+  retratada na §13, com o alcance na §14. Com o campo certo, a razão
+  ler/gravar percorre **28×** (de 0,8×, onde a leitura é mais barata que a
+  escrita, a 22,5×) e o teto do `RwLock` fica entre **1,79× e 2,15×** nas dez
+  medições, **sem tendência**. A ressalva da §3.1 **cai**: o perfil em que a
+  escrita domina **não inverte a conclusão**.
 * ~~**O custo do `fsync` sob a trava, em milissegundos.**~~ **Medido em 03/09**:
   1.267–1.371 µs por gravação, 10,3× a 12,3× o tempo de trava de uma gravação
   sem ele. §7.1 aqui, e a bateria inteira na §14.1 do `DESEMPENHO.md`.
@@ -1386,3 +1388,67 @@ quiser o perfil de leitura curta manda `LINHAS_LIDAS=50`.
 
 *Consertar o instrumento e mudar a régua no mesmo commit é perder a série.*
 
+---
+
+## 15. O perfil da carga, medido DE VERDADE (04/09) — e a ressalva cai
+
+A §13 tentou isto e mediu quatro vezes a mesma leitura. Com o campo certo
+(`max`), duas baterias limpas às 07:59 e 08:05, o `quieta.Vigia` aprovando as
+duas. Corridas cruas em `corridas/perfil-CERTO-*`.
+
+### 15.1 Agora a leitura VARIA — e o teto não
+
+| `max` | A · ler 1 cli | A · razão ler/gravar | A · teto | B · razão | B · teto |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 4.968 op/s | **0,9×** | 1,80× | **0,8×** | 1,79× |
+| 10 | 4.118 op/s | 1,1× | 2,05× | 1,0× | 1,98× |
+| 50 | 2.078 op/s | 2,1× | 1,86× | 1,9× | 1,81× |
+| 200 | 819 op/s | 5,3× | 2,15× | 5,0× | 1,95× |
+| 1.000 | 192 op/s | **22,5×** | 2,06× | **19,5×** | 2,05× |
+
+A razão de custo entre uma leitura e uma escrita percorre **28×** — de 0,8×,
+onde a leitura é mais **barata** que a escrita, a 22,5×. O teto do `RwLock`
+fica entre **1,79× e 2,15×** nas dez medições, **sem tendência**.
+
+### 15.2 A ressalva da §3.1 cai, com o número
+
+Ela dizia:
+
+> «Um perfil de carga em que a escrita domina **inverte a conclusão**, e a
+> resposta certa muda com ele.»
+
+**Não inverte.** Em `max = 1` a leitura custa **menos** que a escrita — é o
+perfil «escrita domina» que a ressalva descrevia — e o teto do `RwLock` ainda
+é **1,80× e 1,79×**. A recomendação do desenho **generaliza**, e isso agora
+está medido em vez de suposto.
+
+**Por que ela não vale, e é aqui que se aprende algo:** a ressalva supunha que
+o teto vem da *duração* da seção crítica — leitura longa, trava presa por mais
+tempo, mais a ganhar em soltá-la. Se fosse só isso, uma leitura de 201 µs
+(mais curta que a escrita de 231 µs) daria teto ~1,0×. Dá 1,80×. **O que
+serializa não é só o tempo sob a trava; é o pedido dela.** Uma leitura curta
+espera pela trava tanto quanto uma longa.
+
+### 15.3 A §13 chegou à conclusão certa, e isso não a salva
+
+A seção retratada afirmava «o teto não depende do formato da leitura» — que é
+o que a §15 mede. **Conclusão certa tirada de medição inválida não é acerto.**
+A §13 dizia que o teto não varia *porque o custo da leitura não varia*, e o
+custo varia 28×. Ela acertou o resultado e errou o mundo inteiro em volta
+dele — e, pior, teria «aposentado» a ressalva com um argumento que qualquer um
+derrubaria no primeiro exame, levando a conclusão certa junto.
+
+É a versão desta casa de uma lei que já está escrita: *o errado sobrevive
+melhor quando o conserto funcionou por outro motivo.*
+
+### 15.4 Uma ressalva NOVA, e esta é honesta
+
+O teto absoluto **não se compara entre bancadas**: aqui deu 1,79×–2,15× e na
+§11 deu 2,48×–2,99×, com a mesma leitura de 1.000 linhas. A diferença está no
+**controle**: o `ping` escalou 4,01×–4,95× na §11 e 3,18×–3,21× aqui, e o teto
+é a razão entre o ganho do controle e o da leitura. Então o número honesto é
+**«o `RwLock` tem entre ~2× e ~3× para recuperar»**, e não uma casa decimal.
+
+O que **é** comparável, e é o que esta seção entrega, são as dez medições
+**dentro da mesma bateria**: ali o controle é o mesmo para todas as linhas, e
+a ausência de tendência ao longo de 28× de razão é o achado.

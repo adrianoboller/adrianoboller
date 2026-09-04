@@ -215,3 +215,43 @@ def nucleos():
         return len(os.sched_getaffinity(0))
     except AttributeError:
         return os.cpu_count() or 1
+
+
+def confira_a_pagina(call, monta_pedido, pedidos=(1, 7, 50)):
+    """A guarda que teria pegado o defeito de 04/09: **voltou o que se pediu?**
+
+    Ate 04/09 as quatro bancadas de concorrencia mandavam `{"varrer", ...,
+    "limite": 50}`. O `op_varrer` le o campo **`max`**; `limite` nao existe no
+    pedido e era ignorado em silencio, entao TODA leitura caia no teto de
+    configuracao e devolvia 1.000 linhas. As «variacoes» de tamanho de pagina
+    eram a mesma leitura, e nenhuma bancada podia perceber: **as quatro
+    mandavam o mesmo campo errado, entao nenhuma discordava de nenhuma**.
+
+    Quem pegou foi um medidor de OUTRA camada (o `--example
+    onde-doi-na-leitura`, em processo) discordando do de rede.
+
+    `monta_pedido` e o construtor DA PROPRIA BANCADA -- `monta_pedido(n)`
+    devolve o pedido que ela vai medir com pagina de `n` linhas. Passar o
+    construtor, e nao um pedido montado aqui, e a diferenca entre a guarda
+    conferir o SERVIDOR e conferir a BANCADA: a primeira versao desta funcao
+    montava `{"max": n}` por conta propria e teria passado com a bancada
+    mandando `limite`, que e exatamente o defeito que ela existe para pegar.
+
+    Recusar campo desconhecido no SERVIDOR seria o conserto errado -- quebraria
+    todo cliente que manda um campo a mais, e «guarda nova entra pedida, nao
+    imposta». A conferencia certa e do lado de quem mede.
+
+    A tabela precisa ter pelo menos `max(pedidos)` linhas.
+    """
+    for n in pedidos:
+        r = call(dict(monta_pedido(n)), exigir=False)
+        linhas = r.get("linhas")
+        if linhas is None:
+            linhas = r.get("resultado", {}).get("linhas", [])
+        if len(linhas) != n:
+            raise SystemExit(
+                f"A BANCADA NAO ESTA PEDINDO O QUE ACHA QUE PEDE: o pedido "
+                f"dela para {n} linha(s) devolveu {len(linhas)}.\n"
+                f"  pedido montado: {monta_pedido(n)}\n"
+                f"Foi assim que a §13 do docs/CONCORRENCIA.md nasceu errada."
+            )

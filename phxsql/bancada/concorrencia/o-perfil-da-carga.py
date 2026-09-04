@@ -191,6 +191,8 @@ def principal():
         c = Cliente(porta)
         c.call({"op": "login", "usuario": "root", "senha": SENHA})
         semear(c)
+        # A GUARDA, antes de qualquer numero: voltou o que se pediu?
+        quieta.confira_a_pagina(c.call, lambda n: pedido("ler", n))
         # O controle nao depende do limite: mede-se UMA vez por contagem de
         # clientes, e nao uma por limite -- repeti-lo so somaria ruido.
         ctrl = {n: rodada("controle", 0, n, porta, vigia) for n in CLIENTES}
