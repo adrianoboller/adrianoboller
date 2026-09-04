@@ -2391,17 +2391,23 @@ pub fn limpar() {
             "causava a perda de dado que existe para impedir."
         ),
         "arquivo": "crates/phxsql-store/src/table.rs",
+        # O trecho de hoje: `fks_conferidas` (a lista de indices em cache) saiu
+        # do `inserir` no mesmo dia em que a APOSENTADA `portao-de-fk-com-
+        # -esquema-velho` explica -- o portao pergunta ao esquema na hora
+        # (`fks_que_conferem`). O comentario apos o `}` cresceu junto, entao a
+        # amarra e so ate onde ele continua unico neste arquivo (`inserir`; o
+        # `atualizar` tem o mesmo `if` mas nao este comentario).
         "trecho": """        self.conferir_aridade(valores)?;
-        if !self.fks_conferidas.is_empty() && self.julga_integridade() {
+        if fks_que_conferem(&self.esquema).next().is_some() && self.julga_integridade() {
             self.conferir_fks(valores)?;
         }
-        // Numerar ANTES das chaves""",
+        // Numerar ANTES das chaves, pela mesma razao da sequencia: se a coluna""",
         "troca": """        // DEFEITO REPOSTO: a replica volta a julgar o que a origem ja julgou.
         self.conferir_aridade(valores)?;
-        if !self.fks_conferidas.is_empty() {
+        if fks_que_conferem(&self.esquema).next().is_some() {
             self.conferir_fks(valores)?;
         }
-        // Numerar ANTES das chaves""",
+        // Numerar ANTES das chaves, pela mesma razao da sequencia: se a coluna""",
         "pacote": "phxsql-store",
         "alvo": ["--test", "replicacao-integridade"],
         "caem": [
@@ -2697,7 +2703,9 @@ pub fn limpar() {
             "proxima a virar buraco."
         ),
         "arquivo": "crates/phxsql-store/src/table.rs",
-        "trecho": """        if !self.fks_conferidas.is_empty() && self.julga_integridade() {
+        # O mesmo envelhecimento da guarda irma acima: `fks_conferidas` (lista
+        # em cache) virou `fks_que_conferem(&self.esquema)` (calculado na hora).
+        "trecho": """        if fks_que_conferem(&self.esquema).next().is_some() && self.julga_integridade() {
             // A linha so se le quando ha chave a conferir: sem elas, restaurar
             // continua custando o que sempre custou.
             if let Some(linha) = self.ler(rowid)? {""",

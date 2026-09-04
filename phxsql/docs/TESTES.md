@@ -718,13 +718,13 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `procura-das-filhas-manda-reparar-arquivo-sao` | a procura pelas filhas manda reparar o índice — de um arquivo intacto | 1 | ✅ provada |
 | `recuperacao-nao-reconstroi-a-filha` | a recuperação não reconstrói o índice da filha, e a cascata fica pela metade | 1 | ✅ provada |
 
-**77 guardas: 73 provadas, 4 redundantes** — 718 s de mutação, medido em 2026-09-03 15:22.
+**77 guardas: 73 provadas, 4 redundantes** — 732 s de mutação, medido em 2026-09-04 03:21.
 
 As notas que a rodada deixou:
 
 - `cadeia-sem-teto` — o binario abortou, que e como esta guarda pega
-- `aad-fora-do-slot` — confirmado: tirar so o AAD nao e sentido por teste nenhum, porque o `nonce_de_pedaco` carrega (rowid, volume, versao)
-- `nonce-sem-endereco` — confirmado: tirar so o endereco do nonce tambem passa despercebido
+- `aad-fora-do-slot` — confirmado: tirar so o AAD nao e sentido por teste nenhum, porque o `nonce_de_pedaco` carrega o ROWID. Medido em 03/09/2026, e nao deduzido: tirando o AAD e SO o rowid do nonce -- volume e contador ficando --, o teste CAI. Volume e versao nao entram nesta conta porque o teste copia o slot INTEIRO, e os dois slots moram no mesmo volume com a mesma versao
+- `nonce-sem-endereco` — confirmado: tirar so o endereco do nonce tambem passa despercebido, porque o AAD carrega o ROWID. Medido em 03/09/2026: tirando o endereco do nonce e SO o rowid do AAD -- volume e versao ficando --, o teste CAI
 - `ffi-panico-atravessa` — o binario abortou, que e como esta guarda pega
 - `rest-fecha-sem-escoar` — confirmado: nenhum teste de unidade sente isto, e nao poderia -- o RST e do sistema operacional, e so aparece com um soquete de verdade. Quem pega e o passo 13 de `bancada/rest/provar.py`, e esta entrada existe para dizer, com o numero da rodada, que a cobertura mora la e nao aqui
 - `recuperar-sem-reindexar` — confirmado: nenhum teste de unidade pega este defeito. O indice so fica para tras quando o PROCESSO morre no meio da passada, e isso so acontece de verdade em `bancada/transacoes/provar.py` -- que e por isso que a prova por soquete existe.
