@@ -246,6 +246,11 @@ PARTES = [
           [sys.executable, "bancada/manual/provar-manual.py"],
           requisitos=[porta_livre(6410)], prazo=300),
 
+    parte("pacote", "as DUAS ferramentas que conferem um pacote -- o "
+          "conferir-pacote e o sha256sum -c -- tem de concordar; discordaram "
+          "por cinco dias e o pacote intacto reprovava",
+          [sys.executable, "bancada/pacote/provar-manifesto.py"], prazo=300),
+
     parte("rotinas", "gatilhos e procedimentos pelo soquete, com o SIGNAL, o "
           "lote, o reinicio e a tabela sem gatilho",
           [sys.executable, "bancada/rotinas/prova-rotinas.py"],

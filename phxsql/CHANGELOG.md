@@ -20,6 +20,19 @@ ausência de transação: ele as documenta extensamente.
 
 ### Corrigido
 
+- **Três pacotes intactos reprovavam, e o segundo conferidor passava verde.**
+  `./empacotar.sh conferir` reprovava `dossie`, `conhecimento` e `kit` — todos
+  de 30/08 — com **duas divergências por arquivo**, uma `A MAIS` e uma `FALTA`,
+  e nenhum byte errado: era a **grafia do caminho**. A receita que grava o
+  `MANIFESTO.sha256` existia em **quatro** lugares do `empacotar.sh`; o conserto
+  que tira o `./` do `find .` entrou em **um** e os três irmãos ficaram com a
+  receita velha. Ninguém viu por cinco dias porque o outro conferidor que o
+  pacote oferece, `sha256sum -c`, **aceita** o `./` e passava verde: *conferidor
+  que discorda de conferidor não acusa, acalma.* Hoje há **uma** receita —
+  `dossie()`, `conhecimento()` e `kit()` chamam `fecha()` —, os **oito** pacotes
+  saem `INTEGRO`, e a prova entrou na bateria como parte `pacote`, valendo nos
+  dois sentidos: a receita antiga, reposta de propósito, tem de reprovar.
+
 - **O MANUAL prometia o que a pétrea proíbe, e ninguém executava os exemplos
   dele.** A seção de chave estrangeira listava as quatro ações numa tabela só,
   sem dizer o lado — e `ao_excluir` aceita **só** `restringir`, recusando na

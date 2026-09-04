@@ -39,6 +39,8 @@ from pathlib import Path
 RAIZ = Path(__file__).resolve().parents[2]
 MARCA_INICIO = "<!-- catracas:inicio -->"
 MARCA_FIM = "<!-- catracas:fim -->"
+MARCA_BAT_INICIO = "<!-- bateria:inicio -->"
+MARCA_BAT_FIM = "<!-- bateria:fim -->"
 
 
 def exemplos_que_se_descrevem():
@@ -126,19 +128,57 @@ def tabela():
     return "\n".join(linhas)
 
 
+def bateria():
+    """Quantas partes a bateria tem -- PERGUNTADAS a ela, nao contadas na prosa.
+
+    O texto de abertura deste documento dizia «25 partes» e a bateria ja tinha
+    26 quando alguem foi olhar. Numero digitado a mao envelhece calado, e este
+    envelheceu no mesmo lugar que ensina a nao digitar numero.
+
+    Perguntar ao `provar.py --listar` e o mesmo principio das catracas: quem
+    sabe o numero e quem o tem. Um `grep` por `parte(` na fonte contaria
+    tambem as chamadas comentadas e as de dentro de um exemplo do docstring.
+    """
+    r = subprocess.run([sys.executable, "provar.py", "--listar"],
+                       cwd=RAIZ, capture_output=True, text=True)
+    m = re.search(r"^(\d+) partes:", r.stdout, re.M)
+    if not m:
+        return (MARCA_BAT_INICIO
+                + "\n\n*nao consegui perguntar ao `provar.py --listar` "
+                  "quantas partes a bateria tem.*\n\n"
+                + MARCA_BAT_FIM)
+    return (MARCA_BAT_INICIO
+            + f"\n- `provar.py` orquestra a bateria única, hoje **{m.group(1)} "
+              "partes** — o número sai de `python3 provar.py --listar`, nunca "
+              "digitado aqui.\n"
+            + MARCA_BAT_FIM)
+
+
+def substituir(t, inicio, fim, novo, doc):
+    if inicio not in t:
+        print(f"nao achei {inicio} no {doc} -- ponha as duas marcas em volta "
+              "do trecho e rode de novo")
+        return None
+    i, f = t.index(inicio), t.index(fim) + len(fim)
+    return t[:i] + novo + t[f:]
+
+
 def principal():
-    saida = tabela()
+    saida, contagem = tabela(), bateria()
     if "--gravar" in sys.argv:
         doc = RAIZ / "docs/QA-PDCA.md"
         t = doc.read_text(encoding="utf-8")
-        if MARCA_INICIO not in t:
-            print(f"nao achei {MARCA_INICIO} no {doc.name} -- ponha as duas marcas "
-                  "em volta da tabela e rode de novo")
+        t = substituir(t, MARCA_INICIO, MARCA_FIM, saida, doc.name)
+        if t is None:
             return 2
-        i, f = t.index(MARCA_INICIO), t.index(MARCA_FIM) + len(MARCA_FIM)
-        doc.write_text(t[:i] + saida + t[f:], encoding="utf-8")
-        print(f"tabela gravada em {doc.relative_to(RAIZ)}")
+        t = substituir(t, MARCA_BAT_INICIO, MARCA_BAT_FIM, contagem, doc.name)
+        if t is None:
+            return 2
+        doc.write_text(t, encoding="utf-8")
+        print(f"tabela e contagem gravadas em {doc.relative_to(RAIZ)}")
     else:
+        print(contagem)
+        print()
         print(saida)
     return 0
 

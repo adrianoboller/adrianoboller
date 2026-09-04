@@ -119,6 +119,43 @@ está certo:
 Conferidor que aprova tudo é pior que conferidor nenhum, porque quem baixou
 acha que conferiu.
 
+### Quando os dois discordam, a receita é uma só
+
+Dois conferidores independentes têm um preço, e ele foi pago em 30/08/2026: se
+a **receita do manifesto** existir em mais de um lugar, eles passam a discordar
+— e o que passa verde é o que faz ninguém olhar para o outro.
+
+A receita gravava o caminho de duas grafias. O `manifesto()` tira o `./` que o
+`find .` põe na frente; três funções (`dossie()`, `conhecimento()` e `kit()`)
+tinham a própria cópia da receita, sem o `sed`, e gravavam `./CHANGELOG.md`.
+O `sha256sum -c` **aceita** o `./` (ele abre pelo caminho escrito na linha) e
+passava verde; o `conferir-pacote` caminha a árvore e compara chaves, então
+para ele cada arquivo virava **duas** divergências — uma `A MAIS` e uma
+`FALTA`. Três pacotes intactos reprovando por diferença de grafia, e cinco dias
+sem ninguém ver, porque a ferramenta mais fácil de rodar dizia que estava tudo
+bem.
+
+Hoje há **uma** receita: `manifesto()`, chamada por `fecha()`, chamada por
+todos. E ela é exposta como subcomando —
+
+```bash
+./empacotar.sh manifesto <diretorio>
+```
+
+— justamente para a bancada chamar a receita de verdade em vez de copiar o
+`find` para dentro de um teste. A prova é `bancada/pacote/provar-manifesto.py`,
+parte `pacote` da bateria, e ela vale nos **dois sentidos**: a receita de hoje
+sai `INTEGRO`, e a receita antiga, reposta ali de propósito, reprova com
+exatamente **2 divergências por arquivo** — a assinatura do defeito. Ela também
+falha se qualquer linha fora do `manifesto()` voltar a gravar o
+`MANIFESTO.sha256`.
+
+O que **não** está automatizado, e fica dito: `./empacotar.sh conferir` confere
+os zips que estão em `pacotes/`, e `pacotes/` está no `.gitignore` — numa
+árvore recém-clonada não há zip para conferir. Quem monta pacote roda esse
+comando à mão. A parte `pacote` da bateria cobre a **receita**; ela não confere
+os zips do disco.
+
 ---
 
 ## 3. As quatro travas antes de qualquer zip sair

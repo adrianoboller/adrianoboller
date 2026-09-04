@@ -513,6 +513,7 @@ digitada aqui envelheceria calada na próxima parte que entrasse.
 |---|---|---|
 | `motor` | o motor, o protocolo e os portões — `cargo test --workspace` | — |
 | `guardas` | que cada teste ainda **pega** o defeito que o motivou (§8) | — |
+| `pacote` | que os **dois** conferidores de pacote concordam — e que a receita antiga do manifesto, reposta, reprova com 2 divergências por arquivo | — |
 | `tela` | a interface contra o servidor de verdade: 120 telas, CSS global, contraste, primeira pintura | 6950/6951 |
 | `idiomas` | o caminho do idioma de ponta a ponta, e o comportamento velho | 6952/6953 |
 | `ponta-a-ponta` | os seis itens do dono pelo soquete, mais a passada pela tela | 6300/6301 |

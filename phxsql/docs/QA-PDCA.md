@@ -3,11 +3,9 @@
 Este documento não substitui nada que já existe — só nomeia o ciclo que já
 está rodando, com os arquivos e os números de quem faz cada parte:
 
-- `provar.py` orquestra a bateria única, hoje **25 partes** (contadas em
-  `parte(...)` em `provar.py`; a 25ª entrou nesta rodada —
-  `profiler-custo-zero`, abaixo), em **14m35s** (`docs/TESTES.md` §7, tempo
-  de antes desta rodada — a parte nova ainda não foi cronometrada na
-  bateria inteira).
+<!-- bateria:inicio -->
+- `provar.py` orquestra a bateria única, hoje **27 partes** — o número sai de `python3 provar.py --listar`, nunca digitado aqui.
+<!-- bateria:fim -->
 - `bancada/guardas/` é o catálogo dos defeitos já pagos e o executor que os
   repõe para conferir se o teste que cada um motivou ainda cai.
 - `docs/TESTES.md` é a cobertura por área, medida e regenerada.

@@ -12,7 +12,11 @@
 #   ./empacotar.sh windows    so o de Windows
 #   ./empacotar.sh fontes     so o dos fontes
 #   ./empacotar.sh conferir   desempacota o que ja esta em pacotes/ e confere
+#   ./empacotar.sh manifesto <dir>
+#                             grava o MANIFESTO.sha256 de um diretorio qualquer;
+#                             existe para a bancada chamar a receita de verdade
 #
+
 # O que cada pacote leva, o que ele NAO leva e como quem baixou confere esta
 # em docs/EMPACOTAMENTO.md.
 
@@ -176,6 +180,18 @@ confere_ferramentas_windows() {
 #
 # O manifesto lista o caminho relativo com barra normal, ordenado, e nao lista
 # a si mesmo.
+#
+# O `sed 's|^\./||'` nao e enfeite: sem ele o `find .` grava `./CHANGELOG.md`,
+# e o `conferir-pacote` -- que caminha a arvore e monta o caminho sem prefixo --
+# procura `CHANGELOG.md`. Cada arquivo vira DUAS divergencias, uma "a mais" e
+# uma "faltando", e o pacote inteiro reprova estando intacto.
+#
+# Foi exatamente o que aconteceu: a receita do manifesto existia em QUATRO
+# lugares, o `sed` entrou so neste, e os pacotes dossie, conhecimento e kit
+# reprovaram por cinco dias sem ninguem ver -- porque o `sha256sum -c` que o
+# COMECE-AQUI manda rodar ACEITA o `./` e passava verde. Duas ferramentas
+# conferindo a mesma coisa e discordando: uma dizia intacto, a outra corrompido.
+# Hoje ha UMA receita, e quem fecha pacote chama `fecha()`.
 manifesto() {
   local dir=$1
   ( cd "$dir"
@@ -615,11 +631,7 @@ dossie() {
   cp docs/dossie/*.html "$dir/"
   cp docs/dossie/*.py docs/dossie/LEIA-ME.md "$dir/geradores/"
   cp CHANGELOG.md "$dir/"
-  ( cd "$dir" && find . -type f ! -name "$MANIFESTO" -print0 \
-      | sort -z | xargs -0 sha256sum > "$MANIFESTO" )
-  echo "   $(grep -c '' "$dir/$MANIFESTO") arquivos no $MANIFESTO"
-  ( cd "$SAIDA" && rm -f "$nome.zip" && zip -qr "$nome.zip" "$nome" && rm -rf "$nome" )
-  echo "   $SAIDA/$nome.zip"
+  fecha "$nome"
 }
 
 # ---------------------------------------------------------------------------
@@ -636,11 +648,7 @@ conhecimento() {
   [ -d ../base-de-conhecimento ] || { echo "   nao ha base-de-conhecimento/"; return 0; }
   rm -rf "$dir"; mkdir -p "$dir"
   cp -r ../base-de-conhecimento/. "$dir/"
-  ( cd "$dir" && find . -type f ! -name "$MANIFESTO" -print0 \
-      | sort -z | xargs -0 sha256sum > "$MANIFESTO" )
-  echo "   $(grep -c '' "$dir/$MANIFESTO") arquivos no $MANIFESTO"
-  ( cd "$SAIDA" && rm -f "$nome.zip" && zip -qr "$nome.zip" "$nome" && rm -rf "$nome" )
-  echo "   $SAIDA/$nome.zip"
+  fecha "$nome"
 }
 
 # ---------------------------------------------------------------------------
@@ -686,15 +694,15 @@ Cada zip traz um MANIFESTO.sha256 por dentro. O SHA256SUMS da pasta pacotes
 do site confere o download ANTES de abrir; o manifesto de dentro confere
 depois. Os zips daqui sao os MESMOS arquivos, com os mesmos hashes.
 FIM
-  ( cd "$dir" && find . -type f ! -name "$MANIFESTO" -print0 \
-      | sort -z | xargs -0 sha256sum > "$MANIFESTO" )
-  echo "   $(grep -c '' "$dir/$MANIFESTO") arquivos no $MANIFESTO"
-  ( cd "$SAIDA" && rm -f "$nome.zip" && zip -qr "$nome.zip" "$nome" && rm -rf "$nome" )
-  echo "   $SAIDA/$nome.zip"
+  fecha "$nome"
 }
 
 case "$QUAL" in
   conferir) conferir; exit 0 ;;
+  # Exposto para a bancada poder chamar a receita DE VERDADE, em vez de copiar
+  # o `find` para dentro de um teste -- copia de receita foi o defeito que essa
+  # prova existe para pegar.
+  manifesto) manifesto "${2:?uso: $0 manifesto <diretorio>}"; exit 0 ;;
   linux)   confere_versoes; monta "$ALVO_LINUX" linux "" ;;
   windows) confere_versoes; monta "$ALVO_WINDOWS" windows .exe ;;
   arm64)   confere_versoes; monta "$ALVO_ARM64" arm64 "" sem_odbc ;;
@@ -714,7 +722,7 @@ case "$QUAL" in
     conhecimento
     kit
     ;;
-  *) echo "uso: $0 [linux|windows|arm64|arm32|fontes|dossie|conhecimento|kit|tudo|conferir]" >&2; exit 2 ;;
+  *) echo "uso: $0 [linux|windows|arm64|arm32|fontes|dossie|conhecimento|kit|tudo|conferir|manifesto <dir>]" >&2; exit 2 ;;
 esac
 
 # A lista de fora: o hash dos proprios zips, para quem baixou saber que o
