@@ -34,7 +34,7 @@ O que existe, item por item contra a lista do HFSQL(R):
 | O que o cluster deles faz | PhxSql |
 |---|---|
 | Vários servidores aparecem como **um** para o cliente | ✓ **pela semântica de protocolo**: `cluster_estado` responde em qualquer nó quem é o master, e escrita numa réplica devolve `REDIRECIONA host:porta` (erro 4003). VIP de rede é infraestrutura, não banco — ver §2.5 |
-| Falha de um não impede o acesso | ✓ leitura segue nas réplicas; escrita volta sozinha após a eleição (medido: 3,9–4,3 s com janela de 4 s) |
+| Falha de um não impede o acesso | ✓ leitura segue nas réplicas; escrita volta sozinha após a eleição (medido: **3,6–4,3 s** com janela de 4 s) |
 | Replicação automática entre todos | ◐ um master, N réplicas seguindo o master **corrente** — não é multi-master, de propósito |
 | Carga de leitura distribuída | ◐ aponta-se leitores para réplicas; não há balanceador embutido |
 | Adicionar/remover servidor a quente | ✗ a lista de nós é do `config.json`; mudar é editar e reiniciar |
@@ -97,7 +97,9 @@ a ser o master **corrente**, descoberto pelo pulso.
   maior posição do diário; empate quebra pela prioridade e depois pelo menor
   id (este último só para a conta dar igual em todo nó). Cada nó faz a conta
   localmente e **só quem se vê vencedor se promove**, com época =
-  maior época vista + 1.
+  maior época vista + 1. «Vivos» é *quem pulsou dentro da janela* — o que não
+  é a mesma coisa que *quem está de pé agora*, e a diferença tem consequência
+  medida: §2.4, item 5.
 - **Promoção.** `Servidor::promover_a_master(motivo)` é o **único** caminho:
   época nova, papel persistido, escrita liberada, aviso agendado, registro no
   log de acessos (`cluster_promocao`). O laço de réplica para sozinho, porque
@@ -165,6 +167,48 @@ como sempre foi). As consequências práticas, sem eufemismo:
    transação entre tabelas não há ordem global, e a soma é o agregado
    honesto disponível; a prova fina de igualdade continua sendo o retrato
    SHA-256 (a bancada confere os dois).
+5. **A fresta entre «o master calou» e «os pares envelheceram».** A eleição
+   conta quem **pulsou** dentro da janela, e o silêncio do master sai do
+   **mesmo relógio**. Os dois prazos não vencem juntos quando os nós caem em
+   momentos *diferentes*: um par que morre **depois** do master ainda está
+   dentro da janela no instante em que o master é declarado calado — e nesse
+   instante um nó minoritário enxerga **maioria** e se elege. A eleição não
+   está errada em relação ao que vê; o que vê é que está velho.
+
+   Medido nos dois sentidos por `bancada/cluster/fresta.py` — mesmo binário,
+   mesma configuração, mesmos três nós, mudando **só a ordem das mortes**
+   (1,5 s entre elas):
+
+   | ordem das mortes | o nó que sobra fica | época | o que ele registrou |
+   |---|---|---|---|
+   | master primeiro, par 1,5 s depois | **master** | 0 → **1** | `PROMOVIDO a master na epoca 1 -- master calado ha 4s; eleito entre 2 vivos de 3 configurados` |
+   | par primeiro, master 1,5 s depois | replica | 0 → 0 | `master calado ha 4s e sem maioria visivel (1 de 3): NAO promovo` |
+
+   **O que a fresta NÃO quebra: a escrita.** O portão é `escrita_liberada`,
+   recalculado pelo árbitro a cada 500 ms a partir de `e_maioria(vivos)`, e
+   ele é **independente do papel** — nas duas ordens a escrita foi recusada,
+   nas duas os três convergiram para um master só, uma época só, e retratos
+   SHA-256 idênticos. Nenhuma linha se perdeu, e não houve dois masters.
+
+   **O que ela custa: a liderança.** Um nó que estava **sozinho** sobe a
+   época, e é a época que manda no rebaixamento. Quando a maioria volta, os
+   dois nós que juntos *eram* a maioria se rebaixam e passam a seguir o que
+   esteve isolado — medido: `{"no1":"no3","no2":"no3","no3":"no3"}`, época 1
+   nos três. Não é perda de dado; é liderança entregue ao nó **pior
+   informado**, e se o diário dele estiver atrás os outros passam a segui-lo
+   do ponto em que ele parou.
+
+   **Partição de rede não abre a fresta.** Ali os enlaces caem todos ao mesmo
+   tempo: o silêncio do master e o envelhecimento dos pares vencem juntos, e
+   o lado minoritário vê 1 de 3. A fresta é da **queda em sequência** — o
+   caso do reinício em rolagem e o do desligamento de rack.
+
+   Por isso a fase (e) da bancada mata o **par primeiro e o master por
+   último**, com 2 s entre eles: só assim «1 de 3» é verdade *antes* de o
+   árbitro olhar, e o passo mede a garantia que o nome dele promete em vez de
+   sair cara ou coroa. A ordem contrária está em `fresta.py`, que **mede** a
+   fresta sem afirmá-la — guarda que afirmasse o defeito viraria catraca
+   contra o próprio conserto.
 
 ### 2.5 Roteiro de operação
 
@@ -189,11 +233,12 @@ como sempre foi). As consequências práticas, sem eufemismo:
 
 | medido | resultado |
 |---|---|
-| Promoção após matar o master (janela 4 s, pulso 1 s) | **3,9–4,3 s** |
-| Primeira escrita aceita no novo master | **3,9–4,5 s** |
+| Promoção após matar o master (janela 4 s, pulso 1 s) | **3,6–4,3 s** |
+| Primeira escrita aceita no novo master | **3,6–4,5 s** |
 | E-mail de promoção | exatamente **1** |
-| E-mails de degradação em ~14 s (aviso a cada 6 s) | 6 (3 por nó vivo — repetição provada) |
-| Nó isolado (1 de 3) por 3× a janela | **não** se promove; escrita recusada |
+| E-mails de degradação em ~14 s (aviso a cada 6 s) | **6 a 8** (3 a 4 por nó vivo). O que se prova é a **repetição**; o total varia com onde a queda cai entre dois avisos de 6 s |
+| Nó isolado (1 de 3) por 3× a janela, **par morto antes do master** | **não** se promove; época intacta; escrita recusada |
+| Nó isolado com o par morto **depois** do master (`fresta.py`) | **promove-se** (vê 2 de 3 dentro da janela) e ainda assim **recusa a escrita**; convergem os três — §2.4, item 5 |
 | Retratos SHA-256 após queda, promoção, volta e rebaixamento | **idênticos nos três** |
 | Fase sem bloco `cluster` (4 servidores como hoje) | replicação intacta, `cluster_estado` dá erro claro, zero e-mails |
 

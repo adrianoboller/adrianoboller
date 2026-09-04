@@ -392,23 +392,53 @@ def main():
 
     print("(e) particao sem maioria: o no3 sozinho NAO se promove")
     n_emails = len(EMAILS)
-    matar("no2")
+    epoca_antes = estado(C["no3"])["epoca"]
+    # A ORDEM das duas mortes decide O QUE este passo mede, e por isso ela e
+    # explicita: o PAR morre primeiro, o MASTER dois segundos depois.
+    #
+    # A eleicao conta quem PULSOU dentro da janela, e o silencio do master sai
+    # do mesmo relogio. Matando o master primeiro, o par que morre DEPOIS
+    # ainda esta dentro da janela no instante em que o master e declarado
+    # calado -- o no3 ve 2 de 3, que E maioria, abre eleicao e se promove. Nao
+    # e hipotese: `fresta.py` reproduz nos dois sentidos, e o proprio no3
+    # registra "eleito entre 2 vivos de 3 configurados". A fresta esta escrita
+    # em docs/CLUSTER.md 2.4, item 5.
+    #
+    # Com o par morrendo 2 s ANTES (mais que um pulso de 1 s somado a um tique
+    # de 0,5 s do arbitro), o ultimo pulso do par e sempre ao menos 1 s mais
+    # velho que o do master; quando o silencio do master estoura, o par ja
+    # passou da janela POR CONSTRUCAO. So assim "1 de 3" e verdade antes de o
+    # arbitro olhar, e o passo mede a garantia que o nome dele promete.
     matar("no1")
+    time.sleep(2)
+    matar("no2")
     del C["no2"], C["no1"]
     time.sleep(JANELA_S * 3)
     e3 = estado(C["no3"])
     ok("no3 continua replica", e3["papel"] == "replica", e3["papel"])
-    ok("degradado diz que NAO promove",
-       any("NAO promovo" in d for d in e3["degradado"]), str(e3["degradado"]))
+    # Por CHAVE, nunca pela frase. Eleicao E subir a epoca: epoca intacta prova
+    # que nao houve eleicao ainda que o rotulo mentisse, e sobrevive a qualquer
+    # redacao nova do motivo. E `escrita_liberada` e o portao de verdade --
+    # independente do papel, e e o campo que a seguranca realmente usa.
+    ok("no3 nao abriu eleicao: epoca intacta", e3["epoca"] == epoca_antes,
+       f"{epoca_antes} -> {e3['epoca']}")
+    ok("no3 com a escrita travada", e3["escrita_liberada"] is False,
+       str(e3["escrita_liberada"]))
+    ok("no3 diz por que esta degradado", len(e3["degradado"]) >= 1,
+       str(e3["degradado"]))
     rec = inserir(C["no3"], lote(95000, 1))
     ok("escrita recusada no no isolado, sem apontar um master morto",
        (not rec.get("ok")) and rec.get("nome") != "REDIRECIONA",
        str(rec)[:160])
+    # Corpo de e-mail e prosa por definicao: nao ha chave para casar aqui, e
+    # trocar a frase por uma chave inventada seria inventar protocolo dentro
+    # de um aviso para gente. Fica a frase, dita.
     sem_maioria = [e for e in EMAILS[n_emails:]
                    if "maioria" in e["corpo"] or "NAO promovo" in e["corpo"]]
     ok("e-mail de sem-maioria capturado", len(sem_maioria) >= 1,
        f"{len(sem_maioria)}")
     r["no3_nao_promoveu"] = e3["papel"] == "replica"
+    r["epoca_do_isolado"] = e3["epoca"]
 
     print("    sobe no1 e no2 de volta: o cluster sara sozinho")
     subir(base, "no2")
