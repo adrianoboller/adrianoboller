@@ -269,6 +269,28 @@
 #   ao longo dos ~1,4 s parados (a UI continua legivel; a sonda de velocidade
 #   nao acusa parada), e a espera do momento-heroi tem drift.
 #
+# REVISAO 4 (docs/ESPECIFICACAO.md, itens 1, 3 e 4):
+#
+# - BEAT 1, CAIXA FLUTUANTE: o giro de 2 voltas virou 90 graus com a
+#   velocidade angular em janela (sobe, fica constante, desce; pico 1,45
+#   graus/quadro, medido pela sonda SONDA_ROT do teste - o teto era 1,5, e
+#   e ele que fixa os 90: 180 graus dariam 2,9), a subida acaba no fim da
+#   abertura das abas (q120, expoente 2,2, entrada a 4,0 cm/quadro em vez de
+#   7,2) e a caixa PAIRA: bob de 2,5 cm em Z e inclinacao de 2 graus em X e
+#   em Y, senoides de 3,0/3,4/2,7 s com fases diferentes, como transformacao
+#   rigida (pivo no centro da caixa) por chave a cada quadro em corpo, tampa,
+#   U1 e espumas, persistindo no beat 2 e saindo por envelope na vez de cada
+#   peca (ver _beat1 e PARAMS_PADRAO['flutuar']). O obturador do beat 1
+#   voltou a 0,5. Sem overshoot na subida: o balanco e o assentar.
+#
+# - BEAT 3, CABO RETO: o plugue parte de 1,2 m atras da tomada, na altura
+#   dela, alinhado com a normal, e o cabo conectado segue reto com catenaria
+#   leve (mod_cabo, trajeto='reto'; 'arco' e o voo antigo).
+#
+# - "SNAPMAKER U1": legenda fina no momento-heroi, filha da camera, com a
+#   linha indicadora mirada por quadro no corpo do U1 (_legenda_heroi), e a
+#   quinta linha da cartela, logo abaixo da marca.
+#
 # Eixos e medidas seguem docs/ESPECIFICACAO.md: metros, Z para cima, frente
 # em -Y, origem no centro da base da caixa; nao ha chao.
 
@@ -276,7 +298,7 @@ import math
 import os
 
 import bpy
-from mathutils import Matrix, Quaternion, Vector
+from mathutils import Euler, Matrix, Quaternion, Vector
 
 import mod_ambiente
 import mod_cabo
@@ -322,6 +344,11 @@ ROTEIRO = {
         "u1_desce": (0.84, 1.00),       # U1 desce e PARA NO AR na cota de referencia
         "u1_desliza": (0.80, 0.95),     # (caixa_some=False) U1 vai para -Y no ar
         "rim": (0.42, 0.92),            # rim a 0,3 no momento-heroi
+        # Legenda "Snapmaker U1" (revisao 4): entra quando o U1 acaba de
+        # subir e sai antes da orbita do beat 3 (fade de 8 quadros nas duas
+        # pontas, ver _legenda_heroi); 'legenda_ref' e a fracao em que a
+        # mira da linha e medida.
+        "legenda": (0.62, 0.96),
     },
     3: {
         "orbita": (0.00, 0.48),         # frente -> traseira pelo lado +X
@@ -382,7 +409,9 @@ PARAMS_PADRAO = {
     "ambiente": {},
     "camera": {},
     "cartela": {},
-    "caixa": {},
+    # 96 flocos, nao 48: a espuma da revisao 4 (packing peanut de 3-5 cm) tem
+    # metade do tamanho da anterior e a explosao do beat 2 perdia presenca.
+    "caixa": {"n_espumas": 96},
     # Quanto o U1 sobe acima do topo do corpo da caixa ao sair/entrar.
     "folga_u1": 0.14,
     # Quanto a caixa fica ABAIXO da borda inferior do quadro quando "fora"
@@ -405,12 +434,49 @@ PARAMS_PADRAO = {
     # Overshoot das entradas (revisao 3): fracao do percurso alem do destino
     # e quantos quadros antes do destino fica o pico.
     "overshoot": {"fracao": 0.05, "quadros": 6},
+    # Beat 1, caixa FLUTUANTE (revisao 4, item 1). O giro e limitado pela
+    # velocidade angular, nao pelo numero de voltas: com o teto de 1,5
+    # graus/quadro e rampas suaves (a velocidade sobe por meio cosseno em
+    # 'giro_rampas'[0] do beat, fica CONSTANTE - "nunca acelera de verdade" -
+    # e desce por meio cosseno em 'giro_rampas'[1]), 84 quadros comportam
+    # giro/(84 x (1 - 0,10 - 0,16)) = 1,45 graus/quadro para 90 graus; 180
+    # graus dariam 2,9 e estourariam o teto. A subida acaba na fracao
+    # 'subida_fim' do BEAT 2 (0,27 = fim da abertura das abas): com a caixa
+    # partindo 2,17 m abaixo do quadro (projetado), acabar em q84 obrigava a
+    # entrar a 7,2 cm/quadro; ate q120 com expoente 2,2 entra a 4,0 e ainda
+    # anda 15 cm nos ultimos 36 quadros (ease-out longo). 'overshoot' 0: o
+    # balanco ja e o "chega e paira" - um quique de 7 cm seguido de um bob de
+    # 2,5 cm leria como quique duplo. O balanco (bob em Z e inclinacao em X/Y,
+    # senoides em segundos REAIS, periodos diferentes para nao virar pendulo)
+    # e uma transformacao rigida com pivo em 'pivo' da altura da caixa,
+    # aplicada por chave a cada quadro a corpo, tampa, U1 e espumas, e
+    # persiste no beat 2 ate cada peca partir (ver _beat1). 'fases' sao as
+    # fases NO QUADRO EM QUE A ESPUMA E LANCADA (0 ou pi = cruzando zero):
+    # as tres senoides passam por zero ali, entao a espuma segue a caixa
+    # rigidamente ate o lancamento e a primeira chave do modulo caixa (no
+    # repouso) a encontra exatamente onde estava - medido: com a espuma
+    # saindo do balanco por envelope enquanto o U1 ainda o seguia, um floco
+    # entrava 1 cm no U1 (conferir_colisoes, q107). O bob e pi (desce
+    # depois do lancamento): com 0 a caixa e o U1 SUBIAM 2,5 cm contra os
+    # flocos que ainda nao tinham voado (um dentro do U1 em q126); descendo,
+    # a caixa "assenta" e os flocos ganham folga.
+    "flutuar": {"giro_graus": 90.0, "giro_rampas": (0.20, 0.32),
+                "subida_expoente": 2.2, "subida_fim": 0.27, "overshoot": 0.0,
+                "bob_z": 0.025, "periodo_z": 3.0,
+                "inclinacao_graus": (2.0, 2.0), "periodos_xy": (3.4, 2.7),
+                "fases": (math.pi, math.pi, 0.0), "pivo": 0.5},
+    # Legenda "Snapmaker U1" do momento-heroi (revisao 4, item 4a): params
+    # extras do mod_cartela.construir_legenda; a posicao do texto e a mira da
+    # linha sao decididas em _legenda_heroi (ver la).
+    "legenda": {},
     # Deslocamento da cartela para cima no quadro (m a 2 m). None = o padrao
     # medido pelo modulo cartela (0,18: linha 4 fora da faixa de legendas).
     # Rodada 3, com o rolo da camera: 0,12 - com 0,18 o topo da engrenagem
     # (a 17% da altura) caia sobre a cauda do brilho do horizonte (15-22%);
     # 6 cm a menos descem o bloco 3% e a linha 4 fica a ~67%, fora da faixa.
-    "cartela_subida": 0.12,
+    # Revisao 4: cinco linhas; 0,15 (com o bloco mais compacto de
+    # construir_tudo) poe a linha 5 a ~69% e o topo da logo a ~16%.
+    "cartela_subida": 0.15,
     # True (padrao): a caixa some por baixo do quadro no beat 2 e volta por
     # baixo no beat 6. False: o U1 desliza para -Y e para no ar na frente da
     # caixa (ver cabecalho; este modo nao foi reenquadrado na revisao 2).
@@ -419,7 +485,14 @@ PARAMS_PADRAO = {
     # Rig de luz na orbita: rig = azimute da camera + offset. 90 poe o rim
     # atras do produto (padrao medido do ambiente); 60 e a opcao lateral.
     "offset_rig_orbita": mod_ambiente.OFFSET_RIM_ATRAS,
-    # Beat 3: de onde o plugue parte (altura, m) e altura do arco.
+    # Beat 3: trajeto do plugue (revisao 4, item 3): 'reto' = horizontal,
+    # alinhado com a normal da tomada, de 'distancia_cabo' m atras, e o cabo
+    # conectado segue reto com catenaria ('catenaria_cabo' = flecha em fracao
+    # do vao); 'arco' = o voo antigo, de 'origem_cabo_z' de altura com arco
+    # de 'arco_cabo' e o cabo pendurado ate 'z_cabo_solto'.
+    "trajeto_cabo": "reto",
+    "distancia_cabo": 1.2,
+    "catenaria_cabo": 0.035,
     "origem_cabo_z": 0.45,
     "arco_cabo": 0.30,
     # Beat 5: energia do rim e da key em cada foto (W), das area lights da
@@ -1031,14 +1104,25 @@ def construir_tudo(params=None):
     cabo = mod_cabo.construir_cabo(cena, col, pcabo)
 
     # Forcas de emissao: as do modulo (2,4 / 2,0, medidas no render sob o
-    # AgX); bloco mais compacto (logo 0,24, entrelinha 3 menor) para a linha
-    # 4 subir acima da faixa de legendas do Reels.
+    # AgX); bloco mais compacto (logo 0,24, entrelinhas menores que as do
+    # modulo) para a ultima linha subir acima da faixa de legendas do Reels.
+    # Revisao 4: cinco linhas ("Snapmaker U1" logo abaixo da marca), entao
+    # quatro entrelinhas - a segunda e a menor porque a linha do produto
+    # pertence a marca.
+    # Medido no teste do modulo (5 linhas, defaults dele): o bloco ia de 8,6%
+    # a 71,2% da altura. Aqui, com logo 0,21, estas entrelinhas e
+    # 'cartela_subida' 0,15, a ultima linha fica a ~69% (a sonda
+    # [cartela] do teste_coreografia imprime o numero).
     pcart = {"logo": _asset(p, "logo_engineprint.png"),
-             "largura_logo": 0.24, "entrelinhas": (1.30, 1.45, 1.55)}
+             "largura_logo": 0.21, "entrelinhas": (1.22, 1.30, 1.40, 1.50)}
     pcart.update(p["cartela"])
     cartela = mod_cartela.construir_cartela(cena, col, pcart)
 
     cam, alvo = mod_ambiente.criar_camera(cena, col, params=p["camera"])
+    # Legenda "Snapmaker U1" do momento-heroi (revisao 4, item 4a), filha da
+    # camera; construida DEPOIS da cartela (limpar_colecao dela a levaria) e
+    # apontada/animada em _legenda_heroi, quando a camera ja tem chaves.
+    legenda = mod_cartela.construir_legenda(cena, col, cam, "Snapmaker U1", p.get("legenda") or {})
     # A travessia do beat 7 leva a camera a 2 cm dentro da tampa: o clip
     # padrao (0,05) cortaria a logo antes do veu.
     cam.data.clip_start = 0.01
@@ -1068,6 +1152,7 @@ def construir_tudo(params=None):
         "u1": u1,
         "cabo": cabo,
         "cartela": cartela,
+        "legenda": legenda,
         "camera": cam,
         "alvo": alvo,
         "foco": foco,
@@ -1113,25 +1198,49 @@ def _chave_camera(objs, q, az, raio, z, alvo, foco=None, lente=None,
     objs["_chaves_camera"][q] = (interp, easing)
 
 
-def _perfil_overshoot(u, fracao, u_pico):
+def _perfil_overshoot(u, fracao, u_pico, expoente=2.8):
     """Ease-out em [0, 1] que chega a 1 + fracao em u_pico (velocidade zero)
     e volta a 1 em u = 1 por meio cosseno (velocidade zero nos dois lados):
-    e o "chega, passa, assenta" da revisao 3, C1 no pico."""
+    e o "chega, passa, assenta" da revisao 3, C1 no pico. 'expoente' e o do
+    ease-out (maior = entra mais rapido e assenta mais devagar)."""
+    u = min(1.0, max(0.0, u))
     if fracao <= 0.0 or u_pico >= 1.0:
-        return 1.0 - (1.0 - u) ** 2.8
+        return 1.0 - (1.0 - u) ** expoente
     if u <= u_pico:
-        return (1.0 + fracao) * (1.0 - (1.0 - u / u_pico) ** 2.8)
+        return (1.0 + fracao) * (1.0 - (1.0 - u / u_pico) ** expoente)
     v = (u - u_pico) / (1.0 - u_pico)
     return 1.0 + fracao * 0.5 * (1.0 + math.cos(math.pi * v))
 
 
-def _chave_z_com_overshoot(objs, obj, q_ini, q_fim, z_ini, z_fim, xy=(0.0, 0.0)):
+def _perfil_giro(u, rampas):
+    """Fracao do giro feita em u, para um giro que NUNCA acelera de verdade:
+    a velocidade angular sobe por meio cosseno na fracao rampas[0] do
+    intervalo, fica constante, e desce por meio cosseno na fracao rampas[1]
+    final. Integral fechada da janela, normalizada para chegar a 1 em u = 1;
+    o pico de velocidade e 1/(n x (1 - a/2 - b/2)) do giro por quadro."""
+    a, b = float(rampas[0]), float(rampas[1])
+    u = min(1.0, max(0.0, u))
+    area = 1.0 - a / 2.0 - b / 2.0
+    if a > 0.0 and u < a:
+        s = 0.5 * (u - (a / math.pi) * math.sin(math.pi * u / a))
+    elif u <= 1.0 - b:
+        s = 0.5 * a + (u - a)
+    else:
+        v = 1.0 - u
+        cauda = 0.5 * (v - (b / math.pi) * math.sin(math.pi * v / b)) if b > 0.0 else 0.0
+        s = area - cauda
+    return s / area
+
+
+def _chave_z_com_overshoot(objs, obj, q_ini, q_fim, z_ini, z_fim, xy=(0.0, 0.0), inicio=None):
     """Chaves de z de 'z_ini' (q_ini) a 'z_fim' (q_fim) com uma chave a mais
     'quadros' antes do fim, 'fracao' do percurso ALEM do destino: com Bezier
-    auto-clamped o extremo vira handle plano - chega, passa, assenta."""
+    auto-clamped o extremo vira handle plano - chega, passa, assenta.
+    'inicio' (xyz) substitui a primeira chave: e de onde o U1 parte quando a
+    caixa esta balancando (revisao 4)."""
     o = objs["params"].get("overshoot") or {}
     fr, n = float(o.get("fracao", 0.0)), int(round(float(o.get("quadros", 6)) * objs["fator"]))
-    _chave(obj, q_ini, (xy[0], xy[1], z_ini))
+    _chave(obj, q_ini, tuple(inicio) if inicio is not None else (xy[0], xy[1], z_ini))
     if fr > 0.0 and q_fim - n > q_ini:
         _chave(obj, q_fim - n, (xy[0], xy[1], z_fim + fr * (z_fim - z_ini)))
     _chave(obj, q_fim, (xy[0], xy[1], z_fim))
@@ -1366,16 +1475,75 @@ def _sujeitos_fotos(objs):
 
 # ---------------------------------------------------------------- beats
 
+def _balanco(fl, f):
+    """(bob em z, inclinacao em X, inclinacao em Y) do balanco no quadro f:
+    tres senoides lentas em segundos REAIS (o preset de duracao nao muda o
+    periodo do pairar), com periodos diferentes - um so periodo leria como
+    pendulo. As fases sao medidas a partir de fl['_t0'] (o instante do
+    lancamento da espuma, em s): e la que as tres cruzam zero."""
+    t = f / FPS - float(fl.get("_t0", 0.0))
+    fz, fx, fy = fl["fases"]
+    bob = fl["bob_z"] * math.sin(math.tau * t / fl["periodo_z"] + fz)
+    ix = math.radians(fl["inclinacao_graus"][0]) * math.sin(math.tau * t / fl["periodos_xy"][0] + fx)
+    iy = math.radians(fl["inclinacao_graus"][1]) * math.sin(math.tau * t / fl["periodos_xy"][1] + fy)
+    return bob, ix, iy
+
+
+def _pose_flutuante(fl, f, ang, dz, pivo_z, envelope=1.0):
+    """Matriz rigida da caixa no quadro f: giro 'ang' em Z (no eixo da
+    caixa), depois a inclinacao do balanco em torno do pivo (centro da caixa,
+    nao a base: rolar pela base balancaria o topo 3 cm a cada grau), depois a
+    subida 'dz' mais o bob. 'envelope' (0..1) e quanto do balanco entra -
+    e o que deixa cada peca partir do repouso exato na sua vez."""
+    bob, ix, iy = _balanco(fl, f)
+    piv = Vector((0.0, 0.0, pivo_z))
+    inclinacao = Matrix.Rotation(envelope * ix, 4, "X") @ Matrix.Rotation(envelope * iy, 4, "Y")
+    return (Matrix.Translation((0.0, 0.0, dz + envelope * bob)) @ Matrix.Translation(piv)
+            @ inclinacao @ Matrix.Translation(-piv) @ Matrix.Rotation(ang, 4, "Z"))
+
+
+def _chave_na_pose(obj, f, T, loc0, rot0, ang):
+    """Chave de location e rotation de 'obj' no quadro f, com a pose de
+    repouso (loc0, rot0) levada pela matriz T. O Euler sai da matriz com o
+    'compat' (rot0 + giro): a inclinacao e pequena e a solucao vizinha da
+    ideal e sempre a continua - sem isso um floco com rotacao de repouso
+    perto de +-180 graus daria um salto de 360 entre dois quadros."""
+    M = T @ Matrix.Translation(loc0) @ Euler(rot0, "XYZ").to_matrix().to_4x4()
+    obj.location = M.translation
+    obj.rotation_euler = M.to_3x3().to_euler("XYZ", Euler((rot0[0], rot0[1], rot0[2] + ang), "XYZ"))
+    obj.keyframe_insert("location", frame=f)
+    obj.keyframe_insert("rotation_euler", frame=f)
+
+
+def _envelope(f, q_a, q_b):
+    """1 ate q_a, meio cosseno ate 0 em q_b, 0 depois."""
+    if f <= q_a:
+        return 1.0
+    if f >= q_b:
+        return 0.0
+    return 0.5 * (1.0 + math.cos(math.pi * (f - q_a) / float(q_b - q_a)))
+
+
 def _beat1(objs, fator):
-    """Caixa sobe de FORA DO QUADRO, por baixo, girando 2 voltas, rapido no
-    inicio e assentando NO AR na cota de referencia (base em z = 0). O U1
-    (dentro) e as espumas vao junto, uma chave por quadro: a espuma esta
-    fora do eixo, e so a chave por quadro faz o giro dela ser o mesmo da
-    caixa sem parentear (a caixa some no beat 2 e a espuma nao pode ir)."""
+    """Caixa FLUTUANTE (revisao 4, item 1): sobe de FORA DO QUADRO, por
+    baixo, com ease-out longo, girando 'giro_graus' (90) numa velocidade
+    angular que sobe, fica constante e desce - nunca acelera de verdade - e
+    PAIRA: bob em Z e inclinacao em X/Y senoidais que continuam depois de
+    parar. O U1 (dentro) e as espumas vao junto, uma chave por quadro: a
+    espuma esta fora do eixo, e so a chave por quadro faz o giro e o balanco
+    dela serem os da caixa sem parentear (a caixa some no beat 2 e a espuma
+    nao pode ir). O balanco PERSISTE no beat 2 e sai por envelope, cada peca
+    na sua vez: as espumas ate o lancamento delas, o U1 ate comecar a subir
+    (a inclinacao dele e desfeita durante a subida, por chave Bezier), a
+    caixa ate comecar a descer - a chave do beat 2 encontra o repouso exato.
+    As espumas nao tem envelope: as senoides sao ancoradas para cruzar zero
+    no lancamento delas (ver PARAMS_PADRAO['flutuar']['fases'])."""
     q_ini, q_fim = quadros_do_beat(1, fator)
     caixa, u1, p = objs["caixa"], objs["u1"], objs["params"]
+    fl = dict(PARAMS_PADRAO["flutuar"], **(p.get("flutuar") or {}))
+    r2 = ROTEIRO[2]
+    fl["_t0"] = q_em(2, r2["espuma"][0], fator) / FPS
     n = float(q_fim - q_ini)
-    voltas = 2.0                                   # inteiras: acaba com a frente em -Y
     # Camera do beat, definida ANTES das chaves da caixa: a profundidade de
     # partida e projetada por ela. Frontal, um pouco alta, fechando de leve;
     # acaba em -85 graus (quase de frente: a 80 a face lateral entrava e a
@@ -1393,29 +1561,59 @@ def _beat1(objs, fator):
     profundidade = caixa["topo_tampa_z"] - z_pe + p["margem_fora"]
     objs["profundidade_caixa"] = profundidade
     corpo, tampa, raiz = caixa["corpo"], caixa["tampa"], u1["raiz"]
-    z_tampa = tampa.location.z
-    z_u1 = raiz.location.z
+    zero = (0.0, 0.0, 0.0)
+    loc_tampa = Vector(tampa.location)
+    loc_u1 = Vector(raiz.location)
     repousos = [(esp, Vector(esp["caixa_repouso"]), tuple(esp["caixa_rot_repouso"])) for esp in caixa["espumas"]]
+    # Fim da subida (fracao do beat 2), do giro (fim do beat 1) e do balanco
+    # de cada grupo (ver docstring).
+    q_sub_fim = q_em(2, float(fl["subida_fim"]), fator) if fl["subida_fim"] > 0.0 else q_fim
+    q_esp = q_em(2, r2["espuma"][0], fator)
+    q_u1 = q_em(2, r2["u1_sobe"][0], fator)
+    q_u1_fim = q_em(2, r2["u1_sobe"][1], fator)
+    q_caixa = q_em(2, r2["caixa_desce"][0], fator) if p["caixa_some"] else q_u1
+    q_ultimo = max(q_caixa, q_u1, q_esp)
+    n_sub = float(max(1, q_sub_fim - q_ini))
+    giro = math.radians(float(fl["giro_graus"]))
+    pivo_z = float(fl["pivo"]) * caixa["exterior_corpo"][2]
     o = p.get("overshoot") or {}
-    u_pico = 1.0 - float(o.get("quadros", 6)) * fator / n
-    for f in range(q_ini, q_fim + 1):
-        u = (f - q_ini) / n
-        # Giro decai mais devagar que a subida: a caixa ja assentou em altura
-        # e ainda gira um pouco - le como "assentar", nao como parar. A
-        # altura passa 'fracao' do percurso alem do destino e volta (revisao 3).
-        s_rot = 1.0 - (1.0 - u) ** 2.2
-        s_z = _perfil_overshoot(u, float(o.get("fracao", 0.0)), u_pico)
-        ang = -voltas * math.tau * (1.0 - s_rot)
-        dz = -profundidade * (1.0 - s_z)
-        _chave(corpo, f, (0.0, 0.0, dz), (0.0, 0.0, ang))
-        _chave(tampa, f, (0.0, 0.0, z_tampa + dz), (0.0, 0.0, ang))
-        _chave(raiz, f, (0.0, 0.0, z_u1 + dz), (0.0, 0.0, ang))
-        R = Matrix.Rotation(ang, 3, "Z")
-        for esp, p0, r0 in repousos:
-            pe = R @ p0
-            _chave(esp, f, (pe.x, pe.y, pe.z + dz), (r0[0], r0[1], r0[2] + ang))
-    for obj in [corpo, tampa, raiz] + caixa["espumas"]:
-        _interpolar(obj, q_ini, q_fim)
+    u_pico = 1.0 - float(o.get("quadros", 6)) * fator / n_sub
+    for f in range(q_ini, q_ultimo + 1):
+        u_rot = (f - q_ini) / n
+        u_sub = (f - q_ini) / n_sub
+        ang = -giro * (1.0 - _perfil_giro(u_rot, fl["giro_rampas"]))
+        dz = -profundidade * (1.0 - _perfil_overshoot(u_sub, float(fl["overshoot"]), u_pico,
+                                                      expoente=float(fl["subida_expoente"])))
+        if f <= q_caixa:
+            T = _pose_flutuante(fl, f, ang, dz, pivo_z, _envelope(f, q_u1, q_caixa))
+            _chave_na_pose(corpo, f, T, zero, zero, ang)
+            _chave_na_pose(tampa, f, T, loc_tampa, zero, ang)
+        if f <= q_u1:
+            # O U1 segue a caixa SEM envelope ate partir: dentro da caixa (a
+            # folga da espuma e de 4 cm) ele nao pode derivar em relacao a ela.
+            T = _pose_flutuante(fl, f, ang, dz, pivo_z, 1.0)
+            _chave_na_pose(raiz, f, T, loc_u1, zero, ang)
+            if f == q_u1:
+                # De onde o U1 parte no beat 2 (com o bob e a inclinacao
+                # deste quadro): _beat2 usa isto no lugar de (0, 0, z_na_caixa).
+                objs["_u1_partida"] = Vector(raiz.location)
+        if f <= q_esp:
+            # Espumas: seguem a caixa inteira ate o lancamento - la o balanco
+            # cruza zero por construcao e a subida ja esta a < 1 cm do
+            # repouso, de onde o modulo caixa as lanca.
+            T = _pose_flutuante(fl, f, ang, dz, pivo_z, 1.0)
+            for esp, p0, r0 in repousos:
+                _chave_na_pose(esp, f, T, p0, r0, ang)
+    # A inclinacao do U1 e desfeita ate o fim da subida por uma chave Bezier
+    # (o bob vai embutido na primeira chave de altura do beat 2).
+    raiz.rotation_euler = zero
+    raiz.keyframe_insert("rotation_euler", frame=q_u1_fim)
+    objs["_q_balanco"] = (q_ini, q_ultimo)
+    for obj in [corpo, tampa]:
+        _interpolar(obj, q_ini, q_caixa)
+    _interpolar(raiz, q_ini, q_u1_fim)
+    for esp in caixa["espumas"]:
+        _interpolar(esp, q_ini, q_esp)
 
     # A lente PRECISA de chave aqui: a fcurve extrapola a primeira chave para
     # tras, e sem esta os beats 1-4 saiam com os 60 mm da primeira foto do
@@ -1448,8 +1646,11 @@ def _beat2(objs, fator):
     centro = objs["centro_u1"]
     # Sobe com overshoot (passa 5% e assenta no alto); desce e PARA NO AR na
     # cota de referencia (z = 0, a pose em que cabo, tela e fotos foram
-    # medidos), tambem com overshoot - nao ha chao para bater.
-    _chave_z_com_overshoot(objs, raiz, q(r["u1_sobe"][0]), q(r["u1_sobe"][1]), z0, z_alto)
+    # medidos), tambem com overshoot - nao ha chao para bater. Parte de onde
+    # o balanco da caixa o deixou (revisao 4: bob e inclinacao no quadro da
+    # partida), nao de (0, 0, z0) - senao saltaria ate 2,5 cm num quadro.
+    _chave_z_com_overshoot(objs, raiz, q(r["u1_sobe"][0]), q(r["u1_sobe"][1]), z0, z_alto,
+                           inicio=objs.get("_u1_partida"))
     if p["caixa_some"]:
         _chave_z_com_overshoot(objs, raiz, q(r["u1_desce"][0]), q(r["u1_desce"][1]), z_alto, 0.0)
     else:
@@ -1607,17 +1808,28 @@ def _beat3(objs, fator):
     direcao = mod_u1.ponto_no_mundo(u1, "posicao_tomada", "direcao")
     normal = -direcao
     lateral = normal.cross(Vector((0, 0, 1))).normalized() * cabo.get("lado", 1.0)
-    # Origem fora do quadro (a 16 graus de meio-campo horizontal, 1,3 m atras
-    # e 0,9 m para o lado esta fora em qualquer ponto da orbita), a 0,45 m
-    # do chao: o plugue cruza o quadro contra o corpo branco e a faixa rose,
-    # nao preto sobre o chao preto (revisao, q205).
-    origem = ponto + normal * 1.3 + lateral * 0.9
-    origem.z = p["origem_cabo_z"]
     q_cabo = (q(r["cabo"][0]), q(r["cabo"][1]))
-    # z_chao = 'z_cabo_solto': o cabo pende para fora do quadro (ver cabecalho).
-    mod_cabo.animar_conexao(cabo, ponto, direcao, q_cabo[0], q_cabo[1],
-                            origem=origem, z_chao=p["z_cabo_solto"], penetracao=-mod_cabo.BICO[4],
-                            altura_arco=p["arco_cabo"])
+    if p.get("trajeto_cabo", "reto") == "arco":
+        # Voo antigo: origem fora do quadro (a 16 graus de meio-campo
+        # horizontal, 1,3 m atras e 0,9 m para o lado esta fora em qualquer
+        # ponto da orbita), a 0,45 m do chao, arco de 'arco_cabo' e o cabo
+        # pendurado ate 'z_cabo_solto' (ver cabecalho).
+        origem = ponto + normal * 1.3 + lateral * 0.9
+        origem.z = p["origem_cabo_z"]
+        mod_cabo.animar_conexao(cabo, ponto, direcao, q_cabo[0], q_cabo[1], trajeto="arco",
+                                origem=origem, z_chao=p["z_cabo_solto"], penetracao=-mod_cabo.BICO[4],
+                                altura_arco=p["arco_cabo"])
+    else:
+        # Revisao 4, item 3: o plugue vem RETO, na horizontal, alinhado com a
+        # normal da tomada, de 'distancia_cabo' m atras na altura dela. A
+        # camera da traseira (azimute 105-120) olha quase ao longo desse
+        # eixo, entao a origem fica fora do quadro pelo ombro esquerdo dela
+        # e o plugue entra pela borda esquerda (SONDA_CABO no teste mede o
+        # quadro em que entra). Conectado, o cabo segue reto para tras com
+        # catenaria leve ate sair do quadro, sem pender.
+        mod_cabo.animar_conexao(cabo, ponto, direcao, q_cabo[0], q_cabo[1], trajeto="reto",
+                                distancia_reta=p["distancia_cabo"], catenaria=p["catenaria_cabo"],
+                                penetracao=-mod_cabo.BICO[4])
     objs["_q_cabo"] = q_cabo
 
     # Ligar e evento de luz: botao afunda, fitas e area lights da camara
@@ -2162,6 +2374,50 @@ def _beat7(objs, fator):
         _esconder_entre([linha], 1, _primeira_chave(linha, "location", q_logo) + 1)
 
 
+def _legenda_heroi(objs, fator):
+    """Legenda "Snapmaker U1" (revisao 4, item 4a) no momento-heroi do beat
+    2: texto fixo no quadro (a raiz e filha da camera) e a linha indicadora
+    MIRADA POR QUADRO no canto superior do corpo do U1 (do lado do texto)
+    projetado pela camera avaliada - a camera deriva no heroi e o U1 desce
+    nos ultimos quadros da legenda, e uma mira fixa apontaria para o nada.
+    Onde o texto fica, e por que e tinta escura, esta medido em
+    mod_cartela.PARAMS_LEGENDA. Roda depois de _aplicar_interpolacao_camera,
+    com as chaves do U1 e da camera prontas."""
+    leg = objs.get("legenda")
+    if not leg:
+        return
+    r = ROTEIRO[2]
+    p = objs["params"]
+    q_in, q_out = q_em(2, r["legenda"][0], fator), q_em(2, r["legenda"][1], fator)
+    cena, u1 = objs["cena"], objs["u1"]
+    corpo = u1.get("corpo")
+    objetos = [corpo] if corpo is not None and corpo.type == "MESH" else _objetos_do_u1(objs)
+    pl = leg["params"]
+    mira = pl["mira"]
+    direita = pl["alinhamento"] == "RIGHT"
+    a = 9.0 / 16.0
+    for f in range(q_in, q_out + 1):
+        cena.frame_set(f)
+        bpy.context.view_layer.update()
+        proj = projetar_no_quadro(objs, [c for o in objetos for c in _cantos(o)])
+        if not proj:
+            continue
+        xs = [x for x, _ in proj]
+        ys = [y for _, y in proj]
+        # Canto superior do envelope projetado do lado do texto (direito
+        # para a legenda alinhada a direita), em fracoes do quadro (0,0 =
+        # topo esquerdo), descido 'mira'[1] da altura do envelope (o topo do
+        # envelope sao as pontas dos cabecotes; o aro fica a ~1/3) e
+        # afastado 'mira'[0] para fora.
+        fx0, fx1 = 0.5 + min(xs) / (2.0 * a), 0.5 + max(xs) / (2.0 * a)
+        fy0, fy1 = 0.5 - max(ys) / 2.0, 0.5 - min(ys) / 2.0
+        fx = fx1 + mira[0] if direita else fx0 - mira[0]
+        mod_cartela.apontar_legenda(leg, (fx, fy0 + mira[1] * (fy1 - fy0)), quadro=f)
+    mod_cartela.animar_legenda(leg, q_in, q_out, quadros_fade=max(1, int(round(8 * fator))))
+    objs["_q_legenda"] = (q_in, q_out)
+    cena.frame_set(1)
+
+
 def _primeira_chave(obj, data_path, padrao):
     """Quadro da primeira chave de 'data_path' do objeto (a chave de espera
     que animar_cartela grava em inicio-1), ou 'padrao' se nao ha fcurve."""
@@ -2303,15 +2559,16 @@ def _zoom_nos_cortes(objs):
 
 
 def _obturador(objs, fator):
-    """Obturador do motion blur 'forte' so nos movimentos largos (subida da
-    caixa, explosao da espuma e subida do U1 no beat 2 - nao o flutuar, que
-    e calmo -, as duas orbitas, o beat 6 e o mergulho), 'base' no resto
-    (fotos, close da tela, cartela) - o whoosh visual."""
+    """Obturador do motion blur 'forte' so nos movimentos largos (explosao
+    da espuma e subida do U1 no beat 2 - nao o flutuar, que e calmo -, as
+    duas orbitas, o beat 6 e o mergulho), 'base' no resto (fotos, close da
+    tela, cartela) - o whoosh visual. O beat 1 saiu da lista na revisao 4: o
+    0,7 era para o giro rapido, e a caixa flutuante (1,45 graus/quadro no
+    maximo) com 0,7 so borraria os icones do papelao."""
     p = objs["params"]
     base, forte = p["obturador"]
     r2, r3, r4 = ROTEIRO[2], ROTEIRO[3], ROTEIRO[4]
     trechos = [
-        (q_em(1, 0.0, fator), q_em(1, 0.80, fator)),
         (q_em(2, r2["espuma"][0], fator), q_em(2, r2["u1_sobe"][1], fator)),
         (quadros_do_beat(3, fator)[0], q_em(3, r3["orbita"][1], fator)),
         (quadros_do_beat(4, fator)[0], q_em(4, r4["orbita"][1], fator)),
@@ -2342,6 +2599,7 @@ def coreografar(objs, fator=None):
     _esconder_espuma_nos_closes(objs, fator)
     _rig_luz_cortes(objs)
     _aplicar_interpolacao_camera(objs)
+    _legenda_heroi(objs, fator)
     _conferir_volta_da_caixa(objs)
     _zoom_nos_cortes(objs)
     _aplicar_interpolacao_camera(objs)

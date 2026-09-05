@@ -290,6 +290,7 @@ def main():
             "etiqueta": {"malha": ext("caixa_etiqueta_malha.png"), "cor": ext("caixa_etiqueta_cor.png"),
                          "normal": ext("caixa_etiqueta_normal.png"), "rugosidade": ext("caixa_etiqueta_rugosidade.png")},
             "com_logo": False,      # revisao 3: o topo e papelao e fita, nada mais
+            "n_espumas": 96,        # revisao 4: flocos menores, o dobro deles
         },
     }
     objs = mod_coreografia.construir_tudo(params)

@@ -1,6 +1,8 @@
 # Prova do modulo cartela: cena vazia, fundo escuro com o brilho rose no terco
 # de baixo (como a camera do beat 7 ve o gradiente), camera 35 mm 9:16 a 2 m
-# com DoF f/2,8 focado na raiz, 540x960. Seis quadros:
+# com DoF f/2,8 focado na raiz, 540x960. Seis quadros da cartela (agora com
+# CINCO linhas - revisao 4) e dois da legenda "Snapmaker U1" do momento-heroi
+# (legenda_nascendo, legenda), a 360x640:
 #   ini / meio / fim / saida  - a entrada e a saida de sempre;
 #   celular                   - o quadro assentado a 360x640, para ler cada
 #                               linha no tamanho de um celular (o criterio);
@@ -232,25 +234,70 @@ for rotulo, quadro in quadros:
         png_fim = caminho
 
 # Medicao no PNG assentado: uma faixa por linha (fundo da de cima ate o topo
-# da de baixo nao entra, so a propria linha).
+# da de baixo nao entra, so a propria linha). A linha de destaque (cobre) e
+# a ultima linha vem do modulo, nao de um indice fixo: a revisao 4 pos uma
+# quinta linha e o cobre desceu da 3 para a 4.
 cena.frame_set(Q_ENTRADA[1])
 bpy.context.view_layer.update()
 faixas = [faixa_vertical(o) for o in objs["linhas"]]
 medidas = medir_png(png_fim, faixas)
+n_linhas = len(objs["linhas"])
+i_cobre = (mod_cartela.PARAMS_PADRAO["linha_destaque"] or 0) - 1
+brancas = [i for i in range(n_linhas) if i != i_cobre]
 for i, ((maximo, mediana), (topo, fundo_)) in enumerate(zip(medidas, faixas)):
     print("[teste] PNG fim linha %d (y %.1f%%-%.1f%%): max sRGB %s  mediana dos claros %s" % (
         i + 1, 100 * topo, 100 * fundo_, list(maximo), [int(v) for v in mediana]))
-branco = min(medidas[i][0].min() for i in (0, 1, 3)) / 255.0
-cobre = medidas[2][1]
-print("[teste] CRITERIO branco: min do max por canal nas linhas 1/2/4 = %.3f sRGB (>= 0,90 sem bloom: %s)" % (
-    branco, "OK" if branco >= 0.90 else "FALHA"))
-print("[teste] CRITERIO cobre (linha 3): R=%d B=%d (R >= 180 e B <= 80: %s)" % (
-    cobre[0], cobre[2], "OK" if cobre[0] >= 180 and cobre[2] <= 80 else "FALHA"))
-print("[teste] CRITERIO linha 4 assentada: fundo a %.1f%% da altura (< 70%%: %s)" % (
-    100 * faixas[3][1], "OK" if faixas[3][1] < 0.70 else "FALHA"))
+branco = min(medidas[i][0].min() for i in brancas) / 255.0
+print("[teste] CRITERIO branco: min do max por canal nas linhas %s = %.3f sRGB (>= 0,90 sem bloom: %s)" % (
+    "/".join(str(i + 1) for i in brancas), branco, "OK" if branco >= 0.90 else "FALHA"))
+if 0 <= i_cobre < n_linhas:
+    cobre = medidas[i_cobre][1]
+    print("[teste] CRITERIO cobre (linha %d): R=%d B=%d (R >= 180 e B <= 80: %s)" % (
+        i_cobre + 1, cobre[0], cobre[2], "OK" if cobre[0] >= 180 and cobre[2] <= 80 else "FALHA"))
+print("[teste] CRITERIO linha %d assentada: fundo a %.1f%% da altura (< 70%%: %s)" % (
+    n_linhas, 100 * faixas[-1][1], "OK" if faixas[-1][1] < 0.70 else "FALHA"))
+topo_bloco = faixa_vertical(objs["logo"])[0] if objs.get("logo") is not None else faixas[0][0]
+print("[teste] bloco assentado: do topo da logo a %.1f%% ao fundo da linha %d a %.1f%% da altura (%.1f%% do quadro)" % (
+    100 * topo_bloco, n_linhas, 100 * faixas[-1][1], 100 * (faixas[-1][1] - topo_bloco)))
 
 # O criterio de verdade e o celular: o quadro assentado a 360x640.
 render("celular", Q_ENTRADA[1], CELULAR)
+
+# --- legenda do momento-heroi (revisao 4, item 4a) ---
+# Construida na mesma camera (filha dela), animada DEPOIS da saida da
+# cartela (q110..q150: a cartela ja esta com alfa 0) e renderizada a 360x640
+# no meio do fade in (linha nascendo) e assentada: o criterio e ler
+# "Snapmaker U1" num celular e a linha de 1 px existir a 360 px de largura.
+legenda = mod_cartela.construir_legenda(cena, raiz, cam, "Snapmaker U1")
+Q_LEG = (110, 150)
+mod_cartela.animar_legenda(legenda, *Q_LEG)
+cena.frame_end = Q_LEG[1] + 1
+# DoF como no momento-heroi: f/5,6 com o foco no produto, que esta a ~1,25 m
+# da camera - a legenda a 1,2 m. Medido: com o foco da cartela (2 m, f/2,8)
+# a legenda saia borrada, e isso era o teste, nao o modulo.
+cam_dados.dof.focus_object = None
+cam_dados.dof.focus_distance = 1.25
+cam_dados.dof.aperture_fstop = 5.6
+# Fundo como o topo do quadro do heroi (rose claro, L ~205 medido em q180):
+# a legenda e tinta escura e so se prova sobre ele - sobre o preto da
+# cartela nao apareceria. A rampa do world e substituida por uma cor lisa.
+for lk in list(fundo.inputs["Color"].links):
+    nt.links.remove(lk)
+fundo.inputs["Color"].default_value = tuple(0.75 * c for c in mod_cartela.cor_linear("#F4E6E4")[:3]) + (1.0,)
+em_px_640 = legenda["em"] / (2.0 * legenda["meia_altura"]) * 640
+print("[teste] legenda: fonte %s, em %.4f m a %.2f m = %.1f px em 640 (x-altura ~%.0f px), texto %.3f m = %.0f%% da largura, linha %.2f mm (%.2f px em 640)" % (
+    legenda["fonte"], legenda["em"], legenda["distancia"], em_px_640, 0.52 * em_px_640,
+    legenda["largura_texto"], 100 * legenda["largura_texto"] / (2.0 * legenda["meia_largura"]),
+    legenda["espessura"] * 1000.0, legenda["espessura"] / (2.0 * legenda["meia_altura"]) * 640))
+alfa_leg, _ = mod_cartela._no_alfa(legenda["texto"])
+for q in (Q_LEG[0] - 1, Q_LEG[0] + 4, Q_LEG[0] + 8, Q_LEG[1] - 8, Q_LEG[1], Q_LEG[1] + 1):
+    cena.frame_set(q)
+    bpy.context.view_layer.update()
+    print("[teste] legenda q%d: alfa %.2f  linha escala %.2f  hide_render texto=%s linha=%s" % (
+        q, alfa_leg.default_value, legenda["linha"].scale.x, legenda["texto"].hide_render, legenda["linha"].hide_render))
+render("legenda_nascendo", Q_LEG[0] + 5, CELULAR)
+render("legenda", Q_LEG[0] + 20, CELULAR)
+cena.render.resolution_x, cena.render.resolution_y = LARGURA, ALTURA
 
 # Match cut: mesma coreografia, mas a logo ja inteira em q_ini. As chaves
 # caem nos mesmos quadros da entrada normal (mesmo calendario), entao da para

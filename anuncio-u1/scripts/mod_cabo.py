@@ -28,9 +28,19 @@
 #   O easing entra na PARAMETRIZACAO do arco, nao na chave.
 #
 # - Depois de conectado o cabo sai reto do alivio de tensao por uns
-#   centimetros (o alivio e rigido), cai numa curva de gravidade ate o chao e
-#   segue pelo chao para fora do quadro ('ponto_fora'). Nao ha tomada na
-#   parede: o cabo vem de fora da cena.
+#   centimetros (o alivio e rigido) e, no trajeto 'reto' (padrao desde a
+#   revisao 4), segue RETO ate 'ponto_fora' - na altura da tomada, atras e
+#   para o lado - com uma catenaria leve (parabola de flecha 'catenaria' x
+#   vao: para flecha pequena a catenaria e uma parabola, e um Bezier cubico
+#   com handles na tangente a reproduz exatamente). No trajeto 'arco' (o
+#   antigo) cai numa curva de gravidade ate 'z_chao' e segue por ele para
+#   fora do quadro. Nao ha tomada na parede: o cabo vem de fora da cena.
+#
+# - O plugue tambem VOA reto no trajeto 'reto': parte de 'distancia_reta' m
+#   atras da tomada, na altura dela, alinhado com a normal (a orientacao nao
+#   muda no voo), com o smoothstep cubico de sempre (leve desaceleracao) e o
+#   micro-recuo do clique. O cliente pediu "reto, na horizontal, de fora do
+#   quadro por tras/lado, nao de baixo".
 #
 # ACHADO NA PREVIA (EEVEE Next 4.2), para quem monta o render final: em
 # close (85 mm a 20 cm) o chanfro do corpo do plugue sai CHUVISCADO onde a
@@ -78,6 +88,11 @@ PARAMS_PADRAO = {
     # Lado do qual o cabo vem e para onde sai: +1 = para o lado de
     # (normal x Z), -1 = o oposto.
     "lado": 1.0,
+    # Trajeto (revisao 4): 'reto' = plugue e cabo na horizontal, alinhados
+    # com a normal da tomada; 'arco' = o voo antigo com o cabo pendurado.
+    "trajeto": "reto",
+    "distancia_reta": 1.2,         # m atras da tomada de onde o plugue parte
+    "catenaria": 0.035,            # flecha do cabo conectado, fracao do vao
 }
 
 FPS = 30.0
@@ -400,13 +415,51 @@ def _pontos_cabo(m_plugue, ponto_fora, z_chao, raio, lateral):
     ]
 
 
+def _pontos_cabo_reto(m_plugue, ponto_fora, catenaria):
+    """Os 4 pontos Bezier do cabo RETO (revisao 4): sai do alivio na direcao
+    do plugue por 'reto' metros (o alivio e rigido) e segue ate 'ponto_fora'
+    numa parabola de flecha 'catenaria' x vao, com pontos em 1/3 e 2/3 da
+    corda e handles na tangente (1/9 da corda: e o que faz um Bezier cubico
+    reproduzir a parabola). Devolve [(co, handle_esq, handle_dir), ...]."""
+    frente = (m_plugue.to_3x3() @ Vector((0, 1, 0))).normalized()
+    tras = -frente
+    saida = m_plugue @ Vector((0, -COMPRIMENTO_PLUGUE, 0))
+    p3 = Vector(ponto_fora)
+    vao = (p3 - saida).length
+    reto = min(0.06, 0.15 * vao)
+    q0 = saida + tras * reto
+    corda = p3 - q0
+    if corda.length < 1e-6:
+        corda = tras * 0.01
+    flecha = catenaria * vao
+    baixo = Vector((0.0, 0.0, -1.0))
+
+    def pos(x):
+        return q0 + corda * x + baixo * (4.0 * flecha * x * (1.0 - x))
+
+    def tangente(x):
+        return (corda + baixo * (4.0 * flecha * (1.0 - 2.0 * x))) / 9.0
+
+    p1, p2 = pos(1.0 / 3.0), pos(2.0 / 3.0)
+    t1, t2, t3 = tangente(1.0 / 3.0), tangente(2.0 / 3.0), tangente(1.0)
+    return [
+        (saida, saida - tras * 0.02, saida + tras * reto),
+        (p1, p1 - t1, p1 + t1),
+        (p2, p2 - t2, p2 + t2),
+        (p3, p3 - t3, p3 + corda.normalized() * 0.2),
+    ]
+
+
 def _aplicar_pose(objs, pos, quat, quadro=None):
     """Poe plugue e cabo numa pose; com 'quadro', grava a chave."""
     plugue = objs["plugue"]
     plugue.location = pos
     plugue.rotation_quaternion = quat
     m = _matriz_plugue(pos, quat)
-    pontos = _pontos_cabo(m, objs["ponto_fora"], objs["z_chao"], objs["raio"], objs["lateral"])
+    if objs.get("trajeto", "reto") == "reto":
+        pontos = _pontos_cabo_reto(m, objs["ponto_fora"], objs.get("catenaria", PARAMS_PADRAO["catenaria"]))
+    else:
+        pontos = _pontos_cabo(m, objs["ponto_fora"], objs["z_chao"], objs["raio"], objs["lateral"])
     cd = objs["curva"].data
     bps = cd.splines[0].bezier_points
     for i, (co, he, hd) in enumerate(pontos):
@@ -428,6 +481,20 @@ def _ponto_fora_padrao(ponto, normal, lateral, z_chao, raio):
     p = ponto + normal * 1.7 + lateral * 0.5
     p.z = z_chao + raio
     return p
+
+
+def _ponto_fora_reto(ponto, normal, lateral):
+    """Saida do quadro do cabo reto: 1,7 m atras e 0,45 m para o lado, 5 cm
+    abaixo da tomada (o cabo cai um pouco, nao sobe)."""
+    p = ponto + normal * 1.7 + lateral * 0.45
+    p.z = ponto.z - 0.05
+    return p
+
+
+def _ponto_fora_de(trajeto, ponto, normal, lateral, z_chao, raio):
+    if trajeto == "reto":
+        return _ponto_fora_reto(ponto, normal, lateral)
+    return _ponto_fora_padrao(ponto, normal, lateral, z_chao, raio)
 
 
 # ---------------------------------------------------------------- API
@@ -455,7 +522,7 @@ def construir_cabo(cena, colecao_pai, params=None):
     raio = p["diametro_cabo"] / 2.0
     lateral = _lateral(normal, p["lado"])
     ponto_fora = Vector(p["ponto_fora"]) if p["ponto_fora"] is not None else \
-        _ponto_fora_padrao(ponto, normal, lateral, p["z_chao"], raio)
+        _ponto_fora_de(p["trajeto"], ponto, normal, lateral, p["z_chao"], raio)
 
     objs = {
         "plugue": plugue,
@@ -470,6 +537,9 @@ def construir_cabo(cena, colecao_pai, params=None):
         "lateral": lateral,
         "lado": p["lado"],
         "penetracao": p["penetracao"],
+        "trajeto": p["trajeto"],
+        "distancia_reta": p["distancia_reta"],
+        "catenaria": p["catenaria"],
         "materiais": {"cabo": m_cabo, "plugue": m_plugue, "contato": m_contato},
     }
     _aplicar_pose(objs, ponto + direcao * p["penetracao"], _quat_eixo_y(direcao))
@@ -503,28 +573,43 @@ def _bezier3_tangente(p0, p1, p2, p3, t):
 
 def animar_conexao(objs, ponto_tomada, direcao_entrada, q_ini, q_fim, easing="EASE_IN_OUT",
                    origem=None, ponto_fora=None, z_chao=None, altura_arco=0.18,
-                   distancia_alinhada=0.25, recuo=0.003, quadros_clique=8, penetracao=None):
-    """Plugue vem de fora do quadro (de tras e de baixo, ~1 m) num arco
-    suave, alinha-se com direcao_entrada nos ultimos centimetros e encaixa
-    em ponto_tomada com desaceleracao e um micro-recuo de 'recuo' metros (o
-    clique). O cabo acompanha e termina numa curva de gravidade ate o chao.
-    Uma chave por quadro em plugue e cabo, so nos objetos deste modulo."""
+                   distancia_alinhada=0.25, recuo=0.003, quadros_clique=8, penetracao=None,
+                   trajeto="reto", distancia_reta=None, desvio_lateral=0.0, catenaria=None):
+    """Plugue vem de fora do quadro e encaixa em ponto_tomada com
+    desaceleracao e um micro-recuo de 'recuo' metros (o clique). Uma chave
+    por quadro em plugue e cabo, so nos objetos deste modulo.
+
+    trajeto='reto' (padrao, revisao 4): parte de 'distancia_reta' m atras da
+    tomada (objs['distancia_reta'] se None), na altura dela, mais
+    'desvio_lateral' m para o lado, e voa em LINHA RETA alinhado com
+    direcao_entrada; o cabo conectado segue reto com catenaria
+    ('catenaria' = flecha em fracao do vao; objs['catenaria'] se None).
+    trajeto='arco': o voo antigo - de tras e de baixo (~1 m) num arco
+    suave, alinha-se nos ultimos centimetros, e o cabo termina numa curva de
+    gravidade ate 'z_chao'. 'origem' explicita vale nos dois."""
     ponto = Vector(ponto_tomada)
     direcao = Vector(direcao_entrada).normalized()
     normal = -direcao
     if z_chao is not None:
         objs["z_chao"] = z_chao
+    if catenaria is not None:
+        objs["catenaria"] = catenaria
+    objs["trajeto"] = trajeto
     lateral = _lateral(normal, objs.get("lado", 1.0))
     objs["lateral"] = lateral
     if ponto_fora is not None:
         objs["ponto_fora"] = Vector(ponto_fora)
     else:
-        objs["ponto_fora"] = _ponto_fora_padrao(ponto, normal, lateral, objs["z_chao"], objs["raio"])
+        objs["ponto_fora"] = _ponto_fora_de(trajeto, ponto, normal, lateral, objs["z_chao"], objs["raio"])
     if penetracao is None:
         penetracao = objs.get("penetracao", 0.0)
     assento = ponto + direcao * penetracao
 
-    if origem is None:
+    if origem is None and trajeto == "reto":
+        if distancia_reta is None:
+            distancia_reta = objs.get("distancia_reta", PARAMS_PADRAO["distancia_reta"])
+        origem = assento + normal * distancia_reta + lateral * desvio_lateral
+    elif origem is None:
         # ~0,9 m atras e para o lado, a 2 cm do chao: o plugue "levanta" do
         # chao, onde o cabo ja estava jogado.
         origem = ponto + normal * 0.85 + lateral * 0.30
@@ -533,10 +618,15 @@ def animar_conexao(objs, ponto_tomada, direcao_entrada, q_ini, q_fim, easing="EA
 
     # Arco: Bezier cubico. O penultimo ponto de controle esta na reta da
     # tomada, entao a tangente final E direcao_entrada: o alinhamento sai da
-    # geometria, sem blend de angulo.
-    c1 = origem + (ponto - origem) * 0.45
-    c1.z = max(origem.z, ponto.z) + altura_arco
-    c2 = assento + normal * distancia_alinhada
+    # geometria, sem blend de angulo. No trajeto reto os controles ficam na
+    # propria reta: o mesmo Bezier vira a reta origem -> assento.
+    if trajeto == "reto":
+        c1 = origem + (assento - origem) * (1.0 / 3.0)
+        c2 = origem + (assento - origem) * (2.0 / 3.0)
+    else:
+        c1 = origem + (ponto - origem) * 0.45
+        c1.z = max(origem.z, ponto.z) + altura_arco
+        c2 = assento + normal * distancia_alinhada
 
     q_toque = max(q_ini + 1, q_fim - quadros_clique)
     q_ant = None
@@ -545,16 +635,22 @@ def animar_conexao(objs, ponto_tomada, direcao_entrada, q_ini, q_fim, easing="EA
             u = (f - q_ini) / float(q_toque - q_ini)
             s = _ease(u, easing)
             pos = _bezier3(origem, c1, c2, assento, s)
-            tang = _bezier3_tangente(origem, c1, c2, assento, s)
-            # O plugue segue a tangente do voo, mas decola deitado: nos
-            # primeiros 20% a inclinacao entra aos poucos, senao ele sai do
-            # chao apontando para cima como um foguete.
-            eixo = Vector((tang.x, tang.y, tang.z * min(1.0, u / 0.2)))
-            if eixo.length < 1e-6:
-                eixo = direcao
-            # Perto da tomada a tangente ja e a direcao; misturar garante o
-            # alinhamento exato mesmo com easing que zera a velocidade.
-            eixo = eixo.normalized().lerp(direcao, s * s).normalized()
+            if trajeto == "reto":
+                # Alinhado com a normal o voo inteiro; com desvio lateral a
+                # reta nao e a normal, e o plugue vira da reta para a normal
+                # em s^2 - sem desvio as duas coincidem e nada gira.
+                eixo = (assento - origem).normalized().lerp(direcao, s * s).normalized()
+            else:
+                tang = _bezier3_tangente(origem, c1, c2, assento, s)
+                # O plugue segue a tangente do voo, mas decola deitado: nos
+                # primeiros 20% a inclinacao entra aos poucos, senao ele sai
+                # do chao apontando para cima como um foguete.
+                eixo = Vector((tang.x, tang.y, tang.z * min(1.0, u / 0.2)))
+                if eixo.length < 1e-6:
+                    eixo = direcao
+                # Perto da tomada a tangente ja e a direcao; misturar garante
+                # o alinhamento exato mesmo com easing que zera a velocidade.
+                eixo = eixo.normalized().lerp(direcao, s * s).normalized()
         else:
             # Clique: encaixou, recua 'recuo' e assenta. Meio seno = para no
             # fim sem solavanco.
@@ -598,19 +694,24 @@ def _suavizar(objs, q_ini, q_fim):
             fc.update()
 
 
-def posicionar_repouso(objs, ponto_tomada, direcao_entrada, ponto_fora=None, z_chao=None, penetracao=None):
+def posicionar_repouso(objs, ponto_tomada, direcao_entrada, ponto_fora=None, z_chao=None, penetracao=None,
+                       trajeto=None):
     """Sem animacao: plugue encaixado e cabo em repouso (para os beats em que
-    o cabo ja esta conectado e a coreografia so move o U1)."""
+    o cabo ja esta conectado e a coreografia so move o U1). 'trajeto' None
+    mantem o do dict."""
     ponto = Vector(ponto_tomada)
     direcao = Vector(direcao_entrada).normalized()
     if z_chao is not None:
         objs["z_chao"] = z_chao
+    if trajeto is not None:
+        objs["trajeto"] = trajeto
     lateral = _lateral(-direcao, objs.get("lado", 1.0))
     objs["lateral"] = lateral
     if ponto_fora is not None:
         objs["ponto_fora"] = Vector(ponto_fora)
     else:
-        objs["ponto_fora"] = _ponto_fora_padrao(ponto, -direcao, lateral, objs["z_chao"], objs["raio"])
+        objs["ponto_fora"] = _ponto_fora_de(objs.get("trajeto", "reto"), ponto, -direcao, lateral,
+                                            objs["z_chao"], objs["raio"])
     if penetracao is None:
         penetracao = objs.get("penetracao", 0.0)
     _aplicar_pose(objs, ponto + direcao * penetracao, _quat_eixo_y(direcao))

@@ -1,8 +1,11 @@
 # Modulo CARTELA do anuncio do Snapmaker U1.
 #
-# Quatro linhas de texto, estilo Apple (sans fina, tracking largo, branca,
-# centrada, hierarquia clara) e, acima delas, a logo da EnginePrint num plano
-# com alfa. So definicoes aqui - nada roda no import. Quem integra e
+# Cinco linhas de texto (revisao 4: "Snapmaker U1" entrou logo abaixo da
+# marca), estilo Apple (sans fina, tracking largo, branca, centrada,
+# hierarquia clara) e, acima delas, a logo da EnginePrint num plano com
+# alfa. Desde a revisao 4 o modulo tambem faz a LEGENDA do momento-heroi
+# (construir_legenda / apontar_legenda / animar_legenda, no fim do arquivo).
+# So definicoes aqui - nada roda no import. Quem integra e
 # mod_coreografia.py; quem prova este modulo sozinho e teste_cartela.py.
 #
 # DECISOES:
@@ -120,28 +123,37 @@ FONTES_FORTES = (
 )
 
 PARAMS_PADRAO = {
+    # Revisao 4 (item 4b): "Snapmaker U1" logo abaixo da marca, com tamanho
+    # entre a marca e as linhas seguintes e tracking largo - e o nome do
+    # produto, que ate entao nao aparecia escrito em lugar nenhum.
     "textos": (
         "EnginePrint",
+        "Snapmaker U1",
         "qualidade excepcional",
         "13 unidades restantes",
         "compre em engineprint.com.br",
     ),
     # Tamanho relativo (em) de cada linha; o absoluto sai da medicao. A marca
     # a 1,3x na fonte regular substitui o bold (hierarquia por tamanho); como
-    # ela passou a ser a linha mais larga e dita a escala, a linha 4 subiu de
-    # 0,42 para 0,46 para nao cair abaixo de ~11 px de x-altura num celular
-    # de 640 px (medido: 10 px com 0,42).
-    "tamanhos": (1.3, 0.62, 0.62, 0.46),
+    # ela passou a ser a linha mais larga e dita a escala, a ultima linha
+    # subiu de 0,42 para 0,46 para nao cair abaixo de ~11 px de x-altura num
+    # celular de 640 px (medido: 10 px com 0,42).
+    "tamanhos": (1.3, 0.75, 0.62, 0.62, 0.46),
     # Distancia entre a linha de base de uma linha e a de baixo, em fracao do
-    # tamanho da linha de CIMA - o que mantem a proporcao quando escala.
-    "entrelinhas": (1.30, 1.45, 1.80),
+    # tamanho da linha de CIMA - o que mantem a proporcao quando escala. A
+    # primeira e a menor: a linha do produto pertence a marca. Revisao 4,
+    # medido no teste com a quinta linha: com (1,30, 1,40, 1,45, 1,80), logo
+    # 0,30 e subida 0,18 o bloco ia de 8,6% a 71,2% da altura (criterio da
+    # ultima linha: < 70%); estas, logo 0,27 e subida 0,20 o deixam entre
+    # ~12% e ~69%.
+    "entrelinhas": (1.22, 1.32, 1.45, 1.70),
     # Qual linha usa o slot 'fonte_forte' (a marca). Com as listas padrao ele
     # resolve para a mesma fonte regular/light; o slot existe para o cliente
     # dar outra fonte so para a marca.
-    "fortes": (True, False, False, False),
+    "fortes": (True, False, False, False, False),
     "cor_texto": "#FFFFFF",
-    "cor_destaque": "#C8641F",     # cobre da logo, na linha 3
-    "linha_destaque": 3,           # None = tudo branco
+    "cor_destaque": "#C8641F",     # cobre da logo, na linha das unidades
+    "linha_destaque": 4,           # None = tudo branco
     # Forcas MEDIDAS no render (ver cabecalho): 2,4 e o branco mais branco
     # sem bloom (0,92 sRGB); o AgX empalidece cor saturada quando a forca
     # sobe, entao o cobre fica em 2,0 (R 229 / B 73, dentro de R >= 180 e
@@ -159,14 +171,14 @@ PARAMS_PADRAO = {
     # inicial e um TETO: medido, 0,25 em poe a linha mais larga a 1,22 da
     # largura do quadro (cortada dos dois lados) - por isso cada linha recebe
     # o maior tracking inicial que ainda cabe no quadro (ver construir_cartela).
-    "tracking": (0.08, 0.12, 0.12, 0.12),
+    "tracking": (0.08, 0.22, 0.12, 0.12, 0.12),
     "tracking_inicial": 0.25,
     # Folga da borda ao limitar o tracking inicial: a largura cresce um pouco
     # mais que linearmente com o space_character (medido 1,356x para 1,33x).
     "folga_borda": 0.94,
     "com_logo": True,
     "logo": "logo_engineprint.png",   # relativo a assets/; ou caminho absoluto
-    "largura_logo": 0.30,             # do plano, em fracao da largura do bloco
+    "largura_logo": 0.27,             # do plano, em fracao da largura do bloco (era 0,30; revisao 4, 5 linhas)
     "espaco_logo": 0.35,              # entre a base da logo e o topo da linha 1, em fracao do tamanho da linha 1
     # Camera do projeto, so para derivar largura_max (None = derivar).
     "largura_max": None,
@@ -180,9 +192,10 @@ PARAMS_PADRAO = {
     "posicao": (0.0, 0.0, 1.0),
     "rotacao": (math.pi / 2.0, 0.0, 0.0),
     # Quanto posicionar_cartela sobe o bloco no quadro (m, no 'para cima' da
-    # camera): a 2 m, 0,18 m = 8,7% da altura - tira a linha 4 da transicao
-    # escuro -> rose e da faixa de legendas do Reels.
-    "subida": 0.18,
+    # camera): a 2 m, 0,18 m = 8,7% da altura - tira a ultima linha da
+    # transicao escuro -> rose e da faixa de legendas do Reels. 0,20 desde a
+    # quinta linha (revisao 4).
+    "subida": 0.20,
 }
 
 FPS = 30.0
@@ -743,3 +756,207 @@ def animar_cartela_saida(objs, q_ini, q_fim, easing="EASE_IN_OUT", deslocamento=
         _suavizar(obj, q_ini, q_fim, easing)
         _, nt = _no_alfa(obj)
         _suavizar(nt, q_ini, q_fim, easing)
+
+
+# ---------------------------------------------------------------- legenda
+#
+# Legenda fina ao lado do produto (revisao 4, item 4a): um texto na
+# tipografia da cartela e uma linha indicadora de 1 px, os dois FILHOS DA
+# CAMERA num plano a 'distancia' dela - posicoes em fracoes do quadro, nao
+# em metros, para quem integra falar em "terco superior esquerdo". A linha
+# e um quad de comprimento unitario num Empty 'pivo' com origem na partida:
+# a rotacao e a escala X do pivo apontam e esticam (apontar_legenda, por
+# quadro se preciso, porque o produto e a camera se movem), e a escala X do
+# proprio quad e o "nascer do texto" da entrada (animar_legenda) - os dois
+# multiplicam sem brigar. A espessura fica em Y, que nenhum dos dois escala.
+
+PARAMS_LEGENDA = {
+    "distancia": 1.2,              # m a frente da camera (perto do foco do heroi, 1,25: fica nitida com f/5,6)
+    # (fx, fy) do inicio da linha de base do texto, em fracoes do quadro
+    # com (0, 0) no canto superior esquerdo; com 'RIGHT' e o fim da base.
+    # Onde, e por que TINTA ESCURA e nao branca. MEDIDO no quadro do heroi
+    # (q180, luminancia media por regiao do render): o terco superior
+    # inteiro e o rose claro, L 190-209, menos uma faixa de 20% da largura
+    # a esquerda (L 52-89) onde "Snapmaker U1" nao cabe legivel; o terco
+    # inferior escuro e a faixa de legendas do Reels. Texto branco (L 235)
+    # sobre L 200 e contraste 1,15:1 - nao le. Entao a legenda e tinta
+    # escura no topo DIREITO, acima das pontas dos cabecotes (que vao de 36%
+    # a 70% da largura e de 19% a 42% da altura): base em 15% da altura,
+    # alinhada a direita em 95,5%, e a linha desce pela direita dos
+    # cabecotes ate o canto superior direito do corpo, sobre L >= 190 no
+    # caminho todo. 'cor_texto' = "#FFFFFF" e 'forca_texto' = 2,4 devolvem
+    # o branco da cartela se o fundo do heroi mudar.
+    "posicao": (0.955, 0.15),
+    "alinhamento": "RIGHT",
+    "tamanho": 0.026,              # em, fracao da ALTURA do quadro: 50 px em 1920, 17 em 640 (x-altura ~9)
+    "tracking": 0.14,
+    # 2 px em 1080x1920: 1 px, como pedido, some na previa de 360 px (0,33
+    # px) e ninguem consegue conferir que existe; 2 ainda e fio de cabelo.
+    "espessura_px": 2.0,
+    "altura_render": 1920,
+    # De onde a linha parte, em fracoes de em a partir da ponta da base do
+    # texto (x para dentro do texto, y para BAIXO).
+    "partida_linha": (0.15, 0.50),
+    # Mira padrao (fx, fy) - a coreografia calcula a dela pelo produto; e o
+    # que o teste do modulo usa. 'mira' tambem guarda, para a coreografia,
+    # (afastamento horizontal para fora do envelope do produto, fracao da
+    # altura do envelope abaixo do topo dele - ~1/3 e o aro, o topo sao as
+    # pontas dos cabecotes).
+    "alvo": (0.92, 0.42),
+    "mira": (0.02, 0.35),
+    "cor_texto": "#0B0B0E",        # tinta escura sobre o rose (ver acima); emissao sem luz = a propria cor
+    "forca_texto": 1.0,
+    "fonte": None,
+    "lente": 35.0,
+    "sensor": 36.0,
+    "proporcao": 9.0 / 16.0,
+}
+
+NOME_LEGENDA = NOME + ".legenda"
+
+
+def _limpar_legenda():
+    """Apaga os objetos e materiais da legenda de uma rodada anterior: ela
+    pode ser construida sem a cartela (teste), entao nao conta com o
+    limpar_colecao do construtor da cartela."""
+    for obj in list(bpy.data.objects):
+        if obj.name == NOME_LEGENDA or obj.name.startswith(NOME_LEGENDA + "."):
+            dados = obj.data
+            bpy.data.objects.remove(obj, do_unlink=True)
+            if dados is not None and dados.users == 0:
+                if isinstance(dados, bpy.types.Curve):
+                    bpy.data.curves.remove(dados)
+                elif isinstance(dados, bpy.types.Mesh):
+                    bpy.data.meshes.remove(dados)
+    for mat in list(bpy.data.materials):
+        if mat.name.startswith(NOME_LEGENDA) and mat.users == 0:
+            bpy.data.materials.remove(mat)
+
+
+def quadro_para_plano(objs, fx, fy):
+    """(fx, fy) do quadro (0,0 = canto superior esquerdo, 1,1 = inferior
+    direito) -> ponto no plano da legenda (x para a direita, y para cima)."""
+    return Vector(((fx - 0.5) * 2.0 * objs["meia_largura"], (0.5 - fy) * 2.0 * objs["meia_altura"], 0.0))
+
+
+def construir_legenda(cena, colecao_pai, camera, texto, params=None):
+    """Cria 'cartela.legenda' (Empty filho da camera a 'distancia'),
+    'cartela.legenda.texto' (TEXT, emissao), 'cartela.legenda.pivo' e
+    'cartela.legenda.linha' (quad de 1 px) na sub-colecao 'cartela'. Tudo
+    nasce em hide_render: so animar_legenda mostra. Devolve objetos e
+    medidas; a linha ja aponta para params['alvo']."""
+    p = dict(PARAMS_LEGENDA)
+    if params:
+        p.update(params)
+    _limpar_legenda()
+    col = bpy.data.collections.get(NOME)
+    if col is None:
+        col = _colecao(cena, colecao_pai, NOME)
+    meia_alt = p["distancia"] * (p["sensor"] / 2.0) / p["lente"]
+    meia_larg = meia_alt * p["proporcao"]
+    em = p["tamanho"] * 2.0 * meia_alt
+
+    raiz = bpy.data.objects.new(NOME_LEGENDA, None)
+    raiz.empty_display_type = "PLAIN_AXES"
+    raiz.empty_display_size = 0.05
+    col.objects.link(raiz)
+    raiz.parent = camera
+    raiz.matrix_parent_inverse = Matrix.Identity(4)
+    raiz.matrix_basis = Matrix.Translation(Vector((0.0, 0.0, -p["distancia"])))
+    objs = {"raiz": raiz, "distancia": p["distancia"], "meia_largura": meia_larg, "meia_altura": meia_alt,
+            "em": em, "params": p}
+
+    fonte = _carregar_fonte(p["fonte"], FONTES_FINAS)
+    curva = bpy.data.curves.new(NOME_LEGENDA + ".texto", "FONT")
+    curva.body = texto
+    if fonte is not None:
+        curva.font = fonte
+    curva.size = em
+    curva.space_character = _tracking_para_espacamento(p["tracking"])
+    curva.align_x = p["alinhamento"]
+    curva.align_y = "TOP_BASELINE"
+    curva.resolution_u = 12
+    curva.fill_mode = "BOTH"
+    curva.materials.append(_material_texto(NOME_LEGENDA + ".texto", p["cor_texto"], p["forca_texto"]))
+    obj_texto = bpy.data.objects.new(NOME_LEGENDA + ".texto", curva)
+    col.objects.link(obj_texto)
+    obj_texto.parent = raiz
+    obj_texto.location = quadro_para_plano(objs, *p["posicao"])
+    obj_texto.hide_render = True
+    objs["texto"] = obj_texto
+
+    sinal = -1.0 if p["alinhamento"] == "RIGHT" else 1.0
+    partida = obj_texto.location + Vector((sinal * p["partida_linha"][0] * em, -p["partida_linha"][1] * em, 0.0))
+    pivo = bpy.data.objects.new(NOME_LEGENDA + ".pivo", None)
+    pivo.empty_display_type = "PLAIN_AXES"
+    pivo.empty_display_size = 0.01
+    col.objects.link(pivo)
+    pivo.parent = raiz
+    pivo.location = partida
+    objs["pivo"] = pivo
+    objs["partida"] = Vector(partida)
+
+    espessura = p["espessura_px"] * (2.0 * meia_alt) / float(p["altura_render"])
+    malha = bpy.data.meshes.new(NOME_LEGENDA + ".linha")
+    h = espessura / 2.0
+    malha.from_pydata([(0.0, -h, 0.0), (1.0, -h, 0.0), (1.0, h, 0.0), (0.0, h, 0.0)], [], [(0, 1, 2, 3)])
+    malha.update()
+    malha.materials.append(_material_texto(NOME_LEGENDA + ".linha", p["cor_texto"], p["forca_texto"]))
+    linha = bpy.data.objects.new(NOME_LEGENDA + ".linha", malha)
+    col.objects.link(linha)
+    linha.parent = pivo
+    linha.hide_render = True
+    objs["linha"] = linha
+    objs["espessura"] = espessura
+    objs["fonte"] = fonte.name if fonte else "Bfont"
+    apontar_legenda(objs, p["alvo"])
+    bpy.context.view_layer.update()
+    objs["largura_texto"] = _largura(obj_texto)
+    return objs
+
+
+def apontar_legenda(objs, alvo, quadro=None):
+    """Aponta a linha da partida (junto ao texto) ate 'alvo' (fx, fy do
+    quadro): rotacao e comprimento no pivo. Com 'quadro' grava a chave -
+    quem mira por quadro grava uma por quadro, e a interpolacao nao importa."""
+    pivo = objs["pivo"]
+    d = quadro_para_plano(objs, *alvo) - objs["partida"]
+    pivo.rotation_euler = (0.0, 0.0, math.atan2(d.y, d.x))
+    pivo.scale = (max(d.length, 1e-4), 1.0, 1.0)
+    if quadro is not None:
+        pivo.keyframe_insert("rotation_euler", index=2, frame=quadro)
+        pivo.keyframe_insert("scale", index=0, frame=quadro)
+
+
+def _chave_visivel(obj, quadro, visivel):
+    obj.hide_render = not visivel
+    obj.keyframe_insert("hide_render", frame=quadro)
+
+
+def animar_legenda(objs, q_in, q_out, quadros_fade=8, atraso_linha=3, easing="EASE_IN_OUT"):
+    """Texto: fade in (alfa 0 -> 1) em 'quadros_fade' a partir de q_in, fica,
+    fade out nos 'quadros_fade' antes de q_out. A linha nasce do texto
+    ('atraso_linha' depois, escala X 0 -> 1 no mesmo tempo do fade) e some
+    junto. Fora de [q_in, q_out] os dois ficam em hide_render: a raiz e
+    filha da camera e apareceria em TODO plano, inclusive na cartela."""
+    texto, linha = objs["texto"], objs["linha"]
+    fade = max(1, int(quadros_fade))
+    for obj in (texto, linha):
+        if q_in > 1:
+            _chave_visivel(obj, 1, False)
+        _chave_visivel(obj, q_in, True)
+        _chave_visivel(obj, q_out + 1, False)
+    for q_, a in ((q_in, 0.0), (q_in + fade, 1.0), (q_out - fade, 1.0), (q_out, 0.0)):
+        _chave_alfa(texto, q_, a)
+    a = q_in + max(0, int(atraso_linha))
+    b = min(a + fade, max(a + 1, q_out - fade))
+    for q_, s in ((a, 0.0), (b, 1.0)):
+        linha.scale = (s, 1.0, 1.0)
+        linha.keyframe_insert("scale", index=0, frame=q_)
+    for q_, al in ((a, 1.0), (q_out - fade, 1.0), (q_out, 0.0)):
+        _chave_alfa(linha, q_, al)
+    for obj in (texto, linha):
+        _suavizar(obj, q_in, q_out, easing)
+        _, nt = _no_alfa(obj)
+        _suavizar(nt, q_in, q_out, easing)
+    objs["quadros"] = (q_in, q_out)

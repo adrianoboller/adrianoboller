@@ -73,7 +73,12 @@ onde procurou e o que falta. Rodar de novo não duplica nada.
 - **Sem chão:** tudo flutua; a caixa entra e sai por baixo do quadro; a
   espuma sobe pela boca e sai do quadro; o cabo pende.
 - **Beat 7:** a câmera mergulha no centro do topo da caixa (fita) e a logo
-  nasce na cartela.
+  nasce na cartela, agora com cinco linhas: a segunda é **Snapmaker U1**.
+- **Revisão 4:** a caixa entra pairando (giro de 90° em todo o beat, no
+  máximo 1,5° por quadro, com balanço de 2,5 cm que continua depois de
+  parar); a espuma é packing peanut creme‑amarelo em S, 96 flocos; o cabo
+  vem reto na horizontal, alinhado com a tomada; "Snapmaker U1" aparece
+  como legenda fina ao lado da impressora na revelação e na cartela.
 - **Linha "13 unidades restantes" em cobre**, cor da logo.
 
 ## Pipeline daqui (para quem continuar)
