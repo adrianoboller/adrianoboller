@@ -4540,7 +4540,7 @@ function gerirTabelasAtual() {
 /** A grade de gestao: uma linha por tabela, com o que ela pesa. */
 async function gerirTabelas(db) {
   est.database = db;
-  folha(`Tabelas de ${db}`, txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
+  folha(preencher(txt("tela.tt_tabelas_de","Tabelas de {db}"), {db}), txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
 
   const t = await api("tabelas", { database: db });
   const nomes = t.tabelas || [];
@@ -4554,8 +4554,8 @@ async function gerirTabelas(db) {
     } catch (err) { return { nome, erro:String(err) }; }
   }));
 
-  folha(`Tabelas de ${db}`,
-    `${nomes.length} ${nomes.length === 1 ? "tabela" : "tabelas"} · clique numa linha para gerir`,
+  folha(preencher(txt("tela.tt_tabelas_de","Tabelas de {db}"), {db}),
+    preencher(txt("tela.st_n_tabelas_clique_gerir","{n} tabela(s) · clique numa linha para gerir"), {n: nomes.length}),
     `<div class="acoes">
        <button class="botao" id="btNovaTab">✚ Nova tabela…</button>
        <button class="botao secundario" id="btColar" ${est.copia ? "" : "disabled"}>
@@ -4609,7 +4609,7 @@ async function gerirTabelas(db) {
 async function gerirTabela(db, tab) {
   est.atual = { db, tab };
   est.esquemaAtual = null;
-  folha(`Gestão de ${tab}`, `${db} · carregando…`, `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
+  folha(preencher(txt("tela.tt_gestao_de","Gestão de {tab}"), {tab}), preencher(txt("tela.st_db_carregando","{db} · carregando…"), {db}), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
 
   let e = null, erro = "";
   try { e = await api("esquema", { database: db, tabela: tab }); }
@@ -4675,7 +4675,7 @@ async function gerirTabela(db, tab) {
      () => excluirTabelaDe(db, tab)],
   ];
 
-  folha(`Gestão de ${tab}`, `${db} · o que se faz com esta tabela`,
+  folha(preencher(txt("tela.tt_gestao_de","Gestão de {tab}"), {tab}), preencher(txt("tela.st_o_que_se_faz_tabela","{db} · o que se faz com esta tabela"), {db}),
     resumo +
     `<div class="ops">${OPS.map(([k, ico, rot, diz], i) =>
       `<button class="op${k === "excluir" ? " perigo" : ""}" data-op="${i}">
@@ -4752,7 +4752,7 @@ async function verParticoes(db, tab) {
   const pag = e.paginacao;
 
   if (!pag) {
-    folha(`Partições de ${tab}`, `${db} · esta tabela não é paginada`,
+    folha(preencher(txt("tela.tt_particoes_de","Partições de {tab}"), {tab}), preencher(txt("tela.st_tabela_nao_paginada","{db} · esta tabela não é paginada"), {db}),
       `<div class="nota">
          <p><strong>Arquivo único.</strong> Tudo mora em
          <code>${esc(tab)}.reg</code>, sem sufixo numérico.</p>
@@ -4773,7 +4773,7 @@ async function verParticoes(db, tab) {
   const porPeriodo = pag.modo && pag.modo !== "quantidade" && !porLetra;
   const gb = n => (n / (1024 * 1024 * 1024)).toFixed(2);
   const comLinhas = vols.filter(v => v.usados > 0).length;
-  folha(`Partições de ${tab}`,
+  folha(preencher(txt("tela.tt_particoes_de","Partições de {tab}"), {tab}),
     `${db} · ${porLetra
         ? `${comLinhas} de ${vols.length} baldes com linha · pela primeira letra de ${pag.coluna}`
         : `${vols.length} volume(s) do .reg · ${
@@ -5365,18 +5365,18 @@ function ligarNovaTabela(db) {
 async function verSequencias(db) {
   db = db || databaseCorrente();
   if (!db) return avisar(txt("tela.g_sem_database_escolhido","nenhum database escolhido"), true);
-  folha(`Sequências de ${db}`, txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
+  folha(preencher(txt("tela.tt_sequencias_de","Sequências de {db}"), {db}), txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
 
   const r = await api("sequencias", { database: db });
   const linhas = r.sequencias || [];
   const com = linhas.filter(x => x.tem_sequencia);
 
-  folha(`Sequências de ${db}`,
-    `${com.length} de ${linhas.length} tabela(s) têm coluna Sequence`,
+  folha(preencher(txt("tela.tt_sequencias_de","Sequências de {db}"), {db}),
+    preencher(txt("tela.st_com_seq_de_total","{com} de {total} tabela(s) têm coluna Sequence"), {com: com.length, total: linhas.length}),
     `<div class="fichas">
-       ${ficha(linhas.length, "tabelas")}
-       ${ficha(com.length, "com contador")}
-       ${ficha(com.filter(x => x.proxima === 0).length, "nunca usadas", "o primeiro sai 1")}
+       ${ficha(linhas.length, txt("tela.fc_tabelas","tabelas"))}
+       ${ficha(com.length, txt("tela.fc_com_contador","com contador"))}
+       ${ficha(com.filter(x => x.proxima === 0).length, txt("tela.fc_nunca_usadas","nunca usadas"), "o primeiro sai 1")}
      </div>` +
     `<div id="gradeSeq"></div>` +
 
@@ -5433,12 +5433,9 @@ async function verSequencias(db) {
 
 async function ajustarSequencia(db, tabela, atual) {
   const digitado = prompt(
-    `Contador de ${tabela}\n\n`
-    + `O próximo número que a sequência vai dar é ${atual}.\n\n`
-    + `ATENÇÃO ao baixar: se já houver número gravado na faixa, a próxima\n`
-    + `inclusão repete, e um índice único recusa — o erro aparece longe\n`
-    + `de quem causou.\n\n`
-    + `Novo valor (0 zera, e o primeiro sai 1):`,
+    preencher(txt("tela.g_prompt_contador_titulo","Contador de {tabela}\n\nO próximo número que a sequência vai dar é {atual}."), {tabela, atual})
+    + txt("tela.g_prompt_contador_atencao","\n\nATENÇÃO ao baixar: se já houver número gravado na faixa, a próxima inclusão repete, e um índice único recusa — o erro aparece longe de quem causou.")
+    + txt("tela.g_prompt_contador_novo_valor","\n\nNovo valor (0 zera, e o primeiro sai 1):"),
     String(atual));
   if (digitado === null) return;
   const n = Number(digitado.trim());
@@ -5812,12 +5809,12 @@ async function pivotPasso3() {
 
   $("#pvCorpo").innerHTML = `
     <div class="fichas">
-      ${ficha(r.rotulos_linha.length, "linhas")}
-      ${ficha(r.rotulos_coluna.length, "colunas")}
-      ${ficha(agRot, "resumo", r.valor || "linhas")}
-      ${ficha(Number(r.lidas).toLocaleString("pt-BR"), "linhas lidas")}
-      ${ficha(Number(r.consideradas).toLocaleString("pt-BR"), "consideradas", "sem os nulos")}
-      ${ficha(r.total ?? "—", "total geral")}
+      ${ficha(r.rotulos_linha.length, txt("tela.fc_linhas","linhas"))}
+      ${ficha(r.rotulos_coluna.length, txt("tela.fc_colunas","colunas"))}
+      ${ficha(agRot, txt("tela.fc_resumo","resumo"), r.valor || "linhas")}
+      ${ficha(Number(r.lidas).toLocaleString("pt-BR"), txt("tela.fc_linhas_lidas","linhas lidas"))}
+      ${ficha(Number(r.consideradas).toLocaleString("pt-BR"), txt("tela.fc_consideradas","consideradas"), "sem os nulos")}
+      ${ficha(r.total ?? "—", txt("tela.fc_total_geral","total geral"))}
     </div>
 
     ${r.juncoes && r.juncoes.length ? `<p class="leg">Juntou com ${
@@ -5889,7 +5886,7 @@ async function pivotPasso3() {
    tamanho do volume desta tabela" precisa saber que a resposta e "recriando". */
 
 async function verConfigTabela(db, tab) {
-  folha(`Configurações de ${tab}`, `${db} · carregando…`, `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
+  folha(preencher(txt("tela.tt_config_de","Configurações de {tab}"), {tab}), preencher(txt("tela.st_db_carregando","{db} · carregando…"), {db}), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
 
   const [e, c, mem, quem] = await Promise.all([
     api("esquema", { database: db, tabela: tab }),
@@ -5904,14 +5901,14 @@ async function verConfigTabela(db, tab) {
   const seg = c.seguranca || {};
   const proibida = (seg.bases_proibidas || []).includes(db);
 
-  folha(`Configurações de ${tab}`, `${db} · o que vale para esta tabela`,
+  folha(preencher(txt("tela.tt_config_de","Configurações de {tab}"), {tab}), preencher(txt("tela.st_o_que_vale_tabela","{db} · o que vale para esta tabela"), {db}),
     `<div class="fichas">
-       ${ficha(e.registros, "registros")}
-       ${ficha(e.slots, "slots", "inclui excluídos")}
-       ${ficha((e.colunas || []).length, "colunas")}
-       ${ficha(pk ? pk.nome : "—", "chave primária", pk && pk.composto ? "composta" : "")}
-       ${ficha(pag ? (pag.modo === "quantidade" ? "por faixa" : pag.modo) : "arquivo único", "partição")}
-       ${ficha(naRam ? "sim" : "não", "carregada na RAM")}
+       ${ficha(e.registros, txt("tela.fc_registros","registros"))}
+       ${ficha(e.slots, txt("tela.col_slots","slots"), "inclui excluídos")}
+       ${ficha((e.colunas || []).length, txt("tela.fc_colunas","colunas"))}
+       ${ficha(pk ? pk.nome : "—", txt("tela.col_chave_primaria","chave primária"), pk && pk.composto ? "composta" : "")}
+       ${ficha(pag ? (pag.modo === "quantidade" ? "por faixa" : pag.modo) : "arquivo único", txt("tela.col_particao","partição"))}
+       ${ficha(naRam ? "sim" : "não", txt("tela.fc_carregada_na_ram","carregada na RAM"))}
      </div>
 
      <h3 class="secao">Geometria — decidida na criação, não muda</h3>
@@ -6085,49 +6082,49 @@ async function verConfigTabela(db, tab) {
 /** O que cada item de gestao do database faz -- ou por que ainda nao faz. */
 function itensDoDatabase(db) {
   return [
-    { g:"dados", ico:"▦", rot:"Tabelas",
-      diz:"As tabelas deste banco e as oito operações sobre cada uma.",
+    { g:"dados", ico:"▦", rot:"Tabelas", txt:"tela.mi_tabelas",
+      diz:"As tabelas deste banco e as oito operações sobre cada uma.", dizTxt:"tela.dbit_tabelas_diz",
       faz:() => gerirTabelas(db) },
     { g:"dados", ico:"▤", rot:"SysTables",
-      diz:"O catálogo de tabelas em forma de dado: registros, chaves, partição.",
+      diz:"O catálogo de tabelas em forma de dado: registros, chaves, partição.", dizTxt:"tela.dbit_systables_diz",
       faz:() => verSysTables(db) },
     { g:"dados", ico:"☰", rot:"SysColumns",
-      diz:"O dicionário de dados: cada campo com caption, máscara, tipo e papel na chave.",
+      diz:"O dicionário de dados: cada campo com caption, máscara, tipo e papel na chave.", dizTxt:"tela.dbit_syscolumns_diz",
       faz:() => verSysColumns(db) },
-    { g:"dados", ico:"▦", rot:"Tabela dinâmica…",
-      diz:"Cruza uma tabela por dois eixos e soma no servidor — com junção a outras tabelas.",
+    { g:"dados", ico:"▦", rot:"Tabela dinâmica…", txt:"tela.mi_pivot",
+      diz:"Cruza uma tabela por dois eixos e soma no servidor — com junção a outras tabelas.", dizTxt:"tela.dbit_pivot_diz",
       faz:() => telaPivot(db) },
-    { g:"dados", ico:"№", rot:"Sequências",
-      diz:"O contador de cada tabela do banco, e o ajuste para zerar ou pular uma faixa.",
+    { g:"dados", ico:"№", rot:"Sequências", txt:"tela.dbit_sequencias",
+      diz:"O contador de cada tabela do banco, e o ajuste para zerar ou pular uma faixa.", dizTxt:"tela.dbit_sequencias_diz",
       faz:() => verSequencias(db) },
-    { g:"dados", ico:"⧉", rot:"Copiar tabela…",
-      diz:"Copia uma tabela para outro banco ou schema, byte a byte.",
+    { g:"dados", ico:"⧉", rot:"Copiar tabela…", txt:"tela.dbit_copiar_tabela",
+      diz:"Copia uma tabela para outro banco ou schema, byte a byte.", dizTxt:"tela.dbit_copiar_tabela_diz",
       faz:() => telaCopiarColar(db) },
 
-    { g:"config", ico:"⚙", rot:"Configurações do banco",
-      diz:"Onde ele mora, quantos schemas e tabelas, e o que herda do servidor.",
+    { g:"config", ico:"⚙", rot:"Configurações do banco", txt:"tela.dbit_config_banco",
+      diz:"Onde ele mora, quantos schemas e tabelas, e o que herda do servidor.", dizTxt:"tela.dbit_config_banco_diz",
       faz:() => verConfigBanco(db) },
-    { g:"config", ico:"⛨", rot:"Diretivas de acesso ao banco",
-      diz:"Quem alcança este banco e com que poder — e o que o servidor recusa antes de olhar.",
+    { g:"config", ico:"⛨", rot:"Diretivas de acesso ao banco", txt:"tela.dbit_diretivas_banco",
+      diz:"Quem alcança este banco e com que poder — e o que o servidor recusa antes de olhar.", dizTxt:"tela.dbit_diretivas_banco_diz",
       faz:() => verDiretivasDoBanco(db) },
-    { g:"config", ico:"✎", rot:"Editor de menu",
-      diz:"Trocar o nome exibido de qualquer item do menu e da barra.",
+    { g:"config", ico:"✎", rot:"Editor de menu", txt:"tela.tt_editor_menu",
+      diz:"Trocar o nome exibido de qualquer item do menu e da barra.", dizTxt:"tela.dbit_editor_menu_diz",
       faz:editorDeMenu },
 
-    { g:"operacao", ico:"⇋", rot:"Sessões e conexões",
-      diz:"Quem está falando agora, o que está executando, e como derrubar.",
+    { g:"operacao", ico:"⇋", rot:"Sessões e conexões", txt:"tela.dbit_sessoes_conexoes",
+      diz:"Quem está falando agora, o que está executando, e como derrubar.", dizTxt:"tela.dbit_sessoes_conexoes_diz",
       faz:verSessoes },
-    { g:"operacao", ico:"◷", rot:"Estatísticas de uso",
-      diz:"A cauda da latência, o que custa caro e por qual tabela.",
+    { g:"operacao", ico:"◷", rot:"Estatísticas de uso", txt:"tela.dbit_estatisticas_uso",
+      diz:"A cauda da latência, o que custa caro e por qual tabela.", dizTxt:"tela.dbit_estatisticas_uso_diz",
       faz:() => verEstatisticas() },
-    { g:"operacao", ico:"⊘", rot:"Arquivos bloqueados",
-      diz:"Os IPs barrados, o motivo e até quando.",
+    { g:"operacao", ico:"⊘", rot:"Arquivos bloqueados", txt:"tela.dbit_arquivos_bloqueados",
+      diz:"Os IPs barrados, o motivo e até quando.", dizTxt:"tela.dbit_arquivos_bloqueados_diz",
       faz:() => irPara("bloqueios") },
-    { g:"operacao", ico:"⇄", rot:"Transações",
-      diz:"O que existe hoje e o que falta para haver commit e rollback.",
+    { g:"operacao", ico:"⇄", rot:"Transações", txt:"tela.dbit_transacoes",
+      diz:"O que existe hoje e o que falta para haver commit e rollback.", dizTxt:"tela.dbit_transacoes_diz",
       faz:verTransacoes },
-    { g:"operacao", ico:"⛁", rot:"Backup e restauração",
-      diz:"Copiar com manifesto SHA-256, conferir uma cópia, e o que falta para restaurar.",
+    { g:"operacao", ico:"⛁", rot:"Backup e restauração", txt:"tela.mi_backup_restauracao",
+      diz:"Copiar com manifesto SHA-256, conferir uma cópia, e o que falta para restaurar.", dizTxt:"tela.dbit_backup_restauracao_diz",
       faz:() => verBackupRestaure(db) },
 
     // Os tres ficaram no grupo «Ainda nao existe» DEPOIS de os tres passarem a
@@ -6137,7 +6134,7 @@ function itensDoDatabase(db) {
     // o que falta neles e a TELA -- que e o que o item passa a dizer.
     { g:"operacao", ico:"⏱", rot:"Jobs de execução", txt:"tela.mi_jobs",
       faz:telaJobs },
-    { g:"comando", ico:"⚡", rot:"Triggers",
+    { g:"comando", ico:"⚡", rot:"Triggers", txt:"tela.dbit_triggers",
       falta:"EXISTEM, e não por esta tela. `CREATE TRIGGER nome BEFORE|AFTER "
           + "INSERT|UPDATE|DELETE ON tabela FOR EACH ROW <corpo>` pela operação "
           + "`sql` — no dialeto do MySQL(R), similar e não idêntico, com 17 "
@@ -6145,14 +6142,14 @@ function itensDoDatabase(db) {
           + "`DROP TRIGGER` remove, e criar ou excluir exige `administrar`. "
           + "O que falta aqui é o formulário — e ele não entrou de propósito: "
           + "seria um SEGUNDO caminho para escrever rotina." },
-    { g:"comando", ico:"ƒ", rot:"Procedures",
+    { g:"comando", ico:"ƒ", rot:"Procedures", txt:"tela.dbit_procedures",
       falta:"EXISTEM, no MESMO interpretador do gatilho. `CREATE PROCEDURE` "
           + "com `IN`/`OUT`/`INOUT`, `CALL`, `SHOW PROCEDURES` e `DROP "
           + "PROCEDURE`, pela operação `sql`. Cada pedido que o corpo produz "
           + "sai pelo portão de sempre com a sessão de quem chamou — por isso "
           + "`CALL` não pede permissão própria: ele nunca dá poder que a "
           + "pessoa já não tivesse." },
-    { g:"falta", ico:"🔒", rot:"Modo exclusivo",
+    { g:"falta", ico:"🔒", rot:"Modo exclusivo", txt:"tela.dbit_modo_exclusivo",
       falta:"Abrir a tabela em uso exclusivo, para reorganizar ou compactar sem "
           + "ninguém escrevendo junto. Hoje uma trava única já serializa todo "
           + "acesso a dados, então ninguém escreve ao mesmo tempo — mas não há "
@@ -6162,14 +6159,14 @@ function itensDoDatabase(db) {
 }
 
 const GRUPOS_DB = [
-  ["dados",    "Dados e catálogo"],
-  ["config",   "Configuração e acesso"],
-  ["operacao", "Operação"],
+  ["dados",    "Dados e catálogo", "tela.dbgr_dados"],
+  ["config",   "Configuração e acesso", "tela.dbgr_config"],
+  ["operacao", "Operação", "tela.dbgr_operacao"],
   // Grupo novo, e a diferenca importa: «existe pelo comando» nao e «ainda nao
   // existe». Misturar os dois foi o que deixou triggers, procedures e jobs
   // aparecendo como ausentes depois de os tres passarem a existir.
-  ["comando",  "Existe pelo comando, e não por esta tela"],
-  ["falta",    "Ainda não existe"],
+  ["comando",  "Existe pelo comando, e não por esta tela", "tela.dbgr_comando"],
+  ["falta",    "Ainda não existe", "tela.dbgr_falta"],
 ];
 
 async function gerirDatabase(db) {
@@ -6177,33 +6174,33 @@ async function gerirDatabase(db) {
   if (!db) return avisar(txt("tela.g_sem_database","nenhum database — crie um pelo [+] da árvore"), true);
   est.database = db;
 
-  folha(`Gerir ${db}`, txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
+  folha(preencher(txt("tela.tt_gerir_db","Gerir {db}"), {db}), txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   let resumo = "";
   try {
     const st = await api("sistabelas", { database: db });
     const t = st.tabelas || [];
     const soma = f => t.reduce((a, x) => a + (+x[f] || 0), 0);
     resumo = `<div class="fichas">
-      ${ficha(t.length, "tabelas")}
-      ${ficha(soma("registros").toLocaleString("pt-BR"), "registros")}
-      ${ficha(soma("colunas"), "colunas")}
-      ${ficha(t.filter(x => x.chave_primaria).length, "com chave primária")}
-      ${ficha(t.filter(x => x.particao).length, "particionadas")}
-      ${ficha(soma("volumes"), "volumes no disco")}
+      ${ficha(t.length, txt("tela.fc_tabelas","tabelas"))}
+      ${ficha(soma("registros").toLocaleString("pt-BR"), txt("tela.fc_registros","registros"))}
+      ${ficha(soma("colunas"), txt("tela.fc_colunas","colunas"))}
+      ${ficha(t.filter(x => x.chave_primaria).length, txt("tela.fc_com_chave_primaria","com chave primária"))}
+      ${ficha(t.filter(x => x.particao).length, txt("tela.fc_particionadas","particionadas"))}
+      ${ficha(soma("volumes"), txt("tela.fc_volumes_disco","volumes no disco"))}
     </div>`;
   } catch (e) { resumo = `<div class="aviso mal">${esc(String(e))}</div>`; }
 
   const itens = itensDoDatabase(db);
-  folha(`Gerir ${db}`, txt("tela.st_tudo_sobre_banco","tudo que se faz sobre este banco"),
-    resumo + GRUPOS_DB.map(([g, titulo]) => {
+  folha(preencher(txt("tela.tt_gerir_db","Gerir {db}"), {db}), txt("tela.st_tudo_sobre_banco","tudo que se faz sobre este banco"),
+    resumo + GRUPOS_DB.map(([g, titulo, tituloTxt]) => {
       const doGrupo = itens.map((it, i) => [it, i]).filter(([it]) => it.g === g);
       if (!doGrupo.length) return "";
-      return `<h3 class="secao">${esc(titulo)}</h3>
+      return `<h3 class="secao">${esc(txt(tituloTxt, titulo))}</h3>
         <div class="ops">${doGrupo.map(([it, i]) =>
           `<button class="op${it.faz ? "" : " afazer"}" data-op="${i}">
              <span class="op-ico">${it.ico}</span>
-             <span class="op-txt"><b>${esc(it.rot)}</b><span>${esc(
-               it.diz || "ainda não existe — clique para ver o que falta")}</span></span>
+             <span class="op-txt"><b>${esc(txt(it.txt, it.rot))}</b><span>${esc(
+               it.diz ? txt(it.dizTxt, it.diz) : txt("tela.dbit_ainda_nao_existe","ainda não existe — clique para ver o que falta"))}</span></span>
            </button>`).join("")}</div>`;
     }).join(""));
 
@@ -6317,7 +6314,7 @@ async function verDiretivasDoBanco(db) {
     return { itens: ativos, vazio: !ativos.length, curinga: bases[db] === undefined };
   };
 
-  folha(`Diretivas de acesso · ${db}`, txt("tela.st_quem_alcanca_banco","quem alcança este banco, e o que o servidor recusa antes de olhar"),
+  folha(preencher(txt("tela.tt_diretivas_acesso_db","Diretivas de acesso · {db}"), {db}), txt("tela.st_quem_alcanca_banco","quem alcança este banco, e o que o servidor recusa antes de olhar"),
     `${proibida ? `<div class="nota mal"><p><strong>Este banco está em
        <code>seguranca.bases_proibidas</code>.</strong> Nenhum usuário o alcança,
        nem supervisor: a recusa acontece no portão, antes da permissão ser
@@ -6406,10 +6403,10 @@ async function verBackupRestaure(db) {
   const bkp = c.backup || {};
   folha(txt("tela.mi_backup_restauracao","Backup e restauração"), `${db} · cópia com manifesto SHA-256`,
     `<div class="fichas">
-       ${ficha(bkp.destino || "—", "destino")}
-       ${ficha(bkp.hora || "não agendado", "agendamento")}
-       ${ficha(bkp.zip ? "sim" : "não", "em zip")}
-       ${ficha(c.espelho ? "sim" : "não", "espelho .bkp", "segunda cópia por slot")}
+       ${ficha(bkp.destino || "—", txt("tela.fc_destino","destino"))}
+       ${ficha(bkp.hora || "não agendado", txt("tela.fc_agendamento","agendamento"))}
+       ${ficha(bkp.zip ? "sim" : "não", txt("tela.fc_em_zip","em zip"))}
+       ${ficha(c.espelho ? "sim" : "não", txt("tela.fc_espelho_bkp","espelho .bkp"), "segunda cópia por slot")}
      </div>
 
      <div class="ops">
@@ -6591,10 +6588,10 @@ async function verDentroDoBackup(origem, de) {
     alvo.innerHTML = `
       <h3 class="secao">o que tem dentro <em>${esc(de)} · ${esc(arquivo)}</em></h3>
       <div class="fichas">
-        ${ficha(d.quando || "—", "gravado em")}
-        ${ficha(fmt(d.arquivos), "arquivos")}
-        ${ficha(fmtBytes(d.bytes), "conteúdo")}
-        ${ficha(d.phxsql || "—", "gravado pela versão")}
+        ${ficha(d.quando || "—", txt("tela.fc_gravado_em","gravado em"))}
+        ${ficha(fmt(d.arquivos), txt("tela.fc_arquivos","arquivos"))}
+        ${ficha(fmtBytes(d.bytes), txt("tela.fc_conteudo","conteúdo"))}
+        ${ficha(d.phxsql || "—", txt("tela.fc_gravado_pela_versao","gravado pela versão"))}
       </div>
       ${(d.tabelas || []).length
         ? `<p class="leg">Tabelas na cópia: ${
@@ -6671,10 +6668,10 @@ async function restaurarAgora(origem, de, destino, porCima) {
     folha(preencher(txt("tela.tt_restaurado_db","Restaurado: {database}"), {database: r.database}),
       preencher(txt("tela.st_de_em_ms","de {de}, em {ms} ms"), {de: r.de, ms: fmt(r.ms)}),
       `<div class="fichas">
-         ${ficha(r.database, "database")}
-         ${ficha(fmt(r.arquivos), "arquivos")}
-         ${ficha(fmtBytes(r.bytes), "conteúdo")}
-         ${ficha(r.tabelas.length, "tabelas")}
+         ${ficha(r.database, txt("tela.database","database"))}
+         ${ficha(fmt(r.arquivos), txt("tela.fc_arquivos","arquivos"))}
+         ${ficha(fmtBytes(r.bytes), txt("tela.fc_conteudo","conteúdo"))}
+         ${ficha(r.tabelas.length, txt("tela.fc_tabelas","tabelas"))}
        </div>
        <p class="leg">Tabelas: ${
          (r.tabelas || []).map(t => `<code>${esc(t)}</code>`).join(" · ") || "nenhuma"}</p>
@@ -7230,12 +7227,12 @@ async function verConfigServidor() {
        + "nas mensagens que o servidor devolve pelo protocolo."))}</p>
 
      <div class="fichas">
-       ${ficha(p.phxsql || p.versao, "versão")}
-       ${ficha(c.bind, "porta de dados", "campo bind")}
-       ${ficha(web.ligado ? web.bind : "desligada", "porta da interface", "campo web.bind")}
-       ${ficha(p.papel || rep.papel, "papel na replicação")}
-       ${ficha(c.conexoes_max, "conexões máximas")}
-       ${ficha(c.timeout_s, "tempo limite", "segundos")}
+       ${ficha(p.phxsql || p.versao, txt("tela.fc_versao","versão"))}
+       ${ficha(c.bind, txt("tela.fc_porta_de_dados","porta de dados"), "campo bind")}
+       ${ficha(web.ligado ? web.bind : "desligada", txt("tela.fc_porta_da_interface","porta da interface"), "campo web.bind")}
+       ${ficha(p.papel || rep.papel, txt("tela.fc_papel_na_replicacao","papel na replicação"))}
+       ${ficha(c.conexoes_max, txt("tela.fc_conexoes_maximas","conexões máximas"))}
+       ${ficha(c.timeout_s, txt("tela.fc_tempo_limite","tempo limite"), "segundos")}
      </div>
 
      ${c.no_arquivo && Object.keys(c.no_arquivo).length ? `<div class="aviso">
@@ -7418,14 +7415,14 @@ async function verConfigBanco(db) {
   const tabelas = st.tabelas || [];
   const soma = (f) => tabelas.reduce((a, x) => a + (+x[f] || 0), 0);
 
-  folha(`Configurações do banco ${db}`, txt("tela.st_vale_para_database","o que vale para este database"),
+  folha(preencher(txt("tela.tt_config_do_banco","Configurações do banco {db}"), {db}), txt("tela.st_vale_para_database","o que vale para este database"),
     `<div class="fichas">
-       ${ficha(tabelas.length, "tabelas")}
-       ${ficha((t.schemas || []).length, "schemas")}
-       ${ficha(soma("registros").toLocaleString("pt-BR"), "registros")}
-       ${ficha(soma("volumes") || tabelas.length, "volumes no disco")}
-       ${ficha(proibida ? "SIM" : "não", "na lista de bases proibidas")}
-       ${ficha(c.espelho ? "sim" : "não", "espelho .bkp", "vem do servidor")}
+       ${ficha(tabelas.length, txt("tela.fc_tabelas","tabelas"))}
+       ${ficha((t.schemas || []).length, txt("tela.fc_schemas","schemas"))}
+       ${ficha(soma("registros").toLocaleString("pt-BR"), txt("tela.fc_registros","registros"))}
+       ${ficha(soma("volumes") || tabelas.length, txt("tela.fc_volumes_disco","volumes no disco"))}
+       ${ficha(proibida ? "SIM" : "não", txt("tela.fc_na_lista_proibidas","na lista de bases proibidas"))}
+       ${ficha(c.espelho ? "sim" : "não", txt("tela.fc_espelho_bkp","espelho .bkp"), "vem do servidor")}
      </div>
 
      ${proibida ? `<div class="nota mal"><p><strong>Este database está em
@@ -7463,10 +7460,10 @@ async function verConfigUsuarios() {
   const lista = u.usuarios || u || [];
   folha(txt("tela.tt_config_usuarios","Configurações dos usuários"), `${lista.length} cadastrado(s) · o hash da senha nunca sai daqui`,
     `<div class="fichas">
-       ${ficha(lista.length, "usuários")}
-       ${ficha(lista.filter(x => x.supervisor).length, "supervisores")}
-       ${ficha(lista.filter(x => x.ativo === false).length, "inativos")}
-       ${ficha(lista.filter(x => x.exige_chave).length, "exigem chave", "Ed25519")}
+       ${ficha(lista.length, txt("tela.fc_usuarios","usuários"))}
+       ${ficha(lista.filter(x => x.supervisor).length, txt("tela.fc_supervisores","supervisores"))}
+       ${ficha(lista.filter(x => x.ativo === false).length, txt("tela.fc_inativos","inativos"))}
+       ${ficha(lista.filter(x => x.exige_chave).length, txt("tela.fc_exigem_chave","exigem chave"), "Ed25519")}
      </div>
 
      <div id="gradeUsu"></div>
@@ -7547,11 +7544,11 @@ async function verConfigUsuarios() {
 async function verSysTables(db) {
   db = db || databaseCorrente();
   if (!db) return avisar(txt("tela.g_sem_database_escolhido","nenhum database escolhido"), true);
-  folha(`SysTables · ${db}`, txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
+  folha(preencher(txt("tela.tt_systables_db","SysTables · {db}"), {db}), txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   const r = await api("sistabelas", { database: db });
   const linhas = r.tabelas || [];
 
-  folha(`SysTables · ${db}`, `${linhas.length} tabela(s) · o catálogo em forma de dado`,
+  folha(preencher(txt("tela.tt_systables_db","SysTables · {db}"), {db}), preencher(txt("tela.st_n_tabelas_catalogo","{n} tabela(s) · o catálogo em forma de dado"), {n: linhas.length}),
     `<div class="acoes">
        <button class="botao secundario" id="btSysCols">SysColumns →</button>
        <button class="botao secundario" id="btVoltaDb">← Gerir ${esc(db)}</button>
@@ -7615,12 +7612,12 @@ async function verSysTables(db) {
 async function verSysColumns(db, tabela_) {
   db = db || databaseCorrente();
   if (!db) return avisar(txt("tela.g_sem_database_escolhido","nenhum database escolhido"), true);
-  folha(`SysColumns · ${db}`, txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
+  folha(preencher(txt("tela.tt_syscolumns_db","SysColumns · {db}"), {db}), txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   const r = await api("siscolunas", tabela_ ? { database: db, tabela: tabela_ } : { database: db });
   const linhas = r.colunas || [];
 
-  folha(`SysColumns · ${db}${tabela_ ? ` · ${tabela_}` : ""}`,
-    `${linhas.length} coluna(s) · o dicionário de dados`,
+  folha(preencher(txt("tela.tt_syscolumns_db","SysColumns · {db}"), {db}) + (tabela_ ? ` · ${tabela_}` : ""),
+    preencher(txt("tela.st_n_colunas_dicionario","{n} coluna(s) · o dicionário de dados"), {n: linhas.length}),
     `<div class="acoes">
        <button class="botao secundario" id="btSysTabs">← SysTables</button>
        ${tabela_ ? `<button class="botao secundario" id="btTodas">todas as tabelas</button>` : ""}
@@ -8228,7 +8225,7 @@ async function telaImportar(db, tab) {
            ${r.gravadas ? `rowid ${r.primeiro_rowid} a ${r.ultimo_rowid}.` : ""}
            ${r.aviso ? `<br><b>${esc(r.aviso)}</b>` : ""}</div>
          ${(r.erros || []).length ? `<div id="gradeErrosImp"></div>` : ""}`;
-      if (r.gravadas) avisar(`${fmt(r.gravadas)} linha(s) gravadas em ${tab}`);
+      if (r.gravadas) avisar(preencher(txt("tela.g_linhas_gravadas_em","{n} linha(s) gravadas em {tab}"), {n: fmt(r.gravadas), tab}));
       $("#btImportar").disabled = true;
 
       // PADRONIZACAO: PhxGrid. Sem clique proprio.
@@ -8343,10 +8340,8 @@ async function dialogoExcluir(db, tab, rowid, aoTerminar, versao) {
     // encher de confirmação o caminho seguro ensina a clicar em «sim» sem ler,
     // e aí a confirmação que importa também passa batida.
     if (modo === "fisico" &&
-        !confirm(`Excluir de vez o registro ${rowid}?\n\n`
-          + `A linha sai do .reg. Ela fica no .trash, que só o administrador `
-          + `lê, e o slot NÃO é reaproveitado — é assim que a ordem de `
-          + `digitação se mantém.`)) return;
+        !confirm(preencher(txt("tela.g_confirmar_excluir_de_vez",
+          "Excluir de vez o registro {rowid}?\n\nA linha sai do .reg. Ela fica no .trash, que só o administrador lê, e o slot NÃO é reaproveitado — é assim que a ordem de digitação se mantém."), {rowid}))) return;
     try {
       const r = await api("excluir",
         { database: db, tabela: tab, rowid, motivo, fisico: modo === "fisico",
@@ -8511,7 +8506,7 @@ async function dialogoConflito(db, tab, rowid, ctx) {
       await api("atualizar", { database: db, tabela: tab, rowid,
                                valores: escolhido, versao: atual.versao });
       fechar();
-      avisar(`registro ${rowid} gravado com a versão escolhida`);
+      avisar(preencher(txt("tela.g_registro_gravado_versao_escolhida","registro {rowid} gravado com a versão escolhida"), {rowid}));
       if (aoTerminar) aoTerminar();
     } catch (err) {
       // Um TERCEIRO gravou enquanto esta caixa estava aberta. A resposta é a
@@ -8530,12 +8525,12 @@ async function dialogoConflito(db, tab, rowid, ctx) {
 
 /** Restaura uma linha marcada. */
 async function restaurarLinha(db, tab, rowid, aoTerminar) {
-  const motivo = prompt(`Restaurar o registro ${rowid}?\n\n`
-    + `Motivo (fica no .reason):`, "");
+  const motivo = prompt(preencher(txt("tela.g_prompt_restaurar_registro",
+    "Restaurar o registro {rowid}?\n\nMotivo (fica no .reason):"), {rowid}), "");
   if (motivo === null) return;
   try {
     await api("restaurar", { database: db, tabela: tab, rowid, motivo: motivo.trim() });
-    avisar(`registro ${rowid} restaurado`);
+    avisar(preencher(txt("tela.g_registro_restaurado","registro {rowid} restaurado"), {rowid}));
     if (aoTerminar) aoTerminar();
   } catch (err) { avisar(String(err), true); }
 }
@@ -8593,15 +8588,13 @@ async function telaLixeira(db, tab) {
   const bt = $("#btEsvaziar");
   if (bt) bt.onclick = async () => {
     const motivo = prompt(
-      `Esvaziar a lixeira de ${tab}?\n\n`
-      + `Isto apaga ${d.total} linha(s) DE VEZ — daqui não volta.\n`
-      + `O expurgo fica registrado no .reason antes de o dado sair.\n\n`
-      + `Motivo (obrigatório):`, "");
+      preencher(txt("tela.g_prompt_esvaziar_lixeira",
+        "Esvaziar a lixeira de {tab}?\n\nIsto apaga {total} linha(s) DE VEZ — daqui não volta.\nO expurgo fica registrado no .reason antes de o dado sair.\n\nMotivo (obrigatório):"), {tab, total: d.total}), "");
     if (motivo === null) return;
     if (!motivo.trim()) return avisar(txt("tela.g_motivo_obrigatorio_esvaziar","o motivo é obrigatório para esvaziar"), true);
     try {
       const r = await api("esvaziar_lixeira", { database: db, tabela: tab, motivo: motivo.trim() });
-      avisar(`${fmt(r.apagadas)} linha(s) apagadas de vez`);
+      avisar(preencher(txt("tela.g_linhas_apagadas_de_vez","{n} linha(s) apagadas de vez"), {n: fmt(r.apagadas)}));
       telaLixeira(db, tab);
     } catch (err) { avisar(String(err), true); }
   };
@@ -8958,9 +8951,9 @@ async function verEstatisticas(horas) {
       { desde: d.desde, acessos: fmt(d.acessos) }),
     `<div class="fichas">
        ${ficha(fmt(lat.p50), txt("tela.st_fic_mediana", "mediana"), txt("tela.st_fic_mediana_un", "ms · metade responde abaixo disso"))}
-       ${ficha(fmt(lat.p90), "p90", "ms")}
-       ${ficha(fmt(lat.p95), "p95", txt("tela.st_fic_p95_un", "ms · é este que responde «está rápido?»"))}
-       ${ficha(fmt(lat.p99), "p99", "ms")}
+       ${ficha(fmt(lat.p90), txt("tela.fc_p90","p90"), "ms")}
+       ${ficha(fmt(lat.p95), txt("tela.fc_p95","p95"), txt("tela.st_fic_p95_un", "ms · é este que responde «está rápido?»"))}
+       ${ficha(fmt(lat.p99), txt("tela.fc_p99","p99"), "ms")}
        ${ficha(fmt(lat.pior), txt("tela.col_pior", "pior"), "ms")}
      </div>
      <div class="barra-dbl">
@@ -9627,7 +9620,8 @@ async function estruturaDbl(tabela) {
 async function testarDbLink(nome) {
   try {
     const r = await api("dblink_testar", { nome });
-    avisar(`${r.dblink}: ${r.motor} ${r.versao} · ${r.usuario_efetivo} · base ${r.database || "—"} · ${r.ms} ms`);
+    avisar(preencher(txt("tela.g_dblink_testado","{dblink}: {motor} {versao} · {usuario} · base {database} · {ms} ms"),
+      {dblink: r.dblink, motor: r.motor, versao: r.versao, usuario: r.usuario_efetivo, database: r.database || "—", ms: r.ms}));
   } catch (e) { avisar(String(e), true); }
 }
 
@@ -10059,7 +10053,7 @@ async function editarDbLink(nome) {
     return nomeF;
   };
   $("#btGravar").onclick = async () => {
-    try { const n = await gravar(); avisar(`ligação ${n} gravada`); telaDbLinkDefinicoes(); }
+    try { const n = await gravar(); avisar(preencher(txt("tela.g_ligacao_gravada","ligação {n} gravada"), {n})); telaDbLinkDefinicoes(); }
     catch (e) { avisar(String(e), true); }
   };
   $("#btTest2").onclick = async () => {
@@ -10068,8 +10062,8 @@ async function editarDbLink(nome) {
   };
   const ap = $("#btApagar");
   if (ap) ap.onclick = async () => {
-    if (!confirm(`Excluir a ligação ${l.nome}?\n\nO banco do outro lado não é tocado — só o cadastro daqui.`)) return;
-    try { await api("dblink_excluir", { nome: l.nome }); avisar(`${l.nome} excluída`); telaDbLinkDefinicoes(); }
+    if (!confirm(preencher(txt("tela.g_confirmar_excluir_ligacao","Excluir a ligação {nome}?\n\nO banco do outro lado não é tocado — só o cadastro daqui."), {nome: l.nome}))) return;
+    try { await api("dblink_excluir", { nome: l.nome }); avisar(preencher(txt("tela.g_x_excluida","{nome} excluída"), {nome: l.nome})); telaDbLinkDefinicoes(); }
     catch (e) { avisar(String(e), true); }
   };
 }
@@ -10323,18 +10317,18 @@ async function verServico() {
       + "As conexões abertas continuam. Para voltar, use esta mesma tela.")) return;
     try {
       const r = await api("servico_parar");
-      avisar(`porta de dados parando · ${r.conexoes_abertas} conexão(ões) aberta(s)`);
+      avisar(preencher(txt("tela.g_porta_dados_parando","porta de dados parando · {n} conexão(ões) aberta(s)"), {n: r.conexoes_abertas}));
       setTimeout(verServico, 500);
     } catch (e) { avisar(`${e}`, true); }
   };
   $("#btSvSubir").onclick = async () => {
     const bind = $("#svBind").value.trim();
     if (noAr && bind && bind !== s.endereco
-        && !confirm(`Trocar a porta de dados para ${bind}?\n\n`
-          + `Todo cliente que fala com ${s.endereco} precisa ser reapontado.`)) return;
+        && !confirm(preencher(txt("tela.g_confirmar_trocar_porta_dados",
+          "Trocar a porta de dados para {bind}?\n\nTodo cliente que fala com {endereco} precisa ser reapontado."), {bind, endereco: s.endereco}))) return;
     try {
       const r = await api("servico_subir", { bind });
-      avisar(`subindo em ${r.subindo_em}`);
+      avisar(preencher(txt("tela.g_subindo_em","subindo em {onde}"), {onde: r.subindo_em}));
       setTimeout(verServico, 600);
     } catch (e) { avisar(`${e}`, true); }
   };
@@ -10503,7 +10497,8 @@ async function telaJobs() {
         const ligar = bLigar.dataset.l === "1";
         try {
           const r = await api("job_ligar", { nome: bLigar.dataset.n, ligado: ligar });
-          avisar(`job ${bLigar.dataset.n} ${ligar ? "ligado" : "desligado"}`);
+          avisar(preencher(txt("tela.g_job_estado","job {nome} {estado}"),
+            {nome: bLigar.dataset.n, estado: ligar ? txt("tela.g_estado_ligado","ligado") : txt("tela.g_estado_desligado","desligado")}));
           if (ligar && !r.relogio_no_ar) {
             avisar(txt("tela.g_ligado_relogio_jobs_nao_subiu","ligado — mas o relógio de jobs não subiu neste arranque: ")
                  + "reinicie para ele andar sozinho, ou rode pela tela.", true);
@@ -10514,8 +10509,8 @@ async function telaJobs() {
 
       const bExcluir = ev.target.closest(".bt-excluir");
       if (bExcluir) {
-        if (!confirm(`Excluir o job ${bExcluir.dataset.n}? O histórico das corridas dele fica.`)) return;
-        try { await api("job_excluir", { nome: bExcluir.dataset.n }); avisar(`job ${bExcluir.dataset.n} excluído`); }
+        if (!confirm(preencher(txt("tela.g_confirmar_excluir_job","Excluir o job {nome}? O histórico das corridas dele fica."), {nome: bExcluir.dataset.n}))) return;
+        try { await api("job_excluir", { nome: bExcluir.dataset.n }); avisar(preencher(txt("tela.g_job_excluido","job {nome} excluído"), {nome: bExcluir.dataset.n})); }
         catch (e) { avisar(`${e}`, true); }
         return telaJobs();
       }
@@ -10652,7 +10647,7 @@ async function editarJob(nome) {
     } catch (e) {
       // Analisar aqui em vez de mandar o texto: o erro de digitação aparece
       // com o nome dele, e não como «esquema inválido» vindo do servidor.
-      return avisar(`o pedido não é um JSON válido: ${e.message}`, true);
+      return avisar(preencher(txt("tela.g_pedido_nao_json","o pedido não é um JSON válido: {erro}"), {erro: e.message}), true);
     }
     const job = {
       nome: (x ? x.nome : $("#jbNome").value).trim(),
@@ -10665,7 +10660,7 @@ async function editarJob(nome) {
     else job.cada_minutos = Number($("#jbCada").value) || 60;
     try {
       const r = await api("job_salvar", { job });
-      avisar(`job ${r.salvo} gravado`);
+      avisar(preencher(txt("tela.g_job_gravado","job {nome} gravado"), {nome: r.salvo}));
       if (job.ligado && !r.relogio_no_ar) {
         avisar(txt("tela.g_gravado_relogio_jobs_nao_subiu","gravado — mas o relógio de jobs não subiu neste arranque: ")
              + "ele só sobe quando já há job ligado. Reinicie para o job andar sozinho.", true);
@@ -10677,8 +10672,8 @@ async function editarJob(nome) {
   if (x) {
     $("#btJbRodar").onclick = () => rodarJob(x.nome);
     $("#btJbApagar").onclick = async () => {
-      if (!confirm(`Excluir o job ${x.nome}? O histórico das corridas dele fica.`)) return;
-      try { await api("job_excluir", { nome: x.nome }); avisar(`job ${x.nome} excluído`); }
+      if (!confirm(preencher(txt("tela.g_confirmar_excluir_job","Excluir o job {nome}? O histórico das corridas dele fica."), {nome: x.nome}))) return;
+      try { await api("job_excluir", { nome: x.nome }); avisar(preencher(txt("tela.g_job_excluido","job {nome} excluído"), {nome: x.nome})); }
       catch (e) { return avisar(`${e}`, true); }
       telaJobs();
     };
@@ -10983,7 +10978,7 @@ function cartaoTabelaER(db, nome) {
     try {
       await api("excluir_fk", { database: db, tabela: nome, nome: b.dataset.fk });
       c.fechar();
-      avisar(`declaração ${b.dataset.fk} excluída de ${nome} — nenhuma linha foi tocada`);
+      avisar(preencher(txt("tela.g_fk_excluida_sem_toque","declaração {fk} excluída de {tabela} — nenhuma linha foi tocada"), {fk: b.dataset.fk, tabela: nome}));
       telaDiagramaER(db);
     } catch (er) {
       c.corpo.querySelector("#tabRecado").innerHTML =
@@ -11054,7 +11049,7 @@ async function cartaoAcrescentarColuna(db, tabela) {
       try {
         const r = await api("acrescentar_coluna", pedido);
         c.fechar();
-        avisar(`${r.coluna}: ${r.slots_reescritos} ${txt("tela.slots_reescritos", "slot(s) reescrito(s)")} · ${Math.round(r.ms)} ms`);
+        avisar(preencher(txt("tela.g_coluna_slots_reescritos","{coluna}: {n} {slots} · {ms} ms"), {coluna: r.coluna, n: r.slots_reescritos, slots: txt("tela.slots_reescritos", "slot(s) reescrito(s)"), ms: Math.round(r.ms)}));
         // As duas telas de onde este cartão abre se redesenham sozinhas.
         if (typeof ER === "object" && ER.db === db) telaDiagramaER(db);
         else if (est.atual && est.atual.tab === tabela) abrirTabela(db, tabela);
@@ -11177,8 +11172,8 @@ function cartaoNovaTabelaER(db) {
       try {
         const feito = await api("criar_tabela", pedido);
         c.fechar();
-        avisar(`tabela ${feito.tabela} criada · ${feito.colunas} coluna(s)`
-          + (pk ? "" : " · SEM chave primária — as outras tabelas não têm o que apontar"));
+        avisar(preencher(txt("tela.g_tabela_criada_simples","tabela {tabela} criada · {colunas} coluna(s){semchave}"),
+          {tabela: feito.tabela, colunas: feito.colunas, semchave: pk ? "" : txt("tela.g_sem_chave_primaria"," · SEM chave primária — as outras tabelas não têm o que apontar")}));
         await montarArvore(false);
         telaDiagramaER(db);
       } catch (e) {
@@ -12517,7 +12512,7 @@ async function verProfiler() {
   };
   $("#pfParar").onclick = async () => {
     const r = await api("profiler_desligar");
-    avisar(`parado — ${fmt(r.observados)} evento(s) observados`);
+    avisar(preencher(txt("tela.g_profiler_parado","parado — {n} evento(s) observados"), {n: fmt(r.observados)}));
     verProfiler();
   };
   $("#pfLimpar").onclick = async () => {
@@ -12780,7 +12775,7 @@ async function telaMensagens() {
     $("#btSemear").onclick = async () => {
       try {
         const r = await api("mensagens_semear", {});
-        avisar(`${r.semeadas} mensagens semeadas${r.criou_tabela ? " · tabela criada" : ""}`);
+        avisar(preencher(txt("tela.g_mensagens_semeadas","{n} mensagens semeadas{criou}"), {n: r.semeadas, criou: r.criou_tabela ? txt("tela.g_tabela_criada_sufixo"," · tabela criada") : ""}));
         verConteudoEditavel("phxsys", "mensagens");
       } catch (e) { avisar(String(e), true); }
     };
@@ -13458,7 +13453,7 @@ async function novoDatabase() {
   const nome = prompt(txt("tela.g_prompt_nome_db_novo","Nome do database novo:"));
   if (!nome) return;
   const r = await api("criar_database", { database: nome.trim() });
-  avisar(`database "${esc(r.database || nome)}" criado`);
+  avisar(preencher(txt("tela.g_database_criado","database \"{nome}\" criado"), {nome: esc(r.database || nome)}));
   await montarArvore();
 }
 
@@ -13510,10 +13505,10 @@ async function checksumTabela(db, tab) {
   folha(`Soma de verificação de ${esc(db)}.${esc(tab)}`,
     txt("tela.st_comparar_copias","para comparar duas cópias sem transportar as duas"),
     `<div class="fichas">
-       ${ficha(`<code>${esc(r.checksum)}</code>`, "soma", "64 bits, em hexadecimal")}
-       ${ficha(fmt(r.linhas), "linhas vivas")}
-       ${ficha(fmt(r.slots), "slots", "inclui os excluídos")}
-       ${ficha(fmt(r.ms), "ms")}
+       ${ficha(`<code>${esc(r.checksum)}</code>`, txt("tela.fc_soma","soma"), "64 bits, em hexadecimal")}
+       ${ficha(fmt(r.linhas), txt("tela.fc_linhas_vivas","linhas vivas"))}
+       ${ficha(fmt(r.slots), txt("tela.col_slots","slots"), "inclui os excluídos")}
+       ${ficha(fmt(r.ms), txt("tela.fc_ms","ms"))}
      </div>
      <div class="aviso"><b>Serve para responder «estas duas tabelas são a
        mesma?»</b> sem transportar as duas — conferir uma réplica contra a
@@ -13534,18 +13529,18 @@ async function checksumTabela(db, tab) {
 
 async function reindexarTabela() {
   const { db, tab } = est.atual;
-  if (!confirm(`Recriar os índices de ${tab} a partir do .reg?\n\nO .ndx é refeito do zero.`)) return;
+  if (!confirm(preencher(txt("tela.g_confirmar_recriar_indices","Recriar os índices de {tab} a partir do .reg?\n\nO .ndx é refeito do zero."), {tab}))) return;
   const r = await api("reindexar", { database: db, tabela: tab });
-  avisar(`índices de ${tab} refeitos`);
-  folha(`Reindex de ${tab}`, txt("tela.st_ndx_recriado","o .ndx foi recriado a partir do .reg"),
+  avisar(preencher(txt("tela.g_indices_refeitos","índices de {tab} refeitos"), {tab}));
+  folha(preencher(txt("tela.tt_reindex_de","Reindex de {tab}"), {tab}), txt("tela.st_ndx_recriado","o .ndx foi recriado a partir do .reg"),
         `<pre class="dado">${esc(JSON.stringify(r, null, 1))}</pre>`);
 }
 
 async function repararTabela() {
   const { db, tab } = est.atual;
-  if (!confirm(`Reparar ${tab} pelo espelho .bkp?\n\nCada slot é conferido nos dois lados.`)) return;
+  if (!confirm(preencher(txt("tela.g_confirmar_reparar_bkp","Reparar {tab} pelo espelho .bkp?\n\nCada slot é conferido nos dois lados."), {tab}))) return;
   const r = await api("reparar", { database: db, tabela: tab });
-  folha(`Reparo de ${tab}`, txt("tela.st_cada_slot_conferido","cada slot conferido no .reg e no .bkp"),
+  folha(preencher(txt("tela.tt_reparo_de","Reparo de {tab}"), {tab}), txt("tela.st_cada_slot_conferido","cada slot conferido no .reg e no .bkp"),
         fichasDe(r, [["conferidos","conferidos"],["reparados","reparados"],
                      ["perdidos","perdidos"]]) +
         (r.perdidos ? `<div class="nota">Há ${r.perdidos} slot(s) perdido(s) dos dois lados.</div>` : ""));
@@ -13554,7 +13549,7 @@ async function repararTabela() {
 async function carregarNaMemoria() {
   const { db, tab } = est.atual;
   const r = await api("memoria_carregar", { database: db, tabela: tab });
-  avisar(`${tab} está na RAM`);
+  avisar(preencher(txt("tela.g_tabela_esta_na_ram","{tab} está na RAM"), {tab}));
   folha(`${tab} em memória`, txt("tela.st_consulta_sem_disco","a consulta deixa de tocar o disco"),
         `<pre class="dado">${esc(JSON.stringify(r, null, 1))}</pre>`);
 }
@@ -13562,7 +13557,7 @@ async function carregarNaMemoria() {
 async function liberarDaMemoria() {
   const { db, tab } = est.atual;
   const r = await api("memoria_liberar", { database: db, tabela: tab });
-  avisar(`${tab} saiu da RAM`);
+  avisar(preencher(txt("tela.g_tabela_saiu_da_ram","{tab} saiu da RAM"), {tab}));
   await verResidentes();
   return r;
 }
@@ -14238,8 +14233,8 @@ function renomearConexao(i) {
 function removerConexao(i) {
   const lista = conexoes();
   if (!lista[i]) return;
-  if (!confirm(`${txt("tela.confirmar_remover",
-    "Remover esta conexão da lista deste navegador?")}\n\n${lista[i].apelido}`)) return;
+  if (!confirm(txt("tela.confirmar_remover",
+    "Remover esta conexão da lista deste navegador?") + "\n\n" + lista[i].apelido)) return;
   lista.splice(i, 1);
   guardarConexoes(lista);
 }
