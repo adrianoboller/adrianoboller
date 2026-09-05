@@ -419,6 +419,12 @@ API vêm do `.env`, nunca do compose.
 
 O risco aqui era medido, não teórico: com vinte skills a listagem podia cortar alguma, como já aconteceu. As sete entraram com descrição encurtada (a maior caiu de 637 para 89 caracteres, as originais guardadas em `skills/descricoes-originais-uiux.json`) e a listagem foi **medida numa sessão nova**: as vinte aparecem. Material de terceiro entra com licença e atribuição, ou não entra — o teste falha se o `LICENSE`, o `NOTICE.md` ou a linha de origem sumirem.
 
+**Duas provas, não uma.** A bateria confere cada peça isolada; o `tests/fluxo.py` confere a **ligação** entre elas, num projeto novo, do zero à entrega: aplicar o questionário, conferir o contexto da primeira sessão, o índice de respostas por id, o G0, arquivar artefato, o hook recusando escrita nele, PDF virando markdown, bloco e sprint no PMO, o roteador, o RAG, a exportação e o registro. Treze passos, cada um medido, cinco segundos.
+
+Isso não é luxo: **todo defeito grande deste projeto foi de ligação, não de peça**. O esqueleto de ERP que quebrou a contagem de SKIPPED, o `.env.exemplo` comido pela regra do `.env`, o artefato declarado que não existia, o `--conferir` deixando arquivo em `/tmp`. Peça certa, ligação errada. A bateria roda o fluxo, então ligação quebrada derruba o commit.
+
+O teste também separa **código esperado de falha**: o G0 devolve 2 para `CONDITIONAL` por contrato, e a negativa do hook no passo 6 é ele fazendo o que deve. Confundir os dois manda alguém caçar um defeito que não existe — e a primeira versão do meu relatório fazia exatamente isso, dizendo «2 com código ≠ 0» sem dizer que os dois eram esperados.
+
 **Modelo local, para o trabalho que não merece token pago.** O `magnitudedev/magnitude` (Apache 2.0) é um servidor de inferência local: mede a máquina, recomenda o modelo que cabe, baixa, sobe e conecta ao Claude Code. O plugin **não o redistribui** — ele vem do npm — e a skill `modelos-locais` diz como usá-lo aqui, com os comandos conferidos na documentação do repositório.
 
 A integração é no roteador. Com `J.modelos_locais.ativar`, o `rotear_modelo.py` ganha um degrau **abaixo do mais barato**, e só a classe `mecanica` chega lá: renomear em volume, extrair lista de texto já limpo, resumir sprint fechada, traduzir textos de tela. Três travas, todas em teste: classe que produz regra, decisão ou prova nunca vai para o local; os sinais que já subiam o modelo continuam subindo, `dado-pessoal` inclusive; e **serviço fora do ar volta ao modelo pago avisando**, em vez de deixar a tarefa parada.

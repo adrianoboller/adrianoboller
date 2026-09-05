@@ -493,5 +493,20 @@
   "itens_questionario": 60,
   "hooks": 8,
   "manual": 672
+ },
+ {
+  "versao": "3.27.0",
+  "data": "2026-09-05",
+  "titulo": "modelo local pelo Magnitude, como degrau abaixo do mais barato",
+  "agentes": 94,
+  "skills": 21,
+  "comandos": 19,
+  "scripts": 26,
+  "linhas_py": 26795,
+  "prints": 43,
+  "testes": 59,
+  "itens_questionario": 60,
+  "hooks": 8,
+  "manual": 678
  }
 ]

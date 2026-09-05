@@ -757,6 +757,18 @@ class Questionario(unittest.TestCase):
         # e a skill nao pode prometer o que o roteador nao faz
         self.assertIn("dado-pessoal", sk.replace("`dado-pessoal`", "dado-pessoal"))
 
+    def test_fluxo_inteiro_num_projeto_novo(self):
+        """O caminho ligado, do zero a entrega. A bateria prova cada peca; este prova a
+        LIGACAO entre elas, que e onde os defeitos deste projeto sempre apareceram."""
+        r = subprocess.run([sys.executable, str(RAIZ / "tests/fluxo.py")], capture_output=True, text=True, timeout=900)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        dados = json.loads((Path(tempfile.gettempdir()) / "wx-fluxo.json").read_text(encoding="utf-8"))
+        self.assertEqual(dados["ok"], dados["total"], [p for p in dados["passos"] if not p["ok"]])
+        self.assertGreaterEqual(dados["total"], 13)
+        nomes = " ".join(p["passo"] for p in dados["passos"])
+        for peca in ("questionario", "G0", "artefato", "PDF", "PMO", "roteador", "RAG", "exportar", "registro"):
+            self.assertIn(peca, nomes, peca)
+
     def test_fontes_md_esta_em_dia(self):
         """FONTES.md e inventario medido: se alguem acrescentar arquivo e nao rodar o
         gerador, o documento passa a mentir sobre o pacote."""
