@@ -2439,13 +2439,13 @@ Duas cargas por lado, em tabelas próprias, na ordem `sem` → `com` → `largo`
 
 | lado | 1ª carga (parede / motor) | 2ª carga (parede / motor) | 2ª: linhas/s |
 |---|---:|---:|---:|
-| `sem` | 2,30 / 2,07 s | 2,26 / 2,02 s | 8.850 |
-| `com` (Bin+Memo) | 4,45 / 3,43 s | 2,27 / 2,04 s | 8.809 |
-| `largo` (Str) | 4,17 / 3,15 s | 2,34 / 2,12 s | 8.536 |
+| `sem` | 2,25 / 2,04 s | 2,38 / 2,16 s | 8.397 |
+| `com` (Bin+Memo) | 4,36 / 3,31 s | 2,21 / 2,01 s | 9.033 |
+| `largo` (Str) | 4,09 / 3,10 s | 2,32 / 2,11 s | 8.623 |
 
-**Na segunda carga os três lados custam o mesmo, dentro de 0,10 s de diferença** (`sem` 2,02 s / `com` (Bin+Memo) 2,04 s / `largo` (Str) 2,12 s de motor) — ou seja, o tempo **não separa** os três lados. Quem separa são os bytes, e eles estão nas tabelas acima.
+**Na segunda carga os três lados custam o mesmo, dentro de 0,15 s de diferença** (`sem` 2,16 s / `com` (Bin+Memo) 2,01 s / `largo` (Str) 2,11 s de motor) — ou seja, o tempo **não separa** os três lados. Quem separa são os bytes, e eles estão nas tabelas acima.
 
-**E há um efeito que eu não sei explicar, e ele fica escrito assim.** A primeira carga dos dois lados com peso grande custa até **1,68×** a segunda do mesmo lado, e a diferença aparece dentro do motor, não só no fio. Dois controles mataram as duas explicações óbvias, e nenhum deles explicou o efeito:
+**E há um efeito que eu não sei explicar, e ele fica escrito assim.** A primeira carga dos dois lados com peso grande custa até **1,64×** a segunda do mesmo lado, e a diferença aparece dentro do motor, não só no fio. Dois controles mataram as duas explicações óbvias, e nenhum deles explicou o efeito:
 
 1. **não é a posição na fila** — `PHX_ORDEM_INVERTIDA=1` inverte a ordem das seis cargas e o padrão não muda de dono: os mesmos dois lados saem lentos na primeira e rápidos na segunda;
 2. **não é «a primeira carga de uma série»** — o controle da chave conferida, logo abaixo, faz três cargas idênticas seguidas e as três custam o mesmo, nos dois braços.
@@ -2463,10 +2463,10 @@ diferem em uma coisa só — a declaração da chave.
 <!-- GERADO: chave-conferida -->
 | a chave | 1ª carga | 2ª | 3ª | mediana (motor) | µs por linha |
 |---|---:|---:|---:|---:|---:|
-| **declarada? não** — só o índice `porCategoria` | 0,65 | 0,64 | 0,64 | **0,64 s** | 31,9 |
-| **conferida** (o que a tabela desta bancada usa) | 2,09 | 2,04 | 2,05 | **2,05 s** | 102,6 |
+| **declarada? não** — só o índice `porCategoria` | 0,61 | 0,61 | 0,60 | **0,61 s** | 30,4 |
+| **conferida** (o que a tabela desta bancada usa) | 2,06 | 2,02 | 2,05 | **2,05 s** | 102,3 |
 
-**A chave conferida custa 3,21× a gravação.** Os dois braços diferem em uma coisa só — a declaração da chave; o índice `porCategoria` existe nos dois —, então o que está medido é a **conferência**, e não o índice. É o preço da regra primordial da casa cobrado na entrada: para cada linha gravada, o motor pergunta à mãe se o pai existe e se ele está vivo. `docs/DESEMPENHO.md` §15 mede a mesma coisa por dentro, com `--example custo-da-fk`; aqui ela é medida pela porta de dados, com a tabela inteira.
+**A chave conferida custa 3,37× a gravação.** Os dois braços diferem em uma coisa só — a declaração da chave; o índice `porCategoria` existe nos dois —, então o que está medido é a **conferência**, e não o índice. É o preço da regra primordial da casa cobrado na entrada: para cada linha gravada, o motor pergunta à mãe se o pai existe e se ele está vivo. `docs/DESEMPENHO.md` §15 mede a mesma coisa por dentro, com `--example custo-da-fk`; aqui ela é medida pela porta de dados, com a tabela inteira.
 
 E ele é maior que o dos blobs — que no tempo é **zero**, medido no bloco acima. O que **não** está medido aqui é quanto cada um dos cinco índices custa: para dizer isso seria preciso um braço por índice, e ele não existe. Quem carregar milhões de linhas e puder conferir depois tem aqui o número para decidir; quem não puder tem aqui o que a garantia custa.
 

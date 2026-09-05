@@ -13,19 +13,19 @@
   ],
   "lados": {
     "sem": {
-      "carga_s": 2.303,
-      "carga_s_2": 2.26,
-      "carga_ms_servidor": 2070.0,
-      "carga_ms_servidor_2": 2017.0,
-      "linhas_por_s": 8685,
-      "linhas_por_s_2": 8850,
-      "linhas_por_s_servidor": 9662,
-      "linhas_por_s_servidor_2": 9916,
+      "carga_s": 2.249,
+      "carga_s_2": 2.382,
+      "carga_ms_servidor": 2038.0,
+      "carga_ms_servidor_2": 2164.0,
+      "linhas_por_s": 8891,
+      "linhas_por_s_2": 8397,
+      "linhas_por_s_servidor": 9814,
+      "linhas_por_s_servidor_2": 9242,
       "fio_enviado": 4178529,
       "fio_recebido": 1006,
       "fio_por_linha": 209.0,
       "leitura": {
-        "s": 0.2405504310008837,
+        "s": 0.2297579869918991,
         "paginas": 10,
         "linhas_lidas": 20000,
         "enviados": 1172,
@@ -52,6 +52,9 @@
           "escalar": [
             "cidade"
           ],
+          "rownum_da_coluna_de_sistema": [
+            "rownum"
+          ],
           "decimal": [
             "saldo"
           ],
@@ -60,7 +63,7 @@
       },
       "coluna_com_padrao": {
         "slots_reescritos": 20000,
-        "ms": 20.793,
+        "ms": 30.228,
         "indices_refeitos": false,
         "nas_linhas_que_ja_existiam": [
           "ativo",
@@ -70,19 +73,19 @@
       }
     },
     "com": {
-      "carga_s": 4.447,
-      "carga_s_2": 2.27,
-      "carga_ms_servidor": 3426.0,
-      "carga_ms_servidor_2": 2045.0,
-      "linhas_por_s": 4497,
-      "linhas_por_s_2": 8809,
-      "linhas_por_s_servidor": 5838,
-      "linhas_por_s_servidor_2": 9780,
+      "carga_s": 4.363,
+      "carga_s_2": 2.214,
+      "carga_ms_servidor": 3309.0,
+      "carga_ms_servidor_2": 2014.0,
+      "linhas_por_s": 4584,
+      "linhas_por_s_2": 9033,
+      "linhas_por_s_servidor": 6044,
+      "linhas_por_s_servidor_2": 9930,
       "fio_enviado": 27680754,
       "fio_recebido": 1002,
       "fio_por_linha": 1384.1,
       "leitura": {
-        "s": 0.6012802159966668,
+        "s": 0.5588152419950347,
         "paginas": 10,
         "linhas_lidas": 20000,
         "enviados": 1172,
@@ -109,6 +112,9 @@
           "escalar": [
             "cidade"
           ],
+          "rownum_da_coluna_de_sistema": [
+            "rownum"
+          ],
           "decimal": [
             "saldo"
           ],
@@ -123,7 +129,7 @@
       },
       "coluna_com_padrao": {
         "slots_reescritos": 20000,
-        "ms": 23.691,
+        "ms": 27.403,
         "indices_refeitos": false,
         "nas_linhas_que_ja_existiam": [
           "ativo",
@@ -133,19 +139,19 @@
       }
     },
     "largo": {
-      "carga_s": 4.173,
-      "carga_s_2": 2.343,
-      "carga_ms_servidor": 3148.0,
-      "carga_ms_servidor_2": 2119.0,
-      "linhas_por_s": 4793,
-      "linhas_por_s_2": 8536,
-      "linhas_por_s_servidor": 6353,
-      "linhas_por_s_servidor_2": 9438,
+      "carga_s": 4.086,
+      "carga_s_2": 2.319,
+      "carga_ms_servidor": 3104.0,
+      "carga_ms_servidor_2": 2113.0,
+      "linhas_por_s": 4895,
+      "linhas_por_s_2": 8623,
+      "linhas_por_s_servidor": 6443,
+      "linhas_por_s_servidor_2": 9465,
       "fio_enviado": 27680762,
       "fio_recebido": 1013,
       "fio_por_linha": 1384.1,
       "leitura": {
-        "s": 0.5362269799952628,
+        "s": 0.5075674480031012,
         "paginas": 10,
         "linhas_lidas": 20000,
         "enviados": 1192,
@@ -172,6 +178,9 @@
           "escalar": [
             "cidade"
           ],
+          "rownum_da_coluna_de_sistema": [
+            "rownum"
+          ],
           "decimal": [
             "saldo"
           ],
@@ -186,7 +195,7 @@
       },
       "coluna_com_padrao": {
         "slots_reescritos": 20000,
-        "ms": 141.014,
+        "ms": 134.489,
         "indices_refeitos": false,
         "nas_linhas_que_ja_existiam": [
           "ativo",
@@ -247,30 +256,30 @@
   "chave_conferida": {
     "com_fk": [
       {
-        "parede_s": 2.315,
-        "motor_s": 2.087
+        "parede_s": 2.261,
+        "motor_s": 2.058
       },
       {
-        "parede_s": 2.254,
-        "motor_s": 2.039
+        "parede_s": 2.22,
+        "motor_s": 2.024
       },
       {
-        "parede_s": 2.267,
-        "motor_s": 2.051
+        "parede_s": 2.242,
+        "motor_s": 2.046
       }
     ],
     "sem_fk": [
       {
-        "parede_s": 0.878,
-        "motor_s": 0.651
+        "parede_s": 0.814,
+        "motor_s": 0.615
       },
       {
-        "parede_s": 0.86,
-        "motor_s": 0.635
+        "parede_s": 0.802,
+        "motor_s": 0.607
       },
       {
-        "parede_s": 0.868,
-        "motor_s": 0.639
+        "parede_s": 0.8,
+        "motor_s": 0.602
       }
     ]
   },

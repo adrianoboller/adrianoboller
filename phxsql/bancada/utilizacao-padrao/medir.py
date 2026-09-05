@@ -190,6 +190,15 @@ def esperado(i, lado):
     sao conferidos contra uma conta feita AQUI, em Python -- dois codigos sem
     uma linha em comum, que e como a bancada ja provou a soma da varredura."""
     e = dict(linha(i, lado))
+    # AS COLUNAS DE SISTEMA ENTRAM NA CONFERENCIA, e nao so na contagem de
+    # colunas do esquema. Foi coluna de sistema nova que quebrou todo salvar e
+    # todo incluir pela tela uma vez, e conferir o numero de colunas nao teria
+    # pego aquilo -- o que pega e comparar o VALOR. Aqui a tabela nao e
+    # particionada, entao a linha `i` foi a i-esima digitada e o `rownum` dela
+    # e `i`; e nenhuma linha desta carga foi excluida, entao `softdeleted` e
+    # falso em todas.
+    e["rownum"] = i
+    e["softdeleted"] = False
     ms = e["criado_em"]
     q = EPOCA + datetime.timedelta(milliseconds=ms)
     e["criado_em"] = "%s %02d:%02d:%02d,%03d" % (
@@ -343,13 +352,18 @@ def controle_do_comparador(c, lado):
     sujo["cidade"] = limpo["cidade"] + "x"
     acusou["escalar"] = divergencias(volta, sujo, lado)
 
-    # 2) um decimal com um centavo a menos -- o erro que um `f64` produziria
+    # 2) a COLUNA DE SISTEMA: o `rownum` fora da ordem de digitacao
+    sujo = dict(limpo)
+    sujo["rownum"] = limpo["rownum"] + 1
+    acusou["rownum_da_coluna_de_sistema"] = divergencias(volta, sujo, lado)
+
+    # 3) um decimal com um centavo a menos -- o erro que um `f64` produziria
     sujo = dict(limpo)
     inteiro, centavos = limpo["saldo"].split(".")
     sujo["saldo"] = "%s.%02d" % (inteiro, (int(centavos) + 1) % 100)
     acusou["decimal"] = divergencias(volta, sujo, lado)
 
-    # 3) UM BYTE do blob, que e a conferencia que a carga existe para fazer
+    # 4) UM BYTE do blob, que e a conferencia que a carga existe para fazer
     if lado in ("com", "largo"):
         sujo = dict(limpo)
         h = limpo["foto"]

@@ -724,8 +724,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `leitura-sem-guarda-de-reentrancia` | a ficha compartilhada pedida com a exclusiva na mão pendura o servidor | 1 | ✅ provada |
 | `familia-pela-grafia-crua` | a grafia do caminho divide a família do registro de `fsync`, e o volume sujo fica para trás | 1 | ✅ provada |
 | `pag-gravado-com-truncagem` | o `.pag` escrito com `fs::write` aparece pela metade para quem lê de fora | 1 | ✅ provada |
+| `pagina-anterior-de-um-em-um` | a página anterior anda de um em um pelo vazio entre baldes — e ali o `ler` cru RECUSA em vez de dizer «vazio» | 1 | ✅ provada |
 
-**84 guardas: 80 provadas, 4 redundantes** — 884 s de mutação, medido em 2026-09-05 03:18.
+**85 guardas: 81 provadas, 4 redundantes** — 762 s de mutação, medido em 2026-09-05 05:11.
 
 As notas que a rodada deixou:
 

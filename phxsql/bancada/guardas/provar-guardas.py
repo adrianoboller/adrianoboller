@@ -101,7 +101,21 @@ PRAZO_PADRAO = 300
 # qualquer defeito ser reposto, o que e o proprio padrao que este arquivo
 # adverte: quando um gerador (aqui, a copia) depende de uma lista, a lista
 # tem de sair do codigo -- e a lista que faltava era esta.
-COPIAR = ["Cargo.toml", "Cargo.lock", "crates", "exemplos", "docs"]
+#
+# `testes-web/` (368 KB, achado em 05/09/2026, e a SEGUNDA vez que esta lista
+# fica curta pelo mesmo motivo): `conferidor_botoes.rs` le
+# `testes-web/botoes-exercitados.txt` em TEMPO DE EXECUCAO -- como o
+# `error.rs` le o `docs/ROTEIRO-1.0.md` --, e sem ele a catraca
+# `nenhum_botao_novo_sem_prova` reprova na arvore limpa, ANTES de qualquer
+# defeito ser reposto. O sintoma e o pior possivel: a bateria inteira das
+# guardas para na linha de base, e o recado acusa um teste de outra frente que
+# passa perfeitamente na arvore de trabalho.
+#
+# A licao, que ja estava escrita duas linhas acima e voltou: quando um gerador
+# (aqui, a copia) depende de uma lista, a lista tem de sair do CODIGO. Enquanto
+# ela for digitada, o proximo `read_to_string` de um caminho fora de `crates/`
+# quebra isto de novo -- e quebra parecendo defeito de quem escreveu o teste.
+COPIAR = ["Cargo.toml", "Cargo.lock", "crates", "exemplos", "docs", "testes-web"]
 
 CORES = {"ok": "\033[32m", "mal": "\033[31m", "fraco": "\033[90m",
          "aviso": "\033[33m", "fim": "\033[0m"}

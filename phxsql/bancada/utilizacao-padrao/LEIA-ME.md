@@ -72,7 +72,7 @@ e não para engrossar a lista — uma tabela com dez colunas do mesmo tipo e um
 
 E a chave estrangeira `fk_categoria`: `categoria_id` → `categorias(id)`, com `ao_excluir: restringir` e `ao_alterar: cascata`. Ela **nasce conferida** — o `verificar` nem é mandado no pedido —, e chave conferida exige índice **dos dois lados**: `porId` na mãe e `porCategoria` na filha.
 
-As **colunas de sistema** entram sozinhas, e é por isso que a linha «colunas declaradas → colunas no esquema» da capa tem dois números: `sem` 10 → 12, `com` (Bin+Memo) 12 → 14, `largo` (Str) 12 → 14. Coluna de sistema nova já quebrou *todo salvar e todo incluir* pela tela uma vez, e é por isso que ela está exercitada aqui — o `rownum` de toda linha é conferido na leitura de volta.
+As **colunas de sistema** entram sozinhas, e é por isso que a linha «colunas declaradas → colunas no esquema» da capa tem dois números: `sem` 10 → 12, `com` (Bin+Memo) 12 → 14, `largo` (Str) 12 → 14. Coluna de sistema nova já quebrou *todo salvar e todo incluir* pela tela uma vez, e por isso as duas entram na **conferência**, e não só na contagem: o `rownum` de cada linha é comparado com a posição em que ela foi digitada, e o `softdeleted` com `false`. Contar coluna não teria pego aquele defeito; comparar o valor pega.
 <!-- FIM: esquema -->
 
 O que **não** está aqui, e por quê: *coluna com valor padrão*. Ela não existe
@@ -122,13 +122,13 @@ Duas cargas por lado, em tabelas próprias, na ordem `sem` → `com` → `largo`
 
 | lado | 1ª carga (parede / motor) | 2ª carga (parede / motor) | 2ª: linhas/s |
 |---|---:|---:|---:|
-| `sem` | 2,30 / 2,07 s | 2,26 / 2,02 s | 8.850 |
-| `com` (Bin+Memo) | 4,45 / 3,43 s | 2,27 / 2,04 s | 8.809 |
-| `largo` (Str) | 4,17 / 3,15 s | 2,34 / 2,12 s | 8.536 |
+| `sem` | 2,25 / 2,04 s | 2,38 / 2,16 s | 8.397 |
+| `com` (Bin+Memo) | 4,36 / 3,31 s | 2,21 / 2,01 s | 9.033 |
+| `largo` (Str) | 4,09 / 3,10 s | 2,32 / 2,11 s | 8.623 |
 
-**Na segunda carga os três lados custam o mesmo, dentro de 0,10 s de diferença** (`sem` 2,02 s / `com` (Bin+Memo) 2,04 s / `largo` (Str) 2,12 s de motor) — ou seja, o tempo **não separa** os três lados. Quem separa são os bytes, e eles estão nas tabelas acima.
+**Na segunda carga os três lados custam o mesmo, dentro de 0,15 s de diferença** (`sem` 2,16 s / `com` (Bin+Memo) 2,01 s / `largo` (Str) 2,11 s de motor) — ou seja, o tempo **não separa** os três lados. Quem separa são os bytes, e eles estão nas tabelas acima.
 
-**E há um efeito que eu não sei explicar, e ele fica escrito assim.** A primeira carga dos dois lados com peso grande custa até **1,68×** a segunda do mesmo lado, e a diferença aparece dentro do motor, não só no fio. Dois controles mataram as duas explicações óbvias, e nenhum deles explicou o efeito:
+**E há um efeito que eu não sei explicar, e ele fica escrito assim.** A primeira carga dos dois lados com peso grande custa até **1,64×** a segunda do mesmo lado, e a diferença aparece dentro do motor, não só no fio. Dois controles mataram as duas explicações óbvias, e nenhum deles explicou o efeito:
 
 1. **não é a posição na fila** — `PHX_ORDEM_INVERTIDA=1` inverte a ordem das seis cargas e o padrão não muda de dono: os mesmos dois lados saem lentos na primeira e rápidos na segunda;
 2. **não é «a primeira carga de uma série»** — o controle da chave conferida, logo abaixo, faz três cargas idênticas seguidas e as três custam o mesmo, nos dois braços.
@@ -141,10 +141,10 @@ Enquanto não houver causa medida, a conclusão publicada é a que **as duas col
 <!-- GERADO: chave-conferida -->
 | a chave | 1ª carga | 2ª | 3ª | mediana (motor) | µs por linha |
 |---|---:|---:|---:|---:|---:|
-| **declarada? não** — só o índice `porCategoria` | 0,65 | 0,64 | 0,64 | **0,64 s** | 31,9 |
-| **conferida** (o que a tabela desta bancada usa) | 2,09 | 2,04 | 2,05 | **2,05 s** | 102,6 |
+| **declarada? não** — só o índice `porCategoria` | 0,61 | 0,61 | 0,60 | **0,61 s** | 30,4 |
+| **conferida** (o que a tabela desta bancada usa) | 2,06 | 2,02 | 2,05 | **2,05 s** | 102,3 |
 
-**A chave conferida custa 3,21× a gravação.** Os dois braços diferem em uma coisa só — a declaração da chave; o índice `porCategoria` existe nos dois —, então o que está medido é a **conferência**, e não o índice. É o preço da regra primordial da casa cobrado na entrada: para cada linha gravada, o motor pergunta à mãe se o pai existe e se ele está vivo. `docs/DESEMPENHO.md` §15 mede a mesma coisa por dentro, com `--example custo-da-fk`; aqui ela é medida pela porta de dados, com a tabela inteira.
+**A chave conferida custa 3,37× a gravação.** Os dois braços diferem em uma coisa só — a declaração da chave; o índice `porCategoria` existe nos dois —, então o que está medido é a **conferência**, e não o índice. É o preço da regra primordial da casa cobrado na entrada: para cada linha gravada, o motor pergunta à mãe se o pai existe e se ele está vivo. `docs/DESEMPENHO.md` §15 mede a mesma coisa por dentro, com `--example custo-da-fk`; aqui ela é medida pela porta de dados, com a tabela inteira.
 
 E ele é maior que o dos blobs — que no tempo é **zero**, medido no bloco acima. O que **não** está medido aqui é quanto cada um dos cinco índices custa: para dizer isso seria preciso um braço por índice, e ele não existe. Quem carregar milhões de linhas e puder conferir depois tem aqui o número para decidir; quem não puder tem aqui o que a garantia custa.
 
@@ -179,11 +179,11 @@ mesmo método que provou a soma da varredura na bancada de comparação.
 <!-- GERADO: conferencia -->
 | lado | linhas lidas | páginas | divergências | o comparador acusa o estrago? |
 |---|---:|---:|---:|---|
-| `sem` | 20.000 | 10 | 0 | escalar → `cidade`; decimal → `saldo` |
-| `com` (Bin+Memo) | 20.000 | 10 | 0 | escalar → `cidade`; decimal → `saldo`; um byte do blob → `foto`; ultimo char do memo → `observacao` |
-| `largo` (Str) | 20.000 | 10 | 0 | escalar → `cidade`; decimal → `saldo`; um byte do blob → `foto`; ultimo char do memo → `observacao` |
+| `sem` | 20.000 | 10 | 0 | escalar → `cidade`; rownum da coluna de sistema → `rownum`; decimal → `saldo` |
+| `com` (Bin+Memo) | 20.000 | 10 | 0 | escalar → `cidade`; rownum da coluna de sistema → `rownum`; decimal → `saldo`; um byte do blob → `foto`; ultimo char do memo → `observacao` |
+| `largo` (Str) | 20.000 | 10 | 0 | escalar → `cidade`; rownum da coluna de sistema → `rownum`; decimal → `saldo`; um byte do blob → `foto`; ultimo char do memo → `observacao` |
 
-A última coluna é o **controle positivo**, e ele roda na mesma corrida: uma cópia do valor esperado é estragada de propósito — um caractere na cidade, um centavo no `Decimal`, **um byte** no hexadecimal do blob, o último caractere do memo — e o mesmo comparador tem de nomear o campo. Sem isso, «zero divergências» poderia ser um comparador cego, e esta casa já publicou zero com um medidor cego. Sem estrago nenhum ele cala: `sem` `[]`, `com` (Bin+Memo) `[]`, `largo` (Str) `[]`.
+A última coluna é o **controle positivo**, e ele roda na mesma corrida: uma cópia do valor esperado é estragada de propósito — um caractere na cidade, o `rownum` fora da ordem de digitação, um centavo no `Decimal`, **um byte** no hexadecimal do blob, o último caractere do memo — e o mesmo comparador tem de nomear o campo. Sem isso, «zero divergências» poderia ser um comparador cego, e esta casa já publicou zero com um medidor cego. Sem estrago nenhum ele cala: `sem` `[]`, `com` (Bin+Memo) `[]`, `largo` (Str) `[]`.
 <!-- FIM: conferencia -->
 
 ## A integridade referencial, pela porta de dados

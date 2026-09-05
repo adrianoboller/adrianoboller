@@ -66,23 +66,29 @@ da janela é um comboio dos oito arquivos da tabela. *O custo do blob aparece em
 bytes, não em chamadas ao disco.*
 
 E o **tempo não separa os três lados**: na segunda carga de cada um, o motor
-gasta 2,02 s, 2,04 s e 2,12 s para as mesmas 20.000 linhas — 0,10 s de
-diferença entre o lado sem blob nenhum e o lado com os dois. Quem separa são os
-bytes.
+gasta praticamente o mesmo para as mesmas 20.000 linhas — a diferença entre o
+lado sem blob nenhum e o lado com os dois cabe dentro do ruído entre duas
+cargas do mesmo lado. Quem separa são os bytes. *Os números de tempo não são
+repetidos aqui de propósito: eles saem do gerador, em
+`bancada/utilizacao-padrao/LEIA-ME.md` e em `docs/DESEMPENHO.md` §18.1, e uma
+cópia nesta página envelheceria na próxima corrida. Os de byte estão acima
+porque são determinísticos — as mesmas linhas dão os mesmos arquivos.*
 
 Duas coisas apareceram no caminho, e valem mais que o eixo original:
 
-**A chave estrangeira conferida custa 3,21×** a gravação da mesma tabela sem
-ela — 0,64 s contra 2,05 s de motor, medianas de três cargas por braço, com o
-índice `porCategoria` presente nos dois lados. É o maior custo da tabela
-complexa, e é o preço da regra primordial cobrado na entrada.
+**A chave estrangeira conferida triplica a gravação** da mesma tabela sem ela —
+medianas de três cargas por braço, com o índice `porCategoria` presente nos
+dois lados, de modo que o que está medido é a conferência e não o índice. É o
+maior custo da tabela complexa, e é o preço da regra primordial cobrado na
+entrada. O número está em `docs/DESEMPENHO.md` §18.2, gerado.
 
 **E um efeito que ficou sem causa**, escrito assim de propósito: a primeira
-carga de um lado com peso grande custa até 1,68× a segunda do mesmo lado, e a
-diferença aparece dentro do motor. Dois controles mataram as duas explicações
-óbvias — inverter a ordem das seis cargas não muda de quem é a lentidão, e três
-cargas idênticas seguidas (o braço da chave conferida) custam todas o mesmo.
-Nenhum dos dois explicou o efeito, e nenhuma conclusão foi tirada dele.
+carga de um lado com peso grande custa mais da metade a mais que a segunda
+carga do mesmo lado, e a diferença aparece dentro do motor. Dois controles
+mataram as duas explicações óbvias — inverter a ordem das seis cargas
+(`PHX_ORDEM_INVERTIDA=1`) não muda de quem é a lentidão, e três cargas
+idênticas seguidas (o braço da chave conferida) custam todas o mesmo. Nenhum
+dos dois explicou o efeito, e **nenhuma conclusão foi tirada dele**.
 
 O portão do tempo passou a ser consultado **por fase**, e não pela corrida
 inteira: a corrida leva um minuto e meio, e numa máquina com vizinho ativo isso

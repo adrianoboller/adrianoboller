@@ -372,8 +372,9 @@ def bloco_conferencia(d, a):
         "",
         "A última coluna é o **controle positivo**, e ele roda na mesma "
         "corrida: uma cópia do valor esperado é estragada de propósito — um "
-        "caractere na cidade, um centavo no `Decimal`, **um byte** no "
-        "hexadecimal do blob, o último caractere do memo — e o mesmo "
+        "caractere na cidade, o `rownum` fora da ordem de digitação, um "
+        "centavo no `Decimal`, **um byte** no hexadecimal do blob, o último "
+        "caractere do memo — e o mesmo "
         "comparador tem de nomear o campo. Sem isso, «zero divergências» "
         "poderia ser um comparador cego, e esta casa já publicou zero com um "
         "medidor cego. Sem estrago nenhum ele cala: %s."
@@ -489,8 +490,10 @@ def bloco_esquema(d, a):
         "As **colunas de sistema** entram sozinhas, e é por isso que a linha "
         "«colunas declaradas → colunas no esquema» da capa tem dois números: "
         "%s. Coluna de sistema nova já quebrou *todo salvar e todo incluir* "
-        "pela tela uma vez, e é por isso que ela está exercitada aqui — o "
-        "`rownum` de toda linha é conferido na leitura de volta."
+        "pela tela uma vez, e por isso as duas entram na **conferência**, e "
+        "não só na contagem: o `rownum` de cada linha é comparado com a "
+        "posição em que ela foi digitada, e o `softdeleted` com `false`. "
+        "Contar coluna não teria pego aquele defeito; comparar o valor pega."
         % ", ".join("%s %d → %d" % (ROTULO[l], d["colunas_declaradas"][l],
                                     d["colunas_no_esquema"][l])
                     for l in d["lados"]),
