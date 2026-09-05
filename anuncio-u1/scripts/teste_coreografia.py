@@ -24,7 +24,10 @@
 # SONDA_ROT="1-160" (revisao 4: velocidade angular da caixa em graus/quadro,
 # bob e inclinacao), SONDA_CABO="235-305" (plugue projetado por quadro: em
 # que quadro entra no quadro, altura), MEDIR_FUNDO="180" (luminancia por
-# regiao do quadro_180.png renderizado, para posicionar a legenda).
+# regiao do quadro_180.png renderizado, para posicionar a legenda),
+# SONDA_REV5=0 (desliga a conferencia da revisao 5: caixa inteira e <= 40%
+# da altura nos planos em que aparece, 45% em transicao - liga por padrao
+# e imprime OK/FALHA por quadro).
 #
 # Custo medido por software (llvmpipe, 4 nucleos): 16-41 s por quadro da cena
 # completa a 360x640 com 8 amostras (o previa.sh fala em 6 s: e para os
@@ -147,6 +150,51 @@ mod_coreografia.conferir_colisoes(objs, passo=int(os.environ.get("PASSO_COLISAO"
 # q040/q075/q150/q218/q315/q466/q507 pedidos na linha do tempo de 20 s.
 quadros_enq = [int(v) for v in os.environ.get("SONDA_ENQ", "1,42,84,180,276,372,396,579,620,649").split(",") if v.strip()]
 mod_coreografia.medir_enquadramento(objs, quadros_enq)
+
+# Revisao 5: nos planos em que a caixa aparece ela tem de estar INTEIRA
+# (corpo, abas abertas e etiqueta) e a no maximo 40% da altura do 9:16 -
+# 45% em transicao. Quadros "parados" (caixa assentada, abas abertas ou
+# fechadas) e de transicao (abas abrindo/fechando, caixa entrando ou saindo,
+# camera em dolly), na referencia de 25 s; SONDA_REV5=0 desliga. Com os
+# raios antigos repostos (1,5-1,75 no beat 1, 1,35-1,65 no beat 6) o bloco
+# acusa FALHA em todos: 61-84%.
+if os.environ.get("SONDA_REV5", "1") not in ("0", "false", "False") and objs["params"]["caixa_some"]:
+    f_ = objs["fator"]
+    q_ = lambda n, fr: mod_coreografia.q_em(n, fr, f_)  # noqa: E731
+    r2, r6, r7 = mod_coreografia.ROTEIRO[2], mod_coreografia.ROTEIRO[6], mod_coreografia.ROTEIRO[7]
+    parados = [q_(1, 1.0), q_(2, r2["tampa"][1]), q_(2, r2["u1_sobe"][0]),
+               q_(6, r6["camera_longe"]), q_(6, r6["espuma"][0]), q_(6, 1.0)]
+    # (Enquanto a caixa entra ou sai por baixo ela e "cortada embaixo" por
+    # definicao, e o mergulho do beat 7 entra na caixa: esses quadros ficam
+    # na sonda comum, nao aqui. O apice e o plano longe de onde ele parte.
+    # No beat 6 o quadro que mais aperta e o do PICO do overshoot da caixa,
+    # 'quadros' do overshoot antes de assentar: ela ja esta inteira, 6 cm
+    # acima, e a camera ainda esta chegando - medido 49% na primeira
+    # tentativa, com a conferencia so no quadro em que assenta.)
+    n_over = int(round(float((objs["params"].get("overshoot") or {}).get("quadros", 6)) * f_))
+    transicao = [q_(2, 0.20), q_(2, 0.35), q_(6, r6["caixa_sobe"][1]) - n_over, q_(6, r6["caixa_sobe"][1]),
+                 q_(6, r6["tampa"][0]) + 3, q_(7, 0.10), q_(7, r7["sobe_para_logo"][1])]
+    # O quadro que mais aperta na entrada (beat 6) e na saida (beat 2) e o
+    # PRIMEIRO/ULTIMO em que a caixa esta inteira - o pe do quadro fica ~1,5
+    # m abaixo dela, entao ela ja e inteira 0,5 m antes de assentar, com a
+    # camera ainda chegando (medido 49% em q580 com a conferencia so no
+    # quadro em que assenta). Varre os dois trechos e acrescenta esses.
+    for n_, (a_, b_) in ((6, r6["caixa_sobe"]), (2, r2["caixa_desce"])):
+        faixa = list(range(q_(n_, a_), q_(n_, b_) + 1))
+        inteiros = [q__ for q__, m_ in mod_coreografia.medir_enquadramento(objs, faixa, alvos=("caixa",)).items()
+                    if m_["caixa"][2] == "inteiro"]
+        if inteiros:
+            transicao.append(min(inteiros) if n_ == 6 else max(inteiros))
+    medidas = mod_coreografia.medir_enquadramento(objs, sorted(set(parados + transicao)), alvos=("caixa",))
+    falhas = 0
+    for q__ in sorted(set(parados + transicao)):
+        alt, larg, estado = medidas[q__]["caixa"]
+        teto = 0.40 if q__ in parados else 0.45
+        ok = alt <= teto + 1e-6 and estado == "inteiro"
+        falhas += 0 if ok else 1
+        print("[rev5] q%03d %-9s caixa %3.0f%% da altura (teto %.0f%%), %-12s -> %s" % (
+            q__, "parado" if q__ in parados else "transicao", 100 * alt, 100 * teto, estado, "OK" if ok else "FALHA"))
+    print("[rev5] caixa inteira e <= 40%% (45%% em transicao): %s" % ("OK" if falhas == 0 else "FALHA em %d quadros" % falhas))
 # A caixa tem de estar FORA do quadro no quadro em que parte (1), no ultimo
 # em que ainda e visivel ao sumir (beat 2) e no primeiro em que volta (beat 6).
 if params["caixa_some"] and "_q_caixa_some" in objs:

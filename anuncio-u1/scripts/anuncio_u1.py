@@ -6653,6 +6653,49 @@ def _modulo_coreografia():
     #   linha indicadora mirada por quadro no corpo do U1 (_legenda_heroi), e a
     #   quinta linha da cartela, logo abaixo da marca.
     #
+    # REVISAO 5 (docs/ESPECIFICACAO.md): A CAIXA ESTAVA PERTO DEMAIS. Nos planos
+    # em que ela aparece (beat 1, beat 2 ate ela sair, beat 6, aproximacao do
+    # beat 7) a camera fica BEM mais longe: caixa INTEIRA no quadro (corpo, abas
+    # abertas e etiqueta) e a no maximo 40% da altura do 9:16 - alvo 30-40% nos
+    # planos parados, nunca acima de 45% em transicao. Beats 3, 4 e 5 nao mudam.
+    #
+    # - MEDIDO antes de mexer (sonda de enquadramento, 25 s): caixa a 61% no fim
+    #   do beat 1, 79-84% com as abas abertas (q100-q139), 56-72% no beat 6 e
+    #   46-58% na subida do beat 7, cortada nos lados em todos. Envelope real:
+    #   fechada 0,72 x 0,62 x 0,80 m com a etiqueta saindo 0,13 m em +X; com as
+    #   abas abertas 0,97 x 0,97 x 1,08 m. A fracao escala com 1/distancia.
+    #
+    # - SO O RAIO afasta; a lente fica em 35 mm nos planos da caixa. 28 mm
+    #   encurtaria o dolly (2,7 m em vez de 3,3 para o mesmo 40%), mas a legenda
+    #   "Snapmaker U1" e construida com 'lente: 35' fixa (PARAMS_LEGENDA) e uma
+    #   rampa de lente durante q166-q211 mudaria o tamanho do texto; e no beat
+    #   7 a cartela foi medida a 35 mm. Raios: beat 1 3,0 -> 2,8 (era 1,75 ->
+    #   1,5); beat 2 3,3 ate a caixa sair (era 1,55 -> heroi); beat 6 3,2 no
+    #   plano longe e 2,0 (alto, z 2,3) no fim (era 1,35 -> 1,65); apice do beat
+    #   7 a 1,8 m do topo (era 1,25).
+    #
+    # - A CAIXA SAI JUNTO COM A SUBIDA DO U1 (caixa_desce 0,42-0,62, era
+    #   0,52-0,76): a camera so pode aproximar do heroi DEPOIS de a caixa sair,
+    #   e o heroi fica onde estava; com a caixa saindo em q166 o dolly-in tem
+    #   29 quadros ate q195 (2,0 m, pico ~0,10 m/quadro = o da subida do beat
+    #   7). Enquanto a caixa desce a camera so inclina para cima seguindo o U1,
+    #   o que tambem encurta a descida dela (o pe do quadro sobe).
+    #
+    # - BEAT 6: o pull-back da foto C chega ao plano longe em 'camera_longe'
+    #   (0,60) e nao em 'u1_desce'[0]: 3,0 m de recuo em 48 quadros (pico
+    #   ~0,094; em 38 passaria de 0,12). Do plano longe a camera sobe em grua
+    #   ate uma pose alta no fim do beat, e a subida do beat 7 continua o mesmo
+    #   movimento (raio, altura e azimute monotonos ate o apice): sem parada e
+    #   sem a subida de 3 m que partir do plano frontal exigiria.
+    #
+    # - O MERGULHO parte do plano longe ('alto' 1,8: caixa a ~34% da altura
+    #   vista de cima, etiqueta dentro da largura) e a travessia nao muda:
+    #   'meio', 'perto' e 'v_perto' fixam o perfil de la para baixo.
+    #
+    # - O teste (teste_coreografia, bloco [rev5]) confere nos quadros da caixa
+    #   a fracao <= 40% (45% em transicao) e 'inteiro'; com os raios antigos
+    #   repostos ele acusa FALHA em todos.
+    #
     # Eixos e medidas seguem docs/ESPECIFICACAO.md: metros, Z para cima, frente
     # em -Y, origem no centro da base da caixa; nao ha chao.
 
@@ -6702,7 +6745,16 @@ def _modulo_coreografia():
             "tampa": (0.00, 0.27),          # tampa sai rapido, antes da espuma
             "espuma": (0.20, 0.72),         # explode depois que a tampa saiu de cima
             "u1_sobe": (0.42, 0.62),        # so depois de toda espuma ter saltado
-            "caixa_desce": (0.52, 0.76),    # a caixa some por baixo do quadro
+            # Revisao 5: a caixa some JUNTO com a subida do U1 (era 0,52-0,76),
+            # porque a camera so pode aproximar do heroi depois de a caixa ter
+            # saido do quadro - e o heroi (q195) fica onde estava. O ultimo
+            # floco e lancado em 0,20 + 0,35 x 0,52 = 0,38 (atraso maximo do
+            # modulo caixa), antes de a caixa partir. Parte 4 quadros DEPOIS do
+            # U1, nao junto: e o tempo em que o balanco dela sai (5,5 mm/quadro
+            # de bob) com o U1 ja subindo - medido, partir no mesmo quadro
+            # deixava o U1 2,2 cm abaixo do fundo; e amortecer o balanco desde
+            # a espuma cortava o "paira depois de parar" a 0,6 cm de bob.
+            "caixa_desce": (0.45, 0.63),    # a caixa some por baixo do quadro
             "u1_desce": (0.84, 1.00),       # U1 desce e PARA NO AR na cota de referencia
             "u1_desliza": (0.80, 0.95),     # (caixa_some=False) U1 vai para -Y no ar
             "rim": (0.42, 0.92),            # rim a 0,3 no momento-heroi
@@ -6736,9 +6788,30 @@ def _modulo_coreografia():
             # profundidade de partida dela e projetada pela camera AVALIADA nesse
             # quadro (_conferir_volta_da_caixa), nao pela pose de referencia.
             "u1_sobe": (0.12, 0.42),
-            "caixa_sobe": (0.20, 0.46),
-            "u1_desce": (0.48, 0.72),
-            "espuma": (0.66, 0.88),
+            # Revisao 5: a caixa chega 5 quadros mais tarde (era 0,20-0,46) e o
+            # U1 so desce depois (era 0,48-0,72), porque o pull-back da foto C
+            # agora recua 3,0 m (era 1,1) ate o plano LONGE em 'camera_longe'.
+            # MEDIDO: com a caixa chegando em 0,46 e o plano longe em 0,60 a
+            # camera estava a 87% do caminho e a caixa com abas a 49% da altura
+            # (teto de 45% em transicao); com 0,50/0,54 (43 quadros) o pico do
+            # pull-back era 0,117 m/quadro, colado no teto global de 0,123 (o
+            # mergulho); o quadro que aperta nao e o em que ela assenta, e o
+            # PRIMEIRO em que fica inteira (o pe do quadro esta em z -1,5 no
+            # eixo dela, entao ela ja esta inteira a 0,5 m abaixo do repouso,
+            # ~10 quadros antes de assentar): com 0,30-0,55 dava 49% ali, e com
+            # 0,36-0,60 ainda 46%. Com a caixa em 0,37-0,61 e o plano longe em
+            # 0,56 (45 quadros, pico ~0,11) a camera ja fez >= 95% do recuo
+            # quando ela fica inteira. O U1 comeca a descer 3 quadros antes de a
+            # caixa assentar, entrando pela boca
+            # enquanto ela termina de subir: a folga ao fundo e de 0,8 m e as
+            # abas abertas ficam fora da pegada dele (conferir_colisoes mede o
+            # fundo). As luzes continuam assentando em 'u1_desce'[0]; a espuma
+            # volta com o U1 ja parado (o primeiro floco pousa ~0,25 s depois do
+            # inicio) e as abas fecham como antes.
+            "caixa_sobe": (0.37, 0.61),
+            "camera_longe": 0.56,
+            "u1_desce": (0.58, 0.78),
+            "espuma": (0.71, 0.91),
             "tampa": (0.82, 1.00),
         },
         7: {
@@ -6901,7 +6974,12 @@ def _modulo_coreografia():
         # partindo de zero - a sonda media 0,183 -> 0,019 (q528) -> 0,197.
         # Revisao 2: 'alto' 1,8 -> 1,25 e 'meio' 0,9 -> 0,65 (camera mais perto:
         # no apice o topo da caixa ocupa ~95% da largura a 35 mm, era 65%).
-        "mergulho": {"alto": 1.25, "meio": 0.65, "perto": 0.15, "dentro": -0.02, "travessia": 3, "veu": 2,
+        # Revisao 5: 'alto' volta a 1,8 - o mergulho parte do plano LONGE: a
+        # 1,8 m do topo a caixa ocupa ~34% da altura e a etiqueta (que sai 0,13
+        # m em +X) cabe na largura com folga; abaixo de 1,7 m ela cortava na
+        # lateral. 'meio', 'perto' e 'v_perto' ficam: sao eles que fixam o pico
+        # de 0,123 m/quadro na juncao das fases A/B e a travessia, que nao muda.
+        "mergulho": {"alto": 1.8, "meio": 0.65, "perto": 0.15, "dentro": -0.02, "travessia": 3, "veu": 2,
                      "foco_min": 0.07, "f_ini": 2.8, "f_fim": 8.0,
                      "v_perto": 0.03, "arco": 0.30, "arco_quadros": 12, "v_ini": 0.06},
         # Quadros (na referencia) que a logo gasta entrando SOZINHA (fade +
@@ -7444,6 +7522,13 @@ def _modulo_coreografia():
 
         pcaixa = {"cor": p["cor_caixa"], "logo": _asset(p, "logo_engineprint.png"), "u1": tuple(u1["dimensoes"])}
         pcaixa.update(p["caixa"])
+        # Ate onde a espuma cai (e de onde volta): o padrao do modulo caixa
+        # (-1,3) foi calibrado para o pe do quadro da camera antiga (~-0,7 no
+        # eixo da caixa). Com a camera longe da revisao 5 o pe fica em -1,6 a
+        # -1,85, e a -1,3 os flocos desvaneciam a vista e, na volta, nasciam
+        # dentro do quadro. A -2,2 o desvanecer cruza a borda e a volta entra
+        # de fora. Quem passar 'z_fora_do_quadro' em params['caixa'] manda.
+        pcaixa.setdefault("z_fora_do_quadro", -2.2)
         caixa = mod_caixa.construir_caixa(cena, col, pcaixa)
         if caixa.get("logo_provisoria"):
             print("[coreografia] AVISO: logo PROVISORIA na caixa (o PNG nao foi encontrado)")
@@ -7909,13 +7994,20 @@ def _modulo_coreografia():
         # Camera do beat, definida ANTES das chaves da caixa: a profundidade de
         # partida e projetada por ela. Frontal, um pouco alta, fechando de leve;
         # acaba em -85 graus (quase de frente: a 80 a face lateral entrava e a
-        # caixa cortava no lado) e raio 1,5 (era 2,1): caixa a ~60% da altura do
-        # 9:16 com a frente a ~95% da largura (medido pela sonda de
-        # enquadramento). Raio 1,75 no inicio: girando, a diagonal da caixa (0,9
-        # m) precisa de mais largura do que a frente dela (0,68 m) no fim.
+        # caixa cortava no lado). Revisao 5 (a caixa estava perto demais): raio
+        # 3,0 -> 2,8 (era 1,75 -> 1,5, caixa a 61% da altura no fim). MEDIDO
+        # pela sonda de enquadramento: a fracao escala com 1/distancia (0,61 x
+        # 1,57 m = 0,96 m), entao a 2,9 m do alvo a caixa fechada fica a ~33%,
+        # inteira, com ar em cima e embaixo. A lente fica em 35 mm nos planos
+        # da caixa: a legenda do heroi e construida com 'lente: 35' fixa, e uma
+        # rampa de lente durante q166-q211 mudaria o tamanho do texto. A camera
+        # mais longe poe o pe do quadro mais fundo (z -1,95 no eixo da caixa em
+        # vez de -1,4): a caixa parte 2,85 m abaixo (era 2,17) e entra a 5,3
+        # cm/quadro - que NA TELA e mais lento que antes (1,7% da altura do
+        # quadro por quadro; era 2,5%), porque o quadro cobre 3,2 m e nao 1,6.
         lente = 35.0
-        cam_ini = (-92.0, 1.75, 1.0, (0.0, 0.0, 0.42))
-        cam_fim = (-85.0, 1.50, 0.92, (0.0, 0.0, 0.45))
+        cam_ini = (-92.0, 3.00, 1.25, (0.0, 0.0, 0.42))
+        cam_fim = (-85.0, 2.80, 1.15, (0.0, 0.0, 0.45))
         # Partida: topo da tampa 'margem_fora' abaixo da borda inferior do quadro
         # no canto distante da caixa, com a camera do quadro 1 (era "tampa rente
         # ao chao").
@@ -7940,20 +8032,32 @@ def _modulo_coreografia():
         pivo_z = float(fl["pivo"]) * caixa["exterior_corpo"][2]
         o = p.get("overshoot") or {}
         u_pico = 1.0 - float(o.get("quadros", 6)) * fator / n_sub
+        # De onde o balanco da caixa comeca a sair: da partida do U1, se a caixa
+        # parte depois dele (o padrao: 4 quadros depois, revisao 5). Se alguem
+        # puser a caixa partindo junto ou antes do U1, sai desde o lancamento da
+        # espuma, onde as senoides cruzam zero - medido com o envelope de q139 a
+        # q139: a caixa estava no bob (-2,2 cm) em q138, a chave da descida a
+        # punha em (0, 0, 0) em q139 e o U1 partia da pose do balanco, 2,2 cm
+        # abaixo do fundo (conferir_colisoes). O U1 usa o MESMO envelope da
+        # caixa enquanto esta dentro dela: e o que o mantem rigido em relacao a
+        # ela (com q_env = q_u1 o envelope dele e 1,0 ate partir, como antes).
+        q_env = q_u1 if q_caixa > q_u1 else q_esp
         for f in range(q_ini, q_ultimo + 1):
             u_rot = (f - q_ini) / n
             u_sub = (f - q_ini) / n_sub
             ang = -giro * (1.0 - _perfil_giro(u_rot, fl["giro_rampas"]))
             dz = -profundidade * (1.0 - _perfil_overshoot(u_sub, float(fl["overshoot"]), u_pico,
                                                           expoente=float(fl["subida_expoente"])))
+            env = _envelope(f, q_env, q_caixa)
             if f <= q_caixa:
-                T = _pose_flutuante(fl, f, ang, dz, pivo_z, _envelope(f, q_u1, q_caixa))
+                T = _pose_flutuante(fl, f, ang, dz, pivo_z, env)
                 _chave_na_pose(corpo, f, T, zero, zero, ang)
                 _chave_na_pose(tampa, f, T, loc_tampa, zero, ang)
             if f <= q_u1:
-                # O U1 segue a caixa SEM envelope ate partir: dentro da caixa (a
-                # folga da espuma e de 4 cm) ele nao pode derivar em relacao a ela.
-                T = _pose_flutuante(fl, f, ang, dz, pivo_z, 1.0)
+                # O U1 segue a caixa com o envelope DELA ate partir (1,0 enquanto
+                # a caixa balanca inteira): dentro da caixa (a folga da espuma e
+                # de 4 cm) ele nao pode derivar em relacao a ela.
+                T = _pose_flutuante(fl, f, ang, dz, pivo_z, env)
                 _chave_na_pose(raiz, f, T, loc_u1, zero, ang)
                 if f == q_u1:
                     # De onde o U1 parte no beat 2 (com o bob e a inclinacao
@@ -8021,36 +8125,50 @@ def _modulo_coreografia():
             _chave(raiz, q_fim, (0.0, centro.y, 0.0))
         _interpolar(raiz, q(r["u1_sobe"][0]), q_fim)
 
-        # Camera: segura a caixa enquadrada enquanto a tampa sai e a espuma
-        # explode (chave em 0,45), depois sobe com o U1 ate o momento-heroi (raio
-        # 1,05, ver PARAMS_PADRAO['camera_heroi']) e desce com ele ate a pose de
-        # onde a orbita do beat 3 parte. Alvo no meio do U1 e nao na base: com o
-        # alvo na base o topo dele saia do quadro no pico.
+        # Camera (revisao 5, a caixa estava perto demais - antes: chave a 1,55 em
+        # 0,45 e subida ate o heroi durante a subida do U1, com a caixa a ~80%
+        # da altura e cortada nos lados):
+        # - abre de 2,8 (fim do beat 1) para 3,3 enquanto as abas abrem: com as
+        #   abas a caixa passa de 0,80 a 1,08 m de altura (medido), e a 3,3 m
+        #   fica a <= 40% da altura, inteira; a 2,8 chegaria a 47%;
+        # - segura (drift) ate o U1 partir; enquanto o U1 sobe e a caixa desce
+        #   (mesmo trecho), so INCLINA para cima seguindo o U1 - nao aproxima:
+        #   o alvo a 1,2 no ultimo quadro da caixa sobe o pe do quadro e a
+        #   caixa sai com 2,3 m de descida em vez de 3,0 (o pe do quadro fica
+        #   em z -1,1 em vez de -1,6 no eixo dela);
+        # - so com a caixa FORA (q167) aproxima ate o heroi, que fica onde
+        #   estava (raio 1,25, z 1,65, alvo no meio do U1 - ver 'camera_heroi'),
+        #   chegando quando o U1 comeca a descer: 2,0 m em 29 quadros, pico
+        #   ~0,10 m/quadro, o mesmo da subida do beat 7. A legenda (q166-q211)
+        #   mira o U1 por quadro, entao acompanha o dolly-in.
+        # Alvo no meio do U1 e nao na base: com o alvo na base o topo dele saia
+        # do quadro no pico.
         lente = 35.0
         ch = p["camera_heroi"]
         pose_heroi = (-84.0, ch["raio"], ch["z"], Vector((0.0, 0.0, z_alto + ch["alvo"])))
         pose_fim = (-76.0, 1.30, 0.62, centro + Vector((0.0, 0.0, 0.37)))
-        _chave_camera(objs, q(0.45), -82.0, 1.55, 1.05, (0.0, 0.0, 0.62))
-        _chave_camera(objs, q(r["u1_sobe"][1]), *pose_heroi)
+        pose_abas = (-83.0, 3.30, 1.35, Vector((0.0, 0.0, 0.55)))
+        pose_saida = (-82.0, 3.25, 1.60, Vector((0.0, 0.0, 1.20)))
+        _chave_camera(objs, q(r["tampa"][1]), *pose_abas)
+        _chave_camera(objs, q(r["u1_sobe"][0]), -82.0, 3.30, 1.38, (0.0, 0.0, 0.60))
         _chave_centro(objs, q(r["u1_sobe"][1]), (0.0, 0.0, 0.0))
         if p["caixa_some"]:
-            # A camera so comeca a descer QUANDO o U1 desce (chave de espera com
-            # um drift de 1 grau/3 cm, para nao parar): sem ela o alvo Bezier ja
-            # descia entre o heroi e o fim do beat e o topo do U1 saia do quadro
-            # em q150 (medido pela sonda de enquadramento).
-            _chave_camera(objs, q(r["u1_desce"][0]), pose_heroi[0] - 1.0, pose_heroi[1] + 0.03, pose_heroi[2] + 0.02,
-                          pose_heroi[3])
+            _chave_camera(objs, q(r["caixa_desce"][1]), *pose_saida)
+            _chave_camera(objs, q(r["u1_desce"][0]), *pose_heroi)
+        else:
+            _chave_camera(objs, q(r["u1_sobe"][1]), *pose_heroi)
         _chave_camera(objs, q_fim, *pose_fim)
         _chave_centro(objs, q_fim, centro)
 
         corpo = caixa["corpo"]
         if p["caixa_some"]:
             # Some por BAIXO do quadro: ate o topo do corpo ficar 'margem_fora'
-            # abaixo da borda inferior do quadro nas duas poses de camera do
-            # trecho; dali ate voltar (beat 6) fica em hide_render - na foto C,
-            # de cima, ela apareceria sob o U1 se ficasse so "fora do quadro".
-            z_pe = min(_z_pe_do_quadro(_pos_camera(*pose[:3]), pose[3], lente, avanco=_meia_diagonal_caixa(caixa))
-                       for pose in (pose_heroi, pose_fim))
+            # abaixo da borda inferior do quadro na pose de camera do ultimo
+            # quadro visivel (_conferir_volta_da_caixa reprojeta com a camera
+            # avaliada e as abas abertas, e so aprofunda); dali ate voltar (beat
+            # 6) fica em hide_render - na foto C, de cima, ela apareceria sob o
+            # U1 se ficasse so "fora do quadro".
+            z_pe = _z_pe_do_quadro(_pos_camera(*pose_saida[:3]), pose_saida[3], lente, avanco=_meia_diagonal_caixa(caixa))
             profundidade = caixa["exterior_corpo"][2] - z_pe + p["margem_fora"]
             objs["profundidade_saida"] = profundidade
             _chave(corpo, q(r["caixa_desce"][0]), (0.0, 0.0, 0.0))
@@ -8427,19 +8545,35 @@ def _modulo_coreografia():
         z_alto = objs["z_alto_u1"]
 
         lente = 35.0
-        # Pose de referencia do plano geral (a profundidade da volta da caixa e
-        # projetada por ela; revisao 3: nao ha mais chave de corte em q_ini - a
-        # camera chega aqui vindo da foto C em pull-back continuo).
-        pose_ini = (-80.0, 1.30, 0.65, Vector((0.0, 0.0, 0.36)))
+        # Revisao 5 (a caixa estava perto demais; era raio 1,35 em 'u1_desce'[0]
+        # e 1,65 no fim, caixa a 56-72% da altura e cortada nos lados):
+        # - o pull-back da foto C vai ate o plano LONGE 'pose_longe' em
+        #   'camera_longe' (raio 3,3: caixa com abas abertas, 1,08 m, a ~36% da
+        #   altura e inteira; o alvo a 0,85 centra o par caixa + U1 flutuando
+        #   acima dela, ate 1,66 m, e sobe o pe do quadro - medido: com raio
+        #   3,2 e alvo 0,72 o primeiro quadro em que a caixa entrava inteira
+        #   dava 46%, um acima do teto de transicao), com a lente 62 -> 35
+        #   LINEAR no mesmo trecho;
+        # - dali sobe em grua ate 'pose_alta' no fim do beat (raio 2,0, z 2,3,
+        #   olhando 43 graus para baixo: a caixa fechada a ~35% e as abas
+        #   fechando vistas de cima), e a subida do beat 7 continua desse
+        #   movimento - raio, altura e azimute sao monotonos de q593 ate o apice,
+        #   entao a camera nao para em q624 (as chaves Bezier auto-clamped so
+        #   zeram a velocidade em extremos). A grua ate a pose alta tambem
+        #   encurta a subida do beat 7 (1,7 m, igual a de antes): partir do
+        #   plano longe frontal (z 1,4) para o apice a 2,6 m seriam 3 m em 25
+        #   quadros.
+        # A profundidade da volta da caixa e projetada por 'pose_longe'
+        # (_conferir_volta_da_caixa reprojeta pela camera avaliada em
+        # 'caixa_sobe'[0], no meio do pull-back, e so aprofunda).
+        pose_longe = (-81.0, 3.30, 1.45, Vector((0.0, 0.0, 0.85)))
+        pose_alta = (-86.0, 2.00, 2.30, Vector((0.0, 0.0, 0.42)))
+        pose_ini = pose_longe
         q_trans = q(r["u1_desce"][0])
+        q_longe = q(r["camera_longe"])
         if p["caixa_some"]:
-            # Revisao 2: raio 1,35/1,65 (era 2,3/2,1): o U1 a >= 60% da altura no
-            # pico (camera sobe com ele: alvo no meio do U1, z_alto + 0,36 - com
-            # o alvo a 0,45 o topo dele (1,68 m) saia do quadro), e a caixa
-            # fechada a ~60% no fim. A caixa entra por baixo do quadro enquanto o
-            # U1 esta no pico.
-            _chave_camera(objs, q_trans, -81.0, 1.35, 1.35, (0.0, 0.0, z_alto + 0.36), lente=lente)
-            _chave_camera(objs, q_fim, -84.0, 1.65, 1.0, (0.0, 0.0, 0.50))
+            _chave_camera(objs, q_longe, *pose_longe, lente=lente)
+            _chave_camera(objs, q_fim, *pose_alta)
         else:
             # De lado: o U1 esta 2,1 m na frente da caixa e de frente ele
             # ficaria colado na camera.
@@ -8808,7 +8942,15 @@ def _modulo_coreografia():
         for esp in objs["caixa"]["espumas"]:
             if esp.hide_render:
                 continue
-            for f, s in ((q_a, 1.0), (q_a + n, 0.0), (q_b - n, 0.0), (q_b, 1.0)):
+            # A escala nas pontas e a que a animacao do proprio floco tem ali,
+            # nao 1,0: hoje todo floco encolhe a 0 ao sair do quadro (beat 2) e
+            # so cresce de novo ao voltar (beat 6), e chavear 1,0 no inicio do
+            # beat 6 os fazia POPAR no pouso, a 1,3 m abaixo da caixa - invisivel
+            # com a camera antiga, pontinhos amarelos no pe do quadro com a
+            # camera longe da revisao 5 (medido no render do beat 6).
+            s_a = float(_valor_em(esp, "scale", q_a, 0))
+            s_b = float(_valor_em(esp, "scale", q_b, 0))
+            for f, s in ((q_a, s_a), (q_a + n, 0.0), (q_b - n, 0.0), (q_b, s_b)):
                 esp.scale = (s, s, s)
                 esp.keyframe_insert("scale", frame=f)
             esp.scale = (1.0, 1.0, 1.0)
