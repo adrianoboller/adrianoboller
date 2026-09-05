@@ -6,19 +6,19 @@
 :root{
   --papel:#fbf9f7; --papel-2:#f3efec; --tinta:#1a1210; --tinta-2:#4a3f3a;
   --tinta-3:#7a6d66; --linha:#ded6d0; --acento:#c63c0a;
-  --ok:#2f7a3e; --falta:#8a6a1f;
+  --ok:#2f7a3e; --falta:#8a6a1f; --log:#b71414;
 }
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
     --papel:#040814; --papel-2:#0a1122; --tinta:#dde2eb; --tinta-2:#a8b0c0;
     --tinta-3:#7c8598; --linha:#1e2940; --acento:#ff8a1c;
-    --ok:#5cbf74; --falta:#d5a83c;
+    --ok:#5cbf74; --falta:#d5a83c; --log:#ff5f5f;
   }
 }
 :root[data-theme="dark"]{
   --papel:#040814; --papel-2:#0a1122; --tinta:#dde2eb; --tinta-2:#a8b0c0;
   --tinta-3:#7c8598; --linha:#1e2940; --acento:#ff8a1c;
-  --ok:#5cbf74; --falta:#d5a83c;
+  --ok:#5cbf74; --falta:#d5a83c; --log:#ff5f5f;
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--papel);color:var(--tinta);
@@ -50,6 +50,12 @@ table{border-collapse:collapse;width:100%;min-width:600px}
 thead th{font-family:"IBM Plex Mono",monospace;font-weight:500;font-size:10px;
   letter-spacing:.13em;text-transform:uppercase;color:var(--tinta-3);text-align:left;
   padding:11px 11px 7px;border-bottom:1px solid var(--linha)}
+h2.mal{color:var(--log)}
+ul.vermelhas{list-style:none;padding:0;margin:0 0 26px;display:grid;gap:10px}
+ul.vermelhas li{border-left:3px solid var(--log);background:var(--papel-2);
+                 padding:11px 14px;border-radius:0 4px 4px 0;line-height:1.5}
+ul.vermelhas .q{font-family:"IBM Plex Mono",monospace;font-size:11.5px;
+                 color:var(--tinta-3)}
 tbody td{padding:13px 11px;border-bottom:1px solid var(--linha);vertical-align:top;
   font-size:14.5px}
 td.nome{width:32%;color:var(--tinta)}
@@ -87,6 +93,8 @@ footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--linha);
     <div class="c"><div class="v">0</div><div class="r">dependências</div></div>
   </div>
 </header>
+
+<h2 class="mal">0. 2 guarda(s) VERMELHA(S) — defeito provado, conserto pendente</h2><p class="sub">Entregues falhando de proposito. Elas nao entram na suite (levam <code>#[ignore]</code>, senao a catraca deixaria de segurar o resto), e rodam com <code>-- --ignored</code>. <b>Enquanto estiverem aqui, os numeros verdes abaixo nao cobrem o que elas provam.</b></p><ul class="vermelhas"><li><code>coluna_externa_marcada_sozinha_nao_pode_ir_em_claro</code> — VERMELHA de proposito: prova um vazamento que ainda nao foi consertado<br><span class="q">crates/phxsql-store/tests/cifra-dos-dados.rs</span></li><li><code>tabela_que_nao_abre_nao_pode_encolher_a_posicao_em_silencio</code> — VERMELHA de proposito: prova um erro engolido que ainda nao foi consertado<br><span class="q">crates/phxsql-server/src/servidor.rs</span></li></ul>
 
 <h2>1. O motor, por dentro</h2>
 <p class="sub"><code>cargo test --workspace</code>. É a camada mais barata e a
@@ -165,7 +173,7 @@ e o pior deles quebrava todo salvar e todo incluir pela tela.</p>
   <b>23 casos</b> em <code>testes-web/casos/</code>, quase todos nos dois
   temas, contra um <code>phxsqld</code> de verdade num navegador de verdade — sem
   maquete e sem mockup. E <b>151 botões</b> com clique gravado
-  (<code>testes-web/botoes-exercitados.txt</code>, 2026-09-05 13:25 (mtime)):
+  (<code>testes-web/botoes-exercitados.txt</code>, 2026-09-05 13:52 (mtime)):
   a evidência é escrita pela própria corrida, e só em corrida <b>inteira e
   verde</b>, porque uma corrida que cai no meio grava menos do que provou.
 </div>
@@ -197,7 +205,7 @@ diz onde não confiar.</p>
 </div>
 
 <footer>
-  Gerado por <code>docs/dossie/pagina-dos-testes.py</code> em 05/09/2026 13:50. Nenhum
+  Gerado por <code>docs/dossie/pagina-dos-testes.py</code> em 05/09/2026 15:11. Nenhum
   número desta página foi digitado: eles saem do <code>CAPABILITIES.json</code>,
   do catálogo de guardas, dos <code>resultados.json</code> das bancadas, dos
   arquivos de <code>testes-web/</code> e das constantes do próprio fonte. O

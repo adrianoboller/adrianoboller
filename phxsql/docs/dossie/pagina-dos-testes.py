@@ -100,6 +100,35 @@ def guardas():
         return None, str(e)
 
 
+def guardas_vermelhas():
+    """As guardas entregues VERMELHAS: defeito provado, conserto pendente.
+
+    A lista sai do CODIGO, pelo mesmo motivo das catracas: uma guarda vermelha
+    que ninguem lembrasse de acrescentar aqui sumiria da pagina -- e a pagina
+    passaria a dizer que se pode confiar em algo que esta provado quebrado.
+
+    O `CLAUDE.md` cobra isto desta pagina em particular: *«uma pagina de testes
+    que esconde a bancada que nao rodou e a pior de todas, porque ela existe
+    justamente para dizer em que se pode confiar»*. Guarda vermelha e a mesma
+    forma pelo outro lado: defeito conhecido, medido, e invisivel.
+
+    A convencao que ela procura e a que as duas primeiras usaram:
+    `#[ignore = "VERMELHA ..."]` na linha acima do `fn`.
+    """
+    achadas = []
+    padrao = re.compile(
+        r'#\[ignore\s*=\s*"(VERMELHA[^"]*)"\]\s*\n\s*(?:async\s+)?fn\s+(\w+)')
+    for rs in sorted((RAIZ / "crates").glob("*/**/*.rs")):
+        try:
+            texto = rs.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        for m in padrao.finditer(texto):
+            achadas.append((m.group(2), m.group(1), str(rs.relative_to(RAIZ))))
+    achadas.sort()
+    return achadas
+
+
 def catracas():
     """As catracas do repositorio, lidas do fonte.
 
@@ -255,9 +284,33 @@ def montar():
     cap, (cap_quando, cap_mtime) = capabilities()
     n_guardas, erro_guardas = guardas()
     tetos = catracas()
+    vermelhas = guardas_vermelhas()
     casos = casos_de_tela()
     n_botoes, (botoes_quando, botoes_mtime) = botoes_exercitados()
     agora = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+
+    # As guardas VERMELHAS vao no ALTO, antes de qualquer numero verde.
+    #
+    # Uma pagina que abre com «1.618 testes, 0 falhas» e so no rodape confessa
+    # dois defeitos provados esta ordenando a verdade pelo conforto. Quem le
+    # esta pagina le para saber em que confiar, e a primeira coisa que ela
+    # precisa dizer e onde NAO dar.
+    if vermelhas:
+        itens = "".join(
+            f'<li><code>{esc(n)}</code> — {esc(r)}<br>'
+            f'<span class="q">{esc(a)}</span></li>'
+            for n, r, a in vermelhas)
+        bloco_vermelhas = (
+            f'<h2 class="mal">0. {len(vermelhas)} guarda(s) VERMELHA(S) — '
+            f'defeito provado, conserto pendente</h2>'
+            f'<p class="sub">Entregues falhando de proposito. Elas nao entram na '
+            f'suite (levam <code>#[ignore]</code>, senao a catraca deixaria de '
+            f'segurar o resto), e rodam com <code>-- --ignored</code>. '
+            f'<b>Enquanto estiverem aqui, os numeros verdes abaixo nao cobrem '
+            f'o que elas provam.</b></p>'
+            f'<ul class="vermelhas">{itens}</ul>')
+    else:
+        bloco_vermelhas = ""
 
     def c(k, padrao="—"):
         """O valor do `CAPABILITIES.json`, com o ponto de milhar.
@@ -281,6 +334,7 @@ def montar():
 
     return TEMPLATE.format(
         agora=agora,
+        bloco_vermelhas=bloco_vermelhas,
         versao=c("versao"), commit=esc(str(cap.get("commit", "—"))[:7]),
         testes=c("testes"), operacoes=c("operacoes"),
         linhas_rust=c("linhas_rust"), deps=c("dependencias_externas"),
@@ -305,19 +359,19 @@ TEMPLATE = """<title>Dossiê dos testes do PhxSql</title>
 :root{{
   --papel:#fbf9f7; --papel-2:#f3efec; --tinta:#1a1210; --tinta-2:#4a3f3a;
   --tinta-3:#7a6d66; --linha:#ded6d0; --acento:#c63c0a;
-  --ok:#2f7a3e; --falta:#8a6a1f;
+  --ok:#2f7a3e; --falta:#8a6a1f; --log:#b71414;
 }}
 @media (prefers-color-scheme:dark){{
   :root:not([data-theme="light"]){{
     --papel:#040814; --papel-2:#0a1122; --tinta:#dde2eb; --tinta-2:#a8b0c0;
     --tinta-3:#7c8598; --linha:#1e2940; --acento:#ff8a1c;
-    --ok:#5cbf74; --falta:#d5a83c;
+    --ok:#5cbf74; --falta:#d5a83c; --log:#ff5f5f;
   }}
 }}
 :root[data-theme="dark"]{{
   --papel:#040814; --papel-2:#0a1122; --tinta:#dde2eb; --tinta-2:#a8b0c0;
   --tinta-3:#7c8598; --linha:#1e2940; --acento:#ff8a1c;
-  --ok:#5cbf74; --falta:#d5a83c;
+  --ok:#5cbf74; --falta:#d5a83c; --log:#ff5f5f;
 }}
 *{{box-sizing:border-box}}
 body{{margin:0;background:var(--papel);color:var(--tinta);
@@ -349,6 +403,12 @@ table{{border-collapse:collapse;width:100%;min-width:600px}}
 thead th{{font-family:"IBM Plex Mono",monospace;font-weight:500;font-size:10px;
   letter-spacing:.13em;text-transform:uppercase;color:var(--tinta-3);text-align:left;
   padding:11px 11px 7px;border-bottom:1px solid var(--linha)}}
+h2.mal{{color:var(--log)}}
+ul.vermelhas{{list-style:none;padding:0;margin:0 0 26px;display:grid;gap:10px}}
+ul.vermelhas li{{border-left:3px solid var(--log);background:var(--papel-2);
+                 padding:11px 14px;border-radius:0 4px 4px 0;line-height:1.5}}
+ul.vermelhas .q{{font-family:"IBM Plex Mono",monospace;font-size:11.5px;
+                 color:var(--tinta-3)}}
 tbody td{{padding:13px 11px;border-bottom:1px solid var(--linha);vertical-align:top;
   font-size:14.5px}}
 td.nome{{width:32%;color:var(--tinta)}}
@@ -386,6 +446,8 @@ footer{{margin-top:52px;padding-top:20px;border-top:1px solid var(--linha);
     <div class="c"><div class="v">{deps}</div><div class="r">dependências</div></div>
   </div>
 </header>
+
+{bloco_vermelhas}
 
 <h2>1. O motor, por dentro</h2>
 <p class="sub"><code>cargo test --workspace</code>. É a camada mais barata e a
