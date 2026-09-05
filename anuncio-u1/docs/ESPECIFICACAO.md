@@ -320,3 +320,15 @@ assenta; câmera calma; nada corta seco fora das fotos.
    lado da impressora no momento‑herói (beat 2), "Snapmaker U1", com linha
    indicadora, fade in/out; e (b) na cartela, como linha logo abaixo de
    "EnginePrint": **Snapmaker U1**.
+
+---
+
+# Revisão 5 (05/09) — a caixa está perto demais
+
+Nos planos em que a **caixa** aparece (beat 1 inteiro, beat 2 até a
+impressora sair, beat 6 inteiro, e a aproximação do beat 7 antes do
+mergulho), a câmera fica **bem mais longe**: a caixa inteira no quadro, sem
+cortar, ocupando **no máximo 40% da altura** do 9:16 (hoje passa de 60% e
+chega a 100%). Os closes da impressora (beats 3, 4, 5) **não mudam**. A
+espuma e as abas abrindo continuam legíveis a essa distância — se a espuma
+sumir no plano, aumentar `n_espumas`, não aproximar.
