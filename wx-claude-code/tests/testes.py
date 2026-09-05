@@ -769,6 +769,23 @@ class Questionario(unittest.TestCase):
         for peca in ("questionario", "G0", "artefato", "PDF", "PMO", "roteador", "RAG", "exportar", "registro"):
             self.assertIn(peca, nomes, peca)
 
+    def test_bateria_pesada_de_cenarios(self):
+        """Os OUTROS caminhos: sem licenca, PDF que e foto, legado que nunca foi WX,
+        resposta que se contradiz. Cada cenario diz o que espera antes de rodar."""
+        r = subprocess.run([sys.executable, str(RAIZ / "tests/cenarios.py")], capture_output=True, text=True, timeout=1800)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        dados = json.loads((Path(tempfile.gettempdir()) / "wx-cenarios.json").read_text(encoding="utf-8"))
+        self.assertEqual(dados["ok"], dados["total"], [c for c in dados["cenarios"] if not c["ok"]])
+        self.assertGreaterEqual(dados["total"], 12)
+        # o relatorio sai da bateria; se o gerador nao consumir o JSON, a pagina mente
+        alvo = Path(tempfile.mkdtemp()) / "rel.html"
+        g = run(RAIZ / "docs/dossie/gerar-relatorio-cenarios.py", alvo, "--json", Path(tempfile.gettempdir()) / "wx-cenarios.json")
+        self.assertEqual(g.returncode, 0, g.stderr)
+        html = alvo.read_text(encoding="utf-8")
+        self.assertIn(f'{dados["ok"]}/{dados["total"]}', html)
+        for c in dados["cenarios"]:
+            self.assertIn(c["espera"], html, c["cenario"])
+
     def test_fontes_md_esta_em_dia(self):
         """FONTES.md e inventario medido: se alguem acrescentar arquivo e nao rodar o
         gerador, o documento passa a mentir sobre o pacote."""

@@ -508,5 +508,20 @@
   "itens_questionario": 60,
   "hooks": 8,
   "manual": 678
+ },
+ {
+  "versao": "3.28.0",
+  "data": "2026-09-05",
+  "titulo": "teste de fluxo, e o fluxograma mostrando as duas provas",
+  "agentes": 94,
+  "skills": 21,
+  "comandos": 19,
+  "scripts": 26,
+  "linhas_py": 26795,
+  "prints": 44,
+  "testes": 60,
+  "itens_questionario": 60,
+  "hooks": 8,
+  "manual": 684
  }
 ]

@@ -189,9 +189,13 @@ Veja `exemplos/estoque-wx/LEIA-ME.md`.
 
 ## Provas em código
 
-Duas, e a segunda é a que pega os defeitos deste projeto: `tests/testes.py`
-confere cada peça isolada; `tests/fluxo.py` confere a **ligação** entre elas,
-num projeto novo, do questionário à entrega, em treze passos medidos.
+Três, em níveis que não se substituem: `tests/testes.py` confere cada peça
+isolada; `tests/fluxo.py` confere a **ligação** entre elas, num projeto novo,
+do questionário à entrega, em treze passos medidos; e `tests/cenarios.py`
+confere os **outros caminhos** — cliente sem licença, PDF que é foto, legado
+que nunca foi WX, resposta que se contradiz — em doze cenários que dizem o que
+esperam antes de rodar. O relatório sai de `docs/relatorio-de-cenarios.pdf`,
+gerado rodando a bateria, nunca digitado.
 
 
 - `extrair_pdf.py`: texto por página com `arquivo#page=N` e hash; pouco texto vira `OCR_REQUIRED`.
