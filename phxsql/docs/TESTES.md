@@ -1460,3 +1460,25 @@ maiores lotes que ficaram, medidos:
 Meia cobertura só é pior que nada quando finge ser inteira: o
 `--example botoes-sem-prova` lista os **211** que faltam, por tela, do maior
 lote para o menor.
+
+### 13.8 Um achado que não é meu para consertar: o buraco do pedido 170
+
+Procurando botões que fazem `await api(...)` e **só então** pintam — a forma
+que o pedido 170 deixou aberta e sem guarda —, a varredura acha **pelo menos
+30 funções** de `ui/index.html` com essa forma. O caso `tela-atropelada` cobre
+**duas**: as vítimas conhecidas (telemetria e Configurações).
+
+Três coisas para quem for pegar isto, e a terceira é a que importa:
+
+- **A régua é declaradamente incompleta**, e para menos. Ela casa
+  `await api(`, e por isso **não** vê `await Promise.all([api(…), api(…)])` —
+  que é exatamente a forma da `verConfigServidor`, uma das duas vítimas
+  conhecidas. Trinta é o **piso**, não a conta.
+- **A guarda não existe no código.** Não há marca de geração de pintura
+  (`est.pintura`, `geracao`, «ainda sou eu») em `ui/index.html`: o caso 18
+  prova o comportamento das duas telas que ganharam conserto próprio, e não um
+  mecanismo que valha para as outras.
+- **Isto não vira lote de botões.** Um caso por tela repetiria trinta vezes a
+  mesma prova de uma corrida que só se reproduz segurando a resposta no fio.
+  O que resolve é a marca de geração — e essa é decisão de arquitetura da
+  tela, não de quem escreve teste.
