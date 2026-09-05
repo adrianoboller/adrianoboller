@@ -46,6 +46,25 @@ cada um:
   `python3 phxsql/docs/dossie/pagina-dos-pedidos.py` a gera do `PENDENCIAS.md`
   e conta os três estados sozinho.
 
+E há uma **terceira página**, o dossiê dos testes — o que este banco prova, e
+como:
+
+- **URL:** https://claude.ai/code/artifact/0c069766-7ff0-437e-b18b-8278f8b96038
+- **Fonte:** `phxsql/docs/dossie/testes.html`, que **não se edita** —
+  `python3 phxsql/docs/dossie/pagina-dos-testes.py` monta a página inteira do
+  `CAPABILITIES.json`, do catálogo de guardas, dos `resultados.json` das
+  bancadas, dos arquivos de `testes-web/` e das constantes `TETO_*` do próprio
+  fonte.
+
+Ela tem duas disciplinas que as outras duas não precisavam ter, e as duas saem
+de erro já pago aqui. **Cada número traz a data em que foi medido**, porque os
+`resultados.json` são de corridas de dias diferentes e juntá-los sem dizer
+quando publica um retrato que nunca existiu — quando a data sai do `mtime` em
+vez do próprio resultado, a página diz que saiu. E **bancada sem arquivo de
+resultado aparece como NÃO MEDIDA**, com o comando para rodar, em vez de sumir
+da tabela: uma página de testes que esconde a bancada que não rodou é a pior de
+todas, porque ela existe justamente para dizer em que se pode confiar.
+
 ## Todo aprendizado novo vira um arquivo de cognição
 
 Ordem do dono, 02/09/2026: *«Todo aprendizado novo seu deve virar um
