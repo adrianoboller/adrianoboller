@@ -125,6 +125,57 @@ def itens_screenshots(raiz: Path) -> list[dict]:
     return itens
 
 
+EXTENSOES_DE_FONTE = {".php", ".inc", ".c", ".h", ".cpp", ".hpp", ".cc", ".rs", ".py",
+                      ".js", ".ts", ".java", ".cs", ".go", ".rb", ".pas", ".cbl", ".clw"}
+MAX_ITENS_DE_FONTE = 200
+
+
+def itens_de_codigo_fonte(p: dict, raiz_evidencias: Path | None) -> list[dict]:
+    """Lista o codigo-fonte do legado nao-WX, que e a evidencia central dele.
+
+    Vale para PHP (legado_php.raiz) e para qualquer outra linguagem
+    (legado_outra.raiz): C, C++, Clarion, COBOL. O caminho gravado e relativo a
+    raiz de evidencias, como todo item do manifesto.
+    """
+    if raiz_evidencias is None:
+        return []
+    raizes = []
+    for chave in ("legado_php", "legado_outra"):
+        bloco = p.get(chave) or {}
+        if chave == "legado_php" and not bloco.get("tem"):
+            continue
+        if chave == "legado_outra" and not (bloco.get("linguagem") or "").strip():
+            continue
+        alvo = (bloco.get("raiz") or "").strip()
+        if alvo:
+            raizes.append(alvo)
+    itens: list[dict] = []
+    for alvo in raizes:
+        base = Path(alvo)
+        if not base.is_absolute():
+            # a raiz do legado e relativa a raiz do PROJETO, e a de evidencias
+            # costuma ser ./inputs: resolver contra as duas cobre os dois jeitos
+            candidatos = [raiz_evidencias.parent / base, raiz_evidencias / base.name]
+        else:
+            candidatos = [base]
+        pasta = next((c for c in candidatos if c.is_dir()), None)
+        if pasta is None:
+            continue
+        for arq in sorted(pasta.rglob("*")):
+            if not arq.is_file() or arq.suffix.lower() not in EXTENSOES_DE_FONTE:
+                continue
+            try:
+                rel = arq.resolve().relative_to(raiz_evidencias.resolve())
+            except ValueError:
+                continue
+            itens.append({"path": str(rel).replace(os.sep, "/"),
+                          "language": arq.suffix.lstrip(".").lower(),
+                          "lines": len(arq.read_text(encoding="utf-8", errors="replace").splitlines())})
+            if len(itens) >= MAX_ITENS_DE_FONTE:
+                return itens
+    return itens
+
+
 def montar_manifesto(q: dict, modelo: dict, projeto: Path) -> dict:
     m = json.loads(json.dumps(modelo))
     p = q.get("projeto", {})
@@ -211,6 +262,18 @@ def montar_manifesto(q: dict, modelo: dict, projeto: Path) -> dict:
             a["sample_data_and_expected_results"]["status"] = "provided"
             a["sample_data_and_expected_results"]["items"] = [{"path": f"dados-de-amostra/{f.name}", "description": "resultado esperado do legado (golden master)" if "esperad" in f.name else "dados sinteticos ou anonimizados de amostra"} for f in arqs]
             a["sample_data_and_expected_results"]["notes"] = "Lidos de dados-de-amostra/; somente dados sinteticos ou anonimizados."
+
+    # Legado que nao e WX: o codigo-fonte E a evidencia, nao um PDF de
+    # documentacao. Sem isto o manifesto dizia native_project_sources
+    # "missing" com o fonte inteiro ali do lado, e o G0 bloqueava um projeto
+    # PHP por falta de PDF que ele nunca teve.
+    itens_fonte = itens_de_codigo_fonte(p, RAIZ_DE_EVIDENCIAS)
+    if itens_fonte:
+        a["native_project_sources"]["status"] = "provided"
+        a["native_project_sources"]["items"] = itens_fonte
+        a["native_project_sources"]["notes"] = (
+            "Codigo-fonte do legado lido de " + str(p.get("legado_php", {}).get("raiz")
+            or p.get("legado_outra", {}).get("raiz") or "") + "; e a evidencia central deste projeto.")
 
     g = q.get("G_help_json", {})
     m["project"]["wlanguage_help_version"] = str(g.get("versao_do_help", ""))

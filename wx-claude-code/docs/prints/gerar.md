@@ -35,6 +35,16 @@ e renderizada num terminal pelo Chromium (Playwright), a 2× de escala.
 | 47 | a procedure WLanguage `CalculaDesconto` como ela sai do PDF do legado pelo `pdf_para_markdown.py`, com a página 1 e o sha256 do PDF preservados |
 | 48 | o Rust gerado por uma sessão real a partir da página 1: cada regra de negócio no código traz a origem citada, e o teto de 15%/25% não foi inventado |
 | 49 | a mesma sessão rodando `cargo test` (6 testes) e explicando o que mudou de semântica na tradução — o `RETURN -1` que virou `Result`, o dinheiro em centavos e o `>` mantido literal |
+| 50 | `licenca.py verificar` e o hook `PreToolUse` num ambiente **sem serial**: o verificador sai com código 3 e o hook nega o próprio script do plugin, com a razão |
+| 51 | a liberação inteira: a impressão da máquina, o serial assinado com a chave privada (do lado de quem vende), a instalação no cliente, o verificador dizendo válida e o mesmo comando de antes passando |
+| 52 | a regra BR-101 como ela está no legado PHP de 2009 — `calcula_encargos`, com `strtotime`, `round` e as constantes de multa e juros |
+| 53 | o questionário aplicado num projeto **PHP puro** e o G0 sobre ele: `CONDITIONAL`, zero erros, e o código-fonte listado como evidência central com as linhas medidas de cada arquivo |
+| 54 | o Rust gerado por uma sessão real a partir do PHP, com `regras.php:19-33` citado no cabeçalho do módulo e o golden master nomeado como prova |
+| 55 | `cargo test` com os três casos do golden master, e a sessão dizendo o que mudou de semântica (`strtotime` → dias de calendário) e o que ela **não** converteu por não ser dela decidir (o `f64` no lugar de decimal) |
+| 56 | `php capturar-golden.php`: o esperado do exemplo PHP sai rodando o próprio legado, 14 casos, com a versão do PHP e a data registradas no arquivo |
+| 57 | sessão nova sem contexto no projeto PHP: achou o aprovador e o prazo nas respostas por id, a baixa de título sem transação em `titulo_baixar.php:15-21`, e a view `v_inadimplencia` que nenhum PHP consulta |
+| 58 | `exportar_projeto.py` com as sete pastas numeradas e o SHA-256 de cada um dos 38 arquivos, e o `registro.py resumo` com as 30 operações que o plugin fez naquele projeto |
+| 59 | a bateria pesada com treze cenários, o de número 13 sendo este legado PHP inteiro atravessando o G0 |
 | 31 | sessão real num projeto recém-aplicado: perguntada o que faz `HReadSeekFirst`, consultou o Help pelo tema que o hook do RAG apontou, citou a página com id e hash, e separou semântica técnica de regra de negócio, como o `CLAUDE.md` gerado manda |
 | 07 | `claude -p "/wx-claude-code:laudo-tokens fase-1"` com fonte de sessões marcada INDISPONÍVEL |
 | 08 | `pmo.py iniciar/gastar/status` e `rotear_modelo.py` com subida, rebaixamento a 85 %, bloqueio a 105 % e fallback |

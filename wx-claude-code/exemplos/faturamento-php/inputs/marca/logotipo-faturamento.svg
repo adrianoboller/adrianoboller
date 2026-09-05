@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 80" width="320" height="80" role="img" aria-label="Faturamento">
+  <rect width="320" height="80" fill="#FBFAF7"/>
+  <path d="M24 20h34v40H24z" fill="none" stroke="#1F5FBF" stroke-width="4"/>
+  <path d="M31 32h20M31 40h20M31 48h12" stroke="#1F5FBF" stroke-width="4" stroke-linecap="square"/>
+  <text x="72" y="49" font-family="Exo 2, Segoe UI, sans-serif" font-size="27" font-weight="800" fill="#14161F">FATURAMENTO</text>
+</svg>

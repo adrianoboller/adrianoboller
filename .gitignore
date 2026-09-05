@@ -14,6 +14,25 @@ wx-claude-code/exemplos/*/.wx-migration/
 wx-claude-code/exemplos/*/CLAUDE.md
 wx-claude-code/exemplos/*/DESIGN.md
 wx-claude-code/exemplos/*/PRODUCT.md
+wx-claude-code/exemplos/*/AGENTS.md
+wx-claude-code/exemplos/*/ARCHITECTURE.md
+wx-claude-code/exemplos/*/CHANGELOG.md
+wx-claude-code/exemplos/*/CONTEXT.md
+wx-claude-code/exemplos/*/CONTEXT-MAP.md
+wx-claude-code/exemplos/*/INDEX_FILES.md
+wx-claude-code/exemplos/*/SECURITY.md
+wx-claude-code/exemplos/*/UBIQUITOUS_LANGUAGE.md
+wx-claude-code/exemplos/*/docker-compose.yml
+wx-claude-code/exemplos/*/.claude/
+wx-claude-code/exemplos/*/.github/
+wx-claude-code/exemplos/*/.mcp.json
+wx-claude-code/exemplos/*/.editorconfig
+wx-claude-code/exemplos/*/artefatos/
+wx-claude-code/exemplos/*/database/
+wx-claude-code/exemplos/*/docs/
+wx-claude-code/exemplos/*/scripts/
+wx-claude-code/exemplos/*/src/
+wx-claude-code/exemplos/*/tests/
 
 # bytecode do Python
 __pycache__/

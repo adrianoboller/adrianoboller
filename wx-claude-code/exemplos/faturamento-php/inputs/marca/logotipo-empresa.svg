@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 80" width="320" height="80" role="img" aria-label="Boller Sistemas">
+  <rect width="320" height="80" fill="#010418"/>
+  <rect x="20" y="24" width="32" height="32" fill="none" stroke="#E2261C" stroke-width="4"/>
+  <text x="66" y="48" font-family="Exo 2, Segoe UI, sans-serif" font-size="26" font-weight="800" fill="#FFFFFF">BOLLER</text>
+  <text x="188" y="48" font-family="Exo 2, Segoe UI, sans-serif" font-size="26" font-weight="500" fill="#9AA0B8">SISTEMAS</text>
+</svg>

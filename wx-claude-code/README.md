@@ -187,6 +187,12 @@ dados de amostra e dez casos de golden master. O G0 sobre ele dá
 `CONDITIONAL` com zero erros. Há uma divergência plantada para o G2 achar.
 Veja `exemplos/estoque-wx/LEIA-ME.md`.
 
+E o segundo exemplo, `exemplos/faturamento-php/`, é um legado **sem nada de
+WINDEV**: PHP 7.4 procedural de 2009, com o código-fonte fazendo o papel que o
+PDF faz no outro, e o golden master capturado rodando o próprio legado. Foi ele
+que mostrou o G0 supondo WINDEV em oito lugares — consertado, com o teste do
+comportamento velho travando o que já funcionava.
+
 ## Provas em código
 
 Três, em níveis que não se substituem: `tests/testes.py` confere cada peça

@@ -523,5 +523,20 @@
   "itens_questionario": 60,
   "hooks": 8,
   "manual": 684
+ },
+ {
+  "versao": "3.29.0",
+  "data": "2026-09-05",
+  "titulo": "bateria pesada de cenários, com relatório gerado rodando a bateria",
+  "agentes": 94,
+  "skills": 21,
+  "comandos": 19,
+  "scripts": 26,
+  "linhas_py": 26795,
+  "prints": 49,
+  "testes": 61,
+  "itens_questionario": 60,
+  "hooks": 8,
+  "manual": 686
  }
 ]

@@ -26,6 +26,7 @@ from pathlib import Path
 RAIZ = Path(__file__).resolve().parents[1]
 SCRIPTS = RAIZ / "skills/conversao-wx/scripts"
 EXEMPLO = RAIZ / "exemplos/estoque-wx"
+EXEMPLO_PHP = RAIZ / "exemplos/faturamento-php"
 
 
 def py(*args, cwd: Path | None = None, entrada: str | None = None) -> subprocess.CompletedProcess:
@@ -210,6 +211,32 @@ def c12_instalador_confere():
     return ok, "cinco passos conferidos, nada instalado, nada deixado em /tmp"
 
 
+def c13_legado_php_de_verdade():
+    """O outro exemplo inteiro: PHP procedural de 2009, sem nada de WX, ate o G0.
+
+    Nao e o cenario 02 de novo: la o legado PHP era declarado sobre os anexos do
+    exemplo WX. Aqui o projeto E PHP -- codigo-fonte no lugar de PDF, MySQL no
+    lugar de HFSQL -- e foi ele que achou o G0 supondo WINDEV em oito lugares.
+    """
+    p = Path(tempfile.mkdtemp(prefix="wx-cen-php-"))
+    shutil.copytree(EXEMPLO_PHP / "inputs", p / "inputs")
+    (p / ".wx-migration").mkdir()
+    r = py(SCRIPTS / "aplicar_questionario.py", "--questionario", EXEMPLO_PHP / "questionario.json",
+           "--project-root", p, "--plugin-root", RAIZ)
+    py(SCRIPTS / "wx_preflight.py", "--manifest", p / ".wx-migration/wx-inputs.manifest.json",
+       "--allowed-evidence-root", p / "inputs", "--workspace-root", p,
+       "--output", p / ".wx-migration/preflight")
+    relatorios = sorted((p / ".wx-migration/preflight/runs").glob("*/report.json"))
+    rel = json.loads(relatorios[-1].read_text(encoding="utf-8")) if relatorios else {}
+    man = json.loads((p / ".wx-migration/wx-inputs.manifest.json").read_text(encoding="utf-8")) if r.returncode == 0 else {}
+    fontes = (man.get("artifacts", {}).get("native_project_sources") or {}).get("items", [])
+    proc = (p / ".wx-migration/processo-de-conversao.md").read_text(encoding="utf-8") if r.returncode == 0 else ""
+    ok = (r.returncode == 0 and rel.get("status") == "CONDITIONAL" and not rel.get("errors")
+          and len(fontes) >= 5 and "Rust" in proc)
+    shutil.rmtree(p, ignore_errors=True)
+    return ok, f"{rel.get('status')} sem erros, {len(fontes)} fontes PHP como evidência central, destino Rust"
+
+
 CENARIOS = [
     ("01 WX clássico → Rust", c01_wx_classico, "o caminho que o plugin existe para atender"),
     ("02 só PHP → Elixir", c02_so_php_para_elixir, "legado E/OU e destino livre, os dois fora do caso padrão"),
@@ -223,6 +250,7 @@ CENARIOS = [
     ("10 sem licença", c10_sem_licenca, "o hook recusa os scripts do plugin"),
     ("11 exportar sem segredo", c11_exportar_sem_segredo, ".env fora, .env.exemplo dentro"),
     ("12 instalador em conferência", c12_instalador_confere, "não instala e não suja"),
+    ("13 legado PHP de verdade", c13_legado_php_de_verdade, "projeto sem nada de WX atravessa o G0"),
 ]
 
 

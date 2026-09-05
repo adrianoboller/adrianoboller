@@ -16,3 +16,20 @@ Para regravar: `node gravar-video.mjs <pasta-de-saida> <pasta-das-capturas>`.
 O script usa o Playwright do ambiente e grava em WebM porque é o único codec
 de vídeo que o ffmpeg do Playwright codifica; para MP4, converta com um ffmpeg
 que tenha libx264.
+
+## Segundo vídeo: de PHP para Rust
+
+`wx-claude-code-video-php.webm` (1 min 26 s, 11 cenas) mostra o outro caminho,
+o que prova a parte **E/OU** da regra do legado: um sistema PHP procedural de
+2009, sem nada de WINDEV, atravessando o plugin inteiro — instalação, o serial
+recusando e depois liberando, o questionário, o portão G0 aceitando um projeto
+sem um único PDF, a conversão para Rust por uma sessão real, o `cargo test`
+contra o golden master capturado do próprio legado, a entrega com hashes e o
+registro de operações.
+
+Os dois roteiros vivem no mesmo gerador:
+
+```bash
+node gravar-video.mjs <pasta-saida> <pasta-capturas>        # roteiro 'uso'
+node gravar-video.mjs <pasta-saida> <pasta-capturas> php    # roteiro 'php'
+```

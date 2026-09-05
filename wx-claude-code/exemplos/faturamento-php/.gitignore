@@ -1,0 +1,10 @@
+# nunca versionar segredos nem gerados
+.env
+.env.*
+!.env.exemplo
+.claude/settings.local.json
+__pycache__/
+*.pyc
+target/
+node_modules/
+.claude/worktrees/

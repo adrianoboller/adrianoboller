@@ -1,0 +1,796 @@
+{
+  "schema_version": "1.0",
+  "respondido_em": "2026-09-05",
+  "projeto": {
+    "nome": "FATURAMENTO",
+    "produtos": [
+      "php"
+    ],
+    "wx_versao": "",
+    "wx_update": "",
+    "idioma": "pt-BR",
+    "raiz_de_evidencias": "./inputs",
+    "modo": "inventario",
+    "aprovador": "Adriano Boller",
+    "legado_php": {
+      "tem": true,
+      "raiz": "./inputs/legado-php",
+      "versao": "7.4",
+      "framework": "nenhum",
+      "estilo": "procedural",
+      "observacao": "PHP procedural com mysqli e HTML no meio do codigo; sem composer, sem autoload, sem teste"
+    },
+    "principal": "php",
+    "legado_outra": {
+      "linguagem": "",
+      "versao": "",
+      "framework": "",
+      "observacao": "preencher so quando produtos incluir 'outra'; a skill de conversao generica trata o resto"
+    },
+    "observacao_legado": "produtos: um ou mais de windev | webdev | windev-mobile | php | outra (E/OU, nao E). WLanguage (WINDEV, WEBDEV, WINDEV Mobile) e o caso principal e nunca sai do plugin; php e outra entram junto ou sozinhos. principal: qual deles manda quando houver conflito de evidencia"
+  },
+  "0_empresa_e_projeto": {
+    "0_1_softhouse": {
+      "razao_social": "Boller Sistemas Ltda",
+      "nome_fantasia": "Boller Sistemas",
+      "cnpj": "00.000.000/0001-00",
+      "solicitacao": "Converter o FATURAMENTO (PHP 7.4 procedural, 2009) para Rust, mantendo as regras do financeiro ao centavo.",
+      "observacao": ""
+    },
+    "0_2_diretores": [
+      {
+        "nome": "Adriano Boller",
+        "cargo": "Diretor de tecnologia",
+        "email": "adriano@exemplo.com.br"
+      },
+      {
+        "nome": "Maria Souza",
+        "cargo": "Diretora comercial",
+        "email": "maria@exemplo.com.br"
+      }
+    ],
+    "0_3_endereco": {
+      "logradouro": "Rua XV de Novembro",
+      "numero": "1000",
+      "complemento": "sala 501",
+      "bairro": "Centro",
+      "cidade": "Blumenau",
+      "uf": "SC",
+      "cep": "89010-000",
+      "pais": "Brasil"
+    },
+    "0_4_logotipo_da_empresa": {
+      "status": "provided",
+      "arquivo": "marca/logotipo-empresa.svg",
+      "observacao": ""
+    },
+    "0_5_logotipo_do_software": {
+      "status": "provided",
+      "arquivo": "marca/logotipo-faturamento.svg",
+      "observacao": ""
+    },
+    "0_6_finalidade": "Emitir faturas e controlar titulos a receber de uma distribuidora, com multa e juros no atraso.",
+    "0_7_objetivos": [
+      "Sair do PHP procedural sem perder nenhuma regra do financeiro",
+      "Ter teste automatizado onde hoje nao existe nenhum",
+      "Trocar a concatenacao de SQL por consulta parametrizada"
+    ],
+    "0_8_descricao_do_software": {
+      "descricao": "Sistema de faturamento com cadastro de clientes, pedidos a faturar, emissao de fatura com desconto por forma de pagamento, parcelamento e baixa de titulo com multa e juros.",
+      "recursos": [
+        "Emissao de fatura a partir dos pedidos a faturar",
+        "Desconto por forma de pagamento",
+        "Parcelamento em ate 12 vezes",
+        "Baixa de titulo com multa e juros pro rata die",
+        "Bloqueio de cliente inadimplente"
+      ],
+      "modulos": [
+        "cadastros",
+        "faturamento",
+        "financeiro"
+      ]
+    },
+    "0_9_organograma": {
+      "status": "not_applicable",
+      "arquivo": "",
+      "posicoes": [
+        {
+          "papel": "patrocinador",
+          "nome": "Adriano Boller",
+          "responde_a": ""
+        },
+        {
+          "papel": "gerente do projeto",
+          "nome": "PMO do plugin",
+          "responde_a": "patrocinador"
+        },
+        {
+          "papel": "analista do legado",
+          "nome": "João Lima",
+          "responde_a": "gerente do projeto"
+        }
+      ],
+      "observacao": "sem arquivo; posições informadas na conversa"
+    },
+    "0_10_fluxograma": {
+      "status": "not_applicable",
+      "arquivo": "",
+      "etapas": [
+        "Pedido a faturar",
+        "Conferencia do cliente",
+        "Emissao da fatura",
+        "Geracao dos titulos",
+        "Baixa com encargos"
+      ],
+      "observacao": ""
+    },
+    "0_11_cronograma": {
+      "inicio": "2026-09-08",
+      "prazo_final": "2026-12-18",
+      "marcos": [
+        {
+          "marco": "Inventário aprovado",
+          "data": "2026-09-26",
+          "gate": "G1"
+        },
+        {
+          "marco": "Piloto vertical em produção",
+          "data": "2026-10-30",
+          "gate": "G4"
+        },
+        {
+          "marco": "Aceite final",
+          "data": "2026-12-18",
+          "gate": "G7"
+        }
+      ],
+      "observacao": ""
+    },
+    "0_12_orcamento": {
+      "valor": 180000,
+      "moeda": "BRL",
+      "base": "fechado",
+      "aprovado_por": "Adriano Boller",
+      "observacao": ""
+    },
+    "0_13_riscos": [
+      {
+        "risco": "Regra do financeiro so existe no codigo, sem documento",
+        "probabilidade": "alta",
+        "impacto": "alto",
+        "mitigacao": "golden master capturado rodando o proprio legado"
+      },
+      {
+        "risco": "Arredondamento diferente entre PHP e Rust",
+        "probabilidade": "media",
+        "impacto": "alto",
+        "mitigacao": "valores em centavos inteiros no destino e caso de teste por regra"
+      },
+      {
+        "risco": "SQL concatenado esconde injecao ja explorada",
+        "probabilidade": "media",
+        "impacto": "alto",
+        "mitigacao": "inventario das consultas no G2 antes de reescrever"
+      }
+    ],
+    "0_14_pessoal_envolvido": [
+      {
+        "nome": "Adriano Boller",
+        "papel": "patrocinador e aprovador",
+        "empresa": "Boller Sistemas",
+        "contato": "adriano@exemplo.com.br"
+      },
+      {
+        "nome": "João Lima",
+        "papel": "analista do legado",
+        "empresa": "Boller Sistemas",
+        "contato": "joao@exemplo.com.br"
+      }
+    ],
+    "0_15_github": {
+      "url": "https://github.com/adrianoboller/faturamento-rs",
+      "branch": "main",
+      "usuario": "adrianoboller",
+      "credencial_ref": "GITHUB_TOKEN",
+      "diretorio_destino": "./faturamento-rs",
+      "observacao": "token configurado na variável de ambiente GITHUB_TOKEN da máquina que faz o push"
+    },
+    "0_16_aprovador": {
+      "nome": "Adriano Boller",
+      "cargo": "Diretor de tecnologia",
+      "email": "adriano@exemplo.com.br",
+      "aprova": [
+        "regras de negocio",
+        "divergencias",
+        "aceite dos gates"
+      ],
+      "substituto": "Maria Souza",
+      "observacao": ""
+    }
+  },
+  "A_sql": {
+    "status": "provided",
+    "arquivos": [
+      "banco.sql"
+    ],
+    "dialeto": "MySQL",
+    "versao_do_banco": "5.7",
+    "encoding": "utf-8",
+    "collation": "utf8mb4_general_ci",
+    "charset": "utf8mb4",
+    "timezone": "America/Sao_Paulo",
+    "observacao": "DDL exportado do banco de producao, sem dados"
+  },
+  "B_pdf_codigos": {
+    "status": "not_applicable",
+    "arquivos": [],
+    "observacao": "o codigo-fonte PHP esta em inputs/legado-php/, legivel, sem PDF"
+  },
+  "C_pdf_interfaces": {
+    "status": "not_applicable",
+    "arquivos": [],
+    "observacao": "as telas sao HTML dentro dos proprios .php"
+  },
+  "D_pdf_queries": {
+    "status": "not_applicable",
+    "arquivos": [],
+    "observacao": "as consultas estao concatenadas no PHP, nao ha catalogo"
+  },
+  "E_pdf_completo": {
+    "status": "not_applicable",
+    "arquivos": [],
+    "observacao": "o sistema nunca teve documentacao"
+  },
+  "F_estilo_impeccable": {
+    "ativar": true,
+    "preservar_ou_redesenhar": "preservar",
+    "tema": "ambos",
+    "paleta": {
+      "principal": "#E2261C",
+      "secundaria": "#14161F",
+      "fundo": "#FBFAF7",
+      "texto": "#14161F",
+      "acao": "#1F7A4E",
+      "erro": "#C63C0A",
+      "aviso": "#9A6B00",
+      "sucesso": "#1F7A4E"
+    },
+    "tipografia": "Exo 2",
+    "densidade": "compacta",
+    "marca": "WX Claude Code",
+    "observacao": "",
+    "F0_tela_modelo": {
+      "status": "not_applicable",
+      "arquivos": [],
+      "o_que_preservar": [
+        "a sequencia da tela de emissao: cliente, forma, parcelas, gerar",
+        "os rotulos que o financeiro le em voz alta ao telefone"
+      ],
+      "o_que_mudar": [
+        "a tabela sem estilo, que hoje e um <table border=1>",
+        "as mensagens de erro que hoje saem por die()"
+      ],
+      "observacao": "nao ha screenshot; o modelo e o proprio fatura_gerar.php"
+    },
+    "F1_operacao": {
+      "perfil_do_usuario": "faturamento e financeiro",
+      "horas_por_dia": "8",
+      "ambiente": "escritorio",
+      "tela_tipica": "1920x1080"
+    },
+    "F2_teclado": {
+      "atalhos_a_preservar": [
+        "F2 novo",
+        "F5 salvar",
+        "F8 excluir",
+        "Esc cancelar"
+      ],
+      "enter_avanca_campo": true,
+      "ordem_de_tabulacao": "igual ao legado"
+    },
+    "F3_grids": {
+      "linhas_por_tela": "titulos em aberto ate 5 mil linhas",
+      "colunas_fixas": true,
+      "ordenar_e_filtrar_por_coluna": true,
+      "edicao_na_celula": true,
+      "totais_no_rodape": true,
+      "exportar": [
+        "xlsx",
+        "csv"
+      ],
+      "imprimir_grade": true
+    },
+    "F4_formularios": {
+      "validacao": "inline",
+      "preservar_mensagens_do_legado": true,
+      "obrigatorio_marcado_como": "asterisco",
+      "mascaras": [
+        "cnpj",
+        "moeda",
+        "data"
+      ],
+      "autocompletar": true
+    },
+    "F5_formatos": {
+      "locale": "pt-BR",
+      "decimais_moeda": 2,
+      "decimais_quantidade": 3,
+      "negativo": "vermelho",
+      "fuso": "America/Sao_Paulo"
+    },
+    "F6_impressao": {
+      "telas_que_imprimem": [
+        "RPT_SaldoMinimo",
+        "RPT_Comissao",
+        "cupom da venda"
+      ],
+      "papel": "A4 e bobina 80 mm",
+      "pdf": true,
+      "etiquetas": false
+    },
+    "F7_estados": {
+      "vazio": true,
+      "carregando": true,
+      "sem_permissao": true,
+      "offline": false,
+      "erro_do_servidor": true,
+      "confirmar_destrutivo": true
+    },
+    "F8_acessibilidade": {
+      "wcag": "AA",
+      "leitor_de_tela": false,
+      "daltonismo": true,
+      "toque_minimo_px": 44
+    },
+    "F9_vocabulario_dos_botoes": {
+      "estilo": "imperativo",
+      "observacao": "imperativo = INCLUIR, ALTERAR, EXCLUIR, GRAVAR, SELECIONAR REGISTRO, VOLTAR, CANCELAR, DUPLICAR; substantivo = Inclusão, Alteração, Exclusão, Gravação, Selecionar, Abortar, Cancelar; caixa = maiusculas | capitalizado",
+      "caixa": "maiusculas",
+      "rotulos": {
+        "incluir": "INCLUIR",
+        "alterar": "ALTERAR",
+        "excluir": "EXCLUIR",
+        "gravar": "GRAVAR",
+        "selecionar": "SELECIONAR REGISTRO",
+        "voltar": "VOLTAR",
+        "cancelar": "CANCELAR",
+        "duplicar": "DUPLICAR"
+      },
+      "mensagens": {
+        "confirmar_exclusao": "Confirma a exclusão do registro?",
+        "gravado": "Registro gravado.",
+        "excluido": "Registro excluído.",
+        "cancelado": "Operação cancelada."
+      }
+    },
+    "F10_posicao_dos_botoes": {
+      "da_grade": "acima",
+      "dos_campos": "abaixo",
+      "alinhamento": "direita",
+      "ordem": [
+        "incluir",
+        "alterar",
+        "duplicar",
+        "excluir",
+        "selecionar",
+        "voltar"
+      ],
+      "gravar_e_cancelar": "abaixo dos campos, à direita, gravar por último",
+      "observacao": "da_grade e dos_campos: acima | abaixo | direita | esquerda"
+    },
+    "F11_icones": {
+      "usar": true,
+      "biblioteca": "Lucide",
+      "com_texto": true,
+      "tamanho_px": 16,
+      "por_acao": {
+        "incluir": "plus",
+        "alterar": "pencil",
+        "excluir": "trash-2",
+        "gravar": "save",
+        "selecionar": "check",
+        "voltar": "arrow-left",
+        "cancelar": "x",
+        "duplicar": "copy"
+      }
+    },
+    "F12_cores_das_acoes": {
+      "regra": "contorno; preenchimento so no hover",
+      "por_acao": {
+        "incluir": "#1F7A4E",
+        "alterar": "#9A6B00",
+        "excluir": "#C63C0A",
+        "gravar": "#1F7A4E",
+        "selecionar": "#1F5FBF",
+        "voltar": "#4A4E5E",
+        "cancelar": "#4A4E5E",
+        "duplicar": "#1F5FBF"
+      },
+      "observacao": "padrao do plugin: verde inclui/grava, amarelo altera, vermelho exclui, azul consulta/seleciona, cinza volta/cancela"
+    },
+    "F13_fundo_das_telas": {
+      "tipo": "textura",
+      "cor": "#FBFAF7",
+      "cor_escuro": "#0B0D17",
+      "textura_ou_imagem": "papel fino cinza-quente, sem imagem externa",
+      "opacidade_da_textura": 0.04,
+      "observacao": "tipo: cor | textura | imagem; cor em hexadecimal ou rgb(r,g,b)"
+    }
+  },
+  "G_help_json": {
+    "usar_corpus_do_plugin": true,
+    "override_da_versao": {
+      "status": "not_applicable",
+      "arquivos": [],
+      "versao": ""
+    },
+    "versao_do_help": "2025"
+  },
+  "H_backend": {
+    "linguagem": "Rust",
+    "framework": "Axum",
+    "banco": "PostgreSQL 16",
+    "versoes_minimas": {
+      "rust": "1.85"
+    },
+    "implantacao": "Docker",
+    "perfil": "rust_axum",
+    "sinais": {
+      "quem_mantem": "equipe nova em Rust",
+      "produto": "web",
+      "prioridade": "desempenho",
+      "linguagem_ja_em_uso": "Rust (PhxSql)"
+    },
+    "processo": {
+      "mostrado": "todas",
+      "estrategia": "reescrita-guiada",
+      "mapeamento_confirmado": true,
+      "quer_diferente": "relatórios: manter o gerador do legado até o G6, porque as etiquetas térmicas são o risco RSK-002",
+      "observacao": ""
+    },
+    "observacao": "perfil: rust | python | csharp-wl | go | java | node | php | outra; com 'outra', preencha linguagem e framework livremente e o processo sai generico; sinais preenchidos quando o usuario nao sabia a linguagem"
+  },
+  "I_frontend": {
+    "linguagem": "TypeScript",
+    "framework": "React",
+    "plataformas": [
+      "web"
+    ],
+    "navegadores_e_dispositivos": [
+      "Chrome 120+",
+      "Firefox 120+",
+      "Edge 120+"
+    ],
+    "perfil": "react",
+    "processo": {
+      "mostrado": "uma",
+      "estrategia": "ondas",
+      "telas_por_vez": "modulo a modulo",
+      "quer_diferente": "a grade de movimentação é a primeira tela, por ser a mais usada",
+      "observacao": ""
+    },
+    "observacao": ""
+  },
+  "J_economia_de_tokens": {
+    "ativar": true,
+    "instalar_estilo_no_claude_md": true,
+    "modelos_locais": {
+      "ativar": true,
+      "ferramenta": "magnitude",
+      "endereco": "http://127.0.0.1:10100",
+      "modelo": "o que o `magnitude setup` recomendar para a maquina",
+      "so_para": [
+        "mecanica"
+      ],
+      "observacao": ""
+    }
+  },
+  "K_ambiente": {
+    "K0_privilegios": {
+      "modo": "sudo",
+      "usuario_root": "root",
+      "observacao": ""
+    },
+    "K1_rust": {
+      "instalar_ou_atualizar": true,
+      "versao_minima": "1.98",
+      "canal": "stable",
+      "componentes": [
+        "clippy",
+        "rustfmt"
+      ],
+      "targets": [
+        "x86_64-pc-windows-gnu"
+      ],
+      "observacao": ""
+    },
+    "K2_postgresql": {
+      "instalar_ou_atualizar": true,
+      "versao": "16",
+      "host": "localhost",
+      "porta": 5432,
+      "banco": "estoque",
+      "superusuario": "postgres",
+      "senha_ref": "PGPASSWORD",
+      "papeis": [
+        {
+          "nome": "estoque_owner",
+          "nivel": "owner",
+          "senha_ref": "ESTOQUE_OWNER_PASSWORD"
+        },
+        {
+          "nome": "estoque_app",
+          "nivel": "readwrite",
+          "senha_ref": "ESTOQUE_APP_PASSWORD"
+        },
+        {
+          "nome": "estoque_bi",
+          "nivel": "readonly",
+          "senha_ref": "ESTOQUE_BI_PASSWORD"
+        }
+      ],
+      "observacao": ""
+    },
+    "K3_mysql": {
+      "instalar_ou_atualizar": false,
+      "versao": "8.4",
+      "host": "localhost",
+      "porta": 3306,
+      "banco": "",
+      "superusuario": "root",
+      "senha_ref": "MYSQL_ROOT_PASSWORD",
+      "papeis": [],
+      "observacao": "não se aplica: destino é PostgreSQL"
+    },
+    "K4_mariadb": {
+      "instalar_ou_atualizar": false,
+      "versao": "11.4",
+      "host": "localhost",
+      "porta": 3306,
+      "banco": "",
+      "superusuario": "root",
+      "senha_ref": "MARIADB_ROOT_PASSWORD",
+      "papeis": [],
+      "observacao": ""
+    },
+    "K5_supabase": {
+      "instalar_ou_atualizar": false,
+      "projeto_url": "",
+      "projeto_ref": "",
+      "anon_key_ref": "SUPABASE_ANON_KEY",
+      "service_role_ref": "SUPABASE_SERVICE_ROLE_KEY",
+      "cli_local": false,
+      "observacao": ""
+    },
+    "K6_github": {
+      "ligar_projeto": true,
+      "criar_repositorio_se_nao_existir": true,
+      "visibilidade": "private",
+      "remote": "origin",
+      "branch_principal": "main",
+      "ci": "github-actions",
+      "proteger_branch": true,
+      "observacao": "",
+      "convencao_de_commits": "conventional (feat, fix, chore, docs, test)"
+    },
+    "K7_n8n": {
+      "instalar": true,
+      "modo": "docker",
+      "versao": "1.100",
+      "host": "localhost",
+      "porta": 5678,
+      "url_publica": "https://n8n.exemplo.com.br",
+      "timezone": "America/Sao_Paulo",
+      "banco": {
+        "tipo": "postgresql",
+        "reusar_k2": true,
+        "nome": "n8n",
+        "usuario": "n8n",
+        "senha_ref": "N8N_DB_PASSWORD"
+      },
+      "admin": {
+        "email": "adriano@exemplo.com.br",
+        "senha_ref": "N8N_ADMIN_PASSWORD"
+      },
+      "encryption_key_ref": "N8N_ENCRYPTION_KEY",
+      "integracao": {
+        "api_do_projeto_url": "http://localhost:8080/api",
+        "api_token_ref": "ESTOQUE_API_TOKEN",
+        "webhooks": [
+          {
+            "nome": "estoque-baixo",
+            "caminho": "/webhook/estoque-baixo",
+            "metodo": "POST",
+            "o_que_faz": "recebe do backend o produto abaixo do mínimo e avisa compras por e-mail"
+          },
+          {
+            "nome": "nfe-autorizada",
+            "caminho": "/webhook/nfe-autorizada",
+            "metodo": "POST",
+            "o_que_faz": "recebe a NF-e autorizada e grava o XML no Drive"
+          }
+        ],
+        "fluxos_iniciais": [
+          {
+            "nome": "Reposição",
+            "gatilho": "webhook estoque-baixo",
+            "acao": "cria pedido de compra pela API do projeto e manda e-mail"
+          },
+          {
+            "nome": "Fechamento diário",
+            "gatilho": "cron 23:00",
+            "acao": "chama /api/relatorios/posicao e envia PDF ao diretor"
+          }
+        ],
+        "eventos_do_projeto": [
+          "estoque.baixo",
+          "nfe.autorizada",
+          "venda.fechada"
+        ],
+        "documentacao_da_api": true,
+        "api_key_ref": "ESTOQUE_API_KEY"
+      },
+      "observacao": ""
+    },
+    "K8_backup_e_replicacao": {
+      "ativar": true,
+      "backup": {
+        "ferramenta": "pgbackrest",
+        "tipo": "continuo-wal",
+        "frequencia": "diaria",
+        "hora": "02:00",
+        "retencao_dias": 30,
+        "retencao_mensal_meses": 12,
+        "destino": "s3",
+        "caminho_ou_bucket": "backups-estoque",
+        "fora_do_servidor": true,
+        "cifrado": true,
+        "chave_ref": "BACKUP_ENCRYPTION_KEY",
+        "credencial_destino_ref": "BACKUP_S3_SECRET",
+        "compressao": "zstd",
+        "inclui_arquivos": true,
+        "teste_de_restauracao": "mensal",
+        "restauracao_testada_em": "2026-08-30",
+        "janela_de_manutencao": "domingo 01:00-03:00",
+        "responsavel": "Adriano Boller",
+        "alerta_em_falha": {
+          "canal": "email",
+          "destino_ref": "BACKUP_ALERTA_EMAIL"
+        }
+      },
+      "replicacao": {
+        "ativar": true,
+        "tipo": "streaming",
+        "sincrona": false,
+        "replicas": [
+          {
+            "nome": "estoque-replica-1",
+            "host": "replica1.exemplo.com.br",
+            "papel": "leitura",
+            "regiao": "sp"
+          }
+        ],
+        "lag_maximo_segundos": 30,
+        "failover": "manual",
+        "ferramenta_de_failover": "repmgr",
+        "monitoramento": "lag conferido a cada 5 min pelo healthcheck",
+        "responsavel": "Adriano Boller"
+      },
+      "objetivos": {
+        "rpo_minutos": 15,
+        "rto_minutos": 120,
+        "observacao": "faturamento nao pode perder o dia"
+      },
+      "legado": {
+        "como_e_hoje": "copia manual da pasta do HFSQL para um HD externo, as sextas",
+        "backup_do_hfsql": "HBackup nao usado; copia de arquivo com o sistema fechado",
+        "o_que_nao_pode_parar": "emissao de nota e consulta de saldo",
+        "ja_perdeu_dado": "sim, em 2023: uma semana de movimentacao, por falha do HD externo"
+      },
+      "observacao": ""
+    }
+  },
+  "L_contexto_e_implantacao": {
+    "L1_requisitos_da_v1": {
+      "itens": [
+        "O sistema deve permitir login com usuário e senha do legado",
+        "O sistema deve cadastrar produtos com código de barras e saldo por lote",
+        "O sistema deve registrar entrada e saída com o mesmo teclado do WINDEV (Enter avança, F2 grava)",
+        "O sistema deve emitir o relatório de posição em PDF igual ao legado",
+        "O sistema deve bloquear venda com estoque zero (BR-002)"
+      ],
+      "fora_da_v1": [
+        "Etiquetas térmicas (fica no G5, RPT-*)",
+        "Inventário rotativo",
+        "App mobile"
+      ],
+      "observacao": ""
+    },
+    "L2_prototipacao": {
+      "ferramenta": "stitch",
+      "telas_prioritarias": [
+        "WIN_Venda",
+        "WIN_Cliente",
+        "WIN_Produto"
+      ],
+      "observacao": ""
+    },
+    "L3_implantacao": {
+      "alvo": "easypanel-vps",
+      "dominio": "estoque.exemplo.com.br",
+      "porta": 8080,
+      "dockerfile": true,
+      "docker_compose": true,
+      "variaveis_de_ambiente": [
+        "DATABASE_URL",
+        "ESTOQUE_API_KEY",
+        "RUST_LOG"
+      ],
+      "healthcheck": "/health",
+      "observacao": "; pasta_de_saida: pasta do usuario onde exportar_projeto.py grava o projeto organizado (<nome>-<data>)",
+      "pasta_de_saida": "~/entregas-wx"
+    },
+    "L4_hooks_do_projeto": {
+      "testar_ao_parar": true,
+      "lint_ao_editar": true,
+      "comando_de_teste": "cargo test --workspace",
+      "comando_de_lint": "cargo clippy --workspace --all-targets -- -D warnings",
+      "observacao": ""
+    },
+    "L5_mcp_e_skills": {
+      "mcps": [
+        "postgresql",
+        "github"
+      ],
+      "skills_externas": [],
+      "observacao": ""
+    },
+    "L6_esqueleto_erp": {
+      "gerar": true,
+      "multi_empresa": false,
+      "fiscal_brasil": true,
+      "modulos_extras": [
+        "financeiro"
+      ],
+      "observacao": ""
+    }
+  },
+  "M_artefatos": {
+    "pasta": "./artefatos",
+    "itens": [
+      {
+        "arquivo": "anotacoes-da-reuniao-2026-09-01.txt",
+        "tipo": "anotacao",
+        "onde_usar": "G1: regras que o cliente ditou e nao estao no codigo; cada uma vira BR-* com origem nesta anotacao",
+        "descricao": "reuniao com o gerente de estoque sobre bloqueio de venda com saldo zero",
+        "origem": "cliente",
+        "confidencial": false
+      },
+      {
+        "arquivo": "classes-negocio.pdf",
+        "tipo": "classe-oop",
+        "onde_usar": "G2: as classes WLanguage de negocio; viram servicos por dominio em src/<modulo>/",
+        "descricao": "PDF com as classes CLS_Produto, CLS_Venda e CLS_Estoque",
+        "origem": "IDE do WINDEV",
+        "confidencial": false
+      },
+      {
+        "arquivo": "consultas-do-financeiro.sql",
+        "tipo": "query-sql",
+        "onde_usar": "G3: viram QRY-* na matriz e metodos de repositorio; resultado comparado com o legado",
+        "descricao": "quatro consultas que o financeiro roda fora do sistema",
+        "origem": "cliente",
+        "confidencial": false
+      },
+      {
+        "arquivo": "modelo-posicao-de-estoque.pdf",
+        "tipo": "relatorio",
+        "onde_usar": "G5: RPT-001; o PDF gerado e comparado pagina a pagina com este",
+        "descricao": "relatorio de posicao impresso pelo legado, com os totais",
+        "origem": "legado",
+        "confidencial": false
+      }
+    ],
+    "observacao": ""
+  }
+}

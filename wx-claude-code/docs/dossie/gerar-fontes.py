@@ -26,6 +26,7 @@ GRUPOS = [
     ("Modelos", "skills/conversao-wx/templates/*", "questionário, CLAUDE.md e matriz que viram o projeto do cliente"),
     ("Testes", "tests/*.py", "a bateria; o validador estrito a roda"),
     ("Exemplo", "exemplos/estoque-wx/**/*", "projeto sintético que é o teste de regressão do fluxo inteiro"),
+    ("Exemplo PHP", "exemplos/faturamento-php/**/*", "legado PHP procedural sintético: o segundo exemplo, sem nada de WX"),
     ("Documentos", "*.md", "manual, README, fontes e a instrução de ativação, na raiz"),
     ("Documentos de apoio", "docs/**/*.md", "relatório, análises, origens dos prints e o vídeo"),
     ("Instaladores", "instalar.*", "bash para Linux e macOS, PowerShell para Windows"),

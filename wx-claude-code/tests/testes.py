@@ -21,6 +21,7 @@ from pathlib import Path
 RAIZ = Path(__file__).resolve().parents[1]
 SCRIPTS = RAIZ / "skills" / "conversao-wx" / "scripts"
 EXEMPLO = RAIZ / "exemplos" / "estoque-wx"
+EXEMPLO_PHP = RAIZ / "exemplos" / "faturamento-php"
 
 
 def run(*args: str, entrada: str | None = None, cwd: Path | None = None) -> subprocess.CompletedProcess:
@@ -768,6 +769,74 @@ class Questionario(unittest.TestCase):
         nomes = " ".join(p["passo"] for p in dados["passos"])
         for peca in ("questionario", "G0", "artefato", "PDF", "PMO", "roteador", "RAG", "exportar", "registro"):
             self.assertIn(peca, nomes, peca)
+
+    def _preflight_do_exemplo(self, exemplo: Path):
+        """Aplica o questionario do exemplo num projeto novo e roda o G0 nele."""
+        tmp = Path(tempfile.mkdtemp())
+        shutil.copytree(exemplo / "inputs", tmp / "inputs")
+        (tmp / ".wx-migration").mkdir()
+        r = run(SCRIPTS / "aplicar_questionario.py", "--questionario", exemplo / "questionario.json",
+                "--project-root", tmp, "--plugin-root", RAIZ)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        run(SCRIPTS / "wx_preflight.py", "--manifest", tmp / ".wx-migration/wx-inputs.manifest.json",
+            "--allowed-evidence-root", tmp / "inputs", "--workspace-root", tmp,
+            "--output", tmp / ".wx-migration/preflight")
+        rel = sorted((tmp / ".wx-migration/preflight/runs").glob("*/report.json"))[-1]
+        return tmp, json.loads(rel.read_text(encoding="utf-8"))
+
+    def test_g0_aceita_legado_php_sem_pdf_de_windev(self):
+        """O legado e E/OU: um projeto PHP puro nao pode ser barrado por nao ter
+        wx_version nem os PDFs de documentacao que ele nunca teve. Este exemplo
+        achou oito erros do G0 na primeira execucao, todos por supor WINDEV."""
+        tmp, rel = self._preflight_do_exemplo(EXEMPLO_PHP)
+        self.assertEqual(rel["status"], "CONDITIONAL", [e["code"] for e in rel.get("errors", [])])
+        self.assertEqual(rel.get("errors", []), [], "G0 nao pode ter erro num legado PHP completo")
+        # o codigo-fonte E a evidencia central aqui: tem de estar no manifesto
+        man = json.loads((tmp / ".wx-migration/wx-inputs.manifest.json").read_text(encoding="utf-8"))
+        fonte = man["artifacts"]["native_project_sources"]
+        self.assertEqual(fonte["status"], "provided")
+        caminhos = [i["path"] for i in fonte["items"]]
+        self.assertIn("legado-php/lib/regras.php", caminhos)
+        self.assertTrue(all(i["lines"] > 0 for i in fonte["items"]), "linhas medidas, nao chutadas")
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_projeto_windev_continua_exigindo_o_que_sempre_exigiu(self):
+        """O teste que importa numa guarda afrouxada e o do comportamento VELHO:
+        projeto WX sem wx_version e sem os PDFs centrais continua bloqueado."""
+        tmp = Path(tempfile.mkdtemp())
+        shutil.copytree(EXEMPLO / "inputs", tmp / "inputs")
+        (tmp / ".wx-migration").mkdir()
+        r = run(SCRIPTS / "aplicar_questionario.py", "--questionario", EXEMPLO / "questionario.json",
+                "--project-root", tmp, "--plugin-root", RAIZ)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        man = tmp / ".wx-migration/wx-inputs.manifest.json"
+        d = json.loads(man.read_text(encoding="utf-8"))
+        self.assertEqual(d["project"]["products"], ["WINDEV"])
+        d["project"]["wx_version"] = ""
+        d["artifacts"]["code_documents"] = {"status": "not_applicable", "notes": "nao quero", "items": []}
+        man.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
+        run(SCRIPTS / "wx_preflight.py", "--manifest", man, "--allowed-evidence-root", tmp / "inputs",
+            "--workspace-root", tmp, "--output", tmp / ".wx-migration/preflight")
+        rel = json.loads(sorted((tmp / ".wx-migration/preflight/runs").glob("*/report.json"))[-1].read_text(encoding="utf-8"))
+        codigos = [e["code"] for e in rel.get("errors", [])]
+        self.assertEqual(rel["status"], "BLOCKED")
+        self.assertIn("PROJECT_FIELD", codigos, "wx_version continua obrigatorio em projeto WX")
+        self.assertIn("CORE_NOT_APPLICABLE", codigos, "PDF de codigo continua central em projeto WX")
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_golden_master_do_exemplo_php_sai_do_proprio_legado(self):
+        """Numero visivel sai de medicao: o esperado do exemplo PHP e capturado
+        rodando as regras do legado, e o script tem de reproduzi-lo igual."""
+        php = shutil.which("php")
+        if not php:
+            self.skipTest("php nao instalado neste ambiente")
+        gravado = json.loads((EXEMPLO_PHP / "inputs/dados-de-amostra/resultados-esperados.json").read_text(encoding="utf-8"))
+        r = subprocess.run([php, str(EXEMPLO_PHP / "capturar-golden.php")], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        agora = json.loads(r.stdout)
+        self.assertEqual(gravado["casos"], agora["casos"],
+                         "o golden master gravado nao bate com o legado; rode capturar-golden.php")
+        self.assertGreaterEqual(len(agora["casos"]), 12)
 
     def test_bateria_pesada_de_cenarios(self):
         """Os OUTROS caminhos: sem licenca, PDF que e foto, legado que nunca foi WX,

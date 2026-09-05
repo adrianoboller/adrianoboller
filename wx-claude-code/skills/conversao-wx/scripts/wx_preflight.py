@@ -39,6 +39,10 @@ VALID_MODES = {"inventory", "plan", "pilot", "complete"}
 VALID_EVIDENCE_CLASSES = {"auto", "native", "documentary", "forensic"}
 VALID_ACCESS = {"public", "authenticated", "vpn", "unverified"}
 VALID_PRODUCTS = {"WINDEV", "WEBDEV", "WINDEV Mobile"}
+# O legado e E/OU: pode vir sem nenhum produto WX. Quando vem, o que e
+# evidencia central muda -- o codigo-fonte no lugar dos PDFs da documentacao
+# que um sistema PHP de 2009 nunca teve.
+VALID_LEGACY_PRODUCTS = {"php", "outra"}
 VALID_EXCEPTION_CODES = {
     "NO_SAMPLE_DATA",
     "NO_SOURCE_RUNTIME",
@@ -60,6 +64,18 @@ CORE_GROUPS = {
     "sql_scripts",
     "screenshots",
 }
+# Legado sem nenhum produto WX: o Help WLanguage nao se aplica e nao ha PDF de
+# documentacao por tipo. A evidencia central passa a ser o codigo-fonte e o
+# esquema do banco. Exigir os PDFs de um projeto que nunca os teve nao protege
+# ninguem -- so impede o G0 de um legado que o questionario ja aceita.
+CORE_GROUPS_SEM_WX = {
+    "native_project_sources",
+    "sql_scripts",
+}
+
+
+def core_groups(products) -> set:
+    return CORE_GROUPS if (set(products or []) & VALID_PRODUCTS) else CORE_GROUPS_SEM_WX
 KNOWN_ARTIFACT_GROUPS = {
     "native_project_sources",
     "wlanguage_help_json",
@@ -2804,13 +2820,18 @@ def validate_project_and_config(manifest: dict, config: dict, audit: Audit) -> d
         audit.issue("error", "PROJECT_MISSING", "Objeto project ausente ou inválido.")
         project = {}
     project_name = nonempty_string(project, "name", audit, "PROJECT_FIELD", "project")
-    wx_version = nonempty_string(project, "wx_version", audit, "PROJECT_FIELD", "project")
+    produtos_declarados = project.get("products") if isinstance(project.get("products"), list) else []
+    tem_wx = bool({p for p in produtos_declarados if isinstance(p, str)} & VALID_PRODUCTS)
+    # wx_version so faz sentido com produto WX: cobrar de um legado PHP e
+    # cobrar a versao de um produto que ele nao usa.
+    wx_version = nonempty_string(project, "wx_version", audit, "PROJECT_FIELD", "project", required=tem_wx)
     help_version = nonempty_string(project, "wlanguage_help_version", audit, "PROJECT_FIELD", "project")
     help_language = nonempty_string(project, "wlanguage_help_language", audit, "PROJECT_FIELD", "project")
     human_approver = nonempty_string(project, "human_approver", audit, "PROJECT_FIELD", "project")
     products = string_list(project.get("products"), audit, "PROJECT_PRODUCTS", "project.products", nonempty=True)
-    if any(product not in VALID_PRODUCTS for product in products):
-        audit.issue("error", "PROJECT_PRODUCTS", "project.products contém produto WX inválido.")
+    if any(product not in (VALID_PRODUCTS | VALID_LEGACY_PRODUCTS) for product in products):
+        audit.issue("error", "PROJECT_PRODUCTS",
+                    "project.products aceita WINDEV, WEBDEV, WINDEV Mobile, php ou outra.")
 
     mode = config.get("mode")
     if not isinstance(mode, str) or mode not in VALID_MODES:
@@ -3031,7 +3052,8 @@ def validate_project_and_config(manifest: dict, config: dict, audit: Audit) -> d
         "help_version": help_version,
         "help_language": help_language,
         "human_approver": human_approver,
-        "products": set(products),
+        "products": {p for p in products if p in VALID_PRODUCTS},
+        "all_products": set(products),
         "mode": mode,
         "requested_evidence_class": evidence_class,
         "source_execution_available": source_available,
@@ -3355,7 +3377,8 @@ def readiness_blockers(manifest: dict, audit: Audit) -> list[str]:
     blockers = {record["code"] for record in audit.errors}
     blockers.update(record["code"] for record in audit.warnings)
     artifacts = manifest.get("artifacts") if isinstance(manifest.get("artifacts"), dict) else {}
-    for group_name in CORE_GROUPS:
+    projeto = manifest.get("project") if isinstance(manifest.get("project"), dict) else {}
+    for group_name in core_groups(projeto.get("products")):
         if not artifact_group_ready_for_g1(artifacts.get(group_name)):
             blockers.add(f"GROUP:{group_name}")
     if not audit.help_identity_verified:
@@ -3701,7 +3724,7 @@ def run(
         if status_value == "not_applicable":
             if not notes.strip():
                 audit.issue("error", "NA_WITHOUT_REASON", "not_applicable exige justificativa.", group_name)
-            if group_name in CORE_GROUPS:
+            if group_name in core_groups(context.get("all_products")):
                 audit.issue(
                     "error",
                     "CORE_NOT_APPLICABLE",
@@ -3710,8 +3733,9 @@ def run(
                 )
             continue
         if status_value == "missing":
-            level = "error" if group_name in CORE_GROUPS else "warning"
-            if context["missing_artifact_policy"] == "allow-scoped-analysis" and group_name not in CORE_GROUPS:
+            centrais = core_groups(context.get("all_products"))
+            level = "error" if group_name in centrais else "warning"
+            if context["missing_artifact_policy"] == "allow-scoped-analysis" and group_name not in centrais:
                 level = "warning"
             audit.issue(level, "ARTIFACT_MISSING", "Grupo declarado como ausente.", group_name)
             continue

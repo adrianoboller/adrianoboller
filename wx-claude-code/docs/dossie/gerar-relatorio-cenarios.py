@@ -21,6 +21,11 @@ from pathlib import Path
 RAIZ = Path(__file__).resolve().parents[2]
 E = H.escape
 
+# "doze" ja mentiu uma vez, quando o decimo terceiro cenario entrou: o numero
+# por extenso do texto tem de sair da contagem, como todo numero visivel.
+POR_EXTENSO = {10: "dez", 11: "onze", 12: "doze", 13: "treze", 14: "catorze", 15: "quinze",
+               16: "dezesseis", 17: "dezessete", 18: "dezoito", 19: "dezenove", 20: "vinte"}
+
 # O que cada cenario cobre, para quem le o relatorio sem ler o codigo.
 POR_QUE = {
     "01": "É o caminho que o plugin existe para atender: projeto WINDEV com anexos, questionário completo, portão G0 e saída em Rust.",
@@ -35,6 +40,7 @@ POR_QUE = {
     "10": "Sem licença o plugin não roda: o hook recusa os scripts, e o verificador não diz que está válida.",
     "11": "Entrega ao cliente: o .env fica fora do pacote e o .env.exemplo entra, sem nenhum valor real.",
     "12": "O instalador em conferência não instala nada e não deixa lixo — inclusive em /tmp.",
+    "13": "O exemplo FATURAMENTO inteiro: PHP procedural de 2009, sem nada de WINDEV, atravessando o G0 com o código-fonte como evidência central.",
 }
 
 
@@ -82,7 +88,7 @@ def main() -> int:
             f'<td class="ms">{c["ms"]} ms</td></tr>')
     tabela = "".join(linhas)
 
-    veredito = ("Os doze passaram." if not falhas
+    veredito = (f"Os {POR_EXTENSO.get(d['total'], d['total'])} passaram." if not falhas
                 else f'{len(falhas)} cenário(s) falharam: ' + ", ".join(E(c["cenario"]) for c in falhas))
 
     page = f'''<title>Relatório da bateria pesada</title>
@@ -120,8 +126,8 @@ code{{font-family:"JetBrains Mono",monospace;font-size:12.5px;background:var(--g
 <div class="wrap">
 <header>
  <div class="eyebrow">WX Claude Code {E(versao)} · relatório de uso · {date.today().isoformat()}</div>
- <h1>Bateria pesada: o plugin inteiro, em doze situações</h1>
- <p class="lead">Esta página é gerada rodando os cenários — nenhum número aqui foi digitado. A bateria de unidade prova cada peça; o teste de fluxo prova a ligação no caminho feliz. Estes doze cenários são os <i>outros</i> caminhos: os que um cliente real traz e que só aparecem quando quebram.</p>
+ <h1>Bateria pesada: o plugin inteiro, em {E(POR_EXTENSO.get(d["total"], str(d["total"])))} situações</h1>
+ <p class="lead">Esta página é gerada rodando os cenários — nenhum número aqui foi digitado. A bateria de unidade prova cada peça; o teste de fluxo prova a ligação no caminho feliz. Estes {E(POR_EXTENSO.get(d["total"], str(d["total"])))} cenários são os <i>outros</i> caminhos: os que um cliente real traz e que só aparecem quando quebram.</p>
 </header>
 
 <div class="painel">

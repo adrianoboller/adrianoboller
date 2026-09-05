@@ -1,0 +1,169 @@
+{
+    "descricao": "Golden master capturado RODANDO o legado PHP (capturar-golden.php), com os dados de amostra. Nao foi digitado a mao.",
+    "capturado_em": "2026-09-05",
+    "php": "8.4.19",
+    "origem": "inputs/legado-php/lib/regras.php",
+    "casos": [
+        {
+            "id": "TST-BR-101-a",
+            "regra": "BR-101 calcula_encargos",
+            "entrada": {
+                "valor": 1000,
+                "vencimento": "2026-08-01",
+                "pagamento": "2026-08-31"
+            },
+            "esperado": {
+                "multa": 20,
+                "juros": 10,
+                "total": 1030
+            },
+            "observacao": "trinta dias de atraso: multa de 2% mais um mes de juros de 1%"
+        },
+        {
+            "id": "TST-BR-101-b",
+            "regra": "BR-101 calcula_encargos",
+            "entrada": {
+                "valor": 1000,
+                "vencimento": "2026-08-01",
+                "pagamento": "2026-08-01"
+            },
+            "esperado": {
+                "multa": 0,
+                "juros": 0,
+                "total": 1000
+            },
+            "observacao": "em dia nao tem acrescimo nenhum"
+        },
+        {
+            "id": "TST-BR-101-c",
+            "regra": "BR-101 calcula_encargos",
+            "entrada": {
+                "valor": 748.14,
+                "vencimento": "2026-08-01",
+                "pagamento": "2026-08-16"
+            },
+            "esperado": {
+                "multa": 14.96,
+                "juros": 3.74,
+                "total": 766.84
+            },
+            "observacao": "meio mes: juros pro rata die"
+        },
+        {
+            "id": "TST-BR-102-a",
+            "regra": "BR-102 desconto_por_forma",
+            "entrada": {
+                "subtotal": 3954,
+                "forma": "AV"
+            },
+            "esperado": 197.7
+        },
+        {
+            "id": "TST-BR-102-b",
+            "regra": "BR-102 desconto_por_forma",
+            "entrada": {
+                "subtotal": 3954,
+                "forma": "PZ"
+            },
+            "esperado": 0
+        },
+        {
+            "id": "TST-BR-102-c",
+            "regra": "BR-102 desconto_por_forma",
+            "entrada": {
+                "subtotal": 3954,
+                "forma": "XX"
+            },
+            "esperado": 0,
+            "observacao": "forma desconhecida nao ganha desconto (decisao de 2014)"
+        },
+        {
+            "id": "TST-BR-103-a",
+            "regra": "BR-103 situacao_do_cliente",
+            "entrada": {
+                "maior_atraso_em_dias": 45
+            },
+            "esperado": "BLOQUEADO"
+        },
+        {
+            "id": "TST-BR-103-b",
+            "regra": "BR-103 situacao_do_cliente",
+            "entrada": {
+                "maior_atraso_em_dias": 30
+            },
+            "esperado": "AVISO",
+            "observacao": "exatamente 30 dias ainda fatura, com aviso: o limite e maior que 30"
+        },
+        {
+            "id": "TST-BR-103-c",
+            "regra": "BR-103 situacao_do_cliente",
+            "entrada": {
+                "maior_atraso_em_dias": 0
+            },
+            "esperado": "LIVRE"
+        },
+        {
+            "id": "TST-BR-104-a",
+            "regra": "BR-104 gera_parcelas",
+            "entrada": {
+                "total": 100,
+                "n": 3,
+                "primeira": "2026-10-01"
+            },
+            "esperado": [
+                {
+                    "numero": 1,
+                    "valor": 33.33,
+                    "vencimento": "2026-10-01"
+                },
+                {
+                    "numero": 2,
+                    "valor": 33.33,
+                    "vencimento": "2026-10-31"
+                },
+                {
+                    "numero": 3,
+                    "valor": 33.34,
+                    "vencimento": "2026-11-30"
+                }
+            ],
+            "observacao": "a diferenca de arredondamento vai toda na ultima parcela"
+        },
+        {
+            "id": "TST-BR-104-b",
+            "regra": "BR-104 gera_parcelas",
+            "entrada": {
+                "total": 3756.3,
+                "n": 13,
+                "primeira": "2026-10-01"
+            },
+            "esperado": false,
+            "observacao": "acima de 12 parcelas o legado devolve false"
+        },
+        {
+            "id": "TST-BR-105-a",
+            "regra": "BR-105 valida_cnpj",
+            "entrada": {
+                "cnpj": "11.222.333/0001-81"
+            },
+            "esperado": true
+        },
+        {
+            "id": "TST-BR-105-b",
+            "regra": "BR-105 valida_cnpj",
+            "entrada": {
+                "cnpj": "11.111.111/1111-11"
+            },
+            "esperado": false
+        },
+        {
+            "id": "TST-BR-105-c",
+            "regra": "BR-105 valida_cnpj",
+            "entrada": {
+                "cnpj": "11222333000182"
+            },
+            "esperado": false,
+            "observacao": "digito verificador errado de proposito"
+        }
+    ]
+}

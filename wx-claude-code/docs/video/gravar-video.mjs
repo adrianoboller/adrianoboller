@@ -4,7 +4,7 @@
 import { chromium } from '/opt/node22/lib/node_modules/playwright/index.mjs';
 import { readFileSync, readdirSync, renameSync, rmSync } from 'node:fs';
 
-const [, , outDir, capsDir] = process.argv;
+const [, , outDir, capsDir, roteiroNome = 'uso'] = process.argv;
 const cap = (n) => readFileSync(`${capsDir}/${n}.txt`, 'utf8').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/(proj|pmo2|demo|ex2?)/g, '.');
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 function fmt(line) {
@@ -19,7 +19,8 @@ function fmt(line) {
 }
 // cenas: [titulo, legenda, texto, comandoDigitado?, maxLinhas?]
 const MARCA = 'data:image/png;base64,' + readFileSync('/home/user/adrianoboller/wx-claude-code/marca-wx-claude-code.png').toString('base64');
-const scenes = [
+const ROTEIROS = {};
+ROTEIROS.uso = [
   ['card', 'WX Claude Code', 'Conversão governada de projetos WINDEV, WEBDEV e WINDEV Mobile\nQuestionário: bloco 0 da empresa e letras A–L · Gates G0–G7 · Equipe WLanguage sobre o Help da PC SOFT · PMO com Scrum, Kanban e PDCA\n\nTudo que aparece a seguir é saída real de sessões do Claude Code e dos scripts do plugin.'],
   ['instalar.sh --conferir', '1 · Instalação: pré-requisitos, corpus, conferência do pacote e licença — em modo conferir nada é instalado', cap('45-instalacao')],
   ['claude plugin validate', '2 · O manifesto aceito pelo Claude Code', cap('validate')],
@@ -52,6 +53,30 @@ const scenes = [
   ['cargo test · sessão real', '29 · A prova e a diferença: seis testes passando, e o que mudou de semântica na tradução — dito, não escondido', cap('49-prova-e-semantica')],
   ['card', 'Built to convert. Engineered to prove.', 'claude plugin marketplace add adrianoboller/adrianoboller\nclaude plugin install wx-claude-code@wx-claude-code\n\nManual completo em MANUAL.md'],
 ];
+
+// Segundo roteiro: um legado que nao tem NADA de WINDEV. O plugin converte
+// WLanguage e isso nao muda; o legado, porem, e E/OU -- pode chegar em PHP, C,
+// C++, Clarion ou COBOL. Aqui o de origem e PHP procedural de 2009, e o video
+// mostra o caminho inteiro: instalar, liberar a licenca, usar, chegar em Rust.
+ROTEIROS.php = [
+  ['card', 'De PHP para Rust', 'Um sistema PHP procedural de 2009 — sem nada de WINDEV — atravessando o WX Claude Code inteiro.\nInstalação · liberação da licença · questionário · portão G0 · conversão · prova\n\nTudo a seguir é saída real de sessões do Claude Code e dos scripts do plugin.'],
+  ['instalar.sh --conferir', '1 · Instalação: pré-requisitos, corpus, conferência do pacote e licença — em modo conferir nada é instalado', cap('45-instalacao')],
+  ['licenca.py verificar', '2 · Sem serial o plugin não roda: o verificador diz «ausente» e o hook nega o próprio script do plugin', cap('50-licenca-sem-serial')],
+  ['licenca.py gerar · instalar · verificar', '3 · A liberação: quem vende assina com a chave privada, o cliente instala o serial, e o mesmo comando de antes passa', cap('51-licenca-liberada')],
+  ['inputs/legado-php/lib/regras.php', '4 · O legado de origem: PHP procedural, mysqli, HTML no meio do código — a regra do financeiro mora aqui', cap('52-legado-php')],
+  ['questionário + portão G0', '5 · O mesmo questionário de 60 perguntas, e o G0 aceitando um projeto sem um único PDF de WINDEV: o código-fonte é a evidência', cap('53-questionario-e-g0-php')],
+  ['php capturar-golden.php', '6 · O golden master não foi digitado: ele é capturado rodando as regras do próprio legado, com os dados de amostra', cap('56-golden-do-legado')],
+  ['sessão nova · sem contexto', '7 · Uma sessão nova responde sobre o legado com localizador: acha o aprovador, a baixa sem transação e a view que nenhum PHP usa', cap('57-sessao-nova')],
+  ['src/regras/encargos.rs', '8 · O Rust que uma sessão real gerou, citando arquivo e linha do PHP dentro do próprio código', cap('54-rust-do-php')],
+  ['cargo test · sessão real', '9 · A prova pelo golden master capturado do legado — e o que a sessão se recusou a converter sozinha', cap('55-prova-php-rust')],
+  ['exportar_projeto.py · registro.py', '10 · A entrega: sete pastas numeradas, SHA-256 de cada arquivo, nada sensível junto — e o registro de tudo que o plugin fez', cap('58-entrega-e-registro')],
+  ['tests/cenarios.py', '11 · A bateria pesada com o cenário deste projeto: treze situações, e a de número 13 é este legado PHP inteiro', cap('59-bateria-com-php')],
+  ['card', 'O legado é E/OU. O destino é livre.', 'WLanguage (WINDEV, WEBDEV, WINDEV Mobile) é o caso principal e nunca sai do plugin.\nPHP, C, C++, Clarion, COBOL entram junto ou sozinhos.\n\nclaude plugin install wx-claude-code@wx-claude-code'],
+];
+
+const scenes = ROTEIROS[roteiroNome];
+if (!scenes) { console.error(`roteiro desconhecido: ${roteiroNome} (existem: ${Object.keys(ROTEIROS).join(', ')})`); process.exit(2); }
+const SAIDA = roteiroNome === 'uso' ? 'wx-claude-code-video-de-uso' : `wx-claude-code-video-${roteiroNome}`;
 const html = `<!doctype html><meta charset="utf-8"><style>
 html,body{margin:0;height:100%;background:#0b0d17;font-family:"DejaVu Sans Mono",Menlo,monospace;overflow:hidden}
 .win{position:absolute;inset:26px 40px 44px 40px;border-radius:12px;overflow:hidden;background:#010418;border:1px solid #232742;box-shadow:0 20px 60px #0009;display:flex;flex-direction:column}
@@ -96,5 +121,5 @@ for (const [title, caption, text, typed] of scenes) {
 }
 await ctx.close(); await browser.close();
 const f = readdirSync(outDir).find((n) => n.endsWith('.webm'));
-renameSync(`${outDir}/${f}`, `${outDir}/wx-claude-code-video-de-uso.webm`);
+renameSync(`${outDir}/${f}`, `${outDir}/${SAIDA}.webm`);
 console.log('ok');
