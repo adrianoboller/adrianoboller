@@ -145,7 +145,7 @@ CUE_SHEET = (
     (5, 1.0 / 3.0, "obturador", -2.0, 0.3),             # foto B
     (5, 2.0 / 3.0, "obturador", -2.0, 0.0),             # foto C
     (6, 0.000, "whoosh_pullback", -10.0, 0.0),          # foto C abre em pull-back ate u1_desce (0,48), sem corte
-    (6, 0.480, "whoosh_descida", -4.0, 0.0),            # U1 desce na caixa (0,48-0,72)
+    (6, 0.580, "whoosh_descida", -4.0, 0.0),            # U1 desce na caixa (0,58-0,78; revisao 5)
     (6, 1.000, "baque_surdo", -1.0, 0.0),               # abas fecham (0,82-1,00)
     (7, 0.420, "impacto", 0.0, 0.0),                    # sub na travessia do topo da caixa (fim do mergulho)
     (7, 0.420, "swell", -3.0, 0.0),                     # apice na travessia; comeca no inicio do beat (1,75 s)
