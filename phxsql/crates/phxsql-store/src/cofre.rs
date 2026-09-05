@@ -160,6 +160,27 @@ static DERIVADAS: Mutex<Option<Derivadas>> = Mutex::new(None);
 /// O que ja foi derivado: a chave de cada par (sal, iteracoes).
 type Derivadas = HashMap<([u8; SAL_LEN], u32), Chave>;
 
+/// Quantas vezes o PBKDF2 rodou de verdade neste processo.
+///
+/// # Por que um contador, e nao um cronometro
+///
+/// Porque o numero que decide um desenho de senha POR TABELA e "quantas
+/// derivacoes um pedido paga", e nao "quanto demorou hoje nesta maquina".
+/// Contagem e deterministica; tempo nao e, e ainda briga com quem estiver
+/// medindo na maquina ao lado. O custo de cada uma ja esta medido em
+/// `docs/SEGURANCA.md` §11.4 -- 298 ms para 210.000 iteracoes.
+///
+/// So sobe no caminho LENTO (quando o PBKDF2 realmente roda), entao o acerto
+/// de cache continua sem tocar nele: e a regra da casa de que instrumentacao
+/// desligada custa zero, aqui de graca, porque o incremento nunca acontece ao
+/// lado do trabalho barato.
+static DERIVACOES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Quantas derivacoes de PBKDF2 este processo pagou. Ver [`DERIVACOES`].
+pub fn derivacoes() -> u64 {
+    DERIVACOES.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 fn envenenada() -> PhxError {
     PhxError::Esquema("a trava do cofre ficou envenenada por um panico anterior".into())
 }
@@ -261,6 +282,7 @@ pub fn derivar(sal: &[u8; SAL_LEN], iteracoes: u32, arquivo: &str) -> Result<Cha
                  preencha \"cifra\" no config.json com a mesma senha que gravou o arquivo"
             )));
         };
+        DERIVACOES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Chave(cifra::chave_de_senha(&s.senha, sal, iteracoes))
     };
     DERIVADAS

@@ -1528,3 +1528,187 @@ plausível não é diagnóstico medido, **e o errado sobrevive melhor quando o
 conserto funcionou por outro motivo**. O AAD foi escrito, o embaralhamento
 parou de funcionar, e todo mundo — eu inclusive, até rodar — atribuiu a parada à
 peça recém-escrita.
+
+---
+
+## 12. Senha por tabela: as três premissas, medidas
+
+O dono perguntou, em 05/09/2026: *«Preciso poder ter senha ou não no `.reg`
+para tabelas criptografadas, é possível?»* — senha **própria por tabela**,
+opcional, em vez da senha única do servidor que existe hoje (§11.5).
+
+Postas as saídas na mesa, ele escolheu **medir primeiro e decidir depois**.
+Esta seção é a medição; ela **não decide**, e nenhuma linha do motor mudou por
+causa dela. O parecer com as saídas e o custo de cada uma está em
+[`PARECER-SENHA-POR-TABELA.md`](PARECER-SENHA-POR-TABELA.md).
+
+Todos os números daqui saem de um gerador, e não de leitura:
+
+```bash
+cargo run --release --example senha-por-tabela -p phxsql-store
+```
+
+### 12.1 O ponto de partida que joga a favor
+
+Vale dizer antes das três, porque é o que faz a pergunta ser razoável: **o
+formato já sabe fazer a pergunta que uma senha por tabela precisa fazer.**
+
+- a senha **nunca** é gravada; o que vai no arquivo é o **sal** (16 bytes, em
+  claro) e uma **prova** de 16 bytes que responde *«esta senha abre este
+  arquivo?»* já na abertura (`cofre::Material`, `MATERIAL_LEN = 40`);
+- **cada arquivo sorteia o próprio sal e por isso já tem a própria chave** —
+  `Material` carrega um `Option<Chave>` por arquivo, não uma chave do
+  servidor. O que é global é só a **senha**, não a chave;
+- o caminho de **chegada** de uma senha já existe: desafio-resposta no login
+  (§2) e a cifra do fio (§7).
+
+O que não existe é o **lugar de guardar** essa senha durante a sessão — e é
+onde a premissa 1 bate.
+
+### 12.2 Premissa 1 — o cache de chaves derivadas erra com duas senhas?
+
+**A hipótese morreu medida: não erra.** `Derivadas` tem chave `(sal,
+iterações)` e não inclui a senha, mas `definir_com` **limpa o cache inteiro**
+a cada troca de senha (`cofre.rs`), e isso já foi pago por um defeito real
+descrito na §11.5.
+
+Prova real nos dois sentidos, com o defeito reposto (a limpeza removida à mão):
+
+| | mesma dupla `(sal, iterações)`, duas senhas | derivações em 10 pedidos sobre 2 tabelas |
+|---|---|---|
+| hoje | chaves **diferentes** | 2 com uma senha, **20** alternando |
+| com o defeito reposto | **mesma chave** — o cache erra | 2 com uma senha, **0** alternando |
+
+O teste que já existia, `senha_errada_e_falta_de_senha_param_na_abertura`
+(`cifra-dos-dados.rs`), **cai** com o defeito reposto, dizendo *«a tabela
+cifrada abriu sem a chave certa»*. A guarda existe e está registrada.
+
+**Mas o número que interessa é o outro, e ele é o custo da premissa:** aqueles
+`0` e `20` são a mesma coisa vista de dois lados. O cache só está correto
+porque é **esvaziado** a cada troca de senha — e com senha por tabela a troca
+acontece **a cada tabela de cada pedido**.
+
+| desenho | derivações de PBKDF2 em 10 pedidos sobre 2 tabelas | a 298 ms cada (§11.4) |
+|---|---|---|
+| senha do servidor (hoje) | **2** | 0,6 s, uma vez na vida do processo |
+| senha por tabela, pelo `cofre::definir` que existe | **20** | **6,0 s**, e cresce com o número de pedidos |
+
+São **10×**, e o número não é o pior: ele **não converge**. Hoje o servidor
+paga uma derivação por arquivo e nunca mais; com senha por tabela pelo caminho
+que existe, paga **uma derivação por tabela por pedido, para sempre** — 298 ms
+por tabela tocada. Um pedido que junta duas tabelas custa 596 ms de PBKDF2
+antes de ler a primeira linha.
+
+**A saída é conhecida e é barata:** trocar a chave do mapa de `(sal,
+iterações)` para `(impressão da senha, sal, iterações)` e parar de esvaziar. É
+uma linha de tipo e um `HashMap` maior — mas é **decisão de projeto**, não
+detalhe: a impressão da senha passa a morar em RAM ao lado das chaves, e o
+cache passa a guardar chaves de senhas que ninguém está mais usando até alguém
+mandar esquecê-las.
+
+**Onde a senha da tabela moraria durante a sessão — o buraco de verdade.** O
+cofre é um `static` **do processo**; a sessão é **por conexão**
+(`servidor.rs::Sessao` no fio, `http.rs::Sessao` na web). Duas conexões com
+senhas de tabela diferentes brigariam pelo mesmo global, e a última a chamar
+`definir` decidiria pelas outras. Nenhuma das duas `Sessao` tem hoje onde
+guardar segredo, e a alternativa — a chave como **parâmetro** — atravessa as
+mesmas quatro camadas que o cabeçalho do `cofre.rs` recusa por escrito, em
+**35** pontos que chamam `Table::criar`/`Table::abrir` em 7 arquivos e 3
+crates, mais **32** usos do cofre em `src/`, em 6 arquivos e 2 crates.
+
+### 12.3 Premissa 2 — o `.ndx` em claro faz de senha por tabela uma aparência?
+
+O `.ndx` é o único arquivo de dados que **não tem uma linha de cifra**: zero
+menções a `cifra`, `Material` ou `cofre` em `ndx.rs`, contra 12 usos em
+`reg.rs`. A §11.3 já dizia que ele fica em claro, e um teste
+(`o_indice_sobre_a_coluna_marcada_continua_em_claro`) já provava que o nome
+aparece lá dentro.
+
+O que faltava era **quanto**. Medido com a cifra ligada, 200 linhas, coluna
+`Str(40)` marcada como `DadoPessoal::Pessoal` **e indexada**, lendo os bytes
+crus do `.ndx` sem nenhuma chave — folha por folha, entrada por entrada, do
+jeito que qualquer um que copiou o diretório leria:
+
+| onde | tamanho | o que se recupera sem a senha |
+|---|---|---|
+| `.ndx` | 28.672 B | **200 de 200** pares `(valor, rowid)` — **100%** |
+| `.reg` | 23.440 B | **0** ocorrências do texto |
+| `.memo` | — | **0** ocorrências do texto |
+| **controle**: a mesma tabela **sem** índice sobre a coluna marcada | 8.192 B | **0** ocorrências |
+
+O controle é o que faz a medição valer nos dois sentidos: o vazamento é do
+**índice**, e não de outra peça. E o `rowid` vem junto porque a chave completa
+do `.ndx` é `[chave codificada][rowid u64 BE]` — então o que se recupera não é
+uma lista de nomes soltos, é a **coluna inteira ligada à linha**.
+
+> **O índice é maior que o arquivo que a cifra protege.** 28.672 bytes de
+> `.ndx` contra 23.440 de `.reg`. Cifrar o `.reg` e deixar o `.ndx` ao lado
+> não é meia proteção: é a proteção do arquivo menor.
+
+Isso **não é defeito** — é a escolha (c) da §11.1, consciente e documentada, e
+a §11.3 já traz o aviso de quem precisa dos dois tirar o índice da coluna
+sensível. Mas é o número que decide a premissa: **senha por tabela sobre uma
+tabela com índice na coluna sensível protege 23 KB e deixa 28 KB abertos ao
+lado.** É a mesma lição que a casa já escreveu sobre cifrar o ponteiro do
+`.bin` — *cifrar o ponteiro não esconde o conteúdo* —, com outro arquivo.
+
+### 12.4 Premissa 3 — a réplica aplica cifrado ou precisa da senha?
+
+As duas faixas de uma linha respondem **coisas opostas**, e só uma estava
+escrita.
+
+**A faixa inline viaja em CLARO dentro da imagem.** A imagem da linha carrega o
+*payload* como o `.reg` o entregou — decifrado. Medido: o nome marcado aparece
+literalmente dentro dos 156 bytes da imagem. A réplica o aplica **sem chave
+nenhuma**, e é por isso que a coluna inline replica hoje mesmo com a cifra
+desligada do outro lado. Está na §11.7, e é seguro **só porque o corpo do
+`.log` é cifrado pelo cofre** — no fio, quem protege é a cifra do fio (§7).
+
+**A faixa externa (`Memo`/`Bin`) viaja CIFRADA — e não abre do outro lado nem
+com a mesma senha.** Este é o achado, e ele contraria o que a §11.8 diz.
+
+| origem | réplica | o que aconteceu, medido |
+|---|---|---|
+| cifra ligada | **a mesma senha** | **recusou**: *«a etiqueta nao confere — ou o dado foi alterado, ou a chave de "cifra" nao e a que gravou este arquivo»* |
+| cifra ligada | senha diferente | recusou, com o mesmo texto |
+| cifra ligada | **cifra desligada** | **gravou 63 bytes que não são o conteúdo — o texto cifrado, sem erro nenhum** |
+
+A causa está medida e não suposta: os dois `.reg` **sortearam sais diferentes**
+(`sal igual: false` nos três casos). E o sal é sorteado por arquivo, sempre.
+A §11.8 dizia que replicar coluna externa marcada *«só funciona entre
+servidores que compartilham a senha da cifra **E o sal do arquivo de
+origem**»* — e como dois arquivos nunca compartilham sal, a condição **nunca é
+satisfeita**. A frase estava certa e a conclusão que ela sugere está errada:
+não é uma limitação com uma saída operacional, é **não funciona**.
+
+Duas consequências que valem separadas:
+
+- **A recusa acusa a coisa errada.** O texto diz *«arquivo corrompido»* e
+  manda escolher entre «o dado foi alterado» e «a chave não é a que gravou» —
+  quando não há corrupção nenhuma e a senha até pode estar certa. Manda o
+  operador procurar corrupção onde há um limite de desenho.
+- **A réplica sem cifra grava o texto cifrado como se fosse o conteúdo, em
+  silêncio.** Numa coluna `Memo` isso para **por acidente**, no
+  `String::from_utf8` da volta; numa coluna `Bin` não há essa peneira, e os 63
+  bytes entram como anexo. É o pior dos três casos, porque é o único que não dá
+  erro.
+
+O envelope da §11.5 — chave de tabela sorteada, envelopada pela chave mestra —
+resolve o primeiro e o segundo casos: a chave da tabela pode viajar com a
+tabela sem que a senha mestra viaje junto. Ele **não** resolve o terceiro, que
+é uma conferência que falta.
+
+### 12.5 Qual premissa mata o pedido
+
+**Nenhuma mata; a 2 muda o alcance dele, e a 1 muda o preço.**
+
+| premissa | veredito | o número |
+|---|---|---|
+| 1 — o cache erra | **morreu medida** | chaves diferentes; o cache é limpo. O custo é o que sobra: **10×** em derivações, **298 ms por tabela por pedido** |
+| 2 — o `.ndx` faz da senha uma aparência | **viva, e com alcance medido** | **100%** da coluna marcada e indexada sai do `.ndx` sem a senha. Sobre tabela **sem** índice na coluna sensível, 0% |
+| 3 — a réplica precisa da senha | **viva, e pior do que a ficha dizia** | inline replica em claro; externa **não replica de jeito nenhum**, e sem cifra do outro lado grava cifrado em silêncio |
+
+O que ficou por medir, nomeado: **o custo da senha por tabela sobre o
+protocolo** — quantos pedidos a mais um cliente faria para abrir uma tabela com
+senha própria — e **a rotação**, que não existe nem com a senha do servidor
+(§11.5) e que com senha por tabela passa a ser N rotações em vez de uma.
