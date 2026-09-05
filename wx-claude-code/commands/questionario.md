@@ -190,6 +190,7 @@ O script também gera `INDEX_FILES.md` (o mapa de tudo que o Claude Code pode le
 | H | escolheu C# | em I ofereça Blazor além de React; registre que o `WL.dll` será baixado da release oficial e conferido por hash |
 | I | plataforma inclui mobile | pergunte versões mínimas de Android e iOS; se só web, pergunte navegadores |
 | J | «sim» | confirme que o `CLAUDE.md` do projeto vai receber o bloco de estilo; se já existir, diga que não será sobrescrito |
+| J | perguntou de modelo local | ofereça o Magnitude (`J.modelos_locais`): roda o trabalho mecânico numa máquina do cliente, sem token pago e sem o dado sair. Diga o que **não** vai para lá — regra, decisão, prova — e que Windows só por WSL |
 | K1 | «sim» | pergunte a versão mínima e os targets; se o destino H não for Rust, pergunte se ainda quer o toolchain (ferramentas do plugin não precisam dele) |
 | K2, K3 ou K4 | «sim» | pergunte, um por vez: versão, host e porta, banco, login do superusuário e **o nome da variável** da senha; depois os papéis, um por vez, com nível e nome da variável |
 | K2, K3 ou K4 | usuário cola a senha do root | não repita, não grave, peça que troque; registre só o nome da variável |

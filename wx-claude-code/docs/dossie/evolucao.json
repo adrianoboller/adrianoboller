@@ -478,5 +478,20 @@
   "itens_questionario": 60,
   "hooks": 8,
   "manual": 668
+ },
+ {
+  "versao": "3.26.0",
+  "data": "2026-09-04",
+  "titulo": "folha de referência dos comandos e das perguntas, gerada dos arquivos",
+  "agentes": 94,
+  "skills": 20,
+  "comandos": 19,
+  "scripts": 26,
+  "linhas_py": 26736,
+  "prints": 42,
+  "testes": 57,
+  "itens_questionario": 60,
+  "hooks": 8,
+  "manual": 672
  }
 ]

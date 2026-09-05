@@ -493,7 +493,17 @@
   },
   "J_economia_de_tokens": {
     "ativar": true,
-    "instalar_estilo_no_claude_md": true
+    "instalar_estilo_no_claude_md": true,
+    "modelos_locais": {
+      "ativar": true,
+      "ferramenta": "magnitude",
+      "endereco": "http://127.0.0.1:10100",
+      "modelo": "o que o `magnitude setup` recomendar para a maquina",
+      "so_para": [
+        "mecanica"
+      ],
+      "observacao": ""
+    }
   },
   "K_ambiente": {
     "K0_privilegios": {

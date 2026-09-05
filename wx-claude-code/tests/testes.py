@@ -707,6 +707,56 @@ class Questionario(unittest.TestCase):
         finally:
             novo.unlink()
 
+    def test_modelo_local_so_recebe_o_que_pode_e_volta_ao_pago_sem_servico(self):
+        """Magnitude entra como degrau abaixo do mais barato, e so para tarefa mecanica.
+        Regra, decisao e prova nunca vao para la; servico fora do ar volta ao pago e
+        avisa, em vez de deixar a tarefa parada."""
+        def roteia(*args):
+            r = run(SCRIPTS / "rotear_modelo.py", *args)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            return json.loads(r.stdout)
+
+        d = roteia("--classe", "mecanica", "--local", "--local-no-ar", "sim")
+        self.assertEqual(d["modelo"], "local")
+        self.assertTrue(any("local:" in m for m in d["motivos"]))
+
+        d = roteia("--classe", "mecanica", "--local", "--local-no-ar", "nao")
+        self.assertEqual(d["modelo"], "haiku")
+        self.assertTrue(any("nao respondeu" in m or "não respondeu" in m for m in d["motivos"]))
+
+        for classe in ("analise", "decisao", "revisao"):
+            d = roteia("--classe", classe, "--local", "--local-no-ar", "sim")
+            self.assertNotEqual(d["modelo"], "local", classe)
+
+        for sinal in ("fiscal", "dinheiro", "conflito", "permissao", "decisao-humana", "dado-pessoal"):
+            d = roteia("--classe", "mecanica", "--sinal", sinal, "--local", "--local-no-ar", "sim")
+            self.assertNotEqual(d["modelo"], "local", f"sinal {sinal} nao podia ir para local")
+
+        # sem --local nada muda: quem nao pediu continua como antes
+        d = roteia("--classe", "mecanica", "--local-no-ar", "sim")
+        self.assertEqual(d["modelo"], "haiku")
+
+        # o questionario liga sozinho, e o exemplo ja vem com J.modelos_locais
+        q = json.loads((EXEMPLO / "questionario.json").read_text())
+        self.assertTrue(q["J_economia_de_tokens"]["modelos_locais"]["ativar"])
+        self.assertEqual(q["J_economia_de_tokens"]["modelos_locais"]["so_para"], ["mecanica"])
+        d = roteia("--classe", "mecanica", "--project-root", str(self.tmp), "--local-no-ar", "sim")
+        self.assertEqual(d["modelo"], "local", "J.modelos_locais devia ligar o local sem --local")
+
+    def test_skill_de_modelos_locais_cita_a_origem_e_nao_redistribui(self):
+        """O Magnitude nao vem no pacote: e npm. A skill diz de onde vem, sob qual
+        licenca, e nao ha codigo dele aqui."""
+        sk = (RAIZ / "skills/modelos-locais/SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("magnitudedev/magnitude", sk)
+        self.assertIn("Apache 2.0", sk)
+        self.assertIn("não redistribui", sk)
+        self.assertIn("npm install -g @magnitudedev/cli", sk)
+        desc = re.search(r'^description:\s*"?(.+?)"?$', sk, re.M).group(1)
+        self.assertLessEqual(len(desc), 150)
+        self.assertFalse((RAIZ / "skills/modelos-locais/package.json").exists(), "codigo do magnitude nao entra no pacote")
+        # e a skill nao pode prometer o que o roteador nao faz
+        self.assertIn("dado-pessoal", sk.replace("`dado-pessoal`", "dado-pessoal"))
+
     def test_fontes_md_esta_em_dia(self):
         """FONTES.md e inventario medido: se alguem acrescentar arquivo e nao rodar o
         gerador, o documento passa a mentir sobre o pacote."""

@@ -24,9 +24,43 @@ CLASSES = {
 }
 SINAIS_SOBE = {"conflito", "fiscal", "dinheiro", "permissao", "dado-pessoal", "decisao-humana", "falhou-antes"}
 SINAIS_DESCE = {"padrao-aprovado", "volume-grande", "criterio-objetivo"}
+# Modelo local (Magnitude, J.modelos_locais): degrau abaixo do haiku, so para
+# tarefa mecanica. Nunca para o que produz regra, decisao ou prova -- o barato
+# entra onde o erro e barato, e ai nao e. Servico fora do ar volta ao pago.
+LOCAL = "local"
+CLASSES_SEM_LOCAL = {"analise", "decisao", "revisao"}
+SINAIS_SEM_LOCAL = {"conflito", "fiscal", "dinheiro", "permissao", "decisao-humana", "falhou-antes"}
+ENDERECO_LOCAL = "http://127.0.0.1:10100"
 
 
-def rotear(classe: str, sinais: set[str], gasto_pct: float | None, indisponiveis: set[str]) -> dict:
+def servico_local_no_ar(endereco: str = ENDERECO_LOCAL, timeout: float = 1.5) -> bool:
+    """Confere o servico do Magnitude sem depender de biblioteca de fora."""
+    import urllib.error
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"{endereco}/inference/v1/models", timeout=timeout) as r:
+            return 200 <= r.status < 300
+    except (urllib.error.URLError, OSError, ValueError):
+        return False
+
+
+def pode_ir_para_local(classe: str, sinais: set[str]) -> tuple[bool, str]:
+    """Diz se a tarefa PODE ir para o modelo local, e por que nao quando nao pode."""
+    if classe in CLASSES_SEM_LOCAL:
+        return False, f"classe {classe} nao vai para local: produz regra, decisao ou prova"
+    impeditivos = sinais & SINAIS_SEM_LOCAL
+    if impeditivos:
+        return False, "sinal impede local: " + ", ".join(sorted(impeditivos))
+    # 'dado-pessoal' nao aparece aqui de proposito: ele ja SOBE o modelo (regra
+    # antiga, deliberada -- dado delicado merece o modelo melhor), entao a tarefa
+    # nunca chega ao degrau mais baixo e nao cai no local. Manter o dado na
+    # maquina seria outro argumento, e trocar essa regra e decisao do dono, nao
+    # efeito colateral de uma funcionalidade nova.
+    return True, "tarefa mecanica sem sinal impeditivo"
+
+
+def rotear(classe: str, sinais: set[str], gasto_pct: float | None, indisponiveis: set[str],
+           local: bool = False, local_no_ar: bool | None = None) -> dict:
     if classe not in CLASSES:
         raise ValueError(f"classe inválida: {classe!r} (aceitas: {', '.join(CLASSES)})")
     modelo, effort = CLASSES[classe]
@@ -52,12 +86,26 @@ def rotear(classe: str, sinais: set[str], gasto_pct: float | None, indisponiveis
     while grau > 0 and DEGRAUS[grau] in indisponiveis:
         motivos.append(f"fallback: {DEGRAUS[grau]} indisponível")
         grau -= 1
-    return {"modelo": DEGRAUS[grau], "effort": effort, "estado": estado, "motivos": motivos}
+    escolhido = DEGRAUS[grau]
+    if local and estado != "BLOQUEADO" and grau == 0:
+        pode, porque = pode_ir_para_local(classe, sinais)
+        if not pode:
+            motivos.append(porque)
+        else:
+            no_ar = servico_local_no_ar() if local_no_ar is None else local_no_ar
+            if no_ar:
+                escolhido = LOCAL
+                motivos.append(f"local: {porque}")
+            else:
+                motivos.append("local pedido, mas o serviço do Magnitude não respondeu; seguiu no modelo pago")
+    return {"modelo": escolhido, "effort": effort, "estado": estado, "motivos": motivos}
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--classe", required=True, choices=sorted(CLASSES))
+    parser.add_argument("--local", action="store_true", help="permite cair no modelo local (Magnitude) quando a tarefa e mecanica")
+    parser.add_argument("--local-no-ar", choices=["sim", "nao"], help="pula a conferencia do servico (para teste)")
     parser.add_argument("--sinal", action="append", default=[], help="conflito, fiscal, dinheiro, permissao, dado-pessoal, decisao-humana, falhou-antes, padrao-aprovado, volume-grande, criterio-objetivo")
     parser.add_argument("--gate", default="", help="G0..G7, para ler o orçamento")
     parser.add_argument("--tarefa", default="", help="identificação curta, só para o registro")
@@ -74,7 +122,17 @@ def main() -> int:
         if g and g.get("tokens_previstos"):
             gasto_pct = 100.0 * float(g.get("tokens_gastos", 0)) / float(g["tokens_previstos"])
 
-    decisao = rotear(args.classe, set(args.sinal), gasto_pct, set(args.indisponivel))
+    # J.modelos_locais liga o degrau local por padrao; --local forca sem o questionario
+    local = args.local
+    q = args.project_root / ".wx-migration" / "questionario.json"
+    if not local and q.is_file():
+        try:
+            j = json.loads(q.read_text(encoding="utf-8")).get("J_economia_de_tokens") or {}
+            local = bool((j.get("modelos_locais") or {}).get("ativar"))
+        except (OSError, json.JSONDecodeError):
+            pass
+    no_ar = None if args.local_no_ar is None else (args.local_no_ar == "sim")
+    decisao = rotear(args.classe, set(args.sinal), gasto_pct, set(args.indisponivel), local=local, local_no_ar=no_ar)
     decisao.update({"gate": args.gate, "tarefa": args.tarefa, "quando": datetime.now(timezone.utc).isoformat(timespec="seconds")})
     if pmo.is_dir():
         with (pmo / "roteamento.jsonl").open("a", encoding="utf-8") as f:

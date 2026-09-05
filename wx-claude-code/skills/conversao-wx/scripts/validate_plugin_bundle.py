@@ -201,6 +201,7 @@ def validate(root: Path, strict: bool = False) -> dict:
         "skills/php-legado-e-destino/SKILL.md",
         "skills/pdf-para-markdown/SKILL.md",
         "skills/ui-ux-pro-max/SKILL.md",
+        "skills/modelos-locais/SKILL.md",
         "skills/ui-ux-pro-max/LICENSE",
         "skills/ui-ux-pro-max/NOTICE.md",
         "PRE-REQUISITOS.md",

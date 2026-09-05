@@ -356,7 +356,17 @@
   },
   "J_economia_de_tokens": {
     "ativar": false,
-    "instalar_estilo_no_claude_md": true
+    "instalar_estilo_no_claude_md": true,
+    "modelos_locais": {
+      "ativar": false,
+      "ferramenta": "magnitude",
+      "endereco": "http://127.0.0.1:10100",
+      "modelo": "",
+      "so_para": [
+        "mecanica"
+      ],
+      "observacao": "ferramenta: magnitude (github.com/magnitudedev/magnitude, Apache 2.0, instalado por npm; nao vem no plugin); so_para: classes que podem cair no modelo local -- 'mecanica' e a unica aceita hoje, porque analise, decisao e revisao produzem regra, decisao ou prova; servico fora do ar volta ao modelo pago e avisa"
+    }
   },
   "K_ambiente": {
     "K0_privilegios": {
