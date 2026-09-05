@@ -142,6 +142,14 @@ export async function subir({ phxsqld, portaDados = PORTA_DADOS, portaWeb = PORT
     base,
     url: `http://127.0.0.1:${portaWeb}/`,
     saida,
+    /** `null` enquanto vivo; o codigo de saida depois de morto.
+     *
+     *  Existe porque um servidor que morre no meio da bateria reprova TODOS
+     *  os casos seguintes com `ERR_CONNECTION_REFUSED` -- 41 reprovacoes com
+     *  a mesma frase, nenhuma delas dizendo que o servidor caiu nem depois de
+     *  qual caso. E a mesma licao do portao de sintaxe deste diretorio: uma
+     *  linha nomeando a causa vale as 41 reprovacoes. */
+    morreuCom: () => morreu,
     async derrubar() {
       matar(proc);
       // Espera o processo sair de verdade antes de devolver a porta: a

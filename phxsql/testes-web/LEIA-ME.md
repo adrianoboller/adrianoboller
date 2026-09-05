@@ -72,6 +72,14 @@ Três coisas que valem saber:
 - **Corrida parcial não grava.** `--caso` ou `--tema` só imprimem quantos
   ganchos aquela corrida viu. Evidência parcial é pior que evidência faltando:
   ela daria por não-provado tudo o que a corrida inteira prova.
+- **Corrida com falha não grava tampouco**, e a segunda metade desta frase
+  custou uma corrida para aparecer: o `phxsqld` caiu no meio de uma corrida
+  cheia, os 41 casos seguintes reprovaram com `ERR_CONNECTION_REFUSED`, e a
+  gravação aconteceu do mesmo jeito — o arquivo perdeu 110 ganchos. *«Corrida
+  inteira» não quer dizer «corrida que chegou ao fim»: quer dizer corrida que
+  provou o que se propôs a provar.* Hoje a bateria **para no ato**, nomeando o
+  caso depois do qual o servidor caiu e mostrando a saída dele, em vez de
+  produzir 41 reprovações com a mesma frase e nenhuma delas dizendo por quê.
 - **O arquivo não se edita.** Editar é a porta dos fundos da catraca, e
   `nenhuma_chave_morta_na_evidencia` a fecha: gancho que a tela não tem mais
   reprova.

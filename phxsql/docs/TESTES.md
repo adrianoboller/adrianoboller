@@ -1405,6 +1405,33 @@ geral antes e depois. Um passo que só olhasse o texto do botão passaria verde.
 Nos dois casos o **`botoes-da-tira` continuou verde**: é a delimitação que
 importa — o lote acusa a tela dele, e não a bateria inteira.
 
+### 13.5.1 O que a própria gravação ensinou sobre a bateria
+
+Duas coisas que só apareceram usando o gravador, e as duas viraram guarda:
+
+- **O acumulador não pode morar na página.** Ele nasceu como um `Set` em
+  `window`, e o caso `multitela` dá um `page.reload()` no meio: o `Set` nascia
+  vazio de novo e os cliques anteriores sumiam — entre eles o
+  `[data-jan="acoplar"]`, que aquele caso clica há rodadas. A evidência dizia
+  «nunca clicado» de um botão provado, e a catraca teria mandado escrever um
+  caso que já existe. Hoje vai por `exposeBinding`, que sobrevive à navegação.
+- **«Corrida inteira» não é «corrida que chegou ao fim».** Numa das corridas
+  de conferência o `phxsqld` caiu no meio: os 41 casos seguintes reprovaram
+  com `ERR_CONNECTION_REFUSED` e a gravação aconteceu do mesmo jeito — o
+  arquivo perdeu 110 ganchos. Hoje a evidência só se reescreve numa corrida
+  cheia **e verde**, e a bateria **para no ato** da morte do servidor,
+  nomeando o caso e mostrando a saída dele. É a mesma lição do portão de
+  sintaxe deste diretório: uma linha nomeando a causa vale as 41 reprovações.
+
+**A queda em si fica NOMEADA e não explicada.** Ela aconteceu duas vezes
+seguidas — depois do `passeio` numa corrida, depois do `multitela` na outra —
+e **não se reproduziu na terceira**, que passou 43/43 e regravou a evidência
+byte a byte igual. Havia duas outras frentes compilando na mesma máquina e o
+disco em 94%, então o palpite fácil é pressão de recurso; palpite não é
+medição, e nesta rodada não houve máquina livre para medir. O que ficou é o
+instrumento: a próxima queda diz o caso e mostra a saída do servidor, em vez
+de sumir dentro de 41 reprovações iguais.
+
 ### 13.6 As dispensas, uma a uma
 
 Nada entra por ser chato. «Derruba o serviço» sozinho não basta — o caso do

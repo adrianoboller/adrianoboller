@@ -236,6 +236,7 @@ async function principal() {
   const temas = opc.tema ? [opc.tema] : ['escuro', 'claro'];
   const resultados = [];
   const botoesClicados = new Set();
+  let caiuOServidor = null;
 
   try {
     for (const tema of temas) {
@@ -318,7 +319,22 @@ async function principal() {
         for (const n of ctx.notas) diz(`      ${CORES.fraco}nota: ${n}${CORES.fim}`);
         await page.close();
         await ctxNav.close();
+
+        // O servidor morreu? Para AQUI, nomeando o caso depois do qual ele
+        // caiu e mostrando a saida dele. Continuar so acrescenta reprovacoes
+        // que dizem `ERR_CONNECTION_REFUSED` sem dizer por que.
+        const codigo = servidor.morreuCom();
+        if (codigo !== null) {
+          diz(`\n${CORES.mal}o phxsqld caiu com codigo ${codigo} DEPOIS do caso `
+            + `«${caso.nome}» [${tema}] — os casos seguintes nao teriam onde `
+            + `acontecer.${CORES.fim}`);
+          const cauda = servidor.saida.join('').split('\n').slice(-25).join('\n      ');
+          diz(`${CORES.fraco}      saida do servidor (fim):\n      ${cauda}${CORES.fim}`);
+          caiuOServidor = `${caso.nome} [${tema}], codigo ${codigo}`;
+          break;
+        }
       }
+      if (caiuOServidor) break;
     }
   } finally {
     await navegador.close();
@@ -326,22 +342,33 @@ async function principal() {
     diz(`${CORES.fraco}· servidor pid ${servidor.pid} derrubado${CORES.fim}`);
   }
 
-  const inteira = !opc.caso && !opc.tema;
-  if (inteira) {
+  const maus = resultados.filter(r => r.falha);
+  // A evidencia so se reescreve numa corrida INTEIRA E VERDE, e a segunda
+  // metade desta frase custou uma corrida para aparecer: o `phxsqld` morreu no
+  // meio de uma corrida cheia, os 41 casos seguintes reprovaram com
+  // ERR_CONNECTION_REFUSED, e a gravacao aconteceu do mesmo jeito -- o arquivo
+  // perdeu 110 ganchos e a catraca teria mandado escrever caso para botao que
+  // ja tem prova. «Corrida inteira» nao quer dizer «corrida que chegou ao
+  // fim»: quer dizer corrida que provou o que se propos a provar.
+  const inteira = !opc.caso && !opc.tema && !caiuOServidor;
+  if (inteira && !maus.length) {
     const { arq, quantas } = gravarEvidencia(botoesClicados);
     diz(`${CORES.fraco}· ${quantas} ganchos de botao gravados em ${arq}${CORES.fim}`);
   } else {
-    diz(`${CORES.fraco}· corrida parcial: a evidencia de botoes NAO foi reescrita`
+    diz(`${CORES.fraco}· ${inteira ? "corrida com falhas" : "corrida parcial"}:`
+      + ` a evidencia de botoes NAO foi reescrita`
       + ` (${botoesClicados.size} ganchos nesta corrida)${CORES.fim}`);
   }
 
-  const maus = resultados.filter(r => r.falha);
   diz(`\n${resultados.length - maus.length}/${resultados.length} casos passaram`);
   if (maus.length) {
     diz(`${CORES.mal}${maus.length} falharam:${CORES.fim}`);
     for (const m of maus) diz(`  ${m.caso} [${m.tema}]`);
   }
-  return maus.length ? 1 : 0;
+  if (caiuOServidor) {
+    diz(`${CORES.mal}A CORRIDA PAROU: o phxsqld caiu em ${caiuOServidor}.${CORES.fim}`);
+  }
+  return maus.length || caiuOServidor ? 1 : 0;
 }
 
 principal()
