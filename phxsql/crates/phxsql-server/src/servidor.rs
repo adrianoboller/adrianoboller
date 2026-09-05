@@ -24503,3 +24503,139 @@ mod testes_varrer_onde {
         assert_eq!(descrever_filtros(&[], &esquema), "");
     }
 }
+
+/// A posicao do diario, e o que ela faz quando uma tabela nao abre.
+///
+/// # Por que este modulo existe
+///
+/// Achado em 05/09/2026 conferindo, um a um, os oito sitios que abrem tabela
+/// sem sessao. `posicao_do_diario` nao tinha teste NENHUM -- so um sitio de
+/// chamada, no pulso.
+#[cfg(test)]
+mod testes_posicao_do_diario {
+    use super::*;
+    use crate::usuarios::Cadastro;
+
+    fn dir_temp(nome: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("phx-pos-{nome}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn json(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    /// Duas tabelas com linhas, para a soma ter duas parcelas.
+    fn com_duas(dir: &std::path::Path) -> Arc<Servidor> {
+        let c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            cadastro: Cadastro::default(),
+            ..Config::default()
+        };
+        let s = Servidor::novo(c).unwrap();
+        let ses = Sessao::default();
+        s.executar("criar_database", &json(r#"{"database":"b"}"#), &ses)
+            .unwrap();
+        for t in ["uma", "outra"] {
+            s.executar(
+                "criar_tabela",
+                &json(&format!(
+                    r#"{{"database":"b","tabela":"{t}",
+                        "colunas":[{{"nome":"id","tipo":"Int4","obrigatoria":true}}],
+                        "indices":[{{"nome":"porId","colunas":["id"],"unico":true,"primario":true}}]}}"#
+                )),
+                &ses,
+            )
+            .unwrap();
+            for i in 1..=5 {
+                s.executar(
+                    "inserir",
+                    &json(&format!(
+                        r#"{{"database":"b","tabela":"{t}","linha":{{"id":{i}}}}}"#
+                    )),
+                    &ses,
+                )
+                .unwrap();
+            }
+        }
+        s
+    }
+
+    /// **GUARDA VERMELHA, entregue falhando de proposito em 05/09/2026.**
+    ///
+    /// Uma tabela que NAO ABRE some da soma da posicao do diario, em silencio,
+    /// e a funcao devolve um numero menor como se fosse a verdade.
+    ///
+    /// # Por que isso e grave, e nao um detalhe de contagem
+    ///
+    /// O comentario da propria `posicao_do_diario` diz o que esse numero e:
+    /// *«a soma dos eventos das tabelas replicadas -- a posicao que o pulso
+    /// carrega e que a ELEICAO compara»*. E o `cluster.rs` fecha a conta:
+    /// *«entre os elegiveis vence a maior posicao do diario (quem menos
+    /// perdeu)»*.
+    ///
+    /// Entao um no que nao consegue abrir uma tabela **se declara mais
+    /// atrasado do que e**, perde uma eleicao que deveria vencer, e quem
+    /// assume no lugar dele tem MENOS dado. O erro engolido nao custa uma
+    /// contagem: custa a promocao do no errado.
+    ///
+    /// # O que engole, medido
+    ///
+    /// Duas vezes em quatro linhas:
+    ///
+    /// ```text
+    /// if let Ok(mut tab) = db.abrir_qualificada(&t) {   // descarta a tabela
+    ///     total += tab.eventos().unwrap_or(0);          // descarta a contagem
+    /// }
+    /// ```
+    ///
+    /// E a assinatura fecha a porta: a funcao devolve `u64`, e nao `Result` --
+    /// nao ha por onde a falha sair mesmo que alguem queira propaga-la.
+    ///
+    /// # Por que a causa aqui e um `.reg` estragado, e nao a cifra
+    ///
+    /// Porque o que se prova e o ENGOLIR, e nao uma causa. Cifrada sem chave,
+    /// corrompida, sem permissao: para esta funcao sao todas «nao abriu», e
+    /// uma so basta para provar o silencio. Estragar o arquivo e a causa mais
+    /// deterministica das tres, e nao depende do estado do cofre do processo.
+    ///
+    /// # O conserto NAO vem junto
+    ///
+    /// Fazer a posicao recusar, ou marca-la como incompleta, muda o que o
+    /// pulso publica e portanto o que a eleicao compara. E decisao do dono, e
+    /// esta na fila com as outras.
+    #[test]
+    #[ignore = "VERMELHA de proposito: prova um erro engolido que ainda nao foi consertado"]
+    fn tabela_que_nao_abre_nao_pode_encolher_a_posicao_em_silencio() {
+        let d = dir_temp("engole");
+        let s = com_duas(&d);
+
+        let inteira = s.posicao_do_diario(&[]);
+        assert!(
+            inteira > 0,
+            "as duas tabelas somadas tem de dar posicao maior que zero"
+        );
+
+        // Estraga o `.reg` de UMA delas: a partir daqui ela existe e nao abre.
+        let alvo = d.join("b").join("uma.reg");
+        assert!(
+            alvo.exists(),
+            "o arquivo da tabela tem de existir: {alvo:?}"
+        );
+        std::fs::write(&alvo, b"nao sou um PHXREG").unwrap();
+
+        let depois = s.posicao_do_diario(&[]);
+        assert_eq!(
+            depois, inteira,
+            "a posicao ENCOLHEU de {inteira} para {depois} porque uma tabela \
+             nao abriu -- e e essa posicao que a eleicao compara. Encolher em \
+             silencio faz o no se declarar mais atrasado do que e."
+        );
+    }
+}
