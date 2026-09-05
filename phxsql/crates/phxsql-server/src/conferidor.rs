@@ -1279,7 +1279,19 @@ pub fn token_sem_definicao_e_sem_fallback() -> Vec<(&'static str, String)> {
 /// servidor), e um texto que muda conforme a resposta nao podia continuar
 /// cravado em portugues no meio de um template. Uma linha a menos, e ela sai
 /// da conta por ter sido traduzida -- que e o unico motivo que vale.
-pub const TETO_ROTULOS_E_CRASE: usize = 1_706;
+///
+/// 05/09: **1.051**. Leva grande da frente de idiomas, com `crates/` intocado
+/// (so este arquivo, `mensagens.rs` e `idiomas.rs`) enquanto outra frente
+/// mexia em `servidor.rs`/`phxsql-store` ao mesmo tempo. Cobriu as chamadas
+/// de `avisar`/`confirm`/`prompt` com interpolacao (antes invisiveis ao
+/// `literal()` por nao serem so aspas simples), os rotulos de `ficha(valor,
+/// rotulo)` das fichas de resumo, os itens de `gerirDatabase`/FORMATOS/
+/// JUNCOES/MODOS_REPLICA que tinham `rot:` sem o par `txt:`, e as telas de
+/// Nova tabela, Particoes, Configuracoes da tabela e o passo 1 do Pivot por
+/// inteiro. 655 textos saíram da conta (1.706 -> 1.051), medidos pelo
+/// conferidor a cada leva, nunca contados a mao. `docs/PENDENCIAS.md` guarda
+/// o que ainda falta, tela por tela.
+pub const TETO_ROTULOS_E_CRASE: usize = 1_051;
 #[cfg(test)]
 mod testes {
     use std::collections::HashSet;

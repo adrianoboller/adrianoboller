@@ -5538,7 +5538,7 @@ async function pivotPasso1() {
 
     <div class="nota">
       <p>${marcado(txt("tela.pv_lida_inteira_memoria","**A tabela de consulta é lida inteira para a memória, uma vez.**"))}
-      ${marcado(txt("tela.pv_hash_join","É o *hash join*: para a forma de dado que um pivot cruza — muitos fatos, poucas dimensões — ele custa uma varredura em vez de uma descida na árvore por linha de fato.".replace(/\*([^*]+)\*/, "**$1**")))}
+      ${marcado(txt("tela.pv_hash_join","É o **hash join**: para a forma de dado que um pivot cruza — muitos fatos, poucas dimensões — ele custa uma varredura em vez de uma descida na árvore por linha de fato."))}
       ${esc(txt("tela.pv_teto_500k","O teto é 500.000 linhas por tabela de consulta."))}</p>
     </div>
 
@@ -5859,105 +5859,98 @@ async function verConfigTabela(db, tab) {
   folha(preencher(txt("tela.tt_config_de","Configurações de {tab}"), {tab}), preencher(txt("tela.st_o_que_vale_tabela","{db} · o que vale para esta tabela"), {db}),
     `<div class="fichas">
        ${ficha(e.registros, txt("tela.fc_registros","registros"))}
-       ${ficha(e.slots, txt("tela.col_slots","slots"), "inclui excluídos")}
+       ${ficha(e.slots, txt("tela.col_slots","slots"), txt("tela.gt_inclui_excluidos","inclui os excluídos"))}
        ${ficha((e.colunas || []).length, txt("tela.fc_colunas","colunas"))}
-       ${ficha(pk ? pk.nome : "—", txt("tela.col_chave_primaria","chave primária"), pk && pk.composto ? "composta" : "")}
-       ${ficha(pag ? (pag.modo === "quantidade" ? "por faixa" : pag.modo) : "arquivo único", txt("tela.col_particao","partição"))}
-       ${ficha(naRam ? "sim" : "não", txt("tela.fc_carregada_na_ram","carregada na RAM"))}
+       ${ficha(pk ? pk.nome : "—", txt("tela.col_chave_primaria","chave primária"), pk && pk.composto ? txt("tela.nt_composta","composta") : "")}
+       ${ficha(pag ? (pag.modo === "quantidade" ? txt("tela.pt_por_faixa","por faixa") : pag.modo) : txt("tela.gt_arquivo_unico","arquivo único"), txt("tela.col_particao","partição"))}
+       ${ficha(naRam ? txt("tela.pt_sim","sim") : txt("tela.nao","não"), txt("tela.fc_carregada_na_ram","carregada na RAM"))}
      </div>
 
-     <h3 class="secao">Geometria — decidida na criação, não muda</h3>
+     <h3 class="secao">${esc(txt("tela.ctb_geometria_titulo","Geometria — decidida na criação, não muda"))}</h3>
      <div class="rolo"><table><thead><tr>
-       <th>ajuste</th><th>valor</th><th>por que não muda depois</th>
+       <th>${esc(txt("tela.ctb_ajuste","ajuste"))}</th><th>${esc(txt("tela.ctb_valor","valor"))}</th><th>${esc(txt("tela.ctb_por_que_nao_muda","por que não muda depois"))}</th>
      </tr></thead><tbody>
-       <tr><td class="dado">regra de partição</td>
-         <td class="dado"><b>${esc(pag ? (pag.modo === "quantidade" ? "por faixa de quantidade" : pag.modo) : "arquivo único")}</b></td>
-         <td class="leg">decide como o rowid vira endereço</td></tr>
+       <tr><td class="dado">${esc(txt("tela.ctb_regra_particao","regra de partição"))}</td>
+         <td class="dado"><b>${esc(pag ? (pag.modo === "quantidade" ? txt("tela.ctb_por_faixa_quantidade","por faixa de quantidade") : pag.modo) : txt("tela.gt_arquivo_unico","arquivo único"))}</b></td>
+         <td class="leg">${esc(txt("tela.ctb_decide_rowid_endereco","decide como o rowid vira endereço"))}</td></tr>
        ${pag ? `
-       <tr><td class="dado">registros por arquivo</td>
+       <tr><td class="dado">${esc(txt("tela.pt_registros_por_arquivo","registros por arquivo"))}</td>
          <td class="dado"><b>${esc(String(pag.registros_por_arquivo))}</b></td>
-         <td class="leg">é o divisor do endereço, ou o teto do volume</td></tr>
-       <tr><td class="dado">coluna do período</td>
+         <td class="leg">${esc(txt("tela.ctb_divisor_ou_teto","é o divisor do endereço, ou o teto do volume"))}</td></tr>
+       <tr><td class="dado">${esc(txt("tela.ctb_coluna_do_periodo","coluna do período"))}</td>
          <td class="dado"><b>${esc(pag.coluna || "—")}</b></td>
-         <td class="leg">quem decide quando o volume corta</td></tr>
-       <tr><td class="dado">dígitos do sufixo</td>
+         <td class="leg">${esc(txt("tela.ctb_quem_decide_corta","quem decide quando o volume corta"))}</td></tr>
+       <tr><td class="dado">${esc(txt("tela.nt_digitos_sufixo","dígitos do sufixo"))}</td>
          <td class="dado"><b>${esc(String(pag.digitos))}</b> — <code>${esc(tab)}_${"0".repeat(Math.max(0, pag.digitos - 1))}1.reg</code></td>
-         <td class="leg">o nome do arquivo depende dele</td></tr>
-       <tr><td class="dado">teto de volumes</td>
+         <td class="leg">${esc(txt("tela.ctb_nome_arquivo_depende","o nome do arquivo depende dele"))}</td></tr>
+       <tr><td class="dado">${esc(txt("tela.pt_teto_de_volumes","teto de volumes"))}</td>
          <td class="dado"><b>${esc(String(pag.max_arquivos))}</b></td>
-         <td class="leg">o que cabe no sufixo</td></tr>
-       <tr><td class="dado">volume dos externos</td>
+         <td class="leg">${esc(txt("tela.ctb_o_que_cabe_sufixo","o que cabe no sufixo"))}</td></tr>
+       <tr><td class="dado">${esc(txt("tela.pt_volume_dos_externos","volume dos externos"))}</td>
          <td class="dado"><b>${((pag.bytes_por_arquivo || 0) / 1073741824).toFixed(2)} GiB</b></td>
          <td class="leg">.bin, .memo e .log</td></tr>` : ""}
-       <tr><td class="dado">colunas e tipos</td>
-         <td class="dado"><b>${(e.colunas || []).length} coluna(s)</b></td>
-         <td class="leg">o tamanho do slot é fixo; mudar reescreveria a tabela</td></tr>
+       <tr><td class="dado">${esc(txt("tela.ctb_colunas_e_tipos","colunas e tipos"))}</td>
+         <td class="dado"><b>${esc(preencher(txt("tela.ctb_n_colunas","{n} coluna(s)"), {n: (e.colunas || []).length}))}</b></td>
+         <td class="leg">${esc(txt("tela.ctb_tamanho_slot_fixo","o tamanho do slot é fixo; mudar reescreveria a tabela"))}</td></tr>
      </tbody></table></div>
 
-     <h3 class="secao">Índices e chaves</h3>
+     <h3 class="secao">${esc(txt("tela.nt_indices_e_chaves","Índices e chaves"))}</h3>
      <div id="gradeIdxTab"></div>
 
      ${(e.chaves_estrangeiras || []).length ? `
-     <h3 class="secao">Chaves estrangeiras</h3>
+     <h3 class="secao">${esc(txt("tela.et_fks_titulo","Chaves estrangeiras"))}</h3>
      <div class="nota">${marcado(txt("tela.fk_nota_conferida", "**Conferidas na gravação.** Chave declarada **nasce** conferida, e a coluna diz por chave: a imposta recusa filha sem mãe, mãe que ainda tem filha, e alteração que quebre a ligação."))}</div>
      <div id="gradeFkTab"></div>` : ""}
 
      ${pag && (e.volumes || []).length ? `
-     <h3 class="secao">Volumes no disco</h3>
+     <h3 class="secao">${esc(txt("tela.ctb_volumes_no_disco","Volumes no disco"))}</h3>
      <div id="gradeVolTab"></div>` : ""}
 
-     <h3 class="secao">Diretiva desta tabela <em>— a única que é dela</em></h3>
+     <h3 class="secao">${esc(txt("tela.ctb_diretiva_desta_tabela","Diretiva desta tabela"))} <em>${esc(txt("tela.ctb_a_unica_que_e_dela","— a única que é dela"))}</em></h3>
      <div class="rolo"><table><thead><tr>
-       <th>diretiva</th><th>vale aqui</th><th>o que ela faz</th>
+       <th>${esc(txt("tela.ctb_diretiva","diretiva"))}</th><th>${esc(txt("tela.ctb_vale_aqui","vale aqui"))}</th><th>${esc(txt("tela.ctb_o_que_ela_faz","o que ela faz"))}</th>
      </tr></thead><tbody>
-       <tr><td class="dado">motivo obrigatório na exclusão</td>
+       <tr><td class="dado">${esc(txt("tela.ctb_motivo_obrig_exclusao","motivo obrigatório na exclusão"))}</td>
          <td class="dado">${e.motivo_obrigatorio
-            ? '<span class="pino ok">exigido</span>' : "não exigido"}</td>
-         <td class="leg">gravada no cabeçalho do <code>.reg</code>, na criação.
-           Com ela, excluir sem <code>motivo</code> é recusado <em>antes</em> de
-           qualquer gravação, e o texto vai para o <code>.reason</code></td></tr>
+            ? `<span class="pino ok">${esc(txt("tela.ctb_exigido","exigido"))}</span>` : esc(txt("tela.ctb_nao_exigido","não exigido"))}</td>
+         <td class="leg">${marcado(txt("tela.ctb_gravada_cabecalho_reg","gravada no cabeçalho do `.reg`, na criação."))} ${marcado(txt("tela.ctb_com_ela_excluir_sem_motivo","Com ela, excluir sem `motivo` é recusado *antes* de qualquer gravação, e o texto vai para o `.reason`"))}</td></tr>
      </tbody></table></div>
 
-     <h3 class="secao">Diretivas — o que a tabela herda</h3>
+     <h3 class="secao">${esc(txt("tela.ctb_diretivas_herda","Diretivas — o que a tabela herda"))}</h3>
      <div class="rolo"><table><thead><tr>
-       <th>diretiva</th><th>vale aqui</th><th>de onde vem</th>
+       <th>${esc(txt("tela.ctb_diretiva","diretiva"))}</th><th>${esc(txt("tela.ctb_vale_aqui","vale aqui"))}</th><th>${esc(txt("tela.ctb_de_onde_vem","de onde vem"))}</th>
      </tr></thead><tbody>
-       <tr><td class="dado">espelho <code>.bkp</code></td>
-         <td class="dado">${c.espelho ? '<span class="pino ok">ligado</span>' : "desligado"}</td>
-         <td class="leg">campo <code>espelho</code> do servidor — não é por tabela</td></tr>
-       <tr><td class="dado">somente leitura</td>
-         <td class="dado">${c.somente_leitura ? '<span class="pino mal">ligado</span>' : "desligado"}</td>
-         <td class="leg">campo <code>somente_leitura</code> do servidor</td></tr>
-       <tr><td class="dado">base proibida</td>
-         <td class="dado">${proibida ? '<span class="pino mal">SIM</span>' : "não"}</td>
-         <td class="leg"><code>seguranca.bases_proibidas</code> — recusa antes de olhar</td></tr>
-       <tr><td class="dado">comandos proibidos</td>
+       <tr><td class="dado">${marcado(txt("tela.ctb_espelho_bkp","espelho `.bkp`"))}</td>
+         <td class="dado">${c.espelho ? `<span class="pino ok">${esc(txt("tela.g_estado_ligado","ligado"))}</span>` : esc(txt("tela.g_estado_desligado","desligado"))}</td>
+         <td class="leg">${marcado(txt("tela.ctb_campo_espelho_servidor","campo `espelho` do servidor — não é por tabela"))}</td></tr>
+       <tr><td class="dado">${esc(txt("tela.ctb_somente_leitura","somente leitura"))}</td>
+         <td class="dado">${c.somente_leitura ? `<span class="pino mal">${esc(txt("tela.g_estado_ligado","ligado"))}</span>` : esc(txt("tela.g_estado_desligado","desligado"))}</td>
+         <td class="leg">${marcado(txt("tela.ctb_campo_somente_leitura_servidor","campo `somente_leitura` do servidor"))}</td></tr>
+       <tr><td class="dado">${esc(txt("tela.ctb_base_proibida","base proibida"))}</td>
+         <td class="dado">${proibida ? `<span class="pino mal">${esc(txt("tela.ctb_sim_maiusculo","SIM"))}</span>` : esc(txt("tela.nao","não"))}</td>
+         <td class="leg"><code>seguranca.bases_proibidas</code> — ${esc(txt("tela.ctb_recusa_antes_olhar","recusa antes de olhar"))}</td></tr>
+       <tr><td class="dado">${esc(txt("tela.ctb_comandos_proibidos","comandos proibidos"))}</td>
          <td class="dado">${(seg.comandos_proibidos||[]).length
-            ? (seg.comandos_proibidos).map(x=>`<code>${esc(x)}</code>`).join(" ") : "nenhum"}</td>
-         <td class="leg">recusados no portão, para qualquer tabela</td></tr>
-       <tr><td class="dado">teto de linhas por resposta</td>
+            ? (seg.comandos_proibidos).map(x=>`<code>${esc(x)}</code>`).join(" ") : esc(txt("tela.bl_nenhum","nenhum"))}</td>
+         <td class="leg">${esc(txt("tela.ctb_recusados_no_portao","recusados no portão, para qualquer tabela"))}</td></tr>
+       <tr><td class="dado">${esc(txt("tela.ctb_teto_linhas_resposta","teto de linhas por resposta"))}</td>
          <td class="dado">${esc(String(c.max_linhas ?? "—"))}</td>
-         <td class="leg">campo <code>max_linhas</code></td></tr>
-       <tr><td class="dado">seu poder aqui</td>
-         <td class="dado">${quem.supervisor ? '<span class="pino ok">supervisor</span>'
+         <td class="leg">${marcado(txt("tela.ctb_campo_max_linhas","campo `max_linhas`"))}</td></tr>
+       <tr><td class="dado">${esc(txt("tela.ctb_seu_poder_aqui","seu poder aqui"))}</td>
+         <td class="dado">${quem.supervisor ? `<span class="pino ok">${esc(txt("tela.ctb_supervisor","supervisor"))}</span>`
             : esc(quem.nivel || quem.login || "—")}</td>
-         <td class="leg">a permissão é por <em>database</em>, não por tabela</td></tr>
+         <td class="leg">${marcado(txt("tela.ctb_permissao_por_database","a permissão é por `database`, não por tabela"))}</td></tr>
      </tbody></table></div>
 
      <div class="nota">
-       <p><strong>Quase nada aqui se ajusta por tabela</strong>, e isso é
-       desenho, não falta. A geometria entra na criação porque é ela que
-       transforma o rowid em endereço; o espelho e a política são do servidor,
-       porque valem para tudo que ele abrir; a permissão é do database, porque
-       é ali que a árvore de pastas separa.</p>
-       <p>Para mudar a geometria: crie a tabela nova com a partição que quer e
-       copie as linhas. Isso <em>refaz os rowids</em> — que é exatamente o
-       motivo de a mudança não ser automática.</p>
+       <p>${marcado(txt("tela.ctb_quase_nada_ajusta","**Quase nada aqui se ajusta por tabela**, e isso é desenho, não falta."))}
+       ${esc(txt("tela.ctb_geometria_entra_criacao","A geometria entra na criação porque é ela que transforma o rowid em endereço; o espelho e a política são do servidor, porque valem para tudo que ele abrir."))} ${esc(txt("tela.ctb_permissao_do_database","A permissão é do database, porque é ali que a árvore de pastas separa."))}</p>
+       <p>${esc(txt("tela.ctb_para_mudar_geometria","Para mudar a geometria: crie a tabela nova com a partição que quer e copie as linhas."))} ${marcado(txt("tela.ctb_isso_refaz_rowids","Isso **refaz os rowids** — que é exatamente o motivo de a mudança não ser automática."))}</p>
      </div>
 
      <div class="acoes">
        <button class="botao secundario" id="btVoltarGer">${esc(preencher(txt("tela.bt_voltar_gestao","← Gestão de {tab}"), {tab: esc(tab)}))}</button>
-       <button class="botao secundario" id="btVerEstr">Estrutura completa</button>
+       <button class="botao secundario" id="btVerEstr">${esc(txt("tela.ctb_estrutura_completa","Estrutura completa"))}</button>
      </div>`);
 
   ligarVoltarGestao(db, tab);
