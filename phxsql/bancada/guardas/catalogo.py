@@ -904,8 +904,14 @@ GUARDAS = [
         "trecho": """        let dados = self.travar_dados()?;
         Ok(idiomas::estado(&dados, idioma))
 """,
+        # Desde 05/09 a trava e um `RwLock<Raiz>`, e o defeito reposto tem de
+        # COMPILAR para poder provar alguma coisa: `.lock()` nao existe mais, e
+        # a ficha exclusiva sai do guard de escrita. Guarda cujo defeito nao
+        # compila nao e guarda -- e por isso o executor a chama de QUEBRADA em
+        # vez de PROVADA, e foi ele que pegou esta.
         "troca": """        // DEFEITO REPOSTO: a decima-quarta tomada, fora do ponto unico.
-        let dados = self.dados.lock().map_err(|_| trava_envenenada())?;
+        let mut raiz = self.dados.write().map_err(|_| trava_envenenada())?;
+        let dados = raiz.exclusiva();
         Ok(idiomas::estado(&dados, idioma))
 """,
         "pacote": "phxsql-server",
@@ -936,7 +942,15 @@ GUARDAS = [
             "que pendura penduraria o `cargo test` inteiro."
         ),
         "arquivo": "crates/phxsql-server/src/servidor.rs",
-        "trecho": """        if COM_A_TRAVA.with(std::cell::Cell::get) {
+        # O trecho carrega o COMENTARIO de cima, e nao e enfeite: desde 05/09
+        # ha DUAS portas (`travar_dados` e `travar_dados_para_ler`) e as duas
+        # comecam com esta mesma pergunta. Sem o comentario o trecho aparece
+        # duas vezes e o executor recusa a entrada -- corretamente, porque
+        # trocar a errada provaria outra coisa. A porta de LEITURA tem a guarda
+        # irma logo abaixo.
+        "trecho": """        // ANTES de qualquer trabalho, e antes de parar na fila: se esta thread
+        // ja tem a trava, esperar por ela e esperar por si mesma.
+        if COM_A_TRAVA.with(std::cell::Cell::get) {
             return Err(trava_reentrante());
         }
 """,
@@ -3058,5 +3072,36 @@ pub fn limpar() {
             "a_tabela_que_precisaria_escrever_para_abrir_manda_para_a_exclusiva"
         ],
         "seguem": ["leitura::testes::as_duas_fichas_leem_a_mesma_pagina"],
+    },
+    {
+        "id": "leitura-sem-guarda-de-reentrancia",
+        "titulo": "a ficha compartilhada pedida com a exclusiva na mao pendura o servidor",
+        "porque": "e a guarda IRMA da `trava-sem-guarda-de-reentrancia`, e ela nasceu "
+                  "junto com a segunda porta. O `RwLock` piora o abraco: com um "
+                  "escritor na fila, a segunda leitura da mesma thread trava as tres "
+                  "pontas -- ela, o escritor, e todo leitor que chegar depois. A "
+                  "`COM_A_TRAVA` e UMA para as duas portas de proposito, e e isso que "
+                  "esta entrada prova.",
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """    fn travar_dados_para_ler(&self) -> Result<TravaDeLeitura<'_>> {
+        if COM_A_TRAVA.with(std::cell::Cell::get) {
+            return Err(trava_reentrante());
+        }
+""",
+        "troca": """    fn travar_dados_para_ler(&self) -> Result<TravaDeLeitura<'_>> {
+        // DEFEITO REPOSTO: a porta de leitura sem a pergunta. A mesma thread
+        // que ja tem a exclusiva pede a compartilhada e espera por si mesma.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "prazo": 420,
+        "caem": [
+            "servidor::testes_janela_e_cadeia::as_duas_fichas_na_mesma_thread_viram_erro"
+        ],
+        "seguem": [
+            "servidor::testes_janela_e_cadeia::"
+            "a_trava_pedida_duas_vezes_pela_mesma_thread_vira_erro",
+            "servidor::testes_janela_e_cadeia::sem_reentrancia_nada_muda",
+        ],
     },
 ]

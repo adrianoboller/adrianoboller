@@ -1017,6 +1017,22 @@ impl Servidor {
     /// e a mesma dos dois lados de propósito -- misturar as duas fichas na
     /// mesma thread e o mesmo defeito, com nome diferente.
     ///
+    /// # A RAM, que a trava segurava de graca
+    ///
+    /// O cache de paginas do `.ndx` e por `Table` ABERTA -- 2.048 paginas de
+    /// 4 KiB, 8 MiB de teto cada. O comentario do `ndx.rs` justifica esse teto
+    /// dizendo que «a tabela abre e fecha a cada operacao, entao o teto vale
+    /// enquanto a operacao dura», e isso era verdade **porque a trava
+    /// serializava tudo**. Aqui deixa de ser: N leitores sao N caches.
+    ///
+    /// Medido (`--example quanto-cache-uma-leitura-usa`): a grade SEM ordem
+    /// paga **zero** -- ela percorre o `.reg` e nao toca o indice --, e a
+    /// ORDENADA paga **6,52 MiB**, com 50 linhas custando o mesmo que 1.000.
+    /// Oito leitores ordenados ao mesmo tempo dao 52,1 MiB. O teto segura (o
+    /// cache despeja e troca RAM por releitura), e quem mexer em
+    /// `recursos.cache_paginas` daqui em diante esta mexendo num numero que se
+    /// multiplica por leitor. Ver `docs/CONCORRENCIA.md` §16.7.
+    ///
     /// # O tempo entra na MESMA serie da trava
     ///
     /// Podia ter serie propria, e nao tem: a serie existe para responder «por
@@ -22098,6 +22114,55 @@ mod testes_janela_e_cadeia {
             assert!(
                 copia.travar_dados().is_ok(),
                 "depois de soltar, a mesma thread tem de conseguir de novo"
+            );
+        });
+    }
+
+    /// O abraco mortal ENTRE AS DUAS FICHAS, nos dois sentidos.
+    ///
+    /// # Por que ele nao e o mesmo teste de cima
+    ///
+    /// Porque a `COM_A_TRAVA` e uma so para as duas portas, e isso e decisao --
+    /// e decisao que precisa de prova. Pedir a compartilhada com a exclusiva na
+    /// mao pendura igual; pedir a exclusiva com a compartilhada na mao pendura
+    /// PIOR, porque num `RwLock` com escritor na fila a segunda leitura da
+    /// mesma thread trava as tres pontas: ela, o escritor e todo leitor que
+    /// chegar depois.
+    ///
+    /// O teste de cima nao cobre nenhum dos dois: ele pede a mesma porta duas
+    /// vezes. **Guarda que existe e so cobre metade dos caminhos e guarda que
+    /// alguem vai citar como se cobrisse todos.**
+    #[test]
+    fn as_duas_fichas_na_mesma_thread_viram_erro() {
+        let s = servidor_janela_curta("duas-fichas");
+        let copia = Arc::clone(&s);
+        com_prazo("a compartilhada depois da exclusiva", move || {
+            let exclusiva = copia.travar_dados().expect("a primeira tem de vir");
+            let recado = match copia.travar_dados_para_ler() {
+                Ok(_) => unreachable!("a ficha compartilhada nao podia vir"),
+                Err(e) => format!("{e}"),
+            };
+            assert!(
+                recado.contains("a propria thread ja tem"),
+                "o erro tem de dizer o que houve: {recado}"
+            );
+            drop(exclusiva);
+            assert!(
+                copia.travar_dados_para_ler().is_ok(),
+                "depois de soltar, a compartilhada tem de vir"
+            );
+        });
+        let copia = Arc::clone(&s);
+        com_prazo("a exclusiva depois da compartilhada", move || {
+            let leitura = copia.travar_dados_para_ler().expect("a primeira tem de vir");
+            assert!(
+                copia.travar_dados().is_err(),
+                "a exclusiva pedida com a compartilhada na mao tinha de ser recusada"
+            );
+            drop(leitura);
+            assert!(
+                copia.travar_dados().is_ok(),
+                "depois de soltar, a exclusiva tem de vir"
             );
         });
     }

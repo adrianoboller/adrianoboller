@@ -1871,3 +1871,50 @@ medido por ela — e nunca no mesmo commit da mudança que ela mede.
 
 O que se pode dizer com número: foram **quatro reprovações para quatro
 baterias limpas**, e três das quatro reprovações caíram do lado DEPOIS.
+
+### 16.7 A RAM, que a trava segurava de graça — e agora não segura mais
+
+Isto precisa estar escrito onde a próxima pessoa vê, porque **é a única coisa
+que a ficha compartilhada piora**.
+
+O cache de páginas do `.ndx` é **por `Table` aberta**: 2.048 páginas de 4 KiB,
+**8 MiB de teto por tabela aberta**. O comentário que justifica esse teto, no
+`ndx.rs`, diz «o servidor abre e fecha a tabela a cada operação, então o teto
+vale enquanto a operação dura» — e essa frase era verdadeira **porque a trava
+global serializava tudo**. Com N leitores simultâneos, N × o que cada um ocupa.
+
+O uso real está medido (`--example quanto-cache-uma-leitura-usa`, corridas em
+`corridas/cache-por-leitura-*-CERTO.txt`), e o resultado é o que mais importa
+aqui: **depende do caminho, e o caro é o ordenado**.
+
+| a leitura | páginas | residente | do teto |
+|---|---:|---:|---:|
+| grade **sem ordem** (50 ou 1.000 linhas) | **0** | 0,00 MiB | 0,0% |
+| grade **ORDENADA** (50 linhas) | 1.668 | **6,52 MiB** | 81,4% |
+| grade **ORDENADA** (1.000 linhas) | 1.668 | 6,52 MiB | 81,4% |
+| busca por chave | 3 | 0,01 MiB | 0,1% |
+
+**A leitura por ordem de digitação não paga cache nenhum** — ela percorre o
+`.reg` e não toca o índice. **A ordenada paga 6,52 MiB, e 50 linhas custam o
+mesmo que 1.000**, porque `pagina_por_indice` chama `varrer_indice` e só depois
+recorta.
+
+Multiplicado:
+
+| leitores simultâneos | pelo uso medido | pelo teto |
+|---:|---:|---:|
+| 2 | 13,0 MiB | 16,0 MiB |
+| 4 | 26,1 MiB | 32,0 MiB |
+| 8 | **52,1 MiB** | 64,0 MiB |
+| 16 | 104,2 MiB | 128,0 MiB |
+
+**O teto segura, e o que ele troca é RAM por trabalho:** acima de 2.048 páginas
+o cache despeja, a RAM para de crescer e a releitura volta. Ninguém precisa
+mexer em `recursos.cache_paginas` por causa desta mudança — mas quem for mexer
+agora está mexendo num número que se multiplica por leitor, e não mais num
+número que a trava segurava sozinha.
+
+E o número de leitores tem teto próprio: `conexoes_max` do `config.json`. Quem
+o subir para centenas com `cache_paginas` no padrão está escolhendo, sem saber,
+um teto de RAM de centenas × 8 MiB — e é por isso que esta tabela está aqui, e
+não só no exemplo que a mediu.
