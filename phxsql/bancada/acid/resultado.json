@@ -4,7 +4,9 @@
   "maquina": {
     "havia_medicao_em_curso": true,
     "quem": [
-      "24004\tcompilacao (cargo)\t/root/.rustup/toolchains/1.94.1-x86_64-unknown-linux-gnu/bin/cargo test --workspace"
+      "13836\tbancada em python\tpython3 bancada/guardas/provar-guardas.py --json /tmp/guardas.json ",
+      "4613\tcompilacao (cargo)\t/root/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo test --offline --no-fai",
+      "4624\tcompilacao (rustc)\t/root/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc --crate-name phxsql_cor"
     ]
   },
   "A": {
@@ -38,19 +40,19 @@
         ],
         [
           "por_lote#3",
-          "P3 parcial (reaplicadas=216 ja_aplicadas=584)",
+          "P2 nada aplicado (reaplicadas=800)",
           400,
           400
         ],
         [
           "por_lote#4",
-          "P3 parcial (reaplicadas=71 ja_aplicadas=729)",
+          "P4 tudo aplicado, marca pendente (ja_aplicadas=800)",
           400,
           400
         ],
         [
           "por_lote#5",
-          "P3 parcial (reaplicadas=134 ja_aplicadas=666)",
+          "P4 tudo aplicado, marca pendente (ja_aplicadas=800)",
           400,
           400
         ],
@@ -80,42 +82,56 @@
         [
           "por_lote-cascata#0",
           "CONSISTENTE",
+          "COMPLETADA",
+          0,
           1200,
           0
         ],
         [
           "por_lote-cascata#1",
           "CONSISTENTE",
+          "COMPLETADA",
+          0,
           1200,
           0
         ],
         [
           "por_lote-cascata#2",
           "CONSISTENTE",
+          "COMPLETADA",
+          1,
           1200,
           0
         ],
         [
           "por_lote-cascata#3",
           "CONSISTENTE",
+          "COMPLETADA",
+          1,
           1200,
           0
         ],
         [
           "por_lote-cascata#4",
           "CONSISTENTE",
+          "COMPLETADA",
+          1,
           1200,
           0
         ],
         [
           "por_lote-cascata#5",
           "CONSISTENTE",
+          "COMPLETADA",
+          0,
           1200,
           0
         ],
         [
           "por_lote-cascata#6",
           "CONSISTENTE",
+          "COMPLETADA",
+          0,
           1200,
           0
         ]
@@ -207,28 +223,28 @@
     "leitura_consistente": {
       "escritor_solto": {
         "voltas_do_leitor": 400,
-        "escritas": 302,
+        "escritas": 303,
         "recusas": 0,
         "uma_instrucao": 97,
-        "duas_instrucoes": 1,
+        "duas_instrucoes": 4,
         "erros_do_escritor": [],
         "estados_vistos_por_uma_instrucao": {
-          "49,51": 154,
-          "50,50": 149,
-          "49,50": 49,
-          "50,51": 48
+          "50,50": 157,
+          "49,51": 146,
+          "50,51": 52,
+          "49,50": 45
         }
       },
       "escritor_em_transacao": {
         "voltas_do_leitor": 400,
-        "escritas": 224,
+        "escritas": 211,
         "recusas": 0,
         "uma_instrucao": 0,
-        "duas_instrucoes": 68,
+        "duas_instrucoes": 73,
         "erros_do_escritor": [],
         "estados_vistos_por_uma_instrucao": {
-          "49,51": 201,
-          "50,50": 199
+          "48,52": 203,
+          "49,51": 197
         }
       }
     }
@@ -335,7 +351,7 @@
       "esperado": 0,
       "medido": 0,
       "ok": true,
-      "controle": "a varredura pegou P2 · P3 · P4 -- pontos de morte diferentes, e e isso que prova que ela mirou dentro da janela",
+      "controle": "a varredura pegou P2 · P4 -- pontos de morte diferentes, e e isso que prova que ela mirou dentro da janela",
       "nota": null
     },
     {
@@ -643,7 +659,7 @@
         true
       ],
       "ok": true,
-      "controle": "escritor solto 302 voltas / leitor 400; escritor em transacao 224 / leitor 400",
+      "controle": "escritor solto 303 voltas / leitor 400; escritor em transacao 211 / leitor 400",
       "nota": null
     },
     {
@@ -673,8 +689,8 @@
       "esperado": true,
       "medido": true,
       "ok": true,
-      "controle": "68 de 400 voltas; o COMMIT e atomico, mas ele acontece INTEIRO entre a primeira leitura e a segunda",
-      "nota": "a celula «escritor solto x duas instrucoes» deu 1, e isso NAO e garantia nenhuma: o mesmo par quebra 68 vez(es) na outra coluna, entao o instrumento enxerga. O zero ali e o ciclo curto do escritor solto somado ao passo alternado dos pedidos, e esta escrito para ninguem o ler como protecao."
+      "controle": "73 de 400 voltas; o COMMIT e atomico, mas ele acontece INTEIRO entre a primeira leitura e a segunda",
+      "nota": "a celula «escritor solto x duas instrucoes» deu 4, e isso NAO e garantia nenhuma: o mesmo par quebra 73 vez(es) na outra coluna, entao o instrumento enxerga. O zero ali e o ciclo curto do escritor solto somado ao passo alternado dos pedidos, e esta escrito para ninguem o ler como protecao."
     },
     {
       "letra": "D",

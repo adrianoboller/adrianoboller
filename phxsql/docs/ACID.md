@@ -63,7 +63,7 @@ que é exatamente a mão que este documento não tem.
 |---|---|---|---|
 | **A** | o ROLLBACK de tres INSERT nao consome slot nenhum do `.reg` | o COMMIT das mesmas tres consome 3 (1 -> 4) | sim |
 | **A** | o controle: o COMMIT das mesmas tres linhas consome 3 slots | — | sim |
-| **A** | em 7 quedas validas no meio de um COMMIT de duas tabelas, nenhuma deixou uma tabela com linha e a outra sem | a varredura pegou P2 · P3 · P4 -- pontos de morte diferentes, e e isso que prova que ela mirou dentro da janela | sim |
+| **A** | em 7 quedas validas no meio de um COMMIT de duas tabelas, nenhuma deixou uma tabela com linha e a outra sem | a varredura pegou P2 · P4 -- pontos de morte diferentes, e e isso que prova que ela mirou dentro da janela | sim |
 | **A** | com avo<-mae(cascata)<-neta(restringir), trocar a chave da avo e recusado e a AVO fica no valor antigo | a recusa e nomeada: INTEGRIDADE | sim |
 | **A** | o controle: tirada a neta, a mesma alteracao passa e a MAE acompanha a avo | — | sim |
 | **A** | nenhuma queda no meio da cascata deixou mae e filhas divergentes SEM o relatorio do arranque denunciar | a corrida achou 0 cascata(s) parcial(is) denunciada(s) em 7, e 7 consistente(s) -- o instrumento distingue os dois | sim |
@@ -84,10 +84,10 @@ que é exatamente a mão que este documento não tem.
 | **I** | o controle da trava: a linha 2 continua gravavel enquanto a transacao segura a linha 1 | — | sim |
 | **I** | as duas viram 2 de plantao, cada uma tirou a sua, e no fim sobraram 0 | as duas transacoes CONFIRMARAM (nenhuma foi recusada) -- as travas sao por linha e as linhas eram diferentes | sim |
 | **I** | dentro da transacao a MAE ja aparece com a chave nova e a FILHA ainda aponta para a antiga; o COMMIT acerta as duas | a mae muda dentro (42) e a filha nao (1) -- se a sobreposicao estivesse desligada, a mae tambem nao mudaria | sim |
-| **I** | a corrida nao foi vazia: o escritor deu voltas enquanto o leitor perguntava | escritor solto 302 voltas / leitor 400; escritor em transacao 224 / leitor 400 | sim |
+| **I** | a corrida nao foi vazia: o escritor deu voltas enquanto o leitor perguntava | escritor solto 303 voltas / leitor 400; escritor em transacao 211 / leitor 400 | sim |
 | **I** | uma varredura unica ENXERGA o estado entre as duas escritas quando o escritor nao usa transacao | 97 de 400 voltas -- e nao e defeito do leitor: o banco esta mesmo inconsistente ali, porque o escritor deixou as duas linhas fora de acordo | sim |
 | **I** | com o escritor em transacao, a MESMA varredura nunca mais ve o estado intermediario | o mesmo instrumento, na mesma tabela, viu 97 vez(es) contra o escritor solto -- a diferenca e a transacao, e nada mais | sim |
-| **I** | duas leituras separadas veem o par inconsistente MESMO contra um escritor em transacao -- e a leitura repetivel que falta | 68 de 400 voltas; o COMMIT e atomico, mas ele acontece INTEIRO entre a primeira leitura e a segunda | sim |
+| **I** | duas leituras separadas veem o par inconsistente MESMO contra um escritor em transacao -- e a leitura repetivel que falta | 73 de 400 voltas; o COMMIT e atomico, mas ele acontece INTEIRO entre a primeira leitura e a segunda | sim |
 | **D** | em `por_operacao`, um INSERT que respondeu OK ja mandou o `.reg` ao disco | na mesma medicao, `por_lote` da 0 e `sistema` da 0 -- o contador distingue os regimes | sim |
 | **D** | em `por_lote` (o padrao) e em `sistema`, o mesmo INSERT responde OK sem nenhum `fsync` no `.reg` | `por_operacao` deu 1 na mesma corrida | sim |
 | **D** | o `fsync` da marca `.tx` acontece nos tres regimes -- ele nao olha `recursos.durabilidade` | contados [1, 1, 1] (por_operacao, por_lote, sistema); no MESMO commit o `.reg` sai [1, 0, 0] -- e a diferenca entre os dois que mostra que o regime so decide a tabela | sim |
@@ -161,9 +161,9 @@ aconteceu?». O que **reprova** é metade: uma tabela com linha e a outra sem.
 | 0 | P2 nada aplicado (reaplicadas=800) | 400 | 400 |
 | 1 | P2 nada aplicado (reaplicadas=800) | 400 | 400 |
 | 2 | P2 nada aplicado (reaplicadas=800) | 400 | 400 |
-| 3 | P3 parcial (reaplicadas=216 ja_aplicadas=584) | 400 | 400 |
-| 4 | P3 parcial (reaplicadas=71 ja_aplicadas=729) | 400 | 400 |
-| 5 | P3 parcial (reaplicadas=134 ja_aplicadas=666) | 400 | 400 |
+| 3 | P2 nada aplicado (reaplicadas=800) | 400 | 400 |
+| 4 | P4 tudo aplicado, marca pendente (ja_aplicadas=800) | 400 | 400 |
+| 5 | P4 tudo aplicado, marca pendente (ja_aplicadas=800) | 400 | 400 |
 | 6 | P4 tudo aplicado, marca pendente (ja_aplicadas=800) | 400 | 400 |
 
 **7 quedas válidas, 0 com uma tabela gravada e a outra não.** Os desfechos não foram todos iguais — a varredura pegou pontos de morte diferentes, e é isso que prova que ela mirou dentro da janela.
@@ -196,24 +196,33 @@ velho. Medido, com **os mesmos parâmetros** da matriz publicada em
 dois números sejam comparáveis:
 
 <!-- GERADO: a-cascata -->
-| corrida | veredito | filhas na chave nova | filhas na chave velha |
-|---|---|---:|---:|
-| 0 | CONSISTENTE | 1200 | 0 |
-| 1 | CONSISTENTE | 1200 | 0 |
-| 2 | CONSISTENTE | 1200 | 0 |
-| 3 | CONSISTENTE | 1200 | 0 |
-| 4 | CONSISTENTE | 1200 | 0 |
-| 5 | CONSISTENTE | 1200 | 0 |
-| 6 | CONSISTENTE | 1200 | 0 |
+| corrida | onde a queda caiu | veredito | índices reconstruídos pela recuperação | filhas na chave nova | filhas na chave velha |
+|---|---|---|---:|---:|---:|
+| 0 | COMPLETADA | CONSISTENTE | 0 | 1200 | 0 |
+| 1 | COMPLETADA | CONSISTENTE | 0 | 1200 | 0 |
+| 2 | COMPLETADA | CONSISTENTE | 1 | 1200 | 0 |
+| 3 | COMPLETADA | CONSISTENTE | 1 | 1200 | 0 |
+| 4 | COMPLETADA | CONSISTENTE | 1 | 1200 | 0 |
+| 5 | COMPLETADA | CONSISTENTE | 0 | 1200 | 0 |
+| 6 | COMPLETADA | CONSISTENTE | 0 | 1200 | 0 |
 
-Vereditos: **7** CONSISTENTE
+Vereditos: **7** CONSISTENTE — e a recuperação reconstruiu o índice de alguma filha em **3** das 7 corridas.
 <!-- FIM: a-cascata -->
 
-**E o número mudou.** Aquela matriz mediu, na linha `por_lote`, **4 de 7
-consistentes e 3 de 7 parciais denunciadas** — e ela é de **antes** do pedido
-172, que pôs a recuperação a reconstruir o `.ndx` da filha dentro do próprio
-`completar()`, enquanto a marca ainda existe. Esta corrida, com os mesmos
-parâmetros, saiu **consistente nas sete**. O conserto do 172 aparece no número.
+**E o número mudou, com o mecanismo à vista.** Aquela matriz mediu, na linha
+`por_lote`, **4 de 7 consistentes e 3 de 7 parciais denunciadas** — e ela é de
+**antes** do pedido 172, que pôs a recuperação a reconstruir o `.ndx` da filha
+dentro do próprio `completar()`, enquanto a marca ainda existe. Esta corrida,
+com os mesmos parâmetros, saiu **consistente nas sete**.
+
+E não é coincidência de amostra: a coluna «índices reconstruídos» diz **em
+quais** corridas a recuperação teve de reconstruir o índice de uma filha, e são
+**três de sete** — exatamente as três que, sem o conserto, teriam caído em
+`operacoes IMPOSSIVEIS`. As outras quatro saíram consistentes pelo outro
+caminho, a reaplicação inteira a partir da marca. A tabela distingue os dois, e
+é por isso que ela traz a coluna: «sete consistentes» sozinho não diria **por
+que**, e um sete que veio de o `SIGKILL` ter errado a janela é indistinguível
+de um sete que veio do conserto.
 
 O que **continua** verdadeiro, e não se apaga: a cascata escreve em tabela que
 a transação não declarou, então o `ROLLBACK` não a alcança — e é por isso que
@@ -351,11 +360,11 @@ Conta-se quantas vezes a soma veio quebrada.
 | o leitor pergunta | escritor **sem** transação | escritor **em** transação |
 |---|---:|---:|
 | **uma** instrução (`varrer` devolve as duas linhas) | 97 de 400 |    0 de 400 |
-| **duas** instruções (`ler` + `ler`) | 1 de 400 | 68 de 400 |
+| **duas** instruções (`ler` + `ler`) | 4 de 400 | 73 de 400 |
 
-A corrida não foi vazia: o escritor deu **302** voltas na coluna da esquerda e **224** na da direita, contra 400 perguntas do leitor em cada.
+A corrida não foi vazia: o escritor deu **303** voltas na coluna da esquerda e **211** na da direita, contra 400 perguntas do leitor em cada.
 
-E os **estados** que a instrução única viu contra o escritor sem transação, que é o número que separa «o leitor rasgou a leitura» de «o banco estava mesmo inconsistente»: `(49,51)` 154 · `(50,50)` 149 · `(49,50)` 49 · `(50,51)` 48. O escritor passa **uma** ida e volta em cada estado do meio da transferência e **três** em cada estado em acordo — a frequência tem de sair 3:1:3:1, e sai.
+E os **estados** que a instrução única viu contra o escritor sem transação, que é o número que separa «o leitor rasgou a leitura» de «o banco estava mesmo inconsistente»: `(50,50)` 157 · `(49,51)` 146 · `(50,51)` 52 · `(49,50)` 45. O escritor passa **uma** ida e volta em cada estado do meio da transferência e **três** em cada estado em acordo — a frequência tem de sair 3:1:3:1, e sai.
 <!-- FIM: i-matriz -->
 
 **Linha de cima — é o que a transação compra.** Sem ela, uma varredura única

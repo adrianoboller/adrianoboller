@@ -323,8 +323,16 @@ def letra_a():
     vereditos = {}
     for r in vc["corridas"]:
         vereditos[r["veredito"]] = vereditos.get(r["veredito"], 0) + 1
+    # `classe` e `indices_reconstruidos` entram porque o veredito sozinho NAO
+    # distingue as duas maneiras de sair consistente: a queda pode ter caido
+    # antes da passada (e ai a reaplicacao refaz tudo do zero) ou no meio do
+    # laco que reescreve as filhas (e ai quem salva e a reconstrucao do `.ndx`
+    # da filha, o conserto do pedido 172). Sem esses dois campos, «7 de 7
+    # consistentes» e um numero que nao diz por que.
     bruto["a4"] = {"vereditos": vereditos,
-                   "corridas": [[r["rotulo"], r["veredito"], r.get("filhas_com_mae_nova"),
+                   "corridas": [[r["rotulo"], r["veredito"], r.get("classe"),
+                                 (r.get("relatorio") or {}).get("indices_reconstruidos"),
+                                 r.get("filhas_com_mae_nova"),
                                  r.get("filhas_com_mae_velha")] for r in vc["corridas"]]}
     parciais = vereditos.get("PARCIAL_DENUNCIADO", 0)
     silenciosas = vereditos.get("*** PARCIAL SEM AVISO ***", 0)

@@ -91,13 +91,20 @@ def bloco_a_queda(d):
 
 def bloco_a_cascata(d):
     a4 = d["A"]["a4"]
-    saida = ["| corrida | veredito | filhas na chave nova | filhas na chave velha |",
-             "|---|---|---:|---:|"]
-    for rotulo, ver, novas, velhas in a4["corridas"]:
-        saida.append("| %s | %s | %s | %s |" % (rotulo.split("#")[-1], ver, novas, velhas))
+    saida = ["| corrida | onde a queda caiu | veredito | índices reconstruídos pela recuperação | filhas na chave nova | filhas na chave velha |",
+             "|---|---|---|---:|---:|---:|"]
+    reconstruiu = 0
+    for rotulo, ver, classe, idx, novas, velhas in a4["corridas"]:
+        if idx:
+            reconstruiu += 1
+        saida.append("| %s | %s | %s | %s | %s | %s |"
+                     % (rotulo.split("#")[-1], classe, ver,
+                        "—" if idx is None else idx, novas, velhas))
     saida.append("")
     saida.append("Vereditos: " + " · ".join("**%d** %s" % (v, k)
-                                            for k, v in sorted(a4["vereditos"].items())))
+                                            for k, v in sorted(a4["vereditos"].items()))
+                 + " — e a recuperação reconstruiu o índice de alguma filha em "
+                   "**%d** das %d corridas." % (reconstruiu, len(a4["corridas"])))
     return saida
 
 
