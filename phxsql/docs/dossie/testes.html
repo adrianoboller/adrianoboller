@@ -80,7 +80,7 @@ footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--linha);
   retrato que nunca existiu.</p>
 
   <div class="placar">
-    <div class="c"><div class="v">1585</div><div class="r">testes</div></div>
+    <div class="c"><div class="v">1598</div><div class="r">testes</div></div>
     <div class="c"><div class="v">85</div><div class="r">guardas</div></div>
     <div class="c"><div class="v">23</div><div class="r">casos de tela</div></div>
     <div class="c"><div class="v">14</div><div class="r">catracas</div></div>
@@ -92,9 +92,9 @@ footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--linha);
 <p class="sub"><code>cargo test --workspace</code>. É a camada mais barata e a
 mais rasa: ela prova que a função faz o que o autor dela achou que faz.</p>
 <div class="nota">
-  <b>1585 testes</b> em 134751 linhas de Rust, versão
-  <code>0.18.0</code>, commit <code>31850422f421f869e80d72e8c32fcb4951f79494</code>, 121 operações no
-  protocolo. Medido em 2026-09-05 02:09:41, por
+  <b>1598 testes</b> em 137097 linhas de Rust, versão
+  <code>0.18.0</code>, commit <code>57dbe17a5c46c0ab789593fb0516d00e74047b25</code>, 121 operações no
+  protocolo. Medido em 2026-09-05 06:12:31, por
   <code>docs/dossie/numeros-do-projeto.py</code>, que <b>aborta se o
   <code>cargo test</code> falhar</b>.
 </div>
@@ -146,9 +146,9 @@ medida</b> em vez de sumir da tabela.</p>
   <table>
     <thead><tr><th>bancada</th><th>medida em</th><th>o número de então</th></tr></thead>
     <tbody>
-      <tr><td class="nome">Cluster — eleição e promoção<div class="prova">três nós de verdade, um SMTP falso, e a promoção acontecendo quando o master cai</div></td><td class="q mono">2026-09-05 03:58 <span class="mtime" title="a data saiu do mtime do arquivo, e nao do proprio resultado">(mtime)</span></td><td class="v"><b>promoção em</b> 3,8 s · <b>escrita aceita em</b> 3,9 s · <b>época do nó isolado</b> 1 · <b>linhas no fim</b> 3.801</td></tr>
+      <tr><td class="nome">Cluster — eleição e promoção<div class="prova">três nós de verdade, um SMTP falso, e a promoção acontecendo quando o master cai</div></td><td class="q mono">2026-09-05 05:49 <span class="mtime" title="a data saiu do mtime do arquivo, e nao do proprio resultado">(mtime)</span></td><td class="v"><b>promoção em</b> 3,8 s · <b>escrita aceita em</b> 3,9 s · <b>época do nó isolado</b> 1 · <b>linhas no fim</b> 3.801</td></tr>
       <tr><td class="nome">Replicação — quatro servidores<div class="prova">master e três espelhos no ar, com retrato SHA-256 de cada linha nos quatro</div></td><td class="q mono">2026-09-05</td><td class="v"><b>master</b> 26.762 linhas/s · <b>réplica aplica</b> 24.583 eventos/s · <b>alcance</b> 4,1 s · <b>os quatro iguais no fim</b> sim</td></tr>
-      <tr><td class="nome">ACID — as quatro letras<div class="prova">cada afirmação com o controle da mesma corrida; o nível de isolamento sai medido, não citado</div></td><td class="q mono">2026-09-05 03:12 <span class="mtime" title="a data saiu do mtime do arquivo, e nao do proprio resultado">(mtime)</span></td><td class="v"><b>versao</b> phxsqld 0.18.0 (41e82efa97c8) x86_64-unknown-linux-gnu · <b>rapido</b> NÃO</td></tr>
+      <tr><td class="nome">ACID — as quatro letras<div class="prova">cada afirmação com o controle da mesma corrida; o nível de isolamento sai medido, não citado</div></td><td class="q mono">2026-09-05 05:49 <span class="mtime" title="a data saiu do mtime do arquivo, e nao do proprio resultado">(mtime)</span></td><td class="v"><b>versao</b> phxsqld 0.18.0 (41e82efa97c8) x86_64-unknown-linux-gnu · <b>rapido</b> NÃO</td></tr>
       <tr><td class="nome">Durabilidade — o fecho da janela<div class="prova">os `fsync` contados por `strace` contra o `phxsqld` de pé</div></td><td class="q mono">2026-09-04 14:40 <span class="mtime" title="a data saiu do mtime do arquivo, e nao do proprio resultado">(mtime)</span></td><td class="v"><b>defeito_confirmado_a</b> sim</td></tr>
       <tr><td class="nome">Carga — uma a uma contra o lote<div class="prova">o custo da viagem de rede, separado do custo de gravar</div></td><td class="q mono">2026-08-29</td><td class="v"><b>quando</b> 2026-08-29 · <b>versao</b> 0.17.0 · <b>linhas</b> 20.000 · <b>por_lote</b> 5.000</td></tr>
       <tr><td class="nome">Os três motores a um milhão<div class="prova">PhxSql, MySQL® e SQLite® intercalados na MESMA rodada, porque medidas de dias diferentes carregam o ambiente junto</div></td><td class="q mono">2026-09-01 18:30:03</td><td class="v"><b>linhas</b> 1.000.000 · <b>operacoes_por_fase_pontual</b> 20.000 · <b>rodadas</b> 3 · <b>medido_em</b> 2026-09-01 18:30:03</td></tr>
@@ -165,7 +165,7 @@ e o pior deles quebrava todo salvar e todo incluir pela tela.</p>
   <b>23 casos</b> em <code>testes-web/casos/</code>, quase todos nos dois
   temas, contra um <code>phxsqld</code> de verdade num navegador de verdade — sem
   maquete e sem mockup. E <b>151 botões</b> com clique gravado
-  (<code>testes-web/botoes-exercitados.txt</code>, 2026-09-05 04:19 (mtime)):
+  (<code>testes-web/botoes-exercitados.txt</code>, 2026-09-05 05:49 (mtime)):
   a evidência é escrita pela própria corrida, e só em corrida <b>inteira e
   verde</b>, porque uma corrida que cai no meio grava menos do que provou.
 </div>
@@ -197,7 +197,7 @@ diz onde não confiar.</p>
 </div>
 
 <footer>
-  Gerado por <code>docs/dossie/pagina-dos-testes.py</code> em 05/09/2026 05:22. Nenhum
+  Gerado por <code>docs/dossie/pagina-dos-testes.py</code> em 05/09/2026 06:12. Nenhum
   número desta página foi digitado: eles saem do <code>CAPABILITIES.json</code>,
   do catálogo de guardas, dos <code>resultados.json</code> das bancadas, dos
   arquivos de <code>testes-web/</code> e das constantes do próprio fonte. O
