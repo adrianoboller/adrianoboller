@@ -260,7 +260,17 @@ def montar():
     agora = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
 
     def c(k, padrao="—"):
-        return esc(cap.get(k, padrao))
+        """O valor do `CAPABILITIES.json`, com o ponto de milhar.
+
+        O JSON guarda o numero cru, que e' o certo para quem le por
+        programa. Quem le esta pagina e' gente, e `138426` se le pior que
+        `138.426` -- separador nao e' enfeite, e' o que faz a ordem de
+        grandeza aparecer sem contar digito.
+        """
+        v = cap.get(k, padrao)
+        if isinstance(v, int) and abs(v) >= 1000:
+            return esc(f"{v:,}".replace(",", "."))
+        return esc(v)
 
     linhas_bancadas = "\n      ".join(linha_bancada(b) for b in BANCADAS)
     linhas_tetos = "\n      ".join(
@@ -271,7 +281,7 @@ def montar():
 
     return TEMPLATE.format(
         agora=agora,
-        versao=c("versao"), commit=c("commit"),
+        versao=c("versao"), commit=esc(str(cap.get("commit", "—"))[:7]),
         testes=c("testes"), operacoes=c("operacoes"),
         linhas_rust=c("linhas_rust"), deps=c("dependencias_externas"),
         cap_quando=esc(cap_quando),
