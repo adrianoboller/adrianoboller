@@ -553,3 +553,82 @@ fn acrescentar_coluna_em_tabela_cifrada_mantem_a_linha_legivel() {
     cofre::desligar();
     let _ = std::fs::remove_dir_all(&d);
 }
+
+/// **GUARDA VERMELHA, entregue falhando de proposito em 05/09/2026.**
+///
+/// Tabela cujas UNICAS colunas marcadas sao EXTERNAS (`Memo`/`Bin`). Hoje ela
+/// nasce em claro com o cofre ligado, e o texto sigiloso vai para o `.memo`
+/// legivel -- sem erro, sem aviso, e com `{"op":"config"}` respondendo
+/// `cifra.ligada: true`.
+///
+/// # A cadeia, medida no fonte
+///
+/// 1. `faixas_pessoais` (`reg.rs:2117`) faz `continue` em `col.ty.externo()`,
+///    entao coluna externa marcada NAO gera faixa;
+/// 2. sem faixa, `faixas.is_empty()` e o volume nasce `Material::EM_CLARO`
+///    (`reg.rs:266`) -- e o comentario ao lado diz «uma tabela SEM coluna
+///    marcada nasce em claro», que nao e este caso: ha coluna marcada;
+/// 3. `selar_externo` (`reg.rs:1591`) devolve o dado intacto porque
+///    `!self.material.cifrado()`.
+///
+/// O caminho de selar o externo esta escrito e esta CERTO. O que nao alcanca
+/// este caso e a condicao que o LIGA, derivada so das colunas inline.
+///
+/// # Por que nenhum teste pegava
+///
+/// O `esquema()` deste arquivo marca `nome` (Str, INLINE) alem de `obs`
+/// (Memo). Com uma inline marcada, `faixas` nao fica vazio, o material nasce
+/// cifrado, e o `.memo` e selado -- entao toda a bateria de cifra prova o
+/// caminho que FUNCIONA, e o irmao nunca foi exercitado. E a mesma forma dos
+/// pedidos 172, 173 e 176: o conserto entrou no caminho que o motivou e o
+/// irmao ficou.
+///
+/// Medido com dez linhas pelo soquete, nos dois sentidos:
+///
+/// ```text
+/// so externas (Memo+Bin)         .memo 6264 B   texto em claro? SIM
+/// externas + UMA inline (nome)   .memo 6664 B   texto em claro? nao
+/// ```
+///
+/// Os 400 bytes de diferenca sao os 40 por valor (nonce de 24 + etiqueta de
+/// 16) das dez linhas.
+#[test]
+#[ignore = "VERMELHA de proposito: prova um vazamento que ainda nao foi consertado"]
+fn coluna_externa_marcada_sozinha_nao_pode_ir_em_claro() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    cofre::desligar();
+    let d = dir("so-externa");
+    cofre::definir(SENHA, RAPIDO).unwrap();
+
+    // NENHUMA coluna inline marcada -- e a unica diferenca para o `esquema()`
+    // deste arquivo, que marca `nome`.
+    let e = Schema::new(
+        "fichas",
+        vec![
+            Column::new("id", ColumnType::Int8).obrigatoria(),
+            Column::new("obs", ColumnType::Memo).com_dado_pessoal(DadoPessoal::Sensivel),
+        ],
+        vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
+    )
+    .unwrap();
+
+    {
+        let mut t = Table::criar(&d, e).unwrap();
+        for i in 1..=10 {
+            t.inserir(&[
+                Value::Int(i),
+                Value::Memo(format!("{MEMO_SECRETO} numero {i}")),
+            ])
+            .unwrap();
+        }
+        t.sincronizar().unwrap();
+    }
+
+    let memo = bytes_com_extensao(d.as_ref(), "memo");
+    assert!(
+        !contem(&memo, MEMO_SECRETO.as_bytes()),
+        "o `.memo` de uma tabela com coluna EXTERNA marcada como sensivel \
+         guardou o texto em claro, com o cofre ligado"
+    );
+    cofre::desligar();
+}

@@ -1,0 +1,101 @@
+{
+ "quando": "2026-09-05T14:09:20",
+ "linhas": 2000,
+ "lado": "com",
+ "por_lote": 5000,
+ "esta_medindo_antes": false,
+ "esta_medindo_quem_antes": "",
+ "sem_senha": {
+  "cifrado": false,
+  "linhas": 2000,
+  "insert": {
+   "s": 0.484,
+   "linhas_por_s": 4131,
+   "ms_no_servidor": 319.0,
+   "fio_enviado": 2768160
+  },
+  "select": {
+   "s": 0.126,
+   "linhas_por_s": 15916,
+   "ms_no_servidor": 22.0,
+   "divergentes": 0,
+   "linhas_lidas": 2000
+  },
+  "rowids_colhidos": 2000,
+  "update": {
+   "s": 1.12,
+   "linhas": 2000,
+   "por_s": 1785,
+   "ms_no_servidor": 36.0
+  },
+  "disco": {
+   "reg": 456960,
+   "ndx": 684032,
+   "bin": 1088064,
+   "memo": 2492090,
+   "log": 176064,
+   "trash": 64,
+   "reason": 64,
+   "pag": 448,
+   "total": 4897786
+  },
+  "delete": {
+   "s": 1.946,
+   "linhas": 2000,
+   "por_s": 1027,
+   "ms_no_servidor": 103.0
+  },
+  "apagado_apos_medir": true,
+  "_tam_medido": 4897786
+ },
+ "com_senha": {
+  "cifrado": true,
+  "linhas": 2000,
+  "insert": {
+   "s": 0.5,
+   "linhas_por_s": 4000,
+   "ms_no_servidor": 341.0,
+   "fio_enviado": 2768160
+  },
+  "select": {
+   "s": 0.422,
+   "linhas_por_s": 4739,
+   "ms_no_servidor": 318.0,
+   "divergentes": 0,
+   "linhas_lidas": 2000
+  },
+  "rowids_colhidos": 2000,
+  "update": {
+   "s": 1.177,
+   "linhas": 2000,
+   "por_s": 1698,
+   "ms_no_servidor": 46.0
+  },
+  "disco": {
+   "reg": 456960,
+   "ndx": 684032,
+   "bin": 1088064,
+   "memo": 2492090,
+   "log": 176128,
+   "trash": 128,
+   "reason": 128,
+   "pag": 448,
+   "total": 4897978
+  },
+  "delete": {
+   "s": 2.011,
+   "linhas": 2000,
+   "por_s": 994,
+   "ms_no_servidor": 101.0
+  },
+  "apagado_apos_medir": true,
+  "_tam_medido": 4897978
+ },
+ "razao": {
+  "insert": 1.033,
+  "select": 3.349,
+  "update": 1.051,
+  "delete": 1.033,
+  "disco": 1.0
+ }
+}
