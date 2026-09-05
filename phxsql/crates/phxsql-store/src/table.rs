@@ -3694,20 +3694,24 @@ impl Table {
                 return Ok(saida);
             }
         }
-        let mut rowid = cursor - 1;
-        while rowid >= 1 {
-            if let Some(payload) = self.reg.ler(rowid)? {
-                if self.visivel(rowid, Some(&payload), visao)? {
-                    saida.push(rowid);
-                    if limite > 0 && saida.len() as u64 >= limite {
-                        break;
-                    }
+        // Pelo `anterior_ativo`, e nao por um `rowid -= 1` com `ler` cru: na
+        // particao alfanumerica o slot entre o fim de um balde e o comeco do
+        // proximo NAO EXISTE, e o `ler` responde `NaoEncontrado` em vez de
+        // `None` -- o que reprovava a varredura inteira sempre que a pagina
+        // comecava no primeiro slot de um balde. Fora da alfanumerica ele
+        // percorre exatamente os mesmos slots que este laco percorria.
+        let mut ate = cursor - 1;
+        while let Some((id, payload)) = self.reg.anterior_ativo(ate)? {
+            if self.visivel(id, Some(&payload), visao)? {
+                saida.push(id);
+                if limite > 0 && saida.len() as u64 >= limite {
+                    break;
                 }
             }
-            if rowid == 1 {
+            if id == 1 {
                 break;
             }
-            rowid -= 1;
+            ate = id - 1;
         }
         saida.reverse();
         Ok(saida)

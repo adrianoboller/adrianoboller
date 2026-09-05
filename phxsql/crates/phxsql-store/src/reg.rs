@@ -1967,6 +1967,69 @@ impl RegFile {
         Ok(None)
     }
 
+    /// Registro ativo ANTERIOR, com rowid <= `ate`, na ordem de digitacao.
+    ///
+    /// E o irmao do [`RegFile::proximo_ativo`], e existe pela mesma razao que
+    /// ele: quem anda para tras de um em um paga o vazio entre baldes. Na
+    /// alfanumerica esse vazio nao e so caro -- ele nem sequer responde
+    /// `None`: o slot alem do `usados` do balde NAO EXISTE, e o `ler` cru
+    /// devolve `NaoEncontrado`. Era por isso que a pagina anterior de uma
+    /// tabela por letra reprovava a varredura inteira em vez de dizer
+    /// "nao ha nada antes".
+    pub fn anterior_ativo(&mut self, ate: RowId) -> Result<Option<(RowId, Vec<u8>)>> {
+        if !self.baldes.is_empty() {
+            return self.anterior_ativo_por_balde(ate);
+        }
+        let mut rowid = ate.min(self.slot_count);
+        while rowid >= 1 {
+            if let Some(p) = self.ler(rowid)? {
+                return Ok(Some((rowid, p)));
+            }
+            rowid -= 1;
+        }
+        Ok(None)
+    }
+
+    /// O anterior ativo quando a tabela e alfanumerica.
+    ///
+    /// Espelha o `proximo_ativo_por_balde`: dentro do balde comeca no menor
+    /// entre o slot pedido e o ultimo usado -- pedir o slot 999 de um balde com
+    /// tres linhas comeca no terceiro, e nao anda 996 vezes pelo que nunca foi
+    /// gravado -- e, esgotado o balde, salta direto para o fim do anterior.
+    fn anterior_ativo_por_balde(&mut self, ate: RowId) -> Result<Option<(RowId, Vec<u8>)>> {
+        if ate == 0 || self.baldes.is_empty() {
+            return Ok(None);
+        }
+        let rpa = self.esquema.paginacao().registros_por_arquivo;
+        let mut balde = ((ate - 1) / rpa) as usize;
+        let mut slot = (ate - 1) % rpa;
+        if balde >= self.baldes.len() {
+            balde = self.baldes.len() - 1;
+            slot = rpa - 1;
+        }
+        loop {
+            let usados = self.baldes[balde];
+            if usados > 0 {
+                let mut s = slot.min(usados - 1);
+                loop {
+                    let rowid = balde as u64 * rpa + s + 1;
+                    if let Some(p) = self.ler(rowid)? {
+                        return Ok(Some((rowid, p)));
+                    }
+                    if s == 0 {
+                        break;
+                    }
+                    s -= 1;
+                }
+            }
+            if balde == 0 {
+                return Ok(None);
+            }
+            balde -= 1;
+            slot = rpa - 1;
+        }
+    }
+
     /// Quantos slots cada balde ja usou. Vazio fora da particao alfanumerica.
     pub fn baldes(&self) -> &[u64] {
         &self.baldes

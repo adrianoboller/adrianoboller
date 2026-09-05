@@ -2393,6 +2393,125 @@ cargo test -p phxsql-store --test grafia-do-diretorio-nao-divide-a-familia
 cargo test -p phxsql-store --test pag-se-troca-inteiro
 ```
 
+## 18. Blob no fio, no slot e no `.bin`: três coisas que um número só junta (05/09)
+
+A pergunta do dono foi «20.000 registros em tabela complexa **com e sem
+binários e memos**». A resposta óbvia seria duas cargas e uma razão — e ela
+seria o **terceiro** número desta casa a comparar trabalho desigual sem que
+nada no número denunciasse. Os dois anteriores estão na `bancada/LEIA-ME.md`,
+e apontaram para lados opostos.
+
+O motivo é simples de dizer: uma tabela com `Bin` e `Memo` grava em dois
+arquivos que a outra nem abre — mas **também** manda mais bytes pelo fio, e
+**também** carrega dois campos a mais no slot do `.reg`. Um só número junta as
+três, e depois ninguém consegue separar.
+
+Por isso a bancada tem **três** lados, e o terceiro é o controle: `largo`
+declara as mesmas duas colunas com os **mesmos nomes e os mesmos valores** como
+`Str(n)`. O pedido no fio sai byte a byte idêntico ao do lado `com`; o que muda
+é só onde o dado para.
+
+<!-- GERADO: os-tres-lados -->
+| lado | o que ele é | fio (B/linha) | disco (B/linha) | `.reg` | `.ndx` | `.bin` | `.memo` |
+|---|---|---:|---:|---:|---:|---:|---:|
+| `sem` | 10 colunas de dado, 5 índices. Nenhum arquivo externo. | 209,0 | 603,2 | 3,7 MiB | 6,9 MiB | 0,1 KiB | 0,1 KiB |
+| `com` (Bin+Memo) | as mesmas 10 mais `observacao` **Memo** e `foto` **Bin**. | 1384,1 | 1529,8 | 4,3 MiB | 6,9 MiB | 5,2 MiB | 11,9 MiB |
+| `largo` (Str) | as mesmas 10 mais `observacao` e `foto` com os **mesmos nomes e os mesmos valores**, declaradas `Str(n)` — o pedido no fio é byte a byte igual ao do `com`. | 1384,1 | 1763,2 | 25,9 MiB | 6,9 MiB | 0,1 KiB | 0,1 KiB |
+
+O `.log` é igual nos três (859,4 KiB) e o `.trash`, o `.reason` e o `.pag` são só cabeçalho.
+<!-- FIM: os-tres-lados -->
+
+<!-- GERADO: decomposicao -->
+| a diferença | o que ela mede | fio | disco |
+|---|---|---:|---:|
+| `sem` → `largo` | **o peso no fio e no slot**: o mesmo JSON, guardado em coluna de largura fixa, sem nenhum arquivo externo | +1175,1 B/linha | +1160,0 B/linha |
+| `largo` → `com` | **o `.bin` e o `.memo`**: o mesmo pedido no fio, outro destino no disco | 0 B/linha (idêntico) | -233,4 B/linha |
+
+O dado que a linha carrega são **856 bytes** (256 no binário e 600 caracteres no texto). Guardado no `.bin`/`.memo` ele custa **926,6 bytes por linha** de disco — 8,2% de sobra, que são o cabeçalho do bloco, o CRC e o ponteiro que entra no slot. Guardado em `Str` de largura fixa custa **1160,0 bytes por linha**, e a conta fecha exatamente com as larguras declaradas: o `.reg` cresce o que a coluna pediu, esteja ela cheia ou vazia.
+
+E no **fio** os dois lados custam o mesmo: +1175,1 bytes por linha, dos quais 512 são o hexadecimal do `Bin` — **um binário viaja com o dobro do tamanho** porque JSON não tem tipo binário.
+<!-- FIM: decomposicao -->
+
+### 18.1 O tempo não separa os três lados — e um efeito que ficou sem causa
+
+<!-- GERADO: tempo -->
+Duas cargas por lado, em tabelas próprias, na ordem `sem` → `com` → `largo` → `r2sem` → `r2com` → `r2largo`. Duas colunas de tempo, porque elas não medem a mesma coisa: **parede** inclui montar o JSON no cliente, o fio e a análise da volta; **motor** é o `ms` que o próprio servidor carimba na resposta.
+
+| lado | 1ª carga (parede / motor) | 2ª carga (parede / motor) | 2ª: linhas/s |
+|---|---:|---:|---:|
+| `sem` | 2,30 / 2,07 s | 2,26 / 2,02 s | 8.850 |
+| `com` (Bin+Memo) | 4,45 / 3,43 s | 2,27 / 2,04 s | 8.809 |
+| `largo` (Str) | 4,17 / 3,15 s | 2,34 / 2,12 s | 8.536 |
+
+**Na segunda carga os três lados custam o mesmo, dentro de 0,10 s de diferença** (`sem` 2,02 s / `com` (Bin+Memo) 2,04 s / `largo` (Str) 2,12 s de motor) — ou seja, o tempo **não separa** os três lados. Quem separa são os bytes, e eles estão nas tabelas acima.
+
+**E há um efeito que eu não sei explicar, e ele fica escrito assim.** A primeira carga dos dois lados com peso grande custa até **1,68×** a segunda do mesmo lado, e a diferença aparece dentro do motor, não só no fio. Dois controles mataram as duas explicações óbvias, e nenhum deles explicou o efeito:
+
+1. **não é a posição na fila** — `PHX_ORDEM_INVERTIDA=1` inverte a ordem das seis cargas e o padrão não muda de dono: os mesmos dois lados saem lentos na primeira e rápidos na segunda;
+2. **não é «a primeira carga de uma série»** — o controle da chave conferida, logo abaixo, faz três cargas idênticas seguidas e as três custam o mesmo, nos dois braços.
+
+Enquanto não houver causa medida, a conclusão publicada é a que **as duas colunas concordam**: entre a diferença dos lados e a diferença entre as duas cargas do mesmo lado, a segunda é maior. *Número citado é número que não se mede* — e diagnóstico plausível não é diagnóstico medido.
+<!-- FIM: tempo -->
+
+### 18.2 A chave conferida é o maior custo desta tabela — maior que os blobs
+
+A §15 mediu a chave estrangeira conferida por dentro, com `--example
+custo-da-fk`. Aqui ela é medida pela **porta de dados**, com a tabela inteira:
+cinco índices, dois blobs, o fio e a trava de dados no caminho. Os dois braços
+diferem em uma coisa só — a declaração da chave.
+
+<!-- GERADO: chave-conferida -->
+| a chave | 1ª carga | 2ª | 3ª | mediana (motor) | µs por linha |
+|---|---:|---:|---:|---:|---:|
+| **declarada? não** — só o índice `porCategoria` | 0,65 | 0,64 | 0,64 | **0,64 s** | 31,9 |
+| **conferida** (o que a tabela desta bancada usa) | 2,09 | 2,04 | 2,05 | **2,05 s** | 102,6 |
+
+**A chave conferida custa 3,21× a gravação.** Os dois braços diferem em uma coisa só — a declaração da chave; o índice `porCategoria` existe nos dois —, então o que está medido é a **conferência**, e não o índice. É o preço da regra primordial da casa cobrado na entrada: para cada linha gravada, o motor pergunta à mãe se o pai existe e se ele está vivo. `docs/DESEMPENHO.md` §15 mede a mesma coisa por dentro, com `--example custo-da-fk`; aqui ela é medida pela porta de dados, com a tabela inteira.
+
+E ele é maior que o dos blobs — que no tempo é **zero**, medido no bloco acima. O que **não** está medido aqui é quanto cada um dos cinco índices custa: para dizer isso seria preciso um braço por índice, e ele não existe. Quem carregar milhões de linhas e puder conferir depois tem aqui o número para decidir; quem não puder tem aqui o que a garantia custa.
+
+De quebra, ele é o **controle da posição**: três cargas idênticas, uma atrás da outra, com o mesmo esquema e as mesmas linhas. Nos dois braços as três custam o mesmo — logo, «ser a primeira carga» não explica sozinho o que o bloco do tempo mostra.
+<!-- FIM: chave-conferida -->
+
+### 18.3 O `fsync` não distingue quem tem blob de quem não tem
+
+<!-- GERADO: fsync -->
+| lado | ação | `.reg` | `.ndx` | `.bin` | `.memo` | `.log` | `.trash` | `.reason` | total |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `sem` | um lote de 500 | 1 | 2 | 1 | 1 | 1 | 1 | 1 | **8** |
+| `sem` | uma linha | 1 | 2 | 1 | 1 | 1 | 1 | 1 | **8** |
+| `com` (Bin+Memo) | um lote de 500 | 1 | 2 | 1 | 1 | 1 | 1 | 1 | **8** |
+| `com` (Bin+Memo) | uma linha | 1 | 2 | 1 | 1 | 1 | 1 | 1 | **8** |
+| `largo` (Str) | um lote de 500 | 1 | 2 | 1 | 1 | 1 | 1 | 1 | **8** |
+| `largo` (Str) | uma linha | 1 | 2 | 1 | 1 | 1 | 1 | 1 | **8** |
+
+Medido em `recursos.durabilidade = "por_operacao"`, e não na configuração de fábrica — de propósito: a de fábrica (`por_lote`, 200 operações ou 200 ms) fecha a janela pelo **relógio**, e aí a contagem passa a depender de quantas vezes o relógio bateu no meio da carga. Medido assim numa primeira corrida, o mesmo lote deu 2 `fsync` no `.reg` para um lado e 1 para o outro, e a diferença era o relógio.
+
+**O achado: o `.bin` e o `.memo` custam ZERO `fsync` a mais.** O fecho da janela sincroniza os oito arquivos da tabela **exista ou não** coluna que os use — o lado `sem`, que não tem `Bin` nem `Memo` nenhum, paga o `fsync` do `.bin` e do `.memo` igual aos outros dois. O custo do blob aparece em **bytes**, e não em chamadas ao disco.
+<!-- FIM: fsync -->
+
+Isso fecha com o que a §16 mediu por outro caminho: o fecho da janela é um
+comboio de arquivos, e ele custa o mesmo com a tabela cheia ou vazia. A
+consequência prática é que o `.bin`/`.memo` **não** encarece a durabilidade —
+o que ele encarece é o `write`, e isso aparece em bytes.
+
+### 18.4 A hipótese que morreu: «o custo do blob é o arquivo externo»
+
+Era o que eu diria antes de medir, e é o que a razão entre dois lados diria
+para sempre. Medido com o terceiro lado, o `.bin`/`.memo` é a **menor** das
+três parcelas: ele guarda o binário cru (256 bytes) onde a coluna de largura
+fixa guarda o hexadecimal (512 caracteres), e por isso **economiza** disco em
+vez de gastar — a linha `largo → com` da tabela acima é negativa.
+
+Quem cobra é o **fio**: o mesmo binário viaja com o dobro do tamanho, porque
+JSON não tem tipo binário. Um cliente que grave binário grande pelo protocolo
+paga a conversão duas vezes — hexadecimal na ida, bytes na chegada — e essa é
+a conta que vale otimizar, não o bloco do `.bin`.
+
+Como refazer: `python3 bancada/utilizacao-padrao/medir.py 20000`, depois
+`python3 bancada/utilizacao-padrao/gera-leia-me.py`. Os números destas três
+tabelas são reescritos pelo gerador; nenhum deles se digita.
+
 ## Como refazer tudo
 
 ```bash
@@ -2417,4 +2536,7 @@ python3 bancada/transacoes/provar.py                     # a transacao pelo soqu
 python3 bancada/concorrencia/a-trava-serializa.py        # a premissa da SP000011, a §14
 cargo run --release --example custo-da-fk -- 20000 1000   # o custo da chave conferida, a §15
 cargo run --release --example fsync-por-fecho -p phxsql-store -- --numeros  # a §16
+python3 bancada/utilizacao-padrao/medir.py 20000          # a §18
+python3 bancada/utilizacao-padrao/paginacao-alfabetica.py # a partição por letra pela porta de dados
+python3 bancada/utilizacao-padrao/gera-leia-me.py         # reescreve a §18 e o LEIA-ME da bancada
 ```

@@ -1,0 +1,348 @@
+{
+  "linhas": 20000,
+  "por_lote": 5000,
+  "por_pagina": 2000,
+  "bin_bytes": 256,
+  "memo_chars": 600,
+  "indices": [
+    "porFilialId",
+    "porCodigo",
+    "porNome",
+    "porCidade",
+    "porCategoria"
+  ],
+  "lados": {
+    "sem": {
+      "carga_s": 2.303,
+      "carga_s_2": 2.26,
+      "carga_ms_servidor": 2070.0,
+      "carga_ms_servidor_2": 2017.0,
+      "linhas_por_s": 8685,
+      "linhas_por_s_2": 8850,
+      "linhas_por_s_servidor": 9662,
+      "linhas_por_s_servidor_2": 9916,
+      "fio_enviado": 4178529,
+      "fio_recebido": 1006,
+      "fio_por_linha": 209.0,
+      "leitura": {
+        "s": 0.2405504310008837,
+        "paginas": 10,
+        "linhas_lidas": 20000,
+        "enviados": 1172,
+        "recebidos": 4962921,
+        "divergentes": 0,
+        "amostra_divergente": []
+      },
+      "registros_verificados": 20000,
+      "disco": {
+        "reg": 3920896,
+        "ndx": 7262208,
+        "bin": 64,
+        "memo": 64,
+        "log": 880064,
+        "trash": 64,
+        "reason": 64,
+        "pag": 448
+      },
+      "disco_total": 12063872,
+      "disco_por_linha": 603.2,
+      "controle_do_comparador": {
+        "rowid_usado": 1,
+        "acusou": {
+          "escalar": [
+            "cidade"
+          ],
+          "decimal": [
+            "saldo"
+          ],
+          "sem_estrago": []
+        }
+      },
+      "coluna_com_padrao": {
+        "slots_reescritos": 20000,
+        "ms": 20.793,
+        "indices_refeitos": false,
+        "nas_linhas_que_ja_existiam": [
+          "ativo",
+          "ativo"
+        ],
+        "na_linha_inserida_depois": null
+      }
+    },
+    "com": {
+      "carga_s": 4.447,
+      "carga_s_2": 2.27,
+      "carga_ms_servidor": 3426.0,
+      "carga_ms_servidor_2": 2045.0,
+      "linhas_por_s": 4497,
+      "linhas_por_s_2": 8809,
+      "linhas_por_s_servidor": 5838,
+      "linhas_por_s_servidor_2": 9780,
+      "fio_enviado": 27680754,
+      "fio_recebido": 1002,
+      "fio_por_linha": 1384.1,
+      "leitura": {
+        "s": 0.6012802159966668,
+        "paginas": 10,
+        "linhas_lidas": 20000,
+        "enviados": 1172,
+        "recebidos": 27855334,
+        "divergentes": 0,
+        "amostra_divergente": []
+      },
+      "registros_verificados": 20000,
+      "disco": {
+        "reg": 4560960,
+        "ndx": 7262208,
+        "bin": 5440064,
+        "memo": 12452477,
+        "log": 880064,
+        "trash": 64,
+        "reason": 64,
+        "pag": 448
+      },
+      "disco_total": 30596349,
+      "disco_por_linha": 1529.8,
+      "controle_do_comparador": {
+        "rowid_usado": 1,
+        "acusou": {
+          "escalar": [
+            "cidade"
+          ],
+          "decimal": [
+            "saldo"
+          ],
+          "um_byte_do_blob": [
+            "foto"
+          ],
+          "ultimo_char_do_memo": [
+            "observacao"
+          ],
+          "sem_estrago": []
+        }
+      },
+      "coluna_com_padrao": {
+        "slots_reescritos": 20000,
+        "ms": 23.691,
+        "indices_refeitos": false,
+        "nas_linhas_que_ja_existiam": [
+          "ativo",
+          "ativo"
+        ],
+        "na_linha_inserida_depois": null
+      }
+    },
+    "largo": {
+      "carga_s": 4.173,
+      "carga_s_2": 2.343,
+      "carga_ms_servidor": 3148.0,
+      "carga_ms_servidor_2": 2119.0,
+      "linhas_por_s": 4793,
+      "linhas_por_s_2": 8536,
+      "linhas_por_s_servidor": 6353,
+      "linhas_por_s_servidor_2": 9438,
+      "fio_enviado": 27680762,
+      "fio_recebido": 1013,
+      "fio_por_linha": 1384.1,
+      "leitura": {
+        "s": 0.5362269799952628,
+        "paginas": 10,
+        "linhas_lidas": 20000,
+        "enviados": 1192,
+        "recebidos": 27855334,
+        "divergentes": 0,
+        "amostra_divergente": []
+      },
+      "registros_verificados": 20000,
+      "disco": {
+        "reg": 27121024,
+        "ndx": 7262208,
+        "bin": 64,
+        "memo": 64,
+        "log": 880064,
+        "trash": 64,
+        "reason": 64,
+        "pag": 450
+      },
+      "disco_total": 35264002,
+      "disco_por_linha": 1763.2,
+      "controle_do_comparador": {
+        "rowid_usado": 1,
+        "acusou": {
+          "escalar": [
+            "cidade"
+          ],
+          "decimal": [
+            "saldo"
+          ],
+          "um_byte_do_blob": [
+            "foto"
+          ],
+          "ultimo_char_do_memo": [
+            "observacao"
+          ],
+          "sem_estrago": []
+        }
+      },
+      "coluna_com_padrao": {
+        "slots_reescritos": 20000,
+        "ms": 141.014,
+        "indices_refeitos": false,
+        "nas_linhas_que_ja_existiam": [
+          "ativo",
+          "ativo"
+        ],
+        "na_linha_inserida_depois": null
+      }
+    }
+  },
+  "esta_medindo_antes": false,
+  "esta_medindo_quem_antes": "",
+  "colunas_declaradas": {
+    "sem": 10,
+    "com": 12,
+    "largo": 12
+  },
+  "colunas_no_esquema": {
+    "sem": 12,
+    "com": 14,
+    "largo": 14
+  },
+  "indices_no_esquema": {
+    "sem": 5,
+    "com": 5,
+    "largo": 5
+  },
+  "cidades": 8,
+  "categorias": 50,
+  "ordem_de_carga": [
+    "sem",
+    "com",
+    "largo",
+    "r2sem",
+    "r2com",
+    "r2largo"
+  ],
+  "portao": {
+    "cargas": {
+      "antes": false,
+      "depois": false,
+      "publicavel": true,
+      "quem": ""
+    },
+    "chave_conferida": {
+      "antes": false,
+      "depois": false,
+      "publicavel": true,
+      "quem": ""
+    }
+  },
+  "integridade": {
+    "suave": "[SP000008] integridade referencial: categorias: esta linha tem filhas em com pela chave \"fk_categoria\". Nunca se apaga o registro pai que tem filhos -- apague as filhas antes",
+    "de_vez": "[SP000008] integridade referencial: categorias: esta linha tem filhas em com pela chave \"fk_categoria\". Nunca se apaga o registro pai que tem filhos -- apague as filhas antes",
+    "orfa": "[SP000008] integridade referencial: fk_categoria: nao existe categorias(id) com esse valor",
+    "codigo_repetido": "[SP000020] chave duplicada: indice unico porCodigo ja tem essa chave",
+    "controle_sem_filhas": true
+  },
+  "chave_conferida": {
+    "com_fk": [
+      {
+        "parede_s": 2.315,
+        "motor_s": 2.087
+      },
+      {
+        "parede_s": 2.254,
+        "motor_s": 2.039
+      },
+      {
+        "parede_s": 2.267,
+        "motor_s": 2.051
+      }
+    ],
+    "sem_fk": [
+      {
+        "parede_s": 0.878,
+        "motor_s": 0.651
+      },
+      {
+        "parede_s": 0.86,
+        "motor_s": 0.635
+      },
+      {
+        "parede_s": 0.868,
+        "motor_s": 0.639
+      }
+    ]
+  },
+  "fsync": {
+    "linhas_do_lote": 500,
+    "regime": "por_operacao",
+    "por_lado": {
+      "sem": {
+        "um_lote_de_500": {
+          "trash": 1,
+          "bin": 1,
+          "memo": 1,
+          "log": 1,
+          "reason": 1,
+          "ndx": 2,
+          "reg": 1
+        },
+        "uma_linha": {
+          "trash": 1,
+          "bin": 1,
+          "memo": 1,
+          "log": 1,
+          "reason": 1,
+          "ndx": 2,
+          "reg": 1
+        }
+      },
+      "com": {
+        "um_lote_de_500": {
+          "trash": 1,
+          "bin": 1,
+          "memo": 1,
+          "log": 1,
+          "reason": 1,
+          "ndx": 2,
+          "reg": 1
+        },
+        "uma_linha": {
+          "trash": 1,
+          "bin": 1,
+          "memo": 1,
+          "log": 1,
+          "reason": 1,
+          "ndx": 2,
+          "reg": 1
+        }
+      },
+      "largo": {
+        "um_lote_de_500": {
+          "trash": 1,
+          "bin": 1,
+          "memo": 1,
+          "log": 1,
+          "reason": 1,
+          "ndx": 2,
+          "reg": 1
+        },
+        "uma_linha": {
+          "trash": 1,
+          "bin": 1,
+          "memo": 1,
+          "log": 1,
+          "reason": 1,
+          "ndx": 2,
+          "reg": 1
+        }
+      }
+    }
+  },
+  "esta_medindo_depois": false,
+  "esta_medindo_quem_depois": "",
+  "tempo_publicavel": true,
+  "corrida_inteira_limpa": true,
+  "versao": "phxsqld 0.18.0 (1cff41c6e3be-sujo) x86_64-unknown-linux-gnu"
+}

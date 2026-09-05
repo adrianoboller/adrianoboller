@@ -3162,4 +3162,57 @@ pub fn limpar() {
         "caem": ["quem_le_de_fora_nunca_pega_o_pag_pela_metade"],
         "seguem": [],
     },
+    {
+        "id": "pagina-anterior-de-um-em-um",
+        "titulo": "a página anterior anda de um em um pelo vazio entre baldes — e ali o `ler` cru RECUSA em vez de dizer «vazio»",
+        "porque": "*Conserto entra no caminho que o motivou, e o caminho IRMAO fica.* "
+                  "O `pagina_depois_de` nasceu sabendo saltar o vazio entre baldes "
+                  "(pelo `proximo_ativo`); o `pagina_antes_de` ficou com o laco de "
+                  "um em um e o `ler` cru. Na alfanumerica o slot alem do `usados` "
+                  "do balde NAO EXISTE, e `conferir_faixa` devolve `NaoEncontrado` "
+                  "-- entao o efeito nao era lentidao, era recusa. Pela porta de "
+                  "dados o `varrer` monta o `ha_antes` com essa funcao, e toda "
+                  "pagina que comecasse no primeiro slot de um balde voltava "
+                  "«rowid N nao existe» no lugar das linhas. Os 16 testes de "
+                  "`alfanumerica.rs` provavam a ida; nenhum provava a volta.",
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        let mut ate = cursor - 1;
+        while let Some((id, payload)) = self.reg.anterior_ativo(ate)? {
+            if self.visivel(id, Some(&payload), visao)? {
+                saida.push(id);
+                if limite > 0 && saida.len() as u64 >= limite {
+                    break;
+                }
+            }
+            if id == 1 {
+                break;
+            }
+            ate = id - 1;
+        }""",
+        "troca": """        // DEFEITO REPOSTO: o laco de tras para a frente de um em um, com o
+        // `ler` cru. Na alfanumerica o slot alem do `usados` do balde nao
+        // existe, e o `ler` responde `NaoEncontrado` em vez de `None`.
+        let mut rowid = cursor - 1;
+        while rowid >= 1 {
+            if let Some(payload) = self.reg.ler(rowid)? {
+                if self.visivel(rowid, Some(&payload), visao)? {
+                    saida.push(rowid);
+                    if limite > 0 && saida.len() as u64 >= limite {
+                        break;
+                    }
+                }
+            }
+            if rowid == 1 {
+                break;
+            }
+            rowid -= 1;
+        }""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "alfanumerica"],
+        "prazo": 420,
+        "caem": ["a_pagina_anterior_atravessa_o_vazio_entre_baldes"],
+        "seguem": ["a_varredura_salta_os_vazios_entre_baldes",
+                   "a_ordem_de_digitacao_esta_no_rownum",
+                   "achar_pelo_numero_de_ordem_continua_certo_com_baldes"],
+    },
 ]

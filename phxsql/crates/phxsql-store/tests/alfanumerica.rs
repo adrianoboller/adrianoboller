@@ -5,7 +5,8 @@
 //! 1. a linha vai para o ARQUIVO da letra dela, e o nome do arquivo é a letra;
 //! 2. o endereço continua saindo de uma conta — ler não mudou em nada;
 //! 3. a ordem de digitação global não se perdeu: ela está no `rownum`;
-//! 4. a varredura salta os vazios entre baldes em vez de andar por eles;
+//! 4. a varredura salta os vazios entre baldes em vez de andar por eles —
+//!    para a frente E para trás, que é o irmão que ficou de fora primeiro;
 //! 5. alterar a coluna de referência é RECUSADO, porque o balde é o endereço.
 
 #[allow(dead_code, reason = "o modulo comum serve a varios testes")]
@@ -186,6 +187,59 @@ fn a_varredura_salta_os_vazios_entre_baldes() {
     assert_eq!(p, vec![1, 25_000_001]);
     let q = t.pagina_depois_de(25_000_001, 2, Visao::Ativas).unwrap();
     assert_eq!(q, vec![36_000_001]);
+}
+
+/// O IRMÃO da varredura para a frente, e ele tinha ficado.
+///
+/// `pagina_depois_de` sabe saltar o vazio entre baldes desde o primeiro dia,
+/// porque anda pelo `proximo_ativo`. A página ANTERIOR andava de um em um com
+/// o `ler` cru — e na alfanumérica o slot além do `usados` do balde não
+/// devolve «vazio»: devolve ERRO, porque ele não existe.
+///
+/// O efeito não era lentidão, era recusa: pela porta de dados o `varrer` monta
+/// o campo `ha_antes` com esta função, então **toda página que começasse no
+/// primeiro slot de um balde** voltava `NAO_ENCONTRADO` em vez de linhas —
+/// e a página 1 também, quando o balde `_A` estava vazio. Achado exercitando
+/// o `varrer` por soquete (`bancada/utilizacao-padrao/`), não lendo o código:
+/// os 33 testes daqui provavam a ida, e nenhum provava a volta.
+#[test]
+fn a_pagina_anterior_atravessa_o_vazio_entre_baldes() {
+    let dir = DirTemp::novo("anterior");
+    // Teto altíssimo de propósito: entre um balde e o outro há quase um milhão
+    // de slots que nunca existiram. Andar por eles não terminaria; ler o
+    // primeiro deles reprova.
+    let mut t = Table::criar(&dir.0, esquema(1_000_000)).unwrap();
+    t.inserir(&linha(1, "Adriano")).unwrap();
+    t.inserir(&linha(2, "Mendes")).unwrap();
+    t.inserir(&linha(3, "Zeus")).unwrap();
+    let (adriano, mendes, zeus) = (1, 12_000_001, 25_000_001);
+
+    // Uma antes de Zeus é a Mendes, treze baldes atrás.
+    assert_eq!(
+        t.pagina_antes_de(zeus, 1, Visao::Ativas).unwrap(),
+        vec![mendes]
+    );
+    // E a página inteira sai na ordem dos baldes, como a de ir.
+    assert_eq!(
+        t.pagina_antes_de(zeus, 10, Visao::Ativas).unwrap(),
+        vec![adriano, mendes]
+    );
+    // Perguntar o que vem antes do primeiro não é erro: é uma lista vazia.
+    assert!(t
+        .pagina_antes_de(adriano, 1, Visao::Ativas)
+        .unwrap()
+        .is_empty());
+
+    // O balde _A vazio é o caso que quebrava a PÁGINA 1: o primeiro rowid da
+    // tabela deixa de ser 1, e `ha_antes` passa a perguntar por um slot que
+    // não existe.
+    let dir2 = DirTemp::novo("anterior-sem-a");
+    let mut u = Table::criar(&dir2.0, esquema(1_000_000)).unwrap();
+    u.inserir(&linha(1, "Bruno")).unwrap();
+    assert!(u
+        .pagina_antes_de(1_000_001, 1, Visao::Ativas)
+        .unwrap()
+        .is_empty());
 }
 
 /// Mudar a coluna de referência mudaria o arquivo em que a linha mora, e com

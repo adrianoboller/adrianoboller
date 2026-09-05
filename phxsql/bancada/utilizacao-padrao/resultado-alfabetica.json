@@ -1,0 +1,379 @@
+{
+  "afirmacoes": [
+    {
+      "chave": "o_nome_do_arquivo_e_a_letra",
+      "frase": "cada balde ocupado vira `porletra_<letra>.reg` no disco",
+      "esperado": [
+        "0",
+        "A",
+        "B",
+        "C",
+        "E",
+        "M",
+        "Outros",
+        "S",
+        "Z"
+      ],
+      "medido": [
+        "0",
+        "A",
+        "B",
+        "C",
+        "E",
+        "M",
+        "Outros",
+        "S",
+        "Z"
+      ],
+      "ok": true,
+      "controle": "o mesmo listador nao acha `_Q` nem `_X`, que nao receberam linha: []",
+      "nota": null
+    },
+    {
+      "chave": "balde_vazio_nao_ganha_arquivo",
+      "frase": "letra que nunca recebeu linha nao cria arquivo vazio",
+      "esperado": [],
+      "medido": [],
+      "ok": true,
+      "controle": "na mesma listagem, `A` e `Z` aparecem: ['A', 'Z']",
+      "nota": null
+    },
+    {
+      "chave": "acento_cai_na_letra_sem_acento",
+      "frase": "«Álvaro» e «Alvaro» vao para o MESMO arquivo (`_A`), e «Çelik» para o `_C`, e «Éder» para o `_E`",
+      "esperado": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "medido": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "ok": true,
+      "controle": "o mesmo endereco poe «Bruno» em 1001..2000 (balde B): True",
+      "nota": null
+    },
+    {
+      "chave": "digito_tem_balde_proprio_nao_e_Outros",
+      "frase": "«0800» NAO cai em Outros: os dez algarismos tem balde proprio, e o arquivo se chama `porletra_0.reg`",
+      "esperado": true,
+      "medido": true,
+      "ok": true,
+      "controle": "na mesma corrida, `#etc` cai em Outros (36001..37000): True",
+      "nota": null
+    },
+    {
+      "chave": "outros_recebe_o_que_nao_e_letra_nem_algarismo",
+      "frase": "`#etc`, vazio, so espacos e `日本` vao todos para `_Outros`",
+      "esperado": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "medido": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "ok": true,
+      "controle": "e o mesmo criterio deixa `Mendes` fora de Outros: True",
+      "nota": null
+    },
+    {
+      "chave": "a_ordem_de_digitacao_esta_no_rownum",
+      "frase": "o `rownum` de cada linha e a posicao em que ela foi DIGITADA, e nao a posicao dela no arquivo",
+      "esperado": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "medido": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "ok": true,
+      "controle": "na mesma corrida os rowids NAO sao crescentes na ordem de digitacao (o primeiro digitado tem rowid 18001 e o segundo tem 1)",
+      "nota": null
+    },
+    {
+      "chave": "a_varredura_sai_em_ordem_de_balde",
+      "frase": "a leitura sai na ordem dos baldes (alfabetica), que e outra ordem que a de digitacao",
+      "esperado": [
+        1,
+        2,
+        3,
+        1001,
+        2001,
+        4001,
+        12001,
+        18001,
+        25001,
+        26001,
+        36001,
+        36002,
+        36003,
+        36004
+      ],
+      "medido": [
+        1,
+        2,
+        3,
+        1001,
+        2001,
+        4001,
+        12001,
+        18001,
+        25001,
+        26001,
+        36001,
+        36002,
+        36003,
+        36004
+      ],
+      "ok": true,
+      "controle": "e o `rownum` da mesma lista sai fora de ordem: [2, 5, 6, 4, 12, 13]",
+      "nota": null
+    },
+    {
+      "chave": "a_varredura_salta_os_vazios_entre_baldes",
+      "frase": "com 1.000.000 de slots por balde, a varredura devolve as tres linhas pelos enderecos calculados, sem andar pelos 25 milhoes de slots vazios",
+      "esperado": [
+        1,
+        12000001,
+        25000001
+      ],
+      "medido": [
+        1,
+        12000001,
+        25000001
+      ],
+      "ok": true,
+      "controle": "terminou em 0.014 s; andar de um em um seriam 25.000.000 de leituras, que nao cabem em segundo nenhum (este e o UNICO numero de tempo desta prova, e ele e um limite, nao um desempenho)",
+      "nota": null
+    },
+    {
+      "chave": "a_pagina_anterior_atravessa_os_mesmos_vazios",
+      "frase": "pedir a pagina ANTERIOR a Zeus atravessa os mesmos vazios e devolve Adriano e Mendes",
+      "esperado": [
+        1,
+        12000001
+      ],
+      "medido": [
+        1,
+        12000001
+      ],
+      "ok": true,
+      "controle": "e perguntar o que vem antes da primeira linha devolve lista vazia, e nao erro: 0 linha(s)",
+      "nota": null
+    },
+    {
+      "chave": "a_pagina_2_atravessa_balde",
+      "frase": "paginar de tres em tres com `pular`/`max` devolve exatamente a mesma lista da varredura inteira, atravessando os baldes",
+      "esperado": [
+        1,
+        2,
+        3,
+        1001,
+        2001,
+        4001,
+        12001,
+        18001,
+        25001,
+        26001,
+        36001,
+        36002,
+        36003,
+        36004
+      ],
+      "medido": [
+        1,
+        2,
+        3,
+        1001,
+        2001,
+        4001,
+        12001,
+        18001,
+        25001,
+        26001,
+        36001,
+        36002,
+        36003,
+        36004
+      ],
+      "ok": true,
+      "controle": "4 das 5 paginas comecam no PRIMEIRO slot de um balde -- que e o caso que voltava «rowid N nao existe» antes do conserto",
+      "nota": null
+    },
+    {
+      "chave": "na_alfanumerica_o_pular_anda",
+      "frase": "a posicao NAO e o `rownum` aqui, entao o `pular` anda em vez de bissetar -- e a resposta diz isso",
+      "esperado": [
+        "passo"
+      ],
+      "medido": [
+        "passo"
+      ],
+      "ok": true,
+      "controle": "numa tabela sem particao por letra o mesmo campo diz «bisseccao»; aqui bissetar devolveria a linha errada em silencio, porque o `rownum` nao cresce com o rowid",
+      "nota": null
+    },
+    {
+      "chave": "o_cursor_tambem_atravessa_balde",
+      "frase": "o cursor `depois`/`cursor_fim` percorre a tabela inteira atravessando os baldes",
+      "esperado": [
+        1,
+        2,
+        3,
+        1001,
+        2001,
+        4001,
+        12001,
+        18001,
+        25001,
+        26001,
+        36001,
+        36002,
+        36003,
+        36004
+      ],
+      "medido": [
+        1,
+        2,
+        3,
+        1001,
+        2001,
+        4001,
+        12001,
+        18001,
+        25001,
+        26001,
+        36001,
+        36002,
+        36003,
+        36004
+      ],
+      "ok": true,
+      "controle": "sao 5 paginas de 3 para 14 linhas",
+      "nota": null
+    },
+    {
+      "chave": "ha_antes_responde_em_toda_pagina",
+      "frase": "`ha_antes` responde em todas as paginas -- e e falso so na primeira",
+      "esperado": [
+        false,
+        true,
+        true,
+        true,
+        true
+      ],
+      "medido": [
+        false,
+        true,
+        true,
+        true,
+        true
+      ],
+      "ok": true,
+      "controle": "era exatamente este campo que derrubava a varredura: ele chama a pagina ANTERIOR para saber se ela existe",
+      "nota": null
+    },
+    {
+      "chave": "desde_rownum_acha_a_linha_certa",
+      "frase": "`desde_rownum` acha a linha cujo numero de ordem e o pedido, e nao a que estiver naquela posicao do arquivo",
+      "esperado": 2,
+      "medido": 2,
+      "ok": true,
+      "controle": "a linha de rownum 5 e 'Álvaro'",
+      "nota": null
+    },
+    {
+      "chave": "desde_rownum_continua_na_ordem_do_ARQUIVO",
+      "frase": "e o resto da pagina sai na ordem dos BALDES, nao na ordem de digitacao -- comportamento, e nao defeito: o `rownum` e o ponto de partida, e a leitura continua sendo a do arquivo",
+      "esperado": true,
+      "medido": true,
+      "ok": true,
+      "controle": "os numeros de ordem da pagina saem assim: [5, 6, 4, 12]",
+      "nota": null
+    },
+    {
+      "chave": "alterar_a_coluna_de_referencia_e_recusado",
+      "frase": "trocar «Silva» por «Andrade» muda o arquivo em que a linha mora, e a gravacao recusa",
+      "esperado": true,
+      "medido": true,
+      "ok": true,
+      "controle": "a recusa DIZ o que fazer: '[SP000018] esquema invalido: a alteracao mudaria o balde de S para A, e o balde e o endereco fisico da linha em porletra. Exclua e insira de novo: a linha nova nasce no balde certo, com outro rowid'",
+      "nota": null
+    },
+    {
+      "chave": "a_recusa_diz_o_caminho",
+      "frase": "e a mensagem manda excluir e inserir, em vez de so dizer «nao»",
+      "esperado": true,
+      "medido": true,
+      "ok": true,
+      "controle": null,
+      "nota": null
+    },
+    {
+      "chave": "alterar_dentro_do_mesmo_balde_passa",
+      "frase": "«Silva» -> «Silveira» fica no `_S` e e aceita",
+      "esperado": [
+        "Silveira",
+        18001
+      ],
+      "medido": [
+        "Silveira",
+        18001
+      ],
+      "ok": true,
+      "controle": "e o rowid nao mudou, que e o que a recusa acima protege",
+      "nota": null
+    }
+  ],
+  "n_afirmacoes": 18,
+  "falhas": 0,
+  "arquivos_no_disco": [
+    "0",
+    "A",
+    "B",
+    "C",
+    "E",
+    "M",
+    "Outros",
+    "S",
+    "Z"
+  ],
+  "segundos_do_salto": 0.014,
+  "esta_medindo": false,
+  "esta_medindo_quem": "",
+  "versao": "phxsqld 0.18.0 (1cff41c6e3be-sujo) x86_64-unknown-linux-gnu"
+}
