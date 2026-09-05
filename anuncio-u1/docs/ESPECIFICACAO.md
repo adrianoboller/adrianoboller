@@ -300,3 +300,23 @@ o Google Gemini). Quadros em `scratchpad/ref1/` e `ref2/`, folha em
 `scratchpad/folha_ref.png`. A paleta do cliente (preto/rosé) fica, mas o
 **movimento** segue esse gênero: tudo entra com um pequeno overshoot e
 assenta; câmera calma; nada corta seco fora das fotos.
+
+---
+
+# Revisão 4 (05/09) — ajustes do Adriano depois da prévia de 25 s
+
+1. **Entrada da caixa (beat 1):** gira rápido demais. Deixar **flutuante**:
+   giro lento (no máximo meia volta ao longo do beat inteiro, easing suave),
+   subida mais lenta, com um balanço sutil (bob em Z de poucos cm e
+   inclinação de 2 a 3 graus, senoidal lenta) que continua depois de parar,
+   como se pairasse.
+2. **Espuma:** flocos **branco‑amarelados**, "tipo cheetos": os *packing
+   peanuts* clássicos, alongados, em S ou em 8, superfície porosa, cor
+   creme‑amarela (`#F0E2B4` a `#E8D59A`), 3 a 5 cm.
+3. **Cabo de energia:** vem **reto**, na horizontal, alinhado com a normal da
+   tomada, de fora do quadro por trás/lado, não de baixo. Depois de
+   conectado, o cabo segue reto para fora do quadro com leve catenária.
+4. **Dizer que é o Snapmaker U1:** o nome aparece (a) como legenda fina ao
+   lado da impressora no momento‑herói (beat 2), "Snapmaker U1", com linha
+   indicadora, fade in/out; e (b) na cartela, como linha logo abaixo de
+   "EnginePrint": **Snapmaker U1**.
