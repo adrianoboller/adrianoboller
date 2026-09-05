@@ -2870,7 +2870,7 @@ function ligarEstrutura(db, tab) {
         formato:v => `${esc(v)}<span class="leg">${notaDoTipo(v)}</span>` },
       { campo:"nullable", titulo:txt("tela.col_obrig","obrig."),
         formato:v => v ? `<span class="pino nao">${esc(txt("tela.pino_nulo_ok","nulo ok"))}</span>`
-                       : `<span class="pino ok">not null</span>` },
+                       : `<span class="pino ok">${esc(txt("tela.pino_not_null","não nulo"))}</span>` },
       { campo:"__ext", titulo:txt("tela.col_onde_mora","onde mora"),
         formato:(_, l) => `<span class="pino ${extDe(l.tipo)}">.${extDe(l.tipo)}</span>` },
       // LGPD e o unico campo que GRAVA a partir da grade -- e por isso nao
@@ -3240,8 +3240,9 @@ function ligarConteudo() {
       try { await api("excluir", { database: db, tabela: tab, rowid: +rowid }); }
       catch { falhou++; }
     }
-    avisar(falhou ? `${ids.length - falhou} excluída(s), ${falhou} falhou(ram)`
-                  : `${ids.length} linha(s) marcada(s) como excluída(s)`, !!falhou);
+    avisar(falhou
+      ? preencher(txt("tela.g_excluidas_com_falhas","{ok} excluída(s), {falhou} falhou(ram)"), {ok: ids.length - falhou, falhou})
+      : preencher(txt("tela.g_linhas_marcadas_excluidas","{n} linha(s) marcada(s) como excluída(s)"), {n: ids.length}), !!falhou);
     est.grade.limparSelecao();
     desenharAba();
   };
@@ -3250,9 +3251,8 @@ function ligarConteudo() {
 async function vIndices(database, tabela_) {
   const e = await api("esquema", { database, tabela:tabela_ });
   est.indicesAtual = e.indices || [];
-  return `<div class="aviso">Todos os índices moram no mesmo <code>.ndx</code>.
-    Ele é o único arquivo que <b>não</b> pagina: é uma B+tree por índice sobre a
-    tabela inteira, e partir o arquivo partiria a árvore.</div>
+  return `<div class="aviso">${marcado(txt("tela.ix_todos_no_ndx","Todos os índices moram no mesmo `.ndx`."))}
+    ${marcado(txt("tela.ix_nao_pagina","Ele é o único arquivo que **não** pagina: é uma B+tree por índice sobre a tabela inteira, e partir o arquivo partiria a árvore."))}</div>
     <div id="gradeAbaIndices"></div>`;
 }
 
@@ -3288,8 +3288,7 @@ function ligarIndices() {
 async function vDiario(database, tabela_) {
   const d = await api("diario", { database, tabela:tabela_, max:200 });
   est.diarioAtual = d.eventos || [];
-  return `<div class="ferramentas"><span class="conta">${d.total} eventos no
-      <code>.log</code></span></div>
+  return `<div class="ferramentas"><span class="conta">${marcado(txt("tela.di_eventos_no_log","{n} eventos no `.log`"), {n: d.total})}</span></div>
     <div id="gradeAbaDiario"></div>`;
 }
 
@@ -3319,15 +3318,14 @@ async function vIntegridade(database, tabela_) {
   const v = await api("verificar", { database, tabela:tabela_ });
   est.integridadeAtual = { indices: Object.entries(v.indices || {}), registros: v.registros };
   const vol = v.volumes || {};
-  let h = `<div class="aviso"><b>Íntegra.</b> Conferidos o CRC de cada registro,
-    de cada página de índice, de cada bloco externo e de cada evento do diário —
-    e se a contagem de chaves de cada índice bate com a de registros vivos.</div>`;
+  let h = `<div class="aviso">${marcado(txt("tela.ig_integra","**Íntegra.** Conferidos o CRC de cada registro, de cada página de índice, de cada bloco externo e de cada evento do diário —"))}
+    ${marcado(txt("tela.ig_integra_bate","e se a contagem de chaves de cada índice bate com a de registros vivos."))}</div>`;
   h += `<div class="fichas">${[
       ["registros",v.registros],["slots",v.slots],["eventos",v.eventos],
       [".reg",vol.reg],[".bin",vol.bin],[".memo",vol.memo],[".log",vol.log]
     ].map(([r,x]) => `<div class="ficha"><div class="v">${esc(x)}</div>
       <div class="r">${r==="registros"||r==="slots"||r==="eventos"?r:r+" volumes"}</div></div>`).join("")}</div>`;
-  h += `<h3>Índices conferidos</h3><div id="gradeAbaIntegridade"></div>`;
+  h += `<h3>${esc(txt("tela.ig_indices_conferidos_titulo","Índices conferidos"))}</h3><div id="gradeAbaIntegridade"></div>`;
   return h;
 }
 
@@ -3438,14 +3436,14 @@ function areaHoras(serie, recusadas, largura = 1180) {
      <text x="${L - 12}" y="${(py(teto * f) - 4).toFixed(1)}" text-anchor="end" font-size="10"
            fill="currentColor" opacity=".45">${fmt(Math.round(teto * f))}</text>`).join("");
   return `<svg viewBox="0 0 ${L} ${A}" role="img"
-    aria-label="Operações por hora nas últimas 24 horas, com as recusadas destacadas">
+    aria-label="${esc(txt("tela.pa_ops_hora_aria","Operações por hora nas últimas 24 horas, com as recusadas destacadas"))}">
     ${grade}
     <line x1="12" y1="${base}" x2="${L - 12}" y2="${base}" stroke="currentColor" stroke-width="1" opacity=".25"/>
     <polygon points="${area}" fill="var(--laranja)" opacity=".16"/>
     <polyline points="${linha}" fill="none" stroke="var(--laranja)" stroke-width="2"
               stroke-linejoin="round" stroke-linecap="round"/>
     ${barrasRec}
-    <text x="12" y="${topo - 4}" font-size="11" fill="currentColor" opacity=".55">operações por hora</text>
+    <text x="12" y="${topo - 4}" font-size="11" fill="currentColor" opacity=".55">${esc(txt("tela.pa_operacoes_por_hora","operações por hora"))}</text>
     ${marcas}
   </svg>`;
 }
@@ -3481,12 +3479,12 @@ function anel(fatias) {
   // texto em SVG que cresce com o cartao e o regime de escala que esta rodada
   // veio acabar.
   return `<svg class="anel" viewBox="0 0 320 ${Math.max(145, 34 + fatias.length * 21)}" role="img"
-    aria-label="Composição: ${fatias.map(f => f.nome + " " + f.valor).join(", ")}">
+    aria-label="${esc(preencher(txt("tela.pa_composicao_aria","Composição: {lista}"), {lista: fatias.map(f => f.nome + " " + f.valor).join(", ")}))}">
     ${arcos}
     <text x="${cx}" y="${cy + 1}" text-anchor="middle" font-size="20" font-weight="700"
           fill="currentColor">${total}</text>
     <text x="${cx}" y="${cy + 16}" text-anchor="middle" font-size="9.5"
-          fill="currentColor" opacity=".55">TOTAL</text>
+          fill="currentColor" opacity=".55">${esc(txt("tela.pa_total","TOTAL"))}</text>
     ${legenda}
   </svg>`;
 }
@@ -3552,7 +3550,7 @@ function barrasCheias(itens) {
       <span class="dsk-nome">${esc(it.nome)}</span>
       <span class="dsk-val">${esc(it.texto)}</span>
       <div class="dsk-trilha" role="img"
-           aria-label="${esc(it.nome)}: ${p.toFixed(0)}% ocupado, ${esc(it.texto)}">
+           aria-label="${esc(preencher(txt("tela.pa_disco_ocupado_aria","{nome}: {p}% ocupado, {texto}"), {nome: it.nome, p: p.toFixed(0), texto: it.texto}))}"
         <i style="width:${Math.max(1.5, p).toFixed(1)}%;background:${cor}"></i>
       </div>
     </div>`;
@@ -3886,8 +3884,7 @@ async function abrirAdmin(qual) {
         "toda tentativa entra, inclusive as recusadas");
       const a = await api("acessos", { max:200 });
       if (!aindaEMinha()) return;
-      p.innerHTML = `<div class="ferramentas"><span class="conta">${a.total}
-          registros no <code>acessos.log</code></span></div>
+      p.innerHTML = `<div class="ferramentas"><span class="conta">${marcado(txt("tela.ac_registros_no_log","{n} registros no `acessos.log`"), {n: a.total})}</span></div>
         <div id="gradeAdmAcessos"></div>`;
       PhxGrid.criar("#gradeAdmAcessos", {
         agrupavel: true, buscaGlobal: true, filterRow: true,
@@ -3899,8 +3896,8 @@ async function abrirAdmin(qual) {
           { campo:"op", titulo:txt("tela.col_operacao","operação") },
           { campo:"usuario", titulo:txt("tela.col_usuario","usuário"), formato:v => esc(v || "—") },
           { campo:"ok", titulo:txt("tela.col_resultado","resultado"),
-            formato:(v, x) => v ? `<span class="pino ok">ok</span>`
-                                 : `<span class="pino mal">${esc(x.erro || "negado")}</span>` },
+            formato:(v, x) => v ? `<span class="pino ok">${esc(txt("tela.ac_ok","ok"))}</span>`
+                                 : `<span class="pino mal">${esc(x.erro || txt("tela.ac_negado","negado"))}</span>` },
           { campo:"ms", titulo:txt("tela.col_ms","ms"), tipo:"numero" },
         ],
         dados: a.acessos,
@@ -3928,57 +3925,56 @@ async function abrirAdmin(qual) {
       // A política EM VIGOR, lida do servidor — e não o que alguém lembra de
       // ter configurado. Muda no config.json, com reinício.
       const politicaHtml = `<div class="aviso">
-          <b>Política do bloco <code>seguranca</code></b> (muda no
-          <code>config.json</code>, exige reinício) ·
-          comandos proibidos: ${(pol.comandos_proibidos||[]).map(chip).join(" ") || "<i>nenhum</i>"} ·
-          bases proibidas: ${(pol.bases_proibidas||[]).map(chip).join(" ") || "<i>nenhuma</i>"} ·
-          violação grave bloqueia na tentativa
+          <b>${marcado(txt("tela.bl_politica_bloco","Política do bloco `seguranca`"))}</b>
+          ${marcado(txt("tela.bl_muda_no_config","(muda no `config.json`, exige reinício)"))} ·
+          ${esc(txt("tela.bl_comandos_proibidos","comandos proibidos:"))} ${(pol.comandos_proibidos||[]).map(chip).join(" ") || `<i>${esc(txt("tela.bl_nenhum","nenhum"))}</i>`} ·
+          ${esc(txt("tela.bl_bases_proibidas","bases proibidas:"))} ${(pol.bases_proibidas||[]).map(chip).join(" ") || `<i>${esc(txt("tela.bl_nenhuma","nenhuma"))}</i>`} ·
+          ${esc(txt("tela.bl_violacao_grave","violação grave bloqueia na tentativa"))}
           <b>${esc(String(pol.tentativas_para_bloqueio ?? 1))}</b> ·
-          leves (token/senha) na <b>${esc(String(pol.tentativas_ate_bloquear ?? 5))}</b>
-          em ${esc(String(pol.janela_minutos ?? 10))} min ·
-          duração: <b>${pol.bloqueio_minutos === 0 ? "permanente até soltar"
-            : esc(String(pol.bloqueio_minutos ?? 60)) + " min"}</b> ·
-          firewall do sistema: ${pol.firewall
-            ? '<span class="pino ok">ligado</span>'
-            : '<span class="pino nao">desligado</span>'}
+          ${esc(txt("tela.bl_leves","leves (token/senha) na"))} <b>${esc(String(pol.tentativas_ate_bloquear ?? 5))}</b>
+          ${esc(preencher(txt("tela.bl_em_min","em {min} min"), {min: pol.janela_minutos ?? 10}))} ·
+          ${esc(txt("tela.bl_duracao","duração:"))} <b>${pol.bloqueio_minutos === 0 ? esc(txt("tela.bl_permanente","permanente até soltar"))
+            : esc(preencher(txt("tela.bl_min_sufixo","{n} min"), {n: pol.bloqueio_minutos ?? 60}))}</b> ·
+          ${esc(txt("tela.bl_firewall_sistema","firewall do sistema:"))} ${pol.firewall
+            ? `<span class="pino ok">${esc(txt("tela.g_estado_ligado","ligado"))}</span>`
+            : `<span class="pino nao">${esc(txt("tela.g_estado_desligado","desligado"))}</span>`}
         </div>`;
 
       // Lista vazia mostra UM recado, e não dois: uma grade vazia já diz
       // "nada aqui" sozinha, e os dois juntos só ocupam a tela dizendo o mesmo.
       const bloqueadosHtml = !b.ativos.length
-        ? `<div class="aviso">Nenhum IP bloqueado.</div>`
+        ? `<div class="aviso">${esc(txt("tela.bl_nenhum_ip_bloqueado","Nenhum IP bloqueado."))}</div>`
         : `<div id="gradeAdmBloqueios"></div>`;
 
       // Whitelist: a fixa do config só se lê; a editável grava no
       // blacklist.json — arquivo próprio, como dblink e jobs.
-      const whitelistHtml = `<h3 class="secao">Whitelist — nunca bloqueiam</h3>
-        <p class="leg">A recusa da operação proibida continua valendo; whitelist protege o
-           <b>acesso</b>, não dá poder. Aceita IP e faixa CIDR (<code>192.168.50.0/24</code>).</p>
-        <p class="leg">Fixa do <code>config.json</code>:
-           ${wlConfig.map(chip).join(" ") || "<i>vazia</i>"}</p>
+      const whitelistHtml = `<h3 class="secao">${esc(txt("tela.bl_whitelist_titulo","Whitelist — nunca bloqueiam"))}</h3>
+        <p class="leg">${marcado(txt("tela.bl_whitelist_p1","A recusa da operação proibida continua valendo; whitelist protege o **acesso**, não dá poder. Aceita IP e faixa CIDR (`192.168.50.0/24`)."))}</p>
+        <p class="leg">${marcado(txt("tela.bl_fixa_config","Fixa do `config.json`:"))}
+           ${wlConfig.map(chip).join(" ") || `<i>${esc(txt("tela.bl_vazia","vazia"))}</i>`}</p>
         <div class="ficha-edit" style="max-width:28rem">
           <textarea id="wlEditavel" rows="4" spellcheck="false"
-            placeholder="um IP ou CIDR por linha">${esc(wlEditavel.join("\n"))}</textarea>
+            placeholder="${esc(txt("tela.bl_ph_ip_cidr","um IP ou CIDR por linha"))}">${esc(wlEditavel.join("\n"))}</textarea>
         </div>
         <div class="acoes">
-          <button class="botao alterar" id="btSalvarWl">Salvar whitelist</button>
-          <span class="leg">editável pela tela · vale na próxima conexão, sem reiniciar</span>
+          <button class="botao alterar" id="btSalvarWl">${esc(txt("tela.bl_salvar_whitelist","Salvar whitelist"))}</button>
+          <span class="leg">${esc(txt("tela.bl_editavel_pela_tela","editável pela tela · vale na próxima conexão, sem reiniciar"))}</span>
         </div>`;
 
       // Exportação: o servidor não roda como root e não mexe em iptables —
       // entrega o texto pronto para quem TEM o privilégio aplicar.
-      const exportarHtml = `<h3 class="secao">Exportar para o firewall do sistema</h3>
+      const exportarHtml = `<h3 class="secao">${esc(txt("tela.bl_exportar_firewall_titulo","Exportar para o firewall do sistema"))}</h3>
         <div class="acoes">
           <!-- width:auto porque o CSS global diz select{width:100%}, que é
                certo num formulário e aqui empurraria o botão para fora. -->
           <select id="fmtExport" style="width:auto;max-width:20rem">
-            <option value="texto">texto — um IP por linha</option>
+            <option value="texto">${esc(txt("tela.bl_opt_texto","texto — um IP por linha"))}</option>
             <option value="iptables">iptables / ip6tables</option>
             <option value="nftables">nftables</option>
             <option value="fail2ban">fail2ban</option>
           </select>
-          <button class="botao consultar" id="btExportar">Gerar</button>
-          <span class="leg">só os bloqueios ativos · docs/SEGURANCA.md mostra o comando de aplicar</span>
+          <button class="botao consultar" id="btExportar">${esc(txt("tela.gerar","Gerar"))}</button>
+          <span class="leg">${esc(txt("tela.bl_so_bloqueios_ativos","só os bloqueios ativos · docs/SEGURANCA.md mostra o comando de aplicar"))}</span>
         </div>
         <pre id="saidaExport" class="rolo" hidden style="user-select:all"></pre>`;
 
@@ -4004,7 +4000,7 @@ async function abrirAdmin(qual) {
                              : `<span class="pino nao">${esc(txt("tela.pino_so_servidor","só no servidor"))}</span>` },
             { campo:"__soltar", titulo:"", ordenavel:false, filtravel:false,
               formato:(_, x) => `<button class="botao mini excluir soltar-ip" data-ip="${esc(x.ip)}"
-                title="tira ${esc(x.ip)} da lista de bloqueio de vez">soltar</button>` },
+                title="${esc(preencher(txt("tela.bl_tira_da_lista","tira {ip} da lista de bloqueio de vez"), {ip: x.ip}))}">${esc(txt("tela.bl_soltar","soltar"))}</button>` },
           ],
           dados: b.ativos,
           pagina: { tamanho: 100, opcoes: [50, 100, 200] },
@@ -4030,7 +4026,7 @@ async function abrirAdmin(qual) {
         try {
           const r = await api("bloqueios_exportar", { formato: $("#fmtExport").value });
           const saida = $("#saidaExport");
-          saida.textContent = r.texto || "(nenhum bloqueio ativo)";
+          saida.textContent = r.texto || txt("tela.bl_nenhum_bloqueio_ativo","(nenhum bloqueio ativo)");
           saida.hidden = false;
         } catch (e) { avisar(String(e), true); }
       };
@@ -4069,7 +4065,7 @@ function viewDatabaseAtual() {
 
 async function verDatabase(db) {
   est.database = db;
-  folha(db, "as tabelas deste database · clique numa para ver e editar",
+  folha(db, txt("tela.st_tabelas_db_clique_editar","as tabelas deste database · clique numa para ver e editar"),
         `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
 
   const t = await api("tabelas", { database: db });
@@ -4087,9 +4083,9 @@ async function verDatabase(db) {
     }
   }));
 
-  folha(db, `${nomes.length} ${nomes.length === 1 ? "tabela" : "tabelas"} · clique numa linha para ver e editar`,
+  folha(db, preencher(txt("tela.st_n_tabelas_clique_editar","{n} tabela(s) · clique numa linha para ver e editar"), {n: nomes.length}),
     nomes.length ? `<div id="gradeDb"></div>`
-      : `<div class="vazio">nenhuma tabela neste database</div>`);
+      : `<div class="vazio">${esc(txt("tela.db_nenhuma_tabela","nenhuma tabela neste database"))}</div>`);
 
   if (!nomes.length) return;
 
@@ -4106,7 +4102,7 @@ async function verDatabase(db) {
     colunas: [
       { campo:"nome", titulo:txt("tela.col_tabela","tabela"), fixa:"esq",
         formato:(v, l) => `<button class="botao mini consultar bt-db" data-tab="${esc(v)}"
-          ><b>${esc(v)}</b></button>${l.erro ? ' <span class="pino mal">ilegível</span>' : ""}` },
+          ><b>${esc(v)}</b></button>${l.erro ? ` <span class="pino mal">${esc(txt("tela.pino_ilegivel","ilegível"))}</span>` : ""}` },
       { campo:"registros", titulo:txt("tela.col_registros","registros"), tipo:"numero", agregador:"sum", formato:num },
       { campo:"slots", titulo:txt("tela.col_slots","slots"), tipo:"numero", agregador:"sum", formato:num },
       { campo:"colunas", titulo:txt("tela.col_colunas","colunas"), tipo:"numero", formato:num },
@@ -4188,36 +4184,36 @@ async function verConteudoEditavel(db, tab, verExcluidos = false, cursor = null)
   const pagina = Math.min(paginas, Math.max(1, (cursor && cursor.pagina) || 1));
 
   const barra = `<div class="acoes">
-      <button class="botao incluir" id="btNova">Nova linha</button>
+      <button class="botao incluir" id="btNova">${esc(txt("tela.ce_nova_linha","Nova linha"))}</button>
       <button class="botao secundario" id="btVoltarDb">← ${esc(db)}</button>
       <span class="chip-visao">
-        <button id="vwAtivas" class="${verExcluidos ? "" : "ativo"}">ativas</button>
-        <button id="vwExcl" class="marcadas ${verExcluidos ? "ativo" : ""}">excluídas</button>
+        <button id="vwAtivas" class="${verExcluidos ? "" : "ativo"}">${esc(txt("tela.ce_ativas","ativas"))}</button>
+        <button id="vwExcl" class="marcadas ${verExcluidos ? "ativo" : ""}">${esc(txt("tela.ce_excluidas","excluídas"))}</button>
       </span>
       <span class="paginar">
-        <button class="botao mini" id="pgInicio" ${r.ha_antes ? "" : "disabled"}>⏮ início</button>
-        <button class="botao mini" id="pgAntes" ${r.ha_antes ? "" : "disabled"}>← anterior</button>
-        <button class="botao mini" id="pgDepois" ${r.ha_mais ? "" : "disabled"}>próxima →</button>
-        <button class="botao mini" id="pgFim" ${paginas > 1 ? "" : "disabled"}>fim ⏭</button>
+        <button class="botao mini" id="pgInicio" ${r.ha_antes ? "" : "disabled"}>${esc(txt("tela.ce_pg_inicio","⏮ início"))}</button>
+        <button class="botao mini" id="pgAntes" ${r.ha_antes ? "" : "disabled"}>${esc(txt("tela.ce_pg_anterior","← anterior"))}</button>
+        <button class="botao mini" id="pgDepois" ${r.ha_mais ? "" : "disabled"}>${esc(txt("tela.ce_pg_proxima","próxima →"))}</button>
+        <button class="botao mini" id="pgFim" ${paginas > 1 ? "" : "disabled"}>${esc(txt("tela.ce_pg_fim","fim ⏭"))}</button>
         <input id="pgIr" class="campo-pagina" type="number" min="1" max="${paginas}"
-               value="${pagina}" title="ir para a página" ${paginas > 1 ? "" : "disabled"}>
-        <span class="leg">de ${fmt(paginas)}</span>
+               value="${pagina}" title="${esc(txt("tela.ce_ir_pagina","ir para a página"))}" ${paginas > 1 ? "" : "disabled"}>
+        <span class="leg">${esc(txt("tela.ce_de_visiveis","de"))} ${fmt(paginas)}</span>
       </span>
-      <span class="cores-acao" title="a mesma cor vale em toda tela">
-        <b><i style="background:var(--acao-incluir)"></i>incluir</b>
-        <b><i style="background:var(--acao-alterar)"></i>alterar</b>
-        <b><i style="background:var(--acao-marcar)"></i>marcar</b>
-        <b><i style="background:var(--acao-excluir)"></i>excluir de vez</b>
-        <b><i style="background:var(--acao-consultar)"></i>consultar</b>
+      <span class="cores-acao" title="${esc(txt("tela.ce_mesma_cor_toda_tela","a mesma cor vale em toda tela"))}">
+        <b><i style="background:var(--acao-incluir)"></i>${esc(txt("tela.acl_incluir","incluir"))}</b>
+        <b><i style="background:var(--acao-alterar)"></i>${esc(txt("tela.acl_alterar","alterar"))}</b>
+        <b><i style="background:var(--acao-marcar)"></i>${esc(txt("tela.acl_marcar","marcar"))}</b>
+        <b><i style="background:var(--acao-excluir)"></i>${esc(txt("tela.acl_excluir_de_vez","excluir de vez"))}</b>
+        <b><i style="background:var(--acao-consultar)"></i>${esc(txt("tela.acl_consultar","consultar"))}</b>
       </span>
       <span class="leg" title="${esc(COMO_PAGINOU[r.salto || r.modo] || "")}">${
-        fmt(r.devolvidas)} de ${fmt(r.visiveis ?? r.registros)} ·
+        fmt(r.devolvidas)} ${esc(txt("tela.ce_de_visiveis","de"))} ${fmt(r.visiveis ?? r.registros)} ·
         <b>${esc(NOME_DO_MODO[r.salto || r.modo] || r.modo)}</b></span>
     </div>`;
 
   const vazio = verExcluidos
-    ? `<div class="vazio">nenhuma linha marcada como excluída</div>`
-    : `<div class="vazio">tabela vazia</div>`;
+    ? `<div class="vazio">${esc(txt("tela.ce_nenhuma_excluida","nenhuma linha marcada como excluída"))}</div>`
+    : `<div class="vazio">${esc(txt("tela.ce_tabela_vazia","tabela vazia"))}</div>`;
 
   $("#painel").innerHTML = barra + (r.linhas.length ? `<div id="gradeEdit"></div>` : vazio);
 
@@ -4586,7 +4582,7 @@ async function gerirTabelas(db) {
     colunas: [
       { campo:"nome", titulo:txt("tela.col_tabela","tabela"), fixa:"esq",
         formato:(v, l) => `<button class="botao mini consultar bt-gt" data-tab="${esc(v)}"
-          ><b>${esc(v)}</b></button>${l.erro ? ' <span class="pino mal">ilegível</span>' : ""}` },
+          ><b>${esc(v)}</b></button>${l.erro ? ` <span class="pino mal">${esc(txt("tela.pino_ilegivel","ilegível"))}</span>` : ""}` },
       { campo:"registros", titulo:txt("tela.col_registros","registros"), tipo:"numero", agregador:"sum", formato:num },
       { campo:"slots", titulo:txt("tela.col_slots","slots"), tipo:"numero", agregador:"sum", formato:num },
       { campo:"colunas", titulo:txt("tela.col_colunas","colunas"), tipo:"numero", formato:num },
