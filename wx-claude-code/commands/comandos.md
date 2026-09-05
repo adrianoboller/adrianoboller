@@ -22,6 +22,10 @@ Se `$1` vier preenchido, filtre por essa palavra e mostre só o que casa; sem ar
 | `/wx-claude-code:log` | ver o registro das operações do plugin neste projeto |
 | `/wx-claude-code:estilo-telas` | qualidade de tela com o Impeccable, a partir do `DESIGN.md` |
 | `/wx-claude-code:golden` | golden master: comparar a saída do destino com a do legado |
+| `/wx-claude-code:constraints` | as restrições do projeto e o portão C-GATE (está conforme?) |
+| `/wx-claude-code:evidencia` | livro de evidências: o que foi provado, com estado e limite |
+| `/wx-claude-code:efeito` | conferir o efeito real de uma ação, não o código de saída dela |
+| `/wx-claude-code:contrato` | o contrato ativo: o que vale hoje, separado do histórico |
 | `/wx-claude-code:pmo` | sprints, Kanban, PDCA, relatório de onze seções, entrega |
 | `/wx-claude-code:equipe` | acionar um papel da equipe prioritária (zelador, pesquisador, documentador…) |
 | `/wx-claude-code:ambiente` | instalar e conferir o ambiente pedido na letra K |

@@ -838,6 +838,248 @@ class Questionario(unittest.TestCase):
                          "o golden master gravado nao bate com o legado; rode capturar-golden.php")
         self.assertGreaterEqual(len(agora["casos"]), 12)
 
+    def test_evidencia_recusa_afirmacao_sem_limite(self):
+        """A frase que falta e a que o leitor completa sozinho, para o lado
+        otimista: sem --nao-prova a evidencia nao entra."""
+        r = run(SCRIPTS / "evidencia.py", "--project-root", self.tmp, "registrar",
+                "--afirmacao", "o sistema está seguro", "--metodo", "revisao",
+                "--estado", "verificado", "--nao-prova", "")
+        self.assertEqual(r.returncode, 2, r.stdout)
+        self.assertIn("obrigatório", r.stderr)
+        self.assertFalse((self.tmp / ".wx-migration/evidencias").exists(), "nada pode ter sido gravado")
+
+    def test_evidencia_tem_quatro_estados_e_o_do_meio_e_o_que_importa(self):
+        """passou/falhou esconde o caso mais comum de migracao: 7 de 10 casos batem."""
+        rel = self.tmp / "comp.json"
+        casos = [{"id": f"C{i}", "regra": "R", "passou": i < 7} for i in range(10)]
+        rel.write_text(json.dumps({"total": 10, "passaram": 7, "casos": casos}), encoding="utf-8")
+        r = run(SCRIPTS / "evidencia.py", "--project-root", self.tmp, "--json", "do-golden", str(rel))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        f = json.loads(r.stdout)
+        self.assertEqual(f["estado"], "parcial")
+        self.assertEqual(f["medida"], "7/10")
+        self.assertIn("C7", f["nao_prova"], "os divergentes precisam estar escritos no limite")
+        # e os extremos continuam sendo os extremos
+        for passaram, esperado in ((10, "verificado"), (0, "falhou")):
+            rel.write_text(json.dumps({"total": 10, "passaram": passaram,
+                                       "casos": [{"id": f"C{i}", "passou": i < passaram} for i in range(10)]}), encoding="utf-8")
+            saida = json.loads(run(SCRIPTS / "evidencia.py", "--project-root", self.tmp, "--json", "do-golden", str(rel)).stdout)
+            self.assertEqual(saida["estado"], esperado)
+
+    def test_evidencia_vence_quando_o_arquivo_provado_muda(self):
+        """Prova de ontem sobre codigo de hoje nao e prova."""
+        alvo = self.tmp / "regra.rs"
+        alvo.write_text("fn a() {}", encoding="utf-8")
+        r = run(SCRIPTS / "evidencia.py", "--project-root", self.tmp, "registrar",
+                "--afirmacao", "a regra BR-001 está implementada", "--metodo", "teste",
+                "--estado", "verificado", "--assunto", "regra.rs",
+                "--nao-prova", "nada sobre as demais regras")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        antes = json.loads(run(SCRIPTS / "evidencia.py", "--project-root", self.tmp, "--json", "conferir").stdout)
+        self.assertEqual(antes["vencidas"], [])
+        alvo.write_text("fn a() { /* mexeram */ }", encoding="utf-8")
+        r2 = run(SCRIPTS / "evidencia.py", "--project-root", self.tmp, "--json", "conferir")
+        depois = json.loads(r2.stdout)
+        self.assertEqual(depois["vencidas"], ["EVID-0001"])
+        self.assertEqual(r2.returncode, 1, "conferir tem de sair 1 quando ha evidencia vencida")
+        # e o indice legivel conta a mesma historia
+        indice = (self.tmp / ".wx-migration/evidencias.md").read_text(encoding="utf-8")
+        self.assertIn("VENCIDA", indice)
+        self.assertIn("nada sobre as demais regras", indice)
+
+    def test_c_gate_nao_aprova_o_que_ninguem_conferiu(self):
+        """Portao que aprova o que nao conferiu e pior que portao nenhum:
+        restricao sem validador volta INCONCLUSIVA, nunca aprovada."""
+        cs = SCRIPTS / "constraints.py"
+        run(cs, "--project-root", self.tmp, "criar", "--titulo", "regra sem validador",
+            "--severidade", "grave")
+        run(cs, "--project-root", self.tmp, "criar", "--titulo", "regra que passa",
+            "--severidade", "bloqueante", "--validador", "true")
+        r = run(cs, "--project-root", self.tmp, "--json", "c-gate")
+        d = json.loads(r.stdout)
+        self.assertEqual(d["c_gate"], "APROVADO_COM_RESSALVA", d)
+        self.assertEqual(d["inconclusivas"], ["CONST-0001"])
+        self.assertEqual(r.returncode, 0, "inconclusiva sozinha nao reprova, mas aparece")
+        # bloqueante violada reprova e sai 1
+        run(cs, "--project-root", self.tmp, "criar", "--titulo", "regra que falha",
+            "--severidade", "bloqueante", "--validador", "false")
+        r2 = run(cs, "--project-root", self.tmp, "--json", "c-gate")
+        d2 = json.loads(r2.stdout)
+        self.assertEqual(d2["c_gate"], "REPROVADO")
+        self.assertEqual(d2["bloqueantes"], ["CONST-0003"])
+        self.assertEqual(r2.returncode, 1)
+
+    def test_c_gate_e_separado_do_f_gate(self):
+        """O ponto da separacao: tudo verde no funcional e ainda assim reprovado
+        na regra do projeto. Sem os dois portoes, isso passaria."""
+        cs = SCRIPTS / "constraints.py"
+        run(cs, "--project-root", self.tmp, "criar", "--titulo", "API pública não quebra compatibilidade",
+            "--severidade", "bloqueante", "--validador", "false", "--origem", "ADR-0021")
+        # F-GATE verde: o golden bate inteiro
+        rel = self.tmp / "comp.json"
+        rel.write_text(json.dumps({"total": 4, "passaram": 4,
+                                   "casos": [{"id": f"C{i}", "passou": True} for i in range(4)]}), encoding="utf-8")
+        f = json.loads(run(SCRIPTS / "evidencia.py", "--project-root", self.tmp, "--json", "do-golden", str(rel)).stdout)
+        self.assertEqual(f["estado"], "verificado", "F-GATE verde")
+        c = json.loads(run(cs, "--project-root", self.tmp, "--json", "c-gate").stdout)
+        self.assertEqual(c["c_gate"], "REPROVADO", "C-GATE reprova apesar do F-GATE verde")
+
+    def test_restricao_revogada_sai_do_portao_sem_sumir_do_historico(self):
+        cs = SCRIPTS / "constraints.py"
+        run(cs, "--project-root", self.tmp, "criar", "--titulo", "usar MySQL",
+            "--severidade", "bloqueante", "--validador", "false")
+        run(cs, "--project-root", self.tmp, "criar", "--titulo", "usar PhxSql",
+            "--severidade", "bloqueante", "--validador", "true")
+        r = run(cs, "--project-root", self.tmp, "revogar", "CONST-0001",
+                "--motivo", "decisão de banco mudou", "--por", "CONST-0002")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        d = json.loads(run(cs, "--project-root", self.tmp, "--json", "c-gate").stdout)
+        self.assertEqual(d["c_gate"], "APROVADO", "a revogada não pode mais reprovar")
+        itens = json.loads(run(cs, "--project-root", self.tmp, "--json", "listar").stdout)
+        revogada = next(c for c in itens if c["id"] == "CONST-0001")
+        self.assertEqual(revogada["estado"], "revogada")
+        self.assertEqual(revogada["supersede"], "CONST-0002")
+        self.assertIn("banco mudou", revogada["motivo_da_revogacao"], "o histórico fica")
+
+    def test_semear_propoe_mas_nao_grava_sem_pedir(self):
+        """Guarda nova entra pedida, nao imposta."""
+        cs = SCRIPTS / "constraints.py"
+        run(SCRIPTS / "aplicar_questionario.py", "--questionario",
+            self.tmp / ".wx-migration/questionario.json", "--project-root", self.tmp, "--plugin-root", RAIZ)
+        r = run(cs, "--project-root", self.tmp, "semear")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("nenhuma gravada", r.stdout)
+        self.assertFalse((self.tmp / ".wx-migration/constraints.json").exists())
+        r2 = run(cs, "--project-root", self.tmp, "semear", "--aplicar")
+        self.assertEqual(r2.returncode, 0, r2.stderr)
+        itens = json.loads(run(cs, "--project-root", self.tmp, "--json", "listar").stdout)
+        self.assertGreaterEqual(len(itens), 4)
+        self.assertTrue(any("segredo" in c["titulo"] for c in itens))
+        # rodar de novo nao duplica
+        run(cs, "--project-root", self.tmp, "semear", "--aplicar")
+        self.assertEqual(len(json.loads(run(cs, "--project-root", self.tmp, "--json", "listar").stdout)), len(itens))
+
+    def _projeto_aplicado(self):
+        run(SCRIPTS / "aplicar_questionario.py", "--questionario",
+            self.tmp / ".wx-migration/questionario.json", "--project-root", self.tmp, "--plugin-root", RAIZ)
+        d = self.tmp / ".wx-migration/decisoes"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "DEC-0001.md").write_text("# DEC-0001 — Banco\n- Status: superseded\n- Superada por: DEC-0003\n"
+                                       "- Decisão: usar MySQL 8\n", encoding="utf-8")
+        (d / "DEC-0003.md").write_text("# DEC-0003 — Banco\n- Status: approved\n"
+                                       "- Decisão: usar PostgreSQL 16\n", encoding="utf-8")
+        (d / "DEC-0004.md").write_text("# DEC-0004 — Relatórios\n- Status:\n"
+                                       "- Decisão: manter o gerador do legado\n", encoding="utf-8")
+
+    def test_contrato_separa_o_que_vale_hoje_do_historico(self):
+        """A decisao superada nao pode aparecer como vigente: e assim que um agente
+        usa MySQL tres sprints depois de o projeto ter mudado de banco."""
+        self._projeto_aplicado()
+        r = run(SCRIPTS / "contrato.py", "--project-root", self.tmp, "--json", "gerar")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        c = json.loads(r.stdout)
+        vigentes = [d["id"] for d in c["decisoes_vigentes"]]
+        self.assertEqual(vigentes, ["DEC-0003"])
+        self.assertEqual([d["id"] for d in c["decisoes_superadas"]], ["DEC-0001"])
+        md = (self.tmp / ".wx-migration/contrato-ativo.md").read_text(encoding="utf-8")
+        # a superada continua legivel, mas riscada e fora do bloco em vigor
+        em_vigor, superado = md.split("## Superado")
+        self.assertIn("DEC-0003", em_vigor)
+        self.assertNotIn("DEC-0001", em_vigor, "decisão superada não pode estar no bloco em vigor")
+        self.assertIn("DEC-0001", superado)
+        self.assertIn("MySQL", (self.tmp / ".wx-migration/decisoes/DEC-0001.md").read_text(encoding="utf-8"),
+                      "o histórico não se apaga")
+
+    def test_ficha_sem_status_nao_entra_no_contrato(self):
+        """Campo em branco nao e aprovacao."""
+        self._projeto_aplicado()
+        c = json.loads(run(SCRIPTS / "contrato.py", "--project-root", self.tmp, "--json", "gerar").stdout)
+        self.assertEqual([d["id"] for d in c["decisoes_indefinidas"]], ["DEC-0004"])
+        self.assertNotIn("DEC-0004", [d["id"] for d in c["decisoes_vigentes"]])
+        md = (self.tmp / ".wx-migration/contrato-ativo.md").read_text(encoding="utf-8")
+        self.assertIn("Pendências", md)
+
+    def test_contrato_avisa_quando_muda(self):
+        """E o que uma sessao nova pergunta antes de confiar no que leu ontem."""
+        self._projeto_aplicado()
+        run(SCRIPTS / "contrato.py", "--project-root", self.tmp, "gerar")
+        r = run(SCRIPTS / "contrato.py", "--project-root", self.tmp, "conferir")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        (self.tmp / ".wx-migration/decisoes/DEC-0005.md").write_text(
+            "# DEC-0005 — Fila\n- Status: approved\n- Decisão: usar NATS\n", encoding="utf-8")
+        r2 = run(SCRIPTS / "contrato.py", "--project-root", self.tmp, "conferir")
+        self.assertEqual(r2.returncode, 1)
+        self.assertIn("MUDOU", r2.stdout)
+
+    def test_papel_sem_declaracao_nao_muda_nada(self):
+        """O teste que importa numa guarda nova e o do comportamento VELHO:
+        quem nao declarou papel escreve como sempre escreveu."""
+        hook = RAIZ / "hooks/papel_da_sessao.py"
+        entrada = json.dumps({"tool_name": "Write", "tool_input": {"file_path": "src/api.rs"},
+                              "cwd": str(self.tmp)})
+        amb = {**os.environ}
+        amb.pop("WX_PAPEL", None)
+        r = subprocess.run([sys.executable, str(hook)], input=entrada, capture_output=True, text=True, env=amb)
+        self.assertEqual(r.returncode, 0)
+        self.assertEqual(r.stdout.strip(), "", "sem papel declarado o hook não pode opinar")
+
+    def test_qa_nao_conserta_o_que_deveria_detectar(self):
+        """Independencia e o que da valor a evidencia do QA."""
+        hook = RAIZ / "hooks/papel_da_sessao.py"
+        (self.tmp / ".wx-migration/papel-da-sessao").write_text("qa\n", encoding="utf-8")
+
+        def pede(ferramenta, caminho):
+            entrada = json.dumps({"tool_name": ferramenta, "tool_input": {"file_path": caminho},
+                                  "cwd": str(self.tmp)})
+            amb = {**os.environ}
+            amb.pop("WX_PAPEL", None)
+            return subprocess.run([sys.executable, str(hook)], input=entrada,
+                                  capture_output=True, text=True, env=amb).stdout.strip()
+
+        negado = pede("Write", "src/api.rs")
+        self.assertTrue(negado, "QA escrevendo produto tem de ser negado")
+        motivo = json.loads(negado)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertIn("gaps.md", motivo, "a negativa precisa dizer o que fazer no lugar")
+        for permitido in ("tests/api_test.rs", ".wx-migration/gaps.md", ".wx-migration/evidencias/EVID-0001.json"):
+            self.assertEqual(pede("Write", permitido), "", f"{permitido} é do papel qa")
+        # e a saida existe e e barata: o hook e disciplina, nao cadeado
+        (self.tmp / ".wx-migration/papel-da-sessao").unlink()
+        self.assertEqual(pede("Write", "src/api.rs"), "")
+
+    def test_efeito_separa_executou_de_aconteceu(self):
+        """Comando que sai 0 nao prova efeito: e o erro classico de sistema
+        agentico, que le o proprio codigo de saida como se fosse o mundo."""
+        ef = SCRIPTS / "efeito.py"
+        (self.tmp / "schema.sql").write_text("create table customers(id int);\n", encoding="utf-8")
+        # o "ALTER TABLE rodou" sem o efeito: DIVERGENTE, com codigo 1
+        r = run(ef, "--project-root", self.tmp, "--json", "conferir", "--acao", "criar índice",
+                "--esperado", "arquivo-contem", "--alvo", "schema.sql", "--valor", "idx_cnpj")
+        self.assertEqual(json.loads(r.stdout)["resultado"], "divergente")
+        self.assertEqual(r.returncode, 1)
+        (self.tmp / "schema.sql").write_text("create index idx_cnpj on customers(cnpj);\n", encoding="utf-8")
+        r2 = run(ef, "--project-root", self.tmp, "--json", "conferir", "--acao", "criar índice",
+                 "--esperado", "arquivo-contem", "--alvo", "schema.sql", "--valor", "idx_cnpj")
+        self.assertEqual(json.loads(r2.stdout)["resultado"], "verificado")
+        self.assertEqual(r2.returncode, 0)
+
+    def test_efeito_tem_inconclusivo_e_ele_nao_aprova(self):
+        """Quando a conferencia falha, a resposta honesta e «nao sei» -- e ela
+        precisa ter codigo proprio, para nao virar sucesso num script."""
+        ef = SCRIPTS / "efeito.py"
+        r = run(ef, "--project-root", self.tmp, "--json", "conferir", "--acao", "migrar",
+                "--esperado", "arquivo-contem", "--alvo", "nao-existe.sql", "--valor", "x")
+        self.assertEqual(json.loads(r.stdout)["resultado"], "inconclusivo")
+        self.assertEqual(r.returncode, 2, "inconclusivo tem código próprio, diferente de 0 e de 1")
+
+    def test_conferencia_nao_pode_mudar_o_mundo_que_confere(self):
+        ef = SCRIPTS / "efeito.py"
+        for comando in ("rm -rf build", "git commit -m x", "psql -c 'drop table customers'"):
+            r = run(ef, "--project-root", self.tmp, "--json", "conferir", "--acao", "conferir",
+                    "--esperado", "comando-diz", "--comando", comando, "--valor", "x")
+            d = json.loads(r.stdout)
+            self.assertEqual(d["resultado"], "inconclusivo", comando)
+            self.assertIn("não pode mudar o estado", d["detalhe"])
+
     def test_wx_modelos_compila_e_nao_inventa_numero(self):
         """A ferramenta de modelo local e Rust a parte; o que ela promete e nao
         inventar numero. Aqui roda a bateria dela e o binario de verdade."""

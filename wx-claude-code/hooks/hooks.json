@@ -69,6 +69,17 @@
             "statusMessage": "Anexos e segredos"
           }
         ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/papel_da_sessao.py\"",
+            "timeout": 5,
+            "statusMessage": "Papel da sessão"
+          }
+        ]
       }
     ],
     "SessionStart": [

@@ -419,6 +419,35 @@ API vêm do `.env`, nunca do compose.
 
 O risco aqui era medido, não teórico: com vinte skills a listagem podia cortar alguma, como já aconteceu. As sete entraram com descrição encurtada (a maior caiu de 637 para 89 caracteres, as originais guardadas em `skills/descricoes-originais-uiux.json`) e a listagem foi **medida numa sessão nova**: as vinte aparecem. Material de terceiro entra com licença e atribuição, ou não entra — o teste falha se o `LICENSE`, o `NOTICE.md` ou a linha de origem sumirem.
 
+**Governar não é só executar: seis portões que o plugin ganhou.** Um agente que
+constrói e se aprova entrega alegação, não prova. Estes seis existem para
+transformar «terminei» em algo que o cliente pode auditar — e todos entram
+**pedidos, não impostos**: quem não os usa continua exatamente como estava.
+
+| peça | comando | o que ela impede |
+| --- | --- | --- |
+| **Estados de certificação** | `/wx-claude-code:evidencia` | `passou/falhou` esconder o caso comum: 7 de 10 casos do golden é **PARCIAL**, e o número aparece |
+| **Fronteira epistêmica** | idem | «nenhuma falha encontrada» virar «está correto»: o campo `--nao-prova` é obrigatório, e sem ele o script recusa gravar |
+| **Prova que vence** | `evidencia conferir` | prova de ontem valer para código de hoje: a evidência guarda o SHA-256 do arquivo e vira **VENCIDA** quando ele muda |
+| **Constraint Registry + C-GATE** | `/wx-claude-code:constraints` | teste verde ser confundido com Sprint aprovada — `F-GATE` responde «funciona?», `C-GATE` responde «está conforme?» |
+| **Contrato ativo** | `/wx-claude-code:contrato` | um agente usar a decisão da sprint 10 três sprints depois de ela ter sido superada |
+| **Um escritor** | hook `papel_da_sessao.py` | quem valida consertar o que deveria detectar: com `WX_PAPEL=qa`, a escrita no produto é negada |
+| **Efeito conferido** | `/wx-claude-code:efeito` | `ALTER TABLE` que sai 0 ser lido como «a coluna está lá» |
+
+Duas escolhas de projeto valem por todo o resto. A primeira: **restrição sem
+validador volta INCONCLUSIVA, nunca aprovada** — portão que aprova o que não
+conferiu é pior que portão nenhum, e o mesmo vale para o efeito que não deu
+para ler, que tem código de saída próprio (2) para não virar sucesso dentro de
+um script. A segunda: **ficha de decisão sem status legível não entra no
+contrato** — campo em branco não é aprovação.
+
+E as três, de novo, aprendidas rodando: o validador que aponta para arquivo
+inexistente acusava o projeto de violar uma regra que ninguém conferiu (virou
+inconclusiva); o validador semeado do golden ia rodar `--help` e aprovar sem
+conferir nada (virou manual); e o contrato lia o nome do projeto só do
+questionário, que nem todo projeto guarda ao lado (passou a ler também o
+manifesto).
+
 **Dois exemplos, dois legados.** O `exemplos/estoque-wx/` é WINDEV 2025 com PDF de documentação; o `exemplos/faturamento-php/` é PHP 7.4 procedural de 2009, **sem nada de WX** — código-fonte no lugar de PDF, MySQL no lugar de HFSQL, e o golden master capturado rodando o próprio legado (`php capturar-golden.php`) em vez de digitado. Os dois respondem o mesmo questionário de 60 perguntas e os dois saem do G0 em `CONDITIONAL` com zero erros, por caminhos diferentes.
 
 O segundo achou um defeito na primeira execução: **o portão G0 ainda julgava todo mundo como WINDEV** — cobrava `wx_version` de quem não usa WINDEV, chamava `php` de produto inválido e exigia os PDFs de código, telas e queries que um sistema PHP nunca teve. O legado é E/OU desde a 3.26.0 no questionário; o portão não tinha sido avisado. Sem produto WX, a evidência central passou a ser o código-fonte (`native_project_sources`, listado com linguagem e número de linhas medidas) mais o esquema do banco — e **projeto WINDEV continua exigindo exatamente o que exigia**, travado pelo teste do comportamento velho.

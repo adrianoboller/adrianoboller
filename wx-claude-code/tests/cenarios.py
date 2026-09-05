@@ -237,6 +237,57 @@ def c13_legado_php_de_verdade():
     return ok, f"{rel.get('status')} sem erros, {len(fontes)} fontes PHP como evidência central, destino Rust"
 
 
+def c14_governanca_de_ponta_a_ponta():
+    """Os seis portoes novos ligados, num projeto real, na ordem em que se usam.
+
+    Cada um ja tem teste de unidade; este prova a LIGACAO -- que e onde os
+    defeitos deste projeto sempre apareceram. O caso e o que a governanca existe
+    para pegar: F-GATE verde e C-GATE reprovado.
+    """
+    p = projeto_novo()
+    aplicar(p)
+    ambiente = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(RAIZ)}
+
+    def rodar(script, *args):
+        return subprocess.run([sys.executable, str(SCRIPTS / script), "--project-root", str(p), *args],
+                              capture_output=True, text=True, timeout=300, env=ambiente)
+
+    # 1. as restricoes que o questionario ja implica, pedidas
+    rodar("constraints.py", "semear", "--aplicar")
+    # 2. uma restricao do projeto que o resultado viola
+    rodar("constraints.py", "criar", "--titulo", "API pública não quebra compatibilidade",
+          "--severidade", "bloqueante", "--validador", "false", "--origem", "ADR-0021")
+    c = json.loads(rodar("constraints.py", "--json", "c-gate").stdout)
+    # 3. F-GATE verde: o golden bate inteiro
+    rel = p / "comp.json"
+    rel.write_text(json.dumps({"total": 6, "passaram": 6,
+                               "casos": [{"id": f"C{i}", "passou": True} for i in range(6)]}), encoding="utf-8")
+    f = json.loads(rodar("evidencia.py", "--json", "do-golden", str(rel)).stdout)
+    # 4. o contrato ativo sai das duas coisas
+    decisoes = p / ".wx-migration/decisoes"
+    decisoes.mkdir(parents=True, exist_ok=True)
+    (decisoes / "DEC-0001.md").write_text("# DEC-0001 — Banco\n- Status: superseded\n- Decisão: MySQL\n", encoding="utf-8")
+    (decisoes / "DEC-0002.md").write_text("# DEC-0002 — Banco\n- Status: approved\n- Decisão: PostgreSQL\n", encoding="utf-8")
+    contrato = json.loads(rodar("contrato.py", "--json", "gerar").stdout)
+    # 5. efeito conferido no mundo, nao no codigo de saida
+    e = json.loads(rodar("efeito.py", "--json", "conferir", "--acao", "gerar o contrato",
+                         "--esperado", "arquivo-existe", "--alvo", ".wx-migration/contrato-ativo.md").stdout)
+    # 6. o QA nao conserta o que deveria detectar
+    (p / ".wx-migration/papel-da-sessao").write_text("qa\n", encoding="utf-8")
+    pedido = json.dumps({"tool_name": "Write", "tool_input": {"file_path": "src/api.rs"}, "cwd": str(p)})
+    amb = {k: v for k, v in ambiente.items() if k != "WX_PAPEL"}
+    hook = subprocess.run([sys.executable, str(RAIZ / "hooks/papel_da_sessao.py")],
+                          input=pedido, capture_output=True, text=True, env=amb)
+
+    ok = (c["c_gate"] == "REPROVADO" and "CONST-0006" in c["bloqueantes"]
+          and f["estado"] == "verificado"
+          and [d["id"] for d in contrato["decisoes_vigentes"]] == ["DEC-0002"]
+          and e["resultado"] == "verificado"
+          and "deny" in hook.stdout)
+    shutil.rmtree(p, ignore_errors=True)
+    return ok, "F-GATE verde e C-GATE reprovado no mesmo projeto; contrato só com a decisão vigente; QA barrado no produto"
+
+
 CENARIOS = [
     ("01 WX clássico → Rust", c01_wx_classico, "o caminho que o plugin existe para atender"),
     ("02 só PHP → Elixir", c02_so_php_para_elixir, "legado E/OU e destino livre, os dois fora do caso padrão"),
@@ -251,6 +302,7 @@ CENARIOS = [
     ("11 exportar sem segredo", c11_exportar_sem_segredo, ".env fora, .env.exemplo dentro"),
     ("12 instalador em conferência", c12_instalador_confere, "não instala e não suja"),
     ("13 legado PHP de verdade", c13_legado_php_de_verdade, "projeto sem nada de WX atravessa o G0"),
+    ("14 governança ligada", c14_governanca_de_ponta_a_ponta, "os seis portões novos funcionando juntos"),
 ]
 
 

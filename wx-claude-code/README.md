@@ -193,6 +193,15 @@ PDF faz no outro, e o golden master capturado rodando o próprio legado. Foi ele
 que mostrou o G0 supondo WINDEV em oito lugares — consertado, com o teste do
 comportamento velho travando o que já funcionava.
 
+## Governança: seis portões que entram pedidos
+
+`evidencia` (quatro estados, limite obrigatório, prova que vence), `constraints`
+(C-GATE ao lado do F-GATE), `contrato` (o que vale hoje, sem apagar o
+histórico), `efeito` (o estado real, não o código de saída) e o hook
+`papel_da_sessao.py` (quem valida não conserta). Nenhum deles muda nada para
+quem não os usa: sem papel declarado, sem restrição registrada e sem contrato
+gerado, o plugin funciona como antes.
+
 ## Modelo local, no terminal
 
 `ferramentas/wx-modelos/` é um binário Rust à parte (só `std`, nenhuma crate)
