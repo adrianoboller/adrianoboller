@@ -1564,7 +1564,7 @@ solta**, e por isso a coluna do meio ganha um ator.
 |---|---|---|---|---|
 | Q7 | trava solta entre `A` e `C`; **ninguém entra**; queda | a marca; `A` durável, `C` no cache | reaplica `C` | ✔ |
 | Q8 | trava solta; outro escritor **W** grava em `A` e comete. A janela reabriu no fecho, então `gravar_de_verdade` só marca `A` como suja e a marca de **W** vai para `marcas_pendentes`. O fecho volta, sincroniza `C` e apaga **todas** as marcas pendentes — a de **W** inclusive. Queda de **energia** | nenhuma marca de **W**; a escrita de **W** só no cache do núcleo | **nada** — não há bilhete | ✘ **perde um commit confirmado, em silêncio** |
-| Q9 | trava solta; **W** fecha a janela ele mesmo e entra em `descarregar_sujas_com` — dois fechos ao mesmo tempo, cada um com um pedaço do conjunto de sujas. O de **W** termina primeiro e apaga as marcas do outro, cuja tabela `C` ainda não sincronizou. Queda de energia | nenhuma marca; `C` só no cache | nada | ✘ mesma perda, por outro caminho |
+| Q9 | trava solta; **W** grava (o que põe a tabela dele no conjunto de sujas, que o outro fecho já tinha drenado) e a janela fecha para ele: **W** entra em `descarregar_sujas_com` também. São dois fechos ao mesmo tempo, e o de **W** tem lista não-vazia, então ele chega até a drenagem das marcas — e apaga também as marcas do fecho que ainda está em curso, cuja tabela `C` não sincronizou. Queda de energia | nenhuma marca; `C` só no cache | nada | ✘ mesma perda, por outro caminho |
 | Q10 | igual ao Q8, mas queda de **processo** (`SIGKILL`) e não de energia | as escritas já estão no núcleo | nada a fazer, e o dado está lá | ✔ — **e é isto que torna o defeito invisível** |
 
 **Três coisas que esta metade da matriz decide.**
@@ -1692,6 +1692,26 @@ válida, mas o **valor** não descreve o servidor que vai ser lançado.
   (`FIOS_DO_FECHO = 16`, e acima disso vai em pedaços): 1,62× em K=4 e 2,52× em
   K=16, mesmo número de `fsync`, mesma ordem dentro de cada tabela, nenhuma
   linha nova na matriz de queda e nenhuma mudança de formato.
+
+**O que fica por fazer, nomeado:**
+
+* **A contabilidade por marca** da §12.6.3(c) — o único caminho conhecido que
+  torna a quebra da trava segura. Desenhada, não feita. Quem a fizer refaz a
+  matriz **antes** de escrever código.
+* **O ganho depende do sistema de arquivos, e está medido num só.** O 2,52×
+  vem de o `ext4` desta máquina juntar `fsync` de arquivos diferentes no mesmo
+  diário. Num sistema que não junte, o que sobra é o custo dos fios — e esse
+  custo **não está medido em separado**: as duas baterias limpas divergem no
+  K=1 (1,00× e 0,86×), o que põe o preço de subir um fio em algum lugar entre
+  zero e ~150 µs, e uma faixa dessas não é número. *O servidor não paga esse
+  preço no K=1*, pelo atalho, mas paga em K≥2 se o sistema de arquivos não
+  ajudar. **Quem publicar o motor sobre XFS, ZFS ou disco de rede roda o
+  `--example o-comboio-em-paralelo` antes de acreditar nesta seção** — o
+  medidor responde em segundos e o veredito dele já está escrito para os dois
+  desfechos.
+* **`FIOS_DO_FECHO = 16` não é catraca** — é teto de recurso, e não mede
+  promessa nenhuma. Não se aplica a ele a lei do «só desce»; aplica-se a de
+  medir com o `--example o-comboio-em-paralelo` antes de mudá-lo.
 
 ---
 
