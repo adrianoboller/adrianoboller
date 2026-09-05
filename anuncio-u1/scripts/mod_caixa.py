@@ -65,6 +65,14 @@
 # - Logo: os valores medidos na versao branca (gamma 2,0 antes do AgX,
 #   specular 0 e sheen 0 na tinta) valem; a tinta sobre papelao fica um pouco
 #   mais fosca que o papelao (rugosidade do bake + 0,12).
+# - Espuma (Revisao 4, item 2): packing peanuts classicos "tipo cheetos" -
+#   tubo extrudado de secao trilobada, dobrado em S ou em 8, 3 a 5 cm, creme-
+#   amarelo (#F0E2B4 a #E8D59A, sorteado por floco), poroso, sem brilho. So a
+#   malha e o material mudaram: contagem (48), arrumacao em repouso, arco de
+#   saida e volta sao os mesmos, porque 'caixa_raio' continua sendo o raio da
+#   esfera envolvente e 'caixa_extensoes' e medido da malha nova - o mecanismo
+#   de folga nao sabe a forma do floco. As pontas do S nao podem furar parede
+#   nem U1: teste_caixa.py mede.
 
 import math
 import random
@@ -115,7 +123,13 @@ PARAMS_PADRAO = {
     "sobrepasso": 0.05,               # fracao do angulo, overshoot ao abrir
     "ordem": "grandes_primeiro",      # ou "pequenas_primeiro" (atravessa!)
     "n_espumas": 48,
-    "raio_espuma": (0.03, 0.05),      # meio eixo maior: flocos de 6 a 10 cm
+    # Packing peanut: 'raio_espuma' e o raio da esfera envolvente (meio eixo
+    # maior), entao 3 a 5 cm de comprimento; 'secao_espuma' e o diametro da
+    # secao extrudada; 'dobra_espuma' e a amplitude do S, fracao do
+    # comprimento (Revisao 4, item 2).
+    "raio_espuma": (0.015, 0.025),
+    "secao_espuma": (0.012, 0.016),
+    "dobra_espuma": (0.12, 0.28),
     "semente": 7,
     # Onde o U1 vai ficar dentro da caixa: as espumas se arrumam em volta
     # desse volume, mesmo sem o U1 existir na cena de teste.
@@ -144,7 +158,23 @@ def nomes_texturas(p):
 # Papelao liso para quando as texturas nao existirem (kraft medio da Meshy,
 # medido no atlas dela). Serve ao bake_caixa.py antes de existir o bake.
 COR_PAPELAO = (0xD6, 0xA0, 0x66)
-COR_ESPUMA = (0xF6, 0xF6, 0xF4)
+# Espuma creme-amarela (Revisao 4, item 2): cada floco sorteia entre as duas
+# pelo Random do Object Info. Nada de branco puro. Sao a cor QUE SE VE; o
+# albedo passa por _cor_espuma (abaixo), porque o AgX dessatura o claro.
+COR_ESPUMA_CLARA = (0xF0, 0xE2, 0xB4)
+COR_ESPUMA_ESCURA = (0xE8, 0xD5, 0x9A)
+COR_ESPUMA = COR_ESPUMA_CLARA     # compatibilidade com quem lia o nome antigo
+# Medido com o AgX (Medium High Contrast) aplicado por Image.save_render a
+# valores lineares conhecidos, sem render: o albedo #F0E2B4 cru vira #CBC3B0
+# na tela a radiancia 1,0 e #E0D9CA (B/R 0,90 - quase branco) na luz do
+# teste, onde o lado da key recebe ~2x. A cor pedida como PIXEL exige albedo
+# mais saturado que ela: cinza + k*(cor - cinza) em linear com k = 1,8 e
+# teto 0,85 no canal maior (para o floco nao sair mais claro que um produto
+# branco) da B/R de ~0,70-0,78 na tela entre radiancia 1,5 e 2,0, e mais
+# amarelo na sombra - como packing peanut de verdade. Com k = 2,4 o escuro
+# ja saia mostarda (B/R 0,31 a radiancia 1,0).
+SATURACAO_ESPUMA_PRE_AGX = 1.8
+TETO_ALBEDO_ESPUMA = 0.85
 CORES = {"clara": COR_PAPELAO, "escura": COR_PAPELAO}   # compatibilidade
 
 FPS = 30.0
@@ -159,6 +189,18 @@ def _srgb_para_linear(c):
 
 def cor_linear(hex3):
     return tuple(_srgb_para_linear(v) for v in hex3) + (1.0,)
+
+
+def _cor_espuma(hex3, k=None, teto=None):
+    """Albedo linear do floco: a cor pedida com a saturacao reforcada em
+    linear (ver SATURACAO_ESPUMA_PRE_AGX) e o canal maior limitado ao teto."""
+    k = SATURACAO_ESPUMA_PRE_AGX if k is None else k
+    teto = TETO_ALBEDO_ESPUMA if teto is None else teto
+    r, g, b, _ = cor_linear(hex3)
+    y = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    c = [max(0.0, y + k * (v - y)) for v in (r, g, b)]
+    esc = min(1.0, teto / max(c))
+    return tuple(v * esc for v in c) + (1.0,)
 
 
 def limpar_colecao(nome):
@@ -495,38 +537,95 @@ def geometria_caixa(p=None):
 
 # ---------------------------------------------------------------- espuma
 
-def _malha_espuma(nome, rng, raio):
-    """Floco de espuma: icosfera amassada por ruido em duas oitavas, alongada
-    de forma desigual e com cantos AMASSADOS (vertices alem de planos
-    aleatorios sao empurrados para o plano). Igual a versao anterior."""
+def _malha_espuma(nome, rng, raio, secao=0.014, dobra=(0.12, 0.28), aneis=40, segmentos=20):
+    """Packing peanut classico ("tipo cheetos", Revisao 4, item 2): tubo
+    extrudado de secao levemente trilobada e ondulada (com torcao, como sai
+    da matriz), dobrado por deformacao senoidal ao longo do eixo - uma
+    senoide inteira da o S (zero nas pontas e no meio); uma segunda
+    harmonica forte, num plano perpendicular, da o "8" -, pontas
+    arredondadas (superelipse) e superficie porosa por ruido fino radial.
+    O eixo maior fica em X local com ~2*raio de comprimento. No fim a malha
+    e recentrada na caixa envolvente e normalizada para o vertice mais
+    distante da origem ficar a 'raio': e isso que 'caixa_raio' e
+    'caixa_extensoes' medem, entao a arrumacao em repouso e a trajetoria
+    nao dependem da forma. Tudo sai do 'rng' (semente fixa)."""
+    L = 2.0 * raio
+    r0 = secao / 2.0
+    # secao: tres lobulos + leve achatamento, torcidos ao longo do eixo
+    a3 = rng.uniform(0.10, 0.20)
+    a2 = rng.uniform(0.0, 0.10)
+    fase3 = rng.uniform(0.0, math.tau)
+    fase2 = rng.uniform(0.0, math.tau)
+    torcao = rng.uniform(-1.2, 1.2)
+    # dobra: plano do S sorteado em volta do eixo; "8" em ~40% dos flocos
+    A1 = rng.uniform(*dobra) * L
+    psi = rng.uniform(0.0, math.tau)
+    em_oito = rng.random() < 0.4
+    A2 = A1 * (rng.uniform(0.45, 0.8) if em_oito else rng.uniform(0.0, 0.2))
+    fase_oito = rng.uniform(0.0, math.tau)
+    e1 = Vector((0.0, math.cos(psi), math.sin(psi)))
+    e2 = Vector((0.0, -math.sin(psi), math.cos(psi)))
+    expo = rng.uniform(2.2, 3.2)          # 2 = ponta elipsoidal; maior = mais cheia
+    d1 = Vector((rng.uniform(-50, 50), rng.uniform(-50, 50), rng.uniform(-50, 50)))
+    d2 = Vector((rng.uniform(-50, 50), rng.uniform(-50, 50), rng.uniform(-50, 50)))
+
+    def centro(s):
+        return (Vector((L * (s - 0.5), 0.0, 0.0)) + e1 * (A1 * math.sin(math.tau * s))
+                + e2 * (A2 * math.sin(2.0 * math.tau * s + fase_oito)))
+
+    def perfil(s):
+        u = abs(2.0 * s - 1.0)
+        return max(0.0, 1.0 - u ** expo) ** (1.0 / expo)
+
     bm = bmesh.new()
-    bmesh.ops.create_icosphere(bm, subdivisions=3, radius=1.0)
-    desloc = Vector((rng.uniform(-50, 50), rng.uniform(-50, 50), rng.uniform(-50, 50)))
-    desloc2 = Vector((rng.uniform(-50, 50), rng.uniform(-50, 50), rng.uniform(-50, 50)))
-    freq = rng.uniform(1.0, 1.8)
-    amp = rng.uniform(0.3, 0.45)
-    amp2 = rng.uniform(0.10, 0.18)
-    escala = Vector((rng.uniform(1.4, 2.2), rng.uniform(0.7, 1.0), rng.uniform(0.42, 0.62)))
-    curva = rng.uniform(-0.4, 0.4)
-    cintura = rng.uniform(0.0, 0.3)
+    n_an, n_seg = int(aneis), int(segmentos)
+    fileiras = []
+    N = None
+    h = 1e-3
+    for i in range(n_an):
+        # espacamento em cosseno: aneis mais juntos nas pontas, onde o perfil
+        # muda rapido; uniforme deixaria a ponta facetada
+        s = 0.5 * (1.0 - math.cos(math.pi * i / (n_an - 1)))
+        c = centro(s)
+        T = (centro(min(s + h, 1.0)) - centro(max(s - h, 0.0))).normalized()
+        # quadro de rotacao minima (transporte paralelo): a secao acompanha
+        # a curva sem virar de repente
+        if N is None:
+            N = Vector((0.0, 0.0, 1.0)) if abs(T.z) < 0.9 else Vector((0.0, 1.0, 0.0))
+        N = (N - T * N.dot(T)).normalized()
+        B = T.cross(N)
+        if i == 0 or i == n_an - 1:
+            fileiras.append([bm.verts.new(c)])       # polo da ponta
+            continue
+        pf = perfil(s)
+        fileira = []
+        for j in range(n_seg):
+            th = math.tau * j / n_seg
+            r = r0 * pf * (1.0 + a3 * math.cos(3.0 * th + fase3 + torcao * s) + a2 * math.cos(2.0 * th + fase2))
+            radial = N * math.cos(th) + B * math.sin(th)
+            pos = c + radial * r
+            # poros: duas oitavas de ruido radial, atenuadas na ponta (onde a
+            # direcao radial degenera no polo)
+            ru = 0.08 * noise.noise(pos * 260.0 + d1) + 0.04 * noise.noise(pos * 640.0 + d2)
+            fileira.append(bm.verts.new(pos + radial * (r0 * ru * pf)))
+        fileiras.append(fileira)
+    for i in range(n_an - 1):
+        a, b = fileiras[i], fileiras[i + 1]
+        for j in range(n_seg):
+            j2 = (j + 1) % n_seg
+            if len(a) == 1:
+                bm.faces.new((a[0], b[j], b[j2]))
+            elif len(b) == 1:
+                bm.faces.new((a[j], a[j2], b[0]))
+            else:
+                bm.faces.new((a[j], a[j2], b[j2], b[j]))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    # recentra na caixa envolvente (o "8" nao e antissimetrico) e normaliza
+    lo = Vector((min(v.co.x for v in bm.verts), min(v.co.y for v in bm.verts), min(v.co.z for v in bm.verts)))
+    hi = Vector((max(v.co.x for v in bm.verts), max(v.co.y for v in bm.verts), max(v.co.z for v in bm.verts)))
+    meio = (lo + hi) / 2.0
     for v in bm.verts:
-        n = noise.noise(v.co * freq + desloc)
-        n2 = noise.noise(v.co * freq * 2.7 + desloc2)
-        fator = 1.0 + amp * n + amp2 * n2
-        x, y, z = v.co.x * escala.x, v.co.y * escala.y, v.co.z * escala.z
-        aperto = 1.0 - cintura * math.exp(-(x / (0.45 * escala.x)) ** 2)
-        y *= aperto
-        z *= aperto
-        z += curva * x * x
-        v.co = Vector((x, y, z)) * fator
-    for _ in range(rng.randint(2, 4)):
-        normal = Vector((rng.gauss(0, 1), rng.gauss(0, 1), rng.gauss(0, 1))).normalized()
-        alcance = max(v.co.dot(normal) for v in bm.verts)
-        corte = alcance * rng.uniform(0.55, 0.8)
-        for v in bm.verts:
-            s = v.co.dot(normal)
-            if s > corte:
-                v.co -= normal * (s - corte) * 0.9
+        v.co -= meio
     maior = max(v.co.length for v in bm.verts)
     for v in bm.verts:
         v.co *= raio / maior
@@ -765,16 +864,62 @@ def _material_etiqueta(nome, imagens):
 
 
 def _material_espuma(nome):
+    """Packing peanut de amido (Revisao 4, item 2): creme-amarelo sorteado
+    por floco entre COR_ESPUMA_CLARA e COR_ESPUMA_ESCURA (Object Info >
+    Random), fosco (rugosidade 0,85, especular quase zero: sem brilho),
+    subsurface 0,2 com raio amarelado - a espuma deixa a luz entrar um
+    pouco e e isso que tira a cara de plastico -, e poros por ruido fino em
+    bump, com as cavidades um pouco mais escuras. Nada de branco puro."""
     mat, nt, bsdf = _material_base(nome)
-    bsdf.inputs["Base Color"].default_value = cor_linear(COR_ESPUMA)
-    bsdf.inputs["Roughness"].default_value = 0.9
-    bsdf.inputs["Specular IOR Level"].default_value = 0.25
-    try:
-        bsdf.inputs["Subsurface Weight"].default_value = 0.15
-        bsdf.inputs["Subsurface Radius"].default_value = (1.0, 1.0, 1.0)
-        bsdf.inputs["Subsurface Scale"].default_value = 0.01
-    except KeyError:
-        pass
+    bsdf.inputs["Roughness"].default_value = 0.85
+    bsdf.inputs["Specular IOR Level"].default_value = 0.08
+    for chave, valor in (("Sheen Weight", 0.0), ("Coat Weight", 0.0), ("Subsurface Weight", 0.2),
+                         ("Subsurface Radius", (1.0, 0.8, 0.4)), ("Subsurface Scale", 0.004)):
+        try:
+            bsdf.inputs[chave].default_value = valor
+        except KeyError:
+            pass                              # nome de outra versao do Principled
+    # cor por floco
+    info = nt.nodes.new("ShaderNodeObjectInfo")
+    info.location = (-900, 400)
+    mix = nt.nodes.new("ShaderNodeMixRGB")
+    mix.location = (-600, 400)
+    mix.blend_type = "MIX"
+    mix.inputs["Color1"].default_value = _cor_espuma(COR_ESPUMA_CLARA)
+    mix.inputs["Color2"].default_value = _cor_espuma(COR_ESPUMA_ESCURA)
+    nt.links.new(info.outputs["Random"], mix.inputs["Fac"])
+    # poros: ruido em coordenadas de objeto (acompanha o floco girando e
+    # encolhendo). Celula de ~1,5 mm: com 1,1 mm (escala 900) o close a 40
+    # cm em 540x960 nao mostrava poro nenhum - 2,5 px por celula some no
+    # filtro; a 1080x1920 do final fica com o dobro.
+    coords = nt.nodes.new("ShaderNodeTexCoord")
+    coords.location = (-1200, -100)
+    ruido = nt.nodes.new("ShaderNodeTexNoise")
+    ruido.location = (-900, -100)
+    ruido.inputs["Scale"].default_value = 650.0
+    ruido.inputs["Detail"].default_value = 4.0
+    ruido.inputs["Roughness"].default_value = 0.6
+    nt.links.new(coords.outputs["Object"], ruido.inputs["Vector"])
+    bump = nt.nodes.new("ShaderNodeBump")
+    bump.location = (-300, -300)
+    bump.inputs["Strength"].default_value = 0.6
+    bump.inputs["Distance"].default_value = 0.0008
+    nt.links.new(ruido.outputs["Fac"], bump.inputs["Height"])
+    nt.links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
+    # cavidades 10% mais escuras: cor x (0,90 + 0,10 x ruido)
+    sombra = nt.nodes.new("ShaderNodeMath")
+    sombra.location = (-600, 100)
+    sombra.operation = "MULTIPLY_ADD"
+    sombra.inputs[1].default_value = 0.10
+    sombra.inputs[2].default_value = 0.90
+    nt.links.new(ruido.outputs["Fac"], sombra.inputs[0])
+    mult = nt.nodes.new("ShaderNodeMixRGB")
+    mult.location = (-300, 300)
+    mult.blend_type = "MULTIPLY"
+    mult.inputs["Fac"].default_value = 1.0
+    nt.links.new(mix.outputs["Color"], mult.inputs["Color1"])
+    nt.links.new(sombra.outputs["Value"], mult.inputs["Color2"])
+    nt.links.new(mult.outputs["Color"], bsdf.inputs["Base Color"])
     return mat
 
 
@@ -955,26 +1100,27 @@ def construir_caixa(cena, colecao_pai=None, params=None):
              m["hy"] + t + max(0.0, -math.cos(ag)) * (L + t) + t,
              max(m["zy"] + (L + t) * math.sin(ag), m["zx"] + (L + t) * math.sin(ap)) + t)
 
-    # --- espumas (iguais a versao anterior; a camada de cima e mais baixa) ---
+    # --- espumas: packing peanuts; a arrumacao (camada de cima + laterais)
+    # e a mesma da versao anterior, so muda o que _malha_espuma devolve ---
     mat_espuma = _material_espuma("caixa.espuma")
     espumas = []
     ux, uy, uz = p["u1"]
     n = int(p["n_espumas"])
     r_min, r_max = p["raio_espuma"]
+    s_min, s_max = p["secao_espuma"]
     FOLGA_ESPUMA = 0.003
     camada = iz - uz
     vao_x, vao_y = (ix - ux) / 2.0, (iy - uy) / 2.0
     ocupados = []
     for i in range(n):
         raio = rng.uniform(r_min, r_max)
-        malha = _malha_espuma("caixa.espuma.%03d" % (i + 1), rng, raio)
+        malha = _malha_espuma("caixa.espuma.%03d" % (i + 1), rng, raio,
+                              secao=rng.uniform(s_min, s_max), dobra=p["dobra_espuma"])
         obj = bpy.data.objects.new("caixa.espuma.%03d" % (i + 1), malha)
         obj.data.materials.append(mat_espuma)
-        bis = obj.modifiers.new("chanfro", "BEVEL")
-        bis.width = raio * 0.15
-        bis.segments = 2
-        bis.limit_method = "ANGLE"
-        bis.angle_limit = math.radians(35.0)
+        # O tubo ja e liso (o chanfro era para os cantos amassados da versao
+        # anterior); o subsurf de nivel 1 so arredonda as 20 arestas da
+        # secao, que apareciam na silhueta do close a 40 cm.
         sub = obj.modifiers.new("suave", "SUBSURF")
         sub.levels = 1
         sub.render_levels = 1

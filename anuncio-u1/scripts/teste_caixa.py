@@ -9,6 +9,10 @@
 #   etiqueta   close da etiqueta pendurada (a malha da Meshy)
 #   topo       ortografico de cima: sem logo MEDE que o miolo nao tem tinta;
 #              com COM_LOGO=1 mede largura, centro e cor da logo
+#   espuma     close a ~40 cm de 4-6 packing peanuts em repouso (Revisao 4,
+#              item 2), com corpo/abas/etiqueta fora do render SO neste
+#              quadro (a caixa fechada os esconderia); mede a cor media de um
+#              floco no pixel contra #E8D59A..#F0E2B4
 # Roda com: bash scripts/previa.sh scripts/teste_caixa.py
 #   QUAIS=ini,fim  AMOSTRAS=48  para recortar / conferir ruido.
 #   Os seis quadros por software (llvmpipe) levam ~1 min cada; se a memoria
@@ -17,6 +21,12 @@
 # Quem roda isto abre os PNGs e olha - o script rodar sem erro nao prova nada.
 # Os numeros [medida] saem do render e do estado da cena, nunca do que o
 # codigo pretende.
+#
+# Pixel de PNG de 8 bits: Image.pixels devolve o BYTE/255, ja em sRGB - medido
+# gravando um PNG com o byte 188 e lendo 0,7373 de volta (imagem float/16
+# bits e que vem linearizada). A primeira versao deste teste tratava o valor
+# como linear e aplicava a curva sRGB de novo ao imprimir: o kraft saia
+# inflado. Aqui todo valor de pixel e sRGB e so se multiplica por 255.
 
 import math
 import os
@@ -38,7 +48,7 @@ os.makedirs(SAIDA, exist_ok=True)
 
 LARGURA, ALTURA = 540, 960
 AMOSTRAS = int(os.environ.get("AMOSTRAS", "16"))
-QUAIS = os.environ.get("QUAIS", "ini,meio,fim,topo_close,etiqueta,topo").split(",")
+QUAIS = os.environ.get("QUAIS", "ini,meio,fim,topo_close,etiqueta,topo,espuma").split(",")
 
 # Os PNGs da versao branca ficam ao lado, com sufixo, para comparar. So os
 # seis quadros que ela tinha: um rename generico rebatizava os quadros novos
@@ -46,6 +56,15 @@ QUAIS = os.environ.get("QUAIS", "ini,meio,fim,topo_close,etiqueta,topo").split("
 for rotulo in ("ini", "meio", "fim", "detalhe", "espuma", "topo"):
     antigo = os.path.join(SAIDA, "previa_caixa_%s.png" % rotulo)
     guardado = os.path.join(SAIDA, "previa_caixa_%s_v1branca.png" % rotulo)
+    if os.path.exists(antigo) and not os.path.exists(guardado):
+        os.rename(antigo, guardado)
+# A rodada 3 (flocos brancos amassados) fica ao lado para comparar com os
+# packing peanuts da Revisao 4. SO o 'meio': era o unico quadro que mostrava
+# espuma, e 'espuma' nao existia - incluir o rotulo aqui rebatizaria o close
+# novo na rodada seguinte.
+for rotulo in ("meio",):
+    antigo = os.path.join(SAIDA, "previa_caixa_%s.png" % rotulo)
+    guardado = os.path.join(SAIDA, "previa_caixa_%s_rodada3.png" % rotulo)
     if os.path.exists(antigo) and not os.path.exists(guardado):
         os.rename(antigo, guardado)
 
@@ -247,6 +266,39 @@ print("[medida] flocos: %d; maior eixo %.1f-%.1f cm (media %.1f); menor folga ba
 assert pior_topo >= 0.0025, "floco afunda no topo do U1"
 assert pior_lado >= 0.0, "floco dentro do U1"
 
+# --- forma do packing peanut (Revisao 4, item 2), medida na malha. Eixo
+# maior = maior distancia entre dois vertices. Secao = maior diametro de cada
+# anel da malha (a ordem dos vertices e polo, aneis de 'segmentos', polo),
+# tomado o maximo entre os aneis: a extensao minima por PCA NAO serve de
+# secao - nos flocos em "8" os dois eixos perpendiculares incluem a dobra
+# (medido: 2,28 cm num floco de secao nominal < 1,6). Pedido: 3 a 5 cm de
+# comprimento, ~1,2-1,6 cm de secao; os lobulos (+-20%) e o ruido (+-12%)
+# alargam o diametro maximo de um anel ate ~2 cm.
+import inspect
+import numpy as np
+n_seg = int(inspect.signature(mod_caixa._malha_espuma).parameters["segmentos"].default)
+eixos, secoes, larguras = [], [], []
+for esp in objs["espumas"]:
+    co = np.empty(len(esp.data.vertices) * 3, dtype=np.float32)
+    esp.data.vertices.foreach_get("co", co)
+    co = co.reshape(-1, 3).astype(np.float64)
+    d2 = ((co[:, None, :] - co[None, :, :]) ** 2).sum(axis=2)
+    eixos.append(math.sqrt(d2.max()))
+    aneis = co[1:-1].reshape(-1, n_seg, 3)
+    da = ((aneis[:, :, None, :] - aneis[:, None, :, :]) ** 2).sum(axis=3)
+    secoes.append(math.sqrt(da.max()))
+    c = co - co.mean(axis=0)
+    _, _, vt = np.linalg.svd(c, full_matrices=False)
+    larguras.append(np.ptp(c @ vt.T, axis=0)[1])
+print("[medida] peanuts: eixo maior %.2f-%.2f cm (media %.2f); secao (maior diametro de anel) %.2f-%.2f cm (media %.2f); "
+      "largura com a dobra %.2f-%.2f cm; %d vertices por floco (%d aneis de %d); modificadores: %s" % (
+          100 * min(eixos), 100 * max(eixos), 100 * sum(eixos) / len(eixos), 100 * min(secoes), 100 * max(secoes),
+          100 * sum(secoes) / len(secoes), 100 * min(larguras), 100 * max(larguras),
+          len(objs["espumas"][0].data.vertices), aneis.shape[0], n_seg, [m.type for m in objs["espumas"][0].modifiers]))
+assert 0.025 <= min(eixos) and max(eixos) <= 0.052, "peanut fora dos 3-5 cm (encolhido pela folga vale ate 2,5)"
+assert 0.010 <= min(secoes) and max(secoes) <= 0.021, "secao fora do esperado para 1,2-1,6 cm nominal"
+assert max(larguras) < 0.7 * max(eixos), "floco largo demais para ser alongado"
+
 # --- trajetoria sem chao: dentro da pegada ate a boca; fora do funil das
 # abas quando abaixo das pontas delas; termina fora do quadro com escala 0 ---
 fx, fy, fz = objs["funil"]
@@ -318,6 +370,80 @@ if "etiqueta" in QUAIS:
     enquadrar(c + Vector((0.62, -0.22, 0.10)), c, 85.0)
     render("etiqueta")
 
+if "espuma" in QUAIS:
+    # Close da espuma: em repouso os flocos estao DENTRO da caixa fechada,
+    # entao corpo, abas e etiqueta saem do render so neste quadro; o fundo e
+    # o World cinza, que tambem isola os flocos para a medicao de cor. Mira
+    # no grupo mais denso da camada de cima, camera a 40 cm, lente 50 mm
+    # (a 85 mm o quadro de 9,5 cm de largura nao cabia 4 flocos).
+    from bpy_extras.object_utils import world_to_camera_view
+    import numpy as np
+    cena.frame_set(1)
+    bpy.context.view_layer.update()
+    de_cima = [esp for esp in objs["espumas"] if esp.location.z > e + uz]
+
+    def vizinhos(a, alcance=0.11):
+        return [b for b in de_cima if (b.location - a.location).xy.length < alcance]
+
+    central = max(de_cima, key=lambda a: len(vizinhos(a)))
+    grupo = sorted(vizinhos(central), key=lambda b: (b.location - central.location).length)[:6]
+    mira = sum((b.location for b in grupo), Vector()) / len(grupo)
+    DIST_CLOSE = 0.40
+    enquadrar(mira + Vector((0.55, -0.60, 0.58)).normalized() * DIST_CLOSE, mira, 50.0)
+    escondidos = [objs["corpo"], objs["etiqueta"]] + list(objs["abas"])
+    for o in escondidos:
+        o.hide_render = True
+    bpy.context.view_layer.update()
+    caminho = render("espuma")
+    for o in escondidos:
+        o.hide_render = False
+    w, h = LARGURA, ALTURA
+
+    def no_quadro(o):
+        v = world_to_camera_view(cena, cam, o.matrix_world.translation)
+        return v.z > 0 and 0.0 <= v.x <= 1.0 and 0.0 <= v.y <= 1.0
+
+    visiveis = [o for o in objs["espumas"] if no_quadro(o)]
+    # Olhando obliquo sobre a camada, o quadro alcanca flocos a mais de 1 m
+    # (medido: 15 com o centro no quadro); o pedido "4-6 flocos a ~40 cm" e
+    # sobre o primeiro plano, entao conta-se quem esta a menos de 50 cm.
+    pos_cam = cam.matrix_world.translation
+    perto = [o for o in visiveis if (o.matrix_world.translation - pos_cam).length < 0.50]
+    print("[medida] espuma close: camera a %.2f m do grupo; %d flocos com o centro no quadro, %d deles a menos de 50 cm "
+          "(grupo mirado: %d)" % ((pos_cam - mira).length, len(visiveis), len(perto), len(grupo)))
+    assert 4 <= len(perto) <= 9, "close deveria ter 4-6 flocos no primeiro plano"
+
+    img = bpy.data.images.load(caminho)
+    px = np.empty(w * h * 4, dtype=np.float32)
+    img.pixels.foreach_get(px)
+    srgb = px.reshape(h, w, 4)[::-1, :, :3] * 255.0          # ja e sRGB (ver cabecalho)
+    bpy.data.images.remove(img)
+    borda = np.concatenate([srgb[:8].reshape(-1, 3), srgb[-8:].reshape(-1, 3), srgb[:, :8].reshape(-1, 3), srgb[:, -8:].reshape(-1, 3)])
+    fundo = np.median(borda, axis=0)
+    e_floco = np.abs(srgb - fundo).max(axis=2) > 25.0
+
+    def bbox_px(o):
+        pts = [world_to_camera_view(cena, cam, o.matrix_world @ v.co) for v in o.data.vertices]
+        xs = [q.x * w for q in pts]
+        ys = [(1.0 - q.y) * h for q in pts]
+        return (max(0, int(min(xs))), min(w, int(max(xs)) + 1), max(0, int(min(ys))), min(h, int(max(ys)) + 1))
+
+    x0, x1, y0, y1 = bbox_px(central)
+    sub, msk = srgb[y0:y1, x0:x1], e_floco[y0:y1, x0:x1]
+    pix = sub[msk]
+    lum = pix.mean(axis=1)
+    media = pix.mean(axis=0)
+    luz = pix[lum >= np.percentile(lum, 50)].mean(axis=0)
+    todos = srgb[e_floco].mean(axis=0)
+    hexa = lambda c: "#%02X%02X%02X" % tuple(int(round(v)) for v in c)  # noqa: E731
+    print("[medida] espuma cor: fundo %s; floco central (%d px, bbox %dx%d): media %s, metade iluminada %s "
+          "(G/R %.2f, B/R %.2f); todos os flocos (%d px): media %s. Alvo #E8D59A..#F0E2B4 = G/R 0,92-0,94, B/R 0,66-0,75" % (
+              hexa(fundo), len(pix), x1 - x0, y1 - y0, hexa(media), hexa(luz), luz[1] / luz[0], luz[2] / luz[0],
+              int(e_floco.sum()), hexa(todos)))
+    assert len(pix) > 400, "floco central quase nao aparece"
+    assert luz[0] - luz[2] > 30.0 and luz[2] / luz[0] < 0.85, "floco saiu branco, nao creme-amarelo"
+    assert 0.84 <= luz[1] / luz[0] <= 0.99 and 0.50 <= luz[2] / luz[0] <= 0.88, "matiz longe do creme pedido"
+
 # Topo ortografico: mede a largura da engrenagem contra a caixa e a cor da
 # tinta no pixel (sobre papelao, nao sobre papel branco).
 if "topo" in QUAIS:
@@ -355,7 +481,7 @@ if "topo" in QUAIS:
         fita = sub.mean(axis=2) > k_lum * 1.08
         print("[medida] topo sem logo: pixels de tinta no miolo (80%% do topo): %d de %d; pixels mais claros que o "
               "papelao (fita): %.1f%%; papelao mediano (%.0f,%.0f,%.0f) sRGB" % (
-                  int(tinta.sum()), tinta.size, 100.0 * fita.mean(), *tuple(np.where(kraft <= 0.0031308, kraft * 12.92, 1.055 * kraft ** (1 / 2.4) - 0.055) * 255)))
+                  int(tinta.sum()), tinta.size, 100.0 * fita.mean(), *tuple(kraft * 255)))
         assert tinta.sum() < 0.001 * tinta.size, "ha tinta no topo sem logo"
         QUAIS = []
     cols = np.where(tinta.any(axis=0))[0] if objs["com_logo"] else np.array([0, 1])
@@ -370,8 +496,8 @@ if "topo" in QUAIS and objs["com_logo"]:
               100.0 * (rows[-1] - rows[0] + 1) / caixa_px, centro_x, centro_y))
 
     def srgb(v):
-        v = np.clip(np.asarray(v, dtype=np.float64), 0, 1)
-        return np.where(v <= 0.0031308, v * 12.92, 1.055 * v ** (1 / 2.4) - 0.055) * 255
+        # o pixel do PNG de 8 bits ja vem em sRGB (ver cabecalho)
+        return np.clip(np.asarray(v, dtype=np.float64), 0, 1) * 255
 
     r0, r1 = rows[0], rows[-1]
     faixa = slice(cols[0], cols[-1] + 1)
