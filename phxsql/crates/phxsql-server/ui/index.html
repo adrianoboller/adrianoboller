@@ -1324,11 +1324,23 @@ td.num.mal{color:var(--log)}
                                   text-transform:uppercase}
 .form-dbl .cmp .leg{font-size:10.5px;line-height:1.4;color:var(--texto-3);
                     text-transform:none;letter-spacing:0}
-.form-dbl input,.form-dbl select{
+/* O `textarea` entrou nesta lista DEPOIS, e a falta dele era visivel:
+   achado exercitando a tela no tema escuro, o campo de lista aparecia como
+   uma caixa BRANCA com texto preto no meio de um painel escuro -- porque o
+   seletor nomeava `input` e `select`, os dois controles que existiam quando
+   ele foi escrito, e o terceiro tipo de campo (`lista`, que e um textarea)
+   nasceu fora dele.
+   E o mesmo padrao que o `rownum` ja custou a esta casa por outro caminho:
+   PECA NOVA NO FIM DE UMA LISTA QUEBRA QUEM ENUMEROU A LISTA ANTIGA. O
+   conserto entra aqui, no seletor, e nao no campo que o motivou -- o irmao
+   `rest.tabelas` tinha o mesmo defeito e sara junto. */
+.form-dbl input,.form-dbl select,.form-dbl textarea{
   padding:8px 10px;border:1px solid var(--linha);border-radius:5px;
   background:var(--painel);color:var(--texto);font-size:12.5px;margin:0;
 }
-.form-dbl input:focus,.form-dbl select:focus{outline:none;border-color:var(--laranja)}
+.form-dbl textarea{font-family:"IBM Plex Mono",monospace;resize:vertical}
+.form-dbl input:focus,.form-dbl select:focus,.form-dbl textarea:focus{
+  outline:none;border-color:var(--laranja)}
 /* Numero em algarismo de largura fixa: sem isto, 1000 e 2048 nao alinham de
    um campo para o outro, e a coluna de ajustes fica com os digitos dancando. */
 .form-dbl input[type=number]{font-family:"IBM Plex Mono",monospace;
@@ -6878,6 +6890,7 @@ const AJUSTE_NA_FABRICA = {
   "rest.tabelas": ["tela.cfg_rest_tabelas", "tela.cfg_rest_tabelas_diz"],
   "rest.swagger_ligado": ["tela.cfg_rest_swagger", "tela.cfg_rest_swagger_diz"],
   "rest.swagger_bind": ["tela.cfg_rest_swagger_bind", "tela.cfg_rest_swagger_bind_diz"],
+  "cifra.tabelas": ["tela.cfg_cifra_tabelas", "tela.cfg_cifra_tabelas_diz"],
 };
 
 /** O rótulo de um ajuste; sem entrada, o nome do campo serve de reserva. */
@@ -6922,6 +6935,12 @@ const GRUPOS_AJUSTE = [
    ["rest.ligado", "rest.bind", "rest.nome", "rest.database", "rest.tabelas",
     "rest.swagger_ligado", "rest.swagger_bind"],
    c => rodapeDoRest(c)],
+  // As tabelas declaradas cifradas ficam num grupo SÓ DELAS, e não junto do
+  // resto da cifra: o resto da seção `cifra` não se edita pela tela (senha e
+  // iterações moram no arquivo, porque carregam credencial), e um grupo com um
+  // campo editável e cinco só de leitura faria parecer que os cinco também se
+  // gravam daqui.
+  ["tela.cfg_cifra", ["cifra.tabelas"], () => rodapeDaCifra()],
   ["Alerta de espaço em disco",
    ["alertas.ligado", "alertas.livre_minimo_percentual", "alertas.livre_minimo_mb",
     "alertas.checar_minutos", "alertas.repetir_horas"]],
@@ -7040,6 +7059,20 @@ function rodapeDoRest(c) {
       ${esc(r.token_proprio ? txt("tela.cfg_rest_token_sim") : txt("tela.cfg_rest_token_nao"))}.
       ${marcado(txt("tela.cfg_rest_token_diz"))}</p>
       <p>${marcado(txt("tela.cfg_rest_nota"))} ${marcado(txt("tela.cfg_rest_nota2"))}</p>
+    </div>`;
+}
+
+/** O rodapé do grupo das tabelas cifradas: o que declarar FAZ e o que não faz.
+ *
+ * O rodapé é a peça, e não o enfeite: um campo chamado «tabelas cifradas» que
+ * não cifra nada seria a mentira desta tela. Ele diz as três coisas na ordem
+ * em que enganam — declarar não cifra, o que a lista faz de verdade hoje, e
+ * que ela não apaga o que já está gravado. */
+function rodapeDaCifra() {
+  return `<div class="nota">
+      <p>${marcado(txt("tela.cfg_cifra_nota"))}</p>
+      <p>${marcado(txt("tela.cfg_cifra_nota2"))}</p>
+      <p>${marcado(txt("tela.cfg_cifra_nota3"))}</p>
     </div>`;
 }
 

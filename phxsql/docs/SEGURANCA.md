@@ -1712,3 +1712,459 @@ O que ficou por medir, nomeado: **o custo da senha por tabela sobre o
 protocolo** — quantos pedidos a mais um cliente faria para abrir uma tabela com
 senha própria — e **a rotação**, que não existe nem com a senha do servidor
 (§11.5) e que com senha por tabela passa a ser N rotações em vez de uma.
+
+---
+
+## 13. A lista de tabelas cifradas, e o furo do Profiler
+
+Rodada de 05/09/2026, frente **CIFRA-POR-TABELA**. Duas entregas inteiras — a
+lista declarada no `config.json` e o Profiler cego para ela — e uma migração
+que **ficou por fazer**, nomeada no fim.
+
+### 13.1 O furo, medido antes de qualquer conserto
+
+O `Evento` do Profiler guardava `redigir(linha_crua)`: o pedido **inteiro**,
+redigido **só por nome de campo**. A lista `SEGREDOS` tem `senha`, `token`,
+`chave`, `prova`, `assinatura`… e **não tem `linha`** — nem podia ter, porque
+`linha` é justamente o dado.
+
+E o Profiler **grava arquivo de texto** (`perfil.txt`, com rotação `.1`, `.2`…).
+Então o payload de uma tabela cifrada ficava **em claro num arquivo em disco, ao
+lado do `.reg` cifrado** — o que anula, palavra por palavra, o propósito escrito
+no `cofre.rs`:
+
+> *«Não protege contra quem lê o `config.json` desta máquina: quem lê o
+> `config.json` tem a senha. Protege o **arquivo copiado** — disco levado,
+> backup vazado, cópia numa máquina que não é esta.»*
+
+**Quem leva o disco leva o `perfil.txt`.**
+
+### 13.2 A decisão: o ANEL vê, o ARQUIVO não
+
+Palavra do dono: *«se for administrador, a regra usa a senha do `config.json`»*.
+Daí sai a assimetria, e ela não é descuido:
+
+| onde | tabela declarada em `cifra.tabelas` |
+|---|---|
+| **anel em memória** (a tela) | guarda o pedido redigido, **como antes** |
+| **`perfil.txt`** (o disco) | `op`, `database`, `tabela`, duração e **`bytes`** — nunca o texto |
+
+Quem chega à tela do Profiler já passou pelo `portao_do_profiler` e é
+administrador **deste** servidor — e administrador tem o `config.json`, logo tem
+a senha do cofre. Esconder o texto dele seria teatro. O que não é teatro é
+manter o texto **fora do arquivo**, porque o arquivo **não tem quem olha**: ele
+viaja com o disco, entra no backup, e ali não há login para conferir nem portão
+para atravessar.
+
+No lugar do pedido o arquivo grava, por extenso,
+`<tabela declarada em cifra.tabelas: pedido nao gravado>` — e não um `-`. Quem
+ler o `perfil.txt` seis meses depois precisa saber a diferença entre *«não havia
+texto»* e *«o texto existe e não foi gravado de propósito»*: log que omite sem
+dizer que omitiu manda procurar defeito onde há decisão.
+
+**O tamanho fica.** É a pétrea da casa — *o que não se analisa não vira texto,
+vira o tamanho em bytes* — aplicada ao que não se **pode** mostrar em vez do que
+não se **consegue** ler. Continua dando para achar o lote gigante que derrubou o
+servidor sem ler uma linha do conteúdo.
+
+### 13.3 As duas fontes de verdade: **o disco manda, a lista pede**
+
+A pergunta que a frente tinha de responder como DBA: com marcação **por tabela**
+na configuração e marcação **por coluna** no esquema, passam a existir duas
+respostas para *«isto é cifrado?»* — e duas verdades divergem no primeiro
+caminho que esquecer de atualizar uma delas.
+
+**A resposta é que nunca houve duas.** A cifra do `.reg` é decidida **na
+criação** e gravada **no cabeçalho do arquivo** (`cofre::Material`: o sal e a
+prova de 16 bytes). A leitura não consulta o `config.json` para saber se
+descriptografa — ela lê o cabeçalho. **O disco é, e sempre foi, a única fonte de
+verdade sobre o estado.**
+
+O que a lista é: a **intenção**. E intenção pode ser plural sem contradição,
+porque ela não responde *«isto está cifrado?»* — responde *«isto deve estar»*.
+É a mesma divisão do `.pag`, que nesta casa **não** é fonte de verdade.
+
+A consequência prática, e ela vai escrita na tela: **declarar não cifra**. Uma
+tabela nomeada na lista cujo `.reg` está em claro continua em claro até alguém
+rodar a migração — que é a parte que **não** foi entregue (§13.6).
+
+### 13.4 O formato da lista: `"banco.tabela"`, e por quê
+
+Palavra do dono: *«se tiver 2 bancos com nomes diferentes e tabelas com nomes
+iguais, as senhas são referentes ao banco em questão»*.
+
+`lojaA.clientes` e `lojaB.clientes` são **duas tabelas**. Uma lista de nomes
+soltos casaria as duas ou nenhuma — e o erro perigoso é o segundo: a tela
+prometeria proteção para a que ninguém declarou. Um objeto `{"lojaA":
+["clientes"]}` diria o mesmo em dois níveis e faria a lista de **uma** tabela
+custar três linhas; a forma plana é a que `rest.tabelas` já usa.
+
+**Item torto é recusado no arranque**, e a recusa nomeia o item. O motivo é o de
+sempre: uma lista de segurança escrita errada não dá erro nenhum — ela
+simplesmente não casa com tabela nenhuma, e a proteção que o dono acha que ligou
+nunca acontece. **Proteção que falha calada é pior que proteção ausente**,
+porque ninguém vai procurar por ela.
+
+**Tabela que não existe na lista:** nada acontece — é o comportamento de hoje,
+byte por byte. **Lista que nomeia tabela inexistente:** o servidor **sobe**. Não
+é descuido: declarar antes de criar é ordem legítima de modelagem, e recusar o
+arranque por isso derrubaria um servidor cuja tabela foi excluída ontem.
+
+### 13.5 A porta dos fundos: três operações escondem tabela
+
+O campo `"tabela"` do primeiro nível **não basta**, e isto já está medido nesta
+casa — o `CLAUDE.md` nomeia as três: `juntar` guarda em `a.tabela`/`b.tabela`,
+`unir` guarda numa **lista**, e `pivotar` põe a tabela de fatos no campo que se
+lê e as de consulta dentro de um `juntar` aninhado.
+
+Um Profiler que olhasse só o primeiro nível gravaria em claro o pedido que lê a
+tabela declarada **como lado B de uma junção** — a mesma porta dos fundos que o
+portão de permissão já teve. Então a colheita **desce a árvore inteira**, e o
+`database` corrente desce com ela: um item que traz o próprio `"database"` manda
+no ramo dele.
+
+**Basta uma.** Um pedido que junta uma tabela comum com uma declarada carrega o
+dado da declarada, e gravar o texto porque a *outra* metade é comum seria vazar
+pela metade que ninguém declarou.
+
+### 13.6 O que NÃO foi entregue, nomeado
+
+**`Criptografar(tab1, tab2, "Senha")` / `Descriptografar(…)`** — a migração que
+reescreve o `.reg` slot a slot no molde do `ALTER TABLE ADD COLUMN`. **Não
+entrou nesta rodada.** Com ela virão, e o desenho já está decidido:
+
+- **o `.log`, o `.trash` e o `.reason` são append-only.** `Criptografar` protege
+  o dado **atual** e **não o histórico**; `Descriptografar` abre o atual e
+  **deixa o histórico cifrado**. Não é defeito — é o formato;
+- **o `.ndx` continua em claro.** Medido: **200 de 200** pares `(valor, rowid)`
+  legíveis sem chave nenhuma, e o `.ndx` (28.672 B) é **maior** que o `.reg`
+  (23.440 B) que a cifra protege (§12.3);
+- **a queda no meio** precisa da mesma resposta que o `ALTER` deu com o volume 1
+  como ponto de compromisso — metade cifrada e metade em claro **abre sem erro
+  nenhum** se ninguém marcar.
+
+**A senha por banco** (`config.json` com uma senha por database, obrigatória)
+**também não entrou**, e o parecer está na §13.7.
+
+### 13.7 Parecer: senha por banco, medida
+
+O cofre é um `static` com **uma** senha do processo, e o cache de chaves
+derivadas tem chave `(sal, iterações)` — **sem a senha**. Isso é correto hoje
+**só porque** `definir_com` esvazia o cache inteiro a cada troca (§12.2).
+
+**Medido nesta rodada, com o binário de hoje** (`--example senha-por-tabela` e
+`--example custo-da-cifra`, ambos recompilados antes):
+
+| pergunta | número medido |
+|---|---|
+| 10 pedidos sobre 2 tabelas, **uma senha do servidor** | **2** derivações |
+| os mesmos 10 pedidos **alternando senha** (= alternando banco, pelo caminho que existe) | **20** derivações |
+| custo de **uma** derivação (PBKDF2-SHA256, 210.000 iterações) | **290,3 ms** |
+| custo de **selar um slot** de 128 bytes | **0,584 µs** = **7,8%** de uma inserção de 7,5 µs |
+| o que a etiqueta cobra em disco | **16 bytes por linha** = 12,5% num slot de 128 |
+
+**E a premissa do «opcional» morre na forma em que foi dita, e sobrevive noutra.**
+O dono justificou a opção pela *«lentidão para abrir»*, e o número existe — mas
+ele **não é por abertura**: a chave derivada é **cacheada por `(sal, iterações)`,
+e o sal é sorteado por ARQUIVO**. Logo o servidor paga **uma derivação por
+arquivo, uma vez na vida do processo** — é o `2` da primeira linha da tabela, e
+não `2 × 10`. Numa migração de um milhão de linhas os 290 ms somem no ruído.
+
+**O que pesa numa migração é o custo por linha**, e ele é contínuo: 0,584 µs por
+slot, **0,58 s no milhão**, mais **16 MB** de disco. É isso que a tela deve
+explicar a quem marca a caixinha — não «lentidão para abrir». *Número citado é
+número que não se mede*, e a justificativa de uma opção está tão sujeita à
+medição quanto a opção.
+
+**A recomendação, com o número que a sustenta:** indexar o cache por
+`(banco, sal, iterações)` e **parar de esvaziar**, invalidando só as entradas do
+banco cuja senha mudou. Sem isso, senha por banco custa **20 derivações onde hoje
+são 2** — **10×**, e o número não converge: 290 ms **por tabela por pedido**, para
+sempre. Um pedido que junta duas tabelas pagaria 580 ms de PBKDF2 antes de ler a
+primeira linha.
+
+**E a consequência de produto, que precisa estar dita antes e não depois do
+primeiro chamado:** com senha obrigatória por banco, **senha esquecida = banco
+perdido**. A senha não é gravada em lugar nenhum, por desenho, e a prova de 16
+bytes do cabeçalho só sabe dizer *«não é esta»*. **Esta frente recomenda NÃO
+haver segunda senha de recuperação**, e o motivo é técnico: qualquer caminho de
+recuperação é a chave guardada noutro lugar, que é exatamente o que a cifra
+existe para não fazer. O que ela recomenda no lugar é o **envelope** da §11.5 —
+a chave do arquivo selada por N senhas —, que resolve rotação e segunda via com
+a mesma peça e sem guardar chave em claro. A decisão é do dono.
+
+### 13.8 O SQL Check: não havia conserto, havia guarda a escrever
+
+Conferido linha a linha: `telemetria::Corrente` guarda `op`, `usuario`,
+`database`, `tabela`, `inicio_ms` e uma `fase` que só recebe **frases fixas
+escritas no código** — as quatro são `"lendo as linhas da pagina"`, `"somando a
+tabela"`, `"convertendo as linhas da carga"` e `"lendo a tabela para exportar"`.
+Nenhum dado de usuário passa por ali.
+
+O risco é de **regressão**, e é do tipo que nasce parecendo melhoria: no dia em
+que alguém escrever `fase_cancelavel(&format!("lendo {}", chave))` para ajudar
+no diagnóstico, o furo nasce **calado** — a `fase` sai na resposta de
+`telemetria`, que não tem portão de tabela nenhum.
+
+A guarda lê o **fonte** e exige que o argumento **comece com aspas**: literal
+passa; `format!`, `&`, variável e concatenação não. Ela conta o que achou e
+**recusa passar vendo zero**, pelo mesmo motivo do conferidor de textos fora da
+fábrica: um leitor quebrado passaria por engano.
+
+### 13.9 O terceiro lugar que grava texto de pedido — procurado, e o que se achou
+
+Varridos todos os `OpenOptions`, `File::create` e `fs::write` do
+`phxsql-server`. **Não há um terceiro** que grave texto de pedido:
+
+| candidato | o que grava | veredito |
+|---|---|---|
+| `acesso.rs` (`acessos.log`) | campos estruturados: `op`, `usuario`, `ip`, `ms`, `database`, `tabela`, `erro` | **limpo** — nenhum campo livre do corpo |
+| `jobs.rs` (histórico de corridas) | `job`, `op`, `usuario`, `ok`, `duracao_ms`, `detalhe` | **limpo** — o `detalhe` é resumo da resposta, e o comentário do campo já dizia *«nunca o corpo inteiro»* |
+| `transacao.rs` (a marca) | **grava a linha**, em binário, no arquivo da marca | **não é texto de pedido, e é transitório** — mas fica **nomeado** aqui: é o único lugar fora do `.reg` onde o conteúdo da linha toca o disco, e ele **não passa pelo cofre**. Vale uma medição própria |
+
+E uma conferência que valia a pena e deu **negativo**: o campo `erro` da linha do
+`perfil.txt` **não** carrega valor de linha. As mensagens citam **nome**, não
+conteúdo — `"indice unico {nome} ja tem essa chave"`, `"{fk}: nao existe
+{tabela}({colunas}) com esse valor"`. Nada a consertar ali, e o achado fica
+escrito para ninguém supor o contrário.
+
+### 13.10 O que os testes provam, e a prova real nos dois sentidos
+
+Nove testes novos, e três guardas no catálogo — **provadas com o defeito
+reposto**, uma a uma:
+
+| guarda | defeito reposto | o que cai |
+|---|---|---|
+| `perfil-grava-o-texto-da-tabela-declarada` | a linha do arquivo volta a escrever `self.pedido` | **4 de 4** |
+| `perfil-so-olha-a-tabela-do-primeiro-nivel` | a colheita para de descer na árvore | **1 de 1** (e só ela — é o ponto) |
+| `fase-da-telemetria-com-dado-do-usuario` | uma `fase_cancelavel(&format!(…))` | **1 de 1** |
+
+O teste que carrega o peso é `o_anel_ve_o_texto_e_o_arquivo_nao`: ele confere as
+**duas** saídas na **mesma** corrida — o anel com o texto, o arquivo sem. O anel
+é o **controle**, e sem ele um Profiler que tivesse ficado cego por acidente
+passaria do mesmo jeito.
+
+E o que mais importa numa guarda nova é o do comportamento **velho**:
+`sem_lista_o_arquivo_continua_com_o_texto`. Quem não declarar tabela nenhuma vê
+exatamente o que via. *Guarda nova entra pedida, não imposta.*
+
+**O que a marcação não faz para trás, e há teste dizendo isso:**
+`declarar_depois_nao_limpa_o_arquivo_ja_gravado`. Marcar uma tabela hoje não
+reescreve o `perfil.txt.1` que já existe — arquivo de rodízio é append-only pelo
+mesmo motivo que o `.log` é. Está como **teste**, e não como comentário, porque
+a surpresa é que custa caro: quem marca depois de ter perfilado acha que limpou o
+passado.
+
+### 13.11 A senha do banco vinda do LOGIN — o parecer, e a decisão que fica com o dono
+
+Palavra do dono: *«no login do ambiente de gestão do SGBD posso passar a senha
+de acesso e a senha do banco e já abrir a conexão com o banco diretamente
+ligado»*.
+
+**Nada disto foi implementado.** O que segue é o parecer medido, e a decisão
+final está **em aberto** de propósito: ela troca uma fronteira de proteção por
+um custo operacional, e as duas pontas são do dono.
+
+#### O ganho, e ele é real
+
+Hoje o cabeçalho do `cofre.rs` diz, por escrito: *«não protege contra quem lê o
+`config.json` desta máquina: quem lê o `config.json` tem a senha»*. **Com a
+senha vindo do login, deixa de ter** — o arquivo passa a não conter a chave de
+nada. É o maior ganho de fronteira disponível neste desenho.
+
+#### A assimetria que precisa estar escrita
+
+| | senha da CONTA | senha do BANCO |
+|---|---|---|
+| viaja? | **não precisa** — o desafio-resposta manda uma `prova` derivada do hash | **precisa**, em claro dentro do túnel: o servidor deriva a chave com PBKDF2 |
+| onde se protege | não existe segredo a proteger no fio | o túnel Noise, e a redação do Profiler |
+
+Por isso `senha_banco` e `senha_banco_b64` **já entraram** na lista `SEGREDOS`
+do `profiler.rs` nesta rodada, com o teste que prova a redação — antes do
+caminho que as manda. Campo redigido que ninguém ainda envia não custa nada;
+campo esquecido no dia em que alguém passa a enviá-lo custa o segredo, **e
+custa calado**.
+
+E uma regra que o `op_login` já cumpre e que o caminho novo não pode quebrar:
+**todo erro devolve a mesma recusa**, de propósito. Senha de banco errada não
+pode responder diferente de login errado, senão o login vira oráculo de *«este
+banco existe e tem senha»*.
+
+#### Onde a chave moraria — medido nos dois caminhos
+
+| caminho | struct | vive quanto |
+|---|---|---|
+| TCP | `servidor.rs::Sessao` | por conexão, morre com ela |
+| web | `http::Sessao`, num `Mutex<Sessoes>` do servidor | atravessa pedidos — é por isso que o desafio-resposta por HTTP funciona |
+
+Guardar ali herda três disciplinas de graça: **expira sozinho** (`limpar`),
+**dá para derrubar** (`encerrar_sessao` passa a significar também *esquecer a
+chave*) e **não vaza na listagem** (`Sessoes::listar` já corta o id em 8 letras
+porque *«ele é a credencial da sessão»*).
+
+Guarda-se a **chave derivada**, não a senha — a senha é a que a pessoa reusa
+noutro lugar, e a derivação custa os **290,3 ms** medidos na §13.7. E o campo
+precisa de `Debug` **manual**: `http::Sessao` deriva `Debug` hoje, e o primeiro
+`{:?}` de alguém publicaria material de cifra num log.
+
+#### Os dois defeitos do desenho, achados medindo — e nenhum aparece de dentro dele
+
+**1. O fecho de janela para de sincronizar, em silêncio.**
+`descarregar_sujas_com` (`servidor.rs:9309`) é o laço de fundo que fecha a
+janela de escrita, e ele **reabre cada tabela suja pelo caminho** —
+`abrir_database(db).and_then(|d| d.abrir_qualificada(tab))` —, não usa
+descritor já aberto. Sem chave, essa reabertura devolve `Autorizacao`. E o ramo
+de erro já escrito diz: *«não abriu: não há o que sincronizar, e a marca desta
+tabela tem de FICAR. A próxima passada tenta de novo»*.
+
+A marca fica e **tenta para sempre**. O comentário foi escrito quando *«não
+abriu»* só podia significar disco ou corrida; com senha na sessão passa a
+significar também *«ninguém logado neste banco agora»* — que é um estado
+**normal e permanente**, e o código o trata como transitório. O dado gravado
+numa tabela cifrada nunca chega ao disco por `fsync`, e nada avisa.
+
+**2. O cache `DERIVADAS` transforma «chave da sessão» em «chave do processo».**
+`cofre::derivar` consulta o cache **antes** de olhar o `COFRE`, e responde sem
+nunca perguntar quem está pedindo. Com uma senha do processo isso é correto, e
+o comentário do fonte explica por quê. **Com senha por sessão é exatamente a
+piora**: o primeiro login que fornecesse a senha poria a chave no cache do
+**processo**, e dali em diante qualquer sessão abriria aquela tabela sem
+fornecer senha nenhuma — inclusive uma que nunca a soube.
+
+O que segura a correção hoje **não** é o `derivar`: é o `definir_com` e o
+`desligar` **esvaziarem o cache inteiro**. E é justamente esse esvaziamento que
+a otimização óbvia do desenho novo removeria, para não pagar 290 ms ao alternar
+de banco. **Indexar por `(banco, sal, iterações)` não resolve isto** — só evita
+colisão entre bancos. O que resolve é o cache deixar de ser global: ou mora na
+sessão junto da chave, ou a chave do cache inclui a identidade de quem pode
+usá-la. **A primeira é melhor**, porque devolve a autorização ao portão onde ela
+se vê, em vez de escondê-la dentro de uma estrutura de cache.
+
+**Não há defeito hoje. Há uma porta**, e a tranca dela entrou nesta rodada:
+`o_cache_de_derivadas_nao_responde_a_quem_nao_deu_a_senha`
+(`tests/cifra-dos-diarios.rs`). Provado nos dois sentidos — simulando o desenho
+proposto (tirar os dois esvaziamentos), **2 testes caem**, com a frase *«as duas
+sessões receberam a MESMA chave para o mesmo sal»*.
+
+#### Quem abre tabela SEM sessão — a varredura
+
+Medida com `bancada/cifra/quem-abre-tabela-sem-sessao.py`, que classifica cada
+chamada de `abrir_qualificada` pela **assinatura da função dona**:
+
+**17 com sessão, 15 sem, 32 sítios.** E os 15 se dividem — o total sozinho
+assusta mais do que deve:
+
+| grupo | quantos | onde |
+|---|---|---|
+| tabela de sistema (`phxsys.mensagens`) | 6 | `servidor.rs:1456`, `:1532`, `:6767`; `idiomas.rs:1933`, `:2059`, `:2218` |
+| **tabela de usuário** | **8** | a tabela abaixo |
+| teste | 1 | `servidor.rs:22097` |
+
+Os oito que decidem, e o veredito de cada um sob as três saídas:
+
+| sítio | quem é | (a) senha no `config.json` | (b) servidor guarda a chave enquanto houver tabela suja | (c) passa a recusar e avisar |
+|---|---|---|---|---|
+| `servidor.rs:1952` `abrir_para_replicar` | replicação, fase 1 | funciona | funciona | **réplica para** |
+| `servidor.rs:1978` `aplicar_lote_da_replica` | replicação, fase 3 | funciona | funciona | **réplica para** |
+| `servidor.rs:2033` `sincronizar_replicada` | replicação | funciona | funciona | **réplica para** |
+| `servidor.rs:2505` `posicao_do_diario` | replicação | funciona | funciona | **réplica para** |
+| `servidor.rs:2776` `abrir_para_bidi` | bidirecional | funciona | funciona | **réplica para** |
+| `servidor.rs:2832` `aplicar_lote_bidi` | bidirecional | funciona | funciona | **réplica para** |
+| `servidor.rs:9327` `descarregar_sujas_com` | **fecho de janela** | funciona | funciona | **sem `fsync` até alguém logar** |
+| `transacao.rs:1157` `completar` | recuperação do arranque | funciona | **não** — não há sessão no arranque | **transação meio aplicada fica pendurada** |
+
+**A (b) reabre a fronteira que a mudança queria fechar** — a chave volta a viver
+no processo sem ninguém logado, que é a mesma exposição do `config.json` por
+outro caminho. **A (c) é honesta e cara.** A (a) é o que existe hoje.
+
+E a linha do `transacao.rs:1157` é a que mais pesa e é a menos óbvia: a
+recuperação do arranque **não tem sessão nenhuma por definição**, então nem a
+(b) a salva. Qualquer desenho de senha por sessão precisa responder o que
+acontece com uma transação que caiu no meio sobre tabela cifrada.
+
+#### E junta com o que já estava medido
+
+As **seis** linhas de replicação desta tabela são o **onde** do que a §12.4 já
+tinha medido como **o quê**: coluna externa marcada **não replica nem com a
+mesma senha dos dois lados** (os sais são sorteados por arquivo), e réplica
+**sem** cifra grava o texto cifrado como conteúdo, **em silêncio**, numa coluna
+`Bin`. Ou seja: a replicação de tabela cifrada **já está quebrada hoje**, com a
+senha no `config.json` — e a senha por sessão não é a causa, mas passa por cima
+dos mesmos seis sítios.
+
+**A decisão fica com o dono**, e as três saídas são defensáveis. O que esta
+frente entrega é o número de cada uma.
+
+### 13.12 A senha do banco NÃO pode ser a senha de administração
+
+Palavra do dono, 05/09/2026:
+
+> *«Se a pessoa só vai acessar o banco via seu ERP usa a senha do banco. Se a
+> pessoa vai administrar os bancos usa a senha de administração que é diferente
+> dos bancos. Porque se fosse a mesma, o invasor capturasse com sniffer ou
+> wireshark não conseguiria administrar e invadir o banco. Pois é uma senha
+> diferente do banco. E não trafegou na rede.»*
+
+**O argumento é técnico e fecha a questão.** É a assimetria da §13.11 vista pelo
+lado do atacante:
+
+| | senha de ADMINISTRAÇÃO | senha do BANCO |
+|---|---|---|
+| viaja pela rede? | **não** — o desafio-resposta manda uma `prova` derivada do hash | **sim, tem de viajar**: o servidor precisa dela em claro para derivar a chave do PBKDF2 |
+| o que o servidor guarda | só o hash | nada, por desenho |
+| quem escuta o fio chega nela? | não | no pior caso, sim |
+
+Se as duas fossem a mesma, quem escutasse o fio — sniffer, túnel quebrado, log
+mal redigido, memória de um proxy — viraria **administrador**. **Separá-las
+transforma o pior caso de «tomou o servidor» em «leu um banco»**, e a diferença
+inteira está em só uma delas viajar.
+
+#### Como se confere, sem nunca ter a senha do administrador
+
+A senha do administrador **não existe em claro em lugar nenhum** — há só o hash.
+Então a conferência deriva a **candidata** com o sal e as iterações que o
+próprio hash guardado carrega, e compara **em tempo constante**
+(`senha::conferir`, que já fazia exatamente isso). Responde *«é a mesma
+senha?»* sem esse código jamais possuir a do administrador.
+
+E ela olha **só supervisor**. Esticar a proibição a todo usuário faria a senha
+do banco colidir com a de qualquer operador — o que não protege mais e proíbe
+muito.
+
+#### Por que a resposta é um `bool` seco, e por que ninguém deve «melhorar» a mensagem
+
+A recusa diz *«a senha do banco não pode ser a senha de administração»*, **e
+só**: nunca qual administrador, nunca uma mensagem diferente conforme quem
+colidiu.
+
+Ela **já é um oráculo pequeno por natureza** — confirma que a senha tentada é a
+de *algum* administrador. É por isso que a conferência só pode acontecer para
+**quem já é administrador autenticado**, que é quem define senha de banco de
+qualquer jeito. Quem detalhar essa mensagem depois estará abrindo o oráculo;
+este parágrafo existe para que a «melhoria» encontre o motivo antes de acontecer.
+
+#### E o teste que manda: proibição nova não derruba servidor que já existe
+
+**Guarda nova entra pedida, não imposta.** Um `config.json` que hoje tem
+`cifra.senha` igual à senha de um administrador **continua subindo** — passa a
+**avisar** no arranque. Recusar aqui poria um banco no chão para consertar uma
+senha, e o estrago seria maior que o furo. A recusa vale para senha de banco
+**definida daqui em diante**, pela operação que ainda não existe.
+
+Três testes: `proibicao_nova_nao_derruba_servidor_que_ja_existe` (o que mais
+importa), `senha_de_cifra_diferente_da_de_administrador_nao_avisa_nada` (o caso
+comum não pode ganhar ruído — aviso que aparece sempre é aviso que ninguém lê) e
+`a_conferencia_deriva_do_hash_e_so_olha_administrador`.
+
+E uma armadilha paga escrevendo o próprio teste, que vale registrar: a primeira
+versão procurava `"adm"` no aviso para provar que ele **não** nomeia o
+administrador — e reprovou sozinha, porque a palavra **administrador** está
+dentro da própria mensagem. **Casador que acha o que procura no texto da
+explicação não prova nada sobre o nome.** O login do teste virou `zoroastro`.
+
+#### O que isto NÃO decide
+
+**De onde vem a senha do banco em tempo de execução** — `config.json`, login, ou
+as duas — continua **em aberto e é do dono**. Esta regra diz que ela é
+*diferente* da de administração; não diz *onde ela mora*. Os dois defeitos
+medidos na §13.11 seguem valendo integralmente.

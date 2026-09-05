@@ -12,6 +12,33 @@
 //! pedido que derruba o servidor: ele aparece mesmo que a operacao nunca
 //! termine.
 //!
+//! # Tabela declarada sigilosa: o ANEL ve, o ARQUIVO nao
+//!
+//! Quando o pedido toca uma tabela nomeada em `cifra.tabelas`, o texto dele
+//! entra no anel como sempre -- e **nao** vai para o `perfil.txt`. No lugar
+//! dele o arquivo grava o tamanho em bytes, que ja era uma coluna da linha.
+//!
+//! A assimetria nao e descuido, e sai de uma frase que ja estava escrita no
+//! `store/src/cofre.rs`: *«Nao protege contra quem le o `config.json` desta
+//! maquina: quem le o `config.json` tem a senha. Protege o ARQUIVO COPIADO --
+//! disco levado, backup vazado, copia numa maquina que nao e esta.»*
+//!
+//! Quem chega a tela do Profiler ja passou pelo `portao_do_profiler` e e
+//! administrador deste servidor -- e administrador tem o `config.json`, logo
+//! tem a senha do cofre. Esconder o texto DELE seria teatro. O que nao e
+//! teatro e manter o texto fora do arquivo, **porque o arquivo nao tem quem
+//! olha**: ele viaja com o disco, entra no backup, e ali nao ha login para
+//! conferir nem portao para atravessar. O payload de uma tabela cifrada
+//! gravado em claro ao lado do `.reg` cifrado anula o proposito do cofre.
+//!
+//! # O que a marcacao NAO faz para tras
+//!
+//! Marcar uma tabela agora nao reescreve `perfil.txt.1`, `.2`... que ja
+//! existem. Arquivo de rodizio e append-only pelo mesmo motivo que o `.log` e:
+//! o que ja foi gravado em claro continua em claro. Quem marca uma tabela
+//! depois de ter perfilado tem de APAGAR os arquivos antigos a mao -- e a tela
+//! diz isso, porque a surpresa seria pior que a limitacao.
+//!
 //! # A senha NAO passa por aqui
 //!
 //! Esta e a regra que mais importa neste arquivo, porque um profiler e
@@ -103,12 +130,34 @@ const SEGREDOS: &[&str] = &[
     "senha_b64",
     "senha_hash",
     "nova_senha",
+    // A senha do BANCO, quando ela passar a entrar pelo login.
+    //
+    // Ela entra na lista ANTES do caminho que a usa, e nao depois, e o motivo
+    // e a assimetria que a distingue da senha da conta: a senha da CONTA pode
+    // ser provada sem viajar (o desafio-resposta manda uma `prova`, nunca a
+    // senha), mas a senha do BANCO nao pode -- o servidor precisa dela em
+    // claro para derivar a chave do PBKDF2. Ela viaja, e o unico lugar em que
+    // se pode tapar e este.
+    //
+    // Campo redigido que ninguem ainda manda nao custa nada; campo que se
+    // esquece de redigir no dia em que alguem passa a manda-lo custa o
+    // segredo, e custa em silencio -- o `perfil.txt` nao acusa nada.
+    "senha_banco",
+    "senha_banco_b64",
     "prova",
     "token",
     "chave",
     "chave_privada",
     "assinatura",
 ];
+
+/// O que o arquivo grava no lugar do pedido de uma tabela declarada sigilosa.
+///
+/// Escrito por extenso, e nao um `-`, porque quem le o `perfil.txt` seis meses
+/// depois precisa saber a DIFERENCA entre "nao havia texto" e "o texto existe
+/// e nao foi gravado de proposito". Log que omite sem dizer que omitiu manda
+/// procurar defeito onde ha decisao.
+const SEM_TEXTO: &str = "<tabela declarada em cifra.tabelas: pedido nao gravado>";
 
 /// Teto de um campo de identificacao na linha do arquivo.
 ///
@@ -202,6 +251,13 @@ pub struct Evento {
     pub bytes: usize,
     /// O pedido, com os campos sensiveis substituidos.
     pub pedido: String,
+    /// O pedido toca uma tabela declarada em `cifra.tabelas`?
+    ///
+    /// Decidido em `chegou`, no MESMO percurso que redige o pedido, e nao na
+    /// hora de escrever: quem decide na hora de escrever decide de novo em
+    /// cada caminho de escrita que nascer depois, e o caminho que alguem
+    /// esquecer e o que vaza. Aqui a resposta viaja com o evento.
+    pub sigiloso: bool,
     /// `None` enquanto a operacao esta em curso.
     pub duracao_ms: Option<u64>,
     pub ok: Option<bool>,
@@ -238,7 +294,15 @@ impl Evento {
             },
             estado,
             self.bytes,
-            self.pedido,
+            // O ARQUIVO nao leva o texto de tabela sigilosa -- ver o cabecalho
+            // do modulo. A coluna de bytes ao lado ja diz o tamanho, entao o
+            // que se perde e o conteudo e nao a medida: continua dando para
+            // achar o pedido gigante que derrubou o servidor.
+            if self.sigiloso {
+                SEM_TEXTO
+            } else {
+                self.pedido.as_str()
+            },
             if self.erro.is_empty() {
                 String::new()
             } else {
@@ -284,6 +348,14 @@ pub struct Profiler {
     bytes_no_arquivo: u64,
     /// Quantas vezes o arquivo virou desde que ligou.
     rodizios: u64,
+    /// As tabelas declaradas em `cifra.tabelas`, ja qualificadas e em
+    /// minusculas -- `["loja.clientes", "rh.folha"]`.
+    ///
+    /// Copiadas para dentro do Profiler, e nao consultadas no `Config` a cada
+    /// pedido, porque o ponto de captura roda ANTES do despacho e nao pode
+    /// tomar trava nenhuma: o caminho quente ja paga uma trava (a do proprio
+    /// Profiler) e pagar a segunda seria pagar duas por pedido.
+    sigilosas: Vec<String>,
     /// Rodizios que nao deram certo -- renomear ou reabrir falhou.
     ///
     /// Contado pelo mesmo motivo de `falhas_de_escrita`: um rodizio que falha
@@ -312,6 +384,7 @@ impl Default for Profiler {
             bytes_no_arquivo: 0,
             rodizios: 0,
             falhas_de_rodizio: 0,
+            sigilosas: Vec::new(),
         }
     }
 }
@@ -378,6 +451,25 @@ impl Profiler {
     /// envelheceria no dia em que o rodizio mudasse de regra.
     pub fn teto_em_disco(&self) -> u64 {
         self.teto_do_arquivo.saturating_mul(self.manter as u64 + 1)
+    }
+
+    /// As tabelas declaradas sigilosas, como o Profiler as conhece.
+    pub fn sigilosas(&self) -> &[String] {
+        &self.sigilosas
+    }
+
+    /// Recebe a lista de `cifra.tabelas`.
+    ///
+    /// Vale A QUENTE, como o rodizio: quem acrescentou uma tabela a lista
+    /// enquanto o Profiler roda quer que o proximo pedido ja saia sem texto do
+    /// arquivo. Esperar o proximo `ligar` deixaria uma janela em que a tela diz
+    /// que a tabela esta declarada e o arquivo continua gravando.
+    pub fn definir_sigilosas(&mut self, tabelas: &[String]) {
+        self.sigilosas = tabelas
+            .iter()
+            .map(|t| t.trim().to_ascii_lowercase())
+            .filter(|t| !t.is_empty())
+            .collect();
     }
 
     /// Ajusta o rodizio. Vale para o arquivo corrente, e nao so no proximo
@@ -635,6 +727,10 @@ impl Profiler {
         // arquivo contam a mesma historia, e a linha forjada morre no
         // nascimento em vez de morrer na hora de escrever -- que e onde
         // alguem esqueceria de matar.
+        //
+        // O pedido e analisado UMA vez, e dessa mesma passada saem as duas
+        // coisas: o texto redigido e a lista de tabelas que ele nomeia.
+        let (pedido, alvos) = analisar_pedido(linha_crua, database);
         let evento = Evento {
             serial,
             quando_ms,
@@ -644,7 +740,12 @@ impl Profiler {
             database: de_uma_linha(database, TETO_DO_CAMPO),
             tabela: de_uma_linha(tabela, TETO_DO_CAMPO),
             bytes: linha_crua.len(),
-            pedido: redigir(linha_crua),
+            pedido,
+            // BASTA UMA. Um pedido que junta uma tabela comum com uma
+            // sigilosa carrega o dado da sigilosa na resposta e o filtro dela
+            // no pedido -- e gravar o texto porque a OUTRA metade e comum
+            // seria vazar pela metade que ninguem declarou.
+            sigiloso: alvos.iter().any(|(db, t)| self.tabela_e_sigilosa(db, t)),
             duracao_ms: None,
             ok: None,
             erro: String::new(),
@@ -655,6 +756,25 @@ impl Profiler {
         }
         self.anel.push_back(evento);
         Some(serial)
+    }
+
+    /// Esta tabela foi declarada em `cifra.tabelas`?
+    ///
+    /// A comparacao e pelo nome QUALIFICADO, e e por isso que o `database`
+    /// vazio nunca casa: `lojaA.clientes` e `lojaB.clientes` sao duas tabelas
+    /// diferentes com o mesmo nome, e casar so pelo nome curto protegeria a
+    /// segunda porque alguem declarou a primeira -- ou, pior, faria a tela
+    /// prometer protecao para a que ninguem declarou.
+    fn tabela_e_sigilosa(&self, database: &str, tabela: &str) -> bool {
+        if self.sigilosas.is_empty() || database.is_empty() || tabela.is_empty() {
+            return false;
+        }
+        let alvo = format!(
+            "{}.{}",
+            database.trim().to_ascii_lowercase(),
+            tabela.trim().to_ascii_lowercase()
+        );
+        self.sigilosas.contains(&alvo)
     }
 
     /// Costura o resultado no evento, e so entao escreve a linha no arquivo.
@@ -758,11 +878,90 @@ fn de_uma_linha(s: &str, teto: usize) -> String {
 /// entao nao se perde pedido legitimo nenhum: perde-se so o lixo, e o lixo e
 /// exatamente onde a senha apareceria por engano.
 pub fn redigir(linha: &str) -> String {
+    analisar_pedido(linha, "").0
+}
+
+/// Redige o pedido **e** colhe as tabelas que ele nomeia, numa passada so.
+///
+/// # Por que junto, e nao duas funcoes
+///
+/// Porque o custo aqui e o `Json::analisar`, e nao o percurso da arvore. Este
+/// arquivo ja pagou essa conta uma vez: o ponto de captura analisava o corpo
+/// inteiro DUAS vezes antes de perguntar se o Profiler estava ligado, e num
+/// lote de cinco mil linhas isso era meio megabyte de JSON analisado para
+/// jogar fora. Uma segunda funcao publica que reanalisasse a mesma linha para
+/// achar as tabelas repetiria o mesmo erro por outro nome.
+fn analisar_pedido(linha: &str, database: &str) -> (String, Vec<(String, String)>) {
     let tamanho = linha.trim().len();
     match Json::analisar(linha) {
-        Ok(j @ Json::Objeto(_)) => limpar(&j).escrever(),
-        Ok(_) => format!("<pedido nao e objeto, {tamanho} bytes>"),
-        Err(_) => format!("<pedido invalido, {tamanho} bytes>"),
+        Ok(j @ Json::Objeto(_)) => {
+            let mut alvos = Vec::new();
+            colher_tabelas(&j, database, &mut alvos);
+            (limpar(&j).escrever(), alvos)
+        }
+        // Pedido que nao e objeto nao vira texto -- vira o tamanho. E sem
+        // arvore nao ha tabela a colher: a lista sai vazia, e o evento cai no
+        // caminho de sempre. Nao ha o que esconder num pedido que nao virou
+        // texto nenhum.
+        Ok(_) => (
+            format!("<pedido nao e objeto, {tamanho} bytes>"),
+            Vec::new(),
+        ),
+        Err(_) => (format!("<pedido invalido, {tamanho} bytes>"), Vec::new()),
+    }
+}
+
+/// Toda tabela nomeada no pedido, em qualquer profundidade, com o banco que
+/// vale para ela.
+///
+/// # Por que a arvore inteira, e nao o campo `"tabela"` do primeiro nivel
+///
+/// Porque **tres operacoes escondem tabela do primeiro nivel**, e isso ja esta
+/// medido nesta casa -- e o `CLAUDE.md` as nomeia: `juntar` guarda as tabelas
+/// em `a.tabela` e `b.tabela`; `unir` guarda numa LISTA; e `pivotar` poe a
+/// tabela de fatos no campo que se le e as de consulta dentro de um `juntar`
+/// aninhado. Um Profiler que olhasse so o primeiro nivel gravaria em claro o
+/// pedido que le a tabela sigilosa como lado B de uma juncao -- que e
+/// exatamente a porta dos fundos que o portao de permissao ja teve.
+///
+/// O `database` corrente desce com a arvore: um item que traz o proprio
+/// `"database"` manda no ramo dele. Sem isso, um `dblink` para outro banco
+/// levaria o nome do banco de fora.
+fn colher_tabelas(j: &Json, database: &str, saida: &mut Vec<(String, String)>) {
+    match j {
+        Json::Objeto(pares) => {
+            let meu_banco = pares
+                .iter()
+                .find(|(k, _)| k.trim().eq_ignore_ascii_case("database"))
+                .and_then(|(_, v)| v.texto())
+                .map(str::trim)
+                .filter(|d| !d.is_empty())
+                .unwrap_or(database);
+            for (k, v) in pares {
+                let chave = k.trim();
+                if chave.eq_ignore_ascii_case("tabela") {
+                    if let Some(t) = v.texto() {
+                        saida.push((meu_banco.to_string(), t.trim().to_string()));
+                    }
+                }
+                if chave.eq_ignore_ascii_case("tabelas") {
+                    if let Some(l) = v.lista() {
+                        for item in l {
+                            if let Some(t) = item.texto() {
+                                saida.push((meu_banco.to_string(), t.trim().to_string()));
+                            }
+                        }
+                    }
+                }
+                colher_tabelas(v, meu_banco, saida);
+            }
+        }
+        Json::Lista(itens) => {
+            for i in itens {
+                colher_tabelas(i, database, saida);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -806,6 +1005,12 @@ mod testes {
             r#"{"op":"criar_usuario","usuario":{"login":"x","senha":"segredo1"}}"#,
             r#"{"op":"lote","linhas":[{"senha":"segredo1"},{"nome":"ok"}]}"#,
             r#"{ "op" : "login" , "senha" : "segredo1" }"#,
+            // A senha do BANCO, que so pode viajar em claro -- ver o
+            // comentario da lista `SEGREDOS`. Ela entra na prova ANTES de
+            // existir o caminho que a manda, porque e o esquecimento que custa
+            // caro, e ele nao acusa nada.
+            r#"{"op":"login","usuario":"adm","senha_banco":"segredo1"}"#,
+            r#"{"op":"login","usuario":"adm","senha_banco_b64":"c2VncmVkbzE="}"#,
         ];
         for p in pedidos {
             let saida = redigir(p);
@@ -1341,5 +1546,243 @@ mod testes {
         assert!(p.rodizios() <= 12, "girou demais: {}", p.rodizios());
         assert!(std::fs::metadata(&alvo).unwrap().len() > 0, "ficou vazio");
         let _ = std::fs::remove_dir_all(&d);
+    }
+}
+
+/// A parte (3) da frente CIFRA-POR-TABELA: **o anel ve, o arquivo nao**.
+///
+/// Cada teste daqui confere o ARQUIVO EM DISCO, e nao a resposta da operacao,
+/// porque o furo E o arquivo: quem leva o disco leva o `perfil.txt`, e ali nao
+/// ha login para conferir nem portao para atravessar.
+#[cfg(test)]
+mod testes_tabela_sigilosa {
+    use super::*;
+
+    /// Um diretorio so deste teste, para as corridas em paralelo nao brigarem
+    /// pelo mesmo `perfil.txt`.
+    fn pasta(nome: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!(
+            "phx-prof-sigilo-{}-{}-{:?}",
+            std::process::id(),
+            nome,
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    /// Liga um Profiler gravando em arquivo, com a lista de sigilosas dada.
+    fn ligado(nome: &str, sigilosas: &[&str]) -> (Profiler, PathBuf) {
+        let d = pasta(nome);
+        let arquivo = d.join("perfil.txt");
+        let mut p = Profiler::default();
+        p.definir_sigilosas(&sigilosas.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+        p.ligar(
+            Filtro::default(),
+            arquivo.to_str().unwrap(),
+            100,
+            1_700_000_000_000,
+        )
+        .unwrap();
+        (p, arquivo)
+    }
+
+    /// So as linhas de EVENTO -- o cabecalho de `ligar` nao e evento.
+    fn corpo(arquivo: &std::path::Path) -> String {
+        std::fs::read_to_string(arquivo).unwrap()
+    }
+
+    /// **A prova real, nos dois sentidos, na MESMA corrida.**
+    ///
+    /// O mesmo pedido produz duas saidas: no anel (o que o administrador ve na
+    /// tela) o texto continua inteiro; no arquivo ele nao esta. O anel e o
+    /// CONTROLE -- sem ele, um Profiler que tivesse ficado cego por acidente
+    /// passaria neste teste do mesmo jeito.
+    #[test]
+    fn o_anel_ve_o_texto_e_o_arquivo_nao() {
+        let (mut p, arquivo) = ligado("dois-sentidos", &["loja.clientes"]);
+        let pedido = r#"{"op":"inserir","database":"loja","tabela":"clientes","linha":{"nome":"Adriano Boller","cpf":"111.222.333-44"}}"#;
+        let s = p
+            .chegou(pedido, "inserir", "adm", "loja", "clientes", "1.1.1.1", 0)
+            .unwrap();
+        p.terminou(s, 3, true, "");
+
+        let no_anel = &p.eventos(1)[0];
+        assert!(
+            no_anel.pedido.contains("Adriano Boller") && no_anel.pedido.contains("111.222.333-44"),
+            "o anel ficou cego: o administrador perdeu a tela por causa de uma \
+             regra que so devia valer para o arquivo -- {}",
+            no_anel.pedido
+        );
+        assert!(no_anel.sigiloso, "o evento nao se marcou sigiloso");
+
+        let texto = corpo(&arquivo);
+        assert!(
+            !texto.contains("Adriano Boller") && !texto.contains("111.222.333-44"),
+            "o payload da tabela declarada foi para o arquivo EM CLARO, ao \
+             lado do .reg cifrado:\n{texto}"
+        );
+        assert!(
+            texto.contains(SEM_TEXTO),
+            "o arquivo omitiu sem dizer que omitiu -- quem ler daqui a seis \
+             meses vai procurar defeito onde ha decisao:\n{texto}"
+        );
+        // O TAMANHO fica: e o que permite achar o pedido gigante sem ler o
+        // conteudo. E a petrea da casa -- «o que nao se analisa nao vira
+        // texto, vira o tamanho em bytes» -- aplicada ao que nao se PODE
+        // mostrar em vez do que nao se consegue ler.
+        assert!(
+            texto.contains(&format!("{}B", pedido.len())),
+            "o arquivo perdeu tambem a medida:\n{texto}"
+        );
+    }
+
+    /// **O teste que mais importa: quem nao declarou tabela nenhuma continua
+    /// exatamente como antes.**
+    ///
+    /// Guarda nova entra PEDIDA, nao imposta. Um Profiler que passasse a
+    /// esconder o texto de todo mundo seria estrago, nao protecao.
+    #[test]
+    fn sem_lista_o_arquivo_continua_com_o_texto() {
+        let (mut p, arquivo) = ligado("sem-lista", &[]);
+        let pedido = r#"{"op":"inserir","database":"loja","tabela":"clientes","linha":{"nome":"Adriano Boller"}}"#;
+        let s = p
+            .chegou(pedido, "inserir", "adm", "loja", "clientes", "1.1.1.1", 0)
+            .unwrap();
+        p.terminou(s, 3, true, "");
+        let texto = corpo(&arquivo);
+        assert!(
+            texto.contains("Adriano Boller"),
+            "o comportamento VELHO mudou sem ninguem pedir:\n{texto}"
+        );
+        assert!(!texto.contains(SEM_TEXTO), "escondeu o que nao foi pedido");
+    }
+
+    /// A tabela declarada e a de OUTRO banco com o mesmo nome nao se
+    /// confundem. E o caso que o dono nomeou: `lojaA.clientes` e
+    /// `lojaB.clientes` sao duas tabelas.
+    #[test]
+    fn a_declaracao_e_por_banco_e_nao_pelo_nome_curto() {
+        let (mut p, arquivo) = ligado("por-banco", &["lojaa.clientes"]);
+        for (db, quem) in [("lojaA", "PROTEGIDO"), ("lojaB", "ABERTO")] {
+            let pedido =
+                format!(r#"{{"op":"ler","database":"{db}","tabela":"clientes","nome":"{quem}"}}"#);
+            let s = p
+                .chegou(&pedido, "ler", "adm", db, "clientes", "1.1.1.1", 0)
+                .unwrap();
+            p.terminou(s, 1, true, "");
+        }
+        let texto = corpo(&arquivo);
+        assert!(
+            !texto.contains("PROTEGIDO"),
+            "o banco declarado vazou:\n{texto}"
+        );
+        assert!(
+            texto.contains("ABERTO"),
+            "protegeu o banco que ninguem declarou -- a lista casou pelo nome \
+             curto:\n{texto}"
+        );
+    }
+
+    /// **A porta dos fundos das tres operacoes que escondem tabela.**
+    ///
+    /// `juntar` guarda em `a.tabela`/`b.tabela`, `unir` numa lista, e `pivotar`
+    /// poe a tabela de fatos no campo que se le e as de consulta dentro de um
+    /// `juntar` aninhado. Um Profiler que olhasse so o primeiro nivel gravaria
+    /// em claro o pedido que le a tabela declarada como lado B.
+    #[test]
+    fn tabela_escondida_em_juncao_uniao_e_pivot_tambem_cega_o_arquivo() {
+        let casos = [
+            r#"{"op":"juntar","database":"loja","a":{"tabela":"pedidos"},"b":{"tabela":"clientes","onde":"cpf = 'VAZOU'"}}"#,
+            r#"{"op":"unir","database":"loja","partes":[{"tabela":"pedidos"},{"tabela":"clientes","filtro":"VAZOU"}]}"#,
+            r#"{"op":"pivotar","database":"loja","tabela":"pedidos","juntar":[{"tabela":"clientes","onde":"VAZOU"}]}"#,
+            r#"{"op":"exportar","database":"loja","tabelas":["pedidos","clientes"],"marca":"VAZOU"}"#,
+        ];
+        for (i, pedido) in casos.iter().enumerate() {
+            let (mut p, arquivo) = ligado(&format!("escondida-{i}"), &["loja.clientes"]);
+            // O campo `"tabela"` do primeiro nivel e `pedidos` -- que NAO esta
+            // declarada. E exatamente o disfarce.
+            let s = p
+                .chegou(pedido, "juntar", "adm", "loja", "pedidos", "1.1.1.1", 0)
+                .unwrap();
+            p.terminou(s, 1, true, "");
+            let texto = corpo(&arquivo);
+            assert!(
+                !texto.contains("VAZOU"),
+                "caso {i}: a tabela declarada entrou pela porta dos fundos e o \
+                 pedido foi para o arquivo em claro:\n{texto}"
+            );
+        }
+    }
+
+    /// A lista vale A QUENTE: quem declara a tabela com o Profiler ligado quer
+    /// o efeito no proximo pedido, e nao no proximo `ligar`.
+    #[test]
+    fn declarar_com_o_profiler_ligado_vale_do_pedido_seguinte_em_diante() {
+        let (mut p, arquivo) = ligado("a-quente", &[]);
+        let pedido = r#"{"op":"ler","database":"loja","tabela":"clientes","nome":"ANTES"}"#;
+        let s = p
+            .chegou(pedido, "ler", "adm", "loja", "clientes", "1.1.1.1", 0)
+            .unwrap();
+        p.terminou(s, 1, true, "");
+        p.definir_sigilosas(&["loja.clientes".to_string()]);
+        let pedido = r#"{"op":"ler","database":"loja","tabela":"clientes","nome":"DEPOIS"}"#;
+        let s = p
+            .chegou(pedido, "ler", "adm", "loja", "clientes", "1.1.1.1", 0)
+            .unwrap();
+        p.terminou(s, 1, true, "");
+        let texto = corpo(&arquivo);
+        assert!(
+            texto.contains("ANTES"),
+            "reescreveu o passado -- e arquivo de rodizio nao se reescreve:\n{texto}"
+        );
+        assert!(
+            !texto.contains("DEPOIS"),
+            "a declaracao a quente nao pegou:\n{texto}"
+        );
+    }
+
+    /// O que a marcacao NAO faz: apagar o que ja esta gravado.
+    ///
+    /// Esta escrito como TESTE, e nao so como comentario, porque a surpresa e
+    /// que custa caro -- quem marca a tabela depois de ter perfilado acha que
+    /// limpou o passado, e o `perfil.txt.1` continua no disco com tudo.
+    #[test]
+    fn declarar_depois_nao_limpa_o_arquivo_ja_gravado() {
+        let (mut p, arquivo) = ligado("passado", &[]);
+        let pedido = r#"{"op":"ler","database":"loja","tabela":"clientes","nome":"JA GRAVADO"}"#;
+        let s = p
+            .chegou(pedido, "ler", "adm", "loja", "clientes", "1.1.1.1", 0)
+            .unwrap();
+        p.terminou(s, 1, true, "");
+        p.desligar(1_700_000_001_000);
+        p.definir_sigilosas(&["loja.clientes".to_string()]);
+        assert!(
+            corpo(&arquivo).contains("JA GRAVADO"),
+            "o teste mentiu: se um dia isto passar a limpar, a documentacao e \
+             a tela precisam mudar junto"
+        );
+    }
+
+    /// Pedido que nao e JSON continua virando o tamanho -- e o caminho novo
+    /// nao pode transformar isso em erro nem em texto.
+    #[test]
+    fn pedido_invalido_continua_virando_tamanho_com_a_lista_ligada() {
+        let (mut p, arquivo) = ligado("invalido", &["loja.clientes"]);
+        let s = p
+            .chegou(
+                "{\"op\":\"ler\",\"senha\":\"x",
+                "ler",
+                "adm",
+                "loja",
+                "clientes",
+                "ip",
+                0,
+            )
+            .unwrap();
+        p.terminou(s, 1, false, "erro");
+        let texto = corpo(&arquivo);
+        assert!(texto.contains("<pedido invalido"), "{texto}");
     }
 }

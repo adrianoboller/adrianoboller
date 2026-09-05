@@ -873,6 +873,29 @@ pub struct Cifra {
     pub salto: usize,
     /// O separador entre os dois lados do pacote FrogCript. Padrao `|`.
     pub separador: String,
+    /// As tabelas que o dono DECLARA sigilosas, em nome qualificado
+    /// `"banco.tabela"`.
+    ///
+    /// # Por que qualificado, e nao uma secao por banco
+    ///
+    /// Porque o nome de tabela nao e unico neste servidor: `loja.clientes` e
+    /// `rh.clientes` sao duas tabelas, e uma lista de nomes soltos protegeria
+    /// as duas ou nenhuma. Um objeto `{"loja": ["clientes"]}` diria o mesmo em
+    /// dois niveis, e faria a lista de UMA tabela custar tres linhas; a forma
+    /// plana e a mesma que `rest.tabelas` ja usa na tela.
+    ///
+    /// # O que esta lista faz HOJE, e o que ela nao faz
+    ///
+    /// Ela DECLARA. Nao cifra nada: cifrar uma tabela que ja existe e
+    /// reescrever o `.reg` slot a slot, e isso e a migracao
+    /// `Criptografar`/`Descriptografar`, que ainda nao existe (PENDENCIAS §182).
+    /// O leitor que ela tem hoje e o **Profiler**, que para de gravar o texto
+    /// do pedido no `perfil.txt` quando o pedido toca uma tabela desta lista.
+    ///
+    /// A fonte da verdade sobre "isto esta cifrado?" continua sendo o DISCO --
+    /// o cabecalho do `.reg` diz, e e ele que a leitura consulta. A lista e a
+    /// INTENCAO; o disco e o estado. Ver `docs/SEGURANCA.md` §13.
+    pub tabelas: Vec<String>,
 }
 
 /// `Debug` escrito a mao: o derivado imprimiria a senha, e um diagnostico
@@ -888,6 +911,7 @@ impl std::fmt::Debug for Cifra {
             .field("modo", &self.modo)
             .field("salto", &self.salto)
             .field("separador", &self.separador)
+            .field("tabelas", &self.tabelas)
             .finish()
     }
 }
@@ -925,7 +949,122 @@ impl Cifra {
                     s
                 }
             },
+            // Aparadas e em minusculas JA na leitura, e nao na comparacao:
+            // quem compara aparando faz cada leitor repetir a regra, e o
+            // leitor que esquecer erra calado -- que e exatamente o defeito
+            // que uma lista de seguranca nao pode ter.
+            tabelas: c
+                .textos("tabelas")
+                .into_iter()
+                .map(|t| t.trim().to_ascii_lowercase())
+                .filter(|t| !t.is_empty())
+                .collect(),
         }
+    }
+
+    /// A lista de tabelas sigilosas esta escrita de um jeito que os leitores
+    /// entendem?
+    ///
+    /// Recusa no ARRANQUE, e nao na primeira gravacao. O motivo e o mesmo do
+    /// `modo_e_ajuste`: uma lista de seguranca escrita errada nao da erro
+    /// nenhum -- ela simplesmente nao casa com tabela nenhuma, e a protecao
+    /// que o dono acha que ligou nunca acontece. Protecao que falha calada e
+    /// pior que protecao ausente, porque ninguem vai procurar por ela.
+    pub fn validar(&self) -> Result<()> {
+        for t in &self.tabelas {
+            let mut partes = t.split('.');
+            let banco = partes.next().unwrap_or("");
+            let tabela = partes.next().unwrap_or("");
+            if banco.is_empty() || tabela.is_empty() || partes.next().is_some() {
+                return Err(PhxError::Esquema(format!(
+                    "cifra.tabelas: {t:?} nao e um nome qualificado -- escreva \
+                     \"banco.tabela\" (o nome da tabela sozinho nao diz de qual \
+                     banco, e este servidor pode ter duas com o mesmo nome)"
+                )));
+            }
+        }
+        let mut vistas: Vec<&str> = Vec::new();
+        for t in &self.tabelas {
+            if vistas.contains(&t.as_str()) {
+                return Err(PhxError::Esquema(format!(
+                    "cifra.tabelas: {t:?} aparece duas vezes"
+                )));
+            }
+            vistas.push(t);
+        }
+        Ok(())
+    }
+
+    /// A senha do BANCO nao pode ser a senha de um ADMINISTRADOR.
+    ///
+    /// Palavra do dono, 05/09/2026: *«se a pessoa so vai acessar o banco via
+    /// seu ERP usa a senha do banco. Se a pessoa vai administrar os bancos usa
+    /// a senha de administracao que e diferente dos bancos. Porque se fosse a
+    /// mesma, o invasor capturasse com sniffer ou wireshark nao conseguiria
+    /// administrar e invadir o banco. Pois e uma senha diferente do banco. E
+    /// nao trafegou na rede.»*
+    ///
+    /// # A assimetria que faz a regra valer, e ela e tecnica
+    ///
+    /// A senha da CONTA nao precisa viajar: o desafio-resposta manda uma
+    /// `prova` derivada do hash, e o servidor guarda so o hash. A senha do
+    /// BANCO **precisa** viajar, porque o servidor precisa dela em claro para
+    /// derivar a chave do PBKDF2 -- nao ha desafio-resposta que a substitua.
+    ///
+    /// Entao quem escuta o fio pode, no pior caso, chegar na senha do banco. Se
+    /// ela fosse tambem a de administracao, esse mesmo atacante viraria
+    /// administrador. **Separar as duas transforma o pior caso de «tomou o
+    /// servidor» em «leu um banco»** -- e a diferenca inteira esta em so uma
+    /// delas viajar.
+    ///
+    /// # Por que comparar assim, e nao as senhas
+    ///
+    /// Porque a senha do administrador **nao existe em claro em lugar nenhum**
+    /// -- ha so o hash. `senha::conferir` deriva a candidata com o SAL e as
+    /// ITERACOES que o proprio hash carrega e compara em tempo constante. Isso
+    /// responde «e a mesma senha?» sem este codigo nunca ter a do
+    /// administrador, que e exatamente o ponto.
+    ///
+    /// # E por que a resposta e um `bool` seco
+    ///
+    /// Porque a recusa **nao pode virar oraculo**. Ela diz «a senha do banco
+    /// nao pode ser a senha de administracao», e so: nunca QUAL administrador,
+    /// nunca uma mensagem diferente conforme quem colidiu. Ela ja e um oraculo
+    /// pequeno por natureza -- confirma que a senha tentada e a de ALGUM
+    /// administrador --, e e por isso que a conferencia so acontece para quem
+    /// **ja e administrador autenticado**, que e quem define senha de banco de
+    /// qualquer jeito. Quem "melhorar" esta mensagem depois esta abrindo o
+    /// oraculo; o motivo esta aqui e em `docs/SEGURANCA.md` §13.12.
+    pub fn senha_e_de_algum_administrador(
+        senha: &str,
+        cadastro: &crate::usuarios::Cadastro,
+    ) -> bool {
+        if senha.is_empty() {
+            return false;
+        }
+        cadastro
+            .root
+            .iter()
+            .chain(cadastro.usuarios.iter())
+            .filter(|u| u.supervisor)
+            .any(|u| phxsql_core::senha::conferir(senha, &u.senha_hash))
+    }
+
+    /// Esta tabela foi declarada sigilosa?
+    ///
+    /// O `database` vazio nunca casa: um pedido que nao nomeia banco nao
+    /// nomeia tabela desta lista, e casar so pelo nome da tabela protegeria
+    /// `rh.clientes` porque alguem declarou `loja.clientes`.
+    pub fn tabela_sigilosa(&self, database: &str, tabela: &str) -> bool {
+        if database.is_empty() || tabela.is_empty() || self.tabelas.is_empty() {
+            return false;
+        }
+        let alvo = format!(
+            "{}.{}",
+            database.trim().to_ascii_lowercase(),
+            tabela.trim().to_ascii_lowercase()
+        );
+        self.tabelas.contains(&alvo)
     }
 
     /// O modo e o ajuste ja validados, ou o erro que diz o que corrigir.
@@ -1010,6 +1149,14 @@ impl Cifra {
                 } else {
                     "(do ambiente)"
                 }),
+            ),
+            // A lista SAI inteira. Nome de tabela nao e segredo -- ele ja
+            // aparece no esquema, no `.ndx` e na tela de estrutura --, e
+            // esconde-la faria a tela de configuracao mostrar um campo que
+            // ninguem consegue conferir.
+            (
+                "tabelas",
+                Json::Lista(self.tabelas.iter().map(Json::texto_de).collect()),
             ),
         ])
     }
@@ -2312,6 +2459,7 @@ const SECOES_CONHECIDAS: [(&str, &[&str]); 11] = [
             "modo",
             "salto",
             "separador",
+            "tabelas",
         ],
     ),
     (
@@ -2511,7 +2659,7 @@ impl Config {
             j.inteiro_ou("conexoes_max", padrao.conexoes_max as i64)
                 .max(1) as usize,
         )?;
-        Ok(Config {
+        let mut c = Config {
             bind: j.texto_ou("bind", &padrao.bind).to_string(),
             base: PathBuf::from(j.texto_ou("base", "dados")),
             token: j.texto_ou("token", "").to_string(),
@@ -2568,7 +2716,29 @@ impl Config {
             estranhas: chaves_estranhas(j),
             avisos,
             caminho: None,
-        })
+        };
+        // A senha da cifra e a senha de um administrador: AVISA, nao recusa.
+        //
+        // Guarda nova entra PEDIDA, nao imposta. Um servidor que hoje tem as
+        // duas iguais nao pode parar de subir por causa de uma regra escrita
+        // depois -- o estrago seria maior que o furo, e o dono ficaria com um
+        // banco no chao para consertar uma senha. A recusa vale para senha de
+        // banco DEFINIDA daqui em diante, pela operacao que ainda nao existe;
+        // o que ja esta gravado continua abrindo, e apenas aparece.
+        //
+        // A mensagem nao nomeia o administrador -- ver
+        // `Cifra::senha_e_de_algum_administrador`.
+        if c.cifra.ligada && Cifra::senha_e_de_algum_administrador(c.cifra.senha(), &c.cadastro) {
+            c.avisos.push(
+                "cifra.senha e igual a senha de um administrador deste servidor. \
+                 A senha do banco VIAJA (o servidor precisa dela em claro para \
+                 derivar a chave); a de administracao nao viaja, porque o \
+                 desafio-resposta manda uma prova. Iguais, quem escutar o fio \
+                 vira administrador -- separadas, no pior caso le um banco."
+                    .to_string(),
+            );
+        }
+        Ok(c)
     }
 
     fn validar(&self) -> Result<()> {
@@ -2676,6 +2846,11 @@ impl Config {
         if let Some(c) = &self.cluster {
             c.validar(&self.replicacao)?;
         }
+        // A lista de tabelas sigilosas e conferida SEMPRE, e nao so com a
+        // cifra ligada: quem escreve a lista antes de ligar a cifra -- que e a
+        // ordem natural de quem esta configurando -- merece o erro na hora em
+        // que escreveu, e nao meses depois.
+        self.cifra.validar()?;
         Ok(())
     }
 
@@ -3057,6 +3232,12 @@ pub const CAMPOS_EDITAVEIS: &[(&str, TipoDoCampo, bool)] = &[
     ("rest.tabelas", TipoDoCampo::Lista, false),
     ("rest.swagger_ligado", TipoDoCampo::Booleano, false),
     ("rest.swagger_bind", TipoDoCampo::Texto, false),
+    // A lista de tabelas sigilosas vale A QUENTE, e e a unica coisa da secao
+    // `cifra` que se edita pela tela: a senha e as iteracoes ficam no arquivo,
+    // porque campo que carrega credencial nao se digita numa tela que qualquer
+    // administrador abre. A lista nao carrega segredo -- so nomes de tabela --
+    // e quem a muda quer o efeito AGORA, no Profiler que ja esta ligado.
+    ("cifra.tabelas", TipoDoCampo::Lista, true),
     ("backup.agendado", TipoDoCampo::Booleano, false),
     ("backup.hora", TipoDoCampo::Texto, false),
     ("backup.cada_horas", TipoDoCampo::Inteiro, false),
@@ -3422,6 +3603,93 @@ mod tests {
         assert!(o.pino_do_fio().is_err(), "31 bytes passaram por 32");
         o.chave_do_fio = "aa".repeat(32);
         assert_eq!(o.pino_do_fio().unwrap(), Some([0xaau8; 32]));
+    }
+
+    /* ------------------------------- a senha do banco nao e a de administracao
+    Palavra do dono, 05/09/2026. A regra e do desenho de senha por banco -- que
+    ainda nao existe --, mas a CONFERENCIA existe hoje e vale para o que ha:
+    `cifra.senha`. */
+
+    /// **O teste que mais importa: proibicao nova nao derruba servidor que ja
+    /// existe.**
+    ///
+    /// Guarda nova entra PEDIDA, nao imposta. Um `config.json` que hoje tem a
+    /// senha da cifra igual a de um administrador continua subindo -- ele so
+    /// passa a AVISAR. Recusar aqui poria um banco no chao para consertar uma
+    /// senha, e o estrago seria maior que o furo.
+    #[test]
+    fn proibicao_nova_nao_derruba_servidor_que_ja_existe() {
+        let hash = phxsql_core::senha::cifrar_com("a mesma senha dos dois", 1_000);
+        let j = Json::analisar(&format!(
+            r#"{{"token":"t","cifra":{{"ligada":true,"senha":"a mesma senha dos dois"}},
+                 "usuarios":[{{"login":"zoroastro","senha_hash":"{hash}","supervisor":true}}]}}"#
+        ))
+        .unwrap();
+        let c = Config::de_json(&j).expect("o servidor tem de continuar subindo");
+        c.validar().expect("e tem de continuar validando");
+        assert!(
+            c.avisos.iter().any(|a| a.contains("cifra.senha")),
+            "subiu calado: quem tem as duas senhas iguais nunca vai saber -- {:?}",
+            c.avisos
+        );
+        // E a mensagem NAO nomeia o administrador: ela ja e um oraculo pequeno
+        // por natureza, e dizer QUEM colidiu o tornaria util.
+        //
+        // O login e `zoroastro` e nao `adm` de proposito: a primeira versao
+        // deste teste procurava `"adm"` e reprovava sozinha, porque a palavra
+        // «administrador» esta DENTRO da mensagem. Um casador que acha o que
+        // procura no proprio texto da explicacao nao prova nada sobre o nome.
+        assert!(
+            !c.avisos.iter().any(|a| a.contains("zoroastro")),
+            "o aviso nomeou o administrador: {:?}",
+            c.avisos
+        );
+    }
+
+    /// Senhas diferentes: nenhum aviso. E o caso comum, e ele nao pode ganhar
+    /// ruido -- aviso que aparece sempre e aviso que ninguem le.
+    #[test]
+    fn senha_de_cifra_diferente_da_de_administrador_nao_avisa_nada() {
+        let hash = phxsql_core::senha::cifrar_com("a senha do administrador", 1_000);
+        let j = Json::analisar(&format!(
+            r#"{{"token":"t","cifra":{{"ligada":true,"senha":"outra senha, a do banco"}},
+                 "usuarios":[{{"login":"adm","senha_hash":"{hash}","supervisor":true}}]}}"#
+        ))
+        .unwrap();
+        let c = Config::de_json(&j).unwrap();
+        assert!(c.avisos.is_empty(), "{:?}", c.avisos);
+    }
+
+    /// A conferencia responde sem nunca ter a senha do administrador: ela
+    /// deriva a candidata com o SAL e as ITERACOES do proprio hash guardado.
+    ///
+    /// E ela so olha SUPERVISOR: a regra do dono e sobre quem *administra*, e
+    /// esticar a proibicao a todo usuario faria a senha do banco colidir com a
+    /// de qualquer operador -- o que nao protege mais e proibe muito.
+    #[test]
+    fn a_conferencia_deriva_do_hash_e_so_olha_administrador() {
+        let hash = phxsql_core::senha::cifrar_com("a senha do operador", 1_000);
+        let ficha = |supervisor: bool| {
+            let j = Json::analisar(&format!(
+                r#"{{"token":"t","usuarios":[{{"login":"operador",
+                     "senha_hash":"{hash}","supervisor":{supervisor}}}]}}"#
+            ))
+            .unwrap();
+            crate::usuarios::Cadastro::de_json(&j).unwrap()
+        };
+        let cadastro = ficha(false);
+        assert!(
+            !Cifra::senha_e_de_algum_administrador("a senha do operador", &cadastro),
+            "proibiu por causa de um usuario que nao administra nada"
+        );
+        // O mesmo usuario, agora supervisor: a mesma senha passa a colidir.
+        let cadastro = ficha(true);
+        assert!(
+            Cifra::senha_e_de_algum_administrador("a senha do operador", &cadastro),
+            "nao viu a colisao com um administrador"
+        );
+        // Senha vazia nunca colide -- e o estado de quem nao ligou a cifra.
+        assert!(!Cifra::senha_e_de_algum_administrador("", &cadastro));
     }
 
     #[test]

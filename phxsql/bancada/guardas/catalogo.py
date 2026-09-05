@@ -196,6 +196,43 @@ HOJE_ALCANCAR_TABELA = """        let Some(mut posicao) = self.abrir_para_replic
         Ok(aplicados)
 """
 
+TRECHO_PERFIL_SEM_TEXTO = """            // O ARQUIVO nao leva o texto de tabela sigilosa -- ver o cabecalho
+            // do modulo. A coluna de bytes ao lado ja diz o tamanho, entao o
+            // que se perde e o conteudo e nao a medida: continua dando para
+            // achar o pedido gigante que derrubou o servidor.
+            if self.sigiloso {
+                SEM_TEXTO
+            } else {
+                self.pedido.as_str()
+            },"""
+
+TROCA_PERFIL_SEM_TEXTO = """            self.pedido.as_str(),"""
+
+TRECHO_COLHER_DESCE = """                colher_tabelas(v, meu_banco, saida);"""
+
+TROCA_COLHER_DESCE = """                let _ = v;"""
+
+TRECHO_FASE_FIXA = """            .map(|a| a.fase_cancelavel("somando a tabela"));"""
+
+TROCA_FASE_FIXA = """            .map(|a| a.fase_cancelavel(&format!("somando {} linhas", linhas)));"""
+
+
+TRECHO_CACHE_ESVAZIA = """    // O cache de chaves derivadas e por (sal, iteracoes) -- NAO por senha.
+    // Deixando-o de pe, trocar a senha nao trocaria a chave de nenhum arquivo
+    // ja aberto neste processo: `derivar` acharia a entrada do sal e
+    // devolveria a chave da senha ANTIGA. Um servidor que aceitasse a senha
+    // errada por ter aberto o arquivo antes seria pior que um que a recusa.
+    if let Ok(mut d) = DERIVADAS.lock() {
+        *d = None;
+    }
+    Ok(())
+}"""
+
+TROCA_CACHE_ESVAZIA = """    // (o defeito reposto: o cache sobrevive a troca de senha)
+    Ok(())
+}"""
+
+
 GUARDAS = [
     # -----------------------------------------------------------------------
     # 1. O Profiler recortando o texto em vez de analisar
@@ -3423,6 +3460,122 @@ pub fn limpar() {
         "seguem": [
             "a_pagina_ordenada_nao_percorre_o_indice_inteiro",
             "as_paginas_reconstroem_a_varredura_inteira",
+        ],
+        "prazo": 300,
+    },
+    {
+        "id": "perfil-grava-o-texto-da-tabela-declarada",
+        "titulo": "o perfil.txt grava em claro o pedido de uma tabela declarada em cifra.tabelas",
+        "porque": (
+            "e o furo que a frente CIFRA-POR-TABELA achou medindo: o Profiler "
+            "guardava `redigir(linha_crua)` -- o pedido inteiro, redigido so "
+            "por NOME de campo -- e escrevia isso num arquivo de texto ao lado "
+            "do .reg cifrado. `SEGREDOS` tem `senha`, `token`, `chave`... e "
+            "NAO tem `linha`. Quem leva o disco leva o perfil.txt, e isso anula "
+            "o proposito escrito no proprio cofre: «protege o ARQUIVO COPIADO»."
+        ),
+        "arquivo": "crates/phxsql-server/src/profiler.rs",
+        "trecho": TRECHO_PERFIL_SEM_TEXTO,
+        "troca": TROCA_PERFIL_SEM_TEXTO,
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "profiler::testes_tabela_sigilosa::o_anel_ve_o_texto_e_o_arquivo_nao",
+            "profiler::testes_tabela_sigilosa::a_declaracao_e_por_banco_e_nao_pelo_nome_curto",
+            "profiler::testes_tabela_sigilosa::tabela_escondida_em_juncao_uniao_e_pivot_tambem_cega_o_arquivo",
+            "profiler::testes_tabela_sigilosa::declarar_com_o_profiler_ligado_vale_do_pedido_seguinte_em_diante",
+        ],
+        "seguem": [
+            "profiler::testes_tabela_sigilosa::sem_lista_o_arquivo_continua_com_o_texto",
+            "profiler::testes::a_senha_nunca_aparece",
+        ],
+        "prazo": 300,
+    },
+    {
+        "id": "perfil-so-olha-a-tabela-do-primeiro-nivel",
+        "titulo": "o Profiler so olha a tabela do primeiro nível e a junção vira a porta dos fundos",
+        "porque": (
+            "e a mesma porta dos fundos que o portao de permissao ja teve, e o "
+            "CLAUDE.md a nomeia: `juntar` guarda as tabelas em `a.tabela` e "
+            "`b.tabela`, `unir` numa LISTA, e `pivotar` poe a tabela de fatos "
+            "no campo que se le e as de consulta dentro de um `juntar` "
+            "aninhado. Sem descer na arvore, bastaria pedir a tabela declarada "
+            "como lado B de uma juncao para o pedido inteiro ir para o "
+            "perfil.txt em claro -- e nenhum outro teste acusa."
+        ),
+        "arquivo": "crates/phxsql-server/src/profiler.rs",
+        "trecho": TRECHO_COLHER_DESCE,
+        "troca": TROCA_COLHER_DESCE,
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "profiler::testes_tabela_sigilosa::tabela_escondida_em_juncao_uniao_e_pivot_tambem_cega_o_arquivo",
+        ],
+        "seguem": [
+            "profiler::testes_tabela_sigilosa::o_anel_ve_o_texto_e_o_arquivo_nao",
+            "profiler::testes_tabela_sigilosa::sem_lista_o_arquivo_continua_com_o_texto",
+        ],
+        "prazo": 300,
+    },
+    {
+        "id": "fase-da-telemetria-com-dado-do-usuario",
+        "titulo": "a fase do SQL Check passa a carregar dado do usuário, e o furo nasce calado",
+        "porque": (
+            "aqui nao havia conserto -- havia risco de regressao, e do tipo "
+            "que nasce parecendo melhoria. A `fase` da telemetria so recebe "
+            "frase fixa escrita no codigo; no dia em que alguem escrever "
+            "`fase_cancelavel(&format!(\"lendo {} \", chave))` para ajudar no "
+            "diagnostico, o dado do usuario sai na resposta de `telemetria`, "
+            "que nao tem portao de tabela nenhum. A guarda le o FONTE e exige "
+            "que o argumento comece com aspas."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": TRECHO_FASE_FIXA,
+        "troca": TROCA_FASE_FIXA,
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "telemetria::testes::a_fase_da_telemetria_so_aceita_frase_fixa",
+        ],
+        "seguem": [
+            "telemetria::testes::toda_operacao_com_ponto_de_cancelamento_esta_na_lista",
+        ],
+        "prazo": 300,
+    },
+    {
+        "id": "cache-de-derivadas-sobrevive-a-troca-de-senha",
+        "titulo": "o cache de chaves derivadas responde a quem não deu a senha",
+        "porque": (
+            "`cofre::derivar` consulta o cache ANTES de olhar o COFRE, e "
+            "responde sem nunca perguntar quem esta pedindo. Com UMA senha do "
+            "processo isso e correto -- o que segura a correcao e o "
+            "`definir_com` esvaziar o cache inteiro. Ha um desenho na mesa "
+            "(senha do banco vinda do login, guardada na sessao) em que tirar "
+            "esse esvaziamento parece a otimizacao obvia, porque evita os "
+            "290 ms do PBKDF2 ao alternar de banco -- e no dia em que alguem o "
+            "tirar, a garantia «so quem sabe a senha le» some SEM erro, SEM log "
+            "e sem teste vermelho: o primeiro login poria a chave no cache do "
+            "PROCESSO. Nao ha defeito hoje; ha uma porta, e esta e a tranca."
+        ),
+        "arquivo": "crates/phxsql-store/src/cofre.rs",
+        "trecho": TRECHO_CACHE_ESVAZIA,
+        "troca": TROCA_CACHE_ESVAZIA,
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "cifra-dos-diarios"],
+        # So UM cai, e o executor mediu isso: `arquivo_cifrado_sem_a_chave_certa`
+        # continua verde porque este defeito tira o esvaziamento do
+        # `definir_com` e nao o do `desligar` -- e e o do `desligar` que aquele
+        # teste exercita. Listar os dois teria dado «nao pegou», que e o
+        # executor fazendo o seu trabalho: teste que passa por engano e pior
+        # que teste que falta.
+        "caem": [
+            "o_cache_de_derivadas_nao_responde_a_quem_nao_deu_a_senha",
+        ],
+        "seguem": [
+            "arquivo_cifrado_sem_a_chave_certa_da_erro_claro",
+            "arquivo_escrito_antes_da_cifra_continua_abrindo",
+            "sem_configuracao_nada_muda_no_disco",
+            "o_dado_some_do_disco_e_volta_pela_leitura",
         ],
         "prazo": 300,
     },

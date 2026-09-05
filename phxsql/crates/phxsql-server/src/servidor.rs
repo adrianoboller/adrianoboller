@@ -3296,6 +3296,11 @@ impl Servidor {
         // no proximo `profiler_ligar`.
         if let Ok(mut prof) = self.profiler.lock() {
             prof.definir_rodizio(novo.profiler.teto_do_arquivo(), novo.profiler.arquivos);
+            // E a lista de tabelas sigilosas pelo mesmo motivo, com um peso a
+            // mais: quem acrescenta uma tabela a `cifra.tabelas` esta pedindo
+            // protecao, e protecao que so vale no proximo `profiler_ligar`
+            // deixa uma janela aberta justamente enquanto alguem observa.
+            prof.definir_sigilosas(&novo.cifra.tabelas);
         }
         // A cor vale na resposta seguinte da telemetria -- dois segundos. Cor
         // se escolhe VENDO, e uma que so aparecesse no proximo arranque seria
@@ -14659,6 +14664,11 @@ impl Servidor {
             self.config.profiler.teto_do_arquivo(),
             self.config.profiler.arquivos,
         );
+        // A lista de tabelas declaradas em `cifra.tabelas` entra ANTES do
+        // `ligar`, e nao depois: entre um e outro cabe um pedido, e um pedido
+        // e o bastante para o `perfil.txt` receber em claro o payload que a
+        // lista existe para manter fora dele.
+        prof.definir_sigilosas(&self.config.cifra.tabelas);
         prof.ligar(filtro, &arquivo, teto, agora)?;
         // Dentro da trava, e DEPOIS de `ligar` ter dado certo: um espelho que
         // sobe antes faria o caminho quente pagar por um profiler que nao ligou.
@@ -14678,6 +14688,15 @@ impl Servidor {
             ),
             ("arquivos_guardados", Json::de_u64(prof.manter() as u64)),
             ("teto_em_disco_bytes", Json::de_u64(prof.teto_em_disco())),
+            // A lista sai NAS DUAS respostas -- a de ligar e a que a tela
+            // pergunta a cada segundo. Na de ligar porque e a hora em que
+            // alguem escolhe o arquivo; na outra porque `cifra.tabelas` vale a
+            // quente, e uma tela que so soubesse do que estava valendo no
+            // `ligar` mostraria a lista de antes da mudanca.
+            (
+                "tabelas_sem_texto",
+                Json::Lista(prof.sigilosas().iter().map(Json::texto_de).collect()),
+            ),
             (
                 "desde",
                 Json::texto_de(phxsql_core::datahora::instante_iso(agora)),
@@ -14777,6 +14796,15 @@ impl Servidor {
             ),
             ("arquivos_guardados", Json::de_u64(prof.manter() as u64)),
             ("teto_em_disco_bytes", Json::de_u64(prof.teto_em_disco())),
+            // A lista sai NAS DUAS respostas -- a de ligar e a que a tela
+            // pergunta a cada segundo. Na de ligar porque e a hora em que
+            // alguem escolhe o arquivo; na outra porque `cifra.tabelas` vale a
+            // quente, e uma tela que so soubesse do que estava valendo no
+            // `ligar` mostraria a lista de antes da mudanca.
+            (
+                "tabelas_sem_texto",
+                Json::Lista(prof.sigilosas().iter().map(Json::texto_de).collect()),
+            ),
             ("guardar", Json::de_u64(prof.teto() as u64)),
             (
                 "desde",
@@ -18803,6 +18831,41 @@ mod testes_profiler_desligado {
             espelho, real,
             "o espelho divergiu: espelho={espelho}, real={real}"
         );
+    }
+
+    /// **A lista de `cifra.tabelas` chega mesmo ao Profiler.**
+    ///
+    /// Nao e conferencia de enfeite: o conserto da parte (3) mora no
+    /// `profiler.rs`, e um `definir_sigilosas` que ninguem chamasse deixaria
+    /// os sete testes de la passando com o arquivo gravando em claro. O fio
+    /// que liga a configuracao ao instrumento e o que este teste segura.
+    #[test]
+    fn a_lista_de_tabelas_declaradas_chega_ao_profiler_no_ligar() {
+        let dir = dir_temp("lista-no-ligar");
+        let mut c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            cadastro: Cadastro::default(),
+            ..Config::default()
+        };
+        c.cifra.tabelas = vec!["loja.clientes".into(), "rh.folha".into()];
+        let s = Servidor::novo(c).unwrap();
+        let sessao = Sessao::default();
+        let r = s
+            .executar("profiler_ligar", &pedido("{}"), &sessao)
+            .unwrap();
+        assert_eq!(
+            s.profiler.lock().unwrap().sigilosas(),
+            ["loja.clientes".to_string(), "rh.folha".to_string()],
+            "o Profiler ligou sem a lista: o perfil.txt vai gravar em claro"
+        );
+        // E ela SAI na resposta: quem escolhe o caminho do arquivo precisa
+        // saber, ali, quais tabelas nao vao ter o texto gravado.
+        let lista = r.campo("tabelas_sem_texto").and_then(Json::lista).unwrap();
+        assert_eq!(lista.len(), 2, "a resposta de ligar escondeu a lista");
     }
 
     /// Nasce desligado, senao o caminho quente pagaria desde o arranque por uma

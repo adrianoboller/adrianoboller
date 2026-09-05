@@ -1916,6 +1916,67 @@ mod testes {
         }
     }
 
+    /// **A fase que a telemetria expoe nao carrega dado do usuario -- e a
+    /// guarda le o FONTE para garantir que continue assim.**
+    ///
+    /// Aqui nao ha conserto: `fase_cancelavel` so recebe frases fixas escritas
+    /// no codigo, e o que a `Corrente` expoe fora isso -- `op`, `usuario`,
+    /// `database`, `tabela` -- sao identificadores, nao conteudo de linha.
+    /// Este teste existe pelo risco de REGRESSAO, e ele e do tipo que nasce
+    /// parecendo melhoria: no dia em que alguem escrever
+    /// `fase_cancelavel(&format!("lendo {}", chave))` para ajudar no
+    /// diagnostico, o furo nasce calado -- a `fase` sai na resposta de
+    /// `telemetria`, que qualquer sessao com direito de ver o painel le, e ali
+    /// nao ha portao de tabela nenhum.
+    ///
+    /// A regra conferida e simples de cumprir e dificil de burlar por acidente:
+    /// **o argumento comeca com aspas**. Literal passa; `format!`, `&`,
+    /// variavel e concatenacao nao.
+    ///
+    /// O crivo e o mesmo do conferidor de textos fora da fabrica: o teste
+    /// precisa ACHAR chamadas, senao um leitor quebrado passaria por engano
+    /// vendo zero.
+    #[test]
+    fn a_fase_da_telemetria_so_aceita_frase_fixa() {
+        const FONTES: [(&str, &str); 2] = [
+            ("servidor.rs", include_str!("servidor.rs")),
+            ("telemetria.rs", include_str!("telemetria.rs")),
+        ];
+        let mut achadas = 0usize;
+        for (arquivo, fonte) in FONTES {
+            for (n, linha) in fonte.lines().enumerate() {
+                // A propria declaracao do metodo nao e chamada.
+                if linha.contains("pub fn fase_cancelavel(") {
+                    continue;
+                }
+                let Some(depois) = linha.split_once("fase_cancelavel(") else {
+                    continue;
+                };
+                // A linha DESTE teste fala do padrao proibido para explica-lo;
+                // ela nao e uma chamada.
+                if linha.trim_start().starts_with("//") || linha.trim_start().starts_with("///") {
+                    continue;
+                }
+                achadas += 1;
+                assert!(
+                    depois.1.starts_with('"'),
+                    "{arquivo}:{}: fase_cancelavel recebe algo que nao e frase \
+                     fixa -- `{}`. A fase sai na resposta da telemetria, e dado \
+                     do usuario ali e um vazamento por um caminho que nao tem \
+                     portao de tabela. Escreva a frase no codigo e ponha o que \
+                     varia noutro campo.",
+                    n + 1,
+                    linha.trim()
+                );
+            }
+        }
+        assert!(
+            achadas >= 4,
+            "o leitor do fonte achou so {achadas} chamadas de fase_cancelavel: \
+             ele quebrou, e um teste que nao ve nada passa por engano"
+        );
+    }
+
     /// Marcar uma operacao que TEM ponto mas ainda nao chegou nele -- o caso
     /// da fila da trava de dados -- nao pode responder «vai terminar».
     ///

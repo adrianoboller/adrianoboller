@@ -662,3 +662,67 @@ fn a_tabela_inteira_nasce_com_os_tres_diarios_cifrados() {
     cofre::desligar();
     std::fs::remove_dir_all(&d).unwrap();
 }
+
+// ---------------------------------------------------------------------------
+// O cache de chaves derivadas responde a QUEM?
+// ---------------------------------------------------------------------------
+
+/// **O cache nao pode responder a quem nao deu a senha.**
+///
+/// `cofre::derivar` consulta `DERIVADAS` **antes** de olhar o `COFRE`: se a
+/// entrada existe, ele devolve a chave sem nunca perguntar quem esta pedindo.
+/// Com UMA senha do processo isso e correto e esta escrito assim no fonte --
+/// «a chave ja esta na memoria do processo de qualquer jeito». O que segura a
+/// correcao nao e o `derivar`: e o `definir_com`/`desligar` **esvaziarem o
+/// cache inteiro**.
+///
+/// # Por que este teste existe ANTES do desenho que ele protege
+///
+/// Porque ha um desenho na mesa -- senha do banco vinda do login, guardada na
+/// sessao -- em que tirar esse esvaziamento parece a otimizacao obvia: sem ele,
+/// alternar de banco deixa de custar os 290 ms do PBKDF2. E o dia em que
+/// alguem o tirar, a garantia «so quem sabe a senha le» **some sem erro, sem
+/// log e sem teste vermelho**: o primeiro login que fornecesse a senha poria a
+/// chave no cache do PROCESSO, e dali em diante qualquer sessao abriria a
+/// tabela sem fornecer senha nenhuma.
+///
+/// Nao ha defeito hoje. Ha uma porta, e esta e a tranca dela.
+#[test]
+fn o_cache_de_derivadas_nao_responde_a_quem_nao_deu_a_senha() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    let sal = [0x5au8; cofre::SAL_LEN];
+
+    // (1) Uma sessao fornece a senha e a chave entra no cache.
+    cofre::desligar();
+    cofre::definir(SENHA, RAPIDO).unwrap();
+    let da_sessao_a = cofre::derivar(&sal, RAPIDO, "<a>").unwrap();
+
+    // (2) Outra sessao chega com OUTRA senha, no mesmo sal. Se o cache
+    //     respondesse, ela receberia a chave da primeira.
+    cofre::definir("nao e a senha da sessao A", RAPIDO).unwrap();
+    let da_sessao_b = cofre::derivar(&sal, RAPIDO, "<b>").unwrap();
+    assert_ne!(
+        da_sessao_a, da_sessao_b,
+        "o cache respondeu a quem nao deu a senha: as duas sessoes receberam a \
+         MESMA chave para o mesmo sal, e a garantia «so quem sabe a senha le» \
+         durou ate o primeiro login"
+    );
+
+    // (3) E o caso extremo, que e o que a senha por sessao produz de verdade:
+    //     ninguem tem a senha agora. O cache nao pode ser a resposta.
+    cofre::desligar();
+    let sem_ninguem = cofre::derivar(&sal, RAPIDO, "<sem sessao>");
+    assert!(
+        sem_ninguem.is_err(),
+        "o cache abriu um arquivo cifrado com NENHUMA senha no cofre -- a \
+         chave sobreviveu a quem a forneceu"
+    );
+
+    // E a recusa DIZ o que fazer, em vez de devolver lixo.
+    let e = sem_ninguem.unwrap_err().to_string();
+    assert!(
+        e.contains("nao tem a chave"),
+        "a recusa nao explica nada: {e}"
+    );
+    cofre::desligar();
+}

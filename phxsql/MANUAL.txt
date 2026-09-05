@@ -993,6 +993,37 @@ PROFILER: O QUE ESTA CHEGANDO, ANTES DE VIRAR DADO
     uma tabela nao ganha por isso o direito de ver o que os outros escrevem
     nela -- nem de mandar o servidor escrever um arquivo no disco.
 
+    TABELA DECLARADA EM cifra.tabelas: O ANEL VE, O ARQUIVO NAO. Um pedido
+    que toca tabela nomeada na lista "cifra.tabelas" do config.json continua
+    aparecendo INTEIRO na tela -- quem chega ali e administrador, e
+    administrador tem o config.json, logo tem a senha do cofre; esconder dele
+    seria teatro. No perfil.txt vao op, database, tabela, duracao e o TAMANHO
+    em bytes, e no lugar do pedido a frase
+
+        <tabela declarada em cifra.tabelas: pedido nao gravado>
+
+    O motivo e que o arquivo NAO TEM QUEM OLHA: ele viaja com o disco, entra
+    no backup, e ali nao ha login para conferir nem portao para atravessar.
+    O payload de uma tabela cifrada gravado em claro ao lado do .reg cifrado
+    anula o proposito do cofre, que e proteger o ARQUIVO COPIADO.
+
+    A lista e por NOME QUALIFICADO -- "banco.tabela" --, porque dois bancos
+    podem ter tabelas com o mesmo nome. E ela vale para o pedido inteiro:
+    basta UMA tabela declarada aparecer em qualquer lugar dele, inclusive
+    como lado B de um "juntar", dentro da lista de um "unir" ou num "juntar"
+    aninhado de um "pivotar".
+
+    O QUE MARCAR NAO FAZ: nao reescreve perfil.txt.1, .2... que ja existem.
+    Arquivo de rodizio nao se reescreve, pelo mesmo motivo que um .log ja
+    gravado em claro continua em claro. Quem marca depois de ter perfilado
+    apaga os arquivos antigos a mao.
+
+    E DECLARAR NAO CIFRA. A lista diz quais tabelas DEVEM estar cifradas; o
+    que cifra uma tabela que ja existe e a migracao Criptografar, que ainda
+    nao existe neste servidor. Quem manda sobre o estado e o DISCO: o
+    cabecalho do .reg diz se o arquivo esta cifrado, e e ele que a leitura
+    consulta.
+
     O ANEL TEM TETO. Profiler esquecido ligado num servidor movimentado nao
     pode comer a memoria da maquina: o mais antigo sai, e a resposta diz
     quantos sairam. O ARQUIVO, esse, CRESCE SEM TETO -- 345 bytes por pedido,
