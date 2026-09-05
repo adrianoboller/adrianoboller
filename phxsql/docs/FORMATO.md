@@ -1477,6 +1477,18 @@ de **energia** os mostra:
 * e o LRU de 64 posições despeja o descritor de quem escreveu antes de o
   `fsync` chegar nele.
 
+**Desde 05/09/2026 o fecho sincroniza as K tabelas sujas AO MESMO TEMPO, e a
+garantia não muda.** A ordem que este documento descreve é a de **dentro** de
+uma tabela — `.trash` antes do `.reg`, pelo motivo escrito no
+`Table::sincronizar` — e ela continua inteira, porque cada tabela vai num fio
+só. **Entre** tabelas nunca houve ordem a preservar: o fecho só termina quando
+todas terminam, e as marcas `.tx` dos commits que esperavam saem depois do
+`join`, sob a mesma tomada da trava de dados. O número de `fsync` é o mesmo —
+32 para K=4, contados por `strace` nos dois arranjos, 8 por tabela. O que muda
+é só quanto a trava fica presa: 2,52× menos em K=16. A matriz de queda que
+sustenta isso, e a recusa medida de *soltar* a trava entre uma tabela e a
+seguinte, estão na §12.6 do `docs/CONCORRENCIA.md`.
+
 **A marca SOMA `fsync`, e nunca subtrai — e essa assimetria é a regra, não um
 detalhe de implementação.** O mesmo registro serviria para *pular* o `fsync` de
 um arquivo que ninguém sujou, e é o que PostgreSQL e InnoDB fazem. Aqui ele é

@@ -1484,6 +1484,215 @@ ordem que faz o group commit ser seguro, e ela não se inverte»*. Quebrar o la�
 em pedaços mexe nessa ordem, e é decisão de formato e durabilidade — do papel
 **C**, não desta medição.
 
+> **Respondido em 05/09, na §12.6:** é **inseguro** como estava proposto, e a
+> matriz de queda mostra o instante. E a saída que se tomou não estava na
+> lista — as K tabelas passaram a ir ao disco **juntas**, sem soltar trava
+> nenhuma: 2,52× em K=16, com o mesmo número de `fsync`.
+
+### 12.6 A matriz de queda, e a decisão do papel C (05/09)
+
+A §12.5 deixou uma pergunta e um dono: *soltar a trava entre uma tabela e a
+seguinte é seguro?* — decisão de durabilidade, não de medição. A resposta está
+abaixo, e ela é **não**, com a matriz que a sustenta. E a saída que se tomou no
+lugar não estava na lista: **o comboio encolhe sem soltar a trava nenhuma.**
+
+#### 12.6.1 O que o laço protege, lido no fonte antes de qualquer proposta
+
+O `op_commit` faz quatro coisas, todas com a **mesma** tomada da trava global:
+
+1. grava a marca `.tx` e a **sincroniza**, antes de tocar em arquivo de dado;
+2. aplica a passada, tabela por tabela — e cada tabela chama
+   `gravar_de_verdade`, que sincroniza **se** a janela fechou e apenas marca a
+   tabela como suja se não;
+3. pergunta `tabelas_ainda_sujas`: se alguma tabela desta transação continua
+   devendo ao disco, a marca vai para `marcas_pendentes`; senão, sai agora;
+4. e o fecho de janela, quando acontece, roda `descarregar_sujas_com`: drena o
+   conjunto de sujas, sincroniza cada uma, e **só então** apaga *todas* as
+   marcas pendentes.
+
+O invariante que isso entrega, escrito com precisão:
+
+> **Uma marca `.tx` só pode sair do disco quando todas as tabelas que ela nomeia
+> tiverem tido um `fsync` POSTERIOR à última escrita daquela transação.**
+
+O código não implementa esse invariante: implementa uma regra mais barata —
+*apaga todas as marcas pendentes quando todas as tabelas sujas sincronizaram*.
+As duas só são a mesma coisa por **duas** razões, e a segunda é a que ninguém
+tinha escrito:
+
+* **a união fecha** — no instante em que uma marca entra em `marcas_pendentes`,
+  cada tabela dela ou já sincronizou nesta passada, ou está no conjunto de
+  sujas. É o que o passo 3 confere;
+* **e ninguém escreve no meio** — entre o passo 3 de uma transação e a drenagem
+  das marcas do passo 4, nenhuma outra thread grava, porque tudo isso acontece
+  sob a mesma tomada da trava global.
+
+**É a segunda que o comentário do laço não diz.** Ele diz «esta é a ordem que
+faz o group commit ser seguro, e ela não se inverte» — e a ordem, sozinha, não
+é o que faz. O que faz é o **encontro ser atômico**. Lei que lista menos casos
+do que existem não protege menos hoje; protege menos no dia em que alguém usar
+a lista como inventário — a mesma forma do portão de permissão que não olhava o
+`juntar`.
+
+#### 12.6.2 A matriz de queda — o laço de HOJE
+
+Instante da queda × o que fica no disco × o que a recuperação faz. As linhas
+saem do `transacao.rs`: a marca é sincronizada inteira antes da primeira
+escrita, a reaplicação anda **para a frente** e é **idempotente pelo rowid**.
+
+| # | instante da queda | o que fica no disco | o que a recuperação faz | |
+|---|---|---|---|---|
+| Q1 | depois do `fsync` da marca, antes da passada | a marca; nenhuma escrita | reaplica tudo (`reaplicadas`) | ✔ |
+| Q2 | no meio da passada | a marca; parte das escritas | reaplica o que falta; o que já estava conta em `ja_aplicadas` | ✔ |
+| Q3 | passada inteira, janela **aberta** (marca pendurada) | a marca; as escritas só no cache do núcleo | reaplica o que a queda de energia levou | ✔ |
+| Q4 | no meio do laço do fecho — `A` sincronizada, `C` não | a marca; `A` durável, `C` no cache | reaplica `C` | ✔ |
+| Q5 | todas sincronizadas, **antes** de apagar as marcas | a marca; tudo durável | reaplica **zero** — 100% `ja_aplicadas` | ✔ |
+| Q6 | depois de apagar as marcas | nenhuma marca; tudo durável | nada a fazer | ✔ |
+
+A linha **Q5 é o preço da ordem**, e é o preço certo: uma janela em que a
+recuperação faz trabalho à toa. A ordem inversa — apagar antes de sincronizar —
+trocaria esse trabalho à toa por uma janela em que o commit confirmado não tem
+bilhete nenhum, e essa não tem conserto depois.
+
+#### 12.6.3 A matriz de queda — o laço QUEBRADO (a trava se solta entre tabelas)
+
+As seis linhas acima **continuam ✔**: uma queda sozinha não quebra o laço
+quebrado. O que muda são os instantes que **só existem quando a trava se
+solta**, e por isso a coluna do meio ganha um ator.
+
+| # | instante | o que fica no disco | o que a recuperação faz | |
+|---|---|---|---|---|
+| Q7 | trava solta entre `A` e `C`; **ninguém entra**; queda | a marca; `A` durável, `C` no cache | reaplica `C` | ✔ |
+| Q8 | trava solta; outro escritor **W** grava em `A` e comete. A janela reabriu no fecho, então `gravar_de_verdade` só marca `A` como suja e a marca de **W** vai para `marcas_pendentes`. O fecho volta, sincroniza `C` e apaga **todas** as marcas pendentes — a de **W** inclusive. Queda de **energia** | nenhuma marca de **W**; a escrita de **W** só no cache do núcleo | **nada** — não há bilhete | ✘ **perde um commit confirmado, em silêncio** |
+| Q9 | trava solta; **W** fecha a janela ele mesmo e entra em `descarregar_sujas_com` — dois fechos ao mesmo tempo, cada um com um pedaço do conjunto de sujas. O de **W** termina primeiro e apaga as marcas do outro, cuja tabela `C` ainda não sincronizou. Queda de energia | nenhuma marca; `C` só no cache | nada | ✘ mesma perda, por outro caminho |
+| Q10 | igual ao Q8, mas queda de **processo** (`SIGKILL`) e não de energia | as escritas já estão no núcleo | nada a fazer, e o dado está lá | ✔ — **e é isto que torna o defeito invisível** |
+
+**Três coisas que esta metade da matriz decide.**
+
+**(a) O Q8 não é corrida rara: é o caminho comum.** Quem fecha a janela a
+*reabre* ao fechá-la. Então toda gravação que chegar durante o fecho cai
+exatamente nesse estado — marca pendurada, tabela suja — e o fim do laço a
+apagaria. Não é «se dois threads se alinharem»; é «se alguém gravar enquanto o
+fecho acontece», que é o que um servidor ocupado faz o tempo todo.
+
+**(b) A bateria de durabilidade NÃO acusaria.** A linha Q10 é a mesma lição do
+pedido 186, oito horas depois e no mesmo arquivo: a `bancada/durabilidade`
+prova com `SIGKILL`, e página suja no cache do núcleo **sobrevive** a processo
+morto. O defeito do Q8 só aparece em queda de energia — e nenhum processo em
+espaço de usuário provoca uma. *`SIGKILL` prova o protocolo; quem prova
+durabilidade é a contagem de `fsync`.*
+
+**(c) O que a quebra custaria para ser segura, dito para não voltar sem
+número.** Não é impossível — é caro, e o preço é uma contabilidade por marca:
+`marcas_pendentes` passaria a guardar `(caminho, [(tabela, geração)])`, o
+conjunto de sujas viraria `tabela → geração`, entraria um `tabela → geração
+sincronizada`, e um portão de reentrância para dois fechos não se atropelarem.
+**Nada disso muda o formato em disco** — é tudo RAM —, mas muda o **protocolo**
+do group commit, que é a peça que a §5.7 do `docs/TRANSACOES.md` prova célula a
+célula. Ficou **recusado**, e o motivo não é o risco sozinho: é que existe ganho
+maior de graça, abaixo.
+
+#### 12.6.4 A saída que não estava na lista: as K vão ao disco JUNTAS
+
+O `o-comboio-por-dentro` já tinha dividido o fecho: `abrir` 5–7%, `fsync`
+93–96%. A pergunta que ninguém tinha feito é mais barata que a da trava:
+**esse `K × fsync` precisa mesmo ser em série?**
+
+Não precisa, e a razão é que **não há ordem ENTRE tabelas para preservar**. A
+ordem que existe é a de dentro de cada tabela — `.trash` antes do `.reg`,
+escrita no `Table::sincronizar` —, e ela continua inteira. O encontro continua
+atômico: as marcas saem depois do `join`, sob a mesma tomada da trava. Nenhuma
+linha da matriz muda, porque nenhum instante novo nasce.
+
+E o sistema de arquivos ajuda: num `ext4` os `fsync` de arquivos diferentes se
+juntam no mesmo diário. Medido com `--example o-comboio-em-paralelo`, com as
+tabelas semeadas em 2.000 linhas e 30 janelas por arranjo, **alternando os dois
+arranjos dentro da mesma corrida** para que uma variação da máquina caia nos
+dois lados:
+
+| K | A · série (µs) | A · paralelo | A · ganho | B · série (µs) | B · paralelo | B · ganho |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 1.390 | 1.391 | 1,00× | 1.342 | 1.555 | 0,86× |
+| 2 | 2.304 | 1.916 | 1,20× | 2.769 | 2.180 | 1,27× |
+| 4 | 4.821 | 2.975 | **1,62×** | 5.459 | 3.484 | **1,57×** |
+| 8 | 9.467 | 4.593 | **2,06×** | 10.516 | 5.339 | **1,97×** |
+| 16 | 21.678 | 8.603 | **2,52×** | 21.200 | 8.766 | **2,42×** |
+
+Duas baterias limpas, cada uma conferida contra o `esta-medindo.sh` **antes e
+depois** da corrida — as contaminadas foram descartadas na hora, e há três
+delas nesta rodada.
+
+**O K=1 é a linha que mais ensina depois do 2,52×.** As duas baterias
+discordam — 1,00× e 0,86× — e a discórdia é do *medidor*, não do servidor: o
+exemplo passa pelo `thread::scope` mesmo com uma tabela só, e o que aparece ali
+é o custo de subir um fio para não sobrepor nada. **O servidor não paga isso**:
+`descarregar_sujas_com` tem o atalho de `abertas.len() == 1`, que sincroniza na
+própria thread. O caminho de uma tabela só continua sendo exatamente o de
+antes, **por construção e não por medição** — e é o comportamento velho que
+mais precisa de garantia numa mudança destas.
+
+**E o ganho não vem de `fsync` a menos**, que é a única forma de esse número
+ser falso. Contado por `strace` num processo filho, com K=4: **32 `fsync` nos
+dois arranjos**, 8 por tabela — que é a `TETO_FSYNC_POR_FECHO_V2`. A catraca
+não se mexe, e a guarda que cobra isso é
+`crates/phxsql-store/tests/fecho-em-paralelo-conta-os-mesmos-fsync.rs`.
+
+#### 12.6.4-bis O mesmo pelo LADO DE FORA — e o que a máquina não deixou medir
+
+O número acima é o **tempo de trabalho** do fecho: quanto a trava fica presa. A
+§12.3 mede a outra ponta — a **espera de quem está atrás**, pela rede. Para que
+os dois arranjos fossem comparados no mesmo dia e na mesma árvore, os dois
+`phxsqld` foram construídos lado a lado e a bancada rodou com `PHX_PHXSQLD`
+apontando para cada um.
+
+O `quieta.Vigia` da própria bancada reprovou a maioria das corridas — «há outra
+frente trabalhando nesta máquina» —, e o que passou foram **duas de cada
+arranjo**, intercaladas ao longo de duas horas:
+
+| p99 do escritor | K=1 | K=4 | K=4 ÷ K=1 |
+|---|---:|---:|---:|
+| série · corrida A | 3.055 µs | 7.372 | 2,41× |
+| série · corrida B | 2.797 µs | 7.808 | 2,79× |
+| **paralelo · corrida A** | 3.049 µs | **6.209** | **2,04×** |
+| **paralelo · corrida B** | 2.727 µs | **5.827** | **2,14×** |
+
+**A coluna do K=1 é a que dá confiança na tabela inteira**: 3.055, 2.797, 3.049
+e 2.727 µs — as quatro iguais dentro do ruído, e tinham de ser, porque com uma
+tabela suja só não há comboio nenhum e o código é literalmente o mesmo (o
+atalho do `abertas.len() == 1`). O que muda é o K=4, que cai de **7,4–7,8 ms
+para 5,8–6,2 ms**, e com ele o fator do comboio: de 2,41×–2,79× para
+**2,04×–2,14×**.
+
+**E os dois lados da medição concordam**, que é o que fecha a conta: por dentro
+o fecho de K=4 encolhe 1,57×–1,62×, e por fora o p99 do escritor em K=4 encolhe
+1,26× — menor, e tinha de ser menor, porque o fecho é só uma parte da espera de
+quem está atrás. Se o de fora tivesse encolhido *mais* que o de dentro, uma das
+duas medições estaria errada.
+
+**E a coluna do LEITOR desta bancada não entra**, de propósito: nesta árvore ela
+saiu com p99 de centenas de milissegundos nas três corridas — contra os 4–8 ms
+da §12.4-bis —, e a diferença é grande demais para ser o comboio. Há outra
+frente mexendo no caminho de leitura do `.ndx` nesta mesma rodada. O número não
+é meu para explicar, e publicá-lo como se fosse seria pior que omiti-lo: as
+três corridas viram o mesmo, então a **comparação** entre os arranjos continua
+válida, mas o **valor** não descreve o servidor que vai ser lançado.
+
+#### 12.6.5 A decisão, e o que ficou por fazer
+
+**Papel C, 05/09:**
+
+* **RECUSADO** soltar a trava entre uma tabela e a seguinte — matriz Q8/Q9, e
+  o agravante do Q10: nenhuma bateria desta casa acusaria. Volta à mesa quando
+  houver a contabilidade por marca da §12.6.3(c), e aí com a matriz refeita.
+* **RECUSADO** fechar a janela por tabela, pelo mesmo Q8 por outro caminho: as
+  marcas pendentes das *outras* transações continuariam precisando de um
+  encontro, e sem contabilidade por marca esse encontro é o mesmo que existe
+  hoje.
+* **ACEITO** sincronizar as K tabelas ao mesmo tempo, com teto de fios
+  (`FIOS_DO_FECHO = 16`, e acima disso vai em pedaços): 1,62× em K=4 e 2,52× em
+  K=16, mesmo número de `fsync`, mesma ordem dentro de cada tabela, nenhuma
+  linha nova na matriz de queda e nenhuma mudança de formato.
+
 ---
 
 ## 13. RETRATADA — a medição não mediu o que dizia medir
@@ -1924,32 +2133,40 @@ O uso real está medido (`--example quanto-cache-uma-leitura-usa`, corridas em
 `corridas/cache-por-leitura-*-CERTO.txt`), e o resultado é o que mais importa
 aqui: **depende do caminho, e o caro é o ordenado**.
 
-| a leitura | páginas | residente | do teto |
-|---|---:|---:|---:|
-| grade **sem ordem** (50 ou 1.000 linhas) | **0** | 0,00 MiB | 0,0% |
-| grade **ORDENADA** (50 linhas) | 1.668 | **6,52 MiB** | 81,4% |
-| grade **ORDENADA** (1.000 linhas) | 1.668 | 6,52 MiB | 81,4% |
-| busca por chave | 3 | 0,01 MiB | 0,1% |
+| a leitura | páginas (antes) | páginas (**hoje**) | residente hoje | do teto |
+|---|---:|---:|---:|---:|
+| grade **sem ordem** (50 ou 1.000 linhas) | 0 | **0** | 0,00 MiB | 0,0% |
+| grade **ORDENADA** (50 linhas) | 1.668 | **3** | 0,01 MiB | 0,1% |
+| grade **ORDENADA** (1.000 linhas) | 1.668 | **11** | 0,04 MiB | 0,5% |
+| busca por chave | 3 | 3 | 0,01 MiB | 0,1% |
+| varredura do índice inteiro | 1.668 | 1.668 | 6,52 MiB | 81,4% |
 
 **A leitura por ordem de digitação não paga cache nenhum** — ela percorre o
-`.reg` e não toca o índice. **A ordenada paga 6,52 MiB, e 50 linhas custam o
-mesmo que 1.000**, porque `pagina_por_indice` chama `varrer_indice` e só depois
-recorta.
+`.reg` e não toca o índice.
 
-Multiplicado:
+A coluna «antes» é o que esta seção publicou em 05/09 de manhã, e ela media um
+defeito: `pagina_por_indice` chamava `varrer_indice`, que percorre o índice
+INTEIRO, e só depois recortava — por isso **50 linhas custavam o mesmo que
+1.000**. Consertado na mesma data pelo **pedido 188** (§16.9): a varredura
+passou a ler o índice em pedaços, e o custo da página voltou a ser o da
+**página**. A última linha da tabela fica como régua: quem realmente pede o
+índice inteiro continua pagando 1.668 páginas, e é assim que se sabe que o
+medidor não ficou cego.
 
-| leitores simultâneos | pelo uso medido | pelo teto |
-|---:|---:|---:|
-| 2 | 13,0 MiB | 16,0 MiB |
-| 4 | 26,1 MiB | 32,0 MiB |
-| 8 | **52,1 MiB** | 64,0 MiB |
-| 16 | 104,2 MiB | 128,0 MiB |
+Multiplicado, e é aqui que o conserto se sente:
 
-**O teto segura, e o que ele troca é RAM por trabalho:** acima de 2.048 páginas
-o cache despeja, a RAM para de crescer e a releitura volta. Ninguém precisa
-mexer em `recursos.cache_paginas` por causa desta mudança — mas quem for mexer
-agora está mexendo num número que se multiplica por leitor, e não mais num
-número que a trava segurava sozinha.
+| leitores simultâneos | antes (uso medido) | **hoje** | pelo teto |
+|---:|---:|---:|---:|
+| 2 | 13,0 MiB | **0,02 MiB** | 16,0 MiB |
+| 4 | 26,1 MiB | **0,05 MiB** | 32,0 MiB |
+| 8 | **52,1 MiB** | **0,10 MiB** | 64,0 MiB |
+| 16 | 104,2 MiB | **0,19 MiB** | 128,0 MiB |
+
+**O teto continua segurando, e o que ele troca é RAM por trabalho:** acima de
+2.048 páginas o cache despeja, a RAM para de crescer e a releitura volta. Quem
+for mexer em `recursos.cache_paginas` está mexendo num número que se multiplica
+por leitor, e não mais num número que a trava segurava sozinha — só que agora a
+grade ordenada deixou de ser quem enche o cache.
 
 E o número de leitores tem teto próprio: `conexoes_max` do `config.json`. Quem
 o subir para centenas com `cache_paginas` no padrão está escolhendo, sem saber,
@@ -1987,3 +2204,28 @@ mutação (`docs/TESTES.md` §12, gerado do `--json` da rodada).
 
 O aprendizado inteiro, com o que eu concluí primeiro e estava errado, está em
 `docs/cognicao/cognicao_porta-nova-quebra-a-guarda-da-porta-velha_20260905_0135.md`.
+
+### 16.9 O pedido 188: a grade ordenada lia o índice inteiro (05/09)
+
+Foi esta seção que achou o defeito, medindo o teto de RAM e não procurando
+defeito nenhum: **50 e 1.000 linhas tocavam as mesmas 1.668 páginas**, porque
+`Table::pagina_por_indice` chamava `varrer_indice` e só depois recortava.
+
+A **ordem do dono foi medir na TELA primeiro** — número de motor não decide se
+há frente, decide se o custo aparece para quem está olhando. Apareceu: num
+navegador de verdade, contra o `phxsqld` de verdade, trocar o «Percorrer por»
+numa tabela de 1.000.000 custava **98 ms com ordem contra 48 ms sem** — o motor
+sozinho **dobrava** a espera da pessoa, sobre um piso de tela de ~48 ms que
+nenhum conserto de motor remove.
+
+O conserto (varredura em pedaços com cursor), as três escalas, a prova real nos
+dois sentidos e o que ele **não** comprou estão em **`docs/DESEMPENHO.md` §19**.
+O que interessa a este documento é o efeito na concorrência, e ele é a tabela da
+§16.7: o pior leitor desta casa deixou de deixar **6,52 MiB residentes** para
+deixar **0,01 MiB**, e o teto de RAM que a onda 1 mediu — 8 leitores ordenados
+a ≈ 52 MiB — deixou de existir por outro caminho que não o teto do cache.
+
+E há um segundo custo que a §16.7 não contava, porque ela contava páginas de
+cache e não **alocação**: o `Vec<RowId>` intermediário carregava uma entrada por
+linha da tabela, `RowId = u64` — **7,63 MiB por leitura ordenada, por leitor**, a
+um milhão de linhas. Hoje ele carrega o pedaço que a página precisa.

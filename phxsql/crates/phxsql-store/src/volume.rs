@@ -238,6 +238,41 @@ fn pendentes_da_familia(familia: PathBuf) -> Pendentes {
     reg.entry(familia).or_default().clone()
 }
 
+/// Quantas familias de arquivo AINDA DEVEM ao disco, dentro deste diretorio.
+///
+/// # Por que ela existe, e por que ela e' publica
+///
+/// Porque os contadores que a `Volumes` ja expunha medem a INTENCAO: o
+/// `sincronizacoes()` e o `selo()` sobem ANTES do laco, e foi por isso que o
+/// defeito do pedido 186 -- um `sincronizar()` que devolvia `Ok(())` tendo
+/// mandado zero `fsync` -- passou por baixo de um teste que os conferia.
+///
+/// Quem quiser provar que um fecho de janela levou TODAS as tabelas ao disco
+/// precisa de um numero que so' desce quando o disco confirmou, e o registro
+/// de escritas pendentes e' exatamente ele: uma familia so' sai da lista
+/// depois do `fsync`. E' o irmao em RAM do `sincronizados()`, para quem nao
+/// tem o descritor na mao -- o caso do servidor, onde quem escreveu e quem
+/// sincroniza sao objetos diferentes.
+///
+/// # Por que POR DIRETORIO, e nao o processo inteiro
+///
+/// Porque `cargo test` roda os testes em threads do MESMO processo, e o
+/// registro e' do processo: um numero global responderia sobre as tabelas de
+/// quem estivesse rodando ao lado. Instrumento que mede o vizinho nao mede
+/// nada.
+pub fn familias_devendo_em(diretorio: &Path) -> usize {
+    let prefixo = absoluto_lexico(diretorio).unwrap_or_else(|| diretorio.to_path_buf());
+    // Os `Arc` saem primeiro e a trava de fora SE SOLTA: tomar a de dentro com
+    // a de fora na mao criaria a unica ordem de duas travas deste modulo, e
+    // ordem que existe uma vez so' e' a que ninguem lembra de respeitar depois.
+    let familias: Vec<Pendentes> = trava(&ESCRITAS_PENDENTES)
+        .iter()
+        .filter(|(caminho, _)| caminho.starts_with(&prefixo))
+        .map(|(_, p)| Arc::clone(p))
+        .collect();
+    familias.iter().filter(|p| !trava(p).is_empty()).count()
+}
+
 /// Toma a trava ignorando envenenamento.
 ///
 /// Envenenar acontece quando uma thread entra em panico segurando a trava, e o

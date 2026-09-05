@@ -465,6 +465,28 @@ const TETO_DO_LOTE_SERVIDO: usize = 16 * 1024 * 1024;
 /// aqui esta fazendo o que este teto existe para impedir.
 const PRAZO_DO_GATILHO_ANTES: Duration = Duration::from_millis(500);
 
+/// Quantas tabelas o fecho da janela sincroniza AO MESMO TEMPO.
+///
+/// O fecho e' 93-96% `fsync` (medido, `--example o-comboio-por-dentro`), e num
+/// `ext4` os `fsync` de arquivos diferentes se juntam no mesmo diario: por isso
+/// sincronizar as K tabelas sujas ao mesmo tempo custa muito menos que K vezes
+/// uma. Medido em `--example o-comboio-em-paralelo`: 1,62x em K=4 e 2,52x em
+/// K=16.
+///
+/// # Por que ele existe, e nao um fio por tabela suja
+///
+/// Porque K nao tem teto: uma base com dezenas de tabelas ativas deixaria
+/// dezenas de tabelas sujas na mesma janela, e a resposta a um pico de escrita
+/// nao pode ser um pico de fios. Acima deste numero o fecho vai em pedacos --
+/// serializa entre pedacos, que e' o comportamento de hoje, e o unico preco e'
+/// nao juntar TODOS os `fsync` num diario so.
+///
+/// O numero e' a largura em que o ganho medido ja tinha crescido de 1,00x
+/// (K=1) a 2,52x sem sinal de dobra. Nao e' catraca: catraca so' desce, e este
+/// numero nao mede promessa nenhuma -- e' um teto de recurso, e quem o mudar
+/// mede de novo com o exemplo.
+const FIOS_DO_FECHO: usize = 16;
+
 pub struct Servidor {
     config: Config,
     /// Trava unica de dados. Ver a nota de concorrencia no topo do modulo.
@@ -9252,6 +9274,33 @@ impl Servidor {
     /// Reabre cada tabela suja so para sincronizar. Custa um `open` por tabela,
     /// uma vez por janela -- nao por gravacao. Erro aqui nao derruba nada: a
     /// tabela continua na lista e a proxima passada tenta de novo.
+    ///
+    /// # O `fsync` das K tabelas acontece JUNTO, e a ordem continua inteira
+    ///
+    /// O comboio desta funcao esta medido na secao 12 do `docs/CONCORRENCIA.md`:
+    /// com os escritores fixos em 4, o p99 de um leitor que le uma tabela que
+    /// NINGUEM escreve sobe 2,01x de K=1 para K=4, so porque outras tabelas
+    /// ficaram sujas. E o `o-comboio-por-dentro` dividiu o custo: `abrir` 5-7%,
+    /// `fsync` 93-96%.
+    ///
+    /// A saida obvia -- soltar a trava entre uma tabela e a seguinte -- esta
+    /// **RECUSADA com a matriz de queda** (`docs/CONCORRENCIA.md` §12.6): esta
+    /// funcao apaga as marcas pendentes depois de sincronizar, e o que faz isso
+    /// ser seguro nao e a ordem sozinha, e o ENCONTRO SER ATOMICO. Soltar a
+    /// trava no meio deixa outro escritor entrar, sujar uma tabela que ja
+    /// passou e pendurar a marca dele -- e o fim deste laco apagaria a marca de
+    /// um commit cujo dado nunca foi sincronizado.
+    ///
+    /// O que se pode fazer sem encostar nisso e sincronizar as K ao mesmo
+    /// tempo: **nao ha ordem ENTRE tabelas para preservar**, porque o encontro
+    /// so termina quando todas terminam. A ordem DENTRO de cada tabela
+    /// (`.trash` antes do `.reg`) continua inteira, e o numero de `fsync` e o
+    /// mesmo -- medido em 32 para K=4 nos dois arranjos, 8 por tabela, que e a
+    /// `TETO_FSYNC_POR_FECHO_V2`. Medido: 1,62x em K=4 e 2,52x em K=16
+    /// (`--example o-comboio-em-paralelo`).
+    ///
+    /// O `abrir` fica em serie de proposito: sao os 5-7%, e o catalogo tem
+    /// estado compartilhado que nao se ganha nada em disputar.
     fn descarregar_sujas_com(&self, dados: &Instancia) {
         let lista: Vec<String> = match self.sujas.lock() {
             Ok(mut s) => s.drain().collect(),
@@ -9261,17 +9310,54 @@ impl Servidor {
             return;
         }
         let mut faltaram = Vec::new();
-        for chave in lista {
-            let Some((db, tab)) = chave.split_once('/') else {
+        for pedaco in lista.chunks(FIOS_DO_FECHO) {
+            let mut chaves: Vec<String> = Vec::with_capacity(pedaco.len());
+            let mut abertas: Vec<Table> = Vec::with_capacity(pedaco.len());
+            for chave in pedaco {
+                let Some((db, tab)) = chave.split_once('/') else {
+                    continue;
+                };
+                match dados
+                    .abrir_database(db)
+                    .and_then(|d| d.abrir_qualificada(tab))
+                {
+                    Ok(t) => {
+                        chaves.push(chave.clone());
+                        abertas.push(t);
+                    }
+                    // Nao abriu: nao ha o que sincronizar, e a marca desta
+                    // tabela tem de FICAR. A proxima passada tenta de novo.
+                    Err(_) => faltaram.push(chave.clone()),
+                }
+            }
+            // Uma tabela so nao tem com quem se sobrepor: sem fio nenhum, o
+            // caminho de K=1 continua sendo exatamente o de antes.
+            if abertas.len() == 1 {
+                if abertas[0].sincronizar().is_err() {
+                    faltaram.push(chaves.remove(0));
+                }
                 continue;
-            };
-            let ok = dados
-                .abrir_database(db)
-                .and_then(|d| d.abrir_qualificada(tab))
-                .and_then(|mut t| t.sincronizar())
-                .is_ok();
-            if !ok {
-                faltaram.push(chave);
+            }
+            let quebrados: Vec<usize> = std::thread::scope(|escopo| {
+                let fios: Vec<_> = abertas
+                    .iter_mut()
+                    .map(|t| escopo.spawn(move || t.sincronizar()))
+                    .collect();
+                // `join` devolve `Err` quando o fio entrou em panico, e panico
+                // aqui NAO pode virar marca apagada: um `unwrap` derrubaria a
+                // thread que segura a trava de dados, e o caminho seguro e o
+                // mesmo do erro de E/S -- a chave volta para as sujas e a marca
+                // fica pendurada.
+                fios.into_iter()
+                    .enumerate()
+                    .filter_map(|(i, f)| match f.join() {
+                        Ok(Ok(())) => None,
+                        _ => Some(i),
+                    })
+                    .collect()
+            });
+            for i in quebrados {
+                faltaram.push(chaves[i].clone());
             }
         }
         if !faltaram.is_empty() {
@@ -9286,6 +9372,23 @@ impl Servidor {
         // O disco esta em dia: as marcas dos commits que esperavam por ele
         // podem sair. **Esta e a ordem que faz o group commit ser seguro**, e
         // ela nao se inverte.
+        //
+        // E a ordem sozinha NAO e o que faz -- este comentario dizia menos do
+        // que a garantia, e a matriz de queda da secao 12.6 do
+        // `docs/CONCORRENCIA.md` mediu a diferenca. O invariante de verdade e:
+        // *uma marca so sai quando toda tabela que ela nomeia teve um `fsync`
+        // POSTERIOR a ultima escrita daquela transacao*. O laco entrega isso
+        // com uma regra mais barata -- apaga todas quando todas sincronizaram
+        // -- e as duas so sao a mesma coisa porque **ninguem escreve no meio**:
+        // o encontro inteiro acontece sob uma tomada so da trava de dados.
+        //
+        // Por isso o `join` acima acontece ANTES daqui, e por isso soltar a
+        // trava entre uma tabela e a seguinte esta recusado: outro escritor
+        // entraria, sujaria uma tabela que ja passou e penduraria a marca dele
+        // -- e esta drenagem a apagaria. Uma queda de energia depois disso
+        // perde um commit confirmado, sem bilhete nenhum, e a bateria de
+        // `SIGKILL` NAO acusaria (pagina suja no cache do nucleo sobrevive a
+        // processo morto -- pedido 186).
         let pendentes: Vec<PathBuf> = match self.marcas_pendentes.lock() {
             Ok(mut m) => m.drain(..).collect(),
             Err(_) => return,
@@ -10768,10 +10871,19 @@ impl Servidor {
             // continuar "depois do rowid X" nao quer dizer nada aqui, porque
             // o proximo da chave pode ter rowid menor. Entao por indice vale a
             // posicao, e a resposta diz isso em vez de fingir que paginou.
-            // E ela PARA no fim da pagina. O caminho anterior lia a tabela
-            // inteira para recortar mil linhas -- 192,5 ms com a trava global
-            // na mao, contra 4 ms do caminho da ordem de digitacao. Ver
-            // `Table::pagina_por_indice` e `docs/CONCORRENCIA.md`.
+            //
+            // E ela PARA no fim da pagina -- NOS DOIS ARQUIVOS, e esta linha
+            // ja disse isso quando era verdade so em um. O conserto de 02/09
+            // fez o `.reg` parar (192,5 ms com a trava global na mao, contra
+            // 4 ms do caminho da ordem de digitacao) e deixou o `.ndx` sendo
+            // percorrido inteiro antes do recorte: 50 linhas custavam o mesmo
+            // que 1.000, e este comentario se declarava resolvido -- que e o
+            // motivo de ninguem olhar de novo. O `.ndx` parou em 05/09
+            // (pedido 188): numa tabela de 1.000.000 e pagina de 50, o pedido
+            // pelo fio saiu de 54,81 ms e 8.335 paginas do indice para 0,56 ms
+            // e 3, e a espera NA TELA saiu de 98 ms para 48 ms. Ver
+            // `Table::pagina_por_indice`, `docs/CONCORRENCIA.md` e
+            // `--example o-que-a-grade-ordenada-custa`.
             (t.pagina_por_indice(&indice, visao, pular, max)?, "posicao")
         } else if antes >= 0 {
             (t.pagina_antes_de(antes as u64, max, visao)?, "cursor")
@@ -21809,6 +21921,173 @@ mod testes_janela_e_cadeia {
             s.sujas.lock().unwrap().is_empty(),
             "a janela fechou e o conjunto de sujas nao esvaziou: alguem pediu \
              a trava que ja tinha e o erro foi engolido"
+        );
+    }
+
+    /// Quantas familias de arquivo ainda devem ao disco nesta base.
+    ///
+    /// **Mede o FATO, e nao a intencao.** O `Volumes::sincronizacoes()` e o
+    /// `selo()` sobem ANTES do laco de `fsync`, e um teste que os conferisse
+    /// passaria com um fio que nunca foi lancado. Este numero so' desce quando
+    /// o disco confirmou.
+    fn devendo(s: &Arc<Servidor>) -> usize {
+        phxsql_store::volume::familias_devendo_em(&s.config.base)
+    }
+
+    /// Deixa as duas tabelas sujas sem fechar a janela.
+    fn sujar_as_duas(s: &Arc<Servidor>) {
+        // `lote_operacoes` e' 4 no servidor de teste: duas insercoes nao
+        // fecham a janela, e as duas tabelas ficam devendo ao disco.
+        for t in ["a", "b"] {
+            s.executar(
+                "inserir",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"{t}","linha":{{"n":1,"x":"y"}}}}"#
+                )),
+                &Sessao::default(),
+            )
+            .unwrap();
+        }
+        let sujas = s.sujas.lock().unwrap();
+        assert_eq!(sujas.len(), 2, "as duas tinham de estar sujas: {sujas:?}");
+        drop(sujas);
+        assert!(
+            devendo(s) > 0,
+            "as duas foram escritas e nenhuma familia deve ao disco: o \
+             instrumento nao esta medindo nada"
+        );
+    }
+
+    /// Uma marca de commit de mentira, so para ver se ela sobrevive.
+    fn marca_de_mentira(s: &Arc<Servidor>, nome: &str) -> PathBuf {
+        let c = s.config.base.join(nome);
+        std::fs::write(&c, b"marca").unwrap();
+        s.marcas_pendentes.lock().unwrap().push(c.clone());
+        c
+    }
+
+    /// **O encontro do fecho e ATOMICO, e e isso que o torna seguro.**
+    ///
+    /// `descarregar_sujas_com` sincroniza as tabelas sujas e SO ENTAO apaga as
+    /// marcas dos commits que esperavam por elas. Desde esta rodada as K vao
+    /// ao disco ao mesmo tempo em vez de em laco — o comboio da §12 do
+    /// `docs/CONCORRENCIA.md`, medido em 2,52x no K=16. O que nao pode mudar
+    /// com isso e o que acontece quando UMA delas falha.
+    ///
+    /// O defeito reposto: um erro engolido no `join`, ou um arranjo que apaga
+    /// as marcas por ter chegado ao fim do laco em vez de por todas terem
+    /// sincronizado. Nos dois casos a marca de um commit confirmado sai do
+    /// disco sem o dado estar la — e a marca e a UNICA coisa que o traz de
+    /// volta.
+    #[test]
+    fn tabela_que_nao_sincroniza_segura_as_marcas() {
+        let s = servidor_janela_curta("fecho-falha");
+        sujar_as_duas(&s);
+        // A terceira chave nao abre: e a mesma perda que um erro de E/S no
+        // meio do fecho, e o caminho que ela toma e o mesmo.
+        s.sujas.lock().unwrap().insert("b/naoexiste".into());
+        let marca = marca_de_mentira(&s, "transacao_1.tx");
+
+        let dados = s.travar_dados().unwrap();
+        s.descarregar_sujas_com(&dados);
+        drop(dados);
+
+        assert!(
+            marca.exists(),
+            "uma tabela nao sincronizou e a marca do commit foi apagada assim              mesmo: apagar a marca antes de o dado estar no disco e jogar fora              o unico bilhete que o traz de volta"
+        );
+        let sujas = s.sujas.lock().unwrap();
+        assert_eq!(
+            sujas.iter().cloned().collect::<Vec<_>>(),
+            vec!["b/naoexiste".to_string()],
+            "so a que falhou volta para as sujas — as que sincronizaram nao              podem voltar (seria fsync de novo a cada janela), e a que falhou              nao pode sumir (seria dado sem `fsync` que ninguem mais tenta)"
+        );
+    }
+
+    /// **O `fsync` que falha DENTRO do fio**, que e o irmao do de cima.
+    ///
+    /// A guarda anterior falha na ABERTURA da tabela; esta falha na
+    /// SINCRONIZACAO, ja com o fio lancado — o unico caminho em que o erro
+    /// chega pelo `join`. Sem ela, trocar `Ok(Ok(())) => None, _ => Some(i)`
+    /// por `_ => None` passaria por toda a suite: o `join` engoliria o erro, a
+    /// tabela ficaria devendo ao disco e a marca do commit sairia assim mesmo.
+    ///
+    /// O `.pag` vira DIRETORIO para que a falha venha do sistema operacional e
+    /// nao de um sinalizador de teste: `Table::sincronizar` termina gravando o
+    /// descritor, e nao se cria arquivo por cima de diretorio. *O que depende
+    /// do sistema operacional se prova contra o sistema operacional.*
+    #[test]
+    fn fsync_que_falha_no_fio_tambem_segura_as_marcas() {
+        let s = servidor_janela_curta("fecho-falha-no-fio");
+        sujar_as_duas(&s);
+        let atravessado = s.config.base.join("b").join("a.pag");
+        let _ = std::fs::remove_file(&atravessado);
+        std::fs::create_dir(&atravessado).unwrap();
+        let marca = marca_de_mentira(&s, "transacao_3.tx");
+
+        let dados = s.travar_dados().unwrap();
+        // A tabela ABRE — se ela nao abrisse, este teste seria uma segunda
+        // copia do de cima e nao cobriria o `join`.
+        assert!(
+            dados
+                .abrir_database("b")
+                .and_then(|d| d.abrir_qualificada("a"))
+                .is_ok(),
+            "a tabela precisa ABRIR para a falha acontecer dentro do fio"
+        );
+        s.descarregar_sujas_com(&dados);
+        drop(dados);
+
+        assert!(
+            marca.exists(),
+            "o `fsync` de uma tabela falhou dentro do fio e a marca do commit \
+             foi apagada assim mesmo: erro engolido no `join` e marca perdida"
+        );
+        let sujas: Vec<String> = s.sujas.lock().unwrap().iter().cloned().collect();
+        assert_eq!(
+            sujas,
+            vec!["b/a".to_string()],
+            "so a que falhou volta para as sujas"
+        );
+        let _ = std::fs::remove_dir(&atravessado);
+    }
+
+    /// O outro lado do laco, e ele e o que faz a guarda de cima segurar: com
+    /// TODAS sincronizadas, as marcas saem. Sem este teste, um fecho que nunca
+    /// apagasse marca nenhuma passaria pela guarda de cima — e marca que nunca
+    /// sai vira uma varredura a mais em todo arranque, para sempre.
+    #[test]
+    fn com_todas_sincronizadas_as_marcas_saem() {
+        let s = servidor_janela_curta("fecho-ok");
+        sujar_as_duas(&s);
+        let marca = marca_de_mentira(&s, "transacao_2.tx");
+
+        let dados = s.travar_dados().unwrap();
+        s.descarregar_sujas_com(&dados);
+        drop(dados);
+
+        assert!(
+            !marca.exists(),
+            "as duas sincronizaram e a marca ficou pendurada"
+        );
+        assert!(
+            s.sujas.lock().unwrap().is_empty(),
+            "as duas sincronizaram e o conjunto de sujas nao esvaziou"
+        );
+        assert!(
+            s.marcas_pendentes.lock().unwrap().is_empty(),
+            "a lista de marcas pendentes nao esvaziou"
+        );
+        // **A asercao que mede o FATO**, e a unica que pega o fio que nao foi
+        // lancado: uma tabela que o arranjo em paralelo deixasse de fora
+        // continuaria devendo ao disco, e as tres asercoes acima passariam
+        // assim mesmo — as marcas sairiam, as sujas esvaziariam, e o dado
+        // ficaria so no cache do nucleo.
+        assert_eq!(
+            devendo(&s),
+            0,
+            "o fecho terminou e alguma familia continua devendo ao disco: uma \
+             tabela nao foi sincronizada, e as marcas sairam assim mesmo"
         );
     }
 

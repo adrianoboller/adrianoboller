@@ -50,6 +50,85 @@ uma lista de dicionarios, lida pelo executor ao lado.
              de falhar trava a bateria; o `sujas-com-a-trava` e exatamente esse
 """
 
+TRECHO_PAGINA_ORDENADA = """        let i = self.idx_por_nome(indice)?;
+        // `limite` zero quer dizer «tudo», e ai nao ha onde parar: o pedaco e o
+        // indice inteiro e o laco roda uma volta so.
+        let mut pedaco = if limite == 0 {
+            0
+        } else {
+            (pular as usize).saturating_add(limite as usize)
+        };
+        // `Todas` sem sobreposicao nao esconde nada: nao ha o que ler para
+        // decidir, e o recorte e direto na lista de rowids.
+        let so_recorta = visao == Visao::Todas && self.sobreposta.is_none();
+        let mut apos: Option<Vec<u8>> = None;
+        let mut saida = Vec::new();
+        let mut vistos = 0u64;
+        loop {
+            let (entradas, ultima, acabou) = self.ndx.varrer_apos(i, apos.as_deref(), pedaco)?;
+            apos = ultima;
+            // Os nascidos na transacao entram no FIM: eles nao tem lugar na
+            // ordem da chave, e por isso so aparecem quando o indice acabou.
+            // O porque esta em `varrer_indice`.
+            let nascidos = if acabou { self.nascidos() } else { Vec::new() };
+            for r in entradas.into_iter().chain(nascidos) {
+                if !so_recorta && !self.visivel(r, None, visao)? {
+                    continue;
+                }
+                if vistos >= pular {
+                    saida.push(r);
+                    if limite > 0 && saida.len() as u64 >= limite {
+                        return Ok(saida);
+                    }
+                }
+                vistos += 1;
+            }
+            if acabou {
+                return Ok(saida);
+            }
+            pedaco = pedaco.saturating_mul(2);
+        }
+    }"""
+
+TROCA_PAGINA_ORDENADA = """        // DEFEITO REPOSTO (pedido 188): a varredura do indice INTEIRO antes
+        // de qualquer recorte. O `break` do limite para a leitura das LINHAS
+        // do `.reg`, e nunca a varredura do `.ndx` -- por isso 50 linhas
+        // custavam o mesmo que 1.000.
+        let todos = self.varrer_indice(indice)?;
+        if visao == Visao::Todas && self.sobreposta.is_none() {
+            return Ok(todos
+                .into_iter()
+                .skip(pular as usize)
+                .take(if limite == 0 { usize::MAX } else { limite as usize })
+                .collect());
+        }
+        let mut saida = Vec::new();
+        let mut vistos = 0u64;
+        for r in todos {
+            if !self.visivel(r, None, visao)? {
+                continue;
+            }
+            if vistos >= pular {
+                saida.push(r);
+                if limite > 0 && saida.len() as u64 >= limite {
+                    break;
+                }
+            }
+            vistos += 1;
+        }
+        Ok(saida)
+    }"""
+
+TRECHO_CURSOR = """        if apos.is_some() {
+            pos += 1;
+        }"""
+
+TROCA_CURSOR = """        // DEFEITO REPOSTO (pedido 188): o cursor sem o `+1` devolve de novo a
+        // entrada que ja foi entregue na volta anterior.
+        if false {
+            pos += 1;
+        }"""
+
 DEFEITO_ALCANCAR_TABELA = """        // DEFEITO REPOSTO: a trava de dados tomada aqui e segurada ate o fim
         // da funcao -- e no meio do laco mora `replica::puxar`, que e uma ida
         // e volta de rede. Rede sa esconde; source mudo prende o servidor
@@ -3214,5 +3293,137 @@ pub fn limpar() {
         "seguem": ["a_varredura_salta_os_vazios_entre_baldes",
                    "a_ordem_de_digitacao_esta_no_rownum",
                    "achar_pelo_numero_de_ordem_continua_certo_com_baldes"],
+    },
+    # -----------------------------------------------------------------------
+    # O fecho de janela que sincroniza as K tabelas AO MESMO TEMPO (pedido 180)
+    # -----------------------------------------------------------------------
+    {
+        "id": "fecho-em-paralelo-engole-o-erro",
+        "titulo": "o `fsync` que falha dentro do fio, e o `join` que engole o erro",
+        "porque": (
+            "o comboio do fecho e 93-96% `fsync`, e o conserto foi sincronizar "
+            "as K tabelas sujas ao mesmo tempo em vez de em laco. Isso poe um "
+            "`join` entre o `fsync` e a decisao de apagar as marcas de commit, "
+            "e um erro engolido ali vira marca apagada sem o dado no disco -- "
+            "a marca e a UNICA coisa que traz o commit de volta. O caminho e "
+            "diferente do erro de ABERTURA (esse tem guarda propria): so o "
+            "`join` cobre a falha de quem ja subiu. A matriz de queda esta na "
+            "secao 12.6 do `docs/CONCORRENCIA.md`."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                    .filter_map(|(i, f)| match f.join() {
+                        Ok(Ok(())) => None,
+                        _ => Some(i),
+                    })""",
+        "troca": """                    // DEFEITO REPOSTO: o erro do fio some no `join`, e o
+                    // fecho segue como se todas tivessem sincronizado.
+                    .filter_map(|(i, f)| match f.join() {
+                        Ok(Ok(())) => None,
+                        _ => None::<usize>.map(|_: usize| i),
+                    })""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_janela_e_cadeia::fsync_que_falha_no_fio_tambem_segura_as_marcas",
+        ],
+        "seguem": [
+            "servidor::testes_janela_e_cadeia::com_todas_sincronizadas_as_marcas_saem",
+            "servidor::testes_janela_e_cadeia::uma_tabela_so_grava_como_sempre",
+        ],
+        "prazo": 420,
+    },
+    {
+        "id": "fecho-em-paralelo-fio-que-nao-sobe",
+        "titulo": "uma tabela do fecho fica sem fio, e ninguém percebe",
+        "porque": (
+            "e o defeito que NENHUMA das outras asercoes pega, e por isso ele "
+            "esta aqui: com uma tabela fora do arranjo, as marcas saem, o "
+            "conjunto de sujas esvazia, o dado aparece na tela -- e ele so "
+            "existe no cache do nucleo. Quem acusa e a asercao que mede o "
+            "FATO, `volume::familias_devendo_em`, porque uma familia so sai do "
+            "registro de escritas pendentes depois do `fsync`. Os contadores "
+            "que medem a INTENCAO (`sincronizacoes()`, `selo()`) sobem ANTES "
+            "do laco e passariam -- foi assim que o pedido 186 escapou de um "
+            "teste."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                let fios: Vec<_> = abertas
+                    .iter_mut()
+                    .map(|t| escopo.spawn(move || t.sincronizar()))
+                    .collect();""",
+        "troca": """                // DEFEITO REPOSTO: a primeira tabela do pedaco nao
+                // ganha fio, e ninguem a sincroniza.
+                let fios: Vec<_> = abertas
+                    .iter_mut()
+                    .skip(1)
+                    .map(|t| escopo.spawn(move || t.sincronizar()))
+                    .collect();""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_janela_e_cadeia::com_todas_sincronizadas_as_marcas_saem",
+        ],
+        "seguem": [
+            "servidor::testes_janela_e_cadeia::uma_tabela_so_grava_como_sempre",
+            "servidor::testes_janela_e_cadeia::tabela_que_nao_sincroniza_segura_as_marcas",
+        ],
+        "prazo": 420,
+    },
+    {
+        "id": "pagina-ordenada-varre-o-indice-inteiro",
+        "titulo": "a grade ordenada percorre o índice inteiro para devolver 50 linhas",
+        "porque": (
+            "pedido 188. O conserto de 02/09/2026 fez a pagina PARAR -- e "
+            "parou so o `.reg`. O `varrer_indice` continuou percorrendo o "
+            "`.ndx` inteiro antes de qualquer recorte, e o comentario que se "
+            "declarava resolvido era o motivo de ninguem olhar de novo. "
+            "Medido pelo fio numa tabela de 1.000.000 com pagina de 50: "
+            "54,81 ms e 8.335 paginas do indice, contra 0,56 ms e 3 paginas "
+            "depois; na tela, num navegador de verdade, a espera ia de 48 ms "
+            "para 98 ms. A guarda mede o EFEITO (paginas do `.ndx` tocadas) e "
+            "nao o veredito, porque o resultado NAO mudava: as mesmas 50 "
+            "linhas, na mesma ordem."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": TRECHO_PAGINA_ORDENADA,
+        "troca": TROCA_PAGINA_ORDENADA,
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "paginacao"],
+        "caem": [
+            "a_pagina_ordenada_nao_percorre_o_indice_inteiro",
+            "a_pagina_ordenada_custa_o_mesmo_em_tabela_dez_vezes_maior",
+        ],
+        "seguem": [
+            "a_pagina_por_indice_que_para_devolve_o_mesmo_que_a_que_lia_tudo",
+            "a_pagina_respeita_a_visao",
+            "as_paginas_reconstroem_a_varredura_inteira",
+        ],
+        "prazo": 300,
+    },
+    {
+        "id": "cursor-do-pedaco-sem-o-mais-um",
+        "titulo": "o cursor da varredura em pedaços devolve de novo a linha da borda",
+        "porque": (
+            "e o defeito que a varredura em pedacos do pedido 188 criou: "
+            "`descer` para NA entrada de `apos`, que ja foi entregue, entao "
+            "sem o `+1` a borda de cada pedaco volta em dobro. Ele so aparece "
+            "quando o laco da a SEGUNDA volta, e ela so acontece com linha "
+            "invisivel no caminho -- a primeira versao da prova varria tabela "
+            "sem exclusao nenhuma e PASSAVA com o defeito reposto."
+        ),
+        "arquivo": "crates/phxsql-store/src/ndx.rs",
+        "trecho": TRECHO_CURSOR,
+        "troca": TROCA_CURSOR,
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "paginacao"],
+        "caem": [
+            "a_varredura_em_pedacos_costura_a_mesma_ordem",
+            "a_pagina_por_indice_que_para_devolve_o_mesmo_que_a_que_lia_tudo",
+        ],
+        "seguem": [
+            "a_pagina_ordenada_nao_percorre_o_indice_inteiro",
+            "as_paginas_reconstroem_a_varredura_inteira",
+        ],
+        "prazo": 300,
     },
 ]

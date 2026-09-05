@@ -2304,9 +2304,53 @@ quem acrescentar um caminho de escrita fora dele. Isso é o preço de 17% de uma
 operação que acontece uma vez por janela — 200 operações ou 200 ms. Não vale
 hoje; com a auditoria e a guarda escritas, volta a valer.
 
+### 16.3 O que a §16.2 deixou passar, e custou 2,5× (05/09)
+
+A §16.2 recusou **cortar** `fsync`, e a recusa continua de pé. Mas ela olhou o
+fecho só por um eixo — *quantos* `fsync` — e não pelo outro: **quantos ao mesmo
+tempo**. O laço mandava as K tabelas ao disco uma de cada vez, com a trava
+global de dados na mão.
+
+Não precisava. **Não há ordem ENTRE tabelas para preservar** — o fecho só acaba
+quando todas acabam —, e a ordem DENTRO de cada uma (`.trash` antes do `.reg`)
+continua inteira porque cada tabela vai num fio só. Num `ext4` os `fsync` de
+arquivos diferentes se juntam no mesmo diário, e o número aparece:
+
+| K | ganho A | ganho B |
+|---:|---:|---:|
+| 4 | 1,62× | 1,57× |
+| 8 | 2,06× | 1,97× |
+| 16 | **2,52×** | **2,42×** |
+
+Duas baterias limpas, alternando os dois arranjos dentro da mesma corrida, com
+o `esta-medindo.sh` conferido antes e depois de cada uma. **Com o mesmo número
+de `fsync`** — 32 para K=4 nos dois arranjos, contados por `strace` num
+processo filho, 8 por tabela: a `TETO_FSYNC_POR_FECHO_V2` não se mexe. Ganho de
+tempo num caminho de durabilidade que viesse de `fsync` a menos não seria
+ganho, e é a única forma de esse número ser falso — daí a guarda
+`tests/fecho-em-paralelo-conta-os-mesmos-fsync.rs`.
+
+E o mesmo pelo lado de fora, com os dois `phxsqld` construídos lado a lado e a
+bancada `o-comboio-do-fecho.py` rodando com `PHX_PHXSQLD` em cada um: o p99 do
+escritor em K=4 cai de **7,4–7,8 ms para 5,8–6,2 ms** (duas corridas limpas de
+cada arranjo), e o K=1 fica igual nas quatro — sem comboio, o código é o mesmo.
+**Os dois lados concordam na direção e na ordem de grandeza**, com o de fora
+encolhendo menos (1,26×) que o de dentro (1,57×–1,62×), porque o fecho é só uma
+parte da espera de quem está atrás. Se o de fora tivesse encolhido *mais*, uma
+das duas medições estaria errada.
+
+**A lição, e ela vale além daqui:** *a recusa de cortar trabalho não responde
+se o trabalho precisa ser em série.* A §16.2 mediu certo e concluiu certo sobre
+a pergunta que fez; a pergunta que faltava era mais barata que a dela e comprou
+7× mais. A matriz de queda que autoriza isto — e a recusa medida de **soltar a
+trava** entre uma tabela e a seguinte, que é a saída óbvia e é insegura — está
+na §12.6 do `docs/CONCORRENCIA.md`.
+
 ```bash
 cargo run --release --example fsync-por-fecho -p phxsql-store -- --numeros
 cargo run --release --example o-comboio-por-dentro -p phxsql-store -- 16 2000
+cargo run --release --example o-comboio-em-paralelo -p phxsql-store -- 16 2000 30
+cargo run --release --example o-comboio-em-paralelo -p phxsql-store -- --contar
 cargo run --release --example custo-do-fsync -p phxsql-store -- 50000
 ```
 
@@ -2512,6 +2556,160 @@ Como refazer: `python3 bancada/utilizacao-padrao/medir.py 20000`, depois
 `python3 bancada/utilizacao-padrao/gera-leia-me.py`. Os números destas três
 tabelas são reescritos pelo gerador; nenhum deles se digita.
 
+## 19. A grade ORDENADA lia o índice inteiro — o pedido 188, medido na TELA (05/09)
+
+**A ordem do dono foi «medir o custo na tela primeiro»**, e ela é a parte que
+mais ensina: o número do motor já estava medido, e ele não decidia nada.
+Decidia se o custo **aparece para quem está olhando** — porque se não
+aparecesse, o pedido virava documentação, e isso seria resultado e não fracasso.
+
+### 19.1 O defeito, e por que o conserto anterior cobria metade
+
+`Table::pagina_por_indice` começava com `let todos = self.varrer_indice(indice)?`
+e só depois recortava. O `break` do limite parava a leitura das **linhas** do
+`.reg` — nunca a varredura do `.ndx`. Por isso **50 linhas custavam o mesmo que
+1.000**: para devolver as 50 primeiras na ordem da chave, o motor lia a ordem
+inteira e jogava fora tudo menos 50.
+
+O conserto de 02/09 tinha feito o `.reg` parar (192,5 ms → 4 ms) e deixou o
+`.ndx` como estava — e o **comentário acima da linha se declarava resolvido**,
+que é o motivo de ninguém olhar de novo. É a mesma forma do pedido 176, e o
+comentário está corrigido no `op_varrer` junto deste conserto.
+
+### 19.2 O que se mede, e o crivo que impede o número de mentir
+
+**Bancada compara trabalho igual, não só pergunta igual.** Uma grade **sem
+ordem** devolve as 50 primeiras na **ordem de digitação**; uma **ordenada**
+devolve as 50 primeiras na **ordem da chave**. São 50 linhas dos dois lados e
+**não é o mesmo trabalho** — a razão entre elas mede o **preço de pedir ordem**,
+e não um motor contra o outro.
+
+A comparação de trabalho igual é outra, e ela está na bancada: a grade ordenada
+contra a **ordenada mínima**, que desce a árvore uma vez e lê só as 50 primeiras
+entradas da folha. Mesmas linhas, mesma ordem, mesmo resultado — e é essa razão
+que diz se há defeito.
+
+### 19.3 Pelo fio, três escalas (`--example o-que-a-grade-ordenada-custa`)
+
+O custo é o do **índice inteiro**, então ele cresce com a **tabela** e não com a
+página — daí três escalas: 10 mil (tabela de apoio), 100 mil (a escala que o
+`onde-doi-no-varrer` já usa nesta casa) e 1 milhão (tabela operacional). Página
+de 50, mediana de 9 rodadas intercaladas, máquina livre pelo
+`bancada/esta-medindo.sh`.
+
+| linhas | grade ordenada, **antes** | **depois** | páginas do `.ndx` antes | depois |
+|---:|---:|---:|---:|---:|
+| 10.000 | 1,13 ms | **0,55 ms** | 84 | **2** |
+| 100.000 | 6,14 ms | **0,56 ms** | 835 | **3** |
+| 1.000.000 | **54,81 ms** | **0,57 ms** | **8.335** | **3** |
+
+O controle da mesma bancada é a grade **sem ordem**, que este conserto não toca:
+ela ficou entre 0,52 e 0,86 ms nas duas rodadas, e essa variação é o **piso de
+ruído** com que se lê o resto — 96× está muito acima dele, e as páginas do
+`.ndx` são determinísticas de qualquer jeito.
+
+E a comparação de **trabalho igual**, no motor: a ordenada custava **44,53 ms**
+contra **0,09 ms** da mínima (484×) a um milhão de linhas. Hoje ela toca as
+**mesmas 3 páginas** que a mínima.
+
+### 19.4 Na TELA, num navegador de verdade (`testes-web/grade/custo-da-ordem.mjs`)
+
+O relógio é o do navegador, e o gesto é o inteiro: trocar o «Percorrer por» de
+«ordem de digitação» para um índice e esperar a grade **repintada** — o `fetch`,
+o servidor, o JSON de volta, o DOM e o quadro pintado. Página de 200, que é o
+que a aba Conteúdo pede sozinha.
+
+| linhas | sem ordem (antes → depois) | ORDENADA **antes** | ORDENADA **depois** |
+|---:|---:|---:|---:|
+| 10.000 | 64,5 → 48,2 ms | 77,1 ms | **48,2 ms** |
+| 100.000 | 48,1 → 48,3 ms | 64,8 ms | **48,3 ms** |
+| 1.000.000 | 48,0 → 48,2 ms | **98,0 ms** | **48,3 ms** |
+
+A coluna «sem ordem» é o **controle**: este conserto não toca aquele caminho, e
+ela tem de ficar onde estava. Ficou — os 64,5 ms da primeira linha são a rodada
+de aquecimento do navegador, que é a primeira escala medida, e é por isso que a
+rodada 0 de cada escala é jogada fora e as duas trocas são intercaladas.
+
+**O custo aparecia, e essa era a pergunta.** A tela tem um piso próprio de
+48 ms (o `fetch` mais o DOM de 200 linhas) que nenhum conserto de motor
+remove — e a um milhão de linhas o motor sozinho **dobrava** a espera. Não é
+uma barra de progresso, é pior: é a diferença entre uma tela que responde e uma
+que hesita, paga a cada clique de cabeçalho, o dia inteiro. E ela **cresce com a
+tabela**: a dez milhões, que é a escala que a bancada desta casa já carrega,
+seriam ~500 ms.
+
+### 19.5 O conserto: a varredura em PEDAÇOS, com cursor
+
+`Ndx::varrer_apos(idx, apos, teto)` devolve até `teto` rowids a partir da última
+chave completa entregue, mais essa chave e se o índice acabou. O
+`pagina_por_indice` pede um pedaço de `pular + limite`, filtra enquanto anda, e
+**volta por mais só se faltar** — continuando de onde parou, e não relendo do
+começo. O pedaço dobra a cada volta.
+
+Três decisões, e a razão de cada uma:
+
+- **O cursor é a CHAVE COMPLETA, não `(página, posição)`.** O par seria uma
+  descida a menos e um ponteiro para dentro de uma estrutura que a próxima
+  escrita reorganiza. A chave completa carrega o rowid no fim, então é única e
+  sobrevive à divisão de folha.
+- **O pedaço dobra.** Sem isso, uma visão que recusa quase tudo (`excluídas`
+  numa tabela sem exclusões) daria uma volta por linha. Dobrando, o pior caso lê
+  o índice inteiro **uma vez só**, como antes, e paga a mais apenas `log2`
+  descidas da árvore.
+- **O filtro continua andando junto.** O `pular` conta linhas **visíveis**, e não
+  entradas do índice: pular dez entradas das quais três estão excluídas levaria
+  à página errada, e levaria calado.
+
+### 19.6 A prova real, nos dois sentidos
+
+O resultado **não mudava** — as mesmas 50 linhas, na mesma ordem. Uma guarda que
+conferisse o veredito passaria com o defeito reposto. Então ela mede o
+**efeito**: `Table::paginas_do_indice_tocadas()` conta acerto de cache **mais**
+falta, porque o que se quer medir é o trabalho de andar pela árvore — contar só
+as faltas mediria a RAM, e mediria zero na segunda corrida.
+
+| a guarda | com o defeito reposto |
+|---|---|
+| `a_pagina_ordenada_nao_percorre_o_indice_inteiro` | «a página de 50 linhas tocou **168** páginas do `.ndx` e a varredura do índice inteiro tocou **168**» |
+| `a_pagina_ordenada_custa_o_mesmo_em_tabela_dez_vezes_maior` | «tocou **17** páginas numa tabela de 2.000 e **168** numa de 20.000» |
+| `a_varredura_em_pedacos_costura_a_mesma_ordem` | «a varredura em pedaços de 1 divergiu da varredura inteira» |
+
+E as comparações são **relativas**, tiradas da própria tabela: um teto digitado
+aqui envelheceria calado no dia em que o tamanho da página do `.ndx`, o tamanho
+da chave ou a profundidade da árvore mudassem.
+
+**A terceira prova passou por engano na primeira versão**, e isso está escrito
+no teste: ela varria uma tabela sem exclusão nenhuma, e ali o cursor nunca é
+tocado — o primeiro pedaço vale `pular + limite` e já basta sozinho, então o
+laço nunca dá a segunda volta. O que faz a volta acontecer são as linhas
+**invisíveis**. Com nove de cada dez marcadas, ela cai com o defeito do cursor.
+
+As duas entradas novas do `bancada/guardas/catalogo.py` —
+`pagina-ordenada-varre-o-indice-inteiro` e `cursor-do-pedaco-sem-o-mais-um` —
+saíram **PROVADAS**, 2/2 testes caindo cada uma.
+
+### 19.7 O que este conserto NÃO comprou
+
+Nada para a grade **sem ordem**, que já não tocava o índice, e nada para a
+**busca por chave**, que já custava 3 páginas. Quem paga o índice inteiro de
+propósito — `varrer_indice`, o `phxsql-cli` — continua pagando 1.668 páginas a
+200.000 linhas, e é assim que se sabe que o medidor não ficou cego.
+
+### 19.8 Como refazer
+
+```bash
+bancada/esta-medindo.sh && echo "ha medicao em curso -- espere"
+flock /tmp/phx-cargo.lock cargo build --release --examples -p phxsql-store
+flock /tmp/phx-cargo.lock cargo build --release -p phxsql-server \
+      --example o-que-a-grade-ordenada-custa --bin phxsqld
+for n in 10000 100000 1000000; do
+  ./target/release/examples/o-que-a-grade-ordenada-custa $n 50 9
+done
+cargo run --release --example quanto-cache-uma-leitura-usa -p phxsql-store -- 200000
+node testes-web/grade/custo-da-ordem.mjs --linhas 10000,100000,1000000
+```
+
+
 ## Como refazer tudo
 
 ```bash
@@ -2539,4 +2737,6 @@ cargo run --release --example fsync-por-fecho -p phxsql-store -- --numeros  # a 
 python3 bancada/utilizacao-padrao/medir.py 20000          # a §18
 python3 bancada/utilizacao-padrao/paginacao-alfabetica.py # a partição por letra pela porta de dados
 python3 bancada/utilizacao-padrao/gera-leia-me.py         # reescreve a §18 e o LEIA-ME da bancada
+cargo run --release -p phxsql-server --example o-que-a-grade-ordenada-custa -- 1000000 50 9  # a §19, pelo fio
+node testes-web/grade/custo-da-ordem.mjs                  # a §19, NA TELA
 ```
