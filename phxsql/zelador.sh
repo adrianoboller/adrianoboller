@@ -245,6 +245,103 @@ print("  %d bundles, %d MiB%s" %
       (apagados, bytes_ // (1024 * 1024), " (nao apagados: --ver)" if so_ver else ""))
 FIM
 
+# Copias DERIVADAS da arvore, fora do repositorio. O alcance de novo.
+#
+# Medido em 05/09/2026: o disco chegou a 2,0 GiB livres e este script liberou
+# 125 MiB, porque 5,6 GiB estavam em lugares que ele nao enxergava -- o cache
+# do provador de guardas (3,0 GiB) e quatro copias de arvore no scratchpad da
+# sessao. E a SEGUNDA vez que o alcance deste script e o defeito, e a primeira
+# esta no commit que criou a secao dos bundles: «a guarda existia, mas o
+# alcance dela parava no target e nos worktrees».
+#
+# A copia do provador de guardas e derivada POR CONSTRUCAO -- o
+# `provar-guardas.py` a recria e diz «reaproveitada» quando a acha --, entao
+# aqui basta a prova de uso viva.
+echo "-- copias derivadas fora do repositorio"
+CACHE_GUARDAS=/root/.cache/phx-guardas
+if [ -d "$CACHE_GUARDAS" ]; then
+  if em_uso "$CACHE_GUARDAS"; then
+    echo "  cache do provador de guardas em uso ($QUEM_SEGURA), nao toco"
+  else
+    t=$(du -sk "$CACHE_GUARDAS" 2>/dev/null | cut -f1)
+    printf '  %-44s %5d MiB  o provador recria\n' "$CACHE_GUARDAS" "$((t/1024))"
+    [ "$VER" = "--ver" ] || rm -rf "$CACHE_GUARDAS"
+  fi
+fi
+
+# As copias no scratchpad da sessao. Aqui NAO se apaga por idade nem por nome:
+# o scratchpad guarda tambem entregavel -- video, capturas -- e apagar por
+# palpite perderia o que a sessao produziu.
+#
+# So sai o que se PROVA redundante, e a prova e a mesma dos bundles, por
+# OBJETO: uma copia que e repositorio git so sai se a arvore de TODA cabeca
+# dela existir no repositorio principal. Nao vale casar por assunto de commit
+# -- dois commits com o mesmo assunto podem ter conteudo diferente, e o SHA
+# sozinho diria «falta» para todo commit rebaseado. O que decide e o hash da
+# ARVORE.
+for SC in /tmp/claude-*/*/*/scratchpad; do
+  [ -d "$SC" ] || continue
+  for C in "$SC"/*/; do
+    C=${C%/}
+    # E copia desta arvore? DUAS formas contam, e exigir so a primeira fazia o
+    # ramo do git virar codigo morto -- medido em 05/09/2026:
+    #
+    #   copia do SUBDIRETORIO do projeto -> `Cargo.toml` e `crates/` na raiz,
+    #     e `.git` NAO vem junto, porque o repositorio mora no pai;
+    #   clone do REPOSITORIO inteiro    -> `phxsql/Cargo.toml`, e `.git` vem.
+    #
+    # Exigindo so a primeira, toda copia com `.git` ficava de fora e a prova
+    # por arvore nunca rodava. A copia que motivou esta secao era da segunda
+    # forma.
+    if [ -f "$C/Cargo.toml" ] && [ -d "$C/crates" ]; then
+      :
+    elif [ -f "$C/phxsql/Cargo.toml" ] && [ -d "$C/phxsql/crates" ]; then
+      :
+    else
+      continue
+    fi
+    if em_uso "$C"; then
+      echo "  $(basename "$C") em uso ($QUEM_SEGURA), nao toco"
+      continue
+    fi
+    # Sem `.git` nao ha o que provar, entao ela FICA -- e aparece no aviso.
+    #
+    # Esta linha nasceu de um defeito NESTE bloco, pego pela prova real em
+    # 05/09/2026: a primeira versao apagava toda copia com `Cargo.toml` e
+    # `crates/`, e duas das que ela pegou nao eram repositorio nenhum. Seria
+    # exatamente o «apagar por palpite» que o cabecalho deste arquivo proibe,
+    # escrito por quem tinha acabado de citar a proibicao.
+    if [ ! -d "$C/.git" ]; then
+      t=$(du -sk "$C" 2>/dev/null | cut -f1)
+      printf '  %-44s %5d MiB  copia SEM git: nao da para provar, fica\n' \
+             "$(basename "$C")" "$((t/1024))"
+      continue
+    fi
+    if [ -n "$(git -C "$C" status --porcelain 2>/dev/null)" ]; then
+      echo "  $(basename "$C") tem trabalho NAO COMMITADO, fica"
+      continue
+    fi
+    # A prova por OBJETO: a arvore de toda cabeca da copia tem de existir no
+    # principal. Nao vale casar por assunto de commit -- dois commits com o
+    # mesmo assunto podem ter conteudo diferente --, nem por SHA de commit,
+    # que diria «falta» para todo commit rebaseado. Medido no mesmo dia: uma
+    # copia com DOZE commits que o principal nao tinha por SHA tinha o hash de
+    # ARVORE identico em todos eles.
+    falta=0
+    for h in $(git -C "$C" for-each-ref --format='%(objectname)' refs/heads 2>/dev/null); do
+      arv=$(git -C "$C" rev-parse "$h^{tree}" 2>/dev/null) || { falta=1; break; }
+      git cat-file -e "$arv" 2>/dev/null || { falta=1; break; }
+    done
+    if [ "$falta" = 1 ]; then
+      echo "  $(basename "$C") carrega arvore que o principal NAO tem, fica"
+      continue
+    fi
+    t=$(du -sk "$C" 2>/dev/null | cut -f1)
+    printf '  %-44s %5d MiB  copia redundante\n' "$(basename "$C")" "$((t/1024))"
+    [ "$VER" = "--ver" ] || rm -rf "$C"
+  done
+done
+
 LIVRE_DEPOIS=$(df -k "$REPO" | awk 'NR==2{print $4}')
 echo "== depois: $(df -h "$REPO" | awk 'NR==2{print $4}') livres"
 # Medido no disco, e nao somado das partes: a soma a mao ja disse 362 MiB numa
