@@ -1,0 +1,19 @@
+[package]
+name = "wx-modelos"
+version = "0.1.0"
+edition = "2021"
+description = "Escolha e controle do modelo local do WX Claude Code, no terminal"
+license = "Proprietary"
+
+[dependencies]
+# Nenhuma. Só a std: é o que faz a compilação cruzada funcionar de primeira e o
+# binário rodar na máquina do cliente sem cargo, sem rede e sem surpresa.
+
+[[bin]]
+name = "wx-modelos"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = "z"
+lto = true
+strip = true

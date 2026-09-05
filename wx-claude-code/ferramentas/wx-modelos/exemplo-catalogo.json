@@ -1,0 +1,9 @@
+{
+  "_leia_me": "Catálogo de EXEMPLO, para a ferramenta rodar sem serviço. Os campos são a forma que o serviço local devolve; os valores aqui são de demonstração e não afirmam nada sobre modelo de terceiro. O catálogo de verdade vem de /models/catalog do serviço local.",
+  "modelos": [
+    {"id": "exemplo-pequeno", "nome": "Exemplo pequeno (Q4)", "parametros": "3B", "quantizacao": "Q4_K_M", "contexto": 32000, "bytes": 2200000000, "modalidades": ["texto"]},
+    {"id": "exemplo-medio", "nome": "Exemplo médio (Q4)", "parametros": "8B", "quantizacao": "Q4_K_M", "contexto": 50000, "bytes": 4600000000, "modalidades": ["texto", "visão"]},
+    {"id": "exemplo-medio-q6", "nome": "Exemplo médio (Q6)", "parametros": "8B", "quantizacao": "Q6_K", "contexto": 50000, "bytes": 6600000000, "modalidades": ["texto"]},
+    {"id": "exemplo-grande", "nome": "Exemplo grande (Q4)", "parametros": "32B", "quantizacao": "Q4_K_M", "contexto": 128000, "bytes": 19000000000, "modalidades": ["texto"]}
+  ]
+}

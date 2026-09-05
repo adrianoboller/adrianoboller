@@ -838,6 +838,41 @@ class Questionario(unittest.TestCase):
                          "o golden master gravado nao bate com o legado; rode capturar-golden.php")
         self.assertGreaterEqual(len(agora["casos"]), 12)
 
+    def test_wx_modelos_compila_e_nao_inventa_numero(self):
+        """A ferramenta de modelo local e Rust a parte; o que ela promete e nao
+        inventar numero. Aqui roda a bateria dela e o binario de verdade."""
+        if not shutil.which("cargo"):
+            self.skipTest("cargo nao instalado neste ambiente")
+        raiz = RAIZ / "ferramentas/wx-modelos"
+        r = subprocess.run(["cargo", "test", "--quiet"], cwd=raiz, capture_output=True, text=True, timeout=1800)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        b = subprocess.run(["cargo", "build", "--release", "--quiet"], cwd=raiz, capture_output=True, text=True, timeout=1800)
+        self.assertEqual(b.returncode, 0, b.stderr)
+        binario = raiz / "target/release/wx-modelos"
+        # a maquina sai medida do sistema, nao de constante no codigo
+        maq = json.loads(subprocess.run([str(binario), "maquina", "--json"], capture_output=True, text=True).stdout)
+        self.assertIn(maq["so"], ("linux", "macos", "windows"))
+        if maq["memoria_bytes"] is not None:
+            self.assertGreater(maq["memoria_bytes"], 0)
+            self.assertIsNotNone(maq["orcamento_bytes"])
+        # catalogo de exemplo: o que nao cabe tem de ser dito, nao arredondado
+        cat = subprocess.run([str(binario), "modelos", "--json", "--catalogo", str(raiz / "exemplo-catalogo.json")],
+                             capture_output=True, text=True)
+        modelos = json.loads(cat.stdout)["modelos"]
+        self.assertGreaterEqual(len(modelos), 4)
+        self.assertTrue(all(m["tokens_por_segundo"] is None for m in modelos),
+                        "velocidade so existe depois de medir; catalogo nao pode trazer chute")
+        # sem servico no ar, o estado diz isso e sai com codigo 1
+        est = subprocess.run([str(binario), "estado", "--json", "--endereco", "127.0.0.1:1"],
+                             capture_output=True, text=True)
+        self.assertEqual(json.loads(est.stdout)["servico_no_ar"], False)
+        self.assertEqual(est.returncode, 1)
+        # zero dependencia externa: e o que faz compilar cruzado sem drama
+        cargo = (raiz / "Cargo.toml").read_text(encoding="utf-8")
+        deps = cargo.split("[dependencies]", 1)[1].split("[", 1)[0]
+        self.assertEqual([l for l in deps.splitlines() if l.strip() and not l.strip().startswith("#")], [],
+                         "wx-modelos nao pode ganhar dependencia externa")
+
     def test_bateria_pesada_de_cenarios(self):
         """Os OUTROS caminhos: sem licenca, PDF que e foto, legado que nunca foi WX,
         resposta que se contradiz. Cada cenario diz o que espera antes de rodar."""

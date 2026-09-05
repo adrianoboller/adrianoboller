@@ -538,5 +538,20 @@
   "itens_questionario": 60,
   "hooks": 8,
   "manual": 686
+ },
+ {
+  "versao": "3.30.0",
+  "data": "2026-09-05",
+  "titulo": "exemplo de legado PHP, e o G0 que ainda supunha WINDEV",
+  "agentes": 94,
+  "skills": 21,
+  "comandos": 19,
+  "scripts": 26,
+  "linhas_py": 26882,
+  "prints": 59,
+  "testes": 64,
+  "itens_questionario": 60,
+  "hooks": 8,
+  "manual": 690
  }
 ]

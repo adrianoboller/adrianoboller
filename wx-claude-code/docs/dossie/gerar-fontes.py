@@ -27,6 +27,7 @@ GRUPOS = [
     ("Testes", "tests/*.py", "a bateria; o validador estrito a roda"),
     ("Exemplo", "exemplos/estoque-wx/**/*", "projeto sintético que é o teste de regressão do fluxo inteiro"),
     ("Exemplo PHP", "exemplos/faturamento-php/**/*", "legado PHP procedural sintético: o segundo exemplo, sem nada de WX"),
+    ("Ferramenta Rust", "ferramentas/wx-modelos/src/*.rs", "wx-modelos: escolha e controle do modelo local, std pura, sem crate"),
     ("Documentos", "*.md", "manual, README, fontes e a instrução de ativação, na raiz"),
     ("Documentos de apoio", "docs/**/*.md", "relatório, análises, origens dos prints e o vídeo"),
     ("Instaladores", "instalar.*", "bash para Linux e macOS, PowerShell para Windows"),
@@ -50,7 +51,7 @@ def main() -> int:
     total_arq = total_lin = 0
     for nome, padrao, oque in GRUPOS:
         arquivos = [p for p in RAIZ.glob(padrao) if p.is_file() and "__pycache__" not in str(p)]
-        lin = sum(linhas_py(p) for p in arquivos if p.suffix in {".py", ".md", ".json", ".csv", ".sh", ".ps1", ".sql"})
+        lin = sum(linhas_py(p) for p in arquivos if p.suffix in {".py", ".md", ".json", ".csv", ".sh", ".ps1", ".sql", ".rs", ".toml", ".php"})
         total_arq += len(arquivos)
         total_lin += lin
         # o separador de milhar so no numero: trocar virgula na linha inteira

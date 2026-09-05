@@ -1,0 +1,3 @@
+
+# binario e indice do wx-modelos: se refazem com cargo build --release
+ferramentas/wx-modelos/target/

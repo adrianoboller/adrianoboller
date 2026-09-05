@@ -193,6 +193,15 @@ PDF faz no outro, e o golden master capturado rodando o próprio legado. Foi ele
 que mostrou o G0 supondo WINDEV em oito lugares — consertado, com o teste do
 comportamento velho travando o que já funcionava.
 
+## Modelo local, no terminal
+
+`ferramentas/wx-modelos/` é um binário Rust à parte (só `std`, nenhuma crate)
+que mostra o que esta máquina aguenta e controla o serviço local: `maquina`,
+`modelos`, `estado`, `carregar`, `soltar`, `medir`. A regra do desenho é a da
+casa: **eixo sem medição não vira polígono** — velocidade só aparece depois de
+`medir`, nota de qualidade só entra com a fonte junto, e o radar diz quantos
+dos eixos foram medidos. Veja `ferramentas/wx-modelos/LEIA-ME.md`.
+
 ## Provas em código
 
 Três, em níveis que não se substituem: `tests/testes.py` confere cada peça
